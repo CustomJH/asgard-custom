@@ -16,7 +16,7 @@ echo "── verify CLI ──"
 command -v asgard >/dev/null || { echo "FAIL: asgard not on PATH"; exit 1; }
 ver="$(asgard --version)"; echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: --version => '$ver'"; exit 1; }
 [ "$ver" != "0.0.0" ] || { echo "FAIL: version 0.0.0 (not embedded)"; exit 1; }
-asgard --help | grep -q "asgard — coding-agent harness" || { echo "FAIL: --help"; exit 1; }
+asgard --help | grep -q "asgard — make anything, your way" || { echo "FAIL: --help"; exit 1; }
 asgard --help | grep -q "doctor" || { echo "FAIL: --help command list"; exit 1; }
 asgard setup | grep -qi "planned" || { echo "FAIL: planned command"; exit 1; }
 asgard doctor

@@ -1,6 +1,6 @@
 # Asgard
 
-Coding-agent harness — sets up multiple coding-agent environments (Claude Code, OpenCode, Codex, …). Shipped as a self-contained binary: no Node, Bun, or git required to run it.
+Make anything, your way — a portable setup system, shipped as a self-contained binary (no Node, Bun, or git required to run it).
 
 ## Install
 

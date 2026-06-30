@@ -31,7 +31,7 @@ die()  { printf '\n  %s✗%s %s\n\n' "$R" "$X" "$*" >&2; exit 1; }
 
 banner() {
   printf '\n  %s%sᚨ  ᛋ  ᚷ  ᚨ  ᚱ  ᛞ%s\n' "$B" "$M" "$X"
-  printf '  %sASGARD%s %s· coding-agent harness%s\n\n' "$B" "$X" "$D" "$X"
+  printf '  %sASGARD%s %s· make anything, your way%s\n\n' "$B" "$X" "$D" "$X"
 }
 
 # spin <pid> <label> — braille spinner while pid runs (tty); one plain line otherwise.

@@ -20,7 +20,7 @@ ver="$(asgard --version)"
 echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: --version => '$ver'"; exit 1; }
 [ "$ver" != "0.0.0" ] || { echo "FAIL: version embedded as 0.0.0 (package.json not bundled)"; exit 1; }
 
-asgard --help | grep -q "asgard — coding-agent harness" || { echo "FAIL: --help missing banner"; exit 1; }
+asgard --help | grep -q "asgard — make anything, your way" || { echo "FAIL: --help missing banner"; exit 1; }
 asgard --help | grep -q "doctor" || { echo "FAIL: --help missing command list"; exit 1; }
 asgard version | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: 'version' subcommand"; exit 1; }
 asgard setup | grep -qi "planned" || { echo "FAIL: planned command not announced"; exit 1; }
