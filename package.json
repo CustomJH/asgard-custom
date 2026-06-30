@@ -1,6 +1,6 @@
 {
   "name": "asgard",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Asgard — Claude Code harness layer. curl-installable CLI.",
   "type": "module",
   "engines": {
