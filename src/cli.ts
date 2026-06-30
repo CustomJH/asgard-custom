@@ -56,7 +56,7 @@ function helpText(): string {
   const rows = Object.entries(COMMANDS)
     .map(([n, c]) => `  ${n.padEnd(10)} ${c.summary}${c.ready ? "" : "   (planned)"}`)
     .join("\n");
-  return `asgard — Claude Code harness layer (v${VERSION})
+  return `asgard — coding-agent harness (v${VERSION})
 
 Usage: asgard <command> [options]
 

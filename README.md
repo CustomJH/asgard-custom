@@ -1,6 +1,6 @@
 # Asgard
 
-Claude Code harness layer, shipped as a self-contained binary — no Node, Bun, or git required to run it.
+Coding-agent harness — sets up multiple coding-agent environments (Claude Code, OpenCode, Codex, …). Shipped as a self-contained binary: no Node, Bun, or git required to run it.
 
 ## Install
 
