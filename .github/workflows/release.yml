@@ -1,0 +1,31 @@
+name: release
+
+# Tag a release: git tag v0.1.0 && git push origin v0.1.0
+# Builds per-OS self-contained binaries with bun and attaches them to the GitHub Release.
+# install.sh downloads these from .../releases/latest/download/asgard-<os>-<arch>.
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build per-OS binaries
+        run: bash scripts/release-build.sh dist
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/asgard-*
+          generate_release_notes: true

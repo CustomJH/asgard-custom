@@ -222,3 +222,7 @@ ref/
 
 # macOS
 .DS_Store
+
+# Build artifacts / deps
+dist/
+node_modules/
