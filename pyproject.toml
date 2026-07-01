@@ -1,0 +1,24 @@
+[project]
+name = "asgard"
+description = "Asgard — make anything, your way. curl-installable CLI."
+requires-python = ">=3.14"
+dynamic = ["version"]
+dependencies = [
+    "typer>=0.12",
+    "rich>=13",
+]
+
+# curl|bash install path (CUS-108 Path B): `uv tool install asgard` exposes this console script.
+[project.scripts]
+asgard = "asgard.cli:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+# Single source of truth for the version — hardcoded in __init__ (frozen-safe; no importlib.metadata).
+[tool.hatch.version]
+path = "src/asgard/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/asgard"]
