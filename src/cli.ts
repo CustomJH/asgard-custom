@@ -12,6 +12,19 @@ const RUNTIME: string = (process.versions as { bun?: string }).bun
   ? `bun v${(process.versions as { bun?: string }).bun}`
   : `node v${process.versions.node}`;
 
+// ── terminal UX (mirrors install.sh): branded + colored on a tty; plain otherwise ──
+// `--quiet` suppresses decorative head/step lines (results still print). NO_COLOR / non-tty → no ANSI.
+let QUIET = false;
+const COLOR = process.stdout.isTTY && !process.env.NO_COLOR;
+const paint = (code: string, s: string): string => (COLOR ? `\x1b[${code}m${s}\x1b[0m` : s);
+const bold = (s: string): string => paint("1", s);
+const dim = (s: string): string => paint("2", s);
+function uiHead(action: string): void { if (!QUIET) process.stdout.write(`\n  ${paint("1;35", "ᛞ")} ${bold("asgard")} ${dim(action)}\n\n`); }
+function uiStep(msg: string): void { if (!QUIET) process.stdout.write(`  ${paint("36", "→")} ${msg}\n`); }
+function uiOk(msg: string): void { process.stdout.write(`  ${paint("32", "✔")} ${msg}\n`); }
+function uiWarn(msg: string): void { process.stdout.write(`  ${paint("33", "!")} ${msg}\n`); }
+function uiFail(msg: string): void { process.stderr.write(`  ${paint("31", "✗")} ${msg}\n`); }
+
 // Shared per-command context (global flag conventions, threaded to every command).
 type Ctx = {
   rest: string[];
@@ -143,34 +156,38 @@ function runUninstall(c: Ctx): number {
   const rcs = rcFilesWithAsgard();
 
   if (files.length === 0 && rcs.length === 0) {
-    process.stdout.write("asgard: nothing to remove (not installed here).\n");
+    uiHead("uninstall");
+    uiWarn("nothing to remove (not installed here).");
     return 0;
   }
   if (c.dryRun || !c.yes) {
-    const lines = [...files.map((t) => `  ${t}`), ...rcs.map((t) => `  ${t}  (asgard PATH block)`)];
-    process.stdout.write("would remove:\n" + lines.join("\n") + "\n\nrun 'asgard uninstall --yes' to remove.\n");
+    uiHead("uninstall");
+    for (const t of files) uiStep(`would remove ${dim(t)}`);
+    for (const t of rcs) uiStep(`would clean ${dim(t)}  ${dim("(asgard PATH block)")}`);
+    process.stdout.write(`\n  ${dim("run 'asgard uninstall --yes' to remove.")}\n`);
     return 0;
   }
+  uiHead("uninstall");
   let failed = 0;
   for (const t of files) {
     try {
       rmSync(t, { recursive: true, force: true });
-      process.stdout.write(`  removed ${t}\n`);
+      uiOk(`removed ${dim(t)}`);
     } catch (e) {
       failed++;
-      process.stderr.write(`  ✗ ${t}: ${(e as Error).message}\n`);
+      uiFail(`${t}: ${(e as Error).message}`);
     }
   }
   for (const rc of rcs) {
     try {
       writeFileSync(rc, readFileSync(rc, "utf8").replace(ASGARD_BLOCK, "\n"));
-      process.stdout.write(`  cleaned ${rc}\n`);
+      uiOk(`cleaned ${dim(rc)}  ${dim("(PATH block)")}`);
     } catch (e) {
       failed++;
-      process.stderr.write(`  ✗ ${rc}: ${(e as Error).message}\n`);
+      uiFail(`${rc}: ${(e as Error).message}`);
     }
   }
-  process.stdout.write(failed ? "\nuninstall incomplete.\n" : "\nasgard removed.\n");
+  process.stdout.write(failed ? `\n  ${paint("33", "!")} uninstall incomplete.\n` : `\n  ${paint("32", "✔")} asgard removed.\n`);
   return failed ? 1 : 0;
 }
 
@@ -180,20 +197,26 @@ function runUninstall(c: Ctx): number {
 type File = { path: string; content: string };
 
 function scaffold(c: Ctx, label: string, files: File[]): number {
+  const cwd = process.cwd();
+  const rel = (p: string): string => (p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p);
   const existing = files.filter((f) => existsSync(f.path));
   if (existing.length && !c.force && !c.dryRun) {
-    process.stderr.write(`asgard: already exists:\n${existing.map((f) => `  ${f.path}`).join("\n")}\n  --force to overwrite · --dry-run to preview\n`);
+    uiHead(label);
+    for (const f of existing) uiFail(`exists ${dim(rel(f.path))}`);
+    process.stderr.write(`  ${dim("--force to overwrite · --dry-run to preview")}\n`);
     return 2;
   }
+  uiHead(label);
   if (c.dryRun) {
-    process.stdout.write(`would create (${label}):\n${files.map((f) => `  ${f.path}`).join("\n")}\n`);
+    for (const f of files) uiStep(`would create ${dim(rel(f.path))}`);
     return 0;
   }
   for (const f of files) {
     mkdirSync(dirname(f.path), { recursive: true });
     writeFileSync(f.path, f.content);
+    uiOk(dim(rel(f.path)));
   }
-  process.stdout.write(`✔ ${label} — ${files.length} file(s)\n`);
+  process.stdout.write(`\n  ${paint("32", "✔")} ${bold("done")} ${dim(`— ${files.length} file(s)`)}\n`);
   return 0;
 }
 
@@ -355,21 +378,31 @@ function runUpgrade(c: Ctx): number {
       : `https://github.com/CustomJH/asgard-custom/releases/latest/download/${asset}`;
 
   if (c.dryRun) {
-    process.stdout.write(`would download:\n  ${url}\n  → ${dest}\n`);
+    uiHead("upgrade");
+    uiStep(`would download ${dim(url)}`);
+    uiStep(`to ${dim(dest)}`);
     return 0;
   }
+  uiHead("upgrade");
+  let cur = "";
+  try { cur = execSync(`${JSON.stringify(dest)} --version`, { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim(); } catch { /* not installed yet */ }
   const tmp = `${dest}.tmp`;
   try {
-    execSync(`curl -fsSL -o ${JSON.stringify(tmp)} ${JSON.stringify(url)}`, { stdio: "ignore" });
+    uiStep(`downloading ${bold(asset)}${pin ? dim(`  (${pin})`) : ""}`);
+    // tty → curl's own progress bar streams to stderr; non-tty → silent.
+    const prog = COLOR ? "--progress-bar" : "-s";
+    execSync(`curl -fSL ${prog} -o ${JSON.stringify(tmp)} ${JSON.stringify(url)}`, { stdio: ["ignore", "ignore", COLOR ? "inherit" : "ignore"] });
     execSync(`chmod +x ${JSON.stringify(tmp)}`);
     renameSync(tmp, dest); // atomic; safe while running on Unix
   } catch (e) {
     try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
-    process.stderr.write(`asgard: upgrade failed — ${(e as Error).message}\n  url: ${url}\n`);
+    uiFail(`upgrade failed — ${(e as Error).message}`);
+    process.stderr.write(`  ${dim("url: " + url)}\n`);
     return 1;
   }
   const v = execSync(`${JSON.stringify(dest)} --version`, { encoding: "utf8" }).trim();
-  process.stdout.write(`✔ upgraded → v${v}  ${dest}\n`);
+  const verb = !cur ? "installed" : cur === v ? "reinstalled" : "upgraded";
+  uiOk(`${verb} ${cur ? dim(cur) + " → " : ""}${bold("v" + v)}  ${dim(dest)}`);
   return 0;
 }
 
@@ -475,6 +508,7 @@ function main(): number {
     codex: !!values.codex,
     profile: typeof values.profile === "string" ? values.profile : undefined,
   };
+  QUIET = ctx.quiet;
 
   if (!entry.ready || !entry.run) {
     process.stdout.write(`asgard ${cmd} — ${entry.summary}\n  planned, not implemented yet (tracked in CUS-49).\n`);
