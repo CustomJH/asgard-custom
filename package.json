@@ -1,6 +1,6 @@
 {
   "name": "asgard",
-  "version": "0.1.15",
+  "version": "0.1.16",
   "description": "Asgard — make anything, your way. curl-installable CLI.",
   "type": "module",
   "engines": {
