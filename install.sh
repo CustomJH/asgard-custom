@@ -16,7 +16,12 @@ fi
 
 ok()   { printf '  %s✔%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '  %s!%s %s\n' "$Y" "$X" "$*"; }
+info() { printf '  %s·%s %s\n' "$D" "$X" "$*"; }
 die()  { printf '\n  %s✗%s %s\n\n' "$R" "$X" "$*" >&2; exit 1; }
+
+# phase <title> — numbered section header ([n/N]) so the install reads as ordered steps to the user.
+STEP=0; STEPS=3
+phase() { STEP=$((STEP + 1)); printf '\n  %s%s[%d/%d]%s %s%s%s\n' "$B" "$C" "$STEP" "$STEPS" "$X" "$B" "$1" "$X"; }
 
 # spin <label> <cmd…> — run cmd in the background, animate a braille spinner beside <label>, return
 # cmd's exit code. Non-tty: run silently, no animation. The spinner line is cleared when cmd finishes
@@ -142,36 +147,56 @@ main() {
   SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
   banner
 
-  # 1) uv — installs a standalone CPython, so no system Python is required.
-  if ! command -v uv >/dev/null 2>&1; then
-    spin "installing uv…" bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' \
+  # ── [1/3] preflight — confirm the host can install before we touch anything. ──
+  phase "preflight · check environment"
+  command -v curl >/dev/null 2>&1 || die "curl required (installer fetches uv over https). Install curl, re-run."
+  ok "curl ${D}present${X}"
+  local os arch have_uv=0
+  os="$(uname -s 2>/dev/null || echo '?')"; arch="$(uname -m 2>/dev/null || echo '?')"
+  case "$os" in
+    Linux|Darwin) ok "platform ${D}${os}/${arch}${X}" ;;
+    *) warn "platform ${os}/${arch} — uv targets Linux/macOS; install may not work" ;;
+  esac
+  if command -v uv >/dev/null 2>&1; then
+    have_uv=1; ok "uv ${D}$(uv --version 2>/dev/null | awk '{print $2}') (already installed)${X}"
+  else
+    info "uv ${D}absent — will bootstrap in step 2${X}"
+  fi
+
+  # ── [2/3] install — bootstrap the toolchain (uv → CPython 3.14), then install asgard. ──
+  phase "install · toolchain + asgard"
+  if [ "$have_uv" = 0 ]; then
+    spin "bootstrapping uv…" bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' \
       || die "uv install failed. Manual: https://astral.sh/uv"
     export PATH="$HOME/.local/bin:$PATH"
+    command -v uv >/dev/null 2>&1 || die "uv not on PATH — add ~/.local/bin and re-run."
+    ok "uv ${D}$(uv --version 2>/dev/null | awk '{print $2}')${X}"
   fi
-  command -v uv >/dev/null 2>&1 || die "uv not on PATH — add ~/.local/bin and re-run."
-  ok "uv ${D}$(uv --version 2>/dev/null | awk '{print $2}')${X}"
-
-  # 2) CPython 3.14 (managed by uv).
-  spin "fetching python 3.14…" uv python install 3.14 \
+  spin "preparing python 3.14…" uv python install 3.14 \
     || warn "Python 3.14 pre-install skipped (uv fetches on demand)."
   ok "python ${D}3.14${X}"
-
-  # 3) asgard as a uv tool — from a local checkout when present, else the git repo.
+  # asgard as a uv tool — from a local checkout when present, else the git repo.
   FROM="$SPEC"
   [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/pyproject.toml" ] && FROM="$SRC_DIR"
   spin "installing asgard…" uv tool install --force --python 3.14 "$FROM" \
     || die "install failed: $FROM"
   uv tool update-shell >/dev/null 2>&1 || true
   export PATH="$HOME/.local/bin:$PATH"
-  VERSION="$(asgard --version 2>/dev/null || echo '?')"
-  ok "asgard ${B}v${VERSION}${X}  ${D}(uv tool)${X}"
+  ok "asgard ${D}linked (uv tool)${X}"
 
-  # summary
+  # ── [3/3] verify — prove the CLI runs, then point the user at next steps. ──
+  phase "verify · check install"
+  VERSION="$(asgard --version 2>/dev/null || echo '?')"
+  ok "asgard ${B}v${VERSION}${X}"
+  if command -v asgard >/dev/null 2>&1; then
+    ok "on PATH ${D}$(command -v asgard)${X}"
+  else
+    warn "not on PATH yet — restart shell (or run: uv tool update-shell)"
+  fi
+
   printf '\n  %s✔ installed%s — next:\n' "$G" "$X"
   printf '    %sasgard doctor%s   %s# verify%s\n' "$B" "$X" "$D" "$X"
-  printf '    %sasgard --help%s\n' "$B" "$X"
-  command -v asgard >/dev/null 2>&1 || printf '    %s↳ restart shell (or run: uv tool update-shell) first%s\n' "$D" "$X"
-  printf '\n'
+  printf '    %sasgard --help%s\n\n' "$B" "$X"
 }
 
 main "$@"
