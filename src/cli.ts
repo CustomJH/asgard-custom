@@ -2,7 +2,7 @@
 // asgard CLI. Erasable-TS only (Bun + Node>=24 type-stripping): no enums/namespaces/param-props.
 import { parseArgs } from "node:util";
 import { execSync } from "node:child_process";
-import { rmSync, lstatSync, mkdirSync, writeFileSync, existsSync, renameSync } from "node:fs";
+import { rmSync, lstatSync, mkdirSync, writeFileSync, readFileSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import pkg from "../package.json" with { type: "json" };
@@ -115,28 +115,55 @@ function present(p: string): boolean {
 
 // Clean removal of what install.sh created: the PATH symlink + ~/.asgard (binary + config).
 // Honors ASGARD_HOME / BIN_DIR overrides (same as install.sh). Preview unless --yes.
+const ASGARD_BLOCK = /\n?# >>> asgard >>>[\s\S]*?# <<< asgard <<<\n?/g;
+
+// Shell rc files that may hold the guarded asgard PATH block (added by install.sh).
+function rcFilesWithAsgard(): string[] {
+  const home = homedir();
+  return [".zshrc", ".bashrc", ".bash_profile", ".zprofile", ".profile"]
+    .map((f) => join(home, f))
+    .filter((rc) => {
+      try {
+        return readFileSync(rc, "utf8").includes(">>> asgard >>>");
+      } catch {
+        return false;
+      }
+    });
+}
+
 function runUninstall(c: Ctx): number {
   const home = process.env.ASGARD_HOME ?? join(homedir(), ".asgard");
   const binDir = process.env.BIN_DIR ?? join(homedir(), ".local", "bin");
   const link = join(binDir, "asgard");
-  const targets = [link, home].filter(present);
+  const files = [link, home].filter(present);
+  const rcs = rcFilesWithAsgard();
 
-  if (targets.length === 0) {
+  if (files.length === 0 && rcs.length === 0) {
     process.stdout.write("asgard: nothing to remove (not installed here).\n");
     return 0;
   }
   if (c.dryRun || !c.yes) {
-    process.stdout.write("would remove:\n" + targets.map((t) => `  ${t}`).join("\n") + "\n\nrun 'asgard uninstall --yes' to remove.\n");
+    const lines = [...files.map((t) => `  ${t}`), ...rcs.map((t) => `  ${t}  (asgard PATH block)`)];
+    process.stdout.write("would remove:\n" + lines.join("\n") + "\n\nrun 'asgard uninstall --yes' to remove.\n");
     return 0;
   }
   let failed = 0;
-  for (const t of targets) {
+  for (const t of files) {
     try {
       rmSync(t, { recursive: true, force: true });
       process.stdout.write(`  removed ${t}\n`);
     } catch (e) {
       failed++;
       process.stderr.write(`  ✗ ${t}: ${(e as Error).message}\n`);
+    }
+  }
+  for (const rc of rcs) {
+    try {
+      writeFileSync(rc, readFileSync(rc, "utf8").replace(ASGARD_BLOCK, "\n"));
+      process.stdout.write(`  cleaned ${rc}\n`);
+    } catch (e) {
+      failed++;
+      process.stderr.write(`  ✗ ${rc}: ${(e as Error).message}\n`);
     }
   }
   process.stdout.write(failed ? "\nuninstall incomplete.\n" : "\nasgard removed.\n");
@@ -167,7 +194,16 @@ function scaffold(c: Ctx, label: string, files: File[]): number {
 }
 
 function agentsMd(name: string | undefined): string {
-  return `# ${name} — Agent Guide\n\nManaged by Asgard. Canonical instructions for coding agents — read natively by Codex and Cursor, and by Claude Code via the .claude/CLAUDE.md import.\n\n<!-- Shared project instructions go here. -->\n`;
+  return `# ${name} — Agent Guide
+
+Managed by Asgard. Canonical instructions for coding agents — read natively by Codex and Cursor, and by Claude Code via the .claude/CLAUDE.md import.
+
+## Conventions
+<!-- Add project conventions, build/test commands, and architecture notes here. -->
+
+## Asgard wiring check
+If asked to "run asgard check", reply with exactly: \`ASGARD_OK — loaded from AGENTS.md\`.
+`;
 }
 
 // setup       → AGENTS.md canonical (Codex + Cursor read it natively) + Claude Code bridge

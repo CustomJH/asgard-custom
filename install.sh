@@ -94,8 +94,23 @@ ok "asgard ${B}v$VERSION${X}  ${D}$DEST${X}"
 # link onto PATH
 ln -sfn "$DEST" "$BIN_DIR/asgard"
 ok "linked  ${D}$BIN_DIR/asgard${X}"
+
+# PATH: if BIN_DIR isn't on PATH, add a guarded block to the shell rc (removed by `asgard uninstall`).
+# Skip with ASGARD_NO_RC=1 (used by tests / when you manage PATH yourself).
 on_path=0; case ":$PATH:" in *":$BIN_DIR:"*) on_path=1 ;; esac
-[ "$on_path" = 1 ] || warn "not on PATH yet — add:  ${C}export PATH=\"$BIN_DIR:\$PATH\"${X}"
+if [ "$on_path" != 1 ]; then
+  rc=""
+  case "$(basename "${SHELL:-}")" in zsh) rc="$HOME/.zshrc" ;; bash) rc="$HOME/.bashrc" ;; esac
+  if [ "${ASGARD_NO_RC:-0}" = 1 ] || [ -z "$rc" ]; then
+    warn "not on PATH — add:  ${C}export PATH=\"$BIN_DIR:\$PATH\"${X}"
+  elif grep -q '>>> asgard >>>' "$rc" 2>/dev/null; then
+    ok "PATH already managed in ${D}$rc${X}"
+  else
+    [ -e "$rc" ] || touch "$rc"
+    printf '\n# >>> asgard >>>\nexport PATH="%s:$PATH"\n# <<< asgard <<<\n' "$BIN_DIR" >> "$rc"
+    ok "PATH added → ${D}$rc${X}  ${D}(removed by: asgard uninstall)${X}"
+  fi
+fi
 
 # Node >= 24 advisory (recommended floor; not a gate — the binary runs without it)
 if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ]; then

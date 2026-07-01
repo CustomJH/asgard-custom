@@ -9,6 +9,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 export ASGARD_HOME="$TMP/.asgard"
 export BIN_DIR="$TMP/bin"
+export ASGARD_NO_RC=1        # don't touch the real ~/.zshrc during the main test (rc round-trip tested separately)
 unset ASGARD_DOWNLOAD_URL   # force local bun build from this checkout
 
 bash "$REPO/install.sh" >/dev/null
@@ -44,6 +45,7 @@ PROJ="$(mktemp -d)"
 [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: .claude/CLAUDE.md missing"; exit 1; }
 [ ! -e "$PROJ/CLAUDE.md" ] || { echo "FAIL: CLAUDE.md must be inside .claude, not root"; exit 1; }
 grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: .claude/CLAUDE.md must import ../AGENTS.md"; exit 1; }
+grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing wiring-check marker"; exit 1; }
 rm -rf "$PROJ"
 
 # setup --cc (claude-code) == init — .claude/
@@ -57,6 +59,14 @@ rm -rf "$PROJ"
 
 # upgrade — dry-run only (no network in smoke)
 asgard upgrade --dry-run | grep -q "would download" || { echo "FAIL: upgrade --dry-run"; exit 1; }
+
+# rc round-trip — install adds a guarded PATH block to the shell rc; uninstall removes it
+RCH="$(mktemp -d)"; touch "$RCH/.zshrc"
+HOME="$RCH" SHELL=/bin/zsh ASGARD_HOME="$RCH/.asgard" BIN_DIR="$RCH/bin" ASGARD_NO_RC=0 bash "$REPO/install.sh" >/dev/null
+grep -q ">>> asgard >>>" "$RCH/.zshrc" || { echo "FAIL: install did not add PATH block to rc"; exit 1; }
+HOME="$RCH" ASGARD_HOME="$RCH/.asgard" BIN_DIR="$RCH/bin" "$RCH/bin/asgard" uninstall --yes >/dev/null
+grep -q ">>> asgard >>>" "$RCH/.zshrc" && { echo "FAIL: uninstall did not clean rc"; exit 1; }
+rm -rf "$RCH"
 
 # uninstall LAST (destructive) — preview is a no-op, then --yes cleanly removes
 asgard uninstall | grep -qi "would remove" || { echo "FAIL: uninstall preview"; exit 1; }
