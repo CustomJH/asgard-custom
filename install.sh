@@ -35,15 +35,18 @@ banner() {
 }
 
 # spin <pid> <label> — braille spinner while pid runs (tty); one plain line otherwise.
+# Frames live in an ARRAY: ${fr[i]} yields a whole glyph. A byte-substring (${s:i:1})
+# would slice one byte out of a 3-byte braille char under a C/POSIX locale → garbled ''.
 spin() {
-  local pid=$1 label=$2 fr='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏' i=0 rc
+  local pid=$1 label=$2 rc i=0
+  local fr=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
   if [ "$TTY" != 1 ]; then
-    printf '  %s∴%s %s\n' "$C" "$X" "$label"
+    printf '  %s→%s %s\n' "$C" "$X" "$label"
     wait "$pid"; return $?
   fi
   while kill -0 "$pid" 2>/dev/null; do
-    i=$(( (i + 1) % ${#fr} ))
-    printf '\r  %s%s%s %s' "$C" "${fr:$i:1}" "$X" "$label"
+    printf '\r  %s%s%s %s' "$C" "${fr[i]}" "$X" "$label"
+    i=$(( (i + 1) % ${#fr[@]} ))
     sleep 0.08
   done
   wait "$pid"; rc=$?
