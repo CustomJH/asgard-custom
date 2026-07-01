@@ -13,9 +13,15 @@ NAME="asgard-devbox"
 case "${1:-up}" in
   up)
     docker build -f "$REPO/docker/devbox.Dockerfile" -t "$IMG" "$REPO/docker"
+    mkdir -p "$REPO/workspace"
     docker rm -f "$NAME" >/dev/null 2>&1 || true
-    docker run -dit --name "$NAME" -v "$REPO":/home/dev/asgard "$IMG" >/dev/null
-    echo "devbox up: $NAME  (repo mounted at ~/asgard)"
+    docker run -dit --name "$NAME" \
+      -v "$REPO":/home/dev/asgard \
+      -v "$REPO/workspace":/home/dev/work \
+      "$IMG" >/dev/null
+    echo "devbox up: $NAME"
+    echo "  repo       → ~/asgard"
+    echo "  workspace  → ~/work   (host: ./workspace — shared both ways, gitignored)"
     echo "  enter:  docker/devbox.sh shell"
     ;;
   shell)

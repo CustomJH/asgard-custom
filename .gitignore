@@ -226,3 +226,6 @@ ref/
 # Build artifacts / deps
 dist/
 node_modules/
+
+# devbox shared test workspace (host <-> container, not tracked)
+workspace/
