@@ -25,6 +25,10 @@ function uiOk(msg: string): void { process.stdout.write(`  ${paint("32", "✔")}
 function uiWarn(msg: string): void { process.stdout.write(`  ${paint("33", "!")} ${msg}\n`); }
 function uiFail(msg: string): void { process.stderr.write(`  ${paint("31", "✗")} ${msg}\n`); }
 
+// Blocking sleep (ms). Synchronous so the progress bar can animate without making every command
+// async — a timed wait on a throwaway SharedArrayBuffer. tty-only path, so it never stalls scripts.
+function sleep(ms: number): void { Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms); }
+
 // Shared per-command context (global flag conventions, threaded to every command).
 type Ctx = {
   rest: string[];
@@ -195,28 +199,92 @@ function runUninstall(c: Ctx): number {
 // setup       → AGENTS.md canonical, shared by codex / claude-code / cursor
 // setup --cc  → same + .claude/settings.json   (init = alias for setup --cc)
 type File = { path: string; content: string };
+// A setup stage — a titled group of files, rendered as one install-like step ("STEP 2/4 · Claude Code").
+type Stage = { title: string; note?: string; files: File[] };
 
-function scaffold(c: Ctx, label: string, files: File[]): number {
+// ── Bifröst progress bar — a pinned bottom bar fills in place (percentage climbing, stage caption
+// morphing) while ✔ lines scroll above it. Mirrors the asgard installer's rainbow bar so setup and
+// install feel like one tool. tty-only; non-tty/quiet/dry take the plain staged path below.
+const BAR_CELLS = 22;
+const BIFROST = ["31", "38;5;208", "33", "32", "36", "34", "35"]; // R O Y G C B M — the rainbow bridge
+
+// Redraw the pinned bar in place: rainbow ▆ up to pct, dim ░ after, bold %, then the morphing caption.
+// \x1b[K erases any leftover from a longer previous caption/frame.
+function drawBar(pct: number, caption: string): void {
+  const filled = Math.floor((BAR_CELLS * pct) / 100);
+  let bar = "";
+  for (let i = 0; i < BAR_CELLS; i++)
+    bar += i < filled ? paint(BIFROST[Math.floor((i * BIFROST.length) / BAR_CELLS)], "▆") : dim("░");
+  process.stdout.write(`\r  ${bar}  ${bold(String(pct).padStart(3) + "%")}  ${caption}\x1b[K`);
+}
+
+// Animate the fill from → to (small steps + short sleep = smooth climb), holding the caption.
+function advance(from: number, to: number, caption: string): number {
+  let p = from;
+  while (p < to) { p = Math.min(p + 4, to); drawBar(p, caption); sleep(14); }
+  return to;
+}
+
+// Emit a permanent line ABOVE the pinned bar: erase the bar, print the line, redraw the bar beneath.
+function barLog(pct: number, caption: string, line: string): void {
+  process.stdout.write(`\r\x1b[K${line}\n`);
+  drawBar(pct, caption);
+}
+
+// Scaffold a project as an install-like progress flow. On a tty: a pinned Bifröst bar climbs while
+// each written file scrolls up as a ✔ and the caption morphs per stage; then a done summary. Guards
+// existing files (--force to overwrite) and previews under --dry-run. Non-tty/quiet/dry: plain steps.
+function scaffoldStaged(c: Ctx, headline: string, stages: Stage[]): number {
   const cwd = process.cwd();
   const rel = (p: string): string => (p.startsWith(cwd + "/") ? p.slice(cwd.length + 1) : p);
-  const existing = files.filter((f) => existsSync(f.path));
+  const all = stages.flatMap((s) => s.files);
+  const existing = all.filter((f) => existsSync(f.path));
   if (existing.length && !c.force && !c.dryRun) {
-    uiHead(label);
+    uiHead(headline);
     for (const f of existing) uiFail(`exists ${dim(rel(f.path))}`);
     process.stderr.write(`  ${dim("--force to overwrite · --dry-run to preview")}\n`);
     return 2;
   }
-  uiHead(label);
-  if (c.dryRun) {
-    for (const f of files) uiStep(`would create ${dim(rel(f.path))}`);
+  uiHead(headline);
+  const total = stages.length;
+  const caption = (i: number): string =>
+    `${dim(`STEP ${i + 1}/${total}`)} ${dim("·")} ${bold(stages[i].title)}${stages[i].note ? "  " + dim(stages[i].note) : ""}`;
+
+  // Plain staged path — dry-run preview, non-tty (CI/pipe), or --quiet: one line per step, no bar.
+  if (c.dryRun || !COLOR || QUIET) {
+    stages.forEach((st, i) => {
+      const label = st.note ? `${st.title}  ${dim("· " + st.note)}` : st.title;
+      const tag = dim(`[${i + 1}/${total}]`);
+      if (c.dryRun) uiStep(`${tag} ${label}`);
+      for (const f of st.files) {
+        if (!c.dryRun) { mkdirSync(dirname(f.path), { recursive: true }); writeFileSync(f.path, f.content); }
+        process.stdout.write(`      ${dim((c.dryRun ? "+ " : "") + rel(f.path))}\n`);
+      }
+      if (!c.dryRun) uiOk(`${tag} ${label}`);
+    });
+    if (c.dryRun) { process.stdout.write(`\n  ${dim(`${all.length} file(s) — run without --dry-run to create.`)}\n`); return 0; }
+    process.stdout.write(`\n  ${paint("32", "✔")} ${bold("done")} ${dim(`— ${all.length} file(s) · make anything, your way`)}\n`);
     return 0;
   }
-  for (const f of files) {
-    mkdirSync(dirname(f.path), { recursive: true });
-    writeFileSync(f.path, f.content);
-    uiOk(dim(rel(f.path)));
-  }
-  process.stdout.write(`\n  ${paint("32", "✔")} ${bold("done")} ${dim(`— ${files.length} file(s)`)}\n`);
+
+  // Animated pinned-bar path (interactive tty).
+  process.stdout.write("\x1b[?25l"); // hide cursor while the bar animates
+  let pct = 0;
+  let done = 0;
+  drawBar(0, caption(0));
+  stages.forEach((st, i) => {
+    drawBar(pct, caption(i)); // morph caption at the stage boundary
+    for (const f of st.files) {
+      mkdirSync(dirname(f.path), { recursive: true });
+      writeFileSync(f.path, f.content);
+      pct = advance(pct, Math.round((++done / all.length) * 100), caption(i));
+      barLog(pct, caption(i), `  ${paint("32", "✔")} ${dim(rel(f.path))}`);
+    }
+  });
+  advance(pct, 100, caption(total - 1));
+  process.stdout.write("\r\x1b[K\x1b[?25h"); // clear the bar, restore cursor
+  process.stdout.write(`\n  ${paint("32", "✔")} ${bold("done")} ${dim(`— ${all.length} file(s) · make anything, your way`)}\n`);
+  process.stdout.write(`  ${dim("next: edit")} ${bold("AGENTS.md")} ${dim("— your project's canonical agent guide")}\n`);
   return 0;
 }
 
@@ -325,32 +393,39 @@ function runSetup(c: Ctx): number {
   const codex = c.codex || c.profile === "codex";
   const universal = !cc && !cursor && !codex; // no tool flag → wire every agent
 
-  const files: File[] = [{ path: join(root, "AGENTS.md"), content: agentsMd(name) }];
+  // Each stage is one install-like step. Build only the stages this invocation actually writes.
+  const stages: Stage[] = [
+    { title: "AGENTS.md", note: "canonical agent guide", files: [{ path: join(root, "AGENTS.md"), content: agentsMd(name) }] },
+  ];
 
   // Claude Code — @import resolves relative to the importing file → from .claude/ use @../AGENTS.md.
   // Bridge when universal or targeted; full skeleton only when targeted (--cc).
-  if (universal || cc) files.push({ path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" });
+  const claude: File[] = [];
+  if (universal || cc) claude.push({ path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" });
   if (cc) {
-    files.push(
+    claude.push(
       { path: join(root, ".claude", "settings.json"), content: ccSettings() },
       { path: join(root, ".claude", ".gitignore"), content: "settings.local.json\n" },
     );
     for (const [dir, desc] of CC_FOLDERS)
-      files.push({ path: join(root, ".claude", dir, "README.md"), content: `# .claude/${dir}/\n\n${desc}\n` });
+      claude.push({ path: join(root, ".claude", dir, "README.md"), content: `# .claude/${dir}/\n\n${desc}\n` });
   }
+  if (claude.length) stages.push({ title: "Claude Code", note: cc ? ".claude/ — settings, skills, hooks, agents" : ".claude/ — bridge", files: claude });
 
   // Cursor — always-apply rule bridge when universal or targeted; skeleton folders only when targeted.
-  if (universal || cursor) files.push({ path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() });
+  const cursorFiles: File[] = [];
+  if (universal || cursor) cursorFiles.push({ path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() });
   if (cursor)
     for (const [dir, desc] of CURSOR_FOLDERS)
-      files.push({ path: join(root, ".cursor", dir, "README.md"), content: `# .cursor/${dir}/\n\n${desc}\n` });
+      cursorFiles.push({ path: join(root, ".cursor", dir, "README.md"), content: `# .cursor/${dir}/\n\n${desc}\n` });
+  if (cursorFiles.length) stages.push({ title: "Cursor", note: cursor ? ".cursor/ — rules, skills, hooks" : ".cursor/ — rule bridge", files: cursorFiles });
 
   // Codex reads root AGENTS.md natively — only a targeted --codex adds the project config.
-  if (codex) files.push({ path: join(root, ".codex", "config.toml"), content: codexConfig() });
+  if (codex) stages.push({ title: "Codex", note: ".codex/config.toml", files: [{ path: join(root, ".codex", "config.toml"), content: codexConfig() }] });
 
   const tools = [cc && "claude-code", cursor && "cursor", codex && "codex"].filter(Boolean);
-  const label = universal ? "universal setup (AGENTS.md — all agents)" : `setup — AGENTS.md + ${tools.join(", ")}`;
-  return scaffold(c, label, files);
+  const headline = universal ? "setting up project — all agents" : `setting up project — ${tools.join(", ")}`;
+  return scaffoldStaged(c, headline, stages);
 }
 
 function runInit(c: Ctx): number {
