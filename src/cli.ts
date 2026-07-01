@@ -287,12 +287,12 @@ function codexConfig(): string {
 }
 
 // AGENTS.md is always canonical. Codex reads it natively at the repo root; Claude Code and Cursor
-// each get a thin bridge to it. Per-tool flags scaffold that tool's full project skeleton on top —
-// combinable (e.g. --cc --cursor --codex).
-// setup            → AGENTS.md + .claude/CLAUDE.md + .cursor/rules/000-agents.mdc (all agents wired)
-// setup --cc       → + full .claude/ skeleton (settings.json, .gitignore, commands/agents/skills/hooks/rules/output-styles)   [init = --cc]
-// setup --cursor   → + .cursor/ skeleton (skills/, hooks/)
-// setup --codex    → + .codex/config.toml (trusted-project overrides; MCP/hooks commented)
+// each get a thin bridge to it. A tool flag SCOPES the setup to that tool (nothing for the others);
+// with no flag, every agent is wired (universal). Flags are combinable (e.g. --cc --cursor).
+// setup            → universal: AGENTS.md + .claude/CLAUDE.md + .cursor/rules bridge (Codex is native)
+// setup --cc       → AGENTS.md + full .claude/ only (no .cursor)   [init = --cc]
+// setup --cursor   → AGENTS.md + full .cursor/ only (no .claude)
+// setup --codex    → AGENTS.md + .codex/config.toml only
 // Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/config-reference · cursor.com/docs/context/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
@@ -300,13 +300,13 @@ function runSetup(c: Ctx): number {
   const cc = c.cc || c.profile === "claude-code";
   const cursor = c.cursor || c.profile === "cursor";
   const codex = c.codex || c.profile === "codex";
+  const universal = !cc && !cursor && !codex; // no tool flag → wire every agent
 
-  // @import resolves relative to the importing file → from .claude/ use @../AGENTS.md.
-  const files: File[] = [
-    { path: join(root, "AGENTS.md"), content: agentsMd(name) },
-    { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
-    { path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() },
-  ];
+  const files: File[] = [{ path: join(root, "AGENTS.md"), content: agentsMd(name) }];
+
+  // Claude Code — @import resolves relative to the importing file → from .claude/ use @../AGENTS.md.
+  // Bridge when universal or targeted; full skeleton only when targeted (--cc).
+  if (universal || cc) files.push({ path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" });
   if (cc) {
     files.push(
       { path: join(root, ".claude", "settings.json"), content: ccSettings() },
@@ -315,14 +315,18 @@ function runSetup(c: Ctx): number {
     for (const [dir, desc] of CC_FOLDERS)
       files.push({ path: join(root, ".claude", dir, "README.md"), content: `# .claude/${dir}/\n\n${desc}\n` });
   }
+
+  // Cursor — always-apply rule bridge when universal or targeted; skeleton folders only when targeted.
+  if (universal || cursor) files.push({ path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() });
   if (cursor)
     for (const [dir, desc] of CURSOR_FOLDERS)
       files.push({ path: join(root, ".cursor", dir, "README.md"), content: `# .cursor/${dir}/\n\n${desc}\n` });
-  if (codex)
-    files.push({ path: join(root, ".codex", "config.toml"), content: codexConfig() });
+
+  // Codex reads root AGENTS.md natively — only a targeted --codex adds the project config.
+  if (codex) files.push({ path: join(root, ".codex", "config.toml"), content: codexConfig() });
 
   const tools = [cc && "claude-code", cursor && "cursor", codex && "codex"].filter(Boolean);
-  const label = tools.length ? `setup — AGENTS.md + ${tools.join(", ")}` : "universal setup (AGENTS.md — all agents)";
+  const label = universal ? "universal setup (AGENTS.md — all agents)" : `setup — AGENTS.md + ${tools.join(", ")}`;
   return scaffold(c, label, files);
 }
 

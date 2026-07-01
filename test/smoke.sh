@@ -68,6 +68,7 @@ python3 -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); s
 for _d in commands agents skills hooks rules output-styles; do
   [ -f "$PROJ/.claude/$_d/README.md" ] || { echo "FAIL: --cc missing .claude/$_d/README.md"; exit 1; }
 done
+[ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --cc must NOT create .cursor (scoped to claude-code)"; exit 1; }
 if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing .claude"; exit 1; fi
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
@@ -80,6 +81,7 @@ PROJ="$(mktemp -d)"
 for _d in skills hooks; do
   [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor missing .cursor/$_d/README.md"; exit 1; }
 done
+[ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude (scoped to cursor)"; exit 1; }
 rm -rf "$PROJ"
 
 # setup --codex — .codex/config.toml (root AGENTS.md native; only per-project config surface)
@@ -88,6 +90,7 @@ PROJ="$(mktemp -d)"
 [ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --codex must create AGENTS.md"; exit 1; }
 [ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: --codex missing .codex/config.toml"; exit 1; }
 grep -q "config-reference" "$PROJ/.codex/config.toml" || { echo "FAIL: --codex config.toml missing docs pointer"; exit 1; }
+[ ! -e "$PROJ/.claude" ] && [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --codex must NOT create .claude/.cursor (scoped to codex)"; exit 1; }
 rm -rf "$PROJ"
 
 # combined --cc --cursor --codex — all skeletons in one project
