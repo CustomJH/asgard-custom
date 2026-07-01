@@ -2,6 +2,9 @@
 // asgard CLI. Erasable-TS only (Bun + Node>=24 type-stripping): no enums/namespaces/param-props.
 import { parseArgs } from "node:util";
 import { execSync } from "node:child_process";
+import { rmSync, lstatSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import pkg from "../package.json" with { type: "json" };
 
 const VERSION: string = (pkg as { version?: string }).version ?? "0.0.0";
@@ -29,6 +32,7 @@ const COMMANDS: Record<string, Cmd> = {
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "upgrade the asgard binary itself", ready: false },
+  uninstall: { summary: "remove asgard (binary, PATH symlink, ~/.asgard)", ready: true, run: runUninstall },
   completions: { summary: "print shell completion script (bash|zsh|fish)", ready: true, run: runCompletions },
 };
 
@@ -94,6 +98,45 @@ function runDoctor(c: Ctx): number {
   }
   if (!c.quiet) process.stdout.write(ok ? "\n  ok.\n" : "\n  ⚠ asgard not on PATH — see fix above.\n");
   return ok ? 0 : 1;
+}
+
+function present(p: string): boolean {
+  try {
+    lstatSync(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Clean removal of what install.sh created: the PATH symlink + ~/.asgard (binary + config).
+// Honors ASGARD_HOME / BIN_DIR overrides (same as install.sh). Preview unless --yes.
+function runUninstall(c: Ctx): number {
+  const home = process.env.ASGARD_HOME ?? join(homedir(), ".asgard");
+  const binDir = process.env.BIN_DIR ?? join(homedir(), ".local", "bin");
+  const link = join(binDir, "asgard");
+  const targets = [link, home].filter(present);
+
+  if (targets.length === 0) {
+    process.stdout.write("asgard: nothing to remove (not installed here).\n");
+    return 0;
+  }
+  if (c.dryRun || !c.yes) {
+    process.stdout.write("would remove:\n" + targets.map((t) => `  ${t}`).join("\n") + "\n\nrun 'asgard uninstall --yes' to remove.\n");
+    return 0;
+  }
+  let failed = 0;
+  for (const t of targets) {
+    try {
+      rmSync(t, { recursive: true, force: true });
+      process.stdout.write(`  removed ${t}\n`);
+    } catch (e) {
+      failed++;
+      process.stderr.write(`  ✗ ${t}: ${(e as Error).message}\n`);
+    }
+  }
+  process.stdout.write(failed ? "\nuninstall incomplete.\n" : "\nasgard removed.\n");
+  return failed ? 1 : 0;
 }
 
 function runCompletions(c: Ctx): number {

@@ -35,4 +35,11 @@ asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; 
 
 if asgard bogus >/dev/null 2>&1; then echo "FAIL: unknown command should exit nonzero"; exit 1; fi
 
-echo "PASS: build+install + version($ver) + help + doctor + unknown-cmd"
+# uninstall LAST (destructive) — preview is a no-op, then --yes cleanly removes
+asgard uninstall | grep -qi "would remove" || { echo "FAIL: uninstall preview"; exit 1; }
+[ -e "$BIN_DIR/asgard" ] || { echo "FAIL: preview must not remove"; exit 1; }
+asgard uninstall --yes >/dev/null || { echo "FAIL: uninstall --yes"; exit 1; }
+[ ! -e "$BIN_DIR/asgard" ] || { echo "FAIL: symlink remains after uninstall"; exit 1; }
+[ ! -d "$ASGARD_HOME" ] || { echo "FAIL: ASGARD_HOME remains after uninstall"; exit 1; }
+
+echo "PASS: build+install + version($ver) + help + doctor + completions + uninstall"
