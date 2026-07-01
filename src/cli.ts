@@ -77,7 +77,7 @@ Global options:
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
       --force         overwrite existing (setup/init)
-      --cc            also scaffold .claude/ config (settings.json perms + .gitignore)
+      --cc            also scaffold full .claude/ skeleton (settings, commands/agents/skills/hooks/rules/…)
       --profile <p>   profile: claude-code`;
 }
 
@@ -218,6 +218,17 @@ function ccSettings(): string {
   }, null, 2) + "\n";
 }
 
+// Foundational .claude/ subdirectories. Each is scaffolded with a README (git tracks it + it's
+// self-documenting) so a fresh --cc project has the full Claude Code skeleton ready to fill in.
+const CC_FOLDERS: [string, string][] = [
+  ["commands", "Custom slash commands — one `.md` each, invoked as `/name`. (Skills are the newer alternative.)\nDocs: https://code.claude.com/docs/en/slash-commands"],
+  ["agents", "Subagents — one `.md` each; frontmatter: name, description, tools, model.\nDocs: https://code.claude.com/docs/en/sub-agents"],
+  ["skills", "Agent skills — each in `<name>/SKILL.md` with a `description` frontmatter.\nDocs: https://code.claude.com/docs/en/skills"],
+  ["hooks", "Hook scripts, wired from `settings.json` `hooks{}` by matcher + command.\nDocs: https://code.claude.com/docs/en/hooks"],
+  ["rules", "Path-scoped instructions — frontmatter `paths:` globs load them when matching files are read.\nDocs: https://code.claude.com/docs/en/memory"],
+  ["output-styles", "Custom system-prompt styles — one `.md` each.\nDocs: https://code.claude.com/docs/en/settings"],
+];
+
 // Cursor bridge (cursor.com/docs/context/rules): an always-apply project rule pointing at the
 // canonical AGENTS.md. Cursor also reads AGENTS.md natively, but the explicit rule guarantees it
 // loads and mirrors the Claude Code bridge — one source of truth, wired to every tool.
@@ -234,7 +245,8 @@ Follow the canonical project instructions in \`AGENTS.md\` at the repo root.
 // AGENTS.md is always canonical. Codex reads it natively at the repo root; Claude Code and Cursor
 // each get a thin bridge to it. --cc adds the Claude Code project config on top.
 // setup       → AGENTS.md + .claude/CLAUDE.md + .cursor/rules/000-agents.mdc (all agents)
-// setup --cc  → same + .claude/settings.json (perms) + .claude/.gitignore   [init = setup --cc]
+// setup --cc  → same + full .claude/ skeleton (settings.json, .gitignore, commands/agents/
+//               skills/hooks/rules/output-styles folders)   [init = setup --cc]
 // Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/guides/agents-md · cursor.com/docs/context/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
@@ -247,10 +259,14 @@ function runSetup(c: Ctx): number {
     { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
     { path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() },
   ];
-  if (cc) files.push(
-    { path: join(root, ".claude", "settings.json"), content: ccSettings() },
-    { path: join(root, ".claude", ".gitignore"), content: "settings.local.json\n" },
-  );
+  if (cc) {
+    files.push(
+      { path: join(root, ".claude", "settings.json"), content: ccSettings() },
+      { path: join(root, ".claude", ".gitignore"), content: "settings.local.json\n" },
+    );
+    for (const [dir, desc] of CC_FOLDERS)
+      files.push({ path: join(root, ".claude", dir, "README.md"), content: `# .claude/${dir}/\n\n${desc}\n` });
+  }
 
   return scaffold(c, cc ? "claude-code setup (AGENTS.md + .claude/)" : "universal setup (AGENTS.md — all agents)", files);
 }

@@ -62,6 +62,10 @@ grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: --cc AGENTS.md missing wi
 # settings.json is real (not empty {}) — valid JSON with a permissions floor
 python3 -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); sys.exit(0 if d.get('permissions',{}).get('deny') else 1)" || { echo "FAIL: --cc settings.json must have permissions"; exit 1; }
 [ -f "$PROJ/.claude/.gitignore" ] && grep -q "settings.local.json" "$PROJ/.claude/.gitignore" || { echo "FAIL: --cc .claude/.gitignore must ignore settings.local.json"; exit 1; }
+# foundational .claude/ folder skeleton (README in each so git tracks it)
+for _d in commands agents skills hooks rules output-styles; do
+  [ -f "$PROJ/.claude/$_d/README.md" ] || { echo "FAIL: --cc missing .claude/$_d/README.md"; exit 1; }
+done
 if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing .claude"; exit 1; fi
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
