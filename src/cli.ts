@@ -4,7 +4,7 @@ import { parseArgs } from "node:util";
 import { execSync } from "node:child_process";
 import { rmSync, lstatSync, mkdirSync, writeFileSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import pkg from "../package.json" with { type: "json" };
 
 const VERSION: string = (pkg as { version?: string }).version ?? "0.0.0";
@@ -20,6 +20,7 @@ type Ctx = {
   dryRun: boolean;
   yes: boolean;
   force: boolean;
+  cc: boolean;
   profile: string | undefined;
 };
 type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
@@ -28,8 +29,8 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 // (behavior lands in CUS-49). Memory/knowledge-store commands are intentionally absent.
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
-  init: { summary: "scaffold .claude into this project (--profile/--force/--dry-run)", ready: true, run: runInit },
-  setup: { summary: "compose project config (.asgardfile)", ready: false },
+  init: { summary: "alias for 'setup --cc' (claude-code .claude/)", ready: true, run: runInit },
+  setup: { summary: "set up project — AGENTS.md (universal) or .claude (--cc)", ready: true, run: runSetup },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
@@ -75,7 +76,8 @@ Global options:
   -q, --quiet         less output
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
-      --force         overwrite existing (init)
+      --force         overwrite existing (setup/init)
+      --cc            claude-code profile → .claude/ (setup/init)
       --profile <p>   target profile (e.g. claude-code)`;
 }
 
@@ -141,36 +143,52 @@ function runUninstall(c: Ctx): number {
   return failed ? 1 : 0;
 }
 
-// ── init (CUS-49): scaffold a project's .claude/ ─────────────────────────────
-function runInit(c: Ctx): number {
-  const profile = c.profile ?? "claude-code";
-  const root = process.cwd();
-  const dir = join(root, ".claude");
-  const files: Array<{ path: string; content: string }> = [
-    { path: join(dir, "settings.json"), content: "{}\n" },
-    {
-      path: join(dir, "CLAUDE.md"),
-      content: `# ${root.split(/[/\\]/).pop()} — Asgard\n\nManaged by Asgard (profile: ${profile}). Edit freely.\n\n<!-- Project instructions for the coding agent go here. -->\n`,
-    },
-  ];
+// ── setup / init (CUS-49): scaffold a project ────────────────────────────────
+// setup       → AGENTS.md canonical, shared by codex / claude-code / cursor
+// setup --cc  → .claude/ (Claude Code native)   (init = alias for setup --cc)
+type File = { path: string; content: string };
 
-  if (existsSync(dir) && !c.force && !c.dryRun) {
-    process.stderr.write(`asgard: .claude already exists (${dir})\n  --force to overwrite · --dry-run to preview\n`);
+function scaffold(c: Ctx, label: string, guard: string, files: File[]): number {
+  if (existsSync(guard) && !c.force && !c.dryRun) {
+    process.stderr.write(`asgard: ${guard} already exists\n  --force to overwrite · --dry-run to preview\n`);
     return 2;
   }
   if (c.dryRun) {
-    process.stdout.write(`would create (profile: ${profile}):\n${files.map((f) => `  ${f.path}`).join("\n")}\n`);
+    process.stdout.write(`would create (${label}):\n${files.map((f) => `  ${f.path}`).join("\n")}\n`);
     return 0;
   }
-  mkdirSync(dir, { recursive: true });
   let wrote = 0;
   for (const f of files) {
+    mkdirSync(dirname(f.path), { recursive: true });
     if (existsSync(f.path) && !c.force) continue;
     writeFileSync(f.path, f.content);
     wrote++;
   }
-  process.stdout.write(`✔ initialized .claude (profile: ${profile}) — ${wrote} file(s)\n  next: edit .claude/CLAUDE.md\n`);
+  process.stdout.write(`✔ ${label} — ${wrote} file(s)\n`);
   return 0;
+}
+
+function doSetup(c: Ctx, cc: boolean): number {
+  const root = process.cwd();
+  const name = root.split(/[/\\]/).pop();
+  if (cc) {
+    return scaffold(c, "claude-code setup (.claude/)", join(root, ".claude"), [
+      { path: join(root, ".claude", "settings.json"), content: "{}\n" },
+      { path: join(root, ".claude", "CLAUDE.md"), content: `# ${name} — Asgard (claude-code)\n\n<!-- Claude Code project instructions. -->\n` },
+    ]);
+  }
+  // universal: AGENTS.md is canonical; CLAUDE.md imports it so Claude Code shares the same source.
+  return scaffold(c, "universal setup (AGENTS.md — codex/claude-code/cursor)", join(root, "AGENTS.md"), [
+    { path: join(root, "AGENTS.md"), content: `# ${name} — Agent Guide\n\nManaged by Asgard. Canonical instructions for all coding agents (Codex, Claude Code, Cursor).\n\n<!-- Shared project instructions go here. -->\n` },
+    { path: join(root, "CLAUDE.md"), content: `@AGENTS.md\n` },
+  ]);
+}
+
+function runSetup(c: Ctx): number {
+  return doSetup(c, c.cc || c.profile === "claude-code");
+}
+function runInit(c: Ctx): number {
+  return doSetup(c, true); // init = claude-code setup
 }
 
 // ── upgrade: self-replace the installed binary with a release build ──────────
@@ -269,6 +287,7 @@ function main(): number {
       "dry-run": { type: "boolean" },
       yes: { type: "boolean", short: "y" },
       force: { type: "boolean" },
+      cc: { type: "boolean" },
       profile: { type: "string" },
     },
   });
@@ -306,6 +325,7 @@ function main(): number {
     dryRun: !!values["dry-run"],
     yes: !!values.yes,
     force: !!values.force,
+    cc: !!values.cc,
     profile: typeof values.profile === "string" ? values.profile : undefined,
   };
 

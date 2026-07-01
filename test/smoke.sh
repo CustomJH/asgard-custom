@@ -23,8 +23,8 @@ echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: --version => 
 asgard --help | grep -q "asgard — make anything, your way" || { echo "FAIL: --help missing banner"; exit 1; }
 asgard --help | grep -q "doctor" || { echo "FAIL: --help missing command list"; exit 1; }
 asgard version | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: 'version' subcommand"; exit 1; }
-asgard setup | grep -qi "planned" || { echo "FAIL: planned command not announced"; exit 1; }
-asgard setup >/dev/null || { echo "FAIL: planned command should exit 0"; exit 1; }
+asgard run | grep -qi "planned" || { echo "FAIL: planned command not announced"; exit 1; }
+asgard run >/dev/null || { echo "FAIL: planned command should exit 0"; exit 1; }
 asgard completions bash | grep -q "complete -F _asgard asgard" || { echo "FAIL: bash completions"; exit 1; }
 asgard completions zsh | grep -q "#compdef asgard" || { echo "FAIL: zsh completions"; exit 1; }
 asgard completions fish | grep -q "complete -c asgard" || { echo "FAIL: fish completions"; exit 1; }
@@ -35,13 +35,21 @@ asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; 
 
 if asgard bogus >/dev/null 2>&1; then echo "FAIL: unknown command should exit nonzero"; exit 1; fi
 
-# init — scaffold .claude into a temp project (flags: dry-run / force)
+# setup (universal AGENTS.md) — codex/claude-code/cursor 공용
 PROJ="$(mktemp -d)"
-( cd "$PROJ" && asgard init --dry-run | grep -q "would create" ) || { echo "FAIL: init --dry-run"; exit 1; }
-[ ! -d "$PROJ/.claude" ] || { echo "FAIL: dry-run must not create"; exit 1; }
-( cd "$PROJ" && asgard init >/dev/null ) || { echo "FAIL: init"; exit 1; }
-[ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: init files missing"; exit 1; }
-if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing without --force"; exit 1; fi
+( cd "$PROJ" && asgard setup --dry-run | grep -q "AGENTS.md" ) || { echo "FAIL: setup --dry-run"; exit 1; }
+[ ! -e "$PROJ/AGENTS.md" ] || { echo "FAIL: dry-run must not create"; exit 1; }
+( cd "$PROJ" && asgard setup >/dev/null ) || { echo "FAIL: setup"; exit 1; }
+[ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: AGENTS.md missing"; exit 1; }
+grep -q "@AGENTS.md" "$PROJ/CLAUDE.md" || { echo "FAIL: CLAUDE.md must import AGENTS.md"; exit 1; }
+rm -rf "$PROJ"
+
+# setup --cc (claude-code) == init — .claude/
+PROJ="$(mktemp -d)"
+( cd "$PROJ" && asgard setup --cc >/dev/null ) || { echo "FAIL: setup --cc"; exit 1; }
+[ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: --cc files"; exit 1; }
+[ ! -e "$PROJ/AGENTS.md" ] || { echo "FAIL: --cc must not create AGENTS.md"; exit 1; }
+if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing .claude"; exit 1; fi
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
 
