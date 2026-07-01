@@ -160,12 +160,12 @@ export const CURSOR_FOLDERS: [string, string][] = [
   ["hooks", "Hook scripts, wired from `.cursor/hooks.json` (events: beforeShellExecution, afterFileEdit, …).\nDocs: https://cursor.com/docs/hooks"],
 ];
 
-// Codex project config (developers.openai.com/codex/config-reference). Codex reads the root
-// AGENTS.md natively; the only per-project config surface is .codex/config.toml (loaded when the
-// project is trusted). Prompts/skills are global (~/.codex) — no project folder tree to scaffold.
+// Codex project config (developers.openai.com/codex/config-reference + /codex/hooks). Codex reads
+// the root AGENTS.md natively; per-project surface = .codex/config.toml + a PreToolUse hook whose
+// stdin schema matches Claude Code, so git-guard is shared verbatim. Loaded only when trusted.
 export function codexConfig(): string {
   return `# Codex project config — overrides ~/.codex/config.toml, loaded only in trusted projects.
-# Docs: https://developers.openai.com/codex/config-reference
+# Docs: https://developers.openai.com/codex/config-reference · https://developers.openai.com/codex/hooks
 #
 # model = "<your-model>"
 # approval_policy = "on-request"    # untrusted | on-request | never
@@ -175,5 +175,14 @@ export function codexConfig(): string {
 # [mcp_servers.example]
 # command = "npx"
 # args = ["-y", "@some/mcp-server"]
+
+# Canon enforcement (CUS-93) — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
+# the guard is the same git-guard.mjs. Trust once via the /hooks CLI (or --dangerously-bypass-hook-trust).
+[[hooks.PreToolUse]]
+matcher = "^Bash$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = 'node "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.mjs"'
 `;
 }

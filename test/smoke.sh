@@ -104,6 +104,12 @@ PROJ="$(mktemp -d)"
 [ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: --codex missing .codex/config.toml"; exit 1; }
 grep -q "config-reference" "$PROJ/.codex/config.toml" || { echo "FAIL: --codex config.toml missing docs pointer"; exit 1; }
 [ ! -e "$PROJ/.claude" ] && [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --codex must NOT create .claude/.cursor (scoped to codex)"; exit 1; }
+# Codex Canon guard — PreToolUse hook wired + shared git-guard present
+grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex config.toml missing PreToolUse hook"; exit 1; }
+[ -f "$PROJ/.codex/hooks/git-guard.mjs" ] || { echo "FAIL: --codex missing .codex/hooks/git-guard.mjs"; exit 1; }
+if command -v node >/dev/null 2>&1; then
+  printf '%s' '{"tool_input":{"command":"git push --force"}}' | node "$PROJ/.codex/hooks/git-guard.mjs" 2>/dev/null && { echo "FAIL: codex git-guard must block force-push"; exit 1; } || true
+fi
 rm -rf "$PROJ"
 
 # combined --cc --cursor --codex — all skeletons in one project

@@ -338,8 +338,12 @@ function runSetup(c: Ctx): number {
       cursorFiles.push({ path: join(root, ".cursor", dir, "README.md"), content: `# .cursor/${dir}/\n\n${desc}\n` });
   if (cursorFiles.length) stages.push({ title: "Cursor", note: cursor ? ".cursor/ — rules, skills, hooks" : ".cursor/ — rule bridge", files: cursorFiles });
 
-  // Codex reads root AGENTS.md natively — only a targeted --codex adds the project config.
-  if (codex) stages.push({ title: "Codex", note: ".codex/config.toml", files: [{ path: join(root, ".codex", "config.toml"), content: codexConfig() }] });
+  // Codex reads root AGENTS.md natively — --codex adds project config + a PreToolUse git-guard
+  // (Codex hooks share Claude Code's stdin schema, so the same guard script enforces the Canon).
+  if (codex) stages.push({ title: "Codex", note: ".codex/config.toml + git-guard", files: [
+    { path: join(root, ".codex", "config.toml"), content: codexConfig() },
+    { path: join(root, ".codex", "hooks", "git-guard.mjs"), content: gitGuard() },
+  ] });
 
   const tools = [cc && "claude-code", cursor && "cursor", codex && "codex"].filter(Boolean);
   const headline = universal ? "setting up project — all agents" : `setting up project — ${tools.join(", ")}`;
