@@ -57,16 +57,17 @@ def setup(
     raise typer.Exit(run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run))
 
 
-@app.command(help="alias for 'setup --cc' (claude-code .claude/)")
+@app.command(help="interactive onboarding — pick a profile (non-TTY/--yes: claude-code)")
 def init(
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="skip the prompt, use the default profile (claude-code)"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.setup import run_init
 
-    raise typer.Exit(run_init(force=force, dry_run=dry_run))
+    raise typer.Exit(run_init(force=force, dry_run=dry_run, yes=yes))
 
 
 @app.command(help="self-update via uv (upgrade [version])")

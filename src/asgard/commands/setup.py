@@ -103,5 +103,48 @@ def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
     return _scaffold(files, label, force, dry_run)
 
 
-def run_init(force: bool = False, dry_run: bool = False) -> int:
-    return run_setup(cc=True, force=force, dry_run=dry_run)
+# ── init — interactive onboarding (CUS-49, minimal slice). TTY: pick a profile; non-TTY / --yes:
+# default to claude-code (back-compat with the old `init` = `setup --cc`). Uses Rich (already a dep);
+# no heavy TUI framework yet — the full OpenCode/Hermes-style editor stays scoped to CUS-49.
+_PROFILES: list[tuple[str, str]] = [
+    ("universal", "AGENTS.md wired to every agent (Claude Code, Cursor, Codex)"),
+    ("claude-code", ".claude/ full skeleton + hooks"),
+    ("cursor", ".cursor/ rules + hooks"),
+    ("codex", ".codex/ config + rules + guard"),
+]
+_DEFAULT_PROFILE = "claude-code"
+_FLAG_OF = {"claude-code": "cc", "cursor": "cursor", "codex": "codex"}
+
+
+def _interactive() -> bool:
+    return sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def _choose_profile() -> str:
+    from rich.console import Console
+    from rich.prompt import Prompt
+
+    c = Console()
+    c.print("\n  [bold]asgard init[/bold] [dim]— choose a setup profile[/dim]")
+    for i, (key, desc) in enumerate(_PROFILES, 1):
+        c.print(f"    [bold cyan]{i}[/bold cyan]  {key:<12} [dim]{desc}[/dim]")
+    default_idx = str(next(i for i, (k, _) in enumerate(_PROFILES, 1) if k == _DEFAULT_PROFILE))
+    choice = Prompt.ask("  select", choices=[str(i) for i in range(1, len(_PROFILES) + 1)], default=default_idx)
+    return _PROFILES[int(choice) - 1][0]
+
+
+def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
+    if profile == "universal":
+        return run_setup(force=force, dry_run=dry_run)
+    return run_setup(**{_FLAG_OF[profile]: True}, force=force, dry_run=dry_run)
+
+
+def run_init(force: bool = False, dry_run: bool = False, yes: bool = False) -> int:
+    profile = _DEFAULT_PROFILE if (yes or not _interactive()) else _choose_profile()
+    return _run_profile(profile, force, dry_run)
+
+
+if __name__ == "__main__":  # ponytail: profile→setup mapping self-check (no framework)
+    assert _FLAG_OF["cursor"] == "cursor" and set(_FLAG_OF) == {"claude-code", "cursor", "codex"}
+    assert _DEFAULT_PROFILE in dict(_PROFILES)
+    print("setup self-check ok")
