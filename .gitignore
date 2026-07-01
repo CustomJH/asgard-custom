@@ -229,3 +229,6 @@ node_modules/
 
 # devbox shared test workspace (host <-> container, not tracked)
 workspace/
+
+# playwright CLI scratch
+.playwright-cli/
