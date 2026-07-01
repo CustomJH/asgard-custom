@@ -21,6 +21,8 @@ type Ctx = {
   yes: boolean;
   force: boolean;
   cc: boolean;
+  cursor: boolean;
+  codex: boolean;
   profile: string | undefined;
 };
 type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
@@ -30,7 +32,7 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
   init: { summary: "alias for 'setup --cc' (claude-code .claude/)", ready: true, run: runInit },
-  setup: { summary: "set up project — AGENTS.md (universal) or .claude (--cc)", ready: true, run: runSetup },
+  setup: { summary: "set up project — AGENTS.md (universal), or per-agent: --cc/--cursor/--codex", ready: true, run: runSetup },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
@@ -77,8 +79,10 @@ Global options:
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
       --force         overwrite existing (setup/init)
-      --cc            claude-code profile → .claude/ (setup/init)
-      --profile <p>   target profile (e.g. claude-code)`;
+      --cc            claude-code → .claude/
+      --cursor        cursor → .cursor/rules/
+      --codex         codex → AGENTS.md
+      --profile <p>   profile: claude-code | cursor | codex`;
 }
 
 type Check = { name: string; ok: boolean; detail: string; fix: string };
@@ -148,47 +152,65 @@ function runUninstall(c: Ctx): number {
 // setup --cc  → .claude/ (Claude Code native)   (init = alias for setup --cc)
 type File = { path: string; content: string };
 
-function scaffold(c: Ctx, label: string, guard: string, files: File[]): number {
-  if (existsSync(guard) && !c.force && !c.dryRun) {
-    process.stderr.write(`asgard: ${guard} already exists\n  --force to overwrite · --dry-run to preview\n`);
+function scaffold(c: Ctx, label: string, files: File[]): number {
+  const existing = files.filter((f) => existsSync(f.path));
+  if (existing.length && !c.force && !c.dryRun) {
+    process.stderr.write(`asgard: already exists:\n${existing.map((f) => `  ${f.path}`).join("\n")}\n  --force to overwrite · --dry-run to preview\n`);
     return 2;
   }
   if (c.dryRun) {
     process.stdout.write(`would create (${label}):\n${files.map((f) => `  ${f.path}`).join("\n")}\n`);
     return 0;
   }
-  let wrote = 0;
   for (const f of files) {
     mkdirSync(dirname(f.path), { recursive: true });
-    if (existsSync(f.path) && !c.force) continue;
     writeFileSync(f.path, f.content);
-    wrote++;
   }
-  process.stdout.write(`✔ ${label} — ${wrote} file(s)\n`);
+  process.stdout.write(`✔ ${label} — ${files.length} file(s)\n`);
   return 0;
 }
 
-function doSetup(c: Ctx, cc: boolean): number {
-  const root = process.cwd();
-  const name = root.split(/[/\\]/).pop();
-  if (cc) {
-    return scaffold(c, "claude-code setup (.claude/)", join(root, ".claude"), [
+function agentsMd(name: string | undefined): string {
+  return `# ${name} — Agent Guide\n\nManaged by Asgard. Canonical instructions for coding agents (Codex, Claude Code, Cursor).\n\n<!-- Shared project instructions go here. -->\n`;
+}
+
+// Native config for one agent.
+function agentFiles(root: string, name: string | undefined, agent: string): File[] {
+  if (agent === "claude-code") {
+    return [
       { path: join(root, ".claude", "settings.json"), content: "{}\n" },
       { path: join(root, ".claude", "CLAUDE.md"), content: `# ${name} — Asgard (claude-code)\n\n<!-- Claude Code project instructions. -->\n` },
-    ]);
+    ];
   }
-  // universal: AGENTS.md is canonical; CLAUDE.md imports it so Claude Code shares the same source.
-  return scaffold(c, "universal setup (AGENTS.md — codex/claude-code/cursor)", join(root, "AGENTS.md"), [
-    { path: join(root, "AGENTS.md"), content: `# ${name} — Agent Guide\n\nManaged by Asgard. Canonical instructions for all coding agents (Codex, Claude Code, Cursor).\n\n<!-- Shared project instructions go here. -->\n` },
-    { path: join(root, "CLAUDE.md"), content: `@AGENTS.md\n` },
-  ]);
+  if (agent === "cursor") {
+    return [{ path: join(root, ".cursor", "rules", "asgard.mdc"), content: `---\ndescription: ${name} project rules (managed by Asgard)\nalwaysApply: true\n---\n\n<!-- Cursor project rules go here. -->\n` }];
+  }
+  if (agent === "codex") {
+    return [{ path: join(root, "AGENTS.md"), content: agentsMd(name) }]; // Codex reads AGENTS.md natively
+  }
+  return [];
 }
 
 function runSetup(c: Ctx): number {
-  return doSetup(c, c.cc || c.profile === "claude-code");
+  const root = process.cwd();
+  const name = root.split(/[/\\]/).pop();
+  const sel: string[] = [];
+  if (c.cc || c.profile === "claude-code") sel.push("claude-code");
+  if (c.cursor || c.profile === "cursor") sel.push("cursor");
+  if (c.codex || c.profile === "codex") sel.push("codex");
+
+  if (sel.length === 0) {
+    // universal: AGENTS.md canonical + CLAUDE.md bridge so Claude Code shares the same source.
+    return scaffold(c, "universal setup (AGENTS.md — codex/claude-code/cursor)", [
+      { path: join(root, "AGENTS.md"), content: agentsMd(name) },
+      { path: join(root, "CLAUDE.md"), content: "@AGENTS.md\n" },
+    ]);
+  }
+  return scaffold(c, `setup (${sel.join(", ")})`, sel.flatMap((a) => agentFiles(root, name, a)));
 }
+
 function runInit(c: Ctx): number {
-  return doSetup(c, true); // init = claude-code setup
+  return runSetup({ ...c, cc: true }); // init = setup --cc (claude-code)
 }
 
 // ── upgrade: self-replace the installed binary with a release build ──────────
@@ -288,6 +310,8 @@ function main(): number {
       yes: { type: "boolean", short: "y" },
       force: { type: "boolean" },
       cc: { type: "boolean" },
+      cursor: { type: "boolean" },
+      codex: { type: "boolean" },
       profile: { type: "string" },
     },
   });
@@ -326,6 +350,8 @@ function main(): number {
     yes: !!values.yes,
     force: !!values.force,
     cc: !!values.cc,
+    cursor: !!values.cursor,
+    codex: !!values.codex,
     profile: typeof values.profile === "string" ? values.profile : undefined,
   };
 
