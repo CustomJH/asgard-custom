@@ -79,7 +79,12 @@ elif [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/src/cli.ts" ] && command -v bun >/d
   ( cd "$SRC_DIR" && bun build src/cli.ts --compile --outfile "$DEST" >/dev/null 2>&1 ) & spin $! "building binary (bun --compile)" || die "build failed."
 else
   asset="$(detect_asset)"
-  ( curl -fsSL -o "$DEST" "$RELEASE_BASE/$asset" ) & spin $! "downloading $asset" || die "download failed: $RELEASE_BASE/$asset"
+  if [ -n "${ASGARD_VERSION:-}" ]; then
+    url="https://github.com/CustomJH/asgard-custom/releases/download/v${ASGARD_VERSION}/$asset"   # pin a version
+  else
+    url="$RELEASE_BASE/$asset"
+  fi
+  ( curl -fsSL -o "$DEST" "$url" ) & spin $! "downloading $asset" || die "download failed: $url"
   chmod +x "$DEST"
 fi
 [ -x "$DEST" ] || die "binary missing at $DEST."
