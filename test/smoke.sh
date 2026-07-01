@@ -71,6 +71,17 @@ for _d in commands agents skills hooks rules output-styles; do
   [ -f "$PROJ/.claude/$_d/README.md" ] || { echo "FAIL: --cc missing .claude/$_d/README.md"; exit 1; }
 done
 [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --cc must NOT create .cursor (scoped to claude-code)"; exit 1; }
+# Canon guards (CUS-93 Phase B) — real hooks wired; block danger, allow safe, fail-open on garbage
+grep -q '"PreToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing hooks"; exit 1; }
+[ -f "$PROJ/.claude/hooks/git-guard.mjs" ] && [ -f "$PROJ/.claude/hooks/secret-guard.mjs" ] || { echo "FAIL: --cc missing Canon guard hooks"; exit 1; }
+if command -v node >/dev/null 2>&1; then
+  node --check "$PROJ/.claude/hooks/git-guard.mjs" || { echo "FAIL: git-guard.mjs invalid"; exit 1; }
+  node --check "$PROJ/.claude/hooks/secret-guard.mjs" || { echo "FAIL: secret-guard.mjs invalid"; exit 1; }
+  printf '%s' '{"tool_input":{"command":"git push --force"}}' | node "$PROJ/.claude/hooks/git-guard.mjs" 2>/dev/null && { echo "FAIL: git-guard must block force-push"; exit 1; } || true
+  printf '%s' '{"tool_input":{"command":"git status"}}'      | node "$PROJ/.claude/hooks/git-guard.mjs" 2>/dev/null || { echo "FAIL: git-guard must allow git status"; exit 1; }
+  printf '%s' 'not-json'                                      | node "$PROJ/.claude/hooks/git-guard.mjs" 2>/dev/null || { echo "FAIL: git-guard must fail-open on garbage"; exit 1; }
+  printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | node "$PROJ/.claude/hooks/secret-guard.mjs" 2>/dev/null && { echo "FAIL: secret-guard must block .env"; exit 1; } || true
+fi
 if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing .claude"; exit 1; fi
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"

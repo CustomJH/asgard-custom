@@ -342,9 +342,77 @@ function ccSettings(): string {
   return JSON.stringify({
     permissions: {
       allow: ["Bash(git status)", "Bash(git diff *)", "Bash(git log *)"],
-      deny: ["Bash(rm -rf *)"],
+      // Belt: static deny for the worst. Braces (git-guard/secret-guard hooks) enforce the rest.
+      deny: ["Bash(rm -rf *)", "Bash(git push --force*)", "Bash(git push -f*)", "Bash(git reset --hard*)"],
+    },
+    // Canon enforcement (CUS-93 Phase B): deterministic PreToolUse guards. "prose asks, hooks forbid."
+    hooks: {
+      PreToolUse: [
+        { matcher: "Bash", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.mjs"' }] },
+        { matcher: "Write|Edit", hooks: [{ type: "command", command: 'node "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.mjs"' }] },
+      ],
     },
   }, null, 2) + "\n";
+}
+
+// Canon hook scripts (Node, ESM). Fail-open by contract: any parse/IO error → exit 0 (allow), so a
+// guard can never brick a session. exit 2 = block with a reason. Kept dependency-free + single-file.
+// Authored without backticks / ${...} / \n-in-strings so they embed cleanly in this TS template.
+function gitGuard(): string {
+  return `#!/usr/bin/env node
+// Asgard git-guard — Canon Law 3/6 (증거 보존). Blocks irreversible git ops in PreToolUse(Bash);
+// they require Odin's explicit per-action consent. Fail-open: any error → exit 0 (allow).
+import { readFileSync } from "node:fs";
+let cmd = "";
+try { cmd = String(JSON.parse(readFileSync(0, "utf8")).tool_input?.command ?? ""); } catch { process.exit(0); }
+const BLOCK = [
+  [/\\bgit\\s+push\\b[^|;&]*\\s-(-force\\b|f\\b)/, "force-push"],
+  [/\\bgit\\s+push\\b[^|;&]*--force-with-lease\\b/, "force-push"],
+  [/\\bgit\\s+reset\\s+--hard\\b/, "reset --hard"],
+  [/\\bgit\\s+clean\\s+-[a-zA-Z]*f/, "clean -f"],
+  [/\\bgit\\s+branch\\s+-D\\b/, "branch -D"],
+  [/\\bgit\\s+(rebase|filter-branch|filter-repo)\\b/, "history rewrite"],
+  [/\\bgit\\s+update-ref\\s+-d\\b/, "update-ref -d"],
+  [/\\bgit\\s+(stash\\s+(drop|clear)|reflog\\s+(delete|expire))\\b/, "drop history"],
+];
+for (const [re, label] of BLOCK) {
+  if (re.test(cmd)) {
+    console.error("Asgard Canon Law 3/6 — irreversible git op (" + label + "). Odin의 명시적 동의를 먼저 받으세요 (매 건, 대상 단위).");
+    process.exit(2);
+  }
+}
+process.exit(0);
+`;
+}
+
+function secretGuard(): string {
+  return `#!/usr/bin/env node
+// Asgard secret-guard — Canon Law 4 (시크릿 보호). Blocks Write/Edit that write a .env or introduce
+// credentials. Fail-open: any error → exit 0 (allow).
+import { readFileSync } from "node:fs";
+let ti = {};
+try { ti = JSON.parse(readFileSync(0, "utf8")).tool_input ?? {}; } catch { process.exit(0); }
+const path = String(ti.file_path ?? "");
+const text = [ti.content, ti.new_string].filter(Boolean).join(" ");
+if (/(^|\\/)\\.env(\\.[^/]*)?$/.test(path) && !/\\.env\\.(example|sample|template|dist)$/.test(path)) {
+  console.error("Asgard Canon Law 4 — .env write blocked: " + path + " (시크릿은 커밋하지 않습니다).");
+  process.exit(2);
+}
+const SECRET = [
+  [/-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----/, "private key"],
+  [/\\bAKIA[0-9A-Z]{16}\\b/, "AWS key"],
+  [/\\bghp_[A-Za-z0-9]{36}\\b/, "GitHub token"],
+  [/\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b/, "Slack token"],
+  [/\\b(secret|password|passwd|api[_-]?key|access[_-]?token|private[_-]?key)\\s*[:=]\\s*["'][^"']{8,}["']/i, "credential"],
+];
+for (const [re, label] of SECRET) {
+  if (re.test(text)) {
+    console.error("Asgard Canon Law 4 — possible secret (" + label + ") blocked: " + path);
+    process.exit(2);
+  }
+}
+process.exit(0);
+`;
 }
 
 // Foundational .claude/ subdirectories. Each is scaffolded with a README (git tracks it + it's
@@ -429,6 +497,11 @@ function runSetup(c: Ctx): number {
     );
     for (const [dir, desc] of CC_FOLDERS)
       claude.push({ path: join(root, ".claude", dir, "README.md"), content: `# .claude/${dir}/\n\n${desc}\n` });
+    // Working Canon guards wired in settings.json hooks{} (Law 3/6 git, Law 4 secrets).
+    claude.push(
+      { path: join(root, ".claude", "hooks", "git-guard.mjs"), content: gitGuard() },
+      { path: join(root, ".claude", "hooks", "secret-guard.mjs"), content: secretGuard() },
+    );
   }
   if (claude.length) stages.push({ title: "Claude Code", note: cc ? ".claude/ — settings, skills, hooks, agents" : ".claude/ — bridge", files: claude });
 
