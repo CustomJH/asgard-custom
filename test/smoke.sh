@@ -48,11 +48,13 @@ grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: .claude/CLAUD
 grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing wiring-check marker"; exit 1; }
 rm -rf "$PROJ"
 
-# setup --cc (claude-code) == init — .claude/
+# setup --cc (claude-code) == init — AGENTS.md (canonical) + .claude/ (bridge + settings)
 PROJ="$(mktemp -d)"
 ( cd "$PROJ" && asgard setup --cc >/dev/null ) || { echo "FAIL: setup --cc"; exit 1; }
+[ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --cc must create AGENTS.md"; exit 1; }
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: --cc files"; exit 1; }
-[ ! -e "$PROJ/AGENTS.md" ] || { echo "FAIL: --cc must not create AGENTS.md"; exit 1; }
+grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: --cc .claude/CLAUDE.md must import ../AGENTS.md"; exit 1; }
+grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: --cc AGENTS.md missing wiring-check marker"; exit 1; }
 if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing .claude"; exit 1; fi
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"

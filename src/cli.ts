@@ -30,7 +30,7 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
   init: { summary: "alias for 'setup --cc' (claude-code .claude/)", ready: true, run: runInit },
-  setup: { summary: "set up project — AGENTS.md (all agents), or .claude only with --cc", ready: true, run: runSetup },
+  setup: { summary: "set up project — AGENTS.md (all agents); --cc also adds .claude/settings.json", ready: true, run: runSetup },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
@@ -77,7 +77,7 @@ Global options:
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
       --force         overwrite existing (setup/init)
-      --cc            claude-code only → .claude/  (default setup covers all agents via AGENTS.md)
+      --cc            also scaffold .claude/settings.json alongside AGENTS.md (claude-code)
       --profile <p>   profile: claude-code`;
 }
 
@@ -172,7 +172,7 @@ function runUninstall(c: Ctx): number {
 
 // ── setup / init (CUS-49): scaffold a project ────────────────────────────────
 // setup       → AGENTS.md canonical, shared by codex / claude-code / cursor
-// setup --cc  → .claude/ (Claude Code native)   (init = alias for setup --cc)
+// setup --cc  → same + .claude/settings.json   (init = alias for setup --cc)
 type File = { path: string; content: string };
 
 function scaffold(c: Ctx, label: string, files: File[]): number {
@@ -206,24 +206,24 @@ If asked to "run asgard check", reply with exactly: \`ASGARD_OK — loaded from 
 `;
 }
 
-// setup       → AGENTS.md canonical (Codex + Cursor read it natively) + Claude Code bridge
-// setup --cc  → .claude/ standalone (Claude Code only, no AGENTS.md)   [init = setup --cc]
+// AGENTS.md is always canonical (Codex + Cursor read it natively; Claude Code reads it via the
+// .claude/CLAUDE.md import). --cc just adds the Claude Code settings on top.
+// setup       → AGENTS.md + .claude/CLAUDE.md (bridge)
+// setup --cc  → same + .claude/settings.json   [init = setup --cc]
 // Refs: code.claude.com/docs/en/memory · developers.openai.com/codex/guides/agents-md · cursor.com/docs/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
   const name = root.split(/[/\\]/).pop();
+  const cc = c.cc || c.profile === "claude-code";
 
-  if (c.cc || c.profile === "claude-code") {
-    return scaffold(c, "claude-code setup (.claude/)", [
-      { path: join(root, ".claude", "settings.json"), content: "{}\n" },
-      { path: join(root, ".claude", "CLAUDE.md"), content: `# ${name} — Asgard (claude-code)\n\n<!-- Claude Code project instructions. -->\n` },
-    ]);
-  }
   // @import resolves relative to the importing file → from .claude/ use @../AGENTS.md.
-  return scaffold(c, "universal setup (AGENTS.md — all agents)", [
+  const files: File[] = [
     { path: join(root, "AGENTS.md"), content: agentsMd(name) },
     { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
-  ]);
+  ];
+  if (cc) files.push({ path: join(root, ".claude", "settings.json"), content: "{}\n" });
+
+  return scaffold(c, cc ? "claude-code setup (AGENTS.md + .claude/)" : "universal setup (AGENTS.md — all agents)", files);
 }
 
 function runInit(c: Ctx): number {
