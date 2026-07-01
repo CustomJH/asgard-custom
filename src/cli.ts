@@ -2,7 +2,7 @@
 // asgard CLI. Erasable-TS only (Bun + Node>=24 type-stripping): no enums/namespaces/param-props.
 import { parseArgs } from "node:util";
 import { execSync } from "node:child_process";
-import { rmSync, lstatSync } from "node:fs";
+import { rmSync, lstatSync, mkdirSync, writeFileSync, existsSync, renameSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import pkg from "../package.json" with { type: "json" };
@@ -19,6 +19,7 @@ type Ctx = {
   quiet: boolean;
   dryRun: boolean;
   yes: boolean;
+  force: boolean;
   profile: string | undefined;
 };
 type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
@@ -27,11 +28,11 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 // (behavior lands in CUS-49). Memory/knowledge-store commands are intentionally absent.
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
-  init: { summary: "install Asgard's .claude into this project", ready: false },
+  init: { summary: "scaffold .claude into this project (--profile/--force/--dry-run)", ready: true, run: runInit },
   setup: { summary: "compose project config (.asgardfile)", ready: false },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
-  upgrade: { summary: "upgrade the asgard binary itself", ready: false },
+  upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
   uninstall: { summary: "remove asgard (binary, PATH symlink, ~/.asgard)", ready: true, run: runUninstall },
   completions: { summary: "print shell completion script (bash|zsh|fish)", ready: true, run: runCompletions },
 };
@@ -74,6 +75,7 @@ Global options:
   -q, --quiet         less output
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
+      --force         overwrite existing (init)
       --profile <p>   target profile (e.g. claude-code)`;
 }
 
@@ -139,6 +141,77 @@ function runUninstall(c: Ctx): number {
   return failed ? 1 : 0;
 }
 
+// ── init (CUS-49): scaffold a project's .claude/ ─────────────────────────────
+function runInit(c: Ctx): number {
+  const profile = c.profile ?? "claude-code";
+  const root = process.cwd();
+  const dir = join(root, ".claude");
+  const files: Array<{ path: string; content: string }> = [
+    { path: join(dir, "settings.json"), content: "{}\n" },
+    {
+      path: join(dir, "CLAUDE.md"),
+      content: `# ${root.split(/[/\\]/).pop()} — Asgard\n\nManaged by Asgard (profile: ${profile}). Edit freely.\n\n<!-- Project instructions for the coding agent go here. -->\n`,
+    },
+  ];
+
+  if (existsSync(dir) && !c.force && !c.dryRun) {
+    process.stderr.write(`asgard: .claude already exists (${dir})\n  --force to overwrite · --dry-run to preview\n`);
+    return 2;
+  }
+  if (c.dryRun) {
+    process.stdout.write(`would create (profile: ${profile}):\n${files.map((f) => `  ${f.path}`).join("\n")}\n`);
+    return 0;
+  }
+  mkdirSync(dir, { recursive: true });
+  let wrote = 0;
+  for (const f of files) {
+    if (existsSync(f.path) && !c.force) continue;
+    writeFileSync(f.path, f.content);
+    wrote++;
+  }
+  process.stdout.write(`✔ initialized .claude (profile: ${profile}) — ${wrote} file(s)\n  next: edit .claude/CLAUDE.md\n`);
+  return 0;
+}
+
+// ── upgrade: self-replace the installed binary with a release build ──────────
+function releaseAsset(): string {
+  const os = process.platform === "darwin" ? "darwin" : process.platform === "linux" ? "linux" : process.platform === "win32" ? "windows" : "";
+  const arch = process.arch === "x64" ? "x64" : process.arch === "arm64" ? "arm64" : "";
+  if (!os || !arch) throw new Error(`unsupported platform ${process.platform}/${process.arch}`);
+  return `asgard-${os}-${arch}${os === "windows" ? ".exe" : ""}`;
+}
+
+function runUpgrade(c: Ctx): number {
+  const home = process.env.ASGARD_HOME ?? join(homedir(), ".asgard");
+  const dest = join(home, "bin", "asgard");
+  const asset = releaseAsset();
+  const base = process.env.ASGARD_RELEASE_BASE;
+  const pin = c.rest[0]; // optional: "0.1.2" or "v0.1.2"
+  const url = base
+    ? `${base}/${asset}`
+    : pin
+      ? `https://github.com/CustomJH/asgard-custom/releases/download/${pin.startsWith("v") ? pin : "v" + pin}/${asset}`
+      : `https://github.com/CustomJH/asgard-custom/releases/latest/download/${asset}`;
+
+  if (c.dryRun) {
+    process.stdout.write(`would download:\n  ${url}\n  → ${dest}\n`);
+    return 0;
+  }
+  const tmp = `${dest}.tmp`;
+  try {
+    execSync(`curl -fsSL -o ${JSON.stringify(tmp)} ${JSON.stringify(url)}`, { stdio: "ignore" });
+    execSync(`chmod +x ${JSON.stringify(tmp)}`);
+    renameSync(tmp, dest); // atomic; safe while running on Unix
+  } catch (e) {
+    try { rmSync(tmp, { force: true }); } catch { /* ignore */ }
+    process.stderr.write(`asgard: upgrade failed — ${(e as Error).message}\n  url: ${url}\n`);
+    return 1;
+  }
+  const v = execSync(`${JSON.stringify(dest)} --version`, { encoding: "utf8" }).trim();
+  process.stdout.write(`✔ upgraded → v${v}  ${dest}\n`);
+  return 0;
+}
+
 function runCompletions(c: Ctx): number {
   const shell = c.rest[0];
   const cmds = [...Object.keys(COMMANDS), "version", "help"].join(" ");
@@ -195,6 +268,7 @@ function main(): number {
       quiet: { type: "boolean", short: "q" },
       "dry-run": { type: "boolean" },
       yes: { type: "boolean", short: "y" },
+      force: { type: "boolean" },
       profile: { type: "string" },
     },
   });
@@ -231,6 +305,7 @@ function main(): number {
     quiet: !!values.quiet,
     dryRun: !!values["dry-run"],
     yes: !!values.yes,
+    force: !!values.force,
     profile: typeof values.profile === "string" ? values.profile : undefined,
   };
 

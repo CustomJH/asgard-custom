@@ -35,6 +35,19 @@ asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; 
 
 if asgard bogus >/dev/null 2>&1; then echo "FAIL: unknown command should exit nonzero"; exit 1; fi
 
+# init — scaffold .claude into a temp project (flags: dry-run / force)
+PROJ="$(mktemp -d)"
+( cd "$PROJ" && asgard init --dry-run | grep -q "would create" ) || { echo "FAIL: init --dry-run"; exit 1; }
+[ ! -d "$PROJ/.claude" ] || { echo "FAIL: dry-run must not create"; exit 1; }
+( cd "$PROJ" && asgard init >/dev/null ) || { echo "FAIL: init"; exit 1; }
+[ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: init files missing"; exit 1; }
+if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing without --force"; exit 1; fi
+( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
+rm -rf "$PROJ"
+
+# upgrade — dry-run only (no network in smoke)
+asgard upgrade --dry-run | grep -q "would download" || { echo "FAIL: upgrade --dry-run"; exit 1; }
+
 # uninstall LAST (destructive) — preview is a no-op, then --yes cleanly removes
 asgard uninstall | grep -qi "would remove" || { echo "FAIL: uninstall preview"; exit 1; }
 [ -e "$BIN_DIR/asgard" ] || { echo "FAIL: preview must not remove"; exit 1; }
@@ -42,4 +55,4 @@ asgard uninstall --yes >/dev/null || { echo "FAIL: uninstall --yes"; exit 1; }
 [ ! -e "$BIN_DIR/asgard" ] || { echo "FAIL: symlink remains after uninstall"; exit 1; }
 [ ! -d "$ASGARD_HOME" ] || { echo "FAIL: ASGARD_HOME remains after uninstall"; exit 1; }
 
-echo "PASS: build+install + version($ver) + help + doctor + completions + uninstall"
+echo "PASS: build+install + version($ver) + help + doctor + completions + init + upgrade + uninstall"
