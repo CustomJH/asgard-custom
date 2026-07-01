@@ -3,4 +3,5 @@ ref
 .git
 node_modules
 dist
+assets
 *.md
