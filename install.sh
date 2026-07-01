@@ -32,13 +32,54 @@ die()  { printf '\n  %s✗%s %s\n\n' "$R" "$X" "$*" >&2; exit 1; }
 # LOGO — brand lockup. Rendered as a real inline image on graphics-capable terminals
 # (kitty/Ghostty/WezTerm, iTerm2); rune wordmark elsewhere. ASGARD_NO_IMAGE=1 forces runes.
 LOGO_URL="${ASGARD_LOGO_URL:-https://raw.githubusercontent.com/CustomJH/asgard-custom/main/assets/individual/15-white-lockup.png}"
+VERSION_URL="${ASGARD_VERSION_URL:-https://raw.githubusercontent.com/CustomJH/asgard-custom/main/package.json}"
 
 banner() {
+  local v="$(_version)"
   printf '\n'
-  if [ "$TTY" = 1 ] && [ "${ASGARD_NO_IMAGE:-0}" != 1 ] && _logo; then :; else
-    printf '  %s%sᚨ  ᛋ  ᚷ  ᚨ  ᚱ  ᛞ%s\n' "$B" "$M" "$X"
+  if [ "$TTY" = 1 ] && [ "${ASGARD_NO_IMAGE:-0}" != 1 ] && _logo; then
+    _ver_line "$v" 38
+  else
+    _logo_art     # universal emblem + wordmark — renders in any terminal, any background
+    _ver_line "$v" 69
   fi
-  printf '  %sASGARD%s %s· make anything, your way%s\n\n' "$B" "$X" "$D" "$X"
+  printf '  %s· make anything, your way%s\n\n' "$D" "$X"
+}
+
+# _version — best-effort asgard version for the splash, auto-tracking the current release:
+# pinned env → local package.json (dev checkout) → package.json on main (curl|bash installs).
+_version() {
+  if [ -n "${ASGARD_VERSION:-}" ]; then printf '%s' "$ASGARD_VERSION"; return 0; fi
+  if [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/package.json" ]; then
+    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC_DIR/package.json" | head -1
+    return 0
+  fi
+  curl -fsSL --max-time 5 "$VERSION_URL" 2>/dev/null \
+    | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true
+}
+
+# _ver_line <version> <width> — dim (vX.Y.Z), right-aligned to sit under the wordmark. No-op if empty.
+_ver_line() {
+  [ -n "$1" ] || return 0
+  local tag="(v$1)" pad
+  pad=$(( $2 - ${#tag} )); [ "$pad" -lt 2 ] && pad=2
+  printf '%*s%s%s%s\n' "$pad" "" "$D" "$tag" "$X"
+}
+
+# _logo_art — universal fallback where inline images aren't supported: a compact braille tree
+# emblem (from the Yggdrasil mark) + the ASGARD wordmark. Brand tint when colored, else the
+# terminal's default fg → readable on any background.
+_logo_art() {
+  printf '%s' "$M"
+  cat <<'ART'
+  ⠀⠀⠀⠀⢀⡤⣶⣶⣶⣲⠤⣀⠀⠀⠀⠀   █████╗ ███████╗ ██████╗  █████╗ ██████╗ ██████╗
+  ⠀⠀⢀⣼⣽⣻⡟⣿⣷⢫⣟⣯⣧⡀⠀⠀  ██╔══██╗██╔════╝██╔════╝ ██╔══██╗██╔══██╗██╔══██╗
+  ⠀⠀⣸⢽⣦⡷⣻⣻⡟⣟⢾⣴⣯⣧⠀⠀  ███████║███████╗██║  ███╗███████║██████╔╝██║  ██║
+  ⠀⠀⢻⠽⠇⠁⣸⢸⡇⣷⠈⠸⠯⡟⠀⠀  ██╔══██║╚════██║██║   ██║██╔══██║██╔══██╗██║  ██║
+  ⠀⠀⠈⢳⣲⣶⡿⣾⣷⢿⣶⣖⡞⠁⠀⠀  ██║  ██║███████║╚██████╔╝██║  ██║██║  ██║██████╔╝
+  ⠀⠀⠀⠀⠈⠓⠻⠯⠵⠟⠚⠉⠀⠀⠀⠀  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝
+ART
+  printf '%s' "$X"
 }
 
 # _logo — emit the lockup PNG via a terminal graphics protocol. Returns nonzero (→ rune fallback)
