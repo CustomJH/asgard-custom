@@ -41,7 +41,9 @@ PROJ="$(mktemp -d)"
 [ ! -e "$PROJ/AGENTS.md" ] || { echo "FAIL: dry-run must not create"; exit 1; }
 ( cd "$PROJ" && asgard setup >/dev/null ) || { echo "FAIL: setup"; exit 1; }
 [ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: AGENTS.md missing"; exit 1; }
-grep -q "@AGENTS.md" "$PROJ/CLAUDE.md" || { echo "FAIL: CLAUDE.md must import AGENTS.md"; exit 1; }
+[ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: .claude/CLAUDE.md missing"; exit 1; }
+[ ! -e "$PROJ/CLAUDE.md" ] || { echo "FAIL: CLAUDE.md must be inside .claude, not root"; exit 1; }
+grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: .claude/CLAUDE.md must import ../AGENTS.md"; exit 1; }
 rm -rf "$PROJ"
 
 # setup --cc (claude-code) == init — .claude/

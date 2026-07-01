@@ -200,10 +200,13 @@ function runSetup(c: Ctx): number {
   if (c.codex || c.profile === "codex") sel.push("codex");
 
   if (sel.length === 0) {
-    // universal: AGENTS.md canonical + CLAUDE.md bridge so Claude Code shares the same source.
+    // universal: AGENTS.md (root) is canonical, read natively by Codex/Cursor.
+    // Claude Code doesn't read AGENTS.md — bridge via .claude/CLAUDE.md importing it.
+    // @import resolves relative to the importing file, so from .claude/ it's @../AGENTS.md.
+    // Ref: https://code.claude.com/docs/en/memory  (CLAUDE.md at ./ or ./.claude/ ; AGENTS.md via import)
     return scaffold(c, "universal setup (AGENTS.md — codex/claude-code/cursor)", [
       { path: join(root, "AGENTS.md"), content: agentsMd(name) },
-      { path: join(root, "CLAUDE.md"), content: "@AGENTS.md\n" },
+      { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
     ]);
   }
   return scaffold(c, `setup (${sel.join(", ")})`, sel.flatMap((a) => agentFiles(root, name, a)));
