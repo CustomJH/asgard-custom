@@ -55,24 +55,6 @@ if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must ref
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
 
-# setup --cursor — .cursor/rules/
-PROJ="$(mktemp -d)"
-( cd "$PROJ" && asgard setup --cursor >/dev/null ) || { echo "FAIL: setup --cursor"; exit 1; }
-[ -f "$PROJ/.cursor/rules/asgard.mdc" ] || { echo "FAIL: cursor rule missing"; exit 1; }
-rm -rf "$PROJ"
-
-# setup --codex — AGENTS.md (no CLAUDE.md bridge)
-PROJ="$(mktemp -d)"
-( cd "$PROJ" && asgard setup --codex >/dev/null ) || { echo "FAIL: setup --codex"; exit 1; }
-[ -f "$PROJ/AGENTS.md" ] && [ ! -e "$PROJ/CLAUDE.md" ] || { echo "FAIL: codex files"; exit 1; }
-rm -rf "$PROJ"
-
-# combined — --cc --cursor installs both
-PROJ="$(mktemp -d)"
-( cd "$PROJ" && asgard setup --cc --cursor >/dev/null ) || { echo "FAIL: setup --cc --cursor"; exit 1; }
-[ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.cursor/rules/asgard.mdc" ] || { echo "FAIL: combined files"; exit 1; }
-rm -rf "$PROJ"
-
 # upgrade — dry-run only (no network in smoke)
 asgard upgrade --dry-run | grep -q "would download" || { echo "FAIL: upgrade --dry-run"; exit 1; }
 

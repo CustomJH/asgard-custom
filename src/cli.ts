@@ -21,8 +21,6 @@ type Ctx = {
   yes: boolean;
   force: boolean;
   cc: boolean;
-  cursor: boolean;
-  codex: boolean;
   profile: string | undefined;
 };
 type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
@@ -32,7 +30,7 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
   init: { summary: "alias for 'setup --cc' (claude-code .claude/)", ready: true, run: runInit },
-  setup: { summary: "set up project — AGENTS.md (universal), or per-agent: --cc/--cursor/--codex", ready: true, run: runSetup },
+  setup: { summary: "set up project — AGENTS.md (all agents), or .claude only with --cc", ready: true, run: runSetup },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
@@ -79,10 +77,8 @@ Global options:
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
       --force         overwrite existing (setup/init)
-      --cc            claude-code → .claude/
-      --cursor        cursor → .cursor/rules/
-      --codex         codex → AGENTS.md
-      --profile <p>   profile: claude-code | cursor | codex`;
+      --cc            claude-code only → .claude/  (default setup covers all agents via AGENTS.md)
+      --profile <p>   profile: claude-code`;
 }
 
 type Check = { name: string; ok: boolean; detail: string; fix: string };
@@ -171,45 +167,27 @@ function scaffold(c: Ctx, label: string, files: File[]): number {
 }
 
 function agentsMd(name: string | undefined): string {
-  return `# ${name} — Agent Guide\n\nManaged by Asgard. Canonical instructions for coding agents (Codex, Claude Code, Cursor).\n\n<!-- Shared project instructions go here. -->\n`;
+  return `# ${name} — Agent Guide\n\nManaged by Asgard. Canonical instructions for coding agents — read natively by Codex and Cursor, and by Claude Code via the .claude/CLAUDE.md import.\n\n<!-- Shared project instructions go here. -->\n`;
 }
 
-// Native config for one agent.
-function agentFiles(root: string, name: string | undefined, agent: string): File[] {
-  if (agent === "claude-code") {
-    return [
-      { path: join(root, ".claude", "settings.json"), content: "{}\n" },
-      { path: join(root, ".claude", "CLAUDE.md"), content: `# ${name} — Asgard (claude-code)\n\n<!-- Claude Code project instructions. -->\n` },
-    ];
-  }
-  if (agent === "cursor") {
-    return [{ path: join(root, ".cursor", "rules", "asgard.mdc"), content: `---\ndescription: ${name} project rules (managed by Asgard)\nalwaysApply: true\n---\n\n<!-- Cursor project rules go here. -->\n` }];
-  }
-  if (agent === "codex") {
-    return [{ path: join(root, "AGENTS.md"), content: agentsMd(name) }]; // Codex reads AGENTS.md natively
-  }
-  return [];
-}
-
+// setup       → AGENTS.md canonical (Codex + Cursor read it natively) + Claude Code bridge
+// setup --cc  → .claude/ standalone (Claude Code only, no AGENTS.md)   [init = setup --cc]
+// Refs: code.claude.com/docs/en/memory · developers.openai.com/codex/guides/agents-md · cursor.com/docs/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
   const name = root.split(/[/\\]/).pop();
-  const sel: string[] = [];
-  if (c.cc || c.profile === "claude-code") sel.push("claude-code");
-  if (c.cursor || c.profile === "cursor") sel.push("cursor");
-  if (c.codex || c.profile === "codex") sel.push("codex");
 
-  if (sel.length === 0) {
-    // universal: AGENTS.md (root) is canonical, read natively by Codex/Cursor.
-    // Claude Code doesn't read AGENTS.md — bridge via .claude/CLAUDE.md importing it.
-    // @import resolves relative to the importing file, so from .claude/ it's @../AGENTS.md.
-    // Ref: https://code.claude.com/docs/en/memory  (CLAUDE.md at ./ or ./.claude/ ; AGENTS.md via import)
-    return scaffold(c, "universal setup (AGENTS.md — codex/claude-code/cursor)", [
-      { path: join(root, "AGENTS.md"), content: agentsMd(name) },
-      { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
+  if (c.cc || c.profile === "claude-code") {
+    return scaffold(c, "claude-code setup (.claude/)", [
+      { path: join(root, ".claude", "settings.json"), content: "{}\n" },
+      { path: join(root, ".claude", "CLAUDE.md"), content: `# ${name} — Asgard (claude-code)\n\n<!-- Claude Code project instructions. -->\n` },
     ]);
   }
-  return scaffold(c, `setup (${sel.join(", ")})`, sel.flatMap((a) => agentFiles(root, name, a)));
+  // @import resolves relative to the importing file → from .claude/ use @../AGENTS.md.
+  return scaffold(c, "universal setup (AGENTS.md — all agents)", [
+    { path: join(root, "AGENTS.md"), content: agentsMd(name) },
+    { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
+  ]);
 }
 
 function runInit(c: Ctx): number {
@@ -313,8 +291,6 @@ function main(): number {
       yes: { type: "boolean", short: "y" },
       force: { type: "boolean" },
       cc: { type: "boolean" },
-      cursor: { type: "boolean" },
-      codex: { type: "boolean" },
       profile: { type: "string" },
     },
   });
@@ -353,8 +329,6 @@ function main(): number {
     yes: !!values.yes,
     force: !!values.force,
     cc: !!values.cc,
-    cursor: !!values.cursor,
-    codex: !!values.codex,
     profile: typeof values.profile === "string" ? values.profile : undefined,
   };
 
