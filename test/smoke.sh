@@ -46,6 +46,10 @@ PROJ="$(mktemp -d)"
 [ ! -e "$PROJ/CLAUDE.md" ] || { echo "FAIL: CLAUDE.md must be inside .claude, not root"; exit 1; }
 grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: .claude/CLAUDE.md must import ../AGENTS.md"; exit 1; }
 grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing wiring-check marker"; exit 1; }
+# cursor bridge — always-apply rule pointing at AGENTS.md
+[ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: .cursor/rules/000-agents.mdc missing"; exit 1; }
+grep -q "alwaysApply: true" "$PROJ/.cursor/rules/000-agents.mdc" || { echo "FAIL: cursor rule must alwaysApply"; exit 1; }
+grep -q "AGENTS.md" "$PROJ/.cursor/rules/000-agents.mdc" || { echo "FAIL: cursor rule must reference AGENTS.md"; exit 1; }
 rm -rf "$PROJ"
 
 # setup --cc (claude-code) == init — AGENTS.md (canonical) + .claude/ (bridge + real config)

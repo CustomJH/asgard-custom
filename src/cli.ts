@@ -196,7 +196,7 @@ function scaffold(c: Ctx, label: string, files: File[]): number {
 function agentsMd(name: string | undefined): string {
   return `# ${name} — Agent Guide
 
-Managed by Asgard. Canonical instructions for coding agents — read natively by Codex and Cursor, and by Claude Code via the .claude/CLAUDE.md import.
+Managed by Asgard. Canonical instructions for coding agents — read natively by Codex, and bridged to Claude Code (.claude/CLAUDE.md) and Cursor (.cursor/rules/000-agents.mdc).
 
 ## Conventions
 <!-- Add project conventions, build/test commands, and architecture notes here. -->
@@ -218,11 +218,24 @@ function ccSettings(): string {
   }, null, 2) + "\n";
 }
 
-// AGENTS.md is always canonical (Codex + Cursor read it natively; Claude Code reads it via the
-// .claude/CLAUDE.md import). --cc adds the Claude Code project config on top.
-// setup       → AGENTS.md + .claude/CLAUDE.md (bridge)
+// Cursor bridge (cursor.com/docs/context/rules): an always-apply project rule pointing at the
+// canonical AGENTS.md. Cursor also reads AGENTS.md natively, but the explicit rule guarantees it
+// loads and mirrors the Claude Code bridge — one source of truth, wired to every tool.
+function cursorRule(): string {
+  return `---
+description: Canonical project instructions (Asgard)
+alwaysApply: true
+---
+
+Follow the canonical project instructions in \`AGENTS.md\` at the repo root.
+`;
+}
+
+// AGENTS.md is always canonical. Codex reads it natively at the repo root; Claude Code and Cursor
+// each get a thin bridge to it. --cc adds the Claude Code project config on top.
+// setup       → AGENTS.md + .claude/CLAUDE.md + .cursor/rules/000-agents.mdc (all agents)
 // setup --cc  → same + .claude/settings.json (perms) + .claude/.gitignore   [init = setup --cc]
-// Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/guides/agents-md · cursor.com/docs/rules
+// Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/guides/agents-md · cursor.com/docs/context/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
   const name = root.split(/[/\\]/).pop();
@@ -232,6 +245,7 @@ function runSetup(c: Ctx): number {
   const files: File[] = [
     { path: join(root, "AGENTS.md"), content: agentsMd(name) },
     { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
+    { path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() },
   ];
   if (cc) files.push(
     { path: join(root, ".claude", "settings.json"), content: ccSettings() },
