@@ -128,6 +128,46 @@ process.exit(0);
 `;
 }
 
+// Cursor git-guard — Cursor's beforeShellExecution hook has a DIFFERENT contract than Claude/Codex:
+// command is a TOP-LEVEL stdin field (.command, not .tool_input.command), and a block is a stdout
+// JSON {"permission":"deny",...} (camelCase) with exit 0 — NOT exit 2. Fail-open → {"permission":"allow"}.
+export function cursorGitGuard(): string {
+  return `#!/usr/bin/env node
+// Asgard git-guard (Cursor) — Canon Law 3/6. beforeShellExecution: block via stdout JSON, exit 0.
+import { readFileSync } from "node:fs";
+function out(o) { process.stdout.write(JSON.stringify(o)); process.exit(0); }
+let cmd = "";
+try { cmd = String(JSON.parse(readFileSync(0, "utf8")).command ?? ""); } catch { out({ permission: "allow" }); }
+const BLOCK = [
+  [/\\bgit\\s+push\\b[^|;&]*\\s-(-force\\b|f\\b)/, "force-push"],
+  [/\\bgit\\s+push\\b[^|;&]*--force-with-lease\\b/, "force-push"],
+  [/\\bgit\\s+reset\\s+--hard\\b/, "reset --hard"],
+  [/\\bgit\\s+clean\\s+-[a-zA-Z]*f/, "clean -f"],
+  [/\\bgit\\s+branch\\s+-D\\b/, "branch -D"],
+  [/\\bgit\\s+(rebase|filter-branch|filter-repo)\\b/, "history rewrite"],
+  [/\\bgit\\s+update-ref\\s+-d\\b/, "update-ref -d"],
+  [/\\bgit\\s+(stash\\s+(drop|clear)|reflog\\s+(delete|expire))\\b/, "drop history"],
+];
+for (const [re, label] of BLOCK) {
+  if (re.test(cmd)) out({
+    permission: "deny",
+    userMessage: "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
+    agentMessage: "This " + label + " was blocked by the Asgard Canon (Law 3/6). Get Odin's explicit per-action consent; do not retry.",
+  });
+}
+out({ permission: "allow" });
+`;
+}
+
+// Cursor hooks manifest — wires the beforeShellExecution guard. Project hooks run from the repo root,
+// need node, and only load in a trusted workspace (cursor.com/docs/hooks).
+export function cursorHooksJson(): string {
+  return JSON.stringify({
+    version: 1,
+    hooks: { beforeShellExecution: [{ command: "node .cursor/hooks/git-guard.mjs" }] },
+  }, null, 2) + "\n";
+}
+
 // Foundational .claude/ subdirectories. Each is scaffolded with a README (git tracks it + it's
 // self-documenting) so a fresh --cc project has the full Claude Code skeleton ready to fill in.
 export const CC_FOLDERS: [string, string][] = [
@@ -184,5 +224,21 @@ matcher = "^Bash$"
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = 'node "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.mjs"'
+`;
+}
+
+// Codex Rules (developers.openai.com/codex/rules) — a native, deterministic, trust-gated command
+// policy (Starlark). Prefix rules match leading tokens, so this is defense-in-depth for the common
+// forms; the regex git-guard hook catches flexible orderings. Node-free, so it holds even without node.
+export function codexRules(): string {
+  return `# Asgard Canon — Codex command-execution rules (Law 3/6). Trust-gated; most-restrictive wins.
+# Docs: https://developers.openai.com/codex/rules  ·  prefix_rule matches the command's leading tokens.
+prefix_rule(pattern=["git", "push", "--force"], decision="forbidden", justification="Asgard Canon Law 3/6 — force-push needs Odin's explicit consent")
+prefix_rule(pattern=["git", "push", "-f"], decision="forbidden", justification="Asgard Canon Law 3/6 — force-push")
+prefix_rule(pattern=["git", "reset", "--hard"], decision="prompt", justification="Asgard Canon Law 3/6 — irreversible; confirm first")
+prefix_rule(pattern=["git", "clean", "-f"], decision="prompt", justification="Asgard Canon Law 3/6 — deletes untracked files")
+prefix_rule(pattern=["git", "clean", "-fd"], decision="prompt", justification="Asgard Canon Law 3/6 — deletes untracked files/dirs")
+prefix_rule(pattern=["git", "branch", "-D"], decision="prompt", justification="Asgard Canon Law 3/6 — force-deletes a branch")
+prefix_rule(pattern=["git", "rebase"], decision="prompt", justification="Asgard Canon Law 3/6 — history rewrite")
 `;
 }

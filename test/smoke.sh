@@ -95,6 +95,15 @@ for _d in skills hooks; do
   [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor missing .cursor/$_d/README.md"; exit 1; }
 done
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude (scoped to cursor)"; exit 1; }
+# Cursor Canon guard — beforeShellExecution hook (deny via stdout JSON, not exit 2)
+grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor hooks.json missing beforeShellExecution"; exit 1; }
+[ -f "$PROJ/.cursor/hooks/git-guard.mjs" ] || { echo "FAIL: --cursor missing .cursor/hooks/git-guard.mjs"; exit 1; }
+if command -v node >/dev/null 2>&1; then
+  node --check "$PROJ/.cursor/hooks/git-guard.mjs" || { echo "FAIL: cursor git-guard invalid"; exit 1; }
+  printf '%s' '{"command":"git push --force"}' | node "$PROJ/.cursor/hooks/git-guard.mjs" | grep -q '"permission":"deny"' || { echo "FAIL: cursor guard must deny force-push"; exit 1; }
+  printf '%s' '{"command":"git status"}'      | node "$PROJ/.cursor/hooks/git-guard.mjs" | grep -q '"permission":"allow"' || { echo "FAIL: cursor guard must allow git status"; exit 1; }
+  printf '%s' 'not-json'                        | node "$PROJ/.cursor/hooks/git-guard.mjs" | grep -q '"permission":"allow"' || { echo "FAIL: cursor guard must fail-open"; exit 1; }
+fi
 rm -rf "$PROJ"
 
 # setup --codex — .codex/config.toml (root AGENTS.md native; only per-project config surface)
@@ -107,6 +116,8 @@ grep -q "config-reference" "$PROJ/.codex/config.toml" || { echo "FAIL: --codex c
 # Codex Canon guard — PreToolUse hook wired + shared git-guard present
 grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex config.toml missing PreToolUse hook"; exit 1; }
 [ -f "$PROJ/.codex/hooks/git-guard.mjs" ] || { echo "FAIL: --codex missing .codex/hooks/git-guard.mjs"; exit 1; }
+# Codex native command rules (defense-in-depth alongside the hook)
+[ -f "$PROJ/.codex/rules/canon.rules" ] && grep -q "prefix_rule" "$PROJ/.codex/rules/canon.rules" || { echo "FAIL: --codex missing .codex/rules/canon.rules"; exit 1; }
 if command -v node >/dev/null 2>&1; then
   printf '%s' '{"tool_input":{"command":"git push --force"}}' | node "$PROJ/.codex/hooks/git-guard.mjs" 2>/dev/null && { echo "FAIL: codex git-guard must block force-push"; exit 1; } || true
 fi

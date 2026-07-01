@@ -6,7 +6,7 @@ import { rmSync, lstatSync, mkdirSync, writeFileSync, readFileSync, existsSync, 
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import pkg from "../package.json" with { type: "json" };
-import { agentsMd, ccSettings, gitGuard, secretGuard, CC_FOLDERS, cursorRule, CURSOR_FOLDERS, codexConfig } from "./templates.ts";
+import { agentsMd, ccSettings, gitGuard, secretGuard, CC_FOLDERS, cursorRule, cursorGitGuard, cursorHooksJson, CURSOR_FOLDERS, codexConfig, codexRules } from "./templates.ts";
 
 const VERSION: string = (pkg as { version?: string }).version ?? "0.0.0";
 const RUNTIME: string = (process.versions as { bun?: string }).bun
@@ -333,16 +333,24 @@ function runSetup(c: Ctx): number {
   // Cursor — always-apply rule bridge when universal or targeted; skeleton folders only when targeted.
   const cursorFiles: File[] = [];
   if (universal || cursor) cursorFiles.push({ path: join(root, ".cursor", "rules", "000-agents.mdc"), content: cursorRule() });
-  if (cursor)
+  if (cursor) {
     for (const [dir, desc] of CURSOR_FOLDERS)
       cursorFiles.push({ path: join(root, ".cursor", dir, "README.md"), content: `# .cursor/${dir}/\n\n${desc}\n` });
+    // Canon enforcement — Cursor's beforeShellExecution guard (different schema than Claude/Codex).
+    cursorFiles.push(
+      { path: join(root, ".cursor", "hooks.json"), content: cursorHooksJson() },
+      { path: join(root, ".cursor", "hooks", "git-guard.mjs"), content: cursorGitGuard() },
+    );
+  }
   if (cursorFiles.length) stages.push({ title: "Cursor", note: cursor ? ".cursor/ — rules, skills, hooks" : ".cursor/ — rule bridge", files: cursorFiles });
 
-  // Codex reads root AGENTS.md natively — --codex adds project config + a PreToolUse git-guard
-  // (Codex hooks share Claude Code's stdin schema, so the same guard script enforces the Canon).
-  if (codex) stages.push({ title: "Codex", note: ".codex/config.toml + git-guard", files: [
+  // Codex reads root AGENTS.md natively — --codex adds project config + a PreToolUse git-guard +
+  // native command rules (defense-in-depth). Hooks share Claude Code's stdin schema (same script);
+  // rules are Starlark (node-free), so the Canon holds even without node.
+  if (codex) stages.push({ title: "Codex", note: ".codex/ — config, git-guard, rules", files: [
     { path: join(root, ".codex", "config.toml"), content: codexConfig() },
     { path: join(root, ".codex", "hooks", "git-guard.mjs"), content: gitGuard() },
+    { path: join(root, ".codex", "rules", "canon.rules"), content: codexRules() },
   ] });
 
   const tools = [cc && "claude-code", cursor && "cursor", codex && "codex"].filter(Boolean);
