@@ -20,9 +20,9 @@ RELEASE_BASE="${ASGARD_RELEASE_BASE:-https://github.com/CustomJH/asgard-custom/r
 
 # ── palette — disabled when stdout is not a tty or NO_COLOR is set ─────────────
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
-  TTY=1; B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; C=$'\033[36m'; M=$'\033[35m'; X=$'\033[0m'
+  TTY=1; B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; C=$'\033[36m'; M=$'\033[35m'; W=$'\033[97m'; X=$'\033[0m'
 else
-  TTY=0; B=; D=; G=; Y=; R=; C=; M=; X=
+  TTY=0; B=; D=; G=; Y=; R=; C=; M=; W=; X=
 fi
 
 ok()   { printf '  %s✔%s %s\n' "$G" "$X" "$*"; }
@@ -39,11 +39,12 @@ banner() {
   printf '\n'
   if [ "$TTY" = 1 ] && [ "${ASGARD_NO_IMAGE:-0}" != 1 ] && _logo; then
     _ver_line "$v" 38
+    printf '  %s· make anything, your way%s\n\n' "$D" "$X"
   else
-    _logo_art     # universal emblem + wordmark — renders in any terminal, any background
-    _ver_line "$v" 69
+    _logo_art     # universal mark + wordmark — renders in any terminal, any background
+    _ver_line "$v" 58
+    printf '%*s%s· make anything, your way%s\n\n' 18 "" "$D" "$X"
   fi
-  printf '  %s· make anything, your way%s\n\n' "$D" "$X"
 }
 
 # _version — best-effort asgard version for the splash, auto-tracking the current release:
@@ -66,18 +67,25 @@ _ver_line() {
   printf '%*s%s%s%s\n' "$pad" "" "$D" "$tag" "$X"
 }
 
-# _logo_art — universal fallback where inline images aren't supported: a compact braille tree
-# emblem (from the Yggdrasil mark) + the ASGARD wordmark. Brand tint when colored, else the
-# terminal's default fg → readable on any background.
+# _logo_art — universal fallback where inline images aren't supported: the Yggdrasil mark +
+# the ASGARD wordmark, both braille-rendered from the brand art (real letterforms) + a divider,
+# in white. Under NO_COLOR the tint is empty → terminal's default fg.
 _logo_art() {
-  printf '%s' "$M"
+  printf '%s' "$W"
   cat <<'ART'
-  ⠀⠀⠀⠀⢀⡤⣶⣶⣶⣲⠤⣀⠀⠀⠀⠀   █████╗ ███████╗ ██████╗  █████╗ ██████╗ ██████╗
-  ⠀⠀⢀⣼⣽⣻⡟⣿⣷⢫⣟⣯⣧⡀⠀⠀  ██╔══██╗██╔════╝██╔════╝ ██╔══██╗██╔══██╗██╔══██╗
-  ⠀⠀⣸⢽⣦⡷⣻⣻⡟⣟⢾⣴⣯⣧⠀⠀  ███████║███████╗██║  ███╗███████║██████╔╝██║  ██║
-  ⠀⠀⢻⠽⠇⠁⣸⢸⡇⣷⠈⠸⠯⡟⠀⠀  ██╔══██║╚════██║██║   ██║██╔══██║██╔══██╗██║  ██║
-  ⠀⠀⠈⢳⣲⣶⡿⣾⣷⢿⣶⣖⡞⠁⠀⠀  ██║  ██║███████║╚██████╔╝██║  ██║██║  ██║██████╔╝
-  ⠀⠀⠀⠀⠈⠓⠻⠯⠵⠟⠚⠉⠀⠀⠀⠀  ╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝
+                        ⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
+                        ⠀⠀⢀⣴⣿⣿⣿⣿⣶⡀⠀⠀
+                        ⠀⢀⣿⣿⣿⣾⣷⡿⣿⣿⡄⠀
+                        ⠀⠘⡞⠃⢸⣿⣷⡇⠘⢻⠃⠀
+                        ⠀⠀⠈⠻⣿⣿⣯⣿⠿⠃⠀⠀
+                        ⠀⠀⠀⠀⠀⠈⠁⠀⠀⠀⠀⠀
+  ⠀⠀⠀⠀⣴⠀⠀⠀⠀⠀⠀⠀⢀⣤⣶⣤⡀⠀⠀⠀⠀⠀⣠⣶⣄⡀⠀⠀⠀⠀⠀⠀⢠⣆⠀⠀⠀⠀⠀⠲⣶⣶⣶⣦⡀⠀⠀⠀⠰⣶⣶⣄⡀⠀⠀⠀
+  ⠀⠀⠀⣼⣿⣧⠀⠀⠀⠀⠀⣴⣿⠋⠀⠙⠋⠀⠀⠀⣠⣾⠟⠉⠙⠋⠀⠀⠀⠀⠀⢀⣾⣿⡆⠀⠀⠀⠀⠀⣿⡇⠀⠈⢻⣦⠀⠀⠀⢸⡏⠙⢿⣦⡀⠀
+  ⠀⠀⢰⣿⠉⣿⣆⠀⠀⠀⠀⠈⠻⢷⣦⡀⠀⠀⠀⢸⣿⠁⠀⠀⢀⣀⣀⠀⠀⠀⠀⣼⡟⠹⣿⡄⠀⠀⠀⠀⣿⡇⢀⣴⡿⠋⠀⠀⠀⢸⡇⠀⠀⠙⣿⡆
+  ⠀⢠⣿⠃⣀⠘⣿⡄⠀⠀⠀⠀⠀⠀⠙⠻⣷⡄⠀⠘⢿⣤⡀⠀⠈⣿⡏⠀⠀⠀⣸⡿⢁⡀⢹⣷⠀⠀⠀⠀⣿⡿⠻⣿⡀⠀⠀⠀⠀⢸⡇⠀⢀⣴⡿⠁
+  ⢀⣾⡏⠘⠿⠃⢹⣿⡀⠀⠀⢶⣦⣤⣴⡿⠋⠀⠀⠀⠀⠙⢿⣦⣤⣿⡇⠀⠀⣰⣿⠃⠙⠟⠀⢻⣧⠀⠀⢀⣿⡇⠀⠙⢿⣆⠀⠀⠀⣸⣧⣴⠟⠋⠀⠀
+  ⠉⠉⠉⠀⠀⠀⠈⠉⠉⠀⠀⠀⠈⠉⠁⠀⠀⠀⠀⠀⠀⠀⠀⠉⠉⠟⠁⠀⠈⠉⠉⠁⠀⠀⠀⠉⠉⠁⠀⠉⠉⠉⠀⠀⠀⠉⠁⠀⠈⠉⠉⠁⠀⠀⠀⠀
+  ────────────────────────── ◇ ──────────────────────────
 ART
   printf '%s' "$X"
 }
