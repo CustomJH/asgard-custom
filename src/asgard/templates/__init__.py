@@ -8,7 +8,7 @@ from .agents import agents_md
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
 from .cursor import CURSOR_FOLDERS, cursor_git_guard, cursor_hooks_json, cursor_rule
-from .guards import git_guard, secret_guard
+from .guards import failure_tracker, git_guard, secret_guard
 
 __all__ = [
     "agents_md",
@@ -20,6 +20,7 @@ __all__ = [
     "cursor_git_guard",
     "cursor_hooks_json",
     "CURSOR_FOLDERS",
+    "failure_tracker",
     "git_guard",
     "secret_guard",
 ]

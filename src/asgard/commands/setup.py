@@ -17,6 +17,7 @@ from ..templates import (
     cursor_git_guard,
     cursor_hooks_json,
     cursor_rule,
+    failure_tracker,
     git_guard,
     secret_guard,
 )
@@ -70,13 +71,14 @@ def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
     if cc:
         files += [
             (j(root, ".claude", "settings.json"), cc_settings()),
-            (j(root, ".claude", ".gitignore"), "settings.local.json\n"),
+            (j(root, ".claude", ".gitignore"), "settings.local.json\n.asgard/\n"),  # .asgard/ = per-session hook state
         ]
         for d, desc in CC_FOLDERS:
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
         files += [
             (j(root, ".claude", "hooks", "git-guard.py"), git_guard()),
             (j(root, ".claude", "hooks", "secret-guard.py"), secret_guard()),
+            (j(root, ".claude", "hooks", "failure-tracker.py"), failure_tracker()),
         ]
 
     # Cursor — always-apply rule bridge when universal or targeted; skeleton + guard only when targeted.

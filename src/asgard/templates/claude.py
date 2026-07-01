@@ -26,6 +26,10 @@ def cc_settings() -> str:
                     {"matcher": "Bash", "hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.py"'}]},
                     {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"'}]},
                 ],
+                # Canon Law 9 — soft 3-strike loop warning (never blocks). All tools.
+                "PostToolUse": [
+                    {"matcher": "*", "hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/failure-tracker.py"'}]},
+                ],
             },
         },
         indent=2,

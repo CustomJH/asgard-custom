@@ -12,7 +12,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 # ── money path: install as a uv tool into an isolated prefix, verify it lands on PATH ──
 export UV_TOOL_DIR="$TMP/uvtools" UV_TOOL_BIN_DIR="$TMP/uvbin"
-uv tool install --python 3.14 "$REPO" >/dev/null 2>&1 || { echo "FAIL: uv tool install"; exit 1; }
+uv tool install --python 3.14 --refresh-package asgard "$REPO" >/dev/null 2>&1 || { echo "FAIL: uv tool install"; exit 1; }
 export PATH="$UV_TOOL_BIN_DIR:$PATH"
 command -v asgard >/dev/null || { echo "FAIL: asgard not on PATH after uv tool install"; exit 1; }
 
@@ -72,6 +72,17 @@ printf '%s' '{"tool_input":{"command":"git push --force"}}' | python3 "$PROJ/.cl
 printf '%s' '{"tool_input":{"command":"git status"}}'      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must allow git status"; exit 1; }
 printf '%s' 'not-json'                                      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must fail-open"; exit 1; }
 printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | python3 "$PROJ/.claude/hooks/secret-guard.py" 2>/dev/null && { echo "FAIL: secret-guard must block .env"; exit 1; } || true
+# Canon Law 9 failure-tracker (PostToolUse) — soft 3-strike warn, normalized signature, fail-open
+grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing PostToolUse"; exit 1; }
+[ -f "$PROJ/.claude/hooks/failure-tracker.py" ] || { echo "FAIL: --cc missing failure-tracker.py"; exit 1; }
+python3 -m py_compile "$PROJ/.claude/hooks/failure-tracker.py" || { echo "FAIL: failure-tracker invalid Python"; exit 1; }
+grep -q '\.asgard/' "$PROJ/.claude/.gitignore" || { echo "FAIL: .gitignore must exclude .asgard/"; exit 1; }
+_FT="$PROJ/.claude/hooks/failure-tracker.py"
+_FAIL='{"tool_name":"Bash","session_id":"smoke","tool_response":{"is_error":true,"error":"cannot open /p/a1: e1"}}'
+for _i in 1 2; do printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' && { echo "FAIL: failure-tracker warned too early"; exit 1; } || true; done
+printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' || { echo "FAIL: failure-tracker must warn on 3rd"; exit 1; }
+printf '%s' 'not-json' | python3 "$_FT" >/dev/null 2>&1 || { echo "FAIL: failure-tracker must fail-open"; exit 1; }
+rm -rf "$PROJ/.claude/.asgard"
 if ( cd "$PROJ" && "${ASG[@]}" init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing"; exit 1; fi
 ( cd "$PROJ" && "${ASG[@]}" init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
@@ -113,4 +124,4 @@ rm -rf "$PROJ"
 asgard uninstall --yes >/dev/null || { echo "FAIL: uninstall"; exit 1; }
 [ ! -e "$UV_TOOL_BIN_DIR/asgard" ] || { echo "FAIL: asgard shim still present after uninstall"; exit 1; }
 
-echo "PASS: uv-install + version($ver) + help + doctor + completions + setup(cc/cursor/codex) + guards(py) + upgrade + uninstall"
+echo "PASS: uv-install + version($ver) + help + doctor + completions + setup(cc/cursor/codex) + guards(py) + failure-tracker(law9) + upgrade + uninstall"
