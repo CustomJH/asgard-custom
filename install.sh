@@ -140,8 +140,46 @@ _logo() {
 # ── install (CUS-108 Path B): uv-managed. Bootstrap uv → standalone CPython 3.14 → `uv tool install`.
 # The `asgard` command lands on PATH via uv's tool bin (uv tool update-shell wires the shell rc).
 # Wrapped in main() so a truncated `curl | bash` stream can't execute a partial script.
-SPEC="${ASGARD_INSTALL_SPEC:-git+https://github.com/CustomJH/asgard-custom.git}"
-[ -n "${ASGARD_VERSION:-}" ] && SPEC="${SPEC}@v${ASGARD_VERSION}"
+REPO_SLUG="CustomJH/asgard-custom"
+
+# bootstrap_uv — install uv the way that fits the host, so a missing runtime self-heals per-OS.
+# Astral's script covers Linux + macOS; if curl|sh is blocked, fall back to Homebrew (macOS) or pip.
+bootstrap_uv() {
+  spin "bootstrapping uv…" bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' && return 0
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) command -v brew >/dev/null 2>&1 && spin "uv via Homebrew…" brew install uv && return 0 ;;
+  esac
+  command -v pip3 >/dev/null 2>&1 && spin "uv via pip…" pip3 install --user uv && return 0
+  return 1
+}
+
+# latest_version — newest published release tag (vX.Y.Z → X.Y.Z) via the /releases/latest redirect.
+# No API token, no git. Used to resolve the wheel to install when ASGARD_VERSION isn't pinned.
+latest_version() {
+  curl -fsSLI -o /dev/null -w '%{url_effective}' "https://github.com/$REPO_SLUG/releases/latest" 2>/dev/null \
+    | sed -n 's#.*/tag/v\([0-9][0-9.]*\).*#\1#p'
+}
+
+# resolve_install_source — decide where `uv tool install` pulls asgard from; sets globals FROM and
+# INSTALL_SRC_DESC (must not run in a subshell — command substitution would lose the assignments).
+# Priority:
+#   1) local checkout (dev / sandbox) — pyproject.toml next to this script
+#   2) ASGARD_INSTALL_SPEC override (any uv-installable spec)
+#   3) release wheel by version — pure-python, needs NO git or compiler on the host (the default)
+FROM=""; INSTALL_SRC_DESC=""
+resolve_install_source() {
+  if [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/pyproject.toml" ]; then
+    FROM="$SRC_DIR"; INSTALL_SRC_DESC="local checkout"; return 0
+  fi
+  if [ -n "${ASGARD_INSTALL_SPEC:-}" ]; then
+    FROM="$ASGARD_INSTALL_SPEC"; INSTALL_SRC_DESC="custom spec"; return 0
+  fi
+  local v="${ASGARD_VERSION:-$(latest_version)}"
+  [ -n "$v" ] || return 1
+  FROM="https://github.com/$REPO_SLUG/releases/download/v${v}/asgard-${v}-py3-none-any.whl"
+  INSTALL_SRC_DESC="v$v wheel"
+  return 0
+}
 
 main() {
   SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
@@ -166,8 +204,7 @@ main() {
   # ── [2/3] install — bootstrap the toolchain (uv → CPython 3.14), then install asgard. ──
   phase "install · toolchain + asgard"
   if [ "$have_uv" = 0 ]; then
-    spin "bootstrapping uv…" bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' \
-      || die "uv install failed. Manual: https://astral.sh/uv"
+    bootstrap_uv || die "uv install failed. Install manually: https://docs.astral.sh/uv/getting-started/installation/"
     export PATH="$HOME/.local/bin:$PATH"
     command -v uv >/dev/null 2>&1 || die "uv not on PATH — add ~/.local/bin and re-run."
     ok "uv ${D}$(uv --version 2>/dev/null | awk '{print $2}')${X}"
@@ -175,10 +212,9 @@ main() {
   spin "preparing python 3.14…" uv python install 3.14 \
     || warn "Python 3.14 pre-install skipped (uv fetches on demand)."
   ok "python ${D}3.14${X}"
-  # asgard as a uv tool — from a local checkout when present, else the git repo.
-  FROM="$SPEC"
-  [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/pyproject.toml" ] && FROM="$SRC_DIR"
-  spin "installing asgard…" uv tool install --force --python 3.14 "$FROM" \
+  # asgard as a uv tool — release wheel by default (no git/compiler needed); local checkout for dev.
+  resolve_install_source || die "could not resolve a version to install (network down?). Pin ASGARD_VERSION=X.Y.Z and retry."
+  spin "installing asgard (${INSTALL_SRC_DESC})…" uv tool install --force --python 3.14 "$FROM" \
     || die "install failed: $FROM"
   uv tool update-shell >/dev/null 2>&1 || true
   export PATH="$HOME/.local/bin:$PATH"
