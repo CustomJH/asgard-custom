@@ -142,6 +142,32 @@ _logo() {
 # Wrapped in main() so a truncated `curl | bash` stream can't execute a partial script.
 REPO_SLUG="CustomJH/asgard-custom"
 
+# pkg_install <pkg…> — install OS packages via whatever manager the host has (CUS-112). Uses sudo
+# when not root and sudo exists. Returns nonzero if no known manager or the install fails — caller
+# decides whether that's fatal. Runs cleanly inside spin's background subshell (inherits functions).
+pkg_install() {
+  local sudo=""; [ "$(id -u 2>/dev/null)" = 0 ] || { command -v sudo >/dev/null 2>&1 && sudo="sudo"; }
+  if   command -v apt-get >/dev/null 2>&1; then $sudo apt-get update -qq && $sudo apt-get install -y -qq "$@"
+  elif command -v dnf     >/dev/null 2>&1; then $sudo dnf install -y -q "$@"
+  elif command -v yum     >/dev/null 2>&1; then $sudo yum install -y -q "$@"
+  elif command -v pacman  >/dev/null 2>&1; then $sudo pacman -Sy --noconfirm "$@"  # -Sy (not -Syu): only refresh, add pkg
+  elif command -v apk     >/dev/null 2>&1; then $sudo apk add --no-cache "$@"
+  elif command -v zypper  >/dev/null 2>&1; then $sudo zypper -q install -y "$@"
+  elif command -v brew    >/dev/null 2>&1; then brew install "$@"
+  else return 1; fi
+}
+
+# ensure_curl — curl is the one hard dependency (fetches uv, and optionally the logo, over https).
+# Minimal hosts may lack it; provision it per-OS instead of dead-ending. Best-effort → the caller
+# fails with a manual instruction if this can't recover, never bricks the session.
+ensure_curl() {
+  command -v curl >/dev/null 2>&1 && return 0
+  info "curl ${D}absent — provisioning per-OS${X}"
+  spin "installing curl…" pkg_install curl ca-certificates \
+    || spin "installing curl…" pkg_install curl || true   # ca-certificates pkg name varies; curl alone as fallback
+  command -v curl >/dev/null 2>&1
+}
+
 # bootstrap_uv — install uv the way that fits the host, so a missing runtime self-heals per-OS.
 # Astral's script covers Linux + macOS; if curl|sh is blocked, fall back to Homebrew (macOS) or pip.
 bootstrap_uv() {
@@ -185,9 +211,9 @@ main() {
   SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
   banner
 
-  # ── [1/3] preflight — confirm the host can install before we touch anything. ──
+  # ── [1/3] preflight — confirm (and, where possible, provision) prerequisites before we touch anything. ──
   phase "preflight · check environment"
-  command -v curl >/dev/null 2>&1 || die "curl required (installer fetches uv over https). Install curl, re-run."
+  ensure_curl || die "curl required (installer fetches uv over https) and auto-install failed. Install curl + ca-certificates, re-run."
   ok "curl ${D}present${X}"
   local os arch have_uv=0
   os="$(uname -s 2>/dev/null || echo '?')"; arch="$(uname -m 2>/dev/null || echo '?')"
