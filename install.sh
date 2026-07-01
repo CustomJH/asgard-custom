@@ -46,9 +46,13 @@ banner() {
 _logo() {
   command -v base64 >/dev/null 2>&1 || return 1
   local proto=""
-  case "${TERM_PROGRAM:-}" in iTerm.app|WezTerm) proto=iterm ;; ghostty|Ghostty) proto=kitty ;; esac
-  case "${TERM:-}" in *kitty*) proto=kitty ;; esac
+  case "${TERM_PROGRAM:-}" in
+    iTerm.app|WezTerm) proto=iterm ;;
+    kitty|ghostty|Ghostty) proto=kitty ;;
+  esac
+  case "${TERM:-}" in *kitty*|*ghostty*) proto=kitty ;; esac
   [ -n "${KITTY_WINDOW_ID:-}" ] && proto=kitty
+  [ -n "${GHOSTTY_RESOURCES_DIR:-}" ] && proto=kitty
   [ "${LC_TERMINAL:-}" = iTerm2 ] && proto=iterm
   [ -n "$proto" ] || return 1
 
@@ -84,7 +88,7 @@ _logo() {
 # would slice one byte out of a 3-byte braille char under a C/POSIX locale → garbled ''.
 spin() {
   local pid=$1 label=$2 rc i=0
-  local fr=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+  local fr=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
   if [ "$TTY" != 1 ]; then
     printf '  %s→%s %s\n' "$C" "$X" "$label"
     wait "$pid"; return $?
@@ -104,7 +108,7 @@ spin() {
 # Always call as `download ... || die` so set -e is ignored inside (lets us capture wait's rc).
 download() {
   local url=$1 dest=$2 label=$3 total sz pct rc pid i=0
-  local fr=(⠋ ⠙ ⠹ ⠸ ⠼ ⠴ ⠦ ⠧ ⠇ ⠏)
+  local fr=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
   total="$(curl -fsSLI --max-time 15 "$url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1}/^content-length:/{v=$2} END{gsub(/\r/,"",v);print v}' || true)"
   curl -fsSL -o "$dest" "$url" & pid=$!
   if [ "$TTY" != 1 ]; then
