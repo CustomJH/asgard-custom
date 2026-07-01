@@ -190,62 +190,92 @@ detect_asset() {
   printf 'asgard-%s-%s' "$os" "$arch"
 }
 
-# SRC_DIR resolved before the banner so a source checkout can render the local logo asset.
-SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
-banner
-mkdir -p "$ASGARD_HOME/bin" "$BIN_DIR"
-
-# obtain the self-contained binary (precedence: explicit URL → local build → release download)
-if [ -n "$DL" ]; then
-  download "$DL" "$DEST" "fetching binary" || die "download failed: $DL"
-  chmod +x "$DEST"
-elif [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/src/cli.ts" ] && command -v bun >/dev/null 2>&1; then
-  ( cd "$SRC_DIR" && bun build src/cli.ts --compile --outfile "$DEST" >/dev/null 2>&1 ) & spin $! "building binary (bun --compile)" || die "build failed."
-else
-  asset="$(detect_asset)"
-  if [ -n "${ASGARD_VERSION:-}" ]; then
-    url="https://github.com/CustomJH/asgard-custom/releases/download/v${ASGARD_VERSION}/$asset"   # pin a version
-  else
-    url="$RELEASE_BASE/$asset"
+# verify_checksum <file> <asset> <sums_url> — fail-closed SHA256 verify against the release's
+# SHA256SUMS. If SHA256SUMS is unavailable (older release) → warn + proceed, unless
+# ASGARD_REQUIRE_VERIFY=1. Skip entirely with ASGARD_NO_VERIFY=1. Only the release path calls this.
+verify_checksum() {
+  local file=$1 asset=$2 sums_url=$3 want have sums
+  [ "${ASGARD_NO_VERIFY:-0}" = 1 ] && { warn "checksum verify skipped ${D}(ASGARD_NO_VERIFY=1)${X}"; return 0; }
+  sums="$(curl -fsSL --max-time 15 "$sums_url" 2>/dev/null || true)"
+  if [ -z "$sums" ]; then
+    [ "${ASGARD_REQUIRE_VERIFY:-0}" = 1 ] && die "checksums unavailable: $sums_url"
+    warn "checksums unavailable — skipping verify ${D}($sums_url)${X}"; return 0
   fi
-  download "$url" "$DEST" "downloading $asset" || die "download failed: $url"
-  chmod +x "$DEST"
-fi
-[ -x "$DEST" ] || die "binary missing at $DEST."
-VERSION="$("$DEST" --version 2>/dev/null || echo 0.0.0)"
-ok "asgard ${B}v$VERSION${X}  ${D}$DEST${X}"
-
-# link onto PATH
-ln -sfn "$DEST" "$BIN_DIR/asgard"
-ok "linked  ${D}$BIN_DIR/asgard${X}"
-
-# PATH: if BIN_DIR isn't on PATH, add a guarded block to the shell rc (removed by `asgard uninstall`).
-# Skip with ASGARD_NO_RC=1 (used by tests / when you manage PATH yourself).
-on_path=0; case ":$PATH:" in *":$BIN_DIR:"*) on_path=1 ;; esac
-if [ "$on_path" != 1 ]; then
-  rc=""
-  case "$(basename "${SHELL:-}")" in zsh) rc="$HOME/.zshrc" ;; bash) rc="$HOME/.bashrc" ;; esac
-  if [ "${ASGARD_NO_RC:-0}" = 1 ] || [ -z "$rc" ]; then
-    warn "not on PATH — add:  ${C}export PATH=\"$BIN_DIR:\$PATH\"${X}"
-  elif grep -q '>>> asgard >>>' "$rc" 2>/dev/null; then
-    ok "PATH already managed in ${D}$rc${X}"
-  else
-    [ -e "$rc" ] || touch "$rc"
-    printf '\n# >>> asgard >>>\nexport PATH="%s:$PATH"\n# <<< asgard <<<\n' "$BIN_DIR" >> "$rc"
-    ok "PATH added → ${D}$rc${X}  ${D}(removed by: asgard uninstall)${X}"
+  want="$(printf '%s\n' "$sums" | awk -v a="$asset" '$2==a || $2=="*"a {print $1; exit}')"
+  if [ -z "$want" ]; then
+    [ "${ASGARD_REQUIRE_VERIFY:-0}" = 1 ] && die "no checksum entry for $asset"
+    warn "no checksum entry for $asset — skipping verify"; return 0
   fi
-fi
+  if command -v sha256sum >/dev/null 2>&1; then have="$(sha256sum "$file" | awk '{print $1}')"
+  elif command -v shasum >/dev/null 2>&1; then have="$(shasum -a 256 "$file" | awk '{print $1}')"
+  else warn "no sha256 tool — skipping verify"; return 0; fi
+  [ "$want" = "$have" ] || die "checksum MISMATCH for $asset — refusing to install (want ${want%${want#????????}}…, have ${have%${have#????????}}…)"
+  ok "checksum verified  ${D}sha256 ok${X}"
+}
 
-# Node >= 24 advisory (recommended floor; not a gate — the binary runs without it)
-if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ]; then
-  ok "node $(node -v)  ${D}recommended floor met${X}"
-else
-  warn "Node ≥ 24 recommended for Claude Code hooks (later); not needed to run asgard."
-fi
+# main — the imperative install, wrapped so a truncated `curl | bash` stream cannot execute a
+# partial script: nothing runs until bash reaches the final `main "$@"` at EOF.
+main() {
+  # SRC_DIR resolved before the banner so a source checkout can render the local logo asset.
+  SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+  banner
+  mkdir -p "$ASGARD_HOME/bin" "$BIN_DIR"
 
-# summary
-printf '\n  %s✔ installed%s — next:\n' "$G" "$X"
-printf '    %sasgard doctor%s   %s# verify%s\n' "$B" "$X" "$D" "$X"
-printf '    %sasgard --help%s\n' "$B" "$X"
-[ "$on_path" = 1 ] || printf '    %s↳ restart shell (or add %s to PATH) first%s\n' "$D" "$BIN_DIR" "$X"
-printf '\n'
+  # obtain the self-contained binary (precedence: explicit URL → local build → release download)
+  if [ -n "$DL" ]; then
+    download "$DL" "$DEST" "fetching binary" || die "download failed: $DL"
+    chmod +x "$DEST"
+  elif [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/src/cli.ts" ] && command -v bun >/dev/null 2>&1; then
+    ( cd "$SRC_DIR" && bun build src/cli.ts --compile --outfile "$DEST" >/dev/null 2>&1 ) & spin $! "building binary (bun --compile)" || die "build failed."
+  else
+    asset="$(detect_asset)"
+    if [ -n "${ASGARD_VERSION:-}" ]; then
+      url="https://github.com/CustomJH/asgard-custom/releases/download/v${ASGARD_VERSION}/$asset"   # pin a version
+    else
+      url="$RELEASE_BASE/$asset"
+    fi
+    download "$url" "$DEST" "downloading $asset" || die "download failed: $url"
+    verify_checksum "$DEST" "$asset" "${url%/*}/SHA256SUMS"   # fail-closed on tamper/corruption
+    chmod +x "$DEST"
+  fi
+  [ -x "$DEST" ] || die "binary missing at $DEST."
+  VERSION="$("$DEST" --version 2>/dev/null || echo 0.0.0)"
+  ok "asgard ${B}v$VERSION${X}  ${D}$DEST${X}"
+
+  # link onto PATH
+  ln -sfn "$DEST" "$BIN_DIR/asgard"
+  ok "linked  ${D}$BIN_DIR/asgard${X}"
+
+  # PATH: if BIN_DIR isn't on PATH, add a guarded block to the shell rc (removed by `asgard uninstall`).
+  # Skip with ASGARD_NO_RC=1 (used by tests / when you manage PATH yourself).
+  on_path=0; case ":$PATH:" in *":$BIN_DIR:"*) on_path=1 ;; esac
+  if [ "$on_path" != 1 ]; then
+    rc=""
+    case "$(basename "${SHELL:-}")" in zsh) rc="$HOME/.zshrc" ;; bash) rc="$HOME/.bashrc" ;; esac
+    if [ "${ASGARD_NO_RC:-0}" = 1 ] || [ -z "$rc" ]; then
+      warn "not on PATH — add:  ${C}export PATH=\"$BIN_DIR:\$PATH\"${X}"
+    elif grep -q '>>> asgard >>>' "$rc" 2>/dev/null; then
+      ok "PATH already managed in ${D}$rc${X}"
+    else
+      [ -e "$rc" ] || touch "$rc"
+      printf '\n# >>> asgard >>>\nexport PATH="%s:$PATH"\n# <<< asgard <<<\n' "$BIN_DIR" >> "$rc"
+      ok "PATH added → ${D}$rc${X}  ${D}(removed by: asgard uninstall)${X}"
+    fi
+  fi
+
+  # Node >= 24 advisory (recommended floor; not a gate — the binary runs without it)
+  if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ]; then
+    ok "node $(node -v)  ${D}recommended floor met${X}"
+  else
+    warn "Node ≥ 24 recommended for Claude Code hooks (later); not needed to run asgard."
+  fi
+
+  # summary
+  printf '\n  %s✔ installed%s — next:\n' "$G" "$X"
+  printf '    %sasgard doctor%s   %s# verify%s\n' "$B" "$X" "$D" "$X"
+  printf '    %sasgard --help%s\n' "$B" "$X"
+  [ "$on_path" = 1 ] || printf '    %s↳ restart shell (or add %s to PATH) first%s\n' "$D" "$BIN_DIR" "$X"
+  printf '\n'
+}
+
+main "$@"

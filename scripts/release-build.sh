@@ -25,6 +25,10 @@ for entry in "${targets[@]}"; do
   bun build src/cli.ts --compile --target="$target" --outfile "$OUT/$asset"
 done
 
+# SHA256SUMS — install.sh verifies the downloaded binary against this (fail-closed on mismatch).
+( cd "$OUT" && { command -v sha256sum >/dev/null 2>&1 && sha256sum asgard-* || shasum -a 256 asgard-*; } > SHA256SUMS )
+echo "wrote $OUT/SHA256SUMS"
+
 echo
 echo "built into $OUT/:"
 ls -lh "$OUT" | awk 'NR>1 {print "  " $5 "  " $9}'
