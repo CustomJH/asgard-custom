@@ -1,10 +1,12 @@
-# Asgard DEV sandbox — persistent, batteries-included dev box.
-# Install + test Asgard alongside Claude Code / Codex (you install those yourself).
-# Distinct from docker/Dockerfile (the ephemeral clean-room install test).
+# Asgard DEV box — persistent, batteries-included (CUS-108 Path B).
+# Python 3.14 via uv (Asgard's runtime) + node (Claude Code / Codex / cursor-agent CLIs) + dev tools.
+# Install & test Asgard alongside those agents inside it. Distinct from docker/Dockerfile (clean-room).
 FROM node:24-bookworm
 
+# dev tooling — vim, a nice `ll`, ripgrep/fd/bat/fzf/jq/tree, git, build tools, sudo.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      git curl ca-certificates ripgrep python3 build-essential sudo less vim jq \
+      git curl ca-certificates build-essential sudo \
+      vim less jq tree unzip ripgrep fd-find bat fzf \
  && rm -rf /var/lib/apt/lists/*
 
 # non-root user with passwordless sudo (install anything you need)
@@ -13,18 +15,37 @@ RUN useradd -m -s /bin/bash dev \
 USER dev
 WORKDIR /home/dev
 
-# bun — Asgard runtime / build
-RUN curl -fsSL https://bun.sh/install | bash
+# uv — Asgard's Python toolchain; installs a standalone CPython 3.14 (no system Python needed).
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+ && ~/.local/bin/uv python install 3.14
 
-# user-local npm globals so `npm i -g @anthropic-ai/claude-code` / `@openai/codex` need no sudo
-ENV BUN_INSTALL=/home/dev/.bun
-ENV PATH=/home/dev/.npm-global/bin:/home/dev/.bun/bin:/home/dev/.local/bin:/usr/local/bin:/usr/bin:/bin
-RUN npm config set prefix /home/dev/.npm-global \
- && printf '\n# asgard devbox\nexport BUN_INSTALL=/home/dev/.bun\nexport PATH=/home/dev/.npm-global/bin:/home/dev/.bun/bin:/home/dev/.local/bin:$PATH\n' >> /home/dev/.bashrc
+# PATH: uv tool bin (asgard) + user npm globals (claude-code/codex install without sudo).
+ENV PATH=/home/dev/.local/bin:/home/dev/.npm-global/bin:/usr/local/bin:/usr/bin:/bin
+RUN npm config set prefix /home/dev/.npm-global
 
-# login shells: /etc/profile resets PATH, so re-add via profile.d (runs after the reset)
+# dev conveniences: ll/la/l aliases, debian bat/fd naming, editor, PATH for interactive shells.
+RUN cat >> /home/dev/.bashrc <<'RC'
+
+# ── asgard devbox ──
+export PATH=/home/dev/.local/bin:/home/dev/.npm-global/bin:$PATH
+export EDITOR=vim
+alias ll='ls -alF --color=auto'
+alias la='ls -A --color=auto'
+alias l='ls -CF --color=auto'
+alias ..='cd ..'
+alias ...='cd ../..'
+alias gs='git status'
+alias gd='git diff'
+command -v batcat >/dev/null && alias bat='batcat'
+command -v fdfind >/dev/null && alias fd='fdfind'
+# install/refresh asgard from the mounted repo
+alias asgard-install='uv tool install --force --python 3.14 ~/asgard'
+echo "asgard devbox — Python 3.14 (uv) + node $(node -v). install asgard:  asgard-install"
+RC
+
+# login shells reset PATH via /etc/profile — re-add after the reset.
 USER root
-RUN printf 'export BUN_INSTALL=/home/dev/.bun\nexport PATH=/home/dev/.npm-global/bin:/home/dev/.bun/bin:/home/dev/.local/bin:$PATH\n' > /etc/profile.d/asgard-devbox.sh
+RUN printf 'export PATH=/home/dev/.local/bin:/home/dev/.npm-global/bin:$PATH\n' > /etc/profile.d/asgard-devbox.sh
 USER dev
 
 CMD ["bash"]

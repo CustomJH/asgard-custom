@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Asgard DEV sandbox — persistent, batteries-included (node24 + bun + git + build tools + sudo).
-# Install & test Asgard alongside Claude Code / Codex inside it (you install those yourself).
+# Asgard DEV box — persistent, batteries-included (Python 3.14 via uv + node + vim/ll/rg/fzf/git + sudo).
+# Install & test Asgard alongside Claude Code / Codex / cursor-agent inside it.
 #   docker/devbox.sh up       # build + start (repo mounted at ~/asgard)
-#   docker/devbox.sh shell    # open a shell inside
+#   docker/devbox.sh shell    # open a shell inside  →  then: asgard-install
 #   docker/devbox.sh down     # stop + remove
 set -euo pipefail
 
