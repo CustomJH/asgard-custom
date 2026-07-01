@@ -1,18 +1,15 @@
-"""asgard CLI (Python 3.14) — CUS-108 Path B. Phase 1 scaffold: version + help + command shells.
-
-Logic (doctor/setup/upgrade/uninstall/completions) ports in later phases; the TypeScript CLI
-(src/cli.ts) stays authoritative until parity is reached.
-"""
+"""asgard CLI (Python 3.14) — Typer entry. Global flags live on each command (mirrors the TS surface).
+Commands delegate to `asgard.commands.*`; templates + guards live in `asgard.templates`."""
 
 import typer
 
-from . import __version__
+from . import __version__, ui
 
 app = typer.Typer(
     name="asgard",
     help="asgard — make anything, your way",
     no_args_is_help=True,
-    add_completion=True,  # Typer generates bash/zsh/fish completions (replaces the hand-rolled ones)
+    add_completion=False,  # we ship an explicit `completions` command (byte-compatible with the TS one)
 )
 
 
@@ -24,51 +21,93 @@ def _version(value: bool) -> None:
 
 @app.callback()
 def _main(
-    version: bool = typer.Option(
-        False, "--version", "-v", callback=_version, is_eager=True, help="print version"
-    ),
+    version: bool = typer.Option(False, "--version", "-v", callback=_version, is_eager=True, help="print version"),
 ) -> None:
     """Root callback — hosts the global --version flag."""
 
 
-@app.command()
+@app.command(help="print version")
 def version() -> None:
-    """print version"""
     typer.echo(__version__)
 
 
-def _planned(cmd: str) -> None:
-    typer.echo(f"asgard {cmd}: migrating to Python (CUS-108)")
+@app.command(help="diagnose runtime & PATH")
+def doctor(
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.doctor import run_doctor
+
+    raise typer.Exit(run_doctor(json_out=json_, quiet=quiet))
 
 
-@app.command()
-def doctor() -> None:
-    """diagnose runtime & PATH"""
-    _planned("doctor")
+@app.command(help="set up project — AGENTS.md (all agents); --cc/--cursor/--codex add per-tool skeletons")
+def setup(
+    cc: bool = typer.Option(False, "--cc"),
+    cursor: bool = typer.Option(False, "--cursor"),
+    codex: bool = typer.Option(False, "--codex"),
+    profile: str = typer.Option(None, "--profile"),
+    force: bool = typer.Option(False, "--force"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    ui.set_quiet(quiet)
+    from .commands.setup import run_setup
+
+    raise typer.Exit(run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run))
 
 
-@app.command()
-def setup() -> None:
-    """set up project — AGENTS.md (all agents); --cc/--cursor/--codex add per-tool skeletons"""
-    _planned("setup")
+@app.command(help="alias for 'setup --cc' (claude-code .claude/)")
+def init(
+    force: bool = typer.Option(False, "--force"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    ui.set_quiet(quiet)
+    from .commands.setup import run_init
+
+    raise typer.Exit(run_init(force=force, dry_run=dry_run))
 
 
-@app.command()
-def upgrade() -> None:
-    """self-update the binary (upgrade [version])"""
-    _planned("upgrade")
+@app.command(help="self-update via uv (upgrade [version])")
+def upgrade(
+    ref: str = typer.Argument(None, metavar="[version]"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    ui.set_quiet(quiet)
+    from .commands.upgrade import run_upgrade
+
+    raise typer.Exit(run_upgrade([ref] if ref else [], dry_run=dry_run))
 
 
-@app.command()
-def uninstall() -> None:
-    """remove asgard (binary, PATH symlink, ~/.asgard)"""
-    _planned("uninstall")
+@app.command(help="remove asgard (uv tool, PATH symlink, ~/.asgard)")
+def uninstall(
+    yes: bool = typer.Option(False, "--yes", "-y"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    ui.set_quiet(quiet)
+    from .commands.uninstall import run_uninstall
+
+    raise typer.Exit(run_uninstall(yes=yes, dry_run=dry_run))
 
 
-@app.command()
-def completions() -> None:
-    """print shell completion script (bash|zsh|fish)"""
-    _planned("completions")
+@app.command(help="print shell completion script (bash|zsh|fish)")
+def completions(shell: str = typer.Argument(None)) -> None:
+    from .commands.completions import run_completions
+
+    raise typer.Exit(run_completions(shell))
+
+
+@app.command(help="run an .asgardfile task")
+def run() -> None:
+    typer.echo("asgard run: planned")
+
+
+@app.command(help="update this project's config (planned)")
+def update() -> None:
+    typer.echo("asgard update: planned")
 
 
 if __name__ == "__main__":
