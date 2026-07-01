@@ -18,6 +18,23 @@ ok()   { printf '  %s✔%s %s\n' "$G" "$X" "$*"; }
 warn() { printf '  %s!%s %s\n' "$Y" "$X" "$*"; }
 die()  { printf '\n  %s✗%s %s\n\n' "$R" "$X" "$*" >&2; exit 1; }
 
+# spin <label> <cmd…> — run cmd in the background, animate a braille spinner beside <label>, return
+# cmd's exit code. Non-tty: run silently, no animation. The spinner line is cleared when cmd finishes
+# (callers print their own ✔). Braille via a bash array (${fr[i]}) — slicing a multibyte glyph garbles.
+spin() {
+  local label="$1"; shift
+  if [ "$TTY" != 1 ]; then "$@" >/dev/null 2>&1; return $?; fi
+  "$@" >/dev/null 2>&1 & local pid=$! rc=0
+  local fr=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷) i=0
+  while kill -0 "$pid" 2>/dev/null; do
+    printf '\r  %s%s%s %s' "$C" "${fr[i]}" "$X" "$label"
+    i=$(( (i + 1) % 8 )); sleep 0.08
+  done
+  wait "$pid" || rc=$?
+  printf '\r\033[K'
+  return $rc
+}
+
 # LOGO — brand lockup. Rendered as a real inline image on graphics-capable terminals
 # (kitty/Ghostty/WezTerm, iTerm2); rune wordmark elsewhere. ASGARD_NO_IMAGE=1 forces runes.
 LOGO_URL="${ASGARD_LOGO_URL:-https://raw.githubusercontent.com/CustomJH/asgard-custom/main/assets/individual/15-white-lockup.png}"
@@ -127,7 +144,7 @@ main() {
 
   # 1) uv — installs a standalone CPython, so no system Python is required.
   if ! command -v uv >/dev/null 2>&1; then
-    ( curl -LsSf https://astral.sh/uv/install.sh | sh ) >/dev/null 2>&1 \
+    spin "installing uv…" bash -c 'curl -LsSf https://astral.sh/uv/install.sh | sh' \
       || die "uv install failed. Manual: https://astral.sh/uv"
     export PATH="$HOME/.local/bin:$PATH"
   fi
@@ -135,14 +152,15 @@ main() {
   ok "uv ${D}$(uv --version 2>/dev/null | awk '{print $2}')${X}"
 
   # 2) CPython 3.14 (managed by uv).
-  uv python install 3.14 >/dev/null 2>&1 || warn "Python 3.14 pre-install skipped (uv fetches on demand)."
+  spin "fetching python 3.14…" uv python install 3.14 \
+    || warn "Python 3.14 pre-install skipped (uv fetches on demand)."
   ok "python ${D}3.14${X}"
 
   # 3) asgard as a uv tool — from a local checkout when present, else the git repo.
   FROM="$SPEC"
   [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/pyproject.toml" ] && FROM="$SRC_DIR"
-  ( uv tool install --force --python 3.14 "$FROM" ) >/dev/null 2>&1 & spinner=$!
-  wait $spinner || die "install failed: $FROM"
+  spin "installing asgard…" uv tool install --force --python 3.14 "$FROM" \
+    || die "install failed: $FROM"
   uv tool update-shell >/dev/null 2>&1 || true
   export PATH="$HOME/.local/bin:$PATH"
   VERSION="$(asgard --version 2>/dev/null || echo '?')"
