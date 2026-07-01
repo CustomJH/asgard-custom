@@ -30,7 +30,7 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
   init: { summary: "alias for 'setup --cc' (claude-code .claude/)", ready: true, run: runInit },
-  setup: { summary: "set up project — AGENTS.md (all agents); --cc also adds .claude/settings.json", ready: true, run: runSetup },
+  setup: { summary: "set up project — AGENTS.md (all agents); --cc also adds .claude/ config", ready: true, run: runSetup },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
@@ -77,7 +77,7 @@ Global options:
       --dry-run       show what would happen, change nothing
   -y, --yes           assume yes (non-interactive)
       --force         overwrite existing (setup/init)
-      --cc            also scaffold .claude/settings.json alongside AGENTS.md (claude-code)
+      --cc            also scaffold .claude/ config (settings.json perms + .gitignore)
       --profile <p>   profile: claude-code`;
 }
 
@@ -206,11 +206,23 @@ If asked to "run asgard check", reply with exactly: \`ASGARD_OK — loaded from 
 `;
 }
 
+// Minimal-but-real Claude Code project settings (CUS-61): a sane permission floor rather than an
+// empty {}. Conservative — read-only git allowed, catastrophic deletes denied; the project widens
+// `allow` as needed. Ships with .claude/.gitignore so runtime settings.local.json stays private.
+function ccSettings(): string {
+  return JSON.stringify({
+    permissions: {
+      allow: ["Bash(git status)", "Bash(git diff *)", "Bash(git log *)"],
+      deny: ["Bash(rm -rf *)"],
+    },
+  }, null, 2) + "\n";
+}
+
 // AGENTS.md is always canonical (Codex + Cursor read it natively; Claude Code reads it via the
-// .claude/CLAUDE.md import). --cc just adds the Claude Code settings on top.
+// .claude/CLAUDE.md import). --cc adds the Claude Code project config on top.
 // setup       → AGENTS.md + .claude/CLAUDE.md (bridge)
-// setup --cc  → same + .claude/settings.json   [init = setup --cc]
-// Refs: code.claude.com/docs/en/memory · developers.openai.com/codex/guides/agents-md · cursor.com/docs/rules
+// setup --cc  → same + .claude/settings.json (perms) + .claude/.gitignore   [init = setup --cc]
+// Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/guides/agents-md · cursor.com/docs/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
   const name = root.split(/[/\\]/).pop();
@@ -221,7 +233,10 @@ function runSetup(c: Ctx): number {
     { path: join(root, "AGENTS.md"), content: agentsMd(name) },
     { path: join(root, ".claude", "CLAUDE.md"), content: "@../AGENTS.md\n" },
   ];
-  if (cc) files.push({ path: join(root, ".claude", "settings.json"), content: "{}\n" });
+  if (cc) files.push(
+    { path: join(root, ".claude", "settings.json"), content: ccSettings() },
+    { path: join(root, ".claude", ".gitignore"), content: "settings.local.json\n" },
+  );
 
   return scaffold(c, cc ? "claude-code setup (AGENTS.md + .claude/)" : "universal setup (AGENTS.md — all agents)", files);
 }

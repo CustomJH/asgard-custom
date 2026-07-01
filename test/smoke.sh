@@ -48,13 +48,16 @@ grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: .claude/CLAUD
 grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing wiring-check marker"; exit 1; }
 rm -rf "$PROJ"
 
-# setup --cc (claude-code) == init — AGENTS.md (canonical) + .claude/ (bridge + settings)
+# setup --cc (claude-code) == init — AGENTS.md (canonical) + .claude/ (bridge + real config)
 PROJ="$(mktemp -d)"
 ( cd "$PROJ" && asgard setup --cc >/dev/null ) || { echo "FAIL: setup --cc"; exit 1; }
 [ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --cc must create AGENTS.md"; exit 1; }
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: --cc files"; exit 1; }
 grep -q "@../AGENTS.md" "$PROJ/.claude/CLAUDE.md" || { echo "FAIL: --cc .claude/CLAUDE.md must import ../AGENTS.md"; exit 1; }
 grep -q "ASGARD_OK" "$PROJ/AGENTS.md" || { echo "FAIL: --cc AGENTS.md missing wiring-check marker"; exit 1; }
+# settings.json is real (not empty {}) — valid JSON with a permissions floor
+python3 -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); sys.exit(0 if d.get('permissions',{}).get('deny') else 1)" || { echo "FAIL: --cc settings.json must have permissions"; exit 1; }
+[ -f "$PROJ/.claude/.gitignore" ] && grep -q "settings.local.json" "$PROJ/.claude/.gitignore" || { echo "FAIL: --cc .claude/.gitignore must ignore settings.local.json"; exit 1; }
 if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing .claude"; exit 1; fi
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
