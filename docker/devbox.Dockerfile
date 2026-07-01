@@ -38,8 +38,8 @@ alias gs='git status'
 alias gd='git diff'
 command -v batcat >/dev/null && alias bat='batcat'
 command -v fdfind >/dev/null && alias fd='fdfind'
-# install/refresh asgard from the mounted repo
-alias asgard-install='uv tool install --force --python 3.14 ~/asgard'
+# install/refresh asgard from the mounted repo (--refresh-package: bust uv's stale path build cache)
+alias asgard-install='uv tool install --force --python 3.14 --refresh-package asgard ~/asgard'
 echo "asgard devbox — Python 3.14 (uv) + node $(node -v). install asgard:  asgard-install"
 RC
 

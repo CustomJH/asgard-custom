@@ -240,8 +240,15 @@ main() {
   ok "python ${D}3.14${X}"
   # asgard as a uv tool — release wheel by default (no git/compiler needed); local checkout for dev.
   resolve_install_source || die "could not resolve a version to install (network down?). Pin ASGARD_VERSION=X.Y.Z and retry."
-  spin "installing asgard (${INSTALL_SRC_DESC})…" uv tool install --force --python 3.14 "$FROM" \
-    || die "install failed: $FROM"
+  # Local path installs need --refresh-package: uv caches a path's built wheel by dir hash and can
+  # serve a stale version after __init__ bumps. Wheel/URL installs are version-keyed, so no refresh.
+  if [ "$INSTALL_SRC_DESC" = "local checkout" ]; then
+    spin "installing asgard (${INSTALL_SRC_DESC})…" uv tool install --force --python 3.14 --refresh-package asgard "$FROM" \
+      || die "install failed: $FROM"
+  else
+    spin "installing asgard (${INSTALL_SRC_DESC})…" uv tool install --force --python 3.14 "$FROM" \
+      || die "install failed: $FROM"
+  fi
   uv tool update-shell >/dev/null 2>&1 || true
   export PATH="$HOME/.local/bin:$PATH"
   ok "asgard ${D}linked (uv tool)${X}"
