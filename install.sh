@@ -1,22 +1,11 @@
 #!/usr/bin/env bash
-# Asgard installer — curl entry point. Polished terminal UX; plain fallback when non-tty.
+# Asgard installer — curl entry point (CUS-108 Path B). Polished terminal UX; plain fallback non-tty.
 #   curl -fsSL https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.sh | bash
 #
-# Installs a self-contained `asgard` binary (bun build --compile): no Node/Bun/git needed to RUN.
-# Node >= 24 is recommended for the full system (Claude Code hooks, later) — NOT required by the CLI.
-#
-# Binary source (precedence):
-#   1) ASGARD_DOWNLOAD_URL          exact binary URL, used as-is (e.g. file:// for tests)
-#   2) source checkout + bun         build locally (dev convenience)
-#   3) ASGARD_RELEASE_BASE/<asset>   download the prebuilt release asset for this OS/arch
-# Env: ASGARD_HOME(~/.asgard) · BIN_DIR(~/.local/bin) · ASGARD_DOWNLOAD_URL · ASGARD_RELEASE_BASE · NO_COLOR
+# Bootstraps uv → a standalone CPython 3.14 → installs the `asgard` CLI as a uv tool. No system
+# Python/Node/git-to-run needed (uv fetches everything). `asgard` lands on PATH via uv's tool bin.
+# Env: ASGARD_VERSION (pin vX.Y.Z) · ASGARD_INSTALL_SPEC (override source) · NO_COLOR · ASGARD_NO_IMAGE
 set -euo pipefail
-
-ASGARD_HOME="${ASGARD_HOME:-$HOME/.asgard}"
-BIN_DIR="${BIN_DIR:-$HOME/.local/bin}"
-DEST="$ASGARD_HOME/bin/asgard"
-DL="${ASGARD_DOWNLOAD_URL:-}"
-RELEASE_BASE="${ASGARD_RELEASE_BASE:-https://github.com/CustomJH/asgard-custom/releases/latest/download}"
 
 # ── palette — disabled when stdout is not a tty or NO_COLOR is set ─────────────
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
@@ -32,7 +21,7 @@ die()  { printf '\n  %s✗%s %s\n\n' "$R" "$X" "$*" >&2; exit 1; }
 # LOGO — brand lockup. Rendered as a real inline image on graphics-capable terminals
 # (kitty/Ghostty/WezTerm, iTerm2); rune wordmark elsewhere. ASGARD_NO_IMAGE=1 forces runes.
 LOGO_URL="${ASGARD_LOGO_URL:-https://raw.githubusercontent.com/CustomJH/asgard-custom/main/assets/individual/15-white-lockup.png}"
-VERSION_URL="${ASGARD_VERSION_URL:-https://raw.githubusercontent.com/CustomJH/asgard-custom/main/package.json}"
+VERSION_URL="${ASGARD_VERSION_URL:-https://raw.githubusercontent.com/CustomJH/asgard-custom/main/src/asgard/__init__.py}"
 
 banner() {
   local v="$(_version)"
@@ -47,16 +36,16 @@ banner() {
   fi
 }
 
-# _version — best-effort asgard version for the splash, auto-tracking the current release:
-# pinned env → local package.json (dev checkout) → package.json on main (curl|bash installs).
+# _version — best-effort asgard version for the splash: pinned env → local __init__.py (dev checkout)
+# → __init__.py on main (curl|bash installs). Parses `__version__ = "X.Y.Z"`.
 _version() {
   if [ -n "${ASGARD_VERSION:-}" ]; then printf '%s' "$ASGARD_VERSION"; return 0; fi
-  if [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/package.json" ]; then
-    sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC_DIR/package.json" | head -1
+  if [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/src/asgard/__init__.py" ]; then
+    sed -n 's/.*__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' "$SRC_DIR/src/asgard/__init__.py" | head -1
     return 0
   fi
   curl -fsSL --max-time 5 "$VERSION_URL" 2>/dev/null \
-    | sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true
+    | sed -n 's/.*__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' | head -1 || true
 }
 
 # _ver_line <version> <width> — dim (vX.Y.Z), right-aligned to sit under the wordmark. No-op if empty.
@@ -126,155 +115,44 @@ _logo() {
   return 0
 }
 
-# spin <pid> <label> — braille spinner while pid runs (tty); one plain line otherwise.
-# Frames live in an ARRAY: ${fr[i]} yields a whole glyph. A byte-substring (${s:i:1})
-# would slice one byte out of a 3-byte braille char under a C/POSIX locale → garbled ''.
-spin() {
-  local pid=$1 label=$2 rc i=0
-  local fr=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
-  if [ "$TTY" != 1 ]; then
-    printf '  %s→%s %s\n' "$C" "$X" "$label"
-    wait "$pid"; return $?
-  fi
-  while kill -0 "$pid" 2>/dev/null; do
-    printf '\r  %s%s%s %s' "$C" "${fr[i]}" "$X" "$label"
-    i=$(( (i + 1) % ${#fr[@]} ))
-    sleep 0.08
-  done
-  wait "$pid"; rc=$?
-  printf '\r\033[K'
-  return "$rc"
-}
+# ── install (CUS-108 Path B): uv-managed. Bootstrap uv → standalone CPython 3.14 → `uv tool install`.
+# The `asgard` command lands on PATH via uv's tool bin (uv tool update-shell wires the shell rc).
+# Wrapped in main() so a truncated `curl | bash` stream can't execute a partial script.
+SPEC="${ASGARD_INSTALL_SPEC:-git+https://github.com/CustomJH/asgard-custom.git}"
+[ -n "${ASGARD_VERSION:-}" ] && SPEC="${SPEC}@v${ASGARD_VERSION}"
 
-# download <url> <dest> <label> — fetch to dest with a live spinner + percentage (tty);
-# one plain line on non-tty. Percentage needs Content-Length; without it, spinner only.
-# Always call as `download ... || die` so set -e is ignored inside (lets us capture wait's rc).
-download() {
-  local url=$1 dest=$2 label=$3 total sz pct rc pid i=0
-  local fr=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷)
-  total="$(curl -fsSLI --max-time 15 "$url" 2>/dev/null | awk 'BEGIN{IGNORECASE=1}/^content-length:/{v=$2} END{gsub(/\r/,"",v);print v}' || true)"
-  curl -fsSL -o "$dest" "$url" & pid=$!
-  if [ "$TTY" != 1 ]; then
-    printf '  %s→%s %s\n' "$C" "$X" "$label"
-    wait "$pid"; return $?
-  fi
-  while kill -0 "$pid" 2>/dev/null; do
-    if [ -n "$total" ] && [ "$total" -gt 0 ] 2>/dev/null; then
-      sz=$(stat -f%z "$dest" 2>/dev/null || stat -c%s "$dest" 2>/dev/null || echo 0)
-      pct=$(( sz * 100 / total )); [ "$pct" -gt 100 ] && pct=100
-      printf '\r  %s%s%s %s  %s%3d%%%s' "$C" "${fr[i]}" "$X" "$label" "$B" "$pct" "$X"
-    else
-      printf '\r  %s%s%s %s' "$C" "${fr[i]}" "$X" "$label"
-    fi
-    i=$(( (i + 1) % ${#fr[@]} ))
-    sleep 0.08
-  done
-  wait "$pid"; rc=$?
-  printf '\r\033[K'
-  return "$rc"
-}
-
-# detect_asset — release asset name for this OS/arch (must match scripts/release-build.sh).
-detect_asset() {
-  local os arch
-  case "$(uname -s)" in
-    Darwin) os=darwin ;;
-    Linux) os=linux ;;
-    *) die "unsupported OS for install.sh: $(uname -s). Windows → install.ps1 (planned)." ;;
-  esac
-  case "$(uname -m)" in
-    x86_64 | amd64) arch=x64 ;;
-    arm64 | aarch64) arch=arm64 ;;
-    *) die "unsupported arch: $(uname -m)." ;;
-  esac
-  printf 'asgard-%s-%s' "$os" "$arch"
-}
-
-# verify_checksum <file> <asset> <sums_url> — fail-closed SHA256 verify against the release's
-# SHA256SUMS. If SHA256SUMS is unavailable (older release) → warn + proceed, unless
-# ASGARD_REQUIRE_VERIFY=1. Skip entirely with ASGARD_NO_VERIFY=1. Only the release path calls this.
-verify_checksum() {
-  local file=$1 asset=$2 sums_url=$3 want have sums
-  [ "${ASGARD_NO_VERIFY:-0}" = 1 ] && { warn "checksum verify skipped ${D}(ASGARD_NO_VERIFY=1)${X}"; return 0; }
-  sums="$(curl -fsSL --max-time 15 "$sums_url" 2>/dev/null || true)"
-  if [ -z "$sums" ]; then
-    [ "${ASGARD_REQUIRE_VERIFY:-0}" = 1 ] && die "checksums unavailable: $sums_url"
-    warn "checksums unavailable — skipping verify ${D}($sums_url)${X}"; return 0
-  fi
-  want="$(printf '%s\n' "$sums" | awk -v a="$asset" '$2==a || $2=="*"a {print $1; exit}')"
-  if [ -z "$want" ]; then
-    [ "${ASGARD_REQUIRE_VERIFY:-0}" = 1 ] && die "no checksum entry for $asset"
-    warn "no checksum entry for $asset — skipping verify"; return 0
-  fi
-  if command -v sha256sum >/dev/null 2>&1; then have="$(sha256sum "$file" | awk '{print $1}')"
-  elif command -v shasum >/dev/null 2>&1; then have="$(shasum -a 256 "$file" | awk '{print $1}')"
-  else warn "no sha256 tool — skipping verify"; return 0; fi
-  [ "$want" = "$have" ] || die "checksum MISMATCH for $asset — refusing to install (want ${want%${want#????????}}…, have ${have%${have#????????}}…)"
-  ok "checksum verified  ${D}sha256 ok${X}"
-}
-
-# main — the imperative install, wrapped so a truncated `curl | bash` stream cannot execute a
-# partial script: nothing runs until bash reaches the final `main "$@"` at EOF.
 main() {
-  # SRC_DIR resolved before the banner so a source checkout can render the local logo asset.
   SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
   banner
-  mkdir -p "$ASGARD_HOME/bin" "$BIN_DIR"
 
-  # obtain the self-contained binary (precedence: explicit URL → local build → release download)
-  if [ -n "$DL" ]; then
-    download "$DL" "$DEST" "fetching binary" || die "download failed: $DL"
-    chmod +x "$DEST"
-  elif [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/src/cli.ts" ] && command -v bun >/dev/null 2>&1; then
-    ( cd "$SRC_DIR" && bun build src/cli.ts --compile --outfile "$DEST" >/dev/null 2>&1 ) & spin $! "building binary (bun --compile)" || die "build failed."
-  else
-    asset="$(detect_asset)"
-    if [ -n "${ASGARD_VERSION:-}" ]; then
-      url="https://github.com/CustomJH/asgard-custom/releases/download/v${ASGARD_VERSION}/$asset"   # pin a version
-    else
-      url="$RELEASE_BASE/$asset"
-    fi
-    download "$url" "$DEST" "downloading $asset" || die "download failed: $url"
-    verify_checksum "$DEST" "$asset" "${url%/*}/SHA256SUMS"   # fail-closed on tamper/corruption
-    chmod +x "$DEST"
+  # 1) uv — installs a standalone CPython, so no system Python is required.
+  if ! command -v uv >/dev/null 2>&1; then
+    ( curl -LsSf https://astral.sh/uv/install.sh | sh ) >/dev/null 2>&1 \
+      || die "uv install failed. Manual: https://astral.sh/uv"
+    export PATH="$HOME/.local/bin:$PATH"
   fi
-  [ -x "$DEST" ] || die "binary missing at $DEST."
-  VERSION="$("$DEST" --version 2>/dev/null || echo 0.0.0)"
-  ok "asgard ${B}v$VERSION${X}  ${D}$DEST${X}"
+  command -v uv >/dev/null 2>&1 || die "uv not on PATH — add ~/.local/bin and re-run."
+  ok "uv ${D}$(uv --version 2>/dev/null | awk '{print $2}')${X}"
 
-  # link onto PATH
-  ln -sfn "$DEST" "$BIN_DIR/asgard"
-  ok "linked  ${D}$BIN_DIR/asgard${X}"
+  # 2) CPython 3.14 (managed by uv).
+  uv python install 3.14 >/dev/null 2>&1 || warn "Python 3.14 pre-install skipped (uv fetches on demand)."
+  ok "python ${D}3.14${X}"
 
-  # PATH: if BIN_DIR isn't on PATH, add a guarded block to the shell rc (removed by `asgard uninstall`).
-  # Skip with ASGARD_NO_RC=1 (used by tests / when you manage PATH yourself).
-  on_path=0; case ":$PATH:" in *":$BIN_DIR:"*) on_path=1 ;; esac
-  if [ "$on_path" != 1 ]; then
-    rc=""
-    case "$(basename "${SHELL:-}")" in zsh) rc="$HOME/.zshrc" ;; bash) rc="$HOME/.bashrc" ;; esac
-    if [ "${ASGARD_NO_RC:-0}" = 1 ] || [ -z "$rc" ]; then
-      warn "not on PATH — add:  ${C}export PATH=\"$BIN_DIR:\$PATH\"${X}"
-    elif grep -q '>>> asgard >>>' "$rc" 2>/dev/null; then
-      ok "PATH already managed in ${D}$rc${X}"
-    else
-      [ -e "$rc" ] || touch "$rc"
-      printf '\n# >>> asgard >>>\nexport PATH="%s:$PATH"\n# <<< asgard <<<\n' "$BIN_DIR" >> "$rc"
-      ok "PATH added → ${D}$rc${X}  ${D}(removed by: asgard uninstall)${X}"
-    fi
-  fi
-
-  # Node >= 24 advisory (recommended floor; not a gate — the binary runs without it)
-  if command -v node >/dev/null 2>&1 && [ "$(node -p 'process.versions.node.split(".")[0]' 2>/dev/null || echo 0)" -ge 24 ]; then
-    ok "node $(node -v)  ${D}recommended floor met${X}"
-  else
-    warn "Node ≥ 24 recommended for Claude Code hooks (later); not needed to run asgard."
-  fi
+  # 3) asgard as a uv tool — from a local checkout when present, else the git repo.
+  FROM="$SPEC"
+  [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/pyproject.toml" ] && FROM="$SRC_DIR"
+  ( uv tool install --force --python 3.14 "$FROM" ) >/dev/null 2>&1 & spinner=$!
+  wait $spinner || die "install failed: $FROM"
+  uv tool update-shell >/dev/null 2>&1 || true
+  export PATH="$HOME/.local/bin:$PATH"
+  VERSION="$(asgard --version 2>/dev/null || echo '?')"
+  ok "asgard ${B}v${VERSION}${X}  ${D}(uv tool)${X}"
 
   # summary
   printf '\n  %s✔ installed%s — next:\n' "$G" "$X"
   printf '    %sasgard doctor%s   %s# verify%s\n' "$B" "$X" "$D" "$X"
   printf '    %sasgard --help%s\n' "$B" "$X"
-  [ "$on_path" = 1 ] || printf '    %s↳ restart shell (or add %s to PATH) first%s\n' "$D" "$BIN_DIR" "$X"
+  command -v asgard >/dev/null 2>&1 || printf '    %s↳ restart shell (or run: uv tool update-shell) first%s\n' "$D" "$X"
   printf '\n'
 }
 

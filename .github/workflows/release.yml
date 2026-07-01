@@ -1,8 +1,9 @@
 name: release
 
-# Tag a release: git tag v0.1.0 && git push origin v0.1.0
-# Builds per-OS self-contained binaries with bun and attaches them to the GitHub Release.
-# install.sh downloads these from .../releases/latest/download/asgard-<os>-<arch>.
+# Tag a release: git tag vX.Y.Z && git push origin vX.Y.Z
+# CUS-108 Path B: no compile matrix. Build a wheel + sdist with uv and attach them to the GitHub
+# Release. install.sh installs from git via `uv tool install`, so the artifacts are for pip/uv users
+# and a record — the tag itself is what `asgard upgrade` pins.
 on:
   push:
     tags:
@@ -17,17 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
+      - uses: astral-sh/setup-uv@v5
 
-      - name: Build per-OS binaries
-        run: bash scripts/release-build.sh dist
+      - name: Build wheel + sdist
+        run: uv build
 
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            dist/asgard-*
-            dist/SHA256SUMS
+          files: dist/*
           generate_release_notes: true

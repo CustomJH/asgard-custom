@@ -1,17 +1,19 @@
 """upgrade — self-update via uv (CUS-108 Path B). asgard ships as a `uv tool`, so upgrading is
 re-installing the latest (or a pinned) version. Requires uv on PATH (the installer bootstraps it)."""
 
+import os
 import subprocess
-import sys
 
 from .. import ui
 from ..platform import on_path
+
+_SPEC = os.environ.get("ASGARD_INSTALL_SPEC", "git+https://github.com/CustomJH/asgard-custom.git")
 
 
 def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
     pin = rest[0] if rest else None
     version = pin[1:] if pin and pin.startswith("v") else pin
-    spec = f"asgard@{version}" if version else "asgard@latest"
+    spec = f"{_SPEC}@v{version}" if version else _SPEC
 
     ui.head("upgrade")
     if dry_run:
@@ -20,10 +22,10 @@ def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
     if not on_path("uv"):
         ui.fail("uv not found — install it first: https://astral.sh/uv")
         return 1
-    ui.step(f"installing {ui.bold(spec)} via uv tool")
+    ui.step(f"installing {ui.bold('asgard')} via uv tool {ui.dim(spec)}")
     result = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec])
     if result.returncode != 0:
         ui.fail(f"upgrade failed (uv exited {result.returncode})")
         return 1
-    ui.ok(f"upgraded → {ui.bold(spec)}")
+    ui.ok(f"upgraded → {ui.bold('asgard')}  {ui.dim('(latest)' if not version else 'v' + version)}")
     return 0
