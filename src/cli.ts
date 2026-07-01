@@ -21,6 +21,8 @@ type Ctx = {
   yes: boolean;
   force: boolean;
   cc: boolean;
+  cursor: boolean;
+  codex: boolean;
   profile: string | undefined;
 };
 type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
@@ -30,7 +32,7 @@ type Cmd = { summary: string; ready: boolean; run?: (c: Ctx) => number };
 const COMMANDS: Record<string, Cmd> = {
   doctor: { summary: "diagnose runtime & PATH", ready: true, run: runDoctor },
   init: { summary: "alias for 'setup --cc' (claude-code .claude/)", ready: true, run: runInit },
-  setup: { summary: "set up project — AGENTS.md (all agents); --cc also adds .claude/ config", ready: true, run: runSetup },
+  setup: { summary: "set up project — AGENTS.md (all agents); --cc/--cursor/--codex add per-tool skeletons", ready: true, run: runSetup },
   run: { summary: "run an .asgardfile task", ready: false },
   update: { summary: "update this project's .claude (3-way merge)", ready: false },
   upgrade: { summary: "self-update the binary (upgrade [version])", ready: true, run: runUpgrade },
@@ -78,7 +80,9 @@ Global options:
   -y, --yes           assume yes (non-interactive)
       --force         overwrite existing (setup/init)
       --cc            also scaffold full .claude/ skeleton (settings, commands/agents/skills/hooks/rules/…)
-      --profile <p>   profile: claude-code`;
+      --cursor        also scaffold .cursor/ skeleton (skills/, hooks/)
+      --codex         also scaffold .codex/config.toml
+      --profile <p>   profile: claude-code | cursor | codex`;
 }
 
 type Check = { name: string; ok: boolean; detail: string; fix: string };
@@ -242,16 +246,46 @@ Follow the canonical project instructions in \`AGENTS.md\` at the repo root.
 `;
 }
 
+// Foundational .cursor/ subdirectories beyond the always-apply rule (which lives in the base set).
+// Cursor's per-project surface: rules/ (base), skills/, hooks/ (+ hooks.json). Commands are only
+// documented as plugin bundles, and MCP (.cursor/mcp.json) is opt-in — both left out of the skeleton.
+const CURSOR_FOLDERS: [string, string][] = [
+  ["skills", "Skills — each in `<name>/SKILL.md`; frontmatter: name, description, paths.\nDocs: https://cursor.com/docs/context/commands"],
+  ["hooks", "Hook scripts, wired from `.cursor/hooks.json` (events: beforeShellExecution, afterFileEdit, …).\nDocs: https://cursor.com/docs/hooks"],
+];
+
+// Codex project config (developers.openai.com/codex/config-reference). Codex reads the root
+// AGENTS.md natively; the only per-project config surface is .codex/config.toml (loaded when the
+// project is trusted). Prompts/skills are global (~/.codex) — no project folder tree to scaffold.
+function codexConfig(): string {
+  return `# Codex project config — overrides ~/.codex/config.toml, loaded only in trusted projects.
+# Docs: https://developers.openai.com/codex/config-reference
+#
+# model = "<your-model>"
+# approval_policy = "on-request"    # untrusted | on-request | never
+# sandbox_mode = "workspace-write"  # read-only | workspace-write | danger-full-access
+#
+# Project MCP servers:
+# [mcp_servers.example]
+# command = "npx"
+# args = ["-y", "@some/mcp-server"]
+`;
+}
+
 // AGENTS.md is always canonical. Codex reads it natively at the repo root; Claude Code and Cursor
-// each get a thin bridge to it. --cc adds the Claude Code project config on top.
-// setup       → AGENTS.md + .claude/CLAUDE.md + .cursor/rules/000-agents.mdc (all agents)
-// setup --cc  → same + full .claude/ skeleton (settings.json, .gitignore, commands/agents/
-//               skills/hooks/rules/output-styles folders)   [init = setup --cc]
-// Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/guides/agents-md · cursor.com/docs/context/rules
+// each get a thin bridge to it. Per-tool flags scaffold that tool's full project skeleton on top —
+// combinable (e.g. --cc --cursor --codex).
+// setup            → AGENTS.md + .claude/CLAUDE.md + .cursor/rules/000-agents.mdc (all agents wired)
+// setup --cc       → + full .claude/ skeleton (settings.json, .gitignore, commands/agents/skills/hooks/rules/output-styles)   [init = --cc]
+// setup --cursor   → + .cursor/ skeleton (skills/, hooks/)
+// setup --codex    → + .codex/config.toml (trusted-project overrides; MCP/hooks commented)
+// Refs: code.claude.com/docs/en/settings · developers.openai.com/codex/config-reference · cursor.com/docs/context/rules
 function runSetup(c: Ctx): number {
   const root = process.cwd();
   const name = root.split(/[/\\]/).pop();
   const cc = c.cc || c.profile === "claude-code";
+  const cursor = c.cursor || c.profile === "cursor";
+  const codex = c.codex || c.profile === "codex";
 
   // @import resolves relative to the importing file → from .claude/ use @../AGENTS.md.
   const files: File[] = [
@@ -267,8 +301,15 @@ function runSetup(c: Ctx): number {
     for (const [dir, desc] of CC_FOLDERS)
       files.push({ path: join(root, ".claude", dir, "README.md"), content: `# .claude/${dir}/\n\n${desc}\n` });
   }
+  if (cursor)
+    for (const [dir, desc] of CURSOR_FOLDERS)
+      files.push({ path: join(root, ".cursor", dir, "README.md"), content: `# .cursor/${dir}/\n\n${desc}\n` });
+  if (codex)
+    files.push({ path: join(root, ".codex", "config.toml"), content: codexConfig() });
 
-  return scaffold(c, cc ? "claude-code setup (AGENTS.md + .claude/)" : "universal setup (AGENTS.md — all agents)", files);
+  const tools = [cc && "claude-code", cursor && "cursor", codex && "codex"].filter(Boolean);
+  const label = tools.length ? `setup — AGENTS.md + ${tools.join(", ")}` : "universal setup (AGENTS.md — all agents)";
+  return scaffold(c, label, files);
 }
 
 function runInit(c: Ctx): number {
@@ -372,6 +413,8 @@ function main(): number {
       yes: { type: "boolean", short: "y" },
       force: { type: "boolean" },
       cc: { type: "boolean" },
+      cursor: { type: "boolean" },
+      codex: { type: "boolean" },
       profile: { type: "string" },
     },
   });
@@ -410,6 +453,8 @@ function main(): number {
     yes: !!values.yes,
     force: !!values.force,
     cc: !!values.cc,
+    cursor: !!values.cursor,
+    codex: !!values.codex,
     profile: typeof values.profile === "string" ? values.profile : undefined,
   };
 

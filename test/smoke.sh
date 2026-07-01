@@ -70,6 +70,30 @@ if ( cd "$PROJ" && asgard init >/dev/null 2>&1 ); then echo "FAIL: init must ref
 ( cd "$PROJ" && asgard init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
 
+# setup --cursor — .cursor/ skeleton (rules bridge base + skills/ + hooks/)
+PROJ="$(mktemp -d)"
+( cd "$PROJ" && asgard setup --cursor >/dev/null ) || { echo "FAIL: setup --cursor"; exit 1; }
+[ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --cursor must create AGENTS.md"; exit 1; }
+[ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: --cursor rules bridge missing"; exit 1; }
+for _d in skills hooks; do
+  [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor missing .cursor/$_d/README.md"; exit 1; }
+done
+rm -rf "$PROJ"
+
+# setup --codex — .codex/config.toml (root AGENTS.md native; only per-project config surface)
+PROJ="$(mktemp -d)"
+( cd "$PROJ" && asgard setup --codex >/dev/null ) || { echo "FAIL: setup --codex"; exit 1; }
+[ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --codex must create AGENTS.md"; exit 1; }
+[ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: --codex missing .codex/config.toml"; exit 1; }
+grep -q "config-reference" "$PROJ/.codex/config.toml" || { echo "FAIL: --codex config.toml missing docs pointer"; exit 1; }
+rm -rf "$PROJ"
+
+# combined --cc --cursor --codex — all skeletons in one project
+PROJ="$(mktemp -d)"
+( cd "$PROJ" && asgard setup --cc --cursor --codex >/dev/null ) || { echo "FAIL: setup combined"; exit 1; }
+[ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.cursor/skills/README.md" ] && [ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: combined skeletons"; exit 1; }
+rm -rf "$PROJ"
+
 # upgrade — dry-run only (no network in smoke)
 asgard upgrade --dry-run | grep -q "would download" || { echo "FAIL: upgrade --dry-run"; exit 1; }
 
