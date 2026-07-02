@@ -7,16 +7,19 @@ import sys
 from pathlib import Path
 
 from .. import ui
+from ..agents import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..templates import (
     CC_FOLDERS,
     CURSOR_FOLDERS,
+    SELFTEST_MD,
     agents_md,
     cc_settings,
     codex_config,
     codex_rules,
     cursor_hooks_json,
     cursor_rule,
+    trinity_policy,
 )
 
 
@@ -62,6 +65,13 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     j = os.path.join
     files: list[tuple[str, str]] = [(j(root, "AGENTS.md"), agents_md(name))]
 
+    # Trinity (CUS-125) — 정책은 툴 중립 .asgard/ (크로스툴 공유). .gitignore 를 함께 심는 이유:
+    # 훅이 첫 실행 때 lazy 로 만들지만, setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.
+    files += [
+        (j(root, ".asgard", "trinity-policy.json"), trinity_policy()),
+        (j(root, ".asgard", ".gitignore"), "*\n"),
+    ]
+
     # Claude Code — bridge import + settings (permission floor + hook wiring) + Canon guards.
     if cc:
         files += [
@@ -75,7 +85,14 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "git-guard.py"), hook("git-guard")),
             (j(root, ".claude", "hooks", "secret-guard.py"), hook("secret-guard")),
             (j(root, ".claude", "hooks", "failure-tracker.py"), hook("failure-tracker")),
+            (j(root, ".claude", "hooks", "quest-log.py"), hook("quest-log")),      # Trinity 로그+전이 CLI
+            (j(root, ".claude", "hooks", "verifier-gate.py"), hook("verifier-gate")),    # Canon 10 Stop 게이트
+            (j(root, ".claude", "hooks", "write-sentinel.py"), hook("write-sentinel")),  # quest 미개설 write 봉합
         ]
+        # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
+        files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
+        # /asgard-test — 사용자가 세션 안에서 셋업을 자가 테스트 (배선·하니스·라이브 3계층).
+        files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -86,6 +103,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".cursor", "hooks.json"), cursor_hooks_json()),
             (j(root, ".cursor", "hooks", "git-guard.py"), hook("git-guard")),  # same script, auto-detects Cursor
             (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("failure-tracker")),
+            (j(root, ".cursor", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 A 로그 CLI
         ]
 
     # Codex reads root AGENTS.md natively — add config + Pre/PostToolUse hooks + native rules.
@@ -95,8 +113,15 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".codex", "config.toml"), codex_config()),
             (j(root, ".codex", "hooks", "git-guard.py"), hook("git-guard")),
             (j(root, ".codex", "hooks", "failure-tracker.py"), hook("failure-tracker")),
+            (j(root, ".codex", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 A 로그 CLI
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
         ]
+
+    # asgard-test 자가 테스트 스킬 — .agents/skills/ 는 Cursor·Codex 공용 네이티브 스코프
+    # (cursor.com/docs/skills · developers.openai.com/codex/skills), Claude Code 만 .claude/skills/.
+    # 같은 SKILL.md 포맷이라 본문은 하나다.
+    if cursor or codex:
+        files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
