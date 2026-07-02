@@ -8,6 +8,7 @@ dependencies = [
     "rich>=13",
     "textual>=0.60",  # full-screen onboarding TUI (asgard init); pure-python, builds on rich
     "anthropic>=0.60",
+    "openai>=1.40",
 ]
 
 # curl|bash install path (CUS-108 Path B): `uv tool install asgard` exposes this console script.

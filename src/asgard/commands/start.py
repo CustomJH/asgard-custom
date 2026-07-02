@@ -32,11 +32,11 @@ def preflight(root: str, provider: str | None = None, model: str | None = None) 
     if rp.api_key_env:
         checks.append({"name": "API 키", "ok": True, "detail": f"${rp.api_key_env}", "fix": ""})
 
-    if rp.profile.api_mode == "anthropic":
-        sdk = importlib.util.find_spec("anthropic") is not None
-        checks.append({"name": "anthropic SDK", "ok": sdk,
-                       "detail": "importable" if sdk else "not installed",
-                       "fix": "asgard upgrade (또는 uv tool install asgard --force)"})
+    sdk_mod = "anthropic" if rp.profile.api_mode == "anthropic" else "openai"
+    sdk = importlib.util.find_spec(sdk_mod) is not None
+    checks.append({"name": f"{sdk_mod} SDK", "ok": sdk,
+                   "detail": "importable" if sdk else "not installed",
+                   "fix": "asgard upgrade (또는 uv tool install asgard --force)"})
 
     # advisory — 없어도 세션은 열린다 (패키지 내장 정체성 사용). 있으면 프로젝트 관례 병합.
     agents_md = os.path.exists(os.path.join(root, "AGENTS.md"))
@@ -65,7 +65,13 @@ def run_start(check_only: bool = False, provider: str | None = None, model: str 
         ui.done("preflight clean — 세션 진입 가능")
         return 0
 
-    # ponytail: 세션 루프는 CUS-137 — 프리플라이트 게이트를 먼저 출하, 여기서 핸드오프한다.
-    ui.done("preflight clean")
-    sys.stdout.write(f"  {ui.dim('에이전트 루프(Heimdall 상주)는 CUS-137 배선 중 — 지금은 --check 게이트로 사용하세요.')}\n")
-    return 0
+    # CUS-138 브랜드 REPL 로 핸드오프 (배너·슬래시·tool-use 축약).
+    from ..agent import Heimdall
+    from ..agent import repl
+
+    def emit(s: str) -> None:
+        sys.stdout.write(s)
+        sys.stdout.flush()
+
+    heimdall = Heimdall(rp, root, on_text=emit)
+    return repl.run(root, rp, heimdall)
