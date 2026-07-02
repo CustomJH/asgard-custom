@@ -53,14 +53,11 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     return 0
 
 
-def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
-              profile: str | None = None, force: bool = False, dry_run: bool = False) -> int:
-    cc = cc or profile == "claude-code"
-    cursor = cursor or profile == "cursor"
-    codex = codex or profile == "codex"
+def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> tuple[list[tuple[str, str]], str]:
+    """Compute (files, label) a setup would write — pure, no IO. Shared by run_setup and the TUI
+    preview so what the onboarding screen shows is exactly what gets scaffolded."""
     universal = not cc and not cursor and not codex
-
-    root = os.getcwd()
+    root = root or os.getcwd()
     name = os.path.basename(root)
     j = os.path.join
     files: list[tuple[str, str]] = [(j(root, "AGENTS.md"), agents_md(name))]
@@ -102,6 +99,15 @@ def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "universal setup (AGENTS.md — all agents)" if universal else f"setup — AGENTS.md + {', '.join(tools)}"
+    return files, label
+
+
+def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
+              profile: str | None = None, force: bool = False, dry_run: bool = False) -> int:
+    cc = cc or profile == "claude-code"
+    cursor = cursor or profile == "cursor"
+    codex = codex or profile == "codex"
+    files, label = plan_files(cc, cursor, codex)
     return _scaffold(files, label, force, dry_run)
 
 
@@ -116,6 +122,11 @@ _PROFILES: list[tuple[str, str]] = [
 ]
 _DEFAULT_PROFILE = "claude-code"
 _FLAG_OF = {"claude-code": "cc", "cursor": "cursor", "codex": "codex"}
+
+
+def profile_flags(profile: str) -> dict[str, bool]:
+    """Profile name → setup flags. 'universal' = all False (bridges every agent)."""
+    return {"cc": profile == "claude-code", "cursor": profile == "cursor", "codex": profile == "codex"}
 
 
 def _interactive() -> bool:
@@ -142,7 +153,17 @@ def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
 
 
 def run_init(force: bool = False, dry_run: bool = False, yes: bool = False) -> int:
-    profile = _DEFAULT_PROFILE if (yes or not _interactive()) else _choose_profile()
+    if yes or not _interactive():
+        return _run_profile(_DEFAULT_PROFILE, force, dry_run)
+    # TTY: full-screen Textual onboarding. Textual missing/broken → Rich prompt. None = user cancelled.
+    try:
+        from ..tui import run_init_tui
+        profile = run_init_tui()
+    except Exception:
+        profile = _choose_profile()
+    if profile is None:
+        ui.warn("cancelled — nothing written.")
+        return 0
     return _run_profile(profile, force, dry_run)
 
 

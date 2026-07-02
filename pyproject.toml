@@ -6,6 +6,7 @@ dynamic = ["version"]
 dependencies = [
     "typer>=0.12",
     "rich>=13",
+    "textual>=0.60",  # full-screen onboarding TUI (asgard init); pure-python, builds on rich
 ]
 
 # curl|bash install path (CUS-108 Path B): `uv tool install asgard` exposes this console script.
