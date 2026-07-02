@@ -10,7 +10,7 @@ import os
 
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Footer, Header, OptionList, Static
 from textual.widgets.option_list import Option
 
@@ -31,7 +31,7 @@ class InitApp(App):
     CSS = """
     Horizontal { height: 1fr; }
     #profiles { width: 34; border: round $accent; padding: 0 1; }
-    #preview  { width: 1fr; border: round $panel-darken-1; padding: 0 1; }
+    #preview-wrap { width: 1fr; border: round $panel-darken-1; padding: 0 1; }
     """
     BINDINGS = [Binding("q,escape", "cancel", "cancel")]
     TITLE = "asgard init"
@@ -43,7 +43,8 @@ class InitApp(App):
             yield OptionList(
                 *[Option(f"{k}", id=k) for k, _ in _PROFILES], id="profiles"
             )
-            yield Static(id="preview")
+            with VerticalScroll(id="preview-wrap"):
+                yield Static(id="preview")
         yield Footer()
 
     def on_mount(self) -> None:

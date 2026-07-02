@@ -58,16 +58,17 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     """Compute (files, label) a setup would write — pure, no IO. Shared by run_setup and the TUI
     preview so what the onboarding screen shows is exactly what gets scaffolded."""
     universal = not cc and not cursor and not codex
+    if universal:  # universal = the full cross-tool Canon setup — every agent wired AND enforced.
+        cc = cursor = codex = True
     root = root or os.getcwd()
     name = os.path.basename(root)
     j = os.path.join
     files: list[tuple[str, str]] = [(j(root, "AGENTS.md"), agents_md(name))]
 
-    # Claude Code — bridge when universal or targeted; full skeleton only when targeted (--cc).
-    if universal or cc:
-        files.append((j(root, ".claude", "CLAUDE.md"), "@../AGENTS.md\n"))
+    # Claude Code — bridge import + settings (permission floor + hook wiring) + Canon guards.
     if cc:
         files += [
+            (j(root, ".claude", "CLAUDE.md"), "@../AGENTS.md\n"),
             (j(root, ".claude", "settings.json"), cc_settings()),
             (j(root, ".claude", ".gitignore"), "settings.local.json\n.asgard/\n"),  # .asgard/ = per-session hook state
         ]
@@ -79,10 +80,9 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "failure-tracker.py"), failure_tracker()),
         ]
 
-    # Cursor — always-apply rule bridge when universal or targeted; skeleton + guard only when targeted.
-    if universal or cursor:
-        files.append((j(root, ".cursor", "rules", "000-agents.mdc"), cursor_rule()))
+    # Cursor — always-apply rule bridge + skeleton + beforeShellExecution guard.
     if cursor:
+        files.append((j(root, ".cursor", "rules", "000-agents.mdc"), cursor_rule()))
         for d, desc in CURSOR_FOLDERS:
             files.append((j(root, ".cursor", d, "README.md"), f"# .cursor/{d}/\n\n{desc}\n"))
         files += [
@@ -90,7 +90,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".cursor", "hooks", "git-guard.py"), cursor_git_guard()),
         ]
 
-    # Codex reads root AGENTS.md natively — --codex adds config + a PreToolUse git-guard + native rules.
+    # Codex reads root AGENTS.md natively — add config + a PreToolUse git-guard + native rules.
     if codex:
         files += [
             (j(root, ".codex", "config.toml"), codex_config()),
@@ -99,7 +99,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         ]
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
-    label = "init · universal (AGENTS.md — all agents)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
+    label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
     return files, label
 
 
@@ -116,7 +116,7 @@ def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
 # default to claude-code (back-compat with the old `init` = `setup --cc`). Uses Rich (already a dep);
 # no heavy TUI framework yet — the full OpenCode/Hermes-style editor stays scoped to CUS-49.
 _PROFILES: list[tuple[str, str]] = [
-    ("universal", "AGENTS.md wired to every agent (Claude Code, Cursor, Codex)"),
+    ("universal", "every agent — AGENTS.md + full .claude/.cursor/.codex, Canon enforced"),
     ("claude-code", ".claude/ full skeleton + hooks"),
     ("cursor", ".cursor/ rules + hooks"),
     ("codex", ".codex/ config + rules + guard"),

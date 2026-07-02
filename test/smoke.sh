@@ -51,6 +51,12 @@ grep -q "asgard:identity" "$PROJ/AGENTS.md" && grep -q "Heimdall" "$PROJ/AGENTS.
 grep -q "asgard:law" "$PROJ/AGENTS.md" && grep -q "3회 실패 법칙" "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing asgard:law block"; exit 1; }
 [ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: .cursor/rules/000-agents.mdc missing"; exit 1; }
 grep -q "alwaysApply: true" "$PROJ/.cursor/rules/000-agents.mdc" || { echo "FAIL: cursor rule must alwaysApply"; exit 1; }
+# universal must ENFORCE, not just bridge prose — every tool's hooks/config present
+[ -f "$PROJ/.claude/settings.json" ] || { echo "FAIL: universal missing .claude/settings.json (no hook wiring)"; exit 1; }
+grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: universal .claude missing PostToolUse wiring"; exit 1; }
+[ -f "$PROJ/.claude/hooks/git-guard.py" ] && [ -f "$PROJ/.claude/hooks/failure-tracker.py" ] || { echo "FAIL: universal missing .claude guards"; exit 1; }
+[ -f "$PROJ/.cursor/hooks.json" ] && [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: universal missing .cursor guard"; exit 1; }
+[ -f "$PROJ/.codex/config.toml" ] && [ -f "$PROJ/.codex/rules/canon.rules" ] || { echo "FAIL: universal missing .codex config/rules"; exit 1; }
 rm -rf "$PROJ"
 
 # ── init --cc — AGENTS.md + full .claude/ (bridge + config + Python guards) ──
