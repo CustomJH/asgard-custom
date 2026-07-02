@@ -84,8 +84,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             files.append((j(root, ".cursor", d, "README.md"), f"# .cursor/{d}/\n\n{desc}\n"))
         files += [
             (j(root, ".cursor", "hooks.json"), cursor_hooks_json()),
-            (j(root, ".cursor", "hooks", "git-guard.py"), hook("cursor-git-guard")),
-            (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("cursor-failure-tracker")),
+            (j(root, ".cursor", "hooks", "git-guard.py"), hook("git-guard")),  # same script, auto-detects Cursor
+            (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("failure-tracker")),
         ]
 
     # Codex reads root AGENTS.md natively — add config + Pre/PostToolUse hooks + native rules.

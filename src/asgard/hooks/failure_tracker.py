@@ -1,20 +1,20 @@
 #!/usr/bin/env python3
-# Asgard failure-tracker — Canon Law 9 (무한 루프 방지). PostToolUse: counts failures per tool +
-# normalized error signature in a per-session file under the shared, tool-neutral .asgard/ dir; at 3+
-# of the same kind, injects a SOFT warning (additionalContext) to reframe — never blocks. Signature
-# normalization defeats "reword the same retry" gaming. Shared by Claude Code + Codex (same schema:
-# tool_name + tool_response). Fail-open: any error -> exit 0 with no output. Stdlib-only.
+# Asgard failure-tracker — Canon Law 9 (무한 루프 방지). Counts failures per tool + normalized error
+# signature in a per-session file under the shared, tool-neutral .asgard/ dir; at 3+ of the same kind,
+# injects a SOFT warning (never blocks). Signature normalization defeats "reword the same retry" gaming.
+# One script for every tool — it auto-detects the hook protocol from the payload:
+#   • Claude Code / Codex (PostToolUse):     {tool_name, tool_response:{error|is_error}} → additionalContext.
+#   • Cursor (postToolUseFailure, on fail):  {tool_name, error_message, failure_type}     → agentMessage.
+# Fail-open: any error -> exit 0 with no output. Stdlib-only.
 import json
 import os
 import re
 import sys
 
 WARN = (
-    "<asgard-failure-warning>\n"
-    "⚠️ Repeated failure: `{tool}` failed {n}× with the same error kind this session.\n"
+    "Repeated failure: `{tool}` failed {n}× with the same error kind this session. "
     "Canon Law 9 (무한 루프 방지): 같은 접근으로 3회+ 실패 시 STOP — 가설을 재설계하거나 다른 "
-    "전략/도구로 바꾸고, 막히면 Odin에게 물어보세요.\n"
-    "</asgard-failure-warning>"
+    "전략/도구로 바꾸고, 막히면 Odin에게 물어보세요."
 )
 
 
@@ -40,6 +40,18 @@ def state_dir(proj: str) -> str:
     return d
 
 
+def read_failure(data: dict) -> tuple[str, bool]:
+    """Return (error_text, is_cursor). Empty error_text = not a recognized failure (skip)."""
+    if "error_message" in data or "failure_type" in data:  # Cursor postToolUseFailure (always a failure)
+        return str(data.get("error_message") or data.get("failure_type") or "error"), True
+    resp = data.get("tool_response")  # Claude Code / Codex PostToolUse
+    if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
+        return str(resp.get("error") or resp.get("stderr") or "error"), False
+    if data.get("error"):
+        return str(data.get("error")), False
+    return "", False
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -47,12 +59,7 @@ def main() -> None:
         sys.exit(0)
     try:
         tool = str(data.get("tool_name") or "").strip() or "unknown"
-        resp = data.get("tool_response")
-        err = ""
-        if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
-            err = str(resp.get("error") or resp.get("stderr") or "error")
-        if not err and data.get("error"):
-            err = str(data.get("error"))
+        err, cursor = read_failure(data)
         if not err or tool == "unknown":
             sys.exit(0)  # not a recognized failure -> no-op
 
@@ -73,8 +80,13 @@ def main() -> None:
         except Exception:
             pass
         if n >= 3:
-            out = {"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": WARN.format(tool=tool, n=n)}}
-            print(json.dumps(out))
+            msg = WARN.format(tool=tool, n=n)
+            if cursor:
+                out = {"agentMessage": msg}
+            else:
+                out = {"hookSpecificOutput": {"hookEventName": "PostToolUse",
+                                              "additionalContext": "<asgard-failure-warning>\n" + msg + "\n</asgard-failure-warning>"}}
+            sys.stdout.write(json.dumps(out, separators=(",", ":")))
     except Exception:
         sys.exit(0)
     sys.exit(0)

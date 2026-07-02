@@ -9,15 +9,12 @@ Registry maps a logical hook name → module filename. Add a hook = drop a file 
 
 from importlib import resources
 
-# logical name → filename (without .py). Grouped by tool contract.
+# logical name → filename (without .py). Each script is tool-agnostic: it auto-detects the hook
+# protocol (Claude Code / Codex / Cursor) from the payload, so one file serves every tool.
 REGISTRY: dict[str, str] = {
-    # Claude Code + Codex share the same PreToolUse/PostToolUse stdin schema → same scripts.
-    "git-guard": "git_guard",
-    "secret-guard": "secret_guard",
-    "failure-tracker": "failure_tracker",
-    # Cursor's hook contract differs (top-level .command / postToolUseFailure) → its own scripts.
-    "cursor-git-guard": "cursor_git_guard",
-    "cursor-failure-tracker": "cursor_failure_tracker",
+    "git-guard": "git_guard",              # Law 3/6 — Pre-shell (Claude/Codex exit2, Cursor permission JSON)
+    "secret-guard": "secret_guard",        # Law 4 — Write/Edit (Claude/Codex)
+    "failure-tracker": "failure_tracker",  # Law 9 — Post/failure, cross-tool shared .asgard/ state
 }
 
 
