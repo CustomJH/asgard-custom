@@ -32,6 +32,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     existing = [p for p, _ in files if os.path.lexists(p)]
     if existing and not force and not dry_run:
         ui.head(label)
+        ui.phase("check · existing files")
         for p in existing:
             ui.fail(f"exists {ui.dim(rel(p))}")
         sys.stderr.write(f"  {ui.dim('--force to overwrite · --dry-run to preview')}\n")
@@ -39,17 +40,17 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
 
     ui.head(label)
     if dry_run:
+        ui.phase(f"preview · {len(files)} file(s)")
         for p, _ in files:
             ui.step(f"would create {ui.dim(rel(p))}")
         return 0
 
+    ui.phase(f"scaffold · {len(files)} file(s)")
     for p, content in files:
         Path(p).parent.mkdir(parents=True, exist_ok=True)
         Path(p).write_text(content)
         ui.ok(ui.dim(rel(p)))
-    sys.stdout.write(
-        f"\n  {ui.paint('32', '✔')} {ui.bold('done')} {ui.dim(f'— {len(files)} file(s) · make anything, your way')}\n"
-    )
+    ui.done(f"{len(files)} file(s) · make anything, your way")
     return 0
 
 
@@ -98,7 +99,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         ]
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
-    label = "universal setup (AGENTS.md — all agents)" if universal else f"setup — AGENTS.md + {', '.join(tools)}"
+    label = "init · universal (AGENTS.md — all agents)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
     return files, label
 
 

@@ -4,7 +4,7 @@ checks python3 instead of node."""
 import json as _json
 import sys
 
-from .. import __version__
+from .. import __version__, ui
 from ..platform import on_path
 
 
@@ -24,11 +24,12 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
         sys.stdout.write(_json.dumps({"version": __version__, "runtime": runtime, "ok": ok, "checks": checks}, indent=2) + "\n")
         return 0 if ok else 1
     if not quiet:
-        sys.stdout.write(f"asgard doctor — v{__version__}  ({runtime})\n\n")
+        ui.head(f"doctor · v{__version__} {ui.dim('(' + runtime + ')')}")
     for ch in checks:
-        sys.stdout.write(f"  {'✔' if ch['ok'] else '⚠'} {ch['name'].ljust(22)} {ch['detail']}\n")
+        mark = ui.paint("32", "✔") if ch["ok"] else ui.paint("33", "⚠")
+        sys.stdout.write(f"  {mark} {ch['name'].ljust(22)} {ui.dim(ch['detail'])}\n")
         if not ch["ok"]:
-            sys.stdout.write(f"      → {ch['fix']}\n")
+            sys.stdout.write(f"      {ui.paint('36', '→')} {ch['fix']}\n")
     if not quiet:
-        sys.stdout.write("\n  ok.\n" if ok else "\n  ⚠ asgard not on PATH — see fix above.\n")
+        ui.done() if ok else ui.warn("asgard not on PATH — see fix above.")
     return 0 if ok else 1

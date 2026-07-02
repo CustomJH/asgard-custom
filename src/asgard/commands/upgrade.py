@@ -43,12 +43,13 @@ def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
     pin = rest[0] if rest else None
     version = pin[1:] if pin and pin.startswith("v") else pin
 
-    ui.head("upgrade")
+    ui.head("upgrade", steps=1)
     if dry_run:  # keep dry-run network-free: describe the plan without resolving latest.
         if _SPEC_OVERRIDE:
             shown = f"{_SPEC_OVERRIDE}@v{version}" if version and _SPEC_OVERRIDE.startswith("git+") else _SPEC_OVERRIDE
         else:
             shown = f"asgard v{version} (release wheel)" if version else "asgard (latest release wheel)"
+        ui.phase("preview")
         ui.step(f"would install {ui.dim(shown)} via uv tool")
         return 0
     if not on_path("uv"):
@@ -58,10 +59,12 @@ def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
     if spec is None:
         ui.fail("could not resolve the latest version (network?). Pin one: asgard upgrade vX.Y.Z")
         return 1
-    ui.step(f"installing {ui.bold('asgard')} via uv tool {ui.dim(spec)}")
-    result = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec])
+    ui.phase("install via uv tool")
+    with ui.spin(f"installing {ui.dim(spec)}…"):
+        result = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec],
+                                capture_output=True, text=True)
     if result.returncode != 0:
         ui.fail(f"upgrade failed (uv exited {result.returncode})")
         return 1
-    ui.ok(f"upgraded → {ui.bold('asgard')}  {ui.dim('v' + version if version else '(latest)')}")
+    ui.done(f"upgraded → asgard {('v' + version) if version else '(latest)'}")
     return 0

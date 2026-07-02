@@ -17,20 +17,22 @@ def _installed() -> bool:
 
 
 def run_uninstall(yes: bool = False, dry_run: bool = False) -> int:
-    ui.head("uninstall")
+    ui.head("uninstall", steps=1)
     if not on_path("uv") or not _installed():
         ui.warn("asgard not installed as a uv tool here.")
         return 0
 
     if dry_run or not yes:
+        ui.phase("preview")
         ui.step("would run: uv tool uninstall asgard")
-        hint = "run 'asgard uninstall --yes' to remove."
-        sys.stdout.write(f"\n  {ui.dim(hint)}\n")
+        sys.stdout.write("\n  " + ui.dim("run 'asgard uninstall --yes' to remove.") + "\n")
         return 0
 
-    result = subprocess.run(["uv", "tool", "uninstall", "asgard"])
+    ui.phase("remove uv tool")
+    with ui.spin("uninstalling asgard…"):
+        result = subprocess.run(["uv", "tool", "uninstall", "asgard"], capture_output=True, text=True)
     if result.returncode == 0:
-        sys.stdout.write(f"\n  {ui.paint('32', '✔')} asgard removed.\n")
+        ui.done("asgard removed")
         return 0
-    sys.stdout.write(f"\n  {ui.paint('33', '!')} uninstall incomplete.\n")
+    ui.warn("uninstall incomplete.")
     return 1
