@@ -1,4 +1,4 @@
-"""Content templates for `asgard setup` — pure, stateless emitters (no shared state / UX / IO).
+"""Content templates for `asgard init` — pure, stateless emitters (no shared state / UX / IO).
 
 Ported from src/templates.ts (CUS-108). Generated content stays byte-identical to the TS version;
 only the hook scripts change from Node (.mjs) to Python (.py) and the wiring flips node → python3.

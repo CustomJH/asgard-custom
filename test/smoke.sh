@@ -37,11 +37,11 @@ asgard doctor >/dev/null || { echo "FAIL: doctor exit nonzero (asgard on PATH)";
 asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; exit 1; }
 if "${ASG[@]}" bogus >/dev/null 2>&1; then echo "FAIL: unknown command should exit nonzero"; exit 1; fi
 
-# ── setup (universal) — codex/claude-code/cursor 공용 ──
+# ── init --profile universal — codex/claude-code/cursor 공용 ──
 PROJ="$(mktemp -d)"
-( cd "$PROJ" && "${ASG[@]}" setup --dry-run | grep -q "AGENTS.md" ) || { echo "FAIL: setup --dry-run"; exit 1; }
+( cd "$PROJ" && "${ASG[@]}" init --profile universal --dry-run | grep -q "AGENTS.md" ) || { echo "FAIL: init universal --dry-run"; exit 1; }
 [ ! -e "$PROJ/AGENTS.md" ] || { echo "FAIL: dry-run must not create"; exit 1; }
-( cd "$PROJ" && "${ASG[@]}" setup >/dev/null ) || { echo "FAIL: setup"; exit 1; }
+( cd "$PROJ" && "${ASG[@]}" init --profile universal >/dev/null ) || { echo "FAIL: init universal"; exit 1; }
 [ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: AGENTS.md missing"; exit 1; }
 [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: .claude/CLAUDE.md missing"; exit 1; }
 [ ! -e "$PROJ/CLAUDE.md" ] || { echo "FAIL: CLAUDE.md must be inside .claude, not root"; exit 1; }
@@ -53,9 +53,9 @@ grep -q "asgard:law" "$PROJ/AGENTS.md" && grep -q "3회 실패 법칙" "$PROJ/AG
 grep -q "alwaysApply: true" "$PROJ/.cursor/rules/000-agents.mdc" || { echo "FAIL: cursor rule must alwaysApply"; exit 1; }
 rm -rf "$PROJ"
 
-# ── setup --cc == init — AGENTS.md + full .claude/ (bridge + config + Python guards) ──
+# ── init --cc — AGENTS.md + full .claude/ (bridge + config + Python guards) ──
 PROJ="$(mktemp -d)"
-( cd "$PROJ" && "${ASG[@]}" setup --cc >/dev/null ) || { echo "FAIL: setup --cc"; exit 1; }
+( cd "$PROJ" && "${ASG[@]}" init --cc >/dev/null ) || { echo "FAIL: init --cc"; exit 1; }
 [ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --cc must create AGENTS.md"; exit 1; }
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: --cc files"; exit 1; }
 python3 -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); sys.exit(0 if d.get('permissions',{}).get('deny') else 1)" || { echo "FAIL: --cc settings.json permissions"; exit 1; }
@@ -87,9 +87,9 @@ if ( cd "$PROJ" && "${ASG[@]}" init >/dev/null 2>&1 ); then echo "FAIL: init mus
 ( cd "$PROJ" && "${ASG[@]}" init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"
 
-# ── setup --cursor — .cursor/ skeleton + beforeShellExecution guard ──
+# ── init --cursor — .cursor/ skeleton + beforeShellExecution guard ──
 PROJ="$(mktemp -d)"
-( cd "$PROJ" && "${ASG[@]}" setup --cursor >/dev/null ) || { echo "FAIL: setup --cursor"; exit 1; }
+( cd "$PROJ" && "${ASG[@]}" init --cursor >/dev/null ) || { echo "FAIL: init --cursor"; exit 1; }
 [ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: --cursor rules bridge"; exit 1; }
 for _d in skills hooks; do [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor .cursor/$_d/README.md"; exit 1; }; done
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude"; exit 1; }
@@ -100,9 +100,9 @@ printf '%s' '{"command":"git push --force"}' | python3 "$PROJ/.cursor/hooks/git-
 printf '%s' '{"command":"git status"}'      | python3 "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"allow"' || { echo "FAIL: cursor guard allow"; exit 1; }
 rm -rf "$PROJ"
 
-# ── setup --codex — config.toml + git-guard + rules ──
+# ── init --codex — config.toml + git-guard + rules ──
 PROJ="$(mktemp -d)"
-( cd "$PROJ" && "${ASG[@]}" setup --codex >/dev/null ) || { echo "FAIL: setup --codex"; exit 1; }
+( cd "$PROJ" && "${ASG[@]}" init --codex >/dev/null ) || { echo "FAIL: init --codex"; exit 1; }
 [ -f "$PROJ/AGENTS.md" ] && [ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: --codex files"; exit 1; }
 [ ! -e "$PROJ/.claude" ] && [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --codex scoped"; exit 1; }
 grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex PreToolUse hook"; exit 1; }
@@ -113,7 +113,7 @@ rm -rf "$PROJ"
 
 # ── combined --cc --cursor --codex ──
 PROJ="$(mktemp -d)"
-( cd "$PROJ" && "${ASG[@]}" setup --cc --cursor --codex >/dev/null ) || { echo "FAIL: setup combined"; exit 1; }
+( cd "$PROJ" && "${ASG[@]}" init --cc --cursor --codex >/dev/null ) || { echo "FAIL: init combined"; exit 1; }
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.cursor/hooks.json" ] && [ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: combined"; exit 1; }
 rm -rf "$PROJ"
 
@@ -124,4 +124,4 @@ rm -rf "$PROJ"
 asgard uninstall --yes >/dev/null || { echo "FAIL: uninstall"; exit 1; }
 [ ! -e "$UV_TOOL_BIN_DIR/asgard" ] || { echo "FAIL: asgard shim still present after uninstall"; exit 1; }
 
-echo "PASS: uv-install + version($ver) + help + doctor + completions + setup(cc/cursor/codex) + guards(py) + failure-tracker(law9) + upgrade + uninstall"
+echo "PASS: uv-install + version($ver) + help + doctor + completions + init(universal/cc/cursor/codex) + guards(py) + failure-tracker(law9) + upgrade + uninstall"

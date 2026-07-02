@@ -152,19 +152,24 @@ def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
     return run_setup(**{_FLAG_OF[profile]: True}, force=force, dry_run=dry_run)
 
 
-def run_init(force: bool = False, dry_run: bool = False, yes: bool = False) -> int:
+def run_init(cc: bool = False, cursor: bool = False, codex: bool = False, profile: str | None = None,
+             force: bool = False, dry_run: bool = False, yes: bool = False) -> int:
+    # Explicit target (flags/--profile) → scaffold it directly, no picker.
+    if cc or cursor or codex or profile:
+        return run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run)
+    # No target given: default on non-TTY/--yes; else the full-screen picker.
     if yes or not _interactive():
         return _run_profile(_DEFAULT_PROFILE, force, dry_run)
     # TTY: full-screen Textual onboarding. Textual missing/broken → Rich prompt. None = user cancelled.
     try:
         from ..tui import run_init_tui
-        profile = run_init_tui()
+        chosen = run_init_tui()
     except Exception:
-        profile = _choose_profile()
-    if profile is None:
+        chosen = _choose_profile()
+    if chosen is None:
         ui.warn("cancelled — nothing written.")
         return 0
-    return _run_profile(profile, force, dry_run)
+    return _run_profile(chosen, force, dry_run)
 
 
 if __name__ == "__main__":  # ponytail: profile→setup mapping self-check (no framework)

@@ -41,33 +41,21 @@ def doctor(
     raise typer.Exit(run_doctor(json_out=json_, quiet=quiet))
 
 
-@app.command(help="set up project — AGENTS.md (all agents); --cc/--cursor/--codex add per-tool skeletons")
-def setup(
-    cc: bool = typer.Option(False, "--cc"),
-    cursor: bool = typer.Option(False, "--cursor"),
-    codex: bool = typer.Option(False, "--codex"),
-    profile: str = typer.Option(None, "--profile"),
-    force: bool = typer.Option(False, "--force"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    quiet: bool = typer.Option(False, "--quiet", "-q"),
-) -> None:
-    ui.set_quiet(quiet)
-    from .commands.setup import run_setup
-
-    raise typer.Exit(run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run))
-
-
-@app.command(help="interactive onboarding — pick a profile (non-TTY/--yes: claude-code)")
+@app.command(help="set up a project — interactive picker (TTY); --cc/--cursor/--codex/--profile for a specific agent")
 def init(
+    cc: bool = typer.Option(False, "--cc", help="Claude Code (.claude/) skeleton"),
+    cursor: bool = typer.Option(False, "--cursor", help="Cursor (.cursor/) skeleton"),
+    codex: bool = typer.Option(False, "--codex", help="Codex (.codex/) skeleton"),
+    profile: str = typer.Option(None, "--profile", help="claude-code | cursor | codex | universal"),
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),
-    yes: bool = typer.Option(False, "--yes", "-y", help="skip the prompt, use the default profile (claude-code)"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="skip the picker, use the default profile (claude-code)"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.setup import run_init
 
-    raise typer.Exit(run_init(force=force, dry_run=dry_run, yes=yes))
+    raise typer.Exit(run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes))
 
 
 @app.command(help="self-update via uv (upgrade [version])")
