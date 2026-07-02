@@ -62,6 +62,15 @@ grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: universal
 grep -q "PostToolUse" "$PROJ/.codex/config.toml" || { echo "FAIL: codex config missing PostToolUse tracker"; exit 1; }
 grep -q "postToolUseFailure" "$PROJ/.cursor/hooks.json" || { echo "FAIL: cursor hooks missing postToolUseFailure"; exit 1; }
 python3 -m py_compile "$PROJ/.codex/hooks/failure-tracker.py" "$PROJ/.cursor/hooks/failure-tracker.py" || { echo "FAIL: cross-tool trackers invalid Python"; exit 1; }
+# asgard-test 자가 테스트 커맨드 — 3툴 전부 (skills/commands/prompts), 하니스 스크립트 실동작
+[ -f "$PROJ/.claude/skills/asgard-test/SKILL.md" ] && [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] \
+  || { echo "FAIL: universal missing asgard-test (.claude + .agents)"; exit 1; }
+( cd "$PROJ" && git init -q && git -c user.email=t@t -c user.name=t commit -qm init --allow-empty \
+  && python3 -c "
+import re
+md = open('.claude/skills/asgard-test/SKILL.md').read()
+open('selftest-b.sh','w').write(re.search(r'\`\`\`bash\n(.*?)\`\`\`', md, re.S).group(1))" \
+  && bash selftest-b.sh | grep -q -- '-- harness: 8/8 ok' ) || { echo "FAIL: asgard-test harness slice not 8/8"; exit 1; }
 rm -rf "$PROJ"
 
 # ── init --cc — AGENTS.md + full .claude/ (bridge + config + Python guards) ──
@@ -105,6 +114,7 @@ PROJ="$(mktemp -d)"
 ( cd "$PROJ" && "${ASG[@]}" init --cursor >/dev/null ) || { echo "FAIL: init --cursor"; exit 1; }
 [ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: --cursor rules bridge"; exit 1; }
 for _d in skills hooks; do [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor .cursor/$_d/README.md"; exit 1; }; done
+[ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --cursor missing .agents/skills asgard-test"; exit 1; }
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude"; exit 1; }
 grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor hooks.json"; exit 1; }
 [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: --cursor guard missing"; exit 1; }
@@ -121,6 +131,7 @@ PROJ="$(mktemp -d)"
 grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex PreToolUse hook"; exit 1; }
 [ -f "$PROJ/.codex/hooks/git-guard.py" ] || { echo "FAIL: --codex guard"; exit 1; }
 [ -f "$PROJ/.codex/rules/canon.rules" ] && grep -q "prefix_rule" "$PROJ/.codex/rules/canon.rules" || { echo "FAIL: --codex rules"; exit 1; }
+[ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --codex missing .agents/skills asgard-test"; exit 1; }
 python3 -m py_compile "$PROJ/.codex/hooks/git-guard.py" || { echo "FAIL: codex guard invalid"; exit 1; }
 rm -rf "$PROJ"
 
