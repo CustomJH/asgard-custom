@@ -75,19 +75,57 @@ def banner(rp) -> None:
         f"  {ui.dim('/help 도움말 · /exit 종료 · Ctrl-C 턴 중단')}\n\n")
 
 
-def prompt() -> str:
-    mark = ui.paint("38;5;208", "◇") if ui._COLOR else "◇"
-    return input(f"{mark} {ui.bold('odin')} ▸ ")
-
-
 _HELP = {
     "/help": "이 도움말",
+    "/new": "새 세션 (컨텍스트·화면 리셋)",
     "/quest": "진행 중 퀘스트 원장 상태",
     "/provider": "provider·model 표시 · '/provider set' 으로 재설정",
     "/model": "현재 모델 ID",
     "/clear": "화면 지우기",
     "/exit": "세션 종료 (Ctrl-D 동일)",
 }
+_COMMANDS = ["/help", "/new", "/quest", "/provider", "/provider set", "/model", "/clear", "/exit"]
+
+
+def _completer(text: str, state: int):
+    """Tab 자동완성 — 슬래시 커맨드 (opencode / 트리거). readline 콜백."""
+    if not text.startswith("/"):
+        return None
+    matches = [c + " " for c in _COMMANDS if c.startswith(text)]
+    return matches[state] if state < len(matches) else None
+
+
+def _setup_readline() -> None:
+    """readline 배선 — Tab 자동완성 + 화살표 히스토리(파일 영속). 없는 플랫폼은 조용히 스킵."""
+    try:
+        import atexit
+        import os
+        import readline
+    except Exception:
+        return
+    readline.set_completer(_completer)
+    readline.set_completer_delims("")   # 전체 라인을 completion 대상으로 (/ 포함)
+    readline.parse_and_bind("tab: complete")
+    hp = os.path.join(os.path.expanduser("~"), ".asgard", "history")
+    try:
+        os.makedirs(os.path.dirname(hp), exist_ok=True)
+        readline.read_history_file(hp)
+    except Exception:
+        pass
+    readline.set_history_length(1000)
+    atexit.register(lambda: _save_history(readline, hp))
+
+
+def _save_history(readline, path: str) -> None:
+    try:
+        readline.write_history_file(path)
+    except Exception:
+        pass
+
+
+def prompt() -> str:
+    mark = ui.paint("38;5;208", "◇") if ui._COLOR else "◇"
+    return input(f"{mark} {ui.bold('odin')} ▸ ")
 
 
 class _Reconfigure(Exception):
@@ -104,8 +142,9 @@ def slash(cmd: str, root: str, rp) -> bool:
     if c == "/help":
         sys.stdout.write("\n")
         for k, v in _HELP.items():
-            sys.stdout.write(f"  {ui.paint('38;5;208', k.ljust(10))} {ui.dim(v)}\n")
-        sys.stdout.write("\n")
+            sys.stdout.write(f"  {ui.paint('38;5;208', k.ljust(14))} {ui.dim(v)}\n")
+        sys.stdout.write(f"  {ui.paint('38;5;208', '!<cmd>'.ljust(14))} {ui.dim('bash 직접 실행')}\n")
+        sys.stdout.write(f"  {ui.dim('Tab 자동완성 · ↑↓ 히스토리')}\n\n")
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
         banner(rp)
@@ -141,12 +180,25 @@ def _bye() -> int:
     return 0
 
 
+def _run_bang(root: str, cmd: str) -> None:
+    """!cmd — bash 직접 실행 (opencode 흐름). git-guard 통과 후 실행, 출력 표시."""
+    from . import tools as T
+    try:
+        out, code = T.run_bash(root, {"command": cmd})
+        sys.stdout.write(f"  {ui.dim('$ ' + cmd)}\n{out}\n")
+        if code:
+            sys.stdout.write(f"  {ui.dim('exit ' + str(code))}\n")
+    except T.ToolError as e:
+        sys.stdout.write(f"  {ui.paint('31', '⚠')} {e}\n")
+
+
 def run(root: str, rp) -> int:
     """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩(opencode 흐름)."""
     def emit(s: str) -> None:
         sys.stdout.write(s)
         sys.stdout.flush()
 
+    _setup_readline()  # Tab 자동완성 + 화살표 히스토리
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
     if heimdall is None:
@@ -158,6 +210,14 @@ def run(root: str, rp) -> int:
         except (EOFError, KeyboardInterrupt):
             return _bye()
         if not req:
+            continue
+        if req == "/new":  # 컨텍스트·화면 리셋 (rp/heimdall 재생성 필요 — slash 는 rp 만 받음)
+            sys.stdout.write("\033[2J\033[H")
+            heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
+            banner(rp)
+            continue
+        if req.startswith("!"):  # bash 직접 실행
+            _run_bang(root, req[1:].strip())
             continue
         if req.startswith("/"):
             try:
