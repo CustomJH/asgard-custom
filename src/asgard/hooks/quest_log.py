@@ -28,7 +28,8 @@ import time
 
 SCHEMA = 1
 EMPTY = hashlib.sha256(b"").hexdigest()  # 변경 전무(diff 없음 + untracked 없음)의 정준 해시
-EVENTS = {"plan", "work", "verify", "fail", "escalate"}
+EVENTS = {"plan", "work", "verify", "fail", "escalate",
+          "delegate"}  # delegate: 중첩 디스패치 배정 기록 (CUS-142) — Phase 2 통계가 배정 정책 학습
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}
 # 로그 v1 = 16필드 고정 (CUS-118, CUS-117 코멘트 A). tier/effort/model 등은 v1 소비자 없음 → Phase 2.
 FIELDS = ["schema", "quest_id", "session_id", "turn", "ts", "role", "event", "base_ref", "risk",
