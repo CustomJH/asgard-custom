@@ -95,10 +95,16 @@ class spin:
         return self
 
     def _run(self) -> None:
+        import shutil
         for fr in itertools.cycle(_FRAMES):
             if self._stop.is_set():
                 break
-            sys.stdout.write(f"\r  {paint('36', fr)} {self.label}")
+            # 라벨을 터미널 폭에 맞춰 절단 — 넘치면 줄바꿈이 나서 \r 리라이트가 깨진다(스피너가
+            # 줄줄이 찍힘). 프리픽스 "  X " = 4칸. 라벨은 순수 텍스트 전제(ANSI 넣지 말 것 — 폭 오산).
+            width = shutil.get_terminal_size((80, 20)).columns
+            budget = max(10, width - 5)
+            label = self.label if len(self.label) <= budget else self.label[:budget - 1] + "…"
+            sys.stdout.write(f"\r\x1b[K  {paint('36', fr)} {label}")
             sys.stdout.flush()
             time.sleep(0.08)
 

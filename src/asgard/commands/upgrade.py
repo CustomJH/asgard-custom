@@ -60,7 +60,8 @@ def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
         ui.fail("could not resolve the latest version (network?). Pin one: asgard upgrade vX.Y.Z")
         return 1
     ui.phase("install via uv tool")
-    with ui.spin(f"installing {ui.dim(spec)}…"):
+    ui.step(ui.dim(spec))  # 소스 한 줄(정적) — 스피너 라벨엔 URL/ANSI 를 넣지 않는다 (폭 초과·오산)
+    with ui.spin(f"installing asgard {('v' + version) if version else '(latest)'}…"):
         result = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec],
                                 capture_output=True, text=True)
     if result.returncode != 0:
