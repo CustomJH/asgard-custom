@@ -68,9 +68,46 @@ class ResolvedProvider:
     profile: ProviderProfile
     model: str
     base_url: str = ""
-    api_key_env: str = ""             # 실제로 키를 찾은(또는 찾아야 할) env var 이름
+    api_key_env: str = ""             # 키를 찾은 env var 이름 (env 소스일 때). 표시용.
+    api_key: str = ""                 # 실제 키 값 (env 또는 credentials.json). repr 마스킹.
+    key_source: str = ""              # "" | env:<VAR> | credentials.json
     source: str = "default"           # default | ~/.asgard/config.toml | .asgard/config.toml | flag
     missing: list[str] = field(default_factory=list)  # 사람이 읽는 미충족 항목
+
+    def __repr__(self) -> str:  # 키 값이 로그·트레이스에 새지 않게 마스킹 (Canon 4)
+        k = f"***{self.api_key[-4:]}" if self.api_key else ""
+        return (f"ResolvedProvider(name={self.profile.name!r}, model={self.model!r}, "
+                f"key_source={self.key_source!r}, api_key={k!r}, missing={self.missing!r})")
+
+
+CRED_PATH = os.path.join(os.path.expanduser("~"), ".asgard", "credentials.json")
+
+
+def load_credentials() -> dict:
+    """~/.asgard/credentials.json — provider별 {"api_key": ...}. config 와 분리된 키 격리 저장소."""
+    import json
+    try:
+        with open(CRED_PATH) as f:
+            return json.load(f)
+    except Exception:
+        return {}
+
+
+def save_credential(provider: str, api_key: str, base_url: str = "", model: str = "") -> None:
+    """키를 credentials.json 에 저장 — chmod 600, config.toml 에는 절대 안 넣는다 (Canon 4)."""
+    import json
+    creds = load_credentials()
+    entry = {"api_key": api_key}
+    if base_url:
+        entry["base_url"] = base_url
+    if model:
+        entry["model"] = model
+    creds[provider] = entry
+    os.makedirs(os.path.dirname(CRED_PATH), exist_ok=True)
+    fd = os.open(CRED_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        json.dump(creds, f, indent=2)
+    os.chmod(CRED_PATH, 0o600)  # 기존 파일이었어도 강제
 
 
 def _read_toml(path: str) -> dict:
@@ -109,20 +146,26 @@ def resolve(root: str | None = None, provider: str | None = None,
         rp.missing.append(f"unknown provider '{name}' — 지원: {', '.join(PROVIDERS)}")
         return rp
 
+    cred = load_credentials().get(name, {})
     rp = ResolvedProvider(
         profile=profile,
-        model=model or conf.get("model") or profile.default_model,
-        base_url=conf.get("base_url") or profile.base_url,
+        model=model or conf.get("model") or cred.get("model") or profile.default_model,
+        base_url=conf.get("base_url") or cred.get("base_url") or profile.base_url,
         source=source,
     )
 
-    # API 키: config 의 api_key_env(이름) 우선, 없으면 프로파일 후보 순회
+    # API 키 해석 — env var(프로파일 후보) 우선, 없으면 credentials.json. env 는 export 한 사용자를
+    # 존중(무회귀), 파일은 온보딩으로 저장한 것. 둘 다 없으면 온보딩 대상(missing).
     candidates = ([conf["api_key_env"]] if conf.get("api_key_env") else []) + list(profile.env_vars)
-    rp.api_key_env = next((v for v in candidates if os.environ.get(v)), "")
-    if not rp.api_key_env:
-        rp.missing.append(f"API 키 env 미설정 ({' 또는 '.join(candidates)}) — {profile.signup_hint}")
+    env_var = next((v for v in candidates if os.environ.get(v)), "")
+    if env_var:
+        rp.api_key, rp.api_key_env, rp.key_source = os.environ[env_var], env_var, f"env:{env_var}"
+    elif cred.get("api_key"):
+        rp.api_key, rp.key_source = cred["api_key"], "credentials.json"
+    else:
+        rp.missing.append(f"API 키 없음 ({name}) — asgard start 에서 입력하거나 {' / '.join(candidates)} export")
     if not rp.model:
-        rp.missing.append("model 미지정 — .asgard/config.toml [provider] model=... 또는 --model")
+        rp.missing.append("model 미지정 — 온보딩에서 입력하거나 --model")
     if profile.api_mode == "openai_compat" and not rp.base_url:
-        rp.missing.append("base_url 미지정 — openai_compat 은 [provider] base_url=... 필수")
+        rp.missing.append("base_url 미지정 — openai_compat 은 온보딩에서 입력하거나 [provider] base_url")
     return rp

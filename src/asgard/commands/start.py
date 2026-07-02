@@ -46,18 +46,32 @@ def preflight(root: str, provider: str | None = None, model: str | None = None) 
     return checks, rp
 
 
-def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None) -> int:
-    root = os.getcwd()
-    checks, rp = preflight(root, provider=provider, model=model)
-    ok = all(c["ok"] for c in checks)
-
-    ui.head("start · preflight")
+def _render(checks: list) -> None:
     for c in checks:
         mark = ui.paint("32", "✔") if c["ok"] else ui.paint("31", "✘")
         sys.stdout.write(f"  {mark} {c['name'].ljust(22)} {ui.dim(str(c['detail']))}\n")
         if not c["ok"] and c["fix"]:
             sys.stdout.write(f"      {ui.paint('36', '→')} {c['fix']}\n")
 
+
+def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None) -> int:
+    root = os.getcwd()
+    ui.head("start · preflight")
+    checks, rp = preflight(root, provider=provider, model=model)
+    _render(checks)
+
+    # 키/설정 미충족 + 대화형이면 실패시키지 않고 온보딩 (opencode /connect 관행). --check 는 게이트 유지.
+    if not all(c["ok"] for c in checks) and rp.missing and not check_only:
+        from ..agent.onboard import can_prompt, onboard
+        if can_prompt():
+            new = onboard(root, preselect=provider)
+            if new is not None:
+                rp = new
+                checks, rp = preflight(root, provider=rp.profile.name, model=model)
+                sys.stdout.write("\n")
+                _render(checks)
+
+    ok = all(c["ok"] for c in checks)
     if not ok:
         ui.warn("세션을 열 수 없습니다 — 위 처방을 적용한 뒤 다시 실행하세요.")
         return 2

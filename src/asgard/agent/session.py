@@ -31,17 +31,16 @@ class SessionResult:
 
 
 def make_client(rp: ResolvedProvider):
-    """provider → SDK 클라이언트. 키는 env 에서만 읽는다 (Canon 4)."""
-    import os
+    """provider → SDK 클라이언트. 키는 resolve() 가 env 또는 credentials.json 에서 찾아둔 값(rp.api_key)."""
     if rp.profile.api_mode == "anthropic":
         import anthropic
-        return anthropic.Anthropic()  # SDK 가 ANTHROPIC_API_KEY/프로파일 해석
+        # rp.api_key 있으면 그것(env 또는 credentials.json), 없으면 SDK 기본 해석(프로파일 등)에 위임
+        return anthropic.Anthropic(api_key=rp.api_key) if rp.api_key else anthropic.Anthropic()
     if rp.profile.api_mode == "openai_compat":
         from openai import OpenAI
-        key = os.environ.get(rp.api_key_env) if rp.api_key_env else None
-        if not key:
-            raise RuntimeError(f"API 키 env 미설정 ({rp.api_key_env or 'API_KEY'}) — {rp.profile.signup_hint}")
-        return OpenAI(base_url=rp.base_url or None, api_key=key)
+        if not rp.api_key:
+            raise RuntimeError(f"API 키 없음 ({rp.profile.name}) — asgard start 온보딩에서 입력하세요")
+        return OpenAI(base_url=rp.base_url or None, api_key=rp.api_key)
     raise NotImplementedError(f"api_mode '{rp.profile.api_mode}' 미지원")
 
 

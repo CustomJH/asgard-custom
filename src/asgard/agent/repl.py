@@ -43,15 +43,21 @@ def prompt() -> str:
 _HELP = {
     "/help": "이 도움말",
     "/quest": "진행 중 퀘스트 원장 상태",
-    "/provider": "연결된 provider·model",
+    "/provider": "provider·model 표시 · '/provider set' 으로 재설정",
     "/model": "현재 모델 ID",
     "/clear": "화면 지우기",
     "/exit": "세션 종료 (Ctrl-D 동일)",
 }
 
 
+class _Reconfigure(Exception):
+    """provider set — 새 ResolvedProvider 로 세션 재생성 신호."""
+    def __init__(self, rp):
+        self.rp = rp
+
+
 def slash(cmd: str, root: str, rp) -> bool:
-    """슬래시 커맨드 처리. True = 처리됨(루프 계속), 종료는 예외로 신호."""
+    """슬래시 커맨드 처리. True = 처리됨(루프 계속), 종료/재설정은 예외로 신호."""
     c = cmd.split()[0]
     if c in ("/exit", "/quit"):
         raise EOFError
@@ -64,8 +70,16 @@ def slash(cmd: str, root: str, rp) -> bool:
         sys.stdout.write("\033[2J\033[H")
         banner(rp)
     elif c in ("/provider", "/model"):
+        if c == "/provider" and cmd.split()[1:2] == ["set"]:
+            from .onboard import can_prompt, onboard
+            if can_prompt():
+                new = onboard(root)
+                if new is not None:
+                    raise _Reconfigure(new)  # repl.run 이 세션 재생성
+            return True
+        src = rp.key_source or rp.source
         sys.stdout.write(f"  {ui.paint('38;5;208', rp.profile.display)} {ui.dim('·')} "
-                         f"{rp.model} {ui.dim('(' + rp.source + ')')}\n")
+                         f"{rp.model} {ui.dim('(' + src + ')')}\n")
     elif c == "/quest":
         try:
             out = ql(root, "state").stdout.strip()
@@ -77,7 +91,13 @@ def slash(cmd: str, root: str, rp) -> bool:
     return True
 
 
+def _new_heimdall(root: str, rp, emit):
+    from .heimdall import Heimdall
+    return Heimdall(rp, root, on_text=emit)
+
+
 def run(root: str, rp, heimdall) -> int:
+    emit = heimdall.on_text
     banner(rp)
     while True:
         try:
@@ -93,6 +113,10 @@ def run(root: str, rp, heimdall) -> int:
             except EOFError:
                 sys.stdout.write(f"\n  {ui.dim('비프로스트 봉인. 안녕히, 오딘.')}\n")
                 return 0
+            except _Reconfigure as r:  # /provider set — 세션 재생성
+                rp = r.rp
+                heimdall = _new_heimdall(root, rp, emit)
+                sys.stdout.write(f"  {ui.paint('32', '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
             continue
         try:
             out = heimdall.handle(req)
