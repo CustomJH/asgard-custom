@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from .. import ui
+from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..templates import (
     CC_FOLDERS,
     CURSOR_FOLDERS,
@@ -14,13 +15,8 @@ from ..templates import (
     cc_settings,
     codex_config,
     codex_rules,
-    cursor_failure_tracker,
-    cursor_git_guard,
     cursor_hooks_json,
     cursor_rule,
-    failure_tracker,
-    git_guard,
-    secret_guard,
 )
 
 
@@ -76,9 +72,9 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         for d, desc in CC_FOLDERS:
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
         files += [
-            (j(root, ".claude", "hooks", "git-guard.py"), git_guard()),
-            (j(root, ".claude", "hooks", "secret-guard.py"), secret_guard()),
-            (j(root, ".claude", "hooks", "failure-tracker.py"), failure_tracker()),
+            (j(root, ".claude", "hooks", "git-guard.py"), hook("git-guard")),
+            (j(root, ".claude", "hooks", "secret-guard.py"), hook("secret-guard")),
+            (j(root, ".claude", "hooks", "failure-tracker.py"), hook("failure-tracker")),
         ]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
@@ -88,16 +84,17 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             files.append((j(root, ".cursor", d, "README.md"), f"# .cursor/{d}/\n\n{desc}\n"))
         files += [
             (j(root, ".cursor", "hooks.json"), cursor_hooks_json()),
-            (j(root, ".cursor", "hooks", "git-guard.py"), cursor_git_guard()),
-            (j(root, ".cursor", "hooks", "failure-tracker.py"), cursor_failure_tracker()),
+            (j(root, ".cursor", "hooks", "git-guard.py"), hook("cursor-git-guard")),
+            (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("cursor-failure-tracker")),
         ]
 
     # Codex reads root AGENTS.md natively — add config + Pre/PostToolUse hooks + native rules.
+    # Codex shares Claude's stdin schema, so it reuses the same git-guard / failure-tracker scripts.
     if codex:
         files += [
             (j(root, ".codex", "config.toml"), codex_config()),
-            (j(root, ".codex", "hooks", "git-guard.py"), git_guard()),
-            (j(root, ".codex", "hooks", "failure-tracker.py"), failure_tracker()),
+            (j(root, ".codex", "hooks", "git-guard.py"), hook("git-guard")),
+            (j(root, ".codex", "hooks", "failure-tracker.py"), hook("failure-tracker")),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
         ]
 

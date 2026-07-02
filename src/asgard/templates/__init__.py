@@ -1,14 +1,13 @@
 """Content templates for `asgard init` — pure, stateless emitters (no shared state / UX / IO).
 
-Ported from src/templates.ts (CUS-108). Generated content stays byte-identical to the TS version;
-only the hook scripts change from Node (.mjs) to Python (.py) and the wiring flips node → python3.
+Config + rules + folder scaffolding only. Hook SCRIPTS live in `asgard.hooks` (loaded via its
+`script()`), so hook code is managed as real files there, not embedded strings here.
 """
 
 from .agents import agents_md
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
-from .cursor import CURSOR_FOLDERS, cursor_failure_tracker, cursor_git_guard, cursor_hooks_json, cursor_rule
-from .guards import failure_tracker, git_guard, secret_guard
+from .cursor import CURSOR_FOLDERS, cursor_hooks_json, cursor_rule
 
 __all__ = [
     "agents_md",
@@ -17,11 +16,6 @@ __all__ = [
     "codex_config",
     "codex_rules",
     "cursor_rule",
-    "cursor_failure_tracker",
-    "cursor_git_guard",
     "cursor_hooks_json",
     "CURSOR_FOLDERS",
-    "failure_tracker",
-    "git_guard",
-    "secret_guard",
 ]
