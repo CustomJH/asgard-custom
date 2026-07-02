@@ -21,8 +21,8 @@ import sys
 
 WARN = (
     "Repeated failure: `{tool}` failed {n}× with the same error kind this session. "
-    "Canon Law 9 (무한 루프 방지): 같은 접근으로 3회+ 실패 시 STOP — 가설을 재설계하거나 다른 "
-    "전략/도구로 바꾸고, 막히면 Odin에게 물어보세요."
+    "Canon Law 9 (무한 루프 방지) + Trinity: Worker 재시도 금지 — Thinker 재계획으로 전환하거나 "
+    "Odin 에게 에스컬레이션하세요 (전이 함수도 THINKER_REPLAN 을 반환합니다: quest-log next)."
 )
 
 
@@ -69,6 +69,33 @@ def read_failure(data: dict) -> tuple[str, bool]:
     return "", False
 
 
+def log_fail(proj: str, sid: str, key: str, n: int) -> None:
+    """Trinity 배선 (CUS-123): 임계 도달을 활성 퀘스트 로그에도 fail 이벤트로 남긴다 — 전이 함수
+    (quest-log next)가 failure_count 를 로그에서 관찰해 THINKER_REPLAN 을 결정하게. 임계 도달
+    시에만 쓰는 이유: 매 실패를 로그에 넣으면 노이즈만 늘고 소비자(전이 함수)는 임계만 본다.
+    fail-open: 로그가 없거나(quest 미사용) 어떤 오류든 조용히 넘어간다 — 경고 주입은 계속된다."""
+    try:
+        qdir = os.path.join(proj, ".asgard", "quest")
+        qid = open(os.path.join(qdir, "ACTIVE")).read().strip()
+        if not qid:
+            return
+        path = os.path.join(qdir, qid + ".jsonl")
+        turn = sum(1 for _ in open(path, encoding="utf-8")) + 1
+        import time
+        ev = {"schema": 1, "quest_id": qid, "session_id": sid, "turn": turn,
+              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "role": "worker",
+              "event": "fail", "base_ref": None, "risk": {}, "criteria": [], "changed_files": [],
+              "diff_hash": None, "commands": [], "verdict": "NA", "failure_sig": key, "failure_count": n}
+        line = (json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+        fd = os.open(path, os.O_APPEND | os.O_WRONLY)  # quest-log 와 같은 O_APPEND 단일 write
+        try:
+            os.write(fd, line)
+        finally:
+            os.close(fd)
+    except Exception:
+        pass
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -100,6 +127,7 @@ def main() -> None:
         except Exception:
             pass  # 저장 실패해도 이번 경고 판정은 진행 (fail-open)
         if n >= 3:  # Law 9 의 "같은 접근 3회+" 임계와 일치
+            log_fail(proj, sid, key, n)  # Trinity: 로그에 fail 이벤트 → 전이 함수가 재계획 결정
             msg = WARN.format(tool=tool, n=n)
             if cursor:
                 out = {"agentMessage": msg}  # Cursor 는 agentMessage 로 에이전트에게 전달
