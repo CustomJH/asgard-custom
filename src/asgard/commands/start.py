@@ -56,36 +56,21 @@ def _render(checks: list) -> None:
 
 def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None) -> int:
     root = os.getcwd()
-    ui.head("start · preflight")
-    checks, rp = preflight(root, provider=provider, model=model)
-    _render(checks)
 
-    # 키/설정 미충족 + 대화형이면 실패시키지 않고 온보딩 (opencode /connect 관행). --check 는 게이트 유지.
-    if not all(c["ok"] for c in checks) and rp.missing and not check_only:
-        from ..agent.onboard import can_prompt, onboard
-        if can_prompt():
-            new = onboard(root, preselect=provider)
-            if new is not None:
-                rp = new
-                checks, rp = preflight(root, provider=rp.profile.name, model=model)
-                sys.stdout.write("\n")
-                _render(checks)
-
-    ok = all(c["ok"] for c in checks)
-    if not ok:
+    # --check 는 CI/스모크용 게이트 — 프리플라이트만 돌고 종료 (기존 계약 유지).
+    if check_only:
+        ui.head("start · preflight")
+        checks, _ = preflight(root, provider=provider, model=model)
+        _render(checks)
+        if all(c["ok"] for c in checks):
+            ui.done("preflight clean — 세션 진입 가능")
+            return 0
         ui.warn("세션을 열 수 없습니다 — 위 처방을 적용한 뒤 다시 실행하세요.")
         return 2
-    if check_only:
-        ui.done("preflight clean — 세션 진입 가능")
-        return 0
 
-    # CUS-138 브랜드 REPL 로 핸드오프 (배너·슬래시·tool-use 축약).
-    from ..agent import Heimdall
+    # 기본: 터미널을 바로 켠다 (hermes/opencode 처럼). provider 미설정은 세션 안에서 온보딩.
+    from ..providers import resolve
     from ..agent import repl
 
-    def emit(s: str) -> None:
-        sys.stdout.write(s)
-        sys.stdout.flush()
-
-    heimdall = Heimdall(rp, root, on_text=emit)
-    return repl.run(root, rp, heimdall)
+    rp = resolve(root, provider=provider, model=model)
+    return repl.run(root, rp)

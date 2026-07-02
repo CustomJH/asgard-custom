@@ -96,28 +96,53 @@ def _new_heimdall(root: str, rp, emit):
     return Heimdall(rp, root, on_text=emit)
 
 
-def run(root: str, rp, heimdall) -> int:
-    emit = heimdall.on_text
+def _bye() -> int:
+    sys.stdout.write(f"\n  {ui.dim('비프로스트 봉인. 안녕히, 오딘.')}\n")
+    return 0
+
+
+def run(root: str, rp) -> int:
+    """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩(opencode 흐름)."""
+    def emit(s: str) -> None:
+        sys.stdout.write(s)
+        sys.stdout.flush()
+
     banner(rp)
+    heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
+    if heimdall is None:
+        sys.stdout.write(f"  {ui.dim('provider 미설정 — 메시지를 보내면 연결을 안내합니다 (또는 /provider set)')}\n")
+
     while True:
         try:
             req = prompt().strip()
         except (EOFError, KeyboardInterrupt):
-            sys.stdout.write(f"\n  {ui.dim('비프로스트 봉인. 안녕히, 오딘.')}\n")
-            return 0
+            return _bye()
         if not req:
             continue
         if req.startswith("/"):
             try:
                 slash(req, root, rp)
             except EOFError:
-                sys.stdout.write(f"\n  {ui.dim('비프로스트 봉인. 안녕히, 오딘.')}\n")
-                return 0
+                return _bye()
             except _Reconfigure as r:  # /provider set — 세션 재생성
                 rp = r.rp
                 heimdall = _new_heimdall(root, rp, emit)
                 sys.stdout.write(f"  {ui.paint('32', '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
             continue
+
+        # 키 미설정이면 첫 요청에서 온보딩 (터미널은 이미 켜진 상태 — hermes/opencode 흐름)
+        if heimdall is None:
+            from .onboard import can_prompt, onboard
+            if not can_prompt():
+                sys.stdout.write(f"  {ui.paint('33', '⚠')} provider 미설정 — 대화형 터미널에서 연결하세요\n")
+                continue
+            new = onboard(root, preselect=rp.profile.name if not rp.missing else None)
+            if new is None or new.missing:
+                sys.stdout.write(f"  {ui.dim('연결 취소 — /provider set 으로 다시 시도')}\n")
+                continue
+            rp = new
+            heimdall = _new_heimdall(root, rp, emit)
+
         try:
             out = heimdall.handle(req)
             if out:
