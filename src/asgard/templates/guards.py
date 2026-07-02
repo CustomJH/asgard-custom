@@ -94,8 +94,14 @@ try:
 
     proj = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
     sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
-    d = os.path.join(proj, ".claude", ".asgard")
+    d = os.path.join(proj, ".asgard")                      # tool-neutral shared state (Claude/Codex/Cursor)
     os.makedirs(d, exist_ok=True)
+    gi = os.path.join(d, ".gitignore")
+    if not os.path.exists(gi):                             # self-ignore: '*' hides the whole dir from git
+        try:
+            open(gi, "w").write("*\\n")
+        except Exception:
+            pass
     path = os.path.join(d, "failures-" + sid + ".json")
     counts = {}
     if os.path.exists(path):

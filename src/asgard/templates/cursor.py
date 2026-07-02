@@ -43,9 +43,67 @@ for pat, label in BLOCK:
 out({"permission": "allow"})
 """
 
+# Cursor failure-tracker (Python). Wired to postToolUseFailure (fires on tool failure only). Shares
+# the tool-neutral .asgard/ state with Claude/Codex so the 3-strike stays continuous across tools.
+_CURSOR_FAILURE_TRACKER = """\
+#!/usr/bin/env python3
+# Asgard failure-tracker (Cursor) — Canon Law 9. postToolUseFailure: count per tool + normalized error
+# signature in the shared .asgard/ dir; at 3+ of the same kind emit a soft agentMessage. Fail-open.
+import sys, json, re, os
+
+def _sig(text):
+    s = text.lower()
+    s = re.sub(r"0x[0-9a-f]+|\\b[0-9a-f]{6,}\\b", "", s)
+    s = re.sub(r"[\\\\/]\\S+", "", s)
+    s = re.sub(r"\\d+", "#", s)
+    return re.sub(r"\\s+", " ", s).strip()[:80]
+
+try:
+    data = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)
+try:
+    tool = str(data.get("tool_name") or "").strip() or "unknown"
+    err = str(data.get("error_message") or data.get("failure_type") or "error")
+    if tool == "unknown":
+        sys.exit(0)
+    proj = data.get("cwd") or os.getcwd()
+    sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
+    d = os.path.join(proj, ".asgard")
+    os.makedirs(d, exist_ok=True)
+    gi = os.path.join(d, ".gitignore")
+    if not os.path.exists(gi):
+        try:
+            open(gi, "w").write("*\\n")
+        except Exception:
+            pass
+    path = os.path.join(d, "failures-" + sid + ".json")
+    counts = {}
+    if os.path.exists(path):
+        try:
+            counts = json.load(open(path))
+        except Exception:
+            counts = {}
+    key = tool + "|" + _sig(err)
+    counts[key] = int(counts.get(key, 0)) + 1
+    n = counts[key]
+    try:
+        json.dump(counts, open(path, "w"))
+    except Exception:
+        pass
+    if n >= 3:
+        msg = ("Asgard Canon Law 9 (\\ubb34\\ud55c \\ub8e8\\ud504 \\ubc29\\uc9c0): `" + tool + "` failed " + str(n) +
+               "\\u00d7 with the same error kind. 3\\ud68c+ \\uac19\\uc740 \\uc811\\uadfc \\uc2e4\\ud328 \\uc2dc STOP \\u2014 "
+               "\\uac00\\uc124 \\uc7ac\\uc124\\uacc4/\\ub2e4\\ub978 \\uc804\\ub7b5, \\ub9c9\\ud790 \\ub54c Odin\\uc5d0\\uac8c \\ubb38\\uc758.")
+        sys.stdout.write(json.dumps({"agentMessage": msg}, separators=(",", ":")))
+except Exception:
+    sys.exit(0)
+sys.exit(0)
+"""
+
 CURSOR_FOLDERS = [
     ("skills", "Skills — each in `<name>/SKILL.md`; frontmatter: name, description, paths.\nDocs: https://cursor.com/docs/context/commands"),
-    ("hooks", "Hook scripts, wired from `.cursor/hooks.json` (events: beforeShellExecution, afterFileEdit, …).\nDocs: https://cursor.com/docs/hooks"),
+    ("hooks", "Hook scripts, wired from `.cursor/hooks.json` (events: beforeShellExecution, postToolUseFailure, …).\nDocs: https://cursor.com/docs/hooks"),
 ]
 
 
@@ -57,10 +115,20 @@ def cursor_git_guard() -> str:
     return _CURSOR_GIT_GUARD
 
 
+def cursor_failure_tracker() -> str:
+    return _CURSOR_FAILURE_TRACKER
+
+
 def cursor_hooks_json() -> str:
-    # Wires the beforeShellExecution guard. Project hooks run from repo root, need python3, load only
-    # in a trusted workspace (cursor.com/docs/hooks).
+    # Wires the beforeShellExecution guard (Law 3/6) + postToolUseFailure tracker (Law 9). Project
+    # hooks run from repo root, need python3, load only in a trusted workspace (cursor.com/docs/hooks).
     return json.dumps(
-        {"version": 1, "hooks": {"beforeShellExecution": [{"command": "python3 .cursor/hooks/git-guard.py"}]}},
+        {
+            "version": 1,
+            "hooks": {
+                "beforeShellExecution": [{"command": "python3 .cursor/hooks/git-guard.py"}],
+                "postToolUseFailure": [{"command": "python3 .cursor/hooks/failure-tracker.py"}],
+            },
+        },
         indent=2,
     ) + "\n"

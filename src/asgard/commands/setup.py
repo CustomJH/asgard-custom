@@ -14,6 +14,7 @@ from ..templates import (
     cc_settings,
     codex_config,
     codex_rules,
+    cursor_failure_tracker,
     cursor_git_guard,
     cursor_hooks_json,
     cursor_rule,
@@ -70,7 +71,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [
             (j(root, ".claude", "CLAUDE.md"), "@../AGENTS.md\n"),
             (j(root, ".claude", "settings.json"), cc_settings()),
-            (j(root, ".claude", ".gitignore"), "settings.local.json\n.asgard/\n"),  # .asgard/ = per-session hook state
+            (j(root, ".claude", ".gitignore"), "settings.local.json\n"),  # shared hook state lives in root .asgard/ (self-ignored)
         ]
         for d, desc in CC_FOLDERS:
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
@@ -80,7 +81,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "failure-tracker.py"), failure_tracker()),
         ]
 
-    # Cursor — always-apply rule bridge + skeleton + beforeShellExecution guard.
+    # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
         files.append((j(root, ".cursor", "rules", "000-agents.mdc"), cursor_rule()))
         for d, desc in CURSOR_FOLDERS:
@@ -88,13 +89,15 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [
             (j(root, ".cursor", "hooks.json"), cursor_hooks_json()),
             (j(root, ".cursor", "hooks", "git-guard.py"), cursor_git_guard()),
+            (j(root, ".cursor", "hooks", "failure-tracker.py"), cursor_failure_tracker()),
         ]
 
-    # Codex reads root AGENTS.md natively — add config + a PreToolUse git-guard + native rules.
+    # Codex reads root AGENTS.md natively — add config + Pre/PostToolUse hooks + native rules.
     if codex:
         files += [
             (j(root, ".codex", "config.toml"), codex_config()),
             (j(root, ".codex", "hooks", "git-guard.py"), git_guard()),
+            (j(root, ".codex", "hooks", "failure-tracker.py"), failure_tracker()),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
         ]
 

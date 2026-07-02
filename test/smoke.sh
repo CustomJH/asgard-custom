@@ -57,6 +57,11 @@ grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: universal
 [ -f "$PROJ/.claude/hooks/git-guard.py" ] && [ -f "$PROJ/.claude/hooks/failure-tracker.py" ] || { echo "FAIL: universal missing .claude guards"; exit 1; }
 [ -f "$PROJ/.cursor/hooks.json" ] && [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: universal missing .cursor guard"; exit 1; }
 [ -f "$PROJ/.codex/config.toml" ] && [ -f "$PROJ/.codex/rules/canon.rules" ] || { echo "FAIL: universal missing .codex config/rules"; exit 1; }
+# cross-tool continuity — failure-tracker (Law 9) wired in ALL three, sharing root .asgard/ state
+[ -f "$PROJ/.codex/hooks/failure-tracker.py" ] && [ -f "$PROJ/.cursor/hooks/failure-tracker.py" ] || { echo "FAIL: universal missing codex/cursor failure-tracker"; exit 1; }
+grep -q "PostToolUse" "$PROJ/.codex/config.toml" || { echo "FAIL: codex config missing PostToolUse tracker"; exit 1; }
+grep -q "postToolUseFailure" "$PROJ/.cursor/hooks.json" || { echo "FAIL: cursor hooks missing postToolUseFailure"; exit 1; }
+python3 -m py_compile "$PROJ/.codex/hooks/failure-tracker.py" "$PROJ/.cursor/hooks/failure-tracker.py" || { echo "FAIL: cross-tool trackers invalid Python"; exit 1; }
 rm -rf "$PROJ"
 
 # ── init --cc — AGENTS.md + full .claude/ (bridge + config + Python guards) ──
@@ -82,13 +87,15 @@ printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | python3 "$
 grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing PostToolUse"; exit 1; }
 [ -f "$PROJ/.claude/hooks/failure-tracker.py" ] || { echo "FAIL: --cc missing failure-tracker.py"; exit 1; }
 python3 -m py_compile "$PROJ/.claude/hooks/failure-tracker.py" || { echo "FAIL: failure-tracker invalid Python"; exit 1; }
-grep -q '\.asgard/' "$PROJ/.claude/.gitignore" || { echo "FAIL: .gitignore must exclude .asgard/"; exit 1; }
 _FT="$PROJ/.claude/hooks/failure-tracker.py"
 _FAIL='{"tool_name":"Bash","session_id":"smoke","tool_response":{"is_error":true,"error":"cannot open /p/a1: e1"}}'
 for _i in 1 2; do printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' && { echo "FAIL: failure-tracker warned too early"; exit 1; } || true; done
 printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' || { echo "FAIL: failure-tracker must warn on 3rd"; exit 1; }
 printf '%s' 'not-json' | python3 "$_FT" >/dev/null 2>&1 || { echo "FAIL: failure-tracker must fail-open"; exit 1; }
-rm -rf "$PROJ/.claude/.asgard"
+# shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
+[ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
+grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }
+rm -rf "$PROJ/.asgard"
 if ( cd "$PROJ" && "${ASG[@]}" init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing"; exit 1; fi
 ( cd "$PROJ" && "${ASG[@]}" init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
 rm -rf "$PROJ"

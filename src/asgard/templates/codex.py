@@ -23,6 +23,15 @@ matcher = "^Bash$"
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.py"'
+
+# Canon Law 9 (CUS-97) — soft 3-strike loop tracker. Codex PostToolUse carries tool_name + tool_response
+# (Claude's schema), so it runs the SAME failure-tracker.py and shares the .asgard/ state cross-tool.
+[[hooks.PostToolUse]]
+matcher = ".*"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/failure-tracker.py"'
 """
 
 _CODEX_RULES = """\

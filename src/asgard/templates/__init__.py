@@ -7,7 +7,7 @@ only the hook scripts change from Node (.mjs) to Python (.py) and the wiring fli
 from .agents import agents_md
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
-from .cursor import CURSOR_FOLDERS, cursor_git_guard, cursor_hooks_json, cursor_rule
+from .cursor import CURSOR_FOLDERS, cursor_failure_tracker, cursor_git_guard, cursor_hooks_json, cursor_rule
 from .guards import failure_tracker, git_guard, secret_guard
 
 __all__ = [
@@ -17,6 +17,7 @@ __all__ = [
     "codex_config",
     "codex_rules",
     "cursor_rule",
+    "cursor_failure_tracker",
     "cursor_git_guard",
     "cursor_hooks_json",
     "CURSOR_FOLDERS",
