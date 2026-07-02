@@ -25,9 +25,48 @@ _LOGO = r"""  ⠀⠀⢀⡤⣶⣶⣲⠤⣀⠀⠀   ⢰⡄⠀⠀⠀⢀⣤⣦⣄⡀
   ⠀⠈⢳⣲⡿⣾⣷⢿⣶⡞⠁⠀   ⢀⣿⠁⠻⠃⢸⣷⡀⣶⣤⣴⠿⠃⠙⢷⣼⡇⣸⡟⢻⣆⣿⡇⠀⠹⣷⡀⣿⣧⡾⠋⠀"""
 
 
+def _image_logo() -> bool:
+    """지원 터미널(kitty/iterm/ghostty/wezterm)이면 PNG lockup 을 인라인 표시. 성공 시 True.
+    install.sh _logo 의 파이썬 포팅 — 미지원/asset 부재는 False 로 braille 폴백."""
+    import base64
+    import os
+    proto = ""
+    tp = os.environ.get("TERM_PROGRAM", "")
+    term = os.environ.get("TERM", "")
+    if tp in ("iTerm.app", "WezTerm") or os.environ.get("LC_TERMINAL") == "iTerm2":
+        proto = "iterm"
+    if "kitty" in term or "ghostty" in term or os.environ.get("KITTY_WINDOW_ID") \
+            or os.environ.get("GHOSTTY_RESOURCES_DIR") or tp in ("ghostty", "Ghostty"):
+        proto = "kitty"
+    if not proto:
+        return False
+    try:
+        from importlib.resources import files
+        data = (files("asgard") / "assets" / "logo-lockup.png").read_bytes()
+    except Exception:
+        return False
+    b64 = base64.b64encode(data).decode()
+    sys.stdout.write("\n  ")
+    if proto == "iterm":
+        sys.stdout.write(f"\033]1337;File=inline=1;width=30;preserveAspectRatio=1:{b64}\a\n")
+    else:  # kitty graphics — 4096자 청크
+        off, first = 0, True
+        while off < len(b64):
+            piece, off = b64[off:off + 4096], off + 4096
+            more = 1 if off < len(b64) else 0
+            if first:
+                sys.stdout.write(f"\033_Gf=100,a=T,c=30,m={more};{piece}\033\\")
+                first = False
+            else:
+                sys.stdout.write(f"\033_m={more};{piece}\033\\")
+        sys.stdout.write("\n")
+    sys.stdout.flush()
+    return True
+
+
 def banner(rp) -> None:
-    if ui._COLOR:
-        sys.stdout.write("\n" + ui.paint("38;5;208", _LOGO) + "\n")
+    if ui._COLOR and not _image_logo():
+        sys.stdout.write("\n" + ui.paint("38;5;208", _LOGO) + "\n")  # 이미지 미지원 → braille 폴백
     sys.stdout.write(
         f"  {ui.dim('─' * 20)} {ui._mark()} {ui.dim('─' * 20)}\n"
         f"  {ui.bold('Heimdall')} {ui.dim('· 비프로스트의 수호자')}    "

@@ -25,3 +25,4 @@ path = "src/asgard/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asgard"]
+artifacts = ["src/asgard/assets/*.png"]  # 로고 lockup — REPL 배너 이미지(kitty/iterm), 기본 .py-only 를 덮어 포함
