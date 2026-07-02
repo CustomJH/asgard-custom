@@ -26,6 +26,7 @@ class ProviderProfile:
     default_model: str
     base_url: str = ""                # openai_compat 필수, anthropic 은 SDK 기본
     signup_hint: str = ""             # 키 없을 때 처방 한 줄
+    extra_body: dict = field(default_factory=dict)  # provider 고유 요청 필드 (nvidia reasoning 등)
 
 
 PROVIDERS: dict[str, ProviderProfile] = {
@@ -45,6 +46,17 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("OPENAI_API_KEY",),
         default_model="",  # compat 은 모델 기본값 없음 — config 필수
         signup_hint="config 에 base_url·model 지정 + api_key_env 의 env var export",
+    ),
+    # NVIDIA NIM — openai_compat 특수화. reasoning 파라미터는 extra_body 로 (enable_thinking·reasoning_budget).
+    "nvidia": ProviderProfile(
+        name="nvidia",
+        display="NVIDIA NIM",
+        api_mode="openai_compat",
+        env_vars=("NVIDIA_API_KEY",),
+        base_url="https://integrate.api.nvidia.com/v1",
+        default_model="nvidia/nemotron-3-ultra-550b-a55b",
+        signup_hint="build.nvidia.com 에서 nvapi- 키 발급 후 export NVIDIA_API_KEY=...",
+        extra_body={"chat_template_kwargs": {"enable_thinking": True}, "reasoning_budget": 16384},
     ),
 }
 
