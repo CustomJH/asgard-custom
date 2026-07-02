@@ -27,8 +27,15 @@ def cc_settings() -> str:
                     {"matcher": "Write|Edit", "hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"'}]},
                 ],
                 # Canon Law 9 — soft 3-strike loop warning (never blocks). All tools.
+                # write-sentinel — records session write paths so the Stop gate can catch
+                # quest-less writes (Trinity enforcement; write tools only, so no read-call overhead).
                 "PostToolUse": [
                     {"matcher": "*", "hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/failure-tracker.py"'}]},
+                    {"matcher": "Write|Edit|NotebookEdit", "hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/write-sentinel.py"'}]},
+                ],
+                # Canon Law 10 (Trinity) — Stop-time verifier gate: diff-hash physical comparison.
+                "Stop": [
+                    {"hooks": [{"type": "command", "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/verifier-gate.py"'}]},
                 ],
             },
         },
