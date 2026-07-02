@@ -41,6 +41,17 @@ def doctor(
     raise typer.Exit(run_doctor(json_out=json_, quiet=quiet))
 
 
+@app.command(help="start an Asgard terminal session (Heimdall, provider-connected) — CUS-135")
+def start(
+    check: bool = typer.Option(False, "--check", help="preflight only — exit code for CI/smoke"),
+    provider: str = typer.Option(None, "--provider", help="anthropic | openai_compat (config 오버라이드)"),
+    model: str = typer.Option(None, "--model", help="모델 ID (config 오버라이드)"),
+) -> None:
+    from .commands.start import run_start
+
+    raise typer.Exit(run_start(check_only=check, provider=provider, model=model))
+
+
 @app.command(help="set up a project — interactive picker (TTY); --cc/--cursor/--codex/--profile for a specific agent")
 def init(
     cc: bool = typer.Option(False, "--cc", help="Claude Code (.claude/) skeleton"),
