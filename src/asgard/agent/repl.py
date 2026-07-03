@@ -30,11 +30,27 @@ _LOGO = (
 _LOGO_SLIM = "◇ ASGARD"  # 폭 좁은 터미널용 축약
 
 
+def is_light_bg() -> bool:
+    """터미널 배경이 밝은지 — COLORFGBG='fg;bg' 의 bg 가 7~15 면 라이트. 모르면 다크 가정.
+    라이트 배경엔 흰 로고가 안 보이고 골드 asset 은 검정 박스가 보이므로, 이미지를 스킵하고
+    진한 텍스트 로고로 폴백한다."""
+    import os
+    parts = os.environ.get("COLORFGBG", "").split(";")
+    if len(parts) >= 2:
+        try:
+            return int(parts[-1]) >= 7
+        except ValueError:
+            pass
+    return False
+
+
 def _image_logo() -> bool:
-    """지원 터미널(kitty/iterm/ghostty/wezterm)이면 PNG lockup 을 인라인 표시. 성공 시 True.
-    install.sh _logo 의 파이썬 포팅 — 미지원/asset 부재는 False 로 braille 폴백."""
+    """지원 터미널(kitty/iterm/ghostty/wezterm) + 다크 배경이면 PNG lockup 을 인라인 표시.
+    라이트 배경은 흰 로고가 안 보여 스킵(→ 텍스트 폴백). install.sh _logo 의 파이썬 포팅."""
     import base64
     import os
+    if is_light_bg():  # 흰 lockup 은 라이트 배경서 안 보인다 — 텍스트 폴백에 맡긴다
+        return False
     proto = ""
     tp = os.environ.get("TERM_PROGRAM", "")
     term = os.environ.get("TERM", "")
@@ -70,8 +86,9 @@ def _image_logo() -> bool:
 
 
 _O = "38;5;80"  # 브랜드 시안 (서리/얼음, 256=80)
-# 로고 세로 그라디언트 (밝은 얼음 위 → 진한 청록 아래)
+# 로고 세로 그라디언트 — 다크 배경은 밝은 얼음, 라이트 배경은 진한 청록(밝은색은 라이트서 안 보임)
 _LOGO_GRAD = ["159", "123", "80", "44", "37", "30"]
+_LOGO_GRAD_LIGHT = ["30", "30", "23", "23", "23", "23"]
 
 
 def banner(rp) -> None:
@@ -79,12 +96,13 @@ def banner(rp) -> None:
     width = shutil.get_terminal_size((80, 20)).columns
     bar = ui.paint(_O, "▌")
 
-    # 로고: 이미지 터미널 → PNG(install 과 동일), 아니면 braille lockup(install 원본, 그라디언트) / 축약
+    # 로고: 다크+이미지 터미널 → PNG, 아니면 braille lockup(배경 밝기별 그라디언트) / 축약
     if not (ui._COLOR and _image_logo()):
+        grad = _LOGO_GRAD_LIGHT if is_light_bg() else _LOGO_GRAD
         if width >= 70:
             sys.stdout.write("\n")
             for i, line in enumerate(_LOGO.split("\n")):
-                col = _LOGO_GRAD[i] if i < len(_LOGO_GRAD) else "80"
+                col = grad[i] if i < len(grad) else grad[-1]
                 sys.stdout.write("  " + ui.paint(f"38;5;{col}", line) + "\n")
         else:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")

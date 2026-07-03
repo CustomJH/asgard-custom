@@ -21,11 +21,16 @@ from textual.widgets import Input, RichLog, Static
 from . import repl as _repl
 
 _O = "#5fd7d7"  # 브랜드 시안 (서리/얼음)
-# 세로 그라디언트 (밝은 얼음 위 → 진한 청록 아래) — repl 과 통일
+# 세로 그라디언트 — 다크 배경은 밝은 얼음, 라이트 배경은 진한 청록 (밝은색은 라이트서 안 보임)
 _GRAD = ["#afffff", "#87ffff", "#5fd7d7", "#00d7d7", "#00afaf", "#008787"]
-_BANNER = "\n".join(
-    f"  [{_GRAD[i] if i < len(_GRAD) else _O}]{ln}[/]"
-    for i, ln in enumerate(_repl._LOGO.split("\n")))
+_GRAD_LIGHT = ["#008787", "#008787", "#005f5f", "#005f5f", "#005f5f", "#005f5f"]
+
+
+def _banner(light: bool = False) -> str:
+    g = _GRAD_LIGHT if light else _GRAD
+    return "\n".join(
+        f"  [{g[i] if i < len(g) else g[-1]}]{ln}[/]"
+        for i, ln in enumerate(_repl._LOGO.split("\n")))
 
 
 class AsgardTUI(App):
@@ -53,7 +58,7 @@ class AsgardTUI(App):
 
     # ── 레이아웃 ─────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
-        yield Static(_BANNER, id="logo")
+        yield Static(_banner(_repl.is_light_bg()), id="logo")
         yield Static(self._meta_line(), id="meta")
         yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         with Vertical(id="prompt"):
