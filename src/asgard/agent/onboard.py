@@ -43,15 +43,18 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
     if not p.default_model:
         model = input("  " + t("model_id_prompt") + ": ").strip()
 
-    try:
-        key = getpass.getpass('  ' + t('api_key_prompt', p=p.display) + ': ').strip()
-    except (EOFError, KeyboardInterrupt):
-        sys.stdout.write(f'  {t("cancelled")}\n')
-        return None
-    if not key:
-        sys.stdout.write(f'  {t("no_key")}\n')
-        return None
+    key = ""
+    if not p.key_optional:  # 로컬 provider(ollama 등)는 키 불요 — 입력 생략
+        try:
+            key = getpass.getpass('  ' + t('api_key_prompt', p=p.display) + ': ').strip()
+        except (EOFError, KeyboardInterrupt):
+            sys.stdout.write(f'  {t("cancelled")}\n')
+            return None
+        if not key:
+            sys.stdout.write(f'  {t("no_key")}\n')
+            return None
 
-    save_credential(name, key, base_url=base_url, model=model)
-    sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(t('saved_cred'))}\n")
+    if key or base_url or model:
+        save_credential(name, key, base_url=base_url, model=model)
+        sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(t('saved_cred'))}\n")
     return resolve(root, provider=name)

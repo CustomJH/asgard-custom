@@ -27,6 +27,8 @@ class ProviderProfile:
     base_url: str = ""                # openai_compat 필수, anthropic 은 SDK 기본
     signup_hint: str = ""             # 키 없을 때 처방 한 줄
     extra_body: dict = field(default_factory=dict)  # provider 고유 요청 필드 (nvidia reasoning 등)
+    key_optional: bool = False        # 로컬 서버(ollama 등) — 키 없어도 연결 (SDK 엔 더미 전달)
+    context_window: int = 0           # 대략적 컨텍스트 한도 (status line % 용). 0 = 미상 → % 생략
 
 
 PROVIDERS: dict[str, ProviderProfile] = {
@@ -37,6 +39,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
         default_model="claude-opus-4-8",
         signup_hint="https://platform.claude.com 에서 키 발급 후 export ANTHROPIC_API_KEY=...",
+        context_window=200_000,
     ),
     # 제네릭 OpenAI-호환 — OpenAI/OpenRouter/Ollama류. base_url 은 config 로 지정.
     "openai_compat": ProviderProfile(
@@ -46,6 +49,18 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("OPENAI_API_KEY",),
         default_model="",  # compat 은 모델 기본값 없음 — config 필수
         signup_hint="config 에 base_url·model 지정 + api_key_env 의 env var export",
+    ),
+    # Ollama — 로컬 서버 (openai_compat 엔드포인트). 키 불요, 모델은 ollama pull 로 준비.
+    "ollama": ProviderProfile(
+        name="ollama",
+        display="Ollama (local)",
+        api_mode="openai_compat",
+        env_vars=("OLLAMA_API_KEY",),  # 원격 ollama 등 특수 환경용 — 보통 불요
+        base_url="http://localhost:11434/v1",
+        default_model="gemma4:12b-mlx",
+        signup_hint="ollama serve 실행 + ollama pull gemma4:12b-mlx (API 키 불요)",
+        key_optional=True,
+        context_window=128_000,
     ),
     # NVIDIA NIM — openai_compat 특수화. reasoning 파라미터는 extra_body 로 (enable_thinking·reasoning_budget).
     "nvidia": ProviderProfile(
@@ -162,6 +177,8 @@ def resolve(root: str | None = None, provider: str | None = None,
         rp.api_key, rp.api_key_env, rp.key_source = os.environ[env_var], env_var, f"env:{env_var}"
     elif cred.get("api_key"):
         rp.api_key, rp.key_source = cred["api_key"], "credentials.json"
+    elif profile.key_optional:
+        rp.api_key, rp.key_source = "ollama", "local (keyless)"  # openai SDK 는 빈 키 거부 — 더미
     else:
         rp.missing.append(f"API 키 없음 ({name}) — asgard start 에서 입력하거나 {' / '.join(candidates)} export")
     if not rp.model:
