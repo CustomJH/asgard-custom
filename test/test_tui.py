@@ -61,6 +61,19 @@ class TestTUI(unittest.TestCase):
                 await pilot.pause()
         asyncio.run(go())
 
+    def test_slash_suggester(self):
+        async def go():
+            app = self._app()
+            async with app.run_test() as pilot:
+                from textual.widgets import Input
+                inp = app.query_one("#input", Input)
+                assert inp.suggester is not None
+                s = await inp.suggester.get_suggestion("/he")
+                assert s == "/help", s
+                s2 = await inp.suggester.get_suggestion("/pro")
+                assert s2 and s2.startswith("/provider"), s2
+        asyncio.run(go())
+
     def test_quit_binding(self):
         async def go():
             app = self._app()

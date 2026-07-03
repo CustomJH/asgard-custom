@@ -15,6 +15,7 @@ from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
+from textual.suggester import SuggestFromList
 from textual.widgets import Input, RichLog, Static
 
 from . import repl as _repl
@@ -51,7 +52,9 @@ class AsgardTUI(App):
         yield Static(self._meta_line(), id="meta")
         yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         with Vertical(id="prompt"):
-            yield Input(placeholder="메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )", id="input")
+            # 슬래시 자동완성 — / 입력 시 인라인 제안(→ 로 수락). CLI readline 의 Tab 대응.
+            yield Input(placeholder="메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )", id="input",
+                        suggester=SuggestFromList(_repl._COMMANDS, case_sensitive=False))
         yield Static(self._status_line(), id="status")
 
     def on_mount(self) -> None:
