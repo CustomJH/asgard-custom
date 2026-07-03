@@ -70,10 +70,10 @@ class AsgardTUI(App):
     def on_mount(self) -> None:
         self.query_one("#input", Input).focus()
         log = self.query_one("#log", RichLog)
+        log.write("[b]Asgard 에 오신 것을 환영합니다, 오딘.[/b] [dim]무엇이든 물으시거나 /help 를 입력하세요.[/dim]")
+        log.write("[#5fd7d7]✦[/#5fd7d7] [dim]Tip — ! 로 bash, / 로 커맨드, Ctrl-C 로 턴 중단.[/dim]")
         if self.heimdall is None:
             log.write("[dim]provider 미설정 — 메시지를 보내면 연결을 안내합니다 (/provider set)[/dim]")
-        else:
-            log.write("[dim]Heimdall 대기 중. 무엇이든 물으세요.[/dim]")
 
     def _meta_line(self) -> str:
         return f"[b]Heimdall[/b]  [dim]비프로스트의 수호자 · Trinity 오케스트레이터[/dim]"

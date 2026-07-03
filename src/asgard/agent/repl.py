@@ -112,6 +112,13 @@ def banner(rp) -> None:
         f"\n  {bar} {ui.bold('Heimdall')}  {ui.dim('비프로스트의 수호자 · Trinity 오케스트레이터')}\n"
         f"  {bar} {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model}\n"
         f"  {bar} {ui.dim('/help · /new · !bash · Tab 자동완성 · ↑↓ 히스토리')}\n")
+    # hermes 스타일 — welcome + tip + 구분선 rule
+    rule = ui.paint(_O, "─" * min(width - 4, 60))
+    sys.stdout.write(
+        f"\n  {ui.bold('Asgard 에 오신 것을 환영합니다, 오딘.')} "
+        f"{ui.dim('무엇이든 물으시거나 /help 를 입력하세요.')}\n"
+        f"  {ui.paint(_O, '✦')} {ui.dim('Tip — ! 로 bash, / 로 커맨드, @ 로 파일(예정). Ctrl-C 로 턴 중단.')}\n"
+        f"  {rule}\n")
 
 
 _HELP = {
