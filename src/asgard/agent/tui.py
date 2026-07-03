@@ -19,6 +19,7 @@ from textual.suggester import SuggestFromList
 from textual.widgets import Input, RichLog, Static
 
 from . import repl as _repl
+from ..i18n import t
 
 _O = "#5fd7d7"  # 브랜드 시안 (서리/얼음)
 # 세로 그라디언트 — 다크 배경은 밝은 얼음, 라이트 배경은 진한 청록 (밝은색은 라이트서 안 보임)
@@ -63,26 +64,26 @@ class AsgardTUI(App):
         yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         with Vertical(id="prompt"):
             # 슬래시 자동완성 — / 입력 시 인라인 제안(→ 로 수락). CLI readline 의 Tab 대응.
-            yield Input(placeholder="메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )", id="input",
+            yield Input(placeholder=t("input_placeholder"), id="input",
                         suggester=SuggestFromList(_repl._COMMANDS, case_sensitive=False))
         yield Static(self._status_line(), id="status")
 
     def on_mount(self) -> None:
         self.query_one("#input", Input).focus()
         log = self.query_one("#log", RichLog)
-        log.write("[b]Asgard 에 오신 것을 환영합니다, 오딘.[/b] [dim]무엇이든 물으시거나 /help 를 입력하세요.[/dim]")
-        log.write("[#5fd7d7]✦[/#5fd7d7] [dim]Tip — ! 로 bash, / 로 커맨드, Ctrl-C 로 턴 중단.[/dim]")
+        log.write(f"[b]{t('welcome')}[/b] [dim]{t('welcome_hint')}[/dim]")
+        log.write(f"[#5fd7d7]✦[/#5fd7d7] [dim]{t('tip')}[/dim]")
         if self.heimdall is None:
-            log.write("[dim]provider 미설정 — 메시지를 보내면 연결을 안내합니다 (/provider set)[/dim]")
+            log.write(f"[dim]{t('provider_unset')}[/dim]")
 
     def _meta_line(self) -> str:
-        return f"[b]Heimdall[/b]  [dim]비프로스트의 수호자 · Trinity 오케스트레이터[/dim]"
+        return f"[b]Heimdall[/b]  [dim]{t('tagline')}[/dim]"
 
     def _status_line(self, busy: bool = False) -> str:
         if busy:
-            return " [#5fd7d7]●[/#5fd7d7] 처리 중…   [dim]Ctrl-C 중단[/dim]"
+            return f" [#5fd7d7]●[/#5fd7d7] {t('busy')}   [dim]{t('interrupt_hint')}[/dim]"
         p = self.rp.profile.display
-        return f" [#5fd7d7]▌[/#5fd7d7] {p} · {self.rp.model}   [dim]/help · /new · !bash[/dim]"
+        return f" [#5fd7d7]▌[/#5fd7d7] {p} · {self.rp.model}   [dim]{t('cmd_hints')}[/dim]"
 
     def _set_status(self, busy: bool) -> None:
         self.query_one("#status", Static).update(self._status_line(busy))
@@ -106,7 +107,7 @@ class AsgardTUI(App):
             if out:
                 self.call_from_thread(self._append, "\n" + out)
         except Exception as e:
-            self.call_from_thread(self._append, f"[red]⚠ 세션 오류: {e}[/red]")
+            self.call_from_thread(self._append, f"[red]⚠ {t('session_error', e=e)}[/red]")
         finally:
             self.call_from_thread(self._set_status, False)
 
@@ -149,12 +150,12 @@ class AsgardTUI(App):
         with self.suspend():
             new = onboard(self.root, preselect=self.rp.profile.name if not self.rp.missing else None)
         if new is None or new.missing:
-            log.write("[dim]연결 취소 — /provider set 으로 다시 시도[/dim]")
+            log.write(f"[dim]{t('connect_cancel')}[/dim]")
             return False
         self.rp = new
         self.heimdall = _repl._new_heimdall(self.root, self.rp, self._emit)
         self._set_status(False)
-        log.write(f"[#5fd7d7]✔[/#5fd7d7] {new.profile.display} · {new.model} 연결")
+        log.write(f"[#5fd7d7]✔[/#5fd7d7] {new.profile.display} · {new.model} {t('connected')}")
         return True
 
     @work(thread=True)
@@ -170,7 +171,7 @@ class AsgardTUI(App):
         log = self.query_one("#log", RichLog)
         c = req.split()[0]
         if c == "/help":
-            for k, v in _repl._HELP.items():
+            for k, v in _repl._help_items():
                 log.write(f"[#5fd7d7]{k}[/#5fd7d7]  [dim]{v}[/dim]")
         elif c == "/provider" and req.split()[1:2] == ["set"]:
             self._onboard()
@@ -179,16 +180,16 @@ class AsgardTUI(App):
         elif c == "/quest":
             try:
                 out = _repl.ql(self.root, "state").stdout.strip()
-                log.write(f"[dim]{out or '진행 중 퀘스트 없음'}[/dim]")
+                log.write(f"[dim]{out or t('no_quest')}[/dim]")
             except Exception:
-                log.write("[dim]진행 중 퀘스트 없음[/dim]")
+                log.write(f"[dim]{t('no_quest')}[/dim]")
         else:
-            log.write(f"[yellow]⚠ 미지의 커맨드 {c} — /help[/yellow]")
+            log.write(f"[yellow]⚠ {t('unknown_cmd', c=c)}[/yellow]")
 
     def action_interrupt(self) -> None:
         self.workers.cancel_all()
         self._set_status(False)
-        self.query_one("#log", RichLog).write("[dim](턴 중단)[/dim]")
+        self.query_one("#log", RichLog).write(f"[dim]{t('turn_interrupted')}[/dim]")
 
 
 def run(root: str, rp) -> int:

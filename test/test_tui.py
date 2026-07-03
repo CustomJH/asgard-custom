@@ -81,12 +81,13 @@ class TestTUI(unittest.TestCase):
                 from textual.widgets import Static
                 st = app.query_one("#status", Static)
                 idle = st.render()
+                from asgard.i18n import t
                 app._set_status(True)
                 await pilot.pause()
-                assert "처리 중" in str(st.render())
+                assert t("busy") in str(st.render())
                 app._set_status(False)
                 await pilot.pause()
-                assert "처리 중" not in str(st.render())
+                assert t("busy") not in str(st.render())
         asyncio.run(go())
 
     def test_quit_binding(self):

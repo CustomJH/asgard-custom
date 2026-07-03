@@ -15,6 +15,7 @@ from __future__ import annotations
 import sys
 
 from .. import ui
+from ..i18n import t
 from .session import ql
 
 # install.sh _logo_art 원본 그대로 — Yggdrasil 마크 + ASGARD braille wordmark. install 에서
@@ -109,28 +110,26 @@ def banner(rp) -> None:
 
     # 정보 블록 — 왼쪽 accent bar 통일 (opencode 스타일)
     sys.stdout.write(
-        f"\n  {bar} {ui.bold('Heimdall')}  {ui.dim('비프로스트의 수호자 · Trinity 오케스트레이터')}\n"
+        f"\n  {bar} {ui.bold('Heimdall')}  {ui.dim(t('tagline'))}\n"
         f"  {bar} {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model}\n"
-        f"  {bar} {ui.dim('/help · /new · !bash · Tab 자동완성 · ↑↓ 히스토리')}\n")
+        f"  {bar} {ui.dim(t('cmd_hints'))}\n")
     # hermes 스타일 — welcome + tip + 구분선 rule
     rule = ui.paint(_O, "─" * min(width - 4, 60))
     sys.stdout.write(
-        f"\n  {ui.bold('Asgard 에 오신 것을 환영합니다, 오딘.')} "
-        f"{ui.dim('무엇이든 물으시거나 /help 를 입력하세요.')}\n"
-        f"  {ui.paint(_O, '✦')} {ui.dim('Tip — ! 로 bash, / 로 커맨드, @ 로 파일(예정). Ctrl-C 로 턴 중단.')}\n"
+        f"\n  {ui.bold(t('welcome'))} {ui.dim(t('welcome_hint'))}\n"
+        f"  {ui.paint(_O, '✦')} {ui.dim(t('tip'))}\n"
         f"  {rule}\n")
 
 
-_HELP = {
-    "/help": "이 도움말",
-    "/new": "새 세션 (컨텍스트·화면 리셋)",
-    "/quest": "진행 중 퀘스트 원장 상태",
-    "/provider": "provider·model 표시 · '/provider set' 으로 재설정",
-    "/model": "현재 모델 ID",
-    "/clear": "화면 지우기",
-    "/exit": "세션 종료 (Ctrl-D 동일)",
+_HELP_KEYS = {
+    "/help": "h_help", "/new": "h_new", "/quest": "h_quest", "/provider": "h_provider",
+    "/model": "h_model", "/clear": "h_clear", "/exit": "h_exit",
 }
 _COMMANDS = ["/help", "/new", "/quest", "/provider", "/provider set", "/model", "/clear", "/exit"]
+
+
+def _help_items():
+    return [(k, t(v)) for k, v in _HELP_KEYS.items()]
 
 
 def _completer(text: str, state: int):
@@ -189,10 +188,10 @@ def slash(cmd: str, root: str, rp) -> bool:
         raise EOFError
     if c == "/help":
         sys.stdout.write("\n")
-        for k, v in _HELP.items():
+        for k, v in _help_items():
             sys.stdout.write(f"  {ui.paint('38;5;80', k.ljust(14))} {ui.dim(v)}\n")
-        sys.stdout.write(f"  {ui.paint('38;5;80', '!<cmd>'.ljust(14))} {ui.dim('bash 직접 실행')}\n")
-        sys.stdout.write(f"  {ui.dim('Tab 자동완성 · ↑↓ 히스토리')}\n\n")
+        sys.stdout.write(f"  {ui.paint('38;5;80', '!<cmd>'.ljust(14))} {ui.dim(t('h_bash'))}\n")
+        sys.stdout.write(f"  {ui.dim(t('help_footer'))}\n\n")
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
         banner(rp)
@@ -210,11 +209,11 @@ def slash(cmd: str, root: str, rp) -> bool:
     elif c == "/quest":
         try:
             out = ql(root, "state").stdout.strip()
-            sys.stdout.write(f"  {ui.dim(out or '진행 중 퀘스트 없음')}\n")
+            sys.stdout.write(f"  {ui.dim(out or t('no_quest'))}\n")
         except Exception:
-            sys.stdout.write(f"  {ui.dim('진행 중 퀘스트 없음')}\n")
+            sys.stdout.write(f"  {ui.dim(t('no_quest'))}\n")
     else:
-        sys.stdout.write(f"  {ui.paint('33', '⚠')} 미지의 커맨드 {c} — /help\n")
+        sys.stdout.write(f"  {ui.paint('33', '⚠')} {t('unknown_cmd', c=c)}\n")
     return True
 
 
@@ -224,7 +223,7 @@ def _new_heimdall(root: str, rp, emit):
 
 
 def _bye() -> int:
-    sys.stdout.write(f"\n  {ui.dim('비프로스트 봉인. 안녕히, 오딘.')}\n")
+    sys.stdout.write(f"\n  {ui.dim(t('bye'))}\n")
     return 0
 
 
@@ -250,7 +249,7 @@ def run(root: str, rp) -> int:
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
     if heimdall is None:
-        sys.stdout.write(f"  {ui.dim('provider 미설정 — 메시지를 보내면 연결을 안내합니다 (또는 /provider set)')}\n")
+        sys.stdout.write(f"  {ui.dim(t('provider_unset'))}\n")
 
     while True:
         try:
@@ -282,11 +281,11 @@ def run(root: str, rp) -> int:
         if heimdall is None:
             from .onboard import can_prompt, onboard
             if not can_prompt():
-                sys.stdout.write(f"  {ui.paint('33', '⚠')} provider 미설정 — 대화형 터미널에서 연결하세요\n")
+                sys.stdout.write(f"  {ui.paint('33', '⚠')} {t('provider_unset_short')}\n")
                 continue
             new = onboard(root, preselect=rp.profile.name if not rp.missing else None)
             if new is None or new.missing:
-                sys.stdout.write(f"  {ui.dim('연결 취소 — /provider set 으로 다시 시도')}\n")
+                sys.stdout.write(f"  {ui.dim(t('connect_cancel'))}\n")
                 continue
             rp = new
             heimdall = _new_heimdall(root, rp, emit)
@@ -296,6 +295,6 @@ def run(root: str, rp) -> int:
             if out:
                 sys.stdout.write(f"\n{out}\n")
         except KeyboardInterrupt:
-            sys.stdout.write(f"\n  {ui.dim('(턴 중단 — 세션 유지)')}\n")
+            sys.stdout.write(f"\n  {ui.dim(t('turn_kept'))}\n")
         except Exception as e:
             sys.stdout.write(f"\n  {ui.paint('31', '⚠')} 세션 오류: {e}\n")

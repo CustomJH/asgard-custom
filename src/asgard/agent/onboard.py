@@ -11,6 +11,7 @@ import getpass
 import sys
 
 from .. import ui
+from ..i18n import t
 from ..providers import PROVIDERS, ResolvedProvider, resolve, save_credential
 
 
@@ -24,15 +25,15 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
     if preselect in PROVIDERS:
         name = preselect
     else:
-        sys.stdout.write(f"\n  {ui.bold('provider 선택')} {ui.dim('(모델 연결)')}\n")
+        sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
         for i, n in enumerate(names, 1):
             p = PROVIDERS[n]
-            sys.stdout.write(f"    {ui.paint('38;5;208', str(i))} {p.display} {ui.dim('· ' + (p.default_model or 'base_url 필요'))}\n")
+            sys.stdout.write(f"    {ui.paint('38;5;80', str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n")
         try:
-            sel = input(f"  번호 [{1}]: ").strip() or "1"
+            sel = input("  " + t("number") + " [1]: ").strip() or "1"
             name = names[int(sel) - 1]
         except (ValueError, IndexError, EOFError, KeyboardInterrupt):
-            sys.stdout.write("  (취소)\n")
+            sys.stdout.write(f'  {t("cancelled")}\n')
             return None
 
     p = PROVIDERS[name]
@@ -40,17 +41,17 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
     if p.api_mode == "openai_compat" and not p.base_url:
         base_url = input(f"  base_url [{p.base_url or 'https://...'}]: ").strip()
     if not p.default_model:
-        model = input("  model ID: ").strip()
+        model = input("  " + t("model_id_prompt") + ": ").strip()
 
     try:
-        key = getpass.getpass(f"  {p.display} API 키 (입력 숨김): ").strip()
+        key = getpass.getpass('  ' + t('api_key_prompt', p=p.display) + ': ').strip()
     except (EOFError, KeyboardInterrupt):
-        sys.stdout.write("  (취소)\n")
+        sys.stdout.write(f'  {t("cancelled")}\n')
         return None
     if not key:
-        sys.stdout.write("  (키 없음 — 취소)\n")
+        sys.stdout.write(f'  {t("no_key")}\n')
         return None
 
     save_credential(name, key, base_url=base_url, model=model)
-    sys.stdout.write(f"  {ui.paint('32', '✔')} {ui.dim('~/.asgard/credentials.json 저장 (권한 600)')}\n")
+    sys.stdout.write(f"  {ui.paint('32', '✔')} {ui.dim(t('saved_cred'))}\n")
     return resolve(root, provider=name)
