@@ -88,6 +88,47 @@ def done(msg: str = "") -> None:
     sys.stdout.write(f"\n  {paint(_OK, '✔')} {bold('done')}{tail}\n\n")
 
 
+class bar:
+    """Determinate 진행률 바 — `with ui.bar('label', total_bytes) as b: b.advance(n)`.
+    골드 채움 + 흐린 잔여 + % + MB. non-tty/--quiet 은 no-op. total 불명(0)은 누적 MB 만."""
+
+    _CELLS = 24
+
+    def __init__(self, label: str, total: int) -> None:
+        self.label, self.total, self.done = label, max(0, int(total or 0)), 0
+
+    def __enter__(self) -> "bar":
+        self._draw()
+        return self
+
+    def advance(self, n: int) -> None:
+        self.done += n
+        self._draw()
+
+    def _draw(self) -> None:
+        if not _COLOR or _QUIET:
+            return
+        import shutil
+        if self.total:
+            frac = min(1.0, self.done / self.total)
+            fill = int(self._CELLS * frac)
+            cells = paint(_GOLD, "━" * fill) + dim("─" * (self._CELLS - fill))
+            info = f"{frac * 100:3.0f}%  {self.done / 1e6:.1f}/{self.total / 1e6:.1f} MB"
+        else:
+            cells = paint(_GOLD, "━" * self._CELLS)
+            info = f"{self.done / 1e6:.1f} MB"
+        width = shutil.get_terminal_size((80, 20)).columns
+        label = self.label[:max(8, width - self._CELLS - 24)]
+        sys.stdout.write(f"\r\x1b[K  {cells} {info}  {dim(label)}")
+        sys.stdout.flush()
+
+    def __exit__(self, *exc: object) -> bool:
+        if _COLOR and not _QUIET:
+            sys.stdout.write("\r\x1b[K")
+            sys.stdout.flush()
+        return False
+
+
 class spin:
     """Braille spinner for a slow step. `with ui.spin('installing…'): subprocess.run(..., capture)`.
     No-op (just runs the body) on non-tty / --quiet. Clears its line on exit so the ✔ prints clean."""
