@@ -108,11 +108,15 @@ class AsgardTUI(App):
 
     @work(thread=True, exclusive=True)
     def _dispatch(self, req: str) -> None:
+        import time
         self.call_from_thread(self._set_status, True)
+        t0 = time.monotonic()
         try:
             out = self.heimdall.handle(req)
             if out:
                 self.call_from_thread(self._append, "\n" + out)
+            # 턴 요약 — opencode 참조 (CUS-154)
+            self.call_from_thread(self._append, f"[dim]⬢ done · {self.rp.model} · {time.monotonic() - t0:.1f}s[/dim]")
         except Exception as e:
             self.call_from_thread(self._append, f"[red]⚠ {t('session_error', e=e)}[/red]")
         finally:

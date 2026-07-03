@@ -144,7 +144,10 @@ def _status_text(root: str, rp, usage: dict | None = None) -> str:
     if br:
         parts.append(f"⎇ {br}")
     if usage and usage.get("tokens"):
-        parts.append(f"↯ {usage['tokens'] / 1000:.1f}k")
+        tok = usage["tokens"]
+        win = rp.profile.context_window
+        pct = f" ({tok / win * 100:.0f}%)" if win else ""  # 한도 미상 provider 는 % 생략
+        parts.append(f"↯ {tok / 1000:.1f}k{pct}")
     return "  ".join(parts)
 
 
@@ -358,9 +361,87 @@ def slash(cmd: str, root: str, rp) -> bool:
     return True
 
 
-def _new_heimdall(root: str, rp, emit):
+def _new_heimdall(root: str, rp, emit, status=None):
     from .heimdall import Heimdall
-    return Heimdall(rp, root, on_text=emit)
+    return Heimdall(rp, root, on_text=emit, on_status=status)
+
+
+class _Spinner:
+    """on_status 핸들러 — 침묵 구간(thinking·툴 실행)에 라이브 스피너. 라벨 None 이면 해제."""
+
+    def __init__(self) -> None:
+        self._cur: ui.spin | None = None
+        self._label: str | None = None
+
+    def __call__(self, label: str | None) -> None:
+        if label == self._label:  # 동일 상태 반복 신호(스트림 청크마다 None 등) — 무시
+            return
+        if self._cur:
+            self._cur.__exit__(None, None, None)
+            self._cur = None
+        if label:
+            self._cur = ui.spin(label)
+            self._cur.__enter__()
+        self._label = label
+
+
+_MD_BOLD = None  # re 모듈 lazy — 아래 _Render 에서 컴파일
+
+
+class _Render:
+    """스트리밍 md-lite 렌더 — 응답 본문을 2칸 들여쓰고 라인 단위로 가볍게 스타일.
+
+    완성 라인: **볼드**·`코드`(시안)·헤더(골드)·불릿(•) 적용. 오래 안 끝나는 라인(긴 문단)은
+    스타일 포기하고 즉시 플러시 — 라이브함이 스타일보다 우선. 세션 메타 라인('  ⬢' 등,
+    이미 들여쓰기됨)은 그대로 통과."""
+
+    FLUSH_AT = 160
+
+    def __init__(self) -> None:
+        import re
+        self._re = re
+        self.buf = ""
+        self.dirty = False  # 현재 라인을 이미 raw 로 흘려보냄 — 완성 시 스타일 생략
+
+    def write(self, s: str) -> None:
+        self.buf += s
+        while "\n" in self.buf:
+            line, self.buf = self.buf.split("\n", 1)
+            self._emit_line(line)
+        if len(self.buf) >= self.FLUSH_AT:
+            if not self.dirty:
+                sys.stdout.write("  ")
+                self.dirty = True
+            sys.stdout.write(self.buf)
+            sys.stdout.flush()
+            self.buf = ""
+
+    def finish(self) -> None:
+        if self.buf:
+            self._emit_line(self.buf)
+            self.buf = ""
+
+    def _emit_line(self, line: str) -> None:
+        if self.dirty:  # 이미 raw 로 나간 라인의 잔여
+            sys.stdout.write(line + "\n")
+            self.dirty = False
+        elif line.startswith("  ") or not line.strip():  # 메타 라인·공백 — 무가공
+            sys.stdout.write(line + "\n")
+        else:
+            sys.stdout.write("  " + self._style(line) + "\n")
+        sys.stdout.flush()
+
+    def _style(self, line: str) -> str:
+        re = self._re
+        if not ui._COLOR:
+            return line
+        m = re.match(r"^(#{1,3})\s+(.*)$", line)
+        if m:  # 헤더 — 골드 볼드
+            return ui.bold(ui.paint(_O, m.group(2)))
+        line = re.sub(r"\*\*(.+?)\*\*", lambda x: ui.bold(x.group(1)), line)
+        line = re.sub(r"`([^`]+)`", lambda x: ui.paint(theme.ansi(theme.ACCENT_CYAN), x.group(1)), line)
+        line = re.sub(r"^(\s*)[-*]\s+", lambda x: x.group(1) + ui.paint(_O, "•") + " ", line)
+        return line
 
 
 def _bye() -> int:
@@ -382,9 +463,11 @@ def _run_bang(root: str, cmd: str) -> None:
 
 def run(root: str, rp) -> int:
     """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩(opencode 흐름)."""
+    render = _Render()
+    status = _Spinner()
+
     def emit(s: str) -> None:
-        sys.stdout.write(s)
-        sys.stdout.flush()
+        render.write(s)
 
     # '/' 라이브 완성 메뉴 (prompt_toolkit). 실패 시 readline 폴백 — 히스토리 파일 충돌 방지 위해
     # 한쪽만 배선한다 (readline atexit 가 pt 포맷 히스토리를 덮어쓰는 것 방지).
@@ -397,7 +480,7 @@ def run(root: str, rp) -> int:
     if not _PT:
         _setup_readline()  # Tab 자동완성 + 화살표 히스토리
     banner(rp)
-    heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
+    heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
     # provider 미설정 안내는 status line(⚠ not connected)이 대신 표현 — 별도 줄 없음
 
     while True:
@@ -415,7 +498,7 @@ def run(root: str, rp) -> int:
             continue
         if req == "/new":  # 컨텍스트·화면 리셋 (rp/heimdall 재생성 필요 — slash 는 rp 만 받음)
             sys.stdout.write("\033[2J\033[H")
-            heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
+            heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
             banner(rp)
             continue
         if req.startswith("!"):  # bash 직접 실행
@@ -428,7 +511,7 @@ def run(root: str, rp) -> int:
                 return _bye()
             except _Reconfigure as r:  # /provider set — 세션 재생성
                 rp = r.rp
-                heimdall = _new_heimdall(root, rp, emit)
+                heimdall = _new_heimdall(root, rp, emit, status)
                 sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
             continue
 
@@ -438,10 +521,18 @@ def run(root: str, rp) -> int:
             continue
 
         try:
+            import time as _time
+            t0 = _time.monotonic()
             out = heimdall.handle(req)
+            render.finish()
             if out:
                 sys.stdout.write(f"\n{out}\n")
+            # 턴 요약 — opencode '■ Build · model · 7.0s' 참조 (CUS-154)
+            sys.stdout.write(f"\n  {ui.dim(f'⬢ done · {rp.model} · {_time.monotonic() - t0:.1f}s')}\n")
         except KeyboardInterrupt:
             sys.stdout.write(f"\n  {ui.dim(t('turn_kept'))}\n")
         except Exception as e:
             sys.stdout.write(f"\n  {ui.paint(ui._FAIL, '⚠')} 세션 오류: {e}\n")
+        finally:
+            status(None)  # 스피너 누수 방지 (인터럽트·예외 경로)
+            render.finish()

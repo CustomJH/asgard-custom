@@ -82,11 +82,14 @@ class AgentSession:
                  tool_handlers: dict[str, Callable[[dict], str]] | None = None,
                  on_text: Callable[[str], None] | None = None,
                  on_tokens: Callable[[int], None] | None = None,
+                 on_status: Callable[[str | None], None] | None = None,
                  max_iterations: int = 40):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         self.tools = [T.BASH_TOOL, T.EDITOR_TOOL] + (extra_tools or [])
         self.handlers = tool_handlers or {}
         self.on_text = on_text or (lambda s: None)
+        # 라이브 상태 신호 — 침묵 구간(thinking·툴 실행)에 스피너 등을 띄울 훅. None = 해제.
+        self.on_status = on_status or (lambda s: None)
         self.on_tokens = on_tokens
         self.max_iterations = max_iterations
         self.messages: list[dict] = []
@@ -108,14 +111,18 @@ class AgentSession:
         try:
             if call.name == "bash":
                 cmd = str(call.input.get("command") or "restart")
+                self.on_status("$ " + cmd[:60])
                 t0 = time.monotonic()
                 out, code = T.run_bash(self.root, call.input)
+                self.on_status(None)
                 self._tool_line("$", cmd, time.monotonic() - t0)
                 result.commands.append({"cmd": cmd[:200], "exit_code": code})
                 return out, False
             if call.name == "str_replace_based_edit_tool":
+                self.on_status("✎ " + str(call.input.get("path", ""))[:60])
                 t0 = time.monotonic()
                 out = T.run_editor(self.root, call.input, result.writes)
+                self.on_status(None)
                 self._tool_line("✎", f"{call.input.get('command', '?')} {call.input.get('path', '')}",
                                 time.monotonic() - t0)
                 return out, False
@@ -130,8 +137,11 @@ class AgentSession:
 
     # ── 진입점 ──────────────────────────────────────────────────────────
     def run(self, user_content: str) -> SessionResult:
-        r = (self._run_anthropic(user_content) if self.rp.profile.api_mode == "anthropic"
-             else self._run_openai(user_content))
+        try:
+            r = (self._run_anthropic(user_content) if self.rp.profile.api_mode == "anthropic"
+                 else self._run_openai(user_content))
+        finally:
+            self.on_status(None)
         if self.on_tokens and r.tokens:
             self.on_tokens(r.tokens)
         return r
@@ -140,6 +150,8 @@ class AgentSession:
         self.messages.append({"role": "user", "content": user_content})
         result = SessionResult(text="", stop_reason="")
         for _ in range(self.max_iterations):
+            from ..i18n import t as _t
+            self.on_status(_t("thinking"))
             t0, first = time.monotonic(), True
             with self.client.messages.stream(
                 model=self.rp.model, max_tokens=32000, system=self.system,
@@ -148,6 +160,7 @@ class AgentSession:
                 for text in stream.text_stream:
                     if first:  # 첫 토큰 전 침묵 = thinking — 2s 이상이면 축약 라인
                         first = False
+                        self.on_status(None)
                         gap = time.monotonic() - t0
                         if gap >= 2:
                             self._thought_line(gap)
@@ -183,8 +196,10 @@ class AgentSession:
         extra = dict(self.rp.profile.extra_body)  # provider 고유 (nvidia reasoning 등)
         sys_msg = [{"role": "system", "content": self.system}]
 
+        from ..i18n import t as _t
         for _ in range(self.max_iterations):
             text_buf, calls, think_t0 = [], {}, None
+            self.on_status(_t("thinking"))
             stream = self.client.chat.completions.create(
                 model=self.rp.model, messages=sys_msg + self.messages,
                 tools=oai_tools or None, max_tokens=16384, stream=True,
@@ -196,11 +211,13 @@ class AgentSession:
                 if not chunk.choices:
                     continue
                 d = chunk.choices[0].delta
-                reasoning = getattr(d, "reasoning_content", None)
+                # reasoning 필드명은 벤더별 상이 — nvidia=reasoning_content, ollama=reasoning
+                reasoning = getattr(d, "reasoning_content", None) or getattr(d, "reasoning", None)
                 if reasoning:  # 원문 덤프 대신 축약 — 시작 시각만 기록
                     if think_t0 is None:
                         think_t0 = time.monotonic()
                 if d.content:
+                    self.on_status(None)
                     if think_t0 is not None:
                         self._thought_line(time.monotonic() - think_t0)
                         think_t0 = None
@@ -215,6 +232,7 @@ class AgentSession:
                     if tc.function and tc.function.arguments:
                         slot["args"] += tc.function.arguments
 
+            self.on_status(None)
             if think_t0 is not None:  # thinking 후 바로 툴콜 — 텍스트 없이 끝난 경우
                 self._thought_line(time.monotonic() - think_t0)
             result.text = "".join(text_buf)
