@@ -69,9 +69,9 @@ def _image_logo() -> bool:
     return True
 
 
-_O = "38;5;208"  # 브랜드 오렌지 (accent)
-# 로고 세로 그라디언트 (밝은 노랑 위 → 진한 주황 아래) — hermes 느낌
-_LOGO_GRAD = ["220", "214", "208", "208", "172", "166"]
+_O = "38;5;80"  # 브랜드 시안 (서리/얼음, 256=80)
+# 로고 세로 그라디언트 (밝은 얼음 위 → 진한 청록 아래)
+_LOGO_GRAD = ["159", "123", "80", "44", "37", "30"]
 
 
 def banner(rp) -> None:
@@ -84,7 +84,7 @@ def banner(rp) -> None:
         if width >= 70:
             sys.stdout.write("\n")
             for i, line in enumerate(_LOGO.split("\n")):
-                col = _LOGO_GRAD[i] if i < len(_LOGO_GRAD) else "208"
+                col = _LOGO_GRAD[i] if i < len(_LOGO_GRAD) else "80"
                 sys.stdout.write("  " + ui.paint(f"38;5;{col}", line) + "\n")
         else:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
@@ -165,8 +165,8 @@ def slash(cmd: str, root: str, rp) -> bool:
     if c == "/help":
         sys.stdout.write("\n")
         for k, v in _HELP.items():
-            sys.stdout.write(f"  {ui.paint('38;5;208', k.ljust(14))} {ui.dim(v)}\n")
-        sys.stdout.write(f"  {ui.paint('38;5;208', '!<cmd>'.ljust(14))} {ui.dim('bash 직접 실행')}\n")
+            sys.stdout.write(f"  {ui.paint('38;5;80', k.ljust(14))} {ui.dim(v)}\n")
+        sys.stdout.write(f"  {ui.paint('38;5;80', '!<cmd>'.ljust(14))} {ui.dim('bash 직접 실행')}\n")
         sys.stdout.write(f"  {ui.dim('Tab 자동완성 · ↑↓ 히스토리')}\n\n")
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
@@ -180,7 +180,7 @@ def slash(cmd: str, root: str, rp) -> bool:
                     raise _Reconfigure(new)  # repl.run 이 세션 재생성
             return True
         src = rp.key_source or rp.source
-        sys.stdout.write(f"  {ui.paint('38;5;208', rp.profile.display)} {ui.dim('·')} "
+        sys.stdout.write(f"  {ui.paint('38;5;80', rp.profile.display)} {ui.dim('·')} "
                          f"{rp.model} {ui.dim('(' + src + ')')}\n")
     elif c == "/quest":
         try:

@@ -20,9 +20,9 @@ from textual.widgets import Input, RichLog, Static
 
 from . import repl as _repl
 
-_O = "#ff8700"  # 브랜드 오렌지 (208)
-# 세로 그라디언트 (repl 의 208/214/220/172/166 대응 hex) — 로고 통일
-_GRAD = ["#ffd700", "#ffaf00", "#ff8700", "#ff8700", "#d75f00", "#d70000"]
+_O = "#5fd7d7"  # 브랜드 시안 (서리/얼음)
+# 세로 그라디언트 (밝은 얼음 위 → 진한 청록 아래) — repl 과 통일
+_GRAD = ["#afffff", "#87ffff", "#5fd7d7", "#00d7d7", "#00afaf", "#008787"]
 _BANNER = "\n".join(
     f"  [{_GRAD[i] if i < len(_GRAD) else _O}]{ln}[/]"
     for i, ln in enumerate(_repl._LOGO.split("\n")))
@@ -37,8 +37,8 @@ class AsgardTUI(App):
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
     #prompt { dock: bottom; height: 3; }
     /* opencode 스타일 — 왼쪽 오렌지 accent bar */
-    Input { border: none; border-left: thick #ff8700; background: $surface; padding-left: 1; }
-    Input:focus { border-left: thick #ffaf00; }
+    Input { border: none; border-left: thick #5fd7d7; background: $surface; padding-left: 1; }
+    Input:focus { border-left: thick #87ffff; }
     """
     BINDINGS = [
         Binding("ctrl+q", "quit", "quit"),
@@ -75,9 +75,9 @@ class AsgardTUI(App):
 
     def _status_line(self, busy: bool = False) -> str:
         if busy:
-            return " [#ff8700]●[/#ff8700] 처리 중…   [dim]Ctrl-C 중단[/dim]"
+            return " [#5fd7d7]●[/#5fd7d7] 처리 중…   [dim]Ctrl-C 중단[/dim]"
         p = self.rp.profile.display
-        return f" [#ff8700]▌[/#ff8700] {p} · {self.rp.model}   [dim]/help · /new · !bash[/dim]"
+        return f" [#5fd7d7]▌[/#5fd7d7] {p} · {self.rp.model}   [dim]/help · /new · !bash[/dim]"
 
     def _set_status(self, busy: bool) -> None:
         self.query_one("#status", Static).update(self._status_line(busy))
@@ -112,7 +112,7 @@ class AsgardTUI(App):
         if not req:
             return
         log = self.query_one("#log", RichLog)
-        log.write(f"[#ff8700]▌[/#ff8700] {req}")
+        log.write(f"[#5fd7d7]▌[/#5fd7d7] {req}")
 
         if req in ("/exit", "/quit"):
             self.exit()
@@ -149,7 +149,7 @@ class AsgardTUI(App):
         self.rp = new
         self.heimdall = _repl._new_heimdall(self.root, self.rp, self._emit)
         self._set_status(False)
-        log.write(f"[#ff8700]✔[/#ff8700] {new.profile.display} · {new.model} 연결")
+        log.write(f"[#5fd7d7]✔[/#5fd7d7] {new.profile.display} · {new.model} 연결")
         return True
 
     @work(thread=True)
@@ -166,11 +166,11 @@ class AsgardTUI(App):
         c = req.split()[0]
         if c == "/help":
             for k, v in _repl._HELP.items():
-                log.write(f"[#ff8700]{k}[/#ff8700]  [dim]{v}[/dim]")
+                log.write(f"[#5fd7d7]{k}[/#5fd7d7]  [dim]{v}[/dim]")
         elif c == "/provider" and req.split()[1:2] == ["set"]:
             self._onboard()
         elif c in ("/provider", "/model"):
-            log.write(f"[#ff8700]{self.rp.profile.display}[/#ff8700] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
+            log.write(f"[#5fd7d7]{self.rp.profile.display}[/#5fd7d7] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
         elif c == "/quest":
             try:
                 out = _repl.ql(self.root, "state").stdout.strip()
