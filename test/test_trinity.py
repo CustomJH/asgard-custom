@@ -126,6 +126,47 @@ class TestTransition(TrinityBase):
         self.qlog("append", stdin=json.dumps(ev))
         self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
 
+    def test_fail_then_work_reverifies_not_retry(self):
+        """FAIL 후 재작업(work)이 오면 재검증 차례 — sticky FAIL 이 WORKER_RETRY 를 무한 재발화하면 안 된다."""
+        self.open_quest()
+        self.write("app.py", "print('bad')\n")
+        self.verify(verdict="FAIL")
+        self.assertEqual(self.next()["next_role"], "WORKER_RETRY")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.assertEqual(self.next()["next_role"], "VERIFIER")
+
+    def test_same_sig_fail_streak_forces_replan(self):
+        """동종 failure_sig 연속 FAIL 3회 — 이벤트 failure_count 없이도 원장에서 세어 3-strike (Canon 9)."""
+        import json as _json
+        self.open_quest()
+        self.write("app.py", "print('bad')\n")
+        for _ in range(3):
+            body = {"role": "verifier", "event": "verify", "failure_sig": "same-err",
+                    "commands": [{"cmd": "python3 app.py", "exit_code": 1}]}
+            self.qlog("append", "--verdict", "FAIL", stdin=_json.dumps(body))
+        self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
+        # 재계획(plan)이 나오면 스트릭 리셋 — REPLAN 무한 루프 방지, 재시도 경로로 복귀
+        self.qlog("append", "--role", "thinker", "--event", "plan")
+        self.assertNotEqual(self.next()["next_role"], "THINKER_REPLAN")
+
+    def test_heterogeneous_sig_fail_streak_backstop(self):
+        """sig 가 매번 달라도 연속 FAIL threshold+1 이면 REPLAN — 자유 텍스트 sig 도돌이표 탈출."""
+        import json as _json
+        self.open_quest()
+        self.write("app.py", "print('bad')\n")
+        for i in range(4):
+            body = {"role": "verifier", "event": "verify", "failure_sig": f"err-{i}",
+                    "commands": [{"cmd": "python3 app.py", "exit_code": 1}]}
+            self.qlog("append", "--verdict", "FAIL", stdin=_json.dumps(body))
+        self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
+
+    def test_ambiguous_plans_once_then_works(self):
+        """모호 플래그는 sticky — Thinker 계획(턴2) 후에는 WORKER 로 넘어가야 한다 (plan 무한 루프 방지)."""
+        self.open_quest()
+        self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "THINKER")
+        self.qlog("append", "--role", "thinker", "--event", "plan")  # 실제 계획 턴
+        self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "WORKER")
+
     def test_fail_minor_retries_structural_replans(self):
         self.open_quest()
         self.write("app.py", "print('ok')\n")

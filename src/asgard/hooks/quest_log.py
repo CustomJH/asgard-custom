@@ -186,13 +186,35 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     verifies = [e for e in events if e.get("event") == "verify"]
     passes = [e for e in verifies if e.get("verdict") == "PASS"]
     last_pass = passes[-1] if passes else None
+    # verdict 신선도 — 마지막 verify "이후" work 가 있으면 판정은 낡았다(재검증 대기).
+    # sticky FAIL 이 WORKER_RETRY 를 무한 재발화시키는 루프 방지 (재검증 없이 재시도 반복).
+    last_verify_i = max((i for i, e in enumerate(events) if e.get("event") == "verify"), default=-1)
+    work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1:]) if verifies else False
+    # 동종 실패 스트릭 — 같은 failure_sig 의 연속 FAIL 을 결정론 계산 (3-strike, Canon 9).
+    # 네이티브 루프는 failure_count 를 이벤트에 안 싣는다 — 원장에서 직접 센다.
+    # 마지막 plan(재계획) "이후"의 FAIL 만 센다 — 재계획이 3-strike 의 응답이므로 스트릭 리셋.
+    # 안 리셋하면 REPLAN → 여전히 count≥3 → REPLAN 무한 루프 (라이브 재현됨).
+    last_plan_i = max((i for i, e in enumerate(events) if e.get("event") == "plan"), default=-1)
+    fail_streak, fail_streak_any, sig = 0, 0, None
+    for i in range(len(events) - 1, last_plan_i, -1):
+        e = events[i]
+        if e.get("event") != "verify":
+            continue
+        if e.get("verdict") != "FAIL":
+            break
+        fail_streak_any += 1  # sig 무관 연속 FAIL — 자유 텍스트 sig 가 매번 달라도 도돌이표는 탈출해야 한다
+        if sig is None:
+            sig = e.get("failure_sig")
+        if sig and e.get("failure_sig") == sig:
+            fail_streak += 1
     sens = [f for f in changed if any(s in f.lower() for s in policy["sensitive_paths"])]
     small = policy["small_write"]
     return {
         "quest_id": qid, "base_ref": base_ref, "turns": len(events),
         "last_event": events[-1].get("event") if events else None,
-        "last_verdict": verifies[-1].get("verdict") if verifies else None,
-        "failure_count": max([int(e.get("failure_count") or 0) for e in events] or [0]),
+        "last_verdict": None if work_after_verify else (verifies[-1].get("verdict") if verifies else None),
+        "failure_count": max([int(e.get("failure_count") or 0) for e in events] + [fail_streak]),
+        "fail_streak_any": fail_streak_any,
         "criteria": next((e.get("criteria") for e in events if e.get("criteria")), []),
         "risk_write": any((e.get("risk") or {}).get("has_write") for e in events),
         "plan_turns": sum(1 for e in events if e.get("event") == "plan"),
@@ -230,6 +252,10 @@ def transition(s: dict, policy: dict, flags) -> dict:
         return out("ESCALATE_ODIN", "destructive_intent — Canon 3, Odin 명시 동의 필요")
     if s["failure_count"] >= policy["failure_threshold"]:
         return out("THINKER_REPLAN", "동종 %d-실패 — Worker 재시도 금지 (Canon 9)" % s["failure_count"])
+    if s.get("fail_streak_any", 0) > policy["failure_threshold"]:
+        # 이종-sig 백스톱 — 자유 텍스트 sig 가 매번 달라 동종 판정이 안 잡혀도, 재계획 없이
+        # FAIL 이 threshold+1 연속이면 접근 자체가 틀렸다고 본다 (턴 예산 소진 전 탈출).
+        return out("THINKER_REPLAN", "연속 %d-실패(이종 포함) — 접근 재설계" % s["fail_streak_any"])
     if s["last_verdict"] == "FAIL":
         return out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계") if flags.structural \
             else out("WORKER_RETRY", "Verifier FAIL(경미) — 같은 계획으로 수정")
@@ -240,7 +266,9 @@ def transition(s: dict, policy: dict, flags) -> dict:
             # gate 와 동일 판정 — micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
             return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
         return out("DONE", "Verifier PASS + diff-hash 물리 대조 일치")
-    if (flags.ambiguous and has_write) or flags.external_research:
+    if ((flags.ambiguous and has_write) or flags.external_research) and s["plan_turns"] < 2:
+        # plan_turns 게이트 — 플래그는 매 전이마다 재전달(sticky)되므로, 실제 Thinker 계획(턴2)
+        # 이후엔 실행으로 넘어가야 한다. 안 그러면 THINKER 무한 루프(12턴 소진).
         return out("THINKER", "모호한 범위의 write 또는 외부 조사 — 전략 선행")
     if not has_write:
         return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")

@@ -122,8 +122,10 @@ def _record_writes(root: str, sid: str, writes: list[str]) -> None:
 
 
 class Heimdall:
-    def __init__(self, rp: ResolvedProvider, root: str, on_text: Callable[[str], None]):
+    def __init__(self, rp: ResolvedProvider, root: str, on_text: Callable[[str], None],
+                 on_status: Callable[[str | None], None] | None = None):
         self.rp, self.root, self.on_text = rp, root, on_text
+        self.on_status = on_status or (lambda s: None)
         self.client = make_client(rp)
         self.identity = _identity(root)
         self.total_tokens = 0  # 세션 누적 (status line 사용량)
@@ -135,7 +137,7 @@ class Heimdall:
         return AgentSession(self.client, self.rp, self.root, system,
                             extra_tools=extra_tools, tool_handlers=handlers,
                             on_text=(lambda s: None) if quiet else self.on_text,
-                            on_tokens=self._add_tokens)
+                            on_tokens=self._add_tokens, on_status=self.on_status)
 
     def _classify(self, request: str) -> dict:
         # structured-output 강제 대신 "JSON 만 출력" + 관대한 파싱 — 두 트랜스포트(및 nemotron 류
@@ -214,7 +216,7 @@ class Heimdall:
                     {"role": "verifier", "event": "verify"}), )
                 return f"⚠ Odin 결정 필요 — {why}"
             if role == "DIRECT_DONE":
-                return self._session(self.identity).run(request).text
+                return self._direct(request)
 
             if role in ("THINKER", "THINKER_REPLAN"):
                 r = self._session(_role_prompt("asgard-thinker.md")).run(
@@ -235,10 +237,21 @@ class Heimdall:
                      "commands": r.commands[-20:]}))
             elif role == "VERIFIER":
                 level = nxt.get("verify_level", "micro")
+                # 원장 관측 diff 컨텍스트 — 검증자가 "diff 없음"으로 헛FAIL 하지 않게 물리 관측을
+                # 손에 쥐여준다 (판정은 여전히 직접 명령 실행으로).
+                st = {}
+                try:
+                    st = json.loads(ql(self.root, "state", session=sid).stdout or "{}")
+                except Exception:
+                    pass
+                changed = ", ".join((st.get("changed_files") or [])[:20]) or "(없음)"
                 s = self._session(_role_prompt("asgard-verifier.md"),
                                   extra_tools=[VERDICT_TOOL], handlers={"verdict": lambda i: "판정 접수"})
                 r = s.run(f"검증하라. 요청: {request}\ncriteria: {cls['criteria']}\n"
-                          f"required level: {level}\nWorker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정.")
+                          f"required level: {level}\n"
+                          f"원장 관측 변경 파일: {changed} (diff_lines={st.get('diff_lines', '?')}) — "
+                          f"`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
+                          f"Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출.")
                 v = next((c["input"] for c in r.tool_calls if c["name"] == "verdict"), None)
                 if not v:
                     v = {"verdict": "FAIL", "criteria": cls["criteria"], "commands": [],
@@ -254,11 +267,22 @@ class Heimdall:
 
         return f"⚠ 턴 예산({MAX_TRINITY_TURNS}) 소진 — Odin 보고. 원장: .asgard/quest/{qid}.jsonl"
 
+    def _direct(self, request: str) -> str:
+        """DIRECT 응답 — 본문은 on_text 로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
+        예외: refusal 안내는 스트림에 안 실린 합성 텍스트 — 그것만 반환."""
+        r = self._session(self.identity).run(request)
+        return r.text if r.stop_reason == "refusal" else ""
+
     # ── 진입점 ───────────────────────────────────────────────────────────
     def handle(self, request: str) -> str:
-        cls = self._classify(request)
+        from ..i18n import t
+        self.on_status(t("thinking"))  # 분류도 모델 호출 — 침묵 구간 커버
+        try:
+            cls = self._classify(request)
+        finally:
+            self.on_status(None)
         if cls["destructive"]:
             return "⚠ 파괴 작업 감지 — Odin 명시 동의 필요 (Canon 3). 대상과 함께 재요청하세요."
         if not cls["write_expected"]:
-            return self._session(self.identity).run(request).text  # DIRECT — 무세금
+            return self._direct(request)  # DIRECT — 무세금
         return self._trinity(request, cls)
