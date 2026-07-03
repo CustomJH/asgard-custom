@@ -79,18 +79,6 @@ def update(
     raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run))
 
 
-@app.command(hidden=True)  # `update` 별칭 — 기존 스크립트/문서 호환
-def upgrade(
-    ref: str = typer.Argument(None, metavar="[version]"),
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    quiet: bool = typer.Option(False, "--quiet", "-q"),
-) -> None:
-    ui.set_quiet(quiet)
-    from .commands.update import run_update
-
-    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run))
-
-
 @app.command(help="remove asgard (uv tool, PATH symlink, ~/.asgard)")
 def uninstall(
     yes: bool = typer.Option(False, "--yes", "-y"),

@@ -3,7 +3,7 @@ re-installing the target version. Requires uv on PATH (the installer bootstraps 
 
 release wheel 을 직접 내려받아(진행률 바) 로컬 파일로 `uv tool install` 한다 — pure-python 이라
 git/컴파일러 불요. ASGARD_INSTALL_SPEC 오버라이드(dev/CI)는 다운로드 없이 스펙 그대로 설치.
-`asgard upgrade` 는 hidden 별칭 (기존 스크립트 호환)."""
+REPL 의 /update 도 이 함수를 쓴다 (restart_hint — 새 버전은 재시작 후 적용)."""
 
 import os
 import re
@@ -54,7 +54,7 @@ def _uv_install(spec: str, label: str) -> int:
     return r.returncode
 
 
-def run_update(rest: list[str], dry_run: bool = False) -> int:
+def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = False) -> int:
     pin = rest[0] if rest else None
     version = pin[1:] if pin and pin.startswith("v") else pin
 
@@ -110,4 +110,7 @@ def run_update(rest: list[str], dry_run: bool = False) -> int:
         ui.fail("update failed (uv tool install)")
         return 1
     ui.done(f"v{__version__} → v{target}")
+    if restart_hint:  # REPL 안에서 실행 — 프로세스는 아직 구버전
+        from ..i18n import t
+        ui.warn(t("update_restart"))
     return 0
