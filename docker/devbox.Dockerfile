@@ -40,7 +40,10 @@ command -v batcat >/dev/null && alias bat='batcat'
 command -v fdfind >/dev/null && alias fd='fdfind'
 # install/refresh asgard from the mounted repo (--refresh-package: bust uv's stale path build cache)
 alias asgard-install='uv tool install --force --python 3.14 --refresh-package asgard ~/asgard'
-echo "asgard devbox — Python 3.14 (uv) + node $(node -v). install asgard:  asgard-install"
+# run the mounted working tree directly (editable) — 릴리스/설치 없이 호스트에서 고친 코드 즉시 실행.
+# UV_PROJECT_ENVIRONMENT: venv 를 마운트 밖에 둔다 (호스트 .venv 는 macOS 바이너리 — 충돌).
+alias asgard-dev='UV_PROJECT_ENVIRONMENT=$HOME/.asgard-dev-venv uv run --project $HOME/asgard asgard'
+echo "asgard devbox — Python 3.14 (uv) + node $(node -v). install: asgard-install · dev-run: asgard-dev"
 RC
 
 # login shells reset PATH via /etc/profile — re-add after the reset.
