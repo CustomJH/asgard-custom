@@ -30,6 +30,8 @@ _M: dict[str, tuple[str, str]] = {
     # provider·온보딩
     "provider_unset": ("no provider — send a message to connect (or /provider set)",
                        "provider 미설정 — 메시지를 보내면 연결을 안내합니다 (또는 /provider set)"),
+    "not_connected": ("not connected — send a message or /provider set",
+                      "미연결 — 메시지 입력 또는 /provider set"),
     "connect_cancel": ("connection cancelled — try /provider set again",
                        "연결 취소 — /provider set 으로 다시 시도"),
     "connected": ("connected", "연결"),

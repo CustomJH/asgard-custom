@@ -71,25 +71,26 @@ class AsgardTUI(App):
         log = self.query_one("#log", RichLog)
         log.write(f"[b]{t('welcome')}[/b] [dim]{t('welcome_hint')}[/dim]")
         log.write(f"[#5fd7d7]✦[/#5fd7d7] [dim]{t('tip')}[/dim]")
-        if self.heimdall is None:
-            log.write(f"[dim]{t('provider_unset')}[/dim]")
+        # 미연결 안내는 하단 status bar(⚠ not connected)가 표현 — log 중복 없음
 
     def _status_line(self, busy: bool = False) -> str:
         if busy:
             return f" [#5fd7d7]●[/#5fd7d7] {t('busy')}   [dim]{t('interrupt_hint')}[/dim]"
-        # claude-code 식 — 모델 · 디렉토리 · git 브랜치
+        # claude-code 식 — 모델 · 디렉토리 · git · 사용량. 미연결이면 명확히 안내.
         import os
         from .repl import _git_status
         home = os.path.expanduser("~")
         cwd = self.root.replace(home, "~", 1) if self.root.startswith(home) else self.root
+        if self.heimdall is None:
+            return f" [yellow]⚠ {t('not_connected')}[/yellow]   [dim]⌂ {cwd}[/dim]"
         parts = [f"◆ {self.rp.model}", f"⌂ {cwd}"]
         br = _git_status(self.root)
         if br:
             parts.append(f"⎇ {br}")
-        tok = getattr(self.heimdall, "total_tokens", 0) if self.heimdall else 0
+        tok = getattr(self.heimdall, "total_tokens", 0)
         if tok:
             parts.append(f"↯ {tok / 1000:.1f}k")
-        return " [#5fd7d7]▌[/#5fd7d7] [dim]" + "  ".join(parts) + "[/dim]"
+        return " [dim]" + "  ".join(parts) + "[/dim]"
 
     def _set_status(self, busy: bool) -> None:
         self.query_one("#status", Static).update(self._status_line(busy))

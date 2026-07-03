@@ -133,17 +133,19 @@ def _git_status(root: str) -> str:
 
 
 def statusline(root: str, rp, usage: dict | None = None) -> str:
-    """claude-code 식 상태줄 — 모델 · 디렉토리 · git 브랜치 · 사용량."""
+    """claude-code 식 상태줄 — 모델 · 디렉토리 · git · 사용량. 미연결이면 명확히 안내."""
     import os
     home = os.path.expanduser("~")
     cwd = root.replace(home, "~", 1) if root.startswith(home) else root
+    if rp.missing:  # 키/설정 미충족 = 미연결 — 모델명 대신 명확한 안내
+        return "  " + ui.paint("33", f"⚠ {t('not_connected')}") + "   " + ui.dim(f"⌂ {cwd}")
     parts = [f"◆ {rp.model}", f"⌂ {cwd}"]
     br = _git_status(root)
     if br:
         parts.append(f"⎇ {br}")
     if usage and usage.get("tokens"):
         parts.append(f"↯ {usage['tokens'] / 1000:.1f}k")
-    return "  " + ui.paint(_O, "▌") + " " + ui.dim("  ".join(parts))
+    return "  " + ui.dim("  ".join(parts))
 
 
 _HELP_KEYS = {
@@ -195,13 +197,12 @@ def _save_history(readline, path: str) -> None:
 
 
 def prompt() -> str:
-    # opencode 스타일 — 왼쪽 accent bar + 얇은 화살표. 앞 빈 줄로 입력 영역 분리.
+    # status line 바로 아래, 2칸 들여 정렬. 시안 › 프롬프트.
     if not ui._COLOR:
-        return input("▌ › ")
+        return input("  › ")
     # readline 은 프롬프트의 비출력(ANSI) 문자를 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
-    bar = f"\x01\x1b[{_O}m\x02▌\x01\x1b[0m\x02"
-    arrow = "\x01\x1b[2m\x02›\x01\x1b[0m\x02"
-    return input(f"{bar} {arrow} ")
+    arrow = f"\x01\x1b[{_O}m\x02›\x01\x1b[0m\x02"
+    return input(f"  {arrow} ")
 
 
 class _Reconfigure(Exception):
@@ -284,8 +285,7 @@ def run(root: str, rp) -> int:
     _setup_readline()  # Tab 자동완성 + 화살표 히스토리
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
-    if heimdall is None:
-        sys.stdout.write(f"  {ui.dim(t('provider_unset'))}\n")
+    # provider 미설정 안내는 status line(⚠ not connected)이 대신 표현 — 별도 줄 없음
 
     while True:
         usage = {"tokens": heimdall.total_tokens} if heimdall else None
