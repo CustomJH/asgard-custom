@@ -82,7 +82,10 @@ _ver_line() {
 # left of the ASGARD wordmark (horizontal lockup), both braille-rendered from the brand art so the
 # real letterforms show. White; under NO_COLOR the tint is empty → terminal's default fg.
 _logo_art() {
-  printf '%s' "$W"
+  # 다크 배경은 흰색($W), 라이트 배경은 진한 청록 — 흰 룬은 밝은 배경서 안 보인다. NO_COLOR 면 무틴트.
+  local tint="$W"
+  if [ -n "$W" ] && [[ "${COLORFGBG:-}" =~ \;([789]|1[0-5])$ ]]; then tint=$'\033[38;5;30m'; fi
+  printf '%s' "$tint"
   cat <<'ART'
   ⠀⠀⠀⠀⢀⡤⣶⣶⣶⣲⠤⣀⠀⠀⠀⠀  ⠀⠀⠀⢰⡄⠀⠀⠀⠀⠀⢀⣤⣦⣄⡀⠀⠀⠀⠀⣠⣦⣀⠀⠀⠀⠀⠀⠀⣦⠀⠀⠀⠀⠰⣶⣶⣶⣦⡀⠀⠀⠐⣶⣦⣄⠀⠀⠀
   ⠀⠀⢀⣼⣽⣻⡟⣿⣷⢫⣟⣯⣧⡀⠀⠀  ⠀⠀⢀⣿⣷⠀⠀⠀⠀⢰⣿⠋⠈⠙⠁⠀⠀⣠⡾⠋⠈⠛⠀⠀⠀⠀⠀⣸⣿⡆⠀⠀⠀⠀⣿⡇⠀⠙⣷⡄⠀⠀⣿⡏⠻⣷⡄⠀
@@ -99,6 +102,8 @@ ART
 # on any miss: unknown terminal, no base64, fetch fail. Prefers a local asset over the network.
 _logo() {
   command -v base64 >/dev/null 2>&1 || return 1
+  # 라이트 배경엔 흰 lockup 이 안 보인다 → 이미지 스킵, 룬(braille) 폴백. COLORFGBG='fg;bg' 의 bg 7~15.
+  if [[ "${COLORFGBG:-}" =~ \;([789]|1[0-5])$ ]]; then return 1; fi
   local proto=""
   case "${TERM_PROGRAM:-}" in
     iTerm.app|WezTerm) proto=iterm ;;
