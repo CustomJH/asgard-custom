@@ -131,10 +131,26 @@ class AsgardTUI(App):
             self._handle_slash(req)
             return
 
-        if self.heimdall is None:
-            log.write("[yellow]⚠ provider 미설정 — /provider set 으로 연결하세요[/yellow]")
+        if self.heimdall is None:  # 키 없음 → 온보딩 후 이 요청 이어서 처리
+            if self._onboard():
+                self._dispatch(req)
             return
         self._dispatch(req)
+
+    def _onboard(self) -> bool:
+        """TUI 를 잠깐 suspend → readline onboard 재사용 → resume. 성공 시 True."""
+        from .onboard import onboard
+        log = self.query_one("#log", RichLog)
+        with self.suspend():
+            new = onboard(self.root, preselect=self.rp.profile.name if not self.rp.missing else None)
+        if new is None or new.missing:
+            log.write("[dim]연결 취소 — /provider set 으로 다시 시도[/dim]")
+            return False
+        self.rp = new
+        self.heimdall = _repl._new_heimdall(self.root, self.rp, self._emit)
+        self._set_status(False)
+        log.write(f"[#ff8700]✔[/#ff8700] {new.profile.display} · {new.model} 연결")
+        return True
 
     @work(thread=True)
     def _dispatch_bang(self, cmd: str) -> None:
@@ -151,6 +167,8 @@ class AsgardTUI(App):
         if c == "/help":
             for k, v in _repl._HELP.items():
                 log.write(f"[#ff8700]{k}[/#ff8700]  [dim]{v}[/dim]")
+        elif c == "/provider" and req.split()[1:2] == ["set"]:
+            self._onboard()
         elif c in ("/provider", "/model"):
             log.write(f"[#ff8700]{self.rp.profile.display}[/#ff8700] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
         elif c == "/quest":
