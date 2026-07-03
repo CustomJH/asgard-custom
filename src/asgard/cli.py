@@ -46,10 +46,12 @@ def start(
     check: bool = typer.Option(False, "--check", help="preflight only — exit code for CI/smoke"),
     provider: str = typer.Option(None, "--provider", help="anthropic | openai_compat (config 오버라이드)"),
     model: str = typer.Option(None, "--model", help="모델 ID (config 오버라이드)"),
+    tui: bool = typer.Option(False, "--tui", help="풀스크린 TUI (textual, 실험)"),
+    plain: bool = typer.Option(False, "--plain", help="readline REPL 강제 (TUI 비활성)"),
 ) -> None:
     from .commands.start import run_start
 
-    raise typer.Exit(run_start(check_only=check, provider=provider, model=model))
+    raise typer.Exit(run_start(check_only=check, provider=provider, model=model, tui=tui, plain=plain))
 
 
 @app.command(help="set up a project — interactive picker (TTY); --cc/--cursor/--codex/--profile for a specific agent")

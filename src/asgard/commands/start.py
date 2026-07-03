@@ -54,7 +54,8 @@ def _render(checks: list) -> None:
             sys.stdout.write(f"      {ui.paint('36', '→')} {c['fix']}\n")
 
 
-def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None) -> int:
+def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None,
+              tui: bool = False, plain: bool = False) -> int:
     root = os.getcwd()
 
     # --check 는 CI/스모크용 게이트 — 프리플라이트만 돌고 종료 (기존 계약 유지).
@@ -70,7 +71,10 @@ def run_start(check_only: bool = False, provider: str | None = None, model: str 
 
     # 기본: 터미널을 바로 켠다 (hermes/opencode 처럼). provider 미설정은 세션 안에서 온보딩.
     from ..providers import resolve
-    from ..agent import repl
 
     rp = resolve(root, provider=provider, model=model)
+    if tui and not plain:  # 풀스크린 textual TUI (CUS-148, opt-in)
+        from ..agent import tui as _tui
+        return _tui.run(root, rp)
+    from ..agent import repl
     return repl.run(root, rp)
