@@ -19,16 +19,14 @@ from textual.suggester import SuggestFromList
 from textual.widgets import Input, RichLog, Static
 
 from . import repl as _repl
+from .. import theme
 from ..i18n import t
 
-_O = "#5fd7d7"  # 브랜드 시안 (서리/얼음)
-# 세로 그라디언트 — 다크 배경은 밝은 얼음, 라이트 배경은 진한 청록 (밝은색은 라이트서 안 보임)
-_GRAD = ["#afffff", "#87ffff", "#5fd7d7", "#00d7d7", "#00afaf", "#008787"]
-_GRAD_LIGHT = ["#008787", "#008787", "#005f5f", "#005f5f", "#005f5f", "#005f5f"]
+_O = theme.PRIMARY  # 브랜드 골드 (신성한 황금)
 
 
 def _banner(light: bool = False) -> str:
-    g = _GRAD_LIGHT if light else _GRAD
+    g = theme.LOGO_GRAD_LIGHT if light else theme.LOGO_GRAD
     return "\n".join(
         f"  [{g[i] if i < len(g) else g[-1]}]{ln}[/]"
         for i, ln in enumerate(_repl._LOGO.split("\n")))
@@ -41,9 +39,9 @@ class AsgardTUI(App):
     #log  { height: 1fr; padding: 0 1; border: none; background: $surface; }
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
     #prompt { dock: bottom; height: 3; }
-    /* opencode 스타일 — 왼쪽 오렌지 accent bar */
-    Input { border: none; border-left: thick #5fd7d7; background: $surface; padding-left: 1; }
-    Input:focus { border-left: thick #87ffff; }
+    /* opencode 스타일 — 왼쪽 골드 accent bar ($primary/$accent 는 theme.textual_theme()) */
+    Input { border: none; border-left: thick $primary; background: $surface; padding-left: 1; }
+    Input:focus { border-left: thick $accent; }
     """
     BINDINGS = [
         Binding("ctrl+q", "quit", "quit"),
@@ -67,15 +65,17 @@ class AsgardTUI(App):
         yield Static(self._status_line(), id="status")
 
     def on_mount(self) -> None:
+        self.register_theme(theme.textual_theme())
+        self.theme = "asgard"
         self.query_one("#input", Input).focus()
         log = self.query_one("#log", RichLog)
         log.write(f"[b]{t('welcome')}[/b] [dim]{t('welcome_hint')}[/dim]")
-        log.write(f"[#5fd7d7]✦[/#5fd7d7] [dim]{t('tip')}[/dim]")
+        log.write(f"[{_O}]✦[/{_O}] [dim]{t('tip')}[/dim]")
         # 미연결 안내는 하단 status bar(⚠ not connected)가 표현 — log 중복 없음
 
     def _status_line(self, busy: bool = False) -> str:
         if busy:
-            return f" [#5fd7d7]●[/#5fd7d7] {t('busy')}   [dim]{t('interrupt_hint')}[/dim]"
+            return f" [{_O}]●[/{_O}] {t('busy')}   [dim]{t('interrupt_hint')}[/dim]"
         # claude-code 식 — 모델 · 디렉토리 · git · 사용량. 미연결이면 명확히 안내.
         import os
         from .repl import _git_status
@@ -125,7 +125,7 @@ class AsgardTUI(App):
         if not req:
             return
         log = self.query_one("#log", RichLog)
-        log.write(f"[#5fd7d7]▌[/#5fd7d7] {req}")
+        log.write(f"[{_O}]▌[/{_O}] {req}")
 
         if req in ("/exit", "/quit"):
             self.exit()
@@ -162,7 +162,7 @@ class AsgardTUI(App):
         self.rp = new
         self.heimdall = _repl._new_heimdall(self.root, self.rp, self._emit)
         self._set_status(False)
-        log.write(f"[#5fd7d7]✔[/#5fd7d7] {new.profile.display} · {new.model} {t('connected')}")
+        log.write(f"[{_O}]✔[/{_O}] {new.profile.display} · {new.model} {t('connected')}")
         return True
 
     @work(thread=True)
@@ -179,17 +179,17 @@ class AsgardTUI(App):
         c = req.split()[0]
         if c == "/help":
             for k, v in _repl._help_items():
-                log.write(f"[#5fd7d7]{k}[/#5fd7d7]  [dim]{v}[/dim]")
+                log.write(f"[{_O}]{k}[/{_O}]  [dim]{v}[/dim]")
         elif c == "/provider" and req.split()[1:2] == ["set"]:
             self._onboard()
         elif c in ("/provider", "/model"):
-            log.write(f"[#5fd7d7]{self.rp.profile.display}[/#5fd7d7] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
+            log.write(f"[{_O}]{self.rp.profile.display}[/{_O}] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
         elif c == "/lang":
             from ..i18n import save_lang
             arg = req.split()[1:2]
             if arg and save_lang(arg[0], self.root):
                 self._set_status(False)
-                log.write(f"[#5fd7d7]✔[/#5fd7d7] {t('lang_set', lang=arg[0])} [dim](/new 로 배너 갱신)[/dim]")
+                log.write(f"[{_O}]✔[/{_O}] {t('lang_set', lang=arg[0])} [dim](/new 로 배너 갱신)[/dim]")
             else:
                 log.write(f"[dim]{t('lang_usage')}[/dim]")
         elif c == "/quest":
