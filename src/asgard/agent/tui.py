@@ -32,8 +32,10 @@ class AsgardTUI(App):
     #meta { color: $text-muted; height: auto; padding: 0 0 1 2; }
     #log  { height: 1fr; padding: 0 1; border: none; background: $surface; }
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
-    #prompt { dock: bottom; height: 3; border-top: solid #ff8700; }
-    Input { border: none; background: $surface; }
+    #prompt { dock: bottom; height: 3; }
+    /* opencode 스타일 — 왼쪽 오렌지 accent bar */
+    Input { border: none; border-left: thick #ff8700; background: $surface; padding-left: 1; }
+    Input:focus { border-left: thick #ffaf00; }
     """
     BINDINGS = [
         Binding("ctrl+q", "quit", "quit"),
