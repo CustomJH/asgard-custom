@@ -21,17 +21,13 @@ def _version(value: bool) -> None:
 
 @app.callback()
 def _main(
-    version: bool = typer.Option(False, "--version", "-v", callback=_version, is_eager=True, help="print version"),
+    version: bool = typer.Option(False, "--version", "-v", callback=_version, is_eager=True,
+                                 help="show version and exit"),
 ) -> None:
     """Root callback — hosts the global --version flag."""
 
 
-@app.command(help="print version")
-def version() -> None:
-    typer.echo(__version__)
-
-
-@app.command(help="diagnose runtime & PATH")
+@app.command(help="check the install — runtime, PATH, and project wiring")
 def doctor(
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
@@ -41,20 +37,20 @@ def doctor(
     raise typer.Exit(run_doctor(json_out=json_, quiet=quiet))
 
 
-@app.command(help="start an Asgard terminal session (Heimdall, provider-connected) — CUS-135")
+@app.command(help="open the Asgard terminal (Heimdall) — chat, connect a provider, run tasks")
 def start(
-    check: bool = typer.Option(False, "--check", help="preflight only — exit code for CI/smoke"),
-    provider: str = typer.Option(None, "--provider", help="anthropic | openai_compat (config 오버라이드)"),
-    model: str = typer.Option(None, "--model", help="모델 ID (config 오버라이드)"),
-    tui: bool = typer.Option(False, "--tui", help="풀스크린 TUI (textual, 실험)"),
-    plain: bool = typer.Option(False, "--plain", help="readline REPL 강제 (TUI 비활성)"),
+    check: bool = typer.Option(False, "--check", help="run preflight checks only, then exit (for CI)"),
+    provider: str = typer.Option(None, "--provider", help="override the provider: anthropic | openai_compat | nvidia"),
+    model: str = typer.Option(None, "--model", help="override the model id"),
+    tui: bool = typer.Option(False, "--tui", help="full-screen TUI (experimental)"),
+    plain: bool = typer.Option(False, "--plain", help="force the plain readline REPL (no TUI)"),
 ) -> None:
     from .commands.start import run_start
 
     raise typer.Exit(run_start(check_only=check, provider=provider, model=model, tui=tui, plain=plain))
 
 
-@app.command(help="set up a project — interactive picker (TTY); --cc/--cursor/--codex/--profile for a specific agent")
+@app.command(help="scaffold a project for coding agents (Claude Code / Cursor / Codex)")
 def init(
     cc: bool = typer.Option(False, "--cc", help="Claude Code (.claude/) skeleton"),
     cursor: bool = typer.Option(False, "--cursor", help="Cursor (.cursor/) skeleton"),
@@ -71,7 +67,7 @@ def init(
     raise typer.Exit(run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes))
 
 
-@app.command(help="self-update via uv (upgrade [version])")
+@app.command(help="update asgard to the latest release, or pin a version: upgrade vX.Y.Z")
 def upgrade(
     ref: str = typer.Argument(None, metavar="[version]"),
     dry_run: bool = typer.Option(False, "--dry-run"),
@@ -102,12 +98,13 @@ def completions(shell: str = typer.Argument(None)) -> None:
     raise typer.Exit(run_completions(shell))
 
 
-@app.command(help="run an .asgardfile task")
+# 미구현 스텁 — 정식 커맨드처럼 목록에 노출하지 않도록 hidden. 구현되면 hidden 제거.
+@app.command(hidden=True)
 def run() -> None:
     typer.echo("asgard run: planned")
 
 
-@app.command(help="update this project's config (planned)")
+@app.command(hidden=True)
 def update() -> None:
     typer.echo("asgard update: planned")
 

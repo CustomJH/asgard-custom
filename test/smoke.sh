@@ -25,9 +25,9 @@ echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: --version => 
 
 "${ASG[@]}" --help | grep -q "asgard — make anything, your way" || { echo "FAIL: --help missing tagline"; exit 1; }
 "${ASG[@]}" --help | grep -q "doctor" || { echo "FAIL: --help missing command list"; exit 1; }
-"${ASG[@]}" version | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: 'version' subcommand"; exit 1; }
-"${ASG[@]}" run | grep -qi "planned" || { echo "FAIL: planned command not announced"; exit 1; }
-"${ASG[@]}" run >/dev/null || { echo "FAIL: planned command should exit 0"; exit 1; }
+# version 은 --version 옵션 단일 (line 22 에서 검증) — 중복 서브커맨드 제거됨.
+"${ASG[@]}" --help | grep -q "planned" && { echo "FAIL: --help must not list planned stubs"; exit 1; } || true
+"${ASG[@]}" run >/dev/null 2>&1 || { echo "FAIL: hidden 'run' stub should still exit 0"; exit 1; }
 "${ASG[@]}" completions bash | grep -q "complete -F _asgard asgard" || { echo "FAIL: bash completions"; exit 1; }
 "${ASG[@]}" completions zsh | grep -q "#compdef asgard" || { echo "FAIL: zsh completions"; exit 1; }
 "${ASG[@]}" completions fish | grep -q "complete -c asgard" || { echo "FAIL: fish completions"; exit 1; }
