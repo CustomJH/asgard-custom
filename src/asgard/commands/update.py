@@ -1,15 +1,18 @@
-"""upgrade — self-update via uv (CUS-108 Path B). asgard ships as a `uv tool`, so upgrading is
-re-installing the latest (or a pinned) version. Requires uv on PATH (the installer bootstraps it).
+"""update — self-update via uv (CUS-108 Path B). asgard ships as a `uv tool`, so updating is
+re-installing the target version. Requires uv on PATH (the installer bootstraps it).
 
-Installs the release *wheel* by default — pure-python, so no git or compiler is needed on the host
-(a git+URL spec would require git, which minimal systems lack). ASGARD_INSTALL_SPEC overrides."""
+release wheel 을 직접 내려받아(진행률 바) 로컬 파일로 `uv tool install` 한다 — pure-python 이라
+git/컴파일러 불요. ASGARD_INSTALL_SPEC 오버라이드(dev/CI)는 다운로드 없이 스펙 그대로 설치.
+`asgard upgrade` 는 hidden 별칭 (기존 스크립트 호환)."""
 
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 import urllib.request
 
-from .. import ui
+from .. import __version__, ui
 from ..platform import on_path
 
 _REPO = "CustomJH/asgard-custom"
@@ -28,22 +31,34 @@ def _latest_version() -> str | None:
     return m.group(1) if m else None
 
 
-def _install_spec(version: str | None) -> str | None:
-    """uv-installable source for asgard. Override wins; else a release wheel by version. Returns
-    None when the version can't be resolved (offline and unpinned)."""
-    if _SPEC_OVERRIDE:
-        return f"{_SPEC_OVERRIDE}@v{version}" if version and _SPEC_OVERRIDE.startswith("git+") else _SPEC_OVERRIDE
-    v = version or _latest_version()
-    if not v:
-        return None
+def _wheel_url(v: str) -> str:
     return f"https://github.com/{_REPO}/releases/download/v{v}/asgard-{v}-py3-none-any.whl"
 
 
-def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
+def _download(url: str, dest: str) -> None:
+    with urllib.request.urlopen(urllib.request.Request(url), timeout=30) as resp:
+        total = int(resp.headers.get("Content-Length") or 0)
+        with ui.bar("asgard wheel", total) as b, open(dest, "wb") as f:
+            while True:
+                chunk = resp.read(65536)
+                if not chunk:
+                    break
+                f.write(chunk)
+                b.advance(len(chunk))
+
+
+def _uv_install(spec: str, label: str) -> int:
+    with ui.spin(label):
+        r = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec],
+                           capture_output=True, text=True)
+    return r.returncode
+
+
+def run_update(rest: list[str], dry_run: bool = False) -> int:
     pin = rest[0] if rest else None
     version = pin[1:] if pin and pin.startswith("v") else pin
 
-    ui.head("upgrade", steps=1)
+    ui.head("update", steps=1 if (dry_run or _SPEC_OVERRIDE) else 3)
     if dry_run:  # keep dry-run network-free: describe the plan without resolving latest.
         if _SPEC_OVERRIDE:
             shown = f"{_SPEC_OVERRIDE}@v{version}" if version and _SPEC_OVERRIDE.startswith("git+") else _SPEC_OVERRIDE
@@ -55,17 +70,44 @@ def run_upgrade(rest: list[str], dry_run: bool = False) -> int:
     if not on_path("uv"):
         ui.fail("uv not found — install it first: https://astral.sh/uv")
         return 1
-    spec = _install_spec(version)
-    if spec is None:
-        ui.fail("could not resolve the latest version (network?). Pin one: asgard upgrade vX.Y.Z")
+
+    if _SPEC_OVERRIDE:  # dev/CI — uv 가 스펙을 직접 해석 (다운로드·버전 비교 없음)
+        spec = f"{_SPEC_OVERRIDE}@v{version}" if version and _SPEC_OVERRIDE.startswith("git+") else _SPEC_OVERRIDE
+        ui.phase("install via uv tool")
+        ui.step(ui.dim(spec))
+        if _uv_install(spec, "installing asgard (override)…"):
+            ui.fail("update failed (uv tool install)")
+            return 1
+        ui.done("updated (override spec)")
+        return 0
+
+    ui.phase("check")
+    target = version or _latest_version()
+    if not target:
+        ui.fail("could not resolve the latest version (network?). Pin one: asgard update vX.Y.Z")
         return 1
+    if target == __version__:
+        ui.ok(f"already up to date — v{__version__}")
+        ui.done(f"asgard v{__version__}")
+        return 0
+    ui.step(f"v{__version__} → v{target}")
+
+    ui.phase("download release wheel")
+    tmpd = tempfile.mkdtemp(prefix="asgard-update-")
+    wheel = os.path.join(tmpd, f"asgard-{target}-py3-none-any.whl")
+    try:
+        _download(_wheel_url(target), wheel)
+    except Exception as e:
+        shutil.rmtree(tmpd, ignore_errors=True)
+        ui.fail(f"download failed: {e}")
+        return 1
+    ui.ok(os.path.basename(wheel))
+
     ui.phase("install via uv tool")
-    ui.step(ui.dim(spec))  # 소스 한 줄(정적) — 스피너 라벨엔 URL/ANSI 를 넣지 않는다 (폭 초과·오산)
-    with ui.spin(f"installing asgard {('v' + version) if version else '(latest)'}…"):
-        result = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec],
-                                capture_output=True, text=True)
-    if result.returncode != 0:
-        ui.fail(f"upgrade failed (uv exited {result.returncode})")
+    rc = _uv_install(wheel, f"installing asgard v{target}…")
+    shutil.rmtree(tmpd, ignore_errors=True)
+    if rc:
+        ui.fail("update failed (uv tool install)")
         return 1
-    ui.done(f"upgraded → asgard {('v' + version) if version else '(latest)'}")
+    ui.done(f"v{__version__} → v{target}")
     return 0

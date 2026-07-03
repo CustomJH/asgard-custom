@@ -67,16 +67,28 @@ def init(
     raise typer.Exit(run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes))
 
 
-@app.command(help="update asgard to the latest release, or pin a version: upgrade vX.Y.Z")
+@app.command(help="update asgard to the latest release, or pin a version: update vX.Y.Z")
+def update(
+    ref: str = typer.Argument(None, metavar="[version]"),
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    ui.set_quiet(quiet)
+    from .commands.update import run_update
+
+    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run))
+
+
+@app.command(hidden=True)  # `update` 별칭 — 기존 스크립트/문서 호환
 def upgrade(
     ref: str = typer.Argument(None, metavar="[version]"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     ui.set_quiet(quiet)
-    from .commands.upgrade import run_upgrade
+    from .commands.update import run_update
 
-    raise typer.Exit(run_upgrade([ref] if ref else [], dry_run=dry_run))
+    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run))
 
 
 @app.command(help="remove asgard (uv tool, PATH symlink, ~/.asgard)")
@@ -102,11 +114,6 @@ def completions(shell: str = typer.Argument(None)) -> None:
 @app.command(hidden=True)
 def run() -> None:
     typer.echo("asgard run: planned")
-
-
-@app.command(hidden=True)
-def update() -> None:
-    typer.echo("asgard update: planned")
 
 
 if __name__ == "__main__":

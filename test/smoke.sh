@@ -141,8 +141,8 @@ PROJ="$(mktemp -d)"
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.cursor/hooks.json" ] && [ -f "$PROJ/.codex/config.toml" ] || { echo "FAIL: combined"; exit 1; }
 rm -rf "$PROJ"
 
-# ── upgrade — dry-run only (no network) ──
-"${ASG[@]}" upgrade --dry-run | grep -q "would install" || { echo "FAIL: upgrade --dry-run"; exit 1; }
+# ── update — dry-run only (no network) ──
+"${ASG[@]}" update --dry-run | grep -q "would install" || { echo "FAIL: update --dry-run"; exit 1; }
 
 # ── uninstall — removes the uv tool we installed at the top ──
 asgard uninstall --yes >/dev/null || { echo "FAIL: uninstall"; exit 1; }

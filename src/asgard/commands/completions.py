@@ -3,7 +3,7 @@
 
 import sys
 
-_CMDS = "doctor start init upgrade uninstall completions"  # cli.py 등록 명령과 동기 (hidden 제외)
+_CMDS = "doctor start init update uninstall completions"  # cli.py 등록 명령과 동기 (hidden 제외)
 _FLAGS = "--help --version --json --quiet --dry-run --yes --profile"
 
 _BASH = """\

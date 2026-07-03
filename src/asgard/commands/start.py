@@ -36,7 +36,7 @@ def preflight(root: str, provider: str | None = None, model: str | None = None) 
     sdk = importlib.util.find_spec(sdk_mod) is not None
     checks.append({"name": f"{sdk_mod} SDK", "ok": sdk,
                    "detail": "importable" if sdk else "not installed",
-                   "fix": "asgard upgrade (또는 uv tool install asgard --force)"})
+                   "fix": "asgard update (또는 uv tool install asgard --force)"})
 
     # advisory — 없어도 세션은 열린다 (패키지 내장 정체성 사용). 있으면 프로젝트 관례 병합.
     agents_md = os.path.exists(os.path.join(root, "AGENTS.md"))
