@@ -158,10 +158,11 @@ def statusline(root: str, rp, usage: dict | None = None) -> str:
 
 _HELP_KEYS = {
     "/help": "h_help", "/new": "h_new", "/quest": "h_quest", "/provider": "h_provider",
-    "/model": "h_model", "/lang": "h_lang", "/clear": "h_clear", "/exit": "h_exit",
+    "/model": "h_model", "/lang": "h_lang", "/update": "h_update", "/clear": "h_clear",
+    "/exit": "h_exit",
 }
 _COMMANDS = ["/help", "/new", "/quest", "/provider", "/provider set", "/model",
-             "/lang en", "/lang ko", "/clear", "/exit"]
+             "/lang en", "/lang ko", "/update", "/clear", "/exit"]
 
 
 def _help_items():
@@ -329,6 +330,9 @@ def slash(cmd: str, root: str, rp) -> bool:
             sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(_t('lang_set', lang=arg[0]))}\n")
         else:
             sys.stdout.write(f"  {ui.dim(_t('lang_usage'))}\n")
+    elif c == "/update":
+        from ..commands.update import run_update
+        run_update(cmd.split()[1:], restart_hint=True)
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
         banner(rp)
@@ -428,18 +432,10 @@ def run(root: str, rp) -> int:
                 sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
             continue
 
-        # 키 미설정이면 첫 요청에서 온보딩 (터미널은 이미 켜진 상태 — hermes/opencode 흐름)
+        # 키 미설정 — 온보딩을 강제로 열지 않고 안내만 (연결은 /provider set 으로 명시적으로)
         if heimdall is None:
-            from .onboard import can_prompt, onboard
-            if not can_prompt():
-                sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('provider_unset_short')}\n")
-                continue
-            new = onboard(root, preselect=rp.profile.name if not rp.missing else None)
-            if new is None or new.missing:
-                sys.stdout.write(f"  {ui.dim(t('connect_cancel'))}\n")
-                continue
-            rp = new
-            heimdall = _new_heimdall(root, rp, emit)
+            sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('connect_needed')}\n")
+            continue
 
         try:
             out = heimdall.handle(req)

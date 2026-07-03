@@ -144,9 +144,8 @@ class AsgardTUI(App):
             self._handle_slash(req)
             return
 
-        if self.heimdall is None:  # 키 없음 → 온보딩 후 이 요청 이어서 처리
-            if self._onboard():
-                self._dispatch(req)
+        if self.heimdall is None:  # 키 없음 — 온보딩 강제 진입 대신 안내 (/provider set 으로 명시적 연결)
+            log.write(f"[yellow]⚠ {t('connect_needed')}[/yellow]")
             return
         self._dispatch(req)
 
@@ -184,6 +183,10 @@ class AsgardTUI(App):
             self._onboard()
         elif c in ("/provider", "/model"):
             log.write(f"[{_O}]{self.rp.profile.display}[/{_O}] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
+        elif c == "/update":
+            from ..commands.update import run_update
+            with self.suspend():  # ui.* 가 stdout 에 그림 — 화면 훼손 방지 (onboard 와 동일)
+                run_update(req.split()[1:], restart_hint=True)
         elif c == "/lang":
             from ..i18n import save_lang
             arg = req.split()[1:2]
