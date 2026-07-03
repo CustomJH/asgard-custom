@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import sys
 
-from .. import ui
+from .. import theme, ui
 from ..i18n import t
 from .session import ql
 
@@ -86,10 +86,10 @@ def _image_logo() -> bool:
     return True
 
 
-_O = "38;5;80"  # 브랜드 시안 (서리/얼음, 256=80)
-# 로고 세로 그라디언트 — 다크 배경은 밝은 얼음, 라이트 배경은 진한 청록(밝은색은 라이트서 안 보임)
-_LOGO_GRAD = ["159", "123", "80", "44", "37", "30"]
-_LOGO_GRAD_LIGHT = ["30", "30", "23", "23", "23", "23"]
+_O = theme.ansi(theme.PRIMARY)  # 브랜드 골드 (신성한 황금)
+# 로고 세로 그라디언트 — theme.py 단일 소스 (다크=밝은 금→깊은 금, 라이트=진한 금)
+_LOGO_GRAD = [theme.ansi(h) for h in theme.LOGO_GRAD]
+_LOGO_GRAD_LIGHT = [theme.ansi(h) for h in theme.LOGO_GRAD_LIGHT]
 
 
 def banner(rp) -> None:
@@ -104,7 +104,7 @@ def banner(rp) -> None:
             sys.stdout.write("\n")
             for i, line in enumerate(_LOGO.split("\n")):
                 col = grad[i] if i < len(grad) else grad[-1]
-                sys.stdout.write("  " + ui.paint(f"38;5;{col}", line) + "\n")
+                sys.stdout.write("  " + ui.paint(col, line) + "\n")
         else:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
 
@@ -138,7 +138,7 @@ def statusline(root: str, rp, usage: dict | None = None) -> str:
     home = os.path.expanduser("~")
     cwd = root.replace(home, "~", 1) if root.startswith(home) else root
     if rp.missing:  # 키/설정 미충족 = 미연결 — 모델명 대신 명확한 안내
-        return "  " + ui.paint("33", f"⚠ {t('not_connected')}") + "   " + ui.dim(f"⌂ {cwd}")
+        return "  " + ui.paint(theme.ansi(theme.WARNING), f"⚠ {t('not_connected')}") + "   " + ui.dim(f"⌂ {cwd}")
     parts = [f"◆ {rp.model}", f"⌂ {cwd}"]
     br = _git_status(root)
     if br:
@@ -219,14 +219,14 @@ def slash(cmd: str, root: str, rp) -> bool:
     if c == "/help":
         sys.stdout.write("\n")
         for k, v in _help_items():
-            sys.stdout.write(f"  {ui.paint('38;5;80', k.ljust(14))} {ui.dim(v)}\n")
-        sys.stdout.write(f"  {ui.paint('38;5;80', '!<cmd>'.ljust(14))} {ui.dim(t('h_bash'))}\n")
+            sys.stdout.write(f"  {ui.paint(_O, k.ljust(14))} {ui.dim(v)}\n")
+        sys.stdout.write(f"  {ui.paint(_O, '!<cmd>'.ljust(14))} {ui.dim(t('h_bash'))}\n")
         sys.stdout.write(f"  {ui.dim(t('help_footer'))}\n\n")
     elif c == "/lang":
         from ..i18n import save_lang, t as _t
         arg = cmd.split()[1:2]
         if arg and save_lang(arg[0], root):
-            sys.stdout.write(f"  {ui.paint('32', '✔')} {ui.dim(_t('lang_set', lang=arg[0]))}\n")
+            sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(_t('lang_set', lang=arg[0]))}\n")
         else:
             sys.stdout.write(f"  {ui.dim(_t('lang_usage'))}\n")
     elif c == "/clear":
@@ -241,7 +241,7 @@ def slash(cmd: str, root: str, rp) -> bool:
                     raise _Reconfigure(new)  # repl.run 이 세션 재생성
             return True
         src = rp.key_source or rp.source
-        sys.stdout.write(f"  {ui.paint('38;5;80', rp.profile.display)} {ui.dim('·')} "
+        sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} "
                          f"{rp.model} {ui.dim('(' + src + ')')}\n")
     elif c == "/quest":
         try:
@@ -250,7 +250,7 @@ def slash(cmd: str, root: str, rp) -> bool:
         except Exception:
             sys.stdout.write(f"  {ui.dim(t('no_quest'))}\n")
     else:
-        sys.stdout.write(f"  {ui.paint('33', '⚠')} {t('unknown_cmd', c=c)}\n")
+        sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('unknown_cmd', c=c)}\n")
     return True
 
 
@@ -273,7 +273,7 @@ def _run_bang(root: str, cmd: str) -> None:
         if code:
             sys.stdout.write(f"  {ui.dim('exit ' + str(code))}\n")
     except T.ToolError as e:
-        sys.stdout.write(f"  {ui.paint('31', '⚠')} {e}\n")
+        sys.stdout.write(f"  {ui.paint(ui._FAIL, '⚠')} {e}\n")
 
 
 def run(root: str, rp) -> int:
@@ -312,14 +312,14 @@ def run(root: str, rp) -> int:
             except _Reconfigure as r:  # /provider set — 세션 재생성
                 rp = r.rp
                 heimdall = _new_heimdall(root, rp, emit)
-                sys.stdout.write(f"  {ui.paint('32', '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
+                sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
             continue
 
         # 키 미설정이면 첫 요청에서 온보딩 (터미널은 이미 켜진 상태 — hermes/opencode 흐름)
         if heimdall is None:
             from .onboard import can_prompt, onboard
             if not can_prompt():
-                sys.stdout.write(f"  {ui.paint('33', '⚠')} {t('provider_unset_short')}\n")
+                sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('provider_unset_short')}\n")
                 continue
             new = onboard(root, preselect=rp.profile.name if not rp.missing else None)
             if new is None or new.missing:
@@ -335,4 +335,4 @@ def run(root: str, rp) -> int:
         except KeyboardInterrupt:
             sys.stdout.write(f"\n  {ui.dim(t('turn_kept'))}\n")
         except Exception as e:
-            sys.stdout.write(f"\n  {ui.paint('31', '⚠')} 세션 오류: {e}\n")
+            sys.stdout.write(f"\n  {ui.paint(ui._FAIL, '⚠')} 세션 오류: {e}\n")

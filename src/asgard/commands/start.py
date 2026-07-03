@@ -51,7 +51,7 @@ def _render(checks: list) -> None:
         mark = ui.paint("32", "✔") if c["ok"] else ui.paint("31", "✘")
         sys.stdout.write(f"  {mark} {c['name'].ljust(22)} {ui.dim(str(c['detail']))}\n")
         if not c["ok"] and c["fix"]:
-            sys.stdout.write(f"      {ui.paint('36', '→')} {c['fix']}\n")
+            sys.stdout.write(f"      {ui.paint(ui._INFO, '→')} {c['fix']}\n")
 
 
 def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None,

@@ -9,11 +9,19 @@ import sys
 import threading
 import time
 
+from . import theme
+
 # TERM=dumb 또는 미설정이면 ANSI 미지원 — 색을 끈다 (docker exec 등에서 raw 코드가 뜨는 것 방지).
 _TERM = os.environ.get("TERM", "")
 _COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and _TERM not in ("", "dumb")
 _QUIET = False
-_MARK = "⠶"  # ⠶ — small brand dot-mark (Yggdrasil), painted orange
+_MARK = "⠶"  # ⠶ — small brand dot-mark (Yggdrasil), painted gold (theme.PRIMARY)
+# 시맨틱 색 — 토큰(theme.py)에서 유도. 여기 외 raw 코드 직접 쓰지 말 것.
+_GOLD = theme.ansi(theme.PRIMARY)
+_INFO = theme.ansi(theme.ACCENT_BLUE)
+_OK = theme.ansi(theme.SUCCESS)
+_WARN = theme.ansi(theme.WARNING)
+_FAIL = theme.ansi(theme.DANGER)
 _FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
 _STEP = 0
 _STEPS = 0
@@ -37,7 +45,7 @@ def dim(s: str) -> str:
 
 
 def _mark() -> str:
-    return paint("38;5;208", _MARK)
+    return paint(_GOLD, _MARK)
 
 
 def head(action: str, steps: int = 0) -> None:
@@ -54,30 +62,30 @@ def phase(title: str) -> None:
     _STEP += 1
     if not _QUIET:
         tag = f"[{_STEP}/{_STEPS}]" if _STEPS else f"[{_STEP}]"
-        sys.stdout.write(f"  {bold(paint('36', tag))} {bold(title)}\n")
+        sys.stdout.write(f"  {bold(paint(_INFO, tag))} {bold(title)}\n")
 
 
 def step(msg: str) -> None:
     if not _QUIET:
-        sys.stdout.write(f"  {paint('36', '→')} {msg}\n")
+        sys.stdout.write(f"  {paint(_INFO, '→')} {msg}\n")
 
 
 def ok(msg: str) -> None:
-    sys.stdout.write(f"  {paint('32', '✔')} {msg}\n")
+    sys.stdout.write(f"  {paint(_OK, '✔')} {msg}\n")
 
 
 def warn(msg: str) -> None:
-    sys.stdout.write(f"  {paint('33', '!')} {msg}\n")
+    sys.stdout.write(f"  {paint(_WARN, '!')} {msg}\n")
 
 
 def fail(msg: str) -> None:
-    sys.stderr.write(f"  {paint('31', '✘')} {msg}\n")
+    sys.stderr.write(f"  {paint(_FAIL, '✘')} {msg}\n")
 
 
 def done(msg: str = "") -> None:
     """Closing ✔ line for a command."""
     tail = f"  {dim('— ' + msg)}" if msg else ""
-    sys.stdout.write(f"\n  {paint('32', '✔')} {bold('done')}{tail}\n\n")
+    sys.stdout.write(f"\n  {paint(_OK, '✔')} {bold('done')}{tail}\n\n")
 
 
 class spin:
@@ -106,7 +114,7 @@ class spin:
             width = shutil.get_terminal_size((80, 20)).columns
             budget = max(10, width - 5)
             label = self.label if len(self.label) <= budget else self.label[:budget - 1] + "…"
-            sys.stdout.write(f"\r\x1b[K  {paint('36', fr)} {label}")
+            sys.stdout.write(f"\r\x1b[K  {paint(_INFO, fr)} {label}")
             sys.stdout.flush()
             time.sleep(0.08)
 

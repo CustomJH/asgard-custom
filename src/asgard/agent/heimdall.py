@@ -37,9 +37,9 @@ _ROLE_ICON = {
 
 
 def _transition_line(role: str, why: str) -> str:
-    from .. import ui
+    from .. import theme, ui
     icon = _ROLE_ICON.get(role, "◇")
-    return f"\n  {ui.paint('38;5;208', icon)} {ui.bold(role)} {ui.dim('· ' + why)}\n"
+    return f"\n  {ui.paint(theme.ansi(theme.PRIMARY), icon)} {ui.bold(role)} {ui.dim('· ' + why)}\n"
 
 NATIVE_NOTE = """
 
@@ -174,8 +174,8 @@ class Heimdall:
     def _dispatch_handler(self, sid: str, worker_result_writes: list[str]):
         def handler(inp: dict) -> str:
             agent, task, why = inp["agent"], inp["task"], inp.get("why", "")
-            from .. import ui
-            self.on_text(f"\n  {ui.paint('38;5;208', '⤷')} {ui.bold(agent)} {ui.dim('위임 · ' + why[:80])}\n")
+            from .. import theme, ui
+            self.on_text(f"\n  {ui.paint(theme.ansi(theme.PRIMARY), '⤷')} {ui.bold(agent)} {ui.dim('위임 · ' + why[:80])}\n")
             ql(self.root, "append", session=sid, stdin=json.dumps(
                 {"role": "worker", "event": "delegate",
                  "commands": [{"cmd": f"dispatch:{agent} — {why[:120]}", "exit_code": 0}]}))

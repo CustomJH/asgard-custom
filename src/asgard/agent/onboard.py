@@ -10,7 +10,7 @@ from __future__ import annotations
 import getpass
 import sys
 
-from .. import ui
+from .. import theme, ui
 from ..i18n import t
 from ..providers import PROVIDERS, ResolvedProvider, resolve, save_credential
 
@@ -28,7 +28,7 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
         for i, n in enumerate(names, 1):
             p = PROVIDERS[n]
-            sys.stdout.write(f"    {ui.paint('38;5;80', str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n")
+            sys.stdout.write(f"    {ui.paint(theme.ansi(theme.PRIMARY), str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n")
         try:
             sel = input("  " + t("number") + " [1]: ").strip() or "1"
             name = names[int(sel) - 1]
@@ -53,5 +53,5 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         return None
 
     save_credential(name, key, base_url=base_url, model=model)
-    sys.stdout.write(f"  {ui.paint('32', '✔')} {ui.dim(t('saved_cred'))}\n")
+    sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(t('saved_cred'))}\n")
     return resolve(root, provider=name)

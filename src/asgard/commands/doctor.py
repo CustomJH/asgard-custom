@@ -78,7 +78,7 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
         mark = ui.paint("32", "✔") if ch["ok"] else ui.paint("33", "⚠")
         sys.stdout.write(f"  {mark} {ch['name'].ljust(22)} {ui.dim(ch['detail'])}\n")
         if not ch["ok"]:
-            sys.stdout.write(f"      {ui.paint('36', '→')} {ch['fix']}\n")
+            sys.stdout.write(f"      {ui.paint(ui._INFO, '→')} {ch['fix']}\n")
     if not quiet:
         ui.done() if ok else ui.warn("asgard not on PATH — see fix above.")
     return 0 if ok else 1
