@@ -74,6 +74,21 @@ class TestTUI(unittest.TestCase):
                 assert s2 and s2.startswith("/provider"), s2
         asyncio.run(go())
 
+    def test_status_busy_toggle(self):
+        async def go():
+            app = self._app()
+            async with app.run_test() as pilot:
+                from textual.widgets import Static
+                st = app.query_one("#status", Static)
+                idle = st.render()
+                app._set_status(True)
+                await pilot.pause()
+                assert "처리 중" in str(st.render())
+                app._set_status(False)
+                await pilot.pause()
+                assert "처리 중" not in str(st.render())
+        asyncio.run(go())
+
     def test_quit_binding(self):
         async def go():
             app = self._app()

@@ -68,9 +68,14 @@ class AsgardTUI(App):
     def _meta_line(self) -> str:
         return f"[b]Heimdall[/b]  [dim]비프로스트의 수호자 · Trinity 오케스트레이터[/dim]"
 
-    def _status_line(self) -> str:
+    def _status_line(self, busy: bool = False) -> str:
+        if busy:
+            return " [#ff8700]●[/#ff8700] 처리 중…   [dim]Ctrl-C 중단[/dim]"
         p = self.rp.profile.display
         return f" [#ff8700]▌[/#ff8700] {p} · {self.rp.model}   [dim]/help · /new · !bash[/dim]"
+
+    def _set_status(self, busy: bool) -> None:
+        self.query_one("#status", Static).update(self._status_line(busy))
 
     # ── Heimdall 스트리밍 브리지 (thread → UI) ──────────────────────────
     def _emit(self, s: str) -> None:
@@ -85,12 +90,15 @@ class AsgardTUI(App):
 
     @work(thread=True, exclusive=True)
     def _dispatch(self, req: str) -> None:
+        self.call_from_thread(self._set_status, True)
         try:
             out = self.heimdall.handle(req)
             if out:
                 self.call_from_thread(self._append, "\n" + out)
         except Exception as e:
             self.call_from_thread(self._append, f"[red]⚠ 세션 오류: {e}[/red]")
+        finally:
+            self.call_from_thread(self._set_status, False)
 
     # ── 입력 처리 ────────────────────────────────────────────────────────
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -151,6 +159,7 @@ class AsgardTUI(App):
 
     def action_interrupt(self) -> None:
         self.workers.cancel_all()
+        self._set_status(False)
         self.query_one("#log", RichLog).write("[dim](턴 중단)[/dim]")
 
 
