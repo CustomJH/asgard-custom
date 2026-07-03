@@ -67,25 +67,31 @@ def _image_logo() -> bool:
     return True
 
 
+_O = "38;5;208"  # 브랜드 오렌지 (accent)
+# 로고 세로 그라디언트 (밝은 노랑 위 → 진한 주황 아래) — hermes 느낌
+_LOGO_GRAD = ["220", "214", "208", "208", "172", "166"]
+
+
 def banner(rp) -> None:
     import shutil
     width = shutil.get_terminal_size((80, 20)).columns
-    O = "38;5;208"  # 브랜드 오렌지 (hermes gold 자리 — Asgard 정체성색)
+    bar = ui.paint(_O, "▌")
 
-    # 로고: 이미지 터미널 → PNG(install 과 동일), 아니면 블록 figlet(넓으면) / 축약(좁으면)
+    # 로고: 이미지 터미널 → PNG(install 과 동일), 아니면 블록 figlet(그라디언트) / 축약
     if not (ui._COLOR and _image_logo()):
-        art = _LOGO if width >= 55 else _LOGO_SLIM
-        sys.stdout.write("\n")
-        for line in art.split("\n"):
-            sys.stdout.write("  " + ui.paint(O, line) + "\n")
+        if width >= 55:
+            sys.stdout.write("\n")
+            for i, line in enumerate(_LOGO.split("\n")):
+                col = _LOGO_GRAD[i] if i < len(_LOGO_GRAD) else "208"
+                sys.stdout.write("  " + ui.paint(f"38;5;{col}", line) + "\n")
+        else:
+            sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
 
-    # 정보 블록 (hermes 스타일 — 로고 밑 라벨: 값 정렬)
-    rule = ui.paint(O, "▔" * min(width - 4, 52))
+    # 정보 블록 — 왼쪽 accent bar 통일 (opencode 스타일)
     sys.stdout.write(
-        f"\n  {rule}\n"
-        f"  {ui.bold('Heimdall')} {ui.dim('· 비프로스트의 수호자 · Trinity 오케스트레이터')}\n"
-        f"  {ui.dim('provider'.ljust(9))} {ui.paint(O, rp.profile.display)} {ui.dim('·')} {rp.model}\n"
-        f"  {ui.dim('commands'.ljust(9))} {ui.dim('/help · /new · /provider · !bash · Tab 자동완성 · ↑↓ 히스토리')}\n\n")
+        f"\n  {bar} {ui.bold('Heimdall')}  {ui.dim('비프로스트의 수호자 · Trinity 오케스트레이터')}\n"
+        f"  {bar} {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model}\n"
+        f"  {bar} {ui.dim('/help · /new · !bash · Tab 자동완성 · ↑↓ 히스토리')}\n")
 
 
 _HELP = {
@@ -137,8 +143,10 @@ def _save_history(readline, path: str) -> None:
 
 
 def prompt() -> str:
-    mark = ui.paint("38;5;208", "◇") if ui._COLOR else "◇"
-    return input(f"{mark} {ui.bold('odin')} ▸ ")
+    # opencode 스타일 — 왼쪽 accent bar + 얇은 화살표. 앞 빈 줄로 입력 영역 분리.
+    bar = ui.paint(_O, "▌")
+    arrow = ui.dim("›")
+    return input(f"\n{bar} {arrow} ")
 
 
 class _Reconfigure(Exception):
