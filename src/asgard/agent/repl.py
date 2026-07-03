@@ -123,9 +123,10 @@ def banner(rp) -> None:
 
 _HELP_KEYS = {
     "/help": "h_help", "/new": "h_new", "/quest": "h_quest", "/provider": "h_provider",
-    "/model": "h_model", "/clear": "h_clear", "/exit": "h_exit",
+    "/model": "h_model", "/lang": "h_lang", "/clear": "h_clear", "/exit": "h_exit",
 }
-_COMMANDS = ["/help", "/new", "/quest", "/provider", "/provider set", "/model", "/clear", "/exit"]
+_COMMANDS = ["/help", "/new", "/quest", "/provider", "/provider set", "/model",
+             "/lang en", "/lang ko", "/clear", "/exit"]
 
 
 def _help_items():
@@ -192,6 +193,13 @@ def slash(cmd: str, root: str, rp) -> bool:
             sys.stdout.write(f"  {ui.paint('38;5;80', k.ljust(14))} {ui.dim(v)}\n")
         sys.stdout.write(f"  {ui.paint('38;5;80', '!<cmd>'.ljust(14))} {ui.dim(t('h_bash'))}\n")
         sys.stdout.write(f"  {ui.dim(t('help_footer'))}\n\n")
+    elif c == "/lang":
+        from ..i18n import save_lang, t as _t
+        arg = cmd.split()[1:2]
+        if arg and save_lang(arg[0], root):
+            sys.stdout.write(f"  {ui.paint('32', '✔')} {ui.dim(_t('lang_set', lang=arg[0]))}\n")
+        else:
+            sys.stdout.write(f"  {ui.dim(_t('lang_usage'))}\n")
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
         banner(rp)

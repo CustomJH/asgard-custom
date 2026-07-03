@@ -177,6 +177,14 @@ class AsgardTUI(App):
             self._onboard()
         elif c in ("/provider", "/model"):
             log.write(f"[#5fd7d7]{self.rp.profile.display}[/#5fd7d7] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
+        elif c == "/lang":
+            from ..i18n import save_lang
+            arg = req.split()[1:2]
+            if arg and save_lang(arg[0], self.root):
+                self._set_status(False)
+                log.write(f"[#5fd7d7]✔[/#5fd7d7] {t('lang_set', lang=arg[0])} [dim](/new 로 배너 갱신)[/dim]")
+            else:
+                log.write(f"[dim]{t('lang_usage')}[/dim]")
         elif c == "/quest":
             try:
                 out = _repl.ql(self.root, "state").stdout.strip()

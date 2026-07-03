@@ -58,6 +58,9 @@ _M: dict[str, tuple[str, str]] = {
     "h_model": ("current model id", "현재 모델 ID"),
     "h_clear": ("clear the screen", "화면 지우기"),
     "h_exit": ("end the session (same as Ctrl-D)", "세션 종료 (Ctrl-D 동일)"),
+    "h_lang": ("switch language: /lang en | ko", "언어 전환: /lang en | ko"),
+    "lang_set": ("language → {lang}", "언어 → {lang}"),
+    "lang_usage": ("usage: /lang en | ko", "사용법: /lang en | ko"),
     "h_bash": ("run a bash command", "bash 직접 실행"),
     "help_footer": ("Tab complete · ↑↓ history", "Tab 자동완성 · ↑↓ 히스토리"),
     "input_placeholder": ("Type a message…  ( /help · !bash · Ctrl-Q quit )",
@@ -94,6 +97,30 @@ def load_lang(root: str | None = None) -> str:
     lang = lang or os.environ.get("ASGARD_LANG")
     set_lang(lang)
     return _LANG
+
+
+def save_lang(lang: str, root: str | None = None) -> bool:
+    """언어를 프로젝트 .asgard/config.toml [ui] lang 에 저장하고 즉시 적용. tomllib 는 읽기 전용
+    이므로 [ui] 섹션만 최소 편집(있으면 교체, 없으면 append) — provider 등 다른 섹션 보존."""
+    if lang not in LANGS:
+        return False
+    import re
+    root = root or os.getcwd()
+    d = os.path.join(root, ".asgard")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, "config.toml")
+    try:
+        txt = open(path).read()
+    except FileNotFoundError:
+        txt = ""
+    block = f'[ui]\nlang = "{lang}"\n'
+    if re.search(r'^\[ui\]', txt, re.M):
+        txt = re.sub(r'^\[ui\][^\[]*', block, txt, count=1, flags=re.M)
+    else:
+        txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
+    open(path, "w").write(txt)
+    set_lang(lang)
+    return True
 
 
 def t(key: str, **kw) -> str:
