@@ -16,6 +16,25 @@ dependencies = [
 [project.scripts]
 asgard = "asgard.cli:app"
 
+# 개발 도구 (PEP 735) — `uv sync` 기본 포함, 배포 wheel 에는 안 들어감.
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "ruff>=0.8",
+]
+
+# 구조 현대화 뼈대 (CUS-160). lint 규칙 확장·위반 전면 정리는 CUS-161.
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]  # pycodestyle · pyflakes · isort — 최소 셋부터
+ignore = ["E501"]  # 포매터 병용 시 공식 권장 — 장문 템플릿 문자열은 포매터도 못 접음
+
+[tool.pytest.ini_options]
+testpaths = ["test"]  # tests/ 이관은 CUS-162
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
