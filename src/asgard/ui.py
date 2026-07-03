@@ -9,7 +9,9 @@ import sys
 import threading
 import time
 
-_COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+# TERM=dumb 또는 미설정이면 ANSI 미지원 — 색을 끈다 (docker exec 등에서 raw 코드가 뜨는 것 방지).
+_TERM = os.environ.get("TERM", "")
+_COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and _TERM not in ("", "dumb")
 _QUIET = False
 _MARK = "⠶"  # ⠶ — small brand dot-mark (Yggdrasil), painted orange
 _FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"

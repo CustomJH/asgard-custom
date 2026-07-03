@@ -171,8 +171,11 @@ def _save_history(readline, path: str) -> None:
 
 def prompt() -> str:
     # opencode 스타일 — 왼쪽 accent bar + 얇은 화살표. 앞 빈 줄로 입력 영역 분리.
-    bar = ui.paint(_O, "▌")
-    arrow = ui.dim("›")
+    if not ui._COLOR:
+        return input("\n▌ › ")
+    # readline 은 프롬프트의 비출력(ANSI) 문자를 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
+    bar = f"\x01\x1b[{_O}m\x02▌\x01\x1b[0m\x02"
+    arrow = "\x01\x1b[2m\x02›\x01\x1b[0m\x02"
     return input(f"\n{bar} {arrow} ")
 
 
