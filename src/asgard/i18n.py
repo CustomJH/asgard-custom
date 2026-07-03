@@ -68,6 +68,8 @@ _M: dict[str, tuple[str, str]] = {
     "input_placeholder": ("Type a message…  ( /help · !bash · Ctrl-Q quit )",
                           "메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )"),
     "needs_base_url": ("base_url required", "base_url 필요"),
+    "thought": ("Thought", "생각"),
+    "ph_input": ("Ask anything — / commands · ! bash", "무엇이든 입력 — / 커맨드 · ! bash"),
     "number": ("number", "번호"),
     "model_id_prompt": ("model id", "model ID"),
 }

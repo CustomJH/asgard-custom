@@ -132,20 +132,28 @@ def _git_status(root: str) -> str:
         return ""
 
 
-def statusline(root: str, rp, usage: dict | None = None) -> str:
-    """claude-code 식 상태줄 — 모델 · 디렉토리 · git · 사용량. 미연결이면 명확히 안내."""
+def _status_text(root: str, rp, usage: dict | None = None) -> str:
+    """상태줄 순수 텍스트 — 모델 · 디렉토리 · git · 사용량 (색은 호출부 몫)."""
     import os
     home = os.path.expanduser("~")
     cwd = root.replace(home, "~", 1) if root.startswith(home) else root
     if rp.missing:  # 키/설정 미충족 = 미연결 — 모델명 대신 명확한 안내
-        return "  " + ui.paint(theme.ansi(theme.WARNING), f"⚠ {t('not_connected')}") + "   " + ui.dim(f"⌂ {cwd}")
+        return f"⚠ {t('not_connected')}   ⌂ {cwd}"
     parts = [f"◆ {rp.model}", f"⌂ {cwd}"]
     br = _git_status(root)
     if br:
         parts.append(f"⎇ {br}")
     if usage and usage.get("tokens"):
         parts.append(f"↯ {usage['tokens'] / 1000:.1f}k")
-    return "  " + ui.dim("  ".join(parts))
+    return "  ".join(parts)
+
+
+def statusline(root: str, rp, usage: dict | None = None) -> str:
+    """claude-code 식 상태줄 (readline 폴백 경로 — pt 는 bottom_toolbar 로 표시)."""
+    txt = _status_text(root, rp, usage)
+    if rp.missing:
+        return "  " + ui.paint(theme.ansi(theme.WARNING), txt)
+    return "  " + ui.dim(txt)
 
 
 _HELP_KEYS = {
@@ -168,8 +176,89 @@ def _completer(text: str, state: int):
     return matches[state] if state < len(matches) else None
 
 
+_PT = None  # prompt_toolkit 세션 캐시 — False 면 생성 실패(readline 폴백)
+_PT_CTX: dict = {}  # bottom_toolbar 용 세션 상태 — run() 이 매 루프 갱신 {root, rp, heimdall}
+
+
+def _term_width() -> int:
+    import shutil
+    return max(20, shutil.get_terminal_size((80, 20)).columns)
+
+
+def _pt_message():
+    """입력 영역 상단 rule + 골드 화살표 (cursor-agent 식 입력박스 프레임)."""
+    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"),
+            ("class:arrow", "  → ")]
+
+
+def _pt_toolbar():
+    """입력창 아래 — 하단 rule + 상태줄 (모델 · 디렉토리 · git · 사용량)."""
+    ctx = _PT_CTX
+    if not ctx:
+        return ""
+    hd = ctx.get("heimdall")
+    usage = {"tokens": hd.total_tokens} if hd else None
+    txt = _status_text(ctx["root"], ctx["rp"], usage)
+    cls = "class:status-warn" if ctx["rp"].missing else "class:status"
+    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"),
+            (cls, "  " + txt)]
+
+
+def _history_path() -> str:
+    import os
+    hp = os.path.join(os.path.expanduser("~"), ".asgard", "history")
+    os.makedirs(os.path.dirname(hp), exist_ok=True)
+    return hp
+
+
+def _pt_session():
+    """prompt_toolkit 세션 — '/' 입력 즉시 후보 메뉴(설명 포함)가 아래에 뜨고 Tab·화살표로
+    완성한다 (hermes-agent SlashCommandCompleter 참조). 색은 theme 토큰."""
+    from prompt_toolkit import PromptSession
+    from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
+    from prompt_toolkit.completion import Completer, Completion
+    from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.styles import Style
+
+    class _Slash(Completer):
+        def get_completions(self, document, complete_event):
+            text = document.text_before_cursor
+            if not text.startswith("/"):
+                return
+            helps = dict(_help_items())  # 호출 시점 조회 — /lang 전환 즉시 반영
+            for c in _COMMANDS:
+                if c.startswith(text):
+                    meta = helps.get("/" + c[1:].split()[0], "")
+                    yield Completion(c + " ", start_position=-len(text),
+                                     display=c, display_meta=meta)
+
+    style = Style.from_dict({
+        "arrow": f"{theme.PRIMARY} bold",
+        "rule": theme.SECONDARY,
+        "placeholder": theme.SUBTEXT,
+        "hint": theme.SUBTEXT,
+        "status": theme.SUBTEXT,
+        "status-warn": theme.WARNING,
+        "bottom-toolbar": "noreverse",
+        "completion-menu": f"bg:{theme.SURFACE} {theme.TEXT}",
+        "completion-menu.completion.current": f"bg:{theme.PRIMARY} {theme.BACKGROUND}",
+        "completion-menu.meta.completion": f"bg:{theme.SURFACE} {theme.SUBTEXT}",
+        "completion-menu.meta.completion.current": f"bg:{theme.PRIMARY} {theme.SECONDARY}",
+        "auto-suggestion": theme.SUBTEXT,
+    })
+    return PromptSession(
+        completer=_Slash(),
+        complete_while_typing=True,
+        auto_suggest=AutoSuggestFromHistory(),
+        history=FileHistory(_history_path()),
+        style=style,
+        reserve_space_for_menu=len(_COMMANDS) + 1,
+    )
+
+
 def _setup_readline() -> None:
-    """readline 배선 — Tab 자동완성 + 화살표 히스토리(파일 영속). 없는 플랫폼은 조용히 스킵."""
+    """readline 배선 — Tab 자동완성 + 화살표 히스토리(파일 영속). 없는 플랫폼은 조용히 스킵.
+    prompt_toolkit 폴백 경로 전용 (기본은 _pt_session)."""
     try:
         import atexit
         import os
@@ -178,7 +267,12 @@ def _setup_readline() -> None:
         return
     readline.set_completer(_completer)
     readline.set_completer_delims("")   # 전체 라인을 completion 대상으로 (/ 포함)
-    readline.parse_and_bind("tab: complete")
+    # uv 파이썬(macOS)은 GNU readline 이 아니라 libedit — 바인딩 문법이 다르다.
+    # GNU 문법("tab: complete")을 libedit 에 주면 조용히 무시돼 Tab 이 탭 문자로 들어간다.
+    if getattr(readline, "backend", "") == "editline":
+        readline.parse_and_bind("bind ^I rl_complete")
+    else:
+        readline.parse_and_bind("tab: complete")
     hp = os.path.join(os.path.expanduser("~"), ".asgard", "history")
     try:
         os.makedirs(os.path.dirname(hp), exist_ok=True)
@@ -197,10 +291,16 @@ def _save_history(readline, path: str) -> None:
 
 
 def prompt() -> str:
-    # status line 바로 아래, 2칸 들여 정렬. 시안 › 프롬프트.
+    # cursor-agent 식 입력 영역 — rule 프레임 + 골드 → + placeholder + 하단 상태줄.
     if not ui._COLOR:
         return input("  › ")
-    # readline 은 프롬프트의 비출력(ANSI) 문자를 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
+    if _PT:
+        return _PT.prompt(
+            _pt_message,
+            placeholder=[("class:placeholder", t("ph_input"))],
+            rprompt=[("class:hint", t("interrupt_hint") + " ")],
+            bottom_toolbar=_pt_toolbar)
+    # readline 폴백 — 비출력(ANSI) 문자는 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
     arrow = f"\x01\x1b[{_O}m\x02›\x01\x1b[0m\x02"
     return input(f"  {arrow} ")
 
@@ -282,14 +382,27 @@ def run(root: str, rp) -> int:
         sys.stdout.write(s)
         sys.stdout.flush()
 
-    _setup_readline()  # Tab 자동완성 + 화살표 히스토리
+    # '/' 라이브 완성 메뉴 (prompt_toolkit). 실패 시 readline 폴백 — 히스토리 파일 충돌 방지 위해
+    # 한쪽만 배선한다 (readline atexit 가 pt 포맷 히스토리를 덮어쓰는 것 방지).
+    global _PT
+    if _PT is None and ui._COLOR:
+        try:
+            _PT = _pt_session()
+        except Exception:
+            _PT = False
+    if not _PT:
+        _setup_readline()  # Tab 자동완성 + 화살표 히스토리
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit)
     # provider 미설정 안내는 status line(⚠ not connected)이 대신 표현 — 별도 줄 없음
 
     while True:
-        usage = {"tokens": heimdall.total_tokens} if heimdall else None
-        sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")  # claude-code 식 상태줄 (프롬프트 위)
+        if _PT:  # 상태줄은 bottom_toolbar(입력창 아래)가 표시 — cursor-agent 식
+            _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)
+            sys.stdout.write("\n")
+        else:
+            usage = {"tokens": heimdall.total_tokens} if heimdall else None
+            sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")
         try:
             req = prompt().strip()
         except (EOFError, KeyboardInterrupt):
