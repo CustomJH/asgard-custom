@@ -21,14 +21,17 @@ from textual.widgets import Input, RichLog, Static
 from . import repl as _repl
 
 _O = "#ff8700"  # 브랜드 오렌지 (208)
-
-_BANNER = "\n".join("  " + ln for ln in _repl._LOGO.split("\n"))
+# 세로 그라디언트 (repl 의 208/214/220/172/166 대응 hex) — 로고 통일
+_GRAD = ["#ffd700", "#ffaf00", "#ff8700", "#ff8700", "#d75f00", "#d70000"]
+_BANNER = "\n".join(
+    f"  [{_GRAD[i] if i < len(_GRAD) else _O}]{ln}[/]"
+    for i, ln in enumerate(_repl._LOGO.split("\n")))
 
 
 class AsgardTUI(App):
     CSS = """
     Screen { background: $surface; }
-    #logo { color: #ff8700; height: auto; padding: 1 0 0 0; }
+    #logo { height: auto; padding: 1 0 0 0; }  /* 색은 _BANNER markup 그라디언트 */
     #meta { color: $text-muted; height: auto; padding: 0 0 1 2; }
     #log  { height: 1fr; padding: 0 1; border: none; background: $surface; }
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
