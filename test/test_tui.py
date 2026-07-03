@@ -64,7 +64,7 @@ class TestTUI(unittest.TestCase):
     def test_slash_suggester(self):
         async def go():
             app = self._app()
-            async with app.run_test() as pilot:
+            async with app.run_test():
                 from textual.widgets import Input
                 inp = app.query_one("#input", Input)
                 assert inp.suggester is not None
@@ -80,7 +80,6 @@ class TestTUI(unittest.TestCase):
             async with app.run_test() as pilot:
                 from textual.widgets import Static
                 st = app.query_one("#status", Static)
-                idle = st.render()
                 from asgard.i18n import t
                 app._set_status(True)
                 await pilot.pause()

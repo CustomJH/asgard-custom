@@ -25,7 +25,7 @@ from typing import Callable
 from ..agents import ROLE_AGENTS
 from ..providers import ResolvedProvider
 from ..templates import agents_md
-from .session import AgentSession, SessionResult, gate, make_client, ql
+from .session import AgentSession, gate, make_client, ql
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
 

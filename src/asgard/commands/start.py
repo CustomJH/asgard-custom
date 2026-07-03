@@ -70,8 +70,8 @@ def run_start(check_only: bool = False, provider: str | None = None, model: str 
         return 2
 
     # 기본: 터미널을 바로 켠다 (hermes/opencode 처럼). provider 미설정은 세션 안에서 온보딩.
-    from ..providers import resolve
     from .. import i18n
+    from ..providers import resolve
     i18n.load_lang(root)  # config [ui] lang → env → 기본 en
 
     rp = resolve(root, provider=provider, model=model)

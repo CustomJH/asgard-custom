@@ -83,7 +83,7 @@ class TestQuestLog(TrinityBase):
         want = {"schema", "quest_id", "session_id", "turn", "ts", "role", "event", "base_ref", "risk",
                 "criteria", "changed_files", "diff_hash", "commands", "verdict", "failure_sig", "failure_count"}
         self.assertEqual(want - set(ev), set())
-        self.assertEqual([json.loads(l)["turn"] for l in lines], [1, 2])
+        self.assertEqual([json.loads(ln)["turn"] for ln in lines], [1, 2])
         self.assertTrue(open(os.path.join(self.root, ".asgard", "quest", "ACTIVE")).read().strip() == "q1")
 
     def test_verify_computes_diff_hash(self):
@@ -342,7 +342,7 @@ class TestFailureEscalation(TrinityBase):
         self.assertEqual([o.stdout.strip() != "" for o in outs], [False, False, True])
         warn = json.loads(outs[2].stdout)["hookSpecificOutput"]["additionalContext"]
         self.assertIn("THINKER_REPLAN", warn)
-        events = [json.loads(l) for l in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"))]
+        events = [json.loads(ln) for ln in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"))]
         fails = [e for e in events if e["event"] == "fail"]
         self.assertEqual(len(fails), 1)
         self.assertEqual(fails[0]["failure_count"], 3)
@@ -429,7 +429,7 @@ class TestFullLoopE2E(TrinityBase):
         b = jout(self.gate())
         self.assertNotEqual(b.get("decision"), "block")
         self.assertEqual(self.qlog("close").returncode, 0)
-        events = [json.loads(l) for l in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"))]
+        events = [json.loads(ln) for ln in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"))]
         self.assertEqual([e["event"] for e in events], ["plan", "work", "verify"])
 
 

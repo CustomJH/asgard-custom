@@ -22,7 +22,8 @@ class Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
-        run = lambda *a: subprocess.run(a, cwd=self.root, capture_output=True, check=True)
+        def run(*a):
+            return subprocess.run(a, cwd=self.root, capture_output=True, check=True)
         run("git", "init", "-q")
         run("git", "config", "user.email", "t@t")
         run("git", "config", "user.name", "t")

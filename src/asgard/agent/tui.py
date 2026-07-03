@@ -18,9 +18,9 @@ from textual.containers import Vertical
 from textual.suggester import SuggestFromList
 from textual.widgets import Input, RichLog, Static
 
-from . import repl as _repl
 from .. import theme
 from ..i18n import t
+from . import repl as _repl
 
 _O = theme.PRIMARY  # 브랜드 골드 (신성한 황금)
 
@@ -78,6 +78,7 @@ class AsgardTUI(App):
             return f" [{_O}]●[/{_O}] {t('busy')}   [dim]{t('interrupt_hint')}[/dim]"
         # claude-code 식 — 모델 · 디렉토리 · git · 사용량. 미연결이면 명확히 안내.
         import os
+
         from .repl import _git_status
         home = os.path.expanduser("~")
         cwd = self.root.replace(home, "~", 1) if self.root.startswith(home) else self.root

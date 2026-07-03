@@ -89,12 +89,13 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
             raise ToolError(f"파일 없음: {rel}")
         rng = tool_input.get("view_range")
         if rng and len(rng) == 2:
-            lo = max(1, int(rng[0])); hi = len(lines) if int(rng[1]) == -1 else int(rng[1])
+            lo = max(1, int(rng[0]))
+            hi = len(lines) if int(rng[1]) == -1 else int(rng[1])
             lines = lines[lo - 1:hi]
             start = lo
         else:
             start = 1
-        return _cap("\n".join(f"{i + start:6}\t{l}" for i, l in enumerate(lines)))
+        return _cap("\n".join(f"{i + start:6}\t{ln}" for i, ln in enumerate(lines)))
 
     if cmd == "create":
         os.makedirs(os.path.dirname(path) or root, exist_ok=True)

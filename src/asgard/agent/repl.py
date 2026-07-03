@@ -95,7 +95,6 @@ _LOGO_GRAD_LIGHT = [theme.ansi(h) for h in theme.LOGO_GRAD_LIGHT]
 def banner(rp) -> None:
     import shutil
     width = shutil.get_terminal_size((80, 20)).columns
-    bar = ui.paint(_O, "▌")
 
     # 로고: 다크+이미지 터미널 → PNG, 아니면 braille lockup(배경 밝기별 그라디언트) / 축약
     if not (ui._COLOR and _image_logo()):
@@ -327,7 +326,8 @@ def slash(cmd: str, root: str, rp) -> bool:
         sys.stdout.write(f"  {ui.paint(_O, '!<cmd>'.ljust(14))} {ui.dim(t('h_bash'))}\n")
         sys.stdout.write(f"  {ui.dim(t('help_footer'))}\n\n")
     elif c == "/lang":
-        from ..i18n import save_lang, t as _t
+        from ..i18n import save_lang
+        from ..i18n import t as _t
         arg = cmd.split()[1:2]
         if arg and save_lang(arg[0], root):
             sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(_t('lang_set', lang=arg[0]))}\n")
