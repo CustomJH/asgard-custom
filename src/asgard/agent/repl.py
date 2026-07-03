@@ -288,7 +288,8 @@ def run(root: str, rp) -> int:
         sys.stdout.write(f"  {ui.dim(t('provider_unset'))}\n")
 
     while True:
-        sys.stdout.write("\n" + statusline(root, rp) + "\n")  # claude-code 식 상태줄 (프롬프트 위)
+        usage = {"tokens": heimdall.total_tokens} if heimdall else None
+        sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")  # claude-code 식 상태줄 (프롬프트 위)
         try:
             req = prompt().strip()
         except (EOFError, KeyboardInterrupt):

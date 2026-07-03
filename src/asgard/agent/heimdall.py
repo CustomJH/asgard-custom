@@ -126,11 +126,16 @@ class Heimdall:
         self.rp, self.root, self.on_text = rp, root, on_text
         self.client = make_client(rp)
         self.identity = _identity(root)
+        self.total_tokens = 0  # 세션 누적 (status line 사용량)
+
+    def _add_tokens(self, n: int) -> None:
+        self.total_tokens += n
 
     def _session(self, system: str, extra_tools=None, handlers=None, quiet=False) -> AgentSession:
         return AgentSession(self.client, self.rp, self.root, system,
                             extra_tools=extra_tools, tool_handlers=handlers,
-                            on_text=(lambda s: None) if quiet else self.on_text)
+                            on_text=(lambda s: None) if quiet else self.on_text,
+                            on_tokens=self._add_tokens)
 
     def _classify(self, request: str) -> dict:
         # structured-output 강제 대신 "JSON 만 출력" + 관대한 파싱 — 두 트랜스포트(및 nemotron 류

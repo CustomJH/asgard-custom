@@ -86,6 +86,9 @@ class AsgardTUI(App):
         br = _git_status(self.root)
         if br:
             parts.append(f"⎇ {br}")
+        tok = getattr(self.heimdall, "total_tokens", 0) if self.heimdall else 0
+        if tok:
+            parts.append(f"↯ {tok / 1000:.1f}k")
         return " [#5fd7d7]▌[/#5fd7d7] [dim]" + "  ".join(parts) + "[/dim]"
 
     def _set_status(self, busy: bool) -> None:

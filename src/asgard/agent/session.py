@@ -28,6 +28,7 @@ class SessionResult:
     commands: list[dict] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
+    tokens: int = 0  # 이 세션 누적 토큰 (input+output) — status line 사용량
 
 
 def make_client(rp: ResolvedProvider):
@@ -79,11 +80,13 @@ class AgentSession:
                  extra_tools: list[dict] | None = None,
                  tool_handlers: dict[str, Callable[[dict], str]] | None = None,
                  on_text: Callable[[str], None] | None = None,
+                 on_tokens: Callable[[int], None] | None = None,
                  max_iterations: int = 40):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         self.tools = [T.BASH_TOOL, T.EDITOR_TOOL] + (extra_tools or [])
         self.handlers = tool_handlers or {}
         self.on_text = on_text or (lambda s: None)
+        self.on_tokens = on_tokens
         self.max_iterations = max_iterations
         self.messages: list[dict] = []
 
@@ -114,9 +117,11 @@ class AgentSession:
 
     # ── 진입점 ──────────────────────────────────────────────────────────
     def run(self, user_content: str) -> SessionResult:
-        if self.rp.profile.api_mode == "anthropic":
-            return self._run_anthropic(user_content)
-        return self._run_openai(user_content)
+        r = (self._run_anthropic(user_content) if self.rp.profile.api_mode == "anthropic"
+             else self._run_openai(user_content))
+        if self.on_tokens and r.tokens:
+            self.on_tokens(r.tokens)
+        return r
 
     def _run_anthropic(self, user_content: str) -> SessionResult:
         self.messages.append({"role": "user", "content": user_content})
@@ -132,6 +137,9 @@ class AgentSession:
             self.messages.append({"role": "assistant", "content": resp.content})
             result.text = "".join(b.text for b in resp.content if b.type == "text")
             result.stop_reason = resp.stop_reason or ""
+            u = getattr(resp, "usage", None)
+            if u:
+                result.tokens += (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "output_tokens", 0) or 0)
             if resp.stop_reason == "tool_use":
                 trs = []
                 for b in resp.content:
@@ -161,8 +169,11 @@ class AgentSession:
             stream = self.client.chat.completions.create(
                 model=self.rp.model, messages=sys_msg + self.messages,
                 tools=oai_tools or None, max_tokens=16384, stream=True,
-                extra_body=extra or None)
+                stream_options={"include_usage": True}, extra_body=extra or None)
             for chunk in stream:
+                u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
+                if u:
+                    result.tokens += getattr(u, "total_tokens", 0) or 0
                 if not chunk.choices:
                     continue
                 d = chunk.choices[0].delta
