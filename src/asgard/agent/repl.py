@@ -108,17 +108,42 @@ def banner(rp) -> None:
         else:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
 
-    # 정보 블록 — 왼쪽 accent bar 통일 (opencode 스타일)
-    sys.stdout.write(
-        f"\n  {bar} {ui.bold('Heimdall')}  {ui.dim(t('tagline'))}\n"
-        f"  {bar} {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model}\n"
-        f"  {bar} {ui.dim(t('cmd_hints'))}\n")
-    # hermes 스타일 — welcome + tip + 구분선 rule
+    # hermes 스타일 — welcome + tip + 구분선 rule (모델·경로·git 은 하단 status line 으로)
     rule = ui.paint(_O, "─" * min(width - 4, 60))
     sys.stdout.write(
         f"\n  {ui.bold(t('welcome'))} {ui.dim(t('welcome_hint'))}\n"
         f"  {ui.paint(_O, '✦')} {ui.dim(t('tip'))}\n"
         f"  {rule}\n")
+
+
+def _git_status(root: str) -> str:
+    """현재 브랜치(+dirty '*'). git repo 아니면 빈 문자열."""
+    import subprocess
+    try:
+        b = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+                           capture_output=True, text=True, timeout=3)
+        if b.returncode != 0:
+            return ""
+        branch = b.stdout.strip()
+        d = subprocess.run(["git", "-C", root, "status", "--porcelain"],
+                          capture_output=True, text=True, timeout=3)
+        return branch + ("*" if d.stdout.strip() else "")
+    except Exception:
+        return ""
+
+
+def statusline(root: str, rp, usage: dict | None = None) -> str:
+    """claude-code 식 상태줄 — 모델 · 디렉토리 · git 브랜치 · 사용량."""
+    import os
+    home = os.path.expanduser("~")
+    cwd = root.replace(home, "~", 1) if root.startswith(home) else root
+    parts = [f"◆ {rp.model}", f"⌂ {cwd}"]
+    br = _git_status(root)
+    if br:
+        parts.append(f"⎇ {br}")
+    if usage and usage.get("tokens"):
+        parts.append(f"↯ {usage['tokens'] / 1000:.1f}k")
+    return "  " + ui.paint(_O, "▌") + " " + ui.dim("  ".join(parts))
 
 
 _HELP_KEYS = {
@@ -172,11 +197,11 @@ def _save_history(readline, path: str) -> None:
 def prompt() -> str:
     # opencode 스타일 — 왼쪽 accent bar + 얇은 화살표. 앞 빈 줄로 입력 영역 분리.
     if not ui._COLOR:
-        return input("\n▌ › ")
+        return input("▌ › ")
     # readline 은 프롬프트의 비출력(ANSI) 문자를 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
     bar = f"\x01\x1b[{_O}m\x02▌\x01\x1b[0m\x02"
     arrow = "\x01\x1b[2m\x02›\x01\x1b[0m\x02"
-    return input(f"\n{bar} {arrow} ")
+    return input(f"{bar} {arrow} ")
 
 
 class _Reconfigure(Exception):
@@ -263,6 +288,7 @@ def run(root: str, rp) -> int:
         sys.stdout.write(f"  {ui.dim(t('provider_unset'))}\n")
 
     while True:
+        sys.stdout.write("\n" + statusline(root, rp) + "\n")  # claude-code 식 상태줄 (프롬프트 위)
         try:
             req = prompt().strip()
         except (EOFError, KeyboardInterrupt):

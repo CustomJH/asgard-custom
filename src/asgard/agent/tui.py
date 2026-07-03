@@ -38,7 +38,6 @@ class AsgardTUI(App):
     CSS = """
     Screen { background: $surface; }
     #logo { height: auto; padding: 1 0 0 0; }  /* 색은 _BANNER markup 그라디언트 */
-    #meta { color: $text-muted; height: auto; padding: 0 0 1 2; }
     #log  { height: 1fr; padding: 0 1; border: none; background: $surface; }
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
     #prompt { dock: bottom; height: 3; }
@@ -60,7 +59,6 @@ class AsgardTUI(App):
     # ── 레이아웃 ─────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
         yield Static(_banner(_repl.is_light_bg()), id="logo")
-        yield Static(self._meta_line(), id="meta")
         yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         with Vertical(id="prompt"):
             # 슬래시 자동완성 — / 입력 시 인라인 제안(→ 로 수락). CLI readline 의 Tab 대응.
@@ -76,14 +74,19 @@ class AsgardTUI(App):
         if self.heimdall is None:
             log.write(f"[dim]{t('provider_unset')}[/dim]")
 
-    def _meta_line(self) -> str:
-        return f"[b]Heimdall[/b]  [dim]{t('tagline')}[/dim]"
-
     def _status_line(self, busy: bool = False) -> str:
         if busy:
             return f" [#5fd7d7]●[/#5fd7d7] {t('busy')}   [dim]{t('interrupt_hint')}[/dim]"
-        p = self.rp.profile.display
-        return f" [#5fd7d7]▌[/#5fd7d7] {p} · {self.rp.model}   [dim]{t('cmd_hints')}[/dim]"
+        # claude-code 식 — 모델 · 디렉토리 · git 브랜치
+        import os
+        from .repl import _git_status
+        home = os.path.expanduser("~")
+        cwd = self.root.replace(home, "~", 1) if self.root.startswith(home) else self.root
+        parts = [f"◆ {self.rp.model}", f"⌂ {cwd}"]
+        br = _git_status(self.root)
+        if br:
+            parts.append(f"⎇ {br}")
+        return " [#5fd7d7]▌[/#5fd7d7] [dim]" + "  ".join(parts) + "[/dim]"
 
     def _set_status(self, busy: bool) -> None:
         self.query_one("#status", Static).update(self._status_line(busy))
