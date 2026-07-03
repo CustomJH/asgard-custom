@@ -56,6 +56,12 @@ def head(action: str, steps: int = 0) -> None:
         sys.stdout.write(f"\n  {_mark()} {bold('asgard')} {dim(action)}\n\n")
 
 
+def steps(n: int) -> None:
+    """phase 분모를 늦게 확정 — head 시점에 총 단계 수를 모를 때 (update 의 check 분기 등)."""
+    global _STEPS
+    _STEPS = n
+
+
 def phase(title: str) -> None:
     """Numbered section header, install.sh-style: [n/N] (or [n] when the total is unknown)."""
     global _STEP
@@ -147,15 +153,18 @@ class spin:
 
     def _run(self) -> None:
         import shutil
+        t0 = time.monotonic()
         for fr in itertools.cycle(_FRAMES):
             if self._stop.is_set():
                 break
             # 라벨을 터미널 폭에 맞춰 절단 — 넘치면 줄바꿈이 나서 \r 리라이트가 깨진다(스피너가
             # 줄줄이 찍힘). 프리픽스 "  X " = 4칸. 라벨은 순수 텍스트 전제(ANSI 넣지 말 것 — 폭 오산).
+            secs = time.monotonic() - t0
+            tail = f" · {secs:.0f}s" if secs >= 1 else ""
             width = shutil.get_terminal_size((80, 20)).columns
-            budget = max(10, width - 5)
+            budget = max(10, width - 5 - len(tail))
             label = self.label if len(self.label) <= budget else self.label[:budget - 1] + "…"
-            sys.stdout.write(f"\r\x1b[K  {paint(_INFO, fr)} {label}")
+            sys.stdout.write(f"\r\x1b[K  {paint(_INFO, fr)} {label}{dim(tail)}")
             sys.stdout.flush()
             time.sleep(0.08)
 

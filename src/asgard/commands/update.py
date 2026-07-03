@@ -58,8 +58,10 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
     pin = rest[0] if rest else None
     version = pin[1:] if pin and pin.startswith("v") else pin
 
-    ui.head("update", steps=1 if (dry_run or _SPEC_OVERRIDE) else 3)
+    # 총 단계 수는 check 결과에 달림(최신이면 0, 업데이트면 2) — head 는 분모 없이 열고 늦게 확정.
+    ui.head("update · starting…")
     if dry_run:  # keep dry-run network-free: describe the plan without resolving latest.
+        ui.steps(1)
         if _SPEC_OVERRIDE:
             shown = f"{_SPEC_OVERRIDE}@v{version}" if version and _SPEC_OVERRIDE.startswith("git+") else _SPEC_OVERRIDE
         else:
@@ -73,6 +75,7 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
 
     if _SPEC_OVERRIDE:  # dev/CI — uv 가 스펙을 직접 해석 (다운로드·버전 비교 없음)
         spec = f"{_SPEC_OVERRIDE}@v{version}" if version and _SPEC_OVERRIDE.startswith("git+") else _SPEC_OVERRIDE
+        ui.steps(1)
         ui.phase("install via uv tool")
         ui.step(ui.dim(spec))
         if _uv_install(spec, "installing asgard (override)…"):
@@ -81,17 +84,21 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
         ui.done("updated (override spec)")
         return 0
 
-    ui.phase("check")
-    target = version or _latest_version()
+    # check — 핀이면 즉시, 아니면 최신 릴리스 조회 (스피너)
+    if version:
+        target = version
+    else:
+        with ui.spin("checking for updates…"):
+            target = _latest_version()
     if not target:
         ui.fail("could not resolve the latest version (network?). Pin one: asgard update vX.Y.Z")
         return 1
     if target == __version__:
-        ui.ok(f"already up to date — v{__version__}")
-        ui.done(f"asgard v{__version__}")
+        ui.ok(f"already up to date — v{__version__} is the latest release")
         return 0
-    ui.step(f"v{__version__} → v{target}")
+    ui.step(f"update available: v{__version__} → v{target}")
 
+    ui.steps(2)
     ui.phase("download release wheel")
     tmpd = tempfile.mkdtemp(prefix="asgard-update-")
     wheel = os.path.join(tmpd, f"asgard-{target}-py3-none-any.whl")
