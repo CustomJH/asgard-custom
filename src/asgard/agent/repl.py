@@ -17,13 +17,15 @@ import sys
 from .. import ui
 from .session import ql
 
-# 순수 ASCII 워드마크 — braille 아트는 폰트/셀폭 의존으로 정렬이 깨진다. ASCII 는 셀폭 1 로
-# 고정이라 어느 터미널·폰트·배경에서도 안 깨진다. 이미지 지원 터미널은 위 _image_logo() 가 PNG 표시.
-_LOGO = r"""   _    ____   ____    _    ____  ____
-  / \  / ___| / ___|  / \  |  _ \|  _ \
- / _ \ \___ \| |  _  / _ \ | |_) | | | |
-/ ___ \ ___) | |_| |/ ___ \|  _ <| |_| |
-/_/   \_\____/ \____/_/   \_\_| \_\____/"""
+# ANSI-shadow 블록 워드마크 (hermes-agent 스타일). box-drawing + block — 셀폭 1 고정이라
+# 안 깨진다. 폭 49 → 좁은 터미널(<55)은 _LOGO_SLIM 폴백. 이미지 터미널은 _image_logo() PNG.
+_LOGO = r""" █████╗ ███████╗ ██████╗  █████╗ ██████╗ ██████╗
+██╔══██╗██╔════╝██╔════╝ ██╔══██╗██╔══██╗██╔══██╗
+███████║███████╗██║  ███╗███████║██████╔╝██║  ██║
+██╔══██║╚════██║██║   ██║██╔══██║██╔══██╗██║  ██║
+██║  ██║███████║╚██████╔╝██║  ██║██║  ██║██████╔╝
+╚═╝  ╚═╝╚══════╝ ╚═════╝ ╚═╝  ╚═╝╚═╝  ╚═╝╚═════╝"""
+_LOGO_SLIM = "▚ ASGARD"  # 폭 좁은 터미널용 축약
 
 
 def _image_logo() -> bool:
@@ -66,13 +68,24 @@ def _image_logo() -> bool:
 
 
 def banner(rp) -> None:
-    if ui._COLOR and not _image_logo():
-        sys.stdout.write("\n" + ui.paint("38;5;208", _LOGO) + "\n")  # 이미지 미지원 → braille 폴백
+    import shutil
+    width = shutil.get_terminal_size((80, 20)).columns
+    O = "38;5;208"  # 브랜드 오렌지 (hermes gold 자리 — Asgard 정체성색)
+
+    # 로고: 이미지 터미널 → PNG(install 과 동일), 아니면 블록 figlet(넓으면) / 축약(좁으면)
+    if not (ui._COLOR and _image_logo()):
+        art = _LOGO if width >= 55 else _LOGO_SLIM
+        sys.stdout.write("\n")
+        for line in art.split("\n"):
+            sys.stdout.write("  " + ui.paint(O, line) + "\n")
+
+    # 정보 블록 (hermes 스타일 — 로고 밑 라벨: 값 정렬)
+    rule = ui.paint(O, "▔" * min(width - 4, 52))
     sys.stdout.write(
-        f"  {ui.dim('─' * 20)} {ui._mark()} {ui.dim('─' * 20)}\n"
-        f"  {ui.bold('Heimdall')} {ui.dim('· 비프로스트의 수호자')}    "
-        f"{ui.paint('38;5;208', rp.profile.display)} {ui.dim('·')} {rp.model}\n"
-        f"  {ui.dim('/help 도움말 · /exit 종료 · Ctrl-C 턴 중단')}\n\n")
+        f"\n  {rule}\n"
+        f"  {ui.bold('Heimdall')} {ui.dim('· 비프로스트의 수호자 · Trinity 오케스트레이터')}\n"
+        f"  {ui.dim('provider'.ljust(9))} {ui.paint(O, rp.profile.display)} {ui.dim('·')} {rp.model}\n"
+        f"  {ui.dim('commands'.ljust(9))} {ui.dim('/help · /new · /provider · !bash · Tab 자동완성 · ↑↓ 히스토리')}\n\n")
 
 
 _HELP = {
