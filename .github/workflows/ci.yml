@@ -1,0 +1,28 @@
+name: ci
+
+# 품질 게이트 (CUS-164): lint + format + typecheck + test.
+# 로컬 베이스라인과 동일 커맨드 — ruff check · ruff format --check · ty check · pytest.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --group dev
+
+      - run: uv run ruff check
+
+      - run: uv run ruff format --check
+
+      - run: uv run ty check
+
+      - run: uv run pytest -q
