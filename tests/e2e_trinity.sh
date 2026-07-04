@@ -2,13 +2,13 @@
 # Trinity E2E (CUS-126) — 실 Claude Code 로 5 시나리오를 돌린다.
 #
 # 요구: claude CLI(인증 완료), python3, git, uv(레포 소스로 asgard init 실행).
-# 사용: test/e2e_trinity.sh [s1|s2|s3|s4|s5 ...]   # 기본: 전부
+# 사용: tests/e2e_trinity.sh [s1|s2|s3|s4|s5 ...]   # 기본: 전부
 # env:  E2E_KEEP=1  → 시나리오 작업 디렉터리 보존 (기본: 성공 시 삭제)
 #       E2E_MODEL   → 코디네이터 모델 오버라이드 (기본: claude 기본값)
 #
 # devbox 절차 (CUS-55): docker/devbox.sh up && docker/devbox.sh shell
 #   → 컨테이너 안에서 claude 설치·인증(ANTHROPIC_API_KEY 또는 claude login) 후
-#   → ~/asgard/test/e2e_trinity.sh
+#   → ~/asgard/tests/e2e_trinity.sh
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """디자인 토큰(theme.py) 자가 검증 — hex 형식, ansi() truecolor/256 분기, x256 근사 정확도.
 
-실행: uv run python test/test_theme.py
+실행: uv run pytest tests/test_theme.py
 """
 
 import os

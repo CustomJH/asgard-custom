@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """TUI 뼈대 스모크 (CUS-148) — textual pilot. 실 API 없이 App 기동·입력·슬래시·종료.
 
-실행: uv run python test/test_tui.py
+실행: uv run pytest tests/test_tui.py
 """
 
 import asyncio

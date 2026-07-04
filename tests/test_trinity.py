@@ -4,7 +4,7 @@
 실제 훅 스크립트를 subprocess 로 실행한다 (임포트가 아니라 배포 형태 그대로) — 사용자 repo 에서
 python3 <file> 로 도는 것과 동일 경로. 임시 git repo 를 만들어 시나리오별 워킹트리 상태를 재현한다.
 
-실행: python3 test/test_trinity.py
+실행: uv run pytest tests/test_trinity.py
 """
 
 import json

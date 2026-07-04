@@ -2,9 +2,9 @@
 """네이티브 에이전트 루프 결정론 슬라이스 (CUS-137/142) — API 호출 없는 부분 전부.
 
 툴 계약(text_editor/bash)·경로 격리·git-guard 배선·원장 래퍼(ql/gate)·delegate 이벤트·
-write-sentinel 미러. 라이브 루프(실 모델)는 test/e2e_trinity.sh 의 start 아암(CUS-140) 몫.
+write-sentinel 미러. 라이브 루프(실 모델)는 tests/e2e_trinity.sh 의 start 아암(CUS-140) 몫.
 
-실행: uv run python test/test_agent.py  (asgard 패키지 임포트 필요 — subprocess 가 -m 으로 훅 실행)
+실행: uv run pytest tests/test_agent.py  (asgard 패키지 임포트 필요 — subprocess 가 -m 으로 훅 실행)
 """
 
 import json

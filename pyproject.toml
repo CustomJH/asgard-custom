@@ -33,7 +33,7 @@ select = ["E", "F", "W", "I"]  # pycodestyle · pyflakes · isort — 최소 셋
 ignore = ["E501"]  # 포매터 병용 시 공식 권장 — 장문 템플릿 문자열은 포매터도 못 접음
 
 [tool.pytest.ini_options]
-testpaths = ["test"]  # tests/ 이관은 CUS-162
+testpaths = ["tests"]
 
 [build-system]
 requires = ["hatchling"]
