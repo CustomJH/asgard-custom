@@ -204,7 +204,7 @@ def run_init(
         return _run_profile(_DEFAULT_PROFILE, force, dry_run)
     # TTY: full-screen Textual onboarding. Textual missing/broken → Rich prompt. None = user cancelled.
     try:
-        from ..tui import run_init_tui
+        from .init_tui import run_init_tui
 
         chosen = run_init_tui()
     except Exception:

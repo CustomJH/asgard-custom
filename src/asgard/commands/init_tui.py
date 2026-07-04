@@ -14,7 +14,7 @@ from textual.containers import Horizontal, VerticalScroll
 from textual.widgets import Footer, Header, OptionList, Static
 from textual.widgets.option_list import Option
 
-from .commands.setup import _DEFAULT_PROFILE, _PROFILES, plan_files, profile_flags
+from .setup import _DEFAULT_PROFILE, _PROFILES, plan_files, profile_flags
 
 
 def _preview(profile: str) -> str:
@@ -72,7 +72,7 @@ def run_init_tui() -> str | None:
     return InitApp().run()
 
 
-if __name__ == "__main__":  # pilot self-check (needs textual): uv run python -m asgard.tui
+if __name__ == "__main__":  # pilot self-check (needs textual): uv run python -m asgard.commands.init_tui
     import asyncio
 
     async def _check() -> None:
