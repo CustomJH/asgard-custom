@@ -49,8 +49,9 @@ def _download(url: str, dest: str) -> None:
 
 def _uv_install(spec: str, label: str) -> int:
     with ui.spin(label):
-        r = subprocess.run(["uv", "tool", "install", "--force", "--python", "3.14", spec],
-                           capture_output=True, text=True)
+        r = subprocess.run(
+            ["uv", "tool", "install", "--force", "--python", "3.14", spec], capture_output=True, text=True
+        )
     return r.returncode
 
 
@@ -119,5 +120,6 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
     ui.done(f"v{__version__} → v{target}")
     if restart_hint:  # REPL 안에서 실행 — 프로세스는 아직 구버전
         from ..i18n import t
+
         ui.warn(t("update_restart"))
     return 0

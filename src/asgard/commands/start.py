@@ -18,12 +18,14 @@ from ..providers import resolve
 def preflight(root: str, provider: str | None = None, model: str | None = None) -> tuple[list[dict], object]:
     """세션 진입 체크리스트. (checks, resolved) — resolved 는 루프(CUS-137)로 핸드오프."""
     rp = resolve(root, provider=provider, model=model)
-    checks: list[dict] = [{
-        "name": "provider",
-        "ok": not any("provider" in m for m in rp.missing),
-        "detail": f"{rp.profile.display} · {rp.model or '?'} ({rp.source})",
-        "fix": rp.missing[0] if rp.missing else "",
-    }]
+    checks: list[dict] = [
+        {
+            "name": "provider",
+            "ok": not any("provider" in m for m in rp.missing),
+            "detail": f"{rp.profile.display} · {rp.model or '?'} ({rp.source})",
+            "fix": rp.missing[0] if rp.missing else "",
+        }
+    ]
     for m in rp.missing:
         if "provider" in m:
             continue
@@ -34,15 +36,25 @@ def preflight(root: str, provider: str | None = None, model: str | None = None) 
 
     sdk_mod = "anthropic" if rp.profile.api_mode == "anthropic" else "openai"
     sdk = importlib.util.find_spec(sdk_mod) is not None
-    checks.append({"name": f"{sdk_mod} SDK", "ok": sdk,
-                   "detail": "importable" if sdk else "not installed",
-                   "fix": "asgard update (또는 uv tool install asgard --force)"})
+    checks.append(
+        {
+            "name": f"{sdk_mod} SDK",
+            "ok": sdk,
+            "detail": "importable" if sdk else "not installed",
+            "fix": "asgard update (또는 uv tool install asgard --force)",
+        }
+    )
 
     # advisory — 없어도 세션은 열린다 (패키지 내장 정체성 사용). 있으면 프로젝트 관례 병합.
     agents_md = os.path.exists(os.path.join(root, "AGENTS.md"))
-    checks.append({"name": "AGENTS.md (advisory)", "ok": True,
-                   "detail": "프로젝트 관례 병합" if agents_md else "없음 — 내장 정체성 사용 (asgard init 권장)",
-                   "fix": ""})
+    checks.append(
+        {
+            "name": "AGENTS.md (advisory)",
+            "ok": True,
+            "detail": "프로젝트 관례 병합" if agents_md else "없음 — 내장 정체성 사용 (asgard init 권장)",
+            "fix": "",
+        }
+    )
     return checks, rp
 
 
@@ -54,8 +66,13 @@ def _render(checks: list) -> None:
             sys.stdout.write(f"      {ui.paint(ui._INFO, '→')} {c['fix']}\n")
 
 
-def run_start(check_only: bool = False, provider: str | None = None, model: str | None = None,
-              tui: bool = False, plain: bool = False) -> int:
+def run_start(
+    check_only: bool = False,
+    provider: str | None = None,
+    model: str | None = None,
+    tui: bool = False,
+    plain: bool = False,
+) -> int:
     root = os.getcwd()
 
     # --check 는 CI/스모크용 게이트 — 프리플라이트만 돌고 종료 (기존 계약 유지).
@@ -72,11 +89,14 @@ def run_start(check_only: bool = False, provider: str | None = None, model: str 
     # 기본: 터미널을 바로 켠다 (hermes/opencode 처럼). provider 미설정은 세션 안에서 온보딩.
     from .. import i18n
     from ..providers import resolve
+
     i18n.load_lang(root)  # config [ui] lang → env → 기본 en
 
     rp = resolve(root, provider=provider, model=model)
     if tui and not plain:  # 풀스크린 textual TUI (CUS-148, opt-in)
         from ..agent import tui as _tui
+
         return _tui.run(root, rp)
     from ..agent import repl
+
     return repl.run(root, rp)

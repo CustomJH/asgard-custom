@@ -24,8 +24,15 @@ SENTINEL = os.path.abspath(os.path.join(SRC, "write_sentinel.py"))
 def run(script, args=None, stdin="", cwd=None, env_extra=None):
     env = {k: v for k, v in os.environ.items() if k != "CLAUDE_PROJECT_DIR"}
     env.update(env_extra or {})
-    return subprocess.run([sys.executable, script] + (args or []), input=stdin,
-                          capture_output=True, text=True, cwd=cwd, env=env, timeout=60)
+    return subprocess.run(
+        [sys.executable, script] + (args or []),
+        input=stdin,
+        capture_output=True,
+        text=True,
+        cwd=cwd,
+        env=env,
+        timeout=60,
+    )
 
 
 def jout(p):
@@ -56,8 +63,9 @@ class TrinityBase(unittest.TestCase):
         return run(QLOG, list(args), stdin=stdin, cwd=self.root)
 
     def gate(self, session="s1"):
-        return run(GATE, stdin=json.dumps({"session_id": session, "cwd": self.root,
-                                           "hook_event_name": "Stop"}), cwd=self.root)
+        return run(
+            GATE, stdin=json.dumps({"session_id": session, "cwd": self.root, "hook_event_name": "Stop"}), cwd=self.root
+        )
 
     def open_quest(self, *extra):
         p = self.qlog("open", "q1", "--criteria", "app.py prints ok", *extra)
@@ -65,8 +73,11 @@ class TrinityBase(unittest.TestCase):
         return jout(p)
 
     def verify(self, verdict="PASS", level=None, commands=None, session="s1"):
-        body = {"role": "verifier", "event": "verify",
-                "commands": commands if commands is not None else [{"cmd": "python3 app.py", "exit_code": 0}]}
+        body = {
+            "role": "verifier",
+            "event": "verify",
+            "commands": commands if commands is not None else [{"cmd": "python3 app.py", "exit_code": 0}],
+        }
         args = ["append", "--verdict", verdict, "--session", session]
         if level:
             args += ["--level", level]
@@ -80,8 +91,24 @@ class TestQuestLog(TrinityBase):
         lines = open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()
         self.assertEqual(len(lines), 2)
         ev = json.loads(lines[1])
-        want = {"schema", "quest_id", "session_id", "turn", "ts", "role", "event", "base_ref", "risk",
-                "criteria", "changed_files", "diff_hash", "commands", "verdict", "failure_sig", "failure_count"}
+        want = {
+            "schema",
+            "quest_id",
+            "session_id",
+            "turn",
+            "ts",
+            "role",
+            "event",
+            "base_ref",
+            "risk",
+            "criteria",
+            "changed_files",
+            "diff_hash",
+            "commands",
+            "verdict",
+            "failure_sig",
+            "failure_count",
+        }
         self.assertEqual(want - set(ev), set())
         self.assertEqual([json.loads(ln)["turn"] for ln in lines], [1, 2])
         self.assertTrue(open(os.path.join(self.root, ".asgard", "quest", "ACTIVE")).read().strip() == "q1")
@@ -138,11 +165,16 @@ class TestTransition(TrinityBase):
     def test_same_sig_fail_streak_forces_replan(self):
         """동종 failure_sig 연속 FAIL 3회 — 이벤트 failure_count 없이도 원장에서 세어 3-strike (Canon 9)."""
         import json as _json
+
         self.open_quest()
         self.write("app.py", "print('bad')\n")
         for _ in range(3):
-            body = {"role": "verifier", "event": "verify", "failure_sig": "same-err",
-                    "commands": [{"cmd": "python3 app.py", "exit_code": 1}]}
+            body = {
+                "role": "verifier",
+                "event": "verify",
+                "failure_sig": "same-err",
+                "commands": [{"cmd": "python3 app.py", "exit_code": 1}],
+            }
             self.qlog("append", "--verdict", "FAIL", stdin=_json.dumps(body))
         self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
         # 재계획(plan)이 나오면 스트릭 리셋 — REPLAN 무한 루프 방지, 재시도 경로로 복귀
@@ -152,11 +184,16 @@ class TestTransition(TrinityBase):
     def test_heterogeneous_sig_fail_streak_backstop(self):
         """sig 가 매번 달라도 연속 FAIL threshold+1 이면 REPLAN — 자유 텍스트 sig 도돌이표 탈출."""
         import json as _json
+
         self.open_quest()
         self.write("app.py", "print('bad')\n")
         for i in range(4):
-            body = {"role": "verifier", "event": "verify", "failure_sig": f"err-{i}",
-                    "commands": [{"cmd": "python3 app.py", "exit_code": 1}]}
+            body = {
+                "role": "verifier",
+                "event": "verify",
+                "failure_sig": f"err-{i}",
+                "commands": [{"cmd": "python3 app.py", "exit_code": 1}],
+            }
             self.qlog("append", "--verdict", "FAIL", stdin=_json.dumps(body))
         self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
 
@@ -336,8 +373,12 @@ class TestGate(TrinityBase):
 class TestFailureEscalation(TrinityBase):
     def test_three_failures_inject_replan_and_log_fail_event(self):
         self.open_quest()
-        payload = {"tool_name": "Bash", "session_id": "s1", "cwd": self.root,
-                   "tool_response": {"is_error": True, "error": "command not found: foo"}}
+        payload = {
+            "tool_name": "Bash",
+            "session_id": "s1",
+            "cwd": self.root,
+            "tool_response": {"is_error": True, "error": "command not found: foo"},
+        }
         outs = [run(TRACKER, stdin=json.dumps(payload), cwd=self.root) for _ in range(3)]
         self.assertEqual([o.stdout.strip() != "" for o in outs], [False, False, True])
         warn = json.loads(outs[2].stdout)["hookSpecificOutput"]["additionalContext"]
@@ -351,8 +392,12 @@ class TestFailureEscalation(TrinityBase):
         self.assertEqual(out["next_role"], "THINKER_REPLAN")
 
     def test_tracker_without_quest_still_warns(self):
-        payload = {"tool_name": "Bash", "session_id": "s2", "cwd": self.root,
-                   "tool_response": {"is_error": True, "error": "boom"}}
+        payload = {
+            "tool_name": "Bash",
+            "session_id": "s2",
+            "cwd": self.root,
+            "tool_response": {"is_error": True, "error": "boom"},
+        }
         for _ in range(2):
             run(TRACKER, stdin=json.dumps(payload), cwd=self.root)
         p = run(TRACKER, stdin=json.dumps(payload), cwd=self.root)
@@ -363,9 +408,13 @@ class TestQuestEnforcement(TrinityBase):
     """write-sentinel + gate — quest 로그 없이 write 하고 끝내는 우회 경로 봉합 검증."""
 
     def sentinel(self, rel, session="s1", error=False):
-        payload = {"tool_name": "Write", "session_id": session, "cwd": self.root,
-                   "tool_input": {"file_path": os.path.join(self.root, rel)},
-                   "tool_response": {"is_error": True, "error": "boom"} if error else {"ok": True}}
+        payload = {
+            "tool_name": "Write",
+            "session_id": session,
+            "cwd": self.root,
+            "tool_input": {"file_path": os.path.join(self.root, rel)},
+            "tool_response": {"is_error": True, "error": "boom"} if error else {"ok": True},
+        }
         return run(SENTINEL, stdin=json.dumps(payload), cwd=self.root)
 
     def blocked(self, p):
@@ -421,8 +470,14 @@ class TestFullLoopE2E(TrinityBase):
         self.open_quest()
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "WORKER")
         self.write("app.py", "print('ok')\n")  # [Worker]
-        self.qlog("append", "--role", "worker", "--event", "work",
-                    stdin=json.dumps({"commands": [{"cmd": "python3 app.py", "exit_code": 0}]}))
+        self.qlog(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"commands": [{"cmd": "python3 app.py", "exit_code": 0}]}),
+        )
         self.assertEqual(jout(self.qlog("next"))["next_role"], "VERIFIER")
         self.verify()  # [Verifier] PASS + diff_hash 자동
         self.assertEqual(jout(self.qlog("next"))["next_role"], "DONE")

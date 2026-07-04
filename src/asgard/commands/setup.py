@@ -27,7 +27,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     cwd = os.getcwd()
 
     def rel(p: str) -> str:
-        return p[len(cwd) + 1:] if p.startswith(cwd + os.sep) else p
+        return p[len(cwd) + 1 :] if p.startswith(cwd + os.sep) else p
 
     existing = [p for p, _ in files if os.path.lexists(p)]
     if existing and not force and not dry_run:
@@ -77,7 +77,10 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [
             (j(root, ".claude", "CLAUDE.md"), "@../AGENTS.md\n"),
             (j(root, ".claude", "settings.json"), cc_settings()),
-            (j(root, ".claude", ".gitignore"), "settings.local.json\n"),  # shared hook state lives in root .asgard/ (self-ignored)
+            (
+                j(root, ".claude", ".gitignore"),
+                "settings.local.json\n",
+            ),  # shared hook state lives in root .asgard/ (self-ignored)
         ]
         for d, desc in CC_FOLDERS:
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
@@ -85,8 +88,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "git-guard.py"), hook("git-guard")),
             (j(root, ".claude", "hooks", "secret-guard.py"), hook("secret-guard")),
             (j(root, ".claude", "hooks", "failure-tracker.py"), hook("failure-tracker")),
-            (j(root, ".claude", "hooks", "quest-log.py"), hook("quest-log")),      # Trinity 로그+전이 CLI
-            (j(root, ".claude", "hooks", "verifier-gate.py"), hook("verifier-gate")),    # Canon 10 Stop 게이트
+            (j(root, ".claude", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 로그+전이 CLI
+            (j(root, ".claude", "hooks", "verifier-gate.py"), hook("verifier-gate")),  # Canon 10 Stop 게이트
             (j(root, ".claude", "hooks", "write-sentinel.py"), hook("write-sentinel")),  # quest 미개설 write 봉합
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
@@ -128,8 +131,14 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     return files, label
 
 
-def run_setup(cc: bool = False, cursor: bool = False, codex: bool = False,
-              profile: str | None = None, force: bool = False, dry_run: bool = False) -> int:
+def run_setup(
+    cc: bool = False,
+    cursor: bool = False,
+    codex: bool = False,
+    profile: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+) -> int:
     cc = cc or profile == "claude-code"
     cursor = cursor or profile == "cursor"
     codex = codex or profile == "codex"
@@ -178,8 +187,15 @@ def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
     return run_setup(**{_FLAG_OF[profile]: True}, force=force, dry_run=dry_run)
 
 
-def run_init(cc: bool = False, cursor: bool = False, codex: bool = False, profile: str | None = None,
-             force: bool = False, dry_run: bool = False, yes: bool = False) -> int:
+def run_init(
+    cc: bool = False,
+    cursor: bool = False,
+    codex: bool = False,
+    profile: str | None = None,
+    force: bool = False,
+    dry_run: bool = False,
+    yes: bool = False,
+) -> int:
     # Explicit target (flags/--profile) → scaffold it directly, no picker.
     if cc or cursor or codex or profile:
         return run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run)
@@ -189,6 +205,7 @@ def run_init(cc: bool = False, cursor: bool = False, codex: bool = False, profil
     # TTY: full-screen Textual onboarding. Textual missing/broken → Rich prompt. None = user cancelled.
     try:
         from ..tui import run_init_tui
+
         chosen = run_init_tui()
     except Exception:
         chosen = _choose_profile()

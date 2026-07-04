@@ -115,6 +115,7 @@ class bar:
         if not _COLOR or _QUIET:
             return
         import shutil
+
         if self.total:
             frac = min(1.0, self.done / self.total)
             fill = int(self._CELLS * frac)
@@ -124,7 +125,7 @@ class bar:
             cells = paint(_GOLD, "━" * self._CELLS)
             info = f"{self.done / 1e6:.1f} MB"
         width = shutil.get_terminal_size((80, 20)).columns
-        label = self.label[:max(8, width - self._CELLS - 24)]
+        label = self.label[: max(8, width - self._CELLS - 24)]
         sys.stdout.write(f"\r\x1b[K  {cells} {info}  {dim(label)}")
         sys.stdout.flush()
 
@@ -153,6 +154,7 @@ class spin:
 
     def _run(self) -> None:
         import shutil
+
         t0 = time.monotonic()
         for fr in itertools.cycle(_FRAMES):
             if self._stop.is_set():
@@ -163,7 +165,7 @@ class spin:
             tail = f" · {secs:.0f}s" if secs >= 1 else ""
             width = shutil.get_terminal_size((80, 20)).columns
             budget = max(10, width - 5 - len(tail))
-            label = self.label if len(self.label) <= budget else self.label[:budget - 1] + "…"
+            label = self.label if len(self.label) <= budget else self.label[: budget - 1] + "…"
             sys.stdout.write(f"\r\x1b[K  {paint(_INFO, fr)} {label}{dim(tail)}")
             sys.stdout.flush()
             time.sleep(0.08)

@@ -28,12 +28,14 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
         for i, n in enumerate(names, 1):
             p = PROVIDERS[n]
-            sys.stdout.write(f"    {ui.paint(theme.ansi(theme.PRIMARY), str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n")
+            sys.stdout.write(
+                f"    {ui.paint(theme.ansi(theme.PRIMARY), str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n"
+            )
         try:
             sel = input("  " + t("number") + " [1]: ").strip() or "1"
             name = names[int(sel) - 1]
-        except (ValueError, IndexError, EOFError, KeyboardInterrupt):
-            sys.stdout.write(f'  {t("cancelled")}\n')
+        except ValueError, IndexError, EOFError, KeyboardInterrupt:
+            sys.stdout.write(f"  {t('cancelled')}\n")
             return None
 
     p = PROVIDERS[name]
@@ -46,12 +48,12 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
     key = ""
     if not p.key_optional:  # 로컬 provider(ollama 등)는 키 불요 — 입력 생략
         try:
-            key = getpass.getpass('  ' + t('api_key_prompt', p=p.display) + ': ').strip()
-        except (EOFError, KeyboardInterrupt):
-            sys.stdout.write(f'  {t("cancelled")}\n')
+            key = getpass.getpass("  " + t("api_key_prompt", p=p.display) + ": ").strip()
+        except EOFError, KeyboardInterrupt:
+            sys.stdout.write(f"  {t('cancelled')}\n")
             return None
         if not key:
-            sys.stdout.write(f'  {t("no_key")}\n')
+            sys.stdout.write(f"  {t('no_key')}\n")
             return None
 
     if key or base_url or model:

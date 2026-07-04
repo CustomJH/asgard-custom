@@ -12,8 +12,8 @@ import sys
 # "password: xxx" 같은 placeholder 오탐을 줄인다).
 SECRET = [
     (r"-----BEGIN (RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----", "private key"),  # PEM 헤더
-    (r"\bAKIA[0-9A-Z]{16}\b", "AWS key"),                                            # AWS access key ID 고정 프리픽스
-    (r"\bghp_[A-Za-z0-9]{36}\b", "GitHub token"),                                    # GitHub classic PAT
+    (r"\bAKIA[0-9A-Z]{16}\b", "AWS key"),  # AWS access key ID 고정 프리픽스
+    (r"\bghp_[A-Za-z0-9]{36}\b", "GitHub token"),  # GitHub classic PAT
     (r"\bxox[baprs]-[A-Za-z0-9-]{10,}\b", "Slack token"),
     (r"(?i)\b(secret|password|passwd|api[_-]?key|access[_-]?token|private[_-]?key)\s*[:=]\s*\S{8,}", "credential"),
 ]

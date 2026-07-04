@@ -27,9 +27,7 @@ _O = theme.PRIMARY  # 브랜드 골드 (신성한 황금)
 
 def _banner(light: bool = False) -> str:
     g = theme.LOGO_GRAD_LIGHT if light else theme.LOGO_GRAD
-    return "\n".join(
-        f"  [{g[i] if i < len(g) else g[-1]}]{ln}[/]"
-        for i, ln in enumerate(_repl._LOGO.split("\n")))
+    return "\n".join(f"  [{g[i] if i < len(g) else g[-1]}]{ln}[/]" for i, ln in enumerate(_repl._LOGO.split("\n")))
 
 
 class AsgardTUI(App):
@@ -60,8 +58,11 @@ class AsgardTUI(App):
         yield RichLog(id="log", wrap=True, markup=True, highlight=False)
         with Vertical(id="prompt"):
             # 슬래시 자동완성 — / 입력 시 인라인 제안(→ 로 수락). CLI readline 의 Tab 대응.
-            yield Input(placeholder=t("input_placeholder"), id="input",
-                        suggester=SuggestFromList(_repl._COMMANDS, case_sensitive=False))
+            yield Input(
+                placeholder=t("input_placeholder"),
+                id="input",
+                suggester=SuggestFromList(_repl._COMMANDS, case_sensitive=False),
+            )
         yield Static(self._status_line(), id="status")
 
     def on_mount(self) -> None:
@@ -80,6 +81,7 @@ class AsgardTUI(App):
         import os
 
         from .repl import _git_status
+
         home = os.path.expanduser("~")
         cwd = self.root.replace(home, "~", 1) if self.root.startswith(home) else self.root
         if self.heimdall is None:
@@ -110,6 +112,7 @@ class AsgardTUI(App):
     @work(thread=True, exclusive=True)
     def _dispatch(self, req: str) -> None:
         import time
+
         self.call_from_thread(self._set_status, True)
         t0 = time.monotonic()
         try:
@@ -157,6 +160,7 @@ class AsgardTUI(App):
     def _onboard(self) -> bool:
         """TUI 를 잠깐 suspend → readline onboard 재사용 → resume. 성공 시 True."""
         from .onboard import onboard
+
         log = self.query_one("#log", RichLog)
         with self.suspend():
             new = onboard(self.root, preselect=self.rp.profile.name if not self.rp.missing else None)
@@ -172,6 +176,7 @@ class AsgardTUI(App):
     @work(thread=True)
     def _dispatch_bang(self, cmd: str) -> None:
         from . import tools as T
+
         try:
             out, code = T.run_bash(self.root, {"command": cmd})
             self.call_from_thread(self._append, f"[dim]$ {cmd}[/dim]\n{out}")
@@ -187,13 +192,17 @@ class AsgardTUI(App):
         elif c == "/provider" and req.split()[1:2] == ["set"]:
             self._onboard()
         elif c in ("/provider", "/model"):
-            log.write(f"[{_O}]{self.rp.profile.display}[/{_O}] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]")
+            log.write(
+                f"[{_O}]{self.rp.profile.display}[/{_O}] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]"
+            )
         elif c == "/update":
             from ..commands.update import run_update
+
             with self.suspend():  # ui.* 가 stdout 에 그림 — 화면 훼손 방지 (onboard 와 동일)
                 run_update(req.split()[1:], restart_hint=True)
         elif c == "/lang":
             from ..i18n import save_lang
+
             arg = req.split()[1:2]
             if arg and save_lang(arg[0], self.root):
                 self._set_status(False)

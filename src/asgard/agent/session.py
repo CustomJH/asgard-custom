@@ -36,10 +36,12 @@ def make_client(rp: ResolvedProvider):
     """provider → SDK 클라이언트. 키는 resolve() 가 env 또는 credentials.json 에서 찾아둔 값(rp.api_key)."""
     if rp.profile.api_mode == "anthropic":
         import anthropic
+
         # rp.api_key 있으면 그것(env 또는 credentials.json), 없으면 SDK 기본 해석(프로파일 등)에 위임
         return anthropic.Anthropic(api_key=rp.api_key) if rp.api_key else anthropic.Anthropic()
     if rp.profile.api_mode == "openai_compat":
         from openai import OpenAI
+
         if not rp.api_key:
             raise RuntimeError(f"API 키 없음 ({rp.profile.name}) — asgard start 온보딩에서 입력하세요")
         return OpenAI(base_url=rp.base_url or None, api_key=rp.api_key)
@@ -47,18 +49,35 @@ def make_client(rp: ResolvedProvider):
 
 
 # ── openai function 스키마 — 스키마리스 anthropic 툴의 명시 대응 ──
-_OPENAI_BASH = {"type": "function", "function": {
-    "name": "bash", "description": "Run a bash command in the project root.",
-    "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}}
-_OPENAI_EDIT = {"type": "function", "function": {
-    "name": "str_replace_based_edit_tool",
-    "description": "View/create/edit files. command: view|create|str_replace|insert.",
-    "parameters": {"type": "object", "properties": {
-        "command": {"type": "string"}, "path": {"type": "string"}, "file_text": {"type": "string"},
-        "old_str": {"type": "string"}, "new_str": {"type": "string"},
-        "insert_line": {"type": "integer"}, "insert_text": {"type": "string"},
-        "view_range": {"type": "array", "items": {"type": "integer"}}},
-        "required": ["command", "path"]}}}
+_OPENAI_BASH = {
+    "type": "function",
+    "function": {
+        "name": "bash",
+        "description": "Run a bash command in the project root.",
+        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
+    },
+}
+_OPENAI_EDIT = {
+    "type": "function",
+    "function": {
+        "name": "str_replace_based_edit_tool",
+        "description": "View/create/edit files. command: view|create|str_replace|insert.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "command": {"type": "string"},
+                "path": {"type": "string"},
+                "file_text": {"type": "string"},
+                "old_str": {"type": "string"},
+                "new_str": {"type": "string"},
+                "insert_line": {"type": "integer"},
+                "insert_text": {"type": "string"},
+                "view_range": {"type": "array", "items": {"type": "integer"}},
+            },
+            "required": ["command", "path"],
+        },
+    },
+}
 
 
 def _to_openai_tool(t: dict) -> dict:
@@ -66,24 +85,37 @@ def _to_openai_tool(t: dict) -> dict:
         return _OPENAI_BASH
     if t.get("type", "").startswith("text_editor"):
         return _OPENAI_EDIT
-    return {"type": "function", "function": {  # 커스텀 (dispatch/verdict)
-        "name": t["name"], "description": t.get("description", ""), "parameters": t["input_schema"]}}
+    return {
+        "type": "function",
+        "function": {  # 커스텀 (dispatch/verdict)
+            "name": t["name"],
+            "description": t.get("description", ""),
+            "parameters": t["input_schema"],
+        },
+    }
 
 
 class _Call:
     """트랜스포트 무관 툴콜 — (id, name, input)."""
+
     def __init__(self, cid, name, inp):
         self.id, self.name, self.input = cid, name, inp
 
 
 class AgentSession:
-    def __init__(self, client, rp: ResolvedProvider, root: str, system: str,
-                 extra_tools: list[dict] | None = None,
-                 tool_handlers: dict[str, Callable[[dict], str]] | None = None,
-                 on_text: Callable[[str], None] | None = None,
-                 on_tokens: Callable[[int], None] | None = None,
-                 on_status: Callable[[str | None], None] | None = None,
-                 max_iterations: int = 40):
+    def __init__(
+        self,
+        client,
+        rp: ResolvedProvider,
+        root: str,
+        system: str,
+        extra_tools: list[dict] | None = None,
+        tool_handlers: dict[str, Callable[[dict], str]] | None = None,
+        on_text: Callable[[str], None] | None = None,
+        on_tokens: Callable[[int], None] | None = None,
+        on_status: Callable[[str | None], None] | None = None,
+        max_iterations: int = 40,
+    ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         self.tools = [T.BASH_TOOL, T.EDITOR_TOOL] + (extra_tools or [])
         self.handlers = tool_handlers or {}
@@ -97,6 +129,7 @@ class AgentSession:
     def _tool_line(self, sym: str, detail: str, secs: float | None = None) -> None:
         """cursor-agent 식 활동 라인 — ⬢ + 요약 + 소요시간 (완료 후 출력, 전부 흐리게)."""
         from .. import ui
+
         dur = f" · {secs:.0f}s" if secs is not None and secs >= 1 else ""
         self.on_text(f"  {ui.dim('⬢ ' + sym + ' ' + detail.strip()[:100] + dur)}\n")
 
@@ -104,6 +137,7 @@ class AgentSession:
         """thinking 원문 대신 축약 한 줄 — '⬢ Thought 3s' (cursor-agent 참조)."""
         from .. import ui
         from ..i18n import t
+
         self.on_text(f"  {ui.dim(f'⬢ {t("thought")} {secs:.0f}s')}\n")
 
     # ── 툴 실행 (트랜스포트 공유) — (output, is_error) ──────────────────
@@ -123,8 +157,9 @@ class AgentSession:
                 t0 = time.monotonic()
                 out = T.run_editor(self.root, call.input, result.writes)
                 self.on_status(None)
-                self._tool_line("✎", f"{call.input.get('command', '?')} {call.input.get('path', '')}",
-                                time.monotonic() - t0)
+                self._tool_line(
+                    "✎", f"{call.input.get('command', '?')} {call.input.get('path', '')}", time.monotonic() - t0
+                )
                 return out, False
             if call.name in self.handlers:
                 result.tool_calls.append({"name": call.name, "input": dict(call.input)})
@@ -138,8 +173,11 @@ class AgentSession:
     # ── 진입점 ──────────────────────────────────────────────────────────
     def run(self, user_content: str) -> SessionResult:
         try:
-            r = (self._run_anthropic(user_content) if self.rp.profile.api_mode == "anthropic"
-                 else self._run_openai(user_content))
+            r = (
+                self._run_anthropic(user_content)
+                if self.rp.profile.api_mode == "anthropic"
+                else self._run_openai(user_content)
+            )
         finally:
             self.on_status(None)
         if self.on_tokens and r.tokens:
@@ -151,11 +189,16 @@ class AgentSession:
         result = SessionResult(text="", stop_reason="")
         for _ in range(self.max_iterations):
             from ..i18n import t as _t
+
             self.on_status(_t("thinking"))
             t0, first = time.monotonic(), True
             with self.client.messages.stream(
-                model=self.rp.model, max_tokens=32000, system=self.system,
-                thinking={"type": "adaptive"}, tools=self.tools, messages=self.messages,
+                model=self.rp.model,
+                max_tokens=32000,
+                system=self.system,
+                thinking={"type": "adaptive"},
+                tools=self.tools,
+                messages=self.messages,
             ) as stream:
                 for text in stream.text_stream:
                     if first:  # 첫 토큰 전 침묵 = thinking — 2s 이상이면 축약 라인
@@ -197,13 +240,19 @@ class AgentSession:
         sys_msg = [{"role": "system", "content": self.system}]
 
         from ..i18n import t as _t
+
         for _ in range(self.max_iterations):
             text_buf, calls, think_t0 = [], {}, None
             self.on_status(_t("thinking"))
             stream = self.client.chat.completions.create(
-                model=self.rp.model, messages=sys_msg + self.messages,
-                tools=oai_tools or None, max_tokens=16384, stream=True,
-                stream_options={"include_usage": True}, extra_body=extra or None)
+                model=self.rp.model,
+                messages=sys_msg + self.messages,
+                tools=oai_tools or None,
+                max_tokens=16384,
+                stream=True,
+                stream_options={"include_usage": True},
+                extra_body=extra or None,
+            )
             for chunk in stream:
                 u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
                 if u:
@@ -223,7 +272,7 @@ class AgentSession:
                         think_t0 = None
                     text_buf.append(d.content)
                     self.on_text(d.content)
-                for tc in (d.tool_calls or []):
+                for tc in d.tool_calls or []:
                     slot = calls.setdefault(tc.index, {"id": "", "name": "", "args": ""})
                     if tc.id:
                         slot["id"] = tc.id
@@ -241,10 +290,20 @@ class AgentSession:
                 return result
 
             # assistant 툴콜 메시지 재구성 (openai 히스토리 계약)
-            self.messages.append({"role": "assistant", "content": result.text or None,
-                                  "tool_calls": [{"id": c["id"], "type": "function",
-                                                  "function": {"name": c["name"], "arguments": c["args"] or "{}"}}
-                                                 for c in calls.values()]})
+            self.messages.append(
+                {
+                    "role": "assistant",
+                    "content": result.text or None,
+                    "tool_calls": [
+                        {
+                            "id": c["id"],
+                            "type": "function",
+                            "function": {"name": c["name"], "arguments": c["args"] or "{}"},
+                        }
+                        for c in calls.values()
+                    ],
+                }
+            )
             for c in calls.values():
                 try:
                     inp = json.loads(c["args"] or "{}")
@@ -258,18 +317,29 @@ class AgentSession:
 
 # ── 원장·게이트 subprocess 래퍼 — 훅을 배포 형태 그대로 (36/36 테스트된 계약) ──
 
+
 def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "asgard.hooks.quest_log", *args, "--session", session],
-        input=stdin, capture_output=True, text=True, cwd=root, timeout=30)
+        input=stdin,
+        capture_output=True,
+        text=True,
+        cwd=root,
+        timeout=30,
+    )
 
 
 def gate(root: str, session: str = "native") -> tuple[bool, str]:
     import json as _json
+
     p = subprocess.run(
         [sys.executable, "-m", "asgard.hooks.verifier_gate"],
         input=_json.dumps({"session_id": session, "cwd": root}),
-        capture_output=True, text=True, cwd=root, timeout=60)
+        capture_output=True,
+        text=True,
+        cwd=root,
+        timeout=60,
+    )
     if '"block"' in (p.stdout or ""):
         try:
             return True, _json.loads(p.stdout)["reason"]

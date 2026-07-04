@@ -13,6 +13,7 @@ from asgard.providers import resolve
 
 class Stub:
     """Heimdall 스텁 — API 없이 handle."""
+
     def handle(self, req):
         return f"[echo] {req}"
 
@@ -30,10 +31,12 @@ class TestTUI(unittest.TestCase):
             app = self._app()
             async with app.run_test() as pilot:
                 from textual.widgets import Input, RichLog, Static
+
                 assert app.query_one("#log", RichLog) is not None
                 assert app.query_one("#input", Input) is not None
                 assert app.query_one("#logo", Static) is not None
                 await pilot.pause()
+
         asyncio.run(go())
 
     def test_slash_help(self):
@@ -46,8 +49,10 @@ class TestTUI(unittest.TestCase):
                 await pilot.pause()
                 # RichLog 에 help 항목이 쓰였는지 (line 수 > 초기)
                 from textual.widgets import RichLog
+
                 log = app.query_one("#log", RichLog)
                 assert len(log.lines) > 1
+
         asyncio.run(go())
 
     def test_bang_bash(self):
@@ -59,6 +64,7 @@ class TestTUI(unittest.TestCase):
                 await pilot.press("enter")
                 await asyncio.sleep(0.5)  # worker thread 완료 대기
                 await pilot.pause()
+
         asyncio.run(go())
 
     def test_slash_suggester(self):
@@ -66,12 +72,14 @@ class TestTUI(unittest.TestCase):
             app = self._app()
             async with app.run_test():
                 from textual.widgets import Input
+
                 inp = app.query_one("#input", Input)
                 assert inp.suggester is not None
                 s = await inp.suggester.get_suggestion("/he")
                 assert s == "/help", s
                 s2 = await inp.suggester.get_suggestion("/pro")
                 assert s2 and s2.startswith("/provider"), s2
+
         asyncio.run(go())
 
     def test_status_busy_toggle(self):
@@ -79,14 +87,17 @@ class TestTUI(unittest.TestCase):
             app = self._app()
             async with app.run_test() as pilot:
                 from textual.widgets import Static
+
                 st = app.query_one("#status", Static)
                 from asgard.i18n import t
+
                 app._set_status(True)
                 await pilot.pause()
                 assert t("busy") in str(st.render())
                 app._set_status(False)
                 await pilot.pause()
                 assert t("busy") not in str(st.render())
+
         asyncio.run(go())
 
     def test_quit_binding(self):
@@ -96,6 +107,7 @@ class TestTUI(unittest.TestCase):
                 await pilot.press("ctrl+q")
                 await pilot.pause()
             assert app.return_code == 0 or app.return_code is None
+
         asyncio.run(go())
 
 

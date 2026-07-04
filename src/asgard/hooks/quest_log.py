@@ -28,25 +28,79 @@ import time
 
 SCHEMA = 1
 EMPTY = hashlib.sha256(b"").hexdigest()  # 변경 전무(diff 없음 + untracked 없음)의 정준 해시
-EVENTS = {"plan", "work", "verify", "fail", "escalate",
-          "delegate"}  # delegate: 중첩 디스패치 배정 기록 (CUS-142) — Phase 2 통계가 배정 정책 학습
+EVENTS = {
+    "plan",
+    "work",
+    "verify",
+    "fail",
+    "escalate",
+    "delegate",
+}  # delegate: 중첩 디스패치 배정 기록 (CUS-142) — Phase 2 통계가 배정 정책 학습
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}
 # 로그 v1 = 16필드 고정 (CUS-118, CUS-117 코멘트 A). tier/effort/model 등은 v1 소비자 없음 → Phase 2.
-FIELDS = ["schema", "quest_id", "session_id", "turn", "ts", "role", "event", "base_ref", "risk",
-          "criteria", "changed_files", "diff_hash", "commands", "verdict", "failure_sig", "failure_count"]
+FIELDS = [
+    "schema",
+    "quest_id",
+    "session_id",
+    "turn",
+    "ts",
+    "role",
+    "event",
+    "base_ref",
+    "risk",
+    "criteria",
+    "changed_files",
+    "diff_hash",
+    "commands",
+    "verdict",
+    "failure_sig",
+    "failure_count",
+]
 
 # 정책 파일이 없어도 동작해야 하므로(fail-open) 기본값을 내장 — .asgard/trinity-policy.json 이 덮는다.
 DEFAULT_POLICY = {
     "schema": 1,
-    "roles": {"thinker": {"tier": "high", "effort": "high"},
-              "worker": {"tier": "standard", "effort": "medium"},
-              "verifier": {"tier": "high", "effort": "high"}},
+    "roles": {
+        "thinker": {"tier": "high", "effort": "high"},
+        "worker": {"tier": "standard", "effort": "medium"},
+        "verifier": {"tier": "high", "effort": "high"},
+    },
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
-    "sensitive_paths": ["hooks", "policy", "templates", "install", "security", "auth", "secret",
-                        "db", "migration", "ci", ".github", ".claude", ".cursor", ".codex"],
-    "readonly_commands": ["git status", "git diff", "git log", "git show", "git ls-files", "git rev-parse",
-                          "rg", "grep", "ls", "cat", "head", "tail", "find", "wc", "pwd", "which"],
+    "sensitive_paths": [
+        "hooks",
+        "policy",
+        "templates",
+        "install",
+        "security",
+        "auth",
+        "secret",
+        "db",
+        "migration",
+        "ci",
+        ".github",
+        ".claude",
+        ".cursor",
+        ".codex",
+    ],
+    "readonly_commands": [
+        "git status",
+        "git diff",
+        "git log",
+        "git show",
+        "git ls-files",
+        "git rev-parse",
+        "rg",
+        "grep",
+        "ls",
+        "cat",
+        "head",
+        "tail",
+        "find",
+        "wc",
+        "pwd",
+        "which",
+    ],
     "failure_threshold": 3,
 }
 
@@ -165,13 +219,21 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     """16필드 고정 스키마로 정규화 — 빠진 필드는 중립값, 모르는 필드는 버린다 (v1 계약 고정)."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
     full = {
-        "schema": SCHEMA, "quest_id": qid, "session_id": session,
-        "turn": len(events) + 1, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "role": ev.get("role") or "worker", "event": ev.get("event") or "work",
-        "base_ref": ev.get("base_ref") or base_ref, "risk": ev.get("risk") or {},
-        "criteria": ev.get("criteria") or [], "changed_files": ev.get("changed_files") or [],
-        "diff_hash": ev.get("diff_hash"), "commands": ev.get("commands") or [],
-        "verdict": ev.get("verdict") or "NA", "failure_sig": ev.get("failure_sig"),
+        "schema": SCHEMA,
+        "quest_id": qid,
+        "session_id": session,
+        "turn": len(events) + 1,
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "role": ev.get("role") or "worker",
+        "event": ev.get("event") or "work",
+        "base_ref": ev.get("base_ref") or base_ref,
+        "risk": ev.get("risk") or {},
+        "criteria": ev.get("criteria") or [],
+        "changed_files": ev.get("changed_files") or [],
+        "diff_hash": ev.get("diff_hash"),
+        "commands": ev.get("commands") or [],
+        "verdict": ev.get("verdict") or "NA",
+        "failure_sig": ev.get("failure_sig"),
         "failure_count": int(ev.get("failure_count") or 0),
     }
     if ev.get("level"):  # verify 전용 부가 필드 — gate 의 full-verify 판정 근거
@@ -189,7 +251,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     # verdict 신선도 — 마지막 verify "이후" work 가 있으면 판정은 낡았다(재검증 대기).
     # sticky FAIL 이 WORKER_RETRY 를 무한 재발화시키는 루프 방지 (재검증 없이 재시도 반복).
     last_verify_i = max((i for i, e in enumerate(events) if e.get("event") == "verify"), default=-1)
-    work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1:]) if verifies else False
+    work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1 :]) if verifies else False
     # 동종 실패 스트릭 — 같은 failure_sig 의 연속 FAIL 을 결정론 계산 (3-strike, Canon 9).
     # 네이티브 루프는 failure_count 를 이벤트에 안 싣는다 — 원장에서 직접 센다.
     # 마지막 plan(재계획) "이후"의 FAIL 만 센다 — 재계획이 3-strike 의 응답이므로 스트릭 리셋.
@@ -210,7 +272,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     sens = [f for f in changed if any(s in f.lower() for s in policy["sensitive_paths"])]
     small = policy["small_write"]
     return {
-        "quest_id": qid, "base_ref": base_ref, "turns": len(events),
+        "quest_id": qid,
+        "base_ref": base_ref,
+        "turns": len(events),
         "last_event": events[-1].get("event") if events else None,
         "last_verdict": None if work_after_verify else (verifies[-1].get("verdict") if verifies else None),
         "failure_count": max([int(e.get("failure_count") or 0) for e in events] + [fail_streak]),
@@ -218,7 +282,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "criteria": next((e.get("criteria") for e in events if e.get("criteria")), []),
         "risk_write": any((e.get("risk") or {}).get("has_write") for e in events),
         "plan_turns": sum(1 for e in events if e.get("event") == "plan"),
-        "diff_hash": cur, "changed_files": changed, "diff_lines": lines,
+        "diff_hash": cur,
+        "changed_files": changed,
+        "diff_lines": lines,
         "sensitive_files": sens,
         # gate 의 full_required 판정과 동일 기준 — 전이(DONE)와 close 가 gate 와 어긋나면 안 된다.
         "full_required": bool(sens) or len(changed) > small["max_files"] or lines > small["max_lines"],
@@ -236,11 +302,16 @@ def transition(s: dict, policy: dict, flags) -> dict:
     has_write = s["diff_hash"] != EMPTY or s["risk_write"] or flags.write_expected
     # risk_features 11종 (CUS-117 코멘트 C) — 결정론 계산 7 + 모델 신고 4 (--flags)
     features = {
-        "has_write": has_write, "sensitive_path": bool(s["sensitive_files"]),
-        "shared_surface": flags.shared, "diff_files": len(s["changed_files"]),
-        "diff_lines": s["diff_lines"], "tests_available": s.get("tests_available", False),
-        "verification_possible": bool(s["criteria"]), "failure_count": s["failure_count"],
-        "ambiguous_scope": flags.ambiguous, "destructive_intent": flags.destructive,
+        "has_write": has_write,
+        "sensitive_path": bool(s["sensitive_files"]),
+        "shared_surface": flags.shared,
+        "diff_files": len(s["changed_files"]),
+        "diff_lines": s["diff_lines"],
+        "tests_available": s.get("tests_available", False),
+        "verification_possible": bool(s["criteria"]),
+        "failure_count": s["failure_count"],
+        "ambiguous_scope": flags.ambiguous,
+        "destructive_intent": flags.destructive,
         "external_research": flags.external_research,
     }
     level = "full" if (sensitive or big) else "micro"
@@ -257,8 +328,11 @@ def transition(s: dict, policy: dict, flags) -> dict:
         # FAIL 이 threshold+1 연속이면 접근 자체가 틀렸다고 본다 (턴 예산 소진 전 탈출).
         return out("THINKER_REPLAN", "연속 %d-실패(이종 포함) — 접근 재설계" % s["fail_streak_any"])
     if s["last_verdict"] == "FAIL":
-        return out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계") if flags.structural \
+        return (
+            out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계")
+            if flags.structural
             else out("WORKER_RETRY", "Verifier FAIL(경미) — 같은 계획으로 수정")
+        )
     if s["last_verdict"] == "PASS":
         if not s["pass_hash_match"]:
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
@@ -281,8 +355,9 @@ def transition(s: dict, policy: dict, flags) -> dict:
 
 
 def tests_available(root: str) -> bool:
-    return any(os.path.exists(os.path.join(root, p))
-               for p in ("test", "tests", "pytest.ini", "pyproject.toml", "package.json"))
+    return any(
+        os.path.exists(os.path.join(root, p)) for p in ("test", "tests", "pytest.ini", "pyproject.toml", "package.json")
+    )
 
 
 def sanitize(qid: str) -> str:
@@ -317,9 +392,18 @@ def main() -> int:
         qid = sanitize(args.quest_id)
         rc, head = git(root, "rev-parse", "HEAD")
         base_ref = head.strip() if rc == 0 else "NONE"
-        ev = normalize({"role": "thinker", "event": "plan", "base_ref": base_ref,
-                        "risk": {"has_write": not args.no_write}, "criteria": args.criteria},
-                       load_events(root, qid), qid, args.session)
+        ev = normalize(
+            {
+                "role": "thinker",
+                "event": "plan",
+                "base_ref": base_ref,
+                "risk": {"has_write": not args.no_write},
+                "criteria": args.criteria,
+            },
+            load_events(root, qid),
+            qid,
+            args.session,
+        )
         write_event(root, qid, ev)
         open(os.path.join(quest_dir(root), "ACTIVE"), "w").write(qid + "\n")
         print(json.dumps({"opened": qid, "base_ref": base_ref, "turn": ev["turn"]}, ensure_ascii=False))
@@ -340,8 +424,7 @@ def main() -> int:
             except Exception:
                 print(json.dumps({"error": "stdin is not valid JSON"}), file=sys.stderr)
                 return 2
-        for k, v in (("role", args.role), ("event", args.event), ("verdict", args.verdict),
-                     ("level", args.level)):
+        for k, v in (("role", args.role), ("event", args.event), ("verdict", args.verdict), ("level", args.level)):
             if v:
                 raw[k] = v
         if args.criteria:
@@ -361,8 +444,12 @@ def main() -> int:
             ev["diff_hash"], ev["changed_files"], _ = diff_state(root, ev["base_ref"])
             ev.setdefault("level", "micro")
         write_event(root, qid, ev)
-        print(json.dumps({"appended": ev["event"], "turn": ev["turn"], "verdict": ev["verdict"],
-                          "diff_hash": ev["diff_hash"]}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {"appended": ev["event"], "turn": ev["turn"], "verdict": ev["verdict"], "diff_hash": ev["diff_hash"]},
+                ensure_ascii=False,
+            )
+        )
         return 0
 
     s = summarize(root, qid, events, policy)
@@ -377,12 +464,22 @@ def main() -> int:
         return 0
 
     if args.cmd == "close":
-        verified = (s["last_verdict"] == "PASS" and s["pass_hash_match"]
-                    and (not s["full_required"] or s["pass_level"] == "full"))  # gate 와 동일 기준
+        verified = (
+            s["last_verdict"] == "PASS"
+            and s["pass_hash_match"]
+            and (not s["full_required"] or s["pass_level"] == "full")
+        )  # gate 와 동일 기준
         ok = verified or s["last_verdict"] == "ESCALATE"
         if not ok and not args.force:
-            print(json.dumps({"error": "close 거부 — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
-                                       "우회는 --force (Odin 동의 필요)"}), file=sys.stderr)
+            print(
+                json.dumps(
+                    {
+                        "error": "close 거부 — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
+                        "우회는 --force (Odin 동의 필요)"
+                    }
+                ),
+                file=sys.stderr,
+            )
             return 1
         try:
             os.remove(os.path.join(quest_dir(root), "ACTIVE"))

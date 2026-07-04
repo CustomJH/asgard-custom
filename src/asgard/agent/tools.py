@@ -43,7 +43,10 @@ def _git_guard(root: str, command: str) -> str | None:
         p = subprocess.run(
             [sys.executable, "-m", "asgard.hooks.git_guard"],
             input=json.dumps({"tool_input": {"command": command}}),
-            capture_output=True, text=True, timeout=10, cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            cwd=root,
         )
         if p.returncode != 0:
             return (p.stderr or p.stdout or "git-guard 차단").strip()[:500]
@@ -91,7 +94,7 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
         if rng and len(rng) == 2:
             lo = max(1, int(rng[0]))
             hi = len(lines) if int(rng[1]) == -1 else int(rng[1])
-            lines = lines[lo - 1:hi]
+            lines = lines[lo - 1 : hi]
             start = lo
         else:
             start = 1
@@ -126,7 +129,7 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
         at = int(tool_input.get("insert_line") or 0)
         if not 0 <= at <= len(lines):
             raise ToolError(f"insert_line {at} 범위 밖 (0..{len(lines)})")
-        ins = (tool_input.get("insert_text") or "")
+        ins = tool_input.get("insert_text") or ""
         if not ins.endswith("\n"):
             ins += "\n"
         lines.insert(at, ins)

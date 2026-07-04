@@ -21,14 +21,14 @@ class ProviderProfile:
 
     name: str
     display: str
-    api_mode: str                     # "anthropic" | "openai_compat"
-    env_vars: tuple[str, ...]         # API 키 후보 env var (첫 매치 승리)
+    api_mode: str  # "anthropic" | "openai_compat"
+    env_vars: tuple[str, ...]  # API 키 후보 env var (첫 매치 승리)
     default_model: str
-    base_url: str = ""                # openai_compat 필수, anthropic 은 SDK 기본
-    signup_hint: str = ""             # 키 없을 때 처방 한 줄
+    base_url: str = ""  # openai_compat 필수, anthropic 은 SDK 기본
+    signup_hint: str = ""  # 키 없을 때 처방 한 줄
     extra_body: dict = field(default_factory=dict)  # provider 고유 요청 필드 (nvidia reasoning 등)
-    key_optional: bool = False        # 로컬 서버(ollama 등) — 키 없어도 연결 (SDK 엔 더미 전달)
-    context_window: int = 0           # 대략적 컨텍스트 한도 (status line % 용). 0 = 미상 → % 생략
+    key_optional: bool = False  # 로컬 서버(ollama 등) — 키 없어도 연결 (SDK 엔 더미 전달)
+    context_window: int = 0  # 대략적 컨텍스트 한도 (status line % 용). 0 = 미상 → % 생략
 
 
 PROVIDERS: dict[str, ProviderProfile] = {
@@ -83,16 +83,18 @@ class ResolvedProvider:
     profile: ProviderProfile
     model: str
     base_url: str = ""
-    api_key_env: str = ""             # 키를 찾은 env var 이름 (env 소스일 때). 표시용.
-    api_key: str = ""                 # 실제 키 값 (env 또는 credentials.json). repr 마스킹.
-    key_source: str = ""              # "" | env:<VAR> | credentials.json
-    source: str = "default"           # default | ~/.asgard/config.toml | .asgard/config.toml | flag
+    api_key_env: str = ""  # 키를 찾은 env var 이름 (env 소스일 때). 표시용.
+    api_key: str = ""  # 실제 키 값 (env 또는 credentials.json). repr 마스킹.
+    key_source: str = ""  # "" | env:<VAR> | credentials.json
+    source: str = "default"  # default | ~/.asgard/config.toml | .asgard/config.toml | flag
     missing: list[str] = field(default_factory=list)  # 사람이 읽는 미충족 항목
 
     def __repr__(self) -> str:  # 키 값이 로그·트레이스에 새지 않게 마스킹 (Canon 4)
         k = f"***{self.api_key[-4:]}" if self.api_key else ""
-        return (f"ResolvedProvider(name={self.profile.name!r}, model={self.model!r}, "
-                f"key_source={self.key_source!r}, api_key={k!r}, missing={self.missing!r})")
+        return (
+            f"ResolvedProvider(name={self.profile.name!r}, model={self.model!r}, "
+            f"key_source={self.key_source!r}, api_key={k!r}, missing={self.missing!r})"
+        )
 
 
 CRED_PATH = os.path.join(os.path.expanduser("~"), ".asgard", "credentials.json")
@@ -101,6 +103,7 @@ CRED_PATH = os.path.join(os.path.expanduser("~"), ".asgard", "credentials.json")
 def load_credentials() -> dict:
     """~/.asgard/credentials.json — provider별 {"api_key": ...}. config 와 분리된 키 격리 저장소."""
     import json
+
     try:
         with open(CRED_PATH) as f:
             return json.load(f)
@@ -111,6 +114,7 @@ def load_credentials() -> dict:
 def save_credential(provider: str, api_key: str, base_url: str = "", model: str = "") -> None:
     """키를 credentials.json 에 저장 — chmod 600, config.toml 에는 절대 안 넣는다 (Canon 4)."""
     import json
+
     creds = load_credentials()
     entry = {"api_key": api_key}
     if base_url:
@@ -135,17 +139,18 @@ def _read_toml(path: str) -> dict:
         return {"_error": path}  # 깨진 config 는 조용히 무시하지 않고 표시
 
 
-def resolve(root: str | None = None, provider: str | None = None,
-            model: str | None = None) -> ResolvedProvider:
+def resolve(root: str | None = None, provider: str | None = None, model: str | None = None) -> ResolvedProvider:
     """provider 연결 해석 — 우선순위: 플래그 > 프로젝트 config > 글로벌 config > 기본값."""
     root = root or os.getcwd()
     conf: dict = {}
     source = "default"
-    for path, label in ((os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"), "~/.asgard/config.toml"),
-                        (os.path.join(root, ".asgard", "config.toml"), ".asgard/config.toml")):
+    for path, label in (
+        (os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"), "~/.asgard/config.toml"),
+        (os.path.join(root, ".asgard", "config.toml"), ".asgard/config.toml"),
+    ):
         loaded = _read_toml(path).get("provider") or {}
         if loaded:
-            conf.update(loaded)      # 프로젝트가 글로벌을 키 단위로 덮는다
+            conf.update(loaded)  # 프로젝트가 글로벌을 키 단위로 덮는다
             source = label
 
     name = provider or conf.get("name") or "anthropic"

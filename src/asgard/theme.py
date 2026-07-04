@@ -8,10 +8,10 @@ $primary/$accent/$surface 참조.
 
 import os
 
-PRIMARY = "#D4AF37"      # 신성한 황금 — 브랜드 마크·로고·액센트 바
-SECONDARY = "#1E2A44"    # 왕실 네이비 — 패널·보조 배경
-BACKGROUND = "#090B12"   # 우주
-SURFACE = "#151D38"      # 궁전 석재
+PRIMARY = "#D4AF37"  # 신성한 황금 — 브랜드 마크·로고·액센트 바
+SECONDARY = "#1E2A44"  # 왕실 네이비 — 패널·보조 배경
+BACKGROUND = "#090B12"  # 우주
+SURFACE = "#151D38"  # 궁전 석재
 TEXT = "#F7F5EF"
 SUBTEXT = "#C8C5BD"
 
@@ -26,12 +26,12 @@ DANGER = "#DC2626"
 LOGO_GRAD = ["#F5E6B0", "#E9CE79", "#D4AF37", "#BD9A2F", "#A28327", "#856B1F"]
 LOGO_GRAD_LIGHT = ["#8A6D1E", "#8A6D1E", "#6F5716", "#6F5716", "#6F5716", "#6F5716"]
 
-_TRUECOLOR = ("truecolor" in os.environ.get("COLORTERM", "")
-              or "24bit" in os.environ.get("COLORTERM", ""))
+_TRUECOLOR = "truecolor" in os.environ.get("COLORTERM", "") or "24bit" in os.environ.get("COLORTERM", "")
 
 
 def _x256(r: int, g: int, b: int) -> int:
     """xterm-256 근사 — 6×6×6 색 큐브와 그레이 램프 중 오차 작은 쪽."""
+
     def q(v: int) -> int:  # 큐브 레벨 0,95,135,175,215,255 로 양자화
         return 0 if v < 48 else 1 if v < 115 else min(5, (v - 35) // 40)
 
@@ -48,13 +48,14 @@ def _x256(r: int, g: int, b: int) -> int:
 
 def ansi(hex_color: str) -> str:
     """ui.paint 용 SGR 전경색 파라미터 — '38;2;r;g;b' 또는 '38;5;N'."""
-    r, g, b = (int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
     return f"38;2;{r};{g};{b}" if _TRUECOLOR else f"38;5;{_x256(r, g, b)}"
 
 
 def textual_theme():
     """asgard Textual 테마. TUI 경로에서만 호출 — CLI 는 textual 미로드."""
     from textual.theme import Theme
+
     return Theme(
         name="asgard",
         primary=PRIMARY,

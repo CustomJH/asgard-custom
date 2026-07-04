@@ -40,9 +40,7 @@ class InitApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         with Horizontal():
-            yield OptionList(
-                *[Option(f"{k}", id=k) for k, _ in _PROFILES], id="profiles"
-            )
+            yield OptionList(*[Option(f"{k}", id=k) for k, _ in _PROFILES], id="profiles")
             with VerticalScroll(id="preview-wrap"):
                 yield Static(id="preview")
         yield Footer()

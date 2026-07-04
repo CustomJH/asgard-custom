@@ -21,8 +21,9 @@ def _version(value: bool) -> None:
 
 @app.callback()
 def _main(
-    version: bool = typer.Option(False, "--version", "-v", callback=_version, is_eager=True,
-                                 help="show version and exit"),
+    version: bool = typer.Option(
+        False, "--version", "-v", callback=_version, is_eager=True, help="show version and exit"
+    ),
 ) -> None:
     """Root callback — hosts the global --version flag."""
 
@@ -64,7 +65,9 @@ def init(
     ui.set_quiet(quiet)
     from .commands.setup import run_init
 
-    raise typer.Exit(run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes))
+    raise typer.Exit(
+        run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes)
+    )
 
 
 @app.command(help="update asgard to the latest release, or pin a version: update vX.Y.Z")

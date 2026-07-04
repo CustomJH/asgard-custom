@@ -27,10 +27,40 @@ EMPTY = hashlib.sha256(b"").hexdigest()
 # quest_log.py 의 DEFAULT_POLICY 와 동일 유지 — 정책 파일이 없어도 두 스크립트가 같은 기준으로 판단.
 DEFAULT_POLICY = {
     "small_write": {"max_files": 2, "max_lines": 80},
-    "sensitive_paths": ["hooks", "policy", "templates", "install", "security", "auth", "secret",
-                        "db", "migration", "ci", ".github", ".claude", ".cursor", ".codex"],
-    "readonly_commands": ["git status", "git diff", "git log", "git show", "git ls-files", "git rev-parse",
-                          "rg", "grep", "ls", "cat", "head", "tail", "find", "wc", "pwd", "which"],
+    "sensitive_paths": [
+        "hooks",
+        "policy",
+        "templates",
+        "install",
+        "security",
+        "auth",
+        "secret",
+        "db",
+        "migration",
+        "ci",
+        ".github",
+        ".claude",
+        ".cursor",
+        ".codex",
+    ],
+    "readonly_commands": [
+        "git status",
+        "git diff",
+        "git log",
+        "git show",
+        "git ls-files",
+        "git rev-parse",
+        "rg",
+        "grep",
+        "ls",
+        "cat",
+        "head",
+        "tail",
+        "find",
+        "wc",
+        "pwd",
+        "which",
+    ],
 }
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
 
@@ -92,15 +122,23 @@ def block(root, sid, reason):
     except Exception:
         pass
     if n > MAX_BLOCKS:
-        sys.stderr.write("asgard verifier-gate: %d회 차단 초과 — 통과시키되 Odin 에스컬레이션 필요 (Canon 9)\n" % MAX_BLOCKS)
+        sys.stderr.write(
+            "asgard verifier-gate: %d회 차단 초과 — 통과시키되 Odin 에스컬레이션 필요 (Canon 9)\n" % MAX_BLOCKS
+        )
         sys.exit(0)
-    sys.stdout.write(json.dumps({
-        "decision": "block",
-        "reason": "Asgard verifier-gate (Canon 10 — 완료 증명): " + reason +
-                  " Verifier 판정을 로그에 기록하세요: echo '{...}' | python3 <hooks>/quest-log.py "
-                  "append --verdict PASS|FAIL (verify 이벤트가 diff_hash 를 자동 계산). "
-                  "3회 이상 막히면 중단하고 Odin 에게 보고하세요 (Canon 9).",
-    }, ensure_ascii=False))
+    sys.stdout.write(
+        json.dumps(
+            {
+                "decision": "block",
+                "reason": "Asgard verifier-gate (Canon 10 — 완료 증명): "
+                + reason
+                + " Verifier 판정을 로그에 기록하세요: echo '{...}' | python3 <hooks>/quest-log.py "
+                "append --verdict PASS|FAIL (verify 이벤트가 diff_hash 를 자동 계산). "
+                "3회 이상 막히면 중단하고 Odin 에게 보고하세요 (Canon 9).",
+            },
+            ensure_ascii=False,
+        )
+    )
     sys.exit(0)
 
 
@@ -136,10 +174,14 @@ def orphan_writes(root, sid):
                 return
     except Exception:
         pass
-    block(root, sid, "이 세션이 파일을 썼는데(%s%s) 퀘스트 로그가 없습니다. write 과업은 Trinity "
-                     "순환이 필수입니다: python3 <hooks>/quest-log.py open <quest-id> --criteria "
-                     "\"...\" 로 로그를 열고 Verifier 검증을 기록하세요."
-          % (", ".join(dirty[:3]), " 외 %d" % (len(dirty) - 3) if len(dirty) > 3 else ""))
+    block(
+        root,
+        sid,
+        "이 세션이 파일을 썼는데(%s%s) 퀘스트 로그가 없습니다. write 과업은 Trinity "
+        "순환이 필수입니다: python3 <hooks>/quest-log.py open <quest-id> --criteria "
+        '"..." 로 로그를 열고 Verifier 검증을 기록하세요.'
+        % (", ".join(dirty[:3]), " 외 %d" % (len(dirty) - 3) if len(dirty) > 3 else ""),
+    )
 
 
 def main():
@@ -201,14 +243,22 @@ def main():
         if not any(e.get("criteria") for e in events):
             block(root, sid, "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.")
         if not any(c.get("exit_code") == 0 for c in (p.get("commands") or []) if isinstance(c, dict)):
-            block(root, sid, "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
-                             "Verifier 는 검증 명령을 직접 실행해야 합니다.")
+            block(
+                root,
+                sid,
+                "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
+                "Verifier 는 검증 명령을 직접 실행해야 합니다.",
+            )
         small = policy["small_write"]
         sensitive = [f for f in changed if any(s in f.lower() for s in policy["sensitive_paths"])]
         full_required = bool(sensitive) or len(changed) > small["max_files"] or lines > small["max_lines"]
         if full_required and p.get("level") != "full":
-            block(root, sid, "full-verify 필요(민감 경로 %s / diff %d files·%d lines)한데 micro PASS 입니다. "
-                             "--level full 로 재검증하세요." % (sensitive[:3], len(changed), lines))
+            block(
+                root,
+                sid,
+                "full-verify 필요(민감 경로 %s / diff %d files·%d lines)한데 micro PASS 입니다. "
+                "--level full 로 재검증하세요." % (sensitive[:3], len(changed), lines),
+            )
         try:  # 통과 → 차단 카운터 리셋 (다음 위반은 새로 3회부터)
             os.remove(os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json"))
         except Exception:

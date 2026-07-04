@@ -22,8 +22,10 @@ class Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
+
         def run(*a):
             return subprocess.run(a, cwd=self.root, capture_output=True, check=True)
+
         run("git", "init", "-q")
         run("git", "config", "user.email", "t@t")
         run("git", "config", "user.name", "t")
@@ -47,10 +49,8 @@ class TestEditor(Base):
         w = []
         T.run_editor(self.root, {"command": "create", "path": "c.txt", "file_text": "aa\naa\n"}, w)
         with self.assertRaises(T.ToolError):  # 2회 매치
-            T.run_editor(self.root, {"command": "str_replace", "path": "c.txt",
-                                     "old_str": "aa", "new_str": "bb"}, w)
-        T.run_editor(self.root, {"command": "str_replace", "path": "c.txt",
-                                 "old_str": "aa\naa", "new_str": "bb"}, w)
+            T.run_editor(self.root, {"command": "str_replace", "path": "c.txt", "old_str": "aa", "new_str": "bb"}, w)
+        T.run_editor(self.root, {"command": "str_replace", "path": "c.txt", "old_str": "aa\naa", "new_str": "bb"}, w)
         self.assertEqual(open(os.path.join(self.root, "c.txt")).read(), "bb\n")
 
     def test_path_escape_rejected(self):
@@ -61,12 +61,10 @@ class TestEditor(Base):
     def test_insert_bounds(self):
         w = []
         T.run_editor(self.root, {"command": "create", "path": "d.txt", "file_text": "1\n2\n"}, w)
-        T.run_editor(self.root, {"command": "insert", "path": "d.txt",
-                                 "insert_line": 1, "insert_text": "x"}, w)
+        T.run_editor(self.root, {"command": "insert", "path": "d.txt", "insert_line": 1, "insert_text": "x"}, w)
         self.assertEqual(open(os.path.join(self.root, "d.txt")).read(), "1\nx\n2\n")
         with self.assertRaises(T.ToolError):
-            T.run_editor(self.root, {"command": "insert", "path": "d.txt",
-                                     "insert_line": 99, "insert_text": "x"}, w)
+            T.run_editor(self.root, {"command": "insert", "path": "d.txt", "insert_line": 99, "insert_text": "x"}, w)
 
 
 class TestBash(Base):
@@ -91,12 +89,29 @@ class TestLedgerWiring(Base):
         self.assertEqual(ql(self.root, "open", "q1", "--criteria", "c", session=sid).returncode, 0)
         open(os.path.join(self.root, "f.txt"), "a").write("more\n")
         _record_writes(self.root, sid, ["f.txt"])
-        ql(self.root, "append", session=sid, stdin=json.dumps(
-            {"role": "worker", "event": "work", "changed_files": ["f.txt"],
-             "commands": [{"cmd": "true", "exit_code": 0}]}))
-        ql(self.root, "append", "--verdict", "PASS", "--level", "micro", session=sid,
-           stdin=json.dumps({"role": "verifier", "event": "verify",
-                             "commands": [{"cmd": "true", "exit_code": 0}]}))
+        ql(
+            self.root,
+            "append",
+            session=sid,
+            stdin=json.dumps(
+                {
+                    "role": "worker",
+                    "event": "work",
+                    "changed_files": ["f.txt"],
+                    "commands": [{"cmd": "true", "exit_code": 0}],
+                }
+            ),
+        )
+        ql(
+            self.root,
+            "append",
+            "--verdict",
+            "PASS",
+            "--level",
+            "micro",
+            session=sid,
+            stdin=json.dumps({"role": "verifier", "event": "verify", "commands": [{"cmd": "true", "exit_code": 0}]}),
+        )
         blocked, _ = gate(self.root, sid)
         self.assertFalse(blocked)
         self.assertEqual(ql(self.root, "close", session=sid).returncode, 0)
@@ -113,9 +128,18 @@ class TestLedgerWiring(Base):
     def test_delegate_event_accepted(self):
         sid = "native-t3"
         ql(self.root, "open", "q3", "--criteria", "c", session=sid)
-        p = ql(self.root, "append", session=sid, stdin=json.dumps(
-            {"role": "worker", "event": "delegate",
-             "commands": [{"cmd": "dispatch:freyja — 프론트 전담", "exit_code": 0}]}))
+        p = ql(
+            self.root,
+            "append",
+            session=sid,
+            stdin=json.dumps(
+                {
+                    "role": "worker",
+                    "event": "delegate",
+                    "commands": [{"cmd": "dispatch:freyja — 프론트 전담", "exit_code": 0}],
+                }
+            ),
+        )
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         log = open(os.path.join(self.root, ".asgard", "quest", "q3.jsonl")).read()
         self.assertIn('"delegate"', log)

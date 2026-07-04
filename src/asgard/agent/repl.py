@@ -36,6 +36,7 @@ def is_light_bg() -> bool:
     라이트 배경엔 흰 로고가 안 보이고 골드 asset 은 검정 박스가 보이므로, 이미지를 스킵하고
     진한 텍스트 로고로 폴백한다."""
     import os
+
     parts = os.environ.get("COLORFGBG", "").split(";")
     if len(parts) >= 2:
         try:
@@ -50,6 +51,7 @@ def _image_logo() -> bool:
     라이트 배경은 흰 로고가 안 보여 스킵(→ 텍스트 폴백). install.sh _logo 의 파이썬 포팅."""
     import base64
     import os
+
     if is_light_bg():  # 흰 lockup 은 라이트 배경서 안 보인다 — 텍스트 폴백에 맡긴다
         return False
     proto = ""
@@ -57,13 +59,19 @@ def _image_logo() -> bool:
     term = os.environ.get("TERM", "")
     if tp in ("iTerm.app", "WezTerm") or os.environ.get("LC_TERMINAL") == "iTerm2":
         proto = "iterm"
-    if "kitty" in term or "ghostty" in term or os.environ.get("KITTY_WINDOW_ID") \
-            or os.environ.get("GHOSTTY_RESOURCES_DIR") or tp in ("ghostty", "Ghostty"):
+    if (
+        "kitty" in term
+        or "ghostty" in term
+        or os.environ.get("KITTY_WINDOW_ID")
+        or os.environ.get("GHOSTTY_RESOURCES_DIR")
+        or tp in ("ghostty", "Ghostty")
+    ):
         proto = "kitty"
     if not proto:
         return False
     try:
         from importlib.resources import files
+
         data = (files("asgard") / "assets" / "logo-lockup.png").read_bytes()
     except Exception:
         return False
@@ -74,7 +82,7 @@ def _image_logo() -> bool:
     else:  # kitty graphics — 4096자 청크
         off, first = 0, True
         while off < len(b64):
-            piece, off = b64[off:off + 4096], off + 4096
+            piece, off = b64[off : off + 4096], off + 4096
             more = 1 if off < len(b64) else 0
             if first:
                 sys.stdout.write(f"\033_Gf=100,a=T,c=30,m={more};{piece}\033\\")
@@ -94,6 +102,7 @@ _LOGO_GRAD_LIGHT = [theme.ansi(h) for h in theme.LOGO_GRAD_LIGHT]
 
 def banner(rp) -> None:
     import shutil
+
     width = shutil.get_terminal_size((80, 20)).columns
 
     # 로고: 다크+이미지 터미널 → PNG, 아니면 braille lockup(배경 밝기별 그라디언트) / 축약
@@ -110,22 +119,22 @@ def banner(rp) -> None:
     # hermes 스타일 — welcome + tip + 구분선 rule (모델·경로·git 은 하단 status line 으로)
     rule = ui.paint(_O, "─" * min(width - 4, 60))
     sys.stdout.write(
-        f"\n  {ui.bold(t('welcome'))} {ui.dim(t('welcome_hint'))}\n"
-        f"  {ui.paint(_O, '✦')} {ui.dim(t('tip'))}\n"
-        f"  {rule}\n")
+        f"\n  {ui.bold(t('welcome'))} {ui.dim(t('welcome_hint'))}\n  {ui.paint(_O, '✦')} {ui.dim(t('tip'))}\n  {rule}\n"
+    )
 
 
 def _git_status(root: str) -> str:
     """현재 브랜치(+dirty '*'). git repo 아니면 빈 문자열."""
     import subprocess
+
     try:
-        b = subprocess.run(["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
-                           capture_output=True, text=True, timeout=3)
+        b = subprocess.run(
+            ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=3
+        )
         if b.returncode != 0:
             return ""
         branch = b.stdout.strip()
-        d = subprocess.run(["git", "-C", root, "status", "--porcelain"],
-                          capture_output=True, text=True, timeout=3)
+        d = subprocess.run(["git", "-C", root, "status", "--porcelain"], capture_output=True, text=True, timeout=3)
         return branch + ("*" if d.stdout.strip() else "")
     except Exception:
         return ""
@@ -134,6 +143,7 @@ def _git_status(root: str) -> str:
 def _status_text(root: str, rp, usage: dict | None = None) -> str:
     """상태줄 순수 텍스트 — 모델 · 디렉토리 · git · 사용량 (색은 호출부 몫)."""
     import os
+
     home = os.path.expanduser("~")
     cwd = root.replace(home, "~", 1) if root.startswith(home) else root
     if rp.missing:  # 키/설정 미충족 = 미연결 — 모델명 대신 명확한 안내
@@ -159,12 +169,29 @@ def statusline(root: str, rp, usage: dict | None = None) -> str:
 
 
 _HELP_KEYS = {
-    "/help": "h_help", "/new": "h_new", "/quest": "h_quest", "/provider": "h_provider",
-    "/model": "h_model", "/lang": "h_lang", "/update": "h_update", "/clear": "h_clear",
+    "/help": "h_help",
+    "/new": "h_new",
+    "/quest": "h_quest",
+    "/provider": "h_provider",
+    "/model": "h_model",
+    "/lang": "h_lang",
+    "/update": "h_update",
+    "/clear": "h_clear",
     "/exit": "h_exit",
 }
-_COMMANDS = ["/help", "/new", "/quest", "/provider", "/provider set", "/model",
-             "/lang en", "/lang ko", "/update", "/clear", "/exit"]
+_COMMANDS = [
+    "/help",
+    "/new",
+    "/quest",
+    "/provider",
+    "/provider set",
+    "/model",
+    "/lang en",
+    "/lang ko",
+    "/update",
+    "/clear",
+    "/exit",
+]
 
 
 def _help_items():
@@ -185,13 +212,13 @@ _PT_CTX: dict = {}  # bottom_toolbar 용 세션 상태 — run() 이 매 루프 
 
 def _term_width() -> int:
     import shutil
+
     return max(20, shutil.get_terminal_size((80, 20)).columns)
 
 
 def _pt_message():
     """입력 영역 상단 rule + 골드 화살표 (cursor-agent 식 입력박스 프레임)."""
-    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"),
-            ("class:arrow", "  → ")]
+    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"), ("class:arrow", "  → ")]
 
 
 def _pt_toolbar():
@@ -203,12 +230,12 @@ def _pt_toolbar():
     usage = {"tokens": hd.total_tokens} if hd else None
     txt = _status_text(ctx["root"], ctx["rp"], usage)
     cls = "class:status-warn" if ctx["rp"].missing else "class:status"
-    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"),
-            (cls, "  " + txt)]
+    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"), (cls, "  " + txt)]
 
 
 def _history_path() -> str:
     import os
+
     hp = os.path.join(os.path.expanduser("~"), ".asgard", "history")
     os.makedirs(os.path.dirname(hp), exist_ok=True)
     return hp
@@ -232,23 +259,24 @@ def _pt_session():
             for c in _COMMANDS:
                 if c.startswith(text):
                     meta = helps.get("/" + c[1:].split()[0], "")
-                    yield Completion(c + " ", start_position=-len(text),
-                                     display=c, display_meta=meta)
+                    yield Completion(c + " ", start_position=-len(text), display=c, display_meta=meta)
 
-    style = Style.from_dict({
-        "arrow": f"{theme.PRIMARY} bold",
-        "rule": theme.SECONDARY,
-        "placeholder": theme.SUBTEXT,
-        "hint": theme.SUBTEXT,
-        "status": theme.SUBTEXT,
-        "status-warn": theme.WARNING,
-        "bottom-toolbar": "noreverse",
-        "completion-menu": f"bg:{theme.SURFACE} {theme.TEXT}",
-        "completion-menu.completion.current": f"bg:{theme.PRIMARY} {theme.BACKGROUND}",
-        "completion-menu.meta.completion": f"bg:{theme.SURFACE} {theme.SUBTEXT}",
-        "completion-menu.meta.completion.current": f"bg:{theme.PRIMARY} {theme.SECONDARY}",
-        "auto-suggestion": theme.SUBTEXT,
-    })
+    style = Style.from_dict(
+        {
+            "arrow": f"{theme.PRIMARY} bold",
+            "rule": theme.SECONDARY,
+            "placeholder": theme.SUBTEXT,
+            "hint": theme.SUBTEXT,
+            "status": theme.SUBTEXT,
+            "status-warn": theme.WARNING,
+            "bottom-toolbar": "noreverse",
+            "completion-menu": f"bg:{theme.SURFACE} {theme.TEXT}",
+            "completion-menu.completion.current": f"bg:{theme.PRIMARY} {theme.BACKGROUND}",
+            "completion-menu.meta.completion": f"bg:{theme.SURFACE} {theme.SUBTEXT}",
+            "completion-menu.meta.completion.current": f"bg:{theme.PRIMARY} {theme.SECONDARY}",
+            "auto-suggestion": theme.SUBTEXT,
+        }
+    )
     return PromptSession(
         completer=_Slash(),
         complete_while_typing=True,
@@ -269,7 +297,7 @@ def _setup_readline() -> None:
     except Exception:
         return
     readline.set_completer(_completer)
-    readline.set_completer_delims("")   # 전체 라인을 completion 대상으로 (/ 포함)
+    readline.set_completer_delims("")  # 전체 라인을 completion 대상으로 (/ 포함)
     # uv 파이썬(macOS)은 GNU readline 이 아니라 libedit — 바인딩 문법이 다르다.
     # GNU 문법("tab: complete")을 libedit 에 주면 조용히 무시돼 Tab 이 탭 문자로 들어간다.
     if getattr(readline, "backend", "") == "editline":
@@ -302,7 +330,8 @@ def prompt() -> str:
             _pt_message,
             placeholder=[("class:placeholder", t("ph_input"))],
             rprompt=[("class:hint", t("interrupt_hint") + " ")],
-            bottom_toolbar=_pt_toolbar)
+            bottom_toolbar=_pt_toolbar,
+        )
     # readline 폴백 — 비출력(ANSI) 문자는 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
     arrow = f"\x01\x1b[{_O}m\x02›\x01\x1b[0m\x02"
     return input(f"  {arrow} ")
@@ -310,6 +339,7 @@ def prompt() -> str:
 
 class _Reconfigure(Exception):
     """provider set — 새 ResolvedProvider 로 세션 재생성 신호."""
+
     def __init__(self, rp):
         self.rp = rp
 
@@ -328,6 +358,7 @@ def slash(cmd: str, root: str, rp) -> bool:
     elif c == "/lang":
         from ..i18n import save_lang
         from ..i18n import t as _t
+
         arg = cmd.split()[1:2]
         if arg and save_lang(arg[0], root):
             sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(_t('lang_set', lang=arg[0]))}\n")
@@ -335,6 +366,7 @@ def slash(cmd: str, root: str, rp) -> bool:
             sys.stdout.write(f"  {ui.dim(_t('lang_usage'))}\n")
     elif c == "/update":
         from ..commands.update import run_update
+
         run_update(cmd.split()[1:], restart_hint=True)
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
@@ -342,14 +374,14 @@ def slash(cmd: str, root: str, rp) -> bool:
     elif c in ("/provider", "/model"):
         if c == "/provider" and cmd.split()[1:2] == ["set"]:
             from .onboard import can_prompt, onboard
+
             if can_prompt():
                 new = onboard(root)
                 if new is not None:
                     raise _Reconfigure(new)  # repl.run 이 세션 재생성
             return True
         src = rp.key_source or rp.source
-        sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} "
-                         f"{rp.model} {ui.dim('(' + src + ')')}\n")
+        sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model} {ui.dim('(' + src + ')')}\n")
     elif c == "/quest":
         try:
             out = ql(root, "state").stdout.strip()
@@ -363,6 +395,7 @@ def slash(cmd: str, root: str, rp) -> bool:
 
 def _new_heimdall(root: str, rp, emit, status=None):
     from .heimdall import Heimdall
+
     return Heimdall(rp, root, on_text=emit, on_status=status)
 
 
@@ -399,6 +432,7 @@ class _Render:
 
     def __init__(self) -> None:
         import re
+
         self._re = re
         self.buf = ""
         self.dirty = False  # 현재 라인을 이미 raw 로 흘려보냄 — 완성 시 스타일 생략
@@ -452,6 +486,7 @@ def _bye() -> int:
 def _run_bang(root: str, cmd: str) -> None:
     """!cmd — bash 직접 실행 (opencode 흐름). git-guard 통과 후 실행, 출력 표시."""
     from . import tools as T
+
     try:
         out, code = T.run_bash(root, {"command": cmd})
         sys.stdout.write(f"  {ui.dim('$ ' + cmd)}\n{out}\n")
@@ -492,7 +527,7 @@ def run(root: str, rp) -> int:
             sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")
         try:
             req = prompt().strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             return _bye()
         if not req:
             continue
@@ -522,6 +557,7 @@ def run(root: str, rp) -> int:
 
         try:
             import time as _time
+
             t0 = _time.monotonic()
             out = heimdall.handle(req)
             render.finish()

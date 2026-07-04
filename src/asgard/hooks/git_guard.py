@@ -15,14 +15,23 @@ import sys
 # 패턴 공통: `[^|;&]*` 는 명령 구분자(| ; &)를 넘지 않게 탐색을 제한한다 —
 # `git push && rm -f x` 의 `-f` 를 push 의 플래그로 오인해 차단하는 오탐을 막는다.
 BLOCK = [
-    (r"\bgit\s+push\b[^|;&]*\s-(-force\b|f\b)", "force-push"),          # 원격 히스토리 덮어쓰기
-    (r"\bgit\s+push\b[^|;&]*--force-with-lease\b", "force-push"),       # lease 도 결국 덮어쓰기 — 의도를 명시하려고 별도 항목
-    (r"\bgit\s+reset\s+--hard\b", "reset --hard"),                       # 워킹트리+인덱스 즉시 소실
-    (r"\bgit\s+clean\s+-[a-zA-Z]*f", "clean -f"),                        # 언트래킹 파일 영구 삭제; [a-zA-Z]*f 로 -fd, -xf 등 조합 플래그도 포착
-    (r"\bgit\s+branch\s+-D\b", "branch -D"),                             # 병합 확인 없는 강제 삭제 (-d 는 안전하므로 허용)
+    (r"\bgit\s+push\b[^|;&]*\s-(-force\b|f\b)", "force-push"),  # 원격 히스토리 덮어쓰기
+    (
+        r"\bgit\s+push\b[^|;&]*--force-with-lease\b",
+        "force-push",
+    ),  # lease 도 결국 덮어쓰기 — 의도를 명시하려고 별도 항목
+    (r"\bgit\s+reset\s+--hard\b", "reset --hard"),  # 워킹트리+인덱스 즉시 소실
+    (
+        r"\bgit\s+clean\s+-[a-zA-Z]*f",
+        "clean -f",
+    ),  # 언트래킹 파일 영구 삭제; [a-zA-Z]*f 로 -fd, -xf 등 조합 플래그도 포착
+    (r"\bgit\s+branch\s+-D\b", "branch -D"),  # 병합 확인 없는 강제 삭제 (-d 는 안전하므로 허용)
     (r"\bgit\s+(rebase|filter-branch|filter-repo)\b", "history rewrite"),  # 커밋 해시가 바뀜 = 증거 재작성
-    (r"\bgit\s+update-ref\s+-d\b", "update-ref -d"),                     # ref 직접 삭제 (위 우회 경로)
-    (r"\bgit\s+(stash\s+(drop|clear)|reflog\s+(delete|expire))\b", "drop history"),  # 복구 지점 제거 — Law 3 의 마지막 보루
+    (r"\bgit\s+update-ref\s+-d\b", "update-ref -d"),  # ref 직접 삭제 (위 우회 경로)
+    (
+        r"\bgit\s+(stash\s+(drop|clear)|reflog\s+(delete|expire))\b",
+        "drop history",
+    ),  # 복구 지점 제거 — Law 3 의 마지막 보루
 ]
 
 
@@ -40,12 +49,17 @@ def main() -> None:
     for pat, label in BLOCK:
         if re.search(pat, cmd):
             if cursor:
-                sys.stdout.write(json.dumps({
-                    "permission": "deny",
-                    "userMessage": "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
-                    "agentMessage": "This " + label + " was blocked by the Asgard Canon (Law 3/6). "
-                                    "Get Odin's explicit per-action consent; do not retry.",
-                }, separators=(",", ":")))
+                sys.stdout.write(
+                    json.dumps(
+                        {
+                            "permission": "deny",
+                            "userMessage": "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
+                            "agentMessage": "This " + label + " was blocked by the Asgard Canon (Law 3/6). "
+                            "Get Odin's explicit per-action consent; do not retry.",
+                        },
+                        separators=(",", ":"),
+                    )
+                )
                 sys.exit(0)
             # Claude Code / Codex: exit 2 가 차단 신호, stderr 가 에이전트에게 그대로 전달된다.
             print(

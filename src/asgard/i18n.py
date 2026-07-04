@@ -17,29 +17,31 @@ _LANG = "en"
 # key: (english, korean)
 _M: dict[str, tuple[str, str]] = {
     # 배너·환영
-    "tagline": ("Bifrost's watchman · Trinity orchestrator",
-                "비프로스트의 수호자 · Trinity 오케스트레이터"),
+    "tagline": ("Bifrost's watchman · Trinity orchestrator", "비프로스트의 수호자 · Trinity 오케스트레이터"),
     "welcome": ("Welcome to Asgard, Odin.", "Asgard 에 오신 것을 환영합니다, 오딘."),
     "welcome_hint": ("Ask anything, or type /help.", "무엇이든 물으시거나 /help 를 입력하세요."),
-    "tip": ("Tip — ! for bash, / for commands, Ctrl-C to interrupt a turn.",
-            "Tip — ! 로 bash, / 로 커맨드, Ctrl-C 로 턴 중단."),
-    "cmd_hints": ("/help · /new · !bash · Tab complete · ↑↓ history",
-                  "/help · /new · !bash · Tab 자동완성 · ↑↓ 히스토리"),
+    "tip": (
+        "Tip — ! for bash, / for commands, Ctrl-C to interrupt a turn.",
+        "Tip — ! 로 bash, / 로 커맨드, Ctrl-C 로 턴 중단.",
+    ),
+    "cmd_hints": (
+        "/help · /new · !bash · Tab complete · ↑↓ history",
+        "/help · /new · !bash · Tab 자동완성 · ↑↓ 히스토리",
+    ),
     "bye": ("Bifrost sealed. Farewell, Odin.", "비프로스트 봉인. 안녕히, 오딘."),
     "ready": ("Heimdall is ready. Ask anything.", "Heimdall 대기 중. 무엇이든 물으세요."),
     # provider·온보딩
-    "provider_unset": ("no provider — connect with /provider set",
-                       "provider 미설정 — /provider set 으로 연결하세요"),
+    "provider_unset": ("no provider — connect with /provider set", "provider 미설정 — /provider set 으로 연결하세요"),
     "not_connected": ("not connected — /provider set", "미연결 — /provider set"),
-    "connect_needed": ("provider not connected — run /provider set to connect, then resend",
-                       "provider 미연결 — /provider set 으로 연결한 뒤 다시 보내세요"),
-    "connect_cancel": ("connection cancelled — try /provider set again",
-                       "연결 취소 — /provider set 으로 다시 시도"),
+    "connect_needed": (
+        "provider not connected — run /provider set to connect, then resend",
+        "provider 미연결 — /provider set 으로 연결한 뒤 다시 보내세요",
+    ),
+    "connect_cancel": ("connection cancelled — try /provider set again", "연결 취소 — /provider set 으로 다시 시도"),
     "connected": ("connected", "연결"),
     "pick_provider": ("select a provider", "provider 선택"),
     "api_key_prompt": ("{p} API key (hidden)", "{p} API 키 (입력 숨김)"),
-    "saved_cred": ("saved to ~/.asgard/credentials.json (mode 600)",
-                   "~/.asgard/credentials.json 저장 (권한 600)"),
+    "saved_cred": ("saved to ~/.asgard/credentials.json (mode 600)", "~/.asgard/credentials.json 저장 (권한 600)"),
     "cancelled": ("(cancelled)", "(취소)"),
     "no_key": ("(no key — cancelled)", "(키 없음 — 취소)"),
     # 상태·턴
@@ -54,21 +56,27 @@ _M: dict[str, tuple[str, str]] = {
     "h_help": ("this help", "이 도움말"),
     "h_new": ("new session (reset context & screen)", "새 세션 (컨텍스트·화면 리셋)"),
     "h_quest": ("active quest ledger status", "진행 중 퀘스트 원장 상태"),
-    "h_provider": ("show provider·model · '/provider set' to reconnect",
-                   "provider·model 표시 · '/provider set' 으로 재설정"),
+    "h_provider": (
+        "show provider·model · '/provider set' to reconnect",
+        "provider·model 표시 · '/provider set' 으로 재설정",
+    ),
     "h_model": ("current model id", "현재 모델 ID"),
     "h_clear": ("clear the screen", "화면 지우기"),
     "h_exit": ("end the session (same as Ctrl-D)", "세션 종료 (Ctrl-D 동일)"),
     "h_lang": ("switch language: /lang en | ko", "언어 전환: /lang en | ko"),
     "h_update": ("update asgard to the latest release", "asgard 최신 릴리스로 업데이트"),
-    "update_restart": ("new version applies after restart — /exit then `asgard start`",
-                       "새 버전은 재시작 후 적용 — /exit 후 asgard start"),
+    "update_restart": (
+        "new version applies after restart — /exit then `asgard start`",
+        "새 버전은 재시작 후 적용 — /exit 후 asgard start",
+    ),
     "lang_set": ("language → {lang}", "언어 → {lang}"),
     "lang_usage": ("usage: /lang en | ko", "사용법: /lang en | ko"),
     "h_bash": ("run a bash command", "bash 직접 실행"),
     "help_footer": ("Tab complete · ↑↓ history", "Tab 자동완성 · ↑↓ 히스토리"),
-    "input_placeholder": ("Type a message…  ( /help · !bash · Ctrl-Q quit )",
-                          "메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )"),
+    "input_placeholder": (
+        "Type a message…  ( /help · !bash · Ctrl-Q quit )",
+        "메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )",
+    ),
     "needs_base_url": ("base_url required", "base_url 필요"),
     "thought": ("Runes read", "룬 해독"),
     "thinking": ("reading the runes…", "룬을 읽는 중…"),
@@ -90,10 +98,13 @@ def current() -> str:
 def load_lang(root: str | None = None) -> str:
     """config [ui] lang → env ASGARD_LANG → 'en'. set_lang 도 함께 수행하고 결과를 반환."""
     import tomllib
+
     root = root or os.getcwd()
     lang = None
-    for path in (os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
-                 os.path.join(root, ".asgard", "config.toml")):
+    for path in (
+        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
+        os.path.join(root, ".asgard", "config.toml"),
+    ):
         try:
             with open(path, "rb") as f:
                 ui = tomllib.load(f).get("ui") or {}
@@ -112,6 +123,7 @@ def save_lang(lang: str, root: str | None = None) -> bool:
     if lang not in LANGS:
         return False
     import re
+
     root = root or os.getcwd()
     d = os.path.join(root, ".asgard")
     os.makedirs(d, exist_ok=True)
@@ -121,8 +133,8 @@ def save_lang(lang: str, root: str | None = None) -> bool:
     except FileNotFoundError:
         txt = ""
     block = f'[ui]\nlang = "{lang}"\n'
-    if re.search(r'^\[ui\]', txt, re.M):
-        txt = re.sub(r'^\[ui\][^\[]*', block, txt, count=1, flags=re.M)
+    if re.search(r"^\[ui\]", txt, re.M):
+        txt = re.sub(r"^\[ui\][^\[]*", block, txt, count=1, flags=re.M)
     else:
         txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
     open(path, "w").write(txt)

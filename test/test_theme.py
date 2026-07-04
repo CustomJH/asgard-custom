@@ -15,9 +15,20 @@ from asgard import theme  # noqa: E402
 
 class TestTokens(unittest.TestCase):
     def test_all_tokens_are_hex(self):
-        for name in ("PRIMARY", "SECONDARY", "BACKGROUND", "SURFACE", "TEXT", "SUBTEXT",
-                     "ACCENT_BLUE", "ACCENT_CYAN", "ACCENT_PURPLE",
-                     "SUCCESS", "WARNING", "DANGER"):
+        for name in (
+            "PRIMARY",
+            "SECONDARY",
+            "BACKGROUND",
+            "SURFACE",
+            "TEXT",
+            "SUBTEXT",
+            "ACCENT_BLUE",
+            "ACCENT_CYAN",
+            "ACCENT_PURPLE",
+            "SUCCESS",
+            "WARNING",
+            "DANGER",
+        ):
             v = getattr(theme, name)
             self.assertRegex(v, r"^#[0-9A-Fa-f]{6}$", name)
 
@@ -45,7 +56,7 @@ class TestAnsi(unittest.TestCase):
             theme._TRUECOLOR = old
 
     def test_x256_exact_cube_corners(self):
-        self.assertEqual(theme._x256(0, 0, 0), 16)        # 큐브 (0,0,0)
+        self.assertEqual(theme._x256(0, 0, 0), 16)  # 큐브 (0,0,0)
         self.assertEqual(theme._x256(255, 255, 255), 231)  # 큐브 (5,5,5)
         self.assertEqual(theme._x256(95, 135, 175), 16 + 36 * 1 + 6 * 2 + 3)
 

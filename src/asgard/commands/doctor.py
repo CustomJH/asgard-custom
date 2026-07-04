@@ -21,8 +21,14 @@ def _trinity_checks(root: str) -> list[dict]:
         txt = open(os.path.join(root, "AGENTS.md"), encoding="utf-8").read()
     except Exception:
         txt = ""
-    checks.append({"name": "trinity block (AGENTS.md)", "ok": "asgard:trinity" in txt,
-                   "detail": "marker found" if "asgard:trinity" in txt else "missing", "fix": fix})
+    checks.append(
+        {
+            "name": "trinity block (AGENTS.md)",
+            "ok": "asgard:trinity" in txt,
+            "detail": "marker found" if "asgard:trinity" in txt else "missing",
+            "fix": fix,
+        }
+    )
     pol = os.path.join(root, ".asgard", "trinity-policy.json")
     pol_ok, detail = False, "missing"
     try:
@@ -35,8 +41,14 @@ def _trinity_checks(root: str) -> list[dict]:
     checks.append({"name": "trinity-policy.json", "ok": pol_ok, "detail": detail, "fix": fix})
     agents = ["asgard-thinker.md", "asgard-worker.md", "asgard-verifier.md"]
     missing = [a for a in agents if not os.path.exists(os.path.join(root, ".claude", "agents", a))]
-    checks.append({"name": "trinity role agents", "ok": not missing,
-                   "detail": "3/3 present" if not missing else "missing: " + ", ".join(missing), "fix": fix})
+    checks.append(
+        {
+            "name": "trinity role agents",
+            "ok": not missing,
+            "detail": "3/3 present" if not missing else "missing: " + ", ".join(missing),
+            "fix": fix,
+        }
+    )
     hooks = ["quest-log.py", "verifier-gate.py", "write-sentinel.py"]
     missing = [h for h in hooks if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
     gate_wired = False
@@ -46,13 +58,23 @@ def _trinity_checks(root: str) -> list[dict]:
     except Exception:
         pass
     ok = not missing and gate_wired
-    checks.append({"name": "trinity hooks + Stop gate", "ok": ok,
-                   "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop hook not wired"),
-                   "fix": fix})
+    checks.append(
+        {
+            "name": "trinity hooks + Stop gate",
+            "ok": ok,
+            "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop hook not wired"),
+            "fix": fix,
+        }
+    )
     ledger_ok = os.access(root, os.W_OK)
-    checks.append({"name": ".asgard quest-log writable", "ok": ledger_ok,
-                   "detail": os.path.join(root, ".asgard") if ledger_ok else "not writable",
-                   "fix": "프로젝트 루트 쓰기 권한 확인"})
+    checks.append(
+        {
+            "name": ".asgard quest-log writable",
+            "ok": ledger_ok,
+            "detail": os.path.join(root, ".asgard") if ledger_ok else "not writable",
+            "fix": "프로젝트 루트 쓰기 권한 확인",
+        }
+    )
     return checks
 
 
@@ -60,17 +82,27 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
     py = on_path("python3")
     checks = [
-        {"name": "asgard on PATH", "ok": bool(asgard), "detail": asgard or "not found",
-         "fix": 'add the install dir to PATH, e.g. export PATH="$HOME/.local/bin:$PATH"'},
-        {"name": "python3 (hooks)", "ok": bool(py), "detail": py or "not found",
-         "fix": "Canon hooks run via python3 — https://www.python.org/downloads/"},
+        {
+            "name": "asgard on PATH",
+            "ok": bool(asgard),
+            "detail": asgard or "not found",
+            "fix": 'add the install dir to PATH, e.g. export PATH="$HOME/.local/bin:$PATH"',
+        },
+        {
+            "name": "python3 (hooks)",
+            "ok": bool(py),
+            "detail": py or "not found",
+            "fix": "Canon hooks run via python3 — https://www.python.org/downloads/",
+        },
     ]
     checks += _trinity_checks(os.getcwd())
     ok = bool(asgard)  # self-contained CLI; only PATH wiring is fatal here.
     runtime = f"python {sys.version.split()[0]}"
 
     if json_out:
-        sys.stdout.write(_json.dumps({"version": __version__, "runtime": runtime, "ok": ok, "checks": checks}, indent=2) + "\n")
+        sys.stdout.write(
+            _json.dumps({"version": __version__, "runtime": runtime, "ok": ok, "checks": checks}, indent=2) + "\n"
+        )
         return 0 if ok else 1
     if not quiet:
         ui.head(f"doctor · v{__version__} {ui.dim('(' + runtime + ')')}")

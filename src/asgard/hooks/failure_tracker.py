@@ -33,8 +33,8 @@ def sig(text: str) -> str:
     숫자(라인 번호·포트·PID). 80자 cap: 오류 종류 구분엔 앞부분이면 충분하고 key 폭주를 막는다."""
     s = text.lower()
     s = re.sub(r"0x[0-9a-f]+|\b[0-9a-f]{6,}\b", "", s)  # hex / 해시
-    s = re.sub(r"[\\/]\S+", "", s)                       # 경로 (가변 부분 제거)
-    s = re.sub(r"\d+", "#", s)                           # 숫자 -> #
+    s = re.sub(r"[\\/]\S+", "", s)  # 경로 (가변 부분 제거)
+    s = re.sub(r"\d+", "#", s)  # 숫자 -> #
     return re.sub(r"\s+", " ", s).strip()[:80]
 
 
@@ -82,10 +82,25 @@ def log_fail(proj: str, sid: str, key: str, n: int) -> None:
         path = os.path.join(qdir, qid + ".jsonl")
         turn = sum(1 for _ in open(path, encoding="utf-8")) + 1
         import time
-        ev = {"schema": 1, "quest_id": qid, "session_id": sid, "turn": turn,
-              "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "role": "worker",
-              "event": "fail", "base_ref": None, "risk": {}, "criteria": [], "changed_files": [],
-              "diff_hash": None, "commands": [], "verdict": "NA", "failure_sig": key, "failure_count": n}
+
+        ev = {
+            "schema": 1,
+            "quest_id": qid,
+            "session_id": sid,
+            "turn": turn,
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            "role": "worker",
+            "event": "fail",
+            "base_ref": None,
+            "risk": {},
+            "criteria": [],
+            "changed_files": [],
+            "diff_hash": None,
+            "commands": [],
+            "verdict": "NA",
+            "failure_sig": key,
+            "failure_count": n,
+        }
         line = (json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
         fd = os.open(path, os.O_APPEND | os.O_WRONLY)  # quest-log 와 같은 O_APPEND 단일 write
         try:
@@ -134,8 +149,12 @@ def main() -> None:
             else:
                 # Claude/Codex: additionalContext 로 소프트 주입. 태그로 감싸 모델이
                 # 훅 경고임을 구분하게 한다 (사용자 발화와 혼동 방지).
-                out = {"hookSpecificOutput": {"hookEventName": "PostToolUse",
-                                              "additionalContext": "<asgard-failure-warning>\n" + msg + "\n</asgard-failure-warning>"}}
+                out = {
+                    "hookSpecificOutput": {
+                        "hookEventName": "PostToolUse",
+                        "additionalContext": "<asgard-failure-warning>\n" + msg + "\n</asgard-failure-warning>",
+                    }
+                }
             sys.stdout.write(json.dumps(out, separators=(",", ":")))
     except Exception:
         sys.exit(0)
