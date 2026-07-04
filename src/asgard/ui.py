@@ -143,7 +143,7 @@ class spin:
     def __init__(self, label: str) -> None:
         self.label = label
         self._t: threading.Thread | None = None
-        self._stop: threading.Event | None = None
+        self._stop = threading.Event()  # __enter__ 마다 새로 교체 — 항상 Event (Optional 아님)
 
     def __enter__(self) -> "spin":
         if _COLOR and not _QUIET:

@@ -184,7 +184,7 @@ def _choose_profile() -> str:
 def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
     if profile == "universal":
         return run_setup(force=force, dry_run=dry_run)
-    return run_setup(**{_FLAG_OF[profile]: True}, force=force, dry_run=dry_run)
+    return run_setup(**{_FLAG_OF[profile]: True}, force=force, dry_run=dry_run)  # ty: ignore[invalid-argument-type] — 동적 kwargs 디스패치
 
 
 def run_init(

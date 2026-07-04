@@ -113,6 +113,7 @@ class AsgardTUI(App):
     def _dispatch(self, req: str) -> None:
         import time
 
+        assert self.heimdall is not None  # 입력 핸들러가 None 가드 후에만 디스패치
         self.call_from_thread(self._set_status, True)
         t0 = time.monotonic()
         try:

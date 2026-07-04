@@ -81,7 +81,7 @@ def _trinity_checks(root: str) -> list[dict]:
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
     py = on_path("python3")
-    checks = [
+    checks: list[dict] = [
         {
             "name": "asgard on PATH",
             "ok": bool(asgard),

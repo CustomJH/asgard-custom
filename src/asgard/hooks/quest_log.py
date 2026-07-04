@@ -142,7 +142,7 @@ def git(root: str, *args: str, binary: bool = False):
 
 
 # ── 물리 증거 해시 — verifier-gate.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙) ──
-def diff_state(root: str, base_ref: str) -> tuple[str, list[str], int]:
+def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int]:
     """(diff_hash, changed_files, changed_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref 는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
     diff 를 바꾸면 해시가 자기참조로 영원히 안 맞는다."""

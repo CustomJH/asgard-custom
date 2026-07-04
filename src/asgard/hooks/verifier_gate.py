@@ -22,10 +22,12 @@ import os
 import re
 import subprocess
 import sys
+from typing import Any
 
 EMPTY = hashlib.sha256(b"").hexdigest()
 # quest_log.py 의 DEFAULT_POLICY 와 동일 유지 — 정책 파일이 없어도 두 스크립트가 같은 기준으로 판단.
-DEFAULT_POLICY = {
+# dict[str, Any]: 사용자 trinity-policy.json 이 update() 로 섞이므로 값 타입은 런타임에 열려 있다.
+DEFAULT_POLICY: dict[str, Any] = {
     "small_write": {"max_files": 2, "max_lines": 80},
     "sensitive_paths": [
         "hooks",

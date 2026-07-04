@@ -349,7 +349,16 @@ class Heimdall:
                 }
                 if v.get("failure_sig"):
                     ev["failure_sig"] = v["failure_sig"]
-                ql(self.root, "append", "--verdict", v["verdict"], "--level", level, session=sid, stdin=json.dumps(ev))
+                ql(
+                    self.root,
+                    "append",
+                    "--verdict",
+                    str(v["verdict"]),
+                    "--level",
+                    level,
+                    session=sid,
+                    stdin=json.dumps(ev),
+                )
             else:
                 return f"⚠ 미지의 전이 상태 '{role}' — Odin 보고 (원장: .asgard/quest/{qid}.jsonl)"
 
