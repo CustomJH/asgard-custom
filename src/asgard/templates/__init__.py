@@ -1,7 +1,7 @@
 """Content templates for `asgard init` — pure, stateless emitters (no shared state / UX / IO).
 
 Config + rules + folder scaffolding only. Hook SCRIPTS live in `asgard.hooks` and role AGENTS in
-`asgard.agents` — both managed as real files there, not embedded strings here.
+`asgard.templates.roles` — both managed as real files there, not embedded strings here.
 """
 
 from .agents import agents_md

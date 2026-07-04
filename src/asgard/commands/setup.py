@@ -7,7 +7,6 @@ import sys
 from pathlib import Path
 
 from .. import ui
-from ..agents import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..templates import (
     CC_FOLDERS,
@@ -21,6 +20,7 @@ from ..templates import (
     cursor_rule,
     trinity_policy,
 )
+from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 
 
 def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bool) -> int:
