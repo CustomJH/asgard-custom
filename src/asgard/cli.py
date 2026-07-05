@@ -101,6 +101,29 @@ def completions(shell: str = typer.Argument(None)) -> None:
     raise typer.Exit(run_completions(shell))
 
 
+# Trinity 역할 브릿지 — 호스트 도구(Claude Code/Codex/Cursor)가 [trinity.<role>] 배치 provider 로
+# 역할 턴을 위임할 때 쓴다 (asgard-provider 스킬 참조). [bridge] 기본 꺼짐 = 내부 모델로만 동작.
+role_app = typer.Typer(help="Trinity role bridge — run a single role on its placed provider", no_args_is_help=True)
+app.add_typer(role_app, name="role")
+
+
+@role_app.command("list", help="bridge flags + role placements (JSON)")
+def role_list() -> None:
+    from .commands.role import run_role_list
+
+    raise typer.Exit(run_role_list())
+
+
+@role_app.command("run", help="run one role turn on its placed provider and record it to the quest log")
+def role_run(
+    role: str = typer.Argument(..., metavar="<thinker|worker|verifier>"),
+    task: str = typer.Argument(..., help="task + context (e.g. the Thinker plan for a Worker turn)"),
+) -> None:
+    from .commands.role import run_role_run
+
+    raise typer.Exit(run_role_run(role, task))
+
+
 # 미구현 스텁 — 정식 커맨드처럼 목록에 노출하지 않도록 hidden. 구현되면 hidden 제거.
 @app.command(hidden=True)
 def run() -> None:

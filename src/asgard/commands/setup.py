@@ -9,6 +9,7 @@ from pathlib import Path
 from .. import ui
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..templates import (
+    BRIDGE_SKILL_MD,
     CC_FOLDERS,
     CURSOR_FOLDERS,
     SELFTEST_MD,
@@ -51,6 +52,12 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
         Path(p).write_text(content)
         ui.ok(ui.dim(rel(p)))
     ui.done(f"{len(files)} file(s) · make anything, your way")
+    ui.phase("next steps")
+    ui.step(f"asgard start   {ui.dim('— open the Heimdall terminal (native Trinity loop)')}")
+    ui.step(f"asgard doctor  {ui.dim('— verify the wiring')}")
+    ui.step(f"role placement {ui.dim('— /trinity set in the terminal, or [trinity.<role>] in .asgard/config.toml')}")
+    ui.step(f"tool bridge    {ui.dim('— /bridge <tool> on lets Claude Code/Codex/Cursor delegate placed roles')}")
+    ui.step(f"               {ui.dim('  via `asgard role` (asgard-provider skill) · default off = internal model')}")
     return 0
 
 
@@ -96,6 +103,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
         # /asgard-test — 사용자가 세션 안에서 셋업을 자가 테스트 (배선·하니스·라이브 3계층).
         files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
+        # asgard-provider — Trinity 역할 브릿지. 항상 스캐폴드, 게이트는 런타임([bridge] 기본 꺼짐).
+        files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -125,6 +134,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     # 같은 SKILL.md 포맷이라 본문은 하나다.
     if cursor or codex:
         files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
+        files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"

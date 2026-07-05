@@ -5,6 +5,7 @@ Config + rules + folder scaffolding only. Hook SCRIPTS live in `asgard.hooks` an
 """
 
 from .agents import agents_md
+from .bridge import BRIDGE_SKILL_MD
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
 from .cursor import CURSOR_FOLDERS, cursor_hooks_json, cursor_rule
@@ -13,6 +14,7 @@ from .trinity import trinity_policy
 
 __all__ = [
     "agents_md",
+    "BRIDGE_SKILL_MD",
     "cc_settings",
     "CC_FOLDERS",
     "codex_config",
