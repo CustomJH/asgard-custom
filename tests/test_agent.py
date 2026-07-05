@@ -151,5 +151,136 @@ class TestLedgerWiring(Base):
         self.assertEqual(data, ["a.py", "b.py"])
 
 
+class TestRoleProviders(Base):
+    """[trinity.<role>] 역할별 provider 배치 — Trinity 모델 융합 축 (API 호출 없음)."""
+
+    def setUp(self):
+        super().setUp()
+        self._home = os.environ.get("HOME")  # 글로벌 ~/.asgard/config.toml 오염 차단
+        os.environ["HOME"] = self.root
+
+    def tearDown(self):
+        if self._home is not None:
+            os.environ["HOME"] = self._home
+        super().tearDown()
+
+    def _default(self):
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        return ResolvedProvider(profile=PROVIDERS["anthropic"], model="claude-x", api_key="k")
+
+    def _write_config(self, body: str):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(body)
+
+    def test_no_config_all_roles_default(self):
+        from asgard.providers import resolve_trinity
+
+        default = self._default()
+        m = resolve_trinity(self.root, default)
+        self.assertEqual(sorted(m), ["thinker", "verifier", "worker"])
+        self.assertTrue(all(rp is default for rp in m.values()))
+
+    def test_role_section_places_provider(self):
+        from asgard.providers import resolve_trinity
+
+        self._write_config('[trinity.worker]\nprovider = "ollama"\nmodel = "m1"\n')
+        default = self._default()
+        m = resolve_trinity(self.root, default)
+        self.assertIs(m["thinker"], default)
+        self.assertEqual(m["worker"].profile.name, "ollama")
+        self.assertEqual(m["worker"].model, "m1")
+        self.assertEqual(m["worker"].missing, [])  # ollama 는 keyless — 배치 즉시 유효
+
+    def test_heimdall_session_routes_by_role(self):
+        from asgard.agent.heimdall import Heimdall
+
+        self._write_config('[trinity.worker]\nprovider = "ollama"\nmodel = "m1"\n')
+        h = Heimdall(self._default(), self.root, on_text=lambda s: None)
+        self.assertEqual(h._session("sys", role="worker").rp.profile.name, "ollama")
+        self.assertEqual(h._session("sys", role="thinker").rp.profile.name, "anthropic")
+        self.assertEqual(h._session("sys").rp.profile.name, "anthropic")  # 딜리버리/DIRECT = 기본
+
+    def test_heimdall_missing_role_falls_back(self):
+        from asgard.agent.heimdall import Heimdall
+
+        # openai_compat 는 base_url·키 필수 — 미충족이면 경고 + 기본 provider 폴백
+        self._write_config('[trinity.verifier]\nprovider = "openai_compat"\nmodel = "m2"\n')
+        warns = []
+        h = Heimdall(self._default(), self.root, on_text=warns.append)
+        self.assertEqual(h._session("sys", role="verifier").rp.profile.name, "anthropic")
+        self.assertTrue(any("trinity.verifier" in w for w in warns))
+
+    def test_save_config_section_roundtrip_preserves_others(self):
+        from asgard.providers import project_section, save_config_section
+
+        self._write_config('[provider]\nname = "anthropic"\n')
+        save_config_section(self.root, "trinity.worker", {"provider": "ollama", "model": "m1"})
+        save_config_section(self.root, "bridge", {"claude-code": True, "codex": False})
+        txt = open(os.path.join(self.root, ".asgard", "config.toml")).read()
+        self.assertIn("[provider]", txt)  # 기존 섹션 보존
+        self.assertEqual(project_section(self.root, "trinity"), {"worker": {"provider": "ollama", "model": "m1"}})
+        self.assertEqual(project_section(self.root, "bridge"), {"claude-code": True, "codex": False})
+        # 섹션 교체 (중복 없이) + 제거
+        save_config_section(self.root, "trinity.worker", {"provider": "nvidia"})
+        self.assertEqual(project_section(self.root, "trinity"), {"worker": {"provider": "nvidia"}})
+        save_config_section(self.root, "trinity.worker", None)
+        self.assertEqual(project_section(self.root, "trinity"), {})
+        self.assertIn("[provider]", open(os.path.join(self.root, ".asgard", "config.toml")).read())
+
+    def test_bridge_flags_default_off_and_config(self):
+        from asgard.providers import bridge_flags
+
+        self.assertEqual(bridge_flags(self.root), {"claude-code": False, "codex": False, "cursor": False})
+        self._write_config("[bridge]\nclaude-code = true\ncursor = true\n")
+        flags = bridge_flags(self.root)
+        self.assertTrue(flags["claude-code"] and flags["cursor"])
+        self.assertFalse(flags["codex"])
+
+    def test_role_list_reports_placements(self):
+        import contextlib
+        import io
+
+        from asgard.commands.role import run_role_list
+
+        self._write_config('[trinity.worker]\nprovider = "ollama"\nmodel = "m1"\n[bridge]\ncodex = true\n')
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                self.assertEqual(run_role_list(), 0)
+        finally:
+            os.chdir(cwd)
+        out = json.loads(buf.getvalue())
+        self.assertTrue(out["bridge"]["codex"])
+        self.assertTrue(out["roles"]["worker"]["placed"])
+        self.assertEqual(out["roles"]["worker"]["provider"], "ollama")
+        self.assertFalse(out["roles"]["thinker"]["placed"])
+
+    def test_role_run_rejects_bad_role_and_no_quest(self):
+        from asgard.commands.role import run_role_run
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            self.assertEqual(run_role_run("odin", "t"), 2)  # 미지의 역할
+            self.assertEqual(run_role_run("worker", "t"), 1)  # 활성 quest 없음
+        finally:
+            os.chdir(cwd)
+
+    def test_escalate_records_verdict(self):
+        from asgard.agent.heimdall import Heimdall
+
+        sid = "native-esc"
+        ql(self.root, "open", "q-esc", "--criteria", "c", session=sid)
+        h = Heimdall(self._default(), self.root, on_text=lambda s: None)
+        h._escalate(sid)
+        log = open(os.path.join(self.root, ".asgard", "quest", "q-esc.jsonl")).read()
+        self.assertIn('"ESCALATE"', log)  # verdict 없던 기존 append 는 조용히 거부되던 경로
+        # ESCALATE 후 close 허용 (quest_log 계약)
+        self.assertEqual(ql(self.root, "close", session=sid).returncode, 0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
