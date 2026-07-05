@@ -22,12 +22,21 @@ import os
 import time
 from typing import Callable
 
-from ..providers import ResolvedProvider
+from ..providers import ResolvedProvider, resolve_trinity
 from ..templates import agents_md
 from ..templates.roles import ROLE_AGENTS
 from .session import AgentSession, gate, make_client, ql
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
+
+# 전이 상태 → [trinity.<role>] 설정 키 (역할별 provider 배치)
+_ROLE_KEY = {
+    "THINKER": "thinker",
+    "THINKER_REPLAN": "thinker",
+    "WORKER": "worker",
+    "WORKER_RETRY": "worker",
+    "VERIFIER": "verifier",
+}
 
 # 역할 심볼 (AGENTS.md 이모지 일관) — REPL 전이 표시에 씀
 _ROLE_ICON = {
@@ -145,17 +154,34 @@ class Heimdall:
     ):
         self.rp, self.root, self.on_text = rp, root, on_text
         self.on_status = on_status or (lambda s: None)
-        self.client = make_client(rp)
+        self._clients: dict[tuple, object] = {}  # (provider, base_url, key_source) → SDK 클라이언트
+        self.client = self._client_for(rp)
+        # 역할별 provider 배치 ([trinity.<role>]) — 미충족은 기본 provider 로 fail-open + 경고 1회
+        self.role_rp: dict[str, ResolvedProvider] = {}
+        for role, rrp in resolve_trinity(root, rp).items():
+            if rrp is not rp and rrp.missing:
+                on_text(f"⚠ [trinity.{role}] 미충족({'; '.join(rrp.missing)}) — 기본 provider 사용\n")
+                rrp = rp
+            self.role_rp[role] = rrp
         self.identity = _identity(root)
         self.total_tokens = 0  # 세션 누적 (status line 사용량)
+
+    def _client_for(self, rp: ResolvedProvider):
+        key = (rp.profile.name, rp.base_url, rp.key_source)
+        if key not in self._clients:
+            self._clients[key] = make_client(rp)
+        return self._clients[key]
 
     def _add_tokens(self, n: int) -> None:
         self.total_tokens += n
 
-    def _session(self, system: str, extra_tools=None, handlers=None, quiet=False) -> AgentSession:
+    def _session(
+        self, system: str, extra_tools=None, handlers=None, quiet=False, role: str | None = None
+    ) -> AgentSession:
+        rp = self.role_rp.get(role or "", self.rp)
         return AgentSession(
-            self.client,
-            self.rp,
+            self._client_for(rp),
+            rp,
             self.root,
             system,
             extra_tools=extra_tools,
@@ -236,6 +262,17 @@ class Heimdall:
 
         return handler
 
+    def _escalate(self, sid: str) -> None:
+        """ESCALATE 원장 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
+        ql(
+            self.root,
+            "append",
+            "--verdict",
+            "ESCALATE",
+            session=sid,
+            stdin=json.dumps({"role": "verifier", "event": "verify"}),
+        )
+
     # ── Trinity 순환 ─────────────────────────────────────────────────────
     def _trinity(self, request: str, cls: dict) -> str:
         qid = f"native-{int(time.time())}"
@@ -259,6 +296,9 @@ class Heimdall:
         for _ in range(MAX_TRINITY_TURNS):
             nxt = json.loads(ql(self.root, "next", *flag_args, session=sid).stdout or "{}")
             role, why = nxt.get("next_role", ""), nxt.get("why", "")
+            rrp = self.role_rp.get(_ROLE_KEY.get(role, ""), self.rp)
+            if rrp is not self.rp:  # 역할별 배치가 있으면 어떤 모델이 뛰는지 표시
+                why += f" · {rrp.profile.name}:{rrp.model}"
             self.on_text(_transition_line(role, why))
 
             if role == "DONE":
@@ -269,18 +309,13 @@ class Heimdall:
                 ql(self.root, "close", session=sid)
                 return "과업 완수 — Verifier PASS + diff-hash 일치, 원장 닫힘."
             if role == "ESCALATE_ODIN":
-                ql(
-                    self.root,
-                    "append",
-                    session=sid,
-                    stdin=json.dumps({"role": "verifier", "event": "verify"}),
-                )
+                self._escalate(sid)
                 return f"⚠ Odin 결정 필요 — {why}"
             if role == "DIRECT_DONE":
                 return self._direct(request)
 
             if role in ("THINKER", "THINKER_REPLAN"):
-                r = self._session(_role_prompt("asgard-thinker.md")).run(
+                r = self._session(_role_prompt("asgard-thinker.md"), role="thinker").run(
                     f"과업: {request}\n\n(재계획: {why})" if role == "THINKER_REPLAN" else f"과업: {request}"
                 )
                 plan_ctx = r.text
@@ -296,6 +331,7 @@ class Heimdall:
                     _role_prompt("asgard-worker.md"),
                     extra_tools=[DISPATCH_TOOL],
                     handlers={"dispatch": self._dispatch_handler(sid, writes)},
+                    role="worker",
                 )
                 r = s.run(
                     f"과업: {request}\n\n계획:\n{plan_ctx[:4000]}\n\n"
@@ -325,6 +361,7 @@ class Heimdall:
                     _role_prompt("asgard-verifier.md"),
                     extra_tools=[VERDICT_TOOL],
                     handlers={"verdict": lambda i: "판정 접수"},
+                    role="verifier",
                 )
                 r = s.run(
                     f"검증하라. 요청: {request}\ncriteria: {cls['criteria']}\n"

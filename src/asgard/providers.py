@@ -191,3 +191,106 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     if profile.api_mode == "openai_compat" and not rp.base_url:
         rp.missing.append("base_url 미지정 — openai_compat 은 온보딩에서 입력하거나 [provider] base_url")
     return rp
+
+
+TRINITY_ROLES = ("thinker", "worker", "verifier")
+
+
+def resolve_trinity(root: str | None, default: ResolvedProvider) -> dict[str, ResolvedProvider]:
+    """[trinity.<role>] 해석 — Trinity 역할별 provider 배치 (모델 융합 축, Sakana Trinity 대응).
+
+    config.toml (글로벌 → 프로젝트, 키 단위 덮어쓰기):
+      [trinity.worker]
+      provider = "ollama"       # PROVIDERS 키
+      model = "gemma4:12b-mlx"  # 생략 시 provider 기본값
+      base_url = "..."          # openai_compat 계열만 필요시
+
+    미지정 역할은 default 그대로 — 호출측은 `is default` 로 배치 여부를 구분할 수 있다.
+    미충족(missing) 판단·폴백은 호출측(Heimdall) 몫: 여기선 사실만 해석한다.
+    """
+    root = root or os.getcwd()
+    conf: dict[str, dict] = {}
+    for path in (
+        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
+        os.path.join(root, ".asgard", "config.toml"),
+    ):
+        for role, entry in (_read_toml(path).get("trinity") or {}).items():
+            if role in TRINITY_ROLES and isinstance(entry, dict):
+                conf.setdefault(role, {}).update(entry)
+    out: dict[str, ResolvedProvider] = {}
+    for role in TRINITY_ROLES:
+        e = conf.get(role) or {}
+        if not (e.get("provider") or e.get("model")):
+            out[role] = default
+            continue
+        rp = resolve(root, provider=e.get("provider") or default.profile.name, model=e.get("model"))
+        if e.get("base_url"):
+            rp.base_url = e["base_url"]
+            rp.missing = [m for m in rp.missing if "base_url" not in m]
+        out[role] = rp
+    return out
+
+
+def project_section(root: str | None, section: str) -> dict:
+    """프로젝트 .asgard/config.toml 의 한 섹션 원본 (글로벌 병합 없음) — 편집 기점용."""
+    root = root or os.getcwd()
+    return dict(_read_toml(os.path.join(root, ".asgard", "config.toml")).get(section) or {})
+
+
+def save_config_section(root: str | None, section: str, values: dict | None) -> str:
+    """프로젝트 .asgard/config.toml 의 한 섹션만 최소 편집 — 다른 섹션·주석 보존 (i18n.save_lang 관행).
+    values 가 비면 섹션 제거. 값은 str|bool|int. `[trinity.worker]` 식 점 섹션 지원. 반환 = 파일 경로."""
+    import re
+
+    root = root or os.getcwd()
+    d = os.path.join(root, ".asgard")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, "config.toml")
+    try:
+        txt = open(path).read()
+    except FileNotFoundError:
+        txt = ""
+
+    def fmt(v) -> str:
+        if isinstance(v, bool):
+            return "true" if v else "false"
+        if isinstance(v, int):
+            return str(v)
+        return '"%s"' % str(v).replace("\\", "\\\\").replace('"', '\\"')
+
+    pat = rf"^\[{re.escape(section)}\][^\[]*"
+    if values:
+        block = f"[{section}]\n" + "".join(f"{k} = {fmt(v)}\n" for k, v in values.items())
+        if re.search(pat, txt, re.M):
+            txt = re.sub(pat, block, txt, count=1, flags=re.M)
+        else:
+            txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
+    else:
+        txt = re.sub(pat, "", txt, count=1, flags=re.M).strip()
+        txt = txt + "\n" if txt else ""
+    open(path, "w").write(txt)
+    return path
+
+
+BRIDGE_TOOLS = ("claude-code", "codex", "cursor")
+
+
+def bridge_flags(root: str | None = None) -> dict[str, bool]:
+    """[bridge] 해석 — 도구별 asgard CLI 브릿지 opt-in. 미설정 = 전부 꺼짐 (각 도구 내부 모델로만).
+
+    config.toml:
+      [bridge]
+      claude-code = true   # Claude Code 가 배치된 역할을 asgard CLI 로 위임
+      codex = false
+      cursor = false
+    """
+    root = root or os.getcwd()
+    flags = dict.fromkeys(BRIDGE_TOOLS, False)
+    for path in (
+        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
+        os.path.join(root, ".asgard", "config.toml"),
+    ):
+        for k, v in (_read_toml(path).get("bridge") or {}).items():
+            if k in flags:
+                flags[k] = bool(v)
+    return flags
