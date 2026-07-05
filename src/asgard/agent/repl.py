@@ -173,6 +173,8 @@ _HELP_KEYS = {
     "/new": "h_new",
     "/quest": "h_quest",
     "/provider": "h_provider",
+    "/trinity": "h_trinity",
+    "/bridge": "h_bridge",
     "/model": "h_model",
     "/lang": "h_lang",
     "/update": "h_update",
@@ -185,6 +187,9 @@ _COMMANDS = [
     "/quest",
     "/provider",
     "/provider set",
+    "/trinity",
+    "/trinity set",
+    "/bridge",
     "/model",
     "/lang en",
     "/lang ko",
@@ -338,10 +343,81 @@ def prompt() -> str:
 
 
 class _Reconfigure(Exception):
-    """provider set — 새 ResolvedProvider 로 세션 재생성 신호."""
+    """provider set / trinity 배치 변경 — 세션(Heimdall) 재생성 신호."""
 
-    def __init__(self, rp):
-        self.rp = rp
+    def __init__(self, rp, msg: str | None = None):
+        self.rp, self.msg = rp, msg
+
+
+def _cmd_trinity(cmd: str, root: str, rp) -> None:
+    """/trinity — 역할별 배치 표시. '/trinity set' — 역할→provider 대화형 배치 (config.toml 저장)."""
+    from ..providers import PROVIDERS, resolve_trinity, save_config_section
+
+    if cmd.split()[1:2] == ["set"]:
+        from .onboard import can_prompt
+
+        if not can_prompt():
+            return
+        roles = ("thinker", "worker", "verifier")
+        sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
+        for i, r in enumerate(roles, 1):
+            sys.stdout.write(f"    {ui.paint(_O, str(i))} {r}\n")
+        names = list(PROVIDERS)
+        try:
+            role = roles[int(input("  " + t("number") + " [2]: ").strip() or "2") - 1]
+            sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
+            sys.stdout.write(f"    {ui.paint(_O, '0')} {t('placement_clear')}\n")
+            for i, n in enumerate(names, 1):
+                p = PROVIDERS[n]
+                sys.stdout.write(
+                    f"    {ui.paint(_O, str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n"
+                )
+            idx = int(input("  " + t("number") + " [0]: ").strip() or "0")
+            if idx == 0:
+                save_config_section(root, f"trinity.{role}", None)
+                raise _Reconfigure(rp, t("placement_cleared"))
+            name = names[idx - 1]
+            p = PROVIDERS[name]
+            vals: dict = {"provider": name}
+            model = input(f"  model [{p.default_model or '?'}]: ").strip() or p.default_model
+            if model:
+                vals["model"] = model
+            if p.api_mode == "openai_compat" and not p.base_url:
+                bu = input("  base_url: ").strip()
+                if bu:
+                    vals["base_url"] = bu
+        except ValueError, IndexError, EOFError, KeyboardInterrupt:
+            sys.stdout.write(f"  {t('cancelled')}\n")
+            return
+        save_config_section(root, f"trinity.{role}", vals)
+        raise _Reconfigure(rp, t("placement_saved"))
+
+    for role, r in resolve_trinity(root, rp).items():
+        if r is rp:
+            sys.stdout.write(
+                f"  {ui.paint(_O, role.ljust(9))} {rp.profile.name}:{rp.model} {ui.dim(t('default_tag'))}\n"
+            )
+        else:
+            warn = f"  {ui.paint(ui._WARN, '⚠ ' + '; '.join(r.missing))}" if r.missing else ""
+            sys.stdout.write(f"  {ui.paint(_O, role.ljust(9))} {r.profile.name}:{r.model}{warn}\n")
+    sys.stdout.write(f"  {ui.dim(t('trinity_hint'))}\n")
+
+
+def _cmd_bridge(cmd: str, root: str) -> None:
+    """/bridge — 도구별 CLI 브릿지 플래그 표시/토글 ([bridge], 기본 전부 off)."""
+    from ..providers import BRIDGE_TOOLS, bridge_flags, project_section, save_config_section
+
+    args = cmd.split()[1:]
+    if len(args) == 2 and args[0] in BRIDGE_TOOLS and args[1] in ("on", "off"):
+        cur = project_section(root, "bridge")
+        cur[args[0]] = args[1] == "on"
+        save_config_section(root, "bridge", cur)
+        sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {t('bridge_set', tool=args[0], v=args[1])}\n")
+        return
+    for tool, on in bridge_flags(root).items():
+        mark = ui.paint(ui._OK, "on") if on else ui.dim("off")
+        sys.stdout.write(f"  {ui.paint(_O, tool.ljust(12))} {mark}\n")
+    sys.stdout.write(f"  {ui.dim(t('bridge_usage'))}\n")
 
 
 def slash(cmd: str, root: str, rp) -> bool:
@@ -382,6 +458,10 @@ def slash(cmd: str, root: str, rp) -> bool:
             return True
         src = rp.key_source or rp.source
         sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model} {ui.dim('(' + src + ')')}\n")
+    elif c == "/trinity":
+        _cmd_trinity(cmd, root, rp)
+    elif c == "/bridge":
+        _cmd_bridge(cmd, root)
     elif c == "/quest":
         try:
             out = ql(root, "state").stdout.strip()
@@ -544,10 +624,11 @@ def run(root: str, rp) -> int:
                 slash(req, root, rp)
             except EOFError:
                 return _bye()
-            except _Reconfigure as r:  # /provider set — 세션 재생성
+            except _Reconfigure as r:  # /provider set · /trinity set — 세션 재생성
                 rp = r.rp
-                heimdall = _new_heimdall(root, rp, emit, status)
-                sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {rp.profile.display} · {rp.model} 로 전환\n")
+                heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
+                msg = r.msg or f"{rp.profile.display} · {rp.model} 로 전환"
+                sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
             continue
 
         # 키 미설정 — 온보딩을 강제로 열지 않고 안내만 (연결은 /provider set 으로 명시적으로)

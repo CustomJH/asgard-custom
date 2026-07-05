@@ -83,6 +83,32 @@ _M: dict[str, tuple[str, str]] = {
     "ph_input": ("Ask anything — / commands · ! bash", "무엇이든 입력 — / 커맨드 · ! bash"),
     "number": ("number", "번호"),
     "model_id_prompt": ("model id", "model ID"),
+    # trinity 배치·브릿지
+    "h_trinity": (
+        "role placements · '/trinity set' to place a role on a provider",
+        "역할별 provider 배치 · '/trinity set' 으로 설정",
+    ),
+    "h_bridge": (
+        "per-tool CLI bridge · '/bridge <tool> on|off'",
+        "도구별 CLI 브릿지 · '/bridge <도구> on|off'",
+    ),
+    "pick_role": ("select a role", "역할 선택"),
+    "placement_clear": ("default (clear placement)", "기본값 (배치 해제)"),
+    "placement_saved": (
+        "placement saved — applied to new turns",
+        "배치 저장 — 새 턴부터 적용",
+    ),
+    "placement_cleared": ("placement cleared — back to the default provider", "배치 해제 — 기본 provider 로 복귀"),
+    "default_tag": ("(default)", "(기본)"),
+    "trinity_hint": (
+        "'/trinity set' to place a role on another provider",
+        "'/trinity set' 으로 역할을 다른 provider 에 배치",
+    ),
+    "bridge_usage": (
+        "usage: /bridge <claude-code|codex|cursor> on|off — lets that tool delegate placed roles via `asgard role`",
+        "사용법: /bridge <claude-code|codex|cursor> on|off — 해당 도구가 배치 역할을 `asgard role` 로 위임",
+    ),
+    "bridge_set": ("bridge.{tool} = {v}", "bridge.{tool} = {v}"),
 }
 
 
