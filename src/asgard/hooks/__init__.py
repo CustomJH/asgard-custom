@@ -18,6 +18,7 @@ REGISTRY: dict[str, str] = {
     "quest-log": "quest_log",  # Trinity — 퀘스트 로그 + 전이 함수 CLI (CUS-118/120), 훅 아님
     "verifier-gate": "verifier_gate",  # Trinity — Canon 10 훅 강제, Stop 시점 diff-hash 물리 대조 (CUS-122)
     "write-sentinel": "write_sentinel",  # Trinity — Post-Write/Edit 기록, quest 미개설 write 우회 봉합
+    "unattended-context": "unattended_context",  # Canon 8 — 무인 세션 감지·계약 주입 (CUS-169)
 }
 
 

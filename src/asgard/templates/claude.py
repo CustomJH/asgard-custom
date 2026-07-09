@@ -43,6 +43,17 @@ def cc_settings() -> str:
                     ],
                 },
                 "hooks": {
+                    # Canon 8 (무인이면 진행) — 자동화 permission_mode 감지 시 무인 계약 주입 (CUS-169).
+                    "UserPromptSubmit": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
+                                }
+                            ]
+                        },
+                    ],
                     "PreToolUse": [
                         {
                             "matcher": "Bash",

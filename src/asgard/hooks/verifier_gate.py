@@ -65,6 +65,12 @@ DEFAULT_POLICY: dict[str, Any] = {
     ],
 }
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
+UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py 와 동일 유지 (CUS-169)
+
+
+def unattended(data):
+    """무인 세션 신호 — 사람이 승인 루프에 없다. permission_mode 는 모든 훅 stdin 공통 필드."""
+    return os.environ.get("ASGARD_UNATTENDED") == "1" or str(data.get("permission_mode")) in UNATTENDED_MODES
 
 
 def git(root, *args, binary=False):
@@ -246,11 +252,29 @@ def main():
             block(root, sid, "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.")
         p = verdicts[-1]
         if p.get("verdict") == "ESCALATE":
+            # 무인 세션에서 work 시도 전무한 ESCALATE = 승인 대기 모양 (CUS-169 r4형: 오딘이 없어
+            # 답이 올 수 없다). 1회만 되돌려보내 Canon 8 무인 진행을 지시 — 재차 ESCALATE 하면
+            # 진짜 블로커로 인정하고 통과 (마커 파일 = 세션당 1회 상한, 인질극 방지).
+            if unattended(data) and not any(e.get("event") == "work" for e in events):
+                marker = os.path.join(root, ".asgard", "escalate-nudge-" + sid)
+                if not os.path.exists(marker):
+                    try:
+                        open(marker, "w").write("1")
+                    except Exception:
+                        pass
+                    block(
+                        root,
+                        sid,
+                        "무인 세션에서 작업 시도 없이 ESCALATE 로 종료하려 합니다 (Canon 8 무인 진행). "
+                        "오딘의 답은 오지 않습니다 — 방어 가능한 기본안을 골라 가정을 plan criteria "
+                        "`가정: ...` 으로 기록하고 Worker 를 디스패치하세요. 어떤 기본안도 방어 불가한 "
+                        "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다.",
+                    )
             try:
                 os.remove(os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json"))
             except Exception:
                 pass
-            sys.exit(0)  # 종료 허용 — 단 완료가 아니라 오딘 결정 대기 상태 (원장에 ESCALATE 가 남는다)
+            sys.exit(0)  # 종료 허용 — 단 완료가 아니라 오딘 결정 대기 상태 (퀘스트 로그에 ESCALATE 가 남는다)
         if p.get("diff_hash") != current:
             block(root, sid, "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.")
         if not any(e.get("criteria") for e in events):
