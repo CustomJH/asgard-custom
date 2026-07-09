@@ -76,6 +76,26 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": "프로젝트 루트 쓰기 권한 확인",
         }
     )
+    # classify 오분류율 (CUS-179) — misroute = DIRECT 분류인데 write 발생 (소급 검증됨). 기록 있을 때만.
+    try:
+        events = [
+            _json.loads(ln)
+            for ln in open(os.path.join(root, ".asgard", "classify.jsonl"), encoding="utf-8")
+            if ln.strip()
+        ]
+        routes = sum(1 for e in events if e.get("event") == "route")
+        misroutes = sum(1 for e in events if e.get("event") == "misroute")
+        if routes:
+            checks.append(
+                {
+                    "name": "classify misroute rate",
+                    "ok": misroutes == 0,
+                    "detail": f"{misroutes}/{routes} misroute ({misroutes / routes:.0%})",
+                    "fix": "오분류 반복 시 classify 휴리스틱/프롬프트 보강 (.asgard/classify.jsonl 감사)",
+                }
+            )
+    except Exception:
+        pass
     return checks
 
 

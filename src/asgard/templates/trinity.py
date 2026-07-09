@@ -15,6 +15,9 @@ _POLICY = {
         "worker": {"tier": "standard", "effort": "medium"},
         "verifier": {"tier": "high", "effort": "high"},
     },
+    # 딜리버리 전문가 티어 (CUS-177) — 하니스 tier→모델: fast=haiku, standard=sonnet, high=opus, max=fable.
+    # full-verify·재계획 2회+ 는 한 칸 승급 (high→max). 명시 [trinity.<role>] placement 가 항상 우선.
+    "delivery": {"freyja": "standard", "thor": "standard", "loki": "fast"},
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
     "sensitive_paths": [

@@ -194,9 +194,14 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
 
 
 TRINITY_ROLES = ("thinker", "worker", "verifier")
+# 확장 배치 슬롯 (CUS-177/179): thinker_alt = 3-strike clean-slate 재검토용 대체 모델,
+# classify = 분류 전용 저비용 placement. 미배치 시 default — 기존 동작 보존.
+TRINITY_EXTRA_ROLES = ("thinker_alt", "classify")
 
 
-def resolve_trinity(root: str | None, default: ResolvedProvider) -> dict[str, ResolvedProvider]:
+def resolve_trinity(
+    root: str | None, default: ResolvedProvider, roles: tuple[str, ...] = TRINITY_ROLES
+) -> dict[str, ResolvedProvider]:
     """[trinity.<role>] 해석 — Trinity 역할별 provider 배치 (모델 융합 축, Sakana Trinity 대응).
 
     config.toml (글로벌 → 프로젝트, 키 단위 덮어쓰기):
@@ -215,10 +220,10 @@ def resolve_trinity(root: str | None, default: ResolvedProvider) -> dict[str, Re
         os.path.join(root, ".asgard", "config.toml"),
     ):
         for role, entry in (_read_toml(path).get("trinity") or {}).items():
-            if role in TRINITY_ROLES and isinstance(entry, dict):
+            if role in roles and isinstance(entry, dict):
                 conf.setdefault(role, {}).update(entry)
     out: dict[str, ResolvedProvider] = {}
-    for role in TRINITY_ROLES:
+    for role in roles:
         e = conf.get(role) or {}
         if not (e.get("provider") or e.get("model")):
             out[role] = default

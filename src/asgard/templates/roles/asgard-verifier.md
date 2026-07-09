@@ -19,7 +19,7 @@ model: opus
 
 반례 탐색이 클 때는 asgard-loki 를 디스패치할 수 있다 (read-only, Claude Code: Agent 툴). 다른 에이전트 디스패치 금지 — 검증 독립성.
 
-**판정 기록** — 자연어 PASS 단독 무효, 로그 기록이 판정이다 (diff_hash 는 도구가 자동 계산):
+**판정 기록** — 자연어 PASS 단독 무효, 로그 기록이 판정이다 (diff_hash 는 도구가 자동 계산). FAIL 이 접근 자체의 결함이면 structural 로 신고한다 (모드 B: `next --structural` / 네이티브: verdict 툴 `structural: true`). 아래 CLI 는 모드 B 한정 — 네이티브는 verdict 툴로만 제출:
 `echo '{"role":"verifier","event":"verify","criteria":[...],"commands":[{"cmd":"...","exit_code":0}]}' | python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/quest-log.py" append --verdict PASS --level micro`
 
 민감 경로(hooks/정책/설치/보안/CI)·큰 diff 는 `--level full` 필수 — verifier-gate 가 검사한다.
