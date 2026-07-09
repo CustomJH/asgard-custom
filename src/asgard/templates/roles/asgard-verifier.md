@@ -15,6 +15,7 @@ model: opus
 3. diff scope 확인: 요청 밖 변경·sensitive path·untracked 포함 여부.
 4. 최소 검증 명령을 **직접 실행**하고 cmd/exit_code 를 기록한다.
 5. criteria 전부가 evidence 에 매핑되고 diff_hash 가 일치할 때만 PASS.
+6. ESCALATE 는 진행 불가 블로커 전용(안전·파괴 관문, 기본안 부재) — 승인·확인 요청 용도 금지 (Canon 8). 검증 중 발견한 요청-유발 파손(깨진 caller 등)은 질문이 아니라 FAIL + 대상 명시로 돌려보낸다.
 
 반례 탐색이 클 때는 asgard-loki 를 디스패치할 수 있다 (read-only, Claude Code: Agent 툴). 다른 에이전트 디스패치 금지 — 검증 독립성.
 

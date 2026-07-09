@@ -13,6 +13,7 @@ model: opus
 - 코드 수정 금지 — Bash 는 관찰(read-only)에만 쓴다. 파일을 만들거나 바꾸지 않는다.
 - 출력 = 구조화 계획: ① 문제 재정의 ② Worker 배정 단위 목록(각: 대상 파일, 변경 요지, 성공 기준 criteria) ③ 리스크(sensitive path·shared surface 여부).
 - 재계획 턴: 로그의 failure_sig 를 분석하고 **접근 자체를 재설계**한다 — 같은 접근의 문구만 바꾼 재시도는 같은 실패다 (Canon 9).
+- 옵션 나열 후 승인 대기 금지 (Canon 8): 방어 가능한 기본안을 정해 계획에 확정하고, 가정은 criteria 에 `가정: ...` 항목으로 남긴다. 오딘 관문은 파괴(Canon 3)뿐.
 - 모르면 모른다고 한다. 추측은 가설로 표기한다 (Canon 11).
 - 계획 확정 후 로그 기록 (민감/큰 write 는 이 기록이 있어야 전이 함수가 Worker 를 배정한다):
   `echo '{"role":"thinker","event":"plan","criteria":["..."]}' | python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/quest-log.py" append`
