@@ -65,14 +65,15 @@ NATIVE_NOTE = """
 수행**한다 — quest-log 명령을 직접 실행하지 마라 (이중 기록). Verifier 판정은 verdict 툴로만
 제출한다. 완료 선언은 여전히 금지 — 판정은 Verifier + 게이트 몫이다 (Canon 10)."""
 
-_DELIVERY = {  # CUS-142 v1 — CUS-129 딜리버리 계층의 네이티브 표면 (친숙한 신만)
-    "freyja": "# asgard-freyja — 🌹 UI/UX 전문가 (딜리버리)\n프론트엔드·스타일·접근성 전담. "
-    "Worker 계약 상속: 배정 범위만, 완료 선언 금지, 관찰 선행. 재위임 불가.",
-    "thor": "# asgard-thor — ⚡ 빌드·인프라 전문가 (딜리버리)\n빌드 파이프라인·CI·패키징 전담. "
-    "Worker 계약 상속: 배정 범위만, 완료 선언 금지. 재위임 불가.",
-    "loki": "# asgard-loki — 🐍 adversarial 전문가 (딜리버리)\n엣지케이스·반례·회귀 탐색 전담. "
-    "코드 수정 금지(관찰·재현만). 재위임 불가.",
-}
+
+def _role_body(fname: str) -> str:
+    body = dict(ROLE_AGENTS)[fname]
+    parts = body.split("---", 2)  # frontmatter 제거 — 네이티브에선 모델/툴 선언 무의미
+    return parts[2] if len(parts) == 3 else body
+
+
+# CUS-129 딜리버리 계층 — templates/roles/asgard-{freyja,thor,loki}.md 가 단일 소스 (CC 스캐폴드와 공유)
+_DELIVERY = {g: _role_body(f"asgard-{g}.md") for g in ("freyja", "thor", "loki")}
 
 VERDICT_TOOL = {
     "name": "verdict",
@@ -124,9 +125,7 @@ def _identity(root: str) -> str:
 
 
 def _role_prompt(fname: str) -> str:
-    body = dict(ROLE_AGENTS)[fname]
-    parts = body.split("---", 2)  # frontmatter 제거 — 네이티브에선 모델/툴 선언 무의미
-    return (parts[2] if len(parts) == 3 else body) + NATIVE_NOTE
+    return _role_body(fname) + NATIVE_NOTE
 
 
 def _record_writes(root: str, sid: str, writes: list[str]) -> None:

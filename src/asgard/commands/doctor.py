@@ -8,6 +8,7 @@ import sys
 
 from .. import __version__, ui
 from ..platform import on_path
+from ..templates.roles import ROLE_AGENTS
 
 
 def _trinity_checks(root: str) -> list[dict]:
@@ -39,13 +40,13 @@ def _trinity_checks(root: str) -> list[dict]:
     except Exception:
         detail = "unparseable JSON"
     checks.append({"name": "trinity-policy.json", "ok": pol_ok, "detail": detail, "fix": fix})
-    agents = ["asgard-thinker.md", "asgard-worker.md", "asgard-verifier.md"]
+    agents = [fname for fname, _ in ROLE_AGENTS]  # 역할 3종 + 딜리버리 계층 — 라이브러리가 소스
     missing = [a for a in agents if not os.path.exists(os.path.join(root, ".claude", "agents", a))]
     checks.append(
         {
             "name": "trinity role agents",
             "ok": not missing,
-            "detail": "3/3 present" if not missing else "missing: " + ", ".join(missing),
+            "detail": f"{len(agents)}/{len(agents)} present" if not missing else "missing: " + ", ".join(missing),
             "fix": fix,
         }
     )
