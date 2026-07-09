@@ -282,5 +282,49 @@ class TestRoleProviders(Base):
         self.assertEqual(ql(self.root, "close", session=sid).returncode, 0)
 
 
+class TestDeliveryAgents(unittest.TestCase):
+    """딜리버리 계층 CC 배선 (CUS-129) — 템플릿 계약·소스 단일화, API 호출 없음."""
+
+    def _tpl(self, name):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        return dict(ROLE_AGENTS)[name]
+
+    def test_library_has_roles_and_delivery(self):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        names = {f for f, _ in ROLE_AGENTS}
+        self.assertLessEqual(
+            {f"asgard-{n}.md" for n in ("thinker", "worker", "verifier", "freyja", "thor", "loki")}, names
+        )
+
+    def test_delivery_frontmatter_blocks_redelegation(self):
+        # freyja/thor: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
+        for n in ("freyja", "thor"):
+            self.assertIn("disallowedTools: Agent", self._tpl(f"asgard-{n}.md"))
+        loki_fm = self._tpl("asgard-loki.md").split("---")[1]
+        self.assertIn("tools: Read, Grep, Glob, Bash", loki_fm)
+        self.assertNotIn("Agent", loki_fm.split("tools:")[1].splitlines()[0])
+
+    def test_trinity_agents_can_nest(self):
+        # worker 는 tools 무제한(Agent 상속) → 중첩 디스패치 가능. verifier 는 allowlist 에 Agent 명시.
+        self.assertNotIn("tools:", self._tpl("asgard-worker.md").split("---")[1])
+        self.assertIn("Agent", self._tpl("asgard-verifier.md").split("---")[1])
+        self.assertNotIn("tools:", self._tpl("asgard-thinker.md").split("---")[1].replace("tools: Read", ""))
+
+    def test_heimdall_delivery_derives_from_templates(self):
+        from asgard.agent.heimdall import _DELIVERY
+
+        self.assertEqual(sorted(_DELIVERY), ["freyja", "loki", "thor"])
+        for g, body in _DELIVERY.items():
+            self.assertIn(f"asgard-{g}", body)
+            self.assertNotIn("name:", body)  # frontmatter 누출 없음
+
+    def test_agents_md_mandates_mode_b(self):
+        from asgard.templates.agents import agents_md
+
+        self.assertIn("반드시 별도 서브에이전트", agents_md("p"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

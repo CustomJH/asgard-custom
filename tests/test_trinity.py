@@ -305,6 +305,30 @@ class TestGate(TrinityBase):
         self.assertTrue(b)
         self.assertIn("stale", reason)
 
+    def test_verify_artifacts_do_not_stale_pass(self):
+        # s1 라이브 실측 — .gitignore 없는 프로젝트에서 검증 명령이 만든 __pycache__ 가
+        # hash 를 바꿔 PASS 를 stale 로 만들던 자기파괴 회귀 방지 (_junk 제외, 양 훅 동일).
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.write("__pycache__/app.cpython-314.pyc", "bytecode")
+        self.write(".pytest_cache/v/cache/lastfailed", "{}")
+        b, reason = self.blocked(self.gate())
+        self.assertFalse(b, reason)
+
+    def test_closed_quest_escalate_allows_stop(self):
+        # s1 라이브 실측 — ESCALATE 로 close 된 quest(LAST) + write 흔적 잔존 시
+        # orphan 경로가 PASS 만 인정해 Canon 9 정규 종료를 차단하던 회귀 방지.
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify(verdict="ESCALATE")
+        self.assertEqual(self.qlog("close").returncode, 0)  # ESCALATE close 인정
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "writes-s1.json"), "w") as f:
+            json.dump(["app.py"], f)  # write-sentinel 흔적 — orphan 경로 진입 조건
+        b, reason = self.blocked(self.gate())
+        self.assertFalse(b, reason)
+
     def test_pass_without_successful_command_blocks(self):
         self.open_quest()
         self.write("app.py", "print('ok')\n")
