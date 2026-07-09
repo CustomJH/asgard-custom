@@ -19,6 +19,7 @@ QLOG = os.path.abspath(os.path.join(SRC, "quest_log.py"))
 GATE = os.path.abspath(os.path.join(SRC, "verifier_gate.py"))
 TRACKER = os.path.abspath(os.path.join(SRC, "failure_tracker.py"))
 SENTINEL = os.path.abspath(os.path.join(SRC, "write_sentinel.py"))
+UCTX = os.path.abspath(os.path.join(SRC, "unattended_context.py"))
 
 
 def run(script, args=None, stdin="", cwd=None, env_extra=None):
@@ -163,7 +164,7 @@ class TestTransition(TrinityBase):
         self.assertEqual(self.next()["next_role"], "VERIFIER")
 
     def test_same_sig_fail_streak_forces_replan(self):
-        """동종 failure_sig 연속 FAIL 3회 — 이벤트 failure_count 없이도 원장에서 세어 3-strike (Canon 9)."""
+        """동종 failure_sig 연속 FAIL 3회 — 이벤트 failure_count 없이도 퀘스트 로그에서 세어 3-strike (Canon 9)."""
         import json as _json
 
         self.open_quest()
@@ -510,6 +511,56 @@ class TestFullLoopE2E(TrinityBase):
         self.assertEqual(self.qlog("close").returncode, 0)
         events = [json.loads(ln) for ln in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"))]
         self.assertEqual([e["event"] for e in events], ["plan", "work", "verify"])
+
+
+class TestUnattended(TrinityBase):
+    """무인 진행 강제층 (CUS-169) — 감지 주입 + 시도-없는 ESCALATE 1회 차단."""
+
+    def gate_pm(self, mode, session="s1"):
+        return run(
+            GATE,
+            stdin=json.dumps(
+                {"session_id": session, "cwd": self.root, "hook_event_name": "Stop", "permission_mode": mode}
+            ),
+            cwd=self.root,
+        )
+
+    def test_context_injected_only_for_automation_modes(self):
+        for mode, expect in (("bypassPermissions", True), ("dontAsk", True), ("default", False), ("plan", False)):
+            p = run(UCTX, stdin=json.dumps({"permission_mode": mode, "user_prompt": "x"}), cwd=self.root)
+            self.assertEqual(p.returncode, 0)
+            self.assertEqual("무인 세션" in p.stdout, expect, mode)
+
+    def test_context_env_override(self):
+        p = run(
+            UCTX,
+            stdin=json.dumps({"permission_mode": "default"}),
+            cwd=self.root,
+            env_extra={"ASGARD_UNATTENDED": "1"},
+        )
+        self.assertIn("무인 세션", p.stdout)
+
+    def test_workless_escalate_blocked_once_when_unattended(self):
+        self.open_quest()
+        self.qlog("append", "--role", "thinker", "--event", "plan", stdin=json.dumps({"criteria": ["c"]}))
+        self.verify(verdict="ESCALATE", commands=[])
+        b = jout(self.gate_pm("bypassPermissions"))
+        self.assertEqual(b.get("decision"), "block")
+        self.assertIn("가정:", b.get("reason", ""))
+        # 2번째 Stop — 마커 존재 → 진짜 블로커로 인정, 통과
+        self.assertNotEqual(jout(self.gate_pm("bypassPermissions")).get("decision"), "block")
+
+    def test_workless_escalate_allowed_when_attended(self):
+        self.open_quest()
+        self.verify(verdict="ESCALATE", commands=[])
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")  # permission_mode 없음 = 인터랙티브
+
+    def test_escalate_after_work_attempt_passes_gate(self):
+        self.open_quest()
+        self.write("app.py", "print('wip')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify(verdict="ESCALATE", commands=[])
+        self.assertNotEqual(jout(self.gate_pm("bypassPermissions")).get("decision"), "block")
 
 
 if __name__ == "__main__":

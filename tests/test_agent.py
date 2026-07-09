@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """네이티브 에이전트 루프 결정론 슬라이스 (CUS-137/142) — API 호출 없는 부분 전부.
 
-툴 계약(text_editor/bash)·경로 격리·git-guard 배선·원장 래퍼(ql/gate)·delegate 이벤트·
+툴 계약(text_editor/bash)·경로 격리·git-guard 배선·퀘스트 로그 래퍼(ql/gate)·delegate 이벤트·
 write-sentinel 미러. 라이브 루프(실 모델)는 tests/e2e_trinity.sh 의 start 아암(CUS-140) 몫.
 
 실행: uv run pytest tests/test_agent.py  (asgard 패키지 임포트 필요 — subprocess 가 -m 으로 훅 실행)
@@ -324,6 +324,41 @@ class TestDeliveryAgents(unittest.TestCase):
         from asgard.templates.agents import agents_md
 
         self.assertIn("반드시 별도 서브에이전트", agents_md("p"))
+
+
+class TestHeadlessProceed(unittest.TestCase):
+    """무인 승인 해소 계약 (CUS-169) — headless 에서 승인 대기 무작업 종료 금지."""
+
+    def _tpl(self, name):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        return dict(ROLE_AGENTS)[name]
+
+    def test_canon8_headless_proceeds_with_assumptions(self):
+        from asgard.templates.agents import agents_md
+
+        md = agents_md("p")
+        self.assertIn("무인이면 진행", md)
+        self.assertIn("승인 대기로 끝내지 않는다", md)
+
+    def test_canon3_reversible_code_change_not_destructive(self):
+        from asgard.templates.agents import agents_md
+
+        self.assertIn("커밋으로 되돌릴 수 있는 코드 변경", agents_md("p"))
+
+    def test_trinity_escalate_blocker_only_and_callers_in_scope(self):
+        from asgard.templates.agents import agents_md
+
+        md = agents_md("p")
+        self.assertIn("ESCALATE 는 승인 요청이 아니라", md)
+        self.assertIn("과업의 일부다", md)  # 깨진 caller 복구 = 범위 안
+
+    def test_thinker_forbids_option_wait(self):
+        self.assertIn("승인 대기 금지", self._tpl("asgard-thinker.md"))
+        self.assertIn("가정: ...", self._tpl("asgard-thinker.md"))
+
+    def test_verifier_escalate_not_for_approval(self):
+        self.assertIn("승인·확인 요청 용도 금지", self._tpl("asgard-verifier.md"))
 
 
 if __name__ == "__main__":
