@@ -65,6 +65,8 @@ DEFAULT_POLICY = {
         "worker": {"tier": "standard", "effort": "medium"},
         "verifier": {"tier": "high", "effort": "high"},
     },
+    # 소비자는 Heimdall(_delivery_model/_model_for) — 여기 두는 이유는 템플릿과 기본값 거울 유지.
+    "delivery": {"freyja": "standard", "thor": "standard", "loki": "fast"},
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
     "sensitive_paths": [
@@ -150,6 +152,18 @@ _JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".to
 
 def _junk(p: str) -> bool:
     return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
+
+
+def sensitive_path(path: str, needles) -> bool:
+    """경로 세그먼트 기준 민감 매칭 — 나이브 substring 은 'ci' 가 circle.py 를 오탐 (CUS-184).
+    규칙: 세그먼트 정확 일치, 또는 4자+ needle 은 세그먼트 내 부분 문자열 허용 (auth→authentication).
+    verifier_gate.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 게이트↔전이 판정 분열)."""
+    segs = path.lower().split("/")
+    for n in needles:
+        n = str(n).lower()
+        if any(seg == n or (len(n) >= 4 and n in seg) for seg in segs):
+            return True
+    return False
 
 
 def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int]:
@@ -248,6 +262,10 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     }
     if ev.get("level"):  # verify 전용 부가 필드 — gate 의 full-verify 판정 근거
         full["level"] = ev["level"]
+    if ev.get("unit") is not None:  # work 전용 부가 필드 — wave 병렬 배정 단위 id (CUS-176)
+        full["unit"] = ev["unit"]
+    if ev.get("model"):  # 실사용 provider:model 기록 (CUS-177) — CUS-127 결과 기반 정책 조정의 데이터 축
+        full["model"] = str(ev["model"])[:80]
     return full
 
 
@@ -279,7 +297,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
             sig = e.get("failure_sig")
         if sig and e.get("failure_sig") == sig:
             fail_streak += 1
-    sens = [f for f in changed if any(s in f.lower() for s in policy["sensitive_paths"])]
+    sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
     small = policy["small_write"]
     return {
         "quest_id": qid,
@@ -337,6 +355,10 @@ def transition(s: dict, policy: dict, flags) -> dict:
         # 이종-sig 백스톱 — 자유 텍스트 sig 가 매번 달라 동종 판정이 안 잡혀도, 재계획 없이
         # FAIL 이 threshold+1 연속이면 접근 자체가 틀렸다고 본다 (턴 예산 소진 전 탈출).
         return out("THINKER_REPLAN", "연속 %d-실패(이종 포함) — 접근 재설계" % s["fail_streak_any"])
+    if s["last_verdict"] == "ESCALATE":
+        # Verifier ESCALATE = 진행 불가 블로커 신고 (Canon 8: 승인 요청 용도 아님) — WORKER 폴스루로
+        # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭 (CUS-171).
+        return out("ESCALATE_ODIN", "Verifier ESCALATE — 진행 불가 블로커, Odin 결정 필요")
     if s["last_verdict"] == "FAIL":
         return (
             out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계")

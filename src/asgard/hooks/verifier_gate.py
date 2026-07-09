@@ -91,6 +91,16 @@ def _junk(p):
     return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
 
 
+def sensitive_path(path, needles):
+    """quest_log.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 판정 분열, CUS-184)."""
+    segs = path.lower().split("/")
+    for n in needles:
+        n = str(n).lower()
+        if any(seg == n or (len(n) >= 4 and n in seg) for seg in segs):
+            return True
+    return False
+
+
 def diff_state(root, base_ref):
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0
@@ -287,7 +297,7 @@ def main():
                 "Verifier 는 검증 명령을 직접 실행해야 합니다.",
             )
         small = policy["small_write"]
-        sensitive = [f for f in changed if any(s in f.lower() for s in policy["sensitive_paths"])]
+        sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
         full_required = bool(sensitive) or len(changed) > small["max_files"] or lines > small["max_lines"]
         if full_required and p.get("level") != "full":
             block(
