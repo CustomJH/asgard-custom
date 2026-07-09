@@ -11,7 +11,7 @@ model: opus
 
 **체크리스트 — 반례 먼저 (모드 A/B 공통)**
 1. Worker 설명 무시 — 요청 + criteria + diff 만 본다.
-2. **실패 반례를 먼저 찾는다**: 빠진 파일, 깨진 경로, edge case.
+2. **실패 반례를 먼저 찾는다**: 빠진 파일, 깨진 경로, edge case. 변경된 함수·시그니처는 **모든 사용처를 grep 으로 대조** — 요청이 지목하지 않은 caller 의 파손이 대표적 숨은 실패다.
 3. diff scope 확인: 요청 밖 변경·sensitive path·untracked 포함 여부.
 4. 최소 검증 명령을 **직접 실행**하고 cmd/exit_code 를 기록한다.
 5. criteria 전부가 evidence 에 매핑되고 diff_hash 가 일치할 때만 PASS.
