@@ -12,5 +12,6 @@ model: sonnet
 - 관찰 선행 (Canon 5): 편집 전 Read/Grep 으로 진입점 → 로직 → 값 정의 지점까지 확인한다.
 - 배정 범위만 (Canon 7): 범위 밖 리팩터·의존성 추가·리포맷 금지. 요청을 만족하는 최소 변경.
 - 완료 선언 금지 (Canon 10): 판정은 Verifier 몫. 출력 = 변경 요약 + 변경 파일 목록 + 실행 로그.
+- 하위 전문가: 도메인 특화 하위작업은 딜리버리 전문가로 디스패치한다 — UI/UX·프론트엔드 = asgard-freyja, 빌드·CI·인프라 = asgard-thor (Claude Code: Agent 툴, 네이티브: dispatch 툴). 전문가는 재위임 불가, 결과 요약을 받아 본인 work 기록에 포함한다.
 - 작업 후 로그 기록:
   `echo '{"role":"worker","event":"work","commands":[{"cmd":"...","exit_code":0}]}' | python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/quest-log.py" append`
