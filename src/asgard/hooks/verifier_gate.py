@@ -199,7 +199,11 @@ def orphan_writes(root, sid):
         if verdicts and verdicts[-1].get("verdict") == "ESCALATE":
             return  # Canon 9 정규 종료 — close 후에도 인질 금지 (active 경로와 동일 규칙, s1 라이브 실측)
         if base_ref and verdicts and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
-            if verdicts[-1].get("diff_hash") == diff_state(root, base_ref)[0]:
+            last = verdicts[-1]
+            evidence = any(
+                isinstance(c, dict) and c.get("exit_code") == 0 for c in (last.get("commands") or [])
+            )  # LAST 면제도 증거 요구 — 무증거 PASS + close 로 게이트 우회되던 구멍 (CUS-170 깊이 테스트)
+            if evidence and last.get("diff_hash") == diff_state(root, base_ref)[0]:
                 return
     except Exception:
         pass

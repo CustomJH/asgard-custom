@@ -23,3 +23,4 @@ model: opus
 `echo '{"role":"verifier","event":"verify","criteria":[...],"commands":[{"cmd":"...","exit_code":0}]}' | python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/quest-log.py" append --verdict PASS --level micro`
 
 민감 경로(hooks/정책/설치/보안/CI)·큰 diff 는 `--level full` 필수 — verifier-gate 가 검사한다.
+**commands 없는 PASS 는 무효** — 성공한 검증 명령(`exit_code: 0`) 기록이 없으면 전이·close·게이트 전부가 거부한다. 판정 전에 반드시 명령을 실행하고 결과를 기록하라.

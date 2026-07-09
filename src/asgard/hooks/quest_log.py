@@ -318,6 +318,11 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "full_required": bool(sens) or len(changed) > small["max_files"] or lines > small["max_lines"],
         "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
         "pass_level": (last_pass or {}).get("level"),
+        # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부, CUS-170 깊이 테스트 발견 구멍)
+        "pass_evidence": bool(
+            last_pass
+            and any(isinstance(c, dict) and c.get("exit_code") == 0 for c in (last_pass.get("commands") or []))
+        ),
     }
 
 
@@ -366,6 +371,10 @@ def transition(s: dict, policy: dict, flags) -> dict:
             else out("WORKER_RETRY", "Verifier FAIL(경미) — 같은 계획으로 수정")
         )
     if s["last_verdict"] == "PASS":
+        if not s.get("pass_evidence"):
+            # 증거 없는 PASS 는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
+            # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (CUS-170 깊이 테스트 발견).
+            return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
         if not s["pass_hash_match"]:
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
         if full_required and s["pass_level"] != "full":
@@ -501,6 +510,7 @@ def main() -> int:
         verified = (
             s["last_verdict"] == "PASS"
             and s["pass_hash_match"]
+            and s["pass_evidence"]  # 증거 없는 PASS 로 close → LAST 면제로 게이트 우회되던 구멍 봉합
             and (not s["full_required"] or s["pass_level"] == "full")
         )  # gate 와 동일 기준
         ok = verified or s["last_verdict"] == "ESCALATE"

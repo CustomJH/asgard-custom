@@ -664,6 +664,58 @@ class TestHookParity(Base):
             self.assertEqual(q(path, needles), want, f"quest_log: {path}")
             self.assertEqual(g(path, needles), want, f"verifier_gate: {path}")
 
+    def test_evidenceless_pass_cannot_close_or_transition_done(self):
+        # CUS-170 깊이 테스트 발견 구멍: 무증거 PASS → close → LAST 면제로 게이트 우회
+        import subprocess
+        import sys as _sys
+
+        def ql(*args, stdin=""):
+            return subprocess.run(
+                [_sys.executable, "-m", "asgard.hooks.quest_log", *args, "--session", "ev"],
+                input=stdin, capture_output=True, text=True, cwd=self.root, timeout=30,
+            )  # fmt: skip
+
+        ql("open", "q-ev", "--criteria", "c")
+        open(os.path.join(self.root, "f.txt"), "a").write("x\n")
+        ql("append", stdin=json.dumps({"role": "worker", "event": "work"}))
+        ql("append", "--verdict", "PASS", "--level", "full",
+           stdin=json.dumps({"role": "verifier", "event": "verify", "commands": []}))  # fmt: skip
+        nxt = json.loads(ql("next", "--write-expected").stdout)
+        self.assertEqual(nxt["next_role"], "VERIFIER")  # DONE 금지 — 재검증 지시
+        self.assertIn("증거", nxt["why"])
+        self.assertEqual(ql("close").returncode, 1)  # close 거부
+        # 증거 추가 후엔 통과
+        ql("append", "--verdict", "PASS", "--level", "full",
+           stdin=json.dumps({"role": "verifier", "event": "verify",
+                             "commands": [{"cmd": "python3 -c 1", "exit_code": 0}]}))  # fmt: skip
+        self.assertEqual(json.loads(ql("next", "--write-expected").stdout)["next_role"], "DONE")
+        self.assertEqual(ql("close").returncode, 0)
+
+    def test_gate_orphan_last_exemption_requires_evidence(self):
+        # 강제 close(LAST 생성) 후에도 무증거 PASS 면 게이트가 orphan write 를 차단해야 한다
+        import subprocess
+        import sys as _sys
+
+        def ql(*args, stdin=""):
+            return subprocess.run(
+                [_sys.executable, "-m", "asgard.hooks.quest_log", *args, "--session", "ev2"],
+                input=stdin, capture_output=True, text=True, cwd=self.root, timeout=30,
+            )  # fmt: skip
+
+        ql("open", "q-ev2", "--criteria", "c")
+        open(os.path.join(self.root, "f.txt"), "a").write("y\n")
+        ql("append", stdin=json.dumps({"role": "worker", "event": "work"}))
+        ql("append", "--verdict", "PASS", "--level", "full",
+           stdin=json.dumps({"role": "verifier", "event": "verify", "commands": []}))  # fmt: skip
+        self.assertEqual(ql("close", "--force").returncode, 0)  # 우회 시나리오 재현 (LAST 생성)
+        json.dump(["f.txt"], open(os.path.join(self.root, ".asgard", "writes-ev2.json"), "w"))
+        p = subprocess.run(
+            [_sys.executable, "-m", "asgard.hooks.verifier_gate"],
+            input=json.dumps({"session_id": "ev2", "cwd": self.root}),
+            capture_output=True, text=True, cwd=self.root, timeout=60,
+        )  # fmt: skip
+        self.assertIn('"block"', p.stdout)  # 무증거 LAST 는 면제 불가
+
     def test_diff_state_parity(self):
         import subprocess
 
