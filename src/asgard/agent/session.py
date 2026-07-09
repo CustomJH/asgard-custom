@@ -315,7 +315,7 @@ class AgentSession:
         return result
 
 
-# ── 원장·게이트 subprocess 래퍼 — 훅을 배포 형태 그대로 (36/36 테스트된 계약) ──
+# ── 퀘스트 로그·게이트 subprocess 래퍼 — 훅을 배포 형태 그대로 (36/36 테스트된 계약) ──
 
 
 def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subprocess.CompletedProcess:

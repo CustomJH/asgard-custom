@@ -263,7 +263,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     last_verify_i = max((i for i, e in enumerate(events) if e.get("event") == "verify"), default=-1)
     work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1 :]) if verifies else False
     # 동종 실패 스트릭 — 같은 failure_sig 의 연속 FAIL 을 결정론 계산 (3-strike, Canon 9).
-    # 네이티브 루프는 failure_count 를 이벤트에 안 싣는다 — 원장에서 직접 센다.
+    # 네이티브 루프는 failure_count 를 이벤트에 안 싣는다 — 퀘스트 로그에서 직접 센다.
     # 마지막 plan(재계획) "이후"의 FAIL 만 센다 — 재계획이 3-strike 의 응답이므로 스트릭 리셋.
     # 안 리셋하면 REPLAN → 여전히 count≥3 → REPLAN 무한 루프 (라이브 재현됨).
     last_plan_i = max((i for i, e in enumerate(events) if e.get("event") == "plan"), default=-1)

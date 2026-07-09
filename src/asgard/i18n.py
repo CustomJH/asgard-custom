@@ -55,7 +55,7 @@ _M: dict[str, tuple[str, str]] = {
     # help 항목
     "h_help": ("this help", "이 도움말"),
     "h_new": ("new session (reset context & screen)", "새 세션 (컨텍스트·화면 리셋)"),
-    "h_quest": ("active quest ledger status", "진행 중 퀘스트 원장 상태"),
+    "h_quest": ("active quest log status", "진행 중 퀘스트 로그 상태"),
     "h_provider": (
         "show provider·model · '/provider set' to reconnect",
         "provider·model 표시 · '/provider set' 으로 재설정",

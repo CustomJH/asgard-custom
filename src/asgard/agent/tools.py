@@ -60,7 +60,7 @@ def _cap(s: str) -> str:
 
 
 def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
-    """(output, exit_code). exit_code 는 원장 commands 증거용."""
+    """(output, exit_code). exit_code 는 퀘스트 로그 commands 증거용."""
     if tool_input.get("restart"):
         return "shell restarted (stateless — cwd는 프로젝트 루트 고정)", 0
     cmd = str(tool_input.get("command") or "")

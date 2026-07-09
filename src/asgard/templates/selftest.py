@@ -46,7 +46,7 @@ QL="python3 ql.py"; n=0; f=0
 ck(){ n=$((n+1)); if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; f=$((f+1)); fi; }
 W='{"role":"worker","event":"work","changed_files":["f.txt"],"commands":[{"cmd":"true","exit_code":0}]}'
 V='{"role":"verifier","event":"verify","commands":[{"cmd":"true","exit_code":0}]}'
-ck "원장 open/state"          "$QL open q1 --criteria c && $QL state | grep -q q1"
+ck "퀘스트 로그 open/state"          "$QL open q1 --criteria c && $QL state | grep -q q1"
 echo x >> f.txt
 ck "전이: work 후 → VERIFIER" "echo '$W' | $QL append && $QL next | grep -q VERIF"
 ck "verify PASS → diff_hash"  "echo '$V' | $QL append --verdict PASS --level micro && grep -q '\\"diff_hash\\": *\\"[0-9a-f]' .asgard/quest/q1.jsonl"

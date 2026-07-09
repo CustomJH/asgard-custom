@@ -53,7 +53,7 @@ run_claude() { # $1=dir $2=prompt $3=max-turns → out.json 에 결과
      --max-turns "${3:-50}" $MODEL_ARG > out.json 2> claude.err)
 }
 
-# out.json / 원장 검사용 파이썬 원라이너
+# out.json / 퀘스트 로그 검사용 파이썬 원라이너
 py() { python3 -c "$1" "${@:2}"; }
 jfield() { py "import json,sys;d=json.load(open(sys.argv[1]));print(d.get(sys.argv[2],''))" "$1" "$2"; }
 ledger() { ls "$1"/.asgard/quest/*.jsonl 2>/dev/null | head -1; }
@@ -80,7 +80,7 @@ s1() {
   local d="$WORK/s1"; make_repo "$d"
   run_claude "$d" "calc.py 에 mul(a, b) 함수를 추가하고 test_calc.py 에 mul 검증 assert 를 추가하라. AGENTS.md 의 트리니티 프로토콜을 따르라." 60
   check "[ \"$(jfield "$d/out.json" is_error)\" = 'False' ]" "세션 정상 종료 (is_error=false)"
-  check "[ -n \"$(ledger "$d")\" ]" "퀘스트 원장 생성됨"
+  check "[ -n \"$(ledger "$d")\" ]" "퀘스트 로그 생성됨"
   check "events "$d" | grep -q 'work'" "work 이벤트 기록"
   check "events "$d" | grep -q 'verify:PASS'" "verify PASS 기록"
   check "grep -q '\"diff_hash\": *\"[0-9a-f]' \"$(ledger "$d")\"" "diff_hash 계산됨"
@@ -179,7 +179,7 @@ s5() {
   local P="calc.py 의 각 함수가 무엇을 하는지 한 줄씩 설명하라. 파일은 수정하지 마라."
   run_claude "$d" "$P" 20
   run_claude "$b" "$P" 20
-  check "[ ! -d "$d/.asgard/quest" ] || [ -z \"$(ledger "$d")\" ]" "read-only → 원장 미생성 (DIRECT)"
+  check "[ ! -d "$d/.asgard/quest" ] || [ -z \"$(ledger "$d")\" ]" "read-only → 퀘스트 로그 미생성 (DIRECT)"
   check "! ls "$d"/.asgard/gate-blocks-*.json >/dev/null 2>&1" "게이트 무간섭 (block 0회)"
   check "[ \"$(jfield "$d/out.json" is_error)\" = 'False' ]" "정상 종료"
   metrics "$d/out.json" "asgard  "

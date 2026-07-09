@@ -31,7 +31,7 @@ quest-log `next` 가 THINKER/WORKER/VERIFIER 를 배정하면 먼저:
 
     asgard role run <thinker|worker|verifier> "<과업 + 필요한 컨텍스트(Thinker 계획 등)>"
 
-- CLI 가 배치된 provider 로 역할 세션을 돌리고 **원장(quest-log) 기록까지 수행**한다 —
+- CLI 가 배치된 provider 로 역할 세션을 돌리고 **퀘스트 로그(quest-log) 기록까지 수행**한다 —
   브릿지된 역할에 대해 quest-log append 를 직접 하지 마라 (이중 기록).
 - 출력 마지막 줄 JSON 이 결과 (`writes` / `verdict` / `appended`).
 - 이후는 평소 프로토콜 — quest-log `next` 로 다음 전이.

@@ -2,17 +2,17 @@
 
 구조 (CUS-135/142 합의):
   Odin 요청 → [분류] → DIRECT (write 없음, 무세금)
-                    → Trinity: 원장 open → 매 턴 전이 함수(quest-log next, 결정론) →
-                      역할 세션(child context) → 원장 기록(하니스가 결정론 수행) →
+                    → Trinity: 퀘스트 로그 open → 매 턴 전이 함수(quest-log next, 결정론) →
+                      역할 세션(child context) → 퀘스트 로그 기록(하니스가 결정론 수행) →
                       Verifier verdict 툴 → 게이트(verifier-gate, 루프 종료 지점) → close
 
 Claude Code 모드 B 와의 차이: 거기선 모델이 quest-log CLI 를 스스로 실행하지만, 네이티브에선
-**하니스가 원장을 기록**한다 — 프로토콜 준수가 모델 순응이 아니라 코드 경로다. 훅 자체는
+**하니스가 퀘스트 로그을 기록**한다 — 프로토콜 준수가 모델 순응이 아니라 코드 경로다. 훅 자체는
 subprocess 배포 형태로 재사용 (36/36 테스트된 계약, 재구현 금지). 상태는 같은 .asgard/ —
-Claude Code/Codex/Cursor 세션과 원장을 이어 쓴다 (크로스툴 연속성).
+Claude Code/Codex/Cursor 세션과 퀘스트 로그을 이어 쓴다 (크로스툴 연속성).
 
 중첩 디스패치 (CUS-142): Worker 에 dispatch 툴 — 딜리버리 전문가(child context, depth 1)에
-위임하고 배정 근거를 delegate 이벤트로 원장에 남긴다. 딜리버리는 재위임 불가 (툴 미제공).
+위임하고 배정 근거를 delegate 이벤트로 퀘스트 로그에 남긴다. 딜리버리는 재위임 불가 (툴 미제공).
 """
 
 from __future__ import annotations
@@ -61,7 +61,7 @@ def _transition_line(role: str, why: str) -> str:
 NATIVE_NOTE = """
 
 ## 네이티브 세션 규칙 (하니스 자동화)
-이 세션은 Asgard 네이티브 루프다. 퀘스트 원장 기록·전이 함수·verifier-gate 는 **하니스가 자동
+이 세션은 Asgard 네이티브 루프다. 퀘스트 로그 기록·전이 함수·verifier-gate 는 **하니스가 자동
 수행**한다 — quest-log 명령을 직접 실행하지 마라 (이중 기록). Verifier 판정은 verdict 툴로만
 제출한다. 완료 선언은 여전히 금지 — 판정은 Verifier + 게이트 몫이다 (Canon 10)."""
 
@@ -101,7 +101,7 @@ VERDICT_TOOL = {
 DISPATCH_TOOL = {
     "name": "dispatch",
     "description": "딜리버리 전문가에게 하위 작업 위임 (freyja=UI/UX, thor=빌드/인프라, loki=adversarial). "
-    "위임 전 누구에게·왜를 고민하고 why 에 근거를 남겨라 — 원장에 기록된다.",
+    "위임 전 누구에게·왜를 고민하고 why 에 근거를 남겨라 — 퀘스트 로그에 기록된다.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -262,7 +262,7 @@ class Heimdall:
         return handler
 
     def _escalate(self, sid: str) -> None:
-        """ESCALATE 원장 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
+        """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
         ql(
             self.root,
             "append",
@@ -306,7 +306,7 @@ class Heimdall:
                     self.on_text(f"⛔ gate: {reason[:200]}\n")
                     continue
                 ql(self.root, "close", session=sid)
-                return "과업 완수 — Verifier PASS + diff-hash 일치, 원장 닫힘."
+                return "과업 완수 — Verifier PASS + diff-hash 일치, 퀘스트 로그 닫힘."
             if role == "ESCALATE_ODIN":
                 self._escalate(sid)
                 return f"⚠ Odin 결정 필요 — {why}"
@@ -348,7 +348,7 @@ class Heimdall:
                 )
             elif role == "VERIFIER":
                 level = nxt.get("verify_level", "micro")
-                # 원장 관측 diff 컨텍스트 — 검증자가 "diff 없음"으로 헛FAIL 하지 않게 물리 관측을
+                # 퀘스트 로그 관측 diff 컨텍스트 — 검증자가 "diff 없음"으로 헛FAIL 하지 않게 물리 관측을
                 # 손에 쥐여준다 (판정은 여전히 직접 명령 실행으로).
                 st = {}
                 try:
@@ -365,7 +365,7 @@ class Heimdall:
                 r = s.run(
                     f"검증하라. 요청: {request}\ncriteria: {cls['criteria']}\n"
                     f"required level: {level}\n"
-                    f"원장 관측 변경 파일: {changed} (diff_lines={st.get('diff_lines', '?')}) — "
+                    f"하니스 관측 변경 파일: {changed} (diff_lines={st.get('diff_lines', '?')}) — "
                     f"`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
                     f"Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출."
                 )
@@ -396,9 +396,9 @@ class Heimdall:
                     stdin=json.dumps(ev),
                 )
             else:
-                return f"⚠ 미지의 전이 상태 '{role}' — Odin 보고 (원장: .asgard/quest/{qid}.jsonl)"
+                return f"⚠ 미지의 전이 상태 '{role}' — Odin 보고 (퀘스트 로그: .asgard/quest/{qid}.jsonl)"
 
-        return f"⚠ 턴 예산({MAX_TRINITY_TURNS}) 소진 — Odin 보고. 원장: .asgard/quest/{qid}.jsonl"
+        return f"⚠ 턴 예산({MAX_TRINITY_TURNS}) 소진 — Odin 보고. 퀘스트 로그: .asgard/quest/{qid}.jsonl"
 
     def _direct(self, request: str) -> str:
         """DIRECT 응답 — 본문은 on_text 로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
