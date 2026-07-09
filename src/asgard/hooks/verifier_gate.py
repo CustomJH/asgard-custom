@@ -76,6 +76,15 @@ def git(root, *args, binary=False):
 
 
 # ── quest_log.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙 — 어긋나면 위양성 차단) ──
+# 검증 실행 아티팩트 — quest_log.py 의 _junk 와 동일해야 한다 (양쪽 hash 불일치 = 영구 stale).
+# ponytail: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
+_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv"}
+
+
+def _junk(p):
+    return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
+
+
 def diff_state(root, base_ref):
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0
@@ -91,7 +100,7 @@ def diff_state(root, base_ref):
         parts = row.split("\t")
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
             lines += int(parts[0]) + int(parts[1])
-    untracked = sorted(p for p in unt.splitlines() if p.strip())
+    untracked = sorted(p for p in unt.splitlines() if p.strip() and not _junk(p))
     h = hashlib.sha256(diff)
     for p in untracked:
         try:
@@ -170,9 +179,11 @@ def orphan_writes(root, sid):
             except Exception:
                 continue
         base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
-        passes = [e for e in events if e.get("event") == "verify" and e.get("verdict") == "PASS"]
-        if base_ref and passes and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
-            if passes[-1].get("diff_hash") == diff_state(root, base_ref)[0]:
+        verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")]
+        if verdicts and verdicts[-1].get("verdict") == "ESCALATE":
+            return  # Canon 9 정규 종료 — close 후에도 인질 금지 (active 경로와 동일 규칙, s1 라이브 실측)
+        if base_ref and verdicts and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
+            if verdicts[-1].get("diff_hash") == diff_state(root, base_ref)[0]:
                 return
     except Exception:
         pass

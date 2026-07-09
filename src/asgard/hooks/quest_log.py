@@ -142,6 +142,16 @@ def git(root: str, *args: str, binary: bool = False):
 
 
 # ── 물리 증거 해시 — verifier-gate.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙) ──
+# 검증 실행 아티팩트 — 검증 명령이 만든 캐시가 PASS 를 stale 로 만들면 게이트가 자기파괴적이다
+# (.gitignore 없는 프로젝트에서 pytest 실행 → __pycache__ → hash 변경, s1 라이브 실측).
+# ponytail: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
+_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv"}
+
+
+def _junk(p: str) -> bool:
+    return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
+
+
 def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int]:
     """(diff_hash, changed_files, changed_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref 는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
@@ -160,7 +170,7 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int]:
         parts = row.split("\t")
         if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
             lines += int(parts[0]) + int(parts[1])
-    untracked = sorted(p for p in unt.splitlines() if p.strip())
+    untracked = sorted(p for p in unt.splitlines() if p.strip() and not _junk(p))
     h = hashlib.sha256(diff)
     for p in untracked:
         try:
@@ -427,6 +437,8 @@ def main() -> int:
         for k, v in (("role", args.role), ("event", args.event), ("verdict", args.verdict), ("level", args.level)):
             if v:
                 raw[k] = v
+        if isinstance(raw.get("role"), str):
+            raw["role"] = raw["role"].lower()  # 전이 함수 출력(WORKER)을 그대로 넣는 세션 실측 — 통계 축 분열 방지
         if args.criteria:
             raw["criteria"] = args.criteria
         if raw.get("event") not in EVENTS:
