@@ -36,6 +36,30 @@ _WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 _MAX_CONCURRENT = max(1, int(os.environ.get("ASGARD_CLAUDE_MAX_CONCURRENT", "3") or 3))
 _spawn_gate = threading.BoundedSemaphore(_MAX_CONCURRENT)
 
+# ── 단일 데몬 이벤트 루프 (CUS-192) ─────────────────────────────────────
+# 매 턴 asyncio.run() 새 루프 생성/종료는 SDK subprocess child watcher·async
+# generator 잔여와 충돌한다 ("aclose(): already running", "Loop … is closed").
+# 프로세스 수명 동안 데몬 스레드에서 루프 하나를 돌리고 모든 코루틴을 거기 제출 —
+# 루프가 안 닫히니 child watcher 도 고정, 스레드풀 병렬 딜리버리도 같은 루프 공유.
+_loop = None
+_loop_lock = threading.Lock()
+
+
+def _bg_loop():
+    global _loop
+    if _loop is None:
+        with _loop_lock:
+            if _loop is None:
+                loop = asyncio.new_event_loop()
+                threading.Thread(target=loop.run_forever, daemon=True, name="asgard-claude-cli").start()
+                _loop = loop
+    return _loop
+
+
+def _submit(coro):
+    """코루틴을 데몬 루프에 제출하고 완료까지 블록 (asyncio.run 대체)."""
+    return asyncio.run_coroutine_threadsafe(coro, _bg_loop()).result()
+
 
 class UsageCapError(RuntimeError):
     """구독 사용량 한도(5시간 윈도/주간 캡) 도달 — 재시도로 뚫지 않는다 (fatal 분류)."""
@@ -124,7 +148,7 @@ def run(sess, user_content: str):
 
     try:
         with _spawn_gate:  # 동시 CLI 세션 상한 — 초과분은 직렬 대기
-            asyncio.run(_run_async(sess, user_content, result))
+            _submit(_run_async(sess, user_content, result))  # 데몬 루프 재사용 (CUS-192)
     except ProcessError as e:
         if _is_usage_cap(str(e), e.stderr or ""):
             raise UsageCapError(
@@ -177,7 +201,8 @@ async def _run_async(sess, user_content: str, result) -> None:
     sess.on_status(_t("thinking"))
     t0 = time.monotonic()
     first = True
-    async for msg in query(prompt=user_content, options=options):
+    gen = query(prompt=user_content, options=options)
+    async for msg in _drained(gen):
         if isinstance(msg, AssistantMessage):
             for b in msg.content:
                 if isinstance(b, TextBlock):
@@ -211,6 +236,19 @@ async def _run_async(sess, user_content: str, result) -> None:
             if msg.result and not result.text:
                 result.text = msg.result
     sess.on_status(None)
+
+
+async def _drained(gen):
+    """query async generator 를 소비하고 finally 에서 명시적으로 닫는다 (CUS-192).
+
+    async for 정상 종료 후에도 SDK 는 subprocess/백그라운드 태스크를 남길 수 있어,
+    루프 회수 전에 gen.aclose() 로 확정 정리 — asyncgen shutdown 잔여 경고를 없앤다.
+    """
+    try:
+        async for msg in gen:
+            yield msg
+    finally:
+        await gen.aclose()
 
 
 # 공식 하드캡 문구 (code.claude.com/docs/en/errors): "You've hit your session|weekly|Opus limit · resets <t>"
@@ -287,10 +325,11 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
             cwd=root,
             env=_guard_env(),
         )
-        async for msg in query(prompt=user, options=options):
+        out = ""
+        async for msg in _drained(query(prompt=user, options=options)):
             if isinstance(msg, ResultMessage):
-                return msg.result or ""
-        return ""
+                out = msg.result or ""
+        return out
 
     with _spawn_gate:  # classify 도 CLI 스폰 — 동시성 상한 공유
-        return asyncio.run(_go())
+        return _submit(_go())  # 데몬 루프 재사용 (CUS-192)
