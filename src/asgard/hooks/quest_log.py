@@ -169,35 +169,45 @@ def sensitive_path(path: str, needles) -> bool:
     return False
 
 
-def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int]:
-    """(diff_hash, changed_files, changed_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
+def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, int]:
+    """(diff_hash, changed_files, changed_lines, nontest_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref 는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
-    diff 를 바꾸면 해시가 자기참조로 영원히 안 맞는다."""
+    diff 를 바꾸면 해시가 자기참조로 영원히 안 맞는다.
+    nontest_lines: 테스트 파일 제외 변경 라인 — 테스트 추가는 검증 표면이지 리스크 질량이 아니다
+    (CUS-189 스모크 발견: 잠금 테스트 2파일 추가가 big 판정 → 게이트-우선 무력화). 삭제된 테스트는
+    별도 하드 트리거 (deleted_tests)."""
     if not base_ref or base_ref == "NONE":
-        return EMPTY, [], 0
+        return EMPTY, [], 0, 0
     spec = [base_ref, "--", ".", ":(exclude).asgard"]
     rc, diff = git(root, "diff", "--binary", *spec, binary=True)
     if rc != 0:
-        return EMPTY, [], 0
+        return EMPTY, [], 0, 0
     _, names = git(root, "diff", "--name-only", *spec)
     _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
+    nt_lines = 0
     for row in num.splitlines():
         parts = row.split("\t")
-        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-            lines += int(parts[0]) + int(parts[1])
+        if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
+            n = int(parts[0]) + int(parts[1])
+            lines += n
+            if not _testfile(parts[2]):
+                nt_lines += n
     untracked = sorted(p for p in unt.splitlines() if p.strip() and not _junk(p))
     h = hashlib.sha256(diff)
     for p in untracked:
         try:
             body = open(os.path.join(root, p), "rb").read()
-            lines += body.count(b"\n") + 1
+            k = body.count(b"\n") + 1
+            lines += k
+            if not _testfile(p):
+                nt_lines += k
             h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
         except Exception:
             h.update(p.encode() + b"\0missing")
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked))
-    return (h.hexdigest() if changed else EMPTY), changed, lines
+    return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
 # ── 하네스 소유 베이스라인 체크 (CUS-187) — 증거 '품질'의 결정론화 ──
@@ -365,7 +375,7 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
 def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     """코디네이터 관찰용 요약 — next 의 입력이기도 하다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
-    cur, changed, lines = diff_state(root, base_ref)
+    cur, changed, lines, nt_lines = diff_state(root, base_ref)
     verifies = [e for e in events if e.get("event") == "verify"]
     passes = [e for e in verifies if e.get("verdict") == "PASS"]
     last_pass = passes[-1] if passes else None
@@ -392,6 +402,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
             fail_streak += 1
     sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
     dts = deleted_tests(root, base_ref)
+    # small_write 판정은 테스트 파일 제외 — 테스트 추가는 검증 표면이지 리스크 질량이 아니다
+    # (CUS-189: 잠금 테스트 2파일 추가 → big 오판 → full 강제·게이트-우선 무력화). 삭제는 dts 가 잡는다.
+    nt_files = [f for f in changed if not _testfile(f)]
     small = policy["small_write"]
     return {
         "quest_id": qid,
@@ -409,8 +422,10 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "diff_lines": lines,
         "sensitive_files": sens,
         "deleted_tests": dts,
+        "nontest_files": len(nt_files),
+        "nontest_lines": nt_lines,
         # gate 의 full_required 판정과 동일 기준 — 전이(DONE)와 close 가 gate 와 어긋나면 안 된다.
-        "full_required": bool(sens) or bool(dts) or len(changed) > small["max_files"] or lines > small["max_lines"],
+        "full_required": bool(sens) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"],
         "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
         "pass_level": (last_pass or {}).get("level"),
         # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부, CUS-170 깊이 테스트 발견 구멍)
@@ -429,7 +444,11 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
 # ── 전이 함수 (CUS-120) — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
 def transition(s: dict, policy: dict, flags) -> dict:
     small = policy["small_write"]
-    big = len(s["changed_files"]) > small["max_files"] or s["diff_lines"] > small["max_lines"]
+    # big 은 non-test 질량 기준 (summarize.full_required 와 동일) — 테스트 추가로 full/승격을 트리거하지 않는다
+    big = (
+        s.get("nontest_files", len(s["changed_files"])) > small["max_files"]
+        or s.get("nontest_lines", s["diff_lines"]) > small["max_lines"]
+    )
     sensitive = bool(s["sensitive_files"]) or flags.shared
     full_required = s["full_required"] or flags.shared
     has_write = s["diff_hash"] != EMPTY or s["risk_write"] or flags.write_expected
@@ -604,7 +623,7 @@ def main() -> int:
                 print(json.dumps({"error": "verify requires --verdict PASS|FAIL|ESCALATE"}), file=sys.stderr)
                 return 2
             # 판정 이벤트의 물리 증거는 이 도구가 계산한다 — 손 계산 해시는 gate 와 어긋난다.
-            ev["diff_hash"], ev["changed_files"], _ = diff_state(root, ev["base_ref"])
+            ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"])
             ev.setdefault("level", "micro")
             if ev["verdict"] == "PASS":
                 # 하네스 소유 베이스라인 (CUS-187) — normalize 가 stdin baseline 을 버린 뒤 여기서만 기록
@@ -624,7 +643,7 @@ def main() -> int:
         # 게이트-우선 판정 턴 (CUS-188) — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
         # commands = 하네스가 직접 실행한 체크 (pass_evidence 충족) — verifier 재량 커맨드 아님.
         ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
-        ev["diff_hash"], ev["changed_files"], _ = diff_state(root, ev["base_ref"])
+        ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"])
         ev["level"] = "micro"
         bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
         state = bl.get("state")

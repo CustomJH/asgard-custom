@@ -731,6 +731,20 @@ class TestStandardTransition(TrinityBase):
         self.work()
         self.assertEqual(self.nxt()["next_role"], "VERIFIER")
 
+    def test_added_tests_do_not_escalate(self):
+        # CUS-189 스모크 발견 — 잠금 테스트 추가가 big 오판을 만들면 게이트-우선이 무력화된다
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.write("test_a.py", "assert True\n")
+        self.write("test_b.py", "assert True\n")  # changed 3파일 — non-test 는 1파일
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+        jout(self.qlog("verify-baseline"))
+        self.assertEqual(self.nxt()["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")
+
     def test_deleted_test_escalates_to_llm_verifier(self):
         self.write("tests/test_app.py", "def test_a(): pass\n")
         self.commit_all()

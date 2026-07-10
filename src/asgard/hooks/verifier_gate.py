@@ -106,31 +106,39 @@ def sensitive_path(path, needles):
 
 
 def diff_state(root, base_ref):
+    # nontest_lines 4번째 원소 — quest_log.py 와 동일 유지 (테스트 추가 ≠ 리스크 질량, CUS-189)
     if not base_ref or base_ref == "NONE":
-        return EMPTY, [], 0
+        return EMPTY, [], 0, 0
     spec = [base_ref, "--", ".", ":(exclude).asgard"]
     rc, diff = git(root, "diff", "--binary", *spec, binary=True)
     if rc != 0:
-        return EMPTY, [], 0
+        return EMPTY, [], 0, 0
     _, names = git(root, "diff", "--name-only", *spec)
     _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
+    nt_lines = 0
     for row in num.splitlines():
         parts = row.split("\t")
-        if len(parts) >= 2 and parts[0].isdigit() and parts[1].isdigit():
-            lines += int(parts[0]) + int(parts[1])
+        if len(parts) >= 3 and parts[0].isdigit() and parts[1].isdigit():
+            n = int(parts[0]) + int(parts[1])
+            lines += n
+            if not _testfile(parts[2]):
+                nt_lines += n
     untracked = sorted(p for p in unt.splitlines() if p.strip() and not _junk(p))
     h = hashlib.sha256(diff)
     for p in untracked:
         try:
             body = open(os.path.join(root, p), "rb").read()
-            lines += body.count(b"\n") + 1
+            k = body.count(b"\n") + 1
+            lines += k
+            if not _testfile(p):
+                nt_lines += k
             h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
         except Exception:
             h.update(p.encode() + b"\0missing")
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked))
-    return (h.hexdigest() if changed else EMPTY), changed, lines
+    return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
 def _testfile(p):
@@ -270,7 +278,7 @@ def main():
         except Exception:
             pass
 
-        current, changed, lines = diff_state(root, base_ref)
+        current, changed, lines, nt_lines = diff_state(root, base_ref)
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
         mutating = [c for c in cmds if not readonly(c.get("cmd", ""), policy["readonly_commands"])]
         risk_write = any((e.get("risk") or {}).get("has_write") for e in events)
@@ -330,7 +338,10 @@ def main():
         small = policy["small_write"]
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
         dts = deleted_tests(root, base_ref)
-        full_required = bool(sensitive) or bool(dts) or len(changed) > small["max_files"] or lines > small["max_lines"]
+        nt_files = [f for f in changed if not _testfile(f)]  # 테스트 추가 ≠ 리스크 질량 (CUS-189)
+        full_required = (
+            bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
+        )
         if full_required and p.get("level") != "full":
             block(
                 root,
