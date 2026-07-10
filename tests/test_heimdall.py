@@ -37,8 +37,10 @@ class FakeSession:
 
     def __init__(self, result: SessionResult, effect=None, label=""):
         self.result, self.effect, self.label = result, effect, label
-        self.prompt: str | None = None
+        self.prompt: str = ""  # 마지막 run() 프롬프트 — assertIn 검증 표면 (미실행 = "")
         self.role: str | None = None
+        self.model: str | None = None
+        self.readonly: bool = False
 
     def run(self, user_content: str) -> SessionResult:
         self.prompt = user_content
@@ -61,13 +63,14 @@ class FakeHeimdall(Heimdall):
         self.texts: list[str] = []
         super().__init__(default, root, on_text=self.texts.append)
 
-    def _session(self, system, extra_tools=None, handlers=None, quiet=False, role=None, model=None):
+    def _session(self, system, extra_tools=None, handlers=None, quiet=False, role=None, model=None, readonly=False):
         with self._lock:  # wave 병렬 스레드가 동시에 pop — 순서 보호
             if not self._script:
                 raise AssertionError("스크립트된 세션 소진 — 예상보다 많은 역할 턴")
             s = self._script.pop(0)
             s.role = role
             s.model = model
+            s.readonly = readonly
             self.consumed.append(s)
             return s
 
@@ -397,7 +400,8 @@ class TestModelTiers(Base):
 class TestClassify(Base):
     def test_parse_failure_defaults_to_gated_write(self):
         h = FakeHeimdall(self.root, [], cls=None)
-        h._complete_text = lambda *a, **k: "이건 JSON 이 아님"
+        mock.patch.object(h, "_complete_text", lambda *a, **k: "이건 JSON 이 아님").start()
+        self.addCleanup(mock.patch.stopall)
         d = Heimdall._classify(h, "뭔가 대충 처리해줘")  # 휴리스틱 불확정 → LLM 폴백 → 파싱 실패
         self.assertTrue(d["write_expected"] and d["ambiguous"])  # 안전 기본값 → 게이트 경로
         self.assertEqual(d["task_class"], "deep")  # 미상 = 최대 예산
@@ -435,16 +439,16 @@ class TestClassifyHeuristic(Base):
         destructive = ["rm -rf ./build 실행해", "git push --force 해", "임시 파일 다 지워"]
         for q in read_only:
             d = ch(q)
-            self.assertIsNotNone(d, q)
+            assert d is not None, q  # ty 내로잉 — assertIsNotNone 은 타입을 못 좁힌다
             self.assertFalse(d["write_expected"], q)
         for q in writes:
             d = ch(q)
-            self.assertIsNotNone(d, q)
+            assert d is not None, q
             self.assertTrue(d["write_expected"], q)
             self.assertFalse(d["destructive"], q)
         for q in destructive:
             d = ch(q)
-            self.assertIsNotNone(d, q)
+            assert d is not None, q
             self.assertTrue(d["destructive"], q)
 
     def test_ambiguous_falls_back_to_llm(self):
@@ -459,7 +463,8 @@ class TestClassifyHeuristic(Base):
         def boom(*a, **k):
             raise AssertionError("LLM 호출 금지 — 휴리스틱이 처리해야 함")
 
-        h._complete_text = boom
+        mock.patch.object(h, "_complete_text", boom).start()
+        self.addCleanup(mock.patch.stopall)
         d = Heimdall._classify(h, "이 함수 설명해줘")
         self.assertFalse(d["write_expected"])
 
@@ -487,7 +492,7 @@ class TestErrorRecovery(Base):
         attempts = []
 
         class S:
-            def run(_, p):
+            def run(_, user_content):
                 attempts.append(1)
                 if len(attempts) < 3:
                     raise self._Boom(429)
@@ -503,7 +508,7 @@ class TestErrorRecovery(Base):
         attempts = []
 
         class S:
-            def run(_, p):
+            def run(_, user_content):
                 attempts.append(1)
                 raise self._Boom(401)
 
@@ -516,11 +521,11 @@ class TestErrorRecovery(Base):
         ok = SessionResult(text="fb", stop_reason="end_turn")
 
         class Bad:
-            def run(_, p):
+            def run(_, user_content):
                 raise self._Boom(401)
 
         class Good:
-            def run(_, p):
+            def run(_, user_content):
                 return ok
 
         r = h._run_turn(lambda: Bad(), "p", fallback=lambda: Good())
@@ -588,7 +593,7 @@ class TestWaveParallel(Base):
     def test_parse_units_valid_and_fallbacks(self):
         from asgard.agent.heimdall import _parse_units
 
-        units = _parse_units(PLAN_WITH_UNITS)
+        units = _parse_units(PLAN_WITH_UNITS) or []
         self.assertEqual([u["id"] for u in units], [1, 2, 3])
         self.assertIsNone(_parse_units("계획만 있고 블록 없음"))
         self.assertIsNone(_parse_units('```json\n{"units": [{"id": 1, "subtask": "하나뿐"}]}\n```'))  # 단일 = 기존 경로
@@ -818,6 +823,22 @@ class TestStandardRoute(Base):
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
         h.handle("w1.txt 만들어")
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+
+
+class TestDirectHistory(Base):
+    """REPL 턴 간 대화 맥락 — DIRECT 후속 질문이 직전 문답을 받는다 (Trinity 경로는 안 받음)."""
+
+    def test_direct_followup_gets_history(self):
+        cls_ro = {**CLS_WRITE, "write_expected": False, "criteria": []}
+        s1 = FakeSession(SessionResult(text="답1", stop_reason="end_turn"), label="direct")
+        s2 = FakeSession(SessionResult(text="답2", stop_reason="end_turn"), label="direct")
+        h = FakeHeimdall(self.root, [s1, s2], cls=cls_ro)
+        h.handle("파이썬 버전 뭐야?")
+        h.handle("그건 왜?")
+        self.assertNotIn("이전 문답", s1.prompt)  # 첫 턴은 맥락 없음
+        self.assertIn("이전 문답", s2.prompt)
+        self.assertIn("파이썬 버전 뭐야?", s2.prompt)
+        self.assertIn("답1", s2.prompt)
 
 
 if __name__ == "__main__":

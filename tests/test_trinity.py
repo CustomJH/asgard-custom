@@ -852,5 +852,46 @@ class TestRoutePriors(TrinityBase):
         self.assertEqual(load_priors(self.root)["classes"]["standard"], {"n": 1, "red": 1})
 
 
+class TestUnattendedTransition(TrinityBase):
+    """Canon 8 무인 nudge 의 전이측 (네이티브 등가) — ESCALATE → 재계획 1회 → 재-ESCALATE 인정."""
+
+    def nxt(self, *flags):
+        return jout(self.qlog("next", "--write-expected", *flags))
+
+    def test_unattended_escalate_replan_once_then_honored(self):
+        self.open_quest()
+        self.write("app.py", "x\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("ESCALATE")
+        self.assertEqual(self.nxt()["next_role"], "ESCALATE_ODIN")  # attended 는 즉시 에스컬레이션
+        self.assertEqual(self.nxt("--unattended")["next_role"], "THINKER_REPLAN")  # 무인 1회 nudge
+        self.qlog("append", "--role", "thinker", "--event", "plan")  # nudge 소비 (재계획 기록)
+        self.assertEqual(self.nxt("--unattended")["next_role"], "WORKER")  # 실행 재개 (재-에스컬레이션 아님)
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("ESCALATE")
+        self.assertEqual(self.nxt("--unattended")["next_role"], "ESCALATE_ODIN")  # 재-ESCALATE = 진짜 블로커
+
+
+class TestGoodhartEvidence(TrinityBase):
+    """PASS 증거 trivial 필터 — `true`/`echo` 한 방이 증거로 성립하던 구멍 (게이트·전이 동일 기준)."""
+
+    def test_trivial_only_pass_rejected_by_transition_and_gate(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "true", "exit_code": 0}, {"cmd": "echo ok", "exit_code": 0}])
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")  # 재검증 강제
+        out = jout(self.gate())
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("증거", out.get("reason", ""))
+
+    def test_real_command_pass_allowed(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "true", "exit_code": 0}, {"cmd": "python3 app.py", "exit_code": 0}])
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

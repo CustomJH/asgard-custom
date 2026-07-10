@@ -12,6 +12,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 from asgard.agent import tools as T
 from asgard.agent.heimdall import _record_writes
@@ -81,6 +82,93 @@ class TestBash(Base):
         self.assertEqual(code, 0)
 
 
+class TestBashDestructiveGuard(Base):
+    """비-git 파괴 명령 가드 (Canon 3) — 루트 밖 rm -rf 차단, 루트 안은 허용."""
+
+    def test_rm_rf_outside_root_blocked(self):
+        for cmd in ("rm -rf /tmp/x", "rm -rf ~/stuff", "rm -rf ../sibling", "cd sub && rm -rf /"):
+            with self.assertRaises(T.ToolError, msg=cmd):
+                T.run_bash(self.root, {"command": cmd})
+
+    def test_rm_rf_inside_root_allowed(self):
+        os.makedirs(os.path.join(self.root, "build"))
+        _, code = T.run_bash(self.root, {"command": "rm -rf build"})
+        self.assertEqual(code, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "build")))
+
+    def test_device_destruction_blocked(self):
+        for cmd in ("mkfs.ext4 /dev/sda1", "dd if=/dev/zero of=/dev/sda"):
+            with self.assertRaises(T.ToolError, msg=cmd):
+                T.run_bash(self.root, {"command": cmd})
+
+
+class TestSecretGuardWiring(Base):
+    """secret-guard 훅 배선 (Canon Law 4) — 네이티브 editor write 도 mode B 와 같은 차단 지점."""
+
+    def test_env_file_write_blocked(self):
+        with self.assertRaises(T.ToolError):
+            T.run_editor(self.root, {"command": "create", "path": ".env", "file_text": "X=1\n"}, [])
+
+    def test_secret_content_blocked(self):
+        with self.assertRaises(T.ToolError):
+            T.run_editor(
+                self.root,
+                {"command": "create", "path": "config.py", "file_text": 'KEY = "AKIA' + "A" * 16 + '"\n'},
+                [],
+            )
+
+    def test_template_env_allowed(self):
+        w = []
+        T.run_editor(self.root, {"command": "create", "path": ".env.example", "file_text": "X=placeholder\n"}, w)
+        self.assertEqual(w, [".env.example"])
+
+
+class TestReadonlySession(Base):
+    """역할→도구 구조 강제 — readonly 세션은 editor write 를 거부한다 (thinker/verifier/loki)."""
+
+    def _session(self, readonly):
+        from asgard.agent.session import AgentSession
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="m", api_key="k")
+        return AgentSession(None, rp, self.root, "sys", readonly=readonly)
+
+    def test_readonly_rejects_editor_write_allows_view(self):
+        from asgard.agent.session import SessionResult, _Call
+
+        s = self._session(readonly=True)
+        r = SessionResult(text="", stop_reason="")
+        call = _Call("1", "str_replace_based_edit_tool", {"command": "create", "path": "x.txt", "file_text": "x"})
+        out, err = s._execute(call, r)
+        self.assertTrue(err)
+        self.assertEqual(r.writes, [])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "x.txt")))
+        out, err = s._execute(_Call("2", "str_replace_based_edit_tool", {"command": "view", "path": "f.txt"}), r)
+        self.assertFalse(err)
+        self.assertIn("base", out)
+
+
+class TestContextPrune(Base):
+    """컨텍스트 압축 — 오래된 tool_result 본문 프룬 (LLM 무호출, 최근 유지)."""
+
+    def test_prune_old_tool_results_keeps_recent(self):
+        from asgard.agent.session import AgentSession
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="m", api_key="k")
+        s = AgentSession(None, rp, self.root, "sys")
+        for i in range(10):
+            s.messages.append({"role": "assistant", "content": [{"type": "text", "text": f"t{i}"}]})
+            s.messages.append(
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": str(i), "content": "X" * 100}]}
+            )
+        n = s._prune_history(keep=6)
+        self.assertEqual(n, 7)  # 전체 20 중 앞 14 만 대상 — tool_result 는 그 절반
+        self.assertEqual(s.messages[1]["content"][0]["content"], "[pruned]")
+        self.assertEqual(s.messages[-1]["content"][0]["content"], "X" * 100)  # 최근 보존
+        self.assertEqual(s._prune_history(keep=6), 0)  # 재실행 멱등
+
+
 class TestLedgerWiring(Base):
     """네이티브 루프가 쓰는 subprocess 계약 — 훅을 배포 형태 그대로."""
 
@@ -110,7 +198,10 @@ class TestLedgerWiring(Base):
             "--level",
             "micro",
             session=sid,
-            stdin=json.dumps({"role": "verifier", "event": "verify", "commands": [{"cmd": "true", "exit_code": 0}]}),
+            # PASS 증거는 non-trivial 명령이어야 한다 — true/echo 류는 게이트가 증거로 안 친다 (Goodhart)
+            stdin=json.dumps(
+                {"role": "verifier", "event": "verify", "commands": [{"cmd": "git diff", "exit_code": 0}]}
+            ),
         )
         blocked, _ = gate(self.root, sid)
         self.assertFalse(blocked)
@@ -371,15 +462,15 @@ class TestRunPrompt(unittest.TestCase):
         from asgard.commands import start as S
 
         self.S = S
-        self._preflight, self._stdout = S.preflight, _sys.stdout
+        self._stdout = _sys.stdout
         self._unattended = os.environ.pop("ASGARD_UNATTENDED", None)
         self.out = io.StringIO()
         _sys.stdout = self.out
+        self.addCleanup(mock.patch.stopall)
 
     def tearDown(self):
         import sys as _sys
 
-        self.S.preflight = self._preflight
         _sys.stdout = self._stdout
         if self._unattended is not None:
             os.environ["ASGARD_UNATTENDED"] = self._unattended
@@ -403,10 +494,10 @@ class TestRunPrompt(unittest.TestCase):
             def handle(self, prompt):
                 return result_text
 
-        self.S.preflight = lambda root, provider=None, model=None: ([{"ok": True}], FakeRP())
-        orig = H.Heimdall
-        H.Heimdall = FakeHeimdall
-        self.addCleanup(lambda: setattr(H, "Heimdall", orig))
+        mock.patch.object(
+            self.S, "preflight", lambda root, provider=None, model=None: ([{"ok": True}], FakeRP())
+        ).start()
+        mock.patch.object(H, "Heimdall", FakeHeimdall).start()
 
     def test_json_output_and_exit_zero(self):
         self._patch()
@@ -422,10 +513,11 @@ class TestRunPrompt(unittest.TestCase):
         self.assertEqual(self.S.run_prompt("작업해줘", json_out=True), 1)
 
     def test_preflight_failure_exits_two(self):
-        self.S.preflight = lambda root, provider=None, model=None: (
-            [{"ok": False, "name": "k", "detail": "", "fix": ""}],
-            None,
-        )
+        mock.patch.object(
+            self.S,
+            "preflight",
+            lambda root, provider=None, model=None: ([{"ok": False, "name": "k", "detail": "", "fix": ""}], None),
+        ).start()
         self.assertEqual(self.S.run_prompt("작업해줘"), 2)
 
 
