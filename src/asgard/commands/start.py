@@ -46,6 +46,26 @@ def preflight(root: str, provider: str | None = None, model: str | None = None) 
                 "fix": "https://claude.com/claude-code 설치 후 claude /login (구독) 또는 키 export",
             }
         )
+        from ..agent.claude_native import detect_auth
+
+        kind, detail = detect_auth()  # 감지만 — 토큰 값은 절대 안 읽는다 (ToS)
+        checks.append(
+            {
+                "name": "인증 (advisory)",
+                "ok": kind != "unknown",
+                "detail": f"{kind} · {detail}",
+                "fix": "claude /login (구독) 또는 CLAUDE_CODE_OAUTH_TOKEN export" if kind == "unknown" else "",
+            }
+        )
+        if rp.base_url:
+            checks.append(
+                {
+                    "name": "base_url",
+                    "ok": False,
+                    "detail": rp.base_url,
+                    "fix": "claude-native 는 base_url 미지원 — 프록시+구독 조합은 차단 리스크, config 에서 제거",
+                }
+            )
         sdk_mod = "claude_agent_sdk"
     else:
         sdk_mod = "anthropic" if rp.profile.api_mode == "anthropic" else "openai"

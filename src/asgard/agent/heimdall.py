@@ -292,6 +292,8 @@ def classify_api_error(e: Exception) -> str:
     if status in _FATAL_STATUS:
         return "fatal"
     name = e.__class__.__name__.lower()
+    if "usagecap" in name:  # 구독 한도 도달 (claude_cli) — 재시도로 뚫지 않는다 (CUS-191)
+        return "fatal"
     if any(k in name for k in ("timeout", "connection", "overloaded", "ratelimit", "internalserver")):
         return "retryable"
     return "retryable" if status is None else "fatal"  # 미상 = 일시 오류로 간주 (1회 재시도 가치)

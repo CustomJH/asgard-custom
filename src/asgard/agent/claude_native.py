@@ -6,12 +6,22 @@ anthropic/openai_compat 과 달리 내부 루프를 Claude Code 하네스가 소
 (구독 keychain → CLAUDE_CODE_OAUTH_TOKEN → ANTHROPIC_API_KEY) — Asgard 는 키를 만지지 않는다.
 
 주의: 구독 인증은 개인 사용 한정 (Anthropic ToS — 제3자 서비스에 구독 로그인 제공 금지).
+
+밴/차단 방어 독트린 (CUS-191, 2026-07 리서치 — 차단은 '클라이언트 진위' 기준):
+  1. 토큰 불추출 — keychain/credentials 값을 절대 안 읽는다 (감지는 존재 확인만). #1 차단 트리거.
+  2. 클라이언트 무변조 — 스톡 바이너리, 헤더/UA 불변, 텔레메트리 유지 (끄면 '무텔레메트리 이상 트래픽' 지문).
+  3. 프록시 금지 — 구독 인증 시 base_url(config)·ANTHROPIC_BASE_URL(env) 차단/무력화 (OpenCode 차단 벡터).
+  4. 동시성 상한 — CLI 세션 세마포어 (기본 3, ASGARD_CLAUDE_MAX_CONCURRENT). 서브에이전트 툴(Task) 미노출.
+  5. 하드캡 존중 — "You've hit your … limit" 감지 시 UsageCapError(fatal) — 재시도로 캡을 두드리지 않는다.
+     일시 스로틀("not your usage limit")은 CLI 내장 백오프에 위임 (자체 재시도 루프 금지).
 """
 
 from __future__ import annotations
 
 import asyncio
+import os
 import shutil
+import threading
 import time
 from dataclasses import dataclass
 
@@ -19,6 +29,42 @@ from dataclasses import dataclass
 # 미포함 툴(WebSearch/Task 등)은 컨텍스트에서 제거된다 (tools=availability 계층).
 BUILTIN_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 _WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
+
+# ── 밴/차단 방어 (CUS-191) ──────────────────────────────────────────────
+# 동시 CLI 세션 상한 — 구독 트래픽 폭주(다중 병렬 에이전트) 방지. Heimdall 딜리버리
+# 웨이브(≤3 병렬)까지 수용하되 그 이상은 직렬화. env ASGARD_CLAUDE_MAX_CONCURRENT 로 조정.
+_MAX_CONCURRENT = max(1, int(os.environ.get("ASGARD_CLAUDE_MAX_CONCURRENT", "3") or 3))
+_spawn_gate = threading.BoundedSemaphore(_MAX_CONCURRENT)
+
+
+class UsageCapError(RuntimeError):
+    """구독 사용량 한도(5시간 윈도/주간 캡) 도달 — 재시도로 뚫지 않는다 (fatal 분류)."""
+
+
+def detect_auth() -> tuple[str, str]:
+    """(kind, detail) — 인증 '감지'만, 토큰 값은 절대 읽지 않는다 (superset 패턴, ToS).
+
+    kind: "api_key" | "oauth_token" | "keychain" | "unknown"
+    우선순위는 CLI 해석 순서와 동일: env API 키 > env OAuth 토큰 > keychain/credentials 로그인.
+    """
+    if os.environ.get("ANTHROPIC_API_KEY"):
+        return "api_key", "$ANTHROPIC_API_KEY — 구독이 아닌 API 과금으로 나간다"
+    if os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
+        return "oauth_token", "$CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)"
+    cred = os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json")
+    if os.path.exists(cred):
+        return "keychain", "~/.claude/.credentials.json (claude /login)"
+    if os.uname().sysname == "Darwin":  # macOS 는 keychain 저장 — 존재 여부만 (값 조회 금지)
+        import subprocess
+
+        p = subprocess.run(
+            ["security", "find-generic-password", "-s", "Claude Code-credentials"],
+            capture_output=True,
+            timeout=5,
+        )
+        if p.returncode == 0:
+            return "keychain", "macOS Keychain (claude /login)"
+    return "unknown", "감지 실패 — claude /login 또는 키 export 필요할 수 있음"
 
 
 @dataclass(frozen=True)
@@ -69,9 +115,22 @@ def run(sess, user_content: str):
     """AgentSession.run 의 claude_cli 분기 본체. sess = AgentSession (session.py)."""
     from .session import SessionResult
 
+    if sess.rp.base_url:
+        # 구독 인증 + 커스텀 엔드포인트 프록시 조합은 OpenCode류 차단 트리거 — 원천 거부.
+        raise RuntimeError("claude-native 는 base_url 미지원 — 프록시+구독 조합은 차단 리스크 (config 에서 제거)")
     result = SessionResult(text="", stop_reason="")
     sess.messages.append({"role": "user", "content": user_content})  # 관찰용 — 전송 히스토리는 CLI 세션 소유
-    asyncio.run(_run_async(sess, user_content, result))
+    from claude_agent_sdk import ProcessError
+
+    try:
+        with _spawn_gate:  # 동시 CLI 세션 상한 — 초과분은 직렬 대기
+            asyncio.run(_run_async(sess, user_content, result))
+    except ProcessError as e:
+        if _is_usage_cap(str(e), e.stderr or ""):
+            raise UsageCapError(
+                f"구독 사용량 한도 도달 — 리셋까지 대기하거나 --provider anthropic (API) 로 전환. 원문: {str(e)[:200]}"
+            ) from e
+        raise
     if result.text:
         sess.messages.append({"role": "assistant", "content": result.text})
     return result
@@ -111,6 +170,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         max_turns=sess.max_iterations,
         mcp_servers=mcp_servers,
         resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
+        env=_guard_env(sess),  # 구독+프록시 조합 무력화 (차단 방지)
     )
 
     pending: dict[str, tuple[str, str, float, int]] = {}  # tool_use_id → (sym, detail, t0, cmd_idx)
@@ -143,9 +203,40 @@ async def _run_async(sess, user_content: str, result) -> None:
                 "success": "end_turn",
                 "error_max_turns": "max_iterations",
             }.get(msg.subtype, msg.subtype)
+            if msg.is_error and _is_usage_cap(msg.result or "", *(msg.errors or [])):
+                raise UsageCapError(
+                    "구독 사용량 한도 도달 — 리셋까지 대기하거나 --provider anthropic (API) 로 전환. "
+                    f"원문: {(msg.result or (msg.errors or ['?'])[0])[:200]}"
+                )
             if msg.result and not result.text:
                 result.text = msg.result
     sess.on_status(None)
+
+
+# 공식 하드캡 문구 (code.claude.com/docs/en/errors): "You've hit your session|weekly|Opus limit · resets <t>"
+_CAP_MARKERS = ("usage limit", "session limit", "weekly limit", "opus limit", "limit reached", "out of extra usage")
+
+
+def _is_usage_cap(*texts: str) -> bool:
+    joined = " ".join(t.lower() for t in texts if t)
+    if "not your usage limit" in joined:  # 일시 스로틀 문구 — 캡 아님, CLI 자체 백오프가 처리
+        return False
+    return any(m in joined for m in _CAP_MARKERS)
+
+
+def _guard_env(sess=None) -> dict:
+    """구독 보호 env 오버레이 — 상속된 ANTHROPIC_BASE_URL(프록시)을 무력화.
+
+    구독 인증 + 게이트웨이 조합은 차단 리스크(OpenCode 사례) — API 키 인증일 때만 존중.
+    SDK env 는 os.environ 상속 + 오버레이라 제거 불가 → 빈 문자열로 무력화한다.
+    """
+    if os.environ.get("ANTHROPIC_BASE_URL") and detect_auth()[0] != "api_key":
+        if sess is not None:
+            from .. import ui
+
+            sess.on_text(f"  {ui.dim('⬢ ANTHROPIC_BASE_URL 무시 — 구독 인증은 프록시 없이 직결 (차단 방지)')}\n")
+        return {"ANTHROPIC_BASE_URL": ""}
+    return {}
 
 
 def _observe_use(sess, result, b, pending) -> None:
@@ -194,10 +285,12 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
             tools=[],  # 내장 툴 전부 제거 — 순수 텍스트 완성
             max_turns=1,
             cwd=root,
+            env=_guard_env(),
         )
         async for msg in query(prompt=user, options=options):
             if isinstance(msg, ResultMessage):
                 return msg.result or ""
         return ""
 
-    return asyncio.run(_go())
+    with _spawn_gate:  # classify 도 CLI 스폰 — 동시성 상한 공유
+        return asyncio.run(_go())
