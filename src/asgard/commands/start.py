@@ -34,7 +34,21 @@ def preflight(root: str, provider: str | None = None, model: str | None = None) 
     if rp.api_key_env:
         checks.append({"name": "API 키", "ok": True, "detail": f"${rp.api_key_env}", "fix": ""})
 
-    sdk_mod = "anthropic" if rp.profile.api_mode == "anthropic" else "openai"
+    if rp.profile.api_mode == "claude_cli":
+        import shutil
+
+        cli = shutil.which("claude")
+        checks.append(
+            {
+                "name": "claude CLI",
+                "ok": bool(cli),
+                "detail": cli or "not found",
+                "fix": "https://claude.com/claude-code 설치 후 claude /login (구독) 또는 키 export",
+            }
+        )
+        sdk_mod = "claude_agent_sdk"
+    else:
+        sdk_mod = "anthropic" if rp.profile.api_mode == "anthropic" else "openai"
     sdk = importlib.util.find_spec(sdk_mod) is not None
     checks.append(
         {

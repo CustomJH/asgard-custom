@@ -3,9 +3,12 @@
 세션 = (system, tools, messages) 하나. 서브에이전트(역할·딜리버리)는 새 AgentSession —
 child context 라 프로세스 스폰 없이 중첩된다 (CUS-142 의 구조적 기반).
 
-트랜스포트 2종 (루프·툴 실행은 공유, API 호출·파싱만 분기):
+트랜스포트 3종 (루프·툴 실행은 공유, API 호출·파싱만 분기):
   anthropic     — Messages API (스키마리스 bash/editor, content 블록)
   openai_compat — chat.completions (function 툴, reasoning_content 스트리밍 — nvidia NIM 등)
+  claude_cli    — 로컬 claude CLI(Claude Code) 를 Agent SDK 로 구동 (claude_native.py, CUS-190).
+                  예외적으로 내부 루프는 Claude Code 소유 — 커스텀 툴은 in-process MCP 로
+                  이쪽 핸들러 실행, 커맨드/쓰기/토큰은 이벤트 관찰로 집계 (계약 유지).
 루프를 Asgard 가 소유하는 게 핵심 — strands/langchain 은 루프를 가져가서 Trinity 강제화를 없앤다.
 """
 
@@ -45,6 +48,10 @@ def make_client(rp: ResolvedProvider):
         if not rp.api_key:
             raise RuntimeError(f"API 키 없음 ({rp.profile.name}) — asgard start 온보딩에서 입력하세요")
         return OpenAI(base_url=rp.base_url or None, api_key=rp.api_key)
+    if rp.profile.api_mode == "claude_cli":
+        from .claude_native import make_native_client
+
+        return make_native_client()  # 마커 — 실제 스폰·인증은 Agent SDK/CLI 가 해석
     raise NotImplementedError(f"api_mode '{rp.profile.api_mode}' 미지원")
 
 
@@ -173,11 +180,14 @@ class AgentSession:
     # ── 진입점 ──────────────────────────────────────────────────────────
     def run(self, user_content: str) -> SessionResult:
         try:
-            r = (
-                self._run_anthropic(user_content)
-                if self.rp.profile.api_mode == "anthropic"
-                else self._run_openai(user_content)
-            )
+            if self.rp.profile.api_mode == "claude_cli":
+                from . import claude_native
+
+                r = claude_native.run(self, user_content)
+            elif self.rp.profile.api_mode == "anthropic":
+                r = self._run_anthropic(user_content)
+            else:
+                r = self._run_openai(user_content)
         finally:
             self.on_status(None)
         if self.on_tokens and r.tokens:

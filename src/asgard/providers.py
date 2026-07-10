@@ -41,6 +41,19 @@ PROVIDERS: dict[str, ProviderProfile] = {
         signup_hint="https://platform.claude.com 에서 키 발급 후 export ANTHROPIC_API_KEY=...",
         context_window=200_000,
     ),
+    # 네이티브 Claude Code — 로컬 claude CLI 를 Agent SDK 로 구동 (CUS 신규). API 키 대신
+    # 구독(Pro/Max) keychain 로그인·CLAUDE_CODE_OAUTH_TOKEN 을 그대로 쓴다. 키 해석은
+    # CLI/SDK 몫이라 key_optional — env 후보는 표시·우선순위 확인용일 뿐 SDK 로 전달 안 함.
+    "claude-native": ProviderProfile(
+        name="claude-native",
+        display="Claude Code (native CLI)",
+        api_mode="claude_cli",
+        env_vars=("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
+        default_model="opus",  # CLI 별칭 — claude 가 최신 모델로 해석 (full ID 도 허용)
+        signup_hint="claude CLI 설치 + 구독 로그인(claude /login) 또는 CLAUDE_CODE_OAUTH_TOKEN export",
+        key_optional=True,  # 구독 keychain 로그인이면 env 키 불요
+        context_window=200_000,
+    ),
     # 제네릭 OpenAI-호환 — OpenAI/OpenRouter/Ollama류. base_url 은 config 로 지정.
     "openai_compat": ProviderProfile(
         name="openai_compat",
@@ -183,7 +196,10 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     elif cred.get("api_key"):
         rp.api_key, rp.key_source = cred["api_key"], "credentials.json"
     elif profile.key_optional:
-        rp.api_key, rp.key_source = "ollama", "local (keyless)"  # openai SDK 는 빈 키 거부 — 더미
+        if profile.api_mode == "claude_cli":
+            rp.key_source = "claude login (keychain)"  # 인증은 CLI 가 해석 — 키 값 불요
+        else:
+            rp.api_key, rp.key_source = "ollama", "local (keyless)"  # openai SDK 는 빈 키 거부 — 더미
     else:
         rp.missing.append(f"API 키 없음 ({name}) — asgard start 에서 입력하거나 {' / '.join(candidates)} export")
     if not rp.model:

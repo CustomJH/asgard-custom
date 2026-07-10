@@ -418,7 +418,8 @@ class Heimdall:
         rp = self.role_rp.get(role_key, self.rp)
         if rp is not self.rp:
             return None  # 명시 placement 존중
-        if rp.profile.api_mode != "anthropic" or rp.model != rp.profile.default_model:
+        # claude_cli 도 티어 매핑 가능 — CLI 가 full 모델 ID 를 그대로 해석한다 (CUS-190)
+        if rp.profile.api_mode not in ("anthropic", "claude_cli") or rp.model != rp.profile.default_model:
             return None
         tier = str((self.policy.get("roles", {}).get(role_key) or {}).get("tier", "standard"))
         if bump:
@@ -428,7 +429,7 @@ class Heimdall:
     def _delivery_model(self, agent: str) -> str | None:
         """딜리버리 전문가 모델 — 정책 "delivery" 티어 (기본: freyja/thor=sonnet, loki=haiku)."""
         rp = self.rp
-        if rp.profile.api_mode != "anthropic" or rp.model != rp.profile.default_model:
+        if rp.profile.api_mode not in ("anthropic", "claude_cli") or rp.model != rp.profile.default_model:
             return None
         tier = str((self.policy.get("delivery") or {}).get(agent, _DELIVERY_TIERS.get(agent, "standard")))
         return _TIER_MODELS.get(tier)
@@ -479,6 +480,10 @@ class Heimdall:
         [trinity.classify] placement 가 있으면 그 provider/모델 사용 (저비용 분류, CUS-179)."""
         rp = self.role_rp.get("classify", self.rp)
         client = self._client_for(rp)
+        if rp.profile.api_mode == "claude_cli":
+            from .claude_native import complete_text
+
+            return complete_text(system, user, model=rp.model, root=self.root)
         if rp.profile.api_mode == "anthropic":
             resp = client.messages.create(
                 model=rp.model, max_tokens=max_tokens, system=system, messages=[{"role": "user", "content": user}]
