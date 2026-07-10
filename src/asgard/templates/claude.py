@@ -50,12 +50,7 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
-                                },
-                                {
-                                    # 게이트-우선 라우트 힌트 (CUS-189) — 모드 B classify 대체 주입
-                                    "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/route-hint.py"',
-                                },
+                                }
                             ]
                         },
                     ],

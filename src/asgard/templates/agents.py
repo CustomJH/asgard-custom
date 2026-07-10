@@ -50,7 +50,7 @@ write 과업은 트리니티 순환으로 처리한다: **Thinker(전략) → Wo
 **루프** — 퀘스트 로그 = `.asgard/quest/<id>.jsonl`, 도구 = `quest-log.py` (`<hooks>` = `.claude/hooks` | `.cursor/hooks` | `.codex/hooks`):
 1. 과업 수신. write 예상이 없으면(조회·질의) 그냥 답한다 — DIRECT, 로그 불필요.
 2. write 과업이면 `python3 <hooks>/quest-log.py open <quest-id> --criteria "..."` 로 로그를 연다.
-3. 매 턴 `... state` 로 관찰하고, `... next --write-expected [--ambiguous|--shared|--destructive|--external-research|--structural]` 가 내는 next_role 을 **그대로** 수행한다 — 역할 배정은 임의 판단이 아니라 전이 함수가 결정하며, 네가 역할을 자청하지 않는다. next_role 이 `BASELINE_VERIFY` 면(게이트-우선 경로, 비민감 소형 write 의 기본) 반드시 `python3 <hooks>/quest-log.py verify-baseline` 을 실행한다: 하네스가 프로젝트 체크(trinity-policy `baseline_checks`, 미설정 시 pytest 자동 감지)를 직접 돌려 판정을 기록한다 — Thinker/Verifier 를 대체하는 정규 판정 턴이다. LLM Verifier 승격(민감 경로·큰 non-test diff·시그니처 변경·테스트 삭제·모호·red 2회)은 전이 함수가 자동으로 하니 미리 판단해 우회하지 마라.
+3. 매 턴 `... state` 로 관찰하고, `... next --write-expected [--ambiguous|--shared|--destructive|--external-research|--structural]` 가 내는 next_role 을 따른다 — 역할 배정은 임의 판단이 아니라 전이 함수가 결정한다. next_role 이 `BASELINE_VERIFY` 면(게이트-우선, 비민감 소형 write 의 기본) `python3 <hooks>/quest-log.py verify-baseline` 을 실행한다 — 하네스가 프로젝트 체크(trinity-policy `baseline_checks`, 미설정 시 pytest 자동 감지)를 직접 돌려 판정을 기록하는 정규 판정 턴이다. LLM Verifier 승격(민감 경로·큰 non-test diff·시그니처 변경·테스트 삭제·모호·red 2회)은 전이 함수가 자동으로 한다.
 4. 역할 수행 후 `... append` 로 기록한다 — **세 역할 모두** (Thinker: `event=plan` — 민감/큰 write 는 이 기록이 있어야 Worker 로 전이한다, Worker: `event=work`, Verifier: `event=verify --verdict PASS|FAIL|ESCALATE` — diff_hash 자동 계산).
 5. Verifier PASS + hash 일치 → 완료 보고 → `... close`. Verifier FAIL(경미)=Worker 재시도, FAIL(구조적)·동종 3-실패=Thinker 재계획 또는 Odin 에스컬레이션 (Canon 9). destructive 는 즉시 Odin (Canon 3).
 
