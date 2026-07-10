@@ -138,7 +138,9 @@ def main() -> None:
         counts[key] = int(counts.get(key, 0)) + 1
         n = counts[key]
         try:
-            json.dump(counts, open(path, "w"))
+            tmp = "%s.%d.tmp" % (path, os.getpid())  # temp+rename — 크래시 절단이 카운트를 리셋하지 않게
+            json.dump(counts, open(tmp, "w"))
+            os.replace(tmp, path)
         except Exception:
             pass  # 저장 실패해도 이번 경고 판정은 진행 (fail-open)
         if n >= 3:  # Law 9 의 "같은 접근 3회+" 임계와 일치

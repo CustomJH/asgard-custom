@@ -160,6 +160,25 @@ def readonly(cmd, allow):
     return any(c == a or c.startswith(a + " ") for a in allow)
 
 
+def trivial_evidence(cmd):
+    """quest_log.py 의 trivial_evidence 와 동일 유지 (단일 출처 원칙) — `true` 한 방이 PASS 증거로
+    성립하던 Goodhart 구멍 봉합: 무조건 exit 0 인 명령은 검증 증거가 아니다."""
+    c = " ".join(str(cmd).split())
+    return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
+
+
+def pass_evidence(rec):
+    """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (quest_log.py 와 동일 유지).
+    하네스가 직접 돌린 베이스라인 green 은 그 자체가 물리 증거 — trivial 필터는 모델이 고른
+    명령에만 적용한다 (baseline_checks 는 정책 파일 소유, 모델 위조 불가)."""
+    if (rec.get("baseline") or {}).get("state") == "green":
+        return True
+    return any(
+        isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
+        for c in (rec.get("commands") or [])
+    )
+
+
 def block(root, sid, reason):
     """차단 — 단 세션당 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시 (Canon 9)."""
     path = os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json")
@@ -171,7 +190,9 @@ def block(root, sid, reason):
     n += 1
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        json.dump({"n": n}, open(path, "w"))
+        tmp = "%s.%d.tmp" % (path, os.getpid())  # temp+rename — 크래시 절단이 카운터를 리셋하지 않게
+        json.dump({"n": n}, open(tmp, "w"))
+        os.replace(tmp, path)
     except Exception:
         pass
     if n > MAX_BLOCKS:
@@ -226,9 +247,7 @@ def orphan_writes(root, sid):
             return  # Canon 9 정규 종료 — close 후에도 인질 금지 (active 경로와 동일 규칙, s1 라이브 실측)
         if base_ref and verdicts and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
             last = verdicts[-1]
-            evidence = any(
-                isinstance(c, dict) and c.get("exit_code") == 0 for c in (last.get("commands") or [])
-            )  # LAST 면제도 증거 요구 — 무증거 PASS + close 로 게이트 우회되던 구멍 (CUS-170 깊이 테스트)
+            evidence = pass_evidence(last)  # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍 (CUS-170)
             baseline_red = (last.get("baseline") or {}).get("state") == "red"  # --force close 우회 봉합 (CUS-187)
             if evidence and not baseline_red and last.get("diff_hash") == diff_state(root, base_ref)[0]:
                 return
@@ -320,12 +339,12 @@ def main():
             block(root, sid, "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.")
         if not any(e.get("criteria") for e in events):
             block(root, sid, "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.")
-        if not any(c.get("exit_code") == 0 for c in (p.get("commands") or []) if isinstance(c, dict)):
+        if not pass_evidence(p):
             block(
                 root,
                 sid,
                 "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
-                "Verifier 는 검증 명령을 직접 실행해야 합니다.",
+                "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
             )
         bl = p.get("baseline") or {}
         if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 (CUS-187) — 코드가 깨져 있다

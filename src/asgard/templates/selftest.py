@@ -45,7 +45,7 @@ echo base > f.txt && git add -A && git commit -qm init
 QL="python3 ql.py"; n=0; f=0
 ck(){ n=$((n+1)); if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; f=$((f+1)); fi; }
 W='{"role":"worker","event":"work","changed_files":["f.txt"],"commands":[{"cmd":"true","exit_code":0}]}'
-V='{"role":"verifier","event":"verify","commands":[{"cmd":"true","exit_code":0}]}'
+V='{"role":"verifier","event":"verify","commands":[{"cmd":"git diff","exit_code":0}]}'
 ck "퀘스트 로그 open/state"          "$QL open q1 --criteria c && $QL state | grep -q q1"
 echo x >> f.txt
 ck "전이: work 후 → VERIFIER" "echo '$W' | $QL append && $QL next | grep -q VERIF"

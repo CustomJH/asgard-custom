@@ -288,6 +288,25 @@ def deleted_tests(root: str, base_ref: str | None) -> list[str]:
     return [p for p in out.splitlines() if p.strip() and _testfile(p)]
 
 
+def trivial_evidence(cmd) -> bool:
+    """verifier_gate.py 의 trivial_evidence 와 동일 유지 (단일 출처 원칙) — `true` 한 방이 PASS
+    증거로 성립하던 Goodhart 구멍 봉합: 무조건 exit 0 인 명령은 검증 증거가 아니다."""
+    c = " ".join(str(cmd).split())
+    return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
+
+
+def pass_evidence(rec: dict) -> bool:
+    """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (verifier_gate.py 와 동일 유지).
+    하네스가 직접 돌린 베이스라인 green 은 그 자체가 물리 증거 — trivial 필터는 모델이 고른
+    명령에만 적용한다 (baseline_checks 는 정책 파일 소유, 모델 위조 불가)."""
+    if (rec.get("baseline") or {}).get("state") == "green":
+        return True
+    return any(
+        isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
+        for c in (rec.get("commands") or [])
+    )
+
+
 _SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn )")
 
 
@@ -335,7 +354,10 @@ def update_priors(root: str, task_class: str, red: bool) -> None:
         p["schema"] = 1
         d = os.path.join(root, ".asgard")
         os.makedirs(d, exist_ok=True)
-        json.dump(p, open(os.path.join(d, "route-priors.json"), "w"))
+        f = os.path.join(d, "route-priors.json")
+        tmp = "%s.%d.tmp" % (f, os.getpid())  # temp+rename — 크래시 절단이 이력을 리셋하지 않게
+        json.dump(p, open(tmp, "w"))
+        os.replace(tmp, f)
     except Exception:
         pass
 
@@ -437,6 +459,8 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     # (CUS-189: 잠금 테스트 2파일 추가 → big 오판 → full 강제·게이트-우선 무력화). 삭제는 dts 가 잡는다.
     nt_files = [f for f in changed if not _testfile(f)]
     small = policy["small_write"]
+    _esc_i = [i for i, e in enumerate(events) if e.get("event") == "verify" and e.get("verdict") == "ESCALATE"]
+    _plan_i = [i for i, e in enumerate(events) if e.get("event") == "plan"]
     return {
         "quest_id": qid,
         "base_ref": base_ref,
@@ -460,12 +484,14 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
         "pass_level": (last_pass or {}).get("level"),
         # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부, CUS-170 깊이 테스트 발견 구멍)
-        "pass_evidence": bool(
-            last_pass
-            and any(isinstance(c, dict) and c.get("exit_code") == 0 for c in (last_pass.get("commands") or []))
-        ),
+        "pass_evidence": bool(last_pass and pass_evidence(last_pass)),
         # 하네스 베이스라인 상태 (CUS-187) — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
         "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
+        # 무인 nudge 상태 (Canon 8) — 마커 파일 대신 로그 구조가 상한을 센다:
+        #   replan_after_escalate = 마지막 ESCALATE 이후 plan 존재 (nudge/오딘 답변이 소비됨 → 실행 재개)
+        #   escalate_nudged       = 어떤 ESCALATE 든 이후 plan 이 존재 (퀘스트당 nudge 1회 소진)
+        "replan_after_escalate": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[-1]),
+        "escalate_nudged": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[0]),
         # 게이트-우선 라우팅 신호 (CUS-188)
         "checks_available": bool(detect_checks(root, policy)),
         "sig_risk": signature_risk(root, base_ref),
@@ -533,7 +559,18 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         # 이종-sig 백스톱 — 자유 텍스트 sig 가 매번 달라 동종 판정이 안 잡혀도, 재계획 없이
         # FAIL 이 threshold+1 연속이면 접근 자체가 틀렸다고 본다 (턴 예산 소진 전 탈출).
         return out("THINKER_REPLAN", "연속 %d-실패(이종 포함) — 접근 재설계" % s["fail_streak_any"])
-    if s["last_verdict"] == "ESCALATE":
+    if s["last_verdict"] == "ESCALATE" and not s.get("replan_after_escalate"):
+        # ESCALATE 이후 재계획(plan)이 남았으면 이 분기를 건너뛴다 — 재계획이 에스컬레이션을 소비하고
+        # 아래 WORKER 폴스루로 실행이 이어진다 (오딘 답변 후 재개 경로와 무인 nudge 경로 공통).
+        if getattr(flags, "unattended", False) and not s.get("escalate_nudged"):
+            # 무인 세션 1회 nudge (Canon 8) — 오딘의 답은 오지 않는다. 방어 가능한 기본안으로 재계획을
+            # 강제하고, nudge 소진 후의 재-ESCALATE 는 진짜 블로커로 인정 (verifier_gate 의 마커 파일과
+            # 같은 의미론 — 여기선 로그 구조(ESCALATE↔plan 순서)가 상한을 센다).
+            return out(
+                "THINKER_REPLAN",
+                "무인 세션 ESCALATE (Canon 8) — 방어 가능한 기본안을 골라 `가정:` criteria 로 기록하고 진행. "
+                "어떤 기본안도 방어 불가한 진짜 블로커면 사유 기록 후 재-ESCALATE",
+            )
         # Verifier ESCALATE = 진행 불가 블로커 신고 (Canon 8: 승인 요청 용도 아님) — WORKER 폴스루로
         # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭 (CUS-171).
         return out("ESCALATE_ODIN", "Verifier ESCALATE — 진행 불가 블로커, Odin 결정 필요")
@@ -606,6 +643,9 @@ def main() -> int:
     ap.add_argument("--shared", action="store_true")
     ap.add_argument("--structural", action="store_true", help="next: 직전 FAIL 이 구조적임을 신고")
     ap.add_argument("--write-expected", action="store_true", help="next: 아직 diff 없지만 write 예정")
+    ap.add_argument(  # Canon 8 무인 진행 — asgard run 이 env 를 심으므로 기본값이 env 를 읽는다
+        "--unattended", action="store_true", default=os.environ.get("ASGARD_UNATTENDED") == "1"
+    )
     ap.add_argument(
         "--task-class",
         choices=["trivial", "standard", "deep"],
@@ -640,7 +680,12 @@ def main() -> int:
             args.session,
         )
         write_event(root, qid, ev)
-        open(os.path.join(quest_dir(root), "ACTIVE"), "w").write(qid + "\n")
+        # temp+rename — 크래시 절단 ACTIVE(빈 파일)가 게이트를 orphan 경로로 오도하지 않게.
+        # ponytail: 전역 포인터 자체는 유지 — 동시 세션 경쟁은 open 시 dangling 경고가 표면화 (CUS-180)
+        _ap = os.path.join(quest_dir(root), "ACTIVE")
+        _tmp = "%s.%d.tmp" % (_ap, os.getpid())
+        open(_tmp, "w").write(qid + "\n")
+        os.replace(_tmp, _ap)
         print(json.dumps({"opened": qid, "base_ref": base_ref, "turn": ev["turn"]}, ensure_ascii=False))
         return 0
 
@@ -769,7 +814,10 @@ def main() -> int:
         # LAST 포인터: 닫힌 뒤에도 gate 가 "이 워킹트리 상태는 검증됐다"를 증명할 수 있게 —
         # 없으면 close 직후 Stop 에서 write-sentinel 기록이 방금 검증된 write 를 오차단한다.
         try:
-            open(os.path.join(quest_dir(root), "LAST"), "w").write(qid + "\n")
+            _lp = os.path.join(quest_dir(root), "LAST")
+            _tmp = "%s.%d.tmp" % (_lp, os.getpid())
+            open(_tmp, "w").write(qid + "\n")
+            os.replace(_tmp, _lp)
         except Exception:
             pass
         print(json.dumps({"closed": qid, "forced": bool(args.force and not ok)}))
