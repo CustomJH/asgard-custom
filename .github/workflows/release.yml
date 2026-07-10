@@ -18,6 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 태그 ↔ __version__ 불일치 방어 — 불일치면 wheel 파일명이 태그와 어긋나
+      # install.sh 의 releases/download/v{tag}/asgard-{tag}-*.whl URL 이 404 가 된다.
+      - name: Verify tag matches __version__
+        run: |
+          v="$(sed -n 's/.*__version__ = "\([^"]*\)".*/\1/p' src/asgard/__init__.py)"
+          [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != __version__ $v — src/asgard/__init__.py 를 먼저 올리세요"; exit 1; }
+
       - uses: astral-sh/setup-uv@v5
 
       - name: Build wheel + sdist

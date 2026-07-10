@@ -25,4 +25,18 @@ jobs:
 
       - run: uv run ty check
 
-      - run: uv run pytest -q
+      # 커버리지는 리포트만 (게이트 아님) — 공백이 파이프라인 로그에 보이게. 문턱은 정책 결정 후.
+      - run: uv run pytest -q --cov=asgard --cov-report=term
+
+  # 설치 머니패스 + 스캐폴드/가드 하네스 — pytest 밖의 셸 하네스를 CI 에 편입 (e2e_trinity.sh 는
+  # 실 API 키 필요라 제외, docker/sandbox 는 로컬 전용).
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: bash tests/smoke.sh
