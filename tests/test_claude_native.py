@@ -314,6 +314,40 @@ class TestBanGuards(_Sess):
         self.assertIsNotNone(claude_native._spawn_gate)
 
 
+class TestDaemonLoop(unittest.TestCase):
+    """단일 데몬 이벤트 루프 (CUS-192) — 매턴 새 루프 대신 재사용으로 asyncgen/child-watcher 잔여 봉인."""
+
+    def test_submit_reuses_single_loop(self):
+        async def who():
+            return id(asyncio.get_running_loop())
+
+        a, b = claude_native._submit(who()), claude_native._submit(who())
+        self.assertEqual(a, b)  # 두 제출이 같은 루프 — 매턴 새 루프 아님
+
+    def test_submit_returns_coro_value(self):
+        async def double(n):
+            return n * 2
+
+        self.assertEqual(claude_native._submit(double(21)), 42)
+
+    def test_drained_closes_generator(self):
+        closed = []
+
+        async def gen():
+            try:
+                yield 1
+                yield 2
+            finally:
+                closed.append(True)
+
+        async def consume():
+            return [m async for m in claude_native._drained(gen())]
+
+        out = claude_native._submit(consume())
+        self.assertEqual(out, [1, 2])
+        self.assertEqual(closed, [True])  # finally 실행 = 명시적 정리됨
+
+
 class TestCompleteText(unittest.TestCase):
     def test_tools_removed_single_turn(self):
         calls = []
