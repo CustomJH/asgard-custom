@@ -14,6 +14,7 @@ from unittest import mock
 from claude_agent_sdk import (
     AssistantMessage,
     ResultMessage,
+    StreamEvent,
     TextBlock,
     ToolResultBlock,
     ToolUseBlock,
@@ -115,12 +116,14 @@ class TestTransport(_Sess):
         self.assertEqual(r.text, "world")  # anthropic 트랜스포트 계약 — 마지막 어시스턴트 텍스트
         self.assertEqual(r.tokens, 15)
         self.assertEqual(r.stop_reason, "end_turn")
-        # 옵션 계약 — 시스템 프롬프트·cwd·권한 모드·내장 툴 셋
+        # 옵션 계약 — 시스템 프롬프트·cwd·권한 모드·내장 툴 셋·스트리밍·bash 상한
         _, opt = calls[0]
         self.assertEqual(opt.system_prompt, "you are a test")
         self.assertEqual(opt.permission_mode, "bypassPermissions")
         self.assertEqual(opt.tools, claude_native.BUILTIN_TOOLS)
         self.assertIsNone(opt.resume)
+        self.assertTrue(opt.include_partial_messages)
+        self.assertEqual(opt.env["BASH_MAX_TIMEOUT_MS"], "120000")  # tools._TIMEOUT 패리티
 
     def test_resume_on_second_turn(self):
         script = [[_result_msg(session_id="sid-42")], [_result_msg(session_id="sid-42")]]
@@ -181,6 +184,54 @@ class TestTransport(_Sess):
         with mock.patch("claude_agent_sdk.query", query):
             r = sess.run("q")
         self.assertEqual(r.text, "final answer")
+
+
+def _delta(text):
+    return StreamEvent(
+        uuid="u",
+        session_id="s",
+        event={"type": "content_block_delta", "delta": {"type": "text_delta", "text": text}},
+    )
+
+
+class TestStreaming(_Sess):
+    """텍스트 델타 스트리밍 (include_partial_messages) — anthropic 트랜스포트 체감 패리티."""
+
+    def test_deltas_stream_and_block_not_duplicated(self):
+        script = [
+            [
+                _delta("hel"),
+                _delta("lo"),
+                AssistantMessage(content=[TextBlock(text="hello")], model="m"),
+                _result_msg(),
+            ]
+        ]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("hi")
+        self.assertEqual(self.texts, ["hel", "lo"])  # 델타만 방출 — TextBlock 전체 재방출 없음
+        self.assertEqual(r.text, "hello")  # result.text 는 여전히 완성 블록 소스
+
+    def test_non_text_deltas_ignored(self):
+        script = [
+            [
+                StreamEvent(
+                    uuid="u",
+                    session_id="s",
+                    event={"type": "content_block_delta", "delta": {"type": "input_json_delta", "partial_json": "{"}},
+                ),
+                StreamEvent(uuid="u", session_id="s", event={"type": "message_start"}),
+                AssistantMessage(content=[TextBlock(text="done")], model="m"),
+                _result_msg(),
+            ]
+        ]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("hi")
+        self.assertEqual(self.texts, ["done"])  # 텍스트 델타 없음 → 폴백 전체 방출
+        self.assertEqual(r.text, "done")
 
 
 class TestCustomToolBridge(_Sess):

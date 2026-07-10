@@ -165,6 +165,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         AssistantMessage,
         ClaudeAgentOptions,
         ResultMessage,
+        StreamEvent,
         TextBlock,
         ToolResultBlock,
         ToolUseBlock,
@@ -194,16 +195,31 @@ async def _run_async(sess, user_content: str, result) -> None:
         max_turns=sess.max_iterations,
         mcp_servers=mcp_servers,
         resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
-        env=_guard_env(sess),  # 구독+프록시 조합 무력화 (차단 방지)
+        include_partial_messages=True,  # 텍스트 델타 스트리밍 — anthropic 트랜스포트와 체감 패리티
+        # BASH_MAX_TIMEOUT_MS: 네이티브 트랜스포트 120s 하드캡(tools._TIMEOUT)과 패리티 —
+        # 모델이 timeout 연장(기본 최대 10분)으로 폭주 명령을 키우지 못하게 상한.
+        env={"BASH_MAX_TIMEOUT_MS": "120000", **_guard_env(sess)},
     )
 
     pending: dict[str, tuple[str, str, float, int]] = {}  # tool_use_id → (sym, detail, t0, cmd_idx)
     sess.on_status(_t("thinking"))
     t0 = time.monotonic()
     first = True
+    streamed = False  # 델타 수신 여부 — 수신 중이면 TextBlock 전체 재방출 억제 (이중 출력 방지)
     gen = query(prompt=user_content, options=options)
     async for msg in _drained(gen):
-        if isinstance(msg, AssistantMessage):
+        if isinstance(msg, StreamEvent):
+            d = msg.event.get("delta") or {}
+            if msg.event.get("type") == "content_block_delta" and d.get("type") == "text_delta" and d.get("text"):
+                streamed = True
+                if first:
+                    first = False
+                    sess.on_status(None)
+                    gap = time.monotonic() - t0
+                    if gap >= 2:
+                        sess._thought_line(gap)
+                sess.on_text(d["text"])
+        elif isinstance(msg, AssistantMessage):
             for b in msg.content:
                 if isinstance(b, TextBlock):
                     if first:
@@ -213,7 +229,8 @@ async def _run_async(sess, user_content: str, result) -> None:
                         if gap >= 2:
                             sess._thought_line(gap)
                     result.text = b.text  # anthropic 트랜스포트와 동일 — 마지막 어시스턴트 텍스트가 남는다
-                    sess.on_text(b.text)
+                    if not streamed:  # 구 CLI(델타 미지원) 폴백 — 기존 전체 블록 방출
+                        sess.on_text(b.text)
                 elif isinstance(b, ToolUseBlock):
                     _observe_use(sess, result, b, pending)
         elif isinstance(msg, UserMessage) and isinstance(msg.content, list):
