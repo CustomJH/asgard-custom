@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shlex
 import subprocess
 import sys
 
@@ -37,21 +39,56 @@ def _confine(root: str, path: str) -> str:
     return p
 
 
-def _git_guard(root: str, command: str) -> str | None:
-    """git-guard 훅을 배포 형태로 통과. 차단이면 사유 문자열, 통과면 None. fail-open (훅 오류 = 통과)."""
+def _hook_guard(root: str, module: str, tool_input: dict) -> str | None:
+    """가드 훅을 배포 형태(subprocess stdin 계약)로 통과. 차단이면 사유 문자열, 통과면 None.
+    fail-open (훅 오류 = 통과) — 로직 중복 금지, 훅이 단일 출처."""
     try:
         p = subprocess.run(
-            [sys.executable, "-m", "asgard.hooks.git_guard"],
-            input=json.dumps({"tool_input": {"command": command}}),
+            [sys.executable, "-m", module],
+            input=json.dumps({"tool_input": tool_input}),
             capture_output=True,
             text=True,
             timeout=10,
             cwd=root,
         )
         if p.returncode != 0:
-            return (p.stderr or p.stdout or "git-guard 차단").strip()[:500]
+            return (p.stderr or p.stdout or module + " 차단").strip()[:500]
     except Exception:
         pass
+    return None
+
+
+def _git_guard(root: str, command: str) -> str | None:
+    return _hook_guard(root, "asgard.hooks.git_guard", {"command": command})
+
+
+# 셸 파괴 명령 가드 (Canon 3) — git 계열은 git-guard 훅이 단일 출처, 여기는 비-git 만.
+# 루트 안 rm -rf 는 허용 (스크래치 정리는 정당 + git 이 복구 지점) — 루트 밖·조상 경로만 차단.
+_DEV_DESTRUCTIVE = re.compile(r"\bmkfs(\.\w+)?\b|\bdd\b[^|;&]*\bof=/dev/")
+
+
+def _destructive_guard(root: str, cmd: str) -> str | None:
+    """rm -rf 급 삭제가 프로젝트 루트 밖을 노리면 차단. 파싱 불가 세그먼트는 fail-open
+    (ponytail: 셸 문법 전체 해석은 안 한다 — 게이트·git 이 최종 방어선)."""
+    if _DEV_DESTRUCTIVE.search(cmd):
+        return f"파괴 명령 차단: {cmd[:80]} (Canon 3 — 디바이스 파괴는 Odin 동의로도 네이티브 루프 밖)"
+    rr = os.path.realpath(root)
+    for seg in re.split(r"[;&|]+", cmd):
+        try:
+            toks = shlex.split(seg)
+        except ValueError:
+            continue
+        if not toks or os.path.basename(toks[0]) != "rm":
+            continue
+        flags = "".join(t.lstrip("-") for t in toks[1:] if t.startswith("-")).lower()
+        if not ("r" in flags and "f" in flags):
+            continue
+        for t in toks[1:]:
+            if t.startswith("-"):
+                continue
+            p = os.path.realpath(os.path.expanduser(t) if t.startswith(("~", "/")) else os.path.join(root, t))
+            if p != rr and not p.startswith(rr + os.sep):
+                return f"rm -rf 가 프로젝트 루트 밖을 대상: {t} (Canon 3 — Odin 명시 동의 필요)"
     return None
 
 
@@ -66,7 +103,7 @@ def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
     cmd = str(tool_input.get("command") or "")
     if not cmd.strip():
         raise ToolError("빈 명령")
-    blocked = _git_guard(root, cmd)
+    blocked = _git_guard(root, cmd) or _destructive_guard(root, cmd)
     if blocked:
         raise ToolError(blocked)
     try:
@@ -82,6 +119,14 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
     cmd = tool_input.get("command")
     path = _confine(root, str(tool_input.get("path") or ""))
     rel = os.path.relpath(path, os.path.realpath(root))  # path 는 realpath — 기준도 풀어야 함 (macOS /var 심링크)
+
+    if cmd in ("create", "str_replace", "insert"):
+        # secret-guard 훅 (Canon Law 4) — mode B 와 동일 차단 지점(파일 쓰기). shell 우회는
+        # 훅 헤더에 문서화된 알려진 구멍 (양 모드 공통).
+        body = str(tool_input.get("file_text") or tool_input.get("new_str") or tool_input.get("insert_text") or "")
+        blocked = _hook_guard(root, "asgard.hooks.secret_guard", {"file_path": rel, "content": body})
+        if blocked:
+            raise ToolError(blocked)
 
     if cmd == "view":
         if os.path.isdir(path):
