@@ -467,14 +467,17 @@ def transition(s: dict, policy: dict, flags) -> dict:
         "external_research": flags.external_research,
     }
     level = "full" if (sensitive or big) else "micro"
-    # 게이트-우선(STANDARD) 적격 (CUS-188) — 조건 하나라도 깨지면 아래 트리니티 행으로 자연 폴스루
-    # = Trinity 승격. 민감/큰 diff/시그니처 변경/테스트 삭제는 LLM Verifier(caller-grep 계약)가 필요.
+    # 게이트-우선(STANDARD) 적격 (CUS-188) — 플래그 없는 기본값: 물리 가드가 전부 판정한다.
+    # v1 은 --standard 옵트인이었으나 CUS-189 스모크 3회에서 모델이 플래그를 안 넘김 (프롬프트 계약
+    # 한계) — 의존성을 삭제하고 전이 함수 기본으로 흡수. 조건 하나라도 깨지면 아래 트리니티 행으로
+    # 자연 폴스루 = 승격. 민감/큰 non-test diff/시그니처 변경/테스트 삭제/모호는 LLM Verifier 가 필요.
     standard_ok = (
-        getattr(flags, "standard", False)
-        and not sensitive
+        not sensitive
         and not big
         and not s.get("deleted_tests")
         and not s.get("sig_risk")
+        and not flags.ambiguous
+        and not flags.external_research
     )
 
     def out(role, why):
@@ -559,7 +562,6 @@ def main() -> int:
     ap.add_argument("--shared", action="store_true")
     ap.add_argument("--structural", action="store_true", help="next: 직전 FAIL 이 구조적임을 신고")
     ap.add_argument("--write-expected", action="store_true", help="next: 아직 diff 없지만 write 예정")
-    ap.add_argument("--standard", action="store_true", help="next: 게이트-우선 경로 (CUS-188) — 비민감 소형 write")
     ap.add_argument("--force", action="store_true", help="close: 판정 없이 강제 해제 (Odin 동의 필요)")
     args = ap.parse_args()
     root = repo_root()

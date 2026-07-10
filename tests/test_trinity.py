@@ -664,8 +664,8 @@ class TestStandardTransition(TrinityBase):
     def work(self):
         self.qlog("append", "--role", "worker", "--event", "work")
 
-    def nxt(self):
-        return jout(self.qlog("next", "--standard", "--write-expected"))
+    def nxt(self, *flags):
+        return jout(self.qlog("next", "--write-expected", *flags))
 
     def test_work_routes_baseline_verify(self):
         self.policy(baseline_checks=["true"])
@@ -732,6 +732,15 @@ class TestStandardTransition(TrinityBase):
         self.work()
         self.assertEqual(self.nxt()["next_role"], "VERIFIER")
 
+    def test_ambiguous_excluded_from_gate_first(self):
+        # 모호 과업은 게이트-우선 부적격 — plan 충족 후에도 work 다음은 LLM VERIFIER
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.qlog("append", "--role", "thinker", "--event", "plan")
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        self.assertEqual(self.nxt("--ambiguous")["next_role"], "VERIFIER")
+
     def test_added_tests_do_not_escalate(self):
         # CUS-189 스모크 발견 — 잠금 테스트 추가가 big 오판을 만들면 게이트-우선이 무력화된다
         self.policy(baseline_checks=["true"])
@@ -772,7 +781,7 @@ class TestRouteHint(TrinityBase):
 
     def test_write_prompt_injects_standard_hint(self):
         out = self.rhint("app.py 의 버그 고쳐줘").stdout
-        self.assertIn("--standard", out)
+        self.assertIn("BASELINE_VERIFY", out)
         self.assertIn("verify-baseline", out)
 
     def test_read_prompt_is_silent(self):

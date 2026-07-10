@@ -661,10 +661,9 @@ class Heimdall:
                 ("--external-research", cls["external_research"]),
                 ("--shared", cls["shared"]),
                 ("--write-expected", True),
-                ("--standard", standard),  # 게이트-우선 (CUS-188) — 전이 함수가 승격 조건을 판정
             )
             if on
-        ]
+        ]  # 게이트-우선은 전이 함수 기본값 (CUS-189) — 별도 플래그 없음, 물리 가드가 판정
         # 게이트-우선은 Thinker 를 생략한다 — Worker 가 계획 없이 뛰지 않게 criteria 를 계획 자리에.
         plan_ctx = ("성공 기준: " + "; ".join(map(str, cls["criteria"]))) if standard else ""
         explored: list[str] = []  # Thinker 관찰 명령 — Worker 재탐색 세금 절감 (CUS-182 최소판, 힌트 전용)

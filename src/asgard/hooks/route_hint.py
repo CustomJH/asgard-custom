@@ -28,11 +28,11 @@ _READ_VERBS = (
 )  # fmt: skip
 
 HINT = (
-    "[asgard] 라우트 힌트(결정론 분류): 이 과업은 비파괴 write 로 분류됨 — 게이트-우선 경로를 쓴다: "
-    "quest-log open 후 `next` 를 반드시 `--standard --write-expected` 로 호출하고, next_role 이 "
-    "BASELINE_VERIFY 면 `quest-log.py verify-baseline` 을 실행하라 (Thinker/Verifier 생략 — 하네스 "
-    "베이스라인이 판정). 부적격(민감 경로·큰 diff·시그니처 변경·테스트 삭제)이면 전이 함수가 자동 "
-    "승격하니 미리 판단해 빼지 마라."
+    "[asgard] 라우트 힌트(결정론 분류): 이 과업은 비파괴 write 로 분류됨 — 트리니티 프로토콜을 그대로 "
+    "따르라: quest-log open 후 매 턴 `next --write-expected` 를 호출하고 산출된 next_role 을 **그대로** "
+    "수행한다 (역할 자청 금지 — Thinker/Verifier 를 스스로 시작하지 마라). next_role 이 BASELINE_VERIFY "
+    "면 반드시 `quest-log.py verify-baseline` 을 실행하라 — 하네스가 프로젝트 체크로 판정하는 정규 턴이다. "
+    "LLM Verifier 승격(민감 경로·큰 diff·시그니처 변경·테스트 삭제)은 전이 함수가 자동으로 한다."
 )
 
 
