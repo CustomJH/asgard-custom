@@ -194,6 +194,10 @@ async def _run_async(sess, user_content: str, result) -> None:
         permission_mode="bypassPermissions",  # 네이티브 트랜스포트(무제한 bash)와 동등 자율성
         max_turns=sess.max_iterations,
         mcp_servers=mcp_servers,
+        # 유저/프로젝트 MCP 설정(~/.claude.json, .mcp.json) 차단 — Asgard 가 툴 표면을 소유한다.
+        # 없으면 pencil/hermes 등 무관 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
+        # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (CUS-194 t1 4/4 실측).
+        strict_mcp_config=True,
         resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
         include_partial_messages=True,  # 텍스트 델타 스트리밍 — anthropic 트랜스포트와 체감 패리티
         # BASH_MAX_TIMEOUT_MS: 네이티브 트랜스포트 120s 하드캡(tools._TIMEOUT)과 패리티 —
@@ -338,6 +342,7 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
             system_prompt=system,
             model=model or None,
             tools=[],  # 내장 툴 전부 제거 — 순수 텍스트 완성
+            strict_mcp_config=True,  # tools=[] 는 유저 MCP 를 못 막는다 — classify 순수성 보장 (t1 4/4 원인)
             max_turns=1,
             cwd=root,
             env=_guard_env(),

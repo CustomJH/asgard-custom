@@ -124,6 +124,7 @@ class TestTransport(_Sess):
         self.assertIsNone(opt.resume)
         self.assertTrue(opt.include_partial_messages)
         self.assertEqual(opt.env["BASH_MAX_TIMEOUT_MS"], "120000")  # tools._TIMEOUT 패리티
+        self.assertTrue(opt.strict_mcp_config)  # 유저/프로젝트 MCP 누출 차단 — Asgard 가 툴 표면 소유
 
     def test_resume_on_second_turn(self):
         script = [[_result_msg(session_id="sid-42")], [_result_msg(session_id="sid-42")]]
@@ -414,6 +415,7 @@ class TestCompleteText(unittest.TestCase):
         self.assertEqual(opt.tools, [])
         self.assertEqual(opt.max_turns, 1)
         self.assertEqual(opt.model, "claude-haiku-4-5-20251001")
+        self.assertTrue(opt.strict_mcp_config)  # tools=[] 는 유저 MCP 를 못 막는다 (t1 4/4 fallback 원인)
 
 
 if __name__ == "__main__":

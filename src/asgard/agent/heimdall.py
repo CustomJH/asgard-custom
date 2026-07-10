@@ -152,7 +152,7 @@ _DESTRUCTIVE_PAT = re.compile(
 )
 _WRITE_VERBS = (
     "만들", "생성해", "수정해", "고쳐", "추가해", "구현해", "작성해", "바꿔", "변경해", "리팩터", "빼줘",
-    "삭제해", "지워", "적용해", "옮겨", "설치해", "fix ", "implement", "refactor", "rename ", "install ",
+    "삭제해", "지워", "적용해", "옮겨", "설치해", "완성해", "fix ", "implement", "refactor", "rename ", "install ",
 )  # fmt: skip
 _READ_VERBS = (
     "설명해", "알려", "뭐야", "무엇", "어떻게 동작", "왜 ", "읽어줘", "분석해줘", "보여줘", "요약해", "조회",

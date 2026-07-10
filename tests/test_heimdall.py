@@ -429,6 +429,8 @@ class TestClassifyHeuristic(Base):
             "테스트 추가해줘",
             "implement the parser in parser.py",
             "이 모듈 리팩터해줘",
+            # CUS-194 t1 실측 — "완성해줘" 가 동사 리스트 밖이라 LLM 폴백으로 새던 케이스
+            "우리 API 서비스에 요청 rate limit 기능을 완성해줘. limiter.py에 골격만 있고 아직 동작하지 않아.",
         ]
         destructive = ["rm -rf ./build 실행해", "git push --force 해", "임시 파일 다 지워"]
         for q in read_only:
