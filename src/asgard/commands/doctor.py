@@ -50,7 +50,7 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
-    hooks = ["quest-log.py", "verifier-gate.py", "write-sentinel.py", "unattended-context.py"]
+    hooks = ["quest-log.py", "verifier-gate.py", "write-sentinel.py", "unattended-context.py", "route-hint.py"]
     missing = [h for h in hooks if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
     gate_wired = False
     try:

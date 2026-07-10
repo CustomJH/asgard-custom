@@ -20,6 +20,7 @@ GATE = os.path.abspath(os.path.join(SRC, "verifier_gate.py"))
 TRACKER = os.path.abspath(os.path.join(SRC, "failure_tracker.py"))
 SENTINEL = os.path.abspath(os.path.join(SRC, "write_sentinel.py"))
 UCTX = os.path.abspath(os.path.join(SRC, "unattended_context.py"))
+RHINT = os.path.abspath(os.path.join(SRC, "route_hint.py"))
 
 
 def run(script, args=None, stdin="", cwd=None, env_extra=None):
@@ -761,6 +762,24 @@ class TestStandardTransition(TrinityBase):
         self.work()
         p = self.qlog("verify-baseline")
         self.assertEqual(p.returncode, 1)  # 판정 불가 — LLM Verifier 폴백 지시
+
+
+class TestRouteHint(TrinityBase):
+    """CUS-189 — 모드 B 라우트 힌트 훅: 명백 비파괴 write 에만 --standard 주입, 그 외 침묵."""
+
+    def rhint(self, prompt):
+        return run(RHINT, stdin=json.dumps({"prompt": prompt}), cwd=self.root)
+
+    def test_write_prompt_injects_standard_hint(self):
+        out = self.rhint("app.py 의 버그 고쳐줘").stdout
+        self.assertIn("--standard", out)
+        self.assertIn("verify-baseline", out)
+
+    def test_read_prompt_is_silent(self):
+        self.assertEqual(self.rhint("이 함수 어떻게 동작하는지 설명해줘").stdout, "")
+
+    def test_destructive_prompt_is_silent(self):
+        self.assertEqual(self.rhint("레포 전부 삭제하고 다시 만들어").stdout, "")
 
 
 if __name__ == "__main__":

@@ -99,6 +99,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "verifier-gate.py"), hook("verifier-gate")),  # Canon 10 Stop 게이트
             (j(root, ".claude", "hooks", "write-sentinel.py"), hook("write-sentinel")),  # quest 미개설 write 봉합
             (j(root, ".claude", "hooks", "unattended-context.py"), hook("unattended-context")),  # Canon 8 무인 감지
+            (j(root, ".claude", "hooks", "route-hint.py"), hook("route-hint")),  # 게이트-우선 라우트 힌트 (CUS-189)
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
         files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
