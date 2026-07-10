@@ -12,10 +12,10 @@ import os
 import sys
 
 from .. import ui
-from ..providers import resolve
+from ..providers import ResolvedProvider, resolve
 
 
-def preflight(root: str, provider: str | None = None, model: str | None = None) -> tuple[list[dict], object]:
+def preflight(root: str, provider: str | None = None, model: str | None = None) -> tuple[list[dict], "ResolvedProvider"]:
     """세션 진입 체크리스트. (checks, resolved) — resolved 는 루프(CUS-137)로 핸드오프."""
     rp = resolve(root, provider=provider, model=model)
     checks: list[dict] = [
@@ -134,3 +134,57 @@ def run_start(
     from ..agent import repl
 
     return repl.run(root, rp)
+
+
+def run_prompt(
+    prompt: str,
+    provider: str | None = None,
+    model: str | None = None,
+    json_out: bool = False,
+) -> int:
+    """headless 단발 실행 (CUS-193) — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
+
+    모드 B 는 라우팅 논리레이어 주입 불가(CUS-189 실측) — 게이트-우선의 측정·강제 표면은
+    이 네이티브 경로다 (하네스가 전이 산출을 코드로 수행, 채택률 100%).
+    exit code: 0 정상 / 1 ⚠ 보고(에스컬레이션·중단·예산 소진) / 2 프리플라이트 실패."""
+    import json as _json
+    import time as _time
+
+    root = os.getcwd()
+    from .. import i18n
+
+    i18n.load_lang(root)
+    checks, rp = preflight(root, provider=provider, model=model)
+    if not all(c["ok"] for c in checks):
+        _render(checks)
+        ui.warn("headless 실행 불가 — 위 처방을 적용하세요.")
+        return 2
+    os.environ.setdefault("ASGARD_UNATTENDED", "1")  # Canon 8 — headless 는 무인, 게이트도 이 신호를 본다
+    from ..agent.heimdall import Heimdall
+
+    sink = sys.stderr if json_out else sys.stdout  # --json: stdout 은 최종 JSON 전용
+
+    def stream(s: str) -> None:
+        sink.write(s)
+
+    h = Heimdall(rp, root, on_text=stream, on_status=None)
+    t0 = _time.time()
+    result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다 (CUS-180)
+    wall = round(_time.time() - t0, 1)
+    if json_out:
+        sys.stdout.write(
+            _json.dumps(
+                {
+                    "result": result,
+                    "tokens": h.total_tokens,
+                    "wall_s": wall,
+                    "provider": rp.profile.name,
+                    "model": rp.model,
+                },
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    else:
+        sys.stdout.write("\n" + result + "\n")
+    return 1 if result.startswith("⚠") else 0

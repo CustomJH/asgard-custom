@@ -124,10 +124,16 @@ def role_run(
     raise typer.Exit(run_role_run(role, task))
 
 
-# 미구현 스텁 — 정식 커맨드처럼 목록에 노출하지 않도록 hidden. 구현되면 hidden 제거.
-@app.command(hidden=True)
-def run() -> None:
-    typer.echo("asgard run: planned")
+@app.command(help="run one task headless through the native Trinity loop (benches/CI)")
+def run(
+    prompt: str = typer.Argument(..., help="the task to execute"),
+    provider: str = typer.Option(None, "--provider", help="override the provider"),
+    model: str = typer.Option(None, "--model", help="override the model id"),
+    json_: bool = typer.Option(False, "--json", help="stream to stderr, print a final JSON summary to stdout"),
+) -> None:
+    from .commands.start import run_prompt
+
+    raise typer.Exit(run_prompt(prompt, provider=provider, model=model, json_out=json_))
 
 
 if __name__ == "__main__":

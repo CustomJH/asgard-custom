@@ -361,5 +361,73 @@ class TestHeadlessProceed(unittest.TestCase):
         self.assertIn("승인·확인 요청 용도 금지", self._tpl("asgard-verifier.md"))
 
 
+class TestRunPrompt(unittest.TestCase):
+    """asgard run — headless 단발 실행 (CUS-193). Heimdall/preflight 을 대역으로 결정론 검증."""
+
+    def setUp(self):
+        import io
+        import sys as _sys
+
+        from asgard.commands import start as S
+
+        self.S = S
+        self._preflight, self._stdout = S.preflight, _sys.stdout
+        self._unattended = os.environ.pop("ASGARD_UNATTENDED", None)
+        self.out = io.StringIO()
+        _sys.stdout = self.out
+
+    def tearDown(self):
+        import sys as _sys
+
+        self.S.preflight = self._preflight
+        _sys.stdout = self._stdout
+        if self._unattended is not None:
+            os.environ["ASGARD_UNATTENDED"] = self._unattended
+        else:
+            os.environ.pop("ASGARD_UNATTENDED", None)
+
+    def _patch(self, result_text="과업 완수 — 보고", tokens=1234):
+        import asgard.agent.heimdall as H
+
+        class FakeRP:
+            class profile:
+                name = "anthropic"
+
+            model = "claude-x"
+
+        class FakeHeimdall:
+            def __init__(self, rp, root, on_text, on_status=None):
+                self.total_tokens = tokens
+                on_text("stream-line\n")
+
+            def handle(self, prompt):
+                return result_text
+
+        self.S.preflight = lambda root, provider=None, model=None: ([{"ok": True}], FakeRP())
+        orig = H.Heimdall
+        H.Heimdall = FakeHeimdall
+        self.addCleanup(lambda: setattr(H, "Heimdall", orig))
+
+    def test_json_output_and_exit_zero(self):
+        self._patch()
+        rc = self.S.run_prompt("작업해줘", json_out=True)
+        self.assertEqual(rc, 0)
+        d = json.loads(self.out.getvalue())
+        self.assertEqual(d["result"], "과업 완수 — 보고")
+        self.assertEqual(d["tokens"], 1234)
+        self.assertEqual(os.environ.get("ASGARD_UNATTENDED"), "1")  # Canon 8 headless 신호
+
+    def test_warning_result_exits_one(self):
+        self._patch(result_text="⚠ Odin 결정 필요 — 게이트 차단")
+        self.assertEqual(self.S.run_prompt("작업해줘", json_out=True), 1)
+
+    def test_preflight_failure_exits_two(self):
+        self.S.preflight = lambda root, provider=None, model=None: (
+            [{"ok": False, "name": "k", "detail": "", "fix": ""}],
+            None,
+        )
+        self.assertEqual(self.S.run_prompt("작업해줘"), 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)
