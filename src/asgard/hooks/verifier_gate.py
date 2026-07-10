@@ -63,6 +63,10 @@ DEFAULT_POLICY: dict[str, Any] = {
         "pwd",
         "which",
     ],
+    # 하네스 소유 베이스라인 체크 (CUS-187) — quest_log.py 와 동일 유지. 게이트는 실행하지 않고
+    # PASS 레코드에 quest-log 가 기록한 결과만 읽는다 (Stop 지연 예산에 pytest 를 얹지 않는다).
+    "baseline_checks": [],
+    "baseline_timeout": 120,
 }
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py 와 동일 유지 (CUS-169)
@@ -127,6 +131,20 @@ def diff_state(root, base_ref):
             h.update(p.encode() + b"\0missing")
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked))
     return (h.hexdigest() if changed else EMPTY), changed, lines
+
+
+def _testfile(p):
+    segs = p.lower().split("/")
+    return "tests" in segs or "test" in segs or segs[-1].startswith("test_") or segs[-1].endswith("_test.py")
+
+
+def deleted_tests(root, base_ref):
+    """quest_log.py 의 deleted_tests 와 동일 유지 (단일 출처 원칙) — 테스트를 지워 green 을 사는
+    경로 차단 (anti-Goodhart). 삭제된 테스트 파일이 있으면 full-verify 강제."""
+    if not base_ref or base_ref == "NONE":
+        return []
+    _, out = git(root, "diff", "--name-only", "--diff-filter=D", base_ref, "--", ".", ":(exclude).asgard")
+    return [p for p in out.splitlines() if p.strip() and _testfile(p)]
 
 
 def readonly(cmd, allow):
@@ -203,7 +221,8 @@ def orphan_writes(root, sid):
             evidence = any(
                 isinstance(c, dict) and c.get("exit_code") == 0 for c in (last.get("commands") or [])
             )  # LAST 면제도 증거 요구 — 무증거 PASS + close 로 게이트 우회되던 구멍 (CUS-170 깊이 테스트)
-            if evidence and last.get("diff_hash") == diff_state(root, base_ref)[0]:
+            baseline_red = (last.get("baseline") or {}).get("state") == "red"  # --force close 우회 봉합 (CUS-187)
+            if evidence and not baseline_red and last.get("diff_hash") == diff_state(root, base_ref)[0]:
                 return
     except Exception:
         pass
@@ -300,15 +319,25 @@ def main():
                 "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
                 "Verifier 는 검증 명령을 직접 실행해야 합니다.",
             )
+        bl = p.get("baseline") or {}
+        if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 (CUS-187) — 코드가 깨져 있다
+            failing = [str(r.get("cmd")) for r in (bl.get("results") or []) if r.get("exit_code") not in (0, None)]
+            block(
+                root,
+                sid,
+                "하네스 베이스라인 체크 red (%s) — 실패한 체크를 수정한 뒤 재검증하세요." % ", ".join(failing[:3]),
+            )
         small = policy["small_write"]
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
-        full_required = bool(sensitive) or len(changed) > small["max_files"] or lines > small["max_lines"]
+        dts = deleted_tests(root, base_ref)
+        full_required = bool(sensitive) or bool(dts) or len(changed) > small["max_files"] or lines > small["max_lines"]
         if full_required and p.get("level") != "full":
             block(
                 root,
                 sid,
-                "full-verify 필요(민감 경로 %s / diff %d files·%d lines)한데 micro PASS 입니다. "
-                "--level full 로 재검증하세요." % (sensitive[:3], len(changed), lines),
+                "full-verify 필요(민감 경로 %s%s / diff %d files·%d lines)한데 micro PASS 입니다. "
+                "--level full 로 재검증하세요."
+                % (sensitive[:3], " / 삭제된 테스트 %s" % dts[:3] if dts else "", len(changed), lines),
             )
         try:  # 통과 → 차단 카운터 리셋 (다음 위반은 새로 3회부터)
             os.remove(os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json"))

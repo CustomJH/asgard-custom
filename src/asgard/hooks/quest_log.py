@@ -104,6 +104,9 @@ DEFAULT_POLICY = {
         "which",
     ],
     "failure_threshold": 3,
+    # 하네스 소유 베이스라인 체크 (CUS-187) — 비면 보수적 자동 감지 (pytest 만)
+    "baseline_checks": [],
+    "baseline_timeout": 120,
 }
 
 
@@ -195,6 +198,81 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int]:
             h.update(p.encode() + b"\0missing")
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked))
     return (h.hexdigest() if changed else EMPTY), changed, lines
+
+
+# ── 하네스 소유 베이스라인 체크 (CUS-187) — 증거 '품질'의 결정론화 ──
+# 기존 pass_evidence 는 증거 '존재'만 봤다 — 어떤 명령이었는지는 verifier LLM 재량이라 `echo ok`
+# 도 증거가 됐다 (깊이벤치 실증). 여기서는 하네스가 직접 프로젝트 체크를 실행해 exit code 를
+# 기록한다 — LLM-as-judge 불신 원칙 (결정론 룰 피드백이 최상위 증거, Anthropic SDK 가이드).
+# stdin 으로 들어온 baseline 은 normalize 가 버린다 — 이 코드만이 유일한 기록 경로 (위조 차단).
+
+
+def detect_checks(root: str, policy: dict) -> list[str]:
+    """정책 baseline_checks 우선. 없으면 보수적 자동 감지 — pytest 만.
+    ponytail: lint 류 자동 감지 안함 — 기존 위반 false-red 가 게이트 인질이 된다. 명시 설정으로만."""
+    cfg = policy.get("baseline_checks")
+    if cfg:
+        return [str(c) for c in cfg]
+    import shutil
+
+    if shutil.which("pytest") and any(
+        os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")
+    ):
+        return ["pytest -x -q"]
+    return []
+
+
+def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) -> dict | None:
+    """체크 전부 실행 → {"state": green|red|none, "results": [...]}. 체크 없음 → None (요건 면제).
+    같은 diff_hash 의 기존 verify 기록은 재사용 — 동일 트리에 pytest 를 두 번 돌리지 않는다.
+    skip(127 미설치·pytest 5 수집 없음·timeout)은 red 아님 — 게이트는 자기기만 방어지 인질극 장치가
+    아니다 (verifier_gate.py 서두와 같은 원칙). ponytail: timeout=skip 은 보호 약화 — 느린 스위트는
+    baseline_timeout 상향으로 대응."""
+    checks = detect_checks(root, policy)
+    if not checks:
+        return None
+    for e in reversed(events):
+        bl = e.get("baseline")
+        if bl and e.get("event") == "verify" and e.get("diff_hash") == diff_hash:
+            return {**bl, "cached": True}
+    timeout = int(policy.get("baseline_timeout") or 120)
+    auto = not policy.get("baseline_checks")  # 자동 감지 모드 — red 판정을 보수적으로 (아래)
+    results: list[dict] = []
+    state = "none"
+    for cmd in checks[:10]:
+        t0 = time.time()
+        code: int | None
+        try:
+            p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
+            code = p.returncode
+        except Exception:
+            code = None  # timeout 포함 — skip 취급 (fail-open)
+        results.append({"cmd": cmd[:120], "exit_code": code, "secs": round(time.time() - t0, 1)})
+        # skip = 체크가 "돌 수 없었다": 127 미설치 · pytest 5 수집 없음 · timeout. 자동 감지 pytest 는
+        # 2/3/4(수집·사용법 오류 — venv 밖 pytest 가 흔한 원인)도 skip — 환경 문제를 코드 red 로
+        # 오판해 게이트가 인질 잡는 것 방지. 명시 설정 체크는 사용자가 커맨드를 보증하므로 엄격 판정.
+        if code is None or code == 127 or ("pytest" in cmd.split() and (code == 5 or (auto and code in (2, 3, 4)))):
+            continue
+        if code != 0:
+            state = "red"
+            break  # 첫 red 에서 중단 — 나머지는 수리 후 어차피 재실행
+        state = "green"
+    return {"state": state, "results": results}
+
+
+def _testfile(p: str) -> bool:
+    segs = p.lower().split("/")
+    return "tests" in segs or "test" in segs or segs[-1].startswith("test_") or segs[-1].endswith("_test.py")
+
+
+def deleted_tests(root: str, base_ref: str | None) -> list[str]:
+    """base_ref 이후 삭제된 테스트 파일 — 테스트를 지워 green 을 사는 경로 차단 (anti-Goodhart,
+    Anthropic feature-ledger "removing tests is unacceptable" analog). 삭제만 본다 — 테스트 수정은
+    정상 작업이라 전부 full 로 올리면 세금이 되레 는다. verifier_gate.py 와 동일 유지 (단일 출처 원칙)."""
+    if not base_ref or base_ref == "NONE":
+        return []
+    _, out = git(root, "diff", "--name-only", "--diff-filter=D", base_ref, "--", ".", ":(exclude).asgard")
+    return [p for p in out.splitlines() if p.strip() and _testfile(p)]
 
 
 def load_policy(root: str) -> dict:
@@ -298,6 +376,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         if sig and e.get("failure_sig") == sig:
             fail_streak += 1
     sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
+    dts = deleted_tests(root, base_ref)
     small = policy["small_write"]
     return {
         "quest_id": qid,
@@ -314,8 +393,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "changed_files": changed,
         "diff_lines": lines,
         "sensitive_files": sens,
+        "deleted_tests": dts,
         # gate 의 full_required 판정과 동일 기준 — 전이(DONE)와 close 가 gate 와 어긋나면 안 된다.
-        "full_required": bool(sens) or len(changed) > small["max_files"] or lines > small["max_lines"],
+        "full_required": bool(sens) or bool(dts) or len(changed) > small["max_files"] or lines > small["max_lines"],
         "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
         "pass_level": (last_pass or {}).get("level"),
         # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부, CUS-170 깊이 테스트 발견 구멍)
@@ -323,6 +403,8 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
             last_pass
             and any(isinstance(c, dict) and c.get("exit_code") == 0 for c in (last_pass.get("commands") or []))
         ),
+        # 하네스 베이스라인 상태 (CUS-187) — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
+        "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
     }
 
 
@@ -375,6 +457,9 @@ def transition(s: dict, policy: dict, flags) -> dict:
             # 증거 없는 PASS 는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
             # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (CUS-170 깊이 테스트 발견).
             return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
+        if s.get("baseline_state") == "red":
+            # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다 (CUS-187)
+            return out("WORKER_RETRY", "하네스 베이스라인 체크 red — 실패한 체크를 먼저 수리 (Canon 10)")
         if not s["pass_hash_match"]:
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
         if full_required and s["pass_level"] != "full":
@@ -486,6 +571,11 @@ def main() -> int:
             # 판정 이벤트의 물리 증거는 이 도구가 계산한다 — 손 계산 해시는 gate 와 어긋난다.
             ev["diff_hash"], ev["changed_files"], _ = diff_state(root, ev["base_ref"])
             ev.setdefault("level", "micro")
+            if ev["verdict"] == "PASS":
+                # 하네스 소유 베이스라인 (CUS-187) — normalize 가 stdin baseline 을 버린 뒤 여기서만 기록
+                bl = run_baseline(root, policy, events, ev["diff_hash"])
+                if bl:
+                    ev["baseline"] = bl
         write_event(root, qid, ev)
         print(
             json.dumps(
@@ -511,6 +601,7 @@ def main() -> int:
             s["last_verdict"] == "PASS"
             and s["pass_hash_match"]
             and s["pass_evidence"]  # 증거 없는 PASS 로 close → LAST 면제로 게이트 우회되던 구멍 봉합
+            and s.get("baseline_state") != "red"  # 하네스 베이스라인 red 로는 close 불가 (CUS-187)
             and (not s["full_required"] or s["pass_level"] == "full")
         )  # gate 와 동일 기준
         ok = verified or s["last_verdict"] == "ESCALATE"

@@ -563,5 +563,95 @@ class TestUnattended(TrinityBase):
         self.assertNotEqual(jout(self.gate_pm("bypassPermissions")).get("decision"), "block")
 
 
+class TestBaseline(TrinityBase):
+    """CUS-187 — 하네스 소유 베이스라인 체크: 증거 '품질'의 결정론화 (verifier 재량 커맨드 불신)."""
+
+    def policy(self, **kw):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
+            json.dump(kw, f)
+
+    def last_event(self):
+        lines = open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()
+        return json.loads(lines[-1])
+
+    def test_red_blocks_close_routes_repair_and_gate(self):
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()  # verifier 는 PASS + echo 급 증거 — 하네스 체크가 red 를 기록한다
+        st = jout(self.qlog("state"))
+        self.assertEqual(st["baseline_state"], "red")
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "WORKER_RETRY")
+        self.assertEqual(self.qlog("close").returncode, 1)
+        gp = jout(self.gate())
+        self.assertEqual(gp.get("decision"), "block")
+        self.assertIn("베이스라인", gp.get("reason", ""))
+
+    def test_green_baseline_done_and_close(self):
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        st = jout(self.qlog("state"))
+        self.assertEqual(st["baseline_state"], "green")
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")
+
+    def test_no_checks_waived(self):
+        self.open_quest()  # 체크 미설정 + 자동 감지 대상 없음 → 요건 면제 (구 로그 하위호환)
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.assertEqual(jout(self.qlog("state"))["baseline_state"], "none")
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "DONE")
+
+    def test_same_hash_reuses_cached_result(self):
+        self.policy(baseline_checks=["echo x >> .asgard/bl-runs"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.verify()  # 동일 트리 재검증 — 체크 재실행 없이 캐시 재사용
+        runs = open(os.path.join(self.root, ".asgard", "bl-runs")).read().splitlines()
+        self.assertEqual(len(runs), 1)
+        self.assertTrue(self.last_event()["baseline"].get("cached"))
+
+    def test_timeout_is_skip_not_red(self):
+        self.policy(baseline_checks=["sleep 3"], baseline_timeout=1)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.assertEqual(jout(self.qlog("state"))["baseline_state"], "none")  # 인질 방지 fail-open
+
+    def test_stdin_baseline_forgery_dropped(self):
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        body = {
+            "role": "verifier",
+            "event": "verify",
+            "commands": [{"cmd": "python3 app.py", "exit_code": 0}],
+            "baseline": {"state": "green"},  # 위조 시도 — normalize 가 버리고 하네스가 red 재계산
+        }
+        self.qlog("append", "--verdict", "PASS", stdin=json.dumps(body))
+        self.assertEqual(self.last_event()["baseline"]["state"], "red")
+
+    def test_deleted_test_file_forces_full_verify(self):
+        self.write("tests/test_app.py", "def test_a(): pass\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.root, "commit", "-qm", "add test"], check=True)
+        self.open_quest()
+        os.remove(os.path.join(self.root, "tests", "test_app.py"))
+        self.write("app.py", "print('ok')\n")
+        self.verify()  # micro PASS — 테스트 삭제 diff 는 full 을 요구한다 (anti-Goodhart)
+        st = jout(self.qlog("state"))
+        self.assertIn("tests/test_app.py", st["deleted_tests"])
+        self.assertTrue(st["full_required"])
+        self.assertEqual(jout(self.qlog("next"))["next_role"], "VERIFIER")
+        gp = jout(self.gate())
+        self.assertEqual(gp.get("decision"), "block")
+        self.assertIn("삭제된 테스트", gp.get("reason", ""))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

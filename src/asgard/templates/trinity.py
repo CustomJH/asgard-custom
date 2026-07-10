@@ -55,6 +55,10 @@ _POLICY = {
         "which",
     ],
     "failure_threshold": 3,
+    # 하네스 소유 베이스라인 체크 (CUS-187) — 비면 보수적 자동 감지 (pytest 만). 프로젝트 체크를
+    # 명시하면 red 판정이 엄격해진다 (예: ["uv run pytest -x -q", "uv run ruff check"]).
+    "baseline_checks": [],
+    "baseline_timeout": 120,
 }
 
 

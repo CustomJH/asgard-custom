@@ -123,6 +123,7 @@ _GATE_SIGS = (
     ("stale PASS", "stale-pass"),
     ("성공 기준(criteria)", "no-criteria"),
     ("검증 명령 증거", "no-evidence"),
+    ("베이스라인 체크 red", "baseline-red"),
     ("full-verify 필요", "micro-pass"),
     ("퀘스트 로그가 없", "orphan-write"),
 )
@@ -133,9 +134,12 @@ def _gate_sig(reason: str) -> str:
 
 
 def _gate_repair(sig: str) -> tuple[str, str]:
-    """차단 사유별 수리 턴 — criteria 부재만 계획 보강, 나머지는 전부 신선 증거 재검증."""
+    """차단 사유별 수리 턴 — criteria 부재만 계획 보강, baseline red 는 코드 수리(Worker),
+    나머지는 전부 신선 증거 재검증."""
     if sig == "no-criteria":
         return "THINKER_REPLAN", "게이트: criteria 부재 — 계획 보강 필요"
+    if sig == "baseline-red":
+        return "WORKER_RETRY", "게이트: 하네스 베이스라인 red — 실패한 체크를 수정 (CUS-187)"
     return "VERIFIER", f"게이트 차단({sig}) — 신선한 증거로 재검증"
 
 
@@ -712,6 +716,8 @@ class Heimdall:
                             f"퀘스트 로그: .asgard/quest/{qid}.jsonl"
                         )
                     pending = _gate_repair(sig)
+                    if sig == "baseline-red":  # 실패 체크 상세를 수리 턴에 주입 (CUS-172 경로 재사용)
+                        last_fail = {"sig": sig, "why": reason[:500]}
                     continue
                 ql(self.root, "close", session=sid)
                 return self._final_report(qid, sid, gate_blocks)

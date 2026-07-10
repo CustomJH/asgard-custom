@@ -325,7 +325,7 @@ def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subpr
         capture_output=True,
         text=True,
         cwd=root,
-        timeout=30,
+        timeout=300,  # append(PASS) 가 하네스 베이스라인 체크를 직접 돌린다 (CUS-187, 체크당 기본 120s)
     )
 
 
