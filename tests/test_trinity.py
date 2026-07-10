@@ -73,6 +73,11 @@ class TrinityBase(unittest.TestCase):
         self.assertEqual(p.returncode, 0, p.stderr)
         return jout(p)
 
+    def policy(self, **kw):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
+            json.dump(kw, f)
+
     def verify(self, verdict="PASS", level=None, commands=None, session="s1"):
         body = {
             "role": "verifier",
@@ -566,11 +571,6 @@ class TestUnattended(TrinityBase):
 class TestBaseline(TrinityBase):
     """CUS-187 — 하네스 소유 베이스라인 체크: 증거 '품질'의 결정론화 (verifier 재량 커맨드 불신)."""
 
-    def policy(self, **kw):
-        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
-        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
-            json.dump(kw, f)
-
     def last_event(self):
         lines = open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()
         return json.loads(lines[-1])
@@ -651,6 +651,102 @@ class TestBaseline(TrinityBase):
         gp = jout(self.gate())
         self.assertEqual(gp.get("decision"), "block")
         self.assertIn("삭제된 테스트", gp.get("reason", ""))
+
+
+class TestStandardTransition(TrinityBase):
+    """CUS-188 — 게이트-우선 전이: BASELINE_VERIFY 배정·verify-baseline 판정·승격 조건."""
+
+    def commit_all(self, msg="c"):
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.root, "commit", "-qm", msg], check=True)
+
+    def work(self):
+        self.qlog("append", "--role", "worker", "--event", "work")
+
+    def nxt(self):
+        return jout(self.qlog("next", "--standard", "--write-expected"))
+
+    def test_work_routes_baseline_verify(self):
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+
+    def test_no_checks_falls_back_to_llm_verifier(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+
+    def test_verify_baseline_green_done_close_gate(self):
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        vb = jout(self.qlog("verify-baseline"))
+        self.assertEqual((vb["verdict"], vb["baseline"]), ("PASS", "green"))
+        self.assertEqual(self.nxt()["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")
+
+    def test_red_retries_worker_then_two_reds_escalate(self):
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        vb = jout(self.qlog("verify-baseline"))
+        self.assertEqual(vb["verdict"], "FAIL")
+        self.assertEqual(self.nxt()["next_role"], "WORKER_RETRY")
+        self.work()
+        self.qlog("verify-baseline")
+        n = self.nxt()  # red 2회 — threshold(3) 전 선제 Trinity 승격
+        self.assertEqual(n["next_role"], "THINKER_REPLAN")
+        self.assertIn("승격", n["why"])
+
+    def test_signature_change_escalates_to_llm_verifier(self):
+        self.write("lib.py", "def foo(a):\n    return a\n")
+        self.commit_all()
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("lib.py", "def foo(a, b):\n    return a\n")  # 시그니처 변경 = 숨은-caller 리스크
+        self.work()
+        self.assertTrue(jout(self.qlog("state"))["sig_risk"])
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+
+    def test_body_edit_is_not_signature_risk(self):
+        self.write("lib.py", "def foo(a):\n    return a\n")
+        self.commit_all()
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("lib.py", "def foo(a):\n    return a + 1\n")  # 본문만 변경
+        self.work()
+        self.assertFalse(jout(self.qlog("state"))["sig_risk"])
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+
+    def test_sensitive_path_escalates_to_llm_verifier(self):
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("hooks/h.py", "x = 1\n")  # sensitive 세그먼트 → 게이트-우선 부적격
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+
+    def test_deleted_test_escalates_to_llm_verifier(self):
+        self.write("tests/test_app.py", "def test_a(): pass\n")
+        self.commit_all()
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        os.remove(os.path.join(self.root, "tests", "test_app.py"))  # anti-Goodhart — 게이트-우선 부적격
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+
+    def test_verify_baseline_without_checks_errors(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        p = self.qlog("verify-baseline")
+        self.assertEqual(p.returncode, 1)  # 판정 불가 — LLM Verifier 폴백 지시
 
 
 if __name__ == "__main__":

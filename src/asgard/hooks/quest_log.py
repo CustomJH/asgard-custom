@@ -275,6 +275,21 @@ def deleted_tests(root: str, base_ref: str | None) -> list[str]:
     return [p for p in out.splitlines() if p.strip() and _testfile(p)]
 
 
+_SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn )")
+
+
+def signature_risk(root: str, base_ref: str | None) -> bool:
+    """diff 에 삭제·변경된 함수/클래스 시그니처 라인 존재 여부 — 숨은-caller 리스크의 결정론 신호
+    (CUS-188, t3 방어 유지 조건). '-' 라인만 본다: 신규 추가(+def)는 기존 caller 가 없다.
+    게이트-우선(STANDARD) 라우팅 전용 — verifier_gate 대응 불필요."""
+    if not base_ref or base_ref == "NONE":
+        return False
+    rc, out = git(root, "diff", "-U0", base_ref, "--", ".", ":(exclude).asgard")
+    if rc != 0:
+        return False
+    return any(_SIG_PAT.match(line) for line in out.splitlines())
+
+
 def load_policy(root: str) -> dict:
     p = dict(DEFAULT_POLICY)
     try:
@@ -405,6 +420,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         ),
         # 하네스 베이스라인 상태 (CUS-187) — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
         "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
+        # 게이트-우선 라우팅 신호 (CUS-188)
+        "checks_available": bool(detect_checks(root, policy)),
+        "sig_risk": signature_risk(root, base_ref),
     }
 
 
@@ -430,6 +448,15 @@ def transition(s: dict, policy: dict, flags) -> dict:
         "external_research": flags.external_research,
     }
     level = "full" if (sensitive or big) else "micro"
+    # 게이트-우선(STANDARD) 적격 (CUS-188) — 조건 하나라도 깨지면 아래 트리니티 행으로 자연 폴스루
+    # = Trinity 승격. 민감/큰 diff/시그니처 변경/테스트 삭제는 LLM Verifier(caller-grep 계약)가 필요.
+    standard_ok = (
+        getattr(flags, "standard", False)
+        and not sensitive
+        and not big
+        and not s.get("deleted_tests")
+        and not s.get("sig_risk")
+    )
 
     def out(role, why):
         return {"next_role": role, "verify_level": level, "why": why, "features": features}
@@ -447,6 +474,9 @@ def transition(s: dict, policy: dict, flags) -> dict:
         # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭 (CUS-171).
         return out("ESCALATE_ODIN", "Verifier ESCALATE — 진행 불가 블로커, Odin 결정 필요")
     if s["last_verdict"] == "FAIL":
+        if standard_ok and s.get("fail_streak_any", 0) >= 2:
+            # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격 (CUS-188)
+            return out("THINKER_REPLAN", "게이트-우선 red 2회 — Trinity 승격, 접근 재설계")
         return (
             out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계")
             if flags.structural
@@ -473,6 +503,10 @@ def transition(s: dict, policy: dict, flags) -> dict:
     if not has_write:
         return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")
     if s["last_event"] == "work":
+        if standard_ok and s.get("checks_available"):
+            # 게이트-우선 — 검증이 싸면 always-verify 가 지배 (arXiv 2606.24453): LLM Verifier 대신
+            # 하네스 베이스라인이 판정한다. 체크가 없으면 LLM Verifier 폴백 (아래).
+            return out("BASELINE_VERIFY", "게이트-우선 — 하네스 베이스라인 판정 (CUS-188)")
         return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
     if (sensitive or big) and s["plan_turns"] < 2:
         # open 의 자동 plan(턴1)은 접수 기록일 뿐 — 민감/큰 write 는 실제 Thinker 계획 턴을 요구한다.
@@ -492,7 +526,7 @@ def sanitize(qid: str) -> str:
 
 def main() -> int:
     ap = argparse.ArgumentParser(prog="quest-log", description="Asgard Trinity quest log")
-    ap.add_argument("cmd", choices=["open", "append", "state", "next", "close"])
+    ap.add_argument("cmd", choices=["open", "append", "state", "next", "close", "verify-baseline"])
     ap.add_argument("quest_id", nargs="?")
     ap.add_argument("--criteria", action="append", default=[])
     ap.add_argument("--session", default=os.environ.get("CLAUDE_SESSION_ID", "-"))
@@ -506,6 +540,7 @@ def main() -> int:
     ap.add_argument("--shared", action="store_true")
     ap.add_argument("--structural", action="store_true", help="next: 직전 FAIL 이 구조적임을 신고")
     ap.add_argument("--write-expected", action="store_true", help="next: 아직 diff 없지만 write 예정")
+    ap.add_argument("--standard", action="store_true", help="next: 게이트-우선 경로 (CUS-188) — 비민감 소형 write")
     ap.add_argument("--force", action="store_true", help="close: 판정 없이 강제 해제 (Odin 동의 필요)")
     args = ap.parse_args()
     root = repo_root()
@@ -580,6 +615,43 @@ def main() -> int:
         print(
             json.dumps(
                 {"appended": ev["event"], "turn": ev["turn"], "verdict": ev["verdict"], "diff_hash": ev["diff_hash"]},
+                ensure_ascii=False,
+            )
+        )
+        return 0
+
+    if args.cmd == "verify-baseline":
+        # 게이트-우선 판정 턴 (CUS-188) — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
+        # commands = 하네스가 직접 실행한 체크 (pass_evidence 충족) — verifier 재량 커맨드 아님.
+        ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
+        ev["diff_hash"], ev["changed_files"], _ = diff_state(root, ev["base_ref"])
+        ev["level"] = "micro"
+        bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
+        state = bl.get("state")
+        if state not in ("green", "red"):
+            print(
+                json.dumps({"error": "baseline 판정 불가 (체크 없음/전부 skip) — LLM Verifier 로 검증하세요"}),
+                file=sys.stderr,
+            )
+            return 1
+        results = [c for c in bl.get("results", []) if isinstance(c, dict)]
+        ev["verdict"] = "PASS" if state == "green" else "FAIL"
+        ev["commands"] = results[:20]
+        ev["baseline"] = bl
+        failing = [str(c.get("cmd")) for c in results if c.get("exit_code") not in (0, None)]
+        if state == "red":
+            ev["failure_sig"] = "baseline-red"
+        write_event(root, qid, ev)
+        print(
+            json.dumps(
+                {
+                    "appended": "verify",
+                    "verdict": ev["verdict"],
+                    "baseline": state,
+                    "failing": failing[:5],
+                    "turn": ev["turn"],
+                    "diff_hash": ev["diff_hash"],
+                },
                 ensure_ascii=False,
             )
         )

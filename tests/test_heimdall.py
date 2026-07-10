@@ -734,5 +734,38 @@ class TestHookParity(Base):
         self.assertNotIn("__pycache__/x.pyc", q(self.root, head)[1])  # junk 제외 유지
 
 
+class TestStandardRoute(Base):
+    """게이트-우선 (CUS-188) — ordinary write 는 Worker 직행 + 하네스 베이스라인 판정, LLM Verifier 0."""
+
+    def policy(self, **kw):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
+            json.dump(kw, f)
+
+    def test_standard_closes_without_llm_verifier(self):
+        self.policy(baseline_checks=["true"])
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root)], cls={**CLS_WRITE, "task_class": "standard"})
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)
+        self.assertEqual([s.label for s in h.consumed], ["worker"])  # verifier LLM 미소비
+        self.assertIn('"harness"', self.quest_log_text())  # 판정 주체 = 하네스
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
+
+    def test_standard_red_gives_worker_retry_with_failing_check(self):
+        self.policy(baseline_checks=["test -f fixed.txt"])
+        seq = [worker({"w1.txt": "x\n"}, self.root), worker({"fixed.txt": "y\n"}, self.root)]
+        h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
+        out = h.handle("고쳐줘")
+        self.assertIn("과업 완수", out)
+        self.assertEqual([s.label for s in h.consumed], ["worker", "worker"])
+        self.assertIn("baseline-red", seq[1].prompt or "")  # 실패 체크가 재시도 컨텍스트로 전달
+
+    def test_missing_task_class_stays_trinity(self):
+        # task_class 미상(None) = 안전 기본값 — 기존 LLM Verifier 경로 유지
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
+        h.handle("w1.txt 만들어")
+        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

@@ -59,6 +59,7 @@ _ROLE_ICON = {
     "WORKER": "🔨",
     "WORKER_RETRY": "🔨",
     "VERIFIER": "⚖️",
+    "BASELINE_VERIFY": "🛡",
     "DONE": "✔",
     "DIRECT_DONE": "→",
     "ESCALATE_ODIN": "⚠",
@@ -618,7 +619,7 @@ class Heimdall:
         )
 
     # ── Trinity 순환 ─────────────────────────────────────────────────────
-    def _trinity(self, request: str, cls: dict, pre_work=None) -> str:
+    def _trinity(self, request: str, cls: dict, pre_work=None, standard: bool = False) -> str:
         import uuid
 
         qid = f"native-{int(time.time())}-{uuid.uuid4().hex[:6]}"  # 초 단위 충돌 방지 (CUS-184)
@@ -653,10 +654,12 @@ class Heimdall:
                 ("--external-research", cls["external_research"]),
                 ("--shared", cls["shared"]),
                 ("--write-expected", True),
+                ("--standard", standard),  # 게이트-우선 (CUS-188) — 전이 함수가 승격 조건을 판정
             )
             if on
         ]
-        plan_ctx = ""  # Thinker 계획을 Worker 에 전달
+        # 게이트-우선은 Thinker 를 생략한다 — Worker 가 계획 없이 뛰지 않게 criteria 를 계획 자리에.
+        plan_ctx = ("성공 기준: " + "; ".join(map(str, cls["criteria"]))) if standard else ""
         explored: list[str] = []  # Thinker 관찰 명령 — Worker 재탐색 세금 절감 (CUS-182 최소판, 힌트 전용)
         structural = False  # 직전 FAIL 이 구조적 — 다음 next 에 --structural 전달 (CUS-171)
         last_fail: dict | None = None  # 직전 FAIL 상세 — WORKER_RETRY 에 주입 (CUS-172)
@@ -676,7 +679,7 @@ class Heimdall:
                 nxt = json.loads(ql(self.root, "next", *nx_args, session=sid).stdout or "{}")
                 role, why = nxt.get("next_role", ""), nxt.get("why", "")
                 level = nxt.get("verify_level", "micro")
-            if t > budget and role not in ("VERIFIER", "DONE", "ESCALATE_ODIN", "DIRECT_DONE"):
+            if t > budget and role not in ("VERIFIER", "BASELINE_VERIFY", "DONE", "ESCALATE_ODIN", "DIRECT_DONE"):
                 break  # 예산 소진 — grace 는 판정·종료 전용, 새 작업 턴 금지 (CUS-181)
             # 잔량 자기규제 (helios budget-guard 패턴) — 80% 도달 시 범위 축소 지시
             budget_note = f"\n(턴 {t}/{budget}" + (
@@ -702,6 +705,22 @@ class Heimdall:
                 why += f" · {model}"
             self.on_text(_transition_line(role, why))
 
+            if role == "BASELINE_VERIFY":
+                # 게이트-우선 판정 턴 (CUS-188) — LLM 토큰 0, 하네스가 프로젝트 체크로 판정 기록
+                p = ql(self.root, "verify-baseline", session=sid)
+                try:
+                    bj = json.loads(p.stdout or "{}")
+                except Exception:
+                    bj = {}
+                if p.returncode != 0 or not bj.get("verdict"):
+                    pending = ("VERIFIER", "베이스라인 판정 불가 — LLM Verifier 폴백")
+                    continue
+                self.on_text(f"  ⚖ 베이스라인 {bj.get('baseline')} → {bj['verdict']}\n")
+                if bj["verdict"] == "FAIL":
+                    failing = ", ".join(map(str, bj.get("failing") or [])) or "(퀘스트 로그 baseline.results 참조)"
+                    last_fail = {"sig": "baseline-red", "why": f"하네스 베이스라인 체크 실패: {failing}"}
+                    fail_history.append(f"baseline-red: {failing[:200]}")
+                continue
             if role == "DONE":
                 blocked, reason = gate(self.root, sid)
                 if blocked:  # 전이/게이트 판정 불일치 — 사유별 수리 턴 강제 (무수리 재시도 금지, CUS-174)
@@ -976,9 +995,12 @@ class Heimdall:
         if not cls["write_expected"]:
             _log_classify(self.root, {"event": "route", "route": "direct"})
             return self._direct(request)  # DIRECT — 무세금
-        _log_classify(self.root, {"event": "route", "route": "trinity"})
+        # 게이트-우선(STANDARD) 라우팅 (CUS-188) — 비민감 소형 write 는 Worker 직행 + 하네스 베이스라인.
+        # deep/ambiguous/shared 는 상시 Trinity. task_class 미상(None)은 deep 취급 (안전 기본값).
+        standard = cls.get("task_class") in ("trivial", "standard") and not (cls["ambiguous"] or cls["shared"])
+        _log_classify(self.root, {"event": "route", "route": "standard" if standard else "trinity"})
         try:
-            return self._trinity(request, cls)
+            return self._trinity(request, cls, standard=standard)
         except Exception as e:  # dangling 방지 (CUS-180) — 퀘스트는 ACTIVE 로 남고 정직하게 보고
             return (
                 f"⚠ 세션 오류로 Trinity 중단 ({e.__class__.__name__}: {str(e)[:200]}) — "
