@@ -21,13 +21,22 @@ import json
 import os
 import random
 import re
+import threading
 import time
-from typing import Callable
+from typing import Callable, Protocol
 
+from ..hooks.quest_log import trivial_evidence as _trivial_evidence
 from ..providers import ResolvedProvider, resolve_trinity
 from ..templates import agents_md
 from ..templates.roles import ROLE_AGENTS
-from .session import AgentSession, gate, make_client, ql
+from .session import AgentSession, SessionResult, gate, make_client, ql
+
+
+class SessionLike(Protocol):
+    """_run_turn 이 요구하는 표면 — run() 하나. 테스트 대역(FakeSession)이 AgentSession 상속 없이 만족."""
+
+    def run(self, user_content: str) -> SessionResult: ...
+
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
 
@@ -330,7 +339,8 @@ def _role_prompt(fname: str) -> str:
 
 
 def _record_writes(root: str, sid: str, writes: list[str]) -> None:
-    """write-sentinel 대응 — 네이티브 세션의 write 흔적을 게이트가 보는 파일에 기록."""
+    """write-sentinel 대응 — 네이티브 세션의 write 흔적을 게이트가 보는 파일에 기록.
+    temp+rename 원자 쓰기 — 크래시 절단 파일은 게이트가 못 읽어 fail-open(orphan write 통과)이 된다."""
     if not writes:
         return
     d = os.path.join(root, ".asgard")
@@ -341,7 +351,9 @@ def _record_writes(root: str, sid: str, writes: list[str]) -> None:
     except Exception:
         prev = []
     merged = prev + [w for w in writes if w not in prev]
-    json.dump(merged[:500], open(f, "w"))
+    tmp = f"{f}.{os.getpid()}.tmp"
+    json.dump(merged[:500], open(tmp, "w"))
+    os.replace(tmp, f)
 
 
 class Heimdall:
@@ -354,6 +366,7 @@ class Heimdall:
     ):
         self.rp, self.root, self.on_text = rp, root, on_text
         self.on_status = on_status or (lambda s: None)
+        self._state_lock = threading.Lock()  # wave 병렬 스레드의 _clients/total_tokens 변이 보호 (CUS-176)
         self._clients: dict[tuple, object] = {}  # (provider, base_url, key_source) → SDK 클라이언트
         self.client = self._client_for(rp)
         # 역할별 provider 배치 ([trinity.<role>]) — 미충족은 기본 provider 로 fail-open + 경고 1회
@@ -370,20 +383,24 @@ class Heimdall:
 
         self.policy = load_policy(root)
         self.identity = _identity(root)
-        self.total_tokens = 0  # 세션 누적 (status line 사용량)
-        self._sleep = time.sleep  # 재시도 백오프 — 테스트 주입점 (CUS-180)
+        self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
+        self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
+        self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
+        self._sleep: Callable[[float], None] = time.sleep  # 재시도 백오프 — 테스트 주입점 (CUS-180)
         dangling = active_quest(root)
         if dangling:  # 이전 세션 중단으로 남은 ACTIVE 퀘스트 — 조용히 덮지 않는다 (CUS-180)
             on_text(f"⚠ 미완 퀘스트 발견({dangling}) — 이전 세션 중단 흔적. 이어서 검증하거나 quest-log close 필요.\n")
 
     def _client_for(self, rp: ResolvedProvider):
         key = (rp.profile.name, rp.base_url, rp.key_source)
-        if key not in self._clients:
-            self._clients[key] = make_client(rp)
-        return self._clients[key]
+        with self._state_lock:
+            if key not in self._clients:
+                self._clients[key] = make_client(rp)
+            return self._clients[key]
 
     def _add_tokens(self, n: int) -> None:
-        self.total_tokens += n
+        with self._state_lock:
+            self.total_tokens += n
 
     def _session(
         self,
@@ -393,6 +410,7 @@ class Heimdall:
         quiet=False,
         role: str | None = None,
         model: str | None = None,
+        readonly: bool = False,
     ) -> AgentSession:
         rp = self.role_rp.get(role or "", self.rp)
         if model and model != rp.model:  # 상황별 모델 스왑 (CUS-177) — provider 는 유지, 모델만
@@ -409,6 +427,7 @@ class Heimdall:
             on_text=(lambda s: None) if quiet else self.on_text,
             on_tokens=self._add_tokens,
             on_status=self.on_status,
+            readonly=readonly,
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
@@ -499,14 +518,16 @@ class Heimdall:
         return resp.choices[0].message.content or ""
 
     def _run_turn(
-        self, make: Callable[[], AgentSession], prompt: str, fallback: Callable[[], AgentSession] | None = None
+        self, make: Callable[[], SessionLike], prompt: str, fallback: Callable[[], SessionLike] | None = None
     ):
         """역할 턴 실행 + 오류 회복 (CUS-180) — retryable 은 jittered backoff ≤2회 재시도,
         소진 시 placement 폴백 1회 (기본 provider), fatal 은 즉시 표면화."""
         delay = 2.0
         for attempt in range(3):
             try:
-                return make().run(prompt)
+                r = make().run(prompt)
+                self.last_context_tokens = getattr(r, "context_tokens", 0) or self.last_context_tokens
+                return r
             except Exception as e:
                 if classify_api_error(e) != "retryable" or attempt == 2:
                     if fallback is not None:
@@ -540,7 +561,11 @@ class Heimdall:
                 ),
             )
             # dispatch 툴 미제공 = 재위임 불가. 모델은 딜리버리 티어 (freyja/thor=standard, loki=fast)
-            child = self._session(_DELIVERY[agent] + "\n\n" + self.identity, model=self._delivery_model(agent))
+            child = self._session(
+                _DELIVERY[agent] + "\n\n" + self.identity,
+                model=self._delivery_model(agent),
+                readonly=agent == "loki",  # loki = read-only 반례 탐색 — 도구로 강제
+            )
             r = child.run(task)
             worker_result_writes.extend(r.writes)
             return f"[{agent}] {r.text[-2000:]}"
@@ -781,8 +806,15 @@ class Heimdall:
                     )
                 else:
                     prompt = f"과업: {request}"
-                mk = lambda sr=sess_role, m=model: self._session(_role_prompt("asgard-thinker.md"), role=sr, model=m)  # noqa: E731
-                fb = (lambda: self._session(_role_prompt("asgard-thinker.md"))) if rrp is not self.rp else None
+
+                def mk(sr=sess_role, m=model):
+                    return self._session(_role_prompt("asgard-thinker.md"), role=sr, model=m, readonly=True)
+
+                fb = (
+                    (lambda: self._session(_role_prompt("asgard-thinker.md"), readonly=True))
+                    if rrp is not self.rp
+                    else None
+                )
                 r = self._run_turn(mk, prompt + _UNITS_NOTE + budget_note, fb)
                 plan_ctx = r.text
                 # 탐색 캐시 힌트 (CUS-182) — 게이트 증거 아님, 컨텍스트 힌트만 ("게이트는 메모리 불신")
@@ -868,6 +900,7 @@ class Heimdall:
                         handlers={"verdict": lambda i: "판정 접수"},
                         role=rl,
                         model=m,
+                        readonly=True,  # 읽기전용을 도구로 강제 — 프롬프트 순응에 안 기댄다
                     )
 
                 fb = (lambda mv=mk_verifier: mv(m=None, rl=None)) if rrp is not self.rp else None
@@ -891,8 +924,11 @@ class Heimdall:
                         "failure_sig": "no-verdict-submitted",
                         "why": "verdict 툴 미제출",
                     }
-                elif v.get("verdict") == "PASS" and not any(c.get("exit_code") == 0 for c in observed):
-                    # 증거 없는 PASS 무효 — verifier 가 명령을 실제 실행하지 않았다 (Goodhart, CUS-173)
+                elif v.get("verdict") == "PASS" and not any(
+                    c.get("exit_code") == 0 and not _trivial_evidence(c.get("cmd", "")) for c in observed
+                ):
+                    # 증거 없는 PASS 무효 — verifier 가 명령을 실제 실행하지 않았거나 true/echo 류
+                    # 무조건-성공 명령뿐이다 (Goodhart, CUS-173)
                     v = {
                         "verdict": "FAIL",
                         "criteria": v.get("criteria") or cls["criteria"],
@@ -991,7 +1027,12 @@ class Heimdall:
         워킹트리 fingerprint 변화 — 소급 퀘스트를 열어 Verifier 판정 + 게이트를 강제한다.
         mode B 의 orphan-write 봉인의 네이티브 등가물 (native 엔 Stop 훅이 없다)."""
         before = self._worktree_dirty()
-        r = self._session(self.identity).run(request)
+        # REPL 턴 간 대화 맥락 — 직전 문답 요약을 앞에 붙인다 (후속 질문 "그건 왜?" 가 성립하게).
+        # Trinity 경로엔 안 붙인다 — write 과업은 요청+계획이 맥락의 전부여야 한다 (Canon 7 범위 존중).
+        ctx = "".join(f"[이전 문답]\nOdin: {q}\n응답: {a}\n\n" for q, a in self.history[-3:])
+        r = self._session(self.identity).run(ctx + request if ctx else request)
+        self.last_context_tokens = r.context_tokens or self.last_context_tokens
+        self.history = (self.history + [(request, r.text[:500])])[-6:]
         if r.writes or self._worktree_dirty() != before:
             _log_classify(self.root, {"event": "misroute", "route": "direct", "actual_write": True})
             self.on_text("\n⚠ DIRECT 분류였지만 write 감지 — 소급 검증 경로 진입 (Canon 10)\n")
@@ -1027,7 +1068,9 @@ class Heimdall:
         standard = cls.get("task_class") in ("trivial", "standard") and not (cls["ambiguous"] or cls["shared"])
         _log_classify(self.root, {"event": "route", "route": "standard" if standard else "trinity"})
         try:
-            return self._trinity(request, cls, standard=standard)
+            out = self._trinity(request, cls, standard=standard)
+            self.history = (self.history + [(request, out[:500])])[-6:]  # 후속 질문 맥락 (DIRECT 가 소비)
+            return out
         except Exception as e:  # dangling 방지 (CUS-180) — 퀘스트는 ACTIVE 로 남고 정직하게 보고
             return (
                 f"⚠ 세션 오류로 Trinity 중단 ({e.__class__.__name__}: {str(e)[:200]}) — "

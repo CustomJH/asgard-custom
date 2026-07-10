@@ -153,9 +153,10 @@ def _status_text(root: str, rp, usage: dict | None = None) -> str:
     if br:
         parts.append(f"⎇ {br}")
     if usage and usage.get("tokens"):
-        tok = usage["tokens"]
+        tok = usage["tokens"]  # 누적 지출 (iteration 마다 전체 프롬프트 재합산 — 창 % 기준으론 부적합)
         win = rp.profile.context_window
-        pct = f" ({tok / win * 100:.0f}%)" if win else ""  # 한도 미상 provider 는 % 생략
+        ctx = usage.get("context") or 0  # 마지막 호출 컨텍스트 크기 — 창 % 는 이걸로
+        pct = f" ({ctx / win * 100:.0f}%)" if win and ctx else ""  # 한도/컨텍스트 미상은 % 생략
         parts.append(f"↯ {tok / 1000:.1f}k{pct}")
     return "  ".join(parts)
 
@@ -232,7 +233,7 @@ def _pt_toolbar():
     if not ctx:
         return ""
     hd = ctx.get("heimdall")
-    usage = {"tokens": hd.total_tokens} if hd else None
+    usage = {"tokens": hd.total_tokens, "context": hd.last_context_tokens} if hd else None
     txt = _status_text(ctx["root"], ctx["rp"], usage)
     cls = "class:status-warn" if ctx["rp"].missing else "class:status"
     return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"), (cls, "  " + txt)]
@@ -603,7 +604,7 @@ def run(root: str, rp) -> int:
             _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)
             sys.stdout.write("\n")
         else:
-            usage = {"tokens": heimdall.total_tokens} if heimdall else None
+            usage = {"tokens": heimdall.total_tokens, "context": heimdall.last_context_tokens} if heimdall else None
             sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")
         try:
             req = prompt().strip()

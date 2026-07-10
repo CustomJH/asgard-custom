@@ -32,7 +32,9 @@ class SessionResult:
     commands: list[dict] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
-    tokens: int = 0  # 이 세션 누적 토큰 (input+output) — status line 사용량
+    tokens: int = 0  # 이 세션 누적 토큰 (매 iteration input+output 합산 = 지출량) — status line 사용량
+    context_tokens: int = 0  # 마지막 API 호출의 input+output = 현재 컨텍스트 크기 — 창 % 는 이걸로
+    # (tokens 는 iteration 마다 전체 프롬프트를 재합산하므로 컨텍스트 창 대비 % 가 100 을 넘는다)
 
 
 def make_client(rp: ResolvedProvider):
@@ -122,8 +124,12 @@ class AgentSession:
         on_tokens: Callable[[int], None] | None = None,
         on_status: Callable[[str | None], None] | None = None,
         max_iterations: int = 40,
+        readonly: bool = False,
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
+        # readonly = 역할→도구 구조 강제 (thinker/verifier/loki) — editor write 거부.
+        # ponytail: bash 리다이렉션 write 는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
+        self.readonly = readonly
         self.tools = [T.BASH_TOOL, T.EDITOR_TOOL] + (extra_tools or [])
         self.handlers = tool_handlers or {}
         self.on_text = on_text or (lambda s: None)
@@ -160,6 +166,8 @@ class AgentSession:
                 result.commands.append({"cmd": cmd[:200], "exit_code": code})
                 return out, False
             if call.name == "str_replace_based_edit_tool":
+                if self.readonly and call.input.get("command") != "view":
+                    return "이 세션은 읽기 전용 역할입니다 — 파일 수정은 Worker 의 몫 (view 만 허용)", True
                 self.on_status("✎ " + str(call.input.get("path", ""))[:60])
                 t0 = time.monotonic()
                 out = T.run_editor(self.root, call.input, result.writes)
@@ -194,12 +202,40 @@ class AgentSession:
             self.on_tokens(r.tokens)
         return r
 
+    def _prune_history(self, keep: int = 6) -> int:
+        """컨텍스트 창 80% 도달 시 오래된 툴 출력 본문을 비운다 — LLM 무호출 결정론 압축.
+        ponytail: 요약 압축 아님 — 툴 출력이 컨텍스트 질량 대부분이라 이걸로 충분, 부족해지면 요약 승격."""
+        pruned = 0
+        for m in self.messages[:-keep]:
+            c = m.get("content")
+            if isinstance(c, list):  # anthropic — user 메시지 안의 tool_result 블록
+                for b in c:
+                    if (
+                        isinstance(b, dict)
+                        and b.get("type") == "tool_result"
+                        and b.get("content") not in (None, "[pruned]")
+                    ):
+                        b["content"] = "[pruned]"
+                        pruned += 1
+            elif m.get("role") == "tool" and c not in (None, "[pruned]"):  # openai — role=tool 메시지
+                m["content"] = "[pruned]"
+                pruned += 1
+        return pruned
+
+    def _maybe_prune(self, result: SessionResult) -> None:
+        win = self.rp.profile.context_window
+        if win and result.context_tokens > win * 0.8:
+            n = self._prune_history()
+            if n:
+                self._tool_line("⌫", f"컨텍스트 압축 — 오래된 툴 출력 {n}건 프룬")
+
     def _run_anthropic(self, user_content: str) -> SessionResult:
         self.messages.append({"role": "user", "content": user_content})
         result = SessionResult(text="", stop_reason="")
         for _ in range(self.max_iterations):
             from ..i18n import t as _t
 
+            self._maybe_prune(result)
             self.on_status(_t("thinking"))
             t0, first = time.monotonic(), True
             with self.client.messages.stream(
@@ -224,7 +260,12 @@ class AgentSession:
             result.stop_reason = resp.stop_reason or ""
             u = getattr(resp, "usage", None)
             if u:
-                result.tokens += (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "output_tokens", 0) or 0)
+                result.context_tokens = (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "output_tokens", 0) or 0)
+                result.tokens += result.context_tokens
+            if resp.stop_reason == "max_tokens":
+                from .. import ui
+
+                self.on_text(f"\n  {ui.dim('⚠ max_tokens 도달 — 응답이 절단됨 (이어서 계속하려면 재요청)')}\n")
             if resp.stop_reason == "tool_use":
                 trs = []
                 for b in resp.content:
@@ -252,7 +293,8 @@ class AgentSession:
         from ..i18n import t as _t
 
         for _ in range(self.max_iterations):
-            text_buf, calls, think_t0 = [], {}, None
+            text_buf, calls, think_t0, finish = [], {}, None, None
+            self._maybe_prune(result)
             self.on_status(_t("thinking"))
             stream = self.client.chat.completions.create(
                 model=self.rp.model,
@@ -266,9 +308,12 @@ class AgentSession:
             for chunk in stream:
                 u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
                 if u:
-                    result.tokens += getattr(u, "total_tokens", 0) or 0
+                    result.context_tokens = getattr(u, "total_tokens", 0) or 0
+                    result.tokens += result.context_tokens
                 if not chunk.choices:
                     continue
+                if chunk.choices[0].finish_reason:
+                    finish = chunk.choices[0].finish_reason
                 d = chunk.choices[0].delta
                 # reasoning 필드명은 벤더별 상이 — nvidia=reasoning_content, ollama=reasoning
                 reasoning = getattr(d, "reasoning_content", None) or getattr(d, "reasoning", None)
@@ -295,6 +340,12 @@ class AgentSession:
             if think_t0 is not None:  # thinking 후 바로 툴콜 — 텍스트 없이 끝난 경우
                 self._thought_line(time.monotonic() - think_t0)
             result.text = "".join(text_buf)
+            if finish == "length":  # max_tokens 절단 — 잘린 툴콜 인자 실행은 위험, 정직하게 종료
+                from .. import ui
+
+                self.on_text(f"\n  {ui.dim('⚠ max_tokens 도달 — 응답이 절단됨 (이어서 계속하려면 재요청)')}\n")
+                result.stop_reason = "max_tokens"
+                return result
             if not calls:
                 result.stop_reason = "end_turn"
                 return result

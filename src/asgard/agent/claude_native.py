@@ -178,7 +178,10 @@ async def _run_async(sess, user_content: str, result) -> None:
 
     custom = [tl for tl in sess.tools if "input_schema" in tl]  # bash/editor 는 스키마리스 내장 — 제외
     mcp_servers: dict = {}
-    allowed = list(BUILTIN_TOOLS)
+    # readonly 역할(thinker/verifier/loki)은 write 툴 자체를 뺀다 — anthropic 트랜스포트의
+    # editor write 거부와 동일한 구조 강제 (프롬프트 순응 아님)
+    builtin = [t for t in BUILTIN_TOOLS if not (getattr(sess, "readonly", False) and t in _WRITE_TOOLS)]
+    allowed = list(builtin)
     if custom:
         mcp_servers["asgard"] = create_sdk_mcp_server(
             name="asgard", version="1.0.0", tools=[_bridge_tool(sess, tl, result) for tl in custom]
@@ -189,7 +192,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         system_prompt=sess.system,
         cwd=sess.root,
         model=sess.rp.model or None,
-        tools=list(BUILTIN_TOOLS),
+        tools=builtin,
         allowed_tools=allowed,
         permission_mode="bypassPermissions",  # 네이티브 트랜스포트(무제한 bash)와 동등 자율성
         max_turns=sess.max_iterations,
