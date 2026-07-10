@@ -614,6 +614,15 @@ class Heimdall:
                 )
         _record_writes(self.root, sid, all_writes)
 
+    def _record_outcome(self, task_class: str, result: str, saw_red: bool) -> None:
+        """퀘스트 종결 → route-priors 카운트 + classify.jsonl 감사 (CUS-127 Bayesian-lite 데이터 축)."""
+        from ..hooks.quest_log import update_priors
+
+        _log_classify(
+            self.root, {"event": "outcome", "task_class": task_class, "result": result, "baseline_red": saw_red}
+        )
+        update_priors(self.root, task_class, saw_red)
+
     def _escalate(self, sid: str) -> None:
         """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
         ql(
@@ -631,7 +640,10 @@ class Heimdall:
 
         qid = f"native-{int(time.time())}-{uuid.uuid4().hex[:6]}"  # 초 단위 충돌 방지 (CUS-184)
         sid = qid
-        args = ["open", qid] + [
+        tc = str(cls.get("task_class") or "")
+        if tc not in ("trivial", "standard"):
+            tc = "deep"  # 미상/파싱 실패는 deep (안전 기본값)
+        args = ["open", qid, "--task-class", tc] + [
             x for c in (cls["criteria"] or ["요청 충족을 검증 명령으로 입증"]) for x in ("--criteria", c)
         ]
         ql(self.root, *args, session=sid)
@@ -664,6 +676,7 @@ class Heimdall:
             )
             if on
         ]  # 게이트-우선은 전이 함수 기본값 (CUS-189) — 별도 플래그 없음, 물리 가드가 판정
+        flag_args += ["--task-class", tc]  # prior 승격 문턱 축 (CUS-127)
         # 게이트-우선은 Thinker 를 생략한다 — Worker 가 계획 없이 뛰지 않게 criteria 를 계획 자리에.
         plan_ctx = ("성공 기준: " + "; ".join(map(str, cls["criteria"]))) if standard else ""
         explored: list[str] = []  # Thinker 관찰 명령 — Worker 재탐색 세금 절감 (CUS-182 최소판, 힌트 전용)
@@ -672,6 +685,7 @@ class Heimdall:
         fail_history: list[str] = []  # 턴별 실패 이력 — THINKER_REPLAN 에 주입 (CUS-172)
         gate_sigs: dict[str, int] = {}  # 게이트 차단 사유별 카운트 (CUS-174)
         gate_blocks = 0
+        saw_red = False  # 이 퀘스트에서 하네스 베이스라인 red 관측 — prior 집계 축 (CUS-127)
         replans = 0  # 재계획 횟수 — 2회+ 는 clean-slate: thinker_alt placement 또는 티어 승급 (CUS-177)
         pending: tuple[str, str] | None = None  # 게이트 수리 강제 턴 — next 우회
 
@@ -723,6 +737,7 @@ class Heimdall:
                     continue
                 self.on_text(f"  ⚖ 베이스라인 {bj.get('baseline')} → {bj['verdict']}\n")
                 if bj["verdict"] == "FAIL":
+                    saw_red = True
                     failing = ", ".join(map(str, bj.get("failing") or [])) or "(퀘스트 로그 baseline.results 참조)"
                     last_fail = {"sig": "baseline-red", "why": f"하네스 베이스라인 체크 실패: {failing}"}
                     fail_history.append(f"baseline-red: {failing[:200]}")
@@ -734,8 +749,11 @@ class Heimdall:
                     sig = _gate_sig(reason)
                     gate_sigs[sig] = gate_sigs.get(sig, 0) + 1
                     self.on_text(f"⛔ gate({sig}): {reason[:200]}\n")
+                    if sig == "baseline-red":
+                        saw_red = True
                     if gate_sigs[sig] >= 2:  # 동일 사유 재차단 = 수리 불가 — fail-open 위장 대신 정직 보고
                         self._escalate(sid)
+                        self._record_outcome(tc, "gate-escalate", saw_red)
                         return (
                             f"⚠ Odin 결정 필요 — 게이트 동일 사유({sig}) {gate_sigs[sig]}회 차단, 수리 실패. "
                             f"퀘스트 로그: .asgard/quest/{qid}.jsonl"
@@ -745,9 +763,11 @@ class Heimdall:
                         last_fail = {"sig": sig, "why": reason[:500]}
                     continue
                 ql(self.root, "close", session=sid)
+                self._record_outcome(tc, "pass", saw_red)
                 return self._final_report(qid, sid, gate_blocks)
             if role == "ESCALATE_ODIN":
                 self._escalate(sid)
+                self._record_outcome(tc, "escalate", saw_red)
                 return f"⚠ Odin 결정 필요 — {why}"
             if role == "DIRECT_DONE":
                 return self._direct(request)
@@ -916,6 +936,7 @@ class Heimdall:
             else:
                 return f"⚠ 미지의 전이 상태 '{role}' — Odin 보고 (퀘스트 로그: .asgard/quest/{qid}.jsonl)"
 
+        self._record_outcome(tc, "budget-exhausted", saw_red)
         return (
             f"⚠ 턴 예산({budget}) 소진 — Odin 보고 (grace 판정까지 완료 실패). 퀘스트 로그: .asgard/quest/{qid}.jsonl"
         )

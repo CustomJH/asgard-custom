@@ -312,6 +312,34 @@ def load_policy(root: str) -> dict:
     return p
 
 
+# ── Bayesian-lite 라우팅 prior (CUS-127) — task-class별 게이트-red 이력 카운트 ──
+# 학습 없음: 퀘스트 종결마다 {n, red} 카운트 1건 (기록자는 Heimdall — 모델 비노출).
+# 소비는 transition 의 게이트-우선 승격 문턱뿐 — 게이트 자체는 여전히 물리 가드가 판정한다
+# ("게이트는 메모리 불신" — prior 는 심도 선택 힌트지 증거가 아니다).
+
+
+def load_priors(root: str) -> dict:
+    try:
+        return json.load(open(os.path.join(root, ".asgard", "route-priors.json")))
+    except Exception:
+        return {}  # 없음/깨짐 = 이력 없음 (fail-open — 기본 문턱)
+
+
+def update_priors(root: str, task_class: str, red: bool) -> None:
+    """퀘스트 종결 1건 반영. fail-open — 카운트 유실은 문턱이 기본값으로 남을 뿐."""
+    try:
+        p = load_priors(root)
+        c = p.setdefault("classes", {}).setdefault(task_class, {"n": 0, "red": 0})
+        c["n"] = int(c.get("n") or 0) + 1
+        c["red"] = int(c.get("red") or 0) + (1 if red else 0)
+        p["schema"] = 1
+        d = os.path.join(root, ".asgard")
+        os.makedirs(d, exist_ok=True)
+        json.dump(p, open(os.path.join(d, "route-priors.json"), "w"))
+    except Exception:
+        pass
+
+
 def active_quest(root: str) -> str | None:
     try:
         qid = open(os.path.join(root, ".asgard", "quest", "ACTIVE")).read().strip()
@@ -445,7 +473,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
 
 
 # ── 전이 함수 (CUS-120) — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
-def transition(s: dict, policy: dict, flags) -> dict:
+def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict:
     small = policy["small_write"]
     # big 은 non-test 질량 기준 (summarize.full_required 와 동일) — 테스트 추가로 full/승격을 트리거하지 않는다
     big = (
@@ -487,6 +515,12 @@ def transition(s: dict, policy: dict, flags) -> dict:
         and not flags.ambiguous
         and not flags.external_research
     )
+    # Bayesian-lite 승격 문턱 (CUS-127) — 이 task-class 의 게이트-red 이력이 과반이면 red 1회로
+    # 선제 승격. Beta(1,1) posterior mean (red+1)/(n+2) > 0.5 ⟺ red > n−red (과반 판정) —
+    # 카운트뿐, 학습 없음 (arXiv 2606.24453: 검증 싸고 critic 불완전한 구간의 적응 제어).
+    pc = ((priors or {}).get("classes") or {}).get(getattr(flags, "task_class", None) or "", {})
+    red_hist = int(pc.get("red") or 0)
+    promote_at = 1 if red_hist > int(pc.get("n") or 0) - red_hist else 2
 
     def out(role, why):
         return {"next_role": role, "verify_level": level, "why": why, "features": features}
@@ -504,9 +538,11 @@ def transition(s: dict, policy: dict, flags) -> dict:
         # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭 (CUS-171).
         return out("ESCALATE_ODIN", "Verifier ESCALATE — 진행 불가 블로커, Odin 결정 필요")
     if s["last_verdict"] == "FAIL":
-        if standard_ok and s.get("fail_streak_any", 0) >= 2:
-            # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격 (CUS-188)
-            return out("THINKER_REPLAN", "게이트-우선 red 2회 — Trinity 승격, 접근 재설계")
+        if standard_ok and s.get("fail_streak_any", 0) >= promote_at:
+            # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격 (CUS-188).
+            # prior 과반-red 클래스는 red 1회로 하향 (CUS-127).
+            why = "게이트-우선 red %d회 — Trinity 승격, 접근 재설계" % s["fail_streak_any"]
+            return out("THINKER_REPLAN", why + (" (prior: 클래스 red 이력 과반)" if promote_at == 1 else ""))
         return (
             out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계")
             if flags.structural
@@ -570,6 +606,12 @@ def main() -> int:
     ap.add_argument("--shared", action="store_true")
     ap.add_argument("--structural", action="store_true", help="next: 직전 FAIL 이 구조적임을 신고")
     ap.add_argument("--write-expected", action="store_true", help="next: 아직 diff 없지만 write 예정")
+    ap.add_argument(
+        "--task-class",
+        choices=["trivial", "standard", "deep"],
+        dest="task_class",
+        help="open: 로그 기록 / next: prior 승격 문턱 조회 축 (CUS-127)",
+    )
     ap.add_argument("--force", action="store_true", help="close: 판정 없이 강제 해제 (Odin 동의 필요)")
     args = ap.parse_args()
     root = repo_root()
@@ -582,12 +624,15 @@ def main() -> int:
         qid = sanitize(args.quest_id)
         rc, head = git(root, "rev-parse", "HEAD")
         base_ref = head.strip() if rc == 0 else "NONE"
+        risk = {"has_write": not args.no_write}
+        if args.task_class:  # prior 집계 축 (CUS-127) — 퀘스트가 어느 클래스로 열렸는지 감사 기록
+            risk["task_class"] = args.task_class
         ev = normalize(
             {
                 "role": "thinker",
                 "event": "plan",
                 "base_ref": base_ref,
-                "risk": {"has_write": not args.no_write},
+                "risk": risk,
                 "criteria": args.criteria,
             },
             load_events(root, qid),
@@ -694,7 +739,7 @@ def main() -> int:
         return 0
 
     if args.cmd == "next":
-        print(json.dumps(transition(s, policy, args), ensure_ascii=False, indent=2))
+        print(json.dumps(transition(s, policy, args, load_priors(root)), ensure_ascii=False, indent=2))
         return 0
 
     if args.cmd == "close":

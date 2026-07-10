@@ -780,5 +780,77 @@ class TestStandardTransition(TrinityBase):
         self.assertEqual(p.returncode, 1)  # 판정 불가 — LLM Verifier 폴백 지시
 
 
+class TestRoutePriors(TrinityBase):
+    """CUS-127 Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1 로 하향."""
+
+    def priors(self, **classes):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+            json.dump({"schema": 1, "classes": classes}, f)
+
+    def one_red(self):
+        """게이트-우선 적격 상태에서 baseline red 1회까지 진행."""
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.qlog("verify-baseline")
+
+    def nxt(self, *flags):
+        return jout(self.qlog("next", "--write-expected", *flags))
+
+    def test_red_majority_promotes_on_first_red(self):
+        self.priors(standard={"n": 3, "red": 2})
+        self.one_red()
+        n = self.nxt("--task-class", "standard")
+        self.assertEqual(n["next_role"], "THINKER_REPLAN")
+        self.assertIn("prior", n["why"])
+
+    def test_red_minority_keeps_default_threshold(self):
+        self.priors(standard={"n": 3, "red": 1})
+        self.one_red()
+        self.assertEqual(self.nxt("--task-class", "standard")["next_role"], "WORKER_RETRY")
+
+    def test_no_history_keeps_default_threshold(self):
+        self.one_red()
+        self.assertEqual(self.nxt("--task-class", "standard")["next_role"], "WORKER_RETRY")
+
+    def test_other_class_history_does_not_bleed(self):
+        self.priors(deep={"n": 3, "red": 3})
+        self.one_red()
+        self.assertEqual(self.nxt("--task-class", "standard")["next_role"], "WORKER_RETRY")
+
+    def test_no_task_class_flag_keeps_default_threshold(self):
+        self.priors(standard={"n": 3, "red": 3})
+        self.one_red()
+        self.assertEqual(self.nxt()["next_role"], "WORKER_RETRY")
+
+    def test_corrupt_priors_file_fails_open(self):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+            f.write("{broken")
+        self.one_red()
+        self.assertEqual(self.nxt("--task-class", "standard")["next_role"], "WORKER_RETRY")
+
+    def test_open_records_task_class_in_risk(self):
+        self.open_quest("--task-class", "standard")
+        ev = json.loads(open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).readline())
+        self.assertEqual(ev["risk"].get("task_class"), "standard")
+
+    def test_update_priors_roundtrip_and_fail_open(self):
+        from asgard.hooks.quest_log import load_priors, update_priors
+
+        update_priors(self.root, "standard", red=True)
+        update_priors(self.root, "standard", red=False)
+        update_priors(self.root, "deep", red=True)
+        p = load_priors(self.root)
+        self.assertEqual(p["classes"]["standard"], {"n": 2, "red": 1})
+        self.assertEqual(p["classes"]["deep"], {"n": 1, "red": 1})
+        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+            f.write("{broken")
+        update_priors(self.root, "standard", red=True)  # 깨진 파일 위에서도 예외 없이 재시작
+        self.assertEqual(load_priors(self.root)["classes"]["standard"], {"n": 1, "red": 1})
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

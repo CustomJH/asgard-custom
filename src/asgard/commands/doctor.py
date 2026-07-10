@@ -96,6 +96,24 @@ def _trinity_checks(root: str) -> list[dict]:
             )
     except Exception:
         pass
+    # route prior (CUS-127) — task-class별 게이트-red 이력. 과반 red 클래스는 승격 문턱 1로 하향.
+    try:
+        classes = _json.load(open(os.path.join(root, ".asgard", "route-priors.json"))).get("classes") or {}
+        if classes:
+            hot = [
+                c for c, v in classes.items() if int(v.get("red") or 0) > int(v.get("n") or 0) - int(v.get("red") or 0)
+            ]
+            detail = ", ".join(f"{c} {v.get('red', 0)}/{v.get('n', 0)} red" for c, v in sorted(classes.items()))
+            checks.append(
+                {
+                    "name": "route priors (Bayesian-lite)",
+                    "ok": not hot,
+                    "detail": detail + (f" — 승격 문턱 1: {', '.join(hot)}" if hot else ""),
+                    "fix": "과반-red 클래스는 red 1회에 Trinity 승격 — 반복되면 baseline_checks/과업 분할 점검",
+                }
+            )
+    except Exception:
+        pass
     return checks
 
 

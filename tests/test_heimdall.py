@@ -260,6 +260,57 @@ class TestTrinityLoop(Base):
         self.assertIn("차단 1회", out)
 
 
+class TestRoutePriorsE2E(Base):
+    """CUS-127 Bayesian-lite — 종결 outcome 기록 + prior 가 승격 문턱을 실제로 낮추는 e2e."""
+
+    def read_priors(self):
+        return json.load(open(os.path.join(self.root, ".asgard", "route-priors.json")))
+
+    def outcomes(self):
+        path = os.path.join(self.root, ".asgard", "classify.jsonl")
+        events = [json.loads(ln) for ln in open(path) if ln.strip()]
+        return [e for e in events if e.get("event") == "outcome"]
+
+    def test_happy_path_records_pass_outcome_and_prior(self):
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
+        h.handle("w1.txt 만들어")
+        self.assertEqual(self.read_priors()["classes"]["deep"], {"n": 1, "red": 0})  # task_class 미상 = deep
+        (out,) = self.outcomes()
+        self.assertEqual((out["task_class"], out["result"], out["baseline_red"]), ("deep", "pass", False))
+        first = json.loads(self.quest_log_text().splitlines()[0])
+        self.assertEqual(first["risk"].get("task_class"), "deep")  # open 이 클래스를 기록
+
+    def test_escalate_records_outcome(self):
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("ESCALATE")], cls=CLS_WRITE)
+        h.handle("w1.txt 만들어")
+        (out,) = self.outcomes()
+        self.assertEqual(out["result"], "escalate")
+        self.assertEqual(self.read_priors()["classes"]["deep"]["n"], 1)
+
+    def test_red_majority_prior_promotes_on_first_red(self):
+        # baseline red 상시(false 체크) + standard 클래스 과반-red 이력 → 첫 red 에 THINKER_REPLAN
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
+            json.dump({"baseline_checks": ["false"]}, f)
+        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+            json.dump({"schema": 1, "classes": {"standard": {"n": 3, "red": 2}}}, f)
+        seq = [
+            worker({"w1.txt": "a\n"}, self.root),
+            thinker("재설계 1"),
+            worker({"w1.txt": "b\n"}, self.root),
+            thinker("재설계 2"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("턴 예산", out)  # 체크가 영원히 red — 예산 소진으로 정직 종료
+        labels = [s.label for s in h.consumed]
+        self.assertEqual(labels[:2], ["worker", "thinker"])  # red 1회 만에 재계획 (기본 문턱 2 아님)
+        self.assertIn("prior", "".join(h.texts))  # 전이 사유에 prior 하향 표기
+        self.assertEqual(self.read_priors()["classes"]["standard"], {"n": 4, "red": 3})
+        (out_ev,) = self.outcomes()
+        self.assertEqual((out_ev["result"], out_ev["baseline_red"]), ("budget-exhausted", True))
+
+
 OPUS_DEFAULT = PROVIDERS["anthropic"].default_model  # 티어 매핑은 기본 모델일 때만 적용
 
 
