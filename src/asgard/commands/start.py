@@ -15,7 +15,9 @@ from .. import ui
 from ..providers import ResolvedProvider, resolve
 
 
-def preflight(root: str, provider: str | None = None, model: str | None = None) -> tuple[list[dict], "ResolvedProvider"]:
+def preflight(
+    root: str, provider: str | None = None, model: str | None = None
+) -> tuple[list[dict], "ResolvedProvider"]:
     """세션 진입 체크리스트. (checks, resolved) — resolved 는 루프(CUS-137)로 핸드오프."""
     rp = resolve(root, provider=provider, model=model)
     checks: list[dict] = [

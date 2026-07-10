@@ -754,6 +754,14 @@ class TestStandardTransition(TrinityBase):
         self.assertEqual(self.qlog("close").returncode, 0)
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
 
+    def test_large_rewrite_escalates_even_without_sig_change(self):
+        # CUS-194 벤치 결함 — def 무변경 리라이트(+52/-11)가 caller 를 깨고도 소형 판정돼 close 됨
+        self.policy(baseline_checks=["true"])
+        self.open_quest()
+        self.write("app.py", "\n".join(f"x{i} = {i}" for i in range(30)) + "\n")  # 30 라인 > 상한 25
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+
     def test_deleted_test_escalates_to_llm_verifier(self):
         self.write("tests/test_app.py", "def test_a(): pass\n")
         self.commit_all()

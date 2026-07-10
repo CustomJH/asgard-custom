@@ -107,6 +107,9 @@ DEFAULT_POLICY = {
     # 하네스 소유 베이스라인 체크 (CUS-187) — 비면 보수적 자동 감지 (pytest 만)
     "baseline_checks": [],
     "baseline_timeout": 120,
+    # 게이트-우선 적격 상한 (CUS-194) — small_write(full-verify 기준)보다 훨씬 좁다:
+    # 63라인 리라이트가 소형 판정돼 caller 미방어로 close 된 벤치 결함. 소형 diff 전용.
+    "gate_first_max_lines": 25,
 }
 
 
@@ -471,9 +474,14 @@ def transition(s: dict, policy: dict, flags) -> dict:
     # v1 은 --standard 옵트인이었으나 CUS-189 스모크 3회에서 모델이 플래그를 안 넘김 (프롬프트 계약
     # 한계) — 의존성을 삭제하고 전이 함수 기본으로 흡수. 조건 하나라도 깨지면 아래 트리니티 행으로
     # 자연 폴스루 = 승격. 민감/큰 non-test diff/시그니처 변경/테스트 삭제/모호는 LLM Verifier 가 필요.
+    # 게이트-우선 전용 라인 상한 (CUS-194 벤치 결함): sig_risk 는 def 삭제만 본다 — def 무변경
+    # 리라이트(+52/-11)가 동작 계약을 바꿔 caller 를 깨는 경로는 diff 질량으로만 잡을 수 있다.
+    # 가시 테스트(baseline)는 near-oracle 이 아니므로 (2606.24453 regime) 소형 diff 에서만 신뢰.
+    gf_small = s.get("nontest_lines", s["diff_lines"]) <= int(policy.get("gate_first_max_lines") or 25)
     standard_ok = (
         not sensitive
         and not big
+        and gf_small
         and not s.get("deleted_tests")
         and not s.get("sig_risk")
         and not flags.ambiguous

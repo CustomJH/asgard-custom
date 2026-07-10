@@ -59,6 +59,8 @@ _POLICY = {
     # 명시하면 red 판정이 엄격해진다 (예: ["uv run pytest -x -q", "uv run ruff check"]).
     "baseline_checks": [],
     "baseline_timeout": 120,
+    # 게이트-우선 적격 non-test 라인 상한 (CUS-194) — 초과 시 LLM Verifier 승격
+    "gate_first_max_lines": 25,
 }
 
 
