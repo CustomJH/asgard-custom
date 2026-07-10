@@ -9,6 +9,7 @@ dependencies = [
     "textual>=0.60",  # full-screen onboarding TUI (asgard init); pure-python, builds on rich
     "anthropic>=0.60",
     "openai>=1.40",
+    "claude-agent-sdk>=0.2",  # claude-native provider — 로컬 claude CLI 구동 (claude_cli 트랜스포트)
     "prompt-toolkit>=3.0",
 ]
 
