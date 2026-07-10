@@ -222,6 +222,98 @@ class TestCustomToolBridge(_Sess):
         self.assertIn("nope", out["content"][0]["text"])
 
 
+class TestBanGuards(_Sess):
+    """밴/차단 방어 (CUS-191) — 캡 감지·프록시 거부·인증 감지·동시성 상한."""
+
+    def test_base_url_rejected(self):
+        sess = self._session()
+        sess.rp.base_url = "https://proxy.example.com"
+        with self.assertRaises(RuntimeError) as cm:
+            sess.run("hi")
+        self.assertIn("base_url", str(cm.exception))
+
+    def test_usage_cap_in_result_message_raises(self):
+        script = [
+            [
+                ResultMessage(
+                    subtype="error_during_execution",
+                    duration_ms=1,
+                    duration_api_ms=1,
+                    is_error=True,
+                    num_turns=1,
+                    session_id="s",
+                    result="Claude AI usage limit reached|1760000000",
+                )
+            ]
+        ]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            with self.assertRaises(claude_native.UsageCapError):
+                sess.run("hi")
+
+    def test_usage_cap_classified_fatal(self):
+        from asgard.agent.heimdall import classify_api_error
+
+        self.assertEqual(classify_api_error(claude_native.UsageCapError("한도")), "fatal")
+
+    def test_non_cap_error_result_passes_through(self):
+        script = [[_result_msg(subtype="error_during_execution", result="some other failure")]]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("hi")  # 캡 아님 — 예외 없이 stop_reason 으로 표면화
+        self.assertEqual(r.stop_reason, "error_during_execution")
+
+    def test_cap_markers(self):
+        self.assertTrue(claude_native._is_usage_cap("You've hit your weekly limit · resets Mon 12:00am"))
+        self.assertTrue(claude_native._is_usage_cap("You've hit your session limit · resets 3:45pm"))
+        self.assertTrue(claude_native._is_usage_cap("You've hit your Opus limit · resets 3:45pm"))
+        self.assertTrue(claude_native._is_usage_cap("", "You are out of extra usage"))
+        self.assertFalse(claude_native._is_usage_cap("normal text", "tool failed"))
+
+    def test_transient_throttle_is_not_cap(self):
+        # 공식 일시 스로틀 문구 — CLI 내장 백오프 대상, fatal 캡으로 오분류 금지
+        self.assertFalse(
+            claude_native._is_usage_cap("API Error: Server is temporarily limiting requests (not your usage limit)")
+        )
+
+    def test_guard_env_neutralizes_proxy_on_subscription(self):
+        env = {"ANTHROPIC_BASE_URL": "https://gw.example.com"}
+        with mock.patch.dict("os.environ", env):
+            with mock.patch.object(claude_native, "detect_auth", return_value=("keychain", "")):
+                self.assertEqual(claude_native._guard_env(), {"ANTHROPIC_BASE_URL": ""})
+            with mock.patch.object(claude_native, "detect_auth", return_value=("api_key", "")):
+                self.assertEqual(claude_native._guard_env(), {})  # API 키 인증은 게이트웨이 존중
+
+    def test_guard_env_noop_without_proxy(self):
+        import os
+
+        env = {k: v for k, v in os.environ.items() if k != "ANTHROPIC_BASE_URL"}
+        with mock.patch.dict("os.environ", env, clear=True):
+            self.assertEqual(claude_native._guard_env(), {})
+
+    def test_detect_auth_api_key_warns_billing(self):
+        with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-x"}):
+            kind, detail = claude_native.detect_auth()
+        self.assertEqual(kind, "api_key")
+        self.assertIn("과금", detail)
+
+    def test_detect_auth_never_reads_token_values(self):
+        # 감지 함수는 파일을 '읽지' 않는다 — 존재 확인만 (ToS: 토큰 추출 금지)
+        import os
+
+        env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")}
+        with mock.patch.dict("os.environ", env, clear=True):
+            with mock.patch("builtins.open", side_effect=AssertionError("token file must not be opened")):
+                kind, _ = claude_native.detect_auth()
+        self.assertIn(kind, ("keychain", "unknown"))
+
+    def test_concurrency_gate_default(self):
+        self.assertEqual(claude_native._MAX_CONCURRENT, 3)
+        self.assertIsNotNone(claude_native._spawn_gate)
+
+
 class TestCompleteText(unittest.TestCase):
     def test_tools_removed_single_turn(self):
         calls = []
