@@ -82,6 +82,10 @@ def update(
     raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run))
 
 
+# `upgrade` 별칭 — 구 TS CLI(asgard-cli)의 근육기억 호환. start 안 /update 와 동일 플로우.
+app.command("upgrade", hidden=True, help="alias of `update`")(update)
+
+
 @app.command(help="remove asgard (uv tool, PATH symlink, ~/.asgard)")
 def uninstall(
     yes: bool = typer.Option(False, "--yes", "-y"),

@@ -159,6 +159,7 @@ rm -rf "$PROJ"
 
 # ── update — dry-run only (no network) ──
 "${ASG[@]}" update --dry-run | grep -q "would install" || { echo "FAIL: update --dry-run"; exit 1; }
+"${ASG[@]}" upgrade --dry-run | grep -q "would install" || { echo "FAIL: upgrade alias --dry-run"; exit 1; }
 
 # ── uninstall — removes the uv tool we installed at the top ──
 asgard uninstall --yes >/dev/null || { echo "FAIL: uninstall"; exit 1; }
