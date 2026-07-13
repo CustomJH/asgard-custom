@@ -149,6 +149,14 @@ def _status_text(root: str, rp, usage: dict | None = None) -> str:
     if rp.missing:  # 키/설정 미충족 = 미연결 — 모델명 대신 명확한 안내
         return f"⚠ {t('not_connected')}   ⌂ {cwd}"
     parts = [f"◆ {rp.model}", f"⌂ {cwd}"]
+    try:  # Lagom 모드 (CUS-215) — off 는 흔적 없음
+        from ..lagom import current_mode
+
+        lm = current_mode(root)
+        if lm != "off":
+            parts.append(f"❄ lagom:{lm}")
+    except Exception:
+        pass
     br = _git_status(root)
     if br:
         parts.append(f"⎇ {br}")
@@ -176,6 +184,7 @@ _HELP_KEYS = {
     "/provider": "h_provider",
     "/trinity": "h_trinity",
     "/bridge": "h_bridge",
+    "/lagom": "h_lagom",
     "/model": "h_model",
     "/lang": "h_lang",
     "/update": "h_update",
@@ -191,6 +200,12 @@ _COMMANDS = [
     "/trinity",
     "/trinity set",
     "/bridge",
+    "/lagom",
+    "/lagom off",
+    "/lagom lite",
+    "/lagom full",
+    "/lagom ultra",
+    "/lagom default ",
     "/model",
     "/lang en",
     "/lang ko",
@@ -421,6 +436,33 @@ def _cmd_bridge(cmd: str, root: str) -> None:
     sys.stdout.write(f"  {ui.dim(t('bridge_usage'))}\n")
 
 
+def _cmd_lagom(cmd: str, root: str, rp) -> None:
+    """/lagom — 모드 표시. '/lagom <mode>' 세션 전환, '/lagom default <mode>' 영속 (CUS-209/215).
+    전환은 _Reconfigure 로 Heimdall 을 재생성한다 — 역할 프롬프트의 lagom 렌더가 새 모드로 갱신."""
+    from ..lagom import clear_state, current_mode, normalize, read_state, write_state
+
+    args = cmd.split()[1:]
+    if not args:
+        cur, st = current_mode(root), read_state(root)
+        tag = t("lagom_session") if st else t("lagom_default")
+        sys.stdout.write(f"  {ui.paint(_O, 'lagom'.ljust(9))} {cur} {ui.dim('(' + tag + ')')}\n")
+        sys.stdout.write(f"  {ui.dim(t('lagom_usage'))}\n")
+        return
+    is_default = args[0] == "default"
+    mode = normalize(args[1] if is_default and len(args) > 1 else args[0])
+    if mode is None:
+        sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('lagom_usage')}\n")
+        return
+    if is_default:
+        from ..providers import save_config_section
+
+        save_config_section(root, "lagom", {"mode": mode})
+        clear_state(root)  # 상태파일 제거 → 새 기본값이 즉시 유효 (세션 오버라이드 해소)
+        raise _Reconfigure(rp, t("lagom_persisted", mode=mode))
+    write_state(root, mode)
+    raise _Reconfigure(rp, t("lagom_set", mode=mode))
+
+
 def slash(cmd: str, root: str, rp) -> bool:
     """슬래시 커맨드 처리. True = 처리됨(루프 계속), 종료/재설정은 예외로 신호."""
     c = cmd.split()[0]
@@ -463,6 +505,8 @@ def slash(cmd: str, root: str, rp) -> bool:
         _cmd_trinity(cmd, root, rp)
     elif c == "/bridge":
         _cmd_bridge(cmd, root)
+    elif c == "/lagom":
+        _cmd_lagom(cmd, root, rp)
     elif c == "/quest":
         try:
             out = ql(root, "state").stdout.strip()

@@ -12,6 +12,7 @@ from ..templates import (
     BRIDGE_SKILL_MD,
     CC_FOLDERS,
     CURSOR_FOLDERS,
+    LAGOM_CANON,
     SELFTEST_MD,
     agents_md,
     cc_settings,
@@ -21,6 +22,7 @@ from ..templates import (
     cursor_rule,
     trinity_policy,
 )
+from ..templates.lagom import LAGOM_SKILLS  # (스킬명, SKILL.md 본문) — review/debt/compress
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
@@ -144,6 +146,11 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "write-sentinel.py"), hook("write-sentinel")),  # quest 미개설 write 봉합
             (j(root, ".claude", "hooks", "unattended-context.py"), hook("unattended-context")),  # Canon 8 무인 감지
             (j(root, ".claude", "hooks", "subagent-gate.py"), hook("subagent-gate")),  # 역할 로그 규율 (SubagentStop)
+            # Lagom (CUS-205) — 훅 3종 + 캐논 단일 소스 (훅이 모드 필터해 주입)
+            (j(root, ".claude", "hooks", "lagom-activate.py"), hook("lagom-activate")),
+            (j(root, ".claude", "hooks", "lagom-tracker.py"), hook("lagom-tracker")),
+            (j(root, ".claude", "hooks", "lagom-subagent.py"), hook("lagom-subagent")),
+            (j(root, ".claude", "hooks", "lagom-canon.md"), LAGOM_CANON),
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
         files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
@@ -151,6 +158,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
         # asgard-provider — Trinity 역할 브릿지. 항상 스캐폴드, 게이트는 런타임([bridge] 기본 꺼짐).
         files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
+        # Lagom 스킬 (CUS-210) — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -181,6 +190,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     if cursor or codex:
         files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
         files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
@@ -243,6 +253,23 @@ def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
     return run_setup(**{_FLAG_OF[profile]: True}, force=force, dry_run=dry_run)  # ty: ignore[invalid-argument-type] — 동적 kwargs 디스패치
 
 
+def _apply_lagom(lagom: str | None, dry_run: bool, rc: int) -> int:
+    """init --lagom <mode> — 스캐폴드 성공 후 프로젝트 [lagom].mode 영속 (기본 full 은 무기록,
+    resolve 기본값이 이미 full — 사다리 1단: 필요 없는 설정은 만들지 않는다)."""
+    if rc != 0 or dry_run or not lagom:
+        return rc
+    from ..lagom import normalize
+    from ..providers import save_config_section
+
+    mode = normalize(lagom)
+    if mode is None:
+        ui.warn(f"--lagom {lagom}: 유효 모드 아님 (off|lite|full|ultra) — 기본 full 유지")
+        return rc
+    save_config_section(None, "lagom", {"mode": mode})
+    ui.step(f"lagom mode   {ui.dim('— [lagom].mode = ' + mode + ' (.asgard/config.toml)')}")
+    return rc
+
+
 def run_init(
     cc: bool = False,
     cursor: bool = False,
@@ -251,13 +278,15 @@ def run_init(
     force: bool = False,
     dry_run: bool = False,
     yes: bool = False,
+    lagom: str | None = None,
 ) -> int:
     # Explicit target (flags/--profile) → scaffold it directly, no picker.
     if cc or cursor or codex or profile:
-        return run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run)
+        rc = run_setup(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run)
+        return _apply_lagom(lagom, dry_run, rc)
     # No target given: default on non-TTY/--yes; else the full-screen picker.
     if yes or not _interactive():
-        return _run_profile(_DEFAULT_PROFILE, force, dry_run)
+        return _apply_lagom(lagom, dry_run, _run_profile(_DEFAULT_PROFILE, force, dry_run))
     # TTY: full-screen Textual onboarding. Textual missing/broken → Rich prompt. None = user cancelled.
     try:
         from .init_tui import run_init_tui
@@ -268,10 +297,10 @@ def run_init(
     if chosen is None:
         ui.warn("cancelled — nothing written.")
         return 0
-    return _run_profile(chosen, force, dry_run)
+    return _apply_lagom(lagom, dry_run, _run_profile(chosen, force, dry_run))
 
 
-if __name__ == "__main__":  # ponytail: profile→setup mapping self-check (no framework)
+if __name__ == "__main__":  # lagom: profile→setup mapping self-check (no framework)
     assert _FLAG_OF["cursor"] == "cursor" and set(_FLAG_OF) == {"claude-code", "cursor", "codex"}
     assert _DEFAULT_PROFILE in dict(_PROFILES)
     print("setup self-check ok")

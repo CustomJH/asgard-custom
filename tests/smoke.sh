@@ -117,6 +117,25 @@ printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PRO
 printf '{"event":"verify","role":"verifier","verdict":"PASS","commands":[{"cmd":"pytest -q","exit_code":0}]}\n' >> "$PROJ/.asgard/quest/sg1.jsonl"
 printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow verifier with evidence PASS"; exit 1; } || true
 rm -f "$PROJ/.asgard/quest/ACTIVE" "$PROJ/.asgard/quest/sg1.jsonl"
+# Lagom (CUS-205) — 훅 3종+캐논 스캐폴드, SessionStart 주입, /lagom 전환, off 무주입, fail-open
+grep -q '"SessionStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SessionStart (lagom)"; exit 1; }
+grep -q '"SubagentStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SubagentStart (lagom)"; exit 1; }
+for _f in lagom-activate.py lagom-tracker.py lagom-subagent.py lagom-canon.md; do
+  [ -f "$PROJ/.claude/hooks/$_f" ] || { echo "FAIL: --cc missing $_f"; exit 1; }
+done
+python3 -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
+printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }
+[ "$(cat "$PROJ/.asgard/lagom-mode")" = "full" ] || { echo "FAIL: lagom state file not written"; exit 1; }
+printf '%s' '{"prompt":"/lagom ultra"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q 'ultra' || { echo "FAIL: lagom-tracker must switch mode"; exit 1; }
+[ "$(cat "$PROJ/.asgard/lagom-mode")" = "ultra" ] || { echo "FAIL: lagom switch not persisted to state"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' && { echo "FAIL: lagom-subagent must not inject verifier"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' || { echo "FAIL: lagom-subagent must inject worker"; exit 1; }
+printf '%s' '{"prompt":"stop lagom"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q '\[lagom\] off' || { echo "FAIL: lagom deactivation phrase"; exit 1; }
+printf '%s' '{"source":"compact"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q '.' && { echo "FAIL: lagom off must inject nothing"; exit 1; } || true
+printf '%s' 'not-json' | python3 "$PROJ/.claude/hooks/lagom-tracker.py" >/dev/null 2>&1 || { echo "FAIL: lagom-tracker must fail-open"; exit 1; }
+rm -f "$PROJ/.asgard/lagom-mode"
+grep -q 'asgard:lagom' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing lagom section"; exit 1; }
+[ -f "$PROJ/.claude/skills/asgard-lagom-review/SKILL.md" ] || { echo "FAIL: --cc missing lagom-review skill"; exit 1; }
 # shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
 [ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
 grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }

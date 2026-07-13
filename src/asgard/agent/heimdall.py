@@ -382,7 +382,12 @@ class Heimdall:
         from ..hooks.quest_log import active_quest, load_policy
 
         self.policy = load_policy(root)
-        self.identity = _identity(root)
+        # Lagom (CUS-209) — 세션 생성 시점 모드로 렌더 (off = 빈 문자열, 프롬프트 무변화).
+        # REPL /lagom 전환은 _Reconfigure 로 Heimdall 을 재생성해 여기로 다시 온다.
+        from ..lagom import note as _lagom_note
+
+        self.lagom = _lagom_note(root)
+        self.identity = _identity(root) + self.lagom
         self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
         self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
         self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
@@ -590,7 +595,7 @@ class Heimdall:
 
             def mk():
                 return self._session(
-                    _role_prompt("asgard-worker.md"),
+                    _role_prompt("asgard-worker.md") + self.lagom,
                     extra_tools=[DISPATCH_TOOL],
                     handlers={"dispatch": self._dispatch_handler(sid, writes)},
                     role="worker",
@@ -808,10 +813,12 @@ class Heimdall:
                     prompt = f"과업: {request}"
 
                 def mk(sr=sess_role, m=model):
-                    return self._session(_role_prompt("asgard-thinker.md"), role=sr, model=m, readonly=True)
+                    return self._session(
+                        _role_prompt("asgard-thinker.md") + self.lagom, role=sr, model=m, readonly=True
+                    )
 
                 fb = (
-                    (lambda: self._session(_role_prompt("asgard-thinker.md"), readonly=True))
+                    (lambda: self._session(_role_prompt("asgard-thinker.md") + self.lagom, readonly=True))
                     if rrp is not self.rp
                     else None
                 )
@@ -838,8 +845,9 @@ class Heimdall:
                 writes: list[str] = []
 
                 def mk_worker(m=model, w=writes, s_id=sid, rl="worker"):
+                    # verifier 는 무주입 (mk_verifier) — 게이트 기준이 lagom 으로 흔들리면 안 된다
                     return self._session(
-                        _role_prompt("asgard-worker.md"),
+                        _role_prompt("asgard-worker.md") + self.lagom,
                         extra_tools=[DISPATCH_TOOL],
                         handlers={"dispatch": self._dispatch_handler(s_id, w)},
                         role=rl,

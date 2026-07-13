@@ -152,7 +152,7 @@ def git(root: str, *args: str, binary: bool = False):
 # ── 물리 증거 해시 — verifier-gate.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙) ──
 # 검증 실행 아티팩트 — 검증 명령이 만든 캐시가 PASS 를 stale 로 만들면 게이트가 자기파괴적이다
 # (.gitignore 없는 프로젝트에서 pytest 실행 → __pycache__ → hash 변경, s1 라이브 실측).
-# ponytail: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
+# lagom: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
 _JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv"}
 
 
@@ -222,7 +222,7 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
 
 def detect_checks(root: str, policy: dict) -> list[str]:
     """정책 baseline_checks 우선. 없으면 보수적 자동 감지 — pytest 만.
-    ponytail: lint 류 자동 감지 안함 — 기존 위반 false-red 가 게이트 인질이 된다. 명시 설정으로만."""
+    lagom: lint 류 자동 감지 안함 — 기존 위반 false-red 가 게이트 인질이 된다. 명시 설정으로만."""
     cfg = policy.get("baseline_checks")
     if cfg:
         return [str(c) for c in cfg]
@@ -239,7 +239,7 @@ def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) ->
     """체크 전부 실행 → {"state": green|red|none, "results": [...]}. 체크 없음 → None (요건 면제).
     같은 diff_hash 의 기존 verify 기록은 재사용 — 동일 트리에 pytest 를 두 번 돌리지 않는다.
     skip(127 미설치·pytest 5 수집 없음·timeout)은 red 아님 — 게이트는 자기기만 방어지 인질극 장치가
-    아니다 (verifier_gate.py 서두와 같은 원칙). ponytail: timeout=skip 은 보호 약화 — 느린 스위트는
+    아니다 (verifier_gate.py 서두와 같은 원칙). lagom: timeout=skip 은 보호 약화 — 느린 스위트는
     baseline_timeout 상향으로 대응."""
     checks = detect_checks(root, policy)
     if not checks:
@@ -681,7 +681,7 @@ def main() -> int:
         )
         write_event(root, qid, ev)
         # temp+rename — 크래시 절단 ACTIVE(빈 파일)가 게이트를 orphan 경로로 오도하지 않게.
-        # ponytail: 전역 포인터 자체는 유지 — 동시 세션 경쟁은 open 시 dangling 경고가 표면화 (CUS-180)
+        # lagom: 전역 포인터 자체는 유지 — 동시 세션 경쟁은 open 시 dangling 경고가 표면화 (CUS-180)
         _ap = os.path.join(quest_dir(root), "ACTIVE")
         _tmp = "%s.%d.tmp" % (_ap, os.getpid())
         open(_tmp, "w").write(qid + "\n")

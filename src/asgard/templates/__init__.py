@@ -9,6 +9,7 @@ from .bridge import BRIDGE_SKILL_MD
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
 from .cursor import CURSOR_FOLDERS, cursor_hooks_json, cursor_rule
+from .lagom import LAGOM_CANON, render_lagom
 from .selftest import SELFTEST_MD
 from .trinity import trinity_policy
 
@@ -22,6 +23,8 @@ __all__ = [
     "cursor_rule",
     "cursor_hooks_json",
     "CURSOR_FOLDERS",
+    "LAGOM_CANON",
+    "render_lagom",
     "SELFTEST_MD",
     "trinity_policy",
 ]

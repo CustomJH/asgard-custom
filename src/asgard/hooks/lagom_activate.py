@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+# Asgard lagom-activate — SessionStart 모드 초기화 + 룰 주입 (CUS-208).
+#
+# 배선 매처: startup|resume|clear|compact — compact/clear 는 컨텍스트 소실 지점이라 재주입이
+# 필수다. 동작: 세션 런타임 상태(.asgard/lagom-mode)가 있으면 그 값(세션 중 전환 보존),
+# 없으면 영속 기본값(LAGOM_MODE env > 프로젝트 [lagom].mode > 글로벌 > full)을 기록한다.
+# off = 무주입 즉시 종료. 활성 = 훅 옆 lagom-canon.md 를 모드 필터해 stdout 으로 주입
+# (SessionStart stdout + exit 0 = 컨텍스트 주입, unattended-context 와 동일 스키마).
+# fail-open: 페이로드 파싱 실패는 cwd 폴백으로 주입을 계속하고(룰 누락이 더 큰 실패),
+# 캐논 부재 등 그 밖의 오류는 무주입 통과 — 어느 쪽도 세션을 막지 않는다 (항상 exit 0).
+import json
+import os
+import re
+import sys
+
+MODES = ("off", "lite", "full", "ultra")
+
+# 모드 마커 필터 — templates/lagom.py render_lagom 과 동일 유지 (단일 출처 원칙)
+_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full|ultra)\*\*\s*\|")
+_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full|ultra):")
+
+
+def norm(m):
+    m = str(m or "").strip().lower()
+    return m if m in MODES else None
+
+
+def config_mode(root):
+    """영속 기본값 — env > 프로젝트 > 글로벌 > full. asgard/lagom.py default_mode 와 동일 유지.
+    tomllib 은 3.11+ 라 정규식 파싱 (config 는 save_config_section 이 쓰는 단순 TOML)."""
+    m = norm(os.environ.get("LAGOM_MODE"))
+    if m:
+        return m
+    for path in (
+        os.path.join(root, ".asgard", "config.toml"),
+        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
+    ):
+        try:
+            txt = open(path, encoding="utf-8").read()
+        except Exception:
+            continue
+        sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
+        if sec:
+            kv = re.search(r'^\s*mode\s*=\s*"?([A-Za-z]+)"?', sec.group(1), re.M)
+            m = norm(kv.group(1)) if kv else None
+            if m:
+                return m
+    return "full"
+
+
+def render(canon, mode):
+    """모드 필터 — 마커 행은 해당 모드만 생존. render_lagom 과 동일 유지 (단일 출처 원칙)."""
+    out = []
+    for line in canon.splitlines():
+        m = _ROW.match(line) or _EXAMPLE.match(line)
+        if m and m.group(1) != mode:
+            continue
+        out.append(line)
+    return "\n".join(out).replace("__MODE__", mode)
+
+
+def main():
+    try:
+        data = json.load(sys.stdin)
+    except Exception:
+        data = {}
+    try:
+        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+        state = os.path.join(root, ".asgard", "lagom-mode")
+        mode = None
+        try:
+            mode = norm(open(state, encoding="utf-8").read())  # 세션 전환값이 기본값을 이긴다
+        except Exception:
+            pass
+        if mode is None:
+            mode = config_mode(root)
+            try:  # best-effort — 기록 실패해도 주입은 진행
+                os.makedirs(os.path.dirname(state), exist_ok=True)
+                open(state, "w", encoding="utf-8").write(mode + "\n")
+            except Exception:
+                pass
+        if mode == "off":
+            sys.exit(0)  # 무주입 — off 는 흔적도 없어야 한다 (토큰 회귀 없음)
+        canon = open(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"), encoding="utf-8"
+        ).read()
+        sys.stdout.write("[lagom] mode=%s (source=%s)\n\n%s" % (mode, data.get("source") or "?", render(canon, mode)))
+    except Exception:
+        pass  # fail-open — 캐논 파일 부재 등 어떤 실패도 세션을 막지 않는다
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

@@ -43,13 +43,41 @@ def cc_settings() -> str:
                     ],
                 },
                 "hooks": {
+                    # Lagom (CUS-208) — 세션 시작·재개·클리어·컴팩트 시 모드 초기화 + 캐논 주입.
+                    "SessionStart": [
+                        {
+                            "matcher": "startup|resume|clear|compact",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-activate.py"',
+                                }
+                            ],
+                        },
+                    ],
                     # Canon 8 (무인이면 진행) — 자동화 permission_mode 감지 시 무인 계약 주입 (CUS-169).
+                    # Lagom tracker (CUS-213) — /lagom 전환·영속·비활성 문구.
                     "UserPromptSubmit": [
                         {
                             "hooks": [
                                 {
                                     "type": "command",
                                     "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-tracker.py"',
+                                },
+                            ]
+                        },
+                    ],
+                    # Lagom (CUS-214) — SessionStart 컨텍스트 미전파 보상. verifier 는 스크립트가 자체 제외.
+                    "SubagentStart": [
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-subagent.py"',
                                 }
                             ]
                         },

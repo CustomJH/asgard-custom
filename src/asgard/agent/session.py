@@ -128,7 +128,7 @@ class AgentSession:
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # readonly = 역할→도구 구조 강제 (thinker/verifier/loki) — editor write 거부.
-        # ponytail: bash 리다이렉션 write 는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
+        # lagom: bash 리다이렉션 write 는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
         self.readonly = readonly
         self.tools = [T.BASH_TOOL, T.EDITOR_TOOL] + (extra_tools or [])
         self.handlers = tool_handlers or {}
@@ -204,7 +204,7 @@ class AgentSession:
 
     def _prune_history(self, keep: int = 6) -> int:
         """컨텍스트 창 80% 도달 시 오래된 툴 출력 본문을 비운다 — LLM 무호출 결정론 압축.
-        ponytail: 요약 압축 아님 — 툴 출력이 컨텍스트 질량 대부분이라 이걸로 충분, 부족해지면 요약 승격."""
+        lagom: 요약 압축 아님 — 툴 출력이 컨텍스트 질량 대부분이라 이걸로 충분, 부족해지면 요약 승격."""
         pruned = 0
         for m in self.messages[:-keep]:
             c = m.get("content")

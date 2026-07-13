@@ -1,5 +1,7 @@
 """AGENTS.md — canonical agent guide: Asgard identity (worldview) + Canon (13 laws) + Trinity loop
-(CUS-121/124). The only interpolation is the project name via __NAME__."""
+(CUS-121/124) + Lagom contract (CUS-205). The only interpolation is the project name via __NAME__."""
+
+from .lagom import LAGOM_AGENTS_SECTION
 
 _AGENTS_MD = """\
 # __NAME__ — Agent Guide
@@ -61,6 +63,7 @@ write 과업은 트리니티 순환으로 처리한다: **Thinker(전략) → Wo
 정책·임계값: `.asgard/trinity-policy.json` (task-class 는 budget prior 일 뿐 — 배정은 매 턴 전이 함수).
 <!-- <<< asgard:trinity <<< -->
 
+__LAGOM__
 ## Conventions
 <!-- Add project conventions, build/test commands, and architecture notes here. -->
 
@@ -70,4 +73,4 @@ If asked to "run asgard check", reply with exactly: `ASGARD_OK — loaded from A
 
 
 def agents_md(name: str | None) -> str:
-    return _AGENTS_MD.replace("__NAME__", name or "")
+    return _AGENTS_MD.replace("__NAME__", name or "").replace("__LAGOM__", LAGOM_AGENTS_SECTION)

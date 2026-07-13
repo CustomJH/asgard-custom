@@ -50,7 +50,17 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
-    hooks = ["quest-log.py", "verifier-gate.py", "write-sentinel.py", "unattended-context.py", "subagent-gate.py"]
+    hooks = [
+        "quest-log.py",
+        "verifier-gate.py",
+        "write-sentinel.py",
+        "unattended-context.py",
+        "subagent-gate.py",
+        "lagom-activate.py",
+        "lagom-tracker.py",
+        "lagom-subagent.py",
+        "lagom-canon.md",
+    ]
     missing = [h for h in hooks if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
     gate_wired = False
     try:
@@ -69,6 +79,21 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
+    # Lagom (CUS-207/215) — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off 도 유효한 선택).
+    try:
+        from ..lagom import default_mode, read_state
+
+        st = read_state(root)
+        checks.append(
+            {
+                "name": "lagom mode",
+                "ok": True,
+                "detail": f"{st or default_mode(root)} ({'session' if st else 'default'})",
+                "fix": "",
+            }
+        )
+    except Exception:
+        pass
     ledger_ok = os.access(root, os.W_OK)
     checks.append(
         {

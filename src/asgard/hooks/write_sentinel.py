@@ -8,7 +8,7 @@
 #
 # 왜 플래그가 아니라 경로 목록인가: 되돌린 write(net-zero)와 사용자의 기존 dirt 를 구분하려면
 # "세션이 만진 경로가 여전히 HEAD 와 다른가"를 봐야 한다. 플래그면 둘 다 오차단.
-# ponytail: 도구 계층 write 만 잡는다 — Bash 경유 mutation(echo > file)은 못 본다. 그 경로는
+# lagom: 도구 계층 write 만 잡는다 — Bash 경유 mutation(echo > file)은 못 본다. 그 경로는
 # quest 로그의 commands 기록 + git-guard 가 부분 커버; 완전 봉합이 필요해지면 Bash 훅에서
 # redirection 파싱 추가.
 import json

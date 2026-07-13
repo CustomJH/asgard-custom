@@ -60,13 +60,14 @@ def init(
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", "-y", help="skip the picker, use the default profile (claude-code)"),
+    lagom: str = typer.Option(None, "--lagom", help="lagom default mode: off | lite | full | ultra (default full)"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.setup import run_init
 
     raise typer.Exit(
-        run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes)
+        run_init(cc=cc, cursor=cursor, codex=codex, profile=profile, force=force, dry_run=dry_run, yes=yes, lagom=lagom)
     )
 
 

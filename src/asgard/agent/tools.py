@@ -69,7 +69,7 @@ _DEV_DESTRUCTIVE = re.compile(r"\bmkfs(\.\w+)?\b|\bdd\b[^|;&]*\bof=/dev/")
 
 def _destructive_guard(root: str, cmd: str) -> str | None:
     """rm -rf 급 삭제가 프로젝트 루트 밖을 노리면 차단. 파싱 불가 세그먼트는 fail-open
-    (ponytail: 셸 문법 전체 해석은 안 한다 — 게이트·git 이 최종 방어선)."""
+    (lagom: 셸 문법 전체 해석은 안 한다 — 게이트·git 이 최종 방어선)."""
     if _DEV_DESTRUCTIVE.search(cmd):
         return f"파괴 명령 차단: {cmd[:80]} (Canon 3 — 디바이스 파괴는 Odin 동의로도 네이티브 루프 밖)"
     rr = os.path.realpath(root)

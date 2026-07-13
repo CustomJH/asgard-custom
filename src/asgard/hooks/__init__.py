@@ -20,6 +20,9 @@ REGISTRY: dict[str, str] = {
     "write-sentinel": "write_sentinel",  # Trinity — Post-Write/Edit 기록, quest 미개설 write 우회 봉합
     "unattended-context": "unattended_context",  # Canon 8 — 무인 세션 감지·계약 주입 (CUS-169)
     "subagent-gate": "subagent_gate",  # Trinity — SubagentStop 역할 로그 규율 강제 (CC 전용, CUS-197)
+    "lagom-activate": "lagom_activate",  # Lagom — SessionStart 모드 초기화·룰 주입 (CUS-208)
+    "lagom-tracker": "lagom_tracker",  # Lagom — UserPromptSubmit 전환·영속·비활성·보상 (CUS-213)
+    "lagom-subagent": "lagom_subagent",  # Lagom — SubagentStart 재주입, verifier 제외 (CC 전용, CUS-214)
 }
 
 

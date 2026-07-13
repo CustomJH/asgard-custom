@@ -92,6 +92,19 @@ _M: dict[str, tuple[str, str]] = {
         "per-tool CLI bridge · '/bridge <tool> on|off'",
         "도구별 CLI 브릿지 · '/bridge <도구> on|off'",
     ),
+    # lagom (CUS-205)
+    "h_lagom": (
+        "lagom mode · '/lagom <mode>' switch, '/lagom default <mode>' persist",
+        "lagom 모드 · '/lagom <모드>' 전환, '/lagom default <모드>' 영속",
+    ),
+    "lagom_usage": (
+        "usage: /lagom [default] off|lite|full|ultra",
+        "사용법: /lagom [default] off|lite|full|ultra",
+    ),
+    "lagom_set": ("lagom → {mode} (this session)", "lagom → {mode} (세션 한정)"),
+    "lagom_persisted": ("lagom default → {mode} (.asgard/config.toml)", "lagom 기본값 → {mode} (.asgard/config.toml)"),
+    "lagom_session": ("session override", "세션 전환값"),
+    "lagom_default": ("default", "기본값"),
     "pick_role": ("select a role", "역할 선택"),
     "placement_clear": ("default (clear placement)", "기본값 (배치 해제)"),
     "placement_saved": (
