@@ -20,6 +20,7 @@ GATE = os.path.abspath(os.path.join(SRC, "verifier_gate.py"))
 TRACKER = os.path.abspath(os.path.join(SRC, "failure_tracker.py"))
 SENTINEL = os.path.abspath(os.path.join(SRC, "write_sentinel.py"))
 UCTX = os.path.abspath(os.path.join(SRC, "unattended_context.py"))
+SUBGATE = os.path.abspath(os.path.join(SRC, "subagent_gate.py"))
 
 
 def run(script, args=None, stdin="", cwd=None, env_extra=None):
@@ -891,6 +892,127 @@ class TestGoodhartEvidence(TrinityBase):
         self.qlog("append", "--role", "worker", "--event", "work")
         self.verify("PASS", commands=[{"cmd": "true", "exit_code": 0}, {"cmd": "python3 app.py", "exit_code": 0}])
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
+
+
+class TestSubagentGate(TrinityBase):
+    """SubagentStop 역할 로그 규율 (CUS-197) — 미기록 종료 block, 신선도는 앵커(마지막 상대 이벤트) 기준."""
+
+    def sg(self, agent, session="s1"):
+        return run(
+            SUBGATE,
+            stdin=json.dumps(
+                {"agent_type": agent, "session_id": session, "cwd": self.root, "hook_event_name": "SubagentStop"}
+            ),
+            cwd=self.root,
+        )
+
+    def blocked(self, p):
+        out = jout(p)
+        return out.get("decision") == "block", out.get("reason", "")
+
+    def work(self, **extra):
+        body = {"role": "worker", "event": "work", "commands": [{"cmd": "python3 app.py", "exit_code": 0}], **extra}
+        return self.qlog("append", stdin=json.dumps(body))
+
+    def test_no_active_quest_allows(self):
+        b, _ = self.blocked(self.sg("asgard-verifier"))
+        self.assertFalse(b)
+
+    def test_non_trinity_agent_allows(self):
+        self.open_quest()
+        self.work()
+        b, _ = self.blocked(self.sg("asgard-loki"))
+        self.assertFalse(b)
+
+    def test_verifier_without_verify_blocks(self):
+        self.open_quest()
+        self.work()
+        b, reason = self.blocked(self.sg("asgard-verifier"))
+        self.assertTrue(b)
+        self.assertIn("verify", reason)
+
+    def test_verifier_with_evidence_pass_allows(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work()
+        self.verify("PASS")
+        b, _ = self.blocked(self.sg("asgard-verifier"))
+        self.assertFalse(b)
+
+    def test_verifier_trivial_evidence_pass_blocks(self):
+        self.open_quest()
+        self.work()
+        self.verify("PASS", commands=[{"cmd": "echo ok", "exit_code": 0}])
+        b, reason = self.blocked(self.sg("asgard-verifier"))
+        self.assertTrue(b)
+        self.assertIn("증거", reason)
+
+    def test_verifier_fail_verdict_allows(self):
+        # FAIL 판정은 증거 요건 없이도 유효한 역할 수행 — 이 게이트는 기록 규율만 본다
+        self.open_quest()
+        self.work()
+        self.verify("FAIL", commands=[])
+        b, _ = self.blocked(self.sg("asgard-verifier"))
+        self.assertFalse(b)
+
+    def test_worker_without_work_blocks(self):
+        self.open_quest()
+        b, reason = self.blocked(self.sg("asgard-worker"))
+        self.assertTrue(b)
+        self.assertIn("work", reason)
+
+    def test_worker_with_work_allows(self):
+        self.open_quest()
+        self.work()
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertFalse(b)
+
+    def test_worker_stale_work_before_verify_blocks(self):
+        # 앵커 신선도 — 직전 판정(verify) 이후의 work 만 이번 턴 기록으로 인정
+        self.open_quest()
+        self.work()
+        self.verify("FAIL")
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertTrue(b)
+        self.work()
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertFalse(b)
+
+    def test_thinker_replan_freshness(self):
+        # open 의 plan 기록으로 첫 thinker 는 통과, verify 이후 재계획 미기록은 block
+        self.open_quest()
+        b, _ = self.blocked(self.sg("asgard-thinker"))
+        self.assertFalse(b)
+        self.work()
+        self.verify("FAIL")
+        b, _ = self.blocked(self.sg("asgard-thinker"))
+        self.assertTrue(b)
+        self.qlog("append", stdin=json.dumps({"role": "thinker", "event": "plan", "criteria": ["fix"]}))
+        b, _ = self.blocked(self.sg("asgard-thinker"))
+        self.assertFalse(b)
+
+    def test_two_block_cap_then_fail_open(self):
+        self.open_quest()
+        for _ in range(2):
+            b, _ = self.blocked(self.sg("asgard-worker"))
+            self.assertTrue(b)
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertFalse(b)  # 3번째 = 통과 (최종 담보는 verifier-gate)
+
+    def test_pass_resets_block_counter(self):
+        self.open_quest()
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertTrue(b)
+        self.work()
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertFalse(b)  # 통과 → 카운터 리셋
+        self.verify("FAIL")
+        b, _ = self.blocked(self.sg("asgard-worker"))
+        self.assertTrue(b)  # 리셋 후 새 위반은 다시 계수
+
+    def test_malformed_stdin_fail_open(self):
+        p = run(SUBGATE, stdin="not-json", cwd=self.root)
+        self.assertEqual(p.returncode, 0)
 
 
 if __name__ == "__main__":

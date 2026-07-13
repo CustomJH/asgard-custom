@@ -105,6 +105,18 @@ _FAIL='{"tool_name":"Bash","session_id":"smoke","tool_response":{"is_error":true
 for _i in 1 2; do printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' && { echo "FAIL: failure-tracker warned too early"; exit 1; } || true; done
 printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' || { echo "FAIL: failure-tracker must warn on 3rd"; exit 1; }
 printf '%s' 'not-json' | python3 "$_FT" >/dev/null 2>&1 || { echo "FAIL: failure-tracker must fail-open"; exit 1; }
+# Trinity subagent-gate (SubagentStop) — 역할 로그 규율: 미기록 종료 block, quest 없으면 allow, fail-open
+grep -q '"SubagentStop"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SubagentStop"; exit 1; }
+_SG="$PROJ/.claude/hooks/subagent-gate.py"
+[ -f "$_SG" ] || { echo "FAIL: --cc missing subagent-gate.py"; exit 1; }
+python3 -m py_compile "$_SG" || { echo "FAIL: subagent-gate invalid Python"; exit 1; }
+printf '%s' 'not-json' | python3 "$_SG" >/dev/null 2>&1 || { echo "FAIL: subagent-gate must fail-open"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow without active quest"; exit 1; } || true
+mkdir -p "$PROJ/.asgard/quest" && printf 'sg1' > "$PROJ/.asgard/quest/ACTIVE" && printf '{"event":"work","role":"worker"}\n' > "$PROJ/.asgard/quest/sg1.jsonl"
+printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q '"decision": "block"' || { echo "FAIL: subagent-gate must block verifier without verify event"; exit 1; }
+printf '{"event":"verify","role":"verifier","verdict":"PASS","commands":[{"cmd":"pytest -q","exit_code":0}]}\n' >> "$PROJ/.asgard/quest/sg1.jsonl"
+printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow verifier with evidence PASS"; exit 1; } || true
+rm -f "$PROJ/.asgard/quest/ACTIVE" "$PROJ/.asgard/quest/sg1.jsonl"
 # shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
 [ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
 grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }
