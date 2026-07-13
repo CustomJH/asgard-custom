@@ -23,6 +23,37 @@ from ..templates import (
 )
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 
+# 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
+# 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
+# .asgard/.gitignore="*" 가 이미 자가 무시하지만, 루트에도 명시해 `git status` 를 처음부터 깨끗하게.
+_GITIGNORE_BEGIN = "# >>> asgard >>>"
+_GITIGNORE_END = "# <<< asgard <<<"
+_GITIGNORE_BLOCK = (
+    f"{_GITIGNORE_BEGIN}\n"
+    "# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)\n"
+    ".asgard/\n"
+    ".claude/settings.local.json\n"
+    ".claude/**/*.local.*\n"
+    f"{_GITIGNORE_END}\n"
+)
+
+
+def merge_gitignore(existing: str | None) -> str:
+    """루트 .gitignore 내용 계산 — 기존 있으면 asgard 마커 블록만 갱신(사용자 내용 보존), 없으면 신규.
+    idempotent: 재실행 시 블록을 교체하되 블록 밖 사용자 규칙은 건드리지 않는다."""
+    if not existing:
+        return _GITIGNORE_BLOCK
+    lines = existing.splitlines()
+    if _GITIGNORE_BEGIN in lines and _GITIGNORE_END in lines:  # 기존 블록 교체
+        b = lines.index(_GITIGNORE_BEGIN)
+        e = lines.index(_GITIGNORE_END)
+        if b < e:
+            merged = lines[:b] + _GITIGNORE_BLOCK.rstrip("\n").splitlines() + lines[e + 1 :]
+            return "\n".join(merged) + "\n"
+    # 블록 없음 → 끝에 append (기존이 개행으로 안 끝나면 하나 넣는다)
+    sep = "" if existing.endswith("\n") else "\n"
+    return existing + sep + "\n" + _GITIGNORE_BLOCK
+
 
 def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bool) -> int:
     cwd = os.getcwd()
@@ -30,7 +61,10 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     def rel(p: str) -> str:
         return p[len(cwd) + 1 :] if p.startswith(cwd + os.sep) else p
 
-    existing = [p for p, _ in files if os.path.lexists(p)]
+    def _is_root_gitignore(p: str) -> bool:  # 루트 .gitignore 는 병합 대상 — existing 거부·덮어쓰기 예외
+        return os.path.basename(p) == ".gitignore" and os.path.dirname(p) in (cwd, os.getcwd())
+
+    existing = [p for p, _ in files if os.path.lexists(p) and not _is_root_gitignore(p)]
     if existing and not force and not dry_run:
         ui.head(label)
         ui.phase("check · existing files")
@@ -49,6 +83,11 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     ui.phase(f"scaffold · {len(files)} file(s)")
     for p, content in files:
         Path(p).parent.mkdir(parents=True, exist_ok=True)
+        if _is_root_gitignore(p):  # 병합 — 기존 사용자 규칙 보존, asgard 블록만 갱신
+            prev = Path(p).read_text(encoding="utf-8") if os.path.exists(p) else None
+            Path(p).write_text(merge_gitignore(prev))
+            ui.ok(ui.dim(rel(p)) + ("" if prev is None else ui.dim(" (asgard 블록 갱신)")))
+            continue
         Path(p).write_text(content)
         ui.ok(ui.dim(rel(p)))
     ui.done(f"{len(files)} file(s) · make anything, your way")
@@ -70,7 +109,12 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     root = root or os.getcwd()
     name = os.path.basename(root)
     j = os.path.join
-    files: list[tuple[str, str]] = [(j(root, "AGENTS.md"), agents_md(name))]
+    files: list[tuple[str, str]] = [
+        (j(root, "AGENTS.md"), agents_md(name)),
+        # 루트 .gitignore — 없으면 생성, 있으면 asgard 마커 블록만 병합 (write 시점, merge_gitignore).
+        # 런타임 상태(.asgard/)·로컬 설정만 무시; 스캐폴드는 커밋해 팀과 공유.
+        (j(root, ".gitignore"), _GITIGNORE_BLOCK),
+    ]
 
     # Trinity (CUS-125) — 정책은 툴 중립 .asgard/ (크로스툴 공유). .gitignore 를 함께 심는 이유:
     # 훅이 첫 실행 때 lazy 로 만들지만, setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.

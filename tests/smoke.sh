@@ -120,6 +120,15 @@ rm -f "$PROJ/.asgard/quest/ACTIVE" "$PROJ/.asgard/quest/sg1.jsonl"
 # shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
 [ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
 grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }
+# 루트 .gitignore — 런타임 상태 필터. 생성됨 + asgard 블록 + .asgard/ 무시
+[ -f "$PROJ/.gitignore" ] || { echo "FAIL: --cc must create root .gitignore"; exit 1; }
+grep -q '^\.asgard/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must ignore .asgard/"; exit 1; }
+grep -q '>>> asgard >>>' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore missing asgard marker block"; exit 1; }
+# 병합 — 기존 사용자 규칙 보존 + idempotent (블록 1개)
+printf '# user rule\nmydir/\n' > "$PROJ/.gitignore"
+( cd "$PROJ" && "${ASG[@]}" init --cc --force >/dev/null 2>&1 )
+grep -q '^mydir/$' "$PROJ/.gitignore" || { echo "FAIL: .gitignore merge must preserve user rules"; exit 1; }
+[ "$(grep -c '>>> asgard >>>' "$PROJ/.gitignore")" = "1" ] || { echo "FAIL: .gitignore asgard block must be idempotent (1)"; exit 1; }
 rm -rf "$PROJ/.asgard"
 if ( cd "$PROJ" && "${ASG[@]}" init >/dev/null 2>&1 ); then echo "FAIL: init must refuse existing"; exit 1; fi
 ( cd "$PROJ" && "${ASG[@]}" init --force >/dev/null ) || { echo "FAIL: init --force"; exit 1; }
