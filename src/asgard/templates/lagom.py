@@ -178,3 +178,26 @@ LAGOM_SKILLS: list[tuple[str, str]] = [
     ("asgard-lagom-debt", _DEBT_SKILL),
     ("asgard-lagom-compress", _COMPRESS_SKILL),
 ]
+
+
+# ── CC statusline (CUS-215) — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json 을
+# 통째로 방출하므로 nudge 불요 — 새 프로젝트는 배선 포함, 기존 프로젝트는 --force 재스캐폴드.
+# 셸 전용 (statusline 은 ~300ms 주기 실행 — python 기동 비용 회피). 상태파일 > config > full,
+# lagom_activate.py 의 resolve 와 동일 유지 (단일 출처 원칙: asgard/lagom.py).
+LAGOM_STATUSLINE_SH = """\
+#!/bin/bash
+# Asgard lagom-statusline — Claude Code statusLine: model · dir · lagom mode (CUS-215)
+input=$(cat)
+model=$(printf '%s' "$input" | sed -n 's/.*"display_name": *"\\([^"]*\\)".*/\\1/p' | head -1)
+dir=$(printf '%s' "$input" | sed -n 's/.*"current_dir": *"\\([^"]*\\)".*/\\1/p' | head -1)
+root="${dir:-$PWD}"
+mode=$(cat "$root/.asgard/lagom-mode" 2>/dev/null | tr -d '[:space:]')
+if [ -z "$mode" ]; then
+  mode=$(sed -n '/^\\[lagom\\]/,/^\\[/{ s/^mode *= *"\\{0,1\\}\\([a-z]*\\)"\\{0,1\\}.*/\\1/p; }' \\
+    "$root/.asgard/config.toml" 2>/dev/null | head -1)
+fi
+[ -z "$mode" ] && mode=full
+out="◆ ${model:-claude} · ⌂ ${root##*/}"
+[ "$mode" != "off" ] && out="$out · ❄ lagom:$mode"
+printf '%s' "$out"
+"""

@@ -120,9 +120,11 @@ rm -f "$PROJ/.asgard/quest/ACTIVE" "$PROJ/.asgard/quest/sg1.jsonl"
 # Lagom (CUS-205) — 훅 3종+캐논 스캐폴드, SessionStart 주입, /lagom 전환, off 무주입, fail-open
 grep -q '"SessionStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SessionStart (lagom)"; exit 1; }
 grep -q '"SubagentStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SubagentStart (lagom)"; exit 1; }
-for _f in lagom-activate.py lagom-tracker.py lagom-subagent.py lagom-canon.md; do
+for _f in lagom-activate.py lagom-tracker.py lagom-subagent.py lagom-canon.md lagom-statusline.sh; do
   [ -f "$PROJ/.claude/hooks/$_f" ] || { echo "FAIL: --cc missing $_f"; exit 1; }
 done
+grep -q '"statusLine"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing statusLine (lagom)"; exit 1; }
+printf '%s' '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PROJ"'"}}' | bash "$PROJ/.claude/hooks/lagom-statusline.sh" | grep -q 'lagom:full' || { echo "FAIL: lagom-statusline must show default full"; exit 1; }
 python3 -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
 printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }
 [ "$(cat "$PROJ/.asgard/lagom-mode")" = "full" ] || { echo "FAIL: lagom state file not written"; exit 1; }

@@ -33,6 +33,11 @@ def cc_settings() -> str:
     return (
         json.dumps(
             {
+                # Lagom 모드 가시성 (CUS-215) — 상태파일/config 를 읽는 셸 전용 스크립트
+                "statusLine": {
+                    "type": "command",
+                    "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
+                },
                 "permissions": {
                     "allow": ["Bash(git status)", "Bash(git diff *)", "Bash(git log *)"],
                     "deny": [

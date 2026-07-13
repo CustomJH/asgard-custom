@@ -105,6 +105,11 @@ _M: dict[str, tuple[str, str]] = {
     "lagom_persisted": ("lagom default → {mode} (.asgard/config.toml)", "lagom 기본값 → {mode} (.asgard/config.toml)"),
     "lagom_session": ("session override", "세션 전환값"),
     "lagom_default": ("default", "기본값"),
+    "lagom_stats_tokens": ("session spend {tok} tokens (input+output)", "세션 지출 {tok} 토큰 (입력+출력 합산)"),
+    "lagom_stats_note": (
+        "savings need measured coefficients — pending CUS-212 bench; no telemetry, local only",
+        "절감량은 실측 계수 필요 — CUS-212 벤치 후 표시. 텔레메트리 없음, 로컬 집계만",
+    ),
     "pick_role": ("select a role", "역할 선택"),
     "placement_clear": ("default (clear placement)", "기본값 (배치 해제)"),
     "placement_saved": (

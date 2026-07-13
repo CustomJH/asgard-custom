@@ -206,6 +206,7 @@ _COMMANDS = [
     "/lagom full",
     "/lagom ultra",
     "/lagom default ",
+    "/lagom stats",
     "/model",
     "/lang en",
     "/lang ko",
@@ -448,6 +449,15 @@ def _cmd_lagom(cmd: str, root: str, rp) -> None:
         sys.stdout.write(f"  {ui.paint(_O, 'lagom'.ljust(9))} {cur} {ui.dim('(' + tag + ')')}\n")
         sys.stdout.write(f"  {ui.dim(t('lagom_usage'))}\n")
         return
+    if args[0] == "stats":  # CUS-216 — 로컬 집계만, 무텔레메트리. honest numbers: 합산 지출이지 output 단독 아님
+        hd = _PT_CTX.get("heimdall")
+        cur = current_mode(root)
+        tok = f"{hd.total_tokens / 1000:.1f}k" if hd and hd.total_tokens else "0"
+        sys.stdout.write(
+            f"  {ui.paint(_O, 'lagom'.ljust(9))} {cur} {ui.dim('· ' + t('lagom_stats_tokens', tok=tok))}\n"
+        )
+        sys.stdout.write(f"  {ui.dim(t('lagom_stats_note'))}\n")
+        return
     is_default = args[0] == "default"
     mode = normalize(args[1] if is_default and len(args) > 1 else args[0])
     if mode is None:
@@ -644,8 +654,8 @@ def run(root: str, rp) -> int:
     # provider 미설정 안내는 status line(⚠ not connected)이 대신 표현 — 별도 줄 없음
 
     while True:
+        _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)  # toolbar + /lagom stats 공용 세션 상태
         if _PT:  # 상태줄은 bottom_toolbar(입력창 아래)가 표시 — cursor-agent 식
-            _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)
             sys.stdout.write("\n")
         else:
             usage = {"tokens": heimdall.total_tokens, "context": heimdall.last_context_tokens} if heimdall else None

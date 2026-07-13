@@ -440,6 +440,7 @@ class TestNativeIntegration(LagomBase):
         self.assertIn("startup|resume|clear|compact", json.dumps(s["hooks"]["SessionStart"]))
         self.assertIn("lagom-tracker", json.dumps(s["hooks"]["UserPromptSubmit"]))
         self.assertIn("lagom-subagent", json.dumps(s["hooks"]["SubagentStart"]))
+        self.assertIn("lagom-statusline", s["statusLine"]["command"])  # CUS-215
 
     def test_agents_skills_scaffold_for_codex_cursor(self):
         from asgard.commands.setup import plan_files
@@ -447,6 +448,50 @@ class TestNativeIntegration(LagomBase):
         files, _ = plan_files(cc=False, cursor=False, codex=True, root=self.root)
         paths = [p for p, _ in files]
         self.assertTrue(any(".agents" in p and "asgard-lagom-review" in p for p in paths))
+
+
+class TestStatusline(LagomBase):
+    """CUS-215 — CC statusLine 셸 스크립트: 상태파일 > config > full, off 는 숨김."""
+
+    def setUp(self):
+        super().setUp()
+        from asgard.templates.lagom import LAGOM_STATUSLINE_SH
+
+        self.sh = os.path.join(self.hooks, "lagom-statusline.sh")
+        with open(self.sh, "w") as f:
+            f.write(LAGOM_STATUSLINE_SH)
+
+    def line(self, payload=None):
+        p = subprocess.run(
+            ["bash", self.sh],
+            input=json.dumps(payload or {"model": {"display_name": "Opus"}, "workspace": {"current_dir": self.root}}),
+            capture_output=True,
+            text=True,
+            cwd=self.root,
+            timeout=10,
+        )
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout
+
+    def test_state_file_mode(self):
+        lagom.write_state(self.root, "ultra")
+        self.assertIn("lagom:ultra", self.line())
+        self.assertIn("Opus", self.line())
+
+    def test_off_hidden(self):
+        lagom.write_state(self.root, "off")
+        self.assertNotIn("lagom", self.line())
+
+    def test_config_fallback_then_default(self):
+        self.set_config("lite")
+        self.assertIn("lagom:lite", self.line())
+        os.remove(os.path.join(self.root, ".asgard", "config.toml"))
+        self.assertIn("lagom:full", self.line())  # 아무 설정 없음 = 기본 full
+
+    def test_garbage_payload_still_renders(self):
+        p = subprocess.run(["bash", self.sh], input="not json", capture_output=True, text=True, cwd=self.root)
+        self.assertEqual(p.returncode, 0)
+        self.assertIn("◆", p.stdout)  # cwd 폴백
 
 
 if __name__ == "__main__":

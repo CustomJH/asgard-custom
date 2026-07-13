@@ -22,7 +22,10 @@ from ..templates import (
     cursor_rule,
     trinity_policy,
 )
-from ..templates.lagom import LAGOM_SKILLS  # (스킬명, SKILL.md 본문) — review/debt/compress
+from ..templates.lagom import (
+    LAGOM_SKILLS,  # (스킬명, SKILL.md 본문) — review/debt/compress
+    LAGOM_STATUSLINE_SH,
+)
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
@@ -151,6 +154,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "lagom-tracker.py"), hook("lagom-tracker")),
             (j(root, ".claude", "hooks", "lagom-subagent.py"), hook("lagom-subagent")),
             (j(root, ".claude", "hooks", "lagom-canon.md"), LAGOM_CANON),
+            (j(root, ".claude", "hooks", "lagom-statusline.sh"), LAGOM_STATUSLINE_SH),  # CUS-215
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
         files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
