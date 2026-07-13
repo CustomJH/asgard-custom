@@ -19,6 +19,7 @@ REGISTRY: dict[str, str] = {
     "verifier-gate": "verifier_gate",  # Trinity — Canon 10 훅 강제, Stop 시점 diff-hash 물리 대조 (CUS-122)
     "write-sentinel": "write_sentinel",  # Trinity — Post-Write/Edit 기록, quest 미개설 write 우회 봉합
     "unattended-context": "unattended_context",  # Canon 8 — 무인 세션 감지·계약 주입 (CUS-169)
+    "subagent-gate": "subagent_gate",  # Trinity — SubagentStop 역할 로그 규율 강제 (CC 전용, CUS-197)
 }
 
 

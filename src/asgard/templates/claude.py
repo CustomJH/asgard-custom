@@ -97,6 +97,19 @@ def cc_settings() -> str:
                             ],
                         },
                     ],
+                    # Trinity mode B — role subagents must record their quest-log event before
+                    # finishing (deterministic role-discipline; final backstop is still the Stop gate).
+                    "SubagentStop": [
+                        {
+                            "matcher": "^asgard-(thinker|worker|verifier)$",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-gate.py"',
+                                }
+                            ],
+                        },
+                    ],
                     # Canon Law 10 (Trinity) — Stop-time verifier gate: diff-hash physical comparison.
                     "Stop": [
                         {

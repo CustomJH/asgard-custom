@@ -50,12 +50,14 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
-    hooks = ["quest-log.py", "verifier-gate.py", "write-sentinel.py", "unattended-context.py"]
+    hooks = ["quest-log.py", "verifier-gate.py", "write-sentinel.py", "unattended-context.py", "subagent-gate.py"]
     missing = [h for h in hooks if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
     gate_wired = False
     try:
         settings = _json.load(open(os.path.join(root, ".claude", "settings.json")))
-        gate_wired = "verifier-gate" in _json.dumps(settings.get("hooks", {}).get("Stop", []))
+        gate_wired = "verifier-gate" in _json.dumps(settings.get("hooks", {}).get("Stop", [])) and "subagent-gate" in (
+            _json.dumps(settings.get("hooks", {}).get("SubagentStop", []))
+        )
     except Exception:
         pass
     ok = not missing and gate_wired
@@ -63,7 +65,7 @@ def _trinity_checks(root: str) -> list[dict]:
         {
             "name": "trinity hooks + Stop gate",
             "ok": ok,
-            "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop hook not wired"),
+            "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop/SubagentStop 미배선"),
             "fix": fix,
         }
     )
