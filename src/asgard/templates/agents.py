@@ -45,7 +45,7 @@ Managed by Asgard. Canonical instructions for coding agents — read natively by
 
 write 과업은 트리니티 순환으로 처리한다: **Thinker(전략) → Worker(실행) → Verifier(검증)** — Verifier PASS + diff-hash 물리 대조 일치 전에는 완료를 선언하지 않는다 (Canon 10, verifier-gate 훅이 강제).
 
-**모드** — Claude Code 에서는 write 과업의 세 역할을 **반드시 별도 서브에이전트로** 디스패치한다(모드 B — asgard-thinker/worker/verifier, 인라인 phase 대체 금지). Worker·Verifier 는 하위 딜리버리 전문가(asgard-freyja=UI/UX, asgard-thor=빌드·인프라, asgard-loki=adversarial)를 중첩 디스패치할 수 있다 — 전문가는 재위임 불가. 서브에이전트 프리미티브가 없는 툴(Codex/Cursor)은 같은 세션에서 `[Thinker]` → `[Worker]` → `[Verifier]` phase 를 순차 전환한다(모드 A). 어느 모드든 로그 포맷과 종료 규칙은 동일하다 — 크로스툴 연속성.
+**모드** — Claude Code 에서는 write 과업의 세 역할을 **반드시 별도 서브에이전트로** 디스패치한다(모드 B — asgard-thinker/worker/verifier, 인라인 phase 대체 금지). Worker·Verifier 는 하위 딜리버리 전문가(asgard-freyja=UI/UX, asgard-thor=빌드·인프라, asgard-loki=adversarial)를 중첩 디스패치할 수 있다 — 전문가는 재위임 불가. 역할 서브에이전트는 활성 quest 에 자기 이벤트(plan/work/verify)를 기록해야 종료할 수 있다 — subagent-gate 훅이 강제한다. 서브에이전트 프리미티브가 없는 툴(Codex/Cursor)은 같은 세션에서 `[Thinker]` → `[Worker]` → `[Verifier]` phase 를 순차 전환한다(모드 A). 어느 모드든 로그 포맷과 종료 규칙은 동일하다 — 크로스툴 연속성.
 
 **루프** — 퀘스트 로그 = `.asgard/quest/<id>.jsonl`, 도구 = `quest-log.py` (`<hooks>` = `.claude/hooks` | `.cursor/hooks` | `.codex/hooks`):
 1. 과업 수신. write 예상이 없으면(조회·질의) 그냥 답한다 — DIRECT, 로그 불필요.
