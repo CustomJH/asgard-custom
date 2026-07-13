@@ -1015,5 +1015,20 @@ class TestSubagentGate(TrinityBase):
         self.assertEqual(p.returncode, 0)
 
 
+class TestAdversarialSuite(unittest.TestCase):
+    """CC4 (CUS-201) 게이트 적대 벡터 통합 — workspace/bench-cc/adversarial.sh 를 CI 에서 구동.
+    실 LLM 불필요(훅 직접 구동), 우회 벡터 10종 전수 차단/허용 대조. 벤치 디렉터리 부재 시 skip."""
+
+    def test_adversarial_vectors_all_blocked(self):
+        script = os.path.abspath(
+            os.path.join(os.path.dirname(__file__), "..", "workspace", "bench-cc", "adversarial.sh")
+        )
+        if not os.path.exists(script):
+            self.skipTest("adversarial.sh 없음 (workspace 미포함 환경)")
+        p = subprocess.run(["bash", script], capture_output=True, text=True, timeout=120)
+        self.assertEqual(p.returncode, 0, f"적대 벡터 실패:\n{p.stdout}\n{p.stderr}")
+        self.assertIn("FAIL=0", p.stdout)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
