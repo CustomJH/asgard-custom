@@ -267,6 +267,12 @@ main() {
   else
     warn "not on PATH yet — restart shell (or run: uv tool update-shell)"
   fi
+  # shell completions — 로그인 셸($SHELL) 기준으로 배선. 실패해도 설치는 유효 (수동 안내만).
+  if asgard completions --install >/dev/null 2>&1; then
+    ok "completions ${D}wired ($(basename "${SHELL:-bash}") — restart shell to activate)${X}"
+  else
+    info "completions ${D}skipped — run: asgard completions --install${X}"
+  fi
 
   printf '\n  %s✔ installed%s — next:\n' "$G" "$X"
   printf '    %sasgard doctor%s   %s# verify%s\n' "$B" "$X" "$D" "$X"

@@ -39,7 +39,8 @@ alias gd='git diff'
 command -v batcat >/dev/null && alias bat='batcat'
 command -v fdfind >/dev/null && alias fd='fdfind'
 # install/refresh asgard from the mounted repo (--refresh-package: bust uv's stale path build cache)
-alias asgard-install='uv tool install --force --python 3.14 --refresh-package asgard ~/asgard'
+# && completions --install: 서브커맨드 자동완성까지 배선 (bashrc 에 가드된 source 한 줄, 멱등)
+alias asgard-install='uv tool install --force --python 3.14 --refresh-package asgard ~/asgard && asgard completions --install'
 # run the mounted working tree directly (editable) — 릴리스/설치 없이 호스트에서 고친 코드 즉시 실행.
 # UV_PROJECT_ENVIRONMENT: venv 를 마운트 밖에 둔다 (호스트 .venv 는 macOS 바이너리 — 충돌).
 alias asgard-dev='UV_PROJECT_ENVIRONMENT=$HOME/.asgard-dev-venv uv run --project $HOME/asgard asgard'
