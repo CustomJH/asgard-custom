@@ -10,6 +10,15 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 
+# HOME 격리 — asgard 는 ~/.asgard 에 상태를 쓴다 (projects.json 레지스트리·completions).
+# 격리 없이는 smoke 가 돌 때마다 mktemp 프로젝트들이 실레지스트리에 등록돼 `asgard sync` 를
+# 오염시킨다 (라이브 실측: temp 항목 18건 누적). uv 캐시·managed python 은 실경로를 물려줘
+# 재다운로드 없이 돈다 — HOME 을 바꾸기 전에 실경로를 고정해야 한다.
+export UV_CACHE_DIR="${UV_CACHE_DIR:-$(uv cache dir)}"
+export UV_PYTHON_INSTALL_DIR="${UV_PYTHON_INSTALL_DIR:-$HOME/.local/share/uv/python}"
+export HOME="$TMP/home"
+mkdir -p "$HOME"
+
 # ── money path: install as a uv tool into an isolated prefix, verify it lands on PATH ──
 export UV_TOOL_DIR="$TMP/uvtools" UV_TOOL_BIN_DIR="$TMP/uvbin"
 uv tool install --python 3.14 --refresh-package asgard "$REPO" >/dev/null 2>&1 || { echo "FAIL: uv tool install"; exit 1; }
