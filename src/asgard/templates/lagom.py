@@ -11,8 +11,8 @@ import re
 
 # 모드 마커 규약: `| **<mode>** |` 로 시작하는 표 행과 `- <mode>:` 로 시작하는 예시 행은
 # 해당 모드에서만 살아남는다. 마커 없는 본문은 전 모드 공통.
-_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full|ultra)\*\*\s*\|")
-_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full|ultra):")
+_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
+_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
 LAGOM_CANON = """\
 ## Lagom — 미니멀리즘 계약 (모드: __MODE__)
@@ -40,12 +40,10 @@ LAGOM_CANON = """\
 | 모드 | 코드 축 동작 |
 | **lite** | 요청대로 구현하되, 더 게으른 대안을 **한 문장** 덧붙인다. |
 | **full** | 사다리 강제 — stdlib 우선, 최단 diff, 최단 설명. |
-| **ultra** | YAGNI 극단 — 요구사항 자체에 도전하고, 원라이너를 우선하며, 프로파일러 증명 전 최적화를 거부한다. |
 
 예시 — "API 응답 캐싱 추가":
 - lite: "캐시를 구현하고, `functools.lru_cache` 면 한 줄로 된다고 언급한다."
 - full: "fetch 함수에 `@lru_cache(maxsize=1000)` 를 붙이고 끝낸다."
-- ultra: "프로파일러가 증명하기 전엔 캐싱 자체를 보류하자고 제안한다."
 
 ### 축 2 — 산출 압축 (응답)
 
@@ -54,7 +52,6 @@ LAGOM_CANON = """\
 | 모드 | 산출 축 동작 |
 | **lite** | 선택적 축약 — 완결 문장 유지, 군더더기만 제거. |
 | **full** | 프래그먼트 압축 — `[대상] [동작] [근거]. [다음 단계].` 패턴, 최단 설명. |
-| **ultra** | 극단 압축 — 실질만 남긴다. |
 
 - **원문 불변**: 코드 블록·커밋 메시지·PR 본문·에러 인용·URL·파일 경로는 byte-for-byte 보존 — 압축 대상이 아니다.
 - **persistence**: 턴이 쌓여도 문체를 되돌리지 않는다. 불확실하면 유지.
@@ -71,14 +68,15 @@ lagom 을 이유로 낮아지지 않는다. `lagom:` 마커는 "의도적 트레
 
 ### 제어
 
-`/lagom lite|full|ultra|off` 세션 전환 · `/lagom default <mode>` 영속 기본값 ·
+`/lagom lite|full|off` 세션 전환 · `/lagom default <mode>` 영속 기본값 ·
 "stop lagom" 또는 "normal mode" 전문 입력 = 비활성.
 """
 
 
 def render_lagom(mode: str) -> str:
-    """모드 필터 렌더 — off/미상은 빈 문자열. 마커 행은 해당 모드만 생존, 나머지는 공통."""
-    if mode not in ("lite", "full", "ultra"):
+    """모드 필터 렌더 — off/미상은 빈 문자열. 마커 행은 해당 모드만 생존, 나머지는 공통.
+    ultra 는 CUS-218 에서 제거 — 절감 우위 소멸(full 대비 1.5%p) + 품질 세금(성공률 78%) 실측."""
+    if mode not in ("lite", "full"):
         return ""
     out = []
     for line in LAGOM_CANON.splitlines():
@@ -106,7 +104,7 @@ LAGOM_AGENTS_SECTION = """\
 기준은 lagom 을 이유로 낮아지지 않는다. 의도적 간소화엔 `lagom:` 주석(한계·업그레이드
 경로), 비자명 로직엔 러너블 체크 1개.
 
-모드(lite=요청대로+대안 한 문장 / full=사다리 강제·기본 / ultra=요구사항 도전)는
+모드(lite=요청대로+대안 한 문장 / full=사다리 강제·기본)는
 `.asgard/lagom-mode` 상태파일과 config `[lagom].mode` 가 결정한다. 제어:
 `/lagom <mode>` · `/lagom default <mode>` · "stop lagom"/"normal mode" = 비활성.
 <!-- <<< asgard:lagom <<< -->

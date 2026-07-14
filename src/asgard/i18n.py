@@ -98,8 +98,8 @@ _M: dict[str, tuple[str, str]] = {
         "lagom 모드 · '/lagom <모드>' 전환, '/lagom default <모드>' 영속",
     ),
     "lagom_usage": (
-        "usage: /lagom [default] off|lite|full|ultra",
-        "사용법: /lagom [default] off|lite|full|ultra",
+        "usage: /lagom [default] off|lite|full",
+        "사용법: /lagom [default] off|lite|full",
     ),
     "lagom_set": ("lagom → {mode} (this session)", "lagom → {mode} (세션 한정)"),
     "lagom_persisted": ("lagom default → {mode} (.asgard/config.toml)", "lagom 기본값 → {mode} (.asgard/config.toml)"),

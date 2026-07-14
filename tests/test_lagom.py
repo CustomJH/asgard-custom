@@ -79,18 +79,18 @@ class TestRender(unittest.TestCase):
         self.assertEqual(render_lagom(""), "")
 
     def test_mode_filter_rows_and_examples(self):
-        for mode in ("lite", "full", "ultra"):
+        for mode in ("lite", "full"):
             body = render_lagom(mode)
             self.assertIn("모드: %s" % mode, body)  # __MODE__ 치환
             self.assertIn("| **%s** |" % mode, body)
             self.assertIn("- %s:" % mode, body)
-            for other in {"lite", "full", "ultra"} - {mode}:
+            for other in {"lite", "full"} - {mode}:
                 self.assertNotIn("| **%s** |" % other, body)  # 타 모드 표 행 제거
                 self.assertNotIn("- %s:" % other, body)  # 타 모드 예시 제거
 
     def test_common_body_survives_every_mode(self):
         """안전 예외·원문 불변·persistence 는 마커 없는 공통 본문 — 전 모드 생존 (적대 방어의 근거)."""
-        for mode in ("lite", "full", "ultra"):
+        for mode in ("lite", "full"):
             body = render_lagom(mode)
             self.assertIn("안전 예외", body)
             self.assertIn("입력 검증", body)
@@ -116,14 +116,14 @@ class TestResolve(LagomBase):
         self.assertEqual(lagom.default_mode(self.root), "full")
 
     def test_precedence_project_config(self):
-        self.set_config("ultra")
-        self.assertEqual(lagom.default_mode(self.root), "ultra")
+        self.set_config("lite")
+        self.assertEqual(lagom.default_mode(self.root), "lite")
 
     def test_precedence_env_beats_config(self):
-        self.set_config("ultra")
-        os.environ["LAGOM_MODE"] = "lite"
+        self.set_config("lite")
+        os.environ["LAGOM_MODE"] = "full"
         try:
-            self.assertEqual(lagom.default_mode(self.root), "lite")
+            self.assertEqual(lagom.default_mode(self.root), "full")
         finally:
             del os.environ["LAGOM_MODE"]
 
@@ -135,11 +135,11 @@ class TestResolve(LagomBase):
             del os.environ["LAGOM_MODE"]
 
     def test_state_beats_default(self):
-        self.set_config("ultra")
-        lagom.write_state(self.root, "lite")
-        self.assertEqual(lagom.current_mode(self.root), "lite")
+        self.set_config("lite")
+        lagom.write_state(self.root, "full")
+        self.assertEqual(lagom.current_mode(self.root), "full")
         lagom.clear_state(self.root)
-        self.assertEqual(lagom.current_mode(self.root), "ultra")
+        self.assertEqual(lagom.current_mode(self.root), "lite")
 
     def test_normalize_rejects_review_and_junk(self):
         self.assertEqual(lagom.normalize(" FULL "), "full")
@@ -167,7 +167,7 @@ class TestActivateMatrix(LagomBase):
     """SessionStart — off=클리어·무주입 / 활성=상태 기록+모드 필터 주입, 매처 4종."""
 
     def test_matrix_modes(self):
-        for mode, expect_inject in (("off", False), ("lite", True), ("full", True), ("ultra", True)):
+        for mode, expect_inject in (("off", False), ("lite", True), ("full", True)):
             with self.subTest(mode=mode):
                 lagom.clear_state(self.root)
                 self.set_config(mode)
@@ -189,15 +189,15 @@ class TestActivateMatrix(LagomBase):
 
     def test_resume_preserves_session_switch(self):
         """세션 중 전환값이 resume/compact 재주입에서 기본값에 덮이지 않는다."""
-        self.set_config("ultra")
+        self.set_config("full")
         lagom.write_state(self.root, "lite")
         p = self.hook("lagom_activate.py", {"source": "resume"})
         self.assertIn("mode=lite", p.stdout)
         self.assertEqual(self.state(), "lite")
 
     def test_env_override(self):
-        p = self.hook("lagom_activate.py", {"source": "startup"}, env_extra={"LAGOM_MODE": "ultra"})
-        self.assertIn("mode=ultra", p.stdout)
+        p = self.hook("lagom_activate.py", {"source": "startup"}, env_extra={"LAGOM_MODE": "lite"})
+        self.assertIn("mode=lite", p.stdout)
 
 
 class TestTrackerMatrix(LagomBase):
@@ -205,7 +205,7 @@ class TestTrackerMatrix(LagomBase):
 
     def test_switch_roundtrip(self):
         self.set_config("full")
-        for target in ("ultra", "off", "lite"):
+        for target in ("full", "off", "lite"):
             p = self.hook("lagom_tracker.py", {"prompt": "/lagom %s" % target})
             self.assertEqual(p.returncode, 0)
             self.assertEqual(self.state(), target)
@@ -218,15 +218,15 @@ class TestTrackerMatrix(LagomBase):
         self.assertEqual(self.state(), "off")
 
     def test_default_persists_config(self):
-        p = self.hook("lagom_tracker.py", {"prompt": "/lagom default ultra"})
+        p = self.hook("lagom_tracker.py", {"prompt": "/lagom default lite"})
         self.assertIn("영속", p.stdout)
-        self.assertEqual(self.state(), "ultra")
+        self.assertEqual(self.state(), "lite")
         conf = open(os.path.join(self.root, ".asgard", "config.toml")).read()
-        self.assertIn('mode = "ultra"', conf)
+        self.assertIn('mode = "lite"', conf)
         # 새 세션 재현 — 상태 클리어 후 activate 가 영속값을 집는다
         lagom.clear_state(self.root)
         p = self.hook("lagom_activate.py", {"source": "startup"})
-        self.assertIn("mode=ultra", p.stdout)
+        self.assertIn("mode=lite", p.stdout)
 
     def test_default_preserves_other_sections(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -279,9 +279,9 @@ class TestTrackerMatrix(LagomBase):
         self.assertEqual(p.stdout, "")
 
     def test_bare_reports_mode(self):
-        self.set_config("ultra")
+        self.set_config("lite")
         p = self.hook("lagom_tracker.py", {"prompt": "/lagom"})
-        self.assertIn("ultra", p.stdout)
+        self.assertIn("lite", p.stdout)
 
 
 class TestSubagentMatrix(LagomBase):
@@ -291,7 +291,7 @@ class TestSubagentMatrix(LagomBase):
         return {"agent_type": agent}
 
     def test_matrix_modes(self):
-        for mode, expect in (("off", False), ("lite", True), ("full", True), ("ultra", True)):
+        for mode, expect in (("off", False), ("lite", True), ("full", True)):
             with self.subTest(mode=mode):
                 self.assertTrue(lagom.write_state(self.root, mode))
                 p = self.hook("lagom_subagent.py", self.payload("asgard-worker"))
@@ -308,7 +308,7 @@ class TestSubagentMatrix(LagomBase):
         self.assertEqual(p.stdout, "")  # lagom 비활성 세션 — 무개입
 
     def test_verifier_never_injected(self):
-        lagom.write_state(self.root, "ultra")
+        lagom.write_state(self.root, "lite")
         p = self.hook("lagom_subagent.py", self.payload("asgard-verifier"))
         self.assertEqual(p.stdout, "")  # 게이트 기준 오염 방지
 
@@ -355,7 +355,7 @@ class TestFailOpen(LagomBase):
         self.set_config("full")
         for name, payload in (
             ("lagom_activate.py", {"source": "startup"}),
-            ("lagom_tracker.py", {"prompt": "/lagom ultra"}),
+            ("lagom_tracker.py", {"prompt": "/lagom full"}),
             ("lagom_subagent.py", {"agent_type": "asgard-worker"}),
         ):
             with self.subTest(hook=name):
@@ -375,15 +375,15 @@ class TestAdversarialContract(LagomBase):
     """LLM 행동 적대는 라이브 벤치(CUS-212) 몫 — 여기선 주입되는 계약 텍스트의 불변식을 검증:
     프롬프트 재료 자체에 안전 예외·원문 불변·off 존중이 모드 불문 존재해야 방어가 성립한다."""
 
-    def test_ultra_keeps_safety_exceptions(self):
-        """ultra(가장 공격적)에서도 안전 예외·러너블 체크·명시 요청 존중이 주입된다."""
-        self.set_config("ultra")
+    def test_full_keeps_safety_exceptions(self):
+        """full(가장 공격적 잔존 모드 — ultra 는 CUS-218 제거)에서도 안전 예외가 주입된다."""
+        self.set_config("full")
         p = self.hook("lagom_activate.py", {"source": "startup"})
         for needle in ("안전 예외", "입력 검증", "데이터 손실", "러너블 체크", "재논쟁 없이 구현"):
             self.assertIn(needle, p.stdout)
 
     def test_every_mode_keeps_byte_preservation(self):
-        for mode in ("lite", "full", "ultra"):
+        for mode in ("lite", "full"):
             self.assertTrue(lagom.write_state(self.root, mode))
             p = self.hook("lagom_activate.py", {"source": "resume"})
             self.assertIn("byte-for-byte", p.stdout)
@@ -391,7 +391,7 @@ class TestAdversarialContract(LagomBase):
 
     def test_gate_standard_not_lowered_in_canon(self):
         """캐논이 게이트 완화를 명시적으로 금지 — verifier 게이트 신뢰 원칙."""
-        for mode in ("lite", "full", "ultra"):
+        for mode in ("lite", "full"):
             self.assertIn("게이트", render_lagom(mode))
             self.assertIn("검증 면제가 아니다", render_lagom(mode))
 
@@ -413,8 +413,8 @@ class TestNativeIntegration(LagomBase):
         self.set_config("lite")
         n = lagom.note(self.root)
         self.assertIn("| **lite** |", n)
-        lagom.write_state(self.root, "ultra")  # 세션 전환이 이긴다
-        self.assertIn("| **ultra** |", lagom.note(self.root))
+        lagom.write_state(self.root, "full")  # 세션 전환이 이긴다
+        self.assertIn("| **full** |", lagom.note(self.root))
 
     def test_scaffold_plan_contains_lagom_assets(self):
         from asgard.commands.setup import plan_files
@@ -474,8 +474,8 @@ class TestStatusline(LagomBase):
         return p.stdout
 
     def test_state_file_mode(self):
-        lagom.write_state(self.root, "ultra")
-        self.assertIn("lagom:ultra", self.line())
+        lagom.write_state(self.root, "lite")
+        self.assertIn("lagom:lite", self.line())
         self.assertIn("Opus", self.line())
 
     def test_off_hidden(self):

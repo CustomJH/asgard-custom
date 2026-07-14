@@ -60,7 +60,7 @@ def init(
     force: bool = typer.Option(False, "--force"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     yes: bool = typer.Option(False, "--yes", "-y", help="skip the picker, use the default profile (claude-code)"),
-    lagom: str = typer.Option(None, "--lagom", help="lagom default mode: off | lite | full | ultra (default full)"),
+    lagom: str = typer.Option(None, "--lagom", help="lagom default mode: off | lite | full (default full)"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     ui.set_quiet(quiet)

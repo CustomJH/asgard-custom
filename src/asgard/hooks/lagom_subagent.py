@@ -13,11 +13,11 @@ import os
 import re
 import sys
 
-MODES = ("off", "lite", "full", "ultra")
+MODES = ("off", "lite", "full")
 
 # 모드 마커 필터 — templates/lagom.py render_lagom 과 동일 유지 (단일 출처 원칙)
-_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full|ultra)\*\*\s*\|")
-_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full|ultra):")
+_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
+_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
 NEVER_INJECT = ("asgard-verifier",)  # 검증 기준 오염 방지 — CUS-209 와 동일 원칙
 

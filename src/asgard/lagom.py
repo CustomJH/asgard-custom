@@ -15,7 +15,7 @@ from __future__ import annotations
 import os
 import tomllib
 
-MODES = ("off", "lite", "full", "ultra")
+MODES = ("off", "lite", "full")
 DEFAULT_MODE = "full"  # default-on — asgard init 프로젝트는 별도 설정 없이 full 로 돈다
 STATE_FILE = "lagom-mode"  # <root>/.asgard/ 아래 — 런타임 상태라 .asgard/.gitignore 가 커버
 

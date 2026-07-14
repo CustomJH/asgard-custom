@@ -128,8 +128,8 @@ printf '%s' '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PRO
 python3 -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
 printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }
 [ "$(cat "$PROJ/.asgard/lagom-mode")" = "full" ] || { echo "FAIL: lagom state file not written"; exit 1; }
-printf '%s' '{"prompt":"/lagom ultra"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q 'ultra' || { echo "FAIL: lagom-tracker must switch mode"; exit 1; }
-[ "$(cat "$PROJ/.asgard/lagom-mode")" = "ultra" ] || { echo "FAIL: lagom switch not persisted to state"; exit 1; }
+printf '%s' '{"prompt":"/lagom lite"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q 'lite' || { echo "FAIL: lagom-tracker must switch mode"; exit 1; }
+[ "$(cat "$PROJ/.asgard/lagom-mode")" = "lite" ] || { echo "FAIL: lagom switch not persisted to state"; exit 1; }
 printf '%s' '{"agent_type":"asgard-verifier"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' && { echo "FAIL: lagom-subagent must not inject verifier"; exit 1; } || true
 printf '%s' '{"agent_type":"asgard-worker"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' || { echo "FAIL: lagom-subagent must inject worker"; exit 1; }
 printf '%s' '{"prompt":"stop lagom"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q '\[lagom\] off' || { echo "FAIL: lagom deactivation phrase"; exit 1; }

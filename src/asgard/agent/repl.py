@@ -204,7 +204,6 @@ _COMMANDS = [
     "/lagom off",
     "/lagom lite",
     "/lagom full",
-    "/lagom ultra",
     "/lagom default ",
     "/lagom stats",
     "/model",

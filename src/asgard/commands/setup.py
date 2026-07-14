@@ -267,7 +267,7 @@ def _apply_lagom(lagom: str | None, dry_run: bool, rc: int) -> int:
 
     mode = normalize(lagom)
     if mode is None:
-        ui.warn(f"--lagom {lagom}: 유효 모드 아님 (off|lite|full|ultra) — 기본 full 유지")
+        ui.warn(f"--lagom {lagom}: 유효 모드 아님 (off|lite|full) — 기본 full 유지")
         return rc
     save_config_section(None, "lagom", {"mode": mode})
     ui.step(f"lagom mode   {ui.dim('— [lagom].mode = ' + mode + ' (.asgard/config.toml)')}")

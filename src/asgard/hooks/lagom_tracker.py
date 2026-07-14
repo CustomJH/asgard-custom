@@ -2,8 +2,8 @@
 # Asgard lagom-tracker — UserPromptSubmit 모드 수명주기 (CUS-213).
 #
 # 세 가지 축:
-#   전환   /lagom lite|full|ultra|off          → 상태파일 갱신 (세션 한정)
-#   영속   /lagom default lite|full|ultra|off  → 프로젝트 [lagom].mode 기록 + 상태 갱신
+#   전환   /lagom lite|full|off          → 상태파일 갱신 (세션 한정)
+#   영속   /lagom default lite|full|off  → 프로젝트 [lagom].mode 기록 + 상태 갱신
 #           (review 는 세션 한정 스킬 모드 — 전환·영속 둘 다 기각, 원본 #377 계승)
 #   비활성 "stop lagom" / "normal mode" 전문 입력 (대소문자 무시, 말미 구두점 허용) → off
 # 보상: 상태파일이 없으면(SessionStart 훅이 없는 표면 — Codex/Cursor) 기본값을 기록하고,
@@ -14,11 +14,11 @@ import os
 import re
 import sys
 
-MODES = ("off", "lite", "full", "ultra")
+MODES = ("off", "lite", "full")
 
 # 모드 마커 필터 — templates/lagom.py render_lagom 과 동일 유지 (단일 출처 원칙)
-_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full|ultra)\*\*\s*\|")
-_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full|ultra):")
+_ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
+_EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 _SWITCH = re.compile(r"^\s*/lagom(?:\s+(default))?\s+([a-zA-Z]+)\s*$", re.I)
 _BARE = re.compile(r"^\s*/lagom\s*$", re.I)
 _DEACTIVATE = re.compile(r"^\s*(stop lagom|normal mode)\s*[.!]?\s*$", re.I)
@@ -132,7 +132,7 @@ def main():
             is_default, target = bool(m.group(1)), m.group(2).strip().lower()
             if norm(target) is None:  # review 포함 — 세션 스킬 전용, 모드 아님
                 sys.stdout.write(
-                    "[lagom] '%s' 는 유효한 모드가 아니다 (off|lite|full|ultra%s)"
+                    "[lagom] '%s' 는 유효한 모드가 아니다 (off|lite|full%s)"
                     % (target, " — review 는 세션 한정 스킬" if target == "review" else "")
                 )
                 sys.exit(0)
