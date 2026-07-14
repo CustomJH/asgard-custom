@@ -310,7 +310,7 @@ def classify_api_error(e: Exception) -> str:
 
 DISPATCH_TOOL = {
     "name": "dispatch",
-    "description": "딜리버리 전문가에게 하위 작업 위임 (freyja=UI/UX, thor=빌드/인프라, loki=adversarial). "
+    "description": "딜리버리 전문가에게 하위 작업 위임 (freyja=디자인/프론트엔드/모션/3D/영상, thor=빌드/인프라, loki=adversarial). "
     "위임 전 누구에게·왜를 고민하고 why 에 근거를 남겨라 — 퀘스트 로그에 기록된다.",
     "input_schema": {
         "type": "object",

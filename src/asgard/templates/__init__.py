@@ -9,6 +9,7 @@ from .bridge import BRIDGE_SKILL_MD
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
 from .cursor import CURSOR_FOLDERS, cursor_hooks_json, cursor_rule
+from .freyja import FREYJA_SKILLS, freyja_core_skill
 from .lagom import LAGOM_CANON, render_lagom
 from .selftest import SELFTEST_MD
 from .trinity import trinity_policy
@@ -23,6 +24,8 @@ __all__ = [
     "cursor_rule",
     "cursor_hooks_json",
     "CURSOR_FOLDERS",
+    "FREYJA_SKILLS",
+    "freyja_core_skill",
     "LAGOM_CANON",
     "render_lagom",
     "SELFTEST_MD",

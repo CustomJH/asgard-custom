@@ -22,6 +22,10 @@ from ..templates import (
     cursor_rule,
     trinity_policy,
 )
+from ..templates.freyja import (
+    FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video 심화 3종
+    freyja_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
+)
 from ..templates.lagom import (
     LAGOM_SKILLS,  # (스킬명, SKILL.md 본문) — review/debt/compress
     LAGOM_STATUSLINE_SH,
@@ -164,6 +168,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
         # Lagom 스킬 (CUS-210) — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
+        # 프레이야 심화 스킬 3종 — freyja 서브에이전트(모드 B)·메인 세션이 도메인 작업 전 로드
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -195,6 +201,10 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
         files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
         files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
+        # 프레이야 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치(role 파일 파생,
+        # 단일 소스). Worker phase 가 시각·프론트 하위작업에서 로드해 인라인 수행 + 심화 3종.
+        files.append((j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"), freyja_core_skill()))
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
