@@ -142,6 +142,8 @@ printf '%s' 'not-json' | python3 "$PROJ/.claude/hooks/lagom-tracker.py" >/dev/nu
 rm -f "$PROJ/.asgard/lagom-mode"
 grep -q 'asgard:lagom' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing lagom section"; exit 1; }
 [ -f "$PROJ/.claude/skills/asgard-lagom-review/SKILL.md" ] || { echo "FAIL: --cc missing lagom-review skill"; exit 1; }
+[ -f "$PROJ/.claude/skills/asgard-seal/SKILL.md" ] || { echo "FAIL: --cc missing asgard-seal skill"; exit 1; }
+grep -q "Co-Authored-By" "$PROJ/.claude/skills/asgard-seal/SKILL.md" || { echo "FAIL: asgard-seal missing no-footer hard rule"; exit 1; }
 # shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
 [ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
 grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }
@@ -176,6 +178,7 @@ PROJ="$(mktemp -d)"
 [ -f "$PROJ/.cursor/rules/000-agents.mdc" ] || { echo "FAIL: --cursor rules bridge"; exit 1; }
 for _d in skills hooks; do [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor .cursor/$_d/README.md"; exit 1; }; done
 [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --cursor missing .agents/skills asgard-test"; exit 1; }
+[ -f "$PROJ/.agents/skills/asgard-seal/SKILL.md" ] || { echo "FAIL: --cursor missing .agents/skills asgard-seal"; exit 1; }
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude"; exit 1; }
 grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor hooks.json"; exit 1; }
 [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: --cursor guard missing"; exit 1; }

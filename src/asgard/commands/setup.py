@@ -14,6 +14,7 @@ from ..templates import (
     CURSOR_FOLDERS,
     LAGOM_CANON,
     MAP_INDEX_MD,
+    SEAL_SKILL_MD,
     SELFTEST_MD,
     agents_md,
     cc_settings,
@@ -179,6 +180,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
         # Lagom 스킬 (CUS-210) — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
+        # /asgard-seal — gitmoji 사건 봉인 (한 봉인 한 사건 + 품질 게이트)
+        files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
         # 프레이야 심화 스킬 3종 — freyja 서브에이전트(모드 B)·메인 세션이 도메인 작업 전 로드
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
 
@@ -212,6 +215,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
         files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
         files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
+        files.append((j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
         # 프레이야 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치(role 파일 파생,
         # 단일 소스). Worker phase 가 시각·프론트 하위작업에서 로드해 인라인 수행 + 심화 3종.
         files.append((j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"), freyja_core_skill()))
