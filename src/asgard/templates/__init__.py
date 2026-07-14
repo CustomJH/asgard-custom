@@ -11,6 +11,7 @@ from .codex import codex_config, codex_rules
 from .cursor import CURSOR_FOLDERS, cursor_hooks_json, cursor_rule
 from .freyja import FREYJA_SKILLS, freyja_core_skill
 from .lagom import LAGOM_CANON, render_lagom
+from .map import MAP_INDEX_MD
 from .selftest import SELFTEST_MD
 from .trinity import trinity_policy
 
@@ -27,6 +28,7 @@ __all__ = [
     "FREYJA_SKILLS",
     "freyja_core_skill",
     "LAGOM_CANON",
+    "MAP_INDEX_MD",
     "render_lagom",
     "SELFTEST_MD",
     "trinity_policy",

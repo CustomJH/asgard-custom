@@ -143,6 +143,37 @@ class TestQuestLog(TrinityBase):
         self.assertEqual(self.qlog("close").returncode, 0)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
+    def test_close_map_nudge_on_structural_change(self):
+        # 지도 도입(.asgard/map 존재) + 신규 파일(untracked A) → close 가 지도 갱신 리마인드.
+        # .asgard/·닷디렉토리 하위는 소스 구조가 아니므로 넛지 대상에서 제외된다.
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        self.open_quest()
+        self.write("src/new_module.py", "x = 1\n")
+        self.write(".claude/hooks/dummy.py", "y = 1\n")  # 닷디렉토리 — 제외돼야 함
+        self.verify(level="full")  # hooks 는 민감 경로 — full-verify 없이는 close 가 거부된다
+        out = jout(self.qlog("close"))
+        self.assertEqual(out["closed"], "q1")
+        self.assertIn("A src/new_module.py", out["map_update"])
+        self.assertNotIn("A .claude/hooks/dummy.py", out["map_update"])
+        self.assertIn("map_hint", out)
+
+    def test_close_map_nudge_silent_without_map_or_change(self):
+        # 지도 미도입 → 구조 변경이 있어도 침묵 (기존 프로젝트에 강요하지 않는다 — fail-open)
+        self.open_quest()
+        self.write("src/new_module.py", "x = 1\n")
+        self.verify()
+        out = jout(self.qlog("close"))
+        self.assertNotIn("map_update", out)
+        # 지도 도입 + 내용 수정(M)만 → 구조 변경 아님, 침묵
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)  # 신규 파일 흡수 — base 를 깨끗하게
+        subprocess.run(["git", "-C", self.root, "commit", "-qm", "absorb"], check=True)
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        self.qlog("open", "q2", "--criteria", "edit only")
+        self.write("README.md", "hello edited\n")
+        self.verify()
+        out = jout(self.qlog("close", "q2"))
+        self.assertNotIn("map_update", out)
+
 
 class TestTransition(TrinityBase):
     def next(self, *flags):

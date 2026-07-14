@@ -145,10 +145,21 @@ grep -q 'asgard:lagom' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing lago
 # shared state at ROOT .asgard/ (tool-neutral, cross-tool continuity), self-ignored via '*'
 [ -f "$PROJ/.asgard/failures-smoke.json" ] || { echo "FAIL: shared state must live in root .asgard/"; exit 1; }
 grep -q '^\*' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/ must self-ignore with '*'"; exit 1; }
-# 루트 .gitignore — 런타임 상태 필터. 생성됨 + asgard 블록 + .asgard/ 무시
+grep -q '^!map/$' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/.gitignore must un-ignore map/ (team-shared)"; exit 1; }
+# 코드베이스 지도 — 시드 존재 + git 실추적 검증 (루트 블록·자가 무시 둘 다 map 을 허용해야 추적됨)
+[ -f "$PROJ/.asgard/map/INDEX.md" ] || { echo "FAIL: --cc must seed .asgard/map/INDEX.md"; exit 1; }
+grep -q 'asgard:map' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing map section"; exit 1; }
+# 루트 .gitignore — 런타임 상태 필터. 생성됨 + asgard 블록 + .asgard/* 무시 + map 재포함
 [ -f "$PROJ/.gitignore" ] || { echo "FAIL: --cc must create root .gitignore"; exit 1; }
-grep -q '^\.asgard/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must ignore .asgard/"; exit 1; }
+grep -q '^\.asgard/\*$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must ignore .asgard/* (not dir pattern)"; exit 1; }
+grep -q '^!\.asgard/map/$' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore must un-ignore .asgard/map/"; exit 1; }
 grep -q '>>> asgard >>>' "$PROJ/.gitignore" || { echo "FAIL: root .gitignore missing asgard marker block"; exit 1; }
+if command -v git >/dev/null; then
+  ( cd "$PROJ" && git init -q . && git add -A >/dev/null 2>&1
+    git status --porcelain | grep -q 'A  .asgard/map/INDEX.md' || { echo "FAIL: .asgard/map must be git-tracked"; exit 1; }
+    git status --porcelain | grep -q 'failures-smoke' && { echo "FAIL: .asgard runtime state must stay ignored"; exit 1; } || true
+    rm -rf .git ) || exit 1
+fi
 # 병합 — 기존 사용자 규칙 보존 + idempotent (블록 1개)
 printf '# user rule\nmydir/\n' > "$PROJ/.gitignore"
 ( cd "$PROJ" && "${ASG[@]}" init --cc --force >/dev/null 2>&1 )

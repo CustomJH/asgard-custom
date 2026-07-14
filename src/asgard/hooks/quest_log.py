@@ -617,6 +617,32 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
     return out("WORKER", "배정 단위 실행 차례")
 
 
+def map_nudge(root: str, base_ref: str | None) -> list[str]:
+    """close 시 지도 갱신 리마인더 — base_ref 이후 구조 변경(추가 A/삭제 D/이동 R)만 본다.
+    0-LLM·fail-open: git 실패·지도 미도입(.asgard/map 부재)이면 침묵. 내용 수정(M)은 지도 무관.
+    diff 는 untracked 를 못 보므로 ls-files --others 를 A 로 합류 (diff_state 와 동일 처리)."""
+    if not base_ref or base_ref == "NONE" or not os.path.isdir(os.path.join(root, ".asgard", "map")):
+        return []
+
+    def mappable(p: str) -> bool:  # 런타임·캐시·닷디렉토리(.claude 등 스캐폴드) 제외 — 소스 구조만
+        return bool(p.strip()) and not _junk(p) and not any(seg.startswith(".") for seg in p.split("/"))
+
+    rc, out = git(root, "diff", "--name-status", "--diff-filter=ADR", base_ref, "--", ".", ":(exclude).asgard")
+    if rc != 0:
+        return []
+    changes: list[str] = []
+    for row in out.splitlines():
+        parts = row.split("\t")
+        st = parts[0][:1] if parts else ""
+        if st == "R" and len(parts) >= 3 and (mappable(parts[1]) or mappable(parts[2])):
+            changes.append(f"R {parts[1]} → {parts[2]}")
+        elif st in ("A", "D") and len(parts) >= 2 and mappable(parts[1]):
+            changes.append(f"{st} {parts[1]}")
+    _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
+    changes += sorted(f"A {p}" for p in unt.splitlines() if mappable(p))
+    return changes[:20]  # 상한 — 대량 이동에서 close 출력이 지도 노릇을 하지 않게
+
+
 def tests_available(root: str) -> bool:
     return any(
         os.path.exists(os.path.join(root, p)) for p in ("test", "tests", "pytest.ini", "pyproject.toml", "package.json")
@@ -820,7 +846,15 @@ def main() -> int:
             os.replace(_tmp, _lp)
         except Exception:
             pass
-        print(json.dumps({"closed": qid, "forced": bool(args.force and not ok)}))
+        res = {"closed": qid, "forced": bool(args.force and not ok)}
+        try:  # 지도 넛지 (fail-open) — 구조 변경이 있으면 close 전 지도 갱신을 리마인드
+            nudge = map_nudge(root, s.get("base_ref"))
+        except Exception:
+            nudge = []
+        if nudge:
+            res["map_update"] = nudge
+            res["map_hint"] = "구조 변경 감지 — .asgard/map/ 영역 지도에 증분 반영 (전체 재작성 금지, 실재 파일만)"
+        print(json.dumps(res, ensure_ascii=False))
         return 0
     return 0
 

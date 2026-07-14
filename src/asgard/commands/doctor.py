@@ -94,6 +94,44 @@ def _trinity_checks(root: str) -> list[dict]:
         )
     except Exception:
         pass
+    # 코드베이스 지도 — 유령 엔트리(디스크에 없는 경로) 탐지 (지도 문법 3: 실재만 기재).
+    # INDEX.md 는 규칙 문서(예시 엔트리 포함)라 제외. 영역 파일이 아직 없는 건 정상 (fog-of-war).
+    mdir = os.path.join(root, ".asgard", "map")
+    if not os.path.isdir(mdir):
+        checks.append(
+            {
+                "name": "codebase map",
+                "ok": False,
+                "detail": "missing .asgard/map/",
+                "fix": "asgard sync (또는 setup --force) 로 지도 시드 생성",
+            }
+        )
+    else:
+        import re as _re
+
+        entry_pat = _re.compile(r"^- `([^`]+)`", _re.M)
+        ghosts: list[str] = []
+        entries = 0
+        areas = sorted(f for f in os.listdir(mdir) if f.endswith(".md") and f != "INDEX.md")
+        for fname in areas:
+            try:
+                body = open(os.path.join(mdir, fname), encoding="utf-8").read()
+            except Exception:
+                continue
+            for m in entry_pat.finditer(body):
+                entries += 1
+                if not os.path.exists(os.path.join(root, m.group(1).rstrip("/"))):
+                    ghosts.append(f"{fname}: {m.group(1)}")
+        checks.append(
+            {
+                "name": "codebase map",
+                "ok": not ghosts,
+                "detail": f"{len(areas)} area(s) · {entries} entries"
+                if not ghosts
+                else "ghost: " + ", ".join(ghosts[:5]) + (f" (+{len(ghosts) - 5})" if len(ghosts) > 5 else ""),
+                "fix": "디스크에 없는 경로 엔트리 제거 — 지도 문법 3 (실재만 기재, .asgard/map/INDEX.md)",
+            }
+        )
     ledger_ok = os.access(root, os.W_OK)
     checks.append(
         {

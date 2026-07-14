@@ -13,6 +13,7 @@ from ..templates import (
     CC_FOLDERS,
     CURSOR_FOLDERS,
     LAGOM_CANON,
+    MAP_INDEX_MD,
     SELFTEST_MD,
     agents_md,
     cc_settings,
@@ -34,17 +35,25 @@ from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
 # 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
-# .asgard/.gitignore="*" 가 이미 자가 무시하지만, 루트에도 명시해 `git status` 를 처음부터 깨끗하게.
+# .asgard/.gitignore 가 이미 자가 무시하지만, 루트에도 명시해 `git status` 를 처음부터 깨끗하게.
+# `.asgard/` (디렉토리 패턴)이 아니라 `.asgard/*` + negation 인 이유: 디렉토리째 무시하면 git 이
+# 하위로 내려가지 않아 map/ 재포함이 불가능하다 — 지도는 팀 공유(추적) 자산.
 _GITIGNORE_BEGIN = "# >>> asgard >>>"
 _GITIGNORE_END = "# <<< asgard <<<"
 _GITIGNORE_BLOCK = (
     f"{_GITIGNORE_BEGIN}\n"
     "# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)\n"
-    ".asgard/\n"
+    ".asgard/*\n"
+    "!.asgard/map/\n"
+    "!.asgard/.gitignore\n"
     ".claude/settings.local.json\n"
     ".claude/**/*.local.*\n"
     f"{_GITIGNORE_END}\n"
 )
+
+# .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 전부 무시, 지도만 추적.
+# 루트 블록과 합의돼야 한다 (둘 중 하나라도 map 을 막으면 추적 불가 — smoke 가 실추적 검증).
+_ASGARD_GITIGNORE = "*\n!.gitignore\n!map/\n!map/**\n"
 
 
 def merge_gitignore(existing: str | None) -> str:
@@ -129,7 +138,9 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     # 훅이 첫 실행 때 lazy 로 만들지만, setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.
     files += [
         (j(root, ".asgard", "trinity-policy.json"), trinity_policy()),
-        (j(root, ".asgard", ".gitignore"), "*\n"),
+        (j(root, ".asgard", ".gitignore"), _ASGARD_GITIGNORE),
+        # 코드베이스 지도 시드 — INDEX 는 규칙 문서(asgard 소유), 영역 지도는 에이전트가 그린다.
+        (j(root, ".asgard", "map", "INDEX.md"), MAP_INDEX_MD),
     ]
 
     # Claude Code — bridge import + settings (permission floor + hook wiring) + Canon guards.

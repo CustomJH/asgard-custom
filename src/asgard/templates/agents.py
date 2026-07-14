@@ -63,6 +63,17 @@ write 과업은 트리니티 순환으로 처리한다: **Thinker(전략) → Wo
 정책·임계값: `.asgard/trinity-policy.json` (task-class 는 budget prior 일 뿐 — 배정은 매 턴 전이 함수).
 <!-- <<< asgard:trinity <<< -->
 
+<!-- >>> asgard:map >>> -->
+## Asgard — 코드베이스 지도 (.asgard/map/)
+
+팀 공유(git 추적) 코드베이스 지도. 규칙은 `INDEX.md`(asgard 소유), 지식은 영역별 `<area>.md` — 에이전트가 탐사하며 그린다.
+
+- **읽기 우선** — 탐색·계획 전 지도를 먼저 본다. 적중 영역은 광역 탐색을 생략한다. 단 지도는 힌트다: 계획이 딛는 경로는 Read 로 재확인한다 (Canon 5·11).
+- **그리며 확장 (fog-of-war)** — 과업 중 새로 파악한 구조는 해당 영역 지도에 증분 반영한다. 탐사한 영역만 채운다 — 전체 재작성 금지.
+- **엔트리 문법 고정** — `` - `경로` — 1줄 역할 ``. 이력·날짜·사건 서술 금지(이력은 퀘스트 로그 몫). 디스크에 실재하는 파일만 기재 — 선기재 금지.
+- **갱신 시점** — 구조 변경(파일 추가/삭제/이동)이 있는 write 과업은 quest close 전에 지도를 갱신한다. close 가 구조 변경을 감지해 리마인드하고, `asgard doctor` 가 유령 엔트리를 잡는다.
+<!-- <<< asgard:map <<< -->
+
 __LAGOM__
 ## Conventions
 <!-- Add project conventions, build/test commands, and architecture notes here. -->
