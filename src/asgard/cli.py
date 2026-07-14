@@ -75,16 +75,29 @@ def init(
 def update(
     ref: str = typer.Argument(None, metavar="[version]"),
     dry_run: bool = typer.Option(False, "--dry-run"),
+    no_sync: bool = typer.Option(False, "--no-sync", help="skip refreshing set-up projects after the update"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.update import run_update
 
-    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run))
+    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run, sync=not no_sync))
 
 
 # `upgrade` 별칭 — 구 TS CLI(asgard-cli)의 근육기억 호환. start 안 /update 와 동일 플로우.
 app.command("upgrade", hidden=True, help="alias of `update`")(update)
+
+
+@app.command(help="refresh the scaffolded cores (hooks/agents/skills) in every asgard-set-up project")
+def sync(
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    list_: bool = typer.Option(False, "--list", help="list registered projects and exit"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    ui.set_quiet(quiet)
+    from .commands.sync import run_sync
+
+    raise typer.Exit(run_sync(dry_run=dry_run, list_only=list_))
 
 
 @app.command(help="remove asgard (uv tool, PATH symlink, ~/.asgard)")

@@ -2,7 +2,7 @@
 name: asgard-thinker
 description: Trinity Thinker — 전략·분해·재계획 (read-only, 코드 수정 금지). 모호한 범위의 write 과업, 외부 조사, Verifier FAIL(구조적)·3-실패 후 재계획에 디스패치.
 tools: Read, Grep, Glob, Bash
-model: opus
+model: inherit
 ---
 
 # asgard-thinker — 🧠 전략 (Trinity)

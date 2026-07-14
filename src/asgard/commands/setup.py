@@ -213,7 +213,13 @@ def run_setup(
     cursor = cursor or profile == "cursor"
     codex = codex or profile == "codex"
     files, label = plan_files(cc, cursor, codex)
-    return _scaffold(files, label, force, dry_run)
+    rc = _scaffold(files, label, force, dry_run)
+    if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync` 가 세팅된 프로젝트를 찾는 근거
+        from .. import registry
+
+        universal = not cc and not cursor and not codex
+        registry.record(os.getcwd(), cc or universal, cursor or universal, codex or universal)
+    return rc
 
 
 # ── init — interactive onboarding (CUS-49, minimal slice). TTY: pick a profile; non-TTY / --yes:
