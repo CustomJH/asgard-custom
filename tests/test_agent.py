@@ -386,22 +386,27 @@ class TestDeliveryAgents(unittest.TestCase):
 
         names = {f for f, _ in ROLE_AGENTS}
         self.assertLessEqual(
-            {f"asgard-{n}.md" for n in ("thinker", "worker", "verifier", "freyja", "thor", "loki")}, names
+            {f"asgard-{n}.md" for n in ("thinker", "worker", "verifier", "freyja", "thor", "loki", "ullr")}, names
         )
 
     def test_delivery_frontmatter_blocks_redelegation(self):
         # freyja/thor: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
         for n in ("freyja", "thor"):
             self.assertIn("disallowedTools: Agent", self._tpl(f"asgard-{n}.md"))
-        loki_fm = self._tpl("asgard-loki.md").split("---")[1]
-        self.assertIn("tools: Read, Grep, Glob, Bash", loki_fm)
-        self.assertNotIn("Agent", loki_fm.split("tools:")[1].splitlines()[0])
+        # loki/ullr: read-only allowlist (Agent·Write·Edit 부재) — 재위임·수정 불가 정찰 계층.
+        for n in ("loki", "ullr"):
+            fm = self._tpl(f"asgard-{n}.md").split("---")[1]
+            self.assertIn("tools: Read, Grep, Glob, Bash", fm)
+            self.assertNotIn("Agent", fm.split("tools:")[1].splitlines()[0])
 
     def test_trinity_agents_can_nest(self):
-        # worker 는 tools 무제한(Agent 상속) → 중첩 디스패치 가능. verifier 는 allowlist 에 Agent 명시.
+        # worker 는 tools 무제한(Agent 상속) → 중첩 디스패치 가능. verifier/thinker 는 allowlist 에 Agent 명시
+        # (verifier→loki 반례 탐색, thinker→ullr 정찰 — CC 모드 B 한정).
         self.assertNotIn("tools:", self._tpl("asgard-worker.md").split("---")[1])
         self.assertIn("Agent", self._tpl("asgard-verifier.md").split("---")[1])
-        self.assertNotIn("tools:", self._tpl("asgard-thinker.md").split("---")[1].replace("tools: Read", ""))
+        thinker_fm = self._tpl("asgard-thinker.md").split("---")[1]
+        self.assertIn("Agent", thinker_fm.split("tools:")[1].splitlines()[0])
+        self.assertNotIn("tools:", thinker_fm.replace("tools: Read", ""))
 
     def test_heimdall_delivery_derives_from_templates(self):
         from asgard.agent.heimdall import _DELIVERY
