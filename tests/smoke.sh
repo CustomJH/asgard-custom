@@ -36,6 +36,10 @@ rc=0; "${ASG[@]}" run >/dev/null 2>&1 || rc=$?  # set -e 안전 캡처
 "${ASG[@]}" completions zsh | grep -q "#compdef asgard" || { echo "FAIL: zsh completions"; exit 1; }
 "${ASG[@]}" completions fish | grep -q "complete -c asgard" || { echo "FAIL: fish completions"; exit 1; }
 if "${ASG[@]}" completions badshell >/dev/null 2>&1; then echo "FAIL: bad shell should exit nonzero"; exit 1; fi
+# 서브커맨드 인지(뒷단 자동완성) — role 서브커맨드·역할 인자까지 세 셸 모두에 존재해야 한다
+"${ASG[@]}" completions bash | grep -q "thinker worker verifier" || { echo "FAIL: bash completions missing role args"; exit 1; }
+"${ASG[@]}" completions zsh | grep -q "thinker worker verifier" || { echo "FAIL: zsh completions missing role args"; exit 1; }
+"${ASG[@]}" completions fish | grep -q "thinker worker verifier" || { echo "FAIL: fish completions missing role args"; exit 1; }
 
 asgard doctor >/dev/null || { echo "FAIL: doctor exit nonzero (asgard on PATH)"; exit 1; }
 asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; exit 1; }

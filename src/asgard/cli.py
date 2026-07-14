@@ -99,11 +99,14 @@ def uninstall(
     raise typer.Exit(run_uninstall(yes=yes, dry_run=dry_run))
 
 
-@app.command(help="print shell completion script (bash|zsh|fish)")
-def completions(shell: str = typer.Argument(None)) -> None:
+@app.command(help="print or install shell completion (bash|zsh|fish)")
+def completions(
+    shell: str = typer.Argument(None),
+    install: bool = typer.Option(False, "--install", help="write the script and wire your shell rc"),
+) -> None:
     from .commands.completions import run_completions
 
-    raise typer.Exit(run_completions(shell))
+    raise typer.Exit(run_completions(shell, install=install))
 
 
 # Trinity 역할 브릿지 — 호스트 도구(Claude Code/Codex/Cursor)가 [trinity.<role>] 배치 provider 로
