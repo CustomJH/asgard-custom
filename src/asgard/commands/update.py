@@ -14,6 +14,7 @@ import urllib.request
 
 from .. import __version__, ui
 from ..platform import on_path
+from .completions import ensure_installed
 
 _REPO = "CustomJH/asgard-custom"
 _SPEC_OVERRIDE = os.environ.get("ASGARD_INSTALL_SPEC")  # dev/CI escape hatch (git+…, local path)
@@ -55,7 +56,17 @@ def _uv_install(spec: str, label: str) -> int:
     return r.returncode
 
 
-def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = False) -> int:
+def _sync_projects() -> None:
+    """엔진 설치 성공 후 세팅된 프로젝트 코어 동기화 — 반드시 **새 바이너리**로 실행한다
+    (현 프로세스의 템플릿은 아직 구버전). PATH 에 없으면 안내만 (베스트에포트)."""
+    exe = shutil.which("asgard")
+    if not exe:
+        ui.warn("asgard not on PATH — run `asgard sync` to refresh set-up projects")
+        return
+    subprocess.run([exe, "sync"])
+
+
+def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = False, sync: bool = True) -> int:
     pin = rest[0] if rest else None
     version = pin[1:] if pin and pin.startswith("v") else pin
 
@@ -69,6 +80,8 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
             shown = f"asgard v{version} (release wheel)" if version else "asgard (latest release wheel)"
         ui.phase("preview")
         ui.step(f"would install {ui.dim(shown)} via uv tool")
+        if sync:
+            ui.step(f"would sync set-up projects {ui.dim('(asgard sync — --no-sync to skip)')}")
         return 0
     if not on_path("uv"):
         ui.fail("uv not found — install it first: https://astral.sh/uv")
@@ -83,6 +96,9 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
             ui.fail("update failed (uv tool install)")
             return 1
         ui.done("updated (override spec)")
+        ensure_installed()  # 셸 completion 기본 설치·재생성 — 새 바이너리로 (베스트에포트)
+        if sync:
+            _sync_projects()
         return 0
 
     # check — 핀이면 즉시, 아니면 최신 릴리스 조회 (스피너)
@@ -96,6 +112,10 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
         return 1
     if target == __version__:
         ui.ok(f"already up to date — v{__version__} is the latest release")
+        if sync:  # 엔진은 최신이어도 프로젝트 코어가 뒤처졌을 수 있다 — 현 프로세스 템플릿이 곧 최신
+            from .sync import run_sync
+
+            run_sync()
         return 0
     ui.step(f"update available: v{__version__} → v{target}")
 
@@ -118,6 +138,9 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
         ui.fail("update failed (uv tool install)")
         return 1
     ui.done(f"v{__version__} → v{target}")
+    ensure_installed()  # 셸 completion 기본 설치·재생성 — 새 바이너리로 (베스트에포트)
+    if sync:  # 세팅된 프로젝트 코어 갱신 — 새 바이너리 서브프로세스 (현 프로세스 템플릿은 구버전)
+        _sync_projects()
     if restart_hint:  # REPL 안에서 실행 — 프로세스는 아직 구버전
         from ..i18n import t
 
