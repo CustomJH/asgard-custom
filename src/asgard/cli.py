@@ -145,6 +145,101 @@ def role_run(
     raise typer.Exit(run_role_run(role, task))
 
 
+# 개인 메모리 — LLM Wiki (v3 P1). 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생.
+memory_app = typer.Typer(help="personal memory — LLM wiki (ingest/query/lint)", no_args_is_help=True)
+app.add_typer(memory_app, name="memory")
+
+
+@memory_app.command("add", help="add a page (rejects on injection scan or index budget)")
+def memory_add(
+    text: str = typer.Argument(..., help="the fact/insight to remember"),
+    title: str = typer.Option(None, "--title", help="page title (default: first line)"),
+    kind: str = typer.Option("note", "--kind", help="note|user|decision|insight|reference|feedback"),
+    links: str = typer.Option("", "--links", help="related slugs, comma-separated"),
+    force: bool = typer.Option(False, "--force", help="bypass the index budget gate"),
+) -> None:
+    from .commands.memory import run_add
+
+    raise typer.Exit(run_add(text, title, kind, links, force))
+
+
+@memory_app.command("ingest", help="absorb new knowledge — near-duplicates merge into existing pages")
+def memory_ingest(
+    text: str = typer.Argument(...),
+    kind: str = typer.Option("note", "--kind"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="skip the save confirmation"),
+) -> None:
+    from .commands.memory import run_ingest
+
+    raise typer.Exit(run_ingest(text, kind, yes))
+
+
+@memory_app.command("query", help="search the wiki (FTS, zero-LLM; hits are usage-tracked)")
+def memory_query(
+    text: str = typer.Argument(...),
+    k: int = typer.Option(5, "-k", help="max results"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_query
+
+    raise typer.Exit(run_query(text, k, json_))
+
+
+@memory_app.command("lint", help="wiki health — dead links, decay candidates, duplicates, budget")
+def memory_lint(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.memory import run_lint
+
+    raise typer.Exit(run_lint(json_))
+
+
+@memory_app.command("reindex", help="rebuild index.md + state.db from pages/ (canonical)")
+def memory_reindex() -> None:
+    from .commands.memory import run_reindex
+
+    raise typer.Exit(run_reindex())
+
+
+@memory_app.command("show", help="print one page (frontmatter + body)")
+def memory_show(
+    slug: str = typer.Argument(...),
+    unsafe: bool = typer.Option(False, "--unsafe", help="show a quarantined (poisoned) page for repair"),
+) -> None:
+    from .commands.memory import run_show
+
+    raise typer.Exit(run_show(slug, unsafe=unsafe))
+
+
+@memory_app.command("remove", help="delete a page and rebuild the derived index")
+def memory_remove(slug: str = typer.Argument(...)) -> None:
+    from .commands.memory import run_remove
+
+    raise typer.Exit(run_remove(slug))
+
+
+@memory_app.command("merge", help="absorb one page into another (consolidate over budget)")
+def memory_merge(
+    src: str = typer.Argument(..., help="page to absorb (deleted after)"),
+    dst: str = typer.Argument(..., help="page to grow"),
+) -> None:
+    from .commands.memory import run_merge
+
+    raise typer.Exit(run_merge(src, dst))
+
+
+@memory_app.command("snapshot", help="print the session injection snapshot (empty when disabled)")
+def memory_snapshot() -> None:
+    from .commands.memory import run_snapshot
+
+    raise typer.Exit(run_snapshot())
+
+
+@memory_app.command("path", help="print the memory directory")
+def memory_path() -> None:
+    from .commands.memory import run_path
+
+    raise typer.Exit(run_path())
+
+
 @app.command(help="run one task headless through the native Trinity loop (benches/CI)")
 def run(
     prompt: str = typer.Argument(..., help="the task to execute"),

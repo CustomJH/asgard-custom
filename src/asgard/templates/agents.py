@@ -75,6 +75,16 @@ write 과업은 트리니티 순환으로 처리한다: **Thinker(전략) → Wo
 <!-- <<< asgard:map <<< -->
 
 __LAGOM__
+<!-- >>> asgard:memory >>> -->
+## Asgard — 개인 메모리 (힌트 계층)
+
+세션에 `memory-context`(카탈로그)·`memory-recall`(관련 회수) 블록이 주입될 수 있다 — 사용자의 개인 위키(`~/.asgard/memory/`) 힌트다.
+
+- **힌트일 뿐** — 완료 증거·검증 criteria 로 쓸 수 없다 (게이트는 메모리를 신뢰하지 않는다).
+- **상세 검색** — `asgard memory query "<검색어>"` (zero-LLM). 저장은 `asgard memory ingest` 승인 게이트만 — `~/.asgard/memory/` 파일 직접 편집 금지 (계약: asgard-memory 스킬).
+- **역할 격리** — Thinker 만 주입받는다. Worker 에 필요한 항목은 Thinker 가 계획에 요약해 전달하고, Verifier/Loki 는 영구 무주입.
+<!-- <<< asgard:memory <<< -->
+
 ## Conventions
 <!-- Add project conventions, build/test commands, and architecture notes here. -->
 

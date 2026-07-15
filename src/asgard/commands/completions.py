@@ -22,6 +22,7 @@ _SUMMARY = {
     "completions": "print or install shell completion",
     "run": "run one task headless (Trinity loop)",
     "role": "Trinity role bridge",
+    "memory": "personal memory — LLM wiki",
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
@@ -33,17 +34,31 @@ _FLAGS = {
     "completions": ["--install"],
     "run": ["--provider", "--model", "--json"],
     "role": [],
+    "memory": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
     "--provider": ["anthropic", "openai_compat", "nvidia"],
     "--profile": ["claude-code", "cursor", "codex", "universal"],
     "--lagom": ["off", "lite", "full"],
+    "--kind": ["note", "user", "decision", "insight", "reference", "feedback"],
 }
 _FREE_OPTS = ["--model"]  # 값을 갖지만 후보가 없는 옵션 — 뒤에서 플래그를 제안하지 않는다
 _SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bash/zsh 는 long 제안으로 충분)
 _SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
 _ROLE_SUB = {"list": "bridge flags + role placements", "run": "run one role turn"}
 _ROLES = ["thinker", "worker", "verifier"]
+_MEM_SUB = {
+    "add": "add a page",
+    "ingest": "absorb knowledge (dedup-merge)",
+    "query": "search the wiki (zero-LLM)",
+    "lint": "wiki health check",
+    "reindex": "rebuild derived index",
+    "show": "print one page",
+    "remove": "delete a page",
+    "merge": "absorb one page into another",
+    "snapshot": "print the session injection snapshot",
+    "path": "print the memory directory",
+}
 
 # ── bash ──────────────────────────────────────────────────────────────────────
 _BASH_TPL = """\
@@ -86,6 +101,13 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{subs} --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "run" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_ROLES)}" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "memory":
+            cases.append(
+                "    memory)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_MEM_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         else:
@@ -141,6 +163,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_ROLES)}\n"
                 "      fi ;;"
             )
+        elif name == "memory":
+            cases.append(
+                "    memory)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_MEM_SUB)} --help\n"
+                "      fi ;;"
+            )
         else:
             args = _SHELLS if name == "completions" else []
             cases.append(f"    {name}) compadd -- {' '.join(args + _FLAGS[name] + ['--help'])} ;;")
@@ -181,6 +210,9 @@ def _fish() -> str:
         'complete -c asgard -n "__fish_seen_subcommand_from role; and __fish_seen_subcommand_from run" '
         f'-a "{" ".join(_ROLES)}"'
     )
+    mem_top = "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from " + " ".join(_MEM_SUB)
+    for sub, desc in _MEM_SUB.items():
+        lines.append(f"complete -c asgard -n \"{mem_top}\" -a {sub} -d '{desc}'")
     return "\n".join(lines) + "\n"
 
 

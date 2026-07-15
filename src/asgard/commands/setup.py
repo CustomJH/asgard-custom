@@ -32,6 +32,7 @@ from ..templates.lagom import (
     LAGOM_SKILLS,  # (스킬명, SKILL.md 본문) — review/debt/compress
     LAGOM_STATUSLINE_SH,
 )
+from ..templates.memory import MEMORY_SKILL_MD  # memory v3 — 읽기/저장(승인 게이트) 계약
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
@@ -171,6 +172,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "lagom-subagent.py"), hook("lagom-subagent")),
             (j(root, ".claude", "hooks", "lagom-canon.md"), LAGOM_CANON),
             (j(root, ".claude", "hooks", "lagom-statusline.sh"), LAGOM_STATUSLINE_SH),  # CUS-215
+            # Memory v3 — 개인 위키 스냅샷 주입 (SessionStart + Thinker 한정 SubagentStart)
+            (j(root, ".claude", "hooks", "memory-activate.py"), hook("memory-activate")),
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
         files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
@@ -182,6 +185,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
         # /asgard-seal — gitmoji 사건 봉인 (한 봉인 한 사건 + 품질 게이트)
         files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
+        # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
+        files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), MEMORY_SKILL_MD))
         # 프레이야 심화 스킬 3종 — freyja 서브에이전트(모드 B)·메인 세션이 도메인 작업 전 로드
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
 

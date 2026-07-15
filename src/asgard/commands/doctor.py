@@ -94,6 +94,26 @@ def _trinity_checks(root: str) -> list[dict]:
         )
     except Exception:
         pass
+    # Memory v3 — CC 배선(훅 파일 + SessionStart 배선) 단선 탐지 (독립 리뷰 지적: doctor 침묵 금지).
+    # .claude 가 있는 프로젝트만 — 배선 자체가 CC 스캐폴드 소속. 개인 위키 건강은 memory lint 몫.
+    if os.path.isdir(os.path.join(root, ".claude")):
+        hook_ok = os.path.exists(os.path.join(root, ".claude", "hooks", "memory-activate.py"))
+        wired = False
+        try:
+            settings = _json.load(open(os.path.join(root, ".claude", "settings.json")))
+            wired = "memory-activate" in _json.dumps(settings.get("hooks", {}).get("SessionStart", []))
+        except Exception:
+            pass
+        checks.append(
+            {
+                "name": "memory wiring (CC)",
+                "ok": hook_ok and wired,
+                "detail": "wired"
+                if (hook_ok and wired)
+                else ("hook file missing" if not hook_ok else "SessionStart 미배선"),
+                "fix": fix,
+            }
+        )
     # 코드베이스 지도 — 유령 엔트리(디스크에 없는 경로) 탐지 (지도 문법 3: 실재만 기재).
     # INDEX.md 는 규칙 문서(예시 엔트리 포함)라 제외. 영역 파일이 아직 없는 건 정상 (fog-of-war).
     mdir = os.path.join(root, ".asgard", "map")

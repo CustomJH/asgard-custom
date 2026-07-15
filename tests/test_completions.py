@@ -49,6 +49,10 @@ class TestSurfaceSync(unittest.TestCase):
         for r in comp._ROLES:
             self.assertIn(r, arg.metavar or "")
 
+    def test_memory_subcommands_match(self):
+        mem = _visible_commands()["memory"]
+        self.assertEqual(set(mem.commands), set(comp._MEM_SUB))
+
     def test_enum_values_match_help(self):
         """열거형 옵션 후보가 해당 옵션의 help 문구와 어긋나지 않는지 (값 하나하나 존재 확인)."""
         cmds = _visible_commands()
@@ -56,6 +60,7 @@ class TestSurfaceSync(unittest.TestCase):
             "--provider": next(p for p in cmds["start"].params if "--provider" in p.opts).help,
             "--profile": next(p for p in cmds["init"].params if "--profile" in p.opts).help,
             "--lagom": next(p for p in cmds["init"].params if "--lagom" in p.opts).help,
+            "--kind": next(p for p in cmds["memory"].commands["add"].params if "--kind" in p.opts).help,
         }
         for opt, values in comp._VALUES.items():
             for v in values:

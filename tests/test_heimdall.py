@@ -841,5 +841,100 @@ class TestDirectHistory(Base):
         self.assertIn("답1", s2.prompt)
 
 
+class TestDeliveryMemoryIsolation(Base):
+    """개인 메모리 스냅샷은 코디네이터(DIRECT) 전용 (memory v3 P1 — heimdall 주석 계약).
+    26-07-15 리뷰: identity 에 memory_note 가 합쳐지며 딜리버리 자식(freyja/thor/loki)까지
+    누출 — 특히 loki 는 Verifier 반례 탐색자라 게이트 무결성 훼손."""
+
+    def setUp(self):
+        super().setUp()
+        from asgard import memory
+
+        os.environ[memory.MEMORY_ENV] = os.path.join(self.root, "mem")
+        memory.add("게이트 불신 원칙", title="gate-rule", kind="insight")
+
+    def tearDown(self):
+        from asgard import memory
+
+        os.environ.pop(memory.MEMORY_ENV, None)
+        super().tearDown()
+
+    def test_identity_split(self):
+        h = FakeHeimdall(self.root, [])
+        self.assertIn("<memory-context", h.identity)  # 코디네이터 표면엔 주입
+        self.assertNotIn("<memory-context", h.delivery_identity)  # 딜리버리 표면은 무주입
+        self.assertEqual(h.identity, h.delivery_identity + h.memory_note)
+
+    def test_dispatch_child_system_is_memory_free(self):
+        captured = {}
+
+        class Capture(FakeHeimdall):
+            def _session(
+                self, system, extra_tools=None, handlers=None, quiet=False, role=None, model=None, readonly=False
+            ):
+                captured["system"] = system
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
+
+        h = Capture(self.root, [worker(root=self.root)])
+        h._dispatch_handler("s1", [])({"agent": "freyja", "task": "버튼 라벨 수정", "why": "w"})
+        self.assertNotIn("<memory-context", captured["system"])
+        self.assertIn("asgard-freyja", captured["system"])  # role 본문은 그대로
+
+
+class TestMemoryRoleMatrix(Base):
+    """감사 매트릭스 (26-07-15): DIRECT·Thinker = 스냅샷+회수, Worker/Verifier = 무주입,
+    provider allowlist([memory].providers)가 identity 주입을 게이트."""
+
+    def setUp(self):
+        super().setUp()
+        from asgard import memory
+
+        os.environ[memory.MEMORY_ENV] = os.path.join(self.root, "mem")
+        memory.add("Odin 은 pytest -q 스타일 검증을 선호한다", title="pytest-pref", kind="user")
+
+    def tearDown(self):
+        from asgard import memory
+
+        os.environ.pop(memory.MEMORY_ENV, None)
+        super().tearDown()
+
+    def test_thinker_injected_worker_verifier_not(self):
+        systems = []
+
+        class Cap(FakeHeimdall):
+            def _session(
+                self, system, extra_tools=None, handlers=None, quiet=False, role=None, model=None, readonly=False
+            ):
+                systems.append(system)
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
+
+        cls = {**CLS_WRITE, "task_class": "deep"}  # deep → THINKER 선행
+        h = Cap(self.root, [thinker(), worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=cls)
+        h.handle("w1.txt 만들어 — pytest 검증 선호 반영")
+        self.assertEqual([s.label for s in h.consumed], ["thinker", "worker", "verifier"])
+        self.assertIn("<memory-context", systems[0])  # Thinker 시스템 = 스냅샷
+        self.assertIn("<memory-recall", h.consumed[0].prompt)  # Thinker 과업 = 회수 블록
+        self.assertNotIn("<memory-context", systems[1])  # Worker 무주입
+        self.assertNotIn("<memory-recall", h.consumed[1].prompt)
+        self.assertNotIn("<memory-context", systems[2])  # Verifier 무주입 (게이트 무결성)
+        self.assertNotIn("<memory-recall", h.consumed[2].prompt)
+
+    def test_direct_prompt_gets_recall(self):
+        cls = {**CLS_WRITE, "write_expected": False, "criteria": []}
+        s = FakeSession(SessionResult(text="답변", stop_reason="end_turn"), label="direct")
+        h = FakeHeimdall(self.root, [s], cls=cls)
+        h.handle("pytest 검증 선호가 뭐였지?")
+        self.assertIn("<memory-recall", s.prompt)
+        self.assertIn("pytest-pref", s.prompt)
+
+    def test_provider_allowlist_blocks_identity(self):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "config.toml"), "w").write('[memory]\nproviders = ["ollama"]\n')
+        h = FakeHeimdall(self.root, [])  # 기본 provider = anthropic — allowlist 밖
+        self.assertEqual(h.memory_note, "")
+        self.assertNotIn("<memory-context", h.identity)
+        self.assertTrue(h._memory_snap)  # 스냅샷 자체는 존재 — 게이트가 막았을 뿐
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=1)

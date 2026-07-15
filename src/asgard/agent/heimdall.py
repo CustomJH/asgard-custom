@@ -387,7 +387,21 @@ class Heimdall:
         from ..lagom import note as _lagom_note
 
         self.lagom = _lagom_note(root)
-        self.identity = _identity(root) + self.lagom
+        # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더 (hermes frozen
+        # snapshot: 세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
+        # 주입 매트릭스 (감사 26-07-15): DIRECT(identity)·Thinker = 스냅샷+회수, Worker =
+        # Thinker 가 계획에 담은 요약만(직접 접근 없음), Verifier/딜리버리(loki 포함) = 무주입.
+        # provider 게이트: inject_allowed — 킬스위치 + [memory].providers allowlist.
+        from ..memory import inject_allowed as _mem_allowed
+        from ..memory import snapshot_note as _memory_note
+
+        self._memory_snap = _memory_note()  # 동결 원본 — 역할별 게이트는 아래에서
+        self.memory_note = self._memory_snap if _mem_allowed(rp.profile.name) else ""
+        self._mem_allowed = _mem_allowed
+        # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/loki)은 코디네이터가 아니다.
+        # 특히 loki 는 Verifier 의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
+        self.delivery_identity = _identity(root) + self.lagom
+        self.identity = self.delivery_identity + self.memory_note
         self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
         self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
         self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
@@ -566,8 +580,18 @@ class Heimdall:
                 ),
             )
             # dispatch 툴 미제공 = 재위임 불가. 모델은 딜리버리 티어 (freyja/thor=standard, loki=fast)
+            system = _DELIVERY[agent] + "\n\n" + self.delivery_identity
+            if agent == "freyja":
+                # 네이티브엔 파일 스킬 로더가 없다 — task 매칭 전용 스킬 본문을 system 에 직접 주입
+                # (0-LLM 키워드 리졸버, 무매칭 = role 본문만으로 진행)
+                from ..templates.freyja import resolve_freyja_skills
+
+                skills = resolve_freyja_skills(f"{task} {why}")
+                if skills:
+                    system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
+                    self.on_text(f"  {ui.dim('⬢ 스킬 주입 — ' + ', '.join(n for n, _ in skills))}\n")
             child = self._session(
-                _DELIVERY[agent] + "\n\n" + self.identity,
+                system,
                 model=self._delivery_model(agent),
                 readonly=agent == "loki",  # loki = read-only 반례 탐색 — 도구로 강제
             )
@@ -811,14 +835,28 @@ class Heimdall:
                     )
                 else:
                     prompt = f"과업: {request}"
+                # 메모리 주입 (Thinker 한정) — 스냅샷(카탈로그)은 시스템에, 요청 기반 회수는
+                # 과업 프롬프트에. 게이트는 이 역할이 실제로 붙는 provider 기준 (배치 승격 포함).
+                thinker_mem = self._memory_snap if self._mem_allowed(rrp.profile.name) else ""
+                if thinker_mem:
+                    from ..memory import recall_note as _recall
 
-                def mk(sr=sess_role, m=model):
+                    prompt += _recall(request)
+
+                def mk(sr=sess_role, m=model, mem=thinker_mem):
                     return self._session(
-                        _role_prompt("asgard-thinker.md") + self.lagom, role=sr, model=m, readonly=True
+                        _role_prompt("asgard-thinker.md") + self.lagom + mem, role=sr, model=m, readonly=True
                     )
 
                 fb = (
-                    (lambda: self._session(_role_prompt("asgard-thinker.md") + self.lagom, readonly=True))
+                    (
+                        lambda: self._session(
+                            _role_prompt("asgard-thinker.md")
+                            + self.lagom
+                            + (self._memory_snap if self._mem_allowed(self.rp.profile.name) else ""),
+                            readonly=True,
+                        )
+                    )
                     if rrp is not self.rp
                     else None
                 )
@@ -1038,7 +1076,13 @@ class Heimdall:
         # REPL 턴 간 대화 맥락 — 직전 문답 요약을 앞에 붙인다 (후속 질문 "그건 왜?" 가 성립하게).
         # Trinity 경로엔 안 붙인다 — write 과업은 요청+계획이 맥락의 전부여야 한다 (Canon 7 범위 존중).
         ctx = "".join(f"[이전 문답]\nOdin: {q}\n응답: {a}\n\n" for q, a in self.history[-3:])
-        r = self._session(self.identity).run(ctx + request if ctx else request)
+        # 요청 기반 zero-LLM 회수 (감사 권고) — 카탈로그(identity)와 별개로 관련 페이지를 결정론 주입.
+        recall = ""
+        if self.memory_note:
+            from ..memory import recall_note as _recall
+
+            recall = _recall(request)
+        r = self._session(self.identity).run((ctx + request if ctx else request) + recall)
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
         self.history = (self.history + [(request, r.text[:500])])[-6:]
         if r.writes or self._worktree_dirty() != before:

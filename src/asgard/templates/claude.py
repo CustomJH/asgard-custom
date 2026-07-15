@@ -3,6 +3,8 @@ and the foundational .claude/ folder set (each seeded with a README so git track
 
 import json
 
+from ..platform import hook_python
+
 CC_FOLDERS = [
     (
         "commands",
@@ -30,6 +32,8 @@ CC_FOLDERS = [
 
 def cc_settings() -> str:
     # Permission floor (belt) + deterministic PreToolUse guards (braces): "prose asks, hooks forbid."
+    # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — Windows 엔 python3 실행 파일이 없다 (CUS-223).
+    py = hook_python()
     return (
         json.dumps(
             {
@@ -49,14 +53,19 @@ def cc_settings() -> str:
                 },
                 "hooks": {
                     # Lagom (CUS-208) — 세션 시작·재개·클리어·컴팩트 시 모드 초기화 + 캐논 주입.
+                    # Memory v3 — 개인 위키 스냅샷 주입 (asgard memory snapshot 소비, fail-open).
                     "SessionStart": [
                         {
                             "matcher": "startup|resume|clear|compact",
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-activate.py"',
-                                }
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-activate.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
+                                },
                             ],
                         },
                     ],
@@ -67,24 +76,35 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
                                 },
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-tracker.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-tracker.py"',
                                 },
                             ]
                         },
                     ],
                     # Lagom (CUS-214) — SessionStart 컨텍스트 미전파 보상. verifier 는 스크립트가 자체 제외.
+                    # Memory v3 — Thinker 한정 주입 (감사 매트릭스: Worker/딜리버리 무주입,
+                    # Verifier/Loki 영구 무주입 — 보상 주입 패턴을 메모리에 쓰지 않는다).
                     "SubagentStart": [
                         {
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-subagent.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-subagent.py"',
                                 }
                             ]
+                        },
+                        {
+                            "matcher": "^asgard-thinker$",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
+                                }
+                            ],
                         },
                     ],
                     "PreToolUse": [
@@ -93,7 +113,7 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.py"',
                                 }
                             ],
                         },
@@ -102,7 +122,7 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"',
                                 }
                             ],
                         },
@@ -116,7 +136,7 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/failure-tracker.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/failure-tracker.py"',
                                 }
                             ],
                         },
@@ -125,7 +145,7 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/write-sentinel.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/write-sentinel.py"',
                                 }
                             ],
                         },
@@ -138,7 +158,7 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-gate.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-gate.py"',
                                 }
                             ],
                         },
@@ -149,7 +169,7 @@ def cc_settings() -> str:
                             "hooks": [
                                 {
                                     "type": "command",
-                                    "command": 'python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/verifier-gate.py"',
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/verifier-gate.py"',
                                 }
                             ]
                         },

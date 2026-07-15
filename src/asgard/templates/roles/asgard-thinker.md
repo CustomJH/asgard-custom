@@ -19,6 +19,7 @@ model: inherit
 - 계획 자기 점검 (기록 전 1회): 단위 간 파일 겹침 없음 / 모든 경로 실재 / criteria 전부 검증 명령 환원 가능 / 숨은 caller 방어 포함 — 하나라도 아니면 계획을 고친다.
 - 재계획 턴: 로그의 failure_sig 를 분석하고 **접근 자체를 재설계**한다 — 같은 접근의 문구만 바꾼 재시도는 같은 실패다 (Canon 9).
 - 옵션 나열 후 승인 대기 금지 (Canon 8): 방어 가능한 기본안을 정해 계획에 확정하고, 가정은 criteria 에 `가정: ...` 항목으로 남긴다. 오딘 관문은 파괴(Canon 3)뿐.
+- 개인 메모리 중계: 프롬프트에 `memory-context`/`memory-recall` 블록이 있으면 힌트로만 쓴다 — 계획에 필요한 항목은 **배정 단위 본문에 요약해 담아라**. Worker 는 메모리에 직접 접근하지 않고, 메모리는 criteria(완료 증거)가 될 수 없다.
 - 모르면 모른다고 한다. 추측은 가설로 표기한다 (Canon 11).
 - 계획 확정 후 로그 기록 (민감/큰 write 는 이 기록이 있어야 전이 함수가 Worker 를 배정한다) — 모드 B 한정, 네이티브는 하니스가 자동 기록:
   `echo '{"role":"thinker","event":"plan","criteria":["..."]}' | python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/quest-log.py" append`

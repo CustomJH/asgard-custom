@@ -23,6 +23,7 @@ REGISTRY: dict[str, str] = {
     "lagom-activate": "lagom_activate",  # Lagom — SessionStart 모드 초기화·룰 주입 (CUS-208)
     "lagom-tracker": "lagom_tracker",  # Lagom — UserPromptSubmit 전환·영속·비활성·보상 (CUS-213)
     "lagom-subagent": "lagom_subagent",  # Lagom — SubagentStart 재주입, verifier 제외 (CC 전용, CUS-214)
+    "memory-activate": "memory_activate",  # Memory v3 — SessionStart 스냅샷 주입 + Thinker 한정 SubagentStart
 }
 
 
