@@ -57,7 +57,10 @@ _MEM_SUB = {
     "remove": "delete a page",
     "merge": "absorb one page into another",
     "snapshot": "print the session injection snapshot",
+    "recall": "print query-relevant memory context",
     "path": "print the memory directory",
+    "connect": "link project to the shared memory server",
+    "mcp": "stdio MCP bridge (shared memory)",
 }
 
 # ── bash ──────────────────────────────────────────────────────────────────────

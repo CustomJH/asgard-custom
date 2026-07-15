@@ -30,16 +30,15 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
-    pol = os.path.join(root, ".asgard", "trinity-policy.json")
     pol_ok, detail = False, "missing"
-    try:
-        _json.load(open(pol))
-        pol_ok, detail = True, pol
-    except FileNotFoundError:
-        pass
+    try:  # 통합 설정(trinity_policy 섹션) 우선, 구 trinity-policy.json 폴백 (settings.load_project)
+        from ..settings import load_project
+
+        if isinstance(load_project(root).get("trinity_policy"), dict):
+            pol_ok, detail = True, "asgard-setting-project.json (trinity_policy)"
     except Exception:
-        detail = "unparseable JSON"
-    checks.append({"name": "trinity-policy.json", "ok": pol_ok, "detail": detail, "fix": fix})
+        detail = "unparseable settings"
+    checks.append({"name": "trinity policy", "ok": pol_ok, "detail": detail, "fix": fix})
     agents = [fname for fname, _ in ROLE_AGENTS]  # 역할 3종 + 딜리버리 계층 — 라이브러리가 소스
     missing = [a for a in agents if not os.path.exists(os.path.join(root, ".claude", "agents", a))]
     checks.append(
@@ -94,26 +93,64 @@ def _trinity_checks(root: str) -> list[dict]:
         )
     except Exception:
         pass
-    # Memory v3 — CC 배선(훅 파일 + SessionStart 배선) 단선 탐지 (독립 리뷰 지적: doctor 침묵 금지).
+    # Memory v3 — CC 배선(훅 + snapshot/recall + 사용 skill) 단선 탐지.
     # .claude 가 있는 프로젝트만 — 배선 자체가 CC 스캐폴드 소속. 개인 위키 건강은 memory lint 몫.
     if os.path.isdir(os.path.join(root, ".claude")):
         hook_ok = os.path.exists(os.path.join(root, ".claude", "hooks", "memory-activate.py"))
-        wired = False
+        snapshot_wired = recall_wired = False
+        skill_ok = os.path.exists(os.path.join(root, ".claude", "skills", "asgard-memory", "SKILL.md"))
         try:
             settings = _json.load(open(os.path.join(root, ".claude", "settings.json")))
-            wired = "memory-activate" in _json.dumps(settings.get("hooks", {}).get("SessionStart", []))
+            hooks = settings.get("hooks", {})
+            snapshot_wired = "memory-activate" in _json.dumps(hooks.get("SessionStart", []))
+            recall_wired = "memory-activate" in _json.dumps(hooks.get("UserPromptSubmit", []))
         except Exception:
             pass
+        ok = hook_ok and snapshot_wired and recall_wired and skill_ok
+        missing = []
+        if not hook_ok:
+            missing.append("hook file")
+        if not snapshot_wired:
+            missing.append("SessionStart")
+        if not recall_wired:
+            missing.append("UserPromptSubmit")
+        if not skill_ok:
+            missing.append("asgard-memory skill")
         checks.append(
             {
                 "name": "memory wiring (CC)",
-                "ok": hook_ok and wired,
-                "detail": "wired"
-                if (hook_ok and wired)
-                else ("hook file missing" if not hook_ok else "SessionStart 미배선"),
+                "ok": ok,
+                "detail": "wired" if ok else "missing: " + ", ".join(missing),
                 "fix": fix,
             }
         )
+    # 공유 메모리 서버 (CUS-236) — memory-server.json 있는 프로젝트만, 도달성 advisory.
+    try:
+        from ..memory_bridge import find_config
+
+        found = find_config(root)
+        if found:
+            _, mcfg = found
+            reachable = False
+            try:
+                import urllib.request
+
+                urllib.request.urlopen(f"{mcfg['server']}/openapi.json", timeout=3)
+                reachable = True
+            except Exception:
+                pass
+            checks.append(
+                {
+                    "name": "shared memory server",
+                    "ok": reachable,
+                    "detail": f"bank={mcfg['bank']} @ {mcfg['server']}" + ("" if reachable else " — unreachable"),
+                    "fix": ""
+                    if reachable
+                    else "서버 기동 확인 (docker/asgard-common-memory) 또는 asgard memory connect 재설정",
+                }
+            )
+    except Exception:
+        pass
     # 코드베이스 지도 — 유령 엔트리(디스크에 없는 경로) 탐지 (지도 문법 3: 실재만 기재).
     # INDEX.md 는 규칙 문서(예시 엔트리 포함)라 제외. 영역 파일이 아직 없는 건 정상 (fog-of-war).
     mdir = os.path.join(root, ".asgard", "map")
@@ -205,7 +242,8 @@ def _trinity_checks(root: str) -> list[dict]:
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
     py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처) — CUS-224
-    py = on_path(py_cmd)
+    py = on_path(py_cmd.split()[0])  # uv 폴백이면 "uv run --no-project python" — 첫 토큰만 PATH 조회
+    uv = on_path("uv")
     path_fix = (
         "add the uv tool dir to PATH — run: uv tool update-shell, then restart the terminal"
         if sys.platform == "win32"
@@ -223,6 +261,12 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
             "ok": bool(py),
             "detail": py or "not found",
             "fix": f"Canon hooks run via {py_cmd} — https://www.python.org/downloads/",
+        },
+        {
+            "name": "uv on PATH",
+            "ok": bool(uv),
+            "detail": uv or "not found",
+            "fix": "install uv — https://astral.sh/uv (asgard update · 훅 인터프리터 폴백 · uv 프로젝트 베이스라인에 필요)",
         },
     ]
     checks += _trinity_checks(os.getcwd())

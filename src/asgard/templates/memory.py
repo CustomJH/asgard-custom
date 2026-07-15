@@ -27,9 +27,11 @@ asgard memory show <slug>               # 페이지 전문
 asgard memory ingest "<자립적인 사실 한 건>" --kind <note|user|decision|insight|reference|feedback>
 ```
 
-1. ingest 가 계획(create / 기존 페이지 merge)을 출력한다
+1. ingest 가 계획(create / 기존 페이지 merge)과 `approval-id`를 출력한다
 2. 계획을 사용자에게 보여주고 승인을 받는다 (ask-before-save)
-3. 승인 시에만 `--yes` 로 재실행한다 — 계획이 바뀌면(stale plan 오류) 처음부터 다시
+3. 승인 시에만 **같은 본문·kind와 ID**로 재실행한다:
+   `asgard memory ingest "<동일 본문>" --kind <동일 kind> --yes --plan-id <approval-id>`
+4. ID는 승인된 action·target·revision에 묶여 1회만 소비된다. stale 오류면 처음부터 다시 계획한다
 
 ## 불변식
 

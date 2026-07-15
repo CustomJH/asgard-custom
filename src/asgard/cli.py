@@ -168,10 +168,11 @@ def memory_ingest(
     text: str = typer.Argument(...),
     kind: str = typer.Option("note", "--kind"),
     yes: bool = typer.Option(False, "--yes", "-y", help="skip the save confirmation"),
+    plan_id: str = typer.Option(None, "--plan-id", help="execute the exact non-interactive plan previously approved"),
 ) -> None:
     from .commands.memory import run_ingest
 
-    raise typer.Exit(run_ingest(text, kind, yes))
+    raise typer.Exit(run_ingest(text, kind, yes, plan_id))
 
 
 @memory_app.command("query", help="search the wiki (FTS, zero-LLM; hits are usage-tracked)")
@@ -227,10 +228,22 @@ def memory_merge(
 
 
 @memory_app.command("snapshot", help="print the session injection snapshot (empty when disabled)")
-def memory_snapshot() -> None:
+def memory_snapshot(
+    provider: str = typer.Option(None, "--provider", help="injection surface/provider allowlist identity"),
+) -> None:
     from .commands.memory import run_snapshot
 
-    raise typer.Exit(run_snapshot())
+    raise typer.Exit(run_snapshot(provider))
+
+
+@memory_app.command("recall", help="print query-relevant memory context (empty when disabled/no match)")
+def memory_recall(
+    text: str = typer.Argument(...),
+    provider: str = typer.Option(None, "--provider", help="injection surface/provider allowlist identity"),
+) -> None:
+    from .commands.memory import run_recall
+
+    raise typer.Exit(run_recall(text, provider))
 
 
 @memory_app.command("path", help="print the memory directory")
@@ -238,6 +251,23 @@ def memory_path() -> None:
     from .commands.memory import run_path
 
     raise typer.Exit(run_path())
+
+
+@memory_app.command("connect", help="link this project to the shared memory server (.asgard/memory-server.json)")
+def memory_connect(
+    server: str = typer.Argument(..., help="server URL, e.g. http://172.16.30.58:8888"),
+    bank: str = typer.Option(None, "--bank", help="bank id (default: project directory name)"),
+) -> None:
+    from .commands.memory import run_connect
+
+    raise typer.Exit(run_connect(server, bank))
+
+
+@memory_app.command("mcp", help="stdio MCP bridge for the shared memory server (register once, user scope)")
+def memory_mcp() -> None:
+    from .commands.memory import run_mcp
+
+    raise typer.Exit(run_mcp())
 
 
 @app.command(help="run one task headless through the native Trinity loop (benches/CI)")

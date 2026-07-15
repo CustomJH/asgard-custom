@@ -82,6 +82,10 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-tracker.py"',
                                 },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
+                                },
                             ]
                         },
                     ],

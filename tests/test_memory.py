@@ -7,6 +7,7 @@ snapshot_note(동결 주입 + 예산 절단) / 주입 스캔 / 예산 하드거�
 """
 
 import os
+import re
 import shutil
 import sqlite3
 import tempfile
@@ -410,6 +411,13 @@ class TestRecallAndAllowlist(MemoryBase):
         self.assertIn("완료 증거 아님", note)
         self.assertEqual(memory.recall_note("전혀 무관한 주제어"), "")
 
+    def test_recall_handles_korean_particle_attached_to_keyword(self):
+        memory.add("orion catalog hint\nAutomatic recall token is RECALL-5531.", title="orion-detail")
+
+        note = memory.recall_note("orion에 관한 자동 회수 토큰만 알려줘")
+
+        self.assertIn("RECALL-5531", note)
+
     def test_recall_respects_kill_switch(self):
         memory.add("사실", title="fact")
         os.environ["ASGARD_MEMORY_INJECT"] = "off"
@@ -526,7 +534,84 @@ class TestCCWiring(MemoryBase):
 
         self.assertFalse(check()["ok"])  # 훅 파일 없음 → 단선 경고
         open(os.path.join(root, ".claude", "hooks", "memory-activate.py"), "w").write("# hook")
-        self.assertTrue(check()["ok"])  # 파일 + 배선 = 정상
+        self.assertFalse(check()["ok"])  # 요청별 recall + skill 아직 없음
+        open(os.path.join(root, ".claude", "settings.json"), "w").write(
+            j.dumps(
+                {
+                    "hooks": {
+                        "SessionStart": [{"hooks": [{"command": "memory-activate.py"}]}],
+                        "UserPromptSubmit": [{"hooks": [{"command": "memory-activate.py"}]}],
+                    }
+                }
+            )
+        )
+        os.makedirs(os.path.join(root, ".claude", "skills", "asgard-memory"), exist_ok=True)
+        open(os.path.join(root, ".claude", "skills", "asgard-memory", "SKILL.md"), "w").write("# memory")
+        self.assertTrue(check()["ok"])  # hook + snapshot + recall + skill = 정상
+
+    def test_cc_noninteractive_approval_executes_the_exact_saved_plan(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        runner = CliRunner()
+        text = "Lagom ultra CUS-218 full 100 percent success reason"
+        planned = runner.invoke(app, ["memory", "ingest", text, "--kind", "decision"])
+        self.assertEqual(planned.exit_code, 1)
+        approval = re.search(r"approval-id:\s*([0-9a-f]{64})", planned.stdout)
+        self.assertIsNotNone(approval)
+        assert approval is not None
+
+        memory.add("Lagom ultra CUS-218 full 100 percent success", title="lagom")
+        executed = runner.invoke(
+            app,
+            ["memory", "ingest", text, "--kind", "decision", "--yes", "--plan-id", approval.group(1)],
+        )
+
+        self.assertEqual(executed.exit_code, 0)
+        self.assertIn("created:", executed.stdout)
+        self.assertNotIn("merged: lagom", executed.stdout)
+        replay = runner.invoke(
+            app,
+            ["memory", "ingest", text, "--kind", "decision", "--yes", "--plan-id", approval.group(1)],
+        )
+        self.assertEqual(replay.exit_code, 1)
+
+    def test_cc_snapshot_honors_provider_allowlist(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        memory.add("CC provider gate secret", title="cc-provider-secret")
+        os.makedirs(os.path.join(self.tmp, ".asgard"), exist_ok=True)
+        open(os.path.join(self.tmp, ".asgard", "config.toml"), "w").write('[memory]\nproviders = ["ollama"]\n')
+
+        result = CliRunner().invoke(app, ["memory", "snapshot", "--provider", "claude-code"])
+
+        self.assertEqual(result.exit_code, 0)
+        self.assertNotIn("cc-provider-secret", result.stdout)
+
+    def test_cc_user_prompt_submit_injects_query_recall(self):
+        import json as j
+
+        from asgard.templates.claude import cc_settings
+
+        settings = j.loads(cc_settings())
+        self.assertIn("memory-activate", j.dumps(settings["hooks"]["UserPromptSubmit"]))
+        bindir = os.path.join(self.tmp, "recall-bin")
+        os.makedirs(bindir, exist_ok=True)
+        fake = os.path.join(bindir, "asgard")
+        open(fake, "w").write(
+            '#!/bin/sh\n[ "$1" = memory ] && [ "$2" = recall ] && [ "$6" = alpha-773 ] '
+            '&& printf %s "<memory-recall>DETAIL</memory-recall>"\n'
+        )
+        os.chmod(fake, 0o755)
+
+        out = self._run_hook({"hook_event_name": "UserPromptSubmit", "prompt": "alpha-773"}, [bindir])
+
+        payload = j.loads(out)
+        self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
+        self.assertIn("<memory-recall>DETAIL</memory-recall>", payload["hookSpecificOutput"]["additionalContext"])
 
 
 def _json_dumps(payload: dict) -> str:
