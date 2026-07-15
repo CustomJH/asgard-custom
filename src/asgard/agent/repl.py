@@ -166,6 +166,8 @@ def _status_text(root: str, rp, usage: dict | None = None) -> str:
         ctx = usage.get("context") or 0  # 마지막 호출 컨텍스트 크기 — 창 % 는 이걸로
         pct = f" ({ctx / win * 100:.0f}%)" if win and ctx else ""  # 한도/컨텍스트 미상은 % 생략
         parts.append(f"↯ {tok / 1000:.1f}k{pct}")
+        if usage.get("cache_prompt"):  # 프롬프트 캐시 적중률 — read / (read+write+정가 입력)
+            parts.append(f"⚡ {usage.get('cache_read', 0) / usage['cache_prompt'] * 100:.0f}%")
     return "  ".join(parts)
 
 
@@ -248,7 +250,16 @@ def _pt_toolbar():
     if not ctx:
         return ""
     hd = ctx.get("heimdall")
-    usage = {"tokens": hd.total_tokens, "context": hd.last_context_tokens} if hd else None
+    usage = (
+        {
+            "tokens": hd.total_tokens,
+            "context": hd.last_context_tokens,
+            "cache_read": hd.cache_read_tokens,
+            "cache_prompt": hd.cache_prompt_tokens,
+        }
+        if hd
+        else None
+    )
     txt = _status_text(ctx["root"], ctx["rp"], usage)
     cls = "class:status-warn" if ctx["rp"].missing else "class:status"
     return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"), (cls, "  " + txt)]
@@ -366,7 +377,7 @@ class _Reconfigure(Exception):
 
 
 def _cmd_trinity(cmd: str, root: str, rp) -> None:
-    """/trinity — 역할별 배치 표시. '/trinity set' — 역할→provider 대화형 배치 (config.toml 저장)."""
+    """/trinity — 역할별 배치 표시. '/trinity set' — 역할→provider 대화형 배치 (asgard-setting-project.json 저장)."""
     from ..providers import PROVIDERS, resolve_trinity, save_config_section
 
     if cmd.split()[1:2] == ["set"]:
@@ -657,7 +668,16 @@ def run(root: str, rp) -> int:
         if _PT:  # 상태줄은 bottom_toolbar(입력창 아래)가 표시 — cursor-agent 식
             sys.stdout.write("\n")
         else:
-            usage = {"tokens": heimdall.total_tokens, "context": heimdall.last_context_tokens} if heimdall else None
+            usage = (
+                {
+                    "tokens": heimdall.total_tokens,
+                    "context": heimdall.last_context_tokens,
+                    "cache_read": heimdall.cache_read_tokens,
+                    "cache_prompt": heimdall.cache_prompt_tokens,
+                }
+                if heimdall
+                else None
+            )
             sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")
         try:
             req = prompt().strip()

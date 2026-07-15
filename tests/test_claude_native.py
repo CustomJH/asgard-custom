@@ -116,6 +116,7 @@ class TestTransport(_Sess):
         self.assertEqual(r.text, "world")  # anthropic 트랜스포트 계약 — 마지막 어시스턴트 텍스트
         self.assertEqual(r.tokens, 15)
         self.assertEqual(r.stop_reason, "end_turn")
+        self.assertEqual((r.cache_read_tokens, r.cache_write_tokens), (0, 0))  # 캐시 필드 부재 = 0
         # 옵션 계약 — 시스템 프롬프트·cwd·권한 모드·내장 툴 셋·스트리밍·bash 상한
         _, opt = calls[0]
         self.assertEqual(opt.system_prompt, "you are a test")
@@ -125,6 +126,28 @@ class TestTransport(_Sess):
         self.assertTrue(opt.include_partial_messages)
         self.assertEqual(opt.env["BASH_MAX_TIMEOUT_MS"], "120000")  # tools._TIMEOUT 패리티
         self.assertTrue(opt.strict_mcp_config)  # 유저/프로젝트 MCP 누출 차단 — Asgard 가 툴 표면 소유
+
+    def test_cache_usage_metered(self):
+        # Claude Code 가 자체 캐싱 — 계측 패리티: 캐시 적중분을 지출·적중률에 합산 (누락 시 전부 0 으로 보임)
+        script = [
+            [
+                AssistantMessage(content=[TextBlock(text="ok")], model="m"),
+                _result_msg(
+                    usage={
+                        "input_tokens": 20,
+                        "output_tokens": 5,
+                        "cache_read_input_tokens": 900,
+                        "cache_creation_input_tokens": 40,
+                    }
+                ),
+            ]
+        ]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("hi")
+        self.assertEqual(r.tokens, 20 + 5 + 900 + 40)
+        self.assertEqual((r.cache_read_tokens, r.cache_write_tokens, r.uncached_input_tokens), (900, 40, 20))
 
     def test_resume_on_second_turn(self):
         script = [[_result_msg(session_id="sid-42")], [_result_msg(session_id="sid-42")]]

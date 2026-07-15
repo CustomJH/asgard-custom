@@ -249,8 +249,16 @@ async def _run_async(sess, user_content: str, result) -> None:
                     _observe_result(sess, result, b, pending)
         elif isinstance(msg, ResultMessage):
             sess._claude_session_id = msg.session_id
+            # Claude Code 가 자체적으로 프롬프트 캐싱을 적용한다 — 주입 불필요, 계측만 패리티.
+            # 캐시 적중분은 input_tokens 에서 빠지므로 합산 안 하면 지출·적중률이 전부 누락된다.
             u = msg.usage or {}
-            result.tokens += (u.get("input_tokens") or 0) + (u.get("output_tokens") or 0)
+            inp = u.get("input_tokens") or 0
+            cr = u.get("cache_read_input_tokens") or 0
+            cw = u.get("cache_creation_input_tokens") or 0
+            result.tokens += inp + cr + cw + (u.get("output_tokens") or 0)
+            result.cache_read_tokens += cr
+            result.cache_write_tokens += cw
+            result.uncached_input_tokens += inp
             result.stop_reason = {
                 "success": "end_turn",
                 "error_max_turns": "max_iterations",

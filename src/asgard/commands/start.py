@@ -179,6 +179,8 @@ def run_prompt(
                 {
                     "result": result,
                     "tokens": h.total_tokens,
+                    "cache_read_tokens": h.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
+                    "cache_prompt_tokens": h.cache_prompt_tokens,
                     "wall_s": wall,
                     "provider": rp.profile.name,
                     "model": rp.model,

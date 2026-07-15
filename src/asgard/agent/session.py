@@ -33,8 +33,12 @@ class SessionResult:
     writes: list[str] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
     tokens: int = 0  # 이 세션 누적 토큰 (매 iteration input+output 합산 = 지출량) — status line 사용량
-    context_tokens: int = 0  # 마지막 API 호출의 input+output = 현재 컨텍스트 크기 — 창 % 는 이걸로
+    context_tokens: int = 0  # 마지막 API 호출의 전체 프롬프트+출력 = 현재 컨텍스트 크기 — 창 % 는 이걸로
     # (tokens 는 iteration 마다 전체 프롬프트를 재합산하므로 컨텍스트 창 대비 % 가 100 을 넘는다)
+    # 프롬프트 캐시 계측 (anthropic 트랜스포트) — read 는 ~0.1×, write 는 ~1.25× 과금
+    cache_read_tokens: int = 0  # 캐시에서 읽은 누적 입력 토큰
+    cache_write_tokens: int = 0  # 캐시에 쓴 누적 입력 토큰
+    uncached_input_tokens: int = 0  # 정가로 처리된 누적 입력 토큰 — 적중률 분모용
 
 
 def make_client(rp: ResolvedProvider):
@@ -138,6 +142,10 @@ class AgentSession:
         self.on_tokens = on_tokens
         self.max_iterations = max_iterations
         self.messages: list[dict] = []
+        # 프롬프트 캐싱 (anthropic 전용, 상시 기본) — config [cache] enabled/ttl, 세션 생성 시 1회 해석
+        from .prompt_cache import cache_settings
+
+        self.cache_enabled, self.cache_ttl = cache_settings(root)
 
     def _tool_line(self, sym: str, detail: str, secs: float | None = None) -> None:
         """cursor-agent 식 활동 라인 — ⬢ + 요약 + 소요시간 (완료 후 출력, 전부 흐리게)."""
@@ -236,15 +244,20 @@ class AgentSession:
             from ..i18n import t as _t
 
             self._maybe_prune(result)
+            system, messages = self.system, self.messages
+            if self.cache_enabled:  # 브레이크포인트 주입 — 원본 히스토리는 불변 (prompt_cache 참조)
+                from .prompt_cache import cached_request
+
+                system, messages = cached_request(self.system, self.messages, self.cache_ttl)
             self.on_status(_t("thinking"))
             t0, first = time.monotonic(), True
             with self.client.messages.stream(
                 model=self.rp.model,
                 max_tokens=32000,
-                system=self.system,
+                system=system,
                 thinking={"type": "adaptive"},
                 tools=self.tools,
-                messages=self.messages,
+                messages=messages,
             ) as stream:
                 for text in stream.text_stream:
                     if first:  # 첫 토큰 전 침묵 = thinking — 2s 이상이면 축약 라인
@@ -260,8 +273,16 @@ class AgentSession:
             result.stop_reason = resp.stop_reason or ""
             u = getattr(resp, "usage", None)
             if u:
-                result.context_tokens = (getattr(u, "input_tokens", 0) or 0) + (getattr(u, "output_tokens", 0) or 0)
+                # 캐시 적중분은 input_tokens 에서 빠진다 — 셋을 합쳐야 실제 컨텍스트 크기.
+                # 이걸 빼먹으면 캐싱 도입 후 창 80% 프룬 트리거가 과소계상으로 안 터진다.
+                inp = getattr(u, "input_tokens", 0) or 0
+                cr = getattr(u, "cache_read_input_tokens", 0) or 0
+                cw = getattr(u, "cache_creation_input_tokens", 0) or 0
+                result.context_tokens = inp + cr + cw + (getattr(u, "output_tokens", 0) or 0)
                 result.tokens += result.context_tokens
+                result.cache_read_tokens += cr
+                result.cache_write_tokens += cw
+                result.uncached_input_tokens += inp
             if resp.stop_reason == "max_tokens":
                 from .. import ui
 
@@ -289,16 +310,27 @@ class AgentSession:
         result = SessionResult(text="", stop_reason="")
         extra = dict(self.rp.profile.extra_body)  # provider 고유 (nvidia reasoning 등)
         sys_msg = [{"role": "system", "content": self.system}]
+        # 마커 주입은 실측 검증 조합만 (화이트리스트 — 미검증 provider 에 비표준 필드는 400 위험).
+        # OpenAI 자체는 자동 프리픽스 캐시라 마커 불요 — 계측(cached_tokens)은 아래 usage 에서 공통.
+        from .prompt_cache import openai_cache_markers_supported
+
+        inject = self.cache_enabled and openai_cache_markers_supported(self.rp.base_url, self.rp.model)
 
         from ..i18n import t as _t
 
         for _ in range(self.max_iterations):
             text_buf, calls, think_t0, finish = [], {}, None, None
             self._maybe_prune(result)
+            if inject:
+                from .prompt_cache import cached_openai_request
+
+                send_msgs = cached_openai_request(sys_msg, self.messages, self.cache_ttl)
+            else:
+                send_msgs = sys_msg + self.messages
             self.on_status(_t("thinking"))
             stream = self.client.chat.completions.create(
                 model=self.rp.model,
-                messages=sys_msg + self.messages,
+                messages=send_msgs,
                 tools=oai_tools or None,
                 max_tokens=16384,
                 stream=True,
@@ -310,6 +342,12 @@ class AgentSession:
                 if u:
                     result.context_tokens = getattr(u, "total_tokens", 0) or 0
                     result.tokens += result.context_tokens
+                    # OpenAI-와이어 캐시 계측 — 마커 주입 여부와 무관하게 리포트되면 집계
+                    # (OpenAI 자동 프리픽스 캐시·OpenRouter 전부 prompt_tokens_details.cached_tokens)
+                    det = getattr(u, "prompt_tokens_details", None)
+                    cr = (getattr(det, "cached_tokens", 0) or 0) if det else 0
+                    result.cache_read_tokens += cr
+                    result.uncached_input_tokens += max(0, (getattr(u, "prompt_tokens", 0) or 0) - cr)
                 if not chunk.choices:
                     continue
                 if chunk.choices[0].finish_reason:
