@@ -99,6 +99,18 @@ class TestRender(unittest.TestCase):
             self.assertIn("auto-clarity", body)
             self.assertIn("러너블 체크", body)
 
+    def test_style_contract_survives_every_mode(self):
+        """글 문체 조항 — 과장·용어 규율·구조 비례는 마커 없는 공통 본문, 전 모드 생존.
+        실측 근거: 임원-보고 미끼 프로브에서 무조항 캐논은 가치 선언·영문 장 제목·미정의
+        병기를 그대로 통과시켰다 (26-07-15)."""
+        for mode in ("lite", "full"):
+            body = render_lagom(mode)
+            self.assertIn("글 문체", body)
+            self.assertIn("과장 금지", body)
+            self.assertIn("용어 규율", body)
+            self.assertIn("내용 규모에 비례", body)
+            self.assertIn("새로 쓰는 글", body)  # 적용 범위 문장 — 원문 불변과의 경계
+
     def test_agents_md_carries_static_section(self):
         from asgard.templates import agents_md
 
@@ -106,6 +118,7 @@ class TestRender(unittest.TestCase):
         self.assertIn("asgard:lagom", txt)
         self.assertIn("stop lagom", txt)
         self.assertNotIn("__LAGOM__", txt)
+        self.assertIn("문체 계약", txt)  # Codex/Cursor 표면의 유일한 lagom 접점에도 문체 골자
 
 
 # ── resolve (CUS-207) — 2계층 + precedence ──────────────────────────────────────────
