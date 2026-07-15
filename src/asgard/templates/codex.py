@@ -2,6 +2,8 @@
 Python — Codex shares Claude Code's stdin schema) and native command rules (Starlark, node/python-free
 defense-in-depth)."""
 
+from ..platform import hook_python
+
 _CODEX_CONFIG = """\
 # Codex project config — overrides ~/.codex/config.toml, loaded only in trusted projects.
 # Docs: https://developers.openai.com/codex/config-reference · https://developers.openai.com/codex/hooks
@@ -22,7 +24,7 @@ matcher = "^Bash$"
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
-command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.py"'
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.py"'
 
 # Canon Law 9 (CUS-97) — soft 3-strike loop tracker. Codex PostToolUse carries tool_name + tool_response
 # (Claude's schema), so it runs the SAME failure-tracker.py and shares the .asgard/ state cross-tool.
@@ -31,7 +33,7 @@ matcher = ".*"
 
 [[hooks.PostToolUse.hooks]]
 type = "command"
-command = 'python3 "$(git rev-parse --show-toplevel)/.codex/hooks/failure-tracker.py"'
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/failure-tracker.py"'
 """
 
 _CODEX_RULES = """\
@@ -48,7 +50,8 @@ prefix_rule(pattern=["git", "rebase"], decision="prompt", justification="Asgard 
 
 
 def codex_config() -> str:
-    return _CODEX_CONFIG
+    # 인터프리터만 플랫폼 분기 (CUS-223) — $(git rev-parse) 명령치환은 Codex 훅 셸 계약을 따른다.
+    return _CODEX_CONFIG.format(py=hook_python())
 
 
 def codex_rules() -> str:

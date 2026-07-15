@@ -4,6 +4,8 @@ emits config that points at them."""
 
 import json
 
+from ..platform import hook_python
+
 _CURSOR_RULE = """\
 ---
 description: Canonical project instructions (Asgard)
@@ -31,14 +33,16 @@ def cursor_rule() -> str:
 
 def cursor_hooks_json() -> str:
     # Wires the beforeShellExecution guard (Law 3/6) + postToolUseFailure tracker (Law 9). Project
-    # hooks run from repo root, need python3, load only in a trusted workspace (cursor.com/docs/hooks).
+    # hooks run from repo root, need a python on PATH (python3 — Windows: python/py, CUS-223),
+    # load only in a trusted workspace (cursor.com/docs/hooks).
+    py = hook_python()
     return (
         json.dumps(
             {
                 "version": 1,
                 "hooks": {
-                    "beforeShellExecution": [{"command": "python3 .cursor/hooks/git-guard.py"}],
-                    "postToolUseFailure": [{"command": "python3 .cursor/hooks/failure-tracker.py"}],
+                    "beforeShellExecution": [{"command": f"{py} .cursor/hooks/git-guard.py"}],
+                    "postToolUseFailure": [{"command": f"{py} .cursor/hooks/failure-tracker.py"}],
                 },
             },
             indent=2,

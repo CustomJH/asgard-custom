@@ -7,7 +7,7 @@ import os
 import sys
 
 from .. import __version__, ui
-from ..platform import on_path
+from ..platform import hook_python, on_path
 from ..templates.roles import ROLE_AGENTS
 
 
@@ -184,19 +184,25 @@ def _trinity_checks(root: str) -> list[dict]:
 
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
-    py = on_path("python3")
+    py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처) — CUS-224
+    py = on_path(py_cmd)
+    path_fix = (
+        "add the uv tool dir to PATH — run: uv tool update-shell, then restart the terminal"
+        if sys.platform == "win32"
+        else 'add the install dir to PATH, e.g. export PATH="$HOME/.local/bin:$PATH"'
+    )
     checks: list[dict] = [
         {
             "name": "asgard on PATH",
             "ok": bool(asgard),
             "detail": asgard or "not found",
-            "fix": 'add the install dir to PATH, e.g. export PATH="$HOME/.local/bin:$PATH"',
+            "fix": path_fix,
         },
         {
-            "name": "python3 (hooks)",
+            "name": f"{py_cmd} (hooks)",
             "ok": bool(py),
             "detail": py or "not found",
-            "fix": "Canon hooks run via python3 — https://www.python.org/downloads/",
+            "fix": f"Canon hooks run via {py_cmd} — https://www.python.org/downloads/",
         },
     ]
     checks += _trinity_checks(os.getcwd())

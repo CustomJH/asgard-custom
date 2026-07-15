@@ -8,6 +8,12 @@ Make anything, your way — a portable setup system, shipped as a self-contained
 curl -fsSL https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.sh | bash
 ```
 
+Windows (PowerShell):
+
+```powershell
+irm https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.ps1 | iex
+```
+
 Installs `asgard` to `~/.local/bin`. Then:
 
 ```bash

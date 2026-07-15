@@ -21,6 +21,7 @@ from __future__ import annotations
 import asyncio
 import os
 import shutil
+import sys
 import threading
 import time
 from dataclasses import dataclass
@@ -78,7 +79,9 @@ def detect_auth() -> tuple[str, str]:
     cred = os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json")
     if os.path.exists(cred):
         return "keychain", "~/.claude/.credentials.json (claude /login)"
-    if os.uname().sysname == "Darwin":  # macOS 는 keychain 저장 — 존재 여부만 (값 조회 금지)
+    if (
+        sys.platform == "darwin"
+    ):  # macOS 는 keychain 저장 — 존재 여부만 (값 조회 금지). os.uname 은 유닉스 전용이라 금지 (CUS-221)
         import subprocess
 
         p = subprocess.run(

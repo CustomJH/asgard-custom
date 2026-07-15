@@ -139,7 +139,29 @@ def save_credential(provider: str, api_key: str, base_url: str = "", model: str 
     fd = os.open(CRED_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         json.dump(creds, f, indent=2)
-    os.chmod(CRED_PATH, 0o600)  # 기존 파일이었어도 강제
+    _lock_down(CRED_PATH)
+
+
+def _lock_down(path: str) -> None:
+    """키 파일을 소유자 단독 접근으로 — POSIX 는 chmod 600, Windows 는 POSIX 비트가 무시되므로
+    icacls 로 상속 차단 + 현재 사용자 단독 ACL (best-effort, 실패해도 저장은 유효 — CUS-225)."""
+    if os.name != "nt":
+        os.chmod(path, 0o600)  # 기존 파일이었어도 강제
+        return
+    import subprocess
+
+    user = os.environ.get("USERNAME", "")
+    if not user:
+        return
+    try:
+        subprocess.run(
+            ["icacls", path, "/inheritance:r", "/grant:r", f"{user}:F"],
+            capture_output=True,
+            timeout=10,
+            check=False,
+        )
+    except Exception:
+        pass
 
 
 def _read_toml(path: str) -> dict:
