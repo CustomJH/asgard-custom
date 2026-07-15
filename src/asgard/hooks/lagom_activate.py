@@ -2,7 +2,7 @@
 # Asgard lagom-activate — SessionStart 모드 초기화 + 룰 주입 (CUS-208).
 #
 # 배선 매처: startup|resume|clear|compact — compact/clear 는 컨텍스트 소실 지점이라 재주입이
-# 필수다. 동작: 세션 런타임 상태(.asgard/lagom-mode)가 있으면 그 값(세션 중 전환 보존),
+# 필수다. 동작: 세션 런타임 상태(.asgard/lagom-mode.json)가 있으면 그 값(세션 중 전환 보존),
 # 없으면 영속 기본값(LAGOM_MODE env > 프로젝트 [lagom].mode > 글로벌 > full)을 기록한다.
 # off = 무주입 즉시 종료. 활성 = 훅 옆 lagom-canon.md 를 모드 필터해 stdout 으로 주입
 # (SessionStart stdout + exit 0 = 컨텍스트 주입, unattended-context 와 동일 스키마).
@@ -25,18 +25,58 @@ def norm(m):
     return m if m in MODES else None
 
 
+def read_state(root):
+    for path, structured in (
+        (os.path.join(root, ".asgard", "state", "lagom-mode.json"), True),  # 신규 — state/ 격리
+        (os.path.join(root, ".asgard", "lagom-mode.json"), True),  # 레거시 0.4.x
+        (os.path.join(root, ".asgard", "lagom-mode"), False),  # 레거시 0.4.1 이하
+    ):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return norm(json.load(f).get("mode") if structured else f.read())
+        except Exception:
+            continue
+    return None
+
+
+def write_state(root, mode):
+    state = os.path.join(root, ".asgard", "state", "lagom-mode.json")
+    os.makedirs(os.path.dirname(state), exist_ok=True)
+    with open(state, "w", encoding="utf-8") as f:
+        json.dump({"mode": mode}, f, ensure_ascii=False, indent=2)
+        f.write("\n")
+    for old in ("lagom-mode.json", "lagom-mode"):  # 레거시 이관 완료 (이원화 방지)
+        try:
+            os.remove(os.path.join(root, ".asgard", old))
+        except FileNotFoundError:
+            pass
+
+
 def config_mode(root):
     """영속 기본값 — env > 프로젝트 > 글로벌 > full. asgard/lagom.py default_mode 와 동일 유지.
     tomllib 은 3.11+ 라 정규식 파싱 (config 는 save_config_section 이 쓰는 단순 TOML)."""
     m = norm(os.environ.get("LAGOM_MODE"))
     if m:
         return m
-    for path in (
-        os.path.join(root, ".asgard", "config.toml"),
-        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
+    home = os.path.expanduser("~")
+    for scope_json, scope_toml in (
+        (os.path.join(root, ".asgard", "asgard-setting-project.json"), os.path.join(root, ".asgard", "config.toml")),
+        (os.path.join(home, ".asgard", "asgard-setting-global.json"), os.path.join(home, ".asgard", "config.toml")),
     ):
+        # 신규 JSON 설정이 그 스코프의 정본 — 있으면 구 TOML 미참조 (settings.py 와 동일 유지)
+        cfg = None
         try:
-            txt = open(path, encoding="utf-8").read()
+            with open(scope_json, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = None
+        if isinstance(cfg, dict):
+            m = norm((cfg.get("lagom") or {}).get("mode"))
+            if m:
+                return m
+            continue
+        try:
+            txt = open(scope_toml, encoding="utf-8").read()
         except Exception:
             continue
         sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
@@ -66,17 +106,11 @@ def main():
         data = {}
     try:
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        state = os.path.join(root, ".asgard", "lagom-mode")
-        mode = None
-        try:
-            mode = norm(open(state, encoding="utf-8").read())  # 세션 전환값이 기본값을 이긴다
-        except Exception:
-            pass
+        mode = read_state(root)  # 세션 전환값이 기본값을 이긴다
         if mode is None:
             mode = config_mode(root)
             try:  # best-effort — 기록 실패해도 주입은 진행
-                os.makedirs(os.path.dirname(state), exist_ok=True)
-                open(state, "w", encoding="utf-8").write(mode + "\n")
+                write_state(root, mode)
             except Exception:
                 pass
         if mode == "off":

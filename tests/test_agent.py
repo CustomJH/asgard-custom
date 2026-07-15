@@ -238,7 +238,7 @@ class TestLedgerWiring(Base):
     def test_record_writes_merges(self):
         _record_writes(self.root, "s", ["a.py"])
         _record_writes(self.root, "s", ["a.py", "b.py"])
-        data = json.load(open(os.path.join(self.root, ".asgard", "writes-s.json")))
+        data = json.load(open(os.path.join(self.root, ".asgard", "state", "writes-s.json")))
         self.assertEqual(data, ["a.py", "b.py"])
 
 
@@ -494,6 +494,8 @@ class TestRunPrompt(unittest.TestCase):
         class FakeHeimdall:
             def __init__(self, rp, root, on_text, on_status=None):
                 self.total_tokens = tokens
+                self.cache_read_tokens = 0  # 프롬프트 캐시 계측 — json 출력 계약
+                self.cache_prompt_tokens = 0
                 on_text("stream-line\n")
 
             def handle(self, prompt):

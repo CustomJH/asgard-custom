@@ -1,4 +1,4 @@
-"""Trinity policy template (CUS-119/120): trinity-policy.json.
+"""Trinity policy template (CUS-119/120) — 통합 설정(asgard-setting-project.json)의 trinity_policy 섹션.
 
 역할 서브에이전트 3종은 `asgard.templates.roles` 의 실제 .md 파일로 관리한다 (훅과 같은 패턴 — 문자열 임베딩
 금지). 결정 테이블 로직은 quest_log.py(전이 함수)가 유일한 출처고, 이 정책 파일은 임계값·경로 패턴
@@ -66,3 +66,9 @@ _POLICY = {
 
 def trinity_policy() -> str:
     return json.dumps(_POLICY, ensure_ascii=False, indent=2) + "\n"
+
+
+def project_settings() -> str:
+    """asgard-setting-project.json 초기 스캐폴드 — trinity_policy 섹션만 시드.
+    다른 섹션(provider/lagom/memory …)은 명령이 필요할 때 병합 기록한다 (사다리 1단)."""
+    return json.dumps({"trinity_policy": _POLICY}, ensure_ascii=False, indent=2) + "\n"

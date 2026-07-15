@@ -60,7 +60,7 @@ write 과업은 트리니티 순환으로 처리한다: **Thinker(전략) → Wo
 
 **Verifier 독립성 (모드 A)** — Verifier phase 에서는 Worker 의 자기 해설을 무시한다: 요청+criteria+diff 만 보고, 실패 반례를 먼저 찾고, 검증 명령을 직접 실행해 cmd/exit_code 를 기록한다. 민감 경로(hooks/정책/설치/보안/CI)·큰 diff 는 `--level full` 필수.
 
-정책·임계값: `.asgard/trinity-policy.json` (task-class 는 budget prior 일 뿐 — 배정은 매 턴 전이 함수).
+정책·임계값: `.asgard/asgard-setting-project.json` 의 `trinity_policy` 섹션 (task-class 는 budget prior 일 뿐 — 배정은 매 턴 전이 함수).
 <!-- <<< asgard:trinity <<< -->
 
 <!-- >>> asgard:map >>> -->

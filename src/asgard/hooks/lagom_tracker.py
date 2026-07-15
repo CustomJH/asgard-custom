@@ -29,17 +29,44 @@ def norm(m):
     return m if m in MODES else None
 
 
+def read_state(root):
+    for path, structured in (
+        (os.path.join(root, ".asgard", "state", "lagom-mode.json"), True),  # 신규 — state/ 격리
+        (os.path.join(root, ".asgard", "lagom-mode.json"), True),  # 레거시 0.4.x
+        (os.path.join(root, ".asgard", "lagom-mode"), False),  # 레거시 0.4.1 이하
+    ):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return norm(json.load(f).get("mode") if structured else f.read())
+        except Exception:
+            continue
+    return None
+
+
 def config_mode(root):
     """lagom_activate.py config_mode 와 동일 유지 (단일 출처 원칙: asgard/lagom.py)."""
     m = norm(os.environ.get("LAGOM_MODE"))
     if m:
         return m
-    for path in (
-        os.path.join(root, ".asgard", "config.toml"),
-        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
+    home = os.path.expanduser("~")
+    for scope_json, scope_toml in (
+        (os.path.join(root, ".asgard", "asgard-setting-project.json"), os.path.join(root, ".asgard", "config.toml")),
+        (os.path.join(home, ".asgard", "asgard-setting-global.json"), os.path.join(home, ".asgard", "config.toml")),
     ):
+        # 신규 JSON 설정이 그 스코프의 정본 — 있으면 구 TOML 미참조 (settings.py 와 동일 유지)
+        cfg = None
         try:
-            txt = open(path, encoding="utf-8").read()
+            with open(scope_json, encoding="utf-8") as f:
+                cfg = json.load(f)
+        except Exception:
+            cfg = None
+        if isinstance(cfg, dict):
+            m = norm((cfg.get("lagom") or {}).get("mode"))
+            if m:
+                return m
+            continue
+        try:
+            txt = open(scope_toml, encoding="utf-8").read()
         except Exception:
             continue
         sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
@@ -64,31 +91,53 @@ def render(canon, mode):
 
 def write_state(root, mode):
     try:
-        state = os.path.join(root, ".asgard", "lagom-mode")
+        state = os.path.join(root, ".asgard", "state", "lagom-mode.json")
         os.makedirs(os.path.dirname(state), exist_ok=True)
-        open(state, "w", encoding="utf-8").write(mode + "\n")
+        with open(state, "w", encoding="utf-8") as f:
+            json.dump({"mode": mode}, f, ensure_ascii=False, indent=2)
+            f.write("\n")
+        for old in ("lagom-mode.json", "lagom-mode"):  # 레거시 이관 완료 (이원화 방지)
+            try:
+                os.remove(os.path.join(root, ".asgard", old))
+            except FileNotFoundError:
+                pass
         return True
     except Exception:
         return False
 
 
 def persist_default(root, mode):
-    """프로젝트 [lagom].mode 최소 편집 — providers.save_config_section 과 동일 유지 (단일 출처 원칙).
-    다른 섹션·주석 보존, [lagom] 블록만 교체."""
+    """프로젝트 lagom.mode 영속 — asgard-setting-project.json 병합 편집 (settings.save_project 와
+    동일 유지, 단일 출처 원칙). 미이관 프로젝트(신규 파일 없음 + 구 config.toml 존재)는 구 TOML 에
+    기록한다 — 신규 파일을 만들면 TOML 의 다른 섹션이 통째로 가려지기 때문 (이관은 asgard sync 몫)."""
     try:
-        path = os.path.join(root, ".asgard", "config.toml")
+        asg = os.path.join(root, ".asgard")
+        new = os.path.join(asg, "asgard-setting-project.json")
+        legacy = os.path.join(asg, "config.toml")
+        if not os.path.exists(new) and os.path.exists(legacy):
+            txt = open(legacy, encoding="utf-8").read()
+            block = '[lagom]\nmode = "%s"\n' % mode
+            pat = r"^\[lagom\][^\[]*"
+            if re.search(pat, txt, re.M):
+                txt = re.sub(pat, block, txt, count=1, flags=re.M)
+            else:
+                txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
+            open(legacy, "w", encoding="utf-8").write(txt)
+            return True
         try:
-            txt = open(path, encoding="utf-8").read()
+            data = json.load(open(new, encoding="utf-8"))
+            if not isinstance(data, dict):
+                data = {}
         except Exception:
-            txt = ""
-        block = '[lagom]\nmode = "%s"\n' % mode
-        pat = r"^\[lagom\][^\[]*"
-        if re.search(pat, txt, re.M):
-            txt = re.sub(pat, block, txt, count=1, flags=re.M)
-        else:
-            txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        open(path, "w", encoding="utf-8").write(txt)
+            data = {}
+        sec = dict(data.get("lagom") or {})
+        sec["mode"] = mode
+        data["lagom"] = sec
+        os.makedirs(asg, exist_ok=True)
+        tmp = "%s.%d.tmp" % (new, os.getpid())
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, new)
         return True
     except Exception:
         return False
@@ -109,7 +158,6 @@ def main():
     try:
         prompt = str(data.get("prompt") or "")
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        state_file = os.path.join(root, ".asgard", "lagom-mode")
 
         if _DEACTIVATE.match(prompt):
             write_state(root, "off")
@@ -117,11 +165,7 @@ def main():
             sys.exit(0)
 
         if _BARE.match(prompt):
-            cur = None
-            try:
-                cur = norm(open(state_file, encoding="utf-8").read())
-            except Exception:
-                pass
+            cur = read_state(root)
             sys.stdout.write(
                 "[lagom] 현재 모드: %s (전환 /lagom <mode>, 영속 /lagom default <mode>)" % (cur or config_mode(root))
             )
@@ -142,7 +186,7 @@ def main():
                 ok = persist_default(root, target)
                 sys.stdout.write(
                     "[lagom] 기본값 %s %s"
-                    % (target, "영속됨 (.asgard/config.toml)" if ok else "— config 기록 실패, 세션에만 적용")
+                    % (target, "영속됨 (asgard-setting-project.json)" if ok else "— 설정 기록 실패, 세션에만 적용")
                 )
             else:
                 sys.stdout.write("[lagom] mode → %s (세션 한정)" % target)
@@ -153,7 +197,7 @@ def main():
             sys.exit(0)
 
         # 보상 주입 — SessionStart 훅이 없는 표면(Codex/Cursor): 상태파일 부재 = 첫 프롬프트
-        if not os.path.exists(state_file):
+        if read_state(root) is None:  # 신규 state/ + 레거시 2종 전부 부재 (read_state 가 판정)
             mode = config_mode(root)
             write_state(root, mode)
             if mode != "off":

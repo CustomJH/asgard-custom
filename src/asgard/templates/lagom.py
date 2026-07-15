@@ -120,7 +120,7 @@ LAGOM_AGENTS_SECTION = """\
 경로), 비자명 로직엔 러너블 체크 1개.
 
 모드(lite=요청대로+대안 한 문장 / full=사다리 강제·기본)는
-`.asgard/lagom-mode` 상태파일과 config `[lagom].mode` 가 결정한다. 제어:
+`.asgard/state/lagom-mode.json` 상태파일과 설정(`asgard-setting-*.json` lagom.mode)이 결정한다. 제어:
 `/lagom <mode>` · `/lagom default <mode>` · "stop lagom"/"normal mode" = 비활성.
 <!-- <<< asgard:lagom <<< -->
 """
@@ -195,7 +195,7 @@ LAGOM_SKILLS: list[tuple[str, str]] = [
 
 # ── CC statusline (CUS-215) — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json 을
 # 통째로 방출하므로 nudge 불요 — 새 프로젝트는 배선 포함, 기존 프로젝트는 --force 재스캐폴드.
-# 셸 전용 (statusline 은 ~300ms 주기 실행 — python 기동 비용 회피). 상태파일 > config > full,
+# 셸 전용 (statusline 은 ~300ms 주기 실행 — python 기동 비용 회피). JSON 상태파일 > config > full,
 # lagom_activate.py 의 resolve 와 동일 유지 (단일 출처 원칙: asgard/lagom.py).
 LAGOM_STATUSLINE_SH = """\
 #!/bin/bash
@@ -204,8 +204,20 @@ input=$(cat)
 model=$(printf '%s' "$input" | sed -n 's/.*"display_name": *"\\([^"]*\\)".*/\\1/p' | head -1)
 dir=$(printf '%s' "$input" | sed -n 's/.*"current_dir": *"\\([^"]*\\)".*/\\1/p' | head -1)
 root="${dir:-$PWD}"
-mode=$(cat "$root/.asgard/lagom-mode" 2>/dev/null | tr -d '[:space:]')
+mode=$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\\([a-z]*\\)".*/\\1/p' \\
+  "$root/.asgard/state/lagom-mode.json" 2>/dev/null | head -1)
+if [ -z "$mode" ]; then # 레거시 상태 (0.4.x 직하 json / 0.4.1 단일 문자열)
+  mode=$(sed -n 's/.*"mode"[[:space:]]*:[[:space:]]*"\\([a-z]*\\)".*/\\1/p' \\
+    "$root/.asgard/lagom-mode.json" 2>/dev/null | head -1)
+fi
 if [ -z "$mode" ]; then
+  mode=$(cat "$root/.asgard/lagom-mode" 2>/dev/null | tr -d '[:space:]')
+fi
+if [ -z "$mode" ]; then # 영속 기본값 — 통합 설정 JSON 의 "lagom" 섹션 (한 줄 grep 근사)
+  mode=$(sed -n '/"lagom"/,/}/{ s/.*"mode"[[:space:]]*:[[:space:]]*"\\([a-z]*\\)".*/\\1/p; }' \\
+    "$root/.asgard/asgard-setting-project.json" 2>/dev/null | head -1)
+fi
+if [ -z "$mode" ]; then # 구 config.toml 폴백
   mode=$(sed -n '/^\\[lagom\\]/,/^\\[/{ s/^mode *= *"\\{0,1\\}\\([a-z]*\\)"\\{0,1\\}.*/\\1/p; }' \\
     "$root/.asgard/config.toml" 2>/dev/null | head -1)
 fi

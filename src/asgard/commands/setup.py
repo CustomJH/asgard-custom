@@ -22,7 +22,7 @@ from ..templates import (
     codex_rules,
     cursor_hooks_json,
     cursor_rule,
-    trinity_policy,
+    project_settings,
 )
 from ..templates.freyja import (
     FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video 심화 3종
@@ -48,6 +48,7 @@ _GITIGNORE_BLOCK = (
     ".asgard/*\n"
     "!.asgard/map/\n"
     "!.asgard/.gitignore\n"
+    "!.asgard/asgard-setting-project.json\n"
     ".claude/settings.local.json\n"
     ".claude/**/*.local.*\n"
     f"{_GITIGNORE_END}\n"
@@ -55,7 +56,9 @@ _GITIGNORE_BLOCK = (
 
 # .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 전부 무시, 지도만 추적.
 # 루트 블록과 합의돼야 한다 (둘 중 하나라도 map 을 막으면 추적 불가 — smoke 가 실추적 검증).
-_ASGARD_GITIGNORE = "*\n!.gitignore\n!map/\n!map/**\n"
+# asgard-setting-project.json = 팀 공유 설정 (trinity 정책·메모리 서버 연결, 비밀 없음) — 커밋 대상.
+# state/·quest/ 등 런타임은 "*" 가 전부 무시한다.
+_ASGARD_GITIGNORE = "*\n!.gitignore\n!map/\n!map/**\n!asgard-setting-project.json\n"
 
 
 def merge_gitignore(existing: str | None) -> str:
@@ -114,7 +117,9 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     ui.phase("next steps")
     ui.step(f"asgard start   {ui.dim('— open the Heimdall terminal (native Trinity loop)')}")
     ui.step(f"asgard doctor  {ui.dim('— verify the wiring')}")
-    ui.step(f"role placement {ui.dim('— /trinity set in the terminal, or [trinity.<role>] in .asgard/config.toml')}")
+    ui.step(
+        f"role placement {ui.dim('— /trinity set in the terminal, or trinity.<role> in asgard-setting-project.json')}"
+    )
     ui.step(f"tool bridge    {ui.dim('— /bridge <tool> on lets Claude Code/Codex/Cursor delegate placed roles')}")
     ui.step(f"               {ui.dim('  via `asgard role` (asgard-provider skill) · default off = internal model')}")
     return 0
@@ -136,10 +141,11 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         (j(root, ".gitignore"), _GITIGNORE_BLOCK),
     ]
 
-    # Trinity (CUS-125) — 정책은 툴 중립 .asgard/ (크로스툴 공유). .gitignore 를 함께 심는 이유:
-    # 훅이 첫 실행 때 lazy 로 만들지만, setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.
+    # Trinity (CUS-125) — 정책은 툴 중립 .asgard/ (크로스툴 공유), 통합 설정 파일의 trinity_policy
+    # 섹션으로 (26-07-15 설정 통합). .gitignore 를 함께 심는 이유: 훅이 첫 실행 때 lazy 로 만들지만,
+    # setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.
     files += [
-        (j(root, ".asgard", "trinity-policy.json"), trinity_policy()),
+        (j(root, ".asgard", "asgard-setting-project.json"), project_settings()),
         (j(root, ".asgard", ".gitignore"), _ASGARD_GITIGNORE),
         # 코드베이스 지도 시드 — INDEX 는 규칙 문서(asgard 소유), 영역 지도는 에이전트가 그린다.
         (j(root, ".asgard", "map", "INDEX.md"), MAP_INDEX_MD),
@@ -306,7 +312,7 @@ def _apply_lagom(lagom: str | None, dry_run: bool, rc: int) -> int:
         ui.warn(f"--lagom {lagom}: 유효 모드 아님 (off|lite|full) — 기본 full 유지")
         return rc
     save_config_section(None, "lagom", {"mode": mode})
-    ui.step(f"lagom mode   {ui.dim('— [lagom].mode = ' + mode + ' (.asgard/config.toml)')}")
+    ui.step(f"lagom mode   {ui.dim('— lagom.mode = ' + mode + ' (asgard-setting-project.json)')}")
     return rc
 
 

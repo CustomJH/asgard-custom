@@ -31,9 +31,10 @@ def main() -> None:
             sys.exit(0)  # 로그/상태 파일 자체는 증거 대상이 아니다 (자기참조 방지)
         proj = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
         sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
-        d = os.path.join(proj, ".asgard")
+        base = os.path.join(proj, ".asgard")
+        d = os.path.join(base, "state")  # 런타임 상태 격리 — verifier-gate 읽기 경로와 동일 유지
         os.makedirs(d, exist_ok=True)
-        gi = os.path.join(d, ".gitignore")
+        gi = os.path.join(base, ".gitignore")
         if not os.path.exists(gi):
             try:
                 open(gi, "w").write("*\n")
@@ -44,7 +45,10 @@ def main() -> None:
         try:
             writes = json.load(open(f))
         except Exception:
-            writes = []
+            try:  # 레거시(.asgard/ 직하) 세션 잔재 승계 — 세션 중 업그레이드 대비
+                writes = json.load(open(os.path.join(base, "writes-" + sid + ".json")))
+            except Exception:
+                writes = []
         rel = os.path.relpath(path, proj) if os.path.isabs(path) else path
         if rel not in writes and len(writes) < 500:  # cap — 상태 파일 폭주 방지
             writes.append(rel)

@@ -127,8 +127,8 @@ class TestSyncProject(Base):
         open(hook, "w").write("# old version\n")  # 구버전 훅
         agents = j(self.root, "AGENTS.md")
         open(agents, "a").write("\n## Conventions\n우리 팀 규칙 유지\n")
-        policy = j(self.root, ".asgard", "trinity-policy.json")
-        open(policy, "w").write('{"tuned": true}\n')  # 사용자 튜닝
+        policy = j(self.root, ".asgard", "asgard-setting-project.json")
+        open(policy, "w").write('{"tuned": true}\n')  # 사용자 튜닝 (통합 설정, 26-07-15)
         settings = j(self.root, ".claude", "settings.json")
         s = json.loads(open(settings).read())
         s["permissions"]["allow"].append("Bash(make *)")

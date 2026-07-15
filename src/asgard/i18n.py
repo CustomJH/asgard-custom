@@ -140,48 +140,34 @@ def current() -> str:
 
 
 def load_lang(root: str | None = None) -> str:
-    """config [ui] lang → env ASGARD_LANG → 'en'. set_lang 도 함께 수행하고 결과를 반환."""
-    import tomllib
-
-    root = root or os.getcwd()
+    """설정 ui.lang → env ASGARD_LANG → 'en'. set_lang 도 함께 수행하고 결과를 반환.
+    설정 파일 = asgard-setting-{project,global}.json (settings.py — 구 config.toml 폴백 내장)."""
     lang = None
-    for path in (
-        os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"),
-        os.path.join(root, ".asgard", "config.toml"),
-    ):
-        try:
-            with open(path, "rb") as f:
-                ui = tomllib.load(f).get("ui") or {}
-            if ui.get("lang"):
-                lang = ui["lang"]  # 프로젝트가 글로벌을 덮는다
-        except Exception:
-            pass
+    try:
+        from .settings import load_global, load_project
+
+        root = root or os.getcwd()
+        for cfg in (load_global(), load_project(root)):  # 프로젝트가 글로벌을 덮는다
+            v = (cfg.get("ui") or {}).get("lang")
+            if v:
+                lang = v
+    except Exception:
+        pass
     lang = lang or os.environ.get("ASGARD_LANG")
     set_lang(lang)
     return _LANG
 
 
 def save_lang(lang: str, root: str | None = None) -> bool:
-    """언어를 프로젝트 .asgard/config.toml [ui] lang 에 저장하고 즉시 적용. tomllib 는 읽기 전용
-    이므로 [ui] 섹션만 최소 편집(있으면 교체, 없으면 append) — provider 등 다른 섹션 보존."""
+    """언어를 프로젝트 asgard-setting-project.json 의 ui.lang 에 저장하고 즉시 적용."""
     if lang not in LANGS:
         return False
-    import re
-
-    root = root or os.getcwd()
-    d = os.path.join(root, ".asgard")
-    os.makedirs(d, exist_ok=True)
-    path = os.path.join(d, "config.toml")
     try:
-        txt = open(path).read()
-    except FileNotFoundError:
-        txt = ""
-    block = f'[ui]\nlang = "{lang}"\n'
-    if re.search(r"^\[ui\]", txt, re.M):
-        txt = re.sub(r"^\[ui\][^\[]*", block, txt, count=1, flags=re.M)
-    else:
-        txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
-    open(path, "w").write(txt)
+        from .settings import save_project
+
+        save_project(root or os.getcwd(), "ui", {"lang": lang})
+    except Exception:
+        return False
     set_lang(lang)
     return True
 

@@ -27,6 +27,20 @@ def norm(m):
     return m if m in MODES else None
 
 
+def read_state(root):
+    for path, structured in (
+        (os.path.join(root, ".asgard", "state", "lagom-mode.json"), True),  # 신규 — state/ 격리
+        (os.path.join(root, ".asgard", "lagom-mode.json"), True),  # 레거시 0.4.x
+        (os.path.join(root, ".asgard", "lagom-mode"), False),  # 레거시 0.4.1 이하
+    ):
+        try:
+            with open(path, encoding="utf-8") as f:
+                return norm(json.load(f).get("mode") if structured else f.read())
+        except Exception:
+            continue
+    return None
+
+
 def render(canon, mode):
     """lagom_activate.py render 와 동일 유지 (단일 출처 원칙: templates render_lagom)."""
     out = []
@@ -42,6 +56,13 @@ def matcher_pattern(root):
     pat = os.environ.get("LAGOM_SUBAGENT_MATCHER")
     if pat:
         return pat
+    # 신규 JSON 설정 우선, 구 config.toml 폴백 — settings.py 와 동일 유지 (단일 출처 원칙)
+    try:
+        cfg = json.load(open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8"))
+        if isinstance(cfg, dict):
+            return str((cfg.get("lagom") or {}).get("subagent_matcher") or "")
+    except Exception:
+        pass
     try:
         txt = open(os.path.join(root, ".asgard", "config.toml"), encoding="utf-8").read()
         sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
@@ -64,11 +85,7 @@ def main():
         agent = str(data.get("agent_type") or "")
         if agent in NEVER_INJECT:
             sys.exit(0)
-        mode = None
-        try:
-            mode = norm(open(os.path.join(root, ".asgard", "lagom-mode"), encoding="utf-8").read())
-        except Exception:
-            pass
+        mode = read_state(root)
         if mode in (None, "off"):
             sys.exit(0)  # 비활성 세션 — 서브에이전트도 무개입
         pat = matcher_pattern(root)

@@ -14,7 +14,7 @@ from .lagom import LAGOM_CANON, render_lagom
 from .map import MAP_INDEX_MD
 from .seal import SEAL_SKILL_MD
 from .selftest import SELFTEST_MD
-from .trinity import trinity_policy
+from .trinity import project_settings, trinity_policy
 
 __all__ = [
     "agents_md",
@@ -33,5 +33,6 @@ __all__ = [
     "render_lagom",
     "SEAL_SKILL_MD",
     "SELFTEST_MD",
+    "project_settings",
     "trinity_policy",
 ]

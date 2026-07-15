@@ -84,13 +84,20 @@ def _policy(root: str, path: str) -> str:
         return "gitignore"
     if rel == os.path.join(".claude", "settings.json"):
         return "json-merge"
-    if rel == os.path.join(".asgard", "trinity-policy.json"):
-        return "keep"
+    if rel == os.path.join(".asgard", "asgard-setting-project.json"):
+        return "keep"  # 사용자 튜닝(정책·메모리 서버·배치) 존중 — 없을 때만 시드
     return "overwrite"
 
 
 def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool = False) -> dict[str, int]:
     """한 프로젝트의 스캐폴드 갱신 — {"updated": n, "kept": n, "skipped": n} 집계를 돌려준다."""
+    # 설정 통합 마이그레이션 (26-07-15) — 구 config.toml/trinity-policy.json/memory-server.json →
+    # asgard-setting-project.json, 런타임 잔재 → state/. 멱등이라 매 sync 선행해도 무해.
+    if not dry_run:
+        from ..settings import migrate_global, migrate_project
+
+        for msg in migrate_global() + migrate_project(root):
+            ui.step(f"migrate {ui.dim(msg)}")
     files, _ = plan_files(cc, cursor, codex, root)
     counts = {"updated": 0, "kept": 0, "skipped": 0}
     for path, content in files:

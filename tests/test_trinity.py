@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard", "hooks")
 QLOG = os.path.abspath(os.path.join(SRC, "quest_log.py"))
@@ -668,6 +669,18 @@ class TestBaseline(TrinityBase):
         self.qlog("append", "--verdict", "PASS", stdin=json.dumps(body))
         self.assertEqual(self.last_event()["baseline"]["state"], "red")
 
+    def test_uv_project_autodetect_uses_uv_run(self):
+        # uv.lock 이 있으면 자동 감지가 PATH pytest 대신 uv run 을 기록한다 — venv 밖 pytest 는
+        # 수집 실패(skip)로 게이트가 조용히 무력화되던 구멍 (베이스라인 uv-우선)
+        self.write("uv.lock", "")
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        bl = self.last_event()["baseline"]
+        self.assertEqual(bl["results"][0]["cmd"], "uv run pytest -x -q")
+        self.assertNotEqual(bl["state"], "red")  # uv spawn 실패(exit 2)여도 skip — fail-open
+
     def test_deleted_test_file_forces_full_verify(self):
         self.write("tests/test_app.py", "def test_a(): pass\n")
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
@@ -683,6 +696,52 @@ class TestBaseline(TrinityBase):
         gp = jout(self.gate())
         self.assertEqual(gp.get("decision"), "block")
         self.assertIn("삭제된 테스트", gp.get("reason", ""))
+
+
+class TestDetectChecks(unittest.TestCase):
+    """베이스라인 자동 감지 (uv-우선) — uv 프로젝트는 uv run, 아니면 PATH pytest, 명시 정책 최우선."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        from asgard.hooks import quest_log
+
+        self.detect = quest_log.detect_checks
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def touch(self, rel):
+        open(os.path.join(self.root, rel), "w").close()
+
+    def which(self, *names):
+        return mock.patch("shutil.which", side_effect=lambda c: f"/bin/{c}" if c in names else None)
+
+    def test_uv_lock_prefers_uv_run(self):
+        self.touch("uv.lock")
+        self.touch("pyproject.toml")
+        with self.which("uv", "pytest"):
+            self.assertEqual(self.detect(self.root, {}), ["uv run pytest -x -q"])
+
+    def test_uv_lock_without_uv_falls_back_to_path_pytest(self):
+        self.touch("uv.lock")
+        self.touch("pyproject.toml")
+        with self.which("pytest"):
+            self.assertEqual(self.detect(self.root, {}), ["pytest -x -q"])
+
+    def test_plain_project_uses_path_pytest(self):
+        self.touch("pyproject.toml")
+        with self.which("uv", "pytest"):
+            self.assertEqual(self.detect(self.root, {}), ["pytest -x -q"])
+
+    def test_no_markers_no_checks(self):
+        with self.which("uv", "pytest"):
+            self.assertEqual(self.detect(self.root, {}), [])
+
+    def test_explicit_policy_wins(self):
+        self.touch("uv.lock")
+        with self.which("uv", "pytest"):
+            self.assertEqual(self.detect(self.root, {"baseline_checks": ["uv run ruff check"]}), ["uv run ruff check"])
 
 
 class TestStandardTransition(TrinityBase):
@@ -816,8 +875,8 @@ class TestRoutePriors(TrinityBase):
     """CUS-127 Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1 로 하향."""
 
     def priors(self, **classes):
-        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
-        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+        os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "state", "route-priors.json"), "w") as f:
             json.dump({"schema": 1, "classes": classes}, f)
 
     def one_red(self):
@@ -858,8 +917,8 @@ class TestRoutePriors(TrinityBase):
         self.assertEqual(self.nxt()["next_role"], "WORKER_RETRY")
 
     def test_corrupt_priors_file_fails_open(self):
-        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
-        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+        os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
+        with open(os.path.join(self.root, ".asgard", "state", "route-priors.json"), "w") as f:
             f.write("{broken")
         self.one_red()
         self.assertEqual(self.nxt("--task-class", "standard")["next_role"], "WORKER_RETRY")
@@ -878,7 +937,7 @@ class TestRoutePriors(TrinityBase):
         p = load_priors(self.root)
         self.assertEqual(p["classes"]["standard"], {"n": 2, "red": 1})
         self.assertEqual(p["classes"]["deep"], {"n": 1, "red": 1})
-        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+        with open(os.path.join(self.root, ".asgard", "state", "route-priors.json"), "w") as f:
             f.write("{broken")
         update_priors(self.root, "standard", red=True)  # 깨진 파일 위에서도 예외 없이 재시작
         self.assertEqual(load_priors(self.root)["classes"]["standard"], {"n": 1, "red": 1})

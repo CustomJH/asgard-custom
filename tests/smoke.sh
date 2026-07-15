@@ -140,15 +140,15 @@ grep -q '"statusLine"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc setti
 printf '%s' '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PROJ"'"}}' | bash "$PROJ/.claude/hooks/lagom-statusline.sh" | grep -q 'lagom:full' || { echo "FAIL: lagom-statusline must show default full"; exit 1; }
 python3 -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
 printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }
-[ "$(cat "$PROJ/.asgard/lagom-mode")" = "full" ] || { echo "FAIL: lagom state file not written"; exit 1; }
+python3 -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"mode": "full"}' "$PROJ/.asgard/state/lagom-mode.json" || { echo "FAIL: lagom JSON state file not written"; exit 1; }
 printf '%s' '{"prompt":"/lagom lite"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q 'lite' || { echo "FAIL: lagom-tracker must switch mode"; exit 1; }
-[ "$(cat "$PROJ/.asgard/lagom-mode")" = "lite" ] || { echo "FAIL: lagom switch not persisted to state"; exit 1; }
+python3 -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"mode": "lite"}' "$PROJ/.asgard/state/lagom-mode.json" || { echo "FAIL: lagom switch not persisted to JSON state"; exit 1; }
 printf '%s' '{"agent_type":"asgard-verifier"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' && { echo "FAIL: lagom-subagent must not inject verifier"; exit 1; } || true
 printf '%s' '{"agent_type":"asgard-worker"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' || { echo "FAIL: lagom-subagent must inject worker"; exit 1; }
 printf '%s' '{"prompt":"stop lagom"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q '\[lagom\] off' || { echo "FAIL: lagom deactivation phrase"; exit 1; }
 printf '%s' '{"source":"compact"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q '.' && { echo "FAIL: lagom off must inject nothing"; exit 1; } || true
 printf '%s' 'not-json' | python3 "$PROJ/.claude/hooks/lagom-tracker.py" >/dev/null 2>&1 || { echo "FAIL: lagom-tracker must fail-open"; exit 1; }
-rm -f "$PROJ/.asgard/lagom-mode"
+rm -f "$PROJ/.asgard/state/lagom-mode.json" "$PROJ/.asgard/lagom-mode"
 grep -q 'asgard:lagom' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing lagom section"; exit 1; }
 [ -f "$PROJ/.claude/skills/asgard-lagom-review/SKILL.md" ] || { echo "FAIL: --cc missing lagom-review skill"; exit 1; }
 [ -f "$PROJ/.claude/skills/asgard-seal/SKILL.md" ] || { echo "FAIL: --cc missing asgard-seal skill"; exit 1; }

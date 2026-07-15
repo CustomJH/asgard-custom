@@ -17,6 +17,8 @@
 # 재계산해 물리 대조한다. 로그에 뭘 쓰든 워킹트리는 위조할 수 없다 (Goodhart 방어, CUS-122).
 # diff_hash 를 여기(append)서도 계산하는 이유: verifier 가 손으로 만든 해시는 gate 재계산과 어긋날
 # 수 있다 — 같은 알고리즘(아래 diff_state, verifier-gate.py 와 동일 유지)이 유일한 출처여야 한다.
+from __future__ import annotations
+
 import argparse
 import hashlib
 import json
@@ -222,15 +224,20 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
 
 def detect_checks(root: str, policy: dict) -> list[str]:
     """정책 baseline_checks 우선. 없으면 보수적 자동 감지 — pytest 만.
-    lagom: lint 류 자동 감지 안함 — 기존 위반 false-red 가 게이트 인질이 된다. 명시 설정으로만."""
+    lagom: lint 류 자동 감지 안함 — 기존 위반 false-red 가 게이트 인질이 된다. 명시 설정으로만.
+    uv 프로젝트(uv.lock)는 `uv run pytest` 로 — PATH pytest 는 venv 밖이라 수집 실패(2/3/4→skip)로
+    게이트가 조용히 무력화되고, pytest 가 .venv 안에만 있으면 아예 미감지된다. uv 의 spawn 실패는
+    exit 2 라 pytest 미의존 프로젝트도 skip 분류로 fail-open 이 유지된다."""
     cfg = policy.get("baseline_checks")
     if cfg:
         return [str(c) for c in cfg]
     import shutil
 
-    if shutil.which("pytest") and any(
-        os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")
-    ):
+    if not any(os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")):
+        return []
+    if os.path.exists(os.path.join(root, "uv.lock")) and shutil.which("uv"):
+        return ["uv run pytest -x -q"]
+    if shutil.which("pytest"):
         return ["pytest -x -q"]
     return []
 
@@ -324,6 +331,15 @@ def signature_risk(root: str, base_ref: str | None) -> bool:
 
 def load_policy(root: str) -> dict:
     p = dict(DEFAULT_POLICY)
+    # 신규 통합 설정(asgard-setting-project.json 의 trinity_policy) 우선, 구 파일 폴백 (fail-open)
+    try:
+        cfg = json.load(open(os.path.join(root, ".asgard", "asgard-setting-project.json")))
+        pol = cfg.get("trinity_policy") if isinstance(cfg, dict) else None
+        if isinstance(pol, dict):
+            p.update(pol)
+            return p
+    except Exception:
+        pass
     try:
         p.update(json.load(open(os.path.join(root, ".asgard", "trinity-policy.json"))))
     except Exception:
@@ -338,10 +354,12 @@ def load_policy(root: str) -> dict:
 
 
 def load_priors(root: str) -> dict:
-    try:
-        return json.load(open(os.path.join(root, ".asgard", "route-priors.json")))
-    except Exception:
-        return {}  # 없음/깨짐 = 이력 없음 (fail-open — 기본 문턱)
+    for rel in (os.path.join("state", "route-priors.json"), "route-priors.json"):  # 신규 state/ 우선
+        try:
+            return json.load(open(os.path.join(root, ".asgard", rel)))
+        except Exception:
+            continue
+    return {}  # 없음/깨짐 = 이력 없음 (fail-open — 기본 문턱)
 
 
 def update_priors(root: str, task_class: str, red: bool) -> None:
@@ -352,9 +370,13 @@ def update_priors(root: str, task_class: str, red: bool) -> None:
         c["n"] = int(c.get("n") or 0) + 1
         c["red"] = int(c.get("red") or 0) + (1 if red else 0)
         p["schema"] = 1
-        d = os.path.join(root, ".asgard")
+        d = os.path.join(root, ".asgard", "state")
         os.makedirs(d, exist_ok=True)
         f = os.path.join(d, "route-priors.json")
+        try:  # 레거시 위치 잔재 제거 (이원화 방지 — 다음 로드가 신규만 보게)
+            os.remove(os.path.join(root, ".asgard", "route-priors.json"))
+        except FileNotFoundError:
+            pass
         tmp = "%s.%d.tmp" % (f, os.getpid())  # temp+rename — 크래시 절단이 이력을 리셋하지 않게
         json.dump(p, open(tmp, "w"))
         os.replace(tmp, f)

@@ -64,7 +64,8 @@ class LagomBase(unittest.TestCase):
 
     def state(self):
         try:
-            return open(os.path.join(self.root, ".asgard", "lagom-mode")).read().strip()
+            with open(os.path.join(self.root, ".asgard", "state", "lagom-mode.json"), encoding="utf-8") as f:
+                return json.load(f).get("mode")
         except FileNotFoundError:
             return None
 
@@ -125,6 +126,23 @@ class TestRender(unittest.TestCase):
 
 
 class TestResolve(LagomBase):
+    def test_state_is_structured_json(self):
+        self.assertTrue(lagom.write_state(self.root, "lite"))
+        path = os.path.join(self.root, ".asgard", "state", "lagom-mode.json")
+        with open(path, encoding="utf-8") as f:
+            self.assertEqual(json.load(f), {"mode": "lite"})
+
+    def test_legacy_plain_state_is_read_then_removed_on_write(self):
+        legacy = os.path.join(self.root, ".asgard", "lagom-mode")
+        os.makedirs(os.path.dirname(legacy), exist_ok=True)
+        with open(legacy, "w", encoding="utf-8") as f:
+            f.write("lite\n")
+        self.assertEqual(lagom.read_state(self.root), "lite")
+
+        self.assertTrue(lagom.write_state(self.root, "full"))
+        self.assertFalse(os.path.exists(legacy))
+        self.assertEqual(self.state(), "full")
+
     def test_precedence_default_full(self):
         self.assertEqual(lagom.default_mode(self.root), "full")
 
@@ -234,8 +252,8 @@ class TestTrackerMatrix(LagomBase):
         p = self.hook("lagom_tracker.py", {"prompt": "/lagom default lite"})
         self.assertIn("영속", p.stdout)
         self.assertEqual(self.state(), "lite")
-        conf = open(os.path.join(self.root, ".asgard", "config.toml")).read()
-        self.assertIn('mode = "lite"', conf)
+        conf = json.load(open(os.path.join(self.root, ".asgard", "asgard-setting-project.json")))
+        self.assertEqual(conf["lagom"]["mode"], "lite")  # 통합 설정 (26-07-15)
         # 새 세션 재현 — 상태 클리어 후 activate 가 영속값을 집는다
         lagom.clear_state(self.root)
         p = self.hook("lagom_activate.py", {"source": "startup"})

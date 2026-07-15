@@ -29,7 +29,6 @@ import hashlib
 import os
 import re
 import sqlite3
-import tomllib
 from typing import Any
 
 fcntl: Any = None  # posix 파일 락 — 없으면 msvcrt(Windows) 폴백, 둘 다 없으면 best-effort
@@ -72,30 +71,38 @@ def memory_dir() -> str:
     return os.environ.get(MEMORY_ENV) or os.path.join(os.path.expanduser("~"), ".asgard", "memory")
 
 
+def _memory_settings() -> dict:
+    """글로벌 [memory] 섹션 — asgard-setting-global.json 우선, 구 config.toml 폴백 (settings.py)."""
+    try:
+        from .settings import load_global
+
+        return dict(load_global().get("memory") or {})
+    except Exception:
+        return {}
+
+
 def index_budget() -> int:
     try:
-        cfg = tomllib.load(open(os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"), "rb"))
-        value = (cfg.get("memory") or {}).get("index_budget_chars")
+        value = _memory_settings().get("index_budget_chars")
         return max(0, int(value)) if value is not None else INDEX_BUDGET
     except Exception:
         return INDEX_BUDGET
 
 
 def inject_enabled() -> bool:
-    """프롬프트 주입 킬스위치 (2차 리뷰 ⑦) — env ASGARD_MEMORY_INJECT > config [memory].inject.
+    """프롬프트 주입 킬스위치 (2차 리뷰 ⑦) — env ASGARD_MEMORY_INJECT > 설정 memory.inject.
     off 면 snapshot_note 가 빈 문자열 = 어떤 provider 로도 메모리가 전송되지 않는다."""
     v = (os.environ.get("ASGARD_MEMORY_INJECT") or "").strip().lower()
     if v:
         return v not in ("off", "0", "false")
     try:
-        cfg = tomllib.load(open(os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"), "rb"))
-        return str((cfg.get("memory") or {}).get("inject", "on")).strip().lower() not in ("off", "0", "false")
+        return str(_memory_settings().get("inject", "on")).strip().lower() not in ("off", "0", "false")
     except Exception:
         return True
 
 
 def inject_allowed(provider: str | None = None) -> bool:
-    """provider별 전송 게이트 — 킬스위치 + `[memory].providers` allowlist (배선 단계).
+    """provider별 전송 게이트 — 킬스위치 + `memory.providers` allowlist (배선 단계).
     allowlist 부재/빈 리스트 = 전 provider 허용 (개인 도구 기본값), 설정 시 등재만 허용.
     개인 메모리가 임의 원격 모델로 새는 표면을 사용자가 직접 통제한다 (독립 리뷰 지적)."""
     if not inject_enabled():
@@ -103,8 +110,7 @@ def inject_allowed(provider: str | None = None) -> bool:
     if not provider:
         return True
     try:
-        cfg = tomllib.load(open(os.path.join(os.path.expanduser("~"), ".asgard", "config.toml"), "rb"))
-        allow = (cfg.get("memory") or {}).get("providers")
+        allow = _memory_settings().get("providers")
         if isinstance(allow, list) and allow:
             return provider in [str(a).strip() for a in allow]
     except Exception:
@@ -439,7 +445,36 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> li
         return pg
 
     phrase = text.strip().lower()
-    scan_words = [w.lower() for w in re.split(r"[^\w가-힣%-]+", text) if len(w) >= 2]
+    raw_words = [w.lower() for w in re.split(r"[^\w가-힣%-]+", text) if len(w) >= 2]
+    scan_words: list[str] = []
+    particles = (
+        "으로",
+        "에서",
+        "에게",
+        "한테",
+        "처럼",
+        "까지",
+        "부터",
+        "은",
+        "는",
+        "이",
+        "가",
+        "을",
+        "를",
+        "에",
+        "의",
+        "로",
+        "과",
+        "와",
+        "도",
+        "만",
+    )
+    for word in raw_words:
+        scan_words.append(word)
+        suffix = next((p for p in particles if word.endswith(p) and len(word) > len(p) + 1), None)
+        if suffix:
+            scan_words.append(word[: -len(suffix)])
+    scan_words = list(dict.fromkeys(scan_words))
     hits: list[dict] = []
     try:
         conn = _db(d)

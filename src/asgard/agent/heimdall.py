@@ -279,7 +279,7 @@ _UNITS_NOTE = (
 def _log_classify(root: str, entry: dict) -> None:
     """classify 텔레메트리 (CUS-179) — predicted vs actual 감사 데이터. append-only, fail-open."""
     try:
-        d = os.path.join(root, ".asgard")
+        d = os.path.join(root, ".asgard", "state")  # 런타임 텔레메트리 — state/ 격리
         os.makedirs(d, exist_ok=True)
         entry = {"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), **entry}
         with open(os.path.join(d, "classify.jsonl"), "a", encoding="utf-8") as f:
@@ -343,7 +343,7 @@ def _record_writes(root: str, sid: str, writes: list[str]) -> None:
     temp+rename 원자 쓰기 — 크래시 절단 파일은 게이트가 못 읽어 fail-open(orphan write 통과)이 된다."""
     if not writes:
         return
-    d = os.path.join(root, ".asgard")
+    d = os.path.join(root, ".asgard", "state")  # verifier-gate 읽기 경로와 동일 유지 (계약)
     os.makedirs(d, exist_ok=True)
     f = os.path.join(d, f"writes-{sid}.json")
     try:
@@ -404,6 +404,9 @@ class Heimdall:
         self.identity = self.delivery_identity + self.memory_note
         self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
         self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
+        # 프롬프트 캐시 계측 (누적) — 적중률 = read / (read+write+uncached), status line ⚡ 표시
+        self.cache_read_tokens = 0
+        self.cache_prompt_tokens = 0
         self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
         self._sleep: Callable[[float], None] = time.sleep  # 재시도 백오프 — 테스트 주입점 (CUS-180)
         dangling = active_quest(root)
@@ -546,17 +549,29 @@ class Heimdall:
             try:
                 r = make().run(prompt)
                 self.last_context_tokens = getattr(r, "context_tokens", 0) or self.last_context_tokens
+                self._track_cache(r)
                 return r
             except Exception as e:
                 if classify_api_error(e) != "retryable" or attempt == 2:
                     if fallback is not None:
                         self.on_text(f"⚠ provider 오류({e.__class__.__name__}) — 기본 provider 폴백 1회\n")
-                        return fallback().run(prompt)
+                        r = fallback().run(prompt)
+                        self._track_cache(r)
+                        return r
                     raise
                 self.on_text(f"⚠ provider 일시 오류({e.__class__.__name__}) — {delay:.0f}s 후 재시도\n")
                 self._sleep(delay + random.uniform(0, delay / 2))
                 delay = min(delay * 2, 30.0)
         raise RuntimeError("unreachable")
+
+    def _track_cache(self, r) -> None:
+        """프롬프트 캐시 계측 집계 — 세션 결과의 read/write/uncached 를 누적 (스레드 안전, CUS-176 wave)."""
+        cr = getattr(r, "cache_read_tokens", 0) or 0
+        total = cr + (getattr(r, "cache_write_tokens", 0) or 0) + (getattr(r, "uncached_input_tokens", 0) or 0)
+        if total:
+            with self._state_lock:
+                self.cache_read_tokens += cr
+                self.cache_prompt_tokens += total
 
     # ── 딜리버리 디스패치 (CUS-142, depth 1) ─────────────────────────────
     def _dispatch_handler(self, sid: str, worker_result_writes: list[str]):
@@ -596,6 +611,7 @@ class Heimdall:
                 readonly=agent == "loki",  # loki = read-only 반례 탐색 — 도구로 강제
             )
             r = child.run(task)
+            self._track_cache(r)
             worker_result_writes.extend(r.writes)
             return f"[{agent}] {r.text[-2000:]}"
 
@@ -1084,6 +1100,7 @@ class Heimdall:
             recall = _recall(request)
         r = self._session(self.identity).run((ctx + request if ctx else request) + recall)
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
+        self._track_cache(r)
         self.history = (self.history + [(request, r.text[:500])])[-6:]
         if r.writes or self._worktree_dirty() != before:
             _log_classify(self.root, {"event": "misroute", "route": "direct", "actual_write": True})

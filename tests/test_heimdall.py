@@ -267,10 +267,10 @@ class TestRoutePriorsE2E(Base):
     """CUS-127 Bayesian-lite — 종결 outcome 기록 + prior 가 승격 문턱을 실제로 낮추는 e2e."""
 
     def read_priors(self):
-        return json.load(open(os.path.join(self.root, ".asgard", "route-priors.json")))
+        return json.load(open(os.path.join(self.root, ".asgard", "state", "route-priors.json")))
 
     def outcomes(self):
-        path = os.path.join(self.root, ".asgard", "classify.jsonl")
+        path = os.path.join(self.root, ".asgard", "state", "classify.jsonl")
         events = [json.loads(ln) for ln in open(path) if ln.strip()]
         return [e for e in events if e.get("event") == "outcome"]
 
@@ -292,10 +292,10 @@ class TestRoutePriorsE2E(Base):
 
     def test_red_majority_prior_promotes_on_first_red(self):
         # baseline red 상시(false 체크) + standard 클래스 과반-red 이력 → 첫 red 에 THINKER_REPLAN
-        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
         with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
             json.dump({"baseline_checks": ["false"]}, f)
-        with open(os.path.join(self.root, ".asgard", "route-priors.json"), "w") as f:
+        with open(os.path.join(self.root, ".asgard", "state", "route-priors.json"), "w") as f:
             json.dump({"schema": 1, "classes": {"standard": {"n": 3, "red": 2}}}, f)
         seq = [
             worker({"w1.txt": "a\n"}, self.root),
@@ -471,7 +471,7 @@ class TestClassifyHeuristic(Base):
     def test_telemetry_logged(self):
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
         h.handle("w1.txt 만들어")
-        log = open(os.path.join(self.root, ".asgard", "classify.jsonl")).read()
+        log = open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read()
         self.assertIn('"route": "trinity"', log.replace('":"', '": "'))
 
 
@@ -672,7 +672,7 @@ class TestDirectGuard(Base):
         h = FakeHeimdall(self.root, seq, cls=self._cls_read())
         out = h.handle("그냥 이거 처리해줘")
         self.assertIn("과업 완수", out)  # 소급 quest → Verifier → 게이트 → close
-        self.assertIn("misroute", open(os.path.join(self.root, ".asgard", "classify.jsonl")).read())
+        self.assertIn("misroute", open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read())
 
     def test_direct_readonly_stays_taxless(self):
         direct = FakeSession(SessionResult(text="답변", stop_reason="end_turn"), label="direct")
@@ -766,7 +766,8 @@ class TestHookParity(Base):
         ql("append", "--verdict", "PASS", "--level", "full",
            stdin=json.dumps({"role": "verifier", "event": "verify", "commands": []}))  # fmt: skip
         self.assertEqual(ql("close", "--force").returncode, 0)  # 우회 시나리오 재현 (LAST 생성)
-        json.dump(["f.txt"], open(os.path.join(self.root, ".asgard", "writes-ev2.json"), "w"))
+        os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
+        json.dump(["f.txt"], open(os.path.join(self.root, ".asgard", "state", "writes-ev2.json"), "w"))
         p = subprocess.run(
             [_sys.executable, "-m", "asgard.hooks.verifier_gate"],
             input=json.dumps({"session_id": "ev2", "cwd": self.root}),

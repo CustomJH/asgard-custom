@@ -13,7 +13,7 @@ description: Trinity 역할(THINKER/WORKER/VERIFIER)이 [trinity.<role>] 로 외
 
 # asgard-provider — Trinity 역할 브릿지
 
-이 프로젝트의 Trinity 역할은 `.asgard/config.toml` `[trinity.<role>]` 로 다른 모델·provider 에
+이 프로젝트의 Trinity 역할은 `.asgard/asgard-setting-project.json` 의 `trinity.<role>` 로 다른 모델·provider 에
 배치될 수 있다. 배치된 역할은 이 도구의 내부 모델 대신 asgard CLI 가 실행한다.
 
 ## 게이트 (필수 선행 — 통과 못 하면 평소대로 서브에이전트 디스패치)

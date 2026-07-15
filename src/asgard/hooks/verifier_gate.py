@@ -222,9 +222,14 @@ def orphan_writes(root, sid):
     되돌린 write(경로 clean)·사용자 기존 dirt(기록에 없음)는 차단하지 않는다.
     예외: 직전 close 된 quest(LAST)의 PASS 가 현재 워킹트리 hash 와 일치하면 이미 검증된 상태 —
     close 직후 Stop 이 방금 검증한 write 를 오차단하지 않게 한다."""
-    try:
-        writes = json.load(open(os.path.join(root, ".asgard", "writes-" + sid + ".json")))
-    except Exception:
+    writes = None
+    for rel in (os.path.join("state", "writes-" + sid + ".json"), "writes-" + sid + ".json"):  # 신규 state/ 우선
+        try:
+            writes = json.load(open(os.path.join(root, ".asgard", rel)))
+            break
+        except Exception:
+            continue
+    if writes is None:
         return  # 이 세션의 write 기록 없음 → 게이트 대상 아님
     dirty = []
     for rel in writes[:500]:
@@ -292,10 +297,21 @@ def main():
             sys.stderr.write("asgard verifier-gate: base_ref 확인 불가 — allow (fail-open)\n")
             sys.exit(0)
         policy = dict(DEFAULT_POLICY)
+        # 신규 통합 설정 우선, 구 파일 폴백 — quest_log.load_policy 와 동일 유지 (단일 출처 원칙)
+        loaded = False
         try:
-            policy.update(json.load(open(os.path.join(root, ".asgard", "trinity-policy.json"))))
+            cfg = json.load(open(os.path.join(root, ".asgard", "asgard-setting-project.json")))
+            pol = cfg.get("trinity_policy") if isinstance(cfg, dict) else None
+            if isinstance(pol, dict):
+                policy.update(pol)
+                loaded = True
         except Exception:
             pass
+        if not loaded:
+            try:
+                policy.update(json.load(open(os.path.join(root, ".asgard", "trinity-policy.json"))))
+            except Exception:
+                pass
 
         current, changed, lines, nt_lines = diff_state(root, base_ref)
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
