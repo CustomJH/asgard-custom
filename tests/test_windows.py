@@ -50,6 +50,20 @@ class TestHookPython(unittest.TestCase):
             with mock.patch.object(asg_platform.shutil, "which", return_value=None):
                 self.assertEqual(asg_platform.hook_python(), "python")
 
+    def test_posix_no_python3_falls_back_to_uv(self):
+        with mock.patch.object(asg_platform.sys, "platform", "linux"):
+            with mock.patch.object(
+                asg_platform.shutil, "which", side_effect=lambda c: "/usr/local/bin/uv" if c == "uv" else None
+            ):
+                self.assertEqual(asg_platform.hook_python(), "uv run --no-project python")
+
+    def test_windows_no_python_falls_back_to_uv(self):
+        with _win(asg_platform):
+            with mock.patch.object(
+                asg_platform.shutil, "which", side_effect=lambda c: r"C:\uv\uv.exe" if c == "uv" else None
+            ):
+                self.assertEqual(asg_platform.hook_python(), "uv run --no-project python")
+
 
 class TestDetectAuthWindows(unittest.TestCase):
     """CUS-221 — detect_auth 가 Windows 에서 os.uname AttributeError 없이 폴백해야 한다."""
