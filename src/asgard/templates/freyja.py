@@ -43,10 +43,14 @@ description: 프레이야의 목걸이 브리싱가멘 — 시각 방향·미감
 
 | 브리프 신호 | 시스템 |
 |---|---|
-| Microsoft·엔터프라이즈 | Fluent | Google·Material 제품 | Material 3 |
-| IBM 풍 B2B | Carbon | Shopify 앱 | Polaris (관리자 UI 는 필수) |
-| Atlassian 풍 | Atlassian DS | GitHub 풍 devtool | Primer |
-| 영국/미국 공공 | GOV.UK / USWDS (규제상 기대됨) | 접근성 우선 | Radix Themes |
+| Microsoft·엔터프라이즈 | Fluent |
+| Google·Material 제품 | Material 3 |
+| IBM 풍 B2B | Carbon |
+| Shopify 앱 | Polaris (관리자 UI 는 필수) |
+| Atlassian 풍 | Atlassian DS |
+| GitHub 풍 devtool | Primer |
+| 영국/미국 공공 | GOV.UK / USWDS (규제상 기대됨) |
+| 접근성 우선 | Radix Themes |
 
 단, **미학은 시스템이 아니다** — 글래스모피즘·벤토·브루탈리즘·오로라에는 공식 패키지가 없다. 근사 구현임을 밝히고 만든다(예: 리퀴드 글래스 = blur+saturate 근사 + `prefers-reduced-transparency` 솔리드 폴백).
 
@@ -157,6 +161,15 @@ description: 프레이야의 목걸이 브리싱가멘 — 시각 방향·미감
 
 > 로고 절 출처(원칙 재서술): op7418/logo-generator-skill(MIT — 수치 계약·패턴 어휘·쇼케이스 문법), Omar Farook 아트 디렉팅 실전(원샷 금지·심볼 격리·수치 지시), LogoLounge 2026 트렌드 리포트, 옵티컬 보정 정론(Logo Geek 외).
 
+## 인쇄물 (팜플렛·포스터·브랜드 문서 — 화면 문법과 다른 판)
+
+- 물리 단위가 권위: 규격 치수(A4 210×297mm 등) + 안전 여백 ≥12mm, 재단 넘김(도련)이 필요한 풀블리드는 3mm — 어느 쪽인지 선언한다.
+- **도련 산출 계약** (풀블리드 선언 시) — 선언만으로는 미완이다: ① 배경·이미지·색면은 trim 에서 멈추지 않고 도련 끝까지 실제로 확장한다 — 출력면 = trim + 도련×2 (A4 3mm → **216×303mm**), `@page { size: 216mm 303mm; margin: 0 }` 류로 페이지 자체를 도련 포함 치수로 선언. ② 텍스트·핵심 요소는 여전히 trim 기준 안전 여백 안쪽. ③ PDF 산출물은 **TrimBox/BleedBox** 메타데이터 또는 렌더된 페이지 실측 치수(216×303mm)로 검증한다 — 210×297mm 로 나온 "풀블리드" PDF 는 도련이 재단선에서 잘린 미완이다.
+- 화면 팔레트를 그대로 쓰지 않는다 — 백지 위 대비로 재검증(밝은 액센트는 어둡게 보정), 형광·순수 RGB 계열은 인쇄 재현 불가 영역.
+- **콜로폰 동봉 의무**: 잉크 근사치(CMYK)·용지 사양·재단 방식을 문서 안에 마이크로 타이포로 남긴다 — 인쇄소와의 계약서다.
+- 브라우저는 실인쇄를 검증 못 한다(도트게인·색 재현) — 콜로폰에 "교정쇄 필수"를 명시하고 완료 보고에 이 한계를 적는다 (Canon 11).
+- 본문 크기는 pt(9pt±)·행간 1.6~1.7, 괘선은 0.5pt 헤어라인. 납품 = `@media print` 페이지 브레이크 + (풀블리드면) 위 도련 산출 계약 실측까지다.
+
 ## 리디자인 모드
 
 - 모드 판정: **보존**(브랜드 유지) / **전면**(백지) — 모호하면 질문 1개로 확정. 기존 사이트의 다이얼을 먼저 판독한다 — 그것이 출발점이다.
@@ -178,7 +191,7 @@ description: 프레이야의 목걸이 브리싱가멘 — 시각 방향·미감
 - [ ] 시그니처 1개 + 액센트 화면당 ≤3회
 - [ ] 분위기 계열 1개 이상 채택 — 플랫 단색 배경 아님
 - [ ] 선언한 모션 다이얼만큼 모션이 실존
-- [ ] role 마감 품질 13축 중 11+ 통과 (`품질 게이트 N/13` 보고 명기) + INP <200ms · CLS <0.1 (이미지·폰트 공간 예약)
+- [ ] role 마감 품질 판정식 통과 — 이 스킬 스코프는 브랜드 표면이다: 총점 ≥11/13 **AND** 풍부함 축(10–12) 전부 통과 (`품질 게이트 N/13 (브랜드)` 보고 명기) + INP <200ms · CLS <0.1 (이미지·폰트 공간 예약)
 - [ ] 카피 전 문자열 재독 완료 — 껍데기 동사 0·엠대시 0
 - [ ] 렌더 확인 가능 환경이면 스크린샷 대조 1회 이상
 
@@ -359,6 +372,91 @@ FREYJA_SKILLS: list[tuple[str, str]] = [
     ("asgard-freyja-video", _VIDEO),
     ("asgard-freyja-folkvangr", _FOLKVANGR),
 ]
+
+# 네이티브 디스패치 task → 전용 스킬 매칭 키워드 (소문자 부분 일치). 파일 스킬 로더가 없는
+# 네이티브 세션(asgard start)에서 심화 규칙이 닿게 하는 통로 — 모드 A/B 는 파일 스킬이 담당.
+_SKILL_TRIGGERS: dict[str, tuple[str, ...]] = {
+    "asgard-freyja-brisingamen": (
+        "신규 페이지",
+        "랜딩",
+        "히어로",
+        "리디자인",
+        "포트폴리오",
+        "브랜드",
+        "로고",
+        "폴리시",
+        "예쁘",
+        "수려",
+        "미감",
+        "인쇄",
+        "팜플렛",
+        "포스터",
+        "쇼케이스",
+        "landing",
+        "hero",
+        "logo",
+        "brand",
+        "redesign",
+        "polish",
+        "portfolio",
+        # 이미지→코드 경로 (디자인 컨텍스트 구현 — 브리싱가멘 광학 감사 절이 담당)
+        "figma",
+        "피그마",
+        "시안",
+        "목업",
+        "mockup",
+        "스크린샷",
+        "screenshot",
+        "image-to-code",
+        "이미지→코드",
+    ),
+    "asgard-freyja-motion": (
+        "모션",
+        "애니메이",
+        "전환",
+        "호버",
+        "스크롤",
+        "인터랙션",
+        "패럴랙스",
+        "마이크로인터랙션",
+        "motion",
+        "animat",
+        "transition",
+        "hover",
+        "scroll",
+        "parallax",
+    ),
+    "asgard-freyja-video": ("영상", "비디오", "video", "mp4", "webm", "remotion", "프레임 렌더"),
+    # "three" 단독 금지 — "three files" 류 일반 문장 오탐 (26-07-15 리뷰 실측)
+    "asgard-freyja-folkvangr": (
+        "3d",
+        "three.js",
+        "threejs",
+        "react-three-fiber",
+        "react three fiber",
+        "r3f",
+        "webgl",
+        "셰이더",
+        "shader",
+        "gltf",
+        "glb",
+        "모델링",
+    ),
+}
+
+
+def resolve_freyja_skills(task: str) -> list[tuple[str, str]]:
+    """디스패치 task → 매칭된 전용 스킬 (이름, frontmatter 제거 본문) — 0-LLM 키워드 휴리스틱.
+
+    네이티브 프레이야 자식 세션의 system 에 직접 주입할 본문을 고른다 (파일 스킬 로더 부재 보완).
+    무매칭 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role 이 이미 그 폴백을 선언한다).
+    복수 매칭은 전부 주입 — 도메인 우선순위(영상 결정론 > 웹 모션)는 본문 상호 참조가 이미 판정한다."""
+    t = task.lower()
+    return [
+        (name, body.split("---", 2)[2].lstrip())
+        for name, body in FREYJA_SKILLS
+        if any(k in t for k in _SKILL_TRIGGERS[name])
+    ]
 
 
 def freyja_core_skill() -> str:

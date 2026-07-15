@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from asgard.templates.freyja import FREYJA_SKILLS, freyja_core_skill  # noqa: E402
+from asgard.templates.freyja import FREYJA_SKILLS, freyja_core_skill, resolve_freyja_skills  # noqa: E402
 
 _SKILL_NAMES = ("asgard-freyja-brisingamen", "asgard-freyja-motion", "asgard-freyja-video", "asgard-freyja-folkvangr")
 
@@ -84,6 +84,9 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("가변 아이덴티티 세트", taste)  # 2026 트렌드
         self.assertIn("트렌드는 이동한다", taste)  # 재조사 의무
         self.assertIn("의미 1문장", taste)  # 형상의 존재 이유
+        # 인쇄물 절 (26-07-15 QC 스윕 유보 사항 종결 — 팜플렛 실증에서 증류)
+        self.assertIn("콜로폰 동봉 의무", taste)  # CMYK 근사·용지·교정쇄 명시
+        self.assertIn("브라우저는 실인쇄를 검증 못 한다", taste)  # 한계 정직 보고
 
     def test_motion_anchors(self):
         motion = self.by_name["asgard-freyja-motion"]
@@ -162,6 +165,134 @@ class TestA11yCanon(unittest.TestCase):
         self.assertIn("적록 토글 금지", self.role)
 
 
+class TestMarkdownTables(unittest.TestCase):
+    """GFM 표 구조 검사 — 헤더/구분/본문 열 수 불일치는 렌더링에서 열이 통째로 잘린다
+    (26-07-15 리뷰: 디자인 시스템 표 4열 본문이 2열 헤더로 절반 소실). 문자열 앵커로 못 잡는 부류."""
+
+    @staticmethod
+    def _table_blocks(text: str):
+        block: list[str] = []
+        for line in text.splitlines() + [""]:
+            s = line.strip()
+            if s.startswith("|") and s.endswith("|"):
+                block.append(s)
+            else:
+                if len(block) >= 2:
+                    yield block
+                block = []
+
+    def _assert_consistent(self, name: str, text: str):
+        for block in self._table_blocks(text):
+            widths = {len(row.strip("|").split("|")) for row in block}
+            self.assertEqual(len(widths), 1, f"{name}: 표 열 수 불일치 {sorted(widths)} — {block[0][:60]}")
+
+    def test_all_skill_bodies(self):
+        for sname, body in FREYJA_SKILLS:
+            self._assert_consistent(sname, body)
+
+    def test_role_body(self):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        self._assert_consistent("asgard-freyja.md", dict(ROLE_AGENTS)["asgard-freyja.md"])
+
+    def test_design_system_rows_survive(self):
+        # 리뷰에서 잘려나가던 4개 매핑이 각자 온전한 행으로 실존
+        taste = dict(FREYJA_SKILLS)["asgard-freyja-brisingamen"]
+        for row in ("| Google·Material 제품 | Material 3 |", "| GitHub 풍 devtool | Primer |"):
+            self.assertIn(row, taste)
+
+
+class TestSkillResolver(unittest.TestCase):
+    """네이티브 디스패치 스킬 주입 (26-07-15 리뷰 [높음]) — asgard start 에는 파일 스킬 로더가
+    없으므로 task 매칭 본문을 system 에 직접 주입한다. 리졸버가 그 라우팅 계약이다."""
+
+    def test_routing(self):
+        cases = {
+            "랜딩 페이지 히어로를 수려하게": "asgard-freyja-brisingamen",
+            "카드 호버 전환 애니메이션 추가": "asgard-freyja-motion",
+            "설명 영상 mp4 렌더": "asgard-freyja-video",
+            "3D 제품 뷰어 셰이더": "asgard-freyja-folkvangr",
+        }
+        for task, expected in cases.items():
+            names = [n for n, _ in resolve_freyja_skills(task)]
+            self.assertIn(expected, names, task)
+
+    def test_fail_open_on_no_match(self):
+        self.assertEqual(resolve_freyja_skills("버튼 라벨 오타 수정"), [])
+
+    def test_no_false_positive_on_generic_three(self):
+        # "three" 단독 부분 일치가 일반 문장에 3D 스킬을 주입하던 오탐 (26-07-15 리뷰 실측)
+        self.assertEqual(resolve_freyja_skills("three files need merging"), [])
+        names = [n for n, _ in resolve_freyja_skills("three.js 씬에 파티클")]
+        self.assertEqual(names, ["asgard-freyja-folkvangr"])  # 구체화된 표기는 여전히 매칭
+
+    def test_design_context_routes_to_brisingamen(self):
+        # 이미지→코드 경로 누락 (26-07-15 리뷰) — Figma·시안·스크린샷·목업 구현
+        for task in ("Figma 시안을 React로 구현", "스크린샷대로 만들어줘", "목업 그대로 코딩"):
+            names = [n for n, _ in resolve_freyja_skills(task)]
+            self.assertIn("asgard-freyja-brisingamen", names, task)
+
+    def test_injected_body_has_no_frontmatter(self):
+        for _, body in resolve_freyja_skills("히어로 모션 영상 3d 전부"):
+            self.assertFalse(body.startswith("---"))
+            self.assertNotIn("\nname: asgard-freyja-", body.split("\n\n")[0])
+
+    def test_multi_domain_injects_all(self):
+        names = [n for n, _ in resolve_freyja_skills("3D 히어로에 스크롤 모션")]
+        self.assertIn("asgard-freyja-brisingamen", names)
+        self.assertIn("asgard-freyja-motion", names)
+        self.assertIn("asgard-freyja-folkvangr", names)
+
+    def test_heimdall_dispatch_wired(self):
+        # 배선 실존 — 디스패치 핸들러가 리졸버를 실제로 사용한다 (주입 계약의 소비 지점)
+        import inspect
+
+        from asgard.agent.heimdall import Heimdall
+
+        self.assertIn("resolve_freyja_skills", inspect.getsource(Heimdall._dispatch_handler))
+
+
+class TestQualityGateSurfaces(unittest.TestCase):
+    """게이트 표면 분리 (26-07-15 리뷰 [중간]) — 브랜드 표면 13축 vs 실무 표면(10·11·앰비언트 면제)."""
+
+    def setUp(self):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        self.role = dict(ROLE_AGENTS)["asgard-freyja.md"]
+
+    def test_surface_split_declared(self):
+        self.assertIn("브랜드 표면", self.role)
+        self.assertIn("실무 표면", self.role)
+
+    def test_brand_verdict_formula_explicit(self):
+        # 총점만으론 10·11 동시 실패가 통과 가능 — 판정식이 AND 를 명시해야 한다 (26-07-15 리뷰)
+        self.assertIn("총점 ≥11/13 AND 축 10·11·12 전부 통과", self.role)
+        self.assertIn("점수로 상쇄 불가", self.role)
+
+    def test_practical_surface_exemption(self):
+        self.assertIn("면제", self.role)
+        self.assertIn("③ 인터랙션 응답과 나머지 축(1–9, 13)은 그대로", self.role)  # 면제는 앰비언트류만
+
+    def test_report_format_carries_surface(self):
+        self.assertIn("`품질 게이트 N/13 (브랜드)` 또는 `N/11 (실무)`", self.role)
+
+
+class TestPrintBleedContract(unittest.TestCase):
+    """도련 산출 계약 (26-07-15 리뷰 [중간]) — 선언만으론 미완: 확장 + 출력면 실측 검증까지."""
+
+    def setUp(self):
+        self.taste = dict(FREYJA_SKILLS)["asgard-freyja-brisingamen"]
+
+    def test_bleed_output_contract(self):
+        self.assertIn("도련 산출 계약", self.taste)
+        self.assertIn("216×303mm", self.taste)  # A4 + 3mm 도련 출력면
+        self.assertIn("TrimBox/BleedBox", self.taste)
+        self.assertIn("도련 끝까지 실제로 확장", self.taste)
+
+    def test_delivery_line_includes_bleed(self):
+        self.assertIn("(풀블리드면) 위 도련 산출 계약 실측까지", self.taste)
+
+
 class TestModeAWiring(unittest.TestCase):
     def test_agents_md_routes_visual_work_to_freyja_skill(self):
         from asgard.templates.agents import agents_md
@@ -169,6 +300,26 @@ class TestModeAWiring(unittest.TestCase):
         md = agents_md("p")
         self.assertIn("`asgard-freyja` 스킬", md)  # 모드 A 인라인 수행 경로
         self.assertIn("디자인·프론트엔드·모션", md)  # 확장된 도메인 라벨
+
+    def test_verifier_dispatch_isolated(self):
+        # 26-07-15 리뷰 [높음] — 공통 문구가 Verifier 에 freyja/thor 를 허용하면 검증 독립성 붕괴
+        from asgard.templates.agents import agents_md
+
+        md = agents_md("p")
+        self.assertNotIn("Worker·Verifier 는 하위 딜리버리", md)  # 합쳐진 라우팅 문구 재발 방지
+        self.assertIn("asgard-loki(adversarial, read-only)만", md)
+        self.assertIn("Verifier 의 freyja/thor 디스패치는 금지", md)
+
+    def test_freyja_frontmatter_excludes_verifier(self):
+        # 26-07-15 3차 리뷰 — CC 에이전트 선택 메타데이터(frontmatter description)가
+        # Verifier 디스패치를 다시 허용하면 공통 계약 분리가 무력화된다
+        from asgard.templates.roles import ROLE_AGENTS
+
+        role = dict(ROLE_AGENTS)["asgard-freyja.md"]
+        frontmatter = role.split("---", 2)[1]
+        self.assertNotIn("Worker/Verifier", frontmatter)
+        self.assertIn("Verifier 는 금지", frontmatter)
+        self.assertIn("Verifier 의 프레이야 디스패치는 금지", role)  # 본문도 동일 계약
 
 
 if __name__ == "__main__":
