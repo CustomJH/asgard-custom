@@ -32,6 +32,7 @@ ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = {
     "verifier": frozenset({"inspect", "execute", "verify"}),
     "freyja": frozenset({"inspect", "mutate", "execute"}),
     "thor": frozenset({"inspect", "mutate", "execute"}),
+    "eitri": frozenset({"inspect", "mutate", "execute"}),
     "loki": frozenset({"inspect", "execute"}),
     "ullr": frozenset({"inspect", "execute"}),
 }
@@ -44,6 +45,7 @@ _CC_ROLE_TOOLS: Mapping[str, tuple[str, ...]] = {
     "verifier": ("Read", "Grep", "Glob", "Bash", "Agent"),
     "freyja": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit"),
     "thor": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit"),
+    "eitri": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit"),
     "loki": ("Read", "Grep", "Glob", "Bash"),
     "ullr": ("Read", "Grep", "Glob", "Bash"),
 }

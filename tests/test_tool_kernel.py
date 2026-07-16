@@ -20,6 +20,10 @@ class TestRegistry(unittest.TestCase):
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py open q --criteria x"))
+        self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close"))
+        # close --force 는 관리적 해제(Odin 동의) — read-only 역할 권한이 아니다
+        self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close --force"))
+        self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close q1 --force"))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/verifier-gate.py"))
         self.assertFalse(is_readonly_bash_safe("echo x | tee changed.py"))
         self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py state | tee changed.py"))

@@ -7,7 +7,7 @@ anthropic/openai_compat 과 달리 내부 루프를 Claude Code 하네스가 소
 
 주의: 구독 인증은 개인 사용 한정 (Anthropic ToS — 제3자 서비스에 구독 로그인 제공 금지).
 
-밴/차단 방어 독트린 (CUS-191, 2026-07 리서치 — 차단은 '클라이언트 진위' 기준):
+밴/차단 방어 독트린 (2026-07 리서치 — 차단은 '클라이언트 진위' 기준):
   1. 토큰 불추출 — keychain/credentials 값을 절대 안 읽는다 (감지는 존재 확인만). #1 차단 트리거.
   2. 클라이언트 무변조 — 스톡 바이너리, 헤더/UA 불변, 텔레메트리 유지 (끄면 '무텔레메트리 이상 트래픽' 지문).
   3. 프록시 금지 — 구독 인증 시 base_url(config)·ANTHROPIC_BASE_URL(env) 차단/무력화 (OpenCode 차단 벡터).
@@ -31,13 +31,16 @@ from dataclasses import dataclass
 BUILTIN_TOOLS = ["Bash", "Read", "Write", "Edit", "Glob", "Grep"]
 _WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 
-# ── 밴/차단 방어 (CUS-191) ──────────────────────────────────────────────
+# ── 밴/차단 방어 ──────────────────────────────────────────────
 # 동시 CLI 세션 상한 — 구독 트래픽 폭주(다중 병렬 에이전트) 방지. Heimdall 딜리버리
 # 웨이브(≤3 병렬)까지 수용하되 그 이상은 직렬화. env ASGARD_CLAUDE_MAX_CONCURRENT 로 조정.
 _MAX_CONCURRENT = max(1, int(os.environ.get("ASGARD_CLAUDE_MAX_CONCURRENT", "3") or 3))
 _spawn_gate = threading.BoundedSemaphore(_MAX_CONCURRENT)
+# 턴 wall-clock 상한 — CLI 행(hang) 시 영구 블록 방지 (CUS-246). 정상 장기 턴(대형 구현)을
+# 죽이지 않게 기본 1시간. permit 대기에도 같은 상한 — 행 세션이 permit 을 안 놓는 경우 방어.
+_TURN_TIMEOUT_S = max(60.0, float(os.environ.get("ASGARD_CLAUDE_TURN_TIMEOUT_S", "3600") or 3600))
 
-# ── 단일 데몬 이벤트 루프 (CUS-192) ─────────────────────────────────────
+# ── 단일 데몬 이벤트 루프 ─────────────────────────────────────
 # 매 턴 asyncio.run() 새 루프 생성/종료는 SDK subprocess child watcher·async
 # generator 잔여와 충돌한다 ("aclose(): already running", "Loop … is closed").
 # 프로세스 수명 동안 데몬 스레드에서 루프 하나를 돌리고 모든 코루틴을 거기 제출 —
@@ -57,9 +60,21 @@ def _bg_loop():
     return _loop
 
 
-def _submit(coro):
-    """코루틴을 데몬 루프에 제출하고 완료까지 블록 (asyncio.run 대체)."""
-    return asyncio.run_coroutine_threadsafe(coro, _bg_loop()).result()
+def _submit(coro, timeout: float | None = None):
+    """코루틴을 데몬 루프에 제출하고 완료까지 블록 (asyncio.run 대체).
+
+    timeout 초과 시 future 취소(_drained finally 가 CLI subprocess 정리) 후 TimeoutError —
+    classify_api_error 가 이름 기반 retryable 로 분류해 새 세션 재시도로 이어진다."""
+    fut = asyncio.run_coroutine_threadsafe(coro, _bg_loop())
+    try:
+        return fut.result(timeout)
+    except TimeoutError:
+        if fut.done():  # 코루틴 자신이 던진 TimeoutError — 대기 초과 아님, 그대로 표면화
+            raise
+        fut.cancel()
+        raise TimeoutError(
+            f"claude CLI 턴 {timeout:.0f}s 초과 — 행 의심, 취소 후 재시도 (ASGARD_CLAUDE_TURN_TIMEOUT_S 로 조정)"
+        ) from None
 
 
 class UsageCapError(RuntimeError):
@@ -81,7 +96,7 @@ def detect_auth() -> tuple[str, str]:
         return "keychain", "~/.claude/.credentials.json (claude /login)"
     if (
         sys.platform == "darwin"
-    ):  # macOS 는 keychain 저장 — 존재 여부만 (값 조회 금지). os.uname 은 유닉스 전용이라 금지 (CUS-221)
+    ):  # macOS 는 keychain 저장 — 존재 여부만 (값 조회 금지). os.uname 은 유닉스 전용이라 금지
         import subprocess
 
         p = subprocess.run(
@@ -149,8 +164,21 @@ def run(sess, user_content: str):
     from claude_agent_sdk import ProcessError
 
     try:
-        with _spawn_gate:  # 동시 CLI 세션 상한 — 초과분은 직렬 대기
-            _submit(_run_async(sess, user_content, result))  # 데몬 루프 재사용 (CUS-192)
+        if getattr(sess, "_nested_dispatch", False):
+            # 딜리버리 디스패치 자식 — 부모 worker 가 permit 을 쥔 채 이 결과를 기다린다.
+            # 여기서 permit 을 재요구하면 재진입 데드락 (CUS-246): 병렬 worker 3개가 permit
+            # 3개를 전부 점유한 채 자식 3개가 영구 대기. 자식 동시성은 부모 웨이브(≤3)에 유계.
+            _submit(_run_async(sess, user_content, result), timeout=_TURN_TIMEOUT_S)
+        else:
+            if not _spawn_gate.acquire(timeout=_TURN_TIMEOUT_S):  # 동시 CLI 세션 상한 — 초과분은 직렬 대기
+                raise TimeoutError(
+                    f"CLI 세션 슬롯 대기 {_TURN_TIMEOUT_S:.0f}s 초과 — 행 세션 의심 "
+                    "(ASGARD_CLAUDE_MAX_CONCURRENT / ASGARD_CLAUDE_TURN_TIMEOUT_S 확인)"
+                )
+            try:
+                _submit(_run_async(sess, user_content, result), timeout=_TURN_TIMEOUT_S)  # 데몬 루프 재사용
+            finally:
+                _spawn_gate.release()
     except ProcessError as e:
         if _is_usage_cap(str(e), e.stderr or ""):
             raise UsageCapError(
@@ -231,7 +259,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         mcp_servers=mcp_servers,
         # 유저/프로젝트 MCP 설정(~/.claude.json, .mcp.json) 차단 — Asgard 가 툴 표면을 소유한다.
         # 없으면 pencil/hermes 등 무관 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
-        # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (CUS-194 t1 4/4 실측).
+        # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (t1 4/4 실측).
         strict_mcp_config=True,
         hooks=hooks,
         resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
@@ -315,7 +343,7 @@ async def _run_async(sess, user_content: str, result) -> None:
 
 
 async def _drained(gen):
-    """query async generator 를 소비하고 finally 에서 명시적으로 닫는다 (CUS-192).
+    """query async generator 를 소비하고 finally 에서 명시적으로 닫는다.
 
     async for 정상 종료 후에도 SDK 는 subprocess/백그라운드 태스크를 남길 수 있어,
     루프 회수 전에 gen.aclose() 로 확정 정리 — asyncgen shutdown 잔여 경고를 없앤다.
@@ -408,5 +436,9 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
                 out = msg.result or ""
         return out
 
-    with _spawn_gate:  # classify 도 CLI 스폰 — 동시성 상한 공유
-        return _submit(_go())  # 데몬 루프 재사용 (CUS-192)
+    if not _spawn_gate.acquire(timeout=_TURN_TIMEOUT_S):  # classify 도 CLI 스폰 — 동시성 상한 공유
+        raise TimeoutError(f"CLI 세션 슬롯 대기 {_TURN_TIMEOUT_S:.0f}s 초과 — 행 세션 의심")
+    try:
+        return _submit(_go(), timeout=_TURN_TIMEOUT_S)  # 데몬 루프 재사용
+    finally:
+        _spawn_gate.release()

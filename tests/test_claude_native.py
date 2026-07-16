@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""claude_cli 트랜스포트 결정론 슬라이스 (CUS-190) — CLI 스폰 없는 부분 전부.
+"""claude_cli 트랜스포트 결정론 슬라이스 — CLI 스폰 없는 부분 전부.
 
 Agent SDK 의 query 만 페이크로 갈고 메시지 타입은 실물 dataclass 사용 — isinstance 분기가
 실제 와이어 타입과 어긋나면 여기서 깨진다. 라이브 CLI 스모크는 수동 (구독 한도 소모).
@@ -375,7 +375,7 @@ class TestCustomToolBridge(_Sess):
 
 
 class TestBanGuards(_Sess):
-    """밴/차단 방어 (CUS-191) — 캡 감지·프록시 거부·인증 감지·동시성 상한."""
+    """밴/차단 방어 — 캡 감지·프록시 거부·인증 감지·동시성 상한."""
 
     def test_base_url_rejected(self):
         sess = self._session()
@@ -467,7 +467,7 @@ class TestBanGuards(_Sess):
 
 
 class TestDaemonLoop(unittest.TestCase):
-    """단일 데몬 이벤트 루프 (CUS-192) — 매턴 새 루프 대신 재사용으로 asyncgen/child-watcher 잔여 봉인."""
+    """단일 데몬 이벤트 루프 — 매턴 새 루프 대신 재사용으로 asyncgen/child-watcher 잔여 봉인."""
 
     def test_submit_reuses_single_loop(self):
         async def who():
@@ -481,6 +481,23 @@ class TestDaemonLoop(unittest.TestCase):
             return n * 2
 
         self.assertEqual(claude_native._submit(double(21)), 42)
+
+    def test_submit_timeout_cancels_and_raises(self):
+        """CUS-246 — 행 코루틴은 timeout 에서 취소 + 처방적 TimeoutError (기존: 영구 블록)."""
+        with self.assertRaises(TimeoutError) as cm:
+            claude_native._submit(asyncio.sleep(30), timeout=0.05)
+        self.assertIn("초과", str(cm.exception))
+        self.assertIn("ASGARD_CLAUDE_TURN_TIMEOUT_S", str(cm.exception))
+
+    def test_submit_passes_through_inner_timeout_error(self):
+        """코루틴 자신이 던진 TimeoutError(SDK 내부) 는 대기 초과로 오인하지 않는다."""
+
+        async def boom():
+            raise TimeoutError("inner-cause")
+
+        with self.assertRaises(TimeoutError) as cm:
+            claude_native._submit(boom(), timeout=5)
+        self.assertIn("inner-cause", str(cm.exception))
 
     def test_drained_closes_generator(self):
         closed = []
@@ -498,6 +515,36 @@ class TestDaemonLoop(unittest.TestCase):
         out = claude_native._submit(consume())
         self.assertEqual(out, [1, 2])
         self.assertEqual(closed, [True])  # finally 실행 = 명시적 정리됨
+
+
+class TestSpawnGateReentrancy(_Sess):
+    """CUS-246 — 디스패치 자식의 permit 재요구 데드락 봉인 + permit 수지 보존."""
+
+    def test_nested_dispatch_skips_spawn_gate(self):
+        """부모 worker 들이 permit 을 전부 쥔 상황(데드락 조건)에서도 디스패치 자식은 진행한다."""
+        query, _ = _fake_query([[_result_msg()]])
+        sess = self._session()
+        sess._nested_dispatch = True  # _dispatch_handler 가 자식 세션에 다는 마커
+        permits = [claude_native._spawn_gate.acquire(timeout=1) for _ in range(claude_native._MAX_CONCURRENT)]
+        self.assertTrue(all(permits))  # permit 전량 점유 = 기존 코드라면 영구 대기 지점
+        try:
+            with mock.patch("claude_agent_sdk.query", query):
+                r = sess.run("child task")
+        finally:
+            for _ in permits:
+                claude_native._spawn_gate.release()
+        self.assertEqual(r.stop_reason, "end_turn")
+
+    def test_top_level_run_restores_permits(self):
+        """acquire/release 수지 — run 후 permit 전량 복원 (BoundedSemaphore 초과 release 는 즉발)."""
+        query, _ = _fake_query([[_result_msg()]])
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("task")
+        got = [claude_native._spawn_gate.acquire(timeout=1) for _ in range(claude_native._MAX_CONCURRENT)]
+        for _ in [g for g in got if g]:
+            claude_native._spawn_gate.release()
+        self.assertTrue(all(got))
 
 
 class TestCompleteText(unittest.TestCase):

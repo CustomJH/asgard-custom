@@ -1,4 +1,4 @@
-"""네이티브 루프 툴셋 (CUS-137) — Anthropic-defined bash + text_editor 계약 구현.
+"""네이티브 루프 툴셋 — Anthropic-defined bash + text_editor 계약 구현.
 
 Anthropic-defined 툴(스키마리스)을 쓰는 이유: 모델이 이 계약으로 훈련돼 있어 프롬프트 비용 없이
 정확히 동작한다. 핸들러 계약(레퍼런스 문서 그대로):
@@ -62,6 +62,10 @@ def _git_guard(root: str, command: str) -> str | None:
     return _hook_guard(root, "asgard.hooks.git_guard", {"command": command})
 
 
+def _release_guard(root: str, command: str) -> str | None:
+    return _hook_guard(root, "asgard.hooks.release_guard", {"command": command})
+
+
 # 셸 파괴 명령 가드 (Canon 3) — git 계열은 git-guard 훅이 단일 출처, 여기는 비-git 만.
 # 루트 안 rm -rf 는 허용 (스크래치 정리는 정당 + git 이 복구 지점) — 루트 밖·조상 경로만 차단.
 _DEV_DESTRUCTIVE = re.compile(r"\bmkfs(\.\w+)?\b|\bdd\b[^|;&]*\bof=/dev/")
@@ -98,7 +102,7 @@ def _cap(s: str) -> str:
 
 def validate_bash_command(root: str, command: str) -> str | None:
     """Return a deterministic block reason without executing the command."""
-    return _git_guard(root, command) or _destructive_guard(root, command)
+    return _git_guard(root, command) or _release_guard(root, command) or _destructive_guard(root, command)
 
 
 def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:

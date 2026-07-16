@@ -1,12 +1,12 @@
-"""AgentSession — 단일 컨텍스트 tool use 루프 (CUS-137, CUS-143).
+"""AgentSession — 단일 컨텍스트 tool use 루프.
 
 세션 = (system, tools, messages) 하나. 서브에이전트(역할·딜리버리)는 새 AgentSession —
-child context 라 프로세스 스폰 없이 중첩된다 (CUS-142 의 구조적 기반).
+child context 라 프로세스 스폰 없이 중첩된다 (중첩 디스패치의 구조적 기반).
 
 트랜스포트 3종 (루프·툴 실행은 공유, API 호출·파싱만 분기):
   anthropic     — Messages API (스키마리스 bash/editor, content 블록)
   openai_compat — chat.completions (function 툴, reasoning_content 스트리밍 — nvidia NIM 등)
-  claude_cli    — 로컬 claude CLI(Claude Code) 를 Agent SDK 로 구동 (claude_native.py, CUS-190).
+  claude_cli    — 로컬 claude CLI(Claude Code) 를 Agent SDK 로 구동 (claude_native.py).
                   예외적으로 내부 루프는 Claude Code 소유 — 커스텀 툴은 in-process MCP 로
                   이쪽 핸들러 실행, 커맨드/쓰기/토큰은 이벤트 관찰로 집계 (계약 유지).
 루프를 Asgard 가 소유하는 게 핵심 — strands/langchain 은 루프를 가져가서 Trinity 강제화를 없앤다.
@@ -21,6 +21,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable
 
+from ..io_journal import call_returned, call_started
 from ..providers import ResolvedProvider
 from .tool_kernel import ToolContext, build_session_registry, execute_tool, to_openai_tool
 
@@ -65,6 +66,11 @@ def _to_openai_tool(t: dict) -> dict:
     return to_openai_tool(t)
 
 
+# 창 미상 프로바이더의 프룬 폴백 상한 — 주류 창(≥128k) 기준 보수값. 더 작은 모델은
+# config [provider] context_window 로 실제 창을 알려야 정확히 보호된다.
+_FALLBACK_CONTEXT_WINDOW = 128_000
+
+
 class _Call:
     """트랜스포트 무관 툴콜 — (id, name, input)."""
 
@@ -103,6 +109,9 @@ class AgentSession:
         self.on_tokens = on_tokens
         self.max_iterations = max_iterations
         self.messages: list[dict] = []
+        # 딜리버리 디스패치 자식 마커 — claude_cli 에서 부모가 spawn permit 을 쥔 채 기다리므로
+        # 자식은 permit 을 재요구하지 않는다 (재진입 데드락, CUS-246). _dispatch_handler 가 켠다.
+        self._nested_dispatch = False
         # 프롬프트 캐싱 (anthropic 전용, 상시 기본) — config [cache] enabled/ttl, 세션 생성 시 1회 해석
         from .prompt_cache import cache_settings
 
@@ -148,12 +157,36 @@ class AgentSession:
         return out.content, out.is_error
 
     # ── 진입점 ──────────────────────────────────────────────────────────
+    def _journal_started(self, transport: str) -> tuple[str | None, float]:
+        jid = call_started(
+            self.root, provider=self.rp.profile.name, model=self.rp.model, transport=transport, role=self.role
+        )
+        return jid, time.monotonic()
+
+    def _journal_error(self, jid: str | None, t0: float, e: Exception) -> None:
+        call_returned(self.root, jid, duration_ms=(time.monotonic() - t0) * 1000, error=f"{type(e).__name__}: {e}")
+
     def run(self, user_content: str) -> SessionResult:
         try:
             if self.rp.profile.api_mode == "claude_cli":
                 from . import claude_native
 
-                r = claude_native.run(self, user_content)
+                # claude_cli 는 내부 루프를 Claude Code 가 소유 — 저널은 run 전체를 한 호출로 기록
+                jid, j0 = self._journal_started("claude_cli")
+                try:
+                    r = claude_native.run(self, user_content)
+                except Exception as e:
+                    self._journal_error(jid, j0, e)
+                    raise
+                call_returned(
+                    self.root,
+                    jid,
+                    duration_ms=(time.monotonic() - j0) * 1000,
+                    tokens=r.tokens,
+                    context_tokens=r.context_tokens,
+                    cache_read_tokens=r.cache_read_tokens,
+                    cache_write_tokens=r.cache_write_tokens,
+                )
             elif self.rp.profile.api_mode == "anthropic":
                 r = self._run_anthropic(user_content)
             else:
@@ -185,8 +218,11 @@ class AgentSession:
         return pruned
 
     def _maybe_prune(self, result: SessionResult) -> None:
-        win = self.rp.profile.context_window
-        if win and result.context_tokens > win * 0.8:
+        # 창 미상(profile=0, openai_compat/nvidia)이어도 프룬은 걸려야 한다 — 폴백 없이는
+        # 컨텍스트가 무한 성장해 API 한도 초과(400 fatal)로만 터진다 (CUS-248).
+        # 정밀값은 config [provider] context_window 로 지정.
+        win = self.rp.context_window or self.rp.profile.context_window or _FALLBACK_CONTEXT_WINDOW
+        if result.context_tokens > win * 0.8:
             n = self._prune_history()
             if n:
                 self._tool_line("⌫", f"컨텍스트 압축 — 오래된 툴 출력 {n}건 프룬")
@@ -204,39 +240,53 @@ class AgentSession:
 
                 system, messages = cached_request(self.system, self.messages, self.cache_ttl)
             self.on_status(_t("thinking"))
+            jid, j0 = self._journal_started("anthropic")
             t0, first = time.monotonic(), True
-            with self.client.messages.stream(
-                model=self.rp.model,
-                max_tokens=32000,
-                system=system,
-                thinking={"type": "adaptive"},
-                tools=self.tools,
-                messages=messages,
-            ) as stream:
-                for text in stream.text_stream:
-                    if first:  # 첫 토큰 전 침묵 = thinking — 2s 이상이면 축약 라인
-                        first = False
-                        self.on_status(None)
-                        gap = time.monotonic() - t0
-                        if gap >= 2:
-                            self._thought_line(gap)
-                    self.on_text(text)
-                resp = stream.get_final_message()
+            try:
+                with self.client.messages.stream(
+                    model=self.rp.model,
+                    max_tokens=32000,
+                    system=system,
+                    thinking={"type": "adaptive"},
+                    tools=self.tools,
+                    messages=messages,
+                ) as stream:
+                    for text in stream.text_stream:
+                        if first:  # 첫 토큰 전 침묵 = thinking — 2s 이상이면 축약 라인
+                            first = False
+                            self.on_status(None)
+                            gap = time.monotonic() - t0
+                            if gap >= 2:
+                                self._thought_line(gap)
+                        self.on_text(text)
+                    resp = stream.get_final_message()
+            except Exception as e:
+                self._journal_error(jid, j0, e)
+                raise
             self.messages.append({"role": "assistant", "content": resp.content})
             result.text = "".join(b.text for b in resp.content if b.type == "text")
             result.stop_reason = resp.stop_reason or ""
             u = getattr(resp, "usage", None)
+            counts: dict[str, int] = {}
             if u:
                 # 캐시 적중분은 input_tokens 에서 빠진다 — 셋을 합쳐야 실제 컨텍스트 크기.
                 # 이걸 빼먹으면 캐싱 도입 후 창 80% 프룬 트리거가 과소계상으로 안 터진다.
                 inp = getattr(u, "input_tokens", 0) or 0
                 cr = getattr(u, "cache_read_input_tokens", 0) or 0
                 cw = getattr(u, "cache_creation_input_tokens", 0) or 0
-                result.context_tokens = inp + cr + cw + (getattr(u, "output_tokens", 0) or 0)
+                outp = getattr(u, "output_tokens", 0) or 0
+                result.context_tokens = inp + cr + cw + outp
                 result.tokens += result.context_tokens
                 result.cache_read_tokens += cr
                 result.cache_write_tokens += cw
                 result.uncached_input_tokens += inp
+                counts = {
+                    "input_tokens": inp,
+                    "cache_read_tokens": cr,
+                    "cache_write_tokens": cw,
+                    "output_tokens": outp,
+                }
+            call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, **counts)
             if resp.stop_reason == "max_tokens":
                 from .. import ui
 
@@ -262,7 +312,7 @@ class AgentSession:
         oai_tools = [_to_openai_tool(t) for t in self.tools]
         self.messages.append({"role": "user", "content": user_content})
         result = SessionResult(text="", stop_reason="")
-        extra = dict(self.rp.profile.extra_body)  # provider 고유 (nvidia reasoning 등)
+        extra = self.rp.profile.request_extra_body(self.rp.model)  # 선택 모델에 유효한 provider 고유 필드만
         sys_msg = [{"role": "system", "content": self.system}]
         # 마커 주입은 실측 검증 조합만 (화이트리스트 — 미검증 provider 에 비표준 필드는 400 위험).
         # OpenAI 자체는 자동 프리픽스 캐시라 마커 불요 — 계측(cached_tokens)은 아래 usage 에서 공통.
@@ -282,51 +332,59 @@ class AgentSession:
             else:
                 send_msgs = sys_msg + self.messages
             self.on_status(_t("thinking"))
-            stream = self.client.chat.completions.create(
-                model=self.rp.model,
-                messages=send_msgs,
-                tools=oai_tools or None,
-                max_tokens=16384,
-                stream=True,
-                stream_options={"include_usage": True},
-                extra_body=extra or None,
-            )
-            for chunk in stream:
-                u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
-                if u:
-                    result.context_tokens = getattr(u, "total_tokens", 0) or 0
-                    result.tokens += result.context_tokens
-                    # OpenAI-와이어 캐시 계측 — 마커 주입 여부와 무관하게 리포트되면 집계
-                    # (OpenAI 자동 프리픽스 캐시·OpenRouter 전부 prompt_tokens_details.cached_tokens)
-                    det = getattr(u, "prompt_tokens_details", None)
-                    cr = (getattr(det, "cached_tokens", 0) or 0) if det else 0
-                    result.cache_read_tokens += cr
-                    result.uncached_input_tokens += max(0, (getattr(u, "prompt_tokens", 0) or 0) - cr)
-                if not chunk.choices:
-                    continue
-                if chunk.choices[0].finish_reason:
-                    finish = chunk.choices[0].finish_reason
-                d = chunk.choices[0].delta
-                # reasoning 필드명은 벤더별 상이 — nvidia=reasoning_content, ollama=reasoning
-                reasoning = getattr(d, "reasoning_content", None) or getattr(d, "reasoning", None)
-                if reasoning:  # 원문 덤프 대신 축약 — 시작 시각만 기록
-                    if think_t0 is None:
-                        think_t0 = time.monotonic()
-                if d.content:
-                    self.on_status(None)
-                    if think_t0 is not None:
-                        self._thought_line(time.monotonic() - think_t0)
-                        think_t0 = None
-                    text_buf.append(d.content)
-                    self.on_text(d.content)
-                for tc in d.tool_calls or []:
-                    slot = calls.setdefault(tc.index, {"id": "", "name": "", "args": ""})
-                    if tc.id:
-                        slot["id"] = tc.id
-                    if tc.function and tc.function.name:
-                        slot["name"] = tc.function.name
-                    if tc.function and tc.function.arguments:
-                        slot["args"] += tc.function.arguments
+            jid, j0 = self._journal_started("openai_compat")
+            jcounts: dict[str, int] = {}
+            try:
+                stream = self.client.chat.completions.create(
+                    model=self.rp.model,
+                    messages=send_msgs,
+                    tools=oai_tools or None,
+                    max_tokens=16384,
+                    stream=True,
+                    stream_options={"include_usage": True},
+                    extra_body=extra or None,
+                )
+                for chunk in stream:
+                    u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
+                    if u:
+                        result.context_tokens = getattr(u, "total_tokens", 0) or 0
+                        result.tokens += result.context_tokens
+                        # OpenAI-와이어 캐시 계측 — 마커 주입 여부와 무관하게 리포트되면 집계
+                        # (OpenAI 자동 프리픽스 캐시·OpenRouter 전부 prompt_tokens_details.cached_tokens)
+                        det = getattr(u, "prompt_tokens_details", None)
+                        cr = (getattr(det, "cached_tokens", 0) or 0) if det else 0
+                        result.cache_read_tokens += cr
+                        result.uncached_input_tokens += max(0, (getattr(u, "prompt_tokens", 0) or 0) - cr)
+                        jcounts = {"total_tokens": result.context_tokens, "cache_read_tokens": cr}
+                    if not chunk.choices:
+                        continue
+                    if chunk.choices[0].finish_reason:
+                        finish = chunk.choices[0].finish_reason
+                    d = chunk.choices[0].delta
+                    # reasoning 필드명은 벤더별 상이 — nvidia=reasoning_content, ollama=reasoning
+                    reasoning = getattr(d, "reasoning_content", None) or getattr(d, "reasoning", None)
+                    if reasoning:  # 원문 덤프 대신 축약 — 시작 시각만 기록
+                        if think_t0 is None:
+                            think_t0 = time.monotonic()
+                    if d.content:
+                        self.on_status(None)
+                        if think_t0 is not None:
+                            self._thought_line(time.monotonic() - think_t0)
+                            think_t0 = None
+                        text_buf.append(d.content)
+                        self.on_text(d.content)
+                    for tc in d.tool_calls or []:
+                        slot = calls.setdefault(tc.index, {"id": "", "name": "", "args": ""})
+                        if tc.id:
+                            slot["id"] = tc.id
+                        if tc.function and tc.function.name:
+                            slot["name"] = tc.function.name
+                        if tc.function and tc.function.arguments:
+                            slot["args"] += tc.function.arguments
+            except Exception as e:
+                self._journal_error(jid, j0, e)
+                raise
+            call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, **jcounts)
 
             self.on_status(None)
             if think_t0 is not None:  # thinking 후 바로 툴콜 — 텍스트 없이 끝난 경우
@@ -378,7 +436,7 @@ def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subpr
         capture_output=True,
         text=True,
         cwd=root,
-        timeout=300,  # append(PASS) 가 하네스 베이스라인 체크를 직접 돌린다 (CUS-187, 체크당 기본 120s)
+        timeout=300,  # append(PASS) 가 하네스 베이스라인 체크를 직접 돌린다 (체크당 기본 120s)
     )
 
 

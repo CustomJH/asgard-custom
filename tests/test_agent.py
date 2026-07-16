@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""네이티브 에이전트 루프 결정론 슬라이스 (CUS-137/142) — API 호출 없는 부분 전부.
+"""네이티브 에이전트 루프 결정론 슬라이스 — API 호출 없는 부분 전부.
 
 툴 계약(text_editor/bash)·경로 격리·git-guard 배선·퀘스트 로그 래퍼(ql/gate)·delegate 이벤트·
-write-sentinel 미러. 라이브 루프(실 모델)는 tests/e2e_trinity.sh 의 start 아암(CUS-140) 몫.
+write-sentinel 미러. 라이브 루프(실 모델)는 여기서 다루지 않는다 — 별도 벤치/수동 스모크 몫.
 
 실행: uv run pytest tests/test_agent.py  (asgard 패키지 임포트 필요 — subprocess 가 -m 으로 훅 실행)
 """
@@ -193,6 +193,54 @@ class TestContextPrune(Base):
         self.assertEqual(s.messages[1]["content"][0]["content"], "[pruned]")
         self.assertEqual(s.messages[-1]["content"][0]["content"], "X" * 100)  # 최근 보존
         self.assertEqual(s._prune_history(keep=6), 0)  # 재실행 멱등
+
+    def test_prune_triggers_on_unknown_window_via_fallback(self):
+        """CUS-248 — 창 미상(profile=0, openai_compat) 프로바이더도 폴백 상한으로 프룬이 걸린다."""
+        from asgard.agent.session import _FALLBACK_CONTEXT_WINDOW, AgentSession, SessionResult
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        rp = ResolvedProvider(profile=PROVIDERS["openai_compat"], model="m", api_key="k")
+        self.assertEqual(rp.profile.context_window, 0)  # 전제 — 창 미상
+        s = AgentSession(None, rp, self.root, "sys")
+        for i in range(10):
+            s.messages.append({"role": "tool", "content": f"out-{i}" + "X" * 100})
+        r = SessionResult(text="", stop_reason="", context_tokens=int(_FALLBACK_CONTEXT_WINDOW * 0.9))
+        s._maybe_prune(r)
+        self.assertEqual(s.messages[0]["content"], "[pruned]")
+        self.assertNotEqual(s.messages[-1]["content"], "[pruned]")  # 최근 보존
+
+    def test_config_context_window_overrides_fallback(self):
+        """config [provider] context_window — 폴백보다 작은 실제 창을 알려 조기 프룬."""
+        from dataclasses import replace
+
+        from asgard.agent.session import AgentSession, SessionResult
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        rp = replace(
+            ResolvedProvider(profile=PROVIDERS["openai_compat"], model="m", api_key="k"), context_window=10_000
+        )
+        s = AgentSession(None, rp, self.root, "sys")
+        for i in range(10):
+            s.messages.append({"role": "tool", "content": "X" * 100})
+        s._maybe_prune(SessionResult(text="", stop_reason="", context_tokens=9_000))
+        self.assertEqual(s.messages[0]["content"], "[pruned]")
+
+    def test_resolve_parses_context_window_from_project_config(self):
+        from asgard.providers import resolve
+        from asgard.settings import PROJECT_FILE
+
+        d = os.path.join(self.root, ".asgard")
+        os.makedirs(d, exist_ok=True)
+        conf = {"provider": {"name": "openai_compat", "base_url": "http://x", "model": "m", "context_window": 32000}}
+        open(os.path.join(d, PROJECT_FILE), "w").write(json.dumps(conf))
+        with mock.patch("asgard.settings.load_global", return_value={}):
+            rp = resolve(self.root)
+        self.assertEqual(rp.context_window, 32000)
+        conf["provider"]["context_window"] = "invalid"
+        open(os.path.join(d, PROJECT_FILE), "w").write(json.dumps(conf))
+        with mock.patch("asgard.settings.load_global", return_value={}):
+            rp = resolve(self.root)
+        self.assertEqual(rp.context_window, 0)  # 깨진 값은 미지정 취급 — 프로파일/폴백 사용
 
 
 class TestLedgerWiring(Base):
@@ -400,7 +448,7 @@ class TestRoleProviders(Base):
 
 
 class TestDeliveryAgents(unittest.TestCase):
-    """딜리버리 계층 CC 배선 (CUS-129) — 템플릿 계약·소스 단일화, API 호출 없음."""
+    """딜리버리 계층 CC 배선 — 템플릿 계약·소스 단일화, API 호출 없음."""
 
     def _tpl(self, name):
         from asgard.templates.roles import ROLE_AGENTS
@@ -412,12 +460,13 @@ class TestDeliveryAgents(unittest.TestCase):
 
         names = {f for f, _ in ROLE_AGENTS}
         self.assertLessEqual(
-            {f"asgard-{n}.md" for n in ("thinker", "worker", "verifier", "freyja", "thor", "loki", "ullr")}, names
+            {f"asgard-{n}.md" for n in ("thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr")},
+            names,
         )
 
     def test_delivery_frontmatter_blocks_redelegation(self):
-        # freyja/thor: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
-        for n in ("freyja", "thor"):
+        # freyja/thor/eitri: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
+        for n in ("freyja", "thor", "eitri"):
             self.assertIn("disallowedTools: Agent", self._tpl(f"asgard-{n}.md"))
         # loki/ullr: read-only allowlist (Agent·Write·Edit 부재) — 재위임·수정 불가 정찰 계층.
         for n in ("loki", "ullr"):
@@ -437,7 +486,7 @@ class TestDeliveryAgents(unittest.TestCase):
     def test_heimdall_delivery_derives_from_templates(self):
         from asgard.agent.heimdall import _DELIVERY
 
-        self.assertEqual(sorted(_DELIVERY), ["freyja", "loki", "thor"])
+        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "loki", "thor"])
         for g, body in _DELIVERY.items():
             self.assertIn(f"asgard-{g}", body)
             self.assertNotIn("name:", body)  # frontmatter 누출 없음
@@ -449,7 +498,7 @@ class TestDeliveryAgents(unittest.TestCase):
 
 
 class TestHeadlessProceed(unittest.TestCase):
-    """무인 승인 해소 계약 (CUS-169) — headless 에서 승인 대기 무작업 종료 금지."""
+    """무인 승인 해소 계약 — headless 에서 승인 대기 무작업 종료 금지."""
 
     def _tpl(self, name):
         from asgard.templates.roles import ROLE_AGENTS
@@ -484,7 +533,7 @@ class TestHeadlessProceed(unittest.TestCase):
 
 
 class TestRunPrompt(unittest.TestCase):
-    """asgard run — headless 단발 실행 (CUS-193). Heimdall/preflight 을 대역으로 결정론 검증."""
+    """asgard run — headless 단발 실행. Heimdall/preflight 을 대역으로 결정론 검증."""
 
     def setUp(self):
         import io
