@@ -5,7 +5,9 @@
 """
 
 import asyncio
+import threading
 import unittest
+from typing import Any, cast
 
 from asgard.agent.tui import AsgardTUI
 from asgard.providers import resolve
@@ -15,6 +17,19 @@ class Stub:
     """Heimdall 스텁 — API 없이 handle."""
 
     def handle(self, req):
+        return f"[echo] {req}"
+
+
+class BlockingStub:
+    def __init__(self):
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.calls = []
+
+    def handle(self, req):
+        self.calls.append(req)
+        self.started.set()
+        self.release.wait(timeout=5)
         return f"[echo] {req}"
 
 
@@ -97,6 +112,39 @@ class TestTUI(unittest.TestCase):
                 app._set_status(False)
                 await pilot.pause()
                 assert t("busy") not in str(st.render())
+
+        asyncio.run(go())
+
+    def test_second_turn_and_interrupt_do_not_overlap_live_thread(self):
+        async def go():
+            app = self._app()
+            stub = BlockingStub()
+            app.heimdall = cast(Any, stub)
+            async with app.run_test() as pilot:
+                from textual.widgets import Input
+
+                inp = app.query_one("#input", Input)
+                inp.value = "first"
+                await pilot.press("enter")
+                for _ in range(50):
+                    if stub.started.is_set():
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertTrue(stub.started.is_set())
+
+                inp.value = "second"
+                await pilot.press("enter")
+                app.action_interrupt()
+                await pilot.pause()
+                self.assertEqual(stub.calls, ["first"])
+                self.assertTrue(app._turn_running)
+
+                stub.release.set()
+                for _ in range(50):
+                    if not app._turn_running:
+                        break
+                    await asyncio.sleep(0.01)
+                self.assertFalse(app._turn_running)
 
         asyncio.run(go())
 

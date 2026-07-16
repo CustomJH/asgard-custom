@@ -1,10 +1,7 @@
 """네이티브 REPL 렌더 — 브랜드 로고 + 간결 UX.
 
-4개 레퍼런스의 장점만 섞는다:
-  Claude Code — 세션 헤더(provider·model), 슬래시 커맨드, tool-use 축약 한 줄
-  Codex       — 미니멀·조용한 기본, 저소음
-  hermes      — provider·model 상태 라인
-  opencode    — 정렬된 컬러, 역할/툴 심볼
+설계 지향: 세션 헤더(provider·model) + 슬래시 커맨드 + tool-use 축약 한 줄,
+미니멀·조용한 기본(저소음), 정렬된 컬러와 역할/툴 심볼, provider·model 상태 라인.
 
 ANSI 직접 (ui.py 스타일 일관 — rich Markdown 은 스트리밍과 안 맞아 버퍼가 필요). 로고는
 install.sh 의 Yggdrasil braille lockup 재사용 — 어느 터미널·배경에서나 렌더된다.
@@ -116,7 +113,7 @@ def banner(rp) -> None:
         else:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
 
-    # hermes 스타일 — welcome + tip + 구분선 rule (모델·경로·git 은 하단 status line 으로)
+    # welcome + tip + 구분선 rule (모델·경로·git 은 하단 status line 으로)
     # rule 은 HAIRLINE — 금은 로고·✦·입력 캐럿(좌측 스파인)에만, 프레임 선은 전부 한 하드라인 색
     rule = ui.paint(theme.ansi(theme.HAIRLINE), "─" * min(width - 4, 60))
     sys.stdout.write(
@@ -141,7 +138,7 @@ def _git_status(root: str) -> str:
         return ""
 
 
-# 상태줄 — gajae-code 세그먼트 모델 차용. 오딘 선택(26-07-16): 좌측 골드 브랜드칩 + 세그먼트별
+# 상태줄 — 세그먼트 모델. 오딘 선택(26-07-16): 좌측 골드 브랜드칩 + 세그먼트별
 # 아이콘·고유색(모델◆금·경로⌂청·git 녹/호박·lagom❄시안·메트릭 흐림). 색이 분절을 담당하므로
 # 구분자는 여백만. 폭 주의: statusline 은 단일 좌측 플로우라 폭 변동이 정렬을 깨지 않으며, 이모지
 # 프리젠테이션 가능 글리프(❄)만 VS15(U+FE0E)로 텍스트 렌더 강제(색 ANSI 유지·너비 안정).
@@ -153,7 +150,7 @@ _ICON_LAGOM = "❄︎"  # ❄ + VS15 = 텍스트 프리젠테이션 강제 (색 
 # 향후 출력 블록은 샤프 ┌┐└┘ 로 시각 문법 분리. 상·하단 코너는 정적 라인이라 완전 폐합 안전,
 # 입력 줄 좌측 │ 스파인만 두고 우측은 개방(라이브 편집·wrap 로 깨지는 유일한 면 — rprompt 힌트가 채움).
 _BOX = {"tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "h": "─", "v": "│"}
-_BOX_CAP = "⠶ asgard"  # 상단 프레임 골드 브랜드 캡 — pt 경로 시그니처 (gajae 식 top-border 라벨)
+_BOX_CAP = "⠶ asgard"  # 상단 프레임 골드 브랜드 캡 — pt 경로 시그니처 (top-border 라벨)
 
 
 def _abbrev_path(cwd: str, limit: int = 28) -> str:
@@ -262,7 +259,7 @@ def _help_items():
 
 
 def _completer(text: str, state: int):
-    """Tab 자동완성 — 슬래시 커맨드 (opencode / 트리거). readline 콜백."""
+    """Tab 자동완성 — 슬래시 커맨드 (/ 트리거). readline 콜백."""
     if not text.startswith("/"):
         return None
     matches = [c + " " for c in _COMMANDS if c.startswith(text)]
@@ -339,7 +336,7 @@ def _history_path() -> str:
 
 def _pt_session():
     """prompt_toolkit 세션 — '/' 입력 즉시 후보 메뉴(설명 포함)가 아래에 뜨고 Tab·화살표로
-    완성한다 (hermes-agent SlashCommandCompleter 참조). 색은 theme 토큰."""
+    완성한다. 색은 theme 토큰."""
     from prompt_toolkit import PromptSession
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.completion import Completer, Completion
@@ -658,8 +655,8 @@ class _Render:
     """스트리밍 md-lite 렌더 — 응답 본문을 2칸 들여쓰고 라인 단위로 가볍게 스타일.
 
     완성 라인: **볼드**·`코드`(시안)·헤더(골드)·불릿(•) 적용. 오래 안 끝나는 라인(긴 문단)은
-    스타일 포기하고 즉시 플러시 — 라이브함이 스타일보다 우선. 세션 메타 라인('  ⬢' 등,
-    이미 들여쓰기됨)은 그대로 통과."""
+    스타일 포기하고 즉시 플러시 — 라이브함이 스타일보다 우선. 세션 메타 라인('  │ …' 활동 스레드 등,
+    이미 들여쓰기됨)은 그대로 통과하고, 미종결 산문에 접착되지 않게 write() 가 먼저 닫는다."""
 
     FLUSH_AT = 160
 
@@ -727,8 +724,15 @@ def _bye() -> int:
 
 
 def _run_bang(root: str, cmd: str) -> None:
-    """!cmd — bash 직접 실행 (opencode 흐름). git-guard 통과 후 실행, 출력 표시."""
+    """!cmd — 관찰 명령만 직접 실행. 변경은 일반 요청의 Trinity 경로로 보낸다."""
+    from ..hooks.readonly_guard import is_readonly_bash_safe
     from . import tools as T
+
+    if not is_readonly_bash_safe(cmd, root):
+        sys.stdout.write(
+            f"  {ui.paint(ui._WARN, '⚠')} ! 명령은 읽기 전용만 허용됩니다. 변경 작업은 일반 요청으로 실행하세요.\n"
+        )
+        return
 
     try:
         out, code = T.run_bash(root, {"command": cmd})
@@ -740,7 +744,7 @@ def _run_bang(root: str, cmd: str) -> None:
 
 
 def run(root: str, rp) -> int:
-    """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩(opencode 흐름)."""
+    """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩."""
     render = _Render()
     status = _Spinner()
 
@@ -816,8 +820,8 @@ def run(root: str, rp) -> int:
             render.finish()
             if out:
                 sys.stdout.write(f"\n{out}\n")
-            # 턴 요약 — opencode '■ Build · model · 7.0s' 참조
-            sys.stdout.write(f"\n  {ui.dim(f'⬢ done · {rp.model} · {_time.monotonic() - t0:.1f}s')}\n")
+            # 턴 요약 — '✓ done · model · 7.0s' 한 줄
+            sys.stdout.write(f"\n  {ui.dim(f'✓ done · {rp.model} · {_time.monotonic() - t0:.1f}s')}\n")
         except KeyboardInterrupt:
             sys.stdout.write(f"\n  {ui.dim(t('turn_kept'))}\n")
         except Exception as e:

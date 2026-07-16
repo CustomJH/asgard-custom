@@ -1,4 +1,4 @@
-"""풀스크린 TUI 뼈대 — textual. opencode/hermes 급 레이아웃.
+"""풀스크린 TUI 뼈대 — textual.
 
 readline REPL(repl.py)의 한계(단일라인, 박스 입력창 불가)를 넘는다. 레이아웃:
   배너(로고) · 메시지 영역(RichLog, 스크롤) · 입력박스(하단) · 상태바(provider·model).
@@ -10,6 +10,8 @@ Heimdall.handle 은 동기 블로킹(API 스트림)이므로 run_worker(thread=T
 """
 
 from __future__ import annotations
+
+import threading
 
 from textual import work
 from textual.app import App, ComposeResult
@@ -37,7 +39,7 @@ class AsgardTUI(App):
     #log  { height: 1fr; padding: 0 1; border: none; background: $surface; }
     #status { dock: bottom; height: 1; background: $panel; color: $text-muted; padding: 0 1; }
     #prompt { dock: bottom; height: 3; }
-    /* opencode 스타일 — 왼쪽 골드 accent bar ($primary/$accent 는 theme.textual_theme()) */
+    /* 왼쪽 골드 accent bar ($primary/$accent 는 theme.textual_theme()) */
     Input { border: none; border-left: thick $primary; background: $surface; padding-left: 1; }
     Input:focus { border-left: thick $accent; }
     """
@@ -51,6 +53,8 @@ class AsgardTUI(App):
         self.root = root
         self.rp = rp
         self.heimdall = None if rp.missing else _repl._new_heimdall(root, rp, self._emit)
+        self._turn_lock = threading.Lock()
+        self._turn_running = False
 
     # ── 레이아웃 ─────────────────────────────────────────────────────────
     def compose(self) -> ComposeResult:
@@ -120,12 +124,14 @@ class AsgardTUI(App):
             out = self.heimdall.handle(req)
             if out:
                 self.call_from_thread(self._append, "\n" + out)
-            # 턴 요약 — opencode 참조
-            self.call_from_thread(self._append, f"[dim]⬢ done · {self.rp.model} · {time.monotonic() - t0:.1f}s[/dim]")
+            # 턴 요약 한 줄
+            self.call_from_thread(self._append, f"[dim]✓ done · {self.rp.model} · {time.monotonic() - t0:.1f}s[/dim]")
         except Exception as e:
             self.call_from_thread(self._append, f"[red]⚠ {t('session_error', e=e)}[/red]")
         finally:
             self.call_from_thread(self._set_status, False)
+            with self._turn_lock:
+                self._turn_running = False
 
     # ── 입력 처리 ────────────────────────────────────────────────────────
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -139,6 +145,10 @@ class AsgardTUI(App):
         if req in ("/exit", "/quit"):
             self.exit()
             return
+        with self._turn_lock:
+            if self._turn_running:
+                log.write("[yellow]⚠ 이전 턴이 아직 실행 중입니다. 완료 후 다시 요청하세요.[/yellow]")
+                return
         if req == "/clear":
             log.clear()
             return
@@ -147,6 +157,8 @@ class AsgardTUI(App):
             self.heimdall = None if self.rp.missing else _repl._new_heimdall(self.root, self.rp, self._emit)
             return
         if req.startswith("!"):
+            with self._turn_lock:
+                self._turn_running = True
             self._dispatch_bang(req[1:].strip())
             return
         if req.startswith("/"):
@@ -156,6 +168,8 @@ class AsgardTUI(App):
         if self.heimdall is None:  # 키 없음 — 온보딩 강제 진입 대신 안내 (/provider set 으로 명시적 연결)
             log.write(f"[yellow]⚠ {t('connect_needed')}[/yellow]")
             return
+        with self._turn_lock:
+            self._turn_running = True
         self._dispatch(req)
 
     def _onboard(self) -> bool:
@@ -176,13 +190,23 @@ class AsgardTUI(App):
 
     @work(thread=True)
     def _dispatch_bang(self, cmd: str) -> None:
+        from ..hooks.readonly_guard import is_readonly_bash_safe
         from . import tools as T
 
         try:
+            if not is_readonly_bash_safe(cmd, self.root):
+                self.call_from_thread(
+                    self._append,
+                    "[yellow]⚠ ! 명령은 읽기 전용만 허용됩니다. 변경 작업은 일반 요청으로 실행하세요.[/yellow]",
+                )
+                return
             out, code = T.run_bash(self.root, {"command": cmd})
             self.call_from_thread(self._append, f"[dim]$ {cmd}[/dim]\n{out}")
         except T.ToolError as e:
             self.call_from_thread(self._append, f"[red]⚠ {e}[/red]")
+        finally:
+            with self._turn_lock:
+                self._turn_running = False
 
     def _handle_slash(self, req: str) -> None:
         log = self.query_one("#log", RichLog)
@@ -250,8 +274,13 @@ class AsgardTUI(App):
             log.write(f"[yellow]⚠ {t('unknown_cmd', c=c)}[/yellow]")
 
     def action_interrupt(self) -> None:
-        self.workers.cancel_all()
-        self._set_status(False)
+        with self._turn_lock:
+            running = self._turn_running
+        if running:
+            self.query_one("#log", RichLog).write(
+                "[yellow]⚠ 실행 스레드는 안전하게 강제 중단할 수 없습니다. 현재 턴 완료까지 새 요청을 잠급니다.[/yellow]"
+            )
+            return
         self.query_one("#log", RichLog).write(f"[dim]{t('turn_interrupted')}[/dim]")
 
 
