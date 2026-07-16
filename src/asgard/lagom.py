@@ -52,8 +52,29 @@ _COINED_TERM = re.compile(r"무의존성|제로\s*디펜던시", re.IGNORECASE)
 _CORRECTION_META = re.compile(r"문체\s*(?:계약|정책|규율)|하이프|대체안.{0,12}제시|요청.{0,20}쓸\s*수\s*없")
 _ACRONYM = re.compile(r"(?<![A-Z0-9])[A-Z][A-Z0-9]{2,9}(?![A-Z0-9])")
 _KNOWN_TERMS = {
-    "API", "ASCII", "CLI", "CPU", "CSS", "GPU", "HTML", "HTTP", "HTTPS", "JSON", "PR", "RAM", "REST",
-    "SDK", "SQL", "TUI", "UI", "URL", "UTF", "UUID", "UX", "XML", "YAML",
+    "API",
+    "ASCII",
+    "CLI",
+    "CPU",
+    "CSS",
+    "GPU",
+    "HTML",
+    "HTTP",
+    "HTTPS",
+    "JSON",
+    "PR",
+    "RAM",
+    "REST",
+    "SDK",
+    "SQL",
+    "TUI",
+    "UI",
+    "URL",
+    "UTF",
+    "UUID",
+    "UX",
+    "XML",
+    "YAML",
 }
 _PROSE_EXTENSIONS = {".md", ".mdx", ".txt", ".rst", ".adoc"}
 
@@ -103,9 +124,12 @@ def style_violations(text: str, source: str = "") -> list[str]:
 
 def _added_prose(root: str, rel: str) -> str:
     """추적 파일은 diff 추가행, 미추적 파일은 전체 본문을 반환한다."""
-    tracked = subprocess.run(
-        ["git", "-C", root, "ls-files", "--error-unmatch", "--", rel], capture_output=True, text=True, timeout=30
-    ).returncode == 0
+    tracked = (
+        subprocess.run(
+            ["git", "-C", root, "ls-files", "--error-unmatch", "--", rel], capture_output=True, text=True, timeout=30
+        ).returncode
+        == 0
+    )
     if not tracked:
         try:
             with open(os.path.join(root, rel), encoding="utf-8") as f:

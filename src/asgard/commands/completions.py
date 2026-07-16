@@ -261,8 +261,7 @@ def _fish() -> str:
         lines.append(f"complete -c asgard -n \"{setup_top}\" -a {sub} -d '{desc}'")
     for flag in ("check", "dry-run", "json", "quiet"):
         lines.append(
-            'complete -c asgard -n "__fish_seen_subcommand_from setup; and __fish_seen_subcommand_from map" '
-            f"-l {flag}"
+            f'complete -c asgard -n "__fish_seen_subcommand_from setup; and __fish_seen_subcommand_from map" -l {flag}'
         )
     role_top = "__fish_seen_subcommand_from role; and not __fish_seen_subcommand_from " + " ".join(_ROLE_SUB)
     for sub, desc in _ROLE_SUB.items():

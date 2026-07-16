@@ -52,7 +52,9 @@ def _fixture(root: str, count: int) -> list[str]:
             f'''"""Component {index} project boundary."""\n\nfrom {dependency} import Bank\n\n\nclass Component{index:03d}:\n    def recall(self, query: str, limit: int = 5):\n        return Bank().recall(query, limit=limit)\n\n\ndef retain_{index:03d}(item):\n    return Bank().retain(item)\n''',
         )
         paths.append(path)
-    _write(root, "docs/architecture.md", "# Architecture\nProject memory is a derived projection over canonical source.\n")
+    _write(
+        root, "docs/architecture.md", "# Architecture\nProject memory is a derived projection over canonical source.\n"
+    )
     paths.append("docs/architecture.md")
     return paths
 
@@ -82,7 +84,7 @@ def _baseline_scan(root: str, changed: list[str]) -> list[dict]:
             if not os.path.isfile(full) or os.path.getsize(full) > project_memory.MAX_ARTIFACT_BYTES:
                 continue
             content = Path(full).read_text(encoding="utf-8")
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             continue
         if not content.strip() or project_memory.scan_secrets(content):
             continue
@@ -108,7 +110,7 @@ def _timed_pair(first: Callable[[], T], second: Callable[[], U], repeats: int = 
     first_result: T | None = None
     second_result: U | None = None
     for repeat in range(repeats):
-        for index in ((0, 1) if repeat % 2 == 0 else (1, 0)):
+        for index in (0, 1) if repeat % 2 == 0 else (1, 0):
             started = time.perf_counter()
             if index == 0:
                 first_result = first()
@@ -132,10 +134,18 @@ def local_benchmark(files: int) -> dict:
         first = next(candidate for candidate in candidates if candidate.path == "src/components/component_000.py")
         source = Path(root, first.path)
         original = source.read_text(encoding="utf-8")
-        source.write_text(original.replace("return Bank().retain(item)", "return {'retained': Bank().retain(item)}"), encoding="utf-8")
-        body_only = next(c for c in project_memory.scan_project(root, changed_paths=[first.path]) if c.path == first.path)
-        source.write_text(original.replace("def retain_000(item):", "def retain_000(item, replace: bool = False):"), encoding="utf-8")
-        signature = next(c for c in project_memory.scan_project(root, changed_paths=[first.path]) if c.path == first.path)
+        source.write_text(
+            original.replace("return Bank().retain(item)", "return {'retained': Bank().retain(item)}"), encoding="utf-8"
+        )
+        body_only = next(
+            c for c in project_memory.scan_project(root, changed_paths=[first.path]) if c.path == first.path
+        )
+        source.write_text(
+            original.replace("def retain_000(item):", "def retain_000(item, replace: bool = False):"), encoding="utf-8"
+        )
+        signature = next(
+            c for c in project_memory.scan_project(root, changed_paths=[first.path]) if c.path == first.path
+        )
         source.write_text(original, encoding="utf-8")
         candidates = project_memory.scan_project(root, changed_paths=changed)
 
@@ -283,10 +293,7 @@ def live_benchmark() -> dict:
                     },
                 }
             )
-        configs = {
-            name: {**base_cfg, "bank": bank, "timeout": 240}
-            for name, bank in bank_ids.items()
-        }
+        configs = {name: {**base_cfg, "bank": bank, "timeout": 240} for name, bank in bank_ids.items()}
         retain_ms: dict[str, float] = {}
         started = time.perf_counter()
         server_retain_items(configs["baseline"], baseline_items)

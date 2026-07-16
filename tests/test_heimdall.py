@@ -1273,8 +1273,7 @@ class TestMemoryRoleMatrix(Base):
 
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
         open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(
-            '[memory]\nproviders = ["ollama"]\n\n'
-            '[trinity.thinker]\nprovider = "ollama"\nmodel = "placed-t"\n'
+            '[memory]\nproviders = ["ollama"]\n\n[trinity.thinker]\nprovider = "ollama"\nmodel = "placed-t"\n'
         )
 
         def capped():
@@ -1300,8 +1299,7 @@ class TestMemoryRoleMatrix(Base):
 
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
         open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(
-            '[memory]\nproviders = ["anthropic"]\n\n'
-            '[trinity.thinker]\nprovider = "ollama"\nmodel = "placed-t"\n'
+            '[memory]\nproviders = ["anthropic"]\n\n[trinity.thinker]\nprovider = "ollama"\nmodel = "placed-t"\n'
         )
 
         def capped():

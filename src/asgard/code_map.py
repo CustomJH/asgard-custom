@@ -157,22 +157,17 @@ def _owned_project_map(content: str) -> bool:
 
 def _safe_label(value: str) -> str:
     return "".join(
-        " " if unicodedata.category(ch).startswith("C") else "_" if ch == "`" else ch
-        for ch in value
+        " " if unicodedata.category(ch).startswith("C") else "_" if ch == "`" else ch for ch in value
     ).strip()
 
 
 def _safe_relpath(path: Path) -> bool:
-    return bool(path.parts) and not any(
-        unicodedata.category(ch).startswith("C") or ch == "`" for ch in path.as_posix()
-    )
+    return bool(path.parts) and not any(unicodedata.category(ch).startswith("C") or ch == "`" for ch in path.as_posix())
 
 
 def _files(root: Path) -> list[Path]:
     def allowed(path: Path) -> bool:
-        return _safe_relpath(path) and not any(
-            part in _IGNORED_DIRS or part.startswith(".") for part in path.parts
-        )
+        return _safe_relpath(path) and not any(part in _IGNORED_DIRS or part.startswith(".") for part in path.parts)
 
     # In a repository, Git is the canonical project boundary: tracked files plus non-ignored
     # worktree additions. This prevents benchmark copies, build outputs, and local workspaces from
@@ -217,7 +212,7 @@ def _toml(path: Path) -> dict:
         with path.open("rb") as f:
             value = tomllib.load(f)
         return value if isinstance(value, dict) else {}
-    except (OSError, tomllib.TOMLDecodeError):
+    except OSError, tomllib.TOMLDecodeError:
         return {}
 
 
@@ -237,7 +232,7 @@ def _project_name(root: Path) -> str:
         value = json.loads(package.read_text(encoding="utf-8")).get("name")
         if isinstance(value, str) and value.strip():
             return _safe_label(value)
-    except (OSError, ValueError):
+    except OSError, ValueError:
         pass
     return "project"
 
@@ -357,7 +352,7 @@ def _trackable(root: Path, path: Path) -> bool:
             check=False,
         )
         return proc.returncode != 0
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return True
 
 

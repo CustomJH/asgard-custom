@@ -278,7 +278,9 @@ def memory_recall(
     raise typer.Exit(run_recall(text, provider))
 
 
-@memory_app.command("sync-turn", help="internal hook: retain one completed conversation turn from JSON stdin", hidden=True)
+@memory_app.command(
+    "sync-turn", help="internal hook: retain one completed conversation turn from JSON stdin", hidden=True
+)
 def memory_sync_turn(
     mode: str = typer.Option(..., "--mode", help="native|claude-code|codex|cursor"),
 ) -> None:

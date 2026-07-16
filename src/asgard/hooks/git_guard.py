@@ -142,9 +142,7 @@ def _destructive_git(subcommand: str, args: list[str]) -> str | None:
         return "reset --hard"
     if subcommand == "checkout" and ("--" in args or _combined_short_flag(args, "f") or "--force" in args):
         return "checkout (discard worktree)"
-    if subcommand == "switch" and (
-        _combined_short_flag(args, "f") or "--force" in args or "--discard-changes" in args
-    ):
+    if subcommand == "switch" and (_combined_short_flag(args, "f") or "--force" in args or "--discard-changes" in args):
         return "switch force (discard worktree)"
     if subcommand == "restore":
         return "restore (discard worktree)"

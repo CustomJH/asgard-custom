@@ -138,6 +138,7 @@ def _bridge_tool(sess, spec: dict, result):
     from claude_agent_sdk import tool
 
     name = spec["name"]
+
     @tool(name, spec.get("description", ""), spec["input_schema"])
     async def _run(args: dict):
         from .session import _Call
@@ -244,9 +245,7 @@ async def _run_async(sess, user_content: str, result) -> None:
             }
         return {}
 
-    hooks: dict = {
-        "PreToolUse": [HookMatcher(matcher="Bash|Write|Edit|NotebookEdit", hooks=[_canonical_tool_guard])]
-    }
+    hooks: dict = {"PreToolUse": [HookMatcher(matcher="Bash|Write|Edit|NotebookEdit", hooks=[_canonical_tool_guard])]}
 
     options = ClaudeAgentOptions(
         system_prompt=sess.system,

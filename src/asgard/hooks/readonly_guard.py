@@ -91,13 +91,17 @@ def _safe_segment(segment: str) -> bool:
     if program == "go":
         return len(tokens) >= 2 and tokens[1] in {"test", "vet"}
     if program == "make":
-        return len(tokens) >= 2 and all(not t.startswith("-") and t in {"test", "check", "lint", "verify"} for t in tokens[1:])
+        return len(tokens) >= 2 and all(
+            not t.startswith("-") and t in {"test", "check", "lint", "verify"} for t in tokens[1:]
+        )
     if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", program):
         if len(tokens) >= 3 and tokens[1:3] in (["-m", "pytest"], ["-m", "unittest"], ["-m", "compileall"]):
             return True
         if len(tokens) >= 2:
             script = tokens[1].replace("\\", "/")
-            return script.endswith(".py") and (os.path.basename(script).startswith("test_") or "/tests/" in f"/{script}")
+            return script.endswith(".py") and (
+                os.path.basename(script).startswith("test_") or "/tests/" in f"/{script}"
+            )
     return False
 
 
@@ -191,9 +195,14 @@ def main() -> None:
         and any(marker in normalized_command for marker in _CONTROL_PATHS)
         and not is_readonly_bash_safe(command)
     )
-    denied = control_write or control_shell_write or readonly and (
-        tool_name in {"Write", "Edit", "NotebookEdit"}
-        or (tool_name == "Bash" and not is_readonly_bash_safe(command))
+    denied = (
+        control_write
+        or control_shell_write
+        or readonly
+        and (
+            tool_name in {"Write", "Edit", "NotebookEdit"}
+            or (tool_name == "Bash" and not is_readonly_bash_safe(command))
+        )
     )
     if denied:
         print(

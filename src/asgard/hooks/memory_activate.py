@@ -69,7 +69,9 @@ def _completion_context(root: str, session_id: str) -> dict:
     for name in names:
         events = []
         try:
-            events = [json.loads(line) for line in open(os.path.join(quest_dir, name), encoding="utf-8") if line.strip()]
+            events = [
+                json.loads(line) for line in open(os.path.join(quest_dir, name), encoding="utf-8") if line.strip()
+            ]
         except Exception:
             continue
         if not events or not any(str(event.get("session_id")) == session_id for event in events):
@@ -133,7 +135,9 @@ def main():
                 result = {}
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
-                sys.stdout.write(json.dumps({"systemMessage": "🧠 프로젝트 메모리 승인 제안\n" + preview}, ensure_ascii=False) + "\n")
+                sys.stdout.write(
+                    json.dumps({"systemMessage": "🧠 프로젝트 메모리 승인 제안\n" + preview}, ensure_ascii=False) + "\n"
+                )
             sys.exit(0)
         if event == "UserPromptSubmit":
             prompt = str(data.get("prompt") or "").strip()

@@ -159,9 +159,7 @@ def _trinity_checks(root: str) -> list[dict]:
                     "name": "shared memory backend",
                     "ok": ok,
                     "detail": detail,
-                    "fix": ""
-                    if ok
-                    else "backend/plugin 설치·기동·인증 확인 또는 asgard memory connect 재설정",
+                    "fix": "" if ok else "backend/plugin 설치·기동·인증 확인 또는 asgard memory connect 재설정",
                 }
             )
     except Exception:

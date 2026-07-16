@@ -137,11 +137,7 @@ class ToolRegistry:
         return self._specs.get(name)
 
     def available_specs(self, context: ToolContext) -> list[ToolSpec]:
-        return [
-            spec
-            for _, spec in sorted(self._specs.items())
-            if self.state(spec.name, context).callable
-        ]
+        return [spec for _, spec in sorted(self._specs.items()) if self.state(spec.name, context).callable]
 
     def state(self, name: str, context: ToolContext) -> ToolState:
         spec = self.get(name)

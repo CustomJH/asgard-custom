@@ -180,7 +180,13 @@ def diff_state(root, base_ref):
         link_target = os.readlink(full_path).encode(errors="surrogateescape") if is_link else b""
         if (before if before_rc == 0 else None) != after:
             map_changed.append(p)
-            diff += p.encode("utf-8", "surrogateescape") + b"\0" + link_target + b"\0" + (after if after is not None else b"<deleted>")
+            diff += (
+                p.encode("utf-8", "surrogateescape")
+                + b"\0"
+                + link_target
+                + b"\0"
+                + (after if after is not None else b"<deleted>")
+            )
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
     nt_lines = 0

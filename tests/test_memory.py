@@ -429,9 +429,7 @@ class TestReindexAndSnapshot(MemoryBase):
 
     def test_snapshot_budget_covers_final_injection_block(self):
         os.makedirs(os.path.join(self.tmp, ".asgard"), exist_ok=True)
-        open(os.path.join(self.tmp, ".asgard", "config.toml"), "w").write(
-            "[memory]\nindex_budget_chars = 200\n"
-        )
+        open(os.path.join(self.tmp, ".asgard", "config.toml"), "w").write("[memory]\nindex_budget_chars = 200\n")
         memory.add("설명 " * 30, title="긴 개인 메모리 제목", force=True)
 
         note = memory.snapshot_note()
@@ -816,9 +814,7 @@ class TestCCWiring(MemoryBase):
 
         text = "승인 전에는 이 개인 원문을 평문으로 저장하지 않는다"
         plan_id = memory_command._save_plan(text, "user", memory.plan_ingest(text))
-        raw = open(
-            os.path.join(self.d, ".pending-plans", f"{plan_id}.json"), encoding="utf-8"
-        ).read()
+        raw = open(os.path.join(self.d, ".pending-plans", f"{plan_id}.json"), encoding="utf-8").read()
 
         self.assertNotIn(text, raw)
         self.assertIn(hashlib.sha256(text.encode()).hexdigest(), raw)
@@ -946,7 +942,7 @@ class TestCCWiring(MemoryBase):
         os.makedirs(bindir, exist_ok=True)
         fake = os.path.join(bindir, "asgard")
         open(fake, "w").write(
-            "#!/bin/sh\nprintf '%s' '{\"status\":\"retained\",\"proposal\":{\"preview\":\"중요 사건 사용자 승인 제안\"}}'\n"
+            '#!/bin/sh\nprintf \'%s\' \'{"status":"retained","proposal":{"preview":"중요 사건 사용자 승인 제안"}}\'\n'
         )
         os.chmod(fake, 0o755)
         out = self._run_hook(

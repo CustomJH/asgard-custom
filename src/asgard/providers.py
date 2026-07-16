@@ -50,6 +50,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
         default_model="claude-opus-4-8",
         signup_hint="https://platform.claude.com 에서 키 발급 후 export ANTHROPIC_API_KEY=...",
+        fallback_models=("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"),
         context_window=200_000,
     ),
     # 네이티브 Claude Code — 로컬 claude CLI 를 Agent SDK 로 구동. API 키 대신
@@ -62,6 +63,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
         default_model="opus",  # CLI 별칭 — claude 가 최신 모델로 해석 (full ID 도 허용)
         signup_hint="claude CLI 설치 + 구독 로그인(claude /login) 또는 CLAUDE_CODE_OAUTH_TOKEN export",
+        fallback_models=("opus", "sonnet", "haiku"),
         key_optional=True,  # 구독 keychain 로그인이면 env 키 불요
         context_window=200_000,
     ),
@@ -83,6 +85,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
         base_url="http://localhost:11434/v1",
         default_model="gemma4:12b-mlx",
         signup_hint="ollama serve 실행 + ollama pull gemma4:12b-mlx (API 키 불요)",
+        fallback_models=("gemma4:12b-mlx",),
         key_optional=True,
         context_window=128_000,
     ),
@@ -144,6 +147,22 @@ def normalize_model_id(value: object) -> str:
     return model_id
 
 
+def is_agent_model_id(model_id: str) -> bool:
+    """OpenAI-compatible catalog에서 명백한 non-chat 모델을 제외한다."""
+    lowered = model_id.lower().replace("_", "-")
+    non_chat_markers = (
+        "embed",
+        "rerank",
+        "retrieval",
+        "stable-diffusion",
+        "text-to-image",
+        "whisper",
+        "text-to-speech",
+        "-tts",
+    )
+    return not any(marker in lowered for marker in non_chat_markers)
+
+
 class _NoModelCatalogRedirect(urllib_request.HTTPRedirectHandler):
     """Bearer header가 다른 origin으로 전달되지 않도록 catalog redirect를 거부한다."""
 
@@ -201,7 +220,9 @@ def provider_models(
             on_fallback(reason)
         return fallback
 
-    if rp.profile.api_mode != "openai_compat" or not rp.base_url or not rp.api_key:
+    if rp.profile.api_mode != "openai_compat":
+        return fallback
+    if not rp.base_url or not rp.api_key:
         return use_fallback("catalog unavailable")
 
     import json
@@ -233,7 +254,7 @@ def provider_models(
             if not isinstance(item, dict):
                 continue
             model_id = normalize_model_id(item.get("id"))
-            if not model_id:
+            if not model_id or not is_agent_model_id(model_id):
                 continue
             if model_id not in live:
                 live.append(model_id)
@@ -300,7 +321,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     cred = load_credentials().get(name, {})
     try:
         ctx_win = max(0, int(conf.get("context_window") or 0))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         ctx_win = 0
     base_url = conf.get("base_url") or cred.get("base_url") or profile.base_url
     # NVIDIA global credential은 repository-controlled endpoint로 보내지 않는다. 사설 NIM은 별도

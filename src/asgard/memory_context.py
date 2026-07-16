@@ -66,7 +66,7 @@ def _deterministic_projection_is_current(root: str, metadata: dict) -> bool:
             for chunk in iter(lambda: current.read(64 * 1024), b""):
                 digest.update(chunk)
         return digest.hexdigest() == expected_hash
-    except (OSError, KeyError, ValueError):
+    except OSError, KeyError, ValueError:
         return False
 
 
@@ -103,7 +103,9 @@ def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None 
     return not memory.scan_threats(*metadata_texts)
 
 
-def filter_project_hits(root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None) -> tuple[list[dict], int]:
+def filter_project_hits(
+    root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None
+) -> tuple[list[dict], int]:
     """Ambient와 explicit MCP가 공유하는 최소 ownership/provenance 정책."""
     clean: list[dict] = []
     dropped = 0

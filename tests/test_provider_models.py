@@ -79,6 +79,38 @@ class TestProviderModelDiscovery(unittest.TestCase):
             )
         )
 
+    def test_ollama_uses_openai_compatible_live_catalog(self):
+        from asgard.providers import provider_models
+
+        profile = PROVIDERS["ollama"]
+        rp = ResolvedProvider(
+            profile=profile,
+            model=profile.default_model,
+            base_url=profile.base_url,
+            api_key="ollama",
+        )
+        payload = {
+            "data": [
+                {"id": "gemma4:12b-mlx"},
+                {"id": "nomic-embed-text:latest"},
+                {"id": "qwen3:8b"},
+            ]
+        }
+        with mock.patch("asgard.providers._open_model_catalog", return_value=_Response(payload)) as opened:
+            self.assertEqual(provider_models(rp), ["gemma4:12b-mlx", "qwen3:8b"])
+        self.assertEqual(opened.call_args.args[0].full_url, "http://localhost:11434/v1/models")
+
+    def test_curated_provider_catalog_is_not_reported_as_network_fallback(self):
+        from asgard.providers import provider_models
+
+        profile = PROVIDERS["anthropic"]
+        reasons = []
+        models = provider_models(
+            ResolvedProvider(profile=profile, model=profile.default_model), on_fallback=reasons.append
+        )
+        self.assertGreaterEqual(len(models), 3)
+        self.assertEqual(reasons, [])
+
     def test_catalog_rejects_control_character_model_ids_and_non_http_endpoint(self):
         from asgard.providers import provider_models
 
@@ -149,6 +181,53 @@ class TestNativeModelSelection(unittest.TestCase):
         stored = json.load(open(self.cred))
         self.assertEqual(stored["nvidia"]["api_key"], "test-key")
         self.assertNotIn("model", stored["nvidia"])
+
+    def test_anthropic_onboarding_uses_curated_model_picker(self):
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("builtins.input", return_value="2"),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="anthropic")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.model, "claude-sonnet-4-6")
+
+    def test_openai_compatible_onboarding_discovers_models_before_selection(self):
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("asgard.agent.onboard.provider_models", return_value=["vendor/model-a", "vendor/model-b"]),
+            mock.patch("builtins.input", side_effect=["https://models.example/v1", "2"]),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="openai_compat")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.model, "vendor/model-b")
+        self.assertEqual(resolved.base_url, "https://models.example/v1")
+
+    def test_ollama_onboarding_lists_installed_models(self):
+        with (
+            mock.patch("asgard.agent.onboard.provider_models", return_value=["gemma4:12b-mlx", "qwen3:8b"]),
+            mock.patch("builtins.input", return_value="2"),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="ollama")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.model, "qwen3:8b")
+
+    def test_non_openai_provider_catalogs_offer_multiple_models(self):
+        from asgard.providers import provider_models
+
+        for name in ("anthropic", "claude-native"):
+            profile = PROVIDERS[name]
+            rp = ResolvedProvider(profile=profile, model=profile.default_model)
+            with self.subTest(provider=name):
+                self.assertGreaterEqual(len(provider_models(rp)), 3)
 
     def test_switching_to_nvidia_drops_previous_provider_endpoint_and_key_env(self):
         from asgard.providers import save_config_section
@@ -354,7 +433,9 @@ class TestNativeModelSelection(unittest.TestCase):
         )
         replacement = object()
         with (
-            mock.patch("asgard.agent.repl._cmd_trinity", side_effect=repl._Reconfigure(rp, "placement saved")) as command,
+            mock.patch(
+                "asgard.agent.repl._cmd_trinity", side_effect=repl._Reconfigure(rp, "placement saved")
+            ) as command,
             mock.patch("asgard.agent.repl._new_heimdall", return_value=replacement) as rebuilt,
         ):
             AsgardTUI._handle_slash(cast(AsgardTUI, shell), "/trinity set")

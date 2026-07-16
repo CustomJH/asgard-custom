@@ -76,7 +76,9 @@ def merge_gitignore(existing: str | None) -> str:
     # Legacy installs commonly ignored the whole directory. Git will not descend into an ignored
     # parent, so later `!.asgard/map/` cannot revive the shared map. Migrate only these exact broad
     # rules; scoped user rules and every unrelated line remain untouched.
-    lines = [line for line in existing.splitlines() if line.strip() not in (".asgard", ".asgard/", "/.asgard", "/.asgard/")]
+    lines = [
+        line for line in existing.splitlines() if line.strip() not in (".asgard", ".asgard/", "/.asgard", "/.asgard/")
+    ]
     base = "\n".join(lines) + ("\n" if lines else "")
     if _GITIGNORE_BEGIN in lines and _GITIGNORE_END in lines:  # 기존 블록 교체
         b = lines.index(_GITIGNORE_BEGIN)

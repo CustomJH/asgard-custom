@@ -51,14 +51,14 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
         default = next((str(i) for i, model_id in enumerate(visible, 1) if model_id == rp.model), "1")
         try:
             choice = input("  " + t("number") + f" [{default}]: ").strip() or default
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             return None
         if choice.lower() == "q":
             return None
         if choice.lower() == "m":
             try:
                 manual = normalize_model_id(input("  " + t("model_id_prompt") + ": "))
-            except (EOFError, KeyboardInterrupt):
+            except EOFError, KeyboardInterrupt:
                 return None
             if not manual:
                 sys.stdout.write(f"  {t('invalid_model_id')}\n")
@@ -67,7 +67,7 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
         if choice.lower() == "s":
             try:
                 query = input("  search: ").strip()
-            except (EOFError, KeyboardInterrupt):
+            except EOFError, KeyboardInterrupt:
                 return None
             continue
         try:
@@ -75,7 +75,7 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
             if index < 1:
                 raise IndexError
             return visible[index - 1]
-        except (ValueError, IndexError):
+        except ValueError, IndexError:
             sys.stdout.write(f"  {t('cancelled')}\n")
             return None
 
@@ -123,22 +123,23 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         try:
             sel = input("  " + t("number") + " [1]: ").strip() or "1"
             name = names[int(sel) - 1]
-        except (ValueError, IndexError, EOFError, KeyboardInterrupt):
+        except ValueError, IndexError, EOFError, KeyboardInterrupt:
             sys.stdout.write(f"  {t('cancelled')}\n")
             return None
 
     p = PROVIDERS[name]
     base_url, model = "", ""
+    has_model_picker = bool(p.fallback_models) or p.api_mode == "openai_compat"
     if p.api_mode == "openai_compat" and not p.base_url:
         base_url = input(f"  base_url [{p.base_url or 'https://...'}]: ").strip()
-    if not p.default_model:
+    if not p.default_model and not has_model_picker:
         model = input("  " + t("model_id_prompt") + ": ").strip()
 
     key = ""
     if not p.key_optional:  # 로컬 provider(ollama 등)는 키 불요 — 입력 생략
         try:
             key = getpass.getpass("  " + t("api_key_prompt", p=p.display) + ": ").strip()
-        except (EOFError, KeyboardInterrupt):
+        except EOFError, KeyboardInterrupt:
             sys.stdout.write(f"  {t('cancelled')}\n")
             return None
         if not key:
@@ -149,7 +150,7 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         save_credential(name, key, base_url=base_url)
         sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(t('saved_cred'))}\n")
     current = resolve(root, provider=name, model=model or None)
-    if p.fallback_models:
+    if has_model_picker:
         selected = select_model(root, current)
         if selected is not None:
             return selected

@@ -296,7 +296,7 @@ def _box_top(width: int) -> list[tuple[str, str]]:
 def _pt_message():
     """입력 영역 — 상단 박스 보더(브랜드 캡) + 좌측 │ 스파인 + 골드 캐럿."""
     return [
-        *_box_top(_term_width()),
+        *_box_top(ui.stream_width()),  # 박스 폭 상한 100 — 초광폭서 보더가 끝까지 늘어지지 않게
         ("class:rule", "  " + _BOX["v"] + " "),  # 입력 줄 좌측 스파인 "  │ "
         ("class:arrow", "› "),
     ]
@@ -318,7 +318,7 @@ def _pt_toolbar():
         if hd
         else None
     )
-    w = _term_width()
+    w = ui.stream_width()  # 상단 보더와 같은 폭 캡 — 코너 정렬
     bottom = "  " + _BOX["bl"] + _BOX["h"] * max(0, w - 6) + _BOX["br"] + "\n"  # 하단 보더 ╰───╯
     frags: list[tuple[str, str]] = [("class:rule", bottom), ("", "  ")]  # 상태줄은 박스 밖(아래), 들여쓰기 2
     # 브랜드칩은 상단 캡(⠶ asgard)이 담당 — pt 경로 시그니처 1개. 상태줄은 model 부터 (상태 전용)
@@ -469,7 +469,7 @@ def _cmd_trinity(cmd: str, root: str, rp) -> None:
             name = names[idx - 1]
             p = PROVIDERS[name]
             vals: dict = {"provider": name}
-            if p.fallback_models:
+            if p.fallback_models or p.api_mode == "openai_compat":
                 from ..providers import resolve
                 from .onboard import _pick_model
 
@@ -671,6 +671,16 @@ class _Render:
         self.dirty = False  # 현재 라인을 이미 raw 로 흘려보냄 — 완성 시 스타일 생략
 
     def write(self, s: str) -> None:
+        # 활동 라인(완성된 메타 라인 — 앞 2칸 들여쓰기)이 미종결 산문에 접착되는 것을 막는다:
+        # 두 생산자(모델 산문 · 툴/전이 라인)가 한 싱크를 공유하므로, 메타 라인이 오면 대기 산문을 먼저 닫는다.
+        if "\n" in s and s.lstrip("\n").startswith("  "):
+            if self.dirty:  # 산문이 이미 raw 로 흘러나간 상태 — 개행으로 닫는다
+                sys.stdout.write("\n")
+                sys.stdout.flush()
+                self.dirty = False
+            elif self.buf:  # 버퍼에 미종결 산문 — 자기 라인으로 방출
+                self._emit_line(self.buf)
+                self.buf = ""
         self.buf += s
         while "\n" in self.buf:
             line, self.buf = self.buf.split("\n", 1)

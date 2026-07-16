@@ -29,7 +29,7 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py state | tee changed.py"))
         self.assertFalse(is_readonly_bash_safe("cat file |& tee changed.py"))
         self.assertFalse(is_readonly_bash_safe("cat $(printf secret)"))
-        self.assertFalse(is_readonly_bash_safe('python3 -c "open(\'PWNED\', \'w\').write(\'x\')" quest-log.py open'))
+        self.assertFalse(is_readonly_bash_safe("python3 -c \"open('PWNED', 'w').write('x')\" quest-log.py open"))
         self.assertFalse(is_readonly_bash_safe("python3 malicious.py quest-log.py open q"))
         self.assertFalse(is_readonly_bash_safe("python3 /tmp/.claude/hooks/quest-log.py open q"))
 
@@ -208,9 +208,7 @@ class TestCapabilityPolicy(unittest.TestCase):
         def boom(_ctx, _args):
             raise RuntimeError("boom")
 
-        registry.register(
-            ToolSpec("boom", "inspect", {"name": "boom", "input_schema": {"type": "object"}}, boom)
-        )
+        registry.register(ToolSpec("boom", "inspect", {"name": "boom", "input_schema": {"type": "object"}}, boom))
         crashed = execute_tool(registry, "boom", {}, ctx)
         self.assertTrue(crashed.is_error)
         self.assertEqual(crashed.status, "error")

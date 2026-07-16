@@ -24,7 +24,7 @@ def _project_root(start: str) -> str:
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return str(Path(proc.stdout.strip()).resolve())
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError, subprocess.TimeoutExpired:
         pass
     return str(Path(start).resolve())
 
@@ -73,7 +73,9 @@ def run_setup_map(*, check: bool = False, dry_run: bool = False, json_out: bool 
         else:
             ui.fail(payload["error"])
         return 2
-    ignore, _previous, merged, gitignore_changed, internal_ignore, internal_merged, internal_changed = _gitignore_preview(root)
+    ignore, _previous, merged, gitignore_changed, internal_ignore, internal_merged, internal_changed = (
+        _gitignore_preview(root)
+    )
     try:
         if check:
             result = check_map(root)

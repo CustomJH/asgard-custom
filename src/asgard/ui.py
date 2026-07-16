@@ -25,6 +25,19 @@ _FAIL = theme.ansi(theme.DANGER)
 _FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
 _STEP = 0
 _STEPS = 0
+STREAM_MAX = 100  # 스트림·입력 프레임 폭 상한 — 초광폭 터미널서 보더·활동 라인이 끝까지 늘어지지 않게
+
+
+def term_cols() -> int:
+    """터미널 가로 칸 수 (최소 20). 크기 미상은 80 가정."""
+    import shutil
+
+    return max(20, shutil.get_terminal_size((80, 20)).columns)
+
+
+def stream_width() -> int:
+    """활동 스트림·입력 박스 공용 폭 — min(터미널, STREAM_MAX). 좌정렬·차분한 우측 여백."""
+    return min(term_cols(), STREAM_MAX)
 
 
 def set_quiet(q: bool) -> None:

@@ -798,9 +798,9 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
                     log_op(d, "ingest:unchanged", slug)
                     return action, slug
                 if action == "updated":
-                    meta["title"] = _fm_value(
-                        next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip())
-                    )[:80]
+                    meta["title"] = _fm_value(next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()))[
+                        :80
+                    ]
             else:
                 merged = body.rstrip() + f"\n\n{_today()}: {text.strip()}"
                 action = "merged"
@@ -1026,10 +1026,7 @@ def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
         hits = query(text, k=k, d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
         if not hits:
             return ""
-        prefix = (
-            '\n\n<memory-recall scope="personal">\n'
-            "요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n"
-        )
+        prefix = '\n\n<memory-recall scope="personal">\n요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n'
         suffix = "\n</memory-recall>"
         if len(prefix + suffix) > RECALL_BUDGET:
             return ""

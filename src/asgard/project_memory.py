@@ -215,7 +215,9 @@ def scan_secrets(*values: str) -> str | None:
         if not match:
             continue
         sample = match.group(0).lower()
-        if any(marker in sample or marker in low[max(0, match.start() - 30) : match.end() + 30] for marker in _PLACEHOLDERS):
+        if any(
+            marker in sample or marker in low[max(0, match.start() - 30) : match.end() + 30] for marker in _PLACEHOLDERS
+        ):
             continue
         return "credential-like content"
     return None
@@ -325,7 +327,9 @@ def retain_turn(
     except Exception as exc:
         return TurnRetentionResult("failed", document_id=document_id, reason=type(exc).__name__)
     if result.get("success") is not True:
-        return TurnRetentionResult("failed", document_id=document_id, reason=str(result.get("error") or "retain rejected"))
+        return TurnRetentionResult(
+            "failed", document_id=document_id, reason=str(result.get("error") or "retain rejected")
+        )
     return TurnRetentionResult("retained", document_id=document_id)
 
 
@@ -450,7 +454,12 @@ def record_item(
         "context": f"asgard project {record.kind}",
         "document_id": f"asgard:record:{stable_record}",
         "update_mode": "replace",
-        "tags": [f"project:{project}", f"kind:{record.kind}", f"importance:{record.importance}", f"status:{record.status}"],
+        "tags": [
+            f"project:{project}",
+            f"kind:{record.kind}",
+            f"importance:{record.importance}",
+            f"status:{record.status}",
+        ],
         "metadata": {
             "record_id": record.record_id,
             "kind": record.kind,
@@ -469,9 +478,7 @@ def record_item(
 
 def _git_paths(root: str) -> list[str] | None:
     try:
-        result = subprocess.run(
-            ["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True, timeout=10
-        )
+        result = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True, timeout=10)
         return [p.decode("utf-8", "surrogateescape") for p in result.stdout.split(b"\0") if p]
     except Exception:
         return None
@@ -544,13 +551,17 @@ def _is_text_candidate(path: str) -> bool:
 def _python_signal(content: str) -> tuple[int, list[str]]:
     try:
         tree = ast.parse(content)
-    except (SyntaxError, ValueError):
+    except SyntaxError, ValueError:
         return 0, []
     points, reasons = 0, []
     if ast.get_docstring(tree):
         points += 8
         reasons.append("module documentation")
-    public = [n.name for n in tree.body if isinstance(n, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and not n.name.startswith("_")]
+    public = [
+        n.name
+        for n in tree.body
+        if isinstance(n, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)) and not n.name.startswith("_")
+    ]
     if public:
         points += min(12, 4 + len(public) * 2)
         reasons.append("public code contract")
@@ -581,8 +592,7 @@ def _argument_signature(arguments: ast.arguments) -> dict:
         ],
         "vararg": render("vararg", arguments.vararg) if arguments.vararg else None,
         "kwonly": [
-            render("kwonly", arg, arguments.kw_defaults[index])
-            for index, arg in enumerate(arguments.kwonlyargs)
+            render("kwonly", arg, arguments.kw_defaults[index]) for index, arg in enumerate(arguments.kwonlyargs)
         ],
         "kwarg": render("kwarg", arguments.kwarg) if arguments.kwarg else None,
     }
@@ -605,7 +615,7 @@ def _structure(path: str, content: str, content_hash: str) -> tuple[str, str, tu
         return content_hash, "content-v1", (), ()
     try:
         tree = ast.parse(content)
-    except (SyntaxError, ValueError):
+    except SyntaxError, ValueError:
         return content_hash, "python-ast-v2-degraded", (), ()
     symbols: list[str] = []
     imports: list[str] = []
@@ -617,22 +627,32 @@ def _structure(path: str, content: str, content_hash: str) -> tuple[str, str, tu
             functions.append(_function_signature(node))
         elif isinstance(node, ast.ClassDef):
             symbols.append(f"class:{node.name}")
-            methods = [_function_signature(child) for child in node.body if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))]
+            methods = [
+                _function_signature(child)
+                for child in node.body
+                if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef))
+            ]
             classes.append(
                 {
                     "name": node.name,
                     "bases": tuple(_node_signature(base) for base in node.bases),
-                    "keywords": tuple((keyword.arg or "**", _node_signature(keyword.value)) for keyword in node.keywords),
+                    "keywords": tuple(
+                        (keyword.arg or "**", _node_signature(keyword.value)) for keyword in node.keywords
+                    ),
                     "decorators": tuple(_node_signature(decorator) for decorator in node.decorator_list),
                     "type_params": tuple(_node_signature(parameter) for parameter in getattr(node, "type_params", ())),
                     "methods": methods,
                 }
             )
         elif isinstance(node, ast.Import):
-            imports.extend(alias.name if alias.asname is None else f"{alias.name} as {alias.asname}" for alias in node.names)
+            imports.extend(
+                alias.name if alias.asname is None else f"{alias.name} as {alias.asname}" for alias in node.names
+            )
         elif isinstance(node, ast.ImportFrom):
             module = "." * node.level + (node.module or "")
-            aliases = ",".join(alias.name if alias.asname is None else f"{alias.name} as {alias.asname}" for alias in node.names)
+            aliases = ",".join(
+                alias.name if alias.asname is None else f"{alias.name} as {alias.asname}" for alias in node.names
+            )
             imports.append(f"{module}:{aliases}")
     payload = {
         "functions": functions,
@@ -731,7 +751,7 @@ def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[
             if os.path.getsize(full) > MAX_ARTIFACT_BYTES:
                 continue
             content = open(full, encoding="utf-8").read()
-        except (OSError, UnicodeError):
+        except OSError, UnicodeError:
             continue
         if not content.strip() or scan_secrets(content):
             continue
@@ -862,7 +882,10 @@ def load_projection_manifest(root: str) -> dict:
                 not isinstance(source_path, str)
                 or _canonical_repo_path(os.path.realpath(root), source_path) != source_path
                 or not isinstance(entry, dict)
-                or not all(isinstance(entry.get(field), str) and entry[field] for field in ("document_id", "content_hash", "structural_hash", "kind", "status"))
+                or not all(
+                    isinstance(entry.get(field), str) and entry[field]
+                    for field in ("document_id", "content_hash", "structural_hash", "kind", "status")
+                )
             ):
                 raise ValueError("malformed projection manifest item")
         return data
