@@ -460,18 +460,11 @@ def resolve_freyja_skills(task: str) -> list[tuple[str, str]]:
 
 
 def freyja_core_skill() -> str:
-    """모드 A(Codex/Cursor — 서브에이전트 부재)용 코어 계약 스킬 — role 파일이 단일 소스.
+    """모드 A용 프레이야 코어 계약 스킬 — role 파일 단일 소스 (roles.role_core_skill 파생)."""
+    from .roles import role_core_skill
 
-    role frontmatter(모델·툴 선언)는 스킬에서 무의미하므로 스킬 frontmatter 로 교체하고
-    본문은 그대로 잇는다. Worker phase 가 시각·프론트 하위작업에서 이 스킬을 로드해
-    프레이야 계약을 인라인 수행한다."""
-    from .roles import ROLE_AGENTS
-
-    body = dict(ROLE_AGENTS)["asgard-freyja.md"].split("---", 2)[2].lstrip()
-    return (
-        "---\n"
-        "name: asgard-freyja\n"
-        "description: 프레이야 코어 계약 — 디자인·프론트엔드·UX·모션 작업의 인라인 수행 기준. "
-        "서브에이전트가 없는 툴에서 시각·프론트 하위작업 시 Worker phase 가 로드한다.\n"
-        "---\n\n" + body
+    return role_core_skill(
+        "asgard-freyja.md",
+        "프레이야 코어 계약 — 디자인·프론트엔드·UX·모션 작업의 인라인 수행 기준. "
+        "서브에이전트가 없는 툴에서 시각·프론트 하위작업 시 Worker phase 가 로드한다.",
     )

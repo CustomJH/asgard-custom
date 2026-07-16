@@ -1,4 +1,4 @@
-"""Trinity policy template (CUS-119/120) — 통합 설정(asgard-setting-project.json)의 trinity_policy 섹션.
+"""Trinity policy template — 통합 설정(asgard-setting-project.json)의 trinity_policy 섹션.
 
 역할 서브에이전트 3종은 `asgard.templates.roles` 의 실제 .md 파일로 관리한다 (훅과 같은 패턴 — 문자열 임베딩
 금지). 결정 테이블 로직은 quest_log.py(전이 함수)가 유일한 출처고, 이 정책 파일은 임계값·경로 패턴
@@ -15,9 +15,9 @@ _POLICY = {
         "worker": {"tier": "standard", "effort": "medium"},
         "verifier": {"tier": "high", "effort": "high"},
     },
-    # 딜리버리 전문가 티어 (CUS-177) — 하니스 tier→모델: fast=haiku, standard=sonnet, high=opus, max=fable.
+    # 딜리버리 전문가 티어 — 하니스 tier→모델: fast=haiku, standard=sonnet, high=opus, max=fable.
     # full-verify·재계획 2회+ 는 한 칸 승급 (high→max). 명시 [trinity.<role>] placement 가 항상 우선.
-    "delivery": {"freyja": "standard", "thor": "standard", "loki": "fast"},
+    "delivery": {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast"},
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
     "sensitive_paths": [
@@ -55,11 +55,11 @@ _POLICY = {
         "which",
     ],
     "failure_threshold": 3,
-    # 하네스 소유 베이스라인 체크 (CUS-187) — 비면 보수적 자동 감지 (pytest 만). 프로젝트 체크를
+    # 하네스 소유 베이스라인 체크 — 비면 보수적 자동 감지 (pytest 만). 프로젝트 체크를
     # 명시하면 red 판정이 엄격해진다 (예: ["uv run pytest -x -q", "uv run ruff check"]).
     "baseline_checks": [],
     "baseline_timeout": 120,
-    # 게이트-우선 적격 non-test 라인 상한 (CUS-194) — 초과 시 LLM Verifier 승격
+    # 게이트-우선 적격 non-test 라인 상한 — 초과 시 LLM Verifier 승격
     "gate_first_max_lines": 25,
 }
 
@@ -69,6 +69,21 @@ def trinity_policy() -> str:
 
 
 def project_settings() -> str:
-    """asgard-setting-project.json 초기 스캐폴드 — trinity_policy 섹션만 시드.
-    다른 섹션(provider/lagom/memory …)은 명령이 필요할 때 병합 기록한다 (사다리 1단)."""
-    return json.dumps({"trinity_policy": _POLICY}, ensure_ascii=False, indent=2) + "\n"
+    """asgard-setting-project.json 초기 스캐폴드 — lagom.mode + 빈 memory + trinity_policy 시드.
+
+    lagom.mode 는 default full 이라 resolve 기본값과 동일하지만, 이 파일이 사용자가 모드를
+    조정하는 표면이므로 명시적으로 적어 둔다 — 없으면 "라곰이 꺼졌나" 오해한다. memory 는
+    빈 객체로 둔다 — 프로젝트 메모리는 opt-in 연결이라 기본 미연결(공란)이 정상 상태고,
+    `asgard memory connect` 가 engine·endpoint·project_id 를 채운다. 빈 {} 는 find_config
+    에서 미연결로 해석돼 도구가 노출되지 않는다. 나머지 섹션(provider …)은 명령이 필요할
+    때 병합 기록한다 (사다리 1단)."""
+    from ..lagom import DEFAULT_MODE
+
+    return (
+        json.dumps(
+            {"lagom": {"mode": DEFAULT_MODE}, "memory": {}, "trinity_policy": _POLICY},
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n"
+    )

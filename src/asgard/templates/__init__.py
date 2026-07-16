@@ -14,6 +14,7 @@ from .lagom import LAGOM_CANON, render_lagom
 from .map import MAP_INDEX_MD
 from .seal import SEAL_SKILL_MD
 from .selftest import SELFTEST_MD
+from .thor import THOR_SKILLS, eitri_core_skill, thor_core_skill
 from .trinity import project_settings, trinity_policy
 
 __all__ = [
@@ -28,6 +29,9 @@ __all__ = [
     "CURSOR_FOLDERS",
     "FREYJA_SKILLS",
     "freyja_core_skill",
+    "THOR_SKILLS",
+    "thor_core_skill",
+    "eitri_core_skill",
     "LAGOM_CANON",
     "MAP_INDEX_MD",
     "render_lagom",

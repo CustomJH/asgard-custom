@@ -244,12 +244,16 @@ class TestSkillResolver(unittest.TestCase):
         self.assertIn("asgard-freyja-folkvangr", names)
 
     def test_heimdall_dispatch_wired(self):
-        # 배선 실존 — 디스패치 핸들러가 리졸버를 실제로 사용한다 (주입 계약의 소비 지점)
+        # 배선 실존 — 디스패치 핸들러가 리졸버 레지스트리를 실제로 사용한다 (주입 계약의 소비 지점)
         import inspect
 
+        from asgard.agent import heimdall
         from asgard.agent.heimdall import Heimdall
 
-        self.assertIn("resolve_freyja_skills", inspect.getsource(Heimdall._dispatch_handler))
+        self.assertIn("_skill_resolver", inspect.getsource(Heimdall._dispatch_handler))
+        registry_src = inspect.getsource(heimdall._skill_resolver)
+        self.assertIn("resolve_freyja_skills", registry_src)
+        self.assertIn("resolve_thor_skills", registry_src)
 
 
 class TestQualityGateSurfaces(unittest.TestCase):
@@ -298,8 +302,10 @@ class TestModeAWiring(unittest.TestCase):
         from asgard.templates.agents import agents_md
 
         md = agents_md("p")
-        self.assertIn("`asgard-freyja` 스킬", md)  # 모드 A 인라인 수행 경로
-        self.assertIn("디자인·프론트엔드·모션", md)  # 확장된 도메인 라벨
+        self.assertIn("시각·프론트 하위작업이면 `asgard-freyja`", md)  # 모드 A 인라인 수행 경로
+        self.assertIn("백엔드 하위작업이면 `asgard-thor`", md)
+        self.assertIn("빌드·CI 하위작업이면 `asgard-eitri`", md)
+        self.assertIn("브라우저 UI·시각·모션·3D·영상", md)  # 변경 표면 기준 도메인 라벨
 
     def test_verifier_dispatch_isolated(self):
         # 26-07-15 리뷰 [높음] — 공통 문구가 Verifier 에 freyja/thor 를 허용하면 검증 독립성 붕괴
@@ -308,7 +314,7 @@ class TestModeAWiring(unittest.TestCase):
         md = agents_md("p")
         self.assertNotIn("Worker·Verifier 는 하위 딜리버리", md)  # 합쳐진 라우팅 문구 재발 방지
         self.assertIn("asgard-loki(adversarial, read-only)만", md)
-        self.assertIn("Verifier 의 freyja/thor 디스패치는 금지", md)
+        self.assertIn("Verifier 의 freyja/thor/eitri 디스패치는 금지", md)
 
     def test_freyja_frontmatter_excludes_verifier(self):
         # 26-07-15 3차 리뷰 — CC 에이전트 선택 메타데이터(frontmatter description)가
