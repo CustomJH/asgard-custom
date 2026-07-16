@@ -1,8 +1,8 @@
-"""Hindsight 기반 프로젝트 메모리의 등록 정책과 artifact projection.
+"""선택형 backend 기반 프로젝트 메모리의 등록 정책과 artifact projection.
 
-Asgard 메모리는 개인(로컬)과 프로젝트(Hindsight) 두 종류뿐이다. 이 모듈은 세 번째
-정본을 만들지 않는다. 코드·문서·Git은 사실의 provenance이고, Hindsight가 팀 공유
-프로젝트 메모리 저장·검색 엔진이다.
+Asgard 메모리는 개인(로컬)과 프로젝트(선택 backend) 두 종류뿐이다. 이 모듈은 세 번째
+정본을 만들지 않는다. 코드·문서·Git은 사실의 provenance이고, 활성 backend 하나가 팀 공유
+프로젝트 메모리를 저장·검색한다.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ import time
 from collections.abc import Iterable, Sequence
 
 from .memory import scan_threats
-from .memory_bridge import server_retain_items, stage_retain
+from .memory_bridge import backend_target, server_retain_items, stage_retain
 
 KINDS = frozenset(
     {
@@ -53,7 +53,7 @@ CONFIDENCE = frozenset({"observed", "verified"})
 STATUSES = frozenset({"active", "superseded", "historical"})
 MAX_ARTIFACT_BYTES = 100_000
 PROJECTION_MANIFEST = "project-memory-manifest.json"
-PROJECTION_VERSION = 1
+PROJECTION_VERSION = 3
 PROJECTION_LOCK_TTL = 300
 ONTOLOGY_SCHEMA = "asgard-project-artifact-v1"
 MAX_ONTOLOGY_VALUE = 512
@@ -138,13 +138,19 @@ _IMPORTANT_CODE_WORDS = frozenset(
         "storage",
     }
 )
-_PLACEHOLDERS = ("example", "placeholder", "changeme", "redacted", "dummy", "test-only", "your-")
+_PLACEHOLDERS = ("example", "placeholder", "changeme", "redacted", "dummy", "test-only", "your-", "your_", "****")
 _SECRET_PATTERNS = (
     re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
     re.compile(
         r"(?i)\b(?:password|passwd|api[_-]?key|access[_-]?token|secret[_-]?key)\b\s*[:=]\s*[\"']?([^\s\"']{8,})"
     ),
-    re.compile(r"\b(?:sk|ghp|github_pat)_[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"\b(?:sk|gh[oprsu]|github_pat)_[A-Za-z0-9_-]{16,}\b"),
+    # Codex 교차검증이 지적한 누락 유형. `$VAR`/`{var}`/`<token>` 참조는 값이 아니므로 제외.
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),  # JWT 3분절
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),  # AWS access key id
+    re.compile(r"(?i)--(?:token|password|passwd|api-key|secret)[= ](?![$\{<])\S{8,}"),  # CLI flag-value
+    re.compile(r"://[^/\s:@]{1,64}:(?![$\{])[^@\s/]{6,}@"),  # URL 내장 크레덴셜 scheme://user:pass@host
 )
 
 
@@ -267,7 +273,7 @@ def retain_turn(
     assistant_text: str,
     mode: str,
 ) -> TurnRetentionResult:
-    """한 user/assistant turn을 idempotent Hindsight 문서로 자동 retain한다."""
+    """한 user/assistant turn을 idempotent backend record로 opt-in retain한다."""
     del root
     user = str(user_text).strip()
     assistant = str(assistant_text).strip()
@@ -279,10 +285,13 @@ def retain_turn(
     threat = scan_threats(user, assistant)
     if threat:
         return TurnRetentionResult("skipped", reason=f"prompt injection: {threat}")
-    project = str(cfg.get("bank") or "").strip()
+    target = backend_target(cfg)
+    project = str(target["project_id"])
+    project_uid = str(target.get("project_uid") or "")
+    binding_id = str(target.get("binding_id") or "")
     if not project:
-        return TurnRetentionResult("skipped", reason="project bank missing")
-    stable = hashlib.sha256(f"{project}\0{session_id}\0{turn_id}".encode()).hexdigest()[:24]
+        return TurnRetentionResult("skipped", reason="project_id missing")
+    stable = hashlib.sha256(f"{project_uid}\0{binding_id}\0{session_id}\0{turn_id}".encode()).hexdigest()[:24]
     document_id = f"asgard:turn:{stable}"
     clean_mode = _neutral_line(mode)
     content = (
@@ -306,6 +315,9 @@ def retain_turn(
             "turn_id": _neutral_line(turn_id),
             "mode": clean_mode,
             "trust": "untrusted-conversation",
+            "project_uid": project_uid,
+            "binding_id": binding_id,
+            "record_schema": "asgard-project-memory-v1",
         },
     }
     try:
@@ -387,8 +399,14 @@ def propose_completion(
     validation = validate_record(record, root)
     if not validation.accepted:
         return CompletionProposalResult("skipped", reason="; ".join(validation.reasons))
-    item = record_item(record, str(cfg.get("bank") or ""))
-    approval_id = stage_retain(root, item)
+    target = backend_target(cfg)
+    item = record_item(
+        record,
+        str(target["project_id"]),
+        project_uid=str(target.get("project_uid") or ""),
+        binding_id=str(target.get("binding_id") or ""),
+    )
+    approval_id = stage_retain(root, item, target=backend_target(cfg))
     preview = (
         render_record(record)
         + f"\n\napproval_id: {approval_id}\n"
@@ -398,7 +416,7 @@ def propose_completion(
 
 
 def render_record(record: ProjectRecord) -> str:
-    """Hindsight가 LLM 없이도 검색할 수 있는 ontology-informed 자립 문장."""
+    """backend가 provider-side extraction 없이도 검색할 수 있는 ontology-informed 자립 문장."""
     lines = [
         f"[ProjectMemory:{record.kind}:{record.record_id}]",
         f"Title: {_neutral_line(record.title)}",
@@ -415,15 +433,22 @@ def render_record(record: ProjectRecord) -> str:
     return "\n".join(lines)
 
 
-def record_item(record: ProjectRecord, project_id: str) -> dict:
+def record_item(
+    record: ProjectRecord,
+    project_id: str,
+    *,
+    project_uid: str = "",
+    binding_id: str = "",
+) -> dict:
     validation = validate_record(record)
     if not validation.accepted:
         raise ValueError("project memory rejected: " + "; ".join(validation.reasons))
     project = _neutral_line(project_id)
+    stable_record = hashlib.sha256((project_uid + "\0" + record.record_id).encode()).hexdigest()[:24]
     return {
         "content": render_record(record),
         "context": f"asgard project {record.kind}",
-        "document_id": f"asgard:record:{hashlib.sha256(record.record_id.encode()).hexdigest()[:24]}",
+        "document_id": f"asgard:record:{stable_record}",
         "update_mode": "replace",
         "tags": [f"project:{project}", f"kind:{record.kind}", f"importance:{record.importance}", f"status:{record.status}"],
         "metadata": {
@@ -435,6 +460,9 @@ def record_item(record: ProjectRecord, project_id: str) -> dict:
             "confidence": record.confidence,
             "status": record.status,
             "scope": "project",
+            "project_uid": project_uid,
+            "binding_id": binding_id,
+            "record_schema": "asgard-project-memory-v1",
         },
     }
 
@@ -730,8 +758,15 @@ def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[
     return candidates
 
 
-def artifact_item(candidate: ArtifactCandidate, project_id: str, source_revision: str) -> dict:
-    path_hash = hashlib.sha256(candidate.path.encode()).hexdigest()[:24]
+def artifact_item(
+    candidate: ArtifactCandidate,
+    project_id: str,
+    source_revision: str,
+    *,
+    project_uid: str = "",
+    binding_id: str = "",
+) -> dict:
+    path_hash = hashlib.sha256(f"{project_uid}\0{candidate.path}".encode()).hexdigest()[:24]
     symbols = ", ".join(candidate.symbols)[:MAX_ONTOLOGY_VALUE]
     imports = ", ".join(candidate.imports)[:MAX_ONTOLOGY_VALUE]
     header = (
@@ -765,12 +800,16 @@ def artifact_item(candidate: ArtifactCandidate, project_id: str, source_revision
             "scope": "project",
             "status": "active",
             "confidence": "verified",
+            "project_uid": project_uid,
+            "binding_id": binding_id,
+            "record_schema": "asgard-project-memory-v1",
         },
     }
 
 
-def _artifact_document_id(path: str) -> str:
-    return f"asgard:artifact:{hashlib.sha256(path.encode()).hexdigest()[:24]}"
+def _artifact_document_id(path: str, project_uid: str = "") -> str:
+    path_hash = hashlib.sha256((project_uid + "\0" + path).encode()).hexdigest()[:24]
+    return f"asgard:artifact:{path_hash}"
 
 
 def _projection_manifest_path(root: str) -> str:
@@ -781,13 +820,44 @@ def load_projection_manifest(root: str) -> dict:
     """Manifest 부재는 bootstrap, 파손은 stale remote 정리를 보존하기 위해 fail-closed."""
     path = _projection_manifest_path(root)
     if not os.path.exists(path):
-        return {"version": PROJECTION_VERSION, "bank": "", "last_synced_revision": "", "items": {}}
+        return {
+            "version": PROJECTION_VERSION,
+            "backend": "",
+            "project_id": "",
+            "project_uid": "",
+            "binding_id": "",
+            "target_fingerprint": "",
+            "last_synced_revision": "",
+            "items": {},
+        }
     try:
         with open(path, encoding="utf-8") as source:
             data = json.load(source)
-        if not isinstance(data, dict) or data.get("version") != PROJECTION_VERSION or not isinstance(data.get("items"), dict):
+        if isinstance(data, dict) and data.get("version") in (1, 2) and isinstance(data.get("items"), dict):
+            # Unbound manifests must never authorize foreign tombstones. Bootstrap from local source instead.
+            data = {
+                **data,
+                "version": PROJECTION_VERSION,
+                "backend": "",
+                "project_id": str(data.get("bank") or ""),
+                "project_uid": "",
+                "binding_id": "",
+                "target_fingerprint": "",
+                "items": {},
+            }
+            data.pop("bank", None)
+        items = data.get("items") if isinstance(data, dict) else None
+        if (
+            not isinstance(data, dict)
+            or data.get("version") != PROJECTION_VERSION
+            or not isinstance(items, dict)
+            or not all(
+                isinstance(data.get(field), str)
+                for field in ("backend", "project_id", "project_uid", "binding_id", "target_fingerprint")
+            )
+        ):
             raise ValueError("unsupported projection manifest")
-        for source_path, entry in data["items"].items():
+        for source_path, entry in items.items():
             if (
                 not isinstance(source_path, str)
                 or _canonical_repo_path(os.path.realpath(root), source_path) != source_path
@@ -852,10 +922,25 @@ def _save_projection_manifest(root: str, data: dict) -> None:
             os.remove(tmp)
 
 
-def projection_plan(root: str, project_id: str, candidates: Iterable[ArtifactCandidate], *, force: bool = False) -> dict:
+def projection_plan(
+    root: str,
+    project_id: str,
+    candidates: Iterable[ArtifactCandidate],
+    *,
+    force: bool = False,
+    target: dict | None = None,
+) -> dict:
     current = {candidate.path: candidate for candidate in candidates}
     manifest = load_projection_manifest(root)
-    previous = manifest.get("items", {}) if manifest.get("bank") in ("", project_id) else {}
+    target_identity = target or {"engine": "", "project_id": project_id, "fingerprint": ""}
+    same_target = (
+        manifest.get("backend") == target_identity.get("engine")
+        and manifest.get("project_id") == target_identity.get("project_id")
+        and manifest.get("project_uid") == target_identity.get("project_uid")
+        and manifest.get("binding_id") == target_identity.get("binding_id")
+        and manifest.get("target_fingerprint") == target_identity.get("fingerprint")
+    )
+    previous = manifest.get("items", {}) if same_target else {}
     upserts = [
         candidate
         for path, candidate in sorted(current.items())
@@ -877,18 +962,46 @@ def projection_plan(root: str, project_id: str, candidates: Iterable[ArtifactCan
         matches = new_by_hash.get(content_hash, [])
         if len(matches) == 1 and len(old_by_hash.get(content_hash, [])) == 1:
             renamed[path] = matches[0]
-    return {"manifest": manifest, "previous": previous, "current": current, "upserts": upserts, "removed": removed_paths, "renamed": renamed}
+    return {
+        "manifest": manifest,
+        "target": target_identity,
+        "previous": previous,
+        "current": current,
+        "upserts": upserts,
+        "removed": removed_paths,
+        "renamed": renamed,
+    }
 
 
 def projection_plan_id(project_id: str, plan: dict, source_revision: str, *, force: bool = False) -> str:
     """실제로 publish할 전체 payload와 provenance revision을 식별한다."""
-    items = [artifact_item(candidate, project_id, source_revision) for candidate in plan["upserts"]]
+    target = plan.get("target") or {}
+    project_uid = str(target.get("project_uid") or "")
+    binding_id = str(target.get("binding_id") or "")
+    items = [
+        artifact_item(
+            candidate,
+            project_id,
+            source_revision,
+            project_uid=project_uid,
+            binding_id=binding_id,
+        )
+        for candidate in plan["upserts"]
+    ]
     items.extend(
-        _tombstone_item(path, plan["previous"][path], project_id, source_revision, plan["renamed"].get(path, ""))
+        _tombstone_item(
+            path,
+            plan["previous"][path],
+            project_id,
+            source_revision,
+            plan["renamed"].get(path, ""),
+            project_uid=project_uid,
+            binding_id=binding_id,
+        )
         for path in plan["removed"]
     )
     payload = {
-        "bank": project_id,
+        "target": plan.get("target") or {"engine": "", "project_id": project_id, "fingerprint": ""},
         "mode": "force-all" if force else "manifest-diff",
         "source_revision": source_revision,
         "items": items,
@@ -897,7 +1010,16 @@ def projection_plan_id(project_id: str, plan: dict, source_revision: str, *, for
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _tombstone_item(path: str, entry: dict, project_id: str, revision: str, renamed_to: str = "") -> dict:
+def _tombstone_item(
+    path: str,
+    entry: dict,
+    project_id: str,
+    revision: str,
+    renamed_to: str = "",
+    *,
+    project_uid: str = "",
+    binding_id: str = "",
+) -> dict:
     status = "renamed" if renamed_to else "deleted"
     content = f"[ProjectArtifactTombstone]\nPath: {path}\nStatus: {status}\nRevision: {revision}"
     if renamed_to:
@@ -911,13 +1033,16 @@ def _tombstone_item(path: str, entry: dict, project_id: str, revision: str, rena
         "scope": "project",
         "origin": "deterministic",
         "status": status,
+        "project_uid": project_uid,
+        "binding_id": binding_id,
+        "record_schema": "asgard-project-memory-v1",
     }
     if renamed_to:
         metadata["renamed_to"] = renamed_to
     return {
         "content": content,
         "context": "asgard project artifact tombstone",
-        "document_id": entry.get("document_id") or _artifact_document_id(path),
+        "document_id": entry.get("document_id") or _artifact_document_id(path, project_uid),
         "update_mode": "replace",
         "tags": [f"project:{project_id}", "artifact", f"status:{status}"],
         "metadata": metadata,
@@ -950,7 +1075,8 @@ def sync_artifacts(
     force: bool = False,
     expected_plan_id: str | None = None,
 ) -> dict:
-    project_id = str(cfg["bank"])
+    target = backend_target(cfg)
+    project_id = str(target["project_id"])
     candidate_list = list(candidates)
     with _projection_guard(root):
         revision = source_revision or globals()["source_revision"](root)
@@ -965,13 +1091,32 @@ def sync_artifacts(
                 raise ValueError(f"project artifact changed after scan: {candidate.path}") from exc
             if live_hash != candidate.content_hash:
                 raise ValueError(f"project artifact changed after scan: {candidate.path}")
-        plan = projection_plan(root, project_id, candidate_list, force=force)
+        plan = projection_plan(root, project_id, candidate_list, force=force, target=target)
         actual_plan_id = projection_plan_id(project_id, plan, revision, force=force)
         if expected_plan_id is not None and not secrets.compare_digest(expected_plan_id, actual_plan_id):
             raise ValueError("project memory sync plan changed; preview again")
-        items = [artifact_item(candidate, project_id, revision) for candidate in plan["upserts"]]
+        project_uid = str(target.get("project_uid") or "")
+        binding_id = str(target.get("binding_id") or "")
+        items = [
+            artifact_item(
+                candidate,
+                project_id,
+                revision,
+                project_uid=project_uid,
+                binding_id=binding_id,
+            )
+            for candidate in plan["upserts"]
+        ]
         items.extend(
-            _tombstone_item(path, plan["previous"][path], project_id, revision, plan["renamed"].get(path, ""))
+            _tombstone_item(
+                path,
+                plan["previous"][path],
+                project_id,
+                revision,
+                plan["renamed"].get(path, ""),
+                project_uid=project_uid,
+                binding_id=binding_id,
+            )
             for path in plan["removed"]
         )
         result = server_retain_items(cfg, items) if items else {"success": True}
@@ -985,7 +1130,7 @@ def sync_artifacts(
             }
         manifest_items = {
             candidate.path: {
-                "document_id": _artifact_document_id(candidate.path),
+                "document_id": _artifact_document_id(candidate.path, project_uid),
                 "content_hash": candidate.content_hash,
                 "structural_hash": candidate.structural_hash,
                 "extractor": candidate.extractor,
@@ -998,7 +1143,11 @@ def sync_artifacts(
             root,
             {
                 "version": PROJECTION_VERSION,
-                "bank": project_id,
+                "backend": target["engine"],
+                "project_id": project_id,
+                "project_uid": project_uid,
+                "binding_id": binding_id,
+                "target_fingerprint": target["fingerprint"],
                 "last_synced_revision": revision,
                 "items": manifest_items,
             },

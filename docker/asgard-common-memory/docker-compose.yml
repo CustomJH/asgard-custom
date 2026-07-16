@@ -1,4 +1,4 @@
-# asgard-common-memory — 중앙 공유 Hindsight 서버 (CUS-236 P2 인프라)
+# asgard-common-memory — 중앙 공유 Hindsight 서버 (프로젝트 메모리 2차 계층 인프라)
 #
 # 용도: 팀 공용 프로젝트 메모리. DB 하나에 여러 사용자가 bank(=프로젝트) 단위로 retain/recall.
 # 임베디드 pg0 대신 외부 PostgreSQL(pgvector) 채택 — 중앙 서버는 독립 백업(pg_dump)·

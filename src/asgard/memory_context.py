@@ -1,4 +1,4 @@
-"""개인 로컬 메모리와 Hindsight 프로젝트 메모리의 범위 분리 협력 회수."""
+"""개인 로컬 메모리와 선택된 프로젝트 메모리 backend의 범위 분리 협력 회수."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import os
 
 from . import memory
-from .memory_bridge import find_config, server_recall
+from .memory_bridge import find_config, is_backend_trusted, server_recall
 
 PROJECT_RECALL_BUDGET = 1600
 MAX_METADATA_FIELDS = 128
@@ -70,7 +70,7 @@ def _deterministic_projection_is_current(root: str, metadata: dict) -> bool:
         return False
 
 
-def _eligible_for_automatic_context(root: str, metadata: dict) -> bool:
+def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None = None) -> bool:
     """자동 주입은 active·verified 지식과 source artifact만 허용한다.
 
     provenance를 증명하지 못하는 legacy item은 명시 검색에는 남겨도 ambient context에는
@@ -82,6 +82,16 @@ def _eligible_for_automatic_context(root: str, metadata: dict) -> bool:
         return False
     if metadata.get("trust") == "untrusted-conversation" or metadata.get("kind") == "turn":
         return False
+    if metadata.get("kind") == "binding" or metadata.get("scope") == "control":
+        return False
+    if cfg is not None:
+        if (
+            not cfg.get("project_uid")
+            or not cfg.get("binding_id")
+            or metadata.get("project_uid") != cfg.get("project_uid")
+            or metadata.get("binding_id") != cfg.get("binding_id")
+        ):
+            return False
     try:
         metadata_texts = _metadata_texts(metadata)
     except ValueError:
@@ -93,17 +103,36 @@ def _eligible_for_automatic_context(root: str, metadata: dict) -> bool:
     return not memory.scan_threats(*metadata_texts)
 
 
+def filter_project_hits(root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None) -> tuple[list[dict], int]:
+    """Ambient와 explicit MCP가 공유하는 최소 ownership/provenance 정책."""
+    clean: list[dict] = []
+    dropped = 0
+    for hit in hits:
+        text = str(hit.get("text") or "").strip()
+        raw_metadata = hit.get("metadata")
+        metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        if not text or memory.scan_threats(text) or not _eligible_for_automatic_context(root, metadata, cfg):
+            dropped += 1
+            continue
+        clean.append({**hit, "text": text, "metadata": metadata})
+        if max_results is not None and len(clean) >= max_results:
+            break
+    return clean, dropped
+
+
 def project_recall_note(query: str, *, start: str | None = None, max_results: int = 5) -> str:
-    """현재 프로젝트 bank를 검색한다. 불능·무적중은 빈 문자열로 fail-open."""
+    """현재 프로젝트 backend를 검색한다. 불능·미신뢰·무적중은 빈 문자열로 fail-open."""
     try:
         found = find_config(start or os.getcwd())
         if not found:
             return ""
         root, cfg = found
+        if not is_backend_trusted(cfg):
+            return ""
         # 턴 시작 자동 주입은 원격 장애로 대화를 붙잡지 않는다. 명시 MCP 조회의 긴 timeout과 분리.
         recall_cfg = {**cfg, "timeout": min(int(cfg.get("timeout") or 5), 5)}
         # raw source artifact가 긴 코드 조각으로 budget을 선점하지 않도록, 더 넓게 검색한 뒤
-        # 승인된 구조화 record를 먼저 배치한다. 각 그룹 내부 Hindsight 순위는 유지한다.
+        # 승인된 구조화 record를 먼저 배치한다. 각 그룹 내부 backend 순위는 유지한다.
         hits = server_recall(recall_cfg, query, max_results=max(8, max_results * 2))
         hits = sorted(
             enumerate(hits),
@@ -112,31 +141,29 @@ def project_recall_note(query: str, *, start: str | None = None, max_results: in
                 pair[0],
             ),
         )
+        project_id = _neutralize(str(cfg.get("project_id") or cfg.get("bank") or ""))[:120]
+        prefix = (
+            '\n\n<memory-recall scope="project">\n'
+            f"요청 관련 프로젝트 공유 메모리 (project_id={project_id}; 힌트 — 원본·완료 증거 아님):\n"
+        )
+        suffix = "\n</memory-recall>"
+        if len(prefix + suffix) > PROJECT_RECALL_BUDGET:
+            return ""
+        filtered, _ = filter_project_hits(root, cfg, [hit for _, hit in hits], max_results=max_results)
         rows: list[str] = []
-        total = 0
-        for _, hit in hits:
-            text = str(hit.get("text") or "").strip()
-            raw_metadata = hit.get("metadata")
-            metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
-            if not text or memory.scan_threats(text) or not _eligible_for_automatic_context(root, metadata):
-                continue
-            source = str(metadata.get("source") or "").strip()
-            suffix = f" [source: {_neutralize(source)}]" if source else ""
-            row = f"- {_neutralize(text)[:420]}{suffix}"
-            if total + len(row) + 1 > PROJECT_RECALL_BUDGET:
+        for hit in filtered:
+            text = str(hit["text"])
+            metadata = hit["metadata"]
+            source = _neutralize(str(metadata.get("source") or "").strip())[:240]
+            source_note = f" [source: {source}]" if source else ""
+            row = f"- {_neutralize(text)[:420]}{source_note}"
+            if len(prefix + "\n".join([*rows, row]) + suffix) > PROJECT_RECALL_BUDGET:
                 break
             rows.append(row)
-            total += len(row) + 1
-            if len(rows) >= max_results:
-                break
+
         if not rows:
             return ""
-        return (
-            '\n\n<memory-recall scope="project">\n'
-            f"요청 관련 프로젝트 공유 메모리 (bank={_neutralize(str(cfg['bank']))}; 힌트 — 원본·완료 증거 아님):\n"
-            + "\n".join(rows)
-            + "\n</memory-recall>"
-        )
+        return prefix + "\n".join(rows) + suffix
     except Exception:
         return ""
 

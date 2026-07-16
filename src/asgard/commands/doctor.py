@@ -1,10 +1,12 @@
-"""doctor — diagnose runtime & PATH, plus Trinity assets when run inside a scaffolded project
-(CUS-125). Project checks are advisory (warn, never fatal) and appear only when AGENTS.md exists —
+"""doctor — diagnose runtime & PATH, plus Trinity assets when run inside a scaffolded project.
+Project checks are advisory (warn, never fatal) and appear only when AGENTS.md exists —
 a global `asgard doctor` outside any project stays exactly as before."""
 
 import json as _json
 import os
 import sys
+from dataclasses import asdict
+from pathlib import Path
 
 from .. import __version__, ui
 from ..platform import hook_python, on_path
@@ -78,7 +80,7 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
-    # Lagom (CUS-207/215) — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off 도 유효한 선택).
+    # Lagom — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off 도 유효한 선택).
     try:
         from ..lagom import default_mode, read_state
 
@@ -124,37 +126,66 @@ def _trinity_checks(root: str) -> list[dict]:
                 "fix": fix,
             }
         )
-    # 공유 메모리 서버 (CUS-236) — memory-server.json 있는 프로젝트만, 도달성 advisory.
+    # 선택형 공유 메모리 backend — 설정된 프로젝트만, readiness/capability advisory.
     try:
-        from ..memory_bridge import find_config
+        from ..memory_bridge import find_config, is_backend_trusted, verify_backend_binding
+        from ..project_memory_backends import get_backend
 
         found = find_config(root)
         if found:
             _, mcfg = found
-            reachable = False
             try:
-                import urllib.request
-
-                urllib.request.urlopen(f"{mcfg['server']}/openapi.json", timeout=3)
-                reachable = True
-            except Exception:
-                pass
+                if not is_backend_trusted(mcfg):
+                    raise PermissionError("untrusted backend target; run asgard memory connect")
+                backend = get_backend(mcfg)
+                try:
+                    binding = verify_backend_binding(mcfg, backend=backend)
+                    readiness = backend.readiness()
+                    enabled = [name for name, supported in asdict(backend.capabilities()).items() if supported]
+                finally:
+                    backend.close()
+                detail = (
+                    f"engine={backend.engine} · project_id={backend.project_id} · {readiness.status}"
+                    + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
+                    + (f" · capabilities={','.join(enabled)}" if enabled else "")
+                    + (f" · {readiness.detail}" if readiness.detail else "")
+                )
+                ok = readiness.status == "ready"
+            except Exception as exc:
+                detail = f"engine={mcfg.get('engine', 'hindsight')} · unavailable · {type(exc).__name__}: {exc}"
+                ok = False
             checks.append(
                 {
-                    "name": "shared memory server",
-                    "ok": reachable,
-                    "detail": f"bank={mcfg['bank']} @ {mcfg['server']}" + ("" if reachable else " — unreachable"),
+                    "name": "shared memory backend",
+                    "ok": ok,
+                    "detail": detail,
                     "fix": ""
-                    if reachable
-                    else "서버 기동 확인 (docker/asgard-common-memory) 또는 asgard memory connect 재설정",
+                    if ok
+                    else "backend/plugin 설치·기동·인증 확인 또는 asgard memory connect 재설정",
                 }
             )
     except Exception:
         pass
     # 코드베이스 지도 — 유령 엔트리(디스크에 없는 경로) 탐지 (지도 문법 3: 실재만 기재).
     # INDEX.md 는 규칙 문서(예시 엔트리 포함)라 제외. 영역 파일이 아직 없는 건 정상 (fog-of-war).
+    from ..code_map import MapError, check_map
+
     mdir = os.path.join(root, ".asgard", "map")
-    if not os.path.isdir(mdir):
+    map_components = (Path(root, ".asgard"), Path(mdir))
+    unsafe_component = next(
+        (p for p in map_components if p.is_symlink() or bool(getattr(p, "is_junction", lambda: False)())),
+        None,
+    )
+    if unsafe_component is not None:
+        checks.append(
+            {
+                "name": "codebase map",
+                "ok": False,
+                "detail": f"unsafe managed map path: symlink/junction: {unsafe_component}",
+                "fix": "symlink/junction 제거 후 asgard setup map 실행",
+            }
+        )
+    elif not os.path.isdir(mdir):
         checks.append(
             {
                 "name": "codebase map",
@@ -168,27 +199,77 @@ def _trinity_checks(root: str) -> list[dict]:
 
         entry_pat = _re.compile(r"^- `([^`]+)`", _re.M)
         ghosts: list[str] = []
+        unsafe: list[str] = []
         entries = 0
-        areas = sorted(f for f in os.listdir(mdir) if f.endswith(".md") and f != "INDEX.md")
+        areas = sorted(f for f in os.listdir(mdir) if f.endswith(".md") and f not in ("INDEX.md", "PROJECT.md"))
         for fname in areas:
+            area_path = Path(mdir, fname)
+            if area_path.is_symlink() or bool(getattr(area_path, "is_junction", lambda: False)()):
+                unsafe.append(f"{fname}: symlink/junction")
+                continue
             try:
-                body = open(os.path.join(mdir, fname), encoding="utf-8").read()
+                body = area_path.read_text(encoding="utf-8")
             except Exception:
                 continue
             for m in entry_pat.finditer(body):
                 entries += 1
-                if not os.path.exists(os.path.join(root, m.group(1).rstrip("/"))):
-                    ghosts.append(f"{fname}: {m.group(1)}")
-        checks.append(
-            {
-                "name": "codebase map",
-                "ok": not ghosts,
-                "detail": f"{len(areas)} area(s) · {entries} entries"
-                if not ghosts
-                else "ghost: " + ", ".join(ghosts[:5]) + (f" (+{len(ghosts) - 5})" if len(ghosts) > 5 else ""),
-                "fix": "디스크에 없는 경로 엔트리 제거 — 지도 문법 3 (실재만 기재, .asgard/map/INDEX.md)",
-            }
-        )
+                entry = m.group(1).rstrip("/")
+                candidate = Path(root, entry)
+                try:
+                    candidate.resolve(strict=False).relative_to(Path(root).resolve())
+                except ValueError:
+                    unsafe.append(f"{fname}: {m.group(1)}")
+                    continue
+                if os.path.isabs(entry) or not candidate.exists():
+                    if os.path.isabs(entry):
+                        unsafe.append(f"{fname}: {m.group(1)}")
+                    else:
+                        ghosts.append(f"{fname}: {m.group(1)}")
+        try:
+            managed = check_map(root)
+        except MapError as exc:
+            checks.append(
+                {
+                    "name": "codebase map",
+                    "ok": False,
+                    "detail": f"unsafe managed map path: {exc}",
+                    "fix": "symlink/junction 제거 후 asgard setup map 실행",
+                }
+            )
+            managed = None
+        if managed is None:
+            pass
+        else:
+            checks.append(
+                {
+                    "name": "codebase map",
+                    "ok": not ghosts and not unsafe and managed.ok,
+                    "detail": (
+                        f"{len(areas)} manual area(s) · {entries} entries · managed current"
+                        if managed.ok
+                        else (
+                            "PROJECT.md ownership marker missing"
+                            if not managed.owned
+                            else (
+                                "INDEX.md drift"
+                                if not managed.index_current
+                                else (
+                                    "managed map is git-ignored — not shareable"
+                                    if not managed.trackable
+                                    else f"managed drift: +{len(managed.added)} -{len(managed.removed)}"
+                                )
+                            )
+                        )
+                    )
+                    if not ghosts and not unsafe
+                    else (
+                        "unsafe: " + ", ".join(unsafe[:5])
+                        if unsafe
+                        else "ghost: " + ", ".join(ghosts[:5]) + (f" (+{len(ghosts) - 5})" if len(ghosts) > 5 else "")
+                    ),
+                    "fix": "asgard setup map 실행; 수동 영역의 유령 경로는 제거 (.asgard/map/INDEX.md)",
+                }
+            )
     ledger_ok = os.access(root, os.W_OK)
     checks.append(
         {
@@ -198,7 +279,7 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": "프로젝트 루트 쓰기 권한 확인",
         }
     )
-    # classify 오분류율 (CUS-179) — misroute = DIRECT 분류인데 write 발생 (소급 검증됨). 기록 있을 때만.
+    # classify 오분류율 — misroute = DIRECT 분류인데 write 발생 (소급 검증됨). 기록 있을 때만.
     try:
         events = [
             _json.loads(ln)
@@ -218,7 +299,7 @@ def _trinity_checks(root: str) -> list[dict]:
             )
     except Exception:
         pass
-    # route prior (CUS-127) — task-class별 게이트-red 이력. 과반 red 클래스는 승격 문턱 1로 하향.
+    # route prior (Bayesian-lite) — task-class별 게이트-red 이력. 과반 red 클래스는 승격 문턱 1로 하향.
     try:
         classes = _json.load(open(os.path.join(root, ".asgard", "route-priors.json"))).get("classes") or {}
         if classes:
@@ -241,7 +322,7 @@ def _trinity_checks(root: str) -> list[dict]:
 
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
-    py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처) — CUS-224
+    py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처)
     py = on_path(py_cmd.split()[0])  # uv 폴백이면 "uv run --no-project python" — 첫 토큰만 PATH 조회
     uv = on_path("uv")
     path_fix = (

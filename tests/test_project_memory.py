@@ -9,10 +9,11 @@ import subprocess
 import tempfile
 import time
 import unittest
+from typing import Any
 from unittest import mock
 
 from asgard import memory, project_memory
-from asgard.memory_context import recall_note
+from asgard.memory_context import PROJECT_RECALL_BUDGET, project_recall_note, recall_note
 
 
 class ProjectMemoryBase(unittest.TestCase):
@@ -35,8 +36,8 @@ class ProjectMemoryBase(unittest.TestCase):
 
 
 class TestRegistrationPolicy(ProjectMemoryBase):
-    def record(self, **overrides):
-        fields = {
+    def record(self, **overrides: Any):
+        fields: dict[str, Any] = {
             "record_id": "decision-project-memory-engine",
             "kind": "decision",
             "title": "프로젝트 메모리 엔진 결정",
@@ -68,6 +69,34 @@ class TestRegistrationPolicy(ProjectMemoryBase):
                 result = project_memory.validate_record(record, self.root)
                 self.assertFalse(result.accepted)
                 self.assertTrue(result.reasons)
+
+    def test_scan_secrets_expanded_patterns(self):
+        # Codex 교차검증이 지적한 누락 유형 — Bearer/JWT/AWS/flag-value/URL 크레덴셜
+        leaks = (
+            "Authorization: Bearer a1B2c3D4e5F6g7H8i9J0kL",
+            "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.SflKxwRJSMeKKF2QT4fwpM",
+            "aws key AKIAIOSFODNN7REALKEY",
+            "curl --token s3cr3t-t0ken-value api.prod.internal",
+            "db url postgres://admin:hunter2secret@db.internal:5432/app",
+            "gho_Abcdefghij0123456789",
+        )
+        for text in leaks:
+            with self.subTest(text=text):
+                self.assertEqual(project_memory.scan_secrets(text), "credential-like content")
+
+    def test_scan_secrets_ignores_references_and_placeholders(self):
+        # 환경변수/템플릿 참조와 문서 예시는 값이 아니다 — 위양성 가드
+        safe = (
+            "curl --token $GITHUB_TOKEN api.example.io",
+            "curl --token ${GITHUB_TOKEN} api.example.io",
+            "Authorization: Bearer <access-token-here>",
+            "postgres://user:$DB_PASSWORD@db:5432/app",
+            "docs: --password your_password_here 로 지정",
+            "config: api_key = example-placeholder-key",
+        )
+        for text in safe:
+            with self.subTest(text=text):
+                self.assertIsNone(project_memory.scan_secrets(text))
 
     def test_policy_rejects_unknown_kind_relation_and_missing_provenance(self):
         cases = (
@@ -298,6 +327,23 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.assertEqual(tombstone["metadata"]["status"], "deleted")
         self.assertEqual(project_memory.load_projection_manifest(self.root)["items"], {})
 
+    def test_backend_switch_forces_full_projection_bootstrap(self):
+        self.write("docs/architecture.md", "# Architecture\nBackend-neutral project memory.\n")
+        candidates = project_memory.scan_project(self.root, changed_paths=[])
+        hindsight = {"engine": "hindsight", "endpoint": "http://memory", "project_id": "demo"}
+        redisvl = {"engine": "redisvl", "endpoint": "redis://memory", "project_id": "demo"}
+
+        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+            first = project_memory.sync_artifacts(self.root, hindsight, candidates, source_revision="HEAD=one")
+            switched = project_memory.sync_artifacts(self.root, redisvl, candidates, source_revision="HEAD=two")
+
+        self.assertEqual(first["items_count"], 1)
+        self.assertEqual(switched["items_count"], 1)
+        manifest = project_memory.load_projection_manifest(self.root)
+        self.assertEqual(manifest["backend"], "redisvl")
+        self.assertEqual(manifest["project_id"], "demo")
+        self.assertTrue(manifest["target_fingerprint"])
+
     def test_projection_manifest_detects_content_preserving_rename(self):
         content = "# Architecture\nStable project-memory ontology.\n"
         self.write("docs/old-name.md", content)
@@ -411,7 +457,10 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("docs/architecture.md", "# Architecture\nApproved state.\n")
         cfg = {"server": "http://memory", "bank": "demo"}
         candidates = project_memory.scan_project(self.root, changed_paths=[])
-        plan_id = project_memory.projection_plan_id("demo", project_memory.projection_plan(self.root, "demo", candidates), "HEAD=one")
+        target = project_memory.backend_target(cfg)
+        plan_id = project_memory.projection_plan_id(
+            "demo", project_memory.projection_plan(self.root, "demo", candidates, target=target), "HEAD=one"
+        )
         with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
             result = project_memory.sync_artifacts(
                 self.root,
@@ -594,7 +643,10 @@ class TestSyncTurnCLI(ProjectMemoryBase):
             "evidence": [{"cmd": "pytest", "exit_code": 0}],
         }
         with mock.patch(
-            "asgard.commands.memory.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
+            "asgard.commands.memory.find_config",
+            return_value=(self.root, {"server": "http://memory", "bank": "demo", "auto_retain_turns": True}),
+        ), mock.patch(
+            "asgard.commands.memory.is_backend_trusted", return_value=True
         ), mock.patch(
             "asgard.commands.memory.retain_turn", return_value=project_memory.TurnRetentionResult("retained", "turn-doc")
         ) as retain, mock.patch(
@@ -609,6 +661,41 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         self.assertEqual(retain.call_args.kwargs["mode"], "claude-code")
         self.assertTrue(propose.call_args.kwargs["verified"])
 
+    def test_sync_turn_does_not_export_raw_turns_by_default(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        payload = {"user_text": "읽기 요청", "assistant_text": "응답", "verified": False}
+        with mock.patch(
+            "asgard.commands.memory.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
+        ), mock.patch("asgard.commands.memory.retain_turn") as retain:
+            result = CliRunner().invoke(app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload))
+
+        self.assertEqual(result.exit_code, 0, result.stdout or str(result.exception))
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "skipped")
+        self.assertIn("disabled", output["reason"])
+        retain.assert_not_called()
+
+    def test_sync_turn_reports_untrusted_opt_in_backend_without_exporting(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        payload = {"user_text": "민감한 요청", "assistant_text": "응답", "verified": False}
+        cfg = {"server": "http://memory", "bank": "demo", "auto_retain_turns": True}
+        with mock.patch("asgard.commands.memory.find_config", return_value=(self.root, cfg)), mock.patch(
+            "asgard.commands.memory.is_backend_trusted", return_value=False
+        ), mock.patch("asgard.commands.memory.retain_turn") as retain:
+            result = CliRunner().invoke(app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload))
+
+        self.assertEqual(result.exit_code, 0, result.stdout or str(result.exception))
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "skipped")
+        self.assertIn("not trusted", output["reason"])
+        retain.assert_not_called()
+
     def test_project_approve_commits_the_exact_staged_item(self):
         from typer.testing import CliRunner
 
@@ -617,7 +704,9 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         item = {"content": "approved event", "document_id": "asgard:record:1"}
         with mock.patch(
             "asgard.commands.memory.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
-        ), mock.patch("asgard.commands.memory.claim_retain", return_value=(item, "claim-1")), mock.patch(
+        ), mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True), mock.patch(
+            "asgard.commands.memory.claim_retain", return_value=(item, "claim-1")
+        ), mock.patch(
             "asgard.commands.memory.server_retain_items", return_value={"success": True}
         ) as retain, mock.patch("asgard.commands.memory.finish_retain") as finish:
             result = CliRunner().invoke(app, ["memory", "project-approve", "approval-1"])
@@ -634,13 +723,31 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         item = {"content": "approved event", "document_id": "asgard:record:1"}
         with mock.patch(
             "asgard.commands.memory.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
-        ), mock.patch("asgard.commands.memory.claim_retain", return_value=(item, "claim-1")), mock.patch(
+        ), mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True), mock.patch(
+            "asgard.commands.memory.claim_retain", return_value=(item, "claim-1")
+        ), mock.patch(
             "asgard.commands.memory.server_retain_items", return_value={"success": False, "error": "rejected"}
         ), mock.patch("asgard.commands.memory.finish_retain") as finish:
             result = CliRunner().invoke(app, ["memory", "project-approve", "approval-1"])
         self.assertNotEqual(result.exit_code, 0)
         self.assertNotIn("project memory saved", result.stdout)
         finish.assert_called_once_with(self.root, "approval-1", "claim-1", success=False)
+
+    def test_project_approve_rejects_untrusted_backend_before_claim(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        with mock.patch(
+            "asgard.commands.memory.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
+        ), mock.patch("asgard.commands.memory.is_backend_trusted", return_value=False), mock.patch(
+            "asgard.commands.memory.claim_retain"
+        ) as claim:
+            result = CliRunner().invoke(app, ["memory", "project-approve", "approval-1"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("not trusted", result.stderr)
+        claim.assert_not_called()
 
     def test_project_sync_reports_server_rejection_as_failure(self):
         from typer.testing import CliRunner
@@ -660,7 +767,9 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         }
         with mock.patch("asgard.commands.memory.os.getcwd", return_value=self.root), mock.patch(
             "asgard.memory_bridge.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
-        ), mock.patch("asgard.project_memory.changed_paths", return_value=[]), mock.patch(
+        ), mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True), mock.patch(
+            "asgard.project_memory.changed_paths", return_value=[]
+        ), mock.patch(
             "asgard.project_memory.scan_project", return_value=[]
         ), mock.patch("asgard.project_memory.sync_artifacts", return_value=rejected):
             result = CliRunner().invoke(app, ["memory", "project-sync", "--yes", "--plan-id", "a" * 64])
@@ -668,8 +777,47 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         self.assertIn("project memory sync failed", result.stderr)
         self.assertNotIn("project memory synced", result.stderr)
 
+    def test_project_sync_rejects_untrusted_backend_before_scan(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        with mock.patch("asgard.commands.memory.os.getcwd", return_value=self.root), mock.patch(
+            "asgard.memory_bridge.find_config", return_value=(self.root, {"server": "http://memory", "bank": "demo"})
+        ), mock.patch("asgard.commands.memory.is_backend_trusted", return_value=False), mock.patch(
+            "asgard.project_memory.changed_paths"
+        ) as changed:
+            result = CliRunner().invoke(app, ["memory", "project-sync"])
+
+        self.assertNotEqual(result.exit_code, 0)
+        self.assertIn("not trusted", result.stderr)
+        changed.assert_not_called()
+
+    def test_project_sync_all_scans_all_candidates_instead_of_only_changed_paths(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        cfg = {"engine": "hindsight", "endpoint": "http://memory", "project_id": "demo"}
+        with mock.patch("asgard.commands.memory.os.getcwd", return_value=self.root), mock.patch(
+            "asgard.memory_bridge.find_config", return_value=(self.root, cfg)
+        ), mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True), mock.patch(
+            "asgard.project_memory.changed_paths"
+        ) as changed, mock.patch("asgard.project_memory.scan_project", return_value=[]) as scan:
+            result = CliRunner().invoke(app, ["memory", "project-sync", "--all"])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        changed.assert_not_called()
+        scan.assert_called_once_with(self.root, changed_paths=[])
+
 
 class TestCooperativeRecall(ProjectMemoryBase):
+    def setUp(self):
+        super().setUp()
+        trust = mock.patch("asgard.memory_context.is_backend_trusted", return_value=True)
+        trust.start()
+        self.addCleanup(trust.stop)
+
     @staticmethod
     def record_metadata(record_id="decision.x", **overrides):
         metadata: dict[str, object] = {
@@ -695,6 +843,28 @@ class TestCooperativeRecall(ProjectMemoryBase):
         self.assertIn("간결한 한국어", note)
         self.assertIn('scope="project"', note)
         self.assertIn("Hindsight", note)
+
+    def test_project_recall_budget_covers_final_injection_block(self):
+        text = " ".join(f"fact{i}" for i in range(100))
+        source = " ".join(f"source{i}" for i in range(120))
+        hits = [{"text": text, "metadata": self.record_metadata(source=source)}]
+        with mock.patch(
+            "asgard.memory_context.find_config",
+            return_value=(self.root, {"server": "http://x", "bank": "asgard"}),
+        ), mock.patch("asgard.memory_context.server_recall", return_value=hits):
+            note = project_recall_note("budget", start=self.root)
+
+        self.assertTrue(note)
+        self.assertLessEqual(len(note), PROJECT_RECALL_BUDGET)
+
+    def test_untrusted_repo_backend_is_not_queried_automatically(self):
+        with mock.patch("asgard.memory_context.is_backend_trusted", return_value=False), mock.patch(
+            "asgard.memory_context.find_config", return_value=(self.root, {"server": "http://x", "bank": "asgard"})
+        ), mock.patch("asgard.memory_context.server_recall") as recall:
+            note = recall_note("private prompt", start=self.root)
+
+        self.assertNotIn('scope="project"', note)
+        recall.assert_not_called()
 
     def test_poisoned_project_result_is_dropped_but_personal_recall_survives(self):
         memory.add("개인 안전 원칙을 유지한다.", title="safe-rule", kind="user")

@@ -5,7 +5,7 @@
 
 MEMORY_SKILL_MD = """---
 name: asgard-memory
-description: Asgard의 두 메모리 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 Hindsight. 사용자가 "기억해/저장해/메모리" 를 말하거나 memory context의 상세가 필요할 때 사용.
+description: Asgard의 두 메모리 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 선택된 backend 하나. 사용자가 "기억해/저장해/메모리" 를 말하거나 memory context의 상세가 필요할 때 사용.
 ---
 
 # asgard-memory — 개인/프로젝트 메모리 사용 계약
@@ -40,10 +40,11 @@ asgard memory ingest "<자립적인 사실 한 건>" --kind <note|user|decision|
 - 개인 스코프 전용 — 프로젝트 공유 지식은 여기 넣지 않는다 (용어 방화벽)
 - 유지관리: `asgard memory lint` 가 부패·중복·오염을 보고하면 merge/remove 로 정리
 
-## 프로젝트 공유 메모리 — Hindsight
+## 프로젝트 공유 메모리 — 선택된 backend 하나
 
-`<memory-recall scope="project">`는 현재 프로젝트의 Hindsight bank에서 온다. 일반 조회는 자동이지만
-명시 검색은 MCP `memory_recall`을 사용한다. 중요한 코드·문서 bootstrap은 먼저 미리본다:
+`<memory-recall scope="project">`는 machine-local trust가 승인한 현재 프로젝트 backend에서 온다.
+Hindsight/Cognee/RedisVL 결과를 동시에 주입하거나 병합하지 않는다. 명시 검색은 MCP
+`memory_recall`을 사용한다. 중요한 코드·문서 bootstrap은 먼저 미리본다:
 
 ```bash
 asgard memory project-scan --all

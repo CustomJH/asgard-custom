@@ -13,26 +13,45 @@ import hmac
 import json as _json
 import os
 import re
+import secrets
 import sys
+import threading
+import time
+import uuid
 from collections.abc import Callable
 
 from .. import memory, ui
-from ..memory_bridge import claim_retain, find_config, finish_retain, server_retain_items
+from ..memory_bridge import (
+    backend_target,
+    claim_retain,
+    find_config,
+    finish_retain,
+    is_backend_trusted,
+    server_retain_items,
+)
 from ..project_memory import propose_completion, retain_turn
 
 _PLAN_ID = re.compile(r"^[0-9a-f]{64}$")
+_PLAN_THREAD_LOCK = threading.Lock()
+PERSONAL_CLAIM_LEASE_SECONDS = 300
 
 
 def _pending_dir() -> str:
     d = os.path.join(memory.ensure_home(), ".pending-plans")
+    if os.path.islink(d):
+        raise ValueError("personal approval directory must not be a symlink")
     os.makedirs(d, mode=0o700, exist_ok=True)
     memory._chmod(d, 0o700)
     return d
 
 
 def _save_plan(text: str, kind: str, plan: dict) -> str:
+    text_sha256 = hashlib.sha256(text.encode()).hexdigest()
     raw = _json.dumps(
-        {"text": text, "kind": kind, "plan": plan}, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+        {"text_sha256": text_sha256, "kind": kind, "plan": plan},
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
     )
     plan_id = hashlib.sha256(raw.encode()).hexdigest()
     memory._atomic_write(os.path.join(_pending_dir(), f"{plan_id}.json"), raw)
@@ -50,14 +69,68 @@ def _load_plan(plan_id: str, text: str, kind: str) -> dict:
     if not hmac.compare_digest(hashlib.sha256(raw.encode()).hexdigest(), plan_id):
         raise ValueError("approval plan integrity check failed — re-run ingest")
     payload = _json.loads(raw)
-    if payload.get("text") != text or payload.get("kind") != kind or not isinstance(payload.get("plan"), dict):
+    text_matches = payload.get("text") == text or hmac.compare_digest(
+        str(payload.get("text_sha256") or ""), hashlib.sha256(text.encode()).hexdigest()
+    )
+    if not text_matches or payload.get("kind") != kind or not isinstance(payload.get("plan"), dict):
         raise ValueError("approval plan does not match text/kind — re-run ingest")
     return payload["plan"]
 
 
-def _consume_plan(plan_id: str) -> None:
-    with contextlib.suppress(OSError):
-        os.remove(os.path.join(_pending_dir(), f"{plan_id}.json"))
+@contextlib.contextmanager
+def _personal_plan_guard():
+    """개인 approval 파일의 프로세스·스레드 공통 claim lock."""
+    with _PLAN_THREAD_LOCK:
+        with memory._lock(_pending_dir()):
+            yield
+
+
+def _claimed_path(plan_id: str, token: str) -> str:
+    return os.path.join(_pending_dir(), f"{plan_id}.{token}.claimed.json")
+
+
+def _recover_stale_claim(plan_id: str) -> None:
+    """lease가 만료된 crash claim을 pending으로 되돌린다. 호출자는 plan guard를 보유한다."""
+    pending = _pending_dir()
+    original = os.path.join(pending, f"{plan_id}.json")
+    if os.path.exists(original):
+        return
+    prefix, suffix = f"{plan_id}.", ".claimed.json"
+    for name in sorted(os.listdir(pending)):
+        if not (name.startswith(prefix) and name.endswith(suffix)):
+            continue
+        claimed = os.path.join(pending, name)
+        try:
+            if time.time() - os.stat(claimed, follow_symlinks=False).st_mtime > PERSONAL_CLAIM_LEASE_SECONDS:
+                os.replace(claimed, original)
+                return
+        except OSError:
+            continue
+
+
+def _claim_plan(plan_id: str, text: str, kind: str) -> tuple[dict, str]:
+    """approval ID를 원자 claim한다. ingest 실패 시 _finish_plan(..., success=False)로 복구한다."""
+    with _personal_plan_guard():
+        _recover_stale_claim(plan_id)
+        plan = _load_plan(plan_id, text, kind)
+        token = secrets.token_hex(8)
+        os.replace(
+            os.path.join(_pending_dir(), f"{plan_id}.json"),
+            _claimed_path(plan_id, token),
+        )
+        return plan, token
+
+
+def _finish_plan(plan_id: str, token: str, *, success: bool) -> None:
+    with _personal_plan_guard():
+        claimed = _claimed_path(plan_id, token)
+        if success:
+            with contextlib.suppress(OSError):
+                os.remove(claimed)
+            return
+        original = os.path.join(_pending_dir(), f"{plan_id}.json")
+        if os.path.exists(claimed) and not os.path.exists(original):
+            os.replace(claimed, original)
 
 
 def _guard(fn: Callable[[], int]) -> int:
@@ -95,16 +168,34 @@ def run_sync_turn(mode: str) -> int:
             print(_json.dumps({"status": "skipped", "reason": "project memory not connected"}))
             return 0
         root, cfg = found
-        result = retain_turn(
-            root,
-            cfg,
-            session_id=str(payload.get("session_id") or mode),
-            turn_id=str(payload.get("turn_id") or "turn"),
-            user_text=str(payload.get("user_text") or ""),
-            assistant_text=str(payload.get("assistant_text") or ""),
-            mode=mode,
-        )
-        output: dict = {"status": result.status, "document_id": result.document_id, "reason": result.reason}
+        output: dict[str, object]
+        auto_retain = bool(cfg.get("auto_retain_turns", False))
+        backend_trusted = is_backend_trusted(cfg) if auto_retain else False
+        if auto_retain and backend_trusted:
+            result = retain_turn(
+                root,
+                cfg,
+                session_id=str(payload.get("session_id") or mode),
+                turn_id=str(payload.get("turn_id") or "turn"),
+                user_text=str(payload.get("user_text") or ""),
+                assistant_text=str(payload.get("assistant_text") or ""),
+                mode=mode,
+            )
+            output = {
+                "status": result.status,
+                "document_id": result.document_id,
+                "reason": result.reason,
+            }
+        else:
+            output = {
+                "status": "skipped",
+                "document_id": "",
+                "reason": (
+                    "automatic raw-turn retain is disabled"
+                    if not auto_retain
+                    else "project memory backend is not trusted on this machine"
+                ),
+            }
         if cfg.get("auto_propose_completion", True) and payload.get("verified"):
             proposal = propose_completion(
                 root,
@@ -137,7 +228,10 @@ def run_project_approve(approval_id: str) -> int:
         if not found:
             raise ValueError("project memory is not connected")
         root, cfg = found
-        claimed = claim_retain(root, approval_id)
+        if not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        target = backend_target(cfg)
+        claimed = claim_retain(root, approval_id, target=target)
         if claimed is None:
             raise ValueError("invalid, expired, claimed, or already consumed approval id")
         item, token = claimed
@@ -149,7 +243,7 @@ def run_project_approve(approval_id: str) -> int:
             finish_retain(root, approval_id, token, success=False)
             raise
         finish_retain(root, approval_id, token, success=True)
-        ui.ok(f"project memory saved → bank={cfg['bank']}")
+        ui.ok(f"project memory saved → engine={target['engine']} project_id={target['project_id']}")
         return 0
 
     return _guard(_do)
@@ -163,7 +257,11 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
             return 1
         if plan_id and not yes:
             raise ValueError("--plan-id requires --yes")
-        plan = _load_plan(plan_id, text, kind) if plan_id else memory.plan_ingest(text)
+        claim_token = None
+        if plan_id:
+            plan, claim_token = _claim_plan(plan_id, text, kind)
+        else:
+            plan = memory.plan_ingest(text)
         if plan["action"] == "merge":
             ui.step(f"plan: merge into '{plan['title']}' ({plan['slug']}, sim={plan['sim']})")
         else:
@@ -177,9 +275,14 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
             if input("save? [y/N] ").strip().lower() not in ("y", "yes"):
                 ui.step("skipped")
                 return 0
-        action, slug = memory.ingest(text, kind=kind, plan=plan)  # 승인한 그 계획 그대로
-        if plan_id:
-            _consume_plan(plan_id)
+        try:
+            action, slug = memory.ingest(text, kind=kind, plan=plan)  # 승인한 그 계획 그대로
+        except Exception:
+            if plan_id and claim_token:
+                _finish_plan(plan_id, claim_token, success=False)
+            raise
+        if plan_id and claim_token:
+            _finish_plan(plan_id, claim_token, success=True)
         ui.ok(f"{action}: {slug}")
         return 0
 
@@ -294,24 +397,112 @@ def run_path() -> int:
     return 0
 
 
-def run_connect(server: str, bank: str | None) -> int:
-    """프로젝트 ↔ 중앙 메모리 서버 연결 — .asgard/memory-server.json (커밋 대상, 팀 공유)."""
+def _backend_options(values: list[str]) -> dict:
+    options = {}
+    for value in values:
+        key, separator, raw = value.partition("=")
+        key = key.strip()
+        if not separator or not key:
+            raise ValueError(f"invalid backend option {value!r}; expected KEY=VALUE")
+        if re.search(r"(?:secret|password|passwd|token|api[_-]?key|credential)", key, re.I):
+            raise ValueError(f"backend option {key!r} looks secret; use an environment variable in the adapter")
+        try:
+            options[key] = _json.loads(raw)
+        except Exception:
+            options[key] = raw
+    return options
+
+
+def run_connect(
+    endpoint: str,
+    project_id: str | None,
+    *,
+    engine: str = "hindsight",
+    option_values: list[str] | None = None,
+    claim: bool = False,
+    adopt_existing: bool = False,
+) -> int:
+    """프로젝트를 선택된 shared-memory backend에 연결하고 통합 설정에 기록한다."""
 
     def _do() -> int:
-        import urllib.request
-
         from .. import memory_bridge
+        from ..project_memory_backends import get_backend
+
+        from ..project_memory_backends import ProjectMemoryBinding
+        from ..settings import load_project
 
         root = os.getcwd()
-        b = (bank or os.path.basename(root)).strip()
-        s = server.rstrip("/")
-        try:  # 도달성 사전 점검 — 실패해도 기록은 한다 (서버가 나중에 뜰 수 있음)
-            urllib.request.urlopen(f"{s}/openapi.json", timeout=5)
-            ui.ok(f"server reachable: {s}")
-        except Exception:
-            ui.warn(f"server unreachable now: {s} — 설정은 기록함 (기동 후 doctor 로 재확인)")
-        p = memory_bridge.write_config(root, s, b)
-        ui.ok(f"connected: bank={b} → {p} (커밋해서 팀과 공유)")
+        previous = dict(load_project(root).get("memory") or {})
+        previous_uid = str(previous.get("project_uid") or "").strip()
+        project_uid = previous_uid or str(uuid.uuid4())
+        explicit_project_id = bool(project_id and project_id.strip())
+        pid = str(project_id or previous.get("project_id") or previous.get("bank") or "").strip()
+        if not pid:
+            slug = re.sub(r"[^A-Za-z0-9._-]+", "-", os.path.basename(root)).strip("-.") or "project"
+            pid = f"{slug}-{project_uid[:8]}"
+        selected_engine = engine.strip().lower()
+        selected_options = _backend_options(option_values or [])
+        same_target = (
+            str(previous.get("engine") or "hindsight").strip().lower() == selected_engine
+            and str(previous.get("endpoint") or previous.get("server") or "").rstrip("/") == endpoint.rstrip("/")
+            and str(previous.get("project_id") or previous.get("bank") or "").strip() == pid
+        )
+        binding_id = str(previous.get("binding_id") or "").strip() if same_target else ""
+        config = {
+            "engine": selected_engine,
+            "endpoint": endpoint.rstrip("/"),
+            "project_id": pid,
+            "options": selected_options,
+            "project_uid": project_uid,
+            "binding_id": binding_id,
+        }
+        backend = get_backend(config)
+        try:
+            readiness = backend.readiness()
+            if readiness.status != "ready":
+                raise ValueError(
+                    f"backend is not ready ({readiness.detail or readiness.status}); binding was not trusted or saved"
+                )
+            marker = backend.read_binding()
+            if marker is not None:
+                if marker.project_id != pid or marker.project_uid != project_uid:
+                    raise ValueError("selected project-memory namespace is already bound to a foreign project")
+                if binding_id and marker.binding_id != binding_id:
+                    raise ValueError("selected project-memory namespace binding has drifted")
+                if not binding_id and not adopt_existing:
+                    raise ValueError("existing bound namespace requires --adopt-existing for this project configuration")
+                binding_id = marker.binding_id
+            else:
+                count = backend.namespace_document_count()
+                if count > 0 and not adopt_existing:
+                    raise ValueError(
+                        f"unbound namespace already contains {count} document(s); use a new bank or --adopt-existing explicitly"
+                    )
+                if count == 0 and explicit_project_id and not claim and not adopt_existing:
+                    raise ValueError("empty explicit namespace is unclaimed; rerun with --claim")
+                if not binding_id:
+                    binding_id = str(uuid.uuid4())
+                marker = ProjectMemoryBinding(project_uid=project_uid, binding_id=binding_id, project_id=pid)
+                result = backend.write_binding(marker)
+                if not result.success:
+                    raise ValueError(result.error or "project-memory binding write was rejected")
+                if backend.read_binding() != marker:
+                    raise ValueError("project-memory binding verification failed after write")
+        finally:
+            backend.close()
+        config["binding_id"] = binding_id
+        ui.ok(f"backend ready and bound: {selected_engine} @ {config['endpoint']}")
+        p = memory_bridge.write_config(
+            root,
+            str(config["endpoint"]),
+            pid,
+            engine=selected_engine,
+            options=selected_options,
+            project_uid=project_uid,
+            binding_id=binding_id,
+        )
+        memory_bridge.trust_backend(config)
+        ui.ok(f"connected: engine={selected_engine} project_id={pid} → {p} (커밋해서 팀과 공유)")
         ui.step("팀원 1회 등록: claude mcp add --scope user asgard-memory -- asgard memory mcp")
         return 0
 
@@ -372,7 +563,7 @@ def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
 
 
 def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool = False, plan_id: str | None = None) -> int:
-    """중요 artifact를 stable document_id로 Hindsight에 replace projection한다."""
+    """중요 artifact를 stable record ID로 선택된 프로젝트 backend에 projection한다."""
 
     def _do() -> int:
         from .. import project_memory
@@ -381,14 +572,20 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
         root = os.getcwd()
         found = find_config(root)
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <server>`")
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
         _, cfg = found
-        changed = project_memory.changed_paths(root)
-        candidates = project_memory.scan_project(root, changed_paths=changed)
+        if not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        target = backend_target(cfg)
+        engine = str(target["engine"])
+        project_id = str(target["project_id"])
+        candidates = _project_candidates(root, all_files)
         if not yes:
             revision = project_memory.source_revision(root)
-            plan = project_memory.projection_plan(root, str(cfg["bank"]), candidates, force=all_files)
-            approved_plan_id = project_memory.projection_plan_id(str(cfg["bank"]), plan, revision, force=all_files)
+            plan = project_memory.projection_plan(
+                root, project_id, candidates, force=all_files, target=target
+            )
+            approved_plan_id = project_memory.projection_plan_id(project_id, plan, revision, force=all_files)
             upsert_paths = [candidate.path for candidate in plan["upserts"]]
             removed = [
                 {
@@ -400,7 +597,8 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
             ]
             payload = {
                 "action": "project-sync",
-                "bank": cfg["bank"],
+                "engine": engine,
+                "project_id": project_id,
                 "mode": "force-all" if all_files else "manifest-diff",
                 "source_revision": revision,
                 "plan_id": approved_plan_id,
@@ -411,7 +609,7 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
             if json_out:
                 print(_json.dumps(payload, ensure_ascii=False, indent=2))
             else:
-                ui.head(f"project memory sync plan · bank={cfg['bank']}")
+                ui.head(f"project memory sync plan · engine={engine} · project_id={project_id}")
                 for path in payload["items"]:
                     ui.step(f"upsert · {path}")
                 for row in removed:
@@ -424,7 +622,8 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
         result = project_memory.sync_artifacts(root, cfg, candidates, force=all_files, expected_plan_id=plan_id)
         output = {
             "success": result.get("success") is True,
-            "bank": cfg["bank"],
+            "engine": engine,
+            "project_id": project_id,
             "items_count": int(result.get("items_count", 0)),
             "upserted_count": int(result.get("upserted_count", 0)),
             "deleted_count": int(result.get("deleted_count", 0)),
@@ -437,9 +636,12 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
         if json_out:
             print(_json.dumps(output, ensure_ascii=False, indent=2))
         elif not output["success"]:
-            ui.fail(f"project memory sync failed: {output['error'] or 'server rejected publication'}")
+            ui.fail(f"project memory sync failed: {output['error'] or 'backend rejected publication'}")
         else:
-            ui.ok(f"project memory synced: {output['items_count']} item(s) → bank={cfg['bank']}")
+            ui.ok(
+                f"project memory synced: {output['items_count']} item(s) "
+                f"→ engine={engine} project_id={project_id}"
+            )
         return 0 if output["success"] else 1
 
     return _guard(_do)

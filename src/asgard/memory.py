@@ -163,15 +163,31 @@ def _chmod(path: str, mode: int) -> None:
 
 
 def ensure_home(d: str | None = None) -> str:
-    """스캐폴드 — 없을 때만 생성 (기존 파일 불변). 반환 = 메모리 디렉토리."""
+    """스캐폴드와 개인 파일 권한 교정. 내용은 기존 파일을 덮어쓰지 않는다."""
     d = d or memory_dir()
-    os.makedirs(os.path.join(d, PAGES), exist_ok=True)
+    pages = os.path.join(d, PAGES)
+    if os.path.islink(d):
+        raise ValueError("memory home must not be a symlink")
+    if os.path.islink(pages):
+        raise ValueError("memory pages directory must not be a symlink")
+    os.makedirs(pages, exist_ok=True)
     _chmod(d, 0o700)
-    _chmod(os.path.join(d, PAGES), 0o700)
+    _chmod(pages, 0o700)
     for name, content in ((SCHEMA, _SCHEMA_MD), (INDEX, "# Memory Index\n"), (LOG, "# Memory Log\n")):
         p = os.path.join(d, name)
         if not os.path.exists(p):
             _atomic_write(p, content)
+        elif not os.path.islink(p):
+            _chmod(p, 0o600)
+    for name in (DB, f"{DB}-wal", f"{DB}-shm", ".lock"):
+        p = os.path.join(d, name)
+        if os.path.exists(p) and not os.path.islink(p):
+            _chmod(p, 0o600)
+    with contextlib.suppress(OSError):
+        for name in os.listdir(pages):
+            p = os.path.join(pages, name)
+            if name.endswith(".md") and os.path.isfile(p) and not os.path.islink(p):
+                _chmod(p, 0o600)
     return d
 
 
@@ -254,8 +270,11 @@ def valid_slug(slug: str) -> bool:
 
 def _page_path(d: str, slug: str) -> str:
     """pages/<slug>.md — realpath 가 pages/ 하위임을 강제 (경로 순회 차단, P0)."""
-    p = os.path.join(d, PAGES, f"{slug}.md")
-    root = os.path.realpath(os.path.join(d, PAGES))
+    pages = os.path.join(d, PAGES)
+    if os.path.islink(d) or os.path.islink(pages):
+        raise ValueError("memory canonical directories must not be symlinks")
+    p = os.path.join(pages, f"{slug}.md")
+    root = os.path.realpath(pages)
     if os.path.commonpath([root, os.path.realpath(p)]) != root:
         raise ValueError(f"slug escapes pages dir: {slug!r}")
     return p
@@ -428,9 +447,15 @@ def _containment(a: str, b: str) -> float:
     return len(ga & gb) / (min(len(ga), len(gb)) or 1)
 
 
+RRF_K = 60  # rank-fusion 표준 상수 — 상위 랭크 간 격차를 완만히 눌러 단일 경로 독주를 막는다
+
+
 def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> list[dict]:
     """FTS5 trigram 검색 (한국어 substring 대응). hit 는 usage 를 남긴다 — lint 부패 판정 원료.
 
+    랭킹 = RRF(rank fusion). BM25 값과 스캔 매칭 카운트는 척도가 달라 점수 혼합이 무의미하므로
+    각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 usage 회수 빈도 → slug 순으로
+    가른다 — 빈도는 어디를 먼저 볼지 정하는 prior 일 뿐, 관련도 순위를 넘지 못한다.
     오염 페이지는 결과에서 제외한다 (2차 리뷰 ② — query 출력은 에이전트 컨텍스트로 흘러간다).
     제외 수는 결과에 실리지 않고 lint 가 threat 로 보고한다."""
     d = d or memory_dir()
@@ -475,69 +500,90 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> li
         if suffix:
             scan_words.append(word[: -len(suffix)])
     scan_words = list(dict.fromkeys(scan_words))
-    hits: list[dict] = []
+
+    def _scan_score(meta: dict, body: str) -> tuple[list[str], int]:
+        hay = (meta.get("title", "") + "\n" + body).lower()
+        matched = [w for w in scan_words if w in hay]
+        return matched, len(matched) + (3 if phrase and phrase in hay else 0)
+
+    # 후보 수집: slug → (meta, body, matched, scan_score). FTS 순위는 별도 리스트로 보존.
+    cand: dict[str, tuple[dict, str, list[str], int]] = {}
+    fts_order: list[tuple[str, float]] = []  # (slug, bm25) — bm25 는 작을수록 좋음
     try:
         conn = _db(d)
         words = [w for w in re.split(r"\s+", text.strip()) if len(w) >= 3]
         if words:
             match = " OR ".join('"' + w.replace('"', '""') + '"' for w in words)
             rows = conn.execute(
-                "SELECT slug, title, kind, snippet(fts, 3, '', '', '…', 16), bm25(fts) "
-                "FROM fts WHERE fts MATCH ? ORDER BY bm25(fts) LIMIT ?",
+                "SELECT slug, bm25(fts) FROM fts WHERE fts MATCH ? ORDER BY bm25(fts) LIMIT ?",
                 (match, k),
             ).fetchall()
-            for r in rows:
-                pg = _clean(r[0])
+            for slug, bm in rows:
+                pg = _clean(slug)
                 if pg is None:  # 오염·소실 — FTS 행이 낡았어도 정본 기준으로 거른다
                     continue
                 meta, body = pg
-                hay = (meta.get("title", "") + "\n" + body).lower()
-                matched = [w for w in scan_words if w in hay]
-                if not matched and not (phrase and phrase in hay):
+                matched, s = _scan_score(meta, body)
+                if not s:
                     continue  # stale FTS 행 — 현재 정본이 더는 질의와 맞지 않음
-                lb = body.lower()
-                needle = phrase if phrase in lb else next((w for w in matched if w in lb), "")
-                i = lb.find(needle) if needle else 0
-                hits.append(
-                    {
-                        "slug": r[0],
-                        "title": meta.get("title", r[0]),
-                        "kind": _kind(meta),
-                        "snippet": body[max(i - 40, 0) : i + 80].strip(),
-                        "score": round(-r[4], 2),
-                    }
-                )
+                cand[slug] = (meta, body, matched, s)
+                fts_order.append((slug, bm))
         conn.close()
     except Exception:
-        pass  # FTS 불능 → 아래 파일 스캔
+        pass  # FTS 불능 → 아래 파일 스캔만으로 fail-open
 
     # 정본 스캔으로 FTS 일부 누락·stale 행을 보완한다. 메모리는 예산상 작아 완전성 우선.
-    seen = {h["slug"] for h in hits}
     for slug in _pages(d):
-        if slug in seen:
+        if slug in cand:
             continue
         pg = _clean(slug)
         if not pg:
             continue
         meta, body = pg
-        hay = (meta.get("title", "") + "\n" + body).lower()
-        matched = [w for w in scan_words if w in hay]
-        score = len(matched) + (3 if phrase and phrase in hay else 0)
-        if score:
-            lb = body.lower()
-            needle = phrase if phrase in lb else next((w for w in matched if w in lb), "")
-            i = lb.find(needle) if needle else 0
-            hits.append(
-                {
-                    "slug": slug,
-                    "title": meta.get("title", slug),
-                    "kind": _kind(meta),
-                    "snippet": body[max(i - 40, 0) : i + 80].strip(),
-                    "score": float(score),
-                }
-            )
-    hits = sorted(hits, key=lambda h: -h["score"])[:k]
-    return _track(d, hits) if (track and hits) else hits
+        matched, s = _scan_score(meta, body)
+        if s:
+            cand[slug] = (meta, body, matched, s)
+    if not cand:
+        return []
+
+    # RRF: 경로별 순위 기여 1/(RRF_K+rank) 합산. 동점은 동순위 — 진짜 동등만 동률로 남는다.
+    rrf = dict.fromkeys(cand, 0.0)
+
+    def _add_ranks(ordered: list[tuple[str, float]]) -> None:
+        rank, prev = 0, None
+        for i, (slug, s) in enumerate(ordered):
+            if s != prev:
+                rank, prev = i + 1, s
+            rrf[slug] += 1.0 / (RRF_K + rank)
+
+    _add_ranks(fts_order)
+    _add_ranks(sorted(((slug, float(c[3])) for slug, c in cand.items()), key=lambda p: -p[1]))
+
+    # usage 는 RRF 동률 타이브레이크 전용 prior — 관련도 순위를 넘지 못한다 (힌트, 증거 아님)
+    uses: dict[str, int] = {}
+    try:
+        conn = _db(d)
+        uses = dict(conn.execute("SELECT slug, uses FROM usage").fetchall())
+        conn.close()
+    except Exception:
+        pass
+
+    hits: list[dict] = []
+    for slug in sorted(cand, key=lambda s: (-rrf[s], -uses.get(s, 0), s))[:k]:
+        meta, body, matched, _s = cand[slug]
+        lb = body.lower()
+        needle = phrase if phrase in lb else next((w for w in matched if w in lb), "")
+        i = lb.find(needle) if needle else 0
+        hits.append(
+            {
+                "slug": slug,
+                "title": meta.get("title", slug),
+                "kind": _kind(meta),
+                "snippet": body[max(i - 40, 0) : i + 80].strip(),
+                "score": round(rrf[slug], 4),
+            }
+        )
+    return _track(d, hits) if track else hits
 
 
 def _track(d: str, hits: list[dict]) -> list[dict]:
@@ -580,6 +626,8 @@ def add(
 ) -> tuple[str, str]:
     """페이지 생성. 반환 = (slug, path). 스캔 위반·예산 초과·잘못된 kind 는 ValueError."""
     d = ensure_home(d)
+    if not text.strip():
+        raise ValueError("empty memory text")
     if kind not in KINDS:
         raise ValueError(f"unknown kind: {kind!r} — one of {', '.join(KINDS)}")
     title = _fm_value(title or next((ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()), "untitled"))[
@@ -590,26 +638,31 @@ def add(
     if threat:
         raise ValueError(f"injection scan: {threat}")
     with _lock(d):
-        slug = _fresh_slug(d, slugify(title), text)
-        meta = {"title": title, "kind": kind, "created": _today(), "updated": _today()}
-        if links:
-            meta["links"] = links
-        # 실제 렌더 기준 하드게이트 (P1) — 추정 아님. 새 행은 build_index 와 바이트 동일.
-        projected = len(build_index(d)) + len(_index_row(slug, meta, text)) + 1
-        if not force and projected > index_budget():
-            raise ValueError(
-                f"index budget exceeded ({projected}/{index_budget()} chars) — "
-                "consolidate first (asgard memory merge/remove), or --force"
-            )
-        path = _page_path(d, slug)
-        _atomic_write(path, render_page(meta, text))
-        write_index(d)
-        with contextlib.suppress(Exception):
-            conn = _db(d)
-            with conn:
-                _fts_upsert(conn, d, slug)
-            conn.close()
-        log_op(d, f"add:{kind}", slug)
+        slug, path = _add_unlocked(d, text, title, kind, links, force)
+    return slug, path
+
+
+def _add_unlocked(d: str, text: str, title: str, kind: str, links: str, force: bool) -> tuple[str, str]:
+    """호출자가 _lock(d)을 보유한 add 본체 — ingest create의 락 공백 방지."""
+    slug = _fresh_slug(d, slugify(title), text)
+    meta = {"title": title, "kind": kind, "created": _today(), "updated": _today()}
+    if links:
+        meta["links"] = links
+    projected = len(build_index(d)) + len(_index_row(slug, meta, text)) + 1
+    if not force and projected > index_budget():
+        raise ValueError(
+            f"index budget exceeded ({projected}/{index_budget()} chars) — "
+            "consolidate first (asgard memory merge/remove), or --force"
+        )
+    path = _page_path(d, slug)
+    _atomic_write(path, render_page(meta, text))
+    write_index(d)
+    with contextlib.suppress(Exception):
+        conn = _db(d)
+        with conn:
+            _fts_upsert(conn, d, slug)
+        conn.close()
+    log_op(d, f"add:{kind}", slug)
     return slug, path
 
 
@@ -644,12 +697,76 @@ def _rev(d: str, slug: str) -> str:
         return ""
 
 
+def _fact_present(body: str, text: str) -> bool:
+    """동일 ingest 재실행 탐지. 과거 날짜-prefix 병합분도 같은 사실로 본다."""
+    fact = text.strip()
+    if not fact:
+        return False
+    for paragraph in re.split(r"\n\s*\n", body.strip()):
+        existing = re.sub(r"^\d{4}-\d{2}-\d{2}:\s*", "", paragraph.strip())
+        if existing == fact:
+            return True
+    return False
+
+
+_PREFERENCE_PATTERNS = (
+    re.compile(r"^(?P<subject>.+?)\s+(?P<key>.+?)(?:로|으로)\s+(?P<value>.+?)(?:을|를)\s+선호"),
+    re.compile(r"^(?P<subject>.+?)\s+(?P<value>.+?)(?:을|를)\s+(?P<key>.+?)(?:로|으로)\s+선호"),
+)
+
+
+def _preference_parts(text: str) -> tuple[str, frozenset[str]] | None:
+    statement = re.sub(r"^\d{4}-\d{2}-\d{2}:\s*", "", text.strip())
+    for pattern in _PREFERENCE_PATTERNS:
+        match = pattern.search(statement)
+        if not match:
+            continue
+        key = re.sub(r"\s+", " ", f"{match.group('subject')} {match.group('key')}").strip().casefold()
+        values = frozenset(
+            value.strip().casefold()
+            for value in re.split(r"\s*(?:과|와|및|,)\s*", match.group("value"))
+            if value.strip()
+        )
+        if key and values:
+            return key, values
+    return None
+
+
+def _update_user_preference(body: str, text: str) -> tuple[str, str]:
+    """동일 preference key만 갱신한다. 복합값 축소·다른 key는 보존한다."""
+    incoming = _preference_parts(text)
+    if incoming is None:
+        return body.rstrip() + f"\n\n{_today()}: {text.strip()}", "merged"
+    paragraphs = re.split(r"\n\s*\n", body.strip())
+    matches = [
+        (i, parts[1])
+        for i, paragraph in enumerate(paragraphs)
+        if (parts := _preference_parts(paragraph)) and parts[0] == incoming[0]
+    ]
+    if not matches:
+        return body.rstrip() + f"\n\n{_today()}: {text.strip()}", "merged"
+    old_values = frozenset().union(*(values for _, values in matches))
+    new_values = incoming[1]
+    if new_values <= old_values:
+        return body, "unchanged"
+    if old_values.isdisjoint(new_values) or old_values <= new_values:
+        first = matches[0][0]
+        remove = {i for i, _ in matches[1:]}
+        paragraphs[first] = text.strip()
+        return "\n\n".join(p for i, p in enumerate(paragraphs) if i not in remove), "updated"
+    return body.rstrip() + f"\n\n{_today()}: {text.strip()}", "merged"
+
+
 def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict | None = None) -> tuple[str, str]:
-    """자가 학습 쓰기 — plan 대로 병합(기존 페이지 성장) 또는 생성. 반환 = (action, slug).
+    """자가 학습 쓰기 — plan 대로 생성·병합·선호 갱신·동일 사실 no-op. 반환 = (action, slug).
 
     plan 을 넘기면(CLI 승인 게이트가 이미 계산·표시한 계획) 재계산하지 않는다 (TOCTOU 차단, P1):
     "승인한 merge 대상"과 "실제 merge 대상"이 갈라지지 않는다."""
     d = ensure_home(d)
+    if not text.strip():
+        raise ValueError("empty memory text")
+    if kind not in KINDS:
+        raise ValueError(f"unknown kind: {kind!r} — one of {', '.join(KINDS)}")
     threat = scan_threats(text)
     if threat:
         raise ValueError(f"injection scan: {threat}")
@@ -665,13 +782,28 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
             if not target or not os.path.exists(_page_path(d, target)):
                 raise ValueError("stale plan: merge target disappeared — re-run ingest")
         if plan["action"] == "merge" and plan.get("slug") and os.path.exists(_page_path(d, plan["slug"])):
-            # 승인된 plan 은 리비전까지 대조 (2차 리뷰 ⑤) — 승인과 실행 사이 대상이 바뀌었으면 중단
-            if approved and plan.get("rev") and plan["rev"] != _rev(d, plan["slug"]):
-                raise ValueError(f"stale plan: page '{plan['slug']}' changed since approval — re-run ingest")
             slug = plan["slug"]
             meta, body = _read(d, slug) or ({}, "")
+            # crash가 정본 쓰기 후 approval finish 전에 발생했다면 stale rev보다 idempotence가 우선이다.
+            if _fact_present(body, text):
+                log_op(d, "ingest:unchanged", slug)
+                return "unchanged", slug
+            # 승인된 plan 은 리비전까지 대조 (2차 리뷰 ⑤) — 승인과 실행 사이 대상이 바뀌었으면 중단
+            if approved and plan.get("rev") and plan["rev"] != _rev(d, slug):
+                raise ValueError(f"stale plan: page '{slug}' changed since approval — re-run ingest")
             meta["updated"] = _today()
-            merged = body.rstrip() + f"\n\n{_today()}: {text.strip()}"
+            if kind == "user" and _kind(meta) == "user":
+                merged, action = _update_user_preference(body, text)
+                if action == "unchanged":
+                    log_op(d, "ingest:unchanged", slug)
+                    return action, slug
+                if action == "updated":
+                    meta["title"] = _fm_value(
+                        next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip())
+                    )[:80]
+            else:
+                merged = body.rstrip() + f"\n\n{_today()}: {text.strip()}"
+                action = "merged"
             _atomic_write(_page_path(d, slug), render_page(meta, merged))
             write_index(d)
             with contextlib.suppress(Exception):
@@ -679,11 +811,16 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
                 with conn:
                     _fts_upsert(conn, d, slug)
                 conn.close()
-            log_op(d, "ingest:merged", slug, f"sim={plan.get('sim')}")
-            return "merged", slug
-    slug, _ = add(text, kind=kind, d=d)  # create — add 가 자체 락/스캔/예산
-    log_op(d, "ingest:created", slug)
-    return "created", slug
+            log_op(d, f"ingest:{action}", slug, f"sim={plan.get('sim')}")
+            return action, slug
+        existing = next((slug for slug in _pages(d) if (pg := _read(d, slug)) and _fact_present(pg[1], text)), None)
+        if existing:
+            log_op(d, "ingest:unchanged", existing)
+            return "unchanged", existing
+        title = _fm_value(next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()))[:80]
+        slug, _ = _add_unlocked(d, text, title, kind, "", False)
+        log_op(d, "ingest:created", slug)
+        return "created", slug
 
 
 def remove(slug: str, d: str | None = None) -> bool:
@@ -744,6 +881,17 @@ def lint(d: str | None = None) -> list[dict]:
     findings: list[dict] = []
     slugs = set(_pages(d))
     if not slugs:
+        index_path = os.path.join(d, INDEX)
+        if os.path.exists(index_path):
+            try:
+                if open(index_path, encoding="utf-8").read() != build_index(d):
+                    findings.append(
+                        {"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"}
+                    )
+            except Exception:
+                findings.append(
+                    {"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"}
+                )
         return findings
     usage: dict[str, tuple[int, str]] = {}
     try:
@@ -841,25 +989,26 @@ def snapshot_note(d: str | None = None) -> str:
         if not rows:
             return ""
         budget = index_budget()
+        prefix = (
+            '\n\n<memory-context scope="personal">\n'
+            "개인 메모리 카탈로그 (힌트 — 완료 증거 아님). 상세는 asgard memory query.\n"
+        )
+        suffix = "\n</memory-context>"
         lines, truncated = ["# Memory Index", ""], False
-        if len("\n".join(lines)) > budget:
+        if len(prefix + "\n".join(lines) + suffix) > budget:
             return ""
         for r in rows:
-            if len("\n".join([*lines, r])) > budget:
+            if len(prefix + "\n".join([*lines, r]) + suffix) > budget:
                 truncated = True
                 break
             lines.append(r)
         if truncated:
-            while len(lines) > 2 and len("\n".join([*lines, _SNAPSHOT_WARN])) > budget:
+            while len(lines) > 2 and len(prefix + "\n".join([*lines, _SNAPSHOT_WARN]) + suffix) > budget:
                 lines.pop()
-            if len("\n".join([*lines, _SNAPSHOT_WARN])) <= budget:
+            if len(prefix + "\n".join([*lines, _SNAPSHOT_WARN]) + suffix) <= budget:
                 lines.append(_SNAPSHOT_WARN)
         catalog = "\n".join(lines)
-        return (
-            '\n\n<memory-context scope="personal">\n'
-            "개인 메모리 카탈로그 (힌트 — 완료 증거 아님). 상세는 asgard memory query.\n"
-            f"{catalog}\n</memory-context>"
-        )
+        return prefix + catalog + suffix
     except Exception:
         return ""  # fail-open — 메모리 불능이 세션을 막지 않는다
 
@@ -877,18 +1026,57 @@ def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
         hits = query(text, k=k, d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
         if not hits:
             return ""
-        rows, total = [], 0
+        prefix = (
+            '\n\n<memory-recall scope="personal">\n'
+            "요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n"
+        )
+        suffix = "\n</memory-recall>"
+        if len(prefix + suffix) > RECALL_BUDGET:
+            return ""
+        rows: list[str] = []
         for h in hits:
-            row = f"- {_neutralize(str(h['title']))} `{h['kind']}` — {_neutralize(str(h['snippet']))[:160]}"
-            if total + len(row) + 1 > RECALL_BUDGET:
+            title = _neutralize(str(h["title"]))[:120]
+            row = f"- {title} `{h['kind']}` — {_neutralize(str(h['snippet']))[:160]}"
+            if len(prefix + "\n".join([*rows, row]) + suffix) > RECALL_BUDGET:
                 break
             rows.append(row)
-            total += len(row) + 1
         if not rows:
             return ""
-        return (
-            '\n\n<memory-recall scope="personal">\n'
-            "요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n" + "\n".join(rows) + "\n</memory-recall>"
-        )
+        return prefix + "\n".join(rows) + suffix
     except Exception:
         return ""  # fail-open
+
+
+DISTILL_MAX_PATHS = 3  # 넛지당 경로 상한 — 위치 지식의 최소 형태만, 목록 폭주 방지
+
+
+def distill_nudge(request: str, response: str, root: str) -> str:
+    """탐색 발견 저장 넛지 (0-LLM) — 응답에 인용된 '실존 파일 경로'만 증류해 기존 ingest
+    승인 게이트로 안내한다. 저장은 ask-before-save 그대로 — 여기는 안내문뿐이다.
+
+    응답 유래 자유 텍스트는 명령에 싣지 않는다: 디스크 실존 + root 격리 검증을 통과한
+    경로 토큰만 후보가 된다 (모델 응답을 명령 제안으로 렌더링하는 표면의 인젝션 차단).
+    숏컷 벤치(26-07-16) 근거 — 위치 지식이 recall 이득(토큰 -67%)의 최대 원천."""
+    try:
+        req = re.sub(r"\s+", " ", (request or "")).strip().replace('"', "'")
+        if not req or not response or scan_threats(req):
+            return ""
+        real_root = os.path.realpath(root)
+        paths: list[str] = []
+        for tok in re.findall(r"[\w][\w./\-]*\.[A-Za-z0-9_]+", response):
+            p = tok.strip(".")
+            if "/" not in p or os.path.isabs(p) or p.startswith((".asgard/", ".git/")):
+                continue
+            full = os.path.realpath(os.path.join(real_root, p))
+            if os.path.commonpath([real_root, full]) != real_root:
+                continue  # 경로 순회 시도 — 후보 자격 없음
+            if p not in paths and os.path.isfile(full):
+                paths.append(p)
+            if len(paths) >= DISTILL_MAX_PATHS:
+                break
+        if not paths:
+            return ""
+        fact = f"{req[:80]} → {', '.join(paths)}"
+        return f'🧠 탐색 발견 저장 후보 (승인 전엔 저장되지 않음):\n  asgard memory ingest "{fact}" --kind reference'
+    except Exception:
+        return ""  # fail-open — 넛지는 실행을 인질로 잡지 않는다
