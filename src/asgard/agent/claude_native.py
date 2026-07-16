@@ -123,17 +123,16 @@ def _bridge_tool(sess, spec: dict, result):
     from claude_agent_sdk import tool
 
     name = spec["name"]
-    handler = sess.handlers[name]
-
     @tool(name, spec.get("description", ""), spec["input_schema"])
     async def _run(args: dict):
+        from .session import _Call
+
         inp = dict(args)
-        result.tool_calls.append({"name": name, "input": inp})
-        try:
-            out = await asyncio.to_thread(handler, inp)
-            return {"content": [{"type": "text", "text": out}]}
-        except Exception as e:
-            return {"content": [{"type": "text", "text": f"tool crashed: {e}"}], "is_error": True}
+        out, is_error = await asyncio.to_thread(sess._execute, _Call("mcp", name, inp), result)
+        response: dict[str, object] = {"content": [{"type": "text", "text": out}]}
+        if is_error:
+            response["is_error"] = True
+        return response
 
     return _run
 
@@ -167,6 +166,7 @@ async def _run_async(sess, user_content: str, result) -> None:
     from claude_agent_sdk import (
         AssistantMessage,
         ClaudeAgentOptions,
+        HookMatcher,
         ResultMessage,
         StreamEvent,
         TextBlock,
@@ -176,20 +176,49 @@ async def _run_async(sess, user_content: str, result) -> None:
         create_sdk_mcp_server,
         query,
     )
+    from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
 
+    from ..hooks.readonly_guard import is_readonly_bash_safe
     from ..i18n import t as _t
+    from . import tools as native_tools
+    from .tool_kernel import ROLE_CAPABILITIES
 
     custom = [tl for tl in sess.tools if "input_schema" in tl]  # bash/editor 는 스키마리스 내장 — 제외
     mcp_servers: dict = {}
-    # readonly 역할(thinker/verifier/loki)은 write 툴 자체를 뺀다 — anthropic 트랜스포트의
-    # editor write 거부와 동일한 구조 강제 (프롬프트 순응 아님)
-    builtin = [t for t in BUILTIN_TOOLS if not (getattr(sess, "readonly", False) and t in _WRITE_TOOLS)]
+    # Explicit readonly and canonical role policy both constrain SDK built-ins.
+    # A mismatched caller cannot turn Verifier into a writer by omitting readonly=True.
+    can_mutate = "mutate" in ROLE_CAPABILITIES.get(sess.role, frozenset()) and not getattr(sess, "readonly", False)
+    builtin = [t for t in BUILTIN_TOOLS if can_mutate or t not in _WRITE_TOOLS]
     allowed = list(builtin)
     if custom:
         mcp_servers["asgard"] = create_sdk_mcp_server(
             name="asgard", version="1.0.0", tools=[_bridge_tool(sess, tl, result) for tl in custom]
         )
         allowed.append("mcp__asgard__*")
+
+    async def _canonical_tool_guard(
+        hook_input: HookInput, _tool_use_id: str | None, _context: HookContext
+    ) -> HookJSONOutput:
+        tool_name = str(hook_input.get("tool_name") or "")
+        tool_input = hook_input.get("tool_input") or {}
+        command = str(tool_input.get("command") or "")
+        reason = native_tools.validate_bash_command(sess.root, command) if tool_name == "Bash" else None
+        role_denied = not can_mutate and (
+            tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not is_readonly_bash_safe(command))
+        )
+        if reason or role_denied:
+            return {
+                "hookSpecificOutput": {
+                    "hookEventName": "PreToolUse",
+                    "permissionDecision": "deny",
+                    "permissionDecisionReason": reason or "Asgard read-only role policy",
+                }
+            }
+        return {}
+
+    hooks: dict = {
+        "PreToolUse": [HookMatcher(matcher="Bash|Write|Edit|NotebookEdit", hooks=[_canonical_tool_guard])]
+    }
 
     options = ClaudeAgentOptions(
         system_prompt=sess.system,
@@ -204,6 +233,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         # 없으면 pencil/hermes 등 무관 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
         # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (CUS-194 t1 4/4 실측).
         strict_mcp_config=True,
+        hooks=hooks,
         resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
         include_partial_messages=True,  # 텍스트 델타 스트리밍 — anthropic 트랜스포트와 체감 패리티
         # BASH_MAX_TIMEOUT_MS: 네이티브 트랜스포트 120s 하드캡(tools._TIMEOUT)과 패리티 —
@@ -216,12 +246,20 @@ async def _run_async(sess, user_content: str, result) -> None:
     t0 = time.monotonic()
     first = True
     streamed = False  # 델타 수신 여부 — 수신 중이면 TextBlock 전체 재방출 억제 (이중 출력 방지)
+    streamed_text = ""  # 일부 CLI 경로는 최종 AssistantMessage 없이 델타만 보낸다.
     gen = query(prompt=user_content, options=options)
     async for msg in _drained(gen):
         if isinstance(msg, StreamEvent):
             d = msg.event.get("delta") or {}
-            if msg.event.get("type") == "content_block_delta" and d.get("type") == "text_delta" and d.get("text"):
+            if msg.event.get("type") == "message_start":
+                streamed_text = ""
+                streamed = False
+            elif msg.event.get("type") == "content_block_delta" and d.get("type") == "text_delta" and d.get("text"):
                 streamed = True
+                streamed_text += d["text"]
+                # SDK 2.1.x 실측: 최종 AssistantMessage/TextBlock가 생략될 수 있다. 델타도
+                # SessionResult의 정본으로 누적해 headless/JSON 결과가 빈 문자열이 되지 않게 한다.
+                result.text = streamed_text
                 if first:
                     first = False
                     sess.on_status(None)
@@ -238,7 +276,10 @@ async def _run_async(sess, user_content: str, result) -> None:
                         gap = time.monotonic() - t0
                         if gap >= 2:
                             sess._thought_line(gap)
-                    result.text = b.text  # anthropic 트랜스포트와 동일 — 마지막 어시스턴트 텍스트가 남는다
+                    if b.text:
+                        # SDK가 델타 뒤 빈 TextBlock을 보낼 수 있다. 이미 누적한 최종 텍스트를
+                        # 빈 블록으로 지우지 않는다.
+                        result.text = b.text  # anthropic 트랜스포트와 동일 — 마지막 어시스턴트 텍스트
                     if not streamed:  # 구 CLI(델타 미지원) 폴백 — 기존 전체 블록 방출
                         sess.on_text(b.text)
                 elif isinstance(b, ToolUseBlock):

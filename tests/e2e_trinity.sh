@@ -12,7 +12,47 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WORK="${E2E_WORK:-$(mktemp -d "${TMPDIR:-/tmp}/trinity-e2e.XXXXXX")}"
+if [ -n "${E2E_WORK:-}" ]; then
+  WORK="$E2E_WORK"
+  if [ -e "$WORK" ] && [ -n "$(find "$WORK" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
+    echo "E2E_WORK must be a new or empty caller-owned directory: $WORK" >&2
+    exit 2
+  fi
+  mkdir -p "$WORK"
+  OWN_WORK=0
+else
+  WORK="$(mktemp -d "${TMPDIR:-/tmp}/trinity-e2e.XXXXXX")"
+  OWN_WORK=1
+fi
+SOURCE_STATUS_BEFORE="$(git -C "$ROOT" status --porcelain=v1 -uall)"
+source_fingerprint() {
+  python3 - "$ROOT" <<'PY'
+import hashlib, os, stat, subprocess, sys
+root = os.path.realpath(sys.argv[1])
+paths = subprocess.check_output(
+    ["git", "-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"]
+)
+h = hashlib.sha256()
+for raw in sorted(filter(None, paths.split(b"\0"))):
+    rel = os.fsdecode(raw)
+    path = os.path.join(root, rel)
+    try:
+        info = os.lstat(path)
+    except FileNotFoundError:
+        h.update(b"missing\0" + raw + b"\0")
+        continue
+    h.update(raw + b"\0" + str(stat.S_IFMT(info.st_mode)).encode() + b"\0")
+    if stat.S_ISLNK(info.st_mode):
+        h.update(os.fsencode(os.readlink(path)))
+    elif stat.S_ISREG(info.st_mode):
+        with open(path, "rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                h.update(chunk)
+    h.update(b"\0")
+print(h.hexdigest())
+PY
+}
+SOURCE_TREE_BEFORE="$(source_fingerprint)" || { echo "source fingerprint failed" >&2; exit 2; }
 MODEL_ARG=""; [ -n "${E2E_MODEL:-}" ] && MODEL_ARG="--model $E2E_MODEL"  # 모델명에 공백 없음 전제
 PASS=0; FAIL=0
 
@@ -221,6 +261,18 @@ command -v claude >/dev/null || { echo "claude CLI 없음 — 설치·인증 후
 SCENARIOS=("${@:-s1 s2 s3 s4 s5 s6 s7}"); [ $# -eq 0 ] && SCENARIOS=(s1 s2 s3 s4 s5 s6 s7)
 for s in "${SCENARIOS[@]}"; do "$s"; done
 
+SOURCE_STATUS_AFTER="$(git -C "$ROOT" status --porcelain=v1 -uall)"
+SOURCE_TREE_AFTER="$(source_fingerprint)" || { echo "source fingerprint failed" >&2; exit 2; }
+if [ "$SOURCE_STATUS_BEFORE" = "$SOURCE_STATUS_AFTER" ] && [ "$SOURCE_TREE_BEFORE" = "$SOURCE_TREE_AFTER" ]; then
+  ok "source checkout unchanged"
+else
+  bad "source checkout changed during live E2E"
+fi
+
 printf '\n\033[1m== 결과: %d PASS / %d FAIL\033[0m\n' "$PASS" "$FAIL"
-if [ "$FAIL" -eq 0 ] && [ -z "${E2E_KEEP:-}" ]; then rm -rf "$WORK"; else echo "작업 디렉터리 보존: $WORK"; fi
+if [ "$FAIL" -eq 0 ] && [ "$OWN_WORK" -eq 1 ] && [ -z "${E2E_KEEP:-}" ]; then
+  rm -rf "$WORK"
+else
+  echo "작업 디렉터리 보존: $WORK"
+fi
 [ "$FAIL" -eq 0 ]

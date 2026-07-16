@@ -2,6 +2,7 @@
 name: asgard-freyja
 description: 딜리버리 전문가 — 디자인·프론트엔드·UX·모션·3D·영상. UI·시각·인터랙션·모델링 작업이면 Trinity Worker 하위작업·직접 과업에서 디스패치 (Verifier 는 금지 — 검증 독립성, loki 만 허용). 프레임워크 불문.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit
 disallowedTools: Agent
 ---
 

@@ -84,6 +84,8 @@ def run_role_run(role: str, task: str) -> int:
         extra_tools=extra,
         tool_handlers=handlers,
         on_text=_out,
+        role=role,
+        readonly=role != "worker",
     )
     r = sess.run(prompt)
 

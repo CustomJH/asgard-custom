@@ -22,7 +22,7 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from ..providers import ResolvedProvider
-from . import tools as T
+from .tool_kernel import ToolContext, build_session_registry, execute_tool, to_openai_tool
 
 
 @dataclass
@@ -61,51 +61,8 @@ def make_client(rp: ResolvedProvider):
     raise NotImplementedError(f"api_mode '{rp.profile.api_mode}' 미지원")
 
 
-# ── openai function 스키마 — 스키마리스 anthropic 툴의 명시 대응 ──
-_OPENAI_BASH = {
-    "type": "function",
-    "function": {
-        "name": "bash",
-        "description": "Run a bash command in the project root.",
-        "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]},
-    },
-}
-_OPENAI_EDIT = {
-    "type": "function",
-    "function": {
-        "name": "str_replace_based_edit_tool",
-        "description": "View/create/edit files. command: view|create|str_replace|insert.",
-        "parameters": {
-            "type": "object",
-            "properties": {
-                "command": {"type": "string"},
-                "path": {"type": "string"},
-                "file_text": {"type": "string"},
-                "old_str": {"type": "string"},
-                "new_str": {"type": "string"},
-                "insert_line": {"type": "integer"},
-                "insert_text": {"type": "string"},
-                "view_range": {"type": "array", "items": {"type": "integer"}},
-            },
-            "required": ["command", "path"],
-        },
-    },
-}
-
-
 def _to_openai_tool(t: dict) -> dict:
-    if t.get("type", "").startswith("bash"):
-        return _OPENAI_BASH
-    if t.get("type", "").startswith("text_editor"):
-        return _OPENAI_EDIT
-    return {
-        "type": "function",
-        "function": {  # 커스텀 (dispatch/verdict)
-            "name": t["name"],
-            "description": t.get("description", ""),
-            "parameters": t["input_schema"],
-        },
-    }
+    return to_openai_tool(t)
 
 
 class _Call:
@@ -129,13 +86,17 @@ class AgentSession:
         on_status: Callable[[str | None], None] | None = None,
         max_iterations: int = 40,
         readonly: bool = False,
+        role: str | None = None,
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # readonly = 역할→도구 구조 강제 (thinker/verifier/loki) — editor write 거부.
         # lagom: bash 리다이렉션 write 는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
         self.readonly = readonly
-        self.tools = [T.BASH_TOOL, T.EDITOR_TOOL] + (extra_tools or [])
+        self.role = role or ("readonly" if readonly else "legacy")
         self.handlers = tool_handlers or {}
+        self.registry = build_session_registry(extra_tools, self.handlers)
+        # 세션 중 schema 를 동결해 prompt cache key 와 실제 호출 가능 표면을 일치시킨다.
+        self.tools = self.registry.schemas(ToolContext(root=self.root, role=self.role, readonly=self.readonly))
         self.on_text = on_text or (lambda s: None)
         # 라이브 상태 신호 — 침묵 구간(thinking·툴 실행)에 스피너 등을 띄울 훅. None = 해제.
         self.on_status = on_status or (lambda s: None)
@@ -159,39 +120,32 @@ class AgentSession:
         from .. import ui
         from ..i18n import t
 
-        self.on_text(f"  {ui.dim(f'⬢ {t("thought")} {secs:.0f}s')}\n")
+        label = t("thought")
+        self.on_text(f"  {ui.dim(f'⬢ {label} {secs:.0f}s')}\n")
 
     # ── 툴 실행 (트랜스포트 공유) — (output, is_error) ──────────────────
     def _execute(self, call: _Call, result: SessionResult) -> tuple[str, bool]:
-        try:
-            if call.name == "bash":
-                cmd = str(call.input.get("command") or "restart")
-                self.on_status("$ " + cmd[:60])
-                t0 = time.monotonic()
-                out, code = T.run_bash(self.root, call.input)
-                self.on_status(None)
-                self._tool_line("$", cmd, time.monotonic() - t0)
-                result.commands.append({"cmd": cmd[:200], "exit_code": code})
-                return out, False
-            if call.name == "str_replace_based_edit_tool":
-                if self.readonly and call.input.get("command") != "view":
-                    return "이 세션은 읽기 전용 역할입니다 — 파일 수정은 Worker 의 몫 (view 만 허용)", True
-                self.on_status("✎ " + str(call.input.get("path", ""))[:60])
-                t0 = time.monotonic()
-                out = T.run_editor(self.root, call.input, result.writes)
-                self.on_status(None)
-                self._tool_line(
-                    "✎", f"{call.input.get('command', '?')} {call.input.get('path', '')}", time.monotonic() - t0
-                )
-                return out, False
-            if call.name in self.handlers:
-                result.tool_calls.append({"name": call.name, "input": dict(call.input)})
-                return self.handlers[call.name](dict(call.input)), False
-            return f"unknown tool {call.name}", True
-        except T.ToolError as e:
-            return str(e), True
-        except Exception as e:
-            return f"tool crashed: {e}", True
+        ctx = ToolContext(
+            root=self.root,
+            role=self.role,
+            readonly=self.readonly,
+            writes=result.writes,
+            commands=result.commands,
+            tool_calls=result.tool_calls,
+        )
+        if call.name == "bash":
+            detail, sym = str(call.input.get("command") or "restart"), "$"
+        elif call.name == "str_replace_based_edit_tool":
+            detail = f"{call.input.get('command', '?')} {call.input.get('path', '')}"
+            sym = "✎"
+        else:
+            detail, sym = call.name, "⚙"
+        self.on_status(f"{sym} {detail[:60]}")
+        t0 = time.monotonic()
+        out = execute_tool(self.registry, call.name, call.input, ctx)
+        self.on_status(None)
+        self._tool_line(sym, detail, time.monotonic() - t0)
+        return out.content, out.is_error
 
     # ── 진입점 ──────────────────────────────────────────────────────────
     def run(self, user_content: str) -> SessionResult:

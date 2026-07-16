@@ -51,7 +51,8 @@ class TestSurfaceSync(unittest.TestCase):
 
     def test_memory_subcommands_match(self):
         mem = _visible_commands()["memory"]
-        self.assertEqual(set(mem.commands), set(comp._MEM_SUB))
+        visible = {name for name, command in mem.commands.items() if not command.hidden}
+        self.assertEqual(visible, set(comp._MEM_SUB))
 
     def test_enum_values_match_help(self):
         """열거형 옵션 후보가 해당 옵션의 help 문구와 어긋나지 않는지 (값 하나하나 존재 확인)."""
@@ -125,6 +126,16 @@ class TestBashFunctional(unittest.TestCase):
     def test_role_subcommands_and_args(self):
         self.assertEqual(set(self._complete('asgard role ""', 2)), set(comp._ROLE_SUB) | {"--help"})
         self.assertEqual(set(self._complete('asgard role run ""', 3)), set(comp._ROLES))
+
+    def test_tools_list_options_and_role_values(self):
+        self.assertEqual(
+            set(self._complete('asgard tools list ""', 3)),
+            {"--role", "--json", "--help"},
+        )
+        self.assertEqual(
+            set(self._complete('asgard tools list --role ""', 4)),
+            set(comp._TOOL_ROLES),
+        )
 
     def test_completions_args(self):
         out = self._complete('asgard completions ""', 2)

@@ -85,7 +85,7 @@ class TestNativeClient(unittest.TestCase):
 class _Sess(unittest.TestCase):
     """AgentSession 을 claude-native rp 로 구성 — client 는 마커라 None 로 충분."""
 
-    def _session(self, extra_tools=None, handlers=None):
+    def _session(self, extra_tools=None, handlers=None, *, readonly=False, role=None):
         rp = resolve("/tmp", provider="claude-native")
         self.texts = []
         return AgentSession(
@@ -96,10 +96,76 @@ class _Sess(unittest.TestCase):
             extra_tools=extra_tools,
             tool_handlers=handlers,
             on_text=self.texts.append,
+            readonly=readonly,
+            role=role,
         )
 
 
 class TestTransport(_Sess):
+    def test_canonical_readonly_role_wins_when_readonly_flag_is_omitted(self):
+        query, calls = _fake_query([[_result_msg()]])
+        sess = self._session(readonly=False, role="verifier")
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("verify")
+        options = calls[0][1]
+        self.assertNotIn("Write", options.tools)
+        self.assertNotIn("Edit", options.tools)
+        hook = options.hooks["PreToolUse"][0].hooks[0]
+        denied = asyncio.run(
+            hook(
+                {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "printf x > file"}},
+                "id",
+                {"signal": None},
+            )
+        )
+        self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_sdk_hook_applies_destructive_guard_to_writable_role(self):
+        query, calls = _fake_query([[_result_msg()]])
+        sess = self._session(role="worker")
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("work")
+        hook = calls[0][1].hooks["PreToolUse"][0].hooks[0]
+        denied = asyncio.run(
+            hook(
+                {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git restore ."}},
+                "id",
+                {"signal": None},
+            )
+        )
+        allowed = asyncio.run(
+            hook(
+                {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "printf x > file"}},
+                "id",
+                {"signal": None},
+            )
+        )
+        self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual(allowed, {})
+
+    def test_readonly_sdk_hook_blocks_mutating_bash(self):
+        query, calls = _fake_query([[_result_msg()]])
+        sess = self._session(readonly=True, role="verifier")
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("verify")
+        hook = calls[0][1].hooks["PreToolUse"][0].hooks[0]
+        denied = asyncio.run(
+            hook(
+                {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "echo x > y"}},
+                "id",
+                {"signal": None},
+            )
+        )
+        allowed = asyncio.run(
+            hook(
+                {"hook_event_name": "PreToolUse", "tool_name": "Bash", "tool_input": {"command": "git diff"}},
+                "id",
+                {"signal": None},
+            )
+        )
+        self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual(allowed, {})
+
     def test_text_tokens_stop_reason(self):
         script = [
             [

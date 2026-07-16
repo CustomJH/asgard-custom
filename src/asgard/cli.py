@@ -145,6 +145,22 @@ def role_run(
     raise typer.Exit(run_role_run(role, task))
 
 
+# Canonical Tool Kernel — inspect the actual role-scoped surfaces used by the
+# native loop and generated Claude Code agents.
+tools_app = typer.Typer(help="inspect Asgard's role-scoped tool catalog", no_args_is_help=True)
+app.add_typer(tools_app, name="tools")
+
+
+@tools_app.command("list", help="list native + Claude Code tools for one role")
+def tools_list(
+    role: str = typer.Option("worker", "--role", help="thinker|worker|verifier|freyja|thor|loki"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.tools import run_tools_list
+
+    raise typer.Exit(run_tools_list(role, json_out=json_))
+
+
 # 개인 메모리 — LLM Wiki (v3 P1). 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생.
 memory_app = typer.Typer(help="personal memory — LLM wiki (ingest/query/lint)", no_args_is_help=True)
 app.add_typer(memory_app, name="memory")

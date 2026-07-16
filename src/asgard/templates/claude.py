@@ -118,16 +118,24 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.py"',
-                                }
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/readonly-guard.py"',
+                                },
                             ],
                         },
                         {
-                            "matcher": "Write|Edit",
+                            "matcher": "Write|Edit|NotebookEdit",
                             "hooks": [
                                 {
                                     "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/readonly-guard.py"',
+                                },
+                                {
+                                    "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"',
-                                }
+                                },
                             ],
                         },
                     ],

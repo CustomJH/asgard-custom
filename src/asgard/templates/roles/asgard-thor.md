@@ -2,6 +2,7 @@
 name: asgard-thor
 description: 딜리버리 전문가 — 빌드 파이프라인·CI·패키징·인프라. Trinity Worker 가 해당 도메인 하위작업을 위임할 때만 디스패치.
 model: sonnet
+tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit
 disallowedTools: Agent
 ---
 

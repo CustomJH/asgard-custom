@@ -165,6 +165,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
         files += [
             (j(root, ".claude", "hooks", "git-guard.py"), hook("git-guard")),
+            (j(root, ".claude", "hooks", "readonly-guard.py"), hook("readonly-guard")),
             (j(root, ".claude", "hooks", "secret-guard.py"), hook("secret-guard")),
             (j(root, ".claude", "hooks", "failure-tracker.py"), hook("failure-tracker")),
             (j(root, ".claude", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 로그+전이 CLI

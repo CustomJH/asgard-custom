@@ -13,6 +13,7 @@ from importlib import resources
 # protocol (Claude Code / Codex / Cursor) from the payload, so one file serves every tool.
 REGISTRY: dict[str, str] = {
     "git-guard": "git_guard",  # Law 3/6 — Pre-shell (Claude/Codex exit2, Cursor permission JSON)
+    "readonly-guard": "readonly_guard",  # Trinity read-only roles — Bash allowlist
     "secret-guard": "secret_guard",  # Law 4 — Write/Edit (Claude/Codex)
     "failure-tracker": "failure_tracker",  # Law 9 — Post/failure, cross-tool shared .asgard/ state
     "quest-log": "quest_log",  # Trinity — 퀘스트 로그 + 전이 함수 CLI (CUS-118/120), 훅 아님

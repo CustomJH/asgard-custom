@@ -52,6 +52,10 @@ if "${ASG[@]}" completions badshell >/dev/null 2>&1; then echo "FAIL: bad shell 
 
 asgard doctor >/dev/null || { echo "FAIL: doctor exit nonzero (asgard on PATH)"; exit 1; }
 asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; exit 1; }
+# Canonical Tool Kernel catalog — installed CLI reports both runtime surfaces.
+asgard tools list --role worker --json | grep -q '"str_replace_based_edit_tool"' || { echo "FAIL: native tool catalog"; exit 1; }
+asgard tools list --role worker --json | grep -q '"NotebookEdit"' || { echo "FAIL: Claude Code tool catalog"; exit 1; }
+if asgard tools list --role odin --json >/dev/null 2>&1; then echo "FAIL: unknown tool role should exit nonzero"; exit 1; fi
 if "${ASG[@]}" bogus >/dev/null 2>&1; then echo "FAIL: unknown command should exit nonzero"; exit 1; fi
 
 # ── init --profile universal — codex/claude-code/cursor 공용 ──
@@ -97,17 +101,30 @@ PROJ="$(mktemp -d)"
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: --cc files"; exit 1; }
 python3 -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); sys.exit(0 if d.get('permissions',{}).get('deny') else 1)" || { echo "FAIL: --cc settings.json permissions"; exit 1; }
 [ -f "$PROJ/.claude/.gitignore" ] && grep -q "settings.local.json" "$PROJ/.claude/.gitignore" || { echo "FAIL: --cc .gitignore"; exit 1; }
+# Role tool surfaces are explicit least-privilege allowlists, not host defaults.
+grep -q '^tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent$' "$PROJ/.claude/agents/asgard-worker.md" || { echo "FAIL: worker tool allowlist"; exit 1; }
+grep -q '^tools: Read, Grep, Glob, Bash, Agent$' "$PROJ/.claude/agents/asgard-verifier.md" || { echo "FAIL: verifier tool allowlist"; exit 1; }
+grep -q '^tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit$' "$PROJ/.claude/agents/asgard-thor.md" || { echo "FAIL: delivery tool allowlist"; exit 1; }
 for _d in commands agents skills hooks rules output-styles; do
   [ -f "$PROJ/.claude/$_d/README.md" ] || { echo "FAIL: --cc missing .claude/$_d/README.md"; exit 1; }
 done
 [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --cc must NOT create .cursor"; exit 1; }
 # Canon guards (Python) — block danger, allow safe, fail-open on garbage
 grep -q '"PreToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing hooks"; exit 1; }
-[ -f "$PROJ/.claude/hooks/git-guard.py" ] && [ -f "$PROJ/.claude/hooks/secret-guard.py" ] || { echo "FAIL: --cc missing Python guards"; exit 1; }
-python3 -m py_compile "$PROJ/.claude/hooks/git-guard.py" "$PROJ/.claude/hooks/secret-guard.py" || { echo "FAIL: guards invalid Python"; exit 1; }
+[ -f "$PROJ/.claude/hooks/git-guard.py" ] && [ -f "$PROJ/.claude/hooks/readonly-guard.py" ] && [ -f "$PROJ/.claude/hooks/secret-guard.py" ] || { echo "FAIL: --cc missing Python guards"; exit 1; }
+python3 -m py_compile "$PROJ/.claude/hooks/git-guard.py" "$PROJ/.claude/hooks/readonly-guard.py" "$PROJ/.claude/hooks/secret-guard.py" || { echo "FAIL: guards invalid Python"; exit 1; }
 printf '%s' '{"tool_input":{"command":"git push --force"}}' | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block force-push"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"git checkout HEAD -- ."}}' | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block worktree discard"; exit 1; } || true
 printf '%s' '{"tool_input":{"command":"git status"}}'      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must allow git status"; exit 1; }
 printf '%s' 'not-json'                                      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must fail-open"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"printf hacked > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block shell writes"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"printf hacked > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator shell writes"; exit 1; } || true
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"calc.py","content":"hacked"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator Write"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":"calc.py","content":"ok"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker Write"; exit 1; }
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":".claude/hooks/readonly-guard.py","content":"pass"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker must not overwrite control hooks"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Bash","tool_input":{"command":"printf pass > .claude/hooks/readonly-guard.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker Bash must not overwrite control hooks"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"git diff"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow inspection"; exit 1; }
+printf '%s' '{"agent_type":"asgard-worker","tool_input":{"command":"printf ok > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker"; exit 1; }
 printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | python3 "$PROJ/.claude/hooks/secret-guard.py" 2>/dev/null && { echo "FAIL: secret-guard must block .env"; exit 1; } || true
 # Canon Law 9 failure-tracker (PostToolUse) — soft 3-strike warn, normalized signature, fail-open
 grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing PostToolUse"; exit 1; }

@@ -96,6 +96,11 @@ def _cap(s: str) -> str:
     return s if len(s) <= _MAX_OUT else s[:_MAX_OUT] + f"\n[... {len(s) - _MAX_OUT} chars 절단]"
 
 
+def validate_bash_command(root: str, command: str) -> str | None:
+    """Return a deterministic block reason without executing the command."""
+    return _git_guard(root, command) or _destructive_guard(root, command)
+
+
 def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
     """(output, exit_code). exit_code 는 퀘스트 로그 commands 증거용."""
     if tool_input.get("restart"):
@@ -103,7 +108,7 @@ def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
     cmd = str(tool_input.get("command") or "")
     if not cmd.strip():
         raise ToolError("빈 명령")
-    blocked = _git_guard(root, cmd) or _destructive_guard(root, cmd)
+    blocked = validate_bash_command(root, cmd)
     if blocked:
         raise ToolError(blocked)
     try:

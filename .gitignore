@@ -232,3 +232,6 @@ workspace/
 
 # playwright CLI scratch
 .playwright-cli/
+
+.claude
+.asgard

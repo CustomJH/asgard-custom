@@ -400,9 +400,9 @@ class TestDeliveryAgents(unittest.TestCase):
             self.assertNotIn("Agent", fm.split("tools:")[1].splitlines()[0])
 
     def test_trinity_agents_can_nest(self):
-        # worker 는 tools 무제한(Agent 상속) → 중첩 디스패치 가능. verifier/thinker 는 allowlist 에 Agent 명시
-        # (verifier→loki 반례 탐색, thinker→ullr 정찰 — CC 모드 B 한정).
-        self.assertNotIn("tools:", self._tpl("asgard-worker.md").split("---")[1])
+        # 모든 역할은 canonical least-privilege allowlist 를 명시한다. Worker 는 mutation + Agent,
+        # verifier/thinker 는 read/execute + Agent 만 (CC 모드 B).
+        self.assertIn("tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent", self._tpl("asgard-worker.md"))
         self.assertIn("Agent", self._tpl("asgard-verifier.md").split("---")[1])
         thinker_fm = self._tpl("asgard-thinker.md").split("---")[1]
         self.assertIn("Agent", thinker_fm.split("tools:")[1].splitlines()[0])

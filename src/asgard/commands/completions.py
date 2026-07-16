@@ -22,6 +22,7 @@ _SUMMARY = {
     "completions": "print or install shell completion",
     "run": "run one task headless (Trinity loop)",
     "role": "Trinity role bridge",
+    "tools": "inspect role-scoped tool catalog",
     "memory": "personal memory — LLM wiki",
 }
 _FLAGS = {
@@ -34,6 +35,7 @@ _FLAGS = {
     "completions": ["--install"],
     "run": ["--provider", "--model", "--json"],
     "role": [],
+    "tools": [],
     "memory": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
@@ -47,6 +49,8 @@ _SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bas
 _SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
 _ROLE_SUB = {"list": "bridge flags + role placements", "run": "run one role turn"}
 _ROLES = ["thinker", "worker", "verifier"]
+_TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "loki", "ullr"]
+_TOOLS_SUB = {"list": "list native + Claude Code role tools"}
 _MEM_SUB = {
     "add": "add a page",
     "ingest": "absorb knowledge (dedup-merge)",
@@ -104,6 +108,17 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{subs} --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "run" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_ROLES)}" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "tools":
+            cases.append(
+                "    tools)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_TOOLS_SUB)} --help" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "list" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
+                '        COMPREPLY=( $(compgen -W "--role --json --help" -- "$cur") )\n'
+                '      elif [ "$prev" = "--role" ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_TOOL_ROLES)}" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "memory":
@@ -166,6 +181,17 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_ROLES)}\n"
                 "      fi ;;"
             )
+        elif name == "tools":
+            cases.append(
+                "    tools)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_TOOLS_SUB)} --help\n"
+                "      elif [[ $words[3] == list ]] && (( CURRENT == 4 )); then\n"
+                "        compadd -- --role --json --help\n"
+                "      elif [[ $words[CURRENT-1] == --role ]]; then\n"
+                f"        compadd -- {' '.join(_TOOL_ROLES)}\n"
+                "      fi ;;"
+            )
         elif name == "memory":
             cases.append(
                 "    memory)\n"
@@ -216,6 +242,16 @@ def _fish() -> str:
     mem_top = "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from " + " ".join(_MEM_SUB)
     for sub, desc in _MEM_SUB.items():
         lines.append(f"complete -c asgard -n \"{mem_top}\" -a {sub} -d '{desc}'")
+    tools_top = "__fish_seen_subcommand_from tools; and not __fish_seen_subcommand_from " + " ".join(_TOOLS_SUB)
+    for sub, desc in _TOOLS_SUB.items():
+        lines.append(f"complete -c asgard -n \"{tools_top}\" -a {sub} -d '{desc}'")
+    lines.append(
+        'complete -c asgard -n "__fish_seen_subcommand_from tools; and __fish_seen_subcommand_from list" '
+        '-l role -x -a "' + " ".join(_TOOL_ROLES) + '"'
+    )
+    lines.append(
+        'complete -c asgard -n "__fish_seen_subcommand_from tools; and __fish_seen_subcommand_from list" -l json'
+    )
     return "\n".join(lines) + "\n"
 
 
