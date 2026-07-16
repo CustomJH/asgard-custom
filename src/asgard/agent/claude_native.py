@@ -231,9 +231,23 @@ async def _run_async(sess, user_content: str, result) -> None:
         tool_name = str(hook_input.get("tool_name") or "")
         tool_input = hook_input.get("tool_input") or {}
         command = str(tool_input.get("command") or "")
-        reason = native_tools.validate_bash_command(sess.root, command) if tool_name == "Bash" else None
+        reason = native_tools.validate_bash_command(sess.cwd, command) if tool_name == "Bash" else None
+        if tool_name == "Bash" and getattr(sess, "_readonly_unisolated", False):
+            reason = "read-only Bash requires an isolated Git workspace"
+        path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
+        if path:
+            project = os.path.realpath(sess.cwd)
+            candidate = os.path.realpath(
+                os.path.expanduser(path) if path.startswith(("~", "/")) else os.path.join(project, path)
+            )
+            try:
+                escaped = os.path.commonpath((project, candidate)) != project
+            except ValueError:
+                escaped = True
+            if escaped:
+                reason = f"tool path escapes Asgard project: {path}"
         role_denied = not can_mutate and (
-            tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not is_readonly_bash_safe(command))
+            tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not is_readonly_bash_safe(command, sess.cwd))
         )
         if reason or role_denied:
             return {
@@ -245,11 +259,15 @@ async def _run_async(sess, user_content: str, result) -> None:
             }
         return {}
 
-    hooks: dict = {"PreToolUse": [HookMatcher(matcher="Bash|Write|Edit|NotebookEdit", hooks=[_canonical_tool_guard])]}
+    hooks: dict = {
+        "PreToolUse": [
+            HookMatcher(matcher="Bash|Read|Grep|Glob|Write|Edit|NotebookEdit", hooks=[_canonical_tool_guard])
+        ]
+    }
 
     options = ClaudeAgentOptions(
         system_prompt=sess.system,
-        cwd=sess.root,
+        cwd=sess.cwd,
         model=sess.rp.model or None,
         tools=builtin,
         allowed_tools=allowed,
@@ -257,7 +275,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         max_turns=sess.max_iterations,
         mcp_servers=mcp_servers,
         # 유저/프로젝트 MCP 설정(~/.claude.json, .mcp.json) 차단 — Asgard 가 툴 표면을 소유한다.
-        # 없으면 pencil/hermes 등 무관 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
+        # 없으면 무관 유저 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
         # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (t1 4/4 실측).
         strict_mcp_config=True,
         hooks=hooks,
@@ -387,7 +405,7 @@ def _observe_use(sess, result, b, pending) -> None:
     if b.name == "Bash":
         cmd = str(b.input.get("command", ""))
         sess.on_status("$ " + cmd[:60])
-        result.commands.append({"cmd": cmd[:200], "exit_code": 0})  # 결과 블록에서 is_error 로 보정
+        result.commands.append({"cmd": cmd[:200], "exit_code": None})  # 결과 블록이 와야만 증거로 승격
         pending[b.id] = ("$", cmd, time.monotonic(), len(result.commands) - 1)
     elif b.name in _WRITE_TOOLS:
         path = str(b.input.get("file_path", ""))
@@ -395,7 +413,7 @@ def _observe_use(sess, result, b, pending) -> None:
         pending[b.id] = ("✎", f"{b.name.lower()} {path}", time.monotonic(), -1)
     elif b.name.startswith("mcp__asgard__"):
         sess.on_status("⚙ " + b.name.removeprefix("mcp__asgard__"))
-    else:  # Read/Glob/Grep 등 읽기 계열 — 상태만
+    else:  # Read/Glob/Grep 등 읽기 계열 — executable verification evidence 는 아님
         sess.on_status(_t("thinking"))
 
 
@@ -406,8 +424,8 @@ def _observe_result(sess, result, b, pending) -> None:
         return
     sess.on_status(None)
     sess._tool_line(sym, detail, time.monotonic() - t0)
-    if cmd_idx >= 0 and b.is_error:
-        result.commands[cmd_idx]["exit_code"] = 1  # CLI 는 exit code 미노출 — is_error 로 근사
+    if cmd_idx >= 0:
+        result.commands[cmd_idx]["exit_code"] = 1 if b.is_error else 0  # CLI 는 exit code 미노출 — is_error 로 근사
     if sym == "✎" and not b.is_error:
         path = detail.split(" ", 1)[1] if " " in detail else detail
         if path and path not in result.writes:

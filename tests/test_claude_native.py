@@ -164,7 +164,10 @@ class TestTransport(_Sess):
             )
         )
         self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
-        self.assertEqual(allowed, {})
+        # /tmp is non-Git in this fixture. Without a disposable clone, even a nominally
+        # read-only command is denied because invoked code could mutate the canonical root.
+        self.assertEqual(allowed["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("isolated Git workspace", allowed["hookSpecificOutput"]["permissionDecisionReason"])
 
     def test_text_tokens_stop_reason(self):
         script = [
@@ -240,6 +243,25 @@ class TestTransport(_Sess):
         with mock.patch("claude_agent_sdk.query", query):
             r = sess.run("run false")
         self.assertEqual(r.commands, [{"cmd": "false", "exit_code": 1}])
+
+    def test_command_without_result_is_not_success_evidence(self):
+        use = ToolUseBlock(id="t1", name="Bash", input={"command": "pytest -q"})
+        script = [[AssistantMessage(content=[use], model="m"), _result_msg()]]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("verify")
+        self.assertEqual(r.commands, [{"cmd": "pytest -q", "exit_code": None}])
+
+    def test_successful_read_is_not_executable_verification_evidence(self):
+        use = ToolUseBlock(id="r1", name="Read", input={"file_path": "hello.txt"})
+        result = ToolResultBlock(tool_use_id="r1", content="ASGARD_E2E_OK\n", is_error=None)
+        script = [[AssistantMessage(content=[use], model="m"), UserMessage(content=[result]), _result_msg()]]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("verify")
+        self.assertEqual(r.commands, [])
 
     def test_writes_recorded_on_success_only(self):
         ok_use = ToolUseBlock(id="w1", name="Write", input={"file_path": "a.txt"})

@@ -52,6 +52,7 @@ class FakeSession:
         self.model: str | None = None
         self.readonly: bool = False
         self.rp_override: ResolvedProvider | None = None
+        self.cwd: str = ""
 
     def run(self, user_content: str) -> SessionResult:
         self.prompt = user_content
@@ -73,6 +74,7 @@ class FakeHeimdall(Heimdall):
         default = ResolvedProvider(profile=PROVIDERS["anthropic"], model=model, api_key="k")
         self.texts: list[str] = []
         super().__init__(default, root, on_text=self.texts.append)
+        self.policy.setdefault("ticket_runtime", {})["isolation"] = False
 
     def _session(
         self,
@@ -84,6 +86,7 @@ class FakeHeimdall(Heimdall):
         model=None,
         readonly=False,
         rp_override=None,
+        cwd=None,
     ):
         with self._lock:  # wave 병렬 스레드가 동시에 pop — 순서 보호
             if not self._script:
@@ -93,6 +96,7 @@ class FakeHeimdall(Heimdall):
             s.model = model
             s.readonly = readonly
             s.rp_override = rp_override
+            s.cwd = cwd or self.root
             s.system = system or ""
             self.consumed.append(s)
             return s
@@ -187,6 +191,27 @@ class TestTrinityLoop(Base):
         self.assertIn("증거", out)  # 구조화 보고
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+
+    def test_close_rejection_cannot_be_reported_as_verified_completion(self):
+        import subprocess
+
+        from asgard.agent import heimdall
+
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
+        real_ql = heimdall.ql
+
+        def reject_close(root, *args, **kwargs):
+            if args and args[0] == "close":
+                return subprocess.CompletedProcess(args, 1, stdout="", stderr="stale close")
+            return real_ql(root, *args, **kwargs)
+
+        with mock.patch.object(heimdall, "ql", side_effect=reject_close):
+            out = h.handle("w1.txt 만들어")
+
+        self.assertIn("close 거부", out)
+        self.assertNotIn("과업 완수", out)
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
+        self.assertIsNone(h._last_completion)
 
     def test_prose_artifact_style_failure_forces_worker_retry_before_close(self):
         seq = [
@@ -449,27 +474,26 @@ class TestRoutePriorsE2E(Base):
         self.assertEqual(self.read_priors()["classes"]["deep"]["n"], 1)
 
     def test_red_majority_prior_promotes_on_first_red(self):
-        # baseline red 상시(false 체크) + standard 클래스 과반-red 이력 → 첫 red 에 THINKER_REPLAN
+        # standard 클래스 과반-red 이력 → 첫 Verifier red 에 THINKER_REPLAN
         os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
-        with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
-            json.dump({"baseline_checks": ["false"]}, f)
         with open(os.path.join(self.root, ".asgard", "state", "route-priors.json"), "w") as f:
             json.dump({"schema": 1, "classes": {"standard": {"n": 3, "red": 2}}}, f)
         seq = [
             worker({"w1.txt": "a\n"}, self.root),
+            verifier("FAIL", sig="broken"),
             thinker("재설계 1"),
             worker({"w1.txt": "b\n"}, self.root),
-            thinker("재설계 2"),
+            verifier("ESCALATE"),
         ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
         out = h.handle("w1.txt 만들어")
-        self.assertIn("턴 예산", out)  # 체크가 영원히 red — 예산 소진으로 정직 종료
+        self.assertIn("Odin", out)
         labels = [s.label for s in h.consumed]
-        self.assertEqual(labels[:2], ["worker", "thinker"])  # red 1회 만에 재계획 (기본 문턱 2 아님)
+        self.assertEqual(labels[:3], ["worker", "verifier", "thinker"])  # red 1회 만에 재계획
         self.assertIn("prior", "".join(h.texts))  # 전이 사유에 prior 하향 표기
-        self.assertEqual(self.read_priors()["classes"]["standard"], {"n": 4, "red": 3})
+        self.assertEqual(self.read_priors()["classes"]["standard"], {"n": 4, "red": 2})
         (out_ev,) = self.outcomes()
-        self.assertEqual((out_ev["result"], out_ev["baseline_red"]), ("budget-exhausted", True))
+        self.assertEqual((out_ev["result"], out_ev["baseline_red"]), ("escalate", False))
 
 
 OPUS_DEFAULT = PROVIDERS["anthropic"].default_model  # 티어 매핑은 기본 모델일 때만 적용
@@ -676,6 +700,64 @@ class TestClassifyHeuristic(Base):
         self.assertIsNone(ch("로그인 화면이 이상함"))  # 동사 신호 없음
         self.assertIsNone(ch("버그 설명해주고 고쳐줘"))  # read+write 혼재
 
+    def test_explicit_parallel_write_routes_through_deep_planning(self):
+        from asgard.agent.heimdall import classify_heuristic as ch
+
+        requests = [
+            "alpha.py와 beta.py를 독립 Worker 단위로 분해해 병렬 구현해줘",
+            "implement the parser with parallel subagents and a TODO list",
+        ]
+        for request in requests:
+            classified = ch(request)
+            assert classified is not None
+            self.assertTrue(classified["write_expected"])
+            self.assertTrue(classified["parallel_requested"])
+            self.assertEqual(classified["task_class"], "deep")
+
+    def test_explicit_parallel_write_actually_runs_thinker_and_wave(self):
+        h = FakeHeimdall(
+            self.root,
+            [
+                thinker(PLAN_WITH_UNITS),
+                worker({"u1.txt": "1\n"}, self.root),
+                worker({"u2.txt": "2\n"}, self.root),
+                worker({"sum.txt": "12\n"}, self.root),
+                verifier("PASS"),
+            ],
+            cls=None,
+        )
+
+        out = h.handle("u1과 u2를 독립 Worker 단위로 분해해 병렬 구현해줘")
+
+        self.assertIn("과업 완수", out)
+        self.assertEqual(
+            [session.label for session in h.consumed], ["thinker", "worker", "worker", "worker", "verifier"]
+        )
+
+    def test_explicit_parallel_write_replans_instead_of_collapsing_invalid_graph_to_one_worker(self):
+        invalid = '```json\n{"units":[{"id":1,"subtask":"monolith","files":["u1.txt"],"access":[]}]}\n```'
+        h = FakeHeimdall(
+            self.root,
+            [
+                thinker(invalid),
+                thinker(PLAN_WITH_UNITS),
+                worker({"u1.txt": "1\n"}, self.root),
+                worker({"u2.txt": "2\n"}, self.root),
+                worker({"sum.txt": "12\n"}, self.root),
+                verifier("PASS"),
+            ],
+            cls=None,
+        )
+
+        out = h.handle("u1과 u2를 독립 Worker 단위로 분해해 병렬 구현해줘")
+
+        self.assertIn("과업 완수", out)
+        self.assertEqual(
+            [session.label for session in h.consumed],
+            ["thinker", "thinker", "worker", "worker", "worker", "verifier"],
+        )
+        self.assertIn("invalid-parallel-plan", self.quest_log_text())
+
     def test_classify_uses_heuristic_without_client_call(self):
         h = FakeHeimdall(self.root, [], cls=None)
 
@@ -809,14 +891,111 @@ PLAN_WITH_UNITS = """계획: 두 파일을 만들고 요약을 붙인다.
 class TestWaveParallel(Base):
     """Worker wave 병렬 + access list 격리 (Fugu Conductor analog)."""
 
+    @staticmethod
+    def isolated_worker(rel: str, body: str):
+        session = FakeSession(SessionResult(text="isolated", stop_reason="end_turn", writes=[]), label="worker")
+
+        def effect():
+            path = os.path.join(session.cwd, rel)
+            os.makedirs(os.path.dirname(path) or session.cwd, exist_ok=True)
+            open(path, "w").write(body)
+
+        session.effect = effect
+        return session
+
+    def test_wave_isolation_merges_physical_deltas_not_self_reported_writes(self):
+        units = [
+            {"id": 1, "subtask": "a", "files": ["a.txt", "b.txt"], "criteria": [], "access": []},
+            {"id": 2, "subtask": "b", "files": ["a.txt", "b.txt"], "criteria": [], "access": []},
+        ]
+        h = FakeHeimdall(self.root, [self.isolated_worker("a.txt", "a"), self.isolated_worker("b.txt", "b")])
+        h.policy["ticket_runtime"] = {"isolation": True, "max_attempts": 1}
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-isolated", session="wave-isolated")
+        h._run_worker_waves("wave-isolated", "task", units, "")
+        self.assertEqual(open(os.path.join(self.root, "a.txt")).read(), "a")
+        self.assertEqual(open(os.path.join(self.root, "b.txt")).read(), "b")
+        events = [json.loads(line) for line in self.quest_log_text().splitlines()]
+        changed = {
+            event["unit"]: event["changed_files"]
+            for event in events
+            if event.get("event") == "work" and event.get("unit") in (1, 2)
+        }
+        self.assertEqual(changed, {1: ["a.txt"], 2: ["b.txt"]})
+
+    def test_disjoint_isolated_units_execute_in_parallel_then_merge(self):
+        import threading
+
+        units = [
+            {"id": 1, "subtask": "a", "files": ["a.txt"], "criteria": [], "access": []},
+            {"id": 2, "subtask": "b", "files": ["b.txt"], "criteria": [], "access": []},
+        ]
+        h = FakeHeimdall(
+            self.root,
+            [
+                FakeSession(SessionResult(text="a", stop_reason="end_turn")),
+                FakeSession(SessionResult(text="b", stop_reason="end_turn")),
+            ],
+        )
+        h.policy["ticket_runtime"] = {"isolation": True, "max_attempts": 1}
+        barrier = threading.Barrier(2)
+        root_was_clean = []
+
+        def turn(make, prompt, fallback=None, fallback_prompt=None):
+            session = make()
+            rel = "a.txt" if "배정 단위 1" in prompt else "b.txt"
+            root_was_clean.append(not os.path.exists(os.path.join(self.root, rel)))
+            barrier.wait(timeout=5)
+            open(os.path.join(session.cwd, rel), "w").write(rel)
+            return SessionResult(text=rel, stop_reason="end_turn", writes=[])
+
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-real-parallel", session="wave-real-parallel")
+        with mock.patch.object(h, "_run_turn", side_effect=turn):
+            h._run_worker_waves("wave-real-parallel", "task", units, "")
+        self.assertEqual(root_was_clean, [True, True])
+        self.assertEqual(open(os.path.join(self.root, "a.txt")).read(), "a.txt")
+        self.assertEqual(open(os.path.join(self.root, "b.txt")).read(), "b.txt")
+
+    def test_wave_isolation_rejects_undeclared_actual_writes_without_touching_root(self):
+        open(os.path.join(self.root, "shared.txt"), "w").write("user\n")
+        units = [
+            {"id": 1, "subtask": "a", "files": ["a.txt"], "criteria": [], "access": []},
+            {"id": 2, "subtask": "b", "files": ["b.txt"], "criteria": [], "access": []},
+        ]
+        h = FakeHeimdall(
+            self.root,
+            [self.isolated_worker("shared.txt", "one\n"), self.isolated_worker("shared.txt", "two\n")],
+        )
+        h.policy["ticket_runtime"] = {"isolation": True, "max_attempts": 1}
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-overlap", session="wave-overlap")
+        with self.assertRaisesRegex(RuntimeError, "scope violation"):
+            h._run_worker_waves("wave-overlap", "task", units, "")
+        self.assertEqual(open(os.path.join(self.root, "shared.txt")).read(), "user\n")
+
     def test_parse_units_valid_and_fallbacks(self):
         from asgard.agent.heimdall import _parse_units
 
         units = _parse_units(PLAN_WITH_UNITS) or []
         self.assertEqual([u["id"] for u in units], [1, 2, 3])
+        self.assertIsNone(_parse_units('```json\n{"units":[{"id":1,"subtask":"a"},{"id":"1","subtask":"b"}]}\n```'))
         self.assertIsNone(_parse_units("계획만 있고 블록 없음"))
         self.assertIsNone(_parse_units('```json\n{"units": [{"id": 1, "subtask": "하나뿐"}]}\n```'))  # 단일 = 기존 경로
         self.assertIsNone(_parse_units("```json\n{깨진 json}\n```"))
+        self.assertIsNone(
+            _parse_units(
+                '```json\n{"units":[{"id":1,"subtask":"a","access":[99]},{"id":2,"subtask":"b","access":[]}]}\n```'
+            )
+        )
+        self.assertIsNone(
+            _parse_units(
+                '```json\n{"units":[{"id":1,"subtask":"a","access":[2]},{"id":2,"subtask":"b","access":[1]}]}\n```'
+            )
+        )
 
     def test_plan_waves_topology_and_file_overlap(self):
         from asgard.agent.heimdall import _plan_waves
@@ -830,6 +1009,14 @@ class TestWaveParallel(Base):
         self.assertEqual([[u["id"] for u in w] for w in waves], [[1, 2], [3]])
         overlap = [{"id": 1, "files": ["a.py"], "access": []}, {"id": 2, "files": ["a.py"], "access": []}]
         self.assertEqual([[u["id"] for u in w] for w in _plan_waves(overlap)], [[1], [2]])  # 겹침 직렬화
+        aliases = [
+            {"id": 1, "files": ["src"], "access": []},
+            {"id": 2, "files": ["./src/A.py"], "access": []},
+            {"id": 3, "files": ["src/a.py"], "access": []},
+        ]
+        self.assertEqual([[u["id"] for u in w] for w in _plan_waves(aliases, self.root)], [[1], [2], [3]])
+        with self.assertRaisesRegex(ValueError, "dependency graph"):
+            _plan_waves([{"id": 1, "files": [], "access": [2]}, {"id": 2, "files": [], "access": [1]}])
 
     def test_wave_execution_isolation_and_unit_events(self):
         cls = dict(CLS_WRITE, ambiguous=True)  # ambiguous write → THINKER 선행 (계획이 wave 의 입력)
@@ -860,6 +1047,24 @@ class TestWaveParallel(Base):
         events = [json.loads(ln) for ln in self.quest_log_text().splitlines() if ln.strip()]
         units_logged = [e.get("unit") for e in events if e.get("event") == "work"]
         self.assertEqual(sorted(u for u in units_logged if u is not None), [1, 2, 3])
+        ticket_statuses = {
+            unit: [e.get("ticket_status") for e in events if e.get("event") == "ticket" and e.get("unit") == unit]
+            for unit in (1, 2, 3)
+        }
+        self.assertEqual(ticket_statuses[1], ["todo", "in_progress", "done"])
+        self.assertEqual(ticket_statuses[2], ["todo", "in_progress", "done"])
+        self.assertEqual(ticket_statuses[3], ["todo", "in_progress", "done"])
+        from asgard.hooks.quest_log import load_events, load_policy, summarize
+
+        quest_file = next(
+            name for name in os.listdir(os.path.join(self.root, ".asgard", "quest")) if name.endswith(".jsonl")
+        )
+        quest_id = quest_file.removesuffix(".jsonl")
+        state = summarize(self.root, quest_id, load_events(self.root, quest_id), load_policy(self.root))
+        self.assertEqual(state["ticket_counts"], {"done": 3})
+        self.assertEqual([ticket["id"] for ticket in state["tickets"]], [1, 2, 3])
+        self.assertTrue(all(ticket["attempt"] == 1 for ticket in state["tickets"]))
+        self.assertTrue(all(ticket["claim_token_hash"] for ticket in state["tickets"]))
 
     def test_wave_worker_supplies_default_provider_fallback(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -869,6 +1074,9 @@ class TestWaveParallel(Base):
         fallback_session = worker(text="fallback")
         h = FakeHeimdall(self.root, [fallback_session])
         captured = {}
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-fallback", session="wave-fallback")
 
         def capture(_make, _prompt, fallback=None, fallback_prompt=None):
             captured["fallback"] = fallback
@@ -891,6 +1099,9 @@ class TestWaveParallel(Base):
             {"id": 2, "subtask": "b", "files": ["bad.txt"], "criteria": [], "access": []},
         ]
         h = FakeHeimdall(self.root, [])
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-partial", session="wave-partial")
 
         def turn(_make, prompt, fallback=None, fallback_prompt=None):
             if "배정 단위 2" in prompt:
@@ -906,8 +1117,45 @@ class TestWaveParallel(Base):
         joined = "".join(h.texts)
         self.assertIn("단위 1 완료", joined)
         self.assertIn("단위 2 실패", joined)
+        events = [json.loads(ln) for ln in self.quest_log_text().splitlines() if ln.strip()]
+        statuses = {
+            unit: [e.get("ticket_status") for e in events if e.get("event") == "ticket" and e.get("unit") == unit]
+            for unit in (1, 2)
+        }
+        self.assertEqual(statuses[1], ["todo", "in_progress", "done"])
+        self.assertEqual(
+            statuses[2],
+            ["todo", "in_progress", "failed", "in_progress", "failed", "in_progress", "blocked"],
+        )
 
-    def test_retry_after_wave_uses_single_path(self):
+    def test_wave_retries_only_failed_ticket_with_new_claim(self):
+        unit = {"id": 1, "subtask": "flaky", "files": ["flaky.txt"], "criteria": [], "access": []}
+        h = FakeHeimdall(self.root, [])
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-retry", session="wave-retry")
+        attempts = 0
+
+        def turn(_make, _prompt, fallback=None, fallback_prompt=None):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("transient")
+            return SessionResult(text="ok", stop_reason="end_turn", writes=["flaky.txt"])
+
+        with mock.patch.object(h, "_run_turn", side_effect=turn):
+            h._run_worker_waves("wave-retry", "task", [unit], "")
+        self.assertEqual(attempts, 2)
+        events = [json.loads(ln) for ln in self.quest_log_text().splitlines() if ln.strip()]
+        statuses = [e.get("ticket_status") for e in events if e.get("event") == "ticket" and e.get("unit") == 1]
+        self.assertEqual(statuses, ["todo", "in_progress", "failed", "in_progress", "done"])
+        from asgard.hooks.quest_log import fold_tickets
+
+        ticket = fold_tickets(events)["1"]
+        self.assertEqual(ticket["attempt"], 2)
+        self.assertEqual(ticket["status"], "done")
+
+    def test_retry_after_wave_replans_and_preserves_unit_scope(self):
         cls = dict(CLS_WRITE, ambiguous=True)
         seq = [
             FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker"),
@@ -915,14 +1163,41 @@ class TestWaveParallel(Base):
             worker({"u2.txt": "2\n"}, self.root),
             worker({"sum.txt": "s\n"}, self.root),
             verifier("FAIL", sig="broken"),
-            worker({"u1.txt": "fix\n"}, self.root),  # WORKER_RETRY — wave 아님, 실패 컨텍스트 집중
+            FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker-replan"),
+            worker({"u1.txt": "fix1\n"}, self.root),
+            worker({"u2.txt": "fix2\n"}, self.root),
+            worker({"sum.txt": "fixed\n"}, self.root),
             verifier("PASS"),
         ]
         h = FakeHeimdall(self.root, seq, cls=cls)
         out = h.handle("u1, u2 만들고 요약")
         self.assertIn("과업 완수", out)
-        retry = h.consumed[5]
-        self.assertIn("FAILED: broken", retry.prompt)
+        replan = h.consumed[5]
+        self.assertEqual(replan.label, "thinker-replan")
+        self.assertIn("broken", replan.prompt)
+
+    def test_structural_replan_executes_new_units_as_a_wave(self):
+        cls = dict(CLS_WRITE, ambiguous=True)
+        seq = [
+            FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker"),
+            worker({"u1.txt": "1\n"}, self.root),
+            worker({"u2.txt": "2\n"}, self.root),
+            worker({"sum.txt": "bad\n"}, self.root),
+            verifier("FAIL", structural=True, sig="bad-plan"),
+            FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker-replan"),
+            worker({"u1.txt": "1\n"}, self.root),
+            worker({"u2.txt": "2\n"}, self.root),
+            worker({"sum.txt": "fixed\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls=cls)
+
+        out = h.handle("u1, u2 만들고 요약")
+
+        self.assertIn("과업 완수", out)
+        workers = [session for session in h.consumed if session.label == "worker"]
+        self.assertEqual(len(workers), 6)
+        self.assertEqual(sum("배정 단위 3" in session.prompt for session in workers), 2)
 
 
 class TestDirectGuard(Base):
@@ -1108,30 +1383,65 @@ class TestHookParity(Base):
 
 
 class TestStandardRoute(Base):
-    """게이트-우선 — ordinary write 는 Worker 직행 + 하네스 베이스라인 판정, LLM Verifier 0."""
+    """ordinary write도 Worker 뒤에 독립 Verifier를 강제한다."""
 
     def policy(self, **kw):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
         with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
             json.dump(kw, f)
 
-    def test_standard_closes_without_llm_verifier(self):
-        self.policy(baseline_checks=["true"])
-        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root)], cls={**CLS_WRITE, "task_class": "standard"})
+    def test_standard_closes_with_independent_verifier(self):
+        self.policy(baseline_checks=["python3 -m compileall -q ."])
+        h = FakeHeimdall(
+            self.root,
+            [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")],
+            cls={**CLS_WRITE, "task_class": "standard"},
+        )
         out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
-        self.assertEqual([s.label for s in h.consumed], ["worker"])  # verifier LLM 미소비
-        self.assertIn('"harness"', self.quest_log_text())  # 판정 주체 = 하네스
+        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+        self.assertIn('"verifier"', self.quest_log_text())
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
     def test_standard_red_gives_worker_retry_with_failing_check(self):
         self.policy(baseline_checks=["test -f fixed.txt"])
-        seq = [worker({"w1.txt": "x\n"}, self.root), worker({"fixed.txt": "y\n"}, self.root)]
+        seq = [
+            worker({"w1.txt": "x\n"}, self.root),
+            verifier("PASS"),
+            worker({"fixed.txt": "y\n"}, self.root),
+            verifier("PASS"),
+        ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
         out = h.handle("고쳐줘")
         self.assertIn("과업 완수", out)
-        self.assertEqual([s.label for s in h.consumed], ["worker", "worker"])
-        self.assertIn("baseline-red", seq[1].prompt or "")  # 실패 체크가 재시도 컨텍스트로 전달
+        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "worker", "verifier"])
+        self.assertIn("baseline-red", seq[2].prompt or "")  # 실패 체크가 재시도 컨텍스트로 전달
+
+    def test_invalid_verdict_is_recorded_as_fail_instead_of_crashing(self):
+        seq = [
+            worker({"w1.txt": "x\n"}, self.root),
+            verifier("Pass"),
+            worker({"w1.txt": "fixed\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
+        out = h.handle("고쳐줘")
+        self.assertIn("과업 완수", out)
+        events = [json.loads(line) for line in self.quest_log_text().splitlines() if line.strip()]
+        failures = [event for event in events if event.get("event") == "verify" and event.get("verdict") == "FAIL"]
+        self.assertEqual(failures[0]["failure_sig"], "invalid-verdict-submitted")
+
+    def test_empty_classifier_criteria_is_bound_to_request_for_every_role(self):
+        cls = {**CLS_WRITE, "criteria": [], "task_class": "standard"}
+        seq = [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")]
+        h = FakeHeimdall(self.root, seq, cls=cls)
+        request = "Create w1.txt containing x"
+        out = h.handle(request)
+        self.assertIn("과업 완수", out)
+        self.assertIn(request, seq[1].prompt)
+        self.assertNotIn("criteria: []", seq[1].prompt)
+        opened = json.loads(self.quest_log_text().splitlines()[0])
+        self.assertEqual(opened["criteria"], [f"요청 본문과 변경 결과가 일치함: {request}"])
 
     def test_missing_task_class_stays_trinity(self):
         # task_class 미상(None) = 안전 기본값 — 기존 LLM Verifier 경로 유지
@@ -1194,6 +1504,7 @@ class TestDeliveryMemoryIsolation(Base):
                 model=None,
                 readonly=False,
                 rp_override=None,
+                cwd=None,
             ):
                 captured["system"] = system
                 return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
@@ -1202,6 +1513,40 @@ class TestDeliveryMemoryIsolation(Base):
         h._dispatch_handler("s1", [])({"agent": "freyja", "task": "버튼 라벨 수정", "why": "w"})
         self.assertNotIn("<memory-context", captured["system"])
         self.assertIn("asgard-freyja", captured["system"])  # role 본문은 그대로
+
+
+class TestFrozenSnapshotIntegration(Base):
+    """감사 공백 ①: 생성 후 메모리를 변경해도 기존 Heimdall 인스턴스의 system 바이트는 불변.
+
+    frozen snapshot 계약(캐시 정합성)의 통합 회귀 — 구성요소 테스트가 아니라 실제 인스턴스의
+    identity/system 바이트를 직접 대조한다. recall(프롬프트 측)은 라이브가 계약이므로 미대상."""
+
+    def test_memory_mutation_after_construction_keeps_system_bytes_frozen(self):
+        from asgard import memory
+
+        old_env = os.environ.get(memory.MEMORY_ENV)
+        os.environ[memory.MEMORY_ENV] = os.path.join(self.root, "mem")
+        self.addCleanup(
+            lambda: (
+                os.environ.pop(memory.MEMORY_ENV, None)
+                if old_env is None
+                else os.environ.__setitem__(memory.MEMORY_ENV, old_env)
+            )
+        )
+        memory.add("동결 전 사실 알파", title="alpha-fact", kind="note")
+        turns = [
+            FakeSession(SessionResult(text="답1", stop_reason="end_turn"), label="direct"),
+            FakeSession(SessionResult(text="답2", stop_reason="end_turn"), label="direct"),
+        ]
+        h = FakeHeimdall(self.root, turns, cls=CLS_DIRECT)
+        identity_before = h.identity
+        self.assertIn("alpha-fact", identity_before)  # 스냅샷이 실제로 실렸는지 전제 확인
+        h.handle("알파 사실이 뭐였지")
+        memory.add("세션 중 추가된 사실 베타", title="beta-fact", kind="note")  # 생성 후 변이
+        h.handle("알파 사실이 뭐였지")  # 동일 요청 — request 파생 주입분까지 동일 조건
+        self.assertEqual(turns[0].system, turns[1].system)  # system 바이트 불변
+        self.assertNotIn("beta-fact", turns[1].system)
+        self.assertEqual(h.identity, identity_before)  # 동결 원본 자체도 불변
 
 
 class TestMemoryRoleMatrix(Base):
@@ -1237,9 +1582,10 @@ class TestMemoryRoleMatrix(Base):
                 model=None,
                 readonly=False,
                 rp_override=None,
+                cwd=None,
             ):
                 systems.append(system)
-                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
 
         cls = {**CLS_WRITE, "task_class": "deep", "shared": True}  # shared → THINKER 선행
         h = Cap(self.root, [thinker(), worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=cls)

@@ -24,12 +24,14 @@ import re
 import threading
 import time
 import uuid
+from contextlib import ExitStack
 from typing import Callable, Protocol
 
+from .. import theme, ui
 from ..hooks.quest_log import trivial_evidence as _trivial_evidence
 from ..providers import ResolvedProvider, resolve_trinity
 from ..templates import agents_md
-from ..templates.roles import ROLE_AGENTS
+from ..templates.roles import ROLE_AGENTS, delivery_agents, role_writable
 from .session import AgentSession, SessionResult, gate, make_client, ql
 
 
@@ -61,26 +63,27 @@ _TIER_MODELS = {
 _TIER_UP = {"fast": "standard", "standard": "high", "high": "max", "max": "max"}
 # 탐색 발견 증류 넛지 문턱 — DIRECT 턴 커맨드 수가 이 이상이면 "탐색이 컸다"로 본다
 _EXPLORE_NUDGE_MIN = 3
-# 딜리버리 전문가 기본 티어 — 정책 파일 "delivery" 로 조정 (freyja/thor/eitri=구현, loki=read-only 반례 탐색)
-_DELIVERY_TIERS = {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast"}
+# 딜리버리 전문가 기본 티어 — role frontmatter `delivery:` 선언에서 파생 (CUS-251 선언화).
+# 새 페르소나 = roles/ 에 .md 드롭 (delivery 키 포함) — 이 파일 수정 불요. 정책 "delivery" 가 덮는다.
+_DELIVERY_TIERS = delivery_agents()
 
-# 역할 심볼 (AGENTS.md 이모지 일관) — REPL 전이 표시에 씀
+# 역할 심볼 — 단폭 BMP 기하 글리프 (프레이야 26-07-16). 이모지(🧠🔨⚖️)는 VS16 더블폭이라 정렬을
+# 깨므로 배제: ◇=사고(속 빔)·◆=구현(채움)·◈=판정(테두리)·▣=기계 체크. 역할 정체성은 색이 아니라
+# 글리프 모양이 진다 — 배너 글리프는 전부 골드 단일 앵커 (액센트 희소성).
 _ROLE_ICON = {
-    "THINKER": "🧠",
-    "THINKER_REPLAN": "🧠",
-    "WORKER": "🔨",
-    "WORKER_RETRY": "🔨",
-    "VERIFIER": "⚖️",
-    "BASELINE_VERIFY": "🛡",
+    "THINKER": "◇",
+    "THINKER_REPLAN": "◇",
+    "WORKER": "◆",
+    "WORKER_RETRY": "◆",
+    "VERIFIER": "◈",
+    "BASELINE_VERIFY": "▣",
     "DONE": "✔",
     "DIRECT_DONE": "→",
-    "ESCALATE_ODIN": "⚠",
+    "ESCALATE_ODIN": "▲",
 }
 
 
 def _transition_line(role: str, why: str) -> str:
-    from .. import theme, ui
-
     icon = _ROLE_ICON.get(role, "◇")
     return f"\n  {ui.paint(theme.ansi(theme.PRIMARY), icon)} {ui.bold(role)} {ui.dim('· ' + why)}\n"
 
@@ -107,13 +110,15 @@ def _role_body(fname: str) -> str:
     return parts[2] if len(parts) == 3 else body
 
 
-# 딜리버리 계층 — templates/roles/asgard-{freyja,thor,eitri,loki}.md 가 단일 소스 (CC 스캐폴드와 공유)
-_DELIVERY = {g: _role_body(f"asgard-{g}.md") for g in ("freyja", "thor", "eitri", "loki")}
+# 딜리버리 계층 — roles/*.md frontmatter `delivery:` 선언이 단일 소스 (CC 스캐폴드와 공유).
+# readonly = frontmatter tools 에 Write 부재 (loki: 반례 탐색은 도구로 강제) — 하드코딩 아님.
+_DELIVERY = {g: _role_body(f"asgard-{g}.md") for g in _DELIVERY_TIERS}
+_DELIVERY_READONLY = frozenset(g for g in _DELIVERY_TIERS if not role_writable(f"asgard-{g}.md"))
 
 
 def _skill_resolver(agent: str):
     """전용 스킬 리졸버 — 심화 스킬을 가진 딜리버리 에이전트만 (본문 상수가 커서 lazy import)."""
-    if agent == "freyja":
+    if agent in ("freyja", "freyja-lead"):
         from ..templates.freyja import resolve_freyja_skills
 
         return resolve_freyja_skills
@@ -121,7 +126,46 @@ def _skill_resolver(agent: str):
         from ..templates.thor import resolve_thor_skills
 
         return resolve_thor_skills
+    if agent == "eitri":
+        from ..templates.eitri import resolve_eitri_skills
+
+        return resolve_eitri_skills
+    if agent == "mimir":
+        from ..templates.mimir import resolve_mimir_skills
+
+        return resolve_mimir_skills
     return None
+
+
+def _worker_note(task: str) -> str:
+    """번들 Worker 공통 스킬 주입 (디버깅·테스트 설계) — Worker 표면 한정.
+
+    딜리버리 전용 스킬(_skill_resolver)의 Worker 층 등가물 — 네이티브엔 파일 스킬 로더가
+    없으므로 task 매칭 본문을 system 에 직접 주입한다. Verifier/loki 호출측은 부르지 않는다
+    (게이트 무결성). 실패는 조용히 빈 문자열 (fail-open)."""
+    try:
+        from ..templates.worker import resolve_worker_skills
+
+        hits = resolve_worker_skills(task)
+        if not hits:
+            return ""
+        return "\n\n# 공통 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in hits)
+    except Exception:
+        return ""
+
+
+def _mimir_note(request: str) -> str:
+    """미미르 안내 계약 주입 — 코드 이해·설명 요청의 DIRECT 턴 한정.
+
+    DIRECT 는 dispatch 툴이 없는 read-only 단일 세션이다 (write 에이전트 혼입 금지) —
+    설명 과업의 미미르 계약(실행 흐름 서사 + 인지부채 방어)을 모드 A 처럼 인라인 주입한다.
+    무매칭·실패는 조용히 빈 문자열 (fail-open — 일반 DIRECT 문답은 그대로)."""
+    try:
+        from ..templates.mimir import mimir_note
+
+        return mimir_note(request)
+    except Exception:
+        return ""
 
 
 VERDICT_TOOL = {
@@ -178,7 +222,7 @@ def _gate_repair(sig: str) -> tuple[str, str]:
     return "VERIFIER", f"게이트 차단({sig}) — 신선한 증거로 재검증"
 
 
-# ── 결정론 pre-LLM 분류 (helios 디스패치 패턴) — 명백 케이스만, 모호하면 None → LLM 폴백 ──
+# ── 결정론 pre-LLM 분류 — 명백 케이스만, 모호하면 None → LLM 폴백 ──
 _DESTRUCTIVE_PAT = re.compile(
     r"rm\s+-rf|git\s+push\s+--force|git\s+reset\s+--hard|git\s+clean\s+-[a-z]*f"
     r"|drop\s+(table|database)|truncate\s+table|mkfs|dd\s+if=|전부\s*(삭제|지워)|다\s*지워|싹\s*지워",
@@ -187,6 +231,7 @@ _DESTRUCTIVE_PAT = re.compile(
 _WRITE_VERBS = (
     "만들", "생성해", "수정해", "고쳐", "추가해", "구현해", "작성해", "바꿔", "변경해", "리팩터", "빼줘",
     "삭제해", "지워", "적용해", "옮겨", "설치해", "완성해", "fix ", "implement", "refactor", "rename ", "install ",
+    "create ", "write ", "modify ", "change ", "edit ", "add ", "update ", "delete ", "remove ", "move ", "copy ",
 )  # fmt: skip
 _READ_VERBS = (
     "설명해", "알려", "뭐야", "무엇", "어떻게 동작", "왜 ", "읽", "답해", "분석해줘", "보여줘", "요약해", "조회",
@@ -195,6 +240,11 @@ _READ_VERBS = (
 _NEGATED_WRITE_PAT = re.compile(
     r"(?:수정|변경|편집|고치)\s*(?:하지\s*(?:마(?:라|세요)?|말|않)|금지)"
     r"|(?:do\s+not|don't|without)\s+(?:modify|modifying|change|changing|edit|editing|write|writing)\b",
+    re.IGNORECASE,
+)
+_PARALLEL_WORK_PAT = re.compile(
+    r"병렬|동시에|독립\s*(?:worker|작업|단위)|서브\s*에이전트|sub[ -]?agents?|fan[ -]?out|"
+    r"todo\s*(?:list)?|작업\s*목록|티켓|task\s*graph",
     re.IGNORECASE,
 )
 
@@ -211,6 +261,7 @@ def classify_heuristic(request: str) -> dict | None:
         "destructive": False,
         "external_research": False,
         "shared": False,
+        "parallel_requested": False,
         "criteria": [],
         "task_class": "standard",
     }
@@ -222,6 +273,10 @@ def classify_heuristic(request: str) -> dict | None:
     write_scan = _NEGATED_WRITE_PAT.sub("", low)
     has_w = any(v in write_scan for v in _WRITE_VERBS)
     has_r = any(v in low for v in _READ_VERBS)
+    if has_w and _PARALLEL_WORK_PAT.search(low):
+        # 명시적 분해·병렬 요청은 Thinker가 dependency/file-overlap을 구조화해야 한다.
+        # LLM 분류가 standard를 반환하면 gate-first가 Thinker를 생략해 단일 Worker로 축소된다.
+        return {**base, "write_expected": True, "parallel_requested": True, "task_class": "deep"}
     if has_r and not has_w:
         return base  # 명백 read-only — DIRECT 무세금
     if has_w and not has_r:
@@ -256,39 +311,65 @@ def _parse_units(plan: str) -> list[dict] | None:
             subtask = u.get("subtask")
             if not subtask:
                 return None
-            uid = u.get("id", i + 1)
+            uid_text = str(u.get("id", i + 1))
+            if not re.fullmatch(r"[1-9]\d*", uid_text):
+                return None
+            uid = int(uid_text)
             if uid in seen:
                 return None
             seen.add(uid)
             files, crit, acc = u.get("files"), u.get("criteria"), u.get("access")
+            if isinstance(acc, list) and any(not re.fullmatch(r"[1-9]\d*", str(dep)) for dep in acc):
+                return None
+            normalized_access = [int(str(dep)) for dep in acc] if isinstance(acc, list) else []
             out.append(
                 {
                     "id": uid,
                     "subtask": str(subtask),
                     "files": [str(f) for f in files] if isinstance(files, list) else [],
                     "criteria": [str(c) for c in crit] if isinstance(crit, list) else [],
-                    "access": list(acc) if isinstance(acc, list) else [],
+                    "access": normalized_access,
                 }
             )
+        ids = {u["id"] for u in out}
+        if any(u["id"] in u["access"] or not set(u["access"]) <= ids for u in out):
+            return None  # self/unknown dependency — 의존성을 무시하고 실행하지 않는다
+        resolved: set = set()
+        pending = list(out)
+        while pending:
+            ready = [u for u in pending if set(u["access"]) <= resolved]
+            if not ready:
+                return None  # cycle — 잘못된 순서로 직렬 실행하는 대신 단일 안전 경로로 강등
+            ready_ids = {u["id"] for u in ready}
+            resolved |= ready_ids
+            pending = [u for u in pending if u["id"] not in ready_ids]
         return out
     except Exception:
         return None
 
 
-def _plan_waves(units: list[dict]) -> list[list[dict]]:
-    """access 의존 위상 정렬 + 파일 겹침 직렬화 — 같은 wave 안은 병렬 안전 (hermes 경로 겹침 게이트)."""
+def _plan_waves(units: list[dict], root: str | None = None) -> list[list[dict]]:
+    """access 의존 위상 정렬 + 파일 겹침 직렬화 — 같은 wave 안은 병렬 안전 (경로 겹침 게이트)."""
+
+    def path_key(path: object) -> str:
+        raw = os.path.abspath(os.path.join(root or os.getcwd(), str(path)))
+        return os.path.realpath(raw).replace(os.sep, "/").casefold().rstrip("/")
+
+    def overlaps(left: set[str], right: set[str]) -> bool:
+        return any(a == b or a.startswith(b + "/") or b.startswith(a + "/") for a in left for b in right)
+
     done: set = set()
     waves: list[list[dict]] = []
     remaining = list(units)
     while remaining:
         ready = [u for u in remaining if set(u.get("access") or []) <= done]
         if not ready:
-            ready = [remaining[0]]  # 순환/미지 의존 — 순차 강등 (막히지 않는다)
+            raise ValueError("invalid unit dependency graph")  # _parse_units 검증의 방어적 백스톱
         wave: list[dict] = []
         files_used: set[str] = set()
         for u in ready:
-            fs = set(u.get("files") or [])
-            if fs & files_used:
+            fs = {path_key(path) for path in (u.get("files") or [])}
+            if overlaps(fs, files_used):
                 continue  # 파일 겹침 — 다음 wave 로 직렬화
             wave.append(u)
             files_used |= fs
@@ -322,13 +403,13 @@ def _log_classify(root: str, entry: dict) -> None:
         pass
 
 
-# ── API 오류 회복 (hermes recovery-hint 패턴 최소판) ──
+# ── API 오류 회복 (recovery-hint 최소판) ──
 _RETRY_STATUS = {408, 409, 429, 500, 502, 503, 504, 529}
 _FATAL_STATUS = {400, 401, 403, 404, 422}
 
 
 def classify_api_error(e: Exception) -> str:
-    """ "retryable" | "fatal" — 분류는 1회, 재시도 루프는 멍청하게 (hermes error_classifier 패턴)."""
+    """ "retryable" | "fatal" — 분류는 1회, 재시도 루프는 멍청하게."""
     status = getattr(e, "status_code", None)
     if status in _RETRY_STATUS:
         return "retryable"
@@ -346,7 +427,8 @@ def classify_api_error(e: Exception) -> str:
 DISPATCH_TOOL: dict = {
     "name": "dispatch",
     "description": "딜리버리 전문가에게 하위 작업 위임 (freyja=디자인/프론트엔드/모션/3D/영상, thor=백엔드/데이터/API/런타임, "
-    "eitri=빌드/CI/패키징/릴리스, loki=adversarial). 위임 전 누구에게·왜를 고민하고 why 에 근거를 남겨라 — 퀘스트 로그에 기록된다.",
+    "eitri=빌드/CI/패키징/릴리스, loki=adversarial, mimir=코드 설명/워크스루/온보딩). "
+    "위임 전 누구에게·왜를 고민하고 why 에 근거를 남겨라 — 퀘스트 로그에 기록된다.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -428,8 +510,8 @@ class Heimdall:
 
         self._charter_note = _charter_note
         self.charter_identity = _charter_note(root, "identity")
-        # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더 (hermes frozen
-        # snapshot: 세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
+        # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더
+        # (세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
         # 주입 매트릭스: DIRECT(identity)·Thinker = 스냅샷+회수. standard Worker는 Thinker가
         # 생략되므로 요청 관련 개인 회수만 받고, deep Worker는 Thinker 계획의 요약만 받는다.
         # Verifier/딜리버리(loki 포함)는 영구 무주입.
@@ -438,8 +520,9 @@ class Heimdall:
         from ..memory import snapshot_note as _memory_note
 
         self._memory_snap = _memory_note()  # 동결 원본 — 역할별 게이트는 아래에서
-        self.memory_note = self._memory_snap if _mem_allowed(rp.profile.name) else ""
         self._mem_allowed = _mem_allowed
+        self._memory_provider_allowed = _mem_allowed(rp.profile.name, rp.source)
+        self.memory_note = self._memory_snap if self._memory_provider_allowed else ""
         # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/eitri/loki)은 코디네이터가 아니다.
         # 특히 loki 는 Verifier 의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
         self.delivery_identity = _identity(root) + self.lagom + self.charter_identity
@@ -483,6 +566,7 @@ class Heimdall:
         model: str | None = None,
         readonly: bool = False,
         rp_override: ResolvedProvider | None = None,
+        cwd: str | None = None,
     ) -> AgentSession:
         rp = rp_override or self.role_rp.get(role or "", self.rp)
         if model and model != rp.model:  # 상황별 모델 스왑 — provider 는 유지, 모델만
@@ -501,6 +585,7 @@ class Heimdall:
             on_status=self.on_status,
             readonly=readonly,
             role=role,
+            cwd=cwd,
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
@@ -552,6 +637,7 @@ class Heimdall:
             for k in ("write_expected", "ambiguous", "destructive", "external_research", "shared"):
                 d[k] = bool(d.get(k))
             d["criteria"] = [str(c) for c in (d.get("criteria") or [])]
+            d["parallel_requested"] = bool(d["write_expected"] and _PARALLEL_WORK_PAT.search(request.lower()))
             if d.get("task_class") not in ("trivial", "standard", "deep"):
                 d["task_class"] = "standard"
             _log_classify(self.root, {"event": "classify", "source": "llm", **_pred_fields(d)})
@@ -560,9 +646,10 @@ class Heimdall:
             d = {
                 "write_expected": True,
                 "ambiguous": True,
-                "destructive": False,
+                "destructive": bool(_DESTRUCTIVE_PAT.search(request.lower())),
                 "external_research": False,
                 "shared": False,
+                "parallel_requested": bool(_PARALLEL_WORK_PAT.search(request.lower())),
                 "criteria": [],
                 "task_class": "deep",  # 파싱 실패 = 미상 — 최대 예산으로 안전하게
             }
@@ -619,6 +706,27 @@ class Heimdall:
                 delay = min(delay * 2, 30.0)
         raise RuntimeError("unreachable")
 
+    def _learned_note(self, task: str, agent: str, quiet: bool = False) -> str:
+        """learned 스킬 주입 노트 (skill_bank, CUS-252) — 승인된 경험 지식의 advisory 층.
+
+        Verifier/loki 호출측은 이 함수를 부르지 않는다 (게이트 무결성 — 학습물은 판정 표면 금지).
+        실패는 조용히 빈 문자열 (fail-open — 스킬 뱅크 문제로 본 작업이 죽으면 안 된다)."""
+        try:
+            from .. import ui  # 로컬 임포트 — WIP 커밋 순서와 무관하게 자립 (모듈 임포트와 공존 무해)
+            from ..skill_bank import record_use, resolve_learned
+
+            hits = resolve_learned(self.root, task, agent)
+            if not hits:
+                return ""
+            record_use(self.root, [n for n, _ in hits])
+            if not quiet:
+                self.on_text(f"  {ui.dim('│ ✦ 학습 스킬 — ' + ', '.join(n for n, _ in hits))}\n")
+            return "\n\n# 학습 스킬 (승인된 과거 경험 — advisory, 게이트 증거 아님)\n\n" + "\n\n".join(
+                b for _, b in hits
+            )
+        except Exception:
+            return ""
+
     def _track_cache(self, r) -> None:
         """프롬프트 캐시 계측 집계 — 세션 결과의 read/write/uncached 를 누적 (스레드 안전, wave 병렬)."""
         cr = getattr(r, "cache_read_tokens", 0) or 0
@@ -629,11 +737,9 @@ class Heimdall:
                 self.cache_prompt_tokens += total
 
     # ── 딜리버리 디스패치 (depth 1) ─────────────────────────────
-    def _dispatch_handler(self, sid: str, worker_result_writes: list[str]):
+    def _dispatch_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         def handler(inp: dict) -> str:
             agent, task, why = inp["agent"], inp["task"], inp.get("why", "")
-            from .. import theme, ui
-
             self.on_text(
                 f"\n  {ui.paint(theme.ansi(theme.PRIMARY), '⤷')} {ui.bold(agent)} {ui.dim('위임 · ' + why[:80])}\n"
             )
@@ -658,12 +764,17 @@ class Heimdall:
                 skills = resolver(f"{task} {why}")
                 if skills:
                     system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
-                    self.on_text(f"  {ui.dim('⬢ 스킬 주입 — ' + ', '.join(n for n, _ in skills))}\n")
+                    self.on_text(f"  {ui.dim('│ ✦ 스킬 주입 — ' + ', '.join(n for n, _ in skills))}\n")
+            if (
+                agent not in _DELIVERY_READONLY
+            ):  # read-only 딜리버리(loki) = 반례 탐색 — 학습물 무주입 (메모리와 동일 규율)
+                system += self._learned_note(f"{task} {why}", agent)
             child = self._session(
                 system,
                 model=self._delivery_model(agent),
-                readonly=agent == "loki",  # loki = read-only 반례 탐색 — 도구로 강제
+                readonly=agent in _DELIVERY_READONLY,  # frontmatter tools 선언 파생 — 반례 탐색은 도구로 강제
                 role=agent,
+                cwd=cwd,
             )
             # claude_cli: 부모 worker 가 spawn permit 을 쥔 채 이 핸들러를 기다린다 —
             # 자식이 permit 을 재요구하면 재진입 데드락 (CUS-246). 재획득 없이 실행.
@@ -686,22 +797,93 @@ class Heimdall:
         먼저 확정한 뒤 예외를 전파한다 — 유실되면 디스크의 쓰기가 게이트에 orphan 으로 남는다."""
         from concurrent.futures import ThreadPoolExecutor, as_completed
 
+        from .. import ui
+
         results: dict = {}  # unit id → 결과 텍스트 (access 컨텍스트 소스)
         all_writes: list[str] = []
         wrp = self.role_rp.get("worker", self.rp)
         used_model = f"{wrp.profile.name}:{self._model_for('worker') or wrp.model}"
 
-        def run_unit(u: dict, writes: list[str]):
+        def record_ticket(u: dict, status: str, *, error: str = "", changed_files: list[str] | None = None) -> None:
+            ql(
+                self.root,
+                "append",
+                session=sid,
+                stdin=json.dumps(
+                    {
+                        "role": "worker" if status != "todo" else "thinker",
+                        "event": "ticket",
+                        "unit": u["id"],
+                        "ticket_status": status,
+                        "subtask": u["subtask"],
+                        "changed_files": changed_files if changed_files is not None else u.get("files", []),
+                        "criteria": u.get("criteria", []),
+                        "access": u.get("access", []),
+                        "ticket_error": error,
+                    }
+                ),
+            )
+
+        ticket_policy = self.policy.get("ticket_runtime") or {}
+        lease_seconds = int(ticket_policy.get("lease_seconds") or 300)
+        max_attempts = int(ticket_policy.get("max_attempts") or 3)
+        isolation = bool(ticket_policy.get("isolation", True))
+
+        def claim_ticket(u: dict) -> str:
+            claimed = ql(
+                self.root,
+                "ticket-claim",
+                "--unit",
+                str(u["id"]),
+                "--worker",
+                f"native:{sid}:{u['id']}",
+                "--lease-seconds",
+                str(lease_seconds),
+                "--max-attempts",
+                str(max_attempts),
+                session=sid,
+            )
+            if claimed.returncode != 0:
+                raise RuntimeError(claimed.stderr.strip() or f"ticket {u['id']} claim failed")
+            return str(json.loads(claimed.stdout)["claim_token"])
+
+        def finish_ticket(u: dict, token: str, status: str, *, error: str = "") -> str:
+            args = [
+                "ticket-finish",
+                "--unit",
+                str(u["id"]),
+                "--claim-token",
+                token,
+                "--status",
+                status,
+            ]
+            if error:
+                args += ["--error", error[:500]]
+            finished = ql(self.root, *args, session=sid)
+            if finished.returncode != 0:
+                raise RuntimeError(finished.stderr.strip() or f"ticket {u['id']} finish failed")
+            return str(json.loads(finished.stdout)["status"])
+
+        for unit in units:
+            record_ticket(unit, "todo")
+
+        def run_unit(u: dict, writes: list[str], cwd: str | None = None):
             # writes 는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
+            # 학습 스킬은 단위 subtask 기준 매칭 — wave 스레드에서 실행되므로 출력은 quiet
+            # 공통 스킬(디버깅·테스트 설계)은 번들 층 — 학습 스킬과 별도 섹션으로 앞에 선다
+            bundled = _worker_note(f"{request} {u['subtask']}")
+            learned = self._learned_note(f"{request} {u['subtask']}", "worker", quiet=True)
+
             def mk(rp=None):
                 return self._session(
-                    _role_prompt("asgard-worker.md") + self.lagom,
+                    _role_prompt("asgard-worker.md") + self.lagom + bundled + learned,
                     extra_tools=[DISPATCH_TOOL],
-                    handlers={"dispatch": self._dispatch_handler(sid, writes)},
+                    handlers={"dispatch": self._dispatch_handler(sid, writes, cwd)},
                     role="worker",
                     model=self._model_for("worker"),
                     quiet=True,
                     rp_override=rp,
+                    cwd=cwd,
                 )
 
             access_ctx = "".join(
@@ -716,58 +898,214 @@ class Heimdall:
             fallback = (lambda: mk(rp=self.rp)) if wrp is not self.rp else None
             return u, self._run_turn(mk, prompt, fallback), writes
 
-        for wave in _plan_waves(units):
+        def run_claimed(u: dict, writes: list[str], token: str, cwd: str | None = None):
+            stop = threading.Event()
+            heartbeat_error: list[str] = []
+
+            def heartbeat() -> None:
+                interval = max(1.0, min(30.0, lease_seconds / 3))
+                while not stop.wait(interval):
+                    beat_result = ql(
+                        self.root,
+                        "ticket-heartbeat",
+                        "--unit",
+                        str(u["id"]),
+                        "--claim-token",
+                        token,
+                        "--lease-seconds",
+                        str(lease_seconds),
+                        session=sid,
+                    )
+                    if beat_result.returncode != 0:
+                        heartbeat_error.append(
+                            (beat_result.stderr or beat_result.stdout or "ticket heartbeat rejected").strip()[:300]
+                        )
+                        stop.set()
+                        return
+
+            beat = threading.Thread(target=heartbeat, name=f"asgard-ticket-{u['id']}", daemon=True)
+            beat.start()
+            try:
+                result = run_unit(u, writes, cwd)
+                if heartbeat_error:
+                    raise RuntimeError(f"ticket lease heartbeat failed: {heartbeat_error[0]}")
+                return result
+            finally:
+                stop.set()
+                beat.join(timeout=0.2)
+
+        for wave in _plan_waves(units, self.root):
             ids = ", ".join(str(u["id"]) for u in wave)
-            self.on_text(f"\n  ⛓ wave [{ids}] — {'병렬 %d단위' % len(wave) if len(wave) > 1 else '단독'}\n")
-            writes_by_id: dict = {u["id"]: [] for u in wave}
-            failures: list[tuple[dict, Exception]] = []
-            outs = []
-            if len(wave) == 1:
-                u0 = wave[0]
-                try:
-                    outs = [run_unit(u0, writes_by_id[u0["id"]])]
-                except Exception as e:
-                    failures.append((u0, e))
-            else:
-                with ThreadPoolExecutor(max_workers=min(3, len(wave))) as ex:
-                    # ex.map 금지 — lazy 예외 재발생이 성공 단위 후처리까지 끊는다 (CUS-247)
-                    futs = {ex.submit(run_unit, u, writes_by_id[u["id"]]): u for u in wave}
-                    for fut in as_completed(futs):
-                        try:
-                            outs.append(fut.result())
-                        except Exception as e:
-                            failures.append((futs[fut], e))
+            wave_note = "병렬 %d단위" % len(wave) if len(wave) > 1 else "단독"
+            self.on_text(f"  {ui.dim(f'│ ⋔ wave [{ids}] — {wave_note}')}\n")
+            pending = list(wave)
             order = {u["id"]: i for i, u in enumerate(wave)}
-            outs.sort(key=lambda o: order[o[0]["id"]])  # 완료순 → 배정순 — 로그 결정론 유지
-            for u, r, writes in outs:
-                unit_writes = writes + [w for w in r.writes if w not in writes]
-                all_writes.extend(w for w in unit_writes if w not in all_writes)
-                results[u["id"]] = r.text[-2000:]
-                self.on_text(f"  ⬢ 단위 {u['id']} 완료 · 파일 {len(unit_writes)}개\n")
-                ql(
-                    self.root,
-                    "append",
-                    session=sid,
-                    stdin=json.dumps(
-                        {
-                            "role": "worker",
-                            "event": "work",
-                            "unit": u["id"],
-                            "changed_files": unit_writes[:50],
-                            "commands": r.commands[-20:],
-                            "model": used_model,
-                        }
-                    ),
-                )
-            if failures:
-                # 실패 단위의 부분 쓰기(디스패치 경유)도 게이트 증거로 확정 후 전파 —
-                # 기록 없이 죽으면 디스크의 쓰기가 다음 세션에서 orphan-write 로 남는다.
-                for u, _ in failures:
-                    all_writes.extend(w for w in writes_by_id[u["id"]] if w not in all_writes)
-                _record_writes(self.root, sid, all_writes)
-                for u, e in failures:
-                    self.on_text(f"  ⚠ 단위 {u['id']} 실패 — {e.__class__.__name__}: {str(e)[:120]}\n")
-                raise failures[0][1]  # fatal = Trinity 중단 의미론 유지 — 성공분 기록만 보존
+            while pending:
+                writes_by_id: dict = {u["id"]: [] for u in pending}
+                workspace_stack = ExitStack()
+                workspaces = {}
+                try:
+                    if isolation:
+                        from .unit_workspace import UnitWorkspace
+
+                        for unit in pending:
+                            workspaces[unit["id"]] = workspace_stack.enter_context(UnitWorkspace(self.root, unit["id"]))
+                    cwd_by_id = {unit["id"]: workspaces[unit["id"]].path if isolation else None for unit in pending}
+                    claims_by_id: dict[str, str] = {}
+                    for unit in pending:
+                        try:
+                            claims_by_id[unit["id"]] = claim_ticket(unit)
+                        except Exception:
+                            # A later claim failure must not strand earlier units until lease expiry.
+                            for claimed in pending:
+                                token = claims_by_id.get(claimed["id"])
+                                if token:
+                                    finish_ticket(claimed, token, "failed", error="wave claim aborted before dispatch")
+                            raise
+                except Exception:
+                    workspace_stack.close()
+                    raise
+                failures: list[tuple[dict, Exception]] = []
+                outs = []
+                actual_writes: dict[object, list[str]] = {}
+                try:
+                    if len(pending) == 1:
+                        u0 = pending[0]
+                        try:
+                            outs = [
+                                run_claimed(
+                                    u0,
+                                    writes_by_id[u0["id"]],
+                                    claims_by_id[u0["id"]],
+                                    cwd_by_id[u0["id"]],
+                                )
+                            ]
+                        except Exception as e:
+                            failures.append((u0, e))
+                    else:
+                        with ThreadPoolExecutor(max_workers=min(3, len(pending))) as ex:
+                            # ex.map 금지 — lazy 예외 재발생이 성공 단위 후처리까지 끊는다 (CUS-247)
+                            futs = {
+                                ex.submit(
+                                    run_claimed,
+                                    u,
+                                    writes_by_id[u["id"]],
+                                    claims_by_id[u["id"]],
+                                    cwd_by_id[u["id"]],
+                                ): u
+                                for u in pending
+                            }
+                            for fut in as_completed(futs):
+                                try:
+                                    outs.append(fut.result())
+                                except Exception as e:
+                                    failures.append((futs[fut], e))
+                    if isolation:
+                        from .unit_workspace import WorkspaceError
+
+                        patches = {u["id"]: workspaces[u["id"]].capture() for u, _, _ in outs}
+                        scope_failed = set()
+                        for u, _, _ in outs:
+                            declared = [
+                                os.path.normpath(str(path)).replace(os.sep, "/").lstrip("./") for path in u["files"]
+                            ]
+                            outside = [
+                                path
+                                for path in patches[u["id"]].paths
+                                if not any(
+                                    path == allowed or path.startswith(allowed.rstrip("/") + "/")
+                                    for allowed in declared
+                                )
+                            ]
+                            if outside:
+                                scope_failed.add(u["id"])
+                                failures.append((u, WorkspaceError("scope violation: " + ", ".join(sorted(outside)))))
+                        outs = [out for out in outs if out[0]["id"] not in scope_failed]
+                        path_owners: dict[str, list[dict]] = {}
+                        for u, _, _ in outs:
+                            for path in patches[u["id"]].paths:
+                                path_owners.setdefault(path, []).append(u)
+                        conflicted = {u["id"] for owners in path_owners.values() if len(owners) > 1 for u in owners}
+                        kept = []
+                        for out in outs:
+                            u = out[0]
+                            if u["id"] in conflicted:
+                                paths = sorted(
+                                    path for path, owners in path_owners.items() if u in owners and len(owners) > 1
+                                )
+                                failures.append((u, WorkspaceError("actual path overlap: " + ", ".join(paths))))
+                                continue
+                            try:
+                                workspaces[u["id"]].apply(patches[u["id"]])
+                                actual_writes[u["id"]] = list(patches[u["id"]].paths)
+                                kept.append(out)
+                            except Exception as e:
+                                failures.append((u, e))
+                        outs = kept
+                finally:
+                    workspace_stack.close()
+                outs.sort(key=lambda o: order[o[0]["id"]])  # 완료순 → 배정순 — 로그 결정론 유지
+                completion_errors: list[Exception] = []
+                for u, r, writes in outs:
+                    unit_writes = actual_writes.get(u["id"], writes + [w for w in r.writes if w not in writes])
+                    all_writes.extend(w for w in unit_writes if w not in all_writes)
+                    # Persist the write sentinel before a potentially failing ticket-finish call.
+                    _record_writes(self.root, sid, all_writes)
+                    results[u["id"]] = r.text[-2000:]
+                    unit_note = f"│ 단위 {u['id']} 완료 · 파일 {len(unit_writes)}개"
+                    self.on_text(f"  {ui.dim(unit_note)}\n")
+                    try:
+                        finish_ticket(u, claims_by_id[u["id"]], "done")
+                    except Exception as e:
+                        # One ticket-control failure must not prevent sibling units' durable
+                        # work events and ticket completions from being recorded.
+                        completion_errors.append(e)
+                    work_event = ql(
+                        self.root,
+                        "append",
+                        session=sid,
+                        stdin=json.dumps(
+                            {
+                                "role": "worker",
+                                "event": "work",
+                                "unit": u["id"],
+                                "changed_files": unit_writes[:50],
+                                "commands": r.commands[-20:],
+                                "model": used_model,
+                            }
+                        ),
+                    )
+                    if work_event.returncode != 0:
+                        completion_errors.append(
+                            RuntimeError(work_event.stderr.strip() or f"ticket {u['id']} work event append failed")
+                        )
+                if completion_errors:
+                    raise RuntimeError("; ".join(str(error) for error in completion_errors))
+                retry: list[dict] = []
+                terminal: list[tuple[dict, Exception]] = []
+                if failures:
+                    # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace의
+                    # 실패 delta는 폐기됐으므로 canonical write sentinel에 거짓 기록하지 않는다.
+                    if not isolation:
+                        for u, _ in failures:
+                            all_writes.extend(w for w in writes_by_id[u["id"]] if w not in all_writes)
+                    _record_writes(self.root, sid, all_writes)
+                    for u, e in failures:
+                        final = finish_ticket(
+                            u,
+                            claims_by_id[u["id"]],
+                            "failed",
+                            error=f"{e.__class__.__name__}: {str(e)[:400]}",
+                        )
+                        if final == "failed":
+                            retry.append(u)
+                            self.on_text(f"  ⚠ 단위 {u['id']} 실패 — 재배정 예정 ({e.__class__.__name__})\n")
+                        else:
+                            terminal.append((u, e))
+                            self.on_text(f"  ⚠ 단위 {u['id']} 실패 — retry budget 소진\n")
+                if terminal:
+                    raise terminal[0][1]
+                pending = retry
         _record_writes(self.root, sid, all_writes)
 
     def _record_outcome(self, task_class: str, result: str, saw_red: bool) -> None:
@@ -791,18 +1129,33 @@ class Heimdall:
         )
 
     # ── Trinity 순환 ─────────────────────────────────────────────────────
-    def _trinity(self, request: str, cls: dict, pre_work=None, standard: bool = False) -> str:
+    def _trinity(
+        self,
+        request: str,
+        cls: dict,
+        pre_work=None,
+        standard: bool = False,
+        pre_base_ref: str | None = None,
+    ) -> str:
         import uuid
 
         qid = f"native-{int(time.time())}-{uuid.uuid4().hex[:6]}"  # 초 단위 충돌 방지
         sid = qid
+        # Heuristic classification intentionally avoids a second LLM call, so it may not
+        # produce criteria. Bind the actual request into a non-empty criterion used by every
+        # subsequent role and by the durable quest gate; do not show Verifier an empty list.
+        if not cls.get("criteria"):
+            cls = {**cls, "criteria": [f"요청 본문과 변경 결과가 일치함: {request[:500]}"]}
         tc = str(cls.get("task_class") or "")
         if tc not in ("trivial", "standard"):
             tc = "deep"  # 미상/파싱 실패는 deep (안전 기본값)
-        args = ["open", qid, "--task-class", tc] + [
-            x for c in (cls["criteria"] or ["요청 충족을 검증 명령으로 입증"]) for x in ("--criteria", c)
-        ]
-        ql(self.root, *args, session=sid)
+        args = ["open", qid, "--task-class", tc] + [x for c in cls["criteria"] for x in ("--criteria", c)]
+        if pre_base_ref:
+            args += ["--base-ref", pre_base_ref]
+        opened = ql(self.root, *args, session=sid)
+        if opened.returncode != 0:
+            detail = (opened.stderr or opened.stdout or "quest open rejected").strip()[:300]
+            return f"⚠ Trinity 시작 거부 — {detail}"
         if pre_work is not None:  # DIRECT 오분류 소급 편입 — 이미 실행된 write 를 work 로 기록
             _record_writes(self.root, sid, list(pre_work.writes))
             ql(
@@ -828,6 +1181,7 @@ class Heimdall:
                 ("--ambiguous", cls["ambiguous"]),
                 ("--external-research", cls["external_research"]),
                 ("--shared", cls["shared"]),
+                ("--parallel-requested", cls.get("parallel_requested", False)),
                 ("--write-expected", True),
             )
             if on
@@ -843,6 +1197,8 @@ class Heimdall:
         gate_blocks = 0
         saw_red = False  # 이 퀘스트에서 하네스 베이스라인 red 관측 — prior 집계 축
         replans = 0  # 재계획 횟수 — 2회+ 는 clean-slate: thinker_alt placement 또는 티어 승급
+        wave_plan_pending = False  # 새 Thinker 계획의 units는 WORKER_RETRY 전이여도 한 번 실행
+        had_wave_plan = False  # wave FAIL을 범위 없는 단일 Worker로 강등하지 않는 latch
         pending: tuple[str, str] | None = None  # 게이트 수리 강제 턴 — next 우회
 
         for t in range(1, budget + 3):  # +2 = grace 판정 턴 + 종료(DONE/게이트) 여지
@@ -855,9 +1211,11 @@ class Heimdall:
                 nxt = json.loads(ql(self.root, "next", *nx_args, session=sid).stdout or "{}")
                 role, why = nxt.get("next_role", ""), nxt.get("why", "")
                 level = nxt.get("verify_level", "micro")
+                if role == "WORKER_RETRY" and ("baseline" in why.lower() or "베이스라인" in why):
+                    last_fail = {"sig": "baseline-red", "why": why[:500]}
             if t > budget and role not in ("VERIFIER", "BASELINE_VERIFY", "DONE", "ESCALATE_ODIN", "DIRECT_DONE"):
                 break  # 예산 소진 — grace 는 판정·종료 전용, 새 작업 턴 금지
-            # 잔량 자기규제 (helios budget-guard 패턴) — 80% 도달 시 범위 축소 지시
+            # 잔량 자기규제 (budget-guard) — 80% 도달 시 범위 축소 지시
             budget_note = f"\n(턴 {t}/{budget}" + (
                 " — 예산 80% 도달: 범위를 좁히고 핵심 criteria 우선, 가정은 `가정:` 으로 기록)"
                 if t >= max(2, int(budget * 0.8))
@@ -891,7 +1249,12 @@ class Heimdall:
                 if p.returncode != 0 or not bj.get("verdict"):
                     pending = ("VERIFIER", "베이스라인 판정 불가 — LLM Verifier 폴백")
                     continue
-                self.on_text(f"  ⚖ 베이스라인 {bj.get('baseline')} → {bj['verdict']}\n")
+                _v = bj["verdict"]  # 판정층(⑤) — 의미색: PASS 녹·FAIL 적
+                _mk, _cl = ("✔", theme.SUCCESS) if _v == "PASS" else ("✘", theme.DANGER)
+                self.on_text(
+                    f"  {ui.paint(theme.ansi(_cl), _mk)} {ui.dim('베이스라인 ' + str(bj.get('baseline')) + ' → ')}"
+                    f"{ui.paint(theme.ansi(_cl), _v)}\n"
+                )
                 if bj["verdict"] == "FAIL":
                     saw_red = True
                     failing = ", ".join(map(str, bj.get("failing") or [])) or "(퀘스트 로그 baseline.results 참조)"
@@ -946,7 +1309,7 @@ class Heimdall:
                     gate_blocks += 1
                     sig = _gate_sig(reason)
                     gate_sigs[sig] = gate_sigs.get(sig, 0) + 1
-                    self.on_text(f"⛔ gate({sig}): {reason[:200]}\n")
+                    self.on_text(f"  {ui.paint(ui._WARN, '!')} {ui.dim(f'gate({sig}): {reason[:200]}')}\n")
                     if sig == "baseline-red":
                         saw_red = True
                     if gate_sigs[sig] >= 2:  # 동일 사유 재차단 = 수리 불가 — fail-open 위장 대신 정직 보고
@@ -960,8 +1323,25 @@ class Heimdall:
                     if sig == "baseline-red":  # 실패 체크 상세를 수리 턴에 주입 (retry 컨텍스트 경로 재사용)
                         last_fail = {"sig": sig, "why": reason[:500]}
                     continue
-                ql(self.root, "close", session=sid)
+                closed = ql(self.root, "close", session=sid)
+                if closed.returncode != 0:
+                    self._record_outcome(tc, "close-rejected", saw_red)
+                    detail = (closed.stderr or closed.stdout or "close rejected").strip()[:300]
+                    return (
+                        "⚠ 완료 게이트 close 거부 — 승인 상태를 기록하지 않았습니다. "
+                        f"{detail} 퀘스트 로그: .asgard/quest/{qid}.jsonl"
+                    )
                 self._record_outcome(tc, "pass", saw_red)
+                try:  # 자가발전 넛지 (CUS-253) — 방금 닫힌 퀘스트가 hard-won(FAIL→PASS)이면 채굴 제안.
+                    # 제안만 한다 — 채굴·승인은 항상 사용자 손 (consent-first, 자동 활성화 없음).
+                    from ..evolution import unmined_signals
+
+                    if unmined_signals(self.root, qid):
+                        self.on_text(
+                            f"  {ui.dim('│ 🌱 hard-won 교훈 감지 — asgard evolve scan 으로 스킬 후보 증류 가능')}\n"
+                        )
+                except Exception:
+                    pass
                 return self._final_report(qid, sid, gate_blocks)
             if role == "ESCALATE_ODIN":
                 self._escalate(sid)
@@ -982,8 +1362,8 @@ class Heimdall:
                 fallback_base_prompt = prompt
                 # 메모리 주입 (Thinker 한정) — 스냅샷(카탈로그)은 시스템에, 요청 기반 회수는
                 # 과업 프롬프트에. 게이트는 이 역할이 실제로 붙는 provider 기준 (배치 승격 포함).
-                primary_memory_allowed = self._mem_allowed(rrp.profile.name)
-                fallback_memory_allowed = self._mem_allowed(self.rp.profile.name)
+                primary_memory_allowed = self._mem_allowed(rrp.profile.name, rrp.source)
+                fallback_memory_allowed = self._memory_provider_allowed
                 thinker_mem = self._memory_snap if primary_memory_allowed else ""
                 thinker_recall = ""
                 if primary_memory_allowed or fallback_memory_allowed:
@@ -1006,7 +1386,7 @@ class Heimdall:
                             _role_prompt("asgard-thinker.md")
                             + self.lagom
                             + ch
-                            + (self._memory_snap if self._mem_allowed(self.rp.profile.name) else ""),
+                            + (self._memory_snap if self._memory_provider_allowed else ""),
                             role=rl,
                             readonly=True,
                             rp_override=self.rp,
@@ -1022,6 +1402,7 @@ class Heimdall:
                 fallback_prompt += _UNITS_NOTE + budget_note
                 r = self._run_turn(mk, primary_prompt, fb, fallback_prompt=fallback_prompt)
                 plan_ctx = r.text
+                wave_plan_pending = True
                 # 탐색 캐시 힌트 — 게이트 증거 아님, 컨텍스트 힌트만 ("게이트는 메모리 불신")
                 explored = list(dict.fromkeys(str(c.get("cmd", ""))[:80] for c in r.commands if isinstance(c, dict)))[
                     :15
@@ -1036,16 +1417,64 @@ class Heimdall:
                     ),
                 )
             elif role in ("WORKER", "WORKER_RETRY"):
-                units = _parse_units(plan_ctx) if role == "WORKER" else None
-                if units:  # wave 병렬 디스패치 — 재시도는 단일 경로 (실패 컨텍스트 집중)
+                new_plan = wave_plan_pending
+                if role == "WORKER_RETRY" and had_wave_plan and not new_plan:
+                    pending = (
+                        "THINKER_REPLAN",
+                        "병렬 wave 결과 검증 실패 — 실패 단위를 재분해·재배정하고 범위 없는 Worker 강등은 금지",
+                    )
+                    structural = True
+                    continue
+                units = _parse_units(plan_ctx) if role == "WORKER" or new_plan else None
+                wave_plan_pending = False
+                if new_plan and cls.get("parallel_requested"):
+                    waves = _plan_waves(units, self.root) if units else []
+                    if not units or not any(len(wave) > 1 for wave in waves):
+                        reason = (
+                            "명시적 병렬 요청인데 유효한 독립 Worker wave가 없음 — "
+                            "2개 이상의 비중첩 단위와 올바른 access graph로 재계획"
+                        )
+                        last_fail = {
+                            "sig": "invalid-parallel-plan",
+                            "why": reason,
+                            "criteria": cls["criteria"],
+                            "commands": [{"cmd": "unit-plan-validation", "exit_code": 1}],
+                        }
+                        fail_history.append(f"invalid-parallel-plan: {reason}")
+                        structural = True
+                        ql(
+                            self.root,
+                            "append",
+                            "--verdict",
+                            "FAIL",
+                            "--level",
+                            "full",
+                            session=sid,
+                            stdin=json.dumps(
+                                {
+                                    "role": "harness",
+                                    "event": "verify",
+                                    "criteria": cls["criteria"],
+                                    "commands": [{"cmd": "unit-plan-validation", "exit_code": 1}],
+                                    "failure_sig": "invalid-parallel-plan",
+                                }
+                            ),
+                        )
+                        pending = ("THINKER_REPLAN", reason)
+                        continue
+                if units:  # 새 Thinker 계획은 wave, 같은 계획의 경미한 재시도는 단일 경로
+                    had_wave_plan = True
                     self._run_worker_waves(sid, request, units, budget_note)
                     continue
                 writes: list[str] = []
 
-                def mk_worker(m=model, w=writes, s_id=sid, rl="worker", rp=None):
+                bundled_note = _worker_note(request)  # 번들 공통 스킬 (디버깅·테스트 설계)
+                learned_note = self._learned_note(request, "worker")
+
+                def mk_worker(m=model, w=writes, s_id=sid, rl="worker", rp=None, bn=bundled_note, ln=learned_note):
                     # verifier 는 무주입 (mk_verifier) — 게이트 기준이 lagom 으로 흔들리면 안 된다
                     return self._session(
-                        _role_prompt("asgard-worker.md") + self.lagom,
+                        _role_prompt("asgard-worker.md") + self.lagom + bn + ln,
                         extra_tools=[DISPATCH_TOOL],
                         handlers={"dispatch": self._dispatch_handler(s_id, w)},
                         role=rl,
@@ -1073,13 +1502,13 @@ class Heimdall:
                 fb = (lambda mw=mk_worker: mw(m=None, rl="worker", rp=self.rp)) if rrp is not self.rp else None
                 worker_prompt = f"과업: {request}\n\n계획:\n{plan_part}{explore_note}\n{retry_note}{budget_note}"
                 fallback_worker_prompt = worker_prompt
-                primary_memory_allowed = standard and self._mem_allowed(rrp.profile.name)
-                fallback_memory_allowed = standard and self._mem_allowed(self.rp.profile.name)
+                primary_memory_allowed = standard and self._mem_allowed(rrp.profile.name, rrp.source)
+                fallback_memory_allowed = standard and self._memory_provider_allowed
                 worker_recall = ""
                 if primary_memory_allowed or fallback_memory_allowed:
-                    from ..memory import recall_note as _personal_recall
+                    from ..memory_context import recall_note as _project_recall
 
-                    worker_recall = _personal_recall(request)
+                    worker_recall = _project_recall(request, start=self.root)
                 if primary_memory_allowed:
                     worker_prompt += worker_recall
                 if fallback_memory_allowed:
@@ -1136,6 +1565,7 @@ class Heimdall:
                     f"required level: {level}\n"
                     f"하니스 관측 변경 파일: {changed} (diff_lines={st.get('diff_lines', '?')}) — "
                     f"`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
+                    "Bash 명령은 shell 연산자(; && || 리다이렉션)로 합치지 말고 각각 별도 호출하라.\n"
                     f"Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출.\n"
                     f"FAIL 이 접근 자체의 결함이면 structural=true 로 제출하라 (재계획 트리거).",
                     fb,
@@ -1149,6 +1579,13 @@ class Heimdall:
                         "criteria": cls["criteria"],
                         "failure_sig": "no-verdict-submitted",
                         "why": "verdict 툴 미제출",
+                    }
+                elif v.get("verdict") not in {"PASS", "FAIL", "ESCALATE"}:
+                    v = {
+                        "verdict": "FAIL",
+                        "criteria": cls["criteria"],
+                        "failure_sig": "invalid-verdict-submitted",
+                        "why": "verdict 값은 PASS|FAIL|ESCALATE 중 하나여야 함",
                     }
                 elif v.get("verdict") == "PASS" and not any(
                     c.get("exit_code") == 0 and not _trivial_evidence(c.get("cmd", "")) for c in observed
@@ -1185,7 +1622,7 @@ class Heimdall:
                     )
                 else:
                     last_fail = None
-                ql(
+                appended = ql(
                     self.root,
                     "append",
                     "--verdict",
@@ -1195,6 +1632,10 @@ class Heimdall:
                     session=sid,
                     stdin=json.dumps(ev),
                 )
+                if appended.returncode != 0:
+                    self._record_outcome(tc, "verify-append-rejected", saw_red)
+                    detail = (appended.stderr or appended.stdout or "verifier append rejected").strip()[:300]
+                    return f"⚠ Verifier 판정 기록 거부 — {detail} 퀘스트는 ACTIVE로 유지됩니다."
             else:
                 return f"⚠ 미지의 전이 상태 '{role}' — Odin 보고 (퀘스트 로그: .asgard/quest/{qid}.jsonl)"
 
@@ -1288,19 +1729,23 @@ class Heimdall:
         가드: classify 오판으로 DIRECT 세션이 파일을 쓰면 — editor writes 또는
         워킹트리 fingerprint 변화 — 소급 퀘스트를 열어 Verifier 판정 + 게이트를 강제한다.
         mode B 의 orphan-write 봉인의 네이티브 등가물 (native 엔 Stop 훅이 없다)."""
+        from ..hooks.quest_log import snapshot_ref
+
         before = self._worktree_dirty()
+        before_ref = snapshot_ref(self.root)
         # REPL 턴 간 대화 맥락 — 직전 문답 요약을 앞에 붙인다 (후속 질문 "그건 왜?" 가 성립하게).
         # Trinity 경로엔 안 붙인다 — write 과업은 요청+계획이 맥락의 전부여야 한다 (Canon 7 범위 존중).
         ctx = "".join(f"[이전 문답]\nOdin: {q}\n응답: {a}\n\n" for q, a in self.history[-3:])
         # 요청 기반 zero-LLM 회수 (감사 권고) — 카탈로그(identity)와 별개로 관련 페이지를 결정론 주입.
         recall = ""
-        if self._mem_allowed(self.rp.profile.name):
+        if self._memory_provider_allowed:
             from ..memory_context import recall_note as _recall
 
             recall = _recall(request, start=self.root)
         active_lagom = bool(self.lagom)
         # 활성 모드는 검사 전 초안이 터미널에 스트리밍되면 회수할 수 없다. 검사 완료까지 버퍼링한다.
-        r = self._session(self.identity, role="direct", readonly=True, quiet=active_lagom).run(
+        live_identity = self.delivery_identity + (self._memory_snap if self._memory_provider_allowed else "")
+        r = self._session(live_identity + _mimir_note(request), role="direct", readonly=True, quiet=active_lagom).run(
             (ctx + request if ctx else request) + recall
         )
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
@@ -1317,7 +1762,7 @@ class Heimdall:
                 "criteria": [],
                 "task_class": "standard",
             }
-            return self._trinity(request, cls, pre_work=r)
+            return self._trinity(request, cls, pre_work=r, pre_base_ref=before_ref)
         final = self._enforce_lagom_text(request, r.text)
         self._explore_cmds = len(r.commands)  # 탐색량 — _finalize_memory 증류 넛지 문턱 (순수 DIRECT 한정)
         self.last_response_text = final
@@ -1361,7 +1806,7 @@ class Heimdall:
         # 탐색 발견 증류 (개인 Tier0) — 프로젝트 backend 유무와 무관. 탐색이 컸던 순수 DIRECT
         # 턴의 위치 지식을 기존 ingest 승인 게이트로 안내한다 (숏컷 벤치 26-07-16 근거).
         try:
-            if self._explore_cmds >= _EXPLORE_NUDGE_MIN and self._mem_allowed(self.rp.profile.name):
+            if self._explore_cmds >= _EXPLORE_NUDGE_MIN and self._memory_provider_allowed:
                 from ..memory import distill_nudge
 
                 nudge = distill_nudge(request, response, self.root)

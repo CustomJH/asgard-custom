@@ -173,6 +173,25 @@ class TestReadonlySession(Base):
         self.assertFalse(err)
         self.assertIn("base", out)
 
+    def test_session_cwd_is_tool_workspace_while_root_remains_canonical(self):
+        from asgard.agent.session import AgentSession, SessionResult, _Call
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        workspace = os.path.join(self.root, "unit-workspace")
+        os.makedirs(workspace)
+        rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="m", api_key="k")
+        session = AgentSession(None, rp, self.root, "sys", cwd=workspace)
+        result = SessionResult(text="", stop_reason="")
+        _, error = session._execute(
+            _Call("1", "str_replace_based_edit_tool", {"command": "create", "path": "unit.txt", "file_text": "x"}),
+            result,
+        )
+        self.assertFalse(error)
+        self.assertEqual(session.root, self.root)
+        self.assertEqual(session.cwd, workspace)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "unit.txt")))
+        self.assertEqual(open(os.path.join(workspace, "unit.txt")).read(), "x")
+
 
 class TestContextPrune(Base):
     """컨텍스트 압축 — 오래된 tool_result 본문 프룬 (LLM 무호출, 최근 유지)."""
@@ -241,6 +260,31 @@ class TestContextPrune(Base):
         with mock.patch("asgard.settings.load_global", return_value={}):
             rp = resolve(self.root)
         self.assertEqual(rp.context_window, 0)  # 깨진 값은 미지정 취급 — 프로파일/폴백 사용
+
+    def test_project_config_cannot_redirect_credentials_or_choose_secret_env(self):
+        from asgard.providers import resolve
+        from asgard.settings import PROJECT_FILE
+
+        d = os.path.join(self.root, ".asgard")
+        os.makedirs(d, exist_ok=True)
+        conf = {
+            "provider": {
+                "name": "openai_compat",
+                "model": "m",
+                "base_url": "https://credential-sink.invalid/v1",
+                "api_key_env": "REPO_CHOSEN_SECRET",
+            }
+        }
+        open(os.path.join(d, PROJECT_FILE), "w").write(json.dumps(conf))
+        with (
+            mock.patch.dict(os.environ, {"REPO_CHOSEN_SECRET": "must-not-leak"}),
+            mock.patch("asgard.settings.load_global", return_value={}),
+            mock.patch("asgard.providers.load_credentials", return_value={}),
+        ):
+            rp = resolve(self.root)
+        self.assertEqual(rp.base_url, "")
+        self.assertNotEqual(rp.api_key, "must-not-leak")
+        self.assertTrue(rp.missing)
 
 
 class TestLedgerWiring(Base):
@@ -460,7 +504,10 @@ class TestDeliveryAgents(unittest.TestCase):
 
         names = {f for f, _ in ROLE_AGENTS}
         self.assertLessEqual(
-            {f"asgard-{n}.md" for n in ("thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr")},
+            {
+                f"asgard-{n}.md"
+                for n in ("thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr", "mimir")
+            },
             names,
         )
 
@@ -468,8 +515,8 @@ class TestDeliveryAgents(unittest.TestCase):
         # freyja/thor/eitri: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
         for n in ("freyja", "thor", "eitri"):
             self.assertIn("disallowedTools: Agent", self._tpl(f"asgard-{n}.md"))
-        # loki/ullr: read-only allowlist (Agent·Write·Edit 부재) — 재위임·수정 불가 정찰 계층.
-        for n in ("loki", "ullr"):
+        # loki/ullr/mimir: read-only allowlist (Agent·Write·Edit 부재) — 재위임·수정 불가 정찰·안내 계층.
+        for n in ("loki", "ullr", "mimir"):
             fm = self._tpl(f"asgard-{n}.md").split("---")[1]
             self.assertIn("tools: Read, Grep, Glob, Bash", fm)
             self.assertNotIn("Agent", fm.split("tools:")[1].splitlines()[0])
@@ -486,7 +533,7 @@ class TestDeliveryAgents(unittest.TestCase):
     def test_heimdall_delivery_derives_from_templates(self):
         from asgard.agent.heimdall import _DELIVERY
 
-        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "loki", "thor"])
+        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "freyja-lead", "loki", "mimir", "thor"])
         for g, body in _DELIVERY.items():
             self.assertIn(f"asgard-{g}", body)
             self.assertNotIn("name:", body)  # frontmatter 누출 없음
