@@ -13,11 +13,60 @@ from ..platform import hook_python, on_path
 from ..templates.roles import ROLE_AGENTS
 
 
+def _shared_memory_check(root: str) -> dict | None:
+    """설정된 프로젝트 메모리의 trust·exact binding·readiness를 Trinity와 독립 진단한다."""
+    try:
+        from ..memory_bridge import find_config, is_backend_trusted, verify_backend_binding
+        from ..project_memory_backends import get_backend
+
+        found = find_config(root, strict=True)
+        if not found:
+            return None
+        _, mcfg = found
+        try:
+            if not is_backend_trusted(mcfg):
+                raise PermissionError("untrusted backend target; run asgard memory connect")
+            backend = get_backend(mcfg)
+            try:
+                binding = verify_backend_binding(mcfg, backend=backend)
+                readiness = backend.readiness()
+                enabled = [name for name, supported in asdict(backend.capabilities()).items() if supported]
+                engine, project_id = backend.engine, backend.project_id
+            finally:
+                backend.close()
+            detail = (
+                f"engine={engine} · project_id={project_id} · {readiness.status}"
+                + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
+                + (f" · capabilities={','.join(enabled)}" if enabled else "")
+                + (f" · {readiness.detail}" if readiness.detail else "")
+            )
+            ok = readiness.status == "ready"
+        except Exception as exc:
+            detail = f"engine={mcfg.get('engine', 'hindsight')} · unavailable · {type(exc).__name__}: {exc}"
+            ok = False
+        return {
+            "name": "shared memory backend",
+            "ok": ok,
+            "detail": detail,
+            "fix": "" if ok else "backend/plugin 설치·기동·인증 확인 또는 asgard memory connect 재설정",
+            "security": True,
+        }
+    except Exception as exc:
+        return {
+            "name": "shared memory backend",
+            "ok": False,
+            "detail": f"diagnostic failed closed · {type(exc).__name__}: {exc}",
+            "fix": "프로젝트 memory 설정을 점검하고 asgard memory connect 재실행",
+            "security": True,
+        }
+
+
 def _trinity_checks(root: str) -> list[dict]:
     """Trinity 에셋 진단 — AGENTS.md 가 있는 프로젝트에서만. 각 항목의 fix 는 전부 동일한 처방
     (setup --force 재실행)이라 개별 복구 절차를 안내하지 않는다."""
+    memory_check = _shared_memory_check(root)
     if not os.path.exists(os.path.join(root, "AGENTS.md")):
-        return []
+        return [memory_check] if memory_check else []
     fix = "asgard setup --force 로 Trinity 에셋 재설치"
     checks = []
     try:
@@ -126,44 +175,8 @@ def _trinity_checks(root: str) -> list[dict]:
                 "fix": fix,
             }
         )
-    # 선택형 공유 메모리 backend — 설정된 프로젝트만, readiness/capability advisory.
-    try:
-        from ..memory_bridge import find_config, is_backend_trusted, verify_backend_binding
-        from ..project_memory_backends import get_backend
-
-        found = find_config(root)
-        if found:
-            _, mcfg = found
-            try:
-                if not is_backend_trusted(mcfg):
-                    raise PermissionError("untrusted backend target; run asgard memory connect")
-                backend = get_backend(mcfg)
-                try:
-                    binding = verify_backend_binding(mcfg, backend=backend)
-                    readiness = backend.readiness()
-                    enabled = [name for name, supported in asdict(backend.capabilities()).items() if supported]
-                finally:
-                    backend.close()
-                detail = (
-                    f"engine={backend.engine} · project_id={backend.project_id} · {readiness.status}"
-                    + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
-                    + (f" · capabilities={','.join(enabled)}" if enabled else "")
-                    + (f" · {readiness.detail}" if readiness.detail else "")
-                )
-                ok = readiness.status == "ready"
-            except Exception as exc:
-                detail = f"engine={mcfg.get('engine', 'hindsight')} · unavailable · {type(exc).__name__}: {exc}"
-                ok = False
-            checks.append(
-                {
-                    "name": "shared memory backend",
-                    "ok": ok,
-                    "detail": detail,
-                    "fix": "" if ok else "backend/plugin 설치·기동·인증 확인 또는 asgard memory connect 재설정",
-                }
-            )
-    except Exception:
-        pass
+    if memory_check:
+        checks.append(memory_check)
     # 코드베이스 지도 — 유령 엔트리(디스크에 없는 경로) 탐지 (지도 문법 3: 실재만 기재).
     # INDEX.md 는 규칙 문서(예시 엔트리 포함)라 제외. 영역 파일이 아직 없는 건 정상 (fog-of-war).
     from ..code_map import MapError, check_map
@@ -315,6 +328,51 @@ def _trinity_checks(root: str) -> list[dict]:
             )
     except Exception:
         pass
+    # skill bank (자가발전 CUS-255) — learned 스킬 수·stale 후보·인박스 대기. 라이브러리는
+    # 성장이 아니라 큐레이션이 자산이다 — stale 은 asgard evolve archive 처방.
+    try:
+        import time as _time
+
+        from ..evolution import pending_list, unmined_signals
+        from ..skill_bank import learned_skills, usage
+
+        skills = learned_skills(root)
+        pend = len(pending_list(root))
+        unmined = unmined_signals(root)
+        if skills or pend or unmined:
+            use = usage(root)
+            cutoff = _time.time() - 30 * 86400
+
+            def _last_seen(n: str) -> float:
+                # 미사용 스킬은 생성일 기준 — 방금 승인된 스킬을 stale 로 오판하지 않는다
+                lu = use.get(n, {}).get("last_used")
+                fmt, val = ("%Y-%m-%dT%H:%M:%SZ", lu) if lu else ("%Y-%m-%d", skills[n].get("created"))
+                try:
+                    import calendar as _cal
+
+                    # 기록은 gmtime(UTC) — mktime(로컬 해석)이면 stale 경계가 오프셋만큼 어긋난다
+                    return _cal.timegm(_time.strptime(str(val), fmt))
+                except ValueError, TypeError:
+                    return _time.time()  # 날짜 불명 = 판정 보류 (fail-open)
+
+            stale = [n for n in skills if _last_seen(n) < cutoff]
+            parts = [f"learned {len(skills)}개"]
+            if stale:
+                parts.append(f"stale(30일+ 미사용) {len(stale)}: {', '.join(stale[:5])}")
+            if pend:
+                parts.append(f"인박스 대기 {pend}건 (asgard evolve list)")
+            if unmined:
+                parts.append(f"미채굴 신호 {unmined}건 (asgard evolve scan)")
+            checks.append(
+                {
+                    "name": "skill bank (self-evolution)",
+                    "ok": not stale,
+                    "detail": " · ".join(parts),
+                    "fix": "stale 스킬은 asgard evolve archive <name> 로 보관 (삭제 아님, 복원 가능)",
+                }
+            )
+    except Exception:
+        pass
     return checks
 
 
@@ -349,7 +407,8 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
         },
     ]
     checks += _trinity_checks(os.getcwd())
-    ok = bool(asgard)  # self-contained CLI; only PATH wiring is fatal here.
+    security_ok = all(ch["ok"] for ch in checks if ch.get("security"))
+    ok = bool(asgard) and security_ok
     runtime = f"python {sys.version.split()[0]}"
 
     if json_out:

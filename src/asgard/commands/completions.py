@@ -25,6 +25,7 @@ _SUMMARY = {
     "role": "Trinity role bridge",
     "tools": "inspect role-scoped tool catalog",
     "memory": "personal memory — LLM wiki",
+    "evolve": "self-evolution inbox — skill drafts",
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
@@ -39,6 +40,7 @@ _FLAGS = {
     "role": [],
     "tools": [],
     "memory": [],
+    "evolve": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
     "--provider": ["anthropic", "openai_compat", "nvidia"],
@@ -51,9 +53,20 @@ _SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bas
 _SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
 _ROLE_SUB = {"list": "bridge flags + role placements", "run": "run one role turn"}
 _ROLES = ["thinker", "worker", "verifier"]
-_TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr"]
+_TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr", "mimir"]
 _TOOLS_SUB = {"list": "list native + Claude Code role tools"}
 _SETUP_SUB = {"map": "draw or refresh the project code map"}
+_EVOLVE_SUB = {
+    "scan": "mine quest logs into pending drafts",
+    "list": "list pending skill drafts",
+    "show": "print one pending draft",
+    "approve": "validate and install a draft",
+    "reject": "reject a draft (latched)",
+    "polish": "LLM-rewrite a pending draft",
+    "bench": "A/B a learned skill OFF vs ON",
+    "archive": "retire a learned skill (reversible)",
+    "restore": "bring an archived skill back",
+}
 _MEM_SUB = {
     "add": "add a page",
     "ingest": "absorb knowledge (dedup-merge)",
@@ -143,6 +156,13 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_MEM_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
+        elif name == "evolve":
+            cases.append(
+                "    evolve)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_EVOLVE_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
         else:
             args = _SHELLS if name == "completions" else []
             words = " ".join(args + _FLAGS[name] + ["--help"])
@@ -223,6 +243,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_MEM_SUB)} --help\n"
                 "      fi ;;"
             )
+        elif name == "evolve":
+            cases.append(
+                "    evolve)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_EVOLVE_SUB)} --help\n"
+                "      fi ;;"
+            )
         else:
             args = _SHELLS if name == "completions" else []
             cases.append(f"    {name}) compadd -- {' '.join(args + _FLAGS[name] + ['--help'])} ;;")
@@ -273,6 +300,9 @@ def _fish() -> str:
     mem_top = "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from " + " ".join(_MEM_SUB)
     for sub, desc in _MEM_SUB.items():
         lines.append(f"complete -c asgard -n \"{mem_top}\" -a {sub} -d '{desc}'")
+    evo_top = "__fish_seen_subcommand_from evolve; and not __fish_seen_subcommand_from " + " ".join(_EVOLVE_SUB)
+    for sub, desc in _EVOLVE_SUB.items():
+        lines.append(f"complete -c asgard -n \"{evo_top}\" -a {sub} -d '{desc}'")
     tools_top = "__fish_seen_subcommand_from tools; and not __fish_seen_subcommand_from " + " ".join(_TOOLS_SUB)
     for sub, desc in _TOOLS_SUB.items():
         lines.append(f"complete -c asgard -n \"{tools_top}\" -a {sub} -d '{desc}'")

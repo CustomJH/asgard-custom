@@ -169,7 +169,7 @@ app.add_typer(tools_app, name="tools")
 
 @tools_app.command("list", help="list native + Claude Code tools for one role")
 def tools_list(
-    role: str = typer.Option("worker", "--role", help="thinker|worker|verifier|freyja|thor|eitri|loki"),
+    role: str = typer.Option("worker", "--role", help="thinker|worker|verifier|freyja|thor|eitri|loki|ullr|mimir"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.tools import run_tools_list
@@ -359,6 +359,86 @@ def memory_mcp() -> None:
     from .commands.memory import run_mcp
 
     raise typer.Exit(run_mcp())
+
+
+# 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 승인만이 활성화 경로.
+evolve_app = typer.Typer(
+    help="self-evolution inbox — mine quest logs into skill drafts, then approve", no_args_is_help=True
+)
+app.add_typer(evolve_app, name="evolve")
+
+
+@evolve_app.command("scan", help="mine quest logs for hard-won lessons (FAIL→PASS) into pending drafts")
+def evolve_scan() -> None:
+    from .commands.evolve import run_scan
+
+    raise typer.Exit(run_scan())
+
+
+@evolve_app.command("list", help="list pending skill drafts (edit the files before approving if needed)")
+def evolve_list() -> None:
+    from .commands.evolve import run_list
+
+    raise typer.Exit(run_list())
+
+
+@evolve_app.command("show", help="print one pending draft (SKILL.md)")
+def evolve_show(cid: str = typer.Argument(..., metavar="<id>")) -> None:
+    from .commands.evolve import run_show
+
+    raise typer.Exit(run_show(cid))
+
+
+@evolve_app.command("approve", help="validate and install a draft — routes on the next dispatch, no restart")
+def evolve_approve(cid: str = typer.Argument(..., metavar="<id>")) -> None:
+    from .commands.evolve import run_approve
+
+    raise typer.Exit(run_approve(cid))
+
+
+@evolve_app.command("reject", help="reject a draft — the same signal is never proposed again")
+def evolve_reject(
+    cid: str = typer.Argument(..., metavar="<id>"),
+    reason: str = typer.Option("", "--reason", help="optional note (kept for distillation-quality audits)"),
+) -> None:
+    from .commands.evolve import run_reject
+
+    raise typer.Exit(run_reject(cid, reason))
+
+
+@evolve_app.command("polish", help="LLM-rewrite a pending draft into principle-level prose (opt-in; stays pending)")
+def evolve_polish(cid: str = typer.Argument(..., metavar="<id>")) -> None:
+    from .commands.evolve import run_polish
+
+    raise typer.Exit(run_polish(cid))
+
+
+@evolve_app.command("bench", help="A/B a learned skill OFF vs ON — MAD-confidence keep/discard verdict")
+def evolve_bench(
+    skill: str = typer.Argument(..., metavar="<skill-name>"),
+    cmd: str = typer.Option(..., "--cmd", help="bench command printing `METRIC <name>=<float>` to stdout"),
+    metric: str = typer.Option(..., "--metric", help="metric name to parse from the command output"),
+    runs: int = typer.Option(5, "--runs", help="runs per arm (needs ≥3 for a verdict)"),
+    direction: str = typer.Option("min", "--direction", help="min (lower is better) | max"),
+    timeout: int = typer.Option(600, "--timeout", help="seconds per run"),
+) -> None:
+    from .commands.evolve import run_bench
+
+    raise typer.Exit(run_bench(skill, cmd, metric, runs, direction, timeout))
+
+
+@evolve_app.command("archive", help="retire a learned skill without deleting it (reversible)")
+def evolve_archive(name: str = typer.Argument(..., metavar="<skill-name>")) -> None:
+    from .commands.evolve import run_archive
+
+    raise typer.Exit(run_archive(name))
+
+
+@evolve_app.command("restore", help="bring an archived learned skill back into routing")
+def evolve_restore(name: str = typer.Argument(..., metavar="<skill-name>")) -> None:
+    from .commands.evolve import run_restore
+
+    raise typer.Exit(run_restore(name))
 
 
 @app.command(help="run one task headless through the native Trinity loop (benches/CI)")
