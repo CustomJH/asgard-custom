@@ -12,7 +12,16 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from asgard.templates.freyja import FREYJA_SKILLS, freyja_core_skill, resolve_freyja_skills  # noqa: E402
 
-_SKILL_NAMES = ("asgard-freyja-brisingamen", "asgard-freyja-motion", "asgard-freyja-video", "asgard-freyja-folkvangr")
+_SKILL_NAMES = (
+    "asgard-freyja-brisingamen",
+    "asgard-freyja-motion",
+    "asgard-freyja-video",
+    "asgard-freyja-folkvangr",
+    "asgard-freyja-hildisvini",
+    "asgard-freyja-seidr",
+    "asgard-freyja-valshamr",
+    "asgard-freyja-valkyrja",
+)
 
 
 class TestScaffold(unittest.TestCase):
@@ -82,11 +91,31 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("옵티컬 보정", taste)  # 오버슛·시각적 중심·조사 현상
         self.assertIn("마스코트화", taste)  # 유치함의 공식
         self.assertIn("가변 아이덴티티 세트", taste)  # 2026 트렌드
+        self.assertIn("판정 위계", taste)  # 수치=바닥, 미감=승부처 (26-07-17 굿하트 교훈)
+        self.assertIn("극단 제약은 가변 세트가 흡수한다", taste)  # 16px 이 풀 마크를 지배하면 오판
+        self.assertIn("취향 선언(앵커)", taste)  # 오딘이 반응한 자산은 밀어낼 기본값이 아니다
         self.assertIn("트렌드는 이동한다", taste)  # 재조사 의무
         self.assertIn("의미 1문장", taste)  # 형상의 존재 이유
         # 인쇄물 절 (26-07-15 QC 스윕 유보 사항 종결 — 팜플렛 실증에서 증류)
         self.assertIn("콜로폰 동봉 의무", taste)  # CMYK 근사·용지·교정쇄 명시
         self.assertIn("브라우저는 실인쇄를 검증 못 한다", taste)  # 한계 정직 보고
+
+    def test_taste_pixel_craft_anchors(self):
+        # 26-07-16 강화 — impeccable·brandkit·figma-implement·designer-skills·실측 기준선 증류
+        taste = self.by_name["asgard-freyja-brisingamen"]
+        self.assertIn("2차 반사 검사", taste)  # 카테고리 반사 — 회피의 정형화도 반사
+        self.assertIn("placeholder 텍스트도 대비 4.5:1", taste)  # 가독성 파괴 1위 실측
+        self.assertIn("999/9999", taste)  # z-index 시맨틱 스케일
+        self.assertIn("드리프트 3분류", taste)  # 폴리시 순서 — 분류별 수리법
+        self.assertIn("8상태", taste)  # 인터랙티브 전수 점검
+        self.assertIn("−2%~−6%", taste)  # 디스플레이 트래킹 실측 대역
+        self.assertIn("표면 명도 사다리", taste)  # 다크 무섀도 — 실측 드롭섀도 0
+        self.assertIn("5질문", taste)  # 브랜드 서사 전략 게이트
+        self.assertIn("브랜드 킷 문서", taste)  # 보드 패널 시퀀스
+        self.assertIn("핸드오프 문서", taste)  # 전달 문서 5섹션 계약
+        self.assertIn("해피패스만 적힌 스펙은 스펙이 아니다", taste)
+        self.assertIn("스크린샷 기준선", taste)  # 디자인 컨텍스트 구현 — 기준선 선확보
+        self.assertIn("placeholder 생성 금지", taste)  # figma-implement 금지 조항
 
     def test_motion_anchors(self):
         motion = self.by_name["asgard-freyja-motion"]
@@ -99,6 +128,18 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn('start: "top top"', motion)  # 핀 시작점 대표 실패
         self.assertIn("scrollWidth - innerWidth", motion)  # 수평 팬 거리 공식
         self.assertIn("엔진 혼용 금지", motion)  # 같은 트리 프레임 경합
+
+    def test_motion_review_anchors(self):
+        # 26-07-16 강화 — design-motion-principles(3렌즈·빈도)·impeccable animate·MoVer 절차화
+        motion = self.by_name["asgard-freyja-motion"]
+        self.assertIn("빈도 게이트", motion)
+        self.assertIn("키보드 개시 동작", motion)  # 키보드 = 애니메이션 금지
+        self.assertIn("80ms", motion)  # 즉시 지각 임계
+        self.assertIn("절제 렌즈", motion)  # 3렌즈 — 컨텍스트 가중
+        self.assertIn("모션 갭 감사", motion)  # 없는 모션도 결함
+        self.assertIn("슬롭 지문", motion)  # 빈도 임계 달린 7종
+        self.assertIn("93.6%", motion)  # MoVer 검증-반복 실측
+        self.assertIn("실패한 술어만", motion)  # 표적 수정 — 전체 재생성 금지
 
     def test_video_anchors(self):
         video = self.by_name["asgard-freyja-video"]
@@ -117,6 +158,90 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("AA 항상 마지막", fk)  # 포스트 패스 순서 계약
         self.assertIn("asgard-freyja-video", fk)  # 영상 산출 시 결정론 우선 (오염 방지)
         self.assertIn("씬이 상속한다", fk)  # 통합 원칙 — 토큰 계획이 씬을 지배
+
+    def test_hildisvini_anchors(self):
+        hv = self.by_name["asgard-freyja-hildisvini"]
+        self.assertIn("도구 사다리", hv)  # 세션 도구 → 기존 스택 → 신규(Canon 7 동의)
+        self.assertIn("고정 sleep 금지", hv)  # 조건 기반 대기
+        self.assertIn("test-id", hv)  # 셀렉터 위계
+        self.assertIn("nth-child", hv)  # 구조 의존 셀렉터 경고
+        self.assertIn("콘솔 오류 0", hv)  # 증거 수집 — 관찰 없는 주장 금지
+        self.assertIn("2뷰포트", hv)
+        self.assertIn("해피패스만은 검증이 아니다", hv)  # 파괴 경로 골격
+        self.assertIn("핸들러를 선등록", hv)  # dialog 함정
+        self.assertIn("쿠키·스토리지·세션을 시나리오마다 초기화", hv)  # 상태 격리
+        self.assertIn("판정은 Verifier 몫", hv)  # 게이트 경계
+        self.assertIn("asgard-worker-testing", hv)  # 테스트 계층 상호 참조
+        # 26-07-16 강화 — webapp-testing·playwright-skill 조사 증류
+        self.assertIn("모드 이분법", hv)  # 검증 headless vs 시각 반복 headed
+        self.assertIn("network idle", hv)  # 하이드레이션 전 스냅샷 = 유령 화면
+        self.assertIn("서버 수명주기", hv)  # 기동·대기·정리 책임
+
+    def test_seidr_anchors(self):
+        # 인터랙티브 피규어 (26-07-16 신설) — Victor/Case/Distill 캐논 + 구현 불변식
+        sd = self.by_name["asgard-freyja-seidr"]
+        self.assertIn("존재 이유 게이트", sd)  # 5효용 중 하나에만 해당해야 인터랙션
+        self.assertIn("5효용", sd)
+        self.assertIn("10–15%", sd)  # NYT 실측 — 핵심 정보 호버 은닉 금지의 근거
+        self.assertIn("추상화 사다리", sd)
+        self.assertIn("멱등 render()", sd)  # 중앙 state — 핸들러는 상태만 갱신
+        self.assertIn("setPointerCapture", sd)  # 마우스·터치·펜 통합
+        self.assertIn("touch-action: none", sd)  # 모바일 스크롤 충돌 방지
+        self.assertIn("dirty 플래그", sd)  # Canvas — 변화 없으면 그리지 않는다
+        self.assertIn("IntersectionObserver", sd)  # 스크롤리텔링 폴백 계층
+        self.assertIn("스크롤은 항상 사용자 소유", sd)  # 하이재킹 금지
+        self.assertIn("빈 화면·0값 시작 금지", sd)  # 초기 상태 유의미
+        self.assertIn("APG", sd)  # 커스텀 슬라이더 접근성 패턴
+        self.assertIn("asgard-freyja-motion", sd)  # 수치 캐논 상속 상호 참조
+
+    def test_valshamr_anchors(self):
+        # 채점 루브릭·판정 반복 루프 (26-07-16 신설) — 논문 근거 보상 신호 절차
+        vs = self.by_name["asgard-freyja-valshamr"]
+        self.assertIn("8축 실측 루브릭", vs)
+        self.assertIn("−2~−6%", vs)  # 디스플레이 트래킹 실측 대역 (Stripe/Linear/Geist)
+        self.assertIn("자기선호 편향", vs)  # 자기채점 금지의 근거
+        self.assertIn("렌더 스크린샷", vs)  # 채점 입력은 코드가 아니라 렌더
+        self.assertIn("실패 축·실패 술어만", vs)  # 표적 수정
+        self.assertIn("최고안", vs)  # 역대 최고안 보존 + 하락 롤백
+        self.assertIn("어떤 축도 하락 없음", vs)  # 수락 조건
+        self.assertIn("2–4회 캡", vs)  # LLM 판정 수확체감
+        self.assertIn("Awwwards", vs)  # 총점 해석 캘리브레이션
+        self.assertIn("기계로 잴 수 있는 것을 인상으로 채점하지 않는다", vs)
+        self.assertIn("게이트 통과 후에 잰다", vs)  # role 13축 게이트와의 관계
+        self.assertIn("판정은 Verifier 몫", vs)  # 검증 독립성 — 게이트 경계
+        self.assertIn("arXiv 2403.03163", vs)  # 논문 실명 인용 실존
+
+    def test_valkyrja_anchors(self):
+        # 발키리 편대 (26-07-17 신설) — 팀 시각 작업 프로토콜, 멀티에이전트 논문 근거
+        vk = self.by_name["asgard-freyja-valkyrja"]
+        self.assertIn("구조(서브 N기 편성)로 강제한다", vk)  # 절차는 지시문이 아니라 구조
+        self.assertIn("0.877 → 3턴 0.707", vk)  # Multi-IF 지시 이행률 감쇠 — 단독 실패의 근거
+        self.assertIn("편성 판정", vk)  # 효과 배분 — 토큰 ~15배 세금 정당화
+        self.assertIn("~15배", vk)
+        self.assertIn("N=3–5", vk)  # 변주 병렬 포화
+        self.assertIn("변주 병렬(안전) vs 부품 분담(위험)", vk)  # Cognition 경계 조건
+        self.assertIn("변주 축 지정", vk)  # 같은 브리프 N벌 금지 — 축 분배
+        self.assertIn("새 컨텍스트", vk)  # 대장 히스토리 미상속 — context rot
+        self.assertIn("MANIFEST.md", vk)  # 파일 기반 핸드오프 + 결정 복제
+        self.assertIn("계획 장부", vk)  # Magentic-One 이중 장부
+        self.assertIn("계획 자체를 재작성", vk)  # 정체 2회 → 재계획
+        self.assertIn("생성자≠판정자", vk)  # 자기선호 편향 방어
+        self.assertIn("상호참조 정련", vk)  # MoA — 1단 선택으로 끝내지 않는다
+        self.assertIn("외부 모델 연계", vk)  # codex 류 CLI — 자문 + 산출 위임 양 경로
+        self.assertIn("산출 위임", vk)  # 외부 모델을 변주 생성 서브로 편성 (26-07-17 오딘 지시)
+        self.assertIn("기준을 세우는 손과 그리는 손이 달라도 계약은 하나다", vk)
+        self.assertIn("codex", vk)
+        self.assertIn("판정 권한은 이양되지 않는다", vk)
+        self.assertIn("로고 캐논 레시피", vk)  # 아트 디렉팅 루프의 편대 구조화
+        self.assertIn("패턴 축 분배", vk)
+        # 판정 위계 (26-07-17 로고 편대 실측 교훈 — 굿하트 방어)
+        self.assertIn("바닥(탈락 기준)이지 우승 기준이 아니다", vk)
+        self.assertIn("취향 앵커 의무", vk)  # 오딘이 반응한 방향의 정련 계승 축 1기
+        self.assertIn("편대의 최종 보상 신호는 기계가 아니라 오딘의 눈이다", vk)
+        self.assertIn("깊이 1", vk)  # 편대의 편대는 없다
+        self.assertIn("Verifier 가 부르지 않는다", vk)  # 검증 독립성
+        self.assertIn("단독 폴백", vk)  # 편대 불가 환경 — 체크리스트 게이트
+        self.assertIn("2411.04468", vk)  # 논문 실명 인용 실존
 
     def test_domain_isolation_declared(self):
         # 영상↔웹모션 규칙 혼용 금지가 양쪽 본문에 명시 — 상호 오염 방지의 핵심 계약
@@ -212,6 +337,14 @@ class TestSkillResolver(unittest.TestCase):
             "카드 호버 전환 애니메이션 추가": "asgard-freyja-motion",
             "설명 영상 mp4 렌더": "asgard-freyja-video",
             "3D 제품 뷰어 셰이더": "asgard-freyja-folkvangr",
+            "playwright e2e 시나리오 작성": "asgard-freyja-hildisvini",
+            "브라우저에서 화면 실측 검증": "asgard-freyja-hildisvini",
+            "설명용 인터렉티브 피규어 제작": "asgard-freyja-seidr",
+            "파라미터 슬라이더로 조작하는 시뮬레이션 도표": "asgard-freyja-seidr",
+            "산출물 루브릭 채점과 반복 개선": "asgard-freyja-valshamr",
+            "히어로 퀄리티 벤치마크 비교": "asgard-freyja-valshamr",
+            "로고 시스템을 변주 편대로 제작": "asgard-freyja-valkyrja",
+            "codex 교차 자문으로 시안 비교": "asgard-freyja-valkyrja",
         }
         for task, expected in cases.items():
             names = [n for n, _ in resolve_freyja_skills(task)]
@@ -295,6 +428,70 @@ class TestPrintBleedContract(unittest.TestCase):
 
     def test_delivery_line_includes_bleed(self):
         self.assertIn("(풀블리드면) 위 도련 산출 계약 실측까지", self.taste)
+
+
+class TestFreyjaLead(unittest.TestCase):
+    """시각 편대장 (26-07-17 신설) — 대장 프레이야만 재위임 봉인을 연다. 서브는 봉인 유지."""
+
+    def setUp(self):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        self.roles = dict(ROLE_AGENTS)
+        self.lead = self.roles["asgard-freyja-lead.md"]
+
+    def test_role_registered_with_delivery_tier(self):
+        from asgard.templates.roles import delivery_agents
+
+        self.assertEqual(delivery_agents().get("freyja-lead"), "standard")  # 네이티브 디스패치 enum 자동 편입
+
+    def test_lead_frontmatter_has_agent_tool(self):
+        frontmatter = self.lead.split("---", 2)[1]
+        self.assertIn("Agent", frontmatter)  # 편성 권한 — 봉인의 유일한 예외
+        self.assertIn("Verifier 는 금지", frontmatter)  # 검증 독립성은 동일
+
+    def test_cc_whitelist_lead_open_sub_sealed(self):
+        from asgard.agent.tool_kernel import ROLE_CAPABILITIES, cc_tools_for_role
+
+        self.assertIn("Agent", cc_tools_for_role("freyja-lead"))
+        self.assertNotIn("Agent", cc_tools_for_role("freyja"))  # 서브 프레이야 재위임 봉인 유지
+        self.assertIn("coordinate", ROLE_CAPABILITIES["freyja-lead"])
+        self.assertNotIn("coordinate", ROLE_CAPABILITIES["freyja"])
+
+    def test_lead_contract_anchors(self):
+        for anchor in (
+            "asgard-freyja-valkyrja",  # 팀 프로토콜 단일 소스 로드 의무
+            "편성 판정 먼저",  # 소형 과업 편대 금지 — 토큰 세금
+            "MANIFEST.md",  # 결정 복제 핸드오프
+            "판정 분리",  # 생성자≠판정자
+            "깊이 1",  # 서브 재위임 불가
+            "완료 선언 금지",
+        ):
+            self.assertIn(anchor, self.lead)
+
+    def test_sub_freyja_squad_membership_contract(self):
+        sub = self.roles["asgard-freyja.md"]
+        self.assertIn("편대 소속 시", sub)  # MANIFEST 상속·변주 축 준수·반환 규격
+        self.assertIn("편대는 asgard-freyja-lead 의 표면", sub)  # 직접 편성 금지 — 판단 반환
+        self.assertIn("재위임 불가 — 하위 에이전트를 만들지 않는다", sub)  # 봉인 문구 보존
+
+    def test_heimdall_resolver_covers_lead(self):
+        import inspect
+
+        from asgard.agent import heimdall
+
+        src = inspect.getsource(heimdall._skill_resolver)
+        self.assertIn('"freyja-lead"', src)  # 편대장 디스패치에도 전용 스킬 주입
+
+    def test_routing_agents_md_and_worker(self):
+        from asgard.templates.agents import agents_md
+
+        md = agents_md("p")
+        self.assertIn("asgard-freyja-lead", md)  # 대형 시각 과업 라우팅
+        self.assertIn("asgard-freyja-valkyrja", md)  # 모드 A 편대 스킬 경로
+        self.assertIn("예외 1개: asgard-freyja-lead", md)  # 재위임 불가 예외의 명시적 한정
+        worker = self.roles["asgard-worker.md"]
+        self.assertIn("asgard-freyja-lead", worker)
+        self.assertIn("발키리 스킬을 로드해 대장 역할", worker)  # 네이티브 순차 편대 경로
 
 
 class TestModeAWiring(unittest.TestCase):
