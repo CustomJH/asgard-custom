@@ -1,6 +1,6 @@
 # Asgard
 
-Make anything, your way — a portable setup system, shipped as a self-contained binary (no Node, Bun, or git required to run it).
+Make anything, your way — a portable setup system with a self-contained install (no Node, Bun, or git required to run it).
 
 ## Install
 
@@ -42,11 +42,36 @@ policy contract; write tools are absent from Thinker, Verifier, Loki, and Ullr.
 Their Bash surface is restricted to allowlisted inspection and verification
 commands, while all roles retain pre-execution destructive Git/filesystem guards.
 
+## Project Map
+
+```bash
+asgard setup map                 # inspect the current project and draw/refresh the map
+asgard setup map --check         # read-only drift check (CI-friendly)
+asgard setup map --dry-run       # preview
+```
+
+The team-shared map lives in `.asgard/map/`. `PROJECT.md` is a compact, deterministic
+orientation map built only from paths and manifests observed on disk; Asgard owns and
+regenerates it. Human/agent-authored area maps such as `cli.md` or `frontend.md` are
+fog-of-war notes and are never overwritten. In a mapped project, quest verification
+refreshes `PROJECT.md` before computing the Verifier diff hash, so automatic map changes
+are covered by the same PASS instead of creating an unverified post-close write.
+
+Maps are navigation hints, not completion evidence. Thinker/Worker must still read the
+definitions and usages that a plan depends on, while `asgard doctor` checks managed-map
+drift and ghost paths in manual area maps.
+
 ## Memory
 
 Asgard has exactly two memory types: personal local Markdown/SQLite memory and
-a shared Hindsight project bank. Project records pass provenance, importance,
+a shared project memory backed by exactly one configured engine (Hindsight is the
+legacy-compatible default; Cognee, RedisVL, and others can be installed as adapters).
+Project records pass provenance, importance,
 secret, prompt-injection, and approval gates before retain. The generated
 `asgard-memory` skill carries the registration schema, and `asgard memory
 project-scan` / `project-sync` preview and commit important artifacts into the
-Hindsight bank.
+active project backend. Backend changes are bound to machine-local trust,
+approval IDs, plan IDs, and projection manifests.
+
+See [`docs/project-memory-backends.md`](docs/project-memory-backends.md) for adapter
+registration, configuration, safety capabilities, and migration details.

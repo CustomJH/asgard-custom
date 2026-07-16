@@ -25,7 +25,7 @@ from ..templates import (
     project_settings,
 )
 from ..templates.freyja import (
-    FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video 심화 3종
+    FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video/3D 심화 4종
     freyja_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
 )
 from ..templates.lagom import (
@@ -34,6 +34,11 @@ from ..templates.lagom import (
 )
 from ..templates.memory import MEMORY_SKILL_MD  # memory v3 — 읽기/저장(승인 게이트) 계약
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
+from ..templates.thor import (
+    THOR_SKILLS,  # (스킬명, SKILL.md 본문) — mjollnir/lightning/megingjord/jarngreipr 심화 4종
+    eitri_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
+    thor_core_skill,
+)
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
 # 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
@@ -45,8 +50,10 @@ _GITIGNORE_END = "# <<< asgard <<<"
 _GITIGNORE_BLOCK = (
     f"{_GITIGNORE_BEGIN}\n"
     "# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)\n"
+    "!.asgard/\n"
     ".asgard/*\n"
     "!.asgard/map/\n"
+    "!.asgard/map/**\n"
     "!.asgard/.gitignore\n"
     "!.asgard/asgard-setting-project.json\n"
     ".claude/settings.local.json\n"
@@ -56,7 +63,7 @@ _GITIGNORE_BLOCK = (
 
 # .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 전부 무시, 지도만 추적.
 # 루트 블록과 합의돼야 한다 (둘 중 하나라도 map 을 막으면 추적 불가 — smoke 가 실추적 검증).
-# asgard-setting-project.json = 팀 공유 설정 (trinity 정책·메모리 서버 연결, 비밀 없음) — 커밋 대상.
+# asgard-setting-project.json = 팀 공유 설정 (trinity 정책·project-memory backend 선택, 비밀 없음) — 커밋 대상.
 # state/·quest/ 등 런타임은 "*" 가 전부 무시한다.
 _ASGARD_GITIGNORE = "*\n!.gitignore\n!map/\n!map/**\n!asgard-setting-project.json\n"
 
@@ -66,7 +73,11 @@ def merge_gitignore(existing: str | None) -> str:
     idempotent: 재실행 시 블록을 교체하되 블록 밖 사용자 규칙은 건드리지 않는다."""
     if not existing:
         return _GITIGNORE_BLOCK
-    lines = existing.splitlines()
+    # Legacy installs commonly ignored the whole directory. Git will not descend into an ignored
+    # parent, so later `!.asgard/map/` cannot revive the shared map. Migrate only these exact broad
+    # rules; scoped user rules and every unrelated line remain untouched.
+    lines = [line for line in existing.splitlines() if line.strip() not in (".asgard", ".asgard/", "/.asgard", "/.asgard/")]
+    base = "\n".join(lines) + ("\n" if lines else "")
     if _GITIGNORE_BEGIN in lines and _GITIGNORE_END in lines:  # 기존 블록 교체
         b = lines.index(_GITIGNORE_BEGIN)
         e = lines.index(_GITIGNORE_END)
@@ -74,8 +85,7 @@ def merge_gitignore(existing: str | None) -> str:
             merged = lines[:b] + _GITIGNORE_BLOCK.rstrip("\n").splitlines() + lines[e + 1 :]
             return "\n".join(merged) + "\n"
     # 블록 없음 → 끝에 append (기존이 개행으로 안 끝나면 하나 넣는다)
-    sep = "" if existing.endswith("\n") else "\n"
-    return existing + sep + "\n" + _GITIGNORE_BLOCK
+    return base + ("\n" if base else "") + _GITIGNORE_BLOCK
 
 
 def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bool) -> int:
@@ -141,7 +151,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         (j(root, ".gitignore"), _GITIGNORE_BLOCK),
     ]
 
-    # Trinity (CUS-125) — 정책은 툴 중립 .asgard/ (크로스툴 공유), 통합 설정 파일의 trinity_policy
+    # Trinity — 정책은 툴 중립 .asgard/ (크로스툴 공유), 통합 설정 파일의 trinity_policy
     # 섹션으로 (26-07-15 설정 통합). .gitignore 를 함께 심는 이유: 훅이 첫 실행 때 lazy 로 만들지만,
     # setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.
     files += [
@@ -165,6 +175,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
         files += [
             (j(root, ".claude", "hooks", "git-guard.py"), hook("git-guard")),
+            (j(root, ".claude", "hooks", "release-guard.py"), hook("release-guard")),  # 외부 부작용 승인 게이트
             (j(root, ".claude", "hooks", "readonly-guard.py"), hook("readonly-guard")),
             (j(root, ".claude", "hooks", "secret-guard.py"), hook("secret-guard")),
             (j(root, ".claude", "hooks", "failure-tracker.py"), hook("failure-tracker")),
@@ -173,12 +184,12 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "write-sentinel.py"), hook("write-sentinel")),  # quest 미개설 write 봉합
             (j(root, ".claude", "hooks", "unattended-context.py"), hook("unattended-context")),  # Canon 8 무인 감지
             (j(root, ".claude", "hooks", "subagent-gate.py"), hook("subagent-gate")),  # 역할 로그 규율 (SubagentStop)
-            # Lagom (CUS-205) — 훅 3종 + 캐논 단일 소스 (훅이 모드 필터해 주입)
+            # Lagom — 훅 3종 + 캐논 단일 소스 (훅이 모드 필터해 주입)
             (j(root, ".claude", "hooks", "lagom-activate.py"), hook("lagom-activate")),
             (j(root, ".claude", "hooks", "lagom-tracker.py"), hook("lagom-tracker")),
             (j(root, ".claude", "hooks", "lagom-subagent.py"), hook("lagom-subagent")),
             (j(root, ".claude", "hooks", "lagom-canon.md"), LAGOM_CANON),
-            (j(root, ".claude", "hooks", "lagom-statusline.sh"), LAGOM_STATUSLINE_SH),  # CUS-215
+            (j(root, ".claude", "hooks", "lagom-statusline.sh"), LAGOM_STATUSLINE_SH),  # CC statusLine 스크립트
             # Memory v3 — 개인 위키 스냅샷 주입 (SessionStart + Thinker 한정 SubagentStart)
             (j(root, ".claude", "hooks", "memory-activate.py"), hook("memory-activate")),
             # Charter — 프로젝트 북극성 주입 (Session/UserPrompt=through_line, Subagent=역할별)
@@ -190,14 +201,15 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
         # asgard-provider — Trinity 역할 브릿지. 항상 스캐폴드, 게이트는 런타임([bridge] 기본 꺼짐).
         files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
-        # Lagom 스킬 (CUS-210) — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
+        # Lagom 스킬 — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
         # /asgard-seal — gitmoji 사건 봉인 (한 봉인 한 사건 + 품질 게이트)
         files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
         # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
         files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), MEMORY_SKILL_MD))
-        # 프레이야 심화 스킬 3종 — freyja 서브에이전트(모드 B)·메인 세션이 도메인 작업 전 로드
+        # 프레이야·토르 심화 스킬 각 4종 — 해당 서브에이전트(모드 B)·메인 세션이 도메인 작업 전 로드
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -207,6 +219,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [
             (j(root, ".cursor", "hooks.json"), cursor_hooks_json()),
             (j(root, ".cursor", "hooks", "git-guard.py"), hook("git-guard")),  # same script, auto-detects Cursor
+            (j(root, ".cursor", "hooks", "release-guard.py"), hook("release-guard")),
             (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("failure-tracker")),
             (j(root, ".cursor", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 A 로그 CLI
         ]
@@ -217,6 +230,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [
             (j(root, ".codex", "config.toml"), codex_config()),
             (j(root, ".codex", "hooks", "git-guard.py"), hook("git-guard")),
+            (j(root, ".codex", "hooks", "release-guard.py"), hook("release-guard")),
             (j(root, ".codex", "hooks", "failure-tracker.py"), hook("failure-tracker")),
             (j(root, ".codex", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 A 로그 CLI
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
@@ -230,10 +244,13 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
         files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
         files.append((j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
-        # 프레이야 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치(role 파일 파생,
-        # 단일 소스). Worker phase 가 시각·프론트 하위작업에서 로드해 인라인 수행 + 심화 3종.
+        # 딜리버리 코어 계약 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치(role 파일
+        # 파생, 단일 소스). Worker phase 가 해당 도메인 하위작업에서 로드해 인라인 수행 + 심화 각 4종.
         files.append((j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"), freyja_core_skill()))
         files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
+        files.append((j(root, ".agents", "skills", "asgard-thor", "SKILL.md"), thor_core_skill()))
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]
+        files.append((j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"), eitri_core_skill()))
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
@@ -251,19 +268,27 @@ def run_setup(
     cc = cc or profile == "claude-code"
     cursor = cursor or profile == "cursor"
     codex = codex or profile == "codex"
+    from ..code_map import MapError, refresh_map
+
+    try:
+        refresh_map(os.getcwd(), dry_run=True)  # map 경로/소유권 preflight — scaffold가 링크를 따라 쓰기 전 차단.
+    except MapError as exc:
+        ui.fail(str(exc))
+        return 2
     files, label = plan_files(cc, cursor, codex)
     rc = _scaffold(files, label, force, dry_run)
     if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync` 가 세팅된 프로젝트를 찾는 근거
         from .. import registry
 
+        refresh_map(os.getcwd())  # 초기 프로젝트 방향을 즉시 그린다; 이후 Verifier가 구조 변경 때 갱신.
         universal = not cc and not cursor and not codex
         registry.record(os.getcwd(), cc or universal, cursor or universal, codex or universal)
     return rc
 
 
-# ── init — interactive onboarding (CUS-49, minimal slice). TTY: pick a profile; non-TTY / --yes:
-# default to claude-code (back-compat with the old `init` = `setup --cc`). Uses Rich (already a dep);
-# no heavy TUI framework yet — the full OpenCode/Hermes-style editor stays scoped to CUS-49.
+# ── init — interactive onboarding. TTY: full-screen Textual picker (init_tui.py), with a Rich prompt
+# as the fallback when Textual can't run; non-TTY / --yes: default to claude-code (back-compat with
+# the old `init` = `setup --cc`).
 _PROFILES: list[tuple[str, str]] = [
     ("universal", "every agent — AGENTS.md + full .claude/.cursor/.codex, Canon enforced"),
     ("claude-code", ".claude/ full skeleton + hooks"),

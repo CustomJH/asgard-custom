@@ -234,4 +234,15 @@ workspace/
 .playwright-cli/
 
 .claude
-.asgard
+
+# >>> asgard >>>
+# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)
+!.asgard/
+.asgard/*
+!.asgard/map/
+!.asgard/map/**
+!.asgard/.gitignore
+!.asgard/asgard-setting-project.json
+.claude/settings.local.json
+.claude/**/*.local.*
+# <<< asgard <<<

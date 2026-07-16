@@ -62,6 +62,37 @@ class TestRegistry(Base):
         self.assertEqual(entries[0]["root"], self.root)
         self.assertTrue(entries[0]["cc"])
         self.assertFalse(entries[0]["cursor"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "map", "PROJECT.md")))
+
+    def test_setup_preflights_unsafe_map_before_scaffolding(self):
+        from asgard.commands.setup import run_setup
+
+        outside = tempfile.TemporaryDirectory()
+        self.addCleanup(outside.cleanup)
+        os.makedirs(os.path.join(self.root, ".asgard"))
+        os.symlink(outside.name, os.path.join(self.root, ".asgard", "map"))
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            with mock.patch("asgard.commands.setup._scaffold") as scaffold:
+                self.assertEqual(run_setup(cc=True), 2)
+                scaffold.assert_not_called()
+        finally:
+            os.chdir(cwd)
+
+    def test_setup_preflights_dangling_map_before_scaffolding(self):
+        from asgard.commands.setup import run_setup
+
+        os.makedirs(os.path.join(self.root, ".asgard"))
+        os.symlink(os.path.join(self.root, "missing-map"), os.path.join(self.root, ".asgard", "map"))
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            with mock.patch("asgard.commands.setup._scaffold") as scaffold:
+                self.assertEqual(run_setup(cc=True), 2)
+                scaffold.assert_not_called()
+        finally:
+            os.chdir(cwd)
 
 
 class TestAgentsMerge(Base):
@@ -94,6 +125,14 @@ class TestAgentsMerge(Base):
     def test_missing_file_gets_full_template(self):
         new = agents_md("proj")
         self.assertEqual(merge_agents_md(None, new), new)
+
+    def test_gitignore_migrates_legacy_whole_asgard_ignore_so_map_is_trackable(self):
+        from asgard.commands.setup import merge_gitignore
+
+        merged = merge_gitignore("cache/\n.asgard\n.asgard/\n")
+        self.assertNotIn("\n.asgard\n", "\n" + merged)
+        self.assertNotIn("\n.asgard/\n", "\n" + merged)
+        self.assertIn("!.asgard/map/", merged)
 
 
 class TestSettingsMerge(Base):
