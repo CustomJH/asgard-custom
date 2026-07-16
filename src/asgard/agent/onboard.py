@@ -1,4 +1,4 @@
-"""인터랙티브 온보딩 — opencode /connect · claude-code 로그인 관행.
+"""인터랙티브 온보딩 — 세션 안 provider 연결·로그인 흐름.
 
 키 없이 start 진입 → provider 선택 → 키 입력(getpass, 에코 없음) → ~/.asgard/credentials.json
 저장(chmod 600, config 와 분리). env var 는 여전히 우선(export 한 사용자 무회귀). 비-TTY 에선

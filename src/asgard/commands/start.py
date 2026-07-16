@@ -122,7 +122,7 @@ def run_start(
         ui.warn("세션을 열 수 없습니다 — 위 처방을 적용한 뒤 다시 실행하세요.")
         return 2
 
-    # 기본: 터미널을 바로 켠다 (hermes/opencode 처럼). provider 미설정은 세션 안에서 온보딩.
+    # 기본: 터미널을 바로 켠다. provider 미설정은 세션 안에서 온보딩.
     from .. import i18n
     from ..providers import resolve
 

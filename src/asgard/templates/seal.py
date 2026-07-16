@@ -1,7 +1,6 @@
 """asgard-seal 스킬 — 변경사항을 독립 철회 가능한 gitmoji 사건 파일(commit)로 봉인하는 커밋 규율.
 
-계보: asgard-helios 의 seal 스킬이 원형이다. helios 판의 프로젝트 전용 절차(asgard.db
-checkpoint/afterword, /audit QA 게이트, 3개국어 phrasebook)는 이식하지 않는다 — 프로젝트
+프로젝트 전용 절차(체크포인트 DB, QA 게이트, 다국어 phrasebook)는 담지 않는다 — 프로젝트
 비의존이 목표고, 언어 미러링은 AGENTS.md identity 섹션이 이미 계약한다 (사다리 1단).
 
 품질 규칙의 출처 (26-07-14 자료조사):

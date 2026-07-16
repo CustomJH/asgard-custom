@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""프롬프트 캐싱 자가 검증 — 브레이크포인트 주입(hermes system_and_3 재서술) + anthropic 트랜스포트
+"""프롬프트 캐싱 자가 검증 — 브레이크포인트 주입(system_and_3 레이아웃) + anthropic 트랜스포트
 배선 + 캐시 포함 usage 정산 (창 80% 프룬 트리거의 과소계상 방지).
 
 실행: uv run pytest tests/test_prompt_cache.py
@@ -69,7 +69,7 @@ class TestCachedRequest(unittest.TestCase):
 
 
 class TestOpenAIWirePolicy(unittest.TestCase):
-    """openai_compat 마커 정책 — 실측 검증 조합(hermes)만 화이트리스트, 그 외 미주입 (400 방지)."""
+    """openai_compat 마커 정책 — 실측 검증 조합만 화이트리스트, 그 외 미주입 (400 방지)."""
 
     def test_whitelist(self):
         cases = {
