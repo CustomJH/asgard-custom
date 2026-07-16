@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard unattended-context — Canon 8(무인이면 진행)의 감지층 (CUS-169).
+# Asgard unattended-context — Canon 8(무인이면 진행)의 감지층.
 #
 # 모델은 headless 여부를 스스로 알 수 없다 — Claude Code 는 print(-p) 모드 신호를 시스템 프롬프트에
 # 주입하지 않는다 (code.claude.com/docs/en/headless, 2026-07 확인). 훅만이 안다: 모든 훅 stdin 에

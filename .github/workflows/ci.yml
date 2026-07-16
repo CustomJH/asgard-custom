@@ -1,6 +1,6 @@
 name: ci
 
-# 품질 게이트 (CUS-164): lint + format + typecheck + test.
+# 품질 게이트: lint + format + typecheck + test.
 # 로컬 베이스라인과 동일 커맨드 — ruff check · ruff format --check · ty check · pytest.
 on:
   push:

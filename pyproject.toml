@@ -13,7 +13,7 @@ dependencies = [
     "prompt-toolkit>=3.0",
 ]
 
-# curl|bash install path (CUS-108 Path B): `uv tool install asgard` exposes this console script.
+# curl|bash install path: `uv tool install asgard` exposes this console script.
 [project.scripts]
 asgard = "asgard.cli:app"
 
@@ -26,7 +26,7 @@ dev = [
     "ty>=0.0.56",
 ]
 
-# 구조 현대화 뼈대 (CUS-160). lint 규칙 확장·위반 전면 정리는 CUS-161.
+# 구조 현대화 뼈대 — lint·format 은 ruff 로 통일.
 [tool.ruff]
 target-version = "py314"
 line-length = 120
@@ -38,7 +38,7 @@ ignore = ["E501"]  # 포매터 병용 시 공식 권장 — 장문 템플릿 문
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
-# 타입체크 (CUS-163) — ty 베타 채택, 문제 시 mypy 폴백. ref/·workspace/ 는 .gitignore 로 자동 제외.
+# 타입체크 — ty 베타 채택, 문제 시 mypy 폴백. ref/·workspace/ 는 .gitignore 로 자동 제외.
 [tool.ty.environment]
 python-version = "3.14"
 

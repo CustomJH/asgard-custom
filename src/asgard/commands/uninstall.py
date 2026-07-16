@@ -1,4 +1,4 @@
-"""uninstall — remove asgard (CUS-108 Path B: it's a uv tool). `uv tool uninstall asgard` removes the
+"""uninstall — remove asgard (it's a uv tool). `uv tool uninstall asgard` removes the
 managed env + the `asgard` shim. Preview unless --yes."""
 
 import subprocess

@@ -47,6 +47,7 @@ class TestLoadCharter(unittest.TestCase):
     def test_full_shape_normalized(self):
         _write_project(self.root, {"through_line": " tl ", "coherence": ["a", "  ", "b"]})
         ch = load_charter(self.root)
+        assert ch is not None
         self.assertEqual(ch["through_line"], "tl")
         self.assertEqual(ch["coherence"], ["a", "b"])  # 공백 항목 제거
 

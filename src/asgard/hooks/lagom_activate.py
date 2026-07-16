@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard lagom-activate — SessionStart 모드 초기화 + 룰 주입 (CUS-208).
+# Asgard lagom-activate — SessionStart 모드 초기화 + 룰 주입.
 #
 # 배선 매처: startup|resume|clear|compact — compact/clear 는 컨텍스트 소실 지점이라 재주입이
 # 필수다. 동작: 세션 런타임 상태(.asgard/lagom-mode.json)가 있으면 그 값(세션 중 전환 보존),

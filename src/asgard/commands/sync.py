@@ -85,7 +85,7 @@ def _policy(root: str, path: str) -> str:
     if rel == os.path.join(".claude", "settings.json"):
         return "json-merge"
     if rel == os.path.join(".asgard", "asgard-setting-project.json"):
-        return "keep"  # 사용자 튜닝(정책·메모리 서버·배치) 존중 — 없을 때만 시드
+        return "keep"  # 사용자 튜닝(정책·project-memory backend·배치) 존중 — 없을 때만 시드
     return "overwrite"
 
 

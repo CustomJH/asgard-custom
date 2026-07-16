@@ -70,7 +70,7 @@ def read_failure(data: dict) -> tuple[str, bool]:
 
 
 def log_fail(proj: str, sid: str, key: str, n: int) -> None:
-    """Trinity 배선 (CUS-123): 임계 도달을 활성 퀘스트 로그에도 fail 이벤트로 남긴다 — 전이 함수
+    """Trinity 배선: 임계 도달을 활성 퀘스트 로그에도 fail 이벤트로 남긴다 — 전이 함수
     (quest-log next)가 failure_count 를 로그에서 관찰해 THINKER_REPLAN 을 결정하게. 임계 도달
     시에만 쓰는 이유: 매 실패를 로그에 넣으면 노이즈만 늘고 소비자(전이 함수)는 임계만 본다.
     fail-open: 로그가 없거나(quest 미사용) 어떤 오류든 조용히 넘어간다 — 경고 주입은 계속된다."""

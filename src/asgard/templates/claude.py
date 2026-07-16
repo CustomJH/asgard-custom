@@ -32,12 +32,12 @@ CC_FOLDERS = [
 
 def cc_settings() -> str:
     # Permission floor (belt) + deterministic PreToolUse guards (braces): "prose asks, hooks forbid."
-    # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — Windows 엔 python3 실행 파일이 없다 (CUS-223).
+    # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — Windows 엔 python3 실행 파일이 없다.
     py = hook_python()
     return (
         json.dumps(
             {
-                # Lagom 모드 가시성 (CUS-215) — 상태파일/config 를 읽는 셸 전용 스크립트
+                # Lagom 모드 가시성 — 상태파일/config 를 읽는 셸 전용 스크립트
                 "statusLine": {
                     "type": "command",
                     "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
@@ -52,7 +52,7 @@ def cc_settings() -> str:
                     ],
                 },
                 "hooks": {
-                    # Lagom (CUS-208) — 세션 시작·재개·클리어·컴팩트 시 모드 초기화 + 캐논 주입.
+                    # Lagom — 세션 시작·재개·클리어·컴팩트 시 모드 초기화 + 캐논 주입.
                     # Memory v3 — 개인 위키 스냅샷 주입 (asgard memory snapshot 소비, fail-open).
                     "SessionStart": [
                         {
@@ -73,8 +73,8 @@ def cc_settings() -> str:
                             ],
                         },
                     ],
-                    # Canon 8 (무인이면 진행) — 자동화 permission_mode 감지 시 무인 계약 주입 (CUS-169).
-                    # Lagom tracker (CUS-213) — /lagom 전환·영속·비활성 문구.
+                    # Canon 8 (무인이면 진행) — 자동화 permission_mode 감지 시 무인 계약 주입.
+                    # Lagom tracker — /lagom 전환·영속·비활성 문구.
                     "UserPromptSubmit": [
                         {
                             "hooks": [
@@ -97,7 +97,7 @@ def cc_settings() -> str:
                             ]
                         },
                     ],
-                    # Lagom (CUS-214) — SessionStart 컨텍스트 미전파 보상. verifier 는 스크립트가 자체 제외.
+                    # Lagom — SessionStart 컨텍스트 미전파 보상. verifier 는 스크립트가 자체 제외.
                     # Memory v3 — Thinker 한정 주입 (감사 매트릭스: Worker/딜리버리 무주입,
                     # Verifier/Loki 영구 무주입 — 보상 주입 패턴을 메모리에 쓰지 않는다).
                     "SubagentStart": [
@@ -130,6 +130,10 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/release-guard.py"',
                                 },
                                 {
                                     "type": "command",

@@ -2,7 +2,7 @@
 # Asgard subagent-gate — Trinity 역할 서브에이전트의 로그 규율 강제 (Claude Code SubagentStop).
 #
 # 모드 B 의 유일한 프롬프트-의존 축은 "역할이 자기 이벤트를 quest 로그에 기록한다"는 계약이다
-# (CUS-189: 프롬프트 준수는 가정이 아니라 측정 대상). 이 훅은 그 계약을 코드로 바꾼다 —
+# (프롬프트 준수는 가정이 아니라 측정 대상). 이 훅은 그 계약을 코드로 바꾼다 —
 # asgard-thinker/worker/verifier 서브에이전트가 활성 quest 에 자기 역할 이벤트를 기록하지 않고
 # 종료하면 1회 차단하고 정확한 append 명령을 지시한다 (lazycodex 증거-영수증 게이트 이식).
 #

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard lagom-subagent — SubagentStart 재주입 (CUS-214, Claude Code 전용 이벤트).
+# Asgard lagom-subagent — SubagentStart 재주입 (Claude Code 전용 이벤트).
 #
 # SessionStart 컨텍스트는 부모 스레드 한정 — 서브에이전트에 전파되지 않는다. 이 보상이 없으면
 # 서브에이전트 작업은 전부 lagom 밖에서 돈다. 동작:
@@ -19,7 +19,7 @@ MODES = ("off", "lite", "full")
 _ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
 _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
-NEVER_INJECT = ("asgard-verifier",)  # 검증 기준 오염 방지 — CUS-209 와 동일 원칙
+NEVER_INJECT = ("asgard-verifier",)  # 검증 기준 오염 방지 — Verifier 무주입 원칙 (heimdall 과 동일)
 
 
 def norm(m):

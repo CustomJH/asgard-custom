@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Asgard installer — curl entry point (CUS-108 Path B). Polished terminal UX; plain fallback non-tty.
+# Asgard installer — curl entry point. Polished terminal UX; plain fallback non-tty.
 #   curl -fsSL https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.sh | bash
 #
 # Bootstraps uv → a standalone CPython 3.14 → installs the `asgard` CLI as a uv tool. No system
@@ -142,12 +142,12 @@ _logo() {
   return 0
 }
 
-# ── install (CUS-108 Path B): uv-managed. Bootstrap uv → standalone CPython 3.14 → `uv tool install`.
+# ── install: uv-managed. Bootstrap uv → standalone CPython 3.14 → `uv tool install`.
 # The `asgard` command lands on PATH via uv's tool bin (uv tool update-shell wires the shell rc).
 # Wrapped in main() so a truncated `curl | bash` stream can't execute a partial script.
 REPO_SLUG="CustomJH/asgard-custom"
 
-# pkg_install <pkg…> — install OS packages via whatever manager the host has (CUS-112). Uses sudo
+# pkg_install <pkg…> — install OS packages via whatever manager the host has. Uses sudo
 # when not root and sudo exists. Returns nonzero if no known manager or the install fails — caller
 # decides whether that's fatal. Runs cleanly inside spin's background subshell (inherits functions).
 pkg_install() {

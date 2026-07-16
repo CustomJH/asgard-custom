@@ -17,7 +17,7 @@ _CODEX_CONFIG = """\
 # command = "npx"
 # args = ["-y", "@some/mcp-server"]
 
-# Canon enforcement (CUS-93) — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
+# Canon enforcement — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
 # the guard is the same git-guard.py. Trust once via the /hooks CLI (or --dangerously-bypass-hook-trust).
 [[hooks.PreToolUse]]
 matcher = "^Bash$"
@@ -26,7 +26,11 @@ matcher = "^Bash$"
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.py"'
 
-# Canon Law 9 (CUS-97) — soft 3-strike loop tracker. Codex PostToolUse carries tool_name + tool_response
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/release-guard.py"'
+
+# Canon Law 9 — soft 3-strike loop tracker. Codex PostToolUse carries tool_name + tool_response
 # (Claude's schema), so it runs the SAME failure-tracker.py and shares the .asgard/ state cross-tool.
 [[hooks.PostToolUse]]
 matcher = ".*"
@@ -50,7 +54,7 @@ prefix_rule(pattern=["git", "rebase"], decision="prompt", justification="Asgard 
 
 
 def codex_config() -> str:
-    # 인터프리터만 플랫폼 분기 (CUS-223) — $(git rev-parse) 명령치환은 Codex 훅 셸 계약을 따른다.
+    # 인터프리터만 플랫폼 분기 — $(git rev-parse) 명령치환은 Codex 훅 셸 계약을 따른다.
     return _CODEX_CONFIG.format(py=hook_python())
 
 

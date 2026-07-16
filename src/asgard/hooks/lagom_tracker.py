@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard lagom-tracker — UserPromptSubmit 모드 수명주기 (CUS-213).
+# Asgard lagom-tracker — UserPromptSubmit 모드 수명주기.
 #
 # 세 가지 축:
 #   전환   /lagom lite|full|off          → 상태파일 갱신 (세션 한정)

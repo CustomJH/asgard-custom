@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Runs INSIDE the bare sandbox (CUS-108 Path B). The base has no node/bun/python/uv; install.sh
+# Runs INSIDE the bare sandbox. The base has no node/bun/python/uv; install.sh
 # bootstraps uv + a standalone CPython 3.14 and installs asgard as a uv tool — proving zero-runtime.
 set -eu
 

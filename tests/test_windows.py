@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Windows 크로스플랫폼 슬라이스 (CUS-220) — POSIX 호스트에서 Windows 분기를 목킹으로 검증.
+"""Windows 크로스플랫폼 슬라이스 — POSIX 호스트에서 Windows 분기를 목킹으로 검증.
 
-실환경 Windows 검증은 CI 매트릭스(CUS-228) 몫 — 여기서는 플랫폼 분기 로직 자체만 고정한다.
+실환경 Windows 검증은 CI 매트릭스 몫 — 여기서는 플랫폼 분기 로직 자체만 고정한다.
 
 실행: uv run pytest tests/test_windows.py
 """
@@ -25,7 +25,7 @@ def _win(module):
 
 
 class TestHookPython(unittest.TestCase):
-    """hook_python (CUS-223/224) — POSIX 는 python3 고정, Windows 는 python → py 런처 탐지."""
+    """hook_python — POSIX 는 python3 고정, Windows 는 python → py 런처 탐지."""
 
     def test_posix_is_python3(self):
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
@@ -66,7 +66,7 @@ class TestHookPython(unittest.TestCase):
 
 
 class TestDetectAuthWindows(unittest.TestCase):
-    """CUS-221 — detect_auth 가 Windows 에서 os.uname AttributeError 없이 폴백해야 한다."""
+    """detect_auth 가 Windows 에서 os.uname AttributeError 없이 폴백해야 한다."""
 
     def test_no_crash_and_falls_to_unknown(self):
         env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")}
@@ -88,7 +88,7 @@ class TestDetectAuthWindows(unittest.TestCase):
 
 
 class TestTemplatesWindowsWiring(unittest.TestCase):
-    """CUS-223 — 스캐폴드 훅 배선이 생성 시점의 플랫폼 인터프리터를 쓴다."""
+    """스캐폴드 훅 배선이 생성 시점의 플랫폼 인터프리터를 쓴다."""
 
     @staticmethod
     def _hook_cmds(settings: dict) -> list[str]:
@@ -126,7 +126,7 @@ class TestTemplatesWindowsWiring(unittest.TestCase):
 
 
 class TestCredentialLockdown(unittest.TestCase):
-    """CUS-225 — 키 파일 잠금: POSIX 는 chmod 600, Windows 는 icacls 소유자 단독 ACL."""
+    """키 파일 잠금: POSIX 는 chmod 600, Windows 는 icacls 소유자 단독 ACL."""
 
     def test_windows_uses_icacls(self):
         with tempfile.TemporaryDirectory() as td:
@@ -160,7 +160,7 @@ class TestCredentialLockdown(unittest.TestCase):
 
 
 class TestDoctorWindows(unittest.TestCase):
-    """CUS-224 — doctor 의 인터프리터 체크·fix 안내가 플랫폼을 따른다."""
+    """doctor 의 인터프리터 체크·fix 안내가 플랫폼을 따른다."""
 
     def test_python_check_uses_hook_python(self):
         from asgard.commands import doctor

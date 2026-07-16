@@ -1,4 +1,4 @@
-"""asgard-test 스킬 (CUS-126 후속): 사용자가 별도 세션에서 셋업을 자가 테스트하는 커맨드.
+"""asgard-test 스킬: 사용자가 별도 세션에서 셋업을 자가 테스트하는 커맨드.
 
 단일 본문을 두 위치에 배포한다 — Claude Code(.claude/skills/) · Cursor+Codex 공용(.agents/skills/,
 양 툴의 네이티브 스킬 스코프이자 동일 SKILL.md 포맷: cursor.com/docs/skills ·

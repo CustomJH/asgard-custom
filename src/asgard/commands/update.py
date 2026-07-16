@@ -1,4 +1,4 @@
-"""update — self-update via uv (CUS-108 Path B). asgard ships as a `uv tool`, so updating is
+"""update — self-update via uv. asgard ships as a `uv tool`, so updating is
 re-installing the target version. Requires uv on PATH (the installer bootstraps it).
 
 release wheel 을 직접 내려받아(진행률 바) 로컬 파일로 `uv tool install` 한다 — pure-python 이라

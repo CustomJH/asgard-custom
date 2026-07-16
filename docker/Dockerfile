@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1
-# Asgard test sandbox — clean room (CUS-108 Path B). BARE base: no node/bun/python/uv preinstalled.
+# Asgard test sandbox — clean room. BARE base: no node/bun/python/uv preinstalled.
 # install.sh bootstraps uv + a standalone CPython 3.14 and installs asgard as a uv tool — proving the
 # zero-runtime install. Run ephemerally: docker run --rm.
 

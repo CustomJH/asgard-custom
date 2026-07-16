@@ -1,4 +1,4 @@
-# Asgard DEV box — persistent, batteries-included (CUS-108 Path B).
+# Asgard DEV box — persistent, batteries-included.
 # Python 3.14 via uv (Asgard's runtime) + node (Claude Code / Codex / cursor-agent CLIs) + dev tools.
 # Install & test Asgard alongside those agents inside it. Distinct from docker/Dockerfile (clean-room).
 FROM node:24-bookworm

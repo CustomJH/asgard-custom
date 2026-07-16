@@ -1,10 +1,10 @@
-"""start — Asgard 네이티브 터미널 세션 진입점 (CUS-135 에픽).
+"""start — Asgard 네이티브 터미널 세션 진입점.
 
-Asgard 자체에서 돈다 — 모델은 provider 설정으로 연결(CUS-141), Claude Code 에 얹지 않는다
+Asgard 자체에서 돈다 — 모델은 provider 설정으로 연결하고, Claude Code 에 얹지 않는다
 (.claude/ 스캐폴드는 Claude Code 사용자용 별개 표면 — 2026-07-03 오딘 정정).
 
-CUS-136 슬라이스: 프리플라이트. 세션을 열 수 없는 환경이면 처방과 함께 명확한 exit code 로
-멈춘다 (doctor 는 advisory, start 는 게이트). 세션 루프 자체는 CUS-137.
+이 모듈의 몫은 프리플라이트: 세션을 열 수 없는 환경이면 처방과 함께 명확한 exit code 로
+멈춘다 (doctor 는 advisory, start 는 게이트). 세션 루프 자체는 agent 패키지 몫.
 """
 
 import importlib.util
@@ -18,7 +18,7 @@ from ..providers import ResolvedProvider, resolve
 def preflight(
     root: str, provider: str | None = None, model: str | None = None
 ) -> tuple[list[dict], "ResolvedProvider"]:
-    """세션 진입 체크리스트. (checks, resolved) — resolved 는 루프(CUS-137)로 핸드오프."""
+    """세션 진입 체크리스트. (checks, resolved) — resolved 는 에이전트 루프로 핸드오프."""
     rp = resolve(root, provider=provider, model=model)
     checks: list[dict] = [
         {
@@ -129,7 +129,7 @@ def run_start(
     i18n.load_lang(root)  # config [ui] lang → env → 기본 en
 
     rp = resolve(root, provider=provider, model=model)
-    if tui and not plain:  # 풀스크린 textual TUI (CUS-148, opt-in)
+    if tui and not plain:  # 풀스크린 textual TUI (opt-in)
         from ..agent import tui as _tui
 
         return _tui.run(root, rp)
@@ -144,9 +144,9 @@ def run_prompt(
     model: str | None = None,
     json_out: bool = False,
 ) -> int:
-    """headless 단발 실행 (CUS-193) — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
+    """headless 단발 실행 — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
 
-    모드 B 는 라우팅 논리레이어 주입 불가(CUS-189 실측) — 게이트-우선의 측정·강제 표면은
+    모드 B 는 라우팅 논리레이어 주입 불가(벤치 실측) — 게이트-우선의 측정·강제 표면은
     이 네이티브 경로다 (하네스가 전이 산출을 코드로 수행, 채택률 100%).
     exit code: 0 정상 / 1 ⚠ 보고(에스컬레이션·중단·예산 소진) / 2 프리플라이트 실패."""
     import json as _json
@@ -171,7 +171,7 @@ def run_prompt(
 
     h = Heimdall(rp, root, on_text=stream, on_status=None)
     t0 = _time.time()
-    result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다 (CUS-180)
+    result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다
     wall = round(_time.time() - t0, 1)
     if json_out:
         json_result = result or h.last_response_text  # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel

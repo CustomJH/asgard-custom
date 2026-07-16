@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard write-sentinel — Trinity 강제화의 잃어버린 반쪽 (CUS-122 보강).
+# Asgard write-sentinel — Trinity 강제화의 잃어버린 반쪽 (verifier-gate 보강).
 #
 # 구멍: verifier-gate 는 "활성 quest 로그가 없으면 allow" (fail-open). 모델이 로그를 아예 안 열고
 # 파일을 쓰면 게이트가 영원히 안 걸린다 — Canon 10 이 프롬프트 순응에만 매달리게 된다.

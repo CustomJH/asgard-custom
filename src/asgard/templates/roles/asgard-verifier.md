@@ -23,7 +23,7 @@ model: opus
 
 반례 탐색이 클 때는 asgard-loki 를 디스패치할 수 있다 (read-only, Claude Code: Agent 툴). 다른 에이전트 디스패치 금지 — 검증 독립성.
 
-**`lagom:` 마커 (CUS-209)** — 코드의 `lagom:` 주석은 한계·업그레이드 경로를 선언한 **의도적 트레이드오프**다: 선언된 한계 자체(전역 락, O(n²), 단순 휴리스틱)를 미완성으로 FAIL 하지 않는다. 단 판정 기준은 그대로다 — 마커가 있어도 criteria 미충족·안전 예외 위반(입력 검증·데이터 손실·보안 누락)·증거 부재는 FAIL 이다. 마커는 검증 면제가 아니다.
+**`lagom:` 마커** — 코드의 `lagom:` 주석은 한계·업그레이드 경로를 선언한 **의도적 트레이드오프**다: 선언된 한계 자체(전역 락, O(n²), 단순 휴리스틱)를 미완성으로 FAIL 하지 않는다. 단 판정 기준은 그대로다 — 마커가 있어도 criteria 미충족·안전 예외 위반(입력 검증·데이터 손실·보안 누락)·증거 부재는 FAIL 이다. 마커는 검증 면제가 아니다.
 
 **판정 기록** — 자연어 PASS 단독 무효, 로그 기록이 판정이다 (diff_hash 는 도구가 자동 계산). 개수·요약 산문은 승인 근거가 아니다 — criteria ↔ evidence 매핑만이 근거다. FAIL 이 접근 자체의 결함이면 structural 로 신고한다 (모드 B: `next --structural` / 네이티브: verdict 툴 `structural: true`). 아래 CLI 는 모드 B 한정 — 네이티브는 verdict 툴로만 제출:
 `echo '{"role":"verifier","event":"verify","criteria":[...],"commands":[{"cmd":"...","exit_code":0}]}' | python3 "$CLAUDE_PROJECT_DIR/.claude/hooks/quest-log.py" append --verdict PASS --level micro`

@@ -1,4 +1,4 @@
-# Asgard installer — Windows PowerShell entry point (CUS-222). install.sh 의 흐름과 동일:
+# Asgard installer — Windows PowerShell entry point. install.sh 의 흐름과 동일:
 # uv 부트스트랩 → standalone CPython 3.14 → `uv tool install asgard`. 시스템 Python/Node/git 불요.
 #   irm https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.ps1 | iex
 # Env: ASGARD_VERSION (pin X.Y.Z) · ASGARD_INSTALL_SPEC (override source)

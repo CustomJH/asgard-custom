@@ -1,9 +1,9 @@
 name: release
 
 # Tag a release: git tag vX.Y.Z && git push origin vX.Y.Z
-# CUS-108 Path B: no compile matrix. Build a wheel + sdist with uv and attach them to the GitHub
-# Release. install.sh installs from git via `uv tool install`, so the artifacts are for pip/uv users
-# and a record — the tag itself is what `asgard upgrade` pins.
+# Pure-python, so no compile matrix. Build a wheel + sdist with uv and attach them to the GitHub
+# Release. install.sh installs the release wheel from here by default (no git or compiler on the
+# host) — the tag itself is what `asgard upgrade` pins.
 on:
   push:
     tags:

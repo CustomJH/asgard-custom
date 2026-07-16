@@ -82,7 +82,7 @@ def section_for(agent):
         return "verifier"
     if agent == "asgard-worker":
         return ""  # 네이티브 패리티 — Worker 는 worker.md+lagom 만 (charter 무주입, Fugu 격리)
-    return "identity"  # 메인·딜리버리(freyja/thor/loki) — through_line 만 (네이티브 delivery_identity 대응)
+    return "identity"  # 메인·딜리버리(freyja/thor/eitri/loki) — through_line 만 (네이티브 delivery_identity 대응)
 
 
 def main():
