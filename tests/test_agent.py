@@ -77,6 +77,32 @@ class TestBash(Base):
         with self.assertRaises(T.ToolError):
             T.run_bash(self.root, {"command": "git push --force origin main"})
 
+    def test_git_guard_blocks_worktree_discard(self):
+        for command in (
+            "git checkout HEAD -- .",
+            "git checkout -- f.txt",
+            "git -C . checkout HEAD -- .",
+            "git -C. restore .",
+            "git -c core.quotePath=false restore .",
+            "git --config-env=core.foo=FOO restore .",
+            "git --config-env=alias.wipe=WIPE wipe .",
+            "git --config-env=Alias.wipe=WIPE wipe .",
+            "git --no-optional-locks reset --hard",
+            "git --exec-path=/tmp reset --hard",
+            'git -C "dir with spaces" reset --hard',
+            "git -p restore .",
+            "git -c alias.wipe=restore wipe .",
+            "git -c Alias.wipe=restore wipe .",
+            "git checkout -f main",
+            "git switch --discard-changes main",
+            "git -C . switch -f main",
+            "git restore .",
+            "git --work-tree=. restore .",
+            "git restore --source=HEAD --worktree .",
+        ):
+            with self.assertRaises(T.ToolError, msg=command):
+                T.run_bash(self.root, {"command": command})
+
     def test_restart_is_ack(self):
         out, code = T.run_bash(self.root, {"restart": True})
         self.assertEqual(code, 0)
