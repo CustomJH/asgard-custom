@@ -14,7 +14,7 @@ import re
 import shlex
 import sys
 
-_READONLY_AGENTS = {"asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr"}
+_READONLY_AGENTS = {"asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr", "asgard-mimir"}
 _PYTHON = {"python", "python3", "pypy", "pypy3"}
 _INSPECT = {
     "cat",
@@ -35,6 +35,7 @@ _INSPECT = {
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
 _CONTROL_PATHS = (".claude", ".asgard")
+_PRIVATE_CONTROL_PATHS = (".asgard/quest", ".asgard/receipts", ".asgard/state")
 
 
 def _git_subcommand(tokens: list[str]) -> str:
@@ -57,7 +58,52 @@ def _git_subcommand(tokens: list[str]) -> str:
     return ""
 
 
-def _safe_segment(segment: str) -> bool:
+def _path_token_within_root(root: str | None, token: str) -> bool:
+    """Reject explicit path escapes; resolve existing symlinks when a project root is known."""
+    if not token or token == "-" or token.startswith("-"):
+        return True
+    normalized = token.replace("\\", "/")
+    if normalized.startswith("~") or os.path.isabs(token) or normalized == ".." or normalized.startswith("../"):
+        if not root:
+            return False
+    if not root:
+        return True
+    candidate = os.path.realpath(
+        os.path.expanduser(token) if token.startswith(("~", "/")) else os.path.join(root, token)
+    )
+    project = os.path.realpath(root)
+    try:
+        return os.path.commonpath((project, candidate)) == project
+    except ValueError:
+        return False
+
+
+def _path_token_targets_control(root: str | None, token: str, markers: tuple[str, ...]) -> bool:
+    """Resolve symlink parents before comparing a path operand with protected directories."""
+    if not root or not token or token == "-" or token.startswith("-"):
+        return False
+    candidate = os.path.realpath(
+        os.path.expanduser(token) if token.startswith(("~", "/")) else os.path.join(root, token)
+    )
+    for marker in markers:
+        protected = os.path.realpath(os.path.join(root, marker))
+        try:
+            if os.path.commonpath((protected, candidate)) == protected:
+                return True
+        except ValueError:
+            continue
+    return False
+
+
+def _command_targets_control(root: str, command: str, markers: tuple[str, ...]) -> bool:
+    try:
+        tokens = shlex.split(command)
+    except ValueError:
+        return True
+    return any(_path_token_targets_control(root, token, markers) for token in tokens[1:])
+
+
+def _safe_segment(segment: str, root: str | None = None) -> bool:
     try:
         tokens = shlex.split(segment)
     except ValueError:
@@ -65,6 +111,8 @@ def _safe_segment(segment: str) -> bool:
     if not tokens:
         return False
     program = os.path.basename(tokens[0])
+    if any(not _path_token_within_root(root, token) for token in tokens[1:]):
+        return False
     if any(token == "--output" or token.startswith("--output=") for token in tokens[1:]):
         return False
     if program == "find" and any(token in {"-delete", "-exec", "-execdir", "-ok", "-okdir"} for token in tokens):
@@ -79,9 +127,16 @@ def _safe_segment(segment: str) -> bool:
     if program == "tsc":
         return "--noEmit" in tokens[1:]
     if program == "git":
+        for index, token in enumerate(tokens[1:], 1):
+            if token == "-C" and (index + 1 >= len(tokens) or not _path_token_within_root(root, tokens[index + 1])):
+                return False
+            if token.startswith(("--git-dir=", "--work-tree=")) and not _path_token_within_root(
+                root, token.split("=", 1)[1]
+            ):
+                return False
         return _git_subcommand(tokens) in _GIT_READ
     if program in {"uv", "poetry", "pipenv"} and len(tokens) >= 3 and tokens[1] == "run":
-        return _safe_segment(shlex.join(tokens[2:]))
+        return _safe_segment(shlex.join(tokens[2:]), root)
     if program in {"npm", "pnpm", "yarn"}:
         return len(tokens) >= 2 and tokens[1] in {"test", "lint", "check"}
     if program == "cargo":
@@ -146,7 +201,7 @@ def _safe_asgard_hook(tokens: list[str]) -> bool:
     return name == "verifier-gate.py"
 
 
-def is_readonly_bash_safe(command: str) -> bool:
+def is_readonly_bash_safe(command: str, root: str | None = None) -> bool:
     """Return True only for Bash commands admitted in a read-only role."""
     command = command.strip()
     if not command:
@@ -166,7 +221,7 @@ def is_readonly_bash_safe(command: str) -> bool:
     ):
         return True
     # Pipelines are safe only when every stage is independently read-only.
-    return all(_safe_segment(shlex.join(part)) for part in parts)
+    return all(_safe_segment(shlex.join(part), root) for part in parts)
 
 
 def main() -> None:
@@ -181,27 +236,44 @@ def main() -> None:
     # Main-thread Odin is coordination/read-only; mutations belong to explicit
     # Worker/Freyja/Thor/Eitri subagents. Tool-lifecycle hooks provide agent_type for them.
     readonly = not agent or agent in _READONLY_AGENTS
+    root = str(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
     normalized_path = os.path.normpath(path).replace("\\", "/")
     try:
         normalized_command = command + " " + " ".join(shlex.split(command))
     except ValueError:
         normalized_command = command
-    control_write = tool_name in {"Write", "Edit", "NotebookEdit"} and any(
-        marker in normalized_path for marker in _CONTROL_PATHS
+    control_write = tool_name in {"Write", "Edit", "NotebookEdit"} and (
+        any(marker in normalized_path for marker in _CONTROL_PATHS)
+        or _path_token_targets_control(root, path, _CONTROL_PATHS)
     )
+    private_control_access = (
+        any(marker in normalized_path for marker in _PRIVATE_CONTROL_PATHS)
+        or _path_token_targets_control(root, path, _PRIVATE_CONTROL_PATHS)
+        or tool_name == "Bash"
+        and (
+            any(marker in normalized_command for marker in _PRIVATE_CONTROL_PATHS)
+            or _command_targets_control(root, command, _PRIVATE_CONTROL_PATHS)
+        )
+    )
+    path_escape = bool(path) and not _path_token_within_root(root, path)
     control_shell_write = (
         tool_name == "Bash"
-        and any(marker in normalized_command for marker in _CONTROL_PATHS)
-        and not is_readonly_bash_safe(command)
+        and (
+            any(marker in normalized_command for marker in _CONTROL_PATHS)
+            or _command_targets_control(root, command, _CONTROL_PATHS)
+        )
+        and not is_readonly_bash_safe(command, root)
     )
     denied = (
-        control_write
+        private_control_access
+        or path_escape
+        or control_write
         or control_shell_write
         or readonly
         and (
             tool_name in {"Write", "Edit", "NotebookEdit"}
-            or (tool_name == "Bash" and not is_readonly_bash_safe(command))
+            or (tool_name == "Bash" and not is_readonly_bash_safe(command, root))
         )
     )
     if denied:

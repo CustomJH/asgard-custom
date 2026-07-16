@@ -21,13 +21,15 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import re
-import stat
+import secrets
 import subprocess
 import sys
+import tempfile
 import time
 
 SCHEMA = 1
@@ -39,8 +41,11 @@ EVENTS = {
     "fail",
     "escalate",
     "delegate",
+    "ticket",
+    "quest_closed",
 }  # delegate: 중첩 디스패치 배정 기록 — Phase 2 통계가 배정 정책 학습
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}
+TICKET_STATUSES = {"todo", "in_progress", "done", "failed", "blocked"}
 # 로그 v1 = 16필드 고정. tier/effort/model 등은 v1 소비자 없음 → Phase 2.
 FIELDS = [
     "schema",
@@ -71,7 +76,7 @@ DEFAULT_POLICY: dict = {
         "verifier": {"tier": "high", "effort": "high"},
     },
     # 소비자는 Heimdall(_delivery_model/_model_for) — 여기 두는 이유는 템플릿과 기본값 거울 유지.
-    "delivery": {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast"},
+    "delivery": {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast", "mimir": "standard"},
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
     "sensitive_paths": [
@@ -159,6 +164,49 @@ def git(root: str, *args: str, binary: bool = False):
         return 1, b"" if binary else ""
 
 
+def snapshot_ref(root: str) -> str | None:
+    """Create an unreachable commit for the exact quest-start tree without touching the user's index."""
+    rc, raw_head = git(root, "rev-parse", "--verify", "HEAD")
+    head = raw_head.decode("utf-8", "replace") if isinstance(raw_head, bytes) else raw_head
+    if rc != 0 or not head.strip():
+        return None
+    fd, index_path = tempfile.mkstemp(prefix="asgard-quest-index-")
+    os.close(fd)
+    os.unlink(index_path)  # Git expects a missing index path, not an empty invalid index.
+    env = {
+        **os.environ,
+        "GIT_INDEX_FILE": index_path,
+        "GIT_AUTHOR_NAME": "Asgard Quest",
+        "GIT_AUTHOR_EMAIL": "quest@asgard.local",
+        "GIT_COMMITTER_NAME": "Asgard Quest",
+        "GIT_COMMITTER_EMAIL": "quest@asgard.local",
+    }
+
+    def run(*args: str, input_data: bytes | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", root, *args], input=input_data, capture_output=True, timeout=60, env=env, check=False
+        )
+
+    try:
+        if run("read-tree", head.strip()).returncode:
+            return None
+        if run("add", "-A", "--", ".", ":(exclude).asgard").returncode:
+            return None
+        if os.path.isdir(os.path.join(root, ".asgard", "map")):
+            if run("add", "-A", "-f", "--", ".asgard/map").returncode:
+                return None
+        tree = run("write-tree")
+        if tree.returncode or not tree.stdout.strip():
+            return None
+        commit = run(
+            "commit-tree", tree.stdout.decode().strip(), "-p", head.strip(), input_data=b"Asgard quest snapshot\n"
+        )
+        return commit.stdout.decode().strip() if commit.returncode == 0 and commit.stdout.strip() else None
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(index_path)
+
+
 # ── 물리 증거 해시 — verifier-gate.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙) ──
 # 검증 실행 아티팩트 — 검증 명령이 만든 캐시가 PASS 를 stale 로 만들면 게이트가 자기파괴적이다
 # (.gitignore 없는 프로젝트에서 pytest 실행 → __pycache__ → hash 변경, s1 라이브 실측).
@@ -187,22 +235,9 @@ def unsafe_map_links(root: str) -> list[str]:
 
 
 def symlink_map_state(path: str) -> bytes:
-    """Hash a linked regular file without blocking on devices/FIFOs."""
+    """Hash only the link identity; never open or consume an external target as evidence."""
     target = os.readlink(path).encode(errors="surrogateescape")
-    fd = None
-    try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return b"<unsafe-symlink-nonregular>\0" + target
-        digest = hashlib.sha256()
-        while chunk := os.read(fd, 1024 * 1024):
-            digest.update(chunk)
-        return b"<unsafe-symlink-sha256>\0" + target + b"\0" + digest.digest()
-    except OSError:
-        return b"<unsafe-symlink-unreadable>\0" + target
-    finally:
-        if fd is not None:
-            os.close(fd)
+    return b"<unsafe-symlink>\0" + target
 
 
 def sensitive_path(path: str, needles) -> bool:
@@ -217,7 +252,47 @@ def sensitive_path(path: str, needles) -> bool:
     return False
 
 
-def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, int]:
+def ignored_state(root: str) -> dict[str, str]:
+    """Hash ignored non-junk files without following symlinks, so they cannot evade quest binding."""
+    rc, raw = git(
+        root,
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "-z",
+        "--",
+        ".",
+        ":(exclude).asgard",
+        binary=True,
+    )
+    if rc != 0:
+        return {}
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8", "surrogateescape")
+    out: dict[str, str] = {}
+    for item in raw.split(b"\0"):
+        if not item:
+            continue
+        path = item.decode("utf-8", "surrogateescape")
+        if _junk(path):
+            continue
+        full = os.path.join(root, path)
+        try:
+            body = (
+                b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
+                if os.path.islink(full)
+                else open(full, "rb").read()
+            )
+            out[path] = hashlib.sha256(body).hexdigest()
+        except OSError:
+            out[path] = "<missing>"
+    return out
+
+
+def diff_state(
+    root: str, base_ref: str | None, ignored_base: dict[str, str] | None = None
+) -> tuple[str, list[str], int, int]:
     """(diff_hash, changed_files, changed_lines, nontest_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref 는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
     diff 를 바꾸면 해시가 자기참조로 영원히 안 맞는다.
@@ -260,16 +335,9 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
             after = symlink_map_state(full_path) if is_link else open(full_path, "rb").read()
         except OSError:
             after = None
-        link_target = os.readlink(full_path).encode(errors="surrogateescape") if is_link else b""
         if (before if before_rc == 0 else None) != after:
             map_changed.append(p)
-            diff += (
-                p.encode("utf-8", "surrogateescape")
-                + b"\0"
-                + link_target
-                + b"\0"
-                + (after if after is not None else b"<deleted>")
-            )
+            diff += p.encode("utf-8", "surrogateescape") + b"\0" + (after if after is not None else b"<deleted>")
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
     nt_lines = 0
@@ -293,7 +361,26 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
             h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
         except Exception:
             h.update(p.encode() + b"\0missing")
-    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed))
+    ignored_changed: list[str] = []
+    if ignored_base is not None:
+        current_ignored = ignored_state(root)
+        ignored_changed = sorted(
+            path
+            for path in set(ignored_base) | set(current_ignored)
+            if ignored_base.get(path) != current_ignored.get(path)
+        )
+        for path in ignored_changed:
+            h.update(
+                b"ignored\0"
+                + path.encode("utf-8", "surrogateescape")
+                + b"\0"
+                + str(ignored_base.get(path, "<missing>")).encode()
+                + b"\0"
+                + str(current_ignored.get(path, "<missing>")).encode()
+            )
+    changed = sorted(
+        set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed) | set(ignored_changed)
+    )
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
@@ -312,7 +399,45 @@ def detect_checks(root: str, policy: dict) -> list[str]:
     exit 2 라 pytest 미의존 프로젝트도 skip 분류로 fail-open 이 유지된다."""
     cfg = policy.get("baseline_checks")
     if cfg:
-        return [str(c) for c in cfg]
+        checks = [str(c).strip() for c in cfg if str(c).strip()]
+        # Repository policy is untrusted input. A trivial command can erase the LLM Verifier,
+        # and shell composition can mutate/exfiltrate from the deterministic harness.
+        safe_prefixes = (
+            "pytest ",
+            "python -m pytest ",
+            "python3 -m pytest ",
+            "python -m compileall ",
+            "python3 -m compileall ",
+            "uv run pytest ",
+            "uv run ruff check ",
+            "uv run ruff format --check ",
+            "uv run ty check",
+            "ruff check ",
+            "ruff format --check ",
+            "mypy ",
+            "pyright ",
+            "ty check",
+            "npm test",
+            "npm run test",
+            "pnpm test",
+            "yarn test",
+            "cargo test",
+            "cargo check",
+            "go test",
+            "make test",
+            "make check",
+            "make verify",
+            "test ",
+            "false",
+        )
+        return [
+            cmd
+            for cmd in checks
+            if not trivial_evidence(cmd)
+            and "\n" not in cmd
+            and not any(token in cmd for token in (";", "&&", "||", "`", "$(", ">", "<"))
+            and any(cmd == prefix.rstrip() or cmd.startswith(prefix) for prefix in safe_prefixes)
+        ]
     import shutil
 
     if not any(os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")):
@@ -546,12 +671,88 @@ def update_priors(root: str, task_class: str, red: bool) -> None:
         pass
 
 
-def active_quest(root: str) -> str | None:
+def _session_key(session: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]", "_", str(session or "default"))[:64] or "default"
+
+
+def _session_pointer(root: str, session: str, kind: str = "active") -> str:
+    directory = os.path.join(quest_dir(root), "sessions")
+    return os.path.join(directory, f"{_session_key(session)}.{kind}")
+
+
+def _write_pointer(path: str, qid: str) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = "%s.%d.tmp" % (path, os.getpid())
+    with open(tmp, "w", encoding="utf-8") as handle:
+        handle.write(qid + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(tmp, path)
+    _fsync_dir(os.path.dirname(path))
+
+
+def _fsync_dir(path: str) -> None:
+    """Persist directory metadata for pointer rename/unlink operations."""
+    fd = os.open(path, os.O_RDONLY)
     try:
-        qid = open(os.path.join(root, ".asgard", "quest", "ACTIVE")).read().strip()
-        return qid or None
-    except Exception:
-        return None
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def active_quest(root: str, session: str | None = None) -> str | None:
+    paths = []
+    if session is not None:
+        session_path = _session_pointer(root, session)
+        try:
+            qid = open(session_path, encoding="utf-8").read().strip()
+            if qid:
+                return qid
+        except Exception:
+            pass
+        sessions = os.path.dirname(session_path)
+        if os.path.exists(_session_pointer(root, session, "known")):
+            return None  # 이 session은 이미 닫혔음 — 다른 session으로 fallback 금지
+        # 구 scaffold는 quest-log CLI와 hook session id를 결속하지 않았다. 알려지지 않은 hook
+        # session은 active Quest가 정확히 하나일 때만 안전하게 승계한다. 둘 이상이면 fail closed.
+        try:
+            active = {
+                open(os.path.join(sessions, name), encoding="utf-8").read().strip()
+                for name in os.listdir(sessions)
+                if name.endswith(".active")
+            }
+            active.discard("")
+            if len(active) == 1:
+                return next(iter(active))
+        except Exception:
+            pass
+        if os.path.isdir(sessions):
+            return None
+    paths.append(os.path.join(root, ".asgard", "quest", "ACTIVE"))  # v1 fallback
+    for path in paths:
+        try:
+            qid = open(path, encoding="utf-8").read().strip()
+            if qid:
+                return qid
+        except Exception:
+            continue
+    return None
+
+
+def set_active_quest(root: str, session: str, qid: str) -> None:
+    _write_pointer(_session_pointer(root, session), qid)
+    _write_pointer(_session_pointer(root, session, "known"), qid)
+    _write_pointer(os.path.join(quest_dir(root), "ACTIVE"), qid)  # v1 readers 호환
+
+
+def clear_active_quest(root: str, session: str, qid: str) -> None:
+    for path in (_session_pointer(root, session), os.path.join(quest_dir(root), "ACTIVE")):
+        try:
+            if open(path, encoding="utf-8").read().strip() == qid:  # compare-and-delete
+                os.remove(path)
+                _fsync_dir(os.path.dirname(path))
+        except FileNotFoundError:
+            pass
 
 
 def load_events(root: str, qid: str) -> list[dict]:
@@ -568,15 +769,59 @@ def load_events(root: str, qid: str) -> list[dict]:
     return events
 
 
-def write_event(root: str, qid: str, ev: dict) -> None:
-    """O_APPEND + 단일 os.write — JSONL 한 줄이 원자 단위. lock 없음 (Codex 합의)."""
+@contextlib.contextmanager
+def quest_lock(root: str, qid: str):
+    """Quest별 프로세스 lock — 상태 검사→turn 할당→append를 한 임계구역으로 묶는 기반."""
+    path = os.path.join(quest_dir(root), qid + ".lock")
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        if os.name == "nt":  # pragma: no cover - Windows 전용
+            import msvcrt
+
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"0")
+            os.lseek(fd, 0, os.SEEK_SET)
+            msvcrt.locking(fd, msvcrt.LK_LOCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        try:
+            if os.name == "nt":  # pragma: no cover - Windows 전용
+                import msvcrt
+
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
+
+
+def _write_event_unlocked(root: str, qid: str, ev: dict, events: list[dict]) -> None:
+    """quest_lock 보유 호출자 전용 append primitive."""
     path = os.path.join(quest_dir(root), qid + ".jsonl")
+    ev["turn"] = max((int(event.get("turn") or 0) for event in events), default=0) + 1
+    ev["ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
     line = (json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     fd = os.open(path, os.O_APPEND | os.O_WRONLY | os.O_CREAT, 0o644)
     try:
-        os.write(fd, line)
+        written = os.write(fd, line)
+        if written != len(line):
+            raise OSError("short quest-log write")
+        os.fsync(fd)
     finally:
         os.close(fd)
+
+
+def write_event(root: str, qid: str, ev: dict) -> None:
+    """Quest lock 안에서 단조 turn을 할당하고 O_APPEND+fsync로 한 JSONL 레코드를 내구 기록."""
+    with quest_lock(root, qid):
+        _write_event_unlocked(root, qid, ev, load_events(root, qid))
 
 
 def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
@@ -600,19 +845,84 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
         "failure_sig": ev.get("failure_sig"),
         "failure_count": int(ev.get("failure_count") or 0),
     }
+    if isinstance(ev.get("ignored_snapshot"), dict):
+        full["ignored_snapshot"] = ev["ignored_snapshot"]
     if ev.get("level"):  # verify 전용 부가 필드 — gate 의 full-verify 판정 근거
         full["level"] = ev["level"]
     if ev.get("unit") is not None:  # work 전용 부가 필드 — wave 병렬 배정 단위 id
         full["unit"] = ev["unit"]
+    if ev.get("ticket_status"):
+        full["ticket_status"] = ev["ticket_status"]
+    if ev.get("subtask"):
+        full["subtask"] = str(ev["subtask"])[:1000]
+    if isinstance(ev.get("access"), list):
+        full["access"] = ev["access"][:20]
+    if ev.get("ticket_error"):
+        full["ticket_error"] = str(ev["ticket_error"])[:500]
+    if ev.get("claim_token_hash"):
+        full["claim_token_hash"] = str(ev["claim_token_hash"])[:128]
+    if ev.get("worker_id"):
+        full["worker_id"] = str(ev["worker_id"])[:128]
+    for key in ("lease_expires_at", "heartbeat_at"):
+        if ev.get(key) is not None:
+            full[key] = float(ev[key])
+    for key in ("attempt", "max_attempts"):
+        if ev.get(key) is not None:
+            full[key] = int(ev[key])
     if ev.get("model"):  # 실사용 provider:model 기록 — 라우팅 prior 등 결과 기반 정책 조정의 데이터 축
         full["model"] = str(ev["model"])[:80]
     return full
 
 
+def fold_tickets(events: list[dict]) -> dict[str, dict]:
+    """Append-only ticket events를 최신 materialized view로 접는다 (구 이벤트는 기본값으로 호환)."""
+    tickets: dict[str, dict] = {}
+    for event in events:
+        if event.get("event") != "ticket" or event.get("unit") is None:
+            continue
+        key = str(event["unit"])
+        current = tickets.get(key, {})
+        attempt_value = event.get("attempt") if event.get("attempt") is not None else current.get("attempt")
+        max_attempts_value = (
+            event.get("max_attempts") if event.get("max_attempts") is not None else current.get("max_attempts")
+        )
+        try:
+            attempt = int(str(attempt_value)) if attempt_value is not None else 0
+        except TypeError, ValueError:
+            attempt = 0
+        try:
+            max_attempts = int(str(max_attempts_value)) if max_attempts_value is not None else 3
+        except TypeError, ValueError:
+            max_attempts = 3
+        tickets[key] = {
+            "id": event["unit"],
+            "status": event.get("ticket_status") or current.get("status") or "todo",
+            "subtask": event.get("subtask") or current.get("subtask") or "",
+            "files": event.get("changed_files") or current.get("files") or [],
+            "criteria": event.get("criteria") or current.get("criteria") or [],
+            "access": event.get("access") if isinstance(event.get("access"), list) else current.get("access") or [],
+            "error": event.get("ticket_error") or current.get("error"),
+            "claim_token_hash": event.get("claim_token_hash") or current.get("claim_token_hash"),
+            "worker_id": event.get("worker_id") or current.get("worker_id"),
+            "lease_expires_at": event.get("lease_expires_at")
+            if event.get("lease_expires_at") is not None
+            else current.get("lease_expires_at"),
+            "heartbeat_at": event.get("heartbeat_at")
+            if event.get("heartbeat_at") is not None
+            else current.get("heartbeat_at"),
+            "attempt": attempt,
+            "max_attempts": max_attempts,
+        }
+    return tickets
+
+
 def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     """코디네이터 관찰용 요약 — next 의 입력이기도 하다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
-    cur, changed, lines, nt_lines = diff_state(root, base_ref)
+    ignored_base = next(
+        (e.get("ignored_snapshot") for e in events if isinstance(e.get("ignored_snapshot"), dict)), None
+    )
+    cur, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
     verifies = [e for e in events if e.get("event") == "verify"]
     passes = [e for e in verifies if e.get("verdict") == "PASS"]
     last_pass = passes[-1] if passes else None
@@ -645,6 +955,10 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     small = policy["small_write"]
     _esc_i = [i for i, e in enumerate(events) if e.get("event") == "verify" and e.get("verdict") == "ESCALATE"]
     _plan_i = [i for i, e in enumerate(events) if e.get("event") == "plan"]
+    tickets = fold_tickets(events)
+    ticket_counts = {
+        status: sum(1 for ticket in tickets.values() if ticket["status"] == status) for status in TICKET_STATUSES
+    }
     return {
         "quest_id": qid,
         "base_ref": base_ref,
@@ -683,6 +997,8 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         # 게이트-우선 라우팅 신호
         "checks_available": bool(detect_checks(root, policy)),
         "sig_risk": signature_risk(root, base_ref),
+        "tickets": list(tickets.values()),
+        "ticket_counts": {status: count for status, count in ticket_counts.items() if count},
     }
 
 
@@ -699,6 +1015,10 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
     if not s.get("criteria"):
         # 게이트와 동일 검사 — close 가 이걸 안 보면 무기준 PASS 가 LAST 면제로 게이트를 우회한다
         return "REJECTED", "no_criteria", "성공 기준(criteria)이 로그에 없음 — 기준 없이는 검증이 성립하지 않는다"
+    unfinished = [ticket for ticket in (s.get("tickets") or []) if ticket.get("status") != "done"]
+    if unfinished:
+        ids = ", ".join(str(ticket.get("id")) for ticket in unfinished[:6])
+        return "REJECTED", "tickets_incomplete", "미완료 ticket 존재: %s" % ids
     if not s.get("pass_evidence"):
         return "REJECTED", "no_evidence", "PASS 에 성공한 검증 명령 증거 없음"
     if s.get("baseline_state") == "red":
@@ -816,6 +1136,8 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
         if code == "no_criteria":
             return out("VERIFIER", "성공 기준(criteria)이 로그에 없음 — criteria 기록 후 재판정 (Canon 10)")
+        if code == "tickets_incomplete":
+            return out("WORKER_RETRY", why + " — 미완료 단위만 재배정")
         if code == "criteria_unverified":
             # 계약 명령이 실패했거나 산출물이 없다 — 재검증 append 가 하네스 재실행을 트리거한다
             return out("VERIFIER", why + " — 계약 명령을 수리/재실행해 재판정 (Canon 10)")
@@ -823,17 +1145,15 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
         # micro_pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
         return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
-    if ((flags.ambiguous and has_write) or flags.external_research) and s["plan_turns"] < 2:
+    if ((flags.ambiguous and has_write) or flags.external_research or flags.parallel_requested) and s["plan_turns"] < 2:
         # plan_turns 게이트 — 플래그는 매 전이마다 재전달(sticky)되므로, 실제 Thinker 계획(턴2)
         # 이후엔 실행으로 넘어가야 한다. 안 그러면 THINKER 무한 루프(12턴 소진).
-        return out("THINKER", "모호한 범위의 write 또는 외부 조사 — 전략 선행")
+        return out("THINKER", "deep/모호한 write 또는 외부 조사 — 전략 선행")
     if not has_write:
         return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")
     if s["last_event"] == "work":
-        if standard_ok and s.get("checks_available"):
-            # 게이트-우선 — 검증이 싸면 always-verify 가 지배 (arXiv 2606.24453): LLM Verifier 대신
-            # 하네스 베이스라인이 판정한다. 체크가 없으면 LLM Verifier 폴백 (아래).
-            return out("BASELINE_VERIFY", "게이트-우선 — 하네스 베이스라인 판정")
+        # Deterministic checks are evidence, not an authority. Every write still crosses an
+        # independent Verifier role; otherwise a repository-controlled baseline can flatten Trinity.
         return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
     if (sensitive or big) and s["plan_turns"] < 2:
         # open 의 자동 plan(턴1)은 접수 기록일 뿐 — 민감/큰 write 는 실제 Thinker 계획 턴을 요구한다.
@@ -867,20 +1187,22 @@ def map_nudge(root: str, base_ref: str | None) -> list[str]:
     return changes[:20]  # 상한 — 대량 이동에서 close 출력이 지도 노릇을 하지 않게
 
 
-def refresh_managed_map(root: str) -> bool:
-    """Verifier hash 전에 PROJECT.md를 갱신한다. 지도 미도입/패키지 부재/IO 실패는 fail-open.
+def refresh_managed_map(root: str) -> tuple[bool, str | None]:
+    """Verifier hash 전에 PROJECT.md를 갱신한다.
 
     검증 뒤 close에서 쓰면 PASS hash가 즉시 stale해진다. 따라서 자동 지도 변경도 반드시
-    Verifier가 판정하는 diff에 포함되도록 이 시점 하나에서만 쓴다.
+    Verifier가 판정하는 diff에 포함되도록 이 시점 하나에서만 쓴다. 지도 미도입은 정상이나,
+    도입된 지도의 안전/소유권/IO 갱신 실패는 PASS를 허용하면 안 되므로 호출자가 FAIL로 강등한다.
     """
     if not os.path.isdir(os.path.join(root, ".asgard", "map")):
-        return False
+        return True, None
     try:
         from asgard.code_map import refresh_map
 
-        return refresh_map(root).changed
-    except Exception:
-        return False
+        refresh_map(root)
+        return True, None
+    except Exception as exc:
+        return False, f"{exc.__class__.__name__}: {str(exc)[:300]}"
 
 
 def tests_available(root: str) -> bool:
@@ -893,14 +1215,190 @@ def sanitize(qid: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", qid)[:80]
 
 
+def ticket_runtime(
+    root: str,
+    qid: str,
+    cmd: str,
+    *,
+    unit: str | None,
+    session: str,
+    worker: str | None = None,
+    claim_token: str | None = None,
+    lease_seconds: int = 300,
+    max_attempts: int = 3,
+    status: str | None = None,
+    error: str | None = None,
+) -> tuple[int, dict]:
+    """Ticket claim/lease 상태 전이를 Quest lock 아래에서 검사+기록한다."""
+    now = time.time()
+    lease_seconds = max(1, min(int(lease_seconds), 86400))
+    max_attempts = max(1, min(int(max_attempts), 20))
+    with quest_lock(root, qid):
+        events = load_events(root, qid)
+
+        def emit(raw: dict) -> dict:
+            event = normalize({"role": "worker", "event": "ticket", **raw}, events, qid, session)
+            _write_event_unlocked(root, qid, event, events)
+            events.append(event)
+            return event
+
+        tickets = fold_tickets(events)
+        if cmd == "ticket-recover":
+            recovered = []
+            for ticket in list(tickets.values()):
+                if ticket["status"] != "in_progress" or float(ticket.get("lease_expires_at") or 0) > now:
+                    continue
+                exhausted = int(ticket.get("attempt") or 0) >= int(ticket.get("max_attempts") or max_attempts)
+                next_status = "blocked" if exhausted else "failed"
+                emit(
+                    {
+                        "unit": ticket["id"],
+                        "ticket_status": next_status,
+                        "ticket_error": "lease expired",
+                        "attempt": ticket.get("attempt") or 0,
+                        "max_attempts": ticket.get("max_attempts") or max_attempts,
+                        "claim_token_hash": ticket.get("claim_token_hash"),
+                        "worker_id": ticket.get("worker_id"),
+                        "lease_expires_at": ticket.get("lease_expires_at"),
+                    }
+                )
+                recovered.append({"unit": ticket["id"], "status": next_status})
+            return 0, {"recovered": recovered}
+
+        key = str(unit)
+        ticket = tickets.get(key)
+        if not ticket:
+            return 1, {"error": "unknown ticket", "unit": unit}
+
+        if cmd == "ticket-claim":
+            dependencies = [tickets.get(str(dep)) for dep in ticket.get("access") or []]
+            if any(not dep or dep.get("status") != "done" for dep in dependencies):
+                return 1, {"error": "dependencies incomplete", "unit": ticket["id"]}
+            if ticket["status"] == "in_progress" and float(ticket.get("lease_expires_at") or 0) > now:
+                return 1, {"error": "ticket already claimed", "unit": ticket["id"]}
+            if ticket["status"] in ("done", "blocked"):
+                message = "retry budget exhausted" if ticket["status"] == "blocked" else "ticket is terminal"
+                return 1, {"error": message, "unit": ticket["id"], "status": ticket["status"]}
+            previous_max = int(ticket.get("max_attempts") or max_attempts)
+            allowed = min(previous_max, max_attempts) if int(ticket.get("attempt") or 0) else max_attempts
+            attempt = int(ticket.get("attempt") or 0) + 1
+            if attempt > allowed:
+                emit(
+                    {
+                        "unit": ticket["id"],
+                        "ticket_status": "blocked",
+                        "ticket_error": "retry budget exhausted",
+                        "attempt": ticket.get("attempt") or 0,
+                        "max_attempts": allowed,
+                    }
+                )
+                return 1, {"error": "retry budget exhausted", "unit": ticket["id"], "status": "blocked"}
+            # Keep the first character non-option-like so argparse callers may safely pass
+            # the opaque token as a separate value (`--claim-token TOKEN`).
+            token = "agt_" + secrets.token_urlsafe(24)
+            token_hash = hashlib.sha256(token.encode()).hexdigest()
+            expiry = now + lease_seconds
+            emit(
+                {
+                    "unit": ticket["id"],
+                    "ticket_status": "in_progress",
+                    "claim_token_hash": token_hash,
+                    "worker_id": worker or "worker",
+                    "lease_expires_at": expiry,
+                    "heartbeat_at": now,
+                    "attempt": attempt,
+                    "max_attempts": allowed,
+                }
+            )
+            return 0, {
+                "claimed": ticket["id"],
+                "claim_token": token,
+                "worker_id": worker or "worker",
+                "lease_expires_at": expiry,
+                "attempt": attempt,
+                "max_attempts": allowed,
+            }
+
+        supplied_hash = hashlib.sha256((claim_token or "").encode()).hexdigest()
+        stored_hash = str(ticket.get("claim_token_hash") or "")
+        if (
+            ticket["status"] != "in_progress"
+            or not claim_token
+            or not secrets.compare_digest(supplied_hash, stored_hash)
+        ):
+            return 1, {"error": "claim token mismatch", "unit": ticket["id"]}
+        if float(ticket.get("lease_expires_at") or 0) <= now:
+            return 1, {"error": "claim lease expired", "unit": ticket["id"]}
+        if cmd == "ticket-heartbeat":
+            expiry = now + lease_seconds
+            emit(
+                {
+                    "unit": ticket["id"],
+                    "ticket_status": "in_progress",
+                    "claim_token_hash": stored_hash,
+                    "worker_id": ticket.get("worker_id"),
+                    "lease_expires_at": expiry,
+                    "heartbeat_at": now,
+                    "attempt": ticket.get("attempt") or 1,
+                    "max_attempts": ticket.get("max_attempts") or max_attempts,
+                }
+            )
+            return 0, {"heartbeat": ticket["id"], "lease_expires_at": expiry}
+        if cmd == "ticket-finish":
+            if status not in ("done", "failed"):
+                return 2, {"error": "ticket-finish status must be done or failed"}
+            final_status = status
+            attempts = int(ticket.get("attempt") or 1)
+            allowed = int(ticket.get("max_attempts") or max_attempts)
+            if status == "failed" and attempts >= allowed:
+                final_status = "blocked"
+            emit(
+                {
+                    "unit": ticket["id"],
+                    "ticket_status": final_status,
+                    "ticket_error": error,
+                    "claim_token_hash": stored_hash,
+                    "worker_id": ticket.get("worker_id"),
+                    "lease_expires_at": ticket.get("lease_expires_at"),
+                    "heartbeat_at": now,
+                    "attempt": attempts,
+                    "max_attempts": allowed,
+                }
+            )
+            return 0, {"finished": ticket["id"], "status": final_status, "attempt": attempts}
+        return 2, {"error": "unknown ticket runtime command"}
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="quest-log", description="Asgard Trinity quest log")
-    ap.add_argument("cmd", choices=["open", "append", "state", "next", "close", "verify-baseline"])
+    ap.add_argument(
+        "cmd",
+        choices=[
+            "open",
+            "append",
+            "state",
+            "next",
+            "close",
+            "verify-baseline",
+            "ticket-claim",
+            "ticket-heartbeat",
+            "ticket-finish",
+            "ticket-recover",
+        ],
+    )
     ap.add_argument("quest_id", nargs="?")
     ap.add_argument("--criteria", action="append", default=[])
+    ap.add_argument("--base-ref", help=argparse.SUPPRESS)
     ap.add_argument("--session", default=os.environ.get("CLAUDE_SESSION_ID", "-"))
     ap.add_argument("--role"), ap.add_argument("--event"), ap.add_argument("--verdict")
     ap.add_argument("--level", choices=["micro", "full"])
+    ap.add_argument("--unit")
+    ap.add_argument("--worker")
+    ap.add_argument("--claim-token")
+    ap.add_argument("--lease-seconds", type=int, default=300)
+    ap.add_argument("--max-attempts", type=int, default=3)
+    ap.add_argument("--status")
+    ap.add_argument("--error")
     ap.add_argument("--no-write", action="store_true", help="open: write 없는 과업으로 표시")
     # 모델 신고 risk_features (결정론 계산이 불가능한 4종) — next 전용
     ap.add_argument("--ambiguous", action="store_true")
@@ -909,6 +1407,11 @@ def main() -> int:
     ap.add_argument("--shared", action="store_true")
     ap.add_argument("--structural", action="store_true", help="next: 직전 FAIL 이 구조적임을 신고")
     ap.add_argument("--write-expected", action="store_true", help="next: 아직 diff 없지만 write 예정")
+    ap.add_argument(
+        "--parallel-requested",
+        action="store_true",
+        help="next: 사용자가 병렬 분해/멀티 서브에이전트를 명시적으로 요구",
+    )
     ap.add_argument(  # Canon 8 무인 진행 — asgard run 이 env 를 심으므로 기본값이 env 를 읽는다
         "--unattended", action="store_true", default=os.environ.get("ASGARD_UNATTENDED") == "1"
     )
@@ -932,8 +1435,20 @@ def main() -> int:
             print("usage: quest-log open <quest-id> [--criteria ...]", file=sys.stderr)
             return 2
         qid = sanitize(args.quest_id)
-        rc, head = git(root, "rev-parse", "HEAD")
-        base_ref = head.strip() if rc == 0 else "NONE"
+        base_ref = args.base_ref or snapshot_ref(root)
+        if args.base_ref:
+            valid_rc, raw_type = git(root, "cat-file", "-t", args.base_ref)
+            valid_type = raw_type.decode("utf-8", "replace") if isinstance(raw_type, bytes) else raw_type
+            if valid_rc != 0 or valid_type.strip() != "commit":
+                print(json.dumps({"error": "invalid quest start snapshot"}), file=sys.stderr)
+                return 1
+        if not base_ref and not args.no_write:
+            print(
+                json.dumps({"error": "write quest requires a Git repository with HEAD and a capturable start tree"}),
+                file=sys.stderr,
+            )
+            return 1
+        base_ref = base_ref or "NONE"
         risk = {"has_write": not args.no_write}
         if args.task_class:  # prior 집계 축 — 퀘스트가 어느 클래스로 열렸는지 감사 기록
             risk["task_class"] = args.task_class
@@ -944,26 +1459,42 @@ def main() -> int:
                 "base_ref": base_ref,
                 "risk": risk,
                 "criteria": args.criteria,
+                "ignored_snapshot": ignored_state(root),
             },
             load_events(root, qid),
             qid,
             args.session,
         )
         write_event(root, qid, ev)
-        # temp+rename — 크래시 절단 ACTIVE(빈 파일)가 게이트를 orphan 경로로 오도하지 않게.
-        # lagom: 전역 포인터 자체는 유지 — 동시 세션 경쟁은 open 시 dangling 경고가 표면화
-        _ap = os.path.join(quest_dir(root), "ACTIVE")
-        _tmp = "%s.%d.tmp" % (_ap, os.getpid())
-        open(_tmp, "w").write(qid + "\n")
-        os.replace(_tmp, _ap)
+        set_active_quest(root, args.session, qid)
         print(json.dumps({"opened": qid, "base_ref": base_ref, "turn": ev["turn"]}, ensure_ascii=False))
         return 0
 
-    qid = sanitize(args.quest_id) if args.quest_id else active_quest(root)
+    qid = sanitize(args.quest_id) if args.quest_id else active_quest(root, args.session)
     if not qid:
         print(json.dumps({"error": "no active quest — run: quest-log open <quest-id>"}))
         return 1
     events = load_events(root, qid)
+
+    if args.cmd.startswith("ticket-"):
+        if args.cmd != "ticket-recover" and args.unit is None:
+            print(json.dumps({"error": "%s requires --unit" % args.cmd}), file=sys.stderr)
+            return 2
+        rc, payload = ticket_runtime(
+            root,
+            qid,
+            args.cmd,
+            unit=args.unit,
+            session=args.session,
+            worker=args.worker,
+            claim_token=args.claim_token,
+            lease_seconds=args.lease_seconds,
+            max_attempts=args.max_attempts,
+            status=args.status,
+            error=args.error,
+        )
+        print(json.dumps(payload, ensure_ascii=False), file=sys.stdout if rc == 0 else sys.stderr)
+        return rc
 
     if args.cmd == "append":
         raw = {}
@@ -984,6 +1515,26 @@ def main() -> int:
         if raw.get("event") not in EVENTS:
             print(json.dumps({"error": "event must be one of %s" % sorted(EVENTS)}), file=sys.stderr)
             return 2
+        if raw.get("event") == "ticket":
+            if raw.get("unit") is None:
+                print(json.dumps({"error": "ticket requires unit"}), file=sys.stderr)
+                return 2
+            if raw.get("ticket_status") not in TICKET_STATUSES:
+                print(
+                    json.dumps({"error": "ticket_status must be one of %s" % sorted(TICKET_STATUSES)}), file=sys.stderr
+                )
+                return 2
+            if raw.get("ticket_status") != "todo" or raw.get("role") != "thinker":
+                print(
+                    json.dumps(
+                        {
+                            "error": "ticket runtime transitions require ticket-claim/heartbeat/finish/recover; "
+                            "raw append only accepts thinker todo definitions"
+                        }
+                    ),
+                    file=sys.stderr,
+                )
+                return 2
         if raw.get("verdict", "NA") not in VERDICTS:
             print(json.dumps({"error": "verdict must be one of %s" % sorted(VERDICTS)}), file=sys.stderr)
             return 2
@@ -993,11 +1544,23 @@ def main() -> int:
                 print(json.dumps({"error": "verify requires --verdict PASS|FAIL|ESCALATE"}), file=sys.stderr)
                 return 2
             # 구조 지도도 판정 대상 diff에 포함 — PASS 뒤 close가 파일을 쓰면 stale hash가 된다.
-            refresh_managed_map(root)
+            map_ok, map_error = refresh_managed_map(root)
             # 판정 이벤트의 물리 증거는 이 도구가 계산한다 — 손 계산 해시는 gate 와 어긋난다.
-            ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"])
+            ignored_base = next(
+                (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
+                None,
+            )
+            ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
             unsafe_maps = unsafe_map_links(root)
-            if unsafe_maps and ev["verdict"] == "PASS":
+            if not map_ok and ev["verdict"] == "PASS":
+                ev["verdict"] = "FAIL"
+                ev["failure_sig"] = "map-refresh-failed"
+                ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
+                ev["commands"] = [
+                    *ev.get("commands", []),
+                    {"cmd": "asgard setup map --check", "exit_code": 1, "error": map_error},
+                ][-20:]
+            elif unsafe_maps and ev["verdict"] == "PASS":
                 ev["verdict"] = "FAIL"
                 ev["failure_sig"] = "unsafe-map-link"
                 ev["changed_files"] = sorted(set(ev["changed_files"]) | set(unsafe_maps))
@@ -1025,23 +1588,30 @@ def main() -> int:
         # 게이트-우선 판정 턴 — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
         # commands = 하네스가 직접 실행한 체크 (pass_evidence 충족) — verifier 재량 커맨드 아님.
         ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
-        refresh_managed_map(root)
-        ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"])
+        map_ok, map_error = refresh_managed_map(root)
+        ignored_base = next(
+            (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
+        )
+        ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
         ev["level"] = "micro"
         bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
         state = bl.get("state")
-        if state not in ("green", "red"):
+        if state not in ("green", "red") and map_ok:
             print(
                 json.dumps({"error": "baseline 판정 불가 (체크 없음/전부 skip) — LLM Verifier 로 검증하세요"}),
                 file=sys.stderr,
             )
             return 1
         results = [c for c in bl.get("results", []) if isinstance(c, dict)]
-        ev["verdict"] = "PASS" if state == "green" else "FAIL"
+        ev["verdict"] = "PASS" if state == "green" and map_ok else "FAIL"
         ev["commands"] = results[:20]
         ev["baseline"] = bl
         failing = [str(c.get("cmd")) for c in results if c.get("exit_code") not in (0, None)]
-        if state == "red":
+        if not map_ok:
+            ev["failure_sig"] = "map-refresh-failed"
+            failing = [map_error or "managed map refresh failed"]
+            ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
+        elif state == "red":
             ev["failure_sig"] = "baseline-red"
         elif unsafe_map_links(root):
             ev["verdict"] = "FAIL"
@@ -1057,6 +1627,17 @@ def main() -> int:
                 ev["verdict"] = "FAIL"
                 ev["failure_sig"] = "criteria-contract"
                 failing = [str(u) for u in unmet]
+        if ev["verdict"] == "PASS":
+            print(
+                json.dumps(
+                    {
+                        "error": "green baseline is evidence only — independent Verifier PASS is still required",
+                        "baseline": state,
+                    }
+                ),
+                file=sys.stderr,
+            )
+            return 1
         write_event(root, qid, ev)
         print(
             json.dumps(
@@ -1085,38 +1666,47 @@ def main() -> int:
         return 0
 
     if args.cmd == "close":
-        # 완료 판정은 단일 퍼널만 신뢰 — transition(DONE)·게이트와 동일 기준.
-        decision, code, why = completion_decision(s)
-        ok = decision in ("APPROVED", "ESCALATED")
-        if not ok and not args.force:
-            print(
-                json.dumps(
-                    {
-                        "error": "close 거부(%s: %s) — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
-                        "우회는 --force (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)" % (code, why)
-                    },
-                    ensure_ascii=False,
-                ),
-                file=sys.stderr,
+        # 최신 상태 판정 → durable close event → pointer compare-delete를 같은 Quest lock에 묶는다.
+        # append가 PASS snapshot 뒤에 끼어드는 stale-close race를 허용하지 않는다.
+        with quest_lock(root, qid):
+            events = load_events(root, qid)
+            s = summarize(root, qid, events, policy)
+            s["tests_available"] = tests_available(root)
+            decision, code, why = completion_decision(s)
+            ok = decision in ("APPROVED", "ESCALATED")
+            if not ok and not args.force:
+                print(
+                    json.dumps(
+                        {
+                            "error": "close 거부(%s: %s) — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
+                            "우회는 --force (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)" % (code, why)
+                        },
+                        ensure_ascii=False,
+                    ),
+                    file=sys.stderr,
+                )
+                return 1
+            forced = bool(args.force and not ok)
+            close_event = normalize(
+                {
+                    "role": "odin",
+                    "event": "quest_closed",
+                    "risk": {"forced": forced, "decision": decision, "code": code},
+                },
+                events,
+                qid,
+                args.session,
             )
-            return 1
-        forced = bool(args.force and not ok)
-        try:
-            os.remove(os.path.join(quest_dir(root), "ACTIVE"))
-        except FileNotFoundError:
-            pass
-        # LAST 포인터: 닫힌 뒤에도 gate 가 "이 워킹트리 상태는 검증됐다"를 증명할 수 있게 —
-        # 없으면 close 직후 Stop 에서 write-sentinel 기록이 방금 검증된 write 를 오차단한다.
-        # forced close 는 LAST 를 기록하지 않는다 — REJECTED 를 --force 로 해제해도
-        # 게이트 면제(승인)로 승격되지 않는다. 남은 write 는 Stop 의 orphan 검사가 정상 차단.
-        if not forced:
-            try:
-                _lp = os.path.join(quest_dir(root), "LAST")
-                _tmp = "%s.%d.tmp" % (_lp, os.getpid())
-                open(_tmp, "w").write(qid + "\n")
-                os.replace(_tmp, _lp)
-            except Exception:
-                pass
+            _write_event_unlocked(root, qid, close_event, events)
+            # LAST 포인터는 승인된 close만 기록한다. forced close는 Stop gate 면제가 아니다.
+            if not forced:
+                try:
+                    _write_pointer(_session_pointer(root, args.session, "last"), qid)
+                    _write_pointer(os.path.join(quest_dir(root), "LAST"), qid)
+                except Exception as exc:
+                    print(json.dumps({"error": f"close LAST pointer publication failed: {exc}"}), file=sys.stderr)
+                    return 1
+            clear_active_quest(root, args.session, qid)
         res = {"closed": qid, "forced": forced}
         if forced:
             res["gate_exempt"] = False

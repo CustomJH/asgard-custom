@@ -20,7 +20,6 @@ import hashlib
 import json
 import os
 import re
-import stat
 import subprocess
 import sys
 from typing import Any
@@ -112,21 +111,9 @@ def unsafe_map_links(root):
 
 
 def symlink_map_state(path):
+    """Hash only the link identity; never open or consume an external target as evidence."""
     target = os.readlink(path).encode(errors="surrogateescape")
-    fd = None
-    try:
-        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
-        if not stat.S_ISREG(os.fstat(fd).st_mode):
-            return b"<unsafe-symlink-nonregular>\0" + target
-        digest = hashlib.sha256()
-        while chunk := os.read(fd, 1024 * 1024):
-            digest.update(chunk)
-        return b"<unsafe-symlink-sha256>\0" + target + b"\0" + digest.digest()
-    except OSError:
-        return b"<unsafe-symlink-unreadable>\0" + target
-    finally:
-        if fd is not None:
-            os.close(fd)
+    return b"<unsafe-symlink>\0" + target
 
 
 def sensitive_path(path, needles):
@@ -139,7 +126,44 @@ def sensitive_path(path, needles):
     return False
 
 
-def diff_state(root, base_ref):
+def ignored_state(root):
+    rc, raw = git(
+        root,
+        "ls-files",
+        "--others",
+        "--ignored",
+        "--exclude-standard",
+        "-z",
+        "--",
+        ".",
+        ":(exclude).asgard",
+        binary=True,
+    )
+    if rc != 0:
+        return {}
+    if isinstance(raw, str):
+        raw = raw.encode("utf-8", "surrogateescape")
+    out = {}
+    for item in raw.split(b"\0"):
+        if not item:
+            continue
+        path = item.decode("utf-8", "surrogateescape")
+        if _junk(path):
+            continue
+        full = os.path.join(root, path)
+        try:
+            body = (
+                b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
+                if os.path.islink(full)
+                else open(full, "rb").read()
+            )
+            out[path] = hashlib.sha256(body).hexdigest()
+        except OSError:
+            out[path] = "<missing>"
+    return out
+
+
+def diff_state(root, base_ref, ignored_base=None):
     # nontest_lines 4번째 원소 — quest_log.py 와 동일 유지 (테스트 추가 ≠ 리스크 질량)
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
@@ -177,16 +201,9 @@ def diff_state(root, base_ref):
             after = symlink_map_state(full_path) if is_link else open(full_path, "rb").read()
         except OSError:
             after = None
-        link_target = os.readlink(full_path).encode(errors="surrogateescape") if is_link else b""
         if (before if before_rc == 0 else None) != after:
             map_changed.append(p)
-            diff += (
-                p.encode("utf-8", "surrogateescape")
-                + b"\0"
-                + link_target
-                + b"\0"
-                + (after if after is not None else b"<deleted>")
-            )
+            diff += p.encode("utf-8", "surrogateescape") + b"\0" + (after if after is not None else b"<deleted>")
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
     nt_lines = 0
@@ -210,7 +227,26 @@ def diff_state(root, base_ref):
             h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
         except Exception:
             h.update(p.encode() + b"\0missing")
-    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed))
+    ignored_changed = []
+    if ignored_base is not None:
+        current_ignored = ignored_state(root)
+        ignored_changed = sorted(
+            path
+            for path in set(ignored_base) | set(current_ignored)
+            if ignored_base.get(path) != current_ignored.get(path)
+        )
+        for path in ignored_changed:
+            h.update(
+                b"ignored\0"
+                + path.encode("utf-8", "surrogateescape")
+                + b"\0"
+                + str(ignored_base.get(path, "<missing>")).encode()
+                + b"\0"
+                + str(current_ignored.get(path, "<missing>")).encode()
+            )
+    changed = sorted(
+        set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed) | set(ignored_changed)
+    )
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
@@ -341,6 +377,47 @@ def block(root, sid, reason):
     sys.exit(0)
 
 
+def quest_pointer(root, sid, kind="active"):
+    """세션별 quest 포인터 해석 — quest_log.active_quest·subagent_gate 와 동일 의미론.
+
+    게이트가 더 약하게 해석하면 session_id 변주만으로 Stop 게이트가 무장해제된다 (적대 벡터).
+    미지 세션은 활성 quest 가 정확히 1개일 때만 승계하고, 둘 이상이면 fail-closed."""
+    name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(sid or "default"))[:64] or "default"
+    sessions = os.path.join(root, ".asgard", "quest", "sessions")
+    session_path = os.path.join(sessions, name + "." + kind)
+    try:
+        qid = open(session_path, encoding="utf-8").read().strip()
+        if qid:
+            return qid
+    except Exception:
+        pass
+    if kind == "active":
+        if os.path.exists(os.path.join(sessions, name + ".known")):
+            return None  # 이 세션은 이미 닫혔음 — 다른 세션으로 fallback 금지
+        try:
+            active = {
+                open(os.path.join(sessions, entry), encoding="utf-8").read().strip()
+                for entry in os.listdir(sessions)
+                if entry.endswith(".active")
+            }
+            active.discard("")
+            if len(active) == 1:
+                return next(iter(active))
+        except Exception:
+            pass
+        if os.path.isdir(sessions):
+            return None
+    # kind="last": 승인된 close 는 legacy LAST 도 항상 기록한다 — 세션 포인터 부재 시 안전 폴백
+    for path in [os.path.join(root, ".asgard", "quest", "ACTIVE" if kind == "active" else "LAST")]:
+        try:
+            qid = open(path, encoding="utf-8").read().strip()
+            if qid:
+                return qid
+        except Exception:
+            continue
+    return None
+
+
 def orphan_writes(root, sid):
     """quest 로그 없이 끝나려는 세션의 write 흔적 검사 (write-sentinel 기록 대조).
     기록된 경로가 지금도 HEAD 와 다르면 = 검증 안 된 write 가 남아 있다 → 차단.
@@ -366,7 +443,9 @@ def orphan_writes(root, sid):
     # LAST 는 quest-log close 의 승인(funnel APPROVED/ESCALATED) 경로만 기록한다 — forced close 는
     # LAST 미기록. 아래 재검증(증거·baseline·hash)은 구버전 quest-log 가 남긴 LAST 방어.
     try:  # LAST quest 의 PASS 가 현 상태를 물리 증명하면 allow
-        qid = open(os.path.join(root, ".asgard", "quest", "LAST")).read().strip()
+        qid = quest_pointer(root, sid, "last")
+        if not qid:
+            raise FileNotFoundError("no last quest for session")
         events = []
         for line in open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
             try:
@@ -381,7 +460,11 @@ def orphan_writes(root, sid):
             last = verdicts[-1]
             evidence = pass_evidence(last)  # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍
             baseline_red = (last.get("baseline") or {}).get("state") == "red"  # --force close 우회 봉합
-            if evidence and not baseline_red and last.get("diff_hash") == diff_state(root, base_ref)[0]:
+            ignored_base = next(
+                (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
+                None,
+            )
+            if evidence and not baseline_red and last.get("diff_hash") == diff_state(root, base_ref, ignored_base)[0]:
                 return
     except Exception:
         pass
@@ -403,9 +486,8 @@ def main():
     try:
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
         sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
-        try:
-            qid = open(os.path.join(root, ".asgard", "quest", "ACTIVE")).read().strip()
-        except Exception:
+        qid = quest_pointer(root, sid)
+        if not qid:
             orphan_writes(root, sid)  # quest 미개설 우회 봉합 — write 흔적이 dirty 면 여기서 block
             sys.exit(0)  # write 흔적 없음 → 게이트 대상 아님
         events = []
@@ -443,7 +525,10 @@ def main():
             except Exception:
                 pass
 
-        current, changed, lines, nt_lines = diff_state(root, base_ref)
+        ignored_base = next(
+            (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
+        )
+        current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
         mutating = [c for c in cmds if not readonly(c.get("cmd", ""), policy["readonly_commands"])]
         risk_write = any((e.get("risk") or {}).get("has_write") for e in events)
@@ -485,6 +570,17 @@ def main():
             block(root, sid, "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.")
         if not any(e.get("criteria") for e in events):
             block(root, sid, "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.")
+        ticket_state = {}
+        for event in events:
+            if event.get("event") == "ticket" and event.get("unit") is not None:
+                ticket_state[str(event["unit"])] = event.get("ticket_status")
+        unfinished = [unit for unit, status in ticket_state.items() if status != "done"]
+        if unfinished:
+            block(
+                root,
+                sid,
+                "미완료 ticket 존재(%s) — 모든 단위를 done으로 만든 뒤 검증하세요." % ", ".join(unfinished[:6]),
+            )
         if not pass_evidence(p):
             block(
                 root,

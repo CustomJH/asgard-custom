@@ -102,6 +102,9 @@ def _cap(s: str) -> str:
 
 def validate_bash_command(root: str, command: str) -> str | None:
     """Return a deterministic block reason without executing the command."""
+    normalized = command.replace("\\", "/")
+    if any(marker in normalized for marker in (".asgard", ".claude")):
+        return "Asgard 제어 경로는 모델 Bash에서 접근할 수 없음 — 하니스/전용 명령만 사용"
     return _git_guard(root, command) or _release_guard(root, command) or _destructive_guard(root, command)
 
 
@@ -130,6 +133,8 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
     rel = os.path.relpath(path, os.path.realpath(root))  # path 는 realpath — 기준도 풀어야 함 (macOS /var 심링크)
 
     if cmd in ("create", "str_replace", "insert"):
+        if rel == ".asgard" or rel.startswith(".asgard/") or rel == ".claude" or rel.startswith(".claude/"):
+            raise ToolError("Asgard 제어 경로는 모델이 변경할 수 없음")
         # secret-guard 훅 (Canon Law 4) — mode B 와 동일 차단 지점(파일 쓰기). shell 우회는
         # 훅 헤더에 문서화된 알려진 구멍 (양 모드 공통).
         body = str(tool_input.get("file_text") or tool_input.get("new_str") or tool_input.get("insert_text") or "")

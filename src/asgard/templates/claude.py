@@ -122,8 +122,28 @@ def cc_settings() -> str:
                                 }
                             ],
                         },
+                        # Trinity mode B — 역할 시작 기록 (agent_id↔세션 결속; Stop 게이트 대조 원료)
+                        {
+                            "matcher": "^asgard-(thinker|worker|verifier)$",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-gate.py"',
+                                }
+                            ],
+                        },
                     ],
                     "PreToolUse": [
+                        # Trinity mode B — Worker/Verifier 디스패치 게이트 (unit 마커·ticket 물리 대조)
+                        {
+                            "matcher": "Agent",
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-gate.py"',
+                                }
+                            ],
+                        },
                         {
                             "matcher": "Bash",
                             "hooks": [
