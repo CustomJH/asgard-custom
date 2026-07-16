@@ -286,7 +286,7 @@ class AgentSession:
                     "cache_write_tokens": cw,
                     "output_tokens": outp,
                 }
-            call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, **counts)
+            call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, counts=counts)
             if resp.stop_reason == "max_tokens":
                 from .. import ui
 
@@ -384,7 +384,7 @@ class AgentSession:
             except Exception as e:
                 self._journal_error(jid, j0, e)
                 raise
-            call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, **jcounts)
+            call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, counts=jcounts)
 
             self.on_status(None)
             if think_t0 is not None:  # thinking 후 바로 툴콜 — 텍스트 없이 끝난 경우

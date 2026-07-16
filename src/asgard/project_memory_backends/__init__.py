@@ -8,8 +8,8 @@ import importlib.metadata
 import json
 import os
 import re
-import urllib.parse
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from collections.abc import Callable, Mapping, Sequence
@@ -344,12 +344,16 @@ def register_backend(name: str, factory: BackendFactory, *, replace: bool = Fals
 
 
 def _load_entry_point_factory(engine: str) -> BackendFactory | None:
-    matches = [entry for entry in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP) if entry.name.lower() == engine]
+    matches = [
+        entry for entry in importlib.metadata.entry_points(group=ENTRY_POINT_GROUP) if entry.name.lower() == engine
+    ]
     if not matches:
         return None
     if len(matches) > 1:
         raise ValueError(f"multiple project memory backend plugins registered: {engine}")
-    trusted = {name.strip().lower() for name in os.environ.get("ASGARD_PROJECT_MEMORY_PLUGINS", "").split(",") if name.strip()}
+    trusted = {
+        name.strip().lower() for name in os.environ.get("ASGARD_PROJECT_MEMORY_PLUGINS", "").split(",") if name.strip()
+    }
     if engine not in trusted:
         raise ValueError(
             f"project memory backend plugin {engine} is installed but not trusted; "

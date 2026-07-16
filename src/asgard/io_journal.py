@@ -72,15 +72,26 @@ def call_started(root: str, *, provider: str, model: str, transport: str, role: 
     return cid if _append(root, entry) else None
 
 
-def call_returned(root: str, call_id: str | None, *, duration_ms: float, error: str | None = None, **counts) -> None:
-    """호출 종료 기록 — counts 는 토큰 계측(0/None 은 생략). error 는 예외 요약 문자열."""
+def call_returned(
+    root: str,
+    call_id: str | None,
+    *,
+    duration_ms: float,
+    error: str | None = None,
+    counts: dict[str, int] | None = None,
+    **kw: int,
+) -> None:
+    """호출 종료 기록 — counts/키워드는 토큰 계측(0/None 은 생략). error 는 예외 요약 문자열.
+
+    dict 계측은 counts= 로 받는다 — **splat 은 int 값이 error(str) 파라미터에 바인딩될 수
+    있다고 타입체커가 판정하므로 시그니처에서 분리."""
     if not call_id:
         return
     entry = _base("returned", call_id)
     entry["duration_ms"] = int(duration_ms)
     if error:
         entry["error"] = str(error)[:200]
-    for key, value in counts.items():
+    for key, value in {**(counts or {}), **kw}.items():
         if value:
             entry[key] = int(value)
     _append(root, entry)

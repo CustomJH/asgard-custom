@@ -47,6 +47,10 @@ class TrinityBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
+        # HOME 격리 — 훅 subprocess 가 호스트의 글로벌 git 설정(excludesfile 등)·~/.asgard 상태를
+        # 보지 않게 한다. map_current 판정이 호스트 상태에 따라 흔들린 flake 방어 (test_heimdall 관행).
+        self._home = os.environ.get("HOME")
+        os.environ["HOME"] = self.root
         subprocess.run(["git", "init", "-q"], cwd=self.root, check=True)
         subprocess.run(["git", "-C", self.root, "config", "user.email", "t@t"], check=True)
         subprocess.run(["git", "-C", self.root, "config", "user.name", "t"], check=True)
@@ -55,6 +59,8 @@ class TrinityBase(unittest.TestCase):
         subprocess.run(["git", "-C", self.root, "commit", "-qm", "init"], check=True)
 
     def tearDown(self):
+        if self._home is not None:
+            os.environ["HOME"] = self._home
         self.tmp.cleanup()
 
     def write(self, rel, content):

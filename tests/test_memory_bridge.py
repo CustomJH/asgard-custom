@@ -152,8 +152,9 @@ class TestConfigDiscovery(BridgeBase):
         }
         changed = {**config, "endpoint": "http://other"}
 
-        with mock.patch.dict(os.environ, {"HOME": self.root}), mock.patch(
-            "asgard.memory_bridge.verify_backend_binding"
+        with (
+            mock.patch.dict(os.environ, {"HOME": self.root}),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
         ):
             self.assertFalse(mb.is_backend_trusted(config))
             mb.trust_backend(config)
@@ -179,8 +180,9 @@ class TestConfigDiscovery(BridgeBase):
             time.sleep(0.03)
             return value
 
-        with mock.patch("asgard.memory_bridge._load_trust", side_effect=slow_load), mock.patch(
-            "asgard.memory_bridge.verify_backend_binding"
+        with (
+            mock.patch("asgard.memory_bridge._load_trust", side_effect=slow_load),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
         ):
             threads = [threading.Thread(target=mb.trust_backend, args=(config,)) for config in configs]
             for thread in threads:
@@ -325,7 +327,6 @@ class TestRecall(BridgeBase):
     def test_foreign_binding_hides_tools_and_blocks_calls_even_when_target_is_trusted(self):
         found = mb.find_config(self.root)
         assert found is not None
-        cfg = found[1]
         with mock.patch("asgard.memory_bridge.verify_backend_binding", side_effect=PermissionError("foreign binding")):
             self.assertEqual(self.rpc("tools/list")["result"]["tools"], [])
             text, error = self.call("memory_recall", {"query": "private prompt"})
@@ -468,7 +469,9 @@ class TestRetainTwoStep(BridgeBase):
         text, _ = self.call("memory_retain", self.record_args("backend 거부 후 재시도할 프로젝트 결정이다."))
         aid = text.split("approval_id: ")[1].split("\n")[0]
 
-        with mock.patch("asgard.memory_bridge.server_retain_items", return_value={"success": False, "error": "rejected"}):
+        with mock.patch(
+            "asgard.memory_bridge.server_retain_items", return_value={"success": False, "error": "rejected"}
+        ):
             first, first_err = self.call("memory_retain_commit", {"approval_id": aid})
 
         self.assertTrue(first_err)

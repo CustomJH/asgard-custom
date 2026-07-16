@@ -28,11 +28,10 @@ import time
 import urllib.error
 
 from . import __version__
-from .memory import scan_threats
 from .project_memory_backends import (
     BackendWriteResult,
-    ProjectMemoryHit,
     ProjectMemoryBinding,
+    ProjectMemoryHit,
     ProjectMemoryRecord,
     get_backend,
     parse_settings,
@@ -163,7 +162,9 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
     records = []
     for item in items:
         text = str(item.get("content") or "")
-        record_id = str(item.get("document_id") or "") or "asgard:legacy:" + hashlib.sha256(text.encode()).hexdigest()[:24]
+        record_id = (
+            str(item.get("document_id") or "") or "asgard:legacy:" + hashlib.sha256(text.encode()).hexdigest()[:24]
+        )
         metadata = item.get("metadata")
         tags = item.get("tags")
         records.append(
@@ -525,7 +526,16 @@ _TOOLS = [
                 "record_id": {"type": "string", "description": "안정적인 프로젝트 고유 ID"},
                 "kind": {
                     "type": "string",
-                    "enum": ["decision", "policy", "contract", "component", "incident", "experiment", "migration", "runbook"],
+                    "enum": [
+                        "decision",
+                        "policy",
+                        "contract",
+                        "component",
+                        "incident",
+                        "experiment",
+                        "migration",
+                        "runbook",
+                    ],
                 },
                 "title": {"type": "string"},
                 "content": {"type": "string", "description": "자립적인 검증된 사실 한 건"},
@@ -543,7 +553,17 @@ _TOOLS = [
                     },
                 },
             },
-            "required": ["record_id", "kind", "title", "content", "source", "source_revision", "importance", "confidence", "status"],
+            "required": [
+                "record_id",
+                "kind",
+                "title",
+                "content",
+                "source",
+                "source_revision",
+                "importance",
+                "confidence",
+                "status",
+            ],
         },
     },
     {
@@ -619,7 +639,11 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
             validation = validate_record(record, root)
             if not validation.accepted:
                 reasons = "; ".join(validation.reasons)
-                prefix = "injection scan: " if any("prompt injection" in r for r in validation.reasons) else "등록 기준 위반: "
+                prefix = (
+                    "injection scan: "
+                    if any("prompt injection" in r for r in validation.reasons)
+                    else "등록 기준 위반: "
+                )
                 return prefix + reasons + " — 저장 거부", True
             item = record_item(
                 record,
@@ -706,7 +730,8 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
             return _text_result(
                 rid,
                 "이 프로젝트의 공유 메모리 binding이 없거나 foreign/drift 상태다 — "
-                + (binding_error or "asgard memory connect로 재검증"),
+                + (binding_error or "asgard memory connect로 재검증")
+                + " — 메모리 힌트 없이 작업은 계속 가능 (fail-open)",
                 True,
             )
         root, cfg = found

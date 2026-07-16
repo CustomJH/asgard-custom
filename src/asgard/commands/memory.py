@@ -426,9 +426,7 @@ def run_connect(
 
     def _do() -> int:
         from .. import memory_bridge
-        from ..project_memory_backends import get_backend
-
-        from ..project_memory_backends import ProjectMemoryBinding
+        from ..project_memory_backends import ProjectMemoryBinding, get_backend
         from ..settings import load_project
 
         root = os.getcwd()
@@ -470,7 +468,9 @@ def run_connect(
                 if binding_id and marker.binding_id != binding_id:
                     raise ValueError("selected project-memory namespace binding has drifted")
                 if not binding_id and not adopt_existing:
-                    raise ValueError("existing bound namespace requires --adopt-existing for this project configuration")
+                    raise ValueError(
+                        "existing bound namespace requires --adopt-existing for this project configuration"
+                    )
                 binding_id = marker.binding_id
             else:
                 count = backend.namespace_document_count()
@@ -525,7 +525,11 @@ def _project_candidates(root: str, all_files: bool):
     if not changed:
         return []
     selected = set(changed)
-    return [candidate for candidate in project_memory.scan_project(root, changed_paths=changed) if candidate.path in selected]
+    return [
+        candidate
+        for candidate in project_memory.scan_project(root, changed_paths=changed)
+        if candidate.path in selected
+    ]
 
 
 def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
@@ -550,7 +554,13 @@ def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
             for candidate in candidates
         ]
         if json_out:
-            print(_json.dumps({"root": root, "mode": "all" if all_files else "changed", "candidates": rows}, ensure_ascii=False, indent=2))
+            print(
+                _json.dumps(
+                    {"root": root, "mode": "all" if all_files else "changed", "candidates": rows},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
         else:
             ui.head(f"project memory scan · {'all' if all_files else 'changed'}")
             for row in rows:
@@ -562,7 +572,9 @@ def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
     return _guard(_do)
 
 
-def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool = False, plan_id: str | None = None) -> int:
+def run_project_sync(
+    all_files: bool = False, yes: bool = False, json_out: bool = False, plan_id: str | None = None
+) -> int:
     """중요 artifact를 stable record ID로 선택된 프로젝트 backend에 projection한다."""
 
     def _do() -> int:
@@ -582,9 +594,7 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
         candidates = _project_candidates(root, all_files)
         if not yes:
             revision = project_memory.source_revision(root)
-            plan = project_memory.projection_plan(
-                root, project_id, candidates, force=all_files, target=target
-            )
+            plan = project_memory.projection_plan(root, project_id, candidates, force=all_files, target=target)
             approved_plan_id = project_memory.projection_plan_id(project_id, plan, revision, force=all_files)
             upsert_paths = [candidate.path for candidate in plan["upserts"]]
             removed = [
@@ -638,10 +648,7 @@ def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool 
         elif not output["success"]:
             ui.fail(f"project memory sync failed: {output['error'] or 'backend rejected publication'}")
         else:
-            ui.ok(
-                f"project memory synced: {output['items_count']} item(s) "
-                f"→ engine={engine} project_id={project_id}"
-            )
+            ui.ok(f"project memory synced: {output['items_count']} item(s) → engine={engine} project_id={project_id}")
         return 0 if output["success"] else 1
 
     return _guard(_do)

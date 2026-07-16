@@ -123,6 +123,7 @@ def _skill_resolver(agent: str):
         return resolve_thor_skills
     return None
 
+
 VERDICT_TOOL = {
     "name": "verdict",
     "description": "Verifier 전용 — 구조화 판정 제출. 검증 명령을 직접 실행한 뒤에만 호출한다.",
@@ -341,7 +342,8 @@ def classify_api_error(e: Exception) -> str:
     return "retryable" if status is None else "fatal"  # 미상 = 일시 오류로 간주 (1회 재시도 가치)
 
 
-DISPATCH_TOOL = {
+# dict 주석: 이질형 중첩 스키마 리터럴 — 좁은 추론이 소비처 서브스크립트를 오탐한다 (ty).
+DISPATCH_TOOL: dict = {
     "name": "dispatch",
     "description": "딜리버리 전문가에게 하위 작업 위임 (freyja=디자인/프론트엔드/모션/3D/영상, thor=백엔드/데이터/API/런타임, "
     "eitri=빌드/CI/패키징/릴리스, loki=adversarial). 위임 전 누구에게·왜를 고민하고 why 에 근거를 남겨라 — 퀘스트 로그에 기록된다.",
@@ -1069,9 +1071,7 @@ class Heimdall:
                     ("\nThinker 관찰 이력 (동일 명령 재탐색 불필요): " + "; ".join(explored)[:600]) if explored else ""
                 )
                 fb = (lambda mw=mk_worker: mw(m=None, rl="worker", rp=self.rp)) if rrp is not self.rp else None
-                worker_prompt = (
-                    f"과업: {request}\n\n계획:\n{plan_part}{explore_note}\n{retry_note}{budget_note}"
-                )
+                worker_prompt = f"과업: {request}\n\n계획:\n{plan_part}{explore_note}\n{retry_note}{budget_note}"
                 fallback_worker_prompt = worker_prompt
                 primary_memory_allowed = standard and self._mem_allowed(rrp.profile.name)
                 fallback_memory_allowed = standard and self._mem_allowed(self.rp.profile.name)
@@ -1129,9 +1129,7 @@ class Heimdall:
                         rp_override=rp,
                     )
 
-                fb = (
-                    (lambda mv=mk_verifier: mv(m=None, rl="verifier", rp=self.rp)) if rrp is not self.rp else None
-                )
+                fb = (lambda mv=mk_verifier: mv(m=None, rl="verifier", rp=self.rp)) if rrp is not self.rp else None
                 r = self._run_turn(
                     mk_verifier,
                     f"검증하라. 요청: {request}\ncriteria: {cls['criteria']}\n"
@@ -1263,11 +1261,7 @@ class Heimdall:
             "입력에 없는 사실·효용·인과를 추가하지 말고, 과장·가치 선언·정의 없는 약어·불필요한 외국어 병기를 제거한다. "
             "위반 표현을 설명하거나 다시 인용하지 않는다. 사용자가 요구한 언어·문장 수·형식과 코드·인용·URL·경로는 보존한다."
         )
-        prompt = (
-            f"[사용자 요청]\n{request}\n\n[검사 결과]\n- "
-            + "\n- ".join(violations)
-            + f"\n\n[초안]\n{draft}"
-        )
+        prompt = f"[사용자 요청]\n{request}\n\n[검사 결과]\n- " + "\n- ".join(violations) + f"\n\n[초안]\n{draft}"
         return self._complete_text(system, prompt, max_tokens=16000).strip()
 
     def _enforce_lagom_text(self, request: str, draft: str) -> str:

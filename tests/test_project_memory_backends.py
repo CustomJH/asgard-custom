@@ -12,8 +12,8 @@ from asgard.project_memory_backends import (
     BackendReadiness,
     BackendWriteResult,
     HindsightBackend,
-    ProjectMemoryHit,
     ProjectMemoryBinding,
+    ProjectMemoryHit,
     ProjectMemoryRecord,
     get_backend,
     register_backend,
@@ -47,11 +47,7 @@ class FakeBackend:
         return BackendWriteResult(True, accepted_ids=tuple(item.record_id for item in items))
 
     def read_binding(self):
-        return type(self).bindings.get(self.project_id) or ProjectMemoryBinding(
-            project_uid="11111111-1111-4111-8111-111111111111",
-            binding_id="22222222-2222-4222-8222-222222222222",
-            project_id=self.project_id,
-        )
+        return type(self).bindings.get(self.project_id)
 
     def write_binding(self, binding):
         type(self).bindings[self.project_id] = binding
@@ -133,8 +129,9 @@ class TestBackendSelection(unittest.TestCase):
             def load():
                 return CogneeBackend
 
-        with mock.patch.dict(os.environ, {"ASGARD_PROJECT_MEMORY_PLUGINS": "cognee"}), mock.patch(
-            "asgard.project_memory_backends.importlib.metadata.entry_points", return_value=[EntryPoint()]
+        with (
+            mock.patch.dict(os.environ, {"ASGARD_PROJECT_MEMORY_PLUGINS": "cognee"}),
+            mock.patch("asgard.project_memory_backends.importlib.metadata.entry_points", return_value=[EntryPoint()]),
         ):
             backend = get_backend({"engine": "cognee", "project_id": "demo", "endpoint": "http://cognee"})
 
@@ -149,9 +146,11 @@ class TestBackendSelection(unittest.TestCase):
             def load():
                 raise AssertionError("untrusted plugin must not execute")
 
-        with mock.patch.dict(os.environ, {"ASGARD_PROJECT_MEMORY_PLUGINS": ""}), mock.patch(
-            "asgard.project_memory_backends.importlib.metadata.entry_points", return_value=[EntryPoint()]
-        ), self.assertRaisesRegex(ValueError, "not trusted"):
+        with (
+            mock.patch.dict(os.environ, {"ASGARD_PROJECT_MEMORY_PLUGINS": ""}),
+            mock.patch("asgard.project_memory_backends.importlib.metadata.entry_points", return_value=[EntryPoint()]),
+            self.assertRaisesRegex(ValueError, "not trusted"),
+        ):
             get_backend({"engine": "untrusted", "project_id": "demo"})
 
     def test_malformed_registered_backend_is_rejected_at_creation(self):
@@ -238,7 +237,9 @@ class TestBackendSelection(unittest.TestCase):
 
             def retain(self, items):
                 calls.append(("retain", items))
-                return BackendWriteResult(True, accepted_ids=tuple(item.record_id for item in items), details={"backend": self.engine})
+                return BackendWriteResult(
+                    True, accepted_ids=tuple(item.record_id for item in items), details={"backend": self.engine}
+                )
 
             def close(self):
                 calls.append(("close",))
@@ -251,7 +252,10 @@ class TestBackendSelection(unittest.TestCase):
             "binding_id": "22222222-2222-4222-8222-222222222222",
         }
 
-        with mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True):
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+        ):
             hits = memory_bridge.server_recall(cfg, "질의", max_results=4)
             written = memory_bridge.server_retain_items(cfg, [{"content": "결정"}])
 
@@ -277,8 +281,10 @@ class TestBackendSelection(unittest.TestCase):
             "project_uid": "11111111-1111-4111-8111-111111111111",
             "binding_id": "22222222-2222-4222-8222-222222222222",
         }
-        with mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True), self.assertRaisesRegex(
-            TypeError, "ProjectMemoryHit"
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+            self.assertRaisesRegex(TypeError, "ProjectMemoryHit"),
         ):
             memory_bridge.server_recall(cfg, "query")
 
@@ -296,8 +302,10 @@ class TestBackendSelection(unittest.TestCase):
             "project_uid": "11111111-1111-4111-8111-111111111111",
             "binding_id": "22222222-2222-4222-8222-222222222222",
         }
-        with mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True), self.assertRaisesRegex(
-            ValueError, "inconsistent write result"
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+            self.assertRaisesRegex(ValueError, "inconsistent write result"),
         ):
             memory_bridge.server_retain_items(
                 cfg,
@@ -321,8 +329,10 @@ class TestBackendSelection(unittest.TestCase):
             "project_uid": "11111111-1111-4111-8111-111111111111",
             "binding_id": "22222222-2222-4222-8222-222222222222",
         }
-        with mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True), self.assertRaisesRegex(
-            RuntimeError, "primary recall failure"
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+            self.assertRaisesRegex(RuntimeError, "primary recall failure"),
         ):
             memory_bridge.server_recall(cfg, "query")
 
@@ -336,8 +346,10 @@ class TestBackendSelection(unittest.TestCase):
             engine = "adapter-cli"
 
         register_backend("adapter-cli", Adapter, replace=True)
-        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {"HOME": root}), mock.patch(
-            "asgard.commands.memory.os.getcwd", return_value=root
+        with (
+            tempfile.TemporaryDirectory() as root,
+            mock.patch.dict(os.environ, {"HOME": root}),
+            mock.patch("asgard.commands.memory.os.getcwd", return_value=root),
         ):
             result = CliRunner().invoke(
                 app,
@@ -379,6 +391,11 @@ class TestBackendSelection(unittest.TestCase):
                 )
 
         register_backend("doctor-adapter", Adapter, replace=True)
+        Adapter.bindings["demo"] = ProjectMemoryBinding(
+            project_uid="11111111-1111-4111-8111-111111111111",
+            binding_id="22222222-2222-4222-8222-222222222222",
+            project_id="demo",
+        )
         with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {"HOME": root}):
             open(f"{root}/AGENTS.md", "w", encoding="utf-8").write("<!-- asgard:trinity -->")
             memory_bridge.write_config(
@@ -474,8 +491,9 @@ class TestHindsightBackend(unittest.TestCase):
                 "binding_id": "22222222-2222-4222-8222-222222222222",
             }
         )
-        with mock.patch("urllib.request.urlopen", return_value=Response()), self.assertRaisesRegex(
-            ValueError, "binding"
+        with (
+            mock.patch("urllib.request.urlopen", return_value=Response()),
+            self.assertRaisesRegex(ValueError, "binding"),
         ):
             backend.read_binding()
 
@@ -495,8 +513,9 @@ class TestHindsightBackend(unittest.TestCase):
                 return b"x" * size
 
         backend = get_backend({"server": "http://memory:8888", "bank": "demo"})
-        with mock.patch("urllib.request.urlopen", return_value=Response()), self.assertRaisesRegex(
-            ValueError, "response exceeds"
+        with (
+            mock.patch("urllib.request.urlopen", return_value=Response()),
+            self.assertRaisesRegex(ValueError, "response exceeds"),
         ):
             backend.recall("query")
 

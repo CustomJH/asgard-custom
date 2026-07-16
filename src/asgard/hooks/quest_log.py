@@ -62,7 +62,8 @@ FIELDS = [
 ]
 
 # 정책 파일이 없어도 동작해야 하므로(fail-open) 기본값을 내장 — .asgard/trinity-policy.json 이 덮는다.
-DEFAULT_POLICY = {
+# dict 주석: 이질형 중첩 리터럴이라 좁은 추론이 소비처 서브스크립트를 오탐한다 (ty).
+DEFAULT_POLICY: dict = {
     "schema": 1,
     "roles": {
         "thinker": {"tier": "high", "effort": "high"},
@@ -262,7 +263,13 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
         link_target = os.readlink(full_path).encode(errors="surrogateescape") if is_link else b""
         if (before if before_rc == 0 else None) != after:
             map_changed.append(p)
-            diff += p.encode("utf-8", "surrogateescape") + b"\0" + link_target + b"\0" + (after if after is not None else b"<deleted>")
+            diff += (
+                p.encode("utf-8", "surrogateescape")
+                + b"\0"
+                + link_target
+                + b"\0"
+                + (after if after is not None else b"<deleted>")
+            )
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
     nt_lines = 0
