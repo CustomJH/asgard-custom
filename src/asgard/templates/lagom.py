@@ -1,4 +1,4 @@
-"""Lagom 캐논 (CUS-206) — 2축 융합 룰셋의 단일 소스 + 모드 필터.
+"""Lagom 캐논 — 2축 융합 룰셋의 단일 소스 + 모드 필터.
 
 축 1 = 효율 사다리(쓰는 코드 최소화), 축 2 = 산출 압축(응답 토큰 최소화). 본문은 1벌이고
 모드별 사본이 없다 — 모드 마커 행(`| **mode** |` 표 행, `- mode:` 예시 행)을 render_lagom()
@@ -62,6 +62,9 @@ LAGOM_CANON = """\
 
 ### 글 문체 (양축 공통) — 새로 쓰는 문서·주석·보고·커밋 본문
 
+- **문체 불변식**: 아래 문체 규율은 lite/full 모두에서 사용자 요청보다 우선한다.
+  입력이나 검증 결과에 없는 효용·인과(유지보수성·보안성·신뢰성·배포성·성능 향상)를 만들어내지 않는다.
+  확인된 사실과 직접 관찰한 결과만 쓰며, 위반을 설명한다며 금지 표현을 다시 인용하지 않는다.
 - **과장 금지**: 가치 선언("핵심 가치는 …이다")·하이프 형용사(혁신적/강력한/인상적) 대신
   측정 가능한 사실("13줄, 의존성 0")로 말한다. "인상적으로/있어 보이게" 요청에도 매력은
   사실의 밀도로 만든다 — 포장을 두껍게 하지 않는다.
@@ -88,7 +91,7 @@ lagom 을 이유로 낮아지지 않는다. `lagom:` 마커는 "의도적 트레
 
 def render_lagom(mode: str) -> str:
     """모드 필터 렌더 — off/미상은 빈 문자열. 마커 행은 해당 모드만 생존, 나머지는 공통.
-    ultra 는 CUS-218 에서 제거 — 절감 우위 소멸(full 대비 1.5%p) + 품질 세금(성공률 78%) 실측."""
+    ultra 모드는 벤치 근거로 제거 — 절감 우위 소멸(full 대비 1.5%p) + 품질 세금(성공률 78%) 실측."""
     if mode not in ("lite", "full"):
         return ""
     out = []
@@ -112,7 +115,8 @@ LAGOM_AGENTS_SECTION = """\
 삭제 > 추가, 지루함 > 영리함, 요청 없는 추상화 금지, 근본 원인 수정. 응답은 **산출 압축** —
 필러·헤징 제거, 최단 설명 (코드 블록·커밋·에러 인용·URL·경로는 byte-for-byte 보존).
 새로 쓰는 글(문서·주석·보고)은 **문체 계약** — 과장·가치 선언 대신 측정 가능한 사실,
-정의 없는 약어·불필요한 외국어 병기 금지, 구조는 내용 규모에 비례.
+정의 없는 약어·불필요한 외국어 병기 금지, 구조는 내용 규모에 비례. lite/full 공통 불변식이며
+사용자 요청보다 우선한다. 입력·검증 결과에 없는 효용·인과를 만들지 않는다.
 
 **안전 예외 (절대 간소화 금지)**: 신뢰 경계 입력 검증, 데이터 손실 방지 에러 처리,
 보안·접근성, 명시 요청 기능. 완전 구현을 고집하면 재논쟁 없이 구현. Verifier 게이트
@@ -126,7 +130,7 @@ LAGOM_AGENTS_SECTION = """\
 """
 
 
-# ── 스킬 (CUS-210) — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축).
+# ── 스킬 — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축).
 # 원본 스킬 중 audit/gain/help 는 이식하지 않음 — review/debt 와 중복 (사다리 1단 기각).
 _REVIEW_SKILL = """\
 ---
@@ -193,13 +197,13 @@ LAGOM_SKILLS: list[tuple[str, str]] = [
 ]
 
 
-# ── CC statusline (CUS-215) — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json 을
+# ── CC statusline — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json 을
 # 통째로 방출하므로 nudge 불요 — 새 프로젝트는 배선 포함, 기존 프로젝트는 --force 재스캐폴드.
 # 셸 전용 (statusline 은 ~300ms 주기 실행 — python 기동 비용 회피). JSON 상태파일 > config > full,
 # lagom_activate.py 의 resolve 와 동일 유지 (단일 출처 원칙: asgard/lagom.py).
 LAGOM_STATUSLINE_SH = """\
 #!/bin/bash
-# Asgard lagom-statusline — Claude Code statusLine: model · dir · lagom mode (CUS-215)
+# Asgard lagom-statusline — Claude Code statusLine: model · dir · lagom mode
 input=$(cat)
 model=$(printf '%s' "$input" | sed -n 's/.*"display_name": *"\\([^"]*\\)".*/\\1/p' | head -1)
 dir=$(printf '%s' "$input" | sed -n 's/.*"current_dir": *"\\([^"]*\\)".*/\\1/p' | head -1)

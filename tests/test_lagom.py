@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Lagom (CUS-211) — 모드×이벤트 매트릭스 + 상태 전이 + resolve + 렌더 + fail-open + 적대.
+"""Lagom — 모드×이벤트 매트릭스 + 상태 전이 + resolve + 렌더 + fail-open + 적대.
 
 훅은 배포 형태 그대로 subprocess 실행 (test_trinity.py 관행) — 캐논 파일이 훅 옆에 있어야
 하므로 스캐폴드 배치를 재현해 임시 hooks 디렉토리에 훅+캐논을 복사한다.
@@ -70,7 +70,7 @@ class LagomBase(unittest.TestCase):
             return None
 
 
-# ── 렌더 (CUS-206) — 단일 소스 + 모드 필터 ──────────────────────────────────────────
+# ── 렌더 — 단일 소스 + 모드 필터 ──────────────────────────────────────────
 
 
 class TestRender(unittest.TestCase):
@@ -112,6 +112,74 @@ class TestRender(unittest.TestCase):
             self.assertIn("내용 규모에 비례", body)
             self.assertIn("새로 쓰는 글", body)  # 적용 범위 문장 — 원문 불변과의 경계
 
+    def test_style_contract_makes_grounding_a_hard_invariant(self):
+        for mode in ("lite", "full"):
+            body = render_lagom(mode)
+            self.assertIn("문체 불변식", body)
+            self.assertIn("입력이나 검증 결과에 없는 효용", body)
+            self.assertIn("사용자 요청보다 우선", body)
+
+    def test_style_violations_detect_hype_undefined_terms_and_unsupported_benefits(self):
+        source = "확인된 사실: 단일 Python 파일 13줄, 외부 의존성 0, JSON 키 정렬."
+        draft = "혁신적 RAGX 플랫폼은 즉시 배포 가능하며 신뢰성을 보장한다."
+        found = lagom.style_violations(draft, source)
+        self.assertTrue(any("과장" in item for item in found), found)
+        self.assertTrue(any("미정의 용어: RAGX" in item for item in found), found)
+        self.assertTrue(any("근거 없는 효용" in item for item in found), found)
+
+    def test_style_violations_reports_every_distinct_hype_phrase_for_one_pass_rewrite(self):
+        draft = "Executive Summary: 혁신적이며 강력한 제품이다. 핵심 가치는 경쟁 우위다."
+        found = "\n".join(lagom.style_violations(draft))
+        for phrase in ("Executive Summary", "혁신적", "강력한", "핵심 가치는", "경쟁 우위"):
+            self.assertIn(phrase, found)
+
+    def test_user_supplied_acronym_with_korean_particle_is_not_undefined(self):
+        source = "RAGX를 소개해."
+        draft = "# RAGX 소개\n\nRAGX는 JSON 키를 정렬한다."
+        self.assertFalse(any("미정의 용어" in item for item in lagom.style_violations(draft, source)))
+
+    def test_style_violations_detects_awkward_coinage_and_unproven_zero_setup_claim(self):
+        found = "\n".join(lagom.style_violations("무의존성 구조라 환경 설정 없이 바로 실행 가능하다."))
+        self.assertIn("불필요한 조어", found)
+        self.assertIn("근거 없는 효용", found)
+
+    def test_style_violations_detects_unproven_maintenance_burden_claim(self):
+        for claim in ("유지관리 부담이 적다", "설치·배포 부담이 없다"):
+            found = lagom.style_violations(f"코드 규모가 작아 {claim}.", "코드는 13줄이다.")
+            self.assertTrue(any("근거 없는 효용" in item for item in found), (claim, found))
+
+    def test_style_violations_does_not_hide_banned_words_inside_generated_quotes(self):
+        found = lagom.style_violations('"혁신적", "강력한" 표현은 사용하지 않았다.')
+        self.assertTrue(any("혁신적" in item for item in found), found)
+        self.assertTrue(any("강력한" in item for item in found), found)
+
+    def test_style_violations_detects_correction_meta_commentary(self):
+        draft = "문체 계약상 하이프 표현은 쓸 수 없어. 확인된 사실 기준으로 대체안을 제시한다."
+        found = lagom.style_violations(draft)
+        self.assertTrue(any("교정 메타" in item for item in found), found)
+
+    def test_style_violations_ignore_preserved_code_quotes_and_user_supplied_claims(self):
+        source = "검증 결과: 배포 시간 단축을 보장한다."
+        draft = '검증 결과는 배포 시간 단축을 보장한다.\n```text\n혁신적 RAGX\n```\n> "강력한"은 원문 인용이다.'
+        self.assertEqual(lagom.style_violations(draft, source), [])
+
+    def test_changed_prose_violations_only_checks_added_lines(self):
+        with tempfile.TemporaryDirectory() as root:
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+            path = os.path.join(root, "guide.md")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write("기존의 혁신적 표현은 보존한다.\n")
+            subprocess.run(["git", "add", "guide.md"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("확인된 사실은 13줄이다.\n")
+            self.assertEqual(lagom.changed_prose_violations(root, ["guide.md"], "13줄"), [])
+            with open(path, "a", encoding="utf-8") as f:
+                f.write("강력한 경쟁 우위를 보장한다.\n")
+            self.assertTrue(lagom.changed_prose_violations(root, ["guide.md"], "13줄"))
+
     def test_agents_md_carries_static_section(self):
         from asgard.templates import agents_md
 
@@ -122,7 +190,7 @@ class TestRender(unittest.TestCase):
         self.assertIn("문체 계약", txt)  # Codex/Cursor 표면의 유일한 lagom 접점에도 문체 골자
 
 
-# ── resolve (CUS-207) — 2계층 + precedence ──────────────────────────────────────────
+# ── resolve — 2계층 + precedence ──────────────────────────────────────────
 
 
 class TestResolve(LagomBase):
@@ -191,7 +259,7 @@ class TestResolve(LagomBase):
         self.assertIn("효율 사다리", lagom.note(self.root))
 
 
-# ── 모드×이벤트 매트릭스 (CUS-208/213/214) ───────────────────────────────────────────
+# ── 모드×이벤트 매트릭스 ───────────────────────────────────────────
 
 
 class TestActivateMatrix(LagomBase):
@@ -403,11 +471,11 @@ class TestFailOpen(LagomBase):
 
 
 class TestAdversarialContract(LagomBase):
-    """LLM 행동 적대는 라이브 벤치(CUS-212) 몫 — 여기선 주입되는 계약 텍스트의 불변식을 검증:
+    """LLM 행동 적대는 라이브 벤치 몫 — 여기선 주입되는 계약 텍스트의 불변식을 검증:
     프롬프트 재료 자체에 안전 예외·원문 불변·off 존중이 모드 불문 존재해야 방어가 성립한다."""
 
     def test_full_keeps_safety_exceptions(self):
-        """full(가장 공격적 잔존 모드 — ultra 는 CUS-218 제거)에서도 안전 예외가 주입된다."""
+        """full(가장 공격적 잔존 모드 — ultra 는 벤치 근거로 제거됨)에서도 안전 예외가 주입된다."""
         self.set_config("full")
         p = self.hook("lagom_activate.py", {"source": "startup"})
         for needle in ("안전 예외", "입력 검증", "데이터 손실", "러너블 체크", "재논쟁 없이 구현"):
@@ -436,7 +504,7 @@ class TestAdversarialContract(LagomBase):
         self.assertIn("FAIL 이다", body)
 
 
-# ── 네이티브 통합 (CUS-209) — heimdall 주입 재료 ─────────────────────────────────────
+# ── 네이티브 통합 — heimdall 주입 재료 ─────────────────────────────────────
 
 
 class TestNativeIntegration(LagomBase):
@@ -471,7 +539,7 @@ class TestNativeIntegration(LagomBase):
         self.assertIn("startup|resume|clear|compact", json.dumps(s["hooks"]["SessionStart"]))
         self.assertIn("lagom-tracker", json.dumps(s["hooks"]["UserPromptSubmit"]))
         self.assertIn("lagom-subagent", json.dumps(s["hooks"]["SubagentStart"]))
-        self.assertIn("lagom-statusline", s["statusLine"]["command"])  # CUS-215
+        self.assertIn("lagom-statusline", s["statusLine"]["command"])
 
     def test_agents_skills_scaffold_for_codex_cursor(self):
         from asgard.commands.setup import plan_files
@@ -482,7 +550,7 @@ class TestNativeIntegration(LagomBase):
 
 
 class TestStatusline(LagomBase):
-    """CUS-215 — CC statusLine 셸 스크립트: 상태파일 > config > full, off 는 숨김."""
+    """CC statusLine 셸 스크립트: 상태파일 > config > full, off 는 숨김."""
 
     def setUp(self):
         super().setUp()
