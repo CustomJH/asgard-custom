@@ -1,6 +1,0 @@
-{"ts": "2026-07-10T08:55:37Z", "event": "classify", "source": "llm", "write_expected": false, "ambiguous": false, "destructive": false, "task_class": "trivial"}
-{"ts": "2026-07-10T08:55:37Z", "event": "route", "route": "direct"}
-{"ts": "2026-07-10T09:36:14Z", "event": "classify", "source": "heuristic", "write_expected": false, "ambiguous": false, "destructive": false, "task_class": "standard"}
-{"ts": "2026-07-10T09:36:14Z", "event": "route", "route": "direct"}
-{"ts": "2026-07-10T09:37:17Z", "event": "classify", "source": "heuristic", "write_expected": false, "ambiguous": false, "destructive": false, "task_class": "standard"}
-{"ts": "2026-07-10T09:37:17Z", "event": "route", "route": "direct"}
