@@ -303,6 +303,17 @@ class TestStreaming(_Sess):
         self.assertEqual(self.texts, ["hel", "lo"])  # 델타만 방출 — TextBlock 전체 재방출 없음
         self.assertEqual(r.text, "hello")  # result.text 는 여전히 완성 블록 소스
 
+    def test_stream_only_response_is_preserved_in_result(self):
+        # 실 Claude CLI에서 최종 AssistantMessage/TextBlock 없이 델타 + ResultMessage만 오는
+        # 경로가 있다. 스트리밍 출력만 보이고 `asgard run --json` result가 빈 문자열이면 안 된다.
+        script = [[_delta("stream "), _delta("only"), AssistantMessage(content=[TextBlock(text="")], model="m"), _result_msg()]]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            r = sess.run("hi")
+        self.assertEqual(self.texts, ["stream ", "only"])
+        self.assertEqual(r.text, "stream only")
+
     def test_non_text_deltas_ignored(self):
         script = [
             [

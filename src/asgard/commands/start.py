@@ -174,10 +174,11 @@ def run_prompt(
     result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다 (CUS-180)
     wall = round(_time.time() - t0, 1)
     if json_out:
+        json_result = result or h.last_response_text  # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel
         sys.stdout.write(
             _json.dumps(
                 {
-                    "result": result,
+                    "result": json_result,
                     "tokens": h.total_tokens,
                     "cache_read_tokens": h.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
                     "cache_prompt_tokens": h.cache_prompt_tokens,

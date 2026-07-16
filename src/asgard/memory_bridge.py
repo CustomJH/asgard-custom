@@ -33,7 +33,9 @@ from .memory import scan_threats
 CONFIG_NAME = "memory-server.json"
 PENDING_NAME = "memory-pending.json"
 PENDING_TTL = 3600  # 승인 id 만료 (초) — 승인과 실행 사이가 길면 재계획이 맞다
+CLAIM_TTL = 60  # commit 중 프로세스가 죽은 경우 claim 자동 회수
 DEFAULT_TIMEOUT = 15
+RECALL_OUTPUT_BUDGET = 2000
 PROTOCOL_VERSION = "2025-03-26"
 
 
@@ -94,7 +96,12 @@ def server_recall(cfg: dict, query: str, max_results: int = 8) -> list[dict]:
 
 
 def server_retain(cfg: dict, content: str) -> dict:
-    return _post(cfg, "/memories", {"items": [{"content": content}], "async_processing": False})
+    return server_retain_items(cfg, [{"content": content}])
+
+
+def server_retain_items(cfg: dict, items: list[dict]) -> dict:
+    """구조화 item batch retain — metadata/tags/document_id/update_mode를 보존한다."""
+    return _post(cfg, "/memories", {"items": items, "async": False})
 
 
 # ── 승인 대기 (2단 retain) — 개인 위키 plan-id 와 동일 계약 ───────────────────────────
@@ -104,7 +111,36 @@ def _pending_path(root: str) -> str:
     return os.path.join(root, ".asgard", "state", PENDING_NAME)  # 런타임 상태 — state/ 격리
 
 
-def _load_pending(root: str) -> dict:
+@contextlib.contextmanager
+def _pending_guard(root: str):
+    """프로세스/스레드 공통 lock — approval JSON의 lost update·double commit 방지."""
+    path = _pending_path(root) + ".lock"
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    deadline = time.monotonic() + 5
+    fd = None
+    while fd is None:
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            try:
+                if time.time() - os.path.getmtime(path) > CLAIM_TTL:
+                    os.remove(path)
+                    continue
+            except OSError:
+                pass
+            if time.monotonic() >= deadline:
+                raise TimeoutError("project memory approval lock timeout")
+            time.sleep(0.01)
+    try:
+        os.write(fd, str(os.getpid()).encode())
+        yield
+    finally:
+        os.close(fd)
+        with contextlib.suppress(OSError):
+            os.remove(path)
+
+
+def _load_pending_unlocked(root: str) -> dict:
     try:
         d = json.load(open(_pending_path(root), encoding="utf-8"))
         now = time.time()
@@ -113,29 +149,87 @@ def _load_pending(root: str) -> dict:
         return {}
 
 
-def _save_pending(root: str, d: dict) -> None:
+def _load_pending(root: str) -> dict:
+    with _pending_guard(root):
+        return _load_pending_unlocked(root)
+
+
+def _save_pending_unlocked(root: str, d: dict) -> None:
     p = _pending_path(root)
     os.makedirs(os.path.dirname(p), exist_ok=True)
-    json.dump(d, open(p, "w", encoding="utf-8"), ensure_ascii=False)
+    tmp = f"{p}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(d, f, ensure_ascii=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, p)
     with contextlib.suppress(OSError):
         os.chmod(p, 0o600)
 
 
-def stage_retain(root: str, content: str) -> str:
+def _save_pending(root: str, d: dict) -> None:
+    with _pending_guard(root):
+        _save_pending_unlocked(root, d)
+
+
+def stage_retain(root: str, item: str | dict) -> str:
     """승인 대기 등록 — 반환 = approval id (1회 소비)."""
-    pend = _load_pending(root)
-    aid = secrets.token_hex(4)
-    pend[aid] = {"content": content, "ts": time.time()}
-    _save_pending(root, pend)
+    with _pending_guard(root):
+        pend = _load_pending_unlocked(root)
+        document_id = str(item.get("document_id") or "") if isinstance(item, dict) else ""
+        if document_id:
+            for existing_id, entry in pend.items():
+                existing = entry.get("item")
+                if isinstance(existing, dict) and existing.get("document_id") == document_id:
+                    return existing_id
+        aid = secrets.token_hex(4)
+        pend[aid] = {"item": item, "ts": time.time()}
+        _save_pending_unlocked(root, pend)
     return aid
 
 
-def pop_retain(root: str, aid: str) -> str | None:
+def pop_retain(root: str, aid: str) -> str | dict | None:
     """승인 id 소비 — 없거나 만료면 None. 소비 후 재사용 불가."""
-    pend = _load_pending(root)
-    item = pend.pop(aid, None)
-    _save_pending(root, pend)
-    return item["content"] if item else None
+    with _pending_guard(root):
+        pend = _load_pending_unlocked(root)
+        item = pend.pop(aid, None)
+        _save_pending_unlocked(root, pend)
+    if not item:
+        return None
+    # 구 pending 파일 호환: 이전 버전은 content 문자열만 저장했다.
+    return item.get("item", item.get("content"))
+
+
+def claim_retain(root: str, aid: str) -> tuple[str | dict, str] | None:
+    """approval을 원격 write 동안 독점 claim한다. 실패 시 같은 ID를 재사용할 수 있다."""
+    with _pending_guard(root):
+        pend = _load_pending_unlocked(root)
+        entry = pend.get(aid)
+        if not entry:
+            return None
+        now = time.time()
+        if entry.get("claim") and now - float(entry.get("claimed_at") or 0) < CLAIM_TTL:
+            return None
+        token = secrets.token_hex(8)
+        entry["claim"] = token
+        entry["claimed_at"] = now
+        _save_pending_unlocked(root, pend)
+        item = entry.get("item", entry.get("content"))
+        return (item, token) if item is not None else None
+
+
+def finish_retain(root: str, aid: str, token: str, *, success: bool) -> None:
+    with _pending_guard(root):
+        pend = _load_pending_unlocked(root)
+        entry = pend.get(aid)
+        if not entry or entry.get("claim") != token:
+            return
+        if success:
+            pend.pop(aid, None)
+        else:
+            entry.pop("claim", None)
+            entry.pop("claimed_at", None)
+        _save_pending_unlocked(root, pend)
 
 
 # ── MCP 툴 정의 — 최소 표면 (파괴 툴 비노출) ─────────────────────────────────────────
@@ -166,8 +260,29 @@ _TOOLS = [
         ),
         "inputSchema": {
             "type": "object",
-            "properties": {"content": {"type": "string", "description": "정제된 사실 한 건"}},
-            "required": ["content"],
+            "properties": {
+                "record_id": {"type": "string", "description": "안정적인 프로젝트 고유 ID"},
+                "kind": {
+                    "type": "string",
+                    "enum": ["decision", "policy", "contract", "component", "incident", "experiment", "migration", "runbook"],
+                },
+                "title": {"type": "string"},
+                "content": {"type": "string", "description": "자립적인 검증된 사실 한 건"},
+                "source": {"type": "string", "description": "repo 경로·commit·test·ADR 등 provenance"},
+                "source_revision": {"type": "string", "description": "commit SHA 또는 검증 revision"},
+                "importance": {"type": "string", "enum": ["normal", "high", "critical"]},
+                "confidence": {"type": "string", "enum": ["observed", "verified"]},
+                "status": {"type": "string", "enum": ["active", "superseded", "historical"]},
+                "relations": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "properties": {"type": {"type": "string"}, "target": {"type": "string"}},
+                        "required": ["type", "target"],
+                    },
+                },
+            },
+            "required": ["record_id", "kind", "title", "content", "source", "source_revision", "importance", "confidence", "status"],
         },
     },
     {
@@ -198,13 +313,17 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
     try:
         if name == "memory_recall":
             hits = server_recall(cfg, str(args.get("query", "")), int(args.get("max_results") or 8))
-            clean, dropped = [], 0
+            clean, dropped, used = [], 0, 0
             for h in hits:
                 t = str(h.get("text", ""))
                 if scan_threats(t):  # 팀원이 심었을 수 있는 오염 — 컨텍스트 유입 차단
                     dropped += 1
                     continue
-                clean.append(f"- {_neutralize(t)[:300]}")
+                row = f"- {_neutralize(t)[:300]}"
+                if used + len(row) + 1 > RECALL_OUTPUT_BUDGET:
+                    break
+                clean.append(row)
+                used += len(row) + 1
             note = f"\n(오염 의심 {dropped}건 제외)" if dropped else ""
             return (
                 ("검색 결과 (힌트 — 완료 증거 아님):\n" + "\n".join(clean) + note)
@@ -216,20 +335,48 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
             content = str(args.get("content", "")).strip()
             if not content:
                 return "content 가 비어 있다", True
-            threat = scan_threats(content)
-            if threat:
-                return f"injection scan: {threat} — 저장 거부", True
-            aid = stage_retain(root, content)
+            required = ("record_id", "kind", "title", "source", "source_revision", "importance", "confidence", "status")
+            missing = [field for field in required if not str(args.get(field) or "").strip()]
+            if missing:
+                return "프로젝트 메모리 등록 필수 항목 누락: " + ", ".join(missing), True
+            from .project_memory import ProjectRecord, record_item, validate_record
+
+            record = ProjectRecord(
+                record_id=str(args["record_id"]),
+                kind=str(args["kind"]),
+                title=str(args["title"]),
+                content=content,
+                source=str(args["source"]),
+                source_revision=str(args["source_revision"]),
+                importance=str(args["importance"]),
+                confidence=str(args["confidence"]),
+                status=str(args["status"]),
+                relations=tuple(args.get("relations") or ()),
+            )
+            validation = validate_record(record, root)
+            if not validation.accepted:
+                reasons = "; ".join(validation.reasons)
+                prefix = "injection scan: " if any("prompt injection" in r for r in validation.reasons) else "등록 기준 위반: "
+                return prefix + reasons + " — 저장 거부", True
+            item = record_item(record, cfg["bank"])
+            aid = stage_retain(root, item)
             return (
-                f"승인 대기 (즉시 저장 안 됨) — approval_id: {aid}\n---\n{content}\n---\n"
+                f"승인 대기 (즉시 저장 안 됨) — approval_id: {aid}\n---\n{item['content']}\n---\n"
                 "이 내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit 을 호출하라.",
                 False,
             )
         if name == "memory_retain_commit":
-            content = pop_retain(root, str(args.get("approval_id", "")))
-            if content is None:
+            aid = str(args.get("approval_id", ""))
+            claimed = claim_retain(root, aid)
+            if claimed is None:
                 return "유효하지 않은 approval_id (미존재·만료·이미 소비) — memory_retain 부터 다시", True
-            out = server_retain(cfg, content)
+            item, token = claimed
+            try:
+                out = server_retain_items(cfg, [item] if isinstance(item, dict) else [{"content": item}])
+            except Exception as e:
+                finish_retain(root, aid, token, success=False)
+                return f"메모리 서버 저장 실패: {type(e).__name__} — 같은 approval_id로 재시도 가능", True
+            finish_retain(root, aid, token, success=True)
             return f"저장 완료 (bank={cfg['bank']}): {json.dumps(out, ensure_ascii=False)[:200]}", False
         return f"unknown tool: {name}", True
     except urllib.error.URLError as e:

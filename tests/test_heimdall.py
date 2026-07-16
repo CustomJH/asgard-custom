@@ -38,6 +38,7 @@ class FakeSession:
     def __init__(self, result: SessionResult, effect=None, label=""):
         self.result, self.effect, self.label = result, effect, label
         self.prompt: str = ""  # 마지막 run() 프롬프트 — assertIn 검증 표면 (미실행 = "")
+        self.system: str = ""  # 이 역할 세션의 system 프롬프트 — charter/lagom 주입 검증 표면
         self.role: str | None = None
         self.model: str | None = None
         self.readonly: bool = False
@@ -71,6 +72,7 @@ class FakeHeimdall(Heimdall):
             s.role = role
             s.model = model
             s.readonly = readonly
+            s.system = system or ""
             self.consumed.append(s)
             return s
 
@@ -164,6 +166,30 @@ class TestTrinityLoop(Base):
         self.assertIn("증거", out)  # 구조화 보고 (CUS-183)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+
+    def test_completed_native_turn_is_retained_and_surfaces_approval_proposal(self):
+        from asgard.project_memory import CompletionProposalResult, TurnRetentionResult
+
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
+        with (
+            mock.patch(
+                "asgard.memory_bridge.find_config",
+                return_value=(self.root, {"server": "http://memory", "bank": "demo"}),
+            ),
+            mock.patch(
+                "asgard.project_memory.retain_turn", return_value=TurnRetentionResult("retained", "asgard:turn:1")
+            ) as retain,
+            mock.patch(
+                "asgard.project_memory.propose_completion",
+                return_value=CompletionProposalResult("proposed", "approval-1", "completion.1", "사용자 승인 제안"),
+            ) as propose,
+        ):
+            out = h.handle("w1.txt 만들어")
+        self.assertIn("사용자 승인 제안", out)
+        self.assertEqual(retain.call_args.kwargs["user_text"], "w1.txt 만들어")
+        self.assertIn("과업 완수", retain.call_args.kwargs["assistant_text"])
+        self.assertTrue(propose.call_args.kwargs["verified"])
+        self.assertIn("w1.txt", propose.call_args.kwargs["changed_files"])
 
     def test_verifier_escalate_reaches_odin_without_worker_spin(self):
         # CUS-171: ESCALATE 데드스테이트 — 이전엔 WORKER 폴스루로 12턴 공회전
@@ -261,6 +287,50 @@ class TestTrinityLoop(Base):
             out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
         self.assertIn("차단 1회", out)
+
+
+class TestCharterInjection(Base):
+    """Charter (프로젝트 북극성) — through-line/coherence 가 라이브 Trinity 순환에서 올바른
+    역할 프롬프트에만 도달하고, evidence-first 게이트를 훼손하지 않음을 검증."""
+
+    def _set_charter(self, charter):
+        d = os.path.join(self.root, ".asgard")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "asgard-setting-project.json"), "w", encoding="utf-8") as f:
+            json.dump({"charter": charter}, f)
+
+    def test_charter_reaches_thinker_and_verifier_not_worker(self):
+        self._set_charter({"through_line": "TL관통원칙", "coherence": ["C1일관성"]})
+        # structural replan 경로 = thinker 턴을 강제 (해피패스는 thinker 생략)
+        seq = [
+            worker({"w1.txt": "bad\n"}, self.root),
+            verifier("FAIL", structural=True, sig="wrong-approach", why="접근 틀림"),
+            thinker("재설계"),
+            worker({"w1.txt": "good\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)  # 게이트 정상 통과 — charter 가 순환을 막지 않음
+        by = {}
+        for s in h.consumed:
+            by.setdefault(s.label, s)
+        # Thinker: 관통 원칙 + coherence 를 criteria 로 환원 지시 (설계①/협업②)
+        self.assertIn("TL관통원칙", by["thinker"].system)
+        self.assertIn("C1일관성", by["thinker"].system)
+        # Verifier: 렌즈로 주입되되 criteria 대체 아님 명시 (판단③, evidence-first 보존)
+        self.assertIn("TL관통원칙", by["verifier"].system)
+        self.assertIn("criteria 를 대체하지 않", by["verifier"].system)
+        # Worker: charter 전혀 무주입 — worker.md+lagom 만 (Fugu 격리, CC 훅과 패리티)
+        self.assertNotIn("C1일관성", by["worker"].system)
+        self.assertNotIn("프로젝트 북극성", by["worker"].system)
+
+    def test_no_charter_no_injection(self):
+        # 미설정이면 프롬프트 무변화 (토큰 회귀 없음)
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
+        h.handle("w1.txt 만들어")
+        for s in h.consumed:
+            self.assertNotIn("프로젝트 북극성", s.system)
 
 
 class TestRoutePriorsE2E(Base):
@@ -396,6 +466,52 @@ class TestModelTiers(Base):
         self.assertEqual(thinkers[0].role, "thinker")  # 1차 재계획 = 기본 배치
         self.assertEqual(thinkers[1].role, "thinker_alt")  # 2차 = clean-slate 대체 모델
 
+    def test_placed_verifier_fallback_keeps_verifier_capability_role(self):
+        from asgard.agent.claude_native import UsageCapError
+
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(
+            '[trinity.verifier]\nprovider = "ollama"\nmodel = "placed-v"\n'
+        )
+
+        def capped():
+            raise UsageCapError("cap")
+
+        failed = FakeSession(SessionResult(text="", stop_reason="error"), effect=capped, label="verifier")
+        h = self._h([worker({"w1.txt": "x\n"}, self.root), failed, verifier("PASS")])
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)
+        verifier_sessions = [s for s in h.consumed if s.label == "verifier"]
+        self.assertEqual([s.role for s in verifier_sessions], ["verifier", "verifier"])
+        self.assertTrue(all(s.readonly for s in verifier_sessions))
+
+    def test_placed_thinker_fallback_keeps_thinker_capability_role(self):
+        from asgard.agent.claude_native import UsageCapError
+
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(
+            '[trinity.thinker]\nprovider = "ollama"\nmodel = "placed-t"\n'
+        )
+
+        def capped():
+            raise UsageCapError("cap")
+
+        failed = FakeSession(SessionResult(text="", stop_reason="error"), effect=capped, label="thinker")
+        seq = [
+            worker({"w1.txt": "bad\n"}, self.root),
+            verifier("FAIL", structural=True, sig="bad-plan"),
+            failed,
+            thinker("fallback plan"),
+            worker({"w1.txt": "good\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = self._h(seq)
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)
+        thinker_sessions = [s for s in h.consumed if s.label == "thinker"]
+        self.assertEqual([s.role for s in thinker_sessions], ["thinker", "thinker"])
+        self.assertTrue(all(s.readonly for s in thinker_sessions))
+
 
 class TestClassify(Base):
     def test_parse_failure_defaults_to_gated_write(self):
@@ -426,6 +542,9 @@ class TestClassifyHeuristic(Base):
             "what does this function do",
             "README 요약해줘",
             "파일이 몇 개 있어?",
+            "README.md 첫 제목만 읽고 답해. 파일은 수정하지 마.",
+            "pwd와 README 첫 줄을 보여줘. 파일 수정 금지.",
+            "describe config.py without changing any files",
         ]
         writes = [
             "app.py 만들어줘",

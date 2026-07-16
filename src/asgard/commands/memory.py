@@ -17,6 +17,8 @@ import sys
 from collections.abc import Callable
 
 from .. import memory, ui
+from ..memory_bridge import claim_retain, find_config, finish_retain, server_retain_items
+from ..project_memory import propose_completion, retain_turn
 
 _PLAN_ID = re.compile(r"^[0-9a-f]{64}$")
 
@@ -74,6 +76,80 @@ def run_add(text: str, title: str | None, kind: str, links: str, force: bool) ->
     def _do() -> int:
         slug, path = memory.add(text, title=title, kind=kind, links=links, force=force)
         ui.ok(f"added {slug} → {path}")
+        return 0
+
+    return _guard(_do)
+
+
+def run_sync_turn(mode: str) -> int:
+    """hook 전용 JSON stdin 표면 — 자동 turn retain과 완료 proposal을 한 lifecycle 호출로 처리."""
+    try:
+        raw = sys.stdin.read(200_001)
+        if len(raw) > 200_000:
+            raise ValueError("turn payload too large")
+        payload = _json.loads(raw or "{}")
+        if not isinstance(payload, dict):
+            raise ValueError("turn payload must be a JSON object")
+        found = find_config(os.getcwd())
+        if not found:
+            print(_json.dumps({"status": "skipped", "reason": "project memory not connected"}))
+            return 0
+        root, cfg = found
+        result = retain_turn(
+            root,
+            cfg,
+            session_id=str(payload.get("session_id") or mode),
+            turn_id=str(payload.get("turn_id") or "turn"),
+            user_text=str(payload.get("user_text") or ""),
+            assistant_text=str(payload.get("assistant_text") or ""),
+            mode=mode,
+        )
+        output: dict = {"status": result.status, "document_id": result.document_id, "reason": result.reason}
+        if cfg.get("auto_propose_completion", True) and payload.get("verified"):
+            proposal = propose_completion(
+                root,
+                cfg,
+                session_id=str(payload.get("session_id") or mode),
+                request=str(payload.get("user_text") or ""),
+                response=str(payload.get("assistant_text") or ""),
+                changed_files=list(payload.get("changed_files") or []),
+                evidence=list(payload.get("evidence") or []),
+                verified=True,
+            )
+            if proposal.status == "proposed":
+                output["proposal"] = {
+                    "approval_id": proposal.approval_id,
+                    "record_id": proposal.record_id,
+                    "preview": proposal.preview,
+                }
+        print(_json.dumps(output, ensure_ascii=False))
+        return 0
+    except Exception as exc:
+        print(_json.dumps({"status": "failed", "reason": type(exc).__name__}))
+        return 0  # lifecycle 메모리 장애가 host turn을 막으면 안 된다
+
+
+def run_project_approve(approval_id: str) -> int:
+    """Native/CLI 사용자 승인을 기존 claim/finish 원자적 commit 경로로 실행한다."""
+
+    def _do() -> int:
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected")
+        root, cfg = found
+        claimed = claim_retain(root, approval_id)
+        if claimed is None:
+            raise ValueError("invalid, expired, claimed, or already consumed approval id")
+        item, token = claimed
+        try:
+            result = server_retain_items(cfg, [item] if isinstance(item, dict) else [{"content": item}])
+            if result.get("success") is not True:
+                raise ValueError(str(result.get("error") or "project memory retain rejected"))
+        except Exception:
+            finish_retain(root, approval_id, token, success=False)
+            raise
+        finish_retain(root, approval_id, token, success=True)
+        ui.ok(f"project memory saved → bank={cfg['bank']}")
         return 0
 
     return _guard(_do)
@@ -205,9 +281,11 @@ def run_snapshot(provider: str | None = None) -> int:
 
 
 def run_recall(text: str, provider: str | None = None) -> int:
-    """요청 관련 회수 블록 출력 — UserPromptSubmit 훅 전용, provider gate 적용."""
+    """개인+프로젝트 범위 회수 — UserPromptSubmit 훅 전용, provider gate 적용."""
     if memory.inject_allowed(provider):
-        print(memory.recall_note(text), end="")
+        from ..memory_context import recall_note
+
+        print(recall_note(text, start=os.getcwd()), end="")
     return 0
 
 
@@ -245,3 +323,123 @@ def run_mcp() -> int:
     from .. import memory_bridge
 
     return memory_bridge.serve()
+
+
+def _project_candidates(root: str, all_files: bool):
+    from .. import project_memory
+
+    if all_files:
+        return project_memory.scan_project(root, changed_paths=[])
+    changed = project_memory.changed_paths(root)
+    if not changed:
+        return []
+    selected = set(changed)
+    return [candidate for candidate in project_memory.scan_project(root, changed_paths=changed) if candidate.path in selected]
+
+
+def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
+    """등록 기준을 통과한 중요 artifact 후보를 읽기 전용으로 출력한다."""
+
+    def _do() -> int:
+        root = os.getcwd()
+        candidates = _project_candidates(root, all_files)
+        rows = [
+            {
+                "path": candidate.path,
+                "kind": candidate.kind,
+                "importance": candidate.importance,
+                "score": candidate.score,
+                "reasons": list(candidate.reasons),
+                "content_hash": candidate.content_hash,
+                "structural_hash": candidate.structural_hash,
+                "extractor": candidate.extractor,
+                "symbols": list(candidate.symbols),
+                "imports": list(candidate.imports),
+            }
+            for candidate in candidates
+        ]
+        if json_out:
+            print(_json.dumps({"root": root, "mode": "all" if all_files else "changed", "candidates": rows}, ensure_ascii=False, indent=2))
+        else:
+            ui.head(f"project memory scan · {'all' if all_files else 'changed'}")
+            for row in rows:
+                ui.step(f"{row['path']} · {row['kind']} · {row['importance']} · score={row['score']}")
+            if not rows:
+                ui.ok("등록 기준을 통과한 후보 없음")
+        return 0
+
+    return _guard(_do)
+
+
+def run_project_sync(all_files: bool = False, yes: bool = False, json_out: bool = False, plan_id: str | None = None) -> int:
+    """중요 artifact를 stable document_id로 Hindsight에 replace projection한다."""
+
+    def _do() -> int:
+        from .. import project_memory
+        from ..memory_bridge import find_config
+
+        root = os.getcwd()
+        found = find_config(root)
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <server>`")
+        _, cfg = found
+        changed = project_memory.changed_paths(root)
+        candidates = project_memory.scan_project(root, changed_paths=changed)
+        if not yes:
+            revision = project_memory.source_revision(root)
+            plan = project_memory.projection_plan(root, str(cfg["bank"]), candidates, force=all_files)
+            approved_plan_id = project_memory.projection_plan_id(str(cfg["bank"]), plan, revision, force=all_files)
+            upsert_paths = [candidate.path for candidate in plan["upserts"]]
+            removed = [
+                {
+                    "path": path,
+                    "status": "renamed" if path in plan["renamed"] else "deleted",
+                    "renamed_to": plan["renamed"].get(path, ""),
+                }
+                for path in plan["removed"]
+            ]
+            payload = {
+                "action": "project-sync",
+                "bank": cfg["bank"],
+                "mode": "force-all" if all_files else "manifest-diff",
+                "source_revision": revision,
+                "plan_id": approved_plan_id,
+                "items": upsert_paths,
+                "removed": removed,
+                "approved": False,
+            }
+            if json_out:
+                print(_json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                ui.head(f"project memory sync plan · bank={cfg['bank']}")
+                for path in payload["items"]:
+                    ui.step(f"upsert · {path}")
+                for row in removed:
+                    detail = f" → {row['renamed_to']}" if row["renamed_to"] else ""
+                    ui.step(f"{row['status']} · {row['path']}{detail}")
+                ui.warn(f"아직 저장하지 않음 — 검토 후 --yes --plan-id {approved_plan_id} 추가")
+            return 0
+        if not plan_id:
+            raise ValueError("--yes requires the --plan-id from a fresh preview")
+        result = project_memory.sync_artifacts(root, cfg, candidates, force=all_files, expected_plan_id=plan_id)
+        output = {
+            "success": result.get("success") is True,
+            "bank": cfg["bank"],
+            "items_count": int(result.get("items_count", 0)),
+            "upserted_count": int(result.get("upserted_count", 0)),
+            "deleted_count": int(result.get("deleted_count", 0)),
+            "renamed_count": int(result.get("renamed_count", 0)),
+            "plan_id": result.get("plan_id", ""),
+            "paths": list(result.get("paths", [])),
+            "removed": list(result.get("removed", [])),
+            "error": str(result.get("error") or ""),
+        }
+        if json_out:
+            print(_json.dumps(output, ensure_ascii=False, indent=2))
+        elif not output["success"]:
+            ui.fail(f"project memory sync failed: {output['error'] or 'server rejected publication'}")
+        else:
+            ui.ok(f"project memory synced: {output['items_count']} item(s) → bank={cfg['bank']}")
+        return 0 if output["success"] else 1
+
+    return _guard(_do)

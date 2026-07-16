@@ -181,6 +181,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "lagom-statusline.sh"), LAGOM_STATUSLINE_SH),  # CUS-215
             # Memory v3 — 개인 위키 스냅샷 주입 (SessionStart + Thinker 한정 SubagentStart)
             (j(root, ".claude", "hooks", "memory-activate.py"), hook("memory-activate")),
+            # Charter — 프로젝트 북극성 주입 (Session/UserPrompt=through_line, Subagent=역할별)
+            (j(root, ".claude", "hooks", "charter-activate.py"), hook("charter-activate")),
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
         files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]

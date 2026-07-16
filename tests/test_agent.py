@@ -482,7 +482,7 @@ class TestRunPrompt(unittest.TestCase):
         else:
             os.environ.pop("ASGARD_UNATTENDED", None)
 
-    def _patch(self, result_text="과업 완수 — 보고", tokens=1234):
+    def _patch(self, result_text="과업 완수 — 보고", tokens=1234, last_response=""):
         import asgard.agent.heimdall as H
 
         class FakeRP:
@@ -496,6 +496,7 @@ class TestRunPrompt(unittest.TestCase):
                 self.total_tokens = tokens
                 self.cache_read_tokens = 0  # 프롬프트 캐시 계측 — json 출력 계약
                 self.cache_prompt_tokens = 0
+                self.last_response_text = last_response
                 on_text("stream-line\n")
 
             def handle(self, prompt):
@@ -518,6 +519,11 @@ class TestRunPrompt(unittest.TestCase):
     def test_warning_result_exits_one(self):
         self._patch(result_text="⚠ Odin 결정 필요 — 게이트 차단")
         self.assertEqual(self.S.run_prompt("작업해줘", json_out=True), 1)
+
+    def test_json_uses_direct_response_not_empty_stream_sentinel(self):
+        self._patch(result_text="", last_response="direct answer")
+        self.assertEqual(self.S.run_prompt("읽어줘", json_out=True), 0)
+        self.assertEqual(json.loads(self.out.getvalue())["result"], "direct answer")
 
     def test_preflight_failure_exits_two(self):
         mock.patch.object(

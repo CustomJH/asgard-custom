@@ -490,6 +490,7 @@ class TestCCWiring(MemoryBase):
         mem_entries = [e for e in s["hooks"]["SubagentStart"] if "memory-activate" in j.dumps(e)]
         self.assertEqual(len(mem_entries), 1)
         self.assertEqual(mem_entries[0]["matcher"], "^asgard-thinker$")  # Thinker 한정 (감사 매트릭스)
+        self.assertIn("memory-activate", j.dumps(s["hooks"]["Stop"]))
 
     def test_hook_registry_and_scaffold(self):
         from asgard.commands.setup import MEMORY_SKILL_MD
@@ -612,6 +613,29 @@ class TestCCWiring(MemoryBase):
         payload = j.loads(out)
         self.assertEqual(payload["hookSpecificOutput"]["hookEventName"], "UserPromptSubmit")
         self.assertIn("<memory-recall>DETAIL</memory-recall>", payload["hookSpecificOutput"]["additionalContext"])
+
+    def test_cc_stop_syncs_completed_turn_and_surfaces_memory_proposal(self):
+        import json as j
+
+        bindir = os.path.join(self.tmp, "stop-bin")
+        os.makedirs(bindir, exist_ok=True)
+        fake = os.path.join(bindir, "asgard")
+        open(fake, "w").write(
+            "#!/bin/sh\nprintf '%s' '{\"status\":\"retained\",\"proposal\":{\"preview\":\"중요 사건 사용자 승인 제안\"}}'\n"
+        )
+        os.chmod(fake, 0o755)
+        out = self._run_hook(
+            {
+                "hook_event_name": "Stop",
+                "session_id": "cc-session-1",
+                "prompt": "메모리 lifecycle을 구현해줘",
+                "last_assistant_message": "구현과 검증을 완료했다.",
+                "cwd": self.tmp,
+            },
+            [bindir],
+        )
+        payload = j.loads(out)
+        self.assertIn("중요 사건 사용자 승인 제안", payload["systemMessage"])
 
 
 def _json_dumps(payload: dict) -> str:

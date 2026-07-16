@@ -23,6 +23,7 @@ import random
 import re
 import threading
 import time
+import uuid
 from typing import Callable, Protocol
 
 from ..hooks.quest_log import trivial_evidence as _trivial_evidence
@@ -164,9 +165,14 @@ _WRITE_VERBS = (
     "삭제해", "지워", "적용해", "옮겨", "설치해", "완성해", "fix ", "implement", "refactor", "rename ", "install ",
 )  # fmt: skip
 _READ_VERBS = (
-    "설명해", "알려", "뭐야", "무엇", "어떻게 동작", "왜 ", "읽어줘", "분석해줘", "보여줘", "요약해", "조회",
-    "explain", "what is", "what does", "how does", "why does", "describe", "summarize", "몇 개", "몇개", "?",
+    "설명해", "알려", "뭐야", "무엇", "어떻게 동작", "왜 ", "읽", "답해", "분석해줘", "보여줘", "요약해", "조회",
+    "explain", "what is", "what does", "how does", "why does", "describe", "summarize", "read ", "show ", "몇 개", "몇개", "?",
 )  # fmt: skip
+_NEGATED_WRITE_PAT = re.compile(
+    r"(?:수정|변경|편집|고치)\s*(?:하지\s*(?:마(?:라|세요)?|말|않)|금지)"
+    r"|(?:do\s+not|don't|without)\s+(?:modify|modifying|change|changing|edit|editing|write|writing)\b",
+    re.IGNORECASE,
+)
 
 
 def classify_heuristic(request: str) -> dict | None:
@@ -186,7 +192,11 @@ def classify_heuristic(request: str) -> dict | None:
     }
     if _DESTRUCTIVE_PAT.search(low):
         return {**base, "write_expected": True, "destructive": True, "task_class": "deep"}
-    has_w = any(v in low for v in _WRITE_VERBS)
+    # "파일을 수정하지 마"의 부정된 동사를 write 의도로 세면 read-only 질의가 Trinity로
+    # 오분류된다. 부정구만 제거한 사본에서 write 동사를 찾되, 같은 문장에 실제 write 동사가
+    # 따로 있으면 그대로 잡는다 (예: "기존 파일은 수정하지 말고 새 파일 만들어").
+    write_scan = _NEGATED_WRITE_PAT.sub("", low)
+    has_w = any(v in write_scan for v in _WRITE_VERBS)
     has_r = any(v in low for v in _READ_VERBS)
     if has_r and not has_w:
         return base  # 명백 read-only — DIRECT 무세금
@@ -387,6 +397,12 @@ class Heimdall:
         from ..lagom import note as _lagom_note
 
         self.lagom = _lagom_note(root)
+        # Charter (프로젝트 북극성) — through-line 은 identity 로(설계①, 모든 역할·DIRECT 관통),
+        # coherence 는 Thinker/Verifier 프롬프트에 역할별로(협업②/판단③). 미설정이면 전부 빈 문자열.
+        from ..charter import note as _charter_note
+
+        self._charter_note = _charter_note
+        self.charter_identity = _charter_note(root, "identity")
         # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더 (hermes frozen
         # snapshot: 세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
         # 주입 매트릭스 (감사 26-07-15): DIRECT(identity)·Thinker = 스냅샷+회수, Worker =
@@ -400,14 +416,20 @@ class Heimdall:
         self._mem_allowed = _mem_allowed
         # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/loki)은 코디네이터가 아니다.
         # 특히 loki 는 Verifier 의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
-        self.delivery_identity = _identity(root) + self.lagom
+        self.delivery_identity = _identity(root) + self.lagom + self.charter_identity
         self.identity = self.delivery_identity + self.memory_note
         self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
         self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
         # 프롬프트 캐시 계측 (누적) — 적중률 = read / (read+write+uncached), status line ⚡ 표시
         self.cache_read_tokens = 0
         self.cache_prompt_tokens = 0
+        # DIRECT는 REPL 이중 출력을 피하려고 handle()에서 빈 문자열 sentinel을 반환한다.
+        # headless JSON 호출자는 실제 최종 응답을 이 필드에서 회수한다.
+        self.last_response_text = ""
         self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
+        self._memory_session_id = f"native-{uuid.uuid4().hex}"
+        self._memory_turn_seq = 0
+        self._last_completion: dict | None = None
         self._sleep: Callable[[float], None] = time.sleep  # 재시도 백오프 — 테스트 주입점 (CUS-180)
         dangling = active_quest(root)
         if dangling:  # 이전 세션 중단으로 남은 ACTIVE 퀘스트 — 조용히 덮지 않는다 (CUS-180)
@@ -450,6 +472,7 @@ class Heimdall:
             on_tokens=self._add_tokens,
             on_status=self.on_status,
             readonly=readonly,
+            role=role,
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
@@ -609,6 +632,7 @@ class Heimdall:
                 system,
                 model=self._delivery_model(agent),
                 readonly=agent == "loki",  # loki = read-only 반례 탐색 — 도구로 강제
+                role=agent,
             )
             r = child.run(task)
             self._track_cache(r)
@@ -854,22 +878,26 @@ class Heimdall:
                 # 메모리 주입 (Thinker 한정) — 스냅샷(카탈로그)은 시스템에, 요청 기반 회수는
                 # 과업 프롬프트에. 게이트는 이 역할이 실제로 붙는 provider 기준 (배치 승격 포함).
                 thinker_mem = self._memory_snap if self._mem_allowed(rrp.profile.name) else ""
-                if thinker_mem:
-                    from ..memory import recall_note as _recall
+                if self._mem_allowed(rrp.profile.name):
+                    from ..memory_context import recall_note as _recall
 
-                    prompt += _recall(request)
+                    prompt += _recall(request, start=self.root)
 
-                def mk(sr=sess_role, m=model, mem=thinker_mem):
+                charter_t = self._charter_note(self.root, "thinker")  # 계획 앵커 (설계①/협업②)
+
+                def mk(sr=sess_role, m=model, mem=thinker_mem, ch=charter_t):
                     return self._session(
-                        _role_prompt("asgard-thinker.md") + self.lagom + mem, role=sr, model=m, readonly=True
+                        _role_prompt("asgard-thinker.md") + self.lagom + ch + mem, role=sr, model=m, readonly=True
                     )
 
                 fb = (
                     (
-                        lambda: self._session(
+                        lambda rl=sess_role, ch=charter_t: self._session(
                             _role_prompt("asgard-thinker.md")
                             + self.lagom
+                            + ch
                             + (self._memory_snap if self._mem_allowed(self.rp.profile.name) else ""),
+                            role=rl,
                             readonly=True,
                         )
                     )
@@ -925,7 +953,7 @@ class Heimdall:
                 explore_note = (
                     ("\nThinker 관찰 이력 (동일 명령 재탐색 불필요): " + "; ".join(explored)[:600]) if explored else ""
                 )
-                fb = (lambda mw=mk_worker: mw(m=None, rl=None)) if rrp is not self.rp else None
+                fb = (lambda mw=mk_worker: mw(m=None, rl="worker")) if rrp is not self.rp else None
                 r = self._run_turn(
                     mk_worker, f"과업: {request}\n\n계획:\n{plan_part}{explore_note}\n{retry_note}{budget_note}", fb
                 )
@@ -955,9 +983,11 @@ class Heimdall:
                     pass
                 changed = ", ".join((st.get("changed_files") or [])[:20]) or "(없음)"
 
-                def mk_verifier(m=model, rl="verifier"):
+                charter_v = self._charter_note(self.root, "verifier")  # 반례 렌즈 (판단③) — 게이트 대체 아님
+
+                def mk_verifier(m=model, rl="verifier", ch=charter_v):
                     return self._session(
-                        _role_prompt("asgard-verifier.md"),
+                        _role_prompt("asgard-verifier.md") + ch,
                         extra_tools=[VERDICT_TOOL],
                         handlers={"verdict": lambda i: "판정 접수"},
                         role=rl,
@@ -965,7 +995,7 @@ class Heimdall:
                         readonly=True,  # 읽기전용을 도구로 강제 — 프롬프트 순응에 안 기댄다
                     )
 
-                fb = (lambda mv=mk_verifier: mv(m=None, rl=None)) if rrp is not self.rp else None
+                fb = (lambda mv=mk_verifier: mv(m=None, rl="verifier")) if rrp is not self.rp else None
                 r = self._run_turn(
                     mk_verifier,
                     f"검증하라. 요청: {request}\ncriteria: {cls['criteria']}\n"
@@ -1067,7 +1097,16 @@ class Heimdall:
             lines.extend(f"  · {a}" for a in assumptions[:8])
         if gate_blocks:
             lines.append(f"⚠ 게이트 차단 {gate_blocks}회 후 통과 — 수리 이력은 퀘스트 로그 참조")
-        return "\n".join(lines)
+        report = "\n".join(lines)
+        self._last_completion = {
+            "session_id": sid,
+            "changed_files": sorted(
+                {str(path) for event in events for path in (event.get("changed_files") or []) if str(path).strip()}
+            ),
+            "evidence": cmds,
+            "verified": True,
+        }
+        return report
 
     def _worktree_dirty(self) -> str:
         """git status --porcelain 스냅샷 — DIRECT 전후 비교로 bash 우회 write 까지 감지 (CUS-178)."""
@@ -1094,13 +1133,14 @@ class Heimdall:
         ctx = "".join(f"[이전 문답]\nOdin: {q}\n응답: {a}\n\n" for q, a in self.history[-3:])
         # 요청 기반 zero-LLM 회수 (감사 권고) — 카탈로그(identity)와 별개로 관련 페이지를 결정론 주입.
         recall = ""
-        if self.memory_note:
-            from ..memory import recall_note as _recall
+        if self._mem_allowed(self.rp.profile.name):
+            from ..memory_context import recall_note as _recall
 
-            recall = _recall(request)
-        r = self._session(self.identity).run((ctx + request if ctx else request) + recall)
+            recall = _recall(request, start=self.root)
+        r = self._session(self.identity, role="direct", readonly=True).run((ctx + request if ctx else request) + recall)
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
         self._track_cache(r)
+        self.last_response_text = r.text
         self.history = (self.history + [(request, r.text[:500])])[-6:]
         if r.writes or self._worktree_dirty() != before:
             _log_classify(self.root, {"event": "misroute", "route": "direct", "actual_write": True})
@@ -1118,9 +1158,41 @@ class Heimdall:
         return r.text if r.stop_reason == "refusal" else ""
 
     # ── 진입점 ───────────────────────────────────────────────────────────
+    def _finalize_memory(self, request: str, visible_response: str) -> str:
+        """완성 turn 자동 retain + 검증된 write 과업의 승인 proposal. 모든 장애는 agent 실행에 fail-open."""
+        try:
+            from ..memory_bridge import find_config
+            from ..project_memory import propose_completion, retain_turn
+
+            found = find_config(self.root)
+            if not found:
+                return visible_response
+            root, cfg = found
+            response = visible_response or self.last_response_text
+            self._memory_turn_seq += 1
+            if cfg.get("auto_retain_turns", True):
+                retain_turn(
+                    root,
+                    cfg,
+                    session_id=self._memory_session_id,
+                    turn_id=f"turn-{self._memory_turn_seq}",
+                    user_text=request,
+                    assistant_text=response,
+                    mode="native",
+                )
+            completion = self._last_completion
+            if completion and cfg.get("auto_propose_completion", True):
+                proposal = propose_completion(root, cfg, request=request, response=response, **completion)
+                if proposal.status == "proposed":
+                    return visible_response + "\n\n🧠 프로젝트 메모리 승인 제안\n" + proposal.preview
+        except Exception:
+            pass
+        return visible_response
+
     def handle(self, request: str) -> str:
         from ..i18n import t
 
+        self._last_completion = None
         self.on_status(t("thinking"))  # 분류도 모델 호출 — 침묵 구간 커버
         try:
             cls = self._classify(request)
@@ -1128,10 +1200,12 @@ class Heimdall:
             self.on_status(None)
         if cls["destructive"]:
             _log_classify(self.root, {"event": "route", "route": "refused-destructive"})
-            return "⚠ 파괴 작업 감지 — Odin 명시 동의 필요 (Canon 3). 대상과 함께 재요청하세요."
+            return self._finalize_memory(
+                request, "⚠ 파괴 작업 감지 — Odin 명시 동의 필요 (Canon 3). 대상과 함께 재요청하세요."
+            )
         if not cls["write_expected"]:
             _log_classify(self.root, {"event": "route", "route": "direct"})
-            return self._direct(request)  # DIRECT — 무세금
+            return self._finalize_memory(request, self._direct(request))  # DIRECT — 무세금
         # 게이트-우선(STANDARD) 라우팅 (CUS-188) — 비민감 소형 write 는 Worker 직행 + 하네스 베이스라인.
         # deep/ambiguous/shared 는 상시 Trinity. task_class 미상(None)은 deep 취급 (안전 기본값).
         standard = cls.get("task_class") in ("trivial", "standard") and not (cls["ambiguous"] or cls["shared"])
@@ -1139,9 +1213,12 @@ class Heimdall:
         try:
             out = self._trinity(request, cls, standard=standard)
             self.history = (self.history + [(request, out[:500])])[-6:]  # 후속 질문 맥락 (DIRECT 가 소비)
-            return out
+            self.last_response_text = out
+            return self._finalize_memory(request, out)
         except Exception as e:  # dangling 방지 (CUS-180) — 퀘스트는 ACTIVE 로 남고 정직하게 보고
-            return (
+            out = (
                 f"⚠ 세션 오류로 Trinity 중단 ({e.__class__.__name__}: {str(e)[:200]}) — "
                 "퀘스트가 ACTIVE 로 남아 있음. 재요청 시 이어서 검증하거나 quest-log close 하세요."
             )
+            self.last_response_text = out
+            return self._finalize_memory(request, out)

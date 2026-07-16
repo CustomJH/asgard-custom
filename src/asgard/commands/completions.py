@@ -64,6 +64,9 @@ _MEM_SUB = {
     "recall": "print query-relevant memory context",
     "path": "print the memory directory",
     "connect": "link project to the shared memory server",
+    "project-scan": "preview important project artifacts",
+    "project-sync": "sync approved artifacts to Hindsight",
+    "project-approve": "approve a staged project-memory record",
     "mcp": "stdio MCP bridge (shared memory)",
 }
 

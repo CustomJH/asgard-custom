@@ -262,6 +262,15 @@ def memory_recall(
     raise typer.Exit(run_recall(text, provider))
 
 
+@memory_app.command("sync-turn", help="internal hook: retain one completed conversation turn from JSON stdin", hidden=True)
+def memory_sync_turn(
+    mode: str = typer.Option(..., "--mode", help="native|claude-code|codex|cursor"),
+) -> None:
+    from .commands.memory import run_sync_turn
+
+    raise typer.Exit(run_sync_turn(mode))
+
+
 @memory_app.command("path", help="print the memory directory")
 def memory_path() -> None:
     from .commands.memory import run_path
@@ -277,6 +286,37 @@ def memory_connect(
     from .commands.memory import run_connect
 
     raise typer.Exit(run_connect(server, bank))
+
+
+@memory_app.command("project-scan", help="preview important code/docs eligible for Hindsight project memory")
+def memory_project_scan(
+    all_files: bool = typer.Option(False, "--all", help="bootstrap scan of all important tracked artifacts"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_scan
+
+    raise typer.Exit(run_project_scan(all_files=all_files, json_out=json_))
+
+
+@memory_app.command("project-sync", help="sync approved important code/docs into the Hindsight project bank")
+def memory_project_sync(
+    all_files: bool = typer.Option(False, "--all", help="bootstrap all important tracked artifacts"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="execute the previewed external write"),
+    plan_id: str | None = typer.Option(None, "--plan-id", help="SHA-256 plan id emitted by the preview"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_sync
+
+    raise typer.Exit(run_project_sync(all_files=all_files, yes=yes, json_out=json_, plan_id=plan_id))
+
+
+@memory_app.command("project-approve", help="approve and commit one pending project-memory proposal")
+def memory_project_approve(
+    approval_id: str = typer.Argument(..., help="approval id shown in the completion proposal"),
+) -> None:
+    from .commands.memory import run_project_approve
+
+    raise typer.Exit(run_project_approve(approval_id))
 
 
 @memory_app.command("mcp", help="stdio MCP bridge for the shared memory server (register once, user scope)")

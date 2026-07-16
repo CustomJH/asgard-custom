@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard memory-activate — 개인 메모리 스냅샷 주입 (memory v3, Claude Code 배선).
+# Asgard memory-activate — 개인 스냅샷 + 개인/프로젝트 관련 회수 (Claude Code 배선).
 #
 # 배선 매처: SessionStart startup|resume|clear|compact (lagom-activate 와 동일 —
 # compact/clear 는 컨텍스트 소실 지점이라 재주입 필수) + UserPromptSubmit 관련 회수 +
@@ -11,12 +11,83 @@
 # `asgard memory recall`을 subprocess 로 소비한다. 스캔·오염 제외·예산·provider gate는
 # 전부 CLI(단일 출처)가 수행하고, 이 훅은 출력 전달만 한다 (로직 재구현 금지).
 # asgard 미설치·빈 출력·타임아웃·어떤 오류든 무주입 통과 (fail-open, 항상 exit 0).
+import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
 
 NEVER_INJECT = ("asgard-verifier", "asgard-loki")  # 게이트·반례 탐색 오염 방지 — 매처가 바뀌어도 불변
+
+
+def _message_text(value) -> str:
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, list):
+        return "\n".join(str(part.get("text") or "") for part in value if isinstance(part, dict)).strip()
+    return ""
+
+
+def _latest_turn(data: dict) -> tuple[str, str]:
+    user = str(data.get("prompt") or "").strip()
+    assistant = str(data.get("last_assistant_message") or "").strip()
+    path = str(data.get("transcript_path") or "")
+    if (not user or not assistant) and path:
+        try:
+            latest_user = ""
+            for line in open(path, encoding="utf-8"):
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                message = row.get("message") if isinstance(row.get("message"), dict) else row
+                role = str(message.get("role") or row.get("type") or "")
+                text = _message_text(message.get("content"))
+                if role == "user" and text:
+                    latest_user = text
+                elif role == "assistant" and text:
+                    user, assistant = latest_user or user, text
+        except Exception:
+            pass
+    return user, assistant
+
+
+def _completion_context(root: str, session_id: str) -> dict:
+    """close가 검증을 강제한 동일 session quest만 완료 사건 후보로 전달한다."""
+    quest_dir = os.path.join(root, ".asgard", "quest")
+    active = ""
+    try:
+        active = open(os.path.join(quest_dir, "ACTIVE"), encoding="utf-8").read().strip()
+    except Exception:
+        pass
+    matches = []
+    try:
+        names = [name for name in os.listdir(quest_dir) if name.endswith(".jsonl")]
+    except Exception:
+        names = []
+    for name in names:
+        events = []
+        try:
+            events = [json.loads(line) for line in open(os.path.join(quest_dir, name), encoding="utf-8") if line.strip()]
+        except Exception:
+            continue
+        if not events or not any(str(event.get("session_id")) == session_id for event in events):
+            continue
+        qid = name[:-6]
+        if active == qid:
+            continue
+        verified = next(
+            (event for event in reversed(events) if event.get("event") == "verify" and event.get("verdict") == "PASS"),
+            None,
+        )
+        if verified:
+            matches.append((os.path.getmtime(os.path.join(quest_dir, name)), events, verified))
+    if not matches:
+        return {"verified": False, "changed_files": [], "evidence": []}
+    _, events, verified = max(matches, key=lambda row: row[0])
+    changed = sorted({str(path) for event in events for path in (event.get("changed_files") or []) if str(path)})
+    return {"verified": True, "changed_files": changed, "evidence": verified.get("commands") or []}
 
 
 def main():
@@ -34,6 +105,36 @@ def main():
         exe = shutil.which("asgard")
         if not exe:
             sys.exit(0)  # asgard CLI 부재 = 메모리 기능 없음 — 조용히 통과
+        if event == "Stop":
+            user, assistant = _latest_turn(data)
+            if not user or not assistant:
+                sys.exit(0)
+            root = os.environ.get("CLAUDE_PROJECT_DIR") or str(data.get("cwd") or os.getcwd())
+            session_id = str(data.get("session_id") or "claude-code")
+            turn_id = str(data.get("turn_id") or hashlib.sha256((user + "\0" + assistant).encode()).hexdigest()[:24])
+            payload = {
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "user_text": user,
+                "assistant_text": assistant,
+                **_completion_context(root, session_id),
+            }
+            r = subprocess.run(
+                [exe, "memory", "sync-turn", "--mode", "claude-code"],
+                input=json.dumps(payload, ensure_ascii=False),
+                capture_output=True,
+                text=True,
+                timeout=15,
+                cwd=root,
+            )
+            try:
+                result = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
+            except Exception:
+                result = {}
+            preview = str((result.get("proposal") or {}).get("preview") or "")
+            if preview:
+                sys.stdout.write(json.dumps({"systemMessage": "🧠 프로젝트 메모리 승인 제안\n" + preview}, ensure_ascii=False) + "\n")
+            sys.exit(0)
         if event == "UserPromptSubmit":
             prompt = str(data.get("prompt") or "").strip()
             if not prompt:

@@ -41,3 +41,12 @@ use explicit least-privilege `tools:` allowlists validated against the same
 policy contract; write tools are absent from Thinker, Verifier, Loki, and Ullr.
 Their Bash surface is restricted to allowlisted inspection and verification
 commands, while all roles retain pre-execution destructive Git/filesystem guards.
+
+## Memory
+
+Asgard has exactly two memory types: personal local Markdown/SQLite memory and
+a shared Hindsight project bank. Project records pass provenance, importance,
+secret, prompt-injection, and approval gates before retain. The generated
+`asgard-memory` skill carries the registration schema, and `asgard memory
+project-scan` / `project-sync` preview and commit important artifacts into the
+Hindsight bank.
