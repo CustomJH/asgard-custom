@@ -1,0 +1,377 @@
+import io
+import json
+import os
+import tempfile
+import unittest
+from contextlib import nullcontext
+from types import SimpleNamespace
+from typing import Any, cast
+from unittest import mock
+
+from asgard.agent import onboard, repl
+from asgard.providers import PROVIDERS, ResolvedProvider
+
+
+class _Response:
+    def __init__(self, payload):
+        self.payload = payload
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def read(self, _size=-1):
+        return json.dumps(self.payload).encode()
+
+
+class TestProviderModelDiscovery(unittest.TestCase):
+    def _nvidia(self, model=None):
+        profile = PROVIDERS["nvidia"]
+        return ResolvedProvider(
+            profile=profile,
+            model=model or profile.default_model,
+            base_url=profile.base_url,
+            api_key="test-key",
+        )
+
+    def test_nvidia_live_catalog_exposes_multiple_models_and_deduplicates(self):
+        from asgard.providers import provider_models
+
+        payload = {
+            "data": [
+                {"id": "meta/llama-3.3-70b-instruct"},
+                {"id": PROVIDERS["nvidia"].default_model},
+                {"id": "meta/llama-3.3-70b-instruct"},
+                {"missing": "id"},
+            ]
+        }
+        with mock.patch("asgard.providers._open_model_catalog", return_value=_Response(payload)) as opened:
+            models = provider_models(self._nvidia())
+
+        self.assertEqual(
+            models,
+            [PROVIDERS["nvidia"].default_model, "meta/llama-3.3-70b-instruct"],
+        )
+        request = opened.call_args.args[0]
+        self.assertEqual(request.full_url, "https://integrate.api.nvidia.com/v1/models")
+        self.assertEqual(request.get_header("Authorization"), "Bearer test-key")
+
+    def test_nvidia_catalog_failure_falls_back_to_curated_agent_models(self):
+        from asgard.providers import provider_models
+
+        reasons = []
+        with mock.patch("asgard.providers._open_model_catalog", side_effect=OSError("offline")):
+            models = provider_models(self._nvidia(), on_fallback=reasons.append)
+
+        self.assertGreaterEqual(len(models), 2)
+        self.assertEqual(models[0], PROVIDERS["nvidia"].default_model)
+        self.assertEqual(reasons, ["live catalog request failed"])
+
+    def test_model_catalog_redirect_handler_refuses_redirect(self):
+        from asgard.providers import _NoModelCatalogRedirect
+
+        handler = _NoModelCatalogRedirect()
+        self.assertIsNone(
+            handler.redirect_request(
+                cast(Any, None), cast(Any, None), 302, "Found", cast(Any, {}), "https://other.invalid/models"
+            )
+        )
+
+    def test_catalog_rejects_control_character_model_ids_and_non_http_endpoint(self):
+        from asgard.providers import provider_models
+
+        payload = {"data": [{"id": "safe/model"}, {"id": "bad\nmodel"}, {"id": "bad\x1b[31m"}]}
+        with mock.patch("asgard.providers._open_model_catalog", return_value=_Response(payload)):
+            self.assertEqual(provider_models(self._nvidia()), ["safe/model"])
+
+        rp = self._nvidia()
+        rp.base_url = "file:///tmp/not-a-provider"
+        with mock.patch("asgard.providers._open_model_catalog") as opened:
+            models = provider_models(rp)
+        opened.assert_not_called()
+        self.assertEqual(models[0], PROVIDERS["nvidia"].default_model)
+
+    def test_nvidia_catalog_never_sends_global_key_to_project_override_origin(self):
+        from asgard.providers import provider_models
+
+        rp = self._nvidia()
+        rp.base_url = "https://credential-sink.invalid/v1"
+        with mock.patch("asgard.providers._open_model_catalog") as opened:
+            models = provider_models(rp)
+        opened.assert_not_called()
+        self.assertEqual(models[0], PROVIDERS["nvidia"].default_model)
+
+    def test_nvidia_extra_body_is_not_forced_on_another_model(self):
+        profile = PROVIDERS["nvidia"]
+        self.assertTrue(profile.request_extra_body(profile.default_model))
+        self.assertEqual(profile.request_extra_body("meta/llama-3.3-70b-instruct"), {})
+
+
+class TestNativeModelSelection(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.cred = os.path.join(self.root, "credentials.json")
+        self.cred_patch = mock.patch("asgard.providers.CRED_PATH", self.cred)
+        self.cred_patch.start()
+        self.global_patch = mock.patch("asgard.settings.load_global", return_value={})
+        self.global_patch.start()
+
+    def tearDown(self):
+        self.global_patch.stop()
+        self.cred_patch.stop()
+        self.tmp.cleanup()
+
+    def test_nvidia_onboarding_prompts_for_model_after_key_and_persists_choice(self):
+        default = PROVIDERS["nvidia"].default_model
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default, "meta/llama-3.3-70b-instruct"]),
+            mock.patch("builtins.input", side_effect=["2"]),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="nvidia")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.model, "meta/llama-3.3-70b-instruct")
+        from asgard.settings import load_project
+
+        self.assertEqual(
+            load_project(self.root)["provider"],
+            {"name": "nvidia", "model": "meta/llama-3.3-70b-instruct"},
+        )
+        from asgard.providers import resolve
+
+        self.assertEqual(resolve(self.root).model, "meta/llama-3.3-70b-instruct")
+        stored = json.load(open(self.cred))
+        self.assertEqual(stored["nvidia"]["api_key"], "test-key")
+        self.assertNotIn("model", stored["nvidia"])
+
+    def test_switching_to_nvidia_drops_previous_provider_endpoint_and_key_env(self):
+        from asgard.providers import save_config_section
+        from asgard.settings import load_project
+
+        save_config_section(
+            self.root,
+            "provider",
+            {
+                "name": "openai_compat",
+                "model": "old-model",
+                "base_url": "https://old-provider.invalid/v1",
+                "api_key_env": "OLD_PROVIDER_KEY",
+            },
+        )
+        default = PROVIDERS["nvidia"].default_model
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default, "meta/llama-3.3-70b-instruct"]),
+            mock.patch("builtins.input", side_effect=["2"]),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="nvidia")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        self.assertEqual(resolved.base_url, PROVIDERS["nvidia"].base_url)
+        self.assertEqual(
+            load_project(self.root)["provider"],
+            {"name": "nvidia", "model": "meta/llama-3.3-70b-instruct"},
+        )
+
+    def test_nvidia_resolve_ignores_project_base_url_override(self):
+        from asgard.providers import resolve, save_config_section, save_credential
+
+        save_credential("nvidia", "test-key")
+        save_config_section(
+            self.root,
+            "provider",
+            {
+                "name": "nvidia",
+                "model": PROVIDERS["nvidia"].default_model,
+                "base_url": "https://credential-sink.invalid/v1",
+            },
+        )
+        self.assertEqual(resolve(self.root).base_url, PROVIDERS["nvidia"].base_url)
+
+    def test_nvidia_trinity_role_ignores_project_base_url_override(self):
+        from asgard.providers import resolve, resolve_trinity, save_config_section, save_credential
+
+        save_credential("nvidia", "test-key")
+        save_config_section(
+            self.root,
+            "trinity.worker",
+            {
+                "provider": "nvidia",
+                "model": "meta/llama-3.3-70b-instruct",
+                "base_url": "https://credential-sink.invalid/v1",
+            },
+        )
+        worker = resolve_trinity(self.root, resolve(self.root))["worker"]
+        self.assertEqual(worker.base_url, PROVIDERS["nvidia"].base_url)
+
+    def test_cancelling_nvidia_picker_keeps_credential_but_does_not_select_provider(self):
+        from asgard.settings import load_project
+
+        default = PROVIDERS["nvidia"].default_model
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default, "meta/llama-3.3-70b-instruct"]),
+            mock.patch("builtins.input", return_value="q"),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="nvidia")
+
+        self.assertIsNone(resolved)
+        self.assertNotIn("provider", load_project(self.root))
+        self.assertTrue(json.load(open(self.cred))["nvidia"]["api_key"])
+
+    def test_manual_model_id_rejects_control_characters(self):
+        default = PROVIDERS["nvidia"].default_model
+        with (
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default]),
+            mock.patch("builtins.input", side_effect=["m", "bad\x1b[31m"]),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            self.assertIsNone(onboard._pick_model(self._nvidia_resolved()))
+
+    def test_model_command_reconfigures_existing_nvidia_connection(self):
+        from asgard.providers import save_config_section
+
+        default = PROVIDERS["nvidia"].default_model
+        save_config_section(self.root, "provider", {"name": "nvidia", "model": default})
+        rp = ResolvedProvider(
+            profile=PROVIDERS["nvidia"],
+            model=default,
+            base_url=PROVIDERS["nvidia"].base_url,
+            api_key="test-key",
+        )
+        with (
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default, "meta/llama-3.3-70b-instruct"]),
+            mock.patch("asgard.agent.onboard.can_prompt", return_value=True),
+            mock.patch("builtins.input", return_value="2"),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            with self.assertRaises(repl._Reconfigure) as changed:
+                repl.slash("/model", self.root, rp)
+
+        self.assertEqual(changed.exception.rp.model, "meta/llama-3.3-70b-instruct")
+
+    def test_selected_nvidia_model_reaches_openai_client_without_default_only_extras(self):
+        from asgard.agent.session import AgentSession
+
+        calls = []
+
+        class Completions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                delta = SimpleNamespace(content="ok", reasoning_content=None, reasoning=None, tool_calls=[])
+                return [SimpleNamespace(usage=None, choices=[SimpleNamespace(finish_reason="stop", delta=delta)])]
+
+        client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+        rp = ResolvedProvider(
+            profile=PROVIDERS["nvidia"],
+            model="meta/llama-3.3-70b-instruct",
+            base_url=PROVIDERS["nvidia"].base_url,
+            api_key="test-key",
+        )
+        session = AgentSession(client, rp, self.root, "system", max_iterations=1)
+        result = session.run("hello")
+
+        self.assertEqual(result.text, "ok")
+        self.assertEqual(calls[0]["model"], "meta/llama-3.3-70b-instruct")
+        self.assertIsNone(calls[0]["extra_body"])
+
+    def test_default_nvidia_model_extras_reach_openai_client(self):
+        from asgard.agent.session import AgentSession
+
+        calls = []
+
+        class Completions:
+            def create(self, **kwargs):
+                calls.append(kwargs)
+                delta = SimpleNamespace(content="ok", reasoning_content=None, reasoning=None, tool_calls=[])
+                return [SimpleNamespace(usage=None, choices=[SimpleNamespace(finish_reason="stop", delta=delta)])]
+
+        rp = self._nvidia_resolved()
+        client = SimpleNamespace(chat=SimpleNamespace(completions=Completions()))
+        AgentSession(client, rp, self.root, "system", max_iterations=1).run("hello")
+        self.assertEqual(calls[0]["extra_body"], rp.profile.extra_body)
+
+    def test_tui_model_command_rebuilds_heimdall_with_selected_model(self):
+        from asgard.agent.tui import AsgardTUI
+
+        original = self._nvidia_resolved()
+        selected = self._nvidia_resolved("meta/llama-3.3-70b-instruct")
+
+        class Log:
+            def __init__(self):
+                self.lines = []
+
+            def write(self, line):
+                self.lines.append(line)
+
+        log = Log()
+        shell = SimpleNamespace(
+            root=self.root,
+            rp=original,
+            heimdall=object(),
+            _emit=mock.Mock(),
+            query_one=lambda *_args: log,
+            suspend=lambda: nullcontext(),
+            _set_status=mock.Mock(),
+        )
+        replacement = object()
+        with (
+            mock.patch("asgard.agent.onboard.select_model", return_value=selected),
+            mock.patch("asgard.agent.repl._new_heimdall", return_value=replacement) as rebuilt,
+        ):
+            AsgardTUI._handle_slash(cast(AsgardTUI, shell), "/model")
+
+        self.assertIs(shell.rp, selected)
+        self.assertIs(shell.heimdall, replacement)
+        rebuilt.assert_called_once_with(self.root, selected, shell._emit)
+
+    def test_tui_trinity_set_rebuilds_heimdall(self):
+        from asgard.agent.tui import AsgardTUI
+
+        rp = self._nvidia_resolved()
+
+        class Log:
+            def write(self, _line):
+                pass
+
+        shell = SimpleNamespace(
+            root=self.root,
+            rp=rp,
+            heimdall=object(),
+            _emit=mock.Mock(),
+            query_one=lambda *_args: Log(),
+            suspend=lambda: nullcontext(),
+            _set_status=mock.Mock(),
+        )
+        replacement = object()
+        with (
+            mock.patch("asgard.agent.repl._cmd_trinity", side_effect=repl._Reconfigure(rp, "placement saved")) as command,
+            mock.patch("asgard.agent.repl._new_heimdall", return_value=replacement) as rebuilt,
+        ):
+            AsgardTUI._handle_slash(cast(AsgardTUI, shell), "/trinity set")
+
+        command.assert_called_once_with("/trinity set", self.root, rp)
+        self.assertIs(shell.heimdall, replacement)
+        rebuilt.assert_called_once_with(self.root, rp, shell._emit)
+
+    def _nvidia_resolved(self, model=None):
+        profile = PROVIDERS["nvidia"]
+        return ResolvedProvider(
+            profile=profile,
+            model=model or profile.default_model,
+            base_url=profile.base_url,
+            api_key="test-key",
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

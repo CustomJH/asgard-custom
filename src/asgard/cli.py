@@ -71,6 +71,22 @@ def init(
     )
 
 
+setup_app = typer.Typer(help="set up or refresh project-aware Asgard assets", no_args_is_help=True)
+app.add_typer(setup_app, name="setup")
+
+
+@setup_app.command("map", help="draw or refresh the evidence-based project code map")
+def setup_map(
+    check: bool = typer.Option(False, "--check", help="report structural drift without writing"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="preview whether the managed map would change"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.map import run_setup_map
+
+    raise typer.Exit(run_setup_map(check=check, dry_run=dry_run, json_out=json_, quiet=quiet))
+
+
 @app.command(help="update asgard to the latest release, or pin a version: update vX.Y.Z")
 def update(
     ref: str = typer.Argument(None, metavar="[version]"),
@@ -153,7 +169,7 @@ app.add_typer(tools_app, name="tools")
 
 @tools_app.command("list", help="list native + Claude Code tools for one role")
 def tools_list(
-    role: str = typer.Option("worker", "--role", help="thinker|worker|verifier|freyja|thor|loki"),
+    role: str = typer.Option("worker", "--role", help="thinker|worker|verifier|freyja|thor|eitri|loki"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.tools import run_tools_list
@@ -278,17 +294,34 @@ def memory_path() -> None:
     raise typer.Exit(run_path())
 
 
-@memory_app.command("connect", help="link this project to the shared memory server (.asgard/memory-server.json)")
+@memory_app.command("connect", help="select and configure this project's shared-memory backend")
 def memory_connect(
-    server: str = typer.Argument(..., help="server URL, e.g. http://172.16.30.58:8888"),
-    bank: str = typer.Option(None, "--bank", help="bank id (default: project directory name)"),
+    endpoint: str = typer.Argument(..., help="backend endpoint, e.g. http://memory.internal:8888"),
+    engine: str = typer.Option("hindsight", "--engine", help="backend name (built-in or installed plugin entry point)"),
+    project_id: str = typer.Option(
+        None, "--project-id", "--bank", help="stable project namespace (default: unique project name + UUID suffix)"
+    ),
+    option: list[str] = typer.Option([], "--option", "-O", help="backend option KEY=VALUE; repeatable, no secrets"),
+    claim: bool = typer.Option(False, "--claim", help="claim an empty explicitly named namespace"),
+    adopt_existing: bool = typer.Option(
+        False, "--adopt-existing", help="explicitly bind an existing unbound/legacy namespace (review first)"
+    ),
 ) -> None:
     from .commands.memory import run_connect
 
-    raise typer.Exit(run_connect(server, bank))
+    raise typer.Exit(
+        run_connect(
+            endpoint,
+            project_id,
+            engine=engine,
+            option_values=option,
+            claim=claim,
+            adopt_existing=adopt_existing,
+        )
+    )
 
 
-@memory_app.command("project-scan", help="preview important code/docs eligible for Hindsight project memory")
+@memory_app.command("project-scan", help="preview important code/docs eligible for project memory")
 def memory_project_scan(
     all_files: bool = typer.Option(False, "--all", help="bootstrap scan of all important tracked artifacts"),
     json_: bool = typer.Option(False, "--json"),
@@ -298,7 +331,7 @@ def memory_project_scan(
     raise typer.Exit(run_project_scan(all_files=all_files, json_out=json_))
 
 
-@memory_app.command("project-sync", help="sync approved important code/docs into the Hindsight project bank")
+@memory_app.command("project-sync", help="sync approved important code/docs into the selected project-memory backend")
 def memory_project_sync(
     all_files: bool = typer.Option(False, "--all", help="bootstrap all important tracked artifacts"),
     yes: bool = typer.Option(False, "--yes", "-y", help="execute the previewed external write"),
@@ -319,7 +352,7 @@ def memory_project_approve(
     raise typer.Exit(run_project_approve(approval_id))
 
 
-@memory_app.command("mcp", help="stdio MCP bridge for the shared memory server (register once, user scope)")
+@memory_app.command("mcp", help="stdio MCP bridge for the selected project-memory backend (register once, user scope)")
 def memory_mcp() -> None:
     from .commands.memory import run_mcp
 

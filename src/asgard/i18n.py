@@ -40,6 +40,7 @@ _M: dict[str, tuple[str, str]] = {
     "connect_cancel": ("connection cancelled — try /provider set again", "연결 취소 — /provider set 으로 다시 시도"),
     "connected": ("connected", "연결"),
     "pick_provider": ("select a provider", "provider 선택"),
+    "pick_model": ("select a model", "model 선택"),
     "api_key_prompt": ("{p} API key (hidden)", "{p} API 키 (입력 숨김)"),
     "saved_cred": ("saved to ~/.asgard/credentials.json (mode 600)", "~/.asgard/credentials.json 저장 (권한 600)"),
     "cancelled": ("(cancelled)", "(취소)"),
@@ -60,7 +61,7 @@ _M: dict[str, tuple[str, str]] = {
         "show provider·model · '/provider set' to reconnect",
         "provider·model 표시 · '/provider set' 으로 재설정",
     ),
-    "h_model": ("current model id", "현재 모델 ID"),
+    "h_model": ("select a model for the current provider", "현재 provider의 모델 선택"),
     "h_clear": ("clear the screen", "화면 지우기"),
     "h_exit": ("end the session (same as Ctrl-D)", "세션 종료 (Ctrl-D 동일)"),
     "h_lang": ("switch language: /lang en | ko", "언어 전환: /lang en | ko"),
@@ -82,7 +83,12 @@ _M: dict[str, tuple[str, str]] = {
     "thinking": ("reading the runes…", "룬을 읽는 중…"),
     "ph_input": ("Ask anything — / commands · ! bash", "무엇이든 입력 — / 커맨드 · ! bash"),
     "number": ("number", "번호"),
-    "model_id_prompt": ("model id", "model ID"),
+    "model_id_prompt": ("model ID", "모델 ID"),
+    "invalid_model_id": ("invalid model ID", "유효하지 않은 모델 ID"),
+    "model_catalog_fallback": (
+        "live model catalog unavailable — showing offline fallback models",
+        "live 모델 catalog를 사용할 수 없어 offline fallback 모델을 표시합니다",
+    ),
     # trinity 배치·브릿지
     "h_trinity": (
         "role placements · '/trinity set' to place a role on a provider",
@@ -92,23 +98,41 @@ _M: dict[str, tuple[str, str]] = {
         "per-tool CLI bridge · '/bridge <tool> on|off'",
         "도구별 CLI 브릿지 · '/bridge <도구> on|off'",
     ),
-    # lagom (CUS-205)
+    # lagom
     "h_lagom": (
-        "lagom mode · '/lagom <mode>' switch, '/lagom default <mode>' persist",
-        "lagom 모드 · '/lagom <모드>' 전환, '/lagom default <모드>' 영속",
+        "minimalism contract (just-enough code & replies) — '/lagom' shows the modes",
+        "미니멀리즘 계약 (딱 적당한 코드·응답) — '/lagom' 로 모드 확인",
+    ),
+    "lagom_what": (
+        "just enough — unwritten code is the best code, unspent tokens the best explanation.\n"
+        "safety (input validation · error handling · security) is never trimmed, in any mode.",
+        "딱 적당한 만큼만 — 안 쓴 코드가 최고의 코드, 안 쓴 토큰이 최고의 설명.\n"
+        "안전 예외(입력 검증·에러 처리·보안)는 어느 모드에서도 안 깎는다.",
+    ),
+    "lagom_mode_off": ("plain — no output compression, no efficiency ladder", "평소대로 — 산출 압축·효율 사다리 없음"),
+    "lagom_mode_lite": (
+        "build as asked, add one lazier-alternative line; trim only filler",
+        "요청대로 구현 + 더 게으른 대안 한 문장, 군더더기만 제거",
+    ),
+    "lagom_mode_full": (
+        "efficiency ladder enforced · shortest diff · shortest reply",
+        "효율 사다리 강제 · 최단 diff · 최단 설명",
     ),
     "lagom_usage": (
-        "usage: /lagom [default] off|lite|full",
-        "사용법: /lagom [default] off|lite|full",
+        "usage: /lagom [default] off|lite|full · /lagom stats",
+        "사용법: /lagom [default] off|lite|full · /lagom stats",
     ),
     "lagom_set": ("lagom → {mode} (this session)", "lagom → {mode} (세션 한정)"),
-    "lagom_persisted": ("lagom default → {mode} (.asgard/config.toml)", "lagom 기본값 → {mode} (.asgard/config.toml)"),
+    "lagom_persisted": (
+        "lagom default → {mode} (asgard-setting-project.json)",
+        "lagom 기본값 → {mode} (asgard-setting-project.json)",
+    ),
     "lagom_session": ("session override", "세션 전환값"),
     "lagom_default": ("default", "기본값"),
     "lagom_stats_tokens": ("session spend {tok} tokens (input+output)", "세션 지출 {tok} 토큰 (입력+출력 합산)"),
     "lagom_stats_note": (
-        "savings need measured coefficients — pending CUS-212 bench; no telemetry, local only",
-        "절감량은 실측 계수 필요 — CUS-212 벤치 후 표시. 텔레메트리 없음, 로컬 집계만",
+        "savings need measured coefficients — pending a measurement bench; no telemetry, local only",
+        "절감량은 실측 계수 필요 — 측정 벤치 후 표시. 텔레메트리 없음, 로컬 집계만",
     ),
     "pick_role": ("select a role", "역할 선택"),
     "placement_clear": ("default (clear placement)", "기본값 (배치 해제)"),

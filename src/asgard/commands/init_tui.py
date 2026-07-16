@@ -1,4 +1,4 @@
-"""Full-screen onboarding TUI for `asgard init` (CUS-49). Textual app: arrow-key profile pick with a
+"""Full-screen onboarding TUI for `asgard init`. Textual app: arrow-key profile pick with a
 live preview of exactly what will be scaffolded (same plan_files() the writer uses, so preview == result).
 
 Kept thin: the caller (commands.setup.run_init) decides when to launch this vs the Rich-prompt fallback

@@ -5,7 +5,7 @@ import sys
 
 from ..agent.tool_kernel import ROLE_CAPABILITIES, ToolContext, build_session_registry, cc_tools_for_role
 
-_CLI_ROLES = ("thinker", "worker", "verifier", "freyja", "thor", "loki", "ullr")
+_CLI_ROLES = ("thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr")
 
 
 def run_tools_list(role: str, json_out: bool = False) -> int:

@@ -16,6 +16,7 @@ _SUMMARY = {
     "doctor": "check the install",
     "start": "open the Asgard terminal (Heimdall)",
     "init": "scaffold a project for coding agents",
+    "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
     "sync": "refresh scaffolded cores in set-up projects",
     "uninstall": "remove asgard",
@@ -29,6 +30,7 @@ _FLAGS = {
     "doctor": ["--json", "--quiet"],
     "start": ["--check", "--provider", "--model", "--tui", "--plain"],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
+    "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],
     "sync": ["--dry-run", "--list", "--quiet"],
     "uninstall": ["--yes", "--dry-run", "--quiet"],
@@ -49,8 +51,9 @@ _SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bas
 _SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
 _ROLE_SUB = {"list": "bridge flags + role placements", "run": "run one role turn"}
 _ROLES = ["thinker", "worker", "verifier"]
-_TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "loki", "ullr"]
+_TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr"]
 _TOOLS_SUB = {"list": "list native + Claude Code role tools"}
+_SETUP_SUB = {"map": "draw or refresh the project code map"}
 _MEM_SUB = {
     "add": "add a page",
     "ingest": "absorb knowledge (dedup-merge)",
@@ -63,9 +66,9 @@ _MEM_SUB = {
     "snapshot": "print the session injection snapshot",
     "recall": "print query-relevant memory context",
     "path": "print the memory directory",
-    "connect": "link project to the shared memory server",
+    "connect": "select and trust a project-memory backend",
     "project-scan": "preview important project artifacts",
-    "project-sync": "sync approved artifacts to Hindsight",
+    "project-sync": "sync approved artifacts to the selected backend",
     "project-approve": "approve a staged project-memory record",
     "mcp": "stdio MCP bridge (shared memory)",
 }
@@ -111,6 +114,15 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{subs} --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "run" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_ROLES)}" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "setup":
+            cases.append(
+                "    setup)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_SETUP_SUB)} --help" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "map" ]; then\n'
+                '        COMPREPLY=( $(compgen -W "--check --dry-run --json --quiet --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "tools":
@@ -184,6 +196,15 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_ROLES)}\n"
                 "      fi ;;"
             )
+        elif name == "setup":
+            cases.append(
+                "    setup)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_SETUP_SUB)} --help\n"
+                "      elif [[ $words[3] == map ]]; then\n"
+                "        compadd -- --check --dry-run --json --quiet --help\n"
+                "      fi ;;"
+            )
         elif name == "tools":
             cases.append(
                 "    tools)\n"
@@ -235,6 +256,14 @@ def _fish() -> str:
             lines.append(line)
         lines.append(f'complete -c asgard -n "{cond}" -l help -s h')
     lines.append(f'complete -c asgard -n "__fish_seen_subcommand_from completions" -a "{" ".join(_SHELLS)}"')
+    setup_top = "__fish_seen_subcommand_from setup; and not __fish_seen_subcommand_from " + " ".join(_SETUP_SUB)
+    for sub, desc in _SETUP_SUB.items():
+        lines.append(f"complete -c asgard -n \"{setup_top}\" -a {sub} -d '{desc}'")
+    for flag in ("check", "dry-run", "json", "quiet"):
+        lines.append(
+            'complete -c asgard -n "__fish_seen_subcommand_from setup; and __fish_seen_subcommand_from map" '
+            f"-l {flag}"
+        )
     role_top = "__fish_seen_subcommand_from role; and not __fish_seen_subcommand_from " + " ".join(_ROLE_SUB)
     for sub, desc in _ROLE_SUB.items():
         lines.append(f"complete -c asgard -n \"{role_top}\" -a {sub} -d '{desc}'")
