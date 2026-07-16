@@ -24,8 +24,9 @@ from ..templates import (
     cursor_rule,
     project_settings,
 )
+from ..templates.eitri import EITRI_SKILLS  # (스킬명, SKILL.md 본문) — CI 재현성/패키징·릴리스 심화 2종
 from ..templates.freyja import (
-    FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video/3D 심화 4종
+    FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video/3D/브라우저 실기동 심화 5종
     freyja_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
 )
 from ..templates.lagom import (
@@ -33,12 +34,17 @@ from ..templates.lagom import (
     LAGOM_STATUSLINE_SH,
 )
 from ..templates.memory import MEMORY_SKILL_MD  # memory v3 — 읽기/저장(승인 게이트) 계약
+from ..templates.mimir import (
+    MIMIR_SKILLS,  # (스킬명, SKILL.md 본문) — 워크스루 설계/문답 설계 심화 2종
+    mimir_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
+)
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
 from ..templates.thor import (
     THOR_SKILLS,  # (스킬명, SKILL.md 본문) — mjollnir/lightning/megingjord/jarngreipr 심화 4종
     eitri_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
     thor_core_skill,
 )
+from ..templates.worker import WORKER_SKILLS  # (스킬명, SKILL.md 본문) — 디버깅/테스트 설계 공통 2종
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
 # 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
@@ -209,9 +215,13 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
         # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
         files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), MEMORY_SKILL_MD))
-        # 프레이야·토르 심화 스킬 각 4종 — 해당 서브에이전트(모드 B)·메인 세션이 도메인 작업 전 로드
+        # 딜리버리 심화 스킬 (프레이야 5·토르 4·에이트리 2) — 해당 서브에이전트(모드 B)·메인 세션이
+        # 도메인 작업 전 로드. Worker 공통 2종(디버깅·테스트 설계)은 도메인 불문 코드 작업용.
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in EITRI_SKILLS]
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in MIMIR_SKILLS]
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in WORKER_SKILLS]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -253,6 +263,11 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".agents", "skills", "asgard-thor", "SKILL.md"), thor_core_skill()))
         files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]
         files.append((j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"), eitri_core_skill()))
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in EITRI_SKILLS]
+        files.append((j(root, ".agents", "skills", "asgard-mimir", "SKILL.md"), mimir_core_skill()))
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in MIMIR_SKILLS]
+        # Worker 공통 스킬 — 모드 A Worker phase 가 디버깅·테스트 하위작업에서 로드
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in WORKER_SKILLS]
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"

@@ -134,7 +134,7 @@ class TestSkillBodies(unittest.TestCase):
 
     def test_mjollnir_anchors(self):
         m = self.by_name["asgard-thor-mjollnir"]
-        self.assertIn("배치 내구성 계약", m)  # hermes 패턴 — 재시작 생존
+        self.assertIn("배치 내구성 계약", m)  # 재시작 생존 계약
         for anchor in ("체크포인트", "재진입점", "부분 실패"):
             self.assertIn(anchor, m)
         self.assertIn("outbox", m)  # 메시징 신뢰성 (Codex #7)
@@ -166,7 +166,7 @@ class TestSkillBodies(unittest.TestCase):
     def test_jarngreipr_anchors(self):
         j = self.by_name["asgard-thor-jarngreipr"]
         self.assertIn("오버레이", j)  # 단독 아닌 합성 (Codex #5)
-        for grade in ("🟢", "🟡", "🔴", "⚫"):  # 안전 등급 매트릭스 (프레이르 패턴)
+        for grade in ("🟢", "🟡", "🔴", "⚫"):  # 안전 등급 매트릭스
             self.assertIn(grade, j)
         self.assertIn("expand-contract", j)
         self.assertIn("승인은 Odin 몫", j)  # Codex #2
@@ -239,8 +239,10 @@ class TestWiring(unittest.TestCase):
     def test_dispatch_tool_routes_all_four(self):
         from asgard.agent.heimdall import DISPATCH_TOOL
 
+        # 순서는 role 파일 delivery: 선언 파생(정렬) — 계약은 구성원 집합이지 순서가 아니다
         self.assertEqual(
-            DISPATCH_TOOL["input_schema"]["properties"]["agent"]["enum"], ["freyja", "thor", "eitri", "loki"]
+            set(DISPATCH_TOOL["input_schema"]["properties"]["agent"]["enum"]),
+            {"freyja", "freyja-lead", "thor", "eitri", "loki", "mimir"},
         )
         for label in ("thor=백엔드", "eitri=빌드"):
             self.assertIn(label, DISPATCH_TOOL["description"])

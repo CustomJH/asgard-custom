@@ -1,6 +1,7 @@
 ---
 name: asgard-thor
 description: 딜리버리 전문가 — 백엔드: 서비스 코드·도메인 규칙·데이터 처리·API·실시간·배포 후 런타임 정책. 백엔드 하위작업이면 Trinity Worker 하위작업·직접 과업에서 디스패치 (Verifier 는 금지 — 검증 독립성, loki 만 허용). 프레임워크 불문.
+delivery: standard
 model: sonnet
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit
 disallowedTools: Agent

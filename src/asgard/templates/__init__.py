@@ -9,13 +9,16 @@ from .bridge import BRIDGE_SKILL_MD
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_config, codex_rules
 from .cursor import CURSOR_FOLDERS, cursor_hooks_json, cursor_rule
+from .eitri import EITRI_SKILLS
 from .freyja import FREYJA_SKILLS, freyja_core_skill
 from .lagom import LAGOM_CANON, render_lagom
 from .map import MAP_INDEX_MD
+from .mimir import MIMIR_SKILLS, mimir_core_skill
 from .seal import SEAL_SKILL_MD
 from .selftest import SELFTEST_MD
 from .thor import THOR_SKILLS, eitri_core_skill, thor_core_skill
 from .trinity import project_settings, trinity_policy
+from .worker import WORKER_SKILLS
 
 __all__ = [
     "agents_md",
@@ -27,8 +30,12 @@ __all__ = [
     "cursor_rule",
     "cursor_hooks_json",
     "CURSOR_FOLDERS",
+    "EITRI_SKILLS",
     "FREYJA_SKILLS",
     "freyja_core_skill",
+    "MIMIR_SKILLS",
+    "mimir_core_skill",
+    "WORKER_SKILLS",
     "THOR_SKILLS",
     "thor_core_skill",
     "eitri_core_skill",
