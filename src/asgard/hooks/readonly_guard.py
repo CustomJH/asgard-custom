@@ -135,7 +135,10 @@ def _safe_asgard_hook(tokens: list[str]) -> bool:
         return False
     name = os.path.basename(script)
     if name == "quest-log.py":
-        return len(tokens) >= 3 and tokens[2] in {"open", "append", "state", "next", "close"}
+        if len(tokens) < 3 or tokens[2] not in {"open", "append", "state", "next", "close"}:
+            return False
+        # close --force 는 검증 실패 상태의 관리적 해제(Odin 동의) — read-only 역할의 권한이 아니다.
+        return not (tokens[2] == "close" and "--force" in tokens[3:])
     return name == "verifier-gate.py"
 
 
@@ -172,7 +175,7 @@ def main() -> None:
     except Exception:
         return
     # Main-thread Odin is coordination/read-only; mutations belong to explicit
-    # Worker/Freyja/Thor subagents. Tool-lifecycle hooks provide agent_type for them.
+    # Worker/Freyja/Thor/Eitri subagents. Tool-lifecycle hooks provide agent_type for them.
     readonly = not agent or agent in _READONLY_AGENTS
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
     normalized_path = os.path.normpath(path).replace("\\", "/")

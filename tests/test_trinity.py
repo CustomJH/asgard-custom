@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Trinity 멀티 검증 (CUS-126 로컬 슬라이스) — 로그·전이 함수·게이트·에스컬레이션 E2E 시나리오.
+"""Trinity 멀티 검증 로컬 슬라이스 — 로그·전이 함수·게이트·에스컬레이션 E2E 시나리오.
 
 실제 훅 스크립트를 subprocess 로 실행한다 (임포트가 아니라 배포 형태 그대로) — 사용자 repo 에서
 python3 <file> 로 도는 것과 동일 경로. 임시 git repo 를 만들어 시나리오별 워킹트리 상태를 재현한다.
@@ -12,6 +12,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -144,19 +145,84 @@ class TestQuestLog(TrinityBase):
         self.assertEqual(self.qlog("close").returncode, 0)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
-    def test_close_map_nudge_on_structural_change(self):
-        # 지도 도입(.asgard/map 존재) + 신규 파일(untracked A) → close 가 지도 갱신 리마인드.
-        # .asgard/·닷디렉토리 하위는 소스 구조가 아니므로 넛지 대상에서 제외된다.
+    def test_verify_refreshes_map_before_hash_and_close_reports_current(self):
+        # 지도 도입 + 신규 파일 → Verifier hash 계산 전에 managed map 자동 갱신.
+        # 따라서 지도 변경도 같은 PASS hash에 포함되고 close 뒤 stale write가 생기지 않는다.
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        self.write(".gitignore", "!.asgard/\n.asgard/*\n!.asgard/map/\n!.asgard/map/**\n")
         self.open_quest()
         self.write("src/new_module.py", "x = 1\n")
         self.write(".claude/hooks/dummy.py", "y = 1\n")  # 닷디렉토리 — 제외돼야 함
         self.verify(level="full")  # hooks 는 민감 경로 — full-verify 없이는 close 가 거부된다
+        project_map = open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
+        self.assertIn("src/", project_map)
+        self.assertNotIn(".claude", project_map)
+        state = jout(self.qlog("state"))
+        self.assertIn(".asgard/map/PROJECT.md", state["changed_files"])
+        from asgard.code_map import check_map
+
+        self.assertTrue(check_map(self.root).ok, check_map(self.root))
         out = jout(self.qlog("close"))
         self.assertEqual(out["closed"], "q1")
-        self.assertIn("A src/new_module.py", out["map_update"])
-        self.assertNotIn("A .claude/hooks/dummy.py", out["map_update"])
-        self.assertIn("map_hint", out)
+        self.assertTrue(out["map_current"])
+        self.assertNotIn("map_update", out)
+
+    def test_map_tamper_after_pass_makes_verdict_stale(self):
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        self.open_quest()
+        self.write("src/new_module.py", "x = 1\n")
+        self.verify(level="full")
+        with open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), "a") as f:
+            f.write("tampered\n")
+        state = jout(self.qlog("state"))
+        self.assertFalse(state["pass_hash_match"])
+        self.assertEqual(self.qlog("close").returncode, 1)
+
+    def test_symlink_area_map_target_tamper_makes_verdict_stale(self):
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        outside_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(outside_dir.cleanup)
+        outside = os.path.join(outside_dir.name, "outside-map.md")
+        with open(outside, "w") as f:
+            f.write("# area\n")
+        os.symlink(outside, os.path.join(self.root, ".asgard", "map", "area.md"))
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.assertEqual(jout(self.verify(level="full"))["verdict"], "FAIL")
+        before = jout(self.qlog("state"))["diff_hash"]
+        with open(outside, "w") as f:
+            f.write("# tampered area\n")
+        state = jout(self.qlog("state"))
+        self.assertNotEqual(state["diff_hash"], before)
+        self.assertFalse(state["pass_hash_match"])
+
+    def test_gate_blocks_map_symlink_added_after_clean_pass(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.assertEqual(jout(self.verify(level="full"))["verdict"], "PASS")
+        os.makedirs(os.path.join(self.root, ".asgard", "map"), exist_ok=True)
+        outside = tempfile.NamedTemporaryFile(suffix=".md")
+        self.addCleanup(outside.close)
+        os.symlink(outside.name, os.path.join(self.root, ".asgard", "map", "area.md"))
+
+        blocked = self.gate()
+        self.assertEqual(blocked.returncode, 0)
+        self.assertEqual(jout(blocked)["decision"], "block")
+        self.assertIn("unsafe code map", blocked.stdout)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable on this platform")
+    def test_nonregular_area_map_symlink_fails_without_blocking(self):
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        fifo = os.path.join(self.root, "area.fifo")
+        os.mkfifo(fifo)
+        os.symlink(fifo, os.path.join(self.root, ".asgard", "map", "area.md"))
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+
+        started = time.monotonic()
+        result = jout(self.verify(level="full"))
+        self.assertLess(time.monotonic() - started, 5)
+        self.assertEqual(result["verdict"], "FAIL")
 
     def test_close_map_nudge_silent_without_map_or_change(self):
         # 지도 미도입 → 구조 변경이 있어도 침묵 (기존 프로젝트에 강요하지 않는다 — fail-open)
@@ -328,7 +394,7 @@ class TestGate(TrinityBase):
 
     def test_escalate_allows_stop(self):
         # Canon 9 — verify:ESCALATE 는 정규 종료: 오딘 보고 세션을 게이트가 인질로 잡지 않는다
-        # (CUS-126 E2E S4: ESCALATE 기록에도 3회 헛차단 후 fail-open 에 기대던 마찰의 회귀 방지).
+        # (E2E S4: ESCALATE 기록에도 3회 헛차단 후 fail-open 에 기대던 마찰의 회귀 방지).
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify(verdict="ESCALATE")
@@ -450,7 +516,7 @@ class TestFailureEscalation(TrinityBase):
         fails = [e for e in events if e["event"] == "fail"]
         self.assertEqual(len(fails), 1)
         self.assertEqual(fails[0]["failure_count"], 3)
-        # 로그의 fail 이벤트가 전이 함수를 재계획으로 이끈다 (CUS-123 배선의 종점)
+        # 로그의 fail 이벤트가 전이 함수를 재계획으로 이끈다 (실패 추적 배선의 종점)
         out = jout(self.qlog("next"))
         self.assertEqual(out["next_role"], "THINKER_REPLAN")
 
@@ -527,7 +593,7 @@ class TestQuestEnforcement(TrinityBase):
 
 
 class TestFullLoopE2E(TrinityBase):
-    """CUS-126 시나리오 1 — 정상 경로 전체 루프: open → (전이) → work → verify PASS → gate allow → close."""
+    """정상 경로 전체 루프: open → (전이) → work → verify PASS → gate allow → close."""
 
     def test_happy_path(self):
         self.open_quest()
@@ -552,7 +618,7 @@ class TestFullLoopE2E(TrinityBase):
 
 
 class TestUnattended(TrinityBase):
-    """무인 진행 강제층 (CUS-169) — 감지 주입 + 시도-없는 ESCALATE 1회 차단."""
+    """무인 진행 강제층 — 감지 주입 + 시도-없는 ESCALATE 1회 차단."""
 
     def gate_pm(self, mode, session="s1"):
         return run(
@@ -602,7 +668,7 @@ class TestUnattended(TrinityBase):
 
 
 class TestBaseline(TrinityBase):
-    """CUS-187 — 하네스 소유 베이스라인 체크: 증거 '품질'의 결정론화 (verifier 재량 커맨드 불신)."""
+    """하네스 소유 베이스라인 체크: 증거 '품질'의 결정론화 (verifier 재량 커맨드 불신)."""
 
     def last_event(self):
         lines = open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()
@@ -745,7 +811,7 @@ class TestDetectChecks(unittest.TestCase):
 
 
 class TestStandardTransition(TrinityBase):
-    """CUS-188 — 게이트-우선 전이: BASELINE_VERIFY 배정·verify-baseline 판정·승격 조건."""
+    """게이트-우선 전이: BASELINE_VERIFY 배정·verify-baseline 판정·승격 조건."""
 
     def commit_all(self, msg="c"):
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
@@ -832,7 +898,7 @@ class TestStandardTransition(TrinityBase):
         self.assertEqual(self.nxt("--ambiguous")["next_role"], "VERIFIER")
 
     def test_added_tests_do_not_escalate(self):
-        # CUS-189 스모크 발견 — 잠금 테스트 추가가 big 오판을 만들면 게이트-우선이 무력화된다
+        # 스모크 벤치 발견 — 잠금 테스트 추가가 big 오판을 만들면 게이트-우선이 무력화된다
         self.policy(baseline_checks=["true"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
@@ -846,7 +912,7 @@ class TestStandardTransition(TrinityBase):
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
 
     def test_large_rewrite_escalates_even_without_sig_change(self):
-        # CUS-194 벤치 결함 — def 무변경 리라이트(+52/-11)가 caller 를 깨고도 소형 판정돼 close 됨
+        # 벤치에서 발견된 결함 — def 무변경 리라이트(+52/-11)가 caller 를 깨고도 소형 판정돼 close 됨
         self.policy(baseline_checks=["true"])
         self.open_quest()
         self.write("app.py", "\n".join(f"x{i} = {i}" for i in range(30)) + "\n")  # 30 라인 > 상한 25
@@ -872,7 +938,7 @@ class TestStandardTransition(TrinityBase):
 
 
 class TestRoutePriors(TrinityBase):
-    """CUS-127 Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1 로 하향."""
+    """Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1 로 하향."""
 
     def priors(self, **classes):
         os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
@@ -984,8 +1050,145 @@ class TestGoodhartEvidence(TrinityBase):
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
 
 
+class TestCompletionFunnel(TrinityBase):
+    """완료 판정 단일 퍼널 — REJECTED 는 어떤 경로(transition·close·--force)로도 승인 승격 금지."""
+
+    def sentinel(self, *paths, session="s1"):
+        d = os.path.join(self.root, ".asgard", "state")
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, "writes-" + session + ".json"), "w") as f:
+            json.dump(list(paths), f)
+
+    def test_forced_close_writes_no_last_and_orphan_blocks(self):
+        # 우회 체인 봉쇄: 무증거 PASS → close --force → (구) LAST 면제로 Stop 통과 → (신) LAST 미기록·차단
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", level="full", commands=[])  # 증거 없는 PASS
+        self.assertEqual(self.qlog("close").returncode, 1)  # 퍼널 REJECTED → close 거부
+        forced = jout(self.qlog("close", "--force"))
+        self.assertTrue(forced["forced"])
+        self.assertIs(forced["gate_exempt"], False)
+        self.assertIn("no_evidence", forced["rejected"])
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
+        self.sentinel("app.py")
+        out = jout(self.gate())
+        self.assertEqual(out.get("decision"), "block")  # forced close 는 게이트 면제가 아니다
+
+    def test_verified_close_writes_last_and_exempts(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", level="full")
+        closed = jout(self.qlog("close"))
+        self.assertFalse(closed["forced"])
+        self.assertNotIn("gate_exempt", closed)
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
+        self.sentinel("app.py")
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")  # 검증된 close 만 면제
+
+    def test_close_requires_criteria_like_gate(self):
+        # criteria 없는 PASS — 게이트는 차단하는데 close 가 통과시키던 판정 분열 봉합
+        self.assertEqual(self.qlog("open", "q1").returncode, 0)  # criteria 미지정
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", level="full")
+        nxt = jout(self.qlog("next", "--write-expected"))
+        self.assertEqual(nxt["next_role"], "VERIFIER")  # DONE 금지
+        self.assertIn("criteria", nxt["why"])
+        p = self.qlog("close")
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("no_criteria", p.stderr)
+        self.assertEqual(jout(self.gate()).get("decision"), "block")  # 게이트와 동일 판정
+
+    def test_escalate_close_still_writes_last(self):
+        # ESCALATE 는 Canon 9 정규 종료 — 퍼널 ESCALATED 는 close·LAST 유지 (인질 금지)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify("ESCALATE", commands=[])
+        closed = jout(self.qlog("close"))
+        self.assertFalse(closed["forced"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
+
+
+class TestCriteriaContracts(TrinityBase):
+    """criteria verify 계약 — 계약 선언 기준은 하네스가 명령·산출물을 직접 결속 (무관한 exit-0 무효)."""
+
+    def open_with(self, *criteria):
+        p = self.qlog("open", "q1", *(a for c in criteria for a in ("--criteria", c)))
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_contract_cmd_harness_run_binds_and_completes(self):
+        self.open_with("app.py 정상 실행 | verify: python3 app.py")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        # 모델이 고른 무관 명령만 신고 — 계약 명령은 하네스가 직접 실행해 기록한다
+        self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
+        ev = json.loads(open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()[-1])
+        self.assertEqual(ev["criteria_checks"][0]["exit_code"], 0)  # 하네스 실행 기록
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_failing_contract_rejects_despite_irrelevant_exit0(self):
+        # Codex 교차검증이 지적한 구멍: 무관한 nontrivial exit-0(git status)이 증거로 인정되던 경로 —
+        # 계약이 선언되면 그 명령의 성공만 증거다
+        self.open_with("app.py 정상 실행 | verify: python3 app.py")
+        self.write("app.py", "import sys; sys.exit(1)\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
+        st = jout(self.qlog("state"))
+        self.assertTrue(st["contracts_unmet"])
+        nxt = jout(self.qlog("next", "--write-expected"))
+        self.assertEqual(nxt["next_role"], "VERIFIER")
+        self.assertIn("계약", nxt["why"])
+        self.assertEqual(self.qlog("close").returncode, 1)  # 퍼널 REJECTED
+        out = jout(self.gate())
+        self.assertEqual(out.get("decision"), "block")  # 게이트 동일 판정
+        self.assertIn("계약", out.get("reason", ""))
+
+    def test_artifacts_checked_live(self):
+        self.open_with("산출물 존재 | artifacts: out.txt")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS")
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")  # out.txt 없음
+        self.assertEqual(self.qlog("close").returncode, 1)
+        self.write("out.txt", "built\n")
+        self.verify("PASS")  # 산출물 생성 후 재검증 (out.txt 가 diff 에 포함 — 새 hash 로 PASS)
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_plain_criteria_backward_compat(self):
+        self.open_quest()  # 계약 없는 평문 criteria
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS")
+        st = jout(self.qlog("state"))
+        self.assertEqual(st["contracts_unmet"], [])
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+
+    def test_trivial_contract_is_not_a_contract(self):
+        self.open_with("항상 성공 | verify: true")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS")  # nontrivial 증거(python3 app.py)로 통과 — trivial 계약은 무시
+        self.assertEqual(jout(self.qlog("state"))["contracts_unmet"], [])
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+
+    def test_verify_baseline_binds_contracts(self):
+        # 게이트-우선 경로 — baseline green 이어도 계약 미충족이면 FAIL 기록
+        self.open_with("app.py 정상 실행 | verify: python3 app.py")
+        self.write("app.py", "import sys; sys.exit(1)\n")
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
+        self.policy(baseline_checks=["python3 -c 'pass'"])
+        self.qlog("append", "--role", "worker", "--event", "work")
+        out = jout(self.qlog("verify-baseline"))
+        self.assertEqual(out["verdict"], "FAIL")
+        self.assertTrue(any("python3 app.py" in str(f) for f in out.get("failing", [])))
+
+
 class TestSubagentGate(TrinityBase):
-    """SubagentStop 역할 로그 규율 (CUS-197) — 미기록 종료 block, 신선도는 앵커(마지막 상대 이벤트) 기준."""
+    """SubagentStop 역할 로그 규율 — 미기록 종료 block, 신선도는 앵커(마지막 상대 이벤트) 기준."""
 
     def sg(self, agent, session="s1"):
         return run(
@@ -1106,7 +1309,7 @@ class TestSubagentGate(TrinityBase):
 
 
 class TestAdversarialSuite(unittest.TestCase):
-    """CC4 (CUS-201) 게이트 적대 벡터 통합 — workspace/bench-cc/adversarial.sh 를 CI 에서 구동.
+    """게이트 적대 벡터 통합 — workspace/bench-cc/adversarial.sh 를 CI 에서 구동.
     실 LLM 불필요(훅 직접 구동), 우회 벡터 10종 전수 차단/허용 대조. 벤치 디렉터리 부재 시 skip."""
 
     def test_adversarial_vectors_all_blocked(self):

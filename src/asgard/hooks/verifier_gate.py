@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-# Asgard verifier-gate — Canon 10(완료 증명)의 훅 강제 (CUS-122). Claude Code Stop 시점에 실행.
+# Asgard verifier-gate — Canon 10(완료 증명)의 훅 강제. Claude Code Stop 시점에 실행.
 #
-# 핵심은 로그 위조 방지가 아니라 **로그 밖 물리 증거 대조**다 (Goodhart 방어, CUS-117 코멘트 B):
+# 핵심은 로그 위조 방지가 아니라 **로그 밖 물리 증거 대조**다 (Goodhart 방어):
 # 모델이 로그에 가짜 PASS 를 append 해도 working-tree 상태는 위조할 수 없다. Stop 시점에 diff hash 를
 # 재계산해 PASS 레코드의 diff_hash 와 대조한다 — 불일치 = stale PASS(PASS 후 추가 변경)도 잡힌다.
 #
@@ -20,6 +20,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 from typing import Any
@@ -63,13 +64,13 @@ DEFAULT_POLICY: dict[str, Any] = {
         "pwd",
         "which",
     ],
-    # 하네스 소유 베이스라인 체크 (CUS-187) — quest_log.py 와 동일 유지. 게이트는 실행하지 않고
+    # 하네스 소유 베이스라인 체크 — quest_log.py 와 동일 유지. 게이트는 실행하지 않고
     # PASS 레코드에 quest-log 가 기록한 결과만 읽는다 (Stop 지연 예산에 pytest 를 얹지 않는다).
     "baseline_checks": [],
     "baseline_timeout": 120,
 }
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
-UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py 와 동일 유지 (CUS-169)
+UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py 와 동일 유지
 
 
 def unattended(data):
@@ -95,8 +96,41 @@ def _junk(p):
     return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
 
 
+def unsafe_map_links(root):
+    map_dir = os.path.join(root, ".asgard", "map")
+    expected = os.path.join(os.path.realpath(root), ".asgard", "map")
+    if os.path.islink(map_dir) or os.path.realpath(map_dir) != expected:
+        return [".asgard/map"]
+    try:
+        return [
+            ".asgard/map/" + name
+            for name in os.listdir(map_dir)
+            if name.endswith(".md") and os.path.islink(os.path.join(map_dir, name))
+        ]
+    except OSError:
+        return []
+
+
+def symlink_map_state(path):
+    target = os.readlink(path).encode(errors="surrogateescape")
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b"<unsafe-symlink-nonregular>\0" + target
+        digest = hashlib.sha256()
+        while chunk := os.read(fd, 1024 * 1024):
+            digest.update(chunk)
+        return b"<unsafe-symlink-sha256>\0" + target + b"\0" + digest.digest()
+    except OSError:
+        return b"<unsafe-symlink-unreadable>\0" + target
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def sensitive_path(path, needles):
-    """quest_log.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 판정 분열, CUS-184)."""
+    """quest_log.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 판정 분열)."""
     segs = path.lower().split("/")
     for n in needles:
         n = str(n).lower()
@@ -106,15 +140,47 @@ def sensitive_path(path, needles):
 
 
 def diff_state(root, base_ref):
-    # nontest_lines 4번째 원소 — quest_log.py 와 동일 유지 (테스트 추가 ≠ 리스크 질량, CUS-189)
+    # nontest_lines 4번째 원소 — quest_log.py 와 동일 유지 (테스트 추가 ≠ 리스크 질량)
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
     spec = [base_ref, "--", ".", ":(exclude).asgard"]
     rc, diff = git(root, "diff", "--binary", *spec, binary=True)
     if rc != 0:
         return EMPTY, [], 0, 0
+    if isinstance(diff, str):
+        diff = diff.encode()
     _, names = git(root, "diff", "--name-only", *spec)
     _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
+    names = names.decode(errors="replace") if isinstance(names, bytes) else names
+    unt = unt.decode(errors="replace") if isinstance(unt, bytes) else unt
+    _, base_maps = git(root, "ls-tree", "-r", "--name-only", base_ref, "--", ".asgard/map")
+    base_maps = base_maps.decode(errors="replace") if isinstance(base_maps, bytes) else base_maps
+    map_paths = {p for p in base_maps.splitlines() if p.strip()}
+    map_dir = os.path.join(root, ".asgard", "map")
+    try:
+        map_paths.update(
+            ".asgard/map/" + p
+            for p in os.listdir(map_dir)
+            if p.endswith(".md")
+            and (os.path.isfile(os.path.join(map_dir, p)) or os.path.islink(os.path.join(map_dir, p)))
+        )
+    except OSError:
+        pass
+    map_changed = []
+    for p in sorted(map_paths):
+        before_rc, before = git(root, "show", f"{base_ref}:{p}", binary=True)
+        if isinstance(before, str):
+            before = before.encode()
+        full_path = os.path.join(root, p)
+        is_link = os.path.islink(full_path)
+        try:
+            after = symlink_map_state(full_path) if is_link else open(full_path, "rb").read()
+        except OSError:
+            after = None
+        link_target = os.readlink(full_path).encode(errors="surrogateescape") if is_link else b""
+        if (before if before_rc == 0 else None) != after:
+            map_changed.append(p)
+            diff += p.encode("utf-8", "surrogateescape") + b"\0" + link_target + b"\0" + (after if after is not None else b"<deleted>")
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
     nt_lines = 0
@@ -130,14 +196,15 @@ def diff_state(root, base_ref):
     for p in untracked:
         try:
             body = open(os.path.join(root, p), "rb").read()
-            k = body.count(b"\n") + 1
-            lines += k
-            if not _testfile(p):
-                nt_lines += k
+            if not p.startswith(".asgard/map/"):
+                k = body.count(b"\n") + 1
+                lines += k
+                if not _testfile(p):
+                    nt_lines += k
             h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
         except Exception:
             h.update(p.encode() + b"\0missing")
-    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked))
+    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
@@ -169,14 +236,66 @@ def trivial_evidence(cmd):
 
 def pass_evidence(rec):
     """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (quest_log.py 와 동일 유지).
-    하네스가 직접 돌린 베이스라인 green 은 그 자체가 물리 증거 — trivial 필터는 모델이 고른
-    명령에만 적용한다 (baseline_checks 는 정책 파일 소유, 모델 위조 불가)."""
+    하네스가 직접 돌린 베이스라인 green·전 계약 성공(criteria_checks)은 그 자체가 물리 증거 —
+    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가)."""
     if (rec.get("baseline") or {}).get("state") == "green":
         return True
+    checks = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
+    if checks and all(c.get("exit_code") == 0 for c in checks):
+        return True  # 계약 명령 전부 성공 — 하네스가 직접 실행한 기록
     return any(
         isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
         for c in (rec.get("commands") or [])
     )
+
+
+# ── criteria verify 계약 — quest_log.py 의 parse_criterion/criteria_contracts/unmet_contracts 와
+# 동일 유지 (단일 출처 원칙). 게이트는 계약 명령을 재실행하지 않고(Stop 지연 예산) quest-log 가
+# 기록한 criteria_checks 를 대조하며, 산출물 존재만 라이브 재확인한다.
+
+
+def parse_criterion(text):
+    """ "설명 | verify: cmd | artifacts: a b" → {description, verify_cmd, artifacts}. 계약 없음 = 빈 값."""
+    desc, cmd, arts = str(text), None, []
+    parts = [p.strip() for p in str(text).split(" | ")]
+    if len(parts) > 1:
+        desc = parts[0]
+        for p in parts[1:]:
+            if p.startswith("verify:"):
+                cmd = p[len("verify:") :].strip() or None
+            elif p.startswith("artifacts:"):
+                arts = [a for a in p[len("artifacts:") :].split() if a]
+            else:
+                desc = desc + " | " + p  # 계약 키워드가 아닌 ' | ' 는 설명의 일부
+    if cmd and trivial_evidence(cmd):
+        cmd = None  # trivial 명령은 계약이 될 수 없다 — 증거 필터와 동일 기준 (Goodhart)
+    return {"description": desc, "verify_cmd": cmd, "artifacts": arts}
+
+
+def criteria_contracts(criteria):
+    """verify 계약이 선언된 기준만 — verify_cmd 또는 artifacts 보유."""
+    out = []
+    for t in criteria or []:
+        c = parse_criterion(t)
+        if c["verify_cmd"] or c["artifacts"]:
+            out.append(c)
+    return out[:5]  # 상한 — 계약 폭주가 verify 턴을 인질로 잡지 않게
+
+
+def unmet_contracts(root, criteria, rec):
+    """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0 만 인정,
+    산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore 로 diff-hash 밖일 수 있어
+    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도."""
+    unmet = []
+    checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in (rec.get("criteria_checks") or [])}
+    for c in criteria_contracts(criteria):
+        cmd = c["verify_cmd"]
+        if cmd and checks.get(" ".join(cmd.split())) != 0:
+            unmet.append("verify: " + cmd)
+        for a in c["artifacts"]:
+            if not os.path.exists(os.path.join(root, a)):
+                unmet.append("artifact: " + a)
+    return unmet
 
 
 def block(root, sid, reason):
@@ -238,6 +357,8 @@ def orphan_writes(root, sid):
             dirty.append(str(rel))
     if not dirty:
         return
+    # LAST 는 quest-log close 의 승인(funnel APPROVED/ESCALATED) 경로만 기록한다 — forced close 는
+    # LAST 미기록. 아래 재검증(증거·baseline·hash)은 구버전 quest-log 가 남긴 LAST 방어.
     try:  # LAST quest 의 PASS 가 현 상태를 물리 증명하면 allow
         qid = open(os.path.join(root, ".asgard", "quest", "LAST")).read().strip()
         events = []
@@ -252,8 +373,8 @@ def orphan_writes(root, sid):
             return  # Canon 9 정규 종료 — close 후에도 인질 금지 (active 경로와 동일 규칙, s1 라이브 실측)
         if base_ref and verdicts and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
             last = verdicts[-1]
-            evidence = pass_evidence(last)  # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍 (CUS-170)
-            baseline_red = (last.get("baseline") or {}).get("state") == "red"  # --force close 우회 봉합 (CUS-187)
+            evidence = pass_evidence(last)  # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍
+            baseline_red = (last.get("baseline") or {}).get("state") == "red"  # --force close 우회 봉합
             if evidence and not baseline_red and last.get("diff_hash") == diff_state(root, base_ref)[0]:
                 return
     except Exception:
@@ -296,6 +417,9 @@ def main():
         if not base_ref or base_ref == "NONE" or git(root, "rev-parse", "--verify", base_ref)[0] != 0:
             sys.stderr.write("asgard verifier-gate: base_ref 확인 불가 — allow (fail-open)\n")
             sys.exit(0)
+        unsafe_maps = unsafe_map_links(root)
+        if unsafe_maps:
+            block(root, sid, "unsafe code map symlink/junction: %s" % ", ".join(unsafe_maps[:3]))
         policy = dict(DEFAULT_POLICY)
         # 신규 통합 설정 우선, 구 파일 폴백 — quest_log.load_policy 와 동일 유지 (단일 출처 원칙)
         loaded = False
@@ -318,17 +442,17 @@ def main():
         mutating = [c for c in cmds if not readonly(c.get("cmd", ""), policy["readonly_commands"])]
         risk_write = any((e.get("risk") or {}).get("has_write") for e in events)
         if current == EMPTY and not risk_write and not mutating:
-            sys.exit(0)  # trivial 면제 — write·mutation 전무 + read-only 명령만 (CUS-117 코멘트 D)
+            sys.exit(0)  # trivial 면제 — write·mutation 전무 + read-only 명령만
 
         # 판정 레코드 = verify 이벤트의 PASS 또는 ESCALATE. ESCALATE 는 Canon 9 의 정규 종료
         # (close 도 인정) — 오딘 보고 세션을 게이트가 인질로 잡으면 정직한 에스컬레이션이
-        # 3회 헛차단 + fail-open 상한에 기대게 된다 (CUS-126 E2E S4 에서 실측된 마찰).
+        # 3회 헛차단 + fail-open 상한에 기대게 된다 (E2E 벤치 S4 에서 실측된 마찰).
         verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")]
         if not verdicts:
             block(root, sid, "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.")
         p = verdicts[-1]
         if p.get("verdict") == "ESCALATE":
-            # 무인 세션에서 work 시도 전무한 ESCALATE = 승인 대기 모양 (CUS-169 r4형: 오딘이 없어
+            # 무인 세션에서 work 시도 전무한 ESCALATE = 승인 대기 모양 (오딘이 없어
             # 답이 올 수 없다). 1회만 되돌려보내 Canon 8 무인 진행을 지시 — 재차 ESCALATE 하면
             # 진짜 블로커로 인정하고 통과 (마커 파일 = 세션당 1회 상한, 인질극 방지).
             if unattended(data) and not any(e.get("event") == "work" for e in events):
@@ -362,8 +486,17 @@ def main():
                 "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
                 "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
             )
+        unmet = unmet_contracts(root, next((e.get("criteria") for e in events if e.get("criteria")), []), p)
+        if unmet:
+            block(
+                root,
+                sid,
+                "criteria verify 계약 미충족 (%s) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
+                "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
+                % "; ".join(map(str, unmet[:3])),
+            )
         bl = p.get("baseline") or {}
-        if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 (CUS-187) — 코드가 깨져 있다
+        if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 — 코드가 깨져 있다
             failing = [str(r.get("cmd")) for r in (bl.get("results") or []) if r.get("exit_code") not in (0, None)]
             block(
                 root,
@@ -373,7 +506,7 @@ def main():
         small = policy["small_write"]
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
         dts = deleted_tests(root, base_ref)
-        nt_files = [f for f in changed if not _testfile(f)]  # 테스트 추가 ≠ 리스크 질량 (CUS-189)
+        nt_files = [f for f in changed if not _testfile(f)]  # 테스트 추가 ≠ 리스크 질량
         full_required = (
             bool(sensitive) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"]
         )

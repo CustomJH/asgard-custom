@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard quest-log — Trinity 퀘스트 로그 + 전이 함수 CLI (CUS-118 / CUS-120).
+# Asgard quest-log — Trinity 퀘스트 로그 + 전이 함수 CLI.
 #
 # 코디네이터(Heimdall)의 "관찰·기록·배정" 프리미티브. 훅이 아니라 에이전트가 직접 부르는 도구다:
 #   open   <quest-id>  과업 로그 시작 (base_ref = 현재 HEAD 고정, ACTIVE 포인터 갱신)
@@ -7,14 +7,15 @@
 #   state              로그 요약 관찰 (코디네이터의 state observation)
 #   next               전이 함수: 로그 상태 + risk_features → next_role (결정 테이블)
 #   close              완료된 quest 의 ACTIVE 해제 (PASS+hash 일치 또는 ESCALATE 만)
+#   verify-baseline    하네스가 베이스라인 체크를 직접 실행해 verify 판정을 기록 (게이트-우선)
 #
 # 왜 CLI 인가: TRINITY 의 "<20K 파라미터 코디네이터"의 하니스 등가물은 학습 모델이 아니라 결정론적
 # 구조다 — 배정(next)을 LLM 임의 판단이 아닌 코드가 내리게 해서 조율을 프롬프트가 아닌 구조로
-# 옮긴다 (TRINITY-inspired 적응, CUS-117 코멘트 C 합의).
+# 옮긴다 (TRINITY-inspired 적응).
 # 왜 O_APPEND 단일 write 인가: 위협 모델이 악의적 변조가 아니라 LLM 자기기만이라 lock/해시체인은
 # 과잉 (Codex 합의 — v1 탈락). 한 줄 원자 append 면 충분하다.
 # 완료 위조 방어는 이 파일 몫이 아니다 — verifier-gate.py 가 Stop 시점에 working-tree diff hash 를
-# 재계산해 물리 대조한다. 로그에 뭘 쓰든 워킹트리는 위조할 수 없다 (Goodhart 방어, CUS-122).
+# 재계산해 물리 대조한다. 로그에 뭘 쓰든 워킹트리는 위조할 수 없다 (Goodhart 방어).
 # diff_hash 를 여기(append)서도 계산하는 이유: verifier 가 손으로 만든 해시는 gate 재계산과 어긋날
 # 수 있다 — 같은 알고리즘(아래 diff_state, verifier-gate.py 와 동일 유지)이 유일한 출처여야 한다.
 from __future__ import annotations
@@ -24,6 +25,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -37,9 +39,9 @@ EVENTS = {
     "fail",
     "escalate",
     "delegate",
-}  # delegate: 중첩 디스패치 배정 기록 (CUS-142) — Phase 2 통계가 배정 정책 학습
+}  # delegate: 중첩 디스패치 배정 기록 — Phase 2 통계가 배정 정책 학습
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}
-# 로그 v1 = 16필드 고정 (CUS-118, CUS-117 코멘트 A). tier/effort/model 등은 v1 소비자 없음 → Phase 2.
+# 로그 v1 = 16필드 고정. tier/effort/model 등은 v1 소비자 없음 → Phase 2.
 FIELDS = [
     "schema",
     "quest_id",
@@ -68,7 +70,7 @@ DEFAULT_POLICY = {
         "verifier": {"tier": "high", "effort": "high"},
     },
     # 소비자는 Heimdall(_delivery_model/_model_for) — 여기 두는 이유는 템플릿과 기본값 거울 유지.
-    "delivery": {"freyja": "standard", "thor": "standard", "loki": "fast"},
+    "delivery": {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast"},
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
     "sensitive_paths": [
@@ -106,10 +108,10 @@ DEFAULT_POLICY = {
         "which",
     ],
     "failure_threshold": 3,
-    # 하네스 소유 베이스라인 체크 (CUS-187) — 비면 보수적 자동 감지 (pytest 만)
+    # 하네스 소유 베이스라인 체크 — 비면 보수적 자동 감지 (pytest 만)
     "baseline_checks": [],
     "baseline_timeout": 120,
-    # 게이트-우선 적격 상한 (CUS-194) — small_write(full-verify 기준)보다 훨씬 좁다:
+    # 게이트-우선 적격 상한 — small_write(full-verify 기준)보다 훨씬 좁다:
     # 63라인 리라이트가 소형 판정돼 caller 미방어로 close 된 벤치 결함. 소형 diff 전용.
     "gate_first_max_lines": 25,
 }
@@ -133,9 +135,14 @@ def quest_dir(root: str) -> str:
     d = os.path.join(root, ".asgard")
     os.makedirs(os.path.join(d, "quest"), exist_ok=True)
     gi = os.path.join(d, ".gitignore")
-    if not os.path.exists(gi):
+    canonical = "*\n!.gitignore\n!map/\n!map/**\n!asgard-setting-project.json\n"
+    try:
+        current = open(gi).read() if os.path.exists(gi) else ""
+    except Exception:
+        current = ""
+    if not current or current.strip() == "*":
         try:
-            open(gi, "w").write("*\n")
+            open(gi, "w").write(canonical)
         except Exception:
             pass
     return os.path.join(d, "quest")
@@ -162,8 +169,43 @@ def _junk(p: str) -> bool:
     return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
 
 
+def unsafe_map_links(root: str) -> list[str]:
+    """Managed map links are invalid evidence; detect them without following targets."""
+    map_dir = os.path.join(root, ".asgard", "map")
+    expected = os.path.join(os.path.realpath(root), ".asgard", "map")
+    if os.path.islink(map_dir) or os.path.realpath(map_dir) != expected:
+        return [".asgard/map"]
+    try:
+        return [
+            ".asgard/map/" + name
+            for name in os.listdir(map_dir)
+            if name.endswith(".md") and os.path.islink(os.path.join(map_dir, name))
+        ]
+    except OSError:
+        return []
+
+
+def symlink_map_state(path: str) -> bytes:
+    """Hash a linked regular file without blocking on devices/FIFOs."""
+    target = os.readlink(path).encode(errors="surrogateescape")
+    fd = None
+    try:
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NONBLOCK", 0))
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            return b"<unsafe-symlink-nonregular>\0" + target
+        digest = hashlib.sha256()
+        while chunk := os.read(fd, 1024 * 1024):
+            digest.update(chunk)
+        return b"<unsafe-symlink-sha256>\0" + target + b"\0" + digest.digest()
+    except OSError:
+        return b"<unsafe-symlink-unreadable>\0" + target
+    finally:
+        if fd is not None:
+            os.close(fd)
+
+
 def sensitive_path(path: str, needles) -> bool:
-    """경로 세그먼트 기준 민감 매칭 — 나이브 substring 은 'ci' 가 circle.py 를 오탐 (CUS-184).
+    """경로 세그먼트 기준 민감 매칭 — 나이브 substring 은 'ci' 가 circle.py 를 오탐.
     규칙: 세그먼트 정확 일치, 또는 4자+ needle 은 세그먼트 내 부분 문자열 허용 (auth→authentication).
     verifier_gate.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 게이트↔전이 판정 분열)."""
     segs = path.lower().split("/")
@@ -179,7 +221,7 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
     커밋 여부와 무관 (base_ref 는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
     diff 를 바꾸면 해시가 자기참조로 영원히 안 맞는다.
     nontest_lines: 테스트 파일 제외 변경 라인 — 테스트 추가는 검증 표면이지 리스크 질량이 아니다
-    (CUS-189 스모크 발견: 잠금 테스트 2파일 추가가 big 판정 → 게이트-우선 무력화). 삭제된 테스트는
+    (스모크 벤치 발견: 잠금 테스트 2파일 추가가 big 판정 → 게이트-우선 무력화). 삭제된 테스트는
     별도 하드 트리거 (deleted_tests)."""
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
@@ -187,8 +229,40 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
     rc, diff = git(root, "diff", "--binary", *spec, binary=True)
     if rc != 0:
         return EMPTY, [], 0, 0
+    if isinstance(diff, str):
+        diff = diff.encode()
     _, names = git(root, "diff", "--name-only", *spec)
     _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
+    names = names.decode(errors="replace") if isinstance(names, bytes) else names
+    unt = unt.decode(errors="replace") if isinstance(unt, bytes) else unt
+    _, base_maps = git(root, "ls-tree", "-r", "--name-only", base_ref, "--", ".asgard/map")
+    base_maps = base_maps.decode(errors="replace") if isinstance(base_maps, bytes) else base_maps
+    map_paths = {p for p in base_maps.splitlines() if p.strip()}
+    map_dir = os.path.join(root, ".asgard", "map")
+    try:
+        map_paths.update(
+            ".asgard/map/" + p
+            for p in os.listdir(map_dir)
+            if p.endswith(".md")
+            and (os.path.isfile(os.path.join(map_dir, p)) or os.path.islink(os.path.join(map_dir, p)))
+        )
+    except OSError:
+        pass
+    map_changed = []
+    for p in sorted(map_paths):
+        before_rc, before = git(root, "show", f"{base_ref}:{p}", binary=True)
+        if isinstance(before, str):
+            before = before.encode()
+        full_path = os.path.join(root, p)
+        is_link = os.path.islink(full_path)
+        try:
+            after = symlink_map_state(full_path) if is_link else open(full_path, "rb").read()
+        except OSError:
+            after = None
+        link_target = os.readlink(full_path).encode(errors="surrogateescape") if is_link else b""
+        if (before if before_rc == 0 else None) != after:
+            map_changed.append(p)
+            diff += p.encode("utf-8", "surrogateescape") + b"\0" + link_target + b"\0" + (after if after is not None else b"<deleted>")
     _, num = git(root, "diff", "--numstat", *spec)
     lines = 0
     nt_lines = 0
@@ -204,18 +278,19 @@ def diff_state(root: str, base_ref: str | None) -> tuple[str, list[str], int, in
     for p in untracked:
         try:
             body = open(os.path.join(root, p), "rb").read()
-            k = body.count(b"\n") + 1
-            lines += k
-            if not _testfile(p):
-                nt_lines += k
+            if not p.startswith(".asgard/map/"):
+                k = body.count(b"\n") + 1
+                lines += k
+                if not _testfile(p):
+                    nt_lines += k
             h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
         except Exception:
             h.update(p.encode() + b"\0missing")
-    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked))
+    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
-# ── 하네스 소유 베이스라인 체크 (CUS-187) — 증거 '품질'의 결정론화 ──
+# ── 하네스 소유 베이스라인 체크 — 증거 '품질'의 결정론화 ──
 # 기존 pass_evidence 는 증거 '존재'만 봤다 — 어떤 명령이었는지는 verifier LLM 재량이라 `echo ok`
 # 도 증거가 됐다 (깊이벤치 실증). 여기서는 하네스가 직접 프로젝트 체크를 실행해 exit code 를
 # 기록한다 — LLM-as-judge 불신 원칙 (결정론 룰 피드백이 최상위 증거, Anthropic SDK 가이드).
@@ -302,12 +377,92 @@ def trivial_evidence(cmd) -> bool:
     return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
 
 
+# ── criteria verify 계약 — 기준별 검증 명령·산출물 결속 ──
+# criteria 문자열에 옵트인 계약을 얹는다: "<설명> | verify: <명령> | artifacts: <경로...>".
+# 계약이 선언되면 "아무 nontrivial 명령 exit 0" 은 더 이상 그 기준의 증거가 아니다 — 하네스가
+# 계약 명령을 직접 실행해 기록하고(모델 신고 exit code 불신, baseline 과 동일 원칙), 퍼널이
+# 전 계약 충족을 요구한다. 계약 없는 기준은 현행 동작 유지 (하위호환).
+# 잔여 한계(문서화): 계약 명령의 '의미적 관련성'은 결정론으로 판정 불가 — 대신 계약이 open 시점
+# 로그에 선언·감사되므로 검증 시점 재량 선택보다 위조 표면이 좁다.
+
+
+def parse_criterion(text) -> dict:
+    """ "설명 | verify: cmd | artifacts: a b" → {description, verify_cmd, artifacts}. 계약 없음 = 빈 값."""
+    desc, cmd, arts = str(text), None, []
+    parts = [p.strip() for p in str(text).split(" | ")]
+    if len(parts) > 1:
+        desc = parts[0]
+        for p in parts[1:]:
+            if p.startswith("verify:"):
+                cmd = p[len("verify:") :].strip() or None
+            elif p.startswith("artifacts:"):
+                arts = [a for a in p[len("artifacts:") :].split() if a]
+            else:
+                desc = desc + " | " + p  # 계약 키워드가 아닌 ' | ' 는 설명의 일부
+    if cmd and trivial_evidence(cmd):
+        cmd = None  # trivial 명령은 계약이 될 수 없다 — 증거 필터와 동일 기준 (Goodhart)
+    return {"description": desc, "verify_cmd": cmd, "artifacts": arts}
+
+
+def criteria_contracts(criteria) -> list[dict]:
+    """verify 계약이 선언된 기준만 — verify_cmd 또는 artifacts 보유."""
+    out = []
+    for t in criteria or []:
+        c = parse_criterion(t)
+        if c["verify_cmd"] or c["artifacts"]:
+            out.append(c)
+    return out[:5]  # 상한 — 계약 폭주가 verify 턴을 인질로 잡지 않게
+
+
+def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:
+    """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0 만 인정,
+    산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore 로 diff-hash 밖일 수 있어
+    stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도."""
+    unmet = []
+    checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in (rec.get("criteria_checks") or [])}
+    for c in criteria_contracts(criteria):
+        cmd = c["verify_cmd"]
+        if cmd and checks.get(" ".join(cmd.split())) != 0:
+            unmet.append("verify: " + cmd)
+        for a in c["artifacts"]:
+            if not os.path.exists(os.path.join(root, a)):
+                unmet.append("artifact: " + a)
+    return unmet
+
+
+def run_criteria_checks(root: str, policy: dict, criteria, events: list[dict], diff_hash: str) -> list[dict] | None:
+    """계약 명령을 하네스가 직접 실행해 기록 — stdin 위조는 normalize 가 버리고 이 코드만이
+    기록 경로 (baseline 과 동일). 같은 diff_hash 의 기존 기록은 재사용. 계약 없음 → None (요건 면제)."""
+    contracts = [c for c in criteria_contracts(criteria) if c["verify_cmd"]]
+    if not contracts:
+        return None
+    for e in reversed(events):
+        cc = e.get("criteria_checks")
+        if cc and e.get("event") == "verify" and e.get("diff_hash") == diff_hash:
+            return [{**c, "cached": True} for c in cc if isinstance(c, dict)]
+    timeout = int(policy.get("baseline_timeout") or 120)
+    results: list[dict] = []
+    for c in contracts:
+        t0 = time.time()
+        code: int | None
+        try:
+            p = subprocess.run(c["verify_cmd"], shell=True, cwd=root, capture_output=True, timeout=timeout)
+            code = p.returncode
+        except Exception:
+            code = None  # timeout 포함 — 미충족 취급 (계약은 명시 선언이라 skip 면제 없음)
+        results.append({"cmd": c["verify_cmd"][:200], "exit_code": code, "secs": round(time.time() - t0, 1)})
+    return results
+
+
 def pass_evidence(rec: dict) -> bool:
     """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (verifier_gate.py 와 동일 유지).
-    하네스가 직접 돌린 베이스라인 green 은 그 자체가 물리 증거 — trivial 필터는 모델이 고른
-    명령에만 적용한다 (baseline_checks 는 정책 파일 소유, 모델 위조 불가)."""
+    하네스가 직접 돌린 베이스라인 green·전 계약 성공(criteria_checks)은 그 자체가 물리 증거 —
+    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가)."""
     if (rec.get("baseline") or {}).get("state") == "green":
         return True
+    checks = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
+    if checks and all(c.get("exit_code") == 0 for c in checks):
+        return True  # 계약 명령 전부 성공 — 하네스가 직접 실행한 기록
     return any(
         isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
         for c in (rec.get("commands") or [])
@@ -319,7 +474,7 @@ _SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn )")
 
 def signature_risk(root: str, base_ref: str | None) -> bool:
     """diff 에 삭제·변경된 함수/클래스 시그니처 라인 존재 여부 — 숨은-caller 리스크의 결정론 신호
-    (CUS-188, t3 방어 유지 조건). '-' 라인만 본다: 신규 추가(+def)는 기존 caller 가 없다.
+    (벤치 t3 방어 유지 조건). '-' 라인만 본다: 신규 추가(+def)는 기존 caller 가 없다.
     게이트-우선(STANDARD) 라우팅 전용 — verifier_gate 대응 불필요."""
     if not base_ref or base_ref == "NONE":
         return False
@@ -347,7 +502,7 @@ def load_policy(root: str) -> dict:
     return p
 
 
-# ── Bayesian-lite 라우팅 prior (CUS-127) — task-class별 게이트-red 이력 카운트 ──
+# ── Bayesian-lite 라우팅 prior — task-class별 게이트-red 이력 카운트 ──
 # 학습 없음: 퀘스트 종결마다 {n, red} 카운트 1건 (기록자는 Heimdall — 모델 비노출).
 # 소비는 transition 의 게이트-우선 승격 문턱뿐 — 게이트 자체는 여전히 물리 가드가 판정한다
 # ("게이트는 메모리 불신" — prior 는 심도 선택 힌트지 증거가 아니다).
@@ -440,9 +595,9 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     }
     if ev.get("level"):  # verify 전용 부가 필드 — gate 의 full-verify 판정 근거
         full["level"] = ev["level"]
-    if ev.get("unit") is not None:  # work 전용 부가 필드 — wave 병렬 배정 단위 id (CUS-176)
+    if ev.get("unit") is not None:  # work 전용 부가 필드 — wave 병렬 배정 단위 id
         full["unit"] = ev["unit"]
-    if ev.get("model"):  # 실사용 provider:model 기록 (CUS-177) — CUS-127 결과 기반 정책 조정의 데이터 축
+    if ev.get("model"):  # 실사용 provider:model 기록 — 라우팅 prior 등 결과 기반 정책 조정의 데이터 축
         full["model"] = str(ev["model"])[:80]
     return full
 
@@ -478,7 +633,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
     dts = deleted_tests(root, base_ref)
     # small_write 판정은 테스트 파일 제외 — 테스트 추가는 검증 표면이지 리스크 질량이 아니다
-    # (CUS-189: 잠금 테스트 2파일 추가 → big 오판 → full 강제·게이트-우선 무력화). 삭제는 dts 가 잡는다.
+    # (스모크 실측: 잠금 테스트 2파일 추가 → big 오판 → full 강제·게이트-우선 무력화). 삭제는 dts 가 잡는다.
     nt_files = [f for f in changed if not _testfile(f)]
     small = policy["small_write"]
     _esc_i = [i for i, e in enumerate(events) if e.get("event") == "verify" and e.get("verdict") == "ESCALATE"]
@@ -505,22 +660,54 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "full_required": bool(sens) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"],
         "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
         "pass_level": (last_pass or {}).get("level"),
-        # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부, CUS-170 깊이 테스트 발견 구멍)
+        # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부 — 깊이 테스트가 발견한 구멍)
         "pass_evidence": bool(last_pass and pass_evidence(last_pass)),
-        # 하네스 베이스라인 상태 (CUS-187) — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
+        # 하네스 베이스라인 상태 — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
         "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
+        # criteria verify 계약 미충족 목록 — 계약 없는 기준은 빈 리스트 (하위호환, 요건 면제)
+        "contracts_unmet": unmet_contracts(
+            root, next((e.get("criteria") for e in events if e.get("criteria")), []), last_pass or {}
+        ),
         # 무인 nudge 상태 (Canon 8) — 마커 파일 대신 로그 구조가 상한을 센다:
         #   replan_after_escalate = 마지막 ESCALATE 이후 plan 존재 (nudge/오딘 답변이 소비됨 → 실행 재개)
         #   escalate_nudged       = 어떤 ESCALATE 든 이후 plan 이 존재 (퀘스트당 nudge 1회 소진)
         "replan_after_escalate": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[-1]),
         "escalate_nudged": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[0]),
-        # 게이트-우선 라우팅 신호 (CUS-188)
+        # 게이트-우선 라우팅 신호
         "checks_available": bool(detect_checks(root, policy)),
         "sig_risk": signature_risk(root, base_ref),
     }
 
 
-# ── 전이 함수 (CUS-120) — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
+# ── 완료 판정 단일 퍼널 — 승인 경로의 유일한 출처 ──
+def completion_decision(s: dict) -> tuple[str, str, str]:
+    """(decision, code, why). decision ∈ APPROVED/REJECTED/ESCALATED — transition(PASS 분기)과
+    close 가 모두 이 함수만 신뢰한다. 불변식: REJECTED 는 어떤 호출측에서도 승인으로 승격 금지
+    (close --force 는 LAST 미기록·게이트 면제 없는 관리적 해제일 뿐, 승인이 아니다).
+    verifier-gate.py 의 Stop 차단 기준과 동일 유지 (단일 출처 원칙 — 어긋나면 DONE 이 Stop 에서 차단)."""
+    if s.get("last_verdict") == "ESCALATE":
+        return "ESCALATED", "escalate", "Verifier ESCALATE — Odin 결정 대기 (Canon 9 정규 종료)"
+    if s.get("last_verdict") != "PASS":
+        return "REJECTED", "no_pass", "Verifier PASS 판정 없음"
+    if not s.get("criteria"):
+        # 게이트와 동일 검사 — close 가 이걸 안 보면 무기준 PASS 가 LAST 면제로 게이트를 우회한다
+        return "REJECTED", "no_criteria", "성공 기준(criteria)이 로그에 없음 — 기준 없이는 검증이 성립하지 않는다"
+    if not s.get("pass_evidence"):
+        return "REJECTED", "no_evidence", "PASS 에 성공한 검증 명령 증거 없음"
+    if s.get("baseline_state") == "red":
+        return "REJECTED", "baseline_red", "하네스 베이스라인 체크 red — 실패한 체크 수리 필요"
+    unmet = s.get("contracts_unmet") or []
+    if unmet:
+        # 계약이 선언된 기준은 그 명령·산출물이 유일한 증거다 — 무관한 exit-0 명령으로 대체 불가
+        return "REJECTED", "criteria_unverified", "criteria verify 계약 미충족: %s" % "; ".join(map(str, unmet[:3]))
+    if not s.get("pass_hash_match"):
+        return "REJECTED", "stale_pass", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요"
+    if s.get("full_required") and s.get("pass_level") != "full":
+        return "REJECTED", "micro_pass", "full-verify 필요(민감 경로/큰 diff)한데 micro PASS"
+    return "APPROVED", "ok", "Verifier PASS + diff-hash 물리 대조 일치"
+
+
+# ── 전이 함수 — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
 def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict:
     small = policy["small_write"]
     # big 은 non-test 질량 기준 (summarize.full_required 와 동일) — 테스트 추가로 full/승격을 트리거하지 않는다
@@ -531,7 +718,7 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
     sensitive = bool(s["sensitive_files"]) or flags.shared
     full_required = s["full_required"] or flags.shared
     has_write = s["diff_hash"] != EMPTY or s["risk_write"] or flags.write_expected
-    # risk_features 11종 (CUS-117 코멘트 C) — 결정론 계산 7 + 모델 신고 4 (--flags)
+    # risk_features 11종 — 결정론 계산 7 + 모델 신고 4 (--flags)
     features = {
         "has_write": has_write,
         "sensitive_path": bool(s["sensitive_files"]),
@@ -546,11 +733,11 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         "external_research": flags.external_research,
     }
     level = "full" if (sensitive or big) else "micro"
-    # 게이트-우선(STANDARD) 적격 (CUS-188) — 플래그 없는 기본값: 물리 가드가 전부 판정한다.
-    # v1 은 --standard 옵트인이었으나 CUS-189 스모크 3회에서 모델이 플래그를 안 넘김 (프롬프트 계약
+    # 게이트-우선(STANDARD) 적격 — 플래그 없는 기본값: 물리 가드가 전부 판정한다.
+    # v1 은 --standard 옵트인이었으나 스모크 3회에서 모델이 플래그를 안 넘김 (프롬프트 계약
     # 한계) — 의존성을 삭제하고 전이 함수 기본으로 흡수. 조건 하나라도 깨지면 아래 트리니티 행으로
     # 자연 폴스루 = 승격. 민감/큰 non-test diff/시그니처 변경/테스트 삭제/모호는 LLM Verifier 가 필요.
-    # 게이트-우선 전용 라인 상한 (CUS-194 벤치 결함): sig_risk 는 def 삭제만 본다 — def 무변경
+    # 게이트-우선 전용 라인 상한 (벤치 결함 대응): sig_risk 는 def 삭제만 본다 — def 무변경
     # 리라이트(+52/-11)가 동작 계약을 바꿔 caller 를 깨는 경로는 diff 질량으로만 잡을 수 있다.
     # 가시 테스트(baseline)는 near-oracle 이 아니므로 (2606.24453 regime) 소형 diff 에서만 신뢰.
     gf_small = s.get("nontest_lines", s["diff_lines"]) <= int(policy.get("gate_first_max_lines") or 25)
@@ -563,7 +750,7 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         and not flags.ambiguous
         and not flags.external_research
     )
-    # Bayesian-lite 승격 문턱 (CUS-127) — 이 task-class 의 게이트-red 이력이 과반이면 red 1회로
+    # Bayesian-lite 승격 문턱 — 이 task-class 의 게이트-red 이력이 과반이면 red 1회로
     # 선제 승격. Beta(1,1) posterior mean (red+1)/(n+2) > 0.5 ⟺ red > n−red (과반 판정) —
     # 카운트뿐, 학습 없음 (arXiv 2606.24453: 검증 싸고 critic 불완전한 구간의 적응 제어).
     pc = ((priors or {}).get("classes") or {}).get(getattr(flags, "task_class", None) or "", {})
@@ -594,12 +781,12 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
                 "어떤 기본안도 방어 불가한 진짜 블로커면 사유 기록 후 재-ESCALATE",
             )
         # Verifier ESCALATE = 진행 불가 블로커 신고 (Canon 8: 승인 요청 용도 아님) — WORKER 폴스루로
-        # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭 (CUS-171).
+        # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭.
         return out("ESCALATE_ODIN", "Verifier ESCALATE — 진행 불가 블로커, Odin 결정 필요")
     if s["last_verdict"] == "FAIL":
         if standard_ok and s.get("fail_streak_any", 0) >= promote_at:
-            # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격 (CUS-188).
-            # prior 과반-red 클래스는 red 1회로 하향 (CUS-127).
+            # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격.
+            # prior 과반-red 클래스는 red 1회로 하향.
             why = "게이트-우선 red %d회 — Trinity 승격, 접근 재설계" % s["fail_streak_any"]
             return out("THINKER_REPLAN", why + (" (prior: 클래스 red 이력 과반)" if promote_at == 1 else ""))
         return (
@@ -608,19 +795,27 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             else out("WORKER_RETRY", "Verifier FAIL(경미) — 같은 계획으로 수정")
         )
     if s["last_verdict"] == "PASS":
-        if not s.get("pass_evidence"):
-            # 증거 없는 PASS 는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
-            # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (CUS-170 깊이 테스트 발견).
-            return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
-        if s.get("baseline_state") == "red":
-            # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다 (CUS-187)
+        # 완료 판정은 단일 퍼널(completion_decision)만 신뢰한다 — close·게이트와 판정 불일치 금지.
+        # flags.shared 는 전이 시점 모델 신고라 요약에 없다 — 퍼널 입력에 병합.
+        decision, code, why = completion_decision({**s, "full_required": full_required})
+        if decision == "APPROVED":
+            return out("DONE", why)
+        if code == "baseline_red":
+            # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다
             return out("WORKER_RETRY", "하네스 베이스라인 체크 red — 실패한 체크를 먼저 수리 (Canon 10)")
-        if not s["pass_hash_match"]:
+        if code == "no_evidence":
+            # 증거 없는 PASS 는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
+            # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (깊이 테스트 발견).
+            return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
+        if code == "no_criteria":
+            return out("VERIFIER", "성공 기준(criteria)이 로그에 없음 — criteria 기록 후 재판정 (Canon 10)")
+        if code == "criteria_unverified":
+            # 계약 명령이 실패했거나 산출물이 없다 — 재검증 append 가 하네스 재실행을 트리거한다
+            return out("VERIFIER", why + " — 계약 명령을 수리/재실행해 재판정 (Canon 10)")
+        if code == "stale_pass":
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
-        if full_required and s["pass_level"] != "full":
-            # gate 와 동일 판정 — micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
-            return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
-        return out("DONE", "Verifier PASS + diff-hash 물리 대조 일치")
+        # micro_pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
+        return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
     if ((flags.ambiguous and has_write) or flags.external_research) and s["plan_turns"] < 2:
         # plan_turns 게이트 — 플래그는 매 전이마다 재전달(sticky)되므로, 실제 Thinker 계획(턴2)
         # 이후엔 실행으로 넘어가야 한다. 안 그러면 THINKER 무한 루프(12턴 소진).
@@ -631,7 +826,7 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         if standard_ok and s.get("checks_available"):
             # 게이트-우선 — 검증이 싸면 always-verify 가 지배 (arXiv 2606.24453): LLM Verifier 대신
             # 하네스 베이스라인이 판정한다. 체크가 없으면 LLM Verifier 폴백 (아래).
-            return out("BASELINE_VERIFY", "게이트-우선 — 하네스 베이스라인 판정 (CUS-188)")
+            return out("BASELINE_VERIFY", "게이트-우선 — 하네스 베이스라인 판정")
         return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
     if (sensitive or big) and s["plan_turns"] < 2:
         # open 의 자동 plan(턴1)은 접수 기록일 뿐 — 민감/큰 write 는 실제 Thinker 계획 턴을 요구한다.
@@ -663,6 +858,22 @@ def map_nudge(root: str, base_ref: str | None) -> list[str]:
     _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
     changes += sorted(f"A {p}" for p in unt.splitlines() if mappable(p))
     return changes[:20]  # 상한 — 대량 이동에서 close 출력이 지도 노릇을 하지 않게
+
+
+def refresh_managed_map(root: str) -> bool:
+    """Verifier hash 전에 PROJECT.md를 갱신한다. 지도 미도입/패키지 부재/IO 실패는 fail-open.
+
+    검증 뒤 close에서 쓰면 PASS hash가 즉시 stale해진다. 따라서 자동 지도 변경도 반드시
+    Verifier가 판정하는 diff에 포함되도록 이 시점 하나에서만 쓴다.
+    """
+    if not os.path.isdir(os.path.join(root, ".asgard", "map")):
+        return False
+    try:
+        from asgard.code_map import refresh_map
+
+        return refresh_map(root).changed
+    except Exception:
+        return False
 
 
 def tests_available(root: str) -> bool:
@@ -698,9 +909,13 @@ def main() -> int:
         "--task-class",
         choices=["trivial", "standard", "deep"],
         dest="task_class",
-        help="open: 로그 기록 / next: prior 승격 문턱 조회 축 (CUS-127)",
+        help="open: 로그 기록 / next: prior 승격 문턱 조회 축",
     )
-    ap.add_argument("--force", action="store_true", help="close: 판정 없이 강제 해제 (Odin 동의 필요)")
+    ap.add_argument(
+        "--force",
+        action="store_true",
+        help="close: 판정 없이 강제 해제 (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)",
+    )
     args = ap.parse_args()
     root = repo_root()
     policy = load_policy(root)
@@ -713,7 +928,7 @@ def main() -> int:
         rc, head = git(root, "rev-parse", "HEAD")
         base_ref = head.strip() if rc == 0 else "NONE"
         risk = {"has_write": not args.no_write}
-        if args.task_class:  # prior 집계 축 (CUS-127) — 퀘스트가 어느 클래스로 열렸는지 감사 기록
+        if args.task_class:  # prior 집계 축 — 퀘스트가 어느 클래스로 열렸는지 감사 기록
             risk["task_class"] = args.task_class
         ev = normalize(
             {
@@ -729,7 +944,7 @@ def main() -> int:
         )
         write_event(root, qid, ev)
         # temp+rename — 크래시 절단 ACTIVE(빈 파일)가 게이트를 orphan 경로로 오도하지 않게.
-        # lagom: 전역 포인터 자체는 유지 — 동시 세션 경쟁은 open 시 dangling 경고가 표면화 (CUS-180)
+        # lagom: 전역 포인터 자체는 유지 — 동시 세션 경쟁은 open 시 dangling 경고가 표면화
         _ap = os.path.join(quest_dir(root), "ACTIVE")
         _tmp = "%s.%d.tmp" % (_ap, os.getpid())
         open(_tmp, "w").write(qid + "\n")
@@ -770,14 +985,26 @@ def main() -> int:
             if ev["verdict"] == "NA":
                 print(json.dumps({"error": "verify requires --verdict PASS|FAIL|ESCALATE"}), file=sys.stderr)
                 return 2
+            # 구조 지도도 판정 대상 diff에 포함 — PASS 뒤 close가 파일을 쓰면 stale hash가 된다.
+            refresh_managed_map(root)
             # 판정 이벤트의 물리 증거는 이 도구가 계산한다 — 손 계산 해시는 gate 와 어긋난다.
             ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"])
+            unsafe_maps = unsafe_map_links(root)
+            if unsafe_maps and ev["verdict"] == "PASS":
+                ev["verdict"] = "FAIL"
+                ev["failure_sig"] = "unsafe-map-link"
+                ev["changed_files"] = sorted(set(ev["changed_files"]) | set(unsafe_maps))
             ev.setdefault("level", "micro")
             if ev["verdict"] == "PASS":
-                # 하네스 소유 베이스라인 (CUS-187) — normalize 가 stdin baseline 을 버린 뒤 여기서만 기록
+                # 하네스 소유 베이스라인 — normalize 가 stdin baseline 을 버린 뒤 여기서만 기록
                 bl = run_baseline(root, policy, events, ev["diff_hash"])
                 if bl:
                     ev["baseline"] = bl
+                # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize 가 버림)
+                crit = ev.get("criteria") or next((e.get("criteria") for e in events if e.get("criteria")), [])
+                cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
+                if cc is not None:
+                    ev["criteria_checks"] = cc
         write_event(root, qid, ev)
         print(
             json.dumps(
@@ -788,9 +1015,10 @@ def main() -> int:
         return 0
 
     if args.cmd == "verify-baseline":
-        # 게이트-우선 판정 턴 (CUS-188) — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
+        # 게이트-우선 판정 턴 — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
         # commands = 하네스가 직접 실행한 체크 (pass_evidence 충족) — verifier 재량 커맨드 아님.
         ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
+        refresh_managed_map(root)
         ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"])
         ev["level"] = "micro"
         bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
@@ -808,6 +1036,20 @@ def main() -> int:
         failing = [str(c.get("cmd")) for c in results if c.get("exit_code") not in (0, None)]
         if state == "red":
             ev["failure_sig"] = "baseline-red"
+        elif unsafe_map_links(root):
+            ev["verdict"] = "FAIL"
+            ev["failure_sig"] = "unsafe-map-link"
+        else:
+            # criteria verify 계약 — 게이트-우선 경로도 계약을 결속한다: 계약 미충족이면 green 이어도 FAIL
+            crit = next((e.get("criteria") for e in events if e.get("criteria")), [])
+            cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
+            if cc is not None:
+                ev["criteria_checks"] = cc
+            unmet = unmet_contracts(root, crit, ev)
+            if unmet:
+                ev["verdict"] = "FAIL"
+                ev["failure_sig"] = "criteria-contract"
+                failing = [str(u) for u in unmet]
         write_event(root, qid, ev)
         print(
             json.dumps(
@@ -836,46 +1078,55 @@ def main() -> int:
         return 0
 
     if args.cmd == "close":
-        verified = (
-            s["last_verdict"] == "PASS"
-            and s["pass_hash_match"]
-            and s["pass_evidence"]  # 증거 없는 PASS 로 close → LAST 면제로 게이트 우회되던 구멍 봉합
-            and s.get("baseline_state") != "red"  # 하네스 베이스라인 red 로는 close 불가 (CUS-187)
-            and (not s["full_required"] or s["pass_level"] == "full")
-        )  # gate 와 동일 기준
-        ok = verified or s["last_verdict"] == "ESCALATE"
+        # 완료 판정은 단일 퍼널만 신뢰 — transition(DONE)·게이트와 동일 기준.
+        decision, code, why = completion_decision(s)
+        ok = decision in ("APPROVED", "ESCALATED")
         if not ok and not args.force:
             print(
                 json.dumps(
                     {
-                        "error": "close 거부 — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
-                        "우회는 --force (Odin 동의 필요)"
-                    }
+                        "error": "close 거부(%s: %s) — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
+                        "우회는 --force (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)" % (code, why)
+                    },
+                    ensure_ascii=False,
                 ),
                 file=sys.stderr,
             )
             return 1
+        forced = bool(args.force and not ok)
         try:
             os.remove(os.path.join(quest_dir(root), "ACTIVE"))
         except FileNotFoundError:
             pass
         # LAST 포인터: 닫힌 뒤에도 gate 가 "이 워킹트리 상태는 검증됐다"를 증명할 수 있게 —
         # 없으면 close 직후 Stop 에서 write-sentinel 기록이 방금 검증된 write 를 오차단한다.
-        try:
-            _lp = os.path.join(quest_dir(root), "LAST")
-            _tmp = "%s.%d.tmp" % (_lp, os.getpid())
-            open(_tmp, "w").write(qid + "\n")
-            os.replace(_tmp, _lp)
-        except Exception:
-            pass
-        res = {"closed": qid, "forced": bool(args.force and not ok)}
-        try:  # 지도 넛지 (fail-open) — 구조 변경이 있으면 close 전 지도 갱신을 리마인드
+        # forced close 는 LAST 를 기록하지 않는다 — REJECTED 를 --force 로 해제해도
+        # 게이트 면제(승인)로 승격되지 않는다. 남은 write 는 Stop 의 orphan 검사가 정상 차단.
+        if not forced:
+            try:
+                _lp = os.path.join(quest_dir(root), "LAST")
+                _tmp = "%s.%d.tmp" % (_lp, os.getpid())
+                open(_tmp, "w").write(qid + "\n")
+                os.replace(_tmp, _lp)
+            except Exception:
+                pass
+        res = {"closed": qid, "forced": forced}
+        if forced:
+            res["gate_exempt"] = False
+            res["rejected"] = "%s: %s" % (code, why)
+        try:  # 지도 최신 여부 확인. 자동 갱신 실패 때만 수동 증분 갱신을 리마인드한다.
+            from asgard.code_map import check_map
+
+            map_current = check_map(root).ok if os.path.isdir(os.path.join(root, ".asgard", "map")) else False
             nudge = map_nudge(root, s.get("base_ref"))
         except Exception:
+            map_current = False
             nudge = []
-        if nudge:
+        if map_current:
+            res["map_current"] = True
+        elif nudge:
             res["map_update"] = nudge
-            res["map_hint"] = "구조 변경 감지 — .asgard/map/ 영역 지도에 증분 반영 (전체 재작성 금지, 실재 파일만)"
+            res["map_hint"] = "자동 지도 갱신 실패 — asgard setup map 실행 후 영역 지도에 새 지식만 증분 반영"
         print(json.dumps(res, ensure_ascii=False))
         return 0
     return 0

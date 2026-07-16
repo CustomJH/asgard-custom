@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Smoke test — the money path: install the Python CLI as a uv tool into a temp prefix, put it on PATH,
 # then the basic commands work; and every scaffold/guard assertion. Fails loud. No framework.
-# CUS-108 Path B: no compile — `uv tool install <repo>` + `uv run --project <repo> asgard` for speed.
+# No compile step — `uv tool install <repo>` + `uv run --project <repo> asgard` for speed.
 # No `pipefail`: `cmd | grep -q` closes the pipe early → the Python producer gets SIGPIPE (exit 141),
 # which pipefail would propagate as a false failure. `set -eu` is enough here.
 set -eu
@@ -34,9 +34,9 @@ echo "$ver" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$' || { echo "FAIL: --version => 
 
 "${ASG[@]}" --help | grep -q "asgard — make anything, your way" || { echo "FAIL: --help missing tagline"; exit 1; }
 "${ASG[@]}" --help | grep -q "doctor" || { echo "FAIL: --help missing command list"; exit 1; }
-# version 은 --version 옵션 단일 (line 22 에서 검증) — 중복 서브커맨드 제거됨.
+# version 은 --version 옵션 단일 (위에서 검증) — 중복 서브커맨드 제거됨.
 "${ASG[@]}" --help | grep -q "planned" && { echo "FAIL: --help must not list planned stubs"; exit 1; } || true
-# run 은 CUS-193 부터 실 커맨드 (PROMPT 필수) — 인자 없으면 usage 오류(2), --help 는 0.
+# run 은 실 커맨드 (PROMPT 필수) — 인자 없으면 usage 오류(2), --help 는 0.
 # (구 hidden-stub exit-0 계약은 폐기 — 이 하네스가 CI 밖이라 조용히 썩었던 지점)
 rc=0; "${ASG[@]}" run >/dev/null 2>&1 || rc=$?  # set -e 안전 캡처
 [ "$rc" -eq 2 ] || { echo "FAIL: 'run' without PROMPT should exit 2 (usage), got $rc"; exit 1; }
@@ -117,6 +117,11 @@ printf '%s' '{"tool_input":{"command":"git push --force"}}' | python3 "$PROJ/.cl
 printf '%s' '{"tool_input":{"command":"git checkout HEAD -- ."}}' | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block worktree discard"; exit 1; } || true
 printf '%s' '{"tool_input":{"command":"git status"}}'      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must allow git status"; exit 1; }
 printf '%s' 'not-json'                                      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must fail-open"; exit 1; }
+[ -f "$PROJ/.claude/hooks/release-guard.py" ] || { echo "FAIL: --cc missing release-guard"; exit 1; }
+printf '%s' '{"tool_input":{"command":"npm publish"}}'      | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null && { echo "FAIL: release-guard must block npm publish"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"docker push repo/img"}}' | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null && { echo "FAIL: release-guard must block docker push"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"npm run build"}}'    | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must allow npm run build"; exit 1; }
+printf '%s' 'not-json'                                      | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must fail-open"; exit 1; }
 printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"printf hacked > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block shell writes"; exit 1; } || true
 printf '%s' '{"tool_input":{"command":"printf hacked > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator shell writes"; exit 1; } || true
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"calc.py","content":"hacked"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator Write"; exit 1; } || true
@@ -147,7 +152,7 @@ printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PRO
 printf '{"event":"verify","role":"verifier","verdict":"PASS","commands":[{"cmd":"pytest -q","exit_code":0}]}\n' >> "$PROJ/.asgard/quest/sg1.jsonl"
 printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow verifier with evidence PASS"; exit 1; } || true
 rm -f "$PROJ/.asgard/quest/ACTIVE" "$PROJ/.asgard/quest/sg1.jsonl"
-# Lagom (CUS-205) — 훅 3종+캐논 스캐폴드, SessionStart 주입, /lagom 전환, off 무주입, fail-open
+# Lagom — 훅 3종+캐논 스캐폴드, SessionStart 주입, /lagom 전환, off 무주입, fail-open
 grep -q '"SessionStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SessionStart (lagom)"; exit 1; }
 grep -q '"SubagentStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SubagentStart (lagom)"; exit 1; }
 for _f in lagom-activate.py lagom-tracker.py lagom-subagent.py lagom-canon.md lagom-statusline.sh; do
