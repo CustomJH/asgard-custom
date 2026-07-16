@@ -10,18 +10,30 @@ from __future__ import annotations
 import ast
 import contextlib
 import dataclasses
-import fcntl
 import hashlib
 import json
 import os
 import re
 import secrets
+import stat
 import subprocess
 import time
 from collections.abc import Iterable, Sequence
+from typing import Any
 
 from .memory import scan_threats
-from .memory_bridge import backend_target, server_retain_items, stage_retain
+from .memory_bridge import assert_backend_access, backend_target, server_retain_items, stage_retain
+
+fcntl: Any = None
+msvcrt: Any = None
+with contextlib.suppress(ImportError):
+    import fcntl as _fcntl
+
+    fcntl = _fcntl
+with contextlib.suppress(ImportError):  # pragma: no cover - Windows only
+    import msvcrt as _msvcrt
+
+    msvcrt = _msvcrt
 
 KINDS = frozenset(
     {
@@ -750,7 +762,9 @@ def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[
         try:
             if os.path.getsize(full) > MAX_ARTIFACT_BYTES:
                 continue
-            content = open(full, encoding="utf-8").read()
+            with open(full, "rb") as source:
+                raw_content = source.read()
+            content = raw_content.decode("utf-8")
         except OSError, UnicodeError:
             continue
         if not content.strip() or scan_secrets(content):
@@ -758,7 +772,10 @@ def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[
         score, kind, importance, reasons = _assess(norm, content, norm in changed)
         if score < 35:
             continue
-        content_hash = hashlib.sha256(content.encode()).hexdigest()
+        # The same raw-byte digest is used by pre-publication TOCTOU checks and ambient
+        # freshness checks. Text-mode universal-newline conversion would make CRLF files
+        # permanently appear changed on Windows.
+        content_hash = hashlib.sha256(raw_content).hexdigest()
         structural_hash, extractor, symbols, imports = _structure(norm, content, content_hash)
         candidates.append(
             ArtifactCandidate(
@@ -851,7 +868,15 @@ def load_projection_manifest(root: str) -> dict:
             "items": {},
         }
     try:
-        with open(path, encoding="utf-8") as source:
+        if os.path.islink(path):
+            raise OSError("projection manifest must not be a symlink")
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            _validate_projection_file(fd, "projection manifest", path)
+        except Exception:
+            os.close(fd)
+            raise
+        with os.fdopen(fd, encoding="utf-8") as source:
             data = json.load(source)
         if isinstance(data, dict) and data.get("version") in (1, 2) and isinstance(data.get("items"), dict):
             # Unbound manifests must never authorize foreign tombstones. Bootstrap from local source instead.
@@ -886,6 +911,7 @@ def load_projection_manifest(root: str) -> dict:
                     isinstance(entry.get(field), str) and entry[field]
                     for field in ("document_id", "content_hash", "structural_hash", "kind", "status")
                 )
+                or entry.get("document_id") != _artifact_document_id(source_path, str(data.get("project_uid") or ""))
             ):
                 raise ValueError("malformed projection manifest item")
         return data
@@ -893,20 +919,53 @@ def load_projection_manifest(root: str) -> dict:
         raise ValueError("project memory projection manifest is corrupt; rebuild explicitly") from exc
 
 
+def _validate_projection_file(fd: int, label: str, path: str | None = None) -> None:
+    info = os.fstat(fd)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+        raise OSError(f"{label} must be a singly-linked regular file")
+    if hasattr(os, "getuid") and info.st_uid != os.getuid():
+        raise OSError(f"{label} must be owned by the current user")
+    if path is not None:
+        is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(path))
+        path_info = os.stat(path, follow_symlinks=False)
+        if stat.S_ISLNK(path_info.st_mode) or is_junction:
+            raise OSError(f"{label} must not be a symlink or junction")
+        if (path_info.st_dev, path_info.st_ino) != (info.st_dev, info.st_ino):
+            raise OSError(f"{label} changed while it was opened")
+
+
 @contextlib.contextmanager
 def _projection_guard(root: str):
     """Kernel-owned advisory lock; process death releases it without stale-file reclamation."""
     lock = _projection_manifest_path(root) + ".lock"
+    managed = (os.path.join(root, ".asgard"), os.path.dirname(lock))
+    for component in managed:
+        is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(component))
+        if os.path.lexists(component) and (os.path.islink(component) or is_junction):
+            raise OSError(f"unsafe project memory state path: symlink/junction: {component}")
+    lock_is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(lock))
+    if os.path.lexists(lock) and (os.path.islink(lock) or lock_is_junction):
+        raise OSError("projection lock must not be a symlink or junction")
     os.makedirs(os.path.dirname(lock), exist_ok=True)
     deadline = time.monotonic() + 5
-    fd = os.open(lock, os.O_CREAT | os.O_RDWR, 0o600)
+    flags = os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(lock, flags, 0o600)
     acquired = False
     try:
+        _validate_projection_file(fd, "projection lock", lock)
+        if fcntl is None and msvcrt is None:
+            raise OSError("no supported kernel file-lock implementation")
+        if msvcrt is not None and os.fstat(fd).st_size == 0:  # pragma: no cover - Windows only
+            os.write(fd, b"\0")
         while not acquired:
             try:
-                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                if fcntl is not None:
+                    fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                else:  # pragma: no cover - Windows only
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
                 acquired = True
-            except BlockingIOError:
+            except BlockingIOError, OSError:
                 if time.monotonic() >= deadline:
                     raise TimeoutError("project memory projection lock timeout")
                 time.sleep(0.01)
@@ -919,27 +978,46 @@ def _projection_guard(root: str):
     finally:
         try:
             if acquired:
-                fcntl.flock(fd, fcntl.LOCK_UN)
+                if fcntl is not None:
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+                else:  # pragma: no cover - Windows only
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
         finally:
             os.close(fd)
 
 
 def _save_projection_manifest(root: str, data: dict) -> None:
     path = _projection_manifest_path(root)
+    managed = (os.path.join(root, ".asgard"), os.path.dirname(path))
+    for component in managed:
+        is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(component))
+        if os.path.lexists(component) and (os.path.islink(component) or is_junction):
+            raise OSError(f"unsafe project memory state path: symlink/junction: {component}")
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
     try:
-        with open(tmp, "w", encoding="utf-8") as output:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags, 0o600)
+        try:
+            _validate_projection_file(fd, "projection manifest temporary file", tmp)
+        except Exception:
+            os.close(fd)
+            raise
+        with os.fdopen(fd, "w", encoding="utf-8") as output:
             json.dump(data, output, ensure_ascii=False, sort_keys=True, indent=2)
             output.flush()
             os.fsync(output.fileno())
         os.replace(tmp, path)
         os.chmod(path, 0o600)
-        directory = os.open(os.path.dirname(path), os.O_RDONLY)
-        try:
-            os.fsync(directory)
-        finally:
-            os.close(directory)
+        # Windows cannot open/fsync a directory through this POSIX path. os.replace has already
+        # made the manifest visible there; keep the stronger directory durability barrier on POSIX.
+        if os.name != "nt":
+            directory = os.open(os.path.dirname(path), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+            try:
+                os.fsync(directory)
+            finally:
+                os.close(directory)
     finally:
         with contextlib.suppress(OSError):
             os.remove(tmp)
@@ -1065,7 +1143,9 @@ def _tombstone_item(
     return {
         "content": content,
         "context": "asgard project artifact tombstone",
-        "document_id": entry.get("document_id") or _artifact_document_id(path, project_uid),
+        # The repository-local manifest is cache state, not authority. Never let it redirect a
+        # tombstone to an arbitrary stable document ID.
+        "document_id": _artifact_document_id(path, project_uid),
         "update_mode": "replace",
         "tags": [f"project:{project_id}", "artifact", f"status:{status}"],
         "metadata": metadata,
@@ -1142,7 +1222,11 @@ def sync_artifacts(
             )
             for path in plan["removed"]
         )
-        result = server_retain_items(cfg, items) if items else {"success": True}
+        if items:
+            result = server_retain_items(cfg, items)
+        else:
+            assert_backend_access(cfg)
+            result = {"success": True}
         summary = _projection_summary(plan)
         if result.get("success") is not True:
             return {

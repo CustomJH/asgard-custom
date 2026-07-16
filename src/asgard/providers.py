@@ -1,6 +1,6 @@
 """Provider 계층 — 모델 연결의 선언적 추상화.
 
-hermes-agent ProviderProfile 패턴 계승: 프로파일은 provider 의 사실만 선언하고
+프로파일은 provider 의 사실만 선언하고
 (이름·env·엔드포인트·기본 모델), 클라이언트 구성·스트리밍은 소유하지 않는다 — 그건
 에이전트 루프 몫. 설정 해석도 여기서: 프로젝트 → 글로벌 → 기본값.
 
@@ -295,15 +295,21 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     from .settings import GLOBAL_FILE, PROJECT_FILE, load_global, load_project
 
     root = root or os.getcwd()
-    conf: dict = {}
+    global_conf = load_global().get("provider") or {}
+    project_conf = load_project(root).get("provider") or {}
+    conf: dict = dict(global_conf)
     source = "default"
-    for loaded, label in (
-        (load_global().get("provider") or {}, f"~/.asgard/{GLOBAL_FILE}"),
-        (load_project(root).get("provider") or {}, f".asgard/{PROJECT_FILE}"),
-    ):
-        if loaded:
-            conf.update(loaded)  # 프로젝트가 글로벌을 키 단위로 덮는다
-            source = label
+    if global_conf:
+        source = f"~/.asgard/{GLOBAL_FILE}"
+    if project_conf:
+        # Repository-controlled settings may select a registered provider/model, but may not
+        # choose which endpoint receives user credentials or which environment variable is read.
+        if project_conf.get("name") and project_conf.get("name") != global_conf.get("name"):
+            conf = {}
+        for key in ("name", "model", "context_window"):
+            if key in project_conf:
+                conf[key] = project_conf[key]
+        source = f".asgard/{PROJECT_FILE}"
 
     name = provider or conf.get("name") or "anthropic"
     if provider:
@@ -323,7 +329,8 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         ctx_win = max(0, int(conf.get("context_window") or 0))
     except TypeError, ValueError:
         ctx_win = 0
-    base_url = conf.get("base_url") or cred.get("base_url") or profile.base_url
+    trusted_global = global_conf if global_conf.get("name", name) == name else {}
+    base_url = trusted_global.get("base_url") or cred.get("base_url") or profile.base_url
     # NVIDIA global credential은 repository-controlled endpoint로 보내지 않는다. 사설 NIM은 별도
     # openai_compat provider로 명시 연결해야 한다.
     if name == "nvidia":
@@ -338,7 +345,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
 
     # API 키 해석 — env var(프로파일 후보) 우선, 없으면 credentials.json. env 는 export 한 사용자를
     # 존중(무회귀), 파일은 온보딩으로 저장한 것. 둘 다 없으면 온보딩 대상(missing).
-    candidates = ([conf["api_key_env"]] if conf.get("api_key_env") else []) + list(profile.env_vars)
+    candidates = ([trusted_global["api_key_env"]] if trusted_global.get("api_key_env") else []) + list(profile.env_vars)
     env_var = next((v for v in candidates if os.environ.get(v)), "")
     if env_var:
         rp.api_key, rp.api_key_env, rp.key_source = os.environ[env_var], env_var, f"env:{env_var}"
@@ -383,9 +390,15 @@ def resolve_trinity(
 
     root = root or os.getcwd()
     conf: dict[str, dict] = {}
-    for cfg in (load_global(), load_project(root)):
-        for role, entry in (cfg.get("trinity") or {}).items():
+    global_cfg = load_global()
+    project_cfg = load_project(root)
+    for cfg, trusted in ((global_cfg, True), (project_cfg, False)):
+        for role, raw_entry in (cfg.get("trinity") or {}).items():
+            entry = dict(raw_entry) if isinstance(raw_entry, dict) else {}
             if role in roles and isinstance(entry, dict):
+                if not trusted:
+                    entry.pop("base_url", None)
+                    entry.pop("api_key_env", None)
                 conf.setdefault(role, {}).update(entry)
     out: dict[str, ResolvedProvider] = {}
     for role in roles:
@@ -394,7 +407,7 @@ def resolve_trinity(
             out[role] = default
             continue
         rp = resolve(root, provider=e.get("provider") or default.profile.name, model=e.get("model"))
-        if e.get("base_url") and rp.profile.name != "nvidia":
+        if e.get("base_url") and rp.profile.name != "nvidia":  # only global trusted entries retain this key
             rp.base_url = e["base_url"]
             rp.missing = [m for m in rp.missing if "base_url" not in m]
         out[role] = rp

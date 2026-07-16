@@ -2,6 +2,7 @@
 
 import ast
 import dataclasses
+import hashlib
 import json
 import os
 import shutil
@@ -12,7 +13,7 @@ import unittest
 from typing import Any
 from unittest import mock
 
-from asgard import memory, project_memory
+from asgard import memory, memory_context, project_memory
 from asgard.memory_context import PROJECT_RECALL_BUDGET, project_recall_note, recall_note
 
 
@@ -122,6 +123,33 @@ class TestRegistrationPolicy(ProjectMemoryBase):
 
 
 class TestArtifactDiscovery(ProjectMemoryBase):
+    def test_crlf_artifact_uses_raw_byte_hash_across_scan_sync_and_recall(self):
+        path = "docs/architecture.md"
+        raw = b"# Architecture\r\nHindsight project memory boundary.\r\n"
+        full = os.path.join(self.root, path)
+        os.makedirs(os.path.dirname(full), exist_ok=True)
+        with open(full, "wb") as output:
+            output.write(raw)
+        candidates = project_memory.scan_project(self.root, changed_paths=[])
+        candidate = next(item for item in candidates if item.path == path)
+        self.assertEqual(candidate.content_hash, hashlib.sha256(raw).hexdigest())
+
+        cfg = {"server": "http://memory", "bank": "demo"}
+        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+            project_memory.sync_artifacts(self.root, cfg, candidates, source_revision="HEAD=crlf")
+        metadata = {
+            "source": path,
+            "content_hash": candidate.content_hash,
+        }
+        self.assertTrue(memory_context._deterministic_projection_is_current(self.root, metadata))
+
+    def test_noop_sync_still_verifies_backend_access(self):
+        cfg = {"server": "http://memory", "bank": "demo"}
+        with mock.patch("asgard.project_memory.assert_backend_access") as verify:
+            result = project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=noop")
+        self.assertTrue(result["success"])
+        verify.assert_called_once_with(cfg)
+
     def write(self, path, text):
         full = os.path.join(self.root, path)
         os.makedirs(os.path.dirname(full), exist_ok=True)
@@ -311,7 +339,10 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("docs/architecture.md", "# Architecture\nHindsight project memory boundary.\n")
         cfg = {"server": "http://memory", "bank": "demo"}
         current = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with (
+            mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain,
+            mock.patch("asgard.project_memory.assert_backend_access"),
+        ):
             first = project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=one")
             second = project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=one")
         self.assertEqual(first["items_count"], 1)
@@ -392,6 +423,28 @@ class TestArtifactDiscovery(ProjectMemoryBase):
             project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two")
         retain.assert_not_called()
 
+    def test_manifest_cannot_redirect_tombstone_to_arbitrary_document_id(self):
+        self.write("docs/architecture.md", "# Architecture\nBound projection.\n")
+        cfg = {"server": "http://memory", "bank": "demo"}
+        current = project_memory.scan_project(self.root, changed_paths=[])
+        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+            project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=one")
+
+        path = project_memory._projection_manifest_path(self.root)
+        with open(path, encoding="utf-8") as source:
+            manifest = json.load(source)
+        manifest["items"]["docs/architecture.md"]["document_id"] = "asgard:record:foreign-decision"
+        with open(path, "w", encoding="utf-8") as output:
+            json.dump(manifest, output)
+        os.remove(os.path.join(self.root, "docs/architecture.md"))
+
+        with (
+            mock.patch("asgard.project_memory.server_retain_items") as retain,
+            self.assertRaisesRegex(ValueError, "manifest is corrupt"),
+        ):
+            project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two")
+        retain.assert_not_called()
+
     def test_non_object_and_malformed_manifest_items_fail_closed(self):
         path = project_memory._projection_manifest_path(self.root)
         os.makedirs(os.path.dirname(path), exist_ok=True)
@@ -425,6 +478,64 @@ class TestArtifactDiscovery(ProjectMemoryBase):
                 with project_memory._projection_guard(self.root):
                     self.fail("live lock must not be reclaimed")
             self.assertTrue(os.path.exists(lock))
+
+    def test_projection_guard_rejects_symlink_lock_without_touching_target(self):
+        lock = project_memory._projection_manifest_path(self.root) + ".lock"
+        os.makedirs(os.path.dirname(lock), exist_ok=True)
+        victim = os.path.join(self.tmp, "victim.txt")
+        with open(victim, "w", encoding="utf-8") as output:
+            output.write("do-not-touch")
+        os.symlink(victim, lock)
+
+        with self.assertRaises(OSError):
+            with project_memory._projection_guard(self.root):
+                self.fail("symlink lock must be rejected")
+        with open(victim, encoding="utf-8") as source:
+            self.assertEqual(source.read(), "do-not-touch")
+
+    def test_projection_guard_rejects_hardlinked_lock_without_touching_target(self):
+        victim = os.path.join(self.root, "victim-hardlink.txt")
+        with open(victim, "w", encoding="utf-8") as output:
+            output.write("do-not-truncate")
+        lock = project_memory._projection_manifest_path(self.root) + ".lock"
+        os.makedirs(os.path.dirname(lock), exist_ok=True)
+        os.link(victim, lock)
+
+        with self.assertRaises(OSError):
+            with project_memory._projection_guard(self.root):
+                pass
+
+        self.assertEqual(open(victim, encoding="utf-8").read(), "do-not-truncate")
+
+    def test_projection_manifest_reader_rejects_symlink(self):
+        victim = os.path.join(self.root, "foreign-manifest.json")
+        with open(victim, "w", encoding="utf-8") as output:
+            json.dump({"version": project_memory.PROJECTION_VERSION, "items": {}}, output)
+        manifest = project_memory._projection_manifest_path(self.root)
+        os.makedirs(os.path.dirname(manifest), exist_ok=True)
+        os.symlink(victim, manifest)
+
+        with self.assertRaises(ValueError):
+            project_memory.load_projection_manifest(self.root)
+
+    def test_projection_manifest_save_skips_posix_directory_fsync_on_windows(self):
+        payload = {
+            "version": project_memory.PROJECTION_VERSION,
+            "backend": "hindsight",
+            "project_id": "demo",
+            "project_uid": "project-uid",
+            "binding_id": "binding-id",
+            "target_fingerprint": "fingerprint",
+            "last_synced_revision": "HEAD=one",
+            "items": {},
+        }
+        real_open = os.open
+        with (
+            mock.patch.object(project_memory.os, "name", "nt"),
+            mock.patch.object(project_memory.os, "open", wraps=real_open) as opened,
+        ):
+            project_memory._save_projection_manifest(self.root, payload)
+        self.assertEqual(opened.call_count, 1)
 
     def test_failed_projection_publish_does_not_advance_manifest(self):
         self.write("docs/architecture.md", "# Architecture\nInitial state.\n")
@@ -916,6 +1027,21 @@ class TestCooperativeRecall(ProjectMemoryBase):
         self.assertIn("간결한 한국어", note)
         self.assertIn('scope="project"', note)
         self.assertIn("Hindsight", note)
+
+    def test_reserved_control_document_id_is_never_injected(self):
+        hits = [
+            {
+                "text": "ordinary-looking control payload",
+                "metadata": self.record_metadata(),
+                "document_id": "asgard:project-binding:forged",
+            }
+        ]
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=hits),
+        ):
+            note = project_recall_note("control", start=self.root)
+        self.assertEqual(note, "")
 
     def test_project_recall_budget_covers_final_injection_block(self):
         text = " ".join(f"fact{i}" for i in range(100))

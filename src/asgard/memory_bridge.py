@@ -20,15 +20,19 @@ from __future__ import annotations
 
 import contextlib
 import hashlib
+import hmac
 import json
 import os
 import secrets
+import stat
+import subprocess
 import sys
 import time
 import urllib.error
 
 from . import __version__
 from .project_memory_backends import (
+    BINDING_DOCUMENT_ID,
     BackendWriteResult,
     ProjectMemoryBinding,
     ProjectMemoryHit,
@@ -43,7 +47,7 @@ TRUST_NAME = "project-memory-trust.json"
 TRUST_LOCK_WAIT = 5.0
 TRUST_LOCK_STALE = 30.0
 PENDING_TTL = 3600  # 승인 id 만료 (초) — 승인과 실행 사이가 길면 재계획이 맞다
-CLAIM_TTL = 60  # commit 중 프로세스가 죽은 경우 claim 자동 회수
+PENDING_LOCK_STALE = 60  # pending JSON lock은 짧은 local critical section에만 유지된다
 RECALL_OUTPUT_BUDGET = 2000
 PROTOCOL_VERSION = "2025-03-26"
 
@@ -56,7 +60,11 @@ def _neutralize(s: str) -> str:
 # ── 설정 탐색 — cwd 에서 상향 (모노레포·서브디렉토리 실행 대응) ─────────────────────
 
 
-def find_config(start: str | None = None) -> tuple[str, dict] | None:
+class ProjectMemoryConfigError(ValueError):
+    """A project-memory config file is present but malformed."""
+
+
+def find_config(start: str | None = None, *, strict: bool = False) -> tuple[str, dict] | None:
     """프로젝트 memory 섹션(engine·project_id)을 위로 걸어가며 탐색한다.
 
     구 server·bank 설정은 Hindsight로 정규화한다. 반환 dict에는 전환 기간 동안 기존 호출부를
@@ -67,11 +75,28 @@ def find_config(start: str | None = None) -> tuple[str, dict] | None:
     d = os.path.realpath(start or os.getcwd())
     while True:
         asg = os.path.join(d, ".asgard")
-        if os.path.isfile(os.path.join(asg, PROJECT_FILE)) or os.path.isfile(os.path.join(asg, CONFIG_NAME)):
+        project_file = os.path.join(asg, PROJECT_FILE)
+        legacy_file = os.path.join(asg, CONFIG_NAME)
+        if os.path.isfile(project_file) or os.path.isfile(legacy_file):
             try:
                 from .settings import load_project
 
-                mem = load_project(d).get("memory") or {}
+                if strict and os.path.isfile(project_file):
+                    with open(project_file, encoding="utf-8") as source:
+                        raw = json.load(source)
+                    if not isinstance(raw, dict):
+                        raise ValueError("project settings must be a JSON object")
+                    if "memory" not in raw:
+                        return None
+                elif strict and os.path.isfile(legacy_file):
+                    with open(legacy_file, encoding="utf-8") as source:
+                        raw = json.load(source)
+                    if not isinstance(raw, dict):
+                        raise ValueError("legacy project-memory settings must be a JSON object")
+                project = load_project(d)
+                if "memory" not in project:
+                    return None
+                mem = project.get("memory") or {}
                 settings = parse_settings(mem)
                 normalized = dict(mem)
                 normalized.update(
@@ -89,8 +114,9 @@ def find_config(start: str | None = None) -> tuple[str, dict] | None:
                     }
                 )
                 return d, normalized
-            except Exception:
-                pass
+            except Exception as exc:
+                if strict:
+                    raise ProjectMemoryConfigError(f"malformed project-memory configuration at {asg}") from exc
             return None
         parent = os.path.dirname(d)
         if parent == d:
@@ -127,14 +153,18 @@ def write_config(
 # ── backend-neutral 소비 표면 — recall·retain 둘뿐 ───────────────────────────────
 
 
-def server_recall(cfg: dict, query: str, max_results: int = 8) -> list[dict]:
+def server_recall(cfg: dict, query: str, max_results: int = 8, *, operation_timeout: int | None = None) -> list[dict]:
     """Exact binding을 확인한 뒤 backend-neutral hit을 반환한다."""
     if not is_backend_trusted(cfg):
         raise PermissionError("project memory backend target is not trusted")
-    backend = get_backend(cfg)
+    backend_cfg = {**cfg, "timeout": operation_timeout} if operation_timeout is not None else cfg
+    backend = get_backend(backend_cfg)
     try:
         verify_backend_binding(cfg, backend=backend)
         hits = backend.recall(query, max_results=max_results)
+        # Hindsight에는 compare-and-recall transaction/CAS가 없다. 반환 직전 재검증으로
+        # 요청 사이 binding drift가 발생한 결과가 모델 경계로 나가는 것은 막는다.
+        verify_backend_binding(cfg, backend=backend)
         if not isinstance(hits, list) or not all(isinstance(hit, ProjectMemoryHit) for hit in hits):
             raise TypeError("project memory backend recall() must return list[ProjectMemoryHit]")
         return [
@@ -152,13 +182,26 @@ def server_recall(cfg: dict, query: str, max_results: int = 8) -> list[dict]:
 
 
 def server_retain(cfg: dict, content: str) -> dict:
-    return server_retain_items(cfg, [{"content": content}])
+    expected = expected_backend_binding(cfg)
+    return server_retain_items(
+        cfg,
+        [
+            {
+                "content": content,
+                "metadata": {
+                    "project_uid": expected.project_uid,
+                    "binding_id": expected.binding_id,
+                },
+            }
+        ],
+    )
 
 
 def server_retain_items(cfg: dict, items: list[dict]) -> dict:
     """Exact binding을 확인한 뒤 canonical item을 선택 backend에 쓴다."""
     if not is_backend_trusted(cfg):
         raise PermissionError("project memory backend target is not trusted")
+    expected = expected_backend_binding(cfg)
     records = []
     for item in items:
         text = str(item.get("content") or "")
@@ -166,6 +209,19 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
             str(item.get("document_id") or "") or "asgard:legacy:" + hashlib.sha256(text.encode()).hexdigest()[:24]
         )
         metadata = item.get("metadata")
+        if record_id == BINDING_DOCUMENT_ID or record_id.startswith("asgard:project-binding:"):
+            raise ValueError("reserved control document ID is not writable through the data plane")
+        if not isinstance(metadata, dict):
+            raise ValueError("project memory write is missing its ownership envelope")
+        project_uid = str(metadata.get("project_uid") or "")
+        binding_id = str(metadata.get("binding_id") or "")
+        if (
+            not project_uid
+            or not binding_id
+            or not secrets.compare_digest(project_uid, expected.project_uid)
+            or not secrets.compare_digest(binding_id, expected.binding_id)
+        ):
+            raise ValueError("project memory write ownership envelope does not match the active binding")
         tags = item.get("tags")
         records.append(
             ProjectMemoryRecord(
@@ -180,6 +236,9 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
     try:
         verify_backend_binding(cfg, backend=backend)
         result = backend.retain(records)
+        # 쓰기는 서버 측 compare-and-operate가 없어 원자적 보장은 못 하지만, drift를
+        # 성공으로 보고하거나 후속 manifest/approval 상태를 전진시키지는 않는다.
+        verify_backend_binding(cfg, backend=backend)
     finally:
         with contextlib.suppress(Exception):
             backend.close()
@@ -286,6 +345,13 @@ def verify_backend_binding(cfg: dict, *, backend=None) -> ProjectMemoryBinding:
                 adapter.close()
 
 
+def assert_backend_access(cfg: dict) -> ProjectMemoryBinding:
+    """Require both machine-local target trust and the exact remote ownership binding."""
+    if not is_backend_trusted(cfg):
+        raise PermissionError("project memory backend target is not trusted")
+    return verify_backend_binding(cfg)
+
+
 @contextlib.contextmanager
 def _trust_guard():
     """machine-local trust read-modify-write를 프로세스 간 직렬화한다."""
@@ -349,22 +415,84 @@ def trust_backend(cfg: dict) -> str:
 
 
 def _pending_path(root: str) -> str:
-    return os.path.join(root, ".asgard", "state", PENDING_NAME)  # 런타임 상태 — state/ 격리
+    project_key = hashlib.sha256(os.path.realpath(root).encode()).hexdigest()[:24]
+    return os.path.join(os.path.expanduser("~"), ".asgard", "state", f"project-memory-pending-{project_key}.json")
+
+
+def _secure_machine_directory(path: str) -> None:
+    """Create an owner-only machine-local directory without following links."""
+    parent = os.path.dirname(path)
+    if parent and parent != path and not os.path.exists(parent):
+        _secure_machine_directory(parent)
+    is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(path))
+    if os.path.lexists(path) and (os.path.islink(path) or is_junction):
+        raise OSError(f"unsafe machine-local memory state directory: {path}")
+    os.makedirs(path, mode=0o700, exist_ok=True)
+    info = os.stat(path, follow_symlinks=False)
+    if not stat.S_ISDIR(info.st_mode):
+        raise OSError(f"machine-local memory state path is not a directory: {path}")
+    if hasattr(os, "getuid") and info.st_uid != os.getuid():
+        raise OSError(f"machine-local memory state directory has the wrong owner: {path}")
+    _apply_private_acl(path, directory=True)
+
+
+def _apply_private_acl(path: str, *, directory: bool = False) -> None:
+    if os.name != "nt":
+        os.chmod(path, 0o700 if directory else 0o600)
+        return
+    user = os.environ.get("USERNAME", "")
+    if not user:
+        raise OSError("USERNAME is required to secure project-memory approval state")
+    grant = f"{user}:(OI)(CI)F" if directory else f"{user}:F"
+    # /grant:r only replaces ACEs for the named user; it does not remove explicit ACEs for
+    # Everyone or other users. Reset to inherited defaults first, then remove inheritance and
+    # install the sole owner ACE.
+    commands = (
+        ["icacls", path, "/reset"],
+        ["icacls", path, "/inheritance:r", "/grant:r", grant],
+    )
+    for command in commands:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise OSError(f"failed to secure project-memory approval state ACL: {path}")
+
+
+def _validate_private_state_file(fd: int, label: str, path: str | None = None) -> None:
+    info = os.fstat(fd)
+    unsafe_posix_mode = os.name != "nt" and bool(info.st_mode & 0o077)
+    if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or unsafe_posix_mode:
+        raise OSError(f"{label} must be a singly-linked regular 0600 file")
+    if hasattr(os, "getuid") and info.st_uid != os.getuid():
+        raise OSError(f"{label} has the wrong owner")
+    if path is not None:
+        is_junction = bool(getattr(os.path, "isjunction", lambda _path: False)(path))
+        path_info = os.stat(path, follow_symlinks=False)
+        if stat.S_ISLNK(path_info.st_mode) or is_junction:
+            raise OSError(f"{label} must not be a symlink or junction")
+        if (path_info.st_dev, path_info.st_ino) != (info.st_dev, info.st_ino):
+            raise OSError(f"{label} changed while it was opened")
 
 
 @contextlib.contextmanager
 def _pending_guard(root: str):
     """프로세스/스레드 공통 lock — approval JSON의 lost update·double commit 방지."""
     path = _pending_path(root) + ".lock"
-    os.makedirs(os.path.dirname(path), exist_ok=True)
+    _secure_machine_directory(os.path.dirname(path))
     deadline = time.monotonic() + 5
     fd = None
     while fd is None:
         try:
-            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(path, flags, 0o600)
         except FileExistsError:
             try:
-                if time.time() - os.path.getmtime(path) > CLAIM_TTL:
+                if time.time() - os.path.getmtime(path) > PENDING_LOCK_STALE:
                     os.remove(path)
                     continue
             except OSError:
@@ -373,6 +501,7 @@ def _pending_guard(root: str):
                 raise TimeoutError("project memory approval lock timeout")
             time.sleep(0.01)
     try:
+        _validate_private_state_file(fd, "project-memory approval lock", path)
         os.write(fd, str(os.getpid()).encode())
         yield
     finally:
@@ -383,9 +512,29 @@ def _pending_guard(root: str):
 
 def _load_pending_unlocked(root: str) -> dict:
     try:
-        d = json.load(open(_pending_path(root), encoding="utf-8"))
+        _apply_private_acl(_pending_path(root))
+        fd = os.open(_pending_path(root), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            _validate_private_state_file(fd, "project-memory pending approval state", _pending_path(root))
+        except Exception:
+            os.close(fd)
+            raise
+        with os.fdopen(fd, encoding="utf-8") as source:
+            d = json.load(source)
+        if not isinstance(d, dict):
+            return {}
         now = time.time()
-        return {k: v for k, v in d.items() if now - v.get("ts", 0) < PENDING_TTL}
+        live: dict[str, dict] = {}
+        for approval_id, entry in d.items():
+            if not isinstance(approval_id, str) or not isinstance(entry, dict):
+                continue
+            try:
+                issued_at = float(entry.get("issued_at") or entry.get("ts") or 0)
+            except TypeError, ValueError:
+                continue
+            if issued_at > 0 and now - issued_at < PENDING_TTL:
+                live[approval_id] = entry
+        return live
     except Exception:
         return {}
 
@@ -397,20 +546,151 @@ def _load_pending(root: str) -> dict:
 
 def _save_pending_unlocked(root: str, d: dict) -> None:
     p = _pending_path(root)
-    os.makedirs(os.path.dirname(p), exist_ok=True)
+    _secure_machine_directory(os.path.dirname(p))
     tmp = f"{p}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        _validate_private_state_file(fd, "project-memory pending approval temporary state", tmp)
+    except Exception:
+        os.close(fd)
+        raise
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(d, f, ensure_ascii=False)
         f.flush()
         os.fsync(f.fileno())
     os.replace(tmp, p)
-    with contextlib.suppress(OSError):
-        os.chmod(p, 0o600)
+    _apply_private_acl(p)
 
 
 def _save_pending(root: str, d: dict) -> None:
     with _pending_guard(root):
         _save_pending_unlocked(root, d)
+
+
+def _approval_key() -> bytes:
+    """Repo 밖 0600 key. pending JSON을 수정한 repo-local 주체가 승인 payload를 재서명하지 못하게 한다."""
+    directory = os.path.join(os.path.expanduser("~"), ".asgard")
+    _secure_machine_directory(directory)
+    path = os.path.join(directory, "project-memory-approval.key")
+    with _trust_guard():
+        if not os.path.exists(path):
+            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+            fd = os.open(path, flags, 0o600)
+            try:
+                key = secrets.token_bytes(32)
+                os.write(fd, key)
+                os.fsync(fd)
+            finally:
+                os.close(fd)
+        _apply_private_acl(path)
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags)
+        try:
+            _validate_private_state_file(fd, "project-memory approval key", path)
+            key = os.read(fd, 33)
+        finally:
+            os.close(fd)
+    if len(key) != 32:
+        raise OSError("invalid project-memory approval key")
+    return key
+
+
+def _retain_item_mac(
+    approval_id: str,
+    issued_at: float,
+    expires_at: float,
+    item: str | dict,
+    target: dict | None,
+) -> str:
+    payload = json.dumps(
+        {
+            "schema": 4,
+            "approval_id": approval_id,
+            "issued_at": issued_at,
+            "expires_at": expires_at,
+            "item": item,
+            "target": target,
+        },
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
+    return hmac.new(_approval_key(), payload, hashlib.sha256).hexdigest()
+
+
+def _consumed_path(root: str) -> str:
+    project_key = hashlib.sha256(os.path.realpath(root).encode()).hexdigest()[:24]
+    return os.path.join(
+        os.path.expanduser("~"),
+        ".asgard",
+        "state",
+        f"project-memory-approval-consumed-{project_key}.json",
+    )
+
+
+def _approval_scope(root: str, approval_id: str) -> str:
+    project_key = hashlib.sha256(os.path.realpath(root).encode()).hexdigest()[:24]
+    return f"{project_key}:{approval_id}"
+
+
+def _consumed_mac(entries: dict[str, float]) -> str:
+    payload = json.dumps(entries, sort_keys=True, separators=(",", ":")).encode()
+    return hmac.new(_approval_key(), payload, hashlib.sha256).hexdigest()
+
+
+def _load_consumed_unlocked(root: str) -> dict[str, float]:
+    path = _consumed_path(root)
+    if not os.path.exists(path):
+        return {}
+    _apply_private_acl(path)
+    fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+    try:
+        _validate_private_state_file(fd, "project-memory consumed approval state", path)
+        source = os.fdopen(fd, encoding="utf-8")
+        fd = -1
+        with source:
+            data = json.load(source)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+    if not isinstance(data, dict) or data.get("schema") != 1 or not isinstance(data.get("entries"), dict):
+        raise OSError("invalid project-memory consumed approval state")
+    raw_entries: dict[str, float] = {}
+    for key, value in data["entries"].items():
+        try:
+            raw_entries[str(key)] = float(value)
+        except TypeError, ValueError:
+            raise OSError("invalid project-memory consumed approval entry") from None
+    expected = str(data.get("mac") or "")
+    if not expected or not secrets.compare_digest(expected, _consumed_mac(raw_entries)):
+        raise OSError("project-memory consumed approval state authentication failed")
+    now = time.time()
+    return {key: expiry for key, expiry in raw_entries.items() if expiry > now}
+
+
+def _save_consumed_unlocked(root: str, entries: dict[str, float]) -> None:
+    path = _consumed_path(root)
+    _secure_machine_directory(os.path.dirname(path))
+    payload = {"schema": 1, "entries": entries, "mac": _consumed_mac(entries)}
+    tmp = f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(tmp, flags, 0o600)
+    try:
+        _validate_private_state_file(fd, "project-memory consumed approval temporary state", tmp)
+        output = os.fdopen(fd, "w", encoding="utf-8")
+        fd = -1
+        with output:
+            json.dump(payload, output, ensure_ascii=False, sort_keys=True)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(tmp, path)
+        _apply_private_acl(path)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
 
 
 def stage_retain(root: str, item: str | dict, *, target: dict | None = None) -> str:
@@ -421,40 +701,71 @@ def stage_retain(root: str, item: str | dict, *, target: dict | None = None) -> 
         item_hash = hashlib.sha256(
             json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
+        now = time.time()
+        expires_at = now + PENDING_TTL
         if document_id:
             for existing_id, entry in pend.items():
                 existing = entry.get("item")
+                issued = float(entry.get("issued_at") or 0)
+                expires = float(entry.get("expires_at") or 0)
+                expected_mac = str(entry.get("item_mac") or "")
+                actual_mac = _retain_item_mac(existing_id, issued, expires, existing, entry.get("target"))
                 if (
-                    isinstance(existing, dict)
+                    entry.get("schema") == 4
+                    and isinstance(existing, dict)
                     and existing.get("document_id") == document_id
                     and entry.get("item_hash") == item_hash
                     and entry.get("target") == target
+                    and not entry.get("claim")
+                    and expected_mac
+                    and secrets.compare_digest(expected_mac, actual_mac)
                 ):
                     return existing_id
         aid = secrets.token_hex(4)
-        pend[aid] = {"item": item, "item_hash": item_hash, "target": target, "ts": time.time(), "schema": 2}
+        pend[aid] = {
+            "item": item,
+            "item_hash": item_hash,
+            "item_mac": _retain_item_mac(aid, now, expires_at, item, target),
+            "target": target,
+            "ts": now,
+            "issued_at": now,
+            "expires_at": expires_at,
+            "schema": 4,
+        }
         _save_pending_unlocked(root, pend)
     return aid
 
 
-def pop_retain(root: str, aid: str) -> str | dict | None:
-    """승인 id 소비 — 없거나 만료면 None. 소비 후 재사용 불가."""
-    with _pending_guard(root):
-        pend = _load_pending_unlocked(root)
-        item = pend.pop(aid, None)
-        _save_pending_unlocked(root, pend)
-    if not item:
-        return None
-    # 구 pending 파일 호환: 이전 버전은 content 문자열만 저장했다.
-    return item.get("item", item.get("content"))
+def _retain_item_hash(item: str | dict) -> str:
+    return hashlib.sha256(
+        json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
 
 
 def claim_retain(root: str, aid: str, *, target: dict | None = None) -> tuple[str | dict, str] | None:
     """approval을 원격 write 동안 독점 claim한다. 실패 시 같은 ID를 재사용할 수 있다."""
     with _pending_guard(root):
+        if _approval_scope(root, aid) in _load_consumed_unlocked(root):
+            return None
         pend = _load_pending_unlocked(root)
         entry = pend.get(aid)
         if not entry:
+            return None
+        if entry.get("schema") != 4:
+            return None
+        item = entry.get("item", entry.get("content"))
+        expected_hash = str(entry.get("item_hash") or "")
+        actual_hash = _retain_item_hash(item)
+        if not expected_hash or not secrets.compare_digest(expected_hash, actual_hash):
+            return None
+        issued_at = float(entry.get("issued_at") or 0)
+        expires_at = float(entry.get("expires_at") or 0)
+        now = time.time()
+        if not issued_at or expires_at <= issued_at or now >= expires_at:
+            return None
+        expected_mac = str(entry.get("item_mac") or "")
+        actual_mac = _retain_item_mac(aid, issued_at, expires_at, item, entry.get("target"))
+        if not expected_mac or not secrets.compare_digest(expected_mac, actual_mac):
             return None
         expected_target = entry.get("target")
         if target is not None:
@@ -469,14 +780,12 @@ def claim_retain(root: str, aid: str, *, target: dict | None = None) -> tuple[st
                 or not secrets.compare_digest(expected_fingerprint, actual_fingerprint)
             ):
                 return None
-        now = time.time()
-        if entry.get("claim") and now - float(entry.get("claimed_at") or 0) < CLAIM_TTL:
+        if entry.get("claim"):
             return None
         token = secrets.token_hex(8)
         entry["claim"] = token
         entry["claimed_at"] = now
         _save_pending_unlocked(root, pend)
-        item = entry.get("item", entry.get("content"))
         return (item, token) if item is not None else None
 
 
@@ -487,6 +796,9 @@ def finish_retain(root: str, aid: str, token: str, *, success: bool) -> None:
         if not entry or entry.get("claim") != token:
             return
         if success:
+            consumed = _load_consumed_unlocked(root)
+            consumed[_approval_scope(root, aid)] = float(entry.get("expires_at") or time.time() + PENDING_TTL)
+            _save_consumed_unlocked(root, consumed)
             pend.pop(aid, None)
         else:
             entry.pop("claim", None)
@@ -686,16 +998,6 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
 def handle(msg: dict, start_dir: str | None = None) -> dict | None:
     """JSON-RPC 메시지 1건 처리 — 응답 dict 또는 None(notification). 순수 진입점 (테스트 표면)."""
     method, rid = msg.get("method", ""), msg.get("id")
-    found = find_config(start_dir)
-    trusted = bool(found and is_backend_trusted(found[1]))
-    bound = False
-    binding_error = ""
-    if trusted and found:
-        try:
-            verify_backend_binding(found[1])
-            bound = True
-        except Exception as exc:
-            binding_error = str(exc) or type(exc).__name__
     if method == "initialize":
         return {
             "jsonrpc": "2.0",
@@ -710,6 +1012,21 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
         return None
     if method == "ping":
         return {"jsonrpc": "2.0", "id": rid, "result": {}}
+    if method not in ("tools/list", "tools/call"):
+        if rid is not None:
+            return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"method not found: {method}"}}
+        return None
+
+    found = find_config(start_dir)
+    trusted = bool(found and is_backend_trusted(found[1]))
+    bound = False
+    binding_error = ""
+    if trusted and found:
+        try:
+            verify_backend_binding(found[1])
+            bound = True
+        except Exception as exc:
+            binding_error = str(exc) or type(exc).__name__
     if method == "tools/list":
         # 설정이 없거나 machine-local trust가 없는 프로젝트는 툴 미노출.
         return {"jsonrpc": "2.0", "id": rid, "result": {"tools": _TOOLS if bound else []}}
@@ -738,9 +1055,7 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
         params = msg.get("params") or {}
         text, err = _call_tool(str(params.get("name", "")), params.get("arguments") or {}, root, cfg)
         return _text_result(rid, text, err)
-    if rid is not None:  # 미지원 요청 — 표준 오류
-        return {"jsonrpc": "2.0", "id": rid, "error": {"code": -32601, "message": f"method not found: {method}"}}
-    return None  # 모르는 notification 은 무시
+    return None
 
 
 def serve(start_dir: str | None = None) -> int:

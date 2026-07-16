@@ -257,7 +257,18 @@ class TestBackendSelection(unittest.TestCase):
             mock.patch("asgard.memory_bridge.verify_backend_binding"),
         ):
             hits = memory_bridge.server_recall(cfg, "질의", max_results=4)
-            written = memory_bridge.server_retain_items(cfg, [{"content": "결정"}])
+            written = memory_bridge.server_retain_items(
+                cfg,
+                [
+                    {
+                        "content": "결정",
+                        "metadata": {
+                            "project_uid": cfg["project_uid"],
+                            "binding_id": cfg["binding_id"],
+                        },
+                    }
+                ],
+            )
 
         self.assertEqual(hits[0]["document_id"], "id-1")
         self.assertEqual(written, {"backend": "adapter-test", "success": True, "items_count": 1})
@@ -266,6 +277,163 @@ class TestBackendSelection(unittest.TestCase):
         self.assertIsInstance(retain_call[1][0], ProjectMemoryRecord)
         self.assertEqual(retain_call[1][0].text, "결정")
         self.assertEqual([call for call in calls if call[0] == "close"], [("close",), ("close",)])
+
+    def test_recall_operation_timeout_does_not_change_trusted_target(self):
+        captured = []
+
+        class Adapter(FakeBackend):
+            engine = "timeout-override"
+
+            def __init__(self, settings):
+                super().__init__(settings)
+                captured.append(settings.timeout)
+
+        register_backend("timeout-override", Adapter, replace=True)
+        cfg = {
+            "engine": "timeout-override",
+            "project_id": "demo",
+            "timeout": 15,
+            "project_uid": "11111111-1111-4111-8111-111111111111",
+            "binding_id": "22222222-2222-4222-8222-222222222222",
+        }
+        authorized = []
+        with (
+            mock.patch(
+                "asgard.memory_bridge.is_backend_trusted", side_effect=lambda value: authorized.append(value) or True
+            ),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+        ):
+            memory_bridge.server_recall(cfg, "query", operation_timeout=5)
+
+        self.assertEqual(authorized, [cfg])
+        self.assertEqual(captured, [5])
+
+    def test_data_plane_rejects_reserved_binding_document_and_foreign_envelope(self):
+        register_backend("fake", lambda settings: FakeBackend(settings), replace=True)
+        cfg = {
+            "engine": "fake",
+            "project_id": "demo",
+            "project_uid": "11111111-1111-4111-8111-111111111111",
+            "binding_id": "22222222-2222-4222-8222-222222222222",
+        }
+        with mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True):
+            with self.assertRaisesRegex(ValueError, "reserved control document"):
+                memory_bridge.server_retain_items(
+                    cfg,
+                    [
+                        {
+                            "document_id": "asgard:project-binding:v1",
+                            "content": "overwrite",
+                            "metadata": {
+                                "project_uid": cfg["project_uid"],
+                                "binding_id": cfg["binding_id"],
+                            },
+                        }
+                    ],
+                )
+            with self.assertRaisesRegex(ValueError, "ownership envelope"):
+                memory_bridge.server_retain_items(
+                    cfg,
+                    [
+                        {
+                            "document_id": "decision-1",
+                            "content": "foreign",
+                            "metadata": {
+                                "project_uid": "33333333-3333-4333-8333-333333333333",
+                                "binding_id": cfg["binding_id"],
+                            },
+                        }
+                    ],
+                )
+
+    def test_recall_discards_results_if_binding_drifts_during_operation(self):
+        expected = ProjectMemoryBinding(
+            project_uid="11111111-1111-4111-8111-111111111111",
+            binding_id="22222222-2222-4222-8222-222222222222",
+            project_id="demo",
+        )
+
+        class DriftingAdapter(FakeBackend):
+            engine = "drifting"
+
+            def __init__(self, settings):
+                super().__init__(settings)
+                self.reads = 0
+
+            def read_binding(self):
+                self.reads += 1
+                if self.reads == 1:
+                    return expected
+                return ProjectMemoryBinding(
+                    project_uid="33333333-3333-4333-8333-333333333333",
+                    binding_id="44444444-4444-4444-8444-444444444444",
+                    project_id="demo",
+                )
+
+            def recall(self, query, max_results=8):
+                return [ProjectMemoryHit(text="foreign secret", metadata={}, document_id="foreign")]
+
+        register_backend("drifting", DriftingAdapter, replace=True)
+        cfg = {
+            "engine": "drifting",
+            "project_id": "demo",
+            "project_uid": expected.project_uid,
+            "binding_id": expected.binding_id,
+        }
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            self.assertRaisesRegex(PermissionError, "foreign or drifted"),
+        ):
+            memory_bridge.server_recall(cfg, "query")
+
+    def test_retain_reports_failure_if_binding_drifts_during_operation(self):
+        expected = ProjectMemoryBinding(
+            project_uid="11111111-1111-4111-8111-111111111111",
+            binding_id="22222222-2222-4222-8222-222222222222",
+            project_id="demo",
+        )
+
+        class DriftingWriteAdapter(FakeBackend):
+            engine = "drifting-write"
+
+            def __init__(self, settings):
+                super().__init__(settings)
+                self.reads = 0
+
+            def read_binding(self):
+                self.reads += 1
+                if self.reads == 1:
+                    return expected
+                return ProjectMemoryBinding(
+                    project_uid="33333333-3333-4333-8333-333333333333",
+                    binding_id="44444444-4444-4444-8444-444444444444",
+                    project_id="demo",
+                )
+
+        register_backend("drifting-write", DriftingWriteAdapter, replace=True)
+        cfg = {
+            "engine": "drifting-write",
+            "project_id": "demo",
+            "project_uid": expected.project_uid,
+            "binding_id": expected.binding_id,
+        }
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            self.assertRaisesRegex(PermissionError, "foreign or drifted"),
+        ):
+            memory_bridge.server_retain_items(
+                cfg,
+                [
+                    {
+                        "document_id": "decision-1",
+                        "content": "decision",
+                        "metadata": {
+                            "project_uid": expected.project_uid,
+                            "binding_id": expected.binding_id,
+                        },
+                    }
+                ],
+            )
 
     def test_facade_rejects_provider_native_result_shapes(self):
         class NativeShapeBackend(FakeBackend):
@@ -309,7 +477,16 @@ class TestBackendSelection(unittest.TestCase):
         ):
             memory_bridge.server_retain_items(
                 cfg,
-                [{"document_id": "decision-1", "content": "결정"}],
+                [
+                    {
+                        "document_id": "decision-1",
+                        "content": "결정",
+                        "metadata": {
+                            "project_uid": cfg["project_uid"],
+                            "binding_id": cfg["binding_id"],
+                        },
+                    }
+                ],
             )
 
     def test_close_failure_does_not_mask_primary_backend_failure(self):
@@ -427,6 +604,50 @@ class TestBackendSelection(unittest.TestCase):
         self.assertFalse(check["ok"])
         self.assertIn("untrusted", check["detail"])
         get_backend.assert_not_called()
+
+    def test_doctor_checks_memory_without_agents_and_fails_exit_status(self):
+        from asgard.commands import doctor
+
+        with tempfile.TemporaryDirectory() as root:
+            memory_bridge.write_config(root, "http://untrusted.example", "demo")
+            with (
+                mock.patch("asgard.commands.doctor.os.getcwd", return_value=root),
+                mock.patch("asgard.commands.doctor.on_path", return_value="/bin/tool"),
+            ):
+                checks = doctor._trinity_checks(root)
+                result = doctor.run_doctor(quiet=True)
+
+        shared = next(row for row in checks if row["name"] == "shared memory backend")
+        self.assertFalse(shared["ok"])
+        self.assertEqual(result, 1)
+
+    def test_doctor_reports_malformed_present_memory_config(self):
+        from asgard.commands import doctor
+        from asgard.settings import PROJECT_FILE
+
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".asgard"), exist_ok=True)
+            with open(os.path.join(root, ".asgard", PROJECT_FILE), "w", encoding="utf-8") as output:
+                output.write("{not-json")
+            checks = doctor._trinity_checks(root)
+
+        shared = next(row for row in checks if row["name"] == "shared memory backend")
+        self.assertFalse(shared["ok"])
+        self.assertIn("failed closed", shared["detail"])
+
+    def test_doctor_reports_malformed_legacy_memory_config(self):
+        from asgard.commands import doctor
+
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".asgard"), exist_ok=True)
+            path = os.path.join(root, ".asgard", memory_bridge.CONFIG_NAME)
+            with open(path, "w", encoding="utf-8") as output:
+                output.write("{not-json")
+            checks = doctor._trinity_checks(root)
+
+        shared = next(row for row in checks if row["name"] == "shared memory backend")
+        self.assertFalse(shared["ok"])
+        self.assertIn("failed closed", shared["detail"])
 
 
 class TestHindsightBackend(unittest.TestCase):

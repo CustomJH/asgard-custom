@@ -5,6 +5,7 @@ recall 패스스루(오염 필터+경계 무력화) / retain 2단 승인(1회 �
 파괴 툴 비노출 / 서버 불능 fail-open. 가짜 Hindsight = 스레드 http.server.
 """
 
+import hashlib
 import json
 import os
 import shutil
@@ -269,10 +270,17 @@ class TestProtocol(BridgeBase):
         self.assertIn("trusted", text)
 
     def test_initialize_and_ping(self):
-        r = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}})
-        self.assertEqual(r["result"]["serverInfo"]["name"], "asgard-memory")
-        self.assertEqual(r["result"]["protocolVersion"], "2025-06-18")  # 클라이언트 버전 에코
-        self.assertEqual(self.rpc("ping")["result"], {})
+        with mock.patch("asgard.memory_bridge.verify_backend_binding") as verify:
+            r = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}})
+            self.assertIsNotNone(r)
+            assert r is not None
+            self.assertEqual(r["result"]["serverInfo"]["name"], "asgard-memory")
+            self.assertEqual(r["result"]["protocolVersion"], "2025-06-18")  # 클라이언트 버전 에코
+            ping = self.rpc("ping")
+            self.assertIsNotNone(ping)
+            assert ping is not None
+            self.assertEqual(ping["result"], {})
+        verify.assert_not_called()
 
     def test_notifications_silent_and_unknown_method_errors(self):
         self.assertIsNone(mb.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}, self.root))
@@ -377,6 +385,151 @@ class TestRecall(BridgeBase):
 
 
 class TestRetainTwoStep(BridgeBase):
+    def test_consumed_ledgers_are_project_scoped_for_lock_consistency(self):
+        other = os.path.join(self.root, "other-project")
+        os.makedirs(other)
+        self.assertNotEqual(mb._consumed_path(self.root), mb._consumed_path(other))
+
+    def test_consumed_approval_cannot_be_replayed_from_restored_pending_state(self):
+        found = mb.find_config(self.root)
+        assert found is not None
+        cfg = found[1]
+        target = mb.backend_target(cfg)
+        item = {
+            "document_id": "decision-replay",
+            "content": "approved once",
+            "metadata": {"project_uid": cfg["project_uid"], "binding_id": cfg["binding_id"]},
+        }
+        aid = mb.stage_retain(self.root, item, target=target)
+        pending_path = mb._pending_path(self.root)
+        backup = open(pending_path, encoding="utf-8").read()
+        claim = mb.claim_retain(self.root, aid, target=target)
+        assert claim is not None
+        _, token = claim
+        mb.finish_retain(self.root, aid, token, success=True)
+
+        with open(pending_path, "w", encoding="utf-8") as output:
+            output.write(backup)
+        self.assertIsNone(mb.claim_retain(self.root, aid, target=target))
+
+    def test_windows_private_acl_is_fail_closed(self):
+        completed = mock.Mock(returncode=0)
+        with (
+            mock.patch.object(mb.os, "name", "nt"),
+            mock.patch.dict(os.environ, {"USERNAME": "odin"}),
+            mock.patch.object(mb.subprocess, "run", return_value=completed) as run,
+        ):
+            mb._apply_private_acl(r"C:\state", directory=True)
+        self.assertEqual(run.call_count, 2)
+        self.assertIn("/reset", run.call_args_list[0].args[0])
+        args = run.call_args_list[1].args[0]
+        self.assertEqual(args[0], "icacls")
+        self.assertIn("odin:(OI)(CI)F", args)
+
+        with (
+            mock.patch.object(mb.os, "name", "nt"),
+            mock.patch.dict(os.environ, {}, clear=True),
+            self.assertRaises(OSError),
+        ):
+            mb._apply_private_acl(r"C:\state")
+
+    def test_malformed_pending_entry_does_not_hide_valid_approval(self):
+        found = mb.find_config(self.root)
+        assert found is not None
+        cfg = found[1]
+        target = mb.backend_target(cfg)
+        item = {
+            "document_id": "decision-valid",
+            "content": "valid approval",
+            "metadata": {"project_uid": cfg["project_uid"], "binding_id": cfg["binding_id"]},
+        }
+        aid = mb.stage_retain(self.root, item, target=target)
+        path = mb._pending_path(self.root)
+        self.assertFalse(os.path.realpath(path).startswith(os.path.realpath(self.root) + os.sep))
+        with open(path, encoding="utf-8") as source:
+            pending = json.load(source)
+        pending["malformed"] = "not-an-entry"
+        with open(path, "w", encoding="utf-8") as output:
+            json.dump(pending, output)
+
+        claim = mb.claim_retain(self.root, aid, target=target)
+        self.assertIsNotNone(claim)
+
+    def test_claim_rejects_unsigned_legacy_approval(self):
+        found = mb.find_config(self.root)
+        assert found is not None
+        cfg = found[1]
+        target = mb.backend_target(cfg)
+        item = {
+            "document_id": "decision-forged",
+            "content": "forged legacy approval",
+            "metadata": {"project_uid": cfg["project_uid"], "binding_id": cfg["binding_id"]},
+        }
+        aid = mb.stage_retain(self.root, item, target=target)
+        path = mb._pending_path(self.root)
+        with open(path, encoding="utf-8") as source:
+            pending = json.load(source)
+        pending[aid]["schema"] = 2
+        pending[aid].pop("item_mac", None)
+        with open(path, "w", encoding="utf-8") as output:
+            json.dump(pending, output)
+
+        self.assertIsNone(mb.claim_retain(self.root, aid, target=target))
+
+    def test_claim_authenticates_approval_id_and_expiry(self):
+        found = mb.find_config(self.root)
+        assert found is not None
+        cfg = found[1]
+        target = mb.backend_target(cfg)
+        item = {
+            "document_id": "decision-signed",
+            "content": "signed approval",
+            "metadata": {"project_uid": cfg["project_uid"], "binding_id": cfg["binding_id"]},
+        }
+        aid = mb.stage_retain(self.root, item, target=target)
+        path = mb._pending_path(self.root)
+        with open(path, encoding="utf-8") as source:
+            pending = json.load(source)
+        copied_id = "feedface"
+        pending[copied_id] = dict(pending[aid])
+        with open(path, "w", encoding="utf-8") as output:
+            json.dump(pending, output)
+        self.assertIsNone(mb.claim_retain(self.root, copied_id, target=target))
+
+        with open(path, encoding="utf-8") as source:
+            pending = json.load(source)
+        pending[aid]["expires_at"] += 60
+        with open(path, "w", encoding="utf-8") as output:
+            json.dump(pending, output)
+        self.assertIsNone(mb.claim_retain(self.root, aid, target=target))
+
+    def test_claim_rejects_tampered_staged_item(self):
+        found = mb.find_config(self.root)
+        self.assertIsNotNone(found)
+        assert found is not None
+        cfg = found[1]
+        target = mb.backend_target(cfg)
+        item = {
+            "document_id": "decision-safe",
+            "content": "원래 승인 내용",
+            "metadata": {
+                "project_uid": cfg["project_uid"],
+                "binding_id": cfg["binding_id"],
+            },
+        }
+        aid = mb.stage_retain(self.root, item, target=target)
+        pending_path = mb._pending_path(self.root)
+        with open(pending_path, encoding="utf-8") as source:
+            pending = json.load(source)
+        pending[aid]["item"]["document_id"] = "asgard:project-binding:v1"
+        pending[aid]["item_hash"] = hashlib.sha256(
+            json.dumps(pending[aid]["item"], ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        with open(pending_path, "w", encoding="utf-8") as output:
+            json.dump(pending, output)
+
+        self.assertIsNone(mb.claim_retain(self.root, aid, target=target))
+
     def test_approval_is_bound_to_backend_target(self):
         original = {"engine": "hindsight", "endpoint": "http://memory", "project_id": "demo"}
         changed = {"engine": "hindsight", "endpoint": "http://other", "project_id": "demo"}
@@ -433,7 +586,7 @@ class TestRetainTwoStep(BridgeBase):
         aid = text.split("approval_id: ")[1].split("\n")[0]
         pend_path = mb._pending_path(self.root)
         d = json.load(open(pend_path))
-        d[aid]["ts"] -= mb.PENDING_TTL + 10  # 시간 여행 — 만료
+        d[aid]["expires_at"] = time.time() - 1  # 인증된 만료 시각 변조도 거부
         json.dump(d, open(pend_path, "w"))
         _, err2 = self.call("memory_retain_commit", {"approval_id": aid})
         self.assertTrue(err2)

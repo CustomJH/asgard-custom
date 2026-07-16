@@ -1,8 +1,8 @@
 """개인 메모리 — LLM Wiki 패턴 (Karpathy gist 442a6bf5) 의 파일 정본 계층.
 
 원칙 (memory v3, 26-07-15 확정):
-  정본 = ~/.asgard/memory/ 의 md 파일 (사람이 읽고 고칠 수 있는 텍스트 — helios
-  asgard.db 바이너리-in-git 사고의 반성). state.db(FTS5)·index.md 는 pages/ 에서
+  정본 = ~/.asgard/memory/ 의 md 파일 (사람이 읽고 고칠 수 있는 텍스트 —
+  바이너리-in-git 사고의 반성). state.db(FTS5)·index.md 는 pages/ 에서
   기계적으로 재생성되는 파생물 — 지워도(또는 손상돼도) 지식은 죽지 않는다.
 
 구조:  SCHEMA.md(규약) · index.md(카탈로그) · log.md(append-only 운영 로그)
@@ -44,7 +44,7 @@ MEMORY_ENV = "ASGARD_MEMORY_DIR"
 PAGES, INDEX, LOG, SCHEMA, DB = "pages", "index.md", "log.md", "SCHEMA.md", "state.db"
 KINDS = ("note", "user", "decision", "insight", "reference", "feedback")
 DEFAULT_KIND = "note"
-INDEX_BUDGET = 2200  # chars — hermes 검증값(주입면 상한). config [memory].index_budget_chars 로 조정
+INDEX_BUDGET = 2200  # chars — 주입면 상한 검증값. config [memory].index_budget_chars 로 조정
 STALE_DAYS = 90  # lint 부패 후보 기준 — 90일 무갱신 + 사용 0회
 # ingest 병합 문턱 — containment(포함 계수)로 판정: Jaccard 는 길이 차에 취약해 "같은 사실의
 # 패러프레이즈+추가 상세"를 놓친다 (실측 26-07-15: 병합쌍 cont 0.56/0.61 vs 생성쌍 0.00/0.02).
@@ -52,7 +52,7 @@ MERGE_CONTAINMENT = 0.45
 DUP_JACCARD = 0.60  # lint 중복 의심 문턱 — 대칭 비교라 Jaccard 가 맞다
 _SNAPSHOT_WARN = "- … (index over budget — asgard memory lint)"
 
-# 주입 스캔 — hermes threat_patterns "strict" 축약판. 메모리는 프롬프트에 주입되므로
+# 주입 스캔 — 위협 문구 패턴 strict 축약판. 메모리는 프롬프트에 주입되므로
 # 오염 엔트리는 세션 전체·세션 간 지속된다. 걸리면 저장 거부 (사람이 고쳐서 재시도).
 _THREATS = (
     r"ignore\s+(all\s+|any\s+)?(previous|prior|above)\s+(instructions|rules|prompts)",
@@ -101,9 +101,9 @@ def inject_enabled() -> bool:
         return True
 
 
-def inject_allowed(provider: str | None = None) -> bool:
+def inject_allowed(provider: str | None = None, provider_source: str | None = None) -> bool:
     """provider별 전송 게이트 — 킬스위치 + `memory.providers` allowlist (배선 단계).
-    allowlist 부재/빈 리스트 = 전 provider 허용 (개인 도구 기본값), 설정 시 등재만 허용.
+    allowlist 부재/빈 리스트 = 사용자 선택 provider 는 허용하되 프로젝트 선택 provider 는 거부.
     개인 메모리가 임의 원격 모델로 새는 표면을 사용자가 직접 통제한다 (독립 리뷰 지적)."""
     if not inject_enabled():
         return False
@@ -115,7 +115,7 @@ def inject_allowed(provider: str | None = None) -> bool:
             return provider in [str(a).strip() for a in allow]
     except Exception:
         pass
-    return True
+    return provider_source != ".asgard/asgard-setting-project.json"
 
 
 def scan_threats(*texts: str | None) -> str | None:
@@ -874,6 +874,21 @@ def merge(src: str, dst: str, d: str | None = None) -> str:
 
 # ── lint — 위키 건강 점검 (Karpathy lint = 부패 방지의 기계화) ───────────────────────
 
+# user 메모리 명령문 탐지 — 명확한 지시 어휘 결합에만 앵커 (false positive 회피).
+_IMPERATIVE_PATTERNS = (
+    re.compile(r"(항상|반드시|무조건|절대)\s+\S[^\n]*?(하라|해라|할 것|하세요|하지 ?마|해야 한다|금지)"),
+    re.compile(r"^\s*(always|never|must|do not|don't)\b", re.IGNORECASE | re.MULTILINE),
+)
+
+
+def _imperative_phrase(body: str) -> str:
+    """user 페이지의 명령문 탐지 — 매치 구절(절단)을 반환, 없으면 빈 문자열."""
+    for pattern in _IMPERATIVE_PATTERNS:
+        m = pattern.search(body)
+        if m:
+            return m.group(0)[:40]
+    return ""
+
 
 def lint(d: str | None = None) -> list[dict]:
     """기계 판정만 — 모순 탐지 같은 의미 판단은 LLM 몫(후속). 반환 = findings."""
@@ -918,6 +933,19 @@ def lint(d: str | None = None) -> list[dict]:
         threat = poisoned(meta, body)
         if threat:
             findings.append({"level": "error", "code": "threat", "slug": slug, "msg": threat})
+        # user 메모리는 선언문이어야 한다 — 명령문은 미래 세션에서 지시로 재해석되어
+        # 사용자의 현재 요청을 덮어쓸 수 있다 ("사용자는 X를 선호한다" ✓ / "항상 X하라" ✗)
+        if _kind(meta) == "user":
+            imperative = _imperative_phrase(body)
+            if imperative:
+                findings.append(
+                    {
+                        "level": "warn",
+                        "code": "imperative-user-memory",
+                        "slug": slug,
+                        "msg": f"명령문 감지({imperative}) — 선언문으로 바꾸세요 ('사용자는 …를 선호한다')",
+                    }
+                )
         try:
             updated = _dt.date.fromisoformat(meta.get("updated", meta.get("created", "")))
             uses = usage.get(slug, (0, None))[0]
@@ -952,7 +980,7 @@ def lint(d: str | None = None) -> list[dict]:
     return findings
 
 
-# ── 동결 스냅샷 주입 (hermes frozen snapshot) — Heimdall 세션 생성 시 1회 ─────────────
+# ── 동결 스냅샷 주입 — Heimdall 세션 생성 시 1회 ─────────────
 
 
 def _neutralize(s: str) -> str:
@@ -1055,6 +1083,10 @@ def distill_nudge(request: str, response: str, root: str) -> str:
     경로 토큰만 후보가 된다 (모델 응답을 명령 제안으로 렌더링하는 표면의 인젝션 차단).
     숏컷 벤치(26-07-16) 근거 — 위치 지식이 recall 이득(토큰 -67%)의 최대 원천."""
     try:
+        # 킬스위치는 여기서 라이브로 본다 — 호출측 플래그는 세션 생성 시점 캐시라
+        # 세션 도중 ASGARD_MEMORY_INJECT=off 를 반영하지 못한다.
+        if not inject_enabled():
+            return ""
         req = re.sub(r"\s+", " ", (request or "")).strip().replace('"', "'")
         if not req or not response or scan_threats(req):
             return ""

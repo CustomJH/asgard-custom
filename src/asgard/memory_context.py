@@ -73,8 +73,8 @@ def _deterministic_projection_is_current(root: str, metadata: dict) -> bool:
 def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None = None) -> bool:
     """자동 주입은 active·verified 지식과 source artifact만 허용한다.
 
-    provenance를 증명하지 못하는 legacy item은 명시 검색에는 남겨도 ambient context에는
-    넣지 않는다. 자동 주입 trust boundary는 fail-closed다.
+    provenance를 증명하지 못하는 legacy item은 ambient 및 explicit MCP context에 넣지 않는다.
+    두 경로가 공유하는 trust boundary는 fail-closed다.
     """
     if metadata.get("scope") != "project" or metadata.get("status") != "active":
         return False
@@ -113,6 +113,10 @@ def filter_project_hits(
         text = str(hit.get("text") or "").strip()
         raw_metadata = hit.get("metadata")
         metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
+        document_id = str(hit.get("document_id") or "")
+        if document_id.startswith("asgard:project-binding:"):
+            dropped += 1
+            continue
         if not text or memory.scan_threats(text) or not _eligible_for_automatic_context(root, metadata, cfg):
             dropped += 1
             continue
@@ -132,10 +136,10 @@ def project_recall_note(query: str, *, start: str | None = None, max_results: in
         if not is_backend_trusted(cfg):
             return ""
         # 턴 시작 자동 주입은 원격 장애로 대화를 붙잡지 않는다. 명시 MCP 조회의 긴 timeout과 분리.
-        recall_cfg = {**cfg, "timeout": min(int(cfg.get("timeout") or 5), 5)}
+        operation_timeout = min(int(cfg.get("timeout") or 5), 5)
         # raw source artifact가 긴 코드 조각으로 budget을 선점하지 않도록, 더 넓게 검색한 뒤
         # 승인된 구조화 record를 먼저 배치한다. 각 그룹 내부 backend 순위는 유지한다.
-        hits = server_recall(recall_cfg, query, max_results=max(8, max_results * 2))
+        hits = server_recall(cfg, query, max_results=max(8, max_results * 2), operation_timeout=operation_timeout)
         hits = sorted(
             enumerate(hits),
             key=lambda pair: (
