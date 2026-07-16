@@ -1,4 +1,4 @@
-"""풀스크린 TUI 뼈대 (CUS-148) — textual. opencode/hermes 급 레이아웃.
+"""풀스크린 TUI 뼈대 — textual. opencode/hermes 급 레이아웃.
 
 readline REPL(repl.py)의 한계(단일라인, 박스 입력창 불가)를 넘는다. 레이아웃:
   배너(로고) · 메시지 영역(RichLog, 스크롤) · 입력박스(하단) · 상태바(provider·model).
@@ -120,7 +120,7 @@ class AsgardTUI(App):
             out = self.heimdall.handle(req)
             if out:
                 self.call_from_thread(self._append, "\n" + out)
-            # 턴 요약 — opencode 참조 (CUS-154)
+            # 턴 요약 — opencode 참조
             self.call_from_thread(self._append, f"[dim]⬢ done · {self.rp.model} · {time.monotonic() - t0:.1f}s[/dim]")
         except Exception as e:
             self.call_from_thread(self._append, f"[red]⚠ {t('session_error', e=e)}[/red]")
@@ -192,10 +192,40 @@ class AsgardTUI(App):
                 log.write(f"[{_O}]{k}[/{_O}]  [dim]{v}[/dim]")
         elif c == "/provider" and req.split()[1:2] == ["set"]:
             self._onboard()
-        elif c in ("/provider", "/model"):
+        elif c == "/provider":
             log.write(
                 f"[{_O}]{self.rp.profile.display}[/{_O}] · {self.rp.model} [dim]({self.rp.key_source or self.rp.source})[/dim]"
             )
+        elif c == "/model":
+            from .onboard import select_model
+
+            with self.suspend():
+                new = select_model(self.root, self.rp)
+            if new is not None:
+                self.rp = new
+                self.heimdall = _repl._new_heimdall(self.root, self.rp, self._emit)
+                self._set_status(False)
+                log.write(f"[{_O}]✔[/{_O}] {new.profile.display} · {new.model} {t('connected')}")
+        elif c == "/trinity":
+            if req.split()[1:2] == ["set"]:
+                changed = None
+                with self.suspend():
+                    try:
+                        _repl._cmd_trinity(req, self.root, self.rp)
+                    except _repl._Reconfigure as signal:
+                        changed = signal
+                if changed is not None:
+                    self.rp = changed.rp
+                    self.heimdall = _repl._new_heimdall(self.root, self.rp, self._emit)
+                    self._set_status(False)
+                    log.write(f"[{_O}]✔[/{_O}] {changed.msg or t('placement_saved')}")
+            else:
+                from ..providers import resolve_trinity
+
+                for role, placed in resolve_trinity(self.root, self.rp).items():
+                    tag = f" [dim]{t('default_tag')}[/dim]" if placed is self.rp else ""
+                    warning = f" [yellow]⚠ {'; '.join(placed.missing)}[/yellow]" if placed.missing else ""
+                    log.write(f"[{_O}]{role.ljust(9)}[/{_O}] {placed.profile.name}:{placed.model}{tag}{warning}")
         elif c == "/update":
             from ..commands.update import run_update
 

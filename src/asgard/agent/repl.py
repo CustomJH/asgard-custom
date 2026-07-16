@@ -1,4 +1,4 @@
-"""네이티브 REPL 렌더 (CUS-138) — 브랜드 로고 + 간결 UX.
+"""네이티브 REPL 렌더 — 브랜드 로고 + 간결 UX.
 
 4개 레퍼런스의 장점만 섞는다:
   Claude Code — 세션 헤더(provider·model), 슬래시 커맨드, tool-use 축약 한 줄
@@ -117,7 +117,8 @@ def banner(rp) -> None:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
 
     # hermes 스타일 — welcome + tip + 구분선 rule (모델·경로·git 은 하단 status line 으로)
-    rule = ui.paint(_O, "─" * min(width - 4, 60))
+    # rule 은 HAIRLINE — 금은 로고·✦·입력 캐럿(좌측 스파인)에만, 프레임 선은 전부 한 하드라인 색
+    rule = ui.paint(theme.ansi(theme.HAIRLINE), "─" * min(width - 4, 60))
     sys.stdout.write(
         f"\n  {ui.bold(t('welcome'))} {ui.dim(t('welcome_hint'))}\n  {ui.paint(_O, '✦')} {ui.dim(t('tip'))}\n  {rule}\n"
     )
@@ -140,43 +141,82 @@ def _git_status(root: str) -> str:
         return ""
 
 
-def _status_text(root: str, rp, usage: dict | None = None) -> str:
-    """상태줄 순수 텍스트 — 모델 · 디렉토리 · git · 사용량 (색은 호출부 몫)."""
+# 상태줄 — gajae-code 세그먼트 모델 차용. 오딘 선택(26-07-16): 좌측 골드 브랜드칩 + 세그먼트별
+# 아이콘·고유색(모델◆금·경로⌂청·git 녹/호박·lagom❄시안·메트릭 흐림). 색이 분절을 담당하므로
+# 구분자는 여백만. 폭 주의: statusline 은 단일 좌측 플로우라 폭 변동이 정렬을 깨지 않으며, 이모지
+# 프리젠테이션 가능 글리프(❄)만 VS15(U+FE0E)로 텍스트 렌더 강제(색 ANSI 유지·너비 안정).
+_BRAND_CHIP = "⠶ ASGARD"  # 좌측 골드 브랜드칩 — readline 폴백 statusline 의 Asgard 시그니처
+_STATUS_SEP = "   "  # 세그먼트 간 여백 — 색이 분절을 담당 (구분자 글리프 없음)
+_ICON_LAGOM = "❄︎"  # ❄ + VS15 = 텍스트 프리젠테이션 강제 (색 이모지 렌더 방지)
+
+# 입력 박스 프레임 (프레이야 명세 26-07-16) — 라운드 코너 U+2500(폭 안정). 라운드=라이브 입력,
+# 향후 출력 블록은 샤프 ┌┐└┘ 로 시각 문법 분리. 상·하단 코너는 정적 라인이라 완전 폐합 안전,
+# 입력 줄 좌측 │ 스파인만 두고 우측은 개방(라이브 편집·wrap 로 깨지는 유일한 면 — rprompt 힌트가 채움).
+_BOX = {"tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "h": "─", "v": "│"}
+_BOX_CAP = "⠶ asgard"  # 상단 프레임 골드 브랜드 캡 — pt 경로 시그니처 (gajae 식 top-border 라벨)
+
+
+def _abbrev_path(cwd: str, limit: int = 28) -> str:
+    """긴 경로는 leaf 디렉토리만 남기고 축약 — ⠶·모델·git 을 밀어내지 않게 (프레이야 절단 우선순위).
+    `~/a/b/c/repo` → `~/…/repo`. leaf 자체가 길면 뒤에서 자른다."""
+    if len(cwd) <= limit:
+        return cwd
+    leaf = cwd.rstrip("/").split("/")[-1] or cwd
+    prefix = "~/…/" if cwd.startswith("~") else "…/"
+    if len(prefix) + len(leaf) <= limit:
+        return prefix + leaf
+    return prefix + leaf[-(limit - len(prefix)) :]
+
+
+def _status_segments(root: str, rp, usage: dict | None = None) -> list[tuple[str, str, bool]]:
+    """상태줄 세그먼트 목록 — (아이콘+텍스트, hex 색, bold). 색 렌더(readline vs pt)는 호출부 몫.
+    브랜드칩(⠶ ASGARD)은 호출부가 앞에 붙인다 — 여기선 모델부터."""
     import os
 
     home = os.path.expanduser("~")
-    cwd = root.replace(home, "~", 1) if root.startswith(home) else root
-    if rp.missing:  # 키/설정 미충족 = 미연결 — 모델명 대신 명확한 안내
-        return f"⚠ {t('not_connected')}   ⌂ {cwd}"
-    parts = [f"◆ {rp.model}", f"⌂ {cwd}"]
-    try:  # Lagom 모드 (CUS-215) — off 는 흔적 없음
+    cwd = _abbrev_path(root.replace(home, "~", 1) if root.startswith(home) else root)
+    if rp.missing:  # 키/설정 미충족 = 미연결 — 색+`!`+단어 이중 인코딩
+        return [("! " + t("not_connected"), theme.WARNING, False), (f"⌂ {cwd}", theme.ACCENT_BLUE, False)]
+    segs = [(f"◆ {rp.model}", theme.PRIMARY, False), (f"⌂ {cwd}", theme.ACCENT_BLUE, False)]  # 모델=금·경로=청
+    br = _git_status(root)
+    if br:  # git 라이브 색 — clean 룬 녹색, dirty 호박(접미 `*` 로 색맹에도 구분)
+        segs.append((br, theme.SUCCESS if not br.endswith("*") else theme.WARNING, False))
+    try:  # Lagom 모드 — off 는 흔적 없음 (bifrost 시안 ❄)
         from ..lagom import current_mode
 
         lm = current_mode(root)
         if lm != "off":
-            parts.append(f"❄ lagom:{lm}")
+            segs.append((f"{_ICON_LAGOM} lagom:{lm}", theme.ACCENT_CYAN, False))
     except Exception:
         pass
-    br = _git_status(root)
-    if br:
-        parts.append(f"⎇ {br}")
     if usage and usage.get("tokens"):
         tok = usage["tokens"]  # 누적 지출 (iteration 마다 전체 프롬프트 재합산 — 창 % 기준으론 부적합)
-        win = rp.profile.context_window
+        win = rp.context_window or rp.profile.context_window  # config override 우선 (CUS-248)
         ctx = usage.get("context") or 0  # 마지막 호출 컨텍스트 크기 — 창 % 는 이걸로
-        pct = f" ({ctx / win * 100:.0f}%)" if win and ctx else ""  # 한도/컨텍스트 미상은 % 생략
-        parts.append(f"↯ {tok / 1000:.1f}k{pct}")
+        metric = f"{tok / 1000:.1f}k"
+        if win and ctx:  # 세그먼트 내부는 미들닷 하위결합 (세그먼트 간 여백과 2단 구두점)
+            metric += f"·{ctx / win * 100:.0f}%"
+        segs.append((metric, theme.SUBTEXT, False))
         if usage.get("cache_prompt"):  # 프롬프트 캐시 적중률 — read / (read+write+정가 입력)
-            parts.append(f"⚡ {usage.get('cache_read', 0) / usage['cache_prompt'] * 100:.0f}%")
-    return "  ".join(parts)
+            segs.append(
+                (f"cache {usage.get('cache_read', 0) / usage['cache_prompt'] * 100:.0f}%", theme.SUBTEXT, False)
+            )
+    return segs
+
+
+def _paint_seg(txt: str, hx: str, bold: bool) -> str:
+    s = ui.paint(theme.ansi(hx), txt)
+    return ui.bold(s) if bold else s
 
 
 def statusline(root: str, rp, usage: dict | None = None) -> str:
-    """claude-code 식 상태줄 (readline 폴백 경로 — pt 는 bottom_toolbar 로 표시)."""
-    txt = _status_text(root, rp, usage)
-    if rp.missing:
-        return "  " + ui.paint(theme.ansi(theme.WARNING), txt)
-    return "  " + ui.dim(txt)
+    """상태줄 (readline 폴백 경로 — pt 는 bottom_toolbar 로 표시). 골드 브랜드칩 + 컬러 아이콘 세그먼트."""
+    segs = _status_segments(root, rp, usage)
+    if not ui._COLOR:  # 무색 터미널 — 텍스트만
+        return "  " + _STATUS_SEP.join([_BRAND_CHIP, *[txt for txt, _, _ in segs]])
+    chip = ui.bold(ui.paint(theme.ansi(theme.PRIMARY), _BRAND_CHIP))
+    body = _STATUS_SEP.join(_paint_seg(txt, hx, b) for txt, hx, b in segs)
+    return f"  {chip}{_STATUS_SEP}{body}"
 
 
 _HELP_KEYS = {
@@ -239,9 +279,27 @@ def _term_width() -> int:
     return max(20, shutil.get_terminal_size((80, 20)).columns)
 
 
+def _box_top(width: int) -> list[tuple[str, str]]:
+    """상단 보더 프래그 — ╭─ ⠶ asgard ───╮ (좁으면 캡 드롭). 좌 들여쓰기 2·우 여백 2로 하단과 정렬.
+    프레임폭(╭→╮) = width-4. 캡 포함: ╭(1)+'─ '(2)+캡(len)+' '(1)+채움+╮(1)."""
+    fill = width - 4 - (1 + 2 + len(_BOX_CAP) + 1 + 1)  # = width - 9 - len(cap)
+    if fill < 4:  # 좁은 터미널 — 캡 드롭, 코너만
+        dashes = max(0, width - 6)
+        return [("class:rule", "  " + _BOX["tl"] + _BOX["h"] * dashes + _BOX["tr"] + "\n")]
+    return [
+        ("class:rule", "  " + _BOX["tl"] + _BOX["h"] + " "),  # "  ╭─ "
+        ("class:cap", _BOX_CAP),  # 골드 브랜드 캡
+        ("class:rule", " " + _BOX["h"] * fill + _BOX["tr"] + "\n"),  # " ───╮"
+    ]
+
+
 def _pt_message():
-    """입력 영역 상단 rule + 골드 화살표 (cursor-agent 식 입력박스 프레임)."""
-    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"), ("class:arrow", "  → ")]
+    """입력 영역 — 상단 박스 보더(브랜드 캡) + 좌측 │ 스파인 + 골드 캐럿."""
+    return [
+        *_box_top(_term_width()),
+        ("class:rule", "  " + _BOX["v"] + " "),  # 입력 줄 좌측 스파인 "  │ "
+        ("class:arrow", "› "),
+    ]
 
 
 def _pt_toolbar():
@@ -260,9 +318,15 @@ def _pt_toolbar():
         if hd
         else None
     )
-    txt = _status_text(ctx["root"], ctx["rp"], usage)
-    cls = "class:status-warn" if ctx["rp"].missing else "class:status"
-    return [("class:rule", " " + "─" * (_term_width() - 2) + "\n"), (cls, "  " + txt)]
+    w = _term_width()
+    bottom = "  " + _BOX["bl"] + _BOX["h"] * max(0, w - 6) + _BOX["br"] + "\n"  # 하단 보더 ╰───╯
+    frags: list[tuple[str, str]] = [("class:rule", bottom), ("", "  ")]  # 상태줄은 박스 밖(아래), 들여쓰기 2
+    # 브랜드칩은 상단 캡(⠶ asgard)이 담당 — pt 경로 시그니처 1개. 상태줄은 model 부터 (상태 전용)
+    for i, (txt, hx, bold) in enumerate(_status_segments(ctx["root"], ctx["rp"], usage)):
+        if i:
+            frags.append(("", _STATUS_SEP))  # 여백 구분자 (색이 분절)
+        frags.append((f"fg:{hx} bold" if bold else f"fg:{hx}", txt))
+    return frags
 
 
 def _history_path() -> str:
@@ -296,11 +360,10 @@ def _pt_session():
     style = Style.from_dict(
         {
             "arrow": f"{theme.PRIMARY} bold",
-            "rule": theme.SECONDARY,
+            "cap": f"{theme.PRIMARY} bold",  # 상단 박스 프레임 골드 브랜드 캡 (⠶ asgard)
+            "rule": theme.HAIRLINE,  # 입력·박스 프레임 룰 — 배너 rule 과 한 하드라인 색
             "placeholder": theme.SUBTEXT,
             "hint": theme.SUBTEXT,
-            "status": theme.SUBTEXT,
-            "status-warn": theme.WARNING,
             "bottom-toolbar": "noreverse",
             "completion-menu": f"bg:{theme.SURFACE} {theme.TEXT}",
             "completion-menu.completion.current": f"bg:{theme.PRIMARY} {theme.BACKGROUND}",
@@ -406,7 +469,17 @@ def _cmd_trinity(cmd: str, root: str, rp) -> None:
             name = names[idx - 1]
             p = PROVIDERS[name]
             vals: dict = {"provider": name}
-            model = input(f"  model [{p.default_model or '?'}]: ").strip() or p.default_model
+            if p.fallback_models:
+                from ..providers import resolve
+                from .onboard import _pick_model
+
+                selected = _pick_model(resolve(root, provider=name))
+                if not selected:
+                    sys.stdout.write(f"  {t('cancelled')}\n")
+                    return
+                model = selected
+            else:
+                model = input(f"  model [{p.default_model or '?'}]: ").strip() or p.default_model
             if model:
                 vals["model"] = model
             if p.api_mode == "openai_compat" and not p.base_url:
@@ -448,18 +521,24 @@ def _cmd_bridge(cmd: str, root: str) -> None:
 
 
 def _cmd_lagom(cmd: str, root: str, rp) -> None:
-    """/lagom — 모드 표시. '/lagom <mode>' 세션 전환, '/lagom default <mode>' 영속 (CUS-209/215).
+    """/lagom — 모드 표시. '/lagom <mode>' 세션 전환, '/lagom default <mode>' 영속.
     전환은 _Reconfigure 로 Heimdall 을 재생성한다 — 역할 프롬프트의 lagom 렌더가 새 모드로 갱신."""
-    from ..lagom import clear_state, current_mode, normalize, read_state, write_state
+    from ..lagom import MODES, clear_state, current_mode, normalize, read_state, write_state
 
     args = cmd.split()[1:]
     if not args:
         cur, st = current_mode(root), read_state(root)
         tag = t("lagom_session") if st else t("lagom_default")
         sys.stdout.write(f"  {ui.paint(_O, 'lagom'.ljust(9))} {cur} {ui.dim('(' + tag + ')')}\n")
+        for line in t("lagom_what").split("\n"):  # 라곰이 뭔지 — 한 번에 이해되게
+            sys.stdout.write(f"  {' ' * 9} {ui.dim(line)}\n")
+        for m in MODES:  # off·lite·full 각 모드가 뭘 하는지, 현재 모드는 표식
+            mark = ui.paint(ui._OK, "▸") if m == cur else " "
+            name = ui.paint(_O, m.ljust(6)) if m == cur else ui.dim(m.ljust(6))
+            sys.stdout.write(f"  {mark} {name} {ui.dim(t('lagom_mode_' + m))}\n")
         sys.stdout.write(f"  {ui.dim(t('lagom_usage'))}\n")
         return
-    if args[0] == "stats":  # CUS-216 — 로컬 집계만, 무텔레메트리. honest numbers: 합산 지출이지 output 단독 아님
+    if args[0] == "stats":  # 로컬 집계만, 무텔레메트리. honest numbers: 합산 지출이지 output 단독 아님
         hd = _PT_CTX.get("heimdall")
         cur = current_mode(root)
         tok = f"{hd.total_tokens / 1000:.1f}k" if hd and hd.total_tokens else "0"
@@ -510,8 +589,8 @@ def slash(cmd: str, root: str, rp) -> bool:
     elif c == "/clear":
         sys.stdout.write("\033[2J\033[H")
         banner(rp)
-    elif c in ("/provider", "/model"):
-        if c == "/provider" and cmd.split()[1:2] == ["set"]:
+    elif c == "/provider":
+        if cmd.split()[1:2] == ["set"]:
             from .onboard import can_prompt, onboard
 
             if can_prompt():
@@ -521,6 +600,15 @@ def slash(cmd: str, root: str, rp) -> bool:
             return True
         src = rp.key_source or rp.source
         sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model} {ui.dim('(' + src + ')')}\n")
+    elif c == "/model":
+        from .onboard import can_prompt, select_model
+
+        if can_prompt():
+            new = select_model(root, rp)
+            if new is not None:
+                raise _Reconfigure(new)
+        else:
+            sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model}\n")
     elif c == "/trinity":
         _cmd_trinity(cmd, root, rp)
     elif c == "/bridge":
@@ -718,7 +806,7 @@ def run(root: str, rp) -> int:
             render.finish()
             if out:
                 sys.stdout.write(f"\n{out}\n")
-            # 턴 요약 — opencode '■ Build · model · 7.0s' 참조 (CUS-154)
+            # 턴 요약 — opencode '■ Build · model · 7.0s' 참조
             sys.stdout.write(f"\n  {ui.dim(f'⬢ done · {rp.model} · {_time.monotonic() - t0:.1f}s')}\n")
         except KeyboardInterrupt:
             sys.stdout.write(f"\n  {ui.dim(t('turn_kept'))}\n")

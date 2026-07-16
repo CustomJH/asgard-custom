@@ -14,6 +14,7 @@ BACKGROUND = "#090B12"  # 우주
 SURFACE = "#151D38"  # 궁전 석재
 TEXT = "#F7F5EF"
 SUBTEXT = "#C8C5BD"
+HAIRLINE = "#3E4B66"  # 프레임 하드라인 — 룰(─)·상태줄 구분자(│) 공용. 배경 위로 물러나되 선으로는 읽힌다
 
 ACCENT_BLUE = "#5FA8D3"  # 정보·진행 (phase 태그·스피너·화살표)
 ACCENT_CYAN = "#5DE7FF"  # 포커스·하이라이트 (bifrost)
