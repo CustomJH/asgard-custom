@@ -135,7 +135,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.assertEqual(candidate.content_hash, hashlib.sha256(raw).hexdigest())
 
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
             project_memory.sync_artifacts(self.root, cfg, candidates, source_revision="HEAD=crlf")
         metadata = {
             "source": path,
@@ -145,7 +145,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
 
     def test_noop_sync_still_verifies_backend_access(self):
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.assert_backend_access") as verify:
+        with mock.patch("asgard.project_memory.projection.assert_backend_access") as verify:
             result = project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=noop")
         self.assertTrue(result["success"])
         verify.assert_called_once_with(cfg)
@@ -284,7 +284,9 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("README.md", "# Project\nImportant architecture.\n")
         candidate = project_memory.scan_project(self.root, changed_paths=[])[0]
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
             result = project_memory.sync_artifacts(self.root, cfg, [candidate], source_revision="rev1")
         self.assertTrue(result["success"])
         sent_cfg, sent_items = retain.call_args.args
@@ -340,8 +342,10 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         cfg = {"server": "http://memory", "bank": "demo"}
         current = project_memory.scan_project(self.root, changed_paths=[])
         with (
-            mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain,
-            mock.patch("asgard.project_memory.assert_backend_access"),
+            mock.patch(
+                "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+            ) as retain,
+            mock.patch("asgard.project_memory.projection.assert_backend_access"),
         ):
             first = project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=one")
             second = project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=one")
@@ -352,7 +356,9 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         old_document_id = manifest["items"]["docs/architecture.md"]["document_id"]
 
         os.remove(os.path.join(self.root, "docs/architecture.md"))
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain_deleted:
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain_deleted:
             deleted = project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two")
         self.assertEqual(deleted["deleted_count"], 1)
         tombstone = retain_deleted.call_args.args[1][0]
@@ -366,7 +372,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         hindsight = {"engine": "hindsight", "endpoint": "http://memory", "project_id": "demo"}
         redisvl = {"engine": "redisvl", "endpoint": "redis://memory", "project_id": "demo"}
 
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
             first = project_memory.sync_artifacts(self.root, hindsight, candidates, source_revision="HEAD=one")
             switched = project_memory.sync_artifacts(self.root, redisvl, candidates, source_revision="HEAD=two")
 
@@ -382,11 +388,13 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("docs/old-name.md", content)
         cfg = {"server": "http://memory", "bank": "demo"}
         old = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
             project_memory.sync_artifacts(self.root, cfg, old, source_revision="HEAD=one")
         os.rename(os.path.join(self.root, "docs/old-name.md"), os.path.join(self.root, "docs/new-name.md"))
         new = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
             result = project_memory.sync_artifacts(self.root, cfg, new, source_revision="HEAD=two")
         self.assertEqual(result["renamed_count"], 1)
         items = retain.call_args.args[1]
@@ -399,12 +407,14 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("docs/old-b.md", content)
         cfg = {"server": "http://memory", "bank": "demo"}
         old = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
             project_memory.sync_artifacts(self.root, cfg, old, source_revision="HEAD=one")
         os.remove(os.path.join(self.root, "docs/old-a.md"))
         os.rename(os.path.join(self.root, "docs/old-b.md"), os.path.join(self.root, "docs/new.md"))
         new = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
             result = project_memory.sync_artifacts(self.root, cfg, new, source_revision="HEAD=two")
         self.assertEqual(result["renamed_count"], 0)
         tombstones = [item for item in retain.call_args.args[1] if item["metadata"].get("status") == "deleted"]
@@ -417,7 +427,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
             output.write("{not-json")
         cfg = {"server": "http://memory", "bank": "demo"}
         with (
-            mock.patch("asgard.project_memory.server_retain_items") as retain,
+            mock.patch("asgard.project_memory.projection.server_retain_items") as retain,
             self.assertRaisesRegex(ValueError, "manifest is corrupt"),
         ):
             project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two")
@@ -427,7 +437,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("docs/architecture.md", "# Architecture\nBound projection.\n")
         cfg = {"server": "http://memory", "bank": "demo"}
         current = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
             project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=one")
 
         path = project_memory._projection_manifest_path(self.root)
@@ -439,7 +449,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         os.remove(os.path.join(self.root, "docs/architecture.md"))
 
         with (
-            mock.patch("asgard.project_memory.server_retain_items") as retain,
+            mock.patch("asgard.project_memory.projection.server_retain_items") as retain,
             self.assertRaisesRegex(ValueError, "manifest is corrupt"),
         ):
             project_memory.sync_artifacts(self.root, cfg, [], source_revision="HEAD=two")
@@ -471,8 +481,8 @@ class TestArtifactDiscovery(ProjectMemoryBase):
             stale = time.time() - project_memory.PROJECTION_LOCK_TTL - 10
             os.utime(lock, (stale, stale))
             with (
-                mock.patch("asgard.project_memory.time.monotonic", side_effect=[0, 6]),
-                mock.patch("asgard.project_memory.time.sleep"),
+                mock.patch("asgard.project_memory.projection.time.monotonic", side_effect=[0, 6]),
+                mock.patch("asgard.project_memory.projection.time.sleep"),
                 self.assertRaisesRegex(TimeoutError, "projection lock timeout"),
             ):
                 with project_memory._projection_guard(self.root):
@@ -531,8 +541,8 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         }
         real_open = os.open
         with (
-            mock.patch.object(project_memory.os, "name", "nt"),
-            mock.patch.object(project_memory.os, "open", wraps=real_open) as opened,
+            mock.patch.object(project_memory.projection.os, "name", "nt"),
+            mock.patch.object(project_memory.projection.os, "open", wraps=real_open) as opened,
         ):
             project_memory._save_projection_manifest(self.root, payload)
         self.assertEqual(opened.call_count, 1)
@@ -541,7 +551,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         self.write("docs/architecture.md", "# Architecture\nInitial state.\n")
         cfg = {"server": "http://memory", "bank": "demo"}
         current = project_memory.scan_project(self.root, changed_paths=[])
-        with mock.patch("asgard.project_memory.server_retain_items", side_effect=OSError("down")):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", side_effect=OSError("down")):
             with self.assertRaises(OSError):
                 project_memory.sync_artifacts(self.root, cfg, current, source_revision="HEAD=failed")
         self.assertEqual(project_memory.load_projection_manifest(self.root)["items"], {})
@@ -556,7 +566,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
 
         self.write("docs/architecture.md", "# Architecture\nChanged after preview.\n")
         with (
-            mock.patch("asgard.project_memory.server_retain_items") as retain,
+            mock.patch("asgard.project_memory.projection.server_retain_items") as retain,
             self.assertRaisesRegex(ValueError, "changed after scan"),
         ):
             project_memory.sync_artifacts(
@@ -566,7 +576,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
 
         changed = project_memory.scan_project(self.root, changed_paths=[])
         with (
-            mock.patch("asgard.project_memory.server_retain_items") as retain,
+            mock.patch("asgard.project_memory.projection.server_retain_items") as retain,
             self.assertRaisesRegex(ValueError, "plan changed"),
         ):
             project_memory.sync_artifacts(self.root, cfg, changed, source_revision="HEAD=two", expected_plan_id=plan_id)
@@ -589,7 +599,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
         plan_id = project_memory.projection_plan_id(
             "demo", project_memory.projection_plan(self.root, "demo", candidates, target=target), "HEAD=one"
         )
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}):
+        with mock.patch("asgard.project_memory.projection.server_retain_items", return_value={"success": True}):
             result = project_memory.sync_artifacts(
                 self.root,
                 cfg,
@@ -605,7 +615,7 @@ class TestArtifactDiscovery(ProjectMemoryBase):
 class TestAutomaticTurnRetention(ProjectMemoryBase):
     def test_safe_turn_is_retained_with_stable_id_and_replace_semantics(self):
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with mock.patch("asgard.project_memory.retain.server_retain_items", return_value={"success": True}) as retain:
             first = project_memory.retain_turn(
                 self.root,
                 cfg,
@@ -636,7 +646,7 @@ class TestAutomaticTurnRetention(ProjectMemoryBase):
     def test_normal_http_rejection_is_reported_as_failed(self):
         cfg = {"server": "http://memory", "bank": "demo"}
         with mock.patch(
-            "asgard.project_memory.server_retain_items", return_value={"success": False, "error": "rejected"}
+            "asgard.project_memory.retain.server_retain_items", return_value={"success": False, "error": "rejected"}
         ):
             result = project_memory.retain_turn(
                 self.root,
@@ -652,7 +662,7 @@ class TestAutomaticTurnRetention(ProjectMemoryBase):
 
     def test_secret_turn_is_skipped_without_remote_write(self):
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.server_retain_items") as retain:
+        with mock.patch("asgard.project_memory.retain.server_retain_items") as retain:
             result = project_memory.retain_turn(
                 self.root,
                 cfg,
@@ -668,7 +678,7 @@ class TestAutomaticTurnRetention(ProjectMemoryBase):
 
     def test_prompt_injection_turn_is_quarantined_without_remote_write(self):
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.server_retain_items") as retain:
+        with mock.patch("asgard.project_memory.retain.server_retain_items") as retain:
             result = project_memory.retain_turn(
                 self.root,
                 cfg,
@@ -684,7 +694,7 @@ class TestAutomaticTurnRetention(ProjectMemoryBase):
 
     def test_remote_failure_is_reported_without_breaking_the_turn(self):
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.server_retain_items", side_effect=OSError("down")):
+        with mock.patch("asgard.project_memory.retain.server_retain_items", side_effect=OSError("down")):
             result = project_memory.retain_turn(
                 self.root,
                 cfg,
@@ -702,8 +712,8 @@ class TestCompletionProposal(ProjectMemoryBase):
     def test_verified_changed_task_stages_structured_proposal_for_user_approval(self):
         cfg = {"server": "http://memory", "bank": "demo"}
         with (
-            mock.patch("asgard.project_memory.stage_retain", return_value="approval-7") as stage,
-            mock.patch("asgard.project_memory.source_revision", return_value="abc123"),
+            mock.patch("asgard.project_memory.retain.stage_retain", return_value="approval-7") as stage,
+            mock.patch("asgard.project_memory.retain.source_revision", return_value="abc123"),
         ):
             result = project_memory.propose_completion(
                 self.root,
@@ -734,7 +744,7 @@ class TestCompletionProposal(ProjectMemoryBase):
             "evidence": [{"cmd": "pytest", "exit_code": 0}],
             "verified": True,
         }
-        with mock.patch("asgard.project_memory.source_revision", return_value="same-rev"):
+        with mock.patch("asgard.project_memory.retain.source_revision", return_value="same-rev"):
             first = project_memory.propose_completion(self.root, cfg, **kwargs)
             second = project_memory.propose_completion(self.root, cfg, **kwargs)
         self.assertEqual(first.status, "proposed")
@@ -742,7 +752,7 @@ class TestCompletionProposal(ProjectMemoryBase):
 
     def test_trivial_completed_file_change_does_not_create_a_proposal(self):
         cfg = {"server": "http://memory", "bank": "demo"}
-        with mock.patch("asgard.project_memory.stage_retain") as stage:
+        with mock.patch("asgard.project_memory.retain.stage_retain") as stage:
             result = project_memory.propose_completion(
                 self.root,
                 cfg,
@@ -1088,7 +1098,9 @@ class TestCooperativeRecall(ProjectMemoryBase):
             output.write("# Architecture\nraw source body\n")
         cfg = self.bound_cfg()
         candidate = project_memory.scan_project(self.root, changed_paths=[])[0]
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
             project_memory.sync_artifacts(self.root, cfg, [candidate], source_revision="HEAD=one")
         artifact = retain.call_args.args[1][0]
         hits = [
@@ -1221,7 +1233,9 @@ class TestCooperativeRecall(ProjectMemoryBase):
             output.write("# Architecture\nOriginal boundary.\n")
         cfg = self.bound_cfg("http://memory")
         candidate = project_memory.scan_project(self.root, changed_paths=[])[0]
-        with mock.patch("asgard.project_memory.server_retain_items", return_value={"success": True}) as retain:
+        with mock.patch(
+            "asgard.project_memory.projection.server_retain_items", return_value={"success": True}
+        ) as retain:
             project_memory.sync_artifacts(self.root, cfg, [candidate], source_revision="HEAD=one")
         hit = {"text": retain.call_args.args[1][0]["content"], "metadata": retain.call_args.args[1][0]["metadata"]}
         with (
