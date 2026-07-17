@@ -505,6 +505,63 @@ FREYJA_SQUAD_TOOL: dict = {
     },
 }
 
+FREYJA_VERDICT_TOOL: dict = {
+    "name": "dispatch_visual_verdict",
+    "description": "프레이야 편대장 전용 — deliverables/ 아래의 후보를 읽기 전용 독립 판정자가 채점한다. "
+    "PASS 후보가 하나 이상이어야 final/<exact-pass-id>/... 경로가 열린다.",
+    "x-asgard-capability": "coordinate",
+    "input_schema": {
+        "type": "object",
+        "properties": {"candidates_dir": {"type": "string"}, "focus": {"type": "string"}},
+        "required": ["candidates_dir"],
+    },
+}
+
+VISUAL_VERDICT_SUBMIT_TOOL: dict = {
+    "name": "submit_visual_verdict",
+    "description": "후보 전원의 시각 판정을 구조화 제출한다. 실제 후보 ID의 중복 없는 전체 집합이어야 한다.",
+    "x-asgard-capability": "inspect",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "verdicts": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "verdict": {"type": "string", "enum": ["PASS", "REJECT", "UNVERIFIED"]},
+                        "why": {"type": "string"},
+                    },
+                    "required": ["id", "verdict", "why"],
+                },
+            }
+        },
+        "required": ["verdicts"],
+    },
+}
+
+
+def _freyja_final_writes(paths) -> list[str]:
+    """deliverables 아래 `final` 디렉터리의 쓰기만 two-stage gate 대상으로 고른다."""
+    found: list[str] = []
+    for raw in paths:
+        path = str(raw).replace(os.sep, "/")
+        parts = path.split("/")
+        if parts and parts[0] == "deliverables" and "final" in parts[1:-1]:
+            found.append(path)
+    return sorted(found)
+
+
+def _derived_from_pass(path: str, passed: list[str]) -> bool:
+    """final/<exact-pass-id>/... 구조만 인정한다. 파일명 부분 문자열은 provenance 가 아니다."""
+    parts = str(path).replace(os.sep, "/").split("/")
+    if len(parts) < 4 or parts[:2] != ["deliverables", "final"]:
+        return False
+    return parts[2] in set(passed)
+
+
 # 네이티브 thor-lead 전용 물리 fan-out — 에인헤랴르 편대 유형 2종을 계약으로 강제한다:
 # split(분할) = scope 파일 범위 비중첩 검증 + 병합, tournament = 패치 회수만(본류 미적용, 승자만 대장이 적용).
 THOR_SQUAD_TOOL: dict = {
@@ -893,6 +950,8 @@ class Heimdall:
                 skills = resolver(f"{task} {axis} {why}") if resolver else []
                 if skills:
                     system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
+                # 편대원도 단독 디스패치와 동일한 프레이야 구성 — 학습물 층 포함 (편대 스레드라 quiet)
+                system += self._learned_note(f"{task} {axis} {why}", "freyja", quiet=True)
                 with UnitWorkspace(squad_root, f"freyja-{spec['id']}") as workspace:
                     child = self._session(
                         system,
@@ -946,6 +1005,140 @@ class Heimdall:
             return json.dumps({"results": payload, "failures": failures}, ensure_ascii=False)
 
         return handler
+
+    @staticmethod
+    def _safe_candidates(root: str, raw) -> tuple[str, str, tuple[str, ...]]:
+        """deliverables/ 아래 실제 후보 디렉터리를 확정하고 symlink 탈출을 막는다."""
+        rel = os.path.normpath(str(raw or "")).replace(os.sep, "/").strip("/")
+        if not rel or rel == "." or rel.startswith("..") or rel.split("/")[0] != "deliverables":
+            raise ValueError("candidates_dir 는 프로젝트의 deliverables/ 하위 상대 경로여야 한다")
+        real_root = os.path.realpath(root)
+        real = os.path.realpath(os.path.join(root, rel))
+        try:
+            inside = os.path.commonpath((real_root, real)) == real_root
+        except ValueError:
+            inside = False
+        if not inside:
+            raise ValueError("candidates_dir 가 심볼릭 링크로 프로젝트 경계를 벗어난다")
+        if not os.path.isdir(real):
+            raise ValueError(f"candidates_dir 가 없다: {rel}")
+        candidates: list[str] = []
+        with os.scandir(real) as entries:
+            for entry in entries:
+                if entry.is_symlink():
+                    raise ValueError(f"후보 디렉터리는 심볼릭 링크일 수 없다: {entry.name}")
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
+                if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", entry.name):
+                    raise ValueError(f"안전하지 않은 후보 id: {entry.name}")
+                candidates.append(entry.name)
+        if not candidates:
+            raise ValueError("candidates_dir 에 판정할 후보 디렉터리가 없다")
+        return rel, real, tuple(sorted(candidates))
+
+    def _freyja_verdict_handler(self, sid: str, worker_result_writes: list[str], cwd: str, verdict_state: dict):
+        """read-only 판정자의 구조화 제출만 신뢰하고 런타임이 판정문을 작성한다."""
+
+        def handler(inp: dict) -> str:
+            rel, real, candidate_ids = self._safe_candidates(cwd, inp.get("candidates_dir"))
+            focus = str(inp.get("focus") or "")
+            ql(
+                self.root,
+                "append",
+                session=sid,
+                stdin=json.dumps(
+                    {
+                        "role": "worker",
+                        "event": "delegate",
+                        "commands": [{"cmd": f"dispatch:visual-verdict — {rel} {focus[:80]}", "exit_code": 0}],
+                    }
+                ),
+            )
+            submitted: dict = {"verdicts": None}
+
+            def submit(payload: dict) -> str:
+                rows = list(payload.get("verdicts") or [])
+                clean: list[dict[str, str]] = []
+                seen: set[str] = set()
+                for row in rows:
+                    candidate_id = str(row.get("id") or "").strip()
+                    verdict = str(row.get("verdict") or "").strip().upper()
+                    why = str(row.get("why") or "").strip()[:400]
+                    if candidate_id not in candidate_ids:
+                        raise ValueError(f"실제 후보가 아닌 판정 id: {candidate_id}")
+                    if candidate_id in seen:
+                        raise ValueError(f"중복 판정 id: {candidate_id}")
+                    if verdict not in ("PASS", "REJECT", "UNVERIFIED") or not why:
+                        raise ValueError("각 판정은 유효한 verdict 와 빈 값이 아닌 why 를 가져야 한다")
+                    seen.add(candidate_id)
+                    clean.append({"id": candidate_id, "verdict": verdict, "why": why})
+                missing = sorted(set(candidate_ids) - seen)
+                if missing:
+                    raise ValueError("판정에서 누락된 후보: " + ", ".join(missing))
+                submitted["verdicts"] = clean
+                return json.dumps({"received": len(clean)}, ensure_ascii=False)
+
+            from ..templates.freyja import FREYJA_SKILLS
+
+            bodies = dict(FREYJA_SKILLS)
+            system = _DELIVERY["freyja"] + "\n\n" + self.delivery_identity
+            system += "\n\n# 전용 스킬 (판정 주입)\n\n" + "\n\n".join(
+                bodies[name].split("---", 2)[2].lstrip()
+                for name in ("asgard-freyja-valshamr", "asgard-freyja-hildisvini")
+            )
+            judge = self._session(
+                system,
+                extra_tools=[VISUAL_VERDICT_SUBMIT_TOOL],
+                handlers={"submit_visual_verdict": submit},
+                model=self._delivery_model("freyja"),
+                role="freyja",
+                readonly=True,
+                cwd=cwd,
+                quiet=True,
+            )
+            judge._nested_dispatch = True
+            result = judge.run(
+                f"시각 판정 (read-only): `{rel}` 아래 실제 후보 {list(candidate_ids)} 전부를 채점하고 "
+                "submit_visual_verdict 도구로 중복·누락 없이 제출하라. "
+                + (f"판정 초점: {focus}. " if focus else "")
+                + "16/24/32px 렌더 수단이 없으면 UNVERIFIED, common glyph/object 자기반증은 REJECT다."
+            )
+            self._track_cache(result)
+            verdicts = submitted["verdicts"]
+            if not verdicts:
+                return "[visual-verdict] ⚠ 판정 미제출 — 게이트는 잠긴 채다."
+            passed = [row["id"] for row in verdicts if row["verdict"] == "PASS"]
+            lines = "\n".join(f"- `{row['id']}` — **{row['verdict']}** — {row['why']}" for row in verdicts)
+            verdict_rel = f"{rel}/VISUAL-VERDICT.md"
+            body = (
+                "<!-- authored-by: dispatch_visual_verdict (runtime) -->\n\n"
+                f"# VISUAL VERDICT — {rel}\n\nPASS {len(passed)}/{len(verdicts)}\n\n{lines}\n"
+            )
+            path = os.path.join(real, "VISUAL-VERDICT.md")
+            temporary = f"{path}.{os.getpid()}.tmp"
+            with open(temporary, "w", encoding="utf-8") as handle:
+                handle.write(body)
+            os.replace(temporary, path)
+            verdict_state.update({"written": True, "passed": passed, "verdicts": verdicts})
+            if verdict_rel not in worker_result_writes:
+                worker_result_writes.append(verdict_rel)
+            return f"[visual-verdict] {verdict_rel} 기록됨 — PASS {len(passed)}/{len(verdicts)}: {passed}"
+
+        return handler
+
+    @staticmethod
+    def _freyja_gate_rejection(final_paths: list[str], verdict_state: dict) -> str | None:
+        if not final_paths:
+            return None
+        if not verdict_state.get("written"):
+            return "dispatch_visual_verdict 판정 없이 final 산출"
+        passed = verdict_state.get("passed") or []
+        if not passed:
+            return "PASS 후보 0 — REJECT/UNVERIFIED 만으로는 final 불가"
+        underived = [path for path in final_paths if not _derived_from_pass(path, passed)]
+        if underived:
+            return f"final 이 PASS 후보({passed})의 exact-id 경로가 아님: " + ", ".join(underived)
+        return None
 
     def _thor_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         """thor-lead → thor N기 병렬 fan-out. 자식에는 coordinate 도구를 주지 않아 깊이 1을 봉인한다.
@@ -1022,6 +1215,8 @@ class Heimdall:
                 skills = [hit for hit in skills if hit[0] != "asgard-thor-einherjar"]
                 if skills:
                     system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
+                # 편대원도 단독 디스패치와 동일한 토르 구성 — 학습물 층 포함 (편대 스레드라 quiet)
+                system += self._learned_note(f"{task} {why}", "thor", quiet=True)
                 with UnitWorkspace(squad_root, f"thor-{spec['id']}") as workspace:
                     child = self._session(
                         system,
@@ -1127,12 +1322,11 @@ class Heimdall:
                 agent not in _DELIVERY_READONLY
             ):  # read-only 딜리버리(loki) = 반례 탐색 — 학습물 무주입 (메모리와 동일 규율)
                 system += self._learned_note(f"{task} {why}", agent)
+            if agent == "freyja-lead":
+                return self._run_freyja_lead(sid, worker_result_writes, cwd, system, task)
             extra_tools = None
             handlers = None
-            if agent == "freyja-lead":
-                extra_tools = [FREYJA_SQUAD_TOOL]
-                handlers = {"dispatch_freyja_squad": self._freyja_squad_handler(sid, worker_result_writes, cwd)}
-            elif agent == "thor-lead":
+            if agent == "thor-lead":
                 extra_tools = [THOR_SQUAD_TOOL]
                 handlers = {"dispatch_thor_squad": self._thor_squad_handler(sid, worker_result_writes, cwd)}
             child = self._session(
@@ -1153,6 +1347,60 @@ class Heimdall:
             return f"[{agent}] {r.text[-2000:]}"
 
         return handler
+
+    def _reject_freyja_final(self, sid: str, reason: str) -> str:
+        ql(
+            self.root,
+            "append",
+            session=sid,
+            stdin=json.dumps(
+                {
+                    "role": "worker",
+                    "event": "delegate",
+                    "commands": [{"cmd": "gate:visual-verdict — " + reason[:200], "exit_code": 1}],
+                }
+            ),
+        )
+        return f"[freyja-lead] ⛔ two-stage visual gate 위반 — {reason}. 본류 미반영."
+
+    def _run_freyja_lead(self, sid: str, worker_result_writes: list[str], cwd: str | None, system: str, task: str):
+        """편대장 전체를 Git 기반 격리 공간에서 실행하고 게이트 통과 후에만 병합한다.
+
+        Git HEAD 가 없으면 기존 final 덮어쓰기를 안전하게 롤백할 수 없으므로 fail-closed 한다.
+        """
+        from .unit_workspace import UnitWorkspace, _git
+
+        base = cwd or self.root
+        if _git(base, "rev-parse", "--verify", "HEAD", check=False).returncode:
+            return self._reject_freyja_final(sid, "안전한 격리를 위한 Git HEAD 가 없어 freyja-lead 실행 불가")
+        with UnitWorkspace(base, "freyja-lead") as workspace:
+            verdict_state: dict = {}
+            lead_writes: list[str] = []
+            handlers = {
+                "dispatch_freyja_squad": self._freyja_squad_handler(sid, lead_writes, workspace.path),
+                "dispatch_visual_verdict": self._freyja_verdict_handler(
+                    sid, lead_writes, workspace.path, verdict_state
+                ),
+            }
+            child = self._session(
+                system,
+                extra_tools=[FREYJA_SQUAD_TOOL, FREYJA_VERDICT_TOOL],
+                handlers=handlers,
+                model=self._delivery_model("freyja-lead"),
+                role="freyja-lead",
+                cwd=workspace.path,
+            )
+            child._nested_dispatch = True
+            result = child.run(task)
+            self._track_cache(result)
+            patch = workspace.capture(extra_paths=tuple(result.writes))
+            final_paths = _freyja_final_writes(patch.paths)
+            reason = self._freyja_gate_rejection(final_paths, verdict_state)
+            if reason:
+                return self._reject_freyja_final(sid, reason)
+            workspace.apply(patch)
+            worker_result_writes.extend(path for path in patch.paths if path not in worker_result_writes)
+            return f"[freyja-lead] {result.text[-2000:]}"
 
     def _run_worker_waves(self, sid: str, request: str, units: list[dict], budget_note: str) -> None:
         """배정 단위 wave 병렬 실행 — access list 격리 + 파일 겹침 직렬화.

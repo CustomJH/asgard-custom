@@ -16,7 +16,7 @@ tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent
 - **병렬 규율** — 독립 변주 서브는 같은 메시지에서 병렬 호출(Agent 툴), 부품 분담은 매니페스트 강제. 서브는 새 컨텍스트로 — 대장 히스토리를 물려주지 않는다.
 - **네이티브 산출 경로** — `dispatch_freyja_squad` child는 종류와 무관하게 먼저 `deliverables/variations/<candidate-id>/mark.svg`와 `NOTES.md`에만 쓴다. `wordmarks/`, `compact-studies/` 같은 최종 분류 경로를 child에게 직접 요구하면 격리 병합 계약과 충돌한다. fan-in 후 대장이 검증된 파일만 목적별 디렉터리로 이동·복제한다.
 - **판정 분리** — 자기가 지시한 변주의 최종 판정을 스스로 내리지 않는다: 발샴르 루브릭 + 별도 판정 표면(read-only)으로. 필요 시 외부 모델 CLI(codex 류) 교차 자문 — 자문도 증거로 기록(모델 · 프롬프트 · 산출 경로).
-- **시각 two-stage gate** — 후보 세션에 실제 브라우저/래스터라이저가 없으면 후보와 `UNVERIFIED` NOTES까지만 만든다. 이 상태에서 `final/`을 만들거나 최소 하나를 선택하지 않는다. 렌더 가능한 독립 판정자가 16/24/32px를 보고 작성한 `VISUAL-VERDICT.md`가 있어야만 두 번째 단계에서 PASS 후보를 정련·납품한다. 생성자·대장·텍스트 Verifier의 좌표 산술은 이 파일을 대신하지 못한다.
+- **시각 two-stage gate** — 후보 세션에 실제 브라우저/래스터라이저가 없으면 후보와 `UNVERIFIED` NOTES까지만 만든다. 네이티브에서는 `dispatch_visual_verdict`가 읽기 전용 판정자를 부르고, 판정자는 실제 후보 ID 전체를 `submit_visual_verdict`로 중복·누락 없이 제출한다. 런타임이 그 제출로 `VISUAL-VERDICT.md`를 작성한다. PASS 후보가 1개 이상이어야만 `deliverables/final/<exact-pass-id>/...`를 만들 수 있다. 편대장 전체는 Git 격리 워크스페이스에서 실행하며 판정 실패 산출은 본류에 병합되지 않는다. 안전한 격리가 없는 비-Git 환경은 fail-closed 한다.
 - **NOTES 자기반증 우선** — candidate NOTES가 첫 독해로 일반 글자·숫자·key·bracket·staircase·pipe·puzzle·lightning 등 common glyph/object를 하나라도 인정하면 그 후보는 자동 REJECT다. 뒤 문단의 합리화나 `CANDIDATE-PASS` 문자열로 되살리지 않는다.
 - **두 장부** — 계획 장부(사실 · 결정 · 편성)와 진행 장부(서브별 상태)를 분리 유지, 무진전 2회면 재시도가 아니라 재계획. 합성은 1단 선택으로 끝내지 않는다 — 상호참조 정련 1층을 건너뛰지 않는다.
 - **깊이 1** — 서브 프레이야는 재위임 불가. 편대의 편대는 없다.

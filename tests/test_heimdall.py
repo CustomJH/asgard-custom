@@ -43,9 +43,9 @@ CLS_DIRECT = {
 
 
 class FakeSession:
-    """AgentSession 대역 — run() 이 스크립트 결과 반환 + effect 로 워킹트리 변경."""
+    """AgentSession 대역 — run() 결과·파일 effect·주입 도구 호출을 스크립트한다."""
 
-    def __init__(self, result: SessionResult, effect=None, label=""):
+    def __init__(self, result: SessionResult, effect=None, label="", tool_script=None):
         self.result, self.effect, self.label = result, effect, label
         self.prompt: str = ""  # 마지막 run() 프롬프트 — assertIn 검증 표면 (미실행 = "")
         self.system: str = ""  # 이 역할 세션의 system 프롬프트 — charter/lagom 주입 검증 표면
@@ -54,11 +54,18 @@ class FakeSession:
         self.readonly: bool = False
         self.rp_override: ResolvedProvider | None = None
         self.cwd: str = ""
+        self.tool_script = list(tool_script or [])
+        self.injected_handlers: dict = {}
+        self.tool_results: list = []
 
     def run(self, user_content: str) -> SessionResult:
         self.prompt = user_content
         if self.effect:
             self.effect()
+        for name, args in self.tool_script:
+            if name not in self.injected_handlers:
+                raise AssertionError(f"미배선 도구 호출: {name}")
+            self.tool_results.append((name, self.injected_handlers[name](args)))
         return self.result
 
 
@@ -99,6 +106,7 @@ class FakeHeimdall(Heimdall):
             s.rp_override = rp_override
             s.cwd = cwd or self.root
             s.system = system or ""
+            s.injected_handlers = handlers or {}
             self.consumed.append(s)
             return s
 
@@ -151,6 +159,18 @@ def verifier(verdict="PASS", observed=True, structural=False, sig=None, why="", 
 
 def thinker(plan="계획: w1.txt 를 만든다", commands=None):
     return FakeSession(SessionResult(text=plan, stop_reason="end_turn", commands=commands or []), label="thinker")
+
+
+def seed_learned_skill(root: str, name: str, *, triggers: str, agent: str) -> None:
+    """승인 receipt 포함 learned 스킬 시드 — HOME 이 테스트 root 라 키도 격리 생성된다."""
+    from asgard import skill_bank
+
+    d = os.path.join(root, ".asgard", "skills", name)
+    os.makedirs(d, exist_ok=True)
+    text = f"---\nname: {name}\ndescription: d\ntriggers: {triggers}\nagent: {agent}\n---\n\n{name} 본문\n"
+    open(os.path.join(d, "SKILL.md"), "w", encoding="utf-8").write(text)
+    receipt = skill_bank.approval_receipt(root, name, text, create_key=True)
+    json.dump(receipt, open(os.path.join(d, skill_bank.APPROVAL_FILE), "w", encoding="utf-8"))
 
 
 class Base(unittest.TestCase):
@@ -1843,9 +1863,36 @@ class TestNativeFreyjaSquad(Base):
                 calls.append({"role": role, "system": system, "tools": extra_tools or [], "handlers": handlers or {}})
                 return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
 
-        lead = worker(root=self.root, text="lead ready")
-        child_a = worker(root=self.root, text="a")
-        child_b = worker(root=self.root, text="b")
+        def scoped_child():
+            session = FakeSession(SessionResult(text="scoped", stop_reason="end_turn"))
+
+            def effect():
+                task_id = "geo" if "편대 변주 geo" in session.prompt else "space"
+                rel = f"deliverables/variations/{task_id}/mark.svg"
+                session.result.writes = [rel]
+                path = os.path.join(session.cwd, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").write(f"<svg id='{task_id}'/>\n")
+
+            session.effect = effect
+            return session
+
+        lead = FakeSession(
+            SessionResult(text="lead ready", stop_reason="end_turn"),
+            tool_script=[
+                (
+                    "dispatch_freyja_squad",
+                    {
+                        "tasks": [
+                            {"id": "geo", "task": "geo.svg", "axis": "순수 기하", "why": "구조"},
+                            {"id": "space", "task": "space.svg", "axis": "네거티브 스페이스", "why": "축소"},
+                        ]
+                    },
+                )
+            ],
+        )
+        child_a = scoped_child()
+        child_b = scoped_child()
         h = Capture(self.root, [lead, child_a, child_b])
         writes = []
         h._dispatch_handler("s1", writes)({"agent": "freyja-lead", "task": "대형 시각 과업", "why": "복합 산출"})
@@ -1853,22 +1900,146 @@ class TestNativeFreyjaSquad(Base):
         self.assertEqual(calls[0]["role"], "freyja-lead")
         self.assertIn("13축", calls[0]["system"])  # 선언이 아니라 Freyja 코어 본문 물리 상속
         self.assertIn("asgard-freyja-valkyrja", calls[0]["system"])  # task 어휘와 무관한 lead 필수 주입
-        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["dispatch_freyja_squad"])
-        squad = calls[0]["handlers"]["dispatch_freyja_squad"]
-        result = json.loads(
-            squad(
-                {
-                    "tasks": [
-                        {"id": "geo", "task": "geo.svg", "axis": "순수 기하", "why": "구조"},
-                        {"id": "space", "task": "space.svg", "axis": "네거티브 스페이스", "why": "축소"},
-                    ]
-                }
-            )
-        )
+        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["dispatch_freyja_squad", "dispatch_visual_verdict"])
+        self.assertEqual(lead.tool_results[0][0], "dispatch_freyja_squad")
+        result = json.loads(lead.tool_results[0][1])
         self.assertEqual({r["id"] for r in result["results"]}, {"geo", "space"})
         self.assertEqual(result["failures"], [])
         self.assertEqual([c["role"] for c in calls[1:]], ["freyja", "freyja"])
         self.assertTrue(all(not c["tools"] for c in calls[1:]))  # 편대의 편대 봉인
+        self.assertEqual(
+            set(writes),
+            {"deliverables/variations/geo/mark.svg", "deliverables/variations/space/mark.svg"},
+        )
+        for task_id in ("geo", "space"):
+            self.assertTrue(os.path.exists(os.path.join(self.root, f"deliverables/variations/{task_id}/mark.svg")))
+
+    @staticmethod
+    def _lead_with_final(final_rel: str, *, verdict=True, candidate_ids=("geo", "space")):
+        session = FakeSession(
+            SessionResult(text="lead", stop_reason="end_turn", writes=[final_rel]),
+            tool_script=[("dispatch_visual_verdict", {"candidates_dir": "deliverables/variations"})] if verdict else [],
+        )
+
+        def effect():
+            for candidate_id in candidate_ids:
+                path = os.path.join(session.cwd, f"deliverables/variations/{candidate_id}/mark.svg")
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").write(f"<svg id='{candidate_id}'/>\n")
+            final = os.path.join(session.cwd, final_rel)
+            os.makedirs(os.path.dirname(final), exist_ok=True)
+            open(final, "w").write("<svg id='final'/>\n")
+
+        session.effect = effect
+        return session
+
+    @staticmethod
+    def _judge(rows):
+        return FakeSession(
+            SessionResult(text="judged", stop_reason="end_turn"),
+            tool_script=[("submit_visual_verdict", {"verdicts": rows})],
+        )
+
+    def test_exact_pass_final_merges_after_runtime_verdict(self):
+        lead = self._lead_with_final("deliverables/final/geo/mark.svg")
+        judge = self._judge(
+            [
+                {"id": "geo", "verdict": "PASS", "why": "축소 렌더가 선명함"},
+                {"id": "space", "verdict": "REJECT", "why": "일반 괄호로 오독됨"},
+            ]
+        )
+        h = FakeHeimdall(self.root, [lead, judge])
+        writes = []
+
+        out = h._dispatch_handler("s1", writes)(
+            {"agent": "freyja-lead", "task": "로고 후보를 판정하고 납품", "why": "시각 게이트"}
+        )
+
+        self.assertIn("lead", out)
+        self.assertTrue(os.path.exists(os.path.join(self.root, "deliverables/final/geo/mark.svg")))
+        verdict_path = os.path.join(self.root, "deliverables/variations/VISUAL-VERDICT.md")
+        self.assertIn("PASS 1/2", open(verdict_path).read())
+        self.assertIn("deliverables/variations/VISUAL-VERDICT.md", writes)
+        self.assertTrue(judge.readonly)
+
+    def test_zero_pass_discards_entire_isolated_lead_workspace(self):
+        lead = self._lead_with_final("deliverables/final/geo/mark.svg")
+        judge = self._judge(
+            [
+                {"id": "geo", "verdict": "REJECT", "why": "글자처럼 보임"},
+                {"id": "space", "verdict": "UNVERIFIED", "why": "렌더 수단 없음"},
+            ]
+        )
+        h = FakeHeimdall(self.root, [lead, judge])
+        writes = []
+
+        out = h._dispatch_handler("s1", writes)(
+            {"agent": "freyja-lead", "task": "로고 후보를 판정하고 납품", "why": "시각 게이트"}
+        )
+
+        self.assertIn("PASS 후보 0", out)
+        self.assertEqual(writes, [])
+        self.assertFalse(os.path.exists(os.path.join(self.root, "deliverables")))
+
+    def test_final_without_verdict_is_discarded(self):
+        lead = self._lead_with_final("deliverables/final/geo/mark.svg", verdict=False)
+        h = FakeHeimdall(self.root, [lead])
+
+        out = h._dispatch_handler("s1", [])(
+            {"agent": "freyja-lead", "task": "로고를 바로 납품", "why": "판정 생략 시도"}
+        )
+
+        self.assertIn("판정 없이 final", out)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "deliverables")))
+
+    def test_verdict_submission_requires_exact_complete_candidate_set(self):
+        root = os.path.join(self.root, "deliverables/variations")
+        for candidate_id in ("geo", "space"):
+            os.makedirs(os.path.join(root, candidate_id), exist_ok=True)
+        cases = (
+            [{"id": "geo", "verdict": "PASS", "why": "ok"}],
+            [
+                {"id": "geo", "verdict": "PASS", "why": "ok"},
+                {"id": "fake", "verdict": "REJECT", "why": "no"},
+            ],
+            [
+                {"id": "geo", "verdict": "PASS", "why": "ok"},
+                {"id": "geo", "verdict": "REJECT", "why": "duplicate"},
+            ],
+        )
+        for rows in cases:
+            with self.subTest(rows=rows):
+                h = FakeHeimdall(self.root, [self._judge(rows)])
+                with self.assertRaises(ValueError):
+                    h._freyja_verdict_handler("s1", [], self.root, {})({"candidates_dir": "deliverables/variations"})
+
+    def test_final_provenance_requires_exact_pass_id_directory(self):
+        from asgard.agent.heimdall import _derived_from_pass
+
+        self.assertTrue(_derived_from_pass("deliverables/final/geo/mark.svg", ["geo"]))
+        self.assertFalse(_derived_from_pass("deliverables/final/mark-geo.svg", ["geo"]))
+        self.assertFalse(_derived_from_pass("deliverables/final/geometric/mark.svg", ["geo"]))
+        self.assertFalse(_derived_from_pass("deliverables/archive/final/geo/mark.svg", ["geo"]))
+
+    def test_candidate_directory_symlink_cannot_escape_project(self):
+        os.makedirs(os.path.join(self.root, "deliverables"), exist_ok=True)
+        with tempfile.TemporaryDirectory() as outside:
+            os.makedirs(os.path.join(outside, "geo"))
+            os.symlink(outside, os.path.join(self.root, "deliverables/variations"))
+            h = FakeHeimdall(self.root, [])
+            with self.assertRaises(ValueError):
+                h._safe_candidates(self.root, "deliverables/variations")
+
+    def test_non_git_root_fails_closed_before_lead_runs(self):
+        with tempfile.TemporaryDirectory() as nongit:
+            lead = self._lead_with_final("deliverables/final/geo/mark.svg", verdict=False)
+            h = FakeHeimdall(nongit, [lead])
+
+            out = h._dispatch_handler("s1", [])({"agent": "freyja-lead", "task": "로고 납품", "why": "비 Git 환경"})
+
+            self.assertIn("Git HEAD", out)
+            self.assertEqual(h.consumed, [])
+            self.assertFalse(os.path.exists(os.path.join(nongit, "deliverables")))
 
     def test_squad_children_are_isolated_and_cannot_write_outside_their_output_dir(self):
         def escaping_child(name: str):
@@ -1896,6 +2067,30 @@ class TestNativeFreyjaSquad(Base):
         self.assertEqual({failure["id"] for failure in result["failures"]}, {"geo", "space"})
         self.assertTrue(all("scope violation" in failure["error"] for failure in result["failures"]))
         self.assertFalse(os.path.exists(os.path.join(self.root, "unauthorized.txt")))
+
+    def test_squad_children_receive_learned_skills_like_solo_dispatch(self):
+        # 편대원 ≠ 얇은 변주기 — 단독 freyja 디스패치와 동일한 구성(role+학습물)을 받아야 한다
+        seed_learned_skill(self.root, "logo-lesson", triggers="로고", agent="freyja")
+        children = [
+            FakeSession(SessionResult(text="a", stop_reason="end_turn")),
+            FakeSession(SessionResult(text="b", stop_reason="end_turn")),
+        ]
+        h = FakeHeimdall(self.root, children)
+        result = json.loads(
+            h._freyja_squad_handler("s1", [], self.root)(
+                {
+                    "tasks": [
+                        {"id": "geo", "task": "로고 mark.svg", "axis": "geometry", "why": "distinct"},
+                        {"id": "space", "task": "로고 mark.svg", "axis": "negative space", "why": "compact"},
+                    ]
+                }
+            )
+        )
+
+        self.assertEqual(result["failures"], [])
+        for child in h.consumed:
+            self.assertIn("# 학습 스킬", child.system)
+            self.assertIn("logo-lesson 본문", child.system)
 
     def test_squad_children_merge_only_their_distinct_output_directories(self):
         def scoped_child():
@@ -2065,6 +2260,31 @@ class TestNativeThorSquad(Base):
         self.assertEqual(set(writes), {"src/api/service.py", "src/db/service.py"})
         for unit in ("api", "db"):
             self.assertIn(unit, open(os.path.join(self.root, f"src/{unit}/service.py")).read())
+
+    def test_squad_children_receive_learned_skills_like_solo_dispatch(self):
+        # 편대원 ≠ 얇은 분할기 — 단독 thor 디스패치와 동일한 구성(role+학습물)을 받아야 한다
+        seed_learned_skill(self.root, "migration-lesson", triggers="마이그레이션", agent="thor")
+        children = [
+            FakeSession(SessionResult(text="a", stop_reason="end_turn")),
+            FakeSession(SessionResult(text="b", stop_reason="end_turn")),
+        ]
+        h = FakeHeimdall(self.root, children)
+        result = json.loads(
+            h._thor_squad_handler("s1", [], self.root)(
+                {
+                    "mode": "split",
+                    "tasks": [
+                        {"id": "api", "task": "api 마이그레이션", "scope": ["src/api"], "why": "w"},
+                        {"id": "db", "task": "db 마이그레이션", "scope": ["src/db"], "why": "w"},
+                    ],
+                }
+            )
+        )
+
+        self.assertEqual(result["failures"], [])
+        for child in h.consumed:
+            self.assertIn("# 학습 스킬", child.system)
+            self.assertIn("migration-lesson 본문", child.system)
 
     def test_tournament_collects_patches_without_applying(self):
         def variant_child(marker: str):
