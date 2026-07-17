@@ -207,8 +207,23 @@ def tools_list(
 
 
 # 개인 메모리 — LLM Wiki (v3 P1). 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생.
-memory_app = typer.Typer(help="personal memory — LLM wiki (ingest/query/lint)", no_args_is_help=True)
+memory_app = typer.Typer(help="personal memory — LLM wiki (ingest/query/lint)", invoke_without_command=True)
 app.add_typer(memory_app, name="memory")
+
+
+@memory_app.callback()
+def memory_default(
+    ctx: typer.Context,
+    port: int = typer.Option(8765, "--port", "-p", help="dashboard port (bare `asgard memory` only)"),
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+) -> None:
+    """서브커맨드 없이 `asgard memory` 만 치면 대시보드가 열린다 (agentmemory 식 원커맨드 UX).
+    운영 서브커맨드(add/query/…)와 --help 는 그대로다."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from .commands.memory_dashboard import run_dashboard
+
+    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
 @memory_app.command("add", help="add a page (rejects on injection scan or index budget)")
@@ -323,6 +338,16 @@ def memory_path() -> None:
     from .commands.memory import run_path
 
     raise typer.Exit(run_path())
+
+
+@memory_app.command("dashboard", help="open a read-only local dashboard for the personal memory wiki")
+def memory_dashboard(
+    port: int = typer.Option(8765, "--port", "-p", help="local port (falls back to a free port if taken)"),
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+) -> None:
+    from .commands.memory_dashboard import run_dashboard
+
+    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
 @memory_app.command("connect", help="select and configure this project's shared-memory backend")

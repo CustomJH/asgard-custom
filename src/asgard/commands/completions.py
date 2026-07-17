@@ -41,7 +41,7 @@ _FLAGS = {
     "run": ["--provider", "--model", "--json", "--resume", "--quest"],
     "role": [],
     "tools": [],
-    "memory": [],
+    "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
     "evolve": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
@@ -74,6 +74,7 @@ _MEM_SUB = {
     "add": "add a page",
     "ingest": "absorb knowledge (dedup-merge)",
     "query": "search the wiki (zero-LLM)",
+    "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
     "reindex": "rebuild derived index",
     "show": "print one page",
@@ -310,7 +311,7 @@ def _fish() -> str:
     for sub in _AUTH_SUB:
         lines.append(
             f'complete -c asgard -n "__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from {sub}" '
-            '-a openai-native'
+            "-a openai-native"
         )
     setup_top = "__fish_seen_subcommand_from setup; and not __fish_seen_subcommand_from " + " ".join(_SETUP_SUB)
     for sub, desc in _SETUP_SUB.items():
