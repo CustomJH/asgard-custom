@@ -34,6 +34,8 @@ ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = {
     # 시각 편대장 — coordinate 를 가진 유일한 딜리버리 (서브 프레이야 편성, 깊이 1)
     "freyja-lead": frozenset({"inspect", "mutate", "execute", "coordinate"}),
     "thor": frozenset({"inspect", "mutate", "execute"}),
+    # 백엔드 편대장 — freyja-lead 와 같은 유일 예외 계층 (서브 토르 편성, 깊이 1)
+    "thor-lead": frozenset({"inspect", "mutate", "execute", "coordinate"}),
     "eitri": frozenset({"inspect", "mutate", "execute"}),
     "loki": frozenset({"inspect", "execute"}),
     "ullr": frozenset({"inspect", "execute"}),
@@ -49,6 +51,7 @@ _CC_ROLE_TOOLS: Mapping[str, tuple[str, ...]] = {
     "freyja": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit"),
     "freyja-lead": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit", "Agent"),
     "thor": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit"),
+    "thor-lead": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit", "Agent"),
     "eitri": ("Read", "Grep", "Glob", "Bash", "Write", "Edit", "NotebookEdit"),
     "loki": ("Read", "Grep", "Glob", "Bash"),
     "ullr": ("Read", "Grep", "Glob", "Bash"),

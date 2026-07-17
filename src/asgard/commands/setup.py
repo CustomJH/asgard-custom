@@ -215,7 +215,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
         # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
         files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), MEMORY_SKILL_MD))
-        # 딜리버리 심화 스킬 (프레이야 5·토르 4·에이트리 2) — 해당 서브에이전트(모드 B)·메인 세션이
+        # 딜리버리 심화 스킬 (각 *_SKILLS 목록이 단일 소스) — 해당 서브에이전트(모드 B)·메인 세션이
         # 도메인 작업 전 로드. Worker 공통 2종(디버깅·테스트 설계)은 도메인 불문 코드 작업용.
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]

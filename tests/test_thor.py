@@ -17,12 +17,16 @@ from asgard.templates.thor import (  # noqa: E402
     thor_core_skill,
 )
 
-_SKILL_NAMES = (
+# role 본문의 합성 규칙에 열거되는 도메인 스킬 — 편대 프로토콜(einherjar)은 lead role 이 참조한다
+_DOMAIN_SKILLS = (
     "asgard-thor-mjollnir",
     "asgard-thor-lightning",
     "asgard-thor-megingjord",
     "asgard-thor-jarngreipr",
+    "asgard-thor-gridarvol",
+    "asgard-thor-tanngrisnir",
 )
+_SKILL_NAMES = (*_DOMAIN_SKILLS, "asgard-thor-einherjar")
 
 
 def _names(task: str) -> list[str]:
@@ -100,7 +104,8 @@ class TestRoleBodies(unittest.TestCase):
         # Codex #5 — 혼용 금지가 아니라 합성 규칙 (야른그레이프르 = 오버레이)
         self.assertIn("배타가 아니라 **합성**", self.thor)
         self.assertIn("안전 오버레이", self.thor)
-        for sname in _SKILL_NAMES:
+        self.assertIn("진단 오버레이", self.thor)  # 그리다르뵐 = 결함 과업에 겹치는 층
+        for sname in _DOMAIN_SKILLS:
             self.assertIn(sname, self.thor)
 
     def test_thor_frontmatter_excludes_verifier(self):
@@ -172,6 +177,41 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("승인은 Odin 몫", j)  # Codex #2
         self.assertIn("실측 쿼리 계획", j)
 
+    def test_gridarvol_anchors(self):
+        g = self.by_name["asgard-thor-gridarvol"]
+        self.assertIn("오버레이", g)  # 공통 디버깅 위에 겹치는 백엔드 층
+        self.assertIn("asgard-worker-debugging", g)  # 공통 층과의 경계 상호 참조
+        self.assertIn("재현 루프 사다리", g)  # 빨강→초록 명령 우선
+        self.assertIn("bisect", g)
+        self.assertIn("계층 격리", g)  # 연결→타임아웃→…→의미
+        self.assertIn("상태 코드 플레이북", g)
+        self.assertIn("전제 검증", g)  # 의도된 설계·하중 받치는 부재
+        self.assertIn("부재가 하중을 받치는", g)
+        self.assertIn("셋의 규칙", g)  # 3회 실패 = 구조 신호
+
+    def test_tanngrisnir_anchors(self):
+        t = self.by_name["asgard-thor-tanngrisnir"]
+        self.assertIn("가면 폴백", t)  # 결함 은폐 폴백 = 차단
+        self.assertIn("근거 폴백", t)  # 허용 조건 4가지
+        self.assertIn("pipefail", t)  # 실패 보존 증거 형식
+        self.assertIn("실행 ≠ 평가", t)  # 명령 실행과 기준 충족의 분리
+        self.assertIn("회귀 케이스", t)  # 라이브 버그 = 수정+케이스 한 쌍
+        self.assertIn("슬롭 스윕", t)
+        self.assertIn("asgard-worker-testing", t)  # 테스트 작성 규율 경계
+
+    def test_einherjar_anchors(self):
+        e = self.by_name["asgard-thor-einherjar"]
+        self.assertIn("위임 문턱", e)  # 편성 판정 — 토큰 세금 정당화
+        self.assertIn("분할 편대", e)
+        self.assertIn("토너먼트 편대", e)
+        self.assertIn("계약 선행", e)  # 공유 계약은 병렬 전에 확정
+        self.assertIn("새 컨텍스트", e)  # 서브에 히스토리 무상속
+        self.assertIn("파일 3–5개 상한", e)
+        self.assertIn("깊이 1", e)
+        self.assertIn("검증 독립성", e)
+        self.assertIn("완료 선언 금지", e)
+        self.assertIn("단독 폴백", e)  # 편대 불가 환경의 체크리스트 게이트
+
 
 class TestSkillResolver(unittest.TestCase):
     """0-LLM 리졸버 — 단어 경계 + 동반어 조건 (26-07-16 Codex #3 오발 반례가 회귀 케이스)."""
@@ -205,6 +245,22 @@ class TestSkillResolver(unittest.TestCase):
         self.assertEqual(_names("GraphQL schema 를 프론트에 연결"), ["asgard-thor-lightning"])
         self.assertEqual(_names("redis 응답 캐시 무효화 전략"), ["asgard-thor-lightning"])
         self.assertEqual(_names("브라우저 캐시 정책 문서화"), [])
+
+    def test_new_domain_triggers(self):
+        self.assertEqual(_names("간헐 크래시 장애 원인 규명"), ["asgard-thor-gridarvol"])
+        self.assertEqual(_names("결제 모듈 에러 처리 폴백 정리"), ["asgard-thor-tanngrisnir"])
+        self.assertEqual(_names("토너먼트 편대 편성"), ["asgard-thor-einherjar"])
+
+    def test_diagnosis_overlay_composes(self):
+        # 그리다르뵐은 오버레이 — API 결함 과업이면 번개 위에 겹친다
+        got = _names("API 타임아웃 버그 재현")
+        self.assertIn("asgard-thor-lightning", got)
+        self.assertIn("asgard-thor-gridarvol", got)
+
+    def test_new_skill_false_positives(self):
+        self.assertEqual(_names("문서 목차 정리"), [])  # "정리" 단독은 탕그리스니르 비발화
+        self.assertEqual(_names("ladybug 컴포넌트 스타일"), [])  # \\bbugs?\\b 단어 경계
+        self.assertEqual(_names("편성표 문서 갱신"), [])  # "편대" 아님
 
     def test_no_match_fail_open(self):
         self.assertEqual(_names("README 오탈자 수정"), [])
@@ -242,10 +298,86 @@ class TestWiring(unittest.TestCase):
         # 순서는 role 파일 delivery: 선언 파생(정렬) — 계약은 구성원 집합이지 순서가 아니다
         self.assertEqual(
             set(DISPATCH_TOOL["input_schema"]["properties"]["agent"]["enum"]),
-            {"freyja", "freyja-lead", "thor", "eitri", "loki", "mimir"},
+            {"freyja", "freyja-lead", "thor", "thor-lead", "eitri", "loki", "mimir"},
         )
         for label in ("thor=백엔드", "eitri=빌드"):
             self.assertIn(label, DISPATCH_TOOL["description"])
+
+
+class TestThorLead(unittest.TestCase):
+    """백엔드 편대장 — 대장 토르만 재위임 봉인을 연다. 서브는 봉인 유지 (freyja-lead 와 동일 계층)."""
+
+    def setUp(self):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        self.roles = dict(ROLE_AGENTS)
+        self.lead = self.roles["asgard-thor-lead.md"]
+
+    def test_role_registered_with_delivery_tier(self):
+        from asgard.templates.roles import delivery_agents
+
+        self.assertEqual(delivery_agents().get("thor-lead"), "standard")  # 네이티브 디스패치 enum 자동 편입
+
+    def test_lead_frontmatter_has_agent_tool(self):
+        frontmatter = self.lead.split("---", 2)[1]
+        self.assertIn("Agent", frontmatter)  # 편성 권한 — 봉인의 예외
+        self.assertIn("Verifier 는 금지", frontmatter)  # 검증 독립성은 동일
+
+    def test_cc_whitelist_lead_open_sub_sealed(self):
+        from asgard.agent.tool_kernel import ROLE_CAPABILITIES, cc_tools_for_role
+
+        self.assertIn("Agent", cc_tools_for_role("thor-lead"))
+        self.assertNotIn("Agent", cc_tools_for_role("thor"))  # 서브 토르 재위임 봉인 유지
+        self.assertIn("coordinate", ROLE_CAPABILITIES["thor-lead"])
+        self.assertNotIn("coordinate", ROLE_CAPABILITIES["thor"])
+
+    def test_lead_contract_anchors(self):
+        for anchor in (
+            "asgard-thor-einherjar",  # 팀 프로토콜 단일 소스 로드 의무
+            "asgard-thor-jarngreipr",  # 데이터 위험 단위 브리프 동봉
+            "asgard-thor-gridarvol",  # 진단 단위 브리프 동봉
+            "편성 판정 먼저",  # 위임 문턱 미달 = 편대 금지
+            "위임 문턱",
+            "계약 선행",  # 공유 계약 병렬 전 확정
+            "토너먼트",  # N-버전 승자 적용
+            "판정 분리",  # 생성자≠판정자
+            "두 장부",
+            "깊이 1",  # 서브 재위임 불가
+            "완료 선언 금지",
+        ):
+            self.assertIn(anchor, self.lead)
+
+    def test_sub_thor_squad_membership_contract(self):
+        sub = self.roles["asgard-thor.md"]
+        self.assertIn("편대 소속 시", sub)  # 브리프 분계선·단위 한정 검증·반환 규격
+        self.assertIn("편대 편성은 asgard-thor-lead 의 표면", sub)  # 직접 편성 금지 — 판단 반환
+        self.assertIn("재위임 불가 — 하위 에이전트를 만들지 않는다", sub)  # 봉인 문구 보존
+        self.assertIn("전역 빌드·전체 테스트는 대장 몫", sub)  # 전역 게이트 단일 실행 계약
+
+    def test_heimdall_resolver_covers_lead(self):
+        import inspect
+
+        from asgard.agent import heimdall
+
+        src = inspect.getsource(heimdall._skill_resolver)
+        self.assertIn('"thor-lead"', src)  # 편대장 디스패치에도 전용 스킬 주입
+
+    def test_subagent_gate_targets(self):
+        from asgard.hooks.subagent_gate import AGENT_TARGETS
+
+        self.assertEqual(AGENT_TARGETS["asgard-thor-lead"], frozenset({"asgard-thor", "asgard-loki"}))
+        self.assertEqual(AGENT_TARGETS["asgard-thor"], frozenset())  # 서브 토르 완전 봉인
+
+    def test_routing_agents_md_and_worker(self):
+        from asgard.templates.agents import agents_md
+
+        md = agents_md("p")
+        self.assertIn("asgard-thor-lead", md)  # 대형 백엔드 과업 라우팅
+        self.assertIn("asgard-thor-einherjar", md)  # 모드 A 편대 스킬 경로
+        self.assertIn("예외 2개: asgard-freyja-lead·asgard-thor-lead", md)  # 재위임 예외의 명시적 한정
+        worker = self.roles["asgard-worker.md"]
+        self.assertIn("asgard-thor-lead", worker)
+        self.assertIn("에인헤랴르 스킬", worker)  # 네이티브 순차 편대 경로
 
 
 if __name__ == "__main__":

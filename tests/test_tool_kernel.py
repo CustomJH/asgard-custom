@@ -13,14 +13,31 @@ from asgard.agent.tool_kernel import (
     execute_tool,
     to_openai_tool,
 )
-from asgard.hooks.readonly_guard import is_readonly_bash_safe
+from asgard.hooks.readonly_guard import _path_token_targets_control, is_readonly_bash_safe
 
 
 class TestRegistry(unittest.TestCase):
+    def test_control_plane_alias_is_detected_after_symlink_resolution(self):
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".claude"))
+            os.symlink(".claude", os.path.join(root, "control"))
+            self.assertTrue(_path_token_targets_control(root, "control/settings.json", (".claude", ".asgard")))
+            self.assertTrue(
+                _path_token_targets_control(root, "--output=control/settings.json", (".claude", ".asgard"))
+            )
+
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py open q --criteria x"))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close"))
+        self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py ticket-claim --unit 1 --worker w1"))
+        self.assertTrue(
+            is_readonly_bash_safe(
+                "python3 .claude/hooks/quest-log.py ticket-finish --unit 1 --claim-token opaque --status done"
+            )
+        )
+        self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py ticket-recover"))
+        self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py verify-baseline"))
         # close --force 는 관리적 해제(Odin 동의) — read-only 역할 권한이 아니다
         self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close --force"))
         self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close q1 --force"))
@@ -32,6 +49,17 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("python3 -c \"open('PWNED', 'w').write('x')\" quest-log.py open"))
         self.assertFalse(is_readonly_bash_safe("python3 malicious.py quest-log.py open q"))
         self.assertFalse(is_readonly_bash_safe("python3 /tmp/.claude/hooks/quest-log.py open q"))
+
+    def test_readonly_git_rejects_executable_diff_helpers(self):
+        self.assertTrue(is_readonly_bash_safe("git diff -- README.md"))
+        self.assertFalse(is_readonly_bash_safe("git diff --ext-diff"))
+        self.assertFalse(is_readonly_bash_safe("git show --textconv HEAD"))
+        self.assertFalse(is_readonly_bash_safe("git -c diff.external='touch PWNED' diff"))
+        self.assertFalse(is_readonly_bash_safe("git -cdiff.demo.textconv='touch PWNED' diff"))
+        self.assertFalse(is_readonly_bash_safe("git --config-env=diff.external=HELPER diff"))
+        self.assertFalse(is_readonly_bash_safe("git grep --open-files-in-pager='touch PWNED' needle"))
+        self.assertFalse(is_readonly_bash_safe("git grep --open-files-in-pager 'touch PWNED' needle"))
+        self.assertFalse(is_readonly_bash_safe("git --paginate log"))
 
     def test_duplicate_name_is_rejected(self):
         registry = ToolRegistry()
