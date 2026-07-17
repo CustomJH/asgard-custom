@@ -143,6 +143,22 @@ class TestTransport(_Sess):
         self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertEqual(allowed, {})
 
+    def test_writable_role_uses_mandatory_bash_sandbox(self):
+        query, calls = _fake_query([[_result_msg()]])
+        sess = self._session(role="worker")
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("work")
+        options = calls[0][1]
+        self.assertEqual(
+            options.sandbox,
+            {
+                "enabled": True,
+                "autoAllowBashIfSandboxed": True,
+                "allowUnsandboxedCommands": False,
+            },
+        )
+
+
     def test_readonly_sdk_hook_blocks_mutating_bash(self):
         query, calls = _fake_query([[_result_msg()]])
         sess = self._session(readonly=True, role="verifier")
@@ -195,6 +211,8 @@ class TestTransport(_Sess):
         self.assertTrue(opt.include_partial_messages)
         self.assertEqual(opt.env["BASH_MAX_TIMEOUT_MS"], "120000")  # tools._TIMEOUT 패리티
         self.assertTrue(opt.strict_mcp_config)  # 유저/프로젝트 MCP 누출 차단 — Asgard 가 툴 표면 소유
+        self.assertEqual(opt.setting_sources, [])  # 유저/프로젝트 hooks·settings 누출 차단
+        self.assertEqual(opt.skills, [])  # ambient user/project skill discovery 차단
 
     def test_cache_usage_metered(self):
         # Claude Code 가 자체 캐싱 — 계측 패리티: 캐시 적중분을 지출·적중률에 합산 (누락 시 전부 0 으로 보임)
@@ -253,6 +271,29 @@ class TestTransport(_Sess):
             r = sess.run("verify")
         self.assertEqual(r.commands, [{"cmd": "pytest -q", "exit_code": None}])
 
+    def test_long_commands_with_same_display_prefix_keep_distinct_identity(self):
+        prefix = "printf " + "x" * 220
+        first = ToolUseBlock(id="c1", name="Bash", input={"command": prefix + " A"})
+        second = ToolUseBlock(id="c2", name="Bash", input={"command": prefix + " B"})
+        script = [
+            [
+                AssistantMessage(content=[first, second], model="m"),
+                UserMessage(
+                    content=[
+                        ToolResultBlock(tool_use_id="c1", content="fail", is_error=True),
+                        ToolResultBlock(tool_use_id="c2", content="ok", is_error=None),
+                    ]
+                ),
+                _result_msg(),
+            ]
+        ]
+        query, _ = _fake_query(script)
+        sess = self._session()
+        with mock.patch("claude_agent_sdk.query", query):
+            result = sess.run("commands")
+        self.assertEqual(result.commands[0]["cmd"], result.commands[1]["cmd"])
+        self.assertNotEqual(result.commands[0]["command_hash"], result.commands[1]["command_hash"])
+
     def test_successful_read_is_not_executable_verification_evidence(self):
         use = ToolUseBlock(id="r1", name="Read", input={"file_path": "hello.txt"})
         result = ToolResultBlock(tool_use_id="r1", content="ASGARD_E2E_OK\n", is_error=None)
@@ -280,6 +321,7 @@ class TestTransport(_Sess):
         with mock.patch("claude_agent_sdk.query", query):
             r = sess.run("write files")
         self.assertEqual(r.writes, ["a.txt"])
+        self.assertTrue(any("b.txt" in text and "실패" in text for text in self.texts))
 
     def test_max_turns_maps_to_max_iterations(self):
         script = [[_result_msg(subtype="error_max_turns")]]
@@ -401,6 +443,7 @@ class TestCustomToolBridge(_Sess):
         out = asyncio.run(t.handler({"ok": False}))
         self.assertTrue(out["is_error"])
         self.assertIn("nope", out["content"][0]["text"])
+        self.assertTrue(any("verdict" in text and "실패" in text for text in self.texts))
 
 
 class TestBanGuards(_Sess):
@@ -592,6 +635,8 @@ class TestCompleteText(unittest.TestCase):
         self.assertEqual(opt.max_turns, 1)
         self.assertEqual(opt.model, "claude-haiku-4-5-20251001")
         self.assertTrue(opt.strict_mcp_config)  # tools=[] 는 유저 MCP 를 못 막는다 (t1 4/4 fallback 원인)
+        self.assertEqual(opt.setting_sources, [])
+        self.assertEqual(opt.skills, [])
 
 
 if __name__ == "__main__":

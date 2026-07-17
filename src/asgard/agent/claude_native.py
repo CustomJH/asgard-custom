@@ -19,6 +19,7 @@ anthropic/openai_compat 과 달리 내부 루프를 Claude Code 하네스가 소
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import shutil
 import sys
@@ -272,12 +273,21 @@ async def _run_async(sess, user_content: str, result) -> None:
         tools=builtin,
         allowed_tools=allowed,
         permission_mode="bypassPermissions",  # 네이티브 트랜스포트(무제한 bash)와 동등 자율성
+        sandbox={
+            "enabled": True,
+            "autoAllowBashIfSandboxed": True,
+            "allowUnsandboxedCommands": False,
+        },
         max_turns=sess.max_iterations,
         mcp_servers=mcp_servers,
         # 유저/프로젝트 MCP 설정(~/.claude.json, .mcp.json) 차단 — Asgard 가 툴 표면을 소유한다.
         # 없으면 무관 유저 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
         # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (t1 4/4 실측).
         strict_mcp_config=True,
+        # SDK 기본(None)은 ~/.claude와 project/local settings·hooks·skills를 전부 로드한다.
+        # Asgard child는 role prompt/tool surface를 하니스가 소유하므로 ambient 확장을 봉인한다.
+        setting_sources=[],
+        skills=[],
         hooks=hooks,
         resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
         include_partial_messages=True,  # 텍스트 델타 스트리밍 — anthropic 트랜스포트와 체감 패리티
@@ -405,7 +415,10 @@ def _observe_use(sess, result, b, pending) -> None:
     if b.name == "Bash":
         cmd = str(b.input.get("command", ""))
         sess.on_status("$ " + cmd[:60])
-        result.commands.append({"cmd": cmd[:200], "exit_code": None})  # 결과 블록이 와야만 증거로 승격
+        command = {"cmd": cmd[:200], "exit_code": None}
+        if len(cmd) > 200:
+            command["command_hash"] = hashlib.sha256(cmd.encode()).hexdigest()
+        result.commands.append(command)  # 결과 블록이 와야만 증거로 승격
         pending[b.id] = ("$", cmd, time.monotonic(), len(result.commands) - 1)
     elif b.name in _WRITE_TOOLS:
         path = str(b.input.get("file_path", ""))
@@ -423,7 +436,8 @@ def _observe_result(sess, result, b, pending) -> None:
     if not sym:
         return
     sess.on_status(None)
-    sess._tool_line(sym, detail, time.monotonic() - t0)
+    failed = bool(b.is_error)
+    sess._tool_line("✕" if failed else sym, detail + (" — 실패" if failed else ""), time.monotonic() - t0)
     if cmd_idx >= 0:
         result.commands[cmd_idx]["exit_code"] = 1 if b.is_error else 0  # CLI 는 exit code 미노출 — is_error 로 근사
     if sym == "✎" and not b.is_error:
@@ -443,6 +457,8 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
             model=model or None,
             tools=[],  # 내장 툴 전부 제거 — 순수 텍스트 완성
             strict_mcp_config=True,  # tools=[] 는 유저 MCP 를 못 막는다 — classify 순수성 보장 (t1 4/4 원인)
+            setting_sources=[],
+            skills=[],
             max_turns=1,
             cwd=root,
             env=_guard_env(),
