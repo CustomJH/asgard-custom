@@ -155,7 +155,7 @@ class TestConfigDiscovery(BridgeBase):
 
         with (
             mock.patch.dict(os.environ, {"HOME": self.root}),
-            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+            mock.patch("asgard.memory_bridge.trust.verify_backend_binding"),
         ):
             self.assertFalse(mb.is_backend_trusted(config))
             mb.trust_backend(config)
@@ -182,8 +182,8 @@ class TestConfigDiscovery(BridgeBase):
             return value
 
         with (
-            mock.patch("asgard.memory_bridge._load_trust", side_effect=slow_load),
-            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+            mock.patch("asgard.memory_bridge.trust._load_trust", side_effect=slow_load),
+            mock.patch("asgard.memory_bridge.trust.verify_backend_binding"),
         ):
             threads = [threading.Thread(target=mb.trust_backend, args=(config,)) for config in configs]
             for thread in threads:
@@ -270,7 +270,7 @@ class TestProtocol(BridgeBase):
         self.assertIn("trusted", text)
 
     def test_initialize_and_ping(self):
-        with mock.patch("asgard.memory_bridge.verify_backend_binding") as verify:
+        with mock.patch("asgard.memory_bridge.server.verify_backend_binding") as verify:
             r = self.rpc("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}})
             self.assertIsNotNone(r)
             assert r is not None
@@ -335,7 +335,9 @@ class TestRecall(BridgeBase):
     def test_foreign_binding_hides_tools_and_blocks_calls_even_when_target_is_trusted(self):
         found = mb.find_config(self.root)
         assert found is not None
-        with mock.patch("asgard.memory_bridge.verify_backend_binding", side_effect=PermissionError("foreign binding")):
+        with mock.patch(
+            "asgard.memory_bridge.server.verify_backend_binding", side_effect=PermissionError("foreign binding")
+        ):
             self.assertEqual(self.rpc("tools/list")["result"]["tools"], [])
             text, error = self.call("memory_recall", {"query": "private prompt"})
 
@@ -371,7 +373,7 @@ class TestRecall(BridgeBase):
         )  # 닫힌 포트
         found = mb.find_config(self.root)
         assert found is not None
-        with mock.patch("asgard.memory_bridge.verify_backend_binding"):
+        with mock.patch("asgard.memory_bridge.trust.verify_backend_binding"):
             mb.trust_backend(found[1])
         text, err = self.call("memory_recall", {"query": "x"})
         self.assertTrue(err)
@@ -415,9 +417,9 @@ class TestRetainTwoStep(BridgeBase):
     def test_windows_private_acl_is_fail_closed(self):
         completed = mock.Mock(returncode=0)
         with (
-            mock.patch.object(mb.os, "name", "nt"),
+            mock.patch.object(mb.config.os, "name", "nt"),
             mock.patch.dict(os.environ, {"USERNAME": "odin"}),
-            mock.patch.object(mb.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(mb.config.subprocess, "run", return_value=completed) as run,
         ):
             mb._apply_private_acl(r"C:\state", directory=True)
         self.assertEqual(run.call_count, 2)
@@ -427,7 +429,7 @@ class TestRetainTwoStep(BridgeBase):
         self.assertIn("odin:(OI)(CI)F", args)
 
         with (
-            mock.patch.object(mb.os, "name", "nt"),
+            mock.patch.object(mb.config.os, "name", "nt"),
             mock.patch.dict(os.environ, {}, clear=True),
             self.assertRaises(OSError),
         ):
@@ -623,7 +625,7 @@ class TestRetainTwoStep(BridgeBase):
         aid = text.split("approval_id: ")[1].split("\n")[0]
 
         with mock.patch(
-            "asgard.memory_bridge.server_retain_items", return_value={"success": False, "error": "rejected"}
+            "asgard.memory_bridge.server.server_retain_items", return_value={"success": False, "error": "rejected"}
         ):
             first, first_err = self.call("memory_retain_commit", {"approval_id": aid})
 
