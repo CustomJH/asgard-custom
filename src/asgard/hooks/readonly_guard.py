@@ -80,8 +80,14 @@ def _path_token_within_root(root: str | None, token: str) -> bool:
 
 def _path_token_targets_control(root: str | None, token: str, markers: tuple[str, ...]) -> bool:
     """Resolve symlink parents before comparing a path operand with protected directories."""
-    if not root or not token or token == "-" or token.startswith("-"):
+    if not root or not token or token == "-":
         return False
+    if token.startswith("-"):
+        if "=" not in token:
+            return False
+        token = token.split("=", 1)[1]
+        if not token:
+            return False
     candidate = os.path.realpath(
         os.path.expanduser(token) if token.startswith(("~", "/")) else os.path.join(root, token)
     )
@@ -128,6 +134,15 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
         return "--noEmit" in tokens[1:]
     if program == "git":
         for index, token in enumerate(tokens[1:], 1):
+            # Nominally read-only Git commands can execute arbitrary configured helpers.
+            # Per-command config is unnecessary here, so reject it rather than maintaining
+            # an incomplete denylist of executable config keys.
+            if token == "-c" or token.startswith("-c") or token == "--config-env" or token.startswith("--config-env="):
+                return False
+            if token in {"--ext-diff", "--textconv", "--paginate", "-p", "--open-files-in-pager"} or token.startswith(
+                "--open-files-in-pager="
+            ):
+                return False
             if token == "-C" and (index + 1 >= len(tokens) or not _path_token_within_root(root, tokens[index + 1])):
                 return False
             if token.startswith(("--git-dir=", "--work-tree=")) and not _path_token_within_root(
@@ -194,7 +209,18 @@ def _safe_asgard_hook(tokens: list[str]) -> bool:
         return False
     name = os.path.basename(script)
     if name == "quest-log.py":
-        if len(tokens) < 3 or tokens[2] not in {"open", "append", "state", "next", "close"}:
+        if len(tokens) < 3 or tokens[2] not in {
+            "open",
+            "append",
+            "state",
+            "next",
+            "close",
+            "ticket-claim",
+            "ticket-heartbeat",
+            "ticket-finish",
+            "ticket-recover",
+            "verify-baseline",
+        }:
             return False
         # close --force 는 검증 실패 상태의 관리적 해제(Odin 동의) — read-only 역할의 권한이 아니다.
         return not (tokens[2] == "close" and "--force" in tokens[3:])

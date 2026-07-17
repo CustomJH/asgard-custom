@@ -26,6 +26,13 @@ import time
 
 MAX_BLOCKS = 2  # 역할당 — 3번째는 통과 (최후 방벽은 verifier-gate)
 ROLE_EVENT = {"asgard-thinker": "plan", "asgard-worker": "work", "asgard-verifier": "verify"}
+AGENT_TARGETS = {
+    "asgard-verifier": frozenset({"asgard-loki"}),
+    "asgard-freyja-lead": frozenset({"asgard-freyja", "asgard-loki"}),
+    "asgard-freyja": frozenset(),
+    "asgard-thor-lead": frozenset({"asgard-thor", "asgard-loki"}),
+    "asgard-thor": frozenset(),
+}
 # 역할 이벤트의 "신선도" 기준점 — 이 이벤트 뒤에 자기 이벤트가 있어야 이번 턴 기록으로 인정.
 ANCHOR = {"plan": "verify", "work": "verify", "verify": "work"}
 
@@ -306,6 +313,14 @@ def main():
         if data.get("hook_event_name") == "PreToolUse" and data.get("tool_name") == "Agent":
             tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
             target = str(tool_input.get("subagent_type") or tool_input.get("agent_type") or "")
+            if agent in AGENT_TARGETS and target not in AGENT_TARGETS[agent]:
+                allowed = ", ".join(sorted(AGENT_TARGETS[agent])) or "none"
+                print(
+                    "Asgard role boundary: %s cannot dispatch %s (allowed: %s)"
+                    % (agent, target or "<missing>", allowed),
+                    file=sys.stderr,
+                )
+                sys.exit(2)
             if target == "asgard-worker":
                 if not record_worker_dispatch(root, qid, sid, str(data.get("tool_use_id") or ""), tool_input):
                     print("Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker", file=sys.stderr)

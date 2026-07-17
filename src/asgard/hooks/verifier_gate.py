@@ -20,8 +20,11 @@ import hashlib
 import json
 import os
 import re
+import shlex
+import stat
 import subprocess
 import sys
+import tempfile
 from typing import Any
 
 EMPTY = hashlib.sha256(b"").hexdigest()
@@ -85,6 +88,57 @@ def git(root, *args, binary=False):
         return 1, b"" if binary else ""
 
 
+def current_tree_ref(root):
+    rc, raw_head = git(root, "rev-parse", "--verify", "HEAD")
+    head = raw_head.decode("utf-8", "replace") if isinstance(raw_head, bytes) else raw_head
+    if rc != 0 or not head.strip():
+        return None
+    fd, index_path = tempfile.mkstemp(prefix="asgard-current-index-")
+    os.close(fd)
+    os.unlink(index_path)
+    env = {**os.environ, "GIT_INDEX_FILE": index_path}
+
+    def run(*args, input_data=None):
+        return subprocess.run(
+            ["git", "-C", root, *args],
+            input=input_data,
+            capture_output=True,
+            timeout=60,
+            env=env,
+            check=False,
+        )
+
+    try:
+        if run("read-tree", head.strip()).returncode:
+            return None
+        if run("add", "-A", "--", ".", ":(exclude).asgard").returncode:
+            return None
+        _, raw_untracked = git(
+            root, "ls-files", "--others", "--exclude-standard", "-z", "--", ".", ":(exclude).asgard", binary=True
+        )
+        if isinstance(raw_untracked, str):
+            raw_untracked = raw_untracked.encode("utf-8", "surrogateescape")
+        junk = [
+            path
+            for path in raw_untracked.split(b"\0")
+            if path and _junk(path.decode("utf-8", "surrogateescape"))
+        ]
+        if junk and run(
+            "update-index", "--force-remove", "-z", "--stdin", input_data=b"\0".join(junk) + b"\0"
+        ).returncode:
+            return None
+        if os.path.isdir(os.path.join(root, ".asgard", "map")):
+            if run("add", "-A", "-f", "--", ".asgard/map").returncode:
+                return None
+        tree = run("write-tree")
+        return tree.stdout.decode().strip() if tree.returncode == 0 and tree.stdout.strip() else None
+    finally:
+        try:
+            os.unlink(index_path)
+        except OSError:
+            pass
+
+
 # ── quest_log.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙 — 어긋나면 위양성 차단) ──
 # 검증 실행 아티팩트 — quest_log.py 의 _junk 와 동일해야 한다 (양쪽 hash 불일치 = 영구 stale).
 # lagom: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
@@ -140,7 +194,7 @@ def ignored_state(root):
         binary=True,
     )
     if rc != 0:
-        return {}
+        return {"<snapshot-unavailable>": "ignored-enumeration-failed"}
     if isinstance(raw, str):
         raw = raw.encode("utf-8", "surrogateescape")
     out = {}
@@ -152,12 +206,18 @@ def ignored_state(root):
             continue
         full = os.path.join(root, path)
         try:
-            body = (
-                b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
-                if os.path.islink(full)
-                else open(full, "rb").read()
-            )
-            out[path] = hashlib.sha256(body).hexdigest()
+            info = os.lstat(full)
+            if stat.S_ISLNK(info.st_mode):
+                body = b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
+                out[path] = hashlib.sha256(body).hexdigest()
+            elif stat.S_ISREG(info.st_mode):
+                digest = hashlib.sha256()
+                with open(full, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                out[path] = digest.hexdigest()
+            else:
+                out[path] = f"<nonregular:{stat.S_IFMT(info.st_mode):o}>"
         except OSError:
             out[path] = "<missing>"
     return out
@@ -167,16 +227,17 @@ def diff_state(root, base_ref, ignored_base=None):
     # nontest_lines 4번째 원소 — quest_log.py 와 동일 유지 (테스트 추가 ≠ 리스크 질량)
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
-    spec = [base_ref, "--", ".", ":(exclude).asgard"]
+    current_ref = current_tree_ref(root)
+    if not current_ref:
+        return hashlib.sha256(b"snapshot-unavailable").hexdigest(), ["<snapshot-unavailable>"], 0, 0
+    spec = [base_ref, current_ref, "--", ".", ":(exclude).asgard"]
     rc, diff = git(root, "diff", "--binary", *spec, binary=True)
     if rc != 0:
         return EMPTY, [], 0, 0
     if isinstance(diff, str):
         diff = diff.encode()
     _, names = git(root, "diff", "--name-only", *spec)
-    _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
     names = names.decode(errors="replace") if isinstance(names, bytes) else names
-    unt = unt.decode(errors="replace") if isinstance(unt, bytes) else unt
     _, base_maps = git(root, "ls-tree", "-r", "--name-only", base_ref, "--", ".asgard/map")
     base_maps = base_maps.decode(errors="replace") if isinstance(base_maps, bytes) else base_maps
     map_paths = {p for p in base_maps.splitlines() if p.strip()}
@@ -214,19 +275,7 @@ def diff_state(root, base_ref, ignored_base=None):
             lines += n
             if not _testfile(parts[2]):
                 nt_lines += n
-    untracked = sorted(p for p in unt.splitlines() if p.strip() and not _junk(p))
     h = hashlib.sha256(diff)
-    for p in untracked:
-        try:
-            body = open(os.path.join(root, p), "rb").read()
-            if not p.startswith(".asgard/map/"):
-                k = body.count(b"\n") + 1
-                lines += k
-                if not _testfile(p):
-                    nt_lines += k
-            h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
-        except Exception:
-            h.update(p.encode() + b"\0missing")
     ignored_changed = []
     if ignored_base is not None:
         current_ignored = ignored_state(root)
@@ -245,7 +294,7 @@ def diff_state(root, base_ref, ignored_base=None):
                 + str(current_ignored.get(path, "<missing>")).encode()
             )
     changed = sorted(
-        set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed) | set(ignored_changed)
+        set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed)
     )
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
@@ -271,9 +320,65 @@ def readonly(cmd, allow):
 
 def trivial_evidence(cmd):
     """quest_log.py 의 trivial_evidence 와 동일 유지 (단일 출처 원칙) — `true` 한 방이 PASS 증거로
-    성립하던 Goodhart 구멍 봉합: 무조건 exit 0 인 명령은 검증 증거가 아니다."""
-    c = " ".join(str(cmd).split())
-    return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
+    성립하던 Goodhart 구멍 봉합: 무조건 exit 0 이거나 관찰만 하는 명령은 검증 증거가 아니다."""
+    try:
+        tokens = shlex.split(str(cmd), posix=True)
+    except ValueError:
+        return True
+    if not tokens:
+        return True
+    segments = [[]]
+    for token in tokens:
+        if token in {"|", "||", "&&", ";"}:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    observational = {
+        ":",
+        "awk",
+        "cat",
+        "date",
+        "echo",
+        "file",
+        "find",
+        "head",
+        "ls",
+        "od",
+        "printf",
+        "pwd",
+        "sed",
+        "sleep",
+        "stat",
+        "tail",
+        "tree",
+        "true",
+        "type",
+        "wc",
+        "which",
+        "whoami",
+        "xxd",
+    }
+    for segment in segments:
+        while segment and ("=" in segment[0] and not segment[0].startswith(("=", "-"))):
+            segment = segment[1:]
+        if not segment:
+            continue
+        head = os.path.basename(segment[0])
+        if head in {"sh", "bash", "zsh"} and any(flag in segment for flag in ("-c", "-lc")):
+            index = next(i for i, token in enumerate(segment) if token in ("-c", "-lc"))
+            if index + 1 < len(segment) and not trivial_evidence(segment[index + 1]):
+                return False
+            continue
+        if head == "git":
+            sub = next((token for token in segment[1:] if not token.startswith("-")), "")
+            if sub == "diff" and any(flag in segment for flag in ("--check", "--quiet", "--exit-code")):
+                return False
+            if sub in {"grep", "rev-parse"}:
+                return False
+            continue
+        if head not in observational and not (head == "exit" and segment[1:] == ["0"]):
+            return False
+    return True
 
 
 def pass_evidence(rec):
@@ -340,9 +445,15 @@ def unmet_contracts(root, criteria, rec):
     return unmet
 
 
+def block_counter_path(root, sid):
+    qid = quest_pointer(root, sid) or "orphan"
+    scope = re.sub(r"[^A-Za-z0-9_.-]", "_", str(qid))[:64] or "orphan"
+    return os.path.join(root, ".asgard", f"gate-blocks-{sid}-{scope}.json")
+
+
 def block(root, sid, reason):
-    """차단 — 단 세션당 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시 (Canon 9)."""
-    path = os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json")
+    """차단 — active quest별 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시."""
+    path = block_counter_path(root, sid)
     n = 0
     try:
         n = int(json.load(open(path)).get("n", 0))
@@ -440,8 +551,8 @@ def orphan_writes(root, sid):
             dirty.append(str(rel))
     if not dirty:
         return
-    # LAST 는 quest-log close 의 승인(funnel APPROVED/ESCALATED) 경로만 기록한다 — forced close 는
-    # LAST 미기록. 아래 재검증(증거·baseline·hash)은 구버전 quest-log 가 남긴 LAST 방어.
+    # LAST is published only for APPROVED close. The checks below also reject legacy
+    # ESCALATED/forced LAST pointers written by older versions.
     try:  # LAST quest 의 PASS 가 현 상태를 물리 증명하면 allow
         qid = quest_pointer(root, sid, "last")
         if not qid:
@@ -453,9 +564,11 @@ def orphan_writes(root, sid):
             except Exception:
                 continue
         base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
-        verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")]
-        if verdicts and verdicts[-1].get("verdict") == "ESCALATE":
-            return  # Canon 9 정규 종료 — close 후에도 인질 금지 (active 경로와 동일 규칙, s1 라이브 실측)
+        closed = [e for e in events if e.get("event") == "quest_closed"]
+        close_risk = (closed[-1].get("risk") or {}) if closed else {}
+        if close_risk.get("decision") != "APPROVED" or close_risk.get("forced"):
+            raise ValueError("LAST does not represent approved close")
+        verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") == "PASS"]
         if base_ref and verdicts and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
             last = verdicts[-1]
             evidence = pass_evidence(last)  # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍
@@ -464,7 +577,13 @@ def orphan_writes(root, sid):
                 (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
                 None,
             )
-            if evidence and not baseline_red and last.get("diff_hash") == diff_state(root, base_ref, ignored_base)[0]:
+            current_hash, last_changed, _, _ = diff_state(root, base_ref, ignored_base)
+            if (
+                evidence
+                and not baseline_red
+                and "<snapshot-unavailable>" not in last_changed
+                and last.get("diff_hash") == current_hash
+            ):
                 return
     except Exception:
         pass
@@ -529,6 +648,8 @@ def main():
             (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
         )
         current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
+        if "<snapshot-unavailable>" in changed:
+            block(root, sid, "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.")
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
         mutating = [c for c in cmds if not readonly(c.get("cmd", ""), policy["readonly_commands"])]
         risk_write = any((e.get("risk") or {}).get("has_write") for e in events)
@@ -562,7 +683,7 @@ def main():
                         "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다.",
                     )
             try:
-                os.remove(os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json"))
+                os.remove(block_counter_path(root, sid))
             except Exception:
                 pass
             sys.exit(0)  # 종료 허용 — 단 완료가 아니라 오딘 결정 대기 상태 (퀘스트 로그에 ESCALATE 가 남는다)
@@ -581,13 +702,6 @@ def main():
                 sid,
                 "미완료 ticket 존재(%s) — 모든 단위를 done으로 만든 뒤 검증하세요." % ", ".join(unfinished[:6]),
             )
-        if not pass_evidence(p):
-            block(
-                root,
-                sid,
-                "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
-                "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
-            )
         unmet = unmet_contracts(root, next((e.get("criteria") for e in events if e.get("criteria")), []), p)
         if unmet:
             block(
@@ -596,6 +710,13 @@ def main():
                 "criteria verify 계약 미충족 (%s) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
                 "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
                 % "; ".join(map(str, unmet[:3])),
+            )
+        if not pass_evidence(p):
+            block(
+                root,
+                sid,
+                "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
+                "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
             )
         bl = p.get("baseline") or {}
         if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 — 코드가 깨져 있다
@@ -621,7 +742,7 @@ def main():
                 % (sensitive[:3], " / 삭제된 테스트 %s" % dts[:3] if dts else "", len(changed), lines),
             )
         try:  # 통과 → 차단 카운터 리셋 (다음 위반은 새로 3회부터)
-            os.remove(os.path.join(root, ".asgard", "gate-blocks-" + sid + ".json"))
+            os.remove(block_counter_path(root, sid))
         except Exception:
             pass
     except Exception:

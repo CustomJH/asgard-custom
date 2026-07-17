@@ -27,6 +27,8 @@ import json
 import os
 import re
 import secrets
+import shlex
+import stat
 import subprocess
 import sys
 import tempfile
@@ -207,6 +209,51 @@ def snapshot_ref(root: str) -> str | None:
             os.unlink(index_path)
 
 
+def current_tree_ref(root: str) -> str | None:
+    """Materialize the exact current non-control tree in a temporary index without touching the user's index."""
+    rc, raw_head = git(root, "rev-parse", "--verify", "HEAD")
+    head = raw_head.decode("utf-8", "replace") if isinstance(raw_head, bytes) else raw_head
+    if rc != 0 or not head.strip():
+        return None
+    fd, index_path = tempfile.mkstemp(prefix="asgard-current-index-")
+    os.close(fd)
+    os.unlink(index_path)
+    env = {**os.environ, "GIT_INDEX_FILE": index_path}
+
+    def run(*args: str, input_data: bytes | None = None) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", "-C", root, *args], input=input_data, capture_output=True, timeout=60, env=env, check=False
+        )
+
+    try:
+        if run("read-tree", head.strip()).returncode:
+            return None
+        if run("add", "-A", "--", ".", ":(exclude).asgard").returncode:
+            return None
+        _, raw_untracked = git(
+            root, "ls-files", "--others", "--exclude-standard", "-z", "--", ".", ":(exclude).asgard", binary=True
+        )
+        if isinstance(raw_untracked, str):
+            raw_untracked = raw_untracked.encode("utf-8", "surrogateescape")
+        junk = [
+            path
+            for path in raw_untracked.split(b"\0")
+            if path and _junk(path.decode("utf-8", "surrogateescape"))
+        ]
+        if junk and run(
+            "update-index", "--force-remove", "-z", "--stdin", input_data=b"\0".join(junk) + b"\0"
+        ).returncode:
+            return None
+        if os.path.isdir(os.path.join(root, ".asgard", "map")):
+            if run("add", "-A", "-f", "--", ".asgard/map").returncode:
+                return None
+        tree = run("write-tree")
+        return tree.stdout.decode().strip() if tree.returncode == 0 and tree.stdout.strip() else None
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(index_path)
+
+
 # ── 물리 증거 해시 — verifier-gate.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙) ──
 # 검증 실행 아티팩트 — 검증 명령이 만든 캐시가 PASS 를 stale 로 만들면 게이트가 자기파괴적이다
 # (.gitignore 없는 프로젝트에서 pytest 실행 → __pycache__ → hash 변경, s1 라이브 실측).
@@ -267,7 +314,7 @@ def ignored_state(root: str) -> dict[str, str]:
         binary=True,
     )
     if rc != 0:
-        return {}
+        return {"<snapshot-unavailable>": "ignored-enumeration-failed"}
     if isinstance(raw, str):
         raw = raw.encode("utf-8", "surrogateescape")
     out: dict[str, str] = {}
@@ -279,12 +326,18 @@ def ignored_state(root: str) -> dict[str, str]:
             continue
         full = os.path.join(root, path)
         try:
-            body = (
-                b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
-                if os.path.islink(full)
-                else open(full, "rb").read()
-            )
-            out[path] = hashlib.sha256(body).hexdigest()
+            info = os.lstat(full)
+            if stat.S_ISLNK(info.st_mode):
+                body = b"<symlink>\0" + os.readlink(full).encode("utf-8", "surrogateescape")
+                out[path] = hashlib.sha256(body).hexdigest()
+            elif stat.S_ISREG(info.st_mode):
+                digest = hashlib.sha256()
+                with open(full, "rb") as handle:
+                    for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                        digest.update(chunk)
+                out[path] = digest.hexdigest()
+            else:
+                out[path] = f"<nonregular:{stat.S_IFMT(info.st_mode):o}>"
         except OSError:
             out[path] = "<missing>"
     return out
@@ -301,16 +354,17 @@ def diff_state(
     별도 하드 트리거 (deleted_tests)."""
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
-    spec = [base_ref, "--", ".", ":(exclude).asgard"]
+    current_ref = current_tree_ref(root)
+    if not current_ref:
+        return hashlib.sha256(b"snapshot-unavailable").hexdigest(), ["<snapshot-unavailable>"], 0, 0
+    spec = [base_ref, current_ref, "--", ".", ":(exclude).asgard"]
     rc, diff = git(root, "diff", "--binary", *spec, binary=True)
     if rc != 0:
         return EMPTY, [], 0, 0
     if isinstance(diff, str):
         diff = diff.encode()
     _, names = git(root, "diff", "--name-only", *spec)
-    _, unt = git(root, "ls-files", "--others", "--exclude-standard", "--", ".", ":(exclude).asgard")
     names = names.decode(errors="replace") if isinstance(names, bytes) else names
-    unt = unt.decode(errors="replace") if isinstance(unt, bytes) else unt
     _, base_maps = git(root, "ls-tree", "-r", "--name-only", base_ref, "--", ".asgard/map")
     base_maps = base_maps.decode(errors="replace") if isinstance(base_maps, bytes) else base_maps
     map_paths = {p for p in base_maps.splitlines() if p.strip()}
@@ -348,19 +402,7 @@ def diff_state(
             lines += n
             if not _testfile(parts[2]):
                 nt_lines += n
-    untracked = sorted(p for p in unt.splitlines() if p.strip() and not _junk(p))
     h = hashlib.sha256(diff)
-    for p in untracked:
-        try:
-            body = open(os.path.join(root, p), "rb").read()
-            if not p.startswith(".asgard/map/"):
-                k = body.count(b"\n") + 1
-                lines += k
-                if not _testfile(p):
-                    nt_lines += k
-            h.update(p.encode() + b"\0" + hashlib.sha256(body).digest())
-        except Exception:
-            h.update(p.encode() + b"\0missing")
     ignored_changed: list[str] = []
     if ignored_base is not None:
         current_ignored = ignored_state(root)
@@ -379,7 +421,7 @@ def diff_state(
                 + str(current_ignored.get(path, "<missing>")).encode()
             )
     changed = sorted(
-        set(n for n in names.splitlines() if n.strip()) | set(untracked) | set(map_changed) | set(ignored_changed)
+        set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed)
     )
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
@@ -504,9 +546,65 @@ def deleted_tests(root: str, base_ref: str | None) -> list[str]:
 
 def trivial_evidence(cmd) -> bool:
     """verifier_gate.py 의 trivial_evidence 와 동일 유지 (단일 출처 원칙) — `true` 한 방이 PASS
-    증거로 성립하던 Goodhart 구멍 봉합: 무조건 exit 0 인 명령은 검증 증거가 아니다."""
-    c = " ".join(str(cmd).split())
-    return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
+    증거로 성립하던 Goodhart 구멍 봉합: 무조건 exit 0 이거나 관찰만 하는 명령은 검증 증거가 아니다."""
+    try:
+        tokens = shlex.split(str(cmd), posix=True)
+    except ValueError:
+        return True
+    if not tokens:
+        return True
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token in {"|", "||", "&&", ";"}:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    observational = {
+        ":",
+        "awk",
+        "cat",
+        "date",
+        "echo",
+        "file",
+        "find",
+        "head",
+        "ls",
+        "od",
+        "printf",
+        "pwd",
+        "sed",
+        "sleep",
+        "stat",
+        "tail",
+        "tree",
+        "true",
+        "type",
+        "wc",
+        "which",
+        "whoami",
+        "xxd",
+    }
+    for segment in segments:
+        while segment and ("=" in segment[0] and not segment[0].startswith(("=", "-"))):
+            segment = segment[1:]
+        if not segment:
+            continue
+        head = os.path.basename(segment[0])
+        if head in {"sh", "bash", "zsh"} and any(flag in segment for flag in ("-c", "-lc")):
+            index = next(i for i, token in enumerate(segment) if token in ("-c", "-lc"))
+            if index + 1 < len(segment) and not trivial_evidence(segment[index + 1]):
+                return False
+            continue
+        if head == "git":
+            sub = next((token for token in segment[1:] if not token.startswith("-")), "")
+            if sub == "diff" and any(flag in segment for flag in ("--check", "--quiet", "--exit-code")):
+                return False
+            if sub in {"grep", "rev-parse"}:
+                return False
+            continue
+        if head not in observational and not (head == "exit" and segment[1:] == ["0"]):
+            return False
+    return True
 
 
 # ── criteria verify 계약 — 기준별 검증 명령·산출물 결속 ──
@@ -869,8 +967,10 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
     for key in ("attempt", "max_attempts"):
         if ev.get(key) is not None:
             full[key] = int(ev[key])
-    if ev.get("model"):  # 실사용 provider:model 기록 — 라우팅 prior 등 결과 기반 정책 조정의 데이터 축
+    if ev.get("model"):
         full["model"] = str(ev["model"])[:80]
+    if ev.get("request"):
+        full["request"] = str(ev["request"])
     return full
 
 
@@ -888,11 +988,11 @@ def fold_tickets(events: list[dict]) -> dict[str, dict]:
         )
         try:
             attempt = int(str(attempt_value)) if attempt_value is not None else 0
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             attempt = 0
         try:
             max_attempts = int(str(max_attempts_value)) if max_attempts_value is not None else 3
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             max_attempts = 3
         tickets[key] = {
             "id": event["unit"],
@@ -1019,14 +1119,14 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
     if unfinished:
         ids = ", ".join(str(ticket.get("id")) for ticket in unfinished[:6])
         return "REJECTED", "tickets_incomplete", "미완료 ticket 존재: %s" % ids
-    if not s.get("pass_evidence"):
-        return "REJECTED", "no_evidence", "PASS 에 성공한 검증 명령 증거 없음"
     if s.get("baseline_state") == "red":
         return "REJECTED", "baseline_red", "하네스 베이스라인 체크 red — 실패한 체크 수리 필요"
     unmet = s.get("contracts_unmet") or []
     if unmet:
         # 계약이 선언된 기준은 그 명령·산출물이 유일한 증거다 — 무관한 exit-0 명령으로 대체 불가
         return "REJECTED", "criteria_unverified", "criteria verify 계약 미충족: %s" % "; ".join(map(str, unmet[:3]))
+    if not s.get("pass_evidence"):
+        return "REJECTED", "no_evidence", "PASS 에 성공한 검증 명령 증거 없음"
     if not s.get("pass_hash_match"):
         return "REJECTED", "stale_pass", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요"
     if s.get("full_required") and s.get("pass_level") != "full":
@@ -1202,7 +1302,21 @@ def refresh_managed_map(root: str) -> tuple[bool, str | None]:
         refresh_map(root)
         return True, None
     except Exception as exc:
-        return False, f"{exc.__class__.__name__}: {str(exc)[:300]}"
+        import_error = f"{exc.__class__.__name__}: {str(exc)[:300]}"
+        try:
+            completed = subprocess.run(
+                ["asgard", "setup", "map", "--quiet"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except Exception as cli_exc:
+            return False, f"{import_error}; CLI fallback {cli_exc.__class__.__name__}: {str(cli_exc)[:200]}"
+        if completed.returncode == 0:
+            return True, None
+        detail = (completed.stderr or completed.stdout or f"exit {completed.returncode}").strip()[:300]
+        return False, f"{import_error}; CLI fallback: {detail}"
 
 
 def tests_available(root: str) -> bool:
@@ -1388,6 +1502,8 @@ def main() -> int:
     )
     ap.add_argument("quest_id", nargs="?")
     ap.add_argument("--criteria", action="append", default=[])
+    ap.add_argument("--request", default="", help="open: original task text for crash-safe native resume")
+    ap.add_argument("--request-stdin", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--base-ref", help=argparse.SUPPRESS)
     ap.add_argument("--session", default=os.environ.get("CLAUDE_SESSION_ID", "-"))
     ap.add_argument("--role"), ap.add_argument("--event"), ap.add_argument("--verdict")
@@ -1435,6 +1551,20 @@ def main() -> int:
             print("usage: quest-log open <quest-id> [--criteria ...]", file=sys.stderr)
             return 2
         qid = sanitize(args.quest_id)
+        request = args.request
+        if args.request_stdin:
+            raw_request = sys.stdin.buffer.read(65537)
+            if len(raw_request) > 65536:
+                print(json.dumps({"error": "request payload exceeds 64 KiB limit"}), file=sys.stderr)
+                return 1
+            try:
+                request = str((json.loads(raw_request.decode("utf-8")) or {}).get("request") or "")
+            except Exception:
+                print(json.dumps({"error": "invalid request stdin payload"}), file=sys.stderr)
+                return 1
+        if len(request) > 10000:
+            print(json.dumps({"error": "request exceeds 10,000-character limit"}), file=sys.stderr)
+            return 1
         base_ref = args.base_ref or snapshot_ref(root)
         if args.base_ref:
             valid_rc, raw_type = git(root, "cat-file", "-t", args.base_ref)
@@ -1452,6 +1582,10 @@ def main() -> int:
         risk = {"has_write": not args.no_write}
         if args.task_class:  # prior 집계 축 — 퀘스트가 어느 클래스로 열렸는지 감사 기록
             risk["task_class"] = args.task_class
+        ignored_snapshot = ignored_state(root)
+        if "<snapshot-unavailable>" in ignored_snapshot:
+            print(json.dumps({"error": "ignored-file snapshot unavailable"}), file=sys.stderr)
+            return 1
         ev = normalize(
             {
                 "role": "thinker",
@@ -1459,7 +1593,8 @@ def main() -> int:
                 "base_ref": base_ref,
                 "risk": risk,
                 "criteria": args.criteria,
-                "ignored_snapshot": ignored_state(root),
+                "request": request,
+                "ignored_snapshot": ignored_snapshot,
             },
             load_events(root, qid),
             qid,
@@ -1552,7 +1687,14 @@ def main() -> int:
             )
             ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
             unsafe_maps = unsafe_map_links(root)
-            if not map_ok and ev["verdict"] == "PASS":
+            if "<snapshot-unavailable>" in ev["changed_files"] and ev["verdict"] == "PASS":
+                ev["verdict"] = "FAIL"
+                ev["failure_sig"] = "snapshot-unavailable"
+                ev["commands"] = [
+                    *ev.get("commands", []),
+                    {"cmd": "git write-tree (temporary index)", "exit_code": 1, "error": "snapshot unavailable"},
+                ][-20:]
+            elif not map_ok and ev["verdict"] == "PASS":
                 ev["verdict"] = "FAIL"
                 ev["failure_sig"] = "map-refresh-failed"
                 ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
@@ -1593,6 +1735,7 @@ def main() -> int:
             (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
         )
         ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
+        snapshot_ok = "<snapshot-unavailable>" not in ev["changed_files"]
         ev["level"] = "micro"
         bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
         state = bl.get("state")
@@ -1603,11 +1746,14 @@ def main() -> int:
             )
             return 1
         results = [c for c in bl.get("results", []) if isinstance(c, dict)]
-        ev["verdict"] = "PASS" if state == "green" and map_ok else "FAIL"
+        ev["verdict"] = "PASS" if state == "green" and map_ok and snapshot_ok else "FAIL"
         ev["commands"] = results[:20]
         ev["baseline"] = bl
         failing = [str(c.get("cmd")) for c in results if c.get("exit_code") not in (0, None)]
-        if not map_ok:
+        if not snapshot_ok:
+            ev["failure_sig"] = "snapshot-unavailable"
+            failing = ["git write-tree (temporary index)"]
+        elif not map_ok:
             ev["failure_sig"] = "map-refresh-failed"
             failing = [map_error or "managed map refresh failed"]
             ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
@@ -1698,8 +1844,9 @@ def main() -> int:
                 args.session,
             )
             _write_event_unlocked(root, qid, close_event, events)
-            # LAST 포인터는 승인된 close만 기록한다. forced close는 Stop gate 면제가 아니다.
-            if not forced:
+            # LAST is a verified-state capability, not merely a termination receipt.
+            # ESCALATE may end the active loop, but its writes remain unverified.
+            if decision == "APPROVED" and not forced:
                 try:
                     _write_pointer(_session_pointer(root, args.session, "last"), qid)
                     _write_pointer(os.path.join(quest_dir(root), "LAST"), qid)
@@ -1708,8 +1855,9 @@ def main() -> int:
                     return 1
             clear_active_quest(root, args.session, qid)
         res = {"closed": qid, "forced": forced}
-        if forced:
+        if forced or decision != "APPROVED":
             res["gate_exempt"] = False
+        if forced:
             res["rejected"] = "%s: %s" % (code, why)
         try:  # 지도 최신 여부 확인. 자동 갱신 실패 때만 수동 증분 갱신을 리마인드한다.
             from asgard.code_map import check_map
