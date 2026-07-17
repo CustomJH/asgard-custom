@@ -346,9 +346,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
             encrypted_content="encrypted-reasoning",
             summary=[],
         )
-        first = SimpleNamespace(
-            id="resp-1", status="completed", output=[reasoning, call], output_text="", usage=None
-        )
+        first = SimpleNamespace(id="resp-1", status="completed", output=[reasoning, call], output_text="", usage=None)
         second = SimpleNamespace(id="resp-2", status="completed", output=[], output_text="done", usage=None)
         responses = _Responses([first, second])
         rp = ResolvedProvider(
@@ -438,9 +436,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
 
     def test_max_iteration_persists_executed_codex_tool_history_before_returning(self):
         call = SimpleNamespace(type="function_call", id="fc", call_id="call", name="probe", arguments="{}")
-        response = SimpleNamespace(
-            id="resp", status="completed", output=[call], output_text="", usage=None
-        )
+        response = SimpleNamespace(id="resp", status="completed", output=[call], output_text="", usage=None)
         rp = ResolvedProvider(
             profile=PROVIDERS["openai-native"],
             model="gpt-5.6-sol",
@@ -560,6 +556,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
 
     def test_preflight_checks_asgard_oauth_not_codex_binary(self):
         from asgard.commands.start import preflight
+
         with (
             mock.patch("asgard.openai_codex.login_status", return_value=(True, "logged in · account selected")),
             mock.patch("asgard.commands.start.resolve") as resolve_provider,

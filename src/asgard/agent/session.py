@@ -120,7 +120,7 @@ def _invalid_encrypted_content(error: Exception) -> bool:
     body = getattr(error, "body", None)
     try:
         rendered = json.dumps(body, sort_keys=True) if body is not None else ""
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         rendered = ""
     return "invalid_encrypted_content" in f"{rendered} {error}".lower()
 
@@ -570,9 +570,7 @@ class AgentSession:
                     if message.get("role") in {"user", "assistant"}
                 ]
             pending_input: object = list(history)
-            pending_input.append(
-                {"role": "user", "content": [{"type": "input_text", "text": user_content}]}
-            )
+            pending_input.append({"role": "user", "content": [{"type": "input_text", "text": user_content}]})
             previous_response_id = None
         else:
             pending_input = user_content
@@ -708,7 +706,7 @@ class AgentSession:
                     out, _error = self._execute(
                         _Call(str(getattr(call, "call_id", "")), str(getattr(call, "name", "")), value), result
                     )
-                except (json.JSONDecodeError, ValueError):
+                except json.JSONDecodeError, ValueError:
                     out = "malformed tool arguments: valid JSON object required"
                 outputs.append(
                     {

@@ -309,7 +309,7 @@ def model_catalog() -> list[str]:
         return []
     try:
         payload = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except UnicodeDecodeError, json.JSONDecodeError:
         return []
     entries = payload.get("models", []) if isinstance(payload, dict) else []
     visible: list[tuple[int, str]] = []
@@ -395,7 +395,7 @@ def device_login(notify: Callable[[str], None], *, timeout: float = 15 * 60) -> 
         raise OAuthError("ChatGPT device login response was incomplete.", code="device_incomplete")
     try:
         interval = max(3.0, float(payload.get("interval", 5)))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         interval = 5.0
     notify(f"Open https://auth.openai.com/codex/device and enter code {user_code}")
 

@@ -15,6 +15,7 @@ def run_login(provider: str) -> int:
 
     try:
         _require_openai_native(provider)
+
         def notify(message: str) -> None:
             sys.stdout.write(message + "\n")
 

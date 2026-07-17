@@ -456,7 +456,11 @@ def resolve_trinity(
             out[role] = default
             continue
         rp = resolve(root, provider=e.get("provider") or default.profile.name, model=e.get("model"))
-        if e.get("base_url") and rp.profile.name not in {"nvidia", "openai", "openai-native"}:  # only global trusted entries retain this key
+        if e.get("base_url") and rp.profile.name not in {
+            "nvidia",
+            "openai",
+            "openai-native",
+        }:  # only global trusted entries retain this key
             rp.base_url = e["base_url"]
             rp.missing = [m for m in rp.missing if "base_url" not in m]
         out[role] = rp

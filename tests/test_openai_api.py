@@ -96,7 +96,9 @@ class TestOpenAIAPIProvider(unittest.TestCase):
                 "required": ["value"],
             },
         }
-        session = AgentSession(client, rp, "/tmp", "system", extra_tools=[tool], tool_handlers={"probe": lambda i: i["value"]})
+        session = AgentSession(
+            client, rp, "/tmp", "system", extra_tools=[tool], tool_handlers={"probe": lambda i: i["value"]}
+        )
         result = session.run("hello")
 
         self.assertEqual(result.text, "done")

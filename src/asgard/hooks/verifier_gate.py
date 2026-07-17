@@ -118,14 +118,11 @@ def current_tree_ref(root):
         )
         if isinstance(raw_untracked, str):
             raw_untracked = raw_untracked.encode("utf-8", "surrogateescape")
-        junk = [
-            path
-            for path in raw_untracked.split(b"\0")
-            if path and _junk(path.decode("utf-8", "surrogateescape"))
-        ]
-        if junk and run(
-            "update-index", "--force-remove", "-z", "--stdin", input_data=b"\0".join(junk) + b"\0"
-        ).returncode:
+        junk = [path for path in raw_untracked.split(b"\0") if path and _junk(path.decode("utf-8", "surrogateescape"))]
+        if (
+            junk
+            and run("update-index", "--force-remove", "-z", "--stdin", input_data=b"\0".join(junk) + b"\0").returncode
+        ):
             return None
         if os.path.isdir(os.path.join(root, ".asgard", "map")):
             if run("add", "-A", "-f", "--", ".asgard/map").returncode:
@@ -293,9 +290,7 @@ def diff_state(root, base_ref, ignored_base=None):
                 + b"\0"
                 + str(current_ignored.get(path, "<missing>")).encode()
             )
-    changed = sorted(
-        set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed)
-    )
+    changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 

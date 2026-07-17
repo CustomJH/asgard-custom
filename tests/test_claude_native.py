@@ -158,7 +158,6 @@ class TestTransport(_Sess):
             },
         )
 
-
     def test_readonly_sdk_hook_blocks_mutating_bash(self):
         query, calls = _fake_query([[_result_msg()]])
         sess = self._session(readonly=True, role="verifier")

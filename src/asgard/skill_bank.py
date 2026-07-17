@@ -151,7 +151,7 @@ def _load(dirs: list[str]) -> dict[str, dict]:
             if os.path.realpath(d) == project_dir:
                 try:
                     receipt = json.load(open(os.path.join(d, name, APPROVAL_FILE), encoding="utf-8"))
-                except (OSError, ValueError, TypeError):
+                except OSError, ValueError, TypeError:
                     continue
                 if not _valid_project_approval(project_root, name, text, receipt):
                     continue

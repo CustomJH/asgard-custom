@@ -22,9 +22,7 @@ class TestRegistry(unittest.TestCase):
             os.makedirs(os.path.join(root, ".claude"))
             os.symlink(".claude", os.path.join(root, "control"))
             self.assertTrue(_path_token_targets_control(root, "control/settings.json", (".claude", ".asgard")))
-            self.assertTrue(
-                _path_token_targets_control(root, "--output=control/settings.json", (".claude", ".asgard"))
-            )
+            self.assertTrue(_path_token_targets_control(root, "--output=control/settings.json", (".claude", ".asgard")))
 
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))
