@@ -366,6 +366,7 @@ class TestDeliveryDeclarative(EvoBase):
                 "loki": "fast",
                 "mimir": "standard",
                 "thor": "standard",
+                "thor-lead": "standard",
             },
         )
         self.assertNotIn("ullr", da)  # delivery 키 없는 role 은 디스패치 비대상 (현행 의미 보존)
@@ -467,6 +468,44 @@ class TestPolish(EvoBase):
         assert after is not None
         self.assertIn("원칙 수준 서술", after)
         self.assertEqual(evolution.pending_list(self.root)[0]["id"], m["id"])  # 여전히 pending — 승인 별도
+
+    def test_polish_uses_openai_responses_transport(self):
+        m = self._mined()
+        original = evolution.show(self.root, m["id"])
+        assert original is not None
+        rewritten = original.replace("## 전략", "## 전략(Responses)")
+        create = mock.Mock(return_value=SimpleNamespace(output_text=rewritten))
+        rp = SimpleNamespace(missing=[], model="m", profile=SimpleNamespace(api_mode="openai_responses"))
+        with (
+            mock.patch("asgard.providers.resolve", return_value=rp),
+            mock.patch(
+                "asgard.agent.session.make_client",
+                return_value=SimpleNamespace(responses=SimpleNamespace(create=create)),
+            ),
+        ):
+            ok, msg = evolution.polish(self.root, m["id"])
+        self.assertTrue(ok, msg)
+        create.assert_called_once()
+        self.assertIn("Responses", evolution.show(self.root, m["id"]) or "")
+
+    def test_polish_uses_codex_subscription_responses_transport(self):
+        m = self._mined()
+        original = evolution.show(self.root, m["id"])
+        assert original is not None
+        rewritten = original.replace("## 전략", "## 전략(Codex)")
+        create = mock.Mock(return_value=SimpleNamespace(output_text=rewritten))
+        rp = SimpleNamespace(missing=[], model="m", profile=SimpleNamespace(api_mode="codex_responses"))
+        with (
+            mock.patch("asgard.providers.resolve", return_value=rp),
+            mock.patch(
+                "asgard.agent.session.make_client",
+                return_value=SimpleNamespace(responses=SimpleNamespace(create=create)),
+            ),
+        ):
+            ok, msg = evolution.polish(self.root, m["id"])
+        self.assertTrue(ok, msg)
+        self.assertFalse(create.call_args.kwargs["store"])
+        self.assertIn("Codex", evolution.show(self.root, m["id"]) or "")
 
     def test_polish_backstop_rejects_name_change(self):
         m = self._mined()

@@ -34,7 +34,8 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
     models = provider_models(rp, on_fallback=fallback_reasons.append)
     if fallback_reasons:
         sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('model_catalog_fallback')}\n")
-    if rp.model and rp.model not in models:
+    account_catalog = rp.profile.api_mode == "codex_responses" and not fallback_reasons
+    if rp.model and rp.model not in models and not account_catalog:
         models.insert(0, rp.model)
     models = list(dict.fromkeys(models))
     query = ""
@@ -63,6 +64,9 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
             if not manual:
                 sys.stdout.write(f"  {t('invalid_model_id')}\n")
                 return None
+            if account_catalog and manual not in models:
+                sys.stdout.write(f"  {t('invalid_model_id')}\n")
+                continue
             return manual
         if choice.lower() == "s":
             try:
@@ -86,7 +90,7 @@ def _provider_values(root: str, rp: ResolvedProvider) -> dict:
     if values.get("name") != rp.profile.name:
         values = {}
     values.update({"name": rp.profile.name, "model": rp.model})
-    if rp.profile.name != "nvidia" and rp.base_url and rp.base_url != rp.profile.base_url:
+    if rp.profile.name not in {"nvidia", "openai"} and rp.base_url and rp.base_url != rp.profile.base_url:
         values["base_url"] = rp.base_url
     else:
         values.pop("base_url", None)
@@ -101,7 +105,7 @@ def select_model(root: str, rp: ResolvedProvider, *, persist: bool = True) -> Re
     if not persist:
         return resolve(root, provider=rp.profile.name, model=model)
     selected = resolve(root, provider=rp.profile.name, model=model)
-    if selected.profile.name != "nvidia":
+    if selected.profile.name not in {"nvidia", "openai"}:
         selected.base_url = rp.base_url
     values = _provider_values(root, selected)
     save_config_section(root, "provider", values)
@@ -130,6 +134,19 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
     p = PROVIDERS[name]
     base_url, model = "", ""
     has_model_picker = bool(p.fallback_models) or p.api_mode == "openai_compat"
+    if p.api_mode == "codex_responses":
+        from .. import openai_codex
+
+        def notify(message: str) -> None:
+            sys.stdout.write(f"  {message}\n")
+
+        try:
+            tokens = openai_codex.device_login(notify)
+            openai_codex.save_tokens(tokens)
+        except openai_codex.OAuthError as exc:
+            sys.stdout.write(f"  ChatGPT login failed: {exc}\n")
+            return None
+        sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim('ChatGPT login saved for Asgard')}\n")
     if p.api_mode == "openai_compat" and not p.base_url:
         base_url = input(f"  base_url [{p.base_url or 'https://...'}]: ").strip()
     if not p.default_model and not has_model_picker:

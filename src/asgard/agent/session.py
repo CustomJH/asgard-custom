@@ -3,22 +3,26 @@
 세션 = (system, tools, messages) 하나. 서브에이전트(역할·딜리버리)는 새 AgentSession —
 child context 라 프로세스 스폰 없이 중첩된다 (중첩 디스패치의 구조적 기반).
 
-트랜스포트 3종 (루프·툴 실행은 공유, API 호출·파싱만 분기):
+트랜스포트 5종 (루프·툴 실행은 공유, API 호출·파싱만 분기):
   anthropic     — Messages API (스키마리스 bash/editor, content 블록)
   openai_compat — chat.completions (function 툴, reasoning_content 스트리밍 — nvidia NIM 등)
+  openai_responses — 공식 OpenAI Responses API (function tool loop).
   claude_cli    — 로컬 claude CLI(Claude Code) 를 Agent SDK 로 구동 (claude_native.py).
                   예외적으로 내부 루프는 Claude Code 소유 — 커스텀 툴은 in-process MCP 로
                   이쪽 핸들러 실행, 커맨드/쓰기/토큰은 이벤트 관찰로 집계 (계약 유지).
+  codex_responses — Asgard-owned ChatGPT OAuth로 Codex Responses API를 직접 호출.
 루프를 Asgard 가 소유하는 게 핵심 — strands/langchain 은 루프를 가져가서 Trinity 강제화를 없앤다.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
 import time
+import uuid
 from dataclasses import dataclass, field
 from typing import Callable
 
@@ -50,7 +54,11 @@ def make_client(rp: ResolvedProvider):
 
         # rp.api_key 있으면 그것(env 또는 credentials.json), 없으면 SDK 기본 해석(프로파일 등)에 위임
         return anthropic.Anthropic(api_key=rp.api_key) if rp.api_key else anthropic.Anthropic()
-    if rp.profile.api_mode == "openai_compat":
+    if rp.profile.api_mode == "codex_responses":
+        from ..openai_codex import make_client as make_codex_client
+
+        return make_codex_client()
+    if rp.profile.api_mode in {"openai_compat", "openai_responses"}:
         from openai import OpenAI
 
         if not rp.api_key:
@@ -60,11 +68,61 @@ def make_client(rp: ResolvedProvider):
         from .claude_native import make_native_client
 
         return make_native_client()  # 마커 — 실제 스폰·인증은 Agent SDK/CLI 가 해석
+
     raise NotImplementedError(f"api_mode '{rp.profile.api_mode}' 미지원")
 
 
 def _to_openai_tool(t: dict) -> dict:
     return to_openai_tool(t)
+
+
+def _to_responses_tool(t: dict) -> dict:
+    """Canonical Asgard schema → OpenAI Responses function tool schema."""
+    return {
+        "type": "function",
+        "name": t["name"],
+        "description": t.get("description", ""),
+        "parameters": t.get("input_schema") or {"type": "object", "properties": {}},
+        "strict": False,
+    }
+
+
+def _codex_replay_item(item: object) -> dict | None:
+    """Convert a Codex output item into a store=false input item without server IDs."""
+    kind = str(getattr(item, "type", "") or "")
+    if kind == "function_call":
+        return {
+            "type": "function_call",
+            "call_id": str(getattr(item, "call_id", "")),
+            "name": str(getattr(item, "name", "")),
+            "arguments": str(getattr(item, "arguments", "") or "{}"),
+        }
+    if kind == "reasoning":
+        encrypted = str(getattr(item, "encrypted_content", "") or "")
+        if not encrypted:
+            return None
+        return {
+            "type": "reasoning",
+            "encrypted_content": encrypted,
+            "summary": getattr(item, "summary", None) or [],
+        }
+    if kind == "message":
+        content = getattr(item, "content", None)
+        if hasattr(item, "model_dump"):
+            content = item.model_dump(exclude={"id", "status"}, exclude_none=True).get("content", content)
+        return {"type": "message", "role": "assistant", "content": content or []}
+    return None
+
+
+def _invalid_encrypted_content(error: Exception) -> bool:
+    if getattr(error, "status_code", None) != 400:
+        return False
+    body = getattr(error, "body", None)
+    try:
+        rendered = json.dumps(body, sort_keys=True) if body is not None else ""
+    except (TypeError, ValueError):
+        rendered = ""
+    return "invalid_encrypted_content" in f"{rendered} {error}".lower()
 
 
 # 창 미상 프로바이더의 프룬 폴백 상한 — 주류 창(≥128k) 기준 보수값. 더 작은 모델은
@@ -95,6 +153,7 @@ class AgentSession:
         readonly: bool = False,
         role: str | None = None,
         cwd: str | None = None,
+        readonly_paths: list[str] | tuple[str, ...] = (),
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # root는 Quest/journal/config의 canonical 소유자, cwd는 도구와 provider subprocess의 실행 공간.
@@ -103,6 +162,7 @@ class AgentSession:
         self._explicit_cwd = cwd is not None
         self._readonly_workspace = None
         self._readonly_unisolated = False
+        self.readonly_paths = tuple(str(path) for path in readonly_paths)
         # readonly = 역할→도구 구조 강제 (thinker/verifier/loki) — editor write 거부.
         # lagom: bash 리다이렉션 write 는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
         self.readonly = readonly
@@ -117,6 +177,8 @@ class AgentSession:
         self.on_tokens = on_tokens
         self.max_iterations = max_iterations
         self.messages: list[dict] = []
+        self._codex_session_id = uuid.uuid4().hex
+        self._codex_reasoning_replay_enabled = True
         # 딜리버리 디스패치 자식 마커 — claude_cli 에서 부모가 spawn permit 을 쥔 채 기다리므로
         # 자식은 permit 을 재요구하지 않는다 (재진입 데드락, CUS-246). _dispatch_handler 가 켠다.
         self._nested_dispatch = False
@@ -170,7 +232,11 @@ class AgentSession:
         t0 = time.monotonic()
         out = execute_tool(self.registry, call.name, call.input, ctx)
         self.on_status(None)
-        self._tool_line(sym, detail, time.monotonic() - t0)
+        self._tool_line(
+            "✕" if out.is_error else sym,
+            detail + (" — 실패" if out.is_error else ""),
+            time.monotonic() - t0,
+        )
         return out.content, out.is_error
 
     # ── 진입점 ──────────────────────────────────────────────────────────
@@ -188,7 +254,11 @@ class AgentSession:
             from .unit_workspace import UnitWorkspace, WorkspaceError
 
             try:
-                workspace = UnitWorkspace(self.root, f"readonly-{os.getpid()}-{id(self)}")
+                workspace = UnitWorkspace(
+                    self.root,
+                    f"readonly-{os.getpid()}-{id(self)}",
+                    include_ignored=self.readonly_paths,
+                )
                 workspace.__enter__()
                 # Do not leave the canonical project's absolute path discoverable as a clone remote.
                 subprocess.run(
@@ -228,6 +298,8 @@ class AgentSession:
                 )
             elif self.rp.profile.api_mode == "anthropic":
                 r = self._run_anthropic(user_content)
+            elif self.rp.profile.api_mode in {"openai_responses", "codex_responses"}:
+                r = self._run_responses(user_content)
             else:
                 r = self._run_openai(user_content)
         finally:
@@ -471,6 +543,190 @@ class AgentSession:
                     continue
                 out, _err = self._execute(_Call(c["id"], c["name"], inp), result)
                 self.messages.append({"role": "tool", "tool_call_id": c["id"], "content": out})
+        result.stop_reason = "max_iterations"
+        return result
+
+    def _run_responses(self, user_content: str) -> SessionResult:
+        """OpenAI/Codex Responses loop with canonical Asgard function tools."""
+        tools = [_to_responses_tool(tool) for tool in self.tools]
+        result = SessionResult(text="", stop_reason="")
+        codex_backend = self.rp.profile.api_mode == "codex_responses"
+        if codex_backend:
+            # ChatGPT's Codex endpoint is stateless (store=false): replay visible history and
+            # this turn's function items instead of relying on previous_response_id.
+            history = getattr(self, "_codex_history_items", None)
+            if history is None:
+                history = [
+                    {
+                        "role": message["role"],
+                        "content": [
+                            {
+                                "type": "input_text" if message["role"] == "user" else "output_text",
+                                "text": str(message.get("content", "")),
+                            }
+                        ],
+                    }
+                    for message in self.messages
+                    if message.get("role") in {"user", "assistant"}
+                ]
+            pending_input: object = list(history)
+            pending_input.append(
+                {"role": "user", "content": [{"type": "input_text", "text": user_content}]}
+            )
+            previous_response_id = None
+        else:
+            pending_input = user_content
+            previous_response_id = getattr(self, "_openai_response_id", None)
+        from ..i18n import t as _t
+
+        for _ in range(self.max_iterations):
+            self.on_status(_t("thinking"))
+            jid, j0 = self._journal_started("codex_responses" if codex_backend else "openai_responses")
+            kwargs: dict = {
+                "model": self.rp.model,
+                "instructions": self.system,
+                "input": pending_input,
+                "timeout": 3600.0,
+                "store": not codex_backend,
+            }
+            if tools:
+                kwargs["tools"] = tools
+                kwargs["tool_choice"] = "auto"
+                kwargs["parallel_tool_calls"] = True
+            if codex_backend:
+                cache_material = json.dumps(tools, sort_keys=True, separators=(",", ":")) + self.system
+                if self._codex_reasoning_replay_enabled:
+                    kwargs["include"] = ["reasoning.encrypted_content"]
+                kwargs["prompt_cache_key"] = hashlib.sha256(cache_material.encode()).hexdigest()
+                kwargs["extra_headers"] = {
+                    "session_id": self._codex_session_id,
+                    "x-client-request-id": self._codex_session_id,
+                }
+                if self.rp.model.startswith(("gpt-5", "o")):
+                    kwargs["reasoning"] = {"effort": "medium", "summary": "auto"}
+            if not codex_backend:
+                kwargs["max_output_tokens"] = 32_768
+                kwargs["truncation"] = "auto"
+            if previous_response_id:
+                kwargs["previous_response_id"] = previous_response_id
+            try:
+                response = self.client.responses.create(**kwargs)
+            except Exception as e:
+                if codex_backend and self._codex_reasoning_replay_enabled and _invalid_encrypted_content(e):
+                    self._codex_reasoning_replay_enabled = False
+                    if isinstance(pending_input, list):
+                        pending_input = [item for item in pending_input if item.get("type") != "reasoning"]
+                        self._codex_history_items = list(pending_input)
+                        kwargs["input"] = pending_input
+                    kwargs.pop("include", None)
+                    try:
+                        response = self.client.responses.create(**kwargs)
+                    except Exception as retry_error:
+                        self._journal_error(jid, j0, retry_error)
+                        raise
+                elif codex_backend and getattr(e, "status_code", None) == 401:
+                    try:
+                        from ..openai_codex import make_client as make_codex_client
+
+                        self.client = make_codex_client(force_refresh=True)
+                        response = self.client.responses.create(**kwargs)
+                    except Exception as retry_error:
+                        self._journal_error(jid, j0, retry_error)
+                        raise
+                else:
+                    self._journal_error(jid, j0, e)
+                    raise
+            usage = getattr(response, "usage", None)
+            inp = int(getattr(usage, "input_tokens", 0) or 0) if usage else 0
+            output = int(getattr(usage, "output_tokens", 0) or 0) if usage else 0
+            total = int(getattr(usage, "total_tokens", 0) or (inp + output)) if usage else 0
+            details = getattr(usage, "input_tokens_details", None) if usage else None
+            cached = int(getattr(details, "cached_tokens", 0) or 0) if details else 0
+            result.context_tokens = total
+            result.tokens += total
+            result.cache_read_tokens += cached
+            result.uncached_input_tokens += max(0, inp - cached)
+            call_returned(
+                self.root,
+                jid,
+                duration_ms=(time.monotonic() - j0) * 1000,
+                counts={"total_tokens": total, "cache_read_tokens": cached},
+            )
+            self.on_status(None)
+            response_status = str(getattr(response, "status", "completed") or "")
+            if response_status not in {"completed", "incomplete"}:
+                self._openai_response_id = None
+                raise RuntimeError(f"Responses protocol rejected terminal status: {response_status or 'missing'}")
+            text = str(getattr(response, "output_text", "") or "")
+            replay_items = [
+                replay
+                for item in (getattr(response, "output", None) or [])
+                if (replay := _codex_replay_item(item)) is not None
+                and (self._codex_reasoning_replay_enabled or replay.get("type") != "reasoning")
+            ]
+            if text:
+                result.text = text
+                self.on_text(text)
+            if response_status == "incomplete":
+                details = getattr(response, "incomplete_details", None)
+                reason = str(getattr(details, "reason", "") or "incomplete")
+                result.stop_reason = "max_tokens" if reason == "max_output_tokens" else reason
+                self._openai_response_id = None
+                if codex_backend and isinstance(pending_input, list):
+                    pending_input.extend(replay_items)
+                    self._codex_history_items = list(pending_input)
+                self.messages.append({"role": "user", "content": user_content})
+                if result.text:
+                    self.messages.append({"role": "assistant", "content": result.text})
+                return result
+            calls = [
+                item
+                for item in (getattr(response, "output", None) or [])
+                if getattr(item, "type", "") == "function_call"
+            ]
+            previous_response_id = str(getattr(response, "id", "") or "") if not codex_backend else None
+            self._openai_response_id = previous_response_id or None
+            if not calls:
+                result.stop_reason = "end_turn"
+                if codex_backend and isinstance(pending_input, list):
+                    pending_input.extend(replay_items)
+                    self._codex_history_items = list(pending_input)
+                self.messages.append({"role": "user", "content": user_content})
+                if result.text:
+                    self.messages.append({"role": "assistant", "content": result.text})
+                return result
+            outputs: list[dict] = []
+            if codex_backend:
+                if not isinstance(pending_input, list):
+                    raise RuntimeError("Codex Responses input state is invalid")
+                pending_input.extend(replay_items)
+            for call in calls:
+                try:
+                    value = json.loads(getattr(call, "arguments", "") or "{}")
+                    if not isinstance(value, dict):
+                        raise ValueError("object required")
+                    out, _error = self._execute(
+                        _Call(str(getattr(call, "call_id", "")), str(getattr(call, "name", "")), value), result
+                    )
+                except (json.JSONDecodeError, ValueError):
+                    out = "malformed tool arguments: valid JSON object required"
+                outputs.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": str(getattr(call, "call_id", "")),
+                        "output": out,
+                    }
+                )
+            if codex_backend:
+                if not isinstance(pending_input, list):
+                    raise RuntimeError("Codex Responses input state is invalid")
+                pending_input.extend(outputs)
+            else:
+                pending_input = outputs
+        self._openai_response_id = None
+        if codex_backend and isinstance(pending_input, list):
+            self._codex_history_items = list(pending_input)
+            self.messages.append({"role": "user", "content": user_content})
         result.stop_reason = "max_iterations"
         return result
 

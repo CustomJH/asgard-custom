@@ -23,7 +23,7 @@ class ProviderProfile:
 
     name: str
     display: str
-    api_mode: str  # "anthropic" | "openai_compat" | "claude_cli"
+    api_mode: str  # "anthropic" | "openai_compat" | "openai_responses" | "codex_responses" | "claude_cli"
     env_vars: tuple[str, ...]  # API 키 후보 env var (첫 매치 승리)
     default_model: str
     base_url: str = ""  # openai_compat 필수, anthropic 은 SDK 기본
@@ -66,6 +66,33 @@ PROVIDERS: dict[str, ProviderProfile] = {
         fallback_models=("opus", "sonnet", "haiku"),
         key_optional=True,  # 구독 keychain 로그인이면 env 키 불요
         context_window=200_000,
+    ),
+    # OpenAI API — 공식 endpoint + Responses API. 제네릭 OpenAI-compatible와 분리해 최신
+    # reasoning/tool wire contract를 사용하고 repository 설정이 credential endpoint를 바꾸지 못하게 한다.
+    "openai": ProviderProfile(
+        name="openai",
+        display="OpenAI API",
+        api_mode="openai_responses",
+        env_vars=("OPENAI_API_KEY",),
+        base_url="https://api.openai.com/v1",
+        default_model="gpt-5.6-sol",
+        signup_hint="platform.openai.com 에서 키 발급 후 export OPENAI_API_KEY=...",
+        fallback_models=("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
+        context_window=1_050_000,
+    ),
+    # ChatGPT 구독 — Asgard 전용 OAuth 세션으로 Codex Responses endpoint를 직접 호출한다.
+    # stock Codex CLI의 agent loop나 ~/.codex/auth.json을 빌리지 않는다.
+    "openai-native": ProviderProfile(
+        name="openai-native",
+        display="OpenAI Codex (ChatGPT subscription)",
+        api_mode="codex_responses",
+        env_vars=(),
+        base_url="https://chatgpt.com/backend-api/codex",
+        default_model="gpt-5.6-sol",
+        signup_hint="asgard auth login openai-native 로 ChatGPT 구독 로그인",
+        fallback_models=("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4-mini"),
+        key_optional=True,
+        context_window=258_400,
     ),
     # 제네릭 OpenAI-호환 — OpenAI/OpenRouter/Ollama류. base_url 은 config 로 지정.
     "openai_compat": ProviderProfile(
@@ -220,7 +247,17 @@ def provider_models(
             on_fallback(reason)
         return fallback
 
-    if rp.profile.api_mode != "openai_compat":
+    if rp.profile.api_mode == "codex_responses":
+        try:
+            from .openai_codex import model_catalog, model_context_window
+
+            live = model_catalog()
+            if live:
+                rp.context_window = model_context_window(rp.model) or rp.context_window
+        except Exception:
+            live = []
+        return live or use_fallback("ChatGPT Codex model catalog unavailable")
+    if rp.profile.api_mode not in {"openai_compat", "openai_responses"}:
         return fallback
     if not rp.base_url or not rp.api_key:
         return use_fallback("catalog unavailable")
@@ -230,7 +267,7 @@ def provider_models(
     url = rp.profile.models_url or rp.base_url.rstrip("/") + "/models"
     if urllib_parse.urlparse(url).scheme not in {"http", "https"}:
         return use_fallback("unsupported catalog URL")
-    if rp.profile.name == "nvidia":
+    if rp.profile.name in {"nvidia", "openai"}:
         trusted = rp.profile.models_url or rp.profile.base_url.rstrip("/") + "/models"
         if url != trusted or urllib_parse.urlparse(url).scheme != "https":
             return use_fallback("untrusted NVIDIA catalog URL")
@@ -325,15 +362,19 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         return rp
 
     cred = load_credentials().get(name, {})
+    # OAuth subscription transport has a dedicated auth store. Never materialize stale API-key
+    # credentials, endpoints, or model routing from credentials.json into this route.
+    if profile.api_mode == "codex_responses":
+        cred = {}
     try:
         ctx_win = max(0, int(conf.get("context_window") or 0))
     except TypeError, ValueError:
         ctx_win = 0
     trusted_global = global_conf if global_conf.get("name", name) == name else {}
     base_url = trusted_global.get("base_url") or cred.get("base_url") or profile.base_url
-    # NVIDIA global credential은 repository-controlled endpoint로 보내지 않는다. 사설 NIM은 별도
+    # 공식 provider credential은 custom endpoint로 보내지 않는다. 사설 endpoint는 별도
     # openai_compat provider로 명시 연결해야 한다.
-    if name == "nvidia":
+    if name in {"nvidia", "openai", "openai-native"}:
         base_url = profile.base_url
     rp = ResolvedProvider(
         profile=profile,
@@ -354,13 +395,21 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     elif profile.key_optional:
         if profile.api_mode == "claude_cli":
             rp.key_source = "claude login (keychain)"  # 인증은 CLI 가 해석 — 키 값 불요
+        elif profile.api_mode == "codex_responses":
+            rp.key_source = "Asgard ChatGPT OAuth"
+            try:
+                from .openai_codex import load_tokens
+
+                load_tokens()
+            except Exception:
+                rp.missing.append("ChatGPT OAuth 없음 — asgard auth login openai-native")
         else:
             rp.api_key, rp.key_source = "ollama", "local (keyless)"  # openai SDK 는 빈 키 거부 — 더미
     else:
         rp.missing.append(f"API 키 없음 ({name}) — asgard start 에서 입력하거나 {' / '.join(candidates)} export")
     if not rp.model:
         rp.missing.append("model 미지정 — 온보딩에서 입력하거나 --model")
-    if profile.api_mode == "openai_compat" and not rp.base_url:
+    if profile.api_mode in {"openai_compat", "openai_responses"} and not rp.base_url:
         rp.missing.append("base_url 미지정 — openai_compat 은 온보딩에서 입력하거나 [provider] base_url")
     return rp
 
@@ -407,7 +456,7 @@ def resolve_trinity(
             out[role] = default
             continue
         rp = resolve(root, provider=e.get("provider") or default.profile.name, model=e.get("model"))
-        if e.get("base_url") and rp.profile.name != "nvidia":  # only global trusted entries retain this key
+        if e.get("base_url") and rp.profile.name not in {"nvidia", "openai", "openai-native"}:  # only global trusted entries retain this key
             rp.base_url = e["base_url"]
             rp.missing = [m for m in rp.missing if "base_url" not in m]
         out[role] = rp
