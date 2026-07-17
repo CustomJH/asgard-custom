@@ -1257,7 +1257,9 @@ class TestSecondReview(MemoryBase):
         real_connect = sqlite3.connect
 
         try:
-            with mock.patch.object(memory.sqlite3, "connect", side_effect=lambda p: real_connect(p, timeout=0.01)):
+            with mock.patch.object(
+                memory.index.sqlite3, "connect", side_effect=lambda p: real_connect(p, timeout=0.01)
+            ):
                 with self.assertRaises(sqlite3.OperationalError):
                     memory._db(self.d)
         finally:
