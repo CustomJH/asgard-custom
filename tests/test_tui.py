@@ -134,6 +134,10 @@ class TestTUI(unittest.TestCase):
 
                 inp.value = "second"
                 await pilot.press("enter")
+                original = app.heimdall
+                inp.value = "/new"
+                await pilot.press("enter")
+                self.assertIs(app.heimdall, original)
                 app.action_interrupt()
                 await pilot.pause()
                 self.assertEqual(stub.calls, ["first"])

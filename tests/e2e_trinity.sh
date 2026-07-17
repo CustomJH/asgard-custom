@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Trinity E2E — 실 Claude Code 로 7 시나리오(s1..s7)를 돌린다.
+# Trinity E2E — 실 Claude Code 로 8 시나리오(s1..s8)를 돌린다.
 #
 # 요구: claude CLI(인증 완료), python3, git, uv(레포 소스로 asgard init 실행).
-# 사용: tests/e2e_trinity.sh [s1|s2|s3|s4|s5|s6|s7 ...]   # 기본: 전부
+# 사용: tests/e2e_trinity.sh [s1|s2|s3|s4|s5|s6|s7|s8 ...]   # 기본: 전부
 # env:  E2E_KEEP=1  → 시나리오 작업 디렉터리 보존 (기본: 성공 시 삭제)
 #       E2E_MODEL   → 코디네이터 모델 오버라이드 (기본: claude 기본값)
 #
@@ -89,7 +89,7 @@ EOF
 }
 
 run_claude() { # $1=dir $2=prompt $3=max-turns → out.json 에 결과
-  (cd "$1" && claude -p "$2" --output-format json --dangerously-skip-permissions \
+  (cd "$1" && PATH="$ROOT/.venv/bin:$PATH" claude -p "$2" --output-format json --dangerously-skip-permissions \
      --max-turns "${3:-50}" $MODEL_ARG > out.json 2> claude.err)
 }
 
@@ -101,9 +101,11 @@ events() { # $1=repo → "role:event:verdict" 줄들
   local f; f="$(ledger "$1")"; [ -n "$f" ] || return 0
   py "
 import json,sys
+rows=[]
 for line in open(sys.argv[1]):
     e=json.loads(line)
-    print(':'.join(str(e.get(k) or '-') for k in ('role','event','verdict')))" "$f"
+    rows.append(':'.join(str(e.get(k) or '-') for k in ('role','event','verdict')))
+sys.stdout.write('\n'.join(rows)+'\n')" "$f"
 }
 metrics() { # $1=out.json $2=label
   py "
@@ -285,10 +287,71 @@ s7() {
   metrics "$d/out.json" S7
 }
 
+# ── S8 Mode B 병렬 물리 증거: 2-worker overlap → dependency fan-in → Verifier ──
+s8() {
+  say "S8 Mode B 병렬 fan-out/fan-in (hook-owned lifecycle receipt)"
+  local d="$WORK/s8"; make_repo "$d"
+  cat > "$d/metrics.py" <<'EOF'
+def total(values):
+    return sum(values)
+EOF
+  cat > "$d/test_parallel.py" <<'EOF'
+import calc
+import metrics
+
+assert calc.mul(3, 4) == 12
+assert metrics.mean([2, 4, 6]) == 4
+print("parallel-ok")
+EOF
+  git -C "$d" add metrics.py test_parallel.py
+  git -C "$d" commit -qm parallel-fixture
+  run_claude "$d" "명시적 병렬 과업이다. Thinker가 정확히 3개 unit으로 계획하라: unit 1은 calc.py에 mul(a,b)를 추가하고, unit 2는 metrics.py에 mean(values)를 추가하며 두 unit은 access=[]로 서로 독립이다. unit 3은 test_parallel.py를 필요하면 보정하고 access=[1,2]로 두 결과를 fan-in한다. ready unit 1과 2는 같은 assistant 메시지에서 서로 다른 asgard-worker Agent로 동시에 호출하고 AGENTS.md의 ticket-claim, ASGARD_UNIT marker, claim-token finish 계약을 그대로 지켜라. 그 뒤 unit 3, 독립 Verifier, PASS/hash/close까지 완료하라." 100
+  check "[ \"$(jfield "$d/out.json" is_error)\" = 'False' ]" "세션 정상 종료"
+  check "(cd "$d" && python3 test_parallel.py >/dev/null 2>&1)" "병렬 산출물 동작"
+  check "python3 - \"$d\" <<'PY'
+import glob,json,os,sys
+root=sys.argv[1]
+logs=glob.glob(os.path.join(root,'.asgard','quest','*.jsonl'))
+assert logs
+events=[json.loads(line) for line in open(logs[0]) if line.strip()]
+tickets={}
+done_turn={}
+graph={}
+for e in events:
+    if e.get('event')=='ticket' and e.get('unit') is not None:
+        unit=str(e['unit']); tickets[unit]=e.get('ticket_status')
+        if unit not in graph: graph[unit]=[str(v) for v in e.get('access') or []]
+        if e.get('ticket_status')=='done': done_turn[unit]=int(e['turn'])
+assert len(tickets)>=3 and all(v=='done' for v in tickets.values()), tickets
+ready=[unit for unit,deps in graph.items() if not deps]
+dependent=[unit for unit,deps in graph.items() if len(deps)>=2]
+assert len(ready)>=2 and dependent, graph
+dirs=glob.glob(os.path.join(root,'.asgard','quest','receipts','*'))
+assert dirs
+receipts=[json.load(open(p)) for p in glob.glob(os.path.join(dirs[0],'agent-*.json'))]
+workers=[r for r in receipts if r.get('agent_type')=='asgard-worker' and r.get('stopped_at')]
+assert len({r['agent_id'] for r in workers})>=len(tickets), workers
+points=[]
+for r in workers:
+    points += [(int(r['started_at']),1),(int(r['stopped_at']),-1)]
+active=peak=0
+for _,delta in sorted(points,key=lambda p:(p[0],-p[1])):
+    active+=delta; peak=max(peak,active)
+assert peak>=len(ready), (peak,ready)
+dispatch=[json.load(open(p)) for p in glob.glob(os.path.join(dirs[0],'dispatch-*.json'))]
+by_unit={str(r['unit']):r for r in dispatch}
+assert set(tickets) <= set(by_unit), (tickets,by_unit)
+for unit in dependent:
+    assert int(by_unit[unit]['quest_turn']) > max(done_turn[d] for d in graph[unit]), (unit,by_unit,done_turn)
+assert any(e.get('event')=='verify' and e.get('verdict')=='PASS' for e in events)
+PY" "distinct Worker·overlap·dependency fan-in·Verifier PASS receipt"
+  metrics "$d/out.json" S8
+}
+
 # ── main ────────────────────────────────────────────────────────────────────
 echo "Trinity E2E — work dir: $WORK"
 command -v claude >/dev/null || { echo "claude CLI 없음 — 설치·인증 후 재실행" >&2; exit 2; }
-SCENARIOS=("${@:-s1 s2 s3 s4 s5 s6 s7}"); [ $# -eq 0 ] && SCENARIOS=(s1 s2 s3 s4 s5 s6 s7)
+SCENARIOS=("${@:-s1 s2 s3 s4 s5 s6 s7 s8}"); [ $# -eq 0 ] && SCENARIOS=(s1 s2 s3 s4 s5 s6 s7 s8)
 for s in "${SCENARIOS[@]}"; do "$s"; done
 
 SOURCE_STATUS_AFTER="$(git -C "$ROOT" status --porcelain=v1 -uall)"

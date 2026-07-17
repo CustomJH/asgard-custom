@@ -15,6 +15,7 @@ import json
 import os
 import subprocess
 import tempfile
+import threading
 import unittest
 from unittest import mock
 
@@ -369,6 +370,48 @@ class TestTrinityLoop(Base):
         self.assertIn("no-verification-evidence", log)
         self.assertNotIn('"cmd":"fake"', log.replace(" ", ""))  # 자가보고 commands 미기록
 
+    def test_pass_with_unresolved_failed_verification_command_becomes_fail(self):
+        incomplete = verifier("PASS")
+        incomplete.result.commands = [
+            {"cmd": "grep -Fx expected missing.txt", "exit_code": 1},
+            {"cmd": "grep -Fx present w1.txt", "exit_code": 0},
+        ]
+        seq = [
+            worker({"w1.txt": "present\n"}, self.root),
+            incomplete,
+            worker({"missing.txt": "expected\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
+        self.assertIn("과업 완수", h.handle("w1.txt와 missing.txt 만들어"))
+        self.assertIn("unresolved-verification-failure", self.quest_log_text())
+
+    def test_failed_verification_command_is_resolved_by_exact_successful_rerun(self):
+        resolved = verifier("PASS")
+        resolved.result.commands = [
+            {"cmd": "pytest -q", "exit_code": 1},
+            {"cmd": "pytest -q", "exit_code": 0},
+        ]
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), resolved], cls=CLS_WRITE)
+        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
+
+    def test_truncated_command_collision_does_not_resolve_failed_verification(self):
+        collision = verifier("PASS")
+        collision.result.commands = [
+            {"cmd": "x" * 200, "command_hash": "failed-full-command", "exit_code": 1},
+            {"cmd": "x" * 200, "command_hash": "different-success-command", "exit_code": 0},
+        ]
+        seq = [
+            worker({"w1.txt": "x\n"}, self.root),
+            collision,
+            worker({"w1.txt": "fixed\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
+        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn("unresolved-verification-failure", self.quest_log_text())
+
     def test_verify_event_records_harness_observed_commands(self):
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
         h.handle("w1.txt 만들어")
@@ -676,6 +719,7 @@ class TestClassifyHeuristic(Base):
             "테스트 추가해줘",
             "implement the parser in parser.py",
             "이 모듈 리팩터해줘",
+            "로고 시스템을 실제 산출물로 제작해줘",
             # 벤치 실측 — "완성해줘" 가 동사 리스트 밖이라 LLM 폴백으로 새던 케이스
             "우리 API 서비스에 요청 rate limit 기능을 완성해줘. limiter.py에 골격만 있고 아직 동작하지 않아.",
         ]
@@ -924,6 +968,17 @@ class TestWaveParallel(Base):
         }
         self.assertEqual(changed, {1: ["a.txt"], 2: ["b.txt"]})
 
+    def test_isolated_unit_accepts_declared_root_dot_path(self):
+        rel = ".github/workflows/ci.yml"
+        unit = {"id": 1, "subtask": "workflow", "files": [rel], "criteria": [], "access": []}
+        h = FakeHeimdall(self.root, [self.isolated_worker(rel, "name: ci\n")])
+        h.policy["ticket_runtime"] = {"isolation": True, "max_attempts": 1}
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-dot-path", session="wave-dot-path")
+        h._run_worker_waves("wave-dot-path", "task", [unit], "")
+        self.assertEqual(open(os.path.join(self.root, rel)).read(), "name: ci\n")
+
     def test_disjoint_isolated_units_execute_in_parallel_then_merge(self):
         import threading
 
@@ -1018,6 +1073,71 @@ class TestWaveParallel(Base):
         with self.assertRaisesRegex(ValueError, "dependency graph"):
             _plan_waves([{"id": 1, "files": [], "access": [2]}, {"id": 2, "files": [], "access": [1]}])
 
+    def test_resume_snapshot_reuses_done_units_and_returns_only_retryable_work(self):
+        from asgard.agent.heimdall import _resume_snapshot, ql
+
+        ql(
+            self.root,
+            "open",
+            "resume-q",
+            "--criteria",
+            "resume criteria",
+            "--request",
+            "original resumable task",
+            session="resume-q",
+        )
+        units = [
+            {"id": 1, "subtask": "done", "files": ["a.txt"], "criteria": ["a"], "access": []},
+            {"id": 2, "subtask": "pending", "files": ["b.txt"], "criteria": ["b"], "access": [1]},
+        ]
+        for unit in units:
+            ql(
+                self.root,
+                "append",
+                session="resume-q",
+                stdin=json.dumps(
+                    {
+                        "role": "thinker",
+                        "event": "ticket",
+                        "ticket_status": "todo",
+                        "unit": unit["id"],
+                        "subtask": unit["subtask"],
+                        "changed_files": unit["files"],
+                        "criteria": unit["criteria"],
+                        "access": unit["access"],
+                    }
+                ),
+            )
+        claim = json.loads(ql(self.root, "ticket-claim", "--unit", "1", "--worker", "old", session="resume-q").stdout)
+        ql(
+            self.root,
+            "ticket-finish",
+            "--unit",
+            "1",
+            "--claim-token",
+            claim["claim_token"],
+            "--status",
+            "done",
+            session="resume-q",
+        )
+        snapshot = _resume_snapshot(self.root, "resume-q")
+        self.assertEqual(snapshot["completed"], [1])
+        self.assertEqual([unit["id"] for unit in snapshot["units"]], [2])
+        self.assertEqual(snapshot["units"][0]["access"], [])
+        self.assertEqual(snapshot["criteria"], ["resume criteria"])
+        self.assertEqual(snapshot["request"], "original resumable task")
+        h = FakeHeimdall(self.root, [])
+        with mock.patch.object(h, "_trinity", return_value="resumed") as resumed:
+            self.assertEqual(h.resume("resume-q"), "resumed")
+        call = resumed.call_args
+        self.assertEqual(call.args[0], "original resumable task")
+        self.assertEqual([unit["id"] for unit in call.kwargs["resume_units"]], [2])
+        self.assertEqual(call.kwargs["resume_qid"], "resume-q")
+        resumed_cls = call.args[1]
+        self.assertFalse(resumed_cls["ambiguous"])
+        self.assertFalse(resumed_cls["external_research"])
+        self.assertFalse(resumed_cls["shared"])
+
     def test_wave_execution_isolation_and_unit_events(self):
         cls = dict(CLS_WRITE, ambiguous=True)  # ambiguous write → THINKER 선행 (계획이 wave 의 입력)
         seq = [
@@ -1065,6 +1185,29 @@ class TestWaveParallel(Base):
         self.assertEqual([ticket["id"] for ticket in state["tickets"]], [1, 2, 3])
         self.assertTrue(all(ticket["attempt"] == 1 for ticket in state["tickets"]))
         self.assertTrue(all(ticket["claim_token_hash"] for ticket in state["tickets"]))
+
+    def test_fast_sibling_keeps_lease_while_waiting_for_slow_fan_in(self):
+        import time
+
+        plan = (
+            '```json\n{"units":['
+            '{"id":1,"subtask":"fast","files":["u1.txt"],"criteria":["u1"],"access":[]},'
+            '{"id":2,"subtask":"slow","files":["u2.txt"],"criteria":["u2"],"access":[]}'
+            "]}\n```"
+        )
+        fast = worker({"u1.txt": "1\n"}, self.root)
+        slow = worker({"u2.txt": "2\n"}, self.root)
+        slow_effect = slow.effect
+        assert slow_effect is not None
+
+        def delayed():
+            time.sleep(3.2)
+            slow_effect()
+
+        slow.effect = delayed
+        h = FakeHeimdall(self.root, [thinker(plan), fast, slow, verifier("PASS")], cls=dict(CLS_WRITE, ambiguous=True))
+        h.policy.setdefault("ticket_runtime", {})["lease_seconds"] = 2
+        self.assertIn("과업 완수", h.handle("u1과 u2를 병렬 구현해줘"))
 
     def test_wave_worker_supplies_default_provider_fallback(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -1127,6 +1270,171 @@ class TestWaveParallel(Base):
             statuses[2],
             ["todo", "in_progress", "failed", "in_progress", "failed", "in_progress", "blocked"],
         )
+
+    def test_capture_failure_joins_all_wave_heartbeats(self):
+        units = [
+            {"id": 1, "subtask": "a", "files": ["a.txt"], "criteria": [], "access": []},
+            {"id": 2, "subtask": "b", "files": ["b.txt"], "criteria": [], "access": []},
+        ]
+        h = FakeHeimdall(self.root, [])
+        h.policy["ticket_runtime"] = {"isolation": True, "max_attempts": 1}
+        from asgard.agent.heimdall import ql
+
+        ql(self.root, "open", "wave-capture-error", session="wave-capture-error")
+        result = SessionResult(text="ok", stop_reason="end_turn")
+        with (
+            mock.patch.object(h, "_run_turn", return_value=result),
+            mock.patch("asgard.agent.unit_workspace.UnitWorkspace.capture", side_effect=RuntimeError("capture failed")),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "capture failed"):
+                h._run_worker_waves("wave-capture-error", "task", units, "")
+        self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
+        from asgard.hooks.quest_log import fold_tickets, load_events
+
+        tickets = fold_tickets(load_events(self.root, "wave-capture-error"))
+        self.assertTrue(all(ticket["status"] not in {"active", "in_progress"} for ticket in tickets.values()))
+
+    def test_completion_error_still_joins_failed_sibling_heartbeat(self):
+        units = [
+            {"id": 1, "subtask": "success", "files": [], "criteria": [], "access": []},
+            {"id": 2, "subtask": "failure", "files": [], "criteria": [], "access": []},
+        ]
+        h = FakeHeimdall(self.root, [])
+        from asgard.agent.heimdall import ql as real_ql
+
+        real_ql(self.root, "open", "wave-completion-error", session="wave-completion-error")
+
+        def turn(_make, prompt, fallback=None, fallback_prompt=None):
+            if "배정 단위 2" in prompt:
+                raise RuntimeError("worker failed")
+            return SessionResult(text="ok", stop_reason="end_turn")
+
+        def fail_work_append(root, *args, stdin="", session="native"):
+            if args and args[0] == "append" and json.loads(stdin or "{}").get("event") == "work":
+                return subprocess.CompletedProcess(args, 1, "", "forced work append failure")
+            return real_ql(root, *args, stdin=stdin, session=session)
+
+        with (
+            mock.patch.object(h, "_run_turn", side_effect=turn),
+            mock.patch("asgard.agent.heimdall.ql", side_effect=fail_work_append),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "forced work append failure"):
+                h._run_worker_waves("wave-completion-error", "task", units, "")
+        self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
+        from asgard.hooks.quest_log import fold_tickets, load_events
+
+        tickets = fold_tickets(load_events(self.root, "wave-completion-error"))
+        self.assertTrue(all(ticket["status"] not in {"active", "in_progress"} for ticket in tickets.values()))
+
+    def test_raised_postprocess_errors_settle_every_claim(self):
+        scenarios = ("record-writes", "work-append")
+        for scenario in scenarios:
+            with self.subTest(scenario=scenario):
+                qid = f"wave-raised-{scenario}"
+                units = [{"id": 1, "subtask": "success", "files": [], "criteria": [], "access": []}]
+                h = FakeHeimdall(self.root, [])
+                from asgard.agent.heimdall import ql as real_ql
+                from asgard.hooks.quest_log import fold_tickets, load_events
+
+                real_ql(self.root, "open", qid, session=qid)
+
+                def raised_ql(root, *args, stdin="", session="native"):
+                    if (
+                        scenario == "work-append"
+                        and args
+                        and args[0] == "append"
+                        and json.loads(stdin or "{}").get("event") == "work"
+                    ):
+                        raise OSError("raised work append")
+                    return real_ql(root, *args, stdin=stdin, session=session)
+
+                patches = [
+                    mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
+                    mock.patch("asgard.agent.heimdall.ql", side_effect=raised_ql),
+                ]
+                if scenario == "record-writes":
+                    patches.append(
+                        mock.patch("asgard.agent.heimdall._record_writes", side_effect=OSError("writes failed"))
+                    )
+                with (
+                    patches[0],
+                    patches[1],
+                    patches[2] if len(patches) == 3 else mock.patch.object(h, "history", h.history),
+                ):
+                    with self.assertRaises(OSError):
+                        h._run_worker_waves(qid, "task", units, "")
+                self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
+                tickets = fold_tickets(load_events(self.root, qid))
+                self.assertTrue(all(ticket["status"] not in {"active", "in_progress"} for ticket in tickets.values()))
+
+    def test_workspace_close_error_settles_claims_and_joins_heartbeats(self):
+        units = [
+            {"id": 1, "subtask": "a", "files": ["a.txt"], "criteria": [], "access": []},
+            {"id": 2, "subtask": "b", "files": ["b.txt"], "criteria": [], "access": []},
+        ]
+        h = FakeHeimdall(self.root, [])
+        h.policy["ticket_runtime"] = {"isolation": True, "max_attempts": 1}
+        from asgard.agent.heimdall import ql
+        from asgard.hooks.quest_log import fold_tickets, load_events
+
+        ql(self.root, "open", "wave-close-error", session="wave-close-error")
+        with (
+            mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
+            mock.patch("asgard.agent.heimdall.ExitStack.close", side_effect=OSError("close failed")),
+        ):
+            with self.assertRaisesRegex(OSError, "close failed"):
+                h._run_worker_waves("wave-close-error", "task", units, "")
+        self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
+        tickets = fold_tickets(load_events(self.root, "wave-close-error"))
+        self.assertTrue(all(ticket["status"] not in {"active", "in_progress"} for ticket in tickets.values()))
+
+    def test_finish_failure_shortens_unsettled_claim_lease(self):
+        unit = {"id": 1, "subtask": "a", "files": [], "criteria": [], "access": []}
+        h = FakeHeimdall(self.root, [])
+        from asgard.agent.heimdall import ql as real_ql
+
+        real_ql(self.root, "open", "wave-finish-error", session="wave-finish-error")
+        shortened = []
+
+        def fail_finish(root, *args, stdin="", session="native"):
+            if args and args[0] == "ticket-finish":
+                return subprocess.CompletedProcess(args, 1, "", "finish unavailable")
+            if args and args[0] == "ticket-heartbeat" and args[args.index("--lease-seconds") + 1] == "1":
+                shortened.append(args)
+            return real_ql(root, *args, stdin=stdin, session=session)
+
+        with (
+            mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
+            mock.patch("asgard.agent.heimdall.ql", side_effect=fail_finish),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "finish unavailable"):
+                h._run_worker_waves("wave-finish-error", "task", [unit], "")
+        self.assertTrue(shortened)
+        self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
+
+    def test_finish_and_lease_shortening_failures_are_both_surfaced(self):
+        unit = {"id": 1, "subtask": "a", "files": [], "criteria": [], "access": []}
+        h = FakeHeimdall(self.root, [])
+        from asgard.agent.heimdall import ql as real_ql
+
+        real_ql(self.root, "open", "wave-control-error", session="wave-control-error")
+
+        def fail_control(root, *args, stdin="", session="native"):
+            if args and args[0] == "ticket-finish":
+                return subprocess.CompletedProcess(args, 1, "", "finish unavailable")
+            if args and args[0] == "ticket-heartbeat" and args[args.index("--lease-seconds") + 1] == "1":
+                return subprocess.CompletedProcess(args, 1, "", "lease shortening rejected")
+            return real_ql(root, *args, stdin=stdin, session=session)
+
+        with (
+            mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
+            mock.patch("asgard.agent.heimdall.ql", side_effect=fail_control),
+        ):
+            with self.assertRaises(RuntimeError) as raised:
+                h._run_worker_waves("wave-control-error", "task", [unit], "")
+        self.assertIn("finish unavailable", str(raised.exception))
+        self.assertIn("lease shortening rejected", str(raised.exception))
+        self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
 
     def test_wave_retries_only_failed_ticket_with_new_claim(self):
         unit = {"id": 1, "subtask": "flaky", "files": ["flaky.txt"], "criteria": [], "access": []}
@@ -1513,6 +1821,289 @@ class TestDeliveryMemoryIsolation(Base):
         h._dispatch_handler("s1", [])({"agent": "freyja", "task": "버튼 라벨 수정", "why": "w"})
         self.assertNotIn("<memory-context", captured["system"])
         self.assertIn("asgard-freyja", captured["system"])  # role 본문은 그대로
+
+
+class TestNativeFreyjaSquad(Base):
+    def test_lead_gets_bounded_squad_tool_and_children_do_not(self):
+        calls = []
+
+        class Capture(FakeHeimdall):
+            def _session(
+                self,
+                system,
+                extra_tools=None,
+                handlers=None,
+                quiet=False,
+                role=None,
+                model=None,
+                readonly=False,
+                rp_override=None,
+                cwd=None,
+            ):
+                calls.append({"role": role, "system": system, "tools": extra_tools or [], "handlers": handlers or {}})
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
+
+        lead = worker(root=self.root, text="lead ready")
+        child_a = worker(root=self.root, text="a")
+        child_b = worker(root=self.root, text="b")
+        h = Capture(self.root, [lead, child_a, child_b])
+        writes = []
+        h._dispatch_handler("s1", writes)({"agent": "freyja-lead", "task": "대형 시각 과업", "why": "복합 산출"})
+
+        self.assertEqual(calls[0]["role"], "freyja-lead")
+        self.assertIn("13축", calls[0]["system"])  # 선언이 아니라 Freyja 코어 본문 물리 상속
+        self.assertIn("asgard-freyja-valkyrja", calls[0]["system"])  # task 어휘와 무관한 lead 필수 주입
+        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["dispatch_freyja_squad"])
+        squad = calls[0]["handlers"]["dispatch_freyja_squad"]
+        result = json.loads(
+            squad(
+                {
+                    "tasks": [
+                        {"id": "geo", "task": "geo.svg", "axis": "순수 기하", "why": "구조"},
+                        {"id": "space", "task": "space.svg", "axis": "네거티브 스페이스", "why": "축소"},
+                    ]
+                }
+            )
+        )
+        self.assertEqual({r["id"] for r in result["results"]}, {"geo", "space"})
+        self.assertEqual(result["failures"], [])
+        self.assertEqual([c["role"] for c in calls[1:]], ["freyja", "freyja"])
+        self.assertTrue(all(not c["tools"] for c in calls[1:]))  # 편대의 편대 봉인
+
+    def test_squad_children_are_isolated_and_cannot_write_outside_their_output_dir(self):
+        def escaping_child(name: str):
+            session = FakeSession(SessionResult(text=name, stop_reason="end_turn", writes=["unauthorized.txt"]))
+
+            def effect():
+                open(os.path.join(session.cwd, "unauthorized.txt"), "w").write(name)
+
+            session.effect = effect
+            return session
+
+        h = FakeHeimdall(self.root, [escaping_child("a"), escaping_child("b")])
+        result = json.loads(
+            h._freyja_squad_handler("s1", [], self.root)(
+                {
+                    "tasks": [
+                        {"id": "geo", "task": "mark.svg", "axis": "geometry", "why": "distinct"},
+                        {"id": "space", "task": "mark.svg", "axis": "negative space", "why": "compact"},
+                    ]
+                }
+            )
+        )
+
+        self.assertEqual(result["results"], [])
+        self.assertEqual({failure["id"] for failure in result["failures"]}, {"geo", "space"})
+        self.assertTrue(all("scope violation" in failure["error"] for failure in result["failures"]))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "unauthorized.txt")))
+
+    def test_squad_children_merge_only_their_distinct_output_directories(self):
+        def scoped_child():
+            session = FakeSession(SessionResult(text="scoped", stop_reason="end_turn"))
+
+            def effect():
+                task_id = "geo" if "편대 변주 geo" in session.prompt else "space"
+                rel = f"deliverables/variations/{task_id}/mark.svg"
+                session.result.writes = [rel]
+                path = os.path.join(session.cwd, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").write(f"<svg id='{task_id}'/>\n")
+
+            session.effect = effect
+            return session
+
+        h = FakeHeimdall(self.root, [scoped_child(), scoped_child()])
+        writes = []
+        result = json.loads(
+            h._freyja_squad_handler("s1", writes, self.root)(
+                {
+                    "tasks": [
+                        {"id": "geo", "task": "mark.svg", "axis": "geometry", "why": "distinct"},
+                        {"id": "space", "task": "mark.svg", "axis": "negative space", "why": "compact"},
+                    ]
+                }
+            )
+        )
+
+        self.assertEqual(result["failures"], [])
+        self.assertEqual(
+            set(writes),
+            {"deliverables/variations/geo/mark.svg", "deliverables/variations/space/mark.svg"},
+        )
+        for task_id in ("geo", "space"):
+            self.assertIn(task_id, open(os.path.join(self.root, f"deliverables/variations/{task_id}/mark.svg")).read())
+
+
+class TestNativeThorSquad(Base):
+    """thor-lead 물리 fan-out — split(비중첩 병합)·tournament(패치 회수) 두 계약."""
+
+    def _capture_heimdall(self, sessions):
+        calls = []
+
+        class Capture(FakeHeimdall):
+            def _session(
+                self,
+                system,
+                extra_tools=None,
+                handlers=None,
+                quiet=False,
+                role=None,
+                model=None,
+                readonly=False,
+                rp_override=None,
+                cwd=None,
+            ):
+                calls.append({"role": role, "system": system, "tools": extra_tools or [], "handlers": handlers or {}})
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
+
+        return Capture(self.root, sessions), calls
+
+    def test_lead_gets_bounded_squad_tool_and_children_do_not(self):
+        lead = worker(root=self.root, text="lead ready")
+        child_a = worker(root=self.root, text="a")
+        child_b = worker(root=self.root, text="b")
+        h, calls = self._capture_heimdall([lead, child_a, child_b])
+        writes = []
+        h._dispatch_handler("s1", writes)({"agent": "thor-lead", "task": "대형 백엔드 과업", "why": "다표면 분할"})
+
+        self.assertEqual(calls[0]["role"], "thor-lead")
+        self.assertIn("백엔드 전문가", calls[0]["system"])  # 선언이 아니라 Thor 코어 본문 물리 상속
+        self.assertIn("사전 진단 게이트", calls[0]["system"])
+        self.assertIn(
+            "에인헤랴르 편대 (팀 백엔드 작업)", calls[0]["system"]
+        )  # task 어휘와 무관한 lead 필수 주입 (스킬 본문)
+        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["dispatch_thor_squad"])
+        squad = calls[0]["handlers"]["dispatch_thor_squad"]
+        result = json.loads(
+            squad(
+                {
+                    "mode": "split",
+                    "tasks": [
+                        {"id": "api", "task": "핸들러 계층 정리", "scope": ["src/api"], "why": "표면 분리"},
+                        {"id": "db", "task": "저장 계층 정리", "scope": ["src/db"], "why": "표면 분리"},
+                    ],
+                }
+            )
+        )
+        self.assertEqual(result["mode"], "split")
+        self.assertEqual({r["id"] for r in result["results"]}, {"api", "db"})
+        self.assertEqual(result["failures"], [])
+        self.assertEqual([c["role"] for c in calls[1:]], ["thor", "thor"])
+        self.assertTrue(all(not c["tools"] for c in calls[1:]))  # 편대의 편대 봉인
+        for c in calls[1:]:
+            self.assertNotIn("에인헤랴르 편대 (팀 백엔드 작업)", c["system"])  # 서브에 편대 프로토콜 본문 무주입
+
+    def test_split_rejects_overlapping_scopes_at_declaration(self):
+        h = FakeHeimdall(self.root, [])
+        with self.assertRaises(ValueError):
+            h._thor_squad_handler("s1", [], self.root)(
+                {
+                    "mode": "split",
+                    "tasks": [
+                        {"id": "a", "task": "t", "scope": ["src/api"], "why": "w"},
+                        {"id": "b", "task": "t", "scope": ["src/api/handlers"], "why": "w"},  # 프리픽스 교차
+                    ],
+                }
+            )
+
+    def test_split_children_cannot_write_outside_scope(self):
+        def escaping_child(name: str):
+            session = FakeSession(SessionResult(text=name, stop_reason="end_turn", writes=["unauthorized.txt"]))
+
+            def effect():
+                open(os.path.join(session.cwd, "unauthorized.txt"), "w").write(name)
+
+            session.effect = effect
+            return session
+
+        h = FakeHeimdall(self.root, [escaping_child("a"), escaping_child("b")])
+        result = json.loads(
+            h._thor_squad_handler("s1", [], self.root)(
+                {
+                    "mode": "split",
+                    "tasks": [
+                        {"id": "api", "task": "t", "scope": ["src/api"], "why": "w"},
+                        {"id": "db", "task": "t", "scope": ["src/db"], "why": "w"},
+                    ],
+                }
+            )
+        )
+        self.assertEqual(result["results"], [])
+        self.assertEqual({failure["id"] for failure in result["failures"]}, {"api", "db"})
+        self.assertTrue(all("scope violation" in failure["error"] for failure in result["failures"]))
+        self.assertFalse(os.path.exists(os.path.join(self.root, "unauthorized.txt")))
+
+    def test_split_merges_scoped_writes(self):
+        def scoped_child():
+            session = FakeSession(SessionResult(text="scoped", stop_reason="end_turn"))
+
+            def effect():
+                unit = "api" if "편대 단위 api" in session.prompt else "db"
+                rel = f"src/{unit}/service.py"
+                session.result.writes = [rel]
+                path = os.path.join(session.cwd, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").write(f"# {unit}\n")
+
+            session.effect = effect
+            return session
+
+        h = FakeHeimdall(self.root, [scoped_child(), scoped_child()])
+        writes = []
+        result = json.loads(
+            h._thor_squad_handler("s1", writes, self.root)(
+                {
+                    "mode": "split",
+                    "tasks": [
+                        {"id": "api", "task": "t", "scope": ["src/api"], "why": "w"},
+                        {"id": "db", "task": "t", "scope": ["src/db"], "why": "w"},
+                    ],
+                }
+            )
+        )
+        self.assertEqual(result["failures"], [])
+        self.assertEqual(set(writes), {"src/api/service.py", "src/db/service.py"})
+        for unit in ("api", "db"):
+            self.assertIn(unit, open(os.path.join(self.root, f"src/{unit}/service.py")).read())
+
+    def test_tournament_collects_patches_without_applying(self):
+        def variant_child(marker: str):
+            session = FakeSession(SessionResult(text=marker, stop_reason="end_turn"))
+
+            def effect():
+                rel = "src/core/fix.py"
+                session.result.writes = [rel]
+                path = os.path.join(session.cwd, rel)
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                open(path, "w").write(f"# variant {marker}\n")
+
+            session.effect = effect
+            return session
+
+        h = FakeHeimdall(self.root, [variant_child("v1"), variant_child("v2")])
+        writes = []
+        result = json.loads(
+            h._thor_squad_handler("s1", writes, self.root)(
+                {
+                    "mode": "tournament",
+                    "tasks": [
+                        # 토너먼트는 같은 난제 — scope 중첩이 허용된다
+                        {"id": "v1", "task": "t", "scope": ["src/core"], "why": "접근 A"},
+                        {"id": "v2", "task": "t", "scope": ["src/core"], "why": "접근 B"},
+                    ],
+                }
+            )
+        )
+        self.assertEqual(result["mode"], "tournament")
+        self.assertEqual(result["failures"], [])
+        self.assertIn("본류 미적용", result["note"])
+        # 본류에는 미적용 — 패치 파일만 회수된다 (승자 적용·검증은 대장 몫)
+        self.assertFalse(os.path.exists(os.path.join(self.root, "src/core/fix.py")))
+        for vid in ("v1", "v2"):
+            rel = f"deliverables/thor-tournament/{vid}.patch"
+            self.assertIn(rel, writes)
+            body = open(os.path.join(self.root, rel), "rb").read().decode("utf-8", "replace")
+            self.assertIn("src/core/fix.py", body)
 
 
 class TestFrozenSnapshotIntegration(Base):

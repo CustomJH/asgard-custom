@@ -7,6 +7,7 @@ python3 <file> 로 도는 것과 동일 경로. 임시 git repo 를 만들어 �
 실행: uv run pytest tests/test_trinity.py
 """
 
+import io
 import json
 import os
 import subprocess
@@ -160,6 +161,38 @@ class TestQuestLog(TrinityBase):
         self.assertEqual([json.loads(ln)["turn"] for ln in lines], [1, 2])
         self.assertTrue(open(os.path.join(self.root, ".asgard", "quest", "ACTIVE")).read().strip() == "q1")
 
+    def test_open_accepts_original_request_via_bounded_stdin(self):
+        request = "원본 요청 " + ("x" * 4096)
+        opened = run(
+            QLOG,
+            ["open", "stdin-request", "--criteria", "c", "--request-stdin", "--session", "s1"],
+            stdin=json.dumps({"request": request}),
+            cwd=self.root,
+        )
+        self.assertEqual(opened.returncode, 0, opened.stderr)
+        event = json.loads(open(os.path.join(self.root, ".asgard", "quest", "stdin-request.jsonl")).readline())
+        self.assertEqual(event["request"], request)
+
+        oversized = run(
+            QLOG,
+            ["open", "oversized-request", "--criteria", "c", "--request-stdin", "--session", "s1"],
+            stdin=json.dumps({"request": "x" * 10001}),
+            cwd=self.root,
+        )
+        self.assertNotEqual(oversized.returncode, 0)
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "oversized-request.jsonl")))
+
+    def test_gate_block_counter_is_scoped_to_active_quest(self):
+        from asgard.hooks.verifier_gate import block_counter_path
+
+        self.assertEqual(self.qlog("open", "q1", "--criteria", "c").returncode, 0)
+        first = block_counter_path(self.root, "s1")
+        self.assertEqual(self.qlog("open", "q2").returncode, 0)
+        second = block_counter_path(self.root, "s1")
+        self.assertNotEqual(first, second)
+        self.assertTrue(first.endswith("-q1.json"))
+        self.assertTrue(second.endswith("-q2.json"))
+
     def test_verify_computes_diff_hash(self):
         self.open_quest()
         self.write("app.py", "print('ok')\n")
@@ -169,6 +202,70 @@ class TestQuestLog(TrinityBase):
         st = jout(self.qlog("state"))
         self.assertTrue(st["pass_hash_match"])
         self.assertIn("app.py", st["changed_files"])
+
+    def test_ignored_file_changes_are_bound_to_pass_hash_and_stale_detection(self):
+        self.write(".gitignore", "secret.env\n")
+        self.write("secret.env", "before\n")
+        self.open_quest()
+        self.write("secret.env", "after\n")
+        self.verify(commands=[{"cmd": "cat secret.env", "exit_code": 0}])
+        state = jout(self.qlog("state"))
+        self.assertIn("secret.env", state["changed_files"])
+        self.assertTrue(state["pass_hash_match"])
+        self.write("secret.env", "tampered\n")
+        self.assertFalse(jout(self.qlog("state"))["pass_hash_match"])
+        self.assertEqual(self.qlog("close").returncode, 1)
+
+    def test_ignored_enumeration_failure_blocks_open_and_close(self):
+        from asgard.hooks import quest_log, verifier_gate
+
+        marker = {"<snapshot-unavailable>": "ignored-enumeration-failed"}
+        with mock.patch.object(quest_log, "git", return_value=(1, b"")):
+            self.assertEqual(quest_log.ignored_state(self.root), marker)
+        with mock.patch.object(verifier_gate, "git", return_value=(1, b"")):
+            self.assertEqual(verifier_gate.ignored_state(self.root), marker)
+
+        with (
+            mock.patch.object(quest_log, "repo_root", return_value=self.root),
+            mock.patch.object(quest_log, "ignored_state", return_value=marker),
+            mock.patch.object(sys, "argv", ["quest-log", "open", "snapshot-fail", "--criteria", "x"]),
+            mock.patch.object(sys, "stdout", io.StringIO()),
+            mock.patch.object(sys, "stderr", io.StringIO()),
+        ):
+            self.assertEqual(quest_log.main(), 1)
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "snapshot-fail.jsonl")))
+
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        with (
+            mock.patch.object(quest_log, "repo_root", return_value=self.root),
+            mock.patch.object(quest_log, "ignored_state", return_value=marker),
+            mock.patch.object(sys, "argv", ["quest-log", "close", "--session", "s1"]),
+            mock.patch.object(sys, "stdout", io.StringIO()),
+            mock.patch.object(sys, "stderr", io.StringIO()),
+        ):
+            self.assertEqual(quest_log.main(), 1)
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable on this platform")
+    def test_ignored_fifo_snapshot_never_blocks_reading_device_content(self):
+        self.write(".gitignore", "*.fifo\n")
+        fifo = os.path.join(self.root, "blocked.fifo")
+        os.mkfifo(fifo)
+        code = (
+            f"from asgard.hooks.quest_log import ignored_state; print(ignored_state({self.root!r}).get('blocked.fifo'))"
+        )
+        result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=2)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "None")  # Git does not enumerate ignored FIFOs as files
+
+    def test_preexisting_untracked_file_is_part_of_base_not_reported_as_quest_change(self):
+        self.write("preexisting.txt", "user state\n")
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        state = jout(self.qlog("state"))
+        self.assertIn("app.py", state["changed_files"])
+        self.assertNotIn("preexisting.txt", state["changed_files"])
 
     def test_append_rejects_bad_event_and_verify_without_verdict(self):
         self.open_quest()
@@ -182,6 +279,29 @@ class TestQuestLog(TrinityBase):
         self.verify()
         self.assertEqual(self.qlog("close").returncode, 0)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
+
+    def test_last_pointer_failure_keeps_active_quest_and_rejects_close(self):
+        from asgard.hooks import quest_log
+
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        real_write_pointer = quest_log._write_pointer
+
+        def fail_last(path, qid):
+            if path.endswith(".last") or os.path.basename(path) == "LAST":
+                raise OSError("injected LAST failure")
+            return real_write_pointer(path, qid)
+
+        stdout, stderr = io.StringIO(), io.StringIO()
+        with mock.patch.dict(os.environ, {"CLAUDE_PROJECT_DIR": self.root}):
+            with mock.patch.object(sys, "argv", ["quest_log.py", "close", "q1", "--session", "s1"]):
+                with mock.patch.object(quest_log, "_write_pointer", side_effect=fail_last):
+                    with mock.patch("sys.stdout", stdout), mock.patch("sys.stderr", stderr):
+                        rc = quest_log.main()
+        self.assertEqual(rc, 1)
+        self.assertIn("LAST pointer publication failed", stderr.getvalue())
+        self.assertEqual(open(os.path.join(self.root, ".asgard", "quest", "ACTIVE")).read().strip(), "q1")
 
     def test_verify_refreshes_map_before_hash_and_close_reports_current(self):
         # 지도 도입 + 신규 파일 → Verifier hash 계산 전에 managed map 자동 갱신.
@@ -204,6 +324,31 @@ class TestQuestLog(TrinityBase):
         self.assertEqual(out["closed"], "q1")
         self.assertTrue(out["map_current"])
         self.assertNotIn("map_update", out)
+
+    def test_managed_map_refresh_falls_back_to_installed_cli_when_hook_python_cannot_import_package(self):
+        import builtins
+
+        from asgard.hooks import quest_log
+
+        real_import = builtins.__import__
+
+        def isolated_hook_import(name, *args, **kwargs):
+            if name == "asgard.code_map":
+                raise ModuleNotFoundError("No module named 'asgard'")
+            return real_import(name, *args, **kwargs)
+
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        completed = subprocess.CompletedProcess([], 0, "", "")
+        with mock.patch("builtins.__import__", side_effect=isolated_hook_import):
+            with mock.patch.object(quest_log.subprocess, "run", return_value=completed) as invoked:
+                self.assertEqual(quest_log.refresh_managed_map(self.root), (True, None))
+        invoked.assert_called_once_with(
+            ["asgard", "setup", "map", "--quiet"],
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
 
     def test_verify_fails_closed_when_managed_map_refresh_is_rejected(self):
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
@@ -561,6 +706,10 @@ class TestTransition(TrinityBase):
         self.assertIn("같은 assistant 메시지에서 함께 호출", guide)
         self.assertIn("todo → in_progress", guide)
         self.assertIn("--parallel-requested", guide)
+        self.assertIn("[ASGARD_UNIT:<unit-id>]", guide)
+        self.assertIn("ticket-claim --unit", guide)
+        self.assertIn("ticket-finish --unit", guide)
+        self.assertIn("--claim-token", guide)
 
     def test_fail_minor_retries_structural_replans(self):
         self.open_quest()
@@ -674,9 +823,8 @@ class TestGate(TrinityBase):
         b, reason = self.blocked(self.gate())
         self.assertFalse(b, reason)
 
-    def test_closed_quest_escalate_allows_stop(self):
-        # s1 라이브 실측 — ESCALATE 로 close 된 quest(LAST) + write 흔적 잔존 시
-        # orphan 경로가 PASS 만 인정해 Canon 9 정규 종료를 차단하던 회귀 방지.
+    def test_closed_quest_escalate_does_not_exempt_unverified_writes(self):
+        # ESCALATE terminates the active loop but does not convert dirty writes into verified state.
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify(verdict="ESCALATE")
@@ -685,7 +833,8 @@ class TestGate(TrinityBase):
         with open(os.path.join(self.root, ".asgard", "writes-s1.json"), "w") as f:
             json.dump(["app.py"], f)  # write-sentinel 흔적 — orphan 경로 진입 조건
         b, reason = self.blocked(self.gate())
-        self.assertFalse(b, reason)
+        self.assertTrue(b)
+        self.assertIn("퀘스트 로그가 없습니다", reason)
 
     def test_pass_without_successful_command_blocks(self):
         self.open_quest()
@@ -1303,6 +1452,24 @@ class TestGoodhartEvidence(TrinityBase):
         self.verify("PASS", commands=[{"cmd": "true", "exit_code": 0}, {"cmd": "python3 app.py", "exit_code": 0}])
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
 
+    def test_observation_only_commands_are_not_completion_evidence(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify(
+            "PASS",
+            commands=[
+                {"cmd": "pwd", "exit_code": 0},
+                {"cmd": "git status --porcelain", "exit_code": 0},
+                {"cmd": "ls -la app.py", "exit_code": 0},
+                {"cmd": "cat app.py", "exit_code": 0},
+                {"cmd": "xxd app.py", "exit_code": 0},
+                {"cmd": "wc -c app.py", "exit_code": 0},
+            ],
+        )
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")
+        self.assertEqual(jout(self.gate()).get("decision"), "block")
+
 
 class TestCompletionFunnel(TrinityBase):
     """완료 판정 단일 퍼널 — REJECTED 는 어떤 경로(transition·close·--force)로도 승인 승격 금지."""
@@ -1355,14 +1522,15 @@ class TestCompletionFunnel(TrinityBase):
         self.assertIn("no_criteria", p.stderr)
         self.assertEqual(jout(self.gate()).get("decision"), "block")  # 게이트와 동일 판정
 
-    def test_escalate_close_still_writes_last(self):
-        # ESCALATE 는 Canon 9 정규 종료 — 퍼널 ESCALATED 는 close·LAST 유지 (인질 금지)
+    def test_escalate_close_does_not_publish_verified_last(self):
+        # ESCALATE is a termination receipt, not a verified-state capability.
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify("ESCALATE", commands=[])
         closed = jout(self.qlog("close"))
         self.assertFalse(closed["forced"])
-        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
+        self.assertFalse(closed["gate_exempt"])
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
 
 
 class TestCriteriaContracts(TrinityBase):
@@ -1668,6 +1836,53 @@ class TestSubagentGate(TrinityBase):
         self.work()
         b, _ = self.blocked(self.sg("asgard-loki"))
         self.assertFalse(b)
+
+    def test_verifier_agent_dispatch_is_readonly_only(self):
+        self.open_quest()
+        allowed = self.sg(
+            "asgard-verifier", event="PreToolUse", tool_input={"subagent_type": "asgard-loki", "prompt": "review"}
+        )
+        self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        for target in ("asgard-freyja", "asgard-freyja-lead", "asgard-thor", "asgard-eitri", ""):
+            denied = self.sg(
+                "asgard-verifier", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "mutate"}
+            )
+            self.assertEqual(denied.returncode, 2, target)
+            self.assertIn("role boundary", denied.stderr)
+
+    def test_freyja_lead_depth_and_target_boundary(self):
+        self.open_quest()
+        for target in ("asgard-freyja", "asgard-loki"):
+            allowed = self.sg(
+                "asgard-freyja-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "variant"}
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        for target in ("asgard-freyja-lead", "asgard-thor", "asgard-eitri", ""):
+            denied = self.sg(
+                "asgard-freyja-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
+            )
+            self.assertEqual(denied.returncode, 2, target)
+
+    def test_thor_lead_depth_and_target_boundary(self):
+        self.open_quest()
+        for target in ("asgard-thor", "asgard-loki"):
+            allowed = self.sg(
+                "asgard-thor-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "unit"}
+            )
+            self.assertEqual(allowed.returncode, 0, allowed.stderr)
+        for target in ("asgard-thor-lead", "asgard-freyja", "asgard-freyja-lead", "asgard-eitri", ""):
+            denied = self.sg(
+                "asgard-thor-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
+            )
+            self.assertEqual(denied.returncode, 2, target)
+
+    def test_sub_thor_dispatch_fully_sealed(self):
+        self.open_quest()
+        for target in ("asgard-thor", "asgard-loki", "asgard-freyja", ""):
+            denied = self.sg(
+                "asgard-thor", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
+            )
+            self.assertEqual(denied.returncode, 2, target)
 
     def test_verifier_without_verify_blocks(self):
         self.open_quest()

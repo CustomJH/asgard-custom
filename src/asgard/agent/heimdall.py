@@ -122,7 +122,7 @@ def _skill_resolver(agent: str):
         from ..templates.freyja import resolve_freyja_skills
 
         return resolve_freyja_skills
-    if agent == "thor":
+    if agent in ("thor", "thor-lead"):
         from ..templates.thor import resolve_thor_skills
 
         return resolve_thor_skills
@@ -229,7 +229,7 @@ _DESTRUCTIVE_PAT = re.compile(
     re.IGNORECASE,
 )
 _WRITE_VERBS = (
-    "만들", "생성해", "수정해", "고쳐", "추가해", "구현해", "작성해", "바꿔", "변경해", "리팩터", "빼줘",
+    "만들", "생성해", "제작해", "수정해", "고쳐", "추가해", "구현해", "작성해", "바꿔", "변경해", "리팩터", "빼줘",
     "삭제해", "지워", "적용해", "옮겨", "설치해", "완성해", "fix ", "implement", "refactor", "rename ", "install ",
     "create ", "write ", "modify ", "change ", "edit ", "add ", "update ", "delete ", "remove ", "move ", "copy ",
 )  # fmt: skip
@@ -382,6 +382,41 @@ def _plan_waves(units: list[dict], root: str | None = None) -> list[list[dict]]:
     return waves
 
 
+def _resume_snapshot(root: str, qid: str) -> dict:
+    """Materialize a resumable unit graph without replaying completed tickets."""
+    from ..hooks.quest_log import fold_tickets, load_events
+
+    events = load_events(root, qid)
+    tickets = fold_tickets(events)
+    completed = {str(ticket["id"]) for ticket in tickets.values() if ticket["status"] == "done"}
+    retryable = []
+    for ticket in tickets.values():
+        if ticket["status"] not in {"todo", "failed"}:
+            continue
+        retryable.append(
+            {
+                "id": ticket["id"],
+                "subtask": ticket.get("subtask") or f"resume unit {ticket['id']}",
+                "files": list(ticket.get("files") or []),
+                "criteria": list(ticket.get("criteria") or []),
+                "access": [
+                    dependency for dependency in (ticket.get("access") or []) if str(dependency) not in completed
+                ],
+            }
+        )
+    criteria = next((list(event.get("criteria") or []) for event in events if event.get("criteria")), [])
+    request = next((str(event.get("request")) for event in events if event.get("request")), "")
+    return {
+        "quest_id": qid,
+        "request": request,
+        "criteria": criteria,
+        "units": retryable,
+        "completed": [ticket["id"] for ticket in tickets.values() if ticket["status"] == "done"],
+        "blocked": [ticket["id"] for ticket in tickets.values() if ticket["status"] == "blocked"],
+        "active": [ticket["id"] for ticket in tickets.values() if ticket["status"] == "in_progress"],
+    }
+
+
 # Thinker 에게 요구하는 배정 단위 출력 계약 (네이티브) — 독립 단위는 wave 병렬로 실행된다
 _UNITS_NOTE = (
     "\n\n계획 마지막에 Worker 배정 단위를 JSON 블록으로 산출하라 (독립 단위는 병렬 실행):\n"
@@ -439,6 +474,72 @@ DISPATCH_TOOL: dict = {
         "required": ["agent", "task", "why"],
     },
 }
+
+
+# 네이티브 freyja-lead 전용 물리 fan-out. 일반 dispatch 를 그대로 주면 lead→lead 재귀와
+# 타 도메인 위임이 열리고, 단일 task 호출만 주면 "편대"가 이름뿐인 직렬 실행이 된다.
+FREYJA_SQUAD_TOOL: dict = {
+    "name": "dispatch_freyja_squad",
+    "description": "프레이야 편대장 전용 — 서로 다른 변주 축을 맡은 프레이야 2~5기를 한 배치로 병렬 호출한다.",
+    "x-asgard-capability": "coordinate",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "tasks": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "task": {"type": "string"},
+                        "axis": {"type": "string"},
+                        "why": {"type": "string"},
+                    },
+                    "required": ["id", "task", "axis", "why"],
+                },
+            }
+        },
+        "required": ["tasks"],
+    },
+}
+
+# 네이티브 thor-lead 전용 물리 fan-out — 에인헤랴르 편대 유형 2종을 계약으로 강제한다:
+# split(분할) = scope 파일 범위 비중첩 검증 + 병합, tournament = 패치 회수만(본류 미적용, 승자만 대장이 적용).
+THOR_SQUAD_TOOL: dict = {
+    "name": "dispatch_thor_squad",
+    "description": "토르 편대장 전용 — 토르 2~4기를 한 배치로 병렬 호출한다. "
+    "mode=split: 파일 범위(scope)가 겹치지 않는 분할 단위 병렬 + 자동 병합. "
+    "mode=tournament: 같은 난제의 N-버전 격리 시도 — 본류 미적용, deliverables/thor-tournament/<id>.patch 로 회수.",
+    "x-asgard-capability": "coordinate",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "mode": {"type": "string", "enum": ["split", "tournament"]},
+            "tasks": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string"},
+                        "task": {"type": "string"},
+                        "scope": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                        "why": {"type": "string"},
+                    },
+                    "required": ["id", "task", "scope", "why"],
+                },
+            },
+        },
+        "required": ["mode", "tasks"],
+    },
+}
+
+# 편대장 → (코어 계약 상속원, 필수 프로토콜 스킬) — lead 신설 시 여기와 squad 툴·핸들러만 늘린다.
+_LEAD_BASE = {"freyja-lead": "freyja", "thor-lead": "thor"}
+_LEAD_PROTOCOL = {"freyja-lead": "asgard-freyja-valkyrja", "thor-lead": "asgard-thor-einherjar"}
 
 
 def _identity(root: str) -> str:
@@ -670,6 +771,21 @@ class Heimdall:
                 model=rp.model, max_tokens=max_tokens, system=system, messages=[{"role": "user", "content": user}]
             )
             return "".join(b.text for b in resp.content if b.type == "text")
+        if rp.profile.api_mode in {"openai_responses", "codex_responses"}:
+            kwargs: dict[str, object] = dict(
+                model=rp.model,
+                instructions=system,
+                input=user,
+                timeout=120.0,
+            )
+            if rp.profile.api_mode == "codex_responses":
+                kwargs["store"] = False
+            else:
+                kwargs["max_output_tokens"] = max(4096, max_tokens)
+            if rp.model.startswith(("gpt-5", "o1", "o3", "o4")):
+                kwargs["reasoning"] = {"effort": "low"}
+            resp = client.responses.create(**kwargs)
+            return resp.output_text or ""
         resp = client.chat.completions.create(
             model=rp.model,
             max_tokens=max_tokens,
@@ -736,7 +852,241 @@ class Heimdall:
                 self.cache_read_tokens += cr
                 self.cache_prompt_tokens += total
 
-    # ── 딜리버리 디스패치 (depth 1) ─────────────────────────────
+    # ── 딜리버리 디스패치 (일반 depth 1, freyja-lead만 봉인된 편대 depth 2) ──
+    def _freyja_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
+        """freyja-lead → freyja N기 병렬 fan-out. 자식에는 coordinate 도구를 주지 않아 깊이 1을 봉인한다."""
+
+        def handler(inp: dict) -> str:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            tasks = list(inp.get("tasks") or [])
+            if not 2 <= len(tasks) <= 5:
+                raise ValueError("프레이야 편대는 한 배치에 2~5기여야 한다")
+            ids = [str(t.get("id") or "") for t in tasks]
+            if any(not i for i in ids) or len(ids) != len(set(ids)):
+                raise ValueError("편대 task id 는 비어 있지 않고 서로 달라야 한다")
+            if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", task_id) for task_id in ids):
+                raise ValueError("편대 task id 는 안전한 파일명 문자만 사용해야 한다")
+            squad_root = cwd or self.root
+
+            def run_one(index: int, spec: dict):
+                from .unit_workspace import UnitWorkspace, WorkspaceError
+
+                task, axis, why = str(spec["task"]), str(spec["axis"]), str(spec["why"])
+                output_dir = f"deliverables/variations/{spec['id']}"
+                ql(
+                    self.root,
+                    "append",
+                    session=sid,
+                    stdin=json.dumps(
+                        {
+                            "role": "worker",
+                            "event": "delegate",
+                            "commands": [
+                                {"cmd": f"dispatch:freyja:{spec['id']} — {axis}: {why[:100]}", "exit_code": 0}
+                            ],
+                        }
+                    ),
+                )
+                system = _DELIVERY["freyja"] + "\n\n" + self.delivery_identity
+                resolver = _skill_resolver("freyja")
+                skills = resolver(f"{task} {axis} {why}") if resolver else []
+                if skills:
+                    system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
+                with UnitWorkspace(squad_root, f"freyja-{spec['id']}") as workspace:
+                    child = self._session(
+                        system,
+                        model=self._delivery_model("freyja"),
+                        role="freyja",
+                        cwd=workspace.path,
+                        quiet=True,
+                    )
+                    child._nested_dispatch = True
+                    result = child.run(
+                        f"편대 변주 {spec['id']}\n변주 축: {axis}\n과업: {task}\n근거: {why}\n"
+                        f"전용 출력 루트: {output_dir}\n이 디렉터리 밖은 수정하지 마라."
+                    )
+                    self._track_cache(result)
+                    patch = workspace.capture(extra_paths=tuple(result.writes))
+                    outside = [
+                        path
+                        for path in patch.paths
+                        if path != output_dir and not path.startswith(output_dir.rstrip("/") + "/")
+                    ]
+                    if outside:
+                        raise WorkspaceError("scope violation: " + ", ".join(sorted(outside)))
+                return index, spec, result, patch
+
+            completed = []
+            failures: list[dict] = []
+            with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+                futures = {pool.submit(run_one, i, spec): spec for i, spec in enumerate(tasks)}
+                for future in as_completed(futures):
+                    spec = futures[future]
+                    try:
+                        completed.append(future.result())
+                    except Exception as exc:
+                        failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+
+            completed.sort(key=lambda item: item[0])
+            payload = []
+            for _, spec, result, patch in completed:
+                try:
+                    from .unit_workspace import UnitWorkspace
+
+                    UnitWorkspace(squad_root, f"freyja-{spec['id']}").apply(patch)
+                except Exception as exc:
+                    failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+                    continue
+                writes = list(patch.paths)
+                worker_result_writes.extend(w for w in writes if w not in worker_result_writes)
+                payload.append(
+                    {"id": spec["id"], "axis": spec["axis"], "writes": writes, "summary": result.text[-1200:]}
+                )
+            return json.dumps({"results": payload, "failures": failures}, ensure_ascii=False)
+
+        return handler
+
+    def _thor_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
+        """thor-lead → thor N기 병렬 fan-out. 자식에는 coordinate 도구를 주지 않아 깊이 1을 봉인한다.
+
+        split = 브리프 scope(파일 범위) 비중첩을 계약으로 검증하고 병합 — 부품 분담의 암묵 충돌 차단.
+        tournament = 같은 난제 N-버전을 격리 시도하고 패치만 회수(본류 미적용) — 승자 선정·적용·검증은
+        대장 몫이다 (에인헤랴르: 검증 통과분 중 승자 1개만 본류)."""
+
+        def handler(inp: dict) -> str:
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+
+            from .unit_workspace import UnitWorkspace, WorkspaceError
+
+            mode = str(inp.get("mode") or "split")
+            if mode not in ("split", "tournament"):
+                raise ValueError("토르 편대 mode 는 split | tournament 다")
+            tasks = list(inp.get("tasks") or [])
+            if not 2 <= len(tasks) <= 4:
+                raise ValueError("토르 편대는 한 배치에 2~4기여야 한다")
+            ids = [str(t.get("id") or "") for t in tasks]
+            if any(not i for i in ids) or len(ids) != len(set(ids)):
+                raise ValueError("편대 task id 는 비어 있지 않고 서로 달라야 한다")
+            if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", task_id) for task_id in ids):
+                raise ValueError("편대 task id 는 안전한 파일명 문자만 사용해야 한다")
+            scopes: dict[str, list[str]] = {}
+            for spec in tasks:
+                norm: list[str] = []
+                for raw in list(spec.get("scope") or []):
+                    s = os.path.normpath(str(raw)).replace(os.sep, "/").strip("/")
+                    unsafe = (
+                        not s
+                        or s == "."
+                        or s.startswith("..")
+                        or s in (".git", ".asgard")
+                        or s.startswith((".git/", ".asgard/"))
+                    )
+                    if unsafe:
+                        raise ValueError(f"안전하지 않은 편대 scope: {raw!r}")
+                    norm.append(s)
+                if not norm:
+                    raise ValueError(f"편대 단위 {spec.get('id')} 에 scope 가 없다")
+                scopes[str(spec["id"])] = norm
+            if mode == "split":
+                # 파일 비중첩은 에인헤랴르 분할 계약 — 선언 시점에 프리픽스 교차를 차단한다
+                flat = [(tid, s) for tid, ss in scopes.items() for s in ss]
+                for i, (ta, sa) in enumerate(flat):
+                    for tb, sb in flat[i + 1 :]:
+                        if ta != tb and (sa == sb or sa.startswith(sb + "/") or sb.startswith(sa + "/")):
+                            raise ValueError(f"분할 편대 scope 중첩: {ta}:{sa} ↔ {tb}:{sb}")
+            squad_root = cwd or self.root
+
+            def in_scope(path: str, allowed: list[str]) -> bool:
+                return any(path == s or path.startswith(s + "/") for s in allowed)
+
+            def run_one(index: int, spec: dict):
+                task, why = str(spec["task"]), str(spec["why"])
+                allowed = scopes[str(spec["id"])]
+                ql(
+                    self.root,
+                    "append",
+                    session=sid,
+                    stdin=json.dumps(
+                        {
+                            "role": "worker",
+                            "event": "delegate",
+                            "commands": [{"cmd": f"dispatch:thor:{spec['id']} — {mode}: {why[:100]}", "exit_code": 0}],
+                        }
+                    ),
+                )
+                system = _DELIVERY["thor"] + "\n\n" + self.delivery_identity
+                resolver = _skill_resolver("thor")
+                skills = resolver(f"{task} {why}") if resolver else []
+                # 서브에 편대 프로토콜 무주입 — 깊이 1 봉인은 도구만이 아니라 지식 표면에서도 유지한다
+                skills = [hit for hit in skills if hit[0] != "asgard-thor-einherjar"]
+                if skills:
+                    system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
+                with UnitWorkspace(squad_root, f"thor-{spec['id']}") as workspace:
+                    child = self._session(
+                        system,
+                        model=self._delivery_model("thor"),
+                        role="thor",
+                        cwd=workspace.path,
+                        quiet=True,
+                    )
+                    child._nested_dispatch = True
+                    result = child.run(
+                        f"편대 단위 {spec['id']} ({mode})\n과업: {task}\n근거: {why}\n"
+                        f"허용 파일 범위: {', '.join(allowed)}\n이 범위 밖은 수정하지 마라. "
+                        "단위 한정 검증만 실행하고(전역 게이트는 대장 몫), "
+                        "반환 = 변경 파일 + 결정 요약 + 검증 증거 + 블로커."
+                    )
+                    self._track_cache(result)
+                    patch = workspace.capture(extra_paths=tuple(result.writes))
+                    outside = [path for path in patch.paths if not in_scope(path, allowed)]
+                    if outside:
+                        raise WorkspaceError("scope violation: " + ", ".join(sorted(outside)))
+                return index, spec, result, patch
+
+            completed = []
+            failures: list[dict] = []
+            with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+                futures = {pool.submit(run_one, i, spec): spec for i, spec in enumerate(tasks)}
+                for future in as_completed(futures):
+                    spec = futures[future]
+                    try:
+                        completed.append(future.result())
+                    except Exception as exc:
+                        failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+
+            completed.sort(key=lambda item: item[0])
+            payload = []
+            for _, spec, result, patch in completed:
+                if mode == "tournament":
+                    rel = f"deliverables/thor-tournament/{spec['id']}.patch"
+                    dest = os.path.join(squad_root, rel)
+                    os.makedirs(os.path.dirname(dest), exist_ok=True)
+                    with open(dest, "wb") as fh:
+                        fh.write(patch.data)
+                    if rel not in worker_result_writes:
+                        worker_result_writes.append(rel)
+                    payload.append(
+                        {"id": spec["id"], "patch": rel, "paths": list(patch.paths), "summary": result.text[-1200:]}
+                    )
+                    continue
+                try:
+                    UnitWorkspace(squad_root, f"thor-{spec['id']}").apply(patch)
+                except Exception as exc:
+                    failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+                    continue
+                writes = list(patch.paths)
+                worker_result_writes.extend(w for w in writes if w not in worker_result_writes)
+                payload.append({"id": spec["id"], "writes": writes, "summary": result.text[-1200:]})
+            out: dict = {"mode": mode, "results": payload, "failures": failures}
+            if mode == "tournament":
+                out["note"] = (
+                    "패치는 본류 미적용 — 검증 통과분 중 승자 1개만 git apply 로 적용하고 합집합 검증을 실행하라"
+                )
+            return json.dumps(out, ensure_ascii=False)
+
+        return handler
+
     def _dispatch_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         def handler(inp: dict) -> str:
             agent, task, why = inp["agent"], inp["task"], inp.get("why", "")
@@ -756,12 +1106,20 @@ class Heimdall:
                 ),
             )
             # dispatch 툴 미제공 = 재위임 불가. 모델은 딜리버리 티어 (freyja/thor/eitri=standard, loki=fast)
-            system = _DELIVERY[agent] + "\n\n" + self.delivery_identity
+            system = _DELIVERY[agent]
+            base = _LEAD_BASE.get(agent)
+            if base:
+                # "코어 계약 전부 상속"을 선언이 아니라 최종 system bytes 로 강제한다.
+                system += f"\n\n# 상속된 {base} 코어 계약\n\n" + _DELIVERY[base]
+            system += "\n\n" + self.delivery_identity
             resolver = _skill_resolver(agent)
             if resolver:
                 # 네이티브엔 파일 스킬 로더가 없다 — task 매칭 전용 스킬 본문을 system 에 직접 주입
                 # (0-LLM 키워드 리졸버, 무매칭 = role 본문만으로 진행)
                 skills = resolver(f"{task} {why}")
+                protocol = _LEAD_PROTOCOL.get(agent)
+                if protocol and not any(name == protocol for name, _ in skills):
+                    skills += [hit for hit in resolver("편대") if hit[0] == protocol]
                 if skills:
                     system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
                     self.on_text(f"  {ui.dim('│ ✦ 스킬 주입 — ' + ', '.join(n for n, _ in skills))}\n")
@@ -769,8 +1127,18 @@ class Heimdall:
                 agent not in _DELIVERY_READONLY
             ):  # read-only 딜리버리(loki) = 반례 탐색 — 학습물 무주입 (메모리와 동일 규율)
                 system += self._learned_note(f"{task} {why}", agent)
+            extra_tools = None
+            handlers = None
+            if agent == "freyja-lead":
+                extra_tools = [FREYJA_SQUAD_TOOL]
+                handlers = {"dispatch_freyja_squad": self._freyja_squad_handler(sid, worker_result_writes, cwd)}
+            elif agent == "thor-lead":
+                extra_tools = [THOR_SQUAD_TOOL]
+                handlers = {"dispatch_thor_squad": self._thor_squad_handler(sid, worker_result_writes, cwd)}
             child = self._session(
                 system,
+                extra_tools=extra_tools,
+                handlers=handlers,
                 model=self._delivery_model(agent),
                 readonly=agent in _DELIVERY_READONLY,  # frontmatter tools 선언 파생 — 반례 탐색은 도구로 강제
                 role=agent,
@@ -864,6 +1232,23 @@ class Heimdall:
                 raise RuntimeError(finished.stderr.strip() or f"ticket {u['id']} finish failed")
             return str(json.loads(finished.stdout)["status"])
 
+        def shorten_claim_lease(u: dict, token: str) -> None:
+            shortened = ql(
+                self.root,
+                "ticket-heartbeat",
+                "--unit",
+                str(u["id"]),
+                "--claim-token",
+                token,
+                "--lease-seconds",
+                "1",
+                session=sid,
+            )
+            if shortened.returncode != 0:
+                raise RuntimeError(
+                    shortened.stderr.strip() or shortened.stdout.strip() or f"ticket {u['id']} lease shortening failed"
+                )
+
         for unit in units:
             record_ticket(unit, "todo")
 
@@ -898,6 +1283,15 @@ class Heimdall:
             fallback = (lambda: mk(rp=self.rp)) if wrp is not self.rp else None
             return u, self._run_turn(mk, prompt, fallback), writes
 
+        heartbeat_controls: dict[object, tuple[threading.Event, threading.Thread]] = {}
+
+        def stop_heartbeat(u: dict) -> None:
+            control = heartbeat_controls.pop(u["id"], None)
+            if control:
+                stop, beat = control
+                stop.set()
+                beat.join()
+
         def run_claimed(u: dict, writes: list[str], token: str, cwd: str | None = None):
             stop = threading.Event()
             heartbeat_error: list[str] = []
@@ -905,17 +1299,22 @@ class Heimdall:
             def heartbeat() -> None:
                 interval = max(1.0, min(30.0, lease_seconds / 3))
                 while not stop.wait(interval):
-                    beat_result = ql(
-                        self.root,
-                        "ticket-heartbeat",
-                        "--unit",
-                        str(u["id"]),
-                        "--claim-token",
-                        token,
-                        "--lease-seconds",
-                        str(lease_seconds),
-                        session=sid,
-                    )
+                    try:
+                        beat_result = ql(
+                            self.root,
+                            "ticket-heartbeat",
+                            "--unit",
+                            str(u["id"]),
+                            "--claim-token",
+                            token,
+                            "--lease-seconds",
+                            str(lease_seconds),
+                            session=sid,
+                        )
+                    except Exception as exc:
+                        heartbeat_error.append(f"{type(exc).__name__}: {str(exc)[:250]}")
+                        stop.set()
+                        return
                     if beat_result.returncode != 0:
                         heartbeat_error.append(
                             (beat_result.stderr or beat_result.stdout or "ticket heartbeat rejected").strip()[:300]
@@ -925,14 +1324,13 @@ class Heimdall:
 
             beat = threading.Thread(target=heartbeat, name=f"asgard-ticket-{u['id']}", daemon=True)
             beat.start()
-            try:
-                result = run_unit(u, writes, cwd)
-                if heartbeat_error:
-                    raise RuntimeError(f"ticket lease heartbeat failed: {heartbeat_error[0]}")
-                return result
-            finally:
-                stop.set()
-                beat.join(timeout=0.2)
+            heartbeat_controls[u["id"]] = (stop, beat)
+            # 빠른 sibling이 먼저 끝나도 느린 sibling의 fan-in·patch merge까지 lease가 살아 있어야 한다.
+            # merge finally가 모든 heartbeat를 join한 직후 ticket-finish를 수행한다.
+            result = run_unit(u, writes, cwd)
+            if heartbeat_error:
+                raise RuntimeError(f"ticket lease heartbeat failed: {heartbeat_error[0]}")
+            return result
 
         for wave in _plan_waves(units, self.root):
             ids = ", ".join(str(u["id"]) for u in wave)
@@ -955,12 +1353,27 @@ class Heimdall:
                     for unit in pending:
                         try:
                             claims_by_id[unit["id"]] = claim_ticket(unit)
-                        except Exception:
+                        except Exception as claim_error:
                             # A later claim failure must not strand earlier units until lease expiry.
+                            cleanup_errors: list[Exception] = []
                             for claimed in pending:
                                 token = claims_by_id.get(claimed["id"])
                                 if token:
-                                    finish_ticket(claimed, token, "failed", error="wave claim aborted before dispatch")
+                                    try:
+                                        finish_ticket(
+                                            claimed, token, "failed", error="wave claim aborted before dispatch"
+                                        )
+                                    except Exception as cleanup_error:
+                                        cleanup_errors.append(cleanup_error)
+                                        try:
+                                            shorten_claim_lease(claimed, token)
+                                        except Exception as expiry_error:
+                                            cleanup_errors.append(expiry_error)
+                            if cleanup_errors:
+                                raise RuntimeError(
+                                    f"{claim_error}; claim cleanup failed: "
+                                    + "; ".join(str(error) for error in cleanup_errors)
+                                ) from claim_error
                             raise
                 except Exception:
                     workspace_stack.close()
@@ -968,6 +1381,36 @@ class Heimdall:
                 failures: list[tuple[dict, Exception]] = []
                 outs = []
                 actual_writes: dict[object, list[str]] = {}
+                finished_claims: set[str] = set()
+
+                def settle_ticket(u: dict, status: str, *, error: str = "") -> str:
+                    token = claims_by_id[u["id"]]
+                    final = finish_ticket(u, token, status, error=error)
+                    finished_claims.add(token)
+                    return final
+
+                def fail_unfinished(candidates: list[dict], error: BaseException) -> list[Exception]:
+                    cleanup_errors: list[Exception] = []
+                    for candidate in candidates:
+                        token = claims_by_id.get(candidate["id"])
+                        if not token or token in finished_claims:
+                            continue
+                        try:
+                            settle_ticket(
+                                candidate,
+                                "failed",
+                                error=f"{error.__class__.__name__}: {str(error)[:400]}",
+                            )
+                        except Exception as cleanup_error:
+                            cleanup_errors.append(cleanup_error)
+                            # If ticket-finish itself is unavailable, stop renewing and shorten
+                            # the still-valid claim so resume is blocked for at most one second.
+                            try:
+                                shorten_claim_lease(candidate, token)
+                            except Exception as expiry_error:
+                                cleanup_errors.append(expiry_error)
+                    return cleanup_errors
+
                 try:
                     if len(pending) == 1:
                         u0 = pending[0]
@@ -1003,12 +1446,16 @@ class Heimdall:
                     if isolation:
                         from .unit_workspace import WorkspaceError
 
-                        patches = {u["id"]: workspaces[u["id"]].capture() for u, _, _ in outs}
+                        patches = {
+                            u["id"]: workspaces[u["id"]].capture(
+                                extra_paths=tuple(writes_by_id[u["id"]])
+                                + tuple(path for path in r.writes if path not in writes_by_id[u["id"]])
+                            )
+                            for u, r, _ in outs
+                        }
                         scope_failed = set()
                         for u, _, _ in outs:
-                            declared = [
-                                os.path.normpath(str(path)).replace(os.sep, "/").lstrip("./") for path in u["files"]
-                            ]
+                            declared = [os.path.normpath(str(path)).replace(os.sep, "/") for path in u["files"]]
                             outside = [
                                 path
                                 for path in patches[u["id"]].paths
@@ -1042,70 +1489,102 @@ class Heimdall:
                             except Exception as e:
                                 failures.append((u, e))
                         outs = kept
+                except Exception as exc:
+                    cleanup_errors = fail_unfinished(pending, exc)
+                    if cleanup_errors:
+                        self.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
+                    raise
                 finally:
-                    workspace_stack.close()
-                outs.sort(key=lambda o: order[o[0]["id"]])  # 완료순 → 배정순 — 로그 결정론 유지
-                completion_errors: list[Exception] = []
-                for u, r, writes in outs:
-                    unit_writes = actual_writes.get(u["id"], writes + [w for w in r.writes if w not in writes])
-                    all_writes.extend(w for w in unit_writes if w not in all_writes)
-                    # Persist the write sentinel before a potentially failing ticket-finish call.
-                    _record_writes(self.root, sid, all_writes)
-                    results[u["id"]] = r.text[-2000:]
-                    unit_note = f"│ 단위 {u['id']} 완료 · 파일 {len(unit_writes)}개"
-                    self.on_text(f"  {ui.dim(unit_note)}\n")
                     try:
-                        finish_ticket(u, claims_by_id[u["id"]], "done")
-                    except Exception as e:
-                        # One ticket-control failure must not prevent sibling units' durable
-                        # work events and ticket completions from being recorded.
-                        completion_errors.append(e)
-                    work_event = ql(
-                        self.root,
-                        "append",
-                        session=sid,
-                        stdin=json.dumps(
-                            {
-                                "role": "worker",
-                                "event": "work",
-                                "unit": u["id"],
-                                "changed_files": unit_writes[:50],
-                                "commands": r.commands[-20:],
-                                "model": used_model,
-                            }
-                        ),
-                    )
-                    if work_event.returncode != 0:
-                        completion_errors.append(
-                            RuntimeError(work_event.stderr.strip() or f"ticket {u['id']} work event append failed")
+                        try:
+                            workspace_stack.close()
+                        except Exception as close_error:
+                            cleanup_errors = fail_unfinished(pending, close_error)
+                            if cleanup_errors:
+                                self.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
+                            raise
+                    finally:
+                        # Capture/apply/overlap bookkeeping can raise before per-unit finish.
+                        # Always reclaim every wave heartbeat before propagating any exception.
+                        for unit in pending:
+                            stop_heartbeat(unit)
+                try:
+                    outs.sort(key=lambda o: order[o[0]["id"]])  # 완료순 → 배정순 — 로그 결정론 유지
+                    completion_errors: list[Exception] = []
+                    for u, r, writes in outs:
+                        unit_writes = actual_writes.get(u["id"], writes + [w for w in r.writes if w not in writes])
+                        all_writes.extend(w for w in unit_writes if w not in all_writes)
+                        # Persist the write sentinel before a potentially failing ticket-finish call.
+                        _record_writes(self.root, sid, all_writes)
+                        results[u["id"]] = r.text[-2000:]
+                        unit_note = f"│ 단위 {u['id']} 완료 · 파일 {len(unit_writes)}개"
+                        self.on_text(f"  {ui.dim(unit_note)}\n")
+                        try:
+                            settle_ticket(u, "done")
+                        except Exception as e:
+                            # One ticket-control failure must not prevent sibling units' durable
+                            # work events and ticket completions from being recorded.
+                            completion_errors.append(e)
+                        finally:
+                            stop_heartbeat(u)
+                        work_event = ql(
+                            self.root,
+                            "append",
+                            session=sid,
+                            stdin=json.dumps(
+                                {
+                                    "role": "worker",
+                                    "event": "work",
+                                    "unit": u["id"],
+                                    "changed_files": unit_writes[:50],
+                                    "commands": r.commands[-20:],
+                                    "model": used_model,
+                                }
+                            ),
                         )
-                if completion_errors:
-                    raise RuntimeError("; ".join(str(error) for error in completion_errors))
-                retry: list[dict] = []
-                terminal: list[tuple[dict, Exception]] = []
-                if failures:
-                    # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace의
-                    # 실패 delta는 폐기됐으므로 canonical write sentinel에 거짓 기록하지 않는다.
-                    if not isolation:
-                        for u, _ in failures:
-                            all_writes.extend(w for w in writes_by_id[u["id"]] if w not in all_writes)
-                    _record_writes(self.root, sid, all_writes)
-                    for u, e in failures:
-                        final = finish_ticket(
-                            u,
-                            claims_by_id[u["id"]],
-                            "failed",
-                            error=f"{e.__class__.__name__}: {str(e)[:400]}",
-                        )
-                        if final == "failed":
-                            retry.append(u)
-                            self.on_text(f"  ⚠ 단위 {u['id']} 실패 — 재배정 예정 ({e.__class__.__name__})\n")
-                        else:
-                            terminal.append((u, e))
-                            self.on_text(f"  ⚠ 단위 {u['id']} 실패 — retry budget 소진\n")
-                if terminal:
-                    raise terminal[0][1]
-                pending = retry
+                        if work_event.returncode != 0:
+                            completion_errors.append(
+                                RuntimeError(work_event.stderr.strip() or f"ticket {u['id']} work event append failed")
+                            )
+                    retry: list[dict] = []
+                    terminal: list[tuple[dict, Exception]] = []
+                    if failures:
+                        # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace의
+                        # 실패 delta는 폐기됐으므로 canonical write sentinel에 거짓 기록하지 않는다.
+                        if not isolation:
+                            for u, _ in failures:
+                                all_writes.extend(w for w in writes_by_id[u["id"]] if w not in all_writes)
+                        _record_writes(self.root, sid, all_writes)
+                        for u, e in failures:
+                            try:
+                                final = settle_ticket(
+                                    u,
+                                    "failed",
+                                    error=f"{e.__class__.__name__}: {str(e)[:400]}",
+                                )
+                            except Exception as finish_error:
+                                completion_errors.append(finish_error)
+                                continue
+                            finally:
+                                stop_heartbeat(u)
+                            if final == "failed":
+                                retry.append(u)
+                                self.on_text(f"  ⚠ 단위 {u['id']} 실패 — 재배정 예정 ({e.__class__.__name__})\n")
+                            else:
+                                terminal.append((u, e))
+                                self.on_text(f"  ⚠ 단위 {u['id']} 실패 — retry budget 소진\n")
+                    if completion_errors:
+                        raise RuntimeError("; ".join(str(error) for error in completion_errors))
+                    if terminal:
+                        raise terminal[0][1]
+                    pending = retry
+                except Exception as post_error:
+                    cleanup_errors = fail_unfinished(pending, post_error)
+                    if cleanup_errors:
+                        raise RuntimeError(
+                            f"{post_error}; claim cleanup failed: " + "; ".join(str(error) for error in cleanup_errors)
+                        ) from post_error
+                    raise
         _record_writes(self.root, sid, all_writes)
 
     def _record_outcome(self, task_class: str, result: str, saw_red: bool) -> None:
@@ -1128,6 +1607,33 @@ class Heimdall:
             stdin=json.dumps({"role": "verifier", "event": "verify"}),
         )
 
+    def resume(self, qid: str | None = None) -> str:
+        """Recover and continue one durable native Quest without replaying done tickets."""
+        from ..hooks.quest_log import active_quest
+
+        qid = qid or active_quest(self.root)
+        if not qid:
+            return "⚠ 재개할 ACTIVE Quest가 없습니다."
+        recovered = ql(self.root, "ticket-recover", session=qid)
+        if recovered.returncode != 0:
+            detail = (recovered.stderr or recovered.stdout or "ticket recovery failed").strip()[:300]
+            return f"⚠ Quest {qid} 복구 실패 — {detail}"
+        snapshot = _resume_snapshot(self.root, qid)
+        if snapshot["blocked"]:
+            return f"⚠ Quest {qid} retry budget 소진 ticket: {snapshot['blocked']}"
+        if snapshot["active"]:
+            return f"⚠ Quest {qid}에 유효 lease의 active ticket이 있어 중복 실행하지 않습니다: {snapshot['active']}"
+        request = snapshot["request"] or ("재개 Quest %s — %s" % (qid, "; ".join(snapshot["criteria"])))
+        cls = {
+            "task_class": "deep",
+            "criteria": snapshot["criteria"] or [f"Quest {qid}의 기존 성공 기준 충족"],
+            "parallel_requested": len(snapshot["units"]) + len(snapshot["completed"]) > 1,
+            "ambiguous": False,
+            "external_research": False,
+            "shared": False,
+        }
+        return self._trinity(request, cls, resume_qid=qid, resume_units=snapshot["units"])
+
     # ── Trinity 순환 ─────────────────────────────────────────────────────
     def _trinity(
         self,
@@ -1136,10 +1642,12 @@ class Heimdall:
         pre_work=None,
         standard: bool = False,
         pre_base_ref: str | None = None,
+        resume_qid: str | None = None,
+        resume_units: list[dict] | None = None,
     ) -> str:
         import uuid
 
-        qid = f"native-{int(time.time())}-{uuid.uuid4().hex[:6]}"  # 초 단위 충돌 방지
+        qid = resume_qid or f"native-{int(time.time())}-{uuid.uuid4().hex[:6]}"  # 초 단위 충돌 방지
         sid = qid
         # Heuristic classification intentionally avoids a second LLM call, so it may not
         # produce criteria. Bind the actual request into a non-empty criterion used by every
@@ -1149,13 +1657,21 @@ class Heimdall:
         tc = str(cls.get("task_class") or "")
         if tc not in ("trivial", "standard"):
             tc = "deep"  # 미상/파싱 실패는 deep (안전 기본값)
-        args = ["open", qid, "--task-class", tc] + [x for c in cls["criteria"] for x in ("--criteria", c)]
-        if pre_base_ref:
-            args += ["--base-ref", pre_base_ref]
-        opened = ql(self.root, *args, session=sid)
-        if opened.returncode != 0:
-            detail = (opened.stderr or opened.stdout or "quest open rejected").strip()[:300]
-            return f"⚠ Trinity 시작 거부 — {detail}"
+        if not resume_qid:
+            args = ["open", qid, "--task-class", tc, "--request-stdin"] + [
+                x for c in cls["criteria"] for x in ("--criteria", c)
+            ]
+            if pre_base_ref:
+                args += ["--base-ref", pre_base_ref]
+            opened = ql(
+                self.root,
+                *args,
+                session=sid,
+                stdin=json.dumps({"request": request}, ensure_ascii=False),
+            )
+            if opened.returncode != 0:
+                detail = (opened.stderr or opened.stdout or "quest open rejected").strip()[:300]
+                return f"⚠ Trinity 시작 거부 — {detail}"
         if pre_work is not None:  # DIRECT 오분류 소급 편입 — 이미 실행된 write 를 work 로 기록
             _record_writes(self.root, sid, list(pre_work.writes))
             ql(
@@ -1200,6 +1716,11 @@ class Heimdall:
         wave_plan_pending = False  # 새 Thinker 계획의 units는 WORKER_RETRY 전이여도 한 번 실행
         had_wave_plan = False  # wave FAIL을 범위 없는 단일 Worker로 강등하지 않는 latch
         pending: tuple[str, str] | None = None  # 게이트 수리 강제 턴 — next 우회
+
+        if resume_units:
+            self.on_text(f"  {ui.dim(f'│ ↻ resume {qid} — unfinished {len(resume_units)}단위')}\n")
+            self._run_worker_waves(sid, request, resume_units, "\n(resumed after process restart)")
+            had_wave_plan = True
 
         for t in range(1, budget + 3):  # +2 = grace 판정 턴 + 종료(DONE/게이트) 여지
             if pending:
@@ -1546,9 +2067,10 @@ class Heimdall:
                 changed = ", ".join((st.get("changed_files") or [])[:20]) or "(없음)"
 
                 charter_v = self._charter_note(self.root, "verifier")  # 반례 렌즈 (판단③) — 게이트 대체 아님
+                verifier_paths = tuple(str(path) for path in (st.get("changed_files") or []) if str(path))
 
-                def mk_verifier(m=model, rl="verifier", ch=charter_v, rp=None):
-                    return self._session(
+                def mk_verifier(m=model, rl="verifier", ch=charter_v, rp=None, paths=verifier_paths):
+                    session = self._session(
                         _role_prompt("asgard-verifier.md") + ch + (LAGOM_VERIFIER_NOTE if self.lagom else ""),
                         extra_tools=[VERDICT_TOOL],
                         handlers={"verdict": lambda i: "판정 접수"},
@@ -1557,6 +2079,8 @@ class Heimdall:
                         readonly=True,  # 읽기전용을 도구로 강제 — 프롬프트 순응에 안 기댄다
                         rp_override=rp,
                     )
+                    session.readonly_paths = paths
+                    return session
 
                 fb = (lambda mv=mk_verifier: mv(m=None, rl="verifier", rp=self.rp)) if rrp is not self.rp else None
                 r = self._run_turn(
@@ -1573,6 +2097,13 @@ class Heimdall:
                 # 마지막 verdict 호출이 최종 판정 (다중 호출 시 정정 인정)
                 v = next((c["input"] for c in reversed(r.tool_calls) if c["name"] == "verdict"), None)
                 observed = [c for c in r.commands if isinstance(c, dict)]  # 하니스 관측 — 위조 불가
+                final_exit_by_command: dict[str, object] = {}
+                for command in observed:
+                    cmd = str(command.get("cmd") or "").strip()
+                    if cmd and not _trivial_evidence(cmd):
+                        identity = str(command.get("command_hash") or cmd)
+                        final_exit_by_command[identity] = command.get("exit_code")
+                unresolved = [cmd for cmd, exit_code in final_exit_by_command.items() if exit_code != 0]
                 if not v:
                     v = {
                         "verdict": "FAIL",
@@ -1597,6 +2128,13 @@ class Heimdall:
                         "criteria": v.get("criteria") or cls["criteria"],
                         "failure_sig": "no-verification-evidence",
                         "why": "PASS 주장에 하니스 관측 성공 명령이 없음 — 검증 명령을 직접 실행해야 한다",
+                    }
+                elif v.get("verdict") == "PASS" and unresolved:
+                    v = {
+                        "verdict": "FAIL",
+                        "criteria": v.get("criteria") or cls["criteria"],
+                        "failure_sig": "unresolved-verification-failure",
+                        "why": "PASS 전에 해소되지 않은 검증 실패: " + "; ".join(unresolved[:3]),
                     }
                 # 증거는 하니스 관측 명령만 기록 — 모델 자가보고 commands 는 버린다
                 ev = {
