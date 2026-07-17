@@ -247,6 +247,11 @@ workspace/
 .claude/**/*.local.*
 # <<< asgard <<<
 
-# 이 리포 한정: .asgard 전체 무시 — dogfood 산출물(map/·로컬 설정)은 커밋하지 않는다.
+# 이 리포 한정: .asgard 는 무시하되 루트 map/ 만 커밋한다 — 팀 공유 코드베이스 지도 dogfood.
+# (구 결정 ".asgard 전체 무시" 를 대체. 워크스페이스·벤치 중첩 .asgard 는 계속 무시.)
 # 블록 밖 + `**/` 접두: asgard setup 의 블록 교체·광역 규칙 이관(정확히 `.asgard/` 만 삭제)에서 생존.
 **/.asgard/
+!/.asgard/
+/.asgard/*
+!/.asgard/map/
+!/.asgard/map/**
