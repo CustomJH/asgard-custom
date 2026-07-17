@@ -14,6 +14,10 @@ from asgard.templates.freyja import FREYJA_SKILLS, freyja_core_skill, resolve_fr
 
 _SKILL_NAMES = (
     "asgard-freyja-brisingamen",
+    "asgard-freyja-hnoss",
+    "asgard-freyja-gersemi",
+    "asgard-freyja-print",
+    "asgard-freyja-hmi",
     "asgard-freyja-reference-atlas",
     "asgard-freyja-logo-studio",
     "asgard-freyja-gullveig",
@@ -77,7 +81,6 @@ class TestSkillBodies(unittest.TestCase):
             self.assertIn(cliche, taste)
         self.assertIn("액센트 화면당 ≤3회", taste)
         self.assertIn("Discovery Trace", taste)  # 레퍼런스 참조 보고 의무
-        self.assertIn("밋밋함 방지", taste)  # 분위기·깊이 기법 카탈로그
         for archetype in ("정밀 미니멀", "다크 터미널", "럭셔리 절제"):  # 아키타입 카드 실존
             self.assertIn(archetype, taste)
         # taste-skill v2 전수 발굴분 (26-07-14) — 정량 규율·리디자인·카피 이진 금지
@@ -85,46 +88,69 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("엠대시 0개", taste)  # 이진 금지 ("아껴 쓰라"는 무시된다)
         self.assertIn("침묵 변경 금지", taste)  # 리디자인 모드 — URL/폼 필드/애널리틱스 보호
         self.assertIn("선언한 모션은 보여야 한다", taste)  # 다이얼 선언≠실행 방지
-        self.assertIn("해독제는 일괄 장식이 아니라 다이얼 정합", taste)  # 분위기 카탈로그 강제 채택 해제 (26-07-17)
         self.assertIn("Geist+Geist Mono", taste)  # 서체 출발 페어링 — 금지 일변도에 양성 가이드 보강
-        self.assertIn("100dvh", taste)  # 풀높이 히어로 주소창 함정
-        # 로고·브랜드 자산 (26-07-15 실증 + 오딘 레퍼런스 3종 증류 — "유치함" 피드백 교정)
-        self.assertIn("로고는 그림이 아니라 기하다", taste)  # 벡터 우선
-        self.assertIn("원샷 수용 금지", taste)  # 아트 디렉팅 루프
-        self.assertIn("변형 6종 강제", taste)  # 같은 아이디어 6벌 금지
-        self.assertIn("여백 ≥40%", taste)  # 조형 수치 계약
-        self.assertIn("옵티컬 보정", taste)  # 오버슛·시각적 중심·조사 현상
-        self.assertIn("마스코트화", taste)  # 유치함의 공식
-        self.assertIn("가변 아이덴티티 세트", taste)  # 2026 트렌드
-        self.assertIn("판정 위계", taste)  # 수치=바닥, 미감=승부처 (26-07-17 굿하트 교훈)
-        self.assertIn("극단 제약은 가변 세트가 흡수한다", taste)  # 16px 이 풀 마크를 지배하면 오판
-        self.assertIn("취향 선언(앵커)", taste)  # 오딘이 반응한 자산은 밀어낼 기본값이 아니다
-        self.assertIn("트렌드는 이동한다", taste)  # 재조사 의무
-        self.assertIn("의미 1문장", taste)  # 형상의 존재 이유
-        self.assertIn("op7418/logo-generator-skill 패턴 라이브러리", taste)
-        self.assertIn("소유 가능성 충돌 검사", taste)
-        self.assertIn("16px·32px·64px·512px 실제 CSS 픽셀 렌더", taste)
-        self.assertIn("법적 클리어런스가 아님", taste)
-        # 인쇄물 절 (26-07-15 QC 스윕 유보 사항 종결 — 팜플렛 실증에서 증류)
-        self.assertIn("콜로폰 동봉 의무", taste)  # CMYK 근사·용지·교정쇄 명시
-        self.assertIn("브라우저는 실인쇄를 검증 못 한다", taste)  # 한계 정직 보고
-
-    def test_taste_pixel_craft_anchors(self):
-        # 26-07-16 강화 — impeccable·brandkit·figma-implement·designer-skills·실측 기준선 증류
-        taste = self.by_name["asgard-freyja-brisingamen"]
         self.assertIn("2차 반사 검사", taste)  # 카테고리 반사 — 회피의 정형화도 반사
-        self.assertIn("placeholder 텍스트도 대비 4.5:1", taste)  # 가독성 파괴 1위 실측
-        self.assertIn("999/9999", taste)  # z-index 시맨틱 스케일
-        self.assertIn("드리프트 3분류", taste)  # 폴리시 순서 — 분류별 수리법
-        self.assertIn("8상태", taste)  # 인터랙티브 전수 점검
         self.assertIn("−2%~−6%", taste)  # 디스플레이 트래킹 실측 대역
-        self.assertIn("표면 명도 사다리", taste)  # 다크 무섀도 — 실측 드롭섀도 0
-        self.assertIn("5질문", taste)  # 브랜드 서사 전략 게이트
-        self.assertIn("브랜드 킷 문서", taste)  # 보드 패널 시퀀스
         self.assertIn("핸드오프 문서", taste)  # 전달 문서 5섹션 계약
         self.assertIn("해피패스만 적힌 스펙은 스펙이 아니다", taste)
-        self.assertIn("스크린샷 기준선", taste)  # 디자인 컨텍스트 구현 — 기준선 선확보
-        self.assertIn("placeholder 생성 금지", taste)  # figma-implement 금지 조항
+        # 심화 위임 라우팅 (26-07-17 분해) — 코어가 자매 스킬을 지명
+        self.assertIn("심화 위임", taste)
+        for sibling in ("asgard-freyja-hnoss", "asgard-freyja-gersemi", "asgard-freyja-print"):
+            self.assertIn(sibling, taste)
+        self.assertIn("로고는 그림이 아니라 기하다", taste)  # 위임 포인터에도 핵심 계약 1줄 유지
+        self.assertIn("원샷 수용 금지", taste)
+
+    def test_gersemi_surface_anchors(self):
+        # 표면·마감 (26-07-17 분해 — 브리싱가멘에서 이관): 색 엔진·그림자·깊이·광학 감사
+        g = self.by_name["asgard-freyja-gersemi"]
+        self.assertIn("밋밋함 방지", g)  # 분위기·깊이 기법 카탈로그
+        self.assertIn("해독제는 일괄 장식이 아니라 다이얼 정합", g)
+        self.assertIn("100dvh", g)  # 풀높이 히어로 주소창 함정 (광학 감사)
+        self.assertIn("placeholder 텍스트도 대비 4.5:1", g)  # 가독성 파괴 1위 실측
+        self.assertIn("999/9999", g)  # z-index 시맨틱 스케일
+        self.assertIn("드리프트 3분류", g)  # 폴리시 순서 — 분류별 수리법
+        self.assertIn("8상태", g)  # 인터랙티브 전수 점검
+        self.assertIn("표면 명도 사다리", g)  # 다크 무섀도 — 실측 드롭섀도 0
+        self.assertIn("스크린샷 기준선", g)  # 디자인 컨텍스트 구현 — 기준선 선확보
+        self.assertIn("placeholder 생성 금지", g)  # figma-implement 금지 조항
+
+    def test_gersemi_material_ladder(self):
+        # 그래픽 재료 사다리 (26-07-17 — "SVG 만능주의 표현 부자연" 오딘 피드백 교정)
+        g = self.by_name["asgard-freyja-gersemi"]
+        self.assertIn("그래픽 재료 사다리", g)
+        self.assertIn("직접 그리기의 경계는 기하다", g)  # 유기 곡선·장면부터 재료를 가져온다
+        self.assertIn("api.iconify.design", g)  # 아이콘은 완성 SVG 인라인 박제 (라이브 검증 URL)
+        self.assertIn("currentColor", g)  # 색 주입 대신 CSS 상속 — 다크 공짜
+        self.assertIn("feTurbulence", g)  # 노이즈는 data-URI
+        self.assertIn("2408.08313", g)  # SGP-Bench — 코드→시각 역상상 불능 실증
+        self.assertIn("자기완결 납품 = 재료도 파일 안에", g)
+        # 로고 스튜디오에도 손 SVG 경계 명시 (26-07-17 확장: 단순 기하 → 기하 유도 조형까지)
+        self.assertIn("손 SVG 정본은 기하 유도 조형 한정", self.by_name["asgard-freyja-logo-studio"])
+
+    def test_logo_canon_merged_into_studio(self):
+        # 로고 조형·아트 디렉팅 캐논 (26-07-17 분해 — 브리싱가멘에서 logo-studio 로 병합)
+        logo = self.by_name["asgard-freyja-logo-studio"]
+        self.assertIn("변형 6종 강제", logo)  # 같은 아이디어 6벌 금지
+        self.assertIn("여백 ≥40%", logo)  # 조형 수치 계약
+        self.assertIn("옵티컬 보정", logo)  # 오버슛·시각적 중심·조사 현상
+        self.assertIn("마스코트화", logo)  # 유치함의 공식
+        self.assertIn("가변 아이덴티티 세트", logo)  # 2026 트렌드
+        self.assertIn("판정 위계", logo)  # 수치=바닥, 미감=승부처 (26-07-17 굿하트 교훈)
+        self.assertIn("극단 제약은 가변 세트가 흡수한다", logo)
+        self.assertIn("취향 선언(앵커)", logo)  # 오딘이 반응한 자산은 밀어낼 기본값이 아니다
+        self.assertIn("트렌드는 이동한다", logo)  # 재조사 의무
+        self.assertIn("의미 1문장", logo)  # 형상의 존재 이유
+        self.assertIn("소유 가능성 충돌 검사", logo)
+        self.assertIn("16px·32px·64px·512px 실제 CSS 픽셀 렌더", logo)
+        self.assertIn("법적 클리어런스가 아님", logo)
+        self.assertIn("5질문", logo)  # 브랜드 서사 전략 게이트
+        self.assertIn("브랜드 킷 문서", logo)  # 보드 패널 시퀀스
+
+    def test_print_skill_anchors(self):
+        # 인쇄물 (26-07-17 분해 — 전용 스킬로 이관)
+        pr = self.by_name["asgard-freyja-print"]
+        self.assertIn("콜로폰 동봉 의무", pr)  # CMYK 근사·용지·교정쇄 명시
+        self.assertIn("브라우저는 실인쇄를 검증 못 한다", pr)  # 한계 정직 보고
 
     def test_motion_anchors(self):
         motion = self.by_name["asgard-freyja-motion"]
@@ -312,6 +338,235 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("웹 모션 규칙이 무효", self.by_name["asgard-freyja-video"])
 
 
+class TestUiSkillsRework(unittest.TestCase):
+    """ui-skills.com 181종 전수 정독 재설계 (26-07-17) — 양성 레시피·레지스터·시드 변주·OKLCH 엔진.
+    금지 일변도가 아니라 실행 가능한 수치 레시피가 결핍이었다는 진단의 계약 앵커."""
+
+    def setUp(self):
+        self.by_name = dict(FREYJA_SKILLS)
+        self.taste = self.by_name["asgard-freyja-brisingamen"]
+        self.motion = self.by_name["asgard-freyja-motion"]
+
+    def test_design_plan_block_procedure(self):
+        # 코드 전 플랜 블록: 레지스터 → 디자인 리드+장면 문장 → 다이얼 → 시드 변주 → 색 전략 → 플랜 검증
+        self.assertIn("레지스터 판정", self.taste)
+        self.assertIn("fluid clamp 비율 ≥1.25", self.taste)  # 브랜드 스케일
+        self.assertIn("1.125–1.2", self.taste)  # 프로덕트 스케일
+        self.assertIn("장면 문장", self.taste)  # 테마는 취향이 아니라 장면
+        self.assertIn("변주 강제 (시드 선택 + 전형성 탈출)", self.taste)
+        self.assertIn("글자 수를 시드로", self.taste)  # 결정론적 변주 — 같은 화면 반복 차단
+        self.assertIn("색 전략 4단", self.taste)
+        self.assertIn("Restrained", self.taste)
+        self.assertIn("플랜 자가 검증", self.taste)  # H1 수학·벤토 수학 사전 증명
+
+    def test_layout_blueprints(self):
+        # 양성 레시피 — 빈 캔버스에서 출발하지 않는다 (26-07-17 분해: hnoss 로 이관)
+        hn = self.by_name["asgard-freyja-hnoss"]
+        self.assertIn("레이아웃 청사진", hn)
+        self.assertIn("AIDA", hn)
+        self.assertIn("히어로 아키타입", hn)
+        self.assertIn("grid-auto-flow: dense", hn)
+        self.assertIn("이중 베젤", hn)  # 구조 장치 카탈로그
+        self.assertIn("min-h-[100dvh]", hn)
+        self.assertIn("인지부하 수치", hn)  # 내비 ≤5·지표 ≤4·티어 ≤3
+        self.assertIn("분할 정복 생성", hn)  # DCGen — 섹션별 생성·검수 후 조립
+        self.assertIn("2406.16386", hn)  # 논문 실명 인용 실존
+
+    def test_oklch_color_engine(self):
+        g = self.by_name["asgard-freyja-gersemi"]
+        self.assertIn("색 엔진 (OKLCH", g)
+        self.assertIn("대비 수리는 L 채널만", g)
+        self.assertIn(">10°", g)  # 휴 드리프트 판정
+        self.assertIn("L 매핑 역전", g)  # 다크 모드는 손으로 고르지 않는다
+        self.assertIn("0.005–0.015", g)  # 틴트 뉴트럴 크로마 대역
+        self.assertIn("60-30-10", g)
+
+    def test_shadow_surface_recipes(self):
+        g = self.by_name["asgard-freyja-gersemi"]
+        self.assertIn("그림자·표면 캐논", g)
+        self.assertIn("0 2px 3px -1px rgba(0,0,0,.1)", g)  # sm 정확 레시피
+        self.assertIn("고스트카드 금지", g)  # 1px 보더 + blur ≥16px 동시 금지
+        self.assertIn("표면 깊이 전략은 하나만", g)
+
+    def test_weight_caps(self):
+        # 무게 상한 (26-07-17 분해의 존재 이유) — "800줄 프롬프트가 40줄보다 나쁘다"(실무 실측)
+        # + Context Rot: 입력 길이 증가만으로 성능 저하. 코어 재비대는 회귀다.
+        sizes = {name: len(body) for name, body in FREYJA_SKILLS}
+        self.assertLessEqual(sizes["asgard-freyja-brisingamen"], 10_500, "브리싱가멘 재비대 — 자매 스킬로 분해하라")
+        for name, n in sizes.items():
+            self.assertLessEqual(n, 10_500, f"{name} 과적재 — 스킬은 얇고 전부 현역이어야 한다")
+        # role 은 상시 주입 계약 — 정본은 스킬로 위임하고 role 은 계약·게이트만 (26-07-17 다이어트)
+        role_path = os.path.join(
+            os.path.dirname(__file__), "..", "src", "asgard", "templates", "roles", "asgard-freyja.md"
+        )
+        self.assertLessEqual(len(open(role_path).read()), 8_000, "role 재비대 — 정본을 스킬로 위임하라")
+
+    def test_seed_variation_includes_atypicality(self):
+        # Verbalized Sampling (2510.01171) — 전형성 편향 탈출이 시드 변주에 명문화
+        self.assertIn("전형성", self.taste)
+        self.assertIn("2510.01171", self.taste)
+
+    def test_valshamr_research_reinforcement(self):
+        vs = self.by_name["asgard-freyja-valshamr"]
+        self.assertIn("하드 필터 선행", vs)  # 렌더 실패·오버플로·콘솔 에러는 미감 채점 전 탈락
+        self.assertIn("인터랙션 미감", vs)  # 3축 분리 (WebGen-R1)
+        self.assertIn("과제별 체크리스트", vs)  # 전역 인상 점수 금지 (ArtifactsBench)
+        self.assertIn("피드백 형식", vs)  # 점수·순위가 아니라 코멘트·지목
+
+    def test_motion_choreography_canon(self):
+        # LottieFiles/motion-design-skill 증류 (26-07-17) — 강제 아닌 "채택 시 레시피"로 편입
+        m = self.by_name["asgard-freyja-motion"]
+        self.assertIn("거리-시간 스케일", m)  # 거리 2배 ≠ 시간 2배
+        self.assertIn("오버슈트는 문맥 예산", m)  # 에러 0%·축하 15–25%
+        self.assertIn("재질 은유", m)  # 종이/고무/물/금속
+        self.assertIn("카운터모션이 무게를 만든다", m)
+        self.assertIn("4막 구조", m)  # 예고→본동작→반응→정착
+        self.assertIn("앰비언트 자격선", m)  # ±5% 초과 펄스는 주의 요구
+        self.assertIn("텍스트 패럴랙스 절대 금지", m)
+        self.assertIn("ease-out 이 더 빠르게 느껴진다", m)
+        # 3레이어: 전면 의무화 기각, 브랜드 표면 기본값(옵트아웃)으로 절충 채택 (26-07-17 오딘 지시)
+        self.assertIn("레이어 진폭비 — 브랜드 표면 기본값", m)
+        self.assertIn("전면 의무화는 기각", m)
+        self.assertIn("LottieFiles/motion-design-skill", m)
+
+    def test_logo_organic_construction(self):
+        # 유기·다이내믹 조형 구성법 (26-07-17 — 컨셉 B 계열 불합격 교정: 프리핸드 아닌 기하 유도)
+        logo = self.by_name["asgard-freyja-logo-studio"]
+        self.assertIn("유기·다이내믹 구성법", logo)
+        self.assertIn("중첩 원 구성", logo)  # 반지름 2–3종 호 가족 + G1 접선 연속
+        self.assertIn("두 원 빼기 스우시", logo)
+        self.assertIn("오프셋 곡선 리본", logo)  # 가변 굵기 테이퍼
+        self.assertIn("회전 복제", logo)  # rotate(360/n)
+        self.assertIn("로그 나선", logo)  # 성장 서사의 기하 근거
+        self.assertIn("하이브리드 그리드 선행", logo)
+        self.assertIn("납품 매트릭스", logo)  # 레이아웃×색 + 금지 사용례
+        # 모티프 메뉴 탈기본화 — 양 세대 동시 수렴 실측 (에코 아크)
+        self.assertIn("같은 모티프 연속 2회 = 수렴 티", logo)
+
+    def test_logo_asset_pipeline(self):
+        # 에셋 조립 파이프라인 (26-07-17 — manus/Brandmark/op7418 리서치: 품질 = 에셋+페어링+채점 게이트)
+        logo = self.by_name["asgard-freyja-logo-studio"]
+        self.assertIn("에셋 조립 파이프라인", logo)
+        self.assertIn("opentype.js", logo)  # 워드마크는 실제 폰트 아웃라인
+        self.assertIn("불리언 실계산", logo)  # paper.js — 라이브러리 티 제거·좌표 환각 제거
+        self.assertIn("흔한 모양 감점", logo)  # Brandmark 고유성 점수 등가물
+        self.assertIn("무게 페어링", logo)  # 심볼-워드마크 광학 무게 정합
+        self.assertIn("대량 생성 후 선별", logo)  # 후보 ≥8 → 게이트 선별
+        self.assertIn("패턴 좌표 레시피", logo)  # op7418 — 동심원 점·캡슐 흐름·회전 스택
+        self.assertIn("할당제 + 4차원 분산", logo)
+        self.assertIn("쇼케이스 미세 타이포", logo)  # 6–9pt 3점 배치
+
+    def test_logo_3d_showcase(self):
+        fk = self.by_name["asgard-freyja-folkvangr"]
+        self.assertIn("로고 3D 쇼케이스", fk)
+        self.assertIn("SVGLoader.createShapes", fk)  # 압출 파이프라인 순서
+        self.assertIn("scale.y *= -1", fk)  # SVG Y축 반전 필수
+        self.assertIn("크게, 기울여, 잘라, 천천히", fk)  # 성숙 문법
+        self.assertIn("검은 덩어리", fk)  # metalness 1 + no envmap 함정
+        logo = self.by_name["asgard-freyja-logo-studio"]
+        self.assertIn("로고 3D 쇼케이스", logo)  # 상호 참조
+
+    def test_hero_living_element_mandate(self):
+        # three.js 활용 경로 (26-07-17 오딘 피드백 "히어로 수려한 모션 부재")
+        hn = self.by_name["asgard-freyja-hnoss"]
+        self.assertIn("히어로 살아있는 요소 실장 의무", hn)
+        self.assertIn("asgard-freyja-folkvangr", hn)  # 3D 앰비언트 경로 지명
+        fk = self.by_name["asgard-freyja-folkvangr"]
+        self.assertIn("히어로 앰비언트 씬", fk)  # 경량 공식 (파티클·자전·시차·reduced-motion 정지)
+        self.assertIn("three.js CDN", fk)  # 단일 파일 데모 허용
+
+    def test_hildisvini_interaction_operation(self):
+        hv = self.by_name["asgard-freyja-hildisvini"]
+        self.assertIn("인터랙션 실조작 검증", hv)  # 기능이 최대 실패 모드 (WebGen-Bench 27.8%)
+        self.assertIn("27.8%", hv)
+
+    def test_hmi_skill_extracted(self):
+        # 산업 HMI (26-07-17 분해 — role 에서 이관, role 은 포인터만)
+        from asgard.templates.roles import ROLE_AGENTS
+
+        hmi = self.by_name["asgard-freyja-hmi"]
+        for anchor in (
+            "회색 캔버스",
+            "채도는 알람의 전유물",
+            "안전색은 예약어",
+            "미확인 알람만 점멸",
+            "≥15mm",
+            "2단 확인",
+            "380%",
+            "적록 토글 금지",
+        ):
+            self.assertIn(anchor, hmi)
+        role = dict(ROLE_AGENTS)["asgard-freyja.md"]
+        self.assertIn("asgard-freyja-hmi", role)  # role 은 로드 포인터 유지
+        self.assertNotIn("미확인 알람만 점멸", role)  # 본문은 이관 완료 (중복 금지)
+
+    def test_typography_scale_canon(self):
+        self.assertIn("clamp 상한 ≤6rem", self.taste)
+        self.assertIn("타입 스케일은 5단이면 충분", self.taste)
+        self.assertIn("font-synthesis: none", self.taste)
+        self.assertIn("text-wrap: balance", self.taste)
+
+    def test_self_gates_and_slop_test(self):
+        self.assertIn("Swap 테스트", self.taste)
+        self.assertIn("Squint 테스트", self.taste)
+        self.assertIn("Signature 테스트", self.taste)
+        self.assertIn("슬롭 테스트 2단", self.taste)
+        self.assertIn("'AI 가 만들었네'라고 말할 수 있다면 실패다", self.taste)
+
+    def test_output_completeness(self):
+        self.assertIn("출력 완전성", self.taste)
+        self.assertIn("[PAUSED — X of Y]", self.taste)
+        self.assertIn("for brevity", self.taste)
+
+    def test_new_decoration_tells(self):
+        self.assertIn("스케치풍 SVG", self.taste)
+        self.assertIn("32px+ 라운딩", self.taste)
+        self.assertIn("Herding pixels", self.taste)  # 클리셰 로딩 카피
+        self.assertIn("동사+목적어", self.taste)  # OK·Submit 금지
+
+    def test_motion_named_curves_and_springs(self):
+        self.assertIn("이징·스프링 명명 캐논", self.motion)
+        self.assertIn("cubic-bezier(0.22, 1, 0.36, 1)", self.motion)
+        self.assertIn("cubic-bezier(0.32, 0.72, 0, 1)", self.motion)  # 드로어·시트
+        self.assertIn("stiffness 400 / damping 30", self.motion)
+        self.assertIn("스프링 판단 기준은 하나다", self.motion)  # 사용자 반응 vs 시스템 통보
+
+    def test_motion_reduced_motion_tiers_and_flags(self):
+        self.assertIn("3계층 강등", self.motion)  # reduced-motion 은 킬스위치가 아니다
+        self.assertIn("0.01ms", self.motion)  # 0s 는 transitionend 파손
+        self.assertIn("transition: all", self.motion)  # 즉시 플래그
+        self.assertIn("즉시 플래그", self.motion)
+        self.assertIn("수정 우선순위 위계", self.motion)
+        self.assertIn("닫힘에 delay 절대 금지", self.motion)
+        self.assertIn("transform-origin", self.motion)  # 트리거에서 자란다
+
+    def test_hildisvini_observation_surface(self):
+        hv = self.by_name["asgard-freyja-hildisvini"]
+        self.assertIn("접근성 트리 스냅샷", hv)  # 기본 관측면 — 스크린샷은 보조
+        self.assertIn("가시적 델타", hv)  # 컴파일 통과는 기준이 아니다
+        self.assertIn("DOM 안정화", hv)  # 고정 딜레이는 렌더 중간 샘플링
+
+    def test_folkvangr_material_light_recipes(self):
+        fk = self.by_name["asgard-freyja-folkvangr"]
+        self.assertIn("transmission 1", fk)  # 유리 레시피
+        self.assertIn("clearcoatRoughness 0.1", fk)  # 코팅 레시피
+        self.assertIn("scene.environment", fk)  # IBL 이 라이트 추가보다 먼저
+
+    def test_valshamr_negative_clauses_and_report(self):
+        vs = self.by_name["asgard-freyja-valshamr"]
+        self.assertIn("지적하지 말 것", vs)  # 음성 조항 — 과잉 교정 차단
+        self.assertIn("근거 없는 발견보다 무발견이 낫다", vs)
+        self.assertIn("Before/After/Why 표", vs)
+
+    def test_role_carries_register_and_gates(self):
+        from asgard.templates.roles import ROLE_AGENTS
+
+        role = dict(ROLE_AGENTS)["asgard-freyja.md"]
+        self.assertIn("레지스터 판정", role)
+        self.assertIn("장면 문장", role)
+        self.assertIn("Swap", role)  # 자기 게이트가 role 에서도 선언
+
+
 class TestA11yCanon(unittest.TestCase):
     """접근성 캐논 (26-07-15 고도화) — 표본 3종 실측(Lighthouse 100×2 + 행동 검증 14항)으로 증류한 계약.
     role 이 단일 소스이므로 코어 스킬(모드 A)에도 자동 상속된다."""
@@ -340,17 +595,12 @@ class TestA11yCanon(unittest.TestCase):
         self.assertIn("색으로만 전하지 않는다", self.role)
         self.assertIn("3–4할만 잡는다", self.role)  # 자동 감사 한계 — 키보드 실측 의무의 근거
 
-    def test_industrial_hmi_extension(self):
-        # 산업 환경 확장 (26-07-15 goal) — ISA-101/18.2·ISO 3864·9241-303 증류, HMI 벤치 실측 통과
-        self.assertIn("산업 환경 확장", self.role)
-        self.assertIn("회색 캔버스", self.role)
-        self.assertIn("채도는 알람의 전유물", self.role)
-        self.assertIn("안전색은 예약어", self.role)
-        self.assertIn("미확인 알람만 점멸", self.role)
-        self.assertIn("≥15mm", self.role)  # 타깃은 px 가 아니라 mm
-        self.assertIn("2단 확인", self.role)  # 파괴 조작
-        self.assertIn("380%", self.role)  # ASM 실증 — 목표는 예쁨이 아니라 상황 인식
-        self.assertIn("적록 토글 금지", self.role)
+    def test_industrial_hmi_pointer(self):
+        # 산업 환경 (26-07-17 분해) — 본문은 asgard-freyja-hmi 스킬로 이관, role 은 로드 포인터
+        self.assertIn("산업 환경", self.role)
+        self.assertIn("asgard-freyja-hmi", self.role)
+        self.assertIn("채도는 알람의 전유물", self.role)  # 포인터에도 핵심 1줄 유지
+        self.assertIn("상황 인식", self.role)  # 목표는 예쁨이 아니다
 
 
 class TestMarkdownTables(unittest.TestCase):
@@ -440,6 +690,33 @@ class TestSkillResolver(unittest.TestCase):
         for task, expected in cases.items():
             self.assertIn(expected, [name for name, _ in resolve_freyja_skills(task)], task)
 
+    def test_split_skill_routing(self):
+        # 26-07-17 분해 — 자매 스킬이 과업 성격대로 붙는다
+        cases = {
+            # "수려하게" 류 모호 미감 요청은 코어(브리싱가멘)만 — 표면 스킬은 명시 키워드 시 (다이어트)
+            "랜딩 페이지 히어로를 수려하게": {
+                "asgard-freyja-brisingamen",
+                "asgard-freyja-hnoss",
+            },
+            "다크 모드 팔레트 대비 폴리시": {"asgard-freyja-gersemi"},
+            "행사 포스터 인쇄용 pdf 제작": {"asgard-freyja-print"},
+            "scada 제어실 hmi 화면 설계": {"asgard-freyja-hmi"},
+        }
+        for task, expected in cases.items():
+            names = {n for n, _ in resolve_freyja_skills(task)}
+            self.assertTrue(expected.issubset(names), (task, names))
+
+    def test_split_skill_negative_routing(self):
+        # 부분 과업에 무관 청사진·표면 스킬이 끌려오지 않는다 (분해의 존재 이유)
+        cases = {
+            "버튼 컴포넌트 focus 상태 접근성 수정": {"asgard-freyja-hnoss", "asgard-freyja-print", "asgard-freyja-hmi"},
+            "검색 결과 목록 정렬 로직 수정": {"asgard-freyja-gersemi"},  # "검색"이 "색" 오탐 금지
+            "알람 시계 앱 UI": {"asgard-freyja-hmi"},  # 일반 앱 오탐 금지
+        }
+        for task, excluded in cases.items():
+            names = {n for n, _ in resolve_freyja_skills(task)}
+            self.assertFalse(excluded & names, (task, names))
+
     def test_fail_open_on_no_match(self):
         self.assertEqual(resolve_freyja_skills("버튼 라벨 오타 수정"), [])
 
@@ -519,10 +796,11 @@ class TestQualityGateSurfaces(unittest.TestCase):
 
 
 class TestPrintBleedContract(unittest.TestCase):
-    """도련 산출 계약 (26-07-15 리뷰 [중간]) — 선언만으론 미완: 확장 + 출력면 실측 검증까지."""
+    """도련 산출 계약 (26-07-15 리뷰 [중간]) — 선언만으론 미완: 확장 + 출력면 실측 검증까지.
+    26-07-17 분해로 asgard-freyja-print 스킬이 정본."""
 
     def setUp(self):
-        self.taste = dict(FREYJA_SKILLS)["asgard-freyja-brisingamen"]
+        self.taste = dict(FREYJA_SKILLS)["asgard-freyja-print"]
 
     def test_bleed_output_contract(self):
         self.assertIn("도련 산출 계약", self.taste)
