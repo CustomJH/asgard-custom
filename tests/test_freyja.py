@@ -10,7 +10,12 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from asgard.templates.freyja import FREYJA_SKILLS, freyja_core_skill, resolve_freyja_skills  # noqa: E402
+from asgard.templates.freyja import (  # noqa: E402
+    _SKILL_BODY_BUDGET,
+    FREYJA_SKILLS,
+    freyja_core_skill,
+    resolve_freyja_skills,
+)
 
 _SKILL_NAMES = (
     "asgard-freyja-brisingamen",
@@ -18,6 +23,7 @@ _SKILL_NAMES = (
     "asgard-freyja-gersemi",
     "asgard-freyja-print",
     "asgard-freyja-hmi",
+    "asgard-freyja-syn",
     "asgard-freyja-reference-atlas",
     "asgard-freyja-logo-studio",
     "asgard-freyja-gullveig",
@@ -210,6 +216,56 @@ class TestSkillBodies(unittest.TestCase):
             "참조 축",
         ):
             self.assertIn(anchor, atlas)
+        # 26-07-18 강화 (Open Design reference-design-contract·brand-extract 증류)
+        self.assertIn("신뢰도 라벨", atlas)  # observed/provided/inferred — 브랜드 사실 발명 금지
+        self.assertIn("observed", atlas)
+        self.assertIn("형용사는 구체 제약으로 번역", atlas)  # "프리미엄" → 실행 가능한 제약
+        self.assertIn("기존 브랜드 실측 추출", atlas)  # 기억 추측 = Inter·인디고 회귀
+        self.assertIn("7 시맨틱 역할", atlas)
+
+    def test_syn_state_and_form_anchors(self):
+        # 26-07-18 신설 — Open Design craft(state-coverage·form-validation) 증류
+        syn = self.by_name["asgard-freyja-syn"]
+        self.assertIn("5상태", syn)  # 로딩/빈/에러/채워짐/엣지 전수
+        self.assertIn("무한 스피너 금지", syn)
+        self.assertIn("빈 상태 4종", syn)
+        self.assertIn("에러 3질문 순서", syn)
+        self.assertIn("재시도 규율", syn)  # 백오프 2/4/8s + 에러 ID
+        self.assertIn("첫 blur 후 검사", syn)  # 검증 타이밍의 정본
+        self.assertIn(":user-invalid", syn)  # :invalid 스타일링 금지
+        self.assertIn("붙여넣기 차단 절대 금지", syn)  # WCAG 3.3.8
+        self.assertIn('setCustomValidity("")', syn)  # null 은 미해제
+        self.assertIn("이중 낭독", syn)  # 요약 컨테이너 role=alert 금지
+
+    def test_syn_laws_a11y_rtl_anchors(self):
+        syn = self.by_name["asgard-freyja-syn"]
+        for law in ("Hick", "Miller/Cowan", "Peak-End", "Zeigarnik", "Postel", "Tesler"):
+            self.assertIn(law, syn)
+        self.assertIn("24×24 CSS px", syn)  # AA 바닥 (44 는 AAA — 통설 교정)
+        self.assertIn("18pt(≈24px)", syn)  # "큰 텍스트" 경계값 교정
+        self.assertIn("ARIA 는 정확성 빚", syn)  # WebAIM 실측 — 네이티브 우선 4단
+        self.assertIn("letter-spacing 절대 금지", syn)  # 아랍어 연결 문자
+        self.assertIn('<bdi dir="ltr">', syn)  # 전화·IBAN 약문자 강제
+        self.assertIn("미러 X", syn)  # 시계·미디어 스크러버·차트 축은 불변
+
+    def test_craft_distillation_anchors(self):
+        # 26-07-18 강화 — Open Design craft 코퍼스의 기존-스킬 편입분
+        taste = self.by_name["asgard-freyja-brisingamen"]
+        self.assertIn("#6366f1", taste)  # 인디고 하드코딩 대역 = 최다 검증 티
+        self.assertIn("압박 부사", taste)  # "쉽게·간단히·빠르게" 금지
+        self.assertIn("3역할 명명", taste)  # 웨이트 400–450/500–550/600
+        hnoss = self.by_name["asgard-freyja-hnoss"]
+        self.assertIn("위계 5벡터", hnoss)  # 지배 요소 1 + 벡터 ≥2
+        self.assertIn("에디토리얼 타이포 캐논", hnoss)  # 디스플레이/데크 ≥1.5× 낙차
+        self.assertIn("표준 시퀀스", hnoss)  # Hero→…→CTA 무변주 = 템플릿 골격
+        gersemi = self.by_name["asgard-freyja-gersemi"]
+        self.assertIn("필(배경) 전용", gersemi)  # 저대비 액센트 역할 분리
+        self.assertIn("overscroll-behavior", gersemi)  # 마감 감사 확장
+        motion = self.by_name["asgard-freyja-motion"]
+        self.assertIn("교육용 모션은 실증 기각", motion)  # Tversky 2002 메타분석
+        self.assertIn("루프 상한", motion)  # WCAG 2.2.2·2.3.1 법적 바닥
+        self.assertIn("명명 함정 2종", motion)  # M2/M3 이징·스프링 default 상반
+        self.assertIn("View Transitions API 는 reduced-motion 을 자동 존중하지 않는다", motion)
 
     def test_motion_review_anchors(self):
         # 26-07-16 강화 — design-motion-principles(3렌즈·빈도)·impeccable animate·MoVer 절차화
@@ -353,8 +409,10 @@ class TestUiSkillsRework(unittest.TestCase):
         self.assertIn("fluid clamp 비율 ≥1.25", self.taste)  # 브랜드 스케일
         self.assertIn("1.125–1.2", self.taste)  # 프로덕트 스케일
         self.assertIn("장면 문장", self.taste)  # 테마는 취향이 아니라 장면
-        self.assertIn("변주 강제 (시드 선택 + 전형성 탈출)", self.taste)
-        self.assertIn("글자 수를 시드로", self.taste)  # 결정론적 변주 — 같은 화면 반복 차단
+        self.assertIn("변주 강제 (시드 셔플 + 전형성 탈출)", self.taste)
+        self.assertIn("해시를 시드로", self.taste)
+        self.assertNotIn("글자 수를 시드로", self.taste)
+        self.assertIn("최종 선택 기준은 순서가 아니라 브리프 적합성 게이트", self.taste)
         self.assertIn("색 전략 4단", self.taste)
         self.assertIn("Restrained", self.taste)
         self.assertIn("플랜 자가 검증", self.taste)  # H1 수학·벤토 수학 사전 증명
@@ -726,6 +784,21 @@ class TestSkillResolver(unittest.TestCase):
         names = [n for n, _ in resolve_freyja_skills("three.js 씬에 파티클")]
         self.assertEqual(names, ["asgard-freyja-folkvangr"])  # 구체화된 표기는 여전히 매칭
 
+    def test_syn_routing(self):
+        # 26-07-18 신설 — 실무 UX 캐논: 상태·폼·사용성·RTL 과업이 syn 을 부른다
+        for task in (
+            "회원가입 폼 검증 흐름 개선",
+            "빈 상태 화면 디자인",
+            "form validation UX",
+            "아랍어 rtl 레이아웃 대응",
+            "체크아웃 로딩 상태와 스켈레톤",
+        ):
+            names = [n for n, _ in resolve_freyja_skills(task)]
+            self.assertIn("asgard-freyja-syn", names, task)
+        # "플랫폼"·일반 문장이 syn 을 끌지 않는다 ("폼"·"상태" 단독 미채택의 존재 이유)
+        for task in ("크로스 플랫폼 빌드 상태 점검", "버튼 라벨 오타 수정"):
+            self.assertNotIn("asgard-freyja-syn", [n for n, _ in resolve_freyja_skills(task)], task)
+
     def test_design_context_routes_to_brisingamen(self):
         # 이미지→코드 경로 누락 (26-07-15 리뷰) — Figma·시안·스크린샷·목업 구현
         for task in ("Figma 시안을 React로 구현", "스크린샷대로 만들어줘", "목업 그대로 코딩"):
@@ -737,11 +810,34 @@ class TestSkillResolver(unittest.TestCase):
             self.assertFalse(body.startswith("---"))
             self.assertNotIn("\nname: asgard-freyja-", body.split("\n\n")[0])
 
-    def test_multi_domain_injects_all(self):
-        names = [n for n, _ in resolve_freyja_skills("3D 히어로에 스크롤 모션")]
-        self.assertIn("asgard-freyja-brisingamen", names)
-        self.assertIn("asgard-freyja-motion", names)
-        self.assertIn("asgard-freyja-folkvangr", names)
+    def test_multi_domain_prioritizes_specialists_within_budget(self):
+        hits = dict(resolve_freyja_skills("3D 히어로에 스크롤 모션"))
+        self.assertIn("asgard-freyja-motion", hits)
+        self.assertIn("asgard-freyja-folkvangr", hits)
+        self.assertIn("asgard-freyja-brisingamen", hits["asgard-freyja-deferred"])
+
+    def test_composite_skill_injection_has_combined_cap(self):
+        from asgard.agent.heimdall import _DELIVERY
+
+        tasks = (
+            "3D 히어로에 스크롤 모션",
+            "웹사이트 UI UX 애니메이션 영상 3D 로고 포스터 HMI 편대",
+            "Figma 시안 웹사이트 모션 다크 모드",
+            "브랜드 로고 아이콘 워드마크 심볼 영상 모션 3D",
+        )
+        for task in tasks:
+            with self.subTest(task=task):
+                hits = resolve_freyja_skills(task)
+                injected = sum(len(body) for name, body in hits if name != "asgard-freyja-deferred")
+                self.assertLessEqual(injected, _SKILL_BODY_BUDGET)
+                self.assertLessEqual(len(_DELIVERY["freyja-lead"]) + sum(len(body) for _, body in hits), 26_000)
+
+    def test_budget_overflow_is_visible_as_redelegation_pointer(self):
+        hits = dict(resolve_freyja_skills("웹사이트 UI UX 애니메이션 영상 3D 로고 포스터 HMI 편대"))
+        pointer = hits["asgard-freyja-deferred"]
+        self.assertIn("합산 예산 초과", pointer)
+        self.assertIn("상위 Worker", pointer)
+        self.assertIn("단독 재위임", pointer)
 
     def test_heimdall_dispatch_wired(self):
         # 배선 실존 — 디스패치 핸들러가 리졸버 레지스트리를 실제로 사용한다 (주입 계약의 소비 지점)

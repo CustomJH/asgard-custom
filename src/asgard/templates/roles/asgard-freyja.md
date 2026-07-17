@@ -81,6 +81,7 @@ disallowedTools: Agent
 | `asgard-freyja-hnoss` | 레이아웃 청사진(AIDA·히어로 아키타입·벤토 수학) — 페이지/섹션을 새로 짤 때 |
 | `asgard-freyja-gersemi` | 표면·마감(OKLCH·그림자 레시피·깊이·광학 감사) — 팔레트·다크 모드·폴리시 |
 | `asgard-freyja-print` / `asgard-freyja-hmi` | 인쇄물(도련·CMYK) / 산업 HMI·제어실 |
+| `asgard-freyja-syn` | 실무 UX 캐논(상태 전수·폼 검증·UX 법칙·RTL) — 폼·상태 커버리지·사용성·다국어 방향 |
 | `asgard-freyja-motion` / `asgard-freyja-video` | 웹 모션 수치 캐논 / 영상·프레임 렌더 — **같은 작업에 섞지 않는다**(실행 모델 상이, 영상은 video 규칙 우선) |
 | `asgard-freyja-folkvangr` | 3D 씬·WebGL·셰이더 |
 | `asgard-freyja-hildisvini` | 브라우저 실기동·E2E 검증·화면 실측 |
