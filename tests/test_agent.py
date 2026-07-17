@@ -318,7 +318,7 @@ class TestLedgerWiring(Base):
             session=sid,
             # PASS 증거는 non-trivial 명령이어야 한다 — true/echo 류는 게이트가 증거로 안 친다 (Goodhart)
             stdin=json.dumps(
-                {"role": "verifier", "event": "verify", "commands": [{"cmd": "git diff", "exit_code": 0}]}
+                {"role": "verifier", "event": "verify", "commands": [{"cmd": "git diff --check", "exit_code": 0}]}
             ),
         )
         blocked, _ = gate(self.root, sid)
@@ -533,7 +533,7 @@ class TestDeliveryAgents(unittest.TestCase):
     def test_heimdall_delivery_derives_from_templates(self):
         from asgard.agent.heimdall import _DELIVERY
 
-        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "freyja-lead", "loki", "mimir", "thor"])
+        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "freyja-lead", "loki", "mimir", "thor", "thor-lead"])
         for g, body in _DELIVERY.items():
             self.assertIn(f"asgard-{g}", body)
             self.assertNotIn("name:", body)  # frontmatter 누출 없음
@@ -613,6 +613,8 @@ class TestRunPrompt(unittest.TestCase):
 
             model = "claude-x"
 
+        calls = []
+
         class FakeHeimdall:
             def __init__(self, rp, root, on_text, on_status=None):
                 self.total_tokens = tokens
@@ -622,12 +624,18 @@ class TestRunPrompt(unittest.TestCase):
                 on_text("stream-line\n")
 
             def handle(self, prompt):
+                calls.append(("handle", prompt))
+                return result_text
+
+            def resume(self, quest_id=None):
+                calls.append(("resume", quest_id))
                 return result_text
 
         mock.patch.object(
             self.S, "preflight", lambda root, provider=None, model=None: ([{"ok": True}], FakeRP())
         ).start()
         mock.patch.object(H, "Heimdall", FakeHeimdall).start()
+        return calls
 
     def test_json_output_and_exit_zero(self):
         self._patch()
@@ -654,6 +662,12 @@ class TestRunPrompt(unittest.TestCase):
             lambda root, provider=None, model=None: ([{"ok": False, "name": "k", "detail": "", "fix": ""}], None),
         ).start()
         self.assertEqual(self.S.run_prompt("작업해줘"), 2)
+
+    def test_resume_calls_durable_quest_path_without_new_prompt(self):
+        calls = self._patch(result_text="resumed")
+        self.assertEqual(self.S.run_prompt(None, json_out=True, resume=True, quest_id="native-old"), 0)
+        self.assertEqual(calls, [("resume", "native-old")])
+        self.assertEqual(json.loads(self.out.getvalue())["result"], "resumed")
 
 
 if __name__ == "__main__":

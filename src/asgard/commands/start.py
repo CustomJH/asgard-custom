@@ -36,6 +36,7 @@ def preflight(
     if rp.api_key_env:
         checks.append({"name": "API 키", "ok": True, "detail": f"${rp.api_key_env}", "fix": ""})
 
+    sdk_mod: str | None
     if rp.profile.api_mode == "claude_cli":
         import shutil
 
@@ -69,17 +70,31 @@ def preflight(
                 }
             )
         sdk_mod = "claude_agent_sdk"
+    elif rp.profile.api_mode == "codex_responses":
+        from ..openai_codex import login_status
+
+        oauth_ok, detail = login_status()
+        checks.append(
+            {
+                "name": "ChatGPT OAuth",
+                "ok": oauth_ok,
+                "detail": detail,
+                "fix": "asgard auth login openai-native" if not oauth_ok else "",
+            }
+        )
+        sdk_mod = "openai"
     else:
         sdk_mod = "anthropic" if rp.profile.api_mode == "anthropic" else "openai"
-    sdk = importlib.util.find_spec(sdk_mod) is not None
-    checks.append(
-        {
-            "name": f"{sdk_mod} SDK",
-            "ok": sdk,
-            "detail": "importable" if sdk else "not installed",
-            "fix": "asgard update (또는 uv tool install asgard --force)",
-        }
-    )
+    if sdk_mod:
+        sdk = importlib.util.find_spec(sdk_mod) is not None
+        checks.append(
+            {
+                "name": f"{sdk_mod} SDK",
+                "ok": sdk,
+                "detail": "importable" if sdk else "not installed",
+                "fix": "asgard update (또는 uv tool install asgard --force)",
+            }
+        )
 
     # advisory — 없어도 세션은 열린다 (패키지 내장 정체성 사용). 있으면 프로젝트 관례 병합.
     agents_md = os.path.exists(os.path.join(root, "AGENTS.md"))
@@ -139,10 +154,12 @@ def run_start(
 
 
 def run_prompt(
-    prompt: str,
+    prompt: str | None,
     provider: str | None = None,
     model: str | None = None,
     json_out: bool = False,
+    resume: bool = False,
+    quest_id: str | None = None,
 ) -> int:
     """headless 단발 실행 — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
 
@@ -171,7 +188,12 @@ def run_prompt(
 
     h = Heimdall(rp, root, on_text=stream, on_status=None)
     t0 = _time.time()
-    result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다
+    if resume:
+        result = h.resume(quest_id)
+    elif prompt:
+        result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다
+    else:
+        result = "⚠ 새 실행에는 prompt가 필요합니다. 기존 Quest는 --resume을 사용하세요."
     wall = round(_time.time() - t0, 1)
     if json_out:
         json_result = result or h.last_response_text  # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel

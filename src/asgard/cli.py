@@ -41,7 +41,11 @@ def doctor(
 @app.command(help="open the Asgard terminal (Heimdall) — chat, connect a provider, run tasks")
 def start(
     check: bool = typer.Option(False, "--check", help="run preflight checks only, then exit (for CI)"),
-    provider: str = typer.Option(None, "--provider", help="override the provider: anthropic | openai_compat | nvidia"),
+    provider: str = typer.Option(
+        None,
+        "--provider",
+        help="override the provider: anthropic | claude-native | openai | openai-native | openai_compat | ollama | nvidia",
+    ),
     model: str = typer.Option(None, "--model", help="override the model id"),
     tui: bool = typer.Option(False, "--tui", help="full-screen TUI (experimental)"),
     plain: bool = typer.Option(False, "--plain", help="force the plain readline REPL (no TUI)"),
@@ -49,6 +53,31 @@ def start(
     from .commands.start import run_start
 
     raise typer.Exit(run_start(check_only=check, provider=provider, model=model, tui=tui, plain=plain))
+
+
+auth_app = typer.Typer(help="manage Asgard-owned provider logins", no_args_is_help=True)
+app.add_typer(auth_app, name="auth")
+
+
+@auth_app.command("login", help="sign in to a subscription provider")
+def auth_login(provider: str = typer.Argument("openai-native")) -> None:
+    from .commands.auth import run_login
+
+    raise typer.Exit(run_login(provider))
+
+
+@auth_app.command("status", help="check a subscription login")
+def auth_status(provider: str = typer.Argument("openai-native")) -> None:
+    from .commands.auth import run_status
+
+    raise typer.Exit(run_status(provider))
+
+
+@auth_app.command("logout", help="remove an Asgard-owned subscription login")
+def auth_logout(provider: str = typer.Argument("openai-native")) -> None:
+    from .commands.auth import run_logout
+
+    raise typer.Exit(run_logout(provider))
 
 
 @app.command(help="scaffold a project for coding agents (Claude Code / Cursor / Codex)")
@@ -443,14 +472,16 @@ def evolve_restore(name: str = typer.Argument(..., metavar="<skill-name>")) -> N
 
 @app.command(help="run one task headless through the native Trinity loop (benches/CI)")
 def run(
-    prompt: str = typer.Argument(..., help="the task to execute"),
+    prompt: str = typer.Argument(None, help="the task to execute (omit with --resume)"),
     provider: str = typer.Option(None, "--provider", help="override the provider"),
     model: str = typer.Option(None, "--model", help="override the model id"),
     json_: bool = typer.Option(False, "--json", help="stream to stderr, print a final JSON summary to stdout"),
+    resume: bool = typer.Option(False, "--resume", help="resume the active durable native Quest"),
+    quest: str = typer.Option(None, "--quest", help="specific Quest id to resume"),
 ) -> None:
     from .commands.start import run_prompt
 
-    raise typer.Exit(run_prompt(prompt, provider=provider, model=model, json_out=json_))
+    raise typer.Exit(run_prompt(prompt, provider=provider, model=model, json_out=json_, resume=resume, quest_id=quest))
 
 
 if __name__ == "__main__":

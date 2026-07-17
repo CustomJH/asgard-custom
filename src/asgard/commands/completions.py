@@ -15,6 +15,7 @@ from .. import ui
 _SUMMARY = {
     "doctor": "check the install",
     "start": "open the Asgard terminal (Heimdall)",
+    "auth": "manage Asgard-owned provider logins",
     "init": "scaffold a project for coding agents",
     "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
@@ -30,20 +31,21 @@ _SUMMARY = {
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
     "start": ["--check", "--provider", "--model", "--tui", "--plain"],
+    "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],
     "sync": ["--dry-run", "--list", "--quiet"],
     "uninstall": ["--yes", "--dry-run", "--quiet"],
     "completions": ["--install"],
-    "run": ["--provider", "--model", "--json"],
+    "run": ["--provider", "--model", "--json", "--resume", "--quest"],
     "role": [],
     "tools": [],
     "memory": [],
     "evolve": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
-    "--provider": ["anthropic", "openai_compat", "nvidia"],
+    "--provider": ["anthropic", "claude-native", "openai", "openai-native", "openai_compat", "ollama", "nvidia"],
     "--profile": ["claude-code", "cursor", "codex", "universal"],
     "--lagom": ["off", "lite", "full"],
     "--kind": ["note", "user", "decision", "insight", "reference", "feedback"],
@@ -52,6 +54,7 @@ _FREE_OPTS = ["--model"]  # 값을 갖지만 후보가 없는 옵션 — 뒤에�
 _SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bash/zsh 는 long 제안으로 충분)
 _SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
 _ROLE_SUB = {"list": "bridge flags + role placements", "run": "run one role turn"}
+_AUTH_SUB = {"login": "sign in", "status": "check login", "logout": "remove login"}
 _ROLES = ["thinker", "worker", "verifier"]
 _TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr", "mimir"]
 _TOOLS_SUB = {"list": "list native + Claude Code role tools"}
@@ -127,6 +130,15 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{subs} --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "run" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_ROLES)}" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "auth":
+            cases.append(
+                "    auth)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_AUTH_SUB)} --help" -- "$cur") )\n'
+                '      elif [ "$COMP_CWORD" -eq 3 ]; then\n'
+                '        COMPREPLY=( $(compgen -W "openai-native" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "setup":
@@ -216,6 +228,15 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_ROLES)}\n"
                 "      fi ;;"
             )
+        elif name == "auth":
+            cases.append(
+                "    auth)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_AUTH_SUB)} --help\n"
+                "      elif (( CURRENT == 4 )); then\n"
+                "        compadd -- openai-native\n"
+                "      fi ;;"
+            )
         elif name == "setup":
             cases.append(
                 "    setup)\n"
@@ -283,6 +304,14 @@ def _fish() -> str:
             lines.append(line)
         lines.append(f'complete -c asgard -n "{cond}" -l help -s h')
     lines.append(f'complete -c asgard -n "__fish_seen_subcommand_from completions" -a "{" ".join(_SHELLS)}"')
+    auth_top = "__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from " + " ".join(_AUTH_SUB)
+    for sub, desc in _AUTH_SUB.items():
+        lines.append(f"complete -c asgard -n \"{auth_top}\" -a {sub} -d '{desc}'")
+    for sub in _AUTH_SUB:
+        lines.append(
+            f'complete -c asgard -n "__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from {sub}" '
+            '-a openai-native'
+        )
     setup_top = "__fish_seen_subcommand_from setup; and not __fish_seen_subcommand_from " + " ".join(_SETUP_SUB)
     for sub, desc in _SETUP_SUB.items():
         lines.append(f"complete -c asgard -n \"{setup_top}\" -a {sub} -d '{desc}'")
