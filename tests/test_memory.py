@@ -7,6 +7,7 @@ snapshot_note(동결 주입 + 예산 절단) / 주입 스캔 / 예산 하드거�
 """
 
 import hashlib
+import json
 import multiprocessing
 import os
 import re
@@ -706,6 +707,62 @@ class TestCCWiring(MemoryBase):
     HOOK = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard", "hooks", "memory_activate.py"
     )
+
+    def test_completion_context_requires_current_approved_close(self):
+        from asgard.hooks import memory_activate, quest_log
+
+        root = os.path.join(self.tmp, "project")
+        quest_dir = os.path.join(root, ".asgard", "quest")
+        os.makedirs(os.path.join(quest_dir, "sessions"), exist_ok=True)
+        qid = "q-memory"
+        log = os.path.join(quest_dir, qid + ".jsonl")
+        verify = {
+            "event": "verify",
+            "verdict": "PASS",
+            "session_id": "s1",
+            "commands": [{"cmd": "pytest", "exit_code": 0}],
+        }
+
+        def write_events(events):
+            with open(log, "w", encoding="utf-8") as handle:
+                for event in events:
+                    handle.write(json.dumps(event) + "\n")
+            with open(os.path.join(quest_dir, "LAST"), "w", encoding="utf-8") as handle:
+                handle.write(qid)
+
+        write_events([verify])
+        self.assertFalse(memory_activate._completion_context(root, "s1")["verified"])
+
+        approved_close = {
+            "event": "quest_closed",
+            "session_id": "s1",
+            "risk": {"decision": "APPROVED", "forced": False},
+        }
+        write_events([verify, approved_close])
+        summary = {"changed_files": ["app.py"]}
+        with (
+            mock.patch.object(quest_log, "summarize", return_value=summary),
+            mock.patch.object(quest_log, "completion_decision", return_value=("APPROVED", "pass", "ok")),
+        ):
+            context = memory_activate._completion_context(root, "s1")
+        self.assertTrue(context["verified"])
+        self.assertEqual(context["changed_files"], ["app.py"])
+
+        with (
+            mock.patch.object(quest_log, "summarize", return_value=summary),
+            mock.patch.object(quest_log, "completion_decision", return_value=("REJECTED", "stale", "stale hash")),
+        ):
+            self.assertFalse(memory_activate._completion_context(root, "s1")["verified"])
+
+        write_events([verify, {**approved_close, "risk": {"decision": "ESCALATED", "forced": False}}])
+        self.assertFalse(memory_activate._completion_context(root, "s1")["verified"])
+
+        write_events([verify, {**approved_close, "session_id": "s2"}])
+        with (
+            mock.patch.object(quest_log, "summarize", return_value=summary),
+            mock.patch.object(quest_log, "completion_decision", return_value=("APPROVED", "pass", "ok")),
+        ):
+            self.assertFalse(memory_activate._completion_context(root, "s1")["verified"])
 
     def _run_hook(self, payload: dict, path_dirs: list[str]) -> str:
         import subprocess

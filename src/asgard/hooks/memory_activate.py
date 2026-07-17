@@ -14,6 +14,7 @@
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,17 +57,21 @@ def _latest_turn(data: dict) -> tuple[str, str]:
 def _completion_context(root: str, session_id: str) -> dict:
     """close가 검증을 강제한 동일 session quest만 완료 사건 후보로 전달한다."""
     quest_dir = os.path.join(root, ".asgard", "quest")
-    active = ""
-    try:
-        active = open(os.path.join(quest_dir, "ACTIVE"), encoding="utf-8").read().strip()
-    except Exception:
-        pass
+    sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(session_id or "default"))[:64] or "default"
+    last_ids: set[str] = set()
+    for pointer in (
+        os.path.join(quest_dir, "sessions", sid + ".last"),
+        os.path.join(quest_dir, "LAST"),
+    ):
+        try:
+            qid = open(pointer, encoding="utf-8").read().strip()
+            if qid:
+                last_ids.add(qid)
+        except Exception:
+            continue
     matches = []
-    try:
-        names = [name for name in os.listdir(quest_dir) if name.endswith(".jsonl")]
-    except Exception:
-        names = []
-    for name in names:
+    for qid in last_ids:
+        name = qid + ".jsonl"
         events = []
         try:
             events = [
@@ -76,19 +81,35 @@ def _completion_context(root: str, session_id: str) -> dict:
             continue
         if not events or not any(str(event.get("session_id")) == session_id for event in events):
             continue
-        qid = name[:-6]
-        if active == qid:
+        closed = events[-1] if events and events[-1].get("event") == "quest_closed" else None
+        close_risk = (closed.get("risk") or {}) if closed else {}
+        if (
+            not closed
+            or str(closed.get("session_id")) != session_id
+            or close_risk.get("decision") != "APPROVED"
+            or close_risk.get("forced")
+        ):
             continue
-        verified = next(
-            (event for event in reversed(events) if event.get("event") == "verify" and event.get("verdict") == "PASS"),
-            None,
-        )
-        if verified:
-            matches.append((os.path.getmtime(os.path.join(quest_dir, name)), events, verified))
+        try:
+            from asgard.hooks import quest_log
+
+            summary = quest_log.summarize(root, qid, events, quest_log.load_policy(root))
+            if quest_log.completion_decision(summary)[0] != "APPROVED":
+                continue
+            verified = next(
+                event
+                for event in reversed(events)
+                if event.get("event") == "verify"
+                and event.get("verdict") == "PASS"
+                and str(event.get("session_id")) == session_id
+            )
+        except Exception:
+            continue
+        matches.append((os.path.getmtime(os.path.join(quest_dir, name)), summary, verified))
     if not matches:
         return {"verified": False, "changed_files": [], "evidence": []}
-    _, events, verified = max(matches, key=lambda row: row[0])
-    changed = sorted({str(path) for event in events for path in (event.get("changed_files") or []) if str(path)})
+    _, summary, verified = max(matches, key=lambda row: row[0])
+    changed = sorted(str(path) for path in (summary.get("changed_files") or []) if str(path))
     return {"verified": True, "changed_files": changed, "evidence": verified.get("commands") or []}
 
 

@@ -36,7 +36,7 @@ def _approval_key(create: bool = False) -> bytes | None:
     )
     try:
         st = os.lstat(path)
-        if os.path.islink(path) or st.st_mode & 0o077:
+        if os.path.islink(path) or st.st_mode & 0o077 or (hasattr(os, "getuid") and st.st_uid != os.getuid()):
             return None
         key = open(path, "rb").read()
         return key if len(key) >= 32 else None
@@ -151,7 +151,7 @@ def _load(dirs: list[str]) -> dict[str, dict]:
             if os.path.realpath(d) == project_dir:
                 try:
                     receipt = json.load(open(os.path.join(d, name, APPROVAL_FILE), encoding="utf-8"))
-                except OSError, ValueError, TypeError:
+                except (OSError, ValueError, TypeError):
                     continue
                 if not _valid_project_approval(project_root, name, text, receipt):
                     continue

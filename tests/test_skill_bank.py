@@ -5,6 +5,7 @@
 실행: uv run pytest tests/test_skill_bank.py
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -73,6 +74,27 @@ class TestResolve(unittest.TestCase):
     def test_unsigned_project_skill_is_not_routed(self):
         _write_skill(self.root, "unsigned", triggers="배치", approved=False)
         self.assertEqual(skill_bank.resolve_learned(self.root, "배치", "worker"), [])
+
+    def test_repository_forged_sha_only_receipt_is_not_routed(self):
+        _write_skill(self.root, "forged", triggers="배치", approved=False)
+        skill = os.path.join(self.root, ".asgard", "skills", "forged", "SKILL.md")
+        text = open(skill, encoding="utf-8").read()
+        receipt = os.path.join(os.path.dirname(skill), skill_bank.APPROVAL_FILE)
+        with open(receipt, "w", encoding="utf-8") as handle:
+            json.dump({"sha256": hashlib.sha256(text.encode()).hexdigest()}, handle)
+        self.assertEqual(skill_bank.resolve_learned(self.root, "배치", "worker"), [])
+
+    def test_approval_receipt_is_bound_to_canonical_project(self):
+        import shutil
+
+        _write_skill(self.root, "bound", triggers="배치")
+        other = os.path.join(self.root, "other-project")
+        source = os.path.join(self.root, ".asgard", "skills", "bound")
+        target = os.path.join(other, ".asgard", "skills", "bound")
+        os.makedirs(os.path.dirname(target), exist_ok=True)
+        shutil.copytree(source, target)
+        skill_bank._cache.clear()
+        self.assertEqual(skill_bank.resolve_learned(other, "배치", "worker"), [])
 
     def test_cap_and_ranking(self):
         # 상한 _CAP=2 — 히트 수 많은 순 (과주입 = 노이즈)
