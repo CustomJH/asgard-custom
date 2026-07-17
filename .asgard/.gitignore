@@ -1,0 +1,6 @@
+# 이 리포 한정: asgard-setting-project.json 은 중요정보 — 커밋 금지 (업스트림 기본 예외를 제거).
+# asgard setup 재실행이 이 파일을 덮어쓰면 예외가 부활한다 — tests/test_repo_hygiene.py 가 감시.
+*
+!.gitignore
+!map/
+!map/**

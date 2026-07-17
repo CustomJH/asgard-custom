@@ -255,3 +255,4 @@ workspace/
 /.asgard/*
 !/.asgard/map/
 !/.asgard/map/**
+!/.asgard/.gitignore
