@@ -39,6 +39,9 @@ OUT = Path(__file__).resolve().parent
 RESULTS = OUT / "results.jsonl"
 REPORT = OUT / "REPORT.md"
 
+# 캐시된 실모델 — main() 이 1회 로드해 두 모드가 공유한다 (재로드 회피).
+_EMBEDDER = None
+
 # 타깃 페이지: (slug 제목, 본문) — Asgard 도메인. 질의는 아래에서 이 제목을 정답으로 라벨링.
 TARGETS = [
     ("라곰 출력 압축", "라곰 모드는 산출물을 사다리로 압축해 토큰을 줄인다. full 모드가 기본이다."),

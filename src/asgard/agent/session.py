@@ -108,8 +108,9 @@ def _codex_replay_item(item: object) -> dict | None:
         }
     if kind == "message":
         content = getattr(item, "content", None)
-        if hasattr(item, "model_dump"):
-            content = item.model_dump(exclude={"id", "status"}, exclude_none=True).get("content", content)
+        dump = getattr(item, "model_dump", None)
+        if dump is not None:
+            content = dump(exclude={"id", "status"}, exclude_none=True).get("content", content)
         return {"type": "message", "role": "assistant", "content": content or []}
     return None
 

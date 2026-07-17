@@ -99,7 +99,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
 
         from asgard import openai_codex
 
-        state = {"locked": False, "store": {}}
+        state: dict = {"locked": False, "store": {}}
 
         @contextmanager
         def lock():
@@ -485,7 +485,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
                 raise value
             return value
 
-        responses.create = create
+        responses.create = create  # ty: ignore[invalid-assignment] — 인스턴스 몽키패치
         rp = ResolvedProvider(
             profile=PROVIDERS["openai-native"],
             model="gpt-5.6-sol",

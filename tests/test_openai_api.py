@@ -138,7 +138,7 @@ class TestOpenAIAPIProvider(unittest.TestCase):
             root="/tmp",
             _client_for=lambda _rp: SimpleNamespace(responses=responses),
         )
-        result = Heimdall._complete_text(fake, "system", "user", max_tokens=100)
+        result = Heimdall._complete_text(fake, "system", "user", max_tokens=100)  # ty: ignore[invalid-argument-type]
         self.assertEqual(result, "classified")
         self.assertEqual(responses.create.call_args.kwargs["timeout"], 120.0)
         self.assertEqual(responses.create.call_args.kwargs["max_output_tokens"], 4096)
