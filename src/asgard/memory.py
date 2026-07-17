@@ -360,6 +360,9 @@ def _connect(path: str) -> sqlite3.Connection:
         )
         # usage 는 운영 메타 (지식 아님) — 페이지 파일을 더럽히지 않고 여기서만 추적
         conn.execute("CREATE TABLE IF NOT EXISTS usage(slug TEXT PRIMARY KEY, uses INT DEFAULT 0, last_used TEXT)")
+        # vec = 시맨틱 스트림 파생물 (옵트인). sha 로 본문 변경만 재임베딩, data 는 float32 BLOB.
+        # 지워도·모델 바뀌어도 정본(pages/)에서 reindex 로 복원 — 파일이 여전히 정본이다.
+        conn.execute("CREATE TABLE IF NOT EXISTS vec(slug TEXT PRIMARY KEY, sha TEXT, dim INT, data BLOB)")
         return conn
     except Exception:
         conn.close()
@@ -397,6 +400,35 @@ def _fts_upsert(conn: sqlite3.Connection, d: str, slug: str) -> None:
         "INSERT INTO fts(slug, title, kind, body) VALUES(?,?,?,?)",
         (slug, meta.get("title", slug), _kind(meta), body),
     )
+    _vec_upsert(conn, slug, meta, body)
+
+
+def _vec_text(meta: dict, body: str) -> str:
+    """임베딩 입력 — 제목에 가중(2회)해 짧은 페이지의 주제 신호를 살린다."""
+    title = meta.get("title", "")
+    return f"{title}\n{title}\n{body}".strip()
+
+
+def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> None:
+    """시맨틱 활성 시에만 벡터 저장 (파생물). 본문 sha 불변이면 재임베딩 생략.
+    비활성/실패는 무해 — 벡터 없이 query 가 2경로로 fail-open 한다."""
+    from . import memory_semantic as sem
+
+    if not sem.active():
+        return
+    text = _vec_text(meta, body)
+    sha = hashlib.sha1(text.encode()).hexdigest()
+    row = conn.execute("SELECT sha FROM vec WHERE slug = ?", (slug,)).fetchone()
+    if row and row[0] == sha:
+        return  # 본문 무변경 — 재임베딩 비용 회피
+    vector = sem.embed(text)
+    if vector is None:
+        return
+    conn.execute(
+        "INSERT INTO vec(slug, sha, dim, data) VALUES(?,?,?,?) "
+        "ON CONFLICT(slug) DO UPDATE SET sha=excluded.sha, dim=excluded.dim, data=excluded.data",
+        (slug, sha, len(vector), sem.pack(vector)),
+    )
 
 
 def reindex(d: str | None = None) -> int:
@@ -408,8 +440,10 @@ def reindex(d: str | None = None) -> int:
             conn = _db(d)
             with conn:
                 conn.execute("DELETE FROM fts")
-                for slug in _pages(d):
+                pages = _pages(d)
+                for slug in pages:
                     _fts_upsert(conn, d, slug)
+                _vec_prune(conn, pages)  # 소실 페이지의 벡터 파생물 정리
             conn.close()
         except sqlite3.DatabaseError as e:  # connect 는 됐지만 쓰기 중 손상 — 파일 폐기 후 재구축
             if conn is not None:
@@ -421,11 +455,22 @@ def reindex(d: str | None = None) -> int:
                 os.remove(os.path.join(d, DB))
             conn = _db(d)
             with conn:
-                for slug in _pages(d):
+                pages = _pages(d)
+                for slug in pages:
                     _fts_upsert(conn, d, slug)
+                _vec_prune(conn, pages)
             conn.close()
         write_index(d)
         return len(_pages(d))
+
+
+def _vec_prune(conn: sqlite3.Connection, pages: list[str]) -> None:
+    """정본에 없는 slug 의 벡터 행 제거 — 파생물 고아 청소 (fail-open)."""
+    with contextlib.suppress(Exception):
+        keep = set(pages)
+        stale = [r[0] for r in conn.execute("SELECT slug FROM vec").fetchall() if r[0] not in keep]
+        for slug in stale:
+            conn.execute("DELETE FROM vec WHERE slug = ?", (slug,))
 
 
 # ── 검색 (query) — LLM 0. trigram FTS, 실패 시 파일 스캔 fail-open ─────────────────
@@ -448,16 +493,32 @@ def _containment(a: str, b: str) -> float:
 
 
 RRF_K = 60  # rank-fusion 표준 상수 — 상위 랭크 간 격차를 완만히 눌러 단일 경로 독주를 막는다
+SEM_FLOOR = 0.20  # 시맨틱 후보 진입 문턱 — 이 미만 코사인은 후보로도 안 넣는다(약연관 잡음 차단).
+# 0.20 은 경량 정적 임베더(model2vec) 기준 실측 튜닝(26-07-18): 교차언어 정답이 랭크1이어도
+# 절대 코사인이 0.18–0.29 로 낮아 0.30 은 이득을 죽였다. 강한 torch 모델(all-MiniLM 등)은
+# 0.5–0.7 로 분리가 뚜렷해 이 문턱이 넉넉하다. config [memory].semantic_floor 로 조정 가능.
 
 
-def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> list[dict]:
+def _sem_floor() -> float:
+    """시맨틱 후보 진입 문턱 — 설정 오버라이드 > SEM_FLOOR 기본. 모델 tier 에 맞춰 조정."""
+    try:
+        v = _memory_settings().get("semantic_floor")
+        return float(v) if v is not None else SEM_FLOOR
+    except Exception:
+        return SEM_FLOOR
+
+
+def query(text: str, k: int = 5, d: str | None = None, track: bool = True, explain: bool = False) -> list[dict]:
     """FTS5 trigram 검색 (한국어 substring 대응). hit 는 usage 를 남긴다 — lint 부패 판정 원료.
 
     랭킹 = RRF(rank fusion). BM25 값과 스캔 매칭 카운트는 척도가 달라 점수 혼합이 무의미하므로
     각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 usage 회수 빈도 → slug 순으로
     가른다 — 빈도는 어디를 먼저 볼지 정하는 prior 일 뿐, 관련도 순위를 넘지 못한다.
     오염 페이지는 결과에서 제외한다 (2차 리뷰 ② — query 출력은 에이전트 컨텍스트로 흘러간다).
-    제외 수는 결과에 실리지 않고 lint 가 threat 로 보고한다."""
+    제외 수는 결과에 실리지 않고 lint 가 threat 로 보고한다.
+
+    explain=True 면 각 hit 에 `streams`(fts/scan/semantic 경로별 적중 여부)를 덧붙인다 —
+    랭킹·반환 순서는 불변, 대시보드의 스트림 출처 표시(읽기 전용)용 파생 정보일 뿐이다."""
     d = d or memory_dir()
     k = max(1, min(int(k), 1000))  # 음수·0·과대 방지 (P2)
     if not os.path.isdir(os.path.join(d, PAGES)):
@@ -543,6 +604,42 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> li
         matched, s = _scan_score(meta, body)
         if s:
             cand[slug] = (meta, body, matched, s)
+
+    # 시맨틱 스트림 (옵트인 3번째 경로) — 활성 시에만. lexical 이 놓친 패러프레이즈/동의어를
+    # 회수한다. 벡터는 state.db 파생물이고, 비활성이면 이 블록 전체가 건너뛰어져 기존 2경로와
+    # 완전히 동일하게 동작한다 (무회귀 계약). 문턱 미만 코사인은 후보로도 넣지 않는다.
+    sem_order: list[tuple[str, float]] = []
+    from . import memory_semantic as sem
+
+    if sem.active():
+        qv = sem.embed(text)
+        if qv:
+            floor = _sem_floor()
+            scored: list[tuple[str, float]] = []
+            try:
+                conn = _db(d)
+                rows = conn.execute("SELECT slug, data FROM vec").fetchall()
+                conn.close()
+            except Exception:
+                rows = []
+            for slug, data in rows:
+                try:
+                    cos = sem.cosine(qv, sem.unpack(data))
+                except Exception:
+                    continue
+                if cos >= floor:
+                    scored.append((slug, cos))
+            scored.sort(key=lambda p: -p[1])
+            for slug, cos in scored[: max(k, 10)]:
+                if slug not in cand:
+                    pg = _clean(slug)  # 시맨틱 전용 후보도 오염 제외
+                    if not pg:
+                        continue
+                    meta, body = pg
+                    matched, _s = _scan_score(meta, body)
+                    cand[slug] = (meta, body, matched, _s)  # _s 0 가능 — 순수 시맨틱 진입
+                sem_order.append((slug, cos))
+
     if not cand:
         return []
 
@@ -557,7 +654,9 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> li
             rrf[slug] += 1.0 / (RRF_K + rank)
 
     _add_ranks(fts_order)
-    _add_ranks(sorted(((slug, float(c[3])) for slug, c in cand.items()), key=lambda p: -p[1]))
+    # 스캔 스트림엔 실제 lexical 매칭(s>0)만 — 순수 시맨틱 후보(s=0)가 스캔 순위를 훔치지 않게
+    _add_ranks(sorted(((slug, float(c[3])) for slug, c in cand.items() if c[3] > 0), key=lambda p: -p[1]))
+    _add_ranks(sem_order)  # 비활성이면 빈 리스트 → 무영향
 
     # usage 는 RRF 동률 타이브레이크 전용 prior — 관련도 순위를 넘지 못한다 (힌트, 증거 아님)
     uses: dict[str, int] = {}
@@ -568,22 +667,46 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True) -> li
     except Exception:
         pass
 
+    # 경로별 적중 집합 (explain 전용 파생 — 랭킹엔 미개입). fts=BM25 경로, scan=lexical(s>0),
+    # semantic=벡터 코사인 경로. RRF 합산에 쓴 그 순서 리스트와 동일 출처라 표시가 실사와 일치한다.
+    fts_slugs = {s for s, _ in fts_order}
+    scan_slugs = {s for s, c in cand.items() if c[3] > 0}
+    sem_slugs = {s for s, _ in sem_order}
+
     hits: list[dict] = []
     for slug in sorted(cand, key=lambda s: (-rrf[s], -uses.get(s, 0), s))[:k]:
         meta, body, matched, _s = cand[slug]
         lb = body.lower()
         needle = phrase if phrase in lb else next((w for w in matched if w in lb), "")
         i = lb.find(needle) if needle else 0
-        hits.append(
-            {
-                "slug": slug,
-                "title": meta.get("title", slug),
-                "kind": _kind(meta),
-                "snippet": body[max(i - 40, 0) : i + 80].strip(),
-                "score": round(rrf[slug], 4),
+        hit = {
+            "slug": slug,
+            "title": meta.get("title", slug),
+            "kind": _kind(meta),
+            "snippet": body[max(i - 40, 0) : i + 80].strip(),
+            "score": round(rrf[slug], 4),
+        }
+        if explain:
+            hit["streams"] = {
+                "fts": slug in fts_slugs,
+                "scan": slug in scan_slugs,
+                "semantic": slug in sem_slugs,
             }
-        )
+        hits.append(hit)
     return _track(d, hits) if track else hits
+
+
+def usage_stats(d: str | None = None) -> list[dict]:
+    """usage 테이블 읽기 전용 스냅샷 — slug·uses·last_used, 회수 빈도 내림차순.
+    파생물(state.db)이라 없으면 빈 리스트 (fail-open). 대시보드·분석용 순수 읽기."""
+    d = d or memory_dir()
+    try:
+        conn = _db(d)
+        rows = conn.execute("SELECT slug, uses, last_used FROM usage ORDER BY uses DESC, slug").fetchall()
+        conn.close()
+    except Exception:
+        return []
+    return [{"slug": r[0], "uses": int(r[1] or 0), "last_used": r[2]} for r in rows]
 
 
 def _track(d: str, hits: list[dict]) -> list[dict]:
@@ -838,6 +961,7 @@ def remove(slug: str, d: str | None = None) -> bool:
             with conn:
                 conn.execute("DELETE FROM fts WHERE slug = ?", (slug,))
                 conn.execute("DELETE FROM usage WHERE slug = ?", (slug,))
+                conn.execute("DELETE FROM vec WHERE slug = ?", (slug,))
             conn.close()
         write_index(d)
         log_op(d, "remove", slug)
@@ -865,6 +989,7 @@ def merge(src: str, dst: str, d: str | None = None) -> str:
             with conn:
                 conn.execute("DELETE FROM fts WHERE slug = ?", (src,))
                 conn.execute("DELETE FROM usage WHERE slug = ?", (src,))
+                conn.execute("DELETE FROM vec WHERE slug = ?", (src,))
                 _fts_upsert(conn, d, dst)
             conn.close()
         write_index(d)

@@ -187,6 +187,136 @@ class TestRankFusion(MemoryBase):
         self.assertEqual(hits[0]["slug"], "zz-recipe")
 
 
+class TestSemanticStream(MemoryBase):
+    """시맨틱 3번째 스트림 (옵트인) — agentmemory 이식(26-07-18). 실제 모델 없이 결정론
+    가짜 임베더를 주입해 벡터 저장·3-스트림 융합·fail-open·정본 복원을 검증한다.
+
+    가짜 임베더: 지정 키워드별 원-핫 축 벡터. 같은 개념군(예: 강아지/개/반려견)을 같은 축에
+    실어 lexical 로는 안 겹치는 패러프레이즈가 시맨틱으로 회수되는지를 통제된 조건에서 본다."""
+
+    # 개념 → 축. 같은 개념군은 같은 축(코사인 1.0), 다른 군은 직교(코사인 0).
+    _CONCEPTS = {
+        "강아지": 0,
+        "개": 0,
+        "반려견": 0,
+        "puppy": 0,
+        "고양이": 1,
+        "냥이": 1,
+        "cat": 1,
+        "자동차": 2,
+        "차량": 2,
+        "car": 2,
+    }
+    _DIM = 3
+
+    @classmethod
+    def _fake_embed(cls, text: str) -> list[float]:
+        vec = [0.0] * cls._DIM
+        low = text.lower()
+        for word, axis in cls._CONCEPTS.items():
+            if word in low:
+                vec[axis] += 1.0
+        if not any(vec):
+            vec[0] = 1e-6  # 무개념 텍스트는 거의 영벡터 (어디에도 안 걸림)
+        return vec
+
+    def setUp(self):
+        super().setUp()
+        from asgard import memory_semantic as sem
+
+        self.sem = sem
+        sem.set_embedder(self._fake_embed)  # 주입 = 활성 (mode·모델 로드 우회)
+
+    def tearDown(self):
+        self.sem.set_embedder(None)  # 다른 테스트로 새지 않게 시임 해제
+        super().tearDown()
+
+    def test_active_when_embedder_injected(self):
+        self.assertTrue(self.sem.active())
+        self.sem.set_embedder(None)
+        self.assertFalse(self.sem.active())
+
+    def test_vector_stored_on_add(self):
+        slug, _ = memory.add("강아지 산책 일지", title="dog-walk")
+        conn = memory._db(self.d)
+        row = conn.execute("SELECT dim, data FROM vec WHERE slug = ?", (slug,)).fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+        self.assertEqual(row[0], self._DIM)
+        self.assertEqual(
+            self.sem.unpack(row[1]), self.sem._normalize(self._fake_embed("dog-walk\ndog-walk\n강아지 산책 일지"))
+        )
+
+    def test_semantic_recalls_paraphrase_lexical_misses(self):
+        # lexical 로는 "반려견" 질의가 "강아지" 본문과 한 글자도 안 겹친다.
+        memory.add("강아지 배변 훈련 노하우", title="potty")
+        memory.add("자동차 엔진 오일 교체", title="oil")
+        # 대조: 시맨틱 off 면 lexical miss
+        self.sem.set_embedder(None)
+        self.assertEqual(memory.query("반려견", track=False), [])
+        # 시맨틱 on 이면 같은 개념축으로 회수
+        self.sem.set_embedder(self._fake_embed)
+        hits = memory.query("반려견", track=False)
+        self.assertEqual([h["slug"] for h in hits], ["potty"])
+
+    def test_semantic_off_is_bitwise_same_as_before(self):
+        # 활성/비활성이 lexical 질의 결과를 바꾸지 않는다 (무회귀).
+        memory.add("맛있는 레시피 모음.", title="zz-recipe")
+        memory.add("김치 보관법.", title="aa-kimchi")
+        on = memory.query("레시피 김치", track=False)
+        self.sem.set_embedder(None)
+        off = memory.query("레시피 김치", track=False)
+        self.assertEqual([h["slug"] for h in on], [h["slug"] for h in off])
+
+    def test_floor_blocks_weak_semantic_noise(self):
+        # 직교 개념(고양이)은 강아지 벡터와 코사인 0 → 문턱 미만 → 후보 진입 자체를 안 함.
+        memory.add("고양이 그루밍 습관", title="cat-groom")
+        hits = memory.query("강아지", track=False)
+        self.assertEqual(hits, [])
+
+    def test_reindex_rebuilds_vectors_from_canonical(self):
+        slug, _ = memory.add("강아지 예방접종 기록", title="vax")
+        conn = memory._db(self.d)
+        with conn:
+            conn.execute("DELETE FROM vec")  # 파생물 파괴
+        conn.close()
+        memory.reindex(self.d)  # 정본에서 복원돼야 한다
+        conn = memory._db(self.d)
+        row = conn.execute("SELECT slug FROM vec WHERE slug = ?", (slug,)).fetchone()
+        conn.close()
+        self.assertIsNotNone(row)
+
+    def test_remove_drops_vector(self):
+        slug, _ = memory.add("자동차 정기점검", title="car-check")
+        memory.remove(slug)
+        conn = memory._db(self.d)
+        row = conn.execute("SELECT slug FROM vec WHERE slug = ?", (slug,)).fetchone()
+        conn.close()
+        self.assertIsNone(row)
+
+    def test_reindex_prunes_orphan_vectors(self):
+        memory.add("강아지 사료 비교", title="food")
+        conn = memory._db(self.d)
+        with conn:  # 정본에 없는 유령 벡터를 심는다
+            conn.execute("INSERT INTO vec(slug, sha, dim, data) VALUES('ghost','x',3,?)", (self.sem.pack([1.0, 0, 0]),))
+        conn.close()
+        memory.reindex(self.d)
+        conn = memory._db(self.d)
+        row = conn.execute("SELECT slug FROM vec WHERE slug = 'ghost'").fetchone()
+        conn.close()
+        self.assertIsNone(row)
+
+    def test_embed_failure_is_fail_open(self):
+        # 임베더가 던져도 query 는 lexical 로 계속된다 (검색을 인질로 잡지 않는다).
+        def _boom(_text: str) -> list[float]:
+            raise RuntimeError("model exploded")
+
+        memory.add("김치 담그기", title="kimchi")
+        self.sem.set_embedder(_boom)
+        hits = memory.query("김치", track=False)  # lexical 은 여전히 동작
+        self.assertEqual([h["slug"] for h in hits], ["kimchi"])
+
+
 class TestDistillNudge(MemoryBase):
     """distill_nudge (26-07-16) — 탐색 발견 증류: 디스크 실존 경로만 후보, 승인 게이트 안내만."""
 

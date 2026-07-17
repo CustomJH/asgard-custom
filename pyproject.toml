@@ -14,6 +14,11 @@ dependencies = [
     "prompt-toolkit>=3.0",
 ]
 
+# 옵트인 시맨틱 검색 (1차 메모리 3번째 RRF 스트림) — 미설치면 lexical 2경로로 fail-open.
+# 기본 의존성에 넣지 않는다: torch 무의존 경량(model2vec)이라도 기본 설치는 제로 의존 원칙 유지.
+[project.optional-dependencies]
+semantic = ["model2vec>=0.8"]
+
 # curl|bash install path: `uv tool install asgard` exposes this console script.
 [project.scripts]
 asgard = "asgard.cli:app"
@@ -25,6 +30,7 @@ dev = [
     "pytest-cov>=6",  # 커버리지 가시화 — 게이트 아님, 공백이 파이프라인에 보이게만 (CI --cov)
     "ruff>=0.8",
     "ty>=0.0.56",
+    "model2vec>=0.8",  # 시맨틱 스트림 dev 실검증·벤치용 — 배포 기본엔 불포함 (extra: semantic)
 ]
 
 # 구조 현대화 뼈대 — lint·format 은 ruff 로 통일.
