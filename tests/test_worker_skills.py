@@ -120,22 +120,22 @@ class TestNativeWiring(unittest.TestCase):
         # wave 병렬 경로 + 단일 WORKER 경로 둘 다 — 한쪽만 배선되면 경로에 따라 지식이 사라진다
         import inspect
 
-        from asgard.agent.heimdall import Heimdall
+        from asgard.agent.heimdall import TrinityRun, WaveRunner
 
-        self.assertIn("_worker_note", inspect.getsource(Heimdall._run_worker_waves))
-        self.assertIn("_worker_note", inspect.getsource(Heimdall._trinity))
+        self.assertIn("_worker_note", inspect.getsource(WaveRunner.run))
+        self.assertIn("_worker_note", inspect.getsource(TrinityRun._worker_turn))
 
     def test_verifier_and_loki_not_injected(self):
         # 게이트 무결성 — advisory 지식은 판정 표면(Verifier/loki) 금지 (skill_bank 헌법과 동일)
         import inspect
 
-        from asgard.agent.heimdall import Heimdall
+        from asgard.agent.heimdall import DeliveryDispatch, TrinityRun
 
-        trinity_src = inspect.getsource(Heimdall._trinity)
+        trinity_src = inspect.getsource(TrinityRun)
         for line in trinity_src.splitlines():
             if "_worker_note(" in line and "def " not in line:
                 self.assertNotIn("verifier", line.lower())
-        dispatch_src = inspect.getsource(Heimdall._dispatch_handler)
+        dispatch_src = inspect.getsource(DeliveryDispatch)
         self.assertNotIn("_worker_note", dispatch_src)  # 딜리버리 디스패치는 전용 스킬 층이 담당
 
     def test_bundled_names_reserve_worker_skills(self):

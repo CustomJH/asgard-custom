@@ -844,9 +844,9 @@ class TestSkillResolver(unittest.TestCase):
         import inspect
 
         from asgard.agent import heimdall
-        from asgard.agent.heimdall import Heimdall
+        from asgard.agent.heimdall import DeliveryDispatch
 
-        self.assertIn("_skill_resolver", inspect.getsource(Heimdall._dispatch_handler))
+        self.assertIn("_skill_resolver", inspect.getsource(DeliveryDispatch.dispatch_handler))
         registry_src = inspect.getsource(heimdall._skill_resolver)
         self.assertIn("resolve_freyja_skills", registry_src)
         self.assertIn("resolve_thor_skills", registry_src)

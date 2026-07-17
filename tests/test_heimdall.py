@@ -226,7 +226,7 @@ class TestTrinityLoop(Base):
                 return subprocess.CompletedProcess(args, 1, stdout="", stderr="stale close")
             return real_ql(root, *args, **kwargs)
 
-        with mock.patch.object(heimdall, "ql", side_effect=reject_close):
+        with mock.patch("asgard.agent.heimdall.trinity.ql", side_effect=reject_close):
             out = h.handle("w1.txt 만들어")
 
         self.assertIn("close 거부", out)
@@ -447,7 +447,7 @@ class TestTrinityLoop(Base):
             verifier("PASS"),  # 게이트 수리 재검증 턴
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
-        with mock.patch("asgard.agent.heimdall.gate", return_value=(True, "stale PASS — 물리 대조 불일치")):
+        with mock.patch("asgard.agent.heimdall.trinity.gate", return_value=(True, "stale PASS — 물리 대조 불일치")):
             out = h.handle("w1.txt 만들어")
         self.assertIn("Odin 결정 필요", out)
         self.assertIn("stale-pass", out)
@@ -459,7 +459,7 @@ class TestTrinityLoop(Base):
         seq = [worker({"w1.txt": "x\n"}, self.root), verifier("PASS"), verifier("PASS")]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         real_gate = [(True, "stale PASS — 물리 대조 불일치"), (False, "")]
-        with mock.patch("asgard.agent.heimdall.gate", side_effect=real_gate):
+        with mock.patch("asgard.agent.heimdall.trinity.gate", side_effect=real_gate):
             out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
         self.assertIn("차단 1회", out)
@@ -1336,7 +1336,7 @@ class TestWaveParallel(Base):
 
         with (
             mock.patch.object(h, "_run_turn", side_effect=turn),
-            mock.patch("asgard.agent.heimdall.ql", side_effect=fail_work_append),
+            mock.patch("asgard.agent.heimdall.waves.ql", side_effect=fail_work_append),
         ):
             with self.assertRaisesRegex(RuntimeError, "forced work append failure"):
                 h._run_worker_waves("wave-completion-error", "task", units, "")
@@ -1370,11 +1370,11 @@ class TestWaveParallel(Base):
 
                 patches = [
                     mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
-                    mock.patch("asgard.agent.heimdall.ql", side_effect=raised_ql),
+                    mock.patch("asgard.agent.heimdall.waves.ql", side_effect=raised_ql),
                 ]
                 if scenario == "record-writes":
                     patches.append(
-                        mock.patch("asgard.agent.heimdall._record_writes", side_effect=OSError("writes failed"))
+                        mock.patch("asgard.agent.heimdall.waves._record_writes", side_effect=OSError("writes failed"))
                     )
                 with (
                     patches[0],
@@ -1400,7 +1400,7 @@ class TestWaveParallel(Base):
         ql(self.root, "open", "wave-close-error", session="wave-close-error")
         with (
             mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
-            mock.patch("asgard.agent.heimdall.ExitStack.close", side_effect=OSError("close failed")),
+            mock.patch("asgard.agent.heimdall.waves.ExitStack.close", side_effect=OSError("close failed")),
         ):
             with self.assertRaisesRegex(OSError, "close failed"):
                 h._run_worker_waves("wave-close-error", "task", units, "")
@@ -1425,7 +1425,7 @@ class TestWaveParallel(Base):
 
         with (
             mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
-            mock.patch("asgard.agent.heimdall.ql", side_effect=fail_finish),
+            mock.patch("asgard.agent.heimdall.waves.ql", side_effect=fail_finish),
         ):
             with self.assertRaisesRegex(RuntimeError, "finish unavailable"):
                 h._run_worker_waves("wave-finish-error", "task", [unit], "")
@@ -1448,7 +1448,7 @@ class TestWaveParallel(Base):
 
         with (
             mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
-            mock.patch("asgard.agent.heimdall.ql", side_effect=fail_control),
+            mock.patch("asgard.agent.heimdall.waves.ql", side_effect=fail_control),
         ):
             with self.assertRaises(RuntimeError) as raised:
                 h._run_worker_waves("wave-control-error", "task", [unit], "")

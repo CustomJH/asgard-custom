@@ -561,8 +561,8 @@ class TestNoInjectionInvariants(EvoBase):
 
         learned = mock.Mock(return_value="\n\n# 학습 스킬")
         fake = self._fake_heimdall(learned)
-        with mock.patch.object(heimdall, "ql"):
-            handler = heimdall.Heimdall._dispatch_handler(cast(heimdall.Heimdall, fake), "sid", [])
+        with mock.patch("asgard.agent.heimdall.dispatch.ql"):
+            handler = heimdall.DeliveryDispatch(cast(heimdall.Heimdall, fake)).dispatch_handler("sid", [])
             handler({"agent": "loki", "task": "반례 탐색", "why": ""})
             learned.assert_not_called()  # read-only 딜리버리 = 무주입
             handler({"agent": "thor", "task": "백엔드 작업", "why": ""})
@@ -573,10 +573,10 @@ class TestNoInjectionInvariants(EvoBase):
         import inspect
         import re as _re
 
-        from asgard.agent import heimdall
+        from asgard.agent.heimdall import trinity
 
-        src = inspect.getsource(heimdall)
-        m = _re.search(r"def mk_verifier\b.*?(?=\n {16}\w|\n {12}\w)", src, _re.DOTALL)
+        src = inspect.getsource(trinity)
+        m = _re.search(r"def mk_verifier\b.*?(?=\n {8}\w)", src, _re.DOTALL)
         assert m is not None, "mk_verifier 조립 지점을 찾지 못함 — 리네임 시 이 테스트도 갱신"
         self.assertNotIn("_learned_note", m.group(0))
         self.assertNotIn("학습 스킬", m.group(0))
