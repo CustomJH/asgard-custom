@@ -14,6 +14,9 @@ from asgard.templates.freyja import FREYJA_SKILLS, freyja_core_skill, resolve_fr
 
 _SKILL_NAMES = (
     "asgard-freyja-brisingamen",
+    "asgard-freyja-reference-atlas",
+    "asgard-freyja-logo-studio",
+    "asgard-freyja-gullveig",
     "asgard-freyja-motion",
     "asgard-freyja-video",
     "asgard-freyja-folkvangr",
@@ -82,6 +85,8 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("엠대시 0개", taste)  # 이진 금지 ("아껴 쓰라"는 무시된다)
         self.assertIn("침묵 변경 금지", taste)  # 리디자인 모드 — URL/폼 필드/애널리틱스 보호
         self.assertIn("선언한 모션은 보여야 한다", taste)  # 다이얼 선언≠실행 방지
+        self.assertIn("해독제는 일괄 장식이 아니라 다이얼 정합", taste)  # 분위기 카탈로그 강제 채택 해제 (26-07-17)
+        self.assertIn("Geist+Geist Mono", taste)  # 서체 출발 페어링 — 금지 일변도에 양성 가이드 보강
         self.assertIn("100dvh", taste)  # 풀높이 히어로 주소창 함정
         # 로고·브랜드 자산 (26-07-15 실증 + 오딘 레퍼런스 3종 증류 — "유치함" 피드백 교정)
         self.assertIn("로고는 그림이 아니라 기하다", taste)  # 벡터 우선
@@ -96,6 +101,10 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("취향 선언(앵커)", taste)  # 오딘이 반응한 자산은 밀어낼 기본값이 아니다
         self.assertIn("트렌드는 이동한다", taste)  # 재조사 의무
         self.assertIn("의미 1문장", taste)  # 형상의 존재 이유
+        self.assertIn("op7418/logo-generator-skill 패턴 라이브러리", taste)
+        self.assertIn("소유 가능성 충돌 검사", taste)
+        self.assertIn("16px·32px·64px·512px 실제 CSS 픽셀 렌더", taste)
+        self.assertIn("법적 클리어런스가 아님", taste)
         # 인쇄물 절 (26-07-15 QC 스윕 유보 사항 종결 — 팜플렛 실증에서 증류)
         self.assertIn("콜로폰 동봉 의무", taste)  # CMYK 근사·용지·교정쇄 명시
         self.assertIn("브라우저는 실인쇄를 검증 못 한다", taste)  # 한계 정직 보고
@@ -128,6 +137,53 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn('start: "top top"', motion)  # 핀 시작점 대표 실패
         self.assertIn("scrollWidth - innerWidth", motion)  # 수평 팬 거리 공식
         self.assertIn("엔진 혼용 금지", motion)  # 같은 트리 프레임 경합
+
+    def test_generated_asset_adapter_boundaries(self):
+        gen = self.by_name["asgard-freyja-gullveig"]
+        self.assertIn("필터 없는 전체 목록", gen)
+        self.assertIn("Recraft V4.1", gen)
+        self.assertIn("후보를 정본으로 승격할 수 있다", gen)
+        self.assertIn("워드마크는 생성 결과를 그대로 확정하지 않는다", gen)
+        self.assertIn("추가 유료 웨이브·영상·배포·마켓 공개", gen)
+        self.assertIn("토르", gen)
+        self.assertIn("에이트리", gen)
+        self.assertIn("commit 9ab6483", gen)
+
+    def test_logo_studio_imported_workflow(self):
+        logo = self.by_name["asgard-freyja-logo-studio"]
+        for anchor in (
+            "최소 6개",
+            "순수 기하",
+            "점 매트릭스",
+            "선 시스템",
+            "노드 네트워크",
+            'viewBox="0 0 100 100"',
+            "currentColor",
+            "interactive showcase",
+            "16·32·64·512",
+            "reference-assisted vectorization",
+            "최소 하나를 고르지 않는다",
+            "좌표 산술은 실제 래스터 검사가 아니다",
+            "일반 글자나 사물로 읽힌다고 NOTES가 인정하면 자동 탈락",
+            "질량·곡률·terminal",
+            "IBM Plex Sans·Inter",
+            "font·license·버전·outline 변환 계보",
+        ):
+            self.assertIn(anchor, logo)
+        self.assertIn("asgard-freyja-reference-atlas", logo)
+
+    def test_reference_atlas_requires_diverse_evidence_board(self):
+        atlas = self.by_name["asgard-freyja-reference-atlas"]
+        for anchor in (
+            "세계관 일치가 아니라",
+            "3개 이상의 서로 다른 산업",
+            "docs/design/freyja-reference-atlas.md",
+            "REFERENCE-BOARD.md",
+            "공식 브랜드 가이드",
+            "형태를 복제하지 않는다",
+            "참조 축",
+        ):
+            self.assertIn(anchor, atlas)
 
     def test_motion_review_anchors(self):
         # 26-07-16 강화 — design-motion-principles(3렌즈·빈도)·impeccable animate·MoVer 절차화
@@ -221,6 +277,11 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("N=3–5", vk)  # 변주 병렬 포화
         self.assertIn("변주 병렬(안전) vs 부품 분담(위험)", vk)  # Cognition 경계 조건
         self.assertIn("변주 축 지정", vk)  # 같은 브리프 N벌 금지 — 축 분배
+        # 26-07-17 관문 대조 실측 — 요약 전달 편대가 쇼케이스 문법·옵티컬 보정을 잃고 퇴화
+        self.assertIn("도메인 스킬 원문 동봉", vk)  # 브리프 ⑦ — 재서술은 손실 압축
+        self.assertIn("손실 압축", vk)
+        self.assertIn("폴백에서도 심화 스킬 원문을 로드", vk)  # 단독 폴백도 원문 실행
+        self.assertIn("예산은 폭이 아니라 깊이로 마감한다", vk)  # 승자 정련·연출 몫 보존
         self.assertIn("새 컨텍스트", vk)  # 대장 히스토리 미상속 — context rot
         self.assertIn("MANIFEST.md", vk)  # 파일 기반 핸드오프 + 결정 복제
         self.assertIn("계획 장부", vk)  # Magentic-One 이중 장부
@@ -238,6 +299,8 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("바닥(탈락 기준)이지 우승 기준이 아니다", vk)
         self.assertIn("취향 앵커 의무", vk)  # 오딘이 반응한 방향의 정련 계승 축 1기
         self.assertIn("편대의 최종 보상 신호는 기계가 아니라 오딘의 눈이다", vk)
+        self.assertIn("일반 Y/A/가지/그래프 아이콘으로 환원", vk)
+        self.assertIn("NOTES 자기평가를 독립 판정 증거로 사용하지 않는다", vk)
         self.assertIn("깊이 1", vk)  # 편대의 편대는 없다
         self.assertIn("Verifier 가 부르지 않는다", vk)  # 검증 독립성
         self.assertIn("단독 폴백", vk)  # 편대 불가 환경 — 체크리스트 게이트
@@ -335,20 +398,47 @@ class TestSkillResolver(unittest.TestCase):
         cases = {
             "랜딩 페이지 히어로를 수려하게": "asgard-freyja-brisingamen",
             "카드 호버 전환 애니메이션 추가": "asgard-freyja-motion",
-            "설명 영상 mp4 렌더": "asgard-freyja-video",
+            "Remotion 설명 영상 프레임 렌더": "asgard-freyja-video",
             "3D 제품 뷰어 셰이더": "asgard-freyja-folkvangr",
-            "playwright e2e 시나리오 작성": "asgard-freyja-hildisvini",
+            "playwright UI e2e visual regression": "asgard-freyja-hildisvini",
             "브라우저에서 화면 실측 검증": "asgard-freyja-hildisvini",
             "설명용 인터렉티브 피규어 제작": "asgard-freyja-seidr",
             "파라미터 슬라이더로 조작하는 시뮬레이션 도표": "asgard-freyja-seidr",
             "산출물 루브릭 채점과 반복 개선": "asgard-freyja-valshamr",
             "히어로 퀄리티 벤치마크 비교": "asgard-freyja-valshamr",
             "로고 시스템을 변주 편대로 제작": "asgard-freyja-valkyrja",
+            "제품 로고 SVG 6개와 interactive showcase 제작": "asgard-freyja-logo-studio",
+            "다양한 로고 레퍼런스 리서치와 reference board 준비": "asgard-freyja-reference-atlas",
             "codex 교차 자문으로 시안 비교": "asgard-freyja-valkyrja",
+            "Recraft로 로고 쇼케이스 이미지 생성": "asgard-freyja-gullveig",
+            "Higgsfield 이미지 모델로 브랜드 목업": "asgard-freyja-gullveig",
+            "gullveig 계약을 적용한 로고 제작": "asgard-freyja-gullveig",
+            "굴베이그 계약을 적용한 로고 제작": "asgard-freyja-gullveig",
         }
         for task, expected in cases.items():
             names = [n for n, _ in resolve_freyja_skills(task)]
             self.assertIn(expected, names, task)
+
+    def test_negative_routing_respects_declared_scope(self):
+        cases = {
+            "분기별 매출 정적 BI 차트 작성": "asgard-freyja-seidr",
+            "paragraph typography spacing": "asgard-freyja-seidr",
+            "브라우저로 상품 가격 수집 자동화": "asgard-freyja-hildisvini",
+            "촬영한 광고 영상 편집": "asgard-freyja-video",
+            "GLB 모델 생성": "asgard-freyja-folkvangr",
+        }
+        for task, excluded in cases.items():
+            self.assertNotIn(excluded, [name for name, _ in resolve_freyja_skills(task)], task)
+
+    def test_compound_visual_triggers_still_route(self):
+        cases = {
+            "interactive chart with a slider": "asgard-freyja-seidr",
+            "UI e2e visual regression": "asgard-freyja-hildisvini",
+            "Remotion frame render": "asgard-freyja-video",
+            "three.js 3D scene integration": "asgard-freyja-folkvangr",
+        }
+        for task, expected in cases.items():
+            self.assertIn(expected, [name for name, _ in resolve_freyja_skills(task)], task)
 
     def test_fail_open_on_no_match(self):
         self.assertEqual(resolve_freyja_skills("버튼 라벨 오타 수정"), [])
@@ -402,9 +492,23 @@ class TestQualityGateSurfaces(unittest.TestCase):
         self.assertIn("실무 표면", self.role)
 
     def test_brand_verdict_formula_explicit(self):
-        # 총점만으론 10·11 동시 실패가 통과 가능 — 판정식이 AND 를 명시해야 한다 (26-07-15 리뷰)
-        self.assertIn("총점 ≥11/13 AND 축 10·11·12 전부 통과", self.role)
+        # 바닥 축은 무조건, 풍부함 축은 다이얼 정합 판정 (26-07-17 재설계 — 강제 장식이 새 AI 티를 만든다:
+        # 참조 스킬 전부가 절제·다이얼 연동을 마감 원칙으로 둔다. 무조건 풍부함 강제는 다크 미니멀·공공
+        # 브리프에서 과잉 장식을 생산하던 실측 결함)
+        self.assertIn("바닥 축(1–9·13) 전부 통과 AND 풍부함 축(10–12)은 선언한 다이얼에 정합", self.role)
         self.assertIn("점수로 상쇄 불가", self.role)
+        self.assertIn("강제 장식은 그 자체가 새로운 AI 티다", self.role)
+        # 회피 양방향 봉쇄 — 선언 없는 정적 출고도, 근거 없는 하향 선언도 회피
+        self.assertIn("프리셋 대비 −2 초과", self.role)
+
+    def test_dark_surface_shadow_axis(self):
+        # 축1 그림자가 다크 표면에 라이트 레시피를 강제하던 모순 해소 (브리싱가멘·발샴르의
+        # "다크 무섀도+표면 사다리" 캐논과 게이트가 충돌 — 26-07-17 정합)
+        self.assertIn("다크 표면은 무섀도 + 표면 명도 사다리", self.role)
+
+    def test_role_declares_dial_source(self):
+        # 게이트가 참조하는 다이얼의 출처 — 브리싱가멘 정본 + 스킬 미로드 폴백
+        self.assertIn("변주·모션·밀도 다이얼(1–10)을 함께 선언", self.role)
 
     def test_practical_surface_exemption(self):
         self.assertIn("면제", self.role)
@@ -460,9 +564,14 @@ class TestFreyjaLead(unittest.TestCase):
     def test_lead_contract_anchors(self):
         for anchor in (
             "asgard-freyja-valkyrja",  # 팀 프로토콜 단일 소스 로드 의무
+            "asgard-freyja-logo-studio",
+            "asgard-freyja-reference-atlas",
             "편성 판정 먼저",  # 소형 과업 편대 금지 — 토큰 세금
             "MANIFEST.md",  # 결정 복제 핸드오프
             "판정 분리",  # 생성자≠판정자
+            "VISUAL-VERDICT.md",
+            "NOTES 자기반증 우선",
+            "deliverables/variations/<candidate-id>/mark.svg",
             "깊이 1",  # 서브 재위임 불가
             "완료 선언 금지",
         ):
@@ -488,7 +597,7 @@ class TestFreyjaLead(unittest.TestCase):
         md = agents_md("p")
         self.assertIn("asgard-freyja-lead", md)  # 대형 시각 과업 라우팅
         self.assertIn("asgard-freyja-valkyrja", md)  # 모드 A 편대 스킬 경로
-        self.assertIn("예외 1개: asgard-freyja-lead", md)  # 재위임 불가 예외의 명시적 한정
+        self.assertIn("예외 2개: asgard-freyja-lead·asgard-thor-lead", md)  # 재위임 불가 예외의 명시적 한정
         worker = self.roles["asgard-worker.md"]
         self.assertIn("asgard-freyja-lead", worker)
         self.assertIn("발키리 스킬을 로드해 대장 역할", worker)  # 네이티브 순차 편대 경로
