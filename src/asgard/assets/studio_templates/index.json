@@ -1,0 +1,1892 @@
+[
+{
+"name": "audio-jingle",
+"title": "audio jingle",
+"desc": "Audio generation skill — jingles, beds, voiceover, and sound effects.",
+"category": "오디오",
+"kind": "design",
+"file": "example.html",
+"bytes": 4911
+},
+{
+"name": "blog-post",
+"title": "blog post",
+"desc": "A long-form article / blog post — masthead, hero image placeholder,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 6738
+},
+{
+"name": "clinical-case-report",
+"title": "clinical case report",
+"desc": "Structured medical case presentation for clinical rounds, conferences,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 27682
+},
+{
+"name": "contact-widget",
+"title": "contact widget",
+"desc": "Self-contained floating chat widget with welcome screen, social links, meeting button, and message input. Single HTML file, zero dependencie",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 15367
+},
+{
+"name": "critique",
+"title": "critique",
+"desc": "Run a 5-dimension expert design review on any HTML artifact in the",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 27012
+},
+{
+"name": "dashboard",
+"title": "dashboard",
+"desc": "Admin / analytics dashboard in a single HTML file. Fixed left sidebar,",
+"category": "대시보드",
+"kind": "design",
+"file": "example.html",
+"bytes": 6652
+},
+{
+"name": "dating-web",
+"title": "dating web",
+"desc": "A consumer-feeling dating / matchmaking dashboard — left rail navigation,",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 12405
+},
+{
+"name": "digital-eguide",
+"title": "digital eguide",
+"desc": "A two-spread digital e-guide preview — page 1 is a cover (display title,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 11651
+},
+{
+"name": "docs-page",
+"title": "docs page",
+"desc": "A documentation page — inline-start nav, scrollable article body,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 6861
+},
+{
+"name": "email-marketing",
+"title": "email marketing",
+"desc": "A brand product-launch email — masthead with wordmark, hero image block,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 9879
+},
+{
+"name": "eng-runbook",
+"title": "eng runbook",
+"desc": "An engineering runbook — service overview, alerts table, dashboards",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 13852
+},
+{
+"name": "finance-report",
+"title": "finance report",
+"desc": "Quarterly / monthly financial report — masthead with KPIs, revenue and",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 13166
+},
+{
+"name": "flowai-live-dashboard-template",
+"title": "flowai live dashboard template",
+"desc": "Team-management dashboard skill in the FlowAI aesthetic — three tabs",
+"category": "대시보드",
+"kind": "design",
+"file": "example.html",
+"bytes": 454
+},
+{
+"name": "gamified-app",
+"title": "gamified app",
+"desc": "A multi-frame gamified mobile-app prototype — three phone frames on a dark",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 16468
+},
+{
+"name": "github-dashboard",
+"title": "github dashboard",
+"desc": "GitHub repository analytics dashboard — stars, forks, contributors,",
+"category": "대시보드",
+"kind": "design",
+"file": "example.html",
+"bytes": 25964
+},
+{
+"name": "hr-onboarding",
+"title": "hr onboarding",
+"desc": "A new-hire onboarding plan as a single page — first week schedule,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 14193
+},
+{
+"name": "html-ppt-course-module",
+"title": "html ppt course module",
+"desc": "A first-30-days onboarding module for new hospitality hires — the behaviors, the practice, the checks, and the manager follow-up. Built as a",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 32743
+},
+{
+"name": "html-ppt-graphify-dark-graph",
+"title": "html ppt graphify dark graph",
+"desc": "Asgard Studio's feature business case for the plugin marketplace: the user pain, options, tradeoffs, and the measure of success. Built as a ",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 26888
+},
+{
+"name": "html-ppt-hermes-cyber-terminal",
+"title": "html ppt hermes cyber terminal",
+"desc": "Asgard Studio + BYOK: choosing and wiring your own model, hands-on — cost, quality, and the routing decision. Built as a decision-grade AI l",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 26362
+},
+{
+"name": "html-ppt-knowledge-arch-blueprint",
+"title": "html ppt knowledge arch blueprint",
+"desc": "Asgard Studio's incident retro: the daemon-restart data bug, the root cause, the fix, and the systemic follow-ups. Built as a decision-grade",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 27461
+},
+{
+"name": "html-ppt-obsidian-claude-gradient",
+"title": "html ppt obsidian claude gradient",
+"desc": "Asgard Studio's enterprise AI-adoption brief: local-first agents at work, the risk controls, the ROI, and the rollout plan. Built as a decis",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 24040
+},
+{
+"name": "html-ppt-pitch-deck",
+"title": "html ppt pitch deck",
+"desc": "Asgard Studio's demo-day pitch: hook, traction, moat, and the raise — built to make a partner sit up by page three. Built as a decision-grad",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 29805
+},
+{
+"name": "html-ppt-presenter-mode-reveal",
+"title": "html ppt presenter mode reveal",
+"desc": "Asgard Studio live demo: from a one-line prompt to runnable design in a single session — the flow, live. Built as a decision-grade AI litera",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 38162
+},
+{
+"name": "html-ppt-product-launch",
+"title": "html ppt product launch",
+"desc": "Asgard Studio Teams: a launch-and-adoption proposal for a mid-market design team weighing a switch from closed cloud tools. Built as a decis",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 28639
+},
+{
+"name": "html-ppt-taste-brutalist",
+"title": "html ppt taste brutalist",
+"desc": "16:9 HTML deck in tactical-telemetry / CRT-terminal taste. Deactivated-CRT charcoal slides, white-phosphor monospace, hazard-red accent, sca",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 38277
+},
+{
+"name": "html-ppt-taste-editorial",
+"title": "html ppt taste editorial",
+"desc": "16:9 HTML deck in editorial-minimalist taste. Warm cream slides, serif display + grotesque body, hairline rules, monospace meta, generous ma",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 31245
+},
+{
+"name": "html-ppt-tech-sharing",
+"title": "html ppt tech sharing",
+"desc": "Asgard Studio internals: how the agent stream, sandbox, and artifacts work — an engineering deep-dive talk. Built as a decision-grade AI lit",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 30778
+},
+{
+"name": "html-ppt-testing-safety-alert",
+"title": "html ppt testing safety alert",
+"desc": "A hospital data-governance briefing: patient-data risk, the control framework, accountability, and the approval the board must give. Built a",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 27771
+},
+{
+"name": "html-ppt-weekly-report",
+"title": "html ppt weekly report",
+"desc": "Asgard Studio's weekly growth review: stars, installs, activation — the number, the driver, and the recommended move. Built as a decision-gr",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 31715
+},
+{
+"name": "html-ppt-xhs-pastel-card",
+"title": "html ppt xhs pastel card",
+"desc": "A personal manifesto: a year of saying yes — the premise, the scenes, the turn, and the meaning that lands. Built as a decision-grade story ",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 25218
+},
+{
+"name": "html-ppt-xhs-white-editorial",
+"title": "html ppt xhs white editorial",
+"desc": "A staff-engineer promotion packet — scope, the proof moments, the artifacts, and the impact that clears the bar. Built as a decision-grade c",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 26691
+},
+{
+"name": "html-ppt-zhangzara-8-bit-orbit",
+"title": "html ppt zhangzara 8 bit orbit",
+"desc": "A gamer's journey building a retro-arcade collection — the obsession, the hunt, and what the machines came to mean. Built as a decision-grad",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 49412
+},
+{
+"name": "html-ppt-zhangzara-biennale-yellow",
+"title": "html ppt zhangzara biennale yellow",
+"desc": "A curatorial deck for a contemporary art biennale — the thesis, the rooms, the works, and the visitor journey. Built as a decision-grade des",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 37712
+},
+{
+"name": "html-ppt-zhangzara-block-frame",
+"title": "html ppt zhangzara block frame",
+"desc": "Rescuing a messy startup deck into a board-grade system — the diagnosis, the page grammar, and the rebuilt proof pages. Built as a decision-",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 43491
+},
+{
+"name": "html-ppt-zhangzara-blue-professional",
+"title": "html ppt zhangzara blue professional",
+"desc": "Asgard Studio's QBR for the executive committee: what moved, what stalled, and the resource reallocation ask. Built as a decision-grade corp",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 43352
+},
+{
+"name": "html-ppt-zhangzara-bold-poster",
+"title": "html ppt zhangzara bold poster",
+"desc": "Asgard Studio's Series A growth story: the traction curve, the expansion motion, and why it's venture-scale. Built as a decision-grade fundr",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 35681
+},
+{
+"name": "html-ppt-zhangzara-broadside",
+"title": "html ppt zhangzara broadside",
+"desc": "Asgard Studio's product-launch announcement and press narrative — the headline, the proof points, and the call to action. Built as a decisio",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 75952
+},
+{
+"name": "html-ppt-zhangzara-capsule",
+"title": "html ppt zhangzara capsule",
+"desc": "A year-end self-review for a product manager — the role, the outcomes, the learning, and the ask, all evidence-backed. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 42366
+},
+{
+"name": "html-ppt-zhangzara-cartesian",
+"title": "html ppt zhangzara cartesian",
+"desc": "An economics senior thesis on the employment effects of local minimum-wage increases — identification strategy, evidence, and limitations. B",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 36229
+},
+{
+"name": "html-ppt-zhangzara-cobalt-grid",
+"title": "html ppt zhangzara cobalt grid",
+"desc": "Asgard Studio renewal + seat-expansion business case for a growing customer: realized value, usage proof, and the expansion ROI. Built as a ",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 48546
+},
+{
+"name": "html-ppt-zhangzara-coral",
+"title": "html ppt zhangzara coral",
+"desc": "Asgard Studio's community-growth campaign across GitHub, Discord, and X: the loops, the content calendar, and the pipeline math. Built as a ",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 49218
+},
+{
+"name": "html-ppt-zhangzara-creative-mode",
+"title": "html ppt zhangzara creative mode",
+"desc": "A brand visual-identity system reveal for an outdoor label — logo, color, type, and the rules that keep it consistent. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 25409
+},
+{
+"name": "html-ppt-zhangzara-daisy-days",
+"title": "html ppt zhangzara daisy days",
+"desc": "A customer-success workshop onboarding users to a project-management app — the first-value path and the habits that retain. Built as a decis",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 88819
+},
+{
+"name": "html-ppt-zhangzara-editorial-tri-tone",
+"title": "html ppt zhangzara editorial tri tone",
+"desc": "A type-and-color system for a culture magazine relaunch — the grid, the tri-tone palette, and the layout kit. Built as a decision-grade desi",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 33560
+},
+{
+"name": "html-ppt-zhangzara-grove",
+"title": "html ppt zhangzara grove",
+"desc": "A municipal urban-tree-canopy policy proposal — the public need, the evidence, the options, and the funding decision. Built as a decision-gr",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 67691
+},
+{
+"name": "html-ppt-zhangzara-long-table",
+"title": "html ppt zhangzara long table",
+"desc": "Asgard Studio's unit-economics and BYOK cost model: the assumptions, the sensitivity, and why it scales. Built as a decision-grade data & fi",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 43435
+},
+{
+"name": "html-ppt-zhangzara-mat",
+"title": "html ppt zhangzara mat",
+"desc": "A margin-recovery diagnosis for a regional grocery chain — the governing thought, the driver tree, the priorities, and the roadmap. Built as",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 55335
+},
+{
+"name": "html-ppt-zhangzara-monochrome",
+"title": "html ppt zhangzara monochrome",
+"desc": "A grant proposal on CRISPR base-editing for sickle-cell disease — the hypothesis, the approach, the milestones, and the risk. Built as a dec",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 93984
+},
+{
+"name": "html-ppt-zhangzara-neo-grid-bold",
+"title": "html ppt zhangzara neo grid bold",
+"desc": "A designer's portfolio narrative for a senior interview — three case studies, the craft, and the judgment behind each. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 52558
+},
+{
+"name": "html-ppt-zhangzara-peoples-platform",
+"title": "html ppt zhangzara peoples platform",
+"desc": "A public-transit funding proposal for a city council — ridership need, the plan, the risk controls, and the ask. Built as a decision-grade p",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 32995
+},
+{
+"name": "html-ppt-zhangzara-pin-and-paper",
+"title": "html ppt zhangzara pin and paper",
+"desc": "A field-biology capstone on urban pollinator decline — the survey design, the data, the contribution, and the caveats. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 22172
+},
+{
+"name": "html-ppt-zhangzara-pink-script",
+"title": "html ppt zhangzara pink script",
+"desc": "A wedding-anniversary tribute photo essay — a decade in scenes, the turning points, and the quiet meaning of staying. Built as a decision-gr",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 41622
+},
+{
+"name": "html-ppt-zhangzara-playful",
+"title": "html ppt zhangzara playful",
+"desc": "A retail sales-floor training on consultative selling — the flow, the role-plays, and the daily habit that lifts conversion. Built as a deci",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 44106
+},
+{
+"name": "html-ppt-zhangzara-raw-grid",
+"title": "html ppt zhangzara raw grid",
+"desc": "A brutalist poster-series case study for a music festival — the concept, the system, and how it scaled across formats. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 33296
+},
+{
+"name": "html-ppt-zhangzara-retro-windows",
+"title": "html ppt zhangzara retro windows",
+"desc": "An IT security-awareness training on spotting phishing — the tells, the drill, and what to do in the first 60 seconds. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 49725
+},
+{
+"name": "html-ppt-zhangzara-retro-zine",
+"title": "html ppt zhangzara retro zine",
+"desc": "A neighborhood zine on the disappearing corner shops — portraits, voices, and what a block loses when they close. Built as a decision-grade ",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 33637
+},
+{
+"name": "html-ppt-zhangzara-sakura-chroma",
+"title": "html ppt zhangzara sakura chroma",
+"desc": "A cherry-blossom-season travel photo essay through Kyoto — the arrival, the peak bloom, and the moment that made the trip. Built as a decisi",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 56244
+},
+{
+"name": "html-ppt-zhangzara-scatterbrain",
+"title": "html ppt zhangzara scatterbrain",
+"desc": "A design-school graduation project: a civic wayfinding system for a transit hub — the brief, the process, and the outcome. Built as a decisi",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 51379
+},
+{
+"name": "html-ppt-zhangzara-signal",
+"title": "html ppt zhangzara signal",
+"desc": "Asgard Studio's strategy memo: should it monetize the plugin registry now or hold — options, risks, and the recommendation. Built as a decis",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 90608
+},
+{
+"name": "html-ppt-zhangzara-soft-editorial",
+"title": "html ppt zhangzara soft editorial",
+"desc": "A digital-transformation roadmap for a legacy insurer — the diagnosis, the sequenced bets, and the operating rhythm to land them. Built as a",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 40132
+},
+{
+"name": "html-ppt-zhangzara-stencil-tablet",
+"title": "html ppt zhangzara stencil tablet",
+"desc": "A workplace-safety compliance review for a manufacturing regulator — findings, the evidence chain, and the corrective mandate. Built as a de",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 41591
+},
+{
+"name": "html-ppt-zhangzara-studio",
+"title": "html ppt zhangzara studio",
+"desc": "A photography studio's portfolio-and-rate deck — the signature work, the process, and the packages that win the brief. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 60594
+},
+{
+"name": "html-ppt-zhangzara-vellum",
+"title": "html ppt zhangzara vellum",
+"desc": "A humanities lecture: how Renaissance linear perspective reshaped early cartography — sources, argument, and evidence. Built as a decision-g",
+"category": "슬라이드",
+"kind": "design",
+"file": "example.html",
+"bytes": 41008
+},
+{
+"name": "ib-pitch-book",
+"title": "ib pitch book",
+"desc": "Asgard Studio's investor pitch book: market map, moat, unit economics, and the ask — analyst-grade and diligence-ready. Built as a decision-",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 70369
+},
+{
+"name": "image-poster",
+"title": "image poster",
+"desc": "Single-image generation skill for posters, key art, and editorial",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 3654
+},
+{
+"name": "invoice",
+"title": "invoice",
+"desc": "A printable invoice page — sender + recipient block, line items table,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 10912
+},
+{
+"name": "kami-deck",
+"title": "kami deck",
+"desc": "A lab-meeting deck on gut-microbiome links to sleep quality — the design, the results, the caveats, and the next experiment. Built as a deci",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 33876
+},
+{
+"name": "kami-landing",
+"title": "kami landing",
+"desc": ">",
+"category": "랜딩",
+"kind": "design",
+"file": "example.html",
+"bytes": 20579
+},
+{
+"name": "kanban-board",
+"title": "kanban board",
+"desc": "Kanban / task board with columns (To do / In progress / In review / Done),",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 16509
+},
+{
+"name": "live-dashboard",
+"title": "live dashboard",
+"desc": "Notion-style team dashboard rendered as a Live Artifact. A single-page,",
+"category": "대시보드",
+"kind": "design",
+"file": "example.html",
+"bytes": 37327
+},
+{
+"name": "magazine-poster",
+"title": "magazine poster",
+"desc": "An editorial-style poster — newsprint paper, dateline, oversized serif",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 8538
+},
+{
+"name": "meeting-notes",
+"title": "meeting notes",
+"desc": "Meeting notes page — title bar with attendees, agenda checklist, decisions",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 11995
+},
+{
+"name": "mobile-app",
+"title": "mobile app",
+"desc": "A mobile-app screen rendered inside a pixel-accurate iPhone 15 Pro frame",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 6249
+},
+{
+"name": "mobile-onboarding",
+"title": "mobile onboarding",
+"desc": "A multi-screen mobile onboarding flow rendered as three phone frames",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 8899
+},
+{
+"name": "motion-frames",
+"title": "motion frames",
+"desc": "A single-frame motion-design composition with looping CSS animations —",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 8402
+},
+{
+"name": "orbit-general",
+"title": "orbit general",
+"desc": "Open Orbit briefing skill — selected by the Orbit pipeline when the",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 48894
+},
+{
+"name": "orbit-github",
+"title": "orbit github",
+"desc": "Open Orbit briefing skill — selected by the Orbit pipeline when",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 27030
+},
+{
+"name": "orbit-gmail",
+"title": "orbit gmail",
+"desc": "Open Orbit briefing skill — selected by the Orbit pipeline when",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 24111
+},
+{
+"name": "orbit-linear",
+"title": "orbit linear",
+"desc": "Open Orbit briefing skill — selected by the Orbit pipeline when",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 26050
+},
+{
+"name": "orbit-notion",
+"title": "orbit notion",
+"desc": "Open Orbit briefing skill — selected by the Orbit pipeline when",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 15912
+},
+{
+"name": "pm-spec",
+"title": "pm spec",
+"desc": "Product spec / PRD as a single page — problem, success metrics, scope,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 14291
+},
+{
+"name": "pricing-page",
+"title": "pricing page",
+"desc": "A standalone pricing page — header, plan tiers, feature comparison table,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 7117
+},
+{
+"name": "saas-landing",
+"title": "saas landing",
+"desc": "Single-page SaaS landing with hero, features, social proof, pricing, and CTA.",
+"category": "랜딩",
+"kind": "design",
+"file": "example.html",
+"bytes": 7659
+},
+{
+"name": "simple-deck",
+"title": "simple deck",
+"desc": "Asgard Studio's operating review: growth, burn, and the concrete path to sustainability without losing the open ethos. Built as a decision-g",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 9227
+},
+{
+"name": "social-carousel",
+"title": "social carousel",
+"desc": "A three-card social-media carousel laid out as 1080×1080 squares —",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 10020
+},
+{
+"name": "social-media-dashboard",
+"title": "social media dashboard",
+"desc": "Creator-facing social media analytics dashboard in a single HTML file.",
+"category": "대시보드",
+"kind": "design",
+"file": "example.html",
+"bytes": 51864
+},
+{
+"name": "social-media-matrix-tracker-template",
+"title": "social media matrix tracker template",
+"desc": "社媒矩阵数据追踪面板模板（Social Media Matrix Tracker）。",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 63478
+},
+{
+"name": "sprite-animation",
+"title": "sprite animation",
+"desc": "A pixel / sprite-style animated explainer slide — full-bleed cream stage,",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 13511
+},
+{
+"name": "team-okrs",
+"title": "team okrs",
+"desc": "OKR tracker page — quarter banner, three objectives with their key",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 12051
+},
+{
+"name": "trading-analysis-dashboard-template",
+"title": "trading analysis dashboard template",
+"desc": "Professional trading analysis dashboard template (single-file HTML) with",
+"category": "대시보드",
+"kind": "design",
+"file": "example.html",
+"bytes": 955
+},
+{
+"name": "tweaks",
+"title": "tweaks",
+"desc": "Wrap any HTML artifact with a side panel of live, parameterized",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 24799
+},
+{
+"name": "video-shortform",
+"title": "video shortform",
+"desc": "Short-form video generation skill — 3-10 second clips for product",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 3563
+},
+{
+"name": "waitlist-page",
+"title": "waitlist page",
+"desc": "Minimal pre-launch landing with email capture, brand logo, and optional decorative layer.",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 12540
+},
+{
+"name": "web-prototype",
+"title": "web prototype",
+"desc": "General-purpose desktop web prototype. Single self-contained HTML file built",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 4217
+},
+{
+"name": "web-prototype-taste-brutalist",
+"title": "web prototype taste brutalist",
+"desc": "Swiss industrial-print web prototype. Newsprint canvas, monolithic black grotesque, viewport-bleeding numerals, hairline grid dividers, haza",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 21458
+},
+{
+"name": "web-prototype-taste-editorial",
+"title": "web prototype taste editorial",
+"desc": "Editorial-minimalist web prototype. Warm monochrome canvas, serif display + grotesque body, 1px hairline borders, muted pastel chips, genero",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 18228
+},
+{
+"name": "web-prototype-taste-soft",
+"title": "web prototype taste soft",
+"desc": "Apple-tier soft web prototype. Silver/cream canvas, double-bezel cards, button-in-button CTAs, generous squircle radii, spring motion, ambie",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 24209
+},
+{
+"name": "webgl-experience",
+"title": "webgl experience",
+"desc": "A full-screen, real-time WebGL/WebGL2 experience — animated shaders, 3D",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 5504
+},
+{
+"name": "weekly-update",
+"title": "weekly update",
+"desc": "Asgard Studio's weekly metrics standup: this week's numbers, the one anomaly, and the single decision it forces. Built as a decision-grade d",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 17296
+},
+{
+"name": "wireframe-annotated",
+"title": "wireframe annotated",
+"desc": "An annotated / redline lo-fi wireframe — a desktop landing/marketing page",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 13140
+},
+{
+"name": "wireframe-greybox",
+"title": "wireframe greybox",
+"desc": "A crisp greybox / blueprint lo-fi wireframe — neutral grey blocks on a",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 13227
+},
+{
+"name": "wireframe-mobile-flow",
+"title": "wireframe mobile flow",
+"desc": "A lo-fi multi-screen MOBILE flow wireframe — three or four phone frames",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 17969
+},
+{
+"name": "wireframe-sketch",
+"title": "wireframe sketch",
+"desc": "A hand-drawn wireframe exploration — graph-paper background, marker /",
+"category": "프로토타입",
+"kind": "design",
+"file": "example.html",
+"bytes": 15563
+},
+{
+"name": "worker-visualizer",
+"title": "worker visualizer",
+"desc": "A real-time data/particle/simulation visualizer whose heavy compute runs in",
+"category": "문서·리포트",
+"kind": "design",
+"file": "example.html",
+"bytes": 5627
+},
+{
+"name": "media/image/3d-stone-staircase-evolution-infographic",
+"title": "3D Stone Staircase Evolution Infographic",
+"desc": "Transforms a flat evolutionary timeline into a realistic 3D stone staircase infographic with detailed organism renders and structured side p",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/3d-stone-staircase-evolution-infographic.json",
+"bytes": 2707
+},
+{
+"name": "media/image/anime-martial-arts-battle-illustration",
+"title": "Anime Martial Arts Battle Illustration",
+"desc": "Generates a dynamic, high-impact anime illustration of two female characters fighting in a traditional dojo with elemental energy effects.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/anime-martial-arts-battle-illustration.json",
+"bytes": 1885
+},
+{
+"name": "media/image/e-commerce-live-stream-ui-mockup",
+"title": "E-commerce Live Stream UI Mockup",
+"desc": "Generates a realistic social media live stream interface overlaying a portrait, featuring customizable chat messages, gift popups, and a pro",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/e-commerce-live-stream-ui-mockup.json",
+"bytes": 3156
+},
+{
+"name": "media/image/game-screenshot-anime-fighting-game-captain-ryuuga-vs-kaze-renshin",
+"title": "Game Screenshot - Anime Fighting Game: Captain Ryuuga vs Kaze Renshin",
+"desc": "An in-game fighting game key visual / combat screenshot in the style of Street Fighter 6 or Tekken 8 intro art. Two anime-style male warrior",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/game-screenshot-anime-fighting-game-captain-ryuuga-vs-kaze-renshin.json",
+"bytes": 4793
+},
+{
+"name": "media/image/game-screenshot-three-kingdoms-guanyu-slaying-yanliang",
+"title": "Game Screenshot - Three Kingdoms ARPG: Guan Yu Slaying Yan Liang",
+"desc": "An in-game action-RPG screenshot of the iconic Three Kingdoms scene where Guan Yu rides his Red Hare warhorse through a torrential-rain batt",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/game-screenshot-three-kingdoms-guanyu-slaying-yanliang.json",
+"bytes": 4560
+},
+{
+"name": "media/image/game-screenshot-three-kingdoms-lyubu-yuanmen-archery",
+"title": "Game Screenshot - Three Kingdoms ARPG: Lü Bu's Yuanmen Archery",
+"desc": "An in-game action-RPG screenshot of the famous Three Kingdoms scene where Lü Bu shoots down a distant halberd at the camp gate to stop a bat",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/game-screenshot-three-kingdoms-lyubu-yuanmen-archery.json",
+"bytes": 3936
+},
+{
+"name": "media/image/game-screenshot-three-kingdoms-zhaoyun-cradle-escape",
+"title": "Game Screenshot - Three Kingdoms ARPG: Zhao Yun's Cradle Escape at Changbanpo",
+"desc": "An in-game action-RPG screenshot of the legendary Three Kingdoms scene where Zhao Yun cradles the infant Liu Chan in one arm and fights his ",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/game-screenshot-three-kingdoms-zhaoyun-cradle-escape.json",
+"bytes": 7364
+},
+{
+"name": "media/image/game-ui-ancient-china-open-world-mmo-hud",
+"title": "Game UI - Ancient China Open-World MMO HUD",
+"desc": "Generates an in-game HUD screenshot mockup for a AAA ancient-China open-world MMO, in the cinematic photoreal style of Black Myth: Wukong. A",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/game-ui-ancient-china-open-world-mmo-hud.json",
+"bytes": 7678
+},
+{
+"name": "media/image/illustrated-city-food-map",
+"title": "Illustrated City Food Map",
+"desc": "Generates a hand-drawn, watercolor-style tourist map featuring numbered local food specialties, landmarks, and a legend.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/illustrated-city-food-map.json",
+"bytes": 3107
+},
+{
+"name": "media/image/illustration-crayon-kid-drawing-rework",
+"title": "Illustration - Crayon Kid-Drawing Rework",
+"desc": "A style-transfer prompt that reworks any reference image (product shot, screenshot, portrait, UI mockup) into a hand-drawn crayon illustrati",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/illustration-crayon-kid-drawing-rework.json",
+"bytes": 2974
+},
+{
+"name": "media/image/infographic-otaku-dance-choreography-breakdown-gokurakujodo-16-panels",
+"title": "Infographic - Otaku Dance Choreography Breakdown (Gokuraku Jodo, 16 Panels)",
+"desc": "A single vertical 2:3 poster composed as a 4×4 grid of 16 connected square panels, forming a full choreography breakdown chart for the famou",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/infographic-otaku-dance-choreography-breakdown-gokurakujodo-16-panels.json",
+"bytes": 7493
+},
+{
+"name": "media/image/momotaro-explainer-slide-in-hybrid-style",
+"title": "Momotaro Explainer Slide in Hybrid Style",
+"desc": "A prompt that combines the simple, warm aesthetic of Irasutoya illustrations with the high-information density characteristic of Japanese go",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/momotaro-explainer-slide-in-hybrid-style.json",
+"bytes": 959
+},
+{
+"name": "media/image/notion-team-dashboard-live-artifact",
+"title": "Notion-style Team Dashboard (Live Artifact)",
+"desc": "Single-screen Notion-native team dashboard mockup — KPI grid, 7-day sparkline, activity feed, and linked-database task table. Visual compani",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/notion-team-dashboard-live-artifact.json",
+"bytes": 6202
+},
+{
+"name": "media/image/profile-avatar-anime-girl-to-cinematic-photo",
+"title": "Profile / Avatar - Anime Girl to Cinematic Photo",
+"desc": "This prompt turns a character reference illustration into a realistic, warm-toned vintage interior portrait while preserving the original ou",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-anime-girl-to-cinematic-photo.json",
+"bytes": 1451
+},
+{
+"name": "media/image/profile-avatar-casual-fashion-grid-photoshoot",
+"title": "Profile / Avatar - Casual Fashion Grid Photoshoot",
+"desc": "A structured JSON prompt for a 4-photo collage of a casual fashion photoshoot with detailed subject and lighting parameters.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-casual-fashion-grid-photoshoot.json",
+"bytes": 3378
+},
+{
+"name": "media/image/profile-avatar-cinematic-south-asian-male-portrait-with-vultures",
+"title": "Profile / Avatar - Cinematic South Asian Male Portrait with Vultures",
+"desc": "A detailed cinematic portrait of a young South Asian man in a moody, dark fantasy setting surrounded by vultures and ravens.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-cinematic-south-asian-male-portrait-with-vultures.json",
+"bytes": 1802
+},
+{
+"name": "media/image/profile-avatar-cyberpunk-anime-portrait-with-neon-face-text",
+"title": "Profile / Avatar - Cyberpunk Anime Portrait with Neon Face Text",
+"desc": "A stylish neon-soaked anime portrait for posters, social media art, or futuristic branding visuals.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-cyberpunk-anime-portrait-with-neon-face-text.json",
+"bytes": 1816
+},
+{
+"name": "media/image/profile-avatar-elegant-fantasy-girl-in-violet-garden",
+"title": "Profile / Avatar - Elegant Fantasy Girl in Violet Garden",
+"desc": "This prompt generates a polished anime-style fantasy portrait of an elegant woman with glossy styled hair, ornate violet-black clothing, and",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-elegant-fantasy-girl-in-violet-garden.json",
+"bytes": 2550
+},
+{
+"name": "media/image/profile-avatar-ethereal-blue-haired-fantasy-portrait",
+"title": "Profile / Avatar - Ethereal Blue-Haired Fantasy Portrait",
+"desc": "This prompt generates a soft, luminous anime-style fantasy character portrait, ideal for creating elegant vertical key art or character illu",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-ethereal-blue-haired-fantasy-portrait.json",
+"bytes": 2603
+},
+{
+"name": "media/image/profile-avatar-glamorous-woman-in-black-portrait",
+"title": "Profile / Avatar - Glamorous Woman in Black Portrait",
+"desc": "This prompt generates a photorealistic luxury-style portrait of an elegant woman in a plunging black outfit, ideal for fashion editorial or ",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-glamorous-woman-in-black-portrait.json",
+"bytes": 1886
+},
+{
+"name": "media/image/profile-avatar-hyper-realistic-selfie-texture-prompts",
+"title": "Profile / Avatar - Hyper-Realistic Selfie Texture Prompts",
+"desc": "Detailed prompt snippets for generating realistic skin textures and authentic phone selfie framing, focusing on visible pores and natural li",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-hyper-realistic-selfie-texture-prompts.json",
+"bytes": 1040
+},
+{
+"name": "media/image/profile-avatar-lavender-fantasy-mage-portrait",
+"title": "Profile / Avatar - Lavender Fantasy Mage Portrait",
+"desc": "This prompt generates a polished anime-style fantasy portrait of an elegant mage princess with glossy blonde hair, purple flowers, and ornat",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-lavender-fantasy-mage-portrait.json",
+"bytes": 2436
+},
+{
+"name": "media/image/profile-avatar-monochrome-studio-portrait",
+"title": "Profile / Avatar - Monochrome Studio Portrait",
+"desc": "A high-end commercial photography prompt for a monochrome portrait with a distinctive split-background and dramatic studio lighting.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-monochrome-studio-portrait.json",
+"bytes": 1784
+},
+{
+"name": "media/image/profile-avatar-old-photo-restoration-to-dslr-portrait",
+"title": "Profile / Avatar - Old Photo Restoration to DSLR Portrait",
+"desc": "This prompt restores a damaged vintage 4-person family photo into a clean, colorized, high-resolution realistic portrait for photo repair an",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-old-photo-restoration-to-dslr-portrait.json",
+"bytes": 1625
+},
+{
+"name": "media/image/profile-avatar-poetic-woman-in-garden-portrait",
+"title": "Profile / Avatar - Poetic Woman in Garden Portrait",
+"desc": "This prompt generates a realistic editorial-style portrait of a bookish young woman in a sunlit garden, ideal for lifestyle photography, lit",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-poetic-woman-in-garden-portrait.json",
+"bytes": 2228
+},
+{
+"name": "media/image/profile-avatar-professional-identity-portrait-wallpaper",
+"title": "Profile / Avatar - Professional Identity Portrait Wallpaper",
+"desc": "Generates a high-resolution, premium wallpaper featuring a subject in professional attire with career-related activities and typography.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-professional-identity-portrait-wallpaper.json",
+"bytes": 1736
+},
+{
+"name": "media/image/profile-avatar-realistically-imperfect-ai-selfie",
+"title": "Profile / Avatar - Realistically Imperfect AI Selfie",
+"desc": "A creative prompt used with GPT Image 2 to generate a 'failed' selfie that looks like an accidental, low-quality smartphone snapshot.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-realistically-imperfect-ai-selfie.json",
+"bytes": 1335
+},
+{
+"name": "media/image/profile-avatar-seedream-high-fashion-dreamy-portrait",
+"title": "Profile / Avatar - Seedream High-Fashion Dreamy Portrait",
+"desc": "A Seedream 5.0 Pro portrait prompt for a dark, dreamy high-fashion editorial image with refined lighting, detailed makeup, and a vertical fu",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-seedream-high-fashion-dreamy-portrait.json",
+"bytes": 3392
+},
+{
+"name": "media/image/profile-avatar-signed-marker-portrait-on-shikishi",
+"title": "Profile / Avatar - Signed Marker Portrait on Shikishi",
+"desc": "This generates a lively signed marker-style portrait on a square shikishi board, useful for fan-art autographs, commemorative illustration p",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-signed-marker-portrait-on-shikishi.json",
+"bytes": 2597
+},
+{
+"name": "media/image/profile-avatar-snow-rabbit-empress-portrait",
+"title": "Profile / Avatar - Snow Rabbit Empress Portrait",
+"desc": "A realistic fantasy portrait prompt for generating a regal rabbit-themed woman in ornate winter hanfu standing in a snowy mountain temple se",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-snow-rabbit-empress-portrait.json",
+"bytes": 1853
+},
+{
+"name": "media/image/profile-avatar-snow-rabbit-mask-hanfu-portrait",
+"title": "Profile / Avatar - Snow Rabbit Mask Hanfu Portrait",
+"desc": "This prompt generates a cinematic winter fantasy portrait of a masked woman in a rabbit-themed white Hanfu, ideal for elegant character art ",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-snow-rabbit-mask-hanfu-portrait.json",
+"bytes": 2243
+},
+{
+"name": "media/image/profile-avatar-snowy-rabbit-hanfu-portrait",
+"title": "Profile / Avatar - Snowy Rabbit Hanfu Portrait",
+"desc": "This prompt generates an ultra-detailed fantasy beauty portrait of a rabbit-eared woman in embroidered hanfu, ideal for elegant character ar",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-snowy-rabbit-hanfu-portrait.json",
+"bytes": 2713
+},
+{
+"name": "media/image/profile-avatar-snowy-rabbit-spirit-portrait",
+"title": "Profile / Avatar - Snowy Rabbit Spirit Portrait",
+"desc": "This prompt generates a serene fantasy portrait of an anonymous rabbit-eared woman in winter, ideal for atmospheric character art and styliz",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-snowy-rabbit-spirit-portrait.json",
+"bytes": 2022
+},
+{
+"name": "media/image/profile-avatar-song-dynasty-hanfu-portrait",
+"title": "Profile / Avatar - Song Dynasty Hanfu Portrait",
+"desc": "An optimized prompt for generating a detailed and realistic portrait of a beauty in Song Dynasty traditional Hanfu within an ancient courtya",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/profile-avatar-song-dynasty-hanfu-portrait.json",
+"bytes": 1539
+},
+{
+"name": "media/image/social-media-post-anime-pokemon-shop-outfit-teaser-poster",
+"title": "Social Media Post - Anime Pokémon Shop Outfit Teaser Poster",
+"desc": "This prompt generates a soft pastel anime fashion announcement poster featuring a blurred-face girl in a blue dress inside a Pokémon store, ",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-anime-pokemon-shop-outfit-teaser-poster.json",
+"bytes": 3559
+},
+{
+"name": "media/image/social-media-post-cinematic-elevator-scene",
+"title": "Social Media Post - Cinematic Elevator Scene",
+"desc": "A prompt for generating a moody, cinematic scene of a woman inside a metallic elevator with realistic lighting and reflections.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-cinematic-elevator-scene.json",
+"bytes": 1021
+},
+{
+"name": "media/image/social-media-post-confused-elf-girl-at-pastel-desk",
+"title": "Social Media Post - Confused Elf Girl at Pastel Desk",
+"desc": "This prompt generates a soft pastel anime illustration of an elf girl typing at her computer in a cozy kawaii workspace, ideal for social po",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-confused-elf-girl-at-pastel-desk.json",
+"bytes": 2510
+},
+{
+"name": "media/image/social-media-post-editorial-fashion-photography",
+"title": "Social Media Post - Editorial Fashion Photography",
+"desc": "A moody, fashion-focused prompt for a minimalist studio scene with soft lighting and warm tones.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-editorial-fashion-photography.json",
+"bytes": 1212
+},
+{
+"name": "media/image/social-media-post-fashion-editorial-collage",
+"title": "Social Media Post - Fashion Editorial Collage",
+"desc": "A highly detailed 2x2 photo collage prompt for fashion editorial shots, focusing on consistent styling, specific lighting, and facial featur",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-fashion-editorial-collage.json",
+"bytes": 7149
+},
+{
+"name": "media/image/social-media-post-psg-transfer-announcement-poster",
+"title": "Social Media Post - PSG Transfer Announcement Poster",
+"desc": "A bold, professional football signing poster for announcing a player's move to Paris Saint-Germain on social media or sports promo graphics.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-psg-transfer-announcement-poster.json",
+"bytes": 2906
+},
+{
+"name": "media/image/social-media-post-seedream-squishcraft-kids-clay-ad",
+"title": "Social Media Post - Seedream Squishcraft Kids Clay Ad",
+"desc": "A production-ready kids craft product ad prompt for Seedream 5.0 Pro, featuring a playful clay set, cheerful product typography, and warm co",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-seedream-squishcraft-kids-clay-ad.json",
+"bytes": 1539
+},
+{
+"name": "media/image/social-media-post-sensational-girl-dance-storyboard-8-shots",
+"title": "Social Media Post - Sensational Girl Dance Storyboard (8 Shots)",
+"desc": "A full 8-shot storyboard prompt set for generating a coherent frame-by-frame dance sequence of a stylish character. Includes shared global s",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-sensational-girl-dance-storyboard-8-shots.json",
+"bytes": 6380
+},
+{
+"name": "media/image/social-media-post-showa-day-retro-culture-magazine-cover",
+"title": "Social Media Post - Showa Day Retro Culture Magazine Cover",
+"desc": "A warm editorial-style Japanese holiday feature page combining anime character art, nostalgic Showa-era street imagery, and magazine-style i",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-showa-day-retro-culture-magazine-cover.json",
+"bytes": 5601
+},
+{
+"name": "media/image/social-media-post-social-media-fashion-outfit-generation",
+"title": "Social Media Post - Social Media Fashion Outfit Generation",
+"desc": "A prompt to generate a week's worth of fashion blogger-style outfit recommendations based on a character profile, complete with item labels ",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-social-media-fashion-outfit-generation.json",
+"bytes": 1219
+},
+{
+"name": "media/image/social-media-post-travel-snapshot-collage-prompt",
+"title": "Social Media Post - Travel Snapshot Collage Prompt",
+"desc": "A detailed prompt for creating a nostalgic, 12-frame collage of smartphone-style travel photos depicting a solo journey.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-travel-snapshot-collage-prompt.json",
+"bytes": 2381
+},
+{
+"name": "media/image/social-media-post-vintage-sign-painter-sketch",
+"title": "Social Media Post - Vintage Sign-Painter Sketch",
+"desc": "Generates a hand-drawn marker sketch on paper with realistic details like graphite lines and ink bleed, perfect for vintage lettering styles",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/social-media-post-vintage-sign-painter-sketch.json",
+"bytes": 1298
+},
+{
+"name": "media/image/vr-headset-exploded-view-poster",
+"title": "VR Headset Exploded View Poster",
+"desc": "Generates a high-tech exploded view diagram of a VR headset with detailed component callouts and promotional text.",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/vr-headset-exploded-view-poster.json",
+"bytes": 2987
+},
+{
+"name": "media/image/zelda-style-forbidden-city-game-screenshot",
+"title": "Zelda-Style Forbidden City Game Screenshot",
+"desc": "Generates a 16:9 original-gameplay-screenshot-style image prompt inspired by The Legend of Zelda: Breath of the Wild / Tears of the Kingdom,",
+"category": "이미지",
+"kind": "media",
+"file": "media/image/zelda-style-forbidden-city-game-screenshot.json",
+"bytes": 3485
+},
+{
+"name": "media/video/3d-animated-boy-building-lego",
+"title": "3D Animated Boy Building Lego",
+"desc": "A multi-shot video prompt in 3D animation style describing a boy carefully assembling Lego pieces in a room, featuring time-lapse effects.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/3d-animated-boy-building-lego.json",
+"bytes": 1853
+},
+{
+"name": "media/video/a-decade-of-refinement-glow-up",
+"title": "A Decade of Refinement Glow-Up",
+"desc": "A transformation prompt for Seedance 2.0 showing a man's transition from a casual 2016 setting to a luxurious 2026 Dubai lifestyle while mai",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/a-decade-of-refinement-glow-up.json",
+"bytes": 2327
+},
+{
+"name": "media/video/ancient-guardian-dragon-rescue",
+"title": "Ancient Guardian Dragon Rescue",
+"desc": "A detailed multi-shot cinematic prompt for a story about a girl in a rainy village saved by an emerging dragon, focusing on VFX and atmosphe",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/ancient-guardian-dragon-rescue.json",
+"bytes": 3797
+},
+{
+"name": "media/video/ancient-indian-kingdom-fpv-video",
+"title": "Ancient Indian Kingdom FPV Video",
+"desc": "A fast-paced FPV drone-style cinematic prompt depicting a mystical Indian kingdom with temples and jungles.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/ancient-indian-kingdom-fpv-video.json",
+"bytes": 1419
+},
+{
+"name": "media/video/animation-transfer-and-camera-tracking-prompt",
+"title": "Animation transfer and camera tracking prompt",
+"desc": "A technical prompt for Seedance 2.0 that applies a specific motion reference to a character while maintaining fixed camera tracking.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/animation-transfer-and-camera-tracking-prompt.json",
+"bytes": 1012
+},
+{
+"name": "media/video/beat-synced-outfit-transformation-dance",
+"title": "Beat-Synced Outfit Transformation Dance",
+"desc": "A prompt for Seedance 2.0 that coordinates a character dance following breakdown frames while performing a beat-synced outfit change.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/beat-synced-outfit-transformation-dance.json",
+"bytes": 1009
+},
+{
+"name": "media/video/character-intro-motion-graphics-sequence",
+"title": "Character Intro Motion Graphics Sequence",
+"desc": "A complex, multi-stage motion graphics prompt for introducing a team of characters with specific UI overlays and transitions, designed for t",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/character-intro-motion-graphics-sequence.json",
+"bytes": 2725
+},
+{
+"name": "media/video/cinematic-birthday-celebration-sequence",
+"title": "Cinematic Birthday Celebration Sequence",
+"desc": "A highly detailed multi-shot video prompt for a birthday sequence, focusing on character consistency and emotional storytelling.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-birthday-celebration-sequence.json",
+"bytes": 2256
+},
+{
+"name": "media/video/cinematic-dragon-interaction-flight",
+"title": "Cinematic Dragon Interaction & Flight",
+"desc": "A detailed storyboard-style prompt for a video featuring a woman's emotional interaction with a dragon followed by a cinematic flight sequen",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-dragon-interaction-flight.json",
+"bytes": 1968
+},
+{
+"name": "media/video/cinematic-east-asian-woman-hand-dance",
+"title": "Cinematic East Asian Woman Hand Dance",
+"desc": "A highly detailed multi-shot cinematic video prompt for a stylized hand dance, featuring time-coded instructions for camera movement and cha",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-east-asian-woman-hand-dance.json",
+"bytes": 5266
+},
+{
+"name": "media/video/cinematic-emotional-face-close-up",
+"title": "Cinematic Emotional Face Close-up",
+"desc": "A highly detailed technical prompt for Seedance 2.0 focusing on realistic skin textures and a series of complex emotional facial transitions",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-emotional-face-close-up.json",
+"bytes": 2681
+},
+{
+"name": "media/video/cinematic-marine-biologist-exploration",
+"title": "Cinematic Marine Biologist Exploration",
+"desc": "A detailed cinematic video prompt for an underwater scene featuring a marine biologist discovering an ancient shipwreck in a coral reef.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-marine-biologist-exploration.json",
+"bytes": 1333
+},
+{
+"name": "media/video/cinematic-music-podcast-and-guitar-technique",
+"title": "Cinematic Music Podcast and Guitar Technique",
+"desc": "An advanced cinematic prompt for generating a 4K music podcast video, with specific focus on guitar technique, pinch harmonics, and studio a",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-music-podcast-and-guitar-technique.json",
+"bytes": 3797
+},
+{
+"name": "media/video/cinematic-route-navigation-guide",
+"title": "Cinematic Route Navigation Guide",
+"desc": "A structured multi-scene prompt designed for Seedance to create a consistent walking navigation video featuring a recurring tour guide chara",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-route-navigation-guide.json",
+"bytes": 2386
+},
+{
+"name": "media/video/cinematic-street-racing-sequence-for-seedance-2",
+"title": "Cinematic Street Racing Sequence for Seedance 2",
+"desc": "A detailed, multi-shot prompt designed for Seedance 2 to generate a cinematic street racing sequence at night, focusing on intense driver fo",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-street-racing-sequence-for-seedance-2.json",
+"bytes": 2518
+},
+{
+"name": "media/video/cinematic-vampire-alley-fight-sequence",
+"title": "Cinematic vampire alley fight sequence",
+"desc": "A comprehensive action prompt for a short film scene involving dynamic camera movements and high-speed combat in a neon-lit alley.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cinematic-vampire-alley-fight-sequence.json",
+"bytes": 2145
+},
+{
+"name": "media/video/crimson-horizon-sci-fi-cinematic-sequence",
+"title": "Crimson Horizon Sci-Fi Cinematic Sequence",
+"desc": "A comprehensive 9-shot cinematic video sequence for a sci-fi film titled 'Crimson Horizon', detailing everything from a rocket launch to an ",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/crimson-horizon-sci-fi-cinematic-sequence.json",
+"bytes": 2472
+},
+{
+"name": "media/video/cyberpunk-game-trailer-script",
+"title": "Cyberpunk Game Trailer Script",
+"desc": "An extensive video generation prompt for a cyberpunk game trailer, detailing character design, UI animations, and environmental transitions ",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/cyberpunk-game-trailer-script.json",
+"bytes": 3851
+},
+{
+"name": "media/video/forbidden-city-cat-satire",
+"title": "Forbidden City Cat Satire",
+"desc": "A complex dark comedy prompt for Seedance 2.0 featuring an orange cat official and a hyena emperor in a satirical Qing dynasty setting.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/forbidden-city-cat-satire.json",
+"bytes": 3647
+},
+{
+"name": "media/video/hollywood-haute-couture-fantasy-video-prompt",
+"title": "Hollywood Haute Couture Fantasy Video Prompt",
+"desc": "A detailed, multi-scene video generation prompt for Seedance 2.0, designed to create a Hollywood Haute Couture Fantasy film. The prompt spec",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hollywood-haute-couture-fantasy-video-prompt.json",
+"bytes": 3142
+},
+{
+"name": "media/video/hunched-character-animation",
+"title": "Hunched Character Animation",
+"desc": "Instruction for Seedance 2 to create an in-place walking animation for a specific character reference.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hunched-character-animation.json",
+"bytes": 891
+},
+{
+"name": "media/video/hyperframes-app-showcase-three-phones",
+"title": "HyperFrames: 12-Second App Showcase — Three Floating Phones",
+"desc": "A 12-second 16:9 app showcase composition — three floating iPhone screens hover in 3D space, each rotating in turn to surface a different fe",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-app-showcase-three-phones.json",
+"bytes": 3384
+},
+{
+"name": "media/video/hyperframes-brand-sizzle-reel",
+"title": "HyperFrames: 30-Second Brand Sizzle Reel",
+"desc": "A 30-second 16:9 HyperFrames sizzle reel — fast cuts, beat-synced kinetic typography, audio-reactive scale on display words, shader transiti",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-brand-sizzle-reel.json",
+"bytes": 3318
+},
+{
+"name": "media/video/hyperframes-data-bar-chart-race",
+"title": "HyperFrames: Animated Bar-Chart Race (NYT-style)",
+"desc": "A 12-second 16:9 data infographic — animated bar + line chart with staggered category reveal, NYT-style serif headline, footnote source, kin",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-data-bar-chart-race.json",
+"bytes": 3282
+},
+{
+"name": "media/video/hyperframes-flight-map-route",
+"title": "HyperFrames: Apple-Style Flight Map (Origin → Destination)",
+"desc": "An 8-second 16:9 cinematic flight-route map — realistic terrain zoom, animated plane gliding from origin to destination along a curved path,",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-flight-map-route.json",
+"bytes": 3129
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-iphone-device",
+"title": "HyperFrames HTML-in-Canvas: 3D iPhone + MacBook Product Demo",
+"desc": "A 15-second product demo where a real GLTF iPhone 15 Pro Max and MacBook Pro float on a clean stage with the actual app UI rendering live on",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-iphone-device.json",
+"bytes": 3950
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-liquid-background",
+"title": "HyperFrames HTML-in-Canvas: Liquid Background Hero",
+"desc": "A 12-second hero with HTML content floating above an organic liquid surface — vertex-displaced subdivided plane, real-time wave dynamics, ca",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-liquid-background.json",
+"bytes": 4174
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-liquid-glass",
+"title": "HyperFrames HTML-in-Canvas: Liquid Glass Landing Reveal",
+"desc": "A 20-second voronoi liquid-glass reveal of a real product landing page — DOM is captured live via drawElementImage, shattered into refractin",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-liquid-glass.json",
+"bytes": 3768
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-magnetic",
+"title": "HyperFrames HTML-in-Canvas: Magnetic Field Visualisation",
+"desc": "A 15-second magnetic-field particle visualisation reacting to a live DOM heatmap or chart — particles trace field lines that bend around the",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-magnetic.json",
+"bytes": 4256
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-portal-reveal",
+"title": "HyperFrames HTML-in-Canvas: Portal Reveal Dashboard",
+"desc": "A 10-second dimensional portal opens onto a live data dashboard — DOM captured in real time, volumetric light spill, portal-edge particles. ",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-portal-reveal.json",
+"bytes": 3636
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-shatter",
+"title": "HyperFrames HTML-in-Canvas: Glass Shatter Outro",
+"desc": "A 12-second HTML shatter outro — a real product page or pricing card holds for a beat, then explodes into refracting glass fragments with de",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-shatter.json",
+"bytes": 4111
+},
+{
+"name": "media/video/hyperframes-html-in-canvas-text-cursor",
+"title": "HyperFrames HTML-in-Canvas: Cinematic Text Cursor Reveal",
+"desc": "An 8-second dramatic text reveal with cursor glow, chromatic shadow rays, and directional lighting on a black stage. Real DOM typography und",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-html-in-canvas-text-cursor.json",
+"bytes": 3703
+},
+{
+"name": "media/video/hyperframes-logo-outro-cinematic",
+"title": "HyperFrames: 4-Second Cinematic Logo Outro",
+"desc": "A 4-second 16:9 logo outro — piece-by-piece wordmark assembly with bloom, shimmer sweep across the final lockup, soft grain overlay, single-",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-logo-outro-cinematic.json",
+"bytes": 2977
+},
+{
+"name": "media/video/hyperframes-money-counter-hype",
+"title": "HyperFrames: $0 → $10K Money Counter Hype (9:16)",
+"desc": "A 6-second vertical 1080×1920 HyperFrames hype clip — Apple-style $0 → $10,000 counter with green flash, money burst particles, cash-stack i",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-money-counter-hype.json",
+"bytes": 3182
+},
+{
+"name": "media/video/hyperframes-product-reveal-minimal",
+"title": "HyperFrames: 5-Second Minimal Product Reveal",
+"desc": "A 5-second HyperFrames composition for a high-end product reveal — dark canvas, single warm accent, slow push-in title card, kinetic kicker ",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-product-reveal-minimal.json",
+"bytes": 2814
+},
+{
+"name": "media/video/hyperframes-saas-product-promo-30s",
+"title": "HyperFrames: 30-Second SaaS Product Promo (Linear-style)",
+"desc": "A 30-second HyperFrames composition modelled on Linear/ClickUp-style product films — UI 3D reveals, beat-synced kinetic typography, animated",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-saas-product-promo-30s.json",
+"bytes": 3509
+},
+{
+"name": "media/video/hyperframes-social-overlay-stack",
+"title": "HyperFrames: 9:16 Social Overlay Stack (X · Reddit · Spotify · Instagram)",
+"desc": "A 15-second vertical 1080×1920 HyperFrames composition that stacks four animated social cards over a face-cam loop — an X post, a Reddit rea",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-social-overlay-stack.json",
+"bytes": 3399
+},
+{
+"name": "media/video/hyperframes-tiktok-karaoke-talking-head",
+"title": "HyperFrames: 9:16 TikTok Talking-Head with Karaoke Captions",
+"desc": "A vertical 1080×1920 HyperFrames short — TTS-narrated talking-head over a face-cam loop, with karaoke-style word-synced captions, animated l",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-tiktok-karaoke-talking-head.json",
+"bytes": 3327
+},
+{
+"name": "media/video/hyperframes-website-to-video-promo",
+"title": "HyperFrames: Website-to-Video Pipeline (15-Second Marketing Cut)",
+"desc": "A 15-second 16:9 HyperFrames composition that captures a live website at three viewport sizes, then animates between them with a chromatic r",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/hyperframes-website-to-video-promo.json",
+"bytes": 3223
+},
+{
+"name": "media/video/live-action-anime-adaptation-water-vs-thunder-breathing-duel",
+"title": "Live-Action Anime Adaptation: Water vs. Thunder Breathing Duel",
+"desc": "A highly detailed, 15-second prompt for generating a live-action adaptation of an anime-style duel, featuring 'Water Breathing' (blue water ",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/live-action-anime-adaptation-water-vs-thunder-breathing-duel.json",
+"bytes": 3399
+},
+{
+"name": "media/video/luxury-supercar-cinematic-narrative",
+"title": "Luxury Supercar Cinematic Narrative",
+"desc": "A highly detailed multi-shot cinematic prompt for Seedance 2.0 involving a stylish man, Dobermans, and a vintage supercar in a misty mountai",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/luxury-supercar-cinematic-narrative.json",
+"bytes": 3910
+},
+{
+"name": "media/video/magical-academy-storyboard-sequence",
+"title": "Magical Academy Storyboard Sequence",
+"desc": "A detailed storyboard-style prompt for a cinematic sequence depicting a magical girl at an academy, covering arrival, discovery of power, an",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/magical-academy-storyboard-sequence.json",
+"bytes": 2241
+},
+{
+"name": "media/video/modern-rural-aesthetics-healing-short-film-video-prompt",
+"title": "Modern Rural Aesthetics Healing Short Film Video Prompt",
+"desc": "A detailed, three-shot prompt for Seedance 2.0 to generate a healing, cinematic short film in the Modern Rural Aesthetics style. It specifie",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/modern-rural-aesthetics-healing-short-film-video-prompt.json",
+"bytes": 2804
+},
+{
+"name": "media/video/nightclub-flyer-atmospheric-animation",
+"title": "Nightclub Flyer Atmospheric Animation",
+"desc": "A subtle animation prompt for Seedance 2.0 to bring background and lighting elements to life while keeping the subject locked",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/nightclub-flyer-atmospheric-animation.json",
+"bytes": 2558
+},
+{
+"name": "media/video/retro-hk-wuxia-film-aesthetic",
+"title": "Retro HK Wuxia Film Aesthetic",
+"desc": "A complex multi-part video prompt recreating 80s-90s Hong Kong Wuxia film aesthetics, featuring a character transformation from a cat to a h",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/retro-hk-wuxia-film-aesthetic.json",
+"bytes": 2955
+},
+{
+"name": "media/video/seedance-2-0-15-second-cinematic-japanese-romance-short-film",
+"title": "Seedance 2.0: 15-Second Cinematic Japanese Romance Short Film",
+"desc": "A highly detailed, 15-second multi-scene prompt for Seedance 2.0, designed to generate a cinematic, ultra-realistic Japanese high school pur",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/seedance-2-0-15-second-cinematic-japanese-romance-short-film.json",
+"bytes": 4923
+},
+{
+"name": "media/video/seedance-2-0-80-year-old-rapper-mv",
+"title": "Seedance 2.0: 80-Year-Old Rapper MV",
+"desc": "A detailed, 15-second prompt for Seedance 2.0 to generate a 16:9 horizontal street rap music video (MV) featuring an 80-year-old woman. The ",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/seedance-2-0-80-year-old-rapper-mv.json",
+"bytes": 4201
+},
+{
+"name": "media/video/sequence-and-movement-instruction-for-martial-arts-video",
+"title": "Sequence and Movement Instruction for Martial Arts Video",
+"desc": "A video prompt for Seedance 2.0 that instructs the model to animate a sequence based on a character sheet, focusing on specific movements an",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/sequence-and-movement-instruction-for-martial-arts-video.json",
+"bytes": 1963
+},
+{
+"name": "media/video/soul-switching-mirror-magic-sequence",
+"title": "Soul-Switching Mirror Magic Sequence",
+"desc": "A narrative video prompt describing a magical soul-switching event at a mirror, with specific camera instructions and emotional cues for eac",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/soul-switching-mirror-magic-sequence.json",
+"bytes": 2339
+},
+{
+"name": "media/video/toaster-rocket-jumpscare",
+"title": "Toaster Rocket Jumpscare",
+"desc": "A prompt for a realistic home-video style shot of an old man being jumpscared by a toaster launching bread like a rocket.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/toaster-rocket-jumpscare.json",
+"bytes": 1299
+},
+{
+"name": "media/video/traditional-dance-performance",
+"title": "Traditional Dance Performance",
+"desc": "A comprehensive video prompt for Seedance 2.0 to generate a graceful traditional dance based on choreography and identity reference images.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/traditional-dance-performance.json",
+"bytes": 1922
+},
+{
+"name": "media/video/video-seedance-desk-hologram-ar-realdesk",
+"title": "Video - Desk Hologram AR on Real Workspace (Seedance 2.0)",
+"desc": "A two-phase Seedance 2.0 workflow for the viral desk-hologram format: first lock a photoreal keyframe on a real developer desk (Asgard Studi",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/video-seedance-desk-hologram-ar-realdesk.json",
+"bytes": 5458
+},
+{
+"name": "media/video/video-seedance-three-kingdoms-guanyu-slaying-yanliang",
+"title": "Video - Three Kingdoms ARPG - Guan Yu Slays Yan Liang (Seedance 2.0)",
+"desc": "A ~10s in-engine cinematic action sequence bringing the companion image template game-screenshot-three-kingdoms-guanyu-slaying-yanliang to l",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/video-seedance-three-kingdoms-guanyu-slaying-yanliang.json",
+"bytes": 6156
+},
+{
+"name": "media/video/video-seedance-three-kingdoms-lyubu-yuanmen-archery",
+"title": "Video - Three Kingdoms ARPG - Lyu Bu Yuanmen Archery (Seedance 2.0)",
+"desc": "A ~10s in-engine cinematic action sequence bringing the companion image template game-screenshot-three-kingdoms-lyubu-yuanmen-archery to lif",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/video-seedance-three-kingdoms-lyubu-yuanmen-archery.json",
+"bytes": 6352
+},
+{
+"name": "media/video/video-seedance-three-kingdoms-zhaoyun-cradle-escape",
+"title": "Video - Three Kingdoms ARPG - Zhao Yun Cradle Escape (Seedance 2.0)",
+"desc": "A ~12s in-engine cinematic action sequence bringing the companion image template game-screenshot-three-kingdoms-zhaoyun-cradle-escape to lif",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/video-seedance-three-kingdoms-zhaoyun-cradle-escape.json",
+"bytes": 7055
+},
+{
+"name": "media/video/vintage-disney-style-pirate-crocodile-animation",
+"title": "Vintage Disney Style Pirate Crocodile Animation",
+"desc": "A multi-scene narrative prompt for a classic vintage Disney-style animation featuring a crocodile pirate and bird pirates on a ship.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/vintage-disney-style-pirate-crocodile-animation.json",
+"bytes": 2982
+},
+{
+"name": "media/video/viral-k-pop-dance-choreography",
+"title": "Viral K-pop Dance Choreography",
+"desc": "A detailed prompt for Seedance 2.0 to animate a character performing a dance based on a 16-panel storyboard reference.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/viral-k-pop-dance-choreography.json",
+"bytes": 2076
+},
+{
+"name": "media/video/wasteland-factory-chase",
+"title": "Wasteland Factory Chase",
+"desc": "A cinematic prompt for a high-speed desert wasteland scene featuring a moving industrial factory on legs and a rebel bike chase.",
+"category": "동영상",
+"kind": "media",
+"file": "media/video/wasteland-factory-chase.json",
+"bytes": 1255
+}
+]
