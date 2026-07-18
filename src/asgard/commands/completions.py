@@ -27,6 +27,7 @@ _SUMMARY = {
     "tools": "inspect role-scoped tool catalog",
     "memory": "Yggdrasil — personal memory · LLM wiki",
     "plan": "Asgard Plan — local product planning workspace",
+    "studio": "Sessrúmnir — Freyja design studio",
     "evolve": "self-evolution inbox — skill drafts",
 }
 _FLAGS = {
@@ -44,6 +45,7 @@ _FLAGS = {
     "tools": [],
     "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
     "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
+    "studio": ["--port", "--no-open"],  # bare `asgard studio` = 대시보드 오픈 (memory 와 동형)
     "evolve": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
@@ -90,6 +92,15 @@ _MEM_SUB = {
     "project-sync": "sync approved artifacts to the selected backend",
     "project-approve": "approve a staged project-memory record",
     "mcp": "stdio MCP bridge (shared memory)",
+}
+_STUDIO_SUB = {
+    "new": "create a project from a brief and generate",
+    "open": "open the dashboard focused on one project",
+    "dashboard": "open the local studio dashboard",
+    "template": "bundled template library (list/use)",
+    "engine": "show or switch the generation engine",
+    "list": "list studio projects",
+    "path": "print the studio directory",
 }
 _PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}
 
@@ -177,6 +188,13 @@ def _bash() -> str:
                 "    plan)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_PLAN_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "studio":
+            cases.append(
+                "    studio)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_STUDIO_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "evolve":
@@ -282,6 +300,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_PLAN_SUB)} --help\n"
                 "      fi ;;"
             )
+        elif name == "studio":
+            cases.append(
+                "    studio)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_STUDIO_SUB)} --help\n"
+                "      fi ;;"
+            )
         elif name == "evolve":
             cases.append(
                 "    evolve)\n"
@@ -350,6 +375,9 @@ def _fish() -> str:
     plan_top = "__fish_seen_subcommand_from plan; and not __fish_seen_subcommand_from " + " ".join(_PLAN_SUB)
     for sub, desc in _PLAN_SUB.items():
         lines.append(f"complete -c asgard -n \"{plan_top}\" -a {sub} -d '{desc}'")
+    studio_top = "__fish_seen_subcommand_from studio; and not __fish_seen_subcommand_from " + " ".join(_STUDIO_SUB)
+    for sub, desc in _STUDIO_SUB.items():
+        lines.append(f"complete -c asgard -n \"{studio_top}\" -a {sub} -d '{desc}'")
     evo_top = "__fish_seen_subcommand_from evolve; and not __fish_seen_subcommand_from " + " ".join(_EVOLVE_SUB)
     for sub, desc in _EVOLVE_SUB.items():
         lines.append(f"complete -c asgard -n \"{evo_top}\" -a {sub} -d '{desc}'")

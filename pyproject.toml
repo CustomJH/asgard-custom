@@ -59,4 +59,8 @@ path = "src/asgard/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asgard"]
-artifacts = ["src/asgard/assets/*.png", "src/asgard/assets/*.html"]  # 로고 lockup + 메모리 대시보드 HTML, 기본 .py-only 를 덮어 포함
+artifacts = [
+  "src/asgard/assets/*.png",
+  "src/asgard/assets/*.html",
+  "src/asgard/assets/studio_templates/**",  # 세스룸니르 템플릿 라이브러리 (CUS-264)
+]  # 로고 lockup + 대시보드 HTML + 스튜디오 템플릿, 기본 .py-only 를 덮어 포함
