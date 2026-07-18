@@ -22,6 +22,7 @@ from .data import (
     ensure_home,
     project_data,
     read_run_log,
+    read_state,
     slug_ok,
     snapshot_data,
     studio_dir,
@@ -33,6 +34,7 @@ from .data import (
 
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
+_SPAWN_LOCK = threading.Lock()
 
 
 def host_allowed(host_header: str | None) -> bool:
@@ -133,24 +135,28 @@ def dispatch_post(path: str, payload: dict, d: str | None = None) -> tuple[int, 
     if path != "/api/generate":
         return 404, "text/plain; charset=utf-8", b"not found"
 
-    slug = str(payload.get("slug") or "").strip()
-    brief = str(payload.get("brief") or "").strip()
-    if slug:  # 기존 프로젝트 재생성 (+선택적 추가 지시 병합 — refine-lite)
-        if not slug_ok(slug):
-            return _json_body(400, {"error": "bad slug"})
-        import os as _os
+    with _SPAWN_LOCK:  # ThreadingHTTPServer의 중복 POST가 상태 확인과 spawn 사이로 끼어들지 못하게 한다.
+        slug = str(payload.get("slug") or "").strip()
+        brief = str(payload.get("brief") or "").strip()
+        if slug:  # 기존 프로젝트 재생성 (+선택적 추가 지시 병합 — refine-lite)
+            if not slug_ok(slug):
+                return _json_body(400, {"error": "bad slug"})
+            import os as _os
 
-        if not _os.path.isdir(_os.path.join(d or studio_dir(), PROJECTS, slug)):
-            return _json_body(404, {"error": "not found", "slug": slug})
-        if brief:
-            _studio.append_instruction(slug, brief, d)
-    else:  # 새 프로젝트 — 브리프 필수
-        if not brief:
-            return _json_body(400, {"error": "brief required"})
-        name = str(payload.get("name") or "").strip() or None
-        slug = _studio.create_project(brief, name=name, d=d)["slug"]
-    pid = _spawn(slug, d)
-    return _json_body(202, {"slug": slug, "pid": pid, "status": "running"})
+            pdir = _os.path.join(d or studio_dir(), PROJECTS, slug)
+            if not _os.path.isdir(pdir):
+                return _json_body(404, {"error": "not found", "slug": slug})
+            if read_state(pdir).get("status") == "running":
+                return _json_body(409, {"error": "generation already running", "slug": slug})
+            if brief:
+                _studio.append_instruction(slug, brief, d)
+        else:  # 새 프로젝트 — 브리프 필수
+            if not brief:
+                return _json_body(400, {"error": "brief required"})
+            name = str(payload.get("name") or "").strip() or None
+            slug = _studio.create_project(brief, name=name, d=d)["slug"]
+        pid = _spawn(slug, d)
+        return _json_body(202, {"slug": slug, "pid": pid, "status": "running"})
 
 
 def _spawn(slug: str, d: str | None) -> int:

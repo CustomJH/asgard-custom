@@ -388,6 +388,18 @@ class TestPostDispatch(StudioBase):
         self.assertEqual(json.loads(body)["slug"], "deck")
         self.assertEqual(self.spawned, ["deck"])
 
+    def test_regenerate_running_project_returns_conflict(self):
+        from asgard.commands import studio as core
+
+        self._seed()
+        pdir = os.path.join(self.d, studio.PROJECTS, "deck")
+        core._write_state(pdir, {"status": "running"})
+        status, _, body = studio.dispatch_post("/api/generate", {"slug": "deck", "brief": "do not append"})
+        self.assertEqual(status, 409)
+        self.assertEqual(json.loads(body)["error"], "generation already running")
+        self.assertEqual(self.spawned, [])
+        self.assertNotIn("do not append", studio.project_data("deck", self.d)["brief"])
+
     def test_regenerate_with_instruction_appends_brief(self):
         """스레드 추가 지시(refine-lite) — slug+brief POST 는 브리프에 병합 후 재생성한다."""
         self._seed()
