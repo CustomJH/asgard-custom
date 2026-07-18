@@ -14,8 +14,20 @@ import tempfile
 import time
 from contextlib import contextmanager
 from dataclasses import dataclass, field
+from importlib import import_module
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
+
+fcntl: Any = None
+try:
+    fcntl = import_module("fcntl")
+except ImportError:  # pragma: no cover - Windows only
+    pass
+msvcrt: Any = None
+try:
+    msvcrt = import_module("msvcrt")
+except ImportError:  # pragma: no cover - POSIX only
+    pass
 
 AUTH_PATH = Path.home() / ".asgard" / "auth.json"
 CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
@@ -79,6 +91,10 @@ def _secure_auth_dir() -> None:
         raise OAuthError("Refusing to use a symlinked Asgard auth directory.", code="auth_store_unsafe")
     parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(parent, 0o700)
+    if os.name == "nt":  # chmod 비트가 ACL을 잠그지 않는 Windows
+        from .providers import _lock_down
+
+        _lock_down(str(parent))
 
 
 def _write_store(store: dict) -> None:
@@ -86,7 +102,8 @@ def _write_store(store: dict) -> None:
     fd, raw_tmp = tempfile.mkstemp(prefix=".auth-", suffix=".tmp", dir=AUTH_PATH.parent)
     tmp = Path(raw_tmp)
     try:
-        os.fchmod(fd, 0o600)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
         with os.fdopen(fd, "w") as handle:
             json.dump(store, handle, separators=(",", ":"))
             handle.flush()
@@ -94,11 +111,18 @@ def _write_store(store: dict) -> None:
         if AUTH_PATH.is_symlink():
             raise OAuthError("Refusing to replace a symlinked Asgard auth store.", code="auth_store_unsafe")
         os.replace(tmp, AUTH_PATH)
-        directory_fd = os.open(AUTH_PATH.parent, os.O_RDONLY)
         try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
+            directory_fd = os.open(AUTH_PATH.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+        except OSError:  # Windows는 디렉터리 fsync를 지원하지 않는다
+            pass
+        else:
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        from .providers import _lock_down
+
+        _lock_down(str(AUTH_PATH))
     finally:
         tmp.unlink(missing_ok=True)
 
@@ -161,8 +185,6 @@ def _token_expiring(token: str, skew_seconds: int = _REFRESH_SKEW_SECONDS) -> bo
 @contextmanager
 def _refresh_lock():
     """Serialize refresh-token rotation across concurrent Asgard processes."""
-    import fcntl
-
     _secure_auth_dir()
     lock_path = AUTH_PATH.with_suffix(".lock")
     flags = os.O_RDWR | os.O_CREAT
@@ -170,11 +192,24 @@ def _refresh_lock():
         flags |= os.O_NOFOLLOW
     fd = os.open(lock_path, flags, 0o600)
     try:
-        os.fchmod(fd, 0o600)
-        fcntl.flock(fd, fcntl.LOCK_EX)
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+        elif msvcrt is not None:  # pragma: no cover - Windows only
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b"\0")
+            os.lseek(fd, 0, os.SEEK_SET)
+            getattr(msvcrt, "locking")(fd, getattr(msvcrt, "LK_LOCK"), 1)
+        else:
+            raise OAuthError("No supported auth-store file lock.", code="auth_store_unsafe")
         yield
     finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
+        if fcntl is not None:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        elif msvcrt is not None:  # pragma: no cover - Windows only
+            os.lseek(fd, 0, os.SEEK_SET)
+            getattr(msvcrt, "locking")(fd, getattr(msvcrt, "LK_UNLCK"), 1)
         os.close(fd)
 
 

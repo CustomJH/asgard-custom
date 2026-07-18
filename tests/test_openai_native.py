@@ -126,6 +126,26 @@ class TestOpenAINativeOAuth(unittest.TestCase):
             openai_codex.save_tokens({"access_token": "access", "refresh_token": "refresh"})
             self.assertTrue(openai_codex.logout())
 
+    def test_refresh_lock_uses_windows_msvcrt_fallback(self):
+        from asgard import openai_codex
+
+        calls = []
+        win_lock = SimpleNamespace(
+            LK_LOCK=1,
+            LK_UNLCK=2,
+            locking=lambda fd, mode, size: calls.append((fd, mode, size)),
+        )
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / ".asgard" / "auth.json"
+            with (
+                mock.patch.object(openai_codex, "AUTH_PATH", path),
+                mock.patch.object(openai_codex, "fcntl", None),
+                mock.patch.object(openai_codex, "msvcrt", win_lock),
+            ):
+                with openai_codex._refresh_lock():
+                    self.assertTrue(path.with_suffix(".lock").exists())
+        self.assertEqual([mode for _, mode, _ in calls], [win_lock.LK_LOCK, win_lock.LK_UNLCK])
+
     def test_runtime_credentials_refresh_expiring_token_and_persist_rotation(self):
         from asgard import openai_codex
 
