@@ -25,7 +25,7 @@ _SUMMARY = {
     "run": "run one task headless (Trinity loop)",
     "role": "Trinity role bridge",
     "tools": "inspect role-scoped tool catalog",
-    "memory": "personal memory — LLM wiki",
+    "memory": "Yggdrasil — personal memory · LLM wiki",
     "evolve": "self-evolution inbox — skill drafts",
 }
 _FLAGS = {

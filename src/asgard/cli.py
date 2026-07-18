@@ -206,9 +206,11 @@ def tools_list(
     raise typer.Exit(run_tools_list(role, json_out=json_))
 
 
-# 개인 메모리 — LLM Wiki (v3 P1). 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생.
-memory_app = typer.Typer(help="personal memory — LLM wiki (ingest/query/lint)", invoke_without_command=True)
+# 위그드라실 (Yggdrasil) — 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki (v3 P1).
+# 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생. 커맨드는 기능명 memory 유지 + 세계관 별칭.
+memory_app = typer.Typer(help="Yggdrasil — personal memory · LLM wiki (ingest/query/lint)", invoke_without_command=True)
 app.add_typer(memory_app, name="memory")
+app.add_typer(memory_app, name="yggdrasil", hidden=True)  # 세계관 별칭 — 같은 앱, 도움말 중복 없음
 
 
 @memory_app.callback()
@@ -217,8 +219,8 @@ def memory_default(
     port: int = typer.Option(8765, "--port", "-p", help="dashboard port (bare `asgard memory` only)"),
     no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
 ) -> None:
-    """서브커맨드 없이 `asgard memory` 만 치면 대시보드가 열린다 (agentmemory 식 원커맨드 UX).
-    운영 서브커맨드(add/query/…)와 --help 는 그대로다."""
+    """서브커맨드 없이 `asgard memory` 만 치면 위그드라실 대시보드가 열린다 (agentmemory 식
+    원커맨드 UX). 운영 서브커맨드(add/query/…)와 --help 는 그대로다."""
     if ctx.invoked_subcommand is not None:
         return
     from .commands.memory_dashboard import run_dashboard

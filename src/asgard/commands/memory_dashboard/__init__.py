@@ -1,4 +1,4 @@
-"""memory dashboard — 개인 1차 메모리(Tier0 로컬 위키)의 읽기 전용 관측 창.
+"""위그드라실 관측 창 (memory dashboard) — 개인 1차 메모리(Tier0 로컬 위키)의 읽기 전용 관측 창.
 
 `asgard memory dashboard` 가 127.0.0.1 에 표준 라이브러리 http.server 만으로 일회성
 프로세스를 띄운다(신규 의존성 0, Ctrl-C 종료). 상주 데몬·다포트가 아니다.

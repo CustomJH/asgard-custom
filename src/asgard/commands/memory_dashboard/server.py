@@ -126,7 +126,7 @@ def run_dashboard(port: int = 8765, host: str = "127.0.0.1", open_browser: bool 
     httpd = _bind(host, port)
     actual = httpd.server_address[1]
     url = f"http://{host}:{actual}/"
-    ui.ok(f"memory dashboard → {url}")
+    ui.ok(f"위그드라실 · memory dashboard → {url}")
     ui.step("읽기 전용 관측 창 · 종료: Ctrl-C")
     if open_browser:
         threading.Timer(0.4, lambda: _open(url)).start()
