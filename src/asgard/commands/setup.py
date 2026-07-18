@@ -170,6 +170,11 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     ]
 
     # Claude Code — bridge import + settings (permission floor + hook wiring) + Canon guards.
+    # 의도적으로 standalone(비-플러그인) 배치다. CC 플러그인으로 묶으면 에이전트명이 네임스페이스돼
+    # (`asgard:asgard-thinker`) settings.json 매처와 훅 내부의 이름 등식(readonly/subagent/memory/
+    # charter)이 조용히 fail-open 하고, readonly-guard 의 `.claude/hooks/` allowlist·lagom-canon
+    # sibling 읽기도 깨진다. 배포·버전·팀 공유는 init/sync/update 가 이미 담당 — 스킬의 승인
+    # 완화는 프론트매터 allowed-tools 로, 강제는 훅으로 (승인과 강제는 별 계층).
     if cc:
         files += [
             (j(root, ".claude", "CLAUDE.md"), "@../AGENTS.md\n"),

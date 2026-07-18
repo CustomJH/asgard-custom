@@ -36,6 +36,13 @@ class TestSkillBody(unittest.TestCase):
     def test_frontmatter(self):
         self.assertTrue(SEAL_SKILL_MD.startswith("---\nname: asgard-seal\n"))
 
+    def test_allowed_tools_preapproval(self):
+        """봉인 절차의 git 명령은 스킬 활성 중 사전 승인 — 승인 완화일 뿐, 강제(add -A 금지 등)는
+        본문 하드룰 + git-guard 훅이 계속 담당한다."""
+        self.assertIn("allowed-tools:", SEAL_SKILL_MD)
+        for rule in ("Bash(git add *)", "Bash(git commit *)", "Bash(git branch --show-current)"):
+            self.assertIn(rule, SEAL_SKILL_MD)
+
     def test_no_attribution_footer_rule(self):
         self.assertIn("Co-Authored-By", SEAL_SKILL_MD)
         self.assertIn("Signed-off-by", SEAL_SKILL_MD)

@@ -22,6 +22,7 @@ SEAL_SKILL_MD = """\
 ---
 name: asgard-seal
 description: 🔏 Seal — 워킹트리 변경을 독립 철회 가능한 gitmoji 사건 파일(commit)로 분류·봉인. 품질 게이트(한 봉인 한 사건·50/72·이유 본문·시크릿 차단·staged 재검증) 포함. NEVER Co-Authored-By/Signed-off-by.
+allowed-tools: Bash(git status *) Bash(git diff *) Bash(git log *) Bash(git branch --show-current) Bash(git add *) Bash(git commit *)
 ---
 
 # asgard-seal — 사건 봉인 (gitmoji commit)
