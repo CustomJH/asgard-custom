@@ -160,7 +160,10 @@ def use_template(name: str, brief: str | None = None, d: str | None = None) -> d
     with contextlib.suppress(Exception):  # 템플릿 편입도 증거 트리에 (fail-open)
         subprocess.run(["git", "add", "-A"], cwd=pdir, check=True, capture_output=True)
         subprocess.run(
-            ["git", "commit", "-q", "-m", f"🎨 studio: template {name}"], cwd=pdir, check=True, capture_output=True
+            ["git", *_GIT_IDENT, "commit", "-q", "-m", f"🎨 studio: template {name}"],
+            cwd=pdir,
+            check=True,
+            capture_output=True,
         )
     return {**p, "template": name}
 
@@ -180,6 +183,18 @@ def append_instruction(slug: str, text: str, d: str | None = None) -> bool:
     return True
 
 
+# 스캐폴드 커밋 주체 — 사용자 git identity 에 의존하지 않는다 (CI/헤드리스 러너엔 ident 가
+# 없어 commit 이 fatal — quest 스냅샷의 "Asgard Quest" ident 와 같은 원리). gpgsign 도 차단.
+_GIT_IDENT = [
+    "-c",
+    "user.name=Asgard Studio",
+    "-c",
+    "user.email=studio@asgard.local",
+    "-c",
+    "commit.gpgsign=false",
+]
+
+
 def _ensure_git(pdir: str) -> None:
     """프로젝트 = 독립 git 저장소 — Trinity 쓰기 퀘스트가 HEAD·시작 트리 캡처를 요구한다.
     북키핑(.studio)·에이전트 상태(.asgard)는 증거 트리 밖. 실패해도 스캐폴드는 유효(fail-open,
@@ -197,7 +212,7 @@ def _ensure_git(pdir: str) -> None:
         if head.returncode != 0:  # 첫 커밋 — 캡처 가능한 시작 트리
             subprocess.run(["git", "add", "-A"], cwd=pdir, check=True, capture_output=True)
             subprocess.run(
-                ["git", "commit", "-q", "-m", "🎨 studio: project scaffold"],
+                ["git", *_GIT_IDENT, "commit", "-q", "-m", "🎨 studio: project scaffold"],
                 cwd=pdir,
                 check=True,
                 capture_output=True,

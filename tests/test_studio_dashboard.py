@@ -308,14 +308,21 @@ class TestStudioCore(StudioBase):
         self.assertEqual(row["artifacts"], 0)  # .studio 북키핑은 아티팩트가 아니다
 
     def test_create_project_initializes_git_evidence_tree(self):
-        """Trinity 쓰기 퀘스트 요건 — HEAD 있는 git 저장소 + 북키핑은 ignore (라이브 e2e 회귀 방지)."""
+        """Trinity 쓰기 퀘스트 요건 — HEAD 있는 git 저장소 + 북키핑은 ignore (라이브 e2e 회귀 방지).
+
+        사용자/시스템 git config 를 끊고 검증한다 — CI 러너엔 ident 가 없어 스캐폴드 커밋이
+        명시 ident(-c user.*) 없이는 fatal 이었다 (v0.6.5 ci red 회귀 방지)."""
         import subprocess
+        from unittest import mock
 
         from asgard.commands import studio as core
 
-        p = core.create_project("cafe landing", d=self.d)
+        with mock.patch.dict(os.environ, {"GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null"}):
+            p = core.create_project("cafe landing", d=self.d)
         head = subprocess.run(["git", "rev-parse", "-q", "--verify", "HEAD"], cwd=p["dir"], capture_output=True)
         self.assertEqual(head.returncode, 0)
+        author = subprocess.run(["git", "log", "-1", "--format=%an"], cwd=p["dir"], capture_output=True, text=True)
+        self.assertEqual(author.stdout.strip(), "Asgard Studio")  # 명시 ident — 러너 auto-ident 비의존
         with open(os.path.join(p["dir"], ".gitignore"), encoding="utf-8") as f:
             self.assertIn(".studio/", f.read())
 
