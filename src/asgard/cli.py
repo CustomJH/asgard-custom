@@ -417,6 +417,35 @@ def memory_mcp() -> None:
     raise typer.Exit(run_mcp())
 
 
+# Asgard Plan — 생각을 PRD·기능 구조·유저 플로우로 정리하고 Studio 실행으로 잇는 로컬 표면.
+plan_app = typer.Typer(help="Asgard Plan — local product planning workspace", invoke_without_command=True)
+app.add_typer(plan_app, name="plan")
+
+
+@plan_app.callback()
+def plan_default(
+    ctx: typer.Context,
+    port: int = typer.Option(8767, "--port", "-p", help="dashboard port (bare `asgard plan` only)"),
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+) -> None:
+    """서브커맨드 없이 `asgard plan`을 실행하면 로컬 기획 워크스페이스를 연다."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from .commands.plan_dashboard import run_dashboard
+
+    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
+
+
+@plan_app.command("dashboard", help="open the local Asgard Plan workspace")
+def plan_dashboard(
+    port: int = typer.Option(8767, "--port", "-p", help="local port (falls back to a free port if taken)"),
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+) -> None:
+    from .commands.plan_dashboard import run_dashboard
+
+    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
+
+
 # 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 승인만이 활성화 경로.
 evolve_app = typer.Typer(
     help="self-evolution inbox — mine quest logs into skill drafts, then approve", no_args_is_help=True

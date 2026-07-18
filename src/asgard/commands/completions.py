@@ -26,6 +26,7 @@ _SUMMARY = {
     "role": "Trinity role bridge",
     "tools": "inspect role-scoped tool catalog",
     "memory": "Yggdrasil — personal memory · LLM wiki",
+    "plan": "Asgard Plan — local product planning workspace",
     "evolve": "self-evolution inbox — skill drafts",
 }
 _FLAGS = {
@@ -42,6 +43,7 @@ _FLAGS = {
     "role": [],
     "tools": [],
     "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
+    "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
     "evolve": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
@@ -89,6 +91,7 @@ _MEM_SUB = {
     "project-approve": "approve a staged project-memory record",
     "mcp": "stdio MCP bridge (shared memory)",
 }
+_PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}
 
 # ── bash ──────────────────────────────────────────────────────────────────────
 _BASH_TPL = """\
@@ -167,6 +170,13 @@ def _bash() -> str:
                 "    memory)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_MEM_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "plan":
+            cases.append(
+                "    plan)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_PLAN_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "evolve":
@@ -265,6 +275,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_MEM_SUB)} --help\n"
                 "      fi ;;"
             )
+        elif name == "plan":
+            cases.append(
+                "    plan)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_PLAN_SUB)} --help\n"
+                "      fi ;;"
+            )
         elif name == "evolve":
             cases.append(
                 "    evolve)\n"
@@ -330,6 +347,9 @@ def _fish() -> str:
     mem_top = "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from " + " ".join(_MEM_SUB)
     for sub, desc in _MEM_SUB.items():
         lines.append(f"complete -c asgard -n \"{mem_top}\" -a {sub} -d '{desc}'")
+    plan_top = "__fish_seen_subcommand_from plan; and not __fish_seen_subcommand_from " + " ".join(_PLAN_SUB)
+    for sub, desc in _PLAN_SUB.items():
+        lines.append(f"complete -c asgard -n \"{plan_top}\" -a {sub} -d '{desc}'")
     evo_top = "__fish_seen_subcommand_from evolve; and not __fish_seen_subcommand_from " + " ".join(_EVOLVE_SUB)
     for sub, desc in _EVOLVE_SUB.items():
         lines.append(f"complete -c asgard -n \"{evo_top}\" -a {sub} -d '{desc}'")
