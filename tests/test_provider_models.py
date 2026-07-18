@@ -182,6 +182,19 @@ class TestNativeModelSelection(unittest.TestCase):
         self.assertEqual(stored["nvidia"]["api_key"], "test-key")
         self.assertNotIn("model", stored["nvidia"])
 
+    def test_credential_replace_failure_preserves_previous_file(self):
+        from asgard.providers import save_credential
+
+        previous = {"anthropic": {"api_key": "keep-me"}}
+        with open(self.cred, "w", encoding="utf-8") as f:
+            json.dump(previous, f)
+        with mock.patch("asgard.providers.os.replace", side_effect=OSError("disk full")):
+            with self.assertRaises(OSError):
+                save_credential("nvidia", "new-key")
+        with open(self.cred, encoding="utf-8") as f:
+            self.assertEqual(json.load(f), previous)
+        self.assertEqual(os.listdir(self.root), ["credentials.json"])
+
     def test_anthropic_onboarding_uses_curated_model_picker(self):
         with (
             mock.patch("getpass.getpass", return_value="test-key"),

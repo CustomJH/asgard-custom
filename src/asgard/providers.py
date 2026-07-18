@@ -11,6 +11,7 @@ API 키는 env var *이름*만 다룬다 — 설정 파일에 평문 저장 금�
 from __future__ import annotations
 
 import os
+import tempfile
 import urllib.parse as urllib_parse
 import urllib.request as urllib_request
 from dataclasses import dataclass, field
@@ -223,11 +224,23 @@ def save_credential(provider: str, api_key: str, base_url: str = "", model: str 
     if model:
         entry["model"] = model
     creds[provider] = entry
-    os.makedirs(os.path.dirname(CRED_PATH), exist_ok=True)
-    fd = os.open(CRED_PATH, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-    with os.fdopen(fd, "w") as f:
-        json.dump(creds, f, indent=2)
-    _lock_down(CRED_PATH)
+    parent = os.path.dirname(CRED_PATH)
+    os.makedirs(parent, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(prefix=".credentials-", suffix=".tmp", dir=parent)
+    try:
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        with os.fdopen(fd, "w") as f:
+            json.dump(creds, f, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, CRED_PATH)
+        _lock_down(CRED_PATH)
+    finally:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
 
 
 def provider_models(
