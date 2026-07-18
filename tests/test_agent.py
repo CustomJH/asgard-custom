@@ -127,6 +127,22 @@ class TestBashDestructiveGuard(Base):
             with self.assertRaises(T.ToolError, msg=cmd):
                 T.run_bash(self.root, {"command": cmd})
 
+    def test_scope_escape_and_obfuscated_control_path_blocked(self):
+        os.makedirs(os.path.join(self.root, ".asgard"))
+        for cmd in (
+            "printf escaped > ../outside.txt",
+            "printf bypassed > .as''gard/policy.txt",
+            'target=../outside.txt; printf escaped > "$target"',
+        ):
+            with self.assertRaises(T.ToolError, msg=cmd):
+                T.run_bash(self.root, {"command": cmd})
+        self.assertFalse(os.path.exists(os.path.join(os.path.dirname(self.root), "outside.txt")))
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "policy.txt")))
+
+    def test_single_quoted_dollar_remains_literal(self):
+        out, code = T.run_bash(self.root, {"command": "printf '%s' 'value$'"})
+        self.assertEqual((out, code), ("value$", 0))
+
 
 class TestSecretGuardWiring(Base):
     """secret-guard 훅 배선 (Canon Law 4) — 네이티브 editor write 도 mode B 와 같은 차단 지점."""

@@ -69,6 +69,7 @@ def _release_guard(root: str, command: str) -> str | None:
 # 셸 파괴 명령 가드 (Canon 3) — git 계열은 git-guard 훅이 단일 출처, 여기는 비-git 만.
 # 루트 안 rm -rf 는 허용 (스크래치 정리는 정당 + git 이 복구 지점) — 루트 밖·조상 경로만 차단.
 _DEV_DESTRUCTIVE = re.compile(r"\bmkfs(\.\w+)?\b|\bdd\b[^|;&]*\bof=/dev/")
+_CONTROL_PATHS = (".asgard", ".claude")
 
 
 def _destructive_guard(root: str, cmd: str) -> str | None:
@@ -96,16 +97,74 @@ def _destructive_guard(root: str, cmd: str) -> str | None:
     return None
 
 
+def _has_dynamic_expansion(command: str) -> bool:
+    """동적 경로를 만들 수 있는 셸 확장 감지. 작은따옴표 안의 정규식 `$` 등은 리터럴이다."""
+    single = False
+    escaped = False
+    for char in command:
+        if escaped:
+            escaped = False
+        elif char == "\\" and not single:
+            escaped = True
+        elif char == "'":
+            single = not single
+        elif not single and char in ("$", "`"):
+            return True
+    return False
+
+
+def _scope_guard(root: str, command: str) -> str | None:
+    """명시 경로·따옴표 결합·셸 확장으로 프로젝트/제어 경계를 넘는 명령을 거부."""
+    if _has_dynamic_expansion(command):
+        return "동적 셸 확장($/backtick)은 프로젝트 경로 경계를 검증할 수 없어 차단"
+    try:
+        lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>()")
+        lexer.whitespace_split = True
+        lexer.commenters = ""
+        tokens = [token for token in lexer if not all(char in "|&;<>()" for char in token)]
+    except ValueError:
+        return "셸 명령을 안전하게 해석할 수 없어 차단"
+
+    rr = os.path.realpath(root)
+    for token in tokens:
+        values = [token]
+        if "=" in token:
+            values.append(token.split("=", 1)[1])
+        for value in values:
+            normalized = value.replace("\\", "/")
+            if normalized.startswith(("http://", "https://")):
+                continue
+            candidate = os.path.realpath(
+                os.path.expanduser(value) if value.startswith(("~", "/")) else os.path.join(root, value)
+            )
+            if any(
+                candidate == os.path.realpath(os.path.join(root, marker))
+                or candidate.startswith(os.path.realpath(os.path.join(root, marker)) + os.sep)
+                for marker in _CONTROL_PATHS
+            ):
+                return "Asgard 제어 경로는 모델 Bash에서 접근할 수 없음 — 하니스/전용 명령만 사용"
+            if (
+                (normalized.startswith(("~", "/", "../")) or normalized == ".." or "/../" in normalized)
+                and candidate != rr
+                and not candidate.startswith(rr + os.sep)
+            ):
+                return f"Bash 경로가 프로젝트 루트를 벗어남: {value}"
+    # ponytail: 셸은 OS 샌드박스가 아니다. 더 강한 격리가 필요하면 플랫폼 sandbox 프로세스로 교체.
+    return None
+
+
 def _cap(s: str) -> str:
     return s if len(s) <= _MAX_OUT else s[:_MAX_OUT] + f"\n[... {len(s) - _MAX_OUT} chars 절단]"
 
 
 def validate_bash_command(root: str, command: str) -> str | None:
     """Return a deterministic block reason without executing the command."""
-    normalized = command.replace("\\", "/")
-    if any(marker in normalized for marker in (".asgard", ".claude")):
-        return "Asgard 제어 경로는 모델 Bash에서 접근할 수 없음 — 하니스/전용 명령만 사용"
-    return _git_guard(root, command) or _release_guard(root, command) or _destructive_guard(root, command)
+    return (
+        _scope_guard(root, command)
+        or _git_guard(root, command)
+        or _release_guard(root, command)
+        or _destructive_guard(root, command)
+    )
 
 
 def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
