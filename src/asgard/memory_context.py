@@ -174,8 +174,62 @@ def project_recall_note(query: str, *, start: str | None = None, max_results: in
         return ""
 
 
-def recall_note(query: str, *, start: str | None = None, personal_k: int = 3, project_k: int = 5) -> str:
-    """한 질의로 두 메모리를 조회하되 결과 scope를 절대 섞지 않는다."""
+LEARNED_SKILLS_CAP = 2  # 스킬 힌트 상한 — skill_bank 라우팅 상한(_CAP)과 같은 근거 (과주입 = 노이즈)
+
+
+def learned_skills_note(query: str, *, start: str | None = None, cap: int = LEARNED_SKILLS_CAP) -> str:
+    """질의 관련 learned 스킬 포인터 — 자가발전 산출물을 회수 계층으로 노출.
+
+    CC 모드에는 네이티브 루프의 디스패치 주입(heimdall resolve_learned)이 닿지 않으므로,
+    승인된 스킬을 UserPromptSubmit 회수에 포인터(이름·설명·경로)로 흘린다. 본문 전체는
+    주입하지 않는다 — CC 에이전트는 경로를 Read 로 열 수 있고, 네이티브 루프와의 이중
+    주입도 피한다(recall_note 기본값이 스킬 제외인 이유). Verifier/loki 차단은 호출측
+    (memory-activate 감사 매트릭스)이 지킨다 — 스킬 뱅크 헌법과 같은 결."""
+    try:
+        from .skill_bank import learned_skills, record_use
+
+        root = os.path.realpath(start or os.getcwd())
+        task = query.lower()
+        hits: list[tuple[int, str, dict]] = []
+        for name, skill in learned_skills(root).items():
+            matched = sum(1 for k in skill["triggers"] if k in task)
+            if matched:
+                hits.append((-matched, name, skill))
+        if not hits:
+            return ""
+        hits.sort(key=lambda row: (row[0], row[1]))
+        hits = hits[: max(1, cap)]
+        rows = []
+        for _, name, skill in hits:
+            desc = _neutralize(str(skill.get("description") or "").strip())[:160]
+            path = str(skill.get("path") or "")
+            rel = os.path.relpath(path, root)
+            shown = rel if not rel.startswith("..") else path  # 글로벌(~/.asgard) 스킬은 절대경로 유지
+            rows.append(f"- {name} — {desc} ({shown})")
+        record_use(root, [name for _, name, _ in hits])  # 큐레이션 원료 — 주입도 사용이다
+        return (
+            '\n\n<memory-recall scope="skills">\n'
+            "요청 관련 learned 스킬 (승인된 과거 교훈 — 힌트다, 필요하면 파일을 읽어라):\n"
+            + "\n".join(rows)
+            + "\n</memory-recall>"
+        )
+    except Exception:
+        return ""  # 스킬 힌트 불능이 회수를 막지 않는다 (fail-open)
+
+
+def recall_note(
+    query: str,
+    *,
+    start: str | None = None,
+    personal_k: int = 3,
+    project_k: int = 5,
+    include_skills: bool = False,
+) -> str:
+    """한 질의로 두 메모리를 조회하되 결과 scope를 절대 섞지 않는다.
+
+    include_skills 는 CC 훅 표면(run_recall)만 켠다 — 네이티브 루프는 디스패치 라우팅이
+    스킬 본문을 직접 주입하므로 여기서 또 흘리면 이중 주입이 된다."""
     personal = memory.recall_note(query, k=personal_k)
     project = project_recall_note(query, start=start, max_results=project_k)
-    return personal + project
+    skills = learned_skills_note(query, start=start) if include_skills else ""
+    return personal + project + skills

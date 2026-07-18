@@ -8,7 +8,7 @@ from ..platform import hook_python
 CC_FOLDERS = [
     (
         "commands",
-        "Custom slash commands — one `.md` each, invoked as `/name`. (Skills are the newer alternative.)\nDocs: https://code.claude.com/docs/en/slash-commands",
+        "Legacy scope — Claude Code merged custom commands into skills; put new content in `skills/<name>/SKILL.md`. Existing `.md` files here still work as `/name`.\nDocs: https://code.claude.com/docs/en/skills",
     ),
     (
         "agents",

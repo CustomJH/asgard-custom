@@ -5,10 +5,10 @@
 
 MEMORY_SKILL_MD = """---
 name: asgard-memory
-description: Asgard의 두 메모리 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 선택된 backend 하나. 사용자가 "기억해/저장해/메모리" 를 말하거나 memory context의 상세가 필요할 때 사용.
+description: 위그드라실(Yggdrasil, Asgard 메모리 시스템)의 두 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 선택된 backend 하나. 사용자가 "기억해/저장해/메모리/위그드라실" 을 말하거나 memory context의 상세가 필요할 때 사용.
 ---
 
-# asgard-memory — 개인/프로젝트 메모리 사용 계약
+# asgard-memory — 위그드라실 (개인/프로젝트 메모리) 사용 계약
 
 세션에 주입된 `<memory-context>` 는 **카탈로그(제목만)** 다. 상세가 필요하면 검색하라.
 

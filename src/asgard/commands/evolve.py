@@ -44,6 +44,15 @@ def run_scan(quiet: bool = False) -> int:
     return 0
 
 
+def run_nudge() -> int:
+    """훅 소비 표면 — 미채굴 신호가 새로 생겼을 때만 한 줄 출력 (latch), 그 외 침묵.
+    memory-activate Stop 훅이 subprocess 로 부른다 — 로직은 evolution.nudge_line 단일 출처."""
+    line = evo.nudge_line(_root())
+    if line:
+        print(line)
+    return 0
+
+
 def run_list() -> int:
     root = _root()
     items = evo.pending_list(root)

@@ -582,5 +582,56 @@ class TestNoInjectionInvariants(EvoBase):
         self.assertNotIn("학습 스킬", m.group(0))
 
 
+class TestNudge(EvoBase):
+    """CC 모드 넛지 표면 — 신호 집합 latch (같은 집합으론 두 번 말하지 않는다)."""
+
+    def test_latches_per_signal_set(self):
+        _hard_won(self.root, "q1", sig="alpha 게이트 판정 누락")
+        line = evolution.nudge_line(self.root)
+        assert line is not None
+        self.assertIn("1건", line)
+        self.assertIsNone(evolution.nudge_line(self.root))  # 같은 집합 재넛지 금지 (제안 피로 방지)
+        _hard_won(self.root, "q2", sig="beta 경계 반올림 오판")
+        line2 = evolution.nudge_line(self.root)
+        assert line2 is not None
+        self.assertIn("2건", line2)  # 새 신호 = 집합 변경 → 다시 한 번만
+
+    def test_silent_without_quests_and_after_mine(self):
+        self.assertIsNone(evolution.nudge_line(self.root))  # quest 디렉토리 없음 = 침묵
+        _hard_won(self.root)
+        evolution.mine(self.root)  # 채굴됨 → seen latch → 넛지 대상 아님
+        self.assertIsNone(evolution.nudge_line(self.root))
+
+
+class TestRecallSkillsNote(EvoBase):
+    """자가발전 × 메모리 결합 — learned 스킬이 회수 계층으로 흐른다 (CC 모드 배선, 26-07-18)."""
+
+    def test_matches_pointer_only_and_records_use(self):
+        _write_skill(self.proj_skills(), "learned-vat", triggers="부가세, rounding")
+        from asgard.memory_context import learned_skills_note
+
+        note = learned_skills_note("부가세 rounding 로직 수정", start=self.root)
+        self.assertIn('scope="skills"', note)
+        self.assertIn("learned-vat", note)
+        self.assertIn("SKILL.md", note)  # 포인터 주입 — CC 에이전트가 Read 로 연다
+        self.assertNotIn("본문 절차", note)  # 본문 전체 주입 금지 (네이티브 라우팅과 역할 분리)
+        self.assertEqual(skill_bank.usage(self.root)["learned-vat"]["uses"], 1)  # 주입도 사용 — 큐레이션 원료
+
+    def test_recall_note_gates_skills_behind_optin(self):
+        _write_skill(self.proj_skills(), "learned-vat", triggers="부가세")
+        from asgard.memory_context import recall_note
+
+        # 기본값 제외 — 네이티브 루프(heimdall)는 디스패치 라우팅이 본문을 주입하므로 이중 주입 방지
+        self.assertNotIn('scope="skills"', recall_note("부가세 수정", start=self.root))
+        self.assertIn('scope="skills"', recall_note("부가세 수정", start=self.root, include_skills=True))
+
+    def test_no_match_or_no_bank_is_empty(self):
+        from asgard.memory_context import learned_skills_note
+
+        self.assertEqual(learned_skills_note("아무 질의", start=self.root), "")  # 뱅크 자체가 없음
+        _write_skill(self.proj_skills(), "learned-vat", triggers="부가세")
+        self.assertEqual(learned_skills_note("무관한 프론트엔드 질의", start=self.root), "")
+
+
 if __name__ == "__main__":
     unittest.main()

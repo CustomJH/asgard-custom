@@ -388,7 +388,8 @@ def run_recall(text: str, provider: str | None = None) -> int:
     if memory.inject_allowed(provider):
         from ..memory_context import recall_note
 
-        print(recall_note(text, start=os.getcwd()), end="")
+        # include_skills: CC 훅 표면 한정 — learned 스킬 포인터를 회수에 동봉 (자가발전×메모리 결합).
+        print(recall_note(text, start=os.getcwd(), include_skills=True), end="")
     return 0
 
 

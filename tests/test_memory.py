@@ -1149,7 +1149,9 @@ class TestCCWiring(MemoryBase):
         os.makedirs(bindir, exist_ok=True)
         fake = os.path.join(bindir, "asgard")
         open(fake, "w").write(
-            '#!/bin/sh\nprintf \'%s\' \'{"status":"retained","proposal":{"preview":"중요 사건 사용자 승인 제안"}}\'\n'
+            "#!/bin/sh\n"
+            '[ "$1" = memory ] && printf \'%s\' \'{"status":"retained","proposal":{"preview":"중요 사건 사용자 승인 제안"}}\'\n'
+            "exit 0\n"
         )
         os.chmod(fake, 0o755)
         out = self._run_hook(
@@ -1164,6 +1166,35 @@ class TestCCWiring(MemoryBase):
         )
         payload = j.loads(out)
         self.assertIn("중요 사건 사용자 승인 제안", payload["systemMessage"])
+        self.assertNotIn("🌱", payload["systemMessage"])  # 넛지 침묵 = systemMessage 에 미등장
+
+    def test_cc_stop_surfaces_evolve_nudge(self):
+        """자가발전 넛지 CC 배선 — 미채굴 신호가 있으면 Stop systemMessage 로 한 줄 (26-07-18)."""
+        import json as j
+
+        bindir = os.path.join(self.tmp, "nudge-bin")
+        os.makedirs(bindir, exist_ok=True)
+        fake = os.path.join(bindir, "asgard")
+        open(fake, "w").write(
+            "#!/bin/sh\n"
+            '[ "$1" = memory ] && printf \'%s\' \'{"status":"skipped"}\'\n'
+            '[ "$1" = evolve ] && [ "$2" = nudge ] && printf \'%s\' "진화 후보 신호 1건 — asgard evolve scan 으로 채굴"\n'
+            "exit 0\n"
+        )
+        os.chmod(fake, 0o755)
+        out = self._run_hook(
+            {
+                "hook_event_name": "Stop",
+                "session_id": "cc-session-2",
+                "prompt": "버그 잡아줘",
+                "last_assistant_message": "수정과 검증을 완료했다.",
+                "cwd": self.tmp,
+            },
+            [bindir],
+        )
+        payload = j.loads(out)
+        self.assertIn("🌱", payload["systemMessage"])
+        self.assertIn("진화 후보 신호 1건", payload["systemMessage"])
 
 
 def _json_dumps(payload: dict) -> str:

@@ -309,6 +309,46 @@ def unmined_signals(root: str, qid: str | None = None) -> int:
     return n
 
 
+def nudge_line(root: str) -> str | None:
+    """미채굴 신호 넛지 한 줄 — 신호 집합이 변했을 때만 (latch, 제안 피로 방지).
+
+    CC 모드 Stop 훅(memory-activate)이 소비한다 — 네이티브 루프는 quest close 시점에
+    unmined_signals 를 직접 넛지하므로(heimdall/trinity) 이 latch 를 쓰지 않는다.
+    같은 신호 집합으로는 두 번 말하지 않는다 — 매 턴 반복 넛지는 거부 피로를 만든다."""
+    if not os.path.isdir(os.path.join(root, ".asgard", "quest")):
+        return None
+    qdir = os.path.join(root, ".asgard", "quest")
+    seen = _load_seen(root)
+    signals = sorted(
+        sig["signal"]
+        for fname in os.listdir(qdir)
+        if fname.endswith(".jsonl")
+        for sig in [_quest_signal(_read_quest(os.path.join(qdir, fname)))]
+        if sig and sig["signal"] not in seen
+    )
+    if not signals:
+        return None
+    digest = hashlib.sha1("\0".join(signals).encode()).hexdigest()
+    state_dir = os.path.join(root, ".asgard", "state")
+    state_path = os.path.join(state_dir, "evolve-nudge.json")
+    try:
+        if json.load(open(state_path, encoding="utf-8")).get("digest") == digest:
+            return None
+    except Exception:
+        pass
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        tmp = f"{state_path}.{os.getpid()}.tmp"
+        json.dump(
+            {"digest": digest, "count": len(signals), "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            open(tmp, "w", encoding="utf-8"),
+        )
+        os.replace(tmp, state_path)
+    except OSError:
+        return None  # latch 를 기록할 수 없으면 침묵 — 반복 넛지가 침묵보다 나쁘다
+    return f"진화 후보 신호 {len(signals)}건 — asgard evolve scan 으로 채굴 후 검토·승인 (hard-won 교훈)"
+
+
 def pending_list(root: str) -> list[dict]:
     d = _evo_dir(root, PENDING)
     if not os.path.isdir(d):

@@ -1,4 +1,5 @@
-"""개인 메모리 — LLM Wiki 패턴 (Karpathy gist 442a6bf5) 의 파일 정본 계층.
+"""위그드라실 (Yggdrasil) — Asgard 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki 패턴
+(Karpathy gist 442a6bf5) 의 파일 정본 계층.
 
 원칙 (memory v3, 26-07-15 확정):
   정본 = ~/.asgard/memory/ 의 md 파일 (사람이 읽고 고칠 수 있는 텍스트 —

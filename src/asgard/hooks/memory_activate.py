@@ -154,11 +154,21 @@ def main():
                 result = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
             except Exception:
                 result = {}
+            messages = []
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
-                sys.stdout.write(
-                    json.dumps({"systemMessage": "🧠 프로젝트 메모리 승인 제안\n" + preview}, ensure_ascii=False) + "\n"
-                )
+                messages.append("🧠 프로젝트 메모리 승인 제안\n" + preview)
+            # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch 는 CLI 가 관리).
+            # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 CC 모드 전용 배선이다.
+            try:
+                n = subprocess.run([exe, "evolve", "nudge"], capture_output=True, text=True, timeout=10, cwd=root)
+                nudge = (n.stdout or "").strip()
+                if n.returncode == 0 and nudge:
+                    messages.append("🌱 " + nudge.splitlines()[0])
+            except Exception:
+                pass  # 넛지 불능이 Stop 을 막지 않는다
+            if messages:
+                sys.stdout.write(json.dumps({"systemMessage": "\n\n".join(messages)}, ensure_ascii=False) + "\n")
             sys.exit(0)
         if event == "UserPromptSubmit":
             prompt = str(data.get("prompt") or "").strip()

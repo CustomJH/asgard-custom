@@ -431,6 +431,15 @@ def evolve_scan() -> None:
     raise typer.Exit(run_scan())
 
 
+@evolve_app.command(
+    "nudge", help="print an unmined-signal nudge once per new signal set (hook surface; silent otherwise)"
+)
+def evolve_nudge() -> None:
+    from .commands.evolve import run_nudge
+
+    raise typer.Exit(run_nudge())
+
+
 @evolve_app.command("list", help="list pending skill drafts (edit the files before approving if needed)")
 def evolve_list() -> None:
     from .commands.evolve import run_list

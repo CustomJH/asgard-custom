@@ -9,6 +9,7 @@ BRIDGE_SKILL_MD = """\
 ---
 name: asgard-provider
 description: Trinity 역할(THINKER/WORKER/VERIFIER)이 [trinity.<role>] 로 외부 provider 에 배치된 프로젝트에서, 그 역할을 서브에이전트 대신 asgard CLI 로 실행하는 브릿지. quest-log next 가 역할을 배정한 직후 사용.
+allowed-tools: Bash(asgard role *)
 ---
 
 # asgard-provider — Trinity 역할 브릿지
