@@ -73,5 +73,4 @@ project-scan` / `project-sync` preview and commit important artifacts into the
 active project backend. Backend changes are bound to machine-local trust,
 approval IDs, plan IDs, and projection manifests.
 
-See [`docs/project-memory-backends.md`](docs/project-memory-backends.md) for adapter
-registration, configuration, safety capabilities, and migration details.
+Use `asgard memory connect` to configure a backend and `asgard doctor` to verify its binding and readiness.
