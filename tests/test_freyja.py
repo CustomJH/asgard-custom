@@ -216,7 +216,7 @@ class TestSkillBodies(unittest.TestCase):
             "참조 축",
         ):
             self.assertIn(anchor, atlas)
-        # 26-07-18 강화 (Open Design reference-design-contract·brand-extract 증류)
+        # 26-07-18 강화 (참조 코퍼스 reference-design-contract·brand-extract 증류)
         self.assertIn("신뢰도 라벨", atlas)  # observed/provided/inferred — 브랜드 사실 발명 금지
         self.assertIn("observed", atlas)
         self.assertIn("형용사는 구체 제약으로 번역", atlas)  # "프리미엄" → 실행 가능한 제약
@@ -224,7 +224,7 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("7 시맨틱 역할", atlas)
 
     def test_syn_state_and_form_anchors(self):
-        # 26-07-18 신설 — Open Design craft(state-coverage·form-validation) 증류
+        # 26-07-18 신설 — 참조 craft 코퍼스(state-coverage·form-validation) 증류
         syn = self.by_name["asgard-freyja-syn"]
         self.assertIn("5상태", syn)  # 로딩/빈/에러/채워짐/엣지 전수
         self.assertIn("무한 스피너 금지", syn)
@@ -249,7 +249,7 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("미러 X", syn)  # 시계·미디어 스크러버·차트 축은 불변
 
     def test_craft_distillation_anchors(self):
-        # 26-07-18 강화 — Open Design craft 코퍼스의 기존-스킬 편입분
+        # 26-07-18 강화 — 참조 craft 코퍼스의 기존-스킬 편입분
         taste = self.by_name["asgard-freyja-brisingamen"]
         self.assertIn("#6366f1", taste)  # 인디고 하드코딩 대역 = 최다 검증 티
         self.assertIn("압박 부사", taste)  # "쉽게·간단히·빠르게" 금지
