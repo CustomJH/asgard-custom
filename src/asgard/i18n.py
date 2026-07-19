@@ -53,6 +53,10 @@ _M: dict[str, tuple[str, str]] = {
     "session_error": ("session error: {e}", "세션 오류: {e}"),
     "no_quest": ("no active quest", "진행 중 퀘스트 없음"),
     "unknown_cmd": ("unknown command {c} — /help", "미지의 커맨드 {c} — /help"),
+    "unknown_cmd_suggest": (
+        "unknown command {c} — did you mean {suggestion}?",
+        "미지의 커맨드 {c} — 혹시 {suggestion}?",
+    ),
     # help 항목
     "h_help": ("this help", "이 도움말"),
     "h_new": ("new session (reset context & screen)", "새 세션 (컨텍스트·화면 리셋)"),

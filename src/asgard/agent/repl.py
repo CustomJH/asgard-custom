@@ -100,12 +100,14 @@ _LOGO_GRAD_LIGHT = [theme.ansi(h) for h in theme.LOGO_GRAD_LIGHT]
 def banner(rp) -> None:
     import shutil
 
-    width = shutil.get_terminal_size((80, 20)).columns
+    size = shutil.get_terminal_size((80, 20))
+    width = size.columns
+    roomy = width >= 100 and size.lines >= 36
 
-    # 로고: 다크+이미지 터미널 → PNG, 아니면 braille lockup(배경 밝기별 그라디언트) / 축약
-    if not (ui._COLOR and _image_logo()):
+    # 큰 lockup 은 세로 공간이 충분할 때만. 120×30 같은 일반 터미널은 대화 공간을 우선한다.
+    if not (roomy and ui._COLOR and _image_logo()):
         grad = _LOGO_GRAD_LIGHT if is_light_bg() else _LOGO_GRAD
-        if width >= 70:
+        if roomy:
             sys.stdout.write("\n")
             for i, line in enumerate(_LOGO.split("\n")):
                 col = grad[i] if i < len(grad) else grad[-1]
@@ -223,53 +225,45 @@ def statusline(root: str, rp, usage: dict | None = None) -> str:
     return f"  {chip}{_STATUS_SEP}{body}"
 
 
-_HELP_KEYS = {
+_COMMAND_HELP = {
     "/help": "h_help",
     "/new": "h_new",
     "/quest": "h_quest",
     "/provider": "h_provider",
+    "/provider set": "h_provider",
     "/trinity": "h_trinity",
+    "/trinity set": "h_trinity",
     "/bridge": "h_bridge",
     "/lagom": "h_lagom",
+    "/lagom off": "h_lagom",
+    "/lagom lite": "h_lagom",
+    "/lagom full": "h_lagom",
+    "/lagom default": "h_lagom",
+    "/lagom stats": "h_lagom",
     "/model": "h_model",
     "/lang": "h_lang",
+    "/lang en": "h_lang",
+    "/lang ko": "h_lang",
     "/update": "h_update",
     "/clear": "h_clear",
     "/exit": "h_exit",
 }
-_COMMANDS = [
-    "/help",
-    "/new",
-    "/quest",
-    "/provider",
-    "/provider set",
-    "/trinity",
-    "/trinity set",
-    "/bridge",
-    "/lagom",
-    "/lagom off",
-    "/lagom lite",
-    "/lagom full",
-    "/lagom default ",
-    "/lagom stats",
-    "/model",
-    "/lang en",
-    "/lang ko",
-    "/update",
-    "/clear",
-    "/exit",
-]
 
 
 def _help_items():
-    return [(k, t(v)) for k, v in _HELP_KEYS.items()]
+    return [(command, t(key)) for command, key in _COMMAND_HELP.items() if " " not in command]
+
+
+def _completion_matches(text: str) -> list[str]:
+    """최상위 명령을 먼저 보여주고, 인자 후보는 사용자가 공백을 입력한 뒤 펼친다."""
+    return [c for c in _COMMAND_HELP if c.startswith(text) and (" " in text or " " not in c)]
 
 
 def _completer(text: str, state: int):
     """Tab 자동완성 — 슬래시 커맨드 (/ 트리거). readline 콜백."""
     if not text.startswith("/"):
         return None
-    matches = [c + " " for c in _COMMANDS if c.startswith(text)]
+    matches = [c + " " for c in _completion_matches(text)]
     return matches[state] if state < len(matches) else None
 
 
@@ -355,11 +349,8 @@ def _pt_session():
             text = document.text_before_cursor
             if not text.startswith("/"):
                 return
-            helps = dict(_help_items())  # 호출 시점 조회 — /lang 전환 즉시 반영
-            for c in _COMMANDS:
-                if c.startswith(text):
-                    meta = helps.get("/" + c[1:].split()[0], "")
-                    yield Completion(c + " ", start_position=-len(text), display=c, display_meta=meta)
+            for c in _completion_matches(text):
+                yield Completion(c + " ", start_position=-len(text), display=c, display_meta=t(_COMMAND_HELP[c]))
 
     style = Style.from_dict(
         {
@@ -382,7 +373,7 @@ def _pt_session():
         auto_suggest=AutoSuggestFromHistory(),
         history=FileHistory(_history_path()),
         style=style,
-        reserve_space_for_menu=len(_COMMANDS) + 1,
+        reserve_space_for_menu=8,
     )
 
 
@@ -626,7 +617,11 @@ def slash(cmd: str, root: str, rp) -> bool:
         except Exception:
             sys.stdout.write(f"  {ui.dim(t('no_quest'))}\n")
     else:
-        sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('unknown_cmd', c=c)}\n")
+        from difflib import get_close_matches
+
+        match = get_close_matches(c, _COMMAND_HELP, n=1, cutoff=0.6)
+        key = "unknown_cmd_suggest" if match else "unknown_cmd"
+        sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t(key, c=c, suggestion=match[0] if match else '')}\n")
     return True
 
 
