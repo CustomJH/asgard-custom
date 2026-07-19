@@ -391,54 +391,6 @@ class TestNativeModelSelection(unittest.TestCase):
         AgentSession(client, rp, self.root, "system", max_iterations=1).run("hello")
         self.assertEqual(calls[0]["extra_body"], rp.profile.extra_body)
 
-    def test_tui_model_picker_applies_selected_model(self):
-        from asgard.agent.tui import AsgardTUI
-
-        original = self._nvidia_resolved()
-        selected = self._nvidia_resolved("meta/llama-3.3-70b-instruct")
-
-        replace = mock.Mock()
-        shell = SimpleNamespace(
-            root=self.root,
-            rp=original,
-            _replace_provider=replace,
-            _append=mock.Mock(),
-        )
-        with mock.patch("asgard.agent.onboard.select_model_id", return_value=selected) as apply_model:
-            AsgardTUI._model_selected(cast(AsgardTUI, shell), selected.model)
-
-        apply_model.assert_called_once_with(self.root, original, selected.model)
-        replace.assert_called_once_with(selected)
-
-    def test_tui_trinity_picker_saves_and_rebuilds_heimdall(self):
-        from asgard.agent.tui import AsgardTUI
-
-        rp = self._nvidia_resolved()
-
-        shell = SimpleNamespace(
-            root=self.root,
-            rp=rp,
-            heimdall=object(),
-            _emit=mock.Mock(),
-            _on_status=mock.Mock(),
-            _set_status=mock.Mock(),
-            _append=mock.Mock(),
-        )
-        replacement = object()
-        with (
-            mock.patch("asgard.providers.save_config_section") as save,
-            mock.patch("asgard.agent.repl._new_heimdall", return_value=replacement) as rebuilt,
-        ):
-            AsgardTUI._save_trinity(cast(AsgardTUI, shell), "worker", "nvidia", rp.model)
-
-        save.assert_called_once_with(
-            self.root,
-            "trinity.worker",
-            {"provider": "nvidia", "model": rp.model},
-        )
-        self.assertIs(shell.heimdall, replacement)
-        rebuilt.assert_called_once_with(self.root, rp, shell._emit, shell._on_status)
-
     def _nvidia_resolved(self, model=None):
         profile = PROVIDERS["nvidia"]
         return ResolvedProvider(

@@ -47,15 +47,13 @@ def start(
         help="override the provider: anthropic | claude-native | openai | openai-native | openai_compat | ollama | nvidia",
     ),
     model: str = typer.Option(None, "--model", help="override the model id"),
-    tui: bool = typer.Option(False, "--tui", help="full-screen TUI (default; kept for compatibility)"),
-    plain: bool = typer.Option(False, "--plain", help="force the plain readline REPL (no TUI)"),
     cont: bool = typer.Option(
         False, "--continue", "-c", help="restore the last conversation for this project (context only)"
     ),
 ) -> None:
     from .commands.start import run_start
 
-    raise typer.Exit(run_start(check_only=check, provider=provider, model=model, tui=tui, plain=plain, cont=cont))
+    raise typer.Exit(run_start(check_only=check, provider=provider, model=model, cont=cont))
 
 
 auth_app = typer.Typer(help="manage Asgard-owned provider logins", no_args_is_help=True)

@@ -1,9 +1,7 @@
 """Asgard 디자인 토큰 — 브랜드 색 단일 소스 (신성한 황금 · 왕실 네이비).
 
-hex 는 rich/Textual markup·CSS 용. 터미널 raw ANSI 는 ansi() 로 변환해 ui.paint 에
-넣는다 (truecolor 터미널은 24bit, 아니면 xterm-256 근사). Textual 앱은
-textual_theme() 를 register_theme 하고 theme="asgard" 로 쓴다 — CSS 에서
-$primary/$accent/$surface 참조.
+hex 는 Rich·prompt-toolkit 용. 터미널 raw ANSI 는 ansi() 로 변환해 ui.paint 에
+넣는다 (truecolor 터미널은 24bit, 아니면 xterm-256 근사).
 """
 
 import os
@@ -51,23 +49,3 @@ def ansi(hex_color: str) -> str:
     """ui.paint 용 SGR 전경색 파라미터 — '38;2;r;g;b' 또는 '38;5;N'."""
     r, g, b = (int(hex_color[i : i + 2], 16) for i in (1, 3, 5))
     return f"38;2;{r};{g};{b}" if _TRUECOLOR else f"38;5;{_x256(r, g, b)}"
-
-
-def textual_theme():
-    """asgard Textual 테마. TUI 경로에서만 호출 — CLI 는 textual 미로드."""
-    from textual.theme import Theme
-
-    return Theme(
-        name="asgard",
-        primary=PRIMARY,
-        secondary=SECONDARY,
-        background=BACKGROUND,
-        surface=SURFACE,
-        panel=SECONDARY,
-        foreground=TEXT,
-        accent=ACCENT_CYAN,
-        success=SUCCESS,
-        warning=WARNING,
-        error=DANGER,
-        dark=True,
-    )

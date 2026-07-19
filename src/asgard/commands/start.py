@@ -121,8 +121,6 @@ def run_start(
     check_only: bool = False,
     provider: str | None = None,
     model: str | None = None,
-    tui: bool = False,
-    plain: bool = False,
     cont: bool = False,
 ) -> int:
     root = os.getcwd()
@@ -145,10 +143,6 @@ def run_start(
     i18n.load_lang(root)  # config [ui] lang → env → 기본 en
 
     rp = resolve(root, provider=provider, model=model)
-    if not plain:  # 기본은 풀스크린 Textual TUI; --tui 는 기존 호출 호환용
-        from ..agent import tui as _tui
-
-        return _tui.run(root, rp, cont=cont)
     from ..agent import repl
 
     return repl.run(root, rp, cont=cont)

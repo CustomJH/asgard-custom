@@ -62,7 +62,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
         self.assertNotEqual(rp.model, "stale-model")
         self.assertEqual(rp.key_source, "Asgard ChatGPT OAuth")
 
-    def test_missing_asgard_oauth_marks_provider_disconnected_before_repl_or_tui_builds_client(self):
+    def test_missing_asgard_oauth_marks_provider_disconnected_before_repl_builds_client(self):
         from asgard import openai_codex
 
         with mock.patch.object(
