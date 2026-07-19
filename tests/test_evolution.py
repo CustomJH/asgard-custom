@@ -561,12 +561,16 @@ class TestNoInjectionInvariants(EvoBase):
 
         learned = mock.Mock(return_value="\n\n# 학습 스킬")
         fake = self._fake_heimdall(learned)
-        with mock.patch("asgard.agent.heimdall.dispatch.ql"):
+        with (
+            mock.patch("asgard.agent.heimdall.dispatch.ql"),
+            mock.patch("asgard.agent.heimdall.dispatch._skill_support", return_value=("", [], {})) as support,
+        ):
             handler = heimdall.DeliveryDispatch(cast(heimdall.Heimdall, fake)).dispatch_handler("sid", [])
             handler({"agent": "loki", "task": "반례 탐색", "why": ""})
-            learned.assert_not_called()  # read-only 딜리버리 = 무주입
             handler({"agent": "thor", "task": "백엔드 작업", "why": ""})
-            learned.assert_called_once()  # 쓰기 딜리버리 = 주입 경로 살아있음 (대조군)
+        learned.assert_not_called()  # 본문 직접 주입 경로는 폐기됨
+        self.assertEqual(support.call_args_list[0].kwargs["include_learned"], False)
+        self.assertEqual(support.call_args_list[1].kwargs["include_learned"], True)
 
     def test_verifier_assembly_has_no_learned_note(self):
         """mk_verifier 클로저 본문에 learned 주입이 없어야 한다 — 주석이 아니라 테스트가 지킨다."""

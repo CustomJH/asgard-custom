@@ -106,7 +106,7 @@ def select_model(root: str, rp: ResolvedProvider, *, persist: bool = True) -> Re
 
 
 def select_model_id(root: str, rp: ResolvedProvider, model: str, *, persist: bool = True) -> ResolvedProvider | None:
-    """검증된 model ID를 적용한다. readline 선택기와 TUI picker의 공통 저장 경로."""
+    """검증된 model ID를 적용한다. 모델 선택 경로(REPL /model·온보딩)의 공통 저장 지점."""
     model = normalize_model_id(model)
     if not model:
         return None

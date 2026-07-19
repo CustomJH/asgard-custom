@@ -34,6 +34,7 @@ from .roles import (
     _identity,
     _mimir_note,
     _model_tier,
+    _skill_support,
 )
 from .trinity import TrinityRun
 from .waves import WaveRunner
@@ -375,9 +376,6 @@ class Heimdall:
     def _reject_freyja_final(self, sid: str, reason: str) -> str:
         return self._dispatchers.reject_freyja_final(sid, reason)
 
-    def _run_freyja_lead(self, sid: str, worker_result_writes: list[str], cwd: str | None, system: str, task: str):
-        return self._dispatchers.run_freyja_lead(sid, worker_result_writes, cwd, system, task)
-
     def _run_worker_waves(self, sid: str, request: str, units: list[dict], budget_note: str) -> None:
         return self._waves.run(sid, request, units, budget_note)
 
@@ -553,9 +551,18 @@ class Heimdall:
         active_lagom = bool(self.lagom)
         # 활성 모드는 검사 전 초안이 터미널에 스트리밍되면 회수할 수 없다. 검사 완료까지 버퍼링한다.
         live_identity = self.delivery_identity + (self._memory_snap if self._memory_provider_allowed else "")
-        r = self._session(live_identity + _mimir_note(request), role="direct", readonly=True, quiet=active_lagom).run(
-            (ctx + request if ctx else request) + recall
+        mimir = _mimir_note(request)
+        skill_note, skill_tools, skill_handlers = (
+            _skill_support("mimir", self.root, include_learned=False) if mimir else ("", [], {})
         )
+        r = self._session(
+            live_identity + mimir + skill_note,
+            extra_tools=skill_tools,
+            handlers=skill_handlers,
+            role="direct",
+            readonly=True,
+            quiet=active_lagom,
+        ).run((ctx + request if ctx else request) + recall)
         if r.stop_reason == "cancelled":
             raise TurnCancelled()
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
@@ -666,7 +673,7 @@ class Heimdall:
 
         self._last_completion = None
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
-        # cancel_event 는 여기서 clear 하지 않는다 — 제출측(TUI/REPL)이 턴 시작 전에 clear 한다.
+        # cancel_event 는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
         self.on_status(t("thinking"))  # 분류도 모델 호출 — 침묵 구간 커버
         try:

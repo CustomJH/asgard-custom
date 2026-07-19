@@ -93,47 +93,53 @@ def _role_body(fname: str) -> str:
 _DELIVERY = {g: _role_body(f"asgard-{g}.md") for g in _DELIVERY_TIERS}
 _DELIVERY_READONLY = frozenset(g for g in _DELIVERY_TIERS if not role_writable(f"asgard-{g}.md"))
 
-# 편대장 → (코어 계약 상속원, 필수 프로토콜 스킬) — lead 신설 시 여기와 squad 툴·핸들러만 늘린다.
+# 편대장 → 코어 계약 상속원 — lead 신설 시 여기와 squad 툴·핸들러만 늘린다.
 _LEAD_BASE = {"freyja-lead": "freyja", "thor-lead": "thor"}
-_LEAD_PROTOCOL = {"freyja-lead": "asgard-freyja-valkyrja", "thor-lead": "asgard-thor-einherjar"}
 
 
-def _skill_resolver(agent: str):
-    """전용 스킬 리졸버 — 심화 스킬을 가진 딜리버리 에이전트만 (본문 상수가 커서 lazy import)."""
-    if agent in ("freyja", "freyja-lead"):
-        from ...templates.freyja import resolve_freyja_skills
-
-        return resolve_freyja_skills
-    if agent in ("thor", "thor-lead"):
-        from ...templates.thor import resolve_thor_skills
-
-        return resolve_thor_skills
-    if agent == "eitri":
-        from ...templates.eitri import resolve_eitri_skills
-
-        return resolve_eitri_skills
-    if agent == "mimir":
-        from ...templates.mimir import resolve_mimir_skills
-
-        return resolve_mimir_skills
-    return None
+SKILL_LOAD_TOOL: dict = {
+    "name": "load_skill",
+    "description": "Load one assigned Asgard skill body or one referenced text resource on demand.",
+    "x-asgard-capability": "inspect",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string", "description": "Exact name from <available_skills>."},
+            "resource": {"type": "string", "description": "Optional relative resource path."},
+        },
+        "required": ["name"],
+    },
+}
 
 
-def _worker_note(task: str) -> str:
-    """번들 Worker 공통 스킬 주입 (디버깅·테스트 설계) — Worker 표면 한정.
+def _skill_support(
+    agent: str,
+    root: str | None = None,
+    *,
+    include_learned: bool = True,
+    exclude: tuple[str, ...] = (),
+) -> tuple[str, list[dict], dict]:
+    """Return compact discovery context plus a guarded on-demand loader for one native role."""
+    from ...skill_registry import load_skill_for_agent, skill_catalog
 
-    딜리버리 전용 스킬(_skill_resolver)의 Worker 층 등가물 — 네이티브엔 파일 스킬 로더가
-    없으므로 task 매칭 본문을 system 에 직접 주입한다. Verifier/loki 호출측은 부르지 않는다
-    (게이트 무결성). 실패는 조용히 빈 문자열 (fail-open)."""
-    try:
-        from ...templates.worker import resolve_worker_skills
+    if agent not in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir"):
+        return "", [], {}
+    project = root or os.getcwd()
+    catalog = skill_catalog(project, agent, include_learned=include_learned, exclude=exclude)
+    if not catalog:
+        return "", [], {}
 
-        hits = resolve_worker_skills(task)
-        if not hits:
-            return ""
-        return "\n\n# 공통 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in hits)
-    except Exception:
-        return ""
+    def load(inp: dict) -> str:
+        return load_skill_for_agent(
+            project,
+            agent,
+            str(inp.get("name") or ""),
+            str(inp["resource"]) if inp.get("resource") else None,
+            include_learned=include_learned,
+            exclude=exclude,
+        )
+
+    return catalog, [SKILL_LOAD_TOOL], {"load_skill": load}
 
 
 def _mimir_note(request: str) -> str:

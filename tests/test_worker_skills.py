@@ -72,12 +72,16 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("asgard-eitri-draupnir", t)  # CI 층 상호 참조
         self.assertIn("asgard-freyja-hildisvini", t)  # 브라우저 E2E 상호 참조
 
-    def test_worker_role_declares_skills(self):
+    def test_worker_role_uses_generated_discovery_catalog(self):
+        from asgard.commands.setup import plan_files
         from asgard.templates.roles import ROLE_AGENTS
 
         role = dict(ROLE_AGENTS)["asgard-worker.md"]
+        self.assertIn("load_skill", role)
+        files, _ = plan_files(cc=True, cursor=False, codex=False, root="/tmp/x")
+        generated = dict(files)["/tmp/x/.claude/agents/asgard-worker.md"]
         for sname in _SKILL_NAMES:
-            self.assertIn(sname, role)  # 모드 A/B 로드 경로 — role 이 스킬을 가리켜야 로드된다
+            self.assertIn(sname, generated)
 
 
 class TestSkillResolver(unittest.TestCase):
@@ -105,25 +109,27 @@ class TestSkillResolver(unittest.TestCase):
 
 
 class TestNativeWiring(unittest.TestCase):
-    """네이티브 주입 배선 — 파일 스킬 로더가 없는 asgard start 의 Worker system 직접 주입."""
+    """네이티브 progressive disclosure — 메타데이터 색인 + 선택된 본문만 도구 로드."""
 
-    def test_worker_note_resolves(self):
-        from asgard.agent.heimdall import _worker_note
+    def test_worker_support_defers_full_body_until_selected(self):
+        from asgard.agent.heimdall import _skill_support
 
-        note = _worker_note("버그 재현 후 회귀 테스트 고정")
-        self.assertIn("# 공통 스킬", note)
-        self.assertIn("재현 없으면 수정 없다", note)
-        self.assertIn("실패를 한 번 봐야 한다", note)
-        self.assertEqual(_worker_note("README 오탈자 수정"), "")  # fail-open
+        note, tools, handlers = _skill_support("worker")
+        self.assertIn("<available_skills>", note)
+        self.assertIn("asgard-worker-debugging", note)
+        self.assertNotIn("재현 없으면 수정 없다", note)
+        self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
+        loaded = handlers["load_skill"]({"name": "asgard-worker-debugging"})
+        self.assertIn("재현 없으면 수정 없다", loaded)
 
-    def test_both_worker_paths_inject(self):
+    def test_both_worker_paths_expose_loader(self):
         # wave 병렬 경로 + 단일 WORKER 경로 둘 다 — 한쪽만 배선되면 경로에 따라 지식이 사라진다
         import inspect
 
         from asgard.agent.heimdall import TrinityRun, WaveRunner
 
-        self.assertIn("_worker_note", inspect.getsource(WaveRunner.run))
-        self.assertIn("_worker_note", inspect.getsource(TrinityRun._worker_turn))
+        self.assertIn("_skill_support", inspect.getsource(WaveRunner.run))
+        self.assertIn("_skill_support", inspect.getsource(TrinityRun._worker_turn))
 
     def test_verifier_and_loki_not_injected(self):
         # 게이트 무결성 — advisory 지식은 판정 표면(Verifier/loki) 금지 (skill_bank 헌법과 동일)
@@ -133,10 +139,10 @@ class TestNativeWiring(unittest.TestCase):
 
         trinity_src = inspect.getsource(TrinityRun)
         for line in trinity_src.splitlines():
-            if "_worker_note(" in line and "def " not in line:
+            if "_skill_support(" in line and "def " not in line:
                 self.assertNotIn("verifier", line.lower())
         dispatch_src = inspect.getsource(DeliveryDispatch)
-        self.assertNotIn("_worker_note", dispatch_src)  # 딜리버리 디스패치는 전용 스킬 층이 담당
+        self.assertNotIn('_skill_support("loki"', dispatch_src)
 
     def test_bundled_names_reserve_worker_skills(self):
         from asgard.evolution import _bundled_names

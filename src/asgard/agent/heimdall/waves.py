@@ -15,7 +15,7 @@ from contextlib import ExitStack
 from ..session import TurnCancelled, ql
 from .journal import _record_writes
 from .planning import _plan_waves
-from .roles import _role_prompt, _worker_note
+from .roles import _role_prompt, _skill_support
 from .toolspec import DISPATCH_TOOL
 
 
@@ -126,16 +126,13 @@ class WaveRunner:
 
         def run_unit(u: dict, writes: list[str], cwd: str | None = None):
             # writes 는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
-            # 학습 스킬은 단위 subtask 기준 매칭 — wave 스레드에서 실행되므로 출력은 quiet
-            # 공통 스킬(디버깅·테스트 설계)은 번들 층 — 학습 스킬과 별도 섹션으로 앞에 선다
-            bundled = _worker_note(f"{request} {u['subtask']}")
-            learned = hd._learned_note(f"{request} {u['subtask']}", "worker", quiet=True)
+            skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root)
 
             def mk(rp=None):
                 return hd._session(
-                    _role_prompt("asgard-worker.md") + hd.lagom + bundled + learned,
-                    extra_tools=[DISPATCH_TOOL],
-                    handlers={"dispatch": hd._dispatch_handler(sid, writes, cwd)},
+                    _role_prompt("asgard-worker.md") + hd.lagom + skill_note,
+                    extra_tools=[DISPATCH_TOOL, *skill_tools],
+                    handlers={"dispatch": hd._dispatch_handler(sid, writes, cwd), **skill_handlers},
                     role="worker",
                     model=hd._model_for("worker"),
                     quiet=True,

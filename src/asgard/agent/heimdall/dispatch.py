@@ -13,7 +13,7 @@ import re
 
 from ... import theme, ui
 from ..session import TurnCancelled, ql
-from .roles import _DELIVERY, _DELIVERY_READONLY, _LEAD_BASE, _LEAD_PROTOCOL, _skill_resolver
+from .roles import _DELIVERY, _DELIVERY_READONLY, _LEAD_BASE, _skill_support
 from .toolspec import FREYJA_SQUAD_TOOL, FREYJA_VERDICT_TOOL, THOR_SQUAD_TOOL, VISUAL_VERDICT_SUBMIT_TOOL
 
 
@@ -135,15 +135,13 @@ class DeliveryDispatch:
                     ),
                 )
                 system = _DELIVERY["freyja"] + "\n\n" + hd.delivery_identity
-                resolver = _skill_resolver("freyja")
-                skills = resolver(f"{task} {axis} {why}") if resolver else []
-                if skills:
-                    system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
-                # 편대원도 단독 디스패치와 동일한 프레이야 구성 — 학습물 층 포함 (편대 스레드라 quiet)
-                system += hd._learned_note(f"{task} {axis} {why}", "freyja", quiet=True)
+                catalog, skill_tools, skill_handlers = _skill_support("freyja", hd.root)
+                system += catalog
                 with UnitWorkspace(squad_root, f"freyja-{spec['id']}") as workspace:
                     child = hd._session(
                         system,
+                        extra_tools=skill_tools,
+                        handlers=skill_handlers,
                         model=hd._delivery_model("freyja"),
                         role="freyja",
                         cwd=workspace.path,
@@ -360,17 +358,16 @@ class DeliveryDispatch:
                     ),
                 )
                 system = _DELIVERY["thor"] + "\n\n" + hd.delivery_identity
-                resolver = _skill_resolver("thor")
-                skills = resolver(f"{task} {why}") if resolver else []
                 # 서브에 편대 프로토콜 무주입 — 깊이 1 봉인은 도구만이 아니라 지식 표면에서도 유지한다
-                skills = [hit for hit in skills if hit[0] != "asgard-thor-einherjar"]
-                if skills:
-                    system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
-                # 편대원도 단독 디스패치와 동일한 토르 구성 — 학습물 층 포함 (편대 스레드라 quiet)
-                system += hd._learned_note(f"{task} {why}", "thor", quiet=True)
+                catalog, skill_tools, skill_handlers = _skill_support(
+                    "thor", hd.root, exclude=("asgard-thor-einherjar",)
+                )
+                system += catalog
                 with UnitWorkspace(squad_root, f"thor-{spec['id']}") as workspace:
                     child = hd._session(
                         system,
+                        extra_tools=skill_tools,
+                        handlers=skill_handlers,
                         model=hd._delivery_model("thor"),
                         role="thor",
                         cwd=workspace.path,
@@ -463,28 +460,17 @@ class DeliveryDispatch:
                 # "코어 계약 전부 상속"을 선언이 아니라 최종 system bytes 로 강제한다.
                 system += f"\n\n# 상속된 {base} 코어 계약\n\n" + _DELIVERY[base]
             system += "\n\n" + hd.delivery_identity
-            resolver = _skill_resolver(agent)
-            if resolver:
-                # 네이티브엔 파일 스킬 로더가 없다 — task 매칭 전용 스킬 본문을 system 에 직접 주입
-                # (0-LLM 키워드 리졸버, 무매칭 = role 본문만으로 진행)
-                skills = resolver(f"{task} {why}")
-                protocol = _LEAD_PROTOCOL.get(agent)
-                if protocol and not any(name == protocol for name, _ in skills):
-                    skills += [hit for hit in resolver("편대") if hit[0] == protocol]
-                if skills:
-                    system += "\n\n# 전용 스킬 (task 매칭 주입)\n\n" + "\n\n".join(b for _, b in skills)
-                    hd.on_text(f"  {ui.dim('│ ✦ 스킬 주입 — ' + ', '.join(n for n, _ in skills))}\n")
-            if (
-                agent not in _DELIVERY_READONLY
-            ):  # read-only 딜리버리(loki) = 반례 탐색 — 학습물 무주입 (메모리와 동일 규율)
-                system += hd._learned_note(f"{task} {why}", agent)
+            catalog, skill_tools, skill_handlers = _skill_support(
+                agent, hd.root, include_learned=agent not in _DELIVERY_READONLY
+            )
+            system += catalog
             if agent == "freyja-lead":
-                return self.run_freyja_lead(sid, worker_result_writes, cwd, system, task)
-            extra_tools = None
-            handlers = None
+                return self.run_freyja_lead(sid, worker_result_writes, cwd, system, task, skill_tools, skill_handlers)
+            extra_tools = list(skill_tools)
+            handlers = dict(skill_handlers)
             if agent == "thor-lead":
-                extra_tools = [THOR_SQUAD_TOOL]
-                handlers = {"dispatch_thor_squad": self.thor_squad_handler(sid, worker_result_writes, cwd)}
+                extra_tools.append(THOR_SQUAD_TOOL)
+                handlers["dispatch_thor_squad"] = self.thor_squad_handler(sid, worker_result_writes, cwd)
             child = hd._session(
                 system,
                 extra_tools=extra_tools,
@@ -519,7 +505,16 @@ class DeliveryDispatch:
         )
         return f"[freyja-lead] ⛔ two-stage visual gate 위반 — {reason}. 본류 미반영."
 
-    def run_freyja_lead(self, sid: str, worker_result_writes: list[str], cwd: str | None, system: str, task: str):
+    def run_freyja_lead(
+        self,
+        sid: str,
+        worker_result_writes: list[str],
+        cwd: str | None,
+        system: str,
+        task: str,
+        skill_tools: list[dict],
+        skill_handlers: dict,
+    ):
         """편대장 전체를 Git 기반 격리 공간에서 실행하고 게이트 통과 후에만 병합한다.
 
         Git HEAD 가 없으면 기존 final 덮어쓰기를 안전하게 롤백할 수 없으므로 fail-closed 한다.
@@ -534,12 +529,13 @@ class DeliveryDispatch:
             verdict_state: dict = {}
             lead_writes: list[str] = []
             handlers = {
+                **skill_handlers,
                 "dispatch_freyja_squad": self.freyja_squad_handler(sid, lead_writes, workspace.path),
                 "dispatch_visual_verdict": self.visual_verdict_handler(sid, lead_writes, workspace.path, verdict_state),
             }
             child = hd._session(
                 system,
-                extra_tools=[FREYJA_SQUAD_TOOL, FREYJA_VERDICT_TOOL],
+                extra_tools=[*skill_tools, FREYJA_SQUAD_TOOL, FREYJA_VERDICT_TOOL],
                 handlers=handlers,
                 model=hd._delivery_model("freyja-lead"),
                 role="freyja-lead",

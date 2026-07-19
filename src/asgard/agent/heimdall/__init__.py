@@ -42,8 +42,7 @@ from .roles import (
     _mimir_note,
     _role_body,
     _role_prompt,
-    _skill_resolver,
-    _worker_note,
+    _skill_support,
 )
 from .toolspec import (
     DISPATCH_TOOL,
@@ -90,6 +89,5 @@ __all__ = [
     "_role_body",
     "_role_prompt",
     "_safe_candidates",
-    "_skill_resolver",
-    "_worker_note",
+    "_skill_support",
 ]

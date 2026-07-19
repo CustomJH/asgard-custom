@@ -359,7 +359,7 @@ class TestThorLead(unittest.TestCase):
 
         from asgard.agent import heimdall
 
-        src = inspect.getsource(heimdall._skill_resolver)
+        src = inspect.getsource(heimdall._skill_support)
         self.assertIn('"thor-lead"', src)  # 편대장 디스패치에도 전용 스킬 주입
 
     def test_subagent_gate_targets(self):

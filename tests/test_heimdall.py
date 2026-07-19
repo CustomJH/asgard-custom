@@ -1958,14 +1958,21 @@ class TestNativeFreyjaSquad(Base):
 
         self.assertEqual(calls[0]["role"], "freyja-lead")
         self.assertIn("13축", calls[0]["system"])  # 선언이 아니라 Freyja 코어 본문 물리 상속
-        self.assertIn("asgard-freyja-valkyrja", calls[0]["system"])  # task 어휘와 무관한 lead 필수 주입
-        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["dispatch_freyja_squad", "dispatch_visual_verdict"])
+        self.assertIn("asgard-freyja-valkyrja", calls[0]["system"])  # lead 카탈로그에 항상 발견 가능
+        self.assertEqual(
+            [t["name"] for t in calls[0]["tools"]],
+            ["load_skill", "dispatch_freyja_squad", "dispatch_visual_verdict"],
+        )
+        self.assertIn(
+            "발키리 편대",
+            calls[0]["handlers"]["load_skill"]({"name": "asgard-freyja-valkyrja"}),
+        )
         self.assertEqual(lead.tool_results[0][0], "dispatch_freyja_squad")
         result = json.loads(lead.tool_results[0][1])
         self.assertEqual({r["id"] for r in result["results"]}, {"geo", "space"})
         self.assertEqual(result["failures"], [])
         self.assertEqual([c["role"] for c in calls[1:]], ["freyja", "freyja"])
-        self.assertTrue(all(not c["tools"] for c in calls[1:]))  # 편대의 편대 봉인
+        self.assertTrue(all([t["name"] for t in c["tools"]] == ["load_skill"] for c in calls[1:]))
         self.assertEqual(
             set(writes),
             {"deliverables/variations/geo/mark.svg", "deliverables/variations/space/mark.svg"},
@@ -2127,8 +2134,7 @@ class TestNativeFreyjaSquad(Base):
         self.assertTrue(all("scope violation" in failure["error"] for failure in result["failures"]))
         self.assertFalse(os.path.exists(os.path.join(self.root, "unauthorized.txt")))
 
-    def test_squad_children_receive_learned_skills_like_solo_dispatch(self):
-        # 편대원 ≠ 얇은 변주기 — 단독 freyja 디스패치와 동일한 구성(role+학습물)을 받아야 한다
+    def test_squad_children_discover_learned_skills_and_load_on_demand(self):
         seed_learned_skill(self.root, "logo-lesson", triggers="로고", agent="freyja")
         children = [
             FakeSession(SessionResult(text="a", stop_reason="end_turn")),
@@ -2148,8 +2154,9 @@ class TestNativeFreyjaSquad(Base):
 
         self.assertEqual(result["failures"], [])
         for child in h.consumed:
-            self.assertIn("# 학습 스킬", child.system)
-            self.assertIn("logo-lesson 본문", child.system)
+            self.assertIn("logo-lesson", child.system)
+            self.assertNotIn("logo-lesson 본문", child.system)
+            self.assertIn("logo-lesson 본문", child.injected_handlers["load_skill"]({"name": "logo-lesson"}))
 
     def test_squad_children_merge_only_their_distinct_output_directories(self):
         def scoped_child():
@@ -2223,10 +2230,12 @@ class TestNativeThorSquad(Base):
         self.assertEqual(calls[0]["role"], "thor-lead")
         self.assertIn("백엔드 전문가", calls[0]["system"])  # 선언이 아니라 Thor 코어 본문 물리 상속
         self.assertIn("사전 진단 게이트", calls[0]["system"])
+        self.assertIn("asgard-thor-einherjar", calls[0]["system"])
+        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["load_skill", "dispatch_thor_squad"])
         self.assertIn(
-            "에인헤랴르 편대 (팀 백엔드 작업)", calls[0]["system"]
-        )  # task 어휘와 무관한 lead 필수 주입 (스킬 본문)
-        self.assertEqual([t["name"] for t in calls[0]["tools"]], ["dispatch_thor_squad"])
+            "에인헤랴르 편대 (팀 백엔드 작업)",
+            calls[0]["handlers"]["load_skill"]({"name": "asgard-thor-einherjar"}),
+        )
         squad = calls[0]["handlers"]["dispatch_thor_squad"]
         result = json.loads(
             squad(
@@ -2243,7 +2252,7 @@ class TestNativeThorSquad(Base):
         self.assertEqual({r["id"] for r in result["results"]}, {"api", "db"})
         self.assertEqual(result["failures"], [])
         self.assertEqual([c["role"] for c in calls[1:]], ["thor", "thor"])
-        self.assertTrue(all(not c["tools"] for c in calls[1:]))  # 편대의 편대 봉인
+        self.assertTrue(all([t["name"] for t in c["tools"]] == ["load_skill"] for c in calls[1:]))
         for c in calls[1:]:
             self.assertNotIn("에인헤랴르 편대 (팀 백엔드 작업)", c["system"])  # 서브에 편대 프로토콜 본문 무주입
 
@@ -2320,8 +2329,7 @@ class TestNativeThorSquad(Base):
         for unit in ("api", "db"):
             self.assertIn(unit, open(os.path.join(self.root, f"src/{unit}/service.py")).read())
 
-    def test_squad_children_receive_learned_skills_like_solo_dispatch(self):
-        # 편대원 ≠ 얇은 분할기 — 단독 thor 디스패치와 동일한 구성(role+학습물)을 받아야 한다
+    def test_squad_children_discover_learned_skills_and_load_on_demand(self):
         seed_learned_skill(self.root, "migration-lesson", triggers="마이그레이션", agent="thor")
         children = [
             FakeSession(SessionResult(text="a", stop_reason="end_turn")),
@@ -2342,8 +2350,12 @@ class TestNativeThorSquad(Base):
 
         self.assertEqual(result["failures"], [])
         for child in h.consumed:
-            self.assertIn("# 학습 스킬", child.system)
-            self.assertIn("migration-lesson 본문", child.system)
+            self.assertIn("migration-lesson", child.system)
+            self.assertNotIn("migration-lesson 본문", child.system)
+            self.assertIn(
+                "migration-lesson 본문",
+                child.injected_handlers["load_skill"]({"name": "migration-lesson"}),
+            )
 
     def test_tournament_collects_patches_without_applying(self):
         def variant_child(marker: str):

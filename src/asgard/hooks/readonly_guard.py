@@ -160,6 +160,16 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
         )
     if program == "go":
         return len(tokens) >= 2 and tokens[1] in {"test", "vet"}
+    if program == "asgard" and len(tokens) >= 4 and tokens[1:3] == ["skills", "show"]:
+        if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", tokens[3]):
+            return False
+        return len(tokens) == 4 or (
+            len(tokens) == 6
+            and tokens[4] == "--resource"
+            and tokens[5] not in (".", "..")
+            and not tokens[5].startswith(("/", "../"))
+            and "/../" not in tokens[5]
+        )
     if program == "make":
         return len(tokens) >= 2 and all(
             not t.startswith("-") and t in {"test", "check", "lint", "verify"} for t in tokens[1:]

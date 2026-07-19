@@ -19,7 +19,7 @@ from ..session import gate, ql
 from .classify import _gate_repair, _gate_sig
 from .journal import _record_writes
 from .planning import _UNITS_NOTE, _parse_units, _plan_waves
-from .roles import _ROLE_KEY, LAGOM_VERIFIER_NOTE, _role_prompt, _transition_line, _worker_note
+from .roles import _ROLE_KEY, LAGOM_VERIFIER_NOTE, _role_prompt, _skill_support, _transition_line
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
@@ -451,15 +451,14 @@ class TrinityRun:
             return None
         writes: list[str] = []
 
-        bundled_note = _worker_note(self.request)  # 번들 공통 스킬 (디버깅·테스트 설계)
-        learned_note = hd._learned_note(self.request, "worker")
+        skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root)
 
-        def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None, bn=bundled_note, ln=learned_note):
+        def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None):
             # verifier 는 무주입 (mk_verifier) — 게이트 기준이 lagom 으로 흔들리면 안 된다
             return hd._session(
-                _role_prompt("asgard-worker.md") + hd.lagom + bn + ln,
-                extra_tools=[DISPATCH_TOOL],
-                handlers={"dispatch": hd._dispatch_handler(s_id, w)},
+                _role_prompt("asgard-worker.md") + hd.lagom + skill_note,
+                extra_tools=[DISPATCH_TOOL, *skill_tools],
+                handlers={"dispatch": hd._dispatch_handler(s_id, w), **skill_handlers},
                 role=rl,
                 model=m,
                 rp_override=rp,

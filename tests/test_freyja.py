@@ -38,23 +38,28 @@ _SKILL_NAMES = (
 
 
 class TestScaffold(unittest.TestCase):
-    def test_plan_contains_freyja_skills_cc(self):
+    def test_plan_exposes_freyja_descriptions_to_claude_native_skills(self):
         from asgard.commands.setup import plan_files
 
         files, _ = plan_files(cc=True, cursor=False, codex=False, root="/tmp/x")
-        paths = [p for p, _ in files]
+        by_path = dict(files)
+        paths = list(by_path)
         for sname in _SKILL_NAMES:
-            self.assertTrue(any(p.endswith(os.path.join(sname, "SKILL.md")) for p in paths), sname)
+            path = next(p for p in paths if p.endswith(os.path.join(sname, "SKILL.md")))
+            self.assertIn(f"asgard skills show {sname}", by_path[path])
+        self.assertTrue(any(p.endswith(os.path.join("asgard-skills", "SKILL.md")) for p in paths))
         # CC 는 서브에이전트(role)가 실체 — 코어 스킬은 .agents 스코프 전용 (중복 배치 금지)
         self.assertFalse(any(p.endswith(os.path.join("asgard-freyja", "SKILL.md")) for p in paths))
 
-    def test_plan_contains_freyja_skills_agents_scope(self):
+    def test_plan_uses_core_and_native_discovery_in_agents_scope(self):
         from asgard.commands.setup import plan_files
 
         for flags in ({"cc": False, "cursor": True, "codex": False}, {"cc": False, "cursor": False, "codex": True}):
             files, _ = plan_files(root="/tmp/x", **flags)
             agents_paths = [p for p, _ in files if f"{os.sep}.agents{os.sep}" in p]
-            for sname in (*_SKILL_NAMES, "asgard-freyja"):  # 모드 A 는 코어 계약 스킬 포함
+            for sname in _SKILL_NAMES:
+                self.assertTrue(any(sname in p for p in agents_paths), (sname, flags))
+            for sname in ("asgard-freyja", "asgard-skills"):
                 self.assertTrue(any(sname in p for p in agents_paths), (sname, flags))
 
 
@@ -846,10 +851,10 @@ class TestSkillResolver(unittest.TestCase):
         from asgard.agent import heimdall
         from asgard.agent.heimdall import DeliveryDispatch
 
-        self.assertIn("_skill_resolver", inspect.getsource(DeliveryDispatch.dispatch_handler))
-        registry_src = inspect.getsource(heimdall._skill_resolver)
-        self.assertIn("resolve_freyja_skills", registry_src)
-        self.assertIn("resolve_thor_skills", registry_src)
+        self.assertIn("_skill_support", inspect.getsource(DeliveryDispatch.dispatch_handler))
+        registry_src = inspect.getsource(heimdall._skill_support)
+        self.assertIn("load_skill_for_agent", registry_src)
+        self.assertIn("skill_catalog", registry_src)
 
 
 class TestQualityGateSurfaces(unittest.TestCase):
@@ -962,7 +967,7 @@ class TestFreyjaLead(unittest.TestCase):
 
         from asgard.agent import heimdall
 
-        src = inspect.getsource(heimdall._skill_resolver)
+        src = inspect.getsource(heimdall._skill_support)
         self.assertIn('"freyja-lead"', src)  # 편대장 디스패치에도 전용 스킬 주입
 
     def test_routing_agents_md_and_worker(self):

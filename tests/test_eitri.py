@@ -114,8 +114,9 @@ class TestWiring(unittest.TestCase):
 
         from asgard.agent import heimdall
 
-        registry_src = inspect.getsource(heimdall._skill_resolver)
-        self.assertIn("resolve_eitri_skills", registry_src)
+        registry_src = inspect.getsource(heimdall._skill_support)
+        self.assertIn("load_skill_for_agent", registry_src)
+        self.assertIn('"eitri"', registry_src)
 
     def test_bundled_names_reserve_eitri_skills(self):
         # learned 스킬이 번들 이름을 가로채지 못한다 — 충돌 방지 레지스트리

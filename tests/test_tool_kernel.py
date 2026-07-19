@@ -47,6 +47,10 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("python3 -c \"open('PWNED', 'w').write('x')\" quest-log.py open"))
         self.assertFalse(is_readonly_bash_safe("python3 malicious.py quest-log.py open q"))
         self.assertFalse(is_readonly_bash_safe("python3 /tmp/.claude/hooks/quest-log.py open q"))
+        self.assertTrue(is_readonly_bash_safe("asgard skills show asgard-mimir-flow"))
+        self.assertTrue(is_readonly_bash_safe("asgard skills show review-animations --resource STANDARDS.md"))
+        self.assertFalse(is_readonly_bash_safe("asgard skills resolve --agent mimir task"))
+        self.assertFalse(is_readonly_bash_safe("asgard skills show ../escape"))
 
     def test_readonly_git_rejects_executable_diff_helpers(self):
         self.assertTrue(is_readonly_bash_safe("git diff -- README.md"))

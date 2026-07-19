@@ -163,10 +163,10 @@ def resolve_mimir_skills(task: str) -> list[tuple[str, str]]:
 
 
 def mimir_note(task: str) -> str:
-    """네이티브 DIRECT 턴용 미미르 계약 인라인 주입 — 설명 요청 매칭 시에만.
+    """네이티브 DIRECT 턴용 미미르 코어 계약 — 설명 요청 매칭 시에만.
 
     DIRECT 는 dispatch 툴이 없는 read-only 단일 세션이라(write 에이전트 혼입 금지) 미미르를
-    부를 수 없다 — 모드 A 와 같은 방식으로 role 계약 + 매칭 스킬을 system 에 잇는다.
+    부를 수 없다 — 코어 역할만 활성화하고 전용 스킬 본문은 load_skill 로 지연 로드한다.
     무매칭 = 빈 문자열 — 일반 DIRECT 문답은 그대로 둔다."""
     hits = resolve_mimir_skills(task)
     if not hits:
@@ -174,12 +174,7 @@ def mimir_note(task: str) -> str:
     from .roles import ROLE_AGENTS
 
     core = dict(ROLE_AGENTS)["asgard-mimir.md"].split("---", 2)[2].lstrip()
-    return (
-        "\n\n# 미미르 — 코드 안내 계약 (task 매칭 주입)\n\n"
-        + core
-        + "\n\n# 전용 스킬 (task 매칭 주입)\n\n"
-        + "\n\n".join(b for _, b in hits)
-    )
+    return "\n\n# 미미르 — 코드 안내 계약\n\n" + core
 
 
 def mimir_core_skill() -> str:

@@ -137,21 +137,23 @@ class TestWiring(unittest.TestCase):
 
         from asgard.agent import heimdall
 
-        registry_src = inspect.getsource(heimdall._skill_resolver)
-        self.assertIn("resolve_mimir_skills", registry_src)
+        registry_src = inspect.getsource(heimdall._skill_support)
+        self.assertIn("load_skill_for_agent", registry_src)
+        self.assertIn('"mimir"', registry_src)
 
     def test_heimdall_direct_injects_mimir_note(self):
-        # DIRECT 는 dispatch 툴이 없는 read-only 세션 — 설명 요청은 인라인 주입이 유일 통로
+        # DIRECT 설명 턴도 코어만 인라인, 전용 스킬은 읽기 전용 loader 로 지연 로드한다.
         import inspect
 
         from asgard.agent import heimdall
 
         self.assertIn("_mimir_note", inspect.getsource(heimdall.Heimdall._direct))
+        self.assertIn("_skill_support", inspect.getsource(heimdall.Heimdall._direct))
 
     def test_mimir_note_match_and_fail_open(self):
         note = mimir_note("결제 흐름이 어떻게 동작하는지 설명해줘")
         self.assertIn("코드 안내 계약", note)
-        self.assertIn("전용 스킬 (task 매칭 주입)", note)
+        self.assertNotIn("미미르의 샘", note)
         self.assertNotIn("name:", note.split("# 미미르")[1].split("#")[0])  # frontmatter 누출 없음
         self.assertEqual(mimir_note("버튼 색을 파랑으로 바꿔줘"), "")  # 일반 과업은 무주입
 
