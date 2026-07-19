@@ -55,4 +55,4 @@ jobs:
       - run: uv run pytest -q tests/test_windows.py tests/test_start.py
 
       - name: Initialize terminal input
-        run: uv run python -c "from asgard.agent import repl; repl._pt_session()"
+        run: uv run python tests/smoke_pt_session.py
