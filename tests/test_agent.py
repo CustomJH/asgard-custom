@@ -108,6 +108,45 @@ class TestBash(Base):
         self.assertEqual(code, 0)
 
 
+class TestTruncation(unittest.TestCase):
+    """bash=실행 중 상한 꼬리 버퍼, view=머리 유지 — 오류는 출력 끝에 몰린다는 비대칭이 정책의 근거."""
+
+    def test_tail_buffer_keeps_tail_and_counts_dropped(self):
+        buf = T._TailBuffer(limit=10)
+        for chunk in ("aaaaa", "bbbbb", "ccccc"):
+            buf.add(chunk)
+        text = buf.text()
+        self.assertTrue(text.endswith("bbbbbccccc"))
+        self.assertIn("앞 5 chars 절단", text)
+
+    def test_tail_buffer_single_oversized_chunk(self):
+        buf = T._TailBuffer(limit=10)
+        buf.add("x" * 25)
+        self.assertEqual(buf.size, 10)
+        self.assertEqual(buf.dropped, 15)
+
+    def test_tail_buffer_noop_under_limit(self):
+        buf = T._TailBuffer(limit=10)
+        buf.add("short")
+        self.assertEqual(buf.text(), "short")
+
+    def test_cap_head_kept_for_view(self):
+        s = "y" * (T._MAX_OUT + 7)
+        out = T._cap(s)
+        self.assertTrue(out.startswith("yyy"))
+        self.assertIn("절단", out)
+
+    def test_run_bash_large_output_keeps_tail_bounded(self):
+        with tempfile.TemporaryDirectory() as root:
+            n = T._MAX_OUT + 5000
+            cmd = f"python3 -c \"import sys; sys.stdout.write('L'*{n} + chr(10) + 'TAIL_MARK')\""
+            out, code = T.run_bash(root, {"command": cmd})
+            self.assertEqual(code, 0)
+            self.assertIn("TAIL_MARK", out)
+            self.assertIn("절단", out)
+            self.assertLessEqual(len(out), T._MAX_OUT + 200)  # 상한 + 마커 여유
+
+
 class TestBashDestructiveGuard(Base):
     """비-git 파괴 명령 가드 (Canon 3) — 루트 밖 rm -rf 차단, 루트 안은 허용."""
 
@@ -527,6 +566,19 @@ class TestDeliveryAgents(unittest.TestCase):
             names,
         )
 
+    def test_trinity_hands_inherit_coordinator_model(self):
+        # 실행·판정 손은 코디네이터 모델을 상속 — 세션 모델보다 약한 손이 품질 하한이 되는 것을 차단.
+        for n in ("thinker", "worker", "verifier"):
+            fm = self._tpl(f"asgard-{n}.md").split("---")[1]
+            self.assertIn("model: inherit", fm)
+
+    def test_caller_sweep_contract(self):
+        # 숨은 caller 파손 방어 — worker 는 편집 전 전수 나열, verifier 는 diff 밖 증거 없는 PASS 무효.
+        self.assertIn("사용처 전수", self._tpl("asgard-worker.md"))
+        v = self._tpl("asgard-verifier.md")
+        self.assertIn("diff 에 갇힌 PASS 는 무효", v)
+        self.assertIn("결과 0건이어도 그 기록 자체가 증거", v)
+
     def test_delivery_frontmatter_blocks_redelegation(self):
         # freyja/thor/eitri: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
         for n in ("freyja", "thor", "eitri"):
@@ -554,10 +606,14 @@ class TestDeliveryAgents(unittest.TestCase):
             self.assertIn(f"asgard-{g}", body)
             self.assertNotIn("name:", body)  # frontmatter 누출 없음
 
-    def test_agents_md_mandates_mode_b(self):
+    def test_agents_md_allows_main_worker_but_dispatches_other_mode_b_roles(self):
         from asgard.templates.agents import agents_md
 
-        self.assertIn("반드시 별도 서브에이전트", agents_md("p"))
+        guide = agents_md("p")
+        self.assertIn("MAIN_WORKER", guide)
+        self.assertIn("asgard-worker.md", guide)
+        self.assertIn("Thinker·Verifier", guide)
+        self.assertIn("BASELINE_VERIFY", guide)
 
 
 class TestHeadlessProceed(unittest.TestCase):

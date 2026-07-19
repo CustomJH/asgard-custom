@@ -559,7 +559,7 @@ class TestRoutePriorsE2E(Base):
         self.assertEqual((out_ev["result"], out_ev["baseline_red"]), ("escalate", False))
 
 
-OPUS_DEFAULT = PROVIDERS["anthropic"].default_model  # 티어 매핑은 기본 모델일 때만 적용
+OPUS_DEFAULT = PROVIDERS["anthropic"].default_model
 
 
 class TestModelTiers(Base):
@@ -570,16 +570,52 @@ class TestModelTiers(Base):
 
     def test_policy_tiers_map_roles_to_models(self):
         h = self._h()
-        self.assertEqual(h._model_for("worker"), "claude-sonnet-5")
+        # worker 정책 티어는 standard 지만 코디네이터(opus=high)가 하한 — 위임 손은 세션 모델 아래로 안 내려간다
+        self.assertEqual(h._model_for("worker"), "claude-opus-4-8")
         self.assertEqual(h._model_for("thinker"), "claude-opus-4-8")
         self.assertEqual(h._model_for("verifier"), "claude-opus-4-8")
         self.assertEqual(h._model_for("verifier", bump=True), "claude-fable-5")  # full-verify 승급
 
+    def _set_coordinator(self, h, model):
+        # role_rp 가 동일 rp 객체를 공유하므로 in-place 변이 (placement 오인 방지)
+        h.rp.model = model
+
+    def test_coordinator_tier_floor(self):
+        # 프론티어 코디네이터(max) — 전 역할이 fable 로 승급, bump 는 이미 천장
+        h = self._h()
+        self._set_coordinator(h, "claude-fable-5")
+        self.assertEqual(h._model_for("worker"), "claude-fable-5")
+        self.assertEqual(h._model_for("verifier"), "claude-fable-5")
+        self.assertEqual(h._model_for("worker", bump=True), "claude-fable-5")
+        # 코디네이터가 역할 티어보다 낮으면(haiku=fast) 하한은 무효 — 정책 티어 유지
+        h2 = self._h()
+        self._set_coordinator(h2, "claude-haiku-4-5-20251001")
+        self.assertEqual(h2._model_for("worker"), "claude-sonnet-5")
+        self.assertEqual(h2._model_for("verifier"), "claude-opus-4-8")
+
     def test_delivery_tiers(self):
         h = self._h()
-        self.assertEqual(h._delivery_model("freyja"), "claude-sonnet-5")
+        self.assertEqual(h._delivery_model("freyja"), "claude-opus-4-8")
+        self.assertEqual(h._delivery_model("thor"), "claude-opus-4-8")
+        self.assertEqual(h._delivery_model("loki"), "claude-haiku-4-5-20251001")
+        h.policy["delivery"]["thor"] = "custom"
+        self.assertIsNone(h._delivery_model("thor"))
+
+    def test_cli_aliases_keep_low_tier_role_floors(self):
+        h = self._h(model="haiku")
+        self.assertEqual(h._model_for("worker"), "claude-sonnet-5")
+        self.assertEqual(h._model_for("verifier"), "claude-opus-4-8")
         self.assertEqual(h._delivery_model("thor"), "claude-sonnet-5")
         self.assertEqual(h._delivery_model("loki"), "claude-haiku-4-5-20251001")
+
+    def test_explicit_delivery_placement_wins_over_floor(self):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(
+            '[trinity.thor]\nprovider = "ollama"\nmodel = "m1"\n'
+        )
+        h = self._h()
+        self.assertIsNone(h._delivery_model("thor"))
+        self.assertEqual(Heimdall._session(h, "sys", role="thor").rp.model, "m1")
 
     def test_explicit_placement_wins_over_tier(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -615,11 +651,11 @@ class TestModelTiers(Base):
         self.assertEqual(s.rp.profile.name, "anthropic")
         self.assertEqual(h.role_rp["worker"].model, OPUS_DEFAULT)  # 원본 불변
 
-    def test_worker_turn_uses_standard_tier(self):
+    def test_worker_turn_floors_at_coordinator_tier(self):
         h = self._h([worker({"w1.txt": "x\n"}, self.root), verifier("PASS")])
         out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
-        self.assertEqual(h.consumed[0].model, "claude-sonnet-5")  # worker=standard
+        self.assertEqual(h.consumed[0].model, "claude-opus-4-8")  # worker=standard 이나 코디네이터(high) 하한
         self.assertEqual(h.consumed[1].model, "claude-opus-4-8")  # verifier micro=high
 
     def test_quest_events_record_used_model(self):
@@ -628,8 +664,8 @@ class TestModelTiers(Base):
         h.handle("w1.txt 만들어")
         d = os.path.join(self.root, ".asgard", "quest")
         log = "\n".join(open(os.path.join(d, f)).read() for f in os.listdir(d) if f.endswith(".jsonl"))
-        self.assertIn("anthropic:claude-sonnet-5", log)  # work 이벤트
-        self.assertIn("anthropic:claude-opus-4-8", log)  # verify 이벤트
+        self.assertIn('"role":"worker","event":"work"', log)
+        self.assertIn("anthropic:claude-opus-4-8", log)  # work·verify — 코디네이터 하한으로 동일 티어
 
     def test_second_replan_uses_thinker_alt_placement(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -1711,39 +1747,43 @@ class TestHookParity(Base):
 
 
 class TestStandardRoute(Base):
-    """ordinary write도 Worker 뒤에 독립 Verifier를 강제한다."""
+    """ordinary write는 안전 가드가 허용하면 baseline으로 닫고, 아니면 Verifier로 승격한다."""
 
     def policy(self, **kw):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
         with open(os.path.join(self.root, ".asgard", "trinity-policy.json"), "w") as f:
             json.dump(kw, f)
 
-    def test_standard_closes_with_independent_verifier(self):
-        self.policy(baseline_checks=["python3 -m compileall -q ."])
+    def test_standard_closes_with_green_baseline(self):
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         h = FakeHeimdall(
             self.root,
-            [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")],
+            [worker({"w1.txt": "x\n", "test_w1.py": "def test_w1(): assert True\n"}, self.root)],
             cls={**CLS_WRITE, "task_class": "standard"},
         )
         out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
-        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
-        self.assertIn('"verifier"', self.quest_log_text())
+        self.assertEqual([s.label for s in h.consumed], ["worker"])
+        self.assertIn('"harness"', self.quest_log_text())
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
     def test_standard_red_gives_worker_retry_with_failing_check(self):
-        self.policy(baseline_checks=["test -f fixed.txt"])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         seq = [
-            worker({"w1.txt": "x\n"}, self.root),
-            verifier("PASS"),
+            worker(
+                {
+                    "w1.txt": "x\n",
+                    "test_fixed.py": "from pathlib import Path\n\ndef test_fixed(): assert Path('fixed.txt').exists()\n",
+                },
+                self.root,
+            ),
             worker({"fixed.txt": "y\n"}, self.root),
-            verifier("PASS"),
         ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
         out = h.handle("고쳐줘")
         self.assertIn("과업 완수", out)
-        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "worker", "verifier"])
-        self.assertIn("baseline-red", seq[2].prompt or "")  # 실패 체크가 재시도 컨텍스트로 전달
+        self.assertEqual([s.label for s in h.consumed], ["worker", "worker"])
+        self.assertIn("baseline-red", seq[1].prompt or "")  # 실패 체크가 재시도 컨텍스트로 전달
 
     def test_invalid_verdict_is_recorded_as_fail_instead_of_crashing(self):
         seq = [

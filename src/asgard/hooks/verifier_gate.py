@@ -8,7 +8,7 @@
 # 차단 알고리즘 (deterministic violation 만 block, 그 외 전부 warn+allow — fail-open 유지):
 #   활성 quest 없음 / 비-git / 파싱 실패          → allow
 #   write 전무 + mutation 명령 전무 (trivial 면제) → allow
-#   Verifier PASS 레코드 없음                      → block
+#   검증 PASS 레코드 없음 (하네스 또는 Verifier)   → block
 #   PASS.diff_hash != 현재 hash (stale PASS)       → block
 #   criteria 없음 / 성공 명령 증거 없음            → block
 #   full-verify 필요(민감 경로·큰 diff)한데 micro   → block

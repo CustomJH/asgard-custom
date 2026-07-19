@@ -486,6 +486,17 @@ def detect_checks(root: str, policy: dict) -> list[str]:
     return []
 
 
+def gate_first_checks_available(root: str, policy: dict) -> bool:
+    """Only behavior test runners may replace an LLM Verifier; lint/compile/artifact checks may not."""
+    for command in detect_checks(root, policy):
+        words = command.split()
+        if "pytest" in words or words[:2] in (["npm", "test"], ["pnpm", "test"], ["yarn", "test"]):
+            return True
+        if words[:2] in (["cargo", "test"], ["go", "test"]):
+            return True
+    return False
+
+
 def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) -> dict | None:
     """체크 전부 실행 → {"state": green|red|none, "results": [...]}. 체크 없음 → None (요건 면제).
     같은 diff_hash 의 기존 verify 기록은 재사용 — 동일 트리에 pytest 를 두 번 돌리지 않는다.
@@ -694,12 +705,12 @@ def pass_evidence(rec: dict) -> bool:
     )
 
 
-_SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn )")
+_SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn |return\b|yield\b)")
 
 
 def signature_risk(root: str, base_ref: str | None) -> bool:
-    """diff 에 삭제·변경된 함수/클래스 시그니처 라인 존재 여부 — 숨은-caller 리스크의 결정론 신호
-    (벤치 t3 방어 유지 조건). '-' 라인만 본다: 신규 추가(+def)는 기존 caller 가 없다.
+    """diff 에 삭제·변경된 공개 선언·반환 라인 존재 여부 — 숨은-caller/값 형태 리스크 신호.
+    '-' 라인만 본다: 신규 추가(+def)는 기존 caller 가 없고, 바뀐 줄은 기존 '-' 절반이 잡힌다.
     게이트-우선(STANDARD) 라우팅 전용 — verifier_gate 대응 불필요."""
     if not base_ref or base_ref == "NONE":
         return False
@@ -1090,7 +1101,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "replan_after_escalate": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[-1]),
         "escalate_nudged": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[0]),
         # 게이트-우선 라우팅 신호
-        "checks_available": bool(detect_checks(root, policy)),
+        "checks_available": gate_first_checks_available(root, policy),
         "sig_risk": signature_risk(root, base_ref),
         "tickets": list(tickets.values()),
         "ticket_counts": {status: count for status, count in ticket_counts.items() if count},
@@ -1106,7 +1117,7 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
     if s.get("last_verdict") == "ESCALATE":
         return "ESCALATED", "escalate", "Verifier ESCALATE — Odin 결정 대기 (Canon 9 정규 종료)"
     if s.get("last_verdict") != "PASS":
-        return "REJECTED", "no_pass", "Verifier PASS 판정 없음"
+        return "REJECTED", "no_pass", "검증 PASS 판정 없음"
     if not s.get("criteria"):
         # 게이트와 동일 검사 — close 가 이걸 안 보면 무기준 PASS 가 LAST 면제로 게이트를 우회한다
         return "REJECTED", "no_criteria", "성공 기준(criteria)이 로그에 없음 — 기준 없이는 검증이 성립하지 않는다"
@@ -1126,7 +1137,7 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
         return "REJECTED", "stale_pass", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요"
     if s.get("full_required") and s.get("pass_level") != "full":
         return "REJECTED", "micro_pass", "full-verify 필요(민감 경로/큰 diff)한데 micro PASS"
-    return "APPROVED", "ok", "Verifier PASS + diff-hash 물리 대조 일치"
+    return "APPROVED", "ok", "검증 PASS + diff-hash 물리 대조 일치"
 
 
 # ── 전이 함수 — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
@@ -1159,8 +1170,8 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
     # v1 은 --standard 옵트인이었으나 스모크 3회에서 모델이 플래그를 안 넘김 (프롬프트 계약
     # 한계) — 의존성을 삭제하고 전이 함수 기본으로 흡수. 조건 하나라도 깨지면 아래 트리니티 행으로
     # 자연 폴스루 = 승격. 민감/큰 non-test diff/시그니처 변경/테스트 삭제/모호는 LLM Verifier 가 필요.
-    # 게이트-우선 전용 라인 상한 (벤치 결함 대응): sig_risk 는 def 삭제만 본다 — def 무변경
-    # 리라이트(+52/-11)가 동작 계약을 바꿔 caller 를 깨는 경로는 diff 질량으로만 잡을 수 있다.
+    # 게이트-우선 전용 라인 상한 (벤치 결함 대응): sig_risk가 못 보는 간접 값 흐름 변경도
+    # 큰 리라이트(+52/-11)는 diff 질량으로 LLM Verifier에 올린다.
     # 가시 테스트(baseline)는 near-oracle 이 아니므로 (2606.24453 regime) 소형 diff 에서만 신뢰.
     gf_small = s.get("nontest_lines", s["diff_lines"]) <= int(policy.get("gate_first_max_lines") or 25)
     standard_ok = (
@@ -1247,8 +1258,8 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
     if not has_write:
         return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")
     if s["last_event"] == "work":
-        # Deterministic checks are evidence, not an authority. Every write still crosses an
-        # independent Verifier role; otherwise a repository-controlled baseline can flatten Trinity.
+        if standard_ok and s.get("checks_available"):
+            return out("BASELINE_VERIFY", "소형·비민감 변경 — 하네스 베이스라인 우선")
         return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
     if (sensitive or big) and s["plan_turns"] < 2:
         # open 의 자동 plan(턴1)은 접수 기록일 뿐 — 민감/큰 write 는 실제 Thinker 계획 턴을 요구한다.
@@ -1722,6 +1733,23 @@ def main() -> int:
         return 0
 
     if args.cmd == "verify-baseline":
+        # baseline 은 모델이 고르는 축약 경로가 아니다. 현재 물리 diff와 동일 risk flags로
+        # 전이를 다시 계산해 하네스 판정 자격을 확인한다 — sig_risk/큰 diff/민감 경로를
+        # MAIN_WORKER가 micro PASS로 자기강등하는 우회도 여기서 한 번에 막는다.
+        eligible = transition(summarize(root, qid, events, policy), policy, args, load_priors(root))
+        if eligible["next_role"] != "BASELINE_VERIFY":
+            print(
+                json.dumps(
+                    {
+                        "error": "baseline 검증 부적격 — 전이 함수가 배정한 역할을 따르세요",
+                        "next_role": eligible["next_role"],
+                        "why": eligible["why"],
+                    },
+                    ensure_ascii=False,
+                ),
+                file=sys.stderr,
+            )
+            return 1
         # 게이트-우선 판정 턴 — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
         # commands = 하네스가 직접 실행한 체크 (pass_evidence 충족) — verifier 재량 커맨드 아님.
         ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
@@ -1768,17 +1796,6 @@ def main() -> int:
                 ev["verdict"] = "FAIL"
                 ev["failure_sig"] = "criteria-contract"
                 failing = [str(u) for u in unmet]
-        if ev["verdict"] == "PASS":
-            print(
-                json.dumps(
-                    {
-                        "error": "green baseline is evidence only — independent Verifier PASS is still required",
-                        "baseline": state,
-                    }
-                ),
-                file=sys.stderr,
-            )
-            return 1
         write_event(root, qid, ev)
         print(
             json.dumps(
@@ -1819,7 +1836,7 @@ def main() -> int:
                 print(
                     json.dumps(
                         {
-                            "error": "close 거부(%s: %s) — Verifier PASS(+hash 일치) 또는 ESCALATE 후에만. "
+                            "error": "close 거부(%s: %s) — 검증 PASS(+hash 일치) 또는 ESCALATE 후에만. "
                             "우회는 --force (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)" % (code, why)
                         },
                         ensure_ascii=False,

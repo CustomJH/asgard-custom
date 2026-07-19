@@ -469,7 +469,7 @@ class Heimdall:
         )
         last_pass = next((e for e in reversed(events) if e.get("event") == "verify" and e.get("verdict") == "PASS"), {})
         cmds = [c for c in (last_pass.get("commands") or []) if isinstance(c, dict)]
-        lines = ["과업 완수 — Verifier PASS + diff-hash 일치, 퀘스트 로그 닫힘."]
+        lines = ["과업 완수 — 검증 PASS + diff-hash 일치, 퀘스트 로그 닫힘."]
         lines.append(f"턴 {len(events)} · 역할 {'→'.join(roles[-8:]) or '-'}")
         if cmds:
             lines.append(

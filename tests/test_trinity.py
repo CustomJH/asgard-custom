@@ -1214,7 +1214,7 @@ class TestDetectChecks(unittest.TestCase):
 
 
 class TestStandardTransition(TrinityBase):
-    """베이스라인은 증거일 뿐이며 모든 write는 독립 Verifier를 통과한다."""
+    """안전한 소형 write는 baseline 우선, 위험 신호가 있으면 독립 Verifier로 승격한다."""
 
     def commit_all(self, msg="c"):
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
@@ -1226,7 +1226,15 @@ class TestStandardTransition(TrinityBase):
     def nxt(self, *flags):
         return jout(self.qlog("next", "--write-expected", *flags))
 
-    def test_work_routes_independent_verifier_even_with_checks(self):
+    def test_work_routes_baseline_when_behavior_tests_exist(self):
+        self.policy(baseline_checks=["python3 -m pytest -q"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_ok():\n    assert True\n")
+        self.work()
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+
+    def test_compile_only_check_keeps_llm_verifier(self):
         self.policy(baseline_checks=["python3 -m compileall -q ."])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
@@ -1239,21 +1247,23 @@ class TestStandardTransition(TrinityBase):
         self.work()
         self.assertEqual(self.nxt()["next_role"], "VERIFIER")
 
-    def test_green_baseline_cannot_replace_verifier(self):
-        self.policy(baseline_checks=["python3 -m compileall -q ."])
+    def test_green_baseline_closes_safe_small_write(self):
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_ok():\n    assert True\n")
         self.work()
         vb = self.qlog("verify-baseline")
-        self.assertEqual(vb.returncode, 1)
-        self.assertIn("independent Verifier", vb.stderr)
-        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
-        self.assertEqual(self.qlog("close").returncode, 1)
+        self.assertEqual(vb.returncode, 0)
+        self.assertEqual(jout(vb)["verdict"], "PASS")
+        self.assertEqual(self.nxt()["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
 
     def test_red_retries_worker_then_two_reds_escalate(self):
-        self.policy(baseline_checks=["false"])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_red():\n    assert False\n")
         self.work()
         vb = jout(self.qlog("verify-baseline"))
         self.assertEqual(vb["verdict"], "FAIL")
@@ -1266,22 +1276,37 @@ class TestStandardTransition(TrinityBase):
 
     def test_signature_change_escalates_to_llm_verifier(self):
         self.write("lib.py", "def foo(a):\n    return a\n")
+        self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
         self.commit_all()
-        self.policy(baseline_checks=["true"])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.open_quest()
         self.write("lib.py", "def foo(a, b):\n    return a\n")  # 시그니처 변경 = 숨은-caller 리스크
         self.work()
         self.assertTrue(jout(self.qlog("state"))["sig_risk"])
         self.assertEqual(self.nxt()["next_role"], "VERIFIER")
+        vb = self.qlog("verify-baseline")
+        self.assertEqual(vb.returncode, 1)
+        self.assertEqual(json.loads(vb.stderr)["next_role"], "VERIFIER")
 
     def test_body_edit_is_not_signature_risk(self):
-        self.write("lib.py", "def foo(a):\n    return a\n")
+        self.write("lib.py", "def foo(a):\n    value = a\n    return value\n")
+        self.write("tests/test_lib.py", "from lib import foo\n\ndef test_foo():\n    assert foo(1) in (1, 2)\n")
         self.commit_all()
-        self.policy(baseline_checks=["true"])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.open_quest()
-        self.write("lib.py", "def foo(a):\n    return a + 1\n")  # 본문만 변경
+        self.write("lib.py", "def foo(a):\n    value = a + 1\n    return value\n")  # 내부 계산만 변경
         self.work()
         self.assertFalse(jout(self.qlog("state"))["sig_risk"])
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+
+    def test_return_shape_change_escalates_to_llm_verifier(self):
+        self.write("lib.py", "def foo(a):\n    return {'value': a}\n")
+        self.commit_all()
+        self.policy(baseline_checks=["python3 -m pytest -q"])
+        self.open_quest()
+        self.write("lib.py", "def foo(a):\n    return Config(value=a)\n")
+        self.work()
+        self.assertTrue(jout(self.qlog("state"))["sig_risk"])
         self.assertEqual(self.nxt()["next_role"], "VERIFIER")
 
     def test_sensitive_path_escalates_to_llm_verifier(self):
@@ -1302,14 +1327,14 @@ class TestStandardTransition(TrinityBase):
 
     def test_added_tests_do_not_escalate(self):
         # 스모크 벤치 발견 — 잠금 테스트 추가가 big 오판을 만들면 게이트-우선이 무력화된다
-        self.policy(baseline_checks=["true"])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
-        self.write("test_a.py", "assert True\n")
-        self.write("test_b.py", "assert True\n")  # changed 3파일 — non-test 는 1파일
+        self.write("test_a.py", "def test_a(): assert True\n")
+        self.write("test_b.py", "def test_b(): assert True\n")  # changed 3파일 — non-test 는 1파일
         self.work()
-        self.assertEqual(self.nxt()["next_role"], "VERIFIER")
-        self.verify()
+        self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
+        self.assertEqual(jout(self.qlog("verify-baseline"))["verdict"], "PASS")
         self.assertEqual(self.nxt()["next_role"], "DONE")
         self.assertEqual(self.qlog("close").returncode, 0)
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
@@ -1339,6 +1364,13 @@ class TestStandardTransition(TrinityBase):
         p = self.qlog("verify-baseline")
         self.assertEqual(p.returncode, 1)  # 판정 불가 — LLM Verifier 폴백 지시
 
+    def test_verify_baseline_before_work_is_rejected(self):
+        self.policy(baseline_checks=["python3 -m pytest -q"])
+        self.open_quest()
+        p = self.qlog("verify-baseline")
+        self.assertEqual(p.returncode, 1)
+        self.assertEqual(json.loads(p.stderr)["next_role"], "WORKER")
+
 
 class TestRoutePriors(TrinityBase):
     """Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1 로 하향."""
@@ -1350,9 +1382,10 @@ class TestRoutePriors(TrinityBase):
 
     def one_red(self):
         """게이트-우선 적격 상태에서 baseline red 1회까지 진행."""
-        self.policy(baseline_checks=["false"])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_red():\n    assert False\n")
         self.qlog("append", "--role", "worker", "--event", "work")
         self.qlog("verify-baseline")
 
@@ -1602,7 +1635,7 @@ class TestCriteriaContracts(TrinityBase):
         self.open_with("app.py 정상 실행 | verify: python3 app.py")
         self.write("app.py", "import sys; sys.exit(1)\n")
         self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
-        self.policy(baseline_checks=["python3 -m compileall -q ."])
+        self.policy(baseline_checks=["python3 -m pytest -q"])
         self.qlog("append", "--role", "worker", "--event", "work")
         out = jout(self.qlog("verify-baseline"))
         self.assertEqual(out["verdict"], "FAIL")
