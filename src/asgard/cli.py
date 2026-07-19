@@ -207,6 +207,114 @@ def tools_list(
     raise typer.Exit(run_tools_list(role, json_out=json_))
 
 
+# Composio-style catalog → router boundary. Client-native skill folders contain adapters only;
+# selection and policy bodies are owned by these Asgard surfaces.
+skills_app = typer.Typer(help="central Asgard skill catalog and deterministic router", invoke_without_command=True)
+app.add_typer(skills_app, name="skills")
+
+
+@skills_app.callback()
+def skills_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.skills import run_skills_list
+
+        raise typer.Exit(run_skills_list())
+
+
+@skills_app.command("list", help="list bundled, installed, and learned skills")
+def skills_list(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.skills import run_skills_list
+
+    raise typer.Exit(run_skills_list(json_))
+
+
+@skills_app.command("show", help="print one canonical skill body")
+def skills_show(
+    name: str = typer.Argument(..., metavar="<skill-name>"),
+    frontmatter: bool = typer.Option(False, "--frontmatter", help="include SKILL.md frontmatter"),
+    resource: str = typer.Option(None, "--resource", help="print a relative text resource bundled with the skill"),
+) -> None:
+    from .commands.skills import run_skills_show
+
+    raise typer.Exit(run_skills_show(name, body_only=not frontmatter, resource=resource))
+
+
+@skills_app.command("resolve", help="resolve task-matched policy for one Asgard role")
+def skills_resolve(
+    task: str = typer.Argument(None, help="current task (reads stdin when omitted)"),
+    agent: str = typer.Option("worker", "--agent", help="worker|freyja|thor|eitri|mimir"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.skills import run_skills_resolve
+
+    raise typer.Exit(run_skills_resolve(agent, task, json_))
+
+
+@skills_app.command(
+    "run",
+    help="run a declared helper from a resource skill",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def skills_run(ctx: typer.Context, name: str = typer.Argument(..., metavar="<skill-name>")) -> None:
+    from .commands.skills import run_skills_run
+
+    raise typer.Exit(run_skills_run(name, list(ctx.args)))
+
+
+@skills_app.command("assign", help="assign a skill to one role in this project")
+def skills_assign(name: str, agent: str = typer.Option(..., "--agent")) -> None:
+    from .commands.skills import run_skills_assign
+
+    raise typer.Exit(run_skills_assign(name, agent, assigned=True))
+
+
+@skills_app.command("unassign", help="remove a skill from one role in this project")
+def skills_unassign(name: str, agent: str = typer.Option(..., "--agent")) -> None:
+    from .commands.skills import run_skills_assign
+
+    raise typer.Exit(run_skills_assign(name, agent, assigned=False))
+
+
+@skills_app.command("enable", help="enable a skill in this project")
+def skills_enable(name: str) -> None:
+    from .commands.skills import run_skills_enable
+
+    raise typer.Exit(run_skills_enable(name, enabled=True))
+
+
+@skills_app.command("disable", help="disable a skill in this project")
+def skills_disable(name: str) -> None:
+    from .commands.skills import run_skills_enable
+
+    raise typer.Exit(run_skills_enable(name, enabled=False))
+
+
+plugins_app = typer.Typer(help="Asgard resource plugin catalog", invoke_without_command=True)
+app.add_typer(plugins_app, name="plugins")
+
+
+@plugins_app.callback()
+def plugins_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.skills import run_plugins_list
+
+        raise typer.Exit(run_plugins_list())
+
+
+@plugins_app.command("list", help="list bundled and locally installed plugins")
+def plugins_list(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.skills import run_plugins_list
+
+    raise typer.Exit(run_plugins_list(json_))
+
+
+@plugins_app.command("install", help="install a local resource plugin directory")
+def plugins_install(source: str = typer.Argument(..., metavar="<path>")) -> None:
+    from .commands.skills import run_plugins_install
+
+    raise typer.Exit(run_plugins_install(source))
+
+
 # 위그드라실 (Yggdrasil) — 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki (v3 P1).
 # 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생. 커맨드는 기능명 memory 유지 + 세계관 별칭.
 memory_app = typer.Typer(help="Yggdrasil — personal memory · LLM wiki (ingest/query/lint)", invoke_without_command=True)

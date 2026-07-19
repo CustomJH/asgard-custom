@@ -25,6 +25,8 @@ _SUMMARY = {
     "run": "run one task headless (Trinity loop)",
     "role": "Trinity role bridge",
     "tools": "inspect role-scoped tool catalog",
+    "skills": "central Asgard skill catalog and router",
+    "plugins": "Asgard plugin catalog",
     "memory": "Yggdrasil — personal memory · LLM wiki",
     "plan": "Asgard Plan — local product planning workspace",
     "studio": "Sessrúmnir — Freyja design studio",
@@ -43,6 +45,8 @@ _FLAGS = {
     "run": ["--provider", "--model", "--json", "--resume", "--quest"],
     "role": [],
     "tools": [],
+    "skills": [],
+    "plugins": [],
     "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
     "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
     "studio": ["--port", "--no-open"],  # bare `asgard studio` = 대시보드 오픈 (memory 와 동형)
@@ -62,6 +66,17 @@ _AUTH_SUB = {"login": "sign in", "status": "check login", "logout": "remove logi
 _ROLES = ["thinker", "worker", "verifier"]
 _TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr", "mimir"]
 _TOOLS_SUB = {"list": "list native + Claude Code role tools"}
+_SKILLS_SUB = {
+    "list": "list skills",
+    "show": "print one skill",
+    "resolve": "resolve task policy",
+    "run": "run a declared skill helper",
+    "assign": "assign a skill to a role",
+    "unassign": "remove a role assignment",
+    "enable": "enable a project skill",
+    "disable": "disable a project skill",
+}
+_PLUGINS_SUB = {"list": "list plugins", "install": "install a local data-only plugin"}
 _SETUP_SUB = {"map": "draw or refresh the project code map"}
 _EVOLVE_SUB = {
     "scan": "mine quest logs into pending drafts",
@@ -176,6 +191,20 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_TOOL_ROLES)}" -- "$cur") )\n'
                 "      fi ;;"
             )
+        elif name == "skills":
+            cases.append(
+                "    skills)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_SKILLS_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "plugins":
+            cases.append(
+                "    plugins)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_PLUGINS_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
         elif name == "memory":
             cases.append(
                 "    memory)\n"
@@ -286,6 +315,20 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_TOOL_ROLES)}\n"
                 "      fi ;;"
             )
+        elif name == "skills":
+            cases.append(
+                "    skills)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_SKILLS_SUB)} --help\n"
+                "      fi ;;"
+            )
+        elif name == "plugins":
+            cases.append(
+                "    plugins)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_PLUGINS_SUB)} --help\n"
+                "      fi ;;"
+            )
         elif name == "memory":
             cases.append(
                 "    memory)\n"
@@ -388,6 +431,12 @@ def _fish() -> str:
         'complete -c asgard -n "__fish_seen_subcommand_from tools; and __fish_seen_subcommand_from list" '
         '-l role -x -a "' + " ".join(_TOOL_ROLES) + '"'
     )
+    skills_top = "__fish_seen_subcommand_from skills; and not __fish_seen_subcommand_from " + " ".join(_SKILLS_SUB)
+    for sub, desc in _SKILLS_SUB.items():
+        lines.append(f"complete -c asgard -n \"{skills_top}\" -a {sub} -d '{desc}'")
+    plugins_top = "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from " + " ".join(_PLUGINS_SUB)
+    for sub, desc in _PLUGINS_SUB.items():
+        lines.append(f"complete -c asgard -n \"{plugins_top}\" -a {sub} -d '{desc}'")
     lines.append(
         'complete -c asgard -n "__fish_seen_subcommand_from tools; and __fish_seen_subcommand_from list" -l json'
     )

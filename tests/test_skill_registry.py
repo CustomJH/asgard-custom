@@ -1,0 +1,283 @@
+#!/usr/bin/env python3
+"""Central skill/plugin catalog: one router, thin client adapters, safe resource plugins."""
+
+import json
+import os
+import subprocess
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+
+from asgard import skill_bank, skill_registry  # noqa: E402
+
+
+class RegistryTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.old_home = os.environ.get("HOME")
+        os.environ["HOME"] = os.path.join(self.root, "home")
+        skill_bank._cache.clear()
+
+    def tearDown(self):
+        if self.old_home is None:
+            os.environ.pop("HOME", None)
+        else:
+            os.environ["HOME"] = self.old_home
+        skill_bank._cache.clear()
+        self.tmp.cleanup()
+
+    def test_builtin_router_and_gate_isolation(self):
+        names = [name for name, _ in skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "worker")]
+        self.assertEqual(names, ["asgard-worker-debugging", "asgard-worker-testing"])
+        self.assertEqual(skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "verifier"), [])
+        self.assertIn("worker", {plugin["name"] for plugin in skill_registry.plugins()})
+
+    def test_bare_catalog_commands_list_current_inventory(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        skills_result = CliRunner().invoke(app, ["skills"])
+        plugins_result = CliRunner().invoke(app, ["plugins"])
+        self.assertEqual(skills_result.exit_code, 0)
+        self.assertIn("design-md-review", skills_result.stdout)
+        self.assertEqual(plugins_result.exit_code, 0)
+        self.assertIn("google-design-md", plugins_result.stdout)
+
+    def test_bundled_uiux_resource_is_freyja_assigned_and_runnable(self):
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog["ui-ux-pro-max"]["plugin"], "ui-ux-pro-max")
+        self.assertNotIn(
+            "ui-ux-pro-max",
+            {name for name, _ in skill_registry.resolve_skills(self.root, "백엔드와 무관한 일반 과업", "freyja")},
+        )
+        self.assertIn(
+            "ui-ux-pro-max",
+            {name for name, _ in skill_registry.resolve_skills(self.root, "반응형 대시보드 UI", "freyja")},
+        )
+        self.assertIn(
+            "ui-ux-pro-max",
+            {row["name"] for row in skill_registry.available_skills(self.root, "freyja")},
+        )
+        self.assertNotIn(
+            "ui-ux-pro-max",
+            {name for name, _ in skill_registry.resolve_skills(self.root, "반응형 대시보드 UI", "worker")},
+        )
+        with mock.patch("asgard.skill_registry.subprocess.run") as run:
+            run.return_value.returncode = 0
+            self.assertEqual(skill_registry.run_skill(self.root, "ui-ux-pro-max", ["dashboard", "--json"]), 0)
+        command = run.call_args.args[0]
+        self.assertTrue(command[1].endswith("ui-ux-pro-max/scripts/search.py"))
+        self.assertEqual(command[-2:], ["dashboard", "--json"])
+        self.assertEqual(run.call_args.kwargs["cwd"], self.root)
+
+    def test_bundled_design_md_python_linter(self):
+        plugin = skill_registry.bundled_plugins()["google-design-md"]
+        script = Path(plugin["root"], "skills", "design-md-review", "scripts", "design_md.py")
+        design = Path(self.root, "DESIGN.md")
+        design.write_text(
+            """---
+name: Demo
+colors:
+  primary: "oklch(62% 0.18 250)"
+  mixed: "color-mix(in srgb, #ffffff 40%, #000000)"
+  broken-color: nope
+typography:
+  body:
+    fontFamily: Inter
+    fontSize: 16px
+components:
+  button:
+    backgroundColor: "#777777"
+    textColor: "#888888"
+  broken:
+    backgroundColor: "{colors.missing}"
+---
+
+## Colors
+## Typography
+""",
+            encoding="utf-8",
+        )
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        result = subprocess.run(
+            [sys.executable, str(script), "lint", str(design)], capture_output=True, text=True, env=env, check=False
+        )
+        report = json.loads(result.stdout)
+        self.assertEqual(result.returncode, 1)
+        self.assertGreaterEqual(report["summary"]["errors"], 2)
+        self.assertTrue(any("contrast ratio" in finding["message"] for finding in report["findings"]))
+        self.assertFalse(any("color-mix" in finding["message"] for finding in report["findings"]))
+        self.assertIn(
+            "design-md-review",
+            {name for name, _ in skill_registry.resolve_skills(self.root, "DESIGN.md 디자인 시스템 검수", "freyja")},
+        )
+
+    def test_emil_motion_skills_compose_after_existing_freyja_policy(self):
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog["review-animations"]["plugin"], "emil-design-engineering")
+        self.assertEqual(catalog["apple-design"]["origin"], "bundled")
+
+        review = skill_registry.resolve_skills(self.root, "애니메이션 리뷰", "freyja")
+        names = [name for name, _ in review]
+        self.assertLess(names.index("asgard-freyja-motion"), names.index("review-animations"))
+        self.assertNotIn("improve-animations", names)
+
+        physical = dict(skill_registry.resolve_skills(self.root, "스프링 애니메이션 제스처 UI", "freyja"))
+        self.assertIn("apple-design", physical)
+        self.assertIn("asgard skills show apple-design", physical["apple-design"])
+        self.assertIn("asgard skills show apple-design --resource", physical["apple-design"])
+        self.assertNotIn(
+            "apple-design",
+            {name for name, _ in skill_registry.resolve_skills(self.root, "스프링 애니메이션 제스처 UI", "worker")},
+        )
+
+    def test_skill_resource_loader_exposes_references_without_path_escape(self):
+        standards = skill_registry.show_skill_resource(self.root, "review-animations", "STANDARDS.md")
+        self.assertIn("Animation Standards Reference", standards)
+        with self.assertRaisesRegex(ValueError, "escapes"):
+            skill_registry.show_skill_resource(self.root, "review-animations", "../SKILL.md")
+
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        result = CliRunner().invoke(app, ["skills", "show", "review-animations", "--resource", "STANDARDS.md"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("Animation Standards Reference", result.stdout)
+
+    def test_scaffold_uses_native_discovery_and_direct_canonical_loaders(self):
+        from asgard.commands.setup import plan_files
+
+        files, _ = plan_files(cc=True, cursor=False, codex=True, root=self.root)
+        by_path = dict(files)
+        cc = by_path[os.path.join(self.root, ".claude", "skills", "asgard-worker-debugging", "SKILL.md")]
+        codex = by_path[os.path.join(self.root, ".agents", "skills", "asgard-worker-debugging", "SKILL.md")]
+        self.assertEqual(cc, codex)
+        self.assertIn("asgard skills show asgard-worker-debugging", cc)
+        self.assertNotIn("재현 없으면 수정 없다", cc)
+        self.assertIn(os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md"), by_path)
+        for name in ("ui-ux-pro-max", "design-md-review", "review-animations", "asgard-freyja-motion"):
+            adapter = by_path[os.path.join(self.root, ".agents", "skills", name, "SKILL.md")]
+            self.assertIn(f"asgard skills show {name}", adapter)
+        core = by_path[os.path.join(self.root, ".agents", "skills", "asgard-freyja", "SKILL.md")]
+        self.assertIn("asgard skills show asgard-freyja", core)
+        router = by_path[os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md")]
+        self.assertNotIn("skills resolve", router)
+        freyja_role = by_path[os.path.join(self.root, ".claude", "agents", "asgard-freyja.md")]
+        self.assertIn("<available_skills>", freyja_role)
+        self.assertIn("ui-ux-pro-max", freyja_role)
+
+    def test_project_assignment_and_disable_overrides(self):
+        from asgard.settings import load_project
+
+        skill_registry.assign_skill(self.root, "asgard-worker-testing", "worker", assigned=False)
+        names = {name for name, _ in skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "worker")}
+        self.assertNotIn("asgard-worker-testing", names)
+        skill_registry.assign_skill(self.root, "asgard-worker-testing", "worker", assigned=True)
+        names = {name for name, _ in skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "worker")}
+        self.assertIn("asgard-worker-testing", names)
+        skill_registry.set_skill_enabled(self.root, "asgard-worker-testing", enabled=False)
+        names = {name for name, _ in skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "worker")}
+        self.assertNotIn("asgard-worker-testing", names)
+        self.assertEqual(load_project(self.root)["skills"]["disabled"], ["asgard-worker-testing"])
+        with self.assertRaisesRegex(ValueError, "not compatible"):
+            skill_registry.assign_skill(self.root, "ui-ux-pro-max", "worker", assigned=True)
+
+    def test_install_and_resolve_data_only_plugin(self):
+        source = os.path.join(self.root, "source")
+        skill = os.path.join(source, "skills", "acme-db")
+        os.makedirs(skill)
+        Path(os.path.join(source, "plugin.json")).write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "name": "acme",
+                    "version": "1.0.0",
+                    "description": "Acme policy",
+                    "skills": ["acme-db"],
+                }
+            ),
+            encoding="utf-8",
+        )
+        Path(os.path.join(skill, "SKILL.md")).write_text(
+            "---\nname: acme-db\ndescription: DB rule\ntriggers: vacuum, database\nagent: thor\n---\n\nACME_DB_POLICY\n",
+            encoding="utf-8",
+        )
+
+        installed = skill_registry.install_plugin(source)
+        self.assertEqual(installed["name"], "acme")
+        hits = skill_registry.resolve_skills(self.root, "database vacuum", "thor")
+        self.assertIn(("acme-db", "ACME_DB_POLICY\n"), hits)
+        self.assertIn("ACME_DB_POLICY", skill_registry.show_skill(self.root, "acme-db") or "")
+        from asgard.agent.heimdall import _skill_support
+
+        note, tools, handlers = _skill_support("thor", self.root)
+        self.assertIn("acme-db", note)
+        self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
+        self.assertEqual(handlers["load_skill"]({"name": "acme-db"}), "ACME_DB_POLICY\n")
+
+    def test_install_preserves_declared_skill_resources(self):
+        source = os.path.join(self.root, "resource-source")
+        skill = os.path.join(source, "skills", "acme-search")
+        os.makedirs(os.path.join(skill, "scripts"))
+        os.makedirs(os.path.join(skill, "data"))
+        Path(os.path.join(source, "plugin.json")).write_text(
+            json.dumps(
+                {
+                    "schema": 1,
+                    "name": "acme-resource",
+                    "skills": ["acme-search"],
+                    "entrypoints": {"acme-search": "scripts/search.py"},
+                }
+            ),
+            encoding="utf-8",
+        )
+        Path(os.path.join(skill, "SKILL.md")).write_text(
+            "---\nname: acme-search\ndescription: Search\ntriggers: lookup\nagent: worker\n---\n\nSEARCH\n",
+            encoding="utf-8",
+        )
+        Path(os.path.join(skill, "scripts", "search.py")).write_text("print('ok')\n", encoding="utf-8")
+        Path(os.path.join(skill, "data", "index.csv")).write_text("term,value\na,b\n", encoding="utf-8")
+
+        skill_registry.install_plugin(source)
+        plugin = skill_registry.installed_plugins()["acme-resource"]
+        self.assertEqual(
+            Path(plugin["root"], "skills", "acme-search", "data", "index.csv").read_text(), "term,value\na,b\n"
+        )
+
+    def test_plugin_rejects_nested_resource_symlink(self):
+        source = os.path.join(self.root, "source")
+        skill = os.path.join(source, "skills", "escape")
+        os.makedirs(skill)
+        Path(os.path.join(source, "plugin.json")).write_text(
+            json.dumps({"schema": 1, "name": "bad-nested", "skills": ["escape"]}), encoding="utf-8"
+        )
+        Path(os.path.join(skill, "SKILL.md")).write_text(
+            "---\nname: escape\ndescription: Escape\ntriggers: escape\nagent: worker\n---\n\nBAD\n",
+            encoding="utf-8",
+        )
+        os.symlink(os.path.join(self.root, "outside"), os.path.join(skill, "data"))
+        with self.assertRaisesRegex(ValueError, "cannot contain symlinks"):
+            skill_registry.install_plugin(source)
+
+    def test_plugin_rejects_symlinked_skills_directory(self):
+        source = os.path.join(self.root, "source")
+        outside = os.path.join(self.root, "outside")
+        os.makedirs(outside)
+        os.makedirs(source)
+        os.symlink(outside, os.path.join(source, "skills"))
+        Path(os.path.join(source, "plugin.json")).write_text(
+            json.dumps({"schema": 1, "name": "bad", "skills": ["escape"]}), encoding="utf-8"
+        )
+        with self.assertRaisesRegex(ValueError, "regular directory"):
+            skill_registry.install_plugin(source)
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -16,6 +16,7 @@ from .map import MAP_INDEX_MD
 from .mimir import MIMIR_SKILLS, mimir_core_skill
 from .seal import SEAL_SKILL_MD
 from .selftest import SELFTEST_MD
+from .skill_router import ROUTER_SKILL_MD
 from .thor import THOR_SKILLS, eitri_core_skill, thor_core_skill
 from .trinity import project_settings, trinity_policy
 from .worker import WORKER_SKILLS
@@ -44,6 +45,7 @@ __all__ = [
     "render_lagom",
     "SEAL_SKILL_MD",
     "SELFTEST_MD",
+    "ROUTER_SKILL_MD",
     "project_settings",
     "trinity_policy",
 ]
