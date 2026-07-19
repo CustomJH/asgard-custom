@@ -805,8 +805,14 @@ def _write_pointer(path: str, qid: str) -> None:
 
 
 def _fsync_dir(path: str) -> None:
-    """Persist directory metadata for pointer rename/unlink operations."""
-    fd = os.open(path, os.O_RDONLY)
+    """Persist directory metadata for pointer rename/unlink operations.
+
+    Windows 는 디렉터리를 os.open 으로 열 수 없어 PermissionError 로 터진다 — 디렉터리
+    fsync 자체가 미지원 플랫폼이므로 조용히 생략한다 (내구성 강화일 뿐 정합성 조건이 아니다)."""
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
     try:
         os.fsync(fd)
     finally:
