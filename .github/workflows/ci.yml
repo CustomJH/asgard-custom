@@ -40,3 +40,19 @@ jobs:
           python-version: "3.14"
 
       - run: bash tests/smoke.sh
+
+  windows-terminal:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --group dev
+
+      - run: uv run pytest -q tests/test_windows.py tests/test_start.py
+
+      - name: Initialize terminal input
+        run: uv run python -c "from asgard.agent import repl; repl._pt_session()"
