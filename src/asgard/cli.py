@@ -47,7 +47,7 @@ def start(
         help="override the provider: anthropic | claude-native | openai | openai-native | openai_compat | ollama | nvidia",
     ),
     model: str = typer.Option(None, "--model", help="override the model id"),
-    tui: bool = typer.Option(False, "--tui", help="full-screen TUI (experimental)"),
+    tui: bool = typer.Option(False, "--tui", help="full-screen TUI (default; kept for compatibility)"),
     plain: bool = typer.Option(False, "--plain", help="force the plain readline REPL (no TUI)"),
     cont: bool = typer.Option(
         False, "--continue", "-c", help="restore the last conversation for this project (context only)"

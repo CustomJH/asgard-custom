@@ -102,6 +102,14 @@ def select_model(root: str, rp: ResolvedProvider, *, persist: bool = True) -> Re
     model = _pick_model(rp)
     if not model:
         return None
+    return select_model_id(root, rp, model, persist=persist)
+
+
+def select_model_id(root: str, rp: ResolvedProvider, model: str, *, persist: bool = True) -> ResolvedProvider | None:
+    """검증된 model ID를 적용한다. readline 선택기와 TUI picker의 공통 저장 경로."""
+    model = normalize_model_id(model)
+    if not model:
+        return None
     if not persist:
         return resolve(root, provider=rp.profile.name, model=model)
     selected = resolve(root, provider=rp.profile.name, model=model)

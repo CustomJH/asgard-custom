@@ -256,3 +256,4 @@ workspace/
 !/.asgard/map/
 !/.asgard/map/**
 !/.asgard/.gitignore
+design-qa.md
