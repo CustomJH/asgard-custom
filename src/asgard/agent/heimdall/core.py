@@ -548,6 +548,7 @@ class Heimdall:
         self._explore_cmds = len(r.commands)  # 탐색량 — _finalize_memory 증류 넛지 문턱 (순수 DIRECT 한정)
         self.last_response_text = final
         self.history = (self.history + [(request, final[:500])])[-6:]
+        self._persist_turn(request, final)
         if active_lagom:
             self.on_text(final)
             return ""  # 검사된 본문을 방금 출력 — REPL 이중 출력 방지
@@ -601,6 +602,28 @@ class Heimdall:
         """협조적 취소 — 이 턴의 모든 AgentSession(디스패치 자식 포함)이 공유 이벤트로 멈춘다."""
         self.cancel_event.set()
 
+    def _persist_turn(self, request: str, response: str) -> None:
+        """완결 턴을 turn_store 에 append — 취소·오류 턴은 호출부가 걸러 여기 오지 않는다."""
+        try:
+            from ..turn_store import append_turn
+
+            append_turn(self.root, request, response)
+        except Exception:
+            pass
+
+    def restore_history(self) -> int:
+        """직전 대화 복원 — turn_store 의 최근 턴을 history 로 되살린다 (대화 맥락만, 권위 없음).
+        반환 = 복원 턴 수. 퀘스트·게이트·메모리 상태는 건드리지 않는다."""
+        try:
+            from ..turn_store import load_turns
+
+            turns = load_turns(self.root, limit=6)
+        except Exception:
+            return 0
+        if turns:
+            self.history = [(q, a[:500]) for q, a in turns]
+        return len(turns)
+
     def _cancel_notice(self) -> str:
         """취소의 정직한 종결 문구 — 퀘스트는 조용히 닫지 않는다 (ACTIVE 잔존을 명시)."""
         from ...hooks.quest_log import active_quest
@@ -642,6 +665,7 @@ class Heimdall:
             out = self._trinity(request, cls, standard=standard)
             self.history = (self.history + [(request, out[:500])])[-6:]  # 후속 질문 맥락 (DIRECT 가 소비)
             self.last_response_text = out
+            self._persist_turn(request, out)
             return self._finalize_memory(request, out)
         except TurnCancelled:
             self.last_response_text = ""

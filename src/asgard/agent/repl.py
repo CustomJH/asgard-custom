@@ -191,9 +191,16 @@ def _status_segments(root: str, rp, usage: dict | None = None) -> list[tuple[str
         win = rp.context_window or rp.profile.context_window  # config override 우선 (CUS-248)
         ctx = usage.get("context") or 0  # 마지막 호출 컨텍스트 크기 — 창 % 는 이걸로
         metric = f"{tok / 1000:.1f}k"
+        metric_color = theme.SUBTEXT
         if win and ctx:  # 세그먼트 내부는 미들닷 하위결합 (세그먼트 간 여백과 2단 구두점)
-            metric += f"·{ctx / win * 100:.0f}%"
-        segs.append((metric, theme.SUBTEXT, False))
+            pct = ctx / win * 100
+            metric += f"·{pct:.0f}%"
+            # 창 압박 경고색 — 70% 호박, 90% 적색 (프룬 트리거 80% 를 사이에 두는 2단 신호)
+            if pct >= 90:
+                metric_color = theme.DANGER
+            elif pct >= 70:
+                metric_color = theme.WARNING
+        segs.append((metric, metric_color, False))
         if usage.get("cache_prompt"):  # 프롬프트 캐시 적중률 — read / (read+write+정가 입력)
             segs.append(
                 (f"cache {usage.get('cache_read', 0) / usage['cache_prompt'] * 100:.0f}%", theme.SUBTEXT, False)
@@ -743,7 +750,7 @@ def _run_bang(root: str, cmd: str) -> None:
         sys.stdout.write(f"  {ui.paint(ui._FAIL, '⚠')} {e}\n")
 
 
-def run(root: str, rp) -> int:
+def run(root: str, rp, cont: bool = False) -> int:
     """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩."""
     render = _Render()
     status = _Spinner()
@@ -764,6 +771,10 @@ def run(root: str, rp) -> int:
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
     # provider 미설정 안내는 status line(⚠ not connected)이 대신 표현 — 별도 줄 없음
+    if cont and heimdall is not None:
+        n = heimdall.restore_history()
+        if n:
+            sys.stdout.write(f"  {ui.dim(t('continue_restored', n=n))}\n")
 
     while True:
         _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)  # toolbar + /lagom stats 공용 세션 상태
@@ -815,6 +826,9 @@ def run(root: str, rp) -> int:
         try:
             import time as _time
 
+            ev = getattr(heimdall, "cancel_event", None)  # 제출측 clear — handle() 은 clear 하지 않는다
+            if ev is not None:
+                ev.clear()
             t0 = _time.monotonic()
             out = heimdall.handle(req)
             render.finish()

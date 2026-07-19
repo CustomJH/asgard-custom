@@ -86,6 +86,10 @@ _M: dict[str, tuple[str, str]] = {
         " Quest {qid} remains ACTIVE — re-request to continue verification, or close it with quest-log close.",
         " 퀘스트 {qid} 는 ACTIVE 로 남아 있음 — 재요청 시 이어서 검증하거나 quest-log close 하세요.",
     ),
+    "continue_restored": (
+        "Restored the last conversation ({n} turns) — context only; quests and evidence are unaffected.",
+        "이전 대화 {n}턴 복원 — 대화 맥락만이며 퀘스트·증거 상태는 그대로입니다.",
+    ),
     "needs_base_url": ("base_url required", "base_url 필요"),
     "thought": ("Runes read", "룬 해독"),
     "thinking": ("reading the runes…", "룬을 읽는 중…"),

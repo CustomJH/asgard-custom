@@ -123,6 +123,7 @@ def run_start(
     model: str | None = None,
     tui: bool = False,
     plain: bool = False,
+    cont: bool = False,
 ) -> int:
     root = os.getcwd()
 
@@ -147,10 +148,10 @@ def run_start(
     if tui and not plain:  # 풀스크린 textual TUI (opt-in)
         from ..agent import tui as _tui
 
-        return _tui.run(root, rp)
+        return _tui.run(root, rp, cont=cont)
     from ..agent import repl
 
-    return repl.run(root, rp)
+    return repl.run(root, rp, cont=cont)
 
 
 def run_prompt(
