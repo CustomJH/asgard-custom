@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "google-design-md",
+  "version": "alpha-bde692f",
+  "description": "Python DESIGN.md linter and review guidance for Freyja",
+  "skills": [
+    "design-md-review"
+  ],
+  "entrypoints": {
+    "design-md-review": "scripts/design_md.py"
+  },
+  "source": "https://github.com/google-labs-code/design.md",
+  "revision": "bde692f2bc92ef7fdd0cf277b2704ab074b70efd",
+  "license": "Apache-2.0"
+}

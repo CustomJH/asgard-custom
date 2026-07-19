@@ -12,6 +12,8 @@ dependencies = [
     "httpx>=0.27",  # Asgard-owned OAuth device flow + refresh for subscription providers
     "claude-agent-sdk>=0.2",  # claude-native provider — 로컬 claude CLI 구동 (claude_cli 트랜스포트)
     "prompt-toolkit>=3.0",
+    "pyyaml>=6.0.3",  # built-in DESIGN.md Python linter
+    "coloraide>=8.10",  # CSS color parsing + WCAG contrast for DESIGN.md
 ]
 
 # 옵트인 시맨틱 검색 (1차 메모리 3번째 RRF 스트림) — 미설치면 lexical 2경로로 fail-open.
@@ -37,6 +39,7 @@ dev = [
 [tool.ruff]
 target-version = "py314"
 line-length = 120
+extend-exclude = ["src/asgard/assets/skill_plugins/**"]  # vendored resource snapshots retain upstream bytes
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]  # pycodestyle · pyflakes · isort — 최소 셋부터
@@ -48,6 +51,9 @@ testpaths = ["tests"]
 # 타입체크 — ty 베타 채택, 문제 시 mypy 폴백. ref/·workspace/ 는 .gitignore 로 자동 제외.
 [tool.ty.environment]
 python-version = "3.14"
+
+[tool.ty.src]
+exclude = ["src/asgard/assets/skill_plugins/**"]  # vendored resource snapshots retain upstream bytes
 
 [build-system]
 requires = ["hatchling"]
@@ -63,4 +69,5 @@ artifacts = [
   "src/asgard/assets/*.png",
   "src/asgard/assets/*.html",
   "src/asgard/assets/studio_templates/**",  # 세스룸니르 템플릿 라이브러리 (CUS-264)
+  "src/asgard/assets/skill_plugins/**",  # 내장 리소스 스킬 (예: ui-ux-pro-max)
 ]  # 로고 lockup + 대시보드 HTML + 스튜디오 템플릿, 기본 .py-only 를 덮어 포함

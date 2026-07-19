@@ -57,9 +57,11 @@ source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "claude-agent-sdk" },
+    { name = "coloraide" },
     { name = "httpx" },
     { name = "openai" },
     { name = "prompt-toolkit" },
+    { name = "pyyaml" },
     { name = "rich" },
     { name = "textual" },
     { name = "typer" },
@@ -83,10 +85,12 @@ dev = [
 requires-dist = [
     { name = "anthropic", specifier = ">=0.60" },
     { name = "claude-agent-sdk", specifier = ">=0.2" },
+    { name = "coloraide", specifier = ">=8.10" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "model2vec", marker = "extra == 'semantic'", specifier = ">=0.8" },
     { name = "openai", specifier = ">=1.40" },
     { name = "prompt-toolkit", specifier = ">=3.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "rich", specifier = ">=13" },
     { name = "textual", specifier = ">=0.60" },
     { name = "typer", specifier = ">=0.12" },
@@ -207,6 +211,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/76/d4/81420972a676e8ffea40450d8c8c92943e7218a78fe9b64359836cc9876b/click-8.4.2.tar.gz", hash = "sha256:9a6cea6e60b17ebe0a44c5cc636d94f09bd66142c1cd7d8b4cd731c4917a15f6", size = 338000, upload-time = "2026-06-24T17:45:15.148Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/fb/e2/79c688af8b210d232694e31e59da9f6ec747bae31c3f5946e4e9b98860d5/click-8.4.2-py3-none-any.whl", hash = "sha256:e6f9f66136c816745b9d65817da91d61d957fb16e02e4dcd0552553c5a197b76", size = 119243, upload-time = "2026-06-24T17:45:13.73Z" },
+]
+
+[[package]]
+name = "coloraide"
+version = "8.10"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/36/b2/ff53a8c7921197177a4011cc1079b2229678280afd7a8f652c6b46944af8/coloraide-8.10.tar.gz", hash = "sha256:0120503a297181d7236c378297b6ad98b0da4e11bd99fd2500778b8485557a9e", size = 22407815, upload-time = "2026-06-26T01:39:07.708Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/a7/94b95381ebcf3954cd726db7bc4e53cd414a830849ad47db870b2469627f/coloraide-8.10-py3-none-any.whl", hash = "sha256:8a55379769807ce50a1a5b3e973620708fd40b2552a016b89b7fa70e60dd58cc", size = 361350, upload-time = "2026-06-26T01:39:05.522Z" },
 ]
 
 [[package]]

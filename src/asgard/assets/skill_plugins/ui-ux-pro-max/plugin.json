@@ -1,0 +1,15 @@
+{
+  "schema": 1,
+  "name": "ui-ux-pro-max",
+  "version": "2.11.0",
+  "description": "Searchable UI/UX design knowledge bundled for Freyja",
+  "skills": [
+    "ui-ux-pro-max"
+  ],
+  "entrypoints": {
+    "ui-ux-pro-max": "scripts/search.py"
+  },
+  "source": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
+  "revision": "f8ac5e1266dba8354ea96e19994d9f4345e7ec31",
+  "license": "MIT"
+}
