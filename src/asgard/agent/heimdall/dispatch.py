@@ -12,9 +12,18 @@ import os
 import re
 
 from ... import theme, ui
-from ..session import ql
+from ..session import TurnCancelled, ql
 from .roles import _DELIVERY, _DELIVERY_READONLY, _LEAD_BASE, _LEAD_PROTOCOL, _skill_resolver
 from .toolspec import FREYJA_SQUAD_TOOL, FREYJA_VERDICT_TOOL, THOR_SQUAD_TOOL, VISUAL_VERDICT_SUBMIT_TOOL
+
+
+def _checked_run(session, prompt: str):
+    """child 세션 실행 + 취소 승격 — 취소된 산출이 편입(capture/apply)되기 전에 끊는다.
+    child.run 직호출은 core._run_turn 의 TurnCancelled 승격을 우회한다 (Codex 교차 리뷰 지적)."""
+    result = session.run(prompt)
+    if getattr(result, "stop_reason", "") == "cancelled":
+        raise TurnCancelled()
+    return result
 
 
 def _freyja_final_writes(paths) -> list[str]:
@@ -141,9 +150,10 @@ class DeliveryDispatch:
                         quiet=True,
                     )
                     child._nested_dispatch = True
-                    result = child.run(
+                    result = _checked_run(
+                        child,
                         f"편대 변주 {spec['id']}\n변주 축: {axis}\n과업: {task}\n근거: {why}\n"
-                        f"전용 출력 루트: {output_dir}\n이 디렉터리 밖은 수정하지 마라."
+                        f"전용 출력 루트: {output_dir}\n이 디렉터리 밖은 수정하지 마라.",
                     )
                     hd._track_cache(result)
                     patch = workspace.capture(extra_paths=tuple(result.writes))
@@ -164,6 +174,8 @@ class DeliveryDispatch:
                     spec = futures[future]
                     try:
                         completed.append(future.result())
+                    except TurnCancelled:
+                        raise  # 취소는 편대 실패가 아니다 — 공유 이벤트로 나머지도 곧 멈춘다
                     except Exception as exc:
                         failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
 
@@ -248,11 +260,12 @@ class DeliveryDispatch:
                 quiet=True,
             )
             judge._nested_dispatch = True
-            result = judge.run(
+            result = _checked_run(
+                judge,
                 f"시각 판정 (read-only): `{rel}` 아래 실제 후보 {list(candidate_ids)} 전부를 채점하고 "
                 "submit_visual_verdict 도구로 중복·누락 없이 제출하라. "
                 + (f"판정 초점: {focus}. " if focus else "")
-                + "16/24/32px 렌더 수단이 없으면 UNVERIFIED, common glyph/object 자기반증은 REJECT다."
+                + "16/24/32px 렌더 수단이 없으면 UNVERIFIED, common glyph/object 자기반증은 REJECT다.",
             )
             hd._track_cache(result)
             verdicts = submitted["verdicts"]
@@ -364,11 +377,12 @@ class DeliveryDispatch:
                         quiet=True,
                     )
                     child._nested_dispatch = True
-                    result = child.run(
+                    result = _checked_run(
+                        child,
                         f"편대 단위 {spec['id']} ({mode})\n과업: {task}\n근거: {why}\n"
                         f"허용 파일 범위: {', '.join(allowed)}\n이 범위 밖은 수정하지 마라. "
                         "단위 한정 검증만 실행하고(전역 게이트는 대장 몫), "
-                        "반환 = 변경 파일 + 결정 요약 + 검증 증거 + 블로커."
+                        "반환 = 변경 파일 + 결정 요약 + 검증 증거 + 블로커.",
                     )
                     hd._track_cache(result)
                     patch = workspace.capture(extra_paths=tuple(result.writes))
@@ -385,6 +399,8 @@ class DeliveryDispatch:
                     spec = futures[future]
                     try:
                         completed.append(future.result())
+                    except TurnCancelled:
+                        raise  # 취소는 편대 실패가 아니다 — 공유 이벤트로 나머지도 곧 멈춘다
                     except Exception as exc:
                         failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
 
@@ -481,7 +497,7 @@ class DeliveryDispatch:
             # claude_cli: 부모 worker 가 spawn permit 을 쥔 채 이 핸들러를 기다린다 —
             # 자식이 permit 을 재요구하면 재진입 데드락 (CUS-246). 재획득 없이 실행.
             child._nested_dispatch = True
-            r = child.run(task)
+            r = _checked_run(child, task)
             hd._track_cache(r)
             worker_result_writes.extend(r.writes)
             return f"[{agent}] {r.text[-2000:]}"
@@ -530,7 +546,7 @@ class DeliveryDispatch:
                 cwd=workspace.path,
             )
             child._nested_dispatch = True
-            result = child.run(task)
+            result = _checked_run(child, task)
             hd._track_cache(result)
             patch = workspace.capture(extra_paths=tuple(result.writes))
             final_paths = _freyja_final_writes(patch.paths)

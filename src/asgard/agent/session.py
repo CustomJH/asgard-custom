@@ -21,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -29,6 +30,15 @@ from typing import Callable
 from ..io_journal import call_returned, call_started
 from ..providers import ResolvedProvider
 from .tool_kernel import ToolContext, build_session_registry, execute_tool, to_openai_tool
+
+
+class TurnCancelled(Exception):
+    """사용자 취소 — 세션 결과가 아니라 턴 전체의 일급 결과.
+
+    재시도·placement 폴백·역할 전이·디스패치 편입·wave 진행·메모리 보존을 전부 멈춘다.
+    취소를 이 예외로 승격하지 않으면 stop_reason="cancelled" 가 평범한 결과로 흘러
+    Trinity 가 계속 진행하거나 취소된 산출이 편입된다. (세션 계층 정의 — heimdall
+    하위 협력자(dispatch/waves)가 core 순환 임포트 없이 공유한다.)"""
 
 
 @dataclass
@@ -155,6 +165,7 @@ class AgentSession:
         role: str | None = None,
         cwd: str | None = None,
         readonly_paths: list[str] | tuple[str, ...] = (),
+        cancel_event: threading.Event | None = None,
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # root는 Quest/journal/config의 canonical 소유자, cwd는 도구와 provider subprocess의 실행 공간.
@@ -177,6 +188,9 @@ class AgentSession:
         self.on_status = on_status or (lambda s: None)
         self.on_tokens = on_tokens
         self.max_iterations = max_iterations
+        # 협조적 취소 — 부모(Heimdall)가 이벤트를 공유하면 디스패치 자식까지 한 신호로 중단된다.
+        # 검사 지점: iteration 경계·스트림 청크·툴 배치 사이. 히스토리는 항상 API-유효 상태로 닫는다.
+        self.cancel_event = cancel_event or threading.Event()
         self.messages: list[dict] = []
         self._codex_session_id = uuid.uuid4().hex
         self._codex_reasoning_replay_enabled = True
@@ -210,6 +224,13 @@ class AgentSession:
         label = t("thought")
         self.on_text(f"  {gutter} {ui.dim(f'⋯ {label} {secs:.0f}s')}\n")
 
+    def cancel(self) -> None:
+        """협조적 취소 요청 — 다음 안전 지점(청크/툴/iteration 경계)에서 턴이 멈춘다."""
+        self.cancel_event.set()
+
+    def _cancelled(self) -> bool:
+        return self.cancel_event.is_set()
+
     # ── 툴 실행 (트랜스포트 공유) — (output, is_error) ──────────────────
     def _execute(self, call: _Call, result: SessionResult) -> tuple[str, bool]:
         if self._readonly_unisolated and call.name == "bash":
@@ -221,6 +242,7 @@ class AgentSession:
             writes=result.writes,
             commands=result.commands,
             tool_calls=result.tool_calls,
+            cancel=self.cancel_event,
         )
         if call.name == "bash":
             detail, sym = str(call.input.get("command") or "restart"), "$"
@@ -348,6 +370,9 @@ class AgentSession:
         for _ in range(self.max_iterations):
             from ..i18n import t as _t
 
+            if self._cancelled():
+                result.stop_reason = "cancelled"
+                return result
             self._maybe_prune(result)
             system, messages = self.system, self.messages
             if self.cache_enabled:  # 브레이크포인트 주입 — 원본 히스토리는 불변 (prompt_cache 참조)
@@ -357,6 +382,8 @@ class AgentSession:
             self.on_status(_t("thinking"))
             jid, j0 = self._journal_started("anthropic")
             t0, first = time.monotonic(), True
+            parts: list[str] = []
+            resp = None
             try:
                 with self.client.messages.stream(
                     model=self.rp.model,
@@ -367,17 +394,27 @@ class AgentSession:
                     messages=messages,
                 ) as stream:
                     for text in stream.text_stream:
+                        if self._cancelled():  # with 탈출이 스트림을 닫는다 — 부분 응답은 아래서 봉합
+                            break
                         if first:  # 첫 토큰 전 침묵 = thinking — 2s 이상이면 축약 라인
                             first = False
                             self.on_status(None)
                             gap = time.monotonic() - t0
                             if gap >= 2:
                                 self._thought_line(gap)
+                        parts.append(text)
                         self.on_text(text)
-                    resp = stream.get_final_message()
+                    if not self._cancelled():
+                        resp = stream.get_final_message()
             except Exception as e:
                 self._journal_error(jid, j0, e)
                 raise
+            if resp is None:  # 취소 중단 — 부분 텍스트를 assistant 로 닫아 히스토리 API-유효 유지
+                call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, error="cancelled")
+                self.messages.append({"role": "assistant", "content": "".join(parts) or "[사용자 취소]"})
+                result.text = "".join(parts)
+                result.stop_reason = "cancelled"
+                return result
             self.messages.append({"role": "assistant", "content": resp.content})
             result.text = "".join(b.text for b in resp.content if b.type == "text")
             result.stop_reason = resp.stop_reason or ""
@@ -410,6 +447,16 @@ class AgentSession:
                 trs = []
                 for b in resp.content:
                     if b.type == "tool_use":
+                        if self._cancelled():  # 잔여 콜은 실행 없이 닫는다 — tool 쌍 보존 불변식
+                            trs.append(
+                                {
+                                    "type": "tool_result",
+                                    "tool_use_id": b.id,
+                                    "content": "[사용자 취소 — 실행 안 함]",
+                                    "is_error": True,
+                                }
+                            )
+                            continue
                         out, err = self._execute(_Call(b.id, b.name, dict(b.input)), result)
                         tr = {"type": "tool_result", "tool_use_id": b.id, "content": out}
                         if err:
@@ -438,6 +485,9 @@ class AgentSession:
         from ..i18n import t as _t
 
         for _ in range(self.max_iterations):
+            if self._cancelled():
+                result.stop_reason = "cancelled"
+                return result
             text_buf, calls, think_t0, finish = [], {}, None, None
             self._maybe_prune(result)
             if inject:
@@ -460,6 +510,12 @@ class AgentSession:
                     extra_body=extra or None,
                 )
                 for chunk in stream:
+                    if self._cancelled():
+                        try:
+                            stream.close()
+                        except Exception:
+                            pass
+                        break
                     u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
                     if u:
                         result.context_tokens = getattr(u, "total_tokens", 0) or 0
@@ -505,6 +561,10 @@ class AgentSession:
             if think_t0 is not None:  # thinking 후 바로 툴콜 — 텍스트 없이 끝난 경우
                 self._thought_line(time.monotonic() - think_t0)
             result.text = "".join(text_buf)
+            if self._cancelled():  # 스트림 중단 — 부분 텍스트를 assistant 로 닫아 히스토리 유효 유지
+                self.messages.append({"role": "assistant", "content": result.text or "[사용자 취소]"})
+                result.stop_reason = "cancelled"
+                return result
             if finish == "length":  # max_tokens 절단 — 잘린 툴콜 인자 실행은 위험, 정직하게 종료
                 from .. import ui
 
@@ -531,6 +591,11 @@ class AgentSession:
                 }
             )
             for c in calls.values():
+                if self._cancelled():  # 잔여 콜은 실행 없이 닫는다 — tool 쌍 보존
+                    self.messages.append(
+                        {"role": "tool", "tool_call_id": c["id"], "content": "[사용자 취소 — 실행 안 함]"}
+                    )
+                    continue
                 try:
                     inp = json.loads(c["args"] or "{}")
                 except Exception:
@@ -579,6 +644,11 @@ class AgentSession:
         from ..i18n import t as _t
 
         for _ in range(self.max_iterations):
+            if self._cancelled():
+                # Responses 는 논스트리밍 — 취소 경계는 iteration/툴 배치. 미제출 툴 출력은 버려지고
+                # codex 히스토리는 마지막 완결 상태(_codex_history_items)로 남는다.
+                result.stop_reason = "cancelled"
+                return result
             self.on_status(_t("thinking"))
             jid, j0 = self._journal_started("codex_responses" if codex_backend else "openai_responses")
             kwargs: dict = {
@@ -652,6 +722,11 @@ class AgentSession:
                 counts={"total_tokens": total, "cache_read_tokens": cached},
             )
             self.on_status(None)
+            if self._cancelled():
+                # 블로킹 호출 중 취소 도착 — 응답을 히스토리·codex replay 에 편입하지 않고 버린다.
+                # (iteration 경계 취소와 동일 의미 — end_turn 으로 흘러 영속·보존되는 구멍 봉쇄)
+                result.stop_reason = "cancelled"
+                return result
             response_status = str(getattr(response, "status", "completed") or "")
             if response_status not in {"completed", "incomplete"}:
                 self._openai_response_id = None
@@ -700,6 +775,16 @@ class AgentSession:
                     raise RuntimeError("Codex Responses input state is invalid")
                 pending_input.extend(replay_items)
             for call in calls:
+                if self._cancelled():  # 잔여 콜은 실행 없이 닫는다 — call_id 쌍 보존
+                    out = "[사용자 취소 — 실행 안 함]"
+                    outputs.append(
+                        {
+                            "type": "function_call_output",
+                            "call_id": str(getattr(call, "call_id", "")),
+                            "output": out,
+                        }
+                    )
+                    continue
                 try:
                     value = json.loads(getattr(call, "arguments", "") or "{}")
                     if not isinstance(value, dict):

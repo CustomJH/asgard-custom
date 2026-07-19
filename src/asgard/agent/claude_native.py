@@ -304,6 +304,11 @@ async def _run_async(sess, user_content: str, result) -> None:
     streamed_text = ""  # 일부 CLI 경로는 최종 AssistantMessage 없이 델타만 보낸다.
     gen = query(prompt=user_content, options=options)
     async for msg in _drained(gen):
+        if sess.cancel_event.is_set():
+            # 협조적 취소 — break 가 _drained finally 의 gen.aclose() 를 부르고, SDK 가
+            # CLI subprocess 를 정리한다. 취소 결과는 Heimdall 이 TurnCancelled 로 승격.
+            result.stop_reason = "cancelled"
+            break
         if isinstance(msg, StreamEvent):
             d = msg.event.get("delta") or {}
             if msg.event.get("type") == "message_start":

@@ -17,8 +17,12 @@ import json
 import os
 import re
 import shlex
+import signal
 import subprocess
 import sys
+import threading
+import time
+from collections import deque
 
 BASH_TOOL = {"type": "bash_20250124", "name": "bash"}
 EDITOR_TOOL = {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"}
@@ -157,6 +161,67 @@ def _cap(s: str) -> str:
     return s if len(s) <= _MAX_OUT else s[:_MAX_OUT] + f"\n[... {len(s) - _MAX_OUT} chars 절단]"
 
 
+class _TailBuffer:
+    """실행 중 상한이 걸리는 꼬리 버퍼 — 출력 폭주가 RAM 을 인질로 잡지 않게 읽는 즉시 버린다.
+    bash 는 오류·실패 사유가 끝에 몰리므로 꼬리 보존 (view 는 머리 유지 _cap)."""
+
+    def __init__(self, limit: int = _MAX_OUT) -> None:
+        self.limit = limit
+        self.parts: deque[str] = deque()
+        self.size = 0
+        self.dropped = 0
+        self._lock = threading.Lock()
+
+    def add(self, chunk: str) -> None:
+        with self._lock:
+            self.parts.append(chunk)
+            self.size += len(chunk)
+            while self.size > self.limit and len(self.parts) > 1:
+                old = self.parts.popleft()
+                self.size -= len(old)
+                self.dropped += len(old)
+            if self.size > self.limit:  # 단일 청크가 상한 초과 — 청크 안에서 꼬리만 남긴다
+                only = self.parts[0]
+                cut = self.size - self.limit
+                self.parts[0] = only[cut:]
+                self.size -= cut
+                self.dropped += cut
+
+    def text(self) -> str:
+        with self._lock:
+            body = "".join(self.parts)
+            if self.dropped:
+                return f"[... 앞 {self.dropped} chars 절단]\n" + body
+            return body
+
+
+def _kill_group(p: subprocess.Popen) -> None:
+    """프로세스 그룹 전체 종료(손자 포함) — SIGTERM 유예 2s 후 그룹에 무조건 SIGKILL.
+    셸 부모가 먼저 죽고 손자만 SIGTERM 을 무시하는 경우를 놓치지 않는다. Windows 는 트리 킬."""
+    if os.name != "posix":
+        try:
+            subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True)
+        except OSError:
+            pass
+        return
+    try:
+        pgid = os.getpgid(p.pid)
+    except ProcessLookupError, PermissionError, OSError:
+        return
+    try:
+        os.killpg(pgid, signal.SIGTERM)
+        try:
+            p.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+    except ProcessLookupError, PermissionError, OSError:
+        pass
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError, PermissionError, OSError:
+        pass
+
+
 def validate_bash_command(root: str, command: str) -> str | None:
     """Return a deterministic block reason without executing the command."""
     return (
@@ -167,8 +232,9 @@ def validate_bash_command(root: str, command: str) -> str | None:
     )
 
 
-def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
-    """(output, exit_code). exit_code 는 퀘스트 로그 commands 증거용."""
+def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None) -> tuple[str, int | None]:
+    """(output, exit_code). exit_code 는 퀘스트 로그 commands 증거용.
+    cancel 이벤트가 켜지면 프로세스 그룹째 종료 — 취소는 즉시성이 생명이라 0.2s 폴링."""
     if tool_input.get("restart"):
         return "shell restarted (stateless — cwd는 프로젝트 루트 고정)", 0
     cmd = str(tool_input.get("command") or "")
@@ -177,12 +243,62 @@ def run_bash(root: str, tool_input: dict) -> tuple[str, int | None]:
     blocked = validate_bash_command(root, cmd)
     if blocked:
         raise ToolError(blocked)
+    group: dict = {"start_new_session": True} if os.name == "posix" else {}
+    p = subprocess.Popen(
+        cmd,
+        shell=True,
+        cwd=root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        errors="replace",
+        **group,
+    )
+    out_buf, err_buf = _TailBuffer(), _TailBuffer(4000)
+    readers = [
+        threading.Thread(target=_pump, args=(p.stdout, out_buf), daemon=True),
+        threading.Thread(target=_pump, args=(p.stderr, err_buf), daemon=True),
+    ]
+    for r in readers:
+        r.start()
+    deadline = time.monotonic() + _TIMEOUT
     try:
-        p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, text=True, timeout=_TIMEOUT)
-    except subprocess.TimeoutExpired:
-        raise ToolError(f"타임아웃 ({_TIMEOUT}s) — 장기 실행은 분할하거나 백그라운드로")
-    out = (p.stdout or "") + (("\n" + p.stderr) if p.stderr else "")
-    return _cap(out.strip() or f"(no output, exit {p.returncode})"), p.returncode
+        while True:
+            try:
+                p.wait(timeout=0.2)
+                break
+            except subprocess.TimeoutExpired:
+                if cancel is not None and cancel.is_set():
+                    _kill_group(p)
+                    raise ToolError(f"사용자 취소 — 명령 중단 (프로세스 그룹 종료){_tail_note(out_buf, err_buf)}")
+                if time.monotonic() > deadline:
+                    _kill_group(p)
+                    raise ToolError(
+                        f"타임아웃 ({_TIMEOUT}s) — 장기 실행은 분할하거나 백그라운드로{_tail_note(out_buf, err_buf)}"
+                    )
+    except BaseException:  # KeyboardInterrupt 포함 — 분리된 프로세스 그룹을 절대 고아로 남기지 않는다
+        if p.poll() is None:
+            _kill_group(p)
+        raise
+    finally:
+        for r in readers:
+            r.join(timeout=5)
+    out = out_buf.text() + (("\n" + err_buf.text()) if err_buf.size or err_buf.dropped else "")
+    return out.strip() or f"(no output, exit {p.returncode})", p.returncode
+
+
+def _pump(pipe, buf: _TailBuffer) -> None:
+    """파이프 → 꼬리 버퍼 상시 배수 — 자식이 파이프 블로킹으로 멈추는 것도 함께 방지."""
+    try:
+        for chunk in iter(lambda: pipe.read(8192), ""):
+            buf.add(chunk)
+    except OSError, ValueError:
+        pass
+
+
+def _tail_note(out_buf: _TailBuffer, err_buf: _TailBuffer) -> str:
+    partial = (out_buf.text() + "\n" + err_buf.text()).strip()
+    return f"\n[중단 시점 출력 꼬리]\n{partial[-2000:]}" if partial else ""
 
 
 def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:

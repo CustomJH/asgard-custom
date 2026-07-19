@@ -12,7 +12,7 @@ import os
 import threading
 from contextlib import ExitStack
 
-from ..session import ql
+from ..session import TurnCancelled, ql
 from .journal import _record_writes
 from .planning import _plan_waves
 from .roles import _role_prompt, _worker_note
@@ -254,12 +254,27 @@ class WaveRunner:
                 outs = []
                 actual_writes: dict[object, list[str]] = {}
                 finished_claims: set[str] = set()
+                cancelled_cleanup = False  # 취소 전파 중 표식 — finally 의 close 실패가 failed 정산을 피하게
 
                 def settle_ticket(u: dict, status: str, *, error: str = "") -> str:
                     token = claims_by_id[u["id"]]
                     final = finish_ticket(u, token, status, error=error)
                     finished_claims.add(token)
                     return final
+
+                def release_unfinished(candidates: list[dict]) -> list[Exception]:
+                    """취소 전용 — 티켓을 failed 로 정산하지 않고 lease 만 반납한다.
+                    취소는 실패가 아니다: 재개(resume)가 같은 티켓을 그대로 재클레임할 수 있어야 한다."""
+                    cleanup_errors: list[Exception] = []
+                    for candidate in candidates:
+                        token = claims_by_id.get(candidate["id"])
+                        if not token or token in finished_claims:
+                            continue
+                        try:
+                            shorten_claim_lease(candidate, token)
+                        except Exception as expiry_error:
+                            cleanup_errors.append(expiry_error)
+                    return cleanup_errors
 
                 def fail_unfinished(candidates: list[dict], error: BaseException) -> list[Exception]:
                     cleanup_errors: list[Exception] = []
@@ -295,6 +310,8 @@ class WaveRunner:
                                     cwd_by_id[u0["id"]],
                                 )
                             ]
+                        except TurnCancelled:
+                            raise  # 취소는 티켓 실패가 아니다 — 재배정 예산을 소모하지 않고 전파
                         except Exception as e:
                             failures.append((u0, e))
                     else:
@@ -313,6 +330,8 @@ class WaveRunner:
                             for fut in as_completed(futs):
                                 try:
                                     outs.append(fut.result())
+                                except TurnCancelled:
+                                    raise  # 취소는 티켓 실패가 아니다 — 공유 이벤트로 나머지도 곧 멈춘다
                                 except Exception as e:
                                     failures.append((futs[fut], e))
                     if isolation:
@@ -361,6 +380,15 @@ class WaveRunner:
                             except Exception as e:
                                 failures.append((u, e))
                         outs = kept
+                except TurnCancelled:
+                    cancelled_cleanup = True
+                    # 하트비트를 먼저 멈춘다 — lease 를 줄인 뒤 멈추면 그 사이 갱신이 되살린다 (경합)
+                    for unit in pending:
+                        stop_heartbeat(unit)
+                    cleanup_errors = release_unfinished(pending)
+                    if cleanup_errors:
+                        hd.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
+                    raise
                 except Exception as exc:
                     cleanup_errors = fail_unfinished(pending, exc)
                     if cleanup_errors:
@@ -371,7 +399,12 @@ class WaveRunner:
                         try:
                             workspace_stack.close()
                         except Exception as close_error:
-                            cleanup_errors = fail_unfinished(pending, close_error)
+                            # 취소 전파 중의 close 실패는 티켓 실패 정산이 아니다 — lease 반납만
+                            cleanup_errors = (
+                                release_unfinished(pending)
+                                if cancelled_cleanup
+                                else fail_unfinished(pending, close_error)
+                            )
                             if cleanup_errors:
                                 hd.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
                             raise

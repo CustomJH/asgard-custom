@@ -21,7 +21,7 @@ import uuid
 from typing import Callable, Protocol
 
 from ...providers import ResolvedProvider, resolve_trinity
-from ..session import AgentSession, SessionResult, make_client, ql
+from ..session import AgentSession, SessionResult, TurnCancelled, make_client, ql
 from .classify import _DESTRUCTIVE_PAT, _PARALLEL_WORK_PAT, _pred_fields, classify_api_error, classify_heuristic
 from .dispatch import DeliveryDispatch, _freyja_gate_rejection, _safe_candidates
 from .journal import _log_classify
@@ -48,6 +48,8 @@ class Heimdall:
         self.rp, self.root, self.on_text = rp, root, on_text
         self.on_status = on_status or (lambda s: None)
         self._state_lock = threading.Lock()  # wave 병렬 스레드의 _clients/total_tokens 변이 보호
+        # 턴 단위 협조 취소 — 모든 자식 AgentSession 이 이 이벤트를 공유 (handle() 진입 시 clear)
+        self.cancel_event = threading.Event()
         self._clients: dict[tuple, object] = {}  # (provider, base_url, key_source) → SDK 클라이언트
         self.client = self._client_for(rp)
         # 역할별 provider 배치 ([trinity.<role>]) — 미충족은 기본 provider 로 fail-open + 경고 1회
@@ -153,6 +155,7 @@ class Heimdall:
             readonly=readonly,
             role=role,
             cwd=cwd,
+            cancel_event=self.cancel_event,
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
@@ -272,14 +275,20 @@ class Heimdall:
         for attempt in range(3):
             try:
                 r = make().run(prompt)
+                if getattr(r, "stop_reason", "") == "cancelled":
+                    raise TurnCancelled()
                 self.last_context_tokens = getattr(r, "context_tokens", 0) or self.last_context_tokens
                 self._track_cache(r)
                 return r
+            except TurnCancelled:
+                raise  # 취소는 재시도·폴백 대상이 아니다
             except Exception as e:
                 if classify_api_error(e) != "retryable" or attempt == 2:
                     if fallback is not None:
                         self.on_text(f"⚠ provider 오류({e.__class__.__name__}) — 기본 provider 폴백 1회\n")
                         r = fallback().run(prompt if fallback_prompt is None else fallback_prompt)
+                        if getattr(r, "stop_reason", "") == "cancelled":
+                            raise TurnCancelled()
                         self._track_cache(r)
                         return r
                     raise
@@ -518,6 +527,8 @@ class Heimdall:
         r = self._session(live_identity + _mimir_note(request), role="direct", readonly=True, quiet=active_lagom).run(
             (ctx + request if ctx else request) + recall
         )
+        if r.stop_reason == "cancelled":
+            raise TurnCancelled()
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
         self._track_cache(r)
         if r.writes or self._worktree_dirty() != before:
@@ -586,16 +597,32 @@ class Heimdall:
             pass
         return out
 
+    def cancel(self) -> None:
+        """협조적 취소 — 이 턴의 모든 AgentSession(디스패치 자식 포함)이 공유 이벤트로 멈춘다."""
+        self.cancel_event.set()
+
+    def _cancel_notice(self) -> str:
+        """취소의 정직한 종결 문구 — 퀘스트는 조용히 닫지 않는다 (ACTIVE 잔존을 명시)."""
+        from ...hooks.quest_log import active_quest
+        from ...i18n import t
+
+        qid = active_quest(self.root)
+        return t("cancel_notice") + (t("cancel_notice_quest", qid=qid) if qid else "")
+
     def handle(self, request: str) -> str:
         from ...i18n import t
 
         self._last_completion = None
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
+        # cancel_event 는 여기서 clear 하지 않는다 — 제출측(TUI/REPL)이 턴 시작 전에 clear 한다.
+        # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
         self.on_status(t("thinking"))  # 분류도 모델 호출 — 침묵 구간 커버
         try:
             cls = self._classify(request)
         finally:
             self.on_status(None)
+        if self.cancel_event.is_set():  # 분류 중 취소 — 라우팅 진입 전에 멈춘다
+            return self._cancel_notice()
         if cls["destructive"]:
             _log_classify(self.root, {"event": "route", "route": "refused-destructive"})
             return self._finalize_memory(
@@ -603,7 +630,10 @@ class Heimdall:
             )
         if not cls["write_expected"]:
             _log_classify(self.root, {"event": "route", "route": "direct"})
-            return self._finalize_memory(request, self._direct(request))  # DIRECT — 무세금
+            try:
+                return self._finalize_memory(request, self._direct(request))  # DIRECT — 무세금
+            except TurnCancelled:
+                return self._cancel_notice()  # 취소 턴은 메모리 보존도 하지 않는다
         # 게이트-우선(STANDARD) 라우팅 — 비민감 소형 write 는 Worker 직행 + 하네스 베이스라인.
         # deep/ambiguous/shared 는 상시 Trinity. task_class 미상(None)은 deep 취급 (안전 기본값).
         standard = cls.get("task_class") in ("trivial", "standard") and not (cls["ambiguous"] or cls["shared"])
@@ -613,6 +643,9 @@ class Heimdall:
             self.history = (self.history + [(request, out[:500])])[-6:]  # 후속 질문 맥락 (DIRECT 가 소비)
             self.last_response_text = out
             return self._finalize_memory(request, out)
+        except TurnCancelled:
+            self.last_response_text = ""
+            return self._cancel_notice()
         except Exception as e:  # dangling 방지 — 퀘스트는 ACTIVE 로 남고 정직하게 보고
             out = (
                 f"⚠ 세션 오류로 Trinity 중단 ({e.__class__.__name__}: {str(e)[:200]}) — "

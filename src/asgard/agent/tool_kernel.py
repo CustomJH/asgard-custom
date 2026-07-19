@@ -8,6 +8,7 @@ a tool is visible or callable for every role.
 from __future__ import annotations
 
 import copy
+import threading
 from dataclasses import dataclass, field, replace
 from typing import Callable, Mapping
 
@@ -86,6 +87,8 @@ class ToolContext:
     writes: list[str] = field(default_factory=list)
     commands: list[dict] = field(default_factory=list)
     tool_calls: list[dict] = field(default_factory=list)
+    # 협조적 취소 신호 — 장기 실행 툴(bash)이 폴링. None = 취소 불가 컨텍스트.
+    cancel: threading.Event | None = None
 
     @property
     def capabilities(self) -> frozenset[str]:
@@ -223,7 +226,7 @@ def _run_bash(context: ToolContext, args: dict) -> ToolResult:
     cmd = str(args.get("command") or "restart")
     if "mutate" not in context.capabilities and not is_readonly_bash_safe(cmd, context.root):
         return ToolResult(f"read-only role command escapes project policy: {cmd[:160]}", status="blocked")
-    out, code = T.run_bash(context.root, args)
+    out, code = T.run_bash(context.root, args, cancel=context.cancel)
     context.commands.append({"cmd": cmd[:200], "exit_code": code})
     return ToolResult(out, details={"command": cmd, "exit_code": code})
 

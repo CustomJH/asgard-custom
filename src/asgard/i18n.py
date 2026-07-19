@@ -78,6 +78,14 @@ _M: dict[str, tuple[str, str]] = {
         "Type a message…  ( /help · !bash · Ctrl-Q quit )",
         "메시지를 입력하세요…  ( /help · !bash · Ctrl-Q 종료 )",
     ),
+    "cancel_notice": (
+        "⚠ Cancelled by user — turn stopped.",
+        "⚠ 사용자 취소 — 턴 중단.",
+    ),
+    "cancel_notice_quest": (
+        " Quest {qid} remains ACTIVE — re-request to continue verification, or close it with quest-log close.",
+        " 퀘스트 {qid} 는 ACTIVE 로 남아 있음 — 재요청 시 이어서 검증하거나 quest-log close 하세요.",
+    ),
     "needs_base_url": ("base_url required", "base_url 필요"),
     "thought": ("Runes read", "룬 해독"),
     "thinking": ("reading the runes…", "룬을 읽는 중…"),
