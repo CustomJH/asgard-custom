@@ -42,6 +42,42 @@ policy contract; write tools are absent from Thinker, Verifier, Loki, and Ullr.
 Their Bash surface is restricted to allowlisted inspection and verification
 commands, while all roles retain pre-execution destructive Git/filesystem guards.
 
+## Skill and Plugin Registry
+
+Asgard owns the canonical catalog and bodies. Claude Code, Cursor, and Codex receive thin
+per-skill discovery adapters: the host indexes each name and description, chooses relevant skills,
+then the selected adapter loads one canonical body. Native Heimdall uses the same two-stage flow
+through its read-only `load_skill` tool. `skills resolve` remains an explicit diagnostic command,
+not a phase-start injection path.
+
+```bash
+asgard plugins list
+asgard skills list
+asgard skills resolve --agent thor "database migration API"
+asgard skills show asgard-thor-jarngreipr
+asgard skills show review-animations --resource STANDARDS.md
+asgard skills assign ui-ux-pro-max --agent freyja
+asgard skills disable ui-ux-pro-max
+```
+
+A local resource plugin is installed with `asgard plugins install <path>`. Asgard ships
+`ui-ux-pro-max` for Freyja, including its searchable data and Python helper, so users do not need a
+separate Claude Marketplace or Codex install. It also ships a Python port of Google Labs Code
+`design.md` lint/spec as `design-md-review` for Freyja design-system audits, plus Emil Kowalski's
+design-engineering and motion skills. These skills are available to Freyja but none is forced on
+every task; the model selects from their descriptions. A plugin contains `plugin.json` and declared `skills/<name>/`
+directories:
+
+```json
+{"schema": 1, "name": "acme", "version": "1.0.0", "skills": ["acme-db"], "entrypoints": {"acme-db": "scripts/search.py"}}
+```
+
+Routing can be declared centrally under `plugin.json`'s `routing` object, or with the legacy
+`triggers`, `agent` (default assignment), and optional `agents` fields in frontmatter. Resource
+files are copied intact and text references are available through `asgard skills show --resource`.
+Only Python entrypoints explicitly listed in the manifest can run, through
+`asgard skills run <name> ...`; arbitrary hooks and shell commands are never registered.
+
 ## Project Map
 
 ```bash
