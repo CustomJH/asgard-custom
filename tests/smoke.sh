@@ -89,13 +89,17 @@ grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: universal
 grep -q "PostToolUse" "$PROJ/.codex/config.toml" || { echo "FAIL: codex config missing PostToolUse tracker"; exit 1; }
 grep -q "postToolUseFailure" "$PROJ/.cursor/hooks.json" || { echo "FAIL: cursor hooks missing postToolUseFailure"; exit 1; }
 "$PY" -m py_compile "$PROJ/.codex/hooks/failure-tracker.py" "$PROJ/.cursor/hooks/failure-tracker.py" || { echo "FAIL: cross-tool trackers invalid Python"; exit 1; }
-# asgard-test 자가 테스트 커맨드 — 3툴 전부 (skills/commands/prompts), 하니스 스크립트 실동작
+# asgard-test 자가 테스트 커맨드 — 3툴 전부 (skills/commands/prompts), 하니스 스크립트 실동작.
+# 스캐폴드 파일은 발견용 어댑터라 하니스 본문은 중앙 정본(asgard skills show)에서 추출한다.
 [ -f "$PROJ/.claude/skills/asgard-test/SKILL.md" ] && [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] \
   || { echo "FAIL: universal missing asgard-test (.claude + .agents)"; exit 1; }
+grep -q "asgard skills show asgard-test" "$PROJ/.claude/skills/asgard-test/SKILL.md" \
+  || { echo "FAIL: asgard-test adapter must point at the canonical body"; exit 1; }
 ( cd "$PROJ" && git init -q && git -c user.email=t@t -c user.name=t commit -qm init --allow-empty \
+  && "${ASG[@]}" skills show asgard-test > selftest.md \
   && "$PY" -c "
 import re
-md = open('.claude/skills/asgard-test/SKILL.md').read()
+md = open('selftest.md').read()
 open('selftest-b.sh','w').write(re.search(r'\`\`\`bash\n(.*?)\`\`\`', md, re.S).group(1))" \
   && bash selftest-b.sh | grep -q -- '-- harness: 8/8 ok' ) || { echo "FAIL: asgard-test harness slice not 8/8"; exit 1; }
 rm -rf "$PROJ"
