@@ -8,6 +8,15 @@ import json
 import re
 import sys
 
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+    except Exception:
+        pass
+
+
 # 앞 4개는 포맷이 고정된 토큰(오탐 거의 없음), 마지막은 key=value 휴리스틱(넓지만 값 8자 이상만 —
 # "password: xxx" 같은 placeholder 오탐을 줄인다).
 SECRET = [

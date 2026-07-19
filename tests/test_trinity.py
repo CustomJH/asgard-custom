@@ -2059,10 +2059,11 @@ class TestMemoryGateIsolation(TrinityBase):
         self.assertIn("stale", reason)
 
 
+@unittest.skipUnless(os.name == "posix", "bash 하네스 — Windows 는 test_adversarial_gate.py 포트가 동일 벡터를 돈다")
 class TestAdversarialSuite(unittest.TestCase):
     """게이트 적대 벡터 통합 — 우회 벡터 10종 전수 차단/허용 대조 (실 LLM 불필요, 훅 직접 구동).
     정본 fixture 는 git 추적되는 tests/fixtures/bench-cc — 깨끗한 clone 에서도 skip 없이 돈다.
-    (workspace/ 사본은 devbox 공유용 레거시 폴백)"""
+    (workspace/ 사본은 devbox 공유용 레거시 폴백. 크로스 플랫폼 포트: tests/test_adversarial_gate.py)"""
 
     def test_adversarial_vectors_all_blocked(self):
         base = os.path.dirname(__file__)

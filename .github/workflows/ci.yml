@@ -29,9 +29,13 @@ jobs:
       - run: uv run pytest -q --cov=asgard --cov-report=term
 
   # 설치 머니패스 + 스캐폴드/가드 하네스 — pytest 밖의 셸 하네스를 CI 에 편입 (e2e_trinity.sh 는
-  # 실 API 키 필요라 제외, docker/sandbox 는 로컬 전용).
+  # 실 API 키 필요라 제외, docker/sandbox 는 로컬 전용). macOS 는 시스템 환경이 달라(BSD 도구·
+  # 시스템 Python) 적대 가드 스위트를 별도 러너로 이중 실행 — 게이트가 실행된다는 보장을 OS 단위로 든다.
   smoke:
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -40,6 +44,11 @@ jobs:
           python-version: "3.14"
 
       - run: bash tests/smoke.sh
+
+      # 적대 게이트 벡터 크로스 플랫폼 포트 — smoke 의 가드 배터리와 별개로 게이트 우회 벡터 전수.
+      - run: uv sync --group dev
+
+      - run: uv run pytest -q tests/test_adversarial_gate.py
 
   windows-terminal:
     runs-on: windows-latest
@@ -52,7 +61,9 @@ jobs:
 
       - run: uv sync --group dev
 
-      - run: uv run pytest -q tests/test_windows.py tests/test_start.py
+      # 적대 게이트 스위트 포함 — Windows 에서 Verifier 게이트가 실제 차단하는지 회귀 가드
+      # (bash 하네스 아닌 test_adversarial_gate.py 포트가 돈다).
+      - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_adversarial_gate.py
 
-      - name: Initialize terminal input
+      - name: Smoke prompt_toolkit session (headless)
         run: uv run python tests/smoke_pt_session.py

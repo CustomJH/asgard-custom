@@ -14,6 +14,15 @@ import json
 import os
 import sys
 
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+    except Exception:
+        pass
+
+
 COHERENCE_CAP = 8  # 프롬프트 팽창 방지 — charter.py _coherence_block 과 동일
 
 

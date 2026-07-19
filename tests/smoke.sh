@@ -6,6 +6,10 @@
 # which pipefail would propagate as a false failure. `set -eu` is enough here.
 set -eu
 
+# 훅 구동 인터프리터 — 하드코딩 python3 는 Windows(git-bash)·python3 없는 러너에서 스위트를
+# 통째로 무력화한다. python3 → python 순 폴백, PY 환경변수로 재정의 가능.
+PY="${PY:-$(command -v python3 || command -v python)}"
+
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -50,8 +54,10 @@ if "${ASG[@]}" completions badshell >/dev/null 2>&1; then echo "FAIL: bad shell 
 "${ASG[@]}" completions zsh | grep -q "thinker worker verifier" || { echo "FAIL: zsh completions missing role args"; exit 1; }
 "${ASG[@]}" completions fish | grep -q "thinker worker verifier" || { echo "FAIL: fish completions missing role args"; exit 1; }
 
-asgard doctor >/dev/null || { echo "FAIL: doctor exit nonzero (asgard on PATH)"; exit 1; }
-asgard doctor --json | grep -q '"ok": true' || { echo "FAIL: doctor --json ok"; exit 1; }
+# doctor 는 cwd 의 .asgard 상태(공유 메모리 백엔드 등)를 읽는다 — 개발자 로컬 repo 에서 돌리면
+# 호스트 백엔드 접속 상태가 smoke 를 물들인다. HOME 격리와 같은 이유로 중립 cwd 에서 판정.
+( cd "$HOME" && asgard doctor >/dev/null ) || { echo "FAIL: doctor exit nonzero (asgard on PATH)"; exit 1; }
+( cd "$HOME" && asgard doctor --json | grep -q '"ok": true' ) || { echo "FAIL: doctor --json ok"; exit 1; }
 # Canonical Tool Kernel catalog — installed CLI reports both runtime surfaces.
 asgard tools list --role worker --json | grep -q '"str_replace_based_edit_tool"' || { echo "FAIL: native tool catalog"; exit 1; }
 asgard tools list --role worker --json | grep -q '"NotebookEdit"' || { echo "FAIL: Claude Code tool catalog"; exit 1; }
@@ -82,12 +88,12 @@ grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: universal
 [ -f "$PROJ/.codex/hooks/failure-tracker.py" ] && [ -f "$PROJ/.cursor/hooks/failure-tracker.py" ] || { echo "FAIL: universal missing codex/cursor failure-tracker"; exit 1; }
 grep -q "PostToolUse" "$PROJ/.codex/config.toml" || { echo "FAIL: codex config missing PostToolUse tracker"; exit 1; }
 grep -q "postToolUseFailure" "$PROJ/.cursor/hooks.json" || { echo "FAIL: cursor hooks missing postToolUseFailure"; exit 1; }
-python3 -m py_compile "$PROJ/.codex/hooks/failure-tracker.py" "$PROJ/.cursor/hooks/failure-tracker.py" || { echo "FAIL: cross-tool trackers invalid Python"; exit 1; }
+"$PY" -m py_compile "$PROJ/.codex/hooks/failure-tracker.py" "$PROJ/.cursor/hooks/failure-tracker.py" || { echo "FAIL: cross-tool trackers invalid Python"; exit 1; }
 # asgard-test 자가 테스트 커맨드 — 3툴 전부 (skills/commands/prompts), 하니스 스크립트 실동작
 [ -f "$PROJ/.claude/skills/asgard-test/SKILL.md" ] && [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] \
   || { echo "FAIL: universal missing asgard-test (.claude + .agents)"; exit 1; }
 ( cd "$PROJ" && git init -q && git -c user.email=t@t -c user.name=t commit -qm init --allow-empty \
-  && python3 -c "
+  && "$PY" -c "
 import re
 md = open('.claude/skills/asgard-test/SKILL.md').read()
 open('selftest-b.sh','w').write(re.search(r'\`\`\`bash\n(.*?)\`\`\`', md, re.S).group(1))" \
@@ -99,7 +105,7 @@ PROJ="$(mktemp -d)"
 ( cd "$PROJ" && "${ASG[@]}" init --cc >/dev/null ) || { echo "FAIL: init --cc"; exit 1; }
 [ -f "$PROJ/AGENTS.md" ] || { echo "FAIL: --cc must create AGENTS.md"; exit 1; }
 [ -f "$PROJ/.claude/settings.json" ] && [ -f "$PROJ/.claude/CLAUDE.md" ] || { echo "FAIL: --cc files"; exit 1; }
-python3 -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); sys.exit(0 if d.get('permissions',{}).get('deny') else 1)" || { echo "FAIL: --cc settings.json permissions"; exit 1; }
+"$PY" -c "import json,sys; d=json.load(open('$PROJ/.claude/settings.json')); sys.exit(0 if d.get('permissions',{}).get('deny') else 1)" || { echo "FAIL: --cc settings.json permissions"; exit 1; }
 [ -f "$PROJ/.claude/.gitignore" ] && grep -q "settings.local.json" "$PROJ/.claude/.gitignore" || { echo "FAIL: --cc .gitignore"; exit 1; }
 # Role tool surfaces are explicit least-privilege allowlists, not host defaults.
 grep -q '^tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent$' "$PROJ/.claude/agents/asgard-worker.md" || { echo "FAIL: worker tool allowlist"; exit 1; }
@@ -112,45 +118,45 @@ done
 # Canon guards (Python) — block danger, allow safe, fail-open on garbage
 grep -q '"PreToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing hooks"; exit 1; }
 [ -f "$PROJ/.claude/hooks/git-guard.py" ] && [ -f "$PROJ/.claude/hooks/readonly-guard.py" ] && [ -f "$PROJ/.claude/hooks/secret-guard.py" ] || { echo "FAIL: --cc missing Python guards"; exit 1; }
-python3 -m py_compile "$PROJ/.claude/hooks/git-guard.py" "$PROJ/.claude/hooks/readonly-guard.py" "$PROJ/.claude/hooks/secret-guard.py" || { echo "FAIL: guards invalid Python"; exit 1; }
-printf '%s' '{"tool_input":{"command":"git push --force"}}' | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block force-push"; exit 1; } || true
-printf '%s' '{"tool_input":{"command":"git checkout HEAD -- ."}}' | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block worktree discard"; exit 1; } || true
-printf '%s' '{"tool_input":{"command":"git status"}}'      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must allow git status"; exit 1; }
-printf '%s' 'not-json'                                      | python3 "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must fail-open"; exit 1; }
+"$PY" -m py_compile "$PROJ/.claude/hooks/git-guard.py" "$PROJ/.claude/hooks/readonly-guard.py" "$PROJ/.claude/hooks/secret-guard.py" || { echo "FAIL: guards invalid Python"; exit 1; }
+printf '%s' '{"tool_input":{"command":"git push --force"}}' | "$PY" "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block force-push"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"git checkout HEAD -- ."}}' | "$PY" "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null && { echo "FAIL: git-guard must block worktree discard"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"git status"}}'      | "$PY" "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must allow git status"; exit 1; }
+printf '%s' 'not-json'                                      | "$PY" "$PROJ/.claude/hooks/git-guard.py" 2>/dev/null || { echo "FAIL: git-guard must fail-open"; exit 1; }
 [ -f "$PROJ/.claude/hooks/release-guard.py" ] || { echo "FAIL: --cc missing release-guard"; exit 1; }
-printf '%s' '{"tool_input":{"command":"npm publish"}}'      | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null && { echo "FAIL: release-guard must block npm publish"; exit 1; } || true
-printf '%s' '{"tool_input":{"command":"docker push repo/img"}}' | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null && { echo "FAIL: release-guard must block docker push"; exit 1; } || true
-printf '%s' '{"tool_input":{"command":"npm run build"}}'    | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must allow npm run build"; exit 1; }
-printf '%s' 'not-json'                                      | python3 "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must fail-open"; exit 1; }
-printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"printf hacked > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block shell writes"; exit 1; } || true
-printf '%s' '{"tool_input":{"command":"printf hacked > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator shell writes"; exit 1; } || true
-printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"calc.py","content":"hacked"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator Write"; exit 1; } || true
-printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":"calc.py","content":"ok"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker Write"; exit 1; }
-printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":".claude/hooks/readonly-guard.py","content":"pass"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker must not overwrite control hooks"; exit 1; } || true
-printf '%s' '{"agent_type":"asgard-worker","tool_name":"Bash","tool_input":{"command":"printf pass > .claude/hooks/readonly-guard.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker Bash must not overwrite control hooks"; exit 1; } || true
-printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"git diff"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow inspection"; exit 1; }
-printf '%s' '{"agent_type":"asgard-worker","tool_input":{"command":"printf ok > calc.py"}}' | python3 "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker"; exit 1; }
-printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | python3 "$PROJ/.claude/hooks/secret-guard.py" 2>/dev/null && { echo "FAIL: secret-guard must block .env"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"npm publish"}}'      | "$PY" "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null && { echo "FAIL: release-guard must block npm publish"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"docker push repo/img"}}' | "$PY" "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null && { echo "FAIL: release-guard must block docker push"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"npm run build"}}'    | "$PY" "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must allow npm run build"; exit 1; }
+printf '%s' 'not-json'                                      | "$PY" "$PROJ/.claude/hooks/release-guard.py" 2>/dev/null || { echo "FAIL: release-guard must fail-open"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"printf hacked > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block shell writes"; exit 1; } || true
+printf '%s' '{"tool_input":{"command":"printf hacked > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator shell writes"; exit 1; } || true
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"calc.py","content":"hacked"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: readonly-guard must block coordinator Write"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":"calc.py","content":"ok"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker Write"; exit 1; }
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Write","tool_input":{"file_path":".claude/hooks/readonly-guard.py","content":"pass"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker must not overwrite control hooks"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker","tool_name":"Bash","tool_input":{"command":"printf pass > .claude/hooks/readonly-guard.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null && { echo "FAIL: worker Bash must not overwrite control hooks"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-verifier","tool_input":{"command":"git diff"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow inspection"; exit 1; }
+printf '%s' '{"agent_type":"asgard-worker","tool_input":{"command":"printf ok > calc.py"}}' | "$PY" "$PROJ/.claude/hooks/readonly-guard.py" 2>/dev/null || { echo "FAIL: readonly-guard must allow worker"; exit 1; }
+printf '%s' '{"tool_input":{"file_path":"x/.env","content":"A=1"}}' | "$PY" "$PROJ/.claude/hooks/secret-guard.py" 2>/dev/null && { echo "FAIL: secret-guard must block .env"; exit 1; } || true
 # Canon Law 9 failure-tracker (PostToolUse) — soft 3-strike warn, normalized signature, fail-open
 grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing PostToolUse"; exit 1; }
 [ -f "$PROJ/.claude/hooks/failure-tracker.py" ] || { echo "FAIL: --cc missing failure-tracker.py"; exit 1; }
-python3 -m py_compile "$PROJ/.claude/hooks/failure-tracker.py" || { echo "FAIL: failure-tracker invalid Python"; exit 1; }
+"$PY" -m py_compile "$PROJ/.claude/hooks/failure-tracker.py" || { echo "FAIL: failure-tracker invalid Python"; exit 1; }
 _FT="$PROJ/.claude/hooks/failure-tracker.py"
 _FAIL='{"tool_name":"Bash","session_id":"smoke","tool_response":{"is_error":true,"error":"cannot open /p/a1: e1"}}'
-for _i in 1 2; do printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' && { echo "FAIL: failure-tracker warned too early"; exit 1; } || true; done
-printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_FT" | grep -q 'asgard-failure-warning' || { echo "FAIL: failure-tracker must warn on 3rd"; exit 1; }
-printf '%s' 'not-json' | python3 "$_FT" >/dev/null 2>&1 || { echo "FAIL: failure-tracker must fail-open"; exit 1; }
+for _i in 1 2; do printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$_FT" | grep -q 'asgard-failure-warning' && { echo "FAIL: failure-tracker warned too early"; exit 1; } || true; done
+printf '%s' "$_FAIL" | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$_FT" | grep -q 'asgard-failure-warning' || { echo "FAIL: failure-tracker must warn on 3rd"; exit 1; }
+printf '%s' 'not-json' | "$PY" "$_FT" >/dev/null 2>&1 || { echo "FAIL: failure-tracker must fail-open"; exit 1; }
 # Trinity subagent-gate (SubagentStop) — 역할 로그 규율: 미기록 종료 block, quest 없으면 allow, fail-open
 grep -q '"SubagentStop"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SubagentStop"; exit 1; }
 _SG="$PROJ/.claude/hooks/subagent-gate.py"
 [ -f "$_SG" ] || { echo "FAIL: --cc missing subagent-gate.py"; exit 1; }
-python3 -m py_compile "$_SG" || { echo "FAIL: subagent-gate invalid Python"; exit 1; }
-printf '%s' 'not-json' | python3 "$_SG" >/dev/null 2>&1 || { echo "FAIL: subagent-gate must fail-open"; exit 1; }
-printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow without active quest"; exit 1; } || true
+"$PY" -m py_compile "$_SG" || { echo "FAIL: subagent-gate invalid Python"; exit 1; }
+printf '%s' 'not-json' | "$PY" "$_SG" >/dev/null 2>&1 || { echo "FAIL: subagent-gate must fail-open"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow without active quest"; exit 1; } || true
 mkdir -p "$PROJ/.asgard/quest" && printf 'sg1' > "$PROJ/.asgard/quest/ACTIVE" && printf '{"event":"work","role":"worker"}\n' > "$PROJ/.asgard/quest/sg1.jsonl"
-printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q '"decision": "block"' || { echo "FAIL: subagent-gate must block verifier without verify event"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$_SG" | grep -q '"decision": "block"' || { echo "FAIL: subagent-gate must block verifier without verify event"; exit 1; }
 printf '{"event":"verify","role":"verifier","verdict":"PASS","commands":[{"cmd":"pytest -q","exit_code":0}]}\n' >> "$PROJ/.asgard/quest/sg1.jsonl"
-printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow verifier with evidence PASS"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-verifier","session_id":"smoke"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$_SG" | grep -q 'block' && { echo "FAIL: subagent-gate must allow verifier with evidence PASS"; exit 1; } || true
 rm -f "$PROJ/.asgard/quest/ACTIVE" "$PROJ/.asgard/quest/sg1.jsonl"
 # Lagom — 훅 3종+캐논 스캐폴드, SessionStart 주입, /lagom 전환, off 무주입, fail-open
 grep -q '"SessionStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing SessionStart (lagom)"; exit 1; }
@@ -160,16 +166,16 @@ for _f in lagom-activate.py lagom-tracker.py lagom-subagent.py lagom-canon.md la
 done
 grep -q '"statusLine"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing statusLine (lagom)"; exit 1; }
 printf '%s' '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PROJ"'"}}' | bash "$PROJ/.claude/hooks/lagom-statusline.sh" | grep -q 'lagom:full' || { echo "FAIL: lagom-statusline must show default full"; exit 1; }
-python3 -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
-printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }
-python3 -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"mode": "full"}' "$PROJ/.asgard/state/lagom-mode.json" || { echo "FAIL: lagom JSON state file not written"; exit 1; }
-printf '%s' '{"prompt":"/lagom lite"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q 'lite' || { echo "FAIL: lagom-tracker must switch mode"; exit 1; }
-python3 -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"mode": "lite"}' "$PROJ/.asgard/state/lagom-mode.json" || { echo "FAIL: lagom switch not persisted to JSON state"; exit 1; }
-printf '%s' '{"agent_type":"asgard-verifier"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' && { echo "FAIL: lagom-subagent must not inject verifier"; exit 1; } || true
-printf '%s' '{"agent_type":"asgard-worker"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' || { echo "FAIL: lagom-subagent must inject worker"; exit 1; }
-printf '%s' '{"prompt":"stop lagom"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q '\[lagom\] off' || { echo "FAIL: lagom deactivation phrase"; exit 1; }
-printf '%s' '{"source":"compact"}' | CLAUDE_PROJECT_DIR="$PROJ" python3 "$PROJ/.claude/hooks/lagom-activate.py" | grep -q '.' && { echo "FAIL: lagom off must inject nothing"; exit 1; } || true
-printf '%s' 'not-json' | python3 "$PROJ/.claude/hooks/lagom-tracker.py" >/dev/null 2>&1 || { echo "FAIL: lagom-tracker must fail-open"; exit 1; }
+"$PY" -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
+printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }
+"$PY" -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"mode": "full"}' "$PROJ/.asgard/state/lagom-mode.json" || { echo "FAIL: lagom JSON state file not written"; exit 1; }
+printf '%s' '{"prompt":"/lagom lite"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q 'lite' || { echo "FAIL: lagom-tracker must switch mode"; exit 1; }
+"$PY" -c 'import json, sys; assert json.load(open(sys.argv[1])) == {"mode": "lite"}' "$PROJ/.asgard/state/lagom-mode.json" || { echo "FAIL: lagom switch not persisted to JSON state"; exit 1; }
+printf '%s' '{"agent_type":"asgard-verifier"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' && { echo "FAIL: lagom-subagent must not inject verifier"; exit 1; } || true
+printf '%s' '{"agent_type":"asgard-worker"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-subagent.py" | grep -q 'additionalContext' || { echo "FAIL: lagom-subagent must inject worker"; exit 1; }
+printf '%s' '{"prompt":"stop lagom"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-tracker.py" | grep -q '\[lagom\] off' || { echo "FAIL: lagom deactivation phrase"; exit 1; }
+printf '%s' '{"source":"compact"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-activate.py" | grep -q '.' && { echo "FAIL: lagom off must inject nothing"; exit 1; } || true
+printf '%s' 'not-json' | "$PY" "$PROJ/.claude/hooks/lagom-tracker.py" >/dev/null 2>&1 || { echo "FAIL: lagom-tracker must fail-open"; exit 1; }
 rm -f "$PROJ/.asgard/state/lagom-mode.json" "$PROJ/.asgard/lagom-mode"
 grep -q 'asgard:lagom' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing lagom section"; exit 1; }
 [ -f "$PROJ/.claude/skills/asgard-lagom-review/SKILL.md" ] || { echo "FAIL: --cc missing lagom-review skill"; exit 1; }
@@ -213,9 +219,9 @@ for _d in skills hooks; do [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL:
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude"; exit 1; }
 grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor hooks.json"; exit 1; }
 [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: --cursor guard missing"; exit 1; }
-python3 -m py_compile "$PROJ/.cursor/hooks/git-guard.py" || { echo "FAIL: cursor guard invalid"; exit 1; }
-printf '%s' '{"command":"git push --force"}' | python3 "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"deny"' || { echo "FAIL: cursor guard deny"; exit 1; }
-printf '%s' '{"command":"git status"}'      | python3 "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"allow"' || { echo "FAIL: cursor guard allow"; exit 1; }
+"$PY" -m py_compile "$PROJ/.cursor/hooks/git-guard.py" || { echo "FAIL: cursor guard invalid"; exit 1; }
+printf '%s' '{"command":"git push --force"}' | "$PY" "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"deny"' || { echo "FAIL: cursor guard deny"; exit 1; }
+printf '%s' '{"command":"git status"}'      | "$PY" "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"allow"' || { echo "FAIL: cursor guard allow"; exit 1; }
 rm -rf "$PROJ"
 
 # ── init --codex — config.toml + git-guard + rules ──
@@ -227,7 +233,7 @@ grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: -
 [ -f "$PROJ/.codex/hooks/git-guard.py" ] || { echo "FAIL: --codex guard"; exit 1; }
 [ -f "$PROJ/.codex/rules/canon.rules" ] && grep -q "prefix_rule" "$PROJ/.codex/rules/canon.rules" || { echo "FAIL: --codex rules"; exit 1; }
 [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --codex missing .agents/skills asgard-test"; exit 1; }
-python3 -m py_compile "$PROJ/.codex/hooks/git-guard.py" || { echo "FAIL: codex guard invalid"; exit 1; }
+"$PY" -m py_compile "$PROJ/.codex/hooks/git-guard.py" || { echo "FAIL: codex guard invalid"; exit 1; }
 rm -rf "$PROJ"
 
 # ── combined --cc --cursor --codex ──

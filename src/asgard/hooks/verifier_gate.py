@@ -27,6 +27,15 @@ import sys
 import tempfile
 from typing import Any
 
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+    except Exception:
+        pass
+
+
 EMPTY = hashlib.sha256(b"").hexdigest()
 # quest_log.py 의 DEFAULT_POLICY 와 동일 유지 — 정책 파일이 없어도 두 스크립트가 같은 기준으로 판단.
 # dict[str, Any]: 사용자 trinity-policy.json 이 update() 로 섞이므로 값 타입은 런타임에 열려 있다.
@@ -446,7 +455,19 @@ def block_counter_path(root, sid):
     return os.path.join(root, ".asgard", f"gate-blocks-{sid}-{scope}.json")
 
 
-def block(root, sid, reason):
+def gate_event(root, kind, code):
+    """게이트 운영 이벤트 영속 기록 — 차단 카운터 파일은 성공 통과 시 삭제되므로 운영 지표가
+    안 남는다. doctor 가 block/escalation 률을 집계할 수 있게 append-only 로 남긴다. fail-open."""
+    try:
+        path = os.path.join(root, ".asgard", "state", "gate-events.jsonl")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"event": kind, "code": code}) + "\n")
+    except Exception:
+        pass
+
+
+def block(root, sid, reason, code="other"):
     """차단 — active quest별 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시."""
     path = block_counter_path(root, sid)
     n = 0
@@ -462,6 +483,7 @@ def block(root, sid, reason):
         os.replace(tmp, path)
     except Exception:
         pass
+    gate_event(root, "gate_escalate" if n > MAX_BLOCKS else "gate_block", code)
     if n > MAX_BLOCKS:
         sys.stderr.write(
             "asgard verifier-gate: %d회 차단 초과 — 통과시키되 Odin 에스컬레이션 필요 (Canon 9)\n" % MAX_BLOCKS
@@ -621,7 +643,7 @@ def main():
             sys.exit(0)
         unsafe_maps = unsafe_map_links(root)
         if unsafe_maps:
-            block(root, sid, "unsafe code map symlink/junction: %s" % ", ".join(unsafe_maps[:3]))
+            block(root, sid, "unsafe code map symlink/junction: %s" % ", ".join(unsafe_maps[:3]), code="unsafe_map")
         policy = dict(DEFAULT_POLICY)
         # 신규 통합 설정 우선, 구 파일 폴백 — quest_log.load_policy 와 동일 유지 (단일 출처 원칙)
         loaded = False
@@ -644,7 +666,12 @@ def main():
         )
         current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
         if "<snapshot-unavailable>" in changed:
-            block(root, sid, "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.")
+            block(
+                root,
+                sid,
+                "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.",
+                code="snapshot_fail",
+            )
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
         mutating = [c for c in cmds if not readonly(c.get("cmd", ""), policy["readonly_commands"])]
         risk_write = any((e.get("risk") or {}).get("has_write") for e in events)
@@ -656,7 +683,7 @@ def main():
         # 3회 헛차단 + fail-open 상한에 기대게 된다 (E2E 벤치 S4 에서 실측된 마찰).
         verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")]
         if not verdicts:
-            block(root, sid, "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.")
+            block(root, sid, "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.", code="no_verdict")
         p = verdicts[-1]
         if p.get("verdict") == "ESCALATE":
             # 무인 세션에서 work 시도 전무한 ESCALATE = 승인 대기 모양 (오딘이 없어
@@ -676,6 +703,7 @@ def main():
                         "오딘의 답은 오지 않습니다 — 방어 가능한 기본안을 골라 가정을 plan criteria "
                         "`가정: ...` 으로 기록하고 Worker 를 디스패치하세요. 어떤 기본안도 방어 불가한 "
                         "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다.",
+                        code="escalate_nudge",
                     )
             try:
                 os.remove(block_counter_path(root, sid))
@@ -683,9 +711,19 @@ def main():
                 pass
             sys.exit(0)  # 종료 허용 — 단 완료가 아니라 오딘 결정 대기 상태 (퀘스트 로그에 ESCALATE 가 남는다)
         if p.get("diff_hash") != current:
-            block(root, sid, "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.")
+            block(
+                root,
+                sid,
+                "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.",
+                code="stale_pass",
+            )
         if not any(e.get("criteria") for e in events):
-            block(root, sid, "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.")
+            block(
+                root,
+                sid,
+                "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.",
+                code="no_criteria",
+            )
         ticket_state = {}
         for event in events:
             if event.get("event") == "ticket" and event.get("unit") is not None:
@@ -696,6 +734,7 @@ def main():
                 root,
                 sid,
                 "미완료 ticket 존재(%s) — 모든 단위를 done으로 만든 뒤 검증하세요." % ", ".join(unfinished[:6]),
+                code="tickets_incomplete",
             )
         unmet = unmet_contracts(root, next((e.get("criteria") for e in events if e.get("criteria")), []), p)
         if unmet:
@@ -705,6 +744,7 @@ def main():
                 "criteria verify 계약 미충족 (%s) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
                 "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
                 % "; ".join(map(str, unmet[:3])),
+                code="criteria_unverified",
             )
         if not pass_evidence(p):
             block(
@@ -712,6 +752,7 @@ def main():
                 sid,
                 "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
                 "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
+                code="no_evidence",
             )
         bl = p.get("baseline") or {}
         if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 — 코드가 깨져 있다
@@ -720,6 +761,7 @@ def main():
                 root,
                 sid,
                 "하네스 베이스라인 체크 red (%s) — 실패한 체크를 수정한 뒤 재검증하세요." % ", ".join(failing[:3]),
+                code="baseline_red",
             )
         small = policy["small_write"]
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
@@ -735,6 +777,7 @@ def main():
                 "full-verify 필요(민감 경로 %s%s / diff %d files·%d lines)한데 micro PASS 입니다. "
                 "--level full 로 재검증하세요."
                 % (sensitive[:3], " / 삭제된 테스트 %s" % dts[:3] if dts else "", len(changed), lines),
+                code="micro_pass",
             )
         try:  # 통과 → 차단 카운터 리셋 (다음 위반은 새로 3회부터)
             os.remove(block_counter_path(root, sid))

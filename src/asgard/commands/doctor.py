@@ -345,6 +345,60 @@ def _trinity_checks(root: str) -> list[dict]:
             )
     except Exception:
         pass
+    # 게이트 운영 지표 — Stop 게이트 차단/에스컬레이션(state/gate-events.jsonl) + 퀘스트 종료
+    # 판정(quest_closed.risk) 집계. 차단 자체는 게이트가 일한 증거라 결함이 아니다 — 사람이
+    # 게이트를 수동 우회한 forced close 만 경고로 승격. 기록 있을 때만 표시 (misroute 관행).
+    try:
+        blocks: dict[str, int] = {}
+        escalations = 0
+        try:
+            for ln in open(os.path.join(root, ".asgard", "state", "gate-events.jsonl"), encoding="utf-8"):
+                if not ln.strip():
+                    continue
+                ev = _json.loads(ln)
+                code = str(ev.get("code") or "other")
+                if ev.get("event") == "gate_block":
+                    blocks[code] = blocks.get(code, 0) + 1
+                elif ev.get("event") == "gate_escalate":
+                    escalations += 1
+        except OSError:
+            pass
+        verdicts = {"PASS": 0, "FAIL": 0, "ESCALATE": 0}
+        forced = 0
+        qdir = os.path.join(root, ".asgard", "quest")
+        for fname in os.listdir(qdir) if os.path.isdir(qdir) else []:
+            if not fname.endswith(".jsonl"):
+                continue
+            for ln in open(os.path.join(qdir, fname), encoding="utf-8"):
+                if not ln.strip():
+                    continue
+                ev = _json.loads(ln)
+                if ev.get("event") == "verify" and ev.get("verdict") in verdicts:
+                    verdicts[ev["verdict"]] += 1
+                elif ev.get("event") == "quest_closed" and (ev.get("risk") or {}).get("forced"):
+                    forced += 1
+        if blocks or escalations or forced or any(verdicts.values()):
+            parts = []
+            if blocks:
+                top = ", ".join(f"{c} {n}" for c, n in sorted(blocks.items(), key=lambda kv: -kv[1])[:4])
+                parts.append(f"gate block {sum(blocks.values())}회 ({top})")
+            if escalations:
+                parts.append(f"차단 상한 초과 에스컬레이션 {escalations}회")
+            if any(verdicts.values()):
+                parts.append(f"verdict PASS {verdicts['PASS']}·FAIL {verdicts['FAIL']}·ESCALATE {verdicts['ESCALATE']}")
+            if forced:
+                parts.append(f"forced close {forced}회")
+            checks.append(
+                {
+                    "name": "trinity gate events",
+                    "ok": forced == 0,
+                    "detail": " · ".join(parts),
+                    "fix": "forced close 는 게이트 수동 우회 — 사유를 quest 로그에 남기고 재검증 권장 "
+                    "(.asgard/state/gate-events.jsonl · quest/*.jsonl 감사)",
+                }
+            )
+    except Exception:
+        pass
     # skill bank (자가발전 CUS-255) — learned 스킬 수·stale 후보·인박스 대기. 라이브러리는
     # 성장이 아니라 큐레이션이 자산이다 — stale 은 asgard evolve archive 처방.
     try:
