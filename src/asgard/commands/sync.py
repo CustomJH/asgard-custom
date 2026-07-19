@@ -14,6 +14,8 @@ import os
 import re
 
 from .. import registry, ui
+from ..skill_registry import show_skill, skills
+from ..templates.skill_router import direct_skill, routed_skill
 from .setup import merge_gitignore, plan_files
 
 # AGENTS.md 관리 블록 — <!-- >>> asgard:xxx >>> --> … <!-- <<< asgard:xxx <<< -->
@@ -89,6 +91,49 @@ def _policy(root: str, path: str) -> str:
     return "overwrite"
 
 
+def _prune_stale_skill_adapters(
+    root: str,
+    cc: bool,
+    cursor: bool,
+    codex: bool,
+    expected_paths: set[str],
+    dry_run: bool,
+) -> int:
+    """Remove only byte-identical generated adapters no longer exposed by current policy."""
+    scopes = []
+    if cc:
+        scopes.append(os.path.join(root, ".claude", "skills"))
+    if cursor or codex:
+        scopes.append(os.path.join(root, ".agents", "skills"))
+    removed = 0
+    for row in skills(root):
+        name = row["name"]
+        body = show_skill(root, name)
+        if not body:
+            continue
+        generated = {direct_skill(body)} | {
+            routed_skill(body, agent)
+            for agent in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir")
+        }
+        for scope in scopes:
+            path = os.path.join(scope, name, "SKILL.md")
+            if path in expected_paths:
+                continue
+            try:
+                if open(path, encoding="utf-8").read() not in generated:
+                    continue
+            except OSError:
+                continue
+            removed += 1
+            if not dry_run:
+                os.unlink(path)
+                try:
+                    os.rmdir(os.path.dirname(path))
+                except OSError:
+                    pass
+    return removed
+
+
 def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool = False) -> dict[str, int]:
     """한 프로젝트의 스캐폴드 갱신 — {"updated": n, "kept": n, "skipped": n} 집계를 돌려준다."""
     # 설정 통합 마이그레이션 (26-07-15) — 구 config.toml/trinity-policy.json/memory-server.json →
@@ -99,7 +144,11 @@ def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool =
         for msg in migrate_global() + migrate_project(root):
             ui.step(f"migrate {ui.dim(msg)}")
     files, _ = plan_files(cc, cursor, codex, root)
-    counts = {"updated": 0, "kept": 0, "skipped": 0}
+    counts = {
+        "updated": _prune_stale_skill_adapters(root, cc, cursor, codex, {path for path, _ in files}, dry_run),
+        "kept": 0,
+        "skipped": 0,
+    }
     for path, content in files:
         prev = None
         if os.path.exists(path):

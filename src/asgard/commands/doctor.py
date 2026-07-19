@@ -81,6 +81,23 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
+    client_adapters = []
+    for folder in (".claude", ".agents"):
+        if os.path.isdir(os.path.join(root, folder)):
+            client_adapters.append(os.path.join(folder, "skills", "asgard-skills", "SKILL.md"))
+    missing_adapters = [path for path in client_adapters if not os.path.isfile(os.path.join(root, path))]
+    checks.append(
+        {
+            "name": "central skill manager adapters",
+            "ok": bool(client_adapters) and not missing_adapters,
+            "detail": (
+                f"{len(client_adapters)}/{len(client_adapters)} clients wired"
+                if client_adapters and not missing_adapters
+                else "missing: " + ", ".join(missing_adapters or ["client skill scope"])
+            ),
+            "fix": fix,
+        }
+    )
     pol_ok, detail = False, "missing"
     try:  # 통합 설정(trinity_policy 섹션) 우선, 구 trinity-policy.json 폴백 (settings.load_project)
         from ..settings import load_project

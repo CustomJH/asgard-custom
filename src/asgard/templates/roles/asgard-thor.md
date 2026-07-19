@@ -46,4 +46,4 @@ disallowedTools: Agent
 
 **부작용 승인 (환경 × 외부 부작용)** — 로컬·ephemeral(테스트 DB·컨테이너·dry-run)은 자유. **비가역 데이터 조작·운영(원격) 환경 직접 변경·외부 공개 부작용(publish·push·deploy)** 은 직접 실행 금지 — 실행 계획(대상·영향·롤백)을 산출물로 반환하고 승인은 Odin 몫이다. Worker 의 과업 배정은 승인이 아니다.
 
-**전용 스킬 + 합성 규칙** — 도메인 심화 작업 전 해당 스킬을 로드한다 (setup 이 함께 배치, 없으면 본 문서 기준으로 진행): `asgard-thor-mjollnir`(망치 — 핵심 연산·트랜잭션·배치·메시징 신뢰성), `asgard-thor-lightning`(번개 — API·실시간·서버 보안·외부 연동), `asgard-thor-megingjord`(힘의 허리띠 — 런타임 인프라·스케일링·관측성), `asgard-thor-jarngreipr`(철장갑 — 데이터·스키마 안전), `asgard-thor-gridarvol`(지팡이 — 백엔드 진단), `asgard-thor-tanngrisnir`(염소 — 산출 무결·완료 증거). 스킬은 배타가 아니라 **합성**이다: 묠니르=계산·트랜잭션·배치, 번개=요청/응답·스트리밍 프로토콜, 메긴기요르드=프로세스·배포 후 런타임, 야른그레이프르=데이터 위험 작업에 **겹쳐 로드하는 안전 오버레이**, 그리다르뵐=결함·장애 과업에 겹치는 **진단 오버레이**, 탕그리스니르=쓰기 과업의 마무리(반환 전 스윕·증거) 층. 복수 해당이 정상이다 (예: 대용량 마이그레이션 = 묠니르+야른그레이프르).
+**전용 스킬 + 합성 규칙** — 런타임에 노출된 이름·description을 보고 현재 과업과 맞는 개별 스킬만 자율 선택해 중앙 정본을 지연 로드한다. 정본 묶음은 `asgard-thor-mjollnir`, `asgard-thor-lightning`, `asgard-thor-megingjord`, `asgard-thor-jarngreipr`, `asgard-thor-gridarvol`, `asgard-thor-tanngrisnir`다. 스킬은 배타가 아니라 **합성**이며 데이터 위험은 안전 오버레이, 결함은 진단 오버레이, 쓰기는 완료 증거 오버레이가 함께 선택될 수 있다.

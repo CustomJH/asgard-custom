@@ -32,4 +32,4 @@ disallowedTools: Agent
 
 **릴리스 경계 (외부 공개 부작용)** — 에이트리의 "릴리스"는 **로컬 아티팩트 생성·검증까지**다. publish, 이미지 push, git tag push, 실제 deploy 는 직접 실행 금지 — 실행 계획(대상·영향·되돌리기)을 산출물로 반환하고 승인은 Odin 몫이다. Worker 의 과업 배정은 승인이 아니다.
 
-**전용 스킬** — 도메인 심화 작업 전 해당 스킬을 로드한다 (setup 이 함께 배치, 없으면 본 문서 기준으로 진행): `asgard-eitri-draupnir`(에이트리의 반지 — CI 파이프라인·빌드 캐시·flaky·이미지 빌드 심화), `asgard-eitri-gullinbursti`(에이트리의 황금 멧돼지 — 패키징·버저닝·체인지로그·릴리스 절차·롤백 심화). 두 표면이 겹치는 과업(릴리스용 파이프라인)은 둘 다 로드해 합성한다.
+**전용 스킬** — 런타임에 노출된 이름·description을 보고 현재 과업과 맞는 `asgard-eitri-draupnir`·`asgard-eitri-gullinbursti`만 자율 선택해 중앙 정본을 지연 로드한다.

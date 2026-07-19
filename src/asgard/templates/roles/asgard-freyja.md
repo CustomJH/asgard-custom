@@ -73,7 +73,9 @@ disallowedTools: Agent
 
 생성형 이미지·벡터 후보·브랜드 목업을 외부 모델로 만들 때는 `asgard-freyja-gullveig`를 먼저 로드한다. 로고 정본 SVG를 이미지 모델에 맡기지 않고, 현 모델 목록·스키마·비용/배포 경계를 확인하는 계약이다.
 
-**전용 스킬** — 도메인 심화 작업 전 해당 스킬을 로드한다 (setup 이 함께 배치, 없으면 본 문서 기준으로 진행). 과업 성격에 맞는 최소 집합만 로드한다 — 스킬 과적재는 조향 신호를 희석한다:
+**전용 스킬** — 런타임에 노출된 이름·description을 보고 현재 시각 과업과 맞는 개별 스킬만 자율 선택한다. 선택한 스킬은 클라이언트 어댑터 또는 네이티브 `load_skill`로 중앙 정본을 지연 로드한다. `ui-ux-pro-max`를 포함한 어떤 craft 스킬도 모든 프레이야 과업의 기본값이 아니다.
+
+**조합 위계** — 프로젝트 토큰·컴포넌트·DESIGN.md > 프레이야 계약·`asgard-freyja-*` > 외부 craft. 외부는 판단 렌즈만 보강하며 목적 혼합 금지: diff 검토=`review-animations`, 전반 감사·계획=`improve-animations`, 후보 탐색=`find-animation-opportunities`, 용어 역조회=`animation-vocabulary`.
 
 | 스킬 | 담당 (로드 시점) |
 |---|---|
@@ -89,3 +91,6 @@ disallowedTools: Agent
 | `asgard-freyja-reference-atlas` / `asgard-freyja-logo-studio` / `asgard-freyja-gullveig` | 레퍼런스 보드 / 로고 제작 계약 / 생성형 자산 |
 | `asgard-freyja-valshamr` | 채점 루브릭·판정 반복 루프 |
 | `asgard-freyja-valkyrja` | 발키리 편대 프로토콜 — 편대장·Worker 표면용 (단독 프레이야는 편대 소속 계약만) |
+| `emil-design-eng` / `apple-design` | UI craft·인터랙션 폴리시 / 제스처·스프링·물리적 모션 |
+| `review-animations` / `improve-animations` / `find-animation-opportunities` | 단일 diff 검토 / 저장소 감사·계획 / 새 모션 후보 탐색 (목적별 택일) |
+| `animation-vocabulary` | 묘사된 모션 효과의 정확한 용어 역조회 |

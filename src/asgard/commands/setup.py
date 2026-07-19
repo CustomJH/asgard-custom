@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .. import ui
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
+from ..skill_registry import client_skill_bodies, skill_catalog
 from ..templates import (
     BRIDGE_SKILL_MD,
     CC_FOLDERS,
@@ -24,9 +25,7 @@ from ..templates import (
     cursor_rule,
     project_settings,
 )
-from ..templates.eitri import EITRI_SKILLS  # (스킬명, SKILL.md 본문) — CI 재현성/패키징·릴리스 심화 2종
 from ..templates.freyja import (
-    FREYJA_SKILLS,  # (스킬명, SKILL.md 본문) — taste/motion/video/3D/브라우저 실기동 심화 5종
     freyja_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
 )
 from ..templates.lagom import (
@@ -35,16 +34,14 @@ from ..templates.lagom import (
 )
 from ..templates.memory import MEMORY_SKILL_MD  # memory v3 — 읽기/저장(승인 게이트) 계약
 from ..templates.mimir import (
-    MIMIR_SKILLS,  # (스킬명, SKILL.md 본문) — 워크스루 설계/문답 설계 심화 2종
     mimir_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
 )
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
+from ..templates.skill_router import ROUTER_SKILL_MD, direct_skill
 from ..templates.thor import (
-    THOR_SKILLS,  # (스킬명, SKILL.md 본문) — mjollnir/lightning/megingjord/jarngreipr 심화 4종
     eitri_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
     thor_core_skill,
 )
-from ..templates.worker import WORKER_SKILLS  # (스킬명, SKILL.md 본문) — 디버깅/테스트 설계 공통 2종
 
 # 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
 # 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
@@ -152,6 +149,14 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     root = root or os.getcwd()
     name = os.path.basename(root)
     j = os.path.join
+
+    def discovery_bodies() -> list[tuple[str, str]]:
+        merged: dict[str, str] = {}
+        for agent in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir"):
+            for skill, body in client_skill_bodies(agent, root):
+                merged.setdefault(skill, body)
+        return sorted(merged.items())
+
     files: list[tuple[str, str]] = [
         (j(root, "AGENTS.md"), agents_md(name)),
         # 루트 .gitignore — 없으면 생성, 있으면 asgard 마커 블록만 병합 (write 시점, merge_gitignore).
@@ -209,24 +214,25 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".claude", "hooks", "charter-activate.py"), hook("charter-activate")),
         ]
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
-        files += [(j(root, ".claude", "agents", fname), content) for fname, content in ROLE_AGENTS]
+        for fname, content in ROLE_AGENTS:
+            agent = fname.removeprefix("asgard-").removesuffix(".md")
+            catalog = skill_catalog(root, agent, loader="cli")
+            files.append((j(root, ".claude", "agents", fname), content + catalog))
         # /asgard-test — 사용자가 세션 안에서 셋업을 자가 테스트 (배선·하니스·라이브 3계층).
-        files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
+        files.append((j(root, ".claude", "skills", "asgard-skills", "SKILL.md"), ROUTER_SKILL_MD))
+        files.append((j(root, ".claude", "skills", "asgard-test", "SKILL.md"), direct_skill(SELFTEST_MD)))
         # asgard-provider — Trinity 역할 브릿지. 항상 스캐폴드, 게이트는 런타임([bridge] 기본 꺼짐).
-        files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
+        files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), direct_skill(BRIDGE_SKILL_MD)))
         # Lagom 스킬 — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in LAGOM_SKILLS]
         # /asgard-seal — gitmoji 사건 봉인 (한 봉인 한 사건 + 품질 게이트)
-        files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
+        files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD)))
         # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
-        files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), MEMORY_SKILL_MD))
-        # 딜리버리 심화 스킬 (각 *_SKILLS 목록이 단일 소스) — 해당 서브에이전트(모드 B)·메인 세션이
-        # 도메인 작업 전 로드. Worker 공통 2종(디버깅·테스트 설계)은 도메인 불문 코드 작업용.
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in EITRI_SKILLS]
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in MIMIR_SKILLS]
-        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), body) for sname, body in WORKER_SKILLS]
+        files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), direct_skill(MEMORY_SKILL_MD)))
+        # Claude가 각 description으로 스킬을 고르고, 선택된 얇은 어댑터만 중앙 정본을 로드한다.
+        files += [
+            (j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in discovery_bodies()
+        ]
 
     # Cursor — rule bridge + skeleton + beforeShellExecution guard + postToolUseFailure tracker.
     if cursor:
@@ -257,22 +263,20 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     # (cursor.com/docs/skills · developers.openai.com/codex/skills), Claude Code 만 .claude/skills/.
     # 같은 SKILL.md 포맷이라 본문은 하나다.
     if cursor or codex:
-        files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), SELFTEST_MD))
-        files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), BRIDGE_SKILL_MD))
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in LAGOM_SKILLS]
-        files.append((j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), SEAL_SKILL_MD))
-        # 딜리버리 코어 계약 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치(role 파일
-        # 파생, 단일 소스). Worker phase 가 해당 도메인 하위작업에서 로드해 인라인 수행 + 심화 각 4종.
-        files.append((j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"), freyja_core_skill()))
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in FREYJA_SKILLS]
-        files.append((j(root, ".agents", "skills", "asgard-thor", "SKILL.md"), thor_core_skill()))
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in THOR_SKILLS]
-        files.append((j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"), eitri_core_skill()))
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in EITRI_SKILLS]
-        files.append((j(root, ".agents", "skills", "asgard-mimir", "SKILL.md"), mimir_core_skill()))
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in MIMIR_SKILLS]
-        # Worker 공통 스킬 — 모드 A Worker phase 가 디버깅·테스트 하위작업에서 로드
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), body) for sname, body in WORKER_SKILLS]
+        files.append((j(root, ".agents", "skills", "asgard-skills", "SKILL.md"), ROUTER_SKILL_MD))
+        files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), direct_skill(SELFTEST_MD)))
+        files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), direct_skill(BRIDGE_SKILL_MD)))
+        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in LAGOM_SKILLS]
+        files.append((j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD)))
+        # 딜리버리 코어 계약 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치한다.
+        files.append((j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"), direct_skill(freyja_core_skill())))
+        files.append((j(root, ".agents", "skills", "asgard-thor", "SKILL.md"), direct_skill(thor_core_skill())))
+        files.append((j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"), direct_skill(eitri_core_skill())))
+        files.append((j(root, ".agents", "skills", "asgard-mimir", "SKILL.md"), direct_skill(mimir_core_skill())))
+        # 각 클라이언트가 이름·설명만 색인하고, 선택된 어댑터가 중앙 정본을 지연 로드한다.
+        files += [
+            (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in discovery_bodies()
+        ]
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"
