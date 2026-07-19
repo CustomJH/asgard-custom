@@ -1251,20 +1251,18 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
         # micro_pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
         return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
-    if ((flags.ambiguous and has_write) or flags.external_research or flags.parallel_requested) and s["plan_turns"] < 2:
-        # plan_turns 게이트 — 플래그는 매 전이마다 재전달(sticky)되므로, 실제 Thinker 계획(턴2)
-        # 이후엔 실행으로 넘어가야 한다. 안 그러면 THINKER 무한 루프(12턴 소진).
-        return out("THINKER", "deep/모호한 write 또는 외부 조사 — 전략 선행")
+    if flags.parallel_requested and s["plan_turns"] < 2:
+        # 병렬 fan-out만 별도 Thinker가 access/file-overlap 그래프를 만든다. 모호함·외부 조사·큰
+        # 변경은 단일 Worker가 같은 도구 문맥에서 계획하고 실행한다 — 순차 역할 handoff 비용과
+        # 맥락 손실을 피하고, 실제 FAIL/구조적 red가 관측될 때만 THINKER_REPLAN으로 승격한다.
+        return out("THINKER", "명시적 병렬 과업 — 독립 단위와 access graph 계획 선행")
     if not has_write:
         return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")
     if s["last_event"] == "work":
         if standard_ok and s.get("checks_available"):
             return out("BASELINE_VERIFY", "소형·비민감 변경 — 하네스 베이스라인 우선")
         return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
-    if (sensitive or big) and s["plan_turns"] < 2:
-        # open 의 자동 plan(턴1)은 접수 기록일 뿐 — 민감/큰 write 는 실제 Thinker 계획 턴을 요구한다.
-        return out("THINKER", "sensitive/big write — Thinker 계획 선행 (full-verify 경로)")
-    return out("WORKER", "배정 단위 실행 차례")
+    return out("WORKER", "단일 Worker 자율 계획·실행 — 실패 시 Thinker 재계획")
 
 
 def map_nudge(root: str, base_ref: str | None) -> list[str]:

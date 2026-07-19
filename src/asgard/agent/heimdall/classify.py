@@ -87,7 +87,7 @@ def classify_heuristic(request: str) -> dict | None:
     has_r = any(v in low for v in _READ_VERBS)
     if has_w and _PARALLEL_WORK_PAT.search(low):
         # 명시적 분해·병렬 요청은 Thinker가 dependency/file-overlap을 구조화해야 한다.
-        # LLM 분류가 standard를 반환하면 gate-first가 Thinker를 생략해 단일 Worker로 축소된다.
+        # LLM 분류가 standard를 반환해도 명시적 fan-out은 Thinker의 access graph를 거쳐야 한다.
         return {**base, "write_expected": True, "parallel_requested": True, "task_class": "deep"}
     if has_r and not has_w:
         return base  # 명백 read-only — DIRECT 무세금

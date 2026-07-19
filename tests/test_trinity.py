@@ -506,11 +506,9 @@ class TestTransition(TrinityBase):
             self.qlog("append", "--verdict", "FAIL", stdin=_json.dumps(body))
         self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
 
-    def test_ambiguous_plans_once_then_works(self):
-        """모호 플래그는 sticky — Thinker 계획(턴2) 후에는 WORKER 로 넘어가야 한다 (plan 무한 루프 방지)."""
+    def test_ambiguous_starts_with_single_worker(self):
+        """모호함만으로 순차 Thinker handoff를 만들지 않는다 — Worker가 같은 문맥에서 계획·실행한다."""
         self.open_quest()
-        self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "THINKER")
-        self.qlog("append", "--role", "thinker", "--event", "plan")  # 실제 계획 턴
         self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "WORKER")
 
     def test_parallel_request_plans_once_then_works(self):
@@ -726,10 +724,10 @@ class TestTransition(TrinityBase):
         self.write("app.py", "print('changed')\n")  # PASS 후 변경 → stale
         self.assertEqual(self.next()["next_role"], "VERIFIER")
 
-    def test_ambiguous_write_and_research_go_thinker(self):
+    def test_ambiguous_write_and_research_stay_single_worker(self):
         self.open_quest()
-        self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "THINKER")
-        self.assertEqual(self.next("--external-research")["next_role"], "THINKER")
+        self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "WORKER")
+        self.assertEqual(self.next("--external-research")["next_role"], "WORKER")
 
     def test_no_write_is_direct_done(self):
         self.open_quest("--no-write")
@@ -740,13 +738,11 @@ class TestTransition(TrinityBase):
         out = self.next("--write-expected")
         self.assertEqual((out["next_role"], out["verify_level"]), ("WORKER", "micro"))
 
-    def test_sensitive_write_requires_thinker_then_full(self):
+    def test_sensitive_write_starts_worker_but_keeps_full_verification(self):
         self.open_quest()
         self.write("hooks/deploy.py", "x = 1\n")  # sensitive path
         out = self.next()
-        self.assertEqual((out["next_role"], out["verify_level"]), ("THINKER", "full"))
-        self.qlog("append", "--role", "thinker", "--event", "plan")  # 실제 계획 턴
-        self.assertEqual(self.next()["next_role"], "WORKER")
+        self.assertEqual((out["next_role"], out["verify_level"]), ("WORKER", "full"))
 
     def test_micro_pass_on_sensitive_is_not_done(self):
         """전이·close 는 gate 와 같은 판정을 내야 한다 — micro PASS 로 DONE 이면 Stop 에서 차단당한다."""

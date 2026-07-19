@@ -87,8 +87,8 @@ class Heimdall:
         self.charter_identity = _charter_note(root, "identity")
         # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더
         # (세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
-        # 주입 매트릭스: DIRECT(identity)·Thinker = 스냅샷+회수. standard Worker는 Thinker가
-        # 생략되므로 요청 관련 개인 회수만 받고, deep Worker는 Thinker 계획의 요약만 받는다.
+        # 주입 매트릭스: DIRECT(identity)·호출된 Thinker = 스냅샷+회수. standard Worker는
+        # 요청 관련 개인 회수만 받고, deep Worker는 개인 메모리를 받지 않는다.
         # Verifier/딜리버리(loki 포함)는 영구 무주입.
         # provider 게이트: inject_allowed — 킬스위치 + [memory].providers allowlist.
         from ...memory import inject_allowed as _mem_allowed
@@ -686,8 +686,9 @@ class Heimdall:
                 return self._finalize_memory(request, self._direct(request))  # DIRECT — 무세금
             except TurnCancelled:
                 return self._cancel_notice()  # 취소 턴은 메모리 보존도 하지 않는다
-        # 게이트-우선(STANDARD) 라우팅 — 비민감 소형 write 는 Worker 직행 + 하네스 베이스라인.
-        # deep/ambiguous/shared 는 상시 Trinity. task_class 미상(None)은 deep 취급 (안전 기본값).
+        # 모든 비파괴 write 는 Worker가 먼저 자율 계획·실행한다. standard 는 기계 baseline 적격과
+        # 개인 메모리 최소 회수만 표시하고, deep/ambiguous/shared도 선행 Thinker 없이 시작한다.
+        # 별도 Thinker는 명시적 병렬 분해 또는 관측된 실패의 재계획에만 사용한다.
         standard = cls.get("task_class") in ("trivial", "standard") and not (cls["ambiguous"] or cls["shared"])
         _log_classify(self.root, {"event": "route", "route": "standard" if standard else "trinity"})
         try:

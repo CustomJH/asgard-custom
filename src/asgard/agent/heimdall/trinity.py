@@ -1,4 +1,4 @@
-"""Trinity 순환 — 퀘스트 단위 상태기계 (THINKER → WORKER → VERIFIER → 게이트 → close).
+"""Trinity 순환 — 퀘스트 단위 상태기계 (WORKER → 검증, 실패/병렬만 THINKER).
 
 TrinityRun 은 한 퀘스트의 실행 상태(계획 컨텍스트·실패 이력·게이트 시그니처·턴 예산)를 들고,
 전이 함수(quest-log next)가 배정한 역할 턴을 메서드 단위로 수행한다. 각 턴 메서드의 반환이
@@ -59,8 +59,8 @@ class TrinityRun:
         self.tc = tc if tc in ("trivial", "standard") else "deep"  # 미상/파싱 실패는 deep (안전 기본값)
 
         # ── 순환 가변 상태 ──
-        # 게이트-우선은 Thinker 를 생략한다 — Worker 가 계획 없이 뛰지 않게 criteria 를 계획 자리에.
-        self.plan_ctx = ("성공 기준: " + "; ".join(map(str, cls["criteria"]))) if standard else ""
+        # 단일 Worker가 기본 계획자다. 별도 Thinker가 필요한 병렬/재계획 경로는 이 값을 덮어쓴다.
+        self.plan_ctx = "성공 기준: " + "; ".join(map(str, cls["criteria"]))
         self.explored: list[str] = []  # Thinker 관찰 명령 — Worker 재탐색 세금 절감 (힌트 전용)
         self.structural = False  # 직전 FAIL 이 구조적 — 다음 next 에 --structural 전달
         self.last_fail: dict | None = None  # 직전 FAIL 상세 — WORKER_RETRY 에 주입

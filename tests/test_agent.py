@@ -606,13 +606,14 @@ class TestDeliveryAgents(unittest.TestCase):
             self.assertIn(f"asgard-{g}", body)
             self.assertNotIn("name:", body)  # frontmatter 누출 없음
 
-    def test_agents_md_allows_main_worker_but_dispatches_other_mode_b_roles(self):
+    def test_agents_md_starts_main_worker_but_dispatches_conditional_roles(self):
         from asgard.templates.agents import agents_md
 
         guide = agents_md("p")
         self.assertIn("MAIN_WORKER", guide)
         self.assertIn("asgard-worker.md", guide)
-        self.assertIn("Thinker·Verifier", guide)
+        self.assertIn("별도 Thinker는 명시적 병렬 분해와 실패 재계획에만", guide)
+        self.assertIn("Verifier와 병렬/분리 Worker는 독립 Agent", guide)
         self.assertIn("BASELINE_VERIFY", guide)
 
 

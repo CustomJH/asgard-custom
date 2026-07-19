@@ -1195,7 +1195,7 @@ class TestWaveParallel(Base):
         self.assertFalse(resumed_cls["shared"])
 
     def test_wave_execution_isolation_and_unit_events(self):
-        cls = dict(CLS_WRITE, ambiguous=True)  # ambiguous write → THINKER 선행 (계획이 wave 의 입력)
+        cls = dict(CLS_WRITE, ambiguous=True, parallel_requested=True)
         seq = [
             FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker"),
             worker({"u1.txt": "1\n"}, self.root, text="unit-result-A"),
@@ -1261,7 +1261,11 @@ class TestWaveParallel(Base):
             slow_effect()
 
         slow.effect = delayed
-        h = FakeHeimdall(self.root, [thinker(plan), fast, slow, verifier("PASS")], cls=dict(CLS_WRITE, ambiguous=True))
+        h = FakeHeimdall(
+            self.root,
+            [thinker(plan), fast, slow, verifier("PASS")],
+            cls=dict(CLS_WRITE, ambiguous=True, parallel_requested=True),
+        )
         h.policy.setdefault("ticket_runtime", {})["lease_seconds"] = 2
         self.assertIn("과업 완수", h.handle("u1과 u2를 병렬 구현해줘"))
 
@@ -1520,7 +1524,7 @@ class TestWaveParallel(Base):
         self.assertEqual(ticket["status"], "done")
 
     def test_retry_after_wave_replans_and_preserves_unit_scope(self):
-        cls = dict(CLS_WRITE, ambiguous=True)
+        cls = dict(CLS_WRITE, ambiguous=True, parallel_requested=True)
         seq = [
             FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker"),
             worker({"u1.txt": "1\n"}, self.root),
@@ -1541,7 +1545,7 @@ class TestWaveParallel(Base):
         self.assertIn("broken", replan.prompt)
 
     def test_structural_replan_executes_new_units_as_a_wave(self):
-        cls = dict(CLS_WRITE, ambiguous=True)
+        cls = dict(CLS_WRITE, ambiguous=True, parallel_requested=True)
         seq = [
             FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker"),
             worker({"u1.txt": "1\n"}, self.root),
@@ -1629,16 +1633,17 @@ class TestExplorationHint(Base):
     """탐색 캐시 최소판 — Thinker 관찰 명령을 Worker 에 힌트로 전달 (게이트 증거 아님)."""
 
     def test_worker_gets_thinker_observations(self):
-        cls = dict(CLS_WRITE, ambiguous=True)  # THINKER 선행 경로
         seq = [
+            worker({"w1.txt": "bad\n"}, self.root),
+            verifier("FAIL", structural=True, sig="bad-plan"),
             thinker("계획: w1 을 만든다", commands=[{"cmd": "grep -rn foo src/", "exit_code": 0}]),
             worker({"w1.txt": "x\n"}, self.root),
             verifier("PASS"),
         ]
-        h = FakeHeimdall(self.root, seq, cls=cls)
+        h = FakeHeimdall(self.root, seq, cls=dict(CLS_WRITE, ambiguous=True))
         out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
-        w = next(s for s in h.consumed if s.label == "worker")
+        w = [s for s in h.consumed if s.label == "worker"][1]
         self.assertIn("grep -rn foo src/", w.prompt)
         self.assertIn("재탐색 불필요", w.prompt)
 
@@ -1766,6 +1771,20 @@ class TestStandardRoute(Base):
         self.assertEqual([s.label for s in h.consumed], ["worker"])
         self.assertIn('"harness"', self.quest_log_text())
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
+
+    def test_ambiguous_deep_write_starts_single_worker_without_thinker(self):
+        work = worker({"w1.txt": "x\n"}, self.root)
+        h = FakeHeimdall(
+            self.root,
+            [work, verifier("PASS")],
+            cls={**CLS_WRITE, "ambiguous": True, "task_class": "deep"},
+        )
+
+        out = h.handle("모호한 부분은 합리적으로 판단해서 w1.txt 만들어")
+
+        self.assertIn("과업 완수", out)
+        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+        self.assertIn("성공 기준:", work.prompt)
 
     def test_standard_red_gives_worker_retry_with_failing_check(self):
         self.policy(baseline_checks=["python3 -m pytest -q"])
@@ -2401,7 +2420,7 @@ class TestFrozenSnapshotIntegration(Base):
 
 
 class TestMemoryRoleMatrix(Base):
-    """감사 매트릭스: DIRECT·Thinker = 스냅샷+회수, standard Worker = 요청 관련 회수만,
+    """감사 매트릭스: DIRECT·호출된 Thinker = 스냅샷+회수, standard Worker = 요청 관련 회수만,
     deep Worker/Verifier = 직접 무주입. provider allowlist가 모든 전송 표면을 게이트."""
 
     def setUp(self):
@@ -2419,7 +2438,7 @@ class TestMemoryRoleMatrix(Base):
         os.environ.pop(memory.MEMORY_ENV, None)
         super().tearDown()
 
-    def test_thinker_injected_worker_verifier_not(self):
+    def test_replan_thinker_injected_worker_verifier_not(self):
         systems = []
 
         class Cap(FakeHeimdall):
@@ -2438,16 +2457,30 @@ class TestMemoryRoleMatrix(Base):
                 systems.append(system)
                 return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
 
-        cls = {**CLS_WRITE, "task_class": "deep", "shared": True}  # shared → THINKER 선행
-        h = Cap(self.root, [thinker(), worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=cls)
+        cls = {**CLS_WRITE, "task_class": "deep", "shared": True}
+        h = Cap(
+            self.root,
+            [
+                worker({"w1.txt": "bad\n"}, self.root),
+                verifier("FAIL", structural=True, sig="bad-plan"),
+                thinker("재설계"),
+                worker({"w1.txt": "x\n"}, self.root),
+                verifier("PASS"),
+            ],
+            cls=cls,
+        )
         h.handle("w1.txt 만들어 — pytest 검증 선호 반영")
-        self.assertEqual([s.label for s in h.consumed], ["thinker", "worker", "verifier"])
-        self.assertIn("<memory-context", systems[0])  # Thinker 시스템 = 스냅샷
-        self.assertIn("<memory-recall", h.consumed[0].prompt)  # Thinker 과업 = 회수 블록
-        self.assertNotIn("<memory-context", systems[1])  # Worker 무주입
-        self.assertNotIn("<memory-recall", h.consumed[1].prompt)
-        self.assertNotIn("<memory-context", systems[2])  # Verifier 무주입 (게이트 무결성)
-        self.assertNotIn("<memory-recall", h.consumed[2].prompt)
+        self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "thinker", "worker", "verifier"])
+        role_systems = list(zip((s.role for s in h.consumed), systems, strict=True))
+        thinker_session = next(s for s in h.consumed if s.label == "thinker")
+        self.assertIn("<memory-context", next(system for role, system in role_systems if role == "thinker"))
+        self.assertIn("<memory-recall", thinker_session.prompt)
+        for role, system in role_systems:
+            if role in ("worker", "verifier"):
+                self.assertNotIn("<memory-context", system)
+        for session in h.consumed:
+            if session.role in ("worker", "verifier"):
+                self.assertNotIn("<memory-recall", session.prompt)
 
     def test_direct_prompt_gets_recall(self):
         cls = {**CLS_WRITE, "write_expected": False, "criteria": []}
@@ -2478,10 +2511,17 @@ class TestMemoryRoleMatrix(Base):
 
         failed = FakeSession(SessionResult(text="", stop_reason="error"), effect=capped, label="thinker")
         fallback = thinker("fallback plan")
-        cls = {**CLS_WRITE, "task_class": "deep", "shared": True}
+        cls = {**CLS_WRITE, "task_class": "deep"}
         h = FakeHeimdall(
             self.root,
-            [failed, fallback, worker({"w1.txt": "x\n"}, self.root), verifier("PASS")],
+            [
+                worker({"w1.txt": "bad\n"}, self.root),
+                verifier("FAIL", structural=True, sig="bad-plan"),
+                failed,
+                fallback,
+                worker({"w1.txt": "x\n"}, self.root),
+                verifier("PASS"),
+            ],
             cls=cls,
         )
 
@@ -2504,10 +2544,17 @@ class TestMemoryRoleMatrix(Base):
 
         failed = FakeSession(SessionResult(text="", stop_reason="error"), effect=capped, label="thinker")
         fallback = thinker("fallback plan")
-        cls = {**CLS_WRITE, "task_class": "deep", "shared": True}
+        cls = {**CLS_WRITE, "task_class": "deep"}
         h = FakeHeimdall(
             self.root,
-            [failed, fallback, worker({"w1.txt": "x\n"}, self.root), verifier("PASS")],
+            [
+                worker({"w1.txt": "bad\n"}, self.root),
+                verifier("FAIL", structural=True, sig="bad-plan"),
+                failed,
+                fallback,
+                worker({"w1.txt": "x\n"}, self.root),
+                verifier("PASS"),
+            ],
             cls=cls,
         )
 
