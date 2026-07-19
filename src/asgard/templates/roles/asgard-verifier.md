@@ -2,7 +2,7 @@
 name: asgard-verifier
 description: Trinity Verifier — 독립 검증, 구조화 PASS/FAIL/ESCALATE 판정 (코드 수정 금지). Worker 결과 검증·완료 판정에 디스패치.
 tools: Read, Grep, Glob, Bash, Agent
-model: opus
+model: inherit
 ---
 
 # asgard-verifier — ⚖️ 판정 (Trinity)

@@ -26,7 +26,15 @@ from .classify import _DESTRUCTIVE_PAT, _PARALLEL_WORK_PAT, _pred_fields, classi
 from .dispatch import DeliveryDispatch, _freyja_gate_rejection, _safe_candidates
 from .journal import _log_classify
 from .planning import _resume_snapshot
-from .roles import _DELIVERY_TIERS, _EXPLORE_NUDGE_MIN, _TIER_MODELS, _TIER_UP, _identity, _mimir_note
+from .roles import (
+    _DELIVERY_TIERS,
+    _EXPLORE_NUDGE_MIN,
+    _TIER_MODELS,
+    _TIER_UP,
+    _identity,
+    _mimir_note,
+    _model_tier,
+)
 from .trinity import TrinityRun
 from .waves import WaveRunner
 
@@ -56,7 +64,8 @@ class Heimdall:
         from ...providers import TRINITY_EXTRA_ROLES, TRINITY_ROLES
 
         self.role_rp: dict[str, ResolvedProvider] = {}
-        for role, rrp in resolve_trinity(root, rp, TRINITY_ROLES + TRINITY_EXTRA_ROLES).items():
+        roles = TRINITY_ROLES + TRINITY_EXTRA_ROLES + tuple(_DELIVERY_TIERS)
+        for role, rrp in resolve_trinity(root, rp, roles).items():
             if rrp is not rp and rrp.missing:
                 on_text(f"⚠ [trinity.{role}] 미충족({'; '.join(rrp.missing)}) — 기본 provider 사용\n")
                 rrp = rp
@@ -162,25 +171,45 @@ class Heimdall:
         """정책 tier → 상황별 모델. None = 스왑 없음 (해당 세션 rp.model 그대로).
 
         존중 규칙: ① 역할에 명시 placement 가 있으면 그 모델 ② 기본 provider 가 anthropic 이
-        아니면 티어 매핑 불가 ③ 사용자가 기본 모델을 바꿨으면(config model=) 그 선택 유지.
+        아니면 티어 매핑 불가 ③ 알려지지 않은 커스텀 모델은 그 선택 유지.
+        티어 하한 = 코디네이터: 정책 티어가 세션 모델 티어보다 낮으면 세션 티어로 올린다 —
+        더 싼 손이 필요하면 ① placement 로 명시한다.
         bump = 상황 승급 (full-verify·재계획 2회+) — 티어 사다리 한 칸 위 (high→max=fable)."""
         rp = self.role_rp.get(role_key, self.rp)
         if rp is not self.rp:
             return None  # 명시 placement 존중
         # claude_cli 도 티어 매핑 가능 — CLI 가 full 모델 ID 를 그대로 해석한다
-        if rp.profile.api_mode not in ("anthropic", "claude_cli") or rp.model != rp.profile.default_model:
+        if rp.profile.api_mode not in ("anthropic", "claude_cli"):
             return None
         tier = str((self.policy.get("roles", {}).get(role_key) or {}).get("tier", "standard"))
+        # 코디네이터 티어 하한 — 위임된 실행·판정 손이 세션 모델보다 약하면 그 손이 품질 하한이
+        # 된다 (숨은 caller 추적처럼 코디네이터는 하는 일을 못 한다). 정책이 명시한 티어라도
+        # 코디네이터 아래로는 내리지 않는다; 역매핑 불가 모델(커스텀 ID)은 하한 미적용.
+        order = list(_TIER_MODELS)
+        coord = _model_tier(rp.model)
+        if coord is None:
+            return None
+        if coord and tier in order and order.index(coord) > order.index(tier):
+            tier = coord
         if bump:
             tier = _TIER_UP.get(tier, tier)
         return _TIER_MODELS.get(tier)
 
     def _delivery_model(self, agent: str) -> str | None:
         """딜리버리 전문가 모델 — 정책 "delivery" 티어 (기본: freyja/thor/eitri=sonnet, loki=haiku)."""
-        rp = self.rp
-        if rp.profile.api_mode not in ("anthropic", "claude_cli") or rp.model != rp.profile.default_model:
+        rp = self.role_rp.get(agent, self.rp)
+        if rp is not self.rp:  # 명시 placement 존중
+            return None
+        if rp.profile.api_mode not in ("anthropic", "claude_cli"):
             return None
         tier = str((self.policy.get("delivery") or {}).get(agent, _DELIVERY_TIERS.get(agent, "standard")))
+        coord = _model_tier(rp.model)
+        if coord is None:
+            return None
+        # Loki는 의도된 저비용 반례 정찰. 실제 산출을 만드는 나머지 손만 코디네이터 하한 적용.
+        order = list(_TIER_MODELS)
+        if agent != "loki" and tier in order and order.index(coord) > order.index(tier):
+            tier = coord
         return _TIER_MODELS.get(tier)
 
     def _classify(self, request: str) -> dict:

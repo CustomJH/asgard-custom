@@ -2,7 +2,7 @@
 name: asgard-worker
 description: Trinity Worker — 배정 단위 1개만 구현·실행. 계획이 선 표준·소형 write 과업의 실행에 디스패치. 범위 밖 변경 금지.
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent
-model: sonnet
+model: inherit
 ---
 
 # asgard-worker — 🔨 실행 (Trinity)
