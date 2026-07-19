@@ -23,7 +23,7 @@ def run_skills_list(json_out: bool = False) -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
     else:
         for row in rows:
-            print(f"{row['name']}\t{row['plugin']}\t{row['origin']}\t{row['description']}")
+            print(f"{row['name']}\t{row['plugin']}\t{row['origin']}\t{row['invocation']}\t{row['description']}")
     return 0
 
 

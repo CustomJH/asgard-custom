@@ -186,6 +186,8 @@ def resolve_learned(root: str, task: str, agent: str) -> list[tuple[str, str]]:
     for name, s in learned_skills(root).items():
         if "*" in disabled or name in disabled:
             continue
+        if str(s.get("disable-model-invocation") or "").lower() in ("true", "yes", "1", "on"):
+            continue
         if s.get("agent") not in (agent, "any"):
             continue
         n = sum(1 for k in s["triggers"] if k in t)

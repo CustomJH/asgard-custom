@@ -37,7 +37,7 @@ from ..templates.mimir import (
     mimir_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
 )
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
-from ..templates.skill_router import ROUTER_SKILL_MD, direct_skill
+from ..templates.skill_router import ROUTER_SKILL_MD, direct_skill, openai_skill_metadata
 from ..templates.thor import (
     eitri_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
     thor_core_skill,
@@ -277,6 +277,15 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [
             (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in discovery_bodies()
         ]
+
+        # Codex excludes user-invoked skills from model discovery through this standard policy file.
+        # Cursor ignores the extra metadata and keeps sharing the same .agents skill directory.
+        for path, content in tuple(files):
+            if not path.startswith(j(root, ".agents", "skills") + os.sep) or not path.endswith("SKILL.md"):
+                continue
+            metadata = openai_skill_metadata(content)
+            if metadata:
+                files.append((j(os.path.dirname(path), "agents", "openai.yaml"), metadata))
 
     tools = [t for t, on in (("claude-code", cc), ("cursor", cursor), ("codex", codex)) if on]
     label = "init · universal (all agents, enforced)" if universal else f"init · AGENTS.md + {', '.join(tools)}"

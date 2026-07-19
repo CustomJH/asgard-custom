@@ -169,6 +169,9 @@ components:
         self.assertIn("asgard skills show asgard-freyja", core)
         router = by_path[os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md")]
         self.assertNotIn("skills resolve", router)
+        self.assertIn("disable-model-invocation: true", router)
+        metadata = by_path[os.path.join(self.root, ".agents", "skills", "asgard-skills", "agents", "openai.yaml")]
+        self.assertIn("allow_implicit_invocation: false", metadata)
         freyja_role = by_path[os.path.join(self.root, ".claude", "agents", "asgard-freyja.md")]
         self.assertIn("<available_skills>", freyja_role)
         self.assertIn("ui-ux-pro-max", freyja_role)
@@ -221,6 +224,56 @@ components:
         self.assertIn("acme-db", note)
         self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
         self.assertEqual(handlers["load_skill"]({"name": "acme-db"}), "ACME_DB_POLICY\n")
+
+    def test_user_invoked_plugin_stays_out_of_model_context_but_manual_load_works(self):
+        source = os.path.join(self.root, "explicit-source")
+        skill = os.path.join(source, "skills", "manual-check")
+        automatic = os.path.join(source, "skills", "automatic-check")
+        os.makedirs(skill)
+        os.makedirs(automatic)
+        Path(os.path.join(source, "plugin.json")).write_text(
+            json.dumps({"schema": 1, "name": "explicit", "skills": ["manual-check", "automatic-check"]}),
+            encoding="utf-8",
+        )
+        Path(os.path.join(skill, "SKILL.md")).write_text(
+            "---\nname: manual-check\ndescription: Manual check\ntriggers: check\nagent: worker\n"
+            "disable-model-invocation: true\n---\n\nMANUAL_ONLY\n",
+            encoding="utf-8",
+        )
+        Path(os.path.join(automatic, "SKILL.md")).write_text(
+            "---\nname: automatic-check\ndescription: Automatic check\ntriggers: check\nagent: worker\n"
+            "---\n\nAUTOMATIC\n",
+            encoding="utf-8",
+        )
+        skill_registry.install_plugin(source)
+
+        row = next(row for row in skill_registry.skills(self.root) if row["name"] == "manual-check")
+        self.assertEqual(row["invocation"], "user")
+        self.assertNotIn("manual-check", {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+        self.assertEqual(
+            skill_registry.resolve_skills(self.root, "check", "worker"), [("automatic-check", "AUTOMATIC\n")]
+        )
+        self.assertIn("MANUAL_ONLY", skill_registry.show_skill(self.root, "manual-check") or "")
+
+        from asgard.commands.setup import plan_files
+
+        files, _ = plan_files(cc=True, cursor=False, codex=True, root=self.root)
+        by_path = dict(files)
+        adapter = by_path[os.path.join(self.root, ".agents", "skills", "manual-check", "SKILL.md")]
+        metadata = by_path[os.path.join(self.root, ".agents", "skills", "manual-check", "agents", "openai.yaml")]
+        self.assertIn("disable-model-invocation: true", adapter)
+        self.assertIn("allow_implicit_invocation: false", metadata)
+
+    def test_skillcraft_keeps_detailed_rubric_in_a_lazy_resource(self):
+        row = next(row for row in skill_registry.skills(self.root) if row["name"] == "asgard-skillcraft")
+        self.assertEqual((row["plugin"], row["invocation"]), ("asgard-skillcraft", "model"))
+        body = skill_registry.load_skill_for_agent(self.root, "worker", "asgard-skillcraft")
+        self.assertIn("load `CHECKLIST.md`", body)
+        self.assertNotIn("Pick 3-5 representative prompts", body)
+        resource = skill_registry.load_skill_for_agent(
+            self.root, "worker", "asgard-skillcraft", resource="CHECKLIST.md"
+        )
+        self.assertIn("Pick 3-5 representative prompts", resource)
 
     def test_install_preserves_declared_skill_resources(self):
         source = os.path.join(self.root, "resource-source")

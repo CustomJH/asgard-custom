@@ -18,13 +18,20 @@ from unittest import mock
 from asgard import evolution, skill_bank
 
 
-def _write_skill(base: str, name: str, triggers: str, agent: str = "worker", body: str = "본문 절차") -> str:
+def _write_skill(
+    base: str,
+    name: str,
+    triggers: str,
+    agent: str = "worker",
+    body: str = "본문 절차",
+    extra: str = "",
+) -> str:
     d = os.path.join(base, name)
     os.makedirs(d, exist_ok=True)
     p = os.path.join(d, "SKILL.md")
     text = (
         f"---\nname: {name}\ndescription: d\ntriggers: {triggers}\nagent: {agent}\n"
-        f"origin: retrospective\ncreated: 2026-07-16\n---\n\n{body}\n"
+        f"origin: retrospective\ncreated: 2026-07-16\n{extra}---\n\n{body}\n"
     )
     open(p, "w", encoding="utf-8").write(text)
     open(os.path.join(d, skill_bank.APPROVAL_FILE), "w", encoding="utf-8").write(
@@ -126,6 +133,16 @@ class TestSkillBankResolve(EvoBase):
         _write_skill(self.proj_skills(), "learned-any", "배포", agent="any")
         for agent in ("worker", "freyja", "thor"):
             self.assertTrue(skill_bank.resolve_learned(self.root, "배포 스크립트", agent))
+
+    def test_user_invoked_learned_skill_is_not_resolved_implicitly(self):
+        _write_skill(
+            self.proj_skills(),
+            "learned-manual",
+            "수동 검사",
+            extra="disable-model-invocation: true\n",
+        )
+        self.assertIn("learned-manual", skill_bank.learned_skills(self.root))
+        self.assertEqual(skill_bank.resolve_learned(self.root, "수동 검사", "worker"), [])
 
     def test_cap_two_by_hit_count(self):
         _write_skill(self.proj_skills(), "learned-a", "알파", body="A")

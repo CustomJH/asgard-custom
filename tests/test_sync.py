@@ -210,6 +210,32 @@ class TestSyncProject(Base):
         sync_project(self.root, cc=True, cursor=False, codex=False)
         self.assertFalse(os.path.exists(path))
 
+    def test_sync_prunes_user_invoked_adapter_and_codex_policy_together(self):
+        from pathlib import Path
+
+        from asgard.skill_registry import install_plugin, set_skill_enabled
+
+        source = os.path.join(self.root, "explicit-source")
+        skill = os.path.join(source, "skills", "manual-check")
+        os.makedirs(skill)
+        Path(os.path.join(source, "plugin.json")).write_text(
+            json.dumps({"schema": 1, "name": "explicit", "skills": ["manual-check"]}), encoding="utf-8"
+        )
+        Path(os.path.join(skill, "SKILL.md")).write_text(
+            "---\nname: manual-check\ndescription: Manual check\ntriggers: check\nagent: worker\n"
+            "disable-model-invocation: true\n---\n\nMANUAL_ONLY\n",
+            encoding="utf-8",
+        )
+        install_plugin(source)
+        sync_project(self.root, cc=False, cursor=False, codex=True)
+        directory = os.path.join(self.root, ".agents", "skills", "manual-check")
+        self.assertTrue(os.path.exists(os.path.join(directory, "SKILL.md")))
+        self.assertTrue(os.path.exists(os.path.join(directory, "agents", "openai.yaml")))
+
+        set_skill_enabled(self.root, "manual-check", enabled=False)
+        sync_project(self.root, cc=False, cursor=False, codex=True)
+        self.assertFalse(os.path.exists(directory))
+
     def test_run_sync_prunes_missing_root_and_syncs_rest(self):
         registry.record(j := os.path.join(self.root, "gone"), True, False, False)  # 사라진 루트
         registry.record(self.root, True, False, False)

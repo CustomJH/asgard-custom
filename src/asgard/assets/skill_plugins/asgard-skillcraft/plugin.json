@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "name": "asgard-skillcraft",
+  "version": "1",
+  "description": "Low-context skill authoring and pruning discipline",
+  "skills": ["asgard-skillcraft"],
+  "routing": {
+    "asgard-skillcraft": {
+      "triggers": [
+        "skill.md",
+        "agent skill",
+        "skill authoring",
+        "skill refactor",
+        "context load",
+        "no-op test",
+        "스킬 작성",
+        "스킬 리팩터링",
+        "컨텍스트 부하",
+        "무동작 테스트"
+      ],
+      "agents": ["worker"]
+    }
+  },
+  "source": "https://github.com/mattpocock/skills",
+  "revision": "9603c1cc8118d08bc1b3bf34cf714f62178dea3b",
+  "license": "MIT"
+}

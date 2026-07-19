@@ -72,6 +72,11 @@ directories:
 {"schema": 1, "name": "acme", "version": "1.0.0", "skills": ["acme-db"], "entrypoints": {"acme-db": "scripts/search.py"}}
 ```
 
+The skill list reports `model` or `user` invocation. Standard `disable-model-invocation: true`
+skills remain manually loadable but stay out of model discovery; Codex adapters also receive the
+matching `agents/openai.yaml` policy. The bundled `asgard-skillcraft` skill applies the same
+trigger/structure/steering/pruning discipline when authoring or reducing skills.
+
 Routing can be declared centrally under `plugin.json`'s `routing` object, or with the legacy
 `triggers`, `agent` (default assignment), and optional `agents` fields in frontmatter. Resource
 files are copied intact and text references are available through `asgard skills show --resource`.

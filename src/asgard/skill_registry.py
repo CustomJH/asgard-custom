@@ -34,6 +34,14 @@ def _description(text: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _implicit(text: str) -> bool:
+    """Whether a skill may enter model discovery context (Agent Skills convention)."""
+    if not text.startswith("---"):
+        return True
+    match = re.search(r"^disable-model-invocation:\s*(.+)$", text.split("---", 2)[1], re.M)
+    return not match or match.group(1).strip().lower() not in ("true", "yes", "1", "on")
+
+
 def _file_skill(text: str) -> tuple[dict[str, str], str] | None:
     """Parse standard SKILL.md metadata; routing may live in plugin.json."""
     if not text.startswith("---"):
@@ -165,6 +173,7 @@ def _validate_manifest(root: str) -> dict:
         raise ValueError("plugin skills must be a regular directory")
     normalized: list[str] = []
     skill_meta: dict[str, dict[str, str]] = {}
+    skill_implicit: dict[str, bool] = {}
     for raw in skills:
         skill = str(raw)
         if not _SLUG.fullmatch(skill):
@@ -173,11 +182,13 @@ def _validate_manifest(root: str) -> dict:
         path = os.path.join(directory, "SKILL.md")
         if os.path.islink(directory) or os.path.islink(path) or not os.path.isfile(path):
             raise ValueError(f"skill must be a regular file: {skill}")
-        parsed = _file_skill(open(path, encoding="utf-8").read())
+        text = open(path, encoding="utf-8").read()
+        parsed = _file_skill(text)
         if not parsed or parsed[0].get("name") != skill:
             raise ValueError(f"skill frontmatter is invalid or name differs: {skill}")
         normalized.append(skill)
         skill_meta[skill] = parsed[0]
+        skill_implicit[skill] = _implicit(text)
     raw_routing = manifest.get("routing") or {}
     if not isinstance(raw_routing, dict) or set(raw_routing).difference(normalized):
         raise ValueError("plugin routing must be an object keyed by declared skill")
@@ -206,6 +217,7 @@ def _validate_manifest(root: str) -> dict:
             "triggers": triggers,
             "defaults": defaults,
             "agents": compatible,
+            "implicit": skill_implicit[skill],
         }
     _safe_tree(root)
     entrypoints = _entrypoints(manifest, normalized)
@@ -328,6 +340,7 @@ def skills(root: str) -> list[dict]:
             "description": _description(text),
             "plugin": plugin_name,
             "origin": "bundled",
+            "invocation": "model" if _implicit(text) else "user",
         }
         for plugin_name, plugin in _builtin_plugins().items()
         for name, text in plugin["skills"]
@@ -338,7 +351,15 @@ def skills(root: str) -> list[dict]:
             if name in seen:
                 continue
             text = open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
-            rows.append({"name": name, "description": _description(text), "plugin": plugin_name, "origin": "bundled"})
+            rows.append(
+                {
+                    "name": name,
+                    "description": _description(text),
+                    "plugin": plugin_name,
+                    "origin": "bundled",
+                    "invocation": "model" if _implicit(text) else "user",
+                }
+            )
             seen.add(name)
     for name, skill in learned_skills(root).items():
         if name in seen:
@@ -349,6 +370,7 @@ def skills(root: str) -> list[dict]:
                 "description": str(skill.get("description") or ""),
                 "plugin": "learned",
                 "origin": "project" if str(skill.get("path", "")).startswith(os.path.realpath(root)) else "global",
+                "invocation": "model" if _implicit(open(str(skill["path"]), encoding="utf-8").read()) else "user",
             }
         )
         seen.add(name)
@@ -357,7 +379,15 @@ def skills(root: str) -> list[dict]:
             if name in seen:
                 continue
             text = open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
-            rows.append({"name": name, "description": _description(text), "plugin": plugin_name, "origin": "installed"})
+            rows.append(
+                {
+                    "name": name,
+                    "description": _description(text),
+                    "plugin": plugin_name,
+                    "origin": "installed",
+                    "invocation": "model" if _implicit(text) else "user",
+                }
+            )
             seen.add(name)
     return sorted(rows, key=lambda row: row["name"])
 
@@ -523,6 +553,8 @@ def _resolve_file_plugins(root: str, task: str, agent: str, sources: dict[str, d
             parsed = _file_skill(text)
             if not parsed:
                 continue
+            if not plugin["routing"][name]["implicit"]:
+                continue
             _, body = parsed
             route = plugin["routing"][name]
             defaults = tuple(route["defaults"])
@@ -559,12 +591,14 @@ def resolve_skills(root: str, task: str, agent: str, *, include_learned: bool = 
     for name, body in hits:
         if name in disabled or name in unassigned.get(agent, set()) or name in seen:
             continue
+        text = show_skill(root, name) or ""
+        if not _implicit(text):
+            continue
         seen.add(name)
         if name.endswith("-deferred"):
             selected.append((name, body))
             continue
         if used + len(body) > _RESOLVED_BODY_BUDGET:
-            text = show_skill(root, name) or ""
             description = _description(text)[:140] if text.startswith("---") else ""
             selected.append(
                 (
@@ -629,7 +663,7 @@ def available_skills(
     return [
         {"name": name, "description": _description(text)}
         for name, text in client_skill_bodies(agent, root, include_learned=include_learned)
-        if name not in hidden
+        if name not in hidden and _implicit(text)
     ]
 
 

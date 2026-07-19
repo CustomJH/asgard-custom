@@ -15,7 +15,7 @@ import re
 
 from .. import registry, ui
 from ..skill_registry import show_skill, skills
-from ..templates.skill_router import direct_skill, routed_skill
+from ..templates.skill_router import direct_skill, openai_skill_metadata, routed_skill
 from .setup import merge_gitignore, plan_files
 
 # AGENTS.md 관리 블록 — <!-- >>> asgard:xxx >>> --> … <!-- <<< asgard:xxx <<< -->
@@ -127,6 +127,14 @@ def _prune_stale_skill_adapters(
             removed += 1
             if not dry_run:
                 os.unlink(path)
+                metadata = os.path.join(os.path.dirname(path), "agents", "openai.yaml")
+                expected = openai_skill_metadata(direct_skill(body))
+                try:
+                    if expected and open(metadata, encoding="utf-8").read() == expected:
+                        os.unlink(metadata)
+                        os.rmdir(os.path.dirname(metadata))
+                except OSError:
+                    pass
                 try:
                     os.rmdir(os.path.dirname(path))
                 except OSError:
