@@ -132,6 +132,7 @@ class ToolSpec:
 class ToolRegistry:
     def __init__(self) -> None:
         self._specs: dict[str, ToolSpec] = {}
+        self._closers: list[Callable[[], None]] = []
 
     def register(self, spec: ToolSpec) -> None:
         if spec.name in self._specs:
@@ -146,6 +147,16 @@ class ToolRegistry:
 
     def get(self, name: str) -> ToolSpec | None:
         return self._specs.get(name)
+
+    def add_closer(self, closer: Callable[[], None]) -> None:
+        self._closers.append(closer)
+
+    def close(self) -> None:
+        for closer in reversed(self._closers):
+            try:
+                closer()
+            except Exception:
+                pass
 
     def available_specs(self, context: ToolContext) -> list[ToolSpec]:
         return [spec for _, spec in sorted(self._specs.items()) if self.state(spec.name, context).callable]
@@ -236,12 +247,40 @@ def _run_editor(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(out, details={"path": str(args.get("path", "")), "command": args.get("command")})
 
 
+def _read_document(context: ToolContext, args: dict) -> ToolResult:
+    return ToolResult(T.run_document(context.root, args), details={"path": str(args.get("path", ""))})
+
+
+def _web_fetch(context: ToolContext, args: dict) -> ToolResult:
+    return ToolResult(T.run_web_fetch(context.root, args), details={"fetched": True})
+
+
+def _apply_patch(context: ToolContext, args: dict) -> ToolResult:
+    return ToolResult(T.run_apply_patch(context.root, args, context.writes))
+
+
+def _process_capability(args: dict) -> str:
+    if args.get("action") != "start":
+        return "execute"
+    return "execute" if is_readonly_bash_safe(str(args.get("command") or "")) else "mutate"
+
+
 def build_session_registry(
     extra_tools: list[dict] | None = None,
     handlers: Mapping[str, Callable[[dict], str]] | None = None,
 ) -> ToolRegistry:
     """Build a session-scoped registry while preserving the legacy injection API."""
     registry = ToolRegistry()
+    process_manager = T.BackgroundProcessManager()
+    registry.add_closer(process_manager.close)
+
+    def run_process(context: ToolContext, args: dict) -> ToolResult:
+        content = process_manager.run(context.root, args, context.cancel)
+        if args.get("action") == "start":
+            context.commands.append(
+                {"cmd": str(args.get("command") or "")[:200], "exit_code": None, "background": True}
+            )
+        return ToolResult(content, details={"action": args.get("action"), "process_id": args.get("process_id")})
     registry.register(
         ToolSpec(
             "bash",
@@ -255,6 +294,18 @@ def build_session_registry(
             },
         )
     )
+    registry.register(ToolSpec("apply_patch", "mutate", T.APPLY_PATCH_TOOL, _apply_patch))
+    registry.register(
+        ToolSpec(
+            "process",
+            _process_capability,
+            T.PROCESS_TOOL,
+            run_process,
+            visible_capabilities=frozenset({"execute", "mutate"}),
+        )
+    )
+    registry.register(ToolSpec("read_document", "inspect", T.READ_DOCUMENT_TOOL, _read_document))
+    registry.register(ToolSpec("web_fetch", "inspect", T.WEB_FETCH_TOOL, _web_fetch))
     registry.register(
         ToolSpec(
             "str_replace_based_edit_tool",

@@ -12,6 +12,8 @@ dependencies = [
     "httpx>=0.27",  # Asgard-owned OAuth device flow + refresh for subscription providers
     "claude-agent-sdk>=0.2",  # claude-native provider — 로컬 claude CLI 구동 (claude_cli 트랜스포트)
     "prompt-toolkit>=3.0",
+    "pypdf>=6.14.2",  # native PDF text extraction
+    "python-hwpx>=3.5.0",  # HWPX parsing/editing for the bundled Korean document skill
     "pyyaml>=6.0.3",  # built-in DESIGN.md Python linter
     "coloraide>=8.10",  # CSS color parsing + WCAG contrast for DESIGN.md
 ]

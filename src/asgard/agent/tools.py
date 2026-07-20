@@ -13,22 +13,82 @@ Anthropic-defined 툴(스키마리스)을 쓰는 이유: 모델이 이 계약으
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import os
 import re
 import shlex
 import signal
+import socket
 import subprocess
 import sys
+import tempfile
 import threading
 import time
+import zipfile
 from collections import deque
+from html.parser import HTMLParser
+from pathlib import Path
+from urllib.parse import urljoin, urlsplit, urlunsplit
+from xml.etree import ElementTree as ET
 
 BASH_TOOL = {"type": "bash_20250124", "name": "bash"}
 EDITOR_TOOL = {"type": "text_editor_20250728", "name": "str_replace_based_edit_tool"}
+READ_DOCUMENT_TOOL = {
+    "name": "read_document",
+    "description": "Extract paginated text from a project PDF, DOCX, HWPX, or HWP document.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "path": {"type": "string", "description": "Project-relative document path."},
+            "offset": {"type": "integer", "description": "1-based first extracted line; default 1."},
+            "limit": {"type": "integer", "description": "Lines to return, 1-500; default 200."},
+        },
+        "required": ["path"],
+    },
+}
+WEB_FETCH_TOOL = {
+    "name": "web_fetch",
+    "description": "Fetch a public HTTP(S) URL and return bounded text or HTML. Private/internal addresses are blocked.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "url": {"type": "string", "description": "Public http:// or https:// URL."},
+            "format": {"type": "string", "enum": ["text", "html"], "description": "Default: text."},
+            "max_chars": {"type": "integer", "description": "Output limit, 1-30000; default 30000."},
+        },
+        "required": ["url"],
+    },
+}
+PROCESS_TOOL = {
+    "name": "process",
+    "description": "Start, poll, list, or stop a session-scoped background command. Jobs are terminated when the agent session ends.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "action": {"type": "string", "enum": ["start", "poll", "list", "stop"]},
+            "command": {"type": "string", "description": "Required for start."},
+            "process_id": {"type": "string", "description": "Required for poll/stop."},
+            "wait_seconds": {"type": "number", "description": "Poll wait, 0-10 seconds; default 0."},
+        },
+        "required": ["action"],
+    },
+}
+APPLY_PATCH_TOOL = {
+    "name": "apply_patch",
+    "description": "Validate every change, then transactionally apply a Codex-style multi-file patch inside the project.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"patch_text": {"type": "string", "description": "Full *** Begin Patch block."}},
+        "required": ["patch_text"],
+    },
+}
 
 _TIMEOUT = 120
 _MAX_OUT = 30_000  # chars — 초과분은 절단 표기 (조용한 절단 금지)
+_MAX_DOCUMENT_BYTES = 64 * 1024 * 1024
+_MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
+_MAX_FETCH_BYTES = 5 * 1024 * 1024
 
 
 class ToolError(Exception):
@@ -161,6 +221,226 @@ def _cap(s: str) -> str:
     return s if len(s) <= _MAX_OUT else s[:_MAX_OUT] + f"\n[... {len(s) - _MAX_OUT} chars 절단]"
 
 
+class _HTMLText(HTMLParser):
+    _BLOCKS = frozenset({"article", "br", "div", "h1", "h2", "h3", "h4", "h5", "h6", "li", "p", "pre", "section", "tr"})
+    _SKIP = frozenset({"embed", "iframe", "noscript", "object", "script", "style", "svg"})
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.parts: list[str] = []
+        self.skip = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        del attrs
+        if self.skip or tag in self._SKIP:
+            self.skip += 1
+        elif tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_endtag(self, tag: str) -> None:
+        if self.skip:
+            self.skip -= 1
+        elif tag in self._BLOCKS:
+            self.parts.append("\n")
+
+    def handle_data(self, data: str) -> None:
+        if not self.skip:
+            self.parts.append(data)
+
+    def text(self) -> str:
+        lines = (re.sub(r"[ \t]+", " ", line).strip() for line in "".join(self.parts).splitlines())
+        return "\n".join(line for line in lines if line)
+
+
+def _public_url(raw: str) -> str:
+    try:
+        parsed = urlsplit(raw.strip())
+        port = parsed.port
+    except ValueError as exc:
+        raise ToolError(f"잘못된 URL: {exc}") from exc
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.hostname:
+        raise ToolError("web_fetch는 공개 http:// 또는 https:// URL만 지원합니다")
+    if parsed.username or parsed.password:
+        raise ToolError("URL 사용자정보는 허용하지 않습니다")
+    host = parsed.hostname.rstrip(".").lower()
+    if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
+        raise ToolError("내부 호스트 URL은 차단됩니다")
+    try:
+        ipaddress.ip_address(host)
+        addresses = {host}
+    except ValueError:
+        try:
+            addresses = {
+                item[4][0]
+                for item in socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80))
+            }
+        except OSError as exc:
+            raise ToolError(f"URL 호스트를 확인할 수 없습니다: {exc}") from exc
+    if not addresses or any(not ipaddress.ip_address(address).is_global for address in addresses):
+        raise ToolError("사설·루프백·링크로컬·예약 주소는 차단됩니다")
+    return urlunsplit((parsed.scheme.lower(), parsed.netloc, parsed.path or "/", parsed.query, ""))
+
+
+def run_web_fetch(_root: str, tool_input: dict) -> str:
+    import httpx
+
+    url = str(tool_input.get("url") or "")
+    output_format = str(tool_input.get("format") or "text")
+    max_chars = int(tool_input.get("max_chars") or _MAX_OUT)
+    if output_format not in {"text", "html"} or not 1 <= max_chars <= _MAX_OUT:
+        raise ToolError("format은 text|html, max_chars는 1..30000이어야 합니다")
+    headers = {
+        "Accept": "text/html, text/plain, application/json, application/xml;q=0.9, */*;q=0.1",
+        "User-Agent": "Asgard/1 web_fetch",
+    }
+    try:
+        with httpx.Client(follow_redirects=False, timeout=30, headers=headers) as client:
+            for _ in range(6):
+                url = _public_url(url)
+                with client.stream("GET", url) as response:
+                    if response.status_code in {301, 302, 303, 307, 308}:
+                        location = response.headers.get("location")
+                        if not location:
+                            raise ToolError("리다이렉트 대상이 없습니다")
+                        url = urljoin(url, location)
+                        continue
+                    response.raise_for_status()
+                    chunks: list[bytes] = []
+                    size = 0
+                    for chunk in response.iter_bytes():
+                        size += len(chunk)
+                        if size > _MAX_FETCH_BYTES:
+                            raise ToolError("응답이 5 MiB 안전 상한을 초과합니다")
+                        chunks.append(chunk)
+                    content_type = response.headers.get("content-type", "").split(";", 1)[0].lower()
+                    if content_type and not (
+                        content_type.startswith("text/")
+                        or content_type
+                        in {"application/json", "application/ld+json", "application/xml", "application/xhtml+xml"}
+                    ):
+                        raise ToolError(f"텍스트가 아닌 응답입니다: {content_type}")
+                    body = b"".join(chunks).decode(response.encoding or "utf-8", errors="replace")
+                    if output_format == "text" and ("html" in content_type or "<html" in body[:500].lower()):
+                        parser = _HTMLText()
+                        parser.feed(body)
+                        body = parser.text()
+                    shown = urlunsplit((*urlsplit(url)[:3], "", ""))
+                    suffix = "" if len(body) <= max_chars else f"\n[... {len(body) - max_chars} chars 절단]"
+                    return f"[{response.status_code} {content_type or 'unknown'} · {shown}]\n{body[:max_chars]}{suffix}"
+            raise ToolError("리다이렉트가 5회를 초과했습니다")
+    except ToolError:
+        raise
+    except httpx.HTTPError as exc:
+        raise ToolError(f"URL 요청 실패: {exc}") from exc
+
+
+def _safe_archive(path: str) -> None:
+    try:
+        with zipfile.ZipFile(path) as archive:
+            entries = archive.infolist()
+            if len(entries) > 4096 or sum(item.file_size for item in entries) > _MAX_ARCHIVE_BYTES:
+                raise ToolError("문서 압축 해제 크기가 안전 상한을 초과합니다")
+    except zipfile.BadZipFile as exc:
+        raise ToolError(f"올바른 문서 ZIP이 아닙니다: {exc}") from exc
+
+
+def _extract_docx(path: str) -> str:
+    _safe_archive(path)
+    try:
+        with zipfile.ZipFile(path) as archive:
+            root = ET.fromstring(archive.read("word/document.xml"))
+    except (KeyError, ET.ParseError) as exc:
+        raise ToolError(f"DOCX 본문을 읽을 수 없습니다: {exc}") from exc
+    ns = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+    lines: list[str] = []
+    for paragraph in root.iter(f"{ns}p"):
+        text: list[str] = []
+        for node in paragraph.iter():
+            if node.tag == f"{ns}t":
+                text.append(node.text or "")
+            elif node.tag == f"{ns}tab":
+                text.append("\t")
+            elif node.tag in {f"{ns}br", f"{ns}cr"}:
+                text.append("\n")
+        lines.extend("".join(text).splitlines() or [""])
+    return "\n".join(lines)
+
+
+def _extract_pdf(path: str) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(path)
+    return "\n".join(f"# Page {index}\n{page.extract_text() or ''}" for index, page in enumerate(reader.pages, 1))
+
+
+def _extract_hwpx(path: str) -> str:
+    from hwpx import TextExtractor
+
+    _safe_archive(path)
+    with TextExtractor(path) as extractor:
+        return extractor.extract_text(include_nested=True, object_behavior="nested", skip_empty=True)
+
+
+def _extract_hwp(path: str) -> str:
+    script = (
+        Path(__file__).resolve().parents[1]
+        / "assets"
+        / "skill_plugins"
+        / "hwpx-skill"
+        / "skills"
+        / "hwpx"
+        / "scripts"
+        / "convert_hwp.py"
+    )
+    with tempfile.TemporaryDirectory(prefix="asgard-hwp-read-") as temp:
+        converted = os.path.join(temp, "document.hwpx")
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script), path, "-o", converted],
+                capture_output=True,
+                text=True,
+                timeout=_TIMEOUT,
+                check=False,
+            )
+        except FileNotFoundError as exc:
+            raise ToolError("HWP 읽기에는 Node.js 18+가 필요합니다") from exc
+        if result.returncode:
+            raise ToolError((result.stderr or result.stdout or "HWP 변환 실패").strip()[:2000])
+        return _extract_hwpx(converted)
+
+
+def run_document(root: str, tool_input: dict) -> str:
+    path = _confine(root, str(tool_input.get("path") or ""))
+    if not os.path.isfile(path):
+        raise ToolError(f"문서 파일 없음: {os.path.relpath(path, root)}")
+    if os.path.getsize(path) > _MAX_DOCUMENT_BYTES:
+        raise ToolError("문서가 64 MiB 안전 상한을 초과합니다")
+    extractors = {".pdf": _extract_pdf, ".docx": _extract_docx, ".hwpx": _extract_hwpx, ".hwp": _extract_hwp}
+    suffix = Path(path).suffix.lower()
+    if suffix not in extractors:
+        raise ToolError("지원 형식: .pdf, .docx, .hwpx, .hwp")
+    try:
+        text = extractors[suffix](path)
+    except ToolError:
+        raise
+    except Exception as exc:
+        raise ToolError(f"문서 추출 실패: {exc}") from exc
+    lines = text.splitlines()
+    if not any(line.strip() for line in lines):
+        hint = " 스캔 PDF라면 OCR 도구가 필요합니다." if suffix == ".pdf" else ""
+        raise ToolError("추출 가능한 텍스트가 없습니다." + hint)
+    offset = int(tool_input.get("offset") or 1)
+    limit = int(tool_input.get("limit") or 200)
+    if offset < 1 or not 1 <= limit <= 500:
+        raise ToolError("offset은 1 이상, limit은 1..500이어야 합니다")
+    page = lines[offset - 1 : offset - 1 + limit]
+    end = min(offset + len(page) - 1, len(lines))
+    header = f"[{suffix[1:].upper()} · lines {offset}-{end}/{len(lines)}]"
+    if end < len(lines):
+        header += f"\n다음: offset={end + 1}"
+    return _cap(header + "\n" + "\n".join(page))
+
+
 class _TailBuffer:
     """실행 중 상한이 걸리는 꼬리 버퍼 — 출력 폭주가 RAM 을 인질로 잡지 않게 읽는 즉시 버린다.
     bash 는 오류·실패 사유가 끝에 몰리므로 꼬리 보존 (view 는 머리 유지 _cap)."""
@@ -287,6 +567,102 @@ def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None)
     return out.strip() or f"(no output, exit {p.returncode})", p.returncode
 
 
+class BackgroundProcessManager:
+    """Small session-owned process table; never leaves child processes behind."""
+
+    def __init__(self) -> None:
+        self._jobs: dict[str, dict] = {}
+        self._next_id = 1
+        self._lock = threading.Lock()
+
+    def run(self, root: str, tool_input: dict, cancel: threading.Event | None = None) -> str:
+        action = str(tool_input.get("action") or "")
+        if action == "list":
+            with self._lock:
+                jobs = list(self._jobs.items())
+            if not jobs:
+                return "background processes: none"
+            return "\n".join(self._summary(process_id, job) for process_id, job in jobs)
+
+        process_id = str(tool_input.get("process_id") or "")
+        if action in {"poll", "stop"}:
+            with self._lock:
+                job = self._jobs.get(process_id)
+            if job is None:
+                raise ToolError(f"알 수 없는 process_id: {process_id}")
+            if action == "stop":
+                if job["process"].poll() is None:
+                    _kill_group(job["process"])
+                return self._render(process_id, job)
+            wait_seconds = float(tool_input.get("wait_seconds") or 0)
+            if not 0 <= wait_seconds <= 10:
+                raise ToolError("wait_seconds는 0..10이어야 합니다")
+            deadline = time.monotonic() + wait_seconds
+            while job["process"].poll() is None and time.monotonic() < deadline:
+                if cancel is not None and cancel.is_set():
+                    raise ToolError("사용자 취소 — poll 중단")
+                time.sleep(min(0.1, max(0, deadline - time.monotonic())))
+            return self._render(process_id, job)
+
+        if action != "start":
+            raise ToolError("action은 start|poll|list|stop 중 하나여야 합니다")
+        command = str(tool_input.get("command") or "")
+        if not command.strip():
+            raise ToolError("start에는 command가 필요합니다")
+        blocked = validate_bash_command(root, command)
+        if blocked:
+            raise ToolError(blocked)
+        with self._lock:
+            if sum(job["process"].poll() is None for job in self._jobs.values()) >= 8:
+                raise ToolError("동시 백그라운드 프로세스 상한(8)에 도달했습니다")
+            process_id = f"p{self._next_id}"
+            self._next_id += 1
+        group: dict = {"start_new_session": True} if os.name == "posix" else {}
+        process = subprocess.Popen(
+            command,
+            shell=True,
+            cwd=root,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            errors="replace",
+            **group,
+        )
+        job = {"process": process, "command": command, "out": _TailBuffer(), "err": _TailBuffer(4000)}
+        job["readers"] = [
+            threading.Thread(target=_pump, args=(process.stdout, job["out"]), daemon=True),
+            threading.Thread(target=_pump, args=(process.stderr, job["err"]), daemon=True),
+        ]
+        for reader in job["readers"]:
+            reader.start()
+        with self._lock:
+            self._jobs[process_id] = job
+        time.sleep(0.05)
+        return self._render(process_id, job)
+
+    def close(self) -> None:
+        with self._lock:
+            jobs = list(self._jobs.values())
+        for job in jobs:
+            if job["process"].poll() is None:
+                _kill_group(job["process"])
+            for reader in job.get("readers", ()):
+                reader.join(timeout=1)
+
+    @staticmethod
+    def _summary(process_id: str, job: dict) -> str:
+        code = job["process"].poll()
+        state = "running" if code is None else f"exited({code})"
+        return f"{process_id} · {state} · {job['command'][:160]}"
+
+    def _render(self, process_id: str, job: dict) -> str:
+        output = job["out"].text()
+        errors = job["err"].text()
+        body = output + (("\n" + errors) if errors else "")
+        return _cap(self._summary(process_id, job) + (f"\n{body.strip()}" if body.strip() else "\n(no output)"))
+
+
 def _pump(pipe, buf: _TailBuffer) -> None:
     """파이프 → 꼬리 버퍼 상시 배수 — 자식이 파이프 블로킹으로 멈추는 것도 함께 방지."""
     try:
@@ -299,6 +675,164 @@ def _pump(pipe, buf: _TailBuffer) -> None:
 def _tail_note(out_buf: _TailBuffer, err_buf: _TailBuffer) -> str:
     partial = (out_buf.text() + "\n" + err_buf.text()).strip()
     return f"\n[중단 시점 출력 꼬리]\n{partial[-2000:]}" if partial else ""
+
+
+def _parse_patch(patch_text: str) -> list[dict]:
+    if len(patch_text) > 200_000:
+        raise ToolError("패치가 200,000자 안전 상한을 초과합니다")
+    lines = patch_text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    end_index = next((index for index, line in enumerate(lines) if line.strip() == "*** End Patch"), None)
+    if not lines or lines[0].strip() != "*** Begin Patch" or end_index is None:
+        raise ToolError("*** Begin Patch / *** End Patch 형식이 필요합니다")
+    operations: list[dict] = []
+    current: dict | None = None
+    hunk: list[tuple[str, str]] | None = None
+    for line in lines[1:end_index]:
+        header = re.match(r"\*\*\* (Add|Update|Delete) File: (.+)$", line)
+        if header:
+            current = {"action": header.group(1).lower(), "path": header.group(2).strip(), "hunks": []}
+            operations.append(current)
+            hunk = None
+            continue
+        if line.startswith("*** Move to: "):
+            if current is None or current["action"] != "update":
+                raise ToolError("Move to는 Update File 바로 뒤에서만 사용할 수 있습니다")
+            current["move_to"] = line.removeprefix("*** Move to: ").strip()
+            continue
+        if line.startswith("@@"):
+            if current is None or current["action"] != "update":
+                raise ToolError("업데이트 hunk 앞에 Update File이 필요합니다")
+            hunk = []
+            current["hunks"].append(hunk)
+            continue
+        if current is None:
+            if line.strip():
+                raise ToolError(f"파일 작업 밖의 패치 내용: {line[:80]}")
+            continue
+        if current["action"] == "add":
+            if not line.startswith("+"):
+                raise ToolError(f"Add File 본문 줄은 +로 시작해야 합니다: {current['path']}")
+            current.setdefault("content", []).append(line[1:])
+        elif current["action"] == "update":
+            if hunk is None:
+                raise ToolError(f"Update File에 @@ hunk가 필요합니다: {current['path']}")
+            if not line or line[0] not in " +-":
+                raise ToolError(f"hunk 줄은 공백, +, - 중 하나로 시작해야 합니다: {current['path']}")
+            hunk.append((line[0], line[1:]))
+        elif line.strip():
+            raise ToolError(f"Delete File 뒤에는 본문을 둘 수 없습니다: {current['path']}")
+    if not operations or len(operations) > 50:
+        raise ToolError("패치에는 1..50개 파일 작업이 필요합니다")
+    return operations
+
+
+def _patch_path(root: str, path: str) -> tuple[str, str]:
+    absolute = _confine(root, path)
+    relative = os.path.relpath(absolute, os.path.realpath(root))
+    if relative in _CONTROL_PATHS or relative.startswith(tuple(marker + os.sep for marker in _CONTROL_PATHS)):
+        raise ToolError("Asgard 제어 경로는 모델이 변경할 수 없음")
+    return absolute, relative
+
+
+def _apply_hunks(path: str, content: str, hunks: list[list[tuple[str, str]]]) -> str:
+    source = content.splitlines()
+    trailing_newline = content.endswith("\n")
+    cursor = 0
+    for hunk in hunks:
+        old = [text for prefix, text in hunk if prefix != "+"]
+        new = [text for prefix, text in hunk if prefix != "-"]
+        if not old:
+            raise ToolError(f"문맥 없는 추가 hunk는 거부됩니다: {path}")
+        matches = [
+            index for index in range(cursor, len(source) - len(old) + 1) if source[index : index + len(old)] == old
+        ]
+        if not matches:
+            raise ToolError(f"패치 문맥이 현재 파일과 일치하지 않습니다: {path}")
+        at = matches[0]
+        source[at : at + len(old)] = new
+        cursor = at + len(new)
+    result = "\n".join(source)
+    return result + ("\n" if trailing_newline and source else "")
+
+
+def run_apply_patch(root: str, tool_input: dict, writes: list[str]) -> str:
+    operations = _parse_patch(str(tool_input.get("patch_text") or ""))
+    state: dict[str, str | None] = {}
+    paths: dict[str, tuple[str, str]] = {}
+
+    def load(path: str) -> tuple[str, str, str | None]:
+        absolute, relative = _patch_path(root, path)
+        paths[absolute] = (absolute, relative)
+        if absolute not in state:
+            try:
+                state[absolute] = Path(absolute).read_text(encoding="utf-8")
+            except FileNotFoundError:
+                state[absolute] = None
+            except UnicodeDecodeError as exc:
+                raise ToolError(f"UTF-8 텍스트 파일만 패치할 수 있습니다: {relative}") from exc
+        return absolute, relative, state[absolute]
+
+    for operation in operations:
+        absolute, relative, current = load(operation["path"])
+        action = operation["action"]
+        if action == "add":
+            if current is not None:
+                raise ToolError(f"Add File 대상이 이미 존재합니다: {relative}")
+            state[absolute] = "\n".join(operation.get("content", [])) + "\n"
+        elif action == "delete":
+            if current is None:
+                raise ToolError(f"Delete File 대상이 없습니다: {relative}")
+            state[absolute] = None
+        else:
+            if current is None:
+                raise ToolError(f"Update File 대상이 없습니다: {relative}")
+            updated = _apply_hunks(relative, current, operation["hunks"])
+            move_to = operation.get("move_to")
+            if move_to:
+                destination, destination_rel, destination_content = load(move_to)
+                if destination_content is not None:
+                    raise ToolError(f"Move 대상이 이미 존재합니다: {destination_rel}")
+                state[absolute] = None
+                state[destination] = updated
+            else:
+                state[absolute] = updated
+
+    originals = {path: (Path(path).read_bytes() if os.path.exists(path) else None) for path in state}
+    for path, content in state.items():
+        if content is None:
+            continue
+        relative = paths[path][1]
+        blocked = _hook_guard(root, "asgard.hooks.secret_guard", {"file_path": relative, "content": content})
+        if blocked:
+            raise ToolError(blocked)
+    try:
+        for path, content in state.items():
+            if content is None:
+                continue
+            os.makedirs(os.path.dirname(path) or root, exist_ok=True)
+            fd, temporary = tempfile.mkstemp(prefix=".asgard-patch-", dir=os.path.dirname(path) or root)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8", newline="") as output:
+                    output.write(content)
+                os.replace(temporary, path)
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        for path, content in state.items():
+            if content is None and os.path.exists(path):
+                os.unlink(path)
+    except Exception:
+        for path, content in originals.items():
+            if content is None:
+                if os.path.exists(path):
+                    os.unlink(path)
+            else:
+                os.makedirs(os.path.dirname(path) or root, exist_ok=True)
+                Path(path).write_bytes(content)
+        raise
+    changed = [paths[path][1] for path in state]
+    writes.extend(changed)
+    return "applied patch:\n" + "\n".join(f"- {path}" for path in changed)
 
 
 def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
