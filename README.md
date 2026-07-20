@@ -81,8 +81,9 @@ Inside `asgard start`, `/skills` lists only explicit user workflows and
 `/<skill-name> [arguments]` loads exactly that canonical body for the current turn. Built-in
 commands keep priority, disabled skills cannot be invoked through this path, and user workflows
 never enter model discovery. The bundled `/grill-me`, `/to-spec`, `/to-tickets`, and `/wayfinder`
-flows cover decision clarification and durable multi-session handoffs; reusable domain vocabulary
-is loaded separately through the model-invoked `domain-modeling` skill.
+flows cover decision clarification, work sizing, and durable multi-session handoffs; the
+model-invoked `domain-modeling` and `prototype` skills carry reusable domain vocabulary and
+throwaway design-question artifacts into any of them.
 
 Routing can be declared centrally under `plugin.json`'s `routing` object, or with the legacy
 `triggers`, `agent` (default assignment), and optional `agents` fields in frontmatter. Resource

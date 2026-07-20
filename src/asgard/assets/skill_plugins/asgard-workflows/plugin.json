@@ -1,11 +1,15 @@
 {
   "schema": 1,
   "name": "asgard-workflows",
-  "version": "1",
+  "version": "2",
   "description": "Explicit planning workflows and reusable domain language",
-  "skills": ["grill-me", "to-spec", "to-tickets", "wayfinder", "domain-modeling"],
+  "skills": ["grill-me", "to-spec", "to-tickets", "wayfinder", "domain-modeling", "prototype"],
   "routing": {
     "grill-me": {"triggers": ["grill"], "agents": ["worker"]},
+    "prototype": {
+      "triggers": ["prototype", "spike", "프로토타입", "throwaway"],
+      "agents": ["worker", "freyja"]
+    },
     "to-spec": {"triggers": ["spec", "prd"], "agents": ["worker"]},
     "to-tickets": {"triggers": ["tickets", "vertical slice"], "agents": ["worker"]},
     "wayfinder": {"triggers": ["wayfinder", "multi-session"], "agents": ["worker"]},
