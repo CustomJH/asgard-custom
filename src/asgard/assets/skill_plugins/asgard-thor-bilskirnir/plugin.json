@@ -1,0 +1,39 @@
+{
+  "schema": 1,
+  "name": "asgard-thor-bilskirnir",
+  "version": "1",
+  "description": "Thor house backend policy pack — layered modules, API envelope, coding, database, security, integration boundary",
+  "skills": [
+    "asgard-thor-bilskirnir"
+  ],
+  "routing": {
+    "asgard-thor-bilskirnir": {
+      "triggers": [
+        "백엔드 정책",
+        "백엔드 컨벤션",
+        "backend policy",
+        "backend convention",
+        "하우스 룰",
+        "house rules",
+        "레이어드 아키텍처",
+        "layered architecture",
+        "4계층",
+        "4-layer",
+        "api 설계",
+        "api design",
+        "응답 봉투",
+        "response envelope",
+        "신규 백엔드",
+        "backend scaffold",
+        "백엔드 스캐폴딩",
+        "엔드포인트 신설",
+        "테이블 설계",
+        "스키마 컨벤션"
+      ],
+      "agents": [
+        "thor",
+        "thor-lead"
+      ]
+    }
+  }
+}
