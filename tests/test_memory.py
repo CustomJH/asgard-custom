@@ -130,7 +130,10 @@ class TestMemoryDirectoryConfig(MemoryBase):
         self.assertIn("open this folder as an Obsidian vault once", result.output)
 
         os.mkdir(os.path.join(configured, ".obsidian"))
-        with mock.patch("asgard.commands.memory.subprocess.run") as opened:
+        with (  # darwin 분기 고정 — Linux CI 러너는 webbrowser 경로로 빠져 headless 실패한다
+            mock.patch("asgard.commands.memory.sys.platform", "darwin"),
+            mock.patch("asgard.commands.memory.subprocess.run") as opened,
+        ):
             result = CliRunner().invoke(app, ["memory", "obsidian"])
         self.assertEqual(result.exit_code, 0, result.output)
         expected = quote(os.path.join(configured, memory.INDEX), safe="")
