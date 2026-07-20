@@ -292,7 +292,9 @@ components:
 
     def test_invocable_catalog_does_not_enumerate_canonical_bodies_per_role(self):
         with mock.patch.object(
-            skill_registry, "client_skill_bodies", side_effect=AssertionError("body enumeration is not a catalog operation")
+            skill_registry,
+            "client_skill_bodies",
+            side_effect=AssertionError("body enumeration is not a catalog operation"),
         ):
             names = {row["name"] for row in skill_registry.invocable_skills(self.root)}
         self.assertIn("grill-me", names)
