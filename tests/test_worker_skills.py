@@ -64,6 +64,7 @@ class TestSkillBodies(unittest.TestCase):
         t = self.by_name["asgard-worker-testing"]
         self.assertIn("공개 행동", t)  # 구현 세부 고정 금지
         self.assertIn("실패를 한 번 봐야 한다", t)  # 실패 먼저
+        self.assertIn("수직 슬라이스", t)
         self.assertIn("결정론", t)
         for axis in ("시간", "랜덤", "네트워크", "파일시스템", "순서"):  # flaky 5축
             self.assertIn(axis, t)

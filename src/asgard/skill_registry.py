@@ -409,6 +409,37 @@ def show_skill(root: str, name: str) -> str | None:
     return None
 
 
+def invocable_skills(root: str) -> list[dict]:
+    """Catalog rows reachable by at least one configured runtime role."""
+    policy = _skill_policy(root)
+    allowed = set()
+    for name, (defaults, compatible) in _skill_routes(root).items():
+        if any(
+            (agent in compatible or "any" in compatible) and _assigned(name, agent, defaults, policy)
+            for agent in _ASSIGNABLE_AGENTS
+        ):
+            allowed.add(name)
+    return [row for row in skills(root) if row["name"] in allowed]
+
+
+def invoked_skill_prompt(root: str, command: str) -> str | None:
+    """Expand an exact ``/skill-name`` invocation without exposing hidden skills to discovery."""
+    head, _, arguments = command.strip().partition(" ")
+    name = head.removeprefix("/")
+    if not name or name not in {row["name"] for row in invocable_skills(root)}:
+        return None
+    text = show_skill(root, name)
+    if text is None:
+        return None
+    body = text.split("---", 2)[2].lstrip() if text.startswith("---") else text
+    return (
+        f'<user_invoked_skill name="{escape(name)}">\n{body.rstrip()}\n</user_invoked_skill>\n\n'
+        "The user explicitly invoked this skill. Follow its interaction contract; an explicit HITL skill may pause "
+        "for the user's next decision even though ordinary unattended work should choose a safe default.\n\n"
+        f"Arguments: {arguments.strip() or '(none)'}"
+    )
+
+
 def show_skill_resource(root: str, name: str, relative: str) -> str:
     """Read one text resource next to a file-backed skill without allowing path escape."""
     if not relative or os.path.isabs(relative):
@@ -528,6 +559,26 @@ def _assigned(skill: str, agent: str, defaults: tuple[str, ...], policy) -> bool
     if skill in disabled or skill in unassigned.get(agent, set()):
         return False
     return agent in defaults or "any" in defaults or skill in assigned.get(agent, set())
+
+
+def _skill_routes(root: str) -> dict[str, tuple[tuple[str, ...], set[str]]]:
+    """Return assignment metadata without enumerating every role's canonical bodies."""
+    routes: dict[str, tuple[tuple[str, ...], set[str]]] = {}
+    core_contracts = {"asgard-freyja", "asgard-thor", "asgard-eitri", "asgard-mimir"}
+    for plugin in _builtin_plugins().values():
+        defaults = tuple(plugin.get("agents") or ())
+        compatible = set(defaults or _ASSIGNABLE_AGENTS)
+        for name, _ in plugin["skills"]:
+            if name not in core_contracts:
+                routes[name] = defaults, compatible
+    for plugin in [*bundled_plugins().values(), *installed_plugins().values()]:
+        for name in plugin["skills"]:
+            route = plugin["routing"][name]
+            routes.setdefault(name, (tuple(route["defaults"]), set(route["agents"])))
+    for name, skill in learned_skills(root).items():
+        default = str(skill.get("agent") or "worker")
+        routes.setdefault(name, ((default,), {default}))
+    return routes
 
 
 def _resolve_bundled(root: str, task: str, agent: str) -> list[tuple[str, str]]:

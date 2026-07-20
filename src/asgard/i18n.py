@@ -59,6 +59,7 @@ _M: dict[str, tuple[str, str]] = {
     ),
     # help 항목
     "h_help": ("this help", "이 도움말"),
+    "h_skills": ("list explicitly invocable skills", "직접 호출 가능한 스킬 목록"),
     "h_new": ("new session (reset context & screen)", "새 세션 (컨텍스트·화면 리셋)"),
     "h_quest": ("active quest log status", "진행 중 퀘스트 로그 상태"),
     "h_provider": (

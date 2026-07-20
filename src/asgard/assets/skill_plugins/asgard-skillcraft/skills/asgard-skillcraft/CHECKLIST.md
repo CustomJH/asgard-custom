@@ -40,12 +40,15 @@ Run the test sentence by sentence for behavior-bearing prose:
 4. Delete the sentence only when the observable process remains equivalent across the cases. Keep it when the sample is inconclusive or the sentence is a safety boundary.
 5. Remove the temporary variant. Record the eval cases as the smallest regression that can catch future drift.
 
+For an approved learned skill, reuse `asgard evolve bench` for whole-skill OFF/ON measurement. Sentence-level deletion still requires a temporary variant because the existing bench toggles a complete skill, not one line.
+
 Do not claim that prose is a no-op because it sounds generic. A deletion test is behavioral evidence, not word-count preference.
 
 ## 5. Asgard checks
 
 - `asgard skills list` reports `model` or `user` invocation.
 - A user-invoked skill remains available through `asgard skills show <name>` but is absent from native `<available_skills>` and deterministic `skills resolve` results.
+- In `asgard start`, an exact `/<name> [arguments]` invocation expands the canonical body for that turn; `/skills` lists the zero-context user-invoked choices.
 - Resource reads use `asgard skills show <name> --resource <relative-path>` or native `load_skill`; absolute paths, symlinks, and `..` escapes fail closed.
 - Client adapters contain no policy body. `asgard sync` updates generated adapters without overwriting user-owned files.
 - Compare catalog characters and canonical body characters before/after. Smaller is a result only when trigger recall and process checks still pass.

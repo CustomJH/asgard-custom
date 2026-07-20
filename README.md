@@ -77,6 +77,13 @@ skills remain manually loadable but stay out of model discovery; Codex adapters 
 matching `agents/openai.yaml` policy. The bundled `asgard-skillcraft` skill applies the same
 trigger/structure/steering/pruning discipline when authoring or reducing skills.
 
+Inside `asgard start`, `/skills` lists only explicit user workflows and
+`/<skill-name> [arguments]` loads exactly that canonical body for the current turn. Built-in
+commands keep priority, disabled skills cannot be invoked through this path, and user workflows
+never enter model discovery. The bundled `/grill-me`, `/to-spec`, `/to-tickets`, and `/wayfinder`
+flows cover decision clarification and durable multi-session handoffs; reusable domain vocabulary
+is loaded separately through the model-invoked `domain-modeling` skill.
+
 Routing can be declared centrally under `plugin.json`'s `routing` object, or with the legacy
 `triggers`, `agent` (default assignment), and optional `agents` fields in frontmatter. Resource
 files are copied intact and text references are available through `asgard skills show --resource`.

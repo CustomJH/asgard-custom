@@ -227,6 +227,7 @@ def statusline(root: str, rp, usage: dict | None = None) -> str:
 
 _COMMAND_HELP = {
     "/help": "h_help",
+    "/skills": "h_skills",
     "/new": "h_new",
     "/quest": "h_quest",
     "/provider": "h_provider",
@@ -562,7 +563,15 @@ def slash(cmd: str, root: str, rp) -> bool:
     c = cmd.split()[0]
     if c in ("/exit", "/quit"):
         raise EOFError
-    if c == "/help":
+    if c == "/skills":
+        from ..skill_registry import invocable_skills
+
+        rows = [row for row in invocable_skills(root) if row["invocation"] == "user"]
+        for row in rows:
+            sys.stdout.write(f"  {ui.paint(_O, ('/' + row['name']).ljust(24))} {ui.dim(row['description'])}\n")
+        if not rows:
+            sys.stdout.write(f"  {ui.dim('no user-invoked skills')}\n")
+    elif c == "/help":
         sys.stdout.write("\n")
         for k, v in _help_items():
             sys.stdout.write(f"  {ui.paint(_O, k.ljust(14))} {ui.dim(v)}\n")
@@ -802,16 +811,21 @@ def run(root: str, rp, cont: bool = False) -> int:
             _run_bang(root, req[1:].strip())
             continue
         if req.startswith("/"):
-            try:
-                slash(req, root, rp)
-            except EOFError:
-                return _bye()
-            except _Reconfigure as r:  # /provider set · /trinity set — 세션 재생성
-                rp = r.rp
-                heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
-                msg = r.msg or f"{rp.profile.display} · {rp.model} 로 전환"
-                sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
-            continue
+            from ..skill_registry import invoked_skill_prompt
+
+            invoked = None if req.split()[0] in _COMMAND_HELP else invoked_skill_prompt(root, req)
+            if invoked is None:
+                try:
+                    slash(req, root, rp)
+                except EOFError:
+                    return _bye()
+                except _Reconfigure as r:  # /provider set · /trinity set — 세션 재생성
+                    rp = r.rp
+                    heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
+                    msg = r.msg or f"{rp.profile.display} · {rp.model} 로 전환"
+                    sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
+                continue
+            req = invoked
 
         # 키 미설정 — 온보딩을 강제로 열지 않고 안내만 (연결은 /provider set 으로 명시적으로)
         if heimdall is None:

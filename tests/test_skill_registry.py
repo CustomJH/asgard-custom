@@ -264,6 +264,40 @@ components:
         self.assertIn("disable-model-invocation: true", adapter)
         self.assertIn("allow_implicit_invocation: false", metadata)
 
+    def test_bundled_workflows_have_real_manual_invocation_and_zero_discovery_load(self):
+        rows = {row["name"]: row for row in skill_registry.skills(self.root)}
+        for name in ("grill-me", "to-spec", "to-tickets", "wayfinder", "emil-design-eng"):
+            self.assertEqual(rows[name]["invocation"], "user")
+        available = {row["name"] for row in skill_registry.available_skills(self.root, "worker")}
+        self.assertNotIn("grill-me", available)
+        self.assertIn("domain-modeling", available)
+
+        prompt = skill_registry.invoked_skill_prompt(self.root, "/grill-me checkout flow")
+        self.assertIn('<user_invoked_skill name="grill-me">', prompt or "")
+        self.assertIn("Ask exactly one decision question per turn", prompt or "")
+        self.assertIn("Arguments: checkout flow", prompt or "")
+        self.assertIsNone(skill_registry.invoked_skill_prompt(self.root, "/missing-skill"))
+        skill_registry.set_skill_enabled(self.root, "grill-me", enabled=False)
+        self.assertIsNone(skill_registry.invoked_skill_prompt(self.root, "/grill-me checkout flow"))
+        skill_registry.set_skill_enabled(self.root, "grill-me", enabled=True)
+
+        from asgard.commands.setup import plan_files
+
+        files, _ = plan_files(cc=True, cursor=False, codex=True, root=self.root)
+        by_path = dict(files)
+        adapter = by_path[os.path.join(self.root, ".agents", "skills", "grill-me", "SKILL.md")]
+        metadata = by_path[os.path.join(self.root, ".agents", "skills", "grill-me", "agents", "openai.yaml")]
+        self.assertIn("disable-model-invocation: true", adapter)
+        self.assertIn("allow_implicit_invocation: false", metadata)
+
+    def test_invocable_catalog_does_not_enumerate_canonical_bodies_per_role(self):
+        with mock.patch.object(
+            skill_registry, "client_skill_bodies", side_effect=AssertionError("body enumeration is not a catalog operation")
+        ):
+            names = {row["name"] for row in skill_registry.invocable_skills(self.root)}
+        self.assertIn("grill-me", names)
+        self.assertIn("domain-modeling", names)
+
     def test_skillcraft_keeps_detailed_rubric_in_a_lazy_resource(self):
         row = next(row for row in skill_registry.skills(self.root) if row["name"] == "asgard-skillcraft")
         self.assertEqual((row["plugin"], row["invocation"]), ("asgard-skillcraft", "model"))

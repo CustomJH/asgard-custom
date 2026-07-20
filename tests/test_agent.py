@@ -651,6 +651,14 @@ class TestHeadlessProceed(unittest.TestCase):
     def test_verifier_escalate_not_for_approval(self):
         self.assertIn("승인·확인 요청 용도 금지", self._tpl("asgard-verifier.md"))
 
+    def test_trinity_roles_carry_vertical_slice_and_two_axis_review_contracts(self):
+        self.assertIn("red → green 수직 슬라이스", self._tpl("asgard-worker.md"))
+        self.assertIn("tracer-bullet 수직 슬라이스", self._tpl("asgard-thinker.md"))
+        verifier = self._tpl("asgard-verifier.md")
+        self.assertIn("Spec 축", verifier)
+        self.assertIn("Standards 축", verifier)
+        self.assertIn("스멜은 판단 보조", verifier)
+
 
 class TestRunPrompt(unittest.TestCase):
     """asgard run — headless 단발 실행. Heimdall/preflight 을 대역으로 결정론 검증."""

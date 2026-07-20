@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from types import SimpleNamespace
 
 from asgard import ui
 from asgard.agent import repl
@@ -22,6 +23,48 @@ def test_unknown_command_suggests_nearest_command(monkeypatch, capsys) -> None:
     repl.slash("/modle", ".", None)
 
     assert "/model" in capsys.readouterr().out
+
+
+def test_skills_command_lists_only_explicit_workflows(monkeypatch, capsys, tmp_path) -> None:
+    monkeypatch.setattr(ui, "_COLOR", False)
+
+    repl.slash("/skills", str(tmp_path), None)
+
+    out = capsys.readouterr().out
+    assert "/grill-me" in out
+    assert "/to-spec" in out
+    assert "/domain-modeling" not in out
+
+
+def test_exact_skill_slash_reaches_heimdall_as_explicit_prompt(monkeypatch, tmp_path) -> None:
+    seen = []
+
+    class Heimdall:
+        total_tokens = last_context_tokens = cache_read_tokens = cache_prompt_tokens = 0
+        cancel_event = None
+
+        def handle(self, prompt):
+            seen.append(prompt)
+            return ""
+
+    requests = iter(["/grill-me checkout flow"])
+
+    def ask():
+        try:
+            return next(requests)
+        except StopIteration as exc:
+            raise EOFError from exc
+
+    monkeypatch.setattr(repl, "_PT", True)
+    monkeypatch.setattr(repl, "banner", lambda _rp: None)
+    monkeypatch.setattr(repl, "prompt", ask)
+    monkeypatch.setattr(repl, "_new_heimdall", lambda *_args, **_kwargs: Heimdall())
+    rp = SimpleNamespace(missing=False, model="test-model")
+
+    assert repl.run(str(tmp_path), rp) == 0
+    assert len(seen) == 1
+    assert '<user_invoked_skill name="grill-me">' in seen[0]
+    assert "Arguments: checkout flow" in seen[0]
 
 
 def test_banner_uses_compact_mark_on_standard_terminal(monkeypatch, capsys) -> None:
