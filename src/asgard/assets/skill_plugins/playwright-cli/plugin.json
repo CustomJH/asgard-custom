@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "name": "playwright-cli",
+  "version": "0.1.17",
+  "description": "Token-efficient browser automation with persistent Playwright CLI sessions",
+  "skills": ["playwright-cli"],
+  "entrypoints": {
+    "playwright-cli": "asgard_playwright.py"
+  },
+  "routing": {
+    "playwright-cli": {
+      "triggers": [
+        "browser",
+        "browser use",
+        "playwright",
+        "web automation",
+        "ui test",
+        "e2e",
+        "브라우저",
+        "웹 자동화",
+        "브라우저 테스트",
+        "화면 확인"
+      ],
+      "agents": ["worker", "freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/microsoft/playwright-cli",
+  "revision": "793cfb32572733cbcb401e6f28d05a7a914ce408",
+  "license": "Apache-2.0"
+}

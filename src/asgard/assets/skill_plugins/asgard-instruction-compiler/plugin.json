@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "name": "asgard-instruction-compiler",
+  "version": "1",
+  "description": "Intent recovery and executable instruction design for Asgard agents",
+  "skills": ["asgard-instruction-compiler"],
+  "routing": {
+    "asgard-instruction-compiler": {
+      "triggers": [
+        "prompt",
+        "instruction",
+        "delegate",
+        "delegation",
+        "subagent",
+        "team agent",
+        "system prompt",
+        "few-shot",
+        "constraint",
+        "프롬프트",
+        "지시",
+        "위임",
+        "서브에이전트",
+        "서브 에이전트",
+        "팀에이전트",
+        "팀 에이전트",
+        "편대",
+        "알아서",
+        "찰떡같이"
+      ],
+      "agents": ["worker"]
+    }
+  },
+  "source": "https://github.com/Owl-Listener/ai-design-skills",
+  "revision": "f41b650435b62dec6d5b1dc3598ac4679f8b7ae7",
+  "license": "MIT"
+}

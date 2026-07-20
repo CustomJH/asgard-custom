@@ -140,6 +140,61 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(command[-2:], ["dashboard", "--json"])
         self.assertEqual(run.call_args.kwargs["cwd"], self.root)
 
+    def test_freyja_restraint_is_native_and_freyja_only(self):
+        name = "asgard-freyja-restraint"
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog[name]["plugin"], name)
+        self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
+        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+        self.assertIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "랜딩 페이지 UI 디자인", "freyja")},
+        )
+        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
+        self.assertIn("Leave empty regions quiet", body)
+        self.assertIn("Do not use Unicode emoji", body)
+        from asgard.agent.heimdall import _skill_support
+
+        note, tools, handlers = _skill_support("freyja", self.root)
+        self.assertIn(name, note)
+        self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
+        self.assertEqual(handlers["load_skill"]({"name": name}), body)
+
+    def test_thor_bilskirnir_policy_pack_is_thor_scoped(self):
+        name = "asgard-thor-bilskirnir"
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog[name]["plugin"], name)
+        for agent in ("thor", "thor-lead"):
+            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+        self.assertIn(
+            name,
+            {
+                skill
+                for skill, _ in skill_registry.resolve_skills(
+                    self.root, "신규 백엔드 API 설계 — 하우스 룰 준수", "thor"
+                )
+            },
+        )
+        self.assertNotIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "프론트 버튼 색상 교체", "thor")},
+        )
+        body = skill_registry.load_skill_for_agent(self.root, "thor", name)
+        self.assertIn("적용 위계", body)
+        for resource in (
+            "ARCHITECTURE.md",
+            "API-DESIGN.md",
+            "CODING.md",
+            "DATABASE.md",
+            "SECURITY.md",
+            "INTEGRATION.md",
+            "WORKFLOW.md",
+        ):
+            self.assertIn(resource, body)
+        envelope = skill_registry.show_skill_resource(self.root, name, "API-DESIGN.md")
+        self.assertIn("resultCode", envelope)
+
     def test_bundled_design_md_python_linter(self):
         plugin = skill_registry.bundled_plugins()["google-design-md"]
         script = Path(plugin["root"], "skills", "design-md-review", "scripts", "design_md.py")
@@ -222,8 +277,10 @@ components:
         by_path = dict(files)
         cc = by_path[os.path.join(self.root, ".claude", "skills", "asgard-worker-debugging", "SKILL.md")]
         codex = by_path[os.path.join(self.root, ".agents", "skills", "asgard-worker-debugging", "SKILL.md")]
-        self.assertEqual(cc, codex)
+        self.assertNotIn("disable-model-invocation: true", cc)
+        self.assertIn("disable-model-invocation: true", codex)
         self.assertIn("asgard skills show asgard-worker-debugging", cc)
+        self.assertIn("asgard skills show asgard-worker-debugging", codex)
         self.assertNotIn("재현 없으면 수정 없다", cc)
         self.assertIn(os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md"), by_path)
         for name in ("ui-ux-pro-max", "design-md-review", "review-animations", "asgard-freyja-motion"):
@@ -232,9 +289,16 @@ components:
         core = by_path[os.path.join(self.root, ".agents", "skills", "asgard-freyja", "SKILL.md")]
         self.assertIn("asgard skills show asgard-freyja", core)
         router = by_path[os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md")]
-        self.assertNotIn("skills resolve", router)
-        self.assertIn("disable-model-invocation: true", router)
-        metadata = by_path[os.path.join(self.root, ".agents", "skills", "asgard-skills", "agents", "openai.yaml")]
+        self.assertIn('skills resolve --agent <role> "<current task>"', router)
+        self.assertIn("Do not prefix the command with", router)
+        self.assertIn("`MAIN_WORKER` and agent names are not valid role values", router)
+        self.assertNotIn("disable-model-invocation: true", router)
+        self.assertNotIn(
+            os.path.join(self.root, ".agents", "skills", "asgard-skills", "agents", "openai.yaml"), by_path
+        )
+        metadata = by_path[
+            os.path.join(self.root, ".agents", "skills", "asgard-worker-debugging", "agents", "openai.yaml")
+        ]
         self.assertIn("allow_implicit_invocation: false", metadata)
         freyja_role = by_path[os.path.join(self.root, ".claude", "agents", "asgard-freyja.md")]
         self.assertIn("<available_skills>", freyja_role)
@@ -330,32 +394,32 @@ components:
 
     def test_bundled_workflows_have_real_manual_invocation_and_zero_discovery_load(self):
         rows = {row["name"]: row for row in skill_registry.skills(self.root)}
-        for name in ("grill-me", "to-spec", "to-tickets", "wayfinder", "emil-design-eng"):
+        for name in ("council", "blueprint", "quests", "expedition", "emil-design-eng"):
             self.assertEqual(rows[name]["invocation"], "user")
         available = {row["name"] for row in skill_registry.available_skills(self.root, "worker")}
-        self.assertNotIn("grill-me", available)
+        self.assertNotIn("council", available)
         self.assertIn("domain-modeling", available)
         self.assertEqual(rows["prototype"]["invocation"], "model")
         self.assertIn("prototype", available)
         self.assertIn("prototype", {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
 
-        prompt = skill_registry.invoked_skill_prompt(self.root, "/grill-me checkout flow")
-        self.assertIn('<user_invoked_skill name="grill-me">', prompt or "")
+        prompt = skill_registry.invoked_skill_prompt(self.root, "/council checkout flow")
+        self.assertIn('<user_invoked_skill name="council">', prompt or "")
         self.assertIn("Ask exactly one decision question per turn", prompt or "")
         self.assertIn("Arguments: checkout flow", prompt or "")
-        for route in ("prototype", "domain-modeling", "to-spec", "to-tickets", "wayfinder"):
+        for route in ("prototype", "domain-modeling", "blueprint", "quests", "expedition"):
             self.assertIn(route, prompt or "")
         self.assertIsNone(skill_registry.invoked_skill_prompt(self.root, "/missing-skill"))
-        skill_registry.set_skill_enabled(self.root, "grill-me", enabled=False)
-        self.assertIsNone(skill_registry.invoked_skill_prompt(self.root, "/grill-me checkout flow"))
-        skill_registry.set_skill_enabled(self.root, "grill-me", enabled=True)
+        skill_registry.set_skill_enabled(self.root, "council", enabled=False)
+        self.assertIsNone(skill_registry.invoked_skill_prompt(self.root, "/council checkout flow"))
+        skill_registry.set_skill_enabled(self.root, "council", enabled=True)
 
         from asgard.commands.setup import plan_files
 
         files, _ = plan_files(cc=True, cursor=False, codex=True, root=self.root)
         by_path = dict(files)
-        adapter = by_path[os.path.join(self.root, ".agents", "skills", "grill-me", "SKILL.md")]
-        metadata = by_path[os.path.join(self.root, ".agents", "skills", "grill-me", "agents", "openai.yaml")]
+        adapter = by_path[os.path.join(self.root, ".agents", "skills", "council", "SKILL.md")]
+        metadata = by_path[os.path.join(self.root, ".agents", "skills", "council", "agents", "openai.yaml")]
         self.assertIn("disable-model-invocation: true", adapter)
         self.assertIn("allow_implicit_invocation: false", metadata)
 
@@ -366,7 +430,7 @@ components:
             side_effect=AssertionError("body enumeration is not a catalog operation"),
         ):
             names = {row["name"] for row in skill_registry.invocable_skills(self.root)}
-        self.assertIn("grill-me", names)
+        self.assertIn("council", names)
         self.assertIn("domain-modeling", names)
 
     def test_skillcraft_keeps_detailed_rubric_in_a_lazy_resource(self):

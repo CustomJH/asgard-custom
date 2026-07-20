@@ -1,0 +1,4 @@
+interface:
+  display_name: "Asgard Instruction Compiler"
+  short_description: "Compile vague intent into executable agent instructions"
+  default_prompt: "Use $asgard-instruction-compiler to turn this request into a precise agent task."

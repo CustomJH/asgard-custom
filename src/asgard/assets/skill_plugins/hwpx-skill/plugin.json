@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "hwpx-skill",
+  "version": "1.7.0",
+  "description": "HWPX creation, reading, editing, validation, and explicit HWP conversion",
+  "skills": ["hwpx"],
+  "entrypoints": {
+    "hwpx": "asgard_hwpx.py"
+  },
+  "routing": {
+    "hwpx": {
+      "triggers": [
+        "hwp",
+        "hwpx",
+        "한글 문서",
+        "한글파일",
+        "한글 파일",
+        "공문",
+        "기안문",
+        "회의록"
+      ],
+      "agents": ["worker"]
+    }
+  },
+  "source": "https://github.com/jkf87/hwpx-skill",
+  "revision": "e5e35cbf0bcd8e9aae8013bff1003ab9c5beaf6f",
+  "license": "MIT"
+}
