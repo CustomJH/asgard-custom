@@ -63,7 +63,7 @@ jobs:
 
       # 적대 게이트 스위트 포함 — Windows 에서 Verifier 게이트가 실제 차단하는지 회귀 가드
       # (bash 하네스 아닌 test_adversarial_gate.py 포트가 돈다).
-      - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_adversarial_gate.py
+      - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_sandbox.py tests/test_adversarial_gate.py
 
       - name: Smoke prompt_toolkit session (headless)
         run: uv run python tests/smoke_pt_session.py

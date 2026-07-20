@@ -21,6 +21,41 @@ asgard doctor    # verify
 asgard --help
 ```
 
+## Local or isolated execution
+
+`asgard start` asks where Heimdall should run when attached to a terminal. Local mode is fastest.
+The cross-platform container modes use the current Docker-compatible engine: OrbStack/Docker/Podman on
+macOS and Docker Desktop/Podman Desktop on Windows. `container` works from a persistent private copy;
+`container-shared` deliberately mounts the host checkout read-write for immediate edits. Neither mode
+requires a Docker Sandboxes account. Windows engines must be configured for Linux containers.
+
+```bash
+asgard start --execution local
+asgard start --execution container         # macOS + Windows; private workspace
+asgard start --execution container-shared  # macOS + Windows; live host working tree
+asgard start --execution sandbox           # Docker microVM + private Git clone
+asgard start --execution sandbox-shared    # Docker microVM + live host working tree
+```
+
+The standard container passes only API-key environment variables that are already set on the host; those
+keys are readable inside the container. Do not mount the Docker socket. Private workspaces persist under
+`~/.asgard/sandboxes/` so changes can be reviewed without touching the original checkout. Host Git
+credentials and SSH agents are not mounted, and a private clone's original remote is removed.
+
+For the stronger Docker Sandbox modes, install Docker's `sbx` CLI and run `sbx login`. Private-clone sessions
+start from committed `HEAD`; commit inside the sandbox and fetch the generated `sandbox-<name>` remote
+before removing it. Asgard does not mount the host Docker socket or copy raw provider keys into the VM;
+the bundled sandbox kit uses Docker's host-side credential proxy. Register the provider once with
+`sbx secret set -g openai`, `sbx secret set -g anthropic`, or `sbx secret set -g nvidia`.
+The first kit supports those API-key providers; host OAuth sessions, Claude CLI state, Ollama localhost,
+and host `--provider`/`--model`/`--continue` flags are intentionally not copied across the boundary.
+Docker currently marks custom sandbox kits as Early Access, so Asgard fails closed with install guidance
+when `sbx` is unavailable instead of silently falling back to local execution.
+
+During a turn, the status area shows the active role and concurrent child count. `/sessions` lists recent
+Thinker, Worker, Verifier, and delivery sessions; Ctrl-C cooperatively cancels the active child tree, and
+`/sessions stop` exposes the same cancellation boundary as a command.
+
 ## Tool Kernel
 
 Asgard resolves tools from one role-scoped capability policy for both the native

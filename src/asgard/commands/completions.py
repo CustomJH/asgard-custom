@@ -34,7 +34,7 @@ _SUMMARY = {
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
-    "start": ["--check", "--provider", "--model", "--continue"],
+    "start": ["--check", "--provider", "--model", "--continue", "--execution", "--sandbox-name"],
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "setup": [],

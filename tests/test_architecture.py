@@ -26,7 +26,10 @@ import unittest
 SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard")
 
 LAYERS: list[tuple[str, frozenset[str]]] = [
-    ("foundation", frozenset({"settings", "platform", "theme", "ui", "i18n", "io_journal", "registry"})),
+    (
+        "foundation",
+        frozenset({"settings", "platform", "theme", "ui", "i18n", "io_journal", "registry", "sandbox"}),
+    ),
     ("providers", frozenset({"providers", "openai_codex"})),
     (
         "domain",

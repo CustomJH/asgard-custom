@@ -11,7 +11,7 @@ import importlib.util
 import os
 import sys
 
-from .. import ui
+from .. import sandbox, ui
 from ..providers import ResolvedProvider, resolve
 
 
@@ -122,6 +122,8 @@ def run_start(
     provider: str | None = None,
     model: str | None = None,
     cont: bool = False,
+    execution: str | None = None,
+    sandbox_name: str | None = None,
 ) -> int:
     root = os.getcwd()
 
@@ -135,6 +137,21 @@ def run_start(
             return 0
         ui.warn("세션을 열 수 없습니다 — 위 처방을 적용한 뒤 다시 실행하세요.")
         return 2
+
+    try:
+        execution = sandbox.choose_mode(execution)
+    except ValueError as exc:
+        ui.warn(str(exc))
+        return 2
+    if execution != "local":
+        if provider or model or cont:
+            ui.warn(
+                "sandbox uses its own provider and conversation state; "
+                "--provider, --model, and --continue are not inherited from the host"
+            )
+        if execution.startswith("container"):
+            return sandbox.run_container(root, shared=execution == "container-shared", name=sandbox_name)
+        return sandbox.run(root, shared=execution == "sandbox-shared", name=sandbox_name)
 
     # 기본: 터미널을 바로 켠다. provider 미설정은 세션 안에서 온보딩.
     from .. import i18n

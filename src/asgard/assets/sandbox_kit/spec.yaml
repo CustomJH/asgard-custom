@@ -1,0 +1,62 @@
+schemaVersion: "1"
+kind: sandbox
+name: asgard
+displayName: Asgard
+description: Asgard native Heimdall runtime in an isolated Docker microVM.
+
+sandbox:
+  image: docker/sandbox-templates:shell-docker
+  aiFilename: AGENTS.md
+  entrypoint:
+    run: [asgard, start]
+
+environment:
+  variables:
+    ASGARD_EXECUTION: local
+    ASGARD_ISOLATION: docker-sandbox
+  proxyManaged: [ANTHROPIC_API_KEY, OPENAI_API_KEY, NVIDIA_API_KEY]
+
+credentials:
+  sources:
+    anthropic:
+      env: [ANTHROPIC_API_KEY]
+    openai:
+      env: [OPENAI_API_KEY]
+    nvidia:
+      env: [NVIDIA_API_KEY]
+
+network:
+  allowedDomains:
+    - api.anthropic.com
+    - api.openai.com
+    - integrate.api.nvidia.com
+    - astral.sh
+    - pypi.org
+    - files.pythonhosted.org
+    - github.com
+    - objects.githubusercontent.com
+  serviceDomains:
+    api.anthropic.com: anthropic
+    api.openai.com: openai
+    integrate.api.nvidia.com: nvidia
+  serviceAuth:
+    anthropic:
+      headerName: x-api-key
+      valueFormat: "%s"
+    openai:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+    nvidia:
+      headerName: Authorization
+      valueFormat: "Bearer %s"
+
+commands:
+  install:
+    - command: "curl -fsSL https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.sh | bash"
+      user: "1000"
+      description: Install the Asgard runtime with its own Python.
+
+agentContext: |
+  This session runs inside a Docker Sandbox microVM. Asgard still owns role routing,
+  quest evidence, verification, and cancellation. Treat the workspace mode shown at
+  startup as the filesystem trust boundary; clone mode does not write to the host tree.

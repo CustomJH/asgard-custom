@@ -50,10 +50,25 @@ def start(
     cont: bool = typer.Option(
         False, "--continue", "-c", help="restore the last conversation for this project (context only)"
     ),
+    execution: str = typer.Option(
+        None,
+        "--execution",
+        help="execution boundary: local | container[-shared] | sandbox[-shared]",
+    ),
+    sandbox_name: str = typer.Option(None, "--sandbox-name", help="reuse a named isolated workspace"),
 ) -> None:
     from .commands.start import run_start
 
-    raise typer.Exit(run_start(check_only=check, provider=provider, model=model, cont=cont))
+    raise typer.Exit(
+        run_start(
+            check_only=check,
+            provider=provider,
+            model=model,
+            cont=cont,
+            execution=execution,
+            sandbox_name=sandbox_name,
+        )
+    )
 
 
 auth_app = typer.Typer(help="manage Asgard-owned provider logins", no_args_is_help=True)
