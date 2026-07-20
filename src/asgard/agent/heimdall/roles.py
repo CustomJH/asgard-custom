@@ -142,6 +142,68 @@ def _skill_support(
     return catalog, [SKILL_LOAD_TOOL], {"load_skill": load}
 
 
+def _delivery_matches(root: str, task: str) -> dict[str, list[tuple[str, str]]]:
+    """과업 텍스트에 결정론 매칭된 딜리버리 정본 스킬 (agent → [(name, description)]).
+
+    실패는 조용히 빈 결과 (fail-open) — 무매칭 과업은 어느 노트도 만들지 않는다."""
+    from ...skill_registry import available_skills, resolve_skills
+
+    matches: dict[str, list[tuple[str, str]]] = {}
+    for agent in ("thor", "freyja", "eitri"):
+        try:
+            matched = [name for name, _ in resolve_skills(root, task, agent, include_learned=False)]
+            if not matched:
+                continue
+            rows = {row["name"]: str(row.get("description") or "") for row in available_skills(root, agent)}
+        except Exception:
+            continue
+        matches[agent] = [(name, rows.get(name, "")) for name in matched]
+    return matches
+
+
+def delivery_canon_note(root: str, task: str) -> str:
+    """Thinker 계획 컨텍스트 — 과업에 매칭된 딜리버리 정본 스킬의 존재를 알린다.
+
+    외부 모드(CC/Codex/Cursor)는 코디네이터가 스킬 카탈로그를 보고 위임 브리프에 정본 로드를
+    명시하지만, 네이티브 Thinker 는 딜리버리 스킬 표면이 없어 저장소 문서 검색만으로 "정본
+    부재"를 확정하고 형태(응답 구조·계층 배치)를 발명해 verify 계약으로 고정할 수 있다.
+    결정론 리졸버로 이 과업에 매칭된 정본만 이름+설명으로 주입한다 — 무매칭 과업은 빈 문자열
+    (토큰 회귀 없음)."""
+    lines = [
+        f"  - {agent} · {name}: {desc[:220]}"
+        for agent, skills in _delivery_matches(root, task).items()
+        for name, desc in skills
+    ]
+    if not lines:
+        return ""
+    return (
+        "\n\n## 딜리버리 정본 (계획 구속 — 이 과업에 매칭됨)\n"
+        "정책·컨벤션 정본은 저장소 문서가 아니라 Asgard 스킬 레지스트리에 있다. 저장소에서 정본"
+        " 문서를 못 찾은 것은 정본 부재가 아니다. 이 과업에 매칭된 딜리버리 정본:\n"
+        "<delivery_canon>\n" + "\n".join(lines) + "\n</delivery_canon>\n"
+        "계획 규칙: 정본이 소유한 형태(응답 구조·계층 배치·명명·컨벤션)를 계획이 직접 확정하지"
+        " 마라 — 해당 단위는 그 딜리버리 전문가에게 dispatch 되도록 계획하고 단위 브리프에 위"
+        " 스킬 이름을 명시한다. criteria/verify 계약은 검증 가능한 표면(파일 존재·계층 위치·"
+        "정본 준수 여부)만 고정하고, 계획이 가정한 필드명·코드값을 못박지 않는다."
+    )
+
+
+def worker_canon_hint(root: str, task: str) -> str:
+    """Worker 착수 힌트 — 정본이 전문가 소유일 때 관찰-정지 대신 dispatch 를 지시한다.
+
+    실증 근거(26-07-21): 정본 스킬이 thor 전용이라 worker 직접 로드가 거부되자 "형태 미결정"으로
+    관찰만 하다 no-op 종료 (3/3 재현) — 턴 예산의 절반을 태우는 착수 정지."""
+    matched = _delivery_matches(root, task)
+    if not matched:
+        return ""
+    owners = "; ".join(f"{agent}: {', '.join(name for name, _ in skills)}" for agent, skills in matched.items())
+    return (
+        f"\n\n딜리버리 정본 힌트 — 이 과업 도메인의 정책 정본({owners})은 해당 전문가 소유라"
+        " 직접 로드가 거부될 수 있다. 형태(응답 구조·계층 배치·명명) 미결정을 이유로 관찰만 하다"
+        " 빈손으로 끝내지 마라 — 그 단위를 dispatch 로 소유 전문가에게 위임해 정본대로 확정·구현하게 하라."
+    )
+
+
 def _mimir_note(request: str) -> str:
     """미미르 안내 계약 주입 — 코드 이해·설명 요청의 DIRECT 턴 한정.
 

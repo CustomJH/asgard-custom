@@ -26,6 +26,8 @@ from .roles import (
     _role_prompt,
     _skill_support,
     _transition_line,
+    delivery_canon_note,
+    worker_canon_hint,
 )
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
 
@@ -280,11 +282,12 @@ class TrinityRun:
                 rp_override=rp,
             )
 
+        canon = delivery_canon_note(hd.root, self.request)
         primary_prompt = (
-            prompt + (thinker_recall if primary_memory_allowed else "") + _UNITS_NOTE + self.budget_note
+            prompt + (thinker_recall if primary_memory_allowed else "") + canon + _UNITS_NOTE + self.budget_note
         )
         fallback_prompt = (
-            prompt + (thinker_recall if fallback_memory_allowed else "") + _UNITS_NOTE + self.budget_note
+            prompt + (thinker_recall if fallback_memory_allowed else "") + canon + _UNITS_NOTE + self.budget_note
         )
         fallback = (lambda: make(rp=hd.rp)) if allow_fallback and rrp is not hd.rp else None
         return hd._run_turn(make, primary_prompt, fallback, fallback_prompt=fallback_prompt)
@@ -613,7 +616,10 @@ class TrinityRun:
             else ""
         )
         fb = (lambda mw=mk_worker: mw(m=None, rl="worker", rp=hd.rp)) if self.rrp is not hd.rp else None
-        worker_prompt = f"과업: {self.request}\n\n계획:\n{plan_part}{explore_note}\n{retry_note}{self.budget_note}"
+        canon_hint = worker_canon_hint(hd.root, self.request)
+        worker_prompt = (
+            f"과업: {self.request}\n\n계획:\n{plan_part}{explore_note}{canon_hint}\n{retry_note}{self.budget_note}"
+        )
         fallback_worker_prompt = worker_prompt
         primary_memory_allowed = self.standard and hd._mem_allowed(self.rrp.profile.name, self.rrp.source)
         fallback_memory_allowed = self.standard and hd._memory_provider_allowed

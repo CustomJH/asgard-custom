@@ -575,6 +575,46 @@ class TestCharterInjection(Base):
             self.assertNotIn("프로젝트 북극성", s.system)
 
 
+class TestDeliveryCanonInjection(Base):
+    """딜리버리 정본 카탈로그 — 도메인 매칭 과업의 Thinker 프롬프트에만 정본 존재를 알린다.
+
+    실증 근거(26-07-21 bilskirnir 4모드 실증): Thinker 가 저장소 문서 검색만으로 "정본 부재"를
+    확정하고 응답 봉투를 발명해 verify 계약으로 고정 → thor 미디스패치·정책 우회 (2/2 재현)."""
+
+    def _consumed_by_label(self, h):
+        by = {}
+        for s in h.consumed:
+            by.setdefault(s.label, s)
+        return by
+
+    def test_matched_task_reaches_thinker_prompt_only(self):
+        # structural replan 경로 = thinker 턴을 강제 (해피패스는 thinker 생략)
+        seq = [
+            worker({"w1.txt": "bad\n"}, self.root),
+            verifier("FAIL", structural=True, sig="wrong-approach", why="접근 틀림"),
+            thinker("재설계"),
+            worker({"w1.txt": "good\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
+        out = h.handle("신규 백엔드 API 설계 — 하우스 룰 준수로 w1.txt 만들어")
+        self.assertIn("과업 완수", out)  # 주입이 순환을 막지 않음
+        by = self._consumed_by_label(h)
+        self.assertIn("딜리버리 정본 (계획 구속", by["thinker"].prompt)
+        self.assertIn("asgard-thor-bilskirnir", by["thinker"].prompt)
+        # Worker: 계획 구속 노트 대신 착수 힌트만 — 정본 소유 전문가 dispatch 지시 (관찰-정지 방어)
+        self.assertNotIn("딜리버리 정본 (계획 구속", by["worker"].prompt)
+        self.assertIn("딜리버리 정본 힌트", by["worker"].prompt)
+        self.assertIn("dispatch", by["worker"].prompt)
+        self.assertNotIn("딜리버리 정본", by["verifier"].prompt)
+
+    def test_unmatched_task_no_injection(self):
+        from asgard.agent.heimdall.roles import delivery_canon_note, worker_canon_hint
+
+        self.assertEqual(delivery_canon_note(self.root, "readme 문서 오탈자 정리"), "")
+        self.assertEqual(worker_canon_hint(self.root, "readme 문서 오탈자 정리"), "")
+
+
 class TestRoutePriorsE2E(Base):
     """Bayesian-lite — 종결 outcome 기록 + prior 가 승격 문턱을 실제로 낮추는 e2e."""
 
