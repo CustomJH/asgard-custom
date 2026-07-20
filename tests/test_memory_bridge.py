@@ -572,6 +572,8 @@ class TestRetainTwoStep(BridgeBase):
         self.assertIn("프로젝트 결정: 임베딩은 다국어 모델 고정", item["content"])
         self.assertEqual(item["metadata"]["source"], "README.md")
         self.assertEqual(item["update_mode"], "replace")
+        records = os.path.join(self.root, ".asgard", "memory", "records")
+        self.assertEqual(len([name for name in os.listdir(records) if name.endswith(".md")]), 1)
 
     def test_approval_id_single_use(self):
         text, _ = self.call("memory_retain", self.record_args("한 번만 저장될 프로젝트 결정 사실이다."))
@@ -625,7 +627,8 @@ class TestRetainTwoStep(BridgeBase):
         aid = text.split("approval_id: ")[1].split("\n")[0]
 
         with mock.patch(
-            "asgard.memory_bridge.server.server_retain_items", return_value={"success": False, "error": "rejected"}
+            "asgard.project_memory.canonical.server_retain_items",
+            return_value={"success": False, "error": "rejected"},
         ):
             first, first_err = self.call("memory_retain_commit", {"approval_id": aid})
 

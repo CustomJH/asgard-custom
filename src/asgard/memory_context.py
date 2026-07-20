@@ -160,9 +160,17 @@ def project_recall_note(query: str, *, start: str | None = None, max_results: in
         for hit in filtered:
             text = str(hit["text"])
             metadata = hit["metadata"]
-            source = _neutralize(str(metadata.get("source") or "").strip())[:240]
-            source_note = f" [source: {source}]" if source else ""
-            row = f"- {_neutralize(text)[:420]}{source_note}"
+            provenance = []
+            for label, key, cap in (
+                ("source", "source", 240),
+                ("record", "record_id", 120),
+                ("revision", "source_revision", 160),
+            ):
+                value = _neutralize(str(metadata.get(key) or "").strip())[:cap]
+                if value:
+                    provenance.append(f"{label}: {value}")
+            provenance_note = f" [{'; '.join(provenance)}]" if provenance else ""
+            row = f"- {_neutralize(text)[:420]}{provenance_note}"
             if len(prefix + "\n".join([*rows, row]) + suffix) > PROJECT_RECALL_BUDGET:
                 break
             rows.append(row)

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime as _dt
 import os
 import re
 
@@ -32,6 +33,9 @@ def _containment(a: str, b: str) -> float:
 
 RRF_K = 60  # rank-fusion 표준 상수 — 상위 랭크 간 격차를 완만히 눌러 단일 경로 독주를 막는다
 SEM_FLOOR = 0.20  # 시맨틱 후보 진입 문턱 — 이 미만 코사인은 후보로도 안 넣는다(약연관 잡음 차단).
+TEMPORAL_KINDS = frozenset({"reference"})
+TEMPORAL_DAYS = 365
+TEMPORAL_ALPHA = 0.20  # 최신성은 관련도를 대체하지 않고 최대 약 ±10%만 보정한다.
 # 0.20 은 경량 정적 임베더(model2vec) 기준 실측 튜닝(26-07-18): 교차언어 정답이 랭크1이어도
 # 절대 코사인이 0.18–0.29 로 낮아 0.30 은 이득을 죽였다. 강한 torch 모델(all-MiniLM 등)은
 # 0.5–0.7 로 분리가 뚜렷해 이 문턱이 넉넉하다. config [memory].semantic_floor 로 조정 가능.
@@ -46,12 +50,25 @@ def _sem_floor() -> float:
         return SEM_FLOOR
 
 
+def _temporal_multiplier(meta: dict, today: _dt.date | None = None) -> float:
+    """빠르게 낡는 reference만 보수적으로 보정한다. 날짜 불명·다른 kind는 중립."""
+    if _kind(meta) not in TEMPORAL_KINDS:
+        return 1.0
+    try:
+        updated = _dt.date.fromisoformat(str(meta.get("updated") or meta.get("created") or ""))
+    except ValueError:
+        return 1.0
+    days = max(0, ((today or _dt.date.today()) - updated).days)
+    recency = max(0.1, min(1.0, 1.0 - days / TEMPORAL_DAYS))
+    return 1.0 + TEMPORAL_ALPHA * (recency - 0.5)
+
+
 def query(text: str, k: int = 5, d: str | None = None, track: bool = True, explain: bool = False) -> list[dict]:
     """FTS5 trigram 검색 (한국어 substring 대응). hit 는 usage 를 남긴다 — lint 부패 판정 원료.
 
     랭킹 = RRF(rank fusion). BM25 값과 스캔 매칭 카운트는 척도가 달라 점수 혼합이 무의미하므로
-    각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 usage 회수 빈도 → slug 순으로
-    가른다 — 빈도는 어디를 먼저 볼지 정하는 prior 일 뿐, 관련도 순위를 넘지 못한다.
+    각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 reference 최신성 → usage 회수
+    빈도 → slug 순으로 가른다 — 보조 신호는 관련도 순위를 넘지 못한다.
     오염 페이지는 결과에서 제외한다 (2차 리뷰 ② — query 출력은 에이전트 컨텍스트로 흘러간다).
     제외 수는 결과에 실리지 않고 lint 가 threat 로 보고한다.
 
@@ -196,7 +213,12 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True, expla
     _add_ranks(sorted(((slug, float(c[3])) for slug, c in cand.items() if c[3] > 0), key=lambda p: -p[1]))
     _add_ranks(sem_order)  # 비활성이면 빈 리스트 → 무영향
 
-    # usage 는 RRF 동률 타이브레이크 전용 prior — 관련도 순위를 넘지 못한다 (힌트, 증거 아님)
+    # 빠르게 낡는 reference만 시간 multiplier를 계산하되 RRF 동률 안에서만 쓴다.
+    # k=60 RRF의 인접 순위 차가 작아 전역 곱셈은 약한 최신성만으로 강한 관련도를 뒤집는다.
+    # user/decision/insight는 강등하지 않고, last_used도 자기강화 편향 때문에 쓰지 않는다.
+    temporal_scores = {slug: rrf[slug] * _temporal_multiplier(cand[slug][0]) for slug in cand}
+
+    # usage 는 RRF·시간 보정 동률 타이브레이크 전용 prior (힌트, 증거 아님)
     uses: dict[str, int] = {}
     try:
         conn = _db(d)
@@ -212,7 +234,7 @@ def query(text: str, k: int = 5, d: str | None = None, track: bool = True, expla
     sem_slugs = {s for s, _ in sem_order}
 
     hits: list[dict] = []
-    for slug in sorted(cand, key=lambda s: (-rrf[s], -uses.get(s, 0), s))[:k]:
+    for slug in sorted(cand, key=lambda s: (-rrf[s], -temporal_scores[s], -uses.get(s, 0), s))[:k]:
         meta, body, matched, _s = cand[slug]
         lb = body.lower()
         needle = phrase if phrase in lb else next((w for w in matched if w in lb), "")

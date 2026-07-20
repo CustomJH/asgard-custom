@@ -133,6 +133,7 @@ class TestAgentsMerge(Base):
         self.assertNotIn("\n.asgard\n", "\n" + merged)
         self.assertNotIn("\n.asgard/\n", "\n" + merged)
         self.assertIn("!.asgard/map/", merged)
+        self.assertIn("!.asgard/memory/records/", merged)
 
 
 class TestSettingsMerge(Base):

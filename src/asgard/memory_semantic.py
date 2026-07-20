@@ -16,7 +16,7 @@
     active() 로 활성/비활성을 대시보드·doctor 에 그대로 노출한다 (숨기지 않는다).
 
 옵트인 방법:  설정 [memory].semantic = "local"  (기본 "off")
-             모델 [memory].semantic_model = "sentence-transformers/all-MiniLM-L6-v2" (기본)
+             모델 [memory].semantic_model = "sentence-transformers/all-MiniLM-L6-v2" (선택)
              env  ASGARD_MEMORY_SEMANTIC 로 세션 오버라이드 (off|local).
 """
 
@@ -35,6 +35,7 @@ _OVERRIDE: Callable[[str], list[float]] | None = None
 _CACHE: dict[str, Any] = {"loaded": False, "fn": None, "dim": 0, "model": ""}
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+DEFAULT_STATIC_MODEL = "minishlab/potion-multilingual-128M"
 _ENV = "ASGARD_MEMORY_SEMANTIC"
 
 
@@ -81,10 +82,10 @@ def reset() -> None:
     _CACHE.update({"loaded": False, "fn": None, "dim": 0, "model": ""})
 
 
-def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int] | None:
+def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int, str] | None:
     """로컬 임베더 로드 — sentence-transformers 우선, model2vec 폴백. 미설치면 None (fail-open).
 
-    반환 = (embed_fn, dim). 어떤 import·로드 실패도 삼켜 None 을 돌린다 — 검색은 계속돼야 한다.
+    반환 = (embed_fn, dim, 실제 모델명). 어떤 import·로드 실패도 삼켜 None — 검색은 계속돼야 한다.
     """
     with contextlib.suppress(Exception):
         from sentence_transformers import SentenceTransformer  # type: ignore
@@ -96,18 +97,19 @@ def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int] | N
             vec = model.encode([text], normalize_embeddings=True)[0]
             return [float(x) for x in vec]
 
-        return _embed, dim
+        return _embed, dim, model_name
     with contextlib.suppress(Exception):  # 경량 폴백 — torch 없는 정적 임베딩
         from model2vec import StaticModel
 
-        model = StaticModel.from_pretrained(model_name)
+        static_model_name = DEFAULT_STATIC_MODEL if model_name == DEFAULT_MODEL else model_name
+        model = StaticModel.from_pretrained(static_model_name)
 
         def _embed2(text: str) -> list[float]:
             vec = model.encode(text)
             return _normalize([float(x) for x in vec])
 
         probe = _embed2("dimension probe")
-        return _embed2, len(probe)
+        return _embed2, len(probe), static_model_name
     return None
 
 
@@ -124,7 +126,7 @@ def embedder() -> Callable[[str], list[float]] | None:
     if loaded is None:
         _CACHE["fn"], _CACHE["dim"] = None, 0
         return None
-    _CACHE["fn"], _CACHE["dim"], _CACHE["model"] = loaded[0], loaded[1], _model_name()
+    _CACHE["fn"], _CACHE["dim"], _CACHE["model"] = loaded
     return _CACHE["fn"]
 
 

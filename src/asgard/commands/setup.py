@@ -47,7 +47,7 @@ from ..templates.thor import (
 # 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
 # .asgard/.gitignore 가 이미 자가 무시하지만, 루트에도 명시해 `git status` 를 처음부터 깨끗하게.
 # `.asgard/` (디렉토리 패턴)이 아니라 `.asgard/*` + negation 인 이유: 디렉토리째 무시하면 git 이
-# 하위로 내려가지 않아 map/ 재포함이 불가능하다 — 지도는 팀 공유(추적) 자산.
+# 하위로 내려가지 않아 map/과 memory/records/ 재포함이 불가능하다 — 둘 다 팀 공유 자산이다.
 _GITIGNORE_BEGIN = "# >>> asgard >>>"
 _GITIGNORE_END = "# <<< asgard <<<"
 _GITIGNORE_BLOCK = (
@@ -57,6 +57,10 @@ _GITIGNORE_BLOCK = (
     ".asgard/*\n"
     "!.asgard/map/\n"
     "!.asgard/map/**\n"
+    "!.asgard/memory/\n"
+    ".asgard/memory/*\n"
+    "!.asgard/memory/records/\n"
+    "!.asgard/memory/records/**\n"
     "!.asgard/.gitignore\n"
     "!.asgard/asgard-setting-project.json\n"
     ".claude/settings.local.json\n"
@@ -64,11 +68,15 @@ _GITIGNORE_BLOCK = (
     f"{_GITIGNORE_END}\n"
 )
 
-# .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 전부 무시, 지도만 추적.
-# 루트 블록과 합의돼야 한다 (둘 중 하나라도 map 을 막으면 추적 불가 — smoke 가 실추적 검증).
+# .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 무시하고 지도와 승인 record만 추적.
+# 루트 블록과 합의돼야 한다 (둘 중 하나라도 공유 경로를 막으면 추적 불가 — smoke 가 실추적 검증).
 # asgard-setting-project.json = 팀 공유 설정 (trinity 정책·project-memory backend 선택, 비밀 없음) — 커밋 대상.
 # state/·quest/ 등 런타임은 "*" 가 전부 무시한다.
-_ASGARD_GITIGNORE = "*\n!.gitignore\n!map/\n!map/**\n!asgard-setting-project.json\n"
+_ASGARD_GITIGNORE = (
+    "*\n!.gitignore\n!map/\n!map/**\n"
+    "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
+    "!asgard-setting-project.json\n"
+)
 
 
 def merge_gitignore(existing: str | None) -> str:

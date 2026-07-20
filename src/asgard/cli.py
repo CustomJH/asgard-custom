@@ -387,6 +387,13 @@ def memory_reindex() -> None:
     raise typer.Exit(run_reindex())
 
 
+@memory_app.command("export-okf", help="export personal memory as a read-only OKF v0.1 bundle")
+def memory_export_okf(destination: str = typer.Argument(..., help="new or empty destination directory")) -> None:
+    from .commands.memory import run_export_okf
+
+    raise typer.Exit(run_export_okf(destination))
+
+
 @memory_app.command("show", help="print one page (frontmatter + body)")
 def memory_show(
     slug: str = typer.Argument(...),
@@ -517,6 +524,17 @@ def memory_project_approve(
     from .commands.memory import run_project_approve
 
     raise typer.Exit(run_project_approve(approval_id))
+
+
+@memory_app.command("project-rehydrate", help="replay Git canonical project records into the selected backend")
+def memory_project_rehydrate(
+    yes: bool = typer.Option(False, "--yes", "-y", help="execute the previewed external writes"),
+    plan_id: str | None = typer.Option(None, "--plan-id", help="SHA-256 plan id emitted by the preview"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_rehydrate
+
+    raise typer.Exit(run_project_rehydrate(yes=yes, plan_id=plan_id, json_out=json_))
 
 
 @memory_app.command("mcp", help="stdio MCP bridge for the selected project-memory backend (register once, user scope)")

@@ -4,3 +4,7 @@
 !.gitignore
 !map/
 !map/**
+!memory/
+memory/*
+!memory/records/
+!memory/records/**

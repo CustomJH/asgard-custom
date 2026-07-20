@@ -24,7 +24,7 @@
 패키지 구성 (파사드 — 공개 표면은 이 모듈에서 전부 재수출):
   policy(설정·게이트·인젝션 스캔) · store(파일시스템 원시·페이지 직렬화) ·
   index(index.md·state.db 파생) · recall(query·스냅샷·회수·증류 넛지) ·
-  pages(add/ingest/remove/merge·lint)
+  pages(add/ingest/remove/merge·lint) · okf(단방향 export)
 """
 
 from __future__ import annotations
@@ -43,6 +43,7 @@ from .index import (
     usage_stats,
     write_index,
 )
+from .okf import export_okf
 from .pages import (
     _IMPERATIVE_PATTERNS,
     _PREFERENCE_PATTERNS,
@@ -179,6 +180,7 @@ __all__ = [
     "build_index",
     "distill_nudge",
     "ensure_home",
+    "export_okf",
     "index_budget",
     "ingest",
     "inject_allowed",

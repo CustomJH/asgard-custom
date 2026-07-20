@@ -13,9 +13,8 @@ from .client import (
     _neutralize,
     backend_target,
     server_recall,
-    server_retain_items,
 )
-from .config import claim_retain, find_config, finish_retain, stage_retain
+from .config import find_config, stage_retain
 from .trust import is_backend_trusted, verify_backend_binding
 
 # ── MCP 툴 정의 — 최소 표면 (파괴 툴 비노출) ─────────────────────────────────────────
@@ -92,7 +91,10 @@ _TOOLS = [
     },
     {
         "name": "memory_retain_commit",
-        "description": "저장 2단계 — 사용자가 승인한 approval_id 로만 실행. id 는 1회 소비·1시간 만료.",
+        "description": (
+            "저장 2단계 — 사용자가 승인한 approval_id 로만 실행. 프로젝트 Git 정본을 먼저 기록한 뒤 "
+            "backend에 반영한다. id 는 1회 소비·1시간 만료."
+        ),
         "inputSchema": {
             "type": "object",
             "properties": {"approval_id": {"type": "string"}},
@@ -183,21 +185,16 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
             )
         if name == "memory_retain_commit":
             aid = str(args.get("approval_id", ""))
-            claimed = claim_retain(root, aid, target=backend_target(cfg))
-            if claimed is None:
-                return "유효하지 않은 approval_id (미존재·만료·이미 소비) — memory_retain 부터 다시", True
-            item, token = claimed
             try:
-                out = server_retain_items(cfg, [item] if isinstance(item, dict) else [{"content": item}])
-                if out.get("success") is not True:
-                    raise ValueError(str(out.get("error") or "project memory retain rejected"))
+                from ..project_memory import commit_approved_record
+
+                out = commit_approved_record(root, cfg, aid)
             except Exception as e:
-                finish_retain(root, aid, token, success=False)
-                return f"메모리 backend 저장 실패: {type(e).__name__} — 같은 approval_id로 재시도 가능", True
-            finish_retain(root, aid, token, success=True)
+                return f"프로젝트 메모리 저장 실패: {e}", True
+            canonical = f" · canonical={out['canonical_path']}" if out.get("canonical_path") else ""
             return (
                 f"저장 완료 (engine={cfg['engine']}, project_id={cfg['project_id']}): "
-                f"{json.dumps(out, ensure_ascii=False)[:200]}",
+                f"{json.dumps(out, ensure_ascii=False)[:200]}{canonical}",
                 False,
             )
         return f"unknown tool: {name}", True

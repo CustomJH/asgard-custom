@@ -18,7 +18,11 @@ import time
 import unittest
 from unittest import mock
 
+import yaml
+from typer.testing import CliRunner
+
 from asgard import memory
+from asgard.cli import app
 
 
 def _ingest_process(text: str, memory_dir: str, plan: dict, start, results) -> None:
@@ -101,6 +105,55 @@ class TestScaffoldAndAdd(MemoryBase):
         with self.assertRaises(ValueError):  # 초과 → 통합 압력 (하드거부)
             memory.add("second fact should not fit under the tiny budget")
         memory.add("second fact forced in", force=True)  # 탈출구는 명시적으로만
+
+
+class TestOkfExport(MemoryBase):
+    def test_cli_exports_bundle(self):
+        memory.add("기억", title="기억")
+        bundle = os.path.join(self.tmp, "okf-cli")
+
+        result = CliRunner().invoke(app, ["memory", "export-okf", bundle])
+
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(os.path.exists(os.path.join(bundle, "index.md")))
+
+    def test_exports_parseable_yaml_and_standard_links_without_changing_canonical(self):
+        target, _ = memory.add("프로젝트 기준 문서", title="기준", kind="reference")
+        source, source_path = memory.add(
+            "[[기준]]을 참고한다. [[아직 없는 문서]]도 추후 작성한다.",
+            title="운영 절차",
+            kind="reference",
+            links=target,
+        )
+        page = memory._read(self.d, source)
+        assert page is not None
+        meta, body = page
+        meta["source"] = "https://example.com/runbook"
+        memory._atomic_write(source_path, memory.render_page(meta, body))
+        before = open(source_path, encoding="utf-8").read()
+
+        bundle = os.path.join(self.tmp, "okf")
+        self.assertEqual(memory.export_okf(bundle), 2)
+
+        exported = open(os.path.join(bundle, "pages", f"{source}.md"), encoding="utf-8").read()
+        frontmatter = yaml.safe_load(exported.split("---", 2)[1])
+        self.assertEqual(frontmatter["type"], "reference")
+        self.assertEqual(frontmatter["timestamp"], memory._today())
+        self.assertEqual(frontmatter["resource"], "https://example.com/runbook")
+        self.assertNotIn("[[", exported)
+        self.assertIn(f"](/pages/{target}.md)", exported)
+        self.assertIn("# Citations", exported)
+        self.assertIn(f"(pages/{source}.md)", open(os.path.join(bundle, "index.md"), encoding="utf-8").read())
+        self.assertEqual(open(source_path, encoding="utf-8").read(), before)
+
+    def test_refuses_nonempty_destination(self):
+        memory.add("기억", title="기억")
+        bundle = os.path.join(self.tmp, "okf")
+        os.makedirs(bundle)
+        open(os.path.join(bundle, "keep.txt"), "w").write("keep")
+
+        with self.assertRaisesRegex(ValueError, "not empty"):
+            memory.export_okf(bundle)
 
 
 class TestQuery(MemoryBase):
@@ -187,6 +240,41 @@ class TestRankFusion(MemoryBase):
         self.assertEqual(hits[0]["slug"], "zz-recipe")
 
 
+class TestTemporalRanking(MemoryBase):
+    """stale-memory 평가셋: reference만 최신성 보정, 안정 지식과 강한 관련도는 보존한다."""
+
+    def _dated(self, slug: str, updated: str) -> None:
+        page = memory._read(self.d, slug)
+        assert page is not None
+        meta, body = page
+        meta["updated"] = updated
+        memory._atomic_write(memory._page_path(self.d, slug), memory.render_page(meta, body))
+        memory.reindex(self.d)
+
+    def test_fresh_reference_wins_a_relevance_tie(self):
+        old, _ = memory.add("PostgreSQL 운영 문서", title="동일 문서", kind="reference")
+        fresh, _ = memory.add("PostgreSQL 운영 문서", title="동일 문서", kind="reference")
+        self._dated(old, "2020-01-01")
+        self._dated(fresh, memory._today())
+
+        self.assertEqual(memory.query("PostgreSQL 운영 문서", track=False)[0]["slug"], fresh)
+
+    def test_decisions_do_not_decay(self):
+        old, _ = memory.add("메모리 정본은 Markdown이다", title="동일 결정", kind="decision")
+        fresh, _ = memory.add("메모리 정본은 Markdown이다", title="동일 결정", kind="decision")
+        self._dated(old, "2020-01-01")
+        self._dated(fresh, memory._today())
+
+        self.assertEqual(memory.query("메모리 정본 Markdown", track=False)[0]["slug"], old)
+
+    def test_recency_does_not_override_stronger_relevance(self):
+        old, _ = memory.add("PostgreSQL migration rollback 절차", title="aa-exact", kind="reference")
+        memory.add("PostgreSQL 소개", title="zz-recent", kind="reference")
+        self._dated(old, "2020-01-01")
+
+        self.assertEqual(memory.query("PostgreSQL migration rollback", track=False)[0]["slug"], old)
+
+
 class TestSemanticStream(MemoryBase):
     """시맨틱 3번째 스트림 (옵트인) — agentmemory 이식(26-07-18). 실제 모델 없이 결정론
     가짜 임베더를 주입해 벡터 저장·3-스트림 융합·fail-open·정본 복원을 검증한다.
@@ -235,6 +323,21 @@ class TestSemanticStream(MemoryBase):
         self.assertTrue(self.sem.active())
         self.sem.set_embedder(None)
         self.assertFalse(self.sem.active())
+
+    def test_default_model2vec_fallback_uses_compatible_model(self):
+        static_model = mock.Mock()
+        static_model.encode.return_value = [1.0, 0.0]
+        static_cls = mock.Mock()
+        static_cls.from_pretrained.return_value = static_model
+        with mock.patch.dict(
+            "sys.modules",
+            {"sentence_transformers": None, "model2vec": mock.Mock(StaticModel=static_cls)},
+        ):
+            loaded = self.sem._load_local(self.sem.DEFAULT_MODEL)
+
+        assert loaded is not None
+        self.assertEqual(loaded[1:], (2, self.sem.DEFAULT_STATIC_MODEL))
+        static_cls.from_pretrained.assert_called_once_with(self.sem.DEFAULT_STATIC_MODEL)
 
     def test_vector_stored_on_add(self):
         slug, _ = memory.add("강아지 산책 일지", title="dog-walk")

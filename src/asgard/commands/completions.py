@@ -96,6 +96,7 @@ _MEM_SUB = {
     "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
     "reindex": "rebuild derived index",
+    "export-okf": "export personal memory as an OKF bundle",
     "show": "print one page",
     "remove": "delete a page",
     "merge": "absorb one page into another",
@@ -106,6 +107,7 @@ _MEM_SUB = {
     "project-scan": "preview important project artifacts",
     "project-sync": "sync approved artifacts to the selected backend",
     "project-approve": "approve a staged project-memory record",
+    "project-rehydrate": "replay Git canonical records to the selected backend",
     "mcp": "stdio MCP bridge (shared memory)",
 }
 _STUDIO_SUB = {

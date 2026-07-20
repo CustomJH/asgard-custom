@@ -69,11 +69,11 @@ __LAGOM__
 <!-- >>> asgard:memory >>> -->
 ## Asgard — 개인/프로젝트 메모리 (두 종류, 힌트 계층)
 
-개인은 로컬 위키(`~/.asgard/memory/`), 프로젝트 공유 지식은 설정으로 선택한 backend 정확히 하나다. `memory-context`는 개인 카탈로그이고 `memory-recall`은 `scope="personal|project"`로 출처가 분리된다.
+개인은 로컬 위키(`~/.asgard/memory/`), 승인된 프로젝트 record 정본은 repo `.asgard/memory/records/`, 검색은 설정으로 선택한 backend 정확히 하나다. `memory-context`는 개인 카탈로그이고 `memory-recall`은 `scope="personal|project"`로 출처가 분리된다.
 
 - **힌트일 뿐** — 완료 증거·검증 criteria 로 쓸 수 없다 (게이트는 메모리를 신뢰하지 않는다).
 - **개인** — `asgard memory query`; 저장은 `asgard memory ingest` 승인 게이트만. 로컬 파일 직접 편집 금지.
-- **프로젝트** — MCP `memory_recall`; 저장은 provenance·kind·importance를 갖춘 `memory_retain` → 사용자 승인 → `memory_retain_commit`만. 중요 artifact는 `asgard memory project-scan/project-sync`로 관리한다.
+- **프로젝트** — MCP `memory_recall`; 저장은 provenance·kind·importance를 갖춘 `memory_retain` → 사용자 승인 → `memory_retain_commit`만. commit은 Git 정본을 먼저 쓰고 backend에 반영한다. 중요 artifact는 `asgard memory project-scan/project-sync`, backend 복원은 `asgard memory project-rehydrate`로 관리한다.
 - **역할 격리** — Thinker는 호출될 때 snapshot+회수를 받는다. native standard Worker는 요청 관련 개인 회수만 받고, deep Worker는 개인 메모리를 받지 않는다. Verifier/Loki는 영구 무주입.
 <!-- <<< asgard:memory <<< -->
 

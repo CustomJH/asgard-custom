@@ -1,10 +1,11 @@
-"""선택형 backend 기반 프로젝트 메모리의 등록 정책과 artifact projection (패키지 파사드).
+"""Git 정본과 선택형 검색 backend를 쓰는 프로젝트 메모리 (패키지 파사드).
 
 Asgard 메모리는 개인(로컬)과 프로젝트(선택 backend) 두 종류뿐이다. 이 패키지는 세 번째
-정본을 만들지 않는다. 코드·문서·Git은 사실의 provenance이고, 활성 backend 하나가 팀 공유
-프로젝트 메모리를 저장·검색한다.
+메모리를 만들지 않는다. 승인 record 정본은 프로젝트 `.asgard/memory/records/`에 두고,
+활성 backend 하나는 재생 가능한 팀 공유 검색 인덱스다. 코드·문서는 원래 Git 파일이 정본이다.
 
 모듈 구성 (구 단일 모듈 project_memory.py 의 분해 — 공개 표면은 여기서 그대로 재수출):
+  canonical  — 승인 record Git 정본·target-bound backend 재생
   records    — 상수·record dataclass·검증·직렬화 (순수 계층)
   scan       — 아티팩트 채굴: Git/worktree 스캔·구조 fingerprint·중요도 평가
   projection — manifest·kernel lock·plan/plan-id·backend sync
@@ -13,6 +14,19 @@ Asgard 메모리는 개인(로컬)과 프로젝트(선택 backend) 두 종류뿐
 
 from ..memory import scan_threats
 from ..memory_bridge import assert_backend_access, backend_target, server_retain_items, stage_retain
+from .canonical import (
+    MAX_RECORD_FILE_BYTES,
+    RECORD_SCHEMA,
+    RECORDS_RELATIVE_DIR,
+    commit_approved_record,
+    load_canonical_records,
+    record_filename,
+    records_dir,
+    rehydrate_records,
+    rehydration_plan,
+    render_canonical_record,
+    save_canonical_record,
+)
 from .projection import (
     PROJECTION_LOCK_TTL,
     PROJECTION_MANIFEST,
@@ -79,11 +93,14 @@ __all__ = [
     "IMPORTANCE",
     "KINDS",
     "MAX_ARTIFACT_BYTES",
+    "MAX_RECORD_FILE_BYTES",
     "MAX_ONTOLOGY_VALUE",
     "ONTOLOGY_SCHEMA",
     "PROJECTION_LOCK_TTL",
     "PROJECTION_MANIFEST",
     "PROJECTION_VERSION",
+    "RECORDS_RELATIVE_DIR",
+    "RECORD_SCHEMA",
     "RELATIONS",
     "STATUSES",
     "ArtifactCandidate",
@@ -121,16 +138,24 @@ __all__ = [
     "assert_backend_access",
     "backend_target",
     "changed_paths",
+    "commit_approved_record",
+    "load_canonical_records",
     "load_projection_manifest",
     "projection_plan",
     "projection_plan_id",
     "propose_completion",
     "record_item",
+    "record_filename",
+    "records_dir",
+    "rehydrate_records",
+    "rehydration_plan",
     "render_record",
+    "render_canonical_record",
     "retain_turn",
     "scan_project",
     "scan_secrets",
     "scan_threats",
+    "save_canonical_record",
     "server_retain_items",
     "source_revision",
     "stage_retain",

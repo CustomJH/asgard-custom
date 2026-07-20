@@ -113,13 +113,15 @@ drift and ghost paths in manual area maps.
 ## Memory
 
 Asgard has exactly two memory types: personal local Markdown/SQLite memory and
-a shared project memory backed by exactly one configured engine (Hindsight is the
-legacy-compatible default; Cognee, RedisVL, and others can be installed as adapters).
+shared project memory. Approved project records are Git-canonical under
+`.asgard/memory/records/`; exactly one configured engine is their replaceable search
+index (Hindsight is the legacy-compatible default; Cognee, RedisVL, and others can be installed as adapters).
 Project records pass provenance, importance,
 secret, prompt-injection, and approval gates before retain. The generated
 `asgard-memory` skill carries the registration schema, and `asgard memory
 project-scan` / `project-sync` preview and commit important artifacts into the
-active project backend. Backend changes are bound to machine-local trust,
+active project backend. `asgard memory project-rehydrate` previews and replays canonical
+records after a backend replacement. Backend changes are bound to machine-local trust,
 approval IDs, plan IDs, and projection manifests.
 
 Use `asgard memory connect` to configure a backend and `asgard doctor` to verify its binding and readiness.

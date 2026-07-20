@@ -150,14 +150,16 @@ def validate_record(record: ProjectRecord, root: str | None = None) -> Validatio
         reasons.append("record is not self-contained")
     if not record.source.strip() or not record.source_revision.strip():
         reasons.append("provenance required")
+    relation_values: list[str] = []
     for relation in record.relations:
         if relation.get("type") not in RELATIONS or not str(relation.get("target") or "").strip():
             reasons.append("invalid relation")
             break
-    threat = scan_threats(record.title, record.content, record.source)
+        relation_values.extend((str(relation.get("type") or ""), str(relation.get("target") or "")))
+    threat = scan_threats(record.title, record.content, record.source, record.source_revision, *relation_values)
     if threat:
         reasons.append(f"prompt injection: {threat}")
-    secret = scan_secrets(record.title, record.content, record.source)
+    secret = scan_secrets(record.title, record.content, record.source, record.source_revision, *relation_values)
     if secret:
         reasons.append(secret)
     return ValidationResult(not reasons, tuple(reasons))
@@ -220,5 +222,21 @@ def record_item(
             "project_uid": project_uid,
             "binding_id": binding_id,
             "record_schema": "asgard-project-memory-v1",
+        },
+        # 승인 파일에는 backend payload와 함께 backend-neutral 원자료를 보관한다. backend
+        # adapter는 이 키를 무시하고, 승인 commit/rehydrate만 정본 생성에 사용한다.
+        "record": {
+            "schema": "asgard-project-memory-v1",
+            "record_id": record.record_id,
+            "kind": record.kind,
+            "title": record.title,
+            "content": record.content.strip(),
+            "source": record.source,
+            "source_revision": record.source_revision,
+            "importance": record.importance,
+            "confidence": record.confidence,
+            "status": record.status,
+            "scope": record.scope,
+            "relations": [dict(relation) for relation in record.relations],
         },
     }

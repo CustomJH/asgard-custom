@@ -23,13 +23,10 @@ from collections.abc import Callable
 from .. import memory, ui
 from ..memory_bridge import (
     backend_target,
-    claim_retain,
     find_config,
-    finish_retain,
     is_backend_trusted,
-    server_retain_items,
 )
-from ..project_memory import propose_completion, retain_turn
+from ..project_memory import commit_approved_record, propose_completion, retain_turn
 
 _PLAN_ID = re.compile(r"^[0-9a-f]{64}$")
 _PLAN_THREAD_LOCK = threading.Lock()
@@ -221,7 +218,7 @@ def run_sync_turn(mode: str) -> int:
 
 
 def run_project_approve(approval_id: str) -> int:
-    """Native/CLI 사용자 승인을 기존 claim/finish 원자적 commit 경로로 실행한다."""
+    """Native/CLI 사용자 승인을 Git 정본 → backend 순서로 실행한다."""
 
     def _do() -> int:
         found = find_config(os.getcwd())
@@ -231,18 +228,9 @@ def run_project_approve(approval_id: str) -> int:
         if not is_backend_trusted(cfg):
             raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
         target = backend_target(cfg)
-        claimed = claim_retain(root, approval_id, target=target)
-        if claimed is None:
-            raise ValueError("invalid, expired, claimed, or already consumed approval id")
-        item, token = claimed
-        try:
-            result = server_retain_items(cfg, [item] if isinstance(item, dict) else [{"content": item}])
-            if result.get("success") is not True:
-                raise ValueError(str(result.get("error") or "project memory retain rejected"))
-        except Exception:
-            finish_retain(root, approval_id, token, success=False)
-            raise
-        finish_retain(root, approval_id, token, success=True)
+        result = commit_approved_record(root, cfg, approval_id)
+        if result.get("canonical_path"):
+            ui.ok(f"project memory canonical saved → {result['canonical_path']} (commit this file)")
         ui.ok(f"project memory saved → engine={target['engine']} project_id={target['project_id']}")
         return 0
 
@@ -325,6 +313,15 @@ def run_reindex() -> int:
     def _do() -> int:
         n = memory.reindex()
         ui.ok(f"reindexed {n} pages → index.md + state.db")
+        return 0
+
+    return _guard(_do)
+
+
+def run_export_okf(destination: str) -> int:
+    def _do() -> int:
+        count = memory.export_okf(destination)
+        ui.ok(f"exported {count} personal memory pages → {os.path.abspath(os.path.expanduser(destination))}")
         return 0
 
     return _guard(_do)
@@ -650,6 +647,69 @@ def run_project_sync(
             ui.fail(f"project memory sync failed: {output['error'] or 'backend rejected publication'}")
         else:
             ui.ok(f"project memory synced: {output['items_count']} item(s) → engine={engine} project_id={project_id}")
+        return 0 if output["success"] else 1
+
+    return _guard(_do)
+
+
+def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_out: bool = False) -> int:
+    """프로젝트 `.asgard/memory/records/` 정본을 현재 backend에 stable replace한다."""
+
+    def _do() -> int:
+        from .. import project_memory
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+        root, cfg = found
+        if not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        if plan_id and not yes:
+            raise ValueError("--plan-id requires --yes")
+        plan = project_memory.rehydration_plan(root, cfg)
+        target = plan["target"]
+        if not yes:
+            payload = {
+                "action": "project-rehydrate",
+                "engine": target["engine"],
+                "project_id": target["project_id"],
+                "canonical_digest": plan["canonical_digest"],
+                "plan_id": plan["plan_id"],
+                "records": plan["records"],
+                "approved": False,
+            }
+            if json_out:
+                print(_json.dumps(payload, ensure_ascii=False, indent=2))
+            else:
+                ui.head(
+                    f"project memory rehydrate plan · engine={target['engine']} · project_id={target['project_id']}"
+                )
+                for row in plan["records"]:
+                    ui.step(f"replace · {row['record_id']} · {row['path']}")
+                if not plan["records"]:
+                    ui.step("canonical records 없음")
+                ui.warn(f"아직 저장하지 않음 — 검토 후 --yes --plan-id {plan['plan_id']} 추가")
+            return 0
+        if not plan_id:
+            raise ValueError("--yes requires the --plan-id from a fresh preview")
+        result = project_memory.rehydrate_records(root, cfg, plan_id)
+        output = {
+            "success": result.get("success") is True,
+            "engine": target["engine"],
+            "project_id": target["project_id"],
+            "items_count": int(result.get("items_count", 0)),
+            "plan_id": result.get("plan_id", ""),
+            "error": str(result.get("error") or ""),
+        }
+        if json_out:
+            print(_json.dumps(output, ensure_ascii=False, indent=2))
+        elif output["success"]:
+            ui.ok(
+                f"project memory rehydrated: {output['items_count']} record(s) → "
+                f"engine={target['engine']} project_id={target['project_id']}"
+            )
+        else:
+            ui.fail(f"project memory rehydrate failed: {output['error'] or 'backend rejected publication'}")
         return 0 if output["success"] else 1
 
     return _guard(_do)

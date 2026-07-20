@@ -5,7 +5,7 @@
 
 MEMORY_SKILL_MD = """---
 name: asgard-memory
-description: 위그드라실(Yggdrasil, Asgard 메모리 시스템)의 두 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 선택된 backend 하나. 사용자가 "기억해/저장해/메모리/위그드라실" 을 말하거나 memory context의 상세가 필요할 때 사용.
+description: 위그드라실(Yggdrasil, Asgard 메모리 시스템)의 두 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 Git 정본과 선택된 backend 하나. 사용자가 "기억해/저장해/메모리/위그드라실" 을 말하거나 memory context의 상세가 필요할 때 사용.
 ---
 
 # asgard-memory — 위그드라실 (개인/프로젝트 메모리) 사용 계약
@@ -40,7 +40,7 @@ asgard memory ingest "<자립적인 사실 한 건>" --kind <note|user|decision|
 - 개인 스코프 전용 — 프로젝트 공유 지식은 여기 넣지 않는다 (용어 방화벽)
 - 유지관리: `asgard memory lint` 가 부패·중복·오염을 보고하면 merge/remove 로 정리
 
-## 프로젝트 공유 메모리 — 선택된 backend 하나
+## 프로젝트 공유 메모리 — Git 정본 + 선택된 backend 하나
 
 `<memory-recall scope="project">`는 machine-local trust가 승인한 현재 프로젝트 backend에서 온다.
 Hindsight/Cognee/RedisVL 결과를 동시에 주입하거나 병합하지 않는다. 명시 검색은 MCP
@@ -53,6 +53,8 @@ asgard memory project-sync --all --yes --plan-id <preview-plan-id> # 동일 snap
 ```
 
 프로젝트 사실 저장은 MCP `memory_retain` → 사용자 승인 → `memory_retain_commit`의 2단계만 사용한다.
+commit은 repo `.asgard/memory/records/`에 정본을 먼저 기록한 뒤 backend에 반영한다. backend
+복원은 `asgard memory project-rehydrate` 미리보기 → `--yes --plan-id`로만 실행한다.
 반드시 `record_id`, `kind`, `title`, `content`, `source`, `source_revision`, `importance`,
 `confidence`, `status`를 채운다. 허용 kind는 decision/policy/contract/component/incident/
 experiment/migration/runbook이다.
