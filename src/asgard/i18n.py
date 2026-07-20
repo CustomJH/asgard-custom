@@ -62,6 +62,12 @@ _M: dict[str, tuple[str, str]] = {
     "h_skills": ("list explicitly invocable skills", "직접 호출 가능한 스킬 목록"),
     "h_new": ("new session (reset context & screen)", "새 세션 (컨텍스트·화면 리셋)"),
     "h_quest": ("active quest log status", "진행 중 퀘스트 로그 상태"),
+    "h_sessions": (
+        "child agent sessions · '/sessions stop' cancels the active tree",
+        "하위 에이전트 세션 · '/sessions stop' 으로 실행 트리 취소",
+    ),
+    "no_sessions": ("no child sessions", "하위 세션 없음"),
+    "sessions_stopping": ("cancelling the active session tree", "실행 중인 세션 트리를 취소합니다"),
     "h_provider": (
         "show provider·model · '/provider set' to reconnect",
         "provider·model 표시 · '/provider set' 으로 재설정",
@@ -98,7 +104,10 @@ _M: dict[str, tuple[str, str]] = {
     "needs_base_url": ("base_url required", "base_url 필요"),
     "thought": ("Runes read", "룬 해독"),
     "thinking": ("reading the runes…", "룬을 읽는 중…"),
-    "ph_input": ("Ask anything — / commands · ! bash", "무엇이든 입력 — / 커맨드 · ! bash"),
+    "ph_input": (
+        "Ask anything — / commands · ! bash · \\⏎ newline",
+        "무엇이든 입력 — / 커맨드 · ! bash · \\⏎ 줄바꿈",
+    ),
     "number": ("number", "번호"),
     "model_id_prompt": ("model ID", "모델 ID"),
     "invalid_model_id": ("invalid model ID", "유효하지 않은 모델 ID"),

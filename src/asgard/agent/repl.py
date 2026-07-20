@@ -2,6 +2,8 @@
 
 설계 지향: 세션 헤더(provider·model) + 슬래시 커맨드 + tool-use 축약 한 줄,
 미니멀·조용한 기본(저소음), 정렬된 컬러와 역할/툴 심볼, provider·model 상태 라인.
+입력 프레임은 턴 진행 중에도 하단에 상주한다(_Dock) — 출력이 독 위로 흘러들고,
+턴이 끝나면 pt 프롬프트가 같은 자리를 이어받는다 (프레이야 명세 26-07-20).
 
 ANSI 직접 (ui.py 스타일 일관 — rich Markdown 은 스트리밍과 안 맞아 버퍼가 필요). 로고는
 install.sh 의 Yggdrasil braille lockup 재사용 — 어느 터미널·배경에서나 렌더된다.
@@ -177,6 +179,13 @@ def _status_segments(root: str, rp, usage: dict | None = None) -> list[tuple[str
     if rp.missing:  # 키/설정 미충족 = 미연결 — 색+`!`+단어 이중 인코딩
         return [("! " + t("not_connected"), theme.WARNING, False), (f"⌂ {cwd}", theme.ACCENT_BLUE, False)]
     segs = [(f"◆ {rp.model}", theme.PRIMARY, False), (f"⌂ {cwd}", theme.ACCENT_BLUE, False)]  # 모델=금·경로=청
+    isolation = os.environ.get("ASGARD_ISOLATION")
+    if isolation in {"docker-sandbox", "oci-container"}:
+        segs.append(("▣ " + ("sandbox" if isolation == "docker-sandbox" else "container"), theme.SUCCESS, False))
+    if usage and usage.get("active_sessions"):
+        count = usage["active_sessions"]
+        role = usage.get("active_role") or "agent"
+        segs.append((f"◇ {role}" + (f" +{count - 1}" if count > 1 else ""), theme.ACCENT_CYAN, False))
     br = _git_status(root)
     if br:  # git 라이브 색 — clean 룬 녹색, dirty 호박(접미 `*` 로 색맹에도 구분)
         segs.append((br, theme.SUCCESS if not br.endswith("*") else theme.WARNING, False))
@@ -230,6 +239,8 @@ _COMMAND_HELP = {
     "/skills": "h_skills",
     "/new": "h_new",
     "/quest": "h_quest",
+    "/sessions": "h_sessions",
+    "/sessions stop": "h_sessions",
     "/provider": "h_provider",
     "/provider set": "h_provider",
     "/trinity": "h_trinity",
@@ -278,10 +289,15 @@ def _term_width() -> int:
     return max(20, shutil.get_terminal_size((80, 20)).columns)
 
 
-def _box_top(width: int) -> list[tuple[str, str]]:
-    """상단 보더 프래그 — ╭─ ⠶ asgard ───╮ (좁으면 캡 드롭). 좌 들여쓰기 2·우 여백 2로 하단과 정렬.
+def _box_fill(width: int) -> int:
+    """상단 보더 캡 우측 채움 길이 — pt 프래그(_box_top)와 독 문자열(_box_top_str) 공용 기하.
     프레임폭(╭→╮) = width-4. 캡 포함: ╭(1)+'─ '(2)+캡(len)+' '(1)+채움+╮(1)."""
-    fill = width - 4 - (1 + 2 + len(_BOX_CAP) + 1 + 1)  # = width - 9 - len(cap)
+    return width - 4 - (1 + 2 + len(_BOX_CAP) + 1 + 1)  # = width - 9 - len(cap)
+
+
+def _box_top(width: int) -> list[tuple[str, str]]:
+    """상단 보더 프래그 — ╭─ ⠶ asgard ───╮ (좁으면 캡 드롭). 좌 들여쓰기 2·우 여백 2로 하단과 정렬."""
+    fill = _box_fill(width)
     if fill < 4:  # 좁은 터미널 — 캡 드롭, 코너만
         dashes = max(0, width - 6)
         return [("class:rule", "  " + _BOX["tl"] + _BOX["h"] * dashes + _BOX["tr"] + "\n")]
@@ -290,6 +306,40 @@ def _box_top(width: int) -> list[tuple[str, str]]:
         ("class:cap", _BOX_CAP),  # 골드 브랜드 캡
         ("class:rule", " " + _BOX["h"] * fill + _BOX["tr"] + "\n"),  # " ───╮"
     ]
+
+
+def _box_top_str(width: int) -> str:
+    """_box_top 의 ANSI 문자열판 — 독(비활성 프레임)용. pt 프래그와 같은 기하·색."""
+    rule = theme.ansi(theme.HAIRLINE)
+    fill = _box_fill(width)
+    if fill < 4:
+        return "  " + ui.paint(rule, _BOX["tl"] + _BOX["h"] * max(0, width - 6) + _BOX["tr"])
+    return (
+        "  "
+        + ui.paint(rule, _BOX["tl"] + _BOX["h"] + " ")
+        + ui.bold(ui.paint(_O, _BOX_CAP))
+        + ui.paint(rule, " " + _BOX["h"] * fill + _BOX["tr"])
+    )
+
+
+def _box_bottom_str(width: int) -> str:
+    """하단 보더 ╰───╯ — pt toolbar 첫 줄과 같은 기하·색 (독·제출 박스 폐합 공용)."""
+    return "  " + ui.paint(theme.ansi(theme.HAIRLINE), _BOX["bl"] + _BOX["h"] * max(0, width - 6) + _BOX["br"])
+
+
+def _usage_of(hd) -> dict | None:
+    """Heimdall 누적 사용량 → 상태줄 usage dict (독·pt toolbar·readline 폴백 공용)."""
+    if hd is None:
+        return None
+    active = hd.session_snapshot(active_only=True) if hasattr(hd, "session_snapshot") else []
+    return {
+        "tokens": hd.total_tokens,
+        "context": hd.last_context_tokens,
+        "cache_read": hd.cache_read_tokens,
+        "cache_prompt": hd.cache_prompt_tokens,
+        "active_sessions": len(active),
+        "active_role": active[-1]["role"] if active else "",
+    }
 
 
 def _pt_message():
@@ -306,17 +356,7 @@ def _pt_toolbar():
     ctx = _PT_CTX
     if not ctx:
         return ""
-    hd = ctx.get("heimdall")
-    usage = (
-        {
-            "tokens": hd.total_tokens,
-            "context": hd.last_context_tokens,
-            "cache_read": hd.cache_read_tokens,
-            "cache_prompt": hd.cache_prompt_tokens,
-        }
-        if hd
-        else None
-    )
+    usage = _usage_of(ctx.get("heimdall"))
     w = ui.stream_width()  # 상단 보더와 같은 폭 캡 — 코너 정렬
     bottom = "  " + _BOX["bl"] + _BOX["h"] * max(0, w - 6) + _BOX["br"] + "\n"  # 하단 보더 ╰───╯
     frags: list[tuple[str, str]] = [("class:rule", bottom), ("", "  ")]  # 상태줄은 박스 밖(아래), 들여쓰기 2
@@ -336,14 +376,67 @@ def _history_path() -> str:
     return hp
 
 
+def _kb_enter(event) -> None:
+    """Enter = 제출. 단 커서 앞이 '\\' 로 끝나면 백슬래시를 지우고 줄 내림 (연속 입력)."""
+    buf = event.current_buffer
+    if buf.document.current_line_before_cursor.endswith("\\"):
+        buf.delete_before_cursor(1)
+        buf.insert_text("\n")
+    else:
+        buf.validate_and_handle()
+
+
+def _kb_newline(event) -> None:
+    """Shift+Enter(CSI-u·modifyOtherKeys 터미널)·Ctrl+J — 줄 내림."""
+    event.current_buffer.insert_text("\n")
+
+
+def _pt_continuation(width, line_number, is_soft_wrap):
+    """멀티라인 연속 행 프리픽스 — 좌측 │ 스파인 유지 + 첫 행('  │ › ' 6칸)과 동일 폭 정렬."""
+    return [("class:rule", "  " + _BOX["v"] + " "), ("", "  ")]
+
+
 def _pt_session():
     """prompt_toolkit 세션 — '/' 입력 즉시 후보 메뉴(설명 포함)가 아래에 뜨고 Tab·화살표로
-    완성한다. 색은 theme 토큰."""
+    완성한다. 색은 theme 토큰. 멀티라인: Enter 제출 · '\\'+Enter / Shift+Enter / Ctrl+J 줄 내림."""
+    from collections.abc import Callable
+
     from prompt_toolkit import PromptSession
     from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
     from prompt_toolkit.completion import Completer, Completion
     from prompt_toolkit.history import FileHistory
+    from prompt_toolkit.input import ansi_escape_sequences as _esc
+    from prompt_toolkit.key_binding import KeyBindings
+    from prompt_toolkit.keys import Keys
     from prompt_toolkit.styles import Style
+
+    # Shift+Enter 를 Ctrl+J 로 별칭 — CSI-u(\x1b[13;2u)는 미매핑, modifyOtherKeys(\x1b[27;2;13~)는
+    # pt 기본이 일반 Enter 라 줄내림으로 재매핑한다. 미지원 터미널은 \r 그대로 → '\'+Enter 가 대안.
+    for seq in ("\x1b[13;2u", "\x1b[27;2;13~"):
+        _esc.ANSI_SEQUENCES[seq] = Keys.ControlJ
+
+    kb = KeyBindings()
+    kb.add("enter")(_kb_enter)
+    kb.add("c-j")(_kb_newline)
+
+    class _BottomAnchored(PromptSession):
+        """하단 고정용 세션 — 메뉴 예약을 동적으로: '/' 커맨드 입력 중일 때만 8행.
+        pt 는 이 값을 렌더마다 읽으므로(_get_default_buffer_control_height) 프로퍼티가 통한다.
+        상시 예약은 입력행과 toolbar(하단 보더·상태줄)를 항상 8행 찢어 놓아 하단 고정과 상극 —
+        필요한 순간에만 열어 평소엔 프레임이 밀착된다 (pyte 실측 검증)."""
+
+        _asgard_bottom_pad: Callable[[], object]  # 바닥 정렬 필러 — _pt_session 말미 배선 (테스트 노출)
+
+        @property
+        def reserve_space_for_menu(self) -> int:
+            try:
+                return 8 if self.default_buffer.text.startswith("/") else 0
+            except Exception:
+                return 0
+
+        @reserve_space_for_menu.setter
+        def reserve_space_for_menu(self, value: int) -> None:
+            pass  # __init__ 의 정적 대입 무시 — 동적 계산이 단일 소스
 
     class _Slash(Completer):
         def get_completions(self, document, complete_event):
@@ -368,14 +461,45 @@ def _pt_session():
             "auto-suggestion": theme.SUBTEXT,
         }
     )
-    return PromptSession(
+    session = _BottomAnchored(
         completer=_Slash(),
         complete_while_typing=True,
         auto_suggest=AutoSuggestFromHistory(),
         history=FileHistory(_history_path()),
         style=style,
-        reserve_space_for_menu=8,
+        multiline=True,  # 줄 내림 허용 — Enter 제출은 _kb_enter 가 유지 (기본 멀티라인 Enter 를 대체)
+        key_bindings=kb,
+        prompt_continuation=_pt_continuation,
     )
+
+    # 바닥 정렬 필러 — pt 인라인 프롬프트는 커서 원점에 위에서부터 그린다. 박스 위를
+    # `화면 잔여 행(rows − rows_above_layout, CPR 기반) − 본체 필요 행` 만큼 정확히 채우면
+    # 박스가 바닥에 붙고, 성장(줄 추가·메뉴 오픈)은 필러를 소모할 뿐 화면을 스크롤하지 않으며
+    # 축소는 필러가 되살아나 위 내용(배너·직전 출력)이 전혀 움직이지 않는다. 잔여 공간을
+    # 넘는 성장만 pt 가 자연 스크롤. accept(is_done) 시 필러가 접혀 제출 박스는 본문 흐름
+    # 위치로 붙고 스크롤백에 빈 행이 남지 않는다. CPR 미지원/미도착이면 0 (원점 폴백).
+    from prompt_toolkit.filters import is_done
+    from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
+    from prompt_toolkit.layout.dimension import Dimension
+    from prompt_toolkit.layout.layout import Layout
+
+    inner = session.layout.container
+
+    def _bottom_pad() -> Dimension:
+        from prompt_toolkit.application import get_app
+
+        app = get_app()
+        try:
+            above = app.renderer.rows_above_layout
+        except Exception:
+            return Dimension.exact(0)
+        size = app.output.get_size()
+        body = inner.preferred_height(size.columns, size.rows).preferred
+        return Dimension.exact(max(0, size.rows - above - body))
+
+    session.app.layout = Layout(HSplit([ConditionalContainer(Window(height=_bottom_pad), filter=~is_done), inner]))
+    session._asgard_bottom_pad = _bottom_pad  # 테스트 노출용
+    return session
 
 
 def _setup_readline() -> None:
@@ -412,10 +536,19 @@ def _save_history(readline, path: str) -> None:
         pass
 
 
+def _input_continued(first: str, cont: str) -> str:
+    """input() 경로의 '\\' 연속 입력 — 트레일링 백슬래시는 지우고 다음 줄을 이어 받는다."""
+    parts = [input(first)]
+    while parts[-1].endswith("\\"):
+        parts[-1] = parts[-1][:-1]
+        parts.append(input(cont))
+    return "\n".join(parts)
+
+
 def prompt() -> str:
     # cursor-agent 식 입력 영역 — rule 프레임 + 골드 → + placeholder + 하단 상태줄.
     if not ui._COLOR:
-        return input("  › ")
+        return _input_continued("  › ", "  … ")
     if _PT:
         return _PT.prompt(
             _pt_message,
@@ -425,7 +558,191 @@ def prompt() -> str:
         )
     # readline 폴백 — 비출력(ANSI) 문자는 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
     arrow = f"\x01\x1b[{_O}m\x02›\x01\x1b[0m\x02"
-    return input(f"  {arrow} ")
+    cont = "  \x01\x1b[2m\x02…\x01\x1b[0m\x02 "  # readline 프롬프트 ANSI 는 \x01..\x02 가드 필수
+    return _input_continued(f"  {arrow} ", cont)
+
+
+class _Dock:
+    """클로드코드식 하단 상주 입력 독 (프레이야 명세 26-07-20).
+
+    턴 진행 중에도 입력 프레임이 화면 하단에 상주하고 스트리밍 출력은 그 위로 삽입된다.
+    pt 프롬프트와 같은 프레임(골드 캡·라운드 박스·상태줄)을 그려 턴 사이 시각 연속성을 만들고,
+    독 자신은 비활성(딤 캐럿) — 실제 편집은 턴 종료 후 pt 가 같은 자리에서 이어받는다.
+
+    커서 계약: 유휴 시 항상 독 첫 행(스페이서) 1열 파킹. write() 는 파킹점부터 아래를 지우고
+    출력을 삽입한 뒤 독을 다시 그린다 — 자연 스크롤이라 스크롤백이 보존된다 (DECSTBM 스크롤
+    영역은 밀려난 행을 스크롤백에 안 남겨 기각). 리사이즈·CJK 랩으로 파킹이 틀어져도 다음
+    redraw 의 전체 소거가 복원한다. 화면 쓰기는 전부 _lock 직렬화 (틱 스레드 vs 메인)."""
+
+    HEIGHT = 6  # 스페이서 · 스피너 상태 · 박스 상단 · 입력행 · 박스 하단 · 상태줄
+
+    def __init__(self) -> None:
+        import threading
+
+        self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._t: threading.Thread | None = None
+        self._label: str | None = None
+        self._t0 = 0.0
+        self._frame = 0
+        self.mounted = False
+
+    def mount(self) -> None:
+        import threading
+
+        with self._lock:
+            # 제출된 입력 박스를 닫는다 — pt 는 accept 시 toolbar(하단 보더+상태줄)를 지우므로
+            # (\x1b[J 실측) 스크롤백엔 열린 박스만 남는다. 여기서 ╰╯ 를 정적으로 폐합.
+            self.mounted = True
+            sys.stdout.write(_box_bottom_str(ui.stream_width()) + "\n" + self._frame_str())
+            sys.stdout.flush()
+        self._stop = threading.Event()
+        self._t = threading.Thread(target=self._tick, daemon=True)
+        self._t.start()
+
+    def unmount(self) -> None:
+        if not self.mounted:
+            return
+        self._stop.set()
+        if self._t:
+            self._t.join(timeout=1)
+            self._t = None
+        with self._lock:
+            self.mounted = False
+            self._label = None
+            sys.stdout.write("\x1b[0J")  # 파킹점부터 독 소거 — 커서는 다음 출력 자리
+            sys.stdout.flush()
+
+    def write(self, s: str) -> None:
+        """완성 라인(들)을 독 위로 삽입. 미마운트면 stdout 직행 (테어다운 경계 잔여분)."""
+        if not s:
+            return
+        with self._lock:
+            if not self.mounted:
+                sys.stdout.write(s)
+                sys.stdout.flush()
+                return
+            # 소거→삽입→재드로우를 단일 write 로 원자화 — 라인버퍼 중간 flush 로 소거 상태가
+            # 노출되는 플리커 창을 없앤다
+            body = s if s.endswith("\n") else s + "\n"
+            sys.stdout.write("\x1b[0J" + body + self._frame_str())
+            sys.stdout.flush()
+
+    def status(self, label: str | None) -> None:
+        """on_status 핸들러 — 독 상태 행에 스피너 라벨 표시 (None=해제). 경과초는 틱이 갱신."""
+        import time
+
+        with self._lock:
+            if label != self._label:
+                self._label, self._t0 = label, time.monotonic()
+            if self.mounted:
+                self._paint_status()
+                sys.stdout.flush()
+
+    # — 내부 렌더 (호출측이 _lock 보유) —
+
+    def _tick(self) -> None:
+        while not self._stop.wait(0.1):
+            with self._lock:
+                if not self.mounted:
+                    return
+                self._frame += 1
+                self._paint_status()
+                sys.stdout.flush()
+
+    def _paint_status(self) -> None:
+        # 파킹(스페이서)에서 한 줄 내려가 상태 행만 제자리 갱신 후 복귀 — 독 전체 redraw 없이 저비용
+        sys.stdout.write("\x1b[B\r\x1b[2K" + self._status_str() + "\r\x1b[A")
+
+    def _status_str(self) -> str:
+        import time
+
+        if not self._label:
+            return ""
+        fr = ui._FRAMES[self._frame % len(ui._FRAMES)]
+        secs = time.monotonic() - self._t0
+        tail = f" · {secs:.0f}s" if secs >= 1 else ""
+        budget = max(10, ui.term_cols() - 8 - len(tail))  # 랩 방지 절단 (ui.spin 과 동일 규칙)
+        label = self._label if len(self._label) <= budget else self._label[: budget - 1] + "…"
+        return f"  {ui.paint(theme.ansi(theme.ACCENT_BLUE), fr)} {label}{ui.dim(tail)}"
+
+    def _statusline_str(self) -> str:
+        ctx = _PT_CTX
+        if not ctx:
+            return ""
+        segs = _status_segments(ctx["root"], ctx["rp"], _usage_of(ctx.get("heimdall")))
+        parts: list[str] = []
+        used = 2
+        for txt, hx, bold in segs:  # 폭 초과 세그먼트는 통째로 드롭 — 랩이 독 높이를 깨지 않게
+            need = (len(_STATUS_SEP) if parts else 0) + len(txt)
+            if used + need > ui.term_cols() - 2:
+                break
+            used += need
+            parts.append(_paint_seg(txt, hx, bold))
+        return "  " + _STATUS_SEP.join(parts)
+
+    def _frame_str(self) -> str:
+        w = ui.stream_width()
+        # 독 캐럿·플레이스홀더는 딤 — pt 활성 캐럿(골드)과 활성/비활성 시각 구분
+        inp = "  " + ui.paint(theme.ansi(theme.HAIRLINE), _BOX["v"]) + " " + ui.dim("› " + t("ph_input"))
+        lines = ["", self._status_str(), _box_top_str(w), inp, _box_bottom_str(w), self._statusline_str()]
+        return "\n".join(lines) + f"\r\x1b[{self.HEIGHT - 1}A"  # 스페이서 행 1열 파킹
+
+
+def _echo_off():
+    """턴 진행 중 키 입력 에코 차단 컨텍스트 — 독 화면 오염 방지. 눌린 키는 커널 버퍼에 남아
+    다음 pt 프롬프트가 그대로 소비한다(타이핑 큐잉). termios 없는 플랫폼·non-tty 는 no-op."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        try:
+            import termios
+
+            fd = sys.stdin.fileno()
+            if not sys.stdin.isatty():
+                raise OSError("not a tty")
+            old = termios.tcgetattr(fd)
+            new = termios.tcgetattr(fd)
+            new[3] &= ~termios.ECHO
+            termios.tcsetattr(fd, termios.TCSANOW, new)
+        except Exception:
+            yield
+            return
+        try:
+            yield
+        finally:
+            termios.tcsetattr(fd, termios.TCSANOW, old)
+
+    return _cm()
+
+
+def _cancel_on_sigint(heimdall):
+    """Turn Ctrl-C into cooperative tree cancellation so child sessions cannot outlive the UI."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def _cm():
+        try:
+            import signal
+
+            previous = signal.getsignal(signal.SIGINT)
+
+            def cancel(sig, frame):
+                if getattr(heimdall, "cancel_event", None) is not None and heimdall.cancel_event.is_set():
+                    signal.default_int_handler(sig, frame)  # second Ctrl-C = hard interrupt
+                heimdall.cancel()
+
+            signal.signal(signal.SIGINT, cancel)
+        except Exception:
+            yield
+            return
+        try:
+            yield
+        finally:
+            signal.signal(signal.SIGINT, previous)
+
+    return _cm()
 
 
 class _Reconfigure(Exception):
@@ -627,6 +944,25 @@ def slash(cmd: str, root: str, rp) -> bool:
             sys.stdout.write(f"  {ui.dim(out or t('no_quest'))}\n")
         except Exception:
             sys.stdout.write(f"  {ui.dim(t('no_quest'))}\n")
+    elif c == "/sessions":
+        hd = _PT_CTX.get("heimdall")
+        if hd is None:
+            sys.stdout.write(f"  {ui.dim(t('no_sessions'))}\n")
+            return True
+        if cmd.split()[1:2] == ["stop"]:
+            hd.cancel()
+            sys.stdout.write(f"  {ui.paint(ui._WARN, '■')} {t('sessions_stopping')}\n")
+            return True
+        rows = hd.session_snapshot()
+        if not rows:
+            sys.stdout.write(f"  {ui.dim(t('no_sessions'))}\n")
+            return True
+        for row in rows[-12:]:
+            mark = "●" if row["state"] == "running" else "○"
+            detail = row["status"] or row["state"]
+            sys.stdout.write(
+                f"  {ui.paint(_O, mark)} {row['id'].ljust(18)} {ui.dim(detail + ' · ' + str(row['elapsed_s']) + 's')}\n"
+            )
     else:
         from difflib import get_close_matches
 
@@ -679,8 +1015,47 @@ class _Render:
         self._re = re
         self.buf = ""
         self.dirty = False  # 현재 라인을 이미 raw 로 흘려보냄 — 완성 시 스타일 생략
+        self._sink = None  # 독 모드 싱크(dock.write) — 완성 라인만 전달. None=stdout 직행
+
+    def attach(self, sink) -> None:
+        """독 모드 전환 — 잔여 버퍼를 현 싱크로 먼저 방출하고 교체. 독 모드는 완성 라인 단위로만
+        흘려보낸다(부분 라인 raw 스트림은 독 redraw 와 충돌). 긴 문단은 폭 경계 소프트랩으로
+        라인을 확정 — 터미널 자연 랩과 같은 자리라 시각 동일, 라이브함 유지."""
+        self.finish()
+        self._sink = sink
+
+    def _sink_write(self, s: str) -> None:
+        sink = self._sink
+        if sink is None:
+            return
+        self.buf += s
+        lines: list[str] = []
+        budget = max(24, ui.stream_width() - 4)
+        while True:
+            if "\n" in self.buf:
+                line, self.buf = self.buf.split("\n", 1)
+                lines.append(self._line(line))
+                continue
+            if len(self.buf) >= budget:  # 소프트랩 — 마지막 공백에서 자르고 라인 확정
+                cut = self.buf.rfind(" ", 0, budget)
+                cut = cut if cut > 0 else budget
+                line, self.buf = self.buf[:cut], self.buf[cut:].lstrip(" ")
+                lines.append(self._line(line))
+                continue
+            break
+        if lines:
+            sink("\n".join(lines) + "\n")
+
+    def _line(self, line: str) -> str:
+        """싱크 모드 라인 스타일 — _emit_line 과 같은 규칙, 문자열 반환."""
+        if line.startswith("  ") or not line.strip():
+            return line
+        return "  " + self._style(line)
 
     def write(self, s: str) -> None:
+        if self._sink is not None:
+            self._sink_write(s)
+            return
         # 활동 라인(완성된 메타 라인 — 앞 2칸 들여쓰기)이 미종결 산문에 접착되는 것을 막는다:
         # 두 생산자(모델 산문 · 툴/전이 라인)가 한 싱크를 공유하므로, 메타 라인이 오면 대기 산문을 먼저 닫는다.
         if "\n" in s and s.lstrip("\n").startswith("  "):
@@ -705,7 +1080,10 @@ class _Render:
 
     def finish(self) -> None:
         if self.buf:
-            self._emit_line(self.buf)
+            if self._sink is not None:
+                self._sink(self._line(self.buf) + "\n")
+            else:
+                self._emit_line(self.buf)
             self.buf = ""
 
     def _emit_line(self, line: str) -> None:
@@ -759,7 +1137,15 @@ def _run_bang(root: str, cmd: str) -> None:
 def run(root: str, rp, cont: bool = False) -> int:
     """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩."""
     render = _Render()
-    status = _Spinner()
+    spinner = _Spinner()
+    dock: _Dock | None = None
+
+    def status(label: str | None) -> None:
+        # 턴 중(독 상주)엔 독 상태 행, 그 외(readline 폴백·독 밖)엔 라인 스피너
+        if dock is not None and dock.mounted:
+            dock.status(label)
+        else:
+            spinner(label)
 
     def emit(s: str) -> None:
         render.write(s)
@@ -774,6 +1160,9 @@ def run(root: str, rp, cont: bool = False) -> int:
             _PT = False
     if not _PT:
         _setup_readline()  # Tab 자동완성 + 화살표 히스토리
+    if _PT and ui._COLOR and sys.stdout.isatty():
+        dock = _Dock()  # 하단 상주 입력 독 — pt 경로 전용 (폴백·비 tty 는 기존 스피너 흐름)
+        sys.stdout.write("\033[2J\033[H")  # 클린 스타트 — 이전 셸 화면 위가 아니라 아스가드만
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
     # provider 미설정 안내는 status line(⚠ not connected)이 대신 표현 — 별도 줄 없음
@@ -785,19 +1174,10 @@ def run(root: str, rp, cont: bool = False) -> int:
     while True:
         _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)  # toolbar + /lagom stats 공용 세션 상태
         if _PT:  # 상태줄은 bottom_toolbar(입력창 아래)가 표시 — cursor-agent 식
+            # 하단 고정은 _pt_session 의 바닥 정렬 필러가 담당 (커서 점프 불요 — CPR 기반)
             sys.stdout.write("\n")
         else:
-            usage = (
-                {
-                    "tokens": heimdall.total_tokens,
-                    "context": heimdall.last_context_tokens,
-                    "cache_read": heimdall.cache_read_tokens,
-                    "cache_prompt": heimdall.cache_prompt_tokens,
-                }
-                if heimdall
-                else None
-            )
-            sys.stdout.write("\n" + statusline(root, rp, usage) + "\n")
+            sys.stdout.write("\n" + statusline(root, rp, _usage_of(heimdall)) + "\n")
         try:
             req = prompt().strip()
         except EOFError, KeyboardInterrupt:
@@ -836,13 +1216,22 @@ def run(root: str, rp, cont: bool = False) -> int:
 
         try:
             import time as _time
+            from contextlib import ExitStack
 
             ev = getattr(heimdall, "cancel_event", None)  # 제출측 clear — handle() 은 clear 하지 않는다
             if ev is not None:
                 ev.clear()
             t0 = _time.monotonic()
-            out = heimdall.handle(req)
-            render.finish()
+            with ExitStack() as stack:  # 독 수명 = handle 구간 — 예외·중단에도 반드시 내려간다
+                stack.enter_context(_cancel_on_sigint(heimdall))
+                if dock is not None:
+                    stack.enter_context(_echo_off())
+                    stack.callback(dock.unmount)
+                    stack.callback(render.attach, None)  # LIFO — 싱크 분리(잔여 방출) 후 독 해체
+                    render.attach(dock.write)
+                    dock.mount()
+                out = heimdall.handle(req)
+                render.finish()
             if out:
                 sys.stdout.write(f"\n{out}\n")
             # 턴 요약 — '✓ done · model · 7.0s' 한 줄
