@@ -547,7 +547,7 @@ class TestRoleProviders(Base):
 
 
 class TestDeliveryAgents(unittest.TestCase):
-    """딜리버리 계층 CC 배선 — 템플릿 계약·소스 단일화, API 호출 없음."""
+    """딜리버리 계층 호스트 배선 — 템플릿 계약·소스 단일화, API 호출 없음."""
 
     def _tpl(self, name):
         from asgard.templates.roles import ROLE_AGENTS
@@ -613,8 +613,43 @@ class TestDeliveryAgents(unittest.TestCase):
         self.assertIn("MAIN_WORKER", guide)
         self.assertIn("asgard-worker.md", guide)
         self.assertIn("별도 Thinker는 명시적 병렬 분해와 실패 재계획에만", guide)
-        self.assertIn("Verifier와 병렬/분리 Worker는 독립 Agent", guide)
+        self.assertIn("Verifier와 병렬/분리 Worker는 호스트의 독립 서브에이전트", guide)
         self.assertIn("BASELINE_VERIFY", guide)
+
+    def test_cursor_init_scaffolds_native_agents_and_lower_camel_hooks(self):
+        from asgard.commands.setup import plan_files
+        from asgard.templates.roles import ROLE_AGENTS
+
+        files = dict(plan_files(cc=False, cursor=True, codex=False, root="/workspace")[0])
+        agents = {path: body for path, body in files.items() if "/.cursor/agents/asgard-" in path}
+        self.assertEqual(len(agents), len(ROLE_AGENTS))
+        worker = agents["/workspace/.cursor/agents/asgard-worker.md"]
+        verifier = agents["/workspace/.cursor/agents/asgard-verifier.md"]
+        self.assertIn("\nreadonly: false\n", worker)
+        self.assertIn("\nreadonly: true\n", verifier)
+        hooks = json.loads(files["/workspace/.cursor/hooks.json"])["hooks"]
+        self.assertLessEqual({"preToolUse", "subagentStart", "subagentStop", "stop"}, set(hooks))
+        self.assertIn("subagent-gate.py start", hooks["subagentStart"][0]["command"])
+        self.assertIn("verifier-gate.py cursor", hooks["stop"][0]["command"])
+
+    def test_codex_init_scaffolds_toml_agents_and_native_hooks(self):
+        import tomllib
+
+        from asgard.commands.setup import plan_files
+        from asgard.templates.roles import ROLE_AGENTS
+
+        files = dict(plan_files(cc=False, cursor=False, codex=True, root="/workspace")[0])
+        agents = {path: body for path, body in files.items() if "/.codex/agents/asgard-" in path}
+        self.assertEqual(len(agents), len(ROLE_AGENTS))
+        worker = tomllib.loads(agents["/workspace/.codex/agents/asgard-worker.toml"])
+        verifier = tomllib.loads(agents["/workspace/.codex/agents/asgard-verifier.toml"])
+        self.assertNotIn("sandbox_mode", worker)
+        self.assertEqual(verifier["sandbox_mode"], "read-only")
+        self.assertIn("# asgard-worker", worker["developer_instructions"])
+        config = tomllib.loads(files["/workspace/.codex/config.toml"])
+        self.assertEqual(config["agents"]["max_depth"], 2)
+        self.assertTrue(config["hooks"]["SubagentStart"])
+        self.assertIn("verifier-gate.py", config["hooks"]["Stop"][0]["hooks"][0]["command"])
 
 
 class TestHeadlessProceed(unittest.TestCase):

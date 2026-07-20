@@ -19,8 +19,10 @@ from ..templates import (
     SELFTEST_MD,
     agents_md,
     cc_settings,
+    codex_agent,
     codex_config,
     codex_rules,
+    cursor_agent,
     cursor_hooks_json,
     cursor_rule,
     project_settings,
@@ -37,7 +39,12 @@ from ..templates.mimir import (
     mimir_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
 )
 from ..templates.roles import ROLE_AGENTS  # real .md files, scaffolded verbatim (same pattern as hooks)
-from ..templates.skill_router import ROUTER_SKILL_MD, direct_skill, openai_skill_metadata
+from ..templates.skill_router import (
+    MANAGED_ROUTER_SKILL_MD,
+    ROUTER_SKILL_MD,
+    direct_skill,
+    openai_skill_metadata,
+)
 from ..templates.thor import (
     eitri_core_skill,  # 모드 A 코어 계약 스킬 — role 파일에서 파생 (단일 소스)
     thor_core_skill,
@@ -252,38 +259,81 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".cursor", "hooks", "git-guard.py"), hook("git-guard")),  # same script, auto-detects Cursor
             (j(root, ".cursor", "hooks", "release-guard.py"), hook("release-guard")),
             (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("failure-tracker")),
-            (j(root, ".cursor", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 A 로그 CLI
+            (j(root, ".cursor", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 B 로그 CLI
+            (j(root, ".cursor", "hooks", "subagent-gate.py"), hook("subagent-gate")),
+            (j(root, ".cursor", "hooks", "verifier-gate.py"), hook("verifier-gate")),
+            (j(root, ".cursor", "hooks", "write-sentinel.py"), hook("write-sentinel")),
         ]
+        files += [(j(root, ".cursor", "agents", fname), cursor_agent(content)) for fname, content in ROLE_AGENTS]
 
-    # Codex reads root AGENTS.md natively — add config + Pre/PostToolUse hooks + native rules.
-    # Codex shares Claude's stdin schema, so it reuses the same git-guard / failure-tracker scripts.
+    # Codex reads root AGENTS.md natively — add custom agents, hooks, and native command rules.
     if codex:
         files += [
             (j(root, ".codex", "config.toml"), codex_config()),
             (j(root, ".codex", "hooks", "git-guard.py"), hook("git-guard")),
             (j(root, ".codex", "hooks", "release-guard.py"), hook("release-guard")),
             (j(root, ".codex", "hooks", "failure-tracker.py"), hook("failure-tracker")),
-            (j(root, ".codex", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 A 로그 CLI
+            (j(root, ".codex", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 B 로그 CLI
+            (j(root, ".codex", "hooks", "subagent-gate.py"), hook("subagent-gate")),
+            (j(root, ".codex", "hooks", "verifier-gate.py"), hook("verifier-gate")),
+            (j(root, ".codex", "hooks", "write-sentinel.py"), hook("write-sentinel")),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
+        ]
+        files += [
+            (j(root, ".codex", "agents", fname.removesuffix(".md") + ".toml"), codex_agent(content))
+            for fname, content in ROLE_AGENTS
         ]
 
     # asgard-test 자가 테스트 스킬 — .agents/skills/ 는 Cursor·Codex 공용 네이티브 스코프
     # (cursor.com/docs/skills · developers.openai.com/codex/skills), Claude Code 만 .claude/skills/.
     # 같은 SKILL.md 포맷이라 본문은 하나다.
     if cursor or codex:
-        files.append((j(root, ".agents", "skills", "asgard-skills", "SKILL.md"), ROUTER_SKILL_MD))
-        files.append((j(root, ".agents", "skills", "asgard-test", "SKILL.md"), direct_skill(SELFTEST_MD)))
-        files.append((j(root, ".agents", "skills", "asgard-provider", "SKILL.md"), direct_skill(BRIDGE_SKILL_MD)))
-        files += [(j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in LAGOM_SKILLS]
-        files.append((j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD)))
-        # 딜리버리 코어 계약 — 모드 A 는 서브에이전트가 없으므로 코어 계약을 스킬로 배치한다.
-        files.append((j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"), direct_skill(freyja_core_skill())))
-        files.append((j(root, ".agents", "skills", "asgard-thor", "SKILL.md"), direct_skill(thor_core_skill())))
-        files.append((j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"), direct_skill(eitri_core_skill())))
-        files.append((j(root, ".agents", "skills", "asgard-mimir", "SKILL.md"), direct_skill(mimir_core_skill())))
+        files.append((j(root, ".agents", "skills", "asgard-skills", "SKILL.md"), MANAGED_ROUTER_SKILL_MD))
+        files.append(
+            (j(root, ".agents", "skills", "asgard-test", "SKILL.md"), direct_skill(SELFTEST_MD, implicit=False))
+        )
+        files.append(
+            (
+                j(root, ".agents", "skills", "asgard-provider", "SKILL.md"),
+                direct_skill(BRIDGE_SKILL_MD, implicit=False),
+            )
+        )
+        files += [
+            (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body, implicit=False))
+            for sname, body in LAGOM_SKILLS
+        ]
+        files.append(
+            (j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD, implicit=False))
+        )
+        # 딜리버리 코어 계약 — 서브에이전트 디스패치와 단일 세션 폴백에서 같은 정본을 쓴다.
+        files.append(
+            (
+                j(root, ".agents", "skills", "asgard-freyja", "SKILL.md"),
+                direct_skill(freyja_core_skill(), implicit=False),
+            )
+        )
+        files.append(
+            (
+                j(root, ".agents", "skills", "asgard-thor", "SKILL.md"),
+                direct_skill(thor_core_skill(), implicit=False),
+            )
+        )
+        files.append(
+            (
+                j(root, ".agents", "skills", "asgard-eitri", "SKILL.md"),
+                direct_skill(eitri_core_skill(), implicit=False),
+            )
+        )
+        files.append(
+            (
+                j(root, ".agents", "skills", "asgard-mimir", "SKILL.md"),
+                direct_skill(mimir_core_skill(), implicit=False),
+            )
+        )
         # 각 클라이언트가 이름·설명만 색인하고, 선택된 어댑터가 중앙 정본을 지연 로드한다.
         files += [
-            (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in discovery_bodies()
+            (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body, implicit=False))
+            for sname, body in discovery_bodies()
         ]
 
         # Codex excludes user-invoked skills from model discovery through this standard policy file.

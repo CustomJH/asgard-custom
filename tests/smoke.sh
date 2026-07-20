@@ -227,6 +227,10 @@ for _d in skills hooks; do [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL:
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude"; exit 1; }
 grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor hooks.json"; exit 1; }
 [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: --cursor guard missing"; exit 1; }
+[ -f "$PROJ/.cursor/agents/asgard-worker.md" ] && [ -f "$PROJ/.cursor/agents/asgard-verifier.md" ] || { echo "FAIL: --cursor Trinity agents missing"; exit 1; }
+grep -q '"subagentStart"' "$PROJ/.cursor/hooks.json" && grep -q '"stop"' "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor Trinity hooks missing"; exit 1; }
+grep -q '^readonly: false$' "$PROJ/.cursor/agents/asgard-worker.md" || { echo "FAIL: --cursor worker must be writable"; exit 1; }
+grep -q '^readonly: true$' "$PROJ/.cursor/agents/asgard-verifier.md" || { echo "FAIL: --cursor verifier must be read-only"; exit 1; }
 "$PY" -m py_compile "$PROJ/.cursor/hooks/git-guard.py" || { echo "FAIL: cursor guard invalid"; exit 1; }
 printf '%s' '{"command":"git push --force"}' | "$PY" "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"deny"' || { echo "FAIL: cursor guard deny"; exit 1; }
 printf '%s' '{"command":"git status"}'      | "$PY" "$PROJ/.cursor/hooks/git-guard.py" | grep -q '"permission":"allow"' || { echo "FAIL: cursor guard allow"; exit 1; }
@@ -239,6 +243,9 @@ PROJ="$(mktemp -d)"
 [ ! -e "$PROJ/.claude" ] && [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --codex scoped"; exit 1; }
 grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex PreToolUse hook"; exit 1; }
 [ -f "$PROJ/.codex/hooks/git-guard.py" ] || { echo "FAIL: --codex guard"; exit 1; }
+[ -f "$PROJ/.codex/agents/asgard-worker.toml" ] && [ -f "$PROJ/.codex/agents/asgard-verifier.toml" ] || { echo "FAIL: --codex Trinity agents missing"; exit 1; }
+grep -q '\[\[hooks.SubagentStart\]\]' "$PROJ/.codex/config.toml" && grep -q '\[\[hooks.Stop\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex Trinity hooks missing"; exit 1; }
+grep -q '^sandbox_mode = "read-only"$' "$PROJ/.codex/agents/asgard-verifier.toml" || { echo "FAIL: --codex verifier must be read-only"; exit 1; }
 [ -f "$PROJ/.codex/rules/canon.rules" ] && grep -q "prefix_rule" "$PROJ/.codex/rules/canon.rules" || { echo "FAIL: --codex rules"; exit 1; }
 [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --codex missing .agents/skills asgard-test"; exit 1; }
 "$PY" -m py_compile "$PROJ/.codex/hooks/git-guard.py" || { echo "FAIL: codex guard invalid"; exit 1; }

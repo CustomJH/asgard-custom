@@ -14,6 +14,22 @@ ROLE_AGENTS: list[tuple[str, str]] = sorted(
 )
 
 
+def role_document(content: str) -> tuple[dict, str]:
+    """Parse one canonical role file for client-specific adapters."""
+    parts = content.split("---", 2)
+    if len(parts) != 3:
+        raise ValueError("role file requires YAML frontmatter")
+    metadata = {
+        key.strip(): value.strip()
+        for line in parts[1].splitlines()
+        if ":" in line
+        for key, value in (line.split(":", 1),)
+    }
+    if not metadata.get("name") or not metadata.get("description"):
+        raise ValueError("role file requires name and description")
+    return metadata, parts[2].lstrip()
+
+
 def delivery_agents() -> dict[str, str]:
     """딜리버리 계층 발견 — frontmatter `delivery: <tier>` 를 선언한 role 만 (CUS-251 선언화).
 

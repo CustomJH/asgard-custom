@@ -82,6 +82,7 @@ DEFAULT_POLICY: dict[str, Any] = {
 }
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py 와 동일 유지
+_HOST_PROTOCOL = "claude"
 
 
 def unattended(data):
@@ -489,19 +490,20 @@ def block(root, sid, reason, code="other"):
             "asgard verifier-gate: %d회 차단 초과 — 통과시키되 Odin 에스컬레이션 필요 (Canon 9)\n" % MAX_BLOCKS
         )
         sys.exit(0)
-    sys.stdout.write(
-        json.dumps(
-            {
-                "decision": "block",
-                "reason": "Asgard verifier-gate (Canon 10 — 완료 증명): "
-                + reason
-                + " Verifier 판정을 로그에 기록하세요: echo '{...}' | python3 <hooks>/quest-log.py "
-                "append --verdict PASS|FAIL (verify 이벤트가 diff_hash 를 자동 계산). "
-                "3회 이상 막히면 중단하고 Odin 에게 보고하세요 (Canon 9).",
-            },
-            ensure_ascii=False,
-        )
+    message = (
+        "Asgard verifier-gate (Canon 10 — 완료 증명): "
+        + reason
+        + " Verifier 판정을 로그에 기록하세요: echo '{...}' | python3 <hooks>/quest-log.py "
+        "append --verdict PASS|FAIL (verify 이벤트가 diff_hash 를 자동 계산). "
+        "3회 이상 막히면 중단하고 Odin 에게 보고하세요 (Canon 9)."
     )
+    if _HOST_PROTOCOL == "cursor":
+        payload = {"followup_message": message}
+    elif _HOST_PROTOCOL == "codex":
+        payload = {"continue": False, "stopReason": message}
+    else:
+        payload = {"decision": "block", "reason": message}
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False))
     sys.exit(0)
 
 
@@ -615,13 +617,16 @@ def orphan_writes(root, sid):
 
 
 def main():
+    global _HOST_PROTOCOL
     try:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
     try:
+        _HOST_PROTOCOL = sys.argv[1] if len(sys.argv) > 1 else "claude"
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
+        raw_sid = "cursor" if _HOST_PROTOCOL == "cursor" else data.get("session_id") or "default"
+        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
         qid = quest_pointer(root, sid)
         if not qid:
             orphan_writes(root, sid)  # quest 미개설 우회 봉합 — write 흔적이 dirty 면 여기서 block

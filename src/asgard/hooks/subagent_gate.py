@@ -62,7 +62,7 @@ def pass_evidence(rec):
     )
 
 
-def block(root, sid, agent, reason):
+def block(root, sid, agent, reason, *, protocol="claude"):
     """차단 — 단 세션·역할당 MAX_BLOCKS 회. 초과 시 warn+allow (인질극 방지)."""
     path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")
     counts = {}
@@ -85,8 +85,28 @@ def block(root, sid, agent, reason):
             "asgard subagent-gate: %s %d회 차단 초과 — 통과 (최종 담보는 verifier-gate)\n" % (agent, MAX_BLOCKS)
         )
         sys.exit(0)
-    sys.stdout.write(json.dumps({"decision": "block", "reason": "Asgard subagent-gate: " + reason}, ensure_ascii=False))
+    message = "Asgard subagent-gate: " + reason
+    if protocol == "cursor":
+        payload = {"followup_message": message}
+    elif protocol == "codex":
+        payload = {"continue": False, "stopReason": message}
+    else:
+        payload = {"decision": "block", "reason": message}
+    sys.stdout.write(json.dumps(payload, ensure_ascii=False))
     sys.exit(0)
+
+
+def deny_pretool(protocol: str, message: str) -> None:
+    if protocol == "cursor":
+        sys.stdout.write(
+            json.dumps(
+                {"permission": "deny", "userMessage": message, "agentMessage": message},
+                ensure_ascii=False,
+            )
+        )
+        sys.exit(0)
+    print(message, file=sys.stderr)
+    sys.exit(2)
 
 
 def quest_pointer(root: str, sid: str) -> str | None:
@@ -129,7 +149,7 @@ def receipt_path(root: str, qid: str, agent_id: str) -> str:
     return os.path.join(root, ".asgard", "quest", "receipts", qid, "agent-" + safe_agent + ".json")
 
 
-def record_agent_start(root: str, qid: str, sid: str, agent: str, agent_id: str) -> None:
+def record_agent_start(root: str, qid: str, sid: str, agent: str, agent_id: str, task: str = "") -> None:
     if not agent_id:
         return
     path = receipt_path(root, qid, agent_id)
@@ -140,6 +160,7 @@ def record_agent_start(root: str, qid: str, sid: str, agent: str, agent_id: str)
         "session_id": sid,
         "agent_type": agent,
         "agent_id": agent_id,
+        "task": task,
         "started_at": time.time_ns(),
         "stopped_at": None,
     }
@@ -151,7 +172,26 @@ def record_agent_start(root: str, qid: str, sid: str, agent: str, agent_id: str)
     os.replace(tmp, path)
 
 
-def record_agent_stop(root: str, qid: str, agent_id: str) -> None:
+def record_agent_stop(root: str, qid: str, agent_id: str, agent: str = "", task: str = "") -> None:
+    if not agent_id:
+        directory = os.path.join(root, ".asgard", "quest", "receipts", qid)
+        candidates = []
+        try:
+            for name in os.listdir(directory):
+                if not name.startswith("agent-"):
+                    continue
+                record = json.load(open(os.path.join(directory, name), encoding="utf-8"))
+                if (
+                    record.get("agent_type") == agent
+                    and record.get("stopped_at") is None
+                    and (not task or record.get("task") == task)
+                ):
+                    candidates.append(record)
+        except Exception:
+            return
+        if not candidates:
+            return
+        agent_id = str(max(candidates, key=lambda record: int(record.get("started_at") or 0)).get("agent_id") or "")
     if not agent_id:
         return
     path = receipt_path(root, qid, agent_id)
@@ -172,7 +212,13 @@ def record_agent_stop(root: str, qid: str, agent_id: str) -> None:
 
 
 def record_worker_dispatch(root: str, qid: str, sid: str, tool_use_id: str, tool_input: dict) -> bool:
-    prompt = str(tool_input.get("prompt") or tool_input.get("description") or "")
+    prompt = str(
+        tool_input.get("prompt")
+        or tool_input.get("task")
+        or tool_input.get("message")
+        or tool_input.get("description")
+        or ""
+    )
     match = re.search(r"\[ASGARD_UNIT:([^\]]+)\]", prompt)
     if not match:
         return False
@@ -313,43 +359,47 @@ def main():
     except Exception:
         sys.exit(0)
     try:
-        agent = str(data.get("agent_type") or "")
+        protocol_arg = sys.argv[1] if len(sys.argv) > 1 else ""
+        protocol = "cursor" if protocol_arg in {"pre", "start", "stop"} else protocol_arg or "claude"
+        event = str(data.get("hook_event_name") or protocol_arg)
+        agent = str(data.get("agent_type") or data.get("subagent_type") or "")
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
+        raw_sid = "cursor" if protocol == "cursor" else data.get("session_id") or "default"
+        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
         qid = quest_pointer(root, sid)
         if not qid:
             sys.exit(0)  # 활성 quest 없음 → DIRECT·탐사 디스패치 존중 (fail-open)
-        if data.get("hook_event_name") == "PreToolUse" and data.get("tool_name") == "Agent":
+        if event in {"PreToolUse", "preToolUse", "pre"} and data.get("tool_name") in {"Agent", "Task"}:
             tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
             target = str(tool_input.get("subagent_type") or tool_input.get("agent_type") or "")
             if agent in AGENT_TARGETS and target not in AGENT_TARGETS[agent]:
                 allowed = ", ".join(sorted(AGENT_TARGETS[agent])) or "none"
-                print(
+                deny_pretool(
+                    protocol,
                     "Asgard role boundary: %s cannot dispatch %s (allowed: %s)"
                     % (agent, target or "<missing>", allowed),
-                    file=sys.stderr,
                 )
-                sys.exit(2)
             if target == "asgard-worker":
                 if not record_worker_dispatch(root, qid, sid, str(data.get("tool_use_id") or ""), tool_input):
-                    print("Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker", file=sys.stderr)
-                    sys.exit(2)
+                    deny_pretool(protocol, "Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker")
             elif target == "asgard-verifier":
                 tickets = ticket_view(load_quest_events(root, qid))
                 unfinished = sorted(str(ticket["unit"]) for ticket in tickets.values() if ticket["status"] != "done")
                 if unfinished:
-                    print("Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished), file=sys.stderr)
-                    sys.exit(2)
+                    deny_pretool(protocol, "Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished))
                 problem = physical_worker_problem(root, qid, sid, tickets)
                 if problem:
-                    print("Asgard Mode B: " + problem, file=sys.stderr)
-                    sys.exit(2)
+                    deny_pretool(protocol, "Asgard Mode B: " + problem)
+            if protocol == "cursor":
+                sys.stdout.write(json.dumps({"permission": "allow"}))
             sys.exit(0)
         want = ROLE_EVENT.get(agent)
         if not want:
             sys.exit(0)  # Trinity 역할 아님 (딜리버리 전문가 포함) → 대상 아님
-        if data.get("hook_event_name") == "SubagentStart":
-            record_agent_start(root, qid, sid, agent, str(data.get("agent_id") or ""))
+        task = str(data.get("task") or data.get("description") or "")
+        agent_id = str(data.get("agent_id") or data.get("subagent_id") or "")
+        if event in {"SubagentStart", "subagentStart", "start"}:
+            record_agent_start(root, qid, sid, agent, agent_id, task)
             sys.exit(0)
         events = []
         try:
@@ -364,7 +414,11 @@ def main():
         anchor = ANCHOR[want]
         last_anchor = max((i for i, e in enumerate(events) if e.get("event") == anchor), default=-1)
         fresh = [e for i, e in enumerate(events) if i > last_anchor and e.get("event") == want]
-        hooks_dir = ".claude/hooks"  # SubagentStop 은 Claude Code 전용 이벤트
+        script = os.path.realpath(__file__).replace("\\", "/")
+        hooks_dir = next(
+            (f".{client}/hooks" for client in ("claude", "cursor", "codex") if f"/.{client}/hooks/" in script),
+            ".claude/hooks",
+        )
         if not fresh:
             block(
                 root,
@@ -384,6 +438,7 @@ def main():
                     if want == "verify"
                     else "",
                 ),
+                protocol=protocol,
             )
         if want == "verify":
             last = fresh[-1]
@@ -394,8 +449,9 @@ def main():
                     agent,
                     "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. 검증 명령을 직접 "
                     "실행하고 결과를 append 로 재기록하세요 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
+                    protocol=protocol,
                 )
-        record_agent_stop(root, qid, str(data.get("agent_id") or ""))
+        record_agent_stop(root, qid, agent_id, agent, task)
         # 통과 → 이 역할의 차단 카운터 리셋 (다음 위반은 새로 계수)
         try:
             path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")

@@ -989,6 +989,40 @@ class TestQuestEnforcement(TrinityBase):
         self.sentinel(".asgard/quest/q1.jsonl")
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "writes-s1.json")))
 
+    def test_cursor_write_and_stop_use_cursor_protocol(self):
+        self.write("app.py", "print('cursor')\n")
+        payload = {
+            "tool_name": "Write",
+            "cwd": self.root,
+            "tool_input": {"path": "app.py"},
+            "tool_output": {"ok": True},
+        }
+        run(SENTINEL, ["cursor"], stdin=json.dumps(payload), cwd=self.root)
+        stopped = run(GATE, ["cursor"], stdin=json.dumps({"cwd": self.root}), cwd=self.root)
+        out = jout(stopped)
+        self.assertIn("followup_message", out)
+        self.assertIn("퀘스트 로그가 없습니다", out["followup_message"])
+
+    def test_codex_apply_patch_and_stop_use_codex_protocol(self):
+        self.write("app.py", "print('codex')\n")
+        payload = {
+            "tool_name": "apply_patch",
+            "session_id": "codex-1",
+            "cwd": self.root,
+            "tool_input": {"command": "*** Begin Patch\n*** Update File: app.py\n*** End Patch"},
+            "tool_response": {"ok": True},
+        }
+        run(SENTINEL, ["codex"], stdin=json.dumps(payload), cwd=self.root)
+        stopped = run(
+            GATE,
+            ["codex"],
+            stdin=json.dumps({"session_id": "codex-1", "cwd": self.root, "hook_event_name": "Stop"}),
+            cwd=self.root,
+        )
+        out = jout(stopped)
+        self.assertIs(out.get("continue"), False)
+        self.assertIn("퀘스트 로그가 없습니다", out.get("stopReason", ""))
+
 
 class TestFullLoopE2E(TrinityBase):
     """정상 경로 전체 루프: open → (전이) → work → verify PASS → gate allow → close."""
@@ -1735,6 +1769,51 @@ class TestSubagentGate(TrinityBase):
         b = json.load(open(os.path.join(receipts, "agent-worker-b.json")))
         self.assertGreater(a["stopped_at"], a["started_at"])
         self.assertIsNone(b["stopped_at"])
+
+    def test_cursor_start_and_stop_bind_receipt_without_stop_id(self):
+        self.open_quest()
+        started = {
+            "subagent_id": "cursor-worker-1",
+            "subagent_type": "asgard-worker",
+            "task": "implement unit",
+            "parent_conversation_id": "conversation-1",
+            "cwd": self.root,
+        }
+        self.assertEqual(run(SUBGATE, ["start"], stdin=json.dumps(started), cwd=self.root).returncode, 0)
+        self.work()
+        stopped = {
+            "subagent_type": "asgard-worker",
+            "task": "implement unit",
+            "cwd": self.root,
+        }
+        result = run(SUBGATE, ["stop"], stdin=json.dumps(stopped), cwd=self.root)
+        self.assertFalse(result.stdout.strip(), result.stdout)
+        path = os.path.join(
+            self.root,
+            ".asgard",
+            "quest",
+            "receipts",
+            "q1",
+            "agent-cursor-worker-1.json",
+        )
+        receipt = json.load(open(path))
+        self.assertEqual(receipt["session_id"], "cursor")
+        self.assertIsNotNone(receipt["stopped_at"])
+
+    def test_cursor_pretool_uses_explicit_permission_protocol(self):
+        self.open_quest()
+        payload = {
+            "agent_type": "asgard-verifier",
+            "tool_name": "Task",
+            "tool_input": {"subagent_type": "asgard-worker"},
+            "cwd": self.root,
+        }
+        denied = run(SUBGATE, ["pre"], stdin=json.dumps(payload), cwd=self.root)
+        self.assertEqual(denied.returncode, 0)
+        self.assertEqual(jout(denied).get("permission"), "deny")
+        payload["tool_input"] = {"subagent_type": "asgard-loki"}
+        allowed = run(SUBGATE, ["pre"], stdin=json.dumps(payload), cwd=self.root)
+        self.assertEqual(jout(allowed), {"permission": "allow"})
 
     def test_agent_pretool_records_worker_dispatch_bound_to_unit(self):
         self.open_quest()

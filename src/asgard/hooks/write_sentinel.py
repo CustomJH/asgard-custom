@@ -31,14 +31,24 @@ def main() -> None:
     except Exception:
         sys.exit(0)
     try:
-        resp = data.get("tool_response")
+        resp = data.get("tool_response") or data.get("tool_output")
         if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
             sys.exit(0)  # 실패한 write 는 파일을 못 바꿨다 — 기록 안 함
-        path = str((data.get("tool_input") or {}).get("file_path") or "")
-        if not path or ".asgard" in path:
+        tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
+        path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+        paths = [path] if path else []
+        command = str(tool_input.get("command") or tool_input.get("patch") or "")
+        paths.extend(
+            match.strip()
+            for match in re.findall(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", command, flags=re.MULTILINE)
+        )
+        paths = [item for item in paths if item and ".asgard" not in item]
+        if not paths:
             sys.exit(0)  # 로그/상태 파일 자체는 증거 대상이 아니다 (자기참조 방지)
         proj = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(data.get("session_id") or "default"))[:64]
+        protocol = sys.argv[1] if len(sys.argv) > 1 else "claude"
+        raw_sid = "cursor" if protocol == "cursor" else data.get("session_id") or "default"
+        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
         base = os.path.join(proj, ".asgard")
         d = os.path.join(base, "state")  # 런타임 상태 격리 — verifier-gate 읽기 경로와 동일 유지
         os.makedirs(d, exist_ok=True)
@@ -57,10 +67,11 @@ def main() -> None:
                 writes = json.load(open(os.path.join(base, "writes-" + sid + ".json")))
             except Exception:
                 writes = []
-        rel = os.path.relpath(path, proj) if os.path.isabs(path) else path
-        if rel not in writes and len(writes) < 500:  # cap — 상태 파일 폭주 방지
-            writes.append(rel)
-            json.dump(writes, open(f, "w"))
+        for item in paths:
+            rel = os.path.relpath(item, proj) if os.path.isabs(item) else item
+            if rel not in writes and len(writes) < 500:  # cap — 상태 파일 폭주 방지
+                writes.append(rel)
+        json.dump(writes, open(f, "w"))
     except Exception:
         pass  # 관측용 훅 — 어떤 오류든 세션을 방해하지 않는다
     sys.exit(0)

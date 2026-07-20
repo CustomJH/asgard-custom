@@ -111,7 +111,7 @@ def _prune_stale_skill_adapters(
         body = show_skill(root, name)
         if not body:
             continue
-        generated = {direct_skill(body)} | {
+        generated = {direct_skill(body), direct_skill(body, implicit=False)} | {
             routed_skill(body, agent)
             for agent in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir")
         }
@@ -128,7 +128,7 @@ def _prune_stale_skill_adapters(
             if not dry_run:
                 os.unlink(path)
                 metadata = os.path.join(os.path.dirname(path), "agents", "openai.yaml")
-                expected = openai_skill_metadata(direct_skill(body))
+                expected = openai_skill_metadata(direct_skill(body, implicit=False))
                 try:
                     if expected and open(metadata, encoding="utf-8").read() == expected:
                         os.unlink(metadata)

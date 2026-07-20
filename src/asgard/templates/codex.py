@@ -1,8 +1,9 @@
-"""Codex templates: project config.toml (commented overrides + an active PreToolUse git-guard hook,
-Python — Codex shares Claude Code's stdin schema) and native command rules (Starlark, node/python-free
-defense-in-depth)."""
+"""Codex project config, custom-agent adapters, and native command rules."""
+
+import json
 
 from ..platform import hook_python
+from .roles import role_document
 
 _CODEX_CONFIG = """\
 # Codex project config — overrides ~/.codex/config.toml, loaded only in trusted projects.
@@ -16,6 +17,10 @@ _CODEX_CONFIG = """\
 # [mcp_servers.example]
 # command = "npx"
 # args = ["-y", "@some/mcp-server"]
+
+# Asgard lead roles may create one child squad; their children cannot delegate again.
+[agents]
+max_depth = 2
 
 # Canon enforcement — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
 # the guard is the same git-guard.py. Trust once via the /hooks CLI (or --dangerously-bypass-hook-trust).
@@ -38,6 +43,41 @@ matcher = ".*"
 [[hooks.PostToolUse.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/failure-tracker.py"'
+
+[[hooks.PostToolUse]]
+matcher = "^(apply_patch|Write|Edit)$"
+
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/write-sentinel.py" codex'
+
+# Trinity role receipts and completion gate. Codex exposes custom agents as Agent tool calls.
+[[hooks.PreToolUse]]
+matcher = "^Agent$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py" codex'
+
+[[hooks.SubagentStart]]
+matcher = "^asgard-(thinker|worker|verifier)$"
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py" codex'
+
+[[hooks.SubagentStop]]
+matcher = "^asgard-(thinker|worker|verifier)$"
+
+[[hooks.SubagentStop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py" codex'
+
+[[hooks.Stop]]
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/verifier-gate.py" codex'
 """
 
 _CODEX_RULES = """\
@@ -56,6 +96,22 @@ prefix_rule(pattern=["git", "rebase"], decision="prompt", justification="Asgard 
 def codex_config() -> str:
     # 인터프리터만 플랫폼 분기 — $(git rev-parse) 명령치환은 Codex 훅 셸 계약을 따른다.
     return _CODEX_CONFIG.format(py=hook_python())
+
+
+def codex_agent(content: str) -> str:
+    """Adapt one canonical role file to Codex's standalone custom-agent TOML."""
+    metadata, body = role_document(content)
+    lines = [
+        f"name = {json.dumps(str(metadata['name']), ensure_ascii=False)}",
+        f"description = {json.dumps(str(metadata['description']), ensure_ascii=False)}",
+    ]
+    if "Write" not in str(metadata.get("tools") or ""):
+        lines.append('sandbox_mode = "read-only"')
+    if "'''" in body:
+        lines.append("developer_instructions = " + json.dumps(body, ensure_ascii=False))
+    else:
+        lines.append("developer_instructions = '''\n" + body.rstrip() + "\n'''")
+    return "\n".join(lines) + "\n"
 
 
 def codex_rules() -> str:

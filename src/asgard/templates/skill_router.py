@@ -31,12 +31,12 @@ wrapper's name, and do not resolve the same phase again through another client-n
 """
 
 
-def direct_skill(skill_md: str) -> str:
-    """Explicit commands keep their native trigger, while their body remains Asgard-owned."""
+def direct_skill(skill_md: str, *, implicit: bool = True) -> str:
+    """Keep canonical bodies in Asgard; optionally reserve the adapter for explicit invocation."""
     name = _field(skill_md, "name")
     description = _field(skill_md, "description")
     allowed = _field(skill_md, "allowed-tools")
-    explicit = _field(skill_md, "disable-model-invocation").lower() in ("true", "yes", "1", "on")
+    explicit = not implicit or _field(skill_md, "disable-model-invocation").lower() in ("true", "yes", "1", "on")
     explicit_line = "disable-model-invocation: true\n" if explicit else ""
     tools = " ".join(part for part in (allowed, "Bash(asgard skills *)") if part)
     return f"""---
@@ -68,21 +68,47 @@ def openai_skill_metadata(skill_md: str) -> str | None:
     )
 
 
-ROUTER_SKILL_MD = """\
+def _router_skill(*, explicit: bool) -> str:
+    explicit_line = "disable-model-invocation: true\n" if explicit else ""
+    return f"""\
 ---
 name: asgard-skills
-description: Asgard 중앙 스킬·플러그인 목록, 할당, 활성화 상태를 조회하거나 관리할 때 사용.
-disable-model-invocation: true
-allowed-tools: Bash(asgard skills *)
+description: Before ordinary Codex or Cursor work, select and load the matching Asgard skill or plugin policy; also manage the central catalog.
+{explicit_line}allowed-tools: Bash(asgard skills *)
 ---
 
-# asgard-skills — central catalog
+# asgard-skills — central router
 
-This is the management surface, not a mandatory task router. Inspect the catalog with:
+For ordinary Codex or Cursor work, use this router once before task-specific decisions. Pass only
+one of these exact lowercase CLI roles. `MAIN_WORKER` and agent names are not valid role values;
+classify their task instead:
+
+- `freyja` — UI, design, UX, motion, browser, 3D, or video
+- `thor` — backend, data, API, security, or runtime infrastructure
+- `eitri` — build, CI, packaging, or release
+- `mimir` — code explanation, walkthrough, or onboarding
+- `worker` — debugging, testing, and everything else
+
+Then run:
+
+    asgard skills resolve --agent <role> "<current task>"
+
+Run the installed `asgard` executable directly from `PATH`. Do not prefix the command with
+`python`, and do not resolve `asgard` relative to this skill directory.
+
+Apply only the returned policies. Empty output means no extra policy. Do not also auto-select an
+individual `.agents/skills` adapter; those remain available as explicit `/name` or `$name`
+overrides.
+
+For catalog management, use:
 
     asgard skills
     asgard plugins
-
-For ordinary work, let the runtime choose a specific skill from its name and description. The
-selected skill adapter loads its canonical body with `asgard skills show <name>`.
 """
+
+
+# Claude Code already selects the right project skill reliably; keep its manager user-invoked.
+ROUTER_SKILL_MD = _router_skill(explicit=True)
+
+# Codex and Cursor share .agents/skills and route through one implicit manager.
+MANAGED_ROUTER_SKILL_MD = _router_skill(explicit=False)
