@@ -719,6 +719,15 @@ description: 프레이야 웹 모션 심화 — 호버·전환·스크롤 내러
 - **엔진 혼용 금지** — 스크롤 오케스트레이션 라이브러리와 컴포넌트 모션 라이브러리를 같은 트리에서 섞지 않는다: 같은 프레임을 두고 싸운다. 단순 진입 리빌은 경량 경로(뷰포트 진입 트리거, once + amount 0.3, 지연 i×60ms), 대형 라이브러리는 핀·스크럽 작업 전용.
 - **연속값은 컴포넌트 상태로 추적 금지** — 마우스 위치·스크롤 진행률·마그네틱 호버를 상태 갱신(리렌더)으로 구동하면 모바일에서 무너진다. 모션 전용 값 채널(motion value·transform 구독)로만.
 
+## 웹 모션 스킬 연계
+
+이 스킬이 의도·안무·품질 기준을 잡고, 구현 도메인과 정확히 맞는 스킬만 추가 로드한다. 전부 선주입하지 않는다.
+
+- React 상태·제스처·레이아웃 모션은 프로젝트에 `motion`이 있거나 CSS로 부족할 때 `micro-interaction`을 로드하고 현행 `motion/react` API를 공식 Motion.dev 문서에서 확인한다.
+- `.lottie`/Bodymovin 자산·재생 제어·스크롤 동기화는 `lottie-animation`, SVG 경로는 `svg-animation`, 핀·스크럽은 `gsap-web`, 라우트 전환은 `page-transition-animation`을 고른다. 성능·접근성 문제는 각각 `60fps-animation`, `accessible-animation`을 보조로 붙인다.
+- 흔한 React 인터랙션·섹션은 새로 짜기 전에 `21st-cli-use`로 21st.dev 전체 카탈로그를, 무료 Aceternity 후보는 `aceternity-ui`로 조회한다. 기존 프로젝트 컴포넌트가 없고 의존성 비용까지 이득일 때만 채택한다.
+- 선택한 구현 스킬도 이 본문의 엔진 혼용 금지·빈도 게이트·검증 계약과 `asgard-freyja-restraint`를 우선한다.
+
 ## 스크롤 내러티브 캐논 (핀·스크럽 작업의 알려진 함정)
 
 - **핀 시작점**: `start: "top top"` — `"top center"` 류는 스크롤 중간에 발화해 반쯤 지나간 장면을 보여주는 대표 실패.
@@ -767,6 +776,15 @@ description: 프레이야 영상 심화 — 산출물이 영상 파일(mp4/webm)
 - **그 외 스택**: 빌드 스텝 없는 HTML 기반 프레임 렌더러(Apache-2.0 계열)가 있다 — 프레임워크 불문이 요건이면 이쪽.
 - 패키지 버전은 **정확 핀**(캐럿 금지) — 렌더러 계열 패키지 간 버전 불일치가 대표 실패 모드.
 - API 는 기억이 아니라 공식 스킬·기계 판독 문서(llms.txt)로 확인한다 (Canon 12).
+
+## Remotion + iart 목적별 연계
+
+이 스킬을 Remotion 결정론·렌더·검증 기반으로 유지하고, 산출물 유형과 정확히 맞는 iart 스킬 하나를 주 스킬로 추가 로드한다.
+
+- 서사형 제품·교육 설명은 `explainer-video`; 다이어그램·화이트보드·아이소메트릭은 각각 `diagram-animation`, `whiteboard-animation`, `isometric-animation`.
+- 데이터 중심 영상은 `chart-animation`, `animated-infographic`, `presentation-video`, 개인화 결산은 `wrapped-video` 중 하나를 고른다.
+- 텍스트가 주연인 타이틀·가사·캡션 영상은 `kinetic-typography`를 고른다.
+- 공식 Remotion 문서의 현재 API와 라이선스를 먼저 확인한다. iart는 장르별 구성법을 보강할 뿐 프레임 결정론·대표 스틸 검사·최종 MP4 재생 게이트를 대체하지 않는다.
 
 ## 워크플로
 
@@ -1390,9 +1408,30 @@ _SKILL_TRIGGERS: dict[str, tuple[str, ...]] = {
         "hover",
         "scroll",
         "parallax",
+        "lottie",
+        "dotlottie",
+        "로티",
     ),
     # 결정론적 프레임 렌더 전용. 촬영 영상 편집·광고 영상은 별도 미디어 표면이다.
-    "asgard-freyja-video": ("remotion", "프레임 렌더", "frame render", "프로그래매틱 영상", "programmatic video"),
+    "asgard-freyja-video": (
+        "remotion",
+        "프레임 렌더",
+        "frame render",
+        "프로그래매틱 영상",
+        "programmatic video",
+        "설명 영상",
+        "explainer video",
+        "데이터 영상",
+        "data video",
+        "인포그래픽 영상",
+        "infographic video",
+        "프레젠테이션 영상",
+        "presentation video",
+        "키네틱 타이포그래피 영상",
+        "kinetic typography video",
+        "wrapped video",
+        "연말 결산 영상",
+    ),
     # "three" 단독 금지 — "three files" 류 일반 문장 오탐 (26-07-15 리뷰 실측)
     "asgard-freyja-folkvangr": (
         "3d",

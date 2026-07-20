@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "iart-explainer-video-skills",
+  "version": "0.1.0",
+  "description": "iart.ai explainer, diagram, isometric, whiteboard, and recap video workflows for Freyja",
+  "skills": [
+    "diagram-animation",
+    "explainer-video",
+    "isometric-animation",
+    "whiteboard-animation",
+    "wrapped-video"
+  ],
+  "routing": {
+    "diagram-animation": {
+      "triggers": ["animate diagram", "diagram animation", "animated flowchart", "sequence diagram", "architecture diagram", "data flow animation", "다이어그램 애니메이션", "흐름도 애니메이션", "시퀀스 다이어그램"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "explainer-video": {
+      "triggers": ["explainer video", "how it works video", "onboarding video", "narrated explainer", "product explainer", "설명 영상", "제품 설명 영상", "온보딩 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "isometric-animation": {
+      "triggers": ["isometric animation", "2.5d animation", "isometric infographic", "exploded diagram", "아이소메트릭 애니메이션", "등각 애니메이션", "분해도 애니메이션"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "whiteboard-animation": {
+      "triggers": ["whiteboard animation", "draw-on explainer", "scribe video", "doodle animation", "hand drawn explainer", "화이트보드 애니메이션", "드로온 설명 영상", "손그림 설명 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "wrapped-video": {
+      "triggers": ["wrapped video", "year in review video", "recap video", "personalized data video", "yearly recap", "연말 결산 영상", "리캡 영상", "개인화 데이터 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/explainer-video-skills",
+  "revision": "3e2d411b725d9a72939cf8e5eb81579e751373e7",
+  "license": "MIT"
+}

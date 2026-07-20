@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "iart-kinetic-typography-skills",
+  "version": "0.1.0",
+  "description": "iart.ai kinetic typography workflow for web and Remotion video",
+  "skills": [
+    "kinetic-typography"
+  ],
+  "routing": {
+    "kinetic-typography": {
+      "triggers": ["kinetic typography", "animate headline", "animated title card", "split text reveal", "lyric video", "키네틱 타이포그래피", "헤드라인 애니메이션", "타이틀 애니메이션", "가사 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/kinetic-typography-skills",
+  "revision": "fccc94bd325d824235ee9e715e65abde57b6513a",
+  "license": "MIT"
+}

@@ -1,0 +1,58 @@
+{
+  "schema": 1,
+  "name": "iart-web-animation-skills",
+  "version": "0.1.0",
+  "description": "iart.ai GSAP, SVG, Lottie, Motion, accessibility, and web animation workflows for Freyja",
+  "skills": [
+    "60fps-animation",
+    "accessible-animation",
+    "ascii-animation",
+    "glassmorphism",
+    "gsap-web",
+    "lottie-animation",
+    "micro-interaction",
+    "page-transition-animation",
+    "svg-animation"
+  ],
+  "routing": {
+    "60fps-animation": {
+      "triggers": ["60fps animation", "120fps animation", "janky animation", "layout thrashing", "choppy animation", "끊기는 애니메이션", "버벅이는 모션"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "accessible-animation": {
+      "triggers": ["prefers-reduced-motion", "reduced motion", "accessible animation", "motion sickness", "모션 접근성", "동작 줄이기", "멀미 방지 애니메이션"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "ascii-animation": {
+      "triggers": ["ascii animation", "ascii art animation", "terminal animation", "ascii shader", "아스키 애니메이션", "터미널 애니메이션"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "glassmorphism": {
+      "triggers": ["glassmorphism", "frosted glass", "liquid glass", "glass ui", "글래스모피즘", "프로스트 글래스", "리퀴드 글래스"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "gsap-web": {
+      "triggers": ["gsap", "scrolltrigger", "lenis", "pinned scroll", "scroll scrub", "스크롤 트리거", "핀 스크롤", "스크롤 스크럽"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "lottie-animation": {
+      "triggers": ["lottie", "dotlottie", "bodymovin", "lottie playback", "lottie scroll", "로티 애니메이션", "닷로티"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "micro-interaction": {
+      "triggers": ["micro interaction", "hover effect", "press effect", "animated toggle", "toast animation", "drawer animation", "ui feedback", "마이크로인터랙션", "호버 효과", "토글 애니메이션", "ui 피드백"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "page-transition-animation": {
+      "triggers": ["page transition", "route transition", "view transitions api", "animatepresence exit", "페이지 전환 애니메이션", "라우트 전환"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "svg-animation": {
+      "triggers": ["svg animation", "stroke draw", "path morph", "motion path", "animated svg icon", "svg 애니메이션", "패스 모핑", "선 그리기 애니메이션"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/web-animation-skills",
+  "revision": "b6dba3eb759726845a44163ff0bad70dd9e7fbb6",
+  "license": "MIT"
+}

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "name": "21st-dev",
+  "version": "1.0.0",
+  "description": "Search, inspect, and install 21st.dev React components through the official CLI",
+  "skills": [
+    "21st-cli-use"
+  ],
+  "routing": {
+    "21st-cli-use": {
+      "triggers": [
+        "21st.dev",
+        "21st dev",
+        "21st component",
+        "21st ui",
+        "21st ai",
+        "21st 컴포넌트",
+        "ui component search",
+        "find ui component",
+        "컴포넌트 검색"
+      ],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "entrypoints": {
+    "21st-cli-use": "scripts/21st.py"
+  },
+  "source": "https://docs.21st.dev/mcp"
+}

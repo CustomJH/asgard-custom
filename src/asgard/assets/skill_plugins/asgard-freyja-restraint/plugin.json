@@ -1,0 +1,37 @@
+{
+  "schema": 1,
+  "name": "asgard-freyja-restraint",
+  "version": "1.0.0",
+  "description": "Visual restraint and anti-cliche UI guidance bundled for Freyja",
+  "skills": [
+    "asgard-freyja-restraint"
+  ],
+  "routing": {
+    "asgard-freyja-restraint": {
+      "triggers": [
+        "ui design",
+        "interface design",
+        "frontend design",
+        "website",
+        "landing page",
+        "dashboard",
+        "redesign",
+        "ui polish",
+        "visual review",
+        "ui 디자인",
+        "인터페이스 디자인",
+        "프론트엔드 디자인",
+        "웹사이트",
+        "랜딩 페이지",
+        "대시보드",
+        "리디자인",
+        "ui 폴리시",
+        "시각 리뷰"
+      ],
+      "agents": [
+        "freyja",
+        "freyja-lead"
+      ]
+    }
+  }
+}
