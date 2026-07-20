@@ -564,12 +564,14 @@ def slash(cmd: str, root: str, rp) -> bool:
     if c in ("/exit", "/quit"):
         raise EOFError
     if c == "/skills":
+        from ..commands.skills import render_skills
         from ..skill_registry import invocable_skills
 
         rows = [row for row in invocable_skills(root) if row["invocation"] == "user"]
-        for row in rows:
-            sys.stdout.write(f"  {ui.paint(_O, ('/' + row['name']).ljust(24))} {ui.dim(row['description'])}\n")
-        if not rows:
+        if rows:
+            rows = [{**row, "name": "/" + row["name"]} for row in rows]
+            render_skills(rows, "User skills")
+        else:
             sys.stdout.write(f"  {ui.dim('no user-invoked skills')}\n")
     elif c == "/help":
         sys.stdout.write("\n")

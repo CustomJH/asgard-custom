@@ -41,13 +41,77 @@ class RegistryTest(unittest.TestCase):
         from typer.testing import CliRunner
 
         from asgard.cli import app
+        from asgard.commands import skills as command
 
-        skills_result = CliRunner().invoke(app, ["skills"])
-        plugins_result = CliRunner().invoke(app, ["plugins"])
+        with mock.patch.object(command.ui, "term_cols", return_value=140):
+            skills_result = CliRunner().invoke(app, ["skills"])
+            plugins_result = CliRunner().invoke(app, ["plugins"])
+            json_result = CliRunner().invoke(app, ["plugins", "list", "--json"])
         self.assertEqual(skills_result.exit_code, 0)
+        self.assertIn("╭─ Skills ·", skills_result.stdout)
         self.assertIn("design-md-review", skills_result.stdout)
         self.assertEqual(plugins_result.exit_code, 0)
+        self.assertIn("╭─ Plugins ·", plugins_result.stdout)
+        self.assertIn("╰", plugins_result.stdout)
         self.assertIn("google-design-md", plugins_result.stdout)
+        self.assertEqual(json.loads(json_result.stdout), skill_registry.plugins())
+
+    def test_catalog_renderer_is_readable_without_changing_json(self):
+        from asgard.commands import skills as command
+
+        skill_rows = [
+            {
+                "name": "narrow-check",
+                "plugin": "visual-tools",
+                "origin": "project",
+                "invocation": "user",
+                "description": "좁은 터미널에서도 설명을 생략하지 않는다.",
+            }
+        ]
+        plugin_rows = [
+            {"name": "empty", "version": "bundled", "origin": "bundled", "skills": [], "description": "none"},
+            {"name": "one", "version": "1", "origin": "installed", "skills": ["a"], "description": "single"},
+            {
+                "name": "many",
+                "version": "2",
+                "origin": "installed",
+                "skills": ["a", "b"],
+                "description": "multiple",
+            },
+        ]
+        with (
+            mock.patch.object(command.ui, "_COLOR", False),
+            mock.patch.object(command.ui, "term_cols", return_value=80),
+            mock.patch.object(command, "skills", return_value=skill_rows),
+        ):
+            from typer.testing import CliRunner
+
+            from asgard.cli import app
+
+            plain = CliRunner().invoke(app, ["skills", "list"])
+            json_result = CliRunner().invoke(app, ["skills", "list", "--json"])
+        self.assertEqual(plain.exit_code, 0)
+        self.assertIn("Skills · 1", plain.stdout)
+        self.assertNotIn("\x1b[", plain.stdout)
+        self.assertIn("narrow-check", plain.stdout)
+        self.assertIn("visual-tools", plain.stdout)
+        self.assertIn("project · user", plain.stdout)
+        self.assertIn("좁은터미널에서도설명을생략하지않는다.", "".join(plain.stdout.split()))
+        self.assertEqual(json.loads(json_result.stdout), skill_rows)
+
+        with (
+            mock.patch.object(command.ui, "_COLOR", False),
+            mock.patch.object(command.ui, "term_cols", return_value=100),
+            mock.patch.object(command, "plugins", return_value=plugin_rows),
+        ):
+            wide = CliRunner().invoke(app, ["plugins", "list"])
+        self.assertEqual(wide.exit_code, 0)
+        self.assertIn("Plugins · 3", wide.stdout)
+        self.assertIn("╭", wide.stdout)
+        self.assertIn("╰", wide.stdout)
+        self.assertIn("0 skills", wide.stdout)
+        self.assertIn("1 skill", wide.stdout)
+        self.assertIn("2 skills", wide.stdout)
 
     def test_bundled_uiux_resource_is_freyja_assigned_and_runnable(self):
         catalog = {row["name"]: row for row in skill_registry.skills(self.root)}

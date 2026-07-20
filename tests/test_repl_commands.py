@@ -31,6 +31,8 @@ def test_skills_command_lists_only_explicit_workflows(monkeypatch, capsys, tmp_p
     repl.slash("/skills", str(tmp_path), None)
 
     out = capsys.readouterr().out
+    assert "User skills" in out
+    assert "╭─" in out and "╰" in out
     assert "/grill-me" in out
     assert "/to-spec" in out
     assert "/domain-modeling" not in out
