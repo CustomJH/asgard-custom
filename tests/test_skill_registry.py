@@ -195,6 +195,26 @@ class RegistryTest(unittest.TestCase):
         envelope = skill_registry.show_skill_resource(self.root, name, "API-DESIGN.md")
         self.assertIn("resultCode", envelope)
 
+    def test_official_scrapling_skill_is_bundled_and_assigned(self):
+        name = "scrapling-official"
+        plugin = skill_registry.bundled_plugins()[name]
+        self.assertEqual(plugin["version"], "0.4.11")
+        self.assertEqual(plugin["revision"], "07a548362ff904a2837f503ed9d9f6b9dcef0195")
+        self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+        for agent in ("thor", "thor-lead", "freyja"):
+            self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+        skill_registry.assign_skill(self.root, name, "thor", assigned=True)
+        self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "thor")})
+        self.assertIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "웹 스크래핑 크롤러 작성", "worker")},
+        )
+        body = skill_registry.load_skill_for_agent(self.root, "thor", name)
+        self.assertIn("--ai-targeted", body)
+        self.assertIn("Respect robots.txt and ToS", body)
+        reference = skill_registry.show_skill_resource(self.root, name, "references/fetching/choosing.md")
+        self.assertIn("Fetchers Overview", reference)
+
     def test_bundled_design_md_python_linter(self):
         plugin = skill_registry.bundled_plugins()["google-design-md"]
         script = Path(plugin["root"], "skills", "design-md-review", "scripts", "design_md.py")

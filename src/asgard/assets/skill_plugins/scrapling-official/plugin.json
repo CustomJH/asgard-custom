@@ -1,0 +1,35 @@
+{
+  "schema": 1,
+  "name": "scrapling-official",
+  "version": "0.4.11",
+  "description": "Official Scrapling skill for adaptive web scraping, JavaScript rendering, anti-bot handling, and spiders",
+  "skills": ["scrapling-official"],
+  "routing": {
+    "scrapling-official": {
+      "triggers": [
+        "scrapling",
+        "web scraping",
+        "scrape website",
+        "website crawl",
+        "web crawler",
+        "write spider",
+        "adaptive scraping",
+        "anti-bot",
+        "cloudflare turnstile",
+        "robots.txt",
+        "웹 스크래핑",
+        "웹 크롤링",
+        "사이트 크롤링",
+        "웹 데이터 추출",
+        "크롤러",
+        "스파이더",
+        "안티봇"
+      ],
+      "defaults": ["worker"],
+      "agents": ["worker", "thor", "thor-lead"]
+    }
+  },
+  "source": "https://github.com/D4Vinci/Scrapling/tree/main/agent-skill/Scrapling-Skill",
+  "revision": "07a548362ff904a2837f503ed9d9f6b9dcef0195",
+  "license": "BSD-3-Clause"
+}
