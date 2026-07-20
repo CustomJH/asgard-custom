@@ -56,6 +56,11 @@ During a turn, the status area shows the active role and concurrent child count.
 Thinker, Worker, Verifier, and delivery sessions; Ctrl-C cooperatively cancels the active child tree, and
 `/sessions stop` exposes the same cancellation boundary as a command.
 
+For two-model planning, assign a distinct `thinker_alt` with `/trinity set`, then run
+`/trinity dual on`. Both read-only Thinkers plan independently in parallel; one Worker synthesizes
+their plans, and the normal Verifier gate remains unchanged. Use `/trinity dual default on` to make
+it the project default for future `asgard start` sessions. Headless runs use `asgard run --dual`.
+
 ## Tool Kernel
 
 Asgard resolves tools from one role-scoped capability policy for both the native

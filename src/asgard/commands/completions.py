@@ -42,7 +42,7 @@ _FLAGS = {
     "sync": ["--dry-run", "--list", "--quiet"],
     "uninstall": ["--yes", "--dry-run", "--quiet"],
     "completions": ["--install"],
-    "run": ["--provider", "--model", "--json", "--resume", "--quest"],
+    "run": ["--provider", "--model", "--json", "--resume", "--quest", "--dual"],
     "role": [],
     "tools": [],
     "skills": [],

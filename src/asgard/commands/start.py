@@ -172,6 +172,7 @@ def run_prompt(
     json_out: bool = False,
     resume: bool = False,
     quest_id: str | None = None,
+    dual: bool = False,
 ) -> int:
     """headless 단발 실행 — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
 
@@ -199,6 +200,7 @@ def run_prompt(
         sink.write(s)
 
     h = Heimdall(rp, root, on_text=stream, on_status=None)
+    h.dual_mode = dual
     t0 = _time.time()
     if resume:
         result = h.resume(quest_id)

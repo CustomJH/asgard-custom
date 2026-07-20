@@ -213,6 +213,45 @@ class TestTrinityLoop(Base):
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
 
+    def test_dual_mode_runs_two_readonly_thinkers_then_one_worker(self):
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "config.toml"), "w").write(
+            '[trinity.thinker_alt]\nprovider = "ollama"\nmodel = "alt-m"\n'
+        )
+        h = FakeHeimdall(
+            self.root,
+            [
+                thinker("계획 A: 호출자를 먼저 찾는다"),
+                thinker("계획 B: 회귀 테스트를 먼저 쓴다"),
+                worker({"w1.txt": "x\n"}, self.root),
+                verifier("PASS"),
+            ],
+            cls=CLS_WRITE,
+        )
+        h.dual_mode = True
+
+        out = h.handle("w1.txt 만들어")
+
+        self.assertIn("과업 완수", out)
+        planners = h.consumed[:2]
+        self.assertEqual({s.role for s in planners}, {"thinker", "thinker_alt"})
+        self.assertTrue(all(s.readonly for s in planners))
+        worker_session = h.consumed[2]
+        self.assertEqual(worker_session.role, "worker")
+        self.assertIn("계획 A", worker_session.prompt)
+        self.assertIn("계획 B", worker_session.prompt)
+        self.assertIn("하나의 최소 구현으로 합성", worker_session.prompt)
+
+    def test_dual_mode_rejects_same_model_before_opening_quest(self):
+        h = FakeHeimdall(self.root, [], cls=CLS_WRITE)
+        h.dual_mode = True
+
+        out = h.handle("w1.txt 만들어")
+
+        self.assertIn("서로 다른 Thinker 모델", out)
+        self.assertEqual(h.consumed, [])
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
+
     def test_close_rejection_cannot_be_reported_as_verified_completion(self):
         import subprocess
 

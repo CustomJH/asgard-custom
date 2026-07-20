@@ -796,10 +796,13 @@ def run(
     json_: bool = typer.Option(False, "--json", help="stream to stderr, print a final JSON summary to stdout"),
     resume: bool = typer.Option(False, "--resume", help="resume the active durable native Quest"),
     quest: str = typer.Option(None, "--quest", help="specific Quest id to resume"),
+    dual: bool = typer.Option(False, "--dual", help="plan writes with thinker + thinker_alt in parallel"),
 ) -> None:
     from .commands.start import run_prompt
 
-    raise typer.Exit(run_prompt(prompt, provider=provider, model=model, json_out=json_, resume=resume, quest_id=quest))
+    raise typer.Exit(
+        run_prompt(prompt, provider=provider, model=model, json_out=json_, resume=resume, quest_id=quest, dual=dual)
+    )
 
 
 if __name__ == "__main__":

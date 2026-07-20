@@ -117,6 +117,7 @@ class Heimdall:
         self._memory_session_id = f"native-{uuid.uuid4().hex}"
         self._memory_turn_seq = 0
         self._last_completion: dict | None = None
+        self.dual_mode = False  # 세션 한정 — /trinity dual on 또는 headless --dual
         self._explore_cmds = 0  # 직전 DIRECT 턴의 탐색 커맨드 수 — 증류 넛지 문턱 판정용
         self._sleep: Callable[[float], None] = time.sleep  # 재시도 백오프 — 테스트 주입점
         # 협력자 — 딜리버리 위임·편대(dispatch), 배정 단위 wave 실행(waves)
@@ -260,6 +261,15 @@ class Heimdall:
         if bump:
             tier = _TIER_UP.get(tier, tier)
         return _TIER_MODELS.get(tier)
+
+    def dual_thinker_labels(self) -> tuple[str, str]:
+        """Dual mode의 실제 provider:model 쌍 — 동일 모델 오설정을 진입 전에 차단한다."""
+
+        def label(role: str) -> str:
+            rp = self.role_rp.get(role, self.rp)
+            return f"{rp.profile.name}:{self._model_for(role) or rp.model}"
+
+        return label("thinker"), label("thinker_alt")
 
     def _delivery_model(self, agent: str) -> str | None:
         """딜리버리 전문가 모델 — 정책 "delivery" 티어 (기본: freyja/thor/eitri=sonnet, loki=haiku)."""
@@ -509,6 +519,7 @@ class Heimdall:
             self,
             request,
             cls,
+            dual=self.dual_mode,
             pre_work=pre_work,
             standard=standard,
             pre_base_ref=pre_base_ref,

@@ -47,6 +47,70 @@ def test_sessions_command_observes_and_stops_child_tree(monkeypatch, capsys) -> 
     assert hd.stopped
 
 
+def test_trinity_dual_mode_is_session_scoped(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(ui, "_COLOR", False)
+
+    class Heimdall:
+        dual_mode = False
+
+        @staticmethod
+        def dual_thinker_labels():
+            return "anthropic:architect", "openai:architect"
+
+    hd = Heimdall()
+    monkeypatch.setitem(repl._PT_CTX, "heimdall", hd)
+
+    repl.slash("/trinity dual on", ".", None)
+    assert hd.dual_mode
+    repl.slash("/trinity dual off", ".", None)
+    assert not hd.dual_mode
+    assert "dual thinker" in capsys.readouterr().out
+
+
+def test_trinity_dual_mode_rejects_same_model(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(ui, "_COLOR", False)
+
+    class Heimdall:
+        dual_mode = False
+
+        @staticmethod
+        def dual_thinker_labels():
+            return "anthropic:same", "anthropic:same"
+
+    hd = Heimdall()
+    monkeypatch.setitem(repl._PT_CTX, "heimdall", hd)
+
+    repl.slash("/trinity dual on", ".", None)
+
+    assert not hd.dual_mode
+    assert "thinker_alt" in capsys.readouterr().out
+
+
+def test_trinity_dual_default_is_loaded_by_new_start_session(monkeypatch, tmp_path) -> None:
+    class CurrentHeimdall:
+        dual_mode = False
+
+        @staticmethod
+        def dual_thinker_labels():
+            return "anthropic:architect", "openai:architect"
+
+    current = CurrentHeimdall()
+    monkeypatch.setitem(repl._PT_CTX, "heimdall", current)
+    repl.slash("/trinity dual default on", str(tmp_path), None)
+
+    from asgard.agent import heimdall as heimdall_module
+
+    class FreshHeimdall:
+        def __init__(self, *args, **kwargs):
+            self.dual_mode = False
+
+    monkeypatch.setattr(heimdall_module, "Heimdall", FreshHeimdall)
+    fresh = repl._new_heimdall(str(tmp_path), object(), lambda _: None)
+
+    assert current.dual_mode is True
+    assert fresh.dual_mode is True
+
+
 def test_skills_command_lists_only_explicit_workflows(monkeypatch, capsys, tmp_path) -> None:
     monkeypatch.setattr(ui, "_COLOR", False)
 

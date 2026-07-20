@@ -729,7 +729,11 @@ class TestRunPrompt(unittest.TestCase):
 
             model = "claude-x"
 
-        calls = []
+        class Calls(list):
+            dual_states: list[bool]
+
+        calls = Calls()
+        calls.dual_states = []
 
         class FakeHeimdall:
             def __init__(self, rp, root, on_text, on_status=None):
@@ -741,6 +745,7 @@ class TestRunPrompt(unittest.TestCase):
 
             def handle(self, prompt):
                 calls.append(("handle", prompt))
+                calls.dual_states.append(bool(getattr(self, "dual_mode", False)))
                 return result_text
 
             def resume(self, quest_id=None):
@@ -765,6 +770,12 @@ class TestRunPrompt(unittest.TestCase):
     def test_warning_result_exits_one(self):
         self._patch(result_text="⚠ Odin 결정 필요 — 게이트 차단")
         self.assertEqual(self.S.run_prompt("작업해줘", json_out=True), 1)
+
+    def test_dual_flag_reaches_headless_heimdall(self):
+        calls = self._patch()
+
+        self.assertEqual(self.S.run_prompt("작업해줘", json_out=True, dual=True), 0)
+        self.assertEqual(calls.dual_states, [True])
 
     def test_json_uses_direct_response_not_empty_stream_sentinel(self):
         self._patch(result_text="", last_response="direct answer")

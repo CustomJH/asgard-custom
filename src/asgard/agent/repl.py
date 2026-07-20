@@ -245,6 +245,12 @@ _COMMAND_HELP = {
     "/provider set": "h_provider",
     "/trinity": "h_trinity",
     "/trinity set": "h_trinity",
+    "/trinity dual": "h_trinity",
+    "/trinity dual on": "h_trinity",
+    "/trinity dual off": "h_trinity",
+    "/trinity dual default": "h_trinity",
+    "/trinity dual default on": "h_trinity",
+    "/trinity dual default off": "h_trinity",
     "/bridge": "h_bridge",
     "/lagom": "h_lagom",
     "/lagom off": "h_lagom",
@@ -753,15 +759,43 @@ class _Reconfigure(Exception):
 
 
 def _cmd_trinity(cmd: str, root: str, rp) -> None:
-    """/trinity — 역할별 배치 표시. '/trinity set' — 역할→provider 대화형 배치 (asgard-setting-project.json 저장)."""
+    """/trinity — 역할 배치와 Dual Thinker 세션·프로젝트 모드."""
     from ..providers import PROVIDERS, resolve_trinity, save_config_section
 
-    if cmd.split()[1:2] == ["set"]:
+    args = cmd.split()[1:]
+    if args[:1] == ["dual"]:
+        hd = _PT_CTX.get("heimdall")
+        if hd is None:
+            sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('connect_needed')}\n")
+            return
+        if len(args) == 1:
+            state = "on" if hd.dual_mode else "off"
+            a, b = hd.dual_thinker_labels()
+            sys.stdout.write(f"  {ui.paint(_O, 'dual'.ljust(9))} {state} {ui.dim(f'· {a} ⊕ {b}')}\n")
+            return
+        persistent = args[1:2] == ["default"]
+        mode_arg = args[2] if persistent and len(args) == 3 else (args[1] if len(args) == 2 else "")
+        if mode_arg not in ("on", "off"):
+            sys.stdout.write(f"  {ui.dim(t('trinity_dual_usage'))}\n")
+            return
+        if mode_arg == "on":
+            a, b = hd.dual_thinker_labels()
+            if a == b:
+                sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('trinity_dual_same', model=a)}\n")
+                return
+        hd.dual_mode = mode_arg == "on"
+        if persistent:
+            save_config_section(root, "trinity.mode", {"dual": hd.dual_mode})
+        key = "trinity_dual_persisted" if persistent else "trinity_dual_set"
+        sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {t(key, mode=mode_arg)}\n")
+        return
+
+    if args[:1] == ["set"]:
         from .onboard import can_prompt
 
         if not can_prompt():
             return
-        roles = ("thinker", "worker", "verifier")
+        roles = ("thinker", "thinker_alt", "worker", "verifier")
         sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
         for i, r in enumerate(roles, 1):
             sys.stdout.write(f"    {ui.paint(_O, str(i))} {r}\n")
@@ -805,7 +839,8 @@ def _cmd_trinity(cmd: str, root: str, rp) -> None:
         save_config_section(root, f"trinity.{role}", vals)
         raise _Reconfigure(rp, t("placement_saved"))
 
-    for role, r in resolve_trinity(root, rp).items():
+    roles = ("thinker", "thinker_alt", "worker", "verifier")
+    for role, r in resolve_trinity(root, rp, roles).items():
         if r is rp:
             sys.stdout.write(
                 f"  {ui.paint(_O, role.ljust(9))} {rp.profile.name}:{rp.model} {ui.dim(t('default_tag'))}\n"
@@ -973,9 +1008,12 @@ def slash(cmd: str, root: str, rp) -> bool:
 
 
 def _new_heimdall(root: str, rp, emit, status=None):
+    from ..providers import project_section
     from .heimdall import Heimdall
 
-    return Heimdall(rp, root, on_text=emit, on_status=status)
+    hd = Heimdall(rp, root, on_text=emit, on_status=status)
+    hd.dual_mode = project_section(root, "trinity.mode").get("dual") is True
+    return hd
 
 
 class _Spinner:

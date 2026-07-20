@@ -19,7 +19,13 @@ from ..session import gate, ql
 from .classify import _gate_repair, _gate_sig
 from .journal import _record_writes
 from .planning import _UNITS_NOTE, _parse_units, _plan_waves
-from .roles import _ROLE_KEY, LAGOM_VERIFIER_NOTE, _role_prompt, _skill_support, _transition_line
+from .roles import (
+    _ROLE_KEY,
+    LAGOM_VERIFIER_NOTE,
+    _role_prompt,
+    _skill_support,
+    _transition_line,
+)
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
@@ -34,6 +40,7 @@ class TrinityRun:
         request: str,
         cls: dict,
         *,
+        dual: bool = False,
         pre_work=None,
         standard: bool = False,
         pre_base_ref: str | None = None,
@@ -48,6 +55,7 @@ class TrinityRun:
         if not cls.get("criteria"):
             cls = {**cls, "criteria": [f"요청 본문과 변경 결과가 일치함: {request[:500]}"]}
         self.cls = cls
+        self.dual = dual
         self.pre_work = pre_work
         self.standard = standard
         self.pre_base_ref = pre_base_ref
@@ -70,6 +78,7 @@ class TrinityRun:
         self.saw_red = False  # 이 퀘스트에서 하네스 베이스라인 red 관측 — prior 집계 축
         self.replans = 0  # 재계획 횟수 — 2회+ 는 clean-slate: thinker_alt placement 또는 티어 승급
         self.wave_plan_pending = False  # 새 Thinker 계획의 units는 WORKER_RETRY 전이여도 한 번 실행
+        self.dual_plan_pending = False  # 초기 dual 계획은 단일 Worker가 직접 합성·실행
         self.had_wave_plan = False  # wave FAIL을 범위 없는 단일 Worker로 강등하지 않는 latch
         self.pending: tuple[str, str] | None = None  # 게이트 수리 강제 턴 — next 우회
 
@@ -124,12 +133,24 @@ class TrinityRun:
     # ── 순환 본체 ────────────────────────────────────────────────────────
     def run(self) -> str:
         hd = self._hd
+        dual_active = self.dual and not self.resume_qid and self.pre_work is None
+        if dual_active:
+            a, b = hd.dual_thinker_labels()
+            if a == b:
+                return (
+                    f"⚠ Dual mode는 서로 다른 Thinker 모델이 필요합니다 ({a}). "
+                    "`/trinity set`에서 thinker_alt를 다른 모델로 배치하세요."
+                )
+            if self.cls.get("parallel_requested"):
+                return "⚠ Dual mode와 Worker 병렬 wave의 동시 사용은 아직 지원하지 않습니다."
         if not self.resume_qid:
             rejected = self._open_quest()
             if rejected:
                 return rejected
         if self.pre_work is not None:
             self._record_pre_work()
+        elif dual_active:
+            self._dual_thinker_turn()
         # 턴 예산 = budget_priors[task_class] — T→W→V 최소 순환 아래로는 안 내려간다
         priors = hd.policy.get("budget_priors") or {}
         budget = int((priors.get(self.cls.get("task_class") or "deep") or {}).get("turns", MAX_TRINITY_TURNS))
@@ -224,6 +245,88 @@ class TrinityRun:
         )
 
     # ── 역할 턴 ──────────────────────────────────────────────────────────
+
+    def _run_thinker(
+        self,
+        sess_role: str,
+        model: str | None,
+        prompt: str,
+        *,
+        quiet: bool = False,
+        allow_fallback: bool = True,
+    ):
+        """Thinker 한 손 실행 — 일반 재계획과 Dual 후보가 같은 메모리·fallback 계약을 쓴다."""
+        hd = self._hd
+        rrp = hd.role_rp.get(sess_role, hd.rp)
+        primary_memory_allowed = hd._mem_allowed(rrp.profile.name, rrp.source)
+        fallback_memory_allowed = hd._memory_provider_allowed
+        thinker_recall = ""
+        if primary_memory_allowed or fallback_memory_allowed:
+            from ...memory_context import recall_note as _recall
+
+            thinker_recall = _recall(self.request, start=hd.root)
+        charter = hd._charter_note(hd.root, "thinker")
+
+        def make(rp=None, role=sess_role, selected=model):
+            placed = rp or rrp
+            memory = hd._memory_snap if hd._mem_allowed(placed.profile.name, placed.source) else ""
+            return hd._session(
+                _role_prompt("asgard-thinker.md") + hd.lagom + charter + memory,
+                role=role,
+                model=selected if rp is None else None,
+                readonly=True,
+                quiet=quiet,
+                rp_override=rp,
+            )
+
+        primary_prompt = (
+            prompt + (thinker_recall if primary_memory_allowed else "") + _UNITS_NOTE + self.budget_note
+        )
+        fallback_prompt = (
+            prompt + (thinker_recall if fallback_memory_allowed else "") + _UNITS_NOTE + self.budget_note
+        )
+        fallback = (lambda: make(rp=hd.rp)) if allow_fallback and rrp is not hd.rp else None
+        return hd._run_turn(make, primary_prompt, fallback, fallback_prompt=fallback_prompt)
+
+    def _dual_thinker_turn(self) -> None:
+        """서로 다른 두 read-only Thinker의 독립 계획을 병렬 생성해 Worker 입력으로 묶는다."""
+        from concurrent.futures import ThreadPoolExecutor
+
+        hd = self._hd
+        labels = hd.dual_thinker_labels()
+        hd.on_text(_transition_line("THINKER", f"dual · {labels[0]} ⊕ {labels[1]}"))
+        prompt = (
+            f"과업: {self.request}\n\n"
+            "Dual Thinker의 독립 후보 계획을 작성하라. 다른 Thinker의 계획은 볼 수 없다. "
+            "정확한 경로·숨은 caller·criteria·리스크를 직접 조사하고 하나의 실행 가능한 계획으로 답하라."
+        )
+        specs = (("thinker", hd._model_for("thinker")), ("thinker_alt", hd._model_for("thinker_alt")))
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(self._run_thinker, role, model, prompt, quiet=True, allow_fallback=False)
+                for role, model in specs
+            ]
+            plans = [future.result().text for future in futures]
+
+        def bounded(text: str) -> str:
+            return text[:1800] + (f"\n…(후보 절단 — 원문 {len(text)}자)" if len(text) > 1800 else "")
+
+        self.plan_ctx = (
+            "Dual Thinker 독립 계획이다. 둘을 그대로 이어 붙이지 말고 합의점은 채택하고, "
+            "충돌은 실제 코드와 사용자 criteria를 근거로 판단해 하나의 최소 구현으로 합성하라.\n\n"
+            f"[Thinker A · {labels[0]}]\n{bounded(plans[0])}\n\n"
+            f"[Thinker B · {labels[1]}]\n{bounded(plans[1])}"
+        )
+        self.dual_plan_pending = True
+        ql(
+            hd.root,
+            "append",
+            session=self.sid,
+            stdin=json.dumps(
+                {"role": "thinker", "event": "plan", "criteria": self.cls["criteria"], "model": " ⊕ ".join(labels)}
+            ),
+        )
+
     def _baseline_turn(self) -> str | None:
         """게이트-우선 판정 턴 — LLM 토큰 0, 하네스가 프로젝트 체크로 판정 기록."""
         hd = self._hd
@@ -342,46 +445,7 @@ class TrinityRun:
             )
         else:
             prompt = f"과업: {self.request}"
-        fallback_base_prompt = prompt
-        # 메모리 주입 (Thinker 한정) — 스냅샷(카탈로그)은 시스템에, 요청 기반 회수는
-        # 과업 프롬프트에. 게이트는 이 역할이 실제로 붙는 provider 기준 (배치 승격 포함).
-        primary_memory_allowed = hd._mem_allowed(self.rrp.profile.name, self.rrp.source)
-        fallback_memory_allowed = hd._memory_provider_allowed
-        thinker_mem = hd._memory_snap if primary_memory_allowed else ""
-        thinker_recall = ""
-        if primary_memory_allowed or fallback_memory_allowed:
-            from ...memory_context import recall_note as _recall
-
-            thinker_recall = _recall(self.request, start=hd.root)
-        if primary_memory_allowed:
-            prompt += thinker_recall
-
-        charter_t = hd._charter_note(hd.root, "thinker")  # 계획 앵커 (설계①/협업②)
-
-        def mk(sr=self.sess_role, m=self.model, mem=thinker_mem, ch=charter_t):
-            return hd._session(_role_prompt("asgard-thinker.md") + hd.lagom + ch + mem, role=sr, model=m, readonly=True)
-
-        fb = (
-            (
-                lambda rl=self.sess_role, ch=charter_t: hd._session(
-                    _role_prompt("asgard-thinker.md")
-                    + hd.lagom
-                    + ch
-                    + (hd._memory_snap if hd._memory_provider_allowed else ""),
-                    role=rl,
-                    readonly=True,
-                    rp_override=hd.rp,
-                )
-            )
-            if self.rrp is not hd.rp
-            else None
-        )
-        primary_prompt = prompt + _UNITS_NOTE + self.budget_note
-        fallback_prompt = fallback_base_prompt
-        if fallback_memory_allowed:
-            fallback_prompt += thinker_recall
-        fallback_prompt += _UNITS_NOTE + self.budget_note
-        r = hd._run_turn(mk, primary_prompt, fb, fallback_prompt=fallback_prompt)
+        r = self._run_thinker(self.sess_role, self.model, prompt)
         self.plan_ctx = r.text
         self.wave_plan_pending = True
         # 탐색 캐시 힌트 — 게이트 증거 아님, 컨텍스트 힌트만 ("게이트는 메모리 불신")
@@ -408,7 +472,9 @@ class TrinityRun:
             )
             self.structural = True
             return None
-        units = _parse_units(self.plan_ctx) if self.role == "WORKER" or new_plan else None
+        dual_plan = self.dual_plan_pending
+        self.dual_plan_pending = False
+        units = None if dual_plan else (_parse_units(self.plan_ctx) if self.role == "WORKER" or new_plan else None)
         self.wave_plan_pending = False
         if new_plan and self.cls.get("parallel_requested"):
             waves = _plan_waves(units, hd.root) if units else []

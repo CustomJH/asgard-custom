@@ -171,8 +171,21 @@ _M: dict[str, tuple[str, str]] = {
     "placement_cleared": ("placement cleared — back to the default provider", "배치 해제 — 기본 provider 로 복귀"),
     "default_tag": ("(default)", "(기본)"),
     "trinity_hint": (
-        "'/trinity set' to place a role on another provider",
-        "'/trinity set' 으로 역할을 다른 provider 에 배치",
+        "'/trinity set' places roles · '/trinity dual on|off' toggles two-model planning",
+        "'/trinity set' 역할 배치 · '/trinity dual on|off' 두 모델 계획 전환",
+    ),
+    "trinity_dual_usage": (
+        "usage: /trinity dual [default] on|off",
+        "사용법: /trinity dual [default] on|off",
+    ),
+    "trinity_dual_same": (
+        "dual mode needs a distinct thinker_alt model ({model}) — configure it with '/trinity set'",
+        "dual mode는 다른 thinker_alt 모델이 필요합니다 ({model}) — '/trinity set'으로 배치하세요",
+    ),
+    "trinity_dual_set": ("dual thinker → {mode} (this session)", "dual thinker → {mode} (세션 한정)"),
+    "trinity_dual_persisted": (
+        "dual thinker default → {mode} (this project)",
+        "dual thinker 기본값 → {mode} (이 프로젝트)",
     ),
     "bridge_usage": (
         "usage: /bridge <claude-code|codex|cursor> on|off — lets that tool delegate placed roles via `asgard role`",
