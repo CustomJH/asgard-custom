@@ -48,9 +48,12 @@ class MotionSkillStackTest(unittest.TestCase):
         available = {row["name"] for row in skill_registry.available_skills(self.tmp.name, "freyja")}
         for name in ("chart-animation", "kinetic-typography", "lottie-animation", "aceternity-ui", "21st-cli-use"):
             self.assertIn(name, available)
-        self.assertIn("@lottiefiles/dotlottie-web", skill_registry.show_skill_resource(
-            self.tmp.name, "lottie-animation", "references/integration-and-export.md"
-        ))
+        self.assertIn(
+            "@lottiefiles/dotlottie-web",
+            skill_registry.show_skill_resource(
+                self.tmp.name, "lottie-animation", "references/integration-and-export.md"
+            ),
+        )
 
         from asgard.agent.heimdall import _skill_support
 
@@ -63,10 +66,8 @@ class MotionSkillStackTest(unittest.TestCase):
         plugin = skill_registry.bundled_plugins()["aceternity-ui"]
         script = Path(plugin["root"], "skills", "aceternity-ui", "scripts", "aceternity.py")
         spec = importlib.util.spec_from_file_location("aceternity_skill", script)
-        self.assertIsNotNone(spec)
-        self.assertIsNotNone(spec.loader if spec else None)
+        assert spec is not None and spec.loader is not None
         module = importlib.util.module_from_spec(spec)
-        assert spec and spec.loader
         old_dont_write_bytecode = sys.dont_write_bytecode
         try:
             sys.dont_write_bytecode = True

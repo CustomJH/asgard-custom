@@ -271,8 +271,7 @@ def _public_url(raw: str) -> str:
     except ValueError:
         try:
             addresses = {
-                item[4][0]
-                for item in socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80))
+                item[4][0] for item in socket.getaddrinfo(host, port or (443 if parsed.scheme == "https" else 80))
             }
         except OSError as exc:
             raise ToolError(f"URL 호스트를 확인할 수 없습니다: {exc}") from exc

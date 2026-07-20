@@ -24,7 +24,9 @@ class NativeUtilityToolTests(unittest.TestCase):
         try:
             worker = ToolContext(root=self.root, role="worker")
             thinker = ToolContext(root=self.root, role="thinker", readonly=True)
-            self.assertTrue({"apply_patch", "process", "web_fetch"} <= {spec.name for spec in registry.available_specs(worker)})
+            self.assertTrue(
+                {"apply_patch", "process", "web_fetch"} <= {spec.name for spec in registry.available_specs(worker)}
+            )
             self.assertNotIn("apply_patch", {spec.name for spec in registry.available_specs(thinker)})
             self.assertIn("process", {spec.name for spec in registry.available_specs(thinker)})
         finally:

@@ -281,6 +281,7 @@ def build_session_registry(
                 {"cmd": str(args.get("command") or "")[:200], "exit_code": None, "background": True}
             )
         return ToolResult(content, details={"action": args.get("action"), "process_id": args.get("process_id")})
+
     registry.register(
         ToolSpec(
             "bash",
