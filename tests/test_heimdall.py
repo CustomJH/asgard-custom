@@ -242,6 +242,33 @@ class TestTrinityLoop(Base):
         self.assertIn("계획 B", worker_session.prompt)
         self.assertIn("하나의 최소 구현으로 합성", worker_session.prompt)
 
+    def test_external_research_reenters_thinker_before_implementation(self):
+        research = FakeSession(
+            SessionResult(
+                text="https://example.com/source — observed fact",
+                stop_reason="end_turn",
+                commands=[{"cmd": "web_fetch https://example.com/source", "exit_code": 0}],
+            ),
+            label="worker",
+        )
+        replanner = thinker("조사 결과에 맞춰 w1.txt를 만든다")
+        implementation = worker({"w1.txt": "fact-backed\n"}, self.root)
+        h = FakeHeimdall(
+            self.root,
+            [research, replanner, implementation, verifier("PASS")],
+            cls={**CLS_WRITE, "external_research": True},
+        )
+
+        out = h.handle("외부 자료를 조사해 근거 기반 w1.txt를 만들어")
+
+        self.assertIn("과업 완수", out)
+        self.assertEqual([s.label for s in h.consumed], ["worker", "thinker", "worker", "verifier"])
+        self.assertIn("[ASGARD_RESEARCH]", research.prompt)
+        self.assertIn("scrapling-official", research.system)
+        self.assertNotEqual(research.cwd, self.root)
+        self.assertIn("https://example.com/source — observed fact", replanner.prompt)
+        self.assertIn("미검증 데이터", replanner.prompt)
+
     def test_dual_mode_rejects_same_model_before_opening_quest(self):
         h = FakeHeimdall(self.root, [], cls=CLS_WRITE)
         h.dual_mode = True

@@ -992,6 +992,10 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
         full["model"] = str(ev["model"])[:80]
     if ev.get("request"):
         full["request"] = str(ev["request"])
+    if ev.get("research_only") is True:
+        full["research_only"] = True
+    if ev.get("research_findings"):
+        full["research_findings"] = str(ev["research_findings"])[:6000]
     return full
 
 
@@ -1076,6 +1080,8 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     small = policy["small_write"]
     _esc_i = [i for i, e in enumerate(events) if e.get("event") == "verify" and e.get("verdict") == "ESCALATE"]
     _plan_i = [i for i, e in enumerate(events) if e.get("event") == "plan"]
+    _research_i = [i for i, e in enumerate(events) if e.get("event") == "work" and e.get("research_only")]
+    last_research = events[_research_i[-1]] if _research_i else {}
     tickets = fold_tickets(events)
     ticket_counts = {
         status: sum(1 for ticket in tickets.values() if ticket["status"] == status) for status in TICKET_STATUSES
@@ -1091,6 +1097,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "criteria": next((e.get("criteria") for e in events if e.get("criteria")), []),
         "risk_write": any((e.get("risk") or {}).get("has_write") for e in events),
         "plan_turns": sum(1 for e in events if e.get("event") == "plan"),
+        "research_completed": bool(_research_i),
+        "research_pending_plan": bool(_research_i and (not _plan_i or _plan_i[-1] < _research_i[-1])),
+        "research_findings": str(last_research.get("research_findings") or "")[:6000],
         "diff_hash": cur,
         "changed_files": changed,
         "diff_lines": lines,
@@ -1266,6 +1275,10 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
         # micro_pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
         return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
+    if flags.external_research and has_write and not s.get("research_completed"):
+        return out("WORKER", "외부 조사 선행 — 격리 Research Worker가 근거를 수집하고 구현은 보류")
+    if flags.external_research and s.get("research_pending_plan"):
+        return out("THINKER", "외부 조사 완료 — 수집 근거를 검토해 구현 단위와 criteria를 재계획")
     if flags.parallel_requested and s["plan_turns"] < 2:
         # 병렬 fan-out만 별도 Thinker가 access/file-overlap 그래프를 만든다. 모호함·외부 조사·큰
         # 변경은 단일 Worker가 같은 도구 문맥에서 계획하고 실행한다 — 순차 역할 handoff 비용과

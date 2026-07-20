@@ -724,10 +724,25 @@ class TestTransition(TrinityBase):
         self.write("app.py", "print('changed')\n")  # PASS 후 변경 → stale
         self.assertEqual(self.next()["next_role"], "VERIFIER")
 
-    def test_ambiguous_write_and_research_stay_single_worker(self):
+    def test_external_research_runs_worker_then_thinker_then_implementation(self):
         self.open_quest()
         self.assertEqual(self.next("--ambiguous", "--write-expected")["next_role"], "WORKER")
-        self.assertEqual(self.next("--external-research")["next_role"], "WORKER")
+        self.assertEqual(self.next("--external-research", "--write-expected")["next_role"], "WORKER")
+        findings = "https://example.com/source — observed fact"
+        self.qlog(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"research_only": True, "research_findings": findings}),
+        )
+        state = jout(self.qlog("state"))
+        self.assertTrue(state["research_pending_plan"])
+        self.assertEqual(state["research_findings"], findings)
+        self.assertEqual(self.next("--external-research", "--write-expected")["next_role"], "THINKER")
+        self.qlog("append", "--role", "thinker", "--event", "plan")
+        self.assertEqual(self.next("--external-research", "--write-expected")["next_role"], "WORKER")
 
     def test_no_write_is_direct_done(self):
         self.open_quest("--no-write")
