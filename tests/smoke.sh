@@ -89,6 +89,13 @@ grep -q '"PostToolUse"' "$PROJ/.claude/settings.json" || { echo "FAIL: universal
 grep -q "PostToolUse" "$PROJ/.codex/config.toml" || { echo "FAIL: codex config missing PostToolUse tracker"; exit 1; }
 grep -q "postToolUseFailure" "$PROJ/.cursor/hooks.json" || { echo "FAIL: cursor hooks missing postToolUseFailure"; exit 1; }
 "$PY" -m py_compile "$PROJ/.codex/hooks/failure-tracker.py" "$PROJ/.cursor/hooks/failure-tracker.py" || { echo "FAIL: cross-tool trackers invalid Python"; exit 1; }
+# cross-tool memory lifecycle — shared skill + client-native snapshot/recall/sync hooks.
+[ -f "$PROJ/.agents/skills/asgard-memory/SKILL.md" ] \
+  && [ -f "$PROJ/.codex/hooks/memory-activate.py" ] && [ -f "$PROJ/.cursor/hooks/memory-activate.py" ] \
+  || { echo "FAIL: universal missing codex/cursor memory lifecycle"; exit 1; }
+grep -q "UserPromptSubmit" "$PROJ/.codex/config.toml" \
+  && grep -q "beforeSubmitPrompt" "$PROJ/.cursor/hooks.json" \
+  || { echo "FAIL: universal memory recall not wired cross-tool"; exit 1; }
 # asgard-test 자가 테스트 커맨드 — 3툴 전부 (skills/commands/prompts), 하니스 스크립트 실동작.
 # 스캐폴드 파일은 발견용 어댑터라 하니스 본문은 중앙 정본(asgard skills show)에서 추출한다.
 [ -f "$PROJ/.claude/skills/asgard-test/SKILL.md" ] && [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] \
@@ -224,9 +231,12 @@ PROJ="$(mktemp -d)"
 for _d in skills hooks; do [ -f "$PROJ/.cursor/$_d/README.md" ] || { echo "FAIL: --cursor .cursor/$_d/README.md"; exit 1; }; done
 [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --cursor missing .agents/skills asgard-test"; exit 1; }
 [ -f "$PROJ/.agents/skills/asgard-seal/SKILL.md" ] || { echo "FAIL: --cursor missing .agents/skills asgard-seal"; exit 1; }
+[ -f "$PROJ/.agents/skills/asgard-memory/SKILL.md" ] || { echo "FAIL: --cursor missing asgard-memory skill"; exit 1; }
 [ ! -e "$PROJ/.claude" ] || { echo "FAIL: --cursor must NOT create .claude"; exit 1; }
 grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor hooks.json"; exit 1; }
 [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: --cursor guard missing"; exit 1; }
+[ -f "$PROJ/.cursor/hooks/memory-activate.py" ] && grep -q '"beforeSubmitPrompt"' "$PROJ/.cursor/hooks.json" \
+  || { echo "FAIL: --cursor memory lifecycle missing"; exit 1; }
 [ -f "$PROJ/.cursor/agents/asgard-worker.md" ] && [ -f "$PROJ/.cursor/agents/asgard-verifier.md" ] || { echo "FAIL: --cursor Trinity agents missing"; exit 1; }
 grep -q '"subagentStart"' "$PROJ/.cursor/hooks.json" && grep -q '"stop"' "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor Trinity hooks missing"; exit 1; }
 grep -q '^readonly: false$' "$PROJ/.cursor/agents/asgard-worker.md" || { echo "FAIL: --cursor worker must be writable"; exit 1; }
@@ -243,11 +253,14 @@ PROJ="$(mktemp -d)"
 [ ! -e "$PROJ/.claude" ] && [ ! -e "$PROJ/.cursor" ] || { echo "FAIL: --codex scoped"; exit 1; }
 grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex PreToolUse hook"; exit 1; }
 [ -f "$PROJ/.codex/hooks/git-guard.py" ] || { echo "FAIL: --codex guard"; exit 1; }
+[ -f "$PROJ/.codex/hooks/memory-activate.py" ] && grep -q '\[\[hooks.UserPromptSubmit\]\]' "$PROJ/.codex/config.toml" \
+  || { echo "FAIL: --codex memory lifecycle missing"; exit 1; }
 [ -f "$PROJ/.codex/agents/asgard-worker.toml" ] && [ -f "$PROJ/.codex/agents/asgard-verifier.toml" ] || { echo "FAIL: --codex Trinity agents missing"; exit 1; }
 grep -q '\[\[hooks.SubagentStart\]\]' "$PROJ/.codex/config.toml" && grep -q '\[\[hooks.Stop\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex Trinity hooks missing"; exit 1; }
 grep -q '^sandbox_mode = "read-only"$' "$PROJ/.codex/agents/asgard-verifier.toml" || { echo "FAIL: --codex verifier must be read-only"; exit 1; }
 [ -f "$PROJ/.codex/rules/canon.rules" ] && grep -q "prefix_rule" "$PROJ/.codex/rules/canon.rules" || { echo "FAIL: --codex rules"; exit 1; }
 [ -f "$PROJ/.agents/skills/asgard-test/SKILL.md" ] || { echo "FAIL: --codex missing .agents/skills asgard-test"; exit 1; }
+[ -f "$PROJ/.agents/skills/asgard-memory/SKILL.md" ] || { echo "FAIL: --codex missing asgard-memory skill"; exit 1; }
 "$PY" -m py_compile "$PROJ/.codex/hooks/git-guard.py" || { echo "FAIL: codex guard invalid"; exit 1; }
 rm -rf "$PROJ"
 

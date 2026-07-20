@@ -58,6 +58,12 @@ def cursor_hooks_json() -> str:
             {
                 "version": 1,
                 "hooks": {
+                    "sessionStart": [
+                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"}
+                    ],
+                    "beforeSubmitPrompt": [
+                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"}
+                    ],
                     "beforeShellExecution": [
                         {"command": f"{py} .cursor/hooks/git-guard.py"},
                         {"command": f"{py} .cursor/hooks/release-guard.py"},
@@ -66,7 +72,11 @@ def cursor_hooks_json() -> str:
                         {
                             "matcher": "Task",
                             "command": f"{py} .cursor/hooks/subagent-gate.py pre",
-                        }
+                        },
+                        {
+                            "matcher": "Task",
+                            "command": f"{py} .cursor/hooks/memory-activate.py cursor",
+                        },
                     ],
                     "subagentStart": [
                         {
@@ -86,7 +96,10 @@ def cursor_hooks_json() -> str:
                             "command": f"{py} .cursor/hooks/write-sentinel.py cursor",
                         }
                     ],
-                    "stop": [{"command": f"{py} .cursor/hooks/verifier-gate.py cursor"}],
+                    "stop": [
+                        {"command": f"{py} .cursor/hooks/verifier-gate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
+                    ],
                     "postToolUseFailure": [{"command": f"{py} .cursor/hooks/failure-tracker.py"}],
                 },
             },

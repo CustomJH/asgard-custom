@@ -997,13 +997,13 @@ class TestCCWiring(MemoryBase):
         ):
             self.assertFalse(memory_activate._completion_context(root, "s1")["verified"])
 
-    def _run_hook(self, payload: dict, path_dirs: list[str]) -> str:
+    def _run_hook(self, payload: dict, path_dirs: list[str], mode: str | None = None) -> str:
         import subprocess
         import sys as _sys
 
         env = {**os.environ, "PATH": os.pathsep.join(path_dirs)}
         r = subprocess.run(
-            [_sys.executable, self.HOOK],
+            [_sys.executable, self.HOOK, *([mode] if mode else [])],
             input=_json_dumps(payload),
             capture_output=True,
             text=True,
@@ -1083,6 +1083,7 @@ class TestCCWiring(MemoryBase):
                     "hooks": {
                         "SessionStart": [{"hooks": [{"command": "memory-activate.py"}]}],
                         "UserPromptSubmit": [{"hooks": [{"command": "memory-activate.py"}]}],
+                        "Stop": [{"hooks": [{"command": "memory-activate.py"}]}],
                     }
                 }
             )
@@ -1090,6 +1091,68 @@ class TestCCWiring(MemoryBase):
         os.makedirs(os.path.join(root, ".claude", "skills", "asgard-memory"), exist_ok=True)
         open(os.path.join(root, ".claude", "skills", "asgard-memory", "SKILL.md"), "w").write("# memory")
         self.assertTrue(check()["ok"])  # hook + snapshot + recall + skill = 정상
+
+    def test_codex_and_cursor_scaffold_full_memory_lifecycle(self):
+        import json as j
+        import tomllib
+
+        from asgard.commands.setup import plan_files
+
+        cursor = dict(plan_files(cc=False, cursor=True, codex=False, root="/workspace")[0])
+        cursor_hooks = j.loads(cursor["/workspace/.cursor/hooks.json"])["hooks"]
+        self.assertIn("/workspace/.cursor/hooks/memory-activate.py", cursor)
+        self.assertIn("memory-activate", j.dumps(cursor_hooks["sessionStart"]))
+        self.assertIn("memory-activate", j.dumps(cursor_hooks["beforeSubmitPrompt"]))
+        self.assertIn("memory-activate", j.dumps(cursor_hooks["stop"]))
+        self.assertIn("/workspace/.agents/skills/asgard-memory/SKILL.md", cursor)
+
+        codex = dict(plan_files(cc=False, cursor=False, codex=True, root="/workspace")[0])
+        codex_hooks = tomllib.loads(codex["/workspace/.codex/config.toml"])["hooks"]
+        self.assertIn("/workspace/.codex/hooks/memory-activate.py", codex)
+        self.assertIn("memory-activate", j.dumps(codex_hooks["SessionStart"]))
+        self.assertIn("memory-activate", j.dumps(codex_hooks["UserPromptSubmit"]))
+        self.assertIn("memory-activate", j.dumps(codex_hooks["Stop"]))
+        self.assertIn("/workspace/.agents/skills/asgard-memory/SKILL.md", codex)
+
+    def test_cursor_native_prompt_recall_and_stop_sync(self):
+        import json as j
+
+        bindir = os.path.join(self.tmp, "cursor-bin")
+        os.makedirs(bindir, exist_ok=True)
+        fake = os.path.join(bindir, "asgard")
+        open(fake, "w").write(
+            "#!/bin/sh\n"
+            '[ "$1" = memory ] && [ "$2" = recall ] && [ "$4" = cursor ] '
+            '&& printf \'%s\' \'<memory-recall>CURSOR</memory-recall>\'\n'
+            '[ "$1" = memory ] && [ "$2" = sync-turn ] && [ "$4" = cursor ] '
+            '&& printf \'%s\' \'{"proposal":{"preview":"CURSOR-PROPOSAL"}}\'\n'
+            "exit 0\n"
+        )
+        os.chmod(fake, 0o755)
+
+        recall = self._run_hook(
+            {"hook_event_name": "beforeSubmitPrompt", "prompt": "project history"}, [bindir], mode="cursor"
+        )
+        self.assertIn("CURSOR", j.loads(recall)["additional_context"])
+
+        transcript = os.path.join(self.tmp, "cursor.jsonl")
+        with open(transcript, "w", encoding="utf-8") as handle:
+            handle.write(j.dumps({"role": "user", "message": {"content": [{"type": "text", "text": "요청"}]}}) + "\n")
+            handle.write(
+                j.dumps({"role": "assistant", "message": {"content": [{"type": "text", "text": "완료"}]}})
+                + "\n"
+            )
+        stopped = self._run_hook(
+            {
+                "hook_event_name": "stop",
+                "conversation_id": "cursor-session",
+                "transcript_path": transcript,
+                "cwd": self.tmp,
+            },
+            [bindir],
+            mode="cursor",
+        )
+        self.assertIn("CURSOR-PROPOSAL", j.loads(stopped)["followup_message"])
 
     def test_cc_noninteractive_approval_executes_the_exact_saved_plan(self):
         from typer.testing import CliRunner

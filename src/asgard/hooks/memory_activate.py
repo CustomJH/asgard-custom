@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard memory-activate — 개인 스냅샷 + 개인/프로젝트 관련 회수 (Claude Code 배선).
+# Asgard memory-activate — 개인 스냅샷 + 개인/프로젝트 관련 회수 (클라이언트 공용 배선).
 #
 # 배선 매처: SessionStart startup|resume|clear|compact (lagom-activate 와 동일 —
 # compact/clear 는 컨텍스트 소실 지점이라 재주입 필수) + UserPromptSubmit 관련 회수 +
@@ -29,6 +29,38 @@ for _stream in (sys.stdout, sys.stderr):
 
 
 NEVER_INJECT = ("asgard-verifier", "asgard-loki")  # 게이트·반례 탐색 오염 방지 — 매처가 바뀌어도 불변
+MODES = {"claude-code", "codex", "cursor"}
+
+
+def _mode() -> str:
+    value = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
+    return value if value in MODES else "claude-code"
+
+
+def _event(data: dict) -> str:
+    """Cursor lower-camel 이벤트를 공용 Claude/Codex 계약으로 정규화한다."""
+    event = str(data.get("hook_event_name") or "")
+    return {
+        "sessionStart": "SessionStart",
+        "beforeSubmitPrompt": "UserPromptSubmit",
+        "subagentStart": "SubagentStart",
+        # Cursor의 SubagentStart 응답에는 context 필드가 없다. Task 실행 직전 preToolUse에서
+        # Thinker snapshot을 싣고 동일한 격리 경계를 유지한다.
+        "preToolUse": "SubagentStart",
+        "stop": "Stop",
+    }.get(event, event)
+
+
+def _agent(data: dict) -> str:
+    tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
+    return str(
+        data.get("agent_type")
+        or data.get("agent_name")
+        or data.get("subagent_type")
+        or tool_input.get("agent_type")
+        or tool_input.get("subagent_type")
+        or ""
+    )
 
 
 def _message_text(value) -> str:
@@ -52,7 +84,7 @@ def _latest_turn(data: dict) -> tuple[str, str]:
                 except Exception:
                     continue
                 message = row.get("message") if isinstance(row.get("message"), dict) else row
-                role = str(message.get("role") or row.get("type") or "")
+                role = str(message.get("role") or row.get("role") or row.get("type") or "")
                 text = _message_text(message.get("content"))
                 if role == "user" and text:
                     latest_user = text
@@ -128,9 +160,10 @@ def main():
     except Exception:
         data = {}
     try:
-        event = data.get("hook_event_name")
+        mode = _mode()
+        event = _event(data)
         # SubagentStart 이중 방어 — settings 매처(^asgard-thinker$)가 느슨해져도 스크립트가 지킨다
-        agent = str(data.get("agent_type") or data.get("agent_name") or "")
+        agent = _agent(data)
         if event == "SubagentStart":
             if agent in NEVER_INJECT or agent != "asgard-thinker":
                 sys.exit(0)
@@ -141,8 +174,12 @@ def main():
             user, assistant = _latest_turn(data)
             if not user or not assistant:
                 sys.exit(0)
-            root = os.environ.get("CLAUDE_PROJECT_DIR") or str(data.get("cwd") or os.getcwd())
-            session_id = str(data.get("session_id") or "claude-code")
+            root = (
+                os.environ.get("CLAUDE_PROJECT_DIR")
+                or os.environ.get("CURSOR_PROJECT_DIR")
+                or str(data.get("cwd") or os.getcwd())
+            )
+            session_id = str(data.get("session_id") or data.get("conversation_id") or mode)
             turn_id = str(data.get("turn_id") or hashlib.sha256((user + "\0" + assistant).encode()).hexdigest()[:24])
             payload = {
                 "session_id": session_id,
@@ -152,7 +189,7 @@ def main():
                 **_completion_context(root, session_id),
             }
             r = subprocess.run(
-                [exe, "memory", "sync-turn", "--mode", "claude-code"],
+                [exe, "memory", "sync-turn", "--mode", mode],
                 input=json.dumps(payload, ensure_ascii=False),
                 capture_output=True,
                 text=True,
@@ -168,7 +205,7 @@ def main():
             if preview:
                 messages.append("🧠 프로젝트 메모리 승인 제안\n" + preview)
             # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch 는 CLI 가 관리).
-            # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 CC 모드 전용 배선이다.
+            # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 외부 클라이언트 훅 전용이다.
             try:
                 n = subprocess.run([exe, "evolve", "nudge"], capture_output=True, text=True, timeout=10, cwd=root)
                 nudge = (n.stdout or "").strip()
@@ -177,19 +214,22 @@ def main():
             except Exception:
                 pass  # 넛지 불능이 Stop 을 막지 않는다
             if messages:
-                sys.stdout.write(json.dumps({"systemMessage": "\n\n".join(messages)}, ensure_ascii=False) + "\n")
+                key = "followup_message" if mode == "cursor" else "systemMessage"
+                sys.stdout.write(json.dumps({key: "\n\n".join(messages)}, ensure_ascii=False) + "\n")
             sys.exit(0)
         if event == "UserPromptSubmit":
             prompt = str(data.get("prompt") or "").strip()
             if not prompt:
                 sys.exit(0)
-            cmd = [exe, "memory", "recall", "--provider", "claude-code", "--", prompt]
+            cmd = [exe, "memory", "recall", "--provider", mode, "--", prompt]
         else:
-            cmd = [exe, "memory", "snapshot", "--provider", "claude-code"]
+            cmd = [exe, "memory", "snapshot", "--provider", mode]
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
         note = (r.stdout or "").strip()
         if r.returncode == 0 and note:
-            if event == "UserPromptSubmit":
+            if mode == "cursor":
+                sys.stdout.write(json.dumps({"additional_context": note}, ensure_ascii=False) + "\n")
+            elif event == "UserPromptSubmit":
                 sys.stdout.write(
                     json.dumps(
                         {

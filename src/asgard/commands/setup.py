@@ -263,6 +263,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".cursor", "hooks", "subagent-gate.py"), hook("subagent-gate")),
             (j(root, ".cursor", "hooks", "verifier-gate.py"), hook("verifier-gate")),
             (j(root, ".cursor", "hooks", "write-sentinel.py"), hook("write-sentinel")),
+            (j(root, ".cursor", "hooks", "memory-activate.py"), hook("memory-activate")),
         ]
         files += [(j(root, ".cursor", "agents", fname), cursor_agent(content)) for fname, content in ROLE_AGENTS]
 
@@ -277,6 +278,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".codex", "hooks", "subagent-gate.py"), hook("subagent-gate")),
             (j(root, ".codex", "hooks", "verifier-gate.py"), hook("verifier-gate")),
             (j(root, ".codex", "hooks", "write-sentinel.py"), hook("write-sentinel")),
+            (j(root, ".codex", "hooks", "memory-activate.py"), hook("memory-activate")),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
         ]
         files += [
@@ -304,6 +306,12 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         ]
         files.append(
             (j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD, implicit=False))
+        )
+        files.append(
+            (
+                j(root, ".agents", "skills", "asgard-memory", "SKILL.md"),
+                direct_skill(MEMORY_SKILL_MD, implicit=False),
+            )
         )
         # 딜리버리 코어 계약 — 서브에이전트 디스패치와 단일 세션 폴백에서 같은 정본을 쓴다.
         files.append(

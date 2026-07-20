@@ -161,34 +161,46 @@ def _trinity_checks(root: str) -> list[dict]:
         )
     except Exception:
         pass
-    # Memory v3 — CC 배선(훅 + snapshot/recall + 사용 skill) 단선 탐지.
-    # .claude 가 있는 프로젝트만 — 배선 자체가 CC 스캐폴드 소속. 개인 위키 건강은 memory lint 몫.
-    if os.path.isdir(os.path.join(root, ".claude")):
-        hook_ok = os.path.exists(os.path.join(root, ".claude", "hooks", "memory-activate.py"))
-        snapshot_wired = recall_wired = False
-        skill_ok = os.path.exists(os.path.join(root, ".claude", "skills", "asgard-memory", "SKILL.md"))
+    # Memory v3 — 설치된 각 클라이언트의 snapshot/recall/turn-sync 배선을 독립 진단한다.
+    for client, folder, config_name, snapshot_event, recall_event, skill_folder in (
+        ("CC", ".claude", "settings.json", "SessionStart", "UserPromptSubmit", ".claude"),
+        ("Cursor", ".cursor", "hooks.json", "sessionStart", "beforeSubmitPrompt", ".agents"),
+        ("Codex", ".codex", "config.toml", "SessionStart", "UserPromptSubmit", ".agents"),
+    ):
+        if not os.path.isdir(os.path.join(root, folder)):
+            continue
+        hook_ok = os.path.exists(os.path.join(root, folder, "hooks", "memory-activate.py"))
+        snapshot_wired = recall_wired = sync_wired = False
+        skill_ok = os.path.exists(os.path.join(root, skill_folder, "skills", "asgard-memory", "SKILL.md"))
         try:
-            settings = _json.load(open(os.path.join(root, ".claude", "settings.json")))
-            hooks = settings.get("hooks", {})
-            snapshot_wired = "memory-activate" in _json.dumps(hooks.get("SessionStart", []))
-            recall_wired = "memory-activate" in _json.dumps(hooks.get("UserPromptSubmit", []))
+            config_path = os.path.join(root, folder, config_name)
+            if config_name.endswith(".toml"):
+                import tomllib
+
+                config = tomllib.load(open(config_path, "rb"))
+            else:
+                config = _json.load(open(config_path))
+            hooks = config.get("hooks", {})
+            snapshot_wired = "memory-activate" in _json.dumps(hooks.get(snapshot_event, []))
+            recall_wired = "memory-activate" in _json.dumps(hooks.get(recall_event, []))
+            sync_wired = "memory-activate" in _json.dumps(hooks.get("stop" if client == "Cursor" else "Stop", []))
         except Exception:
             pass
-        ok = hook_ok and snapshot_wired and recall_wired and skill_ok
         missing = []
-        if not hook_ok:
-            missing.append("hook file")
-        if not snapshot_wired:
-            missing.append("SessionStart")
-        if not recall_wired:
-            missing.append("UserPromptSubmit")
-        if not skill_ok:
-            missing.append("asgard-memory skill")
+        for ok, label in (
+            (hook_ok, "hook file"),
+            (snapshot_wired, snapshot_event),
+            (recall_wired, recall_event),
+            (sync_wired, "Stop sync"),
+            (skill_ok, "asgard-memory skill"),
+        ):
+            if not ok:
+                missing.append(label)
         checks.append(
             {
-                "name": "memory wiring (CC)",
-                "ok": ok,
-                "detail": "wired" if ok else "missing: " + ", ".join(missing),
+                "name": f"memory wiring ({client})",
+                "ok": not missing,
+                "detail": "wired" if not missing else "missing: " + ", ".join(missing),
                 "fix": fix,
             }
         )

@@ -22,6 +22,19 @@ _CODEX_CONFIG = """\
 [agents]
 max_depth = 2
 
+# Memory v3 — session snapshot, prompt-specific recall, Thinker-only context, verified turn sync.
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
+[[hooks.UserPromptSubmit]]
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
 # Canon enforcement — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
 # the guard is the same git-guard.py. Trust once via the /hooks CLI (or --dangerously-bypass-hook-trust).
 [[hooks.PreToolUse]]
@@ -66,6 +79,13 @@ matcher = "^asgard-(thinker|worker|verifier)$"
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py" codex'
 
+[[hooks.SubagentStart]]
+matcher = "^asgard-thinker$"
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
 [[hooks.SubagentStop]]
 matcher = "^asgard-(thinker|worker|verifier)$"
 
@@ -78,6 +98,10 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py"
 [[hooks.Stop.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/verifier-gate.py" codex'
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
 """
 
 _CODEX_RULES = """\
