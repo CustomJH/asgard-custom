@@ -43,7 +43,18 @@ def cc_settings() -> str:
                     "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
                 },
                 "permissions": {
-                    "allow": ["Bash(git status)", "Bash(git diff *)", "Bash(git log *)"],
+                    # 스킬 시스템의 유일한 로드 경로(asgard skills 읽기 3종)와 quest-log 루프는
+                    # 사전 승인 — 헤드리스(-p)에서 자동 거부되면 정본 폴백·게이트 불능이 된다.
+                    # 쓰기 계열(assign/disable 등)은 제외.
+                    "allow": [
+                        "Bash(git status)",
+                        "Bash(git diff *)",
+                        "Bash(git log *)",
+                        "Bash(asgard skills list*)",
+                        "Bash(asgard skills show *)",
+                        "Bash(asgard skills resolve *)",
+                        f"Bash({py} .claude/hooks/quest-log.py *)",
+                    ],
                     "deny": [
                         "Bash(rm -rf *)",
                         "Bash(git push --force*)",

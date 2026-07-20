@@ -226,8 +226,11 @@ async def _run_async(sess, user_content: str, result) -> None:
         )
         allowed.append("mcp__asgard__*")
 
+    denied_tool_ids: set[str] = set()
+    sess._denied_tool_ids = denied_tool_ids  # _observe_result 가 차단 증거를 실행 실패와 구분한다
+
     async def _canonical_tool_guard(
-        hook_input: HookInput, _tool_use_id: str | None, _context: HookContext
+        hook_input: HookInput, tool_use_id: str | None, _context: HookContext
     ) -> HookJSONOutput:
         tool_name = str(hook_input.get("tool_name") or "")
         tool_input = hook_input.get("tool_input") or {}
@@ -251,6 +254,8 @@ async def _run_async(sess, user_content: str, result) -> None:
             tool_name in _WRITE_TOOLS or (tool_name == "Bash" and not is_readonly_bash_safe(command, sess.cwd))
         )
         if reason or role_denied:
+            if tool_use_id:
+                denied_tool_ids.add(tool_use_id)
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
@@ -442,9 +447,16 @@ def _observe_result(sess, result, b, pending) -> None:
         return
     sess.on_status(None)
     failed = bool(b.is_error)
-    sess._tool_line("✕" if failed else sym, detail + (" — 실패" if failed else ""), time.monotonic() - t0)
+    blocked = b.tool_use_id in getattr(sess, "_denied_tool_ids", ())
+    sess._tool_line(
+        "✕" if failed else sym, detail + (" — 차단" if blocked else " — 실패" if failed else ""), time.monotonic() - t0
+    )
     if cmd_idx >= 0:
-        result.commands[cmd_idx]["exit_code"] = 1 if b.is_error else 0  # CLI 는 exit code 미노출 — is_error 로 근사
+        # CLI 는 exit code 미노출 — is_error 로 근사. 가드가 차단한 호출은 실행된 적이 없으므로
+        # 증거에서 제외 표식 (커널 경로의 blocked 미기록과 패리티 — 미해소 실패 오판 방지).
+        result.commands[cmd_idx]["exit_code"] = 1 if b.is_error else 0
+        if blocked:
+            result.commands[cmd_idx]["blocked"] = True
     if sym == "✎" and not b.is_error:
         path = detail.split(" ", 1)[1] if " " in detail else detail
         if path and path not in result.writes:

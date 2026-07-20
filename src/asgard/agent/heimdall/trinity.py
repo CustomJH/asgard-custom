@@ -702,7 +702,8 @@ class TrinityRun:
         final_exit_by_command: dict[str, object] = {}
         for command in observed:
             cmd = str(command.get("cmd") or "").strip()
-            if cmd and not _trivial_evidence(cmd):
+            # 가드 차단(blocked) 호출은 실행된 적이 없다 — 미해소 실패 집합에서 제외 (커널 경로 패리티)
+            if cmd and not _trivial_evidence(cmd) and not command.get("blocked"):
                 identity = str(command.get("command_hash") or cmd)
                 final_exit_by_command[identity] = command.get("exit_code")
         unresolved = [cmd for cmd, exit_code in final_exit_by_command.items() if exit_code != 0]

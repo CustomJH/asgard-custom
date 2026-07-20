@@ -215,6 +215,17 @@ class RegistryTest(unittest.TestCase):
         reference = skill_registry.show_skill_resource(self.root, name, "references/fetching/choosing.md")
         self.assertIn("Fetchers Overview", reference)
 
+    def test_cc_settings_preapprove_skill_loads(self):
+        """헤드리스 CC 에서 스킬 로드 경로·quest-log 루프가 자동 거부되지 않도록 사전 승인."""
+        from asgard.templates.claude import cc_settings
+
+        allow = json.loads(cc_settings())["permissions"]["allow"]
+        self.assertIn("Bash(asgard skills show *)", allow)
+        self.assertIn("Bash(asgard skills resolve *)", allow)
+        self.assertIn("Bash(asgard skills list*)", allow)
+        self.assertTrue(any(".claude/hooks/quest-log.py" in rule for rule in allow))
+        self.assertFalse(any("skills assign" in rule or "skills disable" in rule for rule in allow))
+
     def test_bundled_design_md_python_linter(self):
         plugin = skill_registry.bundled_plugins()["google-design-md"]
         script = Path(plugin["root"], "skills", "design-md-review", "scripts", "design_md.py")

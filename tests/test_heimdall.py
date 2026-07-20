@@ -615,6 +615,61 @@ class TestDeliveryCanonInjection(Base):
         self.assertEqual(worker_canon_hint(self.root, "readme 문서 오탈자 정리"), "")
 
 
+class TestBlockedEvidenceParity(Base):
+    """가드 차단 호출은 실행된 적 없는 명령이다 — 미해소 실패로 PASS 를 강등시키지 않는다.
+
+    실증 근거(26-07-21): claude_cli 트랜스포트에서 readonly 가드가 거부한 `git -C "$(pwd)" …` 가
+    is_error→exit 1 로 증거에 승격, 동등 명령으로 이미 해소했어도 unresolved-verification-failure 로
+    PASS 가 강등돼 턴 예산을 태웠다. 커널 경로(blocked 미기록)와 패리티."""
+
+    def _verifier_with(self, commands):
+        return FakeSession(
+            SessionResult(
+                text="verified",
+                stop_reason="end_turn",
+                commands=commands,
+                tool_calls=[
+                    {
+                        "name": "verdict",
+                        "input": {
+                            "verdict": "PASS",
+                            "criteria": CLS_WRITE["criteria"],
+                            "commands": [{"cmd": "fake", "exit_code": 0}],
+                        },
+                    }
+                ],
+            ),
+            label="verifier",
+        )
+
+    def test_blocked_failure_does_not_demote_pass(self):
+        cmds = [
+            {"cmd": "javac -version", "exit_code": 1, "blocked": True},
+            {"cmd": "pytest -q", "exit_code": 0},
+        ]
+        seq = [worker({"w1.txt": "x\n"}, self.root), self._verifier_with(cmds)]
+        out = FakeHeimdall(self.root, seq, cls=CLS_WRITE).handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)
+
+    def test_executed_failure_still_demotes_pass(self):
+        cmds = [
+            {"cmd": "javac -version", "exit_code": 1},
+            {"cmd": "pytest -q", "exit_code": 0},
+        ]
+        seq = [
+            worker({"w1.txt": "x\n"}, self.root),
+            self._verifier_with(cmds),
+            worker({"w1.txt": "fixed\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)
+        events = [json.loads(line) for line in self.quest_log_text().splitlines() if line.strip()]
+        failures = [event for event in events if event.get("event") == "verify" and event.get("verdict") == "FAIL"]
+        self.assertEqual(failures[0]["failure_sig"], "unresolved-verification-failure")
+
+
 class TestRoutePriorsE2E(Base):
     """Bayesian-lite — 종결 outcome 기록 + prior 가 승격 문턱을 실제로 낮추는 e2e."""
 
