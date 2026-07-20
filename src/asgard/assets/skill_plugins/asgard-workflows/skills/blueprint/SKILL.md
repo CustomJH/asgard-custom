@@ -1,10 +1,10 @@
 ---
-name: to-spec
+name: blueprint
 description: Turn the current discussion into a durable implementation spec.
 disable-model-invocation: true
 ---
 
-# To spec
+# Blueprint
 
 Synthesize the current conversation; do not restart the interview.
 

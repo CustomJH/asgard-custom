@@ -1,18 +1,18 @@
 {
   "schema": 1,
   "name": "asgard-workflows",
-  "version": "2",
+  "version": "3",
   "description": "Explicit planning workflows and reusable domain language",
-  "skills": ["grill-me", "to-spec", "to-tickets", "wayfinder", "domain-modeling", "prototype"],
+  "skills": ["council", "blueprint", "quests", "expedition", "domain-modeling", "prototype"],
   "routing": {
-    "grill-me": {"triggers": ["grill"], "agents": ["worker"]},
+    "council": {"triggers": ["council", "grill", "작전회의"], "agents": ["worker"]},
     "prototype": {
       "triggers": ["prototype", "spike", "프로토타입", "throwaway"],
       "agents": ["worker", "freyja"]
     },
-    "to-spec": {"triggers": ["spec", "prd"], "agents": ["worker"]},
-    "to-tickets": {"triggers": ["tickets", "vertical slice"], "agents": ["worker"]},
-    "wayfinder": {"triggers": ["wayfinder", "multi-session"], "agents": ["worker"]},
+    "blueprint": {"triggers": ["blueprint", "spec", "prd", "설계도"], "agents": ["worker"]},
+    "quests": {"triggers": ["quests", "tickets", "vertical slice", "퀘스트"], "agents": ["worker"]},
+    "expedition": {"triggers": ["expedition", "wayfinder", "multi-session", "원정"], "agents": ["worker"]},
     "domain-modeling": {
       "triggers": ["domain model", "ubiquitous language", "context.md", "adr", "도메인 용어", "결정 기록"],
       "agents": ["worker"]

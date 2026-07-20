@@ -1,10 +1,10 @@
 ---
-name: grill-me
-description: Relentlessly clarify a plan or design, one decision at a time.
+name: council
+description: Convene a war council that clarifies a plan or design, one decision at a time.
 disable-model-invocation: true
 ---
 
-# Grill
+# Council
 
 Resolve the decision tree before acting.
 
@@ -15,4 +15,4 @@ Resolve the decision tree before acting.
 5. When a domain term resolves or a costly decision lands, load `domain-modeling` and record it in `CONTEXT.md` or `docs/adr/` in the same turn, so the outcome survives this chat.
 6. Do not edit files, launch implementation, or declare agreement until the user confirms the shared understanding.
 
-Finish when the important branches have explicit decisions and no answer depends on an unresolved term. Then size the confirmed work and route it: fits one fresh context window → implement directly; larger → `to-spec` then `to-tickets`; decisions still block a spec → `wayfinder`.
+Finish when the important branches have explicit decisions and no answer depends on an unresolved term. Then size the confirmed work and route it: fits one fresh context window → implement directly; larger → `blueprint` then `quests`; decisions still block a spec → `expedition`.
