@@ -52,7 +52,8 @@ def _event(data: dict) -> str:
 
 
 def _agent(data: dict) -> str:
-    tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
+    raw_input = data.get("tool_input")
+    tool_input = raw_input if isinstance(raw_input, dict) else {}
     return str(
         data.get("agent_type")
         or data.get("agent_name")

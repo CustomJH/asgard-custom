@@ -98,6 +98,7 @@ class TestRegistry(unittest.TestCase):
         a = limiter_for(_nvidia_rp())
         b = limiter_for(_nvidia_rp(rpm=200))
         self.assertIsNot(a, b)
+        assert b is not None
         self.assertEqual(b.rpm, 200)
 
 
