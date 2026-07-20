@@ -1157,7 +1157,7 @@ class TestCCWiring(MemoryBase):
         open(fake, "w").write(
             "#!/bin/sh\n"
             '[ "$1" = memory ] && [ "$2" = recall ] && [ "$4" = cursor ] '
-            '&& printf \'%s\' \'<memory-recall>CURSOR</memory-recall>\'\n'
+            "&& printf '%s' '<memory-recall>CURSOR</memory-recall>'\n"
             '[ "$1" = memory ] && [ "$2" = sync-turn ] && [ "$4" = cursor ] '
             '&& printf \'%s\' \'{"proposal":{"preview":"CURSOR-PROPOSAL"}}\'\n'
             "exit 0\n"
@@ -1173,8 +1173,7 @@ class TestCCWiring(MemoryBase):
         with open(transcript, "w", encoding="utf-8") as handle:
             handle.write(j.dumps({"role": "user", "message": {"content": [{"type": "text", "text": "요청"}]}}) + "\n")
             handle.write(
-                j.dumps({"role": "assistant", "message": {"content": [{"type": "text", "text": "완료"}]}})
-                + "\n"
+                j.dumps({"role": "assistant", "message": {"content": [{"type": "text", "text": "완료"}]}}) + "\n"
             )
         stopped = self._run_hook(
             {

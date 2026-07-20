@@ -58,12 +58,8 @@ def cursor_hooks_json() -> str:
             {
                 "version": 1,
                 "hooks": {
-                    "sessionStart": [
-                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"}
-                    ],
-                    "beforeSubmitPrompt": [
-                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"}
-                    ],
+                    "sessionStart": [{"command": f"{py} .cursor/hooks/memory-activate.py cursor"}],
+                    "beforeSubmitPrompt": [{"command": f"{py} .cursor/hooks/memory-activate.py cursor"}],
                     "beforeShellExecution": [
                         {"command": f"{py} .cursor/hooks/git-guard.py"},
                         {"command": f"{py} .cursor/hooks/release-guard.py"},
