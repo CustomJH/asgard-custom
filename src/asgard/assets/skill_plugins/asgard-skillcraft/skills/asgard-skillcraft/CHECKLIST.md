@@ -1,7 +1,5 @@
 # Skillcraft checklist
 
-Sources: Matt Pocock's *Building Great Agent Skills: The Missing Manual* and the `writing-great-skills` reference in `mattpocock/skills` at revision `9603c1c`. This file is a distilled Asgard adaptation, not a copy.
-
 ## 1. Trigger
 
 - Decide who bears the load. Model invocation spends context on every turn; user invocation spends the operator's memory.
