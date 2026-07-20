@@ -205,6 +205,9 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
         if rp.missing:
             return False, "provider 미충족: " + "; ".join(rp.missing)
         client = make_client(rp)
+        from .agent.rate_limit import throttle
+
+        throttle(rp)  # RPM 상한 provider — 단발 호출도 전역 윈도에 계수
         if rp.profile.api_mode == "claude_cli":
             from .agent.claude_native import complete_text
 

@@ -42,6 +42,8 @@ _M: dict[str, tuple[str, str]] = {
     "pick_provider": ("select a provider", "provider 선택"),
     "pick_model": ("select a model", "model 선택"),
     "api_key_prompt": ("{p} API key (hidden)", "{p} API 키 (입력 숨김)"),
+    "rpm_prompt": ("rpm limit (requests/min · -1 = off)", "rpm 상한 (분당 요청 수 · -1 = 해제)"),
+    "rpm_invalid": ("invalid rpm — keeping current", "유효하지 않은 rpm — 현재 값 유지"),
     "saved_cred": ("saved to ~/.asgard/credentials.json (mode 600)", "~/.asgard/credentials.json 저장 (권한 600)"),
     "cancelled": ("(cancelled)", "(취소)"),
     "no_key": ("(no key — cancelled)", "(키 없음 — 취소)"),

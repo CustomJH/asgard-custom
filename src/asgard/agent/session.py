@@ -226,6 +226,18 @@ class AgentSession:
         label = t("thought")
         self.on_text(f"  {gutter} {ui.dim(f'⋯ {label} {secs:.0f}s')}\n")
 
+    def _throttle(self) -> None:
+        """RPM 상한 provider(NVIDIA NIM 무료 40rpm 등) — API 호출 직전 슬롯 대기.
+        무상한 provider 는 no-op. 대기가 길어지면 흐린 한 줄로 정직하게 알린다."""
+        from .rate_limit import limiter_for
+
+        lim = limiter_for(self.rp)
+        if lim is None:
+            return
+        waited = lim.acquire(self.cancel_event)
+        if waited >= 1:
+            self._tool_line("⏳", f"rpm {lim.rpm} 상한 대기 ({self.rp.profile.name})", waited)
+
     def cancel(self) -> None:
         """협조적 취소 요청 — 다음 안전 지점(청크/툴/iteration 경계)에서 턴이 멈춘다."""
         self.cancel_event.set()
@@ -386,6 +398,10 @@ class AgentSession:
                 from .prompt_cache import cached_request
 
                 system, messages = cached_request(self.system, self.messages, self.cache_ttl)
+            self._throttle()
+            if self._cancelled():
+                result.stop_reason = "cancelled"
+                return result
             self.on_status(_t("thinking"))
             jid, j0 = self._journal_started("anthropic")
             t0, first = time.monotonic(), True
@@ -503,19 +519,39 @@ class AgentSession:
                 send_msgs = cached_openai_request(sys_msg, self.messages, self.cache_ttl)
             else:
                 send_msgs = sys_msg + self.messages
+            self._throttle()
+            if self._cancelled():
+                result.stop_reason = "cancelled"
+                return result
             self.on_status(_t("thinking"))
             jid, j0 = self._journal_started("openai_compat")
             jcounts: dict[str, int] = {}
             try:
-                stream = self.client.chat.completions.create(
-                    model=self.rp.model,
-                    messages=send_msgs,
-                    tools=oai_tools or None,
-                    max_tokens=16384,
-                    stream=True,
-                    stream_options={"include_usage": True},
-                    extra_body=extra or None,
-                )
+                # 429 만 여기서 흡수 (Retry-After 존중) — NIM 무료 티어는 스로틀에도 전역 트래픽으로
+                # 초과가 날 수 있다. 그 외 오류는 기존 경로 (재시도는 Heimdall _run_turn 몫).
+                from .rate_limit import retry_after_seconds
+
+                for attempt in range(4):
+                    try:
+                        stream = self.client.chat.completions.create(
+                            model=self.rp.model,
+                            messages=send_msgs,
+                            tools=oai_tools or None,
+                            max_tokens=16384,
+                            stream=True,
+                            stream_options={"include_usage": True},
+                            extra_body=extra or None,
+                        )
+                        break
+                    except Exception as e:
+                        wait = retry_after_seconds(e, attempt)
+                        if wait is None or attempt == 3:
+                            raise
+                        self._tool_line("⏳", f"429 rate limit — {wait:.0f}s 후 재시도")
+                        if self.cancel_event.wait(wait):
+                            self._journal_error(jid, j0, e)
+                            result.stop_reason = "cancelled"
+                            return result
                 for chunk in stream:
                     if self._cancelled():
                         try:
@@ -654,6 +690,10 @@ class AgentSession:
             if self._cancelled():
                 # Responses 는 논스트리밍 — 취소 경계는 iteration/툴 배치. 미제출 툴 출력은 버려지고
                 # codex 히스토리는 마지막 완결 상태(_codex_history_items)로 남는다.
+                result.stop_reason = "cancelled"
+                return result
+            self._throttle()
+            if self._cancelled():
                 result.stop_reason = "cancelled"
                 return result
             self.on_status(_t("thinking"))

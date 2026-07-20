@@ -35,6 +35,7 @@ class ProviderProfile:
     fallback_models: tuple[str, ...] = ()  # live catalog 실패 시 보여줄 검증된 agentic 모델
     key_optional: bool = False  # 로컬 서버(ollama 등) — 키 없어도 연결 (SDK 엔 더미 전달)
     context_window: int = 0  # 대략적 컨텍스트 한도 (status line % 용). 0 = 미상 → % 생략
+    default_rpm: int = 0  # 분당 요청 상한 (NIM 무료 티어 등). 0 = 무제한 — 스로틀은 agent/rate_limit
 
     def request_extra_body(self, model: str) -> dict:
         """선택 모델에 유효한 provider 전용 요청 필드만 반환한다."""
@@ -118,6 +119,8 @@ PROVIDERS: dict[str, ProviderProfile] = {
         context_window=128_000,
     ),
     # NVIDIA NIM — openai_compat 특수화. reasoning 파라미터는 extra_body 로 (enable_thinking·reasoning_budget).
+    # 무료 티어는 API 키 기준 전역 ~40 RPM (모델 합산, 초과 = 429) — default_rpm 으로 선제 스로틀.
+    # 상향 승급(200 RPM 등) 시 config [provider] rpm 으로 조절, -1 = 해제.
     "nvidia": ProviderProfile(
         name="nvidia",
         display="NVIDIA NIM",
@@ -134,6 +137,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
             "nvidia/llama-3.1-nemotron-70b-instruct",
             "nvidia/llama-3.3-70b-instruct",
         ),
+        default_rpm=40,
     ),
 }
 
@@ -155,6 +159,8 @@ class ResolvedProvider:
     # 컨텍스트 창 override — profile 미상(0)인 openai_compat/nvidia 류에서 프룬 트리거·창 % 를
     # 살리는 config [provider] context_window 값. 0 = 미지정 (profile 값 사용).
     context_window: int = 0
+    # RPM override — config [provider] rpm. 0 = 미지정 (profile default_rpm), -1 = 명시 해제.
+    rpm: int = 0
 
     def __repr__(self) -> str:  # 키 값이 로그·트레이스에 새지 않게 마스킹 (Canon 4)
         k = f"***{self.api_key[-4:]}" if self.api_key else ""
@@ -356,7 +362,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         # choose which endpoint receives user credentials or which environment variable is read.
         if project_conf.get("name") and project_conf.get("name") != global_conf.get("name"):
             conf = {}
-        for key in ("name", "model", "context_window"):
+        for key in ("name", "model", "context_window", "rpm"):
             if key in project_conf:
                 conf[key] = project_conf[key]
         source = f".asgard/{PROJECT_FILE}"
@@ -383,6 +389,10 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         ctx_win = max(0, int(conf.get("context_window") or 0))
     except TypeError, ValueError:
         ctx_win = 0
+    try:
+        rpm = int(conf.get("rpm") or 0)  # 양수 = 상한, -1 = 해제, 0/깨진 값 = 미지정 (profile 기본)
+    except TypeError, ValueError:
+        rpm = 0
     trusted_global = global_conf if global_conf.get("name", name) == name else {}
     base_url = trusted_global.get("base_url") or cred.get("base_url") or profile.base_url
     # 공식 provider credential은 custom endpoint로 보내지 않는다. 사설 endpoint는 별도
@@ -395,6 +405,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         base_url=base_url,
         source=source,
         context_window=ctx_win,
+        rpm=rpm,
     )
 
     # API 키 해석 — env var(프로파일 후보) 우선, 없으면 credentials.json. env 는 export 한 사용자를
@@ -428,7 +439,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
 
 
 TRINITY_ROLES = ("thinker", "worker", "verifier")
-# 확장 배치 슬롯: thinker_alt = 3-strike clean-slate 재검토용 대체 모델,
+# 확장 배치 슬롯: thinker_alt = dual 초기 계획·3-strike clean-slate 재검토용 대체 모델,
 # classify = 분류 전용 저비용 placement. 미배치 시 default — 기존 동작 보존.
 TRINITY_EXTRA_ROLES = ("thinker_alt", "classify")
 

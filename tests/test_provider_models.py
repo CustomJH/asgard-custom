@@ -160,7 +160,7 @@ class TestNativeModelSelection(unittest.TestCase):
         with (
             mock.patch("getpass.getpass", return_value="test-key"),
             mock.patch("asgard.agent.onboard.provider_models", return_value=[default, "meta/llama-3.3-70b-instruct"]),
-            mock.patch("builtins.input", side_effect=["2"]),
+            mock.patch("builtins.input", side_effect=["", "2"]),  # rpm 엔터(기본 40) → 모델 2번
             mock.patch("sys.stdout", new_callable=io.StringIO),
         ):
             resolved = onboard.onboard(self.root, preselect="nvidia")
@@ -180,6 +180,42 @@ class TestNativeModelSelection(unittest.TestCase):
         stored = json.load(open(self.cred))
         self.assertEqual(stored["nvidia"]["api_key"], "test-key")
         self.assertNotIn("model", stored["nvidia"])
+
+    def test_nvidia_onboarding_rpm_input_persists_to_project_config(self):
+        default = PROVIDERS["nvidia"].default_model
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default]),
+            mock.patch("builtins.input", side_effect=["20", "1"]),  # rpm 20 → 모델 1번
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="nvidia")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        from asgard.agent.rate_limit import effective_rpm
+        from asgard.settings import load_project
+
+        self.assertEqual(load_project(self.root)["provider"]["rpm"], 20)
+        self.assertEqual(resolved.rpm, 20)
+        self.assertEqual(effective_rpm(resolved), 20)
+
+    def test_nvidia_onboarding_rpm_minus_one_disables_throttle(self):
+        default = PROVIDERS["nvidia"].default_model
+        with (
+            mock.patch("getpass.getpass", return_value="test-key"),
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default]),
+            mock.patch("builtins.input", side_effect=["-1", "1"]),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            resolved = onboard.onboard(self.root, preselect="nvidia")
+
+        self.assertIsNotNone(resolved)
+        assert resolved is not None
+        from asgard.agent.rate_limit import effective_rpm, limiter_for
+
+        self.assertEqual(effective_rpm(resolved), 0)
+        self.assertIsNone(limiter_for(resolved))
 
     def test_credential_replace_failure_preserves_previous_file(self):
         from asgard.providers import save_credential
@@ -259,7 +295,7 @@ class TestNativeModelSelection(unittest.TestCase):
         with (
             mock.patch("getpass.getpass", return_value="test-key"),
             mock.patch("asgard.agent.onboard.provider_models", return_value=[default, "meta/llama-3.3-70b-instruct"]),
-            mock.patch("builtins.input", side_effect=["2"]),
+            mock.patch("builtins.input", side_effect=["", "2"]),  # rpm 엔터(기본 40) → 모델 2번
             mock.patch("sys.stdout", new_callable=io.StringIO),
         ):
             resolved = onboard.onboard(self.root, preselect="nvidia")

@@ -326,6 +326,9 @@ class Heimdall:
         [trinity.classify] placement 가 있으면 그 provider/모델 사용 (저비용 분류)."""
         rp = self.role_rp.get("classify", self.rp)
         client = self._client_for(rp)
+        from ..rate_limit import throttle
+
+        throttle(rp)  # RPM 상한 provider(NIM 40rpm 등) — classify 단발도 전역 윈도에 계수
         if rp.profile.api_mode == "claude_cli":
             from ..claude_native import complete_text
 

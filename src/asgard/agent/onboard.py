@@ -94,6 +94,8 @@ def _provider_values(root: str, rp: ResolvedProvider) -> dict:
         values["base_url"] = rp.base_url
     else:
         values.pop("base_url", None)
+    if rp.rpm:  # 온보딩 rpm 입력 (양수 상한 · -1 해제) — 0(미지정)은 profile 기본에 위임
+        values["rpm"] = rp.rpm
     return values
 
 
@@ -111,8 +113,13 @@ def select_model_id(root: str, rp: ResolvedProvider, model: str, *, persist: boo
     if not model:
         return None
     if not persist:
-        return resolve(root, provider=rp.profile.name, model=model)
+        selected = resolve(root, provider=rp.profile.name, model=model)
+        if rp.rpm:
+            selected.rpm = rp.rpm
+        return selected
     selected = resolve(root, provider=rp.profile.name, model=model)
+    if rp.rpm:  # resolve 재해석은 config 만 본다 — 방금 입력한 rpm 을 승계해 함께 저장
+        selected.rpm = rp.rpm
     if selected.profile.name not in {"nvidia", "openai"}:
         selected.base_url = rp.base_url
     values = _provider_values(root, selected)
@@ -175,6 +182,18 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         save_credential(name, key, base_url=base_url)
         sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {ui.dim(t('saved_cred'))}\n")
     current = resolve(root, provider=name, model=model or None)
+    if p.default_rpm:  # 무료 티어 상한 provider (NVIDIA NIM 40rpm 등) — 엔터 = 현재 값 유지
+        from .rate_limit import effective_rpm
+
+        try:
+            raw = input(f"  {t('rpm_prompt')} [{effective_rpm(current)}]: ").strip()
+        except EOFError, KeyboardInterrupt:
+            raw = ""
+        if raw:
+            try:
+                current.rpm = int(raw)
+            except ValueError:
+                sys.stdout.write(f"  {ui.dim(t('rpm_invalid'))}\n")
     if has_model_picker:
         selected = select_model(root, current)
         if selected is not None:
