@@ -166,6 +166,7 @@ class AgentSession:
         cwd: str | None = None,
         readonly_paths: list[str] | tuple[str, ...] = (),
         cancel_event: threading.Event | None = None,
+        on_lifecycle: Callable[[str, str], None] | None = None,
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # root는 Quest/journal/config의 canonical 소유자, cwd는 도구와 provider subprocess의 실행 공간.
@@ -191,6 +192,7 @@ class AgentSession:
         # 협조적 취소 — 부모(Heimdall)가 이벤트를 공유하면 디스패치 자식까지 한 신호로 중단된다.
         # 검사 지점: iteration 경계·스트림 청크·툴 배치 사이. 히스토리는 항상 API-유효 상태로 닫는다.
         self.cancel_event = cancel_event or threading.Event()
+        self.on_lifecycle = on_lifecycle or (lambda _event, _detail: None)
         self.messages: list[dict] = []
         self._codex_session_id = uuid.uuid4().hex
         self._codex_reasoning_replay_enabled = True
@@ -273,6 +275,7 @@ class AgentSession:
         call_returned(self.root, jid, duration_ms=(time.monotonic() - t0) * 1000, error=f"{type(e).__name__}: {e}")
 
     def run(self, user_content: str) -> SessionResult:
+        outcome = "failed"
         if self.readonly and not self._explicit_cwd:
             from .unit_workspace import UnitWorkspace, WorkspaceError
 
@@ -298,7 +301,8 @@ class AgentSession:
                 # canonical tree. Keep file-inspection tools, but remove execution entirely.
                 self._readonly_workspace = None
                 self._readonly_unisolated = True
-                self.tools = [tool for tool in self.tools if tool.get("name") != "bash"]
+                self.tools = [tool for tool in self.tools if tool.get("name") not in {"bash", "process"}]
+        self.on_lifecycle("running", "")
         try:
             if self.rp.profile.api_mode == "claude_cli":
                 from . import claude_native
@@ -325,8 +329,11 @@ class AgentSession:
                 r = self._run_responses(user_content)
             else:
                 r = self._run_openai(user_content)
+            outcome = r.stop_reason or "done"
         finally:
+            self.on_lifecycle("finished", outcome)
             self.on_status(None)
+            self.registry.close()
             if self._readonly_workspace is not None:
                 self._readonly_workspace.__exit__(None, None, None)
                 self._readonly_workspace = None

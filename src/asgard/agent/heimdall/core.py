@@ -57,6 +57,8 @@ class Heimdall:
         self.rp, self.root, self.on_text = rp, root, on_text
         self.on_status = on_status or (lambda s: None)
         self._state_lock = threading.Lock()  # wave 병렬 스레드의 _clients/total_tokens 변이 보호
+        self._session_seq = 0
+        self._sessions: dict[str, dict] = {}
         # 턴 단위 협조 취소 — 모든 자식 AgentSession 이 이 이벤트를 공유 (handle() 진입 시 clear)
         self.cancel_event = threading.Event()
         self._clients: dict[tuple, object] = {}  # (provider, base_url, key_source) → SDK 클라이언트
@@ -135,6 +137,67 @@ class Heimdall:
         with self._state_lock:
             self.total_tokens += n
 
+    def _session_observer(self, role: str) -> tuple[Callable[[str | None], None], Callable[[str, str], None]]:
+        with self._state_lock:
+            self._session_seq += 1
+            sid = f"{role}-{self._session_seq}"
+            self._sessions[sid] = {
+                "id": sid,
+                "role": role,
+                "state": "ready",
+                "status": "",
+                "started": 0.0,
+                "ended": 0.0,
+            }
+
+        def emit() -> None:
+            rows = self.session_snapshot(active_only=True)
+            if not rows:
+                self.on_status(None)
+                return
+            row = rows[-1]
+            label = row["role"] + (f" · {row['status']}" if row["status"] else "")
+            if len(rows) > 1:
+                label += f" · +{len(rows) - 1}"
+            self.on_status(label)
+
+        def status(label: str | None) -> None:
+            with self._state_lock:
+                row = self._sessions[sid]
+                if row["state"] == "running":
+                    row["status"] = label or ""
+            emit()
+
+        def lifecycle(event: str, detail: str) -> None:
+            now = time.monotonic()
+            with self._state_lock:
+                row = self._sessions[sid]
+                if event == "running":
+                    row.update(state="running", status="", started=now)
+                else:
+                    state = detail if detail in {"cancelled", "failed"} else "done"
+                    row.update(state=state, status="", result=detail, ended=now)
+                if len(self._sessions) > 32:
+                    for old_id, old in list(self._sessions.items()):
+                        if old["state"] != "running" and old_id != sid:
+                            del self._sessions[old_id]
+                            break
+            emit()
+
+        return status, lifecycle
+
+    def session_snapshot(self, active_only: bool = False) -> list[dict]:
+        """Thread-safe child-session view for the terminal; no model state or prompts leak."""
+        now = time.monotonic()
+        with self._state_lock:
+            rows = [dict(row) for row in self._sessions.values() if not active_only or row["state"] == "running"]
+        for row in rows:
+            if row["started"]:
+                row["elapsed_s"] = round((row["ended"] or now) - row["started"], 1)
+            else:
+                row["elapsed_s"] = 0.0
+        return rows
+
     def _session(
         self,
         system: str,
@@ -147,6 +210,7 @@ class Heimdall:
         rp_override: ResolvedProvider | None = None,
         cwd: str | None = None,
     ) -> AgentSession:
+        session_status, lifecycle = self._session_observer(role or ("readonly" if readonly else "legacy"))
         rp = rp_override or self.role_rp.get(role or "", self.rp)
         if model and model != rp.model:  # 상황별 모델 스왑 — provider 는 유지, 모델만
             from dataclasses import replace
@@ -161,11 +225,12 @@ class Heimdall:
             tool_handlers=handlers,
             on_text=(lambda s: None) if quiet else self.on_text,
             on_tokens=self._add_tokens,
-            on_status=self.on_status,
+            on_status=session_status,
             readonly=readonly,
             role=role,
             cwd=cwd,
             cancel_event=self.cancel_event,
+            on_lifecycle=lifecycle,
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
