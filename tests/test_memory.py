@@ -17,11 +17,12 @@ import tempfile
 import time
 import unittest
 from unittest import mock
+from urllib.parse import quote
 
 import yaml
 from typer.testing import CliRunner
 
-from asgard import memory
+from asgard import memory, settings
 from asgard.cli import app
 
 
@@ -105,6 +106,39 @@ class TestScaffoldAndAdd(MemoryBase):
         with self.assertRaises(ValueError):  # 초과 → 통합 압력 (하드거부)
             memory.add("second fact should not fit under the tiny budget")
         memory.add("second fact forced in", force=True)  # 탈출구는 명시적으로만
+
+
+class TestMemoryDirectoryConfig(MemoryBase):
+    def test_persistent_path_env_override_reset_and_obsidian_uri(self):
+        os.environ.pop(memory.MEMORY_ENV)
+        configured = os.path.join(self.tmp, "Cloud Vault", "Asgard")
+        settings.save_global("memory", {"inject": "off"})
+
+        result = CliRunner().invoke(app, ["memory", "path", "--set", configured])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(memory.memory_dir(), configured)
+        self.assertEqual(settings.load_global()["memory"]["inject"], "off")
+        self.assertTrue(os.path.exists(os.path.join(configured, memory.SCHEMA)))
+
+        override = os.path.join(self.tmp, "session-memory")
+        os.environ[memory.MEMORY_ENV] = override
+        self.assertEqual(memory.memory_dir(), override)
+        os.environ.pop(memory.MEMORY_ENV)
+
+        result = CliRunner().invoke(app, ["memory", "obsidian"])
+        self.assertEqual(result.exit_code, 1, result.output)
+        self.assertIn("open this folder as an Obsidian vault once", result.output)
+
+        os.mkdir(os.path.join(configured, ".obsidian"))
+        with mock.patch("asgard.commands.memory.subprocess.run") as opened:
+            result = CliRunner().invoke(app, ["memory", "obsidian"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        expected = quote(os.path.join(configured, memory.INDEX), safe="")
+        opened.assert_called_once_with(["open", f"obsidian://open?path={expected}"], check=True)
+
+        result = CliRunner().invoke(app, ["memory", "path", "--reset"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(memory.memory_dir(), os.path.join(self.tmp, ".asgard", "memory"))
 
 
 class TestOkfExport(MemoryBase):

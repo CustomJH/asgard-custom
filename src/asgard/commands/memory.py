@@ -14,11 +14,14 @@ import json as _json
 import os
 import re
 import secrets
+import subprocess
 import sys
 import threading
 import time
 import uuid
+import webbrowser
 from collections.abc import Callable
+from urllib.parse import quote
 
 from .. import memory, ui
 from ..memory_bridge import (
@@ -390,9 +393,45 @@ def run_recall(text: str, provider: str | None = None) -> int:
     return 0
 
 
-def run_path() -> int:
-    print(memory.memory_dir())
-    return 0
+def run_path(directory: str | None = None, reset: bool = False) -> int:
+    def _do() -> int:
+        if directory and reset:
+            raise ValueError("use either --set or --reset")
+        if directory or reset:
+            from ..settings import load_global, save_global
+
+            configured = dict(load_global().get("memory") or {})
+            if reset:
+                configured.pop("directory", None)
+            else:
+                path = os.path.abspath(os.path.expanduser(directory or ""))
+                memory.ensure_home(path)
+                configured["directory"] = path
+            save_global("memory", configured)
+            if os.environ.get(memory.MEMORY_ENV):
+                ui.warn(f"{memory.MEMORY_ENV} overrides the saved directory")
+        print(memory.memory_dir())
+        return 0
+
+    return _guard(_do)
+
+
+def run_obsidian() -> int:
+    def _do() -> int:
+        vault = memory.ensure_home()
+        if not os.path.isdir(os.path.join(vault, ".obsidian")):
+            raise ValueError(f"open this folder as an Obsidian vault once, then retry: {vault}")
+        uri = f"obsidian://open?path={quote(os.path.join(vault, memory.INDEX), safe='')}"
+        if sys.platform == "darwin":
+            subprocess.run(["open", uri], check=True)
+        elif os.name == "nt":  # pragma: no cover - Windows 전용
+            os.startfile(uri)  # type: ignore[attr-defined]
+        elif not webbrowser.open(uri):  # pragma: no cover - Linux desktop 환경 의존
+            raise OSError("could not open the Obsidian URI")
+        ui.ok(f"opened personal memory in Obsidian → {vault}")
+        return 0
+
+    return _guard(_do)
 
 
 def _backend_options(values: list[str]) -> dict:

@@ -466,11 +466,21 @@ def memory_sync_turn(
     raise typer.Exit(run_sync_turn(mode))
 
 
-@memory_app.command("path", help="print the memory directory")
-def memory_path() -> None:
+@memory_app.command("path", help="print or configure the personal memory directory")
+def memory_path(
+    directory: str = typer.Option(None, "--set", help="persist a global personal memory directory"),
+    reset: bool = typer.Option(False, "--reset", help="restore the default personal memory directory"),
+) -> None:
     from .commands.memory import run_path
 
-    raise typer.Exit(run_path())
+    raise typer.Exit(run_path(directory, reset))
+
+
+@memory_app.command("obsidian", help="open the personal memory wiki in Obsidian")
+def memory_obsidian() -> None:
+    from .commands.memory import run_obsidian
+
+    raise typer.Exit(run_obsidian())
 
 
 @memory_app.command("dashboard", help="open a read-only local dashboard for the personal memory wiki")

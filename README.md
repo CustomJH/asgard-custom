@@ -164,4 +164,17 @@ active project backend. `asgard memory project-rehydrate` previews and replays c
 records after a backend replacement. Backend changes are bound to machine-local trust,
 approval IDs, plan IDs, and projection manifests.
 
+Personal memory is a Markdown wiki and can be used directly as an Obsidian vault. To keep its
+canonical files in a dedicated cloud or external folder, configure it once on each machine:
+
+```bash
+asgard memory path --set "/path/to/cloud/Asgard Memory"
+asgard memory obsidian
+asgard memory path --reset  # restore ~/.asgard/memory
+```
+
+`ASGARD_MEMORY_DIR` remains the session-level override. Obsidian must open the configured folder as
+a vault once before its URI can focus `index.md`. Avoid writing from multiple machines at the same
+time; cloud storage synchronizes the files but does not provide a cross-machine lock.
+
 Use `asgard memory connect` to configure a backend and `asgard doctor` to verify its binding and readiness.

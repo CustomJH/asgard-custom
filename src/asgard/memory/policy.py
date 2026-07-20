@@ -24,7 +24,13 @@ _THREATS = (
 
 
 def memory_dir() -> str:
-    return os.environ.get(MEMORY_ENV) or os.path.join(os.path.expanduser("~"), ".asgard", "memory")
+    path = os.environ.get(MEMORY_ENV) or ""
+    if not path:
+        configured = _memory_settings().get("directory")
+        path = configured if isinstance(configured, str) else ""
+    if path.strip():
+        return os.path.abspath(os.path.expanduser(path))
+    return os.path.join(os.path.expanduser("~"), ".asgard", "memory")
 
 
 def _memory_settings() -> dict:
