@@ -33,6 +33,16 @@ def choose_mode(requested: str | None) -> str:
         return mode
     if not sys.stdin.isatty():
         return "local"
+    from . import picker
+
+    if picker.available():  # 인터랙티브 패널 (같은 foundation 계층) — 번호 입력은 폴백
+        opts = [
+            picker.Option("local", "local", detail="fastest; agent can reach the host"),
+            picker.Option("container", "container", detail="private workspace; Docker/Podman on macOS or Windows"),
+            picker.Option("container-shared", "container shared", detail="edits the host working tree live"),
+            picker.Option("sandbox", "Docker Sandbox", detail="microVM + private Git clone (requires sbx login)"),
+        ]
+        return picker.pick("execution environment", opts) or "local"
     sys.stdout.write(
         "\n  execution environment\n"
         "    1  local            fastest; agent can reach the host\n"

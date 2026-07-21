@@ -10,7 +10,7 @@ from __future__ import annotations
 import getpass
 import sys
 
-from .. import theme, ui
+from .. import picker, theme, ui
 from ..i18n import t
 from ..providers import (
     PROVIDERS,
@@ -38,6 +38,19 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
     if rp.model and rp.model not in models and not account_catalog:
         models.insert(0, rp.model)
     models = list(dict.fromkeys(models))
+    if picker.available():  # 인터랙티브 패널 — 타이핑 즉시 필터가 s(search)·번호 입력을 대체
+        opts = [picker.Option(m, m, current=(m == rp.model)) for m in models]
+        default = next((i for i, m in enumerate(models) if m == rp.model), 0)
+        manual = "" if account_catalog else t("picker_manual_model")  # 계정 catalog 밖 ID 봉쇄 유지
+        sel = picker.pick(t("pick_model"), opts, default=default, manual_hint=manual)
+        if sel is None:
+            return None
+        if sel not in models:  # 수동 입력 행 경유 — 정규화 실패는 취소와 동일
+            sel = normalize_model_id(sel)
+            if not sel:
+                sys.stdout.write(f"  {t('invalid_model_id')}\n")
+                return None
+        return sel
     query = ""
     while True:
         matches = [m for m in models if query.lower() in m.lower()]
@@ -63,7 +76,7 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
                 return None
             if not manual:
                 sys.stdout.write(f"  {t('invalid_model_id')}\n")
-                return None
+                continue
             if account_catalog and manual not in models:
                 sys.stdout.write(f"  {t('invalid_model_id')}\n")
                 continue
@@ -80,8 +93,7 @@ def _pick_model(rp: ResolvedProvider) -> str | None:
                 raise IndexError
             return visible[index - 1]
         except ValueError, IndexError:
-            sys.stdout.write(f"  {t('cancelled')}\n")
-            return None
+            sys.stdout.write(f"  {t('invalid_model_id')}\n")
 
 
 def _provider_values(root: str, rp: ResolvedProvider) -> dict:
@@ -132,6 +144,16 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
     names = list(PROVIDERS)
     if preselect in PROVIDERS:
         name = preselect
+    elif picker.available():
+        opts = [
+            picker.Option(n, PROVIDERS[n].display, detail=PROVIDERS[n].default_model or t("needs_base_url"))
+            for n in names
+        ]
+        selected = picker.pick(t("pick_provider"), opts)
+        if selected is None:
+            sys.stdout.write(f"  {t('cancelled')}\n")
+            return None
+        name = selected
     else:
         sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
         for i, n in enumerate(names, 1):
