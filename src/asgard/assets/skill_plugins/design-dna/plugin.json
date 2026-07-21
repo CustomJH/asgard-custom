@@ -1,0 +1,40 @@
+{
+  "schema": 1,
+  "name": "design-dna",
+  "version": "9d9d795",
+  "description": "Reference-to-JSON design identity extraction and faithful style transfer for Freyja",
+  "skills": [
+    "design-dna"
+  ],
+  "source": "https://github.com/zanwei/design-dna",
+  "revision": "9d9d79568df31cd846681f89fd3be1c3ce0c2aff",
+  "license": "MIT",
+  "routing": {
+    "design-dna": {
+      "triggers": [
+        "design dna",
+        "design-dna",
+        "디자인 dna",
+        "디자인 디엔에이",
+        "style guide json",
+        "스타일 가이드 json",
+        "design profile json",
+        "디자인 프로필 json",
+        "design system from screenshot",
+        "스크린샷 디자인 시스템 추출",
+        "design tokens from reference",
+        "레퍼런스 디자인 토큰 추출",
+        "extract design style",
+        "디자인 스타일 추출",
+        "reference style transfer",
+        "레퍼런스 스타일 이식",
+        "generate design from json",
+        "dna json 디자인 적용"
+      ],
+      "agents": [
+        "freyja",
+        "freyja-lead"
+      ]
+    }
+  }
+}

@@ -628,6 +628,53 @@ class TestUiSkillsRework(unittest.TestCase):
         self.assertIn("레지스터 판정", role)
         self.assertIn("장면 문장", role)
         self.assertIn("Swap", role)  # 자기 게이트가 role 에서도 선언
+        self.assertIn("외부 specialist 게이트", role)
+
+    def test_atomic_design_mandate_spans_role_lead_and_hnoss(self):
+        # 아토믹 디자인 시스템 무조건 강제 (26-07-21) — role 상시 조항 + hnoss 정본 + 편대 상속
+        from asgard.templates.freyja import resolve_freyja_skills
+        from asgard.templates.roles import ROLE_AGENTS
+
+        roles = dict(ROLE_AGENTS)
+        role = roles["asgard-freyja.md"]
+        self.assertIn("아토믹·예외 없음", role)  # 상시 주입 계약이라 전 모드에 전파
+        self.assertIn("asgard-freyja-hnoss", role)  # 정본 포인터
+        self.assertIn("아토믹: 레벨", role)  # 보고 명기 의무
+        self.assertIn("아토믹 컴포넌트 구조", roles["asgard-freyja-lead.md"])  # 편대 브리프에도 복제
+        hnoss = self.by_name["asgard-freyja-hnoss"]
+        self.assertIn("아토믹 디자인 캐논", hnoss)
+        self.assertIn("레벨 판정 사다리", hnoss)
+        self.assertIn("의존 방향 단방향", hnoss)  # 하위는 상위를 모른다
+        self.assertIn("승격은 사용처 2곳 실증 후", hnoss)  # 추측성 일반화 차단
+        for task in ("공용 버튼 컴포넌트 신설", "아토믹 구조로 리팩터링", "design system 정리"):
+            self.assertIn("asgard-freyja-hnoss", [name for name, _ in resolve_freyja_skills(task)], task)
+
+    def test_external_specialists_are_linked_beneath_parent_skills(self):
+        brisingamen = self.by_name["asgard-freyja-brisingamen"]
+        hnoss = self.by_name["asgard-freyja-hnoss"]
+        gersemi = self.by_name["asgard-freyja-gersemi"]
+        motion = self.by_name["asgard-freyja-motion"]
+        hildisvini = self.by_name["asgard-freyja-hildisvini"]
+        for child in ("ui-ux-pro-max", "design-md-review", "21st-cli-use", "aceternity-ui"):
+            self.assertIn(child, brisingamen)
+        for child in ("ui-ux-pro-max", "21st-cli-use", "aceternity-ui", "jitter-motion-reference", "prototype"):
+            self.assertIn(child, hnoss)
+        self.assertIn("glassmorphism", gersemi)
+        for child in (
+            "jitter-motion-reference",
+            "micro-interaction",
+            "lottie-animation",
+            "gsap-web",
+            "animation-vocabulary",
+            "apple-design",
+            "ascii-animation",
+            "find-animation-opportunities",
+            "improve-animations",
+            "review-animations",
+            "emil-design-eng",
+        ):
+            self.assertIn(child, motion)
+        self.assertIn("playwright-cli", hildisvini)
 
 
 class TestA11yCanon(unittest.TestCase):
@@ -710,6 +757,7 @@ class TestSkillResolver(unittest.TestCase):
     def test_routing(self):
         cases = {
             "랜딩 페이지 히어로를 수려하게": "asgard-freyja-brisingamen",
+            "현대적으로 움직이는 랜딩페이지": "asgard-freyja-motion",
             "카드 호버 전환 애니메이션 추가": "asgard-freyja-motion",
             "Remotion 설명 영상 프레임 렌더": "asgard-freyja-video",
             "3D 제품 뷰어 셰이더": "asgard-freyja-folkvangr",

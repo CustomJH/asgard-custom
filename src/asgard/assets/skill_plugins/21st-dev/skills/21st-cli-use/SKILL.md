@@ -1,6 +1,6 @@
 ---
 name: 21st-cli-use
-description: Search, inspect, and install React, shadcn, Tailwind components, themes, templates, and SVG logos from 21st.dev with its official CLI. Use for 21st.dev requests, UI component searches, installing a selected community component, or generating a UI draft only after catalog search finds no suitable component.
+description: Search, inspect, and install React, shadcn, Tailwind components, themes, templates, and SVG logos from 21st.dev with its official CLI. Use when a project lacks a common reusable component such as pricing, navigation, command palette, data display, or form UI; search before hand-writing it. Generate only after catalog search finds no suitable component.
 ---
 
 # Use 21st.dev components

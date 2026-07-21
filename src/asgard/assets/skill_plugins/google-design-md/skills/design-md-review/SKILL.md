@@ -1,15 +1,16 @@
 ---
 name: design-md-review
-description: Validate and review DESIGN.md design-system tokens, structure, references, typography, components, and WCAG contrast with Asgard's Python port.
-triggers: design.md audit, design.md review, design system audit, design system review, design token audit, token validation, 디자인 시스템 검수, 디자인 시스템 리뷰, 디자인 토큰 검수, 토큰 검증
+description: Validate an existing DESIGN.md before Freyja implements from it, then review token, structure, reference, typography, component, WCAG contrast, and implementation drift.
+triggers: design.md, design.md audit, design.md review, design.md apply, design.md based, design.md implementation, using design.md, from design.md, design system audit, design system review, design token audit, token validation, 디자인 시스템 검수, 디자인 시스템 리뷰, 디자인 토큰 검수, 토큰 검증, design.md 적용, design.md 기반, design.md 구현
 agent: freyja, freyja-lead
 agents: freyja, freyja-lead
 ---
 
 # DESIGN.md review — Freyja
 
-When a task asks to review a design system, locate its `DESIGN.md`. Do not create one merely because
-it is absent; report the missing source of truth unless creation was requested.
+Use this skill when a task asks to review a design system or Freyja is about to implement against an
+existing `DESIGN.md`. Do not create one merely because it is absent; report the missing source of
+truth unless creation was requested.
 
 Run the bundled Python linter first:
 
@@ -19,6 +20,12 @@ The command emits JSON and exits 1 only when errors exist, 2 when the file canno
 still require judgment. Use each finding's `path` and message as evidence, then compare the document
 against the actual CSS, theme, component, or token implementation in scope. Tokens are normative;
 prose explains intent but must not silently override token values.
+
+For implementation work, run lint before editing and do not apply an invalid or unresolved token.
+Fix the document when that is in scope; otherwise report the exact blocking path and continue only
+with unaffected values. After implementation, compare changed CSS, theme, and components with the
+validated tokens and report any intentional exception. Do not claim the linter validates rendered
+layout or interaction behavior; those still require Freyja's browser and accessibility checks.
 
 Review beyond syntax:
 

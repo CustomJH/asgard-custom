@@ -9,7 +9,7 @@ import os
 import re
 from typing import Any
 
-from .policy import memory_dir, scan_threats
+from .policy import memory_dir, scan_secrets, scan_threats
 
 fcntl: Any = None  # posix 파일 락 — 없으면 msvcrt(Windows) 폴백, 둘 다 없으면 best-effort
 msvcrt: Any = None
@@ -23,6 +23,15 @@ with contextlib.suppress(ImportError):  # pragma: no cover — Windows 전용
 PAGES, INDEX, LOG, SCHEMA, DB = "pages", "index.md", "log.md", "SCHEMA.md", "state.db"
 KINDS = ("note", "user", "decision", "insight", "reference", "feedback")
 DEFAULT_KIND = "note"
+DEFAULT_SKILL_PREFERENCE_SLUG = "freyja-전체-스킬-조합-선호"
+
+_DEFAULT_SKILL_PREFERENCE = """사용자는 프론트엔드·UI·모션·영상·3D 등 시각 작업에서 일부 익숙한 스킬에 편중하지 않고 Asgard의 현재 전체 스킬·플러그인 카탈로그를 확인해 적재적소에 조합하는 방식을 선호한다.
+
+- `uv run asgard skills list --json`과 `uv run asgard plugins list --json`으로 현재 후보를 확인한다.
+- 프로젝트 기존 컴포넌트와 Freyja 부모 계약을 우선하고, UI/UX 근거·컴포넌트 소싱·모션 레퍼런스·구현·성능·접근성·브라우저 검증 등 필요한 specialist만 지연 로드한다.
+- 모든 스킬을 한꺼번에 주입하지 않는다. 21st·Aceternity·UI/UX Pro Max·Emil 세부 스킬·iart·Jitter·Three.js·DESIGN.md·Playwright 등에서 과업에 맞는 조합을 선택하고 채택·기각 이유를 남긴다.
+- 명시 호출 전용 스킬과 프로젝트의 기존 디자인 시스템·의존성 경계를 존중한다.
+"""
 
 _SCHEMA_MD = """# Memory Schema — 개인 위키 규약
 
@@ -181,6 +190,29 @@ def _pages(d: str) -> list[str]:
         return []
 
 
+def seed_defaults(d: str | None = None) -> list[str]:
+    """첫 setup의 빈 개인 위키에만 패키지 기본 선호를 심는다. 기존 페이지는 건드리지 않는다."""
+    d = ensure_home(d)
+    with _lock(d):
+        if _pages(d):
+            return []
+        meta = {
+            "title": "Freyja 전체 스킬 조합 선호",
+            "kind": "user",
+            "created": _today(),
+            "updated": _today(),
+        }
+        _atomic_write(
+            _page_path(d, DEFAULT_SKILL_PREFERENCE_SLUG),
+            render_page(meta, _DEFAULT_SKILL_PREFERENCE),
+        )
+    from .index import reindex
+
+    reindex(d)
+    log_op(d, "seed:user", DEFAULT_SKILL_PREFERENCE_SLUG)
+    return [DEFAULT_SKILL_PREFERENCE_SLUG]
+
+
 def _read(d: str, slug: str) -> tuple[dict, str] | None:
     try:
         return parse_page(open(_page_path(d, slug), encoding="utf-8").read())
@@ -202,9 +234,8 @@ def _kind(meta: dict) -> str:
 
 def poisoned(meta: dict, body: str) -> str | None:
     """페이지 오염 판정 — 주입 가능한 모든 필드(본문·title·links·description·kind)."""
-    return scan_threats(
-        body, meta.get("title", ""), meta.get("links", ""), meta.get("description", ""), meta.get("kind", "")
-    )
+    fields = (body, meta.get("title", ""), meta.get("links", ""), meta.get("description", ""), meta.get("kind", ""))
+    return scan_threats(*fields) or scan_secrets(*fields)
 
 
 def log_op(d: str, op: str, slug: str, detail: str = "") -> None:

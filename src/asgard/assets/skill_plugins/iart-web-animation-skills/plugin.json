@@ -24,7 +24,7 @@
       "agents": ["freyja", "freyja-lead"]
     },
     "ascii-animation": {
-      "triggers": ["ascii animation", "ascii art animation", "terminal animation", "ascii shader", "아스키 애니메이션", "터미널 애니메이션"],
+      "triggers": ["ascii animation", "ascii art animation", "ascii 애니메이션", "terminal animation", "ascii shader", "아스키 애니메이션", "터미널 애니메이션"],
       "agents": ["freyja", "freyja-lead"]
     },
     "glassmorphism": {
@@ -40,7 +40,7 @@
       "agents": ["freyja", "freyja-lead"]
     },
     "micro-interaction": {
-      "triggers": ["micro interaction", "hover effect", "press effect", "animated toggle", "toast animation", "drawer animation", "ui feedback", "마이크로인터랙션", "호버 효과", "토글 애니메이션", "ui 피드백"],
+      "triggers": ["micro interaction", "animated interface", "animated website", "moving landing page", "animated landing page", "hover effect", "press effect", "animated toggle", "toast animation", "drawer animation", "ui feedback", "마이크로인터랙션", "움직이는 인터페이스", "움직이는 웹사이트", "움직이는 랜딩", "움직이는 랜딩페이지", "움직이는 랜딩 페이지", "호버 효과", "토글 애니메이션", "ui 피드백"],
       "agents": ["freyja", "freyja-lead"]
     },
     "page-transition-animation": {

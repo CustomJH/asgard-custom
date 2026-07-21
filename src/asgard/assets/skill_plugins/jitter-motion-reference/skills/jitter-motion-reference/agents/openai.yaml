@@ -1,0 +1,4 @@
+interface:
+  display_name: "Jitter Motion Reference"
+  short_description: "Jitter 모션 예제를 구현 가능한 패턴으로 번역"
+  default_prompt: "Use $jitter-motion-reference to select a Jitter-inspired motion pattern and adapt it to this project."

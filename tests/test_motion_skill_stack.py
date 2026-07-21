@@ -31,10 +31,35 @@ class MotionSkillStackTest(unittest.TestCase):
         skill_bank._cache.clear()
         self.tmp.cleanup()
 
+    def test_animate_uses_asgard_design_prerequisite_chain(self):
+        from asgard.templates.freyja import FREYJA_SKILLS, resolve_freyja_skills
+
+        motion = dict(FREYJA_SKILLS)["asgard-freyja-motion"]
+        for anchor in (
+            "외부 `animate` 선행 스킬 호환 계약",
+            "asgard skills show asgard-freyja-brisingamen",
+            "asgard skills show asgard-freyja-hnoss",
+            "asgard skills show asgard-freyja-syn",
+            "/frontend-design",
+            "/teach-impeccable",
+        ):
+            self.assertIn(anchor, motion)
+
+        resolved = dict(resolve_freyja_skills("animate this landing page"))
+        self.assertIn("asgard-freyja-motion", resolved)
+        self.assertIn("asgard-freyja-hnoss", resolved)
+        self.assertIn("asgard-freyja-brisingamen", resolved["asgard-freyja-deferred"])
+
     def test_video_and_web_tasks_compose_only_freyja_skills(self):
         video = {name for name, _ in skill_registry.resolve_skills(self.tmp.name, "제품 설명 영상 제작", "freyja")}
         self.assertIn("asgard-freyja-video", video)
         self.assertIn("explainer-video", video)
+
+        data_video = {
+            name for name, _ in skill_registry.resolve_skills(self.tmp.name, "CSV 차트 데이터 영상 제작", "freyja")
+        }
+        self.assertIn("asgard-freyja-video", data_video)
+        self.assertIn("chart-animation", data_video)
 
         web = {name for name, _ in skill_registry.resolve_skills(self.tmp.name, "Lottie 마이크로인터랙션", "freyja")}
         self.assertIn("asgard-freyja-motion", web)
@@ -63,6 +88,14 @@ class MotionSkillStackTest(unittest.TestCase):
         self.assertIn("The pipeline", handlers["load_skill"]({"name": "explainer-video"}))
 
     def test_aceternity_parser_keeps_only_live_free_components(self):
+        hits = {
+            name
+            for name, _ in skill_registry.resolve_skills(
+                self.tmp.name, "Next.js 인터랙티브 히어로에 비교 슬라이더를 넣어줘", "freyja"
+            )
+        }
+        self.assertIn("aceternity-ui", hits)
+
         plugin = skill_registry.bundled_plugins()["aceternity-ui"]
         script = Path(plugin["root"], "skills", "aceternity-ui", "scripts", "aceternity.py")
         spec = importlib.util.spec_from_file_location("aceternity_skill", script)
@@ -103,6 +136,17 @@ class MotionSkillStackTest(unittest.TestCase):
     def test_21st_cli_is_freyja_only_and_uses_the_pinned_official_cli(self):
         hits = {name for name, _ in skill_registry.resolve_skills(self.tmp.name, "21st 컴포넌트 검색", "freyja")}
         self.assertIn("21st-cli-use", hits)
+        natural = {
+            name
+            for name, _ in skill_registry.resolve_skills(
+                self.tmp.name, "React로 재사용 가능한 프라이싱 컴포넌트를 만들어줘", "freyja"
+            )
+        }
+        self.assertIn("21st-cli-use", natural)
+        self.assertNotIn(
+            "21st-cli-use",
+            {name for name, _ in skill_registry.resolve_skills(self.tmp.name, "기존 버튼 패딩 수정", "freyja")},
+        )
         self.assertNotIn(
             "21st-cli-use",
             {name for name, _ in skill_registry.resolve_skills(self.tmp.name, "21st 컴포넌트 검색", "worker")},
@@ -127,6 +171,22 @@ class MotionSkillStackTest(unittest.TestCase):
             cli.return_value.returncode = 0
             self.assertEqual(module.main(["search", "pricing"]), 0)
         self.assertEqual(cli.call_args.args[0], ["npx", "-y", "@21st-dev/cli@1.7.2", "search", "pricing"])
+
+    def test_specialist_intent_routes_to_one_exact_motion_skill(self):
+        cases = {
+            "이 효과 이름이 뭐라고 부르는지 모션 용어 알려줘": "animation-vocabulary",
+            "애플 디자인 제스처 UI와 스프링 애니메이션": "apple-design",
+            "기존 화면 어디에 애니메이션을 넣을지 찾아줘": "find-animation-opportunities",
+            "전체 앱 모션 감사와 개선 로드맵": "improve-animations",
+            "이 애니메이션 diff를 검토해줘": "review-animations",
+            "터미널 ASCII 애니메이션": "ascii-animation",
+            "리퀴드 글래스 UI": "glassmorphism",
+        }
+        for task, expected in cases.items():
+            with self.subTest(task=task):
+                self.assertIn(
+                    expected, {name for name, _ in skill_registry.resolve_skills(self.tmp.name, task, "freyja")}
+                )
 
 
 if __name__ == "__main__":

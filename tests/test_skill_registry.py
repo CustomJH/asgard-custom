@@ -195,6 +195,100 @@ class RegistryTest(unittest.TestCase):
         envelope = skill_registry.show_skill_resource(self.root, name, "API-DESIGN.md")
         self.assertIn("resultCode", envelope)
 
+    def test_thor_clean_hexagonal_skill_is_mapped_loaded_and_composed(self):
+        name = "asgard-thor-clean-hexagonal"
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog[name]["plugin"], "asgard-thor-bilskirnir")
+        for agent in ("thor", "thor-lead"):
+            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+        for agent in ("worker", "freyja"):
+            self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+
+        resolved = {
+            skill
+            for skill, _ in skill_registry.resolve_skills(
+                self.root,
+                "주문 API를 Clean Architecture와 헥사고날 포트와 어댑터로 리팩터링",
+                "thor",
+            )
+        }
+        self.assertIn(name, resolved)
+        audit_resolved = {
+            skill
+            for skill, _ in skill_registry.resolve_skills(
+                self.root, "헥사고날 아키텍처 리뷰 — port 경계와 의존성 방향 감사", "thor"
+            )
+        }
+        self.assertIn(name, audit_resolved)
+        self.assertIn("asgard-hlidskjalf", audit_resolved)
+        self.assertNotIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "기존 CRUD 오탈자 수정", "thor")},
+        )
+        self.assertNotIn(
+            name,
+            {
+                skill
+                for skill, _ in skill_registry.resolve_skills(
+                    self.root, "신규 백엔드의 의존성 역전과 바운디드 컨텍스트를 설계", "thor"
+                )
+            },
+        )
+
+        body = skill_registry.load_skill_for_agent(self.root, "thor", name)
+        for resource in ("references/BOUNDARIES.md", "references/TOOLING.md", "references/SOURCES.md"):
+            self.assertIn(resource, body)
+        tooling = skill_registry.load_skill_for_agent(self.root, "thor", name, resource="references/TOOLING.md")
+        self.assertIn("import-linter", tooling)
+        self.assertIn("ArchUnit", tooling)
+
+        from asgard.agent.heimdall import _skill_support
+
+        note, tools, handlers = _skill_support("thor", self.root)
+        self.assertIn(name, note)
+        self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
+        self.assertEqual(handlers["load_skill"]({"name": name}), body)
+        self.assertIn(
+            "outbound adapter",
+            handlers["load_skill"]({"name": name, "resource": "references/BOUNDARIES.md"}),
+        )
+
+        from asgard.templates.roles import ROLE_AGENTS
+
+        role = dict(ROLE_AGENTS)["asgard-thor.md"]
+        self.assertIn("아키텍처 opt-in 게이트", role)
+        self.assertIn("기본은 `asgard-thor-bilskirnir`의 4레이어", role)
+        self.assertIn("Specialist trace", role)
+
+    def test_hlidskjalf_architecture_pack_spans_backend_and_guide_agents(self):
+        # 시스템 아키텍처 검증 팩 (26-07-21) — 계층·결합도·경계 감사 정본
+        name = "asgard-hlidskjalf"
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog[name]["plugin"], name)
+        for agent in ("worker", "thor", "thor-lead", "mimir"):
+            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
+        self.assertIn(
+            name,
+            {
+                skill
+                for skill, _ in skill_registry.resolve_skills(
+                    self.root, "시스템 아키텍처 검증 — 순환 의존·계층 위반 감사", "thor"
+                )
+            },
+        )
+        self.assertNotIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "프론트 버튼 색상 교체", "thor")},
+        )
+        body = skill_registry.load_skill_for_agent(self.root, "thor", name)
+        self.assertIn("검증 계약", body)
+        self.assertIn("판정 불능 = 미판정", body)
+        for resource in ("LAYERING.md", "COUPLING.md", "BOUNDARIES.md"):
+            self.assertIn(resource, body)
+        layering = skill_registry.show_skill_resource(self.root, name, "LAYERING.md")
+        self.assertIn("역류 검출", layering)
+
     def test_official_scrapling_skill_is_bundled_and_assigned(self):
         name = "scrapling-official"
         plugin = skill_registry.bundled_plugins()[name]
@@ -214,6 +308,43 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("Respect robots.txt and ToS", body)
         reference = skill_registry.show_skill_resource(self.root, name, "references/fetching/choosing.md")
         self.assertIn("Fetchers Overview", reference)
+
+    def test_threejs_reference_pack_is_freyja_scoped(self):
+        name = "threejs-skills"
+        plugin = skill_registry.bundled_plugins()[name]
+        self.assertEqual(plugin["revision"], "b1c623076c661fc9b03dac19292e825a5d106823")
+        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
+        self.assertEqual(catalog[name]["plugin"], name)
+        for agent in ("freyja", "freyja-lead"):
+            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+        resolved = {
+            skill for skill, _ in skill_registry.resolve_skills(self.root, "three.js 3D 제품 뷰어 씬", "freyja")
+        }
+        self.assertIn(name, resolved)
+        self.assertIn("asgard-freyja-folkvangr", resolved)  # 원칙 스킬과 합성 — 레퍼런스 팩은 대체가 아니다
+        self.assertNotIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "three files need merging", "freyja")},
+        )
+        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
+        self.assertIn("적용 위계", body)
+        for room in (
+            "references/fundamentals.md",
+            "references/geometry.md",
+            "references/materials.md",
+            "references/lighting.md",
+            "references/textures.md",
+            "references/animation.md",
+            "references/loaders.md",
+            "references/shaders.md",
+            "references/postprocessing.md",
+            "references/interaction.md",
+        ):
+            self.assertIn(room, body)
+        shaders = skill_registry.show_skill_resource(self.root, name, "references/shaders.md")
+        self.assertIn("onBeforeCompile", shaders)
+        self.assertIn("`references/postprocessing.md`", shaders)  # See Also 가 팩 내부 리소스 경로로 재배선됨
 
     def test_cc_settings_preapprove_skill_loads(self):
         """헤드리스 CC 에서 스킬 로드 경로·quest-log 루프가 자동 거부되지 않도록 사전 승인."""
@@ -286,6 +417,37 @@ components:
             "apple-design",
             {name for name, _ in skill_registry.resolve_skills(self.root, "스프링 애니메이션 제스처 UI", "worker")},
         )
+
+    def test_jitter_motion_reference_is_freyja_scoped(self):
+        name = "jitter-motion-reference"
+        plugin = skill_registry.bundled_plugins()[name]
+        self.assertEqual(plugin["source"], "https://jitter.video/templates/all/")
+        for agent in ("freyja", "freyja-lead"):
+            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
+        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+
+        resolved = [name for name, _ in skill_registry.resolve_skills(self.root, "Jitter 모션 예제 적용", "freyja")]
+        self.assertIn("asgard-freyja-motion", resolved)
+        self.assertIn(name, resolved)
+        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
+        self.assertIn("references/pattern-atlas.md", body)
+        atlas = skill_registry.show_skill_resource(self.root, name, "references/pattern-atlas.md")
+        self.assertIn("https://jitter.video/template/card-flip/", atlas)
+        self.assertIn("분석 레퍼런스", atlas)
+
+    def test_moving_landing_composes_freyja_policy_with_external_specialists(self):
+        task = "아스가르드에 대한 현대적이고 모던한 스타일의 움직이는 랜딩페이지를 구성해줘"
+        resolved = dict(skill_registry.resolve_skills(self.root, task, "freyja"))
+        self.assertIn("asgard-freyja-motion", resolved)
+        for name in (
+            "ui-ux-pro-max",
+            "jitter-motion-reference",
+            "micro-interaction",
+            "asgard-freyja-restraint",
+        ):
+            self.assertIn(name, resolved)
+        self.assertIn("asgard-freyja-brisingamen", resolved["asgard-freyja-deferred"])
+        self.assertNotIn("emil-design-eng", resolved)  # explicit-only broad skill stays out of model discovery
 
     def test_skill_resource_loader_exposes_references_without_path_escape(self):
         standards = skill_registry.show_skill_resource(self.root, "review-animations", "STANDARDS.md")
