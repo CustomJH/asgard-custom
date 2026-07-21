@@ -67,6 +67,7 @@ path = "src/asgard/__init__.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asgard"]
+exclude = ["**/__pycache__/**", "**/*.pyc"]
 artifacts = [
   "src/asgard/assets/*.png",
   "src/asgard/assets/*.html",
