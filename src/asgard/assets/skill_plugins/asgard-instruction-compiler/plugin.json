@@ -2,7 +2,7 @@
   "schema": 1,
   "name": "asgard-instruction-compiler",
   "version": "1",
-  "description": "Intent recovery and executable instruction design for Asgard agents",
+  "description": "Intent recovery plus the complete 44-skill and 18-workflow AI design reference collection",
   "skills": ["asgard-instruction-compiler"],
   "routing": {
     "asgard-instruction-compiler": {

@@ -30,3 +30,18 @@ Understand first; do not merely polish the user's wording.
 10. Remove any sentence that does not change behavior. A fresh recipient should be able to act without guessing, while retaining autonomy over ordinary execution details.
 
 Load `references/PATTERNS.md` only when creating or auditing a reusable system prompt, template, delegation protocol, tone policy, constraint set, or few-shot library.
+
+## Complete upstream knowledge rooms
+
+The full Owl-Listener `ai-design-skills` collection is bundled as lazy resources. Load only the exact room needed with:
+
+    asgard skills show asgard-instruction-compiler --resource references/upstream/skills/<domain>/<skill>/SKILL.md
+
+- `ai-alignment-reasoning`: `bias-detection-design`, `consent-and-agency`, `escalation-design`, `guardrail-design`, `harm-anticipation`, `transparency-patterns`, `trust-calibration`, `value-specification`
+- `design-agent-orchestration`: `agent-role-design`, `failure-recovery`, `handoff-protocols`, `human-in-the-loop`, `observability-design`, `state-management`, `task-decomposition`
+- `evaluation`: `comparative-evaluation`, `failure-taxonomy`, `heuristic-evaluation-ai`, `longitudinal-measurement`, `output-quality-rubrics`, `task-success-metrics`, `user-satisfaction-signals`
+- `model-interaction-design`: `context-window-design`, `conversation-patterns`, `feedback-loops`, `frustration-detection`, `generative-ui`, `mixed-initiative-flow`, `multimodal-orchestration`, `progressive-disclosure`
+- `prompt-architecture`: `chain-of-thought-design`, `constraint-specification`, `context-engineering`, `few-shot-patterns`, `prompt-versioning`, `system-prompt-structure`, `template-design`
+- `system-behavior-shaping`: `behavioral-consistency`, `cultural-adaptation`, `domain-voice`, `emotional-design`, `error-personality`, `persona-architecture`, `tone-calibration`
+
+Its 18 procedural workflows are bundled separately under `references/upstream/workflows/<domain>/<workflow>.md`: `design-guardrails`, `red-team`, `write-policy`, `design-oversight`, `design-workflow`, `map-agents`, `create-rubric`, `design-benchmark`, `run-evaluation`, `audit-interaction`, `design-conversation`, `map-initiative`, `audit-prompt`, `build-chain`, `design-prompt`, `calibrate-tone`, `design-persona`, and `stress-test`. Use one when the user asks for that end-to-end workflow; keep the Asgard authority, memory, privacy, and verification rules above authoritative.
