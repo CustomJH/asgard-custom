@@ -500,6 +500,84 @@ class TestLiveFeatures(DashboardBase):
         self.assertIn('id="ovOnboard"', html)
 
 
+class TestUpgradeMarkers(DashboardBase):
+    """고도화 계약 — 관문 호출 팔레트·스켈레톤·에러 재시도·진입 오케스트레이션·스파크라인."""
+
+    def test_command_palette_markers(self):
+        # ⌘K 관문 호출 — 읽기 전용 항해: role=dialog + combobox/listbox + 단축키 비의존 진입 버튼
+        html = dash.render_html()
+        self.assertIn('id="pal"', html)
+        self.assertIn('role="dialog"', html)
+        self.assertIn('aria-modal="true"', html)
+        self.assertIn('role="combobox"', html)
+        self.assertIn('role="listbox"', html)
+        self.assertIn('data-action="palette-open"', html)
+        self.assertIn("palCandidates", html)
+        self.assertIn("aria-activedescendant", html)
+
+    def test_skeleton_loading_markers(self):
+        # 쉰 5상태 — 로딩은 레이아웃 맞춘 스켈레톤, 300ms 이전 비표시(순간 플래시 방지)
+        html = dash.render_html()
+        self.assertIn("skel-appear", html)
+        self.assertIn('class="skel skel-row"', html)
+        self.assertIn("skel-stat", html)
+        self.assertIn(".01s .3s both", html)
+
+    def test_error_retry_markers(self):
+        # 쉰 에러 3질문 + 재시도 경로 — 실패한 탭을 처음처럼 다시 그린다
+        html = dash.render_html()
+        self.assertIn('data-action="retry-load"', html)
+        self.assertIn("loaderr", html)
+        self.assertIn("다시 시도", html)
+
+    def test_entry_orchestration_once_markers(self):
+        # 진입 오케스트레이션 1회 — 통계 카드 스태거 + 게이지 드로우온, 폴링 재렌더에 재생 금지
+        html = dash.render_html()
+        self.assertIn("card-in", html)
+        self.assertIn("ovWoken", html)
+        self.assertIn("drawOnGauge", html)
+        self.assertIn("calc(var(--i,0)*50ms)", html)
+
+    def test_spark_and_reduced_motion_parity(self):
+        # 연대기 리듬 스파크라인 실존 + 신규 모션 전부 reduced-motion 강등 대상
+        html = dash.render_html()
+        self.assertIn('id="ovSpark"', html)
+        self.assertIn("renderSpark", html)
+        reduced = html.split("@media(prefers-reduced-motion:reduce)", 1)[1].split("}", 20)[0:20]
+        block = "}".join(reduced)
+        for marker in (".skel", ".wake .stat", "#pal.on .pal-box"):
+            self.assertIn(marker, block)
+
+    def test_i18n_language_support_markers(self):
+        # 영문 지원 — 한국어 원문이 키인 EN 사전 + T() + 정적 마크업 재도장 + 헤더 토글(저장·리로드)
+        html = dash.render_html()
+        self.assertIn('"asgard-lang"', html)  # localStorage 저장 키
+        self.assertIn("applyStaticLang", html)
+        self.assertIn('data-action="lang-toggle"', html)
+        self.assertIn('"개요": "Overview"', html)  # 탭 라벨 번역 (라우트 토큰은 한글 유지)
+        self.assertIn("data-t", html)  # 정적 텍스트 재도장 마커
+        self.assertIn("data-t-ph", html)  # placeholder 재도장
+        self.assertIn("data-t-aria", html)  # aria-label 재도장
+        # 라우팅 계약 불변 — 탭 ID 는 여전히 한글 토큰이다
+        self.assertIn('TAB_IDS = ["개요", "성좌", "서고", "연대기", "활동"]', html)
+
+    def test_korean_copy_polish_markers(self):
+        # 한글 카피 정돈 — 서술형 종결(…다) 혼재를 정중체로 통일한 대표 문구들
+        html = dash.render_html()
+        self.assertIn("서고가 비어 있습니다", html)
+        self.assertIn("페이지를 찾을 수 없습니다", html)
+        self.assertIn("본문 스캔", html)  # "정본 스캔" 전문용어 완화
+        self.assertNotIn("죽은 링크의 목적지다", html)
+        self.assertNotIn("첫 봉인이다", html)
+
+    def test_main_top_breathing_wins_specificity(self):
+        # 회귀 방어 — main{padding-top} 은 .wrap 쇼트핸드(클래스 특이도)에 졌던 잠복 결함:
+        # 탭바와 콘텐츠 사이 호흡은 복합 선택자 main.wrap 으로만 실제 적용된다.
+        html = dash.render_html()
+        self.assertIn("main.wrap{padding-top:28px", html)
+        self.assertNotRegex(html, r"(?<!\.)\bmain\{padding-top")
+
+
 class TestLocalDayConsistency(DashboardBase):
     """히트맵 집계와 day 딥링크 필터가 같은 (로컬) 날짜 기준을 쓴다 — UTC 자정 어긋남 교정."""
 

@@ -72,7 +72,7 @@
   @keyframes live-spin{to{transform:rotate(360deg)}}
 
   /* ── 탭 바 (agentmemory 셸 — APG tablist: roving tabindex + aria-selected) ── */
-  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--line-strong);overflow-x:auto}
+  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--line-strong);overflow-x:auto;overflow-y:hidden}
   .tabbar [role=tab]{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:var(--ink-dim);
     font-family:var(--sans);font-size:13.5px;letter-spacing:.02em;padding:12px 16px;min-height:44px;cursor:pointer;
     display:inline-flex;align-items:center;gap:8px;white-space:nowrap;margin-bottom:-1px}
@@ -84,7 +84,9 @@
   .view{display:none}
   .view.active{display:block;animation:view-in .22s ease-out}
   @keyframes view-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
-  main{padding-top:22px;padding-bottom:90px}
+  /* main.wrap — .wrap(클래스)이 main(요소)보다 특이도가 높아 padding 쇼트핸드에 상단 여백이 먹혔던
+     잠복 결함 수정: 복합 선택자(0-1-1)로 탭바와 콘텐츠 사이 호흡을 실제로 확보한다 */
+  main.wrap{padding-top:28px;padding-bottom:90px}
 
   h2{font-family:var(--serif);font-weight:500;font-size:17px;color:var(--gold-lit);margin:0 0 14px;letter-spacing:.01em;display:flex;align-items:center;gap:9px}
   h2 svg{color:var(--rune-gold);flex:none}
@@ -94,7 +96,7 @@
 
   /* ── 개요 — 통계 카드 그리드 → 게이지+건강 → 시맨틱 → 2단 (agentmemory Dashboard 구성) ── */
   .stats5{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:18px}
-  .stat{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:13px 15px}
+  .stat{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
   .stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:26px;line-height:1.1;color:var(--gold-lit)}
   .stat .l{font-size:12px;color:var(--ink);margin-top:5px}
   .stat .s{font-size:11px;color:var(--ink-ghost);margin-top:2px}
@@ -294,6 +296,67 @@
 
   .empty{color:var(--ink-dim);font-size:13px;padding:8px 0}
 
+  /* ── 스켈레톤 — 레이아웃 맞춘 자리 지킴 (300ms 이전엔 숨겨 순간 플래시를 막는다 — 쉰 로딩 캐논) ── */
+  .skel{animation:skel-appear .01s .3s both}
+  .skel .sk{background:var(--surface-2);border-radius:6px;position:relative;overflow:hidden}
+  .skel .sk::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
+    background:linear-gradient(90deg,transparent,rgba(230,208,150,.05),transparent);
+    animation:skel-sheen 1.6s ease-in-out infinite}
+  @keyframes skel-appear{from{opacity:0}to{opacity:1}}
+  @keyframes skel-sheen{to{transform:translateX(100%)}}
+  .skel-stat{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--surface-1)}
+  .skel-stat .sk{height:26px;width:56%}
+  .skel-stat .sk+.sk{height:12px;width:80%;margin-top:8px}
+  .skel-row .sk{height:14px;margin:12px 0}
+  .skel-row .sk:nth-child(2n){width:72%}
+
+  /* ── 로드 실패 — 무슨 일이·왜·무엇을 (쉰 에러 3질문) + 재시도 ── */
+  .loaderr{display:flex;flex-direction:column;gap:8px;align-items:flex-start;border:1px solid color-mix(in oklab,var(--crit) 40%,transparent);
+    background:color-mix(in oklab,var(--crit) 7%,var(--surface-1));border-radius:10px;padding:14px 16px;margin-bottom:16px;
+    color:var(--ink);font-size:13px;line-height:1.55}
+  .loaderr .why{color:var(--ink-dim);font-size:12.5px}
+  .loaderr button{background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
+    font-family:var(--mono);font-size:12px;padding:0 18px;min-height:44px;cursor:pointer}
+  .loaderr button:hover{border-color:var(--rune-gold)}
+  .loaderr button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
+
+  /* ── 진입 오케스트레이션 — 첫 렌더 1회, 통계 카드 스태거 (모션 3막 중 1막) ── */
+  .wake .stat{animation:card-in .26s cubic-bezier(.22,1,.36,1) both;animation-delay:calc(var(--i,0)*50ms)}
+  @keyframes card-in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+
+  /* ── 연대기 리듬 스파크라인 (개요 — 최근 28일 운영 밀도) ── */
+  .spark{display:inline-flex;align-items:flex-end;margin-left:auto}
+  .spark svg{display:block}
+
+  /* ── 관문 호출 — ⌘K 명령 팔레트 (읽기 전용 항해: 탭·별 점프) ── */
+  .palette-hint{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 13px;cursor:pointer;
+    background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink-dim);
+    font-family:var(--mono);font-size:11px;letter-spacing:.04em}
+  .palette-hint:hover{border-color:var(--rune-gold);color:var(--ink)}
+  .palette-hint:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
+  .palette-hint kbd{font-family:var(--mono);font-size:10px;border:1px solid var(--line-strong);border-radius:4px;
+    padding:2px 5px;color:var(--gold-lit);background:var(--surface-1)}
+  #pal{position:fixed;inset:0;z-index:110;display:none;align-items:flex-start;justify-content:center;
+    padding:12vh 20px 20px;background:rgba(8,6,4,.62)}
+  #pal.on{display:flex}
+  .pal-box{width:min(560px,100%);background:var(--surface-1);border:1px solid var(--line-strong);border-radius:12px;
+    overflow:hidden;overscroll-behavior:contain}
+  #pal.on .pal-box{animation:pal-in .22s cubic-bezier(.22,1,.36,1) both}
+  @keyframes pal-in{from{opacity:0;transform:scale(.98) translateY(-6px)}to{opacity:1;transform:none}}
+  .pal-box input{width:100%;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);
+    font-family:var(--sans);font-size:15px;padding:15px 18px;outline:none}
+  .pal-box input::placeholder{color:var(--ink-dim)}
+  .pal-list{list-style:none;margin:0;padding:6px;max-height:46vh;overflow-y:auto}
+  .pal-list li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;
+    font-size:13.5px;color:var(--ink);min-height:44px}
+  .pal-list li svg{flex:none;color:var(--rune-gold);opacity:.85}
+  .pal-list li .sub{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);margin-left:auto;white-space:nowrap}
+  .pal-list li[aria-selected=true]{background:color-mix(in oklab,var(--rune-gold) 11%,var(--surface-1));color:var(--gold-lit)}
+  .pal-list li[aria-selected=true] .sub{color:var(--ink-dim)}
+  .pal-empty{padding:16px 14px;color:var(--ink-dim);font-size:13px}
+  .pal-foot{display:flex;gap:14px;padding:9px 16px;border-top:1px solid var(--line);
+    font-family:var(--mono);font-size:10px;color:var(--ink-ghost)}
+
   /* ── 빈 서고 온보딩 — 빈 표 대신 행동 유도 ── */
   .onboard{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:20px 4px;color:var(--ink-dim);font-size:13px;line-height:1.6}
   .onboard svg{color:var(--rune-gold)}
@@ -331,6 +394,10 @@
     .view.active{animation:none}
     .live-dot,.live-btn[disabled] svg{animation:none}
     .live-btn:active{transform:none}
+    .skel{animation-delay:0s}
+    .skel .sk::after{animation:none}
+    .wake .stat{animation:none}
+    #pal.on .pal-box{animation:none}
     html{scroll-behavior:auto}
   }
 </style>
@@ -368,30 +435,32 @@
   }
 })();
 </script>
-<a class="skip" href="#main">본문으로 건너뛰기</a>
+<a class="skip" href="#main" data-t>본문으로 건너뛰기</a>
 
 <header class="wrap top">
   <div>
     <p class="kicker">Asgard · Yggdrasil — Tier0 Memory</p>
-    <h1>위그드라실</h1>
+    <h1 data-t>위그드라실</h1>
   </div>
   <div class="hright">
     <div class="livebar">
+      <button type="button" class="live-btn" id="langBtn" data-action="lang-toggle" style="width:auto;min-width:44px;padding:0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.04em" aria-label="Switch language — 언어 전환">EN</button>
+      <button type="button" class="palette-hint" id="palOpen" data-action="palette-open" aria-haspopup="dialog"><span data-t>관문 호출</span>&nbsp;<kbd>⌘K</kbd></button>
       <span class="live-badge idle" id="liveBadge"><span class="live-dot" aria-hidden="true"></span><span id="liveText">갱신 30s · <span id="liveTime" class="num">—</span></span></span>
-      <button type="button" class="live-btn" id="refreshBtn" data-action="refresh-now" aria-label="지금 새로고침"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M12.3 8.2a5 5 0 1 1-1.2-4.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12.6 1.2v3h-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      <button type="button" class="live-btn" id="refreshBtn" data-action="refresh-now" aria-label="지금 새로고침" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M12.3 8.2a5 5 0 1 1-1.2-4.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12.6 1.2v3h-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
     </div>
-    <div class="meta-line" id="metaLine">불러오는 중…</div>
+    <div class="meta-line" id="metaLine" data-t>불러오는 중…</div>
   </div>
 </header>
 
 <!-- 탭 바 — agentmemory 뷰어 셸 이식: 해시 딥링크 + 탭별 lazy-load. 데이터가 실존하는 5탭만. -->
-<nav class="wrap" aria-label="관측 창 내비게이션">
-  <div class="tabbar" id="tabBar" role="tablist" aria-label="관측 창 보기">
-    <button type="button" role="tab" id="tab-개요" data-tab="개요" class="on" aria-selected="true" aria-controls="view-개요" tabindex="0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 10a5.5 5.5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 10L9.6 6.6" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="10" r="1.1" fill="currentColor"/></svg>개요</button>
-    <button type="button" role="tab" id="tab-성좌" data-tab="성좌" aria-selected="false" aria-controls="view-성좌" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="3" cy="3.5" r="1.3" fill="currentColor"/><circle cx="11" cy="2.8" r="1" fill="currentColor"/><circle cx="7" cy="8" r="1.6" fill="currentColor"/><circle cx="11.5" cy="11" r="1.2" fill="currentColor"/><path d="M3 3.5L7 8l4-5.2M7 8l4.5 3" stroke="currentColor" stroke-width=".8" fill="none" opacity=".6"/></svg>성좌</button>
-    <button type="button" role="tab" id="tab-서고" data-tab="서고" aria-selected="false" aria-controls="view-서고" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.8" y="1.8" width="10.4" height="10.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M1.8 5.5h10.4M5.5 5.5V12.2" stroke="currentColor" stroke-width="1.2"/></svg>서고</button>
-    <button type="button" role="tab" id="tab-연대기" data-tab="연대기" aria-selected="false" aria-controls="view-연대기" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3.2l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>연대기</button>
-    <button type="button" role="tab" id="tab-활동" data-tab="활동" aria-selected="false" aria-controls="view-활동" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1" fill="currentColor" opacity=".35"/><rect x="7.7" y="1.5" width="5" height="5" rx="1" fill="currentColor" opacity=".6"/><rect x="1.5" y="7.7" width="5" height="5" rx="1" fill="currentColor" opacity=".85"/><rect x="7.7" y="7.7" width="5" height="5" rx="1" fill="currentColor"/></svg>활동</button>
+<nav class="wrap" aria-label="관측 창 내비게이션" data-t-aria>
+  <div class="tabbar" id="tabBar" role="tablist" aria-label="관측 창 보기" data-t-aria>
+    <button type="button" role="tab" id="tab-개요" data-tab="개요" class="on" aria-selected="true" aria-controls="view-개요" tabindex="0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 10a5.5 5.5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 10L9.6 6.6" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="10" r="1.1" fill="currentColor"/></svg><span data-t>개요</span></button>
+    <button type="button" role="tab" id="tab-성좌" data-tab="성좌" aria-selected="false" aria-controls="view-성좌" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="3" cy="3.5" r="1.3" fill="currentColor"/><circle cx="11" cy="2.8" r="1" fill="currentColor"/><circle cx="7" cy="8" r="1.6" fill="currentColor"/><circle cx="11.5" cy="11" r="1.2" fill="currentColor"/><path d="M3 3.5L7 8l4-5.2M7 8l4.5 3" stroke="currentColor" stroke-width=".8" fill="none" opacity=".6"/></svg><span data-t>성좌</span></button>
+    <button type="button" role="tab" id="tab-서고" data-tab="서고" aria-selected="false" aria-controls="view-서고" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.8" y="1.8" width="10.4" height="10.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M1.8 5.5h10.4M5.5 5.5V12.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>서고</span></button>
+    <button type="button" role="tab" id="tab-연대기" data-tab="연대기" aria-selected="false" aria-controls="view-연대기" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3.2l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>연대기</span></button>
+    <button type="button" role="tab" id="tab-활동" data-tab="활동" aria-selected="false" aria-controls="view-활동" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1" fill="currentColor" opacity=".35"/><rect x="7.7" y="1.5" width="5" height="5" rx="1" fill="currentColor" opacity=".6"/><rect x="1.5" y="7.7" width="5" height="5" rx="1" fill="currentColor" opacity=".85"/><rect x="7.7" y="7.7" width="5" height="5" rx="1" fill="currentColor"/></svg><span data-t>활동</span></button>
   </div>
 </nav>
 
@@ -399,30 +468,30 @@
 
   <!-- ══ 개요 (agentmemory Dashboard 구성: 통계 카드 → 게이지 → 2단) ══ -->
   <section class="view active" id="view-개요" role="tabpanel" aria-labelledby="tab-개요">
-    <div class="grid stats5" id="ovStats" aria-label="서고 통계"></div>
+    <div class="grid stats5" id="ovStats" aria-label="서고 통계" data-t-aria><div class="skel" style="display:contents" aria-hidden="true"><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div></div></div>
     <div id="ovOnboard"></div>
     <div class="grid side" style="margin-bottom:18px">
       <figure class="panel gauge-card">
         <div id="gauge" aria-hidden="true"></div>
         <figcaption>
-          <div class="lab">룬-링 인덱스 예산</div>
+          <div class="lab" data-t>룬-링 인덱스 예산</div>
           <div id="budgetText" style="margin-top:6px">—</div>
         </figcaption>
       </figure>
-      <section class="panel" aria-label="건강 진단">
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.5 2.4v3.6c0 3.4-2.3 5.5-5.5 6.5-3.2-1-5.5-3.1-5.5-6.5V3.9z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5.6 8l1.7 1.7 3.1-3.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>건강 진단</h2>
+      <section class="panel" aria-label="건강 진단" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.5 2.4v3.6c0 3.4-2.3 5.5-5.5 6.5-3.2-1-5.5-3.1-5.5-6.5V3.9z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5.6 8l1.7 1.7 3.1-3.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>건강 진단</span></h2>
         <ul class="flist" id="findList"></ul>
       </section>
     </div>
     <p class="panel semstrip" id="semState"></p>
     <div class="grid two">
-      <section class="panel" aria-label="최근 연대기 발췌">
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8M4 5.5h8M4 8.5h5M4 11.5h6" stroke="currentColor" stroke-width="1.2"/></svg>연대기 발췌</h2>
+      <section class="panel" aria-label="최근 연대기 발췌" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8M4 5.5h8M4 8.5h5M4 11.5h6" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>연대기 발췌</span><span class="spark" id="ovSpark"></span></h2>
         <ul class="log" id="ovLog"></ul>
-        <p style="margin:12px 0 0"><button type="button" class="linklike" data-action="open-tab" data-tab="연대기">연대기 전체 보기 →</button></p>
+        <p style="margin:12px 0 0"><button type="button" class="linklike" data-action="open-tab" data-tab="연대기" data-t>연대기 전체 보기 →</button></p>
       </section>
-      <section class="panel" aria-label="회수 상위">
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v5l3 2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>자주 회수됨</h2>
+      <section class="panel" aria-label="회수 상위" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v5l3 2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>자주 회수됨</span></h2>
         <ul class="uselist" id="topUse"></ul>
       </section>
     </div>
@@ -430,42 +499,42 @@
 
   <!-- ══ 성좌 — 일급 그래프 뷰 (기존 Canvas 물리 시뮬 그대로 이관) ══ -->
   <section class="view" id="view-성좌" role="tabpanel" aria-labelledby="tab-성좌">
-    <section class="panel" id="constellation" aria-label="기억 성좌 그래프">
-      <h2><svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true"><circle cx="3.5" cy="4" r="1.7" fill="currentColor"/><circle cx="13" cy="3" r="1.3" fill="currentColor"/><circle cx="8.5" cy="9.5" r="2" fill="currentColor"/><circle cx="14" cy="13.5" r="1.5" fill="currentColor"/><circle cx="3" cy="13" r="1.2" fill="currentColor"/><path d="M3.5 4L8.5 9.5 13 3M8.5 9.5l5.5 4M8.5 9.5L3 13" stroke="currentColor" stroke-width=".9" fill="none" opacity=".55"/></svg>기억 성좌 <span id="gCount" class="num dimnote"></span></h2>
+    <section class="panel" id="constellation" aria-label="기억 성좌 그래프" data-t-aria>
+      <h2><svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true"><circle cx="3.5" cy="4" r="1.7" fill="currentColor"/><circle cx="13" cy="3" r="1.3" fill="currentColor"/><circle cx="8.5" cy="9.5" r="2" fill="currentColor"/><circle cx="14" cy="13.5" r="1.5" fill="currentColor"/><circle cx="3" cy="13" r="1.2" fill="currentColor"/><path d="M3.5 4L8.5 9.5 13 3M8.5 9.5l5.5 4M8.5 9.5L3 13" stroke="currentColor" stroke-width=".9" fill="none" opacity=".55"/></svg><span data-t>기억 성좌</span> <span id="gCount" class="num dimnote"></span></h2>
       <div class="gbody">
         <div class="gwrap">
-          <canvas id="gcanvas" tabindex="0" role="application" aria-describedby="gHelp"
+          <canvas id="gcanvas" tabindex="0" role="application" aria-describedby="gHelp" data-t-aria
             aria-label="기억 성좌 캔버스 — 페이지가 별, 링크·의미 유사가 별자리 선. 화살표 키로 이동, 대괄호 키로 노드 순회."></canvas>
-          <div class="gctrl" role="group" aria-label="성좌 보기 조절">
-            <button type="button" data-action="g-zoom-in" aria-label="확대"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M7.5 2.5v10M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
-            <button type="button" data-action="g-zoom-out" aria-label="축소"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
-            <button type="button" data-action="g-recenter" aria-label="처음 위치로"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><circle cx="7.5" cy="7.5" r="4.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7.5 .8v3M7.5 11.2v3M.8 7.5h3M11.2 7.5h3" stroke="currentColor" stroke-width="1.3"/></svg></button>
+          <div class="gctrl" role="group" aria-label="성좌 보기 조절" data-t-aria>
+            <button type="button" data-action="g-zoom-in" aria-label="확대" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M7.5 2.5v10M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
+            <button type="button" data-action="g-zoom-out" aria-label="축소" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
+            <button type="button" data-action="g-recenter" aria-label="처음 위치로" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><circle cx="7.5" cy="7.5" r="4.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7.5 .8v3M7.5 11.2v3M.8 7.5h3M11.2 7.5h3" stroke="currentColor" stroke-width="1.3"/></svg></button>
           </div>
           <div class="gtip" id="gTip" aria-hidden="true"></div>
-          <p class="ghint" id="gHelp">드래그 이동 · 휠 줌 · 키보드: 화살표 팬 / + − 줌 / ] [ 노드 순회 / Enter 상세로 / Esc 해제 / 0 초기화</p>
+          <p class="ghint" id="gHelp" data-t>드래그 이동 · 휠 줌 · 키보드: 화살표 팬 / + − 줌 / ] [ 노드 순회 / Enter 상세로 / Esc 해제 / 0 초기화</p>
         </div>
-        <aside class="gside" aria-label="성좌 조작반">
+        <aside class="gside" aria-label="성좌 조작반" data-t-aria>
           <div>
-            <label class="vh" for="gq">성좌에서 노드 검색</label>
-            <input id="gq" type="search" placeholder="노드 검색 — 제목·슬러그" autocomplete="off">
+            <label class="vh" for="gq" data-t>성좌에서 노드 검색</label>
+            <input id="gq" type="search" placeholder="노드 검색 — 제목·슬러그" data-t-ph autocomplete="off">
           </div>
           <div id="gDetail"></div>
-          <div class="gstats" id="gStats" aria-label="성좌 통계"></div>
+          <div class="gstats" id="gStats" aria-label="성좌 통계" data-t-aria></div>
           <div>
-            <p class="sectitle">종류 필터 — 색+형태 이중 인코딩</p>
+            <p class="sectitle" data-t>종류 필터 — 색+형태 이중 인코딩</p>
             <div id="gFilters" class="gfilters"></div>
           </div>
           <div>
-            <p class="sectitle">엣지 언어</p>
+            <p class="sectitle" data-t>엣지 언어</p>
             <ul class="glegend">
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#C6A45E" stroke-width="2"/></svg>명시 링크 — 실선 골드</li>
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#5E8A6E" stroke-width="2" stroke-dasharray="4 3"/></svg>의미 유사 — 점선 비취 (코사인 가중)</li>
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h16" stroke="#C25B46" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M20 2l6 6M26 2l-6 6" stroke="#C25B46" stroke-width="1.4"/></svg>죽은 링크 — 붉은 절단선</li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#C6A45E" stroke-width="2"/></svg><span data-t>명시 링크 — 실선 골드</span></li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#5E8A6E" stroke-width="2" stroke-dasharray="4 3"/></svg><span data-t>의미 유사 — 점선 비취 (코사인 가중)</span></li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h16" stroke="#C25B46" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M20 2l6 6M26 2l-6 6" stroke="#C25B46" stroke-width="1.4"/></svg><span data-t>죽은 링크 — 붉은 절단선</span></li>
             </ul>
           </div>
           <div id="gSemHint"></div>
           <div>
-            <p class="sectitle">고아 성단 <span id="orphanCount" class="num"></span></p>
+            <p class="sectitle"><span data-t>고아 성단</span> <span id="orphanCount" class="num"></span></p>
             <ul class="glist" id="orphanList"></ul>
           </div>
         </aside>
@@ -476,57 +545,68 @@
 
   <!-- ══ 서고 — 카탈로그 + 질의 스트림 프리즘 통합 (agentmemory Memories 구성) ══ -->
   <section class="view" id="view-서고" role="tabpanel" aria-labelledby="tab-서고">
-    <section class="panel" aria-label="서고 카탈로그">
-      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 6.5h11M6.5 6.5v7" stroke="currentColor" stroke-width="1.2"/></svg>서고 <span id="catCount" class="num dimnote"></span></h2>
+    <section class="panel" aria-label="서고 카탈로그" data-t-aria>
+      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 6.5h11M6.5 6.5v7" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>서고</span> <span id="catCount" class="num dimnote"></span></h2>
       <form class="search" id="searchForm" role="search">
-        <label for="q" class="vh">서고 검색어</label>
-        <input id="q" name="q" type="search" placeholder="이 서고에서 무엇을 찾나 — RRF 하이브리드 검색 (읽기 전용)" autocomplete="off">
-        <button type="submit">검색</button>
+        <label for="q" class="vh" data-t>서고 검색어</label>
+        <input id="q" name="q" type="search" placeholder="서고 검색 — 제목·본문·의미까지 한 번에 (읽기 전용)" data-t-ph autocomplete="off">
+        <button type="submit" data-t>검색</button>
       </form>
       <div class="legend" id="legend">
-        <span class="sectitle" style="margin:0">질의 스트림 프리즘</span>
-        <span><i style="background:var(--rune-gold)"></i>FTS BM25</span>
-        <span><i style="background:var(--info)"></i>정본 스캔</span>
-        <span><i style="background:var(--gem)"></i>시맨틱</span>
+        <span class="sectitle" style="margin:0" data-t>질의 스트림 프리즘</span>
+        <span><i style="background:var(--rune-gold)"></i><span data-t>전문 검색 FTS</span></span>
+        <span><i style="background:var(--info)"></i><span data-t>본문 스캔</span></span>
+        <span><i style="background:var(--gem)"></i><span data-t>의미 검색</span></span>
         <span id="semNote"></span>
       </div>
-      <div id="kindChips" class="chips" role="group" aria-label="종류 필터"></div>
-      <div id="sortChips" class="chips" role="group" aria-label="정렬 기준"></div>
-      <div id="libBody" aria-live="polite"><p class="empty">불러오는 중…</p></div>
+      <div id="kindChips" class="chips" role="group" aria-label="종류 필터" data-t-aria></div>
+      <div id="sortChips" class="chips" role="group" aria-label="정렬 기준" data-t-aria></div>
+      <div id="libBody" aria-live="polite"><p class="vh">불러오는 중…</p><div class="skel skel-row" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>
     </section>
   </section>
 
   <!-- ══ 연대기 — 좌우 교차 타임라인 (agentmemory Timeline 구성) ══ -->
   <section class="view" id="view-연대기" role="tabpanel" aria-labelledby="tab-연대기">
-    <section class="panel" aria-label="운영 연대기">
-      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.8 1.8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>운영 연대기 <span id="chronCount" class="num dimnote"></span></h2>
-      <div id="opChips" class="chips" role="group" aria-label="작업 종류 필터"></div>
+    <section class="panel" aria-label="운영 연대기" data-t-aria>
+      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M8 4.5V8l2.8 1.8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>운영 연대기</span> <span id="chronCount" class="num dimnote"></span></h2>
+      <div id="opChips" class="chips" role="group" aria-label="작업 종류 필터" data-t-aria></div>
       <div id="dayFilter"></div>
-      <div class="chrono" id="chronBody" aria-live="polite"><p class="empty">불러오는 중…</p></div>
+      <div class="chrono" id="chronBody" aria-live="polite"><p class="vh">불러오는 중…</p><div class="skel skel-row" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>
       <div id="chronPgn"></div>
     </section>
   </section>
 
   <!-- ══ 활동 — 52주 열지도 + 작업 분포 + 피드 (agentmemory Activity 구성) ══ -->
   <section class="view" id="view-활동" role="tabpanel" aria-labelledby="tab-활동">
-    <section class="panel" aria-label="활동 열지도">
-      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="5.5" height="5.5" rx="1" fill="currentColor" opacity=".35"/><rect x="8.7" y="1.8" width="5.5" height="5.5" rx="1" fill="currentColor" opacity=".6"/><rect x="1.8" y="8.7" width="5.5" height="5.5" rx="1" fill="currentColor" opacity=".85"/><rect x="8.7" y="8.7" width="5.5" height="5.5" rx="1" fill="currentColor"/></svg>활동 <span id="actMeta" class="num dimnote"></span></h2>
+    <section class="panel" aria-label="활동 열지도" data-t-aria>
+      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="1.8" width="5.5" height="5.5" rx="1" fill="currentColor" opacity=".35"/><rect x="8.7" y="1.8" width="5.5" height="5.5" rx="1" fill="currentColor" opacity=".6"/><rect x="1.8" y="8.7" width="5.5" height="5.5" rx="1" fill="currentColor" opacity=".85"/><rect x="8.7" y="8.7" width="5.5" height="5.5" rx="1" fill="currentColor"/></svg><span data-t>활동</span> <span id="actMeta" class="num dimnote"></span></h2>
       <div id="heatWrap"></div>
     </section>
     <div class="grid two" style="margin-top:18px">
-      <section class="panel" aria-label="작업 분포">
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5v-5M6.2 13.5v-9M9.9 13.5V6M13.6 13.5V2.5" stroke="currentColor" stroke-width="1.6"/></svg>작업 분포</h2>
+      <section class="panel" aria-label="작업 분포" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 13.5v-5M6.2 13.5v-9M9.9 13.5V6M13.6 13.5V2.5" stroke="currentColor" stroke-width="1.6"/></svg><span data-t>작업 분포</span></h2>
         <div id="opBars" class="bars"></div>
       </section>
-      <section class="panel" aria-label="최근 피드">
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8M4 5.5h8M4 8.5h5M4 11.5h6" stroke="currentColor" stroke-width="1.2"/></svg>최근 피드</h2>
+      <section class="panel" aria-label="최근 피드" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8M4 5.5h8M4 8.5h5M4 11.5h6" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>최근 피드</span></h2>
         <ul class="log" id="actFeed"></ul>
       </section>
     </div>
   </section>
 
-  <footer>위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 127.0.0.1 · 쓰기는 CLI 승인 게이트</footer>
+  <footer data-t>위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI 에서</footer>
 </main>
+
+<!-- 관문 호출 — ⌘K 명령 팔레트: 탭·별을 이름으로 항해한다 (읽기 전용, 스냅샷 데이터만) -->
+<div id="pal" role="dialog" aria-modal="true" aria-label="관문 호출 — 탭과 페이지로 이동" data-t-aria>
+  <div class="pal-box">
+    <label class="vh" for="palQ" data-t>이동할 탭 또는 페이지 검색</label>
+    <input id="palQ" type="text" placeholder="어디로 갈까요 — 탭 또는 페이지 이름" data-t-ph
+      autocomplete="off" role="combobox" aria-expanded="true" aria-controls="palList" aria-activedescendant="">
+    <ul class="pal-list" id="palList" role="listbox" aria-label="이동 후보" data-t-aria></ul>
+    <div class="pal-foot" aria-hidden="true"><span data-t>↑↓ 이동</span><span data-t>Enter 실행</span><span data-t>Esc 닫기</span></div>
+  </div>
+</div>
 
 <script>
 "use strict";
@@ -535,6 +615,155 @@ const esc = (s) => String(s == null ? "" : s).replace(/[&<>"]/g, (c) => ({"&":"&
 const truncate = (s, n) => { s = String(s == null ? "" : s); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
 let REDUCED = false;
 try{ REDUCED = window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches; }catch(e){}
+
+/* ── 언어 — 한국어 원문이 곧 키다: EN 사전에 없으면 한국어 그대로 (fail-open).
+   저장된 선택 > 브라우저 언어 순으로 결정하고, 전환은 저장 후 리로드로 전 표면을 다시 그린다. ── */
+let LANG = "ko";
+try{
+  const saved = localStorage.getItem("asgard-lang");
+  if(saved === "ko" || saved === "en") LANG = saved;
+  else if((navigator.language || "").toLowerCase().indexOf("ko") !== 0) LANG = "en";
+}catch(e){}
+const EN = {
+  "본문으로 건너뛰기": "Skip to content",
+  "위그드라실": "Yggdrasil",
+  "관문 호출": "Gate Call",
+  "지금 새로고침": "Refresh now",
+  "불러오는 중…": "Loading…",
+  "관측 창 내비게이션": "Observatory navigation",
+  "관측 창 보기": "Observatory views",
+  "개요": "Overview", "성좌": "Constellation", "서고": "Library", "연대기": "Chronicle", "활동": "Activity",
+  "서고 통계": "Library stats",
+  "룬-링 인덱스 예산": "Rune-ring index budget",
+  "건강 진단": "Health check",
+  "최근 연대기 발췌": "Recent chronicle excerpt",
+  "연대기 발췌": "Chronicle excerpt",
+  "연대기 전체 보기 →": "View full chronicle →",
+  "회수 상위": "Top recalls",
+  "자주 회수됨": "Frequently recalled",
+  "기억 성좌 그래프": "Memory constellation graph",
+  "기억 성좌": "Memory constellation",
+  "기억 성좌 캔버스 — 페이지가 별, 링크·의미 유사가 별자리 선. 화살표 키로 이동, 대괄호 키로 노드 순회.":
+    "Memory constellation canvas — pages are stars; links and semantic similarity draw the lines. Arrow keys pan, bracket keys cycle nodes.",
+  "성좌 보기 조절": "Constellation view controls",
+  "확대": "Zoom in", "축소": "Zoom out", "처음 위치로": "Reset view",
+  "드래그 이동 · 휠 줌 · 키보드: 화살표 팬 / + − 줌 / ] [ 노드 순회 / Enter 상세로 / Esc 해제 / 0 초기화":
+    "Drag to pan · wheel to zoom · keys: arrows pan / + − zoom / ] [ cycle nodes / Enter opens detail / Esc clears / 0 resets",
+  "성좌 조작반": "Constellation panel",
+  "성좌 통계": "Constellation stats",
+  "성좌에서 노드 검색": "Search nodes in the constellation",
+  "노드 검색 — 제목·슬러그": "Search nodes — title or slug",
+  "종류 필터 — 색+형태 이중 인코딩": "Kind filter — color + shape dual encoding",
+  "엣지 언어": "Edge language",
+  "명시 링크 — 실선 골드": "Explicit link — solid gold",
+  "의미 유사 — 점선 비취 (코사인 가중)": "Semantic similarity — dashed jade (cosine-weighted)",
+  "죽은 링크 — 붉은 절단선": "Dead link — red cut line",
+  "고아 성단": "Orphan cluster",
+  "서고 카탈로그": "Library catalog",
+  "서고 검색어": "Library search query",
+  "서고 검색 — 제목·본문·의미까지 한 번에 (읽기 전용)": "Search the library — title, body and meaning at once (read-only)",
+  "검색": "Search",
+  "질의 스트림 프리즘": "Query stream prism",
+  "전문 검색 FTS": "Full-text FTS",
+  "본문 스캔": "Body scan",
+  "의미 검색": "Semantic",
+  "종류 필터": "Kind filter",
+  "정렬 기준": "Sort by",
+  "운영 연대기": "Operations chronicle",
+  "작업 종류 필터": "Operation filter",
+  "활동 열지도": "Activity heatmap",
+  "작업 분포": "Operation distribution",
+  "최근 피드": "Recent feed",
+  "위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI 에서":
+    "Yggdrasil · Asgard personal memory · read-only observatory · local only (127.0.0.1) · edits happen in the CLI",
+  "관문 호출 — 탭과 페이지로 이동": "Gate Call — jump to tabs and pages",
+  "이동할 탭 또는 페이지 검색": "Search tabs or pages to jump to",
+  "어디로 갈까요 — 탭 또는 페이지 이름": "Where to — tab or page name",
+  "이동 후보": "Jump candidates",
+  "↑↓ 이동": "↑↓ move", "Enter 실행": "Enter run", "Esc 닫기": "Esc close",
+  "갱신 30s": "refresh 30s",
+  "갱신 실패 — 재시도 대기": "Refresh failed — retrying soon",
+  "페이지": "Pages",
+  "시맨틱": "Semantic",
+  "오늘": "today",
+  "서고에 쌓인 기록": "entries in the library",
+  "종류": "Kinds",
+  "비어 있음": "empty",
+  "회수 총합": "Total recalls",
+  "검색이 실제로 꺼내 쓴 횟수": "times search actually pulled a page",
+  "죽은 링크": "Dead links",
+  "가리키는 페이지가 없는 링크 — 정리 대상": "links pointing nowhere — clean these up",
+  "끊긴 참조 없음": "no broken references",
+  "고아 페이지": "Orphan pages",
+  "어떤 페이지와도 이어지지 않음": "connected to nothing",
+  "모두 연결됨": "all connected",
+  "예산 초과 — add 가 거부됩니다. 페이지를 통합하세요": "Over budget — add is rejected; consolidate pages",
+  "예산 임박": "Near budget",
+  "여유": "Healthy",
+  "건강함 — 발견된 문제 없음": "Healthy — no findings",
+  "시맨틱 회수": "Semantic recall",
+  "의미 유사 엣지(점선)와 SEM 레인이 켜져 있습니다": "semantic edges (dashed) and the SEM lane are live",
+  "켜기 전까지는 전문 검색(FTS)·본문 스캔만 사용합니다": "until enabled, only full-text search and body scan are used",
+  "로그 없음": "No log entries",
+  "아직 회수 기록 없음": "No recalls yet",
+  "서고가 비어 있습니다 — 첫 페이지를 기록하면 개요·성좌·연대기가 함께 깨어납니다.":
+    "The library is empty — record your first page and the overview, constellation and chronicle wake together.",
+  "서고가 비어 있습니다 — 아래 한 줄이면 첫 페이지가 만들어집니다.":
+    "The library is empty — one line below creates your first page.",
+  "아직 기록이 없습니다 — 첫 작업이 기록되면 여기에 나타납니다.":
+    "No records yet — the first operation will appear here.",
+  "아직 활동 기록이 없습니다 — 첫 기록이 첫 칸을 밝힙니다.":
+    "No activity yet — the first record lights the first cell.",
+  "전체": "All",
+  "(시맨틱 비활성 — opt-in)": "(semantic off — opt-in)",
+  "정렬": "Sort", "갱신순": "Updated", "회수순": "Recalls", "제목순": "Title",
+  "제목을 누르면 상세가 펼쳐집니다": "Click a title to expand its detail",
+  "갱신": "Updated", "회수": "Recalls",
+  "이 종류의 페이지 없음": "No pages of this kind",
+  " (종류 필터 적용 중)": " (kind filter active)",
+  "— 상세 펼치기": "— expand detail",
+  "닫기": "Close", "상세 닫기": "Close detail",
+  "페이지를 찾을 수 없습니다 — 끊어진 링크가 가리키던 자리입니다.": "Page not found — this is where a broken link pointed.",
+  "생성": "Created", "최근 회수": "Last recall",
+  "오염 격리됨": "Quarantined (poisoned)",
+  "연결된 페이지": "Linked pages",
+  "성좌에서 보기": "View in constellation",
+  "상세를 불러오지 못했습니다": "Couldn't load detail",
+  "선택 해제": "Selection cleared",
+  "고아": "orphan", "오염 격리": "quarantined",
+  "별 (페이지)": "Stars (pages)", "명시 링크": "Explicit links", "의미 엣지": "Semantic edges",
+  "아직 별이 없습니다 — asgard memory add 로 첫 기억을 남기세요": "No stars yet — asgard memory add records your first memory",
+  "고아 없음 — 모두 연결됨": "No orphans — all connected",
+  "아직 페이지가 없습니다.": "No pages yet.",
+  " (필터 적용)": " (filtered)",
+  "조건에 맞는 기록이 없습니다 — 필터를 해제해 보세요.": "No records match — try clearing the filters.",
+  "← 최근": "← Newer", "과거 →": "Older →",
+  "연대기 페이지 넘김": "Chronicle pagination",
+  "해제 ✕": "Clear ✕", "날짜 필터 해제": "Clear date filter",
+  "적음": "Less", "많음": "More",
+  "기록 없음": "No records",
+  "데이터를 불러오지 못했습니다 — 서버에 연결할 수 없습니다.": "Couldn't load data — the server is unreachable.",
+  "· asgard memory 서버가 실행 중인지 확인하세요.": "· check that the asgard memory server is running.",
+  "다시 시도": "Retry",
+  "연대기를 불러오지 못했습니다.": "Couldn't load the chronicle.",
+  "탭 이동": "Go to tab",
+  "일치하는 항목이 없습니다 — 탭 이름이나 페이지 제목으로 검색해 보세요.": "No matches — try a tab name or page title.",
+  "스냅샷 로드 실패: ": "Snapshot load failed: ",
+  "검색 실패: ": "Search failed: ",
+};
+const T = (s) => (LANG === "en" && EN[s]) || s;
+const CNT = (n) => LANG === "en" ? n + (n === 1 ? " op" : " ops") : n + "건";
+const TIMES = (n) => LANG === "en" ? n + "×" : n + "회";
+function applyStaticLang(){
+  document.documentElement.lang = LANG;
+  const lb = $("langBtn");
+  if(lb) lb.textContent = LANG === "ko" ? "EN" : "한국어";
+  if(LANG !== "en") return;
+  document.title = "Yggdrasil · Asgard Memory";
+  document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = T(el.textContent.trim()); });
+  document.querySelectorAll("[data-t-ph]").forEach((el) => { el.placeholder = T(el.placeholder); });
+  document.querySelectorAll("[data-t-aria]").forEach((el) => { el.setAttribute("aria-label", T(el.getAttribute("aria-label"))); });
+}
 
 function debounce(fn, ms){
   let t = null;
@@ -607,15 +836,18 @@ function daysAgo(iso){
   const d = new Date(iso + (iso.length <= 10 ? "T00:00:00" : ""));
   if(isNaN(d)) return esc(iso);
   const n = Math.floor((Date.now() - d.getTime()) / 86400000);
-  return n <= 0 ? "오늘" : n + "일 전";
+  if(n <= 0) return T("오늘");
+  return LANG === "en" ? (n === 1 ? "1 day ago" : n + " days ago") : n + "일 전";
 }
 
 function gauge(b){
   const pct = Math.max(0, Math.min(100, b.pct));
   const R = 44, C = 2 * Math.PI * R, off = C * (1 - pct / 100);
   const col = b.state === "crit" ? "var(--crit)" : b.state === "warn" ? "var(--warn)" : "var(--rune-gold)";
-  return '<svg width="108" height="108" viewBox="0 0 112 112" role="img" aria-label="인덱스 예산 사용량 '
-    + b.size + ' / ' + b.budget + '자, ' + pct + '퍼센트">'
+  const aria = LANG === "en"
+    ? "Index budget usage " + b.size + " / " + b.budget + " chars, " + pct + " percent"
+    : "인덱스 예산 사용량 " + b.size + " / " + b.budget + "자, " + pct + "퍼센트";
+  return '<svg width="108" height="108" viewBox="0 0 112 112" role="img" aria-label="' + aria + '">'
     + '<circle cx="56" cy="56" r="44" fill="none" stroke="var(--surface-3)" stroke-width="7"/>'
     + '<circle cx="56" cy="56" r="44" fill="none" stroke="' + col + '" stroke-width="7" stroke-linecap="round" stroke-dasharray="' + C.toFixed(1) + '" stroke-dashoffset="' + off.toFixed(1) + '" transform="rotate(-90 56 56)"/>'
     + '<g stroke="' + col + '" stroke-width="1" opacity=".5"><path d="M56 5v6M56 101v6M5 56h6M101 56h6"/></g>'
@@ -636,6 +868,8 @@ const KIND = {
   feedback:  { c:"#C48EA5", shape:"tridown", ko:"피드백" },
 };
 const KIND_FALLBACK = KIND.note;
+// 종류 표시명 — 영문 모드는 kind 키 자체가 이미 영어다
+const kindName = (k) => LANG === "en" ? k : ((KIND[k] || KIND_FALLBACK).ko || k);
 
 const G = {
   nodes: [], liveEdges: [], deadEdges: [], adj: {},
@@ -793,7 +1027,7 @@ function renderGraph(){
     ctx.fillStyle = "#9C9179";
     ctx.font = '14px ' + FONT_SANS;
     ctx.textAlign = "center";
-    ctx.fillText("성좌가 비어 있다 — asgard memory add 로 첫 별을 새기세요", w / 2, h / 2);
+    ctx.fillText(T("아직 별이 없습니다 — asgard memory add 로 첫 기억을 남기세요"), w / 2, h / 2);
     return;
   }
 
@@ -906,6 +1140,7 @@ function renderGraph(){
   });
 
   // ── 노드: kind 별 색+형태, 반경=차수, 방사형 그라데이션+글로우 ──
+  const placedLabels = []; // 라벨 충돌 회피 — 겹치는 보조 라벨은 그리지 않는다 (선택·호버·검색 적중은 항상 우선)
   G.nodes.forEach((n) => {
     if(!G.filters[n.kind]) return;
     const st = KIND[n.kind] || KIND_FALLBACK;
@@ -978,7 +1213,16 @@ function renderGraph(){
       const textW = ctx.measureText(label).width;
       const labelW = textW + 16 * zi;
       const labelH = 20 * zi;
-      const labelY = n.y + n.r + 8 * zi;
+      let labelY = n.y + n.r + 8 * zi;
+      // 캔버스 하단 경계에서 라벨이 반절 잘리면 노드 위로 뒤집는다
+      const worldBottom = (h - G.panY) / G.zoom;
+      if(labelY + labelH > worldBottom - 4 * zi) labelY = n.y - n.r - 8 * zi - labelH;
+      const priority = isSel || isHov || (searchActive && m);
+      const rect = { x: n.x - labelW / 2, y: labelY, w: labelW, h: labelH };
+      const clash = placedLabels.some((p) =>
+        rect.x < p.x + p.w && p.x < rect.x + rect.w && rect.y < p.y + p.h && p.y < rect.y + rect.h);
+      if(clash && !priority){ ctx.restore(); return; }
+      placedLabels.push(rect);
       ctx.fillStyle = "rgba(18,15,10,0.92)";
       ctx.beginPath();
       if(ctx.roundRect) ctx.roundRect(n.x - labelW / 2, labelY, labelW, labelH, 4 * zi);
@@ -1034,14 +1278,15 @@ function selectNode(n, center){
   G.sel = n;
   if(center) centerOn(n);
   loadDetail(n.slug);
-  const st = KIND[n.kind] || KIND_FALLBACK;
-  announce(n.title + " 선택 — " + (st.ko || n.kind) + ", 연결 " + n.degree + "개" + (n.orphan ? ", 고아" : "") + (n.poisoned ? ", 오염 격리" : ""));
+  announce(LANG === "en"
+    ? n.title + " selected — " + n.kind + ", " + n.degree + " links" + (n.orphan ? ", orphan" : "") + (n.poisoned ? ", quarantined" : "")
+    : n.title + " 선택 — " + kindName(n.kind) + ", 연결 " + n.degree + "개" + (n.orphan ? ", 고아" : "") + (n.poisoned ? ", 오염 격리" : ""));
   wakeSim();
 }
 function clearSelection(){
   G.sel = null;
   $("gDetail").innerHTML = "";
-  announce("선택 해제");
+  announce(T("선택 해제"));
   wakeSim();
 }
 function cycleNode(dir){
@@ -1080,30 +1325,30 @@ function detailHtml(p, opts){
   const closeAct = opts.close || "close-detail";
   if(p.error){
     return '<div class="gdet"><div class="gdet-head"><span class="mono" style="font-size:11px;color:var(--crit)">' + esc(p.slug || opts.slug || "")
-      + '</span><button type="button" class="gclose" data-action="' + closeAct + '">닫기</button></div>'
-      + '<p class="empty" style="padding:0">페이지를 찾을 수 없다 — 죽은 링크의 목적지다.</p></div>';
+      + '</span><button type="button" class="gclose" data-action="' + closeAct + '">' + T("닫기") + '</button></div>'
+      + '<p class="empty" style="padding:0">' + T("페이지를 찾을 수 없습니다 — 끊어진 링크가 가리키던 자리입니다.") + '</p></div>';
   }
   const drow = (k, v) => v ? "<dt>" + k + "</dt><dd>" + esc(v) + "</dd>" : "";
   let html = '<div class="gdet">';
-  html += '<div class="gdet-head">' + kchip(p.kind) + '<button type="button" class="gclose" data-action="' + closeAct + '" aria-label="상세 닫기">닫기</button></div>';
+  html += '<div class="gdet-head">' + kchip(p.kind) + '<button type="button" class="gclose" data-action="' + closeAct + '" aria-label="' + T("상세 닫기") + '">' + T("닫기") + '</button></div>';
   html += '<h3 class="gdet-title">' + esc(p.title) + '</h3>';
   html += '<p class="gdet-slug mono">' + esc(p.slug) + '</p>';
-  html += '<dl class="gdet-meta">' + drow("생성", p.created) + drow("갱신", p.updated)
-    + drow("회수", p.uses + "회") + drow("최근 회수", p.last_used) + '</dl>';
+  html += '<dl class="gdet-meta">' + drow(T("생성"), p.created) + drow(T("갱신"), p.updated)
+    + drow(T("회수"), TIMES(p.uses)) + drow(T("최근 회수"), p.last_used) + '</dl>';
   if(p.poisoned){
-    html += '<p class="gdet-poison">' + esc(p.quarantine || "오염 격리됨") + '</p>';
+    html += '<p class="gdet-poison">' + esc(p.quarantine || T("오염 격리됨")) + '</p>';
   } else {
     if(p.body) html += '<pre class="gdet-body">' + esc(truncate(p.body, 1200)) + '</pre>';
     const outs = [];
     (p.refs || []).concat(p.links || []).forEach((s) => { if(outs.indexOf(s) < 0) outs.push(s); });
     if(outs.length){
-      html += '<p class="sectitle">잇는 별</p><div class="gdet-links">'
+      html += '<p class="sectitle">' + T("연결된 페이지") + '</p><div class="gdet-links">'
         + outs.map((s) => '<button type="button" class="lchip" data-slug="' + esc(s) + '">' + esc(s) + '</button>').join("")
         + '</div>';
     }
   }
   if(opts.star){
-    html += '<p style="margin:10px 0 0"><button type="button" class="lchip" data-action="goto-star" data-slug="' + esc(p.slug) + '">성좌에서 보기</button></p>';
+    html += '<p style="margin:10px 0 0"><button type="button" class="lchip" data-action="goto-star" data-slug="' + esc(p.slug) + '">' + T("성좌에서 보기") + '</button></p>';
   }
   html += '</div>';
   return html;
@@ -1111,11 +1356,11 @@ function detailHtml(p, opts){
 
 async function loadDetail(slug){ // 성좌 사이드 패널 상세
   const box = $("gDetail");
-  box.innerHTML = '<div class="gdet"><p class="empty" style="padding:0">불러오는 중…</p></div>';
+  box.innerHTML = '<div class="gdet"><p class="empty" style="padding:0">' + T("불러오는 중…") + '</p></div>';
   try{
     box.innerHTML = detailHtml(await fetchPage(slug), { close: "close-detail", slug: slug });
   }catch(e){
-    box.innerHTML = '<div class="gdet"><p class="empty" style="padding:0">상세 로드 실패</p></div>';
+    box.innerHTML = '<div class="gdet"><p class="empty" style="padding:0">' + T("상세를 불러오지 못했습니다") + '</p></div>';
   }
   // 사이드바가 아래로 스크롤된 상태에서 별을 지목해도 상세가 시야에 들어온다 (실측 결함 수정)
   box.scrollIntoView({ block: "nearest", behavior: REDUCED ? "auto" : "smooth" });
@@ -1151,10 +1396,14 @@ function bindGraphInteraction(){
     if(tip){
       if(hoverNode && !G.drag && !isPanning){
         const st = KIND[hoverNode.kind] || KIND_FALLBACK;
+        const kdisp = LANG === "en" ? esc(hoverNode.kind) : esc(st.ko || hoverNode.kind) + ' · ' + esc(hoverNode.kind);
+        const mdisp = LANG === "en"
+          ? 'links ' + hoverNode.degree + ' · recalled ' + hoverNode.uses + '×'
+          : '연결 ' + hoverNode.degree + ' · 회수 ' + hoverNode.uses + '회';
         tip.innerHTML = '<div class="tt-t">' + esc(hoverNode.title) + '</div>'
-          + '<div class="tt-k" style="color:' + st.c + '">' + esc(st.ko || hoverNode.kind) + ' · ' + esc(hoverNode.kind) + '</div>'
-          + '<div class="tt-m">연결 ' + hoverNode.degree + ' · 회수 ' + hoverNode.uses + '회'
-          + (hoverNode.orphan ? ' · 고아' : '') + (hoverNode.poisoned ? ' · 오염 격리' : '') + '</div>';
+          + '<div class="tt-k" style="color:' + st.c + '">' + kdisp + '</div>'
+          + '<div class="tt-m">' + mdisp
+          + (hoverNode.orphan ? ' · ' + T("고아") : '') + (hoverNode.poisoned ? ' · ' + T("오염 격리") : '') + '</div>';
         const rect = canvas.getBoundingClientRect();
         tip.style.left = Math.min(e.clientX - rect.left + 12, rect.width - 200) + "px";
         tip.style.top = (e.clientY - rect.top + 12) + "px";
@@ -1221,9 +1470,11 @@ function buildFilters(){
   const kinds = Object.keys(counts).sort();
   $("gFilters").innerHTML = kinds.map((k) => {
     const st = KIND[k] || KIND_FALLBACK;
+    const label = LANG === "en" ? esc(k)
+      : esc(st.ko || k) + ' <span class="mono" style="font-size:10px;color:var(--ink-dim)">' + esc(k) + '</span>';
     return '<label class="fitem">'
       + '<input type="checkbox" checked data-kind="' + esc(k) + '">'
-      + shapeSwatch(k) + esc(st.ko || k) + ' <span class="mono" style="font-size:10px;color:var(--ink-dim)">' + esc(k) + '</span>'
+      + shapeSwatch(k) + label
       + '<span class="cnt">' + counts[k] + '</span></label>';
   }).join("");
   document.querySelectorAll("#gFilters input").forEach((cb) => {
@@ -1238,11 +1489,13 @@ function renderGraphStats(g){
   const semCount = g.edges.filter((e) => e.type === "semantic").length;
   const linkCount = g.edges.filter((e) => !e.dead && e.type !== "semantic").length;
   $("gStats").innerHTML =
-      '<div class="cell"><div class="v">' + g.nodes.length + '</div><div class="l">별 (페이지)</div></div>'
-    + '<div class="cell"><div class="v">' + linkCount + '</div><div class="l">명시 링크</div></div>'
-    + '<div class="cell"><div class="v">' + semCount + '</div><div class="l">의미 엣지</div></div>'
-    + '<div class="cell' + (g.dead ? " bad" : "") + '"><div class="v">' + g.dead + '</div><div class="l">죽은 링크</div></div>';
-  $("gCount").textContent = "· 별 " + g.nodes.length + " · 선 " + g.edges.length;
+      '<div class="cell"><div class="v">' + g.nodes.length + '</div><div class="l">' + T("별 (페이지)") + '</div></div>'
+    + '<div class="cell"><div class="v">' + linkCount + '</div><div class="l">' + T("명시 링크") + '</div></div>'
+    + '<div class="cell"><div class="v">' + semCount + '</div><div class="l">' + T("의미 엣지") + '</div></div>'
+    + '<div class="cell' + (g.dead ? " bad" : "") + '"><div class="v">' + g.dead + '</div><div class="l">' + T("죽은 링크") + '</div></div>';
+  $("gCount").textContent = LANG === "en"
+    ? "· stars " + g.nodes.length + " · lines " + g.edges.length
+    : "· 별 " + g.nodes.length + " · 선 " + g.edges.length;
 }
 
 function initGraph(g, poisonMap){
@@ -1307,7 +1560,7 @@ bindImeSafeSearch($("gq"), 200, (v) => {
 
 const TAB_IDS = ["개요", "성좌", "서고", "연대기", "활동"];
 const APP = { active: "개요", loaded: {}, snap: null, snapPromise: null, graphReady: false, graphSig: "",
-  kind: "", op: "", q: "", sort: "updated", day: "", chronOffset: 0, inline: null };
+  kind: "", op: "", q: "", sort: "updated", day: "", chronOffset: 0, inline: null, ovWoken: false };
 
 function normalizeTab(t){ return TAB_IDS.indexOf(t) >= 0 ? t : ""; }
 function tabFromRoute(){
@@ -1351,9 +1604,12 @@ async function loadTab(tab){
       case "활동": if(!APP.loaded["활동"]){ renderActivity(s); APP.loaded["활동"] = true; } break;
     }
   }catch(e){
+    // 쉰 에러 3질문 — 무슨 일이 · 왜 · 무엇을 할 수 있나 (재시도 경로 상시 개방)
     if(view && !view.querySelector(".loaderr")){
       view.insertAdjacentHTML("afterbegin",
-        '<p class="empty loaderr">데이터 로드 실패 — 서버가 살아있는지 확인하세요. (' + esc(String(e)) + ')</p>');
+        '<div class="loaderr" role="alert"><span>' + T("데이터를 불러오지 못했습니다 — 서버에 연결할 수 없습니다.") + '</span>'
+        + '<span class="why">' + esc(String(e)) + ' ' + T("· asgard memory 서버가 실행 중인지 확인하세요.") + '</span>'
+        + '<button type="button" data-action="retry-load">' + T("다시 시도") + '</button></div>');
     }
   }
 }
@@ -1363,7 +1619,7 @@ function fetchSnap(){
     APP.snapPromise = fetch("/api/snapshot", { cache: "no-store" })
       .then((r) => r.json())
       .then((s) => { APP.snap = s; renderMeta(s); setLiveBadge(true); return s; })
-      .catch((e) => { $("metaLine").textContent = "스냅샷 로드 실패: " + e; setLiveBadge(false); APP.snapPromise = null; throw e; })
+      .catch((e) => { $("metaLine").textContent = T("스냅샷 로드 실패: ") + e; setLiveBadge(false); APP.snapPromise = null; throw e; })
       .finally(() => dismissSplash()); // 성공이든 실패든 스플래시는 걷는다
   }
   return APP.snapPromise;
@@ -1378,8 +1634,8 @@ function setLiveBadge(ok){
   b.classList.remove("idle");
   b.classList.toggle("err", !ok);
   $("liveText").innerHTML = ok
-    ? '갱신 30s · <span class="num">' + new Date().toTimeString().slice(0, 8) + '</span>'
-    : '갱신 실패 — 재시도 대기';
+    ? T("갱신 30s") + ' · <span class="num">' + new Date().toTimeString().slice(0, 8) + '</span>'
+    : T("갱신 실패 — 재시도 대기");
 }
 function renderActiveTab(s){
   switch(APP.active){
@@ -1425,9 +1681,9 @@ document.addEventListener("visibilitychange", () => {
 function renderMeta(s){
   const m = s.meta;
   $("metaLine").innerHTML =
-    '<span>서고 <b>' + esc(m.dir) + '</b></span>'
-    + '<span>페이지 <b class="num">' + m.pages + '</b></span>'
-    + '<span>시맨틱 <b class="' + (m.semantic ? "on" : "off") + '">' + (m.semantic ? "on · " + esc(m.semantic_mode) : "off") + '</b></span>'
+    '<span>' + T("서고") + ' <b>' + esc(m.dir) + '</b></span>'
+    + '<span>' + T("페이지") + ' <b class="num">' + m.pages + '</b></span>'
+    + '<span>' + T("시맨틱") + ' <b class="' + (m.semantic ? "on" : "off") + '">' + (m.semantic ? "on · " + esc(m.semantic_mode) : "off") + '</b></span>'
     + '<span>' + esc(m.generated) + '</span>';
 }
 // 성좌 데이터 서명 — 폴링 갱신 때 이 값이 같으면 재시드하지 않는다 (드래그 배치 보존)
@@ -1442,8 +1698,8 @@ function renderOrphans(s){
   $("orphanList").innerHTML = s.graph.orphans.slice(0, 12).map((o) =>
     '<li><span class="dot"></span><button type="button" class="linklike mono" style="font-size:12px" data-slug="' + esc(o) + '">' + esc(o) + '</button></li>').join("")
     || (s.graph.nodes.length
-      ? '<li class="empty" style="color:var(--heal)">고아 없음 — 모두 연결됨</li>'
-      : '<li class="empty">별이 없으면 고아도 없다 — 첫 별부터.</li>');
+      ? '<li class="empty" style="color:var(--heal)">' + T("고아 없음 — 모두 연결됨") + '</li>'
+      : '<li class="empty">' + T("아직 페이지가 없습니다.") + '</li>');
 }
 function renderSemHint(s){
   $("gSemHint").innerHTML = s.meta.semantic ? "" :
@@ -1451,7 +1707,9 @@ function renderSemHint(s){
     + '<circle cx="3" cy="6.5" r="1.6" fill="currentColor"/><circle cx="10" cy="3" r="1.4" fill="currentColor"/>'
     + '<circle cx="10" cy="10" r="1.4" fill="currentColor"/>'
     + '<path d="M4.5 5.7L8.7 3.5M4.5 7.3l4.2 2.2" stroke="currentColor" stroke-width="1" stroke-dasharray="2 1.6" fill="none"/></svg>'
-    + '<span>의미 유사 엣지를 보려면 <code>[memory] semantic=local</code> 로 켠다 — 지금은 명시 링크만 잇는다.</span></p>';
+    + (LANG === "en"
+      ? '<span>Semantic edges turn on with <code>[memory] semantic=local</code> — for now only explicit links are shown.</span></p>'
+      : '<span>의미 유사 엣지는 <code>[memory] semantic=local</code> 설정으로 켜집니다 — 지금은 명시 링크만 표시합니다.</span></p>');
 }
 function seedGraph(s){
   const pm = {};
@@ -1487,50 +1745,96 @@ function ovCard(v, label, sub, cls){
 }
 // 빈 서고 온보딩 — 빈 표 대신 첫 행동을 안내한다 (UX 라이팅: 빈 화면은 행동 유도)
 function onboardHtml(msg){
+  const example = LANG === "en"
+    ? 'asgard memory add "today’s decision — one line of why"'
+    : 'asgard memory add "오늘 결정한 것 — 근거 한 줄"';
   return '<div class="onboard">'
     + '<svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">'
     + '<path d="M4 24V12a9 9 0 0 1 18 0v12" fill="none" stroke="currentColor" stroke-width="1.6"/>'
     + '<path d="M9 24v-9a4 4 0 0 1 8 0v9" fill="none" stroke="currentColor" stroke-width="1.2"/>'
     + '<path d="M2 24h22" stroke="currentColor" stroke-width="1.6"/></svg>'
     + '<p>' + msg + '</p>'
-    + '<code>asgard memory add "오늘 결정한 것 — 근거 한 줄"</code></div>';
+    + '<code>' + example + '</code></div>';
+}
+// 게이지 드로우온 — 첫 진입 1회, 링이 0에서 현재 사용량까지 감긴다
+function drawOnGauge(){
+  const ring = $("gauge").querySelector("circle[stroke-dasharray]");
+  if(!ring) return;
+  const target = ring.getAttribute("stroke-dashoffset");
+  ring.style.transition = "none";
+  ring.style.strokeDashoffset = ring.getAttribute("stroke-dasharray");
+  void ring.getBoundingClientRect();
+  ring.style.transition = "stroke-dashoffset .8s cubic-bezier(.22,1,.36,1)";
+  ring.style.strokeDashoffset = target;
+}
+// 연대기 리듬 스파크라인 — 최근 28일 운영 밀도 (활동 히트맵과 같은 일자 기준)
+function renderSpark(a){
+  const el = $("ovSpark");
+  if(!el) return;
+  a = a || { days: {}, total: 0 };
+  if(!a.total){ el.innerHTML = ""; return; }
+  const today = new Date();
+  const counts = [];
+  let sum = 0, max = 1;
+  for(let i = 27; i >= 0; i--){
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const c = a.days[d.toISOString().slice(0, 10)] || 0;
+    counts.push(c);
+    if(c > max) max = c;
+    sum += c;
+  }
+  const bars = counts.map((c, i) => {
+    const h = c ? Math.max(3, Math.round(15 * c / max)) : 1.5;
+    return '<rect x="' + (i * 4) + '" y="' + (17 - h).toFixed(1) + '" width="3" height="' + h
+      + '" rx="1" fill="var(--rune-gold)" opacity="' + (c ? ".85" : ".22") + '"/>';
+  }).join("");
+  const aria = LANG === "en" ? "Last 28 days: " + sum + " operations" : "최근 28일 운영 기록 " + sum + "건 리듬";
+  el.innerHTML = '<svg width="112" height="17" viewBox="0 0 112 17" role="img" aria-label="' + aria + '">' + bars + '</svg>';
 }
 function renderOverview(s){
   const g = s.graph, cat = s.catalog, b = s.meta.budget;
+  const first = !APP.ovWoken; // 진입 오케스트레이션은 첫 렌더 1회 — 폴링 재렌더에 재생하지 않는다
+  APP.ovWoken = true;
   $("ovOnboard").innerHTML = cat.length ? "" :
-    '<div class="panel" style="margin-bottom:18px">' + onboardHtml("서고가 비어 있다 — 첫 페이지를 새기면 개요·성좌·연대기가 함께 깨어난다.") + '</div>';
+    '<div class="panel" style="margin-bottom:18px">' + onboardHtml(T("서고가 비어 있습니다 — 첫 페이지를 기록하면 개요·성좌·연대기가 함께 깨어납니다.")) + '</div>';
   const kinds = {};
   cat.forEach((p) => { kinds[p.kind] = (kinds[p.kind] || 0) + 1; });
   const kn = Object.keys(kinds).sort((a, x) => kinds[x] - kinds[a]);
   const usesSum = s.usage.reduce((acc, u) => acc + (u.uses || 0), 0);
   $("ovStats").innerHTML =
-      ovCard(cat.length, "페이지", "서고의 별", "")
-    + ovCard(kn.length, "종류", kn.slice(0, 3).map((k) => k + " " + kinds[k]).join(" · ") || "비어 있음", "")
-    + ovCard(usesSum, "회수 총합", "쿼리가 실제로 꺼내 쓴 횟수", "")
-    + ovCard(g.dead, "죽은 링크", g.dead ? "성좌의 절단선 — 정리 대상" : "끊긴 참조 없음", g.dead ? "crit" : "")
-    + ovCard(g.orphans.length, "고아 페이지", g.orphans.length ? "링크도 의미도 닿지 않음" : "모두 연결됨", g.orphans.length ? "warn" : "");
+      ovCard(cat.length, T("페이지"), T("서고에 쌓인 기록"), "")
+    + ovCard(kn.length, T("종류"), kn.slice(0, 3).map((k) => k + " " + kinds[k]).join(" · ") || T("비어 있음"), "")
+    + ovCard(usesSum, T("회수 총합"), T("검색이 실제로 꺼내 쓴 횟수"), "")
+    + ovCard(g.dead, T("죽은 링크"), g.dead ? T("가리키는 페이지가 없는 링크 — 정리 대상") : T("끊긴 참조 없음"), g.dead ? "crit" : "")
+    + ovCard(g.orphans.length, T("고아 페이지"), g.orphans.length ? T("어떤 페이지와도 이어지지 않음") : T("모두 연결됨"), g.orphans.length ? "warn" : "");
+  const ov = $("ovStats");
+  ov.classList.toggle("wake", first && !REDUCED);
+  Array.prototype.forEach.call(ov.children, (el, i) => el.style.setProperty("--i", i));
 
   $("gauge").innerHTML = gauge(b);
-  $("budgetText").innerHTML = '<b class="num" style="color:var(--gold-lit)">' + b.size + '</b> / ' + b.budget + '자'
+  if(first && !REDUCED) drawOnGauge();
+  renderSpark(s.activity);
+  $("budgetText").innerHTML = '<b class="num" style="color:var(--gold-lit)">' + b.size + '</b> / ' + b.budget + (LANG === "en" ? " chars" : "자")
     + '<br><span style="color:' + (b.state === "crit" ? "var(--crit)" : b.state === "warn" ? "var(--warn)" : "var(--ink-dim)") + '">'
-    + (b.state === "crit" ? "예산 초과 — add 거부, 통합 필요" : b.state === "warn" ? "예산 임박" : "여유") + '</span>';
+    + (b.state === "crit" ? T("예산 초과 — add 가 거부됩니다. 페이지를 통합하세요") : b.state === "warn" ? T("예산 임박") : T("여유")) + '</span>';
 
   const fl = $("findList");
-  if(!s.health.findings.length){ fl.innerHTML = '<li style="grid-template-columns:1fr;color:var(--heal)">건강함 — findings 없음</li>'; }
+  if(!s.health.findings.length){ fl.innerHTML = '<li style="grid-template-columns:1fr;color:var(--heal)">' + T("건강함 — 발견된 문제 없음") + '</li>'; }
   else fl.innerHTML = s.health.findings.slice(0, 40).map((f) =>
     '<li>' + fchip(f.level) + '<span><span class="sl">' + esc(f.slug) + '</span> <span class="ms">' + esc(f.code) + ' — ' + esc(f.msg) + '</span></span></li>').join("");
 
-  $("semState").innerHTML = '<span class="lab">시맨틱 회수</span> '
+  $("semState").innerHTML = '<span class="lab">' + T("시맨틱 회수") + '</span> '
     + (s.meta.semantic
-      ? '<span><b style="color:var(--heal)">on</b> · ' + esc(s.meta.semantic_mode) + ' — 성좌의 점선 비취 엣지와 SEM 레인이 살아 있다</span>'
-      : '<span><b style="color:var(--ink-ghost)">off</b> — opt-in 전까지 FTS·정본 스캔만으로 회수한다</span>');
+      ? '<span><b style="color:var(--heal)">on</b> · ' + esc(s.meta.semantic_mode) + ' — ' + T("의미 유사 엣지(점선)와 SEM 레인이 켜져 있습니다") + '</span>'
+      : '<span><b style="color:var(--ink-ghost)">off</b> — ' + T("켜기 전까지는 전문 검색(FTS)·본문 스캔만 사용합니다") + '</span>');
 
-  $("ovLog").innerHTML = s.log.slice(0, 8).map(logRow).join("") || '<li class="empty">로그 없음</li>';
+  $("ovLog").innerHTML = s.log.slice(0, 8).map(logRow).join("") || '<li class="empty">' + T("로그 없음") + '</li>';
 
   const top = s.usage.filter((u) => u.uses > 0).slice(0, 8);
   $("topUse").innerHTML = top.length ? top.map((u) =>
     '<li><span class="ti"><button type="button" class="linklike mono" style="font-size:12.5px" data-slug="' + esc(u.slug) + '">' + esc(u.slug) + '</button></span><span class="u">' + u.uses + '×</span><span class="du">' + daysAgo(u.last_used) + '</span></li>').join("")
-    : '<li class="empty">아직 회수 기록 없음</li>';
+    : '<li class="empty">' + T("아직 회수 기록 없음") + '</li>';
 }
 function logRow(l){
   const oc = opStyle(l.op);
@@ -1559,20 +1863,20 @@ function renderKindChips(s){
       + '" aria-pressed="' + (on ? "true" : "false") + '">' + label + '</button>';
   };
   $("kindChips").innerHTML =
-    chip("", '전체 <span class="cnt">' + s.catalog.length + '</span>')
-    + kinds.map((k) => chip(k, shapeSwatch(k) + esc((KIND[k] || {}).ko || k) + ' <span class="cnt">' + counts[k] + '</span>')).join("");
+    chip("", T("전체") + ' <span class="cnt">' + s.catalog.length + '</span>')
+    + kinds.map((k) => chip(k, shapeSwatch(k) + esc(kindName(k)) + ' <span class="cnt">' + counts[k] + '</span>')).join("");
   renderSortChips();
   $("catCount").textContent = s.catalog.length ? "· " + s.catalog.length : "";
-  $("semNote").innerHTML = s.meta.semantic ? "" : '<span style="color:var(--ink-ghost)">(시맨틱 비활성 — opt-in)</span>';
+  $("semNote").innerHTML = s.meta.semantic ? "" : '<span style="color:var(--ink-ghost)">' + T("(시맨틱 비활성 — opt-in)") + '</span>';
 }
 // 정렬 토글 — updated(기본)/회수/제목, aria-pressed 칩
 const SORTS = [["updated", "갱신순"], ["uses", "회수순"], ["title", "제목순"]];
 function renderSortChips(){
-  $("sortChips").innerHTML = '<span class="sectitle" style="margin:0;align-self:center">정렬</span>'
+  $("sortChips").innerHTML = '<span class="sectitle" style="margin:0;align-self:center">' + T("정렬") + '</span>'
     + SORTS.map(([key, ko]) => {
       const on = APP.sort === key;
       return '<button type="button" class="chip' + (on ? " on" : "") + '" data-action="lib-sort" data-sort="' + key
-        + '" aria-pressed="' + (on ? "true" : "false") + '">' + ko + '</button>';
+        + '" aria-pressed="' + (on ? "true" : "false") + '">' + T(ko) + '</button>';
     }).join("");
 }
 function setLibSort(btn){
@@ -1609,8 +1913,8 @@ function renderLibrary(){
   const rows = sortCatalog(s.catalog.filter((p) => !APP.kind || p.kind === APP.kind).slice());
   const maxU = Math.max(1, s.catalog.reduce((m, p) => Math.max(m, p.uses || 0), 0));
   $("libBody").innerHTML = rows.length
-    ? '<div style="overflow-x:auto"><table><caption>pages/ frontmatter — 제목을 고르면 상세가 펼쳐진다</caption>'
-      + '<thead><tr><th scope="col">페이지</th><th scope="col">종류</th><th scope="col" class="rt">회수</th><th scope="col">갱신</th></tr></thead><tbody>'
+    ? '<div style="overflow-x:auto"><table><caption>' + T("제목을 누르면 상세가 펼쳐집니다") + '</caption>'
+      + '<thead><tr><th scope="col">' + T("페이지") + '</th><th scope="col">' + T("종류") + '</th><th scope="col" class="rt">' + T("회수") + '</th><th scope="col">' + T("갱신") + '</th></tr></thead><tbody>'
       + rows.map((p) => {
           const pct = Math.round(100 * (p.uses || 0) / maxU);
           return '<tr><td class="ti">' + (p.poisoned ? '<span class="poison">오염</span>' : "")
@@ -1622,8 +1926,8 @@ function renderLibrary(){
             + '<td class="di">' + daysAgo(p.updated) + '</td></tr>';
         }).join("")
       + '</tbody></table></div>'
-    : (APP.kind ? '<p class="empty">이 종류의 페이지 없음</p>'
-       : onboardHtml("서고가 비어 있다 — 아래 한 줄이면 첫 페이지가 만들어진다."));
+    : (APP.kind ? '<p class="empty">' + T("이 종류의 페이지 없음") + '</p>'
+       : onboardHtml(T("서고가 비어 있습니다 — 아래 한 줄이면 첫 페이지가 만들어집니다.")));
   restoreSearchFocus(focus);
 }
 // 검색어 하이라이트 — 이미 이스케이프된 텍스트에 <mark> 를 입힌다 (agentmemory Memories 이식)
@@ -1639,7 +1943,7 @@ async function doSearch(q){
     const res = await fetch("/api/search?q=" + encodeURIComponent(q) + "&k=12", { cache: "no-store" });
     renderHits(await res.json());
   }catch(e){
-    $("libBody").innerHTML = '<p class="empty">검색 실패: ' + esc(String(e)) + '</p>';
+    $("libBody").innerHTML = '<p class="empty">' + T("검색 실패: ") + esc(String(e)) + '</p>';
   }
 }
 function renderHits(data){
@@ -1649,14 +1953,16 @@ function renderHits(data){
   const hits = data.hits.filter((h) => !APP.kind || h.kind === APP.kind);
   $("libBody").innerHTML = hits.length ? hits.map((h) => {
     const st = h.streams || {};
-    return '<div class="qrow" tabindex="0" role="button" data-action="page-detail" data-slug="' + esc(h.slug) + '" aria-expanded="false" aria-label="' + esc(h.title) + ' — 상세 펼치기">'
+    return '<div class="qrow" tabindex="0" role="button" data-action="page-detail" data-slug="' + esc(h.slug) + '" aria-expanded="false" aria-label="' + esc(h.title) + ' ' + T("— 상세 펼치기") + '">'
       + '<div class="t">' + kchip(h.kind) + ' ' + markHl(esc(h.title), data.q)
       + '<span class="sub">' + esc(h.slug) + ' · score ' + esc(h.score) + '</span>'
       + (h.snippet ? '<span class="snip">' + markHl(esc(h.snippet), data.q) + '</span>' : "")
       + '</div><div class="lanes" aria-hidden="true">'
       + lane("FTS", st.fts, "fts") + lane("SCAN", st.scan, "scan") + lane("SEM", st.semantic, "sem")
       + '</div></div>';
-  }).join("") : '<p class="empty">“' + esc(data.q) + '” 적중 없음' + (APP.kind ? " (종류 필터 적용 중)" : "") + '</p>';
+  }).join("") : '<p class="empty">'
+    + (LANG === "en" ? 'No results for “' + esc(data.q) + '”' : '“' + esc(data.q) + '” 검색 결과 없음')
+    + (APP.kind ? T(" (종류 필터 적용 중)") : "") + '</p>';
   restoreSearchFocus(focus);
 }
 function lane(name, on, cls){
@@ -1672,14 +1978,14 @@ async function toggleInlineDetail(slug, opener){
   if(tr){
     mount = document.createElement("tr");
     mount.className = "dtr";
-    mount.innerHTML = '<td colspan="4"><div class="dwrap"><p class="empty">불러오는 중…</p></div></td>';
+    mount.innerHTML = '<td colspan="4"><div class="dwrap"><p class="empty">' + T("불러오는 중…") + '</p></div></td>';
     tr.after(mount);
   } else {
     const row = opener.closest(".qrow");
     if(!row) return;
     mount = document.createElement("div");
     mount.className = "dbox";
-    mount.innerHTML = '<div class="dwrap"><p class="empty">불러오는 중…</p></div>';
+    mount.innerHTML = '<div class="dwrap"><p class="empty">' + T("불러오는 중…") + '</p></div>';
     row.after(mount);
   }
   opener.setAttribute("aria-expanded", "true");
@@ -1690,7 +1996,7 @@ async function toggleInlineDetail(slug, opener){
       mount.querySelector(".dwrap").innerHTML = detailHtml(p, { close: "close-inline", star: true, slug: slug });
     }
   }catch(e){
-    if(mount.isConnected) mount.querySelector(".dwrap").innerHTML = '<p class="empty">상세 로드 실패</p>';
+    if(mount.isConnected) mount.querySelector(".dwrap").innerHTML = '<p class="empty">' + T("상세를 불러오지 못했습니다") + '</p>';
   }
 }
 function closeInlineDetail(refocus){
@@ -1716,7 +2022,7 @@ function renderChronicle(s){
       + '" aria-pressed="' + (on ? "true" : "false") + '">' + label + '</button>';
   };
   $("opChips").innerHTML =
-    chip("", '전체 <span class="cnt">' + a.total + '</span>')
+    chip("", T("전체") + ' <span class="cnt">' + a.total + '</span>')
     + fams.map((f) => {
       const oc = OPS[f] || OPS.other;
       return chip(f, '<span style="color:' + oc.c + ';display:inline-flex">' + oc.g + '</span>' + esc(f)
@@ -1727,8 +2033,8 @@ function renderChronicle(s){
 }
 function renderDayFilter(){
   $("dayFilter").innerHTML = APP.day
-    ? '<span class="dayflt"><span>' + esc(APP.day) + ' 하루만</span>'
-      + '<button type="button" data-action="day-clear" aria-label="날짜 필터 해제">해제 ✕</button></span>'
+    ? '<span class="dayflt"><span>' + esc(APP.day) + (LANG === "en" ? " only" : " 하루만 보기") + '</span>'
+      + '<button type="button" data-action="day-clear" aria-label="' + T("날짜 필터 해제") + '">' + T("해제 ✕") + '</button></span>'
     : "";
 }
 function setOpFilter(btn){
@@ -1762,13 +2068,16 @@ async function loadChron(){
     const res = await fetch("/api/log?" + p.toString(), { cache: "no-store" });
     renderChronList(await res.json());
   }catch(e){
-    $("chronBody").innerHTML = '<p class="empty">연대기 로드 실패 — 서버가 살아있는지 확인하세요.</p>';
+    $("chronBody").innerHTML = '<div class="loaderr" role="alert"><span>' + T("연대기를 불러오지 못했습니다.") + '</span>'
+      + '<span class="why">' + esc(String(e)) + ' ' + T("· asgard memory 서버가 실행 중인지 확인하세요.") + '</span>'
+      + '<button type="button" data-action="retry-load">' + T("다시 시도") + '</button></div>';
     $("chronPgn").innerHTML = "";
   }
 }
 function renderChronList(data){
   const filtered = !!(APP.op || APP.day);
-  $("chronCount").textContent = "· 총 " + data.total + "건" + (filtered ? " (필터 적용)" : "");
+  $("chronCount").textContent = "· " + (LANG === "en" ? data.total + " total" : "총 " + data.total + "건")
+    + (filtered ? T(" (필터 적용)") : "");
   let html = "", lastDay = "";
   data.entries.forEach((l, i) => {
     const day = String(l.ts).slice(0, 10);
@@ -1787,16 +2096,19 @@ function renderChronList(data){
       + '</div></article>';
   });
   $("chronBody").innerHTML = html
-    || (filtered ? '<p class="empty">조건에 맞는 기록 없음 — 칩·날짜 필터를 풀어 보세요.</p>'
-        : onboardHtml("아직 연대기가 비어 있다 — 첫 기록이 곧 첫 봉인이다."));
+    || (filtered ? '<p class="empty">' + T("조건에 맞는 기록이 없습니다 — 필터를 해제해 보세요.") + '</p>'
+        : onboardHtml(T("아직 기록이 없습니다 — 첫 작업이 기록되면 여기에 나타납니다.")));
   // 페이지 넘김 — agentmemory Timeline Prev/Next 형 (총 건수 표시)
   const pages = Math.max(1, Math.ceil(data.total / CHRON_LIMIT));
   const cur = Math.floor(data.offset / CHRON_LIMIT);
+  const pageInfo = LANG === "en"
+    ? 'page ' + (cur + 1) + ' / ' + pages + ' · ' + data.total + ' total'
+    : (cur + 1) + ' / ' + pages + ' 페이지 · 총 ' + data.total + '건';
   $("chronPgn").innerHTML = pages > 1
-    ? '<nav class="pgn" aria-label="연대기 페이지 넘김">'
-      + '<button type="button" data-action="chron-page" data-page="' + (cur - 1) + '"' + (cur <= 0 ? " disabled" : "") + '>← 최근</button>'
-      + '<span>' + (cur + 1) + ' / ' + pages + ' 페이지 · 총 ' + data.total + '건</span>'
-      + '<button type="button" data-action="chron-page" data-page="' + (cur + 1) + '"' + (cur >= pages - 1 ? " disabled" : "") + '>과거 →</button>'
+    ? '<nav class="pgn" aria-label="' + T("연대기 페이지 넘김") + '">'
+      + '<button type="button" data-action="chron-page" data-page="' + (cur - 1) + '"' + (cur <= 0 ? " disabled" : "") + '>' + T("← 최근") + '</button>'
+      + '<span>' + pageInfo + '</span>'
+      + '<button type="button" data-action="chron-page" data-page="' + (cur + 1) + '"' + (cur >= pages - 1 ? " disabled" : "") + '>' + T("과거 →") + '</button>'
       + '</nav>'
     : "";
 }
@@ -1812,12 +2124,13 @@ function chronPage(p){
 
 function renderActivity(s){
   const a = s.activity || { days: {}, ops: {}, total: 0, first: "", last: "" };
-  $("actMeta").textContent = "· 총 " + a.total + "건" + (a.first ? " · " + a.first + " ~ " + a.last : "");
+  $("actMeta").textContent = "· " + (LANG === "en" ? a.total + " total" : "총 " + a.total + "건")
+    + (a.first ? " · " + a.first + " ~ " + a.last : "");
 
   if(!a.total){
-    $("heatWrap").innerHTML = onboardHtml("52주 열지도가 아직 비어 있다 — 첫 운영 기록이 첫 칸을 밝힌다.");
-    $("opBars").innerHTML = '<p class="empty">기록 없음</p>';
-    $("actFeed").innerHTML = '<li class="empty">기록 없음</li>';
+    $("heatWrap").innerHTML = onboardHtml(T("아직 활동 기록이 없습니다 — 첫 기록이 첫 칸을 밝힙니다."));
+    $("opBars").innerHTML = '<p class="empty">' + T("기록 없음") + '</p>';
+    $("actFeed").innerHTML = '<li class="empty">' + T("기록 없음") + '</li>';
     return;
   }
   let max = 0;
@@ -1832,19 +2145,28 @@ function renderActivity(s){
       const c = a.days[key] || 0;
       const lv = !c ? 0 : c <= max * 0.25 ? 1 : c <= max * 0.5 ? 2 : c <= max * 0.75 ? 3 : 4;
       // 기록 있는 날만 버튼 — 셀 클릭 = 연대기 해당 일자 딥링크
+      const cellTitle = key + " · " + CNT(c);
+      const cellAria = LANG === "en" ? key + " " + CNT(c) + " — view in chronicle" : key + " " + c + "건 — 연대기에서 보기";
       cells += c
         ? '<button type="button" class="heat-cell lv' + lv + '" data-action="heat-day" data-day="' + key
-          + '" title="' + key + ' · ' + c + '건" aria-label="' + key + ' ' + c + '건 — 연대기에서 보기"></button>'
-        : '<div class="heat-cell" title="' + key + ' · 0건" aria-hidden="true"></div>';
+          + '" title="' + cellTitle + '" aria-label="' + cellAria + '"></button>'
+        : '<div class="heat-cell" title="' + key + ' · ' + CNT(0) + '" aria-hidden="true"></div>';
     }
   }
+  const heatDesc = LANG === "en"
+    ? "Daily operations heatmap for the last 52 weeks — " + a.total + " total. Pick a lit cell to open that day in the chronicle."
+    : "지난 52주 일별 운영 기록 열지도 — 총 " + a.total + "건. 기록 있는 날짜 셀을 고르면 연대기의 그 하루로 이동합니다.";
+  const dayCol = LANG === "en" ? ["M", "W", "F"] : ["월", "수", "금"];
   $("heatWrap").innerHTML =
-    '<p class="vh">지난 52주 일별 운영 기록 열지도 — 총 ' + a.total + '건. 기록 있는 날짜 셀을 고르면 연대기의 그 하루로 이동한다.</p>'
+    '<p class="vh">' + heatDesc + '</p>'
     + '<div class="heat">'
-    + '<div class="heat-days" aria-hidden="true"><span>월</span><span></span><span>수</span><span></span><span>금</span><span></span><span></span></div>'
+    + '<div class="heat-days" aria-hidden="true"><span>' + dayCol[0] + '</span><span></span><span>' + dayCol[1] + '</span><span></span><span>' + dayCol[2] + '</span><span></span><span></span></div>'
     + '<div class="heat-scroll"><div class="heat-grid">' + cells + '</div></div>'
     + '</div>'
-    + '<div class="heat-legend" aria-hidden="true">적음 <span class="heat-cell"></span><span class="heat-cell lv1"></span><span class="heat-cell lv2"></span><span class="heat-cell lv3"></span><span class="heat-cell lv4"></span> 많음</div>';
+    + '<div class="heat-legend" aria-hidden="true">' + T("적음") + ' <span class="heat-cell"></span><span class="heat-cell lv1"></span><span class="heat-cell lv2"></span><span class="heat-cell lv3"></span><span class="heat-cell lv4"></span> ' + T("많음") + '</div>';
+  // 최근이 오른쪽 끝이다 — 로드 직후 최신 주간이 보이도록 스크롤을 끝으로 (빈 1년만 보이는 모순 방지)
+  const hs = $("heatWrap").querySelector(".heat-scroll");
+  if(hs) hs.scrollLeft = hs.scrollWidth;
 
   const ops = Object.keys(a.ops).sort((x, y) => a.ops[y] - a.ops[x]);
   const tot = Math.max(1, a.total);
@@ -1854,10 +2176,94 @@ function renderActivity(s){
     return '<div class="bar-row"><span class="bar-label">' + esc(o) + '</span>'
       + '<div class="bar-track"><div class="bar-fill" style="width:' + pct + '%;background:' + oc.c + '"></div></div>'
       + '<span class="bar-val">' + a.ops[o] + '</span></div>';
-  }).join("") : '<p class="empty">기록 없음</p>';
+  }).join("") : '<p class="empty">' + T("기록 없음") + '</p>';
 
-  $("actFeed").innerHTML = s.log.slice(0, 14).map(logRow).join("") || '<li class="empty">기록 없음</li>';
+  $("actFeed").innerHTML = s.log.slice(0, 14).map(logRow).join("") || '<li class="empty">' + T("기록 없음") + '</li>';
 }
+
+/* ══ 관문 호출 — ⌘K 명령 팔레트 (읽기 전용 항해: 스냅샷 데이터만 쓴다) ══════════ */
+
+const PAL = { sel: 0, items: [], opener: null };
+const PAL_GLYPH = {
+  tab: '<svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true"><path d="M2 10.5V5l4.5-2.8L11 5v5.5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M1 10.5h11" stroke="currentColor" stroke-width="1.2"/></svg>',
+  page: '<svg width="13" height="13" viewBox="0 0 13 13" aria-hidden="true"><circle cx="6.5" cy="6.5" r="2" fill="currentColor"/><circle cx="2.2" cy="2.5" r="1" fill="currentColor" opacity=".6"/><circle cx="10.8" cy="3" r="1" fill="currentColor" opacity=".6"/><path d="M3 3.2l2.2 2.2M10 3.8L8.2 5.4" stroke="currentColor" stroke-width=".8" opacity=".5"/></svg>',
+};
+function palIsOpen(){ return $("pal").classList.contains("on"); }
+function palCandidates(q){
+  q = (q || "").trim().toLowerCase();
+  const tabs = TAB_IDS.map((t) => ({ type: "tab", id: t, title: T(t), sub: T("탭 이동") }));
+  const cat = (APP.snap ? APP.snap.catalog : []).slice()
+    .sort((a, b) => (b.uses || 0) - (a.uses || 0))
+    .map((p) => ({ type: "page", id: p.slug, title: p.title, sub: p.slug }));
+  if(!q) return tabs.concat(cat.slice(0, 4)); // 빈 질의 = 탭 5 + 자주 회수된 별 4
+  const hit = (it) => (it.title + " " + it.id).toLowerCase().includes(q);
+  return tabs.filter(hit).concat(cat.filter(hit)).slice(0, 9);
+}
+function renderPal(q){
+  PAL.items = palCandidates(q);
+  if(PAL.sel >= PAL.items.length) PAL.sel = 0;
+  $("palList").innerHTML = PAL.items.length ? PAL.items.map((it, i) =>
+    '<li id="pal-opt-' + i + '" role="option" aria-selected="' + (i === PAL.sel ? "true" : "false") + '" data-idx="' + i + '">'
+      + PAL_GLYPH[it.type] + '<span>' + esc(truncate(it.title, 44)) + '</span><span class="sub">' + esc(truncate(it.sub, 30)) + '</span></li>').join("")
+    : '<li class="pal-empty" role="option" aria-selected="false" aria-disabled="true">' + T("일치하는 항목이 없습니다 — 탭 이름이나 페이지 제목으로 검색해 보세요.") + '</li>';
+  $("palQ").setAttribute("aria-activedescendant", PAL.items.length ? "pal-opt-" + PAL.sel : "");
+}
+function palMove(dir){
+  if(!PAL.items.length) return;
+  PAL.sel = (PAL.sel + dir + PAL.items.length) % PAL.items.length;
+  renderPal($("palQ").value);
+  const li = $("pal-opt-" + PAL.sel);
+  if(li) li.scrollIntoView({ block: "nearest" });
+}
+function palExec(i){
+  const it = PAL.items[i];
+  if(!it) return;
+  closePal(false);
+  if(it.type === "tab") switchTab(it.id);
+  else gotoSlug(it.id);
+}
+function openPal(){
+  PAL.opener = document.activeElement;
+  PAL.sel = 0;
+  $("palQ").value = "";
+  renderPal("");
+  $("pal").classList.add("on");
+  $("palQ").focus();
+}
+function closePal(refocus){
+  $("pal").classList.remove("on");
+  if(refocus !== false && PAL.opener && PAL.opener.isConnected) PAL.opener.focus();
+  PAL.opener = null;
+}
+bindImeSafeSearch($("palQ"), 80, (v) => { PAL.sel = 0; renderPal(v); });
+$("palQ").addEventListener("keydown", (e) => {
+  if(e.isComposing) return; // 한글 조합 중 Enter 는 조합 확정이다 — 실행으로 오인 금지
+  if(e.key === "ArrowDown"){ e.preventDefault(); palMove(1); }
+  else if(e.key === "ArrowUp"){ e.preventDefault(); palMove(-1); }
+  else if(e.key === "Enter"){ e.preventDefault(); palExec(PAL.sel); }
+  else if(e.key === "Tab"){ e.preventDefault(); } // 팔레트는 입력 하나가 전부 — 포커스 이탈 방지
+});
+$("pal").addEventListener("click", (e) => {
+  if(e.target === $("pal")){ closePal(true); return; } // 배경 클릭 = 닫기
+  const li = e.target instanceof Element ? e.target.closest("li[data-idx]") : null;
+  if(li) palExec(parseInt(li.dataset.idx, 10));
+});
+$("palList").addEventListener("mouseover", (e) => {
+  const li = e.target instanceof Element ? e.target.closest("li[data-idx]") : null;
+  if(li && parseInt(li.dataset.idx, 10) !== PAL.sel){
+    PAL.sel = parseInt(li.dataset.idx, 10);
+    renderPal($("palQ").value);
+  }
+});
+document.addEventListener("keydown", (e) => {
+  if((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")){
+    e.preventDefault();
+    if(palIsOpen()) closePal(true); else openPal();
+  } else if(e.key === "Escape" && palIsOpen()){
+    e.preventDefault();
+    closePal(true);
+  }
+});
 
 /* ══ 전역 위임 + 탭 바 배선 + 부트 ══════════════════════════════════════════════ */
 
@@ -1891,6 +2297,16 @@ document.addEventListener("click", (ev) => {
   else if(act === "heat-day") gotoDay(t.getAttribute("data-day"));
   else if(act === "day-clear") clearDayFilter();
   else if(act === "refresh-now") refreshNow();
+  else if(act === "palette-open") openPal();
+  else if(act === "lang-toggle"){
+    try{ localStorage.setItem("asgard-lang", LANG === "ko" ? "en" : "ko"); }catch(e){}
+    location.reload(); // 전 표면 재도장 — 렌더 경로 전부가 T() 를 재평가한다
+  }
+  else if(act === "retry-load"){
+    document.querySelectorAll(".loaderr").forEach((n) => n.remove());
+    APP.loaded[APP.active] = false; // 실패한 탭을 처음처럼 다시 그린다
+    loadTab(APP.active);
+  }
   else if(act === "open-tab") switchTab(t.getAttribute("data-tab"));
   else if(t.hasAttribute("data-slug")) gotoSlug(t.getAttribute("data-slug"));
 });
@@ -1946,6 +2362,10 @@ function dismissSplash(){
 }
 setTimeout(dismissSplash, 5000); // 어떤 실패에도 스플래시가 화면을 잡아두지 않는다
 
+// 플랫폼별 단축키 표기 — 맥은 ⌘K, 그 외 Ctrl K
+try{ if(!/Mac|iP/.test(navigator.platform || "")) $("palOpen").querySelector("kbd").textContent = "Ctrl K"; }catch(e){}
+
+applyStaticLang(); // 언어 적용은 첫 렌더 전 — 정적 마크업을 한 번에 재도장
 switchTab(tabFromRoute() || "개요", { replaceRoute: true });
 startPolling();
 </script>
