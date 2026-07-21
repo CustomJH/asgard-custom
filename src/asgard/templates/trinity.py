@@ -69,19 +69,20 @@ def trinity_policy() -> str:
 
 
 def project_settings() -> str:
-    """asgard-setting-project.json 초기 스캐폴드 — lagom.mode + 빈 memory + trinity_policy 시드.
+    """초기 스캐폴드 — lagom.mode + 빈 memory/agent_models + trinity_policy 시드.
 
     lagom.mode 는 default full 이라 resolve 기본값과 동일하지만, 이 파일이 사용자가 모드를
     조정하는 표면이므로 명시적으로 적어 둔다 — 없으면 "라곰이 꺼졌나" 오해한다. memory 는
     빈 객체로 둔다 — 프로젝트 메모리는 opt-in 연결이라 기본 미연결(공란)이 정상 상태고,
     `asgard memory connect` 가 engine·endpoint·project_id 를 채운다. 빈 {} 는 find_config
     에서 미연결로 해석돼 도구가 노출되지 않는다. 나머지 섹션(provider …)은 명령이 필요할
-    때 병합 기록한다 (사다리 1단)."""
+    때 병합 기록한다 (사다리 1단). agent_models 는 빈 override 맵이다 — 내장 역할별 기본값은
+    템플릿이 소유하고, 여기에 기록한 호스트/역할만 글로벌·기본값을 덮는다."""
     from ..lagom import DEFAULT_MODE
 
     return (
         json.dumps(
-            {"lagom": {"mode": DEFAULT_MODE}, "memory": {}, "trinity_policy": _POLICY},
+            {"lagom": {"mode": DEFAULT_MODE}, "memory": {}, "agent_models": {}, "trinity_policy": _POLICY},
             ensure_ascii=False,
             indent=2,
         )
