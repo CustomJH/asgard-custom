@@ -319,10 +319,12 @@ def test_dock_status_and_stream_lines_stay_single_line(monkeypatch, capsys) -> N
     dock.unmount()
     assert "\n" not in out  # 상태 행 페인트는 단일 물리 행 계약 — 개행이 나가면 보더가 깨진다
 
+    from typing import cast
+
     from asgard.agent.session import AgentSession
 
     emitted: list[str] = []
-    sess = SimpleNamespace(on_text=emitted.append)
+    sess = cast(AgentSession, SimpleNamespace(on_text=emitted.append))  # on_text 만 쓰는 최소 대역
     AgentSession._tool_line(sess, "$", "python3 - <<'EOF'\nimport ast\nEOF", 2.0)
     assert emitted and "\n" not in emitted[0].rstrip("\n")  # 완료 라인도 행당 1줄 — 히어독 본문 스필 금지
 
