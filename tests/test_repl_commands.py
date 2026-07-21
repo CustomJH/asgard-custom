@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from types import SimpleNamespace
 
 from asgard import ui
@@ -264,6 +265,19 @@ def test_pt_session_erases_input_frame_on_accept(monkeypatch, tmp_path) -> None:
         assert session.app.erase_when_done is True
 
 
+def test_pt_prompt_accepts_prefilled_draft_immediately(monkeypatch, tmp_path) -> None:
+    # 턴 중 초안 + 트레일링 ⏎ → 다음 프롬프트가 프리필을 즉시 제출 (자동 제출 계약)
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        session = repl._pt_session()
+        assert session.prompt("› ", default="이어서 진행해", accept_default=True) == "이어서 진행해"
+
+
 def test_dock_inserts_output_above_persistent_frame(monkeypatch, capsys) -> None:
     monkeypatch.setattr(ui, "_COLOR", False)
     monkeypatch.setattr(ui, "term_cols", lambda: 80)
@@ -277,11 +291,124 @@ def test_dock_inserts_output_above_persistent_frame(monkeypatch, capsys) -> None
 
     out = capsys.readouterr().out
     assert "╭" in out and "│" in out and "╰" in out  # 입력 프레임 상주
+    assert re.match(r"\x1b\[\d+;1H", out)  # mount 즉시 마지막 행 절대 점프 — 하단 고정 (본문 위치 점프 방지)
     assert out.count(f"\x1b[{repl._Dock.HEIGHT - 1}A") >= 2  # draw 마다 스페이서 행 파킹 복귀
     assert "\x1b[0J" in out  # 출력 삽입 전 독 소거
     assert "streamed line" in out
     assert "thinking" in out
     assert not dock.mounted
+
+
+def test_dock_status_and_stream_lines_stay_single_line(monkeypatch, capsys) -> None:
+    # 멀티라인 명령 라벨(히어독·python -c)이 독의 고정 커서 산술을 깨고 박스 보더를 오염시키던
+    # 결함 봉합 (26-07-21) — hermes compactPreview 식: 개행 포함 공백 연쇄를 접은 뒤 절단
+    monkeypatch.setattr(ui, "_COLOR", False)
+    monkeypatch.setattr(ui, "term_cols", lambda: 80)
+    monkeypatch.setattr(ui, "stream_width", lambda: 80)
+    repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
+
+    assert ui.oneline("cat > x <<'PY'\nimport re\nPY") == "cat > x <<'PY' import re PY"
+    clipped = ui.oneline("a" * 100, 20)
+    assert len(clipped) == 20 and clipped.endswith("…")
+
+    dock = repl._Dock()
+    dock.mount()
+    capsys.readouterr()
+    dock.status("$ cat > smoke.py <<'PY'\nimport re\nfrom mod import y\nPY")
+    out = capsys.readouterr().out
+    dock.unmount()
+    assert "\n" not in out  # 상태 행 페인트는 단일 물리 행 계약 — 개행이 나가면 보더가 깨진다
+
+    from asgard.agent.session import AgentSession
+
+    emitted: list[str] = []
+    sess = SimpleNamespace(on_text=emitted.append)
+    AgentSession._tool_line(sess, "$", "python3 - <<'EOF'\nimport ast\nEOF", 2.0)
+    assert emitted and "\n" not in emitted[0].rstrip("\n")  # 완료 라인도 행당 1줄 — 히어독 본문 스필 금지
+
+
+def test_dock_mount_places_frame_on_bottom_rows_without_scroll(monkeypatch, capsys) -> None:
+    # CPR 응답 경로 — 흐름(4행)이 독 영역(19~24행) 위: 스크롤 0, 절대 배치 + 입력행 캐럿 파킹
+    monkeypatch.setattr(ui, "_COLOR", False)
+    monkeypatch.setattr(ui, "term_cols", lambda: 80)
+    monkeypatch.setattr(repl, "_term_rows", lambda: 24)
+    monkeypatch.setattr(repl, "_cursor_row", lambda: 4)
+    repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
+
+    dock = repl._Dock()
+    dock.mount()
+    out = capsys.readouterr().out
+    dock.unmount()
+
+    assert "\n" not in out  # 무스크롤 계약 — 개행 없이 행별 절대 이동만
+    for row in range(19, 25):  # 마지막 HEIGHT(6)행 각각에 절대 배치
+        assert f"\x1b[{row};1H" in out
+    assert out.endswith("\x1b[19;1H\x1b[3B\x1b[7G")  # 스페이서 복귀 후 입력행 캐럿 뒤 파킹
+
+
+def test_dock_mount_scrolls_only_overlap_when_flow_is_deep(monkeypatch, capsys) -> None:
+    # CPR 응답 경로 — 흐름(22행)이 독 영역 침범: 부족분(22-19=3)만 최하단 개행으로 밀어낸다
+    monkeypatch.setattr(ui, "_COLOR", False)
+    monkeypatch.setattr(ui, "term_cols", lambda: 80)
+    monkeypatch.setattr(repl, "_term_rows", lambda: 24)
+    monkeypatch.setattr(repl, "_cursor_row", lambda: 22)
+    repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
+
+    dock = repl._Dock()
+    dock.mount()
+    out = capsys.readouterr().out
+    dock.unmount()
+
+    assert out.startswith("\x1b[24;1H" + "\n" * 3)  # 최하단에서 3회 자연 스크롤 (스크롤백 보존)
+    assert out.count("\n") == 3  # 그 외 개행 없음 — 이후는 절대 배치
+    assert out.endswith("\x1b[19;1H\x1b[3B\x1b[7G")
+
+
+def test_dock_live_typing_renders_draft_and_prefills_next_prompt(monkeypatch, capsys) -> None:
+    # 턴 중 타이핑 → 독 입력행에 골드 캐럿+본문 표시, 캐럿 열은 CJK 전각 반영, 회수 시 초안+제출 의사
+    monkeypatch.setattr(ui, "_COLOR", False)
+    monkeypatch.setattr(ui, "term_cols", lambda: 80)
+    monkeypatch.setattr(repl, "_term_rows", lambda: 24)
+    monkeypatch.setattr(repl, "_cursor_row", lambda: 4)
+    repl._PT_CTX.update(root=".", rp=SimpleNamespace(missing=True), heimdall=None)
+
+    dock = repl._Dock()
+    dock.mount()
+    capsys.readouterr()
+    dock._apply_keys("다음 요청")
+    out = capsys.readouterr().out
+    dock.unmount()
+
+    assert "\r\x1b[2K" in out and "› 다음 요청" in out  # 입력행 제자리 갱신
+    assert out.endswith(f"\x1b[{7 + repl._disp_w('다음 요청')}G")  # 캐럿 = 본문 끝
+    assert dock.take_pending() == ("다음 요청", False)
+    assert dock.take_pending() == ("", False)  # 회수는 1회성
+
+    dock._apply_keys("이어서 진행해\n")
+    assert dock.take_pending() == ("이어서 진행해", True)  # 트레일링 ⏎ = 자동 제출 의사
+
+
+def test_dock_apply_keys_edits_draft_backspace_and_clear() -> None:
+    dock = repl._Dock()  # 미마운트 — 화면 무접촉 편집 로직만
+    dock._apply_keys("abcd")
+    dock._apply_keys("\x7f\x7f")
+    assert dock._pending == "ab"
+    dock._apply_keys("\x15x")
+    assert dock._pending == "x"
+
+
+def test_decode_keys_scrubs_escapes_and_holds_partial_sequences() -> None:
+    # 화살표·CPR 응답 등 완성 시퀀스는 폐기 — 다음 프롬프트 오염 경로 차단
+    assert repl._decode_keys(b"ab\x1b[A\x1b[24;1Rcd") == ("abcd", b"")
+    # 청크 경계의 미완성 시퀀스는 carry 로 보류 → 다음 청크와 합류해 통째로 폐기
+    text, carry = repl._decode_keys(b"ok\x1b[24;")
+    assert (text, carry) == ("ok", b"\x1b[24;")
+    assert repl._decode_keys(carry + b"1R!") == ("!", b"")
+    # 미완성 UTF-8 꼬리 보류 → 합류 시 복원 (CJK 멀티바이트)
+    raw = "한글".encode()
+    text, carry = repl._decode_keys(raw[:4])
+    assert text == "한" and carry == raw[3:4]
+    assert repl._decode_keys(carry + raw[4:]) == ("글", b"")
 
 
 def test_enter_submits_but_trailing_backslash_continues() -> None:
