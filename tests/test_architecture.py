@@ -28,7 +28,9 @@ SRC = os.path.join(os.path.dirname(__file__), "..", "src", "asgard")
 LAYERS: list[tuple[str, frozenset[str]]] = [
     (
         "foundation",
-        frozenset({"settings", "platform", "theme", "ui", "i18n", "io_journal", "registry", "sandbox"}),
+        frozenset(
+            {"settings", "platform", "theme", "ui", "i18n", "io_journal", "registry", "sandbox", "failures", "picker"}
+        ),
     ),
     ("providers", frozenset({"providers", "openai_codex"})),
     (
@@ -46,6 +48,7 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "lagom",
                 "charter",
                 "code_map",
+                "map_context",
                 "evolution",
                 "evolution_bench",
                 "templates",

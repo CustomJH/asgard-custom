@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "name": "asgard-hlidskjalf",
+  "version": "1",
+  "description": "Odin's high seat — system architecture verification pack. Layer/dependency direction, coupling/cohesion, module boundary audits with evidence-first verdicts",
+  "skills": [
+    "asgard-hlidskjalf"
+  ],
+  "routing": {
+    "asgard-hlidskjalf": {
+      "triggers": [
+        "아키텍처 검증",
+        "아키텍처 검사",
+        "아키텍처 리뷰",
+        "아키텍처 감사",
+        "architecture verification",
+        "architecture review",
+        "architecture audit",
+        "시스템 아키텍처",
+        "system architecture",
+        "의존 방향",
+        "의존성 방향",
+        "dependency direction",
+        "순환 의존",
+        "순환 참조",
+        "circular dependency",
+        "결합도",
+        "coupling",
+        "응집도",
+        "계층 위반",
+        "계층 구조",
+        "layer violation",
+        "layered architecture",
+        "레이어드 아키텍처",
+        "모듈 경계",
+        "module boundary",
+        "구조 부채",
+        "architecture fitness"
+      ],
+      "agents": [
+        "worker",
+        "thor",
+        "thor-lead",
+        "mimir"
+      ]
+    }
+  }
+}

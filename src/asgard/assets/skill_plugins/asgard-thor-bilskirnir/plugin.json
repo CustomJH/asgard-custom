@@ -1,10 +1,11 @@
 {
   "schema": 1,
   "name": "asgard-thor-bilskirnir",
-  "version": "1",
-  "description": "Thor house backend policy pack — layered modules, API envelope, coding, database, security, integration boundary",
+  "version": "2",
+  "description": "Thor backend policy pack — house conventions plus minimal Clean and Hexagonal architecture boundaries",
   "skills": [
-    "asgard-thor-bilskirnir"
+    "asgard-thor-bilskirnir",
+    "asgard-thor-clean-hexagonal"
   ],
   "routing": {
     "asgard-thor-bilskirnir": {
@@ -29,6 +30,23 @@
         "엔드포인트 신설",
         "테이블 설계",
         "스키마 컨벤션"
+      ],
+      "agents": [
+        "thor",
+        "thor-lead"
+      ]
+    },
+    "asgard-thor-clean-hexagonal": {
+      "triggers": [
+        "클린 아키텍처",
+        "clean architecture",
+        "헥사고날",
+        "hexagonal architecture",
+        "포트와 어댑터",
+        "ports and adapters",
+        "ports & adapters",
+        "포트 앤 어댑터",
+        "port and adapter"
       ],
       "agents": [
         "thor",
