@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "iart-webgl-animation-skills",
+  "version": "0.1.0",
+  "description": "iart.ai Three.js, GLSL shader, and particle-system workflows for Freyja",
+  "skills": [
+    "particle-system",
+    "shader-glsl",
+    "threejs-animation"
+  ],
+  "routing": {
+    "particle-system": {
+      "triggers": ["particle-system", "particle system", "confetti", "smoke particles", "flow field", "파티클 시스템", "컨페티", "입자 효과"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "shader-glsl": {
+      "triggers": ["shader-glsl", "shader", "glsl", "fragment shader", "shader material", "셰이더", "프래그먼트 셰이더", "glsl 셰이더"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "threejs-animation": {
+      "triggers": ["threejs-animation", "three.js animation", "three.js", "threejs", "react three fiber", "r3f animation", "3d hero", "3d logo", "3d 로고", "3d interactive", "3d 인터랙티브", "interactive 3d", "인터랙티브 3d", "three.js 애니메이션", "웹지엘 3d"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/webgl-animation-skills",
+  "revision": "50697d659fbf70152f48f9f8aadf1efe78bbdde1",
+  "license": "MIT"
+}

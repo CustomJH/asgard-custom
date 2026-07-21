@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "iart-ad-video-skills",
+  "version": "0.1.0",
+  "description": "iart.ai advertising, launch, and testimonial video workflows for Freyja",
+  "skills": [
+    "ad-creative-video",
+    "launch-video",
+    "testimonial-video"
+  ],
+  "routing": {
+    "ad-creative-video": {
+      "triggers": ["ad-creative-video", "animated video ad", "animated ad", "ad variants", "performance ad creative", "광고 모션그래픽", "광고 크리에이티브", "a/b 테스트 광고"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "launch-video": {
+      "triggers": ["launch-video", "launch video", "launch film", "product hype", "sizzle film", "teaser trailer", "런칭 영상", "출시 영상", "티저 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "testimonial-video": {
+      "triggers": ["testimonial-video", "animated testimonial", "quote video", "animated review", "social proof video", "후기 카드 영상", "리뷰 애니메이션", "추천사 애니메이션"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/ad-video-skills",
+  "revision": "0de0f2a1c1f42a98103fc0ec436509276428372c",
+  "license": "MIT"
+}

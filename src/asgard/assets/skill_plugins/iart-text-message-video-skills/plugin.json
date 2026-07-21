@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "iart-text-message-video-skills",
+  "version": "0.1.0",
+  "description": "iart.ai text-message and chat-story video workflow for Freyja",
+  "skills": [
+    "text-message-animation"
+  ],
+  "routing": {
+    "text-message-animation": {
+      "triggers": ["text-message-animation", "text message video", "imessage conversation", "whatsapp video", "chat animation", "fake text video", "문자 대화 영상", "채팅 애니메이션", "카톡 대화 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/text-message-video-skills",
+  "revision": "3a800e1e9b9635fa196a07b0143c80f7e9648558",
+  "license": "MIT"
+}

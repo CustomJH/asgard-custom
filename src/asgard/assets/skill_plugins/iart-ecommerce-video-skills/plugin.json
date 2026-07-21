@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "iart-ecommerce-video-skills",
+  "version": "0.1.0",
+  "description": "iart.ai product demo, sale promo, and photo slideshow video workflows for Freyja",
+  "skills": [
+    "photo-slideshow",
+    "product-demo-video",
+    "promo-video"
+  ],
+  "routing": {
+    "photo-slideshow": {
+      "triggers": ["photo-slideshow", "photo slideshow", "photo montage", "ken burns", "photos to video", "사진 슬라이드쇼", "포토 몽타주", "사진 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "product-demo-video": {
+      "triggers": ["product-demo-video", "product demo video", "app demo video", "saas demo", "ui walkthrough video", "제품 데모 영상", "앱 시연 영상", "ui 시연 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "promo-video": {
+      "triggers": ["promo-video", "promo video", "sale video", "discount reveal", "black friday video", "프로모션 영상", "세일 영상", "할인 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/ecommerce-video-skills",
+  "revision": "2bd0dd19c9b2df5230f5d8f7453861b9681e49b4",
+  "license": "MIT"
+}

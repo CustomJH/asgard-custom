@@ -1,0 +1,33 @@
+{
+  "schema": 1,
+  "name": "iart-tiktok-video-skills",
+  "version": "0.1.0",
+  "description": "iart.ai TikTok, Reels, Shorts, caption, countdown, and lower-third workflows for Freyja",
+  "skills": [
+    "caption-animation",
+    "countdown-video",
+    "lower-thirds",
+    "short-form-video"
+  ],
+  "routing": {
+    "caption-animation": {
+      "triggers": ["caption-animation", "caption animation", "animated captions", "tiktok captions", "karaoke captions", "word-by-word subtitles", "자막 애니메이션", "틱톡 자막", "노래방 자막"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "countdown-video": {
+      "triggers": ["countdown-video", "countdown video", "countdown timer", "launch countdown", "stream starting soon", "카운트다운 영상", "타이머 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "lower-thirds": {
+      "triggers": ["lower-thirds", "lower third", "speaker name overlay", "broadcast title", "로워서드", "이름 자막", "발표자 자막"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "short-form-video": {
+      "triggers": ["short-form-video", "short-form video", "tiktok video", "instagram reels", "youtube shorts", "vertical short", "틱톡 영상", "릴스", "쇼츠", "숏폼"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/tiktok-video-skills",
+  "revision": "2a775336b5a638cbf8a61dbd785f9a1b649be016",
+  "license": "MIT"
+}

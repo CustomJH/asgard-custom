@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "iart-manim-skills",
+  "version": "0.1.0",
+  "description": "iart.ai Manim mathematical animation workflow for Freyja",
+  "skills": [
+    "manim"
+  ],
+  "routing": {
+    "manim": {
+      "triggers": ["manim", "math animation", "equation animation", "3blue1brown", "mathematical explainer", "수학 애니메이션", "수식 애니메이션", "수학 설명 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/manim-skills",
+  "revision": "a15833c44de5108a3ee68f178a1fca126aa7c6d8",
+  "license": "MIT"
+}

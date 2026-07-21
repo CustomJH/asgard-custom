@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "name": "iart-map-animation-skills",
+  "version": "0.1.0",
+  "description": "iart.ai editorial map animation workflow for Freyja",
+  "skills": [
+    "map-animation"
+  ],
+  "routing": {
+    "map-animation": {
+      "triggers": ["map-animation", "map animation", "vox-style map", "map zoom", "route animation", "earth studio", "지도 애니메이션", "경로 애니메이션", "지도 영상"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
+  "source": "https://github.com/iart-ai/map-animation-skills",
+  "revision": "390ca98bbcf2ea88a430a69c0dcbf423e43d075d",
+  "license": "MIT"
+}

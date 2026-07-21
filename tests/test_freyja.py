@@ -523,11 +523,15 @@ class TestUiSkillsRework(unittest.TestCase):
         fk = self.by_name["asgard-freyja-folkvangr"]
         self.assertIn("로고 3D 쇼케이스", fk)
         self.assertIn("SVGLoader.createShapes", fk)  # 압출 파이프라인 순서
-        self.assertIn("scale.y *= -1", fk)  # SVG Y축 반전 필수
+        self.assertIn("반전 전 좌표에서 중심 정렬", fk)
+        self.assertIn("group.scale.set(scaleFit, -scaleFit, scaleFit)", fk)
+        self.assertLess(fk.index("반전 전 좌표에서 중심 정렬"), fk.index("group.scale.set"))
         self.assertIn("크게, 기울여, 잘라, 천천히", fk)  # 성숙 문법
         self.assertIn("검은 덩어리", fk)  # metalness 1 + no envmap 함정
         logo = self.by_name["asgard-freyja-logo-studio"]
         self.assertIn("로고 3D 쇼케이스", logo)  # 상호 참조
+        for companion in ("threejs-animation", "threejs-skills", "asgard-freyja-hildisvini", "brand"):
+            self.assertIn(companion, logo)
 
     def test_hero_living_element_mandate(self):
         # three.js 활용 경로 (26-07-17 오딘 피드백 "히어로 수려한 모션 부재")
@@ -608,6 +612,8 @@ class TestUiSkillsRework(unittest.TestCase):
         self.assertIn("접근성 트리 스냅샷", hv)  # 기본 관측면 — 스크린샷은 보조
         self.assertIn("가시적 델타", hv)  # 컴파일 통과는 기준이 아니다
         self.assertIn("DOM 안정화", hv)  # 고정 딜레이는 렌더 중간 샘플링
+        self.assertIn("Canvas/WebGL 실픽셀 게이트", hv)
+        self.assertIn("빈 캔버스", hv)
 
     def test_folkvangr_material_light_recipes(self):
         fk = self.by_name["asgard-freyja-folkvangr"]
@@ -655,9 +661,27 @@ class TestUiSkillsRework(unittest.TestCase):
         gersemi = self.by_name["asgard-freyja-gersemi"]
         motion = self.by_name["asgard-freyja-motion"]
         hildisvini = self.by_name["asgard-freyja-hildisvini"]
-        for child in ("ui-ux-pro-max", "design-md-review", "21st-cli-use", "aceternity-ui"):
+        for child in (
+            "ui-ux-pro-max",
+            "brand",
+            "design-system",
+            "ui-styling",
+            "banner-design",
+            "slides",
+            "design-md-review",
+            "21st-cli-use",
+            "aceternity-ui",
+        ):
             self.assertIn(child, brisingamen)
-        for child in ("ui-ux-pro-max", "21st-cli-use", "aceternity-ui", "jitter-motion-reference", "prototype"):
+        for child in (
+            "ui-ux-pro-max",
+            "design-system",
+            "ui-styling",
+            "21st-cli-use",
+            "aceternity-ui",
+            "jitter-motion-reference",
+            "prototype",
+        ):
             self.assertIn(child, hnoss)
         self.assertIn("glassmorphism", gersemi)
         for child in (
@@ -779,6 +803,17 @@ class TestSkillResolver(unittest.TestCase):
         for task, expected in cases.items():
             names = [n for n, _ in resolve_freyja_skills(task)]
             self.assertIn(expected, names, task)
+
+    def test_logo_route_adds_creation_and_visual_verification_companions(self):
+        hits = dict(resolve_freyja_skills("3D 로고 interactive showcase 제작"))
+        visible = set(hits)
+        deferred = hits.get("asgard-freyja-deferred", "")
+        for name in (
+            "asgard-freyja-logo-studio",
+            "asgard-freyja-reference-atlas",
+            "asgard-freyja-hildisvini",
+        ):
+            self.assertTrue(name in visible or name in deferred, name)
 
     def test_negative_routing_respects_declared_scope(self):
         cases = {
