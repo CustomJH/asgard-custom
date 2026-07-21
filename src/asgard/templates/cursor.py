@@ -5,6 +5,7 @@ emits config that points at them."""
 import json
 
 from ..platform import hook_python
+from .agent_models import agent_model
 from .roles import role_document
 
 _CURSOR_RULE = """\
@@ -36,15 +37,16 @@ def cursor_rule() -> str:
     return _CURSOR_RULE
 
 
-def cursor_agent(content: str) -> str:
+def cursor_agent(content: str, root: str) -> str:
     """Adapt the canonical Claude-compatible role file to Cursor's agent schema."""
     metadata, body = role_document(content)
+    model = agent_model(root, "cursor", metadata["name"])["model"]
     readonly = "Write" not in str(metadata.get("tools") or "")
     return (
         "---\n"
         f"name: {metadata['name']}\n"
         f"description: {json.dumps(str(metadata['description']), ensure_ascii=False)}\n"
-        "model: inherit\n"
+        f"model: {json.dumps(model)}\n"
         f"readonly: {str(readonly).lower()}\n"
         "---\n\n" + body
     )
@@ -58,8 +60,14 @@ def cursor_hooks_json() -> str:
             {
                 "version": 1,
                 "hooks": {
-                    "sessionStart": [{"command": f"{py} .cursor/hooks/memory-activate.py cursor"}],
-                    "beforeSubmitPrompt": [{"command": f"{py} .cursor/hooks/memory-activate.py cursor"}],
+                    "sessionStart": [
+                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                    ],
+                    "beforeSubmitPrompt": [
+                        {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                    ],
                     "beforeShellExecution": [
                         {"command": f"{py} .cursor/hooks/git-guard.py"},
                         {"command": f"{py} .cursor/hooks/release-guard.py"},
@@ -73,12 +81,17 @@ def cursor_hooks_json() -> str:
                             "matcher": "Task",
                             "command": f"{py} .cursor/hooks/memory-activate.py cursor",
                         },
+                        {
+                            "matcher": "Task",
+                            "command": f"{py} .cursor/hooks/map-activate.py cursor",
+                        },
                     ],
                     "subagentStart": [
                         {
                             "matcher": "^asgard-(thinker|worker|verifier)$",
                             "command": f"{py} .cursor/hooks/subagent-gate.py start",
-                        }
+                        },
+                        {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                     ],
                     "subagentStop": [
                         {

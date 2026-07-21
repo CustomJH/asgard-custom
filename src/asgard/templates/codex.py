@@ -3,6 +3,7 @@
 import json
 
 from ..platform import hook_python
+from .agent_models import agent_model
 from .roles import role_document
 
 _CODEX_CONFIG = """\
@@ -29,11 +30,19 @@ max_depth = 2
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
 
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
+
 [[hooks.UserPromptSubmit]]
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
 # Canon enforcement — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
 # the guard is the same git-guard.py. Trust once via the /hooks CLI (or --dangerously-bypass-hook-trust).
@@ -65,6 +74,12 @@ type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/write-sentinel.py" codex'
 
 # Trinity role receipts and completion gate. Codex exposes custom agents as Agent tool calls.
+[[hooks.SubagentStart]]
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
+
 [[hooks.PreToolUse]]
 matcher = "^Agent$"
 
@@ -122,12 +137,15 @@ def codex_config() -> str:
     return _CODEX_CONFIG.format(py=hook_python())
 
 
-def codex_agent(content: str) -> str:
+def codex_agent(content: str, root: str) -> str:
     """Adapt one canonical role file to Codex's standalone custom-agent TOML."""
     metadata, body = role_document(content)
+    selected = agent_model(root, "codex", metadata["name"])
     lines = [
         f"name = {json.dumps(str(metadata['name']), ensure_ascii=False)}",
         f"description = {json.dumps(str(metadata['description']), ensure_ascii=False)}",
+        f"model = {json.dumps(selected['model'])}",
+        f"model_reasoning_effort = {json.dumps(selected['effort'])}",
     ]
     if "Write" not in str(metadata.get("tools") or ""):
         lines.append('sandbox_mode = "read-only"')

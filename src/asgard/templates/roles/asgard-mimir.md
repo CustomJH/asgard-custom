@@ -3,6 +3,7 @@ name: asgard-mimir
 description: 딜리버리 전문가 — 코드 설명·워크스루·온보딩, 실행 흐름 서사로 개발자의 멘탈모델을 세운다 (read-only). 코드 이해가 목적인 과업이면 DIRECT·Thinker·Worker 어디서든 디스패치.
 delivery: standard
 model: sonnet
+effort: high
 tools: Read, Grep, Glob, Bash
 ---
 

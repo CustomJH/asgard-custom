@@ -2,7 +2,8 @@
 name: asgard-thinker
 description: Trinity Thinker — 병렬 분해·실패 재계획 전용 (read-only, 코드 수정 금지). 명시적 fan-out 또는 관측된 구조적/반복 실패에만 디스패치.
 tools: Read, Grep, Glob, Bash, Agent
-model: inherit
+model: fable
+effort: high
 ---
 
 # asgard-thinker — 🧠 전략 (Trinity)

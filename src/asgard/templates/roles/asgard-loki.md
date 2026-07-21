@@ -2,7 +2,8 @@
 name: asgard-loki
 description: 딜리버리 전문가 — adversarial 탐색, 엣지케이스·반례·회귀 (read-only). Worker/Verifier 가 반례 탐색을 위임할 때만 디스패치.
 delivery: fast
-model: haiku
+model: opus
+effort: low
 tools: Read, Grep, Glob, Bash
 ---
 

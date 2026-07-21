@@ -5,7 +5,10 @@ the same abstraction boundary `asgard.hooks` gives hook scripts. setup scaffolds
 into the user's `.claude/agents/`. Add an agent = drop a `.md` file here; discovery is the directory
 listing itself, so there is no registry to update."""
 
+import json
 from importlib import resources
+
+from ..agent_models import agent_model
 
 # (파일명, 내용) — setup 이 .claude/agents/ 에 스캐폴딩. 역할 = 직관명(asgard-thinker/worker/verifier),
 # 신화 이름은 딜리버리 계층(freyja/thor/eitri/loki) 전용 (2026-07-02 Odin 결정).
@@ -28,6 +31,21 @@ def role_document(content: str) -> tuple[dict, str]:
     if not metadata.get("name") or not metadata.get("description"):
         raise ValueError("role file requires name and description")
     return metadata, parts[2].lstrip()
+
+
+def claude_agent(content: str, root: str) -> str:
+    """Apply Claude Code model overrides while preserving the canonical role document."""
+    metadata, body = role_document(content)
+    selected = agent_model(root, "claude-code", metadata["name"])
+    lines = content.split("---", 2)[1].splitlines()
+    keys = set()
+    for index, line in enumerate(lines):
+        key = line.split(":", 1)[0]
+        if key in selected:
+            lines[index] = f"{key}: {json.dumps(selected[key])}"
+            keys.add(key)
+    lines.extend(f"{key}: {json.dumps(value)}" for key, value in selected.items() if key not in keys)
+    return "---\n" + "\n".join(lines).strip() + "\n---\n\n" + body
 
 
 def delivery_agents() -> dict[str, str]:

@@ -111,6 +111,62 @@ def test_trinity_dual_default_is_loaded_by_new_start_session(monkeypatch, tmp_pa
     assert fresh.dual_mode is True
 
 
+def test_trinity_model_terminal_command_sets_lists_and_resets(monkeypatch, capsys, tmp_path) -> None:
+    from asgard.providers import project_section
+
+    monkeypatch.setattr(ui, "_COLOR", False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+
+    repl.slash("/trinity model cursor worker terminal-model", str(tmp_path), None)
+    assert project_section(str(tmp_path), "agent_models.cursor.worker") == {"model": "terminal-model"}
+
+    repl.slash("/trinity models", str(tmp_path), None)
+    out = capsys.readouterr().out
+    assert "cursor" in out and "worker" in out and "terminal-model" in out
+
+    repl.slash("/trinity model reset cursor worker", str(tmp_path), None)
+    assert project_section(str(tmp_path), "agent_models.cursor.worker") == {}
+    assert "gpt-5.6-terra-medium" in capsys.readouterr().out
+
+
+def test_trinity_model_terminal_guides_host_role_and_model(monkeypatch, capsys, tmp_path) -> None:
+    from asgard.providers import project_section
+
+    monkeypatch.setattr(ui, "_COLOR", False)
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.setattr("asgard.agent.onboard.can_prompt", lambda: True)
+    answers = iter(["3", "2", "m", "guided-model"])
+    monkeypatch.setattr("builtins.input", lambda _prompt="": next(answers))
+
+    repl.slash("/trinity model", str(tmp_path), None)
+
+    assert project_section(str(tmp_path), "agent_models.cursor.worker") == {"model": "guided-model"}
+    out = capsys.readouterr().out
+    assert "claude-code" in out and "cursor" in out and "codex" in out
+    assert "worker" in out and "gpt-5.6-terra-medium" in out
+    assert "guided-model" in out
+
+
+def test_trinity_model_terminal_native_change_requests_session_reconfigure(monkeypatch, tmp_path) -> None:
+    from asgard.providers import project_section
+
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    current = object()
+
+    try:
+        repl.slash("/trinity model native worker local-model ollama", str(tmp_path), current)
+    except repl._Reconfigure as changed:
+        assert changed.rp is current
+        assert "native.worker" in (changed.msg or "")
+    else:
+        raise AssertionError("native model change must rebuild the Heimdall session")
+
+    assert project_section(str(tmp_path), "trinity.worker") == {
+        "model": "local-model",
+        "provider": "ollama",
+    }
+
+
 def test_skills_command_lists_only_explicit_workflows(monkeypatch, capsys, tmp_path) -> None:
     monkeypatch.setattr(ui, "_COLOR", False)
 
@@ -183,6 +239,29 @@ def test_render_sink_mode_emits_complete_softwrapped_lines(monkeypatch) -> None:
     assert "  meta line" in lines  # 메타 라인 무가공 통과
     render.attach(None)
     assert render._sink is None
+
+
+def test_submitted_echo_stands_in_for_erased_input_frame(monkeypatch) -> None:
+    # pt 는 accept 시 입력 프레임을 지운다(erase_when_done) — 스크롤백엔 이 에코가 사용자
+    # 메시지를 대표한다. 일반 요청=캐럿+본문, 커맨드(/·!)=흐림, 멀티라인=본문 열 정렬.
+    monkeypatch.setattr(ui, "_COLOR", False)
+
+    assert repl._echo_submitted("배포 상태 봐줘") == "  › 배포 상태 봐줘"
+    assert repl._echo_submitted("첫 줄\n둘째 줄") == "  › 첫 줄\n    둘째 줄"
+    assert repl._echo_submitted("/provider") == "  › /provider"
+    assert repl._echo_submitted("!git status") == "  › !git status"
+
+
+def test_pt_session_erases_input_frame_on_accept(monkeypatch, tmp_path) -> None:
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output import DummyOutput
+
+    monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
+
+    with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
+        session = repl._pt_session()
+        assert session.app.erase_when_done is True
 
 
 def test_dock_inserts_output_above_persistent_frame(monkeypatch, capsys) -> None:

@@ -7,7 +7,8 @@
                                                        writes-*·memory-pending — 설정 아님)
 
 섹션 스키마 (양쪽 동일 — 프로젝트가 글로벌을 키 단위로 이긴다):
-  provider / trinity(역할 배치) / bridge / lagom / memory / ui / trinity_policy(프로젝트 전용)
+  provider / trinity(네이티브 역할 배치) / agent_models(호스트별 역할 모델) / bridge /
+  lagom / memory / ui / trinity_policy(프로젝트 전용)
 
 레거시 폴백: 신규 JSON 이 없으면 구 파일을 그대로 읽는다 (기배포 프로젝트·기존 테스트 무파손).
 쓰기는 항상 신규 JSON — `asgard sync` 가 구 파일을 신 포맷으로 이관한다.

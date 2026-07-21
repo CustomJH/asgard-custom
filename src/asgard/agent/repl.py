@@ -242,9 +242,12 @@ _COMMAND_HELP = {
     "/sessions": "h_sessions",
     "/sessions stop": "h_sessions",
     "/provider": "h_provider",
-    "/provider set": "h_provider",
+    "/provider set": "h_provider_set",
     "/trinity": "h_trinity",
     "/trinity set": "h_trinity",
+    "/trinity models": "h_trinity",
+    "/trinity model": "h_trinity",
+    "/trinity model reset": "h_trinity",
     "/trinity dual": "h_trinity",
     "/trinity dual on": "h_trinity",
     "/trinity dual off": "h_trinity",
@@ -329,7 +332,7 @@ def _box_top_str(width: int) -> str:
 
 
 def _box_bottom_str(width: int) -> str:
-    """하단 보더 ╰───╯ — pt toolbar 첫 줄과 같은 기하·색 (독·제출 박스 폐합 공용)."""
+    """하단 보더 ╰───╯ — pt toolbar 첫 줄과 같은 기하·색 (독 프레임용)."""
     return "  " + ui.paint(theme.ansi(theme.HAIRLINE), _BOX["bl"] + _BOX["h"] * max(0, width - 6) + _BOX["br"])
 
 
@@ -476,6 +479,10 @@ def _pt_session():
         multiline=True,  # 줄 내림 허용 — Enter 제출은 _kb_enter 가 유지 (기본 멀티라인 Enter 를 대체)
         key_bindings=kb,
         prompt_continuation=_pt_continuation,
+        # 제출 시 입력 프레임 전체 소거 — 라이브 에디터는 편집 중에만 존재하고, 스크롤백엔
+        # run() 의 _echo_submitted 한 줄이 사용자 메시지를 대표한다 (pi·hermes·opencode 공통:
+        # 에디터는 transient, 내역엔 별도 표현. 열린 박스·rprompt 힌트 잔존 문제의 근본 해소).
+        erase_when_done=True,
     )
 
     # 바닥 정렬 필러 — pt 인라인 프롬프트는 커서 원점에 위에서부터 그린다. 박스 위를
@@ -551,6 +558,18 @@ def _input_continued(first: str, cont: str) -> str:
     return "\n".join(parts)
 
 
+def _echo_submitted(req: str) -> str:
+    """제출된 입력의 스크롤백 표기 — pt 가 accept 시 입력 프레임을 통째로 지우므로
+    (erase_when_done) 내역엔 이 표기가 사용자 메시지를 대표한다. 일반 요청은 골드 캐럿 `›`
+    + 본문(hermes 의 ❯ 거터 상응), 커맨드(`/`·`!`)는 전체 흐림(hermes 의 muted slash 라인
+    상응 — 대화가 아니라 조작이므로 조용히). 멀티라인은 본문 열('  › ' 4칸)에 정렬."""
+    lines = req.split("\n")
+    if req.startswith(("/", "!")):
+        return "  " + ui.dim("› " + "\n    ".join(lines))
+    head = "  " + ui.paint(_O, "›") + " " + lines[0]
+    return head + "".join("\n    " + line for line in lines[1:])
+
+
 def prompt() -> str:
     # cursor-agent 식 입력 영역 — rule 프레임 + 골드 → + placeholder + 하단 상태줄.
     if not ui._COLOR:
@@ -597,10 +616,9 @@ class _Dock:
         import threading
 
         with self._lock:
-            # 제출된 입력 박스를 닫는다 — pt 는 accept 시 toolbar(하단 보더+상태줄)를 지우므로
-            # (\x1b[J 실측) 스크롤백엔 열린 박스만 남는다. 여기서 ╰╯ 를 정적으로 폐합.
+            # 제출된 입력 박스는 pt 가 통째로 지운다(erase_when_done) — 여기선 독 프레임만 그린다.
             self.mounted = True
-            sys.stdout.write(_box_bottom_str(ui.stream_width()) + "\n" + self._frame_str())
+            sys.stdout.write(self._frame_str())
             sys.stdout.flush()
         self._stop = threading.Event()
         self._t = threading.Thread(target=self._tick, daemon=True)
@@ -763,6 +781,157 @@ def _cmd_trinity(cmd: str, root: str, rp) -> None:
     from ..providers import PROVIDERS, resolve_trinity, save_config_section
 
     args = cmd.split()[1:]
+    if args[:1] == ["models"]:
+        from ..commands.role import role_model_state
+
+        for host, roles in role_model_state(root).items():
+            sys.stdout.write(f"  {ui.bold(host)}\n")
+            for role, selected in roles.items():
+                if host == "native":
+                    value = f"{selected['provider']}:{selected['model']}"
+                else:
+                    value = str(selected["model"])
+                    if selected.get("effort"):
+                        value += f" · effort={selected['effort']}"
+                sys.stdout.write(f"    {ui.paint(_O, role.ljust(12))} {value}\n")
+        return
+
+    if args[:1] == ["model"]:
+        from ..commands.role import MODEL_HOSTS, configure_role_model, role_model_state
+
+        values = args[1:]
+        if not values:
+            from ..templates.agent_models import AGENT_MODEL_DEFAULTS
+            from .onboard import can_prompt
+
+            if not can_prompt():
+                sys.stdout.write(f"  {ui.dim(t('trinity_model_usage'))}\n")
+                return
+            from ..picker import Option, available, pick
+
+            try:
+                if available():  # 인터랙티브 패널 — host→role→model 연계 창 (번호 입력은 폴백)
+                    picked = pick(t("pick_host"), [Option(n, n) for n in MODEL_HOSTS])
+                    if picked is None:
+                        raise EOFError
+                    host = picked
+                    if host == "native":
+                        _cmd_trinity("/trinity set", root, rp)
+                        return
+                    state = role_model_state(root)[host]
+                    roles = tuple(AGENT_MODEL_DEFAULTS[host])
+                    picked = pick(t("pick_role"), [Option(n, n, detail=str(state[n]["model"])) for n in roles])
+                    if picked is None:
+                        raise EOFError
+                    role = picked
+                    current = str(state[role]["model"])
+                    recommended = AGENT_MODEL_DEFAULTS[host][role]["model"]
+                    models = list(
+                        dict.fromkeys(
+                            [current, recommended, *(item["model"] for item in AGENT_MODEL_DEFAULTS[host].values())]
+                        )
+                    )
+                    mopts = [Option("", t("model_override_clear"))]
+                    for model_id in models:
+                        tags = []
+                        if model_id == current:
+                            tags.append(t("current_tag"))
+                        if model_id == recommended:
+                            tags.append(t("recommended_tag"))
+                        mopts.append(Option(model_id, model_id, detail=", ".join(tags), current=model_id == current))
+                    sel = pick(
+                        t("pick_model"), mopts, default=models.index(current) + 1, manual_hint=t("picker_manual_model")
+                    )
+                    if sel is None:
+                        raise EOFError
+                    values = ["reset", host, role] if sel == "" else [host, role, sel]
+                else:
+                    sys.stdout.write(f"\n  {ui.bold(t('pick_host'))}\n")
+                    for i, name in enumerate(MODEL_HOSTS, 1):
+                        sys.stdout.write(f"    {ui.paint(_O, str(i))} {name}\n")
+                    choice = input("  " + t("number") + " [1]: ").strip() or "1"
+                    if choice.lower() == "q":
+                        raise EOFError
+                    host = MODEL_HOSTS[int(choice) - 1]
+                    if host == "native":
+                        _cmd_trinity("/trinity set", root, rp)
+                        return
+
+                    state = role_model_state(root)[host]
+                    roles = tuple(AGENT_MODEL_DEFAULTS[host])
+                    sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
+                    for i, name in enumerate(roles, 1):
+                        sys.stdout.write(f"    {ui.paint(_O, str(i))} {name} {ui.dim('· ' + state[name]['model'])}\n")
+                    choice = input("  " + t("number") + " [1]: ").strip() or "1"
+                    if choice.lower() == "q":
+                        raise EOFError
+                    role = roles[int(choice) - 1]
+
+                    current = str(state[role]["model"])
+                    recommended = AGENT_MODEL_DEFAULTS[host][role]["model"]
+                    models = list(
+                        dict.fromkeys(
+                            [current, recommended, *(item["model"] for item in AGENT_MODEL_DEFAULTS[host].values())]
+                        )
+                    )
+                    sys.stdout.write(f"\n  {ui.bold(t('pick_model'))}\n")
+                    sys.stdout.write(f"    {ui.paint(_O, '0')} {t('model_override_clear')}\n")
+                    for i, model_id in enumerate(models, 1):
+                        tags = []
+                        if model_id == current:
+                            tags.append(t("current_tag"))
+                        if model_id == recommended:
+                            tags.append(t("recommended_tag"))
+                        suffix = ui.dim(" · " + ", ".join(tags)) if tags else ""
+                        sys.stdout.write(f"    {ui.paint(_O, str(i))} {model_id}{suffix}\n")
+                    sys.stdout.write(f"    {ui.dim('m ' + t('model_id_prompt') + ' · q cancel')}\n")
+                    default = str(models.index(current) + 1)
+                    choice = input("  " + t("number") + f" [{default}]: ").strip() or default
+                    if choice.lower() == "q":
+                        raise EOFError
+                    if choice == "0":
+                        values = ["reset", host, role]
+                    elif choice.lower() == "m":
+                        values = [host, role, input("  " + t("model_id_prompt") + ": ").strip()]
+                    else:
+                        values = [host, role, models[int(choice) - 1]]
+            except ValueError, IndexError, EOFError, KeyboardInterrupt:
+                sys.stdout.write(f"  {t('cancelled')}\n")
+                return
+
+        reset = values[:1] == ["reset"]
+        if reset:
+            values = values[1:]
+        if len(values) < 2 or (not reset and len(values) < 3) or len(values) > (2 if reset else 4):
+            sys.stdout.write(f"  {ui.dim(t('trinity_model_usage'))}\n")
+            return
+        host, role = values[:2]
+        model = None if reset else values[2]
+        extra = None if reset or len(values) < 4 else values[3]
+        try:
+            result = configure_role_model(
+                root,
+                host,
+                role,
+                model=model,
+                effort=extra if host != "native" else None,
+                provider=extra if host == "native" else None,
+                reset=reset,
+            )
+        except ValueError as exc:
+            sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {exc}\n")
+            return
+        effective = result["effective"]
+        value = f"{effective.get('provider')}:" if host == "native" else ""
+        value += str(effective["model"])
+        if effective.get("effort"):
+            value += f" · effort={effective['effort']}"
+        msg = t("trinity_model_reset" if reset else "trinity_model_saved", host=host, role=role, value=value)
+        if host == "native":
+            raise _Reconfigure(rp, msg)
+        sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
+        return
+
     if args[:1] == ["dual"]:
         hd = _PT_CTX.get("heimdall")
         if hd is None:
@@ -791,29 +960,49 @@ def _cmd_trinity(cmd: str, root: str, rp) -> None:
         return
 
     if args[:1] == ["set"]:
+        from ..picker import Option, available, pick
         from .onboard import can_prompt
 
         if not can_prompt():
             return
         roles = ("thinker", "thinker_alt", "worker", "verifier")
-        sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
-        for i, r in enumerate(roles, 1):
-            sys.stdout.write(f"    {ui.paint(_O, str(i))} {r}\n")
         names = list(PROVIDERS)
         try:
-            role = roles[int(input("  " + t("number") + " [2]: ").strip() or "2") - 1]
-            sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
-            sys.stdout.write(f"    {ui.paint(_O, '0')} {t('placement_clear')}\n")
-            for i, n in enumerate(names, 1):
-                p = PROVIDERS[n]
-                sys.stdout.write(
-                    f"    {ui.paint(_O, str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n"
-                )
-            idx = int(input("  " + t("number") + " [0]: ").strip() or "0")
-            if idx == 0:
-                save_config_section(root, f"trinity.{role}", None)
-                raise _Reconfigure(rp, t("placement_cleared"))
-            name = names[idx - 1]
+            if available():  # 인터랙티브 패널 — 역할→provider 연계 창 (번호 입력은 폴백)
+                picked_role = pick(t("pick_role"), [Option(r, r) for r in roles], default=1)
+                if picked_role is None:
+                    sys.stdout.write(f"  {t('cancelled')}\n")
+                    return
+                role = picked_role
+                popts = [Option("", t("placement_clear"))] + [
+                    Option(n, PROVIDERS[n].display, detail=PROVIDERS[n].default_model or t("needs_base_url"))
+                    for n in names
+                ]
+                sel = pick(t("pick_provider"), popts)
+                if sel is None:
+                    sys.stdout.write(f"  {t('cancelled')}\n")
+                    return
+                if not sel:
+                    save_config_section(root, f"trinity.{role}", None)
+                    raise _Reconfigure(rp, t("placement_cleared"))
+                name = sel
+            else:
+                sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
+                for i, r in enumerate(roles, 1):
+                    sys.stdout.write(f"    {ui.paint(_O, str(i))} {r}\n")
+                role = roles[int(input("  " + t("number") + " [2]: ").strip() or "2") - 1]
+                sys.stdout.write(f"\n  {ui.bold(t('pick_provider'))}\n")
+                sys.stdout.write(f"    {ui.paint(_O, '0')} {t('placement_clear')}\n")
+                for i, n in enumerate(names, 1):
+                    p = PROVIDERS[n]
+                    sys.stdout.write(
+                        f"    {ui.paint(_O, str(i))} {p.display} {ui.dim('· ' + (p.default_model or t('needs_base_url')))}\n"
+                    )
+                idx = int(input("  " + t("number") + " [0]: ").strip() or "0")
+                if idx == 0:
+                    save_config_section(root, f"trinity.{role}", None)
+                    raise _Reconfigure(rp, t("placement_cleared"))
+                name = names[idx - 1]
             p = PROVIDERS[name]
             vals: dict = {"provider": name}
             if p.fallback_models or p.api_mode == "openai_compat":
@@ -841,13 +1030,9 @@ def _cmd_trinity(cmd: str, root: str, rp) -> None:
 
     roles = ("thinker", "thinker_alt", "worker", "verifier")
     for role, r in resolve_trinity(root, rp, roles).items():
-        if r is rp:
-            sys.stdout.write(
-                f"  {ui.paint(_O, role.ljust(9))} {rp.profile.name}:{rp.model} {ui.dim(t('default_tag'))}\n"
-            )
-        else:
-            warn = f"  {ui.paint(ui._WARN, '⚠ ' + '; '.join(r.missing))}" if r.missing else ""
-            sys.stdout.write(f"  {ui.paint(_O, role.ljust(9))} {r.profile.name}:{r.model}{warn}\n")
+        warn = f"  {ui.paint(ui._WARN, '⚠ ' + '; '.join(r.missing))}" if r.missing else ""
+        tag = f" {ui.dim(t('default_tag'))}" if r is rp else ""
+        sys.stdout.write(f"  {ui.paint(_O, role.ljust(9))} {r.profile.name}:{r.model}{tag}{warn}\n")
     sys.stdout.write(f"  {ui.dim(t('trinity_hint'))}\n")
 
 
@@ -955,6 +1140,11 @@ def slash(cmd: str, root: str, rp) -> bool:
                 new = onboard(root)
                 if new is not None:
                     raise _Reconfigure(new)  # repl.run 이 세션 재생성
+            return True
+        if rp.missing:  # 미연결 — 기본 프로파일(Claude)을 연결된 것처럼 보여주지 않는다
+            sys.stdout.write(
+                f"  {ui.paint(ui._WARN, '⚠')} {t('not_connected')} {ui.dim('· ' + '; '.join(rp.missing))}\n"
+            )
             return True
         src = rp.key_source or rp.source
         sys.stdout.write(f"  {ui.paint(_O, rp.profile.display)} {ui.dim('·')} {rp.model} {ui.dim('(' + src + ')')}\n")
@@ -1222,6 +1412,8 @@ def run(root: str, rp, cont: bool = False) -> int:
             return _bye()
         if not req:
             continue
+        if _PT:  # 지워진 입력 프레임을 대신하는 사용자 메시지 표기 (폴백 경로는 input 에코가 남는다)
+            sys.stdout.write(_echo_submitted(req) + "\n")
         if req == "/new":  # 컨텍스트·화면 리셋 (rp/heimdall 재생성 필요 — slash 는 rp 만 받음)
             sys.stdout.write("\033[2J\033[H")
             heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)

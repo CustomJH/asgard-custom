@@ -521,6 +521,83 @@ class TestRoleProviders(Base):
         self.assertTrue(out["roles"]["worker"]["placed"])
         self.assertEqual(out["roles"]["worker"]["provider"], "ollama")
         self.assertFalse(out["roles"]["thinker"]["placed"])
+        self.assertEqual(out["agent_models"]["cursor"]["worker"]["model"], "gpt-5.6-terra-medium")
+
+    def test_role_model_command_sets_syncs_and_resets_hosted_override(self):
+        from asgard.commands.role import configure_role_model
+        from asgard.providers import project_section
+
+        os.makedirs(os.path.join(self.root, ".cursor"))
+        out = configure_role_model(self.root, "cursor", "worker", model="cursor-user-model")
+
+        self.assertEqual(out["effective"]["model"], "cursor-user-model")
+        self.assertIsNotNone(out["synced"])
+        self.assertEqual(
+            project_section(self.root, "agent_models.cursor.worker"),
+            {"model": "cursor-user-model"},
+        )
+        agent = open(os.path.join(self.root, ".cursor", "agents", "asgard-worker.md")).read()
+        self.assertIn('model: "cursor-user-model"', agent)
+
+        reset = configure_role_model(self.root, "cursor", "worker", reset=True)
+        self.assertEqual(reset["effective"]["model"], "gpt-5.6-terra-medium")
+        self.assertEqual(project_section(self.root, "agent_models.cursor.worker"), {})
+        agent = open(os.path.join(self.root, ".cursor", "agents", "asgard-worker.md")).read()
+        self.assertIn('model: "gpt-5.6-terra-medium"', agent)
+
+    def test_role_model_command_configures_native_provider_and_model(self):
+        from asgard.commands.role import configure_role_model
+        from asgard.providers import project_section
+
+        out = configure_role_model(
+            self.root,
+            "native",
+            "worker",
+            model="native-user-model",
+            provider="ollama",
+        )
+
+        self.assertEqual(out["effective"]["provider"], "ollama")
+        self.assertEqual(out["effective"]["model"], "native-user-model")
+        self.assertIsNone(out["synced"])
+        self.assertEqual(
+            project_section(self.root, "trinity.worker"),
+            {"provider": "ollama", "model": "native-user-model"},
+        )
+
+    def test_role_model_command_rejects_inert_or_conflicting_options(self):
+        from asgard.commands.role import configure_role_model
+
+        with self.assertRaisesRegex(ValueError, "model slug"):
+            configure_role_model(self.root, "cursor", "worker", effort="high")
+        with self.assertRaisesRegex(ValueError, "함께"):
+            configure_role_model(self.root, "codex", "worker", model="x", reset=True)
+        with self.assertRaisesRegex(ValueError, "model ID"):
+            configure_role_model(self.root, "codex", "worker", model="bad\x1b[31m")
+        with self.assertRaisesRegex(ValueError, "provider"):
+            configure_role_model(self.root, "native", "worker", provider="unknown")
+
+    def test_role_model_cli_lists_and_validates_arguments(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            runner = CliRunner()
+            listed = runner.invoke(app, ["role", "model"])
+            changed = runner.invoke(app, ["role", "model", "codex", "thinker", "custom-sol", "--effort", "max"])
+            invalid = runner.invoke(app, ["role", "model", "unknown", "worker", "x"])
+        finally:
+            os.chdir(cwd)
+
+        self.assertEqual(listed.exit_code, 0, listed.output)
+        self.assertIn('"claude-code"', listed.output)
+        self.assertEqual(changed.exit_code, 0, changed.output)
+        self.assertIn('"model": "custom-sol"', changed.output)
+        self.assertIn('"effort": "max"', changed.output)
+        self.assertEqual(invalid.exit_code, 2)
 
     def test_role_run_rejects_bad_role_and_no_quest(self):
         from asgard.commands.role import run_role_run
@@ -555,6 +632,7 @@ class TestDeliveryAgents(unittest.TestCase):
         return dict(ROLE_AGENTS)[name]
 
     def test_library_has_roles_and_delivery(self):
+        from asgard.templates.agent_models import AGENT_MODEL_DEFAULTS
         from asgard.templates.roles import ROLE_AGENTS
 
         names = {f for f, _ in ROLE_AGENTS}
@@ -565,12 +643,31 @@ class TestDeliveryAgents(unittest.TestCase):
             },
             names,
         )
+        roles = {name.removeprefix("asgard-").removesuffix(".md") for name in names}
+        for host, defaults in AGENT_MODEL_DEFAULTS.items():
+            self.assertEqual(set(defaults), roles, host)
 
-    def test_trinity_hands_inherit_coordinator_model(self):
-        # 실행·판정 손은 코디네이터 모델을 상속 — 세션 모델보다 약한 손이 품질 하한이 되는 것을 차단.
-        for n in ("thinker", "worker", "verifier"):
-            fm = self._tpl(f"asgard-{n}.md").split("---")[1]
-            self.assertIn("model: inherit", fm)
+    def test_claude_code_roles_pin_model_and_effort_by_work_type(self):
+        expected = {
+            "thinker": ("fable", "high"),
+            "worker": ("sonnet", "high"),
+            "verifier": ("opus", "high"),
+            "freyja-lead": ("fable", "high"),
+            "freyja": ("sonnet", "high"),
+            "thor-lead": ("fable", "high"),
+            "thor": ("sonnet", "high"),
+            "eitri": ("sonnet", "high"),
+            "loki": ("opus", "low"),
+            "mimir": ("sonnet", "high"),
+        }
+        for role, (model, effort) in expected.items():
+            fm = self._tpl(f"asgard-{role}.md").split("---")[1]
+            self.assertIn(f"model: {model}", fm)
+            self.assertIn(f"effort: {effort}", fm)
+
+        ullr = self._tpl("asgard-ullr.md").split("---")[1]
+        self.assertIn("model: haiku", ullr)
+        self.assertNotIn("effort:", ullr)
 
     def test_caller_sweep_contract(self):
         # 숨은 caller 파손 방어 — worker 는 편집 전 전수 나열, verifier 는 diff 밖 증거 없는 PASS 무효.
@@ -620,9 +717,28 @@ class TestDeliveryAgents(unittest.TestCase):
         from asgard.commands.setup import plan_files
         from asgard.templates.roles import ROLE_AGENTS
 
-        files = dict(plan_files(cc=False, cursor=True, codex=False, root="/workspace")[0])
+        with (
+            mock.patch("asgard.templates.agent_models.load_global", return_value={}),
+            mock.patch("asgard.templates.agent_models.load_project", return_value={}),
+        ):
+            files = dict(plan_files(cc=False, cursor=True, codex=False, root="/workspace")[0])
         agents = {path: body for path, body in files.items() if "/.cursor/agents/asgard-" in path}
         self.assertEqual(len(agents), len(ROLE_AGENTS))
+        expected = {
+            "thinker": "claude-fable-5-thinking-xhigh",
+            "worker": "gpt-5.6-terra-medium",
+            "verifier": "claude-opus-4-8-thinking-high",
+            "freyja-lead": "claude-fable-5-thinking-high",
+            "freyja": "claude-sonnet-5-thinking-high",
+            "thor-lead": "gpt-5.6-sol-high",
+            "thor": "gpt-5.6-terra-high",
+            "eitri": "gpt-5.6-terra-high",
+            "loki": "claude-opus-4-8-thinking-high",
+            "ullr": "gpt-5.6-terra-low",
+            "mimir": "gpt-5.6-terra-medium",
+        }
+        for role, model in expected.items():
+            self.assertIn(f'model: "{model}"', agents[f"/workspace/.cursor/agents/asgard-{role}.md"])
         worker = agents["/workspace/.cursor/agents/asgard-worker.md"]
         verifier = agents["/workspace/.cursor/agents/asgard-verifier.md"]
         self.assertIn("\nreadonly: false\n", worker)
@@ -638,11 +754,33 @@ class TestDeliveryAgents(unittest.TestCase):
         from asgard.commands.setup import plan_files
         from asgard.templates.roles import ROLE_AGENTS
 
-        files = dict(plan_files(cc=False, cursor=False, codex=True, root="/workspace")[0])
+        with (
+            mock.patch("asgard.templates.agent_models.load_global", return_value={}),
+            mock.patch("asgard.templates.agent_models.load_project", return_value={}),
+        ):
+            files = dict(plan_files(cc=False, cursor=False, codex=True, root="/workspace")[0])
         agents = {path: body for path, body in files.items() if "/.codex/agents/asgard-" in path}
         self.assertEqual(len(agents), len(ROLE_AGENTS))
-        worker = tomllib.loads(agents["/workspace/.codex/agents/asgard-worker.toml"])
-        verifier = tomllib.loads(agents["/workspace/.codex/agents/asgard-verifier.toml"])
+        parsed = {path.rsplit("/", 1)[-1].removesuffix(".toml"): tomllib.loads(body) for path, body in agents.items()}
+        expected = {
+            "asgard-thinker": ("gpt-5.6-sol", "xhigh"),
+            "asgard-worker": ("gpt-5.6-terra", "medium"),
+            "asgard-verifier": ("gpt-5.6-sol", "high"),
+            "asgard-freyja-lead": ("gpt-5.6-sol", "high"),
+            "asgard-freyja": ("gpt-5.6-sol", "high"),
+            "asgard-thor-lead": ("gpt-5.6-sol", "high"),
+            "asgard-thor": ("gpt-5.6-terra", "high"),
+            "asgard-eitri": ("gpt-5.6-terra", "high"),
+            "asgard-loki": ("gpt-5.6-sol", "high"),
+            "asgard-ullr": ("gpt-5.6-terra", "low"),
+            "asgard-mimir": ("gpt-5.6-terra", "medium"),
+        }
+        for role, (model, effort) in expected.items():
+            self.assertEqual(parsed[role]["model"], model)
+            self.assertEqual(parsed[role]["model_reasoning_effort"], effort)
+
+        worker = parsed["asgard-worker"]
+        verifier = parsed["asgard-verifier"]
         self.assertNotIn("sandbox_mode", worker)
         self.assertEqual(verifier["sandbox_mode"], "read-only")
         self.assertIn("# asgard-worker", worker["developer_instructions"])
@@ -650,6 +788,33 @@ class TestDeliveryAgents(unittest.TestCase):
         self.assertEqual(config["agents"]["max_depth"], 2)
         self.assertTrue(config["hooks"]["SubagentStart"])
         self.assertIn("verifier-gate.py", config["hooks"]["Stop"][0]["hooks"][0]["command"])
+
+    def test_user_agent_model_overrides_apply_to_every_host(self):
+        import tomllib
+
+        from asgard import settings
+        from asgard.commands.setup import plan_files
+
+        with tempfile.TemporaryDirectory() as root, mock.patch.dict(os.environ, {"HOME": root}):
+            os.makedirs(os.path.join(root, ".asgard"))
+            settings.save_project(
+                root,
+                "agent_models",
+                {
+                    "claude-code": {"worker": {"model": "claude-custom", "effort": "low"}},
+                    "cursor": {"worker": "cursor-custom"},
+                    "codex": {"worker": {"model": "codex-custom", "effort": "xhigh"}},
+                },
+            )
+            files = dict(plan_files(cc=True, cursor=True, codex=True, root=root)[0])
+            claude = files[os.path.join(root, ".claude", "agents", "asgard-worker.md")]
+            cursor = files[os.path.join(root, ".cursor", "agents", "asgard-worker.md")]
+            codex = tomllib.loads(files[os.path.join(root, ".codex", "agents", "asgard-worker.toml")])
+
+        self.assertIn('model: "claude-custom"', claude)
+        self.assertIn('effort: "low"', claude)
+        self.assertIn('model: "cursor-custom"', cursor)
+        self.assertEqual((codex["model"], codex["model_reasoning_effort"]), ("codex-custom", "xhigh"))
 
 
 class TestHeadlessProceed(unittest.TestCase):
@@ -693,6 +858,13 @@ class TestHeadlessProceed(unittest.TestCase):
         self.assertIn("Spec 축", verifier)
         self.assertIn("Standards 축", verifier)
         self.assertIn("스멜은 판단 보조", verifier)
+
+    def test_verifier_carries_architecture_lens(self):
+        # 아키텍처 검사 상시 항목 (26-07-21) — 경계 넘는 import 의 의존 방향 대조 + 정본 포인터
+        verifier = self._tpl("asgard-verifier.md")
+        self.assertIn("아키텍처 검사(Standards 축 상시 항목)", verifier)
+        self.assertIn("순환 의존 신설", verifier)
+        self.assertIn("asgard-hlidskjalf", verifier)
 
 
 class TestRunPrompt(unittest.TestCase):

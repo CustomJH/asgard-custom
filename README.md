@@ -21,6 +21,9 @@ asgard doctor    # verify
 asgard --help
 ```
 
+The installer manages a standalone CPython 3.14. Running from source or importing Asgard as a library
+also requires Python 3.14 or newer; older interpreters cannot parse its PEP 758 syntax.
+
 ## Local or isolated execution
 
 `asgard start` asks where Heimdall should run when attached to a terminal. Local mode is fastest.
@@ -60,6 +63,40 @@ For two-model planning, assign a distinct `thinker_alt` with `/trinity set`, the
 `/trinity dual on`. Both read-only Thinkers plan independently in parallel; one Worker synthesizes
 their plans, and the normal Verifier gate remains unchanged. Use `/trinity dual default on` to make
 it the project default for future `asgard start` sessions. Headless runs use `asgard run --dual`.
+Automatic policy tier-to-model mapping and situational tier bumps apply only to Anthropic/Claude CLI;
+other providers keep the selected model unless each Trinity role is explicitly placed.
+
+Generated host subagents have role-specific model defaults. Override only the roles you want in
+`.asgard/asgard-setting-project.json` (or the same `agent_models` section in the global settings).
+Project values override global values; omitted roles keep Asgard's defaults. The CLI writes project
+overrides and immediately refreshes an already-scaffolded host:
+
+```bash
+asgard role model
+asgard role model cursor worker gpt-5.6-terra-medium
+asgard role model codex thinker gpt-5.6-sol --effort xhigh
+asgard role model claude-code verifier opus --effort high
+asgard role model cursor worker --reset
+asgard role model native worker gpt-5.6-terra --provider openai-native
+```
+
+Inside `asgard start`, enter `/trinity model` for a guided host → role → recommended-model picker.
+`/trinity models` lists everything; the direct forms `/trinity model cursor worker
+gpt-5.6-terra-medium` and `/trinity model reset cursor worker` remain available. Run `asgard role list`
+to inspect bridge state alongside resolved native placements and hosted-agent models.
+
+```json
+{
+  "agent_models": {
+    "claude-code": {"worker": {"model": "sonnet", "effort": "high"}},
+    "cursor": {"worker": {"model": "gpt-5.6-terra-medium"}},
+    "codex": {"worker": {"model": "gpt-5.6-terra", "effort": "medium"}}
+  }
+}
+```
+
+Native Heimdall remains provider-aware: configure it with `trinity.<role>.provider/model`, `/trinity set`,
+or the `native` form above.
 
 ## Tool Kernel
 
@@ -134,21 +171,25 @@ Only Python entrypoints explicitly listed in the manifest can run, through
 ## Project Map
 
 ```bash
-asgard setup map                 # inspect the current project and draw/refresh the map
-asgard setup map --check         # read-only drift check (CI-friendly)
-asgard setup map --dry-run       # preview
+asgard map generate                         # initialize the deterministic shared map
+asgard map update                           # refresh structural facts
+asgard map check                            # read-only drift and area-map validation
+asgard map context --query "worker routing" # inspect bounded agent context
 ```
 
 The team-shared map lives in `.asgard/map/`. `PROJECT.md` is a compact, deterministic
-orientation map built only from paths and manifests observed on disk; Asgard owns and
-regenerates it. Human/agent-authored area maps such as `cli.md` or `frontend.md` are
-fog-of-war notes and are never overwritten. In a mapped project, quest verification
-refreshes `PROJECT.md` before computing the Verifier diff hash, so automatic map changes
-are covered by the same PASS instead of creating an unverified post-close write.
+orientation map built from paths, manifests, verification commands, public symbols, and
+local import relations observed on disk; Asgard owns and regenerates it. Human/agent-authored
+area maps such as `cli.md` or `frontend.md` are bounded fog-of-war notes and are never
+overwritten. Main requests and subagents receive only task-relevant map entries within a
+fixed context budget. Each start refreshes structural drift, and quest verification refreshes
+again before computing the Verifier diff hash, so automatic map changes are covered by the
+same PASS instead of creating an unverified post-close write. `asgard setup map` remains a
+backward-compatible alias.
 
 Maps are navigation hints, not completion evidence. Thinker/Worker must still read the
 definitions and usages that a plan depends on, while `asgard doctor` checks managed-map
-drift and ghost paths in manual area maps.
+drift plus stale, malformed, oversized, or unsafe entries in manual area maps.
 
 ## Memory
 

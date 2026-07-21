@@ -13,7 +13,7 @@ import tempfile
 import unittest
 from unittest import mock
 
-from asgard import registry, ui
+from asgard import memory, registry, ui
 from asgard.commands.sync import merge_agents_md, merge_cc_settings, run_sync, sync_project
 from asgard.templates import agents_md, cc_settings
 
@@ -63,6 +63,7 @@ class TestRegistry(Base):
         self.assertTrue(entries[0]["cc"])
         self.assertFalse(entries[0]["cursor"])
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "map", "PROJECT.md")))
+        self.assertIsNotNone(memory._read(memory.memory_dir(), memory.DEFAULT_SKILL_PREFERENCE_SLUG))
 
     def test_setup_preflights_unsafe_map_before_scaffolding(self):
         from asgard.commands.setup import run_setup
@@ -158,7 +159,24 @@ class TestSyncProject(Base):
         c = sync_project(self.root, cc=True, cursor=False, codex=False)
         self.assertGreater(c["updated"], 10)
         self.assertTrue(os.path.exists(os.path.join(self.root, ".claude", "hooks", "quest-log.py")))
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".claude", "hooks", "map-activate.py")))
         self.assertEqual(sync_project(self.root, True, False, False)["updated"], 0)  # idempotent
+
+    def test_map_refresh_hook_is_wired_for_every_client(self):
+        sync_project(self.root, cc=True, cursor=True, codex=True)
+        for rel in (
+            ".claude/settings.json",
+            ".cursor/hooks.json",
+            ".codex/config.toml",
+        ):
+            self.assertIn("map-activate.py", open(os.path.join(self.root, rel), encoding="utf-8").read())
+        for folder in (".claude", ".cursor", ".codex"):
+            self.assertTrue(os.path.exists(os.path.join(self.root, folder, "hooks", "map-activate.py")))
+        from asgard.commands.doctor import _trinity_checks
+
+        wiring = [check for check in _trinity_checks(self.root) if check["name"].startswith("map wiring")]
+        self.assertEqual(len(wiring), 3)
+        self.assertTrue(all(check["ok"] for check in wiring), wiring)
 
     def test_drift_repaired_user_edits_preserved(self):
         sync_project(self.root, cc=True, cursor=False, codex=False)
@@ -181,6 +199,24 @@ class TestSyncProject(Base):
         self.assertEqual(json.loads(open(policy).read()), {"tuned": True})  # keep 정책
         merged = json.loads(open(settings).read())
         self.assertIn("Bash(make *)", merged["permissions"]["allow"])
+
+    def test_sync_applies_agent_model_override_without_replacing_settings(self):
+        from asgard import settings
+
+        sync_project(self.root, cc=False, cursor=True, codex=False)
+        settings.save_project(
+            self.root,
+            "agent_models",
+            {"cursor": {"worker": {"model": "cursor-user-model"}}},
+        )
+        sync_project(self.root, cc=False, cursor=True, codex=False)
+
+        role = open(os.path.join(self.root, ".cursor", "agents", "asgard-worker.md")).read()
+        self.assertIn('model: "cursor-user-model"', role)
+        self.assertEqual(
+            settings.load_project(self.root)["agent_models"],
+            {"cursor": {"worker": {"model": "cursor-user-model"}}},
+        )
 
     def test_sync_migrates_legacy_routed_freyja_adapters_to_direct_loaders(self):
         from asgard.skill_registry import client_skill_bodies

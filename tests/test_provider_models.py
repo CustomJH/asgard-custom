@@ -359,10 +359,20 @@ class TestNativeModelSelection(unittest.TestCase):
         default = PROVIDERS["nvidia"].default_model
         with (
             mock.patch("asgard.agent.onboard.provider_models", return_value=[default]),
-            mock.patch("builtins.input", side_effect=["m", "bad\x1b[31m"]),
+            mock.patch("builtins.input", side_effect=["m", "bad\x1b[31m", "q"]),
             mock.patch("sys.stdout", new_callable=io.StringIO),
         ):
             self.assertIsNone(onboard._pick_model(self._nvidia_resolved()))
+
+    def test_invalid_model_number_reprompts(self):
+        default = PROVIDERS["nvidia"].default_model
+        alternate = "meta/llama-3.3-70b-instruct"
+        with (
+            mock.patch("asgard.agent.onboard.provider_models", return_value=[default, alternate]),
+            mock.patch("builtins.input", side_effect=["not-a-number", "2"]),
+            mock.patch("sys.stdout", new_callable=io.StringIO),
+        ):
+            self.assertEqual(onboard._pick_model(self._nvidia_resolved()), alternate)
 
     def test_model_command_reconfigures_existing_nvidia_connection(self):
         from asgard.providers import save_config_section

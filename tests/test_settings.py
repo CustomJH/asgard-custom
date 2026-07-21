@@ -55,6 +55,13 @@ class TestLoadSave(SettingsBase):
         self.assertEqual(merged["mode"], "full")  # 프로젝트 승
         self.assertEqual(merged["subagent_matcher"], "x")  # 글로벌 키 유지
 
+    def test_agent_model_override_merges_global_then_project_per_field(self):
+        from asgard.templates.agent_models import agent_model
+
+        settings.save_global("agent_models", {"codex": {"worker": {"model": "global-model", "effort": "low"}}})
+        settings.save_project(self.root, "agent_models", {"codex": {"worker": {"model": "project-model"}}})
+        self.assertEqual(agent_model(self.root, "codex", "worker"), {"model": "project-model", "effort": "low"})
+
 
 class TestLegacyFallback(SettingsBase):
     def test_project_legacy_composite(self):
