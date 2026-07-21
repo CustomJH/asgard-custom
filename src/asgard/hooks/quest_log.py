@@ -131,6 +131,8 @@ DEFAULT_POLICY: dict = {
     # 게이트-우선 적격 상한 — small_write(full-verify 기준)보다 훨씬 좁다:
     # 63라인 리라이트가 소형 판정돼 caller 미방어로 close 된 벤치 결함. 소형 diff 전용.
     "gate_first_max_lines": 25,
+    # 닫힌 퀘스트 로그 keep-last-N — 세션 상한 정책. 0 = 정리 없음(무한 누적).
+    "quest_retention": 30,
 }
 
 
@@ -506,6 +508,16 @@ def gate_first_checks_available(root: str, policy: dict) -> bool:
     return False
 
 
+def fail_lines(stdout: bytes | None, stderr: bytes | None, limit: int = 5) -> list[str]:
+    """실패한 체크 출력에서 정형 실패 줄만 추출 — 이유 없는 red 를 만들지 않는다 (바운디드 증거).
+    pytest 요약 줄(FAILED/ERROR ...) 우선, 없으면 출력 꼬리 3줄. 줄당 200자·최대 limit 줄 —
+    수리 턴이 '무엇이 왜 깨졌는지'를 exit code 만으로 추측하지 않게 한다."""
+    text = b"\n".join(s for s in (stdout, stderr) if s).decode("utf-8", "replace")
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    hits = [ln for ln in lines if ln.startswith(("FAILED ", "ERROR ")) or "AssertionError" in ln]
+    return [ln[:200] for ln in (hits or lines[-3:])[:limit]]
+
+
 def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) -> dict | None:
     """체크 전부 실행 → {"state": green|red|none, "results": [...]}. 체크 없음 → None (요건 면제).
     같은 diff_hash 의 기존 verify 기록은 재사용 — 동일 트리에 pytest 를 두 번 돌리지 않는다.
@@ -526,18 +538,24 @@ def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) ->
     for cmd in checks[:10]:
         t0 = time.time()
         code: int | None
+        p = None
         try:
             p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
             code = p.returncode
         except Exception:
             code = None  # timeout 포함 — skip 취급 (fail-open)
-        results.append({"cmd": cmd[:120], "exit_code": code, "secs": round(time.time() - t0, 1)})
+        row: dict = {"cmd": cmd[:120], "exit_code": code, "secs": round(time.time() - t0, 1)}
+        results.append(row)
         # skip = 체크가 "돌 수 없었다": 127 미설치 · pytest 5 수집 없음 · timeout. 자동 감지 pytest 는
         # 2/3/4(수집·사용법 오류 — venv 밖 pytest 가 흔한 원인)도 skip — 환경 문제를 코드 red 로
         # 오판해 게이트가 인질 잡는 것 방지. 명시 설정 체크는 사용자가 커맨드를 보증하므로 엄격 판정.
         if code is None or code == 127 or ("pytest" in cmd.split() and (code == 5 or (auto and code in (2, 3, 4)))):
             continue
         if code != 0:
+            if p is not None:
+                fails = fail_lines(p.stdout, p.stderr)
+                if fails:
+                    row["fails"] = fails  # 정형 실패 줄 — 게이트 사유·수리 턴 컨텍스트로 흐른다
             state = "red"
             break  # 첫 red 에서 중단 — 나머지는 수리 후 어차피 재실행
         state = "green"
@@ -874,6 +892,96 @@ def clear_active_quest(root: str, session: str, qid: str) -> None:
             pass
 
 
+def _mtime(path: str) -> float:
+    try:
+        return os.path.getmtime(path)
+    except OSError:
+        return 0.0
+
+
+def _pointer_qid(path: str) -> str:
+    try:
+        return open(path, encoding="utf-8").read().strip()
+    except Exception:
+        return ""
+
+
+def _unmined_learning_signal(root: str, qid: str) -> bool:
+    """미채굴 hard-won 신호 보유 여부 — 자가발전 소급 채굴(evolution.mine)이 잃을 게 있는가.
+
+    evolution 부재(standalone scaffold)는 채굴 파이프라인 자체가 없으므로 잃을 것도 없다 — False."""
+    try:
+        from asgard.evolution import unmined_signals
+
+        return unmined_signals(root, qid) > 0
+    except Exception:
+        return False
+
+
+def prune_quests(root: str, policy: dict) -> list[str]:
+    """닫힌 퀘스트 로그 keep-last-N 정리 — 세션 상한 정책의 물리 집행 (close 시점 자동).
+
+    Tier0 기억은 retain 시점에 자기완결 복사본으로 증류된다(quest log ≠ memory) — 오래
+    닫힌 원본 로그 삭제는 기존 기억을 깨지 않는다. 보존 3종:
+      - 포인터(ACTIVE/LAST/sessions/*.active·*.last)가 가리키는 퀘스트 — Stop 훅 완료
+        판정(memory-activate)과 게이트가 재독하는 대상
+      - 미종결 로그(quest_closed 없음) — 크래시 흔적, 증거가 아직 살아있다
+      - 미채굴 학습 신호 보유 퀘스트 — 소급 채굴이 잃는 후보 방지
+    세션 포인터도 같은 상한으로 GC 한다 — 닫힌 세션의 .last 가 퀘스트를 영구 보호하면
+    보호 집합이 세션 수만큼 무한 성장한다. 실패는 close 를 막지 않는다 (fail-open)."""
+    keep = int(policy.get("quest_retention") or 0)
+    qdir = os.path.join(root, ".asgard", "quest")
+    if keep <= 0 or not os.path.isdir(qdir):
+        return []
+    sessions = os.path.join(qdir, "sessions")
+    by_session: dict[str, list[str]] = {}
+    try:
+        for name in os.listdir(sessions):
+            key, dot, kind = name.rpartition(".")
+            if dot and kind in ("active", "known", "last"):
+                by_session.setdefault(key, []).append(os.path.join(sessions, name))
+    except OSError:
+        pass
+    closed_sessions = [paths for paths in by_session.values() if not any(p.endswith(".active") for p in paths)]
+    closed_sessions.sort(key=lambda paths: max(_mtime(p) for p in paths), reverse=True)
+    for paths in closed_sessions[keep:]:
+        for p in paths:
+            with contextlib.suppress(OSError):
+                os.remove(p)
+    protected = {_pointer_qid(os.path.join(qdir, "ACTIVE")), _pointer_qid(os.path.join(qdir, "LAST"))}
+    try:
+        for name in os.listdir(sessions):
+            if name.endswith((".active", ".last")):
+                protected.add(_pointer_qid(os.path.join(sessions, name)))
+    except OSError:
+        pass
+    protected.discard("")
+    logs = sorted(
+        (
+            (_mtime(os.path.join(qdir, name)), name[: -len(".jsonl")])
+            for name in os.listdir(qdir)
+            if name.endswith(".jsonl")
+        ),
+        reverse=True,
+    )
+    pruned = []
+    for _, qid in logs[keep:]:
+        if qid in protected:
+            continue
+        events = load_events(root, qid)
+        if not events or events[-1].get("event") != "quest_closed":
+            continue
+        if _unmined_learning_signal(root, qid):
+            continue
+        for suffix in (".jsonl", ".lock"):
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(qdir, qid + suffix))
+        pruned.append(qid)
+    if pruned:
+        _fsync_dir(qdir)
+    return pruned
+
+
 def load_events(root: str, qid: str) -> list[dict]:
     path = os.path.join(root, ".asgard", "quest", qid + ".jsonl")
     events = []
@@ -1141,26 +1249,26 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
     if s.get("last_verdict") == "ESCALATE":
         return "ESCALATED", "escalate", "Verifier ESCALATE — Odin 결정 대기 (Canon 9 정규 종료)"
     if s.get("last_verdict") != "PASS":
-        return "REJECTED", "no_pass", "검증 PASS 판정 없음"
+        return "REJECTED", "no-pass", "검증 PASS 판정 없음"
     if not s.get("criteria"):
         # 게이트와 동일 검사 — close 가 이걸 안 보면 무기준 PASS 가 LAST 면제로 게이트를 우회한다
-        return "REJECTED", "no_criteria", "성공 기준(criteria)이 로그에 없음 — 기준 없이는 검증이 성립하지 않는다"
+        return "REJECTED", "no-criteria", "성공 기준(criteria)이 로그에 없음 — 기준 없이는 검증이 성립하지 않는다"
     unfinished = [ticket for ticket in (s.get("tickets") or []) if ticket.get("status") != "done"]
     if unfinished:
         ids = ", ".join(str(ticket.get("id")) for ticket in unfinished[:6])
-        return "REJECTED", "tickets_incomplete", "미완료 ticket 존재: %s" % ids
+        return "REJECTED", "tickets-incomplete", "미완료 ticket 존재: %s" % ids
     if s.get("baseline_state") == "red":
-        return "REJECTED", "baseline_red", "하네스 베이스라인 체크 red — 실패한 체크 수리 필요"
+        return "REJECTED", "baseline-red", "하네스 베이스라인 체크 red — 실패한 체크 수리 필요"
     unmet = s.get("contracts_unmet") or []
     if unmet:
         # 계약이 선언된 기준은 그 명령·산출물이 유일한 증거다 — 무관한 exit-0 명령으로 대체 불가
-        return "REJECTED", "criteria_unverified", "criteria verify 계약 미충족: %s" % "; ".join(map(str, unmet[:3]))
+        return "REJECTED", "criteria-unverified", "criteria verify 계약 미충족: %s" % "; ".join(map(str, unmet[:3]))
     if not s.get("pass_evidence"):
-        return "REJECTED", "no_evidence", "PASS 에 성공한 검증 명령 증거 없음"
+        return "REJECTED", "no-evidence", "PASS 에 성공한 검증 명령 증거 없음"
     if not s.get("pass_hash_match"):
-        return "REJECTED", "stale_pass", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요"
+        return "REJECTED", "stale-pass", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요"
     if s.get("full_required") and s.get("pass_level") != "full":
-        return "REJECTED", "micro_pass", "full-verify 필요(민감 경로/큰 diff)한데 micro PASS"
+        return "REJECTED", "micro-pass", "full-verify 필요(민감 경로/큰 diff)한데 micro PASS"
     return "APPROVED", "ok", "검증 PASS + diff-hash 물리 대조 일치"
 
 
@@ -1257,23 +1365,23 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         decision, code, why = completion_decision({**s, "full_required": full_required})
         if decision == "APPROVED":
             return out("DONE", why)
-        if code == "baseline_red":
+        if code == "baseline-red":
             # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다
             return out("WORKER_RETRY", "하네스 베이스라인 체크 red — 실패한 체크를 먼저 수리 (Canon 10)")
-        if code == "no_evidence":
+        if code == "no-evidence":
             # 증거 없는 PASS 는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
             # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (깊이 테스트 발견).
             return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
-        if code == "no_criteria":
+        if code == "no-criteria":
             return out("VERIFIER", "성공 기준(criteria)이 로그에 없음 — criteria 기록 후 재판정 (Canon 10)")
-        if code == "tickets_incomplete":
+        if code == "tickets-incomplete":
             return out("WORKER_RETRY", why + " — 미완료 단위만 재배정")
-        if code == "criteria_unverified":
+        if code == "criteria-unverified":
             # 계약 명령이 실패했거나 산출물이 없다 — 재검증 append 가 하네스 재실행을 트리거한다
             return out("VERIFIER", why + " — 계약 명령을 수리/재실행해 재판정 (Canon 10)")
-        if code == "stale_pass":
+        if code == "stale-pass":
             return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
-        # micro_pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
+        # micro-pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
         return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
     if flags.external_research and has_write and not s.get("research_completed"):
         return out("WORKER", "외부 조사 선행 — 격리 Research Worker가 근거를 수집하고 구현은 보류")
@@ -1732,7 +1840,7 @@ def main() -> int:
                 ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
                 ev["commands"] = [
                     *ev.get("commands", []),
-                    {"cmd": "asgard setup map --check", "exit_code": 1, "error": map_error},
+                    {"cmd": "asgard map check", "exit_code": 1, "error": map_error},
                 ][-20:]
             elif unsafe_maps and ev["verdict"] == "PASS":
                 ev["verdict"] = "FAIL"
@@ -1823,6 +1931,7 @@ def main() -> int:
                 ev["failure_sig"] = "criteria-contract"
                 failing = [str(u) for u in unmet]
         write_event(root, qid, ev)
+        fails = [str(f) for c in results for f in (c.get("fails") or [])]  # run_baseline 채집 정형 실패 줄
         print(
             json.dumps(
                 {
@@ -1830,6 +1939,7 @@ def main() -> int:
                     "verdict": ev["verdict"],
                     "baseline": state,
                     "failing": failing[:5],
+                    "fails": fails[:5],
                     "turn": ev["turn"],
                     "diff_hash": ev["diff_hash"],
                 },
@@ -1892,7 +2002,13 @@ def main() -> int:
                     print(json.dumps({"error": f"close LAST pointer publication failed: {exc}"}), file=sys.stderr)
                     return 1
             clear_active_quest(root, args.session, qid)
+        try:
+            pruned = prune_quests(root, policy)
+        except Exception:
+            pruned = []  # 정리는 부가 기능 — close 성공을 막지 않는다
         res = {"closed": qid, "forced": forced}
+        if pruned:
+            res["pruned"] = len(pruned)
         if forced or decision != "APPROVED":
             res["gate_exempt"] = False
         if forced:
@@ -1909,7 +2025,7 @@ def main() -> int:
             res["map_current"] = True
         elif nudge:
             res["map_update"] = nudge
-            res["map_hint"] = "자동 지도 갱신 실패 — asgard setup map 실행 후 영역 지도에 새 지식만 증분 반영"
+            res["map_hint"] = "자동 지도 갱신 실패 — asgard map update 실행 후 영역 지도에 새 지식만 증분 반영"
         print(json.dumps(res, ensure_ascii=False))
         return 0
     return 0
