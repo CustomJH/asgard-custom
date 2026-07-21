@@ -56,13 +56,13 @@ MAIN_WORKER는 편집 전에 호스트별 Worker 계약(`.claude/agents/asgard-w
 <!-- >>> asgard:map >>> -->
 ## Asgard — 코드베이스 지도 (.asgard/map/)
 
-팀 공유(git 추적) 코드베이스 지도. `PROJECT.md`는 `asgard setup map`이 관리하는 방향 지도,
+팀 공유(git 추적) 코드베이스 지도. `PROJECT.md`는 `asgard map update`가 관리하는 방향 지도,
 영역별 `<area>.md`는 에이전트가 탐사하며 그리는 심층 지도다.
 
-- **읽기 우선** — 탐색·계획 전 지도를 먼저 본다. 적중 영역은 광역 탐색을 생략한다. 단 지도는 힌트다: 계획이 딛는 경로는 Read 로 재확인한다 (Canon 5·11).
+- **읽기 우선** — 각 메인 요청·서브에이전트 시작 때 최신 작업 관련 항목이 `<asgard-map>`으로 제한 주입된다. 적중 영역은 광역 탐색을 생략한다. 단 지도는 힌트다: 계획이 딛는 경로·정의·사용처는 Read 로 재확인한다 (Canon 5·11).
 - **그리며 확장 (fog-of-war)** — 과업 중 새로 파악한 구조는 해당 영역 지도에 증분 반영한다. 탐사한 영역만 채운다 — 전체 재작성 금지.
 - **엔트리 문법 고정** — `` - `경로` — 1줄 역할 ``. 이력·날짜·사건 서술 금지(이력은 퀘스트 로그 몫). 디스크에 실재하는 파일만 기재 — 선기재 금지.
-- **갱신 시점** — Verifier hash 계산 전에 managed `PROJECT.md`가 자동 갱신된다(지도 변경도 PASS 대상). 영역 지도에는 과업에서 새로 확인한 의미만 증분 반영한다. `asgard setup map --check`/`doctor`가 drift·유령을 잡는다.
+- **갱신 시점** — 메인 요청·서브에이전트 시작과 Verifier hash 계산 전에 managed `PROJECT.md`가 자동 갱신된다(지도 변경도 PASS 대상). 영역 지도에는 과업에서 새로 확인한 의미만 증분 반영한다. `asgard map check`/`doctor`가 drift·유령·문법·크기 위반을 잡는다.
 <!-- <<< asgard:map <<< -->
 
 __LAGOM__

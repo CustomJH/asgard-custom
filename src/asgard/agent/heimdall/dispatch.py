@@ -134,7 +134,7 @@ class DeliveryDispatch:
                         }
                     ),
                 )
-                system = _DELIVERY["freyja"] + "\n\n" + hd.delivery_identity
+                system = _DELIVERY["freyja"] + "\n\n" + hd.delivery_identity + hd.map_note
                 catalog, skill_tools, skill_handlers = _skill_support("freyja", hd.root)
                 system += catalog
                 with UnitWorkspace(squad_root, f"freyja-{spec['id']}") as workspace:
@@ -357,7 +357,7 @@ class DeliveryDispatch:
                         }
                     ),
                 )
-                system = _DELIVERY["thor"] + "\n\n" + hd.delivery_identity
+                system = _DELIVERY["thor"] + "\n\n" + hd.delivery_identity + hd.map_note
                 # 서브에 편대 프로토콜 무주입 — 깊이 1 봉인은 도구만이 아니라 지식 표면에서도 유지한다
                 catalog, skill_tools, skill_handlers = _skill_support(
                     "thor", hd.root, exclude=("asgard-thor-einherjar",)
@@ -460,6 +460,8 @@ class DeliveryDispatch:
                 # "코어 계약 전부 상속"을 선언이 아니라 최종 system bytes 로 강제한다.
                 system += f"\n\n# 상속된 {base} 코어 계약\n\n" + _DELIVERY[base]
             system += "\n\n" + hd.delivery_identity
+            if agent != "loki":
+                system += getattr(hd, "map_note", "")
             catalog, skill_tools, skill_handlers = _skill_support(
                 agent, hd.root, include_learned=agent not in _DELIVERY_READONLY
             )

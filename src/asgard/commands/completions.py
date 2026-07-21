@@ -17,6 +17,7 @@ _SUMMARY = {
     "start": "open the Asgard terminal (Heimdall)",
     "auth": "manage Asgard-owned provider logins",
     "init": "scaffold a project for coding agents",
+    "map": "generate, update, inspect, and validate the project map",
     "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
     "sync": "refresh scaffolded cores in set-up projects",
@@ -37,6 +38,7 @@ _FLAGS = {
     "start": ["--check", "--provider", "--model", "--continue", "--execution", "--sandbox-name"],
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
+    "map": [],
     "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],
     "sync": ["--dry-run", "--list", "--quiet"],
@@ -58,12 +60,33 @@ _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 
     "--lagom": ["off", "lite", "full"],
     "--kind": ["note", "user", "decision", "insight", "reference", "feedback"],
 }
-_FREE_OPTS = ["--model"]  # 값을 갖지만 후보가 없는 옵션 — 뒤에서 플래그를 제안하지 않는다
+_FREE_OPTS = ["--model", "--query", "--effort", "--provider"]  # 값을 갖지만 후보가 없는 옵션
 _SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bash/zsh 는 long 제안으로 충분)
 _SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
-_ROLE_SUB = {"list": "bridge flags + role placements", "run": "run one role turn"}
+_ROLE_SUB = {
+    "list": "bridge flags + role placements",
+    "model": "list or set role models",
+    "run": "run one role turn",
+}
 _AUTH_SUB = {"login": "sign in", "status": "check login", "logout": "remove login"}
 _ROLES = ["thinker", "worker", "verifier"]
+_MODEL_HOSTS = ["native", "claude-code", "cursor", "codex"]
+_MODEL_FLAGS = ["--effort", "--provider", "--reset", "--help"]
+_MODEL_ROLES = [
+    "thinker",
+    "worker",
+    "verifier",
+    "freyja-lead",
+    "freyja",
+    "thor-lead",
+    "thor",
+    "eitri",
+    "loki",
+    "ullr",
+    "mimir",
+    "thinker_alt",
+    "classify",
+]
 _TOOL_ROLES = ["thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr", "mimir"]
 _TOOLS_SUB = {"list": "list native + Claude Code role tools"}
 _SKILLS_SUB = {
@@ -77,6 +100,12 @@ _SKILLS_SUB = {
     "disable": "disable a project skill",
 }
 _PLUGINS_SUB = {"list": "list plugins", "install": "install a local data-only plugin"}
+_MAP_SUB = {
+    "generate": "create the deterministic project map",
+    "update": "refresh structural facts",
+    "check": "report drift without writing",
+    "context": "show bounded task context",
+}
 _SETUP_SUB = {"map": "draw or refresh the project code map"}
 _EVOLVE_SUB = {
     "scan": "mine quest logs into pending drafts",
@@ -163,6 +192,12 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{subs} --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "run" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_ROLES)}" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "model" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_MODEL_HOSTS)}" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "model" ] && [ "$COMP_CWORD" -eq 4 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_MODEL_ROLES)}" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "model" ] && [ "$COMP_CWORD" -ge 5 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_MODEL_FLAGS)}" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "auth":
@@ -172,6 +207,19 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_AUTH_SUB)} --help" -- "$cur") )\n'
                 '      elif [ "$COMP_CWORD" -eq 3 ]; then\n'
                 '        COMPREPLY=( $(compgen -W "openai-native" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "map":
+            cases.append(
+                "    map)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_MAP_SUB)} --help" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "generate" ] || [ "${COMP_WORDS[2]}" = "update" ]; then\n'
+                '        COMPREPLY=( $(compgen -W "--dry-run --json --quiet --help" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "check" ]; then\n'
+                '        COMPREPLY=( $(compgen -W "--json --quiet --help" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "context" ]; then\n'
+                '        COMPREPLY=( $(compgen -W "--query --refresh --managed-only --json --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "setup":
@@ -287,6 +335,12 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_ROLE_SUB)} --help\n"
                 "      elif [[ $words[3] == run ]] && (( CURRENT == 4 )); then\n"
                 f"        compadd -- {' '.join(_ROLES)}\n"
+                "      elif [[ $words[3] == model ]] && (( CURRENT == 4 )); then\n"
+                f"        compadd -- {' '.join(_MODEL_HOSTS)}\n"
+                "      elif [[ $words[3] == model ]] && (( CURRENT == 5 )); then\n"
+                f"        compadd -- {' '.join(_MODEL_ROLES)}\n"
+                "      elif [[ $words[3] == model ]] && (( CURRENT >= 6 )); then\n"
+                f"        compadd -- {' '.join(_MODEL_FLAGS)}\n"
                 "      fi ;;"
             )
         elif name == "auth":
@@ -296,6 +350,19 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_AUTH_SUB)} --help\n"
                 "      elif (( CURRENT == 4 )); then\n"
                 "        compadd -- openai-native\n"
+                "      fi ;;"
+            )
+        elif name == "map":
+            cases.append(
+                "    map)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_MAP_SUB)} --help\n"
+                "      elif [[ $words[3] == generate || $words[3] == update ]]; then\n"
+                "        compadd -- --dry-run --json --quiet --help\n"
+                "      elif [[ $words[3] == check ]]; then\n"
+                "        compadd -- --json --quiet --help\n"
+                "      elif [[ $words[3] == context ]]; then\n"
+                "        compadd -- --query --refresh --managed-only --json --help\n"
                 "      fi ;;"
             )
         elif name == "setup":
@@ -401,6 +468,22 @@ def _fish() -> str:
             f'complete -c asgard -n "__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from {sub}" '
             "-a openai-native"
         )
+    map_top = "__fish_seen_subcommand_from map; and not __fish_seen_subcommand_from " + " ".join(_MAP_SUB)
+    for sub, desc in _MAP_SUB.items():
+        lines.append(f"complete -c asgard -n \"{map_top}\" -a {sub} -d '{desc}'")
+    for sub in ("generate", "update"):
+        for flag in ("dry-run", "json", "quiet"):
+            lines.append(
+                f'complete -c asgard -n "__fish_seen_subcommand_from map; and __fish_seen_subcommand_from {sub}" -l {flag}'
+            )
+    for flag in ("json", "quiet"):
+        lines.append(
+            f'complete -c asgard -n "__fish_seen_subcommand_from map; and __fish_seen_subcommand_from check" -l {flag}'
+        )
+    for flag in ("query", "refresh", "managed-only", "json"):
+        lines.append(
+            f'complete -c asgard -n "__fish_seen_subcommand_from map; and __fish_seen_subcommand_from context" -l {flag}'
+        )
     setup_top = "__fish_seen_subcommand_from setup; and not __fish_seen_subcommand_from " + " ".join(_SETUP_SUB)
     for sub, desc in _SETUP_SUB.items():
         lines.append(f"complete -c asgard -n \"{setup_top}\" -a {sub} -d '{desc}'")
@@ -415,6 +498,28 @@ def _fish() -> str:
         'complete -c asgard -n "__fish_seen_subcommand_from role; and __fish_seen_subcommand_from run" '
         f'-a "{" ".join(_ROLES)}"'
     )
+    lines.append(
+        'complete -c asgard -n "__fish_seen_subcommand_from role; and __fish_seen_subcommand_from model; '
+        "and not __fish_seen_subcommand_from " + " ".join(_MODEL_HOSTS) + '" -a "' + " ".join(_MODEL_HOSTS) + '"'
+    )
+    lines.append(
+        'complete -c asgard -n "__fish_seen_subcommand_from role; and __fish_seen_subcommand_from model; '
+        "and __fish_seen_subcommand_from "
+        + " ".join(_MODEL_HOSTS)
+        + "; and not __fish_seen_subcommand_from "
+        + " ".join(_MODEL_ROLES)
+        + '" -a "'
+        + " ".join(_MODEL_ROLES)
+        + '"'
+    )
+    for flag in _MODEL_FLAGS:
+        if flag == "--help":
+            continue
+        suffix = " -x" if flag in ("--effort", "--provider") else ""
+        lines.append(
+            'complete -c asgard -n "__fish_seen_subcommand_from role; and __fish_seen_subcommand_from model" '
+            f"-l {flag[2:]}{suffix}"
+        )
     mem_top = "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from " + " ".join(_MEM_SUB)
     for sub, desc in _MEM_SUB.items():
         lines.append(f"complete -c asgard -n \"{mem_top}\" -a {sub} -d '{desc}'")

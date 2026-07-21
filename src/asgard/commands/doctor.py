@@ -204,6 +204,37 @@ def _trinity_checks(root: str) -> list[dict]:
                 "fix": fix,
             }
         )
+        map_hook_ok = os.path.exists(os.path.join(root, folder, "hooks", "map-activate.py"))
+        map_snapshot = map_recall = map_subagent = False
+        try:
+            hooks = config.get("hooks", {})
+            map_snapshot = "map-activate" in _json.dumps(hooks.get(snapshot_event, []))
+            map_recall = "map-activate" in _json.dumps(hooks.get(recall_event, []))
+            map_subagent = "map-activate" in _json.dumps(
+                hooks.get("subagentStart" if client == "Cursor" else "SubagentStart", [])
+            )
+            if client == "Cursor":
+                map_subagent = map_subagent or "map-activate" in _json.dumps(hooks.get("preToolUse", []))
+        except Exception:
+            pass
+        map_missing = [
+            label
+            for ok, label in (
+                (map_hook_ok, "hook file"),
+                (map_snapshot, snapshot_event),
+                (map_recall, recall_event),
+                (map_subagent, "SubagentStart"),
+            )
+            if not ok
+        ]
+        checks.append(
+            {
+                "name": f"map wiring ({client})",
+                "ok": not map_missing,
+                "detail": "wired" if not map_missing else "missing: " + ", ".join(map_missing),
+                "fix": fix,
+            }
+        )
     if memory_check:
         checks.append(memory_check)
     # 코드베이스 지도 — 유령 엔트리(디스크에 없는 경로) 탐지 (지도 문법 3: 실재만 기재).
@@ -222,7 +253,7 @@ def _trinity_checks(root: str) -> list[dict]:
                 "name": "codebase map",
                 "ok": False,
                 "detail": f"unsafe managed map path: symlink/junction: {unsafe_component}",
-                "fix": "symlink/junction 제거 후 asgard setup map 실행",
+                "fix": "symlink/junction 제거 후 asgard map update 실행",
             }
         )
     elif not os.path.isdir(mdir):
@@ -265,6 +296,13 @@ def _trinity_checks(root: str) -> list[dict]:
                         unsafe.append(f"{fname}: {m.group(1)}")
                     else:
                         ghosts.append(f"{fname}: {m.group(1)}")
+        from ..map_context import validate_area_maps
+
+        _, area_issues = validate_area_maps(root)
+        for issue in area_issues:
+            detail = f"{Path(issue.source).name}: {issue.reason}"
+            if detail not in unsafe and not any(detail.startswith(item.split(":", 1)[0] + ":") for item in ghosts):
+                unsafe.append(detail)
         try:
             managed = check_map(root)
         except MapError as exc:
@@ -273,7 +311,7 @@ def _trinity_checks(root: str) -> list[dict]:
                     "name": "codebase map",
                     "ok": False,
                     "detail": f"unsafe managed map path: {exc}",
-                    "fix": "symlink/junction 제거 후 asgard setup map 실행",
+                    "fix": "symlink/junction 제거 후 asgard map update 실행",
                 }
             )
             managed = None
@@ -307,7 +345,7 @@ def _trinity_checks(root: str) -> list[dict]:
                         if unsafe
                         else "ghost: " + ", ".join(ghosts[:5]) + (f" (+{len(ghosts) - 5})" if len(ghosts) > 5 else "")
                     ),
-                    "fix": "asgard setup map 실행; 수동 영역의 유령 경로는 제거 (.asgard/map/INDEX.md)",
+                    "fix": "asgard map update 실행; 수동 영역의 유령 경로는 제거 (.asgard/map/INDEX.md)",
                 }
             )
     ledger_ok = os.access(root, os.W_OK)

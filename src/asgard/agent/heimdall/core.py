@@ -105,6 +105,8 @@ class Heimdall:
         # 특히 loki 는 Verifier 의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
         self.delivery_identity = _identity(root) + self.lagom + self.charter_identity
         self.identity = self.delivery_identity + self.memory_note
+        self.map_note = ""  # 요청마다 최신화되는 bounded volatile context; cached identity와 분리.
+        self._map_warnings: set[str] = set()
         self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
         self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
         # 프롬프트 캐시 계측 (누적) — 적중률 = read / (read+write+uncached), status line ⚡ 표시
@@ -466,6 +468,33 @@ class Heimdall:
         )
         update_priors(self.root, task_class, saw_red)
 
+    def _prepare_map(self, request: str) -> str:
+        """Refresh before work starts and build task-relevant advisory context."""
+        import os
+
+        # Map is an opt-in project asset created by `asgard init/map generate`. Do not turn a
+        # native session in an arbitrary repository into an unexpected tracked documentation diff.
+        if not os.path.isdir(os.path.join(self.root, ".asgard", "map")):
+            self.map_note = ""
+            return ""
+        try:
+            from ...map_context import build_map_context
+
+            context = build_map_context(self.root, request, refresh=True)
+            for issue in context.issues:
+                warning = f"{issue.source}: {issue.reason}"
+                if warning not in self._map_warnings:
+                    self._map_warnings.add(warning)
+                    self.on_text(f"⚠ 프로젝트 맵 항목 제외 — {warning}\n")
+            self.map_note = ("\n\n" + context.text) if context.text else ""
+        except Exception as exc:
+            self.map_note = ""
+            warning = f"{exc.__class__.__name__}: {str(exc)[:180]}"
+            if warning not in self._map_warnings:
+                self._map_warnings.add(warning)
+                self.on_text(f"⚠ 프로젝트 맵 시작 갱신 실패 — 맵 없이 진행 ({warning})\n")
+        return self.map_note
+
     def _escalate(self, sid: str) -> None:
         """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
         ql(
@@ -494,6 +523,7 @@ class Heimdall:
         if snapshot["active"]:
             return f"⚠ Quest {qid}에 유효 lease의 active ticket이 있어 중복 실행하지 않습니다: {snapshot['active']}"
         request = snapshot["request"] or ("재개 Quest %s — %s" % (qid, "; ".join(snapshot["criteria"])))
+        self._prepare_map(request)
         cls = {
             "task_class": "deep",
             "criteria": snapshot["criteria"] or [f"Quest {qid}의 기존 성공 기준 충족"],
@@ -635,7 +665,7 @@ class Heimdall:
             _skill_support("mimir", self.root, include_learned=False) if mimir else ("", [], {})
         )
         r = self._session(
-            live_identity + mimir + skill_note,
+            live_identity + self.map_note + mimir + skill_note,
             extra_tools=skill_tools,
             handlers=skill_handlers,
             role="direct",
@@ -752,6 +782,7 @@ class Heimdall:
 
         self._last_completion = None
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
+        self._prepare_map(request)
         # cancel_event 는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
         self.on_status(t("thinking"))  # 분류도 모델 호출 — 침묵 구간 커버

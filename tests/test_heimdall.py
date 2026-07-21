@@ -173,6 +173,14 @@ def seed_learned_skill(root: str, name: str, *, triggers: str, agent: str) -> No
     json.dump(receipt, open(os.path.join(d, skill_bank.APPROVAL_FILE), "w", encoding="utf-8"))
 
 
+def seed_map_canary(root: str) -> None:
+    from asgard.code_map import refresh_map
+
+    refresh_map(root)
+    path = os.path.join(root, ".asgard", "map", "navigation.md")
+    open(path, "w", encoding="utf-8").write("# map: navigation\n\n- `f.txt` — MAP_CANARY navigation target\n")
+
+
 class Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -1356,6 +1364,7 @@ class TestWaveParallel(Base):
         self.assertFalse(resumed_cls["shared"])
 
     def test_wave_execution_isolation_and_unit_events(self):
+        seed_map_canary(self.root)
         cls = dict(CLS_WRITE, ambiguous=True, parallel_requested=True)
         seq = [
             FakeSession(SessionResult(text=PLAN_WITH_UNITS, stop_reason="end_turn"), label="thinker"),
@@ -1367,8 +1376,13 @@ class TestWaveParallel(Base):
         h = FakeHeimdall(self.root, seq, cls=cls)
         out = h.handle("u1, u2 만들고 요약")
         self.assertIn("과업 완수", out)
+        thinker_session = next(session for session in h.consumed if session.label == "thinker")
+        verifier_session = next(session for session in h.consumed if session.label == "verifier")
+        self.assertIn("MAP_CANARY", thinker_session.system)
+        self.assertNotIn("MAP_CANARY", verifier_session.system)
         workers = [s for s in h.consumed if s.label == "worker"]
         self.assertEqual(len(workers), 3)
+        self.assertTrue(all("MAP_CANARY" in session.system for session in workers))
         prompts = [w.prompt for w in workers]
         # 단위 1·2 (wave 1) — 격리: 선행 컨텍스트 없음, 서로의 결과 미노출
         wave1 = [p for p in prompts if "배정 단위 3" not in p]
@@ -1744,10 +1758,12 @@ class TestDirectGuard(Base):
         self.assertIn("misroute", open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read())
 
     def test_direct_readonly_stays_taxless(self):
+        seed_map_canary(self.root)
         direct = FakeSession(SessionResult(text="답변", stop_reason="end_turn"), label="direct")
         h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
         h.handle("이 함수 뭐하는거야")
         self.assertEqual(len(h.consumed), 1)
+        self.assertIn("MAP_CANARY", direct.system)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
     def test_active_lagom_buffers_and_rewrites_direct_output_once(self):
@@ -2057,10 +2073,13 @@ class TestDeliveryMemoryIsolation(Base):
                 captured["system"] = system
                 return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
 
+        seed_map_canary(self.root)
         h = Capture(self.root, [worker(root=self.root)])
+        h._prepare_map("버튼 라벨 수정")
         h._dispatch_handler("s1", [])({"agent": "freyja", "task": "버튼 라벨 수정", "why": "w"})
         self.assertNotIn("<memory-context", captured["system"])
         self.assertIn("asgard-freyja", captured["system"])  # role 본문은 그대로
+        self.assertIn("MAP_CANARY", captured["system"])
 
 
 class TestNativeFreyjaSquad(Base):

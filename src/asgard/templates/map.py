@@ -7,7 +7,7 @@
 MAP_INDEX_MD = """\
 # Codebase Map — .asgard/map/
 
-팀 공유(git 추적) 코드베이스 지도. `PROJECT.md`는 `asgard setup map`이 현재 디스크 증거로
+팀 공유(git 추적) 코드베이스 지도. `PROJECT.md`는 `asgard map update`가 현재 디스크 증거로
 그리는 프로젝트 방향·랜드마크다. 심층 지식은 영역별 `<area>.md` (예: `cli.md`, `frontend.md`)에
 기록하고, 영역 파일은 에이전트가 탐사하며 만든다.
 
@@ -19,11 +19,13 @@ MAP_INDEX_MD = """\
 4. **소유권 분리** — `PROJECT.md`는 Asgard 전용(수동 편집 금지), 영역 지도는 사람/에이전트 전용(Asgard 덮어쓰기 금지).
 5. **fog-of-war** — 심층 영역 지도는 탐사한 영역만 증분으로 채운다. 전체 재작성·일괄 생성 금지.
 6. **읽기 우선, 신뢰는 검증** — 탐색 전 지도를 먼저 읽되, 계획이 딛는 경로는 Read 로 재확인.
+7. **크기·주입 안전** — 영역 파일은 8 KiB 이하. 문법 밖 산문·프롬프트 제어 문구는 자동 컨텍스트에서 제외.
 
 ## 검증
 
-`asgard setup map --check`와 `asgard doctor`가 managed drift·유령 엔트리를 탐지한다. 지도 도입
-프로젝트는 Verifier hash 계산 전에 `PROJECT.md`를 자동 갱신하므로 지도 변경도 같은 PASS에 포함된다.
+`asgard map check`와 `asgard doctor`가 managed drift·유령 엔트리·문법·크기 위반을 탐지한다.
+메인 요청·서브에이전트 시작과 Verifier hash 계산 전에 `PROJECT.md`를 자동 갱신하므로 지도 변경도
+같은 PASS에 포함된다. `asgard map context --query "<task>"`로 실제 제한 주입 내용을 확인할 수 있다.
 
 ## 영역 파일 예시
 

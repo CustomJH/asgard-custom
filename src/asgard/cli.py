@@ -116,6 +116,54 @@ def init(
     )
 
 
+map_app = typer.Typer(help="generate, update, inspect, and validate the project map", no_args_is_help=True)
+app.add_typer(map_app, name="map")
+
+
+@map_app.command("generate", help="create the deterministic project map")
+def map_generate(
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.map import run_map_generate
+
+    raise typer.Exit(run_map_generate(dry_run=dry_run, json_out=json_, quiet=quiet))
+
+
+@map_app.command("update", help="refresh a project map when repository structure changes")
+def map_update(
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.map import run_map_update
+
+    raise typer.Exit(run_map_update(dry_run=dry_run, json_out=json_, quiet=quiet))
+
+
+@map_app.command("check", help="report map drift and invalid area maps without writing")
+def map_check(
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.map import run_map_check
+
+    raise typer.Exit(run_map_check(json_out=json_, quiet=quiet))
+
+
+@map_app.command("context", help="show the bounded map context an agent would receive")
+def map_context(
+    query: str = typer.Option("", "--query", "-q"),
+    refresh: bool = typer.Option(False, "--refresh", help="refresh the managed map before rendering"),
+    managed_only: bool = typer.Option(False, "--managed-only", help="exclude human-authored area maps"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.map import run_map_context
+
+    raise typer.Exit(run_map_context(query, refresh=refresh, managed_only=managed_only, json_out=json_))
+
+
 setup_app = typer.Typer(help="set up or refresh project-aware Asgard assets", no_args_is_help=True)
 app.add_typer(setup_app, name="setup")
 
@@ -189,11 +237,25 @@ role_app = typer.Typer(help="Trinity role bridge — run a single role on its pl
 app.add_typer(role_app, name="role")
 
 
-@role_app.command("list", help="bridge flags + role placements (JSON)")
+@role_app.command("list", help="bridge flags + native placements + hosted agent models (JSON)")
 def role_list() -> None:
     from .commands.role import run_role_list
 
     raise typer.Exit(run_role_list())
+
+
+@role_app.command("model", help="list or set one role model for native, Claude Code, Cursor, or Codex")
+def role_model(
+    host: str = typer.Argument(None, metavar="[native|claude-code|cursor|codex]"),
+    role: str = typer.Argument(None, metavar="[role]"),
+    model: str = typer.Argument(None, metavar="[model]"),
+    effort: str = typer.Option(None, "--effort", help="host-specific effort level (Claude Code/Codex)"),
+    provider: str = typer.Option(None, "--provider", help="native provider placement"),
+    reset: bool = typer.Option(False, "--reset", help="remove the project override"),
+) -> None:
+    from .commands.role import run_role_model
+
+    raise typer.Exit(run_role_model(host, role, model, effort=effort, provider=provider, reset=reset))
 
 
 @role_app.command("run", help="run one role turn on its placed provider and record it to the quest log")

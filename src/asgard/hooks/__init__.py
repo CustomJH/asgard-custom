@@ -27,6 +27,7 @@ REGISTRY: dict[str, str] = {
     "lagom-subagent": "lagom_subagent",  # Lagom — SubagentStart 재주입, verifier 제외 (CC 전용)
     "memory-activate": "memory_activate",  # Memory v3 — SessionStart 스냅샷 주입 + Thinker 한정 SubagentStart
     "charter-activate": "charter_activate",  # Charter — 프로젝트 북극성 주입 (모드 B: Session/UserPrompt/Subagent)
+    "map-activate": "map_activate",  # Project map — turn-start refresh + bounded role context
 }
 
 

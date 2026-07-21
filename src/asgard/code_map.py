@@ -6,7 +6,9 @@ landmarks observed on disk and owns exactly ``PROJECT.md``; human-authored area 
 
 from __future__ import annotations
 
+import ast
 import hashlib
+import json
 import os
 import re
 import subprocess
@@ -20,9 +22,15 @@ from pathlib import Path
 from .templates.map import MAP_INDEX_MD
 
 _PROJECT_FILE = "PROJECT.md"
-_GENERATED_MARKER = "<!-- asgard:project-map schema=1 -->"
+_GENERATED_MARKER = "<!-- asgard:project-map schema=2 -->"
+_GENERATED_MARKER_RE = re.compile(r"^<!-- asgard:project-map schema=\d+ -->$")
 _LEGACY_MARKER = "> Asgard managed orientation map."
 _ENTRY_RE = re.compile(r"^- `([^`]+)` — ", re.M)
+_MAX_PROJECT_MAP_BYTES = 32 * 1024
+_MAX_LANDMARKS = 200
+_MAX_SURFACE_FILES = 48
+_MAX_SYMBOLS_PER_FILE = 5
+_MAX_SOURCE_BYTES = 512 * 1024
 _IGNORED_DIRS = {
     ".asgard",
     ".git",
@@ -150,7 +158,7 @@ def _map_dir(root: Path, *, create: bool) -> Path:
 
 def _owned_project_map(content: str) -> bool:
     lines = content.splitlines()
-    if lines and lines[0] == _GENERATED_MARKER:
+    if lines and _GENERATED_MARKER_RE.fullmatch(lines[0]):
         return True
     return len(lines) >= 3 and lines[0].startswith("# Project Map — ") and lines[2].startswith(_LEGACY_MARKER)
 
@@ -227,8 +235,6 @@ def _project_name(root: Path) -> str:
         return _safe_label(value)
     package = root / "package.json"
     try:
-        import json
-
         value = json.loads(package.read_text(encoding="utf-8")).get("name")
         if isinstance(value, str) and value.strip():
             return _safe_label(value)
@@ -297,6 +303,180 @@ def _landmarks(root: Path, files: list[Path]) -> dict[str, str]:
     return dict(sorted(entries.items()))
 
 
+def _verification_commands(root: Path, files: list[Path]) -> list[tuple[str, str]]:
+    """Infer only commands backed by checked-in manifests or task definitions."""
+    file_set = {path.as_posix() for path in files}
+    commands: dict[str, str] = {}
+    pyproject = _toml(root / "pyproject.toml")
+    if "pyproject.toml" in file_set:
+        if "pytest" in (pyproject.get("tool") or {}) or any(path.parts[:1] == ("tests",) for path in files):
+            commands["python -m pytest"] = "Python test suite"
+        tools = pyproject.get("tool") or {}
+        if "ruff" in tools:
+            commands["ruff check ."] = "Python lint"
+            commands["ruff format --check ."] = "Python format check"
+        if "ty" in tools:
+            commands["ty check"] = "Python type check"
+    if "package.json" in file_set:
+        try:
+            package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+            scripts = package.get("scripts") if isinstance(package, dict) else {}
+            runner = "pnpm" if "pnpm-lock.yaml" in file_set else "yarn" if "yarn.lock" in file_set else "npm run"
+            if isinstance(scripts, dict):
+                for name in ("test", "lint", "typecheck", "check", "build"):
+                    if isinstance(scripts.get(name), str):
+                        command = f"{runner} {name}" if runner != "yarn" else f"yarn {name}"
+                        commands[command] = f"package script `{name}`"
+        except OSError, ValueError:
+            pass
+    if "Cargo.toml" in file_set:
+        commands["cargo test"] = "Rust test suite"
+        commands["cargo check"] = "Rust compile check"
+    if "go.mod" in file_set:
+        commands["go test ./..."] = "Go test suite"
+    if "Makefile" in file_set:
+        try:
+            makefile = (root / "Makefile").read_text(encoding="utf-8")
+            for target in ("test", "lint", "check", "build"):
+                if re.search(rf"(?m)^{re.escape(target)}\s*:", makefile):
+                    commands[f"make {target}"] = f"Make target `{target}`"
+        except OSError:
+            pass
+    return sorted(commands.items())
+
+
+def _python_module(path: Path) -> str:
+    parts = list(path.with_suffix("").parts)
+    if parts and parts[0] in {"src", "lib"}:
+        parts = parts[1:]
+    if parts and parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _python_signature(node: ast.FunctionDef | ast.AsyncFunctionDef) -> str:
+    args = [arg.arg for arg in (*node.args.posonlyargs, *node.args.args)]
+    if node.args.vararg:
+        args.append("*" + node.args.vararg.arg)
+    args.extend(arg.arg for arg in node.args.kwonlyargs)
+    if node.args.kwarg:
+        args.append("**" + node.args.kwarg.arg)
+    rendered = ", ".join(args[:5]) + (", …" if len(args) > 5 else "")
+    prefix = "async def" if isinstance(node, ast.AsyncFunctionDef) else "def"
+    return f"{prefix} {node.name}({rendered})"
+
+
+def _python_surface(root: Path, path: Path, modules: dict[str, str]) -> tuple[list[str], list[str]]:
+    try:
+        full = root / path
+        if full.stat().st_size > _MAX_SOURCE_BYTES:
+            return [], []
+        tree = ast.parse(full.read_text(encoding="utf-8"), filename=path.as_posix())
+    except OSError, SyntaxError, UnicodeError:
+        return [], []
+    symbols: list[str] = []
+    imported: set[str] = set()
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and not node.name.startswith("_"):
+            symbols.append(_python_signature(node))
+        elif isinstance(node, ast.ClassDef) and not node.name.startswith("_"):
+            symbols.append(f"class {node.name}")
+        elif isinstance(node, ast.Import):
+            imported.update(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom) and node.module:
+            imported.add(node.module)
+    uses: set[str] = set()
+    for name in imported:
+        candidates = [module for module in modules if name == module or name.startswith(module + ".")]
+        if candidates:
+            uses.add(modules[max(candidates, key=len)])
+    return symbols[:_MAX_SYMBOLS_PER_FILE], sorted(uses)
+
+
+_SURFACE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
+    ".js": (
+        re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", re.M),
+        re.compile(r"^\s*export\s+(?:default\s+)?class\s+([A-Za-z_$][\w$]*)", re.M),
+    ),
+    ".ts": (
+        re.compile(
+            r"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)",
+            re.M,
+        ),
+    ),
+    ".tsx": (
+        re.compile(
+            r"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)",
+            re.M,
+        ),
+    ),
+    ".go": (
+        re.compile(r"^\s*func\s+([A-Z]\w*)\s*\(", re.M),
+        re.compile(r"^\s*type\s+([A-Z]\w*)\s+", re.M),
+    ),
+    ".rs": (re.compile(r"^\s*pub(?:\([^)]*\))?\s+(?:async\s+)?(?:fn|struct|enum|trait|type)\s+([A-Za-z_]\w*)", re.M),),
+    ".java": (
+        re.compile(r"^\s*public\s+(?:final\s+|abstract\s+)?(?:class|interface|record|enum)\s+([A-Za-z_]\w*)", re.M),
+    ),
+    # Kotlin declarations are public by default; match modifier-prefixed declarations while
+    # letting an explicit private/internal/protected prefix fail the keyword position.
+    ".kt": (
+        re.compile(
+            r"^\s*(?:(?:public|open|abstract|final|data|sealed|enum|annotation|value|inner"
+            r"|suspend|operator|infix|inline|tailrec|external|expect|actual|fun)\s+)*"
+            r"(?:class|interface|object|fun)\s+([A-Za-z_]\w*)",
+            re.M,
+        ),
+    ),
+}
+
+
+def _generic_surface(root: Path, path: Path) -> list[str]:
+    patterns = _SURFACE_PATTERNS.get(path.suffix.lower(), ())
+    if not patterns:
+        return []
+    try:
+        full = root / path
+        if full.stat().st_size > _MAX_SOURCE_BYTES:
+            return []
+        text = full.read_text(encoding="utf-8")
+    except OSError, UnicodeError:
+        return []
+    names: list[str] = []
+    for pattern in patterns:
+        names.extend(match.group(1) for match in pattern.finditer(text))
+    return list(dict.fromkeys(names))[:_MAX_SYMBOLS_PER_FILE]
+
+
+def _surface_entries(root: Path, files: list[Path]) -> list[tuple[str, str]]:
+    source_files = [
+        path
+        for path in files
+        if path.suffix.lower() in ({".py"} | set(_SURFACE_PATTERNS))
+        and "test" not in {part.casefold() for part in path.parts}
+        and not path.name.startswith("_")
+    ]
+    python_modules = {_python_module(path): path.as_posix() for path in source_files if path.suffix.lower() == ".py"}
+    rows: list[tuple[str, list[str], list[str]]] = []
+    inbound: Counter[str] = Counter()
+    for path in source_files:
+        if path.suffix.lower() == ".py":
+            symbols, uses = _python_surface(root, path, python_modules)
+        else:
+            symbols, uses = _generic_surface(root, path), []
+        if symbols:
+            rows.append((path.as_posix(), symbols, uses))
+            inbound.update(uses)
+    rows.sort(key=lambda row: (-inbound[row[0]], row[0]))
+    rendered: list[tuple[str, str]] = []
+    for path, symbols, uses in rows[:_MAX_SURFACE_FILES]:
+        role = "public surface: " + "; ".join(symbols)
+        if uses:
+            role += "; uses " + ", ".join(f"`{dependency}`" for dependency in uses[:4])
+        rendered.append((path, role))
+    return rendered
+
+
 def _render(root: Path) -> tuple[str, int, int, str]:
     files = _files(root)
     entries = _landmarks(root, files)
@@ -307,7 +487,7 @@ def _render(root: Path) -> tuple[str, int, int, str]:
         _GENERATED_MARKER,
         f"# Project Map — {project}",
         "",
-        "> Asgard managed orientation map. Regenerate with `asgard setup map`; do not hand-edit this file.",
+        "> Asgard managed orientation map. Regenerate with `asgard map update`; do not hand-edit this file.",
         "> It is a navigation hint, not completion evidence: re-read every path used by a plan.",
         "",
         "## Orientation",
@@ -319,18 +499,36 @@ def _render(root: Path) -> tuple[str, int, int, str]:
         "## Landmarks",
         "",
     ]
-    lines.extend(f"- `{path}` — {role}" for path, role in entries.items())
+    landmark_rows = list(entries.items())[:_MAX_LANDMARKS]
+    lines.extend(f"- `{path}` — {role}" for path, role in landmark_rows)
+    if len(entries) > len(landmark_rows):
+        lines.append(f"- Additional landmarks omitted by budget: {len(entries) - len(landmark_rows)}")
     if not entries:
-        lines.append("- `(none yet)` — add project files, then rerun `asgard setup map`")
-    lines += [
+        lines.append("- `(none yet)` — add project files, then rerun `asgard map update`")
+    commands = _verification_commands(root, files)
+    lines += ["", "## Detected verification", ""]
+    lines.extend(f"- Command: `{command}` — {role}" for command, role in commands)
+    if not commands:
+        lines.append("- No verification command inferred from checked-in manifests.")
+    lines += ["", "## Public surfaces", ""]
+    surface_rows = _surface_entries(root, files)
+    footer = [
         "",
         "## Navigation contract",
         "",
         "- Read `PROJECT.md` first, then the matching human-authored area map if present.",
         "- Verify target definitions and usages from source before planning or editing.",
-        "- Structural changes refresh this managed map before Verifier hashing; use `--check` in CI to detect drift.",
+        "- Structural changes refresh this managed map before Verifier hashing; use `asgard map check` in CI.",
         "",
     ]
+    for path, role in surface_rows:
+        candidate = f"- `{path}` — {role}"
+        projected = "\n".join([*lines, candidate, *footer])
+        if len(projected.encode("utf-8")) > _MAX_PROJECT_MAP_BYTES:
+            lines.append("- Additional public surfaces omitted by byte budget.")
+            break
+        lines.append(candidate)
+    lines += footer
     return "\n".join(lines), len(files), len(entries), project
 
 

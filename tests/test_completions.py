@@ -48,6 +48,11 @@ class TestSurfaceSync(unittest.TestCase):
         arg = next(p for p in role.commands["run"].params if p.name == "role")
         for r in comp._ROLES:
             self.assertIn(r, arg.metavar or "")
+        model = role.commands["model"]
+        self.assertEqual(
+            {o for p in model.params for o in p.opts if o.startswith("--")},
+            {"--effort", "--provider", "--reset"},
+        )
 
     def test_memory_subcommands_match(self):
         mem = _visible_commands()["memory"]
@@ -126,6 +131,9 @@ class TestBashFunctional(unittest.TestCase):
     def test_role_subcommands_and_args(self):
         self.assertEqual(set(self._complete('asgard role ""', 2)), set(comp._ROLE_SUB) | {"--help"})
         self.assertEqual(set(self._complete('asgard role run ""', 3)), set(comp._ROLES))
+        self.assertEqual(set(self._complete('asgard role model ""', 3)), set(comp._MODEL_HOSTS))
+        self.assertEqual(set(self._complete('asgard role model cursor ""', 4)), set(comp._MODEL_ROLES))
+        self.assertEqual(set(self._complete('asgard role model cursor worker ""', 5)), set(comp._MODEL_FLAGS))
 
     def test_tools_list_options_and_role_values(self):
         self.assertEqual(
@@ -196,6 +204,14 @@ class TestZshFunctional(unittest.TestCase):
     def test_role_subcommands_and_args(self):
         self.assertEqual(set(self._complete('asgard role ""', 3)), set(comp._ROLE_SUB) | {"--help"})
         self.assertEqual(set(self._complete('asgard role run ""', 4)), set(comp._ROLES))
+        self.assertEqual(set(self._complete('asgard role model ""', 4)), set(comp._MODEL_HOSTS))
+        self.assertEqual(set(self._complete('asgard role model cursor ""', 5)), set(comp._MODEL_ROLES))
+        self.assertEqual(set(self._complete('asgard role model cursor worker ""', 6)), set(comp._MODEL_FLAGS))
+
+    def test_map_subcommands_and_flags(self):
+        self.assertEqual(set(self._complete('asgard map ""', 3)), set(comp._MAP_SUB) | {"--help"})
+        self.assertIn("--dry-run", self._complete('asgard map update ""', 4))
+        self.assertIn("--query", self._complete('asgard map context ""', 4))
 
     def test_source_registers_compdef(self):
         cmd = f'autoload -Uz compinit; compinit -u; source "{self.script}"; print -r -- $_comps[asgard]'
@@ -224,6 +240,9 @@ class TestFishFunctional(unittest.TestCase):
         out = self._complete("asgard role run ")
         for r in comp._ROLES:
             self.assertIn(r, out)
+        hosts = self._complete("asgard role model ")
+        for host in comp._MODEL_HOSTS:
+            self.assertIn(host, hosts)
 
 
 class TestInstall(unittest.TestCase):
