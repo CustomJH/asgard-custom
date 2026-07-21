@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import re
 
-# ── 게이트 차단 사유 → (시그니처, 수리 역할) — 동일 시그니처 2회 = 수리 불가 → ESCALATE ──
+# ── 게이트 차단 사유 시그니처 — 정본은 [gate:<code>] 태그 직독 (failures 카탈로그).
+# 문장 니들 표는 구버전 훅 사본(태그 없는 문장)이 남긴 사유의 폴백 전용 — 신규 니들 추가 금지. ──
 _GATE_SIGS = (
     ("판정(PASS/ESCALATE) 레코드가 없", "no-verdict"),
     ("stale PASS", "stale-pass"),
@@ -21,17 +22,16 @@ _GATE_SIGS = (
 
 
 def _gate_sig(reason: str) -> str:
-    return next((sig for needle, sig in _GATE_SIGS if needle in reason), "other")
+    from ...failures import parse_gate_code
+
+    return parse_gate_code(reason) or next((sig for needle, sig in _GATE_SIGS if needle in reason), "other")
 
 
 def _gate_repair(sig: str) -> tuple[str, str]:
-    """차단 사유별 수리 턴 — criteria 부재만 계획 보강, baseline red 는 코드 수리(Worker),
-    나머지는 전부 신선 증거 재검증."""
-    if sig == "no-criteria":
-        return "THINKER_REPLAN", "게이트: criteria 부재 — 계획 보강 필요"
-    if sig == "baseline-red":
-        return "WORKER_RETRY", "게이트: 하네스 베이스라인 red — 실패한 체크를 수정"
-    return "VERIFIER", f"게이트 차단({sig}) — 신선한 증거로 재검증"
+    """차단 사유별 수리 턴 — 코드→전이 표는 failures 카탈로그가 정본 (동일 시그니처 2회 = 수리 불가 → ESCALATE)."""
+    from ...failures import repair_for
+
+    return repair_for(sig)
 
 
 # ── 결정론 pre-LLM 분류 — 명백 케이스만, 모호하면 None → LLM 폴백 ──

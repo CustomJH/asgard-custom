@@ -254,7 +254,7 @@ class TestGateEventMetrics(AdversarialBase):
         kinds = [e["event"] for e in events]
         self.assertEqual(kinds.count("gate_block"), 3, events)
         self.assertEqual(kinds.count("gate_escalate"), 1, events)
-        self.assertEqual({e["code"] for e in events}, {"no_verdict"})
+        self.assertEqual({e["code"] for e in events}, {"no-verdict"})
 
     def test_stale_pass_block_carries_code(self):
         self.open_quest()
@@ -271,7 +271,10 @@ class TestGateEventMetrics(AdversarialBase):
             f.write(json.dumps(forged) + "\n")
         got, p = self.gate_decision("m2")
         self.assertEqual(got, "block", p.stdout + p.stderr)
-        self.assertEqual(self.read_events()[-1], {"event": "gate_block", "code": "stale_pass"})
+        self.assertEqual(self.read_events()[-1], {"event": "gate_block", "code": "stale-pass"})
+        payload = json.loads(p.stdout)
+        self.assertEqual(payload.get("code"), "stale-pass")  # payload 코드 직독 — 문장 파싱 불필요
+        self.assertIn("[gate:stale-pass]", payload["reason"])  # 프로토콜 공통 운반자 = 메시지 태그
 
     def test_doctor_aggregates_gate_events(self):
         from asgard.commands.doctor import _trinity_checks
@@ -279,9 +282,9 @@ class TestGateEventMetrics(AdversarialBase):
         self.write("AGENTS.md", "asgard\n")  # 프로젝트 체크는 AGENTS.md 있는 루트에서만
         os.makedirs(os.path.dirname(self.events_path()), exist_ok=True)
         with open(self.events_path(), "w", encoding="utf-8") as f:
-            for code in ("stale_pass", "stale_pass", "no_evidence"):
+            for code in ("stale-pass", "stale-pass", "no-evidence"):
                 f.write(json.dumps({"event": "gate_block", "code": code}) + "\n")
-            f.write(json.dumps({"event": "gate_escalate", "code": "no_verdict"}) + "\n")
+            f.write(json.dumps({"event": "gate_escalate", "code": "no-verdict"}) + "\n")
         qdir = os.path.join(self.root, ".asgard", "quest")
         os.makedirs(qdir, exist_ok=True)
         with open(os.path.join(qdir, "q9.jsonl"), "w", encoding="utf-8") as f:
@@ -291,7 +294,7 @@ class TestGateEventMetrics(AdversarialBase):
         check = next(c for c in _trinity_checks(self.root) if c["name"] == "trinity gate events")
         self.assertFalse(check["ok"], check)  # forced close = 게이트 수동 우회 경고
         self.assertIn("gate block 3회", check["detail"])
-        self.assertIn("stale_pass 2", check["detail"])
+        self.assertIn("stale-pass 2", check["detail"])
         self.assertIn("에스컬레이션 1회", check["detail"])
         self.assertIn("PASS 1·FAIL 1", check["detail"])
         self.assertIn("forced close 1회", check["detail"])
@@ -302,7 +305,7 @@ class TestGateEventMetrics(AdversarialBase):
         self.write("AGENTS.md", "asgard\n")
         os.makedirs(os.path.dirname(self.events_path()), exist_ok=True)
         with open(self.events_path(), "w", encoding="utf-8") as f:
-            f.write(json.dumps({"event": "gate_block", "code": "no_criteria"}) + "\n")
+            f.write(json.dumps({"event": "gate_block", "code": "no-criteria"}) + "\n")
         check = next(c for c in _trinity_checks(self.root) if c["name"] == "trinity gate events")
         self.assertTrue(check["ok"], check)  # 차단은 게이트가 일한 증거 — 경고 아님
 

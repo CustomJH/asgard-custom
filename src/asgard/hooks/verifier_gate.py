@@ -468,8 +468,51 @@ def gate_event(root, kind, code):
         pass
 
 
-def block(root, sid, reason, code="other"):
-    """차단 — active quest별 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시."""
+# ── 차단 메시지 카탈로그 — 코드가 정본, 문장은 렌더링. 자기완결 배포 제약으로 asgard.failures
+# 를 임포트하지 못해 사본을 품는다 — tests/test_failures.py 패리티 테스트가 두 표를 봉인한다. ──
+GATE_MESSAGES = {
+    "orphan-write": (
+        "이 세션이 파일을 썼는데({files}) 퀘스트 로그가 없습니다. write 과업은 Trinity "
+        "순환이 필수입니다: python3 <hooks>/quest-log.py open <quest-id> --criteria "
+        '"..." 로 로그를 열고 Verifier 검증을 기록하세요.'
+    ),
+    "unsafe-map": "unsafe code map symlink/junction: {targets}",
+    "snapshot-fail": "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.",
+    "no-verdict": "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.",
+    "escalate-nudge": (
+        "무인 세션에서 작업 시도 없이 ESCALATE 로 종료하려 합니다 (Canon 8 무인 진행). "
+        "오딘의 답은 오지 않습니다 — 방어 가능한 기본안을 골라 가정을 plan criteria "
+        "`가정: ...` 으로 기록하고 Worker 를 디스패치하세요. 어떤 기본안도 방어 불가한 "
+        "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다."
+    ),
+    "stale-pass": "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.",
+    "no-criteria": "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.",
+    "tickets-incomplete": "미완료 ticket 존재({units}) — 모든 단위를 done으로 만든 뒤 검증하세요.",
+    "criteria-unverified": (
+        "criteria verify 계약 미충족 ({unmet}) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
+        "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
+    ),
+    "no-evidence": (
+        "PASS 에 성공한 검증 명령 증거(commands[{{cmd,exit_code==0}}])가 없습니다. "
+        "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다)."
+    ),
+    "baseline-red": "하네스 베이스라인 체크 red ({failing}) — 실패한 체크를 수정한 뒤 재검증하세요.",
+    "micro-pass": (
+        "full-verify 필요(민감 경로 {sensitive}{deleted} / diff {files} files·{lines} lines)한데 "
+        "micro PASS 입니다. --level full 로 재검증하세요."
+    ),
+}
+
+
+def gate_message(code, **params):
+    return "[gate:%s] " % code + GATE_MESSAGES[code].format(**params)
+
+
+def block(root, sid, code, **params):
+    """차단 — active quest별 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시.
+    사유는 코드+파라미터로만 받는다 — 문장은 GATE_MESSAGES 가 렌더하고, 소비자(classify·doctor)는
+    `[gate:<code>]` 태그/payload code 를 직독한다 (문장 파싱 금지)."""
+    reason = gate_message(code, **params)
     path = block_counter_path(root, sid)
     n = 0
     try:
@@ -497,12 +540,14 @@ def block(root, sid, reason, code="other"):
         "append --verdict PASS|FAIL (verify 이벤트가 diff_hash 를 자동 계산). "
         "3회 이상 막히면 중단하고 Odin 에게 보고하세요 (Canon 9)."
     )
+    # code 필드는 claude/네이티브 경로만 — codex/cursor 프로토콜은 미지 필드 관용을 보증할 수
+    # 없어 메시지 내 [gate:<code>] 태그가 공통 운반자다.
     if _HOST_PROTOCOL == "cursor":
         payload = {"followup_message": message}
     elif _HOST_PROTOCOL == "codex":
         payload = {"continue": False, "stopReason": message}
     else:
-        payload = {"decision": "block", "reason": message}
+        payload = {"decision": "block", "reason": message, "code": code}
     sys.stdout.write(json.dumps(payload, ensure_ascii=False))
     sys.exit(0)
 
@@ -609,10 +654,8 @@ def orphan_writes(root, sid):
     block(
         root,
         sid,
-        "이 세션이 파일을 썼는데(%s%s) 퀘스트 로그가 없습니다. write 과업은 Trinity "
-        "순환이 필수입니다: python3 <hooks>/quest-log.py open <quest-id> --criteria "
-        '"..." 로 로그를 열고 Verifier 검증을 기록하세요.'
-        % (", ".join(dirty[:3]), " 외 %d" % (len(dirty) - 3) if len(dirty) > 3 else ""),
+        "orphan-write",
+        files=", ".join(dirty[:3]) + (" 외 %d" % (len(dirty) - 3) if len(dirty) > 3 else ""),
     )
 
 
@@ -648,7 +691,7 @@ def main():
             sys.exit(0)
         unsafe_maps = unsafe_map_links(root)
         if unsafe_maps:
-            block(root, sid, "unsafe code map symlink/junction: %s" % ", ".join(unsafe_maps[:3]), code="unsafe_map")
+            block(root, sid, "unsafe-map", targets=", ".join(unsafe_maps[:3]))
         policy = dict(DEFAULT_POLICY)
         # 신규 통합 설정 우선, 구 파일 폴백 — quest_log.load_policy 와 동일 유지 (단일 출처 원칙)
         loaded = False
@@ -671,12 +714,7 @@ def main():
         )
         current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
         if "<snapshot-unavailable>" in changed:
-            block(
-                root,
-                sid,
-                "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.",
-                code="snapshot_fail",
-            )
+            block(root, sid, "snapshot-fail")
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
         mutating = [c for c in cmds if not readonly(c.get("cmd", ""), policy["readonly_commands"])]
         risk_write = any((e.get("risk") or {}).get("has_write") for e in events)
@@ -688,7 +726,7 @@ def main():
         # 3회 헛차단 + fail-open 상한에 기대게 된다 (E2E 벤치 S4 에서 실측된 마찰).
         verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") in ("PASS", "ESCALATE")]
         if not verdicts:
-            block(root, sid, "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.", code="no_verdict")
+            block(root, sid, "no-verdict")
         p = verdicts[-1]
         if p.get("verdict") == "ESCALATE":
             # 무인 세션에서 work 시도 전무한 ESCALATE = 승인 대기 모양 (오딘이 없어
@@ -701,72 +739,38 @@ def main():
                         open(marker, "w").write("1")
                     except Exception:
                         pass
-                    block(
-                        root,
-                        sid,
-                        "무인 세션에서 작업 시도 없이 ESCALATE 로 종료하려 합니다 (Canon 8 무인 진행). "
-                        "오딘의 답은 오지 않습니다 — 방어 가능한 기본안을 골라 가정을 plan criteria "
-                        "`가정: ...` 으로 기록하고 Worker 를 디스패치하세요. 어떤 기본안도 방어 불가한 "
-                        "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다.",
-                        code="escalate_nudge",
-                    )
+                    block(root, sid, "escalate-nudge")
             try:
                 os.remove(block_counter_path(root, sid))
             except Exception:
                 pass
             sys.exit(0)  # 종료 허용 — 단 완료가 아니라 오딘 결정 대기 상태 (퀘스트 로그에 ESCALATE 가 남는다)
         if p.get("diff_hash") != current:
-            block(
-                root,
-                sid,
-                "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.",
-                code="stale_pass",
-            )
+            block(root, sid, "stale-pass")
         if not any(e.get("criteria") for e in events):
-            block(
-                root,
-                sid,
-                "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.",
-                code="no_criteria",
-            )
+            block(root, sid, "no-criteria")
         ticket_state = {}
         for event in events:
             if event.get("event") == "ticket" and event.get("unit") is not None:
                 ticket_state[str(event["unit"])] = event.get("ticket_status")
         unfinished = [unit for unit, status in ticket_state.items() if status != "done"]
         if unfinished:
-            block(
-                root,
-                sid,
-                "미완료 ticket 존재(%s) — 모든 단위를 done으로 만든 뒤 검증하세요." % ", ".join(unfinished[:6]),
-                code="tickets_incomplete",
-            )
+            block(root, sid, "tickets-incomplete", units=", ".join(unfinished[:6]))
         unmet = unmet_contracts(root, next((e.get("criteria") for e in events if e.get("criteria")), []), p)
         if unmet:
-            block(
-                root,
-                sid,
-                "criteria verify 계약 미충족 (%s) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
-                "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
-                % "; ".join(map(str, unmet[:3])),
-                code="criteria_unverified",
-            )
+            block(root, sid, "criteria-unverified", unmet="; ".join(map(str, unmet[:3])))
         if not pass_evidence(p):
-            block(
-                root,
-                sid,
-                "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. "
-                "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
-                code="no_evidence",
-            )
+            block(root, sid, "no-evidence")
         bl = p.get("baseline") or {}
         if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 — 코드가 깨져 있다
-            failing = [str(r.get("cmd")) for r in (bl.get("results") or []) if r.get("exit_code") not in (0, None)]
+            rows = [r for r in (bl.get("results") or []) if isinstance(r, dict)]
+            failing = [str(r.get("cmd")) for r in rows if r.get("exit_code") not in (0, None)]
+            fails = [str(f) for r in rows for f in (r.get("fails") or [])]  # 정형 실패 줄 (run_baseline 채집)
             block(
                 root,
                 sid,
-                "하네스 베이스라인 체크 red (%s) — 실패한 체크를 수정한 뒤 재검증하세요." % ", ".join(failing[:3]),
-                code="baseline_red",
+                "baseline-red",
+                failing=", ".join(failing[:3]) + (" — " + "; ".join(fails[:3]) if fails else ""),
             )
         small = policy["small_write"]
         sensitive = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
@@ -779,10 +783,11 @@ def main():
             block(
                 root,
                 sid,
-                "full-verify 필요(민감 경로 %s%s / diff %d files·%d lines)한데 micro PASS 입니다. "
-                "--level full 로 재검증하세요."
-                % (sensitive[:3], " / 삭제된 테스트 %s" % dts[:3] if dts else "", len(changed), lines),
-                code="micro_pass",
+                "micro-pass",
+                sensitive=sensitive[:3],
+                deleted=" / 삭제된 테스트 %s" % dts[:3] if dts else "",
+                files=len(changed),
+                lines=lines,
             )
         try:  # 통과 → 차단 카운터 리셋 (다음 위반은 새로 3회부터)
             os.remove(block_counter_path(root, sid))

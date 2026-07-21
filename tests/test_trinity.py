@@ -1568,7 +1568,7 @@ class TestCompletionFunnel(TrinityBase):
         forced = jout(self.qlog("close", "--force"))
         self.assertTrue(forced["forced"])
         self.assertIs(forced["gate_exempt"], False)
-        self.assertIn("no_evidence", forced["rejected"])
+        self.assertIn("no-evidence", forced["rejected"])
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
         self.sentinel("app.py")
         out = jout(self.gate())
@@ -1597,7 +1597,7 @@ class TestCompletionFunnel(TrinityBase):
         self.assertIn("criteria", nxt["why"])
         p = self.qlog("close")
         self.assertEqual(p.returncode, 1)
-        self.assertIn("no_criteria", p.stderr)
+        self.assertIn("no-criteria", p.stderr)
         self.assertEqual(jout(self.gate()).get("decision"), "block")  # 게이트와 동일 판정
 
     def test_escalate_close_does_not_publish_verified_last(self):
@@ -2169,6 +2169,121 @@ class TestAdversarialSuite(unittest.TestCase):
         p = subprocess.run(["bash", script], capture_output=True, text=True, timeout=120)
         self.assertEqual(p.returncode, 0, f"적대 벡터 실패:\n{p.stdout}\n{p.stderr}")
         self.assertIn("FAIL=0", p.stdout)
+
+
+class TestQuestPrune(TrinityBase):
+    """닫힌 퀘스트 keep-last-N 정리 — 보호 3종(포인터·미종결·미채굴 신호)과 세션 포인터 GC."""
+
+    def _closed_quest(self, qid, session, age):
+        self.qlog("open", qid, "--criteria", "one", "--session", session, "--no-write")
+        p = self.qlog("close", qid, "--session", session, "--force")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        path = os.path.join(self.root, ".asgard", "quest", qid + ".jsonl")
+        past = time.time() - age
+        os.utime(path, (past, past))
+        return path
+
+    def test_prune_keeps_last_n_closed_quests_and_lock_files(self):
+        from asgard.hooks.quest_log import prune_quests
+
+        for i, age in ((1, 400), (2, 300), (3, 200), (4, 100)):
+            self._closed_quest(f"q{i}", f"s{i}", age)
+        pruned = prune_quests(self.root, {"quest_retention": 2})
+        self.assertEqual(sorted(pruned), ["q1", "q2"])
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        names = os.listdir(qdir)
+        self.assertEqual(sorted(n for n in names if n.endswith(".jsonl")), ["q3.jsonl", "q4.jsonl"])
+        self.assertNotIn("q1.lock", names)  # 로그와 lock 은 함께 치운다
+        self.assertNotIn("q2.lock", names)
+
+    def test_prune_protects_pointer_targets_and_unclosed_logs(self):
+        from asgard.hooks.quest_log import prune_quests
+
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        self._closed_quest("q1", "s1", 500)
+        # 전역 LAST 대상은 상한 밖이어도 보존 — Stop 훅 완료 판정(memory-activate)이 재독한다
+        with open(os.path.join(qdir, "LAST"), "w") as f:
+            f.write("q1\n")
+        # 미종결 로그(quest_closed 없음·포인터 유실) = 크래시 흔적 — 증거가 살아있으니 삭제 금지
+        crashed = os.path.join(qdir, "crashed.jsonl")
+        with open(crashed, "w") as f:
+            f.write(json.dumps({"quest_id": "crashed", "event": "work"}) + "\n")
+        past = time.time() - 400
+        os.utime(crashed, (past, past))
+        self._closed_quest("q2", "s2", 300)
+        self._closed_quest("q3", "s3", 200)
+        self._closed_quest("q4", "s4", 100)
+        self.qlog("open", "q0", "--criteria", "x", "--session", "s0", "--no-write")  # 활성 → 보존
+        pruned = prune_quests(self.root, {"quest_retention": 1})
+        self.assertEqual(sorted(pruned), ["q2", "q3", "q4"])  # keep 슬롯은 최신 로그(q0)가 차지
+        left = sorted(n for n in os.listdir(qdir) if n.endswith(".jsonl"))
+        self.assertEqual(left, ["crashed.jsonl", "q0.jsonl", "q1.jsonl"])
+
+    def test_prune_spares_unmined_learning_signal_until_mined(self):
+        from asgard.hooks.quest_log import prune_quests
+
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        os.makedirs(qdir, exist_ok=True)
+        hard = os.path.join(qdir, "hardwon.jsonl")
+        events = [
+            {"quest_id": "hardwon", "event": "verify", "verdict": "FAIL", "failure_sig": "tests-fail"},
+            {
+                "quest_id": "hardwon",
+                "event": "verify",
+                "verdict": "PASS",
+                "commands": [{"cmd": "pytest -q", "exit_code": 0}],
+            },
+            {"quest_id": "hardwon", "event": "quest_closed"},
+        ]
+        with open(hard, "w") as f:
+            f.writelines(json.dumps(e) + "\n" for e in events)
+        past = time.time() - 500
+        os.utime(hard, (past, past))
+        for i, age in ((1, 300), (2, 200)):
+            self._closed_quest(f"q{i}", f"s{i}", age)
+        self.assertEqual(prune_quests(self.root, {"quest_retention": 1}), ["q1"])
+        self.assertTrue(os.path.exists(hard))  # 미채굴 hard-won 신호 → 소급 채굴 전까지 보존
+        from asgard.evolution import mine
+
+        mine(self.root)
+        self.assertEqual(prune_quests(self.root, {"quest_retention": 1}), ["hardwon"])
+
+    def test_prune_gc_closed_session_pointers_keeps_live_and_recent(self):
+        from asgard.hooks.quest_log import prune_quests
+
+        sessions = os.path.join(self.root, ".asgard", "quest", "sessions")
+        for i, age in ((1, 400), (2, 300), (3, 200), (4, 100)):
+            self._closed_quest(f"q{i}", f"s{i}", age)
+            pointer = os.path.join(sessions, f"s{i}.known")
+            past = time.time() - age
+            os.utime(pointer, (past, past))
+        self.qlog("open", "q9", "--criteria", "x", "--session", "live", "--no-write")
+        prune_quests(self.root, {"quest_retention": 2})
+        left = sorted(os.listdir(sessions))
+        self.assertIn("live.active", left)  # 살아있는 세션은 GC 면제
+        self.assertIn("s3.known", left)
+        self.assertIn("s4.known", left)
+        self.assertNotIn("s1.known", left)
+        self.assertNotIn("s2.known", left)
+
+    def test_close_triggers_prune_via_policy(self):
+        self.policy(quest_retention=1)
+        self._closed_quest("q1", "s1", 300)
+        self.qlog("open", "q2", "--criteria", "two", "--session", "s2", "--no-write")
+        p = self.qlog("close", "q2", "--session", "s2", "--force")
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(jout(p).get("pruned"), 1)
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        self.assertEqual([n for n in os.listdir(qdir) if n.endswith(".jsonl")], ["q2.jsonl"])
+
+    def test_retention_zero_disables_prune(self):
+        from asgard.hooks.quest_log import prune_quests
+
+        for i, age in ((1, 300), (2, 200)):
+            self._closed_quest(f"q{i}", f"s{i}", age)
+        self.assertEqual(prune_quests(self.root, {"quest_retention": 0}), [])
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        self.assertEqual(len([n for n in os.listdir(qdir) if n.endswith(".jsonl")]), 2)
 
 
 if __name__ == "__main__":

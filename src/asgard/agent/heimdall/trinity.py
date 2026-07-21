@@ -274,7 +274,7 @@ class TrinityRun:
             placed = rp or rrp
             memory = hd._memory_snap if hd._mem_allowed(placed.profile.name, placed.source) else ""
             return hd._session(
-                _role_prompt("asgard-thinker.md") + hd.lagom + charter + memory,
+                _role_prompt("asgard-thinker.md") + hd.lagom + charter + memory + hd.map_note,
                 role=role,
                 model=selected if rp is None else None,
                 readonly=True,
@@ -351,7 +351,9 @@ class TrinityRun:
         if bj["verdict"] == "FAIL":
             self.saw_red = True
             failing = ", ".join(map(str, bj.get("failing") or [])) or "(퀘스트 로그 baseline.results 참조)"
-            self.last_fail = {"sig": "baseline-red", "why": f"하네스 베이스라인 체크 실패: {failing}"}
+            fails = "; ".join(str(f) for f in (bj.get("fails") or [])[:3])  # 정형 실패 줄 — 수리 턴이 이유를 본다
+            why = f"하네스 베이스라인 체크 실패: {failing}" + (f" — {fails}" if fails else "")
+            self.last_fail = {"sig": "baseline-red", "why": why}
             self.fail_history.append(f"baseline-red: {failing[:200]}")
         return None
 
@@ -448,7 +450,7 @@ class TrinityRun:
 
             def make(rp=None):
                 return hd._session(
-                    _role_prompt("asgard-worker.md") + hd.lagom + skill_note,
+                    _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
                     extra_tools=skill_tools,
                     handlers=skill_handlers,
                     role="worker",
@@ -588,7 +590,7 @@ class TrinityRun:
         def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None):
             # verifier 는 무주입 (mk_verifier) — 게이트 기준이 lagom 으로 흔들리면 안 된다
             return hd._session(
-                _role_prompt("asgard-worker.md") + hd.lagom + skill_note,
+                _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
                 extra_tools=[DISPATCH_TOOL, *skill_tools],
                 handlers={"dispatch": hd._dispatch_handler(s_id, w), **skill_handlers},
                 role=rl,
@@ -739,6 +741,11 @@ class TrinityRun:
                 "failure_sig": "unresolved-verification-failure",
                 "why": "PASS 전에 해소되지 않은 검증 실패: " + "; ".join(unresolved[:3]),
             }
+        if v.get("failure_sig"):
+            # 자유 기술 sig 의 표기 흔들림을 슬러그로 정규화 — 3-strike 동종 판정 키 안정화
+            from ...failures import normalize_sig
+
+            v["failure_sig"] = normalize_sig(str(v["failure_sig"]))
         # 증거는 하니스 관측 명령만 기록 — 모델 자가보고 commands 는 버린다
         ev = {
             "role": "verifier",

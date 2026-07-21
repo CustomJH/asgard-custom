@@ -24,7 +24,11 @@ VERDICT_TOOL = {
                     "required": ["cmd", "exit_code"],
                 },
             },
-            "failure_sig": {"type": "string", "description": "FAIL 시 동종 실패 시그니처"},
+            "failure_sig": {
+                "type": "string",
+                "description": "FAIL 시 동종 실패 시그니처 — kebab-case 슬러그 (예: missing-null-check). "
+                "같은 원인의 재실패에는 같은 슬러그를 쓴다 (3-strike 동종 판정 키 — 하네스가 슬러그로 정규화)",
+            },
             "structural": {
                 "type": "boolean",
                 "description": "FAIL 이 접근 자체의 결함(구조적)이면 true — Thinker 재계획 트리거 (경미한 수정 가능 결함은 false)",
