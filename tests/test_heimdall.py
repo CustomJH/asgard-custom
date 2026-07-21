@@ -135,7 +135,7 @@ def worker(files: dict[str, str] | None = None, root: str = "", text: str = "don
     )
 
 
-def verifier(verdict="PASS", observed=True, structural=False, sig=None, why="", no_tool=False):
+def verifier(verdict="PASS", observed=True, structural=False, sig=None, why="", no_tool=False, commands=None):
     tool_calls = []
     if not no_tool:
         inp = {"verdict": verdict, "criteria": CLS_WRITE["criteria"], "commands": [{"cmd": "fake", "exit_code": 0}]}
@@ -146,11 +146,13 @@ def verifier(verdict="PASS", observed=True, structural=False, sig=None, why="", 
         if why:
             inp["why"] = why
         tool_calls = [{"name": "verdict", "input": inp}]
+    if commands is None:
+        commands = [{"cmd": "pytest -q", "exit_code": 0}] if observed else []
     return FakeSession(
         SessionResult(
             text="verified",
             stop_reason="end_turn",
-            commands=[{"cmd": "pytest -q", "exit_code": 0}] if observed else [],
+            commands=commands,
             tool_calls=tool_calls,
         ),
         label="verifier",
@@ -220,6 +222,38 @@ class TestTrinityLoop(Base):
         self.assertIn("증거", out)  # 구조화 보고
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
+
+    def test_noop_quest_observational_verifier_pass_closes(self):
+        # 무변경 과업(오분류된 인사 등) — verifier 의 트리 관측(git status/diff)만으로 PASS 성립.
+        # 종전엔 관측 명령이 전부 trivial 로 걸러져 PASS 가 영구 무효화되는 교착이었다 (26-07-21 실측).
+        h = FakeHeimdall(
+            self.root,
+            [
+                worker(None, self.root),  # 아무 것도 쓰지 않는 no-op work
+                verifier("PASS", commands=[{"cmd": "git status --porcelain", "exit_code": 0}]),
+            ],
+            cls=CLS_WRITE,
+        )
+        out = h.handle("변경이 필요 없는 요청")
+        self.assertIn("과업 완수", out)
+        self.assertNotIn("PASS 무효화", "".join(h.texts))
+
+    def test_pass_invalidation_is_visible_and_recoverable(self):
+        # diff 가 있는 퀘스트의 관측-only PASS 는 여전히 무효 (Goodhart 유지) — 단 무효화 사실이
+        # 화면에 표시된다 (사용자가 "PASS 직후 FAIL 재시도"라는 모순 화면을 보지 않게, 판정층 정직성)
+        h = FakeHeimdall(
+            self.root,
+            [
+                worker({"w1.txt": "x\n"}, self.root),
+                verifier("PASS", commands=[{"cmd": "git status --porcelain", "exit_code": 0}]),  # 무효화
+                worker({"w1.txt": "x\n"}, self.root),  # WORKER_RETRY
+                verifier("PASS"),  # 실증거(pytest) PASS
+            ],
+            cls=CLS_WRITE,
+        )
+        out = h.handle("w1.txt 만들어")
+        self.assertIn("과업 완수", out)
+        self.assertIn("PASS 무효화", "".join(h.texts))
 
     def test_dual_mode_runs_two_readonly_thinkers_then_one_worker(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -906,13 +940,24 @@ class TestModelTiers(Base):
 
 
 class TestClassify(Base):
-    def test_parse_failure_defaults_to_gated_write(self):
+    def test_parse_failure_with_write_verb_defaults_to_gated_write(self):
         h = FakeHeimdall(self.root, [], cls=None)
         mock.patch.object(h, "_complete_text", lambda *a, **k: "이건 JSON 이 아님").start()
         self.addCleanup(mock.patch.stopall)
-        d = Heimdall._classify(h, "뭔가 대충 처리해줘")  # 휴리스틱 불확정 → LLM 폴백 → 파싱 실패
-        self.assertTrue(d["write_expected"] and d["ambiguous"])  # 안전 기본값 → 게이트 경로
-        self.assertEqual(d["task_class"], "deep")  # 미상 = 최대 예산
+        d = Heimdall._classify(h, "버그 설명해주고 고쳐줘")  # read+write 혼재 → 휴리스틱 불확정 → 파싱 실패
+        self.assertTrue(d["write_expected"] and d["ambiguous"])  # write 신호 존재 → 게이트 경로
+        self.assertEqual(d["task_class"], "deep")  # write 인데 범위 미상 = 최대 예산
+
+    def test_parse_failure_without_write_verb_fails_open_to_direct(self):
+        # 분류기가 JSON 대신 대화체로 응답(인사 등) → 파싱 실패. write 동사가 없으면 DIRECT
+        # fail-open — DIRECT 는 read-only + Canon 10 소급 검증이 실제 write 를 잡는다.
+        # 구 기본값(무조건 write+deep)은 인사 하나가 deep 예산을 태우는 경로였다 (26-07-21 실측).
+        h = FakeHeimdall(self.root, [], cls=None)
+        mock.patch.object(h, "_complete_text", lambda *a, **k: "안녕하세요! 무엇을 도와드릴까요?").start()
+        self.addCleanup(mock.patch.stopall)
+        d = Heimdall._classify(h, "뭔가 대충 처리해줘")  # write 동사 없음 + 휴리스틱 불확정
+        self.assertFalse(d["write_expected"])
+        self.assertEqual(d["task_class"], "standard")
 
     def test_destructive_refused_without_sessions(self):
         cls = dict(CLS_WRITE, destructive=True)
@@ -968,6 +1013,34 @@ class TestClassifyHeuristic(Base):
 
         self.assertIsNone(ch("로그인 화면이 이상함"))  # 동사 신호 없음
         self.assertIsNone(ch("버그 설명해주고 고쳐줘"))  # read+write 혼재
+
+    def test_smalltalk_routes_direct_no_llm(self):
+        # 인사·감사·수긍은 결정론으로 DIRECT — LLM 분류기가 인사에 인사로 답해(JSON 파싱 실패)
+        # Trinity 를 태우던 경로 차단 (26-07-21 "안녕" 실측: deep 예산 소진)
+        from asgard.agent.heimdall import classify_heuristic as ch
+
+        smalltalk = [
+            "안녕",
+            "안녕하세요!",
+            "hi",
+            "hello~",
+            "고마워",
+            "감사합니다",
+            "ㅋㅋㅋ",
+            "넵",
+            "수고하셨습니다",
+            "thanks!",
+            "잘가",
+            "응 좋아",
+        ]
+        for q in smalltalk:
+            d = ch(q)
+            assert d is not None, q
+            self.assertFalse(d["write_expected"], q)
+        # 인사가 실제 과업에 섞이면 스몰톡이 아니다 — write 동사가 정상 우선
+        mixed = ch("안녕, login.py 버그 고쳐줘")
+        assert mixed is not None
+        self.assertTrue(mixed["write_expected"])
 
     def test_explicit_parallel_write_routes_through_deep_planning(self):
         from asgard.agent.heimdall import classify_heuristic as ch

@@ -640,6 +640,47 @@ def trivial_evidence(cmd) -> bool:
     return True
 
 
+_GIT_INSPECT_SUBS = {"status", "diff", "log", "show", "ls-files"}
+
+
+def inspection_evidence(cmd) -> bool:
+    """워킹트리 상태를 직접 관측하는 read-only git 명령 — 무변경(diff 0) 퀘스트 한정 PASS 증거.
+
+    trivial 필터는 '아무 exit 0 명령'이 증거로 성립하는 Goodhart 를 막는 축이고, 이 판정은
+    별개 축이다: '변경 없음' 주장의 올바른 검증은 트리 관측(git status/diff) 그 자체인데,
+    관측 명령이 전부 trivial 로 걸러지면 무변경 퀘스트는 영원히 PASS 가 불가능한 교착이 된다
+    (26-07-21 "안녕" 실측 — Verifier PASS 5연속 무효화 후 예산 소진)."""
+    try:
+        tokens = shlex.split(str(cmd), posix=True)
+    except ValueError:
+        return False
+    segments: list[list[str]] = [[]]
+    for token in tokens:
+        if token in {"|", "||", "&&", ";"}:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    for segment in segments:
+        while segment and ("=" in segment[0] and not segment[0].startswith(("=", "-"))):
+            segment = segment[1:]
+        if not segment or os.path.basename(segment[0]) != "git":
+            continue
+        sub, rest, index = "", segment[1:], 0
+        while index < len(rest):
+            token = rest[index]
+            if token in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
+                index += 2  # 옵션 인자 스킵 — `git -C <path> status` 의 <path> 를 sub 로 오인 금지
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            sub = token
+            break
+        if sub in _GIT_INSPECT_SUBS:
+            return True
+    return False
+
+
 # ── criteria verify 계약 — 기준별 검증 명령·산출물 결속 ──
 # criteria 문자열에 옵트인 계약을 얹는다: "<설명> | verify: <명령> | artifacts: <경로...>".
 # 계약이 선언되면 "아무 nontrivial 명령 exit 0" 은 더 이상 그 기준의 증거가 아니다 — 하네스가
@@ -717,15 +758,22 @@ def run_criteria_checks(root: str, policy: dict, criteria, events: list[dict], d
     return results
 
 
-def pass_evidence(rec: dict) -> bool:
+def pass_evidence(rec: dict, *, no_change: bool = False) -> bool:
     """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (verifier_gate.py 와 동일 유지).
     하네스가 직접 돌린 베이스라인 green·전 계약 성공(criteria_checks)은 그 자체가 물리 증거 —
-    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가)."""
+    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가).
+    no_change=True (하네스 관측 diff 가 EMPTY) 면 트리 관측 명령(git status/diff)도 증거다 —
+    무변경 주장에는 관측이 곧 검증이며, 아니면 no-op 퀘스트가 영구 FAIL 로 교착한다."""
     if (rec.get("baseline") or {}).get("state") == "green":
         return True
     checks = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
     if checks and all(c.get("exit_code") == 0 for c in checks):
         return True  # 계약 명령 전부 성공 — 하네스가 직접 실행한 기록
+    if no_change and any(
+        isinstance(c, dict) and c.get("exit_code") == 0 and inspection_evidence(c.get("cmd", ""))
+        for c in (rec.get("commands") or [])
+    ):
+        return True
     return any(
         isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
         for c in (rec.get("commands") or [])
@@ -1220,7 +1268,8 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
         "pass_level": (last_pass or {}).get("level"),
         # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부 — 깊이 테스트가 발견한 구멍)
-        "pass_evidence": bool(last_pass and pass_evidence(last_pass)),
+        # 무변경(diff EMPTY) 퀘스트는 관측 명령이 곧 증거 (no-op 교착 봉합)
+        "pass_evidence": bool(last_pass and pass_evidence(last_pass, no_change=cur == EMPTY)),
         # 하네스 베이스라인 상태 — 기록 없음(구 로그·체크 미설정) = none = 요건 면제 (fail-open)
         "baseline_state": ((last_pass or {}).get("baseline") or {}).get("state") or "none",
         # criteria verify 계약 미충족 목록 — 계약 없는 기준은 빈 리스트 (하위호환, 요건 면제)

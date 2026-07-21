@@ -386,15 +386,58 @@ def trivial_evidence(cmd):
     return True
 
 
-def pass_evidence(rec):
+_GIT_INSPECT_SUBS = {"status", "diff", "log", "show", "ls-files"}
+
+
+def inspection_evidence(cmd):
+    """quest_log.py 의 inspection_evidence 와 동일 유지 (단일 출처 원칙) — 무변경(diff EMPTY)
+    퀘스트 한정 PASS 증거: 트리 관측(git status/diff)이 곧 검증. 아니면 no-op 이 영구 FAIL."""
+    try:
+        tokens = shlex.split(str(cmd), posix=True)
+    except ValueError:
+        return False
+    segments = [[]]
+    for token in tokens:
+        if token in {"|", "||", "&&", ";"}:
+            segments.append([])
+        else:
+            segments[-1].append(token)
+    for segment in segments:
+        while segment and ("=" in segment[0] and not segment[0].startswith(("=", "-"))):
+            segment = segment[1:]
+        if not segment or os.path.basename(segment[0]) != "git":
+            continue
+        sub, rest, index = "", segment[1:], 0
+        while index < len(rest):
+            token = rest[index]
+            if token in {"-C", "-c", "--git-dir", "--work-tree", "--namespace"}:
+                index += 2  # 옵션 인자 스킵 — `git -C <path> status` 의 <path> 를 sub 로 오인 금지
+                continue
+            if token.startswith("-"):
+                index += 1
+                continue
+            sub = token
+            break
+        if sub in _GIT_INSPECT_SUBS:
+            return True
+    return False
+
+
+def pass_evidence(rec, no_change=False):
     """PASS 레코드의 성공 명령 증거 — trivial 명령 제외 (quest_log.py 와 동일 유지).
     하네스가 직접 돌린 베이스라인 green·전 계약 성공(criteria_checks)은 그 자체가 물리 증거 —
-    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가)."""
+    trivial 필터는 모델이 고른 명령에만 적용한다 (둘 다 하네스 소유 기록, 모델 위조 불가).
+    no_change=True (하네스 관측 diff 가 EMPTY) 면 트리 관측 명령도 증거다."""
     if (rec.get("baseline") or {}).get("state") == "green":
         return True
     checks = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
     if checks and all(c.get("exit_code") == 0 for c in checks):
         return True  # 계약 명령 전부 성공 — 하네스가 직접 실행한 기록
+    if no_change and any(
+        isinstance(c, dict) and c.get("exit_code") == 0 and inspection_evidence(c.get("cmd", ""))
+        for c in (rec.get("commands") or [])
+    ):
+        return True
     return any(
         isinstance(c, dict) and c.get("exit_code") == 0 and not trivial_evidence(c.get("cmd", ""))
         for c in (rec.get("commands") or [])
@@ -635,13 +678,14 @@ def orphan_writes(root, sid):
         verdicts = [e for e in events if e.get("event") == "verify" and e.get("verdict") == "PASS"]
         if base_ref and verdicts and git(root, "rev-parse", "--verify", base_ref)[0] == 0:
             last = verdicts[-1]
-            evidence = pass_evidence(last)  # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍
             baseline_red = (last.get("baseline") or {}).get("state") == "red"  # --force close 우회 봉합
             ignored_base = next(
                 (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
                 None,
             )
             current_hash, last_changed, _, _ = diff_state(root, base_ref, ignored_base)
+            # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍. 무변경은 관측이 곧 증거.
+            evidence = pass_evidence(last, no_change=current_hash == EMPTY)
             if (
                 evidence
                 and not baseline_red
@@ -759,7 +803,7 @@ def main():
         unmet = unmet_contracts(root, next((e.get("criteria") for e in events if e.get("criteria")), []), p)
         if unmet:
             block(root, sid, "criteria-unverified", unmet="; ".join(map(str, unmet[:3])))
-        if not pass_evidence(p):
+        if not pass_evidence(p, no_change=current == EMPTY):
             block(root, sid, "no-evidence")
         bl = p.get("baseline") or {}
         if bl.get("state") == "red":  # 하네스가 직접 돌린 프로젝트 체크 실패 — 코드가 깨져 있다

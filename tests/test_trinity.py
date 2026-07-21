@@ -1549,6 +1549,59 @@ class TestGoodhartEvidence(TrinityBase):
         self.assertEqual(jout(self.gate()).get("decision"), "block")
 
 
+class TestNoChangeEvidence(TrinityBase):
+    """무변경(diff EMPTY) 퀘스트 — 트리 관측(git status/diff)이 곧 PASS 증거.
+
+    trivial 필터가 관측 명령을 전부 걸러내면 무변경 퀘스트는 영원히 PASS 불가 교착이 된다
+    (26-07-21 "안녕" 실측: Verifier PASS 5연속 무효화 → 예산 소진). diff 가 있는 퀘스트는
+    종전대로 관측-only PASS 를 거부한다 (TestGoodhartEvidence 가 회귀 쐐기)."""
+
+    def test_inspection_evidence_classifier(self):
+        from asgard.hooks.quest_log import inspection_evidence
+
+        inspecting = [
+            "git status --porcelain",
+            "git diff --stat",
+            'git -C "/tmp/some path" status --porcelain',
+            "git log --oneline -5",
+            "git -c core.pager=cat diff",
+        ]
+        not_inspecting = [
+            "echo ok",
+            "true",
+            "python3 -c \"print('hi')\"",
+            "ls -la",
+            "git push",
+            "git commit -m x",
+            "git -C add",  # -C 인자 스킵 — add 를 sub 로 오인하지 않되 잘린 명령도 증거 아님
+        ]
+        for cmd in inspecting:
+            self.assertTrue(inspection_evidence(cmd), cmd)
+        for cmd in not_inspecting:
+            self.assertFalse(inspection_evidence(cmd), cmd)
+
+    def test_noop_quest_observational_pass_approves_and_closes(self):
+        self.open_quest()
+        self.qlog("append", "--role", "worker", "--event", "work")  # 무변경 work (no-op 과업)
+        self.verify(
+            "PASS",
+            commands=[
+                {"cmd": "git status --porcelain", "exit_code": 0},
+                {"cmd": "git diff --stat", "exit_code": 0},
+            ],
+        )
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        closed = self.qlog("close")
+        self.assertEqual(closed.returncode, 0, closed.stderr)
+
+    def test_noop_quest_trivial_only_pass_still_rejected(self):
+        # 무변경이어도 관측 명령이 없으면 무증거 — true/echo 는 여전히 증거가 아니다 (Goodhart 유지)
+        self.open_quest()
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "true", "exit_code": 0}, {"cmd": "echo ok", "exit_code": 0}])
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")
+
+
 class TestCompletionFunnel(TrinityBase):
     """완료 판정 단일 퍼널 — REJECTED 는 어떤 경로(transition·close·--force)로도 승인 승격 금지."""
 

@@ -22,7 +22,14 @@ from typing import Callable, Protocol
 
 from ...providers import ResolvedProvider, resolve_trinity
 from ..session import AgentSession, SessionResult, TurnCancelled, make_client, ql
-from .classify import _DESTRUCTIVE_PAT, _PARALLEL_WORK_PAT, _pred_fields, classify_api_error, classify_heuristic
+from .classify import (
+    _DESTRUCTIVE_PAT,
+    _PARALLEL_WORK_PAT,
+    _pred_fields,
+    classify_api_error,
+    classify_heuristic,
+    has_write_verbs,
+)
 from .dispatch import DeliveryDispatch, _freyja_gate_rejection, _safe_candidates
 from .journal import _log_classify
 from .planning import _resume_snapshot
@@ -301,7 +308,8 @@ class Heimdall:
         sysmsg = (
             "과업 분류기. 요청을 읽고 아래 JSON 만 출력한다 (설명 금지, JSON 앞뒤 텍스트 금지). "
             "write_expected = 파일을 생성·수정해야 하는 과업이면 true. "
-            "**질문·계산·설명·조회처럼 답만 하면 되는 것은 false** (예: '1+1?', '이 함수 설명해'). "
+            "**질문·계산·설명·조회·인사·잡담처럼 답만 하면 되는 것은 false** "
+            "(예: '1+1?', '이 함수 설명해', '안녕' — 인사에도 인사로 답하지 말고 JSON 만 출력). "
             "criteria 는 write 과업일 때만, 명령으로 확인 가능한 형태로. "
             "task_class = trivial(파일 1개 소형)|standard|deep(멀티파일·리팩터·리스크). "
             '{"write_expected":bool,"ambiguous":bool,"destructive":bool,'
@@ -320,15 +328,21 @@ class Heimdall:
             _log_classify(self.root, {"event": "classify", "source": "llm", **_pred_fields(d)})
             return d
         except Exception:
+            # 파싱 실패의 라우팅은 '요청의 write 동사 유무'로 결정론 판정한다. write 신호가 없으면
+            # DIRECT fail-open — DIRECT 세션은 read-only 이고 bash 우회 write 는 Canon 10 소급
+            # 검증(워킹트리 fingerprint)이 Trinity 로 편입하므로 게이트는 우회되지 않는다.
+            # 구 기본값(무조건 write+deep)은 분류기가 인사에 JSON 대신 인사로 응답하는 순간
+            # "안녕" 하나가 deep 턴 예산을 전부 태우는 최악 비용 경로였다 (26-07-21 실측).
+            wr = has_write_verbs(request)
             d = {
-                "write_expected": True,
-                "ambiguous": True,
+                "write_expected": wr,
+                "ambiguous": wr,  # write 인데 범위 미상 — Verifier 승격 신호는 유지
                 "destructive": bool(_DESTRUCTIVE_PAT.search(request.lower())),
                 "external_research": False,
                 "shared": False,
-                "parallel_requested": bool(_PARALLEL_WORK_PAT.search(request.lower())),
+                "parallel_requested": wr and bool(_PARALLEL_WORK_PAT.search(request.lower())),
                 "criteria": [],
-                "task_class": "deep",  # 파싱 실패 = 미상 — 최대 예산으로 안전하게
+                "task_class": "deep" if wr else "standard",  # write 미상은 종전대로 최대 예산
             }
             _log_classify(self.root, {"event": "classify", "source": "fallback", **_pred_fields(d)})
             return d

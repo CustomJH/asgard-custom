@@ -59,6 +59,28 @@ _PARALLEL_WORK_PAT = re.compile(
     r"todo\s*(?:list)?|작업\s*목록|티켓|task\s*graph",
     re.IGNORECASE,
 )
+# 인사·감사·수긍·작별 — 요청 전체가 이 토큰들로만 이루어질 때만 매치 (한 단어라도 벗어나면 불발).
+# "안녕" 이 LLM 분류로 넘어가면 분류기가 JSON 대신 인사로 응답 → 파싱 실패 폴백이 Trinity 를
+# 태우는 최악 경로가 된다 (26-07-21 실측: 인사 하나가 deep 예산 소진) — 결정론으로 선차단.
+_SMALLTALK_TOKEN = (
+    r"(?:안녕(?:하세요|하십니까)?|하이|헬로+|ㅎㅇ|방가|반갑(?:다|네요|습니다)|반가워요?"
+    r"|고맙(?:다|네|습니다)|고마워요?|감사(?:요|해요?|합니다|드려요|드립니다)?|땡큐"
+    r"|수고(?:요|해|했어요?|하세요|하셨습니다|많으셨습니다)?|잘\s*가요?|잘\s*자요?|굿모닝|굿나잇|굿밤"
+    r"|응|네|넵|넹|예|옙|ㅇㅇ|좋아요?|좋네요?|굿|오케이?|오키|ㅇㅋ|ㅋ+|ㅎ+"
+    r"|h(?:i|ello|ey)|yo|howdy|thanks?|thank\s+you|thx|ty|bye|goodbye|see\s+ya"
+    r"|good\s+(?:morning|afternoon|evening|night)|ok(?:ay)?|cool|nice|great"
+    r"|how\s+are\s+you|what'?s\s+up)"
+)
+_SMALLTALK_PAT = re.compile(
+    rf"^{_SMALLTALK_TOKEN}(?:[\s,.!?~^…]*{_SMALLTALK_TOKEN})*[\s,.!?~^…]*$",
+    re.IGNORECASE,
+)
+
+
+def has_write_verbs(request: str) -> bool:
+    """부정구("수정하지 마") 제거 후 write 동사 존재 — LLM 분류 실패 시 폴백 라우팅의 결정론 축."""
+    scan = _NEGATED_WRITE_PAT.sub("", " ".join(request.split()).lower())
+    return any(v in scan for v in _WRITE_VERBS)
 
 
 def classify_heuristic(request: str) -> dict | None:
@@ -79,6 +101,8 @@ def classify_heuristic(request: str) -> dict | None:
     }
     if _DESTRUCTIVE_PAT.search(low):
         return {**base, "write_expected": True, "destructive": True, "task_class": "deep"}
+    if _SMALLTALK_PAT.match(low):
+        return base  # 인사·잡담 전체 매치 — DIRECT 무세금 (단순한 것은 단순하게)
     # "파일을 수정하지 마"의 부정된 동사를 write 의도로 세면 read-only 질의가 Trinity로
     # 오분류된다. 부정구만 제거한 사본에서 write 동사를 찾되, 같은 문장에 실제 write 동사가
     # 따로 있으면 그대로 잡는다 (예: "기존 파일은 수정하지 말고 새 파일 만들어").

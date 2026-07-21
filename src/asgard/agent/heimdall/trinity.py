@@ -15,6 +15,8 @@ import time
 import uuid
 
 from ... import theme, ui
+from ...hooks.quest_log import EMPTY as _EMPTY_DIFF
+from ...hooks.quest_log import inspection_evidence as _inspection_evidence
 from ...hooks.quest_log import trivial_evidence as _trivial_evidence
 from ..session import gate, ql
 from .classify import _gate_repair, _gate_sig
@@ -500,7 +502,11 @@ class TrinityRun:
             hist = "\n".join(f"- {h}" for h in self.fail_history[-5:]) or "- (기록 없음)"
             prompt = (
                 f"과업: {self.request}\n\n(재계획: {self.why})\n\n실패 이력:\n{hist}\n\n"
-                "같은 접근의 문구만 바꾼 재시도는 같은 실패다 — 접근 자체를 재설계하라 (Canon 9)."
+                "같은 접근의 문구만 바꾼 재시도는 같은 실패다 — 접근 자체를 재설계하라 (Canon 9).\n"
+                "criteria 는 이 퀘스트가 통제하는 변경 범위 안에서만 검증 가능해야 한다 — 전역 워킹트리가 "
+                "깨끗할 것(`git status` 빈 출력 등)처럼 퀘스트 밖 상태(타 세션 잔여물 포함)에 걸린 기준과 "
+                "검증을 위한 검증용 무의미 명령은 금지. 무변경이 올바른 결과면 '이 퀘스트 귀속 변경 0 관측' "
+                "자체가 기준이다."
             )
         else:
             prompt = f"과업: {self.request}"
@@ -609,6 +615,15 @@ class TrinityRun:
             )
         elif self.role == "WORKER_RETRY":
             retry_note = "(재시도 — 직전 FAIL 사유를 수정하라)"
+        if self.role == "WORKER_RETRY":
+            # 수리 범위 = 퀘스트 귀속 변경만. 워킹트리엔 타 세션의 미커밋 작업이 섞일 수 있다 —
+            # FAIL 사유가 "범위 밖 변경"이어도 남의 작업을 checkout/revert 로 지우면 안 된다
+            # (26-07-21 실측: 병렬 세션 독 작업이 재시도 턴에 소실).
+            quest_files = ", ".join(map(str, (state.get("changed_files") or [])[:20])) or "(없음)"
+            retry_note += (
+                f"\n이 퀘스트 귀속 변경 파일(하니스 관측): {quest_files} — 이 밖의 워킹트리 변경은"
+                " 타 세션 소유 미커밋 작업일 수 있다: git checkout/restore/revert 로 되돌리지 마라."
+            )
         plan_part = self.plan_ctx[:4000] + (
             f"\n…(계획 절단 — 원문 {len(self.plan_ctx)}자)" if len(self.plan_ctx) > 4000 else ""
         )  # silent truncation 금지
@@ -693,6 +708,12 @@ class TrinityRun:
             f"required level: {self.level}\n"
             f"하니스 관측 변경 파일: {changed} (diff_lines={st.get('diff_lines', '?')}) — "
             f"`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
+            "판정 범위는 위 하니스 관측 파일에 한정한다 — 워킹트리의 그 밖의 diff 는 타 세션 소유"
+            " 미커밋 작업일 수 있다: FAIL 사유가 아니라 참고 기록이다.\n"
+            "이 세션은 read-only Bash 가드가 있다 — 허용: 관측·git 읽기·검증 러너(pytest/ruff/ty,"
+            " `uv run` 경유 포함)·`python -m pytest|compileall|py_compile`·`python -c '<쓰기 없는"
+            " 스모크>'`. 파일 작성·히어독·리다이렉션·$VAR 은 차단된다 — 차단당한 명령의 변형"
+            " 재시도로 턴을 태우지 말고 허용 레인으로 즉시 갈아타라. uv 프로젝트면 `uv run pytest -x -q` 우선.\n"
             "Bash 명령은 shell 연산자(; && || 리다이렉션)로 합치지 말고 각각 별도 호출하라.\n"
             f"Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출.\n"
             f"FAIL 이 접근 자체의 결함이면 structural=true 로 제출하라 (재계획 트리거).",
@@ -700,7 +721,11 @@ class TrinityRun:
         )
         # 마지막 verdict 호출이 최종 판정 (다중 호출 시 정정 인정)
         v = next((c["input"] for c in reversed(r.tool_calls) if c["name"] == "verdict"), None)
+        submitted = (v or {}).get("verdict")  # Verifier 가 실제 제출한 판정 — 하네스 무효화 표시용
         observed = [c for c in r.commands if isinstance(c, dict)]  # 하니스 관측 — 위조 불가
+        # 하네스 관측 무변경 퀘스트 — '변경 없음' 주장에는 트리 관측(git status/diff)이 곧 검증.
+        # state 로드 실패(st={}) 는 미상이므로 종전 엄격 경로 유지 (fail-closed).
+        no_change = st.get("diff_hash") == _EMPTY_DIFF
         final_exit_by_command: dict[str, object] = {}
         for command in observed:
             cmd = str(command.get("cmd") or "").strip()
@@ -723,11 +748,16 @@ class TrinityRun:
                 "failure_sig": "invalid-verdict-submitted",
                 "why": "verdict 값은 PASS|FAIL|ESCALATE 중 하나여야 함",
             }
-        elif v.get("verdict") == "PASS" and not any(
-            c.get("exit_code") == 0 and not _trivial_evidence(c.get("cmd", "")) for c in observed
+        elif (
+            v.get("verdict") == "PASS"
+            and not any(c.get("exit_code") == 0 and not _trivial_evidence(c.get("cmd", "")) for c in observed)
+            and not (
+                no_change and any(c.get("exit_code") == 0 and _inspection_evidence(c.get("cmd", "")) for c in observed)
+            )
         ):
             # 증거 없는 PASS 무효 — verifier 가 명령을 실제 실행하지 않았거나 true/echo 류
-            # 무조건-성공 명령뿐이다 (Goodhart)
+            # 무조건-성공 명령뿐이다 (Goodhart). 단 무변경 퀘스트의 관측 명령은 증거로 인정 —
+            # 아니면 no-op 이 영구 FAIL 교착 (26-07-21 "안녕" 실측: PASS 5연속 무효화 → 예산 소진)
             v = {
                 "verdict": "FAIL",
                 "criteria": v.get("criteria") or self.cls["criteria"],
@@ -741,6 +771,10 @@ class TrinityRun:
                 "failure_sig": "unresolved-verification-failure",
                 "why": "PASS 전에 해소되지 않은 검증 실패: " + "; ".join(unresolved[:3]),
             }
+        if submitted == "PASS" and v.get("verdict") == "FAIL":
+            # 하네스가 Verifier 판정을 뒤집었다 — 표시 없이는 사용자가 "PASS 스트림 직후
+            # FAIL(경미) 재시도"라는 모순된 화면을 본다 (판정층 정직성).
+            hd.on_text(f"  {ui.dim('│ ⚠ 하네스가 Verifier PASS 무효화 — ' + str(v.get('why') or '')[:140])}\n")
         if v.get("failure_sig"):
             # 자유 기술 sig 의 표기 흔들림을 슬러그로 정규화 — 3-strike 동종 판정 키 안정화
             from ...failures import normalize_sig
