@@ -25,7 +25,6 @@ _FAIL = theme.ansi(theme.DANGER)
 _FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
 _STEP = 0
 _STEPS = 0
-STREAM_MAX = 100  # 스트림·입력 프레임 폭 상한 — 초광폭 터미널서 보더·활동 라인이 끝까지 늘어지지 않게
 
 
 def term_cols() -> int:
@@ -36,8 +35,18 @@ def term_cols() -> int:
 
 
 def stream_width() -> int:
-    """활동 스트림·입력 박스 공용 폭 — min(터미널, STREAM_MAX). 좌정렬·차분한 우측 여백."""
-    return min(term_cols(), STREAM_MAX)
+    """활동 스트림·입력 박스 공용 폭 — 터미널 실제 가로 칸 수 그대로 (반응형, 상한 없음)."""
+    return term_cols()
+
+
+def oneline(s: str, limit: int | None = None) -> str:
+    """멀티라인 텍스트 → 단일 논리 행 (hermes compactPreview 이식) — 개행 포함 모든 공백 연쇄를
+    한 칸으로 접은 뒤 선택적 절단. 활동 라벨·독 스피너는 반드시 이 경로를 거친다: 개행이 살아
+    나가면 하단 독의 고정 커서 산술이 깨져 박스 보더가 오염된다 (26-07-21 실측)."""
+    one = " ".join(str(s).split())
+    if limit is not None and len(one) > limit:
+        return one[: max(1, limit - 1)] + "…"
+    return one
 
 
 def set_quiet(q: bool) -> None:

@@ -52,6 +52,24 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("asgard skills resolve --agent mimir task"))
         self.assertFalse(is_readonly_bash_safe("asgard skills show ../escape"))
 
+    def test_readonly_python_smoke_lane(self):
+        # Verifier 계약("대표 함수 호출 스모크")의 실행 통로 — 쓰기 없는 python -c 는 허용,
+        # 쓰기·프로세스·네트워크 API 는 fail-closed (26-07-21: 차단 변형 재시도로 턴 소진 봉합)
+        self.assertTrue(is_readonly_bash_safe("python3 -c \"import ast; ast.parse(open('x.py').read())\""))
+        self.assertTrue(is_readonly_bash_safe('python3 -c "from asgard import ui; print(ui.stream_width())"'))
+        self.assertTrue(is_readonly_bash_safe("python3 --version"))
+        self.assertTrue(is_readonly_bash_safe("python3 -m py_compile src/mod.py"))
+        self.assertTrue(is_readonly_bash_safe('uv run python -c "print(1)"'))
+        self.assertTrue(
+            is_readonly_bash_safe('COLUMNS=130 python3 -c "import shutil; print(shutil.get_terminal_size())"')
+        )
+        self.assertTrue(is_readonly_bash_safe('env COLUMNS=500 LINES=40 python3 -c "print(1)"'))
+        self.assertFalse(is_readonly_bash_safe("python3 -c \"open('x','w').write('hi')\""))
+        self.assertFalse(is_readonly_bash_safe("python3 -c \"import shutil; shutil.rmtree('src')\""))
+        self.assertFalse(is_readonly_bash_safe("python3 -c \"import subprocess; subprocess.run(['rm','x'])\""))
+        self.assertFalse(is_readonly_bash_safe("python3 -c \"import os; os.remove('x')\""))
+        self.assertFalse(is_readonly_bash_safe("python3 -c \"import pathlib; pathlib.Path('x').write_text('y')\""))
+
     def test_readonly_git_rejects_executable_diff_helpers(self):
         self.assertTrue(is_readonly_bash_safe("git diff -- README.md"))
         self.assertFalse(is_readonly_bash_safe("git diff --ext-diff"))

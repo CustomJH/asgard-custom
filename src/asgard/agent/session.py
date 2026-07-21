@@ -211,9 +211,8 @@ class AgentSession:
 
         dur = f" · {secs:.0f}s" if secs is not None and secs >= 1 else ""
         budget = max(12, ui.stream_width() - 6 - len(dur))  # col6 시작 + dur 여유
-        text = detail.strip()
-        if len(text) > budget:
-            text = text[: budget - 1] + "…"
+        # 히어독·python -c 멀티라인 명령이 행마다 스트림 줄로 흩어지지 않게 단일 행으로 접는다
+        text = ui.oneline(detail, budget)
         gutter = ui.paint(theme.ansi(theme.HAIRLINE), "│")
         self.on_text(f"  {gutter} {ui.dim(sym + ' ' + text + dur)}\n")
 
@@ -265,7 +264,9 @@ class AgentSession:
             sym = "✎"
         else:
             detail, sym = call.name, "⚙︎"  # ⚙ + VS15 = 텍스트 프리젠테이션 강제 (폭 안정)
-        self.on_status(f"{sym} {detail[:60]}")
+        from .. import ui
+
+        self.on_status(ui.oneline(f"{sym} {detail}", 60))
         t0 = time.monotonic()
         out = execute_tool(self.registry, call.name, call.input, ctx)
         self.on_status(None)

@@ -71,7 +71,10 @@ NATIVE_NOTE = """
 ## 네이티브 세션 규칙 (하니스 자동화)
 이 세션은 Asgard 네이티브 루프다. 퀘스트 로그 기록·전이 함수·verifier-gate 는 **하니스가 자동
 수행**한다 — quest-log 명령을 직접 실행하지 마라 (이중 기록). Verifier 판정은 verdict 툴로만
-제출한다. 완료 선언은 여전히 금지 — 판정은 Verifier + 게이트 몫이다 (Canon 10)."""
+제출한다. 완료 선언은 여전히 금지 — 판정은 Verifier + 게이트 몫이다 (Canon 10).
+파이썬 실행은 프로젝트 인터프리터로 한다 — uv 프로젝트(`uv.lock` 존재)면 `uv run pytest`·
+`uv run python -m …`·`uv run python -c '…'`, 아니면 `python -m …`. 시스템 `python3` 직접
+호출은 프로젝트 의존성을 못 보므로 금지다 (설치 시 uv 가 환경을 이미 세팅해 두었다)."""
 
 LAGOM_VERIFIER_NOTE = """
 

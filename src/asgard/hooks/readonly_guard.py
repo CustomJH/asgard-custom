@@ -25,6 +25,28 @@ for _stream in (sys.stdout, sys.stderr):
 
 _READONLY_AGENTS = {"asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr", "asgard-mimir"}
 _PYTHON = {"python", "python3", "pypy", "pypy3"}
+
+# 차단이 가르치지 않으면 모델은 같은 명령의 변형으로 턴을 태운다 (26-07-21 실측: Verifier 가
+# python3 -c 차단 후 히어독·TMPDIR·py_compile 변형 10여 회 순차 시도). 거부 사유에 항상 동봉.
+READONLY_BASH_HINT = (
+    "read-only 역할 Bash 허용: 관측(ls/cat/grep/rg/find/stat/tree/wc), git 읽기(status/diff/log/show/grep/ls-files), "
+    "검증 러너(pytest/mypy/pyright/ty/ruff check/tsc --noEmit — uv|poetry|pipenv run 경유 포함), "
+    "python -m pytest|unittest|compileall|py_compile, python -c '<쓰기 없는 한 줄 스모크>', tests/ 스크립트. "
+    "차단: 파일 쓰기·리다이렉션(>)·히어독·$()/백틱/$VAR·프로젝트 밖 경로. "
+    "스크래치 파일 대신 python -c 를 쓰고, uv 프로젝트(uv.lock)면 `uv run pytest -x -q` 를 사용하라. "
+    "차단된 명령은 실행된 적 없다 — 변형 재시도 대신 허용 레인으로 즉시 갈아타라."
+)
+
+# python -c 스니펫의 쓰기 표면 휴리스틱 — 이미 허용된 pytest 도 임의 프로젝트 코드를 실행하므로
+# 이 분기가 그보다 넓지 않다. 적대 봉쇄가 아니라 실수 방지: 명시적 쓰기·프로세스·네트워크 API 가
+# 보이면 fail-closed. 없으면 Verifier 계약(대표 함수 호출 스모크)의 유일한 실행 통로로 허용.
+_PY_SNIPPET_MUTATION = re.compile(
+    r"subprocess|os\.(?:system|popen|remove|unlink|rename|replace|rmdir|mkdir|makedirs|chmod|chown|truncate)"
+    r"|shutil\.(?:rmtree|move|copy\w*|chown|make_archive|unpack_archive|disk_usage)"
+    r"|write_text|write_bytes|\.write\s*\(|pickle\.dump|\bexec\s*\(|\beval\s*\("
+    r"|open\s*\([^)]*['\"](?:[wax]b?\+?|[rb]+\+b?)['\"]"
+    r"|\bsocket\b|urllib|requests|httpx"
+)
 _INSPECT = {
     "cat",
     "diff",
@@ -125,6 +147,14 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
         return False
     if not tokens:
         return False
+    # 선행 환경 대입(VAR=x cmd / env VAR=x cmd)은 프로세스-로컬 — 판정은 본체 명령으로.
+    # 터미널 폭 스모크(COLUMNS=130 python -c …) 같은 정당한 검증이 env 때문에 막히지 않게 한다.
+    if os.path.basename(tokens[0]) == "env":
+        tokens = tokens[1:]
+    while tokens and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
+        tokens = tokens[1:]
+    if not tokens:
+        return False
     program = os.path.basename(tokens[0])
     if any(not _path_token_within_root(root, token) for token in tokens[1:]):
         return False
@@ -184,8 +214,18 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
             not t.startswith("-") and t in {"test", "check", "lint", "verify"} for t in tokens[1:]
         )
     if re.fullmatch(r"python(?:\d+(?:\.\d+)*)?", program):
-        if len(tokens) >= 3 and tokens[1:3] in (["-m", "pytest"], ["-m", "unittest"], ["-m", "compileall"]):
+        if tokens[1:2] in (["--version"], ["-V"], ["-VV"]):
             return True
+        if len(tokens) >= 3 and tokens[1:3] in (
+            ["-m", "pytest"],
+            ["-m", "unittest"],
+            ["-m", "compileall"],
+            ["-m", "py_compile"],
+        ):
+            return True
+        if len(tokens) >= 3 and tokens[1] == "-c":
+            # Verifier 계약의 한 줄 스모크 레인 — 파일 작성 없이 대표 함수를 직접 호출한다.
+            return not _PY_SNIPPET_MUTATION.search(" ".join(tokens[2:]))
         if len(tokens) >= 2:
             script = tokens[1].replace("\\", "/")
             return script.endswith(".py") and (
@@ -323,7 +363,7 @@ def main() -> None:
     )
     if denied:
         print(
-            f"Asgard read-only role policy blocked mutating or unclassified Bash: {command[:160]}",
+            f"Asgard read-only role policy blocked mutating or unclassified Bash: {command[:160]}\n{READONLY_BASH_HINT}",
             file=sys.stderr,
         )
         raise SystemExit(2)

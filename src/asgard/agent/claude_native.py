@@ -208,7 +208,7 @@ async def _run_async(sess, user_content: str, result) -> None:
     )
     from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
 
-    from ..hooks.readonly_guard import is_readonly_bash_safe
+    from ..hooks.readonly_guard import READONLY_BASH_HINT, is_readonly_bash_safe
     from ..i18n import t as _t
     from . import tools as native_tools
     from .tool_kernel import ROLE_CAPABILITIES
@@ -256,11 +256,18 @@ async def _run_async(sess, user_content: str, result) -> None:
         if reason or role_denied:
             if tool_use_id:
                 denied_tool_ids.add(tool_use_id)
+            if not reason:
+                # 사유 없는 차단은 모델이 같은 명령의 변형으로 턴을 태우게 한다 — 허용 레인을 가르친다
+                reason = "Asgard read-only 역할 정책 차단 — " + (
+                    READONLY_BASH_HINT
+                    if tool_name == "Bash"
+                    else "파일 수정 도구는 이 역할에서 금지다. 관측·검증 명령과 판정 제출만 하라."
+                )
             return {
                 "hookSpecificOutput": {
                     "hookEventName": "PreToolUse",
                     "permissionDecision": "deny",
-                    "permissionDecisionReason": reason or "Asgard read-only role policy",
+                    "permissionDecisionReason": reason,
                 }
             }
         return {}
@@ -420,11 +427,12 @@ def _guard_env(sess=None) -> dict:
 
 def _observe_use(sess, result, b, pending) -> None:
     """ToolUseBlock 관찰 → 커맨드/쓰기 추적 준비. 실행은 CLI 안 — 여기선 기록만."""
+    from .. import ui as _ui
     from ..i18n import t as _t
 
     if b.name == "Bash":
         cmd = str(b.input.get("command", ""))
-        sess.on_status("$ " + cmd[:60])
+        sess.on_status(_ui.oneline("$ " + cmd, 60))
         command = {"cmd": cmd[:200], "exit_code": None}
         if len(cmd) > 200:
             command["command_hash"] = hashlib.sha256(cmd.encode()).hexdigest()
@@ -432,7 +440,7 @@ def _observe_use(sess, result, b, pending) -> None:
         pending[b.id] = ("$", cmd, time.monotonic(), len(result.commands) - 1)
     elif b.name in _WRITE_TOOLS:
         path = str(b.input.get("file_path", ""))
-        sess.on_status("✎ " + path[:60])
+        sess.on_status(_ui.oneline("✎ " + path, 60))
         pending[b.id] = ("✎", f"{b.name.lower()} {path}", time.monotonic(), -1)
     elif b.name.startswith("mcp__asgard__"):
         sess.on_status("⚙ " + b.name.removeprefix("mcp__asgard__"))
