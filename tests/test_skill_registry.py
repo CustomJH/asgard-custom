@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -114,6 +115,18 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("2 skills", wide.stdout)
 
     def test_bundled_uiux_resource_is_freyja_assigned_and_runnable(self):
+        expected = {
+            "banner-design",
+            "brand",
+            "design",
+            "design-system",
+            "slides",
+            "ui-styling",
+            "ui-ux-pro-max",
+        }
+        plugin = skill_registry.bundled_plugins()["ui-ux-pro-max"]
+        self.assertEqual(set(plugin["skills"]), expected)
+        self.assertEqual(plugin["revision"], "5c0946f66120079258e1efc8e436d78ec793877c")
         catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
         self.assertEqual(catalog["ui-ux-pro-max"]["plugin"], "ui-ux-pro-max")
         self.assertNotIn(
@@ -128,9 +141,36 @@ class RegistryTest(unittest.TestCase):
             "ui-ux-pro-max",
             {row["name"] for row in skill_registry.available_skills(self.root, "freyja")},
         )
+        visible = {row["name"] for row in skill_registry.available_skills(self.root, "freyja")}
+        self.assertEqual(visible & expected, expected - {"design"})
+        self.assertIn("design", {row["name"] for row in skill_registry.invocable_skills(self.root)})
+        self.assertFalse(expected & {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
         self.assertNotIn(
             "ui-ux-pro-max",
             {name for name, _ in skill_registry.resolve_skills(self.root, "반응형 대시보드 UI", "worker")},
+        )
+        for task, specialist in (
+            ("배너 디자인", "banner-design"),
+            ("디자인 토큰", "design-system"),
+            ("Tailwind 스타일링", "ui-styling"),
+            ("HTML 슬라이드", "slides"),
+        ):
+            self.assertIn(
+                specialist,
+                {name for name, _ in skill_registry.resolve_skills(self.root, task, "freyja")},
+                task,
+            )
+        self.assertIn(
+            "brand-context",
+            skill_registry.show_skill_resource(self.root, "brand", "scripts/inject-brand-context.cjs"),
+        )
+        self.assertIn(
+            "Token Architecture",
+            skill_registry.show_skill_resource(self.root, "design-system", "references/token-architecture.md"),
+        )
+        self.assertIn(
+            "name: design",
+            skill_registry.show_skill_resource(self.root, "design", "references/upstream-skill.md"),
         )
         with mock.patch("asgard.skill_registry.subprocess.run") as run:
             run.return_value.returncode = 0
@@ -139,6 +179,121 @@ class RegistryTest(unittest.TestCase):
         self.assertTrue(command[1].endswith("ui-ux-pro-max/scripts/search.py"))
         self.assertEqual(command[-2:], ["dashboard", "--json"])
         self.assertEqual(run.call_args.kwargs["cwd"], self.root)
+
+    def test_instruction_compiler_bundles_all_upstream_knowledge_rooms_lazily(self):
+        expected_skills = {
+            "ai-alignment-reasoning": {
+                "bias-detection-design",
+                "consent-and-agency",
+                "escalation-design",
+                "guardrail-design",
+                "harm-anticipation",
+                "transparency-patterns",
+                "trust-calibration",
+                "value-specification",
+            },
+            "design-agent-orchestration": {
+                "agent-role-design",
+                "failure-recovery",
+                "handoff-protocols",
+                "human-in-the-loop",
+                "observability-design",
+                "state-management",
+                "task-decomposition",
+            },
+            "evaluation": {
+                "comparative-evaluation",
+                "failure-taxonomy",
+                "heuristic-evaluation-ai",
+                "longitudinal-measurement",
+                "output-quality-rubrics",
+                "task-success-metrics",
+                "user-satisfaction-signals",
+            },
+            "model-interaction-design": {
+                "context-window-design",
+                "conversation-patterns",
+                "feedback-loops",
+                "frustration-detection",
+                "generative-ui",
+                "mixed-initiative-flow",
+                "multimodal-orchestration",
+                "progressive-disclosure",
+            },
+            "prompt-architecture": {
+                "chain-of-thought-design",
+                "constraint-specification",
+                "context-engineering",
+                "few-shot-patterns",
+                "prompt-versioning",
+                "system-prompt-structure",
+                "template-design",
+            },
+            "system-behavior-shaping": {
+                "behavioral-consistency",
+                "cultural-adaptation",
+                "domain-voice",
+                "emotional-design",
+                "error-personality",
+                "persona-architecture",
+                "tone-calibration",
+            },
+        }
+        expected_workflows = {
+            "ai-alignment-reasoning": {"design-guardrails", "red-team", "write-policy"},
+            "design-agent-orchestration": {"design-oversight", "design-workflow", "map-agents"},
+            "evaluation": {"create-rubric", "design-benchmark", "run-evaluation"},
+            "model-interaction-design": {"audit-interaction", "design-conversation", "map-initiative"},
+            "prompt-architecture": {"audit-prompt", "build-chain", "design-prompt"},
+            "system-behavior-shaping": {"calibrate-tone", "design-persona", "stress-test"},
+        }
+        plugin = skill_registry.bundled_plugins()["asgard-instruction-compiler"]
+        room_root = Path(plugin["root"], "skills", "asgard-instruction-compiler", "references", "upstream")
+        actual_skills = {
+            domain.name: {path.parent.name for path in domain.glob("*/SKILL.md")}
+            for domain in (room_root / "skills").iterdir()
+            if domain.is_dir()
+        }
+        actual_workflows = {
+            domain.name: {path.stem for path in domain.glob("*.md")}
+            for domain in (room_root / "workflows").iterdir()
+            if domain.is_dir()
+        }
+        self.assertEqual(actual_skills, expected_skills)
+        self.assertEqual(actual_workflows, expected_workflows)
+        self.assertEqual(sum(map(len, actual_skills.values())), 44)
+        self.assertEqual(sum(map(len, actual_workflows.values())), 18)
+        self.assertIn(
+            "System Prompt Structure",
+            skill_registry.show_skill_resource(
+                self.root,
+                "asgard-instruction-compiler",
+                "references/upstream/skills/prompt-architecture/system-prompt-structure/SKILL.md",
+            ),
+        )
+        self.assertIn(
+            "Create a structured system prompt",
+            skill_registry.show_skill_resource(
+                self.root,
+                "asgard-instruction-compiler",
+                "references/upstream/workflows/prompt-architecture/design-prompt.md",
+            ),
+        )
+        worker_names = {row["name"] for row in skill_registry.available_skills(self.root, "worker")}
+        self.assertIn("asgard-instruction-compiler", worker_names)
+        self.assertFalse(set().union(*expected_skills.values()) & worker_names)
+
+    def test_bundled_skill_bodies_do_not_reference_missing_local_resources(self):
+        local_path = re.compile(r"(?<![\w./-])((?:references|scripts|assets|examples)/[A-Za-z0-9_./-]+\.[A-Za-z0-9]+)")
+        missing = []
+        for plugin in skill_registry.bundled_plugins().values():
+            for skill_name in plugin["skills"]:
+                skill_root = Path(plugin["root"], "skills", skill_name)
+                body = (skill_root / "SKILL.md").read_text(encoding="utf-8")
+                for relative in local_path.findall(body):
+                    if not (skill_root / relative).is_file():
+                        missing.append(f"{skill_name}/{relative}")
+        self.assertEqual(missing, [])
 
     def test_freyja_restraint_is_native_and_freyja_only(self):
         name = "asgard-freyja-restraint"

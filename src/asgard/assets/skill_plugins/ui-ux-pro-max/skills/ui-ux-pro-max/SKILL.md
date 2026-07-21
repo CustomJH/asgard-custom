@@ -31,5 +31,5 @@ task's primary user action. Use the browser or rendered artifact when available;
 alone is not a visual verdict.
 
 This is the Asgard adapter for upstream ui-ux-pro-max v2.11.0 at revision
-`f8ac5e1266dba8354ea96e19994d9f4345e7ec31`. The complete upstream instructions are retained in
+`5c0946f66120079258e1efc8e436d78ec793877c`. The complete upstream instructions are retained in
 `references/upstream-skill.md`; this shorter contract keeps Freyja's prompt budget bounded.

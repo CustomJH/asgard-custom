@@ -2,14 +2,50 @@
   "schema": 1,
   "name": "ui-ux-pro-max",
   "version": "2.11.0",
-  "description": "Searchable UI/UX design knowledge bundled for Freyja",
+  "description": "Complete 7-skill UI/UX Pro Max design bundle for Freyja",
   "skills": [
+    "banner-design",
+    "brand",
+    "design",
+    "design-system",
+    "slides",
+    "ui-styling",
     "ui-ux-pro-max"
   ],
   "entrypoints": {
     "ui-ux-pro-max": "scripts/search.py"
   },
+  "routing": {
+    "banner-design": {
+      "triggers": ["banner design", "social banner", "ad banner", "website hero banner", "배너 디자인", "소셜 배너", "광고 배너"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "brand": {
+      "triggers": ["brand identity", "brand voice", "brand guidelines", "brand audit", "brand system", "logo system", "브랜드 아이덴티티", "브랜드 보이스", "브랜드 가이드", "브랜드 시스템", "로고 시스템"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "design": {
+      "triggers": ["/design", "design skill", "통합 디자인 스킬"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "design-system": {
+      "triggers": ["design system", "design tokens", "component specification", "디자인 시스템", "디자인 토큰", "컴포넌트 명세"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "slides": {
+      "triggers": ["html slides", "presentation slides", "pitch deck", "html 슬라이드", "프레젠테이션 슬라이드", "피치덱"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "ui-styling": {
+      "triggers": ["ui styling", "shadcn styling", "tailwind styling", "ui 스타일링", "shadcn 스타일링", "tailwind 스타일링"],
+      "agents": ["freyja", "freyja-lead"]
+    },
+    "ui-ux-pro-max": {
+      "triggers": ["ui", "ux", "interface", "landing page", "dashboard", "accessibility", "typography", "responsive", "디자인", "화면", "랜딩", "랜딩 페이지", "랜딩페이지", "대시보드", "접근성", "타이포", "반응형"],
+      "agents": ["freyja", "freyja-lead"]
+    }
+  },
   "source": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
-  "revision": "f8ac5e1266dba8354ea96e19994d9f4345e7ec31",
+  "revision": "5c0946f66120079258e1efc8e436d78ec793877c",
   "license": "MIT"
 }
