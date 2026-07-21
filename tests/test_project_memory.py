@@ -1111,9 +1111,34 @@ class TestCooperativeRecall(ProjectMemoryBase):
             "binding_id": self.BINDING_ID,
         }
 
+    def record_hit(self, content: str, record_id="decision.x", **overrides) -> dict:
+        fields: dict[str, Any] = {
+            "kind": "decision",
+            "source": "docs/adr.md",
+            "source_revision": "HEAD=verified",
+            "importance": "high",
+            "confidence": "verified",
+            "status": "active",
+        }
+        fields.update(overrides)
+        record = project_memory.ProjectRecord(
+            record_id=record_id,
+            title="프로젝트 회수 회귀 기록",
+            content=content if len(content.strip()) >= 20 else content + " — 프로젝트 회수 회귀 테스트 본문이다.",
+            **fields,
+        )
+        project_memory.save_canonical_record(self.root, record)
+        item = project_memory.record_item(
+            record,
+            "asgard",
+            project_uid=self.PROJECT_UID,
+            binding_id=self.BINDING_ID,
+        )
+        return {"text": item["content"], "metadata": item["metadata"]}
+
     def test_personal_and_project_results_are_both_injected_with_scope_labels(self):
         memory.add("사용자는 간결한 한국어 답변을 선호한다.", title="answer-style", kind="user")
-        hits = [{"text": "프로젝트 메모리 엔진은 Hindsight다.", "metadata": self.record_metadata()}]
+        hits = [self.record_hit("프로젝트 메모리 엔진은 Hindsight다.")]
         with (
             mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
             mock.patch("asgard.memory_context.server_recall", return_value=hits),
@@ -1125,7 +1150,7 @@ class TestCooperativeRecall(ProjectMemoryBase):
         self.assertIn("Hindsight", note)
 
     def test_project_recall_keeps_record_provenance(self):
-        hits = [{"text": "검증된 결정", "metadata": self.record_metadata()}]
+        hits = [self.record_hit("검증된 결정")]
         with (
             mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
             mock.patch("asgard.memory_context.server_recall", return_value=hits),
@@ -1153,7 +1178,7 @@ class TestCooperativeRecall(ProjectMemoryBase):
     def test_project_recall_budget_covers_final_injection_block(self):
         text = " ".join(f"fact{i}" for i in range(100))
         source = " ".join(f"source{i}" for i in range(120))
-        hits = [{"text": text, "metadata": self.record_metadata(source=source)}]
+        hits = [self.record_hit(text, source=source)]
         with (
             mock.patch(
                 "asgard.memory_context.find_config",
@@ -1202,10 +1227,7 @@ class TestCooperativeRecall(ProjectMemoryBase):
         artifact = retain.call_args.args[1][0]
         hits = [
             {"text": artifact["content"], "metadata": artifact["metadata"]},
-            {
-                "text": "structured project decision",
-                "metadata": self.record_metadata(),
-            },
+            self.record_hit("structured project decision"),
         ]
         with (
             mock.patch("asgard.memory_context.find_config", return_value=(self.root, cfg)),
@@ -1216,18 +1238,12 @@ class TestCooperativeRecall(ProjectMemoryBase):
 
     def test_automatic_context_excludes_inactive_unverified_and_raw_turn_hits(self):
         hits: list[dict] = [
-            {
-                "text": "현재 검증된 프로젝트 정책",
-                "metadata": {
-                    "record_id": "policy.active",
-                    "kind": "policy",
-                    "status": "active",
-                    "confidence": "verified",
-                    "scope": "project",
-                    "source": "docs/policy.md",
-                    "source_revision": "HEAD=verified",
-                },
-            },
+            self.record_hit(
+                "현재 검증된 프로젝트 정책",
+                record_id="policy.active",
+                kind="policy",
+                source="docs/policy.md",
+            ),
             {
                 "text": "폐기된 이전 정책",
                 "metadata": {
@@ -1268,6 +1284,26 @@ class TestCooperativeRecall(ProjectMemoryBase):
         self.assertNotIn("폐기된 이전 정책", note)
         self.assertNotIn("미검증 주장", note)
         self.assertNotIn("임시 주장", note)
+
+    def test_backend_record_text_must_match_git_canonical(self):
+        hit = self.record_hit("정본에 승인된 프로젝트 배포 정책이다.")
+        hit["text"] = hit["text"].replace("승인된", "공격자가 바꾼")
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=[hit]),
+        ):
+            note = project_recall_note("배포 정책", start=self.root)
+        self.assertEqual(note, "")
+
+    def test_pre_hash_backend_record_still_matches_git_canonical(self):
+        hit = self.record_hit("기존 backend에 게시된 프로젝트 배포 정책이다.")
+        hit["metadata"].pop("content_hash")
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=[hit]),
+        ):
+            note = project_recall_note("배포 정책", start=self.root)
+        self.assertIn("기존 backend", note)
 
     def test_prompt_injection_in_source_metadata_drops_entire_hit(self):
         hits = [

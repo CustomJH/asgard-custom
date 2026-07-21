@@ -73,6 +73,7 @@ from .policy import (
     inject_allowed,
     inject_enabled,
     memory_dir,
+    scan_secrets,
     scan_threats,
 )
 from .recall import (
@@ -97,6 +98,7 @@ from .store import (
     _SCHEMA_MD,
     DB,
     DEFAULT_KIND,
+    DEFAULT_SKILL_PREFERENCE_SLUG,
     INDEX,
     KINDS,
     LOG,
@@ -117,6 +119,7 @@ from .store import (
     parse_page,
     poisoned,
     render_page,
+    seed_defaults,
     slugify,
     valid_slug,
 )
@@ -124,6 +127,7 @@ from .store import (
 __all__ = [
     "DB",
     "DEFAULT_KIND",
+    "DEFAULT_SKILL_PREFERENCE_SLUG",
     "DISTILL_MAX_PATHS",
     "DUP_JACCARD",
     "INDEX",
@@ -198,6 +202,8 @@ __all__ = [
     "remove",
     "render_page",
     "scan_threats",
+    "scan_secrets",
+    "seed_defaults",
     "slugify",
     "snapshot_note",
     "usage_stats",

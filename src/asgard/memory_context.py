@@ -103,12 +103,45 @@ def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None 
     return not memory.scan_threats(*metadata_texts)
 
 
+def _canonical_record_items(root: str, cfg: dict) -> dict[str, dict]:
+    """현재 Git 정본을 backend가 반환해야 할 정확한 item으로 재구성한다."""
+    try:
+        from .project_memory import load_canonical_records, record_item
+
+        project_id = str(cfg.get("project_id") or cfg.get("bank") or "")
+        project_uid = str(cfg.get("project_uid") or "")
+        binding_id = str(cfg.get("binding_id") or "")
+        return {
+            record.record_id: record_item(
+                record,
+                project_id,
+                project_uid=project_uid,
+                binding_id=binding_id,
+            )
+            for record, _path, _digest in load_canonical_records(root)
+        }
+    except Exception:
+        return {}
+
+
+def _matches_canonical_record(text: str, metadata: dict, canonical_items: dict[str, dict]) -> bool:
+    expected = canonical_items.get(str(metadata.get("record_id") or ""))
+    if not expected or text != expected["content"]:
+        return False
+    expected_metadata = expected["metadata"]
+    return all(
+        (key == "content_hash" and key not in metadata) or metadata.get(key) == value
+        for key, value in expected_metadata.items()
+    )
+
+
 def filter_project_hits(
     root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None
 ) -> tuple[list[dict], int]:
     """Ambient와 explicit MCP가 공유하는 최소 ownership/provenance 정책."""
     clean: list[dict] = []
     dropped = 0
+    canonical_items = _canonical_record_items(root, cfg)
     for hit in hits:
         text = str(hit.get("text") or "").strip()
         raw_metadata = hit.get("metadata")
@@ -118,6 +151,9 @@ def filter_project_hits(
             dropped += 1
             continue
         if not text or memory.scan_threats(text) or not _eligible_for_automatic_context(root, metadata, cfg):
+            dropped += 1
+            continue
+        if metadata.get("origin") != "deterministic" and not _matches_canonical_record(text, metadata, canonical_items):
             dropped += 1
             continue
         clean.append({**hit, "text": text, "metadata": metadata})

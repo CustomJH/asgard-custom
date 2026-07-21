@@ -6,7 +6,11 @@ import dataclasses
 import hashlib
 import re
 
-from ..memory import scan_threats
+from ..memory import policy as _memory_policy
+from ..memory import scan_secrets, scan_threats
+
+_PLACEHOLDERS = _memory_policy._SECRET_PLACEHOLDERS
+_SECRET_PATTERNS = _memory_policy._SECRET_PATTERNS
 
 KINDS = frozenset(
     {
@@ -39,21 +43,6 @@ STATUSES = frozenset({"active", "superseded", "historical"})
 MAX_ARTIFACT_BYTES = 100_000
 ONTOLOGY_SCHEMA = "asgard-project-artifact-v1"
 MAX_ONTOLOGY_VALUE = 512
-
-_PLACEHOLDERS = ("example", "placeholder", "changeme", "redacted", "dummy", "test-only", "your-", "your_", "****")
-_SECRET_PATTERNS = (
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
-    re.compile(
-        r"(?i)\b(?:password|passwd|api[_-]?key|access[_-]?token|secret[_-]?key)\b\s*[:=]\s*[\"']?([^\s\"']{8,})"
-    ),
-    re.compile(r"\b(?:sk|gh[oprsu]|github_pat)_[A-Za-z0-9_-]{16,}\b"),
-    # Codex 교차검증이 지적한 누락 유형. `$VAR`/`{var}`/`<token>` 참조는 값이 아니므로 제외.
-    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
-    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),  # JWT 3분절
-    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),  # AWS access key id
-    re.compile(r"(?i)--(?:token|password|passwd|api-key|secret)[= ](?![$\{<])\S{8,}"),  # CLI flag-value
-    re.compile(r"://[^/\s:@]{1,64}:(?![$\{])[^@\s/]{6,}@"),  # URL 내장 크레덴셜 scheme://user:pass@host
-)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -106,23 +95,6 @@ class CompletionProposalResult:
     record_id: str = ""
     preview: str = ""
     reason: str = ""
-
-
-def scan_secrets(*values: str) -> str | None:
-    """저장 전 명백한 credential 패턴을 차단한다. placeholder 예시는 허용한다."""
-    text = "\n".join(str(v) for v in values if v)
-    low = text.lower()
-    for pattern in _SECRET_PATTERNS:
-        match = pattern.search(text)
-        if not match:
-            continue
-        sample = match.group(0).lower()
-        if any(
-            marker in sample or marker in low[max(0, match.start() - 30) : match.end() + 30] for marker in _PLACEHOLDERS
-        ):
-            continue
-        return "credential-like content"
-    return None
 
 
 def validate_record(record: ProjectRecord, root: str | None = None) -> ValidationResult:
@@ -199,8 +171,9 @@ def record_item(
         raise ValueError("project memory rejected: " + "; ".join(validation.reasons))
     project = _neutral_line(project_id)
     stable_record = hashlib.sha256((project_uid + "\0" + record.record_id).encode()).hexdigest()[:24]
+    content = render_record(record)
     return {
-        "content": render_record(record),
+        "content": content,
         "context": f"asgard project {record.kind}",
         "document_id": f"asgard:record:{stable_record}",
         "update_mode": "replace",
@@ -222,6 +195,7 @@ def record_item(
             "project_uid": project_uid,
             "binding_id": binding_id,
             "record_schema": "asgard-project-memory-v1",
+            "content_hash": hashlib.sha256(content.encode()).hexdigest(),
         },
         # 승인 파일에는 backend payload와 함께 backend-neutral 원자료를 보관한다. backend
         # adapter는 이 키를 무시하고, 승인 commit/rehydrate만 정본 생성에 사용한다.

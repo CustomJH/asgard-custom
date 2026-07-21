@@ -16,6 +16,7 @@ import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from unittest import mock
 
+from asgard import memory, project_memory
 from asgard import memory_bridge as mb
 
 
@@ -107,6 +108,25 @@ class BridgeBase(unittest.TestCase):
         mb.trust_backend(found[1])
 
     def hit(self, text, **metadata):
+        if not memory.scan_threats(text):
+            record_id = "decision." + hashlib.sha256(text.encode()).hexdigest()[:12]
+            record = project_memory.ProjectRecord(
+                record_id=record_id,
+                kind="decision",
+                title="브릿지 회수 회귀 기록",
+                content=text if len(text.strip()) >= 20 else text + " — 브릿지 회수 회귀 테스트 본문이다.",
+                source="docs/adr.md",
+                source_revision="abc123",
+            )
+            project_memory.save_canonical_record(self.root, record)
+            item = project_memory.record_item(
+                record,
+                "proj-test",
+                project_uid=self.project_uid,
+                binding_id=self.binding_id,
+            )
+            item["metadata"].update(metadata)
+            return {"text": item["content"], "metadata": item["metadata"]}
         return {
             "text": text,
             "metadata": {

@@ -62,6 +62,22 @@ class TestScaffoldAndAdd(MemoryBase):
         memory.ensure_home()
         self.assertEqual(open(os.path.join(d, memory.INDEX), encoding="utf-8").read(), "custom")
 
+    def test_seed_defaults_only_for_an_empty_personal_wiki(self):
+        self.assertEqual(memory.seed_defaults(), [memory.DEFAULT_SKILL_PREFERENCE_SLUG])
+        page = memory._read(self.d, memory.DEFAULT_SKILL_PREFERENCE_SLUG)
+        assert page is not None
+        self.assertEqual(page[0]["kind"], "user")
+        self.assertIn("asgard skills list --json", page[1])
+        self.assertIn("Freyja 전체 스킬 조합 선호", memory.snapshot_note())
+        self.assertEqual(
+            memory.query("프론트엔드 스킬 카탈로그", track=False)[0]["slug"], memory.DEFAULT_SKILL_PREFERENCE_SLUG
+        )
+        self.assertEqual(memory.seed_defaults(), [])
+
+        memory.add("기존 개인 선호", title="기존 선호")
+        os.remove(memory._page_path(self.d, memory.DEFAULT_SKILL_PREFERENCE_SLUG))
+        self.assertEqual(memory.seed_defaults(), [])
+
     def test_add_writes_page_index_fts_log(self):
         slug, path = memory.add("Lagom ultra 모드는 CUS-218에서 제거됐다", kind="decision")
         self.assertTrue(os.path.exists(path))
@@ -98,6 +114,24 @@ class TestScaffoldAndAdd(MemoryBase):
         ):
             with self.assertRaises(ValueError):
                 memory.add(bad)
+
+    def test_secret_scan_blocks_writes_and_manually_poisoned_pages(self):
+        leak = "production api_key = sk_live_Abcdefghij0123456789"
+        with self.assertRaisesRegex(ValueError, "credential-like"):
+            memory.add(leak)
+        with self.assertRaisesRegex(ValueError, "credential-like"):
+            memory.ingest(leak)
+
+        memory.ensure_home()
+        memory._atomic_write(
+            memory._page_path(self.d, "manual-leak"),
+            memory.render_page(
+                {"title": "manual leak", "kind": "note", "created": "2026-07-21", "updated": "2026-07-21"},
+                leak,
+            ),
+        )
+        self.assertEqual(memory.query("production", track=False), [])
+        self.assertNotIn("sk_live_", memory.snapshot_note())
 
     def test_budget_hard_reject_and_force(self):
         os.makedirs(os.path.join(self.tmp, ".asgard"), exist_ok=True)

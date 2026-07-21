@@ -9,7 +9,7 @@ import os
 import re
 
 from .index import _db, _fts_upsert, _index_row, build_index, write_index
-from .policy import index_budget, memory_dir, scan_threats
+from .policy import index_budget, memory_dir, scan_secrets, scan_threats
 from .recall import _containment, _jaccard, query
 from .store import (
     DEFAULT_KIND,
@@ -70,6 +70,8 @@ def add(
     threat = scan_threats(text, title, links)  # 본문 + 주입 메타 전부 (P0)
     if threat:
         raise ValueError(f"injection scan: {threat}")
+    if secret := scan_secrets(text, title, links):
+        raise ValueError(f"secret scan: {secret}")
     with _lock(d):
         slug, path = _add_unlocked(d, text, title, kind, links, force)
     return slug, path
@@ -203,6 +205,8 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
     threat = scan_threats(text)
     if threat:
         raise ValueError(f"injection scan: {threat}")
+    if secret := scan_secrets(text):
+        raise ValueError(f"secret scan: {secret}")
     with _lock(d):
         approved = plan is not None
         plan = plan or plan_ingest(text, d)

@@ -1,9 +1,11 @@
-"""설정·게이트 계층 — 메모리 위치·[memory] 설정·주입 킬스위치·provider 게이트·인젝션 스캔."""
+"""설정·게이트 계층 — 메모리 위치·주입/provider 게이트·인젝션/credential 스캔."""
 
 from __future__ import annotations
 
 import os
 import re
+
+from ..settings import PROJECT_FILE
 
 MEMORY_ENV = "ASGARD_MEMORY_DIR"
 INDEX_BUDGET = 2200  # chars — 주입면 상한 검증값. config [memory].index_budget_chars 로 조정
@@ -20,6 +22,30 @@ _THREATS = (
     r"시스템\s*프롬프트\s*(를|을)?\s*(공개|유출|출력)",
     r"\b(curl|wget)\s+https?://",
     r"[A-Za-z0-9+/]{120,}={0,2}",  # 장문 base64 블롭 — 은닉 페이로드 의심
+)
+
+_SECRET_PLACEHOLDERS = (
+    "example",
+    "placeholder",
+    "changeme",
+    "redacted",
+    "dummy",
+    "test-only",
+    "your-",
+    "your_",
+    "****",
+)
+_SECRET_PATTERNS = (
+    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----"),
+    re.compile(
+        r"(?i)\b(?:password|passwd|api[_-]?key|access[_-]?token|secret[_-]?key)\b\s*[:=]\s*[\"']?([^\s\"']{8,})"
+    ),
+    re.compile(r"\b(?:sk|gh[oprsu]|github_pat)_[A-Za-z0-9_-]{16,}\b"),
+    re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
+    re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
+    re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+    re.compile(r"(?i)--(?:token|password|passwd|api-key|secret)[= ](?![$\{<])\S{8,}"),
+    re.compile(r"://[^/\s:@]{1,64}:(?![$\{])[^@\s/]{6,}@"),
 )
 
 
@@ -77,7 +103,7 @@ def inject_allowed(provider: str | None = None, provider_source: str | None = No
             return provider in [str(a).strip() for a in allow]
     except Exception:
         pass
-    return provider_source != ".asgard/asgard-setting-project.json"
+    return provider_source != f".asgard/{PROJECT_FILE}"
 
 
 def scan_threats(*texts: str | None) -> str | None:
@@ -90,4 +116,19 @@ def scan_threats(*texts: str | None) -> str | None:
             m = re.search(pat, text, re.IGNORECASE)
             if m:
                 return f"blocked pattern: {m.group(0)[:60]!r}"
+    return None
+
+
+def scan_secrets(*values: str | None) -> str | None:
+    """저장·주입 전 명백한 credential 패턴을 차단한다. placeholder 예시는 허용한다."""
+    text = "\n".join(str(value) for value in values if value)
+    low = text.lower()
+    for pattern in _SECRET_PATTERNS:
+        match = pattern.search(text)
+        if not match:
+            continue
+        nearby = low[max(0, match.start() - 30) : match.end() + 30]
+        if any(marker in match.group(0).lower() or marker in nearby for marker in _SECRET_PLACEHOLDERS):
+            continue
+        return "credential-like content"
     return None
