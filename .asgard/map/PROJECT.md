@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (225), JavaScript (1)
-- Evidence scan: 855 files; 22 landmarks
+- Languages by observed source files: Python (252), JavaScript (1)
+- Evidence scan: 1189 files; 22 landmarks
 
 ## Landmarks
 
@@ -58,6 +58,7 @@
 - `src/asgard/hooks/readonly_guard.py` — public surface: def is_readonly_bash_safe(command, root); def main()
 - `src/asgard/hooks/release_guard.py` — public surface: def blocked_reason(command); def main()
 - `src/asgard/io_journal.py` — public surface: def journal_path(root); def enabled(); def call_started(root, provider, model, transport, role); def call_returned(root, call_id, duration_ms, error, counts, …)
+- `src/asgard/picker.py` — public surface: class Option; def available(); def pick(title, options, default, manual_hint)
 - `src/asgard/templates/eitri.py` — public surface: def resolve_eitri_skills(task)
 - `src/asgard/templates/freyja.py` — public surface: def resolve_freyja_skills(task); def freyja_core_skill()
 - `src/asgard/templates/lagom.py` — public surface: def render_lagom(mode)
@@ -70,14 +71,14 @@
 - `docker/asgard-common-memory2/llm-benchmark.py` — public surface: def request_json(url, payload, timeout); def rate(count, duration_ns); def main()
 - `docker/asgard-common-memory2/provider-readiness.py` — public surface: def get_json(url, api_key); def main()
 - `src/asgard/agent/claude_native.py` — public surface: class UsageCapError; def detect_auth(); class ClaudeNativeClient; def make_native_client(); def run(sess, user_content)
-- `src/asgard/agent/heimdall/classify.py` — public surface: def classify_heuristic(request); def classify_api_error(e)
+- `src/asgard/agent/heimdall/classify.py` — public surface: def has_write_verbs(request); def classify_heuristic(request); def classify_api_error(e)
 - `src/asgard/agent/heimdall/core.py` — public surface: class SessionLike; class Heimdall
 - `src/asgard/agent/heimdall/dispatch.py` — public surface: class DeliveryDispatch
 - `src/asgard/agent/heimdall/roles.py` — public surface: def delivery_canon_note(root, task); def worker_canon_hint(root, task)
 - `src/asgard/agent/heimdall/trinity.py` — public surface: class TrinityRun
 - `src/asgard/agent/heimdall/waves.py` — public surface: class WaveRunner
 - `src/asgard/agent/onboard.py` — public surface: def can_prompt(); def select_model(root, rp, persist); def select_model_id(root, rp, model, persist); def onboard(root, preselect)
-- `src/asgard/agent/repl.py` — public surface: def is_light_bg(); def banner(rp); def statusline(root, rp, usage); def prompt(); def slash(cmd, root, rp)
+- `src/asgard/agent/repl.py` — public surface: def is_light_bg(); def banner(rp); def statusline(root, rp, usage); def prompt(default_text, auto_submit); def slash(cmd, root, rp)
 - `src/asgard/agent/tools.py` — public surface: class ToolError; def run_web_fetch(_root, tool_input); def run_document(root, tool_input); def validate_bash_command(root, command); def run_bash(root, tool_input, cancel)
 - `src/asgard/agent/turn_store.py` — public surface: def append_turn(root, request, response); def load_turns(root, limit)
 - `src/asgard/assets/skill_plugins/21st-dev/skills/21st-cli-use/scripts/21st.py` — public surface: def main(argv)
@@ -91,7 +92,6 @@
 - `src/asgard/assets/skill_plugins/hwpx-skill/skills/hwpx/scripts/clone_form.py` — public surface: def extract_texts(hwpx_path); def analyze(hwpx_path); def auto_analyze(hwpx_path, output_json); def clone(src_path, dst_path, replacements, keywords, title, …); def validate_result(src_path, dst_path, replacements, keywords)
 - `src/asgard/assets/skill_plugins/hwpx-skill/skills/hwpx/scripts/convert_hwp.py` — public surface: class NormalizeFunction; class ConversionError; class PageDef; class CliArgs; class InfoResult
 - `src/asgard/assets/skill_plugins/hwpx-skill/skills/hwpx/scripts/create_document.py` — public surface: def parse_markdown(text); def parse_json_input(text); def create_document(blocks, output_path); def main()
-- `src/asgard/assets/skill_plugins/hwpx-skill/skills/hwpx/scripts/fill_hwpx.py` — public surface: def is_label_cell(text); def normalize_label(label); def find_matching_key(cell_label, values); def is_keyword_label(text); def fill_in_cell_patterns(cell_text, values, matched_labels)
 
 ## Navigation contract
 
