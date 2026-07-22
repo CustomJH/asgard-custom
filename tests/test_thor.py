@@ -298,14 +298,14 @@ class TestWiring(unittest.TestCase):
         # 순서는 role 파일 delivery: 선언 파생(정렬) — 계약은 구성원 집합이지 순서가 아니다
         self.assertEqual(
             set(DISPATCH_TOOL["input_schema"]["properties"]["agent"]["enum"]),
-            {"freyja", "freyja-lead", "thor", "thor-lead", "eitri", "loki", "mimir"},
+            {"freyja", "thor", "thor-lead", "eitri", "loki", "mimir"},
         )
         for label in ("thor=백엔드", "eitri=빌드"):
             self.assertIn(label, DISPATCH_TOOL["description"])
 
 
 class TestThorLead(unittest.TestCase):
-    """백엔드 편대장 — 대장 토르만 재위임 봉인을 연다. 서브는 봉인 유지 (freyja-lead 와 동일 계층)."""
+    """백엔드 편대장 — 대장 토르만 재위임 봉인을 연다. 서브는 봉인 유지."""
 
     def setUp(self):
         from asgard.templates.roles import ROLE_AGENTS
@@ -374,10 +374,10 @@ class TestThorLead(unittest.TestCase):
         md = agents_md("p")
         self.assertIn("asgard-thor-lead", md)  # 대형 백엔드 과업 라우팅
         self.assertIn("asgard-thor-einherjar", md)  # 모드 A 편대 스킬 경로
-        self.assertIn("예외 2개: asgard-freyja-lead·asgard-thor-lead", md)  # 재위임 예외의 명시적 한정
+        self.assertIn("예외: asgard-thor-lead", md)  # 재위임 예외의 명시적 한정
         worker = self.roles["asgard-worker.md"]
         self.assertIn("asgard-thor-lead", worker)
-        self.assertIn("에인헤랴르 스킬", worker)  # 네이티브 순차 편대 경로
+        self.assertIn("asgard-thor-einherjar", worker)
 
 
 if __name__ == "__main__":

@@ -379,7 +379,6 @@ class TestDeliveryDeclarative(EvoBase):
             {
                 "eitri": "standard",
                 "freyja": "standard",
-                "freyja-lead": "standard",
                 "loki": "fast",
                 "mimir": "standard",
                 "thor": "standard",

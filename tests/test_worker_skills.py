@@ -71,7 +71,6 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("약한 단언", t)
         self.assertIn("지표이지 목표가 아니다", t)  # 커버리지
         self.assertIn("asgard-eitri-draupnir", t)  # CI 층 상호 참조
-        self.assertIn("asgard-freyja-hildisvini", t)  # 브라우저 E2E 상호 참조
 
     def test_worker_role_uses_generated_discovery_catalog(self):
         from asgard.commands.setup import plan_files

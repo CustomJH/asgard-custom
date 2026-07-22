@@ -151,8 +151,6 @@ class TestBundledCollisionGuard(unittest.TestCase):
 
         names = _bundled_names()
         for expected in (
-            "asgard-freyja-brisingamen",
-            "asgard-freyja-hildisvini",
             "asgard-thor-mjollnir",
             "asgard-eitri-draupnir",
             "asgard-eitri-gullinbursti",

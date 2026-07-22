@@ -100,15 +100,18 @@ class BundledDocumentSkillTest(unittest.TestCase):
         self.assertEqual(plugins["playwright-cli"]["version"], "0.1.17")
 
         worker = {row["name"] for row in skill_registry.available_skills(self.root, "worker")}
-        freyja = {row["name"] for row in skill_registry.available_skills(self.root, "freyja")}
         self.assertIn("hwpx", worker)
-        self.assertIn("playwright-cli", worker & freyja)
+        self.assertIn("playwright-cli", worker)
+        self.assertEqual(
+            {row["name"] for row in skill_registry.available_skills(self.root, "freyja")},
+            {"asgard-freyja-design"},
+        )
         self.assertIn(
             "hwpx", {name for name, _ in skill_registry.resolve_skills(self.root, "한글 HWP 문서 읽기", "worker")}
         )
         self.assertIn(
             "playwright-cli",
-            {name for name, _ in skill_registry.resolve_skills(self.root, "브라우저로 UI 테스트", "freyja")},
+            {name for name, _ in skill_registry.resolve_skills(self.root, "브라우저로 UI 테스트", "worker")},
         )
 
     def test_skill_bodies_stay_small_and_full_guides_are_lazy_resources(self):
