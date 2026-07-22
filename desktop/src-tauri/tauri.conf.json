@@ -1,0 +1,25 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Asgard Desktop",
+  "version": "0.6.20",
+  "identifier": "dev.asgard.desktop",
+  "build": {
+    "frontendDist": "../frontend"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["app", "dmg"],
+    "category": "DeveloperTool",
+    "shortDescription": "Asgard tasks, artifacts, and settings",
+    "longDescription": "Native desktop workspace for running Asgard tasks, reviewing artifacts, and managing local settings.",
+    "macOS": {
+      "minimumSystemVersion": "12.0"
+    }
+  }
+}

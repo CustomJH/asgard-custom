@@ -17,7 +17,7 @@ _SUMMARY = {
     "start": "open the Asgard terminal (Heimdall)",
     "auth": "manage Asgard-owned provider logins",
     "init": "scaffold a project for coding agents",
-    "map": "generate, update, inspect, and validate the project map",
+    "map": "project map — orientation, relation graph, and bounded context",
     "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
     "sync": "refresh scaffolded cores in set-up projects",
@@ -30,7 +30,7 @@ _SUMMARY = {
     "plugins": "Asgard plugin catalog",
     "memory": "Yggdrasil — personal memory · LLM wiki",
     "plan": "Asgard Plan — local product planning workspace",
-    "studio": "Sessrúmnir — Freyja design studio",
+    "desktop": "Asgard Desktop — tasks, artifacts, and settings",
     "evolve": "self-evolution inbox — skill drafts",
 }
 _FLAGS = {
@@ -38,7 +38,7 @@ _FLAGS = {
     "start": ["--check", "--provider", "--model", "--continue", "--execution", "--sandbox-name"],
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
-    "map": [],
+    "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
     "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],
     "sync": ["--dry-run", "--list", "--quiet"],
@@ -51,11 +51,20 @@ _FLAGS = {
     "plugins": [],
     "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
     "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
-    "studio": ["--port", "--no-open"],  # bare `asgard studio` = 대시보드 오픈 (memory 와 동형)
+    "desktop": ["--port", "--no-open", "--browser"],
     "evolve": [],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
-    "--provider": ["anthropic", "claude-native", "openai", "openai-native", "openai_compat", "ollama", "nvidia"],
+    "--provider": [
+        "anthropic",
+        "claude-native",
+        "openai",
+        "openai-native",
+        "openai_compat",
+        "openrouter",
+        "ollama",
+        "nvidia",
+    ],
     "--profile": ["claude-code", "cursor", "codex", "universal"],
     "--lagom": ["off", "lite", "full"],
     "--kind": ["note", "user", "decision", "insight", "reference", "feedback"],
@@ -105,6 +114,9 @@ _MAP_SUB = {
     "update": "refresh structural facts",
     "check": "report drift without writing",
     "context": "show bounded task context",
+    "scan": "rebuild the relation graph (no LLM)",
+    "trace": "walk relation edges from a node",
+    "view": "open the relation-graph view",
 }
 _SETUP_SUB = {"map": "draw or refresh the project code map"}
 _EVOLVE_SUB = {
@@ -139,15 +151,6 @@ _MEM_SUB = {
     "project-approve": "approve a staged project-memory record",
     "project-rehydrate": "replay Git canonical records to the selected backend",
     "mcp": "stdio MCP bridge (shared memory)",
-}
-_STUDIO_SUB = {
-    "new": "create a project from a brief and generate",
-    "open": "open the dashboard focused on one project",
-    "dashboard": "open the local studio dashboard",
-    "template": "bundled template library (list/use)",
-    "engine": "show or switch the generation engine",
-    "list": "list studio projects",
-    "path": "print the studio directory",
 }
 _PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}
 
@@ -268,13 +271,6 @@ def _bash() -> str:
                 "    plan)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_PLAN_SUB)} --help" -- "$cur") )\n'
-                "      fi ;;"
-            )
-        elif name == "studio":
-            cases.append(
-                "    studio)\n"
-                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
-                f'        COMPREPLY=( $(compgen -W "{" ".join(_STUDIO_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "evolve":
@@ -413,13 +409,6 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_PLAN_SUB)} --help\n"
                 "      fi ;;"
             )
-        elif name == "studio":
-            cases.append(
-                "    studio)\n"
-                "      if (( CURRENT == 3 )); then\n"
-                f"        compadd -- {' '.join(_STUDIO_SUB)} --help\n"
-                "      fi ;;"
-            )
         elif name == "evolve":
             cases.append(
                 "    evolve)\n"
@@ -526,9 +515,6 @@ def _fish() -> str:
     plan_top = "__fish_seen_subcommand_from plan; and not __fish_seen_subcommand_from " + " ".join(_PLAN_SUB)
     for sub, desc in _PLAN_SUB.items():
         lines.append(f"complete -c asgard -n \"{plan_top}\" -a {sub} -d '{desc}'")
-    studio_top = "__fish_seen_subcommand_from studio; and not __fish_seen_subcommand_from " + " ".join(_STUDIO_SUB)
-    for sub, desc in _STUDIO_SUB.items():
-        lines.append(f"complete -c asgard -n \"{studio_top}\" -a {sub} -d '{desc}'")
     evo_top = "__fish_seen_subcommand_from evolve; and not __fish_seen_subcommand_from " + " ".join(_EVOLVE_SUB)
     for sub, desc in _EVOLVE_SUB.items():
         lines.append(f"complete -c asgard -n \"{evo_top}\" -a {sub} -d '{desc}'")

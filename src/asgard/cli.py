@@ -44,7 +44,7 @@ def start(
     provider: str = typer.Option(
         None,
         "--provider",
-        help="override the provider: anthropic | claude-native | openai | openai-native | openai_compat | ollama | nvidia",
+        help="override the provider: anthropic | claude-native | openai | openai-native | openai_compat | openrouter | ollama | nvidia",
     ),
     model: str = typer.Option(None, "--model", help="override the model id"),
     cont: bool = typer.Option(
@@ -116,8 +116,57 @@ def init(
     )
 
 
-map_app = typer.Typer(help="generate, update, inspect, and validate the project map", no_args_is_help=True)
+map_app = typer.Typer(
+    help="project map — orientation, relation graph, and bounded context", invoke_without_command=True
+)
 app.add_typer(map_app, name="map")
+
+
+@map_app.callback()
+def map_default(
+    ctx: typer.Context,
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+) -> None:
+    """서브커맨드 없이 `asgard map` 만 치면 관계 그래프 뷰가 열린다 (`asgard memory` 와 동일 UX).
+    운영 서브커맨드(generate/update/scan/…)와 --help 는 그대로다."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from .commands.map import run_map_view
+
+    raise typer.Exit(run_map_view(open_browser=not no_open))
+
+
+@map_app.command("scan", help="rebuild the relation graph (deterministic evidence, no LLM)")
+def map_scan(
+    dry_run: bool = typer.Option(False, "--dry-run"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.map import run_map_scan
+
+    raise typer.Exit(run_map_scan(dry_run=dry_run, json_out=json_, quiet=quiet))
+
+
+@map_app.command("trace", help="walk relation edges from a node (adjacent map, not exhaustive impact)")
+def map_trace(
+    from_: str = typer.Option(..., "--from", help="node id, e.g. external_service:stripe or file:src/app.py"),
+    depth: int = typer.Option(2, "--depth"),
+    direction: str = typer.Option("both", "--direction", help="both | upstream | downstream"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.map import run_map_trace
+
+    raise typer.Exit(run_map_trace(from_, depth=depth, direction=direction, json_out=json_))
+
+
+@map_app.command("view", help="build and open the standalone relation-graph view")
+def map_view(
+    no_open: bool = typer.Option(False, "--no-open"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.map import run_map_view
+
+    raise typer.Exit(run_map_view(open_browser=not no_open, json_out=json_))
 
 
 @map_app.command("generate", help="create the deterministic project map")
@@ -631,7 +680,7 @@ def memory_mcp() -> None:
     raise typer.Exit(run_mcp())
 
 
-# Asgard Plan — 생각을 PRD·기능 구조·유저 플로우로 정리하고 Studio 실행으로 잇는 로컬 표면.
+# Asgard Plan — 생각을 PRD·기능 구조·유저 플로우로 정리하는 로컬 표면.
 plan_app = typer.Typer(help="Asgard Plan — local product planning workspace", invoke_without_command=True)
 app.add_typer(plan_app, name="plan")
 
@@ -660,115 +709,16 @@ def plan_dashboard(
     raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
-# 세스룸니르 (Sessrúmnir) — 프레이야 스튜디오 (CUS-258). 표면 = studio + 세계관 별칭.
-# 정본 = ~/.asgard/studio/projects/. 생성 파이프라인(new/refine)은 CUS-261, 내보내기는 대시보드 전용(CUS-263).
-studio_app = typer.Typer(help="Sessrúmnir — Freyja design studio (dashboard/list)", invoke_without_command=True)
-app.add_typer(studio_app, name="studio")
-app.add_typer(studio_app, name="sessrumnir", hidden=True)  # 세계관 별칭 — 같은 앱, 도움말 중복 없음
-
-
-@studio_app.callback()
-def studio_default(
-    ctx: typer.Context,
-    port: int = typer.Option(8766, "--port", "-p", help="dashboard port (bare `asgard studio` only)"),
-    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
-) -> None:
-    """서브커맨드 없이 `asgard studio` 만 치면 세스룸니르 대시보드가 열린다 (memory 와 같은
-    원커맨드 UX). 운영 서브커맨드(list/path)와 --help 는 그대로다."""
-    if ctx.invoked_subcommand is not None:
-        return
-    from .commands.studio_dashboard import run_dashboard
-
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
-
-
-@studio_app.command("dashboard", help="open the local studio dashboard (projects · artifacts · preview)")
-def studio_dashboard(
+@app.command(help="open Asgard Desktop — tasks, artifacts, and settings")
+def desktop(
     port: int = typer.Option(8766, "--port", "-p", help="local port (falls back to a free port if taken)"),
     no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+    browser: bool = typer.Option(False, "--browser", help="use a browser instead of the native Tauri app"),
 ) -> None:
-    from .commands.studio_dashboard import run_dashboard
+    """Open the local Asgard Desktop workspace."""
+    from .commands.desktop import run_desktop
 
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
-
-
-@studio_app.command("new", help="create a studio project from a brief and generate its first artifact")
-def studio_new(
-    brief: str = typer.Argument(..., help="what to design/build — one clear brief"),
-    name: str = typer.Option(None, "--name", help="project name (default: brief first line)"),
-    provider: str = typer.Option(None, "--provider", help="override the provider"),
-    model: str = typer.Option(None, "--model", help="override the model id"),
-) -> None:
-    from .commands.studio import run_new
-
-    raise typer.Exit(run_new(brief, name=name, provider=provider, model=model))
-
-
-@studio_app.command("open", help="open the studio dashboard focused on one project")
-def studio_open(
-    slug: str = typer.Argument(..., help="project slug (see `asgard studio list`)"),
-    port: int = typer.Option(8766, "--port", "-p", help="local port (falls back to a free port if taken)"),
-) -> None:
-    from .commands.studio import run_open
-
-    raise typer.Exit(run_open(slug, port=port))
-
-
-@studio_app.command("generate", hidden=True, help="internal worker: run generation for an existing project")
-def studio_generate(
-    slug: str = typer.Argument(...),
-    provider: str = typer.Option(None, "--provider"),
-    model: str = typer.Option(None, "--model"),
-) -> None:
-    from .commands.studio import run_generation
-
-    raise typer.Exit(run_generation(slug, provider=provider, model=model))
-
-
-@studio_app.command(
-    "engine", help="show or switch the generation engine — claude(-native CLI) | codex(openai-native CLI)"
-)
-def studio_engine(
-    name: str = typer.Argument(None, metavar="[claude|codex]", help="omit to show the current engine"),
-) -> None:
-    from .commands.studio import run_engine
-
-    raise typer.Exit(run_engine(name))
-
-
-studio_tpl_app = typer.Typer(help="bundled template library — instant project scaffolds", no_args_is_help=True)
-studio_app.add_typer(studio_tpl_app, name="template")
-
-
-@studio_tpl_app.command("list", help="list bundled templates (design + media prompts)")
-def studio_template_list(json_: bool = typer.Option(False, "--json")) -> None:
-    from .commands.studio import run_template_list
-
-    raise typer.Exit(run_template_list(json_))
-
-
-@studio_tpl_app.command("use", help="scaffold a project from a template (no LLM — instant artifact)")
-def studio_template_use(
-    name: str = typer.Argument(..., help="template name (see `asgard studio template list`)"),
-    brief: str = typer.Option(None, "--brief", help="project brief (default: template description)"),
-) -> None:
-    from .commands.studio import run_template_use
-
-    raise typer.Exit(run_template_use(name, brief))
-
-
-@studio_app.command("list", help="list studio projects (slug · name · artifact count)")
-def studio_list(json_: bool = typer.Option(False, "--json")) -> None:
-    from .commands.studio_dashboard import run_list
-
-    raise typer.Exit(run_list(json_))
-
-
-@studio_app.command("path", help="print the studio directory")
-def studio_path() -> None:
-    from .commands.studio_dashboard import run_path
-
-    raise typer.Exit(run_path())
+    raise typer.Exit(run_desktop(port=port, open_browser=not no_open, prefer_native=not browser))
 
 
 # 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 승인만이 활성화 경로.

@@ -1,0 +1,13 @@
+{
+  "name": "asgard-desktop-shell",
+  "private": true,
+  "version": "0.6.20",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "bundle:mac": "tauri build --bundles app,dmg"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}
