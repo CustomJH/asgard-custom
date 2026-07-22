@@ -1,0 +1,56 @@
+{
+  "name": "oh-my-design-mcp",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Archived catalog MCP transport. Retained for history; no longer built, published, or required by oh-my-design skills.",
+  "type": "module",
+  "bin": {
+    "oh-my-design-mcp": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "data",
+    "README.md"
+  ],
+  "scripts": {
+    "sync-data": "npm --prefix ../../web run build-reference-ast && node scripts/sync-data.mjs",
+    "build": "npm run sync-data && tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/index.js",
+    "pretest": "npm run sync-data",
+    "test": "vitest run",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "design-system",
+    "design-md",
+    "claude",
+    "cursor",
+    "cline",
+    "continue",
+    "codex",
+    "oh-my-design"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kwakseongjae/oh-my-design",
+    "directory": "packages/mcp"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1"
+  }
+}

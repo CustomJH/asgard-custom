@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "name": "freyja-design",
+  "version": "1",
+  "description": "Freyja default visual delivery engine with complete workflow, reference, motion, accessibility, and restraint coverage",
+  "skills": ["asgard-freyja-design"],
+  "entrypoints": {
+    "asgard-freyja-design": "freyja_design.py"
+  },
+  "routing": {
+    "asgard-freyja-design": {
+      "triggers": [
+        "ui",
+        "ux",
+        "frontend",
+        "design",
+        "motion",
+        "accessibility",
+        "landing",
+        "component",
+        "screen",
+        "프론트엔드",
+        "디자인",
+        "모션",
+        "접근성",
+        "랜딩",
+        "컴포넌트",
+        "화면",
+        "스타일",
+        "버튼",
+        "브랜드",
+        "카피",
+        "로컬라이즈",
+        "서베이",
+        "레퍼런스",
+        "에셋",
+        "이미지",
+        "감사",
+        "qa"
+      ],
+      "defaults": ["freyja"],
+      "agents": ["freyja"]
+    }
+  },
+  "source": "Asgard Freyja Design",
+  "revision": "oh-my-design@0a7f3a1e17814c8a1b000ce075b3b2620b70db9e",
+  "license": "MIT"
+}
