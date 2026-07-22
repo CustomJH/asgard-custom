@@ -501,8 +501,8 @@ class TestTrinityLoop(Base):
     def test_pass_with_unresolved_failed_verification_command_becomes_fail(self):
         incomplete = verifier("PASS")
         incomplete.result.commands = [
-            {"cmd": "grep -Fx expected missing.txt", "exit_code": 1},
-            {"cmd": "grep -Fx present w1.txt", "exit_code": 0},
+            {"cmd": "python -m pytest tests/test_w1.py -q", "exit_code": 1},
+            {"cmd": "python -c \"open('w1.txt')\"", "exit_code": 0},
         ]
         seq = [
             worker({"w1.txt": "present\n"}, self.root),
@@ -513,6 +513,20 @@ class TestTrinityLoop(Base):
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         self.assertIn("과업 완수", h.handle("w1.txt와 missing.txt 만들어"))
         self.assertIn("unresolved-verification-failure", self.quest_log_text())
+
+    def test_grep_no_match_is_absence_evidence_not_unresolved_failure(self):
+        # grep/rg 매치 0건(exit 1)은 '패턴 부재' 확인의 성공 — 미해소 실패로 세면 정당한 PASS 가
+        # 뒤집혀 Worker 재시도+재검증 2턴이 공짜로 낭비된다 (26-07-23 감사).
+        absence = verifier("PASS")
+        absence.result.commands = [
+            {"cmd": "grep -Fx forbidden w1.txt", "exit_code": 1},
+            {"cmd": "rg legacy_symbol", "exit_code": 1},
+            {"cmd": "git grep TODO -- w1.txt", "exit_code": 1},
+            {"cmd": "grep -Fx present w1.txt", "exit_code": 0},
+        ]
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "present\n"}, self.root), absence], cls=CLS_WRITE)
+        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_failed_verification_command_is_resolved_by_exact_successful_rerun(self):
         resolved = verifier("PASS")
@@ -1006,8 +1020,11 @@ class TestClassify(Base):
         mock.patch.object(h, "_complete_text", lambda *a, **k: "이건 JSON 이 아님").start()
         self.addCleanup(mock.patch.stopall)
         d = Heimdall._classify(h, "버그 설명해주고 고쳐줘")  # read+write 혼재 → 휴리스틱 불확정 → 파싱 실패
-        self.assertTrue(d["write_expected"] and d["ambiguous"])  # write 신호 존재 → 게이트 경로
-        self.assertEqual(d["task_class"], "deep")  # write 인데 범위 미상 = 최대 예산
+        self.assertTrue(d["write_expected"])  # write 신호 존재 → 게이트 경로
+        # 파싱 실패는 분류기 장애지 요청의 모호함이 아니다 — ambiguous 로 게이트-우선을 박탈하거나
+        # deep(12턴)으로 최대 예산을 태우지 않는다 (26-07-23 감사). 물리 가드가 승격을 판정한다.
+        self.assertFalse(d["ambiguous"])
+        self.assertEqual(d["task_class"], "standard")
 
     def test_parse_failure_without_write_verb_fails_open_to_direct(self):
         # 분류기가 JSON 대신 대화체로 응답(인사 등) → 파싱 실패. write 동사가 없으면 DIRECT
@@ -2046,13 +2063,17 @@ class TestHookParity(Base):
         from asgard.hooks.quest_log import sensitive_path as q
         from asgard.hooks.verifier_gate import sensitive_path as g
 
-        needles = ["hooks", "ci", ".github", "auth", "migration", "db"]
+        needles = ["hooks", "ci", ".github", "auth", "authentication", "migration", "migrations", "db"]
         cases = {
             "circle.py": False,  # 'ci' substring 오탐 회귀 방지
             "ci/config.yml": True,
             ".github/workflows/x.yml": True,
             "hooks/deploy.py": True,
-            "src/authentication.py": True,  # 4자+ needle 은 세그먼트 내 부분 일치
+            "src/authentication.py": True,  # 파생형은 needle 목록에 명시 (substring 매칭 아님)
+            "src/oauth.py": False,  # 'auth' 4자+ substring 오탐 회귀 방지 (26-07-23 감사)
+            "src/author.py": False,  # 'auth' prefix 오탐 회귀 방지
+            "src/auth.py": True,  # [._-] 토큰 정확 일치
+            "src/db_pool.py": True,  # 토큰 일치 — db
             "src/circuit.py": False,
             "db/migrations/0001.py": True,
             "readme.md": False,

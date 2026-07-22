@@ -1600,6 +1600,142 @@ class TestNoChangeEvidence(TrinityBase):
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")
 
 
+class TestNoChangeBaselineVerify(TrinityBase):
+    """무변경(diff EMPTY) work 의 0-LLM 하네스 판정 출구 — 전이가 BASELINE_VERIFY 를 배정하고
+    verify-baseline 이 트리 관측(git status)으로 판정을 기록한다. LLM Verifier 가 반증 불가능한
+    합성 기준을 재량 검증하던 잔여 낭비 경로 봉합 (26-07-23 감사)."""
+
+    def events(self):
+        path = os.path.join(self.root, ".asgard", "quest", "q1.jsonl")
+        return [json.loads(line) for line in open(path, encoding="utf-8")]
+
+    def test_transition_routes_nochange_work_to_baseline_verify(self):
+        self.open_quest()
+        self.qlog("append", "--role", "worker", "--event", "work")
+        nxt = jout(self.qlog("next", "--write-expected"))
+        self.assertEqual(nxt["next_role"], "BASELINE_VERIFY")
+        self.assertIn("무변경", nxt["why"])
+
+    def test_verify_baseline_nochange_passes_with_inspection_no_baseline_attach(self):
+        self.open_quest()
+        self.qlog("append", "--role", "worker", "--event", "work")
+        vb = jout(self.qlog("verify-baseline"))
+        self.assertEqual(vb["verdict"], "PASS")
+        last_verify = [e for e in self.events() if e.get("event") == "verify"][-1]
+        self.assertNotIn("baseline", last_verify)  # 무변경은 red 원인 불가 — 베이스라인 미부착
+        self.assertEqual(last_verify["commands"][0]["cmd"], "git status --porcelain")
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_nochange_quest_not_hostage_to_red_baseline(self):
+        # 전 트리 체크 red(타 세션 잔여물 등)가 무변경 퀘스트를 인질로 잡지 않는다
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.qlog("append", "--role", "worker", "--event", "work")
+        vb = jout(self.qlog("verify-baseline"))
+        self.assertEqual(vb["verdict"], "PASS")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_nochange_llm_pass_append_skips_baseline_attach(self):
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "git status --porcelain", "exit_code": 0}])
+        last_verify = [e for e in self.events() if e.get("event") == "verify"][-1]
+        self.assertNotIn("baseline", last_verify)
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_changed_quest_still_attaches_baseline(self):
+        # 변경이 있는 퀘스트는 종전대로 하네스 베이스라인이 붙는다 (게이트 무결성 회귀 쐐기)
+        self.policy(baseline_checks=["false"])
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work", stdin=json.dumps({"changed_files": ["app.py"]}))
+        self.verify("PASS", level="full")
+        last_verify = [e for e in self.events() if e.get("event") == "verify"][-1]
+        self.assertEqual((last_verify.get("baseline") or {}).get("state"), "red")
+        self.assertEqual(self.qlog("close").returncode, 1)  # baseline-red → close 거부 유지
+
+
+class TestQuestScopedStale(TrinityBase):
+    """stale-pass 의 귀속 범위 판정 — PASS 후 드리프트가 퀘스트 귀속 파일(work 관측 ∪ 세션
+    write 저널) 밖(병렬 세션·아티팩트)이면 PASS 는 신선하다. 귀속 파일·구 로그(tree_ref 부재)·
+    귀속 공집합은 종전 엄격 판정 유지 (26-07-23 감사: 타 세션 드리프트 full 재검증 폭주 봉합)."""
+
+    def work(self, *files):
+        p = self.qlog(
+            "append",
+            "--session",
+            "s1",
+            stdin=json.dumps({"role": "worker", "event": "work", "changed_files": list(files)}),
+        )
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def events_path(self):
+        return os.path.join(self.root, ".asgard", "quest", "q1.jsonl")
+
+    def test_foreign_drift_after_pass_stays_fresh(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work("app.py")
+        self.verify("PASS", level="full")
+        self.write("other-session.txt", "parallel session leftovers\n")  # 귀속 밖 드리프트
+        nxt = jout(self.qlog("next", "--write-expected"))
+        self.assertEqual(nxt["next_role"], "DONE")
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_owned_drift_after_pass_is_stale(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work("app.py")
+        self.verify("PASS", level="full")
+        self.write("app.py", "print('tampered')\n")  # 귀속 파일 후속 변경 — 종전대로 stale
+        nxt = jout(self.qlog("next", "--write-expected"))
+        self.assertEqual(nxt["next_role"], "VERIFIER")
+        self.assertIn("stale", nxt["why"])
+
+    def test_session_journal_drift_is_stale_even_for_new_file(self):
+        # 세션 write 저널에 잡힌 신규 파일 드리프트는 귀속 — PASS 후 세션이 새 파일을 쓰면 stale
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work("app.py")
+        d = os.path.join(self.root, ".asgard", "state")
+        os.makedirs(d, exist_ok=True)
+        json.dump(["app.py", "late.txt"], open(os.path.join(d, "writes-s1.json"), "w"))
+        self.verify("PASS", level="full")
+        self.write("late.txt", "post-pass write by this session\n")
+        nxt = jout(self.qlog("next", "--write-expected"))
+        self.assertEqual(nxt["next_role"], "VERIFIER")
+
+    def test_pass_without_tree_ref_falls_back_strict(self):
+        # tree_ref 없는 구 로그 — 귀속 대조 불가면 종전 엄격 판정 (fail-safe)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work("app.py")
+        self.verify("PASS", level="full")
+        lines = [json.loads(line) for line in open(self.events_path(), encoding="utf-8")]
+        for e in lines:
+            e.pop("tree_ref", None)
+        with open(self.events_path(), "w", encoding="utf-8") as f:
+            f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in lines)
+        self.write("foreign.txt", "drift\n")
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")
+
+    def test_gate_parity_foreign_drift_allows_owned_drift_blocks(self):
+        # Stop 게이트도 동일 판정 (단일 출처 원칙) — 귀속 밖 드리프트 allow, 귀속 드리프트 block
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.work("app.py")
+        self.verify("PASS", level="full")
+        self.write("other-session.txt", "parallel\n")
+        out = jout(self.gate())
+        self.assertNotEqual(out.get("decision"), "block")
+        self.write("app.py", "print('tampered')\n")
+        out = jout(self.gate())
+        self.assertEqual(out.get("decision"), "block")
+
+
 class TestCompletionFunnel(TrinityBase):
     """완료 판정 단일 퍼널 — REJECTED 는 어떤 경로(transition·close·--force)로도 승인 승격 금지."""
 
