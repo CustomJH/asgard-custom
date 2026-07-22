@@ -112,8 +112,7 @@ def _prune_stale_skill_adapters(
         if not body:
             continue
         generated = {direct_skill(body), direct_skill(body, implicit=False)} | {
-            routed_skill(body, agent)
-            for agent in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir")
+            routed_skill(body, agent) for agent in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir")
         }
         for scope in scopes:
             path = os.path.join(scope, name, "SKILL.md")

@@ -37,7 +37,6 @@ MAX_BLOCKS = 2  # 역할당 — 3번째는 통과 (최후 방벽은 verifier-gat
 ROLE_EVENT = {"asgard-thinker": "plan", "asgard-worker": "work", "asgard-verifier": "verify"}
 AGENT_TARGETS = {
     "asgard-verifier": frozenset({"asgard-loki"}),
-    "asgard-freyja-lead": frozenset({"asgard-freyja", "asgard-loki"}),
     "asgard-freyja": frozenset(),
     "asgard-thor-lead": frozenset({"asgard-thor", "asgard-loki"}),
     "asgard-thor": frozenset(),

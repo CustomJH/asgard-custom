@@ -168,7 +168,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
 
     def discovery_bodies() -> list[tuple[str, str]]:
         merged: dict[str, str] = {}
-        for agent in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir"):
+        for agent in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir"):
             for skill, body in client_skill_bodies(agent, root):
                 merged.setdefault(skill, body)
         return sorted(merged.items())

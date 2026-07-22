@@ -85,7 +85,6 @@ _MODEL_ROLES = [
     "thinker",
     "worker",
     "verifier",
-    "freyja-lead",
     "freyja",
     "thor-lead",
     "thor",

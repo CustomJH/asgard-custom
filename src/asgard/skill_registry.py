@@ -26,7 +26,7 @@ _PLUGIN_FILE_CAP = 4_096
 _PLUGIN_BYTE_CAP = 64 * 1024 * 1024
 _RESOLVED_BODY_BUDGET = 16_000
 _BUNDLED_PLUGINS_DIR = Path(__file__).with_name("assets") / "skill_plugins"
-_ASSIGNABLE_AGENTS = frozenset(("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir"))
+_ASSIGNABLE_AGENTS = frozenset(("worker", "freyja", "thor", "thor-lead", "eitri", "mimir"))
 
 
 def _description(text: str) -> str:
@@ -90,9 +90,9 @@ def _builtin_plugins() -> dict[str, dict]:
             "resolver": "worker",
         },
         "freyja": {
-            "description": "Design, frontend, UX, motion, 3D, and visual verification",
+            "description": "Freyja UI/UX and frontend delivery contract",
             "skills": [("asgard-freyja", freyja_core_skill()), *FREYJA_SKILLS],
-            "agents": ("freyja", "freyja-lead"),
+            "agents": ("freyja",),
             "resolver": "freyja",
         },
         "thor": {

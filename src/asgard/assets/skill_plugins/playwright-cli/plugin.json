@@ -21,7 +21,7 @@
         "브라우저 테스트",
         "화면 확인"
       ],
-      "agents": ["worker", "freyja", "freyja-lead"]
+      "agents": ["worker"]
     }
   },
   "source": "https://github.com/microsoft/playwright-cli",
