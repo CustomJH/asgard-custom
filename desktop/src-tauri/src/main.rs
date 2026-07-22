@@ -1,3 +1,5 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 use std::{
     env,
     net::{TcpListener, TcpStream},
@@ -10,14 +12,30 @@ use std::{
 
 use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 struct DesktopServer(Mutex<Option<Child>>);
+
+fn stop_child(child: &mut Child) {
+    #[cfg(windows)]
+    {
+        let _ = Command::new("taskkill")
+            .args(["/PID", &child.id().to_string(), "/T", "/F"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status();
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
 
 impl DesktopServer {
     fn stop(&self) {
         if let Ok(mut child) = self.0.lock() {
             if let Some(mut child) = child.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+                stop_child(&mut child);
             }
         }
     }
@@ -55,15 +73,30 @@ fn asgard_program() -> PathBuf {
     } else {
         "asgard"
     };
-    let mut candidates = vec![
-        PathBuf::from("/opt/homebrew/bin").join(executable),
-        PathBuf::from("/usr/local/bin").join(executable),
-    ];
+    let mut candidates = Vec::new();
+    if cfg!(windows) {
+        if let Some(appdata) = env::var_os("APPDATA") {
+            candidates.push(
+                PathBuf::from(appdata)
+                    .join("uv/tools/asgard/Scripts")
+                    .join(executable),
+            );
+        }
+    } else {
+        candidates.extend([
+            PathBuf::from("/opt/homebrew/bin").join(executable),
+            PathBuf::from("/usr/local/bin").join(executable),
+        ]);
+    }
     if let Some(home) = env::var_os("HOME").or_else(|| env::var_os("USERPROFILE")) {
         let home = PathBuf::from(home);
         candidates.push(home.join(".local/bin").join(executable));
         candidates.push(
             home.join(".local/share/uv/tools/asgard/bin")
+                .join(executable),
+        );
+        candidates.push(
+            home.join(".local/share/uv/tools/asgard/Scripts")
                 .join(executable),
         );
         if let Ok(versions) = std::fs::read_dir(home.join(".local/share/mise/installs/python")) {
@@ -95,8 +128,11 @@ fn start_server() -> Result<(String, Child), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
+    #[cfg(windows)]
+    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
     let root = env::var_os("ASGARD_DESKTOP_ROOT")
         .or_else(|| env::var_os("HOME"))
+        .or_else(|| env::var_os("USERPROFILE"))
         .map(PathBuf::from)
         .or_else(|| env::current_dir().ok());
     if let Some(root) = root {
@@ -104,8 +140,7 @@ fn start_server() -> Result<(String, Child), String> {
     }
     let mut child = command.spawn().map_err(|error| error.to_string())?;
     if !wait_for_server(port, Duration::from_secs(12)) {
-        let _ = child.kill();
-        let _ = child.wait();
+        stop_child(&mut child);
         return Err("Asgard Desktop server did not become ready".into());
     }
     Ok((format!("http://127.0.0.1:{port}/"), child))

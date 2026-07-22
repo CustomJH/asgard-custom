@@ -14,7 +14,6 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
     "category": "DeveloperTool",
     "shortDescription": "Asgard tasks, artifacts, and settings",
     "longDescription": "Native desktop workspace for running Asgard tasks, reviewing artifacts, and managing local settings.",
