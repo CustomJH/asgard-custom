@@ -1,6 +1,6 @@
 """네이티브 세션 툴 스키마 — 순수 데이터 선언.
 
-Verifier verdict, 딜리버리 dispatch, freyja/thor 편대 fan-out, 시각 판정 제출.
+Verifier verdict, 딜리버리 dispatch, thor 편대 fan-out.
 핸들러 구현은 dispatch/trinity 모듈 몫 — 여기는 계약 표면만.
 """
 
@@ -53,73 +53,6 @@ DISPATCH_TOOL: dict = {
             "why": {"type": "string"},
         },
         "required": ["agent", "task", "why"],
-    },
-}
-
-
-# 네이티브 freyja-lead 전용 물리 fan-out. 일반 dispatch 를 그대로 주면 lead→lead 재귀와
-# 타 도메인 위임이 열리고, 단일 task 호출만 주면 "편대"가 이름뿐인 직렬 실행이 된다.
-FREYJA_SQUAD_TOOL: dict = {
-    "name": "dispatch_freyja_squad",
-    "description": "프레이야 편대장 전용 — 서로 다른 변주 축을 맡은 프레이야 2~5기를 한 배치로 병렬 호출한다.",
-    "x-asgard-capability": "coordinate",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "tasks": {
-                "type": "array",
-                "minItems": 2,
-                "maxItems": 5,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "task": {"type": "string"},
-                        "axis": {"type": "string"},
-                        "why": {"type": "string"},
-                    },
-                    "required": ["id", "task", "axis", "why"],
-                },
-            }
-        },
-        "required": ["tasks"],
-    },
-}
-
-FREYJA_VERDICT_TOOL: dict = {
-    "name": "dispatch_visual_verdict",
-    "description": "프레이야 편대장 전용 — deliverables/ 아래의 후보를 읽기 전용 독립 판정자가 채점한다. "
-    "PASS 후보가 하나 이상이어야 final/<exact-pass-id>/... 경로가 열린다.",
-    "x-asgard-capability": "coordinate",
-    "input_schema": {
-        "type": "object",
-        "properties": {"candidates_dir": {"type": "string"}, "focus": {"type": "string"}},
-        "required": ["candidates_dir"],
-    },
-}
-
-VISUAL_VERDICT_SUBMIT_TOOL: dict = {
-    "name": "submit_visual_verdict",
-    "description": "후보 전원의 시각 판정을 구조화 제출한다. 실제 후보 ID의 중복 없는 전체 집합이어야 한다.",
-    "x-asgard-capability": "inspect",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "verdicts": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "string"},
-                        "verdict": {"type": "string", "enum": ["PASS", "REJECT", "UNVERIFIED"]},
-                        "why": {"type": "string"},
-                    },
-                    "required": ["id", "verdict", "why"],
-                },
-            }
-        },
-        "required": ["verdicts"],
     },
 }
 
