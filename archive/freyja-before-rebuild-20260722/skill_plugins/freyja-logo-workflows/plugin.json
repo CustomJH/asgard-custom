@@ -21,8 +21,7 @@
         "app icon"
       ],
       "agents": [
-        "freyja",
-        "freyja-lead"
+        "freyja"
       ]
     },
     "logo-generator": {
@@ -38,8 +37,7 @@
         "app icon"
       ],
       "agents": [
-        "freyja",
-        "freyja-lead"
+        "freyja"
       ]
     }
   },
