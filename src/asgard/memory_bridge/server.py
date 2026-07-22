@@ -122,7 +122,13 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
             hits = server_recall(cfg, str(args.get("query", "")), int(args.get("max_results") or 8))
             from ..memory_context import filter_project_hits
 
-            filtered, dropped = filter_project_hits(root, cfg, hits, max_results=int(args.get("max_results") or 8))
+            filtered, dropped = filter_project_hits(
+                root,
+                cfg,
+                hits,
+                max_results=int(args.get("max_results") or 8),
+                query=str(args.get("query", "")),
+            )
             clean, used = [], 0
             for h in filtered:
                 t = str(h["text"])

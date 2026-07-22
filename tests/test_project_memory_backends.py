@@ -757,7 +757,8 @@ class TestHindsightBackend(unittest.TestCase):
         self.assertTrue(capabilities.metadata_roundtrip)
         self.assertTrue(capabilities.namespace_isolation)
         self.assertTrue(capabilities.stable_replace)
-        self.assertFalse(capabilities.hybrid_search)
+        self.assertTrue(capabilities.lexical_search)
+        self.assertTrue(capabilities.hybrid_search)
 
         with mock.patch("urllib.request.urlopen", return_value=Response()) as urlopen:
             readiness = backend.readiness()
@@ -799,7 +800,62 @@ class TestHindsightBackend(unittest.TestCase):
         self.assertEqual(hits[0].score, 0.91)
         request = urlopen.call_args.args[0]
         self.assertEqual(request.full_url, "http://memory:8888/v1/default/banks/demo/memories/recall")
-        self.assertEqual(json.loads(request.data), {"query": "결정"})
+        self.assertEqual(
+            json.loads(request.data),
+            {
+                "query": "결정",
+                "types": ["world", "experience"],
+                "budget": "mid",
+                "max_tokens": 2048,
+                "include": {"entities": None, "chunks": {"max_tokens": 4096}},
+            },
+        )
+
+    def test_recall_returns_exact_source_chunk_and_deduplicates_document(self):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, size=-1):
+                return json.dumps(
+                    {
+                        "results": [
+                            {
+                                "id": "fact-1",
+                                "text": "LLM이 재서술한 사실",
+                                "document_id": "decision-1",
+                                "chunk_id": "chunk-1",
+                                "metadata": {"record_id": "decision.deploy"},
+                            },
+                            {
+                                "id": "fact-2",
+                                "text": "같은 문서에서 추출한 다른 사실",
+                                "document_id": "decision-1",
+                                "chunk_id": "chunk-1",
+                                "metadata": {"record_id": "decision.deploy"},
+                            },
+                        ],
+                        "chunks": {
+                            "chunk-1": {
+                                "id": "chunk-1",
+                                "text": "Git 정본과 같은 원문",
+                                "chunk_index": 0,
+                                "truncated": False,
+                            }
+                        },
+                    }
+                ).encode()
+
+        backend = get_backend({"server": "http://memory:8888", "bank": "demo"})
+        with mock.patch("urllib.request.urlopen", return_value=Response()):
+            hits = backend.recall("배포", max_results=8)
+
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0].text, "Git 정본과 같은 원문")
+        self.assertEqual(hits[0].metadata["record_id"], "decision.deploy")
 
     def test_retain_normalizes_write_result_and_preserves_items(self):
         class Response:

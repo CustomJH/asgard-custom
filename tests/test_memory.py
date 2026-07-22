@@ -311,6 +311,37 @@ class TestRankFusion(MemoryBase):
         self.assertEqual(hits[0]["slug"], "zz-recipe")
 
 
+class TestAssociativeGraphRecall(MemoryBase):
+    """명시 링크 PPR 스트림 — flat retrieval이 못 찾는 연상 경로만 보완한다."""
+
+    def test_two_hop_link_recalls_answer_without_lexical_overlap(self):
+        memory.add("Northstar 운영 정보는 연결된 런북에 있다.", title="northstar", links="runbook")
+        memory.add("이 런북은 연결된 소유권 기록을 참조한다.", title="runbook", links="owner")
+        memory.add("운영 주체는 SRE 길드다.", title="owner")
+
+        self.assertNotIn(
+            "owner",
+            [h["slug"] for h in memory.query("Northstar 담당 조직", k=3, track=False, expand_links=False)],
+        )
+        hits = memory.query("Northstar 담당 조직", k=3, track=False, explain=True)
+        self.assertIn("owner", [h["slug"] for h in hits])
+        self.assertTrue(next(h for h in hits if h["slug"] == "owner")["streams"]["graph"])
+
+    def test_body_wikilink_is_bidirectional_and_alias_safe(self):
+        memory.add("결정은 [[source note|원문]]에서 유래했다.", title="decision")
+        memory.add("Orion 정책의 배경이다.", title="source note")
+
+        hits = memory.query("Orion 정책", k=2, track=False)
+        self.assertEqual({h["slug"] for h in hits}, {"source-note", "decision"})
+
+    def test_no_links_preserves_existing_ranking(self):
+        memory.add("맛있는 레시피 모음.", title="zz-recipe")
+        memory.add("김치 보관법.", title="aa-kimchi")
+        old = memory.query("레시피 김치", track=False, expand_links=False)
+        new = memory.query("레시피 김치", track=False)
+        self.assertEqual(old, new)
+
+
 class TestTemporalRanking(MemoryBase):
     """stale-memory 평가셋: reference만 최신성 보정, 안정 지식과 강한 관련도는 보존한다."""
 
@@ -972,6 +1003,13 @@ class TestRecallAndAllowlist(MemoryBase):
 
         self.assertIn("RECALL-5531", note)
 
+    def test_recall_handles_korean_predicate_inflection(self):
+        memory.add("사용자는 코드 리뷰 결과를 간결한 한국어로 받기를 선호한다.", title="review-style")
+
+        note = memory.recall_note("선호하는 코드 리뷰 답변 방식")
+
+        self.assertIn("review-style", note)
+
     def test_recall_respects_kill_switch(self):
         memory.add("사실", title="fact")
         os.environ["ASGARD_MEMORY_INJECT"] = "off"
@@ -1003,6 +1041,46 @@ class TestRecallAndAllowlist(MemoryBase):
         self.assertTrue(memory.inject_allowed())  # provider 미상(로컬 조작)은 킬스위치만
         open(cfg, "w").write('[memory]\ninject = "off"\nproviders = ["ollama"]\n')
         self.assertFalse(memory.inject_allowed("ollama"))  # 킬스위치가 allowlist 를 이긴다
+
+
+class TestPersonalMemoryDoctor(MemoryBase):
+    """1차 메모리 주입 게이트 doctor 표면 — 무음 차단 가시화.
+
+    26-07-21 실측: 프로젝트 설정의 provider 선택이 inject_allowed 를 기본 거부로 만들어
+    "저장은 되는데 어떤 세션도 회상하지 못하는" 상태가 경고 없이 지속됐다."""
+
+    def test_project_selected_provider_block_is_visible_and_allowlist_cures(self):
+        from asgard.commands.doctor import _personal_memory_check
+
+        proj = os.path.join(self.tmp, "proj")
+        os.makedirs(os.path.join(proj, ".asgard"), exist_ok=True)
+        open(os.path.join(proj, ".asgard", "asgard-setting-project.json"), "w").write(
+            json.dumps({"provider": {"name": "claude-native", "model": "haiku"}})
+        )
+        check = _personal_memory_check(proj)
+        assert check is not None
+        self.assertFalse(check["ok"])
+        self.assertIn("claude-native", check["detail"])
+        self.assertIn("providers", check["fix"])  # 처방 = 글로벌 allowlist 명시 허용
+        os.makedirs(os.path.join(self.tmp, ".asgard"), exist_ok=True)
+        open(os.path.join(self.tmp, ".asgard", "asgard-setting-global.json"), "w").write(
+            json.dumps({"memory": {"providers": ["claude-native"]}})
+        )
+        cured = _personal_memory_check(proj)
+        assert cured is not None
+        self.assertTrue(cured["ok"])
+
+    def test_kill_switch_reports_ok_as_intentional(self):
+        from asgard.commands.doctor import _personal_memory_check
+
+        os.environ["ASGARD_MEMORY_INJECT"] = "off"
+        try:
+            check = _personal_memory_check(self.tmp)
+            assert check is not None
+            self.assertTrue(check["ok"])
+            self.assertIn("kill switch", check["detail"])
+        finally:
+            os.environ.pop("ASGARD_MEMORY_INJECT", None)
 
 
 class TestCCWiring(MemoryBase):
@@ -1402,7 +1480,7 @@ class TestCCWiring(MemoryBase):
         )
         payload = j.loads(out)
         self.assertIn("중요 사건 사용자 승인 제안", payload["systemMessage"])
-        self.assertNotIn("🌱", payload["systemMessage"])  # 넛지 침묵 = systemMessage 에 미등장
+        self.assertNotIn("탐색 발견 저장 후보", payload["systemMessage"])  # 넛지 침묵 = systemMessage 에 미등장
 
     def test_cc_stop_surfaces_evolve_nudge(self):
         """자가발전 넛지 CC 배선 — 미채굴 신호가 있으면 Stop systemMessage 로 한 줄 (26-07-18)."""
@@ -1429,7 +1507,7 @@ class TestCCWiring(MemoryBase):
             [bindir],
         )
         payload = j.loads(out)
-        self.assertIn("🌱", payload["systemMessage"])
+        self.assertIn("⠶", payload["systemMessage"])
         self.assertIn("진화 후보 신호 1건", payload["systemMessage"])
 
 

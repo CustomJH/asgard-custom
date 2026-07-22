@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import os
+import re
 
 from . import memory
 from .memory_bridge import find_config, is_backend_trusted, server_recall
@@ -12,6 +13,47 @@ PROJECT_RECALL_BUDGET = 1600
 MAX_METADATA_FIELDS = 128
 MAX_METADATA_CHARS = 8192
 MAX_METADATA_DEPTH = 8
+
+_QUERY_STOPWORDS = frozenset(
+    {
+        "프로젝트",
+        "관련",
+        "정보",
+        "기억",
+        "무엇",
+        "어떤",
+        "어느",
+        "현재",
+        "함께",
+        "알려줘",
+        "대해서",
+        "대한",
+    }
+)
+_QUERY_PARTICLES = ("으로", "에서", "에게", "까지", "부터", "은", "는", "이", "가", "을", "를", "에", "의", "로", "과", "와", "도", "만")
+
+
+def _same_language_lexical_admission(query: str, text: str) -> bool:
+    """한국어 동언어 질의의 무근거 자동 주입만 보수적으로 차단한다.
+
+    Hindsight 0.8.x recall 결과에는 안정적인 relevance score가 없어서 임의의 점수 문턱을
+    둘 수 없다. 양쪽 모두 한국어일 때 도메인어가 하나도 겹치지 않는 경우만 기권하고,
+    영어↔한국어 교차언어 검색은 backend 순위를 그대로 보존한다.
+    """
+    body = text.split("\n\n", 1)[-1]
+    if not query.strip() or not re.search(r"[가-힣]", query) or not re.search(r"[가-힣]", body):
+        return True
+    terms: list[str] = []
+    for raw in re.findall(r"[A-Za-z0-9@._+-]+|[가-힣]+", query.lower()):
+        candidates = [raw]
+        suffix = next((part for part in _QUERY_PARTICLES if raw.endswith(part) and len(raw) > len(part) + 1), None)
+        if suffix:
+            candidates.append(raw[: -len(suffix)])
+        for candidate in candidates:
+            if len(candidate) >= 2 and candidate not in _QUERY_STOPWORDS:
+                terms.append(candidate)
+    haystack = text.lower()
+    return not terms or any(term in haystack for term in terms)
 
 
 def _neutralize(value: str) -> str:
@@ -136,7 +178,7 @@ def _matches_canonical_record(text: str, metadata: dict, canonical_items: dict[s
 
 
 def filter_project_hits(
-    root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None
+    root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None, query: str = ""
 ) -> tuple[list[dict], int]:
     """Ambient와 explicit MCP가 공유하는 최소 ownership/provenance 정책."""
     clean: list[dict] = []
@@ -154,6 +196,9 @@ def filter_project_hits(
             dropped += 1
             continue
         if metadata.get("origin") != "deterministic" and not _matches_canonical_record(text, metadata, canonical_items):
+            dropped += 1
+            continue
+        if query and not _same_language_lexical_admission(query, text):
             dropped += 1
             continue
         clean.append({**hit, "text": text, "metadata": metadata})
@@ -191,7 +236,13 @@ def project_recall_note(query: str, *, start: str | None = None, max_results: in
         suffix = "\n</memory-recall>"
         if len(prefix + suffix) > PROJECT_RECALL_BUDGET:
             return ""
-        filtered, _ = filter_project_hits(root, cfg, [hit for _, hit in hits], max_results=max_results)
+        filtered, _ = filter_project_hits(
+            root,
+            cfg,
+            [hit for _, hit in hits],
+            max_results=max_results,
+            query=query,
+        )
         rows: list[str] = []
         for hit in filtered:
             text = str(hit["text"])

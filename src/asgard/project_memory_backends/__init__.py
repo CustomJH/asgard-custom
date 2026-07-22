@@ -219,6 +219,8 @@ class HindsightBackend:
     def capabilities(self) -> BackendCapabilities:
         return BackendCapabilities(
             semantic_search=True,
+            lexical_search=True,
+            hybrid_search=True,
             metadata_filtering=True,
             metadata_roundtrip=True,
             namespace_isolation=True,
@@ -238,23 +240,49 @@ class HindsightBackend:
         return BackendReadiness("ready", self.engine, self.project_id)
 
     def recall(self, query: str, max_results: int = 8) -> list[ProjectMemoryHit]:
-        output = self._post("/memories/recall", {"query": query})
+        # Hindsight ranks extracted facts, but Asgard's project-memory trust gate
+        # intentionally accepts only the exact Git-canonical document text. Ask
+        # for each fact's source chunk and return that verbatim while preserving
+        # the ranked fact's ownership/provenance metadata.
+        output = self._post(
+            "/memories/recall",
+            {
+                "query": query,
+                "types": ["world", "experience"],
+                "budget": "mid",
+                "max_tokens": 2048,
+                "include": {"entities": None, "chunks": {"max_tokens": 4096}},
+            },
+        )
         rows = output.get("results")
         results = rows if isinstance(rows, list) else []
+        raw_chunks = output.get("chunks")
+        chunks = raw_chunks if isinstance(raw_chunks, Mapping) else {}
         hits: list[ProjectMemoryHit] = []
-        for raw in results[: max(1, min(int(max_results), 50))]:
+        seen_documents: set[str] = set()
+        limit = max(1, min(int(max_results), 50))
+        for raw in results:
             if not isinstance(raw, Mapping):
                 continue
             metadata = raw.get("metadata")
             score = raw.get("score")
+            document_id = str(raw.get("document_id") or raw.get("id") or "")
+            if document_id and document_id in seen_documents:
+                continue
+            chunk = chunks.get(str(raw.get("chunk_id") or ""))
+            chunk_text = chunk.get("text") if isinstance(chunk, Mapping) and chunk.get("truncated") is not True else None
             hits.append(
                 ProjectMemoryHit(
-                    text=str(raw.get("text") or ""),
+                    text=str(chunk_text or raw.get("text") or ""),
                     metadata=dict(metadata) if isinstance(metadata, Mapping) else {},
-                    document_id=str(raw.get("document_id") or raw.get("id") or ""),
+                    document_id=document_id,
                     score=float(score) if isinstance(score, (int, float)) else None,
                 )
             )
+            if document_id:
+                seen_documents.add(document_id)
+            if len(hits) >= limit:
+                break
         return hits
 
     def retain(self, records: Sequence[ProjectMemoryRecord]) -> BackendWriteResult:

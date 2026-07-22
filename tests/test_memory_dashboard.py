@@ -114,7 +114,7 @@ class TestSearchProvenance(DashboardBase):
         self.assertTrue(data["hits"])
         hit = next(h for h in data["hits"] if h["slug"] == "thor-squad")
         self.assertIn("streams", hit)
-        self.assertEqual(set(hit["streams"]), {"fts", "scan", "semantic"})
+        self.assertEqual(set(hit["streams"]), {"fts", "scan", "semantic", "graph"})
         self.assertTrue(hit["streams"]["scan"] or hit["streams"]["fts"])
         self.assertFalse(hit["streams"]["semantic"])  # 시맨틱 비활성 기본
 

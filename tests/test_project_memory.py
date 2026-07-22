@@ -1295,6 +1295,36 @@ class TestCooperativeRecall(ProjectMemoryBase):
             note = project_recall_note("배포 정책", start=self.root)
         self.assertEqual(note, "")
 
+    def test_unrelated_korean_query_abstains_from_canonical_project_hints(self):
+        hit = self.record_hit("프로덕션 기본 배포 리전은 서울 ap-northeast-2이다.")
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=[hit]),
+        ):
+            note = project_recall_note("이 프로젝트의 iOS 최소 지원 버전은?", start=self.root)
+
+        self.assertEqual(note, "")
+
+    def test_unrelated_pure_korean_query_also_abstains(self):
+        hit = self.record_hit("프로덕션 기본 배포 리전은 서울 ap-northeast-2이다.")
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=[hit]),
+        ):
+            note = project_recall_note("모바일 최소 지원 운영체제 버전은?", start=self.root)
+
+        self.assertEqual(note, "")
+
+    def test_cross_language_project_recall_is_not_blocked_by_lexical_gate(self):
+        hit = self.record_hit("프로덕션 기본 배포 리전은 서울 ap-northeast-2이다.")
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=[hit]),
+        ):
+            note = project_recall_note("Where is production hosted?", start=self.root)
+
+        self.assertIn("ap-northeast-2", note)
+
     def test_pre_hash_backend_record_still_matches_git_canonical(self):
         hit = self.record_hit("기존 backend에 게시된 프로젝트 배포 정책이다.")
         hit["metadata"].pop("content_hash")

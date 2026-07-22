@@ -1958,7 +1958,7 @@ function renderHits(data){
       + '<span class="sub">' + esc(h.slug) + ' · score ' + esc(h.score) + '</span>'
       + (h.snippet ? '<span class="snip">' + markHl(esc(h.snippet), data.q) + '</span>' : "")
       + '</div><div class="lanes" aria-hidden="true">'
-      + lane("FTS", st.fts, "fts") + lane("SCAN", st.scan, "scan") + lane("SEM", st.semantic, "sem")
+      + lane("FTS", st.fts, "fts") + lane("SCAN", st.scan, "scan") + lane("SEM", st.semantic, "sem") + lane("PPR", st.graph, "fts")
       + '</div></div>';
   }).join("") : '<p class="empty">'
     + (LANG === "en" ? 'No results for “' + esc(data.q) + '”' : '“' + esc(data.q) + '” 검색 결과 없음')
