@@ -272,6 +272,9 @@ def test_pt_prompt_accepts_prefilled_draft_immediately(monkeypatch, tmp_path) ->
     from prompt_toolkit.output import DummyOutput
 
     monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
+    # TERM 미설정이면 prompt_toolkit 이 dumb-prompt 폴백으로 빠져 accept_default 콜백을
+    # 사용하지 않고 stdin 을 기다린다. 이 테스트는 전체 화면 앱 경로의 자동 제출 계약이다.
+    monkeypatch.setenv("TERM", "xterm-256color")
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
         session = repl._pt_session()
@@ -474,3 +477,61 @@ def test_completion_menu_reservation_is_dynamic(monkeypatch, tmp_path) -> None:
     # Shift+Enter 시퀀스(CSI-u·modifyOtherKeys)가 줄내림(c-j)으로 별칭됐는지
     assert ANSI_SEQUENCES["\x1b[13;2u"] == Keys.ControlJ
     assert ANSI_SEQUENCES["\x1b[27;2;13~"] == Keys.ControlJ
+
+
+def test_turn_recap_renders_natural_sentence(monkeypatch) -> None:
+    # 클로드코드 recap 식 — done 요약줄 + 활동을 담은 자연어 한 문장(⠶ 딤)
+    from collections import Counter
+
+    monkeypatch.setattr(ui, "_COLOR", False)
+    hd = SimpleNamespace(
+        turn_recap={
+            "agents": Counter({"worker": 2, "verifier": 1}),
+            "tools": Counter({"bash": 5, "str_replace_based_edit_tool": 3}),
+            "files": {"src/a.py": {"op": "edit", "n": 3}, "tests/b.py": {"op": "create", "n": 1}},
+            "cmds": Counter({"pytest": 2, "git": 1}),
+        }
+    )
+
+    out = repl._turn_recap_str(hd, SimpleNamespace(model="m1"), 12.34, 4200)
+
+    assert "✓ done · m1 · 12.3s · 4.2k tok" in out
+    assert "⠶" in out
+    assert "patched src/a.py ×3" in out
+    assert "created tests/b.py" in out
+    assert "ran pytest ×2" in out and "ran git" in out
+    assert "agents worker×2, verifier" in out
+
+
+def test_turn_recap_meta_events_take_priority_over_activity(monkeypatch) -> None:
+    # hermes recap 상응 — 기억 저장·보존 같은 메타 이벤트가 있으면 그 문장이 1순위, 활동 문장은 접힘
+    from collections import Counter
+
+    monkeypatch.setattr(ui, "_COLOR", False)
+    hd = SimpleNamespace(
+        turn_recap={
+            "events": ["saved to memory: pytest-pref", "retained this turn in project memory"],
+            "tools": Counter({"bash": 2}),
+            "files": {"src/a.py": {"op": "edit", "n": 1}},
+            "cmds": Counter({"pytest": 1}),
+            "agents": Counter(),
+        }
+    )
+
+    out = repl._turn_recap_str(hd, SimpleNamespace(model="m1"), 2.0, 0)
+
+    assert "⠶ saved to memory: pytest-pref · retained this turn in project memory" in out
+    assert "patched" not in out and "ran pytest" not in out
+
+
+def test_turn_recap_degrades_to_done_line_without_collector(monkeypatch) -> None:
+    # recap 미지원 하임달(목·구버전)·무활동 턴 — done 한 줄로 정확히 축퇴
+    monkeypatch.setattr(ui, "_COLOR", False)
+
+    out = repl._turn_recap_str(object(), SimpleNamespace(model="m1"), 1.0, 0)
+    assert out.strip() == "✓ done · m1 · 1.0s"
+    assert "\n" not in out
+
+    idle = SimpleNamespace(turn_recap={"tools": {}, "files": {}, "cmds": {}, "agents": {}})
+    out = repl._turn_recap_str(idle, SimpleNamespace(model="m1"), 1.0, 0)
+    assert "⠶" not in out

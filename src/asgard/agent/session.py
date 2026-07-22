@@ -41,6 +41,12 @@ class TurnCancelled(Exception):
     하위 협력자(dispatch/waves)가 core 순환 임포트 없이 공유한다.)"""
 
 
+class ProviderRetriesExhausted(RuntimeError):
+    """Transport-local retries are spent; the upper layer may fallback but must not repeat them."""
+
+    _asgard_retries_exhausted = True
+
+
 @dataclass
 class SessionResult:
     text: str
@@ -167,6 +173,7 @@ class AgentSession:
         readonly_paths: list[str] | tuple[str, ...] = (),
         cancel_event: threading.Event | None = None,
         on_lifecycle: Callable[[str, str], None] | None = None,
+        on_tool: Callable[[str, dict], None] | None = None,
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # root는 Quest/journal/config의 canonical 소유자, cwd는 도구와 provider subprocess의 실행 공간.
@@ -188,6 +195,8 @@ class AgentSession:
         # 라이브 상태 신호 — 침묵 구간(thinking·툴 실행)에 스피너 등을 띄울 훅. None = 해제.
         self.on_status = on_status or (lambda s: None)
         self.on_tokens = on_tokens
+        # 턴 recap 수집 훅 — 부모(Heimdall)가 턴 단위 툴 사용을 집계 (None = 무집계)
+        self.on_tool = on_tool
         self.max_iterations = max_iterations
         # 협조적 취소 — 부모(Heimdall)가 이벤트를 공유하면 디스패치 자식까지 한 신호로 중단된다.
         # 검사 지점: iteration 경계·스트림 청크·툴 배치 사이. 히스토리는 항상 API-유효 상태로 닫는다.
@@ -215,6 +224,54 @@ class AgentSession:
         text = ui.oneline(detail, budget)
         gutter = ui.paint(theme.ansi(theme.HAIRLINE), "│")
         self.on_text(f"  {gutter} {ui.dim(sym + ' ' + text + dur)}\n")
+
+    def _tool_preview(self, name: str, args: dict) -> tuple[str, str]:
+        """Provider-neutral one-line tool label for the live status and scrollback."""
+        tool = name.removeprefix("mcp__asgard__")
+        key = tool.lower()
+        path = str(args.get("file_path") or args.get("path") or args.get("notebook_path") or "")
+        if key == "bash":
+            return "$", str(args.get("command") or "shell")
+        if key == "str_replace_based_edit_tool":
+            op = str(args.get("command") or "edit")
+            return ("→" if op == "view" else "✎"), f"{op} {path}".strip()
+        if key == "read":
+            return "→", f"read {path}".strip()
+        if key in {"write", "edit", "notebookedit"}:
+            return "✎", f"{key} {path}".strip()
+        if key in {"glob", "grep"}:
+            pattern = str(args.get("pattern") or "")
+            where = f" in {path}" if path else ""
+            return "✱", f'{key} "{pattern}"{where}'
+        if key == "read_document":
+            return "→", f"read document {path}".strip()
+        if key in {"web_fetch", "webfetch"}:
+            return "%", str(args.get("url") or "web fetch")
+        if key == "process":
+            action = str(args.get("action") or "process")
+            target = args.get("command") if action == "start" else args.get("process_id")
+            return "▶", f"{action} {target or ''}".strip()
+        if key == "apply_patch":
+            return "✎", "apply patch"
+        if key in {"load_skill", "skill"}:
+            return "◇", f"load skill {args.get('name') or ''}".strip()
+        if key == "memory_save":
+            return "◆", "save memory"
+        if key.startswith("dispatch"):
+            agent = str(args.get("agent") or key.removeprefix("dispatch_").removesuffix("_squad"))
+            task = str(args.get("task") or "")
+            return "↗", " · ".join(part for part in (agent, task) if part)
+        if key in {"verdict", "submit_visual_verdict"}:
+            return "✓", key.replace("_", " ")
+        return "⚙︎", tool
+
+    def _observe_tool(self, name: str, args: dict) -> None:
+        """Best-effort turn activity hook shared by every provider transport."""
+        if self.on_tool is not None:
+            try:
+                self.on_tool(name, dict(args))
+            except Exception:
+                pass
 
     def _thought_line(self, secs: float) -> None:
         """thinking 원문 대신 축약 한 줄 — '│ ⋯ 룬 해독 3s' (스레드 아래 사고층)."""
@@ -257,13 +314,8 @@ class AgentSession:
             tool_calls=result.tool_calls,
             cancel=self.cancel_event,
         )
-        if call.name == "bash":
-            detail, sym = str(call.input.get("command") or "restart"), "$"
-        elif call.name == "str_replace_based_edit_tool":
-            detail = f"{call.input.get('command', '?')} {call.input.get('path', '')}"
-            sym = "✎"
-        else:
-            detail, sym = call.name, "⚙︎"  # ⚙ + VS15 = 텍스트 프리젠테이션 강제 (폭 안정)
+        sym, detail = self._tool_preview(call.name, call.input)
+        self._observe_tool(call.name, call.input)
         from .. import ui
 
         self.on_status(ui.oneline(f"{sym} {detail}", 60))
@@ -546,8 +598,12 @@ class AgentSession:
                         break
                     except Exception as e:
                         wait = retry_after_seconds(e, attempt)
-                        if wait is None or attempt == 3:
+                        if wait is None:
                             raise
+                        if attempt == 3:
+                            # 이 transport가 이미 4회 시도했다. Heimdall은 provider 폴백만 하고
+                            # 같은 요청을 다시 3세트 반복하지 않는다.
+                            raise ProviderRetriesExhausted(str(e)) from e
                         self._tool_line("⏳", f"429 rate limit — {wait:.0f}s 후 재시도")
                         if self.cancel_event.wait(wait):
                             self._journal_error(jid, j0, e)

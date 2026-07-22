@@ -56,6 +56,26 @@ _M: dict[str, tuple[str, str]] = {
     "picker_more": ("… {n} more", "… {n}개 더"),
     "picker_no_match": ("no match", "일치하는 항목이 없어요"),
     "picker_manual_model": ('use "{q}" as model ID', '"{q}"를 모델 ID로 사용'),
+    # 턴 종료 recap — 자연어 한 문장 (딤)
+    "recap_created": ("created {f}", "{f} 생성"),
+    "recap_patched": ("patched {f}", "{f} 수정"),
+    "recap_ran": ("ran {c}", "{c} 실행"),
+    "recap_agents": ("agents {a}", "에이전트 {a}"),
+    # recap 메타 이벤트 — 기억·자가발전 부수 작업 (표시 1순위). 기억 체계 = 위그드라실(세계수),
+    # 개인 기억은 줄기에 새기고 프로젝트 기억은 프로젝트 가지 — 승인권자는 오딘(사용자).
+    "recap_ev_memory_saved": ("carved into Yggdrasil: {s}", "위그드라실에 새겼어요: {s}"),
+    "recap_ev_retained": (
+        "preserved this turn on Yggdrasil's project branch",
+        "이 턴을 위그드라실 프로젝트 가지에 보존했어요",
+    ),
+    "recap_ev_proposed": (
+        "proposed an update to Yggdrasil's project branch (awaiting Odin's approval)",
+        "위그드라실 프로젝트 가지 갱신을 제안했어요 (오딘 승인 대기)",
+    ),
+    "recap_ev_distill": (
+        "suggested distilling this exploration into Yggdrasil",
+        "이번 탐색을 위그드라실로 증류하도록 제안했어요",
+    ),
     "api_key_prompt": ("{p} API key (hidden)", "{p} API 키 (입력한 키는 화면에 보이지 않아요)"),
     "rpm_prompt": ("rpm limit (requests/min · -1 = off)", "rpm 상한 (분당 요청 수 · -1이면 제한 없음)"),
     "rpm_invalid": ("invalid rpm — keeping current", "rpm 값이 올바르지 않아요 — 기존 값을 그대로 둘게요"),

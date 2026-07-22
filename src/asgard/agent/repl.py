@@ -1553,6 +1553,50 @@ def _run_bang(root: str, cmd: str) -> None:
         sys.stdout.write(f"  {ui.paint(ui._FAIL, '⚠')} {e}\n")
 
 
+def _recap_sentence(recap: dict) -> str:
+    """턴 활동 → 자연어 한 문장 — '{f} 수정 ×3 · {f} 생성 · pytest ×2 실행 · 에이전트 worker×2'.
+    이미지·클로드코드 recap 스타일: 카운터 표가 아니라 읽히는 문장, 활동 없으면 빈 문자열."""
+    parts: list[str] = []
+    files = list((recap.get("files") or {}).items())
+    for path, info in files[:6]:
+        phrase = t("recap_created" if info.get("op") == "create" else "recap_patched", f=path)
+        if info.get("n", 1) > 1:
+            phrase += f" ×{info['n']}"
+        parts.append(phrase)
+    if len(files) > 6:
+        parts.append(f"+{len(files) - 6}")
+    cmds = recap.get("cmds")
+    if cmds:
+        shown = cmds.most_common(5)
+        parts += [t("recap_ran", c=f"{c} ×{n}" if n > 1 else c) for c, n in shown]
+        if len(cmds) > 5:
+            parts.append(f"+{len(cmds) - 5}")
+    agents = recap.get("agents")
+    if agents:
+        parts.append(t("recap_agents", a=", ".join(f"{k}×{v}" if v > 1 else str(k) for k, v in agents.most_common())))
+    return " · ".join(parts)
+
+
+def _turn_recap_str(hd, rp, secs: float, spent: int) -> str:
+    """턴 종료 recap — '✓ done' 요약줄 + 자연어 한 문장(딤, ⠶ 브랜드 도트마크 — 위그드라실 표식).
+
+    hermes recap 상응: 1순위는 메타 이벤트(기억 저장·프로젝트 메모리 보존/제안·증류 —
+    백그라운드에서 함께 일어난 부수 작업), 이벤트가 없으면 활동 문장(수정 파일·커맨드·에이전트)."""
+    tok = f" · {spent / 1000:.1f}k tok" if spent else ""
+    lines = [f"  {ui.dim(f'✓ done · {rp.model} · {secs:.1f}s{tok}')}"]
+    recap = getattr(hd, "turn_recap", None)
+    if not isinstance(recap, dict):
+        return "\n".join(lines)
+    events = recap.get("events") or []
+    sentence = " · ".join(events) if events else _recap_sentence(recap)
+    if sentence:
+        import textwrap
+
+        for ln in textwrap.wrap("⠶ " + sentence, width=max(24, ui.stream_width() - 4)):
+            lines.append("    " + ui.dim(ln))
+    return "\n".join(lines)
+
+
 def run(root: str, rp, cont: bool = False) -> int:
     """터미널을 바로 켠다 — 키 없어도 진입. 첫 요청 시 provider 미설정이면 온보딩."""
     render = _Render()
@@ -1654,6 +1698,7 @@ def run(root: str, rp, cont: bool = False) -> int:
                 ev.clear()
             sys.stdout.write("\n")  # 제출 에코 ↔ 응답 블록 시각 분리 — 스트리밍 첫 줄이 에코에 접착되지 않게
             t0 = _time.monotonic()
+            tok0 = getattr(heimdall, "total_tokens", 0)  # 턴 지출 = 누적 델타 (recap 용)
             with ExitStack() as stack:  # 독 수명 = handle 구간 — 예외·중단에도 반드시 내려간다
                 stack.enter_context(_cancel_on_sigint(heimdall))
                 if dock is not None:
@@ -1666,8 +1711,9 @@ def run(root: str, rp, cont: bool = False) -> int:
                 render.finish()
             if out:
                 sys.stdout.write(f"\n{out}\n")
-            # 턴 요약 — '✓ done · model · 7.0s' 한 줄
-            sys.stdout.write(f"\n  {ui.dim(f'✓ done · {rp.model} · {_time.monotonic() - t0:.1f}s')}\n")
+            # 턴 recap — '✓ done' 요약줄 + 활동 집계(agents/tools/files/cmds, hermes 식 로컬 계산)
+            spent = max(0, getattr(heimdall, "total_tokens", 0) - tok0)
+            sys.stdout.write("\n" + _turn_recap_str(heimdall, rp, _time.monotonic() - t0, spent) + "\n")
         except KeyboardInterrupt:
             sys.stdout.write(f"\n  {ui.dim(t('turn_kept'))}\n")
         except Exception as e:
