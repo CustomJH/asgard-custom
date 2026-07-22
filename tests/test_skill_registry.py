@@ -38,6 +38,23 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "verifier"), [])
         self.assertIn("worker", {plugin["name"] for plugin in skill_registry.plugins()})
 
+    def test_catalog_prioritizes_matches_without_hiding_other_skills(self):
+        matched = {name for name, _ in skill_registry.resolve_skills(self.root, "로그인 폼 접근성 개선", "freyja")}
+        catalog = skill_registry.skill_catalog(self.root, "freyja", matched=matched)
+
+        self.assertIn("[task-match] asgard-freyja-syn", catalog)
+        self.assertIn("asgard-freyja-motion", catalog)
+        self.assertIn("scan the remaining descriptions", catalog)
+
+    def test_common_frontend_words_match_general_ui_skills(self):
+        for task, expected in (
+            ("기존 버튼 패딩 수정", {"ui-styling", "ui-ux-pro-max"}),
+            ("React component spacing", {"ui-styling", "ui-ux-pro-max"}),
+            ("CSS margin 조정", {"ui-styling"}),
+        ):
+            matched = {name for name, _ in skill_registry.resolve_skills(self.root, task, "freyja")}
+            self.assertTrue(expected <= matched, task)
+
     def test_bare_catalog_commands_list_current_inventory(self):
         from typer.testing import CliRunner
 

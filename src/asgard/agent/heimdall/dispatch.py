@@ -98,7 +98,13 @@ class DeliveryDispatch:
     def __init__(self, hd):
         self._hd = hd
 
-    def freyja_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
+    def freyja_squad_handler(
+        self,
+        sid: str,
+        worker_result_writes: list[str],
+        cwd: str | None = None,
+        parent_task: str = "",
+    ):
         """freyja-lead → freyja N기 병렬 fan-out. 자식에는 coordinate 도구를 주지 않아 깊이 1을 봉인한다."""
         hd = self._hd
 
@@ -135,7 +141,8 @@ class DeliveryDispatch:
                     ),
                 )
                 system = _DELIVERY["freyja"] + "\n\n" + hd.delivery_identity + hd.map_note
-                catalog, skill_tools, skill_handlers = _skill_support("freyja", hd.root)
+                skill_task = "\n".join(part for part in (parent_task, task, axis, why) if part)
+                catalog, skill_tools, skill_handlers = _skill_support("freyja", hd.root, task=skill_task)
                 system += catalog
                 with UnitWorkspace(squad_root, f"freyja-{spec['id']}") as workspace:
                     child = hd._session(
@@ -462,8 +469,14 @@ class DeliveryDispatch:
             system += "\n\n" + hd.delivery_identity
             if agent != "loki":
                 system += getattr(hd, "map_note", "")
+            skill_task = "\n".join(part for part in (task, why) if part)
+            if agent == "freyja-lead":
+                skill_task += "\n발키리 편대"
             catalog, skill_tools, skill_handlers = _skill_support(
-                agent, hd.root, include_learned=agent not in _DELIVERY_READONLY
+                agent,
+                hd.root,
+                task=skill_task if agent in ("freyja", "freyja-lead") else None,
+                include_learned=agent not in _DELIVERY_READONLY,
             )
             system += catalog
             if agent == "freyja-lead":
@@ -505,7 +518,7 @@ class DeliveryDispatch:
                 }
             ),
         )
-        return f"[freyja-lead] ⛔ two-stage visual gate 위반 — {reason}. 본류 미반영."
+        return f"[freyja-lead] ✗ two-stage visual gate 위반 — {reason}. 본류 미반영."
 
     def run_freyja_lead(
         self,
@@ -532,7 +545,7 @@ class DeliveryDispatch:
             lead_writes: list[str] = []
             handlers = {
                 **skill_handlers,
-                "dispatch_freyja_squad": self.freyja_squad_handler(sid, lead_writes, workspace.path),
+                "dispatch_freyja_squad": self.freyja_squad_handler(sid, lead_writes, workspace.path, task),
                 "dispatch_visual_verdict": self.visual_verdict_handler(sid, lead_writes, workspace.path, verdict_state),
             }
             child = hd._session(

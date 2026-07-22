@@ -21,7 +21,7 @@ from .skill_bank import learned_skills, record_use, resolve_learned
 
 _SLUG = re.compile(r"[a-z0-9][a-z0-9._-]{0,63}")
 _PLUGIN_SCHEMA = 1
-_PLUGIN_CAP = 4
+_PLUGIN_CAP = 6
 _PLUGIN_FILE_CAP = 4_096
 _PLUGIN_BYTE_CAP = 64 * 1024 * 1024
 _RESOLVED_BODY_BUDGET = 16_000
@@ -725,19 +725,30 @@ def skill_catalog(
     include_learned: bool = True,
     exclude: tuple[str, ...] = (),
     loader: str = "load_skill",
+    matched: set[str] | None = None,
 ) -> str:
     """Render only the metadata needed for model-native autonomous selection."""
     rows = available_skills(root, agent, include_learned=include_learned, exclude=exclude)
     if not rows:
         return ""
-    if loader == "load_skill":
+    if matched is not None:
+        rows.sort(key=lambda row: (row["name"] not in matched, row["name"]))
+        instruction = (
+            "Call `load_skill` for every `[task-match]` skill before working. Then scan the remaining "
+            "descriptions and load any additional skill that fits the task."
+        )
+    elif loader == "load_skill":
         instruction = "Call `load_skill` with the exact name only when a description matches the task."
     else:
         instruction = (
             "Run `asgard skills show <exact-name>` only when a description matches the task, "
             "then follow the returned body."
         )
-    items = "\n".join(f"  - {escape(row['name'])}: {escape(row['description'])}" for row in rows)
+    items = "\n".join(
+        f"  - {'[task-match] ' if matched is not None and row['name'] in matched else ''}"
+        f"{escape(row['name'])}: {escape(row['description'])}"
+        for row in rows
+    )
     return (
         "\n\n## Available skills (progressive disclosure)\n"
         f"{instruction} Do not preload every skill.\n"

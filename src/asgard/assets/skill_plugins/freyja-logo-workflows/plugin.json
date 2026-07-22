@@ -1,0 +1,49 @@
+{
+  "schema": 1,
+  "name": "freyja-logo-workflows",
+  "version": "2026.07.22",
+  "description": "Repo-aware logo direction and high-quality SVG generation workflows assigned to Freyja",
+  "skills": [
+    "logo-designer",
+    "logo-generator"
+  ],
+  "routing": {
+    "logo-designer": {
+      "triggers": [
+        "로고",
+        "logo",
+        "워드마크",
+        "wordmark",
+        "브랜드 마크",
+        "brand mark",
+        "파비콘",
+        "favicon",
+        "app icon"
+      ],
+      "agents": [
+        "freyja",
+        "freyja-lead"
+      ]
+    },
+    "logo-generator": {
+      "triggers": [
+        "로고",
+        "logo",
+        "워드마크",
+        "wordmark",
+        "브랜드 마크",
+        "brand mark",
+        "파비콘",
+        "favicon",
+        "app icon"
+      ],
+      "agents": [
+        "freyja",
+        "freyja-lead"
+      ]
+    }
+  },
+  "source": "https://github.com/neonwatty/logo-designer-skill + https://github.com/op7418/logo-generator-skill",
+  "revision": "8f9a4b04009c15b05eeb47b4608d5502abafa609 + bf4e9ac4d4428bda261afcfe981871ceb92d94e6",
+  "license": "MIT (declared upstream)"
+}

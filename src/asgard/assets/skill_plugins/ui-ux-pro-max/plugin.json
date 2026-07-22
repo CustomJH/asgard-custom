@@ -37,11 +37,11 @@
       "agents": ["freyja", "freyja-lead"]
     },
     "ui-styling": {
-      "triggers": ["ui styling", "shadcn styling", "tailwind styling", "ui 스타일링", "shadcn 스타일링", "tailwind 스타일링"],
+      "triggers": ["ui styling", "shadcn styling", "tailwind styling", "css", "styling", "button", "component", "spacing", "padding", "margin", "ui 스타일링", "shadcn 스타일링", "tailwind 스타일링", "스타일", "버튼", "컴포넌트", "간격", "패딩", "마진"],
       "agents": ["freyja", "freyja-lead"]
     },
     "ui-ux-pro-max": {
-      "triggers": ["ui", "ux", "interface", "landing page", "dashboard", "accessibility", "typography", "responsive", "디자인", "화면", "랜딩", "랜딩 페이지", "랜딩페이지", "대시보드", "접근성", "타이포", "반응형"],
+      "triggers": ["ui", "ux", "interface", "frontend", "web page", "page", "form", "button", "component", "landing page", "dashboard", "accessibility", "typography", "responsive", "디자인", "화면", "프론트엔드", "웹 페이지", "페이지", "폼", "버튼", "컴포넌트", "랜딩", "랜딩 페이지", "랜딩페이지", "대시보드", "접근성", "타이포", "반응형"],
       "agents": ["freyja", "freyja-lead"]
     }
   },

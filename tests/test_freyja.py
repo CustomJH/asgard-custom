@@ -10,6 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from asgard import skill_registry  # noqa: E402
 from asgard.templates.freyja import (  # noqa: E402
     _SKILL_BODY_BUDGET,
     FREYJA_SKILLS,
@@ -79,6 +80,9 @@ class TestSkillBodies(unittest.TestCase):
 
     def setUp(self):
         self.by_name = dict(FREYJA_SKILLS)
+        root = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+        self.logo_designer = skill_registry.load_skill_for_agent(root, "freyja", "logo-designer")
+        self.logo_generator = skill_registry.load_skill_for_agent(root, "freyja", "logo-generator")
 
     def test_frontmatter(self):
         for sname, body in FREYJA_SKILLS:
@@ -135,27 +139,16 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("feTurbulence", g)  # 노이즈는 data-URI
         self.assertIn("2408.08313", g)  # SGP-Bench — 코드→시각 역상상 불능 실증
         self.assertIn("자기완결 납품 = 재료도 파일 안에", g)
-        # 로고 스튜디오에도 손 SVG 경계 명시 (26-07-17 확장: 단순 기하 → 기하 유도 조형까지)
-        self.assertIn("손 SVG 정본은 기하 유도 조형 한정", self.by_name["asgard-freyja-logo-studio"])
+        # 조형 방법론은 얇은 조정자가 아니라 전용 generator가 소유한다.
+        self.assertIn("단순 기하·원호 유도 곡선은 직접 SVG", self.logo_generator)
 
-    def test_logo_canon_merged_into_studio(self):
-        # 로고 조형·아트 디렉팅 캐논 (26-07-17 분해 — 브리싱가멘에서 logo-studio 로 병합)
-        logo = self.by_name["asgard-freyja-logo-studio"]
-        self.assertIn("변형 6종 강제", logo)  # 같은 아이디어 6벌 금지
-        self.assertIn("여백 ≥40%", logo)  # 조형 수치 계약
-        self.assertIn("옵티컬 보정", logo)  # 오버슛·시각적 중심·조사 현상
-        self.assertIn("마스코트화", logo)  # 유치함의 공식
-        self.assertIn("가변 아이덴티티 세트", logo)  # 2026 트렌드
-        self.assertIn("판정 위계", logo)  # 수치=바닥, 미감=승부처 (26-07-17 굿하트 교훈)
-        self.assertIn("극단 제약은 가변 세트가 흡수한다", logo)
-        self.assertIn("취향 선언(앵커)", logo)  # 오딘이 반응한 자산은 밀어낼 기본값이 아니다
-        self.assertIn("트렌드는 이동한다", logo)  # 재조사 의무
-        self.assertIn("의미 1문장", logo)  # 형상의 존재 이유
-        self.assertIn("소유 가능성 충돌 검사", logo)
-        self.assertIn("16px·32px·64px·512px 실제 CSS 픽셀 렌더", logo)
-        self.assertIn("법적 클리어런스가 아님", logo)
-        self.assertIn("5질문", logo)  # 브랜드 서사 전략 게이트
-        self.assertIn("브랜드 킷 문서", logo)  # 보드 패널 시퀀스
+    def test_logo_canon_lives_in_specialists(self):
+        coordinator = self.by_name["asgard-freyja-logo-studio"]
+        self.assertIn("방법론을\n복제하지 않고", coordinator)
+        self.assertIn("positive/reverse 버전을 별도 실측", self.logo_generator)
+        self.assertIn("clear space, minimum size, 금지 사용례", self.logo_generator)
+        self.assertIn("상표 검색은 이름뿐 아니라 주요 design element", self.logo_generator)
+        self.assertIn("5질문 브리프", coordinator)
 
     def test_print_skill_anchors(self):
         # 인쇄물 (26-07-17 분해 — 전용 스킬로 이관)
@@ -188,23 +181,15 @@ class TestSkillBodies(unittest.TestCase):
 
     def test_logo_studio_imported_workflow(self):
         logo = self.by_name["asgard-freyja-logo-studio"]
+        self.assertIn("필수 선행 로드", logo)
+        self.assertIn("logo-designer", logo)
+        self.assertIn("logo-generator", logo)
         for anchor in (
             "최소 6개",
-            "순수 기하",
-            "점 매트릭스",
-            "선 시스템",
-            "노드 네트워크",
-            'viewBox="0 0 100 100"',
-            "currentColor",
-            "interactive showcase",
             "16·32·64·512",
-            "reference-assisted vectorization",
             "최소 하나를 고르지 않는다",
-            "좌표 산술은 실제 래스터 검사가 아니다",
-            "일반 글자나 사물로 읽힌다고 NOTES가 인정하면 자동 탈락",
-            "질량·곡률·terminal",
-            "IBM Plex Sans·Inter",
-            "font·license·버전·outline 변환 계보",
+            "UNVERIFIED",
+            "visual verdict",
         ):
             self.assertIn(anchor, logo)
         self.assertIn("asgard-freyja-reference-atlas", logo)
@@ -407,6 +392,8 @@ class TestUiSkillsRework(unittest.TestCase):
         self.by_name = dict(FREYJA_SKILLS)
         self.taste = self.by_name["asgard-freyja-brisingamen"]
         self.motion = self.by_name["asgard-freyja-motion"]
+        root = os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+        self.logo_generator = skill_registry.load_skill_for_agent(root, "freyja", "logo-generator")
 
     def test_design_plan_block_procedure(self):
         # 코드 전 플랜 블록: 레지스터 → 디자인 리드+장면 문장 → 다이얼 → 시드 변주 → 색 전략 → 플랜 검증
@@ -492,32 +479,21 @@ class TestUiSkillsRework(unittest.TestCase):
         self.assertIn("전면 의무화는 기각", m)
         self.assertIn("LottieFiles/motion-design-skill", m)
 
-    def test_logo_organic_construction(self):
-        # 유기·다이내믹 조형 구성법 (26-07-17 — 컨셉 B 계열 불합격 교정: 프리핸드 아닌 기하 유도)
-        logo = self.by_name["asgard-freyja-logo-studio"]
-        self.assertIn("유기·다이내믹 구성법", logo)
-        self.assertIn("중첩 원 구성", logo)  # 반지름 2–3종 호 가족 + G1 접선 연속
-        self.assertIn("두 원 빼기 스우시", logo)
-        self.assertIn("오프셋 곡선 리본", logo)  # 가변 굵기 테이퍼
-        self.assertIn("회전 복제", logo)  # rotate(360/n)
-        self.assertIn("로그 나선", logo)  # 성장 서사의 기하 근거
-        self.assertIn("하이브리드 그리드 선행", logo)
-        self.assertIn("납품 매트릭스", logo)  # 레이아웃×색 + 금지 사용례
-        # 모티프 메뉴 탈기본화 — 양 세대 동시 수렴 실측 (에코 아크)
-        self.assertIn("같은 모티프 연속 2회 = 수렴 티", logo)
+    def test_logo_form_method_is_owned_by_generator(self):
+        logo = self.logo_generator
+        self.assertIn("arc, capsule, or offset-ribbon flow", logo)
+        self.assertIn("원호 유도 곡선", logo)
+        self.assertIn("실제 불리언 계산", logo)
+        self.assertIn("메뉴의 첫 항목을 기본값으로 쓰지 않는다", logo)
+        self.assertIn("primary mark / compact mark / bold favicon crop", logo)
 
-    def test_logo_asset_pipeline(self):
-        # 에셋 조립 파이프라인 (26-07-17 — manus/Brandmark/op7418 리서치: 품질 = 에셋+페어링+채점 게이트)
-        logo = self.by_name["asgard-freyja-logo-studio"]
-        self.assertIn("에셋 조립 파이프라인", logo)
-        self.assertIn("opentype.js", logo)  # 워드마크는 실제 폰트 아웃라인
-        self.assertIn("불리언 실계산", logo)  # paper.js — 라이브러리 티 제거·좌표 환각 제거
-        self.assertIn("흔한 모양 감점", logo)  # Brandmark 고유성 점수 등가물
-        self.assertIn("무게 페어링", logo)  # 심볼-워드마크 광학 무게 정합
-        self.assertIn("대량 생성 후 선별", logo)  # 후보 ≥8 → 게이트 선별
-        self.assertIn("패턴 좌표 레시피", logo)  # op7418 — 동심원 점·캡슐 흐름·회전 스택
-        self.assertIn("할당제 + 4차원 분산", logo)
-        self.assertIn("쇼케이스 미세 타이포", logo)  # 6–9pt 3점 배치
+    def test_logo_wordmark_and_selection_method_is_owned_by_generator(self):
+        logo = self.logo_generator
+        self.assertIn("실제 폰트 control", logo)
+        self.assertIn("font 이름·버전·라이선스·outline 변환 계보", logo)
+        self.assertIn("광학 무게·cap height·간격·곡률·terminal", logo)
+        self.assertIn("후보 총수는 6개 이상이며 topology를 분산", logo)
+        self.assertIn("쇼케이스는 승자 확정 **후**", logo)
 
     def test_logo_3d_showcase(self):
         fk = self.by_name["asgard-freyja-folkvangr"]
@@ -814,6 +790,7 @@ class TestSkillResolver(unittest.TestCase):
             "asgard-freyja-hildisvini",
         ):
             self.assertTrue(name in visible or name in deferred, name)
+        self.assertNotIn("asgard-freyja-seidr", visible)
 
     def test_negative_routing_respects_declared_scope(self):
         cases = {
