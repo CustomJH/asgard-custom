@@ -561,6 +561,25 @@ class TestView(Base):
         self.assertIn("prefers-reduced-motion", html)
         self.assertIn("@media (max-width:720px)", html)
 
+    def test_view_redesign_contract(self):
+        """재설계 표면의 등가 가드 — 반응형·줌 컨트롤·캔버스 비의존 접근성·증거 카피."""
+        from asgard.map_graph import build_view, scan_graph
+
+        self.seed()
+        scan_graph(self.root)
+        html = build_view(self.root)
+        self.assertIn('<meta name="viewport"', html)  # 모바일 뷰포트
+        self.assertIn("touch-action:none", html)  # 핀치/팬을 캔버스가 소유
+        self.assertIn('role="application"', html)  # 캔버스 키보드 조작(화살표·+−·0·Esc)
+        self.assertIn("aria-pressed", html)  # kind 필터 칩 상태 노출
+        for control in ('id="zoomIn"', 'id="zoomOut"', 'id="zoomFit"', 'aria-label="확대"'):
+            self.assertIn(control, html)  # 줌 컨트롤 버튼(모바일 배려)
+        self.assertIn("asgard map scan", html)  # 빈 상태 안내
+        self.assertIn("asgard map trace --from", html)  # 추적 안내 유지
+        self.assertIn("소스 재확인", html)  # candidate 증거 계약 문구
+        for kind in ("declares", "calls", "touches", "uses"):
+            self.assertIn(kind, html)  # 엣지 kind 범례 사전
+
     def test_view_without_state_raises(self):
         from asgard.map_graph import GraphError, build_view
 
