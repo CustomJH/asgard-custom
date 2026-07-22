@@ -41,7 +41,10 @@ dev = [
 [tool.ruff]
 target-version = "py314"
 line-length = 120
-extend-exclude = ["src/asgard/assets/skill_plugins/**"]  # vendored resource snapshots retain upstream bytes
+extend-exclude = [
+    "src/asgard/assets/skill_plugins/**",  # vendored resource snapshots retain upstream bytes
+    "archive/**",  # 보존용 원문 스냅샷 — 린트 대상 아님
+]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]  # pycodestyle · pyflakes · isort — 최소 셋부터
@@ -55,7 +58,10 @@ testpaths = ["tests"]
 python-version = "3.14"
 
 [tool.ty.src]
-exclude = ["src/asgard/assets/skill_plugins/**"]  # vendored resource snapshots retain upstream bytes
+exclude = [
+    "src/asgard/assets/skill_plugins/**",  # vendored resource snapshots retain upstream bytes
+    "archive/**",  # 보존용 원문 스냅샷 — 타입체크 대상 아님
+]
 
 [build-system]
 requires = ["hatchling"]
