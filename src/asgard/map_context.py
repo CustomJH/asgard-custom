@@ -75,7 +75,9 @@ def validate_area_maps(root: str | os.PathLike[str]) -> tuple[tuple[MapEntry, ..
     entries: list[MapEntry] = []
     issues: list[AreaIssue] = []
     try:
-        candidates = sorted(path for path in map_dir.glob("*.md") if path.name not in {"INDEX.md", "PROJECT.md"})
+        candidates = sorted(
+            path for path in map_dir.glob("*.md") if path.name not in {"GRAPH.md", "INDEX.md", "PROJECT.md"}
+        )
     except OSError as exc:
         return (), (AreaIssue(".asgard/map", str(exc)),)
     for path in candidates:
@@ -117,21 +119,24 @@ def validate_area_maps(root: str | os.PathLike[str]) -> tuple[tuple[MapEntry, ..
     return tuple(entries), tuple(issues)
 
 
-def _managed_entries(root: Path, text: str) -> tuple[list[MapEntry], list[tuple[str, str]]]:
+def _managed_entries(
+    root: Path, text: str, source: str = ".asgard/map/PROJECT.md"
+) -> tuple[list[MapEntry], list[tuple[str, str]]]:
     entries: list[MapEntry] = []
     commands: list[tuple[str, str]] = []
     for line in text.splitlines():
         command = _COMMAND.fullmatch(line)
         if command:
-            commands.append((command.group(1), command.group(2)))
+            if not _threat(*command.groups()):
+                commands.append((command.group(1), command.group(2)))
             continue
         match = _ENTRY.fullmatch(line)
         if not match:
             continue
         path, role = match.groups()
-        if path == "(none yet)" or not _safe_path(root, path):
+        if path == "(none yet)" or not _safe_path(root, path) or _threat(path, role, source):
             continue
-        entries.append(MapEntry(path, role.strip(), ".asgard/map/PROJECT.md", True))
+        entries.append(MapEntry(path, role.strip(), source, True))
     return entries, commands
 
 
@@ -160,8 +165,17 @@ def build_map_context(
         managed_text = project_path.read_text(encoding="utf-8")
     except OSError:
         managed_text = ""
-    managed_hash = hashlib.sha256(managed_text.encode()).hexdigest()
+    # 관계 그래프 카탈로그(GRAPH.md)는 맵의 심화 계층이다 — 존재하면 같은 엔트리 문법으로
+    # 융합되어 라우트·모델·외부 서비스 증거가 동일 예산 안에서 함께 랭크된다.
+    graph_path = base / ".asgard" / "map" / "GRAPH.md"
+    try:
+        graph_text = graph_path.read_text(encoding="utf-8") if not graph_path.is_symlink() else ""
+    except OSError:
+        graph_text = ""
+    managed_hash = hashlib.sha256((managed_text + "\0" + graph_text).encode()).hexdigest()
     managed, commands = _managed_entries(base, managed_text)
+    graph_entries, _graph_commands = _managed_entries(base, graph_text, ".asgard/map/GRAPH.md")
+    managed = [*managed, *graph_entries]
     manual: tuple[MapEntry, ...] = ()
     issues: tuple[AreaIssue, ...] = ()
     if not managed_only:

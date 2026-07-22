@@ -1477,7 +1477,7 @@ def map_nudge(root: str, base_ref: str | None) -> list[str]:
 
 
 def refresh_managed_map(root: str) -> tuple[bool, str | None]:
-    """Verifier hash 전에 PROJECT.md를 갱신한다.
+    """Verifier hash 전에 PROJECT.md와 관계 GRAPH.md를 갱신한다.
 
     검증 뒤 close에서 쓰면 PASS hash가 즉시 stale해진다. 따라서 자동 지도 변경도 반드시
     Verifier가 판정하는 diff에 포함되도록 이 시점 하나에서만 쓴다. 지도 미도입은 정상이나,
@@ -1487,25 +1487,28 @@ def refresh_managed_map(root: str) -> tuple[bool, str | None]:
         return True, None
     try:
         from asgard.code_map import refresh_map
+        from asgard.map_graph import scan_graph
 
         refresh_map(root)
+        scan_graph(root)
         return True, None
     except Exception as exc:
         import_error = f"{exc.__class__.__name__}: {str(exc)[:300]}"
-        try:
-            completed = subprocess.run(
-                ["asgard", "setup", "map", "--quiet"],
-                cwd=root,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
-        except Exception as cli_exc:
-            return False, f"{import_error}; CLI fallback {cli_exc.__class__.__name__}: {str(cli_exc)[:200]}"
-        if completed.returncode == 0:
-            return True, None
-        detail = (completed.stderr or completed.stdout or f"exit {completed.returncode}").strip()[:300]
-        return False, f"{import_error}; CLI fallback: {detail}"
+        for command in (["asgard", "map", "update", "--quiet"], ["asgard", "map", "scan", "--quiet"]):
+            try:
+                completed = subprocess.run(
+                    command,
+                    cwd=root,
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                )
+            except Exception as cli_exc:
+                return False, f"{import_error}; CLI fallback {cli_exc.__class__.__name__}: {str(cli_exc)[:200]}"
+            if completed.returncode != 0:
+                detail = (completed.stderr or completed.stdout or f"exit {completed.returncode}").strip()[:300]
+                return False, f"{import_error}; CLI fallback: {detail}"
+        return True, None
 
 
 def tests_available(root: str) -> bool:

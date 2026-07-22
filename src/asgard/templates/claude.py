@@ -246,6 +246,10 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/memory-activate.py"',
                                 },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
+                                },
                             ]
                         },
                     ],

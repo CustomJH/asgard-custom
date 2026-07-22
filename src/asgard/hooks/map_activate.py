@@ -8,9 +8,11 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 
 MODES = {"claude-code", "codex", "cursor"}
 NEVER_INJECT = {"asgard-verifier", "asgard-loki"}
+REFRESH_SECONDS = 6 * 60 * 60
 
 
 def mode():
@@ -25,6 +27,7 @@ def event(data):
         "beforeSubmitPrompt": "UserPromptSubmit",
         "subagentStart": "SubagentStart",
         "preToolUse": "SubagentStart",
+        "stop": "Stop",
     }.get(raw, raw)
 
 
@@ -67,6 +70,32 @@ def emit(current_mode, current_event, text):
         sys.stdout.write(text + "\n")
 
 
+def maintain(exe, root, force=False):
+    """Refresh both map tiers at most once per interval; failures stay fail-open."""
+    # ponytail: concurrent hooks may duplicate one scan; add a lock only if scans become costly.
+    state_dir = os.path.join(root, ".asgard", "state")
+    marker = os.path.join(state_dir, "map-maintained")
+    graph = os.path.join(state_dir, "map-graph.json")
+    newest = 0.0
+    for path in (marker, graph):
+        try:
+            newest = max(newest, os.path.getmtime(path))
+        except OSError:
+            pass
+    if not force and time.time() - newest < REFRESH_SECONDS:
+        return
+    for command in ([exe, "map", "update", "--quiet"], [exe, "map", "scan", "--quiet"]):
+        result = subprocess.run(command, capture_output=True, text=True, timeout=30, cwd=root)
+        if result.returncode != 0:
+            return
+    try:
+        os.makedirs(state_dir, exist_ok=True)
+        with open(marker, "w", encoding="utf-8") as stream:
+            stream.write(str(int(time.time())) + "\n")
+    except OSError:
+        pass
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -86,15 +115,16 @@ def main():
             or os.environ.get("CURSOR_PROJECT_DIR")
             or str(data.get("cwd") or os.getcwd())
         )
-        cmd = [exe, "map", "context", "--refresh", "--query", query(data)]
+        maintain(exe, root, force=current_event == "Stop")
+        if current_event == "Stop":
+            return 0
+        cmd = [exe, "map", "context", "--query", query(data)]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, cwd=root)
         note = (result.stdout or "").strip()
         if result.returncode == 0 and note:
             emit(current_mode, current_event, note)
-        elif result.returncode != 0:
-            sys.stderr.write("Asgard project map refresh failed; continuing without map context.\n")
     except Exception:
-        sys.stderr.write("Asgard project map hook failed; continuing without map context.\n")
+        pass
     return 0
 
 

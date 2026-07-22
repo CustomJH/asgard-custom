@@ -117,6 +117,10 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/verifier-gate.py"
 [[hooks.Stop.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
+[[hooks.Stop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 """
 
 _CODEX_RULES = """\

@@ -63,6 +63,8 @@ class TestRegistry(Base):
         self.assertTrue(entries[0]["cc"])
         self.assertFalse(entries[0]["cursor"])
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "map", "PROJECT.md")))
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "map", "GRAPH.md")))
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "state", "map-graph.json")))
         self.assertIsNotNone(memory._read(memory.memory_dir(), memory.DEFAULT_SKILL_PREFERENCE_SLUG))
 
     def test_setup_preflights_unsafe_map_before_scaffolding(self):

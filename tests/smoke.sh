@@ -199,6 +199,10 @@ grep -q '^!map/$' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/.gitignore
 grep -q '^!memory/records/$' "$PROJ/.asgard/.gitignore" || { echo "FAIL: .asgard/.gitignore must un-ignore memory/records/"; exit 1; }
 # 코드베이스 지도 — 시드 존재 + git 실추적 검증 (루트 블록·자가 무시 둘 다 map 을 허용해야 추적됨)
 [ -f "$PROJ/.asgard/map/INDEX.md" ] || { echo "FAIL: --cc must seed .asgard/map/INDEX.md"; exit 1; }
+[ -f "$PROJ/.asgard/map/GRAPH.md" ] && [ -f "$PROJ/.asgard/state/map-graph.json" ] \
+  || { echo "FAIL: --cc must perform the initial relation-map scan"; exit 1; }
+[ -f "$PROJ/.claude/hooks/map-activate.py" ] && grep -q 'map-activate.py' "$PROJ/.claude/settings.json" \
+  || { echo "FAIL: --cc periodic map maintenance missing"; exit 1; }
 grep -q 'asgard:map' "$PROJ/AGENTS.md" || { echo "FAIL: AGENTS.md missing map section"; exit 1; }
 # 루트 .gitignore — 런타임 상태 필터. 생성됨 + asgard 블록 + .asgard/* 무시 + map 재포함
 [ -f "$PROJ/.gitignore" ] || { echo "FAIL: --cc must create root .gitignore"; exit 1; }
@@ -237,6 +241,9 @@ grep -q "beforeShellExecution" "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cur
 [ -f "$PROJ/.cursor/hooks/git-guard.py" ] || { echo "FAIL: --cursor guard missing"; exit 1; }
 [ -f "$PROJ/.cursor/hooks/memory-activate.py" ] && grep -q '"beforeSubmitPrompt"' "$PROJ/.cursor/hooks.json" \
   || { echo "FAIL: --cursor memory lifecycle missing"; exit 1; }
+[ -f "$PROJ/.asgard/map/GRAPH.md" ] && [ -f "$PROJ/.asgard/state/map-graph.json" ] \
+  && [ -f "$PROJ/.cursor/hooks/map-activate.py" ] && grep -q 'map-activate.py' "$PROJ/.cursor/hooks.json" \
+  || { echo "FAIL: --cursor map lifecycle missing"; exit 1; }
 [ -f "$PROJ/.cursor/agents/asgard-worker.md" ] && [ -f "$PROJ/.cursor/agents/asgard-verifier.md" ] || { echo "FAIL: --cursor Trinity agents missing"; exit 1; }
 grep -q '"subagentStart"' "$PROJ/.cursor/hooks.json" && grep -q '"stop"' "$PROJ/.cursor/hooks.json" || { echo "FAIL: --cursor Trinity hooks missing"; exit 1; }
 grep -q '^readonly: false$' "$PROJ/.cursor/agents/asgard-worker.md" || { echo "FAIL: --cursor worker must be writable"; exit 1; }
@@ -255,6 +262,9 @@ grep -q '\[\[hooks.PreToolUse\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: -
 [ -f "$PROJ/.codex/hooks/git-guard.py" ] || { echo "FAIL: --codex guard"; exit 1; }
 [ -f "$PROJ/.codex/hooks/memory-activate.py" ] && grep -q '\[\[hooks.UserPromptSubmit\]\]' "$PROJ/.codex/config.toml" \
   || { echo "FAIL: --codex memory lifecycle missing"; exit 1; }
+[ -f "$PROJ/.asgard/map/GRAPH.md" ] && [ -f "$PROJ/.asgard/state/map-graph.json" ] \
+  && [ -f "$PROJ/.codex/hooks/map-activate.py" ] && grep -q 'map-activate.py' "$PROJ/.codex/config.toml" \
+  || { echo "FAIL: --codex map lifecycle missing"; exit 1; }
 [ -f "$PROJ/.codex/agents/asgard-worker.toml" ] && [ -f "$PROJ/.codex/agents/asgard-verifier.toml" ] || { echo "FAIL: --codex Trinity agents missing"; exit 1; }
 grep -q '\[\[hooks.SubagentStart\]\]' "$PROJ/.codex/config.toml" && grep -q '\[\[hooks.Stop\]\]' "$PROJ/.codex/config.toml" || { echo "FAIL: --codex Trinity hooks missing"; exit 1; }
 grep -q '^sandbox_mode = "read-only"$' "$PROJ/.codex/agents/asgard-verifier.toml" || { echo "FAIL: --codex verifier must be read-only"; exit 1; }

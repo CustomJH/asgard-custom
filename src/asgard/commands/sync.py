@@ -191,10 +191,16 @@ def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool =
     # A scaffold refresh must leave both map contract and managed projection current. Previously
     # sync could create INDEX.md while PROJECT.md stayed missing or stale until verification.
     from ..code_map import refresh_map
+    from ..map_graph import scan_graph
 
     mapped = refresh_map(root, dry_run=dry_run)
     if mapped.changed or mapped.index_changed:
         counts["updated"] += int(mapped.changed) + int(mapped.index_changed)
+    else:
+        counts["kept"] += 1
+    graphed = scan_graph(root, dry_run=dry_run)
+    if graphed.changed:
+        counts["updated"] += 1
     else:
         counts["kept"] += 1
     return counts

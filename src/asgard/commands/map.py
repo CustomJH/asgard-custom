@@ -195,6 +195,94 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
     return 0 if ok else 1
 
 
+def run_map_scan(*, dry_run: bool = False, json_out: bool = False, quiet: bool = False) -> int:
+    """관계 그래프 재구축 — 결정론 추출 (LLM 0토큰)."""
+    root = _project_root(os.getcwd())
+    ui.set_quiet(quiet or json_out)
+    from ..map_graph import GraphError, scan_graph
+
+    try:
+        result = scan_graph(root, dry_run=dry_run)
+    except (GraphError, MapError, OSError) as exc:
+        if json_out:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        else:
+            ui.fail(str(exc))
+        return 2
+    if json_out:
+        print(json.dumps({**asdict(result), "dry_run": dry_run}, ensure_ascii=False, indent=2))
+    else:
+        ui.head("map · relation graph")
+        ui.ok(
+            f"{result.files_scanned} files → {result.evidence_count} evidence · {result.nodes} nodes · {result.edges} edges"
+        )
+        if dry_run:
+            ui.step(("would update " if result.changed else "already current ") + result.graph_md_path)
+        else:
+            ui.done(("updated " if result.changed else "current ") + result.graph_md_path)
+    return 0
+
+
+def run_map_trace(node_id: str, *, depth: int = 2, direction: str = "both", json_out: bool = False) -> int:
+    root = _project_root(os.getcwd())
+    ui.set_quiet(json_out)
+    from ..map_graph import GraphError, graph_state, related_records, trace
+
+    try:
+        hops = trace(root, node_id, depth=depth, direction=direction)
+    except (GraphError, OSError) as exc:
+        if json_out:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        else:
+            ui.fail(str(exc))
+        return 2
+    state = graph_state(root) or {"nodes": []}
+    origin = next((node for node in state["nodes"] if node["id"] == node_id), {})
+    records = [asdict(record) for record in related_records(root, origin)] if origin else []
+    if json_out:
+        print(json.dumps({"from": node_id, "hops": hops, "records": records}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head(f"map · trace {node_id}")
+    if not hops:
+        ui.step("no adjacent edges — 인접 지도가 비어 있다 (전수 부재의 증거가 아님)")
+    for hop in hops:
+        mark = "" if hop["confidence"] == "confirmed" else " ?"
+        ui.step(f"{'  ' * hop['depth']}{hop['via']} → {hop['id']}{mark}")
+    for record in records:
+        ui.step(f"관련 기록: {record['title']} [{record['match']}]")
+    return 0
+
+
+def run_map_view(*, open_browser: bool = True, json_out: bool = False) -> int:
+    """그래프 뷰 HTML 생성·오픈 — 상태가 없으면 먼저 스캔한다."""
+    root = _project_root(os.getcwd())
+    ui.set_quiet(json_out)
+    from ..map_graph import GraphError, scan_graph, write_view
+
+    try:
+        # 뷰는 관측 표면이다. 열 때마다 결정론 스캔해 낡은 상태를 사실처럼 보여주지 않는다.
+        scan_graph(root)
+        path = write_view(root)
+    except (GraphError, MapError, OSError) as exc:
+        if json_out:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        else:
+            ui.fail(str(exc))
+        return 2
+    if json_out:
+        print(json.dumps({"path": path}, ensure_ascii=False))
+        return 0
+    ui.head("map · view")
+    ui.done(path)
+    if open_browser:
+        import webbrowser
+
+        uri = Path(path).as_uri()
+        if not webbrowser.open(uri):  # pragma: no cover - 데스크톱 환경 의존
+            ui.step(f"브라우저를 못 열었다 — 직접 열기: {uri}")
+    return 0
+
+
 def run_map_context(
     query: str,
     *,

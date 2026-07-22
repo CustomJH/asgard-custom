@@ -374,10 +374,12 @@ def run_setup(
     cursor = cursor or profile == "cursor"
     codex = codex or profile == "codex"
     from ..code_map import MapError, refresh_map
+    from ..map_graph import GraphError, scan_graph
 
     try:
         refresh_map(os.getcwd(), dry_run=True)  # map 경로/소유권 preflight — scaffold가 링크를 따라 쓰기 전 차단.
-    except MapError as exc:
+        scan_graph(os.getcwd(), dry_run=True)
+    except (GraphError, MapError) as exc:
         ui.fail(str(exc))
         return 2
     files, label = plan_files(cc, cursor, codex)
@@ -385,7 +387,8 @@ def run_setup(
     if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync` 가 세팅된 프로젝트를 찾는 근거
         from .. import memory, registry
 
-        refresh_map(os.getcwd())  # 초기 프로젝트 방향을 즉시 그린다; 이후 Verifier가 구조 변경 때 갱신.
+        refresh_map(os.getcwd())  # 초기 프로젝트 방향을 즉시 그린다; 이후 훅이 주기적으로 갱신.
+        scan_graph(os.getcwd())
         universal = not cc and not cursor and not codex
         registry.record(os.getcwd(), cc or universal, cursor or universal, codex or universal)
         try:

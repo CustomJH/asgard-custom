@@ -197,7 +197,7 @@ class TestMapCommands(Base):
         self.assertIn("gitignore:", checked.stdout)
 
 
-class TestMapActivateHook(unittest.TestCase):
+class TestMapActivateHook(Base):
     def invoke(self, payload: dict, mode: str = "claude-code"):
         from asgard.hooks import map_activate
 
@@ -211,36 +211,84 @@ class TestMapActivateHook(unittest.TestCase):
             mock.patch.object(map_activate.sys, "stdout", stdout),
             mock.patch.object(map_activate.sys, "stderr", stderr),
             mock.patch.object(map_activate.shutil, "which", return_value="/bin/asgard"),
+            mock.patch.object(map_activate, "maintain") as maintain,
             mock.patch.object(map_activate.subprocess, "run", return_value=completed) as run,
         ):
             result = map_activate.main()
-        return result, stdout.getvalue(), stderr.getvalue(), run
+        return result, stdout.getvalue(), stderr.getvalue(), run, maintain
 
     def test_claude_prompt_refreshes_and_returns_additional_context(self):
-        result, stdout, stderr, run = self.invoke(
+        result, stdout, stderr, run, maintain = self.invoke(
             {"hook_event_name": "UserPromptSubmit", "prompt": "routing task", "cwd": "/tmp"}
         )
         payload = json.loads(stdout)
         self.assertEqual(result, 0)
         self.assertEqual(stderr, "")
         self.assertIn("canary", payload["hookSpecificOutput"]["additionalContext"])
-        self.assertEqual(run.call_args.args[0][-3:], ["--refresh", "--query", "routing task"])
+        maintain.assert_called_once_with("/bin/asgard", "/tmp", force=False)
+        self.assertEqual(run.call_args.args[0][-2:], ["--query", "routing task"])
 
     def test_cursor_uses_cursor_context_schema(self):
-        _, stdout, _, _ = self.invoke(
+        _, stdout, _, _, _ = self.invoke(
             {"hook_event_name": "beforeSubmitPrompt", "prompt": "routing task", "cwd": "/tmp"},
             "cursor",
         )
         self.assertIn("canary", json.loads(stdout)["additional_context"])
 
+    def test_codex_uses_native_prompt_context_schema(self):
+        _, stdout, _, _, maintain = self.invoke(
+            {"hook_event_name": "UserPromptSubmit", "prompt": "routing task", "cwd": self.root},
+            "codex",
+        )
+        payload = json.loads(stdout)
+        self.assertIn("canary", payload["hookSpecificOutput"]["additionalContext"])
+        maintain.assert_called_once_with("/bin/asgard", self.root, force=False)
+
+    def test_stop_forces_refresh_without_injecting_context(self):
+        for mode, event in (("claude-code", "Stop"), ("codex", "Stop"), ("cursor", "stop")):
+            with self.subTest(mode=mode):
+                _, stdout, stderr, run, maintain = self.invoke({"hook_event_name": event, "cwd": self.root}, mode)
+                self.assertEqual((stdout, stderr), ("", ""))
+                maintain.assert_called_once_with("/bin/asgard", self.root, force=True)
+                run.assert_not_called()
+
     def test_verifier_and_loki_never_receive_map(self):
         for agent in ("asgard-verifier", "asgard-loki"):
             with self.subTest(agent=agent):
-                _, stdout, _, run = self.invoke(
+                _, stdout, _, run, maintain = self.invoke(
                     {"hook_event_name": "SubagentStart", "agent_type": agent, "cwd": "/tmp"}
                 )
                 self.assertEqual(stdout, "")
                 run.assert_not_called()
+                maintain.assert_not_called()
+
+    def test_maintenance_is_throttled_and_refreshes_both_map_tiers(self):
+        from asgard.hooks import map_activate
+
+        state = os.path.join(self.root, ".asgard", "state")
+        os.makedirs(state)
+        graph = os.path.join(state, "map-graph.json")
+        open(graph, "w", encoding="utf-8").write("{}")
+        with (
+            mock.patch.object(map_activate.time, "time", return_value=10_000),
+            mock.patch.object(map_activate.os.path, "getmtime", return_value=10_000),
+            mock.patch.object(map_activate.subprocess, "run") as run,
+        ):
+            map_activate.maintain("/bin/asgard", self.root)
+        run.assert_not_called()
+
+        completed = subprocess.CompletedProcess(["asgard"], 0, stdout="", stderr="")
+        with (
+            mock.patch.object(map_activate.time, "time", return_value=100_000),
+            mock.patch.object(map_activate.os.path, "getmtime", return_value=100_000),
+            mock.patch.object(map_activate.subprocess, "run", return_value=completed) as run,
+        ):
+            map_activate.maintain("/bin/asgard", self.root, force=True)
+        self.assertEqual(
+            [call.args[0][1:3] for call in run.call_args_list],
+            [["map", "update"], ["map", "scan"]],
+        )
+        self.assertTrue(os.path.exists(os.path.join(state, "map-maintained")))
 
 
 if __name__ == "__main__":
