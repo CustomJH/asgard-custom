@@ -13,7 +13,7 @@ uv run asgard desktop
 The command opens the built Tauri app when available and otherwise opens the
 browser. Use `--browser` to force the browser or `--no-open` to serve only.
 
-The `.app` can also be opened directly when `asgard` is installed. Set
+The `.app` or Windows `.exe` can also be opened directly when `asgard` is installed. Set
 `ASGARD_EXECUTABLE` only when the executable is outside the normal install
 locations.
 
@@ -25,7 +25,10 @@ npm install
 npm run build -- --bundles app
 # signed distribution build:
 npm run bundle:mac
+# Windows (run on Windows):
+npm run bundle:windows
 ```
 
 macOS distribution still requires the normal Apple signing and notarization
-credentials.
+credentials. Windows produces a per-user NSIS installer and requires code
+signing before public distribution.

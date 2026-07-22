@@ -35,3 +35,31 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+  desktop-windows:
+    needs: release
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+        working-directory: desktop
+
+      - run: cargo test
+        working-directory: desktop/src-tauri
+
+      - run: npm run bundle:windows
+        working-directory: desktop
+
+      - name: Attach Windows installer
+        uses: softprops/action-gh-release@v2
+        with:
+          files: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe

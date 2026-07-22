@@ -63,7 +63,34 @@ jobs:
 
       # 적대 게이트 스위트 포함 — Windows 에서 Verifier 게이트가 실제 차단하는지 회귀 가드
       # (bash 하네스 아닌 test_adversarial_gate.py 포트가 돈다).
-      - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_sandbox.py tests/test_adversarial_gate.py
+      - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_sandbox.py tests/test_adversarial_gate.py tests/test_desktop.py
 
       - name: Smoke prompt_toolkit session (headless)
         run: uv run python tests/smoke_pt_session.py
+
+  desktop-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - run: npm ci
+        working-directory: desktop
+
+      - run: cargo test
+        working-directory: desktop/src-tauri
+
+      - run: npm run bundle:windows
+        working-directory: desktop
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: asgard-desktop-windows
+          path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
