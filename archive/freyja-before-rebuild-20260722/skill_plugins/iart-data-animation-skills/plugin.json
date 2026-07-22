@@ -11,15 +11,15 @@
   "routing": {
     "animated-infographic": {
       "triggers": ["animated infographic", "infographic video", "sequenced infographic", "animated stats", "애니메이션 인포그래픽", "인포그래픽 영상", "통계 애니메이션"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "chart-animation": {
       "triggers": ["animated chart", "bar chart race", "csv to video", "data video", "animated data visualization", "차트 애니메이션", "바 차트 레이스", "csv 영상", "데이터 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "presentation-video": {
       "triggers": ["presentation video", "deck to video", "slides to video", "narrated deck", "animated presentation", "프레젠테이션 영상", "덱 영상", "슬라이드 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/data-animation-skills",

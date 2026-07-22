@@ -10,11 +10,11 @@
   "routing": {
     "audiogram": {
       "triggers": ["audiogram", "podcast video", "podcast clip video", "waveform video", "audio to video", "오디오그램", "팟캐스트 영상", "파형 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "youtube-intro-outro": {
       "triggers": ["youtube-intro-outro", "youtube intro", "youtube outro", "end screen", "channel intro", "logo bumper", "유튜브 인트로", "유튜브 아웃트로", "엔드 스크린"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/youtube-video-skills",

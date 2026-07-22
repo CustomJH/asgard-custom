@@ -9,7 +9,7 @@
   "routing": {
     "manim": {
       "triggers": ["manim", "math animation", "equation animation", "3blue1brown", "mathematical explainer", "수학 애니메이션", "수식 애니메이션", "수학 설명 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/manim-skills",

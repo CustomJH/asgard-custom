@@ -17,39 +17,39 @@
   "routing": {
     "after-effects": {
       "triggers": ["after-effects", "after effects", "adobe after effects", "after effects expression", "mogrt", "애프터 이펙트", "애프터이펙트", "에프터이펙트"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "animation-principles": {
       "triggers": ["animation-principles", "animation principles", "motion principles", "natural animation", "easing curve", "graph editor", "애니메이션 원칙", "모션 원칙", "이징"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "beat-sync-editing": {
       "triggers": ["beat-sync-editing", "beat sync editing", "cut to the beat", "bpm editing", "match cut", "비트 싱크 편집", "박자 편집", "비트에 맞춰 편집"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "color-motion": {
       "triggers": ["color-motion", "color in motion", "motion color palette", "color transition", "oklch", "color grade", "모션 색상", "컬러 그레이딩"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "logo-animation": {
       "triggers": ["logo-animation", "logo animation", "logo sting", "brand reveal", "splash animation", "로고 애니메이션", "로고 인트로", "브랜드 리빌"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "motion-art-direction": {
       "triggers": ["motion-art-direction", "motion art direction", "motion direction", "art direction for video", "motion language", "모션 아트 디렉션", "모션 디렉팅", "모션 언어"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "motion-background": {
       "triggers": ["motion-background", "motion background", "animated background", "mesh gradient background", "aurora background", "모션 배경", "애니메이션 배경", "움직이는 배경"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "remotion-video": {
       "triggers": ["remotion-video", "remotion", "programmatic video", "react video", "frame-driven video", "리모션 영상", "프로그래매틱 영상", "코드 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "shot-composition": {
       "triggers": ["shot-composition", "shot composition", "camera framing", "safe areas", "aspect adaptation", "샷 구성", "화면 구도", "카메라 프레이밍"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/motion-design-skills",

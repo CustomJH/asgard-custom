@@ -9,7 +9,7 @@
   "routing": {
     "generative-illustration": {
       "triggers": ["generative-illustration", "generative illustration", "animated illustration", "motion poem", "visual metaphor", "动态平面", "생성형 일러스트레이션", "움직이는 일러스트", "모션 포엠"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/generative-illustration-skills",

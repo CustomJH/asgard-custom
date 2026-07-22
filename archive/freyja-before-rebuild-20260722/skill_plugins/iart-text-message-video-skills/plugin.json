@@ -9,7 +9,7 @@
   "routing": {
     "text-message-animation": {
       "triggers": ["text-message-animation", "text message video", "imessage conversation", "whatsapp video", "chat animation", "fake text video", "문자 대화 영상", "채팅 애니메이션", "카톡 대화 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/text-message-video-skills",

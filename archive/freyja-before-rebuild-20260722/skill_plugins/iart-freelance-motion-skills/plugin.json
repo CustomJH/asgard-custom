@@ -13,23 +13,23 @@
   "routing": {
     "brand-motion-guidelines": {
       "triggers": ["brand-motion-guidelines", "motion guidelines", "brand motion system", "motion tokens", "모션 가이드라인", "브랜드 모션 시스템", "모션 토큰"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "client-revisions": {
       "triggers": ["client-revisions", "client revisions", "scope creep", "revision rounds", "change order email", "클라이언트 수정", "수정 횟수", "범위 추가"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "creative-brief": {
       "triggers": ["creative-brief", "creative brief", "motion brief", "client questions", "크리에이티브 브리프", "모션 브리프", "고객 질문지"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "motion-pricing": {
       "triggers": ["motion-pricing", "motion pricing", "animation quote", "day rate", "video estimate", "모션 견적", "애니메이션 견적", "영상 단가"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "video-delivery-specs": {
       "triggers": ["video-delivery-specs", "video delivery specs", "video specs", "export settings", "delivery checklist", "영상 납품 사양", "내보내기 설정", "플랫폼 규격"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/freelance-motion-skills",

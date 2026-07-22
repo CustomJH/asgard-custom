@@ -9,7 +9,7 @@
   "routing": {
     "kinetic-typography": {
       "triggers": ["kinetic typography", "animate headline", "animated title card", "split text reveal", "lyric video", "키네틱 타이포그래피", "헤드라인 애니메이션", "타이틀 애니메이션", "가사 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/kinetic-typography-skills",

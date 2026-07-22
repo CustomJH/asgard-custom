@@ -9,7 +9,7 @@
   "routing": {
     "map-animation": {
       "triggers": ["map-animation", "map animation", "vox-style map", "map zoom", "route animation", "earth studio", "지도 애니메이션", "경로 애니메이션", "지도 영상"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/iart-ai/map-animation-skills",
