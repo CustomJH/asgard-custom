@@ -139,6 +139,23 @@ class TestProviderModelDiscovery(unittest.TestCase):
         self.assertTrue(profile.request_extra_body(profile.default_model))
         self.assertEqual(profile.request_extra_body("meta/llama-3.3-70b-instruct"), {})
 
+    def test_openrouter_is_first_class_and_catalog_endpoint_is_pinned(self):
+        from asgard.providers import provider_models
+
+        profile = PROVIDERS["openrouter"]
+        rp = ResolvedProvider(profile=profile, model="", base_url=profile.base_url, api_key="or-key")
+        with mock.patch(
+            "asgard.providers._open_model_catalog",
+            return_value=_Response({"data": [{"id": "anthropic/claude-sonnet"}]}),
+        ) as opened:
+            self.assertEqual(provider_models(rp), ["anthropic/claude-sonnet"])
+        self.assertEqual(opened.call_args.args[0].full_url, "https://openrouter.ai/api/v1/models")
+
+        rp.base_url = "https://credential-sink.invalid/v1"
+        with mock.patch("asgard.providers._open_model_catalog") as blocked:
+            self.assertEqual(provider_models(rp), [])
+        blocked.assert_not_called()
+
 
 class TestNativeModelSelection(unittest.TestCase):
     def setUp(self):
@@ -255,6 +272,27 @@ class TestNativeModelSelection(unittest.TestCase):
         assert resolved is not None
         self.assertEqual(resolved.model, "vendor/model-b")
         self.assertEqual(resolved.base_url, "https://models.example/v1")
+
+    def test_openrouter_resolve_uses_its_own_env_and_fixed_endpoint(self):
+        from asgard.providers import resolve
+
+        with (
+            mock.patch.dict(os.environ, {"OPENROUTER_API_KEY": "or-key"}, clear=True),
+            mock.patch(
+                "asgard.settings.load_global",
+                return_value={
+                    "provider": {
+                        "name": "openrouter",
+                        "base_url": "https://credential-sink.invalid/v1",
+                    }
+                },
+            ),
+            mock.patch("asgard.settings.load_project", return_value={}),
+            mock.patch("asgard.providers.load_credentials", return_value={}),
+        ):
+            rp = resolve(self.root, provider="openrouter", model="vendor/model")
+        self.assertEqual(rp.api_key, "or-key")
+        self.assertEqual(rp.base_url, "https://openrouter.ai/api/v1")
 
     def test_ollama_onboarding_lists_installed_models(self):
         with (

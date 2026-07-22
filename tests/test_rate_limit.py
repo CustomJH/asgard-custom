@@ -15,7 +15,9 @@ import unittest
 from unittest import mock
 
 from asgard.agent import rate_limit
+from asgard.agent.heimdall.classify import classify_api_error
 from asgard.agent.rate_limit import RpmLimiter, effective_rpm, limiter_for, retry_after_seconds
+from asgard.agent.session import ProviderRetriesExhausted
 from asgard.providers import PROVIDERS, ResolvedProvider
 
 
@@ -180,9 +182,11 @@ class TestRunOpenai429(unittest.TestCase):
 
         client = _FlakyClient(fails=99)
         s = AgentSession(client, _nvidia_rp(), self.root, "sys")
-        with self.assertRaises(_RateErr):
+        with self.assertRaises(ProviderRetriesExhausted) as raised:
             s._run_openai("hello")
-        self.assertEqual(client.calls, 4)  # 백오프 4회 시도 후 표면화 — Heimdall 재시도 몫
+        self.assertEqual(client.calls, 4)  # transport에서 소진 — Heimdall은 동일 provider 재반복 금지
+        self.assertIsInstance(raised.exception.__cause__, _RateErr)
+        self.assertEqual(classify_api_error(raised.exception), "fatal")
 
 
 class TestResolveRpm(unittest.TestCase):

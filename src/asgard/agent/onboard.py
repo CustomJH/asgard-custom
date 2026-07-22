@@ -13,6 +13,7 @@ import sys
 from .. import picker, theme, ui
 from ..i18n import t
 from ..providers import (
+    FIXED_ENDPOINT_PROVIDERS,
     PROVIDERS,
     ResolvedProvider,
     normalize_model_id,
@@ -102,7 +103,7 @@ def _provider_values(root: str, rp: ResolvedProvider) -> dict:
     if values.get("name") != rp.profile.name:
         values = {}
     values.update({"name": rp.profile.name, "model": rp.model})
-    if rp.profile.name not in {"nvidia", "openai"} and rp.base_url and rp.base_url != rp.profile.base_url:
+    if rp.profile.name not in FIXED_ENDPOINT_PROVIDERS and rp.base_url and rp.base_url != rp.profile.base_url:
         values["base_url"] = rp.base_url
     else:
         values.pop("base_url", None)
@@ -132,7 +133,7 @@ def select_model_id(root: str, rp: ResolvedProvider, model: str, *, persist: boo
     selected = resolve(root, provider=rp.profile.name, model=model)
     if rp.rpm:  # resolve 재해석은 config 만 본다 — 방금 입력한 rpm 을 승계해 함께 저장
         selected.rpm = rp.rpm
-    if selected.profile.name not in {"nvidia", "openai"}:
+    if selected.profile.name not in FIXED_ENDPOINT_PROVIDERS:
         selected.base_url = rp.base_url
     values = _provider_values(root, selected)
     save_config_section(root, "provider", values)

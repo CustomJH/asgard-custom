@@ -105,6 +105,17 @@ PROVIDERS: dict[str, ProviderProfile] = {
         default_model="",  # compat 은 모델 기본값 없음 — config 필수
         signup_hint="config 에 base_url·model 지정 + api_key_env 의 env var export",
     ),
+    # OpenRouter — 범용 compat 설정으로도 연결 가능하지만, 별도 프로파일로 키와 공식 endpoint를
+    # 고정하면 프로젝트 설정이 credential 목적지를 바꿀 수 없고 live catalog 온보딩도 바로 된다.
+    "openrouter": ProviderProfile(
+        name="openrouter",
+        display="OpenRouter",
+        api_mode="openai_compat",
+        env_vars=("OPENROUTER_API_KEY",),
+        base_url="https://openrouter.ai/api/v1",
+        default_model="",  # 모델 변화가 빠르므로 연결 시 live catalog에서 선택
+        signup_hint="openrouter.ai/settings/keys 에서 키 발급 후 export OPENROUTER_API_KEY=...",
+    ),
     # Ollama — 로컬 서버 (openai_compat 엔드포인트). 키 불요, 모델은 ollama pull 로 준비.
     "ollama": ProviderProfile(
         name="ollama",
@@ -140,6 +151,9 @@ PROVIDERS: dict[str, ProviderProfile] = {
         default_rpm=40,
     ),
 }
+
+# 사용자 키를 보내는 목적지가 고정된 공식 프로파일. 사용자 endpoint는 openai_compat만 소유한다.
+FIXED_ENDPOINT_PROVIDERS = frozenset({"nvidia", "openai", "openai-native", "openrouter"})
 
 
 @dataclass
@@ -286,10 +300,10 @@ def provider_models(
     url = rp.profile.models_url or rp.base_url.rstrip("/") + "/models"
     if urllib_parse.urlparse(url).scheme not in {"http", "https"}:
         return use_fallback("unsupported catalog URL")
-    if rp.profile.name in {"nvidia", "openai"}:
+    if rp.profile.name in FIXED_ENDPOINT_PROVIDERS:
         trusted = rp.profile.models_url or rp.profile.base_url.rstrip("/") + "/models"
         if url != trusted or urllib_parse.urlparse(url).scheme != "https":
-            return use_fallback("untrusted NVIDIA catalog URL")
+            return use_fallback("untrusted provider catalog URL")
     req = urllib_request.Request(
         url,
         headers={
@@ -397,7 +411,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     base_url = trusted_global.get("base_url") or cred.get("base_url") or profile.base_url
     # 공식 provider credential은 custom endpoint로 보내지 않는다. 사설 endpoint는 별도
     # openai_compat provider로 명시 연결해야 한다.
-    if name in {"nvidia", "openai", "openai-native"}:
+    if name in FIXED_ENDPOINT_PROVIDERS:
         base_url = profile.base_url
     rp = ResolvedProvider(
         profile=profile,
@@ -480,11 +494,8 @@ def resolve_trinity(
             out[role] = default
             continue
         rp = resolve(root, provider=e.get("provider") or default.profile.name, model=e.get("model"))
-        if e.get("base_url") and rp.profile.name not in {
-            "nvidia",
-            "openai",
-            "openai-native",
-        }:  # only global trusted entries retain this key
+        if e.get("base_url") and rp.profile.name not in FIXED_ENDPOINT_PROVIDERS:
+            # only global trusted entries retain this key
             rp.base_url = e["base_url"]
             rp.missing = [m for m in rp.missing if "base_url" not in m]
         out[role] = rp
