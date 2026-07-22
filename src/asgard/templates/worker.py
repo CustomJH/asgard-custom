@@ -99,7 +99,6 @@ description: 테스트 설계 — 테스트 작성·보강·flaky 정리 작업 
 ## 계층 배치
 
 - 단위가 기본(빠르고 좁게, 대다수), 통합은 경계 접점(모듈·프로세스 사이), E2E 는 핵심 흐름 최소한만 — 전부 E2E 인 역피라미드는 느리고 원인 특정이 안 된다.
-- 브라우저 실기동 E2E 의 도구·대기·증거 규율은 `asgard-freyja-hildisvini` 가 담당한다.
 """
 
 WORKER_SKILLS: list[tuple[str, str]] = [
