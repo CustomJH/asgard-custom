@@ -673,7 +673,6 @@ class TestDeliveryAgents(unittest.TestCase):
             "thinker": ("fable", "high"),
             "worker": ("sonnet", "high"),
             "verifier": ("opus", "high"),
-            "freyja-lead": ("fable", "high"),
             "freyja": ("sonnet", "high"),
             "thor-lead": ("fable", "high"),
             "thor": ("sonnet", "high"),
@@ -719,7 +718,7 @@ class TestDeliveryAgents(unittest.TestCase):
     def test_heimdall_delivery_derives_from_templates(self):
         from asgard.agent.heimdall import _DELIVERY
 
-        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "freyja-lead", "loki", "mimir", "thor", "thor-lead"])
+        self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "loki", "mimir", "thor", "thor-lead"])
         for g, body in _DELIVERY.items():
             self.assertIn(f"asgard-{g}", body)
             self.assertNotIn("name:", body)  # frontmatter 누출 없음
@@ -749,7 +748,6 @@ class TestDeliveryAgents(unittest.TestCase):
             "thinker": "claude-fable-5-thinking-xhigh",
             "worker": "gpt-5.6-terra-medium",
             "verifier": "claude-opus-4-8-thinking-high",
-            "freyja-lead": "claude-fable-5-thinking-high",
             "freyja": "claude-sonnet-5-thinking-high",
             "thor-lead": "gpt-5.6-sol-high",
             "thor": "gpt-5.6-terra-high",
@@ -787,7 +785,6 @@ class TestDeliveryAgents(unittest.TestCase):
             "asgard-thinker": ("gpt-5.6-sol", "xhigh"),
             "asgard-worker": ("gpt-5.6-terra", "medium"),
             "asgard-verifier": ("gpt-5.6-sol", "high"),
-            "asgard-freyja-lead": ("gpt-5.6-sol", "high"),
             "asgard-freyja": ("gpt-5.6-sol", "high"),
             "asgard-thor-lead": ("gpt-5.6-sol", "high"),
             "asgard-thor": ("gpt-5.6-terra", "high"),

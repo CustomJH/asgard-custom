@@ -48,7 +48,7 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("python3 malicious.py quest-log.py open q"))
         self.assertFalse(is_readonly_bash_safe("python3 /tmp/.claude/hooks/quest-log.py open q"))
         self.assertTrue(is_readonly_bash_safe("asgard skills show asgard-mimir-flow"))
-        self.assertTrue(is_readonly_bash_safe("asgard skills show review-animations --resource STANDARDS.md"))
+        self.assertTrue(is_readonly_bash_safe("asgard skills show asgard-worker-testing"))
         self.assertFalse(is_readonly_bash_safe("asgard skills resolve --agent mimir task"))
         self.assertFalse(is_readonly_bash_safe("asgard skills show ../escape"))
 

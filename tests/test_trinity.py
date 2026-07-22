@@ -2017,25 +2017,12 @@ class TestSubagentGate(TrinityBase):
             "asgard-verifier", event="PreToolUse", tool_input={"subagent_type": "asgard-loki", "prompt": "review"}
         )
         self.assertEqual(allowed.returncode, 0, allowed.stderr)
-        for target in ("asgard-freyja", "asgard-freyja-lead", "asgard-thor", "asgard-eitri", ""):
+        for target in ("asgard-freyja", "asgard-thor", "asgard-eitri", ""):
             denied = self.sg(
                 "asgard-verifier", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "mutate"}
             )
             self.assertEqual(denied.returncode, 2, target)
             self.assertIn("role boundary", denied.stderr)
-
-    def test_freyja_lead_depth_and_target_boundary(self):
-        self.open_quest()
-        for target in ("asgard-freyja", "asgard-loki"):
-            allowed = self.sg(
-                "asgard-freyja-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "variant"}
-            )
-            self.assertEqual(allowed.returncode, 0, allowed.stderr)
-        for target in ("asgard-freyja-lead", "asgard-thor", "asgard-eitri", ""):
-            denied = self.sg(
-                "asgard-freyja-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
-            )
-            self.assertEqual(denied.returncode, 2, target)
 
     def test_thor_lead_depth_and_target_boundary(self):
         self.open_quest()
@@ -2044,7 +2031,7 @@ class TestSubagentGate(TrinityBase):
                 "asgard-thor-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "unit"}
             )
             self.assertEqual(allowed.returncode, 0, allowed.stderr)
-        for target in ("asgard-thor-lead", "asgard-freyja", "asgard-freyja-lead", "asgard-eitri", ""):
+        for target in ("asgard-thor-lead", "asgard-freyja", "asgard-eitri", ""):
             denied = self.sg(
                 "asgard-thor-lead", event="PreToolUse", tool_input={"subagent_type": target, "prompt": "nested"}
             )
