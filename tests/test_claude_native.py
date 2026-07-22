@@ -8,6 +8,7 @@ Agent SDK 의 query 만 페이크로 갈고 메시지 타입은 실물 dataclass
 """
 
 import asyncio
+import os
 import unittest
 from unittest import mock
 
@@ -142,6 +143,36 @@ class TestTransport(_Sess):
         )
         self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
         self.assertEqual(allowed, {})
+
+    def test_background_bash_is_denied_with_foreground_teaching(self):
+        # CC 백그라운드 셸 출력은 프로젝트 밖 스크래치패드 — 경로 가드가 회수를 막는 데드엔드라
+        # 시작 지점에서 차단한다 (26-07-22 실측: 출력 열람 3연속 차단으로 미확인 종료).
+        query, calls = _fake_query([[_result_msg()]])
+        sess = self._session(role="worker")
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("work")
+        hook = calls[0][1].hooks["PreToolUse"][0].hooks[0]
+        denied = asyncio.run(
+            hook(
+                {
+                    "hook_event_name": "PreToolUse",
+                    "tool_name": "Bash",
+                    "tool_input": {"command": "pytest -q", "run_in_background": True},
+                },
+                "id",
+                {"signal": None},
+            )
+        )
+        self.assertEqual(denied["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertIn("포그라운드", denied["hookSpecificOutput"]["permissionDecisionReason"])
+
+    def test_uv_cache_pinned_inside_session_cwd(self):
+        # CC 샌드박스가 ~/.cache/uv 쓰기를 거부하는 환경 방어 — 캐시를 세션 cwd 내부로 고정.
+        query, calls = _fake_query([[_result_msg()]])
+        sess = self._session(role="worker")
+        with mock.patch("claude_agent_sdk.query", query):
+            sess.run("work")
+        self.assertEqual(calls[0][1].env["UV_CACHE_DIR"], os.path.join(sess.cwd, ".cache", "uv"))
 
     def test_writable_role_uses_mandatory_bash_sandbox(self):
         query, calls = _fake_query([[_result_msg()]])
@@ -299,9 +330,16 @@ class TestTransport(_Sess):
         script = [[AssistantMessage(content=[use], model="m"), UserMessage(content=[result]), _result_msg()]]
         query, _ = _fake_query(script)
         sess = self._session()
+        observed = []
+        sess.on_tool = lambda name, args: observed.append((name, args))
         with mock.patch("claude_agent_sdk.query", query):
             r = sess.run("verify")
         self.assertEqual(r.commands, [])
+        self.assertEqual(
+            observed,
+            [("str_replace_based_edit_tool", {"command": "view", "path": "hello.txt"})],
+        )
+        self.assertTrue(any("→ read hello.txt" in text for text in self.texts))
 
     def test_writes_recorded_on_success_only(self):
         ok_use = ToolUseBlock(id="w1", name="Write", input={"file_path": "a.txt"})

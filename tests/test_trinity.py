@@ -317,6 +317,7 @@ class TestQuestLog(TrinityBase):
         self.assertNotIn(".claude", project_map)
         state = jout(self.qlog("state"))
         self.assertIn(".asgard/map/PROJECT.md", state["changed_files"])
+        self.assertIn(".asgard/map/GRAPH.md", state["changed_files"])
         from asgard.code_map import check_map
 
         self.assertTrue(check_map(self.root).ok, check_map(self.root))
@@ -342,12 +343,9 @@ class TestQuestLog(TrinityBase):
         with mock.patch("builtins.__import__", side_effect=isolated_hook_import):
             with mock.patch.object(quest_log.subprocess, "run", return_value=completed) as invoked:
                 self.assertEqual(quest_log.refresh_managed_map(self.root), (True, None))
-        invoked.assert_called_once_with(
-            ["asgard", "setup", "map", "--quiet"],
-            cwd=self.root,
-            capture_output=True,
-            text=True,
-            timeout=60,
+        self.assertEqual(
+            [call.args[0] for call in invoked.call_args_list],
+            [["asgard", "map", "update", "--quiet"], ["asgard", "map", "scan", "--quiet"]],
         )
 
     def test_verify_fails_closed_when_managed_map_refresh_is_rejected(self):

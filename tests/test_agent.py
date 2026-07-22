@@ -146,6 +146,18 @@ class TestTruncation(unittest.TestCase):
             self.assertIn("절단", out)
             self.assertLessEqual(len(out), T._MAX_OUT + 200)  # 상한 + 마커 여유
 
+    def test_successful_repeated_log_lines_are_compacted(self):
+        line = "Compiling same-package"
+        out = T._dedup_log("\n".join([line] * 100 + ["done"]))
+        self.assertEqual(out, f"{line}\n[... 99 duplicate lines]\ndone")
+
+    def test_failed_command_keeps_repeated_stdout_verbatim(self):
+        with tempfile.TemporaryDirectory() as root:
+            cmd = "python3 -c \"print('same\\n' * 100, end=''); raise SystemExit(1)\""
+            out, code = T.run_bash(root, {"command": cmd})
+        self.assertEqual(code, 1)
+        self.assertNotIn("duplicate lines", out)
+
 
 class TestBashDestructiveGuard(Base):
     """비-git 파괴 명령 가드 (Canon 3) — 루트 밖 rm -rf 차단, 루트 안은 허용."""
@@ -246,6 +258,15 @@ class TestReadonlySession(Base):
         self.assertEqual(session.cwd, workspace)
         self.assertFalse(os.path.exists(os.path.join(self.root, "unit.txt")))
         self.assertEqual(open(os.path.join(workspace, "unit.txt")).read(), "x")
+
+    def test_tool_preview_keeps_live_status_specific_and_single_line(self):
+        session = self._session(readonly=False)
+        self.assertEqual(session._tool_preview("Read", {"file_path": "src/app.py"}), ("→", "read src/app.py"))
+        self.assertEqual(
+            session._tool_preview("Grep", {"pattern": "needle", "path": "src"}),
+            ("✱", 'grep "needle" in src'),
+        )
+        self.assertEqual(session._tool_preview("apply_patch", {"patch_text": "many\nlines"}), ("✎", "apply patch"))
 
 
 class TestContextPrune(Base):

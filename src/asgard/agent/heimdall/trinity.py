@@ -10,6 +10,9 @@ TrinityRun 은 한 퀘스트의 실행 상태(계획 컨텍스트·실패 이력
 from __future__ import annotations
 
 import json
+import os
+import re
+import shlex
 import tempfile
 import time
 import uuid
@@ -34,6 +37,43 @@ from .roles import (
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
+
+_PYTHONISH = re.compile(r"^python[0-9.]*$")
+
+
+def _runner_identity(cmd: str) -> str:
+    """러너 래퍼를 벗긴 검증 명령 신원 — `uv run pytest X` 실패 뒤 `python -m pytest X` 성공이
+    같은 검증의 해소로 인정되게 한다 (26-07-22 실측: 격리 워크스페이스에 .venv 가 없어 uv 레인이
+    환경 실패 → 동등 러너로 통과했는데 PASS 가 무효화돼 재시도 턴 전체를 태웠다).
+    파싱 불가·정규화 불일치는 원문 신원 그대로 — 종전 엄격 경로와 동일 (fail-safe)."""
+    try:
+        tokens = shlex.split(cmd, posix=True)
+    except ValueError:
+        return cmd
+    while tokens:
+        while tokens and "=" in tokens[0] and not tokens[0].startswith(("=", "-")):
+            tokens = tokens[1:]  # 선행 VAR= 대입은 신원이 아니다
+        if not tokens:
+            break
+        head = os.path.basename(tokens[0])
+        if head == "env":
+            tokens = tokens[1:]
+            continue
+        if head == "uv" and len(tokens) >= 2 and tokens[1] == "run":
+            tokens = tokens[2:]
+            while tokens and tokens[0].startswith("-"):
+                tokens = tokens[1:]  # 값 취하는 플래그(--with X)는 미해석 — 불일치는 그저 미해소 유지
+            continue
+        if _PYTHONISH.match(head) and len(tokens) >= 3 and tokens[1] == "-m":
+            tokens = tokens[2:]
+            continue
+        break
+    if not tokens:
+        return cmd
+    head = os.path.basename(tokens[0])
+    if _PYTHONISH.match(head):
+        head = "python"
+    return shlex.join([head, *tokens[1:]])
 
 
 class TrinityRun:
@@ -192,7 +232,12 @@ class TrinityRun:
                 if self.role == "WORKER_RETRY" and ("baseline" in self.why.lower() or "베이스라인" in self.why):
                     self.last_fail = {"sig": "baseline-red", "why": self.why[:500]}
             if t > budget and self.role not in ("VERIFIER", "BASELINE_VERIFY", "DONE", "ESCALATE_ODIN", "DIRECT_DONE"):
-                break  # 예산 소진 — grace 는 판정·종료 전용, 새 작업 턴 금지
+                # 예산 소진 — grace 는 판정·종료 전용, 새 작업 턴 금지. 침묵 break 는 "판정 실패"로
+                # 오독된다 (26-07-22 실측: grace PASS 후 타 세션 소유 베이스라인 red 로 수리 전이가
+                # 막혀 "grace 판정까지 완료 실패" 보고 — 실제 판정은 PASS 완료): 미실행 전이와
+                # 사유를 들고 나가 Odin 보고를 정직하게 만든다.
+                self.exhausted_next = (self.role, self.why)
+                break
             # 잔량 자기규제 (budget-guard) — 80% 도달 시 범위 축소 지시
             self.budget_note = f"\n(턴 {t}/{budget}" + (
                 " — 예산 80% 도달: 범위를 좁히고 핵심 criteria 우선, 가정은 `가정:` 으로 기록)"
@@ -244,10 +289,31 @@ class TrinityRun:
                 return out
 
         hd._record_outcome(self.tc, "budget-exhausted", self.saw_red)
-        return (
-            f"⚠ 턴 예산({budget}) 소진 — Odin 보고 (grace 판정까지 완료 실패). "
-            f"퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
-        )
+        pending_next = getattr(self, "exhausted_next", None)
+        if pending_next:
+            role, why = pending_next
+            detail = f"미실행 전이 {role} — {why}"
+            for fail_line in self._baseline_red_fails()[:2]:
+                detail += f"\n  붉은 체크: {fail_line[:160]}"
+        else:
+            detail = "grace 판정까지 완료 실패"
+        return f"⚠ 턴 예산({budget}) 소진 — Odin 보고 ({detail}). 퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
+
+    def _baseline_red_fails(self) -> list[str]:
+        """마지막 verify 이벤트의 베이스라인 red 실패 줄 — 예산 소진 Odin 보고에 원인을 실어
+        준다 (fail-open: 로그 부재·파싱 실패는 빈 목록, 보고 자체는 계속)."""
+        fails: list[str] = []
+        try:
+            path = os.path.join(self._hd.root, ".asgard", "quest", f"{self.qid}.jsonl")
+            with open(path, encoding="utf-8") as f:
+                for ln in f:
+                    e = json.loads(ln)
+                    bl = e.get("baseline") or {}
+                    if e.get("event") == "verify" and bl.get("state") == "red":
+                        fails = [str(x) for r in bl.get("results") or [] for x in (r.get("fails") or [])]
+        except Exception:
+            return []
+        return fails
 
     # ── 역할 턴 ──────────────────────────────────────────────────────────
 
@@ -437,7 +503,7 @@ class TrinityRun:
             from ...evolution import unmined_signals
 
             if unmined_signals(hd.root, self.qid):
-                hd.on_text(f"  {ui.dim('│ 🌱 hard-won 교훈 감지 — asgard evolve scan 으로 스킬 후보 증류 가능')}\n")
+                hd.on_text(f"  {ui.dim('│ ⠶ hard-won 교훈 감지 — asgard evolve scan 으로 스킬 후보 증류 가능')}\n")
         except Exception:
             pass
         return hd._final_report(self.qid, self.sid, self.gate_blocks)
@@ -624,6 +690,13 @@ class TrinityRun:
                 f"\n이 퀘스트 귀속 변경 파일(하니스 관측): {quest_files} — 이 밖의 워킹트리 변경은"
                 " 타 세션 소유 미커밋 작업일 수 있다: git checkout/restore/revert 로 되돌리지 마라."
             )
+            if (self.last_fail or {}).get("sig") == "baseline-red":
+                # 베이스라인은 트리 전역 — red 원인이 귀속 파일 밖(타 세션 작업)이면 수리도 남의
+                # 파일이다. 고치지도 되돌리지도 말고 블로커로 반환해야 교착 대신 정직한 승격이 된다.
+                retry_note += (
+                    "\n베이스라인 red 의 원인이 위 귀속 파일 밖이면 남의 파일을 고치지 말고, 실패한"
+                    " 체크·파일·실패 줄을 보고서에 명시해 블로커로 반환하라 (Verifier structural 승격 대상)."
+                )
         plan_part = self.plan_ctx[:4000] + (
             f"\n…(계획 절단 — 원문 {len(self.plan_ctx)}자)" if len(self.plan_ctx) > 4000 else ""
         )  # silent truncation 금지
@@ -713,7 +786,10 @@ class TrinityRun:
             "이 세션은 read-only Bash 가드가 있다 — 허용: 관측·git 읽기·검증 러너(pytest/ruff/ty,"
             " `uv run` 경유 포함)·`python -m pytest|compileall|py_compile`·`python -c '<쓰기 없는"
             " 스모크>'`. 파일 작성·히어독·리다이렉션·$VAR 은 차단된다 — 차단당한 명령의 변형"
-            " 재시도로 턴을 태우지 말고 허용 레인으로 즉시 갈아타라. uv 프로젝트면 `uv run pytest -x -q` 우선.\n"
+            " 재시도로 턴을 태우지 말고 허용 레인으로 즉시 갈아타라.\n"
+            "이 워크스페이스는 .venv 없는 격리 클론이다 — 테스트는 `python -m pytest -x -q` 우선;"
+            " `uv run` 은 환경 사정으로 실패할 수 있으니 실패하면 재시도 말고 `python -m` 으로"
+            " 갈아타라 (같은 대상을 다른 러너로 통과시키면 앞선 실패는 해소로 인정된다).\n"
             "Bash 명령은 shell 연산자(; && || 리다이렉션)로 합치지 말고 각각 별도 호출하라.\n"
             f"Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출.\n"
             f"FAIL 이 접근 자체의 결함이면 structural=true 로 제출하라 (재계획 트리거).",
@@ -731,7 +807,9 @@ class TrinityRun:
             cmd = str(command.get("cmd") or "").strip()
             # 가드 차단(blocked) 호출은 실행된 적이 없다 — 미해소 실패 집합에서 제외 (커널 경로 패리티)
             if cmd and not _trivial_evidence(cmd) and not command.get("blocked"):
-                identity = str(command.get("command_hash") or cmd)
+                # 200자 초과 명령은 절단본 대신 해시가 신원 (절단 충돌 방지 우선). 그 외는 러너
+                # 래퍼를 벗긴 신원 — 환경 사정으로 러너를 갈아탄 동일 대상 성공은 실패 해소다.
+                identity = str(command.get("command_hash") or _runner_identity(cmd))
                 final_exit_by_command[identity] = command.get("exit_code")
         unresolved = [cmd for cmd, exit_code in final_exit_by_command.items() if exit_code != 0]
         if not v:

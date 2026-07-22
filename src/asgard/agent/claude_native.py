@@ -236,6 +236,14 @@ async def _run_async(sess, user_content: str, result) -> None:
         tool_input = hook_input.get("tool_input") or {}
         command = str(tool_input.get("command") or "")
         reason = native_tools.validate_bash_command(sess.cwd, command) if tool_name == "Bash" else None
+        if tool_name == "Bash" and not reason and tool_input.get("run_in_background"):
+            # CC 백그라운드 셸의 출력은 프로젝트 밖 스크래치패드 파일 — 경로 가드가 회수를
+            # 막아 결과를 영영 못 읽는 데드엔드다 (26-07-22 실측: 전체 스위트 백그라운드 실행
+            # 후 출력 열람 3연속 차단으로 미확인 종료). 시작 지점에서 가르치며 막는다.
+            reason = (
+                "백그라운드 실행 차단 — 출력 파일이 프로젝트 밖이라 이 세션에서 회수할 수 없다. "
+                "같은 명령을 포그라운드로 실행하라 (오래 걸리면 -x·대상 축소로 쪼개라)."
+            )
         if tool_name == "Bash" and getattr(sess, "_readonly_unisolated", False):
             reason = "read-only Bash requires an isolated Git workspace"
         path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
@@ -305,7 +313,14 @@ async def _run_async(sess, user_content: str, result) -> None:
         include_partial_messages=True,  # 텍스트 델타 스트리밍 — anthropic 트랜스포트와 체감 패리티
         # BASH_MAX_TIMEOUT_MS: 네이티브 트랜스포트 120s 하드캡(tools._TIMEOUT)과 패리티 —
         # 모델이 timeout 연장(기본 최대 10분)으로 폭주 명령을 키우지 못하게 상한.
-        env={"BASH_MAX_TIMEOUT_MS": "120000", **_guard_env(sess)},
+        # UV_CACHE_DIR: CC 샌드박스(allowUnsandboxedCommands=False)가 ~/.cache/uv 쓰기를 거부해
+        # `uv run` 이 환경 실패하는 사례 실측(26-07-22) — 캐시를 세션 cwd 내부(.gitignore 된
+        # .cache/uv)로 고정해 env 조작 없이 동작하게 한다. 프로젝트 파일(pyproject) 오염 금지.
+        env={
+            "BASH_MAX_TIMEOUT_MS": "120000",
+            "UV_CACHE_DIR": os.path.join(sess.cwd, ".cache", "uv"),
+            **_guard_env(sess),
+        },
     )
 
     pending: dict[str, tuple[str, str, float, int]] = {}  # tool_use_id → (sym, detail, t0, cmd_idx)
@@ -428,24 +443,40 @@ def _guard_env(sess=None) -> dict:
 def _observe_use(sess, result, b, pending) -> None:
     """ToolUseBlock 관찰 → 커맨드/쓰기 추적 준비. 실행은 CLI 안 — 여기선 기록만."""
     from .. import ui as _ui
-    from ..i18n import t as _t
+
+    # In-process Asgard MCP tools already pass through AgentSession._execute(), which
+    # owns their status, recap, and completion line. Observing them again would duplicate all three.
+    if b.name.startswith("mcp__asgard__"):
+        return
+
+    args = dict(b.input)
+    sym, detail = sess._tool_preview(b.name, args)
+    sess.on_status(_ui.oneline(f"{sym} {detail}", 60))
+
+    # Claude Code built-ins bypass ToolKernel, so adapt their activity back to the
+    # canonical recap shape used by API-backed native sessions.
+    if b.name == "Bash":
+        sess._observe_tool("bash", args)
+    elif b.name in _WRITE_TOOLS:
+        sess._observe_tool(
+            "str_replace_based_edit_tool",
+            {"command": "create" if b.name == "Write" else "str_replace", "path": args.get("file_path", "")},
+        )
+    elif b.name == "Read":
+        sess._observe_tool("str_replace_based_edit_tool", {"command": "view", "path": args.get("file_path", "")})
+    else:
+        sess._observe_tool(b.name.lower(), args)
 
     if b.name == "Bash":
         cmd = str(b.input.get("command", ""))
-        sess.on_status(_ui.oneline("$ " + cmd, 60))
         command = {"cmd": cmd[:200], "exit_code": None}
         if len(cmd) > 200:
             command["command_hash"] = hashlib.sha256(cmd.encode()).hexdigest()
         result.commands.append(command)  # 결과 블록이 와야만 증거로 승격
-        pending[b.id] = ("$", cmd, time.monotonic(), len(result.commands) - 1)
-    elif b.name in _WRITE_TOOLS:
-        path = str(b.input.get("file_path", ""))
-        sess.on_status(_ui.oneline("✎ " + path, 60))
-        pending[b.id] = ("✎", f"{b.name.lower()} {path}", time.monotonic(), -1)
-    elif b.name.startswith("mcp__asgard__"):
-        sess.on_status("⚙ " + b.name.removeprefix("mcp__asgard__"))
-    else:  # Read/Glob/Grep 등 읽기 계열 — executable verification evidence 는 아님
-        sess.on_status(_t("thinking"))
+        command_index = len(result.commands) - 1
+    else:
+        command_index = -1
+    pending[b.id] = (sym, detail, time.monotonic(), command_index)
 
 
 def _observe_result(sess, result, b, pending) -> None:

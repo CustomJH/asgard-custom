@@ -180,7 +180,10 @@ def _has_dynamic_expansion(command: str) -> bool:
 def _scope_guard(root: str, command: str) -> str | None:
     """명시 경로·따옴표 결합·셸 확장으로 프로젝트/제어 경계를 넘는 명령을 거부."""
     if _has_dynamic_expansion(command):
-        return "동적 셸 확장($/backtick)은 프로젝트 경로 경계를 검증할 수 없어 차단"
+        return (
+            "동적 셸 확장($/backtick)은 프로젝트 경로 경계를 검증할 수 없어 차단 — 리터럴 경로로"
+            " 다시 써라. 임시 파일·캐시는 프로젝트 내부 .gitignore 경로(예: .cache/)를 쓴다"
+        )
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>()")
         lexer.whitespace_split = True
@@ -212,13 +215,37 @@ def _scope_guard(root: str, command: str) -> str | None:
                 and candidate != rr
                 and not candidate.startswith(rr + os.sep)
             ):
-                return f"Bash 경로가 프로젝트 루트를 벗어남: {value}"
+                return (
+                    f"Bash 경로가 프로젝트 루트를 벗어남: {value} — 임시 파일·캐시가 필요하면"
+                    " 프로젝트 내부 .gitignore 경로(예: .cache/)를 쓰라"
+                )
     # ponytail: 셸은 OS 샌드박스가 아니다. 더 강한 격리가 필요하면 플랫폼 sandbox 프로세스로 교체.
     return None
 
 
 def _cap(s: str) -> str:
     return s if len(s) <= _MAX_OUT else s[:_MAX_OUT] + f"\n[... {len(s) - _MAX_OUT} chars 절단]"
+
+
+def _dedup_log(s: str) -> str:
+    """성공한 셸 로그의 연속 중복만 접는다. 오류 출력과 서로 떨어진 중복은 원문 보존."""
+    if len(s) < 500:
+        return s
+    out: list[str] = []
+    previous: str | None = None
+    repeated = 0
+    for line in s.splitlines():
+        if line == previous:
+            repeated += 1
+            continue
+        if repeated:
+            out.append(f"[... {repeated} duplicate lines]")
+        out.append(line)
+        previous, repeated = line, 0
+    if repeated:
+        out.append(f"[... {repeated} duplicate lines]")
+    compact = "\n".join(out)
+    return compact if len(compact) < len(s) else s
 
 
 class _HTMLText(HTMLParser):
@@ -562,7 +589,10 @@ def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None)
     finally:
         for r in readers:
             r.join(timeout=5)
-    out = out_buf.text() + (("\n" + err_buf.text()) if err_buf.size or err_buf.dropped else "")
+    stdout = out_buf.text()
+    if p.returncode == 0:
+        stdout = _dedup_log(stdout)
+    out = stdout + (("\n" + err_buf.text()) if err_buf.size or err_buf.dropped else "")
     return out.strip() or f"(no output, exit {p.returncode})", p.returncode
 
 
@@ -657,6 +687,8 @@ class BackgroundProcessManager:
 
     def _render(self, process_id: str, job: dict) -> str:
         output = job["out"].text()
+        if job["process"].poll() in {None, 0}:
+            output = _dedup_log(output)
         errors = job["err"].text()
         body = output + (("\n" + errors) if errors else "")
         return _cap(self._summary(process_id, job) + (f"\n{body.strip()}" if body.strip() else "\n(no output)"))
