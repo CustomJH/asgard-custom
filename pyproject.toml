@@ -72,9 +72,9 @@ build-backend = "hatchling.build"
 path = "src/asgard/__init__.py"
 
 [tool.hatch.build.targets.sdist.force-include]
-"src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/oh-my-design/.claude" = "src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/oh-my-design/.claude"
-"src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/oh-my-design/web/scripts/lib" = "src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/oh-my-design/web/scripts/lib"
-"src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/oh-my-design/web/src/lib" = "src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/oh-my-design/web/src/lib"
+"src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/.claude" = "src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/.claude"
+"src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/scripts/lib" = "src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/scripts/lib"
+"src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/src/lib" = "src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/src/lib"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/asgard"]

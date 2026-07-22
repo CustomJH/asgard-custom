@@ -1,0 +1,124 @@
+# npm 자동 배포 — vX.Y.Z 태그 푸시가 트리거.
+#
+# 릴리스 절차 (로컬):
+#   1. package.json version 범프 + CHANGELOG 항목 → main 머지
+#   2. git tag v1.7.2 && git push origin v1.7.2
+#   3. 이 워크플로가 테스트 → 빌드 → npm publish (provenance 포함)
+#
+# 필요 시크릿: NPM_TOKEN (npmjs.com granular token, vanadis-cli read+write)
+# 주의: npm 계정 2FA 설정이 "Require 2FA and disallow tokens"면 publish가
+# EOTP로 실패한다 — "2FA for authorization only" 또는 토큰 허용으로 둘 것.
+
+name: Release to npm
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+  id-token: write # npm provenance 서명용
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  node18-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 18
+
+      - run: npm ci
+
+      - name: Build the Node 18 package artifacts
+        run: npm run build
+
+      - name: Verify the packed reference collector is self-contained
+        shell: bash
+        run: |
+          set -euo pipefail
+          PACK_JSON=$(npm pack --json)
+          # npm 10 can prepend `prepare` output before the JSON payload. Parse
+          # from the first standalone `[` line instead of assuming byte 0.
+          TARBALL=$(node -e 'const fs=require("fs"); const raw=fs.readFileSync(0,"utf8"); const start=raw.search(/^\[\s*$/m); if(start<0) throw new Error("npm pack JSON payload not found"); const p=JSON.parse(raw.slice(start)); process.stdout.write(p[0].filename)' <<<"$PACK_JSON")
+          mkdir packed
+          tar -xzf "$TARBALL" -C packed
+          # Exercise the artifact exactly as the installer leaves it: outside
+          # the npm package's `type: module` boundary and with no package.json
+          # or node_modules available in any copied skill directory.
+          STANDALONE=$(mktemp -d)
+          cp -R packed/package/skills/vanadis-reference-capture "$STANDALONE/vanadis-reference-capture"
+          COLLECTOR="$STANDALONE/vanadis-reference-capture/scripts/capture-reference-evidence.mjs"
+          test -f "$COLLECTOR"
+          set +e
+          OUTPUT=$(node "$COLLECTOR" 2>&1)
+          STATUS=$?
+          set -e
+          test "$STATUS" -eq 1
+          grep -q "Usage:" <<<"$OUTPUT"
+          if grep -Eq "ERR_MODULE_NOT_FOUND|Unknown file extension|Cannot use import statement outside a module|experimental-strip-types" <<<"$OUTPUT"; then
+            echo "$OUTPUT"
+            exit 1
+          fi
+
+  publish:
+    needs: node18-smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Verify tag matches package.json version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME != package.json $PKG_VERSION"
+            exit 1
+          fi
+
+      - run: npm ci
+
+      - name: Install web quality dependencies
+        run: npm ci
+        working-directory: web
+
+      - name: Verify canonical reference pipeline
+        run: npm run check:catalog
+
+      - name: Test CLI runtime
+        run: npm test
+
+      - name: Type-check CLI runtime
+        run: npm run lint
+
+      - name: Verify public counts
+        run: npm run check-counts
+
+      - name: Test web product
+        run: npm test
+        working-directory: web
+
+      - name: Type-check web product
+        run: npm run typecheck
+        working-directory: web
+
+      - name: Build web product
+        run: npm run build
+        working-directory: web
+
+      # prepublishOnly가 build + gen-llms-full + release-hygiene(pack)을 다시 돌린다
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

@@ -1,0 +1,93 @@
+# vanadis
+
+> AI 코딩 에이전트에 품질 등급이 표시된 디자인 근거를 연결하는 오픈소스 하네스. Claude Code, Codex, OpenCode에는 제품 스킬 20개와 전문 에이전트 18개 전체 번들을 설치할 수 있고, Cursor에는 Vanadis 스킬·서브에이전트가 아닌 프로젝트 rule과 로컬 카탈로그를 설치합니다. DESIGN.md 440개 중 verified_v2 141개, partial 159개, legacy 140개이며 공개 데모에는 verified_v2를 사용합니다.
+
+## 제품 모델
+
+vanadis의 고유한 흐름은 다음과 같습니다.
+
+`검증된 레퍼런스 → 프로젝트 DESIGN.md → 실제 구현 → 정합성 재검증`
+
+CLI는 두 번째 디자인 앱이 아니라 부트스트래퍼입니다. Claude Code, Codex, OpenCode에는 채널별 스킬·전문 역할·로컬 카탈로그를, Cursor에는 `.cursor/rules/vanadis-design.mdc`와 공용 `.claude/data` 카탈로그를 설치하고 상태를 진단합니다. 실제 디자인 작업은 각 채널에 설치된 기능 범위 안에서 자연어로 요청합니다. 코어 설치와 로컬 흐름에는 별도 AI 호출, API 키, 데몬, MCP 서버가 필요하지 않습니다.
+
+## 설치와 진단
+
+```bash
+npx vanadis-cli@latest
+```
+
+에이전트를 재시작한 뒤 한 번 검증합니다.
+
+```bash
+npx vanadis-cli@latest doctor
+```
+
+채널별 비대화형 설치:
+
+```bash
+npx vanadis-cli@latest install-skills --agent codex --all
+npx vanadis-cli@latest install-skills --agent claude-code --all
+npx vanadis-cli@latest install-skills --agent opencode --all
+npx vanadis-cli@latest install-skills --agent cursor --all
+```
+
+## 첫 프롬프트 — Claude Code, Codex, OpenCode
+
+```text
+가족 자산관리 앱에 차분하고 신뢰감 있는 디자인 시스템을 잡아줘.
+검증된 레퍼런스를 추천하고 차이를 설명한 뒤 DESIGN.md 작성 전에 확인해줘.
+```
+
+그다음에는 구체적인 제품 화면을 요청합니다.
+
+```text
+DESIGN.md를 적용해 홈 화면을 개선해줘.
+기존 라우트와 동작은 보존하고 결과를 검증해줘.
+```
+
+## Cursor 경로 — rule + catalog 전용
+
+Cursor는 `vanadis:init`, `vanadis:feel`, `vanadis:harness`, Vanadis 서브에이전트를 실행하지 않습니다.
+
+1. https://vanadis.kr/builder 에서 레퍼런스를 선택·조정하고 `DESIGN.md`를 프로젝트 루트에 내려받거나,
+2. Cursor에게 `Read .claude/data/references/toss/DESIGN.md and create a root DESIGN.md for this product using confirmed values only. Keep unknown facts absent.`라고 요청합니다.
+
+이후 `@DESIGN.md를 읽고 동작은 유지한 채 홈 화면을 다시 디자인해줘`라고 요청합니다. rule의 우선순위는 `DESIGN.md` → `.vanadis/preferences.md`의 대기 중 교정 → 프레임워크 기본값입니다.
+
+## 20개 제품 스킬 — Claude Code, Codex, OpenCode
+
+- 시스템: `vanadis:init`, `vanadis:apply`, `vanadis:sync`, `vanadis:remember`, `vanadis:learn`, `vanadis:taste`
+- 화면 구축: `vanadis:harness`, `vanadis:orchestrator`, `vanadis:asset-fetch`, `vanadis:codex-image`, `claude-design`
+- 품질 검증: `vanadis:feel`, `vanadis:slop-audit`, `vanadis:designer-review`, `vanadis:final-qa`, `vanadis:experiment-gallery`
+- 콘텐츠: `vanadis:kr-writer`, `vanadis:locale-adapter`, `vanadis:humanize`
+- 레퍼런스 증거: `vanadis:reference-capture`
+
+## 핵심 계약
+
+1. 프로젝트 `DESIGN.md`가 UI 작업의 정본입니다.
+2. 모르는 레퍼런스 데이터는 그럴듯한 폴백으로 채우지 않고, 가장 작은 미확정 필드·항목·빈 그룹만 생략합니다.
+3. 마케팅·기업·폰트 카탈로그·제품 화면은 서로 다른 증거 도메인입니다.
+4. `/builder`가 사용자의 시각 레퍼런스 선택 및 미리보기 주 경로입니다.
+5. UI 작업은 실제 제품 라우트와 상태를 검증한 뒤 완료합니다.
+6. 사용자 교정은 `.vanadis/preferences.md`에 범위 있는 선호로 남깁니다.
+
+## 사람용 문서
+
+- 한국어: https://vanadis.kr/docs/ko
+- 한국어 라이브 데모 실행표: https://vanadis.kr/docs/ko/demo
+- AI slop 판정 기준과 비교: https://vanadis.kr/docs/ko/anti-slop
+- English: https://vanadis.kr/docs/en
+- 日本語: https://vanadis.kr/docs/ja
+- 简体中文: https://vanadis.kr/docs/zh-cn
+- 繁體中文: https://vanadis.kr/docs/zh-tw
+- Builder: https://vanadis.kr/builder
+- Catalog: https://vanadis.kr/design-systems
+- GitHub: https://github.com/kwakseongjae/vanadis
+
+## 머신 리더블 원본
+
+- 전체 컨텍스트: https://vanadis.kr/llms-full.txt
+- 레퍼런스 원문: `https://vanadis.kr/<id>/design.md`
+- 예시: https://vanadis.kr/toss/design.md
+
+이전 MCP connector는 폐기되었습니다. 로컬 카탈로그와 raw DESIGN.md 경로를 사용합니다.

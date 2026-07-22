@@ -5,7 +5,7 @@ description: "Freyja's default visual design engine. Use for every Freyja UI, UX
 
 # Freyja default design engine
 
-The exact pinned Oh My Design repository is under `references/oh-my-design/`. Treat every upstream agent as a Freyja role lens, not as a separate runtime identity. Do not summarize, rewrite, or omit a loaded canonical file.
+The exact pinned Vanadis repository is under `references/vanadis/`. Treat every upstream agent as a Freyja role lens, not as a separate runtime identity. Do not summarize, rewrite, or omit a loaded canonical file.
 
 Use the single safe runtime for every non-text surface:
 
@@ -20,19 +20,19 @@ asgard skills run asgard-freyja-design -- --help
 
 ## Fixed order
 
-1. Load `references/oh-my-design/skills/omd-feel/SKILL.md` first. Load its `reference.md` and `provenance.md` when that contract routes to them.
-2. Select and load every task-relevant canonical OmD skill from `references/oh-my-design/skills/<name>/SKILL.md`. For preference-survey work also load `references/oh-my-design/.agents/skills/omd-design/SKILL.md` and its `REFERENCE_TAGS.md`.
-3. Select the matching canonical role files from `references/oh-my-design/agents/`. Freyja performs those roles sequentially and preserves their gates, artifacts, revision caps, and handoffs.
-4. Load `references/emil/freyja-emil-simplicity/SKILL.md` last and apply it as the subtraction and stopping gate.
+1. Load `references/vanadis/skills/vanadis-feel/SKILL.md` first. Load its `reference.md` and `provenance.md` when that contract routes to them.
+2. Select and load every task-relevant canonical Vanadis skill from `references/vanadis/skills/<name>/SKILL.md`. For preference-survey work also load `references/vanadis/.agents/skills/vanadis-design/SKILL.md` and its `REFERENCE_TAGS.md`.
+3. Select the matching canonical role files from `references/vanadis/agents/`. Freyja performs those roles sequentially and preserves their gates, artifacts, revision caps, and handoffs.
+4. Load `references/vanadis-restraint/SKILL.md` last and apply it as the subtraction and stopping gate.
 
-For a new landing page, screen, product surface, or “design it for me” request, the default path is `omd-harness` plus `agents/omd-master.md`; follow the master phases and load each specialist role it calls. For an existing surface use `omd-apply`. Route design-system setup to `omd-init` or the survey skill, review to `omd-designer-review` and `omd-final-qa`, references to `omd-reference-capture`, assets or images to `omd-asset-fetch` or `omd-codex-image`, copy and locale work to the writer/humanize/locale skills, and experiments to the lab or gallery skills.
+For a new landing page, screen, product surface, or “design it for me” request, the default path is `vanadis-harness` plus `agents/vanadis-master.md`; follow the master phases and load each specialist role it calls. For an existing surface use `vanadis-apply`. Route design-system setup to `vanadis-init` or the survey skill, review to `vanadis-designer-review` and `vanadis-final-qa`, references to `vanadis-reference-capture`, assets or images to `vanadis-asset-fetch` or `vanadis-codex-image`, copy and locale work to the writer/humanize/locale skills, and experiments to the lab or gallery skills.
 
-The canonical OmD skill set is: `claude-design`, `omd-apply`, `omd-asset-fetch`, `omd-codex-image`, `omd-designer-review`, `omd-experiment-gallery`, `omd-feel`, `omd-final-qa`, `omd-harness`, `omd-humanize`, `omd-init`, `omd-kr-writer`, `omd-lab-02-design-harness`, `omd-learn`, `omd-locale-adapter`, `omd-orchestrator`, `omd-reference-capture`, `omd-remember`, `omd-slop-audit`, `omd-sync`, and `omd-taste`.
+The canonical Vanadis skill set is: `claude-design`, `vanadis-apply`, `vanadis-asset-fetch`, `vanadis-codex-image`, `vanadis-designer-review`, `vanadis-experiment-gallery`, `vanadis-feel`, `vanadis-final-qa`, `vanadis-harness`, `vanadis-humanize`, `vanadis-init`, `vanadis-kr-writer`, `vanadis-lab-02-design-harness`, `vanadis-learn`, `vanadis-locale-adapter`, `vanadis-orchestrator`, `vanadis-reference-capture`, `vanadis-remember`, `vanadis-slop-audit`, `vanadis-sync`, and `vanadis-taste`.
 
-The canonical Freyja role lenses are: `omd-a11y-auditor`, `omd-asset-curator`, `omd-codex-image`, `omd-critic`, `omd-designer-review`, `omd-final-qa`, `omd-humanizer`, `omd-kr-writer`, `omd-locale-adapter`, `omd-master`, `omd-microcopy`, `omd-orchestrator`, `omd-persona-tester`, `omd-slop-auditor`, `omd-ui-junior`, `omd-ux-engineer`, `omd-ux-researcher`, and `omd-ux-writer`.
+The canonical Freyja role lenses are: `vanadis-a11y-auditor`, `vanadis-asset-curator`, `vanadis-codex-image`, `vanadis-critic`, `vanadis-designer-review`, `vanadis-final-qa`, `vanadis-humanizer`, `vanadis-kr-writer`, `vanadis-locale-adapter`, `vanadis-master`, `vanadis-microcopy`, `vanadis-orchestrator`, `vanadis-persona-tester`, `vanadis-slop-auditor`, `vanadis-ui-junior`, `vanadis-ux-engineer`, `vanadis-ux-researcher`, and `vanadis-ux-writer`.
 
-Resolve upstream repository-relative paths under `references/oh-my-design/`. Use Asgard-equivalent tools when an upstream host-specific tool name differs; preserve the check and report it as unavailable rather than claiming it ran. Never use an upstream machine-specific absolute path.
+Resolve upstream repository-relative paths under `references/vanadis/`. Use Asgard-equivalent tools when an upstream host-specific tool name differs; preserve the check and report it as unavailable rather than claiming it ran. Never use an upstream machine-specific absolute path.
 
-Resolve conflicts in this order: the user's explicit request and the existing product design system; accessibility and runtime correctness; Oh My Design's system and workflow; Emil's restraint. Emil removes unearned elements but must not erase useful identity, information structure, state feedback, or evidence.
+Resolve conflicts in this order: the user's explicit request and the existing product design system; accessibility and runtime correctness; Vanadis's system and workflow; the Vanadis restraint gate. The restraint gate removes unearned elements but must not erase useful identity, information structure, state feedback, or evidence.
 
-Before returning, render and use the result. Verify the primary task, desktop and mobile layout, keyboard focus, reduced motion, overflow, console output, and every gate selected by the OmD workflow.
+Before returning, render and use the result. Verify the primary task, desktop and mobile layout, keyboard focus, reduced motion, overflow, console output, and every gate selected by the Vanadis workflow.

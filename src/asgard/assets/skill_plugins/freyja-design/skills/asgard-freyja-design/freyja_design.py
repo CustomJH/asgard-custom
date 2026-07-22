@@ -14,9 +14,9 @@ from pathlib import Path
 
 from asgard.settings import global_dir
 
-REVISION = "0a7f3a1e17814c8a1b000ce075b3b2620b70db9e"
+REVISION = "0a7f3a1e17814c8a1b000ce075b3b2620b70db9e-vanadis"
 SKILL_ROOT = Path(__file__).resolve().parent
-UPSTREAM = SKILL_ROOT / "references" / "oh-my-design"
+UPSTREAM = SKILL_ROOT / "references" / "vanadis"
 
 
 def _cache_root() -> Path:
@@ -62,7 +62,7 @@ def _snapshot() -> Path:
         return source
 
     cache.parent.mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".omd-", dir=cache.parent))
+    staging = Path(tempfile.mkdtemp(prefix=".vanadis-", dir=cache.parent))
     try:
         shutil.copytree(UPSTREAM, staging / "source")
         (staging / "REVISION").write_text(REVISION + "\n", encoding="utf-8")
@@ -119,7 +119,7 @@ def _npm_ready(package_root: Path) -> None:
 def _root_ready() -> Path:
     source = _snapshot()
     _npm_ready(source)
-    cli = source / "dist" / "bin" / "oh-my-design.js"
+    cli = source / "dist" / "bin" / "vanadis.js"
     if not cli.is_file():
         code = subprocess.run([_program("npm"), "run", "build"], cwd=source, check=False).returncode
         if code:
@@ -237,7 +237,7 @@ def main(argv: list[str]) -> int:
     if command == "cli":
         source = _root_ready()
         return subprocess.run(
-            [_program("node"), str(source / "dist" / "bin" / "oh-my-design.js"), *arguments],
+            [_program("node"), str(source / "dist" / "bin" / "vanadis.js"), *arguments],
             cwd=Path.cwd(),
             check=False,
         ).returncode
@@ -249,7 +249,13 @@ def main(argv: list[str]) -> int:
         return _run_file(arguments[0], arguments[1:])
     if command == "list":
         prefix = arguments[0] if arguments else ""
-        print("\n".join(item.relative_to(UPSTREAM).as_posix() for item in sorted(UPSTREAM.rglob("*")) if item.is_file() and item.relative_to(UPSTREAM).as_posix().startswith(prefix)))
+        print(
+            "\n".join(
+                item.relative_to(UPSTREAM).as_posix()
+                for item in sorted(UPSTREAM.rglob("*"))
+                if item.is_file() and item.relative_to(UPSTREAM).as_posix().startswith(prefix)
+            )
+        )
         return 0
     if command == "resource" and len(arguments) == 1:
         print(_relative(UPSTREAM, arguments[0]).read_text(encoding="utf-8"), end="")

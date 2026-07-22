@@ -1,0 +1,107 @@
+{
+  "name": "vanadis-cli",
+  "version": "1.9.0",
+  "description": "Give your AI coding agent a project-owned DESIGN.md workflow with a guided installer, doctor, and 440+ quality-graded references.",
+  "type": "module",
+  "bin": {
+    "vanadis": "dist/bin/vanadis.js"
+  },
+  "files": [
+    "dist",
+    "skills/vanadis-apply",
+    "skills/vanadis-init",
+    "skills/vanadis-harness",
+    "skills/vanadis-learn",
+    "skills/vanadis-remember",
+    "skills/vanadis-sync",
+    "skills/vanadis-taste",
+    "skills/vanadis-reference-capture",
+    "skills/vanadis-asset-fetch",
+    "skills/vanadis-experiment-gallery",
+    "skills/vanadis-orchestrator",
+    "skills/vanadis-kr-writer",
+    "skills/vanadis-locale-adapter",
+    "skills/vanadis-humanize",
+    "skills/vanadis-designer-review",
+    "skills/vanadis-final-qa",
+    "skills/vanadis-feel",
+    "skills/vanadis-slop-audit",
+    "skills/vanadis-codex-image",
+    "skills/claude-design",
+    "agents",
+    "data/opt-out-corpus.json",
+    "data/synonyms.json",
+    "data/vocabulary.json",
+    "data/reference-fingerprints.json",
+    "data/reference-tags.md",
+    "web/references/*/DESIGN.md",
+    ".claude/hooks/*.cjs",
+    ".claude/hooks/lib/*.cjs",
+    ".claude/settings.json",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "MIGRATION.md",
+    "docs/CLI_QUICKSTART.md",
+    ".github/assets/logo-bg.png",
+    "scripts/postinstall.cjs",
+    "scripts/context.cjs",
+    "scripts/ctx-prime.cjs"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "start": "node dist/bin/vanadis.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build && node scripts/gen-llms-full.cjs && bash scripts/check-release-hygiene.sh pack",
+    "gen:llms-full": "node scripts/gen-llms-full.cjs",
+    "check-counts": "node scripts/check-counts.mjs",
+    "check:catalog": "npm --prefix web run check:reference-pipeline",
+    "postinstall": "node scripts/postinstall.cjs"
+  },
+  "keywords": [
+    "design-system",
+    "design-md",
+    "ai-agent",
+    "claude-code",
+    "codex",
+    "opencode",
+    "cursor",
+    "skills",
+    "design-skills",
+    "google-stitch",
+    "vibe-coding"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kwakseongjae/vanadis.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.9.1",
+    "commander": "^13.1.0",
+    "picocolors": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.13.10",
+    "playwright-core": "^1.61.1",
+    "tsup": "^8.4.0",
+    "typescript": "^5.8.2",
+    "vitest": "^3.1.1"
+  },
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "test"
+  },
+  "author": "",
+  "bugs": {
+    "url": "https://github.com/kwakseongjae/vanadis/issues"
+  },
+  "homepage": "https://vanadis.kr/docs/en"
+}
