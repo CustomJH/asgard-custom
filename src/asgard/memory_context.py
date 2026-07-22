@@ -30,7 +30,26 @@ _QUERY_STOPWORDS = frozenset(
         "대한",
     }
 )
-_QUERY_PARTICLES = ("으로", "에서", "에게", "까지", "부터", "은", "는", "이", "가", "을", "를", "에", "의", "로", "과", "와", "도", "만")
+_QUERY_PARTICLES = (
+    "으로",
+    "에서",
+    "에게",
+    "까지",
+    "부터",
+    "은",
+    "는",
+    "이",
+    "가",
+    "을",
+    "를",
+    "에",
+    "의",
+    "로",
+    "과",
+    "와",
+    "도",
+    "만",
+)
 
 
 def _same_language_lexical_admission(query: str, text: str) -> bool:

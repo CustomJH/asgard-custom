@@ -139,14 +139,10 @@ class TestSettings(DesktopCase):
                 self.assertEqual(status, 200)
                 self.assertTrue(json.loads(body)["saved"].startswith(home))
             self.assertEqual(
-                desktop.save_settings(
-                    {"scope": "project", "section": "provider", "values": {"secret": "no"}}, root
-                )[0],
+                desktop.save_settings({"scope": "project", "section": "provider", "values": {"secret": "no"}}, root)[0],
                 400,
             )
-            self.assertEqual(
-                desktop.save_settings({"scope": "team", "section": "ui", "values": {}}, root)[0], 400
-            )
+            self.assertEqual(desktop.save_settings({"scope": "team", "section": "ui", "values": {}}, root)[0], 400)
 
 
 class TestHostAndOriginGuard(unittest.TestCase):
@@ -189,24 +185,27 @@ class TestNativeShell(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             app = os.path.join(root, "asgard-desktop")
             open(app, "w").close()
-            with mock.patch.dict(os.environ, {"ASGARD_DESKTOP_APP": app}), mock.patch.object(
-                desktop.shutil, "which", return_value=None
+            with (
+                mock.patch.dict(os.environ, {"ASGARD_DESKTOP_APP": app}),
+                mock.patch.object(desktop.shutil, "which", return_value=None),
             ):
                 self.assertEqual(desktop._native_candidates()[0], app)
 
     def test_windows_native_install_is_discovered(self):
         expected = os.path.join("C:\\Users\\yun\\AppData\\Local", "Asgard Desktop", "asgard-desktop.exe")
-        with mock.patch.object(desktop.os, "name", "nt"), mock.patch.dict(
-            os.environ, {"LOCALAPPDATA": "C:\\Users\\yun\\AppData\\Local"}, clear=True
-        ), mock.patch.object(desktop.shutil, "which", return_value=None), mock.patch.object(
-            desktop.os.path, "isfile", side_effect=lambda path: path == expected
+        with (
+            mock.patch.object(desktop.os, "name", "nt"),
+            mock.patch.dict(os.environ, {"LOCALAPPDATA": "C:\\Users\\yun\\AppData\\Local"}, clear=True),
+            mock.patch.object(desktop.shutil, "which", return_value=None),
+            mock.patch.object(desktop.os.path, "isfile", side_effect=lambda path: path == expected),
         ):
             self.assertIn(expected, desktop._native_candidates())
 
     def test_native_app_receives_only_managed_loopback_context(self):
-        with mock.patch.object(desktop, "_native_candidates", return_value=["/app/asgard-desktop"]), mock.patch.object(
-            desktop.subprocess, "run"
-        ) as run:
+        with (
+            mock.patch.object(desktop, "_native_candidates", return_value=["/app/asgard-desktop"]),
+            mock.patch.object(desktop.subprocess, "run") as run,
+        ):
             self.assertTrue(desktop._open_native("http://127.0.0.1:8766/", "/project"))
             env = run.call_args.kwargs["env"]
             self.assertEqual(env["ASGARD_DESKTOP_URL"], "http://127.0.0.1:8766/")

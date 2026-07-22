@@ -270,7 +270,9 @@ class HindsightBackend:
             if document_id and document_id in seen_documents:
                 continue
             chunk = chunks.get(str(raw.get("chunk_id") or ""))
-            chunk_text = chunk.get("text") if isinstance(chunk, Mapping) and chunk.get("truncated") is not True else None
+            chunk_text = (
+                chunk.get("text") if isinstance(chunk, Mapping) and chunk.get("truncated") is not True else None
+            )
             hits.append(
                 ProjectMemoryHit(
                     text=str(chunk_text or raw.get("text") or ""),
