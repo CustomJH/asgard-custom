@@ -17,7 +17,7 @@ class TestDispatch(unittest.TestCase):
         page = body.decode("utf-8")
         self.assertIn("<!doctype html>", page.lower())
         self.assertIn("Asgard Plan", page)
-        self.assertIn("Studio로 보내기", page)
+        self.assertNotIn("Studio", page)
         self.assertNotIn('src="http', page)
 
     def test_logo_and_health_routes(self):

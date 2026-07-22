@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Asgard Plan — 생각을 PRD, 기능 구조, 사용자 흐름과 Studio 실행으로 연결하는 로컬 기획 워크스페이스 목업.">
+<meta name="description" content="Asgard Plan — 생각을 PRD, 기능 구조와 사용자 흐름으로 정리하는 로컬 기획 워크스페이스 목업.">
 <meta name="color-scheme" content="dark">
 <meta name="theme-color" content="#070d16">
 <title>Asgard Plan</title>
@@ -124,7 +124,6 @@ svg{display:block}
 .dir-detail{padding:9px 14px}.dir-detail h2{font-size:17px; margin:5px 0 8px}.dir-detail p{color:var(--ink-2)}
 .flow-canvas{min-height:560px; border:1px solid var(--line); display:flex; align-items:center; justify-content:center; gap:26px; padding:30px; overflow:auto}
 .flow-node{min-width:150px; max-width:190px; border:1px solid var(--line); border-radius:8px; padding:14px; background:var(--surface); position:relative}.flow-node strong{display:block; margin-bottom:6px}.flow-node span{color:var(--ink-3); font-size:12px}.flow-node::after{content:""; position:absolute; right:-27px; top:50%; width:26px; border-top:1px solid var(--ink-3)}.flow-node:last-child::after{display:none}.flow-node.active{border-color:var(--gold); background:var(--gold-bg)}
-.studio-list{border-top:1px solid var(--line)}.studio-artifact{display:grid; grid-template-columns:1fr auto; gap:14px; padding:17px 5px; border-bottom:1px solid var(--line)}.studio-artifact p{margin:4px 0 0; color:var(--ink-3)}
 
 /* inspector */
 .inspector{grid-column:4; grid-row:2; min-height:0; overflow:auto; border-left:1px solid var(--line); background:var(--night-2); padding:18px 17px 92px; position:relative}
@@ -162,7 +161,7 @@ svg{display:block}
   .app{grid-template-columns:58px minmax(0,1fr)}.plan-nav{position:fixed; z-index:35; top:58px; bottom:48px; left:58px; width:260px; transform:translateX(-110%); transition:transform .2s ease}.plan-nav.open{transform:none}.workspace{grid-column:2;padding:0 14px 28px}.topbar{grid-column:2}.statusbar{grid-column:2}.tree-header,.tree-row{grid-template-columns:minmax(230px,1fr) 66px}.tree-header>*:last-child,.tree-row>*:last-child{display:none}.page-head{align-items:flex-start; flex-direction:column}.start-options{grid-template-columns:1fr}.topbar .tab:first-child,.engine{display:none}
 }
 
-/* Studio와 공유하는 Asgard 셸 — 아이콘 레일 + 프로젝트 탭바 */
+/* Asgard 셸 — 아이콘 레일 + 프로젝트 탭바 */
 :root{
   --night:oklch(.155 .018 255); --night-2:oklch(.135 .016 255);
   --surface:oklch(.19 .018 255); --surface-2:oklch(.225 .018 255); --surface-3:oklch(.26 .02 255);
@@ -263,7 +262,6 @@ body{background:var(--night);font-size:14px;line-height:1.55}
     <button class="nav-link selected" data-pane="tree" role="tab" aria-selected="true" aria-label="기능 구조"><svg class="icon"><use href="#i-tree"/></svg><span class="rail-label">기능 구조</span></button>
     <button class="nav-link" data-pane="directory" role="tab" aria-label="디렉토리"><svg class="icon"><use href="#i-list"/></svg><span class="rail-label">디렉토리</span></button>
     <button class="nav-link" data-pane="flow" role="tab" aria-label="유저 플로우"><svg class="icon"><use href="#i-flow"/></svg><span class="rail-label">유저 플로우</span></button>
-    <button class="nav-link" data-pane="studio" role="tab" aria-label="Studio 결과물"><svg class="icon"><use href="#i-code"/></svg><span class="rail-label">Studio 결과물</span></button>
     <div class="rail-bottom"><button class="rail-tab" aria-label="도움말"><svg class="icon"><use href="#i-help"/></svg><span class="rail-label">도움말</span></button></div>
   </nav>
 
@@ -301,21 +299,20 @@ body{background:var(--night);font-size:14px;line-height:1.55}
 
     <section class="pane" id="pane-prd"><div class="page-head"><div><h1>프로덕트 요구사항 (PRD)</h1><p>제품의 목적, 사용자와 성공 기준을 하나의 기준 문서로 정리합니다.</p></div></div><article class="doc">
       <div class="doc-section"><h2>한 줄 정의</h2><div class="editable" contenteditable="true">처음 만난 사용자가 Asgard의 가치를 이해하고 첫 계획을 시작하도록 돕는 온보딩 경험.</div></div>
-      <div class="doc-section"><h2>문제</h2><div class="editable" contenteditable="true">새 사용자는 Studio, Plan, Memory의 관계를 알기 어렵고 무엇부터 시작해야 할지 판단하기 어렵다.</div></div>
+      <div class="doc-section"><h2>문제</h2><div class="editable" contenteditable="true">새 사용자는 Desktop, Plan, Memory의 관계를 알기 어렵고 무엇부터 시작해야 할지 판단하기 어렵다.</div></div>
       <div class="doc-section"><h2>핵심 사용자</h2><div class="pill-list"><span class="pill">솔로 빌더</span><span class="pill">제품 기획자</span><span class="pill">AI 개발팀 리드</span></div></div>
-      <div class="doc-section"><h2>성공 기준</h2><div class="editable" contenteditable="true">첫 방문 사용자의 60% 이상이 3분 안에 새 계획을 만들고, 그중 40% 이상이 Studio 작업을 생성한다.</div></div>
+      <div class="doc-section"><h2>성공 기준</h2><div class="editable" contenteditable="true">첫 방문 사용자의 60% 이상이 3분 안에 새 계획을 만들고, 그중 40% 이상이 Desktop에서 첫 작업을 실행한다.</div></div>
       <div class="doc-section"><h2>오픈 이슈</h2><div class="editable" contenteditable="true">초기 온보딩에서 Memory 접근 권한을 언제 요청할지 결정해야 한다.</div></div>
     </article></section>
 
     <section class="pane" id="pane-directory"><div class="page-head"><div><h1>디렉토리 뷰</h1><p>기능별 세부 정책과 연결 관계를 집중해서 편집합니다.</p></div></div><div class="directory">
       <div class="dir-col"><div class="dir-title">요구사항</div><button class="dir-item active">1. 온보딩 시작</button><button class="dir-item">2. 핵심 가치 경험</button><button class="dir-item">3. 학습 및 가이드</button><button class="dir-item">4. 피드백 및 최적화</button></div>
       <div class="dir-col"><div class="dir-title">기능 / 상세 기능</div><button class="dir-item active" data-item="landing">1.1 진입 및 랜딩</button><button class="dir-item" data-item="cta">1.1.2 명확한 CTA</button><button class="dir-item" data-item="value">1.1.3 가치 제안</button><button class="dir-item" data-item="trust">1.1.4 신뢰 요소</button><button class="dir-item" data-item="account">1.2 가입/계정 생성</button></div>
-      <div class="dir-detail"><div class="dir-title">상세</div><h2>온보딩 진입 및 랜딩</h2><p>사용자가 Asgard의 세 가지 표면을 빠르게 이해하고 자신의 시작점을 고를 수 있게 합니다.</p><div class="doc-section"><h2>수용 기준</h2><div class="editable" contenteditable="true">Plan, Studio, Memory의 역할이 한 화면 안에서 설명되어야 합니다.</div></div><div class="doc-section"><h2>연결된 상세 기능</h2><div class="pill-list"><span class="pill">명확한 시작 CTA</span><span class="pill">가치 제안</span><span class="pill">신뢰 요소</span></div></div></div>
+      <div class="dir-detail"><div class="dir-title">상세</div><h2>온보딩 진입 및 랜딩</h2><p>사용자가 Asgard의 세 가지 표면을 빠르게 이해하고 자신의 시작점을 고를 수 있게 합니다.</p><div class="doc-section"><h2>수용 기준</h2><div class="editable" contenteditable="true">Desktop, Plan, Memory의 역할이 한 화면 안에서 설명되어야 합니다.</div></div><div class="doc-section"><h2>연결된 상세 기능</h2><div class="pill-list"><span class="pill">명확한 시작 CTA</span><span class="pill">가치 제안</span><span class="pill">신뢰 요소</span></div></div></div>
     </div></section>
 
     <section class="pane" id="pane-flow"><div class="page-head"><div><h1>유저 플로우</h1><p>기능명세서에서 정의된 행동이 실제 화면 사이에서 어떻게 이어지는지 확인합니다.</p></div><div class="tool-spacer"></div><button class="btn gold-outline"><svg class="icon sm"><use href="#i-sparkles"/></svg>수정본 만들기</button></div><div class="flow-canvas"><div class="flow-node"><strong>첫 방문</strong><span>시작</span></div><div class="flow-node"><strong>온보딩 랜딩</strong><span>페이지</span></div><div class="flow-node active"><strong>새 계획 시작</strong><span>행동 · CTA</span></div><div class="flow-node"><strong>질문지 작성</strong><span>페이지</span></div><div class="flow-node"><strong>Plan 생성</strong><span>완료</span></div></div></section>
 
-    <section class="pane" id="pane-studio"><div class="page-head"><div><h1>Studio 결과물</h1><p>확정된 계획에서 생성된 프로토타입과 제작 상태를 추적합니다.</p></div><div class="tool-spacer"></div><button class="btn gold"><svg class="icon sm"><use href="#i-send"/></svg>새 작업 보내기</button></div><div class="studio-list"><div class="studio-artifact"><div><strong>온보딩 랜딩 프로토타입</strong><p>CTA, 가치 제안, Studio·Memory 연결 설명 · 3개 화면</p></div><span class="state review"><i class="state-dot"></i>제작 중</span></div><div class="studio-artifact"><div><strong>모바일 온보딩 플로우</strong><p>390×844 · 랜딩 → 질문지 → 생성 완료</p></div><span class="state draft"><i class="state-dot"></i>대기</span></div></div></section>
   </main>
 
   <aside class="inspector open" id="inspector" aria-label="선택한 상세 기능">
@@ -332,16 +329,13 @@ body{background:var(--night);font-size:14px;line-height:1.55}
       <button class="criterion done"><span class="checkmark"><svg class="icon sm"><use href="#i-check"/></svg></span><span>키보드와 터치에서 동일하게 접근 가능하다.</span></button>
     </div></section>
     <section class="inspect-section"><h3>연결된 Asgard Memory <button id="add-evidence"><svg class="icon sm"><use href="#i-plus"/></svg></button></h3><div id="evidence-list"><div class="evidence"><svg class="icon"><use href="#i-link"/></svg><div><strong>온보딩 CTA 클릭률 개선 리포트</strong><span>Report_2026-07-15 · 전환율 +24%</span></div></div><div class="evidence"><svg class="icon"><use href="#i-link"/></svg><div><strong>첫 행동 유도 전환율 인사이트</strong><span>INS-20260715-ONBD · 핵심 인사이트</span></div></div></div></section>
-    <section class="inspect-section"><h3>Studio 작업 3개로 분해</h3><div class="task"><code>TASK-201</code> CTA 컴포넌트 설계 및 배치</div><div class="task"><code>TASK-202</code> 클릭 후 질문지 플로우 연결</div><div class="task"><code>TASK-203</code> 모바일 접근성 최적화</div></section>
-    <div class="inspect-actions"><button class="btn gold" id="send-studio"><svg class="icon sm"><use href="#i-send"/></svg>Studio로 보내기</button><button class="btn gold-outline" id="ai-refine"><svg class="icon sm"><use href="#i-sparkles"/></svg>AI와 다듬기</button></div>
+    <div class="inspect-actions"><button class="btn gold-outline" id="ai-refine"><svg class="icon sm"><use href="#i-sparkles"/></svg>AI와 다듬기</button></div>
   </aside>
 
-  <footer class="statusbar"><span class="saved"><svg class="icon sm"><use href="#i-check"/></svg>저장됨 <span id="saved-time">10:42</span></span><span>로컬 워크스페이스</span><span class="mono">~/Asgard/Plan/온보딩-경험</span><span class="status-spacer"></span><span>작업 디렉토리</span><span class="mono">~/studio/온보딩-경험</span></footer>
+  <footer class="statusbar"><span class="saved"><svg class="icon sm"><use href="#i-check"/></svg>저장됨 <span id="saved-time">10:42</span></span><span>로컬 워크스페이스</span><span class="mono">~/Asgard/Plan/온보딩-경험</span></footer>
 </div>
 
-<div class="overlay" id="start-overlay" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="start-title"><div class="modal-head"><div><h2 id="start-title">무엇을 계획하고 있나요?</h2><p>생각 한 줄에서 시작해 검토 가능한 계획으로 정리합니다.</p></div><button class="modal-close" aria-label="닫기"><svg class="icon"><use href="#i-x"/></svg></button></div><textarea class="idea-input" id="idea-input" placeholder="만들고 싶은 제품이나 해결할 문제를 적어 주세요.">Asgard를 처음 쓰는 사용자가 Plan, Studio, Memory의 관계를 이해하고 첫 작업을 시작하도록 돕는 온보딩 경험</textarea><div class="start-options"><button class="start-option selected" data-start="questions"><svg class="icon"><use href="#i-checklist"/></svg><strong>질문지로 시작</strong><span>핵심 문제와 성공 기준을 함께 구체화</span></button><button class="start-option" data-start="memory"><svg class="icon"><use href="#i-memory"/></svg><strong>Memory에서 시작</strong><span>기존 근거와 결정을 불러와 초안 생성</span></button><button class="start-option" data-start="blank"><svg class="icon"><use href="#i-file"/></svg><strong>빈 계획</strong><span>직접 구조를 만들며 자유롭게 시작</span></button></div><div class="modal-actions"><button class="btn quiet modal-close">취소</button><button class="btn gold" id="create-plan">계획 만들기</button></div></section></div>
-
-<div class="overlay" id="studio-overlay" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="studio-title" style="width:min(520px,92vw)"><div class="modal-head"><div><h2 id="studio-title">Studio 작업을 만들까요?</h2><p>확정된 수용 기준과 연결된 Memory 근거가 함께 전달됩니다.</p></div><button class="modal-close-studio" aria-label="닫기"><svg class="icon"><use href="#i-x"/></svg></button></div><div class="confirm-copy"><strong>명확한 시작 CTA</strong>를 TASK-201~203 세 개의 제작 작업으로 분해합니다. Plan의 원본 구조는 그대로 유지됩니다.</div><div class="modal-actions"><button class="btn quiet modal-close-studio">취소</button><button class="btn gold" id="confirm-studio"><svg class="icon sm"><use href="#i-send"/></svg>작업 생성</button></div></section></div>
+<div class="overlay" id="start-overlay" hidden><section class="modal" role="dialog" aria-modal="true" aria-labelledby="start-title"><div class="modal-head"><div><h2 id="start-title">무엇을 계획하고 있나요?</h2><p>생각 한 줄에서 시작해 검토 가능한 계획으로 정리합니다.</p></div><button class="modal-close" aria-label="닫기"><svg class="icon"><use href="#i-x"/></svg></button></div><textarea class="idea-input" id="idea-input" placeholder="만들고 싶은 제품이나 해결할 문제를 적어 주세요.">Asgard를 처음 쓰는 사용자가 Plan, Desktop, Memory의 관계를 이해하고 첫 작업을 시작하도록 돕는 온보딩 경험</textarea><div class="start-options"><button class="start-option selected" data-start="questions"><svg class="icon"><use href="#i-checklist"/></svg><strong>질문지로 시작</strong><span>핵심 문제와 성공 기준을 함께 구체화</span></button><button class="start-option" data-start="memory"><svg class="icon"><use href="#i-memory"/></svg><strong>Memory에서 시작</strong><span>기존 근거와 결정을 불러와 초안 생성</span></button><button class="start-option" data-start="blank"><svg class="icon"><use href="#i-file"/></svg><strong>빈 계획</strong><span>직접 구조를 만들며 자유롭게 시작</span></button></div><div class="modal-actions"><button class="btn quiet modal-close">취소</button><button class="btn gold" id="create-plan">계획 만들기</button></div></section></div>
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
 <script>
@@ -358,11 +352,11 @@ body{background:var(--night);font-size:14px;line-height:1.55}
     landing:{code:'1.1',name:'온보딩 진입 및 랜딩',status:'검토 중',priority:'P0',role:'신규 사용자',description:'사용자가 Asgard의 역할을 이해하고 자신의 시작점을 선택할 수 있는 랜딩을 제공합니다.'},
     screen:{code:'1.1.1',name:'온보딩 랜딩 화면',status:'검토 중',priority:'P0',role:'신규 사용자',description:'핵심 가치, 신뢰 요소, 시작 행동이 한 화면에서 명확히 보이는 랜딩 화면입니다.'},
     cta:{code:'1.1.2',name:'명확한 시작 CTA',status:'검토 중',priority:'P0',role:'신규 사용자',description:'사용자가 다음 행동을 빠르게 이해하고 온보딩을 시작할 수 있도록 명확한 CTA 버튼을 제공합니다.'},
-    value:{code:'1.1.3',name:'가치 제안 및 핵심 이점',status:'검토 중',priority:'P1',role:'신규 사용자',description:'Plan, Studio, Memory가 함께 만드는 제품 흐름을 짧고 구체적으로 설명합니다.'},
+    value:{code:'1.1.3',name:'가치 제안 및 핵심 이점',status:'검토 중',priority:'P1',role:'신규 사용자',description:'Plan, Desktop, Memory가 함께 만드는 제품 흐름을 짧고 구체적으로 설명합니다.'},
     trust:{code:'1.1.4',name:'신뢰 요소 안내',status:'검토 중',priority:'P1',role:'신규 사용자',description:'로컬 우선 저장, 승인 기반 실행, 추적 가능한 변경이라는 신뢰 근거를 안내합니다.'},
     account:{code:'1.2',name:'가입/계정 생성',status:'검토 중',priority:'P0',role:'신규 사용자',description:'필요한 순간에만 계정 생성을 요청하여 초기 진입 장벽을 낮춥니다.'},
     wizard:{code:'1.3',name:'초기 설정 마법사',status:'검토 중',priority:'P1',role:'신규 사용자',description:'워크스페이스와 실행 환경을 단계별로 설정합니다.'},
-    core:{code:'2',name:'핵심 가치 경험',status:'초안',priority:'P0',role:'신규 사용자',description:'첫 계획에서 Studio 결과까지 Asgard의 핵심 가치를 체험합니다.'},
+    core:{code:'2',name:'핵심 가치 경험',status:'초안',priority:'P0',role:'신규 사용자',description:'첫 계획에서 Desktop 작업 결과까지 Asgard의 핵심 가치를 체험합니다.'},
     learn:{code:'3',name:'학습 및 가이드',status:'초안',priority:'P1',role:'신규 사용자',description:'필요한 맥락에서 짧은 도움말과 예시를 제공합니다.'},
     feedback:{code:'4',name:'피드백 및 최적화',status:'초안',priority:'P2',role:'제품 팀',description:'온보딩 이탈 지점과 사용자 피드백을 바탕으로 흐름을 개선합니다.'}
   };
@@ -389,12 +383,11 @@ body{background:var(--night);font-size:14px;line-height:1.55}
   $('#create-plan').addEventListener('click',()=>{const idea=$('#idea-input').value.trim(); if(!idea){showToast('계획할 내용을 먼저 적어 주세요');return} start.hidden=true; $('#project-tab-name').textContent=idea.length>18?idea.slice(0,18)+'…':idea; showPane('prd'); stamp(); showToast('새 계획 초안을 만들었습니다')});
   $('#section-add').addEventListener('click',()=>{start.hidden=false;$('#idea-input').value='';setTimeout(()=>$('#idea-input').focus(),30)});
 
-  const studio=$('#studio-overlay'); $('#send-studio').addEventListener('click',()=>studio.hidden=false); $$('.modal-close-studio').forEach(b=>b.addEventListener('click',()=>studio.hidden=true)); $('#confirm-studio').addEventListener('click',()=>{studio.hidden=true; $$('.life').forEach(b=>b.classList.toggle('active',b.textContent.trim()==='실행')); stamp(); showToast('Studio 작업 3개를 생성했습니다'); setTimeout(()=>showPane('studio'),700)});
   $$('.life').forEach(b=>b.addEventListener('click',()=>{$$('.life').forEach(x=>x.classList.remove('active'));b.classList.add('active');showToast(b.textContent.trim()+' 단계로 전환했습니다')}));
   $$('[data-toast]').forEach(b=>b.addEventListener('click',()=>showToast(b.dataset.toast)));
   $$('.editable').forEach(e=>e.addEventListener('input',stamp));
   $('#close-inspector').addEventListener('click',()=>$('#inspector').classList.remove('open'));
-  document.addEventListener('keydown',e=>{if(e.key==='Escape'){start.hidden=true;studio.hidden=true;$('#proposal-panel').classList.remove('show')} if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showToast('검색 목업 — “CTA” 결과 2건')}});
+  document.addEventListener('keydown',e=>{if(e.key==='Escape'){start.hidden=true;$('#proposal-panel').classList.remove('show')} if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();showToast('검색 목업 — “CTA” 결과 2건')}});
 })();
 </script>
 </body>
