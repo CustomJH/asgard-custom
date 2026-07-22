@@ -265,3 +265,5 @@ workspace/
 !/.asgard/memory/records/**
 !/.asgard/.gitignore
 design-qa.md
+
+output/
