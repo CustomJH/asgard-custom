@@ -191,6 +191,8 @@ def _run_task(task_id: str, root: str) -> None:
             stderr=subprocess.PIPE,
             text=True,
             env={**os.environ, "ASGARD_UNATTENDED": "1"},
+            start_new_session=os.name == "posix",
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
         )
         with _TASK_LOCK:
             if task_id in _TASKS:
@@ -328,7 +330,9 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
             return _json_body(409, {"error": "task is not running"})
         if task.get("status") == "paused" and hasattr(signal, "SIGCONT"):
             process.send_signal(signal.SIGCONT)
-        process.terminate()
+        from ..agent.tools import _kill_group
+
+        _kill_group(process)
         task.update(
             {"status": "blocked", "updated": time.time(), "result": "작업이 중지되었습니다.", "stopped": True}
         )
@@ -572,27 +576,39 @@ def _native_candidates() -> list[str]:
     repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     configured = os.environ.get("ASGARD_DESKTOP_APP")
     found = shutil.which("asgard-desktop")
+    binary = "asgard-desktop.exe" if os.name == "nt" else "asgard-desktop"
     candidates = [
         configured,
         found,
-        os.path.join(repo, "desktop", "src-tauri", "target", "release", "asgard-desktop"),
-        os.path.join(repo, "desktop", "src-tauri", "target", "debug", "asgard-desktop"),
-        os.path.join(
-            repo,
-            "desktop",
-            "src-tauri",
-            "target",
-            "release",
-            "bundle",
-            "macos",
-            "Asgard Desktop.app",
-            "Contents",
-            "MacOS",
-            "asgard-desktop",
-        ),
-        "/Applications/Asgard Desktop.app/Contents/MacOS/asgard-desktop",
-        os.path.expanduser("~/Applications/Asgard Desktop.app/Contents/MacOS/asgard-desktop"),
+        os.path.join(repo, "desktop", "src-tauri", "target", "release", binary),
+        os.path.join(repo, "desktop", "src-tauri", "target", "debug", binary),
     ]
+    if os.name == "nt":
+        candidates.extend(
+            os.path.join(base, "Asgard Desktop", binary)
+            for base in (os.environ.get("LOCALAPPDATA"), os.environ.get("ProgramFiles"))
+            if base
+        )
+    else:
+        candidates.extend(
+            [
+                os.path.join(
+                    repo,
+                    "desktop",
+                    "src-tauri",
+                    "target",
+                    "release",
+                    "bundle",
+                    "macos",
+                    "Asgard Desktop.app",
+                    "Contents",
+                    "MacOS",
+                    binary,
+                ),
+                f"/Applications/Asgard Desktop.app/Contents/MacOS/{binary}",
+                os.path.expanduser(f"~/Applications/Asgard Desktop.app/Contents/MacOS/{binary}"),
+            ]
+        )
     return list(dict.fromkeys(path for path in candidates if path and os.path.isfile(path)))
 
 

@@ -108,9 +108,10 @@ class TestTaskLifecycle(DesktopCase):
         self.assertEqual(desktop.resume_task({"id": "live"})[0], 200)
         self.assertEqual(task["status"], "running")
         process.send_signal.assert_called_with(desktop.signal.SIGCONT)
-        self.assertEqual(desktop.stop_task({"id": "live"})[0], 200)
+        with mock.patch("asgard.agent.tools._kill_group") as kill_group:
+            self.assertEqual(desktop.stop_task({"id": "live"})[0], 200)
+        kill_group.assert_called_once_with(process)
         self.assertEqual(task["status"], "blocked")
-        process.terminate.assert_called_once()
 
 
 class TestSettings(DesktopCase):
@@ -192,6 +193,15 @@ class TestNativeShell(unittest.TestCase):
                 desktop.shutil, "which", return_value=None
             ):
                 self.assertEqual(desktop._native_candidates()[0], app)
+
+    def test_windows_native_install_is_discovered(self):
+        expected = os.path.join("C:\\Users\\yun\\AppData\\Local", "Asgard Desktop", "asgard-desktop.exe")
+        with mock.patch.object(desktop.os, "name", "nt"), mock.patch.dict(
+            os.environ, {"LOCALAPPDATA": "C:\\Users\\yun\\AppData\\Local"}, clear=True
+        ), mock.patch.object(desktop.shutil, "which", return_value=None), mock.patch.object(
+            desktop.os.path, "isfile", side_effect=lambda path: path == expected
+        ):
+            self.assertIn(expected, desktop._native_candidates())
 
     def test_native_app_receives_only_managed_loopback_context(self):
         with mock.patch.object(desktop, "_native_candidates", return_value=["/app/asgard-desktop"]), mock.patch.object(
