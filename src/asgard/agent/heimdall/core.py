@@ -29,6 +29,7 @@ from .classify import (
     classify_api_error,
     classify_heuristic,
     has_write_verbs,
+    memory_write_intent,
 )
 from .dispatch import DeliveryDispatch, _freyja_gate_rejection, _safe_candidates
 from .journal import _log_classify
@@ -39,6 +40,7 @@ from .roles import (
     _TIER_MODELS,
     _TIER_UP,
     _identity,
+    _memory_save_support,
     _mimir_note,
     _model_tier,
     _skill_support,
@@ -51,6 +53,14 @@ class SessionLike(Protocol):
     """_run_turn 이 요구하는 표면 — run() 하나. 테스트 대역(FakeSession)이 AgentSession 상속 없이 만족."""
 
     def run(self, user_content: str) -> SessionResult: ...
+
+
+def _new_recap() -> dict:
+    """턴 recap 집계 그릇 — 메타 이벤트(기억 저장·보존·제안 등 백그라운드 부수 작업, 표시 1순위)
+    + 활동 집계(툴 횟수·파일별 생성/수정·커맨드 첫 단어·에이전트 역할, 이벤트 없을 때 폴백)."""
+    from collections import Counter
+
+    return {"events": [], "tools": Counter(), "files": {}, "cmds": Counter(), "agents": Counter()}
 
 
 class Heimdall:
@@ -115,6 +125,7 @@ class Heimdall:
         self.map_note = ""  # 요청마다 최신화되는 bounded volatile context; cached identity와 분리.
         self._map_warnings: set[str] = set()
         self.total_tokens = 0  # 세션 누적 지출 (status line 사용량)
+        self.turn_recap = _new_recap()  # 턴 단위 활동 집계 (handle() 진입 시 리셋) — REPL recap 패널 소스
         self.last_context_tokens = 0  # 마지막 역할 턴의 컨텍스트 크기 — status line 창 % 용
         # 프롬프트 캐시 계측 (누적) — 적중률 = read / (read+write+uncached), status line ⚡ 표시
         self.cache_read_tokens = 0
@@ -146,6 +157,40 @@ class Heimdall:
     def _add_tokens(self, n: int) -> None:
         with self._state_lock:
             self.total_tokens += n
+
+    def _recap_event(self, text: str) -> None:
+        """턴 recap 메타 이벤트 기록 — 기억 저장·프로젝트 메모리 보존/제안 등 백그라운드
+        부수 작업을 사용자에게 보이는 한 문장으로 남긴다 (hermes recap 상응). fail-open."""
+        try:
+            with self._state_lock:
+                events = self.turn_recap.setdefault("events", [])
+                if text and text not in events:
+                    events.append(text)
+        except Exception:
+            pass
+
+    def _record_tool(self, name: str, args: dict) -> None:
+        """세션 툴 호출의 턴 recap 집계 (AgentSession on_tool 훅) — 관측 전용, fail-open."""
+        try:
+            with self._state_lock:
+                recap = self.turn_recap
+                recap["tools"][name] += 1
+                if name == "str_replace_based_edit_tool" and args.get("command") != "view":
+                    path = str(args.get("path") or "")
+                    if path:
+                        import os as _os
+
+                        rel = _os.path.relpath(path, self.root) if _os.path.isabs(path) else path
+                        entry = recap["files"].setdefault(rel, {"op": "edit", "n": 0})
+                        entry["n"] += 1
+                        if args.get("command") == "create":
+                            entry["op"] = "create"
+                elif name == "bash":
+                    head = str(args.get("command") or "").strip().split()
+                    if head:
+                        recap["cmds"][head[0]] += 1
+        except Exception:
+            pass
 
     def _session_observer(self, role: str) -> tuple[Callable[[str | None], None], Callable[[str, str], None]]:
         with self._state_lock:
@@ -184,6 +229,10 @@ class Heimdall:
                 row = self._sessions[sid]
                 if event == "running":
                     row.update(state="running", status="", started=now)
+                    try:
+                        self.turn_recap["agents"][role] += 1  # 턴 recap — 기동 에이전트 역할 집계
+                    except AttributeError, KeyError, TypeError:
+                        pass  # 관측 부가 기능 — 구버전/최소 대역 세션을 깨지 않는다
                 else:
                     state = detail if detail in {"cancelled", "failed"} else "done"
                     row.update(state=state, status="", result=detail, ended=now)
@@ -241,6 +290,7 @@ class Heimdall:
             cwd=cwd,
             cancel_event=self.cancel_event,
             on_lifecycle=lifecycle,
+            on_tool=self._record_tool,
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
@@ -651,13 +701,17 @@ class Heimdall:
             return revised
         return "문체 검사를 통과하지 못했습니다. 확인된 사실만 남기도록 범위를 좁혀 다시 요청해 주세요."
 
-    def _direct(self, request: str) -> str:
+    def _direct(self, request: str, memory_intent: bool = False) -> str:
         """DIRECT 응답 — 본문은 on_text 로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
         예외: refusal 안내는 스트림에 안 실린 합성 텍스트 — 그것만 반환.
 
         가드: classify 오판으로 DIRECT 세션이 파일을 쓰면 — editor writes 또는
         워킹트리 fingerprint 변화 — 소급 퀘스트를 열어 Verifier 판정 + 게이트를 강제한다.
-        mode B 의 orphan-write 봉인의 네이티브 등가물 (native 엔 Stop 훅이 없다)."""
+        mode B 의 orphan-write 봉인의 네이티브 등가물 (native 엔 Stop 훅이 없다).
+
+        memory_intent: 사용자의 명시적 기억 지시 턴 — memory_save 도구를 열고, 턴 종료 시
+        실행 증거(도구 호출 성공)를 판정한다. 미저장이면 원문 결정론 폴백으로 봉합 —
+        모델이 저장 없이 "기억했다"고 답하고 끝나는 경로가 없다 (26-07-21 실측 2회)."""
         from ...hooks.quest_log import snapshot_ref
 
         before = self._worktree_dirty()
@@ -678,10 +732,14 @@ class Heimdall:
         skill_note, skill_tools, skill_handlers = (
             _skill_support("mimir", self.root, include_learned=False) if mimir else ("", [], {})
         )
+        # 기억 지시 턴 — 저장은 provider 주입 게이트와 무관하다: 사실은 사용자 발화에서 왔으므로
+        # 메모리가 원격 모델로 새는 표면이 아니다 (inject_allowed 는 읽기 주입만 다룬다).
+        mem_saved: list[tuple[str, str]] = []
+        mem_note, mem_tools, mem_handlers = _memory_save_support(mem_saved) if memory_intent else ("", [], {})
         r = self._session(
-            live_identity + self.map_note + mimir + skill_note,
-            extra_tools=skill_tools,
-            handlers=skill_handlers,
+            live_identity + self.map_note + mimir + skill_note + mem_note,
+            extra_tools=skill_tools + mem_tools,
+            handlers={**skill_handlers, **mem_handlers},
             role="direct",
             readonly=True,
             quiet=active_lagom,
@@ -704,6 +762,9 @@ class Heimdall:
             }
             return self._trinity(request, cls, pre_work=r, pre_base_ref=before_ref)
         final = self._enforce_lagom_text(request, r.text)
+        mem_notice = self._memory_write_outcome(request, mem_saved) if memory_intent else ""
+        if mem_notice:
+            final = (final.rstrip() + "\n\n" + mem_notice) if final.strip() else mem_notice
         self._explore_cmds = len(r.commands)  # 탐색량 — _finalize_memory 증류 넛지 문턱 (순수 DIRECT 한정)
         self.last_response_text = final
         self.history = (self.history + [(request, final[:500])])[-6:]
@@ -711,12 +772,42 @@ class Heimdall:
         if active_lagom:
             self.on_text(final)
             return ""  # 검사된 본문을 방금 출력 — REPL 이중 출력 방지
+        if mem_notice and r.stop_reason != "refusal":
+            self.on_text("\n\n" + mem_notice)  # 본문은 이미 스트리밍됨 — 증거 노티스만 추가 출력
         return final if r.stop_reason == "refusal" else ""
+
+    def _memory_write_outcome(self, request: str, saved: list[tuple[str, str]]) -> str:
+        """기억 지시 턴의 실행 증거 봉합 — 저장 여부를 결정론으로 확정해 사용자에게 보인다.
+
+        도구 미호출이면 요청 원문을 폴백 ingest 한다 (사용자 지시 = 승인; 위협·시크릿 스캔은
+        ingest 가 그대로 수행). 폴백까지 실패하면 실패를 숨기지 않는다 — 모델의 "기억했다"
+        서술과 무관하게 이 노티스가 디스크 진실이다."""
+        from ...i18n import t
+
+        if saved:
+            _log_classify(self.root, {"event": "memory_write", "source": "tool", "count": len(saved)})
+            self._recap_event(t("recap_ev_memory_saved", s=", ".join(slug for _, slug in saved)))
+            return "⠶ 위그드라실에 새겼어요: " + ", ".join(f"{slug} ({action})" for action, slug in saved)
+        try:
+            from ...memory import ingest
+
+            action, slug = ingest(request.strip(), kind="user")
+            _log_classify(self.root, {"event": "memory_write", "source": "fallback", "action": action})
+            self._recap_event(t("recap_ev_memory_saved", s=slug))
+            return f"⠶ 위그드라실에 새겼어요 (원문 폴백): {slug} ({action})"
+        except Exception as e:
+            _log_classify(self.root, {"event": "memory_write", "source": "failed"})
+            return (
+                f"⚠ 위그드라실에 새기지 못했어요 ({e.__class__.__name__}: {str(e)[:120]}) — "
+                '`asgard memory ingest "<사실>" --kind user` 로 직접 저장하세요.'
+            )
 
     # ── 진입점 ───────────────────────────────────────────────────────────
     def _finalize_memory(self, request: str, visible_response: str) -> str:
         """완성 turn 자동 retain + 검증된 write 과업의 승인 proposal + 탐색 발견 증류 넛지.
         모든 장애는 agent 실행에 fail-open."""
+        from ...i18n import t
+
         out = visible_response
         response = visible_response or self.last_response_text
         try:
@@ -737,11 +828,13 @@ class Heimdall:
                         assistant_text=response,
                         mode="native",
                     )
+                    self._recap_event(t("recap_ev_retained"))
                 completion = self._last_completion
                 if completion and cfg.get("auto_propose_completion", True):
                     proposal = propose_completion(root, cfg, request=request, response=response, **completion)
                     if proposal.status == "proposed":
-                        out += "\n\n🧠 프로젝트 메모리 승인 제안\n" + proposal.preview
+                        out += "\n\n⠶ 프로젝트 메모리 승인 제안\n" + proposal.preview
+                        self._recap_event(t("recap_ev_proposed"))
         except Exception:
             pass
         # 탐색 발견 증류 (개인 Tier0) — 프로젝트 backend 유무와 무관. 탐색이 컸던 순수 DIRECT
@@ -753,6 +846,7 @@ class Heimdall:
                 nudge = distill_nudge(request, response, self.root)
                 if nudge:
                     out += "\n\n" + nudge
+                    self._recap_event(t("recap_ev_distill"))
         except Exception:
             pass
         return out
@@ -796,6 +890,8 @@ class Heimdall:
 
         self._last_completion = None
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
+        with self._state_lock:
+            self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL 이 턴 종료 후 회수
         self._prepare_map(request)
         # cancel_event 는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
@@ -814,7 +910,10 @@ class Heimdall:
         if not cls["write_expected"]:
             _log_classify(self.root, {"event": "route", "route": "direct"})
             try:
-                return self._finalize_memory(request, self._direct(request))  # DIRECT — 무세금
+                # 기억 지시는 분류 소스와 무관한 결정론 재판정 — LLM 분류가 trivial 로 뭉개도 계약이 열린다.
+                return self._finalize_memory(
+                    request, self._direct(request, memory_intent=memory_write_intent(request))
+                )  # DIRECT — 무세금
             except TurnCancelled:
                 return self._cancel_notice()  # 취소 턴은 메모리 보존도 하지 않는다
         # 모든 비파괴 write 는 Worker가 먼저 자율 계획·실행한다. standard 는 기계 baseline 적격과

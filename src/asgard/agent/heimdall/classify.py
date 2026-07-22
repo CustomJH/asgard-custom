@@ -75,6 +75,27 @@ _SMALLTALK_PAT = re.compile(
     rf"^{_SMALLTALK_TOKEN}(?:[\s,.!?~^…]*{_SMALLTALK_TOKEN})*[\s,.!?~^…]*$",
     re.IGNORECASE,
 )
+# 기억 지시 — 사용자가 명시적으로 개인 메모리 저장을 요구하는 명령형만 (질문 "기억해?"/"기억하고
+# 있어?" 는 회상 요청이라 제외). 26-07-21 실측: "기억해줘" 가 어느 동사 표에도 없어 LLM 폴백
+# trivial DIRECT 로 흘렀고, 모델이 저장 없이 "기억했다" 허위 확답 — 이 의도는 결정론으로 잡아
+# DIRECT 의 memory_save 계약(core._direct)으로 배선한다.
+_MEMORY_WRITE_PAT = re.compile(
+    r"기억해\s*(?:줘|둬|두|놔|다오|주세요|주라|라)"  # 명령형 보조 어미 ("기억해두고" 포함)
+    r"|기억해[\s.!~]*$"  # 문말 명령형 "…기억해" — 물음표는 불매치 (회상 질문)
+    r"|기억하라|잊지\s*마|잊지\s*말"
+    r"|(?:메모리|위그드라실)에\s*(?:저장|기록|넣|올려|남겨)"
+    r"|(?:^|[.!?]\s|please\s)remember\s+(?:this|that|it|my)\b"  # 명령형 위치 한정 — "do you remember my…" 회상 질문 제외
+    r"|don'?t\s+forget\b|\bmemorize\b",
+    re.IGNORECASE,
+)
+
+
+def memory_write_intent(request: str) -> bool:
+    """사용자의 명시적 기억 지시 여부 — 분류 소스(휴리스틱/LLM/폴백)와 무관한 결정론 판정.
+
+    이 판정이 곧 저장 동의다: ingest 의 ask-before-save 게이트는 모델 자의 저장을 막는 장치이고,
+    사용자가 발화로 직접 지시한 저장은 그 발화가 승인이다 (core 의 memory_save 계약이 소비)."""
+    return bool(_MEMORY_WRITE_PAT.search(" ".join(request.split())))
 
 
 def has_write_verbs(request: str) -> bool:
@@ -103,6 +124,11 @@ def classify_heuristic(request: str) -> dict | None:
         return {**base, "write_expected": True, "destructive": True, "task_class": "deep"}
     if _SMALLTALK_PAT.match(low):
         return base  # 인사·잡담 전체 매치 — DIRECT 무세금 (단순한 것은 단순하게)
+    # 순수 기억 지시(repo write 동사 없음)는 결정론 DIRECT — LLM 폴백이 trivial 로 뭉개는 것을
+    # 차단한다. 저장 자체는 라우팅이 아니라 core._direct 의 memory_save 계약이 집행한다.
+    # 혼합 요청("기억해두고 파일 수정해줘")은 write 분기로 계속 흘러 Trinity 를 탄다.
+    if memory_write_intent(request) and not has_write_verbs(request):
+        return base
     # "파일을 수정하지 마"의 부정된 동사를 write 의도로 세면 read-only 질의가 Trinity로
     # 오분류된다. 부정구만 제거한 사본에서 write 동사를 찾되, 같은 문장에 실제 write 동사가
     # 따로 있으면 그대로 잡는다 (예: "기존 파일은 수정하지 말고 새 파일 만들어").
@@ -132,6 +158,8 @@ _FATAL_STATUS = {400, 401, 403, 404, 422}
 
 def classify_api_error(e: Exception) -> str:
     """ "retryable" | "fatal" — 분류는 1회, 재시도 루프는 멍청하게."""
+    if getattr(e, "_asgard_retries_exhausted", False):
+        return "fatal"
     status = getattr(e, "status_code", None)
     if status in _RETRY_STATUS:
         return "retryable"

@@ -400,7 +400,7 @@ class TestTrinityLoop(Base):
         )
         h = FakeHeimdall(self.root, [direct], cls=CLS_DIRECT)
         out = h.handle("X 값이 어디 있는지 확인해줘")
-        self.assertIn("🧠 탐색 발견 저장 후보", out)
+        self.assertIn("⠶ 탐색 발견 저장 후보", out)
         self.assertIn('asgard memory ingest "', out)
         self.assertIn("src/app.py", out)
         self.assertIn("--kind reference", out)
@@ -523,6 +523,34 @@ class TestTrinityLoop(Base):
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), resolved], cls=CLS_WRITE)
         self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
         self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
+
+    def test_failed_runner_is_resolved_by_equivalent_runner_success(self):
+        # 26-07-22 실측: 격리 클론에 .venv 가 없어 `uv run pytest` 환경 실패 → 같은 대상을
+        # `python -m pytest` 로 통과시켰는데 신원 불일치로 PASS 무효화 → 헛 재시도 턴 전체 소모.
+        resolved = verifier("PASS")
+        resolved.result.commands = [
+            {"cmd": "uv run pytest tests/test_memory.py -q", "exit_code": 1},
+            {"cmd": "python -m pytest tests/test_memory.py -q", "exit_code": 0},
+        ]
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), resolved], cls=CLS_WRITE)
+        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
+
+    def test_failed_runner_with_different_target_stays_unresolved(self):
+        different = verifier("PASS")
+        different.result.commands = [
+            {"cmd": "uv run pytest tests/test_a.py -q", "exit_code": 1},
+            {"cmd": "python -m pytest tests/test_b.py -q", "exit_code": 0},
+        ]
+        seq = [
+            worker({"w1.txt": "x\n"}, self.root),
+            different,
+            worker({"w1.txt": "fixed\n"}, self.root),
+            verifier("PASS"),
+        ]
+        h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
+        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_truncated_command_collision_does_not_resolve_failed_verification(self):
         collision = verifier("PASS")
@@ -710,6 +738,39 @@ class TestBlockedEvidenceParity(Base):
         events = [json.loads(line) for line in self.quest_log_text().splitlines() if line.strip()]
         failures = [event for event in events if event.get("event") == "verify" and event.get("verdict") == "FAIL"]
         self.assertEqual(failures[0]["failure_sig"], "unresolved-verification-failure")
+
+
+class TestRunnerIdentity(unittest.TestCase):
+    """러너 래퍼 정규화 — 동등 러너 신원 일치, 다른 대상·파싱 불가는 그대로 (fail-safe)."""
+
+    def setUp(self):
+        from asgard.agent.heimdall.trinity import _runner_identity
+
+        self.identity = _runner_identity
+
+    def test_wrapper_variants_share_identity(self):
+        for cmd in (
+            "pytest tests -q",
+            "uv run pytest tests -q",
+            "uv run --no-cache pytest tests -q",
+            "python -m pytest tests -q",
+            "python3 -m pytest tests -q",
+            ".venv/bin/pytest tests -q",
+            "env UV_CACHE_DIR=.cache/uv uv run pytest tests -q",
+        ):
+            self.assertEqual(self.identity(cmd), "pytest tests -q", cmd)
+
+    def test_python_dash_c_smoke_variants_share_identity(self):
+        self.assertEqual(
+            self.identity("uv run python -c 'import m; m.f()'"),
+            self.identity("python3 -c 'import m; m.f()'"),
+        )
+
+    def test_distinct_targets_stay_distinct(self):
+        self.assertNotEqual(self.identity("pytest tests/a.py -q"), self.identity("pytest tests/b.py -q"))
+
+    def test_unparsable_command_falls_back_to_raw(self):
+        self.assertEqual(self.identity('pytest "unclosed'), 'pytest "unclosed')
 
 
 class TestRoutePriorsE2E(Base):
@@ -1042,6 +1103,35 @@ class TestClassifyHeuristic(Base):
         assert mixed is not None
         self.assertTrue(mixed["write_expected"])
 
+    def test_memory_instruction_routes_direct_no_llm(self):
+        # 기억 지시가 어느 동사 표에도 없어 LLM 폴백 trivial 로 흐르고, 모델이 저장 없이
+        # "기억했다" 허위 확답하던 경로 (26-07-21 실측) — 결정론 DIRECT + memory_save 계약으로 봉인.
+        from asgard.agent.heimdall import classify_heuristic as ch
+        from asgard.agent.heimdall import memory_write_intent
+
+        d = ch("내 이름은 썬더오브갓이야. 기억해줘.")
+        assert d is not None
+        self.assertFalse(d["write_expected"])
+        for q in (
+            "내 이름은 썬더오브갓이야. 기억해줘.",
+            "이 규칙 잊지 마",
+            "내 생일은 3월 3일이야. 기억해",
+            "메모리에 저장해: 배포는 금요일 금지",
+            "please remember my timezone is KST",
+        ):
+            self.assertTrue(memory_write_intent(q), q)
+        # 회상 질문·과거형은 저장 지시가 아니다 — 오탐이면 폴백 ingest 가 잡담을 영구 저장한다
+        for q in (
+            "내 이름 기억해?",
+            "우리 지난주에 뭐 했는지 기억하고 있어?",
+            "do you remember my name?",
+        ):
+            self.assertFalse(memory_write_intent(q), q)
+        # 혼합(기억 + repo write)은 여전히 write 분기 — Trinity 게이트 우선
+        mixed = ch("이 규칙 기억해두고 config.py 수정해줘")
+        assert mixed is not None
+        self.assertTrue(mixed["write_expected"])
+
     def test_explicit_parallel_write_routes_through_deep_planning(self):
         from asgard.agent.heimdall import classify_heuristic as ch
 
@@ -1217,6 +1307,10 @@ class TestBudget(Base):
         out = h.handle("w1.txt 만들어")
         self.assertIn("예산", out)
         self.assertNotIn("과업 완수", out)
+        # 침묵 break 금지 — 어떤 전이가 왜 못 뛰었는지 Odin 보고에 실린다 (26-07-22 실측:
+        # grace PASS 후 베이스라인 red 수리 전이가 막혔는데 "판정 실패"로 오독되는 보고).
+        # 전이명은 승격 규칙(동종 red 2회 → THINKER_REPLAN)에 따라 달라진다 — 형식만 봉인.
+        self.assertIn("미실행 전이 ", out)
 
 
 PLAN_WITH_UNITS = """계획: 두 파일을 만들고 요약을 붙인다.
@@ -1879,6 +1973,53 @@ class TestDirectGuard(Base):
                 os.environ["LAGOM_MODE"] = old
 
 
+class TestMemoryWriteTurn(Base):
+    """기억 지시 턴 — memory_save 계약 + 실행 증거 봉합.
+
+    26-07-21 실측 봉인: 모델이 ingest 없이 "기억했다" 허위 확답(2회 재현) → 도구 호출 성공이
+    유일한 증거이고, 미호출은 원문 결정론 폴백으로 디스크에 반드시 남는다."""
+
+    def _cls_read(self):
+        return dict(CLS_WRITE, write_expected=False, criteria=[])
+
+    def _pages(self):
+        d = os.path.join(self.root, ".asgard", "memory", "pages")  # HOME=root 격리 — memory_dir 등가
+        return sorted(os.listdir(d)) if os.path.isdir(d) else []
+
+    def test_memory_intent_opens_save_tool_and_records_evidence(self):
+        direct = FakeSession(
+            SessionResult(text="기억했다.", stop_reason="end_turn"),
+            label="direct",
+            tool_script=[("memory_save", {"text": "사용자 이름은 썬더오브갓", "kind": "user"})],
+        )
+        h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
+        h.handle("내 이름은 썬더오브갓이야. 기억해줘.")
+        self.assertIn("memory_save 계약", direct.system)  # 계약 주입
+        self.assertTrue(any("썬더오브갓" in f for f in self._pages()))  # 디스크 진실
+        self.assertIn("위그드라실에 새겼어요", h.last_response_text)
+        self.assertNotIn("원문 폴백", h.last_response_text)
+
+    def test_fabricated_claim_without_tool_falls_back_to_verbatim_ingest(self):
+        direct = FakeSession(
+            SessionResult(text="세션 메모리에 기록되었습니다.", stop_reason="end_turn"), label="direct"
+        )
+        h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
+        h.handle("내 별명은 번개주먹이야. 기억해줘.")
+        self.assertTrue(any("번개주먹" in f for f in self._pages()))
+        self.assertIn("원문 폴백", h.last_response_text)
+        log = open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read()
+        self.assertIn("memory_write", log)
+        self.assertIn("fallback", log)
+
+    def test_plain_direct_turn_gets_no_memory_tool(self):
+        direct = FakeSession(SessionResult(text="답변", stop_reason="end_turn"), label="direct")
+        h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
+        h.handle("이 함수 뭐하는거야")
+        self.assertNotIn("memory_save", direct.injected_handlers)
+        self.assertNotIn("memory_save 계약", direct.system)
+        self.assertEqual(self._pages(), [])
+
+
 class TestExplorationHint(Base):
     """탐색 캐시 최소판 — Thinker 관찰 명령을 Worker 에 힌트로 전달 (게이트 증거 아님)."""
 
@@ -2153,6 +2294,83 @@ class TestDeliveryMemoryIsolation(Base):
         self.assertNotIn("<memory-context", captured["system"])
         self.assertIn("asgard-freyja", captured["system"])  # role 본문은 그대로
         self.assertIn("MAP_CANARY", captured["system"])
+
+    def test_freyja_dispatch_prioritizes_matches_and_keeps_full_discovery(self):
+        captured = {}
+
+        class Capture(FakeHeimdall):
+            def _session(
+                self,
+                system,
+                extra_tools=None,
+                handlers=None,
+                quiet=False,
+                role=None,
+                model=None,
+                readonly=False,
+                rp_override=None,
+                cwd=None,
+            ):
+                captured.update(system=system, tools=extra_tools or [], handlers=handlers or {})
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
+
+        h = Capture(self.root, [worker(root=self.root)])
+        h._dispatch_handler("s1", [])(
+            {"agent": "freyja", "task": "로그인 폼 접근성 및 에러 상태 개선", "why": "UX 보완"}
+        )
+
+        catalog = captured["system"].split("<available_skills>", 1)[1].split("</available_skills>", 1)[0]
+        self.assertIn("[task-match] asgard-freyja-syn", catalog)
+        self.assertIn("asgard-freyja-motion", catalog)
+        self.assertEqual([tool["name"] for tool in captured["tools"]], ["load_skill"])
+        self.assertIn(
+            "웹 모션 수치 캐논",
+            captured["handlers"]["load_skill"]({"name": "asgard-freyja-motion"}),
+        )
+
+    def test_freyja_dispatch_keeps_deferred_logo_dependencies_loadable(self):
+        captured = {}
+
+        class Capture(FakeHeimdall):
+            def _session(
+                self,
+                system,
+                extra_tools=None,
+                handlers=None,
+                quiet=False,
+                role=None,
+                model=None,
+                readonly=False,
+                rp_override=None,
+                cwd=None,
+            ):
+                captured.update(system=system, tools=extra_tools or [], handlers=handlers or {})
+                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
+
+        freyja = FakeSession(
+            SessionResult(text="logo workflows loaded", stop_reason="end_turn"),
+            tool_script=[
+                ("load_skill", {"name": "logo-designer"}),
+                ("load_skill", {"name": "logo-generator"}),
+            ],
+        )
+        h = Capture(self.root, [freyja])
+        h._dispatch_handler("s1", [])({"agent": "freyja", "task": "로고 디자인", "why": "브랜드 자산"})
+
+        catalog = captured["system"].split("<available_skills>", 1)[1].split("</available_skills>", 1)[0]
+        for name in (
+            "asgard-freyja-brisingamen",
+            "asgard-freyja-reference-atlas",
+            "asgard-freyja-logo-studio",
+            "asgard-freyja-hildisvini",
+            "logo-designer",
+            "logo-generator",
+        ):
+            self.assertIn(f"[task-match] {name}", catalog)
+        self.assertEqual([tool["name"] for tool in captured["tools"]], ["load_skill"])
+        self.assertEqual([name for name, _ in freyja.tool_results], ["load_skill", "load_skill"])
+        self.assertIn("repo-aware direction and iteration", freyja.tool_results[0][1])
+        self.assertIn("form, SVG, and evaluation method", freyja.tool_results[1][1])
 
 
 class TestNativeFreyjaSquad(Base):
@@ -2842,6 +3060,53 @@ class TestMemoryRoleMatrix(Base):
         self.assertIn("<memory-recall", work.prompt)
         self.assertIn("pytest-pref", work.prompt)
         self.assertNotIn("<memory-context", work.system)
+
+
+class TestTurnRecapCollector(unittest.TestCase):
+    """턴 recap 집계(_record_tool) — 툴 카운트·수정 파일(view 제외·root 상대화)·커맨드 첫 단어."""
+
+    def test_record_tool_aggregates_tools_files_and_commands(self):
+        from types import SimpleNamespace
+        from typing import cast
+
+        from asgard.agent.heimdall import core
+
+        # _state_lock/turn_recap/root 만 쓰는 최소 대역 — ty invalid-argument-type 내로잉 (45297ac 처방)
+        hd = cast(
+            core.Heimdall, SimpleNamespace(_state_lock=threading.Lock(), turn_recap=core._new_recap(), root="/repo")
+        )
+        core.Heimdall._record_tool(hd, "bash", {"command": "pytest -q tests"})
+        core.Heimdall._record_tool(hd, "bash", {"command": "pytest -x"})
+        core.Heimdall._record_tool(
+            hd, "str_replace_based_edit_tool", {"command": "str_replace", "path": "/repo/src/a.py"}
+        )
+        core.Heimdall._record_tool(hd, "str_replace_based_edit_tool", {"command": "view", "path": "/repo/src/b.py"})
+        core.Heimdall._record_tool(hd, "str_replace_based_edit_tool", {"command": "create", "path": "src/c.py"})
+
+        self.assertEqual(hd.turn_recap["tools"]["bash"], 2)
+        self.assertEqual(hd.turn_recap["tools"]["str_replace_based_edit_tool"], 3)
+        # view 제외·절대경로 상대화·파일별 작업 종류와 횟수
+        self.assertEqual(
+            hd.turn_recap["files"], {"src/a.py": {"op": "edit", "n": 1}, "src/c.py": {"op": "create", "n": 1}}
+        )
+        self.assertEqual(hd.turn_recap["cmds"], {"pytest": 2})
+
+    def test_memory_write_outcome_records_recap_event(self):
+        from types import SimpleNamespace
+        from typing import cast
+
+        from asgard.agent.heimdall import core
+
+        with tempfile.TemporaryDirectory() as root:
+            # _state_lock/turn_recap/root 만 쓰는 최소 대역 — cast 는 소비 직전 1회 (ty 내로잉, 45297ac 처방)
+            ns = SimpleNamespace(_state_lock=threading.Lock(), turn_recap=core._new_recap(), root=root)
+            ns._recap_event = lambda text: core.Heimdall._recap_event(cast(core.Heimdall, ns), text)
+            hd = cast(core.Heimdall, ns)
+
+            notice = core.Heimdall._memory_write_outcome(hd, "pytest 선호 기억해", [("created", "pytest-pref")])
+
+        self.assertIn("pytest-pref", notice)
+        self.assertEqual(hd.turn_recap["events"], ["carved into Yggdrasil: pytest-pref"])
 
 
 if __name__ == "__main__":

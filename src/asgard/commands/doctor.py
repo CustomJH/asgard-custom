@@ -34,9 +34,12 @@ def _shared_memory_check(root: str) -> dict | None:
                 engine, project_id = backend.engine, backend.project_id
             finally:
                 backend.close()
+            # auto_retain off 는 유효한 선택이지만 무음이면 "2차 메모리에 안 쌓이는" 증상의
+            # 원인 조회가 불가능하다 (1차 inject 게이트와 같은 계열의 무음 비활성) — 상태만 명시.
             detail = (
                 f"engine={engine} · project_id={project_id} · {readiness.status}"
                 + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
+                + f" · auto_retain={'on' if mcfg.get('auto_retain_turns') else 'off'}"
                 + (f" · capabilities={','.join(enabled)}" if enabled else "")
                 + (f" · {readiness.detail}" if readiness.detail else "")
             )
@@ -59,6 +62,41 @@ def _shared_memory_check(root: str) -> dict | None:
             "fix": "프로젝트 memory 설정을 점검하고 asgard memory connect 재실행",
             "security": True,
         }
+
+
+def _personal_memory_check(root: str) -> dict | None:
+    """1차(개인) 메모리 주입 게이트 진단 — 무음 차단을 표면화한다.
+
+    26-07-21 실측: 프로젝트 설정이 provider 를 선택하면 inject_allowed 가 개인 메모리 주입을
+    전 세션에서 조용히 끈다 (개인정보 방화벽 — 의도된 기본값). 방화벽 자체는 유지하되,
+    "저장은 되는데 어떤 세션도 회상하지 못하는" 상태를 사용자가 볼 수 있어야 한다."""
+    try:
+        from ..memory import inject_allowed, inject_enabled
+        from ..providers import resolve
+
+        if not inject_enabled():
+            return {
+                "name": "personal memory inject",
+                "ok": True,
+                "detail": "off (kill switch — 의도된 비활성)",
+                "fix": "",
+            }
+        rp = resolve(root)
+        if inject_allowed(rp.profile.name, rp.source):
+            return {
+                "name": "personal memory inject",
+                "ok": True,
+                "detail": f"on · provider={rp.profile.name}",
+                "fix": "",
+            }
+        return {
+            "name": "personal memory inject",
+            "ok": False,
+            "detail": f"blocked · 프로젝트 선택 provider({rp.profile.name})는 개인 메모리 주입이 기본 거부",
+            "fix": f'~/.asgard/asgard-setting-global.json 의 "memory".providers 에 "{rp.profile.name}" 추가 (명시 허용)',
+        }
+    except Exception:
+        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
 
 
 def _trinity_checks(root: str) -> list[dict]:
@@ -205,7 +243,7 @@ def _trinity_checks(root: str) -> list[dict]:
             }
         )
         map_hook_ok = os.path.exists(os.path.join(root, folder, "hooks", "map-activate.py"))
-        map_snapshot = map_recall = map_subagent = False
+        map_snapshot = map_recall = map_subagent = map_complete = False
         try:
             hooks = config.get("hooks", {})
             map_snapshot = "map-activate" in _json.dumps(hooks.get(snapshot_event, []))
@@ -213,6 +251,7 @@ def _trinity_checks(root: str) -> list[dict]:
             map_subagent = "map-activate" in _json.dumps(
                 hooks.get("subagentStart" if client == "Cursor" else "SubagentStart", [])
             )
+            map_complete = "map-activate" in _json.dumps(hooks.get("stop" if client == "Cursor" else "Stop", []))
             if client == "Cursor":
                 map_subagent = map_subagent or "map-activate" in _json.dumps(hooks.get("preToolUse", []))
         except Exception:
@@ -224,6 +263,7 @@ def _trinity_checks(root: str) -> list[dict]:
                 (map_snapshot, snapshot_event),
                 (map_recall, recall_event),
                 (map_subagent, "SubagentStart"),
+                (map_complete, "Stop refresh"),
             )
             if not ok
         ]
@@ -527,6 +567,8 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
             "fix": "install uv — https://astral.sh/uv (asgard update · 훅 인터프리터 폴백 · uv 프로젝트 베이스라인에 필요)",
         },
     ]
+    if personal := _personal_memory_check(os.getcwd()):
+        checks.append(personal)
     checks += _trinity_checks(os.getcwd())
     security_ok = all(ch["ok"] for ch in checks if ch.get("security"))
     ok = bool(asgard) and security_ok

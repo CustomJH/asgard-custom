@@ -204,14 +204,14 @@ def main():
             messages = []
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
-                messages.append("🧠 프로젝트 메모리 승인 제안\n" + preview)
+                messages.append("⠶ 프로젝트 메모리 승인 제안\n" + preview)
             # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch 는 CLI 가 관리).
             # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 외부 클라이언트 훅 전용이다.
             try:
                 n = subprocess.run([exe, "evolve", "nudge"], capture_output=True, text=True, timeout=10, cwd=root)
                 nudge = (n.stdout or "").strip()
                 if n.returncode == 0 and nudge:
-                    messages.append("🌱 " + nudge.splitlines()[0])
+                    messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
                 pass  # 넛지 불능이 Stop 을 막지 않는다
             if messages:
