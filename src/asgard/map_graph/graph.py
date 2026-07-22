@@ -17,16 +17,26 @@ from pathlib import Path
 
 from ..code_map import MapError, _atomic_write, _files, _map_dir, _safe_component
 from .evidence import Evidence
+from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql
 from .extract_python import extract_python
 from .extract_tsjs import extract_tsjs
+from .spring_props import SpringProps
 
 GRAPH_FILE = "GRAPH.md"
 _GRAPH_MARKER = "<!-- asgard:map-graph schema=1 -->"
 _STATE_RELATIVE = Path(".asgard") / "state" / "map-graph.json"
 _MAX_SOURCE_BYTES = 512 * 1024
 _MAX_EVIDENCE_PER_FILE = 40
-_MAX_GRAPH_MD_BYTES = 24 * 1024
 _TSJS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".prisma"}
+# 확장자 → 추출기 (JVM/DB 레인 포함). `.xml`/`.sql` 추출기는 비대상 파일에서 빈 결과를 낸다.
+_EXTRACTORS = {
+    ".py": extract_python,
+    ".java": extract_java,
+    ".xml": extract_mapper_xml,
+    ".sql": extract_sql,
+    ".pc": extract_proc,
+    **dict.fromkeys(_TSJS_SUFFIXES, extract_tsjs),
+}
 # 증거 종류 → 파일-노드 간 엣지 관계
 _EDGE_KIND = {
     "route": "declares",
@@ -69,11 +79,18 @@ class GraphResult:
     changed: bool
 
 
+_JVM_SUFFIXES = {".java", ".kt", ".kts"}
+_JVM_TEST_DIRS = {"test", "androidtest", "integrationtest", "testfixtures"}
+
+
 def _is_test_path(path: Path) -> bool:
-    parents = {part.casefold() for part in path.parts[:-1]}
+    parts = [part.casefold() for part in path.parts[:-1]]
+    if path.suffix.lower() in _JVM_SUFFIXES:
+        # JVM 소스의 테스트는 src/test 트리 관례뿐이다 — "test" 패키지 세그먼트는 프로덕션이다.
+        return any(prev == "src" and part in _JVM_TEST_DIRS for prev, part in zip(parts, parts[1:]))
     name = path.name.casefold()
     return (
-        bool(parents & {"test", "tests", "__tests__"})
+        bool(set(parts) & {"test", "tests", "__tests__"})
         or name == "test.py"
         or name.startswith("test_")
         or name.endswith("_test.py")
@@ -84,10 +101,12 @@ def _is_test_path(path: Path) -> bool:
 def _collect(root: Path) -> tuple[int, list[Evidence], str]:
     scanned = 0
     collected: list[Evidence] = []
+    props = SpringProps()
     digest = hashlib.sha256()
     for rel in _files(root):
         suffix = rel.suffix.lower()
-        if suffix != ".py" and suffix not in _TSJS_SUFFIXES:
+        is_config = SpringProps.is_config(rel.name)
+        if suffix not in _EXTRACTORS and not is_config:
             continue
         if _is_test_path(rel):
             continue
@@ -95,17 +114,27 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str]:
         try:
             if full.stat().st_size > _MAX_SOURCE_BYTES:
                 continue
-            source = full.read_text(encoding="utf-8")
-        except OSError, UnicodeError:
+            raw = full.read_bytes()
+        except OSError:
             continue
+        try:
+            source = raw.decode("utf-8")
+        except UnicodeError:
+            # 한국 엔터프라이즈 레거시(EUC-KR/CP949) 소스도 증거 대상이다 — 둘 다 아니면 건너뛴다.
+            try:
+                source = raw.decode("cp949")
+            except UnicodeError:
+                continue
         digest.update(rel.as_posix().encode("utf-8", "surrogateescape"))
         digest.update(b"\0")
         digest.update(source.encode())
         digest.update(b"\0")
         scanned += 1
-        extractor = extract_python if suffix == ".py" else extract_tsjs
-        collected.extend(extractor(rel.as_posix(), source)[:_MAX_EVIDENCE_PER_FILE])
-    return scanned, collected, "source-sha256:" + digest.hexdigest()
+        if is_config:
+            props.ingest(rel.as_posix(), source)
+            continue
+        collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source)[:_MAX_EVIDENCE_PER_FILE])
+    return scanned, props.promote(collected), "source-sha256:" + digest.hexdigest()
 
 
 def _build_state(scanned: int, collected: list[Evidence], revision: str) -> dict:
@@ -162,21 +191,13 @@ def _render_graph_md(state: dict) -> str:
         "",
     ]
     ranked = sorted(per_file.items(), key=lambda item: (-sum(len(v) for v in item[1].values()), item[0]))
-    footer = ["", "## Navigation contract", "", "- Trace edges with `asgard map trace --from <node-id>`.", ""]
     for path, kinds in ranked:
         parts = []
         for kind in _KIND_LABEL:
             if kinds.get(kind):
-                names = ", ".join(sorted(kinds[kind])[:6])
-                extra = len(kinds[kind]) - 6
-                parts.append(f"{_KIND_LABEL[kind]}: {names}" + (f" (+{extra})" if extra > 0 else ""))
-        candidate = f"- `{path}` — " + " · ".join(parts)
-        projected = "\n".join([*lines, candidate, *footer])
-        if len(projected.encode("utf-8")) > _MAX_GRAPH_MD_BYTES:
-            lines.append("- Additional relations omitted by byte budget.")
-            break
-        lines.append(candidate)
-    lines += footer
+                parts.append(f"{_KIND_LABEL[kind]}: {', '.join(sorted(kinds[kind]))}")
+        lines.append(f"- `{path}` — " + " · ".join(parts))
+    lines += ["", "## Navigation contract", "", "- Trace edges with `asgard map trace --from <node-id>`.", ""]
     return "\n".join(lines)
 
 
