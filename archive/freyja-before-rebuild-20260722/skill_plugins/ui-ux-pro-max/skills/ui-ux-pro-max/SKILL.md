@@ -2,8 +2,8 @@
 name: ui-ux-pro-max
 description: Search UI/UX evidence for product type, design-system direction, accessibility, typography, color, motion, charts, and framework-specific implementation. Use for new pages, broad redesigns, or focused UX/style/stack decisions; use 21st or Aceternity instead when the need is an existing component implementation.
 triggers: ui, ux, interface, screen, page, website, landing, landing page, hero, redesign, dashboard, form, component, accessibility, color, typography, layout, responsive, animation, react, next.js, vue, swiftui, flutter, 디자인, 화면, 페이지, 신규 페이지, 웹사이트, 랜딩, 랜딩페이지, 랜딩 페이지, 히어로, 리디자인, 대시보드, 폼, 컴포넌트, 접근성, 색상, 타이포, 레이아웃, 반응형
-agent: freyja, freyja-lead
-agents: freyja, freyja-lead
+agent: freyja
+agents: freyja
 ---
 
 # UI/UX Pro Max — Freyja resource skill

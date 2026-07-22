@@ -28,7 +28,7 @@
         "find ui component",
         "컴포넌트 검색"
       ],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "entrypoints": {

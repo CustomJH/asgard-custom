@@ -18,31 +18,31 @@
   "routing": {
     "banner-design": {
       "triggers": ["banner design", "social banner", "ad banner", "website hero banner", "배너 디자인", "소셜 배너", "광고 배너"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "brand": {
       "triggers": ["brand identity", "brand voice", "brand guidelines", "brand audit", "brand system", "logo system", "브랜드 아이덴티티", "브랜드 보이스", "브랜드 가이드", "브랜드 시스템", "로고 시스템"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "design": {
       "triggers": ["/design", "design skill", "통합 디자인 스킬"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "design-system": {
       "triggers": ["design system", "design tokens", "component specification", "디자인 시스템", "디자인 토큰", "컴포넌트 명세"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "slides": {
       "triggers": ["html slides", "presentation slides", "pitch deck", "html 슬라이드", "프레젠테이션 슬라이드", "피치덱"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "ui-styling": {
       "triggers": ["ui styling", "shadcn styling", "tailwind styling", "css", "styling", "button", "component", "spacing", "padding", "margin", "ui 스타일링", "shadcn 스타일링", "tailwind 스타일링", "스타일", "버튼", "컴포넌트", "간격", "패딩", "마진"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "ui-ux-pro-max": {
       "triggers": ["ui", "ux", "interface", "frontend", "web page", "page", "form", "button", "component", "landing page", "dashboard", "accessibility", "typography", "responsive", "디자인", "화면", "프론트엔드", "웹 페이지", "페이지", "폼", "버튼", "컴포넌트", "랜딩", "랜딩 페이지", "랜딩페이지", "대시보드", "접근성", "타이포", "반응형"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/nextlevelbuilder/ui-ux-pro-max-skill",
