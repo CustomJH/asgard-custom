@@ -2,8 +2,8 @@
 name: design-md-review
 description: Validate an existing DESIGN.md before Freyja implements from it, then review token, structure, reference, typography, component, WCAG contrast, and implementation drift.
 triggers: design.md, design.md audit, design.md review, design.md apply, design.md based, design.md implementation, using design.md, from design.md, design system audit, design system review, design token audit, token validation, 디자인 시스템 검수, 디자인 시스템 리뷰, 디자인 토큰 검수, 토큰 검증, design.md 적용, design.md 기반, design.md 구현
-agent: freyja, freyja-lead
-agents: freyja, freyja-lead
+agent: freyja
+agents: freyja
 ---
 
 # DESIGN.md review — Freyja

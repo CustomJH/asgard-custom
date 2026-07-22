@@ -14,27 +14,27 @@
   "routing": {
     "animation-vocabulary": {
       "triggers": ["animation vocabulary", "motion vocabulary", "animation term", "motion term", "effect name", "what's it called when", "what is it called when", "애니메이션 용어", "모션 용어", "이 효과 이름", "뭐라고 부르"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "apple-design": {
       "triggers": ["apple design", "fluid interface", "fluid motion", "gesture-driven", "gesture ui", "spring animation", "momentum animation", "interruptible animation", "rubber-banding", "drag gesture", "swipe gesture", "sheet interaction", "애플 디자인", "물리 모션", "제스처 ui", "제스처 인터랙션", "스프링 애니메이션"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "emil-design-eng": {
       "triggers": ["design engineering", "ui polish", "interface polish", "interaction polish", "animation design", "motion design", "design craft", "디자인 엔지니어링", "ui 폴리시", "인터페이스 폴리시", "인터랙션 폴리시", "애니메이션 디자인", "모션 디자인"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "find-animation-opportunities": {
       "triggers": ["animation opportunities", "motion opportunities", "what could be animated", "what should animate", "make this feel more alive", "애니메이션 기회", "모션 기회", "어디에 애니메이션", "어디에 모션", "더 살아있게"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "improve-animations": {
       "triggers": ["improve animations", "improve animation", "improve motion", "animation audit", "motion audit", "animation roadmap", "motion roadmap", "애니메이션 개선", "모션 개선", "애니메이션 감사", "모션 감사", "애니메이션 로드맵", "모션 로드맵"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     },
     "review-animations": {
       "triggers": ["review animations", "review animation", "review motion", "animation review", "motion review", "animation diff", "motion diff", "애니메이션 리뷰", "모션 리뷰", "애니메이션 검토", "모션 검토", "애니메이션 diff", "모션 diff"],
-      "agents": ["freyja", "freyja-lead"]
+      "agents": ["freyja"]
     }
   },
   "source": "https://github.com/emilkowalski/skills",
