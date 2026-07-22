@@ -19,6 +19,7 @@ Installs `asgard` to `~/.local/bin`. Then:
 ```bash
 asgard doctor    # verify
 asgard --help
+asgard desktop   # native app when installed, browser fallback otherwise
 ```
 
 The installer manages a standalone CPython 3.14. Running from source or importing Asgard as a library
@@ -132,17 +133,12 @@ asgard plugins list
 asgard skills list
 asgard skills resolve --agent thor "database migration API"
 asgard skills show asgard-thor-jarngreipr
-asgard skills show review-animations --resource STANDARDS.md
-asgard skills assign ui-ux-pro-max --agent freyja
-asgard skills disable ui-ux-pro-max
+asgard skills disable asgard-worker-testing
 ```
 
-A local resource plugin is installed with `asgard plugins install <path>`. Asgard ships
-`ui-ux-pro-max` for Freyja, including its searchable data and Python helper, so users do not need a
-separate Claude Marketplace or Codex install. It also ships a Python port of Google Labs Code
-`design.md` lint/spec as `design-md-review` for Freyja design-system audits, plus Emil Kowalski's
-design-engineering and motion skills. These skills are available to Freyja but none is forced on
-every task; the model selects from their descriptions. A plugin contains `plugin.json` and declared `skills/<name>/`
+A local resource plugin is installed with `asgard plugins install <path>`. Freyja currently starts
+with only its core delivery contract and no bundled design specialists. Add each rebuilt skill only
+after its contract and routing are reviewed. A plugin contains `plugin.json` and declared `skills/<name>/`
 directories:
 
 ```json
