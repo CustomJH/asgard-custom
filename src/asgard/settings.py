@@ -33,7 +33,10 @@ LEGACY_MEMORY = "memory-server.json"
 
 
 def global_dir() -> str:
-    return os.path.join(os.path.expanduser("~"), ".asgard")
+    # os.path.expanduser("~") 는 Windows 에서 HOME 을 보지 않고 USERPROFILE/HOMEDRIVE+HOMEPATH
+    # 만 본다(posix 는 HOME 우선) — HOME 을 명시 우선해 플랫폼 간 일관성 + 테스트 모킹 가능성 확보.
+    home = os.environ.get("HOME") or os.path.expanduser("~")
+    return os.path.join(home, ".asgard")
 
 
 def global_path() -> str:
