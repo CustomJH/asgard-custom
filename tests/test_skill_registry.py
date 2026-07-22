@@ -4,7 +4,6 @@
 import json
 import os
 import re
-import subprocess
 import sys
 import tempfile
 import unittest
@@ -42,18 +41,8 @@ class RegistryTest(unittest.TestCase):
         matched = {name for name, _ in skill_registry.resolve_skills(self.root, "로그인 폼 접근성 개선", "freyja")}
         catalog = skill_registry.skill_catalog(self.root, "freyja", matched=matched)
 
-        self.assertIn("[task-match] asgard-freyja-syn", catalog)
-        self.assertIn("asgard-freyja-motion", catalog)
-        self.assertIn("scan the remaining descriptions", catalog)
-
-    def test_common_frontend_words_match_general_ui_skills(self):
-        for task, expected in (
-            ("기존 버튼 패딩 수정", {"ui-styling", "ui-ux-pro-max"}),
-            ("React component spacing", {"ui-styling", "ui-ux-pro-max"}),
-            ("CSS margin 조정", {"ui-styling"}),
-        ):
-            matched = {name for name, _ in skill_registry.resolve_skills(self.root, task, "freyja")}
-            self.assertTrue(expected <= matched, task)
+        self.assertEqual(matched, {"asgard-freyja-design"})
+        self.assertIn("[task-match] asgard-freyja-design", catalog)
 
     def test_bare_catalog_commands_list_current_inventory(self):
         from typer.testing import CliRunner
@@ -67,11 +56,11 @@ class RegistryTest(unittest.TestCase):
             json_result = CliRunner().invoke(app, ["plugins", "list", "--json"])
         self.assertEqual(skills_result.exit_code, 0)
         self.assertIn("╭─ Skills ·", skills_result.stdout)
-        self.assertIn("design-md-review", skills_result.stdout)
+        self.assertIn("asgard-worker-testing", skills_result.stdout)
         self.assertEqual(plugins_result.exit_code, 0)
         self.assertIn("╭─ Plugins ·", plugins_result.stdout)
         self.assertIn("╰", plugins_result.stdout)
-        self.assertIn("google-design-md", plugins_result.stdout)
+        self.assertIn("playwright-cli", plugins_result.stdout)
         self.assertEqual(json.loads(json_result.stdout), skill_registry.plugins())
 
     def test_catalog_renderer_is_readable_without_changing_json(self):
@@ -130,72 +119,6 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("0 skills", wide.stdout)
         self.assertIn("1 skill", wide.stdout)
         self.assertIn("2 skills", wide.stdout)
-
-    def test_bundled_uiux_resource_is_freyja_assigned_and_runnable(self):
-        expected = {
-            "banner-design",
-            "brand",
-            "design",
-            "design-system",
-            "slides",
-            "ui-styling",
-            "ui-ux-pro-max",
-        }
-        plugin = skill_registry.bundled_plugins()["ui-ux-pro-max"]
-        self.assertEqual(set(plugin["skills"]), expected)
-        self.assertEqual(plugin["revision"], "5c0946f66120079258e1efc8e436d78ec793877c")
-        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
-        self.assertEqual(catalog["ui-ux-pro-max"]["plugin"], "ui-ux-pro-max")
-        self.assertNotIn(
-            "ui-ux-pro-max",
-            {name for name, _ in skill_registry.resolve_skills(self.root, "백엔드와 무관한 일반 과업", "freyja")},
-        )
-        self.assertIn(
-            "ui-ux-pro-max",
-            {name for name, _ in skill_registry.resolve_skills(self.root, "반응형 대시보드 UI", "freyja")},
-        )
-        self.assertIn(
-            "ui-ux-pro-max",
-            {row["name"] for row in skill_registry.available_skills(self.root, "freyja")},
-        )
-        visible = {row["name"] for row in skill_registry.available_skills(self.root, "freyja")}
-        self.assertEqual(visible & expected, expected - {"design"})
-        self.assertIn("design", {row["name"] for row in skill_registry.invocable_skills(self.root)})
-        self.assertFalse(expected & {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
-        self.assertNotIn(
-            "ui-ux-pro-max",
-            {name for name, _ in skill_registry.resolve_skills(self.root, "반응형 대시보드 UI", "worker")},
-        )
-        for task, specialist in (
-            ("배너 디자인", "banner-design"),
-            ("디자인 토큰", "design-system"),
-            ("Tailwind 스타일링", "ui-styling"),
-            ("HTML 슬라이드", "slides"),
-        ):
-            self.assertIn(
-                specialist,
-                {name for name, _ in skill_registry.resolve_skills(self.root, task, "freyja")},
-                task,
-            )
-        self.assertIn(
-            "brand-context",
-            skill_registry.show_skill_resource(self.root, "brand", "scripts/inject-brand-context.cjs"),
-        )
-        self.assertIn(
-            "Token Architecture",
-            skill_registry.show_skill_resource(self.root, "design-system", "references/token-architecture.md"),
-        )
-        self.assertIn(
-            "name: design",
-            skill_registry.show_skill_resource(self.root, "design", "references/upstream-skill.md"),
-        )
-        with mock.patch("asgard.skill_registry.subprocess.run") as run:
-            run.return_value.returncode = 0
-            self.assertEqual(skill_registry.run_skill(self.root, "ui-ux-pro-max", ["dashboard", "--json"]), 0)
-        command = run.call_args.args[0]
-        self.assertTrue(command[1].endswith("ui-ux-pro-max/scripts/search.py"))
-        self.assertEqual(command[-2:], ["dashboard", "--json"])
-        self.assertEqual(run.call_args.kwargs["cwd"], self.root)
 
     def test_instruction_compiler_bundles_all_upstream_knowledge_rooms_lazily(self):
         expected_skills = {
@@ -311,26 +234,6 @@ class RegistryTest(unittest.TestCase):
                     if not (skill_root / relative).is_file():
                         missing.append(f"{skill_name}/{relative}")
         self.assertEqual(missing, [])
-
-    def test_freyja_restraint_is_native_and_freyja_only(self):
-        name = "asgard-freyja-restraint"
-        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
-        self.assertEqual(catalog[name]["plugin"], name)
-        self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
-        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
-        self.assertIn(
-            name,
-            {skill for skill, _ in skill_registry.resolve_skills(self.root, "랜딩 페이지 UI 디자인", "freyja")},
-        )
-        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
-        self.assertIn("Leave empty regions quiet", body)
-        self.assertIn("Do not use Unicode emoji", body)
-        from asgard.agent.heimdall import _skill_support
-
-        note, tools, handlers = _skill_support("freyja", self.root)
-        self.assertIn(name, note)
-        self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
-        self.assertEqual(handlers["load_skill"]({"name": name}), body)
 
     def test_thor_bilskirnir_policy_pack_is_thor_scoped(self):
         name = "asgard-thor-bilskirnir"
@@ -481,43 +384,6 @@ class RegistryTest(unittest.TestCase):
         reference = skill_registry.show_skill_resource(self.root, name, "references/fetching/choosing.md")
         self.assertIn("Fetchers Overview", reference)
 
-    def test_threejs_reference_pack_is_freyja_scoped(self):
-        name = "threejs-skills"
-        plugin = skill_registry.bundled_plugins()[name]
-        self.assertEqual(plugin["revision"], "b1c623076c661fc9b03dac19292e825a5d106823")
-        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
-        self.assertEqual(catalog[name]["plugin"], name)
-        for agent in ("freyja", "freyja-lead"):
-            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
-        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
-        resolved = {
-            skill for skill, _ in skill_registry.resolve_skills(self.root, "three.js 3D 제품 뷰어 씬", "freyja")
-        }
-        self.assertIn(name, resolved)
-        self.assertIn("asgard-freyja-folkvangr", resolved)  # 원칙 스킬과 합성 — 레퍼런스 팩은 대체가 아니다
-        self.assertNotIn(
-            name,
-            {skill for skill, _ in skill_registry.resolve_skills(self.root, "three files need merging", "freyja")},
-        )
-        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
-        self.assertIn("적용 위계", body)
-        for room in (
-            "references/fundamentals.md",
-            "references/geometry.md",
-            "references/materials.md",
-            "references/lighting.md",
-            "references/textures.md",
-            "references/animation.md",
-            "references/loaders.md",
-            "references/shaders.md",
-            "references/postprocessing.md",
-            "references/interaction.md",
-        ):
-            self.assertIn(room, body)
-        shaders = skill_registry.show_skill_resource(self.root, name, "references/shaders.md")
-        self.assertIn("onBeforeCompile", shaders)
-        self.assertIn("`references/postprocessing.md`", shaders)  # See Also 가 팩 내부 리소스 경로로 재배선됨
-
     def test_cc_settings_preapprove_skill_loads(self):
         """헤드리스 CC 에서 스킬 로드 경로·quest-log 루프가 자동 거부되지 않도록 사전 승인."""
         from asgard.templates.claude import cc_settings
@@ -529,111 +395,12 @@ class RegistryTest(unittest.TestCase):
         self.assertTrue(any(".claude/hooks/quest-log.py" in rule for rule in allow))
         self.assertFalse(any("skills assign" in rule or "skills disable" in rule for rule in allow))
 
-    def test_bundled_design_md_python_linter(self):
-        plugin = skill_registry.bundled_plugins()["google-design-md"]
-        script = Path(plugin["root"], "skills", "design-md-review", "scripts", "design_md.py")
-        design = Path(self.root, "DESIGN.md")
-        design.write_text(
-            """---
-name: Demo
-colors:
-  primary: "oklch(62% 0.18 250)"
-  mixed: "color-mix(in srgb, #ffffff 40%, #000000)"
-  broken-color: nope
-typography:
-  body:
-    fontFamily: Inter
-    fontSize: 16px
-components:
-  button:
-    backgroundColor: "#777777"
-    textColor: "#888888"
-  broken:
-    backgroundColor: "{colors.missing}"
----
-
-## Colors
-## Typography
-""",
-            encoding="utf-8",
-        )
-        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
-        result = subprocess.run(
-            [sys.executable, str(script), "lint", str(design)], capture_output=True, text=True, env=env, check=False
-        )
-        report = json.loads(result.stdout)
-        self.assertEqual(result.returncode, 1)
-        self.assertGreaterEqual(report["summary"]["errors"], 2)
-        self.assertTrue(any("contrast ratio" in finding["message"] for finding in report["findings"]))
-        self.assertFalse(any("color-mix" in finding["message"] for finding in report["findings"]))
-        self.assertIn(
-            "design-md-review",
-            {name for name, _ in skill_registry.resolve_skills(self.root, "DESIGN.md 디자인 시스템 검수", "freyja")},
-        )
-
-    def test_emil_motion_skills_compose_after_existing_freyja_policy(self):
-        catalog = {row["name"]: row for row in skill_registry.skills(self.root)}
-        self.assertEqual(catalog["review-animations"]["plugin"], "emil-design-engineering")
-        self.assertEqual(catalog["apple-design"]["origin"], "bundled")
-
-        review = skill_registry.resolve_skills(self.root, "애니메이션 리뷰", "freyja")
-        names = [name for name, _ in review]
-        self.assertLess(names.index("asgard-freyja-motion"), names.index("review-animations"))
-        self.assertNotIn("improve-animations", names)
-
-        physical = dict(skill_registry.resolve_skills(self.root, "스프링 애니메이션 제스처 UI", "freyja"))
-        self.assertIn("apple-design", physical)
-        self.assertIn("asgard skills show apple-design", physical["apple-design"])
-        self.assertIn("asgard skills show apple-design --resource", physical["apple-design"])
-        self.assertNotIn(
-            "apple-design",
-            {name for name, _ in skill_registry.resolve_skills(self.root, "스프링 애니메이션 제스처 UI", "worker")},
-        )
-
-    def test_jitter_motion_reference_is_freyja_scoped(self):
-        name = "jitter-motion-reference"
-        plugin = skill_registry.bundled_plugins()[name]
-        self.assertEqual(plugin["source"], "https://jitter.video/templates/all/")
-        for agent in ("freyja", "freyja-lead"):
-            self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, agent)})
-        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
-
-        resolved = [name for name, _ in skill_registry.resolve_skills(self.root, "Jitter 모션 예제 적용", "freyja")]
-        self.assertIn("asgard-freyja-motion", resolved)
-        self.assertIn(name, resolved)
-        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
-        self.assertIn("references/pattern-atlas.md", body)
-        atlas = skill_registry.show_skill_resource(self.root, name, "references/pattern-atlas.md")
-        self.assertIn("https://jitter.video/template/card-flip/", atlas)
-        self.assertIn("분석 레퍼런스", atlas)
-
     def test_moving_landing_composes_freyja_policy_with_external_specialists(self):
         task = "아스가르드에 대한 현대적이고 모던한 스타일의 움직이는 랜딩페이지를 구성해줘"
-        resolved = dict(skill_registry.resolve_skills(self.root, task, "freyja"))
-        self.assertIn("asgard-freyja-motion", resolved)
-        for name in (
-            "ui-ux-pro-max",
-            "jitter-motion-reference",
-            "micro-interaction",
-            "asgard-freyja-restraint",
-        ):
-            self.assertIn(name, resolved)
-        self.assertIn("asgard-freyja-brisingamen", resolved["asgard-freyja-deferred"])
-        self.assertNotIn("emil-design-eng", resolved)  # explicit-only broad skill stays out of model discovery
-
-    def test_skill_resource_loader_exposes_references_without_path_escape(self):
-        standards = skill_registry.show_skill_resource(self.root, "review-animations", "STANDARDS.md")
-        self.assertIn("Animation Standards Reference", standards)
-        with self.assertRaisesRegex(ValueError, "escapes"):
-            skill_registry.show_skill_resource(self.root, "review-animations", "../SKILL.md")
-
-        from typer.testing import CliRunner
-
-        from asgard.cli import app
-
-        result = CliRunner().invoke(app, ["skills", "show", "review-animations", "--resource", "STANDARDS.md"])
-        self.assertEqual(result.exit_code, 0)
-        self.assertIn("Animation Standards Reference", result.stdout)
+        self.assertIn(
+            "asgard-freyja-design",
+            {name for name, _ in skill_registry.resolve_skills(self.root, task, "freyja")},
+        )
 
     def test_scaffold_uses_native_discovery_and_direct_canonical_loaders(self):
         from asgard.commands.setup import plan_files
@@ -648,9 +415,6 @@ components:
         self.assertIn("asgard skills show asgard-worker-debugging", codex)
         self.assertNotIn("재현 없으면 수정 없다", cc)
         self.assertIn(os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md"), by_path)
-        for name in ("ui-ux-pro-max", "design-md-review", "review-animations", "asgard-freyja-motion"):
-            adapter = by_path[os.path.join(self.root, ".agents", "skills", name, "SKILL.md")]
-            self.assertIn(f"asgard skills show {name}", adapter)
         core = by_path[os.path.join(self.root, ".agents", "skills", "asgard-freyja", "SKILL.md")]
         self.assertIn("asgard skills show asgard-freyja", core)
         router = by_path[os.path.join(self.root, ".agents", "skills", "asgard-skills", "SKILL.md")]
@@ -667,7 +431,7 @@ components:
         self.assertIn("allow_implicit_invocation: false", metadata)
         freyja_role = by_path[os.path.join(self.root, ".claude", "agents", "asgard-freyja.md")]
         self.assertIn("<available_skills>", freyja_role)
-        self.assertIn("ui-ux-pro-max", freyja_role)
+        self.assertIn("asgard-freyja-design", freyja_role)
 
     def test_project_assignment_and_disable_overrides(self):
         from asgard.settings import load_project
@@ -683,7 +447,7 @@ components:
         self.assertNotIn("asgard-worker-testing", names)
         self.assertEqual(load_project(self.root)["skills"]["disabled"], ["asgard-worker-testing"])
         with self.assertRaisesRegex(ValueError, "not compatible"):
-            skill_registry.assign_skill(self.root, "ui-ux-pro-max", "worker", assigned=True)
+            skill_registry.assign_skill(self.root, "asgard-thor-bilskirnir", "worker", assigned=True)
 
     def test_install_and_resolve_data_only_plugin(self):
         source = os.path.join(self.root, "source")
@@ -759,14 +523,14 @@ components:
 
     def test_bundled_workflows_have_real_manual_invocation_and_zero_discovery_load(self):
         rows = {row["name"]: row for row in skill_registry.skills(self.root)}
-        for name in ("council", "blueprint", "quests", "expedition", "emil-design-eng"):
+        for name in ("council", "blueprint", "quests", "expedition"):
             self.assertEqual(rows[name]["invocation"], "user")
         available = {row["name"] for row in skill_registry.available_skills(self.root, "worker")}
         self.assertNotIn("council", available)
         self.assertIn("domain-modeling", available)
         self.assertEqual(rows["prototype"]["invocation"], "model")
         self.assertIn("prototype", available)
-        self.assertIn("prototype", {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
+        self.assertNotIn("prototype", {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
 
         prompt = skill_registry.invoked_skill_prompt(self.root, "/council checkout flow")
         self.assertIn('<user_invoked_skill name="council">', prompt or "")

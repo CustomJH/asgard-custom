@@ -220,32 +220,15 @@ class TestSyncProject(Base):
             {"cursor": {"worker": {"model": "cursor-user-model"}}},
         )
 
-    def test_sync_migrates_legacy_routed_freyja_adapters_to_direct_loaders(self):
-        from asgard.skill_registry import client_skill_bodies
-        from asgard.templates.skill_router import routed_skill
-
-        bodies = dict(client_skill_bodies("freyja"))
-        clean = os.path.join(self.root, ".claude", "skills", "asgard-freyja-motion", "SKILL.md")
-        edited = os.path.join(self.root, ".claude", "skills", "asgard-freyja-hmi", "SKILL.md")
-        for path, name in ((clean, "asgard-freyja-motion"), (edited, "asgard-freyja-hmi")):
-            os.makedirs(os.path.dirname(path), exist_ok=True)
-            open(path, "w").write(routed_skill(bodies[name], "freyja"))
-        open(edited, "a").write("\nuser edit\n")
-
-        counts = sync_project(self.root, cc=True, cursor=False, codex=False)
-        self.assertGreaterEqual(counts["updated"], 1)
-        for path, name in ((clean, "asgard-freyja-motion"), (edited, "asgard-freyja-hmi")):
-            self.assertIn(f"asgard skills show {name}", open(path).read())
-            self.assertNotIn("skills resolve", open(path).read())
-
     def test_sync_prunes_disabled_generated_adapter(self):
-        from asgard.skill_registry import set_skill_enabled
+        from asgard.skill_registry import assign_skill, set_skill_enabled
 
+        assign_skill(self.root, "playwright-cli", "worker", assigned=True)
         sync_project(self.root, cc=True, cursor=False, codex=False)
-        path = os.path.join(self.root, ".claude", "skills", "ui-ux-pro-max", "SKILL.md")
+        path = os.path.join(self.root, ".claude", "skills", "playwright-cli", "SKILL.md")
         self.assertTrue(os.path.exists(path))
 
-        set_skill_enabled(self.root, "ui-ux-pro-max", enabled=False)
+        set_skill_enabled(self.root, "playwright-cli", enabled=False)
         sync_project(self.root, cc=True, cursor=False, codex=False)
         self.assertFalse(os.path.exists(path))
 
