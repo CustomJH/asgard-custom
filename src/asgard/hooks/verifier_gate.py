@@ -44,13 +44,21 @@ DEFAULT_POLICY: dict[str, Any] = {
     "sensitive_paths": [
         "hooks",
         "policy",
+        "policies",
         "templates",
         "install",
         "security",
         "auth",
+        "authn",
+        "authz",
+        "authentication",
+        "authorization",
         "secret",
+        "secrets",
+        "credentials",
         "db",
         "migration",
+        "migrations",
         "ci",
         ".github",
         ".claude",
@@ -91,8 +99,9 @@ def unattended(data):
 
 
 def git(root, *args, binary=False):
+    # color.ui=false 강제 — quest_log.py 의 git 과 동일 유지 (ANSI 가 경로 파싱을 오염)
     try:
-        p = subprocess.run(["git", "-C", root, *args], capture_output=True, timeout=60)
+        p = subprocess.run(["git", "-C", root, "-c", "color.ui=false", *args], capture_output=True, timeout=60)
         return p.returncode, (p.stdout if binary else p.stdout.decode("utf-8", "replace"))
     except Exception:
         return 1, b"" if binary else ""
@@ -149,7 +158,7 @@ def current_tree_ref(root):
 # ── quest_log.py 의 diff_state 와 알고리즘 동일 유지 (단일 출처 원칙 — 어긋나면 위양성 차단) ──
 # 검증 실행 아티팩트 — quest_log.py 의 _junk 와 동일해야 한다 (양쪽 hash 불일치 = 영구 stale).
 # lagom: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
-_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv"}
+_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv", ".cache"}
 
 
 def _junk(p):
@@ -178,11 +187,12 @@ def symlink_map_state(path):
 
 
 def sensitive_path(path, needles):
-    """quest_log.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 판정 분열)."""
+    """quest_log.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 판정 분열).
+    세그먼트 정확 일치 또는 [._-] 토큰 정확 일치 — substring 파생형은 needle 목록에 명시."""
     segs = path.lower().split("/")
     for n in needles:
         n = str(n).lower()
-        if any(seg == n or (len(n) >= 4 and n in seg) for seg in segs):
+        if any(seg == n or n in re.split(r"[._\-]", seg) for seg in segs):
             return True
     return False
 
@@ -316,6 +326,54 @@ def deleted_tests(root, base_ref):
         return []
     _, out = git(root, "diff", "--name-only", "--diff-filter=D", base_ref, "--", ".", ":(exclude).asgard")
     return [p for p in out.splitlines() if p.strip() and _testfile(p)]
+
+
+def _rel_to_root(root, path):
+    """quest_log.py 의 _rel_to_root 와 동일 유지 — write 저널 절대 경로를 리포 상대로."""
+    p = str(path)
+    if not os.path.isabs(p):
+        return p
+    rp = os.path.realpath(root)
+    ap = os.path.realpath(p)
+    return os.path.relpath(ap, rp) if ap == rp or ap.startswith(rp + os.sep) else p
+
+
+def quest_owned_files(root, events):
+    """quest_log.py 의 quest_owned_files 와 동일 유지 — 퀘스트 귀속 파일(work 관측 ∪ 세션 write 저널)."""
+    owned = {
+        _rel_to_root(root, p)
+        for e in events
+        if e.get("event") == "work"
+        for p in (e.get("changed_files") or [])
+        if str(p).strip()
+    }
+    for sid in {str(e.get("session_id")) for e in events if e.get("session_id")}:
+        try:
+            journal = json.load(open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json")))
+            owned.update(_rel_to_root(root, p) for p in journal if str(p).strip())
+        except Exception:
+            pass
+    return owned
+
+
+def stale_pass_scope(root, last_pass, events, current_changed):
+    """quest_log.py 의 stale_pass_scope 와 동일 유지 (단일 출처 원칙) — 해시 불일치 시
+    PASS 시점 tree_ref ↔ 현재 트리 드리프트가 퀘스트 귀속 파일·관리 지도에 닿을 때만 stale.
+    tree_ref 없는 구 로그·귀속 공집합·트리 계산 실패는 종전 엄격 판정(stale) — fail-safe."""
+    pass_tree = str(last_pass.get("tree_ref") or "")
+    owned = quest_owned_files(root, events)
+    if not pass_tree or not owned:
+        return True, []
+    cur_tree = current_tree_ref(root)
+    if not cur_tree:
+        return True, []
+    rc, names = git(root, "diff", "--name-only", pass_tree, cur_tree)
+    if rc != 0:
+        return True, []
+    drift = {n for n in names.splitlines() if n.strip()}
+    drift |= set(map(str, current_changed or [])) ^ {str(p) for p in (last_pass.get("changed_files") or [])}
+    hits = sorted(p for p in drift if p in owned or p == ".asgard/map" or p.startswith(".asgard/map/"))
+    return bool(hits), sorted(drift - set(hits))
 
 
 def readonly(cmd, allow):
@@ -686,12 +744,8 @@ def orphan_writes(root, sid):
             current_hash, last_changed, _, _ = diff_state(root, base_ref, ignored_base)
             # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍. 무변경은 관측이 곧 증거.
             evidence = pass_evidence(last, no_change=current_hash == EMPTY)
-            if (
-                evidence
-                and not baseline_red
-                and "<snapshot-unavailable>" not in last_changed
-                and last.get("diff_hash") == current_hash
-            ):
+            fresh = last.get("diff_hash") == current_hash or not stale_pass_scope(root, last, events, last_changed)[0]
+            if evidence and not baseline_red and "<snapshot-unavailable>" not in last_changed and fresh:
                 return
     except Exception:
         pass
@@ -790,7 +844,11 @@ def main():
                 pass
             sys.exit(0)  # 종료 허용 — 단 완료가 아니라 오딘 결정 대기 상태 (퀘스트 로그에 ESCALATE 가 남는다)
         if p.get("diff_hash") != current:
-            block(root, sid, "stale-pass")
+            # 해시 불일치 = 즉시 stale 이 아니다 — 귀속 범위 대조 (병렬 세션 드리프트 면책,
+            # quest_log.summarize 와 동일 판정). fail-safe: 대조 불가면 종전대로 차단.
+            stale, _drift_out = stale_pass_scope(root, p, events, changed)
+            if stale:
+                block(root, sid, "stale-pass")
         if not any(e.get("criteria") for e in events):
             block(root, sid, "no-criteria")
         ticket_state = {}

@@ -90,16 +90,25 @@ DEFAULT_POLICY: dict = {
     "delivery": {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast", "mimir": "standard"},
     "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
     "small_write": {"max_files": 2, "max_lines": 80},
+    # 매칭은 세그먼트/토큰 정확 일치 (sensitive_path) — substring 파생형은 여기 명시한다.
     "sensitive_paths": [
         "hooks",
         "policy",
+        "policies",
         "templates",
         "install",
         "security",
         "auth",
+        "authn",
+        "authz",
+        "authentication",
+        "authorization",
         "secret",
+        "secrets",
+        "credentials",
         "db",
         "migration",
+        "migrations",
         "ci",
         ".github",
         ".claude",
@@ -168,9 +177,11 @@ def quest_dir(root: str) -> str:
 
 
 def git(root: str, *args: str, binary: bool = False):
-    """(rc, out). 실패는 (rc!=0, '') 로 — 호출측이 fail-open 판단."""
+    """(rc, out). 실패는 (rc!=0, '') 로 — 호출측이 fail-open 판단.
+    color.ui=false 강제 — 사용자 git 설정(color always)의 ANSI 이스케이프가 경로 파싱에
+    섞이면 ignored_snapshot 키가 오염된다 (26-07-23 실측: \\x1b[36m 이 JSON 키에 잔류)."""
     try:
-        p = subprocess.run(["git", "-C", root, *args], capture_output=True, timeout=60)
+        p = subprocess.run(["git", "-C", root, "-c", "color.ui=false", *args], capture_output=True, timeout=60)
         out = p.stdout if binary else p.stdout.decode("utf-8", "replace")
         return p.returncode, out
     except Exception:
@@ -266,7 +277,9 @@ def current_tree_ref(root: str) -> str | None:
 # 검증 실행 아티팩트 — 검증 명령이 만든 캐시가 PASS 를 stale 로 만들면 게이트가 자기파괴적이다
 # (.gitignore 없는 프로젝트에서 pytest 실행 → __pycache__ → hash 변경, s1 라이브 실측).
 # lagom: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
-_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv"}
+# ".cache": 리포 안 XDG 캐시 (CC 샌드박스가 UV_CACHE_DIR 를 cwd/.cache/uv 로 주입) — uv 캐시
+# 전체가 ignored_snapshot 에 해시로 실려 퀘스트 로그 1.5MB 블롯이 됐다 (26-07-23 실측).
+_JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv", ".cache"}
 
 
 def _junk(p: str) -> bool:
@@ -296,13 +309,16 @@ def symlink_map_state(path: str) -> bytes:
 
 
 def sensitive_path(path: str, needles) -> bool:
-    """경로 세그먼트 기준 민감 매칭 — 나이브 substring 은 'ci' 가 circle.py 를 오탐.
-    규칙: 세그먼트 정확 일치, 또는 4자+ needle 은 세그먼트 내 부분 문자열 허용 (auth→authentication).
+    """경로 세그먼트/토큰 기준 민감 매칭 — 나이브 substring 은 'ci' 가 circle.py 를,
+    4자+ substring 은 'auth' 가 oauth.py·author.py 를, 'install' 이 installer_utils 를 오탐해
+    작은 수정 하나가 full-verify+티어 승격으로 흘렀다 (26-07-23 감사). 규칙: 세그먼트 정확
+    일치, 또는 세그먼트를 [._-] 로 쪼갠 토큰 정확 일치 (auth.py→auth, db_pool→db). 파생형은
+    needle 목록에 명시한다 (authentication 등 — DEFAULT_POLICY).
     verifier_gate.py 의 sensitive_path 와 동일 유지 (단일 출처 원칙 — 어긋나면 게이트↔전이 판정 분열)."""
     segs = path.lower().split("/")
     for n in needles:
         n = str(n).lower()
-        if any(seg == n or (len(n) >= 4 and n in seg) for seg in segs):
+        if any(seg == n or n in re.split(r"[._\-]", seg) for seg in segs):
             return True
     return False
 
@@ -795,6 +811,63 @@ def signature_risk(root: str, base_ref: str | None) -> bool:
     return any(_SIG_PAT.match(line) for line in out.splitlines())
 
 
+def _rel_to_root(root: str, path) -> str:
+    """세션 write 저널의 절대 경로를 리포 상대 경로로 — 귀속 집합 멤버십은 상대 경로 기준."""
+    p = str(path)
+    if not os.path.isabs(p):
+        return p
+    rp = os.path.realpath(root)
+    ap = os.path.realpath(p)
+    return os.path.relpath(ap, rp) if ap == rp or ap.startswith(rp + os.sep) else p
+
+
+def quest_owned_files(root: str, events: list[dict]) -> set[str]:
+    """퀘스트 귀속 파일 — work 이벤트의 changed_files(세션 관측 write) ∪ 참여 세션 write 저널.
+    verify 이벤트의 changed_files 는 전 트리 diff 라 타 세션 잔여물이 섞인다 — 소유 근거 아님."""
+    owned = {
+        _rel_to_root(root, p)
+        for e in events
+        if e.get("event") == "work"
+        for p in (e.get("changed_files") or [])
+        if str(p).strip()
+    }
+    for sid in {str(e.get("session_id")) for e in events if e.get("session_id")}:
+        try:
+            journal = json.load(open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json")))
+            owned.update(_rel_to_root(root, p) for p in journal if str(p).strip())
+        except Exception:
+            pass
+    return owned
+
+
+def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_changed) -> tuple[bool, list[str]]:
+    """(stale 여부, 범위 밖 드리프트) — PASS 이후 트리 변화의 퀘스트 귀속 판정.
+
+    전 트리 해시 불일치를 전부 stale 로 보면 병렬 세션 쓰기·빌드 아티팩트 1건이 full 재검증을
+    재소환하고, 트리가 움직이는 한 예산까지 반복된다 (26-07-21 실측: 타 세션 파일 34개로
+    read-only 퀘스트 4연속 FAIL). 판정 범위 = 퀘스트 귀속 파일 원칙(retry 프롬프트와 동일)을
+    해시 기계에도 적용한다: PASS 시점 tree_ref ↔ 현재 트리의 변경 경로 중 귀속 파일
+    (work 관측 ∪ 세션 write 저널) 또는 관리 지도에 닿은 것만 stale.
+
+    fail-safe: tree_ref 없는 구 로그·귀속 집합 공집합·트리 계산 실패는 종전 엄격 판정(stale).
+    한계(문서화): 같은 이름 ignored 파일의 내용만 바뀐 드리프트는 트리 밖이라 못 본다 —
+    이름 수준(등장/소멸)은 changed 목록 대칭차로 보수 편입한다."""
+    pass_tree = str(last_pass.get("tree_ref") or "")
+    owned = quest_owned_files(root, events)
+    if not pass_tree or not owned:
+        return True, []
+    cur_tree = current_tree_ref(root)
+    if not cur_tree:
+        return True, []
+    rc, names = git(root, "diff", "--name-only", pass_tree, cur_tree)
+    if rc != 0:
+        return True, []
+    drift = {n for n in names.splitlines() if n.strip()}
+    drift |= set(map(str, current_changed or [])) ^ {str(p) for p in (last_pass.get("changed_files") or [])}
+    hits = sorted(p for p in drift if p in owned or p == ".asgard/map" or p.startswith(".asgard/map/"))
+    return bool(hits), sorted(drift - set(hits))
+
+
 def load_policy(root: str) -> dict:
     p = dict(DEFAULT_POLICY)
     # 신규 통합 설정(asgard-setting-project.json 의 trinity_policy) 우선, 구 파일 폴백 (fail-open)
@@ -1242,6 +1315,12 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     ticket_counts = {
         status: sum(1 for ticket in tickets.values() if ticket["status"] == status) for status in TICKET_STATUSES
     }
+    # stale 판정 — 해시 일치가 1차, 불일치면 퀘스트 귀속 범위 대조 (병렬 세션 드리프트 면책).
+    pass_fresh = bool(last_pass and last_pass.get("diff_hash") == cur)
+    drift_out: list[str] = []
+    if last_pass and not pass_fresh:
+        stale, drift_out = stale_pass_scope(root, last_pass, events, changed)
+        pass_fresh = not stale
     return {
         "quest_id": qid,
         "base_ref": base_ref,
@@ -1265,7 +1344,8 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "nontest_lines": nt_lines,
         # gate 의 full_required 판정과 동일 기준 — 전이(DONE)와 close 가 gate 와 어긋나면 안 된다.
         "full_required": bool(sens) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"],
-        "pass_hash_match": bool(last_pass and last_pass.get("diff_hash") == cur),
+        "pass_hash_match": pass_fresh,
+        "drift_out_of_scope": drift_out[:10],  # 범위 밖 드리프트 — 관측용 (판정 아님)
         "pass_level": (last_pass or {}).get("level"),
         # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부 — 깊이 테스트가 발견한 구멍)
         # 무변경(diff EMPTY) 퀘스트는 관측 명령이 곧 증거 (no-op 교착 봉합)
@@ -1444,6 +1524,15 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
     if not has_write:
         return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")
     if s["last_event"] == "work":
+        if s["diff_hash"] == EMPTY:
+            # 무변경 관측 — Worker 가 돌았는데 물리 diff 0 (risk_write 는 분류 시점 기대치라
+            # 판정 축이 아니다 — 물리 관측이 정본). '변경 없음' 주장의 올바른 검증은 트리 관측
+            # 그 자체다 (pass_evidence 의 no_change=inspection 원칙) — LLM Verifier 를 소환해
+            # 반증 불가능한 기준을 재량 검증시키지 않고, 하네스가 관측을 기록해 판정한다
+            # (0-LLM). 오분류로 Trinity 에 들어온 무변경 요청의 결정론 출구 (26-07-21 "안녕"
+            # 계열 — 잔여 낭비 경로 봉합). 한계(수용): 변경이 필요했는데 Worker 가 안 한 경우도
+            # 통과한다 — 최종 보고의 변경 0 관측이 그 사실을 드러낸다.
+            return out("BASELINE_VERIFY", "무변경 관측 — 하네스 트리 관측 판정 (0-LLM)")
         if standard_ok and s.get("checks_available"):
             return out("BASELINE_VERIFY", "소형·비민감 변경 — 하네스 베이스라인 우선")
         return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
@@ -1900,15 +1989,20 @@ def main() -> int:
                 ev["changed_files"] = sorted(set(ev["changed_files"]) | set(unsafe_maps))
             ev.setdefault("level", "micro")
             if ev["verdict"] == "PASS":
-                # 하네스 소유 베이스라인 — normalize 가 stdin baseline 을 버린 뒤 여기서만 기록
-                bl = run_baseline(root, policy, events, ev["diff_hash"])
-                if bl:
-                    ev["baseline"] = bl
+                # 하네스 소유 베이스라인 — normalize 가 stdin baseline 을 버린 뒤 여기서만 기록.
+                # 무변경(diff EMPTY) 퀘스트는 red 의 원인이 될 수 없다 — 전 트리 체크의 타 세션
+                # 잔여물 red 가 무변경 퀘스트를 인질로 잡지 않게 면제 (26-07-23 감사).
+                if ev["diff_hash"] != EMPTY:
+                    bl = run_baseline(root, policy, events, ev["diff_hash"])
+                    if bl:
+                        ev["baseline"] = bl
                 # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize 가 버림)
                 crit = ev.get("criteria") or next((e.get("criteria") for e in events if e.get("criteria")), [])
                 cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
                 if cc is not None:
                     ev["criteria_checks"] = cc
+                # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope)
+                ev["tree_ref"] = current_tree_ref(root)
         write_event(root, qid, ev)
         print(
             json.dumps(
@@ -1946,18 +2040,31 @@ def main() -> int:
         ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
         snapshot_ok = "<snapshot-unavailable>" not in ev["changed_files"]
         ev["level"] = "micro"
-        bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
-        state = bl.get("state")
-        if state not in ("green", "red") and map_ok:
-            print(
-                json.dumps({"error": "baseline 판정 불가 (체크 없음/전부 skip) — LLM Verifier 로 검증하세요"}),
-                file=sys.stderr,
-            )
-            return 1
-        results = [c for c in bl.get("results", []) if isinstance(c, dict)]
-        ev["verdict"] = "PASS" if state == "green" and map_ok and snapshot_ok else "FAIL"
-        ev["commands"] = results[:20]
-        ev["baseline"] = bl
+        # 무변경(diff EMPTY) 판정 — '변경 없음' 주장의 올바른 검증은 트리 관측 그 자체다
+        # (pass_evidence 의 no_change=inspection 원칙). 베이스라인은 돌리지 않는다: 무변경
+        # 퀘스트는 red 의 원인이 될 수 없고, 전 트리 체크의 타 세션 잔여물 red 가 인질이 된다.
+        no_change = ev["diff_hash"] == EMPTY and snapshot_ok
+        if no_change:
+            rc_obs, _obs = git(root, "status", "--porcelain")
+            bl = {}
+            state = None
+            results = [{"cmd": "git status --porcelain", "exit_code": rc_obs}]
+            ev["commands"] = results
+            observed_ok = rc_obs == 0
+        else:
+            bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
+            state = bl.get("state")
+            if state not in ("green", "red") and map_ok:
+                print(
+                    json.dumps({"error": "baseline 판정 불가 (체크 없음/전부 skip) — LLM Verifier 로 검증하세요"}),
+                    file=sys.stderr,
+                )
+                return 1
+            results = [c for c in bl.get("results", []) if isinstance(c, dict)]
+            ev["commands"] = results[:20]
+            ev["baseline"] = bl
+            observed_ok = state == "green"
+        ev["verdict"] = "PASS" if observed_ok and map_ok and snapshot_ok else "FAIL"
         failing = [str(c.get("cmd")) for c in results if c.get("exit_code") not in (0, None)]
         if not snapshot_ok:
             ev["failure_sig"] = "snapshot-unavailable"
@@ -1968,6 +2075,9 @@ def main() -> int:
             ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
         elif state == "red":
             ev["failure_sig"] = "baseline-red"
+        elif no_change and not observed_ok:
+            ev["failure_sig"] = "tree-observe-failed"
+            failing = ["git status --porcelain"]
         elif unsafe_map_links(root):
             ev["verdict"] = "FAIL"
             ev["failure_sig"] = "unsafe-map-link"
@@ -1982,6 +2092,9 @@ def main() -> int:
                 ev["verdict"] = "FAIL"
                 ev["failure_sig"] = "criteria-contract"
                 failing = [str(u) for u in unmet]
+        if ev["verdict"] == "PASS":
+            # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (append 경로와 동일)
+            ev["tree_ref"] = current_tree_ref(root)
         write_event(root, qid, ev)
         fails = [str(f) for c in results for f in (c.get("fails") or [])]  # run_baseline 채집 정형 실패 줄
         print(
