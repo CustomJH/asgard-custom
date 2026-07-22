@@ -98,8 +98,8 @@ def _role_body(fname: str) -> str:
 _DELIVERY = {g: _role_body(f"asgard-{g}.md") for g in _DELIVERY_TIERS}
 _DELIVERY_READONLY = frozenset(g for g in _DELIVERY_TIERS if not role_writable(f"asgard-{g}.md"))
 
-# 편대장 → 코어 계약 상속원 — lead 신설 시 여기와 squad 툴·핸들러만 늘린다.
-_LEAD_BASE = {"freyja-lead": "freyja", "thor-lead": "thor"}
+# 편대장 → 코어 계약 상속원.
+_LEAD_BASE = {"thor-lead": "thor"}
 
 
 SKILL_LOAD_TOOL: dict = {
@@ -180,7 +180,7 @@ def _skill_support(
     """Return compact discovery context plus a guarded on-demand loader for one native role."""
     from ...skill_registry import load_skill_for_agent, resolve_skills, skill_catalog
 
-    if agent not in ("worker", "freyja", "freyja-lead", "thor", "thor-lead", "eitri", "mimir"):
+    if agent not in ("worker", "freyja", "thor", "thor-lead", "eitri", "mimir"):
         return "", [], {}
     project = root or os.getcwd()
     matched = None

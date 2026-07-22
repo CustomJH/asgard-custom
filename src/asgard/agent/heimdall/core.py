@@ -31,7 +31,7 @@ from .classify import (
     has_write_verbs,
     memory_write_intent,
 )
-from .dispatch import DeliveryDispatch, _freyja_gate_rejection, _safe_candidates
+from .dispatch import DeliveryDispatch
 from .journal import _log_classify
 from .planning import _resume_snapshot
 from .roles import (
@@ -502,23 +502,11 @@ class Heimdall:
                 self.cache_prompt_tokens += total
 
     # ── 딜리버리 디스패치 파사드 (구현 = dispatch.DeliveryDispatch) ──
-    _safe_candidates = staticmethod(_safe_candidates)
-    _freyja_gate_rejection = staticmethod(_freyja_gate_rejection)
-
-    def _freyja_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
-        return self._dispatchers.freyja_squad_handler(sid, worker_result_writes, cwd)
-
-    def _freyja_verdict_handler(self, sid: str, worker_result_writes: list[str], cwd: str, verdict_state: dict):
-        return self._dispatchers.visual_verdict_handler(sid, worker_result_writes, cwd, verdict_state)
-
     def _thor_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         return self._dispatchers.thor_squad_handler(sid, worker_result_writes, cwd)
 
     def _dispatch_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         return self._dispatchers.dispatch_handler(sid, worker_result_writes, cwd)
-
-    def _reject_freyja_final(self, sid: str, reason: str) -> str:
-        return self._dispatchers.reject_freyja_final(sid, reason)
 
     def _run_worker_waves(self, sid: str, request: str, units: list[dict], budget_note: str) -> None:
         return self._waves.run(sid, request, units, budget_note)
