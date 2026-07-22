@@ -412,9 +412,9 @@ class TrinityRun:
             return None
         _v = bj["verdict"]  # 판정층(⑤) — 의미색: PASS 녹·FAIL 적
         _mk, _cl = ("✔", theme.SUCCESS) if _v == "PASS" else ("✘", theme.DANGER)
+        _src = str(bj.get("baseline") or "무변경 관측")  # baseline null = 무변경 트리 관측 판정
         hd.on_text(
-            f"  {ui.paint(theme.ansi(_cl), _mk)} {ui.dim('베이스라인 ' + str(bj.get('baseline')) + ' → ')}"
-            f"{ui.paint(theme.ansi(_cl), _v)}\n"
+            f"  {ui.paint(theme.ansi(_cl), _mk)} {ui.dim('베이스라인 ' + _src + ' → ')}{ui.paint(theme.ansi(_cl), _v)}\n"
         )
         if bj["verdict"] == "FAIL":
             self.saw_red = True
@@ -775,6 +775,13 @@ class TrinityRun:
             return session
 
         fb = (lambda mv=mk_verifier: mv(m=None, rl="verifier", rp=hd.rp)) if self.rrp is not hd.rp else None
+        baseline_note = (
+            "\n하네스가 PASS 기록 시 프로젝트 베이스라인 체크(테스트 스위트)를 직접 실행해 증거로"
+            " 기록한다 — 전체 스위트를 재실행하지 마라. 변경 파일 열람·대상 국한 확인(해당 파일의"
+            " 테스트·스모크·grep 대조)만 수행하라. 스위트 red 는 하네스가 잡는다.\n"
+            if st.get("checks_available")
+            else "\n"
+        )
         r = hd._run_turn(
             mk_verifier,
             f"검증하라. 요청: {self.request}\ncriteria: {self.cls['criteria']}\n"
@@ -782,8 +789,10 @@ class TrinityRun:
             f"하니스 관측 변경 파일: {changed} (diff_lines={st.get('diff_lines', '?')}) — "
             f"`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
             "판정 범위는 위 하니스 관측 파일에 한정한다 — 워킹트리의 그 밖의 diff 는 타 세션 소유"
-            " 미커밋 작업일 수 있다: FAIL 사유가 아니라 참고 기록이다.\n"
-            "이 세션은 read-only Bash 가드가 있다 — 허용: 관측·git 읽기·검증 러너(pytest/ruff/ty,"
+            " 미커밋 작업일 수 있다: FAIL 사유가 아니라 참고 기록이다. criteria 를 새로 발명하지"
+            " 마라 — 위 criteria 밖의 관찰은 보고서에 참고로만 남긴다.\n"
+            + baseline_note
+            + "이 세션은 read-only Bash 가드가 있다 — 허용: 관측·git 읽기·검증 러너(pytest/ruff/ty,"
             " `uv run` 경유 포함)·`python -m pytest|compileall|py_compile`·`python -c '<쓰기 없는"
             " 스모크>'`. 파일 작성·히어독·리다이렉션·$VAR 은 차단된다 — 차단당한 명령의 변형"
             " 재시도로 턴을 태우지 말고 허용 레인으로 즉시 갈아타라.\n"
@@ -791,8 +800,8 @@ class TrinityRun:
             " `uv run` 은 환경 사정으로 실패할 수 있으니 실패하면 재시도 말고 `python -m` 으로"
             " 갈아타라 (같은 대상을 다른 러너로 통과시키면 앞선 실패는 해소로 인정된다).\n"
             "Bash 명령은 shell 연산자(; && || 리다이렉션)로 합치지 말고 각각 별도 호출하라.\n"
-            f"Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출.\n"
-            f"FAIL 이 접근 자체의 결함이면 structural=true 로 제출하라 (재계획 트리거).",
+            "Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출.\n"
+            "FAIL 이 접근 자체의 결함이면 structural=true 로 제출하라 (재계획 트리거).",
             fb,
         )
         # 마지막 verdict 호출이 최종 판정 (다중 호출 시 정정 인정)
@@ -811,7 +820,22 @@ class TrinityRun:
                 # 래퍼를 벗긴 신원 — 환경 사정으로 러너를 갈아탄 동일 대상 성공은 실패 해소다.
                 identity = str(command.get("command_hash") or _runner_identity(cmd))
                 final_exit_by_command[identity] = command.get("exit_code")
-        unresolved = [cmd for cmd, exit_code in final_exit_by_command.items() if exit_code != 0]
+
+        def _absence_probe(identity: str, exit_code) -> bool:
+            # grep/rg 매치 0건은 exit 1 — '패턴 부재' 확인의 성공이지 검증 실패가 아니다.
+            # 이걸 미해소 실패로 세면 정당한 PASS 가 뒤집혀 Worker 재시도+재검증 2턴이 공짜로
+            # 낭비된다 (26-07-23 감사). 부재 확인 외의 exit 1 (파일 없음 grep 등)도 exit 1 이라
+            # 구분 불가 — 관측 명령이므로 실패로 물어야 할 근거도 없다 (fail-open).
+            head = identity.split(" ", 1)[0] if identity else ""
+            if head in {"grep", "egrep", "fgrep", "rg"} or identity.startswith("git grep"):
+                return exit_code == 1
+            return False
+
+        unresolved = [
+            cmd
+            for cmd, exit_code in final_exit_by_command.items()
+            if exit_code != 0 and not _absence_probe(cmd, exit_code)
+        ]
         if not v:
             v = {
                 "verdict": "FAIL",
@@ -828,6 +852,7 @@ class TrinityRun:
             }
         elif (
             v.get("verdict") == "PASS"
+            and not st.get("checks_available")
             and not any(c.get("exit_code") == 0 and not _trivial_evidence(c.get("cmd", "")) for c in observed)
             and not (
                 no_change and any(c.get("exit_code") == 0 and _inspection_evidence(c.get("cmd", "")) for c in observed)
@@ -835,7 +860,11 @@ class TrinityRun:
         ):
             # 증거 없는 PASS 무효 — verifier 가 명령을 실제 실행하지 않았거나 true/echo 류
             # 무조건-성공 명령뿐이다 (Goodhart). 단 무변경 퀘스트의 관측 명령은 증거로 인정 —
-            # 아니면 no-op 이 영구 FAIL 교착 (26-07-21 "안녕" 실측: PASS 5연속 무효화 → 예산 소진)
+            # 아니면 no-op 이 영구 FAIL 교착 (26-07-21 "안녕" 실측: PASS 5연속 무효화 → 예산 소진).
+            # checks_available 이면 무효화하지 않는다 — PASS 기록 시 하네스가 베이스라인을 직접
+            # 실행해 결정론 증거를 붙인다 (pass_evidence 의 baseline-green 경로): Verifier 에게
+            # 같은 스위트 재실행을 강요하면 사이클당 동일 테스트 2~3중 실행이 된다 (26-07-23 감사).
+            # red 면 완료 퍼널이 baseline-red 로 거부하므로 게이트 무결성은 유지된다.
             v = {
                 "verdict": "FAIL",
                 "criteria": v.get("criteria") or self.cls["criteria"],

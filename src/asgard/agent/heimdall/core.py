@@ -386,13 +386,21 @@ class Heimdall:
             wr = has_write_verbs(request)
             d = {
                 "write_expected": wr,
-                "ambiguous": wr,  # write 인데 범위 미상 — Verifier 승격 신호는 유지
+                # ambiguous 금지 — 분류기 파싱 실패는 요청이 모호하다는 신호가 아니라 분류기
+                # 장애다. ambiguous=True 는 게이트-우선(BASELINE_VERIFY) 자격을 박탈해 모든
+                # 검증을 LLM Verifier 로 밀었다 (26-07-23 감사: flaky classify 1회가 소형 수정을
+                # 최중량 파이프라인으로 승격). 물리 가드(민감 경로·big diff·sig_risk·테스트
+                # 삭제)는 ambiguous 와 무관하게 그대로 작동한다.
+                "ambiguous": False,
                 "destructive": bool(_DESTRUCTIVE_PAT.search(request.lower())),
                 "external_research": False,
                 "shared": False,
                 "parallel_requested": wr and bool(_PARALLEL_WORK_PAT.search(request.lower())),
                 "criteria": [],
-                "task_class": "deep" if wr else "standard",  # write 미상은 종전대로 최대 예산
+                # deep(12턴) 폴백 폐기 — 실측(state/classify.jsonl)에서 fallback 승격 2건 모두
+                # 소형 요청이었고 그중 1건은 40초 뒤 trivial 재분류. standard(6턴)면 충분하고,
+                # 진짜 deep 은 FAIL/재계획 경로가 자연 승격한다.
+                "task_class": "standard",
             }
             _log_classify(self.root, {"event": "classify", "source": "fallback", **_pred_fields(d)})
             return d
@@ -662,6 +670,11 @@ class Heimdall:
         except Exception:
             return ""
 
+    @staticmethod
+    def _porcelain_paths(snapshot: str) -> set[str]:
+        """porcelain 스냅샷 → 경로 집합 — 소급 승격의 귀속 대조용 (rename 은 목적지 경로)."""
+        return {ln[3:].split(" -> ")[-1].strip() for ln in snapshot.splitlines() if len(ln) > 3}
+
     def _rewrite_lagom_text(self, request: str, draft: str, violations: list[str]) -> str:
         """도구 없는 단발 재작성. 원문은 데이터이며 새 사실을 추가할 수 없다."""
         system = (
@@ -736,7 +749,17 @@ class Heimdall:
             raise TurnCancelled()
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
         self._track_cache(r)
-        if r.writes or self._worktree_dirty() != before:
+        # 소급 승격 판정 — 전 트리 지문 비교(≠)는 병렬 세션·빌드 아티팩트의 무관 드리프트로도
+        # 순수 질문을 Trinity+Verifier 로 승격시켰다 (26-07-23 감사). 이 세션의 write 로 귀속
+        # 가능한 변화만 승격한다: 도구 관측 write(r.writes), 또는 드리프트 경로가 이 세션의
+        # 실행 명령 텍스트에 등장 (bash 우회 write 백스톱 — read-only 가드가 1차 방어).
+        after = self._worktree_dirty()
+        drift = self._porcelain_paths(after) ^ self._porcelain_paths(before) if after != before else set()
+        cmd_text = " ".join(str(c.get("cmd", "")) for c in r.commands if isinstance(c, dict))
+        touched = sorted(p for p in drift if p and p in cmd_text)
+        if drift and not r.writes and not touched:
+            _log_classify(self.root, {"event": "misroute", "route": "direct", "external_drift": sorted(drift)[:10]})
+        if r.writes or touched:
             _log_classify(self.root, {"event": "misroute", "route": "direct", "actual_write": True})
             self.on_text("\n⚠ DIRECT 분류였지만 write 감지 — 소급 검증 경로 진입 (Canon 10)\n")
             cls = {
