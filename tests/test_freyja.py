@@ -45,28 +45,28 @@ class TestFreyjaBaseline(unittest.TestCase):
                 {name for name, _ in skill_registry.resolve_skills(root, "랜딩 페이지 디자인", "freyja")},
             )
 
-    def test_complete_upstream_snapshot_and_emil_are_byte_locked(self):
+    def test_complete_upstream_snapshot_and_restraint_gate_are_byte_locked(self):
         plugin = skill_registry.bundled_plugins()["freyja-design"]
         skill_root = Path(plugin["root"], "skills", "asgard-freyja-design")
-        upstream_root = skill_root / "references" / "oh-my-design"
+        upstream_root = skill_root / "references" / "vanadis"
         files = [item for item in upstream_root.rglob("*") if item.is_file()]
         digest = hashlib.sha256()
         for item in sorted(files, key=lambda value: value.relative_to(upstream_root).as_posix()):
             relative = item.relative_to(upstream_root).as_posix().encode()
             digest.update(relative + b"\0" + item.read_bytes())
 
-        self.assertEqual(len(files), 3265)
-        self.assertEqual(digest.hexdigest(), "04d060bbca898e09afac1b20c5566e2f431e48acac4ee4530b3ac95e3c0cb878")
+        self.assertEqual(len(files), 3264)
+        self.assertEqual(digest.hexdigest(), "6f96fa2319889b8e29ffe06215d9ca7700cdc8912bf130242204132f32c3e453")
         self.assertEqual(len(list((upstream_root / "skills").glob("*/SKILL.md"))), 21)
-        self.assertEqual(len(list((upstream_root / "agents").glob("omd-*.md"))), 18)
-        emil = skill_registry.show_skill_resource(
+        self.assertEqual(len(list((upstream_root / "agents").glob("vanadis-*.md"))), 18)
+        restraint = skill_registry.show_skill_resource(
             "",
             "asgard-freyja-design",
-            "references/emil/freyja-emil-simplicity/SKILL.md",
+            "references/vanadis-restraint/SKILL.md",
         )
         self.assertEqual(
-            hashlib.sha256(emil.encode()).hexdigest(),
-            "3acf61732f91c350084b79b1751179512eb4c8c0f658c2d2d4eec6e6ed642ef4",
+            hashlib.sha256(restraint.encode()).hexdigest(),
+            "9bbcbb2a23555b0184dff3ae10ec652da06a7746d35582785959f2a2883e935f",
         )
 
     def test_design_runtime_reads_references_and_extracts_binary_assets(self):
