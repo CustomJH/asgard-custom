@@ -132,7 +132,10 @@ def settings_state(root: str) -> dict:
     from ..providers import project_section
     from ..settings import load_global, load_project, section
 
-    effective = {name: {key: value for key, value in section(name, root).items() if key in keys} for name, keys in _SETTING_KEYS.items()}
+    effective = {
+        name: {key: value for key, value in section(name, root).items() if key in keys}
+        for name, keys in _SETTING_KEYS.items()
+    }
     effective["trinity_mode"] = project_section(root, "trinity.mode")
     return {
         "global": _safe_sections(load_global()),
@@ -333,9 +336,7 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
         from ..agent.tools import _kill_group
 
         _kill_group(process)
-        task.update(
-            {"status": "blocked", "updated": time.time(), "result": "작업이 중지되었습니다.", "stopped": True}
-        )
+        task.update({"status": "blocked", "updated": time.time(), "result": "작업이 중지되었습니다.", "stopped": True})
     return _json_body(200, _public_task(task))
 
 
@@ -563,12 +564,16 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
 
-def _bind(host: str, port: int, root: str | None = None) -> ThreadingHTTPServer:
+class _RootServer(ThreadingHTTPServer):
+    root: str
+
+
+def _bind(host: str, port: int, root: str | None = None) -> _RootServer:
     try:
-        httpd = ThreadingHTTPServer((host, port), _Handler)
+        httpd = _RootServer((host, port), _Handler)
     except OSError:
-        httpd = ThreadingHTTPServer((host, 0), _Handler)
-    httpd.root = os.path.abspath(root or os.getcwd())  # type: ignore[attr-defined]
+        httpd = _RootServer((host, 0), _Handler)
+    httpd.root = os.path.abspath(root or os.getcwd())
     return httpd
 
 
@@ -638,8 +643,9 @@ def run_desktop(
     ui.ok(f"Asgard Desktop → {url}")
     ui.step("종료: Ctrl-C")
     if open_browser:
+
         def launch() -> None:
-            if prefer_native and _open_native(url, httpd.root):  # type: ignore[attr-defined]
+            if prefer_native and _open_native(url, httpd.root):
                 httpd.shutdown()
                 return
             if prefer_native:
