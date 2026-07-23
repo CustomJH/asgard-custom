@@ -318,7 +318,9 @@ class AgentSession:
         self._observe_tool(call.name, call.input)
         from .. import ui
 
-        self.on_status(ui.oneline(f"{sym} {detail}", 60))
+        # 표시 폭 절단은 렌더 계층(독 _status_str·ui.spin)이 터미널 폭 기준으로 담당 —
+        # 여기서 좁게 자르면 실행 중인 명령 전문 가독이 죽는다. 폭주 방어 상한만 건다.
+        self.on_status(ui.oneline(f"{sym} {detail}", 240))
         t0 = time.monotonic()
         out = execute_tool(self.registry, call.name, call.input, ctx)
         self.on_status(None)
@@ -440,7 +442,7 @@ class AgentSession:
         self.messages.append({"role": "user", "content": user_content})
         result = SessionResult(text="", stop_reason="")
         for _ in range(self.max_iterations):
-            from ..i18n import t as _t
+            from ..i18n import thinking as _thinking
 
             if self._cancelled():
                 result.stop_reason = "cancelled"
@@ -455,7 +457,7 @@ class AgentSession:
             if self._cancelled():
                 result.stop_reason = "cancelled"
                 return result
-            self.on_status(_t("thinking"))
+            self.on_status(_thinking(self.role))
             jid, j0 = self._journal_started("anthropic")
             t0, first = time.monotonic(), True
             parts: list[str] = []
@@ -558,7 +560,7 @@ class AgentSession:
 
         inject = self.cache_enabled and openai_cache_markers_supported(self.rp.base_url, self.rp.model)
 
-        from ..i18n import t as _t
+        from ..i18n import thinking as _thinking
 
         for _ in range(self.max_iterations):
             if self._cancelled():
@@ -576,7 +578,7 @@ class AgentSession:
             if self._cancelled():
                 result.stop_reason = "cancelled"
                 return result
-            self.on_status(_t("thinking"))
+            self.on_status(_thinking(self.role))
             jid, j0 = self._journal_started("openai_compat")
             jcounts: dict[str, int] = {}
             try:
@@ -741,7 +743,7 @@ class AgentSession:
         else:
             pending_input = user_content
             previous_response_id = getattr(self, "_openai_response_id", None)
-        from ..i18n import t as _t
+        from ..i18n import thinking as _thinking
 
         for _ in range(self.max_iterations):
             if self._cancelled():
@@ -753,7 +755,7 @@ class AgentSession:
             if self._cancelled():
                 result.stop_reason = "cancelled"
                 return result
-            self.on_status(_t("thinking"))
+            self.on_status(_thinking(self.role))
             jid, j0 = self._journal_started("codex_responses" if codex_backend else "openai_responses")
             kwargs: dict = {
                 "model": self.rp.model,

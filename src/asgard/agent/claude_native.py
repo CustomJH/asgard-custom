@@ -209,7 +209,7 @@ async def _run_async(sess, user_content: str, result) -> None:
     from claude_agent_sdk.types import HookContext, HookInput, HookJSONOutput
 
     from ..hooks.readonly_guard import READONLY_BASH_HINT, is_readonly_bash_safe
-    from ..i18n import t as _t
+    from ..i18n import thinking as _thinking
     from . import tools as native_tools
     from .tool_kernel import ROLE_CAPABILITIES
 
@@ -324,7 +324,7 @@ async def _run_async(sess, user_content: str, result) -> None:
     )
 
     pending: dict[str, tuple[str, str, float, int]] = {}  # tool_use_id → (sym, detail, t0, cmd_idx)
-    sess.on_status(_t("thinking"))
+    sess.on_status(_thinking(sess.role))
     t0 = time.monotonic()
     first = True
     streamed = False  # 델타 수신 여부 — 수신 중이면 TextBlock 전체 재방출 억제 (이중 출력 방지)
@@ -451,7 +451,8 @@ def _observe_use(sess, result, b, pending) -> None:
 
     args = dict(b.input)
     sym, detail = sess._tool_preview(b.name, args)
-    sess.on_status(_ui.oneline(f"{sym} {detail}", 60))
+    # 표시 폭 절단은 렌더 계층 담당 (AgentSession._execute 와 동일 규칙) — 폭주 방어 상한만.
+    sess.on_status(_ui.oneline(f"{sym} {detail}", 240))
 
     # Claude Code built-ins bypass ToolKernel, so adapt their activity back to the
     # canonical recap shape used by API-backed native sessions.

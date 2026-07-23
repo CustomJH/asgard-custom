@@ -144,6 +144,8 @@ _M: dict[str, tuple[str, str]] = {
     "needs_base_url": ("base_url required", "base_url이 필요해요"),
     "thought": ("Runes read", "룬 해독"),
     "thinking": ("reading the runes…", "룬을 읽는 중…"),
+    # 분류 침묵 구간 — 문지기가 요청의 길을 살피는 상황극 (thinking() 풀과 별개의 고정 문구)
+    "classifying": ("Heimdall surveys the roads from the gate…", "헤임달이 관문에서 길을 살피는 중…"),
     "ph_input": (
         "Ask anything — / commands · ! bash · \\⏎ newline",
         "무엇이든 입력하세요 — / 커맨드 · ! bash · \\⏎ 줄바꿈",
@@ -312,3 +314,70 @@ def t(key: str, **kw) -> str:
     en, ko = _M.get(key, (key, key))
     s = ko if _LANG == "ko" else en
     return s.format(**kw) if kw else s
+
+
+# ── 침묵 구간 라이브 라벨 — 등불 옆 상황극 문구 (단조로움 방지) ─────────────────
+# 모델이 생각하는 동안 매번 다른 세계관 문구가 뜬다. 공용 풀 + 역할(페르소나)별 풀에서
+# 무작위 — 역할 풀이 있으면 절반 확률로 우선해 "지금 누가 무엇을 하는지"가 배어나게.
+# (en, ko) 규약은 _M 과 동일. t() 키가 아닌 전용 함수인 이유 = 호출마다 무작위 선택.
+_THINKING_COMMON: list[tuple[str, str]] = [
+    ("reading the runes…", "룬을 읽는 중…"),
+    ("Huginn and Muninn are circling…", "후긴과 무닌이 하늘을 도는 중…"),
+    ("drawing from Mimir's well…", "미미르의 샘에서 지혜를 긷는 중…"),
+    ("the Norns are weaving the threads…", "노른들이 운명의 실을 잣는 중…"),
+    ("leafing through the sagas…", "사가를 뒤적이는 중…"),
+    ("tracing Yggdrasil's branches…", "위그드라실 가지를 더듬는 중…"),
+    ("gazing out from Hlidskjalf…", "흘리드스캴프에서 아홉 세계를 굽어보는 중…"),
+    ("listening for footsteps on the Bifrost…", "비프로스트의 발소리에 귀 기울이는 중…"),
+]
+_THINKING_ROLE: dict[str, list[tuple[str, str]]] = {
+    "direct": [
+        ("Heimdall handles it at the gate…", "헤임달이 관문에서 직접 처리하는 중…"),
+        ("a swift stroke of the watchman's hand…", "문지기가 손수 빠르게 매듭짓는 중…"),
+    ],
+    "worker": [
+        ("stoking the forge…", "대장간 화덕을 달구는 중…"),
+        ("hammering at the anvil…", "모루 위에서 망치질하는 중…"),
+        ("tempering the blade…", "칼날을 벼리는 중…"),
+    ],
+    "thinker": [
+        ("weighing the paths at the crossroads…", "갈림길에서 길을 저울질하는 중…"),
+        ("unrolling the war maps…", "전략 지도를 펼치는 중…"),
+        ("taking counsel at the long table…", "긴 탁자에 모여 숙의하는 중…"),
+    ],
+    "verifier": [
+        ("weighing the evidence on the scales…", "증거를 저울에 다는 중…"),
+        ("holding the work up to the light…", "결과물을 빛에 비춰 보는 중…"),
+        ("Gjallarhorn in hand, watching…", "걀라르호른을 쥐고 지켜보는 중…"),
+    ],
+    "thor": [
+        ("summoning the thunderheads…", "천둥구름을 부르는 중…"),
+        ("gripping Mjölnir tighter…", "묠니르를 고쳐 쥐는 중…"),
+    ],
+    "freyja": [
+        ("threading Brísingamen…", "브리싱가멘 목걸이를 꿰는 중…"),
+        ("mixing pigments in Fólkvangr…", "폴크방에서 물감을 개는 중…"),
+        ("laying gold leaf on the panel…", "패널에 금박을 펴 바르는 중…"),
+    ],
+    "eitri": [
+        ("firing the kilns of Nidavellir…", "니다벨리르의 가마에 불을 지피는 중…"),
+        ("truing the wheelwork…", "톱니를 맞물리는 중…"),
+    ],
+    "loki": [
+        ("prodding at the seams for mischief…", "빈틈을 찔러 보며 장난을 꾸미는 중…"),
+        ("tugging at loose threads…", "풀린 실밥을 잡아당기는 중…"),
+    ],
+    "mimir": [
+        ("stirring the well of memory…", "기억의 샘을 휘젓는 중…"),
+    ],
+}
+
+
+def thinking(role: str | None = None) -> str:
+    """침묵 구간 라벨 한 개 — 호출마다 달라진다. role 은 페르소나명('-lead' 접미 무시)."""
+    import random
+
+    role_pool = _THINKING_ROLE.get((role or "").removesuffix("-lead"), [])
+    pool = role_pool if role_pool and random.random() < 0.5 else _THINKING_COMMON
+    en, ko = random.choice(pool)
+    return ko if _LANG == "ko" else en

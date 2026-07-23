@@ -810,14 +810,13 @@ class _Dock:
 
         if not self._label:
             return ""
-        fr = ui._FRAMES[self._frame % len(ui._FRAMES)]
         secs = time.monotonic() - self._t0
         tail = f" · {secs:.0f}s" if secs >= 1 else ""
         budget = max(10, ui.term_cols() - 8 - len(tail))  # 랩 방지 절단 (ui.spin 과 동일 규칙)
         # 단일 물리 행 불변식 — 상태 행 페인트는 고정 커서 산술(_paint_status)이라 개행이
         # 살아 나가면 박스 보더를 덮어쓴다. 호출측 클램프와 별개로 여기서 최종 방어.
         label = ui.oneline(self._label, budget)
-        return f"  {ui.paint(theme.ansi(theme.ACCENT_BLUE), fr)} {label}{ui.dim(tail)}"
+        return f"  {ui.lantern(self._frame)} {label}{ui.dim(tail)}"
 
     def _statusline_str(self) -> str:
         ctx = _PT_CTX

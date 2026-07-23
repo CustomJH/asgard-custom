@@ -1,6 +1,6 @@
 """Terminal UX — branded + colored on a tty, plain otherwise (mirrors install.sh's phased look).
 Every command routes through head()/phase()/spin()/ok()/done() so the CLI reads like the installer:
-a brand mark, numbered phases, a braille spinner for slow steps, ✔/!/✗ results.
+a brand mark, numbered phases, a flickering gate-lantern for slow steps, ✔/!/✗ results.
 `--quiet` suppresses decorative lines (results still print). NO_COLOR / non-tty → no ANSI, no spinner."""
 
 import itertools
@@ -22,7 +22,20 @@ _INFO = theme.ansi(theme.ACCENT_BLUE)
 _OK = theme.ansi(theme.SUCCESS)
 _WARN = theme.ansi(theme.WARNING)
 _FAIL = theme.ansi(theme.DANGER)
-_FRAMES = "⣾⣽⣻⢿⡿⣟⣯⣷"
+# 관문의 등불 — 활동 중 신호. 회전 스피너가 아니라 금빛 불꽃의 불규칙 명멸(밝기 요동 + ✦/✧ 교대)로
+# "살아서 일하고 있다"를 전한다. 순서를 비주기적으로 둬 기계적 회전감을 없앤다. 독 상태 행·spin 공용.
+_LANTERN = [
+    ("✦", theme.LOGO_GRAD[0]),  # 확 밝아지는 순간
+    ("✦", theme.LOGO_GRAD[2]),
+    ("✧", theme.LOGO_GRAD[1]),
+    ("✦", theme.LOGO_GRAD[3]),
+    ("✦", theme.LOGO_GRAD[1]),
+    ("✧", theme.LOGO_GRAD[4]),
+    ("✦", theme.LOGO_GRAD[2]),
+    ("✦", theme.LOGO_GRAD[0]),
+    ("✧", theme.LOGO_GRAD[2]),
+    ("✦", theme.LOGO_GRAD[1]),
+]
 _STEP = 0
 _STEPS = 0
 
@@ -68,6 +81,12 @@ def dim(s: str) -> str:
 
 def _mark() -> str:
     return paint(_GOLD, _MARK)
+
+
+def lantern(i: int) -> str:
+    """i번째 등불 프레임 (painted) — 활동 스트림·독 상태 행의 라이브 신호."""
+    glyph, hexc = _LANTERN[i % len(_LANTERN)]
+    return paint(theme.ansi(hexc), glyph)
 
 
 def head(action: str, steps: int = 0) -> None:
@@ -159,7 +178,7 @@ class bar:
 
 
 class spin:
-    """Braille spinner for a slow step. `with ui.spin('installing…'): subprocess.run(..., capture)`.
+    """Flickering gate-lantern for a slow step. `with ui.spin('installing…'): subprocess.run(..., capture)`.
     No-op (just runs the body) on non-tty / --quiet. Clears its line on exit so the ✔ prints clean."""
 
     def __init__(self, label: str) -> None:
@@ -178,17 +197,17 @@ class spin:
         import shutil
 
         t0 = time.monotonic()
-        for fr in itertools.cycle(_FRAMES):
+        for i in itertools.count():
             if self._stop.is_set():
                 break
-            # 라벨을 터미널 폭에 맞춰 절단 — 넘치면 줄바꿈이 나서 \r 리라이트가 깨진다(스피너가
+            # 라벨을 터미널 폭에 맞춰 절단 — 넘치면 줄바꿈이 나서 \r 리라이트가 깨진다(등불이
             # 줄줄이 찍힘). 프리픽스 "  X " = 4칸. 라벨은 순수 텍스트 전제(ANSI 넣지 말 것 — 폭 오산).
             secs = time.monotonic() - t0
             tail = f" · {secs:.0f}s" if secs >= 1 else ""
             width = shutil.get_terminal_size((80, 20)).columns
             budget = max(10, width - 5 - len(tail))
             label = self.label if len(self.label) <= budget else self.label[: budget - 1] + "…"
-            sys.stdout.write(f"\r\x1b[K  {paint(_INFO, fr)} {label}{dim(tail)}")
+            sys.stdout.write(f"\r\x1b[K  {lantern(i)} {label}{dim(tail)}")
             sys.stdout.flush()
             time.sleep(0.08)
 

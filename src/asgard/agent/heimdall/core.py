@@ -915,7 +915,7 @@ class Heimdall:
         self._prepare_map(request)
         # cancel_event 는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
-        self.on_status(t("thinking"))  # 분류도 모델 호출 — 침묵 구간 커버
+        self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (문지기가 길을 살피는 문구)
         try:
             cls = self._classify(request)
         finally:
