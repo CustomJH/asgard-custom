@@ -44,12 +44,17 @@ class Evidence:
     line: int
     confidence: str = "confirmed"
     detail: str = ""  # 부가 맥락 — base class, URL, broker 등
+    # 선언자 본문 끝 줄 — 라우트/커맨드/잡/리스너처럼 본문을 소유하는 증거만 0 초과.
+    # 그래프 빌더가 [line, scope_end] 포함 관계로 개념→개념 플로우 엣지를 만든다.
+    scope_end: int = 0
 
     def __post_init__(self) -> None:
         if self.kind not in EVIDENCE_KINDS:
             raise ValueError(f"unknown evidence kind: {self.kind}")
         if self.confidence not in CONFIDENCE:
             raise ValueError(f"unknown confidence: {self.confidence}")
+        if self.scope_end and self.scope_end < self.line:
+            raise ValueError(f"scope_end precedes line: {self.scope_end} < {self.line}")
 
     @property
     def node_id(self) -> str:

@@ -152,11 +152,14 @@ def map_trace(
     from_: str = typer.Option(..., "--from", help="node id, e.g. external_service:stripe or file:src/app.py"),
     depth: int = typer.Option(2, "--depth"),
     direction: str = typer.Option("both", "--direction", help="both | upstream | downstream"),
+    kinds: str = typer.Option(
+        "", "--kinds", help="follow only these edge kinds (comma list of declares,calls,touches,uses,emits)"
+    ),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.map import run_map_trace
 
-    raise typer.Exit(run_map_trace(from_, depth=depth, direction=direction, json_out=json_))
+    raise typer.Exit(run_map_trace(from_, depth=depth, direction=direction, kinds=kinds, json_out=json_))
 
 
 @map_app.command("view", help="build and open the standalone relation-graph view")

@@ -214,7 +214,8 @@ def run_map_scan(*, dry_run: bool = False, json_out: bool = False, quiet: bool =
     else:
         ui.head("map · relation graph")
         ui.ok(
-            f"{result.files_scanned} files → {result.evidence_count} evidence · {result.nodes} nodes · {result.edges} edges"
+            f"{result.files_scanned} files → {result.evidence_count} evidence · {result.nodes} nodes"
+            f" · {result.edges} edges · {result.flows} flows"
         )
         if dry_run:
             ui.step(("would update " if result.changed else "already current ") + result.graph_md_path)
@@ -223,13 +224,16 @@ def run_map_scan(*, dry_run: bool = False, json_out: bool = False, quiet: bool =
     return 0
 
 
-def run_map_trace(node_id: str, *, depth: int = 2, direction: str = "both", json_out: bool = False) -> int:
+def run_map_trace(
+    node_id: str, *, depth: int = 2, direction: str = "both", kinds: str = "", json_out: bool = False
+) -> int:
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out)
     from ..map_graph import GraphError, graph_state, related_records, trace
 
+    kind_set = {part.strip() for part in kinds.split(",") if part.strip()} or None
     try:
-        hops = trace(root, node_id, depth=depth, direction=direction)
+        hops = trace(root, node_id, depth=depth, direction=direction, kinds=kind_set)
     except (GraphError, OSError) as exc:
         if json_out:
             print(json.dumps({"error": str(exc)}, ensure_ascii=False))
@@ -246,7 +250,9 @@ def run_map_trace(node_id: str, *, depth: int = 2, direction: str = "both", json
     if not hops:
         ui.step("no adjacent edges — 인접 지도가 비어 있다 (전수 부재의 증거가 아님)")
     for hop in hops:
-        mark = "" if hop["confidence"] == "confirmed" else " ?"
+        mark = (
+            "" if hop["confidence"] == "confirmed" and hop.get("via_confidence", "confirmed") == "confirmed" else " ?"
+        )
         ui.step(f"{'  ' * hop['depth']}{hop['via']} → {hop['id']}{mark}")
     for record in records:
         ui.step(f"관련 기록: {record['title']} [{record['match']}]")

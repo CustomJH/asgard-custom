@@ -428,10 +428,10 @@ class TestScanGraph(Base):
     def test_scan_preserves_more_than_forty_relations_from_one_file(self):
         from asgard.map_graph import graph_state, scan_graph
 
-        statements = "\n".join(
-            f'<select id="find{index}">SELECT * FROM TABLE_{index}</select>' for index in range(60)
+        statements = "\n".join(f'<select id="find{index}">SELECT * FROM TABLE_{index}</select>' for index in range(60))
+        self.write(
+            "svc/src/main/resources/mapper/LargeMapper.xml", f'<mapper namespace="LargeMapper">{statements}</mapper>'
         )
-        self.write("svc/src/main/resources/mapper/LargeMapper.xml", f'<mapper namespace="LargeMapper">{statements}</mapper>')
         result = scan_graph(self.root)
         state = graph_state(self.root)
         assert state is not None
@@ -476,6 +476,22 @@ class TestScanGraph(Base):
         with self.assertRaises(GraphOwnershipError):
             scan_graph(self.root)
 
+    def test_force_reowns_human_owned_graph_md(self):
+        # init 경로 — force 는 소유권 거부만 우회해 현재 디렉토리 스캔 결과로 엎어쓴다.
+        from asgard.map_graph import GraphOwnershipError, scan_graph
+
+        self.seed()
+        self.write(".asgard/map/GRAPH.md", "# my own notes\n")
+        result = scan_graph(self.root, force=True)
+        body = open(result.graph_md_path, encoding="utf-8").read()
+        self.assertNotIn("# my own notes", body)
+        scan_graph(self.root)  # 재귀속 후엔 asgard 소유 — 비강제 스캔이 다시 통과한다
+        # force 는 예약 파일명 충돌(안전 검사)은 우회하지 않는다
+        os.remove(os.path.join(self.root, ".asgard", "map", "GRAPH.md"))
+        self.write(".asgard/map/graph.md", "# imposter\n")
+        with self.assertRaises(GraphOwnershipError):
+            scan_graph(self.root, force=True)
+
     def test_scans_production_names_containing_test_and_rejects_state_symlink(self):
         from asgard.map_graph import GraphError, scan_graph
 
@@ -490,6 +506,133 @@ class TestScanGraph(Base):
         os.symlink(outside, os.path.join(self.root, ".asgard", "state"))
         with self.assertRaises(GraphError):
             scan_graph(self.root)
+
+
+class TestFlows(Base):
+    """개념→개념 플로우 엣지 — 핸들러→자원 조인.
+
+    선언자(라우트/커맨드/잡/리스너) 본문 스팬이 소비 증거(db/api/event/서비스)를 포함하면
+    핸들러→자원 엣지를 만든다. 스팬이 근사(비구조 확장자)거나 증거가 candidate 면 candidate.
+    """
+
+    def edges_of(self):
+        from asgard.map_graph import graph_state
+
+        state = graph_state(self.root)
+        assert state is not None
+        return {(e["source"], e["target"], e["kind"]): e["confidence"] for e in state["edges"]}, state
+
+    def test_python_handler_flows_confirmed_by_ast_span(self):
+        from asgard.map_graph import scan_graph
+
+        self.seed()
+        result = scan_graph(self.root)
+        edges, state = self.edges_of()
+        # GET /users 핸들러 본문의 스트라이프 호출 — AST 스팬 + 양측 confirmed → confirmed
+        self.assertEqual(
+            edges.get(("route:GET_/users", "api_call:https://api.stripe.com/v1/charges", "calls")), "confirmed"
+        )
+        # POST /users 핸들러의 커서 실행 — db 증거가 candidate 라 플로우도 candidate
+        self.assertEqual(edges.get(("route:POST_/users", "db_access:connection.execute", "touches")), "candidate")
+        # 모듈 상단 import(외부 서비스, line 1)는 어느 스팬에도 안 들어간다 — 지어내지 않는다
+        self.assertNotIn(("route:GET_/users", "external_service:stripe", "uses"), edges)
+        self.assertEqual(result.flows, state["counts"]["flows"])
+        self.assertGreaterEqual(result.flows, 2)
+
+    def test_java_method_body_flows_and_listener_emit(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write(
+            "src/main/java/com/acme/api/MeterController.java",
+            """
+package com.acme.api;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.client.RestTemplate;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+@RestController
+public class MeterController {
+    private final JdbcTemplate jdbcTemplate;
+    private final RestTemplate restTemplate;
+
+    @GetMapping("/meters")
+    public String list() {
+        jdbcTemplate.queryForList("SELECT * FROM TCFG_METER");
+        return restTemplate.getForObject("https://vendor.example.com/v1/meters", String.class);
+    }
+}
+""",
+        )
+        self.write("src/main/java/com/acme/stream/FrameListener.java", _JAVA_LISTENER)
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        # 메서드 본문 중괄호 스팬(.java 결정론) — 양측 confirmed → confirmed 플로우
+        self.assertEqual(
+            edges.get(("route:GET_/meters", "api_call:https://vendor.example.com/v1/meters", "calls")), "confirmed"
+        )
+        # jdbc 수신자 타입은 정적으로 못 묶는다(candidate) — 플로우도 candidate
+        self.assertEqual(
+            edges.get(("route:GET_/meters", "db_access:jdbcTemplate.queryForList", "touches")), "candidate"
+        )
+        # 리스너 본문의 send — 구독 핸들러 → 이벤트 emits
+        emit_edges = [key for key in edges if key[2] == "emits" and key[0].startswith("event:")]
+        self.assertTrue(emit_edges)
+        # 어노테이션 없는 emit() 메서드의 send 는 선언자가 아니다 — 플로우 소스가 되지 않는다
+        self.assertNotIn("event:billing.raw", {key[0] for key in edges})
+
+    def test_tsjs_inline_handler_flow_capped_candidate(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write(
+            "web/inline.ts",
+            """
+import express from 'express';
+const app = express();
+app.get('/inline', async (req, res) => {
+  const data = await fetch('https://api.example.com/v1/data');
+  res.json(data);
+});
+""",
+        )
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        # 정규식 근사 스팬(.ts) — 양측 confirmed 여도 candidate 로 캡한다
+        self.assertEqual(
+            edges.get(("route:GET_/inline", "api_call:https://api.example.com/v1/data", "calls")), "candidate"
+        )
+
+    def test_flows_projected_into_graph_md(self):
+        from asgard.map_graph import scan_graph
+
+        self.seed()
+        result = scan_graph(self.root)
+        body = open(result.graph_md_path, encoding="utf-8").read()
+        self.assertIn("## Flows", body)
+        self.assertIn("- `GET /users` — calls `https://api.stripe.com/v1/charges`", body)
+        self.assertIn("touches `connection.execute`?", body)  # candidate 플로우는 `?` 표기
+
+    def test_trace_kinds_filter_joins_db_to_route(self):
+        from asgard.map_graph import GraphError, scan_graph, trace
+
+        self.seed()
+        scan_graph(self.root)
+        # DB 앵커 업스트림 — 어떤 핸들러가 이 접근을 소유하는가
+        hops = trace(self.root, "db_access:connection.execute", direction="upstream", kinds={"touches"})
+        ids = {hop["id"] for hop in hops}
+        self.assertIn("route:POST_/users", ids)
+        route_hop = next(hop for hop in hops if hop["id"] == "route:POST_/users")
+        self.assertEqual(route_hop["via"], "touches")
+        self.assertEqual(route_hop["via_confidence"], "candidate")
+        # declares 만 따라가면 플로우는 배제된다
+        hops = trace(self.root, "db_access:connection.execute", direction="upstream", kinds={"declares"})
+        self.assertNotIn("route:POST_/users", {hop["id"] for hop in hops})
+        with self.assertRaises(GraphError):
+            trace(self.root, "db_access:connection.execute", kinds={"accesses_db"})
+        with self.assertRaises(GraphError):
+            trace(self.root, "db_access:connection.execute", kinds=set())
 
 
 class TestTrace(Base):
@@ -596,6 +739,26 @@ class TestView(Base):
         self.assertIn("소스 재확인", html)  # candidate 증거 계약 문구
         for kind in ("declares", "calls", "touches", "uses"):
             self.assertIn(kind, html)  # 엣지 kind 범례 사전
+
+    def test_view_composition_contract(self):
+        """종류 필터·선택이 실제 구성(파일 경유 연계)을 보존한다.
+
+        엣지는 전부 file→개념 별 모양이라, 파일을 필터로 끄면 연계가 통째로
+        사라지고 선택 이웃도 파일 1-hop 에 갇힌다 — 그 회귀를 막는 가드.
+        """
+        from asgard.map_graph import build_view, scan_graph
+
+        self.seed()
+        scan_graph(self.root)
+        html = build_view(self.root)
+        self.assertIn("viaN[a.id]", html)  # 은닉 파일 접점 스터브(필터 off 시 구성 보존)
+        self.assertIn("bridges.has(e.source)", html)  # 파일 경유 2-hop 구간 하이라이트
+        self.assertIn("bridges.has(e.source) && e.target!==selected.id", html)  # 이웃 2-hop 편입
+        self.assertIn("연계 노드", html)  # 상세 패널 — 파일 경유 실제 연계 목록
+        self.assertIn("data-nid", html)  # 연계 목록 클릭 → 선택 이동
+        self.assertIn("function soloKind", html)  # Alt+클릭 단독 보기
+        self.assertIn("previewKind", html)  # 칩 호버 미리보기(종류 구분)
+        self.assertIn('"emits"', html)  # 개념→개념 플로우 엣지 언어
 
     def test_view_without_state_raises(self):
         from asgard.map_graph import GraphError, build_view

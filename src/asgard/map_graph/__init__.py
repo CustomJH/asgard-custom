@@ -15,6 +15,7 @@ from __future__ import annotations
 from .bridge import RelatedRecord, related_records
 from .evidence import EVIDENCE_KINDS, Evidence
 from .graph import (
+    EDGE_KINDS,
     GraphError,
     GraphOwnershipError,
     GraphResult,
@@ -25,6 +26,7 @@ from .graph import (
 from .view import build_view, write_view
 
 __all__ = [
+    "EDGE_KINDS",
     "EVIDENCE_KINDS",
     "Evidence",
     "GraphError",

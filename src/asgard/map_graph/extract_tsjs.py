@@ -47,6 +47,42 @@ def _line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
+def _call_end_line(source: str, open_paren: int, *, limit: int = 120_000) -> int:
+    """`open_paren`( `(` 위치 ) 호출의 닫는 괄호 끝 줄 — 인라인 핸들러 본문을 포함한다. 실패 시 0.
+
+    문자열('  "  `)·주석(// , /* */)을 건너뛰며 괄호 깊이를 센다. 템플릿 중첩 표현식까지는
+    쫓지 않으므로(백틱 짝만 인식) 정규식 보조 추출기 수준의 근사다 — 빌더가 candidate 로 캡한다.
+    """
+    index, depth, quote = open_paren, 0, ""
+    end = min(len(source), open_paren + limit)
+    while index < end:
+        char = source[index]
+        if quote:
+            if char == "\\":
+                index += 1
+            elif char == quote:
+                quote = ""
+        elif char in "'\"`":
+            quote = char
+        elif char == "/" and source[index + 1 : index + 2] == "/":
+            index = source.find("\n", index)
+            if index < 0:
+                return 0
+        elif char == "/" and source[index + 1 : index + 2] == "*":
+            closing = source.find("*/", index + 2)
+            if closing < 0:
+                return 0
+            index = closing + 1
+        elif char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                return _line_of(source, index)
+        index += 1
+    return 0
+
+
 def extract_tsjs(path: str, source: str) -> list[Evidence]:
     evidence: list[Evidence] = []
     if path.endswith(".prisma"):
@@ -58,7 +94,15 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
     for match in _ROUTE.finditer(source):
         receiver, method, route_path = match.group(1).casefold(), match.group(2).upper(), match.group(3)
         confidence = "confirmed" if receiver in route_receivers else "candidate"
-        evidence.append(Evidence("route", f"{method} {route_path}", path, _line_of(source, match.start()), confidence))
+        line = _line_of(source, match.start())
+        # 인라인 핸들러 스팬 — 라우트 등록 호출의 여는 괄호부터 닫는 괄호까지
+        open_paren = source.find("(", match.end(2), match.end())
+        span = _call_end_line(source, open_paren) if open_paren >= 0 else 0
+        evidence.append(
+            Evidence(
+                "route", f"{method} {route_path}", path, line, confidence, scope_end=max(span, line) if span else 0
+            )
+        )
     for match in _NEST_ROUTE.finditer(source):
         method, route_path = match.group(1).upper(), match.group(2) or ""
         name = f"{method} /{route_path.lstrip('/')}" if route_path else f"{method} ."
@@ -72,7 +116,11 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
             Evidence("model", match.group(1), path, _line_of(source, match.start()), "candidate", "drizzle")
         )
     for match in _JOB.finditer(source):
-        evidence.append(Evidence("job", "cron", path, _line_of(source, match.start()), "candidate"))
+        line = _line_of(source, match.start())
+        open_paren = source.rfind("(", match.start(), match.end())
+        # @Cron 데코레이터는 본문이 뒤따르는 메서드라 괄호 스팬이 안 잡힌다 — 콜백형만 스팬을 얻는다.
+        span = _call_end_line(source, open_paren) if open_paren >= 0 and "@" not in match.group(0) else 0
+        evidence.append(Evidence("job", "cron", path, line, "candidate", scope_end=max(span, line) if span else 0))
     seen_services: set[str] = set()
     for match in _IMPORT.finditer(source):
         package = match.group(1) or match.group(2) or ""

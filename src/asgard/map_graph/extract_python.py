@@ -156,6 +156,8 @@ def extract_python(path: str, source: str) -> list[Evidence]:
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            # 본문 스팬 — 데코레이터 줄부터 함수 끝 줄까지. AST 가 직접 증명하는 포함 관계다.
+            span_end = max(node.end_lineno or node.lineno, node.lineno)
             for decorator in node.decorator_list:
                 attr, call = _decorator_call(decorator)
                 if attr in _ROUTE_ATTRS and call is not None:
@@ -165,7 +167,15 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                         receiver = _dotted_root(call.func.value) if isinstance(call.func, ast.Attribute) else ""
                         confidence = "confirmed" if receivers.get(receiver) == "route" else "candidate"
                         evidence.append(
-                            Evidence("route", f"{method} {route_path}", path, decorator.lineno, confidence, node.name)
+                            Evidence(
+                                "route",
+                                f"{method} {route_path}",
+                                path,
+                                decorator.lineno,
+                                confidence,
+                                node.name,
+                                scope_end=span_end,
+                            )
                         )
                 elif attr == "command":
                     name = _first_str(call) if call is not None else ""
@@ -176,7 +186,15 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                     )
                     confidence = "confirmed" if receivers.get(receiver) == "command" else "candidate"
                     evidence.append(
-                        Evidence("command", name or node.name, path, decorator.lineno, confidence, node.name)
+                        Evidence(
+                            "command",
+                            name or node.name,
+                            path,
+                            decorator.lineno,
+                            confidence,
+                            node.name,
+                            scope_end=span_end,
+                        )
                     )
                 elif attr in _JOB_ATTRS:
                     subject = decorator.func if isinstance(decorator, ast.Call) else decorator
@@ -185,7 +203,9 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                     confidence = (
                         "confirmed" if origin.startswith("celery.") or receivers.get(receiver) == "job" else "candidate"
                     )
-                    evidence.append(Evidence("job", node.name, path, decorator.lineno, confidence, attr))
+                    evidence.append(
+                        Evidence("job", node.name, path, decorator.lineno, confidence, attr, scope_end=span_end)
+                    )
         elif isinstance(node, ast.ClassDef):
             matched = sorted(_base_name(base) for base in node.bases if _base_name(base) in _MODEL_BASES)
             if matched:

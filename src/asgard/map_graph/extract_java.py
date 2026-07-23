@@ -169,6 +169,58 @@ def _method_after(text: str, offset: int) -> str:
     return matched.group(1) if matched else ""
 
 
+def _body_end_line(text: str, offset: int, *, limit: int = 120_000) -> int:
+    """`offset`(어노테이션 뒤) 이후 메서드 본문 `{…}` 의 끝 줄 — 없으면 0.
+
+    주석은 이미 제거된 텍스트를 전제한다. 어노테이션 인자 속 `{}` 는 괄호 깊이>0 이라
+    건너뛰고, 깊이 0 에서 `{` 보다 `;` 를 먼저 만나면 본문 없는 선언(인터페이스 메서드)이다.
+    """
+    index, paren, in_string, in_char = offset, 0, False, False
+    end = min(len(text), offset + limit)
+    while index < end:
+        char = text[index]
+        if in_string or in_char:
+            if char == "\\":
+                index += 1
+            elif char == ('"' if in_string else "'"):
+                in_string = in_char = False
+        elif char == '"':
+            in_string = True
+        elif char == "'":
+            in_char = True
+        elif char == "(":
+            paren += 1
+        elif char == ")":
+            paren = max(0, paren - 1)  # 어노테이션 인자 중간에서 출발해도 견딘다
+        elif paren == 0 and char == ";":
+            return 0
+        elif paren == 0 and char == "{":
+            break
+        index += 1
+    else:
+        return 0
+    depth = 0
+    while index < end:
+        char = text[index]
+        if in_string or in_char:
+            if char == "\\":
+                index += 1
+            elif char == ('"' if in_string else "'"):
+                in_string = in_char = False
+        elif char == '"':
+            in_string = True
+        elif char == "'":
+            in_char = True
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return _line_of(text, index)
+        index += 1
+    return 0
+
+
 def extract_java(path: str, source: str) -> list[Evidence]:
     text = _strip_comments(source)
     evidence: list[Evidence] = []
@@ -201,13 +253,27 @@ def extract_java(path: str, source: str) -> list[Evidence]:
         verb = verb_match.group(1).upper() if verb_match else "ANY"
         route = _join_route(class_prefix if match.start() > type_pos else "", match.group(1))
         confidence = "confirmed" if spring_web else "candidate"
-        evidence.append(Evidence("route", f"{verb} {route}", path, _line_of(text, match.start()), confidence, "spring"))
+        line = _line_of(text, match.start())
+        span = _body_end_line(text, match.end())
+        evidence.append(
+            Evidence(
+                "route", f"{verb} {route}", path, line, confidence, "spring", scope_end=max(span, line) if span else 0
+            )
+        )
     for match in _MAPPING.finditer(text):
         route = _join_route(class_prefix, match.group(2) or "")
         confidence = "confirmed" if spring_web else "candidate"
+        line = _line_of(text, match.start())
+        span = _body_end_line(text, match.end())
         evidence.append(
             Evidence(
-                "route", f"{match.group(1).upper()} {route}", path, _line_of(text, match.start()), confidence, "spring"
+                "route",
+                f"{match.group(1).upper()} {route}",
+                path,
+                line,
+                confidence,
+                "spring",
+                scope_end=max(span, line) if span else 0,
             )
         )
 
@@ -216,11 +282,14 @@ def extract_java(path: str, source: str) -> list[Evidence]:
         line = _line_of(text, match.start())
         handler = _method_after(text, block_end or match.end())
         mechanism = imported(_LISTENER_IMPORT[match.group(1)])
+        span = _body_end_line(text, (block_end or match.end()) + 1)
         for topic, is_literal in _listener_topics(args):
             # `${...}` 는 리터럴 문자열이어도 토픽 정체가 미해석 상태다 — 설정 해석 승격 전까지 candidate.
             confidence = "confirmed" if mechanism and is_literal and "${" not in topic else "candidate"
             detail = "subscribe" + (f" · {handler}" if handler else "")
-            evidence.append(Evidence("event", topic, path, line, confidence, detail))
+            evidence.append(
+                Evidence("event", topic, path, line, confidence, detail, scope_end=max(span, line) if span else 0)
+            )
 
     for pattern, mechanism_prefix in (
         (_KAFKA_SEND, "org.springframework.kafka"),
@@ -243,14 +312,17 @@ def extract_java(path: str, source: str) -> list[Evidence]:
         handler = _method_after(text, end)
         cron = _CRON.search(args)
         confidence = "confirmed" if imported("org.springframework.scheduling") else "candidate"
+        line = _line_of(text, match.start())
+        span = _body_end_line(text, end + 1)
         evidence.append(
             Evidence(
                 "job",
                 handler or "scheduled",
                 path,
-                _line_of(text, match.start()),
+                line,
                 confidence,
                 cron.group(1) if cron else "@Scheduled",
+                scope_end=max(span, line) if span else 0,
             )
         )
 

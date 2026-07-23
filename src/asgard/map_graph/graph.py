@@ -47,6 +47,17 @@ _EDGE_KIND = {
     "db_access": "touches",
     "external_service": "uses",
 }
+# 소비 증거 종류 → 개념-개념 플로우 엣지 관계 (선언자 본문 스팬 포함이 근거)
+_FLOW_KIND = {
+    "db_access": "touches",
+    "api_call": "calls",
+    "external_service": "uses",
+    "event": "emits",
+}
+EDGE_KINDS = ("declares", "calls", "touches", "uses", "emits")
+# 스팬 신뢰 확장자 — AST(.py)·주석 제거 후 중괄호 균형(.java)은 포함 관계가 결정론적이다.
+# 나머지(원문 정규식 근사 스팬)는 플로우 엣지를 candidate 로 캡한다.
+_STRUCTURAL_SPAN_SUFFIXES = (".py", ".java")
 _KIND_LABEL = {
     "route": "routes",
     "command": "commands",
@@ -73,6 +84,7 @@ class GraphResult:
     evidence_count: int
     nodes: int
     edges: int
+    flows: int
     state_path: str
     graph_md_path: str
     changed: bool
@@ -136,9 +148,40 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str]:
     return scanned, props.promote(collected), "source-sha256:" + digest.hexdigest()
 
 
+def _flow_edges(collected: list[Evidence]) -> dict[tuple[str, str, str], str]:
+    """선언자 본문 스팬 ⊇ 소비 증거 줄 → 개념-개념 플로우 엣지.
+
+    같은 파일 안 포함 관계만 근거로 삼고, 중첩 시 가장 안쪽 선언자에 귀속한다.
+    지어내지 않는다: 스팬이 근사(비구조 확장자)이거나 어느 한쪽 증거가 candidate 면 candidate.
+    """
+    edges: dict[tuple[str, str, str], str] = {}
+    per_file: dict[str, list[Evidence]] = defaultdict(list)
+    for item in collected:
+        per_file[item.file].append(item)
+    for file, items in per_file.items():
+        declarers = [item for item in items if item.scope_end]
+        if not declarers:
+            continue
+        structural = file.endswith(_STRUCTURAL_SPAN_SUFFIXES)
+        for consumer in items:
+            if consumer.scope_end or consumer.kind not in _FLOW_KIND:
+                continue
+            containing = [d for d in declarers if d.line <= consumer.line <= d.scope_end]
+            if not containing:
+                continue
+            owner = min(containing, key=lambda d: (d.scope_end - d.line, d.line))
+            if owner.node_id == consumer.node_id:
+                continue
+            confirmed = structural and owner.confidence == "confirmed" and consumer.confidence == "confirmed"
+            key = (owner.node_id, consumer.node_id, _FLOW_KIND[consumer.kind])
+            if confirmed or key not in edges:
+                edges[key] = "confirmed" if confirmed else "candidate"
+    return edges
+
+
 def _build_state(scanned: int, collected: list[Evidence], revision: str) -> dict:
     nodes: dict[str, dict] = {}
-    edges: set[tuple[str, str, str]] = set()
+    edges: dict[tuple[str, str, str], str] = {}
     for item in collected:
         node = nodes.setdefault(
             item.node_id,
@@ -153,15 +196,26 @@ def _build_state(scanned: int, collected: list[Evidence], revision: str) -> dict
         nodes.setdefault(
             file_id, {"id": file_id, "kind": "file", "name": item.file, "confidence": "confirmed", "files": []}
         )
-        edges.add((file_id, item.node_id, _EDGE_KIND[item.kind]))
+        edges[(file_id, item.node_id, _EDGE_KIND[item.kind])] = "confirmed"
+    flows = _flow_edges(collected)
+    edges.update(flows)
     for node in nodes.values():
         node["files"].sort(key=lambda loc: (loc["file"], loc["line"]))
     return {
         "schema": 1,
         "revision": revision,
-        "counts": {"files_scanned": scanned, "evidence": len(collected), "nodes": len(nodes), "edges": len(edges)},
+        "counts": {
+            "files_scanned": scanned,
+            "evidence": len(collected),
+            "nodes": len(nodes),
+            "edges": len(edges),
+            "flows": len(flows),
+        },
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
-        "edges": [{"source": source, "target": target, "kind": kind} for source, target, kind in sorted(edges)],
+        "edges": [
+            {"source": source, "target": target, "kind": kind, "confidence": confidence}
+            for (source, target, kind), confidence in sorted(edges.items())
+        ],
     }
 
 
@@ -177,6 +231,13 @@ def _render_graph_md(state: dict) -> str:
         for location in node["files"]:
             per_file[location["file"]][node["kind"]].append(node["name"] + suffix)
     summary = " · ".join(f"{_KIND_LABEL[kind]} {kind_totals[kind]}" for kind in _KIND_LABEL if kind_totals.get(kind))
+    names = {node["id"]: node["name"] for node in state["nodes"] if "id" in node}
+    flows: dict[str, list[str]] = defaultdict(list)
+    for edge in state.get("edges", []):
+        if edge["source"].startswith("file:"):
+            continue
+        suffix = "" if edge.get("confidence", "confirmed") == "confirmed" else "?"
+        flows[edge["source"]].append(f"{edge['kind']} `{names.get(edge['target'], edge['target'])}`{suffix}")
     lines = [
         _GRAPH_MARKER,
         "# Relation Graph",
@@ -196,7 +257,18 @@ def _render_graph_md(state: dict) -> str:
             if kinds.get(kind):
                 parts.append(f"{_KIND_LABEL[kind]}: {', '.join(sorted(kinds[kind]))}")
         lines.append(f"- `{path}` — " + " · ".join(parts))
-    lines += ["", "## Navigation contract", "", "- Trace edges with `asgard map trace --from <node-id>`.", ""]
+    if flows:
+        # 개념→개념 플로우 — 어느 핸들러가 어떤 DB/API/이벤트/서비스를 만지는지
+        lines += ["", "## Flows", ""]
+        for source in sorted(flows):
+            lines.append(f"- `{names.get(source, source)}` — " + " · ".join(sorted(flows[source])))
+    lines += [
+        "",
+        "## Navigation contract",
+        "",
+        "- Trace edges with `asgard map trace --from <node-id>` (`--kinds touches,calls` filters edge kinds).",
+        "",
+    ]
     return "\n".join(lines)
 
 
@@ -237,7 +309,7 @@ def _atomic_state_write(root: Path, path: Path, content: str) -> None:
             pass
 
 
-def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False) -> GraphResult:
+def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bool = False) -> GraphResult:
     base = Path(root).resolve()
     scanned, collected, revision = _collect(base)
     state = _build_state(scanned, collected, revision)
@@ -257,7 +329,8 @@ def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False) -> GraphR
         current = graph_md_path.read_text(encoding="utf-8")
     except OSError:
         current = ""
-    if graph_md_path.exists() and not _owned_graph_md(current):
+    if graph_md_path.exists() and not _owned_graph_md(current) and not force:
+        # force(init 경로)는 이 소유권 거부만 우회한다 — 예약 파일명 충돌 검사는 우회하지 않는다.
         raise GraphOwnershipError(f"refusing to overwrite human-owned {graph_md_path}")
     try:
         current_state = state_path.read_text(encoding="utf-8") if not state_path.is_symlink() else ""
@@ -275,6 +348,7 @@ def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False) -> GraphR
         evidence_count=len(collected),
         nodes=state["counts"]["nodes"],
         edges=state["counts"]["edges"],
+        flows=state["counts"]["flows"],
         state_path=str(state_path),
         graph_md_path=str(graph_md_path),
         changed=changed,
@@ -298,12 +372,28 @@ def graph_state(root: str | os.PathLike[str]) -> dict | None:
     return state
 
 
-def trace(root: str | os.PathLike[str], node_id: str, *, depth: int = 2, direction: str = "both") -> list[dict]:
-    """BFS 로 확인된 엣지만 따라간다 — 전수 블라스트 레디우스가 아니라 인접 지도다."""
+def trace(
+    root: str | os.PathLike[str],
+    node_id: str,
+    *,
+    depth: int = 2,
+    direction: str = "both",
+    kinds: set[str] | None = None,
+) -> list[dict]:
+    """BFS 로 확인된 엣지만 따라간다 — 전수 블라스트 레디우스가 아니라 인접 지도다.
+
+    `kinds` 는 따라갈 엣지 종류의 화이트리스트다 — 예: DB 앵커 업스트림에 {"touches", "calls"}
+    를 주면 한 번의 호출로 DB→핸들러→호출 화면까지 조인해 회수한다.
+    """
     if not 0 <= depth <= 8:
         raise GraphError("trace depth must be between 0 and 8")
     if direction not in {"both", "upstream", "downstream"}:
         raise GraphError("trace direction must be one of: both, upstream, downstream")
+    if kinds is not None:
+        unknown = kinds - set(EDGE_KINDS)
+        if unknown or not kinds:
+            allowed = ", ".join(EDGE_KINDS)
+            raise GraphError(f"trace kinds must be a non-empty subset of: {allowed}")
     state = graph_state(root)
     if state is None:
         raise GraphError("relation graph state missing — run `asgard map scan` first")
@@ -314,11 +404,14 @@ def trace(root: str | os.PathLike[str], node_id: str, *, depth: int = 2, directi
         near = sorted(nid for nid in nodes if node_id.casefold() in nid.casefold())[:5]
         hint = f" — candidates: {', '.join(near)}" if near else ""
         raise GraphError(f"unknown node id: {node_id}{hint}")
-    forward: dict[str, list[tuple[str, str]]] = defaultdict(list)
-    backward: dict[str, list[tuple[str, str]]] = defaultdict(list)
+    forward: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
+    backward: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     for edge in state["edges"]:
-        forward[edge["source"]].append((edge["target"], edge["kind"]))
-        backward[edge["target"]].append((edge["source"], edge["kind"]))
+        if kinds is not None and edge["kind"] not in kinds:
+            continue
+        confidence = edge.get("confidence", "confirmed")
+        forward[edge["source"]].append((edge["target"], edge["kind"], confidence))
+        backward[edge["target"]].append((edge["source"], edge["kind"], confidence))
     seen = {node_id}
     frontier = [(node_id, 0, "")]
     hops: list[dict] = []
@@ -328,12 +421,12 @@ def trace(root: str | os.PathLike[str], node_id: str, *, depth: int = 2, directi
         index += 1
         if level >= depth:
             continue
-        neighbors: list[tuple[str, str]] = []
+        neighbors: list[tuple[str, str, str]] = []
         if direction in {"both", "downstream"}:
             neighbors += forward[current]
         if direction in {"both", "upstream"}:
             neighbors += backward[current]
-        for neighbor, kind in sorted(neighbors):
+        for neighbor, kind, edge_confidence in sorted(neighbors):
             if neighbor in seen:
                 continue
             seen.add(neighbor)
@@ -346,6 +439,7 @@ def trace(root: str | os.PathLike[str], node_id: str, *, depth: int = 2, directi
                     "confidence": node["confidence"],
                     "depth": level + 1,
                     "via": kind,
+                    "via_confidence": edge_confidence,
                 }
             )
             frontier.append((neighbor, level + 1, kind))
