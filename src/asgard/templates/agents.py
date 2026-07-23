@@ -71,6 +71,7 @@ __LAGOM__
 
 개인은 로컬 위키(`~/.asgard/memory/`), 승인된 프로젝트 record 정본은 repo `.asgard/memory/records/`, 검색은 설정으로 선택한 backend 정확히 하나다. `memory-context`는 개인 카탈로그이고 `memory-recall`은 `scope="personal|project"`로 출처가 분리된다.
 
+- **귀속 (세계관)** — 개인 메모리는 **오딘의 기억**(오딘의 선호·결정·배운 사실)이다. Heimdall 은 그것을 자신의 기억처럼 빌려 쓴다 — 소유는 오딘, 사용은 에이전트. 메모리 시스템을 소개·설명할 때도 오딘 귀속으로 말한다.
 - **힌트일 뿐** — 완료 증거·검증 criteria 로 쓸 수 없다 (게이트는 메모리를 신뢰하지 않는다).
 - **개인** — `asgard memory query`; 저장은 `asgard memory ingest` 승인 게이트만. 로컬 파일 직접 편집 금지.
 - **프로젝트** — MCP `memory_recall`; 저장은 provenance·kind·importance를 갖춘 `memory_retain` → 사용자 승인 → `memory_retain_commit`만. commit은 Git 정본을 먼저 쓰고 backend에 반영한다. 중요 artifact는 `asgard memory project-scan/project-sync`, backend 복원은 `asgard memory project-rehydrate`로 관리한다.
