@@ -148,7 +148,7 @@ class TestAdversarialVectors(AdversarialBase):
             self.assertEqual(got, "block", f"무판정 write 차단 {i + 1}/3: {p.stdout}{p.stderr}")
         got, p = self.gate_decision("v2")
         self.assertEqual(got, "allow", p.stdout)
-        self.assertIn("에스컬레이션", p.stderr, "4번째 fail-open 인데 에스컬레이션 지시 없음 — 조용한 성공 금지")
+        self.assertIn("escalation", p.stderr, "4번째 fail-open 인데 에스컬레이션 지시 없음 — 조용한 성공 금지")
 
     def test_v3_no_verify_record_in_new_quest_blocked(self):
         """V3. 증거 재활용 — 이전 quest 증거는 신규 quest 에 무효, verify 레코드 없으면 차단."""

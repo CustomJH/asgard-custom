@@ -284,7 +284,7 @@ class TestTrinityLoop(Base):
         self.assertEqual(worker_session.role, "worker")
         self.assertIn("계획 A", worker_session.prompt)
         self.assertIn("계획 B", worker_session.prompt)
-        self.assertIn("하나의 최소 구현으로 합성", worker_session.prompt)
+        self.assertIn("single minimal implementation", worker_session.prompt)
 
     def test_external_research_reenters_thinker_before_implementation(self):
         research = FakeSession(
@@ -311,7 +311,7 @@ class TestTrinityLoop(Base):
         self.assertIn("scrapling-official", research.system)
         self.assertNotEqual(research.cwd, self.root)
         self.assertIn("https://example.com/source — observed fact", replanner.prompt)
-        self.assertIn("미검증 데이터", replanner.prompt)
+        self.assertIn("unverified data", replanner.prompt)
 
     def test_dual_mode_rejects_same_model_before_opening_quest(self):
         h = FakeHeimdall(self.root, [], cls=CLS_WRITE)
@@ -355,8 +355,8 @@ class TestTrinityLoop(Base):
         out = h.handle("RAGX 소개를 guide.md에 작성해. 사실: Python 13줄, JSON 키 정렬")
         self.assertIn("과업 완수", out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "worker", "verifier"])
-        self.assertIn("Lagom 문체 불변식", h.consumed[1].system)
-        self.assertNotIn("효율 사다리", h.consumed[1].system)  # 전체 Lagom 주입으로 판정 기준을 흔들지 않는다
+        self.assertIn("Lagom prose invariants", h.consumed[1].system)
+        self.assertNotIn("efficiency ladder", h.consumed[1].system)  # 전체 Lagom 주입으로 판정 기준을 흔들지 않는다
         self.assertIn("lagom-style", h.consumed[2].prompt)
         self.assertNotIn("혁신적", open(os.path.join(self.root, "guide.md"), encoding="utf-8").read())
 
@@ -457,7 +457,7 @@ class TestTrinityLoop(Base):
         labels = [s.label for s in h.consumed]
         self.assertEqual(labels, ["worker", "verifier", "thinker", "worker", "verifier"])
         replan = h.consumed[2]
-        self.assertIn("실패 이력", replan.prompt)
+        self.assertIn("Failure history", replan.prompt)
         self.assertIn("wrong-approach", replan.prompt)
 
     def test_retry_gets_failure_context(self):
@@ -648,10 +648,10 @@ class TestCharterInjection(Base):
         self.assertIn("C1일관성", by["thinker"].system)
         # Verifier: 렌즈로 주입되되 criteria 대체 아님 명시 (판단③, evidence-first 보존)
         self.assertIn("TL관통원칙", by["verifier"].system)
-        self.assertIn("criteria 를 대체하지 않", by["verifier"].system)
+        self.assertIn("does not replace criteria", by["verifier"].system)
         # Worker: charter 전혀 무주입 — worker.md+lagom 만 (Fugu 격리, CC 훅과 패리티)
         self.assertNotIn("C1일관성", by["worker"].system)
-        self.assertNotIn("프로젝트 북극성", by["worker"].system)
+        self.assertNotIn("Project North Star", by["worker"].system)
 
     def test_no_charter_no_injection(self):
         # 미설정이면 프롬프트 무변화 (토큰 회귀 없음)
@@ -686,13 +686,13 @@ class TestDeliveryCanonInjection(Base):
         out = h.handle("신규 백엔드 API 설계 — 하우스 룰 준수로 w1.txt 만들어")
         self.assertIn("과업 완수", out)  # 주입이 순환을 막지 않음
         by = self._consumed_by_label(h)
-        self.assertIn("딜리버리 정본 (계획 구속", by["thinker"].prompt)
+        self.assertIn("Delivery canon (binds the plan", by["thinker"].prompt)
         self.assertIn("asgard-thor-bilskirnir", by["thinker"].prompt)
         # Worker: 계획 구속 노트 대신 착수 힌트만 — 정본 소유 전문가 dispatch 지시 (관찰-정지 방어)
-        self.assertNotIn("딜리버리 정본 (계획 구속", by["worker"].prompt)
-        self.assertIn("딜리버리 정본 힌트", by["worker"].prompt)
+        self.assertNotIn("Delivery canon (binds the plan", by["worker"].prompt)
+        self.assertIn("Delivery canon hint", by["worker"].prompt)
         self.assertIn("dispatch", by["worker"].prompt)
-        self.assertNotIn("딜리버리 정본", by["verifier"].prompt)
+        self.assertNotIn("Delivery canon", by["verifier"].prompt)
 
     def test_unmatched_task_no_injection(self):
         from asgard.agent.heimdall.roles import delivery_canon_note, worker_canon_hint
@@ -1312,8 +1312,8 @@ class TestBudget(Base):
         h = FakeHeimdall(self.root, seq, cls=self._cls())
         out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
-        self.assertIn("턴 3/3", h.consumed[2].prompt)  # 80% 도달 자기규제 주입
-        self.assertIn("범위를 좁히고", h.consumed[2].prompt)
+        self.assertIn("turn 3/3", h.consumed[2].prompt)  # 80% 도달 자기규제 주입
+        self.assertIn("narrow scope", h.consumed[2].prompt)
 
     def test_budget_exhaustion_honest_report(self):
         seq = [
@@ -1410,7 +1410,7 @@ class TestWaveParallel(Base):
 
         def turn(make, prompt, fallback=None, fallback_prompt=None):
             session = make()
-            rel = "a.txt" if "배정 단위 1" in prompt else "b.txt"
+            rel = "a.txt" if "Assigned unit 1" in prompt else "b.txt"
             root_was_clean.append(not os.path.exists(os.path.join(self.root, rel)))
             barrier.wait(timeout=5)
             open(os.path.join(session.cwd, rel), "w").write(rel)
@@ -1571,15 +1571,15 @@ class TestWaveParallel(Base):
         self.assertTrue(all("MAP_CANARY" in session.system for session in workers))
         prompts = [w.prompt for w in workers]
         # 단위 1·2 (wave 1) — 격리: 선행 컨텍스트 없음, 서로의 결과 미노출
-        wave1 = [p for p in prompts if "배정 단위 3" not in p]
+        wave1 = [p for p in prompts if "Assigned unit 3" not in p]
         self.assertEqual(len(wave1), 2)
         for p in wave1:
-            self.assertNotIn("선행 단위", p)
+            self.assertNotIn("prior unit", p)
             self.assertNotIn("unit-result", p)
         # 단위 3 (wave 2) — access [1] 의 결과만 주입
-        p3 = next(p for p in prompts if "배정 단위 3" in p)
-        self.assertIn("[선행 단위 1 결과]", p3)
-        self.assertNotIn("[선행 단위 2 결과]", p3)
+        p3 = next(p for p in prompts if "Assigned unit 3" in p)
+        self.assertIn("[prior unit 1 result]", p3)
+        self.assertNotIn("[prior unit 2 result]", p3)
         # work 이벤트 단위별 기록 (unit 필드)
         events = [json.loads(ln) for ln in self.quest_log_text().splitlines() if ln.strip()]
         units_logged = [e.get("unit") for e in events if e.get("event") == "work"]
@@ -1668,7 +1668,7 @@ class TestWaveParallel(Base):
         ql(self.root, "open", "wave-partial", session="wave-partial")
 
         def turn(_make, prompt, fallback=None, fallback_prompt=None):
-            if "배정 단위 2" in prompt:
+            if "Assigned unit 2" in prompt:
                 raise RuntimeError("fatal-unit-2")
             return SessionResult(text="ok", stop_reason="end_turn", writes=["ok.txt"])
 
@@ -1726,7 +1726,7 @@ class TestWaveParallel(Base):
         real_ql(self.root, "open", "wave-completion-error", session="wave-completion-error")
 
         def turn(_make, prompt, fallback=None, fallback_prompt=None):
-            if "배정 단위 2" in prompt:
+            if "Assigned unit 2" in prompt:
                 raise RuntimeError("worker failed")
             return SessionResult(text="ok", stop_reason="end_turn")
 
@@ -1926,7 +1926,7 @@ class TestWaveParallel(Base):
         self.assertIn("과업 완수", out)
         workers = [session for session in h.consumed if session.label == "worker"]
         self.assertEqual(len(workers), 6)
-        self.assertEqual(sum("배정 단위 3" in session.prompt for session in workers), 2)
+        self.assertEqual(sum("Assigned unit 3" in session.prompt for session in workers), 2)
 
 
 class TestDirectGuard(Base):
@@ -2018,7 +2018,7 @@ class TestMemoryWriteTurn(Base):
         )
         h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
         h.handle("내 이름은 썬더오브갓이야. 기억해줘.")
-        self.assertIn("memory_save 계약", direct.system)  # 계약 주입
+        self.assertIn("memory_save contract", direct.system)  # 계약 주입
         self.assertTrue(any("썬더오브갓" in f for f in self._pages()))  # 디스크 진실
         self.assertIn("위그드라실에 새겼어요", h.last_response_text)
         self.assertNotIn("원문 폴백", h.last_response_text)
@@ -2040,7 +2040,7 @@ class TestMemoryWriteTurn(Base):
         h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
         h.handle("이 함수 뭐하는거야")
         self.assertNotIn("memory_save", direct.injected_handlers)
-        self.assertNotIn("memory_save 계약", direct.system)
+        self.assertNotIn("memory_save contract", direct.system)
         self.assertEqual(self._pages(), [])
 
 
@@ -2060,7 +2060,7 @@ class TestExplorationHint(Base):
         self.assertIn("과업 완수", out)
         w = [s for s in h.consumed if s.label == "worker"][1]
         self.assertIn("grep -rn foo src/", w.prompt)
-        self.assertIn("재탐색 불필요", w.prompt)
+        self.assertIn("no need to re-explore", w.prompt)
 
 
 class TestHookParity(Base):
@@ -2107,7 +2107,7 @@ class TestHookParity(Base):
            stdin=json.dumps({"role": "verifier", "event": "verify", "commands": []}))  # fmt: skip
         nxt = json.loads(ql("next", "--write-expected").stdout)
         self.assertEqual(nxt["next_role"], "VERIFIER")  # DONE 금지 — 재검증 지시
-        self.assertIn("증거", nxt["why"])
+        self.assertIn("evidence", nxt["why"])
         self.assertEqual(ql("close").returncode, 1)  # close 거부
         # 증거 추가 후엔 통과
         ql("append", "--verdict", "PASS", "--level", "full",
@@ -2203,7 +2203,7 @@ class TestStandardRoute(Base):
 
         self.assertIn("과업 완수", out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
-        self.assertIn("성공 기준:", work.prompt)
+        self.assertIn("Success criteria:", work.prompt)
 
     def test_standard_red_gives_worker_retry_with_failing_check(self):
         self.policy(baseline_checks=["python3 -m pytest -q"])
@@ -2247,7 +2247,7 @@ class TestStandardRoute(Base):
         self.assertIn(request, seq[1].prompt)
         self.assertNotIn("criteria: []", seq[1].prompt)
         opened = json.loads(self.quest_log_text().splitlines()[0])
-        self.assertEqual(opened["criteria"], [f"요청 본문과 변경 결과가 일치함: {request}"])
+        self.assertEqual(opened["criteria"], [f"Request text and resulting change match: {request}"])
 
     def test_missing_task_class_stays_trinity(self):
         # task_class 미상(None) = 안전 기본값 — 기존 LLM Verifier 경로 유지
@@ -2266,8 +2266,8 @@ class TestDirectHistory(Base):
         h = FakeHeimdall(self.root, [s1, s2], cls=cls_ro)
         h.handle("파이썬 버전 뭐야?")
         h.handle("그건 왜?")
-        self.assertNotIn("이전 문답", s1.prompt)  # 첫 턴은 맥락 없음
-        self.assertIn("이전 문답", s2.prompt)
+        self.assertNotIn("Previous exchange", s1.prompt)  # 첫 턴은 맥락 없음
+        self.assertIn("Previous exchange", s2.prompt)
         self.assertIn("파이썬 버전 뭐야?", s2.prompt)
         self.assertIn("답1", s2.prompt)
 
@@ -2357,12 +2357,12 @@ class TestNativeThorSquad(Base):
         h._dispatch_handler("s1", writes)({"agent": "thor-lead", "task": "대형 백엔드 과업", "why": "다표면 분할"})
 
         self.assertEqual(calls[0]["role"], "thor-lead")
-        self.assertIn("백엔드 전문가", calls[0]["system"])  # 선언이 아니라 Thor 코어 본문 물리 상속
-        self.assertIn("사전 진단 게이트", calls[0]["system"])
+        self.assertIn("Backend specialist", calls[0]["system"])  # 선언이 아니라 Thor 코어 본문 물리 상속
+        self.assertIn("Pre-diagnosis gate", calls[0]["system"])
         self.assertIn("asgard-thor-einherjar", calls[0]["system"])
         self.assertEqual([t["name"] for t in calls[0]["tools"]], ["load_skill", "dispatch_thor_squad"])
         self.assertIn(
-            "에인헤랴르 편대 (팀 백엔드 작업)",
+            "Einherjar Squad (Team Backend Work)",
             calls[0]["handlers"]["load_skill"]({"name": "asgard-thor-einherjar"}),
         )
         squad = calls[0]["handlers"]["dispatch_thor_squad"]
@@ -2383,7 +2383,7 @@ class TestNativeThorSquad(Base):
         self.assertEqual([c["role"] for c in calls[1:]], ["thor", "thor"])
         self.assertTrue(all([t["name"] for t in c["tools"]] == ["load_skill"] for c in calls[1:]))
         for c in calls[1:]:
-            self.assertNotIn("에인헤랴르 편대 (팀 백엔드 작업)", c["system"])  # 서브에 편대 프로토콜 본문 무주입
+            self.assertNotIn("Einherjar Squad (Team Backend Work)", c["system"])  # 서브에 편대 프로토콜 본문 무주입
 
     def test_split_rejects_overlapping_scopes_at_declaration(self):
         h = FakeHeimdall(self.root, [])
@@ -2430,7 +2430,7 @@ class TestNativeThorSquad(Base):
             session = FakeSession(SessionResult(text="scoped", stop_reason="end_turn"))
 
             def effect():
-                unit = "api" if "편대 단위 api" in session.prompt else "db"
+                unit = "api" if "Squad unit api" in session.prompt else "db"
                 rel = f"src/{unit}/service.py"
                 session.result.writes = [rel]
                 path = os.path.join(session.cwd, rel)
@@ -2516,7 +2516,7 @@ class TestNativeThorSquad(Base):
         )
         self.assertEqual(result["mode"], "tournament")
         self.assertEqual(result["failures"], [])
-        self.assertIn("본류 미적용", result["note"])
+        self.assertIn("NOT applied to the mainline", result["note"])
         # 본류에는 미적용 — 패치 파일만 회수된다 (승자 적용·검증은 대장 몫)
         self.assertFalse(os.path.exists(os.path.join(self.root, "src/core/fix.py")))
         for vid in ("v1", "v2"):

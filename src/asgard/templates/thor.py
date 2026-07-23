@@ -14,312 +14,312 @@ import re
 _MJOLLNIR = """\
 ---
 name: asgard-thor-mjollnir
-description: 토르의 망치 묠니르 — 핵심 연산·트랜잭션·배치·메시징 신뢰성 심화. 비즈니스 로직·대용량 처리·백그라운드 잡·큐 소비자 작업 전 로드.
+description: Thor's hammer Mjölnir — deep guidance on core computation, transactions, batch, and messaging reliability. Load before business-logic, high-volume-processing, background-job, or queue-consumer work.
 ---
 
-# asgard-thor-mjollnir — 🔨 핵심 연산·트랜잭션·배치
+# asgard-thor-mjollnir — 🔨 Core Computation, Transactions, Batch
 
-던지면 맞아야 하고(정확), 반드시 돌아와야 한다(복구 가능) — 정확성이 성능보다 먼저다.
+Thrown, it must hit (correct); it must always return (recoverable) — correctness comes before performance.
 
-## 트랜잭션 캐논
+## Transaction Canon
 
-- 경계는 유스케이스 단위 — 한 트랜잭션 = 한 일관성 단위. 진입 표면(핸들러)이나 저장 계층이 아니라 도메인 작업이 소유한다.
-- 트랜잭션 안에서 외부 I/O(HTTP 호출·메일·큐 발행) 금지 — 커밋 전 부수효과는 롤백이 못 지운다. 발행이 필요하면 outbox.
-- 롱 트랜잭션 금지: 사용자 대기·외부 응답을 트랜잭션 안에서 기다리지 않는다.
-- 락 순서 일관성: 복수 자원 갱신은 전역 고정 순서로 — 교차 순서가 데드락 제조기다.
-- 원자성 경계 밖 정합성은 명시적 전략으로: outbox(이벤트 발행) / 보상 트랜잭션(분산) / upsert+유니크 제약(중복 흡수).
-- 격리 수준은 기본값을 확인하고 필요한 지점만 올린다 — 전역 상향은 해법이 아니라 처리량 사고다.
+- The boundary is the use case — one transaction = one consistency unit. Owned by the domain operation, not the entry surface (handler) or the persistence layer.
+- No external I/O (HTTP calls, mail, queue publishing) inside a transaction — side effects before commit cannot be undone by rollback. If you must publish, use an outbox.
+- No long transactions: never wait on user input or external responses inside a transaction.
+- Consistent lock ordering: update multiple resources in a globally fixed order — crossed orders are a deadlock factory.
+- Consistency beyond the atomicity boundary needs an explicit strategy: outbox (event publishing) / compensating transactions (distributed) / upsert + unique constraint (absorb duplicates).
+- Check the default isolation level and raise it only where needed — a global bump is not a fix, it is a throughput incident.
 
-## 멱등성·재시도
+## Idempotency & Retries
 
-- 재시도 가능 경로(큐 소비·웹훅 수신·배치 재실행)는 멱등이 기본값 — 멱등 키·처리 표식·유니크 제약 중 하나로 중복을 흡수한다.
-- at-least-once 전달을 전제한다 — "정확히 한 번"은 전달이 아니라 처리(멱등 소비자)로 달성한다.
+- Retryable paths (queue consumption, webhook receipt, batch re-runs) are idempotent by default — absorb duplicates with an idempotency key, a processed marker, or a unique constraint.
+- Assume at-least-once delivery — "exactly once" is achieved in processing (idempotent consumers), not in delivery.
 
-## 배치 내구성 계약 (이것 없이는 배치가 아니다)
+## Batch Durability Contract (without this it is not a batch)
 
-- **체크포인트**: 어디까지 처리했는지를 재시작이 읽을 수 있는 위치에 기록한다.
-- **재진입점**: 중단 후 재실행이 이어서인지 처음부터인지 선언하고, 이어서라면 경계 중복 구간을 멱등 처리한다.
-- **부분 실패**: 실패 항목의 격리 방침(스킵+기록 vs 전체 중단)을 기준과 함께 선언한다. 실패가 조용히 사라지는 구조 금지 — 실패 테이블이든 DLQ 든 남긴다.
-- **진행 관측**: 처리율·잔여 추정이 로그로 보인다 — 무소식 장시간 배치는 죽은 것과 구분이 안 된다.
+- **Checkpoint**: record how far processing has gone, in a location a restart can read.
+- **Re-entry point**: declare whether a re-run after interruption resumes or starts over; if it resumes, make the boundary overlap idempotent.
+- **Partial failure**: declare the isolation policy for failed items (skip+record vs abort-all) along with its criteria. No structure where failures silently vanish — leave a failure table or a DLQ.
+- **Progress observability**: throughput and remaining-work estimates show up in logs — a silent long-running batch is indistinguishable from a dead one.
 
-## 대용량 처리
+## High-Volume Processing
 
-- 전량 메모리 적재 금지 — 스트리밍·커서·청킹. 청크 크기는 실측으로 정한다.
-- N+1 탐지: 루프 안 쿼리는 배치 조회·조인으로. 수정 전후 쿼리 수를 실측해 보고한다.
-- 처리량 주장은 실측만 — "빨라졌다"는 전/후 수치(건수/시간) 없이 보고하지 않는다 (Canon 8).
+- No loading everything into memory — streaming, cursors, chunking. Set chunk size by measurement.
+- N+1 detection: queries inside loops become batched lookups or joins. Measure and report query counts before and after the fix.
+- Throughput claims are measurement-only — never report "it got faster" without before/after numbers (items/time) (Canon 8).
 
-## 메시징 신뢰성
+## Messaging Reliability
 
-- 발행: DB 커밋과 발행의 원자성은 outbox 로 — 커밋 후 발행 실패, 발행 후 롤백 둘 다 사고다.
-- 소비: 멱등 소비자 + 명시적 ack. poison 메시지는 재시도 상한 후 DLQ — 무한 재큐잉이 파이프라인을 멈춘다.
-- backpressure: 소비 < 발행이 지속되면 버퍼 확대가 아니라 설계 문제 — 큐 깊이를 관측하고 상한을 둔다.
+- Publishing: atomicity between DB commit and publish goes through an outbox — publish failing after commit and rollback after publish are both incidents.
+- Consumption: idempotent consumer + explicit ack. Poison messages go to a DLQ after a retry cap — infinite requeueing stalls the pipeline.
+- Backpressure: if consumption < production persists, it is a design problem, not a buffer-size problem — observe queue depth and cap it.
 
-## 동시성
+## Concurrency
 
-- 공유 가변 상태 최소화가 첫수. race 의심은 추측 수정 금지 — 재현(반복 실행·강제 인터리빙)이 먼저다 (role 사전 진단 게이트).
+- Minimizing shared mutable state is the opening move. Suspected races get no speculative fixes — reproduction first (repeated runs, forced interleaving) (role pre-diagnosis gate).
 """
 
 _LIGHTNING = """\
 ---
 name: asgard-thor-lightning
-description: 토르의 번개 — API·실시간·서버 보안·외부 연동 심화. 엔드포인트 설계·스트리밍·지연 예산·인증 경계·서드파티 호출 작업 전 로드.
+description: Thor's lightning — deep guidance on APIs, realtime, server security, and external integrations. Load before endpoint-design, streaming, latency-budget, auth-boundary, or third-party-call work.
 ---
 
-# asgard-thor-lightning — ⚡ API·실시간·보안·외부 연동
+# asgard-thor-lightning — ⚡ API, Realtime, Security, External Integrations
 
-요청이 오면 번개처럼 — 빠르게, 그러나 계약대로.
+When a request arrives, be lightning — fast, but by the contract.
 
-## API 계약 우선
+## API Contract First
 
-- 에러 모델 일관: 같은 실패는 같은 형태(코드·구조)로. 내부 예외 문자열·스택을 응답에 노출하지 않는다.
-- 버저닝: 깨는 변경(필드 제거·의미 변경)은 새 버전으로 — 기존 소비자 무경고 파괴 금지.
-- 페이지네이션 기본: 무한 목록 응답 금지. 커서 우선(오프셋은 얕은 페이지만), 페이지 상한 명시.
-- 입력 검증은 서버가 최종이다 — 클라이언트 검증은 UX 이지 방어가 아니다.
+- Consistent error model: the same failure gets the same shape (code, structure). Never expose internal exception strings or stack traces in responses.
+- Versioning: breaking changes (field removal, meaning changes) go in a new version — never break existing consumers without warning.
+- Pagination by default: no unbounded list responses. Cursors first (offsets for shallow pages only), explicit page-size cap.
+- Server-side validation is final — client-side validation is UX, not defense.
 
-## 지연 수치 캐논
+## Latency Numbers Canon
 
-- 타임아웃 계층화: 바깥이 안쪽보다 길게 (클라이언트 > 게이트웨이 > 서비스 > DB·외부 호출). 역전되면 안쪽은 살아 있는데 바깥이 끊는 유령 실패가 된다.
-- 재시도: 멱등 요청만, 지수 백오프 + 지터, 상한 명시 — 비멱등 재시도는 중복 실행 사고다.
-- 서킷 브레이커: 연속 실패 임계 후 차단 + 반개방 프로브 — 죽은 의존성에 전 요청이 타임아웃까지 매달리게 두지 않는다.
-- 수치 예산은 핫 패스만 의무 (role 성능 표면 분리) — 예산은 실측으로 검증해 보고한다.
+- Layered timeouts: outer longer than inner (client > gateway > service > DB/external calls). Inverted, you get ghost failures where the inner layer is alive but the outer one hangs up.
+- Retries: idempotent requests only, exponential backoff + jitter, explicit cap — retrying non-idempotent requests is a duplicate-execution incident.
+- Circuit breaker: open after a consecutive-failure threshold + half-open probes — never let every request hang until timeout on a dead dependency.
+- Numeric budgets are mandatory on hot paths only (role performance-surface separation) — validate budgets by measurement and report.
 
-## 실시간 사다리 (낮은 단이 충족하면 멈춘다)
+## Realtime Ladder (stop at the lowest rung that suffices)
 
-① 폴링(간격 조회 — 대부분 충분) → ② SSE/롱폴링(서버→클라이언트 단방향 push) → ③ WebSocket(양방향·상태 유지 — 재연결·팬아웃·백프레셔 비용을 감당할 때만). 근거 없는 상위 단계 채택 금지. WebSocket 이면 재연결 전략과 미전달 메시지 처리를 함께 설계한다.
+① Polling (interval fetch — usually enough) → ② SSE/long-polling (one-way server→client push) → ③ WebSocket (bidirectional, stateful — only when you can afford the reconnection, fan-out, and backpressure costs). No climbing rungs without evidence. If WebSocket, design the reconnection strategy and undelivered-message handling together.
 
-## 캐싱
+## Caching
 
-- 무효화 전략을 먼저 쓰지 못하면 캐시 도입 금지 — "일단 TTL" 은 전략이 아니라 미뤄 둔 버그다.
-- 캐시 키에 파라미터·인증 스코프를 전부 반영한다 — 타인 데이터 응답이 최악의 캐시 버그.
-- 스탬피드: 동시 만료 재계산은 잠금·조기 갱신으로 막는다.
+- If you cannot write the invalidation strategy first, do not introduce a cache — "just TTL for now" is not a strategy, it is a deferred bug.
+- Reflect every parameter and auth scope in the cache key — serving someone else's data is the worst cache bug.
+- Stampede: block simultaneous-expiry recomputation with locking or early refresh.
 
-## 서버 보안 경계
+## Server Security Boundary
 
-- 인증(누구인가)과 인가(무엇을 할 수 있나)를 구분해 명시한다 — 리소스 접근마다 객체 소유권 검사(IDOR 방어).
-- 비밀정보 하드코딩 금지 — 환경·시크릿 스토어로. 로그에 토큰·개인정보를 남기지 않는다.
-- 사용자 입력 URL 로 서버가 fetch 하면 SSRF — 내부망 차단·allowlist 검증 필수. 세션 쿠키 기반이면 CSRF 토큰/SameSite.
+- State authentication (who are you) and authorization (what may you do) separately — check object ownership on every resource access (IDOR defense).
+- No hardcoded secrets — environment/secret store. Never log tokens or personal data.
+- A server fetching a user-supplied URL is SSRF — internal-network blocking and allowlist validation are mandatory. Session-cookie auth needs CSRF tokens/SameSite.
 
-## 외부 연동 (타임아웃·부분 실패·보상 없이는 외부 호출이 아니다)
+## External Integrations (without timeouts, partial-failure handling, and compensation it is not an external call)
 
-- 모든 외부 호출에 타임아웃 명시 — 라이브러리 기본 무한대기가 흔한 함정.
-- 실패 시 전략을 선언한다: 재시도(멱등 한정)? 폴백? 실패 전파? — "될 거라 가정"은 전략이 아니다.
-- 외부 응답은 미검증 입력이다 — 스키마 검증 후 사용 (Canon 5 와 같은 원리).
+- Explicit timeout on every external call — library defaults of infinite wait are a common trap.
+- Declare the on-failure strategy: retry (idempotent only)? fallback? propagate the failure? — "assume it will work" is not a strategy.
+- External responses are unvalidated input — validate against a schema before use (same principle as Canon 5).
 
-> 출처: 타임아웃 계층화·서킷 브레이커·OWASP 상위 카테고리 표준 관행 자체 재서술.
+> Source: layered timeouts, circuit breakers, top OWASP categories — standard practice restated in our own words.
 """
 
 _MEGINGJORD = """\
 ---
 name: asgard-thor-megingjord
-description: 토르의 힘의 허리띠 메긴기요르드 — 런타임 인프라·스케일링·관측성 심화. 배포 후 거동(probe·리소스·오토스케일·로그·메트릭) 작업 전 로드. 이미지 빌드·CI 는 eitri 소관.
+description: Thor's belt of strength Megingjörð — deep guidance on runtime infrastructure, scaling, and observability. Load before work on post-deploy behavior (probes, resources, autoscaling, logs, metrics). Image builds and CI belong to eitri.
 ---
 
-# asgard-thor-megingjord — 🜃 런타임 인프라·스케일링·관측성
+# asgard-thor-megingjord — 🜃 Runtime Infrastructure, Scaling, Observability
 
-허리띠는 힘을 두 배로 — 트래픽이 몰려도 시스템이 버티게. 스코프는 배포된 것의 런타임 거동·정책 값이다. 빌드 그래프·CI·패키징은 asgard-eitri 소관 — 혼합 파일(k8s manifest 의 이미지 태그, Dockerfile 의 HEALTHCHECK)은 주 표면 담당이 편집하되 런타임 값은 이 캐논을 기준으로 쓴다.
+The belt doubles your strength — the system holds even when traffic surges. Scope is the runtime behavior and policy values of what is deployed. Build graphs, CI, and packaging belong to asgard-eitri — mixed files (image tags in a k8s manifest, HEALTHCHECK in a Dockerfile) are edited by the owner of the primary surface, but runtime values are written against this canon.
 
-## 무상태 우선 (스케일아웃의 전제)
+## Stateless First (the precondition for scale-out)
 
-- 프로세스 로컬 세션·업로드 파일·정합성이 걸린 인메모리 캐시가 있으면 수평 확장 불가 — 외부화(스토어·오브젝트 스토리지)가 스케일링보다 먼저다.
-- 리트머스: 인스턴스 2개로 굴려도 죽지 않는가.
+- Process-local sessions, uploaded files, or consistency-bearing in-memory caches make horizontal scaling impossible — externalization (store, object storage) comes before scaling.
+- Litmus: does it survive running on 2 instances?
 
-## 헬스체크
+## Health Checks
 
-- liveness(살았나 — 실패 시 재시작) ≠ readiness(받을 수 있나 — 실패 시 트래픽 제외)를 구분한다.
-- 의존성 캐스케이드 금지: DB 다운을 liveness 실패로 전파하면 전체 재시작 폭풍 — 의존성 상태는 readiness 까지만.
-- 체크는 가볍게 — 헬스체크 자체가 부하 원인이 되지 않게.
+- Distinguish liveness (alive? — restart on failure) ≠ readiness (can it accept? — remove from traffic on failure).
+- No dependency cascades: propagating a DB outage into liveness failure triggers a fleet-wide restart storm — dependency state goes to readiness at most.
+- Keep checks light — the health check itself must not become a load source.
 
 ## graceful shutdown
 
-- 종료 시그널 수신 → 신규 수신 중단(readiness 내리기) → 인플라이트 완료 대기(상한부) → 자원 정리 → 종료. 인플라이트를 끊으면 재시도 없는 클라이언트에겐 데이터 손실이다.
-- 종료 대기 상한은 인프라의 강제 종료 유예보다 짧게 잡는다.
+- Receive termination signal → stop accepting new work (drop readiness) → wait for in-flight completion (bounded) → release resources → exit. Cutting in-flight work is data loss for clients without retries.
+- Set the shutdown wait cap shorter than the infrastructure's forced-kill grace period.
 
-## 스케일링
+## Scaling
 
-- 수평 우선 — 수직(더 큰 머신)은 실측 근거(단일 프로세스 CPU/메모리 병목) 가 필요하다.
-- 오토스케일 신호는 실제 병목 지표로(큐 깊이·p99·동시 처리 수) — CPU 만으론 I/O 바운드를 놓친다.
-- 스케일 정책엔 상한·하한·쿨다운 명시 — 무상한 오토스케일은 비용 사고이자 연쇄 장애 증폭기다.
+- Horizontal first — vertical (a bigger machine) requires measured evidence (a single-process CPU/memory bottleneck).
+- Autoscale on real bottleneck signals (queue depth, p99, concurrent work count) — CPU alone misses I/O-bound workloads.
+- Scale policies state upper bound, lower bound, and cooldown — uncapped autoscaling is a cost incident and a cascading-failure amplifier.
 
-## 설정 외부화
+## Config Externalization
 
-- 환경별 분기 코드 금지 — 설정 값 주입으로. 코드는 모든 환경에서 동일 아티팩트다.
-- 기본값은 안전한 쪽(로컬·개발) — 운영 값은 명시 주입만.
+- No per-environment branches in code — inject configuration values. Code is the same artifact in every environment.
+- Defaults lean safe (local/dev) — production values by explicit injection only.
 
-## 관측성 최소 계약
+## Observability Minimum Contract
 
-- 구조화 로그(검색 가능한 필드) + 요청 상관 ID 전파.
-- 핵심 메트릭 4종: 트래픽·에러율·지연(p50/p99)·포화도. SLO 는 핫 패스만 (role 성능 표면 분리).
-- 리트머스: "이 코드가 새벽에 죽으면 로그만으로 원인 후보를 좁힐 수 있는가."
+- Structured logs (searchable fields) + request correlation-ID propagation.
+- Four core metrics: traffic, error rate, latency (p50/p99), saturation. SLOs on hot paths only (role performance-surface separation).
+- Litmus: "If this code dies in the middle of the night, can logs alone narrow the cause candidates?"
 
-> 출처: probe 분리·graceful shutdown·핵심 메트릭 표준 관행 자체 재서술.
+> Source: probe separation, graceful shutdown, core metrics — standard practice restated in our own words.
 """
 
 _JARNGREIPR = """\
 ---
 name: asgard-thor-jarngreipr
-description: 토르의 철장갑 야른그레이프르 — 데이터·스키마 안전 오버레이. 스키마 변경·마이그레이션·인덱스·비가역 데이터 조작이 끼는 작업에서 다른 스킬 위에 겹쳐 로드한다.
+description: Thor's iron gauntlets Járngreipr — data and schema safety overlay. For tasks involving schema changes, migrations, indexes, or irreversible data operations, load this layered on top of the other skills.
 ---
 
-# asgard-thor-jarngreipr — 🧤 데이터·스키마 안전 (오버레이)
+# asgard-thor-jarngreipr — 🧤 Data & Schema Safety (overlay)
 
-달군 묠니르를 맨손으로 쥐지 않는다. 이 스킬은 단독이 아니라 **오버레이** — 데이터 위험이 끼면 묠니르·번개 위에 겹쳐 적용한다. RDB 만이 아니라 검색 인덱스·파일 데이터·캐시 스토어 등 상태 있는 저장소 전부가 대상이다.
+You do not grip a red-hot Mjölnir bare-handed. This skill is not standalone but an **overlay** — when data risk is involved, layer it on top of Mjölnir and Lightning. It covers not just RDBs but every stateful store: search indexes, file data, cache stores.
 
-## 안전 등급 매트릭스 (환경 × 부작용 — role 승인 모델의 데이터 구체화)
+## Safety Grade Matrix (environment × side effect — the data-specific form of the role approval model)
 
-| 등급 | 대상 | 행동 |
+| Grade | Target | Action |
 |---|---|---|
-| 🟢 | 읽기 전부 / 로컬·ephemeral 환경 전부 | 즉시 실행 |
-| 🟡 | 공유 환경 데이터 변경(DML) | 영향 범위·건수 추정 + 되돌리기 방법을 산출물로 보고 — 실행은 배정에 명시됐을 때만 |
-| 🔴 | 스키마 변경·마이그레이션 | expand-contract + 롤백 계획 필수, 계획을 보고에 동반 |
-| ⚫ | 운영 환경 직접 실행 / 백업 없는 파괴 조작(drop·truncate·비가역 갱신) | 직접 실행 금지 — 계획 반환, 승인은 Odin 몫 |
+| 🟢 | All reads / all local·ephemeral environments | Execute immediately |
+| 🟡 | Data changes (DML) in shared environments | Report impact scope, estimated row count, and the undo method as deliverables — execute only when the assignment says so |
+| 🔴 | Schema changes, migrations | expand-contract + rollback plan required; include the plan in the report |
+| ⚫ | Direct execution in production / destructive ops without backup (drop, truncate, irreversible updates) | No direct execution — return a plan; approval belongs to Odin |
 
-## 마이그레이션 (expand-contract)
+## Migrations (expand-contract)
 
-- 전방·후방 호환: 구 코드와 신 코드가 공존하는 배포 구간을 견뎌야 한다 — ① 확장(새 컬럼·테이블, 널 허용/기본값) ② 이행(이중 쓰기 또는 백필) ③ 수축(구 경로 제거)은 별 단계·별 배포로 나눈다.
-- 파괴 변경(컬럼 제거·타입 축소·NOT NULL 추가)은 수축 단계에서만 — 사용처 0 을 확인한 뒤.
-- 백필은 배치 내구성 계약(묠니르)을 따른다 — 한 방 대량 UPDATE 금지(락·복제 지연), 청크+스로틀.
-- 롤백 계획 없는 마이그레이션은 미완성이다 — "롤포워드로 고친다"도 계획이면 명시한다.
+- Forward and backward compatibility: survive the deploy window where old and new code coexist — ① expand (new columns/tables, nullable/defaults) ② migrate (dual writes or backfill) ③ contract (remove the old path), as separate steps and separate deploys.
+- Destructive changes (column removal, type narrowing, adding NOT NULL) happen only in the contract step — after confirming zero usages.
+- Backfills follow the batch durability contract (Mjölnir) — no one-shot mass UPDATE (locks, replication lag); chunk + throttle.
+- A migration without a rollback plan is unfinished — "fix by rolling forward" counts as a plan only if stated explicitly.
 
-## 인덱스
+## Indexes
 
-- 근거는 실측 쿼리 계획 — "느릴 것 같아서" 인덱스 금지. 전/후 계획·실행 시간을 보고에 첨부한다.
-- 쓰기 비용 명시: 인덱스는 공짜가 아니다 — 쓰기 빈도 높은 테이블은 트레이드오프를 서술한다.
-- 대형 테이블 인덱스 생성은 온라인 방식(지원 시) — 락 유지 시간 추정 없이 실행 금지.
+- Evidence is a measured query plan — no "it might be slow" indexes. Attach before/after plans and execution times to the report.
+- State the write cost: indexes are not free — describe the trade-off for write-heavy tables.
+- Create indexes on large tables online (where supported) — no execution without a lock-duration estimate.
 
-## 정합성·비가역
+## Consistency & Irreversibility
 
-- 비가역 조작 전 리트머스: "직후 후회하면 되돌릴 수단이 있는가" — 없으면 ⚫ 등급이다.
-- 유니크·외래키 제약은 애플리케이션 검증의 대체가 아니라 최후 방어선 — 경합 창은 제약만 잡는다.
-- 검색 인덱스·캐시 등 파생 데이터는 재구축 절차가 확인될 때만 파괴 가능하다.
+- Litmus before any irreversible operation: "If I regret this immediately, is there a way back?" — if not, it is grade ⚫.
+- Unique and foreign-key constraints are the last line of defense, not a substitute for application validation — only constraints close the race window.
+- Derived data (search indexes, caches) may be destroyed only when the rebuild procedure has been confirmed.
 
-> 출처: expand-contract 표준 관행 자체 재서술.
+> Source: expand-contract — standard practice restated in our own words.
 """
 
 _GRIDARVOL = """\
 ---
 name: asgard-thor-gridarvol
-description: 토르의 지팡이 그리다르뵐 — 백엔드 진단 심화 오버레이. 서버 결함·API 오동작·재현 어려운 장애의 원인 규명 작업에서 공통 디버깅 스킬 위에 겹쳐 로드한다.
+description: Thor's staff Gríðarvölr — backend diagnosis overlay. For root-causing server defects, API misbehavior, and hard-to-reproduce failures, load this layered on top of the common debugging skill.
 ---
 
-# asgard-thor-gridarvol — 🦯 백엔드 진단 (오버레이)
+# asgard-thor-gridarvol — 🦯 Backend Diagnosis (overlay)
 
-급류를 건널 때는 지팡이로 바닥을 짚는다 — 추측이 아니라 짚이는 것만 딛는다. 공통 규율(재현→관찰→가설 1개씩→최소 수정)은 `asgard-worker-debugging` 이 담당한다 — 이 스킬은 서버·API·분산 경계 특유의 진단 층을 그 위에 겹친다.
+Crossing rapids, you probe the riverbed with a staff — step only where it touches, never on guesses. The common discipline (reproduce → observe → one hypothesis at a time → minimal fix) belongs to `asgard-worker-debugging` — this skill layers the diagnosis specific to servers, APIs, and distributed boundaries on top of it.
 
-## 재현 루프 사다리 (수정 전에 빨강→초록 명령을 만든다)
+## Reproduction Loop Ladder (build a red→green command before fixing)
 
-원인 이론보다 먼저, 증상에서 빨강이고 수정 후 초록이 되는 명령 하나를 확보한다. 낮은 단부터:
-① 실패 테스트 → ② 요청 재현 스크립트(상태 코드·헤더·본문 기록) → ③ 캡처 재생(실패 요청 본문·큐 메시지·웹훅 페이로드를 픽스처로) → ④ 이분 판정기(git bisect run — 판정 명령은 좁게: 무관한 파손이 탐색을 오도한다) → ⑤ 재현 실패 보고(최후 — 시도한 각도와 함께, role 사전 진단 게이트).
-- 루프는 조인다: 더 빠르게, 단언은 더 날카롭게, 비결정 요소(시간·시드·네트워크)는 고정.
-- 간헐 실패는 먼저 재현율을 올린다 — 재현율 50% 는 진단 가능하고 1% 는 사실상 불가다.
+Before any theory of cause, secure one command that is red at the symptom and turns green after the fix. From the lowest rung:
+① failing test → ② request-reproduction script (record status code, headers, body) → ③ capture replay (failing request body, queue message, webhook payload as fixtures) → ④ bisect judge (git bisect run — keep the judge command narrow: unrelated breakage misleads the search) → ⑤ report reproduction failure (last resort — with the angles attempted; role pre-diagnosis gate).
+- Tighten the loop: faster runs, sharper assertions, pinned nondeterminism (time, seeds, network).
+- For intermittent failures, raise the reproduction rate first — 50% is diagnosable, 1% effectively is not.
 
-## 계층 격리 (요청 경로는 층으로 가른다)
+## Layer Isolation (slice the request path into layers)
 
-증상이 어느 층인지 먼저 격리하고 그 층만 판다: 연결(DNS·라우팅) → 타임아웃(연결 지연 vs 응답 지연 구분 — 단계별 시간 실측) → TLS → 인증/인가(토큰 만료·스코프·환경 불일치) → 요청 형식(Content-Type·직렬화 불일치) → 응답 파싱(content-type 확인 후 역직렬화) → 의미(계약 위반).
-- 상태 코드 플레이북: 401=만료·스킴, 403=스코프·소유권, 404=경로·리소스 열거 주의, 409=경합·멱등 키, 422=스키마 드리프트, 429=Retry-After+백오프, 5xx=상관 ID 확보 후 상류 추적.
-- 200 이어도 본문 안에 에러가 실리는 프로토콜(GraphQL 류)이 있다 — 상태 코드만 믿지 않는다.
+First isolate which layer the symptom lives in, then dig only there: connection (DNS, routing) → timeout (distinguish connect latency vs response latency — measure each stage) → TLS → authn/authz (token expiry, scopes, environment mismatch) → request format (Content-Type, serialization mismatch) → response parsing (check content-type before deserializing) → semantics (contract violation).
+- Status-code playbook: 401=expiry/scheme, 403=scope/ownership, 404=path/beware resource enumeration, 409=contention/idempotency key, 422=schema drift, 429=Retry-After+backoff, 5xx=grab the correlation ID then trace upstream.
+- Some protocols carry errors inside a 200 body (GraphQL and kin) — never trust the status code alone.
 
-## 다중 컴포넌트 계측
+## Multi-Component Instrumentation
 
-- 서비스 2개 이상이 끼면 가설 전에 경계마다 계측한다: 각 경계의 in/out 값·설정 전파를 기록해 "어느 경계에서 값이 틀어지나"를 실측하고, 틀어진 값은 상류로 추적해 근원에서 고친다 — 증상 지점 덧대기 금지.
-- 임시 로그는 고유 접두사(`[DBG-xxxx]`)로 — 정리가 한 번의 검색으로 끝난다.
+- With 2+ services involved, instrument every boundary before hypothesizing: record in/out values and config propagation at each boundary, measure "at which boundary does the value go wrong", and trace the wrong value upstream to fix it at the source — no patching at the symptom site.
+- Temporary logs use a unique prefix (`[DBG-xxxx]`) — cleanup ends with a single search.
 
-## 전제 검증 (버그라 부르기 전)
+## Premise Verification (before calling it a bug)
 
-- 의도된 설계를 결함으로 오인하지 않는다 — 원 의도를 이력에서 확인한다 (`git log -p -S "<symbol>"`). "격리돼 있음" 자체가 설계인 경우가 있다.
-- 결함 발현 지점을 특정하지 못하면 전제 미검증이다: 버그가 발현되는 정확한 줄과, 수정이 그 줄의 거동을 바꾸는지를 말할 수 있어야 한다.
-- 부재가 하중을 받치는 경우가 있다 — "빠진 것 같은" 코드 복원이 기존 동작을 부술 수 있다: 부재의 소비자를 먼저 찾는다.
+- Do not mistake intended design for a defect — check the original intent in history (`git log -p -S "<symbol>"`). Sometimes "it is isolated" is itself the design.
+- If you cannot pinpoint where the defect manifests, your premise is unverified: you must be able to name the exact line where the bug manifests and whether the fix changes that line's behavior.
+- Sometimes absence bears load — restoring "seemingly missing" code can break existing behavior: find the consumers of the absence first.
 
-## 구조 신호 (셋의 규칙)
+## Structural Signal (rule of three)
 
-- 실질적으로 다른 접근 3회가 실패하면 국소 결함이 아니라 구조 문제다 — 위험을 더 쌓지 말고 시도·배제 근거와 함께 반환한다.
-- 같은 버그가 형태만 바꿔 재발하거나 단순 변경이 여러 파일을 건드리게 하면 구조 신호다 — 최소 구조 수정안과 파급 범위 추정을 보고에 담는다.
+- If 3 substantially different approaches fail, it is not a local defect but a structural problem — stop stacking risk and return with the attempts and elimination evidence.
+- The same bug recurring in new forms, or a simple change touching many files, is a structural signal — put a minimal structural fix proposal and a blast-radius estimate in the report.
 
-> 출처: 계층 격리·bisect 판정기·전제 검증 표준 관행 자체 재서술.
+> Source: layer isolation, bisect judges, premise verification — standard practice restated in our own words.
 """
 
 _TANNGRISNIR = """\
 ---
 name: asgard-thor-tanngrisnir
-description: 토르의 염소 탕그리스니르 — 산출 무결 스윕·완료 증거 계약. 백엔드 변경의 마무리(반환 전 자기 점검·보고 작성)와 에러 처리·폴백·리팩터 작업 전 로드.
+description: Thor's goat Tanngrisnir — output integrity sweep and completion-evidence contract. Load when finishing backend changes (pre-return self-check, report writing) and before error-handling, fallback, or refactoring work.
 ---
 
-# asgard-thor-tanngrisnir — 🐐 산출 무결·완료 증거
+# asgard-thor-tanngrisnir — 🐐 Output Integrity & Completion Evidence
 
-염소는 뼈가 온전해야 되살아난다 — 산출물은 무결 스윕과 증거를 갖춰야 반환이다.
+The goat revives only if its bones are intact — output qualifies for return only with an integrity sweep and evidence.
 
-## 가면 폴백 차단 (에러 처리의 제1 결함)
+## Masking-Fallback Ban (the #1 defect in error handling)
 
-폴백·우회 코드는 둘로 분류한다:
-- **가면 폴백 (차단)** — 실제 결함을 숨기는 것: 삼켜진 에러, 조용한 기본값, 우회된 검증, 테스트 없는 대체 경로, 진단 강등. 발견 즉시 결함으로 취급 — 완료가 아니라 수리 대상이다.
-- **근거 폴백 (허용)** — 알려진 외부·버전 경계에 한정되고, 양 경로가 테스트되고, 실패 증거가 보존되고, 근거가 코드에 남는 것.
-- 없는 데이터를 OK·0 으로 렌더하지 않는다 — "데이터 부족"은 그 자체로 표기한다.
+Classify all fallback/bypass code into two kinds:
+- **Masking fallback (banned)** — hides a real defect: swallowed errors, silent defaults, bypassed validation, untested alternate paths, downgraded diagnostics. Treat on sight as a defect — a repair target, not completion.
+- **Justified fallback (allowed)** — confined to a known external or version boundary, both paths tested, failure evidence preserved, rationale left in the code.
+- Never render missing data as OK or 0 — "insufficient data" is itself what gets displayed.
 
-## 슬롭 스윕 (반환 전 자기 점검)
+## Slop Sweep (pre-return self-check)
 
-- 디버그 잔재·죽은 코드·임시 로그 제거 (진단 접두사 일괄 검색 — 그리다르뵐 계측 규율의 짝).
-- 불필요한 추상화 금지: 단일 사용 헬퍼 선제 추출·통과형 래퍼·투기적 간접화 — diff 를 늘린 만큼 정당화돼야 한다.
-- 그 구역 관례에 없는 과잉 방어(신뢰된 경로의 재검증·광역 try/catch) 제거 — 방어 코드도 배정 범위다 (Canon 7).
-- 경계 위반(잘못된 계층 import·숨은 결합)은 스윕 대상 — 수정이 범위 밖이면 발견 보고까지.
+- Remove debug residue, dead code, temporary logs (one bulk search for the diagnostic prefix — the counterpart of Gríðarvölr's instrumentation discipline).
+- No unnecessary abstraction: preemptively extracted single-use helpers, pass-through wrappers, speculative indirection — each must justify the diff it adds.
+- Remove over-defensiveness foreign to that area's conventions (re-validating trusted paths, blanket try/catch) — defensive code is part of the assignment scope too (Canon 7).
+- Boundary violations (wrong-layer imports, hidden coupling) are sweep targets — if the fix is out of scope, report the finding at minimum.
 
-## 완료 증거 계약 (보고의 자격)
+## Completion Evidence Contract (what qualifies a report)
 
-- 단언은 산출물에: 응답 텍스트·희망적 로그 한 줄이 아니라 실제 효과 — 기록된 row·생성 파일·엔드포인트 실응답을 확인한다.
-- 테스트 증거는 실패 상태가 보존되는 형태로: `set -o pipefail && <테스트 명령> 2>&1 | tail -n 100` — 필터가 성공해도 왼쪽 실패가 살아남는다.
-- 실행 ≠ 평가: 명령이 돌았다는 것과 기준을 충족했다는 것은 다르다 — criteria 각각에 어떤 증거가 대응하는지 명시하고, 다루지 못한 기준은 미평가로 남긴다. 완료로 뭉개지 않는다 (Canon 10).
-- 종류 점검: 산출물이 요청된 종류인가(문서가 아니라 동작 코드인가), 검증이 요청된 거동을 증명했나(파일 존재만 확인하지 않았나).
-- 라이브에서 잡은 버그는 수정 + 회귀 케이스가 한 쌍이다 — 케이스 없는 수정은 재발 예약이다 (작성 규율은 `asgard-worker-testing`).
+- Assert on artifacts: not response text or one hopeful log line but the actual effect — confirm the written row, the created file, the endpoint's real response.
+- Test evidence in a failure-preserving form: `set -o pipefail && <test command> 2>&1 | tail -n 100` — the left-side failure survives even when the filter succeeds.
+- Running ≠ evaluating: that a command ran and that the criteria were met are different things — state which evidence maps to each criterion, and leave uncovered criteria as unevaluated. Never smear them into "done" (Canon 10).
+- Kind check: is the artifact the requested kind (working code, not a document)? Did verification prove the requested behavior (not merely that a file exists)?
+- A bug caught live pairs a fix with a regression case — a fix without a case is a scheduled recurrence (authoring discipline in `asgard-worker-testing`).
 
-> 출처: pipefail 증거 형식·폴백 이분류 표준 관행 자체 재서술.
+> Source: pipefail evidence format, two-way fallback classification — standard practice restated in our own words.
 """
 
 _EINHERJAR = """\
 ---
 name: asgard-thor-einherjar
-description: 토르의 에인헤랴르 편대 — 팀 단위 백엔드 작업 오케스트레이션. 다표면 대형 변경(분리 표면 2+·파일 3+)·난제 N-버전 토너먼트가 필요한 과업 전 로드. 편대장(asgard-thor-lead)과 편대를 실행하는 상위(Worker)가 읽는다.
+description: Thor's einherjar squad — team-scale backend work orchestration. Load before tasks needing a large multi-surface change (2+ separate surfaces / 3+ files) or an N-version tournament for a hard problem. Read by the squad lead (asgard-thor-lead) and the superior (Worker) running the squad.
 ---
 
-# asgard-thor-einherjar — 🛡 에인헤랴르 편대 (팀 백엔드 작업)
+# asgard-thor-einherjar — 🛡 Einherjar Squad (Team Backend Work)
 
-혼자 다 하는 토르는 절차를 건너뛴다 — 실측: 지시 이행률은 턴이 쌓일수록 단조 하락하고(Multi-IF: 1턴 0.877 → 3턴 0.707), 긴 멀티턴 컨텍스트는 평균 −39% 열화하며(Lost in Multi-Turn), 자기 산출은 자기가 후하게 판정한다(자기선호 편향). 분할·검증 절차는 지시문이 아니라 **구조(서브 N기 편성)로 강제한다**.
+A Thor who does everything alone skips steps — measured: instruction-following drops monotonically as turns accumulate (Multi-IF: turn 1 at 0.877 → turn 3 at 0.707), long multi-turn context degrades by an average of −39% (Lost in Multi-Turn), and self-produced output gets graded generously by its own producer (self-preference bias). The split/verify procedure is enforced not by instructions but by **structure — organizing N subordinates**.
 
-## 편성 판정 (위임 문턱 — 토큰 세금을 정당화할 때만)
+## Formation Verdict (delegation threshold — only when it justifies the token tax)
 
-| 신호 | 편성 |
+| Signal | Formation |
 |---|---|
-| 단일 파일·원자 변경 | 편대 없음 — 단독 토르. 과소 편성이 아니라 정답이다 (멀티에이전트는 토큰 ~15배 세금) |
-| 분리 가능한 표면 2+ / 파일 3+ / 대략 200줄+ | 분할 편대 2–4기 |
-| 실질적으로 다른 인라인 접근 2회에도 미완 / 접근이 갈리는 난제 | 토너먼트 편대 2–3기 |
+| Single file, atomic change | No squad — solo Thor. This is the correct call, not under-formation (multi-agent carries a ~15x token tax) |
+| 2+ separable surfaces / 3+ files / roughly 200+ lines | Split squad, 2–4 members |
+| Unfinished after 2 substantially different inline approaches / a hard problem where approach itself is contested | Tournament squad, 2–3 members |
 
-## 편대 유형 2종
+## Two Squad Types
 
-- **분할 편대** — 서로 다른 단위를 나눠 든다. 분할은 셋을 검증한다: 자식 합집합 = 부모 범위(누락 없음), 서로 비중첩(파일 겹침 없음), 각자가 부모보다 원자에 가까움. 검증 실패는 1회 수리, 재실패면 에스컬레이션 — 조용한 수용 금지.
-  - **계약 선행**: 한 단위가 만드는 계약(타입·시그니처·스키마·API)을 다른 단위가 소비하면 병렬 불가 — 계약 산출을 먼저 확정하고 소비 단위를 다음 웨이브로 보낸다.
-  - 같은 파일을 두 서브가 만질 가능성이 있으면 그 파일은 대장이 직접 처리한다.
-- **토너먼트 편대** — 같은 난제를 서브마다 다른 접근 축으로 격리 작업 트리에서 병렬 시도, 검증(빨강→초록 명령)을 통과한 것 중 승자 1개만 본류에 적용하고 패자는 폐기한다. 같은 브리프 N벌은 국소 클러스터에 갇힌다 — 축 분배를 강제한다.
+- **Split squad** — divides distinct units among members. A split is verified on three points: the union of children equals the parent's scope (nothing missing), the children are non-overlapping (no file overlap), and each is closer to atomic than the parent. A failed verification gets one repair pass; a second failure escalates — never accept it silently.
+  - **Contracts first**: if one unit produces a contract (types, signatures, schema, API) that another consumes, they cannot run in parallel — finalize the contract output first and send the consuming unit to the next wave.
+  - If two subordinates might touch the same file, the lead handles that file directly.
+- **Tournament squad** — each subordinate tries the same hard problem via a different approach axis, in an isolated worktree, in parallel; only the one winner that passes verification (red→green command) is applied to the mainline, and the losers are discarded. N copies of the same brief cluster locally — force axis distribution instead.
 
-## 서브 브리프 계약 (대상·변경·수용 — 모호한 브리프가 중복·갭의 제1 원인)
+## Subordinate Brief Contract (target · change · acceptance — an ambiguous brief is the #1 cause of duplication and gaps)
 
-① **대상** — 정확한 파일·심볼 + 명시적 비목표(하지 말 것·다른 서브와의 분계선) ② **변경** — 단계 서술 ③ **수용** — 관찰 가능한 결과 + 단위 한정 검증 명령. 전역 빌드·전체 테스트를 서브에 배정하지 않는다 — 전역 게이트는 대장이 통합 후 1회다 ④ **공유 계약 복제** — 단위들이 인터페이스를 공유하면 정확한 타입·시그니처를 브리프마다 동봉한다 ⑤ **도메인 스킬 원문 동봉** — 데이터 위험 단위엔 야른그레이프르, 진단 단위엔 그리다르뵐 원문(또는 로드 경로)을 싣는다. 대장의 재서술은 손실 압축이다.
-- 서브는 항상 **새 컨텍스트** — 대장 히스토리·타 단위 세부를 물려주지 않는다. 실패 단위는 같은 컨텍스트 수리가 아니라 새 컨텍스트 재생성.
-- 서브당 파일 3–5개 상한 — glob·"전부 갱신"류 배정 금지.
+① **Target** — the exact files/symbols + explicit non-goals (what not to do, the boundary with other subordinates) ② **Change** — described step by step ③ **Acceptance** — an observable result + a unit-scoped verification command. Never assign a global build or full test suite to a subordinate — the global gate is the lead's job, run once after integration ④ **Shared contract duplication** — if units share an interface, attach the exact types/signatures to every brief that needs them ⑤ **Attach the domain skill verbatim** — for data-risk units include Jarngreipr, for diagnosis units include Gríðarvölr verbatim (or its load path). A lead's paraphrase is lossy compression.
+- Subordinates always get a **fresh context** — do not hand down the lead's history or other units' details. A failed unit gets a fresh-context regeneration, not a same-context repair.
+- Cap of 3–5 files per subordinate — never assign a glob or "update everything" scope.
 
-## 핸드오프·통합 (산출은 diff, 판정은 분리)
+## Handoff & Integration (deliverable is a diff, verdict is separate)
 
-- 서브 반환 규격: 변경 파일 목록 + 결정 요약 + 검증 증거(또는 검증 권고) + 블로커. 작업 로그 전체 반환 금지.
-- 대장은 두 장부를 분리 유지한다: **계획 장부**(사실·결정·편성)와 **진행 장부**(단위별 상태). 무진전 2회 초과 = 서브 재시도가 아니라 **계획 자체를 재작성**.
-- **통합·전역 검증은 대장 몫** — 모든 단위 합류 후 변경 파일 합집합에 lint·테스트를 1회 실행한다. 서브 요약은 요약일 뿐이다 — 검증 명령은 직접 돌리고 cmd·exit 를 기록한다.
-- 판정 분리 — 자기가 지시한 산출의 최종 판정을 스스로 내리지 않는다: 반례 탐색은 read-only 표면(loki)으로. 검토 순서는 스펙 정합 → 품질이다 — 순서를 바꾸면 잘 짠 오답을 통과시킨다.
+- Subordinate return format: list of changed files + decision summary + verification evidence (or a verification recommendation) + blockers. Never return the full work log.
+- The lead keeps two ledgers separate: a **plan ledger** (facts, decisions, formation) and a **progress ledger** (per-unit status). More than 2 rounds without progress means **rewriting the plan itself**, not retrying the subordinate.
+- **Integration and the global verification are the lead's job** — after all units converge, run lint/tests once against the union of changed files. A subordinate's summary is only a summary — run the verification commands yourself and record cmd and exit code.
+- Verdict separation — never render the final verdict on output you yourself directed: run counterexample search on a read-only surface (loki). Review order is spec conformance → quality — reversing the order lets a well-written wrong answer pass.
 
-## 불변식 (편대가 깨면 안 되는 것)
+## Invariants (what the squad must never break)
 
-- **깊이 1** — 서브 토르는 재위임하지 않는다. 편대의 편대는 없다.
-- **검증 독립성** — 편대는 Verifier 가 부르지 않는다. 판정 서브는 read-only 표면(loki·별도 세션)으로.
-- 산출물은 canonical 작업 트리로 합류해 상위 게이트(물리 대조)를 그대로 통과한다 — 우회 경로 금지.
-- 완료 선언 금지 (Canon 10) — 대장 출력 = 편성 기록(누가 무엇을) + 단위별 증거 + 통합 검증 로그 + 잔여 리스크. 판정은 상위 몫.
+- **Depth 1** — subordinate Thors do not re-delegate. No squad of squads.
+- **Verification independence** — the Verifier never invokes a squad. Verdict subordinates run on a read-only surface (loki, a separate session).
+- Deliverables merge into the canonical work tree and pass the upstream gate (physical diff check) as-is — no bypass path.
+- No declaring completion (Canon 10) — the lead's output is the formation record (who did what) + per-unit evidence + integration verification log + residual risk. The verdict belongs upstream.
 
-**단독 폴백** (편대 불가 환경): 같은 절차를 체크리스트 게이트로 — 단위 분할(비중첩 검증)·계약 선행·단위별 증거·최종 합집합 검증을 같은 순서로, 단계 산출을 파일로 남기며 수행한다. 구조가 없으면 절차는 증발한다 (위 실측).
+**Solo fallback** (when a squad is not available): run the same procedure as a checklist gate — unit split (non-overlap verification), contracts-first, per-unit evidence, and final union verification, in the same order, leaving each step's output on file. Without structure, the procedure evaporates (per the measurements above).
 
-> 출처(수치 재서술): Anthropic multi-agent research system(리드-서브·토큰 ~15배·브리프 규격), Multi-IF(2410.15553), Lost in Multi-Turn(2505.06120), Magentic-One(2411.04468 — 이중 장부·정체 재계획), MetaGPT(2308.00352 — 산출물 표준 핸드오프), Cognition don't-build-multi-agents(부품 분담 경계), 샘플 다양성(2502.11027 — 축 분배).
+> Source (figures restated): Anthropic multi-agent research system (lead-subordinate, ~15x token tax, brief format), Multi-IF (2410.15553), Lost in Multi-Turn (2505.06120), Magentic-One (2411.04468 — dual ledgers, stall replanning), MetaGPT (2308.00352 — standardized deliverable handoff), Cognition don't-build-multi-agents (component ownership boundaries), sample diversity (2502.11027 — axis distribution).
 """
 
 THOR_SKILLS: list[tuple[str, str]] = [
@@ -570,8 +570,8 @@ def thor_core_skill() -> str:
 
     return role_core_skill(
         "asgard-thor.md",
-        "토르 코어 계약 — 백엔드(서비스 코드·데이터·API·런타임 정책) 작업의 인라인 수행 기준. "
-        "서브에이전트가 없는 툴에서 백엔드 하위작업 시 Worker phase 가 로드한다.",
+        "Thor core contract — inline execution standard for backend work (service code, data, API, runtime "
+        "policy). Loaded by the Worker phase on backend subtasks in tools without subagents.",
     )
 
 
@@ -581,6 +581,6 @@ def eitri_core_skill() -> str:
 
     return role_core_skill(
         "asgard-eitri.md",
-        "에이트리 코어 계약 — 빌드·CI·패키징·릴리스 작업의 인라인 수행 기준. "
-        "서브에이전트가 없는 툴에서 빌드·CI 하위작업 시 Worker phase 가 로드한다.",
+        "Eitri core contract — inline execution standard for build, CI, packaging, and release work. Loaded "
+        "by the Worker phase on build/CI subtasks in tools without subagents.",
     )

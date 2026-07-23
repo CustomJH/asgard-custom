@@ -331,8 +331,8 @@ class RegistryTest(unittest.TestCase):
         from asgard.templates.roles import ROLE_AGENTS
 
         role = dict(ROLE_AGENTS)["asgard-thor.md"]
-        self.assertIn("아키텍처 opt-in 게이트", role)
-        self.assertIn("기본은 `asgard-thor-bilskirnir`의 4레이어", role)
+        self.assertIn("Architecture opt-in gate", role)
+        self.assertIn("the default is `asgard-thor-bilskirnir`'s 4 layers", role)
         self.assertIn("Specialist trace", role)
 
     def test_hlidskjalf_architecture_pack_spans_backend_and_guide_agents(self):

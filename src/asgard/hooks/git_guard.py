@@ -216,7 +216,7 @@ def main() -> None:
         # Claude Code / Codex: exit 2 가 차단 신호, stderr 가 에이전트에게 그대로 전달된다.
         print(
             "Asgard Canon Law 3/6 — irreversible git op (" + label + "). "
-            "Odin의 명시적 동의를 먼저 받으세요 (매 건, 대상 단위).",
+            "Get Odin's explicit consent first (per action, per target).",
             file=sys.stderr,
         )
         sys.exit(2)

@@ -49,15 +49,15 @@ class DeliveryDispatch:
 
             mode = str(inp.get("mode") or "split")
             if mode not in ("split", "tournament"):
-                raise ValueError("토르 편대 mode 는 split | tournament 다")
+                raise ValueError("Thor squad mode must be split | tournament")
             tasks = list(inp.get("tasks") or [])
             if not 2 <= len(tasks) <= 4:
-                raise ValueError("토르 편대는 한 배치에 2~4기여야 한다")
+                raise ValueError("A Thor squad batch must have 2-4 members")
             ids = [str(t.get("id") or "") for t in tasks]
             if any(not i for i in ids) or len(ids) != len(set(ids)):
-                raise ValueError("편대 task id 는 비어 있지 않고 서로 달라야 한다")
+                raise ValueError("Squad task ids must be non-empty and mutually distinct")
             if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", task_id) for task_id in ids):
-                raise ValueError("편대 task id 는 안전한 파일명 문자만 사용해야 한다")
+                raise ValueError("Squad task ids must use only safe filename characters")
             scopes: dict[str, list[str]] = {}
             for spec in tasks:
                 norm: list[str] = []
@@ -71,10 +71,10 @@ class DeliveryDispatch:
                         or s.startswith((".git/", ".asgard/"))
                     )
                     if unsafe:
-                        raise ValueError(f"안전하지 않은 편대 scope: {raw!r}")
+                        raise ValueError(f"Unsafe squad scope: {raw!r}")
                     norm.append(s)
                 if not norm:
-                    raise ValueError(f"편대 단위 {spec.get('id')} 에 scope 가 없다")
+                    raise ValueError(f"Squad unit {spec.get('id')} has no scope")
                 scopes[str(spec["id"])] = norm
             if mode == "split":
                 # 파일 비중첩은 에인헤랴르 분할 계약 — 선언 시점에 프리픽스 교차를 차단한다
@@ -82,7 +82,7 @@ class DeliveryDispatch:
                 for i, (ta, sa) in enumerate(flat):
                     for tb, sb in flat[i + 1 :]:
                         if ta != tb and (sa == sb or sa.startswith(sb + "/") or sb.startswith(sa + "/")):
-                            raise ValueError(f"분할 편대 scope 중첩: {ta}:{sa} ↔ {tb}:{sb}")
+                            raise ValueError(f"Split squad scope overlap: {ta}:{sa} ↔ {tb}:{sb}")
             squad_root = cwd or hd.root
 
             def in_scope(path: str, allowed: list[str]) -> bool:
@@ -122,10 +122,11 @@ class DeliveryDispatch:
                     child._nested_dispatch = True
                     result = _checked_run(
                         child,
-                        f"편대 단위 {spec['id']} ({mode})\n과업: {task}\n근거: {why}\n"
-                        f"허용 파일 범위: {', '.join(allowed)}\n이 범위 밖은 수정하지 마라. "
-                        "단위 한정 검증만 실행하고(전역 게이트는 대장 몫), "
-                        "반환 = 변경 파일 + 결정 요약 + 검증 증거 + 블로커.",
+                        f"Squad unit {spec['id']} ({mode})\nQuest: {task}\nRationale: {why}\n"
+                        f"Allowed file scope: {', '.join(allowed)}\nDo not modify anything outside "
+                        "this scope. Run unit-scoped verification only (the global gate belongs to "
+                        "the lead). Return = changed files + decision summary + verification "
+                        "evidence + blockers.",
                     )
                     hd._track_cache(result)
                     patch = workspace.capture(extra_paths=tuple(result.writes))
@@ -173,7 +174,9 @@ class DeliveryDispatch:
             out: dict = {"mode": mode, "results": payload, "failures": failures}
             if mode == "tournament":
                 out["note"] = (
-                    "패치는 본류 미적용 — 검증 통과분 중 승자 1개만 git apply 로 적용하고 합집합 검증을 실행하라"
+                    "Patches are NOT applied to the mainline — pick one winner among the "
+                    "verification-passing entries, apply it with git apply, and run the combined "
+                    "verification"
                 )
             return json.dumps(out, ensure_ascii=False)
 
@@ -204,7 +207,7 @@ class DeliveryDispatch:
             base = _LEAD_BASE.get(agent)
             if base:
                 # "코어 계약 전부 상속"을 선언이 아니라 최종 system bytes 로 강제한다.
-                system += f"\n\n# 상속된 {base} 코어 계약\n\n" + _DELIVERY[base]
+                system += f"\n\n# Inherited {base} core contract\n\n" + _DELIVERY[base]
             system += "\n\n" + hd.delivery_identity
             if agent != "loki":
                 system += getattr(hd, "map_note", "")

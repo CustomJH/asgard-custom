@@ -82,7 +82,7 @@ class TestRender(unittest.TestCase):
     def test_mode_filter_rows_and_examples(self):
         for mode in ("lite", "full"):
             body = render_lagom(mode)
-            self.assertIn("모드: %s" % mode, body)  # __MODE__ 치환
+            self.assertIn("mode: %s" % mode, body)  # __MODE__ 치환
             self.assertIn("| **%s** |" % mode, body)
             self.assertIn("- %s:" % mode, body)
             for other in {"lite", "full"} - {mode}:
@@ -93,12 +93,12 @@ class TestRender(unittest.TestCase):
         """안전 예외·원문 불변·persistence 는 마커 없는 공통 본문 — 전 모드 생존 (적대 방어의 근거)."""
         for mode in ("lite", "full"):
             body = render_lagom(mode)
-            self.assertIn("안전 예외", body)
-            self.assertIn("입력 검증", body)
+            self.assertIn("Safety Exceptions", body)
+            self.assertIn("Input validation", body)
             self.assertIn("byte-for-byte", body)
             self.assertIn("persistence", body)
             self.assertIn("auto-clarity", body)
-            self.assertIn("러너블 체크", body)
+            self.assertIn("runnable check", body)
 
     def test_style_contract_survives_every_mode(self):
         """글 문체 조항 — 과장·용어 규율·구조 비례는 마커 없는 공통 본문, 전 모드 생존.
@@ -106,26 +106,26 @@ class TestRender(unittest.TestCase):
         병기를 그대로 통과시켰다 (26-07-15)."""
         for mode in ("lite", "full"):
             body = render_lagom(mode)
-            self.assertIn("글 문체", body)
-            self.assertIn("과장 금지", body)
-            self.assertIn("용어 규율", body)
-            self.assertIn("내용 규모에 비례", body)
-            self.assertIn("새로 쓰는 글", body)  # 적용 범위 문장 — 원문 불변과의 경계
+            self.assertIn("Writing Style", body)
+            self.assertIn("No hype", body)
+            self.assertIn("Terminology discipline", body)
+            self.assertIn("Structure proportional to content", body)
+            self.assertIn("newly written prose", body)  # 적용 범위 문장 — 원문 불변과의 경계
 
     def test_style_contract_makes_grounding_a_hard_invariant(self):
         for mode in ("lite", "full"):
             body = render_lagom(mode)
-            self.assertIn("문체 불변식", body)
-            self.assertIn("입력이나 검증 결과에 없는 효용", body)
-            self.assertIn("사용자 요청보다 우선", body)
+            self.assertIn("Style invariant", body)
+            self.assertIn("Do not invent benefits or causality", body)
+            self.assertIn("take precedence over user requests", body)
 
     def test_style_violations_detect_hype_undefined_terms_and_unsupported_benefits(self):
         source = "확인된 사실: 단일 Python 파일 13줄, 외부 의존성 0, JSON 키 정렬."
         draft = "혁신적 RAGX 플랫폼은 즉시 배포 가능하며 신뢰성을 보장한다."
         found = lagom.style_violations(draft, source)
-        self.assertTrue(any("과장" in item for item in found), found)
-        self.assertTrue(any("미정의 용어: RAGX" in item for item in found), found)
-        self.assertTrue(any("근거 없는 효용" in item for item in found), found)
+        self.assertTrue(any("hype" in item for item in found), found)
+        self.assertTrue(any("undefined term: RAGX" in item for item in found), found)
+        self.assertTrue(any("unsupported benefit" in item for item in found), found)
 
     def test_style_violations_reports_every_distinct_hype_phrase_for_one_pass_rewrite(self):
         draft = "Executive Summary: 혁신적이며 강력한 제품이다. 핵심 가치는 경쟁 우위다."
@@ -136,17 +136,17 @@ class TestRender(unittest.TestCase):
     def test_user_supplied_acronym_with_korean_particle_is_not_undefined(self):
         source = "RAGX를 소개해."
         draft = "# RAGX 소개\n\nRAGX는 JSON 키를 정렬한다."
-        self.assertFalse(any("미정의 용어" in item for item in lagom.style_violations(draft, source)))
+        self.assertFalse(any("undefined term" in item for item in lagom.style_violations(draft, source)))
 
     def test_style_violations_detects_awkward_coinage_and_unproven_zero_setup_claim(self):
         found = "\n".join(lagom.style_violations("무의존성 구조라 환경 설정 없이 바로 실행 가능하다."))
-        self.assertIn("불필요한 조어", found)
-        self.assertIn("근거 없는 효용", found)
+        self.assertIn("unnecessary coinage", found)
+        self.assertIn("unsupported benefit", found)
 
     def test_style_violations_detects_unproven_maintenance_burden_claim(self):
         for claim in ("유지관리 부담이 적다", "설치·배포 부담이 없다"):
             found = lagom.style_violations(f"코드 규모가 작아 {claim}.", "코드는 13줄이다.")
-            self.assertTrue(any("근거 없는 효용" in item for item in found), (claim, found))
+            self.assertTrue(any("unsupported benefit" in item for item in found), (claim, found))
 
     def test_style_violations_does_not_hide_banned_words_inside_generated_quotes(self):
         found = lagom.style_violations('"혁신적", "강력한" 표현은 사용하지 않았다.')
@@ -156,7 +156,7 @@ class TestRender(unittest.TestCase):
     def test_style_violations_detects_correction_meta_commentary(self):
         draft = "문체 계약상 하이프 표현은 쓸 수 없어. 확인된 사실 기준으로 대체안을 제시한다."
         found = lagom.style_violations(draft)
-        self.assertTrue(any("교정 메타" in item for item in found), found)
+        self.assertTrue(any("correction meta" in item for item in found), found)
 
     def test_style_violations_ignore_preserved_code_quotes_and_user_supplied_claims(self):
         source = "검증 결과: 배포 시간 단축을 보장한다."
@@ -187,7 +187,7 @@ class TestRender(unittest.TestCase):
         self.assertIn("asgard:lagom", txt)
         self.assertIn("stop lagom", txt)
         self.assertNotIn("__LAGOM__", txt)
-        self.assertIn("문체 계약", txt)  # Codex/Cursor 표면의 유일한 lagom 접점에도 문체 골자
+        self.assertIn("style contract", txt)  # Codex/Cursor 표면의 유일한 lagom 접점에도 문체 골자
 
 
 # ── resolve — 2계층 + precedence ──────────────────────────────────────────
@@ -256,7 +256,7 @@ class TestResolve(LagomBase):
         self.set_config("off")
         self.assertEqual(lagom.note(self.root), "")  # 네이티브 프롬프트 무변화 (토큰 회귀 없음)
         self.set_config("full")
-        self.assertIn("효율 사다리", lagom.note(self.root))
+        self.assertIn("Efficiency Ladder", lagom.note(self.root))
 
 
 # ── 모드×이벤트 매트릭스 ───────────────────────────────────────────
@@ -313,12 +313,12 @@ class TestTrackerMatrix(LagomBase):
 
     def test_switch_to_off_injects_nothing(self):
         p = self.hook("lagom_tracker.py", {"prompt": "/lagom off"})
-        self.assertNotIn("사다리", p.stdout)
+        self.assertNotIn("ladder", p.stdout)
         self.assertEqual(self.state(), "off")
 
     def test_default_persists_config(self):
         p = self.hook("lagom_tracker.py", {"prompt": "/lagom default lite"})
-        self.assertIn("영속", p.stdout)
+        self.assertIn("persisted", p.stdout)
         self.assertEqual(self.state(), "lite")
         conf = json.load(open(os.path.join(self.root, ".asgard", "asgard-setting-project.json")))
         self.assertEqual(conf["lagom"]["mode"], "lite")  # 통합 설정 (26-07-15)
@@ -339,7 +339,7 @@ class TestTrackerMatrix(LagomBase):
     def test_review_rejected_everywhere(self):
         for prompt in ("/lagom review", "/lagom default review"):
             p = self.hook("lagom_tracker.py", {"prompt": prompt})
-            self.assertIn("유효한 모드가 아니다", p.stdout)
+            self.assertIn("is not a valid mode", p.stdout)
             self.assertIsNone(self.state())
         conf_path = os.path.join(self.root, ".asgard", "config.toml")
         self.assertFalse(os.path.exists(conf_path))  # 영속 오염 없음
@@ -478,7 +478,7 @@ class TestAdversarialContract(LagomBase):
         """full(가장 공격적 잔존 모드 — ultra 는 벤치 근거로 제거됨)에서도 안전 예외가 주입된다."""
         self.set_config("full")
         p = self.hook("lagom_activate.py", {"source": "startup"})
-        for needle in ("안전 예외", "입력 검증", "데이터 손실", "러너블 체크", "재논쟁 없이 구현"):
+        for needle in ("Safety Exceptions", "Input validation", "data loss", "runnable check", "without re-arguing"):
             self.assertIn(needle, p.stdout)
 
     def test_every_mode_keeps_byte_preservation(self):
@@ -491,8 +491,8 @@ class TestAdversarialContract(LagomBase):
     def test_gate_standard_not_lowered_in_canon(self):
         """캐논이 게이트 완화를 명시적으로 금지 — verifier 게이트 신뢰 원칙."""
         for mode in ("lite", "full"):
-            self.assertIn("게이트", render_lagom(mode))
-            self.assertIn("검증 면제가 아니다", render_lagom(mode))
+            self.assertIn("Verifier gate", render_lagom(mode))
+            self.assertIn("not a verification waiver", render_lagom(mode))
 
     def test_verifier_role_keeps_criteria(self):
         """verifier 역할 md — lagom: 마커 인지가 기준 완화로 표현되지 않는지."""
@@ -500,8 +500,8 @@ class TestAdversarialContract(LagomBase):
 
         body = dict(ROLE_AGENTS)["asgard-verifier.md"]
         self.assertIn("lagom:", body)
-        self.assertIn("검증 면제가 아니다", body)
-        self.assertIn("FAIL 이다", body)
+        self.assertIn("not a verification waiver", body)
+        self.assertIn("is still FAIL", body)
 
 
 # ── 네이티브 통합 — heimdall 주입 재료 ─────────────────────────────────────

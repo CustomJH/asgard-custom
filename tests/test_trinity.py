@@ -535,7 +535,7 @@ class TestTransition(TrinityBase):
         self.verify()
         nxt = self.next()
         self.assertEqual(nxt["next_role"], "WORKER_RETRY")
-        self.assertIn("미완료 ticket", nxt["why"])
+        self.assertIn("incomplete tickets", nxt["why"])
         self.assertNotEqual(self.qlog("close").returncode, 0)
 
     def test_concurrent_appends_have_unique_monotonic_turns(self):
@@ -698,8 +698,8 @@ class TestTransition(TrinityBase):
         from asgard.templates.agents import agents_md
 
         guide = agents_md("demo")
-        self.assertIn("모드 B 병렬 배정", guide)
-        self.assertIn("같은 assistant 메시지에서 함께 호출", guide)
+        self.assertIn("Mode B parallel assignment", guide)
+        self.assertIn("all in the same assistant message", guide)
         self.assertIn("todo → in_progress", guide)
         self.assertIn("--parallel-requested", guide)
         self.assertIn("[ASGARD_UNIT:<unit-id>]", guide)
@@ -843,7 +843,7 @@ class TestGate(TrinityBase):
             json.dump(["app.py"], f)  # write-sentinel 흔적 — orphan 경로 진입 조건
         b, reason = self.blocked(self.gate())
         self.assertTrue(b)
-        self.assertIn("퀘스트 로그가 없습니다", reason)
+        self.assertIn("there is no quest log", reason)
 
     def test_pass_without_successful_command_blocks(self):
         self.open_quest()
@@ -851,7 +851,7 @@ class TestGate(TrinityBase):
         self.verify(commands=[{"cmd": "python3 app.py", "exit_code": 1}])
         b, reason = self.blocked(self.gate())
         self.assertTrue(b)
-        self.assertIn("증거", reason)
+        self.assertIn("evidence", reason)
 
     def test_no_criteria_blocks(self):
         p = self.qlog("open", "q1")  # criteria 없이 open
@@ -966,7 +966,7 @@ class TestQuestEnforcement(TrinityBase):
         self.sentinel("app.py")
         b, reason = self.blocked(self.gate())
         self.assertTrue(b)
-        self.assertIn("퀘스트 로그가 없습니다", reason)
+        self.assertIn("there is no quest log", reason)
 
     def test_reverted_write_allows(self):
         self.sentinel("README.md")  # 기록됐지만 워킹트리는 HEAD 그대로 (되돌린 write)
@@ -1014,7 +1014,7 @@ class TestQuestEnforcement(TrinityBase):
         stopped = run(GATE, ["cursor"], stdin=json.dumps({"cwd": self.root}), cwd=self.root)
         out = jout(stopped)
         self.assertIn("followup_message", out)
-        self.assertIn("퀘스트 로그가 없습니다", out["followup_message"])
+        self.assertIn("there is no quest log", out["followup_message"])
 
     def test_codex_apply_patch_and_stop_use_codex_protocol(self):
         self.write("app.py", "print('codex')\n")
@@ -1034,7 +1034,7 @@ class TestQuestEnforcement(TrinityBase):
         )
         out = jout(stopped)
         self.assertIs(out.get("continue"), False)
-        self.assertIn("퀘스트 로그가 없습니다", out.get("stopReason", ""))
+        self.assertIn("there is no quest log", out.get("stopReason", ""))
 
 
 class TestFullLoopE2E(TrinityBase):
@@ -1078,7 +1078,7 @@ class TestUnattended(TrinityBase):
         for mode, expect in (("bypassPermissions", True), ("dontAsk", True), ("default", False), ("plan", False)):
             p = run(UCTX, stdin=json.dumps({"permission_mode": mode, "user_prompt": "x"}), cwd=self.root)
             self.assertEqual(p.returncode, 0)
-            self.assertEqual("무인 세션" in p.stdout, expect, mode)
+            self.assertEqual("Unattended session" in p.stdout, expect, mode)
 
     def test_context_env_override(self):
         p = run(
@@ -1087,7 +1087,7 @@ class TestUnattended(TrinityBase):
             cwd=self.root,
             env_extra={"ASGARD_UNATTENDED": "1"},
         )
-        self.assertIn("무인 세션", p.stdout)
+        self.assertIn("Unattended session", p.stdout)
 
     def test_workless_escalate_blocked_once_when_unattended(self):
         self.open_quest()
@@ -1130,7 +1130,7 @@ class TestBaseline(TrinityBase):
         self.assertEqual(self.qlog("close").returncode, 1)
         gp = jout(self.gate())
         self.assertEqual(gp.get("decision"), "block")
-        self.assertIn("베이스라인", gp.get("reason", ""))
+        self.assertIn("baseline", gp.get("reason", ""))
 
     def test_green_baseline_done_and_close(self):
         self.policy(baseline_checks=["python3 -m compileall -q ."])
@@ -1204,7 +1204,7 @@ class TestBaseline(TrinityBase):
         self.assertEqual(jout(self.qlog("next"))["next_role"], "VERIFIER")
         gp = jout(self.gate())
         self.assertEqual(gp.get("decision"), "block")
-        self.assertIn("삭제된 테스트", gp.get("reason", ""))
+        self.assertIn("deleted tests", gp.get("reason", ""))
 
 
 class TestDetectChecks(unittest.TestCase):
@@ -1315,7 +1315,7 @@ class TestStandardTransition(TrinityBase):
         self.qlog("verify-baseline")
         n = self.nxt()  # red 2회 — threshold(3) 전 선제 Trinity 승격
         self.assertEqual(n["next_role"], "THINKER_REPLAN")
-        self.assertIn("승격", n["why"])
+        self.assertIn("promoting", n["why"])
 
     def test_signature_change_escalates_to_llm_verifier(self):
         self.write("lib.py", "def foo(a):\n    return a\n")
@@ -1519,7 +1519,7 @@ class TestGoodhartEvidence(TrinityBase):
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")  # 재검증 강제
         out = jout(self.gate())
         self.assertEqual(out.get("decision"), "block")
-        self.assertIn("증거", out.get("reason", ""))
+        self.assertIn("evidence", out.get("reason", ""))
 
     def test_real_command_pass_allowed(self):
         self.open_quest()
@@ -1614,7 +1614,7 @@ class TestNoChangeBaselineVerify(TrinityBase):
         self.qlog("append", "--role", "worker", "--event", "work")
         nxt = jout(self.qlog("next", "--write-expected"))
         self.assertEqual(nxt["next_role"], "BASELINE_VERIFY")
-        self.assertIn("무변경", nxt["why"])
+        self.assertIn("no-change", nxt["why"])
 
     def test_verify_baseline_nochange_passes_with_inspection_no_baseline_attach(self):
         self.open_quest()
@@ -1827,11 +1827,11 @@ class TestCriteriaContracts(TrinityBase):
         self.assertTrue(st["contracts_unmet"])
         nxt = jout(self.qlog("next", "--write-expected"))
         self.assertEqual(nxt["next_role"], "VERIFIER")
-        self.assertIn("계약", nxt["why"])
+        self.assertIn("contract", nxt["why"])
         self.assertEqual(self.qlog("close").returncode, 1)  # 퍼널 REJECTED
         out = jout(self.gate())
         self.assertEqual(out.get("decision"), "block")  # 게이트 동일 판정
-        self.assertIn("계약", out.get("reason", ""))
+        self.assertIn("contract", out.get("reason", ""))
 
     def test_artifacts_checked_live(self):
         self.open_with("산출물 존재 | artifacts: out.txt")
@@ -2202,7 +2202,7 @@ class TestSubagentGate(TrinityBase):
         self.verify("PASS", commands=[{"cmd": "echo ok", "exit_code": 0}])
         b, reason = self.blocked(self.sg("asgard-verifier"))
         self.assertTrue(b)
-        self.assertIn("증거", reason)
+        self.assertIn("evidence", reason)
 
     def test_verifier_fail_verdict_allows(self):
         # FAIL 판정은 증거 요건 없이도 유효한 역할 수행 — 이 게이트는 기록 규율만 본다

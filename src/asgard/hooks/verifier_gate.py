@@ -573,34 +573,37 @@ def gate_event(root, kind, code):
 # 를 임포트하지 못해 사본을 품는다 — tests/test_failures.py 패리티 테스트가 두 표를 봉인한다. ──
 GATE_MESSAGES = {
     "orphan-write": (
-        "이 세션이 파일을 썼는데({files}) 퀘스트 로그가 없습니다. write 과업은 Trinity "
-        "순환이 필수입니다: python3 <hooks>/quest-log.py open <quest-id> --criteria "
-        '"..." 로 로그를 열고 Verifier 검증을 기록하세요.'
+        "This session wrote files ({files}) but there is no quest log. Write quests require "
+        "the Trinity loop: open a log with python3 <hooks>/quest-log.py open <quest-id> "
+        '--criteria "..." and record Verifier verification.'
     ),
     "unsafe-map": "unsafe code map symlink/junction: {targets}",
-    "snapshot-fail": "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.",
-    "no-verdict": "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.",
+    "snapshot-fail": "Failed to snapshot the current working tree — cannot compute change evidence, refusing to close.",
+    "no-verdict": "Write quest without a Verifier verdict (PASS/ESCALATE) record.",
     "escalate-nudge": (
-        "무인 세션에서 작업 시도 없이 ESCALATE 로 종료하려 합니다 (Canon 8 무인 진행). "
-        "오딘의 답은 오지 않습니다 — 방어 가능한 기본안을 골라 가정을 plan criteria "
-        "`가정: ...` 으로 기록하고 Worker 를 디스패치하세요. 어떤 기본안도 방어 불가한 "
-        "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다."
+        "Ending with ESCALATE in an unattended session without attempting the work "
+        "(Canon 8 unattended progress). Odin's answer will not arrive — pick a defensible "
+        "default, record the assumption as a plan criteria `가정: ...` item, and dispatch "
+        "a Worker. If it is a genuine blocker no default can defend, record the reason and "
+        "ESCALATE again to pass."
     ),
-    "stale-pass": "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.",
-    "no-criteria": "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.",
-    "tickets-incomplete": "미완료 ticket 존재({units}) — 모든 단위를 done으로 만든 뒤 검증하세요.",
+    "stale-pass": "stale PASS — the working tree changed after PASS was recorded (physical diff mismatch). Re-verify.",
+    "no-criteria": "No success criteria in the log. Verification cannot stand without criteria.",
+    "tickets-incomplete": "Incomplete tickets remain ({units}) — bring every unit to done before verifying.",
     "criteria-unverified": (
-        "criteria verify 계약 미충족 ({unmet}) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
-        "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
+        "criteria verify contract unmet ({unmet}) — for criteria with a declared contract, only that "
+        "command/artifact counts as evidence. quest-log append --verdict PASS re-runs the contract "
+        "command via the harness."
     ),
     "no-evidence": (
-        "PASS 에 성공한 검증 명령 증거(commands[{{cmd,exit_code==0}}])가 없습니다. "
-        "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다)."
+        "PASS lacks successful verification-command evidence (commands[{{cmd,exit_code==0}}]). "
+        "The Verifier must run verification commands directly (always-succeeding commands like "
+        "true/echo are not evidence)."
     ),
-    "baseline-red": "하네스 베이스라인 체크 red ({failing}) — 실패한 체크를 수정한 뒤 재검증하세요.",
+    "baseline-red": "Harness baseline checks red ({failing}) — fix the failing checks, then re-verify.",
     "micro-pass": (
-        "full-verify 필요(민감 경로 {sensitive}{deleted} / diff {files} files·{lines} lines)한데 "
-        "micro PASS 입니다. --level full 로 재검증하세요."
+        "full-verify required (sensitive paths {sensitive}{deleted} / diff {files} files·{lines} lines) "
+        "but this is a micro PASS. Re-verify with --level full."
     ),
 }
 
@@ -631,15 +634,16 @@ def block(root, sid, code, **params):
     gate_event(root, "gate_escalate" if n > MAX_BLOCKS else "gate_block", code)
     if n > MAX_BLOCKS:
         sys.stderr.write(
-            "asgard verifier-gate: %d회 차단 초과 — 통과시키되 Odin 에스컬레이션 필요 (Canon 9)\n" % MAX_BLOCKS
+            "asgard verifier-gate: exceeded %d blocks — allowing through, but Odin escalation "
+            "is required (Canon 9)\n" % MAX_BLOCKS
         )
         sys.exit(0)
     message = (
-        "Asgard verifier-gate (Canon 10 — 완료 증명): "
+        "Asgard verifier-gate (Canon 10 — proof of completion): "
         + reason
-        + " Verifier 판정을 로그에 기록하세요: echo '{...}' | python3 <hooks>/quest-log.py "
-        "append --verdict PASS|FAIL (verify 이벤트가 diff_hash 를 자동 계산). "
-        "3회 이상 막히면 중단하고 Odin 에게 보고하세요 (Canon 9)."
+        + " Record the Verifier verdict in the log: echo '{...}' | python3 <hooks>/quest-log.py "
+        "append --verdict PASS|FAIL (the verify event auto-computes diff_hash). "
+        "If blocked 3+ times, stop and report to Odin (Canon 9)."
     )
     # code 필드는 claude/네이티브 경로만 — codex/cursor 프로토콜은 미지 필드 관용을 보증할 수
     # 없어 메시지 내 [gate:<code>] 태그가 공통 운반자다.
@@ -785,7 +789,7 @@ def main():
             sys.exit(0)
         base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
         if not base_ref or base_ref == "NONE" or git(root, "rev-parse", "--verify", base_ref)[0] != 0:
-            sys.stderr.write("asgard verifier-gate: base_ref 확인 불가 — allow (fail-open)\n")
+            sys.stderr.write("asgard verifier-gate: cannot verify base_ref — allow (fail-open)\n")
             sys.exit(0)
         unsafe_maps = unsafe_map_links(root)
         if unsafe_maps:
@@ -887,7 +891,7 @@ def main():
                 sid,
                 "micro-pass",
                 sensitive=sensitive[:3],
-                deleted=" / 삭제된 테스트 %s" % dts[:3] if dts else "",
+                deleted=" / deleted tests %s" % dts[:3] if dts else "",
                 files=len(changed),
                 lines=lines,
             )

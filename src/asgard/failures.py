@@ -19,34 +19,37 @@ import re
 # ── 게이트 차단 메시지 — verifier_gate.py 의 사본과 패리티 테스트로 봉인 ──
 GATE_MESSAGES: dict[str, str] = {
     "orphan-write": (
-        "이 세션이 파일을 썼는데({files}) 퀘스트 로그가 없습니다. write 과업은 Trinity "
-        "순환이 필수입니다: python3 <hooks>/quest-log.py open <quest-id> --criteria "
-        '"..." 로 로그를 열고 Verifier 검증을 기록하세요.'
+        "This session wrote files ({files}) but there is no quest log. Write quests require "
+        "the Trinity loop: open a log with python3 <hooks>/quest-log.py open <quest-id> "
+        '--criteria "..." and record Verifier verification.'
     ),
     "unsafe-map": "unsafe code map symlink/junction: {targets}",
-    "snapshot-fail": "현재 워킹트리 snapshot 생성 실패 — 변경 증거를 계산할 수 없어 종료를 거부합니다.",
-    "no-verdict": "write 과업인데 Verifier 판정(PASS/ESCALATE) 레코드가 없습니다.",
+    "snapshot-fail": "Failed to snapshot the current working tree — cannot compute change evidence, refusing to close.",
+    "no-verdict": "Write quest without a Verifier verdict (PASS/ESCALATE) record.",
     "escalate-nudge": (
-        "무인 세션에서 작업 시도 없이 ESCALATE 로 종료하려 합니다 (Canon 8 무인 진행). "
-        "오딘의 답은 오지 않습니다 — 방어 가능한 기본안을 골라 가정을 plan criteria "
-        "`가정: ...` 으로 기록하고 Worker 를 디스패치하세요. 어떤 기본안도 방어 불가한 "
-        "진짜 블로커면 사유를 기록하고 다시 ESCALATE 하면 통과됩니다."
+        "Ending with ESCALATE in an unattended session without attempting the work "
+        "(Canon 8 unattended progress). Odin's answer will not arrive — pick a defensible "
+        "default, record the assumption as a plan criteria `가정: ...` item, and dispatch "
+        "a Worker. If it is a genuine blocker no default can defend, record the reason and "
+        "ESCALATE again to pass."
     ),
-    "stale-pass": "stale PASS — PASS 기록 이후 워킹트리가 변경되었습니다 (물리 대조 불일치). 재검증 필요.",
-    "no-criteria": "성공 기준(criteria)이 로그에 없습니다. 검증은 기준 없이는 성립하지 않습니다.",
-    "tickets-incomplete": "미완료 ticket 존재({units}) — 모든 단위를 done으로 만든 뒤 검증하세요.",
+    "stale-pass": "stale PASS — the working tree changed after PASS was recorded (physical diff mismatch). Re-verify.",
+    "no-criteria": "No success criteria in the log. Verification cannot stand without criteria.",
+    "tickets-incomplete": "Incomplete tickets remain ({units}) — bring every unit to done before verifying.",
     "criteria-unverified": (
-        "criteria verify 계약 미충족 ({unmet}) — 계약이 선언된 기준은 그 명령·산출물만 증거입니다. "
-        "quest-log append --verdict PASS 가 계약 명령을 하네스로 재실행합니다."
+        "criteria verify contract unmet ({unmet}) — for criteria with a declared contract, only that "
+        "command/artifact counts as evidence. quest-log append --verdict PASS re-runs the contract "
+        "command via the harness."
     ),
     "no-evidence": (
-        "PASS 에 성공한 검증 명령 증거(commands[{{cmd,exit_code==0}}])가 없습니다. "
-        "Verifier 는 검증 명령을 직접 실행해야 합니다 (true/echo 류 무조건-성공 명령은 증거가 아닙니다)."
+        "PASS lacks successful verification-command evidence (commands[{{cmd,exit_code==0}}]). "
+        "The Verifier must run verification commands directly (always-succeeding commands like "
+        "true/echo are not evidence)."
     ),
-    "baseline-red": "하네스 베이스라인 체크 red ({failing}) — 실패한 체크를 수정한 뒤 재검증하세요.",
+    "baseline-red": "Harness baseline checks red ({failing}) — fix the failing checks, then re-verify.",
     "micro-pass": (
-        "full-verify 필요(민감 경로 {sensitive}{deleted} / diff {files} files·{lines} lines)한데 "
-        "micro PASS 입니다. --level full 로 재검증하세요."
+        "full-verify required (sensitive paths {sensitive}{deleted} / diff {files} files·{lines} lines) "
+        "but this is a micro PASS. Re-verify with --level full."
     ),
 }
 
@@ -74,10 +77,10 @@ _GATE_TAG = re.compile(r"\[gate:([a-z0-9][a-z0-9-]*)\]")
 # criteria 부재만 계획 보강, baseline red·미완료 ticket 은 코드/단위 수리(Worker),
 # 무인 ESCALATE 넛지는 기본안 재계획, 나머지는 전부 신선 증거 재검증.
 _REPAIRS: dict[str, tuple[str, str]] = {
-    "no-criteria": ("THINKER_REPLAN", "게이트: criteria 부재 — 계획 보강 필요"),
-    "baseline-red": ("WORKER_RETRY", "게이트: 하네스 베이스라인 red — 실패한 체크를 수정"),
-    "tickets-incomplete": ("WORKER_RETRY", "게이트: 미완료 ticket — 미완료 단위만 재배정"),
-    "escalate-nudge": ("THINKER_REPLAN", "게이트: 무인 ESCALATE — 방어 가능한 기본안으로 재계획 (Canon 8)"),
+    "no-criteria": ("THINKER_REPLAN", "gate: missing criteria — plan needs reinforcement"),
+    "baseline-red": ("WORKER_RETRY", "gate: harness baseline red — fix the failing checks"),
+    "tickets-incomplete": ("WORKER_RETRY", "gate: incomplete tickets — reassign only the unfinished units"),
+    "escalate-nudge": ("THINKER_REPLAN", "gate: unattended ESCALATE — replan with a defensible default (Canon 8)"),
 }
 
 
@@ -94,7 +97,7 @@ def parse_gate_code(text: str) -> str | None:
 
 def repair_for(code: str) -> tuple[str, str]:
     """차단 코드 → (수리 전이, 사유 노트)."""
-    return _REPAIRS.get(code) or ("VERIFIER", "게이트 차단(%s) — 신선한 증거로 재검증" % code)
+    return _REPAIRS.get(code) or ("VERIFIER", "gate block (%s) — re-verify with fresh evidence" % code)
 
 
 _SLUG_JUNK = re.compile(r"[\s_/:,;.!?()\[\]{}<>|\"'`~*+=@#$%^&\\]+")

@@ -39,7 +39,7 @@ def main() -> None:
     # .env, .env.local 등 실제 시크릿 파일은 경로만으로 차단(내용 검사 전에) —
     # 단 .env.example/sample/template/dist 는 공유용 템플릿이므로 허용.
     if re.search(r"(^|/)\.env(\.[^/]*)?$", path) and not re.search(r"\.env\.(example|sample|template|dist)$", path):
-        print("Asgard Canon Law 4 — .env write blocked: " + path + " (시크릿은 커밋하지 않습니다).", file=sys.stderr)
+        print("Asgard Canon Law 4 — .env write blocked: " + path + " (secrets are not committed).", file=sys.stderr)
         sys.exit(2)
     for pat, label in SECRET:
         if re.search(pat, text):

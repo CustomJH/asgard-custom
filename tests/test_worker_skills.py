@@ -51,25 +51,25 @@ class TestSkillBodies(unittest.TestCase):
 
     def test_debugging_anchors(self):
         d = self.by_name["asgard-worker-debugging"]
-        self.assertIn("재현 없으면 수정 없다", d)
-        self.assertIn("가설 1개 = 변경 1개", d)  # 동시 다중 변경 금지
-        self.assertIn("반증 가능하게", d)
+        self.assertIn("Reproduce first (no reproduction, no fix)", d)
+        self.assertIn("One hypothesis = one change", d)  # 동시 다중 변경 금지
+        self.assertIn("Make hypotheses falsifiable", d)
         self.assertIn("git bisect", d)  # 이분 탐색 — 커밋 축
-        self.assertIn("은폐", d)  # 증상 덧대기 ≠ 수정
-        self.assertIn("수정 전 실패하고 수정 후 통과하는 테스트", d)  # 회귀 고정
-        self.assertIn("시도 3회면 중단", d)  # 상한 — 무근거 반복 방지
+        self.assertIn("concealment", d)  # 증상 덧대기 ≠ 수정
+        self.assertIn("Leave a test that fails before the fix and passes after", d)  # 회귀 고정
+        self.assertIn("Stop after 3 attempts", d)  # 상한 — 무근거 반복 방지
         self.assertIn("asgard-worker-testing", d)  # 상호 참조
 
     def test_testing_anchors(self):
         t = self.by_name["asgard-worker-testing"]
-        self.assertIn("공개 행동", t)  # 구현 세부 고정 금지
-        self.assertIn("실패를 한 번 봐야 한다", t)  # 실패 먼저
-        self.assertIn("수직 슬라이스", t)
-        self.assertIn("결정론", t)
-        for axis in ("시간", "랜덤", "네트워크", "파일시스템", "순서"):  # flaky 5축
+        self.assertIn("public behavior", t)  # 구현 세부 고정 금지
+        self.assertIn("must be seen to fail once", t)  # 실패 먼저
+        self.assertIn("Vertical slice", t)
+        self.assertIn("Determinism", t)
+        for axis in ("Time", "Random", "Network", "Filesystem", "Order"):  # flaky 5축
             self.assertIn(axis, t)
-        self.assertIn("약한 단언", t)
-        self.assertIn("지표이지 목표가 아니다", t)  # 커버리지
+        self.assertIn("weak assertions", t)
+        self.assertIn("a metric, not a goal", t)  # 커버리지
         self.assertIn("asgard-eitri-draupnir", t)  # CI 층 상호 참조
 
     def test_worker_role_uses_generated_discovery_catalog(self):
@@ -117,10 +117,10 @@ class TestNativeWiring(unittest.TestCase):
         note, tools, handlers = _skill_support("worker")
         self.assertIn("<available_skills>", note)
         self.assertIn("asgard-worker-debugging", note)
-        self.assertNotIn("재현 없으면 수정 없다", note)
+        self.assertNotIn("Reproduce first (no reproduction, no fix)", note)
         self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
         loaded = handlers["load_skill"]({"name": "asgard-worker-debugging"})
-        self.assertIn("재현 없으면 수정 없다", loaded)
+        self.assertIn("Reproduce first (no reproduction, no fix)", loaded)
 
     def test_both_worker_paths_expose_loader(self):
         # wave 병렬 경로 + 단일 WORKER 경로 둘 다 — 한쪽만 배선되면 경로에 따라 지식이 사라진다

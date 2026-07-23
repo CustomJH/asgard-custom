@@ -58,27 +58,30 @@ def note(root: str | None = None, section: str = "identity") -> str:
     if section == "identity":
         if not through:
             return ""
-        return f"\n\n## 프로젝트 북극성 (Charter)\n관통 원칙: {through}\n이 원칙과 모순되는 방향은 택하지 않는다 — 충돌하면 표면화한다."
+        return (
+            f"\n\n## Project North Star (Charter)\nThrough-line: {through}\n"
+            "Do not choose a direction that contradicts this principle — surface any conflict."
+        )
     if section == "thinker":
-        parts = ["\n\n## 프로젝트 북극성 (Charter)"]
+        parts = ["\n\n## Project North Star (Charter)"]
         if through:
-            parts.append(f"관통 원칙: {through}")
+            parts.append(f"Through-line: {through}")
         if coherence:
             parts.append(
-                "일관성 기준 — 이 과업에 걸리는 항목은 **배정 단위 criteria 로 환원**하라 (추상어 금지, 검증 명령으로):\n"
-                + _coherence_block(coherence)
+                "Coherence criteria — reduce the items this quest touches into **assigned-unit criteria** "
+                "(no abstract wording; use verification commands):\n" + _coherence_block(coherence)
             )
         return "\n".join(parts)
     if section == "verifier":
-        parts = ["\n\n## 프로젝트 북극성 (Charter) — 반례 렌즈"]
+        parts = ["\n\n## Project North Star (Charter) — counterexample lens"]
         if through:
-            parts.append(f"관통 원칙: {through}")
+            parts.append(f"Through-line: {through}")
         if coherence:
-            parts.append("일관성 기준:\n" + _coherence_block(coherence))
+            parts.append("Coherence criteria:\n" + _coherence_block(coherence))
         parts.append(
-            "이 원칙을 **명백히** 위반하는 변경은 재현 가능한 고확신 반례로 FAIL 한다. "
-            "단 Charter 는 criteria 를 대체하지 않고 판정 기준(증거·criteria·diff-hash)은 그대로다 — "
-            "저확신 '결이 다르다'는 FAIL 사유가 아니다."
+            "A change that **clearly** violates this principle FAILs with a reproducible, high-confidence "
+            "counterexample. But the Charter does not replace criteria — the verdict basis "
+            "(evidence · criteria · diff-hash) stays as-is; a low-confidence 'feels off' is not a FAIL reason."
         )
         return "\n".join(parts)
     return ""

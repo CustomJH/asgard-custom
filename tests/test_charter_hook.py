@@ -86,13 +86,13 @@ class TestCharterHook(CharterHookBase):
         ctx = json.loads(p.stdout)["hookSpecificOutput"]
         self.assertEqual(ctx["hookEventName"], "SubagentStart")
         self.assertIn("C1일관성", ctx["additionalContext"])
-        self.assertIn("criteria 로 환원", ctx["additionalContext"])
+        self.assertIn("assigned-unit criteria", ctx["additionalContext"])
 
     def test_verifier_is_lens_not_gate(self):
         self.set_charter({"through_line": "TL", "coherence": ["C1일관성"]})
         ctx = json.loads(self.hook({"agent_type": "asgard-verifier"}).stdout)["hookSpecificOutput"]
         self.assertIn("C1일관성", ctx["additionalContext"])
-        self.assertIn("criteria 를 대체하지 않", ctx["additionalContext"])  # evidence-first 보존
+        self.assertIn("does not replace criteria", ctx["additionalContext"])  # evidence-first 보존
 
     def test_worker_gets_no_charter(self):
         # 네이티브 패리티 — Worker 세션은 worker.md+lagom 만, charter 무주입 (Fugu 격리)

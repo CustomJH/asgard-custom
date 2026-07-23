@@ -204,7 +204,7 @@ def main():
             messages = []
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
-                messages.append("⠶ 프로젝트 메모리 승인 제안\n" + preview)
+                messages.append("⠶ Project memory approval proposal\n" + preview)
             # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch 는 CLI 가 관리).
             # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 외부 클라이언트 훅 전용이다.
             try:

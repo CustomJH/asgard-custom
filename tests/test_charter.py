@@ -90,7 +90,7 @@ class TestNote(unittest.TestCase):
         out = note(self.root, "verifier")
         self.assertIn("C1", out)
         # 판단③ evidence-first 보존 — charter 가 criteria 를 대체하지 않는다는 명시가 반드시 있어야
-        self.assertIn("criteria 를 대체하지 않", out)
+        self.assertIn("does not replace criteria", out)
 
     def test_unknown_section_empty(self):
         _write_project(self.root, {"through_line": "TL"})

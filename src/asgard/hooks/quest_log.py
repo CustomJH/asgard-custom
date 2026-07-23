@@ -1376,29 +1376,29 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
     (close --force 는 LAST 미기록·게이트 면제 없는 관리적 해제일 뿐, 승인이 아니다).
     verifier-gate.py 의 Stop 차단 기준과 동일 유지 (단일 출처 원칙 — 어긋나면 DONE 이 Stop 에서 차단)."""
     if s.get("last_verdict") == "ESCALATE":
-        return "ESCALATED", "escalate", "Verifier ESCALATE — Odin 결정 대기 (Canon 9 정규 종료)"
+        return "ESCALATED", "escalate", "Verifier ESCALATE — awaiting Odin's decision (Canon 9 regular exit)"
     if s.get("last_verdict") != "PASS":
-        return "REJECTED", "no-pass", "검증 PASS 판정 없음"
+        return "REJECTED", "no-pass", "no verified PASS verdict"
     if not s.get("criteria"):
         # 게이트와 동일 검사 — close 가 이걸 안 보면 무기준 PASS 가 LAST 면제로 게이트를 우회한다
-        return "REJECTED", "no-criteria", "성공 기준(criteria)이 로그에 없음 — 기준 없이는 검증이 성립하지 않는다"
+        return "REJECTED", "no-criteria", "no success criteria in the log — verification cannot stand without criteria"
     unfinished = [ticket for ticket in (s.get("tickets") or []) if ticket.get("status") != "done"]
     if unfinished:
         ids = ", ".join(str(ticket.get("id")) for ticket in unfinished[:6])
-        return "REJECTED", "tickets-incomplete", "미완료 ticket 존재: %s" % ids
+        return "REJECTED", "tickets-incomplete", "incomplete tickets remain: %s" % ids
     if s.get("baseline_state") == "red":
-        return "REJECTED", "baseline-red", "하네스 베이스라인 체크 red — 실패한 체크 수리 필요"
+        return "REJECTED", "baseline-red", "harness baseline check is red — failing checks need repair"
     unmet = s.get("contracts_unmet") or []
     if unmet:
         # 계약이 선언된 기준은 그 명령·산출물이 유일한 증거다 — 무관한 exit-0 명령으로 대체 불가
-        return "REJECTED", "criteria-unverified", "criteria verify 계약 미충족: %s" % "; ".join(map(str, unmet[:3]))
+        return "REJECTED", "criteria-unverified", "criteria verify contract unmet: %s" % "; ".join(map(str, unmet[:3]))
     if not s.get("pass_evidence"):
-        return "REJECTED", "no-evidence", "PASS 에 성공한 검증 명령 증거 없음"
+        return "REJECTED", "no-evidence", "PASS has no successful verification-command evidence"
     if not s.get("pass_hash_match"):
-        return "REJECTED", "stale-pass", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요"
+        return "REJECTED", "stale-pass", "working tree changed after PASS (stale PASS) — re-verification required"
     if s.get("full_required") and s.get("pass_level") != "full":
-        return "REJECTED", "micro-pass", "full-verify 필요(민감 경로/큰 diff)한데 micro PASS"
-    return "APPROVED", "ok", "검증 PASS + diff-hash 물리 대조 일치"
+        return "REJECTED", "micro-pass", "full-verify required (sensitive path/large diff) but got micro PASS"
+    return "APPROVED", "ok", "verified PASS + diff-hash physical match"
 
 
 # ── 전이 함수 — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
@@ -1455,13 +1455,18 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         return {"next_role": role, "verify_level": level, "why": why, "features": features}
 
     if flags.destructive:
-        return out("ESCALATE_ODIN", "destructive_intent — Canon 3, Odin 명시 동의 필요")
+        return out("ESCALATE_ODIN", "destructive_intent — Canon 3, requires Odin's explicit consent")
     if s["failure_count"] >= policy["failure_threshold"]:
-        return out("THINKER_REPLAN", "동종 %d-실패 — Worker 재시도 금지 (Canon 9)" % s["failure_count"])
+        return out(
+            "THINKER_REPLAN", "%d same-signature failures — Worker retry forbidden (Canon 9)" % s["failure_count"]
+        )
     if s.get("fail_streak_any", 0) > policy["failure_threshold"]:
         # 이종-sig 백스톱 — 자유 텍스트 sig 가 매번 달라 동종 판정이 안 잡혀도, 재계획 없이
         # FAIL 이 threshold+1 연속이면 접근 자체가 틀렸다고 본다 (턴 예산 소진 전 탈출).
-        return out("THINKER_REPLAN", "연속 %d-실패(이종 포함) — 접근 재설계" % s["fail_streak_any"])
+        return out(
+            "THINKER_REPLAN",
+            "%d consecutive failures (including mixed signatures) — redesign the approach" % s["fail_streak_any"],
+        )
     if s["last_verdict"] == "ESCALATE" and not s.get("replan_after_escalate"):
         # ESCALATE 이후 재계획(plan)이 남았으면 이 분기를 건너뛴다 — 재계획이 에스컬레이션을 소비하고
         # 아래 WORKER 폴스루로 실행이 이어진다 (오딘 답변 후 재개 경로와 무인 nudge 경로 공통).
@@ -1471,22 +1476,25 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             # 같은 의미론 — 여기선 로그 구조(ESCALATE↔plan 순서)가 상한을 센다).
             return out(
                 "THINKER_REPLAN",
-                "무인 세션 ESCALATE (Canon 8) — 방어 가능한 기본안을 골라 `가정:` criteria 로 기록하고 진행. "
-                "어떤 기본안도 방어 불가한 진짜 블로커면 사유 기록 후 재-ESCALATE",
+                "Unattended-session ESCALATE (Canon 8) — pick a defensible default, record it as a "
+                "`가정:` criteria entry, and proceed. If no default is defensible (a genuine blocker), "
+                "record the reason and re-ESCALATE",
             )
         # Verifier ESCALATE = 진행 불가 블로커 신고 (Canon 8: 승인 요청 용도 아님) — WORKER 폴스루로
         # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close 의 ESCALATE 수용과 대칭.
-        return out("ESCALATE_ODIN", "Verifier ESCALATE — 진행 불가 블로커, Odin 결정 필요")
+        return out("ESCALATE_ODIN", "Verifier ESCALATE — blocking issue, Odin's decision required")
     if s["last_verdict"] == "FAIL":
         if standard_ok and s.get("fail_streak_any", 0) >= promote_at:
             # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격.
             # prior 과반-red 클래스는 red 1회로 하향.
-            why = "게이트-우선 red %d회 — Trinity 승격, 접근 재설계" % s["fail_streak_any"]
-            return out("THINKER_REPLAN", why + (" (prior: 클래스 red 이력 과반)" if promote_at == 1 else ""))
+            why = "gate-first red %d times — promoting to Trinity, redesign the approach" % s["fail_streak_any"]
+            return out(
+                "THINKER_REPLAN", why + (" (prior: task-class red history is majority)" if promote_at == 1 else "")
+            )
         return (
-            out("THINKER_REPLAN", "Verifier FAIL(구조적) — 접근 재설계")
+            out("THINKER_REPLAN", "Verifier FAIL (structural) — redesign the approach")
             if flags.structural
-            else out("WORKER_RETRY", "Verifier FAIL(경미) — 같은 계획으로 수정")
+            else out("WORKER_RETRY", "Verifier FAIL (minor) — fix under the same plan")
         )
     if s["last_verdict"] == "PASS":
         # 완료 판정은 단일 퍼널(completion_decision)만 신뢰한다 — close·게이트와 판정 불일치 금지.
@@ -1496,33 +1504,39 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             return out("DONE", why)
         if code == "baseline-red":
             # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다
-            return out("WORKER_RETRY", "하네스 베이스라인 체크 red — 실패한 체크를 먼저 수리 (Canon 10)")
+            return out("WORKER_RETRY", "harness baseline check is red — repair the failing check first (Canon 10)")
         if code == "no-evidence":
             # 증거 없는 PASS 는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
             # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (깊이 테스트 발견).
-            return out("VERIFIER", "PASS 에 성공한 검증 명령 증거 없음 — 명령을 직접 실행해 재판정 (Canon 10)")
+            return out(
+                "VERIFIER",
+                "PASS has no successful verification-command evidence — run the command directly and "
+                "re-judge (Canon 10)",
+            )
         if code == "no-criteria":
-            return out("VERIFIER", "성공 기준(criteria)이 로그에 없음 — criteria 기록 후 재판정 (Canon 10)")
+            return out("VERIFIER", "no success criteria in the log — record criteria then re-judge (Canon 10)")
         if code == "tickets-incomplete":
-            return out("WORKER_RETRY", why + " — 미완료 단위만 재배정")
+            return out("WORKER_RETRY", why + " — reassign only the unfinished units")
         if code == "criteria-unverified":
             # 계약 명령이 실패했거나 산출물이 없다 — 재검증 append 가 하네스 재실행을 트리거한다
-            return out("VERIFIER", why + " — 계약 명령을 수리/재실행해 재판정 (Canon 10)")
+            return out("VERIFIER", why + " — repair/re-run the contract command and re-judge (Canon 10)")
         if code == "stale-pass":
-            return out("VERIFIER", "PASS 이후 워킹트리 변경(stale PASS) — 재검증 필요")
+            return out("VERIFIER", "working tree changed after PASS (stale PASS) — re-verification required")
         # micro-pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
-        return out("VERIFIER", "PASS 가 micro — 민감 경로/큰 diff 는 full-verify 필요")
+        return out("VERIFIER", "PASS is micro — sensitive path/large diff requires full-verify")
     if flags.external_research and has_write and not s.get("research_completed"):
-        return out("WORKER", "외부 조사 선행 — 격리 Research Worker가 근거를 수집하고 구현은 보류")
+        return out(
+            "WORKER", "external research first — an isolated Research Worker gathers evidence; implementation waits"
+        )
     if flags.external_research and s.get("research_pending_plan"):
-        return out("THINKER", "외부 조사 완료 — 수집 근거를 검토해 구현 단위와 criteria를 재계획")
+        return out("THINKER", "external research complete — review the gathered evidence and replan units and criteria")
     if flags.parallel_requested and s["plan_turns"] < 2:
         # 병렬 fan-out만 별도 Thinker가 access/file-overlap 그래프를 만든다. 모호함·외부 조사·큰
         # 변경은 단일 Worker가 같은 도구 문맥에서 계획하고 실행한다 — 순차 역할 handoff 비용과
         # 맥락 손실을 피하고, 실제 FAIL/구조적 red가 관측될 때만 THINKER_REPLAN으로 승격한다.
-        return out("THINKER", "명시적 병렬 과업 — 독립 단위와 access graph 계획 선행")
+        return out("THINKER", "explicit parallel task — plan independent units and the access graph first")
     if not has_write:
-        return out("DIRECT_DONE", "write 없음 — 게이트 면제 경로")
+        return out("DIRECT_DONE", "no write — gate-exempt path")
     if s["last_event"] == "work":
         if s["diff_hash"] == EMPTY:
             # 무변경 관측 — Worker 가 돌았는데 물리 diff 0 (risk_write 는 분류 시점 기대치라
@@ -1532,11 +1546,11 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             # (0-LLM). 오분류로 Trinity 에 들어온 무변경 요청의 결정론 출구 (26-07-21 "안녕"
             # 계열 — 잔여 낭비 경로 봉합). 한계(수용): 변경이 필요했는데 Worker 가 안 한 경우도
             # 통과한다 — 최종 보고의 변경 0 관측이 그 사실을 드러낸다.
-            return out("BASELINE_VERIFY", "무변경 관측 — 하네스 트리 관측 판정 (0-LLM)")
+            return out("BASELINE_VERIFY", "no-change observed — harness tree-observation verdict (0-LLM)")
         if standard_ok and s.get("checks_available"):
-            return out("BASELINE_VERIFY", "소형·비민감 변경 — 하네스 베이스라인 우선")
-        return out("VERIFIER", "Worker 완료 — %s-verify 판정 차례" % level)
-    return out("WORKER", "단일 Worker 자율 계획·실행 — 실패 시 Thinker 재계획")
+            return out("BASELINE_VERIFY", "small, non-sensitive change — harness baseline takes priority")
+        return out("VERIFIER", "Worker complete — %s-verify verdict is next" % level)
+    return out("WORKER", "single Worker autonomous plan/execute — Thinker replans on failure")
 
 
 def map_nudge(root: str, base_ref: str | None) -> list[str]:
@@ -1796,18 +1810,18 @@ def main() -> int:
     ap.add_argument("--max-attempts", type=int, default=3)
     ap.add_argument("--status")
     ap.add_argument("--error")
-    ap.add_argument("--no-write", action="store_true", help="open: write 없는 과업으로 표시")
+    ap.add_argument("--no-write", action="store_true", help="open: mark as a task with no write")
     # 모델 신고 risk_features (결정론 계산이 불가능한 4종) — next 전용
     ap.add_argument("--ambiguous", action="store_true")
     ap.add_argument("--destructive", action="store_true")
     ap.add_argument("--external-research", action="store_true")
     ap.add_argument("--shared", action="store_true")
-    ap.add_argument("--structural", action="store_true", help="next: 직전 FAIL 이 구조적임을 신고")
-    ap.add_argument("--write-expected", action="store_true", help="next: 아직 diff 없지만 write 예정")
+    ap.add_argument("--structural", action="store_true", help="next: report that the last FAIL was structural")
+    ap.add_argument("--write-expected", action="store_true", help="next: no diff yet, but a write is expected")
     ap.add_argument(
         "--parallel-requested",
         action="store_true",
-        help="next: 사용자가 병렬 분해/멀티 서브에이전트를 명시적으로 요구",
+        help="next: user explicitly requested parallel decomposition/multi-subagent",
     )
     ap.add_argument(  # Canon 8 무인 진행 — asgard run 이 env 를 심으므로 기본값이 env 를 읽는다
         "--unattended", action="store_true", default=os.environ.get("ASGARD_UNATTENDED") == "1"
@@ -1816,12 +1830,12 @@ def main() -> int:
         "--task-class",
         choices=["trivial", "standard", "deep"],
         dest="task_class",
-        help="open: 로그 기록 / next: prior 승격 문턱 조회 축",
+        help="open: record in log / next: axis for looking up the prior promotion threshold",
     )
     ap.add_argument(
         "--force",
         action="store_true",
-        help="close: 판정 없이 강제 해제 (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)",
+        help="close: force-release without a verdict (requires Odin's consent — LAST not recorded, no gate exemption)",
     )
     args = ap.parse_args()
     root = repo_root()
@@ -2021,7 +2035,8 @@ def main() -> int:
             print(
                 json.dumps(
                     {
-                        "error": "baseline 검증 부적격 — 전이 함수가 배정한 역할을 따르세요",
+                        "error": "not eligible for baseline verification — follow the role assigned by the "
+                        "transition function",
                         "next_role": eligible["next_role"],
                         "why": eligible["why"],
                     },
@@ -2056,7 +2071,11 @@ def main() -> int:
             state = bl.get("state")
             if state not in ("green", "red") and map_ok:
                 print(
-                    json.dumps({"error": "baseline 판정 불가 (체크 없음/전부 skip) — LLM Verifier 로 검증하세요"}),
+                    json.dumps(
+                        {
+                            "error": "cannot render a baseline verdict (no checks/all skipped) — verify with the LLM Verifier"
+                        }
+                    ),
                     file=sys.stderr,
                 )
                 return 1
@@ -2137,8 +2156,9 @@ def main() -> int:
                 print(
                     json.dumps(
                         {
-                            "error": "close 거부(%s: %s) — 검증 PASS(+hash 일치) 또는 ESCALATE 후에만. "
-                            "우회는 --force (Odin 동의 필요 — LAST 미기록, 게이트 면제 없음)" % (code, why)
+                            "error": "close rejected (%s: %s) — only after a verified PASS (+hash match) or "
+                            "ESCALATE. Bypass with --force (requires Odin's consent — LAST not recorded, "
+                            "no gate exemption)" % (code, why)
                         },
                         ensure_ascii=False,
                     ),
@@ -2190,7 +2210,10 @@ def main() -> int:
             res["map_current"] = True
         elif nudge:
             res["map_update"] = nudge
-            res["map_hint"] = "자동 지도 갱신 실패 — asgard map update 실행 후 영역 지도에 새 지식만 증분 반영"
+            res["map_hint"] = (
+                "automatic map refresh failed — run asgard map update, then fold only new knowledge into "
+                "the area map incrementally"
+            )
         print(json.dumps(res, ensure_ascii=False))
         return 0
     return 0

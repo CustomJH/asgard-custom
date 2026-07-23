@@ -53,23 +53,23 @@ class TestSkillBodies(unittest.TestCase):
 
     def test_brunnr_anchors(self):
         b = self.by_name["asgard-mimir-brunnr"]
-        self.assertIn("진입점을 먼저 특정", b)  # 실행 흐름 서사의 출발점
-        self.assertIn("한 문장 전모", b)  # 전역 먼저, 국소 나중
-        self.assertIn("값의 여정", b)  # 구체 값 하나가 닻
-        self.assertIn("라인 낭독 금지", b)  # 과잉 저수준 방어
-        self.assertIn("신뢰 낭비", b)  # 전문성 역전 — 아는 것 재설명 금지
+        self.assertIn("Pin down the entry point first", b)  # 실행 흐름 서사의 출발점
+        self.assertIn("one-sentence overview", b)  # 전역 먼저, 국소 나중
+        self.assertIn("one value's journey", b)  # 구체 값 하나가 닻
+        self.assertIn("No line-by-line recitation", b)  # 과잉 저수준 방어
+        self.assertIn("re-explaining the known wastes trust", b)  # 전문성 역전 — 아는 것 재설명 금지
         self.assertIn(".asgard/map/", b)  # 지도 통합 (읽기 우선)
-        self.assertIn("read-only 실행만", b)  # 실측은 하되 수정 금지
-        self.assertIn("재사용 문서", b)  # 투어 산출물 — 1회용 채팅 아님
+        self.assertIn("read-only execution only", b)  # 실측은 하되 수정 금지
+        self.assertIn("reusable document", b)  # 투어 산출물 — 1회용 채팅 아님
 
     def test_hofud_anchors(self):
         h = self.by_name["asgard-mimir-hofud"]
-        self.assertIn("순서가 스위치다", h)  # Brain-first — 예측 선행
-        self.assertIn("전이 (마무리)", h)  # 전이 질문이 성공 기준
-        self.assertIn("스스로 만든 설명이 더 오래 남는다", h)  # 자기설명 유도
-        self.assertIn("안내의 목적은 안내가 필요 없어지는 것", h)  # 페이딩
-        self.assertIn("체감은 지표가 아니다", h)  # 유창성 착각 방어
-        self.assertIn("같은 설명 반복 금지", h)  # 재설명 대신 각도 전환
+        self.assertIn("Order is the switch", h)  # Brain-first — 예측 선행
+        self.assertIn("Transfer (closing)", h)  # 전이 질문이 성공 기준
+        self.assertIn("a self-generated explanation lasts longer", h)  # 자기설명 유도
+        self.assertIn("the goal of guidance is to make guidance unnecessary", h)  # 페이딩
+        self.assertIn("is not a metric", h)  # 유창성 착각 방어
+        self.assertIn("never repeat the same explanation", h)  # 재설명 대신 각도 전환
 
     def test_role_declares_skills(self):
         from asgard.templates.roles import ROLE_AGENTS
@@ -122,13 +122,13 @@ class TestRoleContract(unittest.TestCase):
         from asgard.templates.roles import ROLE_AGENTS
 
         role = dict(ROLE_AGENTS)["asgard-mimir.md"]
-        self.assertIn("진입점 → 호출 사슬", role)  # 실행 흐름 서사
-        self.assertIn("3~4개 상한", role)  # 청크당 신규 개념 상한
-        self.assertIn("예측 질문", role)  # Brain-first
-        self.assertIn("인출 질문", role)  # 재읽기 대신 인출
-        self.assertIn("실행·판단은 독자 몫", role)  # 검증·디버깅 위임 금지
-        self.assertIn("지도 후보:", role)  # .asgard/map/ 통합 (ullr 계약 이식)
-        self.assertIn("코드 수정 금지", role)
+        self.assertIn("entry point → call chain", role)  # 실행 흐름 서사
+        self.assertIn("Cap of 3-4 new names", role)  # 청크당 신규 개념 상한
+        self.assertIn("prediction question", role)  # Brain-first
+        self.assertIn("retrieval question", role)  # 재읽기 대신 인출
+        self.assertIn("leaving execution and judgment to the reader", role)  # 검증·디버깅 위임 금지
+        self.assertIn("Map candidate:", role)  # .asgard/map/ 통합 (ullr 계약 이식)
+        self.assertIn("No code edits", role)
 
 
 class TestWiring(unittest.TestCase):
@@ -152,9 +152,9 @@ class TestWiring(unittest.TestCase):
 
     def test_mimir_note_match_and_fail_open(self):
         note = mimir_note("결제 흐름이 어떻게 동작하는지 설명해줘")
-        self.assertIn("코드 안내 계약", note)
-        self.assertNotIn("미미르의 샘", note)
-        self.assertNotIn("name:", note.split("# 미미르")[1].split("#")[0])  # frontmatter 누출 없음
+        self.assertIn("Code Guide Contract", note)
+        self.assertNotIn("The well is deep", note)  # 전용 스킬(brunnr) 본문은 지연 로드 — 코어만 주입
+        self.assertNotIn("name:", note.split("# Mimir — Code Guide Contract")[1].split("#")[0])  # frontmatter 누출 없음
         self.assertEqual(mimir_note("버튼 색을 파랑으로 바꿔줘"), "")  # 일반 과업은 무주입
 
     def test_heimdall_delivery_includes_mimir_readonly(self):
@@ -188,7 +188,7 @@ class TestWiring(unittest.TestCase):
         from asgard.agent.heimdall import DISPATCH_TOOL
 
         self.assertIn("mimir", DISPATCH_TOOL["input_schema"]["properties"]["agent"]["enum"])
-        self.assertIn("mimir=코드 설명", DISPATCH_TOOL["description"])
+        self.assertIn("mimir=code explanation", DISPATCH_TOOL["description"])
 
     def test_bundled_names_reserve_mimir_skills(self):
         # learned 스킬이 번들 이름을 가로채지 못한다 — 충돌 방지 레지스트리

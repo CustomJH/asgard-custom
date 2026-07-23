@@ -187,8 +187,9 @@ def main() -> None:
             )
             sys.exit(0)
         print(
-            "Asgard release-guard — 외부 공개 부작용 (" + label + "). "
-            "실행 계획(대상·영향·되돌리기)을 반환하고 Odin의 명시적 승인을 받으세요 (매 건, 대상 단위) — 승인 없는 재시도 금지.",
+            "Asgard release-guard — external side effect (" + label + "). "
+            "Return an execution plan (target / impact / rollback) and get Odin's explicit approval "
+            "(per action, per target) — do not retry without approval.",
             file=sys.stderr,
         )
         sys.exit(2)

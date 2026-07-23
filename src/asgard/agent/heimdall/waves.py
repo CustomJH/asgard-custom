@@ -141,13 +141,14 @@ class WaveRunner:
                 )
 
             access_ctx = "".join(
-                f"\n[선행 단위 {a} 결과]\n{results[a][:1500]}\n" for a in (u.get("access") or []) if a in results
+                f"\n[prior unit {a} result]\n{results[a][:1500]}\n" for a in (u.get("access") or []) if a in results
             )
             prompt = (
-                f"과업: {request}\n\n배정 단위 {u['id']}: {u['subtask']}\n"
-                f"대상 파일: {', '.join(u['files']) or '(미지정)'}\n"
+                f"Quest: {request}\n\nAssigned unit {u['id']}: {u['subtask']}\n"
+                f"Target files: {', '.join(u['files']) or '(unspecified)'}\n"
                 f"criteria: {u['criteria']}\n{access_ctx}\n"
-                f"배정 단위 범위만 구현하라 (Canon 7) — 다른 단위의 파일을 건드리지 마라.{budget_note}"
+                f"Implement only your assigned unit's scope (Canon 7) — "
+                f"do not touch other units' files.{budget_note}"
             )
             fallback = (lambda: mk(rp=hd.rp)) if wrp is not hd.rp else None
             return u, hd._run_turn(mk, prompt, fallback), writes

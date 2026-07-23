@@ -48,12 +48,12 @@ class TestSkillBody(unittest.TestCase):
         self.assertIn("Signed-off-by", SEAL_SKILL_MD)
 
     def test_staging_hygiene_rule(self):
-        self.assertIn("`git add -A` / `git add .` 금지", SEAL_SKILL_MD)
+        self.assertIn("No `git add -A` / `git add .`", SEAL_SKILL_MD)
         self.assertIn("git diff --cached --stat", SEAL_SKILL_MD)  # staged 재검증 게이트
 
     def test_secret_and_noverify_gates(self):
         self.assertIn("Canon 4", SEAL_SKILL_MD)
-        self.assertIn("`--no-verify` 금지", SEAL_SKILL_MD)
+        self.assertIn("No `--no-verify`", SEAL_SKILL_MD)
 
     def test_gitmoji_semver_anchors(self):
         for emoji in ("✨", "🐛", "♻️", "💥", "🎉"):
@@ -62,14 +62,14 @@ class TestSkillBody(unittest.TestCase):
         self.assertIn("major", SEAL_SKILL_MD)  # 💥 semver 매핑
 
     def test_commit_message_canon(self):
-        self.assertIn("이 봉인을 적용하면", SEAL_SKILL_MD)  # 명령형 판별 (cbeams 테스트의 우리 용어판)
-        self.assertIn("50자 목표·72자 상한", SEAL_SKILL_MD)
-        self.assertIn("72자 wrap", SEAL_SKILL_MD)
+        self.assertIn("If this seal is", SEAL_SKILL_MD)  # 명령형 판별 (cbeams 테스트의 우리 용어판)
+        self.assertIn("Target 50 chars, hard cap 72", SEAL_SKILL_MD)
+        self.assertIn("Wrap at 72 chars", SEAL_SKILL_MD)
 
     def test_atomic_commit_rules(self):
-        self.assertIn("1 커밋 = 1 논리 변경", SEAL_SKILL_MD)
-        self.assertIn("독립 revert", SEAL_SKILL_MD)
-        self.assertIn("리팩터 vs 행동 변경", SEAL_SKILL_MD)
+        self.assertIn("1 commit = 1 logical change", SEAL_SKILL_MD)
+        self.assertIn("Independent-revert", SEAL_SKILL_MD)
+        self.assertIn("Refactor vs. behavior change", SEAL_SKILL_MD)
 
 
 if __name__ == "__main__":

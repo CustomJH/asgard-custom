@@ -81,7 +81,8 @@ def block(root, sid, agent, reason, *, protocol="claude"):
         pass
     if n > MAX_BLOCKS:
         sys.stderr.write(
-            "asgard subagent-gate: %s %d회 차단 초과 — 통과 (최종 담보는 verifier-gate)\n" % (agent, MAX_BLOCKS)
+            "asgard subagent-gate: %s exceeded %d block(s) — allowing (verifier-gate is the final backstop)\n"
+            % (agent, MAX_BLOCKS)
         )
         sys.exit(0)
     message = "Asgard subagent-gate: " + reason
@@ -423,8 +424,8 @@ def main():
                 root,
                 sid,
                 agent,
-                "%s 가 활성 quest(%s)에 %s 이벤트를 기록하지 않고 종료하려 합니다. 역할 수행은 로그 기록으로만 "
-                '성립합니다 — 기록 후 종료하세요: echo \'{"role":"%s","event":"%s",...}\' | '
+                "%s is trying to end quest %s without recording a %s event. A role is only fulfilled by "
+                'logging it — record it, then end: echo \'{"role":"%s","event":"%s",...}\' | '
                 'python3 "$CLAUDE_PROJECT_DIR/%s/quest-log.py" append%s'
                 % (
                     agent,
@@ -433,7 +434,8 @@ def main():
                     want if want != "verify" else "verifier",
                     want,
                     hooks_dir,
-                    " --verdict PASS|FAIL --level micro|full (검증 명령 직접 실행 + commands 기록 필수)"
+                    " --verdict PASS|FAIL --level micro|full (must run the verification commands directly "
+                    "and record them)"
                     if want == "verify"
                     else "",
                 ),
@@ -446,8 +448,9 @@ def main():
                     root,
                     sid,
                     agent,
-                    "PASS 에 성공한 검증 명령 증거(commands[{cmd,exit_code==0}])가 없습니다. 검증 명령을 직접 "
-                    "실행하고 결과를 append 로 재기록하세요 (true/echo 류 무조건-성공 명령은 증거가 아닙니다).",
+                    "PASS has no successful verification-command evidence (commands[{cmd,exit_code==0}]). "
+                    "Run the verification command directly and re-record the result via append "
+                    "(unconditionally-successful commands like true/echo do not count as evidence).",
                     protocol=protocol,
                 )
         record_agent_stop(root, qid, agent_id, agent, task)

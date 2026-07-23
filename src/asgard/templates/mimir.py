@@ -15,84 +15,84 @@ import re
 _BRUNNR = """\
 ---
 name: asgard-mimir-brunnr
-description: 미미르의 우물 미미스브룬느 — 워크스루 설계 심화. 코드 투어·흐름 설명·아키텍처 안내 작업 전 로드.
+description: Mimir's well Mimisbrunnr — deep knowledge of walkthrough design. Load before code tours, flow explanations, or architecture guidance work.
 ---
 
-# asgard-mimir-brunnr — 🕳️ 워크스루 설계
+# asgard-mimir-brunnr — 🕳️ Walkthrough Design
 
-우물은 깊지만 물은 한 모금씩 — 전체를 담되 한 번에 한 계층만 길어 올린다.
+The well is deep, but the water comes one sip at a time — hold the whole, yet draw up only one layer per pull.
 
-## 정찰 (설명 전 관찰)
+## Reconnaissance (observe before explaining)
 
-- 진입점을 먼저 특정한다: CLI 엔트리·라우트·핸들러·이벤트 구독 — 실행이 시작되는 곳. 못 찾으면 테스트가 제2 진입점이다.
-- 걸을 경로를 먼저 고정한다: 정의 → 사용처 추적(Grep)으로 호출 사슬 목록을 만든 뒤 시작 — 도중 발견으로 경로를 즉흥 변경하지 않는다. 곁길은 생략 목록으로.
-- `.asgard/map/` 적중 영역은 재탐사를 생략하고, 지도에 없는 구조는 `지도 후보:` 로 제안한다.
-- 죽은 코드·미사용 분기 발견은 설명 대상이 아니라 보고 대상이다 — 살아있는 경로만 서사에 넣는다.
+- Pin down the entry point first: CLI entry, route, handler, event subscription — where execution begins. If you cannot find one, tests are the second entry point.
+- Fix the path you will walk before starting: build the call-chain list via definition → usage tracing (Grep), then begin — never improvise route changes on mid-walk discoveries. Side paths go to the omissions list.
+- Skip re-exploring areas already covered by `.asgard/map/`; propose structures missing from the map as `Map candidate:`.
+- Dead code and unused branches are findings to report, not material to explain — only living paths enter the narrative.
 
-## 서사 구조 (건 하나의 형식)
+## Narrative structure (the shape of one case)
 
-- 1층 = 한 문장 전모 + 등장 파일 지도(`` `경로` — 1줄 역할 ``, 3~7개) — 독자가 지금 어디를 걷는지 항상 알게.
-- 2층부터 구간 단위: [예측 질문] → 흐름 설명(`파일:라인` 근거) → [인출 질문]. 구간 3~7개 — 넘치면 건이 둘 이상인 것이니 분할을 제안한다.
-- 값의 여정 하나를 끝까지 따라간다: 대표 입력 하나를 정해 구간마다 그 값이 어떻게 변하는지 — 추상 설명에 구체 값 하나가 닻이 된다.
-- 갈림길 규율: 분기는 "왜 갈리나"만 말하고 한쪽만 걷는다. 안 걸은 쪽은 생략 목록에 예고한다.
+- Layer 1 = one-sentence overview + a map of the participating files (`` `path` — one-line role ``, 3–7 entries) — the reader always knows where they are walking.
+- From layer 2, work section by section: [prediction question] → flow explanation (`file:line` evidence) → [retrieval question]. 3–7 sections — overflow means there is more than one case, so propose a split.
+- Follow one value's journey to the end: pick one representative input and show how it changes in each section — one concrete value anchors an abstract explanation.
+- Fork discipline: for a branch, say only "why it forks" and walk one side. Announce the unwalked side in the omissions list.
 
-## 깊이 조절 (독자 맞춤)
+## Depth control (fit the reader)
 
-- 코드베이스 처음: 실행 모델(무엇이 언제 어떤 순서로 도는가)부터 — 코드보다 모델이 먼저다.
-- 이 영역 처음: 독자가 이미 아는 인접 영역과의 경계·계약부터 — 아는 것에 잇는다.
-- 익숙한 독자: 기대와 다른 지점만 — 아는 것 재설명은 시간 낭비가 아니라 신뢰 낭비다.
-- 라인 낭독 금지: 문법·자명한 할당처럼 코드가 스스로 말하는 것은 건너뛴다 — 설명의 몫은 코드가 말하지 못하는 것(왜·경계·불변식)이다.
+- New to the codebase: start with the execution model (what runs, when, in what order) — the model comes before the code.
+- New to this area: start from the boundaries and contracts with adjacent areas the reader already knows — attach to the known.
+- Familiar reader: only where things differ from expectation — re-explaining the known wastes trust, not just time.
+- No line-by-line recitation: skip what the code says for itself (syntax, self-evident assignments) — explanation's share is what the code cannot say (why, boundaries, invariants).
 
-## 실측 (서사 검증)
+## Measurement (verifying the narrative)
 
-- 설명한 흐름이 실행 가능하면 실측 1회: 테스트 하나 실행·로그 관찰로 서사와 실제의 일치를 확인한다 (Canon 8) — read-only 실행만.
-- 실행 불가 환경이면 그 한계를 산출물에 명시한다 — 실측 없는 서사는 "코드 기준"임을 밝힌다.
+- If the explained flow is executable, measure once: run one test or observe logs to confirm the narrative matches reality (Canon 8) — read-only execution only.
+- If the environment cannot execute, state that limitation in the deliverable — an unmeasured narrative must declare itself "based on the code."
 
-## 투어 산출물 (재사용 형식)
+## Tour deliverable (reusable format)
 
-- 워크스루는 1회용 대화가 아니라 재사용 문서다: 단계 = `파일:라인` 앵커 + 서사 1~3문장 + 질문. 저장 위치·기재는 디스패처 몫.
-- 변경이 잦아 라인 앵커가 깨질 구간은 라인 대신 심볼명(함수·클래스)으로 앵커한다.
+- A walkthrough is a reusable document, not a one-off conversation: step = `file:line` anchor + 1–3 sentence narrative + question. Storage location and registration are the dispatcher's share.
+- Where frequent change would break line anchors, anchor by symbol name (function, class) instead of line.
 """
 
 _HOFUD = """\
 ---
 name: asgard-mimir-hofud
-description: 미미르의 머리 미미스회푸드 — 문답 설계 심화. 온보딩·인수인계·이해도 확인 작업 전 로드.
+description: Mimir's head Mimishofud — deep knowledge of question design. Load before onboarding, handover, or comprehension-check work.
 ---
 
-# asgard-mimir-hofud — 🗣️ 문답 설계
+# asgard-mimir-hofud — 🗣️ Question Design
 
-잘린 머리는 스스로 걷지 못한다 — 걷는 것은 언제나 묻는 자다.
+The severed head cannot walk on its own — the one who walks is always the one who asks.
 
-## 순서가 스위치다
+## Order is the switch
 
-- 설명 전 예측, 설명 후 인출 — 이 순서 하나가 지식이 남느냐를 가른다. 예측 없이 시작한 설명은 이 스킬의 실패다.
-- 대화형이면 예측 답을 실제로 기다린다. 문서형이면 질문 → 답 접기 배치로 순서를 형식에 보존한다.
+- Prediction before the explanation, retrieval after — this one ordering decides whether knowledge sticks. An explanation started without a prediction is a failure of this skill.
+- In conversational form, actually wait for the prediction answer. In document form, preserve the order structurally as question → collapsed answer.
 
-## 질문 설계 4형
+## Four question types
 
-- 예측 (구간 앞): "이름·시그니처만 보고 — 뭘 할 것 같나?"
-- 인출 (구간 뒤): "안 보고 — 방금 흐름을 한 문장으로."
-- 연결 (구간 사이): "1구간의 X 가 여기서 왜 다시 등장하나?"
-- 전이 (마무리): "Y 를 추가한다면 어디를 고치겠나?" — 전이 질문에 답할 수 있어야 워크스루 성공이다.
-- 저부담 규율: 구간당 1문항 — 시험이 아니라 손잡이다. 오답은 감점이 아니라 다음 설명의 각도를 정하는 신호다.
+- Prediction (before a section): "From the name and signature alone — what do you expect it to do?"
+- Retrieval (after a section): "Without looking — the flow you just saw, in one sentence."
+- Connection (between sections): "Why does X from section 1 reappear here?"
+- Transfer (closing): "If you added Y, where would you make the change?" — the walkthrough succeeds only if the transfer question can be answered.
+- Low-stakes discipline: one question per section — it is a handrail, not an exam. A wrong answer is not a deduction but a signal that sets the angle of the next explanation.
 
-## 자기설명 유도
+## Eliciting self-explanation
 
-- "옆자리 동료에게 한 문장으로 설명한다면?" — 제공받은 설명보다 스스로 만든 설명이 더 오래 남는다.
-- 독자의 설명이 틀려도 전부 교정하지 않는다 — 틀린 연결 하나만 짚고 다시 생성하게 한다.
+- "If you had to explain this to the colleague beside you in one sentence?" — a self-generated explanation lasts longer than a provided one.
+- Even when the reader's explanation is wrong, do not correct everything — point out the one broken link and let them regenerate it.
 
-## 안내 줄이기 (세션이 이어질 때)
+## Fading guidance (across continuing sessions)
 
-- 첫 흐름은 내가 걸으며 시연, 둘째 흐름은 독자가 걷고 나는 확인만, 셋째부터는 질문에만 답한다.
-- 발화량이 회차마다 줄지 않으면 설계 실패다 — 안내의 목적은 안내가 필요 없어지는 것.
-- 익숙한 독자에게 초심자용 안내는 잉여가 아니라 방해다 — 깊이 조절은 brunnr 캐논과 공유.
+- First flow: I walk and demonstrate. Second flow: the reader walks, I only confirm. From the third on: I answer questions only.
+- If the amount I say does not shrink each round, the design has failed — the goal of guidance is to make guidance unnecessary.
+- Beginner-level guidance for a familiar reader is not redundancy but obstruction — depth control is shared with the brunnr canon.
 
-## 이해도 계기판 (체감 금지)
+## Comprehension dashboard (no gut feel)
 
-- "이해했다"는 체감은 지표가 아니다 — 유창하게 읽힌 것과 재구성할 수 있는 것은 다르다.
-- 진행 지표는 인출 성공만: 안 보고 흐름 요약, 수정 지점 특정, 연결 질문 정답.
-- 인출 실패 구간은 같은 설명 반복 금지 — 각도를 바꾼다(제어 흐름 ↔ 데이터 흐름 ↔ 구체 값 여정).
+- "I understood" as a feeling is not a metric — reading fluently and being able to reconstruct are different things.
+- The only progress metrics are retrieval successes: summarizing the flow without looking, pinpointing the change site, answering connection questions correctly.
+- Where retrieval fails, never repeat the same explanation — change the angle (control flow ↔ data flow ↔ concrete value journey).
 """
 
 MIMIR_SKILLS: list[tuple[str, str]] = [
@@ -174,7 +174,7 @@ def mimir_note(task: str) -> str:
     from .roles import ROLE_AGENTS
 
     core = dict(ROLE_AGENTS)["asgard-mimir.md"].split("---", 2)[2].lstrip()
-    return "\n\n# 미미르 — 코드 안내 계약\n\n" + core
+    return "\n\n# Mimir — Code Guide Contract\n\n" + core
 
 
 def mimir_core_skill() -> str:
@@ -183,6 +183,6 @@ def mimir_core_skill() -> str:
 
     return role_core_skill(
         "asgard-mimir.md",
-        "미미르 코어 계약 — 코드 설명·워크스루·온보딩의 인라인 수행 기준 (실행 흐름 서사 + 인지부채 방어). "
-        "서브에이전트가 없는 툴에서 코드 이해 과업 시 로드한다.",
+        "Mimir core contract — the inline execution baseline for code explanation, walkthroughs, and onboarding "
+        "(execution-flow narrative + cognitive-debt defense). Load for code-comprehension quests in tools without subagents.",
     )

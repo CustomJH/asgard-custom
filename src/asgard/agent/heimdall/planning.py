@@ -139,8 +139,10 @@ def _resume_snapshot(root: str, qid: str) -> dict:
 
 # Thinker 에게 요구하는 배정 단위 출력 계약 (네이티브) — 독립 단위는 wave 병렬로 실행된다
 _UNITS_NOTE = (
-    "\n\n계획 마지막에 Worker 배정 단위를 JSON 블록으로 산출하라 (독립 단위는 병렬 실행):\n"
-    '```json\n{"units":[{"id":1,"subtask":"...","files":["경로"],"criteria":["..."],"access":[]}]}\n```\n'
-    "access = 이 단위가 결과를 참조해야 하는 선행 단위 id 목록 (독립이면 빈 배열 — 격리 실행됨). "
-    "파일이 겹치는 단위는 같은 파일을 access 없이 나누지 마라. 단일 작업이면 units 1개."
+    "\n\nAt the end of the plan, emit the Worker assignment units as a JSON block "
+    "(independent units run in parallel):\n"
+    '```json\n{"units":[{"id":1,"subtask":"...","files":["path"],"criteria":["..."],"access":[]}]}\n```\n'
+    "access = list of prior unit ids whose results this unit must reference (empty array if "
+    "independent — runs isolated). Do not split units sharing the same file without access "
+    "between them. For a single task, emit 1 unit."
 )

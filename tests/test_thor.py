@@ -85,46 +85,46 @@ class TestRoleBodies(unittest.TestCase):
         self.worker = roles["asgard-worker.md"]
 
     def test_thor_is_backend_not_build(self):
-        self.assertIn("백엔드 전문가", self.thor)
-        self.assertIn("asgard-eitri 소관", self.thor)  # 빌드·CI 는 에이트리로 경계 명시
-        self.assertNotIn("빌드·인프라 전문가", self.thor)  # 구 정체 잔존 금지
+        self.assertIn("Backend specialist", self.thor)
+        self.assertIn("belong to asgard-eitri", self.thor)  # 빌드·CI 는 에이트리로 경계 명시
+        self.assertNotIn("build/infra specialist", self.thor)  # 구 정체 잔존 금지
 
     def test_thor_diagnosis_gate_scoped_to_defects(self):
         # Codex #8 — 게이트는 버그·회귀·장애 한정, STOP 조건은 검증 가능한 사실
-        self.assertIn("버그·회귀·성능 장애 한정", self.thor)
-        for cond in ("재현 실패", "실제 호출 경로 미확인", "상충하는 증거 미해소"):
+        self.assertIn("bugs/regressions/performance incidents only", self.thor)
+        for cond in ("reproduction failed", "actual call path unconfirmed", "conflicting evidence unresolved"):
             self.assertIn(cond, self.thor)
 
     def test_thor_side_effect_approval_model(self):
         # Codex #2 — 승인 축 = 환경 × 외부 부작용, Worker 배정 ≠ 승인
-        self.assertIn("환경 × 외부 부작용", self.thor)
-        self.assertIn("Worker 의 과업 배정은 승인이 아니다", self.thor)
+        self.assertIn("environment × external side effect", self.thor)
+        self.assertIn("A Worker task assignment is not approval", self.thor)
 
     def test_thor_skill_composition_not_exclusion(self):
         # Codex #5 — 혼용 금지가 아니라 합성 규칙 (야른그레이프르 = 오버레이)
-        self.assertIn("배타가 아니라 **합성**", self.thor)
-        self.assertIn("안전 오버레이", self.thor)
-        self.assertIn("진단 오버레이", self.thor)  # 그리다르뵐 = 결함 과업에 겹치는 층
+        self.assertIn("not mutually exclusive but **compose**", self.thor)
+        self.assertIn("safety overlay", self.thor)
+        self.assertIn("diagnosis overlay", self.thor)  # 그리다르뵐 = 결함 과업에 겹치는 층
         for sname in _DOMAIN_SKILLS:
             self.assertIn(sname, self.thor)
 
     def test_thor_frontmatter_excludes_verifier(self):
         frontmatter = self.thor.split("---", 2)[1]
-        self.assertIn("Verifier 는 금지", frontmatter)
+        self.assertIn("Verifier is forbidden", frontmatter)
 
     def test_eitri_contracts(self):
-        self.assertIn("로컬-CI 패리티", self.eitri)
-        self.assertIn("상한 5회", self.eitri)  # verify-fix 루프 상한
-        self.assertIn("로컬 아티팩트 생성·검증까지", self.eitri)  # 릴리스 경계 (Codex #2)
-        self.assertIn("asgard-thor 소관", self.eitri)  # 런타임 경계
+        self.assertIn("Local-CI parity", self.eitri)
+        self.assertIn("Cap of 5", self.eitri)  # verify-fix 루프 상한
+        self.assertIn("up to local artifact generation and verification", self.eitri)  # 릴리스 경계 (Codex #2)
+        self.assertIn("belong to asgard-thor", self.eitri)  # 런타임 경계
         self.assertIn("disallowedTools: Agent", self.eitri)
 
     def test_worker_routes_by_change_surface(self):
         # Codex #1 — Worker 라우팅 계약이 단일 소스: 이걸 안 고치면 과업이 계속 구 토르로 간다
         self.assertIn("asgard-thor", self.worker)
         self.assertIn("asgard-eitri", self.worker)
-        self.assertIn("변경 표면 기준", self.worker)
-        self.assertNotIn("빌드·CI·인프라 = asgard-thor", self.worker)  # 구 라우팅 잔존 금지
+        self.assertIn("by change surface", self.worker)
+        self.assertNotIn("build/CI/infra = asgard-thor", self.worker)  # 구 라우팅 잔존 금지
 
 
 class TestSkillBodies(unittest.TestCase):
@@ -139,78 +139,82 @@ class TestSkillBodies(unittest.TestCase):
 
     def test_mjollnir_anchors(self):
         m = self.by_name["asgard-thor-mjollnir"]
-        self.assertIn("배치 내구성 계약", m)  # 재시작 생존 계약
-        for anchor in ("체크포인트", "재진입점", "부분 실패"):
+        self.assertIn("Batch Durability Contract", m)  # 재시작 생존 계약
+        for anchor in ("Checkpoint", "Re-entry point", "Partial failure"):
             self.assertIn(anchor, m)
         self.assertIn("outbox", m)  # 메시징 신뢰성 (Codex #7)
         self.assertIn("DLQ", m)
-        self.assertIn("멱등", m)
+        self.assertIn("idempoten", m)
         self.assertIn("N+1", m)
-        self.assertIn("락 순서 일관성", m)
+        self.assertIn("Consistent lock ordering", m)
 
     def test_lightning_anchors(self):
         li = self.by_name["asgard-thor-lightning"]
-        self.assertIn("타임아웃 계층화", li)
-        self.assertIn("서킷 브레이커", li)
-        self.assertIn("실시간 사다리", li)  # 폴링 → SSE → WebSocket
-        self.assertIn("무효화 전략을 먼저 쓰지 못하면 캐시 도입 금지", li)
+        self.assertIn("Layered timeouts", li)
+        self.assertIn("Circuit breaker", li)
+        self.assertIn("Realtime Ladder", li)  # 폴링 → SSE → WebSocket
+        self.assertIn("If you cannot write the invalidation strategy first, do not introduce a cache", li)
         self.assertIn("SSRF", li)  # 서버 보안 경계 (Codex #7)
         self.assertIn("IDOR", li)
-        self.assertIn("타임아웃·부분 실패·보상 없이는 외부 호출이 아니다", li)
+        self.assertIn(
+            "External Integrations (without timeouts, partial-failure handling, and compensation it is not an "
+            "external call)",
+            li,
+        )
 
     def test_megingjord_anchors(self):
         mg = self.by_name["asgard-thor-megingjord"]
         self.assertIn("liveness", mg)
         self.assertIn("readiness", mg)
-        self.assertIn("의존성 캐스케이드 금지", mg)
+        self.assertIn("No dependency cascades", mg)
         self.assertIn("graceful shutdown", mg)
-        self.assertIn("무상태 우선", mg)
-        self.assertIn("관측성 최소 계약", mg)  # Codex #7
-        self.assertIn("asgard-eitri 소관", mg)  # 빌드 경계 상호 참조
+        self.assertIn("Stateless First", mg)
+        self.assertIn("Observability Minimum Contract", mg)  # Codex #7
+        self.assertIn("belong to asgard-eitri", mg)  # 빌드 경계 상호 참조
 
     def test_jarngreipr_anchors(self):
         j = self.by_name["asgard-thor-jarngreipr"]
-        self.assertIn("오버레이", j)  # 단독 아닌 합성 (Codex #5)
+        self.assertIn("overlay", j)  # 단독 아닌 합성 (Codex #5)
         for grade in ("🟢", "🟡", "🔴", "⚫"):  # 안전 등급 매트릭스
             self.assertIn(grade, j)
         self.assertIn("expand-contract", j)
-        self.assertIn("승인은 Odin 몫", j)  # Codex #2
-        self.assertIn("실측 쿼리 계획", j)
+        self.assertIn("approval belongs to Odin", j)  # Codex #2
+        self.assertIn("measured query plan", j)
 
     def test_gridarvol_anchors(self):
         g = self.by_name["asgard-thor-gridarvol"]
-        self.assertIn("오버레이", g)  # 공통 디버깅 위에 겹치는 백엔드 층
+        self.assertIn("overlay", g)  # 공통 디버깅 위에 겹치는 백엔드 층
         self.assertIn("asgard-worker-debugging", g)  # 공통 층과의 경계 상호 참조
-        self.assertIn("재현 루프 사다리", g)  # 빨강→초록 명령 우선
+        self.assertIn("Reproduction Loop Ladder", g)  # 빨강→초록 명령 우선
         self.assertIn("bisect", g)
-        self.assertIn("계층 격리", g)  # 연결→타임아웃→…→의미
-        self.assertIn("상태 코드 플레이북", g)
-        self.assertIn("전제 검증", g)  # 의도된 설계·하중 받치는 부재
-        self.assertIn("부재가 하중을 받치는", g)
-        self.assertIn("셋의 규칙", g)  # 3회 실패 = 구조 신호
+        self.assertIn("Layer Isolation", g)  # 연결→타임아웃→…→의미
+        self.assertIn("Status-code playbook", g)
+        self.assertIn("Premise Verification", g)  # 의도된 설계·하중 받치는 부재
+        self.assertIn("absence bears load", g)
+        self.assertIn("rule of three", g)  # 3회 실패 = 구조 신호
 
     def test_tanngrisnir_anchors(self):
         t = self.by_name["asgard-thor-tanngrisnir"]
-        self.assertIn("가면 폴백", t)  # 결함 은폐 폴백 = 차단
-        self.assertIn("근거 폴백", t)  # 허용 조건 4가지
+        self.assertIn("Masking fallback", t)  # 결함 은폐 폴백 = 차단
+        self.assertIn("Justified fallback", t)  # 허용 조건 4가지
         self.assertIn("pipefail", t)  # 실패 보존 증거 형식
-        self.assertIn("실행 ≠ 평가", t)  # 명령 실행과 기준 충족의 분리
-        self.assertIn("회귀 케이스", t)  # 라이브 버그 = 수정+케이스 한 쌍
-        self.assertIn("슬롭 스윕", t)
+        self.assertIn("Running ≠ evaluating", t)  # 명령 실행과 기준 충족의 분리
+        self.assertIn("regression case", t)  # 라이브 버그 = 수정+케이스 한 쌍
+        self.assertIn("Slop Sweep", t)
         self.assertIn("asgard-worker-testing", t)  # 테스트 작성 규율 경계
 
     def test_einherjar_anchors(self):
         e = self.by_name["asgard-thor-einherjar"]
-        self.assertIn("위임 문턱", e)  # 편성 판정 — 토큰 세금 정당화
-        self.assertIn("분할 편대", e)
-        self.assertIn("토너먼트 편대", e)
-        self.assertIn("계약 선행", e)  # 공유 계약은 병렬 전에 확정
-        self.assertIn("새 컨텍스트", e)  # 서브에 히스토리 무상속
-        self.assertIn("파일 3–5개 상한", e)
-        self.assertIn("깊이 1", e)
-        self.assertIn("검증 독립성", e)
-        self.assertIn("완료 선언 금지", e)
-        self.assertIn("단독 폴백", e)  # 편대 불가 환경의 체크리스트 게이트
+        self.assertIn("delegation threshold", e)  # 편성 판정 — 토큰 세금 정당화
+        self.assertIn("Split squad", e)
+        self.assertIn("Tournament squad", e)
+        self.assertIn("Contracts first", e)  # 공유 계약은 병렬 전에 확정
+        self.assertIn("fresh context", e)  # 서브에 히스토리 무상속
+        self.assertIn("Cap of 3–5 files", e)
+        self.assertIn("Depth 1", e)
+        self.assertIn("Verification independence", e)
+        self.assertIn("No declaring completion", e)
+        self.assertIn("Solo fallback", e)  # 편대 불가 환경의 체크리스트 게이트
 
 
 class TestSkillResolver(unittest.TestCase):
@@ -300,7 +304,7 @@ class TestWiring(unittest.TestCase):
             set(DISPATCH_TOOL["input_schema"]["properties"]["agent"]["enum"]),
             {"freyja", "thor", "thor-lead", "eitri", "loki", "mimir"},
         )
-        for label in ("thor=백엔드", "eitri=빌드"):
+        for label in ("thor=backend", "eitri=build"):
             self.assertIn(label, DISPATCH_TOOL["description"])
 
 
@@ -321,7 +325,7 @@ class TestThorLead(unittest.TestCase):
     def test_lead_frontmatter_has_agent_tool(self):
         frontmatter = self.lead.split("---", 2)[1]
         self.assertIn("Agent", frontmatter)  # 편성 권한 — 봉인의 예외
-        self.assertIn("Verifier 는 금지", frontmatter)  # 검증 독립성은 동일
+        self.assertIn("Verifier is forbidden", frontmatter)  # 검증 독립성은 동일
 
     def test_cc_whitelist_lead_open_sub_sealed(self):
         from asgard.agent.tool_kernel import ROLE_CAPABILITIES, cc_tools_for_role
@@ -336,23 +340,23 @@ class TestThorLead(unittest.TestCase):
             "asgard-thor-einherjar",  # 팀 프로토콜 단일 소스 로드 의무
             "asgard-thor-jarngreipr",  # 데이터 위험 단위 브리프 동봉
             "asgard-thor-gridarvol",  # 진단 단위 브리프 동봉
-            "편성 판정 먼저",  # 위임 문턱 미달 = 편대 금지
-            "위임 문턱",
-            "계약 선행",  # 공유 계약 병렬 전 확정
-            "토너먼트",  # N-버전 승자 적용
-            "판정 분리",  # 생성자≠판정자
-            "두 장부",
-            "깊이 1",  # 서브 재위임 불가
-            "완료 선언 금지",
+            "Judge squad formation first",  # 위임 문턱 미달 = 편대 금지
+            "delegation threshold",
+            "contract-first",  # 공유 계약 병렬 전 확정
+            "Tournament",  # N-버전 승자 적용
+            "Separate the verdict",  # 생성자≠판정자
+            "Two ledgers",
+            "Depth 1",  # 서브 재위임 불가
+            "No completion claims",
         ):
             self.assertIn(anchor, self.lead)
 
     def test_sub_thor_squad_membership_contract(self):
         sub = self.roles["asgard-thor.md"]
-        self.assertIn("편대 소속 시", sub)  # 브리프 분계선·단위 한정 검증·반환 규격
-        self.assertIn("편대 편성은 asgard-thor-lead 의 표면", sub)  # 직접 편성 금지 — 판단 반환
-        self.assertIn("재위임 불가 — 하위 에이전트를 만들지 않는다", sub)  # 봉인 문구 보존
-        self.assertIn("전역 빌드·전체 테스트는 대장 몫", sub)  # 전역 게이트 단일 실행 계약
+        self.assertIn("When part of a squad", sub)  # 브리프 분계선·단위 한정 검증·반환 규격
+        self.assertIn("Squad formation is asgard-thor-lead's surface", sub)  # 직접 편성 금지 — 판단 반환
+        self.assertIn("No re-delegation — does not spawn subagents", sub)  # 봉인 문구 보존
+        self.assertIn("global builds/full test suites are the lead's job", sub)  # 전역 게이트 단일 실행 계약
 
     def test_heimdall_resolver_covers_lead(self):
         import inspect
@@ -374,7 +378,7 @@ class TestThorLead(unittest.TestCase):
         md = agents_md("p")
         self.assertIn("asgard-thor-lead", md)  # 대형 백엔드 과업 라우팅
         self.assertIn("asgard-thor-einherjar", md)  # 모드 A 편대 스킬 경로
-        self.assertIn("예외: asgard-thor-lead", md)  # 재위임 예외의 명시적 한정
+        self.assertIn("exception: asgard-thor-lead", md)  # 재위임 예외의 명시적 한정
         worker = self.roles["asgard-worker.md"]
         self.assertIn("asgard-thor-lead", worker)
         self.assertIn("asgard-thor-einherjar", worker)

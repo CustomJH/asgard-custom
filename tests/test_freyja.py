@@ -25,11 +25,11 @@ class TestFreyjaBaseline(unittest.TestCase):
         self.assertEqual(resolve_freyja_skills("랜딩 페이지"), [])
         core = freyja_core_skill()
         self.assertIn("name: asgard-freyja", core)
-        self.assertIn("기본 성능 — Freyja Design", core)
+        self.assertIn("Default behavior — Freyja Design", core)
         self.assertIn("asgard-freyja-design", core)
-        self.assertIn("시각 시스템과 feel을 먼저", core)
-        self.assertIn("의미 없는 요소만 덜어낸다", core)
-        self.assertIn("아토믹 디자인 시스템으로 설정한다", core)
+        self.assertIn("establish the visual system and feel first", core)
+        self.assertIn("strip only the elements with no meaning", core)
+        self.assertIn("default to an atomic design system", core)
         self.assertIn("components/atoms|molecules|organisms", core)
 
     def test_design_engine_carries_atomic_structure_canon(self):

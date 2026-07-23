@@ -101,16 +101,16 @@ def style_violations(text: str, source: str = "") -> list[str]:
     evidence = _lintable_text(source)
     found: list[str] = []
     for phrase in dict.fromkeys(m.group(0) for m in _HYPE.finditer(body)):
-        found.append(f"과장 표현: {phrase}")
+        found.append(f"hype phrase: {phrase}")
     for phrase in dict.fromkeys(m.group(0) for m in _FOREIGN_DUP.finditer(body)):
-        found.append(f"불필요한 외국어 병기: {phrase}")
+        found.append(f"redundant foreign-language gloss: {phrase}")
     for phrase in dict.fromkeys(m.group(0) for m in _COINED_TERM.finditer(body)):
-        found.append(f"불필요한 조어: {phrase}")
+        found.append(f"unnecessary coinage: {phrase}")
     for phrase in dict.fromkeys(m.group(0) for m in _CORRECTION_META.finditer(body)):
-        found.append(f"교정 메타 설명: {phrase}")
+        found.append(f"correction meta-commentary: {phrase}")
     for label, pattern in _UNSUPPORTED:
         if pattern.search(body) and not pattern.search(evidence):
-            found.append(f"근거 없는 효용: {label}")
+            found.append(f"unsupported benefit claim: {label}")
     source_terms = set(_ACRONYM.findall(evidence))
     for term in dict.fromkeys(_ACRONYM.findall(body)):
         if term in _KNOWN_TERMS or term in source_terms:
@@ -118,7 +118,7 @@ def style_violations(text: str, source: str = "") -> list[str]:
         # 첫 등장 자리에서 곧바로 정의한 형태는 허용한다: `RAGX는 ...`, `RAGX: ...`, `RAGX(...)`.
         if re.search(rf"(?<![A-Z0-9]){re.escape(term)}(?![A-Z0-9])\s*(?:는|은|이란|:|\()", body):
             continue
-        found.append(f"미정의 용어: {term}")
+        found.append(f"undefined term: {term}")
     return found
 
 

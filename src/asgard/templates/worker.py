@@ -13,92 +13,92 @@ import re
 _DEBUGGING = """\
 ---
 name: asgard-worker-debugging
-description: 체계적 디버깅 — 버그·크래시·회귀의 원인 규명·수정 작업 전 로드. 재현 → 관찰 → 가설 1개씩 → 이분 → 최소 수정 → 회귀 고정.
+description: Systematic debugging — load before root-causing and fixing bugs, crashes, or regressions. Reproduce → observe → one hypothesis at a time → bisect → minimal fix → regression pin.
 ---
 
-# asgard-worker-debugging — 🔎 체계적 디버깅
+# asgard-worker-debugging — 🔎 Systematic Debugging
 
-고치는 속도를 정하는 건 타자 속도가 아니라 원인을 좁히는 규율이다.
+What sets the speed of a fix is not typing speed but the discipline of narrowing the cause.
 
-## 재현 먼저 (재현 없으면 수정 없다)
+## Reproduce first (no reproduction, no fix)
 
-- 최소 재현을 만든다 — 입력·환경·경로를 줄여 실패가 성립하는 가장 작은 조건을 실측한다. 재현 명령과 관찰 결과(exit code·에러 출력)를 기록한다.
-- 재현 불가면 추측 수정 대신 그 사실을 보고한다 — 시도한 각도(입력·환경·타이밍)와 함께. 재현 없는 수정은 "고쳐졌다"를 검증할 방법도 없다.
+- Build a minimal reproduction — shrink inputs, environment, and path to the smallest condition where the failure holds, and measure it. Record the repro command and the observed result (exit code, error output).
+- If it cannot be reproduced, report that fact instead of guess-fixing — along with the angles tried (input, environment, timing). A fix without a reproduction also has no way to verify "it's fixed."
 
-## 관찰 > 추측
+## Observation > guessing
 
-- 에러 메시지·스택은 끝까지 읽는다 — 첫 프레임이 아니라 원인 프레임, 래핑된 예외면 근원 예외까지.
-- 실제 상태를 본다: 로그·디버거·중간값 출력으로 "이 지점의 값이 무엇인가"를 확인 — "아마 여기겠지" 편집 금지 (Canon 5).
-- 기존 보고서·주석·이슈의 원인 주장은 미검증 입력이다 — 직접 재확인 후 사용한다.
+- Read error messages and stacks to the end — the causal frame, not the first frame; for wrapped exceptions, down to the root exception.
+- Look at actual state: confirm "what is the value at this point" via logs, a debugger, or intermediate-value output — no "it's probably here" edits (Canon 5).
+- Cause claims in existing reports, comments, and issues are unverified input — re-confirm directly before using them.
 
-## 가설 루프 (한 번에 하나)
+## Hypothesis loop (one at a time)
 
-- 가설 1개 = 변경 1개 — 동시 다중 변경은 무엇이 고쳤는지(혹은 무엇이 새로 부쉈는지) 알 수 없게 만든다.
-- 가설은 반증 가능하게: "X 라면 Y 가 관찰될 것"을 먼저 적고 실측과 비교한다. 어긋나면 가설 폐기 — 관찰을 가설에 맞춰 해석하지 않는다.
-- 근거가 늘지 않는 시도 3회면 중단 — 지금까지의 관찰 요약(확인된 사실 / 배제된 가설)과 함께 보고한다. 같은 가설의 반복 시도는 1회다.
+- One hypothesis = one change — simultaneous multiple changes make it impossible to know what fixed it (or what newly broke it).
+- Make hypotheses falsifiable: write "if X, then Y will be observed" first and compare against measurement. If it diverges, discard the hypothesis — never reinterpret observations to fit it.
+- Stop after 3 attempts that add no evidence — report with a summary of observations so far (confirmed facts / eliminated hypotheses). Repeated attempts on the same hypothesis count as one.
 
-## 이분 탐색 (후보가 넓을 때)
+## Bisection (when the candidate space is wide)
 
-- 커밋 축: 언제부터 깨졌나 — git bisect (재현 명령이 판정기).
-- 입력 축: 어떤 입력이 깨뜨리나 — 입력 절반씩 배제.
-- 코드 축: 어디서 값이 틀어지나 — 경로 중간에 관찰 지점을 놓고 앞뒤를 가른다.
+- Commit axis: since when is it broken — git bisect (the repro command is the judge).
+- Input axis: which input breaks it — eliminate half of the input at a time.
+- Code axis: where does the value go wrong — place an observation point mid-path and split before/after.
 
-## 최소 수정 (원인 지점에)
+## Minimal fix (at the cause site)
 
-- 수정은 규명된 원인과 1:1 이어야 한다 — 증상 지점에 방어 코드를 덧대 덮는 것은 수정이 아니라 은폐다.
-- 수정이 원인 설명 없이 "돌려보니 됐다"면 아직 디버깅이 끝나지 않은 것이다.
+- The fix must map 1:1 to the identified cause — layering defensive code over the symptom site is concealment, not a fix.
+- If the fix is "ran it and it worked" with no causal explanation, the debugging is not finished yet.
 
-## 회귀 고정
+## Regression pin
 
-- 수정 전 실패하고 수정 후 통과하는 테스트를 남긴다 — 그 전이가 "고쳐졌다"의 증거다 (Canon 8).
-- 같은 계열 이웃(같은 패턴을 쓰는 다른 지점)을 1회 점검한다 — 단 범위 확장은 발견 보고까지, 수정은 배정 범위만 (Canon 7).
-- 테스트 작성 규율은 `asgard-worker-testing` 이 담당한다.
+- Leave a test that fails before the fix and passes after — that transition is the evidence for "it's fixed" (Canon 8).
+- Check same-family neighbors (other sites using the same pattern) once — but scope expansion stops at reporting the finding; fix only the assigned scope (Canon 7).
+- Test-writing discipline belongs to `asgard-worker-testing`.
 """
 
 _TESTING = """\
 ---
 name: asgard-worker-testing
-description: 테스트 설계 — 테스트 작성·보강·flaky 정리 작업 전 로드. 공개 행동 고정·실패 먼저·경계값·결정론 격리.
+description: Test design — load before writing, strengthening, or de-flaking tests. Pin public behavior, fail first, boundary values, determinism isolation.
 ---
 
-# asgard-worker-testing — 🧪 테스트 설계
+# asgard-worker-testing — 🧪 Test Design
 
-테스트는 미래의 변경자가 지금의 행동을 부수지 않게 잡아 주는 계약이다 — 계약은 구체적이어야 지킬 수 있다.
+A test is a contract that keeps a future changer from breaking today's behavior — a contract can only be kept if it is concrete.
 
-## 무엇을 고정하나 (공개 행동)
+## What to pin (public behavior)
 
-- 테스트는 공개 행동(입력→출력·상태 변화·부수효과)을 고정한다 — 내부 구현 세부(사설 함수·내부 호출 순서·중간 표현) 고정 금지: 리팩터마다 깨지는 테스트는 자산이 아니라 빚이다.
-- 프로젝트 관례가 먼저다 (Canon 5): 기존 테스트의 프레임워크·픽스처·명명·배치를 읽고 따른다 — 새 스타일 도입은 배정에 명시됐을 때만.
+- Tests pin public behavior (input → output, state changes, side effects) — never pin internal implementation detail (private functions, internal call order, intermediate representations): a test that breaks on every refactor is a liability, not an asset.
+- Project convention comes first (Canon 5): read and follow the existing tests' framework, fixtures, naming, and placement — introduce a new style only when the assignment explicitly calls for it.
 
-## 실패 먼저
+## Fail first
 
-- 새 테스트는 실패를 한 번 봐야 한다 — 통과만 본 테스트는 대상을 안 부르거나 항상 참인 단언일 수 있다.
-- 버그 수정 동반 테스트는 수정 전 실패를 실측한다 — 그 전이가 테스트의 존재 증명이다 (Canon 8).
-- **수직 슬라이스**: 공개 seam 하나의 실패 테스트 → 그 테스트만 통과시키는 최소 구현 → 다음 seam 순서로 진행한다. 계층별 테스트를 먼저 몰아 쓰는 수평 분할은 아직 관찰하지 않은 구현을 고정하므로 금지한다.
+- A new test must be seen to fail once — a test that has only ever been seen passing may not be exercising the target, or may be a tautological assertion.
+- A test accompanying a bug fix must actually measure the failure before the fix — that transition is the proof the test exists (Canon 8).
+- **Vertical slice**: one failing test for one public seam → the minimal implementation that passes only that test → move to the next seam in order. Horizontal splitting — writing a pile of layer-by-layer tests up front — is forbidden because it pins an implementation not yet observed.
 
-## 케이스 골격
+## Case skeleton
 
-- 최소 골격: 해피패스 1 + 경계(빈 값·0·1·최대·경계 직전/직후·유니코드) + 실패 경로(예외·거부·타임아웃)의 형태 검증.
-- 반례의 체계적 탐색은 loki 표면 — Worker 는 골격을 채우고, 판정은 Verifier 몫이다 (Canon 10).
+- Minimum skeleton: one happy path + boundaries (empty value, 0, 1, max, just before/after a boundary, unicode) + shape verification of failure paths (exceptions, rejection, timeout).
+- Systematic counterexample search is loki's surface — Worker fills in the skeleton, and the verdict belongs to Verifier (Canon 10).
 
-## 결정론 (flaky 의 원천 차단)
+## Determinism (cut off flakiness at the source)
 
-- 시간: 실제 시계 금지 — 고정 시계·주입 가능한 시간.
-- 랜덤: 시드 고정 또는 주입.
-- 네트워크: 실 원격 호출 금지 — 페이크·픽스처로 격리 (통합 테스트로 선언된 경우만 예외).
-- 파일시스템: 임시 디렉토리 — 리포·홈 디렉토리 오염 금지.
-- 순서: 테스트 간 독립 — 실행 순서·공유 상태 의존 금지, 각 테스트가 자기 상태를 만든다.
-- flaky 발견 시 재시도로 덮지 않는다 — 위 다섯 축으로 원인을 분류하고 수정한다 (CI 층 대응은 `asgard-eitri-draupnir`).
+- Time: no real wall clock — a fixed clock or injectable time.
+- Random: a fixed seed, or injected.
+- Network: no real remote calls — isolate with fakes/fixtures (exception only when declared an integration test).
+- Filesystem: use a temp directory — never pollute the repo or home directory.
+- Order: tests are independent of each other — no dependence on execution order or shared state; each test builds its own state.
+- On finding a flaky test, do not paper over it with retries — classify the cause along the five axes above and fix it (CI-layer handling belongs to `asgard-eitri-draupnir`).
 
-## 단언 품질
+## Assertion quality
 
-- 단언은 구체 값으로 — "null 아님"·"에러 없음" 류 약한 단언은 통과가 정보가 아니다.
-- 실패 메시지가 원인을 말하게 — 기대/실측이 드러나는 단언 형태를 고른다.
-- 커버리지는 지표이지 목표가 아니다 — 수치 채우기용 무단언 테스트 금지.
+- Assert on concrete values — weak assertions like "not null" or "no error" make a pass uninformative.
+- Let the failure message state the cause — choose an assertion form that surfaces expected vs. actual.
+- Coverage is a metric, not a goal — no assertion-free tests written just to pad the number.
 
-## 계층 배치
+## Layer placement
 
-- 단위가 기본(빠르고 좁게, 대다수), 통합은 경계 접점(모듈·프로세스 사이), E2E 는 핵심 흐름 최소한만 — 전부 E2E 인 역피라미드는 느리고 원인 특정이 안 된다.
+- Unit is the default (fast and narrow, the majority), integration covers boundary seams (between modules/processes), E2E covers only the core flows at a minimum — an inverted pyramid that is all E2E is slow and can't pinpoint causes.
 """
 
 WORKER_SKILLS: list[tuple[str, str]] = [

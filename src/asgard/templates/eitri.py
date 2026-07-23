@@ -13,93 +13,93 @@ import re
 _DRAUPNIR = """\
 ---
 name: asgard-eitri-draupnir
-description: 에이트리의 반지 드라우프니르 — CI 파이프라인·빌드 재현성 심화. 파이프라인 설계·빌드 캐시·flaky 대응·이미지 빌드 작업 전 로드.
+description: Eitri's ring Draupnir — deep knowledge of CI pipelines and build reproducibility. Load before pipeline design, build cache, flaky handling, or image build work.
 ---
 
-# asgard-eitri-draupnir — 💍 CI 파이프라인·빌드 재현성
+# asgard-eitri-draupnir — 💍 CI Pipelines & Build Reproducibility
 
-아홉 밤마다 같은 반지 여덟 개 — 같은 입력이면 언제 어디서 돌려도 같은 산출물이어야 한다.
+Eight identical rings every ninth night — the same inputs must yield the same outputs, whenever and wherever the build runs.
 
-## 파이프라인 구조
+## Pipeline structure
 
-- 빠른 검사 먼저(fail fast): 정적 검사 → 타입 → 단위 → 통합 → 빌드 — 비싼 단계가 싼 실패를 기다리게 하지 않는다.
-- 각 단계는 독립 재실행 가능해야 한다 — 앞 단계의 암묵 부산물(전역 설치·임시 파일)에 기대는 단계 금지.
-- 로컬-CI 패리티 (role 계약의 심화): 같은 검사 = 같은 명령 + 같은 도구 버전. CI 만 아는 검사·로컬만 아는 검사를 발견하면 그 자체가 결함이므로 보고한다.
-- 변경 감지 라우팅(경로→대상 매핑)이 있으면 존중 — 전체 리빌드 전환은 근거를 적는다.
+- Cheap checks first (fail fast): static checks → types → unit → integration → build — never make an expensive stage wait on a cheap failure.
+- Every stage must be independently re-runnable — no stage may lean on implicit byproducts of earlier stages (global installs, temp files).
+- Local-CI parity (deepening the role contract): same check = same command + same tool versions. A check only CI knows, or only local knows, is itself a defect — report it.
+- Respect change-detection routing (path → target mapping) where present — switching to a full rebuild requires written justification.
 
-## 캐시 규율
+## Cache discipline
 
-- 캐시 키 = 입력 해시(락파일·빌드 설정) — 브랜치명·날짜 키는 낡은 적중의 제조기다.
-- 캐시는 속도 층이지 정확성 층이 아니다 — 캐시 미스에서도 결과가 같아야 하며, 다르면 캐시가 아니라 미선언 입력이 있는 것이다.
-- "로컬만 통과 / CI 만 실패" 의심 1순위는 낡은 캐시 — 무캐시 재실행으로 캐시 원인 여부를 먼저 이분한다.
+- Cache key = hash of inputs (lockfiles, build config) — branch-name or date keys are stale-hit factories.
+- A cache is a speed layer, not a correctness layer — results must be identical on a cache miss; if they differ, the cause is an undeclared input, not the cache.
+- "Passes locally / fails only in CI": prime suspect is a stale cache — rerun without cache first to bisect whether the cache is the cause.
 
-## flaky 규율 (재시도로 덮지 않는다)
+## Flaky discipline (never paper over with retries)
 
-- 재시도 통과는 수리가 아니라 결함 은폐다 — 자동 재시도 도입은 원인 분류 티켓과 함께만.
-- 원인 분류가 먼저: 시간 의존 / 순서 의존 / 외부 의존(네트워크·서드파티) / 리소스 경합. 분류가 수정 방향을 정한다.
-- 검역(임시 제외) 표식은 복구 조건·티켓 링크와 함께만 — 조용한 skip 은 커버리지 구멍이다.
+- A retried pass is not a repair but defect concealment — introduce automatic retries only together with a root-cause triage ticket.
+- Classify the cause first: time-dependent / order-dependent / external dependency (network, third party) / resource contention. The classification sets the fix direction.
+- Quarantine (temporary exclusion) markers only with a recovery condition and ticket link — a silent skip is a coverage hole.
 
-## 이미지 빌드
+## Image builds
 
-- 멀티스테이지 — 빌드 도구·중간 산출물을 최종 스테이지에 남기지 않는다.
-- 레이어 순서 = 변경 빈도 역순: 의존성 설치가 소스 복사보다 앞 — 소스 한 줄에 의존성 레이어가 무효화되면 캐시 설계 실패다.
-- 베이스 이미지는 태그 고정 — latest 는 재현성 포기 선언이다.
-- 런타임 값(HEALTHCHECK·STOPSIGNAL·probe)은 토르 캐논 소관 — 빌드 스테이지만 이 스킬의 표면이다.
+- Multi-stage — leave no build tools or intermediate artifacts in the final stage.
+- Layer order = inverse of change frequency: dependency install before source copy — if one source line invalidates the dependency layer, the cache design has failed.
+- Pin base image tags — latest is a declaration that reproducibility has been abandoned.
+- Runtime values (HEALTHCHECK, STOPSIGNAL, probes) belong to Thor's canon — only the build stages are this skill's surface.
 
-## 시크릿 경계
+## Secret boundaries
 
-- 시크릿을 빌드 인자·레이어에 넣지 않는다 — 이미지 히스토리에 영구히 남는다.
-- CI 로그의 시크릿 마스킹을 확인한다 — echo·에러 덤프 경유 노출이 흔한 구멍.
-- 포크 PR 실행 경로에는 시크릿이 없어야 한다 — 외부 코드가 시크릿 컨텍스트에서 돌면 그 자체가 사고다.
+- Never put secrets in build args or layers — they remain in the image history forever.
+- Verify secret masking in CI logs — exposure via echo or error dumps is a common hole.
+- Fork-PR execution paths must carry no secrets — external code running in a secret context is itself an incident.
 
-## 검증
+## Verification
 
-- 파이프라인 변경의 증거는 실제 러너 실행 로그다 — "문법이 맞다"는 검증이 아니다 (Canon 8).
-- 실행 불가 환경이면 그 한계를 보고에 명시하고 최소 실행 경로(문법 검사 + 해당 단계 로컬 등가 실행)를 남긴다.
+- The evidence for a pipeline change is an actual runner execution log — "the syntax is valid" is not verification (Canon 8).
+- If the environment cannot execute it, state that limitation in the report and leave a minimal execution path (syntax check + a local equivalent run of the affected stage).
 """
 
 _GULLINBURSTI = """\
 ---
 name: asgard-eitri-gullinbursti
-description: 에이트리의 황금 멧돼지 굴린부르스티 — 패키징·버저닝·릴리스 자동화 심화. 배포판 생성·버전 범프·체인지로그·설치 스크립트 작업 전 로드.
+description: Eitri's golden boar Gullinbursti — deep knowledge of packaging, versioning, and release automation. Load before building distributions, version bumps, changelogs, or install-script work.
 ---
 
-# asgard-eitri-gullinbursti — 🐗 패키징·버저닝·릴리스
+# asgard-eitri-gullinbursti — 🐗 Packaging, Versioning & Releases
 
-어둠 속에서도 스스로 빛나며 달린다 — 릴리스는 만든 사람 없이도 설치·실행·되돌리기가 되는 산출물이다.
+It runs shining by its own light even in darkness — a release is an artifact that installs, runs, and rolls back without its maker present.
 
-## 버저닝
+## Versioning
 
-- 버전의 단일 소스 1곳 — 여러 파일에 흩어진 버전은 범프가 동기화(스크립트)하거나 파생(빌드 시 주입)한다. 손 동기화 2곳 이상은 불일치 예약이다.
-- 깨는 변경(호환 파괴)은 버전 규약이 요구하는 자리로 — 채택한 규약(semver 등)이 없으면 프로젝트 관례를 먼저 확인한다 (Canon 5).
-- 프리릴리스·후보 표기는 정식과 정렬 순서가 맞는 형식으로 — 정렬이 깨지는 표기는 업그레이드 판정을 부순다.
+- One single source of truth for the version — versions scattered across files are synchronized by the bump (script) or derived (injected at build time). Two or more hand-synced locations is a mismatch waiting to happen.
+- Breaking (compatibility-destroying) changes go where the version convention demands — if no convention (semver etc.) is adopted, check project practice first (Canon 5).
+- Prerelease/candidate notation must sort correctly against final versions — notation that breaks ordering breaks upgrade decisions.
 
-## 아티팩트 (만들었다 ≠ 설치된다)
+## Artifacts (built ≠ installable)
 
-- 패키징의 완료 기준은 설치 스모크다: 깨끗한 환경에서 설치 → 실행 → 버전 확인까지 실측 (Canon 8).
-- 포함물 검사: 불필요 파일(테스트 픽스처·캐시·개발 설정)과 시크릿이 배포물에 없는지 목록으로 확인한다.
-- 크로스 플랫폼 선언이면 플랫폼별 검증 — 한 플랫폼 통과를 전체 통과로 보고하지 않는다.
+- The done criterion for packaging is an install smoke test: install in a clean environment → run → verify the version, all actually measured (Canon 8).
+- Content check: confirm by listing that unneeded files (test fixtures, caches, dev config) and secrets are absent from the distribution.
+- If cross-platform is claimed, verify per platform — never report one platform's pass as a total pass.
 
-## 체인지로그
+## Changelog
 
-- 사용자 언어로: 무엇이 달라지고 무엇을 해야 하는가 — 커밋 로그 복붙은 체인지로그가 아니다.
-- 깨는 변경·마이그레이션 안내가 최상단 — 사용자가 가장 먼저 알아야 할 것이 가장 먼저.
+- In the user's language: what changed and what they must do — a pasted commit log is not a changelog.
+- Breaking changes and migration guidance at the very top — what users must know first comes first.
 
-## 릴리스 절차 (순서 역전 금지)
+## Release procedure (no order inversion)
 
-- 게이트 전부 녹색 → 버전 범프 → 아티팩트 생성·검증 → 태그. 태그 먼저 찍고 고치는 순서는 "같은 태그 다른 내용물"을 만든다.
-- 릴리스 경계 (role 계약): 로컬 아티팩트 생성·검증까지가 에이트리 몫 — publish·이미지 push·태그 push·deploy 는 실행 계획(대상·영향·되돌리기)을 산출물로 반환하고 승인은 Odin 몫이다.
+- All gates green → version bump → artifact build & verification → tag. Tagging first and fixing after produces "same tag, different contents."
+- Release boundary (role contract): Eitri's share ends at local artifact build & verification — publish, image push, tag push, and deploy return an execution plan (targets, impact, rollback) as the deliverable; approval is Odin's share.
 
-## 롤백
+## Rollback
 
-- 릴리스마다 되돌리기 경로를 명시한다: 이전 버전이 재설치 가능한가, 데이터·설정 마이그레이션이 역방향을 막지 않는가.
-- 결함 릴리스는 회수 표식(yank 류) 절차를 확인하고 따른다 — 조용한 덮어쓰기 금지.
+- State a rollback path for every release: can the previous version be reinstalled, and do data/config migrations block the reverse direction?
+- For a defective release, check and follow the recall procedure (yank and the like) — no silent overwrites.
 
-## 설치 스크립트
+## Install scripts
 
-- 멱등: 재실행이 안전해야 한다 — 이미 설치된 상태에서 돌려도 같은 종착지.
-- 실패 즉시 중단 + 부분 설치 잔해 정리 — 반쯤 설치된 환경을 남기지 않는다.
-- 플랫폼·선행 도구는 가정하지 않고 검사한다 — 없으면 추측 진행 대신 명시적 안내로 중단.
+- Idempotent: rerunning must be safe — running on an already-installed state reaches the same end state.
+- Abort on first failure + clean up partial-install debris — never leave a half-installed environment.
+- Never assume platform or prerequisite tools — check for them; if missing, stop with explicit guidance instead of proceeding on guesses.
 """
 
 EITRI_SKILLS: list[tuple[str, str]] = [

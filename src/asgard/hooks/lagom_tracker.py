@@ -170,13 +170,14 @@ def main():
 
         if _DEACTIVATE.match(prompt):
             write_state(root, "off")
-            sys.stdout.write("[lagom] off — 미니멀리즘 계약 해제. 재활성: /lagom full")
+            sys.stdout.write("[lagom] off — minimalism contract lifted. Reactivate: /lagom full")
             sys.exit(0)
 
         if _BARE.match(prompt):
             cur = read_state(root)
             sys.stdout.write(
-                "[lagom] 현재 모드: %s (전환 /lagom <mode>, 영속 /lagom default <mode>)" % (cur or config_mode(root))
+                "[lagom] current mode: %s (switch: /lagom <mode>, persist: /lagom default <mode>)"
+                % (cur or config_mode(root))
             )
             sys.exit(0)
 
@@ -185,8 +186,8 @@ def main():
             is_default, target = bool(m.group(1)), m.group(2).strip().lower()
             if norm(target) is None:  # review 포함 — 세션 스킬 전용, 모드 아님
                 sys.stdout.write(
-                    "[lagom] '%s' 는 유효한 모드가 아니다 (off|lite|full%s)"
-                    % (target, " — review 는 세션 한정 스킬" if target == "review" else "")
+                    "[lagom] '%s' is not a valid mode (off|lite|full%s)"
+                    % (target, " — review is a session-only skill" if target == "review" else "")
                 )
                 sys.exit(0)
             target = norm(target)
@@ -194,11 +195,16 @@ def main():
             if is_default:
                 ok = persist_default(root, target)
                 sys.stdout.write(
-                    "[lagom] 기본값 %s %s"
-                    % (target, "영속됨 (asgard-setting-project.json)" if ok else "— 설정 기록 실패, 세션에만 적용")
+                    "[lagom] default %s %s"
+                    % (
+                        target,
+                        "persisted (asgard-setting-project.json)"
+                        if ok
+                        else "— failed to persist config, applied to this session only",
+                    )
                 )
             else:
-                sys.stdout.write("[lagom] mode → %s (세션 한정)" % target)
+                sys.stdout.write("[lagom] mode → %s (this session only)" % target)
             if target != "off":
                 canon = canon_text()
                 if canon:

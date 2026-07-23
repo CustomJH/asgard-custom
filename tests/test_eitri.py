@@ -51,25 +51,27 @@ class TestSkillBodies(unittest.TestCase):
     def test_draupnir_anchors(self):
         d = self.by_name["asgard-eitri-draupnir"]
         self.assertIn("fail fast", d)
-        self.assertIn("캐시 키 = 입력 해시", d)  # 브랜치명·날짜 키 금지의 근거
-        self.assertIn("재시도로 덮지 않는다", d)  # flaky 규율 — 은폐 금지
-        self.assertIn("검역", d)
-        self.assertIn("멀티스테이지", d)
-        self.assertIn("latest 는 재현성 포기 선언", d)
-        self.assertIn("빌드 인자·레이어에 넣지 않는다", d)  # 시크릿 경계
-        self.assertIn("포크 PR", d)
-        self.assertIn("실제 러너 실행 로그", d)  # 검증 = 실측 (Canon 8)
-        self.assertIn("토르 캐논 소관", d)  # 런타임 경계 상호 참조
+        self.assertIn("Cache key = hash of inputs", d)  # 브랜치명·날짜 키 금지의 근거
+        self.assertIn("not a repair but defect concealment", d)  # flaky 규율 — 은폐 금지
+        self.assertIn("Quarantine", d)
+        self.assertIn("Multi-stage", d)
+        self.assertIn("latest is a declaration that reproducibility has been abandoned", d)
+        self.assertIn("Never put secrets in build args or layers", d)  # 시크릿 경계
+        self.assertIn("Fork-PR", d)
+        self.assertIn("actual runner execution log", d)  # 검증 = 실측 (Canon 8)
+        self.assertIn("Thor's canon", d)  # 런타임 경계 상호 참조
 
     def test_gullinbursti_anchors(self):
         g = self.by_name["asgard-eitri-gullinbursti"]
-        self.assertIn("버전의 단일 소스 1곳", g)
-        self.assertIn("설치 스모크", g)  # 만들었다 ≠ 설치된다
-        self.assertIn("커밋 로그 복붙은 체인지로그가 아니다", g)
-        self.assertIn("순서 역전 금지", g)  # 게이트 → 범프 → 아티팩트 → 태그
-        self.assertIn("승인은 Odin 몫", g)  # 릴리스 경계 (role 계약 상속)
-        self.assertIn("되돌리기 경로", g)  # 롤백
-        self.assertIn("멱등", g)  # 설치 스크립트 재실행 안전
+        self.assertIn("One single source of truth for the version", g)
+        self.assertIn("install smoke test", g)  # 만들었다 ≠ 설치된다
+        self.assertIn("a pasted commit log is not a changelog", g)
+        self.assertIn(
+            "All gates green → version bump → artifact build & verification → tag", g
+        )  # 게이트 → 범프 → 아티팩트 → 태그
+        self.assertIn("approval is Odin's share", g)  # 릴리스 경계 (role 계약 상속)
+        self.assertIn("rollback path", g)  # 롤백
+        self.assertIn("Idempotent", g)  # 설치 스크립트 재실행 안전
 
     def test_role_declares_skills(self):
         from asgard.templates.roles import ROLE_AGENTS

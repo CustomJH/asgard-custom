@@ -5,64 +5,65 @@
 
 MEMORY_SKILL_MD = """---
 name: asgard-memory
-description: 위그드라실(Yggdrasil, Asgard 메모리 시스템)의 두 사용 계약 — 개인은 로컬 wiki, 프로젝트 공유 지식은 Git 정본과 선택된 backend 하나. 사용자가 "기억해/저장해/메모리/위그드라실" 을 말하거나 memory context의 상세가 필요할 때 사용.
+description: The two usage contracts of Yggdrasil (Asgard's memory system) — personal memory is a local wiki; shared project knowledge lives in the Git canon plus one selected backend. Use when the user says "remember/save/memory/Yggdrasil" or when details beyond the memory context are needed.
 ---
 
-# asgard-memory — 위그드라실 (개인/프로젝트 메모리) 사용 계약
+# asgard-memory — Yggdrasil (personal/project memory) usage contract
 
-개인 메모리는 **오딘(사용자)의 기억**이다 — 에이전트는 그것을 자신의 기억처럼 빌려 쓴다 (소유는 오딘, 사용은 에이전트). 시스템을 소개·설명할 때도 오딘 귀속으로 말한다.
+Personal memory is **Odin's (the user's) memory** — the agent borrows it as if it were its own (Odin owns it; the agent uses it). When introducing or explaining the system, always attribute it to Odin.
 
-세션에 주입된 `<memory-context>` 는 **카탈로그(제목만)** 다. 상세가 필요하면 검색하라.
+The `<memory-context>` injected into the session is a **catalog (titles only)**. Search when you need details.
 
-## 읽기 (zero-LLM)
-
-```bash
-asgard memory query "<검색어>" --json   # FTS + 단어 + semantic(opt-in) + 명시 링크 PPR
-asgard memory show <slug>               # 페이지 전문
-```
-
-## 쓰기 — 반드시 승인 게이트 경유
-
-`~/.asgard/memory/` 파일을 **직접 편집·생성하지 마라** (Write/Edit 금지). 저장은 단 한 경로:
+## Reading (zero-LLM)
 
 ```bash
-asgard memory ingest "<자립적인 사실 한 건>" --kind <note|user|decision|insight|reference|feedback>
+asgard memory query "<query>" --json   # FTS + word + semantic (opt-in) + explicit-link PPR
+asgard memory show <slug>               # full page text
 ```
 
-1. ingest 가 계획(create / 기존 페이지 merge)과 `approval-id`를 출력한다
-2. 계획을 사용자에게 보여주고 승인을 받는다 (ask-before-save)
-3. 승인 시에만 **같은 본문·kind와 ID**로 재실행한다:
-   `asgard memory ingest "<동일 본문>" --kind <동일 kind> --yes --plan-id <approval-id>`
-4. ID는 승인된 action·target·revision에 묶여 1회만 소비된다. stale 오류면 처음부터 다시 계획한다
+## Writing — always through the approval gate
 
-## 불변식
+**Never edit or create** files under `~/.asgard/memory/` directly (no Write/Edit). Saving has exactly one path:
 
-- 메모리는 **힌트**다 — 완료 증거·검증 criteria 로 쓸 수 없다 (게이트는 메모리를 신뢰하지 않는다)
-- 코드/저장소에서 1분 내 파악 가능한 사실은 저장하지 않는다
-- 개인 스코프 전용 — 프로젝트 공유 지식은 여기 넣지 않는다 (용어 방화벽)
-- 유지관리: `asgard memory lint` 가 부패·중복·오염을 보고하면 merge/remove 로 정리
+```bash
+asgard memory ingest "<one self-contained fact>" --kind <note|user|decision|insight|reference|feedback>
+```
 
-## 프로젝트 공유 메모리 — Git 정본 + 선택된 backend 하나
+1. ingest prints a plan (create / merge into an existing page) and an `approval-id`
+2. Show the plan to the user and get approval (ask-before-save)
+3. Only on approval, re-run with the **same body, kind, and ID**:
+   `asgard memory ingest "<same body>" --kind <same kind> --yes --plan-id <approval-id>`
+4. The ID is bound to the approved action, target, and revision, and is consumed exactly once. On a stale error, re-plan from the start
 
-`<memory-recall scope="project">`는 machine-local trust가 승인한 현재 프로젝트 backend에서 온다.
-Hindsight/Cognee/RedisVL 결과를 동시에 주입하거나 병합하지 않는다. 명시 검색은 MCP
-`memory_recall`을 사용한다. 중요한 코드·문서 bootstrap은 먼저 미리본다:
+## Invariants
+
+- Memory is a **hint** — it can never serve as completion evidence or verification criteria (the gate never trusts memory)
+- Do not save facts discoverable from the code/repo within a minute
+- Personal scope only — shared project knowledge does not go here (terminology firewall)
+- Maintenance: when `asgard memory lint` reports decay, duplication, or contamination, clean up with merge/remove
+
+## Project shared memory — Git canon + one selected backend
+
+`<memory-recall scope="project">` comes from the current project backend approved by machine-local trust.
+Never inject or merge Hindsight/Cognee/RedisVL results at the same time. For explicit search, use the MCP
+`memory_recall`. Preview any significant code/doc bootstrap first:
 
 ```bash
 asgard memory project-scan --all
-asgard memory project-sync --all       # 계획만, 외부 쓰기 없음
-asgard memory project-sync --all --yes --plan-id <preview-plan-id> # 동일 snapshot 승인 뒤 실행
+asgard memory project-sync --all       # plan only, no external writes
+asgard memory project-sync --all --yes --plan-id <preview-plan-id> # run only after approving the same snapshot
 ```
 
-프로젝트 사실 저장은 MCP `memory_retain` → 사용자 승인 → `memory_retain_commit`의 2단계만 사용한다.
-commit은 repo `.asgard/memory/records/`에 정본을 먼저 기록한 뒤 backend에 반영한다. backend
-복원은 `asgard memory project-rehydrate` 미리보기 → `--yes --plan-id`로만 실행한다.
-반드시 `record_id`, `kind`, `title`, `content`, `source`, `source_revision`, `importance`,
-`confidence`, `status`를 채운다. 허용 kind는 decision/policy/contract/component/incident/
-experiment/migration/runbook이다.
+Saving project facts uses only the two-step flow: MCP `memory_retain` → user approval → `memory_retain_commit`.
+commit writes the canonical record to the repo's `.asgard/memory/records/` first, then reflects it to the backend. Backend
+restore runs only via `asgard memory project-rehydrate` preview → `--yes --plan-id`.
+Always fill `record_id`, `kind`, `title`, `content`, `source`, `source_revision`, `importance`,
+`confidence`, `status`. Allowed kinds: decision/policy/contract/component/incident/
+experiment/migration/runbook.
 
-등록한다: 장기 유효한 팀 결정·정책·공개 계약·핵심 컴포넌트 경계·장애 원인/복구·검증된 실험·
-migration·runbook. 등록하지 않는다: 개인 선호, 임시 진행상태/TODO, raw 로그, 코드에서 즉시 알 수
-있는 사소한 사실, 생성물, 미검증 추측, secret/credential. 변경은 기존 record_id를 replace하거나
-`supersedes` 관계로 이력을 남기고, source revision 없는 사실은 저장하지 않는다.
+Do record: long-lived team decisions, policies, public contracts, key component boundaries, incident causes/recovery,
+verified experiments, migrations, runbooks. Do not record: personal preferences, transient progress/TODOs, raw logs,
+trivial facts immediately visible in the code, generated artifacts, unverified speculation, secrets/credentials.
+For changes, replace the existing record_id or keep history via a `supersedes` relation; never save a fact
+without a source revision.
 """

@@ -44,7 +44,7 @@ for i in 1 2 3; do gate_expect "$D" v2 block "무판정 write 차단 $i/3"; done
 # 4번째: fail-open(allow) 하지만 stderr 에 에스컬레이션 지시 — '조용한 성공'이 아님을 확인
 out4=$(printf '%s' '{"session_id":"v2","cwd":"'"$D"'","hook_event_name":"Stop"}' | CLAUDE_PROJECT_DIR="$D" "$PY" "$GATE" 2>"$TMP/v2.err")
 if echo "$out4" | grep -q '"decision": "block"'; then bad "4번째 차단 여부"; else
-  grep -q "에스컬레이션" "$TMP/v2.err" && ok "4번째 fail-open + Odin 에스컬레이션 지시 (조용한 성공 아님)" || bad "4번째 fail-open 인데 에스컬레이션 지시 없음"
+  grep -q "Odin escalation" "$TMP/v2.err" && ok "4번째 fail-open + Odin 에스컬레이션 지시 (조용한 성공 아님)" || bad "4번째 fail-open 인데 에스컬레이션 지시 없음"
 fi
 
 echo "V3. 증거 재활용 — 이전 quest 의 PASS 명령을 신규 quest 에 복사"

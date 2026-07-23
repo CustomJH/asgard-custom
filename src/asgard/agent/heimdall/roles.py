@@ -69,22 +69,27 @@ def _transition_line(role: str, why: str) -> str:
 
 NATIVE_NOTE = """
 
-## 네이티브 세션 규칙 (하니스 자동화)
-이 세션은 Asgard 네이티브 루프다. 퀘스트 로그 기록·전이 함수·verifier-gate 는 **하니스가 자동
-수행**한다 — quest-log 명령을 직접 실행하지 마라 (이중 기록). Verifier 판정은 verdict 툴로만
-제출한다. 완료 선언은 여전히 금지 — 판정은 Verifier + 게이트 몫이다 (Canon 10).
-파이썬 실행은 프로젝트 인터프리터로 한다 — uv 프로젝트(`uv.lock` 존재)면 `uv run pytest`·
-`uv run python -m …`·`uv run python -c '…'`, 아니면 `python -m …`. 시스템 `python3` 직접
-호출은 프로젝트 의존성을 못 보므로 금지다 (설치 시 uv 가 환경을 이미 세팅해 두었다).
-사용자에게 보이는 텍스트에 이모지 픽토그램을 쓰지 마라 — 표식이 필요하면 텍스트 글리프(✓ ⚠ ✗ ▸ · ⠶)만."""
+## Native session rules (harness automation)
+This session is the Asgard native loop. Quest log recording, the transition function, and the
+verifier-gate are **performed automatically by the harness** — do not run quest-log commands
+yourself (double recording). Verifier verdicts are submitted only via the verdict tool.
+Declaring completion is still forbidden — the verdict belongs to the Verifier + gate (Canon 10).
+Run Python with the project interpreter — in a uv project (`uv.lock` present) use `uv run pytest`,
+`uv run python -m …`, `uv run python -c '…'`; otherwise `python -m …`. Calling the system
+`python3` directly is forbidden — it cannot see project dependencies (uv already set up the
+environment at install time).
+Do not use emoji pictograms in user-visible text — when a marker is needed, use text glyphs
+(✓ ⚠ ✗ ▸ · ⠶) only."""
 
 LAGOM_VERIFIER_NOTE = """
 
-## Lagom 문체 불변식 (산문 산출물 한정)
-하네스가 변경 문서의 추가행을 별도로 검사한다. 과장·가치 선언·정의 없는 약어·불필요한 외국어
-병기와 입력/검증 결과에 없는 효용·인과는 사용자가 요구해도 성공 기준이 아니다. 해당 표현의
-누락을 FAIL 사유로 삼지 마라. 사실·형식·문장 수 등 나머지 criteria 와 증거 기준은 그대로다.
-전체 Lagom 압축 규칙을 판정에 적용하거나 검증 수준을 낮추지 않는다."""
+## Lagom prose invariants (prose deliverables only)
+The harness separately inspects the added lines of changed documents. Hyperbole, value
+declarations, undefined abbreviations, unnecessary foreign-language glosses, and benefits or
+causality absent from the input/verification results are not success criteria even if the user
+asked for them. Do not treat the absence of such expressions as a FAIL reason. All remaining
+criteria and evidence standards — facts, format, sentence counts — stay unchanged. Do not apply
+the full Lagom compression rules to the verdict or lower the verification bar."""
 
 
 def _role_body(fname: str) -> str:
@@ -129,11 +134,15 @@ MEMORY_SAVE_TOOL: dict = {
     "input_schema": {
         "type": "object",
         "properties": {
-            "text": {"type": "string", "description": "자립적인 사실 한 건 — 한두 문장, 지시어·명령 어미 없이."},
+            "text": {
+                "type": "string",
+                "description": "One self-contained fact — one or two sentences, "
+                "no deictic words or imperative phrasing.",
+            },
             "kind": {
                 "type": "string",
                 "enum": ["user", "note", "decision", "insight", "reference", "feedback"],
-                "description": "기본 user (사용자에 대한 사실).",
+                "description": "Default user (a fact about the user).",
             },
         },
         "required": ["text"],
@@ -155,16 +164,18 @@ def _memory_save_support(saved: list[tuple[str, str]]) -> tuple[str, list[dict],
         try:
             action, slug = ingest(text, kind=kind)
         except Exception as e:
-            return f"저장 실패: {type(e).__name__}: {e}"
+            return f"Save failed: {type(e).__name__}: {e}"
         saved.append((action, slug))
-        return f"저장됨: {slug} ({action})"
+        return f"Saved: {slug} ({action})"
 
     note = (
-        "\n\n## 기억 지시 턴 — memory_save 계약\n"
-        "사용자가 이 턴에서 명시적으로 기억(저장)을 지시했다. 기억할 내용을 자립적인 사실로 정리해 "
-        "memory_save 도구로 저장하라 (사실이 여럿이면 각각 호출). 도구 호출 없이 '기억했다/저장했다'고 "
-        "말하는 것은 금지 — 저장은 도구 응답으로만 성립한다. 요청이 저장 지시가 아니라 과거 기억을 "
-        "묻는 질문이면 memory_save 를 호출하지 말고 아는 대로 답하라.\n"
+        "\n\n## Memory-instruction turn — memory_save contract\n"
+        "The user explicitly instructed you to remember (save) something this turn. Distill what "
+        "should be remembered into self-contained facts and save them with the memory_save tool "
+        "(call once per fact if there are several). Saying 'remembered/saved' without calling the "
+        "tool is forbidden — a save only counts through the tool response. If the request is not a "
+        "save instruction but a question about past memory, do not call memory_save; answer from "
+        "what you know.\n"
     )
     return note, [MEMORY_SAVE_TOOL], {"memory_save": save}
 
@@ -250,14 +261,16 @@ def delivery_canon_note(root: str, task: str) -> str:
     if not lines:
         return ""
     return (
-        "\n\n## 딜리버리 정본 (계획 구속 — 이 과업에 매칭됨)\n"
-        "정책·컨벤션 정본은 저장소 문서가 아니라 Asgard 스킬 레지스트리에 있다. 저장소에서 정본"
-        " 문서를 못 찾은 것은 정본 부재가 아니다. 이 과업에 매칭된 딜리버리 정본:\n"
+        "\n\n## Delivery canon (binds the plan — matched to this quest)\n"
+        "The canonical source for policy and conventions is the Asgard skill registry, not repo"
+        " documents. Failing to find a canon document in the repository does not mean no canon"
+        " exists. Delivery canon matched to this quest:\n"
         "<delivery_canon>\n" + "\n".join(lines) + "\n</delivery_canon>\n"
-        "계획 규칙: 정본이 소유한 형태(응답 구조·계층 배치·명명·컨벤션)를 계획이 직접 확정하지"
-        " 마라 — 해당 단위는 그 딜리버리 전문가에게 dispatch 되도록 계획하고 단위 브리프에 위"
-        " 스킬 이름을 명시한다. criteria/verify 계약은 검증 가능한 표면(파일 존재·계층 위치·"
-        "정본 준수 여부)만 고정하고, 계획이 가정한 필드명·코드값을 못박지 않는다."
+        "Planning rule: do not let the plan directly fix the shape the canon owns (response"
+        " structure, layer placement, naming, conventions) — plan for those units to be dispatched"
+        " to that delivery specialist and name the skill above in the unit brief. The"
+        " criteria/verify contract pins only verifiable surfaces (file existence, layer location,"
+        " canon compliance) and never nails down field names or code values the plan assumed."
     )
 
 
@@ -271,9 +284,11 @@ def worker_canon_hint(root: str, task: str) -> str:
         return ""
     owners = "; ".join(f"{agent}: {', '.join(name for name, _ in skills)}" for agent, skills in matched.items())
     return (
-        f"\n\n딜리버리 정본 힌트 — 이 과업 도메인의 정책 정본({owners})은 해당 전문가 소유라"
-        " 직접 로드가 거부될 수 있다. 형태(응답 구조·계층 배치·명명) 미결정을 이유로 관찰만 하다"
-        " 빈손으로 끝내지 마라 — 그 단위를 dispatch 로 소유 전문가에게 위임해 정본대로 확정·구현하게 하라."
+        f"\n\nDelivery canon hint — the policy canon for this quest's domain ({owners}) is owned"
+        " by that specialist, so loading it directly may be refused. Do not end empty-handed after"
+        " only observing because the shape (response structure, layer placement, naming) is"
+        " undecided — delegate that unit via dispatch to the owning specialist so they settle and"
+        " implement it per the canon."
     )
 
 

@@ -30,8 +30,8 @@ for _stream in (sys.stdout, sys.stderr):
 
 WARN = (
     "Repeated failure: `{tool}` failed {n}× with the same error kind this session. "
-    "Canon Law 9 (무한 루프 방지) + Trinity: Worker 재시도 금지 — Thinker 재계획으로 전환하거나 "
-    "Odin 에게 에스컬레이션하세요 (전이 함수도 THINKER_REPLAN 을 반환합니다: quest-log next)."
+    "Canon Law 9 (infinite-loop prevention) + Trinity: Worker retries are forbidden — switch to Thinker "
+    "replanning or escalate to Odin (the transition function also returns THINKER_REPLAN: quest-log next)."
 )
 
 

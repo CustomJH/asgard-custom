@@ -30,11 +30,13 @@ def main():
     mode = str(data.get("permission_mode") or "")
     if os.environ.get("ASGARD_UNATTENDED") != "1" and mode not in UNATTENDED_MODES:
         sys.exit(0)
+    # NOTE: the `가정:` criteria-prefix token is matched elsewhere in the codebase — keep it literal.
     sys.stdout.write(
-        "[asgard] 무인 세션 감지(permission_mode=%s) — Canon 8 무인 진행 발동: "
-        "질문·승인 대기로 세션을 끝내지 말 것. 방어 가능한 기본안을 골라 가정을 plan criteria "
-        "`가정: ...` 항목으로 기록하고 즉시 진행, 최종 보고에 가정·대안을 명기한다. "
-        "ESCALATE 는 진행 불가 블로커 전용 — 승인 요청 용도 금지." % (mode or "env")
+        "[asgard] Unattended session detected (permission_mode=%s) — Canon 8 auto-proceed "
+        "is in effect: do not end the session waiting on a question or approval. Pick a defensible default, "
+        "log the assumption as a plan criteria `가정: ...` item, and proceed immediately — state the "
+        "assumptions and alternatives in the final report. ESCALATE is for blockers you cannot proceed "
+        "past only — never use it to request approval." % (mode or "env")
     )
     sys.exit(0)
 

@@ -691,10 +691,10 @@ class TestDeliveryAgents(unittest.TestCase):
 
     def test_caller_sweep_contract(self):
         # 숨은 caller 파손 방어 — worker 는 편집 전 전수 나열, verifier 는 diff 밖 증거 없는 PASS 무효.
-        self.assertIn("사용처 전수", self._tpl("asgard-worker.md"))
+        self.assertIn("Exhaustive usage sweep", self._tpl("asgard-worker.md"))
         v = self._tpl("asgard-verifier.md")
-        self.assertIn("diff 에 갇힌 PASS 는 무효", v)
-        self.assertIn("결과 0건이어도 그 기록 자체가 증거", v)
+        self.assertIn("A PASS trapped in the diff is void", v)
+        self.assertIn("even a 0-result finding is evidence", v)
 
     def test_delivery_frontmatter_blocks_redelegation(self):
         # freyja/thor/eitri: write 가능하되 Agent 금지. loki: read-only allowlist (Agent·Write·Edit 부재).
@@ -729,8 +729,12 @@ class TestDeliveryAgents(unittest.TestCase):
         guide = agents_md("p")
         self.assertIn("MAIN_WORKER", guide)
         self.assertIn("asgard-worker.md", guide)
-        self.assertIn("별도 Thinker는 명시적 병렬 분해와 실패 재계획에만", guide)
-        self.assertIn("Verifier와 병렬/분리 Worker는 호스트의 독립 서브에이전트", guide)
+        self.assertIn(
+            "A separate Thinker is invoked only for explicit parallel decomposition and failure replanning", guide
+        )
+        self.assertIn(
+            "the Verifier and parallel/separate Workers are invoked as the host's independent subagents", guide
+        )
         self.assertIn("BASELINE_VERIFY", guide)
 
     def test_cursor_init_scaffolds_native_agents_and_lower_camel_hooks(self):
@@ -847,41 +851,41 @@ class TestHeadlessProceed(unittest.TestCase):
         from asgard.templates.agents import agents_md
 
         md = agents_md("p")
-        self.assertIn("무인이면 진행", md)
-        self.assertIn("승인 대기로 끝내지 않는다", md)
+        self.assertIn("in contexts where Odin cannot answer", md)
+        self.assertIn("never end on a question or an approval wait", md)
 
     def test_canon3_reversible_code_change_not_destructive(self):
         from asgard.templates.agents import agents_md
 
-        self.assertIn("커밋으로 되돌릴 수 있는 코드 변경", agents_md("p"))
+        self.assertIn("Code changes revertible by commit", agents_md("p"))
 
     def test_trinity_escalate_blocker_only_and_callers_in_scope(self):
         from asgard.templates.agents import agents_md
 
         md = agents_md("p")
-        self.assertIn("ESCALATE 는 승인 요청이 아니라", md)
-        self.assertIn("과업의 일부다", md)  # 깨진 caller 복구 = 범위 안
+        self.assertIn("ESCALATE is not an approval request", md)
+        self.assertIn("is part of the quest, not out of scope", md)  # 깨진 caller 복구 = 범위 안
 
     def test_thinker_forbids_option_wait(self):
-        self.assertIn("승인 대기 금지", self._tpl("asgard-thinker.md"))
+        self.assertIn("No listing options and waiting for approval", self._tpl("asgard-thinker.md"))
         self.assertIn("가정: ...", self._tpl("asgard-thinker.md"))
 
     def test_verifier_escalate_not_for_approval(self):
-        self.assertIn("승인·확인 요청 용도 금지", self._tpl("asgard-verifier.md"))
+        self.assertIn("never for requesting approval or confirmation", self._tpl("asgard-verifier.md"))
 
     def test_trinity_roles_carry_vertical_slice_and_two_axis_review_contracts(self):
-        self.assertIn("red → green 수직 슬라이스", self._tpl("asgard-worker.md"))
-        self.assertIn("tracer-bullet 수직 슬라이스", self._tpl("asgard-thinker.md"))
+        self.assertIn("red → green vertical slices", self._tpl("asgard-worker.md"))
+        self.assertIn("tracer-bullet vertical slice", self._tpl("asgard-thinker.md"))
         verifier = self._tpl("asgard-verifier.md")
-        self.assertIn("Spec 축", verifier)
-        self.assertIn("Standards 축", verifier)
-        self.assertIn("스멜은 판단 보조", verifier)
+        self.assertIn("Spec axis", verifier)
+        self.assertIn("Standards axis", verifier)
+        self.assertIn("Smells aid judgment", verifier)
 
     def test_verifier_carries_architecture_lens(self):
         # 아키텍처 검사 상시 항목 (26-07-21) — 경계 넘는 import 의 의존 방향 대조 + 정본 포인터
         verifier = self._tpl("asgard-verifier.md")
-        self.assertIn("아키텍처 검사(Standards 축 상시 항목)", verifier)
-        self.assertIn("순환 의존 신설", verifier)
+        self.assertIn("Architecture check (always-on Standards axis item)", verifier)
+        self.assertIn("a new circular dependency", verifier)
         self.assertIn("asgard-hlidskjalf", verifier)
 
 
