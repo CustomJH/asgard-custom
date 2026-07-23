@@ -235,6 +235,16 @@ workspace/
 
 .claude
 
+# Vanadis 업스트림 참조 스냅샷 내부의 .claude·web/**/lib 는 실제 패키지 콘텐츠(pyproject
+# force-include 대상) — 위 블랭킷 규칙(.claude, lib/)에 걸려 커밋된 적이 없어 sdist 빌드가
+# 매번 FileNotFoundError 로 깨졌다. 이 경로들만 예외로 되살린다.
+!src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/.claude/
+!src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/.claude/**
+!src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/scripts/lib/
+!src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/scripts/lib/**
+!src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/src/lib/
+!src/asgard/assets/skill_plugins/freyja-design/skills/asgard-freyja-design/references/vanadis/web/src/lib/**
+
 # >>> asgard >>>
 # Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)
 !.asgard/
