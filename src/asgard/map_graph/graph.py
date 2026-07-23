@@ -26,7 +26,6 @@ GRAPH_FILE = "GRAPH.md"
 _GRAPH_MARKER = "<!-- asgard:map-graph schema=1 -->"
 _STATE_RELATIVE = Path(".asgard") / "state" / "map-graph.json"
 _MAX_SOURCE_BYTES = 512 * 1024
-_MAX_EVIDENCE_PER_FILE = 40
 _TSJS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".prisma"}
 # 확장자 → 추출기 (JVM/DB 레인 포함). `.xml`/`.sql` 추출기는 비대상 파일에서 빈 결과를 낸다.
 _EXTRACTORS = {
@@ -133,7 +132,7 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str]:
         if is_config:
             props.ingest(rel.as_posix(), source)
             continue
-        collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source)[:_MAX_EVIDENCE_PER_FILE])
+        collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source))
     return scanned, props.promote(collected), "source-sha256:" + digest.hexdigest()
 
 

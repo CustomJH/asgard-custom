@@ -425,6 +425,23 @@ class TestScanGraph(Base):
         shared_line = next(line for line in body.splitlines() if f"`{shared}`" in line)
         self.assertTrue(all(f"SharedEntrypoint{index}" in shared_line for index in range(20)))
 
+    def test_scan_preserves_more_than_forty_relations_from_one_file(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        statements = "\n".join(
+            f'<select id="find{index}">SELECT * FROM TABLE_{index}</select>' for index in range(60)
+        )
+        self.write("svc/src/main/resources/mapper/LargeMapper.xml", f'<mapper namespace="LargeMapper">{statements}</mapper>')
+        result = scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        names = {node["name"] for node in state["nodes"] if node["kind"] == "db_access"}
+        self.assertIn("LargeMapper.find59", names)
+        self.assertIn("TABLE_59", names)
+        body = open(result.graph_md_path, encoding="utf-8").read()
+        self.assertIn("LargeMapper.find59", body)
+        self.assertIn("TABLE_59", body)
+
     def test_jvm_lane_scan_resolves_topics_and_respects_src_test_convention(self):
         from asgard.map_graph import graph_state, scan_graph, trace
 

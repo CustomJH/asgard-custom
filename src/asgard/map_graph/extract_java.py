@@ -12,8 +12,6 @@ import re
 
 from .evidence import Evidence, safe_url
 
-_MAX_TABLES_PER_FILE = 16
-
 # ── Java ──────────────────────────────────────────────────────────────────────
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _LINE_COMMENT = re.compile(r"(?<!:)//[^\n]*")  # `://` 는 URL — 주석으로 오인하지 않는다
@@ -331,8 +329,6 @@ def extract_mapper_xml(path: str, source: str) -> list[Evidence]:
             continue
         seen_tables.add(table)
         tables.append(Evidence("db_access", table, path, _line_of(source, match.start()), "candidate", "sql table ref"))
-        if len(tables) >= _MAX_TABLES_PER_FILE:
-            break
     evidence.extend(tables)
     for match in _STATEMENT.finditer(source):
         evidence.append(
@@ -373,8 +369,6 @@ def extract_proc(path: str, source: str) -> list[Evidence]:
                     "exec sql",
                 )
             )
-            if len(seen) >= _MAX_TABLES_PER_FILE:
-                return evidence
     return evidence
 
 
