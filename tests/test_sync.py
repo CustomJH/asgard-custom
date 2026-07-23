@@ -70,7 +70,8 @@ class TestRegistry(Base):
 
     def test_setup_tolerates_preexisting_map_seed(self):
         # `asgard map`·훅이 init 전에 .asgard/.gitignore + map/INDEX.md 를 lazy 생성해도 init 은
-        # 차단(rc 2)하지 않는다 — .gitignore 는 사용자 내용 보존, INDEX.md 는 asgard 소유라 재동기화.
+        # 차단(rc 2)하지 않는다 — .gitignore 는 사용자 내용 보존하되 asgard 관리 공유 예외(`!`)
+        # 누락분만 병합(binding.json 등 신규 공유 자산 전파), INDEX.md 는 asgard 소유라 재동기화.
         from asgard.commands.setup import run_setup
 
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
@@ -86,7 +87,11 @@ class TestRegistry(Base):
         finally:
             os.chdir(cwd)
         with open(os.path.join(self.root, ".asgard", ".gitignore")) as fh:
-            self.assertEqual(fh.read(), custom_ignore)
+            merged = fh.read()
+        self.assertTrue(merged.startswith(custom_ignore))  # 사용자 내용은 원문 그대로 선두 보존
+        merged_lines = merged.splitlines()
+        for negation in ("!map/", "!memory/binding.json", "!asgard-setting-project.json"):
+            self.assertIn(negation, merged_lines)  # asgard 관리 공유 예외 누락분 병합
         from asgard.templates import MAP_INDEX_MD
 
         with open(os.path.join(self.root, ".asgard", "map", "INDEX.md")) as fh:
