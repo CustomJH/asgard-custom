@@ -14,7 +14,7 @@ from pathlib import Path
 
 from asgard.settings import global_dir
 
-REVISION = "0a7f3a1e17814c8a1b000ce075b3b2620b70db9e-vanadis2"
+REVISION = "0a7f3a1e17814c8a1b000ce075b3b2620b70db9e-vanadis3"
 SKILL_ROOT = Path(__file__).resolve().parent
 UPSTREAM = SKILL_ROOT / "references" / "vanadis"
 
