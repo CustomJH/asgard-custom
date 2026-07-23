@@ -2460,5 +2460,30 @@ class TestQuestPrune(TrinityBase):
         self.assertEqual(len([n for n in os.listdir(qdir) if n.endswith(".jsonl")]), 2)
 
 
+class TestPolicyMirror(unittest.TestCase):
+    """정책 3중 미러 정합 — 템플릿 시드가 훅 정본을 그대로 실어야 4모드(네이티브·CC·Codex·Cursor)가
+    같은 기준으로 판정한다. load_policy 는 파일 키가 내장값을 통째로 덮으므로(update) 시드 드리프트는
+    패치 무효화와 같다 (26-07-23 sensitive_paths 14→22 드리프트 회귀 방어)."""
+
+    def test_template_seed_equals_quest_log_default(self):
+        from asgard.hooks.quest_log import DEFAULT_POLICY
+        from asgard.templates.trinity import trinity_policy
+
+        self.assertEqual(json.loads(trinity_policy()), DEFAULT_POLICY)
+
+    def test_project_settings_seed_equals_quest_log_default(self):
+        from asgard.hooks.quest_log import DEFAULT_POLICY
+        from asgard.templates.trinity import project_settings
+
+        self.assertEqual(json.loads(project_settings())["trinity_policy"], DEFAULT_POLICY)
+
+    def test_verifier_gate_shared_keys_equal_quest_log(self):
+        from asgard.hooks import quest_log, verifier_gate
+
+        for key, value in verifier_gate.DEFAULT_POLICY.items():
+            self.assertIn(key, quest_log.DEFAULT_POLICY)
+            self.assertEqual(value, quest_log.DEFAULT_POLICY[key], key)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

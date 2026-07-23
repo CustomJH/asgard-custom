@@ -6,62 +6,10 @@
 
 import json
 
-# quest_log.py / verifier_gate.py 의 DEFAULT_POLICY 와 값 동일 — 파일은 사용자가 조정하는 표면이고,
-# 스크립트 내장값은 파일이 없거나 깨졌을 때의 fail-open 바닥이다.
-_POLICY = {
-    "schema": 1,
-    "roles": {
-        "thinker": {"tier": "high", "effort": "high"},
-        "worker": {"tier": "standard", "effort": "medium"},
-        "verifier": {"tier": "high", "effort": "high"},
-    },
-    # 딜리버리 전문가 티어 — 하니스 tier→모델: fast=haiku, standard=sonnet, high=opus, max=fable.
-    # full-verify·재계획 2회+ 는 한 칸 승급 (high→max). 명시 [trinity.<role>] placement 가 항상 우선.
-    "delivery": {"freyja": "standard", "thor": "standard", "eitri": "standard", "loki": "fast", "mimir": "standard"},
-    "budget_priors": {"trivial": {"turns": 1}, "standard": {"turns": 6}, "deep": {"turns": 12}},
-    "small_write": {"max_files": 2, "max_lines": 80},
-    "sensitive_paths": [
-        "hooks",
-        "policy",
-        "templates",
-        "install",
-        "security",
-        "auth",
-        "secret",
-        "db",
-        "migration",
-        "ci",
-        ".github",
-        ".claude",
-        ".cursor",
-        ".codex",
-    ],
-    "readonly_commands": [
-        "git status",
-        "git diff",
-        "git log",
-        "git show",
-        "git ls-files",
-        "git rev-parse",
-        "rg",
-        "grep",
-        "ls",
-        "cat",
-        "head",
-        "tail",
-        "find",
-        "wc",
-        "pwd",
-        "which",
-    ],
-    "failure_threshold": 3,
-    # 하네스 소유 베이스라인 체크 — 비면 보수적 자동 감지 (pytest 만). 프로젝트 체크를
-    # 명시하면 red 판정이 엄격해진다 (예: ["uv run pytest -x -q", "uv run ruff check"]).
-    "baseline_checks": [],
-    "baseline_timeout": 120,
-    # 게이트-우선 적격 non-test 라인 상한 — 초과 시 LLM Verifier 승격
-    "gate_first_max_lines": 25,
-}
+# 시드 값의 유일한 출처 = quest_log.DEFAULT_POLICY (verifier_gate 는 부분집합 미러). 파일은 사용자가
+# 조정하는 표면이고, 스크립트 내장값은 파일이 없거나 깨졌을 때의 fail-open 바닥이다 — 리터럴 사본을
+# 두면 훅 패치가 시드에 안 실려 4모드 전부 낡은 정책으로 덮인다(26-07-23 sensitive_paths 드리프트).
+from ..hooks.quest_log import DEFAULT_POLICY as _POLICY
 
 
 def trinity_policy() -> str:
