@@ -16,6 +16,7 @@ from asgard import ui
 class CodeMapBase(unittest.TestCase):
     def setUp(self):
         ui.set_quiet(True)
+        self.addCleanup(ui.set_quiet, False)  # 전역 quiet 누출 방지 — 이후 stdout 검증 테스트 보호
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
 

@@ -21,6 +21,7 @@ from asgard.templates import agents_md, cc_settings
 class Base(unittest.TestCase):
     def setUp(self):
         ui.set_quiet(True)
+        self.addCleanup(ui.set_quiet, False)  # 전역 quiet 누출 방지 — 이후 stdout 검증 테스트 보호
         self._home = tempfile.TemporaryDirectory()  # ~/.asgard 격리 — 실 레지스트리 오염 방지
         self._proj = tempfile.TemporaryDirectory()
         self.root = os.path.realpath(self._proj.name)
