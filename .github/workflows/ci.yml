@@ -1,96 +1,99 @@
-name: ci
-
-# 품질 게이트: lint + format + typecheck + test.
-# 로컬 베이스라인과 동일 커맨드 — ruff check · ruff format --check · ty check · pytest.
-on:
-  push:
-    branches: [main]
-  pull_request:
-
-jobs:
-  quality:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.14"
-
-      - run: uv sync --group dev
-
-      - run: uv run ruff check
-
-      - run: uv run ruff format --check
-
-      - run: uv run ty check
-
-      # 커버리지는 리포트만 (게이트 아님) — 공백이 파이프라인 로그에 보이게. 문턱은 정책 결정 후.
-      - run: uv run pytest -q --cov=asgard --cov-report=term
-
-  # 설치 머니패스 + 스캐폴드/가드 하네스 — pytest 밖의 셸 하네스를 CI 에 편입 (e2e_trinity.sh 는
-  # 실 API 키 필요라 제외, docker/sandbox 는 로컬 전용). macOS 는 시스템 환경이 달라(BSD 도구·
-  # 시스템 Python) 적대 가드 스위트를 별도 러너로 이중 실행 — 게이트가 실행된다는 보장을 OS 단위로 든다.
-  smoke:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.14"
-
-      - run: bash tests/smoke.sh
-
-      # 적대 게이트 벡터 크로스 플랫폼 포트 — smoke 의 가드 배터리와 별개로 게이트 우회 벡터 전수.
-      - run: uv sync --group dev
-
-      - run: uv run pytest -q tests/test_adversarial_gate.py
-
-  windows-terminal:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: astral-sh/setup-uv@v5
-        with:
-          python-version: "3.14"
-
-      - run: uv sync --group dev
-
-      # 적대 게이트 스위트 포함 — Windows 에서 Verifier 게이트가 실제 차단하는지 회귀 가드
-      # (bash 하네스 아닌 test_adversarial_gate.py 포트가 돈다).
-      - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_sandbox.py tests/test_adversarial_gate.py tests/test_desktop.py
-
-      - name: Smoke prompt_toolkit session (headless)
-        run: uv run python tests/smoke_pt_session.py
-
-  desktop-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: desktop/package-lock.json
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - run: npm ci
-        working-directory: desktop
-
-      - run: cargo test
-        working-directory: desktop/src-tauri
-
-      - run: npm run bundle:windows
-        working-directory: desktop
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: asgard-desktop-windows
-          path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+# 26-07-23 사용자 지시로 비활성화 — push/PR CI 검증 잡음 제거. release.yml 은 별도 파일이라 영향 없음.
+# 되살리려면 아래 주석을 전부 해제.
+#
+# name: ci
+#
+# # 품질 게이트: lint + format + typecheck + test.
+# # 로컬 베이스라인과 동일 커맨드 — ruff check · ruff format --check · ty check · pytest.
+# on:
+#   push:
+#     branches: [main]
+#   pull_request:
+#
+# jobs:
+#   quality:
+#     runs-on: ubuntu-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - uses: astral-sh/setup-uv@v5
+#         with:
+#           python-version: "3.14"
+#
+#       - run: uv sync --group dev
+#
+#       - run: uv run ruff check
+#
+#       - run: uv run ruff format --check
+#
+#       - run: uv run ty check
+#
+#       # 커버리지는 리포트만 (게이트 아님) — 공백이 파이프라인 로그에 보이게. 문턱은 정책 결정 후.
+#       - run: uv run pytest -q --cov=asgard --cov-report=term
+#
+#   # 설치 머니패스 + 스캐폴드/가드 하네스 — pytest 밖의 셸 하네스를 CI 에 편입 (e2e_trinity.sh 는
+#   # 실 API 키 필요라 제외, docker/sandbox 는 로컬 전용). macOS 는 시스템 환경이 달라(BSD 도구·
+#   # 시스템 Python) 적대 가드 스위트를 별도 러너로 이중 실행 — 게이트가 실행된다는 보장을 OS 단위로 든다.
+#   smoke:
+#     strategy:
+#       matrix:
+#         os: [ubuntu-latest, macos-latest]
+#     runs-on: ${{ matrix.os }}
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - uses: astral-sh/setup-uv@v5
+#         with:
+#           python-version: "3.14"
+#
+#       - run: bash tests/smoke.sh
+#
+#       # 적대 게이트 벡터 크로스 플랫폼 포트 — smoke 의 가드 배터리와 별개로 게이트 우회 벡터 전수.
+#       - run: uv sync --group dev
+#
+#       - run: uv run pytest -q tests/test_adversarial_gate.py
+#
+#   windows-terminal:
+#     runs-on: windows-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - uses: astral-sh/setup-uv@v5
+#         with:
+#           python-version: "3.14"
+#
+#       - run: uv sync --group dev
+#
+#       # 적대 게이트 스위트 포함 — Windows 에서 Verifier 게이트가 실제 차단하는지 회귀 가드
+#       # (bash 하네스 아닌 test_adversarial_gate.py 포트가 돈다).
+#       - run: uv run pytest -q tests/test_windows.py tests/test_start.py tests/test_sandbox.py tests/test_adversarial_gate.py tests/test_desktop.py
+#
+#       - name: Smoke prompt_toolkit session (headless)
+#         run: uv run python tests/smoke_pt_session.py
+#
+#   desktop-windows:
+#     runs-on: windows-latest
+#     steps:
+#       - uses: actions/checkout@v4
+#
+#       - uses: actions/setup-node@v4
+#         with:
+#           node-version: "22"
+#           cache: npm
+#           cache-dependency-path: desktop/package-lock.json
+#
+#       - uses: dtolnay/rust-toolchain@stable
+#
+#       - run: npm ci
+#         working-directory: desktop
+#
+#       - run: cargo test
+#         working-directory: desktop/src-tauri
+#
+#       - run: npm run bundle:windows
+#         working-directory: desktop
+#
+#       - uses: actions/upload-artifact@v4
+#         with:
+#           name: asgard-desktop-windows
+#           path: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
