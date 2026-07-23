@@ -686,18 +686,23 @@ class Heimdall:
         return self._complete_text(system, prompt, max_tokens=16000).strip()
 
     def _enforce_lagom_text(self, request: str, draft: str) -> str:
-        """활성 모드의 자연어 응답을 검사하고 한 번 재작성한다. 재실패는 원문 노출 없이 닫는다."""
+        """활성 모드의 자연어 응답을 검사하고 한 번 재작성한다. 위반 없음(대부분)이면 스트리밍된
+        초안이 곧 정본. 재작성·봉합 시 호출부(_direct)가 교정 표식과 함께 정본을 표시한다."""
         if not self.lagom:
             return draft
+        from ...i18n import t
         from ...lagom import style_violations
 
         violations = style_violations(draft, request)
         if not violations:
             return draft
+        self.on_status(t("lagom_fixing"))  # 재작성도 모델 호출 — 침묵 구간 커버
         try:
             revised = self._rewrite_lagom_text(request, draft, violations)
         except Exception:
             revised = ""
+        finally:
+            self.on_status(None)
         if revised and not style_violations(revised, request):
             return revised
         return "문체 검사를 통과하지 못했습니다. 확인된 사실만 남기도록 범위를 좁혀 다시 요청해 주세요."
@@ -726,8 +731,6 @@ class Heimdall:
             from ...memory_context import recall_note as _recall
 
             recall = _recall(request, start=self.root)
-        active_lagom = bool(self.lagom)
-        # 활성 모드는 검사 전 초안이 터미널에 스트리밍되면 회수할 수 없다. 검사 완료까지 버퍼링한다.
         live_identity = self.delivery_identity + (self._memory_snap if self._memory_provider_allowed else "")
         mimir = _mimir_note(request)
         skill_note, skill_tools, skill_handlers = (
@@ -743,7 +746,6 @@ class Heimdall:
             handlers={**skill_handlers, **mem_handlers},
             role="direct",
             readonly=True,
-            quiet=active_lagom,
         ).run((ctx + request if ctx else request) + recall)
         if r.stop_reason == "cancelled":
             raise TurnCancelled()
@@ -773,19 +775,26 @@ class Heimdall:
             }
             return self._trinity(request, cls, pre_work=r, pre_base_ref=before_ref)
         final = self._enforce_lagom_text(request, r.text)
+        corrected = final != r.text  # 라곰 재작성·봉합 — 스트리밍된 초안과 정본이 갈린 경우만
         mem_notice = self._memory_write_outcome(request, mem_saved) if memory_intent else ""
+        record = final
         if mem_notice:
-            final = (final.rstrip() + "\n\n" + mem_notice) if final.strip() else mem_notice
+            record = (final.rstrip() + "\n\n" + mem_notice) if final.strip() else mem_notice
         self._explore_cmds = len(r.commands)  # 탐색량 — _finalize_memory 증류 넛지 문턱 (순수 DIRECT 한정)
-        self.last_response_text = final
-        self.history = (self.history + [(request, final[:500])])[-6:]
-        self._persist_turn(request, final)
-        if active_lagom:
-            self.on_text(final)
-            return ""  # 검사된 본문을 방금 출력 — REPL 이중 출력 방지
-        if mem_notice and r.stop_reason != "refusal":
+        self.last_response_text = record
+        self.history = (self.history + [(request, record[:500])])[-6:]
+        self._persist_turn(request, record)
+        if r.stop_reason == "refusal":
+            return record  # refusal 안내는 스트림에 안 실린 합성 텍스트 — 반환으로 표시
+        if corrected:
+            from ...i18n import t
+
+            # 본문은 이미 라이브 스트리밍됨 (검사 전 버퍼링은 REPL 을 먹통으로 보이게 했다 —
+            # 26-07-23). 위반 시에만 정본을 교정 표식과 함께 뒤에 붙인다. 정본은 위에서 확정됨.
+            self.on_text("\n\n" + t("lagom_corrected") + "\n" + final + "\n")
+        if mem_notice:
             self.on_text("\n\n" + mem_notice)  # 본문은 이미 스트리밍됨 — 증거 노티스만 추가 출력
-        return final if r.stop_reason == "refusal" else ""
+        return ""
 
     def _memory_write_outcome(self, request: str, saved: list[tuple[str, str]]) -> str:
         """기억 지시 턴의 실행 증거 봉합 — 저장 여부를 결정론으로 확정해 사용자에게 보인다.

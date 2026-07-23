@@ -52,6 +52,7 @@ class FakeSession:
         self.role: str | None = None
         self.model: str | None = None
         self.readonly: bool = False
+        self.quiet: bool = False
         self.rp_override: ResolvedProvider | None = None
         self.cwd: str = ""
         self.tool_script = list(tool_script or [])
@@ -103,6 +104,7 @@ class FakeHeimdall(Heimdall):
             s.role = role
             s.model = model
             s.readonly = readonly
+            s.quiet = quiet
             s.rp_override = rp_override
             s.cwd = cwd or self.root
             s.system = system or ""
@@ -1950,7 +1952,9 @@ class TestDirectGuard(Base):
         self.assertIn("MAP_CANARY", direct.system)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
-    def test_active_lagom_buffers_and_rewrites_direct_output_once(self):
+    def test_active_lagom_streams_live_and_appends_rewrite_as_canonical(self):
+        # 26-07-23: 검사 전 전량 버퍼링은 REPL 을 '먹통 → 한번에 팍' 으로 보이게 했다.
+        # 새 계약: DIRECT 는 라곰 활성에도 라이브 스트리밍, 위반 시에만 교정 표식+정본을 덧붙인다.
         direct = FakeSession(
             SessionResult(text="혁신적 RAGX는 즉시 배포 가능하다.", stop_reason="end_turn"), label="direct"
         )
@@ -1960,9 +1964,11 @@ class TestDirectGuard(Base):
         ) as rewrite:
             h.handle("RAGX 소개를 답해. 사실: 13줄, JSON 키 정렬")
         rewrite.assert_called_once()
+        self.assertFalse(direct.quiet)  # 스트리밍 계약 — DIRECT 세션의 on_text 는 살아 있다
         self.assertEqual(h.last_response_text, "RAGX는 JSON 키를 정렬하는 13줄짜리 도구다.")
-        self.assertNotIn("혁신적", "".join(h.texts))
-        self.assertIn(h.last_response_text, "".join(h.texts))
+        joined = "".join(h.texts)
+        self.assertIn("⠶", joined)  # 교정 표식(언어 중립 글리프) — 초안과 정본이 갈렸음을 알린다
+        self.assertIn(h.last_response_text, joined)
 
     def test_active_lagom_fails_closed_when_rewrite_still_violates_style(self):
         direct = FakeSession(SessionResult(text="혁신적 결과다.", stop_reason="end_turn"), label="direct")
@@ -1970,7 +1976,8 @@ class TestDirectGuard(Base):
         with mock.patch.object(h, "_rewrite_lagom_text", return_value="강력한 결과다."):
             h.handle("결과를 설명해")
         self.assertIn("문체 검사를 통과하지 못", h.last_response_text)
-        self.assertNotIn("혁신적", "".join(h.texts))
+        # 정본(닫는 문구)은 교정 블록으로 표시되고, 실패한 재작성문이 정본 자리를 차지하지 않는다
+        self.assertIn("문체 검사를 통과하지 못", "".join(h.texts))
         self.assertNotIn("강력한", "".join(h.texts))
 
     def test_lagom_off_keeps_direct_streaming_without_rewrite(self):

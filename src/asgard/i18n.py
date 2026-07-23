@@ -198,6 +198,11 @@ _M: dict[str, tuple[str, str]] = {
     ),
     "lagom_session": ("session override", "이번 세션 값"),
     "lagom_default": ("default", "기본값"),
+    "lagom_fixing": ("polishing the reply — style check…", "응답 문체를 다듬는 중…"),
+    "lagom_corrected": (
+        "⠶ style check rewrote the reply — the version below is canonical",
+        "⠶ 문체 검사로 응답을 다듬었어요 — 아래가 정본이에요",
+    ),
     "lagom_stats_tokens": (
         "session spend {tok} tokens (input+output)",
         "이번 세션에서 {tok} 토큰을 썼어요 (입력+출력)",
