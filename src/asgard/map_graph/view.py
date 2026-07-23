@@ -6,8 +6,10 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
+from importlib.resources import files
 from pathlib import Path
 
 from .bridge import related_records
@@ -41,11 +43,12 @@ _TEMPLATE = """<!doctype html>
       clip:rect(0,0,0,0);white-space:nowrap;border:0}
   input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
 
-  /* ── 헤더 — 아치 마크 + 카운트 계기 ── */
+  /* ── 헤더 — 브랜드 로고 + 카운트 계기 ── */
   header{display:flex;justify-content:space-between;align-items:center;gap:8px 22px;flex-wrap:wrap;
          padding:10px 18px;border-bottom:1px solid var(--line);background:var(--surface)}
   .brand{display:flex;align-items:center;gap:11px;min-width:0}
   .mark{color:var(--gold);flex:none}
+  img.mark{height:42px;width:auto;display:block}
   h1{font:600 13px var(--mono);letter-spacing:.3em;color:var(--gold-lit)}
   .sub{font-size:11.5px;color:var(--dim);margin-top:1px}
   .stats{font:11.5px var(--mono);font-variant-numeric:tabular-nums;color:var(--dim);
@@ -111,6 +114,18 @@ _TEMPLATE = """<!doctype html>
   .d-rec .rf{grid-column:1/-1;color:var(--dim);font:11px var(--mono);word-break:break-all}
   .d-code{display:block;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;
           padding:8px 10px;font:11.5px var(--mono);color:var(--ink);word-break:break-all;user-select:all}
+  .d-rel{list-style:none}
+  .d-rel li{border-bottom:1px solid var(--line)}
+  .d-rel li:last-child{border-bottom:0}
+  .d-rel button{display:flex;align-items:center;gap:7px;width:100%;background:none;border:0;
+                padding:5px 0;text-align:left;font-size:12px;color:var(--ink);min-height:28px}
+  .d-rel i{width:8px;height:8px;border-radius:50%;flex:none}
+  .d-rel .rk{font:10px var(--mono);color:var(--dim);flex:none}
+  .d-rel .rn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .d-rel button:hover .rn{color:var(--gold-lit)}
+  .d-rel .rv{margin-left:auto;font:10px var(--mono);color:var(--dim);flex:none;max-width:38%;
+             overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .d-rel .more{padding:5px 0;color:var(--dim);font:11px var(--mono)}
 
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chip{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--dim);
@@ -122,6 +137,7 @@ _TEMPLATE = """<!doctype html>
   .chip i{width:8px;height:8px;border-radius:50%;flex:none;opacity:.35}
   .chip.on i{opacity:1}
   .chip .n{color:var(--dim);font-size:10px}
+  .subhint{font:10.5px var(--mono);color:var(--dim);margin-top:7px}
 
   .ekl{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:4px 14px;
        font:11px var(--mono);color:var(--dim)}
@@ -156,12 +172,15 @@ _TEMPLATE = """<!doctype html>
 <body>
 <header>
   <div class="brand">
+    <!-- 구 삼중 아치 마크 — 정식 로고 교체로 보류(백업: ref/map-view-legacy-mark.svg)
     <svg class="mark" viewBox="0 0 120 96" width="27" height="22" aria-hidden="true">
       <path d="M18 90V52a42 42 0 0 1 84 0v38" fill="none" stroke="currentColor" stroke-width="7"/>
       <path d="M33 90V55a27 27 0 0 1 54 0v35" fill="none" stroke="currentColor" stroke-width="5.5"/>
       <path d="M48 90V58a12 12 0 0 1 24 0v32" fill="none" stroke="currentColor" stroke-width="4.5"/>
       <path d="M10 90h100" stroke="currentColor" stroke-width="7"/>
     </svg>
+    -->
+    <img class="mark" src="__LOGO__" alt="Asgard" onerror="this.hidden=true">
     <div>
       <h1>ASGARD MAP</h1>
       <p class="sub">관계 그래프 — 빈 원은 후보, 소스 재확인 후 확정</p>
@@ -195,6 +214,7 @@ _TEMPLATE = """<!doctype html>
     <section>
       <h2 class="sectitle">종류 필터</h2>
       <div class="chips" id="legend" role="group" aria-label="노드 종류 필터"></div>
+      <p class="subhint">클릭 = 토글 · Alt(⌥)+클릭 = 단독 보기 · 올리면 해당 종류만 밝게</p>
     </section>
     <section id="ekinds" aria-label="엣지 종류"></section>
     <p class="foot">깊은 추적 — <code>asgard map trace --from &lt;node-id&gt;</code></p>
@@ -207,8 +227,8 @@ const DATA = JSON.parse(document.getElementById("data").textContent);
 const KIND_COLORS = { file:"#737D8C", route:"#E8C87E", command:"#D98E4A", model:"#8FB6E8",
   db_access:"#96C08A", api_call:"#E38B8B", event:"#B99CE8", job:"#72C6C6", external_service:"#DD9AC2" };
 const KIND_ORDER = ["route","command","model","db_access","api_call","event","job","external_service","file"];
-const EDGE_KINDS = ["declares","calls","touches","uses"];
-const EDGE_DASH = { declares:[], calls:[7,4], touches:[2,4], uses:[11,3,2,3] };
+const EDGE_KINDS = ["declares","calls","touches","uses","emits"];
+const EDGE_DASH = { declares:[], calls:[7,4], touches:[2,4], uses:[11,3,2,3], emits:[4,3,1,3] };
 const FONT = '"SF Mono",Menlo,Consolas,monospace';
 const REDUCED = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const MOBILE = matchMedia("(max-width:720px)");
@@ -230,10 +250,10 @@ const topLabel = new Set(nodes.filter(n=>n.kind!=="file")
   .sort((a,b)=>(degree[b.id]||0)-(degree[a.id]||0)).slice(0,14).map(n=>n.id));
 
 let off={x:0,y:0}, scale=1, active=new Set(KIND_ORDER.filter(k=>kindCount[k])), query="",
-  selected=null, hover=null, neighbors=new Set(), userCam=false,
-  hot = REDUCED ? 0 : 260;
+  selected=null, hover=null, neighbors=new Set(), bridges=new Set(), previewKind=null,
+  userCam=false, hot = REDUCED ? 0 : 260;
 
-function esc(v){ const e=document.createElement("span"); e.textContent=String(v??""); return e.innerHTML; }
+function esc(v){ const e=document.createElement("span"); e.textContent=String(v??""); return e.innerHTML.replace(/"/g,"&quot;"); }
 function radius(n){ return n.kind==="file" ? 3.2 : Math.min(11, 5+(degree[n.id]||0)*0.55); }
 function matches(n){ return !query || (n.id+" "+n.name).toLowerCase().includes(query); }
 // 노드 상태: 0 숨김(kind off) · 1 유령(검색 불일치) · 2 표시
@@ -299,15 +319,43 @@ function draw(){
   const vx0=(-w/2-off.x)/(scale*devicePixelRatio)-60, vy0=(-h/2-off.y)/(scale*devicePixelRatio)-60;
   const vx1=vx0+w/(scale*devicePixelRatio)+120, vy1=vy0+h/(scale*devicePixelRatio)+120;
   const inView=n=>n.x>vx0&&n.x<vx1&&n.y>vy0&&n.y<vy1;
-  const lit=[], base=[], ghost=[];
+  const lit=[], lit2=[], base=[], ghost=[], via=[], viaN={};
   for(const e of edges){ const a=byId[e.source], b=byId[e.target];
-    const sa=state(a), sb=state(b); if(!sa||!sb) continue;
-    if(focus){ if(e.source===focus.id||e.target===focus.id) lit.push(e); else ghost.push(e); }
+    const sa=state(a), sb=state(b);
+    if(!sa||!sb){ // 파일이 필터로 꺼져도 파일 경유 연계(실제 구성)는 접점 스터브로 남긴다
+      if(!sa && a.kind==="file" && sb===2){ via.push(e); viaN[a.id]=(viaN[a.id]||0)+1; }
+      continue; }
+    if(focus){ if(e.source===focus.id||e.target===focus.id) lit.push(e);
+      else if(bridges.has(e.source)) lit2.push(e); // 선택 개념의 파일 경유 2-hop 구간
+      else ghost.push(e); }
     else if(query && sa<2 && sb<2) ghost.push(e);
+    else if(previewKind && a.kind!==previewKind && b.kind!==previewKind) ghost.push(e);
     else base.push(e); }
   strokeEdges(ghost, "rgba(156,145,121,.07)", 0.8/scale);
   strokeEdges(base, "rgba(156,145,121,.3)", 0.9/scale);
+  strokeEdges(lit2, "rgba(232,200,126,.4)", 1.1/scale);
   strokeEdges(lit, "rgba(232,200,126,.75)", 1.5/scale);
+  { // 은닉 파일 접점 — 연계 2개 이상만 의미가 있다(외줄 스터브 제외)
+    const viaBase=[], viaLit=[];
+    for(const e of via){ if(viaN[e.source]<2) continue;
+      if(!focus) viaBase.push(e); else if(bridges.has(e.source)) viaLit.push(e); }
+    if(viaBase.length||viaLit.length){
+      ctx.setLineDash([2/scale,3.5/scale]);
+      for(const [list,style,width] of [[viaBase,"rgba(156,145,121,.24)",0.8],[viaLit,"rgba(232,200,126,.55)",1.2]]){
+        if(!list.length) continue;
+        ctx.strokeStyle=style; ctx.lineWidth=width/scale; ctx.beginPath();
+        for(const e of list){ const a=byId[e.source], b=byId[e.target];
+          ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+        ctx.stroke(); }
+      ctx.setLineDash([]);
+      ctx.lineWidth=1/scale;
+      for(const id in viaN){ if(viaN[id]<2) continue;
+        if(focus && !bridges.has(id)) continue;
+        const f=byId[id];
+        ctx.strokeStyle = focus ? "rgba(232,200,126,.6)" : "rgba(156,145,121,.5)";
+        ctx.beginPath(); ctx.arc(f.x,f.y,2.2,0,7); ctx.stroke(); }
+    }
+  }
   if(focus && lit.length){ // 방향(파일 → 개념)은 선택 시에만 화살촉으로 노출
     ctx.fillStyle="rgba(232,200,126,.8)";
     for(const e of lit){ const a=byId[e.source], b=byId[e.target];
@@ -318,7 +366,8 @@ function draw(){
       ctx.lineTo(tx-ux*s+uy*s*0.5, ty-uy*s-ux*s*0.5);
       ctx.closePath(); ctx.fill(); } }
   for(const n of nodes){ const s=state(n); if(!s||!inView(n)) continue;
-    const r=radius(n), dim=(s===1)||(focus&&n!==selected&&!neighbors.has(n.id));
+    const r=radius(n), dim=(s===1)||(focus&&n!==selected&&!neighbors.has(n.id))
+      ||(previewKind&&n.kind!==previewKind);
     ctx.globalAlpha = dim ? .16 : 1;
     const col=KIND_COLORS[n.kind]||"#888888";
     ctx.beginPath(); ctx.arc(n.x,n.y,r,0,7);
@@ -384,17 +433,51 @@ function renderDetail(){
     +'<ul class="d-ev">'+n.files.map(f=>'<li><b>'+esc(f.file)+':'+esc(f.line)+'</b>'
       +(f.confidence==="candidate" ? ' <span class="cand">?</span>' : '')
       +(f.detail ? ' <span class="d-det">— '+esc(f.detail)+'</span>' : '')+'</li>').join("")+'</ul>';
+  // 연계 노드 — 파일 증거를 공유하는 실제 구성(1-hop 파일에 갇히지 않는다)
+  let rel=[];
+  if(n.kind==="file"){
+    rel=edges.filter(e=>e.source===n.id).map(e=>({o:byId[e.target], via:[n.name]}));
+  } else {
+    const bf=new Set(edges.filter(e=>e.target===n.id).map(e=>e.source));
+    const acc={};
+    for(const e of edges) if(bf.has(e.source)&&e.target!==n.id)
+      (acc[e.target] ??= {o:byId[e.target], via:[]}).via.push(byId[e.source].name);
+    rel=Object.values(acc);
+  }
+  rel.sort((a,b)=>KIND_ORDER.indexOf(a.o.kind)-KIND_ORDER.indexOf(b.o.kind)||a.o.name.localeCompare(b.o.name));
+  if(rel.length){
+    const cap=24;
+    h+='<h3 class="d-h">연계 노드 '+rel.length+' — 파일 경유</h3><ul class="d-rel">'
+      +rel.slice(0,cap).map(r=>{
+        const vb=r.via[0].split("/").pop(), vt=r.via.length>1 ? vb+" +"+(r.via.length-1) : vb;
+        return '<li><button type="button" data-nid="'+esc(r.o.id)+'" title="'+esc(r.via.join(", "))+'">'
+          +'<i style="background:'+(KIND_COLORS[r.o.kind]||"#888888")+'"></i>'
+          +'<span class="rk">'+esc(r.o.kind)+'</span><span class="rn">'+esc(r.o.name)+'</span>'
+          +'<span class="rv">'+esc(vt)+'</span></button></li>'; }).join("")
+      +(rel.length>cap ? '<li class="more">+'+(rel.length-cap)+' — trace 로 전체 추적</li>' : '')+'</ul>';
+  }
   if(recs.length) h+='<h3 class="d-h">관련 기록 — 프로젝트 메모리</h3><ul class="d-rec">'
     +recs.map(r=>'<li><span class="rt">'+esc(r.title)+'</span><span class="rm">'+esc(r.match)+'</span>'
       +'<span class="rf">'+esc(r.file)+'</span></li>').join("")+'</ul>';
   h+='<h3 class="d-h">추적</h3><code class="d-code">asgard map trace --from '+esc(n.id)+'</code>';
   el.innerHTML=h;
 }
+document.getElementById("detail").addEventListener("click", e=>{
+  const b=e.target.closest("[data-nid]"); if(!b) return;
+  const n=byId[b.dataset.nid]; if(!n) return;
+  ensureKind(n.kind); centerOn(n); select(n);
+});
 function select(n, scrollTo){
-  selected=n||null; neighbors=new Set();
-  if(selected) for(const e of edges){
-    if(e.source===selected.id) neighbors.add(e.target);
-    if(e.target===selected.id) neighbors.add(e.source); }
+  selected=n||null; neighbors=new Set(); bridges=new Set();
+  if(selected){
+    for(const e of edges){
+      if(e.source===selected.id) neighbors.add(e.target);
+      if(e.target===selected.id){ neighbors.add(e.source);
+        if(byId[e.source].kind==="file") bridges.add(e.source); } }
+    // 실제 연계 — 같은 파일 증거를 공유하는 개념(파일 경유 2-hop)까지 이웃으로 편입
+    if(bridges.size) for(const e of edges)
+      if(bridges.has(e.source) && e.target!==selected.id) neighbors.add(e.target);
+  }
   picker.value = selected && selected.kind!=="file" ? selected.id : "";
   renderDetail(); draw();
   if(selected && scrollTo && MOBILE.matches)
@@ -414,10 +497,16 @@ function centerOn(n){ userCam=true;
     const chip=document.createElement("button"); chip.type="button"; chip.className="chip on";
     chip.dataset.kind=k; chip.setAttribute("aria-pressed","true");
     chip.innerHTML='<i style="background:'+(KIND_COLORS[k]||"#888888")+'"></i>'+esc(k)+' <span class="n">'+kindCount[k]+'</span>';
-    chip.onclick=()=>{
+    chip.onclick=e=>{
+      if(e.altKey){ soloKind(k); return; }
       if(active.has(k)) active.delete(k); else active.add(k);
-      chip.classList.toggle("on",active.has(k)); chip.setAttribute("aria-pressed",String(active.has(k)));
+      syncChips();
       if(selected && !active.has(selected.kind)) select(null); else draw(); };
+    // 호버 미리보기 — 해당 종류만 밝혀 색만으로 헷갈리는 구분을 즉석에서 푼다(터치는 무시)
+    chip.addEventListener("pointerenter", e=>{
+      if(e.pointerType==="touch") return; previewKind=k; scheduleDraw(); });
+    chip.addEventListener("pointerleave", ()=>{
+      if(previewKind===k){ previewKind=null; scheduleDraw(); } });
     legend.appendChild(chip); }
   document.getElementById("ekinds").innerHTML =
     '<h2 class="sectitle">엣지 언어</h2><ul class="ekl">'+EDGE_KINDS.map(k=>{
@@ -427,6 +516,17 @@ function centerOn(n){ userCam=true;
         +(d?' stroke-dasharray="'+d+'"':'')+'></line></svg>'
         +esc(k)+' <b>'+(edgeKindCount[k]||0)+'</b></li>'; }).join("")+'</ul>';
 })();
+function syncChips(){
+  for(const c of legend.children){ const on=active.has(c.dataset.kind);
+    c.classList.toggle("on",on); c.setAttribute("aria-pressed",String(on)); }
+}
+function soloKind(k){ // 단독 보기 — 이미 단독이면 전체 복귀
+  const all=KIND_ORDER.filter(x=>kindCount[x]);
+  active = (active.size===1 && active.has(k)) ? new Set(all) : new Set([k]);
+  syncChips();
+  if(selected && !active.has(selected.kind)) select(null); else draw();
+}
+function ensureKind(k){ if(!active.has(k)){ active.add(k); syncChips(); } }
 function buildOptions(){
   const cur=picker.value; picker.innerHTML="";
   const o0=document.createElement("option"); o0.value=""; o0.textContent="노드 선택 — 증거 보기";
@@ -437,10 +537,7 @@ function buildOptions(){
 }
 picker.addEventListener("change", ()=>{
   const n=byId[picker.value]||null;
-  if(n && !active.has(n.kind)){ active.add(n.kind);
-    const chip=legend.querySelector('[data-kind="'+n.kind+'"]');
-    if(chip){ chip.classList.add("on"); chip.setAttribute("aria-pressed","true"); } }
-  if(n) centerOn(n);
+  if(n){ ensureKind(n.kind); centerOn(n); }
   select(n);
 });
 const qEl=document.getElementById("q"), qHint=document.getElementById("qhint");
@@ -562,6 +659,15 @@ fit(); buildOptions(); renderDetail(); loop();
 """
 
 
+def _logo_data_uri() -> str:
+    """위그드라실 엠블럼(yggdrasil-mark.png)을 데이터 URI 로 — 실패 시 빈 값(img 는 onerror 로 숨김)."""
+    try:
+        raw = (files("asgard") / "assets" / "yggdrasil-mark.png").read_bytes()
+    except Exception:
+        return ""
+    return "data:image/png;base64," + base64.b64encode(raw).decode("ascii")
+
+
 def build_view(root: str | os.PathLike[str]) -> str:
     state = graph_state(root)
     if state is None:
@@ -581,7 +687,7 @@ def build_view(root: str | os.PathLike[str]) -> str:
         "records": records,
     }
     data = json.dumps(payload, ensure_ascii=False).replace("</", "<\\/")
-    return _TEMPLATE.replace("__DATA__", data)
+    return _TEMPLATE.replace("__DATA__", data).replace("__LOGO__", _logo_data_uri())
 
 
 def write_view(root: str | os.PathLike[str]) -> str:
