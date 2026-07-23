@@ -81,6 +81,37 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("git grep --open-files-in-pager 'touch PWNED' needle"))
         self.assertFalse(is_readonly_bash_safe("git --paginate log"))
 
+    def test_main_thread_personal_memory_contract_commands(self):
+        """AGENTS.md 개인 메모리 계약(query·ingest)은 메인 스레드에서 기본 동작 —
+        read-only 서브에이전트(Verifier/Loki)는 무주입 원칙대로 계속 차단 (오딘 결정 26-07-23)."""
+        import io
+        import json as j
+        from unittest import mock
+
+        from asgard.hooks import readonly_guard
+
+        # 분류기: 계약 명령만, 단일 명령만
+        self.assertTrue(readonly_guard._main_thread_memory_safe('asgard memory query "닉네임"'))
+        self.assertTrue(readonly_guard._main_thread_memory_safe("asgard memory ingest '사실' --kind decision"))
+        self.assertFalse(readonly_guard._main_thread_memory_safe("asgard memory remove page"))
+        self.assertFalse(readonly_guard._main_thread_memory_safe("asgard memory query a | tee out"))
+        self.assertFalse(readonly_guard._main_thread_memory_safe("asgard skills show x"))
+
+        def verdict(agent: str, command: str) -> bool:
+            payload = j.dumps({"agent_type": agent, "tool_name": "Bash", "tool_input": {"command": command}})
+            with mock.patch("sys.stdin", io.StringIO(payload)):
+                try:
+                    readonly_guard.main()
+                except SystemExit as exc:
+                    return exc.code != 2
+            return True
+
+        self.assertTrue(verdict("", 'asgard memory query "닉네임"'))  # 메인 스레드 허용
+        self.assertTrue(verdict("", "asgard memory ingest '사실' --kind decision"))
+        self.assertFalse(verdict("asgard-verifier", 'asgard memory query "닉네임"'))  # 게이트 역할 불변
+        self.assertFalse(verdict("asgard-loki", "asgard memory ingest '사실'"))
+        self.assertFalse(verdict("", "asgard memory remove page"))  # 비계약 명령 불변
+
     def test_duplicate_name_is_rejected(self):
         registry = ToolRegistry()
         spec = ToolSpec("x", "inspect", {"name": "x", "input_schema": {"type": "object"}}, lambda c, a: "ok")

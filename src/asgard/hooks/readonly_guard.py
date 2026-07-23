@@ -29,12 +29,13 @@ _PYTHON = {"python", "python3", "pypy", "pypy3"}
 # 차단이 가르치지 않으면 모델은 같은 명령의 변형으로 턴을 태운다 (26-07-21 실측: Verifier 가
 # python3 -c 차단 후 히어독·TMPDIR·py_compile 변형 10여 회 순차 시도). 거부 사유에 항상 동봉.
 READONLY_BASH_HINT = (
-    "read-only 역할 Bash 허용: 관측(ls/cat/grep/rg/find/stat/tree/wc), git 읽기(status/diff/log/show/grep/ls-files), "
-    "검증 러너(pytest/mypy/pyright/ty/ruff check/tsc --noEmit — uv|poetry|pipenv run 경유 포함), "
-    "python -m pytest|unittest|compileall|py_compile, python -c '<쓰기 없는 한 줄 스모크>', tests/ 스크립트. "
-    "차단: 파일 쓰기·리다이렉션(>)·히어독·$()/백틱/$VAR·프로젝트 밖 경로. "
-    "스크래치 파일 대신 python -c 를 쓰고, uv 프로젝트(uv.lock)면 `uv run pytest -x -q` 를 사용하라. "
-    "차단된 명령은 실행된 적 없다 — 변형 재시도 대신 허용 레인으로 즉시 갈아타라."
+    "Read-only role Bash allowlist: inspection (ls/cat/grep/rg/find/stat/tree/wc), git reads "
+    "(status/diff/log/show/grep/ls-files), verification runners (pytest/mypy/pyright/ty/ruff check/tsc "
+    "--noEmit — including via uv|poetry|pipenv run), python -m pytest|unittest|compileall|py_compile, "
+    "python -c '<one-line smoke with no writes>', tests/ scripts. "
+    "Blocked: file writes, redirection (>), heredocs, $()/backticks/$VAR, paths outside the project. "
+    "Use python -c instead of a scratch file, and for a uv project (uv.lock) use `uv run pytest -x -q`. "
+    "A blocked command never ran — switch straight to an allowed lane instead of retrying a variant."
 )
 
 # python -c 스니펫의 쓰기 표면 휴리스틱 — 이미 허용된 pytest 도 임의 프로젝트 코드를 실행하므로
@@ -309,6 +310,26 @@ def is_readonly_bash_safe(command: str, root: str | None = None) -> bool:
     return all(_safe_segment(shlex.join(part), root) for part in parts)
 
 
+_MEMORY_MAIN_COMMANDS = {"query", "ingest"}
+
+
+def _main_thread_memory_safe(command: str) -> bool:
+    """Personal-memory contract commands (AGENTS.md) — main thread only.
+    `query` is a read; `ingest` is guarded by its own ask-before-save gate plus the client's
+    tool-permission prompt. Read-only subagents (Verifier/Loki/...) stay blocked — the
+    no-injection principle for gate roles is not relaxed here."""
+    parts, valid = _shell_parts(command.strip())
+    if not valid or len(parts) != 1:
+        return False
+    tokens = parts[0]
+    return (
+        len(tokens) >= 3
+        and os.path.basename(tokens[0]) == "asgard"
+        and tokens[1] == "memory"
+        and tokens[2] in _MEMORY_MAIN_COMMANDS
+    )
+
+
 def main() -> None:
     try:
         data = json.load(sys.stdin)
@@ -321,6 +342,7 @@ def main() -> None:
     # Main-thread Odin is coordination/read-only; mutations belong to explicit
     # Worker/Freyja/Thor/Eitri subagents. Tool-lifecycle hooks provide agent_type for them.
     readonly = not agent or agent in _READONLY_AGENTS
+    memory_main_ok = tool_name == "Bash" and not agent and _main_thread_memory_safe(command)
     root = str(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
     normalized_path = os.path.normpath(path).replace("\\", "/")
@@ -358,7 +380,7 @@ def main() -> None:
         or readonly
         and (
             tool_name in {"Write", "Edit", "NotebookEdit"}
-            or (tool_name == "Bash" and not is_readonly_bash_safe(command, root))
+            or (tool_name == "Bash" and not is_readonly_bash_safe(command, root) and not memory_main_ok)
         )
     )
     if denied:

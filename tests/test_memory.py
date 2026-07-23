@@ -1039,8 +1039,13 @@ class TestRecallAndAllowlist(MemoryBase):
         self.assertFalse(memory.inject_allowed("anthropic"))
         self.assertTrue(memory.inject_allowed("ollama", ".asgard/asgard-setting-project.json"))
         self.assertTrue(memory.inject_allowed())  # provider 미상(로컬 조작)은 킬스위치만
+        # 클라이언트 모드는 allowlist 와 무관하게 허용 — 전 모드 동일 기억 (오딘 결정 26-07-23)
+        self.assertTrue(memory.inject_allowed("claude-code"))
+        self.assertTrue(memory.inject_allowed("codex"))
+        self.assertTrue(memory.inject_allowed("cursor"))
         open(cfg, "w").write('[memory]\ninject = "off"\nproviders = ["ollama"]\n')
         self.assertFalse(memory.inject_allowed("ollama"))  # 킬스위치가 allowlist 를 이긴다
+        self.assertFalse(memory.inject_allowed("claude-code"))  # 킬스위치는 클라이언트 모드도 막는다
 
 
 class TestPersonalMemoryDoctor(MemoryBase):
@@ -1420,17 +1425,24 @@ class TestCCWiring(MemoryBase):
         assert page is not None
         self.assertEqual(page[1].count(text), 1)
 
-    def test_cc_snapshot_honors_provider_allowlist(self):
+    def test_cc_snapshot_client_mode_ignores_native_allowlist_but_honors_killswitch(self):
+        """클라이언트 모드는 전 모드 동일 기억(오딘 결정 26-07-23) — allowlist 는 네이티브
+        provider 통제 표면이라 CC/Codex/Cursor 주입을 막지 않는다. 끄는 길은 킬스위치뿐."""
         from typer.testing import CliRunner
 
         from asgard.cli import app
 
         memory.add("CC provider gate secret", title="cc-provider-secret")
         os.makedirs(os.path.join(self.tmp, ".asgard"), exist_ok=True)
-        open(os.path.join(self.tmp, ".asgard", "config.toml"), "w").write('[memory]\nproviders = ["ollama"]\n')
+        cfg = os.path.join(self.tmp, ".asgard", "config.toml")
+        open(cfg, "w").write('[memory]\nproviders = ["ollama"]\n')
 
         result = CliRunner().invoke(app, ["memory", "snapshot", "--provider", "claude-code"])
+        self.assertEqual(result.exit_code, 0)
+        self.assertIn("cc-provider-secret", result.stdout)
 
+        open(cfg, "w").write('[memory]\ninject = "off"\nproviders = ["ollama"]\n')
+        result = CliRunner().invoke(app, ["memory", "snapshot", "--provider", "claude-code"])
         self.assertEqual(result.exit_code, 0)
         self.assertNotIn("cc-provider-secret", result.stdout)
 

@@ -53,6 +53,10 @@ def cc_settings() -> str:
                         "Bash(asgard skills list*)",
                         "Bash(asgard skills show *)",
                         "Bash(asgard skills resolve *)",
+                        # 개인 메모리 계약 읽기(AGENTS.md) — 회상이 승인 프롬프트에 막히면
+                        # 헤드리스에서 조용히 죽는다. 쓰기(ingest)는 의도적으로 제외 —
+                        # 저장 동의는 클라이언트 권한 프롬프트가 오딘의 승인 표면이다.
+                        "Bash(asgard memory query *)",
                         f"Bash({py} .claude/hooks/quest-log.py *)",
                     ],
                     "deny": [

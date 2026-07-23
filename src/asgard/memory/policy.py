@@ -89,13 +89,23 @@ def inject_enabled() -> bool:
         return True
 
 
+# 훅 배선 클라이언트 모드 — 오딘이 직접 실행하는 코딩 에이전트 호스트. 개인 메모리는 오딘의
+# 기억이라 어느 호스트에서든 같은 기억을 본다 (오딘 결정 26-07-23). allowlist 는 네이티브 루프의
+# 임의 원격 provider 통제 표면이므로 클라이언트 모드에는 적용하지 않는다 — 끄려면 킬스위치
+# (memory.inject=off / ASGARD_MEMORY_INJECT=off).
+CLIENT_MODES = frozenset({"claude-code", "codex", "cursor"})
+
+
 def inject_allowed(provider: str | None = None, provider_source: str | None = None) -> bool:
     """provider별 전송 게이트 — 킬스위치 + `memory.providers` allowlist (배선 단계).
+    클라이언트 모드(claude-code/codex/cursor)는 킬스위치만 적용 — 전 모드 동일 기억 (기본 동작).
     allowlist 부재/빈 리스트 = 사용자 선택 provider 는 허용하되 프로젝트 선택 provider 는 거부.
     개인 메모리가 임의 원격 모델로 새는 표면을 사용자가 직접 통제한다 (독립 리뷰 지적)."""
     if not inject_enabled():
         return False
     if not provider:
+        return True
+    if provider in CLIENT_MODES:
         return True
     try:
         allow = _memory_settings().get("providers")
