@@ -29,6 +29,17 @@ class TestFreyjaBaseline(unittest.TestCase):
         self.assertIn("asgard-freyja-design", core)
         self.assertIn("시각 시스템과 feel을 먼저", core)
         self.assertIn("의미 없는 요소만 덜어낸다", core)
+        self.assertIn("아토믹 디자인 시스템으로 설정한다", core)
+        self.assertIn("components/atoms|molecules|organisms", core)
+
+    def test_design_engine_carries_atomic_structure_canon(self):
+        with tempfile.TemporaryDirectory() as root:
+            bodies = dict(skill_registry.client_skill_bodies("freyja", root))
+        body = bodies["asgard-freyja-design"]
+        self.assertIn("Atomic design project structure", body)
+        self.assertIn("components/atoms|molecules|organisms", body)
+        self.assertIn("Atomic: <level>", body)
+        self.assertIn("lower levels never import higher levels", body)
 
     def test_complete_freyja_design_engine_is_freyja_only(self):
         with tempfile.TemporaryDirectory() as root:
