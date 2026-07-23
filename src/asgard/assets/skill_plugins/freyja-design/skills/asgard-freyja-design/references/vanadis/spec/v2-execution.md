@@ -77,7 +77,7 @@ The Web merge gate currently requires the complete test suite and TypeScript che
 - [x] `AST0-A4` — switch both reference routes, token preview/font resolution, and builder.
 - [ ] `AST0-A5` — after two releases and 14 clean days, remove duplicate parsers and prose-derived defaults from canonical surfaces.
 
-Detailed execution order, dependencies, fixtures, and rollback rules live in `claudedocs/workflow_vanadis_v2_ast0.md`.
+Detailed execution order, dependencies, fixtures, and rollback rules were tracked in a separate workflow log (not part of this snapshot).
 
 ### Slice 3 — flagship proof and page
 

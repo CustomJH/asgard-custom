@@ -7,7 +7,7 @@
 | Adds | Brand Philosophy Layer (6 sections) |
 | Target consumer | Claude Code, Cursor, Gemini CLI, Codex, other AI coding agents |
 | Filename | `DESIGN.md` at project root |
-| Status | Draft — feedback welcome at https://github.com/vanadis/vanadis/issues |
+| Status | Draft |
 
 ---
 
@@ -379,4 +379,4 @@ Vanadis v0.1 builds on:
 - [Anthropic `frontend-design` skill](https://github.com/anthropics/skills) for the anti-slop list informing section 2's conventions.
 - [VoltAgent awesome-design-md](https://github.com/VoltAgent/awesome-design-md) for demonstrating the demand for a community-curated library of DESIGN.md files.
 
-Vanadis is MIT-licensed and openly contributable. File issues and PRs at <https://github.com/vanadis/vanadis>.
+Vanadis is MIT-licensed and openly contributable.

@@ -7,12 +7,11 @@ vanadis itself uses Claude Code skills + subagents for its design harness. This 
 ## Repository quick map
 
 - `src/` — TypeScript source for the `vanadis` CLI (`bin/vanadis.ts` is the entrypoint).
-- `web/references/<id>/DESIGN.md` — 100+ real-company DESIGN.md files; the **canonical source of truth** for the reference catalog. It lives under `web/` because the Vercel project root is `web/` (the site build can only read files beneath it). The root `references` symlink, `design-md/`, and `packages/mcp/data/references/` are all derived from here — see **Repository layout** in `README.md` for why each tree exists and which to edit. Rule: edit `web/references/` only.
+- `web/references/<id>/DESIGN.md` — 100+ real-company DESIGN.md files; the **canonical source of truth** for the reference catalog. It lives under `web/` because the Vercel project root is `web/` (the site build can only read files beneath it). `design-md/` and other derived trees are generated from here — see **Repository layout** in `README.md` for which to edit. Rule: edit `web/references/` only.
 - `skills/vanadis-*` — Claude Code / Codex / OpenCode skill files (installed into target projects via `vanadis install-skills`).
 - `.claude/agents/` — Subagent definitions for the design harness (Claude Code).
 - `.codex/agents/` — Mirror TOML definitions for the design harness (Codex).
 - `spec/vanadis-v0.1.md` — Vanadis spec (15-section DESIGN.md format).
-- `research/harness-design/` — Design harness research + integration design.
 - `skills/vanadis-lab-02-design-harness/` — Lab #02 versioned harness experiments.
 - `scripts/ctx-prime.cjs` — v1.6.0 deterministic codebase analyzer (stack, brand color, voice, surface inventory, audience hypothesis). Called by `vanadis-harness` Step 2.5 to pre-fill master slots.
 
@@ -27,7 +26,7 @@ vanadis itself uses Claude Code skills + subagents for its design harness. This 
 
 User-facing entry: **`/vanadis-harness <task>`** in Claude Code or Codex CLI.
 
-The harness runs entirely inside the host CLI session — no external API keys, no separate process. The skill at `.agents/skills/vanadis-harness/` (Codex) or `.claude/skills/vanadis-harness/` (Claude Code) handles bootstrapping and orchestration handoff.
+The harness runs entirely inside the host CLI session — no external API keys, no separate process. The skill at `.claude/skills/vanadis-harness/` (Claude Code) or its channel mirror under `skills/vanadis-harness/` handles bootstrapping and orchestration handoff.
 
 ### Entrypoint
 
@@ -116,12 +115,6 @@ This mirrors the `vanadis:apply` Claude Code skill behavior.
 - Never emit SUS / NPS / "satisfaction score" from synthetic personas. Use task_success / steps_vs_optimal / friction_count / heuristic_violations / abandonment instead.
 - Never auto-skip user checkpoints.
 - Never delete a run directory. They are permanent learning artifacts.
-
-## 세션 연속성 프로토콜
-- 시작: `scripts/context_restore.sh` 실행(또는 docs/CURRENT_STATE.md 읽기) → 막힘/대기부터 처리.
-- 체크포인트: 작업 단위 완료·결정 확정마다 CURRENT_STATE.md를 먼저 갱신하고 나서 보고한다.
-- 종료: JOURNAL.md 맨 위에 항목 추가(한 일/열린 것/다음, 5줄 이내). 채팅에만 있는 맥락은 잃어버린 것으로 간주.
-- 컨텍스트가 요약(compact)된 채 재개되면: 첫 행동으로 context_restore.sh를 실행해 복원한다.
 
 ## Pre-existing Vanadis shims (managed by `vanadis sync`)
 

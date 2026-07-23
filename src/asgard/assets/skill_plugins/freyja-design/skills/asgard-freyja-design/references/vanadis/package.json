@@ -41,7 +41,6 @@
     "AGENTS.md",
     "CHANGELOG.md",
     "MIGRATION.md",
-    "docs/CLI_QUICKSTART.md",
     ".github/assets/logo-bg.png",
     "scripts/postinstall.cjs",
     "scripts/context.cjs",
