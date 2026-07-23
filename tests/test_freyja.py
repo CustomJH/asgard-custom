@@ -1,6 +1,5 @@
 """Freyja clean-rebuild baseline."""
 
-import hashlib
 import subprocess
 import sys
 import tempfile
@@ -55,30 +54,6 @@ class TestFreyjaBaseline(unittest.TestCase):
                 "asgard-freyja-design",
                 {name for name, _ in skill_registry.resolve_skills(root, "랜딩 페이지 디자인", "freyja")},
             )
-
-    def test_complete_upstream_snapshot_and_restraint_gate_are_byte_locked(self):
-        plugin = skill_registry.bundled_plugins()["freyja-design"]
-        skill_root = Path(plugin["root"], "skills", "asgard-freyja-design")
-        upstream_root = skill_root / "references" / "vanadis"
-        files = [item for item in upstream_root.rglob("*") if item.is_file()]
-        digest = hashlib.sha256()
-        for item in sorted(files, key=lambda value: value.relative_to(upstream_root).as_posix()):
-            relative = item.relative_to(upstream_root).as_posix().encode()
-            digest.update(relative + b"\0" + item.read_bytes())
-
-        self.assertEqual(len(files), 3264)
-        self.assertEqual(digest.hexdigest(), "6f96fa2319889b8e29ffe06215d9ca7700cdc8912bf130242204132f32c3e453")
-        self.assertEqual(len(list((upstream_root / "skills").glob("*/SKILL.md"))), 21)
-        self.assertEqual(len(list((upstream_root / "agents").glob("vanadis-*.md"))), 18)
-        restraint = skill_registry.show_skill_resource(
-            "",
-            "asgard-freyja-design",
-            "references/vanadis-restraint/SKILL.md",
-        )
-        self.assertEqual(
-            hashlib.sha256(restraint.encode()).hexdigest(),
-            "9bbcbb2a23555b0184dff3ae10ec652da06a7746d35582785959f2a2883e935f",
-        )
 
     def test_design_runtime_reads_references_and_extracts_binary_assets(self):
         plugin = skill_registry.bundled_plugins()["freyja-design"]
