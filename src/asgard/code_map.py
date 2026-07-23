@@ -78,11 +78,19 @@ _AREA_ROLES = {
 }
 _LANGUAGE_BY_SUFFIX = {
     ".c": "C",
+    ".h": "C",
+    ".cc": "C++",
     ".cpp": "C++",
+    ".cxx": "C++",
+    ".hh": "C++",
+    ".hpp": "C++",
     ".cs": "C#",
     ".go": "Go",
     ".java": "Java",
     ".js": "JavaScript",
+    ".jsx": "JavaScript",
+    ".mjs": "JavaScript",
+    ".cjs": "JavaScript",
     ".kt": "Kotlin",
     ".kts": "Kotlin",
     ".php": "PHP",
@@ -393,23 +401,31 @@ def _python_surface(root: Path, path: Path, modules: dict[str, str]) -> tuple[li
     return symbols[:_MAX_SYMBOLS_PER_FILE], sorted(uses)
 
 
+_TSJS_EXPORT_PATTERN = re.compile(
+    r"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)", re.M
+)
 _SURFACE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
     ".js": (
         re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", re.M),
         re.compile(r"^\s*export\s+(?:default\s+)?class\s+([A-Za-z_$][\w$]*)", re.M),
     ),
-    ".ts": (
-        re.compile(
-            r"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)",
-            re.M,
-        ),
+    ".jsx": (
+        re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", re.M),
+        re.compile(r"^\s*export\s+(?:default\s+)?class\s+([A-Za-z_$][\w$]*)", re.M),
     ),
-    ".tsx": (
-        re.compile(
-            r"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)",
-            re.M,
-        ),
+    ".mjs": (
+        re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", re.M),
+        re.compile(r"^\s*export\s+(?:default\s+)?class\s+([A-Za-z_$][\w$]*)", re.M),
     ),
+    ".cjs": (
+        re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+([A-Za-z_$][\w$]*)", re.M),
+        re.compile(r"^\s*export\s+(?:default\s+)?class\s+([A-Za-z_$][\w$]*)", re.M),
+    ),
+    ".ts": (_TSJS_EXPORT_PATTERN,),
+    ".tsx": (_TSJS_EXPORT_PATTERN,),
+    # Vue SFCs embed a <script> block using JS/TS export syntax; the surrounding template/style
+    # markup never matches the export keyword so scanning the whole file is safe.
+    ".vue": (_TSJS_EXPORT_PATTERN,),
     ".go": (
         re.compile(r"^\s*func\s+([A-Z]\w*)\s*\(", re.M),
         re.compile(r"^\s*type\s+([A-Z]\w*)\s+", re.M),
@@ -427,6 +443,66 @@ _SURFACE_PATTERNS: dict[str, tuple[re.Pattern[str], ...]] = {
             r"(?:class|interface|object|fun)\s+([A-Za-z_]\w*)",
             re.M,
         ),
+    ),
+    # C has no export keyword, so a name is only counted as a function definition when a return
+    # type token precedes it (excludes control-flow keywords like `if`/`while`, which have none).
+    ".c": (
+        re.compile(r"^(?!static\b)(?:[A-Za-z_]\w*[\s*]+){1,4}([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)\s*\{", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?enum\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".h": (
+        re.compile(r"^(?!static\b)(?:[A-Za-z_]\w*[\s*]+){1,4}([A-Za-z_]\w*)\s*\([^;{}]*\)\s*\{", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)\s*\{", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?enum\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".cpp": (
+        re.compile(r"^\s*(?:template\s*<[^>]*>\s*)?class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*namespace\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".cc": (
+        re.compile(r"^\s*(?:template\s*<[^>]*>\s*)?class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*namespace\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".cxx": (
+        re.compile(r"^\s*(?:template\s*<[^>]*>\s*)?class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*namespace\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".hpp": (
+        re.compile(r"^\s*(?:template\s*<[^>]*>\s*)?class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*namespace\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".hh": (
+        re.compile(r"^\s*(?:template\s*<[^>]*>\s*)?class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*(?:typedef\s+)?struct\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*namespace\s+([A-Za-z_]\w*)\s*\{", re.M),
+    ),
+    ".cs": (
+        re.compile(
+            r"^\s*public\s+(?:static\s+|abstract\s+|sealed\s+|partial\s+)*"
+            r"(?:class|interface|struct|enum|record)\s+([A-Za-z_]\w*)",
+            re.M,
+        ),
+    ),
+    ".php": (
+        re.compile(r"^\s*(?:abstract\s+|final\s+)?class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*interface\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*trait\s+([A-Za-z_]\w*)", re.M),
+        # Global functions (column 0) and class methods declared `public function`.
+        re.compile(r"^function\s+([A-Za-z_]\w*)\s*\(", re.M),
+        re.compile(r"^\s+public\s+(?:static\s+)?function\s+([A-Za-z_]\w*)\s*\(", re.M),
+    ),
+    ".rb": (
+        re.compile(r"^\s*class\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*module\s+([A-Za-z_]\w*)", re.M),
+        re.compile(r"^\s*def\s+(?:self\.)?([a-z_]\w*[?!=]?)", re.M),
+    ),
+    ".swift": (
+        re.compile(r"^\s*(?:public|open)\s+(?:final\s+)?(?:class|struct|enum|protocol|func)\s+([A-Za-z_]\w*)", re.M),
     ),
 }
 
@@ -600,7 +676,9 @@ def _atomic_write(root: Path, path: Path, content: str) -> None:
             pass
 
 
-def refresh_map(root: str | os.PathLike[str], *, dry_run: bool = False) -> MapResult:
+def refresh_map(root: str | os.PathLike[str], *, dry_run: bool = False, force: bool = False) -> MapResult:
+    """force=True 는 소유권 거부만 우회한다 (init — 현재 디렉토리가 정본인 명시 재설정).
+    안전 검사(심링크·경로 탈출·예약 파일명 충돌)는 force 와 무관하게 하드 에러."""
     base = Path(root).resolve()
     content, files_scanned, landmarks, project = _render(base)
     map_dir = _map_dir(base, create=not dry_run)
@@ -609,7 +687,7 @@ def refresh_map(root: str | os.PathLike[str], *, dry_run: bool = False) -> MapRe
         current = project_path.read_text(encoding="utf-8")
     except OSError:
         current = ""
-    if project_path.exists() and not _owned_project_map(current):
+    if project_path.exists() and not _owned_project_map(current) and not force:
         raise MapOwnershipError(f"refusing to overwrite human-owned {project_path}")
     changed = current != content
     index_path = map_dir / "INDEX.md"

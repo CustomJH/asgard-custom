@@ -179,6 +179,23 @@ class TestProjectMap(CodeMapBase):
         with self.assertRaises(MapOwnershipError):
             refresh_map(self.root)
 
+    def test_refresh_force_reowns_unowned_project_map(self):
+        # init 경로 — force 는 소유권 거부만 우회해 현재 디렉토리 스캔 결과로 엎어쓴다.
+        from asgard.code_map import MapOwnershipError, refresh_map
+
+        self.seed_python_project()
+        self.write(".asgard/map/PROJECT.md", "# human project map\n")
+        result = refresh_map(self.root, force=True)
+        self.assertTrue(result.changed)
+        body = open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
+        self.assertNotIn("# human project map", body)
+        refresh_map(self.root)  # 재귀속 후엔 asgard 소유 — 비강제 갱신이 다시 통과한다
+        # force 는 예약 파일명 충돌(안전 검사)은 우회하지 않는다
+        os.remove(os.path.join(self.root, ".asgard", "map", "PROJECT.md"))
+        self.write(".asgard/map/project.md", "# imposter\n")
+        with self.assertRaises(MapOwnershipError):
+            refresh_map(self.root, force=True)
+
     def test_unsafe_filenames_and_manifest_labels_cannot_break_markdown(self):
         from asgard.code_map import refresh_map
 
@@ -358,6 +375,90 @@ class TestMapCLI(CodeMapBase):
         check = next(c for c in _trinity_checks(self.root) if c["name"] == "codebase map")
         self.assertFalse(check["ok"])
         self.assertIn("unsafe", check["detail"])
+
+
+class TestLanguageSurfaceCoverage(CodeMapBase):
+    """Public-surface symbol extraction for languages beyond Python."""
+
+    def render(self) -> str:
+        from asgard.code_map import refresh_map
+
+        refresh_map(self.root)
+        return open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
+
+    def test_c_surface_excludes_static_and_control_flow(self):
+        self.write("pyproject.toml", '[project]\nname = "cdemo"\n')
+        self.write(
+            "src/point.c",
+            "static int helper(int x) {\n"
+            "    if (x > 0) {\n"
+            "        return x;\n"
+            "    }\n"
+            "    return -x;\n"
+            "}\n\n"
+            "int add(int a, int b) {\n"
+            "    return a + b;\n"
+            "}\n\n"
+            "struct Point {\n"
+            "    int x;\n"
+            "};\n",
+        )
+        project_map = self.render()
+        self.assertIn("- `src/point.c` — public surface:", project_map)
+        self.assertIn("add", project_map)
+        self.assertIn("Point", project_map)
+        self.assertNotIn("helper", project_map)
+        self.assertIn("- Languages by observed source files: C (1)", project_map)
+
+    def test_php_surface_public_methods_only(self):
+        self.write("pyproject.toml", '[project]\nname = "phpdemo"\n')
+        self.write(
+            "src/Widget.php",
+            "<?php\nclass Widget {\n    public function render() {}\n    private function hidden() {}\n}\n",
+        )
+        project_map = self.render()
+        self.assertIn("- `src/Widget.php` — public surface:", project_map)
+        self.assertIn("Widget", project_map)
+        self.assertIn("render", project_map)
+        self.assertNotIn("hidden", project_map)
+
+    def test_ruby_swift_csharp_cpp_vue_surfaces_and_language_counts(self):
+        self.write("pyproject.toml", '[project]\nname = "polyglot"\n')
+        self.write("src/circle.rb", "module Shapes\n  class Circle\n    def area\n      3.14\n    end\n  end\nend\n")
+        self.write(
+            "src/point.swift",
+            "public struct Point {\n    public func distance() -> Double { 0 }\n}\n\nclass Hidden {}\n",
+        )
+        self.write(
+            "src/Widget.cs",
+            "namespace Demo {\n    public class Widget {\n        public void Render() {}\n    }\n    internal class Hidden {}\n}\n",
+        )
+        self.write("src/vector.cpp", "namespace geo {\n\nclass Vector {\npublic:\n    int x, y;\n};\n\n}\n")
+        self.write(
+            "src/Widget.vue",
+            "<template><div>{{ msg }}</div></template>\n<script>\nexport function helper() {}\n</script>\n",
+        )
+        self.write("src/legacy.jsx", "export function Button() { return null; }\n")
+
+        project_map = self.render()
+        self.assertIn("- `src/circle.rb` — public surface:", project_map)
+        self.assertIn("Circle", project_map)
+        self.assertIn("- `src/point.swift` — public surface:", project_map)
+        self.assertIn("Point", project_map)
+        self.assertNotIn("Hidden", project_map)
+        self.assertIn("- `src/Widget.cs` — public surface:", project_map)
+        self.assertIn("- `src/vector.cpp` — public surface:", project_map)
+        self.assertIn("Vector", project_map)
+        self.assertIn("- `src/Widget.vue` — public surface:", project_map)
+        self.assertIn("helper", project_map)
+        self.assertIn("- `src/legacy.jsx` — public surface:", project_map)
+        self.assertIn("Button", project_map)
+        self.assertIn("Ruby (1)", project_map)
+        self.assertIn("Swift (1)", project_map)
+        self.assertIn("C# (1)", project_map)
+        self.assertIn("C++ (1)", project_map)
+        self.assertIn("Vue (1)", project_map)
+        self.assertIn("JavaScript (1)", project_map)
 
 
 if __name__ == "__main__":
