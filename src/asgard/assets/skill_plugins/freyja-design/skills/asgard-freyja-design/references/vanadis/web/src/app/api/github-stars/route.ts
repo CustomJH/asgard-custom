@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 // being hit per-visitor — unauthenticated github.com is rate-limited to 60
 // req/hr/IP, which a landing page would blow through instantly. An optional
 // GITHUB_TOKEN lifts the ceiling but is not required.
-const REPO = "kwakseongjae/vanadis";
+const REPO = "vanadis/vanadis";
 
 export async function GET() {
   try {

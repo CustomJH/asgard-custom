@@ -10,7 +10,7 @@ Give your coding agent (Claude Desktop, Cursor, Cline, Continue, Codex) instant 
 - **Deterministic.** Tools are pure file reads + keyword search. Same input, same output.
 - **Drop-in.** One JSON snippet per IDE. `npx -y vanadis-mcp` and you're done.
 
-> Companion to the [vanadis](https://github.com/kwakseongjae/vanadis) CLI / skill suite. This server is the read-side; the CLI is the author-side.
+> Companion to the [vanadis](https://github.com/vanadis/vanadis) CLI / skill suite. This server is the read-side; the CLI is the author-side.
 
 ---
 
@@ -163,7 +163,7 @@ We trade catalog breadth for **bundled, deterministic, offline access to a hand-
 
 - **v0.2** — embedding-based `search_by_vibe` (still local, using a small bundled model) + `extract_tokens` tool returning JSON token sets.
 - **v0.3** — additional resources for component examples + Figma-token export.
-- Bundled catalog grows with the upstream [vanadis](https://github.com/kwakseongjae/vanadis) repo.
+- Bundled catalog grows with the upstream [vanadis](https://github.com/vanadis/vanadis) repo.
 
 ---
 
@@ -171,4 +171,4 @@ We trade catalog breadth for **bundled, deterministic, offline access to a hand-
 
 MIT. © vanadis contributors. Brand names, logos, and DESIGN.md descriptions reference each brand's publicly published design system; usage as inspiration / interoperability per nominative fair use. File an issue to request removal of any brand.
 
-Source: <https://github.com/kwakseongjae/vanadis/tree/main/packages/mcp>
+Source: <https://github.com/vanadis/vanadis/tree/main/packages/mcp>

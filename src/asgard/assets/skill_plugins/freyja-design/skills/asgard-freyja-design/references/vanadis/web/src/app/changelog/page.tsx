@@ -65,7 +65,7 @@ export default function ChangelogIndexPage() {
           <nav className="flex items-center gap-4 text-xs sm:text-sm">
             <Link href="/docs/en" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/faq" className="text-muted-foreground hover:text-foreground">FAQ</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>
@@ -127,7 +127,7 @@ export default function ChangelogIndexPage() {
         <div className="mt-10 rounded-xl border border-border/60 bg-card/20 p-5 text-sm text-muted-foreground leading-relaxed">
           Source: {" "}
           <a
-            href="https://github.com/kwakseongjae/vanadis/blob/main/CHANGELOG.md"
+            href="https://github.com/vanadis/vanadis/blob/main/CHANGELOG.md"
             target="_blank"
             rel="noopener noreferrer"
             className="inline-flex items-center gap-1 underline underline-offset-4 text-foreground"

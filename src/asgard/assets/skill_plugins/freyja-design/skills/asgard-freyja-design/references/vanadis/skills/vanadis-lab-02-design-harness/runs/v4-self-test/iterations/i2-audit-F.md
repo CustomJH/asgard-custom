@@ -3,7 +3,7 @@
 **Date:** 2026-04-27
 **Persona:** F — empty repo, "Stripe like" reference, zero design vocab, 5-minute patience cap, will smash `go` on every default, wants handoff zip ASAP for v0/Cursor.
 **Scenario:** `vanadis install-skills` → `claude` → `/vanadis-harness Stripe 같이 만들어줘 결제 SaaS 메인`
-**Fixture:** `/Users/kwakseongjae/Desktop/projects/vanadis/skills/vanadis-lab-02-design-harness/runs/v4-self-test/fixtures/founder/README.md` (empty repo, billing-saas, references stripe.com/atlas)
+**Fixture:** `/Users/vanadis/Desktop/projects/vanadis/skills/vanadis-lab-02-design-harness/runs/v4-self-test/fixtures/founder/README.md` (empty repo, billing-saas, references stripe.com/atlas)
 
 ---
 

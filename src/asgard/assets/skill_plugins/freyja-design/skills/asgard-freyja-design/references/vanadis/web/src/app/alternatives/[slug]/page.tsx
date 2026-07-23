@@ -262,7 +262,7 @@ export default async function AlternativePage({
           <nav className="flex items-center gap-4 text-xs sm:text-sm">
             <Link href="/docs/en" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/faq" className="text-muted-foreground hover:text-foreground">FAQ</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>

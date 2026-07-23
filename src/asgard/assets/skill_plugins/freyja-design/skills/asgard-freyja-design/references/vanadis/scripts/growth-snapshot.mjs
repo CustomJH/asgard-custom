@@ -21,7 +21,7 @@ const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..'
 const outFile = path.join(repoRoot, 'research', 'sprint-metrics.jsonl');
 
 const NPM_URL = 'https://api.npmjs.org/downloads/point/last-day/vanadis-cli';
-const GH_URL = 'https://api.github.com/repos/kwakseongjae/vanadis';
+const GH_URL = 'https://api.github.com/repos/vanadis/vanadis';
 
 function arg(name) {
   const i = process.argv.indexOf(`--${name}`);

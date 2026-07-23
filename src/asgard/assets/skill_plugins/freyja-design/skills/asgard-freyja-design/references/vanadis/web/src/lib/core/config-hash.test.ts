@@ -141,9 +141,9 @@ describe("encodeConfig/decodeConfig — stylePreferences", () => {
 });
 
 describe("generateNpxCommand", () => {
-  it("emits the npx github:kwakseongjae/vanadis --config=<hash> shape", () => {
+  it("emits the npx github:vanadis/vanadis --config=<hash> shape", () => {
     const cmd = generateNpxCommand("vercel", fullOverrides, ["button"]);
-    expect(cmd).toMatch(/^npx github:kwakseongjae\/vanadis --config=[\w-]+$/);
+    expect(cmd).toMatch(/^npx github:vanadis\/vanadis --config=[\w-]+$/);
   });
 
   it("hash inside the command roundtrips via decodeConfig", () => {

@@ -38,7 +38,7 @@ No input — the form pulls the tool list. Confirm all 3 show **title + `readOnl
 | Documentation URL | `https://vanadis.kr/docs/connector` | |
 | Privacy policy URL | `https://vanadis.kr/privacy` | |
 | Terms of service URL | `https://vanadis.kr/terms` (KR: `/terms/ko`) | |
-| Support contact | `gkffhdnls13@gmail.com` (issues: `github.com/kwakseongjae/vanadis/issues`) | |
+| Support contact | `contact@vanadis.kr` (issues: `github.com/vanadis/vanadis/issues`) | |
 | Icon | `https://vanadis.kr/icon.png` (256×256 square) | |
 | URL slug | `vanadis` | **permanent — set carefully** |
 
@@ -55,7 +55,7 @@ No input — the form pulls the tool list. Confirm all 3 show **title + `readOnl
 |---|---|
 | Company name | `vanadis` (individual maintainer) |
 | Company website | `https://vanadis.kr` |
-| Primary contact | your name + `gkffhdnls13@gmail.com` (pre-filled from account) |
+| Primary contact | your name + `contact@vanadis.kr` (pre-filled from account) |
 
 ## Step 7 — Authentication
 - **No authentication** (public read-only catalog). No OAuth, no custom credentials.
@@ -103,7 +103,7 @@ The 11 steps above are grouped into 6 pages on `clau.de/mcp-directory-submission
 **Testing** — test account/creds items = "(if relevant)" → N/A (no account) ✓ · **"all tools tested in the surfaces" → check only AFTER the self-test.**
 
 **Additional Information (optional free-text), suggested paste:**
-> Public, read-only, unauthenticated connector over our own curated catalog of 286 brand design systems — no user data, no PII. The only external call: the short vibe-search query is sent to OpenRouter to compute a ranking embedding (disclosed in our privacy policy; not stored). Contact: gkffhdnls13@gmail.com.
+> Public, read-only, unauthenticated connector over our own curated catalog of 286 brand design systems — no user data, no PII. The only external call: the short vibe-search query is sent to OpenRouter to compute a ranking embedding (disclosed in our privacy policy; not stored). Contact: contact@vanadis.kr.
 
 **Two items gate the legal page → both need YOUR self-test:** add the connector in Claude.ai (web), run the 3 example prompts, then check the two testing boxes.
 

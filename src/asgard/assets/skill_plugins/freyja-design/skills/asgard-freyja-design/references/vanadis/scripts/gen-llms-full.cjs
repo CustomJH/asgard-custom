@@ -132,7 +132,7 @@ parts.push(section('Bundled reference brand catalog', listReferences()));
 
 parts.push(section('Raw DESIGN.md twin endpoints', mdTwinsBlock()));
 
-parts.push(`\n\n===========================================================\n# Citation\n===========================================================\n\nvanadis is built and maintained by Kwak Seongjae (https://github.com/kwakseongjae).\nMIT licensed. Reference brand DESIGN.md files are reproduced for educational reference and remain the property of their respective companies.\n`);
+parts.push(`\n\n===========================================================\n# Citation\n===========================================================\n\nvanadis is MIT licensed. Reference brand DESIGN.md files are reproduced for educational reference and remain the property of their respective companies.\n`);
 
 fs.mkdirSync(path.dirname(outFile), { recursive: true });
 fs.writeFileSync(outFile, parts.join(''), 'utf8');

@@ -213,7 +213,7 @@ export default function FaqPage() {
               Design systems
             </Link>
             <a
-              href="https://github.com/kwakseongjae/vanadis"
+              href="https://github.com/vanadis/vanadis"
               target="_blank"
               rel="noopener noreferrer"
               className="text-muted-foreground hover:text-foreground"
@@ -296,7 +296,7 @@ export default function FaqPage() {
           </p>
           <div className="mt-4 flex flex-wrap gap-2">
             <a
-              href="https://github.com/kwakseongjae/vanadis/issues/new"
+              href="https://github.com/vanadis/vanadis/issues/new"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs font-medium hover:bg-accent"

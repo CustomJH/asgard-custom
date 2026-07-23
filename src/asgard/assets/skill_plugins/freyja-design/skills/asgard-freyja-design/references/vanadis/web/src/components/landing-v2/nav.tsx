@@ -97,7 +97,7 @@ export function V2Nav() {
             Docs
           </Link>
           <a
-            href="https://github.com/kwakseongjae/vanadis"
+            href="https://github.com/vanadis/vanadis"
             target="_blank"
             rel="noopener noreferrer"
             aria-label={stars != null ? `GitHub — ${formatStars(stars)} stars` : "GitHub"}

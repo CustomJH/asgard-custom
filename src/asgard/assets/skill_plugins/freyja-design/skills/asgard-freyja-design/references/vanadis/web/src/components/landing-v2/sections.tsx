@@ -803,7 +803,7 @@ const CONTACT_TILES: {
     label: "Found a bug?",
     desc: "Open a GitHub issue",
     href:
-      "https://github.com/kwakseongjae/vanadis/issues/new?labels=bug&template=bug_report.md",
+      "https://github.com/vanadis/vanadis/issues/new?labels=bug&template=bug_report.md",
     external: true,
     Icon: Bug,
     accent: "#ff6b6b",
@@ -812,7 +812,7 @@ const CONTACT_TILES: {
     label: "Feature request",
     desc: "Tell us what to build next",
     href:
-      "https://github.com/kwakseongjae/vanadis/issues/new?labels=enhancement&template=feature_request.md",
+      "https://github.com/vanadis/vanadis/issues/new?labels=enhancement&template=feature_request.md",
     external: true,
     Icon: Lightbulb,
     accent: "#ffb547",
@@ -821,7 +821,7 @@ const CONTACT_TILES: {
     label: "Request a brand",
     desc: "Want your favorite DS extracted?",
     href:
-      "mailto:gkffhdnls13@gmail.com?subject=vanadis%20%E2%80%94%20Brand%20request&body=Brand%3A%20%0AWebsite%3A%20%0AWhat%20I%20love%20about%20it%3A%20",
+      "mailto:contact@vanadis.kr?subject=vanadis%20%E2%80%94%20Brand%20request&body=Brand%3A%20%0AWebsite%3A%20%0AWhat%20I%20love%20about%20it%3A%20",
     Icon: Sparkles,
     accent: "#5546ff",
   },
@@ -829,7 +829,7 @@ const CONTACT_TILES: {
     label: "Special thanks",
     desc: "Say hi · share what you shipped",
     href:
-      "mailto:gkffhdnls13@gmail.com?subject=vanadis%20%E2%80%94%20Special%20thanks",
+      "mailto:contact@vanadis.kr?subject=vanadis%20%E2%80%94%20Special%20thanks",
     Icon: Heart,
     accent: "#ec4899",
   },
@@ -905,7 +905,7 @@ export function FinalCtaFooter() {
                 <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
               </Link>
               <a
-                href="https://github.com/kwakseongjae/vanadis"
+                href="https://github.com/vanadis/vanadis"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 rounded-full border px-6 py-3.5 text-base font-medium text-white/85 transition-colors hover:bg-white/5 hover:text-white"
@@ -1002,7 +1002,7 @@ export function FinalCtaFooter() {
                   <span>v{PKG_VERSION}</span>
                 </a>
                 <a
-                  href="https://github.com/kwakseongjae/vanadis"
+                  href="https://github.com/vanadis/vanadis"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium text-white/70 transition-colors hover:bg-white/5 hover:text-white"
@@ -1096,7 +1096,7 @@ export function FinalCtaFooter() {
                 </li>
                 <li>
                   <a
-                    href="https://github.com/kwakseongjae/vanadis"
+                    href="https://github.com/vanadis/vanadis"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-white/85 transition-colors hover:text-white"
@@ -1106,7 +1106,7 @@ export function FinalCtaFooter() {
                 </li>
                 <li>
                   <a
-                    href="https://github.com/kwakseongjae/vanadis/issues"
+                    href="https://github.com/vanadis/vanadis/issues"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-white/85 transition-colors hover:text-white"
@@ -1116,7 +1116,7 @@ export function FinalCtaFooter() {
                 </li>
                 <li>
                   <a
-                    href="https://github.com/kwakseongjae/vanadis/blob/main/LICENSE"
+                    href="https://github.com/vanadis/vanadis/blob/main/LICENSE"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="text-sm text-white/85 transition-colors hover:text-white"
@@ -1136,7 +1136,7 @@ export function FinalCtaFooter() {
             <div>
               &copy; {new Date().getFullYear()} vanadis · Open source ·{" "}
               <a
-                href="https://github.com/kwakseongjae/vanadis/blob/main/LICENSE"
+                href="https://github.com/vanadis/vanadis/blob/main/LICENSE"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="underline underline-offset-2 hover:text-white"

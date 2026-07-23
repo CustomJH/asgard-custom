@@ -251,7 +251,7 @@ export function HeroV2() {
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" />
             </Link>
             <a
-              href="https://github.com/kwakseongjae/vanadis"
+              href="https://github.com/vanadis/vanadis"
               target="_blank"
               rel="noopener noreferrer"
               className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-full border px-4 py-3 text-sm font-medium text-white/90 transition-colors hover:bg-white/5 sm:px-5"

@@ -7,7 +7,7 @@ import path from "node:path";
 import { repoRoot } from "./_env.mjs";
 
 const PKG = "vanadis-cli";
-const REPO = "kwakseongjae/vanadis";
+const REPO = "vanadis/vanadis";
 const UA = { "User-Agent": "vanadis-analytics" };
 
 async function getJson(url, headers = {}) {

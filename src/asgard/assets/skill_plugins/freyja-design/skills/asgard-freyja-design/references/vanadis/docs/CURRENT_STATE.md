@@ -19,7 +19,7 @@
 - 릴리스 게이트는 CLI 6 files/101 tests, Web 50 files/820 tests, 양쪽 TypeScript, Web ESLint 0 errors(기존 warning 40), catalog/counts, 1,458-page production build, `git diff --check` green이다.
 - final QA round 1의 유일한 REVISION이던 production locale link 404는 배포 후 다섯 경로 200으로 닫혔다. 코드/패키지/링크 8개 항목이 모두 PASS다.
 - README EN/KO/JA/ZH-TW와 npm metadata를 outcome-first·quality-graded·MCP-free local workflow 기준으로 교정했다. npm dry-run tarball은 5,747,433B packed / 20,770,035B unpacked / 533 entries이며 README, logo asset, dist CLI가 모두 포함되고 internal-only docs는 없다.
-- CLI-first implementation, web merge/deploy, npm publish/tag까지 완료했다. 릴리스 워크플로우: https://github.com/kwakseongjae/vanadis/actions/runs/29811360657
+- CLI-first implementation, web merge/deploy, npm publish/tag까지 완료했다. 릴리스 워크플로우: https://github.com/vanadis/vanadis/actions/runs/29811360657
 - 2026-06-22~07-19 complete 28d 기준 GA는 7,402 users, legacy `/docs` 186 users(2.5%), `act_install_copy` 282 users(3.8%; 475 events), `act_prompt_copy` 192 users다. Builder는 install-copy 229 events/135 users로 최대 surface이며 desktop handoff는 보이지만 mobile은 0×0로 완전 비노출이다. npm은 같은 기간 2,667 downloads라 web copy event의 5.6×이나 npm download는 unique install이 아니다.
 - 이전 clean-install gate는 `/tmp` candidate `1.9.0` install → Codex 20 skills/18 roles/440 refs → `doctor`까지 통과했다. 이번 변경은 package metadata/README와 web activation layer이며 publish 직전 동일 tarball clean-install을 한 번 더 수행한다.
 - 다음 queue: production activation funnel 관찰 → current v1.9 full-trace 사례 → 기존 route rescue 사례 → P2 Home comparison mobile overflow와 Builder error/Retry 상태 교정이다.

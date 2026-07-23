@@ -38,7 +38,7 @@ export default function TermsPage() {
             <Link href="/docs/en" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/privacy" className="text-muted-foreground hover:text-foreground">Privacy</Link>
             <Link href="/terms/ko" className="text-muted-foreground hover:text-foreground">한국어</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>
@@ -123,8 +123,8 @@ export default function TermsPage() {
           <p>
             We may update these terms; we&apos;ll change the date above when we do.
             Questions? Email{" "}
-            <a href="mailto:gkffhdnls13@gmail.com" className="underline underline-offset-2 hover:text-foreground">
-              gkffhdnls13@gmail.com
+            <a href="mailto:contact@vanadis.kr" className="underline underline-offset-2 hover:text-foreground">
+              contact@vanadis.kr
             </a>
             . Korean users can read the{" "}
             <Link href="/terms/ko" className="underline underline-offset-2 hover:text-foreground">

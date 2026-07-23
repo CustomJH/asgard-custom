@@ -122,7 +122,7 @@ export default function RootLayout({
                   url: siteUrl,
                   logo: `${siteUrl}/logo.png`,
                   sameAs: [
-                    "https://github.com/kwakseongjae/vanadis",
+                    "https://github.com/vanadis/vanadis",
                     "https://www.npmjs.com/package/vanadis-cli",
                   ],
                 },

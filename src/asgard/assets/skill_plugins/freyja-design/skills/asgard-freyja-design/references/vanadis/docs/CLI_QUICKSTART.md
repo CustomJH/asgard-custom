@@ -152,6 +152,6 @@ Common recovery paths:
 - [繁體中文（台灣）文件](https://vanadis.kr/docs/zh-tw)
 - [Reference catalog](https://vanadis.kr/design-systems)
 - [Migration guide for 0.1.x](../MIGRATION.md)
-- [GitHub repository](https://github.com/kwakseongjae/vanadis)
+- [GitHub repository](https://github.com/vanadis/vanadis)
 
 For command flags, run `npx vanadis-cli@latest --help` or `npx vanadis-cli@latest doctor --help`.

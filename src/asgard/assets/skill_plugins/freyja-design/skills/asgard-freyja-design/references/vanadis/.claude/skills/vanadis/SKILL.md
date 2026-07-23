@@ -127,7 +127,7 @@ Vanadis `DESIGN.md` files are designed to be consumed by Claude Code, Cursor, Ge
 
 ## Related resources
 
-- Vanadis v0.1 spec: `spec/vanadis-v0.1.md` in this project, or at <https://github.com/kwakseongjae/vanadis>.
-- Reference library: 67 real-company `DESIGN.md` files at <https://github.com/kwakseongjae/vanadis/tree/main/references>.
+- Vanadis v0.1 spec: `spec/vanadis-v0.1.md` in this project, or at <https://github.com/vanadis/vanadis>.
+- Reference library: 67 real-company `DESIGN.md` files at <https://github.com/vanadis/vanadis/tree/main/references>.
 - Google Stitch format reference: <https://stitch.withgoogle.com/docs/design-md/overview/>.
 - Anthropic's own anti-slop guidance lives in the `frontend-design` skill at <https://github.com/anthropics/skills>; the list above is informed by and intentionally consistent with it.

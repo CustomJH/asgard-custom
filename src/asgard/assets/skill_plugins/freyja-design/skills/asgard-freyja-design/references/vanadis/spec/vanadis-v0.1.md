@@ -7,7 +7,7 @@
 | Adds | Brand Philosophy Layer (6 sections) |
 | Target consumer | Claude Code, Cursor, Gemini CLI, Codex, other AI coding agents |
 | Filename | `DESIGN.md` at project root |
-| Status | Draft — feedback welcome at https://github.com/kwakseongjae/vanadis/issues |
+| Status | Draft — feedback welcome at https://github.com/vanadis/vanadis/issues |
 
 ---
 
@@ -182,7 +182,7 @@ specific middle.
 
 **What to write.** 2–4 persona sketches, each 3–5 lines. Who the product is for in *concrete* terms — name, age bracket, context of use, the sentence they'd say about it.
 
-**Why agents need it.** Personas ground generated UI in a real use case. A Toss screen designed "for 28-year-old Seongjae who checks his balance on the subway at 8:47am before a meeting" is different from one designed "for the user".
+**Why agents need it.** Personas ground generated UI in a real use case. A Toss screen designed "for 28-year-old Jiho who checks his balance on the subway at 8:47am before a meeting" is different from one designed "for the user".
 
 **Format.**
 
@@ -379,4 +379,4 @@ Vanadis v0.1 builds on:
 - [Anthropic `frontend-design` skill](https://github.com/anthropics/skills) for the anti-slop list informing section 2's conventions.
 - [VoltAgent awesome-design-md](https://github.com/VoltAgent/awesome-design-md) for demonstrating the demand for a community-curated library of DESIGN.md files.
 
-Vanadis is MIT-licensed and openly contributable. File issues and PRs at <https://github.com/kwakseongjae/vanadis>.
+Vanadis is MIT-licensed and openly contributable. File issues and PRs at <https://github.com/vanadis/vanadis>.

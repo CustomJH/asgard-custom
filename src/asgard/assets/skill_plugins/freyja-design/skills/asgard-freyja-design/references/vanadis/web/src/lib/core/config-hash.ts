@@ -88,7 +88,7 @@ export function generateNpxCommand(
   stylePreferences?: StylePreferences,
 ): string {
   const hash = encodeConfig(refId, overrides, components, stylePreferences);
-  return `npx github:kwakseongjae/vanadis --config=${hash}`;
+  return `npx github:vanadis/vanadis --config=${hash}`;
 }
 
 // ── StylePreferences serialization ─────────────────────────────────

@@ -42,7 +42,7 @@ export default function PrivacyKoPage() {
           <nav className="flex items-center gap-4 text-xs sm:text-sm">
             <Link href="/docs/ko" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/privacy" className="text-muted-foreground hover:text-foreground">EN</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>
@@ -118,7 +118,7 @@ export default function PrivacyKoPage() {
 
         <Section n={6} title="정보주체의 권리·의무 및 행사 방법">
           <p>정보주체는 열람·정정·삭제·처리정지를 요구할 수 있으며,{" "}
-            <a href="mailto:gkffhdnls13@gmail.com" className="underline underline-offset-2 hover:text-foreground">gkffhdnls13@gmail.com</a>{" "}
+            <a href="mailto:contact@vanadis.kr" className="underline underline-offset-2 hover:text-foreground">contact@vanadis.kr</a>{" "}
             으로 요청할 수 있습니다.</p>
         </Section>
 
@@ -144,7 +144,7 @@ export default function PrivacyKoPage() {
 
         <Section n={10} title="개인정보 보호책임자">
           <p>개인정보 처리에 관한 문의·불만은{" "}
-            <a href="mailto:gkffhdnls13@gmail.com" className="underline underline-offset-2 hover:text-foreground">gkffhdnls13@gmail.com</a>{" "}
+            <a href="mailto:contact@vanadis.kr" className="underline underline-offset-2 hover:text-foreground">contact@vanadis.kr</a>{" "}
             으로 연락해 주시기 바랍니다.</p>
         </Section>
 

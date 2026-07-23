@@ -1468,7 +1468,7 @@ export async function runInstallSkills(
   }
 
   // Generate per-channel sub-agent definitions from the canonical `agents/`.
-  // This is the v2 portable source-of-truth pattern (oh-my-agent style).
+  // This is the v2 portable source-of-truth pattern.
   // `canonicalAgents` is already resolved above by the TUI / --agents filter.
   for (const target of targets) {
     if (target === 'claude-code') {

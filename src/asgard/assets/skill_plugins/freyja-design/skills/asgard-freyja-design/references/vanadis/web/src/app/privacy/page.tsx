@@ -41,7 +41,7 @@ export default function PrivacyPage() {
             <Link href="/docs/en" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/terms" className="text-muted-foreground hover:text-foreground">Terms</Link>
             <Link href="/privacy/ko" className="text-muted-foreground hover:text-foreground">한국어</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>
@@ -75,8 +75,8 @@ export default function PrivacyPage() {
           <p>
             vanadis is maintained by an individual. You can reach us any
             time at{" "}
-            <a href="mailto:gkffhdnls13@gmail.com" className="underline underline-offset-2 hover:text-foreground">
-              gkffhdnls13@gmail.com
+            <a href="mailto:contact@vanadis.kr" className="underline underline-offset-2 hover:text-foreground">
+              contact@vanadis.kr
             </a>
             .
           </p>
@@ -165,8 +165,8 @@ export default function PrivacyPage() {
         <Section title="Your rights, children & changes">
           <p>
             Email{" "}
-            <a href="mailto:gkffhdnls13@gmail.com" className="underline underline-offset-2 hover:text-foreground">
-              gkffhdnls13@gmail.com
+            <a href="mailto:contact@vanadis.kr" className="underline underline-offset-2 hover:text-foreground">
+              contact@vanadis.kr
             </a>{" "}
             to ask about this data or request deletion. EU/UK users have GDPR
             rights (access, deletion, objection, withdrawing consent); Korean

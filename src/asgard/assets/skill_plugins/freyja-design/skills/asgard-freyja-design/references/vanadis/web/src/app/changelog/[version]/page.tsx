@@ -88,7 +88,7 @@ export default async function ChangelogVersionPage({
           <nav className="flex items-center gap-4 text-xs sm:text-sm">
             <Link href="/changelog" className="text-muted-foreground hover:text-foreground">All releases</Link>
             <Link href="/docs/en" className="text-muted-foreground hover:text-foreground">Docs</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>

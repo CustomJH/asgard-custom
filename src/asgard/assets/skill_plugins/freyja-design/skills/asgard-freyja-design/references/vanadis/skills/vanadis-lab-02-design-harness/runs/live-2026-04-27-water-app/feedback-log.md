@@ -2,7 +2,7 @@
 
 **Lab version:** v1 baseline
 **Task:** "물을 하루 3번 이상 음용하도록 유도하는 웹앱의 메인 화면"
-**Driver:** kwakseongjae (별도 Claude Code 세션)
+**Driver:** vanadis (별도 Claude Code 세션)
 **Observer:** main session (this conversation) — applies critical fixes immediately, queues non-critical observations.
 
 ## Triage policy
@@ -106,7 +106,7 @@
   - `vanadis harness "..." --internal` → JSON 단일 라인 emit ✅
 
 ### 2026-04-27 19:15 — v2 B-partial 마이그레이션 적용 완료
-- **Reported by:** user — "voice fingerprint 패턴 + oh-my-* 리서치 기반 재설계. 스킬화 + 러닝커브 적정선"
+- **Reported by:** user — "voice fingerprint 패턴 + 외부 하니스 리서치 기반 재설계. 스킬화 + 러닝커브 적정선"
 - **Decision:** B-partial scope (A + B-partial + C + D), C(전부 pure-skill 도입)는 v3 candidate로 보류.
 - **Applied:**
   - **A. `agents/` portable source-of-truth** — `agents/vanadis-*.md` 8개를 canonical로 격상. `install-skills`가 `parseCanonicalAgent()` + `renderClaudeAgent()` / `renderCodexAgent()`로 Claude/Codex 채널별 generate. `.claude/agents/` 와 `.codex/agents/` 는 generated artifact.
@@ -225,6 +225,6 @@
 - **H2 — Slash command discoverability.** Claude Code의 `/vanadis-harness` 자동 안내가 "skill: ✕ command: ✓"로 거부 → 첫 사용자에게 마찰. v2: install-skills outro에 "슬래시는 하이픈이에요 — `/vanadis-harness`" 명시. **Done in v2.**
 - **H3 — Stop-hook re-prompting** (settings.json hook). User checkpoint 자동 재진입. v3 candidate.
 - **H4 — Pure-skill `vanadis init prepare`/`vanadis remember` port.** delta_set 로직 + preferences 포맷을 스킬 프로즈에 인코드. 안정성 검증 후 진행. v3+ candidate.
-- **H5 — Tmux 다중 CLI fan-out.** Claude + Codex + Gemini 페인 동시 — oh-my-claudecode 패턴. v3 candidate.
+- **H5 — Tmux 다중 CLI fan-out.** Claude + Codex + Gemini 페인 동시 — 멀티 CLI 하니스 패턴. v3 candidate.
 - **H6 — voice-fingerprint manifest 자동 갱신**: 빌드 타임 스크립트로 reference 추가/수정 시 자동 재생성. 현재는 일회성 batch.
 

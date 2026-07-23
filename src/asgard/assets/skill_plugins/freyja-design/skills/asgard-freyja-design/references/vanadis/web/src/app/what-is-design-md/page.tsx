@@ -115,7 +115,7 @@ export default function WhatIsDesignMdPage() {
           <nav className="flex items-center gap-4 text-xs sm:text-sm">
             <Link href="/docs/en" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/faq" className="text-muted-foreground hover:text-foreground">FAQ</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>
@@ -191,7 +191,7 @@ export default function WhatIsDesignMdPage() {
         <p className="mt-4 text-[15px] leading-relaxed text-muted-foreground">
           전체 스펙은{" "}
           <a
-            href="https://github.com/kwakseongjae/vanadis/blob/main/spec/vanadis-v0.1.md"
+            href="https://github.com/vanadis/vanadis/blob/main/spec/vanadis-v0.1.md"
             target="_blank"
             rel="noopener noreferrer"
             className="underline underline-offset-4 text-foreground"

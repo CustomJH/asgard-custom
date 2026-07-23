@@ -77,7 +77,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/kwakseongjae/vanadis.git"
+    "url": "git+https://github.com/vanadis/vanadis.git"
   },
   "engines": {
     "node": ">=18"
@@ -101,7 +101,7 @@
   },
   "author": "",
   "bugs": {
-    "url": "https://github.com/kwakseongjae/vanadis/issues"
+    "url": "https://github.com/vanadis/vanadis/issues"
   },
   "homepage": "https://vanadis.kr/docs/en"
 }

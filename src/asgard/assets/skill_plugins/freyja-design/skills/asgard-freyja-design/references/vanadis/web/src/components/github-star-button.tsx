@@ -4,7 +4,7 @@ import { Star } from "lucide-react";
 import { useGithubStars, formatStars } from "@/lib/use-github-stars";
 import { cn } from "@/lib/utils";
 
-const REPO_URL = "https://github.com/kwakseongjae/vanadis";
+const REPO_URL = "https://github.com/vanadis/vanadis";
 
 function GithubMark({ className }: { className?: string }) {
   return (

@@ -57,7 +57,7 @@ choose from a dropdown/radio, `[click]` = press the button.
 - Move it (Mac, exact path):
   ```bash
   mv ~/Downloads/vanadis-analytics-*.json \
-     /Users/kwakseongjae/Desktop/projects/vanadis/scripts/analytics/.secrets/sa.json
+     /Users/vanadis/Desktop/projects/vanadis/scripts/analytics/.secrets/sa.json
   ```
 - The SA email (`vanadis-analytics-reader@vanadis-analytics.iam.gserviceaccount.com`) is
   what you paste into GA4 + GSC below. (After the file is in place I can echo the

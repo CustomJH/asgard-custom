@@ -40,7 +40,7 @@ export default function TermsKoPage() {
             <Link href="/docs/ko" className="text-muted-foreground hover:text-foreground">Docs</Link>
             <Link href="/privacy/ko" className="text-muted-foreground hover:text-foreground">개인정보</Link>
             <Link href="/terms" className="text-muted-foreground hover:text-foreground">EN</Link>
-            <a href="https://github.com/kwakseongjae/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
+            <a href="https://github.com/vanadis/vanadis" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground">GitHub</a>
           </nav>
         </div>
       </header>
@@ -105,7 +105,7 @@ export default function TermsKoPage() {
 
         <Section n={6} title="약관의 변경 및 문의">
           <p>본 약관은 변경될 수 있으며, 변경 시 상단 시행일자를 갱신합니다. 문의는{" "}
-            <a href="mailto:gkffhdnls13@gmail.com" className="underline underline-offset-2 hover:text-foreground">gkffhdnls13@gmail.com</a>{" "}
+            <a href="mailto:contact@vanadis.kr" className="underline underline-offset-2 hover:text-foreground">contact@vanadis.kr</a>{" "}
             으로 연락해 주세요. (시행일자: {UPDATED})</p>
         </Section>
       </article>

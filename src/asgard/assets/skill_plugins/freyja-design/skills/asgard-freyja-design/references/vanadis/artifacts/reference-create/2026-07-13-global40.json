@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "asOf": "2026-07-13",
-  "manifest": "/Users/kwakseongjae/Desktop/projects/vanadis/config/reference-create-global40.json",
+  "manifest": "/Users/vanadis/Desktop/projects/vanadis/config/reference-create-global40.json",
   "counts": {
     "ready": 40,
     "hold": 7
@@ -23,7 +23,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/104.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/104.json",
         "surfaces": 3,
         "components": 31,
         "coverage": 96,
@@ -46,7 +46,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/kb-kookmin.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/kb-kookmin.json",
         "surfaces": 3,
         "components": 33,
         "coverage": 80,
@@ -69,7 +69,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/wooribank.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/wooribank.json",
         "surfaces": 3,
         "components": 49,
         "coverage": 81,
@@ -87,7 +87,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/sktelecom.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/sktelecom.json",
         "surfaces": 2,
         "components": 22,
         "coverage": 63,
@@ -105,7 +105,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/lguplus.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/lguplus.json",
         "surfaces": 3,
         "components": 85,
         "coverage": 92,
@@ -123,7 +123,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/lotteon.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/lotteon.json",
         "surfaces": 2,
         "components": 38,
         "coverage": 80,
@@ -146,7 +146,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/soop.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/soop.json",
         "surfaces": 3,
         "components": 54,
         "coverage": 66,
@@ -169,7 +169,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/megabox.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/megabox.json",
         "surfaces": 3,
         "components": 26,
         "coverage": 80,
@@ -192,7 +192,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/cgv.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/cgv.json",
         "surfaces": 3,
         "components": 383,
         "coverage": 81,
@@ -218,7 +218,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/onestore.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/onestore.json",
         "surfaces": 5,
         "components": 53,
         "coverage": 76,
@@ -241,7 +241,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/kakaogames.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/kakaogames.json",
         "surfaces": 3,
         "components": 19,
         "coverage": 65,
@@ -264,7 +264,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/ctbc.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/ctbc.json",
         "surfaces": 3,
         "components": 0,
         "coverage": 21,
@@ -282,7 +282,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/taishinbank.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/taishinbank.json",
         "surfaces": 3,
         "components": 66,
         "coverage": 100,
@@ -305,7 +305,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/kktix.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/kktix.json",
         "surfaces": 3,
         "components": 7,
         "coverage": 47,
@@ -323,7 +323,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/inline.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/inline.json",
         "surfaces": 1,
         "components": 0,
         "coverage": 7,
@@ -341,7 +341,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/eslite.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/eslite.json",
         "surfaces": 3,
         "components": 32,
         "coverage": 83,
@@ -364,7 +364,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/thsr.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/thsr.json",
         "surfaces": 3,
         "components": 52,
         "coverage": 80,
@@ -382,7 +382,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/evaair.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/evaair.json",
         "surfaces": 3,
         "components": 71,
         "coverage": 87,
@@ -400,7 +400,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/china-airlines.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/china-airlines.json",
         "surfaces": 3,
         "components": 67,
         "coverage": 100,
@@ -418,7 +418,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/poya.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/poya.json",
         "surfaces": 3,
         "components": 19,
         "coverage": 70,
@@ -436,7 +436,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/toyota.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/toyota.json",
         "surfaces": 3,
         "components": 29,
         "coverage": 76,
@@ -454,7 +454,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/sony.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/sony.json",
         "surfaces": 3,
         "components": 53,
         "coverage": 83,
@@ -472,7 +472,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/recruit.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/recruit.json",
         "surfaces": 3,
         "components": 40,
         "coverage": 70,
@@ -495,7 +495,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/mynavi.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/mynavi.json",
         "surfaces": 3,
         "components": 30,
         "coverage": 66,
@@ -513,7 +513,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/mixi.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/mixi.json",
         "surfaces": 3,
         "components": 30,
         "coverage": 71,
@@ -536,7 +536,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/dena.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/dena.json",
         "surfaces": 3,
         "components": 7,
         "coverage": 42,
@@ -554,7 +554,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/sakura-internet.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/sakura-internet.json",
         "surfaces": 2,
         "components": 29,
         "coverage": 75,
@@ -572,7 +572,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/teamlab.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/teamlab.json",
         "surfaces": 3,
         "components": 59,
         "coverage": 66,
@@ -590,7 +590,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/au.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/au.json",
         "surfaces": 3,
         "components": 142,
         "coverage": 97,
@@ -608,7 +608,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/softbank.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/softbank.json",
         "surfaces": 3,
         "components": 40,
         "coverage": 71,
@@ -626,7 +626,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/uswds.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/uswds.json",
         "surfaces": 3,
         "components": 50,
         "coverage": 76,
@@ -644,7 +644,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/aws-cloudscape.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/aws-cloudscape.json",
         "surfaces": 3,
         "components": 32,
         "coverage": 83,
@@ -667,7 +667,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/redhat.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/redhat.json",
         "surfaces": 3,
         "components": 4,
         "coverage": 37,
@@ -685,7 +685,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/palantir.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/palantir.json",
         "surfaces": 2,
         "components": 12,
         "coverage": 63,
@@ -711,7 +711,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/mozilla.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/mozilla.json",
         "surfaces": 5,
         "components": 15,
         "coverage": 59,
@@ -734,7 +734,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/zendesk.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/zendesk.json",
         "surfaces": 3,
         "components": 43,
         "coverage": 70,
@@ -752,7 +752,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/elastic.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/elastic.json",
         "surfaces": 3,
         "components": 94,
         "coverage": 93,
@@ -770,7 +770,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/intuit.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/intuit.json",
         "surfaces": 3,
         "components": 21,
         "coverage": 71,
@@ -793,7 +793,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/servicenow.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/servicenow.json",
         "surfaces": 3,
         "components": 57,
         "coverage": 81,
@@ -816,7 +816,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/thumbtack.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/thumbtack.json",
         "surfaces": 3,
         "components": 37,
         "coverage": 70,
@@ -839,7 +839,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/familymart-tw.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/familymart-tw.json",
         "surfaces": 3,
         "components": 39,
         "coverage": 80,
@@ -862,7 +862,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/acer.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/acer.json",
         "surfaces": 3,
         "components": 47,
         "coverage": 81,
@@ -885,7 +885,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/udn.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/udn.json",
         "surfaces": 3,
         "components": 24,
         "coverage": 73,
@@ -908,7 +908,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/panasonic.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/panasonic.json",
         "surfaces": 3,
         "components": 40,
         "coverage": 71,
@@ -931,7 +931,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/patternfly.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/patternfly.json",
         "surfaces": 3,
         "components": 27,
         "coverage": 66,
@@ -954,7 +954,7 @@
       },
       "status": "hold",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/segment-evergreen.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/segment-evergreen.json",
         "surfaces": 3,
         "components": 3,
         "coverage": 36,
@@ -977,7 +977,7 @@
       },
       "status": "ready",
       "evidence": {
-        "path": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-evidence/pega.json",
+        "path": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-evidence/pega.json",
         "surfaces": 3,
         "components": 16,
         "coverage": 65,
@@ -989,280 +989,280 @@
     "104": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-104/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-104/packet.md",
       "startedAt": "2026-07-13T16:35:44.026Z",
       "finishedAt": "2026-07-13T16:38:59.264Z"
     },
     "wooribank": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-wooribank/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-wooribank/packet.md",
       "startedAt": "2026-07-13T16:35:44.029Z",
       "finishedAt": "2026-07-13T16:39:22.872Z"
     },
     "kb-kookmin": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-kb-kookmin/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-kb-kookmin/packet.md",
       "startedAt": "2026-07-13T16:35:44.028Z",
       "finishedAt": "2026-07-13T16:42:15.519Z"
     },
     "sktelecom": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-sktelecom/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-sktelecom/packet.md",
       "startedAt": "2026-07-13T16:38:59.265Z",
       "finishedAt": "2026-07-13T16:42:21.849Z"
     },
     "lguplus": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-lguplus/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-lguplus/packet.md",
       "startedAt": "2026-07-13T16:39:22.873Z",
       "finishedAt": "2026-07-13T16:46:14.524Z"
     },
     "lotteon": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-lotteon/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-lotteon/packet.md",
       "startedAt": "2026-07-13T16:42:15.519Z",
       "finishedAt": "2026-07-13T16:46:23.671Z"
     },
     "soop": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-soop/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-soop/packet.md",
       "startedAt": "2026-07-13T15:24:00.574Z",
       "finishedAt": "2026-07-13T15:30:23.085Z"
     },
     "megabox": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-megabox/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-megabox/packet.md",
       "startedAt": "2026-07-13T16:42:21.852Z",
       "finishedAt": "2026-07-13T16:46:13.486Z"
     },
     "cgv": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-cgv/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-cgv/packet.md",
       "startedAt": "2026-07-13T16:46:13.486Z",
       "finishedAt": "2026-07-13T16:51:13.790Z"
     },
     "onestore": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-onestore/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-onestore/packet.md",
       "startedAt": "2026-07-13T15:30:23.085Z",
       "finishedAt": "2026-07-13T15:36:21.119Z"
     },
     "kakaogames": {
       "status": "complete",
       "country": "KR",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-kakaogames/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-kakaogames/packet.md",
       "startedAt": "2026-07-13T15:31:57.138Z",
       "finishedAt": "2026-07-13T15:37:02.847Z"
     },
     "taishinbank": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-taishinbank/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-taishinbank/packet.md",
       "startedAt": "2026-07-13T15:32:41.651Z",
       "finishedAt": "2026-07-13T15:39:24.146Z"
     },
     "thsr": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-thsr/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-thsr/packet.md",
       "startedAt": "2026-07-13T15:37:02.848Z",
       "finishedAt": "2026-07-13T15:42:20.027Z"
     },
     "eslite": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-eslite/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-eslite/packet.md",
       "startedAt": "2026-07-13T15:36:21.119Z",
       "finishedAt": "2026-07-13T15:43:40.972Z"
     },
     "evaair": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-evaair/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-evaair/packet.md",
       "startedAt": "2026-07-13T15:39:24.147Z",
       "finishedAt": "2026-07-13T15:44:34.863Z"
     },
     "toyota": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-toyota/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-toyota/packet.md",
       "startedAt": "2026-07-13T15:44:34.864Z",
       "finishedAt": "2026-07-13T15:49:54.650Z"
     },
     "poya": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-poya/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-poya/packet.md",
       "startedAt": "2026-07-13T15:43:40.972Z",
       "finishedAt": "2026-07-13T15:50:51.745Z"
     },
     "china-airlines": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-china-airlines/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-china-airlines/packet.md",
       "startedAt": "2026-07-13T15:42:20.028Z",
       "finishedAt": "2026-07-13T15:51:13.479Z"
     },
     "sony": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-sony/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-sony/packet.md",
       "startedAt": "2026-07-13T15:49:54.650Z",
       "finishedAt": "2026-07-13T15:55:08.828Z"
     },
     "mynavi": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-mynavi/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-mynavi/packet.md",
       "startedAt": "2026-07-13T15:51:13.480Z",
       "finishedAt": "2026-07-13T15:56:46.929Z"
     },
     "recruit": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-recruit/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-recruit/packet.md",
       "startedAt": "2026-07-13T15:50:51.745Z",
       "finishedAt": "2026-07-13T15:56:56.686Z"
     },
     "mixi": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-mixi/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-mixi/packet.md",
       "startedAt": "2026-07-13T15:55:08.829Z",
       "finishedAt": "2026-07-13T16:00:46.990Z"
     },
     "sakura-internet": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-sakura-internet/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-sakura-internet/packet.md",
       "startedAt": "2026-07-13T15:56:46.929Z",
       "finishedAt": "2026-07-13T16:01:50.987Z"
     },
     "teamlab": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-teamlab/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-teamlab/packet.md",
       "startedAt": "2026-07-13T15:56:56.686Z",
       "finishedAt": "2026-07-13T16:02:46.433Z"
     },
     "softbank": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-softbank/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-softbank/packet.md",
       "startedAt": "2026-07-13T16:01:50.987Z",
       "finishedAt": "2026-07-13T16:06:57.615Z"
     },
     "au": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-au/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-au/packet.md",
       "startedAt": "2026-07-13T16:00:46.990Z",
       "finishedAt": "2026-07-13T16:07:19.691Z"
     },
     "uswds": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-uswds/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-uswds/packet.md",
       "startedAt": "2026-07-13T16:02:46.433Z",
       "finishedAt": "2026-07-13T16:07:32.248Z"
     },
     "aws-cloudscape": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-aws-cloudscape/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-aws-cloudscape/packet.md",
       "startedAt": "2026-07-13T16:06:57.615Z",
       "finishedAt": "2026-07-13T16:12:27.924Z"
     },
     "zendesk": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-zendesk/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-zendesk/packet.md",
       "startedAt": "2026-07-13T16:07:32.249Z",
       "finishedAt": "2026-07-13T16:13:13.089Z"
     },
     "palantir": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-palantir/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-palantir/packet.md",
       "startedAt": "2026-07-13T16:07:19.692Z",
       "finishedAt": "2026-07-13T16:13:15.937Z"
     },
     "elastic": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-elastic/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-elastic/packet.md",
       "startedAt": "2026-07-13T16:12:27.925Z",
       "finishedAt": "2026-07-13T16:18:22.214Z"
     },
     "servicenow": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-servicenow/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-servicenow/packet.md",
       "startedAt": "2026-07-13T16:13:15.938Z",
       "finishedAt": "2026-07-13T16:18:31.072Z"
     },
     "intuit": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-intuit/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-intuit/packet.md",
       "startedAt": "2026-07-13T16:46:14.525Z",
       "finishedAt": "2026-07-13T16:51:31.775Z"
     },
     "familymart-tw": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-familymart-tw/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-familymart-tw/packet.md",
       "startedAt": "2026-07-13T16:18:31.072Z",
       "finishedAt": "2026-07-13T16:23:27.753Z"
     },
     "thumbtack": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-thumbtack/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-thumbtack/packet.md",
       "startedAt": "2026-07-13T16:18:22.215Z",
       "finishedAt": "2026-07-13T16:24:54.148Z"
     },
     "acer": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-acer/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-acer/packet.md",
       "startedAt": "2026-07-13T16:18:42.957Z",
       "finishedAt": "2026-07-13T16:25:05.996Z"
     },
     "udn": {
       "status": "complete",
       "country": "TW",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-udn/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-udn/packet.md",
       "startedAt": "2026-07-13T16:46:23.671Z",
       "finishedAt": "2026-07-13T16:49:03.281Z"
     },
     "patternfly": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-patternfly/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-patternfly/packet.md",
       "startedAt": "2026-07-13T16:25:05.997Z",
       "finishedAt": "2026-07-13T16:30:39.712Z"
     },
     "panasonic": {
       "status": "complete",
       "country": "JP",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-panasonic/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-panasonic/packet.md",
       "startedAt": "2026-07-13T16:24:54.149Z",
       "finishedAt": "2026-07-13T16:31:11.948Z"
     },
     "pega": {
       "status": "complete",
       "country": "US",
-      "packet": "/Users/kwakseongjae/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-pega/packet.md",
+      "packet": "/Users/vanadis/Desktop/projects/vanadis/artifacts/reference-create/runs/2026-07-13-pega/packet.md",
       "startedAt": "2026-07-13T16:29:02.160Z",
       "finishedAt": "2026-07-13T16:35:24.781Z"
     }
