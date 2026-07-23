@@ -428,10 +428,10 @@ class TestScanGraph(Base):
     def test_scan_preserves_more_than_forty_relations_from_one_file(self):
         from asgard.map_graph import graph_state, scan_graph
 
-        statements = "\n".join(
-            f'<select id="find{index}">SELECT * FROM TABLE_{index}</select>' for index in range(60)
+        statements = "\n".join(f'<select id="find{index}">SELECT * FROM TABLE_{index}</select>' for index in range(60))
+        self.write(
+            "svc/src/main/resources/mapper/LargeMapper.xml", f'<mapper namespace="LargeMapper">{statements}</mapper>'
         )
-        self.write("svc/src/main/resources/mapper/LargeMapper.xml", f'<mapper namespace="LargeMapper">{statements}</mapper>')
         result = scan_graph(self.root)
         state = graph_state(self.root)
         assert state is not None
