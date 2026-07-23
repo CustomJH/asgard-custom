@@ -68,6 +68,7 @@ _GITIGNORE_BLOCK = (
     ".asgard/memory/*\n"
     "!.asgard/memory/records/\n"
     "!.asgard/memory/records/**\n"
+    "!.asgard/memory/binding.json\n"
     "!.asgard/.gitignore\n"
     "!.asgard/asgard-setting-project.json\n"
     ".claude/settings.local.json\n"
@@ -81,7 +82,7 @@ _GITIGNORE_BLOCK = (
 # state/·quest/ 등 런타임은 "*" 가 전부 무시한다.
 _ASGARD_GITIGNORE = (
     "*\n!.gitignore\n!map/\n!map/**\n"
-    "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
+    "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n!memory/binding.json\n"
     "!asgard-setting-project.json\n"
 )
 
@@ -146,8 +147,19 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     def _is_root_gitignore(p: str) -> bool:  # 루트 .gitignore 는 병합 대상 — existing 거부·덮어쓰기 예외
         return os.path.basename(p) == ".gitignore" and os.path.dirname(p) in (cwd, os.getcwd())
 
+    # asgard 소유 런타임 시드 — `asgard map`·훅이 init 전에 lazy 생성할 수 있어 존재해도 차단하지 않는다.
+    # .asgard/.gitignore 는 기존 내용 보존(map.py 선례 — 사용자 로컬 예외 존중), INDEX.md 는 asgard
+    # 소유 규칙 계약이라 덮어쓴다 (refresh_map 이 어차피 템플릿으로 재동기화).
+    def _seed_kind(p: str) -> str | None:
+        r = rel(p)
+        if r == os.path.join(".asgard", ".gitignore"):
+            return "preserve"
+        if r == os.path.join(".asgard", "map", "INDEX.md"):
+            return "overwrite"
+        return None
+
     ui.head(label)
-    existing = [p for p, _ in files if os.path.lexists(p) and not _is_root_gitignore(p)]
+    existing = [p for p, _ in files if os.path.lexists(p) and not _is_root_gitignore(p) and _seed_kind(p) is None]
     if existing and not force and not dry_run:
         ui.phase("check · existing files")
         interactive = sys.stdin.isatty() and sys.stdout.isatty()
@@ -204,6 +216,20 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             prev = Path(p).read_text(encoding="utf-8") if os.path.exists(p) else None
             Path(p).write_text(merge_gitignore(prev))
             ui.ok(ui.dim(rel(p)) + ("" if prev is None else ui.dim(" (asgard 블록 갱신)")))
+            continue
+        if _seed_kind(p) == "preserve" and os.path.lexists(p):
+            # 보존하되 asgard 관리 공유 경로 negation 누락분은 병합 — 보존 정책이 신규 공유
+            # 자산(binding.json 등)의 전파를 막으면 팀 공유가 조용히 깨진다 (26-07-23 실측).
+            try:
+                prev_lines = Path(p).read_text(encoding="utf-8").splitlines()
+                missing = [line for line in content.splitlines() if line.startswith("!") and line not in prev_lines]
+                if missing:
+                    Path(p).write_text("\n".join(prev_lines + missing) + "\n", encoding="utf-8")
+                    ui.ok(ui.dim(rel(p)) + ui.dim(" (공유 예외 병합)"))
+                    continue
+            except Exception:
+                pass
+            ui.ok(ui.dim(rel(p)) + ui.dim(" (기존 유지)"))
             continue
         _write(p, content)
     ui.done(f"{len(files)} file(s) · make anything, your way")
@@ -436,12 +462,19 @@ def run_setup(
     cc = cc or profile == "claude-code"
     cursor = cursor or profile == "cursor"
     codex = codex or profile == "codex"
-    from ..code_map import MapError, refresh_map
-    from ..map_graph import GraphError, scan_graph
+    from ..code_map import MapError, MapOwnershipError, refresh_map
+    from ..map_graph import GraphError, GraphOwnershipError, scan_graph
 
     try:
-        refresh_map(os.getcwd(), dry_run=True)  # map 경로/소유권 preflight — scaffold가 링크를 따라 쓰기 전 차단.
-        scan_graph(os.getcwd(), dry_run=True)
+        try:
+            refresh_map(os.getcwd(), dry_run=True)  # map 경로/소유권 preflight — scaffold가 링크를 따라 쓰기 전 차단.
+            scan_graph(os.getcwd(), dry_run=True)
+        except (MapOwnershipError, GraphOwnershipError) as exc:
+            # init 은 현재 디렉토리를 정본으로 삼는 명시 재설정 — 마커 없는(사람 소유·타 프로젝트 유래)
+            # 지도는 경고 후 재귀속해 엎어쓴다. force 는 소유권만 우회하므로 안전 검사는 재검사에서 잡힌다.
+            ui.warn(f"{exc} — init 이 현재 디렉토리 기준으로 재생성(재귀속)")
+            refresh_map(os.getcwd(), dry_run=True, force=True)
+            scan_graph(os.getcwd(), dry_run=True, force=True)
     except (GraphError, MapError) as exc:
         ui.fail(str(exc))
         return 2
@@ -450,8 +483,10 @@ def run_setup(
     if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync` 가 세팅된 프로젝트를 찾는 근거
         from .. import memory, registry
 
-        refresh_map(os.getcwd())  # 초기 프로젝트 방향을 즉시 그린다; 이후 훅이 주기적으로 갱신.
-        scan_graph(os.getcwd())
+        # 초기 프로젝트 방향을 즉시 그린다; 이후 훅이 주기적으로 갱신. init 은 현재 디렉토리가
+        # 정본이므로 낡거나 마커 없는 기존 지도는 스캔 결과로 엎어쓴다 (force=소유권만 우회).
+        refresh_map(os.getcwd(), force=True)
+        scan_graph(os.getcwd(), force=True)
         universal = not cc and not cursor and not codex
         registry.record(os.getcwd(), cc or universal, cursor or universal, codex or universal)
         try:
