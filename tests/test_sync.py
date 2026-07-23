@@ -140,6 +140,108 @@ class TestAgentsMerge(Base):
         self.assertIn("!.asgard/memory/records/", merged)
 
 
+class TestInitOverwrite(Base):
+    """init 재실행 계약 — TTY 는 "다시 덮어쓰시겠습니까?" 확인, 승인/--force 덮어쓰기는 asgard
+    소유 스캐폴드만 갱신하고 프로젝트 데이터(설정값·로그·상태)는 보존한다."""
+
+    def _init(self, **kw):
+        from asgard.commands.setup import run_setup
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            return run_setup(cc=True, **kw)
+        finally:
+            os.chdir(cwd)
+
+    def test_merge_project_settings_preserves_user_values_and_refreshes_policy(self):
+        from asgard.commands.setup import merge_project_settings
+        from asgard.hooks.quest_log import DEFAULT_POLICY
+        from asgard.templates import project_settings
+
+        current = {
+            "lagom": {"mode": "off"},  # 사용자 조정값
+            "project_memory": {"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "team-bank"},
+            "provider": {"name": "ollama"},  # 시드에 없는 사용자 섹션
+            "trinity_policy": {"stale": True},  # 구버전 정책 — asgard 소유라 갱신 대상
+        }
+        merged = json.loads(merge_project_settings(json.dumps(current), project_settings()))
+        self.assertEqual(merged["lagom"], {"mode": "off"})
+        self.assertEqual(merged["project_memory"]["project_id"], "team-bank")
+        self.assertEqual(merged["provider"], {"name": "ollama"})
+        self.assertEqual(merged["trinity_policy"], DEFAULT_POLICY)  # 정책만 최신 시드로
+        self.assertEqual(merged["agent_models"], {})  # 누락 섹션은 시드로 채움
+
+    def test_merge_project_settings_promotes_legacy_memory_section(self):
+        from asgard.commands.setup import merge_project_settings
+        from asgard.templates import project_settings
+
+        current = {"memory": {"engine": "hindsight", "endpoint": "http://legacy:1", "project_id": "legacy-bank"}}
+        merged = json.loads(merge_project_settings(json.dumps(current), project_settings()))
+        self.assertNotIn("memory", merged)
+        self.assertEqual(merged["project_memory"]["project_id"], "legacy-bank")
+
+    def test_merge_project_settings_broken_json_reseeds(self):
+        from asgard.commands.setup import merge_project_settings
+        from asgard.templates import project_settings
+
+        self.assertEqual(merge_project_settings("{broken", project_settings()), project_settings())
+
+    def test_rerun_confirm_yes_overwrites_scaffold_but_preserves_project_data(self):
+        from asgard import settings
+
+        self.assertEqual(self._init(), 0)
+        j = os.path.join
+        # 사용자 데이터: 설정값·CC permissions·AGENTS.md 규칙·로그/상태 — 전부 보존 대상
+        settings.save_project(
+            self.root,
+            "project_memory",
+            {"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "team-bank"},
+        )
+        cc = j(self.root, ".claude", "settings.json")
+        s = json.loads(open(cc).read())
+        s["permissions"]["allow"].append("Bash(make *)")
+        open(cc, "w").write(json.dumps(s))
+        open(j(self.root, "AGENTS.md"), "a").write("\n## Conventions\n우리 팀 규칙 유지\n")
+        os.makedirs(j(self.root, ".asgard", "quest"), exist_ok=True)
+        open(j(self.root, ".asgard", "quest", "2026.jsonl"), "w").write('{"quest": "log"}\n')
+        hook = j(self.root, ".claude", "hooks", "git-guard.py")
+        open(hook, "w").write("# old version\n")  # asgard 소유 — 덮어쓰기 대상
+
+        with (
+            mock.patch("sys.stdin.isatty", return_value=True),
+            mock.patch("sys.stdout.isatty", return_value=True),
+            mock.patch("rich.prompt.Confirm.ask", return_value=True) as ask,
+        ):
+            self.assertEqual(self._init(), 0)
+        self.assertTrue(ask.called)  # "다시 덮어쓰시겠습니까?" 확인을 거쳤다
+
+        self.assertNotIn("old version", open(hook).read())  # 스캐폴드는 최신 복원
+        project = settings.load_project(self.root)
+        self.assertEqual(project["project_memory"]["project_id"], "team-bank")  # 연결 설정 보존
+        self.assertIn("Bash(make *)", json.loads(open(cc).read())["permissions"]["allow"])
+        self.assertIn("우리 팀 규칙 유지", open(j(self.root, "AGENTS.md")).read())
+        self.assertEqual(open(j(self.root, ".asgard", "quest", "2026.jsonl")).read(), '{"quest": "log"}\n')
+
+    def test_rerun_confirm_no_aborts_untouched(self):
+        j = os.path.join
+        self.assertEqual(self._init(), 0)
+        hook = j(self.root, ".claude", "hooks", "git-guard.py")
+        open(hook, "w").write("# old version\n")
+        with (
+            mock.patch("sys.stdin.isatty", return_value=True),
+            mock.patch("sys.stdout.isatty", return_value=True),
+            mock.patch("rich.prompt.Confirm.ask", return_value=False),
+        ):
+            self.assertEqual(self._init(), 2)
+        self.assertEqual(open(hook).read(), "# old version\n")  # 거부 = 무변경
+
+    def test_rerun_noninteractive_still_requires_force(self):
+        self.assertEqual(self._init(), 0)
+        self.assertEqual(self._init(), 2)  # non-TTY — 프롬프트 없이 기존 계약(--force 안내) 유지
+        self.assertEqual(self._init(force=True), 0)
+
+
 class TestSettingsMerge(Base):
     def test_hooks_recomputed_user_keys_and_permissions_kept(self):
         tmpl = cc_settings()

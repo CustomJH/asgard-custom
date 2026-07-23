@@ -108,6 +108,35 @@ def merge_gitignore(existing: str | None) -> str:
     return base + ("\n" if base else "") + _GITIGNORE_BLOCK
 
 
+def merge_project_settings(existing: str | None, seeded: str) -> str:
+    """재스캐폴드 시 통합 설정(asgard-setting-project.json) 병합 — 사용자 값 보존이 기본.
+
+    사용자 소유 섹션(project_memory 연결·lagom·agent_models·provider 등 전부)은 기존 값을
+    유지하고 시드는 누락 섹션만 채운다. trinity_policy 만 asgard 소유 로직이라 최신 시드로
+    갱신한다 (시드 드리프트 = 4모드 정책 패치 무효화, 26-07-23 sensitive_paths 회귀). 프로젝트
+    레벨 구 memory 섹션에 실 설정이 있으면 project_memory 로 승격한다 (write_config 와 같은
+    개명 계약). 파손 JSON 은 시드로 재생한다."""
+    import json
+
+    seed = json.loads(seeded)
+    try:
+        current = json.loads(existing) if existing else None
+    except Exception:
+        current = None
+    if not isinstance(current, dict):
+        return seeded
+    merged = {**seed, **current}
+    merged["trinity_policy"] = seed["trinity_policy"]
+    legacy = merged.get("memory")
+    if isinstance(legacy, dict) and any(not str(k).startswith("_") for k in legacy):
+        pm = merged.get("project_memory")
+        pm_configured = isinstance(pm, dict) and any(not str(k).startswith("_") for k in pm)
+        if not pm_configured:
+            merged["project_memory"] = legacy
+        merged.pop("memory")
+    return json.dumps(merged, ensure_ascii=False, indent=2) + "\n"
+
+
 def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bool) -> int:
     cwd = os.getcwd()
 
@@ -117,21 +146,56 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     def _is_root_gitignore(p: str) -> bool:  # 루트 .gitignore 는 병합 대상 — existing 거부·덮어쓰기 예외
         return os.path.basename(p) == ".gitignore" and os.path.dirname(p) in (cwd, os.getcwd())
 
+    ui.head(label)
     existing = [p for p, _ in files if os.path.lexists(p) and not _is_root_gitignore(p)]
     if existing and not force and not dry_run:
-        ui.head(label)
         ui.phase("check · existing files")
+        interactive = sys.stdin.isatty() and sys.stdout.isatty()
         for p in existing:
-            ui.fail(f"exists {ui.dim(rel(p))}")
-        sys.stderr.write(f"  {ui.dim('--force to overwrite · --dry-run to preview')}\n")
-        return 2
+            (ui.step if interactive else ui.fail)(f"exists {ui.dim(rel(p))}")
+        if interactive:
+            from rich.prompt import Confirm
 
-    ui.head(label)
+            force = Confirm.ask(
+                f"  {len(existing)}개 파일이 이미 존재합니다 — 다시 덮어쓰시겠습니까? "
+                "[dim](asgard 스캐폴드만 갱신 · 설정값·로그·퀘스트/맵 데이터는 유지)[/dim]",
+                default=False,
+            )
+        if not force:
+            sys.stderr.write(f"  {ui.dim('--force to overwrite · --dry-run to preview')}\n")
+            return 2
+
     if dry_run:
         ui.phase(f"preview · {len(files)} file(s)")
         for p, _ in files:
             ui.step(f"would create {ui.dim(rel(p))}")
         return 0
+
+    # 덮어쓰기여도 사용자 데이터 보유 파일 3종은 보존 병합한다 — 스캐폴드(asgard 소유 로직)만
+    # 최신으로 갈고, 프로젝트에 쌓인 값은 유지 (로그·퀘스트·상태·맵 데이터는 애초에 스캐폴드
+    # 대상이 아니라 건드리지 않는다). sync 의 파일별 갱신 정책과 같은 계열.
+    def _write(p: str, content: str) -> None:
+        prev = Path(p).read_text(encoding="utf-8") if os.path.exists(p) else None
+        if os.path.basename(p) == "asgard-setting-project.json" and prev is not None:
+            Path(p).write_text(merge_project_settings(prev, content))
+            ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 기존 설정값 유지)"))
+            return
+        if rel(p) == os.path.join(".claude", "settings.json") and prev is not None:
+            from .sync import merge_cc_settings  # 지연 임포트 — sync 가 setup 을 임포트한다 (순환 방지)
+
+            Path(p).write_text(merge_cc_settings(prev, content))
+            ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 사용자 permissions 유지)"))
+            return
+        if os.path.basename(p) == "AGENTS.md" and os.path.dirname(p) in (cwd, os.getcwd()) and prev is not None:
+            from .sync import merge_agents_md
+
+            merged = merge_agents_md(prev, content)
+            # 마커 없는 파일 = 전면 사용자 소유였던 경우 — init 은 명시적 리셋이라 템플릿으로 교체
+            Path(p).write_text(merged if merged is not None else content)
+            ui.ok(ui.dim(rel(p)) + (ui.dim(" (병합 — 마커 밖 내용 유지)") if merged is not None else ""))
+            return
+        Path(p).write_text(content)
+        ui.ok(ui.dim(rel(p)))
 
     ui.phase(f"scaffold · {len(files)} file(s)")
     for p, content in files:
@@ -141,8 +205,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             Path(p).write_text(merge_gitignore(prev))
             ui.ok(ui.dim(rel(p)) + ("" if prev is None else ui.dim(" (asgard 블록 갱신)")))
             continue
-        Path(p).write_text(content)
-        ui.ok(ui.dim(rel(p)))
+        _write(p, content)
     ui.done(f"{len(files)} file(s) · make anything, your way")
     ui.phase("next steps")
     ui.step(f"asgard start   {ui.dim('— open the Heimdall terminal (native Trinity loop)')}")
