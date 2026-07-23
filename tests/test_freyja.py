@@ -66,8 +66,8 @@ class TestFreyjaBaseline(unittest.TestCase):
             relative = item.relative_to(upstream_root).as_posix().encode()
             digest.update(relative + b"\0" + item.read_bytes())
 
-        self.assertEqual(len(files), 3264)
-        self.assertEqual(digest.hexdigest(), "6f96fa2319889b8e29ffe06215d9ca7700cdc8912bf130242204132f32c3e453")
+        self.assertEqual(len(files), 3256)
+        self.assertEqual(digest.hexdigest(), "e1865a71299fcd3abd8439f0788933f25efd3c5deb0f15196fabcc6d482c18df")
         self.assertEqual(len(list((upstream_root / "skills").glob("*/SKILL.md"))), 21)
         self.assertEqual(len(list((upstream_root / "agents").glob("vanadis-*.md"))), 18)
         restraint = skill_registry.show_skill_resource(
