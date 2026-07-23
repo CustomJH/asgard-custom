@@ -1,0 +1,90 @@
+# asgard-project-memory — 2차 메모리(프로젝트 메모리) Hindsight 서버
+#
+# 용도: 프로젝트 단위 공유 메모리. DB 하나에 여러 사용자가 bank(=프로젝트) 단위로 retain/recall.
+# 임베디드 pg0 대신 외부 PostgreSQL(pgvector) 채택 — 독립 백업(pg_dump)·재시작 안전·표준 운영 우선.
+#
+# 기본 구성 원칙 (2026-07-23 확정):
+#   · MCP 도구 기본 활성화 — 클라이언트는 single-bank `/mcp/{bank_id}/` 마운트(0.8.3 실측 29 tools)로 접속.
+#     bank 생성/열람 도구(create_bank·list_banks·get_bank_stats)는 multi-bank `/mcp/`에만 있어
+#     구조적으로 미노출 = bank 생성/관리는 관리자 전용(REST·UI). 설정으로 건들지 않는다.
+#   · 관찰(observation consolidation)·Reflect 기본 활성 — LLM 연결(.env)로 켜진다.
+#     provider 를 none 으로 두면 chunk 저장 모드로 강등(관찰·Reflect 꺼짐) — fail-safe 폴백.
+#   · mission 항목(retain/observations/reflect)은 전부 빈칸이 기본 — Asgard 어댑터가 이미
+#     증류된 record 를 쓰므로 추가 조향은 추출 왜곡 위험만 키운다 (README §mission 결정).
+#
+# 기동:  cp .env.example .env  →  비밀번호 채움  →  docker compose up -d
+# ⚠ 내부망/VPN 전제 — Hindsight MCP·REST 는 기본 무인증이다 (README §보안).
+
+name: asgard-project-memory
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hindsight
+      POSTGRES_PASSWORD: ${HINDSIGHT_DB_PASSWORD:?set HINDSIGHT_DB_PASSWORD in .env}
+      POSTGRES_DB: hindsight
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hindsight -d hindsight"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    # DB 는 컨테이너 네트워크 안에서만 — 호스트 노출 불필요 (백업은 docker exec pg_dump)
+
+  hindsight:
+    image: ghcr.io/vectorize-io/hindsight:${HINDSIGHT_TAG:-latest}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${HINDSIGHT_PORT:-8888}:8888" # REST API + MCP(/mcp/{bank_id}/)
+      - "${HINDSIGHT_UI_PORT:-9999}:9999" # 웹 UI (bank 관리 = 관리자 표면)
+    environment:
+      HINDSIGHT_API_DATABASE_URL: postgresql://hindsight:${HINDSIGHT_DB_PASSWORD:?set HINDSIGHT_DB_PASSWORD in .env}@postgres:5432/hindsight
+      # LLM — retain(사실 추출)·관찰 통합·Reflect 에 쓰인다. recall(TEMPR)은 LLM 0.
+      # 기본 .env 는 내부망 OpenAI 호환 게이트웨이 연결(엔드포인트·모델명·키는 .env 에만 둔다).
+      # 폴백은 호스트 ollama(qwen3:8b, .env 주석 블록). none 이면 chunk 저장 모드로 강등.
+      HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-none}
+      HINDSIGHT_API_LLM_API_KEY: ${HINDSIGHT_LLM_API_KEY:-}
+      HINDSIGHT_API_LLM_MODEL: ${HINDSIGHT_LLM_MODEL:-}
+      # 호스트 ollama 등 커스텀 엔드포인트 (예: http://host.docker.internal:11434/v1). 빈 값이면 미설정.
+      HINDSIGHT_API_LLM_BASE_URL: ${HINDSIGHT_LLM_BASE_URL:-}
+      # 관찰·Reflect 산출 언어 — 프로젝트 메모리 정본이 한국어라 Korean 기본(덮어쓰기 가능)
+      HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: ${HINDSIGHT_LLM_OUTPUT_LANGUAGE:-Korean}
+      # mission 조향 — 기본 빈칸(헤더 주석의 결정 참고). 필요해지면 .env 로만 켠다.
+      HINDSIGHT_API_RETAIN_MISSION: ${HINDSIGHT_RETAIN_MISSION:-}
+      # retain 추출 출력 상한 — 컨텍스트 짧은 백엔드(vLLM max-model-len 등)에 맞춰 .env 로 낮춘다.
+      # 업스트림 기본 64000 은 max-model-len 16384 게이트웨이에서 400 (2026-07-23 실증).
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: ${HINDSIGHT_RETAIN_MAX_COMPLETION_TOKENS:-64000}
+      # 임베딩 — 반드시 다국어로 시작 (기본 bge-small-en 은 한국어 취약. 벡터 차원이
+      # 스키마에 고정되므로 나중에 바꾸면 전체 재임베딩 — 첫 기동 전에 확정할 것).
+      HINDSIGHT_API_EMBEDDINGS_PROVIDER: onnx
+      HINDSIGHT_API_EMBEDDINGS_ONNX_MODEL_ID: intfloat/multilingual-e5-small
+      # 기본 cross-encoder/ms-marco-MiniLM-L-6-v2 는 영어 전용이라 한국어 semantic
+      # top-1을 뒤집는다. Hindsight 공식 multilingual 권장 모델로 고정한다.
+      HINDSIGHT_API_RERANKER_PROVIDER: local
+      HINDSIGHT_API_RERANKER_LOCAL_MODEL: BAAI/bge-reranker-v2-m3
+      # 첫 기동은 모델 다운로드로 수 분 걸린다 — 조급한 헬스체크 실패 방지
+      HINDSIGHT_API_MODEL_INIT_TIMEOUT: "900"
+      # MCP 표면 — 기본 활성(2차 메모리 기본 구성). 무인증이므로 내부망 밖 노출 시 off.
+      HINDSIGHT_API_MCP_ENABLED: ${HINDSIGHT_MCP_ENABLED:-true}
+      # MCP 클라이언트에 얹을 배포별 사용 지침(빈칸 기본) — 예: "이 서버는 힌트다. 완료 증거로 쓰지 마라."
+      HINDSIGHT_API_MCP_INSTRUCTIONS: ${HINDSIGHT_MCP_INSTRUCTIONS:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # Linux 서버에서 호스트 ollama 접근용 (mac/win 은 네이티브)
+    volumes:
+      - models:/home/hindsight/.cache # 임베딩·리랭커 모델 캐시 — 재기동 시 재다운로드 방지
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/openapi.json', timeout=5)\" || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 60
+      start_period: 120s
+
+volumes:
+  pgdata:
+  models:

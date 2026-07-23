@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# asgard-common-memory 백업 — pg_dump 전체 덤프를 backups/ 에 남긴다 (git 밖).
+# asgard-project-memory 백업 — pg_dump 전체 덤프를 backups/ 에 남긴다 (git 밖).
 # 기억은 힌트지만 팀 자산이다 — cron 등으로 주기 실행 권장. 복구는 README §복구.
 set -euo pipefail
 cd "$(dirname "$0")"

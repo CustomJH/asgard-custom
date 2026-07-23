@@ -1,7 +1,0 @@
-.env
-.venv/
-data/
-models/
-backups/
-*.tmp
-*.log
