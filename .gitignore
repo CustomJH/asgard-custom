@@ -251,19 +251,10 @@ workspace/
 .claude/**/*.local.*
 # <<< asgard <<<
 
-# 이 리포 한정: .asgard 는 무시하되 루트 map/과 memory/records/만 커밋한다 — 팀 공유 자산.
-# (구 결정 ".asgard 전체 무시" 를 대체. 워크스페이스·벤치 중첩 .asgard 는 계속 무시.)
+# 이 리포 한정: .asgard 전체를 무시한다 — 개발 중, 팀 공유 자산 아님.
+# (구 결정 ".asgard 는 무시하되 map/·memory/records/만 커밋" 을 대체.)
 # 블록 밖 + `**/` 접두: asgard setup 의 블록 교체·광역 규칙 이관(정확히 `.asgard/` 만 삭제)에서 생존.
 **/.asgard/
-!/.asgard/
-/.asgard/*
-!/.asgard/map/
-!/.asgard/map/**
-!/.asgard/memory/
-/.asgard/memory/*
-!/.asgard/memory/records/
-!/.asgard/memory/records/**
-!/.asgard/.gitignore
 design-qa.md
 
 output/
