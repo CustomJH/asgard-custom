@@ -543,7 +543,13 @@ class TestBackendSelection(unittest.TestCase):
                     "collection=decisions",
                 ],
             )
-            config = load_project(root)["memory"]
+            persisted = load_project(root)["project_memory"]
+            # 신원(uid·binding)은 설정 파일이 아니라 사이드카 — trust 판정은 find_config 병합본으로.
+            self.assertNotIn("project_uid", persisted)
+            self.assertNotIn("binding_id", persisted)
+            found = memory_bridge.find_config(root)
+            assert found is not None
+            config = found[1]
             self.assertTrue(memory_bridge.is_backend_trusted(config))
 
         self.assertEqual(result.exit_code, 0, result.stdout or str(result.exception))

@@ -467,7 +467,7 @@ def run_connect(
         from ..settings import load_project
 
         root = os.getcwd()
-        previous = dict(load_project(root).get("memory") or {})
+        previous = dict(memory_bridge.project_memory_section(load_project(root)) or {})
         previous_uid = str(previous.get("project_uid") or "").strip()
         project_uid = previous_uid or str(uuid.uuid4())
         explicit_project_id = bool(project_id and project_id.strip())
@@ -516,7 +516,10 @@ def run_connect(
                         f"unbound namespace already contains {count} document(s); use a new bank or --adopt-existing explicitly"
                     )
                 if count == 0 and explicit_project_id and not claim and not adopt_existing:
-                    raise ValueError("empty explicit namespace is unclaimed; rerun with --claim")
+                    # 빈 뱅크의 명시 이름은 곧 새 뱅크 개설 의사 — 별도 --claim 을 요구하던 마찰 제거
+                    # (오딘 결정 26-07-23: connect 한 줄이면 아스가르드가 알아서). 데이터가 있는 뱅크의
+                    # 입양(--adopt-existing)만 명시 동의로 남긴다.
+                    ui.step(f"빈 네임스페이스 '{pid}' — 새 뱅크로 클레임")
                 if not binding_id:
                     binding_id = str(uuid.uuid4())
                 marker = ProjectMemoryBinding(project_uid=project_uid, binding_id=binding_id, project_id=pid)

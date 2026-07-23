@@ -226,7 +226,9 @@ class TestConfigDiscovery(BridgeBase):
             options={"index": "asgard-memory"},
         )
 
-        persisted = load_project(self.root)["memory"]
+        project = load_project(self.root)
+        self.assertNotIn("memory", project)  # 구 섹션 키는 개명 이관 시 제거 (정본 이원화 방지)
+        persisted = project["project_memory"]
         self.assertEqual(
             persisted,
             {
@@ -242,6 +244,62 @@ class TestConfigDiscovery(BridgeBase):
         self.assertEqual(found[1]["engine"], "redisvl")
         self.assertEqual(found[1]["project_id"], "redis-demo")
         self.assertEqual(found[1]["bank"], "redis-demo")  # 전환 기간 호환 alias
+
+    def test_identity_lives_in_sidecar_not_settings(self):
+        """uid·binding 신원은 사이드카 정본 — 설정 파일에는 사람이 만지는 키만 (오딘 결정 26-07-23)."""
+        from asgard.settings import load_project
+
+        mb.write_config(
+            self.root,
+            "http://memory:8888",
+            "demo-bank",
+            project_uid="uid-1234",
+            binding_id="bind-5678",
+        )
+        persisted = load_project(self.root)["project_memory"]
+        self.assertNotIn("project_uid", persisted)
+        self.assertNotIn("binding_id", persisted)
+        sidecar = mb.read_binding_sidecar(self.root)
+        self.assertEqual(sidecar["project_uid"], "uid-1234")
+        self.assertEqual(sidecar["binding_id"], "bind-5678")
+        found = mb.find_config(self.root)
+        assert found is not None
+        self.assertEqual(found[1]["project_uid"], "uid-1234")  # 소비자에게는 병합 제공
+        self.assertEqual(found[1]["binding_id"], "bind-5678")
+
+    def test_legacy_inline_identity_still_read_and_wins(self):
+        """구 스키마(설정 파일 안 uid·binding) 프로젝트는 그대로 동작 — 잔존 값이 사이드카보다 우선."""
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        open(os.path.join(self.root, ".asgard", "asgard-setting-project.json"), "w").write(
+            json.dumps(
+                {
+                    "project_memory": {
+                        "engine": "hindsight",
+                        "endpoint": "http://memory:8888",
+                        "project_id": "legacy-bank",
+                        "project_uid": "inline-uid",
+                        "binding_id": "inline-bind",
+                    }
+                }
+            )
+        )
+        found = mb.find_config(self.root)
+        assert found is not None
+        self.assertEqual(found[1]["project_uid"], "inline-uid")
+        self.assertEqual(found[1]["binding_id"], "inline-bind")
+
+    def test_enabled_false_toggles_off(self):
+        """enabled=false 는 미연결과 동일한 무노출 — 삭제 없이 껐다 켤 수 있다."""
+        mb.write_config(self.root, "http://memory:8888", "demo-bank", project_uid="u", binding_id="b")
+        settings_path = os.path.join(self.root, ".asgard", "asgard-setting-project.json")
+        data = json.load(open(settings_path))
+        data["project_memory"]["enabled"] = False
+        open(settings_path, "w").write(json.dumps(data))
+        self.assertIsNone(mb.find_config(self.root))
+        self.assertIsNone(mb.find_config(self.root, strict=True))  # doctor 경로도 동일
+        data["project_memory"]["enabled"] = True
+        open(settings_path, "w").write(json.dumps(data))
+        self.assertIsNotNone(mb.find_config(self.root))
 
     def test_found_at_root_and_from_subdir(self):
         sub = os.path.join(self.root, "a", "b")
@@ -266,6 +324,54 @@ class TestConfigDiscovery(BridgeBase):
 
         open(os.path.join(self.root, ".asgard", PROJECT_FILE), "w").write('{"memory": {"server": "http://x"}}')
         self.assertIsNone(mb.find_config(self.root))
+
+    def test_legacy_memory_section_key_still_read(self):
+        """구 섹션 키 memory 로 저장된 프로젝트 — project_memory 개명 후에도 폴백으로 인식."""
+        from asgard.settings import PROJECT_FILE
+
+        open(os.path.join(self.root, ".asgard", PROJECT_FILE), "w").write(
+            '{"memory": {"engine": "hindsight", "endpoint": "http://legacy:1", "project_id": "legacy-bank"}}'
+        )
+        found = mb.find_config(self.root)
+        assert found is not None
+        self.assertEqual(found[1]["project_id"], "legacy-bank")
+
+    def test_scaffold_seed_with_comment_keys_is_unconnected(self):
+        """init 시드(project_memory = _comment·_example 주석 키만) = 미연결 — strict(doctor)에서도
+        malformed 가 아니라 None. 과거 빈 {"memory": {}} 시드가 strict 에서 빨갛게 뜨던 회귀 방어."""
+        from asgard.settings import PROJECT_FILE
+        from asgard.templates.trinity import project_settings
+
+        open(os.path.join(self.root, ".asgard", PROJECT_FILE), "w").write(project_settings())
+        self.assertIsNone(mb.find_config(self.root))
+        self.assertIsNone(mb.find_config(self.root, strict=True))
+
+    def test_scaffold_example_bank_matches_backend_contract(self):
+        """시드의 _example 은 그대로 실 키로 승격했을 때 파싱되는 형태여야 한다 — 예제가 계약과
+        어긋나면 사용자를 잘못 안내한다."""
+        from asgard.project_memory_backends import parse_settings
+        from asgard.templates.trinity import project_settings
+
+        seed = json.loads(project_settings())["project_memory"]
+        self.assertIn("_comment", seed)
+        example = seed["_example"]
+        parsed = parse_settings(example)
+        self.assertEqual(parsed.engine, example["engine"])
+        self.assertEqual(parsed.project_id, example["project_id"])
+        self.assertEqual(parsed.endpoint, example["endpoint"])
+
+    def test_example_keys_promoted_in_place_connects(self):
+        """사용자가 _example 의 키들을 섹션에 직접 기입하면 (주석 키가 남아 있어도) 연결된다."""
+        from asgard.settings import PROJECT_FILE
+        from asgard.templates.trinity import project_settings
+
+        data = json.loads(project_settings())
+        data["project_memory"].update(data["project_memory"]["_example"])
+        open(os.path.join(self.root, ".asgard", PROJECT_FILE), "w").write(json.dumps(data))
+        found = mb.find_config(self.root)
+        assert found is not None
+        self.assertEqual(found[1]["project_id"], "my-project-bank")
+        self.assertNotIn("_comment", found[1])  # 주석 키는 설정으로 새지 않는다
 
     def test_legacy_memory_server_json_still_read(self):
         """구 memory-server.json 만 있는 프로젝트 — settings 폴백으로 계속 인식 (마이그레이션 전 호환)."""

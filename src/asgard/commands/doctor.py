@@ -21,6 +21,21 @@ def _shared_memory_check(root: str) -> dict | None:
 
         found = find_config(root, strict=True)
         if not found:
+            # enabled=false 는 미연결과 다른 의도적 비활성 — 무음이면 "왜 안 쌓이지" 조회가 불가능하다.
+            try:
+                from ..memory_bridge import project_memory_disabled, project_memory_section
+                from ..settings import load_project
+
+                section = project_memory_section(load_project(root))
+                if project_memory_disabled(section):
+                    return {
+                        "name": "shared memory backend",
+                        "ok": True,
+                        "detail": "off (project_memory.enabled=false — 의도된 비활성)",
+                        "fix": "",
+                    }
+            except Exception:
+                pass
             return None
         _, mcfg = found
         try:

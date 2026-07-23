@@ -11,11 +11,14 @@ import secrets
 import stat
 import subprocess
 import time
+from collections.abc import Mapping
 
 from ..project_memory_backends import parse_settings
 from .trust import _trust_guard
 
 CONFIG_NAME = "memory-server.json"
+PROJECT_SECTION = "project_memory"
+LEGACY_PROJECT_SECTION = "memory"  # 구 섹션 키 — 글로벌 개인 메모리 섹션과 동명이라 개명됨
 PENDING_NAME = "memory-pending.json"
 PENDING_TTL = 3600  # 승인 id 만료 (초) — 승인과 실행 사이가 길면 재계획이 맞다
 PENDING_LOCK_STALE = 60  # pending JSON lock은 짧은 local critical section에만 유지된다
@@ -28,8 +31,69 @@ class ProjectMemoryConfigError(ValueError):
     """A project-memory config file is present but malformed."""
 
 
+def _binding_sidecar_path(root: str) -> str:
+    return os.path.join(root, ".asgard", "memory", "binding.json")
+
+
+def read_binding_sidecar(root: str) -> dict:
+    """바인딩 사이드카(.asgard/memory/binding.json) — 아스가르드가 관리하는 내부 신원.
+
+    project_uid·binding_id 는 사용자가 읽고 고치는 설정이 아니라 connect 가 발급·검증하는
+    소유권 마커다 (오딘 지적 26-07-23: 설정 파일에는 사람이 만지는 키만). git 추적으로 팀과
+    공유된다. 깨진 파일은 없음과 동일 (fail-safe)."""
+    try:
+        with open(_binding_sidecar_path(root), encoding="utf-8") as source:
+            raw = json.load(source)
+        if not isinstance(raw, dict):
+            return {}
+        return {key: str(raw.get(key) or "").strip() for key in ("project_id", "project_uid", "binding_id")}
+    except Exception:
+        return {}
+
+
+def _write_binding_sidecar(root: str, project_id: str, project_uid: str, binding_id: str) -> None:
+    path = _binding_sidecar_path(root)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "_comment": "asgard memory connect 가 관리하는 프로젝트 메모리 소유권 마커 — 직접 수정 금지",
+        "project_id": project_id,
+        "project_uid": project_uid,
+        "binding_id": binding_id,
+    }
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as sink:
+        json.dump(payload, sink, ensure_ascii=False, indent=1)
+        sink.write("\n")
+    os.replace(tmp, path)
+
+
+def project_memory_disabled(section: Mapping[str, object] | None) -> bool:
+    """`enabled` 토글 — 명시적 false/off/0 만 비활성. 부재·그 외 값 = 활성 (기본 on)."""
+    if not section:
+        return False
+    value = section.get("enabled")
+    if value is None or value is True:
+        return False
+    return str(value).strip().lower() in ("false", "off", "0")
+
+
+def project_memory_section(project: dict) -> dict | None:
+    """통합 설정에서 프로젝트 메모리 섹션을 고른다 — project_memory 우선, 구 memory 폴백.
+
+    `_` 로 시작하는 키는 스캐폴드가 심는 주석·입력 예제(_comment·_example)라 설정으로 치지
+    않는다. 실 설정 키가 하나도 없으면 None — opt-in 미연결(공란 시드) 상태로, 깨진 설정과
+    구별된다 (미연결 시드를 malformed 로 읽으면 fresh init 이 doctor 에서 빨갛게 뜬다)."""
+    for name in (PROJECT_SECTION, LEGACY_PROJECT_SECTION):
+        raw = project.get(name)
+        if isinstance(raw, dict):
+            section = {key: value for key, value in raw.items() if not str(key).startswith("_")}
+            if section:
+                return section
+    return None
+
+
 def find_config(start: str | None = None, *, strict: bool = False) -> tuple[str, dict] | None:
-    """프로젝트 memory 섹션(engine·project_id)을 위로 걸어가며 탐색한다.
+    """프로젝트 메모리 섹션(project_memory — engine·project_id)을 위로 걸어가며 탐색한다.
 
     구 server·bank 설정은 Hindsight로 정규화한다. 반환 dict에는 전환 기간 동안 기존 호출부를
     위한 server·bank alias도 제공하지만, 저장 정본은 engine·endpoint·project_id다.
@@ -50,7 +114,9 @@ def find_config(start: str | None = None, *, strict: bool = False) -> tuple[str,
                         raw = json.load(source)
                     if not isinstance(raw, dict):
                         raise ValueError("project settings must be a JSON object")
-                    if "memory" not in raw:
+                    if project_memory_section(raw) is None:
+                        return None
+                    if project_memory_disabled(project_memory_section(raw)):
                         return None
                 elif strict and os.path.isfile(legacy_file):
                     with open(legacy_file, encoding="utf-8") as source:
@@ -58,9 +124,15 @@ def find_config(start: str | None = None, *, strict: bool = False) -> tuple[str,
                     if not isinstance(raw, dict):
                         raise ValueError("legacy project-memory settings must be a JSON object")
                 project = load_project(d)
-                if "memory" not in project:
+                mem = project_memory_section(project)
+                if mem is None or project_memory_disabled(mem):
                     return None
-                mem = project.get("memory") or {}
+                # 신원(uid·binding)은 사이드카가 정본 — 설정 파일 잔존 값(구 스키마)이 있으면 그 값 우선.
+                sidecar = read_binding_sidecar(d)
+                mem = dict(mem)
+                for key in ("project_uid", "binding_id"):
+                    if not str(mem.get(key) or "").strip() and sidecar.get(key):
+                        mem[key] = sidecar[key]
                 settings = parse_settings(mem)
                 normalized = dict(mem)
                 normalized.update(
@@ -111,7 +183,14 @@ def write_config(
         "binding_id": binding_id or None,
     }
     parse_settings({key: value for key, value in config.items() if value is not None})
-    return save_project(root, "memory", config)
+    # 설정 파일에는 사람이 만지는 키만 남긴다 — uid·binding 신원은 사이드카로 (오딘 결정 26-07-23).
+    # save_project 는 섹션을 통째 교체하므로 구 스키마의 잔존 uid·binding 키도 함께 사라진다.
+    visible = {key: value for key, value in config.items() if key not in ("project_uid", "binding_id")}
+    # 구 memory 섹션은 함께 제거 — 남기면 정본이 이원화되고 폴백 리더가 낡은 값을 읽는다.
+    path = save_project(root, PROJECT_SECTION, visible, drop=(LEGACY_PROJECT_SECTION,))
+    if project_uid or binding_id:
+        _write_binding_sidecar(root, config["project_id"], project_uid, binding_id)
+    return path
 
 
 # ── 승인 대기 (2단 retain) — 개인 위키 plan-id 와 동일 계약 ───────────────────────────

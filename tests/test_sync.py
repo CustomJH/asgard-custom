@@ -68,6 +68,51 @@ class TestRegistry(Base):
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "state", "map-graph.json")))
         self.assertIsNotNone(memory._read(memory.memory_dir(), memory.DEFAULT_SKILL_PREFERENCE_SLUG))
 
+    def test_setup_tolerates_preexisting_map_seed(self):
+        # `asgard map`·훅이 init 전에 .asgard/.gitignore + map/INDEX.md 를 lazy 생성해도 init 은
+        # 차단(rc 2)하지 않는다 — .gitignore 는 사용자 내용 보존, INDEX.md 는 asgard 소유라 재동기화.
+        from asgard.commands.setup import run_setup
+
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        custom_ignore = "*\n!.gitignore\n# 사용자 로컬 예외\n!scratch/\n"
+        with open(os.path.join(self.root, ".asgard", ".gitignore"), "w") as fh:
+            fh.write(custom_ignore)
+        with open(os.path.join(self.root, ".asgard", "map", "INDEX.md"), "w") as fh:
+            fh.write("# stale index\n")
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            self.assertEqual(run_setup(cc=True), 0)
+        finally:
+            os.chdir(cwd)
+        with open(os.path.join(self.root, ".asgard", ".gitignore")) as fh:
+            self.assertEqual(fh.read(), custom_ignore)
+        from asgard.templates import MAP_INDEX_MD
+
+        with open(os.path.join(self.root, ".asgard", "map", "INDEX.md")) as fh:
+            self.assertEqual(fh.read(), MAP_INDEX_MD)
+
+    def test_setup_force_reowns_divergent_map(self):
+        # 기존 맵이 현재 디렉토리 스캔과 다르고 마커조차 없어도(사람 소유·타 프로젝트 유래)
+        # init 은 현재 디렉토리를 정본으로 삼아 경고 후 엎어쓴다 — 차단(rc 2)하지 않는다.
+        from asgard.commands.setup import run_setup
+
+        os.makedirs(os.path.join(self.root, ".asgard", "map"))
+        with open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), "w") as fh:
+            fh.write("# stale foreign map\n")
+        with open(os.path.join(self.root, ".asgard", "map", "GRAPH.md"), "w") as fh:
+            fh.write("# stale foreign graph\n")
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            self.assertEqual(run_setup(cc=True), 0)
+        finally:
+            os.chdir(cwd)
+        with open(os.path.join(self.root, ".asgard", "map", "PROJECT.md")) as fh:
+            self.assertNotIn("stale foreign", fh.read())
+        with open(os.path.join(self.root, ".asgard", "map", "GRAPH.md")) as fh:
+            self.assertNotIn("stale foreign", fh.read())
+
     def test_setup_preflights_unsafe_map_before_scaffolding(self):
         from asgard.commands.setup import run_setup
 
@@ -102,14 +147,14 @@ class TestRegistry(Base):
 class TestAgentsMerge(Base):
     def test_blocks_replaced_user_content_preserved(self):
         new = agents_md("proj")
-        old = new.replace("오딘 우선", "옛날 문구")  # 구버전 블록 시뮬레이션
+        old = new.replace("Odin first", "옛날 문구")  # 구버전 블록 시뮬레이션
         old = old.replace(
             "<!-- Add project conventions, build/test commands, and architecture notes here. -->",
             "uv run pytest — 우리 팀 규칙",
         )
         merged = merge_agents_md(old, new)
         assert merged is not None
-        self.assertIn("오딘 우선", merged)  # 블록은 최신으로
+        self.assertIn("Odin first", merged)  # 블록은 최신으로
         self.assertNotIn("옛날 문구", merged)
         self.assertIn("uv run pytest — 우리 팀 규칙", merged)  # 블록 밖 사용자 내용 보존
 

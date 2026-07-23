@@ -8,7 +8,8 @@
 
 섹션 스키마 (양쪽 동일 — 프로젝트가 글로벌을 키 단위로 이긴다):
   provider / trinity(네이티브 역할 배치) / agent_models(호스트별 역할 모델) / bridge /
-  lagom / memory / ui / trinity_policy(프로젝트 전용)
+  lagom / memory(글로벌 — 개인 메모리) / project_memory(프로젝트 전용 — 공유 backend,
+  구 키 memory 는 폴백으로만 읽는다) / ui / trinity_policy(프로젝트 전용)
 
 레거시 폴백: 신규 JSON 이 없으면 구 파일을 그대로 읽는다 (기배포 프로젝트·기존 테스트 무파손).
 쓰기는 항상 신규 JSON — `asgard sync` 가 구 파일을 신 포맷으로 이관한다.
@@ -120,10 +121,13 @@ def save_global(section_name: str, kv: dict) -> str:
     return global_path()
 
 
-def save_project(root: str, section_name: str, kv: dict) -> str:
-    """프로젝트 섹션 저장 — save_global 과 동일 계약 (섹션 교체). 최초 저장 시 구 3파일 자동 승계."""
+def save_project(root: str, section_name: str, kv: dict, *, drop: tuple[str, ...] = ()) -> str:
+    """프로젝트 섹션 저장 — save_global 과 동일 계약 (섹션 교체). 최초 저장 시 구 3파일 자동 승계.
+    drop = 함께 제거할 구 섹션 키 (섹션 개명 이관용 — 구 키를 남기면 정본이 이원화된다)."""
     data = load_project(root)
     data[section_name] = {k: v for k, v in kv.items() if v is not None}
+    for name in drop:
+        data.pop(name, None)
     _atomic_json(project_path(root), data)
     return project_path(root)
 
