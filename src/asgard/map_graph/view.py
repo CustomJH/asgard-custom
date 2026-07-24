@@ -225,9 +225,9 @@ _TEMPLATE = """<!doctype html>
 "use strict";
 const DATA = JSON.parse(document.getElementById("data").textContent);
 const KIND_COLORS = { file:"#737D8C", route:"#E8C87E", page:"#EFA987", store:"#C9A7EF", composable:"#9FD0A8",
-  command:"#D98E4A", model:"#8FB6E8",
+  component:"#C4A484", command:"#D98E4A", model:"#8FB6E8",
   db_access:"#96C08A", api_call:"#E38B8B", event:"#B99CE8", job:"#72C6C6", external_service:"#DD9AC2" };
-const KIND_ORDER = ["route","page","store","composable","command","model","db_access","api_call","event","job","external_service","file"];
+const KIND_ORDER = ["route","page","component","store","composable","command","model","db_access","api_call","event","job","external_service","file"];
 const EDGE_KINDS = ["declares","calls","touches","uses","emits"];
 const EDGE_DASH = { declares:[], calls:[7,4], touches:[2,4], uses:[11,3,2,3], emits:[4,3,1,3] };
 const FONT = '"SF Mono",Menlo,Consolas,monospace';
