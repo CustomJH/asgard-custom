@@ -361,3 +361,34 @@ class TestDashboardNornData(NornBase):
         self.assertEqual(row["confidence"], "low")
         self.assertEqual(sorted(row["sources"]), sorted([a, b]))
         self.assertIn(data["auto_mode"], ("off", "safe", "full"))
+
+
+class TestHindsightReflect(unittest.TestCase):
+    def _backend(self) -> HindsightBackend:
+        return HindsightBackend(
+            BackendSettings(engine="hindsight", project_id="proj", endpoint="http://memory.internal:8888")
+        )
+
+    def test_reflect_posts_and_returns_text(self):
+        backend = self._backend()
+        with mock.patch.object(
+            HindsightBackend, "_post", return_value={"text": "answer", "based_on": {"memories": []}}
+        ) as post:
+            output = backend.reflect("what changed?", budget="mid", max_tokens=512)
+        self.assertEqual(output["text"], "answer")
+        path, payload = post.call_args.args
+        self.assertEqual(path, "/reflect")
+        self.assertEqual(payload["budget"], "mid")
+        self.assertEqual(payload["max_tokens"], 512)
+        self.assertEqual(payload["include"], {"facts": {}})
+
+    def test_reflect_rejects_bad_budget_and_malformed_response(self):
+        backend = self._backend()
+        with self.assertRaises(ValueError):
+            backend.reflect("q", budget="ultra")
+        with mock.patch.object(HindsightBackend, "_post", return_value={"nope": 1}), self.assertRaises(ValueError):
+            backend.reflect("q")
+
+
+if __name__ == "__main__":
+    unittest.main()

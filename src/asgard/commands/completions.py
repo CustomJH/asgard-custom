@@ -153,6 +153,7 @@ _MEM_SUB = {
     "project-sync": "sync approved artifacts to the selected backend",
     "project-approve": "approve a staged project-memory record",
     "project-rehydrate": "replay Git canonical records to the selected backend",
+    "project-reflect": "LLM-synthesized answer over the project bank (advisory)",
     "mcp": "stdio MCP bridge (shared memory)",
 }
 _PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}

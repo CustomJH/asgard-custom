@@ -311,6 +311,27 @@ class HindsightBackend:
             details=output,
         )
 
+    def reflect(self, query: str, budget: str = "low", max_tokens: int = 2048) -> dict:
+        """Reflect — bank 전체를 근거로 LLM 합성 답변. 반환 = {"text", "based_on"?}.
+
+        읽기 전용 자문 표면이다: 산출은 backend LLM 의 종합이지 Git 정본이 아니므로
+        자동 컨텍스트 주입 자격이 없다 (게이트·trust 필터 계약과 무관한 별도 소비면)."""
+        if budget not in {"low", "mid", "high"}:
+            raise ValueError("reflect budget must be low|mid|high")
+        output = self._post(
+            "/reflect",
+            {
+                "query": query,
+                "budget": budget,
+                "max_tokens": max(256, min(int(max_tokens), 8192)),
+                "include": {"facts": {}},  # {} = 근거 facts 동봉 활성 (Hindsight 0.8 스키마)
+            },
+        )
+        text = output.get("text")
+        if not isinstance(text, str):
+            raise ValueError("project memory backend returned a malformed reflect response")
+        return output
+
     def read_binding(self) -> ProjectMemoryBinding | None:
         document = self._get(
             "/documents/" + urllib.parse.quote(BINDING_DOCUMENT_ID, safe=""),

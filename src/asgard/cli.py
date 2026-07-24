@@ -628,6 +628,17 @@ def memory_norn_restore(slug: str = typer.Argument(...)) -> None:
     raise typer.Exit(run_norn_restore(slug))
 
 
+@memory_app.command("project-reflect", help="LLM-synthesized answer over the project memory bank (advisory)")
+def memory_project_reflect(
+    question: str = typer.Argument(..., help="the question to reflect on"),
+    budget: str = typer.Option("low", "--budget", help="low|mid|high — reflection depth"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_reflect
+
+    raise typer.Exit(run_project_reflect(question, budget, json_))
+
+
 @memory_app.command("obsidian", help="open the personal memory wiki in Obsidian")
 def memory_obsidian() -> None:
     from .commands.memory import run_obsidian
@@ -657,6 +668,9 @@ def memory_connect(
     adopt_existing: bool = typer.Option(
         False, "--adopt-existing", help="explicitly bind an existing unbound/legacy namespace (review first)"
     ),
+    timeout: int = typer.Option(
+        None, "--timeout", help="backend request timeout in seconds (slow LLM gateways need more than the 15s default)"
+    ),
 ) -> None:
     from .commands.memory import run_connect
 
@@ -668,6 +682,7 @@ def memory_connect(
             option_values=option,
             claim=claim,
             adopt_existing=adopt_existing,
+            timeout=timeout,
         )
     )
 

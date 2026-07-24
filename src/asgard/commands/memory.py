@@ -507,6 +507,7 @@ def run_connect(
     option_values: list[str] | None = None,
     claim: bool = False,
     adopt_existing: bool = False,
+    timeout: int | None = None,
 ) -> int:
     """프로젝트를 선택된 shared-memory backend에 연결하고 통합 설정에 기록한다."""
 
@@ -540,6 +541,10 @@ def run_connect(
             "project_uid": project_uid,
             "binding_id": binding_id,
         }
+        if timeout is not None:
+            # 동기 retain 이 backend LLM 추출을 기다린다 — 느린 게이트웨이는 기본 15s 를 넘긴다
+            # (실측 26-07-24: qwen3:8b 로컬 추출 ~16s → binding write 가 기본값에서 항상 timeout)
+            config["timeout"] = int(timeout)
         backend = get_backend(config)
         try:
             readiness = backend.readiness()
@@ -589,6 +594,7 @@ def run_connect(
             options=selected_options,
             project_uid=project_uid,
             binding_id=binding_id,
+            timeout=timeout,
         )
         memory_bridge.trust_backend(config)
         ui.ok(f"connected: engine={selected_engine} project_id={pid} → {p} (커밋해서 팀과 공유)")
@@ -925,5 +931,39 @@ def run_norn_restore(slug: str) -> int:
             return 0
         ui.fail(f"아카이브에 없음: {slug}")
         return 1
+
+    return _guard(_do)
+
+
+def run_project_reflect(question: str, budget: str = "low", json_out: bool = False) -> int:
+    """프로젝트 메모리 backend 의 Reflect 합성 답변 — 읽기 전용 자문 (게이트 증거 아님)."""
+
+    def _do() -> int:
+        from ..project_memory_backends import get_backend
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+        _, cfg = found
+        if not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        backend = get_backend(cfg)
+        try:
+            reflect = getattr(backend, "reflect", None)
+            if not callable(reflect):
+                raise ValueError(f"backend '{backend.engine}' does not support reflect")
+            output = reflect(question, budget=budget)
+        finally:
+            backend.close()
+        facts = output.get("based_on") or {}
+        memories = facts.get("memories") if isinstance(facts, dict) else None
+        if json_out:
+            print(_json.dumps(output, ensure_ascii=False, indent=2))
+            return 0
+        ui.head(f"project memory reflect · engine={backend.engine} · project_id={backend.project_id}")
+        print(str(output.get("text") or "").strip())
+        if isinstance(memories, list) and memories:
+            print(ui.dim(f"근거 memories {len(memories)}건 — 자문일 뿐 완료 증거가 아니다"))
+        return 0
 
     return _guard(_do)
