@@ -279,6 +279,65 @@ def activity_data(d: str) -> dict:
     }
 
 
+def norn_data(d: str) -> dict:
+    """노른 손질 이력 — 리포트 목록 + insight 계보 (연대기 탭 편입, 읽기 전용).
+
+    리포트는 reports/norn-*.md 파생물(원문 그대로 요약), insight 계보는 kind=insight
+    페이지의 sources 링크·confidence 를 카탈로그에서 재구성한다."""
+    reports: list[dict] = []
+    rdir = os.path.join(d, "reports")
+    try:
+        names = sorted((n for n in os.listdir(rdir) if n.startswith("norn-") and n.endswith(".md")), reverse=True)
+    except OSError:
+        names = []
+    for name in names[:12]:
+        path = os.path.join(rdir, name)
+        try:
+            lines = open(path, encoding="utf-8").read().splitlines()
+        except OSError:
+            continue
+        ops = [ln[2:].strip() for ln in lines if ln.startswith("- ")]
+        counts = {
+            "merge": sum(1 for op in ops if op.startswith("merge")),
+            "archive": sum(1 for op in ops if op.startswith("archive")),
+            "insight": sum(1 for op in ops if op.startswith("insight")),
+            "contradiction": sum(1 for op in ops if op.startswith("⚠")),
+            "proposed": sum(1 for op in ops if op.startswith("(제안)")),
+            "dropped": sum(1 for op in ops if op.startswith("(기각)")),
+        }
+        reports.append({"name": name, "ops": ops[:20], "counts": counts})
+    insights: list[dict] = []
+    for row in catalog_data(d):
+        if row.get("kind") != "insight" or row.get("poisoned"):
+            continue
+        pg = memory._read(d, row["slug"])
+        confidence = ""
+        if pg:
+            m = re.search(r"confidence:\s*(low|medium|high)", pg[1])
+            confidence = m.group(1) if m else ""
+        insights.append(
+            {
+                "slug": row["slug"],
+                "title": row["title"],
+                "sources": row.get("links") or [],
+                "confidence": confidence,
+                "created": row.get("created", ""),
+                "uses": row.get("uses", 0),
+            }
+        )
+    insights.sort(key=lambda r: r["created"], reverse=True)
+    return {"reports": reports, "insights": insights[:20], "auto_mode": _norn_auto_mode()}
+
+
+def _norn_auto_mode() -> str:
+    try:
+        from ...memory.norn import auto_mode
+
+        return auto_mode()
+    except Exception:
+        return "safe"
+
+
 def _semantic_status() -> dict:
     try:
         from ... import memory_semantic as sem
@@ -308,6 +367,7 @@ def snapshot_data(d: str | None = None) -> dict:
         "graph": graph_data(d),
         "log": log_data(d, n=120),  # 연대기 탭 분량 — 집계는 activity 가 담당
         "activity": activity_data(d),
+        "norn": norn_data(d),  # 노른 손질 이력 + insight 계보 (연대기 탭)
     }
 
 

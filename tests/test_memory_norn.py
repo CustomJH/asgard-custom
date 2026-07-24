@@ -332,3 +332,32 @@ class TestAutonomyTiers(NornBase):
         with mock.patch.object(norn, "_complete", return_value='{"ops": []}'):
             norn.run_auto(self.tmp, self.d)
         self.assertFalse(norn.norn_due(self.d)[0])  # 같은 누적으로 재발화하지 않는다
+
+
+class TestDashboardNornData(NornBase):
+    def test_norn_data_reports_and_insight_lineage(self):
+        from asgard.commands.memory_dashboard.data import norn_data
+
+        a = self._add("금요일 배포 관측 1", "관측 1")
+        b = self._add("금요일 배포 관측 2", "관측 2")
+        accepted, _ = norn.validate_ops(
+            [
+                {
+                    "op": "insight",
+                    "title": "금요일 배포 패턴",
+                    "text": "사용자는 금요일에 배포하는 경향이 있다",
+                    "sources": [a, b],
+                    "why": "p",
+                }
+            ],
+            self.d,
+        )
+        norn.apply_norn(self.d, {"ops": accepted, "dropped": []})
+        data = norn_data(self.d)
+        self.assertEqual(len(data["reports"]), 1)
+        self.assertEqual(data["reports"][0]["counts"]["insight"], 1)
+        self.assertEqual(len(data["insights"]), 1)
+        row = data["insights"][0]
+        self.assertEqual(row["confidence"], "low")
+        self.assertEqual(sorted(row["sources"]), sorted([a, b]))
+        self.assertIn(data["auto_mode"], ("off", "safe", "full"))
