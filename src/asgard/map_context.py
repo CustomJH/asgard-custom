@@ -16,6 +16,10 @@ MAX_CONTEXT_ENTRIES = 32
 _ENTRY = re.compile(r"^- `([^`]+)` — (.+)$")
 _COMMAND = re.compile(r"^- Command: `([^`]+)` — (.+)$")
 _TOKEN = re.compile(r"[\w./-]{2,}", re.UNICODE)
+_SEED_ID = re.compile(r"`([a-z_]+:[^`\s]+)`")
+_MAX_CONTEXT_SEEDS = 3
+# 동점 시드의 종류 우선순위 — route 는 교차 레인 허브라 impact 회수 가치가 가장 크다.
+_SEED_KIND_PRIORITY = ("route", "event", "job", "store", "page", "command")
 
 
 @dataclass(frozen=True)
@@ -140,6 +144,32 @@ def _managed_entries(
     return entries, commands
 
 
+def _trace_seeds(graph_text: str, terms: set[str]) -> list[str]:
+    """GRAPH.md `## Trace seeds` 에서 쿼리 연관 노드 id 를 고른다 — 명령 라우팅의 시드.
+
+    경로만 주면 에이전트는 Read/grep 최소 저항 경로를 탄다(실측). 시드 id 를 명령과 함께
+    주입해야 trace/impact 로 간다. 쿼리와 무관한 시드는 예산만 축내므로 매치 0 이면 비운다.
+    """
+    if not terms:
+        return []
+    split = graph_text.split("## Trace seeds", 1)
+    if len(split) < 2:
+        return []
+    body = split[1].split("\n## ", 1)[0]
+    scored: list[tuple[int, int, str]] = []
+    seen: set[str] = set()
+    for node_id in _SEED_ID.findall(body):
+        lowered = node_id.casefold()
+        score = sum(1 for term in terms if term in lowered)
+        if score and node_id not in seen:
+            seen.add(node_id)
+            kind = node_id.partition(":")[0]
+            rank = _SEED_KIND_PRIORITY.index(kind) if kind in _SEED_KIND_PRIORITY else len(_SEED_KIND_PRIORITY)
+            scored.append((-score, rank, node_id))
+    scored.sort()
+    return [node_id for _score, _rank, node_id in scored[:_MAX_CONTEXT_SEEDS]]
+
+
 def _score(entry: MapEntry, terms: set[str]) -> tuple[int, int, str, str]:
     haystack = f"{entry.path} {entry.role} {entry.source}".casefold()
     score = sum(8 if term in entry.path.casefold() else 3 for term in terms if term in haystack)
@@ -187,6 +217,17 @@ def build_map_context(
         relevant = [entry for entry in ranked if -_score(entry, terms)[0] > int(entry.managed)]
         fallback = [entry for entry in ranked if entry.managed and entry not in relevant]
         ranked = [*relevant, *fallback]
+    # 시드 섹션은 명령 라우팅 어포던스다 — 큰 리포일수록 엔트리가 예산을 다 채우므로
+    # 바이트를 선예약하고 두 줄을 원자적으로 싣는다 (헤더만 남는 절단 금지).
+    seeds = _trace_seeds(graph_text, terms)
+    seed_lines: list[str] = []
+    if seeds and not _threat(*seeds):
+        seed_row = " · ".join(f"`{_neutralize(seed)}`" for seed in seeds)
+        seed_lines = [
+            "연쇄·영향 질문(무엇이 무엇을 부르나·바꾸면 어디까지)은 경로 grep 전에 지도 명령이 정확하다:",
+            f"- `asgard map impact <id>` / `asgard map trace --from <id> --kinds calls,touches` — 시드: {seed_row}",
+        ]
+    reserved = sum(len(line.encode("utf-8")) + 1 for line in seed_lines)
     selected: list[MapEntry] = []
     lines = [
         f'<asgard-map revision="{managed_hash[:12]}" advisory="true">',
@@ -194,10 +235,12 @@ def build_map_context(
     ]
     for entry in ranked[:MAX_CONTEXT_ENTRIES]:
         line = f"- `{entry.path}` — {_neutralize(entry.role)} [source: {_neutralize(entry.source)}]"
-        if len(("\n".join([*lines, line, "</asgard-map>"])).encode("utf-8")) > CONTEXT_BUDGET:
+        if len(("\n".join([*lines, line, "</asgard-map>"])).encode("utf-8")) > CONTEXT_BUDGET - reserved:
             break
         lines.append(line)
         selected.append(entry)
+    if seed_lines and len(("\n".join([*lines, *seed_lines, "</asgard-map>"])).encode("utf-8")) <= CONTEXT_BUDGET:
+        lines.extend(seed_lines)
     if commands:
         lines.append("검증 명령 후보:")
         for command, role in commands:
