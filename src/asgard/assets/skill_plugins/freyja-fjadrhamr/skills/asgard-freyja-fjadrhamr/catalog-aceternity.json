@@ -1,0 +1,335 @@
+{
+ "source": "aceternity",
+ "license": "Aceternity free components (site-served; pro items return 401 \u2014 skip them)",
+ "fetch": "https://ui.aceternity.com/registry/{name}.json",
+ "count": 109,
+ "components": [
+  {
+   "name": "grid"
+  },
+  {
+   "name": "moving-line"
+  },
+  {
+   "name": "sparkles"
+  },
+  {
+   "name": "spotlight"
+  },
+  {
+   "name": "glowing-stars"
+  },
+  {
+   "name": "text-reveal-card"
+  },
+  {
+   "name": "animated-tooltip"
+  },
+  {
+   "name": "following-pointer"
+  },
+  {
+   "name": "background-beams"
+  },
+  {
+   "name": "svg-mask-effect"
+  },
+  {
+   "name": "infinite-moving-cards"
+  },
+  {
+   "name": "3d-pin"
+  },
+  {
+   "name": "evervault-card"
+  },
+  {
+   "name": "parallax-scroll"
+  },
+  {
+   "name": "parallax-scroll-2"
+  },
+  {
+   "name": "parallax-hero-images"
+  },
+  {
+   "name": "tracing-beam"
+  },
+  {
+   "name": "container-scroll-animation"
+  },
+  {
+   "name": "text-generate-effect"
+  },
+  {
+   "name": "meteors"
+  },
+  {
+   "name": "card-stack"
+  },
+  {
+   "name": "moving-border"
+  },
+  {
+   "name": "lamp"
+  },
+  {
+   "name": "sticky-scroll-reveal"
+  },
+  {
+   "name": "floating-navbar"
+  },
+  {
+   "name": "navbar-menu"
+  },
+  {
+   "name": "tailwindcss-buttons"
+  },
+  {
+   "name": "bento-grid"
+  },
+  {
+   "name": "card-hover-effect"
+  },
+  {
+   "name": "google-gemini-effect"
+  },
+  {
+   "name": "gooey-input"
+  },
+  {
+   "name": "typewriter-effect"
+  },
+  {
+   "name": "background-boxes"
+  },
+  {
+   "name": "3d-card"
+  },
+  {
+   "name": "images-slider"
+  },
+  {
+   "name": "direction-aware-hover"
+  },
+  {
+   "name": "tabs"
+  },
+  {
+   "name": "hero-parallax"
+  },
+  {
+   "name": "wavy-background"
+  },
+  {
+   "name": "background-gradient"
+  },
+  {
+   "name": "layout-grid"
+  },
+  {
+   "name": "background-gradient-animation"
+  },
+  {
+   "name": "macbook-scroll"
+  },
+  {
+   "name": "input"
+  },
+  {
+   "name": "label"
+  },
+  {
+   "name": "multi-step-loader"
+  },
+  {
+   "name": "globe"
+  },
+  {
+   "name": "aurora-background"
+  },
+  {
+   "name": "canvas-reveal-effect"
+  },
+  {
+   "name": "hover-border-gradient"
+  },
+  {
+   "name": "hero-highlight"
+  },
+  {
+   "name": "vortex"
+  },
+  {
+   "name": "wobble-card"
+  },
+  {
+   "name": "placeholders-and-vanish-input"
+  },
+  {
+   "name": "flip-words"
+  },
+  {
+   "name": "link-preview"
+  },
+  {
+   "name": "glare-card"
+  },
+  {
+   "name": "animated-modal"
+  },
+  {
+   "name": "sidebar"
+  },
+  {
+   "name": "apple-cards-carousel"
+  },
+  {
+   "name": "shooting-stars"
+  },
+  {
+   "name": "stars-background"
+  },
+  {
+   "name": "compare"
+  },
+  {
+   "name": "card-spotlight"
+  },
+  {
+   "name": "cover"
+  },
+  {
+   "name": "file-upload"
+  },
+  {
+   "name": "floating-dock"
+  },
+  {
+   "name": "focus-cards"
+  },
+  {
+   "name": "background-beams-with-collision"
+  },
+  {
+   "name": "timeline"
+  },
+  {
+   "name": "text-hover-effect"
+  },
+  {
+   "name": "lens"
+  },
+  {
+   "name": "background-lines"
+  },
+  {
+   "name": "animated-testimonials"
+  },
+  {
+   "name": "world-map"
+  },
+  {
+   "name": "code-block"
+  },
+  {
+   "name": "carousel"
+  },
+  {
+   "name": "colourful-text"
+  },
+  {
+   "name": "squiggly-text"
+  },
+  {
+   "name": "magnetic-button"
+  },
+  {
+   "name": "notch"
+  },
+  {
+   "name": "spotlight-new"
+  },
+  {
+   "name": "glowing-effect"
+  },
+  {
+   "name": "3d-marquee"
+  },
+  {
+   "name": "container-text-flip"
+  },
+  {
+   "name": "resizable-navbar"
+  },
+  {
+   "name": "draggable-card"
+  },
+  {
+   "name": "sticky-banner"
+  },
+  {
+   "name": "pointer-highlight"
+  },
+  {
+   "name": "stateful-button"
+  },
+  {
+   "name": "loader"
+  },
+  {
+   "name": "comet-card"
+  },
+  {
+   "name": "background-ripple-effect"
+  },
+  {
+   "name": "pixelated-canvas"
+  },
+  {
+   "name": "canvas-text"
+  },
+  {
+   "name": "layout-text-flip"
+  },
+  {
+   "name": "dotted-glow-background"
+  },
+  {
+   "name": "tooltip-card"
+  },
+  {
+   "name": "encrypted-text"
+  },
+  {
+   "name": "noise-background"
+  },
+  {
+   "name": "dither-shader"
+  },
+  {
+   "name": "webcam-pixel-grid"
+  },
+  {
+   "name": "images-badge"
+  },
+  {
+   "name": "keyboard"
+  },
+  {
+   "name": "terminal"
+  },
+  {
+   "name": "3d-globe"
+  },
+  {
+   "name": "ascii-art"
+  },
+  {
+   "name": "scales"
+  },
+  {
+   "name": "text-flipping-board"
+  }
+ ]
+}

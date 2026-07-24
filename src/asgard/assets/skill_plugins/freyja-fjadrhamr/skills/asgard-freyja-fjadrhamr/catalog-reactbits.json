@@ -1,0 +1,703 @@
+{
+ "source": "reactbits",
+ "license": "MIT + Commons Clause (no reselling the library itself)",
+ "fetch": "https://reactbits.dev/r/{name}-{JS|TS}-{CSS|TW}.json",
+ "count": 139,
+ "components": [
+  {
+   "name": "AnimatedContent",
+   "title": "AnimatedContent",
+   "description": "Wrapper that animates any children on scroll or mount with configurable direction, distance, duration, easing and disappear options."
+  },
+  {
+   "name": "BlobCursor",
+   "title": "BlobCursor",
+   "description": "Organic blob cursor that smoothly follows the pointer with inertia and elastic morphing."
+  },
+  {
+   "name": "ClickSpark",
+   "title": "ClickSpark",
+   "description": "Creates particle spark bursts at click position."
+  },
+  {
+   "name": "Crosshair",
+   "title": "Crosshair",
+   "description": "Custom crosshair cursor with tracking, and link hover effects."
+  },
+  {
+   "name": "Cubes",
+   "title": "Cubes",
+   "description": "3D rotating cube cluster. Supports auto-rotation or hover interaction."
+  },
+  {
+   "name": "ElectricBorder",
+   "title": "ElectricBorder",
+   "description": "Jittery electric energy border with animated arcs, glow and adjustable intensity."
+  },
+  {
+   "name": "FadeContent",
+   "title": "FadeContent",
+   "description": "Simple directional fade / slide entrance / exit wrapper with threshold-based activation."
+  },
+  {
+   "name": "GlareHover",
+   "title": "GlareHover",
+   "description": "Adds a realistic moving glare highlight on hover over any element."
+  },
+  {
+   "name": "GradualBlur",
+   "title": "GradualBlur",
+   "description": "Progressively un-blurs content based on scroll or trigger creating a cinematic reveal."
+  },
+  {
+   "name": "GhostCursor",
+   "title": "GhostCursor",
+   "description": "Semi-transparent ghost cursor that smoothly follows the real cursor with a trailing effect."
+  },
+  {
+   "name": "ImageTrail",
+   "title": "ImageTrail",
+   "description": "Cursor-based image trail with several built-in variants."
+  },
+  {
+   "name": "LogoLoop",
+   "title": "LogoLoop",
+   "description": "Continuously looping marquee of brand or tech logos with seamless repeat and hover pause."
+  },
+  {
+   "name": "Magnet",
+   "title": "Magnet",
+   "description": "Elements magnetically ease toward the cursor then settle back with spring physics."
+  },
+  {
+   "name": "MagnetLines",
+   "title": "MagnetLines",
+   "description": "Animated field lines bend toward the cursor."
+  },
+  {
+   "name": "MetaBalls",
+   "title": "MetaBalls",
+   "description": "Liquid metaball blobs that merge and separate with smooth implicit surface animation."
+  },
+  {
+   "name": "Strands",
+   "title": "Strands",
+   "description": "Glowing ribbon-like strands that ripple and weave across a transparent canvas."
+  },
+  {
+   "name": "MetallicPaint",
+   "title": "MetallicPaint",
+   "description": "Liquid metallic paint shader which can be applied to SVG elements."
+  },
+  {
+   "name": "Noise",
+   "title": "Noise",
+   "description": "Animated film grain / noise overlay adding subtle texture and motion."
+  },
+  {
+   "name": "PixelTrail",
+   "title": "PixelTrail",
+   "description": "Pixelated cursor trail emitting fading squares with retro digital feel."
+  },
+  {
+   "name": "PixelTransition",
+   "title": "PixelTransition",
+   "description": "Pixel dissolve transition for content reveal on hover."
+  },
+  {
+   "name": "Ribbons",
+   "title": "Ribbons",
+   "description": "Flowing responsive ribbons/cursor trail driven by physics and pointer motion."
+  },
+  {
+   "name": "ShapeBlur",
+   "title": "ShapeBlur",
+   "description": "Morphing blurred geometric shape. The effect occurs on hover."
+  },
+  {
+   "name": "SplashCursor",
+   "title": "SplashCursor",
+   "description": "Liquid splash burst at cursor with curling ripples and waves."
+  },
+  {
+   "name": "StarBorder",
+   "title": "StarBorder",
+   "description": "Animated star / sparkle border orbiting content with twinkle pulses."
+  },
+  {
+   "name": "StickerPeel",
+   "title": "StickerPeel",
+   "description": "Sticker corner lift + peel interaction using 3D transform and shadow depth."
+  },
+  {
+   "name": "TargetCursor",
+   "title": "TargetCursor",
+   "description": "A cursor follow animation with 4 corners that lock onto targets."
+  },
+  {
+   "name": "LaserFlow",
+   "title": "LaserFlow",
+   "description": "Dynamic laser light that flows onto a surface, customizable effect."
+  },
+  {
+   "name": "Antigravity",
+   "title": "Antigravity",
+   "description": "3D antigravity particle field that repels from the cursor with smooth motion."
+  },
+  {
+   "name": "OrbitImages",
+   "title": "OrbitImages",
+   "description": "SVG Path customizable orbiting images effect"
+  },
+  {
+   "name": "MagicRings",
+   "title": "MagicRings",
+   "description": "Interactive magic rings effect with customizable parameters."
+  },
+  {
+   "name": "ASCIIText",
+   "title": "ASCIIText",
+   "description": "Renders text with an animated ASCII background for a retro feel."
+  },
+  {
+   "name": "BlurText",
+   "title": "BlurText",
+   "description": "Text starts blurred then crisply resolves for a soft-focus reveal effect."
+  },
+  {
+   "name": "CircularText",
+   "title": "CircularText",
+   "description": "Layouts characters around a circle with optional rotation animation."
+  },
+  {
+   "name": "CountUp",
+   "title": "CountUp",
+   "description": "Animated number counter supporting formatting and decimals."
+  },
+  {
+   "name": "CurvedLoop",
+   "title": "CurvedLoop",
+   "description": "Flowing looping text path along a customizable curve with drag interaction."
+  },
+  {
+   "name": "DecryptedText",
+   "title": "DecryptedText",
+   "description": "Hacker-style decryption cycling random glyphs until resolving to real text."
+  },
+  {
+   "name": "FallingText",
+   "title": "FallingText",
+   "description": "Characters fall with gravity + bounce creating a playful entrance."
+  },
+  {
+   "name": "FuzzyText",
+   "title": "FuzzyText",
+   "description": "Vibrating fuzzy text with controllable hover intensity."
+  },
+  {
+   "name": "GlitchText",
+   "title": "GlitchText",
+   "description": "RGB split and distortion glitch effect with jitter effects."
+  },
+  {
+   "name": "GradientText",
+   "title": "GradientText",
+   "description": "Animated gradient sweep across live text with speed and color control."
+  },
+  {
+   "name": "RotatingText",
+   "title": "RotatingText",
+   "description": "Cycles through multiple phrases with 3D rotate / flip transitions."
+  },
+  {
+   "name": "ScrambledText",
+   "title": "ScrambledText",
+   "description": "Detects cursor position and applies a distortion effect to text."
+  },
+  {
+   "name": "ScrollFloat",
+   "title": "ScrollFloat",
+   "description": "Text gently floats / parallax shifts on scroll."
+  },
+  {
+   "name": "ScrollReveal",
+   "title": "ScrollReveal",
+   "description": "Text gently unblurs and reveals on scroll."
+  },
+  {
+   "name": "ScrollVelocity",
+   "title": "ScrollVelocity",
+   "description": "Text marquee animatio - speed and distortion scale with user's scroll velocity."
+  },
+  {
+   "name": "ShinyText",
+   "title": "ShinyText",
+   "description": "Metallic sheen sweeps across text producing a reflective highlight."
+  },
+  {
+   "name": "SplitText",
+   "title": "SplitText",
+   "description": "Splits text into characters / words for staggered entrance animation."
+  },
+  {
+   "name": "TextCursor",
+   "title": "TextCursor",
+   "description": "Make any text element follow your cursor, leaving a trail of copies behind it."
+  },
+  {
+   "name": "TextPressure",
+   "title": "TextPressure",
+   "description": "Characters scale / warp interactively based on pointer pressure zone."
+  },
+  {
+   "name": "TextType",
+   "title": "TextType",
+   "description": "Typewriter effect with blinking cursor and adjustable typing cadence."
+  },
+  {
+   "name": "TrueFocus",
+   "title": "TrueFocus",
+   "description": "Applies dynamic blur / clarity based over a series of words in order."
+  },
+  {
+   "name": "VariableProximity",
+   "title": "VariableProximity",
+   "description": "Letter styling changes continuously with pointer distance mapping."
+  },
+  {
+   "name": "Shuffle",
+   "title": "Shuffle",
+   "description": "Animated text reveal where characters shuffle before settling."
+  },
+  {
+   "name": "AnimatedList",
+   "title": "AnimatedList",
+   "description": "List items enter with staggered motion variants for polished reveals."
+  },
+  {
+   "name": "BounceCards",
+   "title": "BounceCards",
+   "description": "Cards bounce that bounce in on mount."
+  },
+  {
+   "name": "BubbleMenu",
+   "title": "BubbleMenu",
+   "description": "Floating circular expanding menu with staggered item reveal."
+  },
+  {
+   "name": "CardNav",
+   "title": "CardNav",
+   "description": "Expandable navigation bar with card panels revealing nested links."
+  },
+  {
+   "name": "CardSwap",
+   "title": "CardSwap",
+   "description": "Cards animate position swapping with smooth layout transitions."
+  },
+  {
+   "name": "Carousel",
+   "title": "Carousel",
+   "description": "Responsive carousel with touch gestures, looping and transitions."
+  },
+  {
+   "name": "ChromaGrid",
+   "title": "ChromaGrid",
+   "description": "A responsive grid of grayscale tiles. Hovering the grid reaveals their colors."
+  },
+  {
+   "name": "CircularGallery",
+   "title": "CircularGallery",
+   "description": "Circular orbit gallery rotating images."
+  },
+  {
+   "name": "Counter",
+   "title": "Counter",
+   "description": "Flexible animated counter supporting increments + easing."
+  },
+  {
+   "name": "DecayCard",
+   "title": "DecayCard",
+   "description": "Hover parallax effect that disintegrates the content of a card."
+  },
+  {
+   "name": "Dock",
+   "title": "Dock",
+   "description": "macOS style magnifying dock with proximity scaling of icons."
+  },
+  {
+   "name": "DomeGallery",
+   "title": "DomeGallery",
+   "description": "Immersive 3D dome gallery projecting images on a hemispheric surface."
+  },
+  {
+   "name": "ElasticSlider",
+   "title": "ElasticSlider",
+   "description": "Slider handle stretches elastically then snaps with spring physics."
+  },
+  {
+   "name": "FlowingMenu",
+   "title": "FlowingMenu",
+   "description": "Liquid flowing active indicator glides between menu items."
+  },
+  {
+   "name": "FluidGlass",
+   "title": "FluidGlass",
+   "description": "Glassmorphism container with animated liquid distortion refraction."
+  },
+  {
+   "name": "FlyingPosters",
+   "title": "FlyingPosters",
+   "description": "3D posters rotate on scroll infinitely."
+  },
+  {
+   "name": "Folder",
+   "title": "Folder",
+   "description": "Interactive folder opens to reveal nested content smooth motion."
+  },
+  {
+   "name": "GlassIcons",
+   "title": "GlassIcons",
+   "description": "Icon set styled with frosted glass blur."
+  },
+  {
+   "name": "GlassSurface",
+   "title": "GlassSurface",
+   "description": "Advanced Apple-style glass surface with real-time distortion + lighting."
+  },
+  {
+   "name": "GooeyNav",
+   "title": "GooeyNav",
+   "description": "Navigation indicator morphs with gooey blob transitions between items."
+  },
+  {
+   "name": "InfiniteMenu",
+   "title": "InfiniteMenu",
+   "description": "Horizontally looping menu effect that scrolls endlessly with seamless wrap."
+  },
+  {
+   "name": "Lanyard",
+   "title": "Lanyard",
+   "description": "Swinging 3D lanyard / badge card with realistic inertial motion."
+  },
+  {
+   "name": "MagicBento",
+   "title": "MagicBento",
+   "description": "Interactive bento grid tiles expand + animate with various options."
+  },
+  {
+   "name": "Masonry",
+   "title": "Masonry",
+   "description": "Responsive masonry layout with animated reflow + gaps optimization."
+  },
+  {
+   "name": "ModelViewer",
+   "title": "ModelViewer",
+   "description": "Three.js model viewer with orbit controls and lighting presets."
+  },
+  {
+   "name": "PillNav",
+   "title": "PillNav",
+   "description": "Minimal pill nav with sliding active highlight + smooth easing."
+  },
+  {
+   "name": "PixelCard",
+   "title": "PixelCard",
+   "description": "Card content revealed through pixel expansion transition."
+  },
+  {
+   "name": "ProfileCard",
+   "title": "ProfileCard",
+   "description": "Animated profile card glare with 3D hover effect."
+  },
+  {
+   "name": "ScrollStack",
+   "title": "ScrollStack",
+   "description": "Overlapping card stack reveals on scroll with depth layering."
+  },
+  {
+   "name": "SpotlightCard",
+   "title": "SpotlightCard",
+   "description": "Dynamic spotlight follows cursor casting gradient illumination."
+  },
+  {
+   "name": "BorderGlow",
+   "title": "BorderGlow",
+   "description": "Glowing mesh-gradient border that follows cursor direction and intensifies near edges."
+  },
+  {
+   "name": "LineSidebar",
+   "title": "LineSidebar",
+   "description": "Static list navigation with a cursor-proximity effect that shifts and highlights nearby items."
+  },
+  {
+   "name": "OptionWheel",
+   "title": "OptionWheel",
+   "description": "Curved option picker that spins via scroll, drag, or arrow keys, fading and tilting items away from the selection."
+  },
+  {
+   "name": "SpecularButton",
+   "title": "SpecularButton",
+   "description": "Glass button with a shader-driven specular rim light that sweeps around the edge and follows the cursor."
+  },
+  {
+   "name": "CursorGrid",
+   "title": "CursorGrid",
+   "description": "Canvas grid whose cells light up around the cursor with configurable radius, falloff and click pulses."
+  },
+  {
+   "name": "CurvedInput",
+   "title": "CurvedInput",
+   "description": "Arc-bent input bar with text, caret and submit button all following the curve."
+  },
+  {
+   "name": "Stack",
+   "title": "Stack",
+   "description": "Layered stack with swipe animations, autoplay and smooth transitions."
+  },
+  {
+   "name": "Stepper",
+   "title": "Stepper",
+   "description": "Animated multi-step progress indicator with active state transitions."
+  },
+  {
+   "name": "TiltedCard",
+   "title": "TiltedCard",
+   "description": "3D perspective tilt card reacting to pointer."
+  },
+  {
+   "name": "StaggeredMenu",
+   "title": "StaggeredMenu",
+   "description": "Menu with staggered item animations and smooth transitions on open/close."
+  },
+  {
+   "name": "ReflectiveCard",
+   "title": "ReflectiveCard",
+   "description": "Card with dynamic webcam reflection and glare effects that respond to cursor movement."
+  },
+  {
+   "name": "Aurora",
+   "title": "Aurora",
+   "description": "Flowing aurora gradient background."
+  },
+  {
+   "name": "Balatro",
+   "title": "Balatro",
+   "description": "The balatro shader, fully customizalbe and interactive."
+  },
+  {
+   "name": "Ballpit",
+   "title": "Ballpit",
+   "description": "Physics ball pit simulation with bouncing colorful spheres."
+  },
+  {
+   "name": "Beams",
+   "title": "Beams",
+   "description": "Crossing animated ribbons with customizable properties."
+  },
+  {
+   "name": "ColorBends",
+   "title": "ColorBends",
+   "description": "Vibrant color bends with smooth flowing animation."
+  },
+  {
+   "name": "DarkVeil",
+   "title": "DarkVeil",
+   "description": "Subtle dark background with a smooth animation and postprocessing."
+  },
+  {
+   "name": "Dither",
+   "title": "Dither",
+   "description": "Retro dithered noise shader background."
+  },
+  {
+   "name": "DotField",
+   "title": "DotField",
+   "description": "Interactive dot grid with cursor bulge, glow, sparkle, and wave effects."
+  },
+  {
+   "name": "DotGrid",
+   "title": "DotGrid",
+   "description": "Animated dot grid with cursor interactions."
+  },
+  {
+   "name": "FaultyTerminal",
+   "title": "FaultyTerminal",
+   "description": "Terminal CRT scanline squares effect with flicker + noise."
+  },
+  {
+   "name": "Galaxy",
+   "title": "Galaxy",
+   "description": "Parallax realistic starfield with pointer interactions."
+  },
+  {
+   "name": "GradientBlinds",
+   "title": "GradientBlinds",
+   "description": "Layered gradient blinds with spotlight and noise distortion."
+  },
+  {
+   "name": "Lightfall",
+   "title": "Lightfall",
+   "description": "Colorful light streaks raining down a glowing tunnel with a cursor light."
+  },
+  {
+   "name": "Ferrofluid",
+   "title": "Ferrofluid",
+   "description": "A churning magnetic fluid traced by glowing contour lines, with a cursor magnet."
+  },
+  {
+   "name": "Grainient",
+   "title": "Grainient",
+   "description": "Grainy gradient swirls with soft wave distortion."
+  },
+  {
+   "name": "GridScan",
+   "title": "GridScan",
+   "description": "Animated grid room 3D scan effect and cool interactions."
+  },
+  {
+   "name": "GridDistortion",
+   "title": "GridDistortion",
+   "description": "Warped grid mesh distorts smoothly reacting to cursor."
+  },
+  {
+   "name": "GridMotion",
+   "title": "GridMotion",
+   "description": "Perspective moving grid lines based on cusror position."
+  },
+  {
+   "name": "Hyperspeed",
+   "title": "Hyperspeed",
+   "description": "Animated lines continuously moving to simulate hyperspace travel on click hold."
+  },
+  {
+   "name": "Iridescence",
+   "title": "Iridescence",
+   "description": "Slick iridescent shader with shifting waves."
+  },
+  {
+   "name": "LetterGlitch",
+   "title": "LetterGlitch",
+   "description": "Matrix style letter animation."
+  },
+  {
+   "name": "LightRays",
+   "title": "LightRays",
+   "description": "Volumetric light rays/beams with customizable direction."
+  },
+  {
+   "name": "Lightning",
+   "title": "Lightning",
+   "description": "Procedural lightning bolts with branching and glow flicker."
+  },
+  {
+   "name": "LineWaves",
+   "title": "LineWaves",
+   "description": "Animated line wave pattern with colorful warped distortion."
+  },
+  {
+   "name": "EvilEye",
+   "title": "EvilEye",
+   "description": "Procedural evil eye shader with animated iris, slit pupil, and fiery outer glow."
+  },
+  {
+   "name": "Radar",
+   "title": "Radar",
+   "description": "Radar sweep effect with concentric rings, radial spokes, and a rotating beam."
+  },
+  {
+   "name": "SoftAurora",
+   "title": "SoftAurora",
+   "description": "Soft aurora borealis shader with 3D Perlin noise and cosine gradient palettes."
+  },
+  {
+   "name": "LiquidChrome",
+   "title": "LiquidChrome",
+   "description": "Liquid metallic chrome shader with flowing reflective surface."
+  },
+  {
+   "name": "Orb",
+   "title": "Orb",
+   "description": "Floating energy orb with customizable hover effect."
+  },
+  {
+   "name": "Particles",
+   "title": "Particles",
+   "description": "Configurable particle system."
+  },
+  {
+   "name": "PixelBlast",
+   "title": "PixelBlast",
+   "description": "Exploding pixel particle bursts with optional liquid postprocessing."
+  },
+  {
+   "name": "Plasma",
+   "title": "Plasma",
+   "description": "Organic plasma gradients swirl + morph with smooth turbulence."
+  },
+  {
+   "name": "PlasmaWave",
+   "title": "PlasmaWave",
+   "description": "Raymarched plasma waves with dual-wave interference and OGL."
+  },
+  {
+   "name": "Prism",
+   "title": "Prism",
+   "description": "Rotating prism with configurable intensity, size, and colors."
+  },
+  {
+   "name": "PrismaticBurst",
+   "title": "PrismaticBurst",
+   "description": "Burst of light rays with controllable color, distortion, amount."
+  },
+  {
+   "name": "RippleGrid",
+   "title": "RippleGrid",
+   "description": "A grid that continuously animates with a ripple effect."
+  },
+  {
+   "name": "Silk",
+   "title": "Silk",
+   "description": "Smooth waves background with soft lighting."
+  },
+  {
+   "name": "SideRays",
+   "title": "SideRays",
+   "description": "Animated light rays emanating from the side with customizable colors and speed."
+  },
+  {
+   "name": "ShapeGrid",
+   "title": "ShapeGrid",
+   "description": "Animated grid with shape variants (square, hexagon, circle, triangle) + direction customization."
+  },
+  {
+   "name": "Threads",
+   "title": "Threads",
+   "description": "Animated pattern of lines forming a fabric-like motion."
+  },
+  {
+   "name": "Waves",
+   "title": "Waves",
+   "description": "Layered lines that form smooth wave patterns with animation."
+  },
+  {
+   "name": "LiquidEther",
+   "title": "LiquidEther",
+   "description": "Interactive liquid shader with flowing distortion and customizable colors."
+  },
+  {
+   "name": "FloatingLines",
+   "title": "FloatingLines",
+   "description": "3D floating lines that react to cursor movement."
+  },
+  {
+   "name": "LightPillar",
+   "title": "LightPillar",
+   "description": "Vertical pillar of light with glow effects."
+  },
+  {
+   "name": "PixelSnow",
+   "title": "PixelSnow",
+   "description": "Falling pixelated snow effect with customizable density and speed."
+  }
+ ]
+}

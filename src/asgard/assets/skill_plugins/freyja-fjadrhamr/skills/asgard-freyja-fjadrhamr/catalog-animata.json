@@ -1,0 +1,1079 @@
+{
+ "source": "animata",
+ "license": "MIT",
+ "repo": "codse/animata",
+ "fetch": "https://raw.githubusercontent.com/codse/animata/main/{path}",
+ "count": 214,
+ "components": [
+  {
+   "name": "faq",
+   "category": "accordion",
+   "path": "animata/accordion/faq.tsx"
+  },
+  {
+   "name": "animated-beam",
+   "category": "background",
+   "path": "animata/background/animated-beam.tsx"
+  },
+  {
+   "name": "blurry-blob",
+   "category": "background",
+   "path": "animata/background/blurry-blob.tsx"
+  },
+  {
+   "name": "boids-ecosystem",
+   "category": "background",
+   "path": "animata/background/boids-ecosystem.tsx"
+  },
+  {
+   "name": "diagonal-lines",
+   "category": "background",
+   "path": "animata/background/diagonal-lines.tsx"
+  },
+  {
+   "name": "dot",
+   "category": "background",
+   "path": "animata/background/dot.tsx"
+  },
+  {
+   "name": "grid",
+   "category": "background",
+   "path": "animata/background/grid.tsx"
+  },
+  {
+   "name": "interactive-grid",
+   "category": "background",
+   "path": "animata/background/interactive-grid.tsx"
+  },
+  {
+   "name": "moving-gradient",
+   "category": "background",
+   "path": "animata/background/moving-gradient.tsx"
+  },
+  {
+   "name": "shooting-stars",
+   "category": "background",
+   "path": "animata/background/shooting-stars.tsx"
+  },
+  {
+   "name": "zigzag",
+   "category": "background",
+   "path": "animata/background/zigzag.tsx"
+  },
+  {
+   "name": "eight",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/eight.tsx"
+  },
+  {
+   "name": "eleven",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/eleven.tsx"
+  },
+  {
+   "name": "five",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/five.tsx"
+  },
+  {
+   "name": "four",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/four.tsx"
+  },
+  {
+   "name": "gradient",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/gradient.tsx"
+  },
+  {
+   "name": "nine",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/nine.tsx"
+  },
+  {
+   "name": "seven",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/seven.tsx"
+  },
+  {
+   "name": "six",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/six.tsx"
+  },
+  {
+   "name": "ten",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/ten.tsx"
+  },
+  {
+   "name": "three",
+   "category": "bento-grid",
+   "path": "animata/bento-grid/three.tsx"
+  },
+  {
+   "name": "ai-button",
+   "category": "button",
+   "path": "animata/button/ai-button.tsx"
+  },
+  {
+   "name": "algolia-blue-button",
+   "category": "button",
+   "path": "animata/button/algolia-blue-button.tsx"
+  },
+  {
+   "name": "algolia-white-button",
+   "category": "button",
+   "path": "animata/button/algolia-white-button.tsx"
+  },
+  {
+   "name": "animated-follow-button",
+   "category": "button",
+   "path": "animata/button/animated-follow-button.tsx"
+  },
+  {
+   "name": "arrow-button",
+   "category": "button",
+   "path": "animata/button/arrow-button.tsx"
+  },
+  {
+   "name": "duolingo",
+   "category": "button",
+   "path": "animata/button/duolingo.tsx"
+  },
+  {
+   "name": "external-link-button",
+   "category": "button",
+   "path": "animata/button/external-link-button.tsx"
+  },
+  {
+   "name": "get-started-button",
+   "category": "button",
+   "path": "animata/button/get-started-button.tsx"
+  },
+  {
+   "name": "ripple-button",
+   "category": "button",
+   "path": "animata/button/ripple-button.tsx"
+  },
+  {
+   "name": "shining-button",
+   "category": "button",
+   "path": "animata/button/shining-button.tsx"
+  },
+  {
+   "name": "slide-arrow-button",
+   "category": "button",
+   "path": "animata/button/slide-arrow-button.tsx"
+  },
+  {
+   "name": "status-button",
+   "category": "button",
+   "path": "animata/button/status-button.tsx"
+  },
+  {
+   "name": "swipe-button",
+   "category": "button",
+   "path": "animata/button/swipe-button.tsx"
+  },
+  {
+   "name": "toggle-switch",
+   "category": "button",
+   "path": "animata/button/toggle-switch.tsx"
+  },
+  {
+   "name": "work-button",
+   "category": "button",
+   "path": "animata/button/work-button.tsx"
+  },
+  {
+   "name": "WebHooks-card",
+   "category": "card",
+   "path": "animata/card/WebHooks-card.tsx"
+  },
+  {
+   "name": "blur-stack-card",
+   "category": "card",
+   "path": "animata/card/blur-stack-card.tsx"
+  },
+  {
+   "name": "card-comment",
+   "category": "card",
+   "path": "animata/card/card-comment.tsx"
+  },
+  {
+   "name": "card-spread",
+   "category": "card",
+   "path": "animata/card/card-spread.tsx"
+  },
+  {
+   "name": "card-stack-profile",
+   "category": "card",
+   "path": "animata/card/card-stack-profile.tsx"
+  },
+  {
+   "name": "card-stack",
+   "category": "card",
+   "path": "animata/card/card-stack.tsx"
+  },
+  {
+   "name": "case-study-card",
+   "category": "card",
+   "path": "animata/card/case-study-card.tsx"
+  },
+  {
+   "name": "collab-card",
+   "category": "card",
+   "path": "animata/card/collab-card.tsx"
+  },
+  {
+   "name": "comment-reply-card",
+   "category": "card",
+   "path": "animata/card/comment-reply-card.tsx"
+  },
+  {
+   "name": "email-feature-card",
+   "category": "card",
+   "path": "animata/card/email-feature-card.tsx"
+  },
+  {
+   "name": "flip-card",
+   "category": "card",
+   "path": "animata/card/flip-card.tsx"
+  },
+  {
+   "name": "github-card-shiny",
+   "category": "card",
+   "path": "animata/card/github-card-shiny.tsx"
+  },
+  {
+   "name": "github-card-skew",
+   "category": "card",
+   "path": "animata/card/github-card-skew.tsx"
+  },
+  {
+   "name": "glowing-card",
+   "category": "card",
+   "path": "animata/card/glowing-card.tsx"
+  },
+  {
+   "name": "integration-pills",
+   "category": "card",
+   "path": "animata/card/integration-pills.tsx"
+  },
+  {
+   "name": "led-board",
+   "category": "card",
+   "path": "animata/card/led-board.tsx"
+  },
+  {
+   "name": "notice-card",
+   "category": "card",
+   "path": "animata/card/notice-card.tsx"
+  },
+  {
+   "name": "notification-card",
+   "category": "card",
+   "path": "animata/card/notification-card.tsx"
+  },
+  {
+   "name": "notify-user-info",
+   "category": "card",
+   "path": "animata/card/notify-user-info.tsx"
+  },
+  {
+   "name": "reminder-scheduler",
+   "category": "card",
+   "path": "animata/card/reminder-scheduler.tsx"
+  },
+  {
+   "name": "score-card",
+   "category": "card",
+   "path": "animata/card/score-card.tsx"
+  },
+  {
+   "name": "staggered-card",
+   "category": "card",
+   "path": "animata/card/staggered-card.tsx"
+  },
+  {
+   "name": "subscribe-card",
+   "category": "card",
+   "path": "animata/card/subscribe-card.tsx"
+  },
+  {
+   "name": "survey-card",
+   "category": "card",
+   "path": "animata/card/survey-card.tsx"
+  },
+  {
+   "name": "swap-card",
+   "category": "card",
+   "path": "animata/card/swap-card.tsx"
+  },
+  {
+   "name": "swap-text-card",
+   "category": "card",
+   "path": "animata/card/swap-text-card.tsx"
+  },
+  {
+   "name": "tilted-card",
+   "category": "card",
+   "path": "animata/card/tilted-card.tsx"
+  },
+  {
+   "name": "expandable",
+   "category": "carousel",
+   "path": "animata/carousel/expandable.tsx"
+  },
+  {
+   "name": "image-carousel",
+   "category": "carousel",
+   "path": "animata/carousel/image-carousel.tsx"
+  },
+  {
+   "name": "animated-border-trail",
+   "category": "container",
+   "path": "animata/container/animated-border-trail.tsx"
+  },
+  {
+   "name": "animated-dock",
+   "category": "container",
+   "path": "animata/container/animated-dock.tsx"
+  },
+  {
+   "name": "announcement-ribbon",
+   "category": "container",
+   "path": "animata/container/announcement-ribbon.tsx"
+  },
+  {
+   "name": "cursor-tracker",
+   "category": "container",
+   "path": "animata/container/cursor-tracker.tsx"
+  },
+  {
+   "name": "fibonacci-lines",
+   "category": "container",
+   "path": "animata/container/fibonacci-lines.tsx"
+  },
+  {
+   "name": "marquee",
+   "category": "container",
+   "path": "animata/container/marquee.tsx"
+  },
+  {
+   "name": "nav-tabs",
+   "category": "container",
+   "path": "animata/container/nav-tabs.tsx"
+  },
+  {
+   "name": "sibling-focus-nav",
+   "category": "container",
+   "path": "animata/container/sibling-focus-nav.tsx"
+  },
+  {
+   "name": "flower-menu",
+   "category": "fabs",
+   "path": "animata/fabs/flower-menu.tsx"
+  },
+  {
+   "name": "speed-dial",
+   "category": "fabs",
+   "path": "animata/fabs/speed-dial.tsx"
+  },
+  {
+   "name": "confirmation-message",
+   "category": "feature-cards",
+   "path": "animata/feature-cards/confirmation-message.tsx"
+  },
+  {
+   "name": "content-scan",
+   "category": "feature-cards",
+   "path": "animata/feature-cards/content-scan.tsx"
+  },
+  {
+   "name": "bar-chart",
+   "category": "graphs",
+   "path": "animata/graphs/bar-chart.tsx"
+  },
+  {
+   "name": "commit-graph",
+   "category": "graphs",
+   "path": "animata/graphs/commit-graph.tsx"
+  },
+  {
+   "name": "donut-chart",
+   "category": "graphs",
+   "path": "animata/graphs/donut-chart.tsx"
+  },
+  {
+   "name": "gauge-chart",
+   "category": "graphs",
+   "path": "animata/graphs/gauge-chart.tsx"
+  },
+  {
+   "name": "progress",
+   "category": "graphs",
+   "path": "animata/graphs/progress.tsx"
+  },
+  {
+   "name": "ring-chart",
+   "category": "graphs",
+   "path": "animata/graphs/ring-chart.tsx"
+  },
+  {
+   "name": "hero-section-text-hover",
+   "category": "hero",
+   "path": "animata/hero/hero-section-text-hover.tsx"
+  },
+  {
+   "name": "hero-section",
+   "category": "hero",
+   "path": "animata/hero/hero-section.tsx"
+  },
+  {
+   "name": "product-features",
+   "category": "hero",
+   "path": "animata/hero/product-features.tsx"
+  },
+  {
+   "name": "shape-shifter",
+   "category": "hero",
+   "path": "animata/hero/shape-shifter.tsx"
+  },
+  {
+   "name": "slack-intro",
+   "category": "hero",
+   "path": "animata/hero/slack-intro.tsx"
+  },
+  {
+   "name": "hover-interaction",
+   "category": "icon",
+   "path": "animata/icon/hover-interaction.tsx"
+  },
+  {
+   "name": "icon-ripple",
+   "category": "icon",
+   "path": "animata/icon/icon-ripple.tsx"
+  },
+  {
+   "name": "disclose-image",
+   "category": "image",
+   "path": "animata/image/disclose-image.tsx"
+  },
+  {
+   "name": "image-box-shadow",
+   "category": "image",
+   "path": "animata/image/image-box-shadow.tsx"
+  },
+  {
+   "name": "images-reveal",
+   "category": "image",
+   "path": "animata/image/images-reveal.tsx"
+  },
+  {
+   "name": "photo-booth",
+   "category": "image",
+   "path": "animata/image/photo-booth.tsx"
+  },
+  {
+   "name": "skew-image",
+   "category": "image",
+   "path": "animata/image/skew-image.tsx"
+  },
+  {
+   "name": "tilted-cover",
+   "category": "image",
+   "path": "animata/image/tilted-cover.tsx"
+  },
+  {
+   "name": "trailing-image",
+   "category": "image",
+   "path": "animata/image/trailing-image.tsx"
+  },
+  {
+   "name": "zoom-image",
+   "category": "image",
+   "path": "animata/image/zoom-image.tsx"
+  },
+  {
+   "name": "avatar-list",
+   "category": "list",
+   "path": "animata/list/avatar-list.tsx"
+  },
+  {
+   "name": "flipping-cards",
+   "category": "list",
+   "path": "animata/list/flipping-cards.tsx"
+  },
+  {
+   "name": "menu-animation",
+   "category": "list",
+   "path": "animata/list/menu-animation.tsx"
+  },
+  {
+   "name": "orbiting-items-3-d",
+   "category": "list",
+   "path": "animata/list/orbiting-items-3-d.tsx"
+  },
+  {
+   "name": "orbiting-items",
+   "category": "list",
+   "path": "animata/list/orbiting-items.tsx"
+  },
+  {
+   "name": "reveal-image",
+   "category": "list",
+   "path": "animata/list/reveal-image.tsx"
+  },
+  {
+   "name": "transaction-list",
+   "category": "list",
+   "path": "animata/list/transaction-list.tsx"
+  },
+  {
+   "name": "transition-list",
+   "category": "list",
+   "path": "animata/list/transition-list.tsx"
+  },
+  {
+   "name": "modal",
+   "category": "overlay",
+   "path": "animata/overlay/modal.tsx"
+  },
+  {
+   "name": "split-reveal",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal.tsx"
+  },
+  {
+   "name": "context",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/context.tsx"
+  },
+  {
+   "name": "images",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/images.tsx"
+  },
+  {
+   "name": "index",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/index.tsx"
+  },
+  {
+   "name": "overlay",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/overlay.tsx"
+  },
+  {
+   "name": "progress-count",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/progress-count.tsx"
+  },
+  {
+   "name": "progress-slot",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/progress-slot.tsx"
+  },
+  {
+   "name": "progress-track",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/progress-track.tsx"
+  },
+  {
+   "name": "progress",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/progress.tsx"
+  },
+  {
+   "name": "root",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/root.tsx"
+  },
+  {
+   "name": "shutter",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/shutter.tsx"
+  },
+  {
+   "name": "task",
+   "category": "preloader",
+   "path": "animata/preloader/split-reveal/task.tsx"
+  },
+  {
+   "name": "vertical-tiles",
+   "category": "preloader",
+   "path": "animata/preloader/vertical-tiles.tsx"
+  },
+  {
+   "name": "animatedtimeline",
+   "category": "progress",
+   "path": "animata/progress/animatedtimeline.tsx"
+  },
+  {
+   "name": "spinner",
+   "category": "progress",
+   "path": "animata/progress/spinner.tsx"
+  },
+  {
+   "name": "stacked-sections",
+   "category": "scroll",
+   "path": "animata/scroll/stacked-sections.tsx"
+  },
+  {
+   "name": "pricing",
+   "category": "section",
+   "path": "animata/section/pricing.tsx"
+  },
+  {
+   "name": "category-glyphs",
+   "category": "skeleton",
+   "path": "animata/skeleton/category-glyphs.tsx"
+  },
+  {
+   "name": "category-skeleton",
+   "category": "skeleton",
+   "path": "animata/skeleton/category-skeleton.tsx"
+  },
+  {
+   "name": "code",
+   "category": "skeleton",
+   "path": "animata/skeleton/code.tsx"
+  },
+  {
+   "name": "cookie-banner",
+   "category": "skeleton",
+   "path": "animata/skeleton/cookie-banner.tsx"
+  },
+  {
+   "name": "list",
+   "category": "skeleton",
+   "path": "animata/skeleton/list.tsx"
+  },
+  {
+   "name": "receipt",
+   "category": "skeleton",
+   "path": "animata/skeleton/receipt.tsx"
+  },
+  {
+   "name": "report",
+   "category": "skeleton",
+   "path": "animata/skeleton/report.tsx"
+  },
+  {
+   "name": "wide-card",
+   "category": "skeleton",
+   "path": "animata/skeleton/wide-card.tsx"
+  },
+  {
+   "name": "fluid-tabs",
+   "category": "tabs",
+   "path": "animata/tabs/fluid-tabs.tsx"
+  },
+  {
+   "name": "gooey-tabs",
+   "category": "tabs",
+   "path": "animata/tabs/gooey-tabs.tsx"
+  },
+  {
+   "name": "shift-tabs",
+   "category": "tabs",
+   "path": "animata/tabs/shift-tabs.tsx"
+  },
+  {
+   "name": "animated-gradient-text",
+   "category": "text",
+   "path": "animata/text/animated-gradient-text.tsx"
+  },
+  {
+   "name": "blur-out-up",
+   "category": "text",
+   "path": "animata/text/blur-out-up.tsx"
+  },
+  {
+   "name": "bold-copy",
+   "category": "text",
+   "path": "animata/text/bold-copy.tsx"
+  },
+  {
+   "name": "bottom-up-letters",
+   "category": "text",
+   "path": "animata/text/bottom-up-letters.tsx"
+  },
+  {
+   "name": "circular-text",
+   "category": "text",
+   "path": "animata/text/circular-text.tsx"
+  },
+  {
+   "name": "counter",
+   "category": "text",
+   "path": "animata/text/counter.tsx"
+  },
+  {
+   "name": "cycle-text",
+   "category": "text",
+   "path": "animata/text/cycle-text.tsx"
+  },
+  {
+   "name": "double-underline",
+   "category": "text",
+   "path": "animata/text/double-underline.tsx"
+  },
+  {
+   "name": "fade-through",
+   "category": "text",
+   "path": "animata/text/fade-through.tsx"
+  },
+  {
+   "name": "focus-blur-resolve",
+   "category": "text",
+   "path": "animata/text/focus-blur-resolve.tsx"
+  },
+  {
+   "name": "gibberish-text",
+   "category": "text",
+   "path": "animata/text/gibberish-text.tsx"
+  },
+  {
+   "name": "glitch-text",
+   "category": "text",
+   "path": "animata/text/glitch-text.tsx"
+  },
+  {
+   "name": "jitter-text",
+   "category": "text",
+   "path": "animata/text/jitter-text.tsx"
+  },
+  {
+   "name": "jumping-text-instagram",
+   "category": "text",
+   "path": "animata/text/jumping-text-instagram.tsx"
+  },
+  {
+   "name": "kinetic-center-build",
+   "category": "text",
+   "path": "animata/text/kinetic-center-build.tsx"
+  },
+  {
+   "name": "line-by-line-slide",
+   "category": "text",
+   "path": "animata/text/line-by-line-slide.tsx"
+  },
+  {
+   "name": "mask-reveal-up",
+   "category": "text",
+   "path": "animata/text/mask-reveal-up.tsx"
+  },
+  {
+   "name": "mask-text",
+   "category": "text",
+   "path": "animata/text/mask-text.tsx"
+  },
+  {
+   "name": "metis-text",
+   "category": "text",
+   "path": "animata/text/metis-text.tsx"
+  },
+  {
+   "name": "micro-scale-fade",
+   "category": "text",
+   "path": "animata/text/micro-scale-fade.tsx"
+  },
+  {
+   "name": "mirror-text",
+   "category": "text",
+   "path": "animata/text/mirror-text.tsx"
+  },
+  {
+   "name": "per-character-rise",
+   "category": "text",
+   "path": "animata/text/per-character-rise.tsx"
+  },
+  {
+   "name": "per-word-crossfade",
+   "category": "text",
+   "path": "animata/text/per-word-crossfade.tsx"
+  },
+  {
+   "name": "roll-text",
+   "category": "text",
+   "path": "animata/text/roll-text.tsx"
+  },
+  {
+   "name": "scale-down-fade",
+   "category": "text",
+   "path": "animata/text/scale-down-fade.tsx"
+  },
+  {
+   "name": "scroll-reveal",
+   "category": "text",
+   "path": "animata/text/scroll-reveal.tsx"
+  },
+  {
+   "name": "shared-axis-y",
+   "category": "text",
+   "path": "animata/text/shared-axis-y.tsx"
+  },
+  {
+   "name": "shared-axis-z",
+   "category": "text",
+   "path": "animata/text/shared-axis-z.tsx"
+  },
+  {
+   "name": "shimmer-sweep",
+   "category": "text",
+   "path": "animata/text/shimmer-sweep.tsx"
+  },
+  {
+   "name": "short-slide-down",
+   "category": "text",
+   "path": "animata/text/short-slide-down.tsx"
+  },
+  {
+   "name": "short-slide-right",
+   "category": "text",
+   "path": "animata/text/short-slide-right.tsx"
+  },
+  {
+   "name": "soft-blur-in",
+   "category": "text",
+   "path": "animata/text/soft-blur-in.tsx"
+  },
+  {
+   "name": "split-text",
+   "category": "text",
+   "path": "animata/text/split-text.tsx"
+  },
+  {
+   "name": "spring-scale-in",
+   "category": "text",
+   "path": "animata/text/spring-scale-in.tsx"
+  },
+  {
+   "name": "staggered-letter",
+   "category": "text",
+   "path": "animata/text/staggered-letter.tsx"
+  },
+  {
+   "name": "swap-text",
+   "category": "text",
+   "path": "animata/text/swap-text.tsx"
+  },
+  {
+   "name": "text-animator",
+   "category": "text",
+   "path": "animata/text/text-animator.tsx"
+  },
+  {
+   "name": "text-border-animation",
+   "category": "text",
+   "path": "animata/text/text-border-animation.tsx"
+  },
+  {
+   "name": "text-explode-imessage",
+   "category": "text",
+   "path": "animata/text/text-explode-imessage.tsx"
+  },
+  {
+   "name": "text-flip",
+   "category": "text",
+   "path": "animata/text/text-flip.tsx"
+  },
+  {
+   "name": "ticker",
+   "category": "text",
+   "path": "animata/text/ticker.tsx"
+  },
+  {
+   "name": "top-down-letters",
+   "category": "text",
+   "path": "animata/text/top-down-letters.tsx"
+  },
+  {
+   "name": "typing-text",
+   "category": "text",
+   "path": "animata/text/typing-text.tsx"
+  },
+  {
+   "name": "underline-hover-text",
+   "category": "text",
+   "path": "animata/text/underline-hover-text.tsx"
+  },
+  {
+   "name": "wave-reveal",
+   "category": "text",
+   "path": "animata/text/wave-reveal.tsx"
+  },
+  {
+   "name": "alarm-clock",
+   "category": "widget",
+   "path": "animata/widget/alarm-clock.tsx"
+  },
+  {
+   "name": "battery-level",
+   "category": "widget",
+   "path": "animata/widget/battery-level.tsx"
+  },
+  {
+   "name": "battery",
+   "category": "widget",
+   "path": "animata/widget/battery.tsx"
+  },
+  {
+   "name": "calendar-event",
+   "category": "widget",
+   "path": "animata/widget/calendar-event.tsx"
+  },
+  {
+   "name": "calendar-widget",
+   "category": "widget",
+   "path": "animata/widget/calendar-widget.tsx"
+  },
+  {
+   "name": "calorie-counter",
+   "category": "widget",
+   "path": "animata/widget/calorie-counter.tsx"
+  },
+  {
+   "name": "clock-with-photo",
+   "category": "widget",
+   "path": "animata/widget/clock-with-photo.tsx"
+  },
+  {
+   "name": "cycling",
+   "category": "widget",
+   "path": "animata/widget/cycling.tsx"
+  },
+  {
+   "name": "delivery-card",
+   "category": "widget",
+   "path": "animata/widget/delivery-card.tsx"
+  },
+  {
+   "name": "direction-card",
+   "category": "widget",
+   "path": "animata/widget/direction-card.tsx"
+  },
+  {
+   "name": "expense-tracker",
+   "category": "widget",
+   "path": "animata/widget/expense-tracker.tsx"
+  },
+  {
+   "name": "flight-widget",
+   "category": "widget",
+   "path": "animata/widget/flight-widget.tsx"
+  },
+  {
+   "name": "fund-widget",
+   "category": "widget",
+   "path": "animata/widget/fund-widget.tsx"
+  },
+  {
+   "name": "live-score",
+   "category": "widget",
+   "path": "animata/widget/live-score.tsx"
+  },
+  {
+   "name": "mobile-detail",
+   "category": "widget",
+   "path": "animata/widget/mobile-detail.tsx"
+  },
+  {
+   "name": "music-stack-interaction",
+   "category": "widget",
+   "path": "animata/widget/music-stack-interaction.tsx"
+  },
+  {
+   "name": "music-widget",
+   "category": "widget",
+   "path": "animata/widget/music-widget.tsx"
+  },
+  {
+   "name": "notes",
+   "category": "widget",
+   "path": "animata/widget/notes.tsx"
+  },
+  {
+   "name": "profile",
+   "category": "widget",
+   "path": "animata/widget/profile.tsx"
+  },
+  {
+   "name": "reminder-widget",
+   "category": "widget",
+   "path": "animata/widget/reminder-widget.tsx"
+  },
+  {
+   "name": "reminder",
+   "category": "widget",
+   "path": "animata/widget/reminder.tsx"
+  },
+  {
+   "name": "score-board",
+   "category": "widget",
+   "path": "animata/widget/score-board.tsx"
+  },
+  {
+   "name": "security-alert",
+   "category": "widget",
+   "path": "animata/widget/security-alert.tsx"
+  },
+  {
+   "name": "shopping-list",
+   "category": "widget",
+   "path": "animata/widget/shopping-list.tsx"
+  },
+  {
+   "name": "sleep-tracker",
+   "category": "widget",
+   "path": "animata/widget/sleep-tracker.tsx"
+  },
+  {
+   "name": "storage-status",
+   "category": "widget",
+   "path": "animata/widget/storage-status.tsx"
+  },
+  {
+   "name": "storage-widget",
+   "category": "widget",
+   "path": "animata/widget/storage-widget.tsx"
+  },
+  {
+   "name": "study-timer",
+   "category": "widget",
+   "path": "animata/widget/study-timer.tsx"
+  },
+  {
+   "name": "team-clock",
+   "category": "widget",
+   "path": "animata/widget/team-clock.tsx"
+  },
+  {
+   "name": "video-chat",
+   "category": "widget",
+   "path": "animata/widget/video-chat.tsx"
+  },
+  {
+   "name": "vpn-widget",
+   "category": "widget",
+   "path": "animata/widget/vpn-widget.tsx"
+  },
+  {
+   "name": "water-tracker",
+   "category": "widget",
+   "path": "animata/widget/water-tracker.tsx"
+  },
+  {
+   "name": "weather-card",
+   "category": "widget",
+   "path": "animata/widget/weather-card.tsx"
+  },
+  {
+   "name": "weekly-progress",
+   "category": "widget",
+   "path": "animata/widget/weekly-progress.tsx"
+  }
+ ]
+}

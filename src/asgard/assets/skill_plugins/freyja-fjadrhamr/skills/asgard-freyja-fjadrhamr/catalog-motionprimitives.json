@@ -1,0 +1,142 @@
+{
+ "source": "motion-primitives",
+ "license": "MIT",
+ "repo": "ibelick/motion-primitives",
+ "note": "free library only \u2014 pro.motion-primitives.com is paid/gated and NOT supported",
+ "fetch": "https://raw.githubusercontent.com/ibelick/motion-primitives/main/{path}",
+ "count": 33,
+ "components": [
+  {
+   "name": "accordion",
+   "path": "components/core/accordion.tsx"
+  },
+  {
+   "name": "animated-background",
+   "path": "components/core/animated-background.tsx"
+  },
+  {
+   "name": "animated-group",
+   "path": "components/core/animated-group.tsx"
+  },
+  {
+   "name": "animated-number",
+   "path": "components/core/animated-number.tsx"
+  },
+  {
+   "name": "border-trail",
+   "path": "components/core/border-trail.tsx"
+  },
+  {
+   "name": "carousel",
+   "path": "components/core/carousel.tsx"
+  },
+  {
+   "name": "cursor",
+   "path": "components/core/cursor.tsx"
+  },
+  {
+   "name": "dialog",
+   "path": "components/core/dialog.tsx"
+  },
+  {
+   "name": "disclosure",
+   "path": "components/core/disclosure.tsx"
+  },
+  {
+   "name": "dock",
+   "path": "components/core/dock.tsx"
+  },
+  {
+   "name": "glow-effect",
+   "path": "components/core/glow-effect.tsx"
+  },
+  {
+   "name": "image-comparison",
+   "path": "components/core/image-comparison.tsx"
+  },
+  {
+   "name": "in-view",
+   "path": "components/core/in-view.tsx"
+  },
+  {
+   "name": "infinite-slider",
+   "path": "components/core/infinite-slider.tsx"
+  },
+  {
+   "name": "magnetic",
+   "path": "components/core/magnetic.tsx"
+  },
+  {
+   "name": "morphing-dialog",
+   "path": "components/core/morphing-dialog.tsx"
+  },
+  {
+   "name": "morphing-popover",
+   "path": "components/core/morphing-popover.tsx"
+  },
+  {
+   "name": "progressive-blur",
+   "path": "components/core/progressive-blur.tsx"
+  },
+  {
+   "name": "scroll-progress",
+   "path": "components/core/scroll-progress.tsx"
+  },
+  {
+   "name": "sliding-number",
+   "path": "components/core/sliding-number.tsx"
+  },
+  {
+   "name": "spinning-text",
+   "path": "components/core/spinning-text.tsx"
+  },
+  {
+   "name": "spotlight",
+   "path": "components/core/spotlight.tsx"
+  },
+  {
+   "name": "text-effect",
+   "path": "components/core/text-effect.tsx"
+  },
+  {
+   "name": "text-loop",
+   "path": "components/core/text-loop.tsx"
+  },
+  {
+   "name": "text-morph",
+   "path": "components/core/text-morph.tsx"
+  },
+  {
+   "name": "text-roll",
+   "path": "components/core/text-roll.tsx"
+  },
+  {
+   "name": "text-scramble",
+   "path": "components/core/text-scramble.tsx"
+  },
+  {
+   "name": "text-shimmer-wave",
+   "path": "components/core/text-shimmer-wave.tsx"
+  },
+  {
+   "name": "text-shimmer",
+   "path": "components/core/text-shimmer.tsx"
+  },
+  {
+   "name": "tilt",
+   "path": "components/core/tilt.tsx"
+  },
+  {
+   "name": "toolbar-dynamic",
+   "path": "components/core/toolbar-dynamic.tsx"
+  },
+  {
+   "name": "toolbar-expandable",
+   "path": "components/core/toolbar-expandable.tsx"
+  },
+  {
+   "name": "transition-panel",
+   "path": "components/core/transition-panel.tsx"
+  }
+ ]
+}

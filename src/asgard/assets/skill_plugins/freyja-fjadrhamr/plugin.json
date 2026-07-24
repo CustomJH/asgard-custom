@@ -1,0 +1,34 @@
+{
+  "schema": 1,
+  "name": "freyja-fjadrhamr",
+  "version": "0.1.0",
+  "description": "Freyja Fjadrhamr (falcon cloak) — motion-example hunting: browse 8 animated-component catalogs (Magic UI, ReactBits, Animata, Aceternity UI, Motion Primitives, 21st.dev, Originkit, Uiverse; 10,066 components), fetch open source directly, and capture-reimplement key-gated previews.",
+  "skills": ["asgard-freyja-fjadrhamr"],
+  "routing": {
+    "asgard-freyja-fjadrhamr": {
+      "triggers": [
+        "fjadrhamr",
+        "깃털옷",
+        "example",
+        "예제",
+        "모션 예제",
+        "motion example",
+        "애니메이션 컴포넌트",
+        "animated component",
+        "magic ui",
+        "reactbits",
+        "animata",
+        "aceternity",
+        "motion primitives",
+        "21st",
+        "originkit",
+        "uiverse",
+        "레퍼런스 컴포넌트"
+      ],
+      "defaults": ["freyja"],
+      "agents": ["freyja"]
+    }
+  },
+  "source": "magicui.design (MIT), reactbits.dev (MIT+Commons Clause), animata.design/codse/animata (MIT), ui.aceternity.com (free components), ibelick/motion-primitives (MIT), 21st.dev (marketplace, browse-only without API key), originkit.dev (free library, key-gated fetch / capture), uiverse-io/galaxy (MIT, 3802 elements)",
+  "license": "MIT (ReactBits: MIT + Commons Clause; Aceternity: free site-served; 21st.dev: per-component, key-gated fetch)"
+}

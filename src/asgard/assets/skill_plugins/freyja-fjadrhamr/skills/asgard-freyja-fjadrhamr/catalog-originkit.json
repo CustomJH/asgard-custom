@@ -1,0 +1,1226 @@
+{
+"source": "originkit",
+"license": "proprietary free library; code fetch requires free API key (10/day) — capture protocol otherwise",
+"fetch_api": "POST https://mcp.originkit.dev/vellumai (JSON-RPC get_component, Bearer ORIGINKIT_API_KEY)",
+"count": 100,
+"components": [
+{
+"name": "ascii-reveal",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/ascii-reveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/ascii-reveal-gallery-720.mp4"
+},
+{
+"name": "asciiwaves",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/asciiwaves-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/asciiwaves-gallery-720.mp4"
+},
+{
+"name": "axis-cursor",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/axis-cursor-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/axis-cursor-gallery-720.mp4"
+},
+{
+"name": "blackhole",
+"category": "interactive-elements",
+"description": "Render a physically convincing 3D black hole with orbiting particles, depth-sorted occlusion, gravity inflow, and a glowing event-horizon core.",
+"tags": [
+"3d",
+"particles",
+"canvas",
+"physics",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/blackhole-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/blackhole-gallery-720.mp4"
+},
+{
+"name": "blinkingsquares",
+"category": "background-animation",
+"description": "Fill any background with a grid of independently twinkling squares, shaped by a directional density fade and a cursor-following halo.",
+"tags": [
+"canvas",
+"grid",
+"squares",
+"twinkle",
+"background",
+"animation",
+"cursor"
+],
+"poster": "https://cdn.originkit.dev/components/blinkingsquares-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/blinkingsquares-gallery-720.mp4"
+},
+{
+"name": "blurcarousel",
+"category": "image-gallery",
+"description": "Flip through images with a soft blur that creeps in on arrow hover and a 3D press-tilt that springs back as each slide advances.",
+"tags": [
+"image",
+"carousel",
+"blur",
+"3d",
+"tilt",
+"hover",
+"autoplay",
+"gallery"
+],
+"poster": "https://cdn.originkit.dev/components/blurcarousel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/blurcarousel-gallery-720.mp4"
+},
+{
+"name": "boxcarousel",
+"category": "image-gallery",
+"description": "Rotate images and videos across the four faces of a 3D cube, driven by autoplay, drag, or arrow keys.",
+"tags": [
+"3d",
+"cube",
+"carousel",
+"css",
+"drag",
+"autoplay",
+"video",
+"gallery"
+],
+"poster": "https://cdn.originkit.dev/components/boxcarousel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/boxcarousel-gallery-720.mp4"
+},
+{
+"name": "button-carousel",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/button-carousel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/button-carousel-gallery-720.mp4"
+},
+{
+"name": "chromatic-waves",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/chromatic-waves-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/chromatic-waves-gallery-720.mp4"
+},
+{
+"name": "clickeffects",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/clickeffects-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/clickeffects-gallery-720.mp4"
+},
+{
+"name": "cosmic-orb",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/cosmic-orb-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/cosmic-orb-gallery-720.mp4"
+},
+{
+"name": "coverflowcarousel",
+"category": "image-gallery",
+"description": "Glide through an infinite cover-flow reel where the centered image grows into a landscape hero while its neighbors fold into thin slats.",
+"tags": [
+"image",
+"carousel",
+"coverflow",
+"gallery",
+"animation",
+"autoplay",
+"infinite loop"
+],
+"poster": "https://cdn.originkit.dev/components/coverflowcarousel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/coverflowcarousel-gallery-720.mp4"
+},
+{
+"name": "coverflowgallery",
+"category": "image-gallery",
+"description": "A smooth 3D coverflow carousel with perspective animations, autoplay, and fully customizable titles.",
+"tags": [
+"coverflow",
+"carousel",
+"3d",
+"slider",
+"gallery",
+"cards",
+"perspective",
+"autoplay",
+"showcase",
+"image-slider",
+"motion"
+],
+"poster": "https://cdn.originkit.dev/components/coverflowgallery-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/coverflowgallery-gallery-720.mp4"
+},
+{
+"name": "cursor-image",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/cursor-image-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/cursor-image-gallery-720.mp4"
+},
+{
+"name": "cursor-image-trail",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/cursor-image-trail-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/cursor-image-trail-gallery-720.mp4"
+},
+{
+"name": "curvedmarquee",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/curvedmarquee-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/curvedmarquee-gallery-720.mp4"
+},
+{
+"name": "directionhover",
+"category": "text",
+"description": "Swap text to an accent-colored copy that slides in from the top or bottom edge the cursor enters, then out again on leave.",
+"tags": [
+"text",
+"hover",
+"direction-aware",
+"slide",
+"animation",
+"css",
+"typography"
+],
+"poster": "https://cdn.originkit.dev/components/directionhover-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/directionhover-gallery-720.mp4"
+},
+{
+"name": "dot-image-reveal",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/dot-image-reveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/dot-image-reveal-gallery-720.mp4"
+},
+{
+"name": "dotmatrix",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/dotmatrix-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/dotmatrix-gallery-720.mp4"
+},
+{
+"name": "draggable-grid",
+"category": "image-gallery",
+"description": "An infinitely draggable image canvas with smooth momentum, responsive layouts, and seamless gallery exploration.",
+"tags": [
+"infinite",
+"canvas",
+"gallery",
+"draggable",
+"image-grid",
+"portfolio",
+"showcase",
+"momentum",
+"interactive",
+"masonry",
+"photos"
+],
+"poster": "https://cdn.originkit.dev/components/draggable-grid-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/draggable-grid-gallery-720.mp4"
+},
+{
+"name": "draggablesticker",
+"category": "interactive-elements",
+"description": "Drag an image around like a real sticker that peels off the surface, tilts to your motion, and settles back into place.",
+"tags": [
+"image",
+"sticker",
+"webgl",
+"drag",
+"peel",
+"tilt",
+"3d",
+"shader"
+],
+"poster": "https://cdn.originkit.dev/components/draggablesticker-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/draggablesticker-gallery-720.mp4"
+},
+{
+"name": "dust-text-reveal",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/dust-text-reveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/dust-text-reveal-gallery-720.mp4"
+},
+{
+"name": "dynamic-weight",
+"category": "text",
+"description": "Morph each letter between two font weights based on its distance from the cursor for a live, variable-font hover effect.",
+"tags": [
+"text",
+"typography",
+"variable font",
+"cursor",
+"proximity",
+"hover",
+"animation",
+"interactive"
+],
+"poster": "https://cdn.originkit.dev/components/dynamic-weight-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/dynamic-weight-gallery-720.mp4"
+},
+{
+"name": "electricborder",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/electricborder-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/electricborder-gallery-720.mp4"
+},
+{
+"name": "emoji-particle",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/emoji-particle-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/emoji-particle-gallery-720.mp4"
+},
+{
+"name": "emojiburst",
+"category": "button",
+"description": "Launch a burst of custom emojis from a tappable button, flying off freely under gravity with a springy shake on each press.",
+"tags": [
+"emoji",
+"button",
+"particles",
+"physics",
+"animation",
+"interactive",
+"confetti",
+"gravity"
+],
+"poster": "https://cdn.originkit.dev/components/emojiburst-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/emojiburst-gallery-720.mp4"
+},
+{
+"name": "encrypt-button",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/encrypt-button-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/encrypt-button-gallery-720.mp4"
+},
+{
+"name": "flip",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/flip-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/flip-gallery-720.mp4"
+},
+{
+"name": "floatingicons",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/floatingicons-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/floatingicons-gallery-720.mp4"
+},
+{
+"name": "fluid-image-reveal",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/fluid-image-reveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/fluid-image-reveal-gallery-720.mp4"
+},
+{
+"name": "fluidtrail",
+"category": "interactive-elements",
+"description": "Paint a glowing, GPU-simulated fluid trail that swirls and drifts behind the cursor with real Navier-Stokes physics.",
+"tags": [
+"webgl",
+"fluid",
+"canvas",
+"simulation",
+"cursor",
+"physics",
+"interactive",
+"trail"
+],
+"poster": "https://cdn.originkit.dev/components/fluidtrail-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/fluidtrail-gallery-720.mp4"
+},
+{
+"name": "gallery-tunnel",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/gallery-tunnel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/gallery-tunnel-gallery-720.mp4"
+},
+{
+"name": "glitch-text",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/glitch-text-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/glitch-text-gallery-720.mp4"
+},
+{
+"name": "glitterwrap",
+"category": "animation",
+"description": "Send a glittering starfield of particles warping outward or inward from center, with random sparkle flashes and motion streaks.",
+"tags": [
+"canvas",
+"starfield",
+"particles",
+"warp",
+"animation",
+"sparkle",
+"hyperspace"
+],
+"poster": "https://cdn.originkit.dev/components/glitterwrap-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/glitterwrap-gallery-720.mp4"
+},
+{
+"name": "globe",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/globe-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/globe-gallery-720.mp4"
+},
+{
+"name": "gravitygallery",
+"category": "interactive-elements",
+"description": "Drop image-filled squares or circles into a Matter.js physics world with gravity, walls, and click-drag tossing.",
+"tags": [
+"image",
+"physics",
+"gallery",
+"drag",
+"gravity",
+"collision",
+"interactive",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/gravitygallery-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/gravitygallery-gallery-720.mp4"
+},
+{
+"name": "grid-hole",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/grid-hole-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/grid-hole-gallery-720.mp4"
+},
+{
+"name": "hover-image-reveal",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/hover-image-reveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/hover-image-reveal-gallery-720.mp4"
+},
+{
+"name": "image-magnifier",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/image-magnifier-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/image-magnifier-gallery-720.mp4"
+},
+{
+"name": "image-ripple",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/image-ripple-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/image-ripple-gallery-720.mp4"
+},
+{
+"name": "imagefold",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/imagefold-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/imagefold-gallery-720.mp4"
+},
+{
+"name": "imagegallery",
+"category": "image-gallery",
+"description": "Continuously stream images that fly outward or spiral from the center, with configurable density, easing, and timing.",
+"tags": [
+"image",
+"gallery",
+"spiral",
+"radial",
+"animation",
+"gsap",
+"collage"
+],
+"poster": "https://cdn.originkit.dev/components/imagegallery-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/imagegallery-gallery-720.mp4"
+},
+{
+"name": "infinitegallery",
+"category": "image-gallery",
+"description": "An infinitely zoomable and draggable image gallery with smooth motion, momentum, and immersive navigation.",
+"tags": [
+"gallery",
+"infinite",
+"zoom",
+"draggable",
+"image-grid",
+"portfolio",
+"showcase",
+"motion",
+"interactive",
+"canvas",
+"photos"
+],
+"poster": "https://cdn.originkit.dev/components/infinitegallery-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/infinitegallery-gallery-720.mp4"
+},
+{
+"name": "inkbleed",
+"category": "text",
+"description": "Create interactive ink bleed effects that react fluidly to cursor movement.",
+"tags": [
+"text effect",
+"ink bleed",
+"liquid text",
+"cursor interaction",
+"typography",
+"hover effect",
+"interactive"
+],
+"poster": "https://cdn.originkit.dev/components/inkbleed-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/inkbleed-gallery-720.mp4"
+},
+{
+"name": "interactive-grid",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/interactive-grid-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/interactive-grid-gallery-720.mp4"
+},
+{
+"name": "juiceeffect",
+"category": "interactive-elements",
+"description": "Fill an image silhouette with gooey, rising-and-falling liquid particles that fuse into organic blobs and scatter from the cursor.",
+"tags": [
+"canvas",
+"particles",
+"liquid",
+"image",
+"hover",
+"svg",
+"goo"
+],
+"poster": "https://cdn.originkit.dev/components/juiceeffect-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/juiceeffect-gallery-720.mp4"
+},
+{
+"name": "kineticgrid",
+"category": "interactive-elements",
+"description": "An interactive grid background that dynamically reacts to cursor movement with smooth attraction, animated mesh lines, and an optional cursor trail.",
+"tags": [
+"background",
+"grid",
+"kinetic",
+"interactive",
+"cursor",
+"mouse",
+"mesh",
+"dots",
+"canvas",
+"motion",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/kineticgrid-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/kineticgrid-gallery-720.mp4"
+},
+{
+"name": "line-ripple-background",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/line-ripple-background-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/line-ripple-background-gallery-720.mp4"
+},
+{
+"name": "link-preview",
+"category": "button",
+"description": "Reveal a floating thumbnail of any linked page on hover, with the preview leaning toward your cursor as it moves.",
+"tags": [
+"text",
+"link",
+"hover",
+"preview",
+"image",
+"animation",
+"spring",
+"cursor"
+],
+"poster": "https://cdn.originkit.dev/components/link-preview-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/link-preview-gallery-720.mp4"
+},
+{
+"name": "liquid-distortion",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/liquid-distortion-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/liquid-distortion-gallery-720.mp4"
+},
+{
+"name": "magnetic-hover-button",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/magnetic-hover-button-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/magnetic-hover-button-gallery-720.mp4"
+},
+{
+"name": "magneticcarousel",
+"category": "image-gallery",
+"description": "Magnify a row of image bars macOS dock style as the cursor nears, then click any bar to expand it into a large square.",
+"tags": [
+"image",
+"gallery",
+"carousel",
+"dock",
+"magnify",
+"hover",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/magneticcarousel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/magneticcarousel-gallery-720.mp4"
+},
+{
+"name": "meshtexthover",
+"category": "text",
+"description": "Warp text across a WebGL mesh that drags and springs back under the cursor, with chromatic color-split fringes that cycle through your palette.",
+"tags": [
+"text",
+"webgl",
+"mesh",
+"hover",
+"distortion",
+"chromatic",
+"physics",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/meshtexthover-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/meshtexthover-gallery-720.mp4"
+},
+{
+"name": "particlesphere",
+"category": "interactive-elements",
+"description": "Spin an interactive 3D sphere of thousands of glowing particles that scatter away from your cursor and clicks.",
+"tags": [
+"3d",
+"particles",
+"webgl",
+"sphere",
+"interactive",
+"rotation",
+"physics",
+"cursor"
+],
+"poster": "https://cdn.originkit.dev/components/particlesphere-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/particlesphere-gallery-720.mp4"
+},
+{
+"name": "particletunnel",
+"category": "animation",
+"description": "Flow particles along radial spokes toward a central black void with perspective depth, depth-based fading, and z-sorted overlap.",
+"tags": [
+"canvas",
+"3d",
+"particles",
+"tunnel",
+"perspective",
+"animation",
+"depth"
+],
+"poster": "https://cdn.originkit.dev/components/particletunnel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/particletunnel-gallery-720.mp4"
+},
+{
+"name": "pixel-led-display",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/pixel-led-display-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixel-led-display-gallery-720.mp4"
+},
+{
+"name": "pixel-tetris",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/pixel-tetris-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixel-tetris-gallery-720.mp4"
+},
+{
+"name": "pixel-unfold",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/pixel-unfold-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixel-unfold-gallery-720.mp4"
+},
+{
+"name": "pixelate-image",
+"category": "interactive-elements",
+"description": "Reveal or conceal an image through a real-time SVG pixelation filter driven by cursor distance or a scroll-triggered tween.",
+"tags": [
+"image",
+"svg",
+"pixelate",
+"hover",
+"scroll",
+"filter",
+"reveal",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/pixelate-image-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixelate-image-gallery-720.mp4"
+},
+{
+"name": "pixelcard",
+"category": "background-animation",
+"description": "Fill a card with a shimmering canvas grid of pixels that grow in from the center or any edge on hover, scroll, or automatically.",
+"tags": [
+"canvas",
+"pixels",
+"grid",
+"shimmer",
+"animation",
+"hover",
+"scroll-reveal",
+"background"
+],
+"poster": "https://cdn.originkit.dev/components/pixelcard-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixelcard-gallery-720.mp4"
+},
+{
+"name": "pixeldrift",
+"category": "interactive-elements",
+"description": "Interactive particle typography that assembles, disperses, and reacts to cursor movement with smooth physics-based animations.",
+"tags": [
+"particle",
+"text",
+"typography",
+"interactive",
+"cursor",
+"hover",
+"animation",
+"motion",
+"canvas",
+"kinetic",
+"hero"
+],
+"poster": "https://cdn.originkit.dev/components/pixeldrift-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixeldrift-gallery-720.mp4"
+},
+{
+"name": "pixelreveal",
+"category": "animation",
+"description": "Dissolve a grid of colored pixel squares to reveal an image, sweeping up, down, left, or right with a ragged, noisy leading edge.",
+"tags": [
+"image",
+"canvas",
+"reveal",
+"dissolve",
+"pixel",
+"animation",
+"scroll"
+],
+"poster": "https://cdn.originkit.dev/components/pixelreveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pixelreveal-gallery-720.mp4"
+},
+{
+"name": "prism-grid",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/prism-grid-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/prism-grid-gallery-720.mp4"
+},
+{
+"name": "proximityorbit",
+"category": "image-gallery",
+"description": "Display images in a smooth, interactive circular orbit.",
+"tags": [
+"orbit gallery",
+"circular gallery",
+"image animation",
+"orbit effect",
+"motion",
+"hover effect",
+"interactive gallery",
+"image carousel",
+"circular layout"
+],
+"poster": "https://cdn.originkit.dev/components/proximityorbit-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/proximityorbit-gallery-720.mp4"
+},
+{
+"name": "pulse-lines",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/pulse-lines-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/pulse-lines-gallery-720.mp4"
+},
+{
+"name": "random",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/random-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/random-gallery-720.mp4"
+},
+{
+"name": "random-letter-swap",
+"category": "text",
+"description": "Swap each letter of a heading vertically on hover, revealing a duplicate glyph in a randomized, staggered order.",
+"tags": [
+"text",
+"hover",
+"animation",
+"typography",
+"stagger",
+"letters",
+"framer-motion"
+],
+"poster": "https://cdn.originkit.dev/components/random-letter-swap-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/random-letter-swap-gallery-720.mp4"
+},
+{
+"name": "reactive-lines",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/reactive-lines-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/reactive-lines-gallery-720.mp4"
+},
+{
+"name": "reactivegrid",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/reactivegrid-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/reactivegrid-gallery-720.mp4"
+},
+{
+"name": "ribbon-trails",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/ribbon-trails-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/ribbon-trails-gallery-720.mp4"
+},
+{
+"name": "ring",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/ring-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/ring-gallery-720.mp4"
+},
+{
+"name": "risinglines",
+"category": "animation",
+"description": "Emit two layers of glowing particles — thin line sparks and soft blobs — rising or falling from a luminous horizon on canvas.",
+"tags": [
+"canvas",
+"particles",
+"animation",
+"glow",
+"horizon",
+"light",
+"generative"
+],
+"poster": "https://cdn.originkit.dev/components/risinglines-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/risinglines-gallery-720.mp4"
+},
+{
+"name": "roundcarousel",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/roundcarousel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/roundcarousel-gallery-720.mp4"
+},
+{
+"name": "scrambletext",
+"category": "text",
+"description": "Animate text with cinematic glitch reveals and interactive character-based hover effects.",
+"tags": [
+"text animation",
+"glitch",
+"character reveal",
+"hover effect",
+"typography"
+],
+"poster": "https://cdn.originkit.dev/components/scrambletext-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/scrambletext-gallery-720.mp4"
+},
+{
+"name": "scroll-text-reveal",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/scroll-text-reveal-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/scroll-text-reveal-gallery-720.mp4"
+},
+{
+"name": "shiny-pill",
+"category": "text",
+"description": "Sweep a bright sheen across a line of text on an endless loop, with tunable shine color and sweep speed.",
+"tags": [
+"text",
+"shine",
+"gradient",
+"mask",
+"css",
+"animation",
+"loop",
+"sheen"
+],
+"poster": "https://cdn.originkit.dev/components/shiny-pill-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/shiny-pill-gallery-720.mp4"
+},
+{
+"name": "smokytext",
+"category": "text",
+"description": "Animate text with realistic smoke diffusion, customizable reveal directions, trigger modes, and smooth character-based transitions.",
+"tags": [
+"text animation",
+"smoke effect",
+"typography",
+"text reveal",
+"particle text",
+"motion",
+"interactive text"
+],
+"poster": "https://cdn.originkit.dev/components/smokytext-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/smokytext-gallery-720.mp4"
+},
+{
+"name": "snake-grid",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/snake-grid-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/snake-grid-gallery-720.mp4"
+},
+{
+"name": "snowfall",
+"category": "background-animation",
+"description": "Fill any frame with drifting canvas snow, tuning per-flake size, speed, opacity, wind sway, and fall direction.",
+"tags": [
+"snow",
+"canvas",
+"particles",
+"background",
+"animation",
+"weather",
+"winter"
+],
+"poster": "https://cdn.originkit.dev/components/snowfall-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/snowfall-gallery-720.mp4"
+},
+{
+"name": "spinimage",
+"category": "image-gallery",
+"description": "Orbit a set of images along a tilted 3D ellipse with continuous spin, depth-based scaling, and front-to-back layering.",
+"tags": [
+"image",
+"gallery",
+"orbit",
+"3d",
+"rotation",
+"animation",
+"carousel",
+"css"
+],
+"poster": "https://cdn.originkit.dev/components/spinimage-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/spinimage-gallery-720.mp4"
+},
+{
+"name": "spiralimages",
+"category": "image-gallery",
+"description": "Images flow along an Archimedean spiral vortex from the edge into the center, rotating to follow the tangent and fading at both ends.",
+"tags": [
+"image",
+"gallery",
+"spiral",
+"rotation",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/spiralimages-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/spiralimages-gallery-720.mp4"
+},
+{
+"name": "spotlighttext",
+"category": "text",
+"description": "Dim a block of text and sweep a soft cursor-following spotlight across it to reveal the bright letters underneath on hover.",
+"tags": [
+"text",
+"spotlight",
+"hover",
+"mask",
+"reveal",
+"cursor",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/spotlighttext-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/spotlighttext-gallery-720.mp4"
+},
+{
+"name": "spring-text",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/spring-text-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/spring-text-gallery-720.mp4"
+},
+{
+"name": "starburst",
+"category": "animation",
+"description": "Radiate glowing streaks outward from a movable focal point to form a twinkling starburst with a soft flower bloom at its core.",
+"tags": [
+"canvas",
+"particles",
+"animation",
+"glow",
+"radial",
+"starburst",
+"twinkle",
+"light"
+],
+"poster": "https://cdn.originkit.dev/components/starburst-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/starburst-gallery-720.mp4"
+},
+{
+"name": "stardust",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/stardust-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/stardust-gallery-720.mp4"
+},
+{
+"name": "sticker-peel",
+"category": "interactive-elements",
+"description": "Peel and curl a 3D image sticker away from the surface on hover and press, with realistic bone-driven folding and soft shadows.",
+"tags": [
+"3d",
+"webgl",
+"image",
+"sticker",
+"peel",
+"hover",
+"animation",
+"shadow"
+],
+"poster": "https://cdn.originkit.dev/components/sticker-peel-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/sticker-peel-gallery-720.mp4"
+},
+{
+"name": "svgparticles",
+"category": "interactive-elements",
+"description": "Transform images/SVGs into interactive particle animations with hover and repulsion effects.",
+"tags": [
+"particle image",
+"particle effect",
+"image animation",
+"interactive",
+"hover effect",
+"repulsion",
+"cursor effect",
+"particles"
+],
+"poster": "https://cdn.originkit.dev/components/svgparticles-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/svgparticles-gallery-720.mp4"
+},
+{
+"name": "swipe-stack",
+"category": "image-gallery",
+"description": "Flick through a fanned 3D stack of image cards that tilt, scale, and cycle to the back on every swipe.",
+"tags": [
+"image",
+"cards",
+"swipe",
+"drag",
+"3d",
+"stack",
+"gallery",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/swipe-stack-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/swipe-stack-gallery-720.mp4"
+},
+{
+"name": "text-reveal-wall",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/text-reveal-wall-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/text-reveal-wall-gallery-720.mp4"
+},
+{
+"name": "text-vaporize",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/text-vaporize-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/text-vaporize-gallery-720.mp4"
+},
+{
+"name": "text-wave",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/text-wave-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/text-wave-gallery-720.mp4"
+},
+{
+"name": "textlift",
+"category": "text",
+"description": "Stack each letter into a layered 3D extrusion that expands and lifts off the surface when you hover it individually.",
+"tags": [
+"text",
+"hover",
+"3d",
+"extrusion",
+"typography",
+"animation",
+"spring"
+],
+"poster": "https://cdn.originkit.dev/components/textlift-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/textlift-gallery-720.mp4"
+},
+{
+"name": "textmorph",
+"category": "text",
+"description": "Cycle through a word list with a gooey blur-and-scale morph that melts each word smoothly into the next.",
+"tags": [
+"text",
+"morph",
+"blur",
+"animation",
+"svg",
+"css",
+"typography"
+],
+"poster": "https://cdn.originkit.dev/components/textmorph-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/textmorph-gallery-720.mp4"
+},
+{
+"name": "textpath",
+"category": "text",
+"description": "Scroll repeating text seamlessly along a procedural sine-wave path with adjustable frequency, height, speed, and direction.",
+"tags": [
+"text",
+"svg",
+"marquee",
+"wave",
+"animation",
+"scrolling",
+"typography"
+],
+"poster": "https://cdn.originkit.dev/components/textpath-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/textpath-gallery-720.mp4"
+},
+{
+"name": "thunderstrike",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/thunderstrike-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/thunderstrike-gallery-720.mp4"
+},
+{
+"name": "typewriter",
+"category": "text",
+"description": "Types out a rotating list of phrases one character at a time with a blinking cursor and a static, separately colored prefix.",
+"tags": [
+"text",
+"typewriter",
+"typing",
+"cursor",
+"animation",
+"loop"
+],
+"poster": "https://cdn.originkit.dev/components/typewriter-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/typewriter-gallery-720.mp4"
+},
+{
+"name": "usercursor",
+"category": "interactive-elements",
+"description": "Replace the native pointer inside any surface with a spring-tracked arrow and a trailing name pill that rocks with cursor speed.",
+"tags": [
+"cursor",
+"pointer",
+"follower",
+"spring",
+"physics",
+"interactive",
+"label",
+"animation"
+],
+"poster": "https://cdn.originkit.dev/components/usercursor-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/usercursor-gallery-720.mp4"
+},
+{
+"name": "water-button",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/water-button-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/water-button-gallery-720.mp4"
+},
+{
+"name": "wave-arcs",
+"category": "",
+"description": "",
+"tags": [],
+"poster": "https://cdn.originkit.dev/components/wave-arcs-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/wave-arcs-gallery-720.mp4"
+},
+{
+"name": "weight-hover",
+"category": "text",
+"description": "Morph each letter's variable-font weight on hover, staggered letter-by-letter with a spring that eases in and out.",
+"tags": [
+"text",
+"hover",
+"variable font",
+"typography",
+"stagger",
+"animation",
+"weight"
+],
+"poster": "https://cdn.originkit.dev/components/weight-hover-gallery-poster.jpg",
+"video": "https://cdn.originkit.dev/components/weight-hover-gallery-720.mp4"
+}
+]
+}
