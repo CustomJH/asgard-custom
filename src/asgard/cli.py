@@ -502,6 +502,20 @@ def memory_query(
     raise typer.Exit(run_query(text, k, json_))
 
 
+@memory_app.command(
+    "episodes", help="search raw session transcript segments (derived index, non-authoritative; empty query = stats)"
+)
+def memory_episodes(
+    text: str = typer.Argument("", help="query over past turns of this project"),
+    k: int = typer.Option(5, "-k", help="max results"),
+    quest: str = typer.Option("", "--quest", help="filter by quest id (alone = list that quest's turns)"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_episodes
+
+    raise typer.Exit(run_episodes(text, k, quest, json_))
+
+
 @memory_app.command("lint", help="wiki health — dead links, decay candidates, duplicates, budget")
 def memory_lint(json_: bool = typer.Option(False, "--json")) -> None:
     from .commands.memory import run_lint
@@ -590,6 +604,41 @@ def memory_path(
     raise typer.Exit(run_path(directory, reset))
 
 
+@memory_app.command("norn", help="evolve the wiki — LLM proposes deltas, deterministic code applies (dry-run)")
+def memory_norn(
+    apply: bool = typer.Option(False, "--apply", help="commit the validated deltas (backup + report)"),
+    nudge: bool = typer.Option(False, "--nudge", hidden=True, help="hook surface: one latched line when due"),
+    auto: bool = typer.Option(
+        False, "--auto", help="autonomous pass: apply ops the norn_auto tier allows (safe=insight only)"
+    ),
+    wake: bool = typer.Option(
+        False, "--wake", hidden=True, help="hook surface: spawn a detached --auto run when due (tier-gated)"
+    ),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_norn
+
+    raise typer.Exit(run_norn(apply, nudge, json_, auto, wake))
+
+
+@memory_app.command("norn-restore", help="restore a page archived by a norn pass")
+def memory_norn_restore(slug: str = typer.Argument(...)) -> None:
+    from .commands.memory import run_norn_restore
+
+    raise typer.Exit(run_norn_restore(slug))
+
+
+@memory_app.command("project-reflect", help="LLM-synthesized answer over the project memory bank (advisory)")
+def memory_project_reflect(
+    question: str = typer.Argument(..., help="the question to reflect on"),
+    budget: str = typer.Option("low", "--budget", help="low|mid|high — reflection depth"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_reflect
+
+    raise typer.Exit(run_project_reflect(question, budget, json_))
+
+
 @memory_app.command("obsidian", help="open the personal memory wiki in Obsidian")
 def memory_obsidian() -> None:
     from .commands.memory import run_obsidian
@@ -619,6 +668,9 @@ def memory_connect(
     adopt_existing: bool = typer.Option(
         False, "--adopt-existing", help="explicitly bind an existing unbound/legacy namespace (review first)"
     ),
+    timeout: int = typer.Option(
+        None, "--timeout", help="backend request timeout in seconds (slow LLM gateways need more than the 15s default)"
+    ),
 ) -> None:
     from .commands.memory import run_connect
 
@@ -630,6 +682,7 @@ def memory_connect(
             option_values=option,
             claim=claim,
             adopt_existing=adopt_existing,
+            timeout=timeout,
         )
     )
 
@@ -797,6 +850,15 @@ def evolve_bench(
     from .commands.evolve import run_bench
 
     raise typer.Exit(run_bench(skill, cmd, metric, runs, direction, timeout))
+
+
+@evolve_app.command("curate", help="deterministic learned-skill aging report — stale 30d / archive 90d (dry-run)")
+def evolve_curate(
+    apply: bool = typer.Option(False, "--apply", help="actually archive 90d-idle candidates (reversible)"),
+) -> None:
+    from .commands.evolve import run_curate
+
+    raise typer.Exit(run_curate(apply))
 
 
 @evolve_app.command("archive", help="retire a learned skill without deleting it (reversible)")

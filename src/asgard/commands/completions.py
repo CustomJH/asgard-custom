@@ -126,6 +126,7 @@ _EVOLVE_SUB = {
     "reject": "reject a draft (latched)",
     "polish": "LLM-rewrite a pending draft",
     "bench": "A/B a learned skill OFF vs ON",
+    "curate": "deterministic learned-skill aging report",
     "archive": "retire a learned skill (reversible)",
     "restore": "bring an archived skill back",
 }
@@ -133,6 +134,7 @@ _MEM_SUB = {
     "add": "add a page",
     "ingest": "absorb knowledge (dedup-merge)",
     "query": "search the wiki (zero-LLM)",
+    "episodes": "search raw session transcript segments",
     "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
     "reindex": "rebuild derived index",
@@ -143,12 +145,15 @@ _MEM_SUB = {
     "snapshot": "print the session injection snapshot",
     "recall": "print query-relevant memory context",
     "path": "print or configure the memory directory",
+    "norn": "evolve the wiki (LLM deltas, deterministic apply)",
+    "norn-restore": "restore a page archived by a norn pass",
     "obsidian": "open the personal memory wiki in Obsidian",
     "connect": "select and trust a project-memory backend",
     "project-scan": "preview important project artifacts",
     "project-sync": "sync approved artifacts to the selected backend",
     "project-approve": "approve a staged project-memory record",
     "project-rehydrate": "replay Git canonical records to the selected backend",
+    "project-reflect": "LLM-synthesized answer over the project bank (advisory)",
     "mcp": "stdio MCP bridge (shared memory)",
 }
 _PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}

@@ -574,6 +574,17 @@
       <div class="chrono" id="chronBody" aria-live="polite"><p class="vh">불러오는 중…</p><div class="skel skel-row" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>
       <div id="chronPgn"></div>
     </section>
+    <!-- 노른 손질 이력 — insight 계보 + 리포트 (자가 진화의 가시화) -->
+    <div class="grid two" style="margin-top:18px">
+      <section class="panel" aria-label="노른 insight 계보" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 9.4A5.6 5.6 0 1 1 6.6 2.8a4.4 4.4 0 0 0 6.6 6.6z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>노른 insight 계보</span> <span id="nornMeta" class="num dimnote"></span></h2>
+        <ul class="log" id="nornInsights"></ul>
+      </section>
+      <section class="panel" aria-label="노른 리포트" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="1.8" width="11" height="12.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.1"/></svg><span data-t>노른 리포트</span> <span id="nornRepMeta" class="num dimnote"></span></h2>
+        <ul class="log" id="nornReports"></ul>
+      </section>
+    </div>
   </section>
 
   <!-- ══ 활동 — 52주 열지도 + 작업 분포 + 피드 (agentmemory Activity 구성) ══ -->
@@ -2013,7 +2024,38 @@ function closeInlineDetail(refocus){
 /* ══ 연대기 — 좌우 교차 타임라인 + op 칩 필터 (agentmemory Timeline 구성) ══ */
 
 const CHRON_LIMIT = 60; // 60건 페이지 — /api/log 서버 페이지네이션 소비
+function renderNorn(s){
+  const dr = (s && s.norn) || { reports: [], insights: [], auto_mode: "safe" };
+  const meta = $("nornMeta");
+  if(meta) meta.textContent = T("자율 모드 ") + dr.auto_mode + " · " + dr.insights.length;
+  const rmeta = $("nornRepMeta");
+  if(rmeta) rmeta.textContent = String(dr.reports.length);
+  const insEl = $("nornInsights");
+  if(insEl){
+    insEl.innerHTML = dr.insights.length
+      ? dr.insights.map((i) =>
+          '<li><span class="ts">' + esc(i.created || "") + '</span><span class="op">' + esc(i.confidence || "—")
+          + '</span><span class="sl"><a href="#" data-slug="' + esc(i.slug) + '">' + esc(i.title) + '</a>'
+          + (i.sources && i.sources.length
+              ? ' <span class="dimnote">← ' + i.sources.map(esc).join(", ") + '</span>' : "")
+          + '</span></li>').join("")
+      : '<li><span class="ts"></span><span class="op"></span><span class="sl dimnote">'
+        + T("insight 없음 — 노른이 패턴을 승격하면 계보가 남는다") + '</span></li>';
+  }
+  const repEl = $("nornReports");
+  if(repEl){
+    const sum = (c) => ["merge","archive","insight","contradiction","proposed"].map((k) => c[k] ? k + " " + c[k] : "")
+      .filter(Boolean).join(" · ") || T("변경 없음");
+    repEl.innerHTML = dr.reports.length
+      ? dr.reports.map((r) =>
+          '<li><span class="ts">' + esc(r.name.replace(/^norn-|\.md$/g, "")) + '</span><span class="op">norn</span>'
+          + '<span class="sl">' + esc(sum(r.counts)) + '</span></li>').join("")
+      : '<li><span class="ts"></span><span class="op"></span><span class="sl dimnote">'
+        + T("리포트 없음 — asgard memory norn 으로 첫 통합을 실행") + '</span></li>';
+  }
+}
 function renderChronicle(s){
+  renderNorn(s); // 노른 손질 이력 — 연대기와 같은 스냅샷으로 동장한다
   const a = (s && s.activity) || { ops: {}, total: 0 };
   const fams = Object.keys(a.ops).sort((x, y) => a.ops[y] - a.ops[x]);
   const chip = (f, label) => {

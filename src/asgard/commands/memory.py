@@ -14,6 +14,7 @@ import json as _json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -163,6 +164,14 @@ def run_sync_turn(mode: str) -> int:
         payload = _json.loads(raw or "{}")
         if not isinstance(payload, dict):
             raise ValueError("turn payload must be a JSON object")
+        # 사용자 정정 신호 채굴 (제2 채굴원) — 개인/진화 스코프라 프로젝트 메모리 연결과 무관하게
+        # 항상 시도한다. 탐지 실패·중복·오염 = 조용히 False (턴을 막지 않는다).
+        with contextlib.suppress(Exception):
+            from ..evolution import record_correction
+
+            record_correction(
+                os.getcwd(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
+            )
         found = find_config(os.getcwd())
         if not found:
             print(_json.dumps({"status": "skipped", "reason": "project memory not connected"}))
@@ -291,6 +300,46 @@ def run_query(text: str, k: int, json_out: bool) -> int:
             return 0
         for h in hits:
             print(f"{h['slug']}  `{h['kind']}`  {h['title']}\n    {h['snippet']}")
+        return 0
+
+    return _guard(_do)
+
+
+def run_episodes(text: str, k: int, quest: str, json_out: bool) -> int:
+    """세션 원문(에피소드) 검색 표면 — 비권위 참고. 빈 질의는 인덱스 현황만 보인다."""
+
+    def _do() -> int:
+        from ..agent import episodes
+
+        root = os.getcwd()
+        if not text.strip() and not quest.strip():
+            s = episodes.stats(root)
+            if json_out:
+                print(_json.dumps(s, ensure_ascii=False))
+            else:
+                ui.step(f"episodes: {s['turns']} turns · {s['quests']} quests · raw {s['raw_bytes']} bytes")
+            return 0
+        if quest.strip() and not text.strip():
+            turns = episodes.turns_for_quest(root, quest.strip())
+            if json_out:
+                print(_json.dumps(turns, ensure_ascii=False, indent=1))
+                return 0
+            if not turns:
+                ui.step("no turns for quest")
+                return 0
+            for t_ in turns:
+                print(f"t{t_['seq']}  {t_['request'][:80]}")
+            return 0
+        hits = episodes.search(root, text, k=k, quest=quest.strip() or None)
+        if json_out:
+            print(_json.dumps(hits, ensure_ascii=False, indent=1))
+            return 0
+        if not hits:
+            ui.step("no matches")
+            return 0
+        for h in hits:
+            tag = f"  quest:{h['quest']}" if h["quest"] else ""
+            print(f"t{h['seq']}{tag}\n    {h['request']}\n    → {h['excerpt']}")
         return 0
 
     return _guard(_do)
@@ -458,6 +507,7 @@ def run_connect(
     option_values: list[str] | None = None,
     claim: bool = False,
     adopt_existing: bool = False,
+    timeout: int | None = None,
 ) -> int:
     """프로젝트를 선택된 shared-memory backend에 연결하고 통합 설정에 기록한다."""
 
@@ -491,6 +541,10 @@ def run_connect(
             "project_uid": project_uid,
             "binding_id": binding_id,
         }
+        if timeout is not None:
+            # 동기 retain 이 backend LLM 추출을 기다린다 — 느린 게이트웨이는 기본 15s 를 넘긴다
+            # (실측 26-07-24: qwen3:8b 로컬 추출 ~16s → binding write 가 기본값에서 항상 timeout)
+            config["timeout"] = int(timeout)
         backend = get_backend(config)
         try:
             readiness = backend.readiness()
@@ -540,6 +594,7 @@ def run_connect(
             options=selected_options,
             project_uid=project_uid,
             binding_id=binding_id,
+            timeout=timeout,
         )
         memory_bridge.trust_backend(config)
         ui.ok(f"connected: engine={selected_engine} project_id={pid} → {p} (커밋해서 팀과 공유)")
@@ -753,5 +808,162 @@ def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_ou
         else:
             ui.fail(f"project memory rehydrate failed: {output['error'] or 'backend rejected publication'}")
         return 0 if output["success"] else 1
+
+    return _guard(_do)
+
+
+def run_norn(
+    apply: bool = False, nudge: bool = False, json_out: bool = False, auto: bool = False, wake: bool = False
+) -> int:
+    """노른 패스 — LLM 제안 델타를 결정적 검증으로 거른 뒤, --apply 시에만 커밋한다.
+
+    자율 계층 (오딘 결정 26-07-24): --wake(훅)는 due 시 모드에 따라 백그라운드 --auto 를
+    분리 스폰하거나(safe/full) 넛지만 남긴다(off). --auto 는 자격 op 만 즉시 자동 적용."""
+
+    def _do() -> int:
+        from ..memory import norn as norn_mod
+
+        d = memory.ensure_home()
+        if wake:  # 훅 소비 표면 — due 아니면 침묵, due 면 모드별 분기 (latch 는 상태 공유)
+            due, reason = norn_mod.norn_due(d)
+            if not due:
+                return 0
+            mode = norn_mod.auto_mode()
+            if mode == "off":
+                line = norn_mod.nudge_line(d)
+                if line:
+                    print(line)
+                return 0
+            state = norn_mod._load_state(d)
+            digest = str(norn_mod._log_lines(d))
+            if state.get("auto_spawn_digest") == digest:
+                return 0  # 같은 누적 상태로 이미 스폰 — 중복 백그라운드 방지
+            state["auto_spawn_digest"] = digest
+            norn_mod._save_state(d, state)
+            exe = shutil.which("asgard") or sys.argv[0]
+            subprocess.Popen(  # 분리 스폰 — 훅 타임아웃(10s)과 LLM 소요(수십 s)를 격리한다
+                [exe, "memory", "norn", "--auto"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            print(f"위그드라실 노른 자동 통합 시작 — {reason} (모드 {mode}: 추가는 자율, 병합·보관은 제안)")
+            return 0
+        if auto:  # 자율 실행 본체 — 모드 자격분만 적용, 잔류분은 제안으로 보고
+            result = norn_mod.run_auto(os.getcwd(), d)
+            if json_out:
+                print(_json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+            ui.head(f"위그드라실 노른 자동 통합 · 모드 {result['mode']}")
+            for op in result["applied"]:
+                if op["op"] == "insight":
+                    ui.ok(f"insight 기록 · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+                elif op["op"] == "contradiction":
+                    ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — 사람이 해소")
+                else:
+                    ui.ok(f"{op['op']} · {op.get('slug') or op.get('src', '')}")
+            for op in result["proposed"]:
+                ui.step(f"제안 잔류 · {op['op']} — asgard memory norn 으로 검토")
+            if result["report"]:
+                ui.step(f"리포트 · {os.path.relpath(result['report'], d)}")
+            if not result["applied"] and not result["proposed"]:
+                ui.ok("적용·제안 없음 — 위키가 이미 정돈되어 있다")
+            return 0
+        if nudge:  # 훅 소비 표면 — due + latch 통과 시 한 줄, 그 외 침묵
+            line = norn_mod.nudge_line(d)
+            if line:
+                print(line)
+            return 0
+        due, reason = norn_mod.norn_due(d)
+        plan = norn_mod.plan_norn(os.getcwd(), d)
+        if json_out and not apply:
+            print(
+                _json.dumps(
+                    {"due": due, "reason": reason, **{k: plan[k] for k in ("ops", "dropped")}},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        ui.head(f"위그드라실 노른 · {'due — ' + reason if due else reason}")
+        if not plan["ops"] and not plan["dropped"]:
+            ui.ok("제안 없음 — 위키가 이미 정돈되어 있다")
+            return 0
+        for op in plan["ops"]:
+            if op["op"] == "merge":
+                ui.step(f"merge · {op['src']} → {op['dst']} (sim {op['sim']}) — {op['why']}")
+            elif op["op"] == "archive":
+                ui.step(f"archive · {op['slug']} — {op['why']}")
+            elif op["op"] == "insight":
+                ui.step(f"insight · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+            else:
+                ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — {op['why']}")
+        for row in plan["dropped"]:
+            ui.step(ui.dim(f"기각 · {row['op'].get('op', '?')} — {row['reason']}"))
+        if not apply:
+            ui.warn("아직 적용하지 않음 — 검토 후 asgard memory norn --apply")
+            return 0
+        result = norn_mod.apply_norn(d, plan)
+        if json_out:
+            print(_json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        for op in result["failed"]:
+            ui.fail(f"{op['op']} 실패 — {op.get('error', '')}")
+        ui.ok(
+            f"노른 적용: {len(result['applied'])}건 (실패 {len(result['failed'])}건) · "
+            f"리포트 {os.path.relpath(result['report'], d)}"
+            + (f" · 백업 {os.path.relpath(result['backup'], d)}" if result["backup"] else "")
+        )
+        return 0 if not result["failed"] else 1
+
+    return _guard(_do)
+
+
+def run_norn_restore(slug: str) -> int:
+    """노른 archive 복원 — 최신 아카이브 스냅샷을 pages/ 로 되돌린다."""
+
+    def _do() -> int:
+        from ..memory.norn import restore_page
+
+        if restore_page(slug):
+            ui.ok(f"복원됨: {slug}")
+            return 0
+        ui.fail(f"아카이브에 없음: {slug}")
+        return 1
+
+    return _guard(_do)
+
+
+def run_project_reflect(question: str, budget: str = "low", json_out: bool = False) -> int:
+    """프로젝트 메모리 backend 의 Reflect 합성 답변 — 읽기 전용 자문 (게이트 증거 아님)."""
+
+    def _do() -> int:
+        from ..project_memory_backends import get_backend
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+        _, cfg = found
+        if not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        backend = get_backend(cfg)
+        try:
+            reflect = getattr(backend, "reflect", None)
+            if not callable(reflect):
+                raise ValueError(f"backend '{backend.engine}' does not support reflect")
+            output = reflect(question, budget=budget)
+        finally:
+            backend.close()
+        facts = output.get("based_on") or {}
+        memories = facts.get("memories") if isinstance(facts, dict) else None
+        if json_out:
+            print(_json.dumps(output, ensure_ascii=False, indent=2))
+            return 0
+        ui.head(f"project memory reflect · engine={backend.engine} · project_id={backend.project_id}")
+        print(str(output.get("text") or "").strip())
+        if isinstance(memories, list) and memories:
+            print(ui.dim(f"근거 memories {len(memories)}건 — 자문일 뿐 완료 증거가 아니다"))
+        return 0
 
     return _guard(_do)

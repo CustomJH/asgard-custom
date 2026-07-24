@@ -39,7 +39,12 @@ def run_scan(quiet: bool = False) -> int:
         )
         return 0
     for m in created:
-        ui.ok(f"후보 생성 {m['id']} — {m['name']} (quest {m['quest_id']}, FAIL {m['fail_count']}회 → PASS)")
+        detail = (
+            f"quest {m['quest_id']}, FAIL {m['fail_count']}회 → PASS"
+            if m.get("quest_id")
+            else "사용자 정정 신호"  # origin: correction — 제2 채굴원 (26-07-24)
+        )
+        ui.ok(f"후보 생성 {m['id']} — {m['name']} ({detail})")
     print(ui.dim("검토: asgard evolve list · 승인: asgard evolve approve <id>"))
     return 0
 
@@ -108,6 +113,31 @@ def run_bench(skill: str, cmd: str, metric: str, runs: int, direction: str, time
     mark(f"verdict: {r['verdict']}" + (" — asgard evolve archive 로 보관 권장" if r["verdict"] == "discard" else ""))
     print(ui.dim("계보: .asgard/evolution/bench.jsonl (판정은 기록 — 처분은 사용자 몫)"))
     return 0 if r["verdict"] != "discard" else 1
+
+
+def run_curate(apply: bool = False) -> int:
+    """learned 스킬 노화 보고 (기본 드라이런) — --apply 시 90일 유휴 후보만 보관 전이."""
+    from ..skill_curator import curate
+
+    root = _root()
+    result = curate(root, apply=apply)
+    findings = result["findings"]
+    if not findings:
+        print("learned 스킬 없음 — 큐레이션 대상이 없다")
+        return 0
+    marks = {"active": ui.ok, "stale": ui.warn, "archive-candidate": ui.warn, "unreadable": ui.fail}
+    for f in findings:
+        mark = marks.get(f["state"], ui.step)
+        detail = f.get("reason", "")
+        mark(f"{f['name']} · {f['state']}" + (f" — {detail}" if detail else ""))
+    candidates = [f["name"] for f in findings if f["state"] == "archive-candidate"]
+    if result["archived"]:
+        ui.ok(
+            f"보관 전이 {len(result['archived'])}건: {', '.join(result['archived'])} (복원: asgard evolve restore <name>)"
+        )
+    elif candidates:
+        ui.warn(f"보관 후보 {len(candidates)}건 — 검토 후 asgard evolve curate --apply")
+    return 0
 
 
 def run_archive(name: str) -> int:

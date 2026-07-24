@@ -21,7 +21,6 @@ import os
 import re
 import shutil
 import time
-from typing import Any, cast
 
 from .skill_bank import APPROVAL_FILE, SKILL_FILE, approval_receipt, learned_skills, parse_skill_md
 
@@ -29,10 +28,12 @@ EVO_DIR = "evolution"
 PENDING = "pending"
 REJECTED = "rejected"
 SEEN_FILE = "seen.json"
+CORRECTIONS_FILE = "corrections.jsonl"
 _SCAN_CAP = 3  # 스캔 1회당 신규 후보 상한 — 인박스 폭탄 방지
+_CORRECTIONS_CAP = 200  # corrections.jsonl 보존 상한 — 최신 우선
 
 # 캡처 금지 — 환경 의존/일시 실패·크레덴셜·도구 부정 주장은 교훈이 아니라 그날의 사정이다
-# (Hermes 비교검증 26-07-16: unconfigured credentials + tool-negativity 패턴 보강)
+# (26-07-16: unconfigured credentials + tool-negativity 패턴 보강)
 _FORBIDDEN_SIG = re.compile(
     r"command not found|no such file|enoent|permission denied|not installed|"
     r"missing (?:binary|tool|dependency)|rate.?limit|connection|network|timed?.?out|"
@@ -112,13 +113,121 @@ def _quest_signal(events: list[dict]) -> dict | None:
         "subtasks": subtasks[:4],
         "task_class": str((events[0].get("risk") or {}).get("task_class") or ""),
         # 함정 섹션 수록분도 금지 필터 적용 — 마지막 sig 만 걸러도 앞선 환경 노이즈가
-        # 초안 본문에 박제되는 누수가 있었다 (Hermes 비교검증 26-07-16)
+        # 초안 본문에 박제되는 누수가 있었다 (26-07-16)
         "fail_whys": [
             str(e.get("failure_sig"))[:200]
             for e in fails
             if e.get("failure_sig") and not _FORBIDDEN_SIG.search(str(e["failure_sig"]))
         ][:4],
     }
+
+
+# ── 사용자 정정 신호 (제2 채굴원 — 26-07-24) ─────────────────────────────────────
+#
+# "그게 아니야" / "~하지 마" / "~말고 …로 해" 류의 정정은 FAIL→PASS 만큼 고신호다:
+# 사용자가 방금 실제로 교정했다는 실측 증거. 탐지는 0-LLM 보수 패턴 — 애매하면 버린다
+# (false positive 1건이 승인 피로 10건보다 나쁘다). 처분은 기존 인박스 계약 그대로:
+# 후보 스테이징 → 사람 승인만이 활성화.
+
+_CORRECTION_PATTERNS = (
+    re.compile(r"(그게|그거|그건)\s*아니"),
+    re.compile(r"아니(야|라니까)\b"),
+    re.compile(r"하지\s*마"),
+    re.compile(r"(말고|대신)\s+\S.{0,60}?(해줘|해라|하세요|해야|할 것|로 해)"),
+    re.compile(r"(로|으로)\s*해\s*줘?\s*[.!]?\s*$"),
+    re.compile(r"\bstop doing\b|\bdon'?t do that\b|\bnot what i (asked|meant)\b", re.IGNORECASE),
+)
+_CORRECTION_MAX_CHARS = 500  # 정정은 짧다 — 장문은 설명/새 요청일 확률이 높다
+
+
+def correction_signal(user_text: str) -> str | None:
+    """정정 발화 판정 (0-LLM) — 매치 구절을 반환, 아니면 None. 보수적: 장문·위협 패턴 배제."""
+    text = (user_text or "").strip()
+    if not text or len(text) > _CORRECTION_MAX_CHARS:
+        return None
+    for pattern in _CORRECTION_PATTERNS:
+        m = pattern.search(text)
+        if m:
+            return m.group(0)[:40]
+    return None
+
+
+def record_correction(root: str, user_text: str, assistant_text: str = "") -> bool:
+    """정정 발화를 corrections.jsonl 에 스테이징한다 (탐지 실패·중복·위협 = False, 무해).
+
+    저장은 신호 원문뿐 — 스킬 초안 변환은 mine() 이 latch 와 함께 수행한다."""
+    try:
+        phrase = correction_signal(user_text)
+        if not phrase:
+            return False
+        from .memory import scan_secrets, scan_threats
+
+        if scan_threats(user_text) or scan_secrets(user_text):
+            return False  # 오염 발화는 증거로도 싣지 않는다
+        signal = "correction:" + hashlib.sha1(user_text.strip().encode()).hexdigest()[:12]
+        os.makedirs(_evo_dir(root), exist_ok=True)
+        path = _evo_dir(root, CORRECTIONS_FILE)
+        rows: list[dict] = []
+        try:
+            rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+        except OSError, ValueError:
+            rows = []
+        if any(r.get("signal") == signal for r in rows):
+            return False  # 같은 발화 재기록 방지 (재실행·중복 훅)
+        rows.append(
+            {
+                "signal": signal,
+                "phrase": phrase,
+                "user_text": user_text.strip()[:_CORRECTION_MAX_CHARS],
+                "assistant_head": re.sub(r"\s+", " ", (assistant_text or "").strip())[:200],
+                "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }
+        )
+        rows = rows[-_CORRECTIONS_CAP:]
+        tmp = f"{path}.{os.getpid()}.tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.writelines(json.dumps(r, ensure_ascii=False) + "\n" for r in rows)
+        os.replace(tmp, path)
+        return True
+    except Exception:
+        return False  # 채굴원 장애가 턴을 막지 않는다
+
+
+def _corrections(root: str) -> list[dict]:
+    try:
+        return [json.loads(line) for line in open(_evo_dir(root, CORRECTIONS_FILE), encoding="utf-8") if line.strip()]
+    except OSError, ValueError:
+        return []
+
+
+def _correction_draft(row: dict) -> tuple[str, str]:
+    """정정 신호 → (스킬명, SKILL.md 초안). 증거 카드 — 사용자 원문이 정본이다."""
+    quote = row.get("user_text", "")
+    name = "learned-" + _slug(quote, "correction")
+    triggers = _tokens(quote + " " + row.get("assistant_head", ""))[:6] or ["재발-트리거-직접-기입"]
+    body = [
+        "---",
+        f"name: {name}",
+        f"description: 사용자 정정에서 증류 — {quote[:120]}",
+        f"triggers: {', '.join(triggers)}",
+        "agent: any",
+        "origin: correction",
+        f"created: {time.strftime('%Y-%m-%d')}",
+        f"evidence: {row.get('signal', '')}",
+        "---",
+        "",
+        "## 정정 (사용자 원문)",
+        f"- 「{quote}」 ({row.get('ts', '')[:10]})",
+        "",
+        "## 직전 맥락 (에이전트 응답 머리)",
+        f"- {row.get('assistant_head') or '(미기록)'}",
+        "",
+        "## 근거",
+        "- 이 카드는 사용자 정정 발화의 증거 초안이다 — 승인 전에 '무엇을 어떻게 바꿔야 하는가'를",
+        "  일반화 원칙으로 다듬어라 (특히 triggers 와 description).",
+        "",
+    ]
+    return name, "\n".join(body)
 
 
 def _tokens(text: str) -> list[str]:
@@ -198,47 +307,11 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
     if draft is None:
         return False, f"후보 없음: {cid}"
     try:
-        from .agent.session import make_client
-        from .providers import resolve
+        from .agent.oneshot import complete_once
 
-        rp = resolve(root)
-        if rp.missing:
-            return False, "provider 미충족: " + "; ".join(rp.missing)
-        client = make_client(rp)
-        from .agent.rate_limit import throttle
-
-        throttle(rp)  # RPM 상한 provider — 단발 호출도 전역 윈도에 계수
-        if rp.profile.api_mode == "claude_cli":
-            from .agent.claude_native import complete_text
-
-            raw = complete_text(_POLISH_SYS, draft, model=rp.model, root=root)
-        elif rp.profile.api_mode == "anthropic":
-            resp = client.messages.create(
-                model=rp.model, max_tokens=3000, system=_POLISH_SYS, messages=[{"role": "user", "content": draft}]
-            )
-            raw = "".join(b.text for b in resp.content if b.type == "text")
-        elif rp.profile.api_mode in {"openai_responses", "codex_responses"}:
-            kwargs: dict[str, Any] = {
-                "model": rp.model,
-                "instructions": _POLISH_SYS,
-                "input": draft,
-                "timeout": 120.0,
-            }
-            if rp.profile.api_mode == "codex_responses":
-                kwargs["store"] = False
-            else:
-                kwargs["max_output_tokens"] = 4096
-            if rp.model.startswith(("gpt-5", "o")):
-                kwargs["reasoning"] = {"effort": "low"}
-            resp = cast(Any, client).responses.create(**kwargs)
-            raw = resp.output_text or ""
-        else:
-            resp = client.chat.completions.create(
-                model=rp.model,
-                max_tokens=3000,
-                messages=[{"role": "system", "content": _POLISH_SYS}, {"role": "user", "content": draft}],
-            )
-            raw = resp.choices[0].message.content or ""
+        raw = complete_once(root, _POLISH_SYS, draft, max_tokens=3000)
+    except RuntimeError as e:  # provider 미충족 — 사전 조건 메시지 그대로
+        return False, str(e)
     except Exception as e:
         return False, f"LLM 호출 실패 — 결정론 초안 유지 ({type(e).__name__})"
     start = raw.find("---")
@@ -259,56 +332,76 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
     return True, f"증류 완료 — {cid} 초안이 다듬어졌다 (여전히 pending, 승인 필요. 원본: SKILL.md.orig)"
 
 
+def _stage_candidate(root: str, seen: dict, signal: str, name: str, skill_md: str, meta_extra: dict) -> dict:
+    """후보 1건을 pending 에 스테이징 + seen latch. 반환 = 후보 메타 (채굴원 공용)."""
+    cid = _cand_id(signal)
+    d = _evo_dir(root, PENDING, cid)
+    os.makedirs(d, exist_ok=True)
+    open(os.path.join(d, SKILL_FILE), "w", encoding="utf-8").write(skill_md)
+    meta = {
+        "id": cid,
+        "name": name,
+        "signal": signal,
+        "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        **meta_extra,
+    }
+    json.dump(meta, open(os.path.join(d, "meta.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    seen[signal] = {"status": "proposed", "id": cid, "ts": meta["created"]}
+    return meta
+
+
 def mine(root: str, cap: int = _SCAN_CAP) -> list[dict]:
-    """quest 로그 전수 스캔 → 신규 후보를 pending 에 스테이징. 반환 = 생성된 후보 메타."""
-    qdir = os.path.join(root, ".asgard", "quest")
-    if not os.path.isdir(qdir):
-        return []
+    """2채굴원 스캔 — quest 로그(FAIL→PASS) + 사용자 정정(corrections.jsonl) → pending 스테이징."""
     seen = _load_seen(root)
     created: list[dict] = []
-    for fname in sorted(os.listdir(qdir)):
-        if not fname.endswith(".jsonl") or len(created) >= cap:
+    qdir = os.path.join(root, ".asgard", "quest")
+    if os.path.isdir(qdir):
+        for fname in sorted(os.listdir(qdir)):
+            if not fname.endswith(".jsonl") or len(created) >= cap:
+                continue
+            sig = _quest_signal(_read_quest(os.path.join(qdir, fname)))
+            if not sig or sig["signal"] in seen:
+                continue
+            name, skill_md = _draft(sig)
+            created.append(
+                _stage_candidate(
+                    root,
+                    seen,
+                    sig["signal"],
+                    name,
+                    skill_md,
+                    {"quest_id": sig["quest_id"], "fail_count": sig["fail_count"], "origin": "retrospective"},
+                )
+            )
+    for row in _corrections(root):
+        if len(created) >= cap:
+            break
+        signal = str(row.get("signal") or "")
+        if not signal or signal in seen:
             continue
-        sig = _quest_signal(_read_quest(os.path.join(qdir, fname)))
-        if not sig or sig["signal"] in seen:
-            continue
-        cid = _cand_id(sig["signal"])
-        name, skill_md = _draft(sig)
-        d = _evo_dir(root, PENDING, cid)
-        os.makedirs(d, exist_ok=True)
-        open(os.path.join(d, SKILL_FILE), "w", encoding="utf-8").write(skill_md)
-        meta = {
-            "id": cid,
-            "name": name,
-            "signal": sig["signal"],
-            "quest_id": sig["quest_id"],
-            "fail_count": sig["fail_count"],
-            "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-            "origin": "retrospective",
-        }
-        json.dump(meta, open(os.path.join(d, "meta.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-        seen[sig["signal"]] = {"status": "proposed", "id": cid, "ts": meta["created"]}
-        created.append(meta)
+        name, skill_md = _correction_draft(row)
+        created.append(_stage_candidate(root, seen, signal, name, skill_md, {"origin": "correction"}))
     if created:
         _save_seen(root, seen)
     return created
 
 
 def unmined_signals(root: str, qid: str | None = None) -> int:
-    """미제안 hard-won 신호 수 (쓰기 없음) — 넛지·doctor 용. qid 지정 시 해당 퀘스트만."""
-    qdir = os.path.join(root, ".asgard", "quest")
-    if not os.path.isdir(qdir):
-        return 0
+    """미제안 신호 수 (쓰기 없음) — 넛지·doctor 용. qid 지정 시 해당 퀘스트만 (정정 제외)."""
     seen = _load_seen(root)
     n = 0
-    for fname in sorted(os.listdir(qdir)):
-        if not fname.endswith(".jsonl"):
-            continue
-        if qid and fname != f"{qid}.jsonl":
-            continue
-        sig = _quest_signal(_read_quest(os.path.join(qdir, fname)))
-        if sig and sig["signal"] not in seen:
-            n += 1
+    qdir = os.path.join(root, ".asgard", "quest")
+    if os.path.isdir(qdir):
+        for fname in sorted(os.listdir(qdir)):
+            if not fname.endswith(".jsonl"):
+                continue
+            if qid and fname != f"{qid}.jsonl":
+                continue
+            sig = _quest_signal(_read_quest(os.path.join(qdir, fname)))
+            if sig and sig["signal"] not in seen:
+                n += 1
+    if qid is None:
+        n += sum(1 for row in _corrections(root) if str(row.get("signal") or "") not in seen)
     return n
 
 
@@ -318,16 +411,17 @@ def nudge_line(root: str) -> str | None:
     CC 모드 Stop 훅(memory-activate)이 소비한다 — 네이티브 루프는 quest close 시점에
     unmined_signals 를 직접 넛지하므로(heimdall/trinity) 이 latch 를 쓰지 않는다.
     같은 신호 집합으로는 두 번 말하지 않는다 — 매 턴 반복 넛지는 거부 피로를 만든다."""
-    if not os.path.isdir(os.path.join(root, ".asgard", "quest")):
-        return None
     qdir = os.path.join(root, ".asgard", "quest")
     seen = _load_seen(root)
     signals = sorted(
         sig["signal"]
-        for fname in os.listdir(qdir)
+        for fname in (os.listdir(qdir) if os.path.isdir(qdir) else [])
         if fname.endswith(".jsonl")
         for sig in [_quest_signal(_read_quest(os.path.join(qdir, fname)))]
         if sig and sig["signal"] not in seen
+    )
+    signals += sorted(
+        str(row["signal"]) for row in _corrections(root) if row.get("signal") and str(row["signal"]) not in seen
     )
     if not signals:
         return None
@@ -460,7 +554,7 @@ def archive_skill(root: str, name: str) -> tuple[bool, str]:
 
 
 def restore_skill(root: str, name: str) -> tuple[bool, str]:
-    """보관 해제 — 최신 아카이브 스냅샷을 활성 위치로 복귀 (충돌 검증 포함, Hermes restore 상당)."""
+    """보관 해제 — 최신 아카이브 스냅샷을 활성 위치로 복귀 (충돌 검증 포함)."""
     adir = os.path.join(root, ".asgard", "skills", ".archive")
     snaps = sorted(
         d for d in (os.listdir(adir) if os.path.isdir(adir) else []) if re.fullmatch(rf"{re.escape(name)}-\d{{14}}", d)

@@ -136,6 +136,7 @@ class Heimdall:
         self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
         self._memory_session_id = f"native-{uuid.uuid4().hex}"
         self._memory_turn_seq = 0
+        self._last_quest_id: str | None = None  # 이 턴이 연 퀘스트 — turn_store 귀속 신호
         self._last_completion: dict | None = None
         self.dual_mode = False  # 세션 한정 — /trinity dual on 또는 headless --dual
         self._explore_cmds = 0  # 직전 DIRECT 턴의 탐색 커맨드 수 — 증류 넛지 문턱 판정용
@@ -605,7 +606,7 @@ class Heimdall:
         resume_qid: str | None = None,
         resume_units: list[dict] | None = None,
     ) -> str:
-        return TrinityRun(
+        run = TrinityRun(
             self,
             request,
             cls,
@@ -615,7 +616,9 @@ class Heimdall:
             pre_base_ref=pre_base_ref,
             resume_qid=resume_qid,
             resume_units=resume_units,
-        ).run()
+        )
+        self._last_quest_id = run.qid  # 퀘스트 귀속 — 종료 후 persist 시점엔 ACTIVE 가 이미 해제된다
+        return run.run()
 
     def _final_report(self, qid: str, sid: str, gate_blocks: int) -> str:
         """퀘스트 로그만 소스로 하는 구조화 최종 보고 — 가정 표면화 + 게이트 이력."""
@@ -732,6 +735,13 @@ class Heimdall:
             from ...memory_context import recall_note as _recall
 
             recall = _recall(request, start=self.root)
+            try:
+                # 승격 메모리가 못 덮는 층 — 과거 세션 원문의 관련 구간 (비권위, fail-open)
+                from ..episodes import episode_note
+
+                recall += episode_note(request, self.root)
+            except Exception:
+                pass
         live_identity = self.delivery_identity + (self._memory_snap if self._memory_provider_allowed else "")
         mimir = _mimir_note(request)
         skill_note, skill_tools, skill_handlers = (
@@ -877,11 +887,18 @@ class Heimdall:
         self.cancel_event.set()
 
     def _persist_turn(self, request: str, response: str) -> None:
-        """완결 턴을 turn_store 에 append — 취소·오류 턴은 호출부가 걸러 여기 오지 않는다."""
+        """완결 턴을 turn_store 에 append — 취소·오류 턴은 호출부가 걸러 여기 오지 않는다.
+        퀘스트·세션 귀속을 함께 남긴다 — 에피소드 계층의 검색 좌표."""
         try:
             from ..turn_store import append_turn
 
-            append_turn(self.root, request, response)
+            append_turn(
+                self.root,
+                request,
+                response,
+                quest_id=self._last_quest_id,
+                session_id=self._memory_session_id,
+            )
         except Exception:
             pass
 
@@ -889,13 +906,15 @@ class Heimdall:
         """직전 대화 복원 — turn_store 의 최근 턴을 history 로 되살린다 (대화 맥락만, 권위 없음).
         반환 = 복원 턴 수. 퀘스트·게이트·메모리 상태는 건드리지 않는다."""
         try:
+            from ..episodes import compact_text
             from ..turn_store import load_turns
 
             turns = load_turns(self.root, limit=6)
         except Exception:
             return 0
         if turns:
-            self.history = [(q, a[:500]) for q, a in turns]
+            # 맹목 접두 절단 대신 의미 보존 발췌 — 응답 꼬리의 결론·증거(경로·수치·판정)를 살린다
+            self.history = [(q, compact_text(a, 500)) for q, a in turns]
         return len(turns)
 
     def _cancel_notice(self) -> str:
@@ -910,6 +929,7 @@ class Heimdall:
         from ...i18n import t
 
         self._last_completion = None
+        self._last_quest_id = None  # 턴 단위 리셋 — DIRECT 턴이 직전 퀘스트 귀속을 승계하지 않게
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
         with self._state_lock:
             self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL 이 턴 종료 후 회수

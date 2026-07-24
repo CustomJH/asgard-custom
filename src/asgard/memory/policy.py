@@ -129,6 +129,38 @@ def scan_threats(*texts: str | None) -> str | None:
     return None
 
 
+def redact_secrets(text: str) -> str:
+    """credential 패턴 스팬만 [redacted-credential] 로 치환한다. placeholder 예시는 보존.
+
+    scan_secrets 는 저장을 '거부'하는 표면(메모리 ingest)용이고, 이 함수는 거부가 불가능한
+    표면 — 이미 발화된 세션 원문(turns.jsonl)처럼 통째 폐기가 손해인 기록 — 의 저장 전
+    편집용이다. 원문의 나머지는 그대로 보존된다."""
+    if not text:
+        return text
+    low = text.lower()
+    spans: list[tuple[int, int]] = []
+    for pattern in _SECRET_PATTERNS:
+        for match in pattern.finditer(text):
+            nearby = low[max(0, match.start() - 30) : match.end() + 30]
+            if any(marker in match.group(0).lower() or marker in nearby for marker in _SECRET_PLACEHOLDERS):
+                continue
+            spans.append((match.start(), match.end()))
+    if not spans:
+        return text
+    spans.sort()
+    out: list[str] = []
+    pos = 0
+    for start, end in spans:
+        if start < pos:  # 겹치는 스팬 — 이미 편집된 구간에 흡수
+            pos = max(pos, end)
+            continue
+        out.append(text[pos:start])
+        out.append("[redacted-credential]")
+        pos = end
+    out.append(text[pos:])
+    return "".join(out)
+
+
 def scan_secrets(*values: str | None) -> str | None:
     """저장·주입 전 명백한 credential 패턴을 차단한다. placeholder 예시는 허용한다."""
     text = "\n".join(str(value) for value in values if value)

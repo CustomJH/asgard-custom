@@ -214,6 +214,17 @@ def main():
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
                 pass  # 넛지 불능이 Stop 을 막지 않는다
+            # 위그드라실 노른 wake — due 시 자율 모드(safe/full)는 백그라운드 자동 통합을 분리
+            # 스폰하고, off 는 넛지 한 줄만 (latch·모드 분기 전부 CLI 단일 출처)
+            try:
+                n = subprocess.run(
+                    [exe, "memory", "norn", "--wake"], capture_output=True, text=True, timeout=10, cwd=root
+                )
+                nudge = (n.stdout or "").strip()
+                if n.returncode == 0 and nudge:
+                    messages.append("⠶ " + nudge.splitlines()[0])
+            except Exception:
+                pass  # 노른 넛지 불능도 Stop 을 막지 않는다
             if messages:
                 key = "followup_message" if mode == "cursor" else "systemMessage"
                 sys.stdout.write(json.dumps({key: "\n\n".join(messages)}, ensure_ascii=False) + "\n")
