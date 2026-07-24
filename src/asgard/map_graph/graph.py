@@ -42,6 +42,7 @@ _EDGE_KIND = {
     "page": "declares",
     "store": "declares",
     "composable": "declares",
+    "component": "declares",  # 소비(스팬 없음)는 빌드 시 "uses" 로 강등된다
     "command": "declares",
     "model": "declares",
     "job": "declares",
@@ -56,6 +57,7 @@ _FLOW_KIND = {
     "api_call": "calls",
     "external_service": "uses",
     "event": "emits",
+    "component": "uses",  # 합성 소비 — page/component 스팬 안 태그가 atoms→page 체인을 만든다
 }
 EDGE_KINDS = ("declares", "calls", "touches", "uses", "emits")
 # 스팬 신뢰 확장자 — AST(.py)·주석 제거 후 중괄호 균형(.java)은 포함 관계가 결정론적이다.
@@ -66,6 +68,7 @@ _KIND_LABEL = {
     "page": "pages",
     "store": "stores",
     "composable": "composables",
+    "component": "components",
     "command": "commands",
     "model": "models",
     "db_access": "db",
@@ -202,7 +205,9 @@ def _build_state(scanned: int, collected: list[Evidence], revision: str) -> dict
         nodes.setdefault(
             file_id, {"id": file_id, "kind": "file", "name": item.file, "confidence": "confirmed", "files": []}
         )
-        edges[(file_id, item.node_id, _EDGE_KIND[item.kind])] = "confirmed"
+        # 컴포넌트 소비(스팬 없음)는 선언이 아니다 — 파일 엣지도 uses 로 표기한다.
+        file_edge = "uses" if item.kind == "component" and not item.scope_end else _EDGE_KIND[item.kind]
+        edges[(file_id, item.node_id, file_edge)] = "confirmed"
     flows = _flow_edges(collected)
     edges.update(flows)
     for node in nodes.values():

@@ -51,6 +51,18 @@ _COMPOSABLE_DIRS = {"composables", "hooks"}
 _SFC_SUFFIXES = (".vue", ".svelte")
 _PAGE_SUFFIXES = {".vue": "nuxt", ".svelte": "sveltekit", ".tsx": "next", ".jsx": "next", ".ts": "next", ".js": "next"}
 _SCRIPT_BLOCK = re.compile(r"<script\b[^>]*>(.*?)</script>", re.S | re.I)
+_STYLE_BLOCK = re.compile(r"<style\b[^>]*>(.*?)</style>", re.S | re.I)
+# 컴포넌트 합성 — 선언은 components/ 트리의 SFC/JSX 파일(스템=컴포넌트명), 소비는 템플릿/JSX
+# 의 PascalCase(또는 케밥 커스텀) 태그. 이름 수렴으로 선언↔소비가 같은 노드에 모여
+# atoms → molecules → organisms → page 체인이 플로우 엣지로 선다.
+_COMPONENT_SUFFIXES = (".vue", ".svelte", ".tsx", ".jsx")
+_TAG_USE = re.compile(r"(?<![\w)\]])<([A-Z][A-Za-z0-9]*|[a-z][a-z0-9]*(?:-[a-z0-9]+)+)[\s/>]")
+# 프레임워크 원시 태그 — 합성 관계가 아니라 런타임 구조라 증거에서 제외한다.
+_BUILTIN_TAGS = {
+    "Transition", "TransitionGroup", "KeepAlive", "Teleport", "Suspense", "Component", "Fragment",
+    "NuxtLink", "NuxtPage", "NuxtLayout", "NuxtImg", "NuxtPicture", "ClientOnly", "DevOnly",
+    "RouterLink", "RouterView", "Head", "Html", "Body", "Title", "Meta", "Link", "Script", "Style", "NoScript",
+}  # fmt: skip
 # 패키지 접두 → 서비스 라벨
 _SERVICE_PACKAGES = (
     ("@anthropic-ai/", "anthropic"),
@@ -136,6 +148,42 @@ def _mask_sfc(source: str) -> str:
     return "\n".join(line if keep[index] else "" for index, line in enumerate(lines))
 
 
+def _pascal(name: str) -> str:
+    """케밥/스네이크 → PascalCase — 태그 표기와 파일 스템을 같은 개념 이름으로 수렴시킨다."""
+    return "".join(part[:1].upper() + part[1:] for part in re.split(r"[-_]+", name) if part)
+
+
+def _component_decl(path: str) -> tuple[str, str] | None:
+    """components/ 트리의 컴포넌트 선언 — (이름, 아토믹 위치 detail). 비대상이면 None."""
+    posix = path.replace("\\", "/")
+    dot = posix.rfind(".")
+    suffix = posix[dot:].lower() if dot >= 0 else ""
+    if suffix not in _COMPONENT_SUFFIXES:
+        return None
+    parts = posix.split("/")
+    dirs, stem = parts[:-1], parts[-1][: len(parts[-1]) - len(suffix)]
+    if "components" not in dirs:
+        return None
+    anchor = dirs.index("components")
+    name = _pascal(dirs[-1] if stem == "index" and anchor < len(dirs) - 1 else stem)
+    if not name or not name[0].isupper():
+        return None
+    return name, "/".join(dirs[anchor + 1 : anchor + 3])
+
+
+def _template_region(source: str) -> str:
+    """SFC 의 script/style 블록을 빈 줄로 치환한다 — 템플릿 마크업만 남긴 줄 보존 뷰."""
+    drop = [False] * (source.count("\n") + 1)
+    for pattern in (_SCRIPT_BLOCK, _STYLE_BLOCK):
+        for match in pattern.finditer(source):
+            first = source.count("\n", 0, match.start(1))
+            last = source.count("\n", 0, match.end(1))
+            for index in range(first, last + 1):
+                drop[index] = True
+    lines = source.split("\n")
+    return "\n".join("" if drop[index] else line for index, line in enumerate(lines))
+
+
 def _clean_segment(segment: str, framework: str) -> str | None:
     """라우트 세그먼트 정규화 — 그룹/슬롯 제거, 경로 변수 `{name}` 표기. 제거 시 None."""
     if segment.startswith("(") and segment.endswith(")"):
@@ -202,8 +250,24 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
     if page is not None:
         # 페이지는 파일 본문 전체를 소유한다 — 같은 파일의 api_call 이 페이지 플로우로 귀속된다.
         evidence.append(Evidence("page", page[0], path, 1, "confirmed", page[1], scope_end=total_lines))
+    decl = _component_decl(path)
+    if decl is not None:
+        # 컴포넌트도 파일 본문을 소유한다 — 자기 템플릿의 하위 컴포넌트 소비가 합성 플로우가 된다.
+        evidence.append(Evidence("component", decl[0], path, 1, "confirmed", decl[1], scope_end=total_lines))
+    markup = None
     if path.endswith(_SFC_SUFFIXES):
+        markup = _template_region(source)
         source = _mask_sfc(source)
+    elif path.endswith((".tsx", ".jsx")):
+        markup = source
+    if markup is not None:
+        seen_tags: set[str] = set()
+        for match in _TAG_USE.finditer(markup):
+            tag = _pascal(match.group(1))
+            if tag in _BUILTIN_TAGS or tag in seen_tags or (decl is not None and tag == decl[0]):
+                continue
+            seen_tags.add(tag)
+            evidence.append(Evidence("component", tag, path, _line_of(markup, match.start()), "candidate", "use"))
 
     route_receivers = {match.group(1).casefold() for match in _ROUTE_BINDING.finditer(source)}
     for match in _ROUTE.finditer(source):

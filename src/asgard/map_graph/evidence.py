@@ -12,6 +12,7 @@ from urllib.parse import urlsplit, urlunsplit
 EVIDENCE_KINDS = (
     "route",  # HTTP/웹 엔드포인트
     "page",  # 프론트 클라이언트 라우트 (파일 기반 라우팅)
+    "component",  # UI 컴포넌트 — 선언(components/ 트리)과 템플릿 태그 소비가 이름으로 수렴
     "store",  # 프론트 전역 상태 (Pinia/Redux slice)
     "composable",  # 프론트 재사용 로직 (composables/hooks 관례 디렉터리)
     "command",  # CLI 커맨드 표면
