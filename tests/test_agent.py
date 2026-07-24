@@ -103,6 +103,56 @@ class TestBash(Base):
             with self.assertRaises(T.ToolError, msg=command):
                 T.run_bash(self.root, {"command": command})
 
+    def test_git_guard_blocks_stash_sweep(self):
+        # 헬리오스 교훈 — bare stash 는 전체 트리를 걷어가 병렬 세션 미커밋분까지 소실.
+        for command in (
+            "git stash",
+            "git stash push -m wip",
+            "git stash save wip",
+            "git stash -u",
+            "git stash --include-untracked",
+            "git -C . stash",
+            "git stash drop",
+            "git stash clear",
+        ):
+            with self.assertRaises(T.ToolError, msg=command):
+                T.run_bash(self.root, {"command": command})
+
+    def test_git_guard_allows_stash_readonly(self):
+        from asgard.hooks.git_guard import blocked_reason
+
+        for command in (
+            "git stash list",
+            "git stash show -p",
+            "git stash apply",
+            "git stash pop",
+            "git stash branch wip-restore",
+        ):
+            self.assertIsNone(blocked_reason(command), msg=command)
+
+    def test_git_guard_blocks_rm_force_and_dot_git(self):
+        for command in (
+            "git rm -rf src",
+            "git rm -f f.txt",
+            "git rm -r dir",
+            "rm -rf .git",
+            "rm .git/index",
+            "cd sub && rm -rf ../.git",
+        ):
+            with self.assertRaises(T.ToolError, msg=command):
+                T.run_bash(self.root, {"command": command})
+
+    def test_git_guard_allows_dot_git_lookalikes(self):
+        from asgard.hooks.git_guard import blocked_reason
+
+        for command in (
+            "rm -rf .github",
+            "rm .gitignore",
+            "git rm --cached f.txt",
+            "git rm f.txt",
+        ):
+            self.assertIsNone(blocked_reason(command), msg=command)
+
     def test_restart_is_ack(self):
         out, code = T.run_bash(self.root, {"restart": True})
         self.assertEqual(code, 0)

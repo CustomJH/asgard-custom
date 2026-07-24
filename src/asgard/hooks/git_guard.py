@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 # Asgard git-guard — Canon Law 3/6 (증거 보존). 되돌릴 수 없는 git 명령을 실행 전에 차단한다.
 #
+# 헬리오스 교훈(2026-04-27, ref/asgard-helios): 실제 자산을 날린 건 "파괴적" 목록 밖의 평범한
+# 명령이었다 — bare `git stash`(전체 트리를 걷어감; 병렬 세션의 미커밋분까지)와 checkout -- <path>.
+# stash 는 drop/clear 만이 아니라 쓰기 계열 전부(bare/push/save/-u)를 막는다. 읽기·복원 계열
+# (list/show/apply/pop/branch)만 통과. 헬리오스는 stash push 를 스냅샷 후 허용했지만, 이 레포는
+# 병렬 세션이 상시라 스냅샷으로도 부족 — 하드 블록 + wip 브랜치 커밋 유도가 정책이다.
+#
 # 왜 스크립트 하나로 모든 툴을 받는가: BLOCK 목록이 단일 출처여야 해서다. 툴별로 스크립트를
 # 나누면 목록이 서로 어긋나게 드리프트한다. 대신 페이로드 모양으로 훅 프로토콜을 자동 감지한다
 # (설치 시 인자·환경변수로 툴을 지정하는 방식보다 배선 실수에 강함):
@@ -54,9 +60,18 @@ BLOCK = [
     (_GIT + r"(rebase|filter-branch|filter-repo)\b", "history rewrite"),  # 커밋 해시가 바뀜 = 증거 재작성
     (_GIT + r"update-ref\s+-d\b", "update-ref -d"),  # ref 직접 삭제 (위 우회 경로)
     (
-        _GIT + r"(stash\s+(drop|clear)|reflog\s+(delete|expire))\b",
-        "drop history",
-    ),  # 복구 지점 제거 — Law 3 의 마지막 보루
+        # 쓰기 계열 stash 전부 — bare/push/save/-u/drop/clear. 읽기·복원(list/show/apply/pop/branch/
+        # create/store)만 lookahead 로 통과. bare stash 는 전체 트리를 걷어가 병렬 세션 미커밋분까지 소실.
+        _GIT + r"stash\b(?!\s+(?:list|show|apply|pop|branch|create|store)\b)",
+        "stash (worktree sweep)",
+    ),
+    (_GIT + r"reflog\s+(delete|expire)\b", "drop history"),  # 복구 지점 제거 — Law 3 의 마지막 보루
+    (_GIT + r"rm\b[^|;&]*(?:\s-[a-zA-Z]*[rf]|\s--force\b)", "rm force (worktree delete)"),  # 수정분 무시 삭제
+    (
+        # .git 디렉터리 자체 삭제 = 저장소 전체 증거 파기. .github/.gitignore 는 (/|공백|끝) 경계로 제외.
+        r"\brm\b[^|;&]*\s(?:\S*/)?\.git(?:/\S*)?(?:\s|$)",
+        "delete .git (repository destruction)",
+    ),
 ]
 
 
@@ -134,6 +149,14 @@ def _git_subcommand(words: list[str], start: int) -> tuple[str, list[str], str |
     return "", [], None
 
 
+# 읽기·복원 계열만 통과 — 나머지 stash 서브커맨드(bare/push/save 및 -u 류 플래그 시작)는 전부
+# 워킹트리를 걷어가므로 차단. create/store 는 트리를 건드리지 않는 스냅샷용 저수준 명령.
+_STASH_READONLY = {"list", "show", "apply", "pop", "branch", "create", "store"}
+
+# rm 경로가 .git 자체를 겨냥하는지 — .github/.gitignore 는 뒤가 word 문자라 매치되지 않는다.
+_DOT_GIT = re.compile(r"(^|/)\.git(/|$)")
+
+
 def _combined_short_flag(args: list[str], flag: str) -> bool:
     return any(
         token == f"-{flag}" or (token.startswith("-") and not token.startswith("--") and flag in token[1:])
@@ -163,17 +186,27 @@ def _destructive_git(subcommand: str, args: list[str]) -> str | None:
         return "history rewrite"
     if subcommand == "update-ref" and ("-d" in args or "--delete" in args):
         return "update-ref delete"
-    if subcommand == "stash" and args and args[0] in {"drop", "clear"}:
-        return "drop history"
+    if subcommand == "stash":
+        if args and args[0] in {"drop", "clear"}:
+            return "drop history"
+        if not args or args[0] not in _STASH_READONLY:
+            return "stash (worktree sweep)"
     if subcommand == "reflog" and args and args[0] in {"delete", "expire"}:
         return "drop history"
+    if subcommand == "rm" and (_combined_short_flag(args, "f") or _combined_short_flag(args, "r") or "--force" in args):
+        return "rm force (worktree delete)"
     return None
 
 
 def blocked_reason(command: str) -> str | None:
     for segment in _segments(command):
         for index, token in enumerate(segment):
-            if os.path.basename(token) != "git":
+            base = os.path.basename(token)
+            if base == "rm":
+                if any(_DOT_GIT.search(arg) for arg in segment[index + 1 :] if not arg.startswith("-")):
+                    return "delete .git (repository destruction)"
+                continue
+            if base != "git":
                 continue
             subcommand, args, error = _git_subcommand(segment, index)
             if error:
@@ -200,6 +233,10 @@ def main() -> None:
 
     label = blocked_reason(cmd)
     if label:
+        # 가르치는 거부 — 워크트리를 걷어가는 계열은 안전 대안까지 제시해 재시도 루프를 끊는다.
+        hint = ""
+        if "stash" in label or "worktree" in label or "discard" in label:
+            hint = " Safer: commit WIP to a branch (git switch -c wip/<name> && git commit), or operate file-by-file."
         if cursor:
             sys.stdout.write(
                 json.dumps(
@@ -207,7 +244,7 @@ def main() -> None:
                         "permission": "deny",
                         "userMessage": "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
                         "agentMessage": "This " + label + " was blocked by the Asgard Canon (Law 3/6). "
-                        "Get Odin's explicit per-action consent; do not retry.",
+                        "Get Odin's explicit per-action consent; do not retry." + hint,
                     },
                     separators=(",", ":"),
                 )
@@ -216,7 +253,7 @@ def main() -> None:
         # Claude Code / Codex: exit 2 가 차단 신호, stderr 가 에이전트에게 그대로 전달된다.
         print(
             "Asgard Canon Law 3/6 — irreversible git op (" + label + "). "
-            "Get Odin's explicit consent first (per action, per target).",
+            "Get Odin's explicit consent first (per action, per target)." + hint,
             file=sys.stderr,
         )
         sys.exit(2)
