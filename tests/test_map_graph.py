@@ -736,7 +736,7 @@ class TestView(Base):
             self.assertIn(control, html)  # 줌 컨트롤 버튼(모바일 배려)
         self.assertIn("asgard map scan", html)  # 빈 상태 안내
         self.assertIn("asgard map trace --from", html)  # 추적 안내 유지
-        self.assertIn("소스 재확인", html)  # candidate 증거 계약 문구
+        self.assertIn("단정 전 소스 확인", html)  # candidate 증거 계약 문구(자동 승격 암시 금지)
         for kind in ("declares", "calls", "touches", "uses"):
             self.assertIn(kind, html)  # 엣지 kind 범례 사전
 

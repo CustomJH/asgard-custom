@@ -183,7 +183,7 @@ _TEMPLATE = """<!doctype html>
     <img class="mark" src="__LOGO__" alt="Asgard" onerror="this.hidden=true">
     <div>
       <h1>ASGARD MAP</h1>
-      <p class="sub">관계 그래프 — 빈 원은 후보, 소스 재확인 후 확정</p>
+      <p class="sub">관계 그래프 — 빈 원은 구문 미증명 후보, 단정 전 소스 확인</p>
     </div>
   </div>
   <p class="stats" id="stats"></p>
@@ -426,7 +426,7 @@ function renderDetail(){
   if(!selected){ el.innerHTML='<p class="d-empty">노드를 선택하면 file:line 증거가 나온다.</p>'; return; }
   const n=selected, recs=(DATA.records||{})[n.id]||[], col=KIND_COLORS[n.kind]||"#888888";
   let h='<div class="d-kind"><i style="background:'+col+'"></i>'+esc(n.kind)
-    +(n.confidence==="candidate" ? ' <span class="badge-cand">candidate — 소스 재확인</span>' : '')
+    +(n.confidence==="candidate" ? ' <span class="badge-cand">candidate — 단정 전 소스 확인</span>' : '')
     +'<span class="d-deg">이웃 '+(degree[n.id]||0)+'</span></div>'
     +'<div class="d-id">'+esc(n.id)+'</div>'
     +'<h3 class="d-h">증거 '+n.files.length+'</h3>'
@@ -585,7 +585,7 @@ function hitTest(e){
 }
 function showTip(e,n){
   tip.innerHTML='<div>'+esc(n.name)+'</div><div class="k">'+esc(n.kind)
-    +(n.confidence==="candidate" ? ' · 후보 — 소스 재확인' : '')+'</div>';
+    +(n.confidence==="candidate" ? ' · 후보 — 단정 전 소스 확인' : '')+'</div>';
   tip.hidden=false; moveTip(e);
 }
 function moveTip(e){
