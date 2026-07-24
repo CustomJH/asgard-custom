@@ -197,10 +197,15 @@ def _files(root: Path) -> list[Path]:
         )
         if proc.returncode == 0:
             paths = [Path(raw.decode("utf-8", "surrogateescape")) for raw in proc.stdout.split(b"\0") if raw]
-            return sorted(
+            listed = sorted(
                 (p for p in paths if allowed(p) and (root / p).is_file() and not (root / p).is_symlink()),
                 key=lambda p: p.as_posix(),
             )
+            # 빈 성공은 경계가 아니라 경계 부재다: 상위 저장소가 ignore 한 하위 트리(레퍼런스
+            # 사본·벤더 복사본)에서 ls-files 는 성공하면서 아무것도 못 본다. 사용자가 가리킨
+            # 루트가 곧 프로젝트다 — 조용한 빈 지도 대신 walk 폴백으로 내려간다.
+            if listed:
+                return listed
     except subprocess.TimeoutExpired as exc:
         raise MapError("git inventory timed out after 30 seconds") from exc
     except OSError:
