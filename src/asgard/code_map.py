@@ -524,6 +524,27 @@ def _generic_surface(root: Path, path: Path) -> list[str]:
     return list(dict.fromkeys(names))[:_MAX_SYMBOLS_PER_FILE]
 
 
+def _diversify(rows: list[tuple[str, list[str], list[str]]]) -> list[tuple[str, list[str], list[str]]]:
+    """depth-2 서브트리 라운드로빈 — 한 대량 트리(예: 아토믹 `components/`)의 표면 독점을 막는다.
+
+    그룹 순서는 정렬된 행의 첫 등장 순서를 따르므로 단일 그룹 저장소에선 순서가 불변이다.
+    """
+    groups: dict[str, list[tuple[str, list[str], list[str]]]] = {}
+    for row in rows:
+        parts = row[0].split("/")
+        groups.setdefault("/".join(parts[:2]), []).append(row)
+    ordered: list[tuple[str, list[str], list[str]]] = []
+    queues = [queue for queue in groups.values()]
+    while queues:
+        remaining = []
+        for queue in queues:
+            ordered.append(queue.pop(0))
+            if queue:
+                remaining.append(queue)
+        queues = remaining
+    return ordered
+
+
 def _surface_entries(root: Path, files: list[Path]) -> list[tuple[str, str]]:
     source_files = [
         path
@@ -545,7 +566,7 @@ def _surface_entries(root: Path, files: list[Path]) -> list[tuple[str, str]]:
             inbound.update(uses)
     rows.sort(key=lambda row: (-inbound[row[0]], row[0]))
     rendered: list[tuple[str, str]] = []
-    for path, symbols, uses in rows[:_MAX_SURFACE_FILES]:
+    for path, symbols, uses in _diversify(rows)[:_MAX_SURFACE_FILES]:
         role = "public surface: " + "; ".join(symbols)
         if uses:
             role += "; uses " + ", ".join(f"`{dependency}`" for dependency in uses[:4])
