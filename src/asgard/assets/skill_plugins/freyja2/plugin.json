@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "name": "freyja2",
+  "version": "1.0.0",
+  "description": "Freyja 2 — Freyja's second visual delivery engine: 23-command design playbook system (shape/critique/audit/polish/animate and more), persistent product-and-design context, seeded direction variation, a deterministic anti-slop detector, and live browser iteration. Fully self-contained vanilla toolchain (node >= 22).",
+  "skills": ["asgard-freyja2"],
+  "routing": {
+    "asgard-freyja2": {
+      "triggers": [
+        "freyja2",
+        "프레이야2",
+        "프레이야 2",
+        "엔진2",
+        "엔진 2",
+        "second engine"
+      ],
+      "defaults": ["freyja"],
+      "agents": ["freyja"]
+    }
+  },
+  "source": "Asgard Freyja 2 Engine",
+  "revision": "engine2@08676d575721a2f3f9c30fc4807d1f61e1462b3b",
+  "license": "Apache-2.0"
+}
