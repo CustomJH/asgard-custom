@@ -17,8 +17,14 @@ _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _LINE_COMMENT = re.compile(r"(?<!:)//[^\n]*")  # `://` 는 URL — 주석으로 오인하지 않는다
 _IMPORT = re.compile(r"^\s*import\s+(?:static\s+)?([\w.]+)", re.M)
 _TYPE_DECL = re.compile(r"\b(?:class|interface|record|enum)\s+([A-Za-z_$][\w$]*)")
-_MAPPING = re.compile(r'@(Get|Post|Put|Delete|Patch)Mapping\b\s*(?:\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]*)")?')
-_REQUEST_MAPPING = re.compile(r'@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?"([^"]*)"([^)]*)\)')
+# 어노테이션 경로 값은 리터럴 연쇄(`"${api.prefix}" + "orbit/home"`)일 수 있다 — 전부 리터럴인
+# 연쇄는 정적으로 증명되므로 조인한다. 상수 참조가 섞인 식은 여전히 불포착(추측 금지).
+_LITERAL_CHAIN = r'"[^"]*"(?:\s*\+\s*"[^"]*")*'
+_STRING_LITERAL = re.compile(r'"([^"]*)"')
+_MAPPING = re.compile(
+    rf"@(Get|Post|Put|Delete|Patch)Mapping\b\s*(?:\(\s*(?:value\s*=\s*|path\s*=\s*)?({_LITERAL_CHAIN}))?"
+)
+_REQUEST_MAPPING = re.compile(rf"@RequestMapping\s*\(\s*(?:value\s*=\s*|path\s*=\s*)?({_LITERAL_CHAIN})([^)]*)\)")
 _REQUEST_METHOD = re.compile(r"RequestMethod\s*\.\s*(\w+)")
 _LISTENER = re.compile(r"@(KafkaListener|RabbitListener|JmsListener)\s*\(")
 _LISTENER_TARGET = re.compile(r"\b(topics|topicPattern|queues|destination)\s*=\s*")
@@ -31,6 +37,8 @@ _ANNOTATED_TYPE = {
     "boot": re.compile(r"@SpringBootApplication\b"),
     "feign": re.compile(r"@FeignClient\s*\("),
 }
+# JPA 물리 테이블 매핑 — 어노테이션 리터럴이 DDL/매퍼 XML 테이블 노드와 이름으로 수렴한다.
+_JPA_TABLE = re.compile(r'@Table\s*\(\s*[^)]*?\bname\s*=\s*"([^"]+)"')
 _REPOSITORY = re.compile(
     r"interface\s+([A-Za-z_$][\w$]*)(?:<[^>]*>)?\s+extends\s+[\w.,<>\s$]*?"
     r"\b(JpaRepository|CrudRepository|PagingAndSortingRepository|ListCrudRepository"
@@ -85,6 +93,10 @@ _LISTENER_IMPORT = {
 }
 
 # ── MyBatis XML / SQL ────────────────────────────────────────────────────────
+# 주석은 증거가 아니다 — XML 주석의 산문("from a page")·주석 처리된 구문·SQL 주석의
+# 죽은 DDL 이 테이블/구문 증거로 오인되는 것을 막는다. 줄 번호 보존을 위해 개행만 남긴다.
+_XML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_SQL_LINE_COMMENT = re.compile(r"--[^\n]*")
 _MAPPER_NS = re.compile(r"<(?:mapper|sqlMap)\s+namespace\s*=\s*[\"']([^\"']+)[\"']")
 _STATEMENT = re.compile(r"<(select|insert|update|delete|statement|procedure)\s+[^>]*?\bid\s*=\s*[\"']([\w.-]+)[\"']")
 _SQL_TABLE = re.compile(r"\b(?:from|join|update|into)\s+([A-Za-z_][\w$#.]*)", re.I)
@@ -134,6 +146,11 @@ def _annotation_args(text: str, start: int) -> tuple[str, int]:
                 return text[start + 1 : index], index
         index += 1
     return "", start
+
+
+def _concat_literals(chain: str | None) -> str:
+    """리터럴 연쇄(`"A" + "B"`) → 조인된 문자열. None/빈 연쇄는 빈 문자열."""
+    return "".join(_STRING_LITERAL.findall(chain)) if chain else ""
 
 
 def _join_route(prefix: str, path: str) -> str:
@@ -248,10 +265,10 @@ def extract_java(path: str, source: str) -> list[Evidence]:
     for match in _REQUEST_MAPPING.finditer(text):
         verb_match = _REQUEST_METHOD.search(match.group(2) or "")
         if match.start() < type_pos and verb_match is None:
-            class_prefix = match.group(1)
+            class_prefix = _concat_literals(match.group(1))
             continue
         verb = verb_match.group(1).upper() if verb_match else "ANY"
-        route = _join_route(class_prefix if match.start() > type_pos else "", match.group(1))
+        route = _join_route(class_prefix if match.start() > type_pos else "", _concat_literals(match.group(1)))
         confidence = "confirmed" if spring_web else "candidate"
         line = _line_of(text, match.start())
         span = _body_end_line(text, match.end())
@@ -261,7 +278,7 @@ def extract_java(path: str, source: str) -> list[Evidence]:
             )
         )
     for match in _MAPPING.finditer(text):
-        route = _join_route(class_prefix, match.group(2) or "")
+        route = _join_route(class_prefix, _concat_literals(match.group(2)))
         confidence = "confirmed" if spring_web else "candidate"
         line = _line_of(text, match.start())
         span = _body_end_line(text, match.end())
@@ -353,6 +370,14 @@ def extract_java(path: str, source: str) -> list[Evidence]:
                 confidence = "confirmed" if imported("org.springframework.boot") else "candidate"
                 evidence.append(Evidence("command", name, path, line, confidence, "spring-boot main"))
 
+    if imported("jakarta.persistence") or imported("javax.persistence"):
+        for match in _JPA_TABLE.finditer(text):
+            # 물리 테이블명은 JPA 관례상 리터럴이지만 스키마 접두·네이밍 전략이 개입할 수 있다 — candidate.
+            table = match.group(1).rsplit(".", 1)[-1].upper()
+            evidence.append(
+                Evidence("db_access", table, path, _line_of(text, match.start()), "candidate", "jpa @Table")
+            )
+
     for match in _REPOSITORY.finditer(text):
         confidence = "confirmed" if imported("org.springframework.data") else "candidate"
         evidence.append(
@@ -384,6 +409,7 @@ def extract_java(path: str, source: str) -> list[Evidence]:
 
 def extract_mapper_xml(path: str, source: str) -> list[Evidence]:
     """MyBatis(3)/iBATIS(2) 매퍼 XML — 네임스페이스·구문 id 는 선언(confirmed), 테이블 참조는 candidate."""
+    source = _XML_COMMENT.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     ns_match = _MAPPER_NS.search(source)
     if ns_match is None:
         return []
@@ -446,6 +472,8 @@ def extract_proc(path: str, source: str) -> list[Evidence]:
 
 def extract_sql(path: str, source: str) -> list[Evidence]:
     """SQL DDL — `CREATE TABLE` 은 스키마가 직접 증명하는 테이블 선언이다."""
+    source = _BLOCK_COMMENT.sub(lambda match: "\n" * match.group(0).count("\n"), source)
+    source = _SQL_LINE_COMMENT.sub("", source)
     evidence: list[Evidence] = []
     seen: set[str] = set()
     for match in _CREATE_TABLE.finditer(source):

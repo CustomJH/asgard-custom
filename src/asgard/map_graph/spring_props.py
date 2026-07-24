@@ -4,6 +4,10 @@
 유일하게 증명하는 스칼라 값만 쓴다. 프로파일 파일(`application-*.yml`)은 환경 의존이라
 제외하고, 같은 스코프에서 키가 서로 다른 값으로 중복 정의되면 해석을 포기한다 —
 모호성은 미해결 증거로 보존한다.
+
+대상: 이벤트 토픽(전체-문자열 `${...}`)과 라우트·api_call 이름(임베디드 `${...}` 치환,
+예: `GET /${api.prefix}orders` → `GET /api/v2/orders`). 라우트 해석은 API↔라우트
+브리지의 완전 일치 근거가 된다.
 """
 
 from __future__ import annotations
@@ -11,10 +15,11 @@ from __future__ import annotations
 import re
 from dataclasses import replace
 
-from .evidence import Evidence
+from .evidence import Evidence, safe_url
 
 _BASE_NAMES = {"application.yml", "application.yaml", "application.properties"}
 _PLACEHOLDER = re.compile(r"^\$\{([^:{}]+)(?::([^{}]*))?\}$")
+_EMBEDDED = re.compile(r"\$\{([^:{}]+)(?::([^{}]*))?\}")
 _AMBIGUOUS = ("", "")  # 충돌 마커 — 값이 아니라 "해석 금지" 신호
 
 
@@ -99,24 +104,76 @@ class SpringProps:
             return owners[0]
         return None
 
-    def promote(self, collected: list[Evidence]) -> list[Evidence]:
-        """`${key}` 전체-문자열 이름의 이벤트 증거만 리터럴로 승격한다 (해석 실패는 원문 보존)."""
-        promoted: list[Evidence] = []
-        for item in collected:
-            matched = _PLACEHOLDER.fullmatch(item.name.strip()) if item.kind == "event" else None
-            if matched is None:
-                promoted.append(item)
-                continue
-            key, inline_default = matched.group(1).strip(), matched.group(2)
-            hit = self._lookup(key, self._scope(item.file))
+    def _resolve_embedded(self, text: str, scope: str) -> tuple[str, list[str]] | None:
+        """텍스트에 박힌 `${key[:default]}` 전부를 설정값으로 치환한다. 하나라도 못 풀면 None.
+
+        라우트 클래스 프리픽스(`${api.prefix}orders`)나 Feign url 처럼 플레이스홀더가
+        리터럴과 섞인 이름을 실제 경로로 복원한다 — 부분 해석은 정체가 아니라서 안 한다.
+        """
+        trails: list[str] = []
+        failed = False
+
+        def substitute(match: re.Match[str]) -> str:
+            nonlocal failed
+            key, inline_default = match.group(1).strip(), match.group(2)
+            hit = self._lookup(key, scope)
             if hit is None and inline_default is not None:
-                literal = _literal(item.name.strip())
+                literal = _literal(match.group(0))
                 hit = (literal, "annotation default") if literal is not None else None
             if hit is None:
-                promoted.append(item)
-                continue
+                failed = True
+                return match.group(0)
             value, source = hit
-            trail = f"{item.name} → {source}"
-            detail = f"{item.detail} · {trail}" if item.detail else trail
-            promoted.append(replace(item, name=value, confidence="confirmed", detail=detail))
+            trails.append(f"${{{key}}} → {value} ({source})")
+            return value
+
+        resolved = _EMBEDDED.sub(substitute, text)
+        return None if failed or not trails else (resolved, trails)
+
+    def promote(self, collected: list[Evidence]) -> list[Evidence]:
+        """설정이 증명하는 이름 승격 — 이벤트는 전체-문자열, 라우트/api_call 은 임베디드 치환.
+
+        해석 실패는 원문 보존(candidate 유지·브리지의 접두 벗김 폴백이 이어받는다).
+        """
+        promoted: list[Evidence] = []
+        for item in collected:
+            if item.kind == "event":
+                matched = _PLACEHOLDER.fullmatch(item.name.strip())
+                if matched is None:
+                    promoted.append(item)
+                    continue
+                key, inline_default = matched.group(1).strip(), matched.group(2)
+                hit = self._lookup(key, self._scope(item.file))
+                if hit is None and inline_default is not None:
+                    literal = _literal(item.name.strip())
+                    hit = (literal, "annotation default") if literal is not None else None
+                if hit is None:
+                    promoted.append(item)
+                    continue
+                value, source = hit
+                trail = f"{item.name} → {source}"
+                detail = f"{item.detail} · {trail}" if item.detail else trail
+                promoted.append(replace(item, name=value, confidence="confirmed", detail=detail))
+                continue
+            if item.kind in {"route", "api_call"} and "${" in item.name:
+                resolved = self._resolve_embedded(item.name, self._scope(item.file))
+                if resolved is None:
+                    promoted.append(item)
+                    continue
+                name, trails = resolved
+                confidence = item.confidence
+                if item.kind == "route":
+                    # 프리픽스 값의 앞뒤 `/` 로 생긴 중복 슬래시를 경로 표기로 정돈한다
+                    method, _, raw = name.partition(" ")
+                    name = f"{method} " + re.sub(r"/{2,}", "/", raw)
+                else:
+                    name = safe_url(name)
+                    if name.startswith(("http://", "https://")):
+                        # URL 정체가 설정으로 증명됐다 — 추출기의 리터럴 URL 기준과 동일 승격
+                        confidence = "confirmed"
+                trail = " · ".join(trails)
+                detail = f"{item.detail} · {trail}" if item.detail else trail
+                promoted.append(replace(item, name=name, confidence=confidence, detail=detail))
+                continue
+            promoted.append(item)
         return promoted
