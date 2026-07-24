@@ -502,6 +502,20 @@ def memory_query(
     raise typer.Exit(run_query(text, k, json_))
 
 
+@memory_app.command(
+    "episodes", help="search raw session transcript segments (derived index, non-authoritative; empty query = stats)"
+)
+def memory_episodes(
+    text: str = typer.Argument("", help="query over past turns of this project"),
+    k: int = typer.Option(5, "-k", help="max results"),
+    quest: str = typer.Option("", "--quest", help="filter by quest id (alone = list that quest's turns)"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_episodes
+
+    raise typer.Exit(run_episodes(text, k, quest, json_))
+
+
 @memory_app.command("lint", help="wiki health — dead links, decay candidates, duplicates, budget")
 def memory_lint(json_: bool = typer.Option(False, "--json")) -> None:
     from .commands.memory import run_lint

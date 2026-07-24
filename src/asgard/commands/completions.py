@@ -133,6 +133,7 @@ _MEM_SUB = {
     "add": "add a page",
     "ingest": "absorb knowledge (dedup-merge)",
     "query": "search the wiki (zero-LLM)",
+    "episodes": "search raw session transcript segments",
     "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
     "reindex": "rebuild derived index",

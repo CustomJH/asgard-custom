@@ -296,6 +296,46 @@ def run_query(text: str, k: int, json_out: bool) -> int:
     return _guard(_do)
 
 
+def run_episodes(text: str, k: int, quest: str, json_out: bool) -> int:
+    """세션 원문(에피소드) 검색 표면 — 비권위 참고. 빈 질의는 인덱스 현황만 보인다."""
+
+    def _do() -> int:
+        from ..agent import episodes
+
+        root = os.getcwd()
+        if not text.strip() and not quest.strip():
+            s = episodes.stats(root)
+            if json_out:
+                print(_json.dumps(s, ensure_ascii=False))
+            else:
+                ui.step(f"episodes: {s['turns']} turns · {s['quests']} quests · raw {s['raw_bytes']} bytes")
+            return 0
+        if quest.strip() and not text.strip():
+            turns = episodes.turns_for_quest(root, quest.strip())
+            if json_out:
+                print(_json.dumps(turns, ensure_ascii=False, indent=1))
+                return 0
+            if not turns:
+                ui.step("no turns for quest")
+                return 0
+            for t_ in turns:
+                print(f"t{t_['seq']}  {t_['request'][:80]}")
+            return 0
+        hits = episodes.search(root, text, k=k, quest=quest.strip() or None)
+        if json_out:
+            print(_json.dumps(hits, ensure_ascii=False, indent=1))
+            return 0
+        if not hits:
+            ui.step("no matches")
+            return 0
+        for h in hits:
+            tag = f"  quest:{h['quest']}" if h["quest"] else ""
+            print(f"t{h['seq']}{tag}\n    {h['request']}\n    → {h['excerpt']}")
+        return 0
+
+    return _guard(_do)
+
+
 def run_lint(json_out: bool) -> int:
     def _do() -> int:
         findings = memory.lint()
