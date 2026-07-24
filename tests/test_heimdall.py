@@ -2630,6 +2630,8 @@ class TestMemoryRoleMatrix(Base):
         h.handle("pytest 검증 선호가 뭐였지?")
         self.assertIn("<memory-recall", s.prompt)
         self.assertIn("pytest-pref", s.prompt)
+        # 답변 소스 배지 원천 — 주입된 회상량이 턴 recap 에 집계된다
+        self.assertGreater(h.turn_recap.get("recall_chars", 0), 0)
 
     def test_provider_allowlist_blocks_identity(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -2748,6 +2750,20 @@ class TestTurnRecapCollector(unittest.TestCase):
             hd.turn_recap["files"], {"src/a.py": {"op": "edit", "n": 1}, "src/c.py": {"op": "create", "n": 1}}
         )
         self.assertEqual(hd.turn_recap["cmds"], {"pytest": 2})
+
+    def test_record_recall_accumulates_injected_chars(self):
+        from types import SimpleNamespace
+        from typing import cast
+
+        from asgard.agent.heimdall import core
+
+        hd = cast(core.Heimdall, SimpleNamespace(_state_lock=threading.Lock(), turn_recap=core._new_recap()))
+        core.Heimdall._record_recall(hd, "<memory-recall>alpha</memory-recall>")
+        core.Heimdall._record_recall(hd, "")  # 빈 회상 = 미발동 — 무기록
+        core.Heimdall._record_recall(hd, "  \n")  # 공백뿐인 회상도 무기록
+        core.Heimdall._record_recall(hd, "beta")
+
+        self.assertEqual(hd.turn_recap["recall_chars"], len("<memory-recall>alpha</memory-recall>") + len("beta"))
 
     def test_memory_write_outcome_records_recap_event(self):
         from types import SimpleNamespace

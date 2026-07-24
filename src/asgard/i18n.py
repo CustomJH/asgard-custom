@@ -76,6 +76,10 @@ _M: dict[str, tuple[str, str]] = {
         "suggested distilling this exploration into Yggdrasil",
         "이번 탐색을 위그드라실로 증류하도록 제안했어요",
     ),
+    # 답변 소스 배지 — 회상(숏컷) 발동 턴의 done 줄: 주입된 기억이 컨텍스트에서 차지한 근사 비중.
+    # 무닌 = 오딘의 기억 까마귀 — 세상을 날아 기억을 물어다 오딘에게 돌려준다 (회상의 세계관 표상).
+    "recap_memory_pct": ("Muninn ~{p}%", "무닌 ~{p}%"),
+    "recap_memory_tok": ("Muninn ~{k}k", "무닌 ~{k}k"),
     "api_key_prompt": ("{p} API key (hidden)", "{p} API 키 (입력한 키는 화면에 보이지 않아요)"),
     "rpm_prompt": ("rpm limit (requests/min · -1 = off)", "rpm 상한 (분당 요청 수 · -1이면 제한 없음)"),
     "rpm_invalid": ("invalid rpm — keeping current", "rpm 값이 올바르지 않아요 — 기존 값을 그대로 둘게요"),

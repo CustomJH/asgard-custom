@@ -1576,16 +1576,33 @@ def _recap_sentence(recap: dict) -> str:
     return " · ".join(parts)
 
 
+def _memory_badge(recap: dict, ctx_tokens: int) -> str:
+    """답변 소스 배지('⠶ 무닌 ~n%') — 이 턴에 결정론 회상(숏컷)으로 주입된 기억이 컨텍스트에서
+    차지한 근사 비중. 무닌 = 오딘의 기억 까마귀 — 위그드라실 세계관에서 회상의 표상.
+    회상이 실제 발동한 턴에만 나타난다. 문자수→토큰 환산은 한/영 혼용 근사(~3자/토큰)라 ~ 표기,
+    컨텍스트 크기를 모르면(첫 턴 오류 등) 절대량(k)으로 축퇴."""
+    chars = recap.get("recall_chars") or 0
+    if not isinstance(chars, int) or chars <= 0:
+        return ""
+    est = max(1, chars // 3)
+    if isinstance(ctx_tokens, int) and ctx_tokens > 0:
+        pct = max(1, min(99, round(est * 100 / ctx_tokens)))
+        return " · ⠶ " + t("recap_memory_pct", p=pct)
+    return " · ⠶ " + t("recap_memory_tok", k=f"{est / 1000:.1f}")
+
+
 def _turn_recap_str(hd, rp, secs: float, spent: int) -> str:
     """턴 종료 recap — '✓ done' 요약줄 + 자연어 한 문장(딤, ⠶ 브랜드 도트마크 — 위그드라실 표식).
 
     hermes recap 상응: 1순위는 메타 이벤트(기억 저장·프로젝트 메모리 보존/제안·증류 —
-    백그라운드에서 함께 일어난 부수 작업), 이벤트가 없으면 활동 문장(수정 파일·커맨드·에이전트)."""
+    백그라운드에서 함께 일어난 부수 작업), 이벤트가 없으면 활동 문장(수정 파일·커맨드·에이전트).
+    회상(숏컷) 발동 턴은 done 줄에 답변 소스 배지('⠶ 무닌 ~n%')를 함께 표기한다."""
     tok = f" · {spent / 1000:.1f}k tok" if spent else ""
-    lines = [f"  {ui.dim(f'✓ done · {rp.model} · {secs:.1f}s{tok}')}"]
     recap = getattr(hd, "turn_recap", None)
     if not isinstance(recap, dict):
-        return "\n".join(lines)
+        return f"  {ui.dim(f'✓ done · {rp.model} · {secs:.1f}s{tok}')}"
+    mem = _memory_badge(recap, getattr(hd, "last_context_tokens", 0) or 0)
+    lines = [f"  {ui.dim(f'✓ done · {rp.model} · {secs:.1f}s{tok}{mem}')}"]
     events = recap.get("events") or []
     sentence = " · ".join(events) if events else _recap_sentence(recap)
     if sentence:

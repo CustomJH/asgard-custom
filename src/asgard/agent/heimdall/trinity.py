@@ -336,6 +336,9 @@ class TrinityRun:
             from ...memory_context import recall_note as _recall
 
             thinker_recall = _recall(self.request, start=hd.root)
+        if primary_memory_allowed:
+            # 답변 소스 배지 — primary 경로 주입만 집계 (폴백 한정 주입은 provider 오류 희귀 경로)
+            hd._record_recall(thinker_recall)
         charter = hd._charter_note(hd.root, "thinker")
 
         def make(rp=None, role=sess_role, selected=model):
@@ -735,6 +738,7 @@ class TrinityRun:
             worker_recall = _project_recall(self.request, start=hd.root)
         if primary_memory_allowed:
             worker_prompt += worker_recall
+            hd._record_recall(worker_recall)  # 답변 소스 배지 — primary 주입만 집계 (Thinker 와 동일 기준)
         if fallback_memory_allowed:
             fallback_worker_prompt += worker_recall
         r = hd._run_turn(

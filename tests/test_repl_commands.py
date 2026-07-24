@@ -535,3 +535,42 @@ def test_turn_recap_degrades_to_done_line_without_collector(monkeypatch) -> None
     idle = SimpleNamespace(turn_recap={"tools": {}, "files": {}, "cmds": {}, "agents": {}})
     out = repl._turn_recap_str(idle, SimpleNamespace(model="m1"), 1.0, 0)
     assert "⠶" not in out
+
+
+def test_turn_recap_memory_badge_shows_recall_share(monkeypatch) -> None:
+    # 답변 소스 배지 — 회상(숏컷) 발동 턴은 done 줄에 주입 기억의 컨텍스트 비중을 근사 표기
+    monkeypatch.setattr(ui, "_COLOR", False)
+    hd = SimpleNamespace(
+        turn_recap={"events": [], "tools": {}, "files": {}, "cmds": {}, "agents": {}, "recall_chars": 900},
+        last_context_tokens=3000,
+    )
+
+    out = repl._turn_recap_str(hd, SimpleNamespace(model="m1"), 1.0, 0)
+
+    # 900자 ≈ 300 tok, 컨텍스트 3000 tok → 10% — 무닌(오딘의 기억 까마귀) = 회상의 세계관 표상
+    assert "✓ done · m1 · 1.0s · ⠶ Muninn ~10%" in out
+
+
+def test_turn_recap_memory_badge_degrades_to_tokens_without_context(monkeypatch) -> None:
+    # 컨텍스트 크기 미상(context_tokens=0) — 비중 대신 절대량(k)으로 축퇴, 허수 % 금지
+    monkeypatch.setattr(ui, "_COLOR", False)
+    hd = SimpleNamespace(
+        turn_recap={"events": [], "tools": {}, "files": {}, "cmds": {}, "agents": {}, "recall_chars": 3000},
+        last_context_tokens=0,
+    )
+
+    out = repl._turn_recap_str(hd, SimpleNamespace(model="m1"), 1.0, 0)
+
+    assert "⠶ Muninn ~1.0k" in out and "%" not in out
+
+
+def test_turn_recap_memory_badge_absent_without_recall(monkeypatch) -> None:
+    # 회상 미발동 턴 — 배지 없음 (recall_chars=0 또는 구버전 recap 키 부재 모두)
+    monkeypatch.setattr(ui, "_COLOR", False)
+    for recap in (
+        {"events": [], "tools": {}, "files": {}, "cmds": {}, "agents": {}, "recall_chars": 0},
+        {"events": [], "tools": {}, "files": {}, "cmds": {}, "agents": {}},
+    ):
+        hd = SimpleNamespace(turn_recap=recap, last_context_tokens=3000)
+        out = repl._turn_recap_str(hd, SimpleNamespace(model="m1"), 1.0, 0)
+        assert "Muninn" not in out

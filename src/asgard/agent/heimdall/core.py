@@ -57,10 +57,18 @@ class SessionLike(Protocol):
 
 def _new_recap() -> dict:
     """턴 recap 집계 그릇 — 메타 이벤트(기억 저장·보존·제안 등 백그라운드 부수 작업, 표시 1순위)
-    + 활동 집계(툴 횟수·파일별 생성/수정·커맨드 첫 단어·에이전트 역할, 이벤트 없을 때 폴백)."""
+    + 활동 집계(툴 횟수·파일별 생성/수정·커맨드 첫 단어·에이전트 역할, 이벤트 없을 때 폴백)
+    + recall_chars(결정론 회상으로 프롬프트에 실제 주입된 문자수 — 답변 소스 배지 원천)."""
     from collections import Counter
 
-    return {"events": [], "tools": Counter(), "files": {}, "cmds": Counter(), "agents": Counter()}
+    return {
+        "events": [],
+        "tools": Counter(),
+        "files": {},
+        "cmds": Counter(),
+        "agents": Counter(),
+        "recall_chars": 0,
+    }
 
 
 class Heimdall:
@@ -167,6 +175,18 @@ class Heimdall:
                 events = self.turn_recap.setdefault("events", [])
                 if text and text not in events:
                     events.append(text)
+        except Exception:
+            pass
+
+    def _record_recall(self, text: str) -> None:
+        """턴 recap 회상 주입량 집계 — 결정론 회상(숏컷)이 이 턴의 프롬프트에 실제로 실은
+        문자수. REPL done 줄의 답변 소스 배지('⠶ 무닌 ~n%' — 오딘의 기억 까마귀) 원천 — 관측 전용, fail-open.
+        게이트 증거가 아니다 (배지는 UX 신호, Verifier 판정과 무관)."""
+        try:
+            if text and text.strip():
+                with self._state_lock:
+                    recap = self.turn_recap
+                    recap["recall_chars"] = recap.get("recall_chars", 0) + len(text)
         except Exception:
             pass
 
@@ -742,6 +762,7 @@ class Heimdall:
                 recall += episode_note(request, self.root)
             except Exception:
                 pass
+        self._record_recall(recall)  # 답변 소스 배지 — 이 턴에 실제 주입될 회상량 (빈 회상은 무기록)
         live_identity = self.delivery_identity + (self._memory_snap if self._memory_provider_allowed else "")
         mimir = _mimir_note(request)
         skill_note, skill_tools, skill_handlers = (
