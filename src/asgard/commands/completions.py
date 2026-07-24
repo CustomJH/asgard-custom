@@ -126,6 +126,7 @@ _EVOLVE_SUB = {
     "reject": "reject a draft (latched)",
     "polish": "LLM-rewrite a pending draft",
     "bench": "A/B a learned skill OFF vs ON",
+    "curate": "deterministic learned-skill aging report",
     "archive": "retire a learned skill (reversible)",
     "restore": "bring an archived skill back",
 }

@@ -813,6 +813,15 @@ def evolve_bench(
     raise typer.Exit(run_bench(skill, cmd, metric, runs, direction, timeout))
 
 
+@evolve_app.command("curate", help="deterministic learned-skill aging report — stale 30d / archive 90d (dry-run)")
+def evolve_curate(
+    apply: bool = typer.Option(False, "--apply", help="actually archive 90d-idle candidates (reversible)"),
+) -> None:
+    from .commands.evolve import run_curate
+
+    raise typer.Exit(run_curate(apply))
+
+
 @evolve_app.command("archive", help="retire a learned skill without deleting it (reversible)")
 def evolve_archive(name: str = typer.Argument(..., metavar="<skill-name>")) -> None:
     from .commands.evolve import run_archive
