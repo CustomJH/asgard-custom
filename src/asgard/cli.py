@@ -162,6 +162,27 @@ def map_trace(
     raise typer.Exit(run_map_trace(from_, depth=depth, direction=direction, kinds=kinds, json_out=json_))
 
 
+@map_app.command("list", help="catalog graph nodes with exact trace-seed ids and source anchors")
+def map_list(
+    kind: str = typer.Option("", "--kind", help="filter by node kind, e.g. route, page, db_access, file"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.map import run_map_list
+
+    raise typer.Exit(run_map_list(kind=kind, json_out=json_))
+
+
+@map_app.command("impact", help="both-direction impact map with coverage limits (adjacency, not proof)")
+def map_impact(
+    node_id: str = typer.Argument(..., metavar="NODE_ID", help="node id, e.g. db_access:USERS or route:GET_/users"),
+    depth: int = typer.Option(4, "--depth"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.map import run_map_impact
+
+    raise typer.Exit(run_map_impact(node_id, depth=depth, json_out=json_))
+
+
 @map_app.command("view", help="build and open the standalone relation-graph view")
 def map_view(
     no_open: bool = typer.Option(False, "--no-open"),
