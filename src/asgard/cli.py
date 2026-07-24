@@ -604,6 +604,30 @@ def memory_path(
     raise typer.Exit(run_path(directory, reset))
 
 
+@memory_app.command("norn", help="evolve the wiki — LLM proposes deltas, deterministic code applies (dry-run)")
+def memory_norn(
+    apply: bool = typer.Option(False, "--apply", help="commit the validated deltas (backup + report)"),
+    nudge: bool = typer.Option(False, "--nudge", hidden=True, help="hook surface: one latched line when due"),
+    auto: bool = typer.Option(
+        False, "--auto", help="autonomous pass: apply ops the norn_auto tier allows (safe=insight only)"
+    ),
+    wake: bool = typer.Option(
+        False, "--wake", hidden=True, help="hook surface: spawn a detached --auto run when due (tier-gated)"
+    ),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_norn
+
+    raise typer.Exit(run_norn(apply, nudge, json_, auto, wake))
+
+
+@memory_app.command("norn-restore", help="restore a page archived by a norn pass")
+def memory_norn_restore(slug: str = typer.Argument(...)) -> None:
+    from .commands.memory import run_norn_restore
+
+    raise typer.Exit(run_norn_restore(slug))
+
+
 @memory_app.command("obsidian", help="open the personal memory wiki in Obsidian")
 def memory_obsidian() -> None:
     from .commands.memory import run_obsidian

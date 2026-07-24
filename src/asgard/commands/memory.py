@@ -14,6 +14,7 @@ import json as _json
 import os
 import re
 import secrets
+import shutil
 import subprocess
 import sys
 import threading
@@ -801,5 +802,128 @@ def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_ou
         else:
             ui.fail(f"project memory rehydrate failed: {output['error'] or 'backend rejected publication'}")
         return 0 if output["success"] else 1
+
+    return _guard(_do)
+
+
+def run_norn(
+    apply: bool = False, nudge: bool = False, json_out: bool = False, auto: bool = False, wake: bool = False
+) -> int:
+    """노른 패스 — LLM 제안 델타를 결정적 검증으로 거른 뒤, --apply 시에만 커밋한다.
+
+    자율 계층 (오딘 결정 26-07-24): --wake(훅)는 due 시 모드에 따라 백그라운드 --auto 를
+    분리 스폰하거나(safe/full) 넛지만 남긴다(off). --auto 는 자격 op 만 즉시 자동 적용."""
+
+    def _do() -> int:
+        from ..memory import norn as norn_mod
+
+        d = memory.ensure_home()
+        if wake:  # 훅 소비 표면 — due 아니면 침묵, due 면 모드별 분기 (latch 는 상태 공유)
+            due, reason = norn_mod.norn_due(d)
+            if not due:
+                return 0
+            mode = norn_mod.auto_mode()
+            if mode == "off":
+                line = norn_mod.nudge_line(d)
+                if line:
+                    print(line)
+                return 0
+            state = norn_mod._load_state(d)
+            digest = str(norn_mod._log_lines(d))
+            if state.get("auto_spawn_digest") == digest:
+                return 0  # 같은 누적 상태로 이미 스폰 — 중복 백그라운드 방지
+            state["auto_spawn_digest"] = digest
+            norn_mod._save_state(d, state)
+            exe = shutil.which("asgard") or sys.argv[0]
+            subprocess.Popen(  # 분리 스폰 — 훅 타임아웃(10s)과 LLM 소요(수십 s)를 격리한다
+                [exe, "memory", "norn", "--auto"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                start_new_session=True,
+            )
+            print(f"위그드라실 노른 자동 통합 시작 — {reason} (모드 {mode}: 추가는 자율, 병합·보관은 제안)")
+            return 0
+        if auto:  # 자율 실행 본체 — 모드 자격분만 적용, 잔류분은 제안으로 보고
+            result = norn_mod.run_auto(os.getcwd(), d)
+            if json_out:
+                print(_json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+            ui.head(f"위그드라실 노른 자동 통합 · 모드 {result['mode']}")
+            for op in result["applied"]:
+                if op["op"] == "insight":
+                    ui.ok(f"insight 기록 · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+                elif op["op"] == "contradiction":
+                    ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — 사람이 해소")
+                else:
+                    ui.ok(f"{op['op']} · {op.get('slug') or op.get('src', '')}")
+            for op in result["proposed"]:
+                ui.step(f"제안 잔류 · {op['op']} — asgard memory norn 으로 검토")
+            if result["report"]:
+                ui.step(f"리포트 · {os.path.relpath(result['report'], d)}")
+            if not result["applied"] and not result["proposed"]:
+                ui.ok("적용·제안 없음 — 위키가 이미 정돈되어 있다")
+            return 0
+        if nudge:  # 훅 소비 표면 — due + latch 통과 시 한 줄, 그 외 침묵
+            line = norn_mod.nudge_line(d)
+            if line:
+                print(line)
+            return 0
+        due, reason = norn_mod.norn_due(d)
+        plan = norn_mod.plan_norn(os.getcwd(), d)
+        if json_out and not apply:
+            print(
+                _json.dumps(
+                    {"due": due, "reason": reason, **{k: plan[k] for k in ("ops", "dropped")}},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0
+        ui.head(f"위그드라실 노른 · {'due — ' + reason if due else reason}")
+        if not plan["ops"] and not plan["dropped"]:
+            ui.ok("제안 없음 — 위키가 이미 정돈되어 있다")
+            return 0
+        for op in plan["ops"]:
+            if op["op"] == "merge":
+                ui.step(f"merge · {op['src']} → {op['dst']} (sim {op['sim']}) — {op['why']}")
+            elif op["op"] == "archive":
+                ui.step(f"archive · {op['slug']} — {op['why']}")
+            elif op["op"] == "insight":
+                ui.step(f"insight · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+            else:
+                ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — {op['why']}")
+        for row in plan["dropped"]:
+            ui.step(ui.dim(f"기각 · {row['op'].get('op', '?')} — {row['reason']}"))
+        if not apply:
+            ui.warn("아직 적용하지 않음 — 검토 후 asgard memory norn --apply")
+            return 0
+        result = norn_mod.apply_norn(d, plan)
+        if json_out:
+            print(_json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        for op in result["failed"]:
+            ui.fail(f"{op['op']} 실패 — {op.get('error', '')}")
+        ui.ok(
+            f"노른 적용: {len(result['applied'])}건 (실패 {len(result['failed'])}건) · "
+            f"리포트 {os.path.relpath(result['report'], d)}"
+            + (f" · 백업 {os.path.relpath(result['backup'], d)}" if result["backup"] else "")
+        )
+        return 0 if not result["failed"] else 1
+
+    return _guard(_do)
+
+
+def run_norn_restore(slug: str) -> int:
+    """노른 archive 복원 — 최신 아카이브 스냅샷을 pages/ 로 되돌린다."""
+
+    def _do() -> int:
+        from ..memory.norn import restore_page
+
+        if restore_page(slug):
+            ui.ok(f"복원됨: {slug}")
+            return 0
+        ui.fail(f"아카이브에 없음: {slug}")
+        return 1
 
     return _guard(_do)

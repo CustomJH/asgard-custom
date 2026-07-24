@@ -145,6 +145,8 @@ _MEM_SUB = {
     "snapshot": "print the session injection snapshot",
     "recall": "print query-relevant memory context",
     "path": "print or configure the memory directory",
+    "norn": "evolve the wiki (LLM deltas, deterministic apply)",
+    "norn-restore": "restore a page archived by a norn pass",
     "obsidian": "open the personal memory wiki in Obsidian",
     "connect": "select and trust a project-memory backend",
     "project-scan": "preview important project artifacts",
