@@ -21,7 +21,6 @@ import os
 import re
 import shutil
 import time
-from typing import Any, cast
 
 from .skill_bank import APPROVAL_FILE, SKILL_FILE, approval_receipt, learned_skills, parse_skill_md
 
@@ -198,47 +197,11 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
     if draft is None:
         return False, f"후보 없음: {cid}"
     try:
-        from .agent.session import make_client
-        from .providers import resolve
+        from .agent.oneshot import complete_once
 
-        rp = resolve(root)
-        if rp.missing:
-            return False, "provider 미충족: " + "; ".join(rp.missing)
-        client = make_client(rp)
-        from .agent.rate_limit import throttle
-
-        throttle(rp)  # RPM 상한 provider — 단발 호출도 전역 윈도에 계수
-        if rp.profile.api_mode == "claude_cli":
-            from .agent.claude_native import complete_text
-
-            raw = complete_text(_POLISH_SYS, draft, model=rp.model, root=root)
-        elif rp.profile.api_mode == "anthropic":
-            resp = client.messages.create(
-                model=rp.model, max_tokens=3000, system=_POLISH_SYS, messages=[{"role": "user", "content": draft}]
-            )
-            raw = "".join(b.text for b in resp.content if b.type == "text")
-        elif rp.profile.api_mode in {"openai_responses", "codex_responses"}:
-            kwargs: dict[str, Any] = {
-                "model": rp.model,
-                "instructions": _POLISH_SYS,
-                "input": draft,
-                "timeout": 120.0,
-            }
-            if rp.profile.api_mode == "codex_responses":
-                kwargs["store"] = False
-            else:
-                kwargs["max_output_tokens"] = 4096
-            if rp.model.startswith(("gpt-5", "o")):
-                kwargs["reasoning"] = {"effort": "low"}
-            resp = cast(Any, client).responses.create(**kwargs)
-            raw = resp.output_text or ""
-        else:
-            resp = client.chat.completions.create(
-                model=rp.model,
-                max_tokens=3000,
-                messages=[{"role": "system", "content": _POLISH_SYS}, {"role": "user", "content": draft}],
-            )
-            raw = resp.choices[0].message.content or ""
+        raw = complete_once(root, _POLISH_SYS, draft, max_tokens=3000)
+    except RuntimeError as e:  # provider 미충족 — 사전 조건 메시지 그대로
+        return False, str(e)
     except Exception as e:
         return False, f"LLM 호출 실패 — 결정론 초안 유지 ({type(e).__name__})"
     start = raw.find("---")
