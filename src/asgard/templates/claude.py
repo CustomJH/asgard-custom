@@ -64,6 +64,19 @@ def cc_settings() -> str:
                         "Bash(git push --force*)",
                         "Bash(git push -f*)",
                         "Bash(git reset --hard*)",
+                        # 헬리오스 교훈 — 실제 자산을 날린 건 아래 두 계열이었다: bare stash 는
+                        # 전체 트리를 걷어가고(병렬 세션 미커밋분 포함), checkout -- 는 경로를
+                        # 조용히 소실시킨다. 정밀 판정은 git-guard 훅(단일 출처)이 맡고, 여기는
+                        # 훅이 죽었을 때(fail-open)를 위한 최소 안전망만 중복한다.
+                        "Bash(git stash)",
+                        "Bash(git stash push*)",
+                        "Bash(git stash save*)",
+                        "Bash(git stash drop*)",
+                        "Bash(git stash clear*)",
+                        "Bash(git stash -*)",
+                        "Bash(git checkout -- *)",
+                        "Bash(git checkout HEAD -- *)",
+                        "Bash(git clean -f*)",
                     ],
                 },
                 "hooks": {
