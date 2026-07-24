@@ -111,6 +111,21 @@ class TestProjectMap(CodeMapBase):
         self.assertEqual(result.files_scanned, 2)
         self.assertNotIn("workspace/", project_map)
 
+    def test_ignored_nested_project_falls_back_to_walk_boundary(self):
+        from pathlib import Path
+
+        from asgard.code_map import _files
+
+        subprocess.run(["git", "init", "-q", self.root], check=True)
+        self.write(".gitignore", "ref/\n")
+        self.write("ref/proj/pyproject.toml", '[project]\nname = "nested"\n')
+        self.write("ref/proj/src/app.py", "X = 1\n")
+        # 상위 저장소가 ignore 한 사본에서 ls-files 는 빈 성공을 낸다 — 경계 부재로 보고
+        # walk 폴백해야 사용자가 가리킨 루트가 조용한 빈 지도가 되지 않는다.
+        listed = [p.as_posix() for p in _files(Path(self.root) / "ref" / "proj")]
+        self.assertIn("pyproject.toml", listed)
+        self.assertIn("src/app.py", listed)
+
     def test_check_fails_when_managed_map_is_gitignored(self):
         from asgard.code_map import check_map, refresh_map
 

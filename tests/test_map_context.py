@@ -44,6 +44,31 @@ class Base(unittest.TestCase):
 
 
 class TestMapContext(Base):
+    def test_query_matched_trace_seeds_ride_with_command_routing(self):
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+
+        self.seed()
+        refresh_map(self.root)
+        self.write(
+            ".asgard/map/GRAPH.md",
+            "<!-- asgard:map-graph schema=1 -->\n# Relation Graph\n\n"
+            "## Trace seeds\n\n"
+            "> Exact node ids.\n\n"
+            "- routes: `route:GET_/api/v1/admin/announcements` · `route:GET_/api/v1/orders`\n"
+            "- pages: `page:/admin/announcements`\n",
+        )
+        matched = build_map_context(self.root, "announcement pinned 필드 추가")
+        # 시드가 명령 라우팅과 함께 주입된다 — 경로 grep 대신 trace/impact 로 가는 어포던스
+        self.assertIn("asgard map impact", matched.text)
+        self.assertIn("`route:GET_/api/v1/admin/announcements`", matched.text)
+        self.assertIn("`page:/admin/announcements`", matched.text)
+        # 쿼리와 무관한 시드는 싣지 않는다
+        self.assertNotIn("route:GET_/api/v1/orders", matched.text)
+        # 쿼리가 어느 시드와도 안 맞으면 섹션 자체가 없다 — 예산 보호
+        unmatched = build_map_context(self.root, "totally unrelated billing task")
+        self.assertNotIn("asgard map impact", unmatched.text)
+
     def test_schema_two_contains_verified_commands_and_public_surfaces(self):
         from asgard.code_map import refresh_map
 

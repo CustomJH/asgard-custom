@@ -422,6 +422,25 @@ class TestJavaExtractor(Base):
         found = self.kinds(_JAVA_CONTROLLER)
         self.assertEqual({e.name for e in found["route"]}, {"GET /api/v1/orders/list", "POST /api/v1/orders"})
         self.assertTrue(all(e.confidence == "confirmed" and e.line > 0 for e in found["route"]))
+
+    def test_annotation_literal_concatenation_joins_route_path(self):
+        found = self.kinds(
+            """
+package com.acme;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("${api.prefix}" + "orbit/home")
+public class OrbitHomeController {
+    @GetMapping("/{id}" + "/detail")
+    public String detail() { return "ok"; }
+}
+"""
+        )
+        # 전부-리터럴 `+` 연쇄는 정적으로 증명된다 — 리소스 세그먼트를 유실하지 않는다
+        self.assertEqual({e.name for e in found["route"]}, {"GET /${api.prefix}orbit/home/{id}/detail"})
         self.assertNotIn("GET /ghost", {e.name for e in found["route"]})
 
     def test_route_without_spring_import_is_candidate(self):
@@ -485,6 +504,27 @@ class TestJvmDbExtractors(Base):
         self.assertNotIn("DUAL", by_name)
         self.assertEqual(extract_mapper_xml("pom.xml", "<project><id>x</id></project>"), [])
 
+    def test_comments_are_not_evidence(self):
+        from asgard.map_graph.extract_java import extract_mapper_xml, extract_sql
+
+        # XML 주석의 산문("from a page")·주석 처리된 구문은 증거가 아니다
+        commented = (
+            '<mapper namespace="com.acme.KbTagMapper">\n'
+            "<!-- Remove a tag from a page -->\n"
+            '<!-- <select id="deadQuery">SELECT * FROM ghost_tbl</select> -->\n'
+            '<delete id="deletePageTag">DELETE FROM kb_page_tag WHERE id = 1</delete>\n'
+            "</mapper>\n"
+        )
+        names = {e.name for e in extract_mapper_xml("mapper/KbTagMapper.xml", commented)}
+        self.assertIn("KB_PAGE_TAG", names)
+        self.assertNotIn("A", names)
+        self.assertNotIn("GHOST_TBL", names)
+        self.assertNotIn("KbTagMapper.deadQuery", names)
+        # SQL 주석 속 죽은 DDL 도 선언이 아니다 (줄 번호는 보존)
+        sql = "-- CREATE TABLE ghost (id int);\n/*\nCREATE TABLE ghost2 (id int);\n*/\nCREATE TABLE live (id int);\n"
+        live = extract_sql("schema/x.sql", sql)
+        self.assertEqual([(e.name, e.line) for e in live], [("LIVE", 5)])
+
     def test_sql_ddl_and_proc_embedded_sql(self):
         from asgard.map_graph.extract_java import extract_proc, extract_sql
 
@@ -541,6 +581,39 @@ class TestSpringProps(Base):
         promoted = SpringProps().promote([self.evidence("${ACME_TOPIC:inline.raw}")])[0]
         self.assertEqual((promoted.name, promoted.confidence), ("inline.raw", "confirmed"))
         self.assertIn("annotation default", promoted.detail)
+
+    def test_route_embedded_prefix_resolves_from_base_config(self):
+        from asgard.map_graph.evidence import Evidence
+        from asgard.map_graph.spring_props import SpringProps
+
+        props = SpringProps()
+        props.ingest("svc/src/main/resources/application.yml", "api:\n  prefix: /api/v2/\n")
+        route = Evidence("route", "GET /${api.prefix}orders/{id}", "svc/src/main/java/App.java", 9, "confirmed")
+        promoted = props.promote([route])[0]
+        # 임베디드 치환 + 프리픽스 값의 중복 슬래시 정돈 — 실제 경로가 노드 정체가 된다
+        self.assertEqual(promoted.name, "GET /api/v2/orders/{id}")
+        self.assertEqual(promoted.confidence, "confirmed")
+        self.assertIn("${api.prefix} → /api/v2/ (svc/src/main/resources/application.yml)", promoted.detail)
+        # 못 푸는 키는 원문 보존 — 브리지의 접두 벗김 폴백이 이어받는다
+        unresolved = Evidence("route", "GET /${gw.prefix}orders", "svc/src/main/java/App.java", 9, "confirmed")
+        self.assertEqual(props.promote([unresolved])[0].name, "GET /${gw.prefix}orders")
+
+    def test_api_call_url_resolution_promotes_like_literal_url(self):
+        from asgard.map_graph.evidence import Evidence
+        from asgard.map_graph.spring_props import SpringProps
+
+        props = SpringProps()
+        props.ingest("svc/src/main/resources/application.yml", "payment:\n  url: https://pay.example.com\n")
+        feign = Evidence("api_call", "${payment.url}/charges", "svc/src/main/java/Pay.java", 4, "candidate", "feign")
+        promoted = props.promote([feign])[0]
+        # 설정이 URL 정체를 증명한다 — 추출기의 리터럴 URL 기준과 동일하게 confirmed
+        self.assertEqual(promoted.name, "https://pay.example.com/charges")
+        self.assertEqual(promoted.confidence, "confirmed")
+        # 경로만 남는 해석(비 URL)은 베이스 URL 미증명 — confidence 를 올리지 않는다
+        props.ingest("svc/src/main/resources/application.properties", "svc.base=/internal\n")
+        relative = Evidence("api_call", "${svc.base}/health", "svc/src/main/java/Pay.java", 5, "candidate")
+        kept = props.promote([relative])[0]
+        self.assertEqual((kept.name, kept.confidence), ("/internal/health", "candidate"))
 
 
 class TestScanGraph(Base):
@@ -823,6 +896,44 @@ class TestTrace(Base):
             trace(self.root, "external_service:strip")
         self.assertIn("candidates", str(caught.exception))
 
+    def test_unknown_concept_word_recovers_kind_diverse_candidates(self):
+        from asgard.map_graph import GraphError, scan_graph, trace
+
+        self.seed()
+        scan_graph(self.root)
+        # "users" 개념어 — api_call 이 알파벳 선두여도 route 후보가 함께 나와야 회복이 된다
+        with self.assertRaises(GraphError) as caught:
+            trace(self.root, "users")
+        message = str(caught.exception)
+        self.assertIn("route:GET_/users", message)
+        # 후보에는 대표 앵커가 동봉된다 — 두 번째 호출 없이 소스로 직행할 수 있다
+        self.assertIn("route:GET_/users @ src/app/api.py:", message)
+
+    def test_stat_freshness_detects_touch_and_legacy_state_falls_back(self):
+        import time as time_module
+
+        from asgard.map_graph import GraphError, fresh_state, scan_graph, trace
+
+        self.seed()
+        result = scan_graph(self.root)
+        state = fresh_state(self.root)
+        # 스탯 검사 경로 — 표식이 있으면 내용 재독취 없이 통과한다
+        self.assertTrue(state.get("stat_revision", "").startswith("source-stat-sha256:"))
+        # 내용 동일 touch(mtime 변경)도 stale 로 본다 — 오탐은 재스캔 방향으로만 틀린다
+        target = os.path.join(self.root, "src/app/api.py")
+        stamp = time_module.time() + 5
+        os.utime(target, (stamp, stamp))
+        with self.assertRaises(GraphError):
+            trace(self.root, "external_service:stripe")
+        scan_graph(self.root)
+        # 구 상태(스탯 표식 없음)는 내용 다이제스트 폴백으로 여전히 동작한다
+        with open(result.state_path, encoding="utf-8") as stream:
+            legacy = json.load(stream)
+        del legacy["stat_revision"]
+        with open(result.state_path, "w", encoding="utf-8") as stream:
+            json.dump(legacy, stream, ensure_ascii=False)
+        self.assertTrue(trace(self.root, "external_service:stripe"))
+
     def test_trace_rejects_stale_state_and_invalid_bounds(self):
         from asgard.map_graph import GraphError, scan_graph, trace
 
@@ -933,6 +1044,45 @@ class TestView(Base):
         self.assertIn("previewKind", html)  # 칩 호버 미리보기(종류 구분)
         self.assertIn('"emits"', html)  # 개념→개념 플로우 엣지 언어
 
+    def test_view_lane_trace_contract(self):
+        """레인 뷰·체인 추적 고도화 계약 — 결정론 배치·플로우 추적·스케일 장치.
+
+        레인 = 물리 없는 계층 컬럼(바리센터 정렬), 트레이스 = 플로우 상·하류
+        BFS(깊이 4, 필터 무관), 스케일 = 엣지 컬링·저줌 LOD·자동 레인 진입.
+        """
+        from asgard.map_graph import build_view, scan_graph
+
+        self.seed()
+        scan_graph(self.root)
+        html = build_view(self.root)
+        # 배치 모드 토글 — 성좌 ⇄ 레인
+        self.assertIn('id="modeStar"', html)
+        self.assertIn('id="modeLane"', html)
+        self.assertIn("function laneLayout", html)  # 결정론 배치(물리 없음)
+        self.assertIn("const LANES=", html)  # 계층 순서 사전
+        self.assertIn('"/atoms/"', html)  # 아토믹 서브밴드(컴포넌트 tier)
+        self.assertIn("nodes.length>1200", html)  # 대규모 자동 레인 진입
+        self.assertIn("laneMode?0.06", html)  # 레인 전폭 줌 플로어(모바일 잘림 방지)
+        # 체인 추적 — 플로우 상·하류
+        self.assertIn("function runTrace", html)
+        self.assertIn("d<=4", html)  # 깊이 캡
+        self.assertIn('byId[e.source].kind==="file"', html)  # 플로우 인접은 개념→개념
+        self.assertIn('id="traceBtn"', html)  # 패널 추적 버튼
+        self.assertIn("lineDashOffset", html)  # 유방향 대시(모션 축소 시 정적)
+        # 필터 승격 — 엣지 언어·후보
+        self.assertIn("data-ek", html)  # 엣지 kind 필터
+        self.assertIn('id="candTog"', html)  # candidate 표시 토글
+        # 스케일 — 15K 엣지 대응
+        self.assertIn("cvx0", html)  # 엣지 뷰포트 컬링 경계
+        self.assertIn("scale<0.5 ? []", html)  # 저줌 대시 LOD
+        # polish 계약 — critique P1·P2·P3 수리 가드
+        self.assertIn('id="viscount"', html)  # 표시/전체 상시 카운터(필터 무언 방지)
+        self.assertIn('id="visreset"', html)  # 필터 전멸 복구 버튼
+        self.assertIn('id="results"', html)  # 검색 결과 리스트(↑↓ 순회)
+        self.assertIn("function writeHash", html)  # URL hash 뷰 상태 영속
+        self.assertIn("KIND_BOOST", html)  # 상시 라벨 종류 가중(차수 독점 방지)
+        self.assertIn("trace.cam", html)  # 체인 해제 시 카메라 복원
+
     def test_view_without_state_raises(self):
         from asgard.map_graph import GraphError, build_view
 
@@ -982,6 +1132,339 @@ class TestContextFusion(Base):
         self.assertNotIn(".asgard/map/GRAPH.md", {entry.source for entry in context.entries})
 
 
+_JAVA_USER_API = """
+package com.acme.api;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+import org.springframework.jdbc.core.JdbcTemplate;
+
+@RestController
+@RequestMapping("/api/users")
+public class UserController {
+    private final JdbcTemplate jdbcTemplate;
+
+    @GetMapping
+    public String list() {
+        jdbcTemplate.queryForList("SELECT * FROM TUSER");
+        return "ok";
+    }
+
+    @GetMapping("/{id}")
+    public String detail() { return "ok"; }
+}
+"""
+
+_VUE_USERS_PAGE = """
+<template><div /></template>
+<script setup>
+const rows = await $fetch('/api/users')
+const one = await $fetch(`/api/users/${id}`)
+</script>
+"""
+
+
+class TestApiRouteBridge(Base):
+    """API↔라우트 브리지 — 프론트/원격 호출과 백엔드 표면의 경로 수렴 (전부 candidate).
+
+    베이스 URL·프록시 접두는 정적으로 증명할 수 없다: 완전 일치는 "path match", 접두 차이만
+    나는 일치는 "path suffix match" 로 이유를 보존하고, 수렴 실패(과다 일치)는 통째로 버린다.
+    """
+
+    def edges_of(self):
+        from asgard.map_graph import graph_state
+
+        state = graph_state(self.root)
+        assert state is not None
+        return {(e["source"], e["target"], e["kind"]): e for e in state["edges"]}, state
+
+    def seed_stack(self) -> None:
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write("src/main/java/com/acme/api/UserController.java", _JAVA_USER_API)
+        self.write("web/pages/users/index.vue", _VUE_USERS_PAGE)
+
+    def test_exact_and_placeholder_path_match(self):
+        from asgard.map_graph import scan_graph
+
+        self.seed_stack()
+        result = scan_graph(self.root)
+        edges, state = self.edges_of()
+        exact = edges.get(("api_call:/api/users", "route:GET_/api/users", "calls"))
+        self.assertIsNotNone(exact)
+        self.assertEqual(exact["confidence"], "candidate")
+        self.assertEqual(exact["detail"], "path match")
+        # `${id}` 보간(`{}`)과 Spring `{id}` 는 같은 와일드카드 세그먼트로 수렴한다 (id 는 슬러그 표기)
+        self.assertIn(("api_call:/api/users/_", "route:GET_/api/users/_id_", "calls"), edges)
+        self.assertEqual(result.api_links, state["counts"]["api_links"])
+        self.assertGreaterEqual(result.api_links, 2)
+
+    def test_full_stack_join_page_to_db(self):
+        from asgard.map_graph import scan_graph, trace
+
+        self.seed_stack()
+        scan_graph(self.root)
+        # 얕은 깊이의 절단은 침묵하지 않는다 — 미탐색 이웃이 남은 홉에 truncated 표식
+        shallow = trace(self.root, "page:/users", depth=1, direction="downstream", kinds={"calls", "touches"})
+        self.assertTrue(all(hop["depth"] == 1 for hop in shallow))
+        self.assertTrue(any(hop["truncated"] for hop in shallow))
+        api_hop = next(hop for hop in shallow if hop["id"] == "api_call:/api/users")
+        self.assertEqual(api_hop["file"], "web/pages/users/index.vue")
+        self.assertGreater(api_hop["line"], 0)
+        # 페이지 → 래퍼 호출 → 라우트 → DB 를 한 번의 trace 로 조인한다 (platty 대등 교차 레인)
+        deep = trace(self.root, "page:/users", depth=4, direction="downstream", kinds={"calls", "touches"})
+        ids = {hop["id"] for hop in deep}
+        self.assertIn("route:GET_/api/users", ids)
+        self.assertIn("db_access:jdbcTemplate.queryForList", ids)
+        self.assertFalse(any(hop["truncated"] for hop in deep))
+
+    def test_suffix_match_respects_method_and_literal_guard(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write(
+            "server/app.ts",
+            "const app = express();\napp.get('/users', handler);\napp.post('/users', handler);\n",
+        )
+        self.write("web/api.ts", "apiGet('/gw/users')\napiGet(`/${id}`)\n")
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        suffix = edges.get(("api_call:/gw/users", "route:GET_/users", "calls"))
+        self.assertIsNotNone(suffix)
+        self.assertEqual(suffix["detail"], "path suffix match")
+        # 래퍼 이름의 메서드(apiGet)와 다른 라우트(POST)는 잇지 않는다
+        self.assertNotIn(("api_call:/gw/users", "route:POST_/users", "calls"), edges)
+        # 순수 와일드카드 경로(`/${id}`)는 리터럴 근거가 없다 — 지어내지 않는다
+        wildcard_links = [key for key in edges if key[0] == "api_call:/_" and key[1].startswith("route:")]
+        self.assertEqual(wildcard_links, [])
+
+    def test_api_base_extraction_accepts_idioms_and_rejects_noise(self):
+        from asgard.map_graph.extract_tsjs import extract_api_bases
+
+        source = """
+const API_BASE_URL = '/api/v2'
+const client = axios.create({ baseURL: 'https://api.example.com/v1/' })
+const fallback = ofetch.create({ baseURL: import.meta.env.VITE_API ?? '/gw' })
+const userUrl = '/users'
+const origin = 'https://example.com'
+const computed = `${API_BASE_URL}/x`
+"""
+        # base 성격 이름의 체크인 리터럴만 — 일반 상수·경로 없는 오리진·계산식은 제외
+        self.assertEqual(extract_api_bases(source), ["/api/v2", "/v1", "/gw"])
+
+    def test_fe_base_prefix_promotes_suffix_to_exact_via_base(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write("be/src/main/resources/application.yml", "api:\n  prefix: /api/v2/\n")
+        self.write(
+            "be/src/main/java/com/acme/mon/MonController.java",
+            """
+package com.acme.mon;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("${api.prefix}string-monitoring")
+public class MonController {
+    @GetMapping("/sites")
+    public String sites() { return "ok"; }
+}
+""",
+        )
+        # helios 관용구 — FE 스코프의 상수 베이스가 같은 스코프의 상대 경로 호출에 적용된다
+        self.write("web/services/client.ts", "const API_BASE_URL = '/api/v2'\n")
+        self.write(
+            "web/pages/mon.vue",
+            """
+<template><div /></template>
+<script setup>
+await $fetch('/string-monitoring/sites')
+</script>
+""",
+        )
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        link = edges.get(("api_call:/string-monitoring/sites", "route:GET_/api/v2/string-monitoring/sites", "calls"))
+        self.assertIsNotNone(link)
+        self.assertEqual(link["detail"], "path match via /api/v2")
+        self.assertEqual(link["confidence"], "candidate")
+
+    def test_original_exact_match_outranks_base_prefixed(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write("web/services/client.ts", "const API_BASE_URL = '/api'\n")
+        self.write(
+            "web/server.ts",
+            "const app = express();\napp.get('/health', handler);\n",
+        )
+        self.write("web/pages/x.vue", "<script setup>\nawait $fetch('/health')\n</script>\n")
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        link = edges.get(("api_call:/health", "route:GET_/health", "calls"))
+        self.assertIsNotNone(link)
+        # 원문 그대로의 완전 일치가 있으면 베이스 접두 해석보다 우선한다
+        self.assertEqual(link["detail"], "path match")
+
+    def test_resolved_gateway_prefix_yields_exact_and_suffix_links(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write("be/src/main/resources/application.yml", "api:\n  prefix: /api/v2/\n")
+        self.write(
+            "be/src/main/java/com/acme/mon/MonController.java",
+            """
+package com.acme.mon;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("${api.prefix}string-monitoring")
+public class MonController {
+    @GetMapping("/sites")
+    public String sites() { return "ok"; }
+}
+""",
+        )
+        self.write(
+            "web/pages/mon.vue",
+            """
+<template><div /></template>
+<script setup>
+await $fetch('/api/v2/string-monitoring/sites')
+await $fetch('/string-monitoring/sites')
+</script>
+""",
+        )
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        # base yml 해석으로 라우트 이름이 실제 경로가 된다 — 프리픽스 포함 호출은 완전 일치
+        exact = edges.get(
+            ("api_call:/api/v2/string-monitoring/sites", "route:GET_/api/v2/string-monitoring/sites", "calls")
+        )
+        self.assertIsNotNone(exact)
+        self.assertEqual(exact["detail"], "path match")
+        # 프리픽스 없는 호출(게이트웨이 재작성)은 접미 일치로 이유가 남는다
+        suffix = edges.get(("api_call:/string-monitoring/sites", "route:GET_/api/v2/string-monitoring/sites", "calls"))
+        self.assertIsNotNone(suffix)
+        self.assertEqual(suffix["detail"], "path suffix match")
+
+    def test_gateway_prefix_strips_and_wildcard_never_matches_literal(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write(
+            "src/main/java/com/acme/mon/MonController.java",
+            """
+package com.acme.mon;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("${api.prefix}string-monitoring")
+public class MonController {
+    @GetMapping("/sites/{siteCode}/overview")
+    public String overview() { return "ok"; }
+
+    @GetMapping("/users/{id}")
+    public String user() { return "ok"; }
+}
+""",
+        )
+        self.write(
+            "web/pages/mon.vue",
+            """
+<template><div /></template>
+<script setup>
+await $fetch(`/string-monitoring/sites/${code}/overview`)
+await $fetch('/users/me')
+</script>
+""",
+        )
+        scan_graph(self.root)
+        edges, _state = self.edges_of()
+        # `${api.prefix}` 설정 접두를 벗기면 남은 리터럴이 세그먼트 정체다 — 완전 일치로 승격
+        exact = edges.get(
+            (
+                "api_call:/string-monitoring/sites/_/overview",
+                "route:GET_/_api.prefix_string-monitoring/sites/_siteCode_/overview",
+                "calls",
+            )
+        )
+        self.assertIsNotNone(exact)
+        self.assertEqual(exact["detail"], "path match")
+        # 한쪽만 변수인 자리는 잇지 않는다 — `/users/me` 는 `/users/{id}` 의 증거가 아니다
+        me_links = [key for key in edges if key[0] == "api_call:/users/me" and key[1].startswith("route:")]
+        self.assertEqual(me_links, [])
+
+    def test_ambiguous_match_is_dropped_whole(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        routes = "\n".join(f"app.get('/a{i}/x', handler);" for i in range(9))
+        self.write("server/app.ts", f"const app = express();\n{routes}\n")
+        self.write("web/api.ts", "fetch('/x')\n")
+        scan_graph(self.root)
+        edges, state = self.edges_of()
+        links = [key for key in edges if key[0] == "api_call:/x" and key[1].startswith("route:")]
+        self.assertEqual(links, [])
+        self.assertEqual(state["counts"]["api_links"], 0)
+
+
+class TestJpaTableConvergence(Base):
+    def test_table_annotation_converges_with_ddl_node(self):
+        from asgard.map_graph import scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "graphed"\n')
+        self.write("db/schema.sql", "CREATE TABLE users (id INT PRIMARY KEY);\n")
+        self.write(
+            "src/main/java/com/acme/domain/User.java",
+            """
+package com.acme.domain;
+import jakarta.persistence.Entity;
+import jakarta.persistence.Table;
+
+@Entity
+@Table(name = "users")
+public class User {
+}
+""",
+        )
+        scan_graph(self.root)
+        from asgard.map_graph import graph_state
+
+        state = graph_state(self.root)
+        assert state is not None
+        node = next(n for n in state["nodes"] if n["id"] == "db_access:USERS")
+        # DDL(confirmed)과 JPA @Table(candidate)이 같은 테이블 노드로 수렴한다
+        self.assertEqual(node["confidence"], "confirmed")
+        files = {loc["file"]: loc for loc in node["files"]}
+        self.assertIn("db/schema.sql", files)
+        self.assertIn("src/main/java/com/acme/domain/User.java", files)
+        self.assertEqual(files["src/main/java/com/acme/domain/User.java"]["confidence"], "candidate")
+        self.assertEqual(files["src/main/java/com/acme/domain/User.java"]["detail"], "jpa @Table")
+
+
+class TestGraphMdSeeds(Base):
+    def test_trace_seeds_and_navigation_contract(self):
+        from asgard.map_graph import scan_graph
+
+        self.seed()
+        result = scan_graph(self.root)
+        with open(result.graph_md_path, encoding="utf-8") as stream:
+            body = stream.read()
+        # 카탈로그 행이 곧 trace 시드다 — 노드 id 재구성을 강요하지 않는다 (platty traceId 대등)
+        self.assertIn("## Trace seeds", body)
+        self.assertIn("`route:GET_/users`", body)
+        self.assertIn("asgard map list", body)
+        self.assertIn("asgard map impact", body)
+        # 부재 규율 — 엣지 없음은 의존 없음의 증거가 아니다
+        self.assertIn("not evidence of absence", body)
+
+
 class TestCli(Base):
     def test_map_scan_and_trace_json(self):
         from typer.testing import CliRunner
@@ -999,7 +1482,50 @@ class TestCli(Base):
             self.assertGreater(payload["nodes"], 0)
             traced = runner.invoke(app, ["map", "trace", "--from", "external_service:stripe", "--json"])
             self.assertEqual(traced.exit_code, 0, traced.output)
-            self.assertIn("hops", json.loads(traced.output))
+            hops = json.loads(traced.output)["hops"]
+            self.assertTrue(hops)
+            # 홉마다 대표 앵커(file:line)와 절단 표식이 실린다 — 원문 확인 없는 단정을 막는 계약
+            self.assertTrue(all({"file", "line", "truncated"} <= set(hop) for hop in hops))
+        finally:
+            os.chdir(cwd)
+
+    def test_map_list_and_impact_json(self):
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        self.seed()
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            runner = CliRunner()
+            self.assertEqual(runner.invoke(app, ["map", "scan", "--json"]).exit_code, 0)
+            listed = runner.invoke(app, ["map", "list", "--kind", "route", "--json"])
+            self.assertEqual(listed.exit_code, 0, listed.output)
+            payload = json.loads(listed.output)
+            self.assertGreaterEqual(payload["total"], 2)
+            self.assertTrue(all(node["kind"] == "route" for node in payload["nodes"]))
+            self.assertTrue(all(node["id"].startswith("route:") and node["file"] for node in payload["nodes"]))
+            unknown = runner.invoke(app, ["map", "list", "--kind", "nope", "--json"])
+            self.assertEqual(unknown.exit_code, 2)
+            self.assertIn("unknown node kind", json.loads(unknown.output)["error"])
+            # 개념어 원콜 진입 — 유일 매치는 자동 해석되고 출처가 남는다
+            resolved = runner.invoke(app, ["map", "trace", "--from", "orders", "--json"])
+            self.assertEqual(resolved.exit_code, 0, resolved.output)
+            resolved_payload = json.loads(resolved.output)
+            self.assertEqual(resolved_payload["from"], "route:POST_/orders")
+            self.assertEqual(resolved_payload["resolved_from"], "orders")
+            # 복수 매치는 해석하지 않는다 — 앵커 동봉 후보로 거부
+            ambiguous = runner.invoke(app, ["map", "trace", "--from", "users", "--json"])
+            self.assertEqual(ambiguous.exit_code, 2)
+            self.assertIn("@ src/app/api.py", json.loads(ambiguous.output)["error"])
+            impact = runner.invoke(app, ["map", "impact", "external_service:stripe", "--json"])
+            self.assertEqual(impact.exit_code, 0, impact.output)
+            report = json.loads(impact.output)
+            self.assertEqual(report["from"], "external_service:stripe")
+            self.assertLessEqual({"upstream", "downstream", "coverage", "records"}, set(report))
+            self.assertEqual(report["coverage"]["depth"], 4)
+            self.assertTrue(report["upstream"] or report["downstream"])
         finally:
             os.chdir(cwd)
 
