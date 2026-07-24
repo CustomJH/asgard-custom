@@ -104,7 +104,7 @@ class BundledDocumentSkillTest(unittest.TestCase):
         self.assertIn("playwright-cli", worker)
         self.assertEqual(
             {row["name"] for row in skill_registry.available_skills(self.root, "freyja")},
-            {"asgard-freyja-design"},
+            {"asgard-freyja-design", "asgard-freyja-fjadrhamr"},
         )
         self.assertIn(
             "hwpx", {name for name, _ in skill_registry.resolve_skills(self.root, "한글 HWP 문서 읽기", "worker")}

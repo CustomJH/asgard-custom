@@ -384,6 +384,45 @@ class RegistryTest(unittest.TestCase):
         reference = skill_registry.show_skill_resource(self.root, name, "references/fetching/choosing.md")
         self.assertIn("Fetchers Overview", reference)
 
+    def test_freyja_fjadrhamr_example_pack_is_freyja_scoped(self):
+        name = "asgard-freyja-fjadrhamr"
+        plugin = skill_registry.bundled_plugins()["freyja-fjadrhamr"]
+        self.assertEqual(plugin["skills"], [name])
+        self.assertIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "freyja")})
+        self.assertNotIn(name, {row["name"] for row in skill_registry.available_skills(self.root, "worker")})
+        self.assertIn(
+            name,
+            {
+                skill
+                for skill, _ in skill_registry.resolve_skills(
+                    self.root, "히어로 배경 애니메이션 컴포넌트 예제 가져와줘", "freyja"
+                )
+            },
+        )
+        # 기존 배타 앵커 보존 — 일반 프레이야 과제 프로브에 침입하지 않는다
+        self.assertNotIn(
+            name,
+            {skill for skill, _ in skill_registry.resolve_skills(self.root, "로그인 폼 접근성 개선", "freyja")},
+        )
+        body = skill_registry.load_skill_for_agent(self.root, "freyja", name)
+        self.assertIn("capture protocol", body)
+        self.assertIn("Commons Clause", body)
+        for catalog in (
+            "catalog-magicui.json",
+            "catalog-reactbits.json",
+            "catalog-animata.json",
+            "catalog-aceternity.json",
+            "catalog-motionprimitives.json",
+            "catalog-21st.json",
+            "catalog-originkit.json",
+            "catalog-uiverse.json",
+        ):
+            resource = skill_registry.show_skill_resource(self.root, name, catalog)
+            self.assertIn('"components"', resource)
+        recipes = skill_registry.show_skill_resource(self.root, name, "SOURCES.md")
+        self.assertIn("ORIGINKIT_API_KEY", recipes)
+        self.assertIn("cdn.21st.dev", recipes)
+
     def test_cc_settings_preapprove_skill_loads(self):
         """헤드리스 CC 에서 스킬 로드 경로·quest-log 루프가 자동 거부되지 않도록 사전 승인."""
         from asgard.templates.claude import cc_settings

@@ -45,7 +45,7 @@ class TestFreyjaBaseline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             self.assertEqual(
                 [name for name, _ in skill_registry.client_skill_bodies("freyja", root)],
-                ["asgard-freyja-design"],
+                ["asgard-freyja-design", "asgard-freyja-fjadrhamr"],
             )
             self.assertNotIn(
                 "asgard-freyja-design",
