@@ -11,6 +11,9 @@ from urllib.parse import urlsplit, urlunsplit
 
 EVIDENCE_KINDS = (
     "route",  # HTTP/웹 엔드포인트
+    "page",  # 프론트 클라이언트 라우트 (파일 기반 라우팅)
+    "store",  # 프론트 전역 상태 (Pinia/Redux slice)
+    "composable",  # 프론트 재사용 로직 (composables/hooks 관례 디렉터리)
     "command",  # CLI 커맨드 표면
     "model",  # 데이터 모델 (ORM/스키마/검증 모델)
     "db_access",  # 데이터베이스 접근 지점

@@ -26,7 +26,7 @@ GRAPH_FILE = "GRAPH.md"
 _GRAPH_MARKER = "<!-- asgard:map-graph schema=1 -->"
 _STATE_RELATIVE = Path(".asgard") / "state" / "map-graph.json"
 _MAX_SOURCE_BYTES = 512 * 1024
-_TSJS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".prisma"}
+_TSJS_SUFFIXES = {".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".prisma", ".vue", ".svelte"}
 # 확장자 → 추출기 (JVM/DB 레인 포함). `.xml`/`.sql` 추출기는 비대상 파일에서 빈 결과를 낸다.
 _EXTRACTORS = {
     ".py": extract_python,
@@ -39,6 +39,9 @@ _EXTRACTORS = {
 # 증거 종류 → 파일-노드 간 엣지 관계
 _EDGE_KIND = {
     "route": "declares",
+    "page": "declares",
+    "store": "declares",
+    "composable": "declares",
     "command": "declares",
     "model": "declares",
     "job": "declares",
@@ -60,6 +63,9 @@ EDGE_KINDS = ("declares", "calls", "touches", "uses", "emits")
 _STRUCTURAL_SPAN_SUFFIXES = (".py", ".java")
 _KIND_LABEL = {
     "route": "routes",
+    "page": "pages",
+    "store": "stores",
+    "composable": "composables",
     "command": "commands",
     "model": "models",
     "db_access": "db",
