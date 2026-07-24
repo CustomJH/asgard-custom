@@ -10,16 +10,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import tempfile
 from collections import defaultdict
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ..code_map import MapError, _atomic_write, _files, _map_dir, _safe_component
 from .evidence import Evidence
 from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql
 from .extract_python import extract_python
-from .extract_tsjs import extract_tsjs
+from .extract_tsjs import extract_api_bases, extract_tsjs
 from .spring_props import SpringProps
 
 GRAPH_FILE = "GRAPH.md"
@@ -60,6 +62,19 @@ _FLOW_KIND = {
     "component": "uses",  # 합성 소비 — page/component 스팬 안 태그가 atoms→page 체인을 만든다
 }
 EDGE_KINDS = ("declares", "calls", "touches", "uses", "emits")
+# API↔라우트 브리지 — api_call 경로와 route 경로의 정규화 일치만 근거로 삼는 candidate 엣지.
+# 경로 변수 표기(`:id`/`{id}`/`{}`)는 와일드카드 세그먼트 하나로 수렴한다.
+_PLACEHOLDER_SEGMENT = re.compile(r"^(?::\w+|\{\w*\})$")
+_EMBEDDED_PLACEHOLDER = re.compile(r"\$\{[^{}]*\}|\{[^{}]*\}")
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_HTTP_VERBS = ("get", "post", "put", "delete", "patch")
+# 한 호출이 이만큼 넘는 라우트와 일치하면 수렴 실패다 — 지어내지 않고 통째로 버린다.
+_API_LINK_CAP = 8
+# 스코프당 FE 베이스 접두가 이만큼 넘으면 수집 잡음이다 — 그 스코프의 베이스를 쓰지 않는다.
+_API_BASE_CAP = 4
+# GRAPH.md Trace seeds — 진입 표면 종류만, 종류당 상한 (전체 열람은 `asgard map list`).
+_SEED_KINDS = ("route", "page", "command", "store", "event", "job")
+_MAX_SEEDS_PER_KIND = 40
 # 스팬 신뢰 확장자 — AST(.py)·주석 제거 후 중괄호 균형(.java)은 포함 관계가 결정론적이다.
 # 나머지(원문 정규식 근사 스팬)는 플로우 엣지를 candidate 로 캡한다.
 _STRUCTURAL_SPAN_SUFFIXES = (".py", ".java")
@@ -94,6 +109,7 @@ class GraphResult:
     nodes: int
     edges: int
     flows: int
+    api_links: int
     state_path: str
     graph_md_path: str
     changed: bool
@@ -118,11 +134,44 @@ def _is_test_path(path: Path) -> bool:
     )
 
 
-def _collect(root: Path) -> tuple[int, list[Evidence], str]:
+def _scope_of(rel_posix: str) -> str:
+    """모노레포 최상위 디렉터리 스코프 — SpringProps 와 동일한 경계."""
+    parts = rel_posix.split("/")
+    return parts[0] if len(parts) > 1 else ""
+
+
+def _stat_revision(root: Path) -> str:
+    """(경로·크기·mtime_ns) 스탯 다이제스트 — 파일 내용을 읽지 않는 값싼 신선도 표식.
+
+    `_collect` 와 동일한 파일 선별 규칙을 지켜야 비교가 성립한다. mtime 오탐(내용 동일한
+    touch)은 stale 방향으로만 틀린다 — 재스캔을 한 번 더 시킬 뿐 낡은 지도를 사실처럼
+    보여주지 않는다.
+    """
+    digest = hashlib.sha256()
+    for rel in _files(root):
+        suffix = rel.suffix.lower()
+        if suffix not in _EXTRACTORS and not SpringProps.is_config(rel.name):
+            continue
+        if _is_test_path(rel):
+            continue
+        try:
+            stat = (root / rel).stat()
+        except OSError:
+            continue
+        if stat.st_size > _MAX_SOURCE_BYTES:
+            continue
+        digest.update(f"{rel.as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode("utf-8", "surrogateescape"))
+        digest.update(b"\0")
+    return "source-stat-sha256:" + digest.hexdigest()
+
+
+def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str, ...]], str]:
     scanned = 0
     collected: list[Evidence] = []
     props = SpringProps()
+    base_table: dict[str, set[str]] = defaultdict(set)
     digest = hashlib.sha256()
+    stat_digest = hashlib.sha256()
     for rel in _files(root):
         suffix = rel.suffix.lower()
         is_config = SpringProps.is_config(rel.name)
@@ -132,8 +181,15 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str]:
             continue
         full = root / rel
         try:
-            if full.stat().st_size > _MAX_SOURCE_BYTES:
-                continue
+            stat = full.stat()
+        except OSError:
+            continue
+        if stat.st_size > _MAX_SOURCE_BYTES:
+            continue
+        # 스탯 다이제스트는 read/decode 성패와 무관하게 여기서 찍는다 — `_stat_revision` 과 동일 집합.
+        stat_digest.update(f"{rel.as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode("utf-8", "surrogateescape"))
+        stat_digest.update(b"\0")
+        try:
             raw = full.read_bytes()
         except OSError:
             continue
@@ -153,8 +209,18 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str]:
         if is_config:
             props.ingest(rel.as_posix(), source)
             continue
+        if suffix in _TSJS_SUFFIXES:
+            base_table[_scope_of(rel.as_posix())].update(extract_api_bases(source))
         collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source))
-    return scanned, props.promote(collected), "source-sha256:" + digest.hexdigest()
+    # 스코프당 베이스가 상한을 넘으면 잡음이다 — 그 스코프는 통째로 버린다 (모호성 보존).
+    api_bases = {scope: tuple(sorted(bases)) for scope, bases in base_table.items() if 0 < len(bases) <= _API_BASE_CAP}
+    return (
+        scanned,
+        props.promote(collected),
+        "source-sha256:" + digest.hexdigest(),
+        api_bases,
+        "source-stat-sha256:" + stat_digest.hexdigest(),
+    )
 
 
 def _flow_edges(collected: list[Evidence]) -> dict[tuple[str, str, str], str]:
@@ -188,7 +254,135 @@ def _flow_edges(collected: list[Evidence]) -> dict[tuple[str, str, str], str]:
     return edges
 
 
-def _build_state(scanned: int, collected: list[Evidence], revision: str) -> dict:
+def _normal_segment(part: str) -> str:
+    """세그먼트 정규화 — 경로 변수는 `{}` 로, 세그먼트에 박힌 `${...}`/`{...}` 는 벗겨낸다.
+
+    Spring 클래스 프리픽스의 `${api.prefix}string-monitoring` 처럼 설정 플레이스홀더가
+    리터럴에 붙은 세그먼트는 남은 리터럴이 정체다. 벗기고 나면 빈 세그먼트만 와일드카드다.
+    """
+    if _PLACEHOLDER_SEGMENT.fullmatch(part):
+        return "{}"
+    stripped = _EMBEDDED_PLACEHOLDER.sub("", part)
+    return stripped.casefold() if stripped else "{}"
+
+
+def _path_segments(raw: str) -> tuple[str, ...]:
+    return tuple(_normal_segment(part) for part in raw.split("/") if part)
+
+
+def _api_call_segments(name: str) -> tuple[str, ...] | None:
+    """api_call 노드 이름 → 정규화 경로 세그먼트. 경로 모양이 아니면(수신자 표기 등) None."""
+    if name.startswith(("http://", "https://")):
+        raw = urlsplit(name).path
+    elif name.startswith("/"):
+        raw = name
+    else:
+        return None
+    segments = _path_segments(raw)
+    return segments or None  # 루트 단독 호출은 어떤 라우트와도 구별 근거가 없다
+
+
+def _segments_match(api: tuple[str, ...], route: tuple[str, ...], *, exact_length: bool) -> bool:
+    """세그먼트 일치 — 접미 일치는 접두(베이스 URL/프록시/게이트웨이) 차이만 인정한다.
+
+    와일드카드(`{}`)는 와일드카드끼리만 일치한다: 한쪽만 변수인 자리는 경로 모양이 다른
+    것이지 같다는 증거가 아니다 (`/users/me` ↔ `/users/{id}` 를 잇지 않는다). 리터럴 일치가
+    하나도 없으면(순수 와일드카드) 일치로 치지 않는다.
+    """
+    if exact_length:
+        if len(api) != len(route):
+            return False
+        pairs = list(zip(api, route))
+    else:
+        short, long = (api, route) if len(api) < len(route) else (route, api)
+        if not short or len(short) == len(long):
+            return False
+        pairs = list(zip(short, long[-len(short) :]))
+    return all(a == b for a, b in pairs) and any(a != "{}" for a, _b in pairs)
+
+
+def _api_call_method(node: dict) -> str:
+    """api_call 증거 detail(래퍼 이름 등)에서 HTTP 메서드를 읽는다 — 못 읽으면 빈 문자열."""
+    for location in node["files"]:
+        text = _CAMEL_BOUNDARY.sub("_", location.get("detail", "")).casefold()
+        for verb in _HTTP_VERBS:
+            if re.search(rf"(?:^|[^a-z]){verb}(?:$|[^a-z])", text):
+                return verb.upper()
+    return ""
+
+
+def _api_route_links(
+    nodes: dict[str, dict], api_bases: dict[str, tuple[str, ...]] | None = None
+) -> dict[tuple[str, str, str], str]:
+    """api_call → route 브리지 엣지 — 프론트/원격 호출과 백엔드 표면을 경로 일치로 잇는다.
+
+    베이스 URL·프록시 접두는 정적으로 증명할 수 없으므로 전부 candidate 다. 우선순위:
+    완전 일치("path match") → 같은 스코프에서 수집한 FE 베이스 접두를 붙인 완전 일치
+    ("path match via <base>", 노드 이름은 원문 보존) → 접미 일치("path suffix match").
+    """
+    api_bases = api_bases or {}
+    routes: list[tuple[str, str, tuple[str, ...]]] = []
+    for node in nodes.values():
+        if node["kind"] != "route":
+            continue
+        method, _, raw = node["name"].partition(" ")
+        if raw.startswith("/"):
+            routes.append((node["id"], method.upper(), _path_segments(raw)))
+    links: dict[tuple[str, str, str], str] = {}
+    for node in nodes.values():
+        if node["kind"] != "api_call":
+            continue
+        segments = _api_call_segments(node["name"])
+        if segments is None:
+            continue
+        # 베이스 접두는 상대 경로 호출에만 후보다 — 절대 URL 은 이미 오리진을 스스로 증명한다.
+        based_segments: list[tuple[str, tuple[str, ...]]] = []
+        if node["name"].startswith("/"):
+            scopes = {_scope_of(location["file"]) for location in node["files"]}
+            for base in sorted({base for scope in scopes for base in api_bases.get(scope, ())}):
+                based_segments.append((base, _path_segments(base) + segments))
+        method = _api_call_method(node)
+        exact: list[str] = []
+        based: list[tuple[str, str]] = []
+        suffix: list[str] = []
+        for route_id, route_method, route_segments in routes:
+            if method and route_method not in ("ANY", method):
+                continue
+            if _segments_match(segments, route_segments, exact_length=True):
+                exact.append(route_id)
+                continue
+            hit = next(
+                (
+                    base
+                    for base, candidate in based_segments
+                    if _segments_match(candidate, route_segments, exact_length=True)
+                ),
+                None,
+            )
+            if hit is not None:
+                based.append((route_id, hit))
+            elif _segments_match(segments, route_segments, exact_length=False):
+                suffix.append(route_id)
+        if exact:
+            matches = [(route_id, "path match") for route_id in exact]
+        elif based:
+            matches = [(route_id, f"path match via {base}") for route_id, base in based]
+        else:
+            matches = [(route_id, "path suffix match") for route_id in suffix]
+        if not matches or len(matches) > _API_LINK_CAP:
+            continue
+        for route_id, reason in matches:
+            links[(node["id"], route_id, "calls")] = reason
+    return links
+
+
+def _build_state(
+    scanned: int,
+    collected: list[Evidence],
+    revision: str,
+    api_bases: dict[str, tuple[str, ...]] | None = None,
+    stat_revision: str = "",
+) -> dict:
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str, str], str] = {}
     for item in collected:
@@ -210,21 +404,29 @@ def _build_state(scanned: int, collected: list[Evidence], revision: str) -> dict
         edges[(file_id, item.node_id, file_edge)] = "confirmed"
     flows = _flow_edges(collected)
     edges.update(flows)
+    link_details: dict[tuple[str, str, str], str] = {}
+    for key, reason in _api_route_links(nodes, api_bases).items():
+        if key not in edges:
+            edges[key] = "candidate"
+            link_details[key] = reason
     for node in nodes.values():
         node["files"].sort(key=lambda loc: (loc["file"], loc["line"]))
     return {
         "schema": 1,
         "revision": revision,
+        "stat_revision": stat_revision,
         "counts": {
             "files_scanned": scanned,
             "evidence": len(collected),
             "nodes": len(nodes),
             "edges": len(edges),
             "flows": len(flows),
+            "api_links": len(link_details),
         },
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
         "edges": [
             {"source": source, "target": target, "kind": kind, "confidence": confidence}
+            | ({"detail": link_details[source, target, kind]} if (source, target, kind) in link_details else {})
             for (source, target, kind), confidence in sorted(edges.items())
         ],
     }
@@ -273,11 +475,35 @@ def _render_graph_md(state: dict) -> str:
         lines += ["", "## Flows", ""]
         for source in sorted(flows):
             lines.append(f"- `{names.get(source, source)}` — " + " · ".join(sorted(flows[source])))
+    # 진입 표면의 정확한 노드 id — 카탈로그 행이 곧 trace 시드다 (id 재구성 강요 금지).
+    seeds: dict[str, list[str]] = defaultdict(list)
+    for node in state["nodes"]:
+        if node["kind"] in _SEED_KINDS and "id" in node:
+            seeds[node["kind"]].append(node["id"])
+    if seeds:
+        lines += [
+            "",
+            "## Trace seeds",
+            "",
+            "> Exact node ids — copy into `asgard map trace --from <id>` or `asgard map impact <id>`.",
+            "",
+        ]
+        for kind in _SEED_KINDS:
+            ids = sorted(seeds.get(kind, ()))
+            if not ids:
+                continue
+            row = " · ".join(f"`{node_id}`" for node_id in ids[:_MAX_SEEDS_PER_KIND])
+            if len(ids) > _MAX_SEEDS_PER_KIND:
+                row += f" (+{len(ids) - _MAX_SEEDS_PER_KIND} more — `asgard map list --kind {kind}`)"
+            lines.append(f"- {_KIND_LABEL[kind]}: {row}")
     lines += [
         "",
         "## Navigation contract",
         "",
         "- Trace edges with `asgard map trace --from <node-id>` (`--kinds touches,calls` filters edge kinds).",
+        "- Enumerate node ids with `asgard map list [--kind route]`; both directions at once with `asgard map impact <node-id>`.",
+        '- Do not read this catalog whole on large repos — `asgard map context --query "<task>"` returns the bounded, task-ranked slice.',
+        "- A missing edge is not evidence of absence — this graph is static-lane adjacency, not an exhaustive dependency inventory.",
         "",
     ]
     return "\n".join(lines)
@@ -322,8 +548,8 @@ def _atomic_state_write(root: Path, path: Path, content: str) -> None:
 
 def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bool = False) -> GraphResult:
     base = Path(root).resolve()
-    scanned, collected, revision = _collect(base)
-    state = _build_state(scanned, collected, revision)
+    scanned, collected, revision, api_bases, stat_revision = _collect(base)
+    state = _build_state(scanned, collected, revision, api_bases, stat_revision)
     state_path = _state_file(base, _STATE_RELATIVE.name, create=False)
     state_json = json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True)
     graph_md = _render_graph_md(state)
@@ -360,6 +586,7 @@ def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bo
         nodes=state["counts"]["nodes"],
         edges=state["counts"]["edges"],
         flows=state["counts"]["flows"],
+        api_links=state["counts"]["api_links"],
         state_path=str(state_path),
         graph_md_path=str(graph_md_path),
         changed=changed,
@@ -383,6 +610,61 @@ def graph_state(root: str | os.PathLike[str]) -> dict | None:
     return state
 
 
+def fresh_state(root: str | os.PathLike[str]) -> dict:
+    """현재 소스와 리비전이 일치하는 그래프 상태만 돌려준다 — 낡은 지도는 사실이 아니다.
+
+    검사는 스탯 다이제스트(내용 무독취) 우선이다 — 대형 리포에서 호출당 전체 재독취 비용을
+    없앤다. 스탯 표식이 없는 구 상태만 내용 다이제스트로 폴백한다.
+    """
+    state = graph_state(root)
+    if state is None:
+        raise GraphError("relation graph state missing — run `asgard map scan` first")
+    base = Path(root).resolve()
+    stat_revision = state.get("stat_revision")
+    if isinstance(stat_revision, str) and stat_revision:
+        current = _stat_revision(base)
+    else:
+        stat_revision, current = state["revision"], _collect(base)[2]
+    if stat_revision != current:
+        raise GraphError("relation graph state is stale — run `asgard map scan` first")
+    return state
+
+
+def concept_candidates(state: dict, word: str, *, limit: int = 8) -> list[dict]:
+    """개념어 → 종류 라운드로빈 후보(id + 대표 앵커) — 한 번의 호출로 진입 지점을 준다.
+
+    알파벳 선두 종류(api_call)가 독점하지 않게 종류당 하나씩 돌고, 종류 안에서는 짧은 id
+    우선이다 — `db_access:ORGANIZATION` 이 긴 구문 id 보다 정규형에 가깝다.
+    """
+    lowered = word.casefold()
+    by_kind: dict[str, list[dict]] = defaultdict(list)
+    for node in state.get("nodes", ()):
+        node_id = node.get("id", "")
+        if lowered in node_id.casefold():
+            by_kind[node["kind"]].append(node)
+    for kind in by_kind:
+        by_kind[kind].sort(key=lambda n: (len(n["id"]), n["id"]))
+    picked: list[dict] = []
+    while len(picked) < limit and any(by_kind.values()):
+        for kind in sorted(by_kind):
+            if by_kind[kind] and len(picked) < limit:
+                node = by_kind[kind].pop(0)
+                file, line = node_anchor(node)
+                picked.append({"id": node["id"], "kind": node["kind"], "file": file, "line": line})
+    return picked
+
+
+def node_anchor(node: dict) -> tuple[str, int]:
+    """노드의 대표 증거 위치 — confirmed 위치 우선, 파일 노드는 경로 자신이 앵커다."""
+    if node["kind"] == "file":
+        return node["name"], 0
+    locations = node.get("files") or []
+    picked = next((loc for loc in locations if loc.get("confidence") == "confirmed"), None) or (
+        locations[0] if locations else None
+    )
+    return (picked["file"], picked["line"]) if picked else ("", 0)
+
+
 def trace(
     root: str | os.PathLike[str],
     node_id: str,
@@ -390,11 +672,13 @@ def trace(
     depth: int = 2,
     direction: str = "both",
     kinds: set[str] | None = None,
+    state: dict | None = None,
 ) -> list[dict]:
     """BFS 로 확인된 엣지만 따라간다 — 전수 블라스트 레디우스가 아니라 인접 지도다.
 
     `kinds` 는 따라갈 엣지 종류의 화이트리스트다 — 예: DB 앵커 업스트림에 {"touches", "calls"}
-    를 주면 한 번의 호출로 DB→핸들러→호출 화면까지 조인해 회수한다.
+    를 주면 한 번의 호출로 DB→핸들러→호출 화면까지 조인해 회수한다. `state` 를 주면 신선도
+    검사를 이미 통과한 상태를 재사용한다 (impact 처럼 한 번 검사로 여러 번 걸을 때).
     """
     if not 0 <= depth <= 8:
         raise GraphError("trace depth must be between 0 and 8")
@@ -405,15 +689,21 @@ def trace(
         if unknown or not kinds:
             allowed = ", ".join(EDGE_KINDS)
             raise GraphError(f"trace kinds must be a non-empty subset of: {allowed}")
-    state = graph_state(root)
     if state is None:
-        raise GraphError("relation graph state missing — run `asgard map scan` first")
-    if state["revision"] != _collect(Path(root).resolve())[2]:
-        raise GraphError("relation graph state is stale — run `asgard map scan` first")
+        state = fresh_state(root)
     nodes = {node["id"]: node for node in state["nodes"]}
     if node_id not in nodes:
-        near = sorted(nid for nid in nodes if node_id.casefold() in nid.casefold())[:5]
-        hint = f" — candidates: {', '.join(near)}" if near else ""
+        near = concept_candidates(state, node_id)
+        rendered = [
+            candidate["id"]
+            + (
+                f" @ {candidate['file']}" + (f":{candidate['line']}" if candidate["line"] else "")
+                if candidate["file"]
+                else ""
+            )
+            for candidate in near
+        ]
+        hint = f" — candidates: {', '.join(rendered)}" if rendered else ""
         raise GraphError(f"unknown node id: {node_id}{hint}")
     forward: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
     backward: dict[str, list[tuple[str, str, str]]] = defaultdict(list)
@@ -442,6 +732,7 @@ def trace(
                 continue
             seen.add(neighbor)
             node = nodes[neighbor]
+            file, line = node_anchor(node)
             hops.append(
                 {
                     "id": neighbor,
@@ -451,7 +742,20 @@ def trace(
                     "depth": level + 1,
                     "via": kind,
                     "via_confidence": edge_confidence,
+                    "file": file,
+                    "line": line,
+                    "truncated": False,
                 }
             )
             frontier.append((neighbor, level + 1, kind))
+    # 절단 보고 — 깊이 상한에서 미탐색 이웃이 남은 홉은 커버리지 한계다 (침묵 절단 금지).
+    for hop in hops:
+        if hop["depth"] != depth:
+            continue
+        remaining: list[tuple[str, str, str]] = []
+        if direction in {"both", "downstream"}:
+            remaining += forward[hop["id"]]
+        if direction in {"both", "upstream"}:
+            remaining += backward[hop["id"]]
+        hop["truncated"] = any(neighbor not in seen for neighbor, _kind, _confidence in remaining)
     return hops
