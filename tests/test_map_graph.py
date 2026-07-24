@@ -362,6 +362,52 @@ class TestFrontendLane(Base):
         # (api_call 의 `{}` 는 id 슬러그에서 `_` 로 정규화된다)
         self.assertEqual(edges.get(("page:/alarms/:id", "api_call:/api/alarms/_/detail", "calls")), "candidate")
 
+    def test_component_declared_only_in_components_tree(self):
+        decls = {
+            "app/components/organisms/alarm/ActiveAlarmDataTable.vue": ("ActiveAlarmDataTable", "organisms/alarm"),
+            "app/components/atoms/ui/button/index.vue": ("Button", "atoms/ui"),
+            "web/components/data-table.tsx": ("DataTable", ""),
+        }
+        for path, (name, level) in decls.items():
+            component = self.kinds(path, "")["component"][0]
+            self.assertEqual((component.name, component.detail, component.confidence), (name, level, "confirmed"))
+        for path in ("app/pages/alarms.vue", "app/layouts/default.vue"):
+            self.assertNotIn("component", self.kinds(path, ""), path)
+
+    def test_template_tags_consumed_builtins_and_script_generics_excluded(self):
+        source = (
+            "<template>\n  <NuxtLink to='/x'/>\n  <AlarmBadge/>\n  <alarm-chip/>\n  <AlarmBadge/>\n</template>\n"
+            "<script setup lang='ts'>\nconst x = apiGet<AlarmRow[]>('/rows')\n</script>\n"
+        )
+        found = self.kinds("app/components/molecules/AlarmCard.vue", source)
+        uses = {e.name: e for e in found["component"] if not e.scope_end}
+        # 빌트인(NuxtLink)·스크립트 제네릭(AlarmRow) 제외, 케밥 태그는 Pascal 수렴, 중복 1회
+        self.assertEqual(set(uses), {"AlarmBadge", "AlarmChip"})
+        self.assertTrue(all(e.confidence == "candidate" and e.detail == "use" for e in uses.values()))
+        # 자기 선언 태그는 소비로 계상하지 않는다
+        self_use = self.kinds("app/components/molecules/AlarmCard.vue", "<template><AlarmCard/></template>")
+        self.assertEqual([e for e in self_use["component"] if not e.scope_end], [])
+
+    def test_composition_chain_page_to_atom_in_scan(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "fe"\n')
+        self.write("app/pages/alarms.vue", "<template><AlarmTable/></template>\n")
+        self.write("app/components/organisms/AlarmTable.vue", "<template><BaseButton label='ack'/></template>\n")
+        self.write("app/components/atoms/BaseButton.vue", "<template><button/></template>\n")
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        edges = {(e["source"], e["target"], e["kind"]): e["confidence"] for e in state["edges"]}
+        # 합성 체인: page → organism → atom (태그 소비는 candidate)
+        self.assertEqual(edges.get(("page:/alarms", "component:AlarmTable", "uses")), "candidate")
+        self.assertEqual(edges.get(("component:AlarmTable", "component:BaseButton", "uses")), "candidate")
+        # 파일 엣지: 선언은 declares, 소비는 uses
+        self.assertEqual(
+            edges.get(("file:app/components/atoms/BaseButton.vue", "component:BaseButton", "declares")), "confirmed"
+        )
+        self.assertEqual(edges.get(("file:app/pages/alarms.vue", "component:AlarmTable", "uses")), "confirmed")
+
 
 class TestJavaExtractor(Base):
     def kinds(self, source: str, path: str = "svc/src/main/java/App.java") -> dict:
