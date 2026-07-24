@@ -19,7 +19,9 @@ import time
 
 _TAIL_BYTES = 256 * 1024  # 복원 시 파일 꼬리만 읽는다 — 장수 파일도 복원 비용 상수
 _RESPONSE_CAP = 4000  # history 소비 계약(500자 절단)보다 넉넉하게 — 전문 보존은 목적 아님
-_MAX_BYTES: int = 2 * 1024 * 1024  # 보존 정책 — 초과 시 최근 _KEEP_TURNS 만 남기고 재작성. 테스트가 치환하는 가변 정책값
+_MAX_BYTES: int = (
+    2 * 1024 * 1024
+)  # 보존 정책 — 초과 시 최근 _KEEP_TURNS 만 남기고 재작성. 테스트가 치환하는 가변 정책값
 _KEEP_TURNS: int = 400
 
 
