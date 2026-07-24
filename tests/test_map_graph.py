@@ -236,6 +236,133 @@ class TestTsJsExtractor(Base):
         self.assertEqual(routes[0].confidence, "candidate")
 
 
+_VUE_PAGE_FIXTURE = """<template>
+  <div @click="axios.get('/template-noise')">x</div>
+</template>
+
+<script setup lang="ts">
+const rows = await $fetch(`/api/alarms/${id}/detail`)
+</script>
+"""
+
+_COMPOSABLE_FIXTURE = """
+import { apiGet, apiPut } from '@/services/api/client'
+
+export function useAlarms() {
+  return apiGet<AlarmRow[]>('/alarms/active')
+}
+
+export const useAck = async () => {
+  await apiPut(`/alarms/${id}/acknowledge`)
+}
+"""
+
+_STORE_FIXTURE = """
+import { defineStore } from 'pinia'
+
+export const useAuthStore = defineStore('auth', {
+  actions: {
+    async login() {
+      await apiPost('/auth/login')
+    },
+  },
+})
+
+const cartSlice = createSlice({
+  name: 'cart',
+  initialState,
+})
+"""
+
+
+class TestFrontendLane(Base):
+    """프론트 레인 — 파일 기반 page·store·composable·래퍼 api_call, SFC 마스킹."""
+
+    def kinds(self, path: str, source: str) -> dict:
+        from asgard.map_graph.extract_tsjs import extract_tsjs
+
+        out = {}
+        for item in extract_tsjs(path, source):
+            out.setdefault(item.kind, []).append(item)
+        return out
+
+    def test_page_routes_derived_from_file_conventions(self):
+        cases = {
+            "app/pages/(auth)/login.vue": ("/login", "nuxt"),
+            "app/pages/index.vue": ("/", "nuxt"),
+            "app/pages/alarms/[id].vue": ("/alarms/:id", "nuxt"),
+            "app/pages/users/_uid.vue": ("/users/:uid", "nuxt"),
+            "src/routes/blog/[slug]/+page.svelte": ("/blog/:slug", "sveltekit"),
+            "web/app/dash/(admin)/page.tsx": ("/dash", "next"),
+            "web/pages/users/[id].tsx": ("/users/:id", "next"),
+        }
+        for path, (route, framework) in cases.items():
+            pages = self.kinds(path, "")["page"]
+            self.assertEqual((pages[0].name, pages[0].detail, pages[0].confidence), (route, framework, "confirmed"))
+
+    def test_non_page_paths_make_no_page_claim(self):
+        for path in (
+            "web/pages/api/users.tsx",  # Next API 라우트는 페이지가 아니다
+            "web/pages/_app.tsx",
+            "app/components/templates/pages/Hero.vue",  # 아토믹 pages 레벨
+            "web/src/Button.vue",
+            "src/routes/blog/Widget.svelte",
+        ):
+            self.assertNotIn("page", self.kinds(path, ""), path)
+
+    def test_sfc_template_masked_and_script_line_numbers_preserved(self):
+        found = self.kinds("app/pages/alarms/[id].vue", _VUE_PAGE_FIXTURE)
+        calls = found["api_call"]
+        self.assertEqual(
+            [(e.name, e.confidence, e.detail) for e in calls], [("/api/alarms/{}/detail", "candidate", "$fetch")]
+        )
+        # 템플릿 줄의 axios 는 마스킹되고, 스크립트 증거는 원본 줄 번호를 유지한다
+        self.assertEqual(calls[0].line, 6)
+        page = found["page"][0]
+        self.assertEqual(page.scope_end, _VUE_PAGE_FIXTURE.count("\n") + 1)
+
+    def test_wrapper_calls_and_composables_with_body_spans(self):
+        found = self.kinds("app/composables/useAlarms.ts", _COMPOSABLE_FIXTURE)
+        by_name = {e.name: e for e in found["api_call"]}
+        self.assertEqual(by_name["/alarms/active"].detail, "apiGet")
+        self.assertEqual(by_name["/alarms/{}/acknowledge"].detail, "apiPut")
+        composables = {e.name: e for e in found["composable"]}
+        self.assertEqual(set(composables), {"useAlarms", "useAck"})
+        span = composables["useAlarms"]
+        self.assertTrue(span.line <= by_name["/alarms/active"].line <= span.scope_end)
+
+    def test_composables_only_claimed_in_convention_dirs(self):
+        self.assertNotIn("composable", self.kinds("app/lib/useAlarms.ts", _COMPOSABLE_FIXTURE))
+
+    def test_stores_pinia_and_redux_slice(self):
+        found = self.kinds("app/stores/auth.store.ts", _STORE_FIXTURE)
+        stores = {e.name: e for e in found["store"]}
+        self.assertEqual(
+            {(s.detail, s.confidence) for s in stores.values()}, {("pinia", "confirmed"), ("redux", "confirmed")}
+        )
+        # 스토어 본문 스팬이 액션의 api_call 을 포함한다
+        auth = stores["auth"]
+        call = found["api_call"][0]
+        self.assertTrue(auth.line <= call.line <= auth.scope_end)
+
+    def test_dollar_fetch_not_double_counted(self):
+        found = self.kinds("app/composables/useX.ts", "export function useX() { return $fetch('/x') }\n")
+        self.assertEqual(len(found["api_call"]), 1)
+
+    def test_page_flow_joins_inline_fetch_in_scan(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "fe"\n')
+        self.write("app/pages/alarms/[id].vue", _VUE_PAGE_FIXTURE)
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        edges = {(e["source"], e["target"], e["kind"]): e["confidence"] for e in state["edges"]}
+        # 페이지가 파일 본문을 소유한다 — 인라인 $fetch 가 페이지 플로우로 귀속 (근사 스팬 → candidate)
+        # (api_call 의 `{}` 는 id 슬러그에서 `_` 로 정규화된다)
+        self.assertEqual(edges.get(("page:/alarms/:id", "api_call:/api/alarms/_/detail", "calls")), "candidate")
+
+
 class TestJavaExtractor(Base):
     def kinds(self, source: str, path: str = "svc/src/main/java/App.java") -> dict:
         from asgard.map_graph.extract_java import extract_java
