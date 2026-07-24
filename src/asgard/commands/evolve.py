@@ -39,7 +39,12 @@ def run_scan(quiet: bool = False) -> int:
         )
         return 0
     for m in created:
-        ui.ok(f"후보 생성 {m['id']} — {m['name']} (quest {m['quest_id']}, FAIL {m['fail_count']}회 → PASS)")
+        detail = (
+            f"quest {m['quest_id']}, FAIL {m['fail_count']}회 → PASS"
+            if m.get("quest_id")
+            else "사용자 정정 신호"  # origin: correction — 제2 채굴원 (26-07-24)
+        )
+        ui.ok(f"후보 생성 {m['id']} — {m['name']} ({detail})")
     print(ui.dim("검토: asgard evolve list · 승인: asgard evolve approve <id>"))
     return 0
 

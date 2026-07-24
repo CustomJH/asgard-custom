@@ -163,6 +163,14 @@ def run_sync_turn(mode: str) -> int:
         payload = _json.loads(raw or "{}")
         if not isinstance(payload, dict):
             raise ValueError("turn payload must be a JSON object")
+        # 사용자 정정 신호 채굴 (제2 채굴원) — 개인/진화 스코프라 프로젝트 메모리 연결과 무관하게
+        # 항상 시도한다. 탐지 실패·중복·오염 = 조용히 False (턴을 막지 않는다).
+        with contextlib.suppress(Exception):
+            from ..evolution import record_correction
+
+            record_correction(
+                os.getcwd(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
+            )
         found = find_config(os.getcwd())
         if not found:
             print(_json.dumps({"status": "skipped", "reason": "project memory not connected"}))
