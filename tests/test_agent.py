@@ -320,55 +320,94 @@ class TestReadonlySession(Base):
 
 
 class TestContextPrune(Base):
-    """컨텍스트 압축 — 오래된 tool_result 본문 프룬 (LLM 무호출, 최근 유지)."""
+    """컨텍스트 압축 세션 배선 — 창 해석과 프룬 단 발동. 알고리즘 자체는 test_huginn.py."""
 
-    def test_prune_old_tool_results_keeps_recent(self):
+    @staticmethod
+    def _heavy(n=30, chars=8000):
+        """툴 출력에 질량이 몰린 히스토리 — 최소 회수 게이트를 넘길 만큼 무겁게."""
+        return [{"role": "tool", "tool_call_id": str(i), "content": f"out-{i} " + "X" * chars} for i in range(n)]
+
+    def _session(self, rp):
         from asgard.agent.session import AgentSession
+
+        s = AgentSession(None, rp, self.root, "sys")
+        s.messages.extend(self._heavy())
+        return s
+
+    def test_prune_old_tool_results_keeps_recent_and_is_idempotent(self):
+        from asgard.agent.session import AgentSession, SessionResult
         from asgard.providers import PROVIDERS, ResolvedProvider
 
         rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="m", api_key="k")
         s = AgentSession(None, rp, self.root, "sys")
-        for i in range(10):
+        for i in range(30):
             s.messages.append({"role": "assistant", "content": [{"type": "text", "text": f"t{i}"}]})
             s.messages.append(
-                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": str(i), "content": "X" * 100}]}
+                {"role": "user", "content": [{"type": "tool_result", "tool_use_id": str(i), "content": "X" * 8000}]}
             )
-        n = s._prune_history(keep=6)
-        self.assertEqual(n, 7)  # 전체 20 중 앞 14 만 대상 — tool_result 는 그 절반
-        self.assertEqual(s.messages[1]["content"][0]["content"], "[pruned]")
-        self.assertEqual(s.messages[-1]["content"][0]["content"], "X" * 100)  # 최근 보존
-        self.assertEqual(s._prune_history(keep=6), 0)  # 재실행 멱등
+        window = rp.profile.context_window
+        s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=int(window * 0.85)))
+        self.assertIn("회수됨", s.messages[1]["content"][0]["content"])
+        self.assertEqual(s.messages[-1]["content"][0]["content"], "X" * 8000)  # 최근 보존
+        # 재실행 멱등 — 회수할 게 없으면 최소 회수 게이트가 히스토리를 그대로 둔다
+        before = list(s.messages)
+        s.huginn.note_usage(int(window * 0.85))
+        s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=int(window * 0.85)))
+        self.assertEqual(s.messages, before)
 
     def test_prune_triggers_on_unknown_window_via_fallback(self):
         """CUS-248 — 창 미상(profile=0, openai_compat) 프로바이더도 폴백 상한으로 프룬이 걸린다."""
-        from asgard.agent.session import _FALLBACK_CONTEXT_WINDOW, AgentSession, SessionResult
+        from asgard.agent.session import _FALLBACK_CONTEXT_WINDOW, SessionResult
         from asgard.providers import PROVIDERS, ResolvedProvider
 
         rp = ResolvedProvider(profile=PROVIDERS["openai_compat"], model="m", api_key="k")
         self.assertEqual(rp.profile.context_window, 0)  # 전제 — 창 미상
-        s = AgentSession(None, rp, self.root, "sys")
-        for i in range(10):
-            s.messages.append({"role": "tool", "content": f"out-{i}" + "X" * 100})
-        r = SessionResult(text="", stop_reason="", context_tokens=int(_FALLBACK_CONTEXT_WINDOW * 0.9))
-        s._maybe_prune(r)
-        self.assertEqual(s.messages[0]["content"], "[pruned]")
-        self.assertNotEqual(s.messages[-1]["content"], "[pruned]")  # 최근 보존
+        s = self._session(rp)
+        self.assertEqual(s._window(), _FALLBACK_CONTEXT_WINDOW)
+        # 프룬(80%)과 요약(90%) 사이 — 이 단계에서 요약 LLM 은 호출되지 않아야 한다
+        s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=int(_FALLBACK_CONTEXT_WINDOW * 0.85)))
+        self.assertIn("회수됨", s.messages[0]["content"])
+        self.assertNotIn("회수됨", s.messages[-1]["content"])  # 최근 보존
+        self.assertEqual(s.huginn.compressions, 0)  # 요약 미발동
 
     def test_config_context_window_overrides_fallback(self):
         """config [provider] context_window — 폴백보다 작은 실제 창을 알려 조기 프룬."""
         from dataclasses import replace
 
-        from asgard.agent.session import AgentSession, SessionResult
+        from asgard.agent.session import SessionResult
         from asgard.providers import PROVIDERS, ResolvedProvider
 
         rp = replace(
             ResolvedProvider(profile=PROVIDERS["openai_compat"], model="m", api_key="k"), context_window=10_000
         )
-        s = AgentSession(None, rp, self.root, "sys")
-        for i in range(10):
-            s.messages.append({"role": "tool", "content": "X" * 100})
-        s._maybe_prune(SessionResult(text="", stop_reason="", context_tokens=9_000))
-        self.assertEqual(s.messages[0]["content"], "[pruned]")
+        s = self._session(rp)
+        self.assertEqual(s._window(), 10_000)
+        s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=8_500))
+        self.assertIn("회수됨", s.messages[0]["content"])
+
+    def test_below_prune_threshold_leaves_history_alone(self):
+        from asgard.agent.session import SessionResult
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="m", api_key="k")
+        s = self._session(rp)
+        before = list(s.messages)
+        s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=1_000))
+        self.assertEqual(s.messages, before)
+
+    def test_compression_failure_never_kills_the_session(self):
+        """압축은 편의 층이다 — 엔진이 터져도 턴은 계속돼야 한다 (fail-open)."""
+        from unittest import mock
+
+        from asgard.agent.session import SessionResult
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="m", api_key="k")
+        s = self._session(rp)
+        before = list(s.messages)
+        with mock.patch.object(type(s.huginn), "compress", side_effect=RuntimeError("boom")):
+            s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=190_000))
+        self.assertEqual(s.messages, before)
 
     def test_resolve_parses_context_window_from_project_config(self):
         from asgard.providers import resolve
