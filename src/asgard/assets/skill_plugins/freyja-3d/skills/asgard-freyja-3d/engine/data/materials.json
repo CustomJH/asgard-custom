@@ -1,0 +1,29 @@
+{
+  "version": 1,
+  "space": "linear",
+  "note": "baseColor 는 glTF baseColorFactor(선형 0–1, RGBA). 보정 기준은 lane-art.md 의 PBR 범위: 비금속 알베도 30–240 sRGB, 순금속(metallic≥0.95) 반사율 70–100%. 값의 계보는 Adobe Substance PBR 차트·Karis(UE4) 측정치 계열이다. 여기 없는 재질(투과 유리, 클리어코트, 이방성 헤어)은 프리셋으로 흉내 내지 말고 escalation.md 로 승급한다.",
+  "presets": {
+    "steel": { "family": "metal", "use": "기계 가공 강 — 하드서피스 기본값", "baseColor": [0.75, 0.77, 0.82, 1], "metallic": 1.0, "roughness": 0.35 },
+    "aluminum": { "family": "metal", "use": "새시·방열판·항공 부품", "baseColor": [0.91, 0.92, 0.92, 1], "metallic": 1.0, "roughness": 0.4 },
+    "chrome": { "family": "metal", "use": "도금 마감 — 거울 반사, 환경 없이는 죽는다", "baseColor": [0.55, 0.56, 0.57, 1], "metallic": 1.0, "roughness": 0.08 },
+    "gold": { "family": "metal", "use": "장식·커넥터 도금", "baseColor": [1.0, 0.78, 0.34, 1], "metallic": 1.0, "roughness": 0.28 },
+    "copper": { "family": "metal", "use": "배관·전기·조리기구", "baseColor": [0.95, 0.64, 0.54, 1], "metallic": 1.0, "roughness": 0.3 },
+    "brass": { "family": "metal", "use": "악기·밸브·황동 부속", "baseColor": [0.91, 0.78, 0.42, 1], "metallic": 1.0, "roughness": 0.35 },
+    "bronze": { "family": "metal", "use": "주물 동상·베어링", "baseColor": [0.72, 0.47, 0.28, 1], "metallic": 1.0, "roughness": 0.4 },
+    "titanium": { "family": "metal", "use": "경량 구조재·의료", "baseColor": [0.62, 0.58, 0.54, 1], "metallic": 1.0, "roughness": 0.4 },
+    "iron_cast": { "family": "metal", "use": "주철 — 거친 표면의 어두운 회금속", "baseColor": [0.56, 0.57, 0.58, 1], "metallic": 1.0, "roughness": 0.65 },
+    "gunmetal": { "family": "metal", "use": "산화 피막 강 — 무기·공구의 어두운 마감", "baseColor": [0.35, 0.37, 0.4, 1], "metallic": 0.9, "roughness": 0.45 },
+    "plastic": { "family": "dielectric", "use": "범용 사출 플라스틱", "baseColor": [0.78, 0.78, 0.8, 1], "metallic": 0.0, "roughness": 0.5 },
+    "resin": { "family": "dielectric", "use": "SLA 출력물·에폭시", "baseColor": [0.62, 0.66, 0.72, 1], "metallic": 0.0, "roughness": 0.4 },
+    "slate": { "family": "dielectric", "use": "석판·짙은 무광 표면", "baseColor": [0.16, 0.2, 0.27, 1], "metallic": 0.1, "roughness": 0.7 },
+    "leather": { "family": "dielectric", "use": "그립·스트랩·시트", "baseColor": [0.24, 0.17, 0.12, 1], "metallic": 0.0, "roughness": 0.85 },
+    "ivory": { "family": "dielectric", "use": "상아색 손잡이·건반", "baseColor": [0.87, 0.84, 0.76, 1], "metallic": 0.0, "roughness": 0.55 },
+    "rubber": { "family": "dielectric", "use": "타이어·개스킷·버튼", "baseColor": [0.03, 0.03, 0.033, 1], "metallic": 0.0, "roughness": 0.9 },
+    "wood_oak": { "family": "dielectric", "use": "밝은 가구목", "baseColor": [0.43, 0.29, 0.16, 1], "metallic": 0.0, "roughness": 0.7 },
+    "wood_walnut": { "family": "dielectric", "use": "짙은 가구목·총목", "baseColor": [0.16, 0.09, 0.05, 1], "metallic": 0.0, "roughness": 0.6 },
+    "ceramic": { "family": "dielectric", "use": "도기·타일·애자", "baseColor": [0.85, 0.84, 0.82, 1], "metallic": 0.0, "roughness": 0.15 },
+    "concrete": { "family": "dielectric", "use": "구조 콘크리트·받침", "baseColor": [0.51, 0.5, 0.47, 1], "metallic": 0.0, "roughness": 0.9 },
+    "carbon_fiber": { "family": "dielectric", "use": "카본 패널 — 직조 노멀은 텍스처 몫", "baseColor": [0.02, 0.02, 0.02, 1], "metallic": 0.0, "roughness": 0.45 },
+    "fabric_canvas": { "family": "dielectric", "use": "캔버스·웨빙", "baseColor": [0.42, 0.39, 0.33, 1], "metallic": 0.0, "roughness": 0.95 }
+  }
+}
