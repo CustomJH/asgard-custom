@@ -1,0 +1,116 @@
+{
+  "version": 1,
+  "verified": "2026-07-26",
+  "note": "조명 리그·카메라·프레젠테이션 프리셋 — lookdev.md 와 함께 쓴다. 강도는 키=1.0 상대값, 방위각은 카메라 축 기준(0°=카메라 위치, 양수=카메라 왼쪽), 고도는 피사체 중심 기준, 크기는 피사체 최대 치수 S 의 배수다. 출처는 research.md 룩뎁 절.",
+  "tone": {
+    "realtime_default": "AgX",
+    "alternatives": ["ACESFilmic", "Neutral"],
+    "interchange": "ACES(교환·합성용, 2.0 이 지원되는 곳)",
+    "bloom_threshold": 1.0,
+    "rules": [
+      "톤 변환 없는 선형 출력 금지 — 하이라이트가 클리핑된다",
+      "블룸 임계는 1.0 — 그 아래로 내려 억지로 보이게 만든 블룸이 아마추어 헤일로다",
+      "포스트는 깨끗하게 노출된 베이스에 하나씩 얹는다. 조명 결함을 포스트로 가리는 것 자체가 초보 패턴이다"
+    ]
+  },
+  "ratios": {
+    "commercial": { "key_fill": "2:1", "read": "밝고 친근한 상업 톤" },
+    "standard": { "key_fill": "3:1", "read": "표준 시작점 — 룩뎁 보정 리그도 3:1–4:1" },
+    "dramatic": { "key_fill": "8:1", "read": "무디·드라마" }
+  },
+  "rigs": {
+    "commercial_three_point": {
+      "use": "밝은 팩샷·상업 제품",
+      "lights": [
+        { "role": "key", "azimuth_deg": 30, "elevation_deg": 30, "intensity": 1.0, "kelvin": 5600, "size_s": 1.25 },
+        { "role": "fill", "azimuth_deg": -45, "elevation_deg": 0, "intensity": 0.5, "kelvin": 5600, "size_s": 1.5, "note": "그림자 캐스팅 끔" },
+        { "role": "rim", "azimuth_deg": 165, "elevation_deg": 45, "intensity": 1.2, "kelvin": 6300, "size_s": 0.5 }
+      ],
+      "camera": "product_packshot"
+    },
+    "dramatic_hero": {
+      "use": "무디한 히어로 소품 — 8:1",
+      "lights": [
+        { "role": "key", "azimuth_deg": 45, "elevation_deg": 45, "intensity": 1.0, "kelvin": 5000, "size_s": 0.75 },
+        { "role": "fill", "azimuth_deg": -60, "elevation_deg": 0, "intensity": 0.125, "kelvin": 7000, "size_s": 1.0 },
+        { "role": "rim", "azimuth_deg": 150, "elevation_deg": 30, "intensity": 1.8, "kelvin": 6500, "size_s": 0.5 }
+      ],
+      "camera": "hero_prop",
+      "note": "화면 값 배분 2/3 어둠 : 1/3 밝음"
+    },
+    "lookdev_neutral": {
+      "use": "보정·QA 리그 — 재질 검증",
+      "lights": [{ "role": "environment", "note": "중립 스튜디오 HDRI, 18% 그레이 구가 미드그레이로 나오게 노출 보정. 키:필 3:1–4:1" }],
+      "camera": "product_packshot",
+      "note": "룩뎁 턴테이블에는 그레이 구·크롬 구·맥베스 차트 트리오를 함께 넣는다"
+    },
+    "hdri_plus_kicker": {
+      "use": "효율 기본값 — HDRI + 보조광 2등 하이브리드",
+      "lights": [
+        { "role": "environment", "intensity": 1.0, "note": "가장 밝은 소스가 3/4 면에 반사되도록 회전" },
+        { "role": "fill", "azimuth_deg": -60, "elevation_deg": 10, "intensity": 0.4, "note": "그림자 쪽 면광 — 비율 제어. 접지 그림자는 이 실광이 만든다(HDRI 단독 그림자는 접지가 약하다)" },
+        { "role": "rim", "azimuth_deg": 165, "elevation_deg": 30, "intensity": 1.2, "note": "선택" }
+      ],
+      "camera": "product_packshot"
+    },
+    "bright_field_glass": {
+      "use": "유리·투명·화이트 온 화이트",
+      "lights": [
+        { "role": "background", "intensity": 1.5, "note": "흰 배경을 직접 조준하는 두 등 — 배경 휘도가 피사체의 약 1.5배" },
+        { "role": "negative", "azimuth_deg": 90, "note": "±90° 검은 카드가 어두운 엣지 라인을 그린다. 전면 직사광 없음" }
+      ],
+      "camera": "macro_detail"
+    },
+    "dark_field_luxury": {
+      "use": "주류·주얼리·블랙 온 블랙",
+      "lights": [
+        { "role": "rim", "azimuth_deg": 135, "elevation_deg": 8, "intensity": 1.0, "kelvin": 6000, "note": "스트립" },
+        { "role": "rim", "azimuth_deg": -135, "elevation_deg": 8, "intensity": 1.0, "kelvin": 6000, "note": "스트립" }
+      ],
+      "camera": "hero_prop",
+      "note": "검은 배경, 전면광 0 — 엣지만 빛난다"
+    },
+    "gradient_tabletop": {
+      "use": "광택면 럭셔리 — 그라디언트 스윕",
+      "lights": [
+        { "role": "key", "azimuth_deg": 180, "elevation_deg": 60, "intensity": 1.0, "kelvin": 5600, "size_s": 2.0, "note": "크고 확산된 면광을 비스듬히 — 광택면에 밝음→어둠 그라디언트가 쓸고 지나가게" },
+        { "role": "fill", "azimuth_deg": 0, "elevation_deg": 0, "intensity": 0.3, "note": "전면 흰 카드 반사" }
+      ],
+      "camera": "product_packshot"
+    },
+    "golden_hour_backlit": {
+      "use": "무드·환경 히어로 — 역광",
+      "lights": [
+        { "role": "key", "azimuth_deg": 160, "elevation_deg": 10, "intensity": 1.0, "kelvin": 3300, "note": "낮게 깔린 태양/HDRI — 림은 공짜로 온다" },
+        { "role": "fill", "azimuth_deg": 0, "elevation_deg": 45, "intensity": 0.25, "kelvin": 7000, "note": "차가운 하늘 필 — 웜/쿨 대비는 선언된 의도" }
+      ],
+      "camera": "environment"
+    }
+  },
+  "cameras": {
+    "product_packshot": { "focal_mm_equiv": [85, 100], "fov_deg": [20, 30], "angle": "3/4 뷰(피사체 45° 회전)", "note": "50mm 미만은 광각 왜곡 — 팩샷 금지" },
+    "hero_prop": { "fov_deg": [20, 30], "angle": "로우 앵글 + 3/4", "note": "좁은 FOV 는 반직교의 기념비적 읽기 — Marmoset 관례" },
+    "macro_detail": { "focal_mm_equiv": [100], "note": "각인·보석·미시 디테일" },
+    "environment": { "focal_mm_equiv": [24, 35], "height_m": 2.0, "tilt_deg": -15, "note": "익스테리어 히어로 35mm/2m/-15°, 마스터플랜 24mm" },
+    "interior": { "fov_deg": [45, 60] },
+    "default_warning": "three.js PerspectiveCamera 기본 FOV 50° 눈높이 정중앙은 미결정이다 — 용도별 프리셋에서 골라라"
+  },
+  "composition": {
+    "negative_space": "프리미엄·히어로 샷은 빈 공간 60% 이상 — 40% 미만이면 어수선하게 읽힌다",
+    "value_split": "2/3 어둠 : 1/3 밝음(또는 역) — 컨셉 아트 차용",
+    "three_quarter": "3/4 뷰가 정면 대비 관찰 지표 +27% — 데드센터 정면은 선택일 때만"
+  },
+  "grounding": {
+    "shadow_catcher": "그림자(선택적으로 반사)만 받는 보이지 않는 바닥 — 접지의 표준",
+    "cyclorama": "섀도 캐처 재질로 만드는 무한 배경 — 수평선 없이 그림자·반사 유지",
+    "reflection_floor": "바닥 반사는 절제 — 풀 강도 거울 바닥은 초보 티",
+    "scale_cues": "치수 정확성 + 익숙한 참조물 — 스케일 혼란은 지명된 리얼리즘 킬러"
+  },
+  "turntable": {
+    "frames": 288,
+    "fps": 24,
+    "seconds_per_rotation": 12,
+    "loop": "첫 키프레임을 마지막에 복제하고 마지막 프레임을 버려야 이음매 없는 루프",
+    "note": "부드러움은 fps 가 아니라 프레임 수에서 온다. 8초/회전보다 빠르면 조급하게 읽힌다. 마켓 규격은 스틸 12–36장 1920×1080"
+  }
+}

@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "verified": "2026-07-26",
+  "note": "검증된 CC0/허용적 자산의 실명 카탈로그 — lane-asset.md 의 수렵 규약과 함께 쓴다. 내려받은 자산도 반드시 파이프라인(mesh_audit·scene_audit)을 태우고, 출처·라이선스를 ASSETS.md 에 한 줄씩 적는다. URL 패턴·슬러그·라이선스는 verified 날짜에 실제 요청으로 확인된 값이다 — 깨진 링크를 만나면 각 소스의 API 로 재조회한다.",
+  "sources": {
+    "polyhaven": {
+      "license": "CC0",
+      "site": "https://polyhaven.com",
+      "api": "https://api.polyhaven.com/assets?type=hdris|textures|models",
+      "files_api": "https://api.polyhaven.com/files/{slug}",
+      "hdri_url": "https://dl.polyhaven.org/file/ph-assets/HDRIs/hdr/{res}/{slug}_{res}.hdr",
+      "texture_url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/{res}/{slug}/{slug}_{map}_{res}.jpg",
+      "texture_maps": ["diff", "nor_gl", "rough", "ao", "disp", "arm"],
+      "hdris": {
+        "studio_neutral": ["studio_small_08", "studio_small_09", "studio_small_03", "brown_photostudio_02", "photo_studio_01"],
+        "golden_hour": ["venice_sunset", "spruit_sunrise", "kiara_1_dawn", "the_sky_is_on_fire", "belfast_sunset_puresky", "kloppenheim_06_puresky"],
+        "daylight": ["kloofendal_48d_partly_cloudy_puresky", "lilienstein", "meadow_2", "noon_grass"],
+        "overcast": ["overcast_soil_puresky", "cannon", "mud_road_puresky", "potsdamer_platz", "urban_street_01"],
+        "night": ["moonless_golf", "dikhololo_night", "satara_night", "kloppenheim_02", "shanghai_bund", "rogland_clear_night"],
+        "indoor_industrial": ["abandoned_workshop", "peppermint_powerplant"]
+      },
+      "textures": {
+        "metal": ["metal_plate", "green_metal_rust", "rust_coarse_01", "rusty_metal_02"],
+        "wood": ["plywood", "oak_veneer_01", "wood_table_001", "weathered_brown_planks", "wood_floor", "rough_wood"],
+        "leather": ["leather_red_02", "brown_leather", "leather_white"],
+        "fabric": ["fabric_pattern_07", "denmin_fabric_02", "book_pattern"],
+        "concrete_plaster": ["concrete_floor_worn_001", "concrete_floor_02", "painted_plaster_wall", "white_plaster_02"],
+        "stone_floor": ["marble_01", "granite_tile", "floor_tiles_06", "asphalt_02", "red_brick"]
+      },
+      "warnings": ["denmin_fabric_02 의 오타는 실제 슬러그다 — 고치면 404"]
+    },
+    "ambientcg": {
+      "license": "CC0",
+      "site": "https://ambientcg.com",
+      "api": "https://ambientcg.com/api/v2/full_json?type=Material&sort=Popular&limit=30",
+      "download_url": "https://ambientcg.com/get?file={id}_{res}-{format}.zip",
+      "view_url": "https://ambientcg.com/view?id={id}",
+      "materials": [
+        "Metal032", "Metal049A", "CorrugatedSteel009",
+        "Wood051", "Wood095", "WoodFloor051",
+        "Bricks104", "Concrete034", "Concrete048",
+        "PavingStones151", "Tiles141",
+        "Grass001", "Grass005", "Ground103", "Rock064", "Asphalt033"
+      ]
+    },
+    "kenney": {
+      "license": "CC0",
+      "site": "https://kenney.nl/assets",
+      "style": "로우폴리 게임 킷 — 프로토타입·스타일라이즈드 씬의 소품·환경",
+      "packs": {
+        "city-kit-commercial": "https://kenney.nl/assets/city-kit-commercial",
+        "city-kit-roads": "https://kenney.nl/assets/city-kit-roads",
+        "city-kit-suburban": "https://kenney.nl/assets/city-kit-suburban",
+        "nature-kit": "https://kenney.nl/assets/nature-kit",
+        "castle-kit": "https://kenney.nl/assets/castle-kit",
+        "furniture-kit": "https://kenney.nl/assets/furniture-kit",
+        "car-kit": "https://kenney.nl/assets/car-kit",
+        "space-kit": "https://kenney.nl/assets/space-kit",
+        "space-station-kit": "https://kenney.nl/assets/space-station-kit",
+        "food-kit": "https://kenney.nl/assets/food-kit",
+        "platformer-kit": "https://kenney.nl/assets/platformer-kit",
+        "pirate-kit": "https://kenney.nl/assets/pirate-kit",
+        "racing-kit": "https://kenney.nl/assets/racing-kit",
+        "graveyard-kit": "https://kenney.nl/assets/graveyard-kit",
+        "survival-kit": "https://kenney.nl/assets/survival-kit",
+        "fantasy-town-kit": "https://kenney.nl/assets/fantasy-town-kit",
+        "tower-defense-kit": "https://kenney.nl/assets/tower-defense-kit",
+        "train-kit": "https://kenney.nl/assets/train-kit",
+        "blaster-kit": "https://kenney.nl/assets/blaster-kit",
+        "prototype-kit": "https://kenney.nl/assets/prototype-kit",
+        "mini-dungeon": "https://kenney.nl/assets/mini-dungeon",
+        "mini-arena": "https://kenney.nl/assets/mini-arena"
+      }
+    },
+    "quaternius": {
+      "license": "CC0",
+      "site": "https://quaternius.com",
+      "url_pattern": "https://quaternius.com/packs/{slug}.html",
+      "packs": [
+        "ultimatenature", "medievalvillage", "downtowncitymegakit"
+      ],
+      "note": "캐릭터·환경 100+ 팩. 위 3종은 슬러그 실검증, 나머지는 홈페이지에서 슬러그를 확인해 같은 패턴으로 받는다(Ultimate RPG/Guns/Food, Modular Sci-Fi MegaKit, Stylized Nature MegaKit 등)."
+    },
+    "khronos_gltf_samples": {
+      "site": "https://github.com/KhronosGroup/glTF-Sample-Assets",
+      "index": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/model-index.json",
+      "glb_url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/{name}/glTF-Binary/{name}.glb",
+      "gltf_url": "https://raw.githubusercontent.com/KhronosGroup/glTF-Sample-Assets/main/Models/{name}/glTF/{name}.gltf",
+      "note": "라이선스는 모델별이다 — 각 모델의 metadata.json 이 정본. 아래는 실검증 값.",
+      "models": [
+        { "name": "FlightHelmet", "license": "CC0", "format": "gltf", "use": "쇼케이스급 PBR 레퍼런스" },
+        { "name": "SciFiHelmet", "license": "CC0", "format": "gltf", "use": "하드서피스 PBR" },
+        { "name": "BoomBox", "license": "CC0", "format": "glb", "use": "소형 제품 PBR" },
+        { "name": "WaterBottle", "license": "CC0", "format": "glb", "use": "제품 뷰 기본" },
+        { "name": "Avocado", "license": "CC0", "format": "glb", "use": "유기물 — Draco/양자화 변형 동봉" },
+        { "name": "Lantern", "license": "CC0", "format": "glb", "use": "소품 + 이미시브" },
+        { "name": "ToyCar", "license": "CC0", "format": "glb", "use": "확장 쇼케이스(sheen·transmission·texture_transform)" },
+        { "name": "Corset", "license": "CC0", "format": "glb", "use": "소프트굿즈" },
+        { "name": "AntiqueCamera", "license": "CC0(로고 상표 유보)", "format": "glb", "use": "복합 재질 소품" },
+        { "name": "DragonAttenuation", "license": "CC0(스캔 고지)", "format": "glb", "use": "투과·볼륨 데모" },
+        { "name": "MetalRoughSpheres", "license": "CC-BY 4.0", "format": "glb", "use": "PBR 보정 기준구 — 재질 검증용" },
+        { "name": "MaterialsVariantsShoe", "license": "CC-BY 4.0", "format": "glb", "use": "KHR_materials_variants 데모" },
+        { "name": "DamagedHelmet", "license": "CC-BY + CC-BY-NC", "format": "glb", "use": "비상업 한정 — 상업 배포 제외" },
+        { "name": "Sponza", "license": "CRYENGINE 계약", "format": "gltf", "use": "참조 전용 — 재배포 불가" }
+      ]
+    }
+  }
+}
