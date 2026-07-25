@@ -161,9 +161,9 @@ verdict를 emit한 **후에**, 이번 run의 rubric FAIL들을 한 번 스캔해
 ### 후보 조건 (둘 중 하나)
 
 1. **반복 rubric 위반** — 같은 rubric item의 FAIL이 이번 run에서 2회 이상 (여러 artifact/locale에 걸쳐, 또는 round 1·2 연속 동일 item). item을 axis로 환원: [1] Brand consistency → 위반 토큰 종류에 따라 color/spacing/radius, [2] Typography hierarchy → typo, [3] Voice register → voice
-2. **기존 pending preference와 매칭** — `.vanadis/preferences.md`가 존재하면 read해서, FAIL이 `status: pending` 엔트리의 scope와 같은 축이면 1회여도 후보
+2. **기존 pending preference와 매칭** — `.asgard/.vanadis/engine1/preferences.md`가 존재하면 read해서, FAIL이 `status: pending` 엔트리의 scope와 같은 축이면 1회여도 후보
 
-`.vanadis/preferences.md`가 없으면 조건 2는 생략 — 파일을 만들지 않는다. a11y/performance/links([6]-[8])는 취향이 아니라 hard rule — 후보에서 제외.
+`.asgard/.vanadis/engine1/preferences.md`가 없으면 조건 2는 생략 — 파일을 만들지 않는다. a11y/performance/links([6]-[8])는 취향이 아니라 hard rule — 후보에서 제외.
 
 ### 제안 (run당 질문 1개 max)
 
@@ -181,4 +181,4 @@ verdict를 emit한 **후에**, 이번 run의 rubric FAIL들을 한 번 스캔해
 - run당 질문 2개 이상 금지, 거절된 후보의 같은 세션 재제안 금지
 - 이 phase가 verdict나 round cap에 영향을 주면 안 됨 (rubric 8 items 고정 유지)
 
-> **수동 검증**: KR/EN 두 artifact에서 rubric [3] Voice register가 모두 FAIL인 QA를 돌리면, verdict 출력 후 "이 패턴, 취향으로 기록할까요?" 질문이 정확히 1회 뜨고, 동의 시 `.vanadis/preferences.md`에 `scope: voice` / `signal: review` / `confidence: inferred` / `status: pending` 엔트리가 append되어야 한다 (artifact·DESIGN.md는 변경 없음).
+> **수동 검증**: KR/EN 두 artifact에서 rubric [3] Voice register가 모두 FAIL인 QA를 돌리면, verdict 출력 후 "이 패턴, 취향으로 기록할까요?" 질문이 정확히 1회 뜨고, 동의 시 `.asgard/.vanadis/engine1/preferences.md`에 `scope: voice` / `signal: review` / `confidence: inferred` / `status: pending` 엔트리가 append되어야 한다 (artifact·DESIGN.md는 변경 없음).

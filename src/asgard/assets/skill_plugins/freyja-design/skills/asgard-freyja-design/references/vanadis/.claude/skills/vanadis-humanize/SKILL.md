@@ -21,7 +21,7 @@ description: "제품 문서·UX 카피·랜딩 카피를 KO/EN/JA/ZH-CN/ZH-TW �
 
 ## 시작 전에 읽을 것
 
-1. 프로젝트 `DESIGN.md` §10 voice와 `.vanadis/preferences.md`
+1. 프로젝트 `DESIGN.md` §10 voice와 `.asgard/.vanadis/engine1/preferences.md`
 2. 대상 파일과 같은 제품의 이미 승인된 카피
 3. [`references/locale-playbooks.md`](./references/locale-playbooks.md)의 **해당 locale 섹션만**
 4. 출처와 차용 범위가 필요하면 [`references/sources.md`](./references/sources.md)

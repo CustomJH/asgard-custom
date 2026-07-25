@@ -32,7 +32,7 @@ const h2set = (md) =>
 
 const rootDesign = read(join(dir, 'DESIGN.md'));
 const refDesign = read(join(dir, '.claude/data/references', ref, 'DESIGN.md'));
-const initCtxRaw = read(join(dir, '.vanadis/init-context.json'));
+const initCtxRaw = read(join(dir, '.asgard/.vanadis/engine1/init-context.json'));
 
 const checks = {};
 

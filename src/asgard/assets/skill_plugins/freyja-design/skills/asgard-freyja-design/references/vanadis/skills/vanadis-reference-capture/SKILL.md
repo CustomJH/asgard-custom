@@ -61,7 +61,7 @@ reference-capture가 어디까지 가져올지는 사용자 의도에 따라 두
 답: clone / inspired (기본값: inspired)
 ```
 
-이 선택은 `.vanadis/init-context.json`의 `mode` 필드에 저장되어 후속 vanadis:init / vanadis:harness / vanadis:apply가 일관되게 사용한다.
+이 선택은 `.asgard/.vanadis/engine1/init-context.json`의 `mode` 필드에 저장되어 후속 vanadis:init / vanadis:harness / vanadis:apply가 일관되게 사용한다.
 
 이미 vanadis:harness Step 3.7에서 mode를 묻고 진입했으면 Phase 0 skip.
 

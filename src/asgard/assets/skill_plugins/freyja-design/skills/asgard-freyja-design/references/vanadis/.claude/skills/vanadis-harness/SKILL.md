@@ -64,7 +64,7 @@ Step 4에서 전용 role spawn이 여전히 불가능하면 inline persona가 �
 ### 2.1 기존 run 재사용 체크
 
 ```bash
-ls -t .vanadis/runs 2>/dev/null | head -1
+ls -t .asgard/.vanadis/engine1/runs 2>/dev/null | head -1
 ```
 
 출력 있으면 그 디렉토리의 `task.md`를 Read해서 사용자 task와 의미적으로 일치하는지 확인. 일치하면 그 run 재사용 — Step 3으로 점프.
@@ -85,7 +85,7 @@ const s = process.argv[1].toLowerCase().trim()
 console.log(s.slice(0,40) || 'untitled');
 " "<EXTRACTED_TASK>")
 RUN_ID="run-${TS}-${SLUG}"
-RUN_DIR=".vanadis/runs/${RUN_ID}"
+RUN_DIR=".asgard/.vanadis/engine1/runs/${RUN_ID}"
 
 # 2.2.2 — 표준 서브폴더 생성
 mkdir -p "${RUN_DIR}"/{wireframes,components,assets/briefs,assets/fallback,assets/pinterest-refs,eval/screenshots,persona-feedback,handoff,checkpoints}
@@ -106,12 +106,12 @@ EOF
 # 2.2.4 — run.log
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] run initialized" > "${RUN_DIR}/run.log"
 
-# 2.2.5 — .vanadis/.gitignore (idempotent)
-mkdir -p .vanadis
-[ -f .vanadis/.gitignore ] || printf "runs/\ncache/\n" > .vanadis/.gitignore
+# 2.2.5 — 산출물 루트. .asgard/ 는 asgard init 이 만들고 이미 git 밖이므로
+#          ignore 파일을 심지 않는다 — 만들지도, 고치지도 말 것.
+mkdir -p .asgard/.vanadis/engine1
 
 # 2.2.6 — INDEX.md (idempotent header + append)
-INDEX=".vanadis/runs/INDEX.md"
+INDEX=".asgard/.vanadis/engine1/runs/INDEX.md"
 [ -f "${INDEX}" ] || cat > "${INDEX}" <<EOF
 # Harness Runs Index
 
@@ -137,7 +137,7 @@ test -d "${RUN_DIR}" && test -f "${RUN_DIR}/task.md" && echo "OK" || echo "FAIL"
 `OK`가 출력되지 않으면 master는 절대 spawn하지 않는다. 사용자에게:
 
 ```
-하네스 부트스트랩이 실패했어요 (run dir or task.md 누락). 디스크 권한·경로 문제일 수 있어요. 다시 시도하거나 .vanadis/ 디렉토리를 정리해주세요.
+하네스 부트스트랩이 실패했어요 (run dir or task.md 누락). 디스크 권한·경로 문제일 수 있어요. 다시 시도하거나 .asgard/.vanadis/engine1/ 디렉토리를 정리해주세요.
 ```
 
 이 gate를 통과해야만 Step 2.5로.
@@ -582,7 +582,7 @@ master에게 전달되는 prompt 첫 단락은 **반드시** 다음을 포함:
       4. `node_modules/vanadis-cli/web/references/<id>/DESIGN.md` (로컬 npm 설치 직접 경로)
       5. `web/references/<id>/DESIGN.md` (개발 레포)
       6. `https://vanadis.kr/<id>/design.md` 를 fetch (WebFetch 또는 `curl -fsSL`) — 1~5가 모두 없을 때. 200이면 본문이 곧 reference DESIGN.md. 가져온 내용은 **활성 채널의 첫 writable data dir** (`.codex/data`, `.claude/data`, `.opencode/data`) 아래 `references/<id>/DESIGN.md`에 캐시한다. 채널을 판별할 수 없으면 1→3 중 먼저 존재하고 쓸 수 있는 dir을 사용하고, 모두 없으면 활성 host 채널 dir을 생성한다.
-   2. 사용자가 같은 brand로 **이미 한 번 실험**했으면 (`.vanadis/runs/INDEX.md`에 기록) → 2순위 사용해서 variation 제공
+   2. 사용자가 같은 brand로 **이미 한 번 실험**했으면 (`.asgard/.vanadis/engine1/runs/INDEX.md`에 기록) → 2순위 사용해서 variation 제공
    3. 사용자가 명시 ("center 정렬로", "carousel로") → 그대로 따름
    4. 선택된 archetype을 `experiment-meta.json`의 `hero_archetype` 필드에 명시 (gallery 표시용)
    5. 사용자에게 한 줄 알림: "Hero archetype: `center-text` 사용 — Linear-style minimal SaaS 매칭"
@@ -683,7 +683,7 @@ Master가 체크포인트에서 turn을 종료한 후 다음 사용자 메시지
 ## 산출물 위치 (master가 emit, 이 스킬은 안내만)
 
 ```
-.vanadis/runs/run-<ts>-<slug>/
+.asgard/.vanadis/engine1/runs/run-<ts>-<slug>/
 ├── task.md
 ├── brief.md
 ├── references-cited.md

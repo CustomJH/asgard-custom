@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // vanadis:installed-hook sha256=f539948ceb96797081ba2669c7820149a7b1784659b5f950d1b08f2a9945b30e
-// Shared writer for .vanadis/preferences.md — appends entries in the EXACT
+// Shared writer for .asgard/.vanadis/engine1/preferences.md — appends entries in the EXACT
 // canonical format the vanadis:remember skill writes (skills/vanadis-remember/SKILL.md).
 // The remember format is the single source of truth; this writer must stay
 // byte-compatible with what lib/preferences-parser.cjs reads:
@@ -62,7 +62,7 @@ function appendEntry({ dir, scope, signal, confidence, body, sourceAgent, source
   if (!dir || !scope || !body) {
     return { written: false, reason: 'invalid-args', id: '' };
   }
-  const prefPath = path.join(dir, '.vanadis', 'preferences.md');
+  const prefPath = path.join(dir, '.asgard', '.vanadis', 'engine1', 'preferences.md');
   let text = '';
   try {
     if (fs.existsSync(prefPath)) text = fs.readFileSync(prefPath, 'utf8');

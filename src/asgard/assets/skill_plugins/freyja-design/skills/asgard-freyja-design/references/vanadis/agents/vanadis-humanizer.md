@@ -13,7 +13,7 @@ model: opus
 
 1. 활성 host의 skill root에서 `vanadis-humanize/SKILL.md`를 끝까지 읽는다.
 2. 그 문서가 지시한 target locale의 `references/locale-playbooks.md` 섹션을 읽는다.
-3. 프로젝트 `DESIGN.md` §10, `.vanadis/preferences.md`, 대상 파일, 승인된 인접 카피를 읽는다.
+3. 프로젝트 `DESIGN.md` §10, `.asgard/.vanadis/engine1/preferences.md`, 대상 파일, 승인된 인접 카피를 읽는다.
 4. 입력에서 mode(`AUDIT|REWRITE|LOCALE`), locale, target, output을 확인한다.
 
 ## Work contract

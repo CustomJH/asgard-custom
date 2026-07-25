@@ -160,7 +160,7 @@ Phase 4.2~6은 건너뛴다.
 
 ### 4.3 init-context 기록
 
-`.vanadis/init-context.json` 작성 (없으면 mkdir):
+`.asgard/.vanadis/engine1/init-context.json` 작성 (없으면 mkdir):
 ```json
 {
   "reference_id": "<id>",
@@ -181,7 +181,7 @@ Phase 4.2~6은 건너뛴다.
 키로 함께 기록하고, builder URL은 출처 표기용으로만 보존 — fetch하지 말 것.
 
 `mode` 값 결정:
-- vanadis:reference-capture가 먼저 돌았으면 그 결과 사용 (`.vanadis/init-context.json` 기존값)
+- vanadis:reference-capture가 먼저 돌았으면 그 결과 사용 (`.asgard/.vanadis/engine1/init-context.json` 기존값)
 - 아직 정해지지 않았으면 사용자에게 묻기 (vanadis:reference-capture Phase 0과 동일한 prompt). 라이브 캡쳐 없이 vanadis:init만 단독으로 도는 경우는 사실상 inspired 외엔 의미 없으므로 기본 `inspired`.
 
 `axes` 표준 키: `color.hue_deg` (도), `color.saturation_pct` (%p), `color.lightness_pct` (%p), `radius.delta_px` (px), `density.shift` (-2 ~ +2), `tracking.shift` (-0.01em ~ +0.01em).
@@ -208,7 +208,7 @@ DESIGN.md의 §11-13 (Brand Narrative / Principles / Personas)에는 사실 정�
 
 ## Phase 5 — Hybrid Variation 생성 (핵심)
 
-`reference_md` + `.vanadis/init-context.json` `delta_set`을 입력으로 새 `DESIGN.md` 작성.
+`reference_md` + `.asgard/.vanadis/engine1/init-context.json` `delta_set`을 입력으로 새 `DESIGN.md` 작성.
 
 ### Phase 5A — Voice Fingerprint 내부 추출 (silent)
 
@@ -274,14 +274,14 @@ Skill: vanadis:sync
 args: --force
 ```
 
-vanadis:sync skill이 `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/vanadis-design.mdc` shim 3종을 생성/갱신하고 `.vanadis/sync.lock.json` 업데이트.
+vanadis:sync skill이 `CLAUDE.md`, `AGENTS.md`, `.cursor/rules/vanadis-design.mdc` shim 3종을 생성/갱신하고 `.asgard/.vanadis/engine1/sync.lock.json` 업데이트.
 
 **옵션 B**: vanadis:sync skill을 호출할 수 없는 환경이면 직접 Write로 shim 작성. 템플릿은 `.claude/skills/vanadis-sync/SKILL.md` (설치 경로; dev 레포에서는 `skills/vanadis-sync/SKILL.md`) §"shim body" 참조. 최소한:
 - `CLAUDE.md`: managed block ("<!-- vanadis:managed:start --> ... <!-- vanadis:managed:end -->") 안에 DESIGN.md 참조 + 핵심 token 요약
 - `AGENTS.md`: 동일 패턴
 - `.cursor/rules/vanadis-design.mdc`: 전체 파일 vanadis 전용 — frontmatter + DESIGN.md 인용
 
-이후 `.vanadis/sync.lock.json`에 각 shim의 hash 기록.
+이후 `.asgard/.vanadis/engine1/sync.lock.json`에 각 shim의 hash 기록.
 
 ## Phase 7 — 요약 출력
 
@@ -315,6 +315,6 @@ Next:
 - Phase 5A fingerprint를 출력하지 말 것 (내부 전용).
 - `delta_set.axes`에 없는 token을 마음대로 바꾸지 말 것.
 - 레퍼런스에 없는 section/heading을 추가하지 말 것.
-- `.vanadis/init-context.json`을 직접 편집할 때 schema 어기지 말 것.
+- `.asgard/.vanadis/engine1/init-context.json`을 직접 편집할 때 schema 어기지 말 것.
 - DESIGN.md가 이미 있는데 백업 없이 덮어쓰지 말 것 (Phase 4.2 rename 절차 준수).
 - **존재하지 않는 CLI subcommand (`vanadis init recommend`, `vanadis init prepare`, `vanadis sync`)를 호출하지 말 것** — CLI는 bare installer와 `install-skills`, `doctor`만 제공한다.

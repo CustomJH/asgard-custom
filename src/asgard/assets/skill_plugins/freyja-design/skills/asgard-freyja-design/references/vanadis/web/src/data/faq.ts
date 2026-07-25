@@ -62,7 +62,7 @@ export const FAQ_EN: FaqEntry[] = [
   },
   {
     q: "How do preferences differ from DESIGN.md?",
-    a: '.vanadis/preferences.md is the running log of corrections (append-only). DESIGN.md is the canonical spec. Run "fold preferences" to merge by scope.',
+    a: '.asgard/.vanadis/engine1/preferences.md is the running log of corrections (append-only). DESIGN.md is the canonical spec. Run "fold preferences" to merge by scope.',
     jsonLd: false,
   },
   {
@@ -72,7 +72,7 @@ export const FAQ_EN: FaqEntry[] = [
   },
   {
     q: "What's a harness run?",
-    a: "Invoking /vanadis-harness <task> creates .vanadis/runs/<id>/ and steps through the 10 phases. Each phase emits artifacts. The final zip is v0/Cursor-ready.",
+    a: "Invoking /vanadis-harness <task> creates .asgard/.vanadis/engine1/runs/<id>/ and steps through the 10 phases. Each phase emits artifacts. The final zip is v0/Cursor-ready.",
     jsonLd: false,
   },
   {

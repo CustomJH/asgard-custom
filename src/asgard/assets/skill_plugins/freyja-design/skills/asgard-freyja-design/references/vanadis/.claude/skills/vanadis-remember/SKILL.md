@@ -1,13 +1,13 @@
 ---
 name: vanadis:remember
-description: "사용자의 디자인 선호·교정을 .vanadis/preferences.md에 기록. '이거 기억해줘', '앞으로는 이렇게', 'remember this', 'going forward never X', 「覚えておいて」, 「記住這個」류의 발화 또는 vanadis:apply가 교정을 감지했을 때 트리거. 기록된 내용은 vanadis:learn으로 DESIGN.md에 정식 반영."
+description: "사용자의 디자인 선호·교정을 .asgard/.vanadis/engine1/preferences.md에 기록. '이거 기억해줘', '앞으로는 이렇게', 'remember this', 'going forward never X', 「覚えておいて」, 「記住這個」류의 발화 또는 vanadis:apply가 교정을 감지했을 때 트리거. 기록된 내용은 vanadis:learn으로 DESIGN.md에 정식 반영."
 ---
 <!-- vanadis:installed-skill — managed by `vanadis install-skills`. Do not edit; rerun the command to refresh. -->
 
 
 # vanadis:remember — Preference Logger
 
-사용자의 디자인 선호/교정을 `.vanadis/preferences.md`에 append-only로 기록한다. 나중에 `vanadis:learn`이 배치로 DESIGN.md에 반영. **CLI 호출 없음** — Read/Edit/Write 툴로 직접 처리.
+사용자의 디자인 선호/교정을 `.asgard/.vanadis/engine1/preferences.md`에 append-only로 기록한다. 나중에 `vanadis:learn`이 배치로 DESIGN.md에 반영. **CLI 호출 없음** — Read/Edit/Write 툴로 직접 처리.
 
 ## 트리거 발화 패턴
 
@@ -17,7 +17,7 @@ description: "사용자의 디자인 선호·교정을 .vanadis/preferences.md�
 - "rule of thumb: ..."
 - 사용자가 당신의 디자인 선택을 명시적으로 교정
 
-## 파일 포맷 (`.vanadis/preferences.md`)
+## 파일 포맷 (`.asgard/.vanadis/engine1/preferences.md`)
 
 frontmatter + 엔트리 시퀀스. 엔트리 하나당 `## <heading>` + `vanadis-meta` 코드블록 + body.
 
@@ -89,7 +89,7 @@ node -e "console.log(process.argv[1].toLowerCase().replace(/[^a-z0-9]+/g,'-').re
 heading: `<ISO timestamp> — <slug>`
 
 ### Step 5 — 파일 read/append
-1. `Read .vanadis/preferences.md` — 없으면 frontmatter+header부터 만든다:
+1. `Read .asgard/.vanadis/engine1/preferences.md` — 없으면 frontmatter+header부터 만든다:
    ```
    ---
    schema: vanadis.preferences/v1
@@ -109,7 +109,7 @@ heading: `<ISO timestamp> — <slug>`
    - `source_context`: 관련 파일 경로 또는 PR번호 (있으면 JSON.stringify로 quote)
 
 ### Step 6 — 응답
-간결한 한 줄: `Logged ${id} to .vanadis/preferences.md (scope: ${scope})`
+간결한 한 줄: `Logged ${id} to .asgard/.vanadis/engine1/preferences.md (scope: ${scope})`
 
 ## vanadis:apply 스킬과의 관계
 
@@ -118,7 +118,7 @@ heading: `<ISO timestamp> — <slug>`
 
 ## 금지
 
-- `.vanadis/preferences.md` 파일을 frontmatter 외 직접 손대지 말 것 (id 충돌 방지) — 항상 위 절차로
+- `.asgard/.vanadis/engine1/preferences.md` 파일을 frontmatter 외 직접 손대지 말 것 (id 충돌 방지) — 항상 위 절차로
 - 같은 세션 내 동일 내용 중복 기록 금지
 - 사용자에게 "기록할까요?" 묻지 말 것 — 감지 즉시 기록 + 간결 알림
 - frontmatter의 `design_md_hash_at_creation`은 첫 생성 시에만 채움 (이후 절대 수정 X)

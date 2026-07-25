@@ -51,7 +51,7 @@ const parserPath = [
 ].find((p) => existsSync(p));
 const { parsePreferences } = require_(parserPath);
 
-const prefsText = read(join(dir, '.vanadis/preferences.md'));
+const prefsText = read(join(dir, '.asgard/.vanadis/engine1/preferences.md'));
 const transcript = read(get('--transcript'));
 const artifact = read(get('--artifact'));
 // 기본 시나리오: "pill 버튼 + 이모지 금지" → components.button + voice.

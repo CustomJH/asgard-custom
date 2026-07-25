@@ -27,7 +27,7 @@ Read .claude/data/references/toss/DESIGN.md and create a root DESIGN.md
 for this product using confirmed values only. Keep unknown facts absent.
 ```
 
-然后提示：`读取 @DESIGN.md，在不改变行为的前提下重新设计首页。` rule 的优先级是 `DESIGN.md` → `.vanadis/preferences.md` 中待处理的修正 → 框架默认值。
+然后提示：`读取 @DESIGN.md，在不改变行为的前提下重新设计首页。` rule 的优先级是 `DESIGN.md` → `.asgard/.vanadis/engine1/preferences.md` 中待处理的修正 → 框架默认值。
 
 核心契约:
 

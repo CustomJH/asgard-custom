@@ -1102,7 +1102,7 @@ function installReferenceCatalog(
 const CURSOR_RULE_BODY = [
   'The authoritative design spec lives at `@DESIGN.md` (repo root). Open and read before generating/modifying UI.',
   '',
-  'Pending preference corrections: `@.vanadis/preferences.md`.',
+  'Pending preference corrections: `@.asgard/.vanadis/engine1/preferences.md`.',
   '',
   'Precedence: DESIGN.md > preferences.md > framework defaults.',
   '',

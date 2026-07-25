@@ -4,7 +4,7 @@ A 60-line operational context card. Loaded into the project at install via `vana
 
 ## Identity
 - **Project:** vanadis — a CLI + skill bundle that turns AI coding agents into a design harness.
-- **Output artifact:** `DESIGN.md` (Google Stitch 1–9 + Vanadis 10–15) + harness run dir at `.vanadis/runs/`.
+- **Output artifact:** `DESIGN.md` (Google Stitch 1–9 + Vanadis 10–15) + harness run dir at `.asgard/.vanadis/engine1/runs/`.
 - **Target users:** vibe coders, junior designers, solo founders.
 
 ## Stack & commands
@@ -21,7 +21,7 @@ A 60-line operational context card. Loaded into the project at install via `vana
 - `data/vocabulary.json`, `data/synonyms.json`, `data/reference-tags.md` — controlled vocab + tagging
 - `references/<id>/DESIGN.md` — bundled reference design systems resolved from the catalog
 - `spec/vanadis-v0.1.md` — Vanadis spec (15-section DESIGN.md format)
-- `.vanadis/runs/run-<ts>-<slug>/` — every harness run; permanent archive
+- `.asgard/.vanadis/engine1/runs/run-<ts>-<slug>/` — every harness run; permanent archive
 - `skills/vanadis-lab-02-design-harness/runs/v<N>-...` — Lab #02 versioned experiments
 
 ## Core architecture (re-read every Phase 8)

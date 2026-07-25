@@ -17,7 +17,7 @@ Vanadis에서 **AI slop**은 “AI가 만든 화면”이라는 출처 판정이
 
 ## 시작 전에 읽을 것
 
-1. 프로젝트 `DESIGN.md` 전체와 `.vanadis/preferences.md`
+1. 프로젝트 `DESIGN.md` 전체와 `.asgard/.vanadis/engine1/preferences.md`
 2. 실제 사용자 journey와 대상 route
 3. [`references/pattern-catalog.md`](./references/pattern-catalog.md)
 4. 출처·라이선스 경계가 필요하면 [`references/sources.md`](./references/sources.md)

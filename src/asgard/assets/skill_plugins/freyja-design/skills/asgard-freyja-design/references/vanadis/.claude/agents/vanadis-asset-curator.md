@@ -16,7 +16,7 @@ vanadis_managed: true
 
 다음을 순서대로 확인:
 
-1. `.vanadis/context.json` 있으면 Read — `framework`, `deps_summary` 필드가 핵심
+1. `.asgard/.vanadis/engine1/context.json` 있으면 Read — `framework`, `deps_summary` 필드가 핵심
 2. 없으면: `Read package.json`. dependencies + devDependencies 합집합에서 다음 키 확인:
    - **Framework**: `next`, `vite`, `react`, `vue`, `svelte`, `solid-js`, `nuxt`, `astro`
    - **CSS**: `tailwindcss`, `styled-components`, `emotion`

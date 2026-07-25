@@ -1,17 +1,17 @@
 ---
 name: vanadis:learn
-description: ".vanadis/preferences.md의 status:pending 항목을 DESIGN.md에 정식 merge하고 status를 applied로 플립. '프리퍼런스 정리해줘', 'fold preferences', 'apply all corrections', 「好みをDESIGN.mdに反映」, 「套用偏好」류의 요청에 트리거. 단발성 교정 기록은 vanadis:remember."
+description: ".asgard/.vanadis/engine1/preferences.md의 status:pending 항목을 DESIGN.md에 정식 merge하고 status를 applied로 플립. '프리퍼런스 정리해줘', 'fold preferences', 'apply all corrections', 「好みをDESIGN.mdに反映」, 「套用偏好」류의 요청에 트리거. 단발성 교정 기록은 vanadis:remember."
 ---
 <!-- vanadis:installed-skill — managed by `vanadis install-skills`. Do not edit; rerun the command to refresh. -->
 
 
 # vanadis:learn — Preference Fold into DESIGN.md
 
-`.vanadis/preferences.md`에 누적된 `status: pending` 교정사항을 DESIGN.md에 반영하고, 반영된 엔트리의 상태를 `applied`로 플립한다. **CLI 호출 없음** — Read/Edit 툴로 직접 처리.
+`.asgard/.vanadis/engine1/preferences.md`에 누적된 `status: pending` 교정사항을 DESIGN.md에 반영하고, 반영된 엔트리의 상태를 `applied`로 플립한다. **CLI 호출 없음** — Read/Edit 툴로 직접 처리.
 
 ## Phase 1 — 검토
 
-`Read .vanadis/preferences.md` → frontmatter + 엔트리들 파싱:
+`Read .asgard/.vanadis/engine1/preferences.md` → frontmatter + 엔트리들 파싱:
 
 - 엔트리 분리: `## ` heading 기준 split
 - 각 엔트리의 `vanadis-meta` 코드블록에서 `id`, `scope`, `status` 추출
@@ -74,7 +74,7 @@ spacing (1 pending):
 한 문단:
 - 반영된 교정 수 (scope별)
 - 거부된 교정 수 + 이유
-- 사용자에게 `.vanadis/preferences.md` 직접 확인 안내
+- 사용자에게 `.asgard/.vanadis/engine1/preferences.md` 직접 확인 안내
 
 ```
 4 preferences applied to DESIGN.md
@@ -82,20 +82,20 @@ spacing (1 pending):
   - spacing: 8pt grid
 1 rejected (conflicts with base reference radius)
 
-Review .vanadis/preferences.md for details.
+Review .asgard/.vanadis/engine1/preferences.md for details.
 ```
 
-## Fold-in 제안에서 호출된 경우 (`.vanadis/foldin-proposal.json`)
+## Fold-in 제안에서 호출된 경우 (`.asgard/.vanadis/engine1/foldin-proposal.json`)
 
 SessionStart 컨텍스트의 Vanadis FOLD-IN PROPOSAL → AskUserQuestion 승인 경로로 호출되었으면 Phase 2 확인은 이미 끝난 것 — 다시 묻지 말 것.
 
-제안 없이 사용자가 직접 vanadis:learn을 부른 경우에도 `.vanadis/foldin-proposal.json`이
+제안 없이 사용자가 직접 vanadis:learn을 부른 경우에도 `.asgard/.vanadis/engine1/foldin-proposal.json`이
 `"status": "proposed"`로 존재하면: 그 scopes를 이번 폴드 대상에 포함할지 Phase 2에서
 함께 확인하고, 처리 후 아래와 동일하게 status를 갱신한다 (proposed인 채로 방치 금지 —
 다음 세션이 또 물어본다).
 
 - **승인된 scope만** Phase 3-4로 처리. 미승인 scope의 pending 엔트리는 건드리지 않는다
-- 처리 후 `.vanadis/foldin-proposal.json`의 status를 Edit 툴로 갱신:
+- 처리 후 `.asgard/.vanadis/engine1/foldin-proposal.json`의 status를 Edit 툴로 갱신:
   - 전부 반영 → `"status": "applied"` + `"applied_at": "<ISO timestamp>"` 필드 추가
   - 일부만 반영 → `"status": "partial"` + `scopes` 배열을 **남은(미승인) scope만**으로 갱신
   - 전부 거절("나중에") → `"status": "snoozed"` + `"snoozed_at": "<ISO timestamp>"` 필드 추가

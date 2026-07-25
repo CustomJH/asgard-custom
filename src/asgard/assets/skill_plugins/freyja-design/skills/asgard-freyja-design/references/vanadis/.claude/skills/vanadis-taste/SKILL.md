@@ -1,6 +1,6 @@
 ---
 name: vanadis:taste
-description: "시스템이 학습한 사용자의 디자인 취향을 한 뷰로 렌더. .vanadis/preferences.md + foldin-proposal.json + DESIGN.md를 읽어 반영됨/대기 중/보류됨/모르는 것 4그룹으로 보여준다. '/vanadis-taste', '내 취향 보여줘', '취향 현황', 'what are my preferences', 'show my taste', 「私の好みを見せて」, 「顯示我的偏好」류의 발화에 트리거. 기록은 vanadis:remember, DESIGN.md 반영은 vanadis:learn."
+description: "시스템이 학습한 사용자의 디자인 취향을 한 뷰로 렌더. .asgard/.vanadis/engine1/preferences.md + foldin-proposal.json + DESIGN.md를 읽어 반영됨/대기 중/보류됨/모르는 것 4그룹으로 보여준다. '/vanadis-taste', '내 취향 보여줘', '취향 현황', 'what are my preferences', 'show my taste', 「私の好みを見せて」, 「顯示我的偏好」류의 발화에 트리거. 기록은 vanadis:remember, DESIGN.md 반영은 vanadis:learn."
 user-invocable: true
 ---
 <!-- vanadis:installed-skill — managed by `vanadis install-skills`. Do not edit; rerun the command to refresh. -->
@@ -12,18 +12,18 @@ user-invocable: true
 
 ## 입력 (모두 Read 툴)
 
-1. `.vanadis/preferences.md` — canonical 포맷 (`## <heading>` + ` ```vanadis-meta` 블록 + body — `vanadis:remember` 스킬의 포맷 정의 참조). **모든 status**의 엔트리를 파싱: `id` / `timestamp` / `scope` / `signal` / `confidence` / `status`
-2. `.vanadis/foldin-proposal.json` — 있으면 `status` (`proposed` / `applied` / `partial` / `snoozed`)와 `scopes[]` (scope, count, score, summary)
+1. `.asgard/.vanadis/engine1/preferences.md` — canonical 포맷 (`## <heading>` + ` ```vanadis-meta` 블록 + body — `vanadis:remember` 스킬의 포맷 정의 참조). **모든 status**의 엔트리를 파싱: `id` / `timestamp` / `scope` / `signal` / `confidence` / `status`
+2. `.asgard/.vanadis/engine1/foldin-proposal.json` — 있으면 `status` (`proposed` / `applied` / `partial` / `snoozed`)와 `scopes[]` (scope, count, score, summary)
 3. `DESIGN.md` — § 라우팅 표시 + "모르는 것" 축 도출용
 
 ## 빈 상태
 
-`.vanadis/preferences.md`가 없거나 파싱된 엔트리가 0개면 두 줄로 끝낸다:
+`.asgard/.vanadis/engine1/preferences.md`가 없거나 파싱된 엔트리가 0개면 두 줄로 끝낸다:
 
 > 아직 학습된 취향이 없어요.
 > 작업 중 "앞으로는 ~로 해"라고 말하면 vanadis:remember가 기록하고, 같은 취향이 쌓이면 vanadis:learn이 DESIGN.md에 정식 반영해요.
 
-이때 `.vanadis/` 디렉토리나 파일을 **만들지 말 것** — 뷰 스킬이 상태를 생성하면 안 된다.
+이때 `.asgard/.vanadis/engine1/` 디렉토리나 파일을 **만들지 말 것** — 뷰 스킬이 상태를 생성하면 안 된다.
 
 ## 렌더 — 4 그룹 한 뷰
 
@@ -54,7 +54,7 @@ scope별로 그룹화해 한 그룹당 한 줄:
 
 ### ③ 보류됨 (snoozed)
 
-`.vanadis/foldin-proposal.json`의 `status`가 `snoozed`면 그 `scopes[]`를 나열 — scope + summary + `snoozed_at`. "지금 반영하려면 vanadis:learn을 부르세요" 한 줄 덧붙임. proposal 파일이 없거나 snoozed가 아니면 이 그룹은 생략.
+`.asgard/.vanadis/engine1/foldin-proposal.json`의 `status`가 `snoozed`면 그 `scopes[]`를 나열 — scope + summary + `snoozed_at`. "지금 반영하려면 vanadis:learn을 부르세요" 한 줄 덧붙임. proposal 파일이 없거나 snoozed가 아니면 이 그룹은 생략.
 
 ### ④ 시스템이 모르는 것 (가볍게)
 

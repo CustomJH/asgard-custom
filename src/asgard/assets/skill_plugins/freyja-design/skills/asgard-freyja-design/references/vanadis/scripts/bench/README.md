@@ -54,7 +54,7 @@ node scripts/bench/score-taste.mjs --dir /tmp/bench-init --ref 29cm \
 
 | 체크 | 점수 | 내용 |
 |---|---|---|
-| `pending_entry_canonical` | 2 | `.vanadis/preferences.md`에 canonical 포맷(`##` heading + ` ```vanadis-meta ` + `status: pending`) 엔트리 존재 |
+| `pending_entry_canonical` | 2 | `.asgard/.vanadis/engine1/preferences.md`에 canonical 포맷(`##` heading + ` ```vanadis-meta ` + `status: pending`) 엔트리 존재 |
 | `correct_scope` | 1 | 기대 scope 전부 pending에 등장 (기본 `components.button,voice`, `--scopes`로 교체 가능) |
 | `parser_roundtrip` | 1 | 배포된 `preferences-parser.cjs`가 실제로 파싱 (유효 id + timestamp + scope) |
 | `conflict_flagged` | 1 | preference가 DESIGN.md와 모순될 때 transcript에 충돌 고지 (`--transcript` 미제공 시 0.5) |

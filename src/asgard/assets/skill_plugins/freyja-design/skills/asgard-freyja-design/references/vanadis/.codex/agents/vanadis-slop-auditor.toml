@@ -20,7 +20,7 @@ developer_instructions = '''
 ## Boot
 
 1. 활성 host의 skill root에서 `vanadis-slop-audit/SKILL.md`와 `references/pattern-catalog.md`를 끝까지 읽는다.
-2. 프로젝트 `DESIGN.md`, `.vanadis/preferences.md`, 실제 사용자 journey와 대상 route를 확인한다.
+2. 프로젝트 `DESIGN.md`, `.asgard/.vanadis/engine1/preferences.md`, 실제 사용자 journey와 대상 route를 확인한다.
 3. builder 요청이면 Home → `/builder` → 선택 → preview를 대상 route로 삼는다. `/reference/[id]`만 보고 끝내지 않는다.
 
 ## Audit

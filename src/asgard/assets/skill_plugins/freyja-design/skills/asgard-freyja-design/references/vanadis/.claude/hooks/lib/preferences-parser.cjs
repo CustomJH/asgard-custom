@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // vanadis:installed-hook sha256=44ceaf346dc7238f92f127699d9b985940f77c68a461752d15f10b930ecea4ca
-// Shared parser for .vanadis/preferences.md — the CANONICAL format written by the
+// Shared parser for .asgard/.vanadis/engine1/preferences.md — the CANONICAL format written by the
 // vanadis:remember skill (skills/vanadis-remember/SKILL.md). The remember format is the
 // single source of truth; these hooks read it, they never change it.
 //

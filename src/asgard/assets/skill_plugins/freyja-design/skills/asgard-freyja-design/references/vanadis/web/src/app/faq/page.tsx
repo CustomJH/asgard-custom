@@ -148,7 +148,7 @@ const SECTIONS: QASection[] = [
       },
       {
         q: "한 번에 화면 여러 개를 멀티턴으로 디자인할 수 있나요?",
-        a: "네. `/vanadis-harness <task>` 명령이 10-phase 파이프라인을 돌면서 16개 sub-agent를 dispatch하고, Discovery·Components·Handoff 3개 checkpoint에서 사용자 확인을 받습니다. 각 phase의 산출물은 `.vanadis/runs/<id>/`에 남아 다음 턴에서 그대로 재사용됩니다.",
+        a: "네. `/vanadis-harness <task>` 명령이 10-phase 파이프라인을 돌면서 16개 sub-agent를 dispatch하고, Discovery·Components·Handoff 3개 checkpoint에서 사용자 확인을 받습니다. 각 phase의 산출물은 `.asgard/.vanadis/engine1/runs/<id>/`에 남아 다음 턴에서 그대로 재사용됩니다.",
       },
       {
         q: "한국어 voice preset이 있나요?",

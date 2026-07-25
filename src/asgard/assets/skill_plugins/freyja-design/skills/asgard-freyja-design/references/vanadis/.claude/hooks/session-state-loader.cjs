@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // vanadis:installed-hook sha256=e5c62304db69247f7deb2237b9b4c559b65e56c0b9d2a9f095f41fa6598d4f4c
-// SessionStart hook — load .vanadis/state.md (and a recent timeline tail) into the
+// SessionStart hook — load .asgard/.vanadis/engine1/state.md (and a recent timeline tail) into the
 // session as additionalContext. If state.md is missing or stale, recompute
 // best-effort from preferences.md + timeline.md.
 
@@ -11,10 +11,10 @@ const path = require('node:path');
 const { countPending } = require('./lib/preferences-parser.cjs');
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const stateMd = path.join(projectDir, '.vanadis', 'state.md');
-const timelineMd = path.join(projectDir, '.vanadis', 'timeline.md');
-const preferencesMd = path.join(projectDir, '.vanadis', 'preferences.md');
-const proposalJson = path.join(projectDir, '.vanadis', 'foldin-proposal.json');
+const stateMd = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'state.md');
+const timelineMd = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'timeline.md');
+const preferencesMd = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'preferences.md');
+const proposalJson = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'foldin-proposal.json');
 
 function safeRead(p) {
   try {
@@ -75,7 +75,7 @@ if (
     `Ask the user via AskUserQuestion (one question, options: '전부 반영'${perScope} / '나중에') whether to fold these into DESIGN.md.`,
   );
   lines.push(
-    "On approve: run the vanadis:learn skill for the approved scopes, then set .vanadis/foldin-proposal.json status to 'applied'.",
+    "On approve: run the vanadis:learn skill for the approved scopes, then set .asgard/.vanadis/engine1/foldin-proposal.json status to 'applied'.",
   );
   lines.push(
     "On decline: set status to 'snoozed' and add snoozed_at (ISO timestamp).",

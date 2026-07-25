@@ -152,9 +152,9 @@ review report를 emit한 **후에** 이번 run의 finding들을 한 번 스캔�
 ### 후보 조건 (둘 중 하나)
 
 1. **같은 axis ≥2회** — 이번 run의 finding을 axis로 분류(radius / color / spacing / typo / voice)했을 때 같은 axis가 2회 이상 등장
-2. **기존 pending preference와 매칭** — `.vanadis/preferences.md`가 존재하면 read해서, finding이 `status: pending` 엔트리의 scope와 같은 축이면 1회여도 후보 (반복의 증거가 이미 파일에 있으므로)
+2. **기존 pending preference와 매칭** — `.asgard/.vanadis/engine1/preferences.md`가 존재하면 read해서, finding이 `status: pending` 엔트리의 scope와 같은 축이면 1회여도 후보 (반복의 증거가 이미 파일에 있으므로)
 
-`.vanadis/preferences.md`가 없으면 조건 2는 생략 — 파일을 만들지 않는다.
+`.asgard/.vanadis/engine1/preferences.md`가 없으면 조건 2는 생략 — 파일을 만들지 않는다.
 
 ### 제안 (run당 질문 1개 max)
 
@@ -177,4 +177,4 @@ review report를 emit한 **후에** 이번 run의 finding들을 한 번 스캔�
 - run당 질문 2개 이상 금지 — 후보가 많아도 multiSelect 하나로 배칭
 - 거절된 후보를 같은 세션에서 재제안 금지
 
-> **수동 검증**: 같은 artifact에서 radius WARN 2건이 나오는 review를 돌리면, report 출력 후 "이 패턴, 취향으로 기록할까요?" 질문이 정확히 1회 뜨고, 동의 시 `.vanadis/preferences.md`에 `signal: review` / `confidence: inferred` / `status: pending` 엔트리 1개가 append되어야 한다 (DESIGN.md는 변경 없음).
+> **수동 검증**: 같은 artifact에서 radius WARN 2건이 나오는 review를 돌리면, report 출력 후 "이 패턴, 취향으로 기록할까요?" 질문이 정확히 1회 뜨고, 동의 시 `.asgard/.vanadis/engine1/preferences.md`에 `signal: review` / `confidence: inferred` / `status: pending` 엔트리 1개가 append되어야 한다 (DESIGN.md는 변경 없음).

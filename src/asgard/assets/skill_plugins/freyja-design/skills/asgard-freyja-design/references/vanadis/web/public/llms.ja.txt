@@ -27,7 +27,7 @@ Read .claude/data/references/toss/DESIGN.md and create a root DESIGN.md
 for this product using confirmed values only. Keep unknown facts absent.
 ```
 
-その後、`@DESIGN.md を読み、動作を変えずにホーム画面を再設計して` と依頼します。rule の優先順位は `DESIGN.md` → `.vanadis/preferences.md` の保留中修正 → フレームワーク既定値です。
+その後、`@DESIGN.md を読み、動作を変えずにホーム画面を再設計して` と依頼します。rule の優先順位は `DESIGN.md` → `.asgard/.vanadis/engine1/preferences.md` の保留中修正 → フレームワーク既定値です。
 
 契約:
 

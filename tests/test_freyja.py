@@ -66,8 +66,17 @@ class TestFreyjaBaseline(unittest.TestCase):
             relative = item.relative_to(upstream_root).as_posix().encode()
             digest.update(relative + b"\0" + item.read_bytes())
 
+        # 봉인 갱신 이력. 파일 수는 불변이고 내용만 바뀌었을 때만 다시 찍는다 —
+        # 개수가 함께 움직였다면 그건 재봉인이 아니라 스냅샷 오염이다.
+        #   d3e8445… → 09f68722…  산출물 루트 이관(.vanadis/ → .asgard/.vanadis/engine1/):
+        #   skills·agents 20파일의 경로 지시 + vanadis-harness 의 .gitignore 자가 설치 제거.
+        #   09f68722… → 09389c99…  같은 이관의 누락분 봉합: .claude/skills·.claude/agents·
+        #   .codex/agents 미러 26파일, 실제로 경로를 만드는 .claude/hooks·scripts 코드 7파일,
+        #   AGENTS.md·web 문서. 첫 회차가 skills/·agents/ 만 훑어 미러를 통째로 빠뜨렸다.
+        #   09389c99… → 181cbf44…  독립 재검이 잡은 마지막 잔재: vanadis-sync 심 템플릿
+        #   (본체+.claude 미러) 4줄이 은퇴 루트 ./.vanadis/preferences.md 를 안내하고 있었다.
         self.assertEqual(len(files), 3238)
-        self.assertEqual(digest.hexdigest(), "d3e8445aac24f20c6040416e1fce22a03e1e6ad618c0a2a0372f10cd034b94b9")
+        self.assertEqual(digest.hexdigest(), "181cbf44714bfc5475e630a25ad125034b2c7ad6a4929cd41fe4b8dd7f7c5b8b")
         self.assertEqual(len(list((upstream_root / "skills").glob("*/SKILL.md"))), 21)
         self.assertEqual(len(list((upstream_root / "agents").glob("vanadis-*.md"))), 18)
         restraint = skill_registry.show_skill_resource(

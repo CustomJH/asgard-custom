@@ -30,7 +30,7 @@ test/scenarios/archive/
 experiments/
 
 # Per-harness-run artifacts (regenerable; not for public repo)
-.vanadis/
+.asgard/.vanadis/engine1/
 
 # npm pack tarball outputs (build artifacts)
 *.tgz

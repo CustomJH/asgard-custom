@@ -45,7 +45,7 @@ The skill internally bootstraps the run dir via a hidden `vanadis harness` helpe
 
 ### Codex-specific harness flow
 
-When this AGENTS.md is loaded and a fresh `.vanadis/runs/run-<latest>/` exists:
+When this AGENTS.md is loaded and a fresh `.asgard/.vanadis/engine1/runs/run-<latest>/` exists:
 
 1. **Activate the orchestrator persona.** Read `.codex/agents/vanadis-master.toml` and adopt that role. The full behavioral spec lives at `.claude/agents/vanadis-master.md` — follow it verbatim regardless of channel.
 
@@ -72,7 +72,7 @@ When this AGENTS.md is loaded and a fresh `.vanadis/runs/run-<latest>/` exists:
    - `vanadis-persona-tester` (×4 in parallel for Phase 8)
    - `vanadis-critic` (iteration > 1)
 
-4. **All artifacts go inside the run dir.** Never write outside it except for `DESIGN.md` (Phase 5, with user checkpoint approval) and `.vanadis/preferences.md` (via `vanadis remember`).
+4. **All artifacts go inside the run dir.** Never write outside it except for `DESIGN.md` (Phase 5, with user checkpoint approval) and `.asgard/.vanadis/engine1/preferences.md` (via `vanadis remember`).
 
 ### User checkpoints (mandatory, do not auto-skip)
 
@@ -87,7 +87,7 @@ A non-mandatory informational checkpoint #0 follows Phase 1.5 (asset self/fallba
 For ad-hoc UI work (component changes, microcopy edits, color tweaks) not running through the full harness:
 
 1. Read project-root `DESIGN.md` in full at the start of the turn.
-2. Read `.vanadis/preferences.md` `pending` entries — these override DESIGN.md until folded in.
+2. Read `.asgard/.vanadis/engine1/preferences.md` `pending` entries — these override DESIGN.md until folded in.
 3. Apply changes citing only DESIGN.md tokens (never invent).
 4. If the user corrects your design choice, run `vanadis remember "<one-sentence summary>" --context "<file>"` before ending the turn.
 

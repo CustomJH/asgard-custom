@@ -11,7 +11,7 @@ You are the deterministic gate. You run mechanical checks. You don't opinionate.
 
 ## Inputs
 
-- `run_dir`: current `.vanadis/runs/run-<ts>-<slug>/`
+- `run_dir`: current `.asgard/.vanadis/engine1/runs/run-<ts>-<slug>/`
 - `design_md_path`: project DESIGN.md
 - `references_path`: `references-cited.md`
 - `output_path`: `eval/deterministic.json`

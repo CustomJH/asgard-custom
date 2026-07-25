@@ -27,7 +27,7 @@ block 모드는 `<!-- vanadis:start v=1 hash=<sha256:12> -->` ~ `<!-- vanadis:en
 The authoritative brand & UI spec is **@./DESIGN.md**.
 Read before any UI/styling/microcopy/motion work.
 
-Preference log (pending corrections): @./.vanadis/preferences.md
+Preference log (pending corrections): @./.asgard/.vanadis/engine1/preferences.md
 
 Precedence: DESIGN.md > preferences.md > your defaults.
 ```
@@ -39,7 +39,7 @@ Precedence: DESIGN.md > preferences.md > your defaults.
 
 **Before any UI, styling, copy, or motion change, open and read `./DESIGN.md` in full.** It is the authoritative brand/design spec. Treat its tokens, voice, and component rules as binding unless the user overrides in chat.
 
-If present, read `./.vanadis/preferences.md` — pending corrections not yet folded into DESIGN.md. Apply them; flag conflicts.
+If present, read `./.asgard/.vanadis/engine1/preferences.md` — pending corrections not yet folded into DESIGN.md. Apply them; flag conflicts.
 ```
 
 ### .cursor/rules/vanadis-design.mdc (whole, frontmatter 포함)
@@ -63,7 +63,7 @@ alwaysApply: false
 <!-- vanadis:start v=1 hash=<HASH> -->
 The authoritative design spec lives at `@DESIGN.md` (repo root). Open and read before generating/modifying UI.
 
-Pending preference corrections: `@.vanadis/preferences.md`.
+Pending preference corrections: `@.asgard/.vanadis/engine1/preferences.md`.
 
 Precedence: DESIGN.md > preferences.md > framework defaults.
 <!-- vanadis:end -->
@@ -120,7 +120,7 @@ existing 전체 content와 rendered 템플릿 비교:
 - whole 모드: 파일 전체를 새 rendered content로 교체. 디렉토리 (`.cursor/rules/`) 없으면 mkdir
 
 ### Step 6 — sync-lock 갱신
-`.vanadis/sync.lock.json` 기록 (없으면 만든다):
+`.asgard/.vanadis/engine1/sync.lock.json` 기록 (없으면 만든다):
 ```json
 {
   "design_md_hash": "<DESIGN.md sha256:12>",
@@ -158,5 +158,5 @@ DESIGN.md hash: ab12cd34ef56
 
 - 마커 안 본문에 임의 추가/축약 금지 — 위 템플릿 정확히 사용
 - block 모드 파일에서 마커 외부 사용자 content 절대 삭제 금지
-- `.vanadis/sync.lock.json` 무시 금지 — 항상 갱신
+- `.asgard/.vanadis/engine1/sync.lock.json` 무시 금지 — 항상 갱신
 - DESIGN.md가 없어도 shim은 만들 수 있음 (DESIGN.md 생성 후에 hash만 채움)

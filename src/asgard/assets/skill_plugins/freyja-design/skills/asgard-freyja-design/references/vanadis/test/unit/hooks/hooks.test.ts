@@ -71,11 +71,11 @@ describe('hooks', () => {
   }
 
   function writePrefs(entries: string[]) {
-    mkdirSync(join(root, '.vanadis'), { recursive: true });
+    mkdirSync(join(root, '.asgard', '.vanadis', 'engine1'), { recursive: true });
     const text =
       '---\nschema: vanadis.preferences/v1\ndesign_md_hash_at_creation:\n---\n\n# Preference Log\n\n' +
       entries.join('\n');
-    writeFileSync(join(root, '.vanadis', 'preferences.md'), text);
+    writeFileSync(join(root, '.asgard', '.vanadis', 'engine1', 'preferences.md'), text);
   }
 
   describe('post-edit-watch.cjs', () => {
@@ -251,7 +251,7 @@ describe('hooks', () => {
         prefEntry({ ts: iso(2), scope: 'components.button', slug: 'c' }),
       ]);
       runHook('session-end-foldin.cjs', {}, root);
-      const timeline = join(root, '.vanadis', 'timeline.md');
+      const timeline = join(root, '.asgard', '.vanadis', 'engine1', 'timeline.md');
       expect(existsSync(timeline)).toBe(true);
       const text = readFileSync(timeline, 'utf8');
       expect(text).toContain('fold_in_proposal');
@@ -263,12 +263,12 @@ describe('hooks', () => {
         prefEntry({ ts: new Date().toISOString(), scope: 'color', slug: 'a' }),
       ]);
       runHook('session-end-foldin.cjs', {}, root);
-      expect(existsSync(join(root, '.vanadis', 'timeline.md'))).toBe(false);
+      expect(existsSync(join(root, '.asgard', '.vanadis', 'engine1', 'timeline.md'))).toBe(false);
     });
   });
 
   describe('auto-fold gate — foldin-proposal.json (issue #23)', () => {
-    const proposalPath = () => join(root, '.vanadis', 'foldin-proposal.json');
+    const proposalPath = () => join(root, '.asgard', '.vanadis', 'engine1', 'foldin-proposal.json');
     const iso = (offsetDays: number) =>
       new Date(Date.now() - offsetDays * 86400000).toISOString();
 
@@ -308,7 +308,7 @@ describe('hooks', () => {
     });
 
     it('state-loader injects the AskUserQuestion instruction for a proposed file', () => {
-      mkdirSync(join(root, '.vanadis'), { recursive: true });
+      mkdirSync(join(root, '.asgard', '.vanadis', 'engine1'), { recursive: true });
       writeFileSync(
         proposalPath(),
         JSON.stringify({
@@ -338,7 +338,7 @@ describe('hooks', () => {
     });
 
     it('does NOT re-inject a snoozed proposal', () => {
-      mkdirSync(join(root, '.vanadis'), { recursive: true });
+      mkdirSync(join(root, '.asgard', '.vanadis', 'engine1'), { recursive: true });
       writeFileSync(
         proposalPath(),
         JSON.stringify({
@@ -360,7 +360,7 @@ describe('hooks', () => {
         snoozed_at: new Date(Date.now() + 60000).toISOString(), // after all entries
         scopes: [],
       };
-      mkdirSync(join(root, '.vanadis'), { recursive: true });
+      mkdirSync(join(root, '.asgard', '.vanadis', 'engine1'), { recursive: true });
       writeFileSync(proposalPath(), JSON.stringify(snoozed));
       runHook('session-end-foldin.cjs', {}, root);
       const after = JSON.parse(readFileSync(proposalPath(), 'utf8'));
@@ -369,7 +369,7 @@ describe('hooks', () => {
 
     it('re-proposes a snoozed proposal after new recurrence', () => {
       writeRecurringPrefs(); // latest entry is "now" — newer than snoozed_at below
-      mkdirSync(join(root, '.vanadis'), { recursive: true });
+      mkdirSync(join(root, '.asgard', '.vanadis', 'engine1'), { recursive: true });
       writeFileSync(
         proposalPath(),
         JSON.stringify({
@@ -387,7 +387,7 @@ describe('hooks', () => {
   });
 
   describe('post-edit-watch ambient persistence (issue #24)', () => {
-    const prefsPath = () => join(root, '.vanadis', 'preferences.md');
+    const prefsPath = () => join(root, '.asgard', '.vanadis', 'engine1', 'preferences.md');
 
     function editPayload(filePath: string, newString: string) {
       return {
@@ -426,7 +426,7 @@ describe('hooks', () => {
       expect(prefs.match(/```vanadis-meta/g)).toHaveLength(1);
     });
 
-    it('never records while editing DESIGN.md / .claude/ / .vanadis/ files', () => {
+    it('never records while editing DESIGN.md / .claude/ / .asgard/.vanadis/engine1/ files', () => {
       writeFileSync(join(root, 'DESIGN.md'), '- #000000\n');
       runHook('post-edit-watch.cjs', editPayload('DESIGN.md', '#ff0000'), root);
       runHook(
@@ -436,7 +436,7 @@ describe('hooks', () => {
       );
       runHook(
         'post-edit-watch.cjs',
-        editPayload('.vanadis/scratch.css', 'a { color: #ff0000; }'),
+        editPayload('.asgard/.vanadis/engine1/scratch.css', 'a { color: #ff0000; }'),
         root,
       );
       expect(existsSync(prefsPath())).toBe(false);

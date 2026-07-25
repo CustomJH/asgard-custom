@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 // scripts/context.cjs — minimal, deterministic project scan invoked by the
-// vanadis-harness skill / vanadis-master agent when they want a fast .vanadis/context.json
+// vanadis-harness skill / vanadis-master agent when they want a fast .asgard/.vanadis/engine1/context.json
 // without doing a full Glob+Read pass in prose.
 //
-// Output: writes .vanadis/context.json with { kind, framework, css_files,
+// Output: writes .asgard/.vanadis/engine1/context.json with { kind, framework, css_files,
 // package_name, deps_summary, ts }, and prints the path to stdout.
 //
 // Pure node — no deps. ~80 lines. Optional helper, not load-bearing: master
@@ -14,7 +14,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const cwd = process.argv[2] || process.cwd();
-const out = path.join(cwd, '.vanadis', 'context.json');
+const out = path.join(cwd, '.asgard', '.vanadis', 'engine1', 'context.json');
 
 function safeRead(p) {
   try {

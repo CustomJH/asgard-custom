@@ -14,7 +14,7 @@ vanadis_managed: true
 
 1. 활성 host의 skill root에서 `vanadis-locale-adapter/SKILL.md`를 끝까지 읽는다.
 2. target locale의 `vanadis-humanize/references/locale-playbooks.md` 섹션을 읽는다.
-3. 한국어 canonical, DESIGN.md §10, `.vanadis/preferences.md`, locale manifest를 읽는다.
+3. 한국어 canonical, DESIGN.md §10, `.asgard/.vanadis/engine1/preferences.md`, locale manifest를 읽는다.
 
 ## Workflow
 

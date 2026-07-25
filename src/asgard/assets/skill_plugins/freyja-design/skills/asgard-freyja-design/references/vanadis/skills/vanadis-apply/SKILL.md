@@ -51,18 +51,18 @@ dispatch가 정해지면 즉시 Agent 툴 호출 (master 경유 X — 우리가 
 dispatch가 아니라 인라인 처리로 분기됐을 때만 진행:
 
 1. 프로젝트 루트의 `DESIGN.md`를 **전체 읽는다**. 요약 금지, Read 툴로 직접 로드.
-2. `.vanadis/preferences.md`가 있으면 같이 읽는다. `status: pending` 엔트리는 아직 DESIGN.md에 반영 안 된 교정 — DESIGN.md보다 **우선** 적용.
-3. **reference-capture 자료가 있으면 함께 로드**: `DESIGN.md` frontmatter의 `bootstrapped_from` 또는 `.vanadis/init-context.json`의 `reference_id`로 brand id를 얻고, `assets/_reference/<id>/`가 존재하면:
+2. `.asgard/.vanadis/engine1/preferences.md`가 있으면 같이 읽는다. `status: pending` 엔트리는 아직 DESIGN.md에 반영 안 된 교정 — DESIGN.md보다 **우선** 적용.
+3. **reference-capture 자료가 있으면 함께 로드**: `DESIGN.md` frontmatter의 `bootstrapped_from` 또는 `.asgard/.vanadis/engine1/init-context.json`의 `reference_id`로 brand id를 얻고, `assets/_reference/<id>/`가 존재하면:
    - `tokens.json` — `live_overrides` 블록 우선
    - `structure.json` — composition cues (hero/cta/nav idiom)
    - `fonts.json` — `live_observed: true` 항목은 출력 HTML `<head>`에 `html_link` 그대로 박을 것. 미로드 시 시스템 fallback으로 둥근 폰트 mismatch.
    - `screenshots/hero-desktop.png` — UI 작업이 hero/landing 류면 Read 툴로 **이미지로 직접 읽고** 시각 grounding
-   - **mode 분기** (`.vanadis/init-context.json`의 `mode` 필드):
+   - **mode 분기** (`.asgard/.vanadis/engine1/init-context.json`의 `mode` 필드):
      - `clone` → 헤더 logo는 `assets/_reference/<id>/logo.<ext>` 직접 사용. project root에 `CLONE-MODE.md` + `replace-checklist.md`가 있어야 함.
      - `inspired` (또는 미지정) → 헤더 logo는 `[YOUR LOGO]` placeholder. captured 자산은 product DOM 미사용.
 4. 우선순위:
    ```
-   .vanadis/preferences.md (pending)
+   .asgard/.vanadis/engine1/preferences.md (pending)
      > assets/_reference/<id>/tokens.json#live_overrides  (visual surface tokens만)
      > DESIGN.md                                          (essence: voice/principles/motion 철학·canonical token)
      > framework defaults
@@ -86,14 +86,14 @@ DESIGN.md 없으면 사용자에게 알리고 vanadis:init 스킬 트리거. 임
 2. 사용자가 토큰/값을 revert 또는 교체
 3. 사용자가 "우리는 ~한다/하지 않는다" 형태 원칙 언급
 
-감지되면 **vanadis:remember 스킬을 트리거**한다 (CLI 호출 X — `.vanadis/preferences.md`에 직접 append). 트리거 메서드: vanadis-remember SKILL.md의 Step 1-6 절차를 따라 Edit 툴로 파일 수정.
+감지되면 **vanadis:remember 스킬을 트리거**한다 (CLI 호출 X — `.asgard/.vanadis/engine1/preferences.md`에 직접 append). 트리거 메서드: vanadis-remember SKILL.md의 Step 1-6 절차를 따라 Edit 툴로 파일 수정.
 
 ## Phase 4 — 확인 메시지
 
 교정 기록 시 턴 끝에 한 줄:
 
 ```
-Logged to .vanadis/preferences.md — say "preference 정리해줘" later to fold into DESIGN.md.
+Logged to .asgard/.vanadis/engine1/preferences.md — say "preference 정리해줘" later to fold into DESIGN.md.
 ```
 
 일반 작업에는 불필요. 과한 알림 금지.

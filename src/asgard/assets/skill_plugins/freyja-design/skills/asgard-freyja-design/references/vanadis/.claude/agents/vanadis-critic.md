@@ -14,7 +14,7 @@ You are the critic. You don't fix; you diagnose. The constraint is deliberate: i
 
 - `run_dir`: full current run directory
 - `user_feedback`: the user's verbatim message at the most recent checkpoint
-- `preferences_path`: `.vanadis/preferences.md` (pending entries)
+- `preferences_path`: `.asgard/.vanadis/engine1/preferences.md` (pending entries)
 - `previous_critique_path` (optional): last iteration's critique.md
 - `output_path`: `<run_dir>/critique.md`
 
@@ -35,7 +35,7 @@ Before writing a single word, read in full:
 11. all `persona-feedback/*.json`
 12. `run.log`
 13. user feedback (verbatim)
-14. `.vanadis/preferences.md` pending entries
+14. `.asgard/.vanadis/engine1/preferences.md` pending entries
 15. previous critique.md (if exists)
 
 ## Diagnostic frame
@@ -98,7 +98,7 @@ Phases NOT in this list must be carried forward unchanged. Do not surface-patch.
 The master must invoke the installed `vanadis:remember` skill once per root-cause
 finding, with the affected artifact path as context. If the host has no explicit
 skill-invocation surface, follow the installed skill schema and append the same
-scoped entries to `.vanadis/preferences.md`. Never call a nonexistent
+scoped entries to `.asgard/.vanadis/engine1/preferences.md`. Never call a nonexistent
 `vanadis remember` shell command.
 
 ## 5. Fragility watchlist (next iteration)

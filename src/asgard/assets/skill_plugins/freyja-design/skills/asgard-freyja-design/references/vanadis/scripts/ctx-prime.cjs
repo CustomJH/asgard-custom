@@ -7,7 +7,7 @@
 //   wow_moment_candidates / scanned_at / scan_duration_ms
 //
 // Usage: node scripts/ctx-prime.cjs <cwd> <run_dir>
-// Falls back to cwd/.vanadis if run_dir omitted (for ad-hoc use).
+// Falls back to cwd/.asgard/.vanadis/engine1 if run_dir omitted (for ad-hoc use).
 
 const fs = require('node:fs');
 const path = require('node:path');
@@ -16,7 +16,7 @@ const startedAt = Date.now();
 const cwd = path.resolve(process.argv[2] || process.cwd());
 const runDir = process.argv[3]
   ? path.resolve(process.argv[3])
-  : path.join(cwd, '.vanadis');
+  : path.join(cwd, '.asgard', '.vanadis', 'engine1');
 const outFile = path.join(runDir, 'ctx-prime.json');
 
 const SKIP_DIRS = new Set([

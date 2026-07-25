@@ -3,7 +3,7 @@
 // PostToolUse hook — runs after Edit/Write on .tsx/.jsx/.css/.scss files.
 // Detects if the change introduced a hex / radius / motion-duration value
 // that's NOT in DESIGN.md, surfaces a one-line suggestion to capture as
-// preference, AND persists the drift to .vanadis/preferences.md as an ambient
+// preference, AND persists the drift to .asgard/.vanadis/engine1/preferences.md as an ambient
 // inferred entry (issue #24 — alert + record).
 //
 // Detection axes (high-precision only — each axis needs a parsable DESIGN.md
@@ -237,7 +237,7 @@ process.stdin.on('end', () => {
 
   // ---- record (ambient persistence, issue #24) -----------------------------
   // Guards: never record while editing DESIGN.md / DESIGN_DEPRECATED.md,
-  // anything under .vanadis/ or .claude/ (or the .codex/ mirror), or non-UI files
+  // anything under .asgard/.vanadis/engine1/ or .claude/ (or the .codex/ mirror), or non-UI files
   // (.ts only when the content is JSX-ish).
   const normPath = filePath.replace(/\\/g, '/');
   const isProtectedFile =

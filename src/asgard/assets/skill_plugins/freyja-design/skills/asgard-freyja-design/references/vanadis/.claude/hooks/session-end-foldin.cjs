@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // vanadis:installed-hook sha256=2bc5b9656c2e3891c68c9bb3213af770002727fd354273fbe4b3158c9dd92968
-// Stop hook — at session end, run fold-in algorithm on .vanadis/preferences.md.
-// If proposals exceed threshold, append a note to .vanadis/timeline.md AND write
-// .vanadis/foldin-proposal.json so the next SessionStart hook instructs the agent
+// Stop hook — at session end, run fold-in algorithm on .asgard/.vanadis/engine1/preferences.md.
+// If proposals exceed threshold, append a note to .asgard/.vanadis/engine1/timeline.md AND write
+// .asgard/.vanadis/engine1/foldin-proposal.json so the next SessionStart hook instructs the agent
 // to ask via AskUserQuestion (hooks can't render UI — the agent layer does).
 
 'use strict';
@@ -12,10 +12,10 @@ const path = require('node:path');
 const { parsePreferences } = require('./lib/preferences-parser.cjs');
 
 const projectDir = process.env.CLAUDE_PROJECT_DIR || process.cwd();
-const preferencesMd = path.join(projectDir, '.vanadis', 'preferences.md');
-const timelineMd = path.join(projectDir, '.vanadis', 'timeline.md');
-const configJson = path.join(projectDir, '.vanadis', 'config.json');
-const proposalJson = path.join(projectDir, '.vanadis', 'foldin-proposal.json');
+const preferencesMd = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'preferences.md');
+const timelineMd = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'timeline.md');
+const configJson = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'config.json');
+const proposalJson = path.join(projectDir, '.asgard', '.vanadis', 'engine1', 'foldin-proposal.json');
 
 if (!fs.existsSync(preferencesMd)) process.exit(0);
 
