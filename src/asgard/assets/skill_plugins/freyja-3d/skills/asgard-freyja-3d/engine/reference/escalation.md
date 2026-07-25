@@ -22,7 +22,7 @@
 경계선부터: 병합·크리스 스무딩·PBR 머티리얼·GLB 재작성까지는 `mesh_polish.mjs` 가 무의존으로 한다.
 Blender 로 넘기는 것은 그 너머다 — **UV 전개, 텍스처·노멀맵 베이크, 스컬프트/유기 조형, 리깅·스키닝, 시네마틱 라이팅**.
 
-`preflight` 가 blender 를 감지하면(game 레인) 사람 조작 없이 헤드리스로 부린다:
+`preflight` 가 blender 를 감지하면 art/asset 레인의 반복 가능한 변환을 헤드리스로 실행할 수 있다:
 
 ```bash
 blender -b --python job.py -- in.glb out.glb    # -b = UI 없이, -- 뒤가 스크립트 인자
@@ -46,7 +46,8 @@ for obj in bpy.data.objects:
 bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB")
 ```
 
-- 산출물은 반드시 이 엔진으로 되돌아온다: `scene_audit`(예산)·`shoot`(형상 증거). Blender 를 거쳤다는 사실은 검증이 아니다.
+- 위 코드는 브리지 골격이지 프로덕션 UV나 베이크 레시피가 아니다. Smart Project 결과를 아티스트 UV라고 부르지 않는다.
+- 산출물은 반드시 이 엔진으로 되돌아온다: Khronos glTF Validator(규격)·`scene_audit`(예산)·`shoot`(형상 증거)·실제 렌더러의 뷰티 캡처(룩). Blender 를 거쳤다는 사실은 검증이 아니다.
 - Blender 가 없으면 되는 척하지 않는다 — game 레인 preflight 문구대로 설치를 안내하고, 그동안 1단(mesh_polish)과 예제 수렵(lane-asset)으로 진행한다.
 
 ## 넘기기 전에 확인할 것

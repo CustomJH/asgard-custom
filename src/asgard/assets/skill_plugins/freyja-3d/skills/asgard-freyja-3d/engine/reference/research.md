@@ -36,6 +36,7 @@
 
 ## 웹 3D 성능
 
+- **Khronos Asset Creation Guidelines 2.0** (2025) — 좌표·단위·원점, GPU 친화적 삼각형, 인스턴싱, UV/텍셀 밀도/밉 블리드, 압축, 스킨·모프·애니메이션, PBR 확장을 한 배달 계약으로 묶는다. 규격 적합성은 공식 [glTF Validator](https://github.com/KhronosGroup/glTF-Validator), 용도별 예산·품질은 [glTF Asset Auditor](https://www.khronos.org/gltf/gltf-asset-auditor/)가 맡는다. → 자체 `scene_audit`를 규격 검사라고 부르지 않고, `specimens.md`에 목적별 표본 게이트를 분리한 근거. [가이드](https://github.com/KhronosGroup/3DC-Asset-Creation/blob/main/asset-creation-guidelines/RealtimeAssetCreationGuidelines.md)
 - 드로우콜 모바일 <100(안전권 50 이하)·데스크톱 <500, 화면 삼각형 모바일 50K~150K·데스크톱 500K~1M, 텍스처 메모리 모바일 <50MB·데스크톱 <200MB, 모바일 GPU 메모리 150MB 이내. **"삼각형 수보다 드로우콜 수가 중요하다"** 는 것이 공통된 결론.
 - WebGPU: three r171+ `three/webgpu` 에서 WebGL2 자동 폴백. `ShaderMaterial`/`RawShaderMaterial`/`onBeforeCompile` 은 WebGPU 경로 미지원 — TSL 노드 머티리얼로 포팅해야 한다. TSL 은 WGSL·GLSL 양쪽으로 컴파일된다. 이득은 드로우콜이 많은 씬과 컴퓨트에서 나온다.
 - 압축: Draco 는 압축률, meshopt 는 디코드 속도. KTX2/Basis 는 GPU 상주 상태로 압축을 유지해 VRAM 을 크게 줄인다.
@@ -48,6 +49,8 @@
 
 ## 게임 아트 공정 (art 레인의 근거)
 
+- **Blender glTF 2.0 exporter** — glTF는 삼각형으로 전달되고 UV·flat edge가 정점을 분리하며, tangent-space normal·ORM 패킹·스킨·모프·클립은 명시적인 내보내기 계약이다. UV·텍스처·스킨을 버리는 위치 전용 재작성기를 일반 glTF 최적화에 쓰면 안 된다. [공식 매뉴얼](https://docs.blender.org/manual/en/latest/addons/import_export/scene_gltf2.html)
+- **Adobe Substance mesh maps** — high→low 베이크는 normal·world normal·ID·AO·curvature·position·thickness를 텍스처로 옮기는 공정이다. 이 엔진의 정점 AO/커버처는 진단·마스크 원료일 뿐 텍스처 베이크의 대체물이 아니다. [공식 문서](https://helpx.adobe.com/substance-3d-painter/using/baking.html)
 - 파이프라인 9단계·수치 기준(히어로 무기 LOD0 15–40k tri, 텍셀 밀도 10.24/5.12 px/cm, LOD 단당 −50%, AAA 무기 1자루 12–19 영업일): Room 8 Studio·nastyrodent AAA 무기 파이프라인·Polycount 스레드·Leonardo Iezzi 텍셀 밀도 문서(2026-07 조사, 출처 URL 은 조사 보고 원문).
 - 정점 베이크 = Substance "per vertex" 커버처 모드와 같은 급. AO 베이커 현업 기본값 64레이/180° 스프레드(Adobe Substance 문서). 커버처의 수학: Meyer et al. 2003 이산 미분기하 연산자(코탄젠트 라플라시안), 저비용 근사 = 부호 이면각.
 - AO 의 기원: Zhukov et al., *An Ambient Light Illumination Model*(obscurances), EGSR 1998. 코사인 가중 반구 샘플링 = Malley's method (몬테카를로 중요도 샘플링).

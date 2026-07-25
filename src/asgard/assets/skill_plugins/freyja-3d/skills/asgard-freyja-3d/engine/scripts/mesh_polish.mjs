@@ -443,21 +443,42 @@ export function writeGlb(outPath, parts) {
   writeFileSync(outPath, Buffer.concat([header, jsonHeader, jsonChunk, binHeader, ...binChunks]));
 }
 
-function toYUp(positions) {
+function preparePositions(positions, { toYUp, scale }) {
   const out = new Float32Array(positions.length);
   for (let i = 0; i < positions.length; i += 3) {
-    out[i] = positions[i];
-    out[i + 1] = positions[i + 2];
-    out[i + 2] = -positions[i + 1];
+    out[i] = positions[i] * scale;
+    out[i + 1] = (toYUp ? positions[i + 2] : positions[i + 1]) * scale;
+    out[i + 2] = (toYUp ? -positions[i + 1] : positions[i + 2]) * scale;
   }
   return out;
 }
 
+function lossyGltfFeatures(gltf) {
+  if (!gltf) return [];
+  const features = [];
+  const attributes = (gltf.meshes || []).flatMap((mesh) =>
+    (mesh.primitives || []).flatMap((primitive) => Object.keys(primitive.attributes || {})),
+  );
+  if (attributes.some((name) => name.startsWith("TEXCOORD_"))) features.push("UV");
+  if (attributes.some((name) => name === "TANGENT")) features.push("tangent");
+  if (attributes.some((name) => name.startsWith("JOINTS_") || name.startsWith("WEIGHTS_"))) features.push("skinning");
+  if ((gltf.meshes || []).some((mesh) => (mesh.primitives || []).some((primitive) => primitive.targets?.length))) {
+    features.push("morph targets");
+  }
+  if (gltf.images?.length || gltf.textures?.length) features.push("textures");
+  if (gltf.animations?.length) features.push("animations");
+  if (gltf.skins?.length) features.push("skins");
+  return [...new Set(features)];
+}
+
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 if (isMain) {
-  const { positional, options } = parseArgs(process.argv.slice(2), { flags: ["json", "bake"] });
+  const { positional, options } = parseArgs(process.argv.slice(2), { flags: ["json", "bake", "force-lossy"] });
   if (!positional.length) {
-    fail("사용법: node mesh_polish.mjs <model> --out polished.glb [--crease 40] [--materials JSON] [--bake] [--ao-samples 32]");
+    fail(
+      "사용법: node mesh_polish.mjs <model> --out polished.glb [--unit auto|mm|cm|m|in] [--crease 40] " +
+        "[--materials JSON] [--bake] [--ao-samples 32] [--force-lossy]",
+    );
   }
   const outPath = String(options.out || "polished.glb");
   const creaseDeg = Number(options.crease || 40);
@@ -479,8 +500,19 @@ if (isMain) {
     fail(`모델을 읽지 못했다: ${positional[0]} — ${error.message}`);
   }
   const isGltf = [".glb", ".gltf"].includes(extname(positional[0]).toLowerCase());
+  const lossyFeatures = lossyGltfFeatures(mesh.gltf);
+  if (lossyFeatures.length && !options["force-lossy"]) {
+    fail(
+      `손실 변환 거부: ${lossyFeatures.join(", ")} 데이터가 있다. mesh_polish 는 위치·법선·단색 PBR만 다시 쓰므로 ` +
+        "원본 glTF 최적화에는 glTF-Transform/Blender를 사용하라. 정말 버릴 때만 --force-lossy.",
+    );
+  }
   const upMode = String(options.up || "auto");
   const convert = upMode === "y" || (upMode === "auto" && !isGltf); // glTF 출력은 Y-up 이 규격이다.
+  const unitMode = String(options.unit || "auto").toLowerCase();
+  const inputUnit = unitMode === "auto" ? (isGltf ? "m" : "mm") : unitMode;
+  const unitToMeters = { mm: 0.001, cm: 0.01, m: 1, in: 0.0254 }[inputUnit];
+  if (!unitToMeters) fail(`알 수 없는 입력 단위: ${inputUnit} (auto, mm, cm, m, in)`);
 
   // CAD 내보내기는 면마다 프리미티브를 쪼갠다 — 같은 이름은 병합해야 스무딩이 조각 경계를 넘고
   // 드로우콜도 부품당 1이 된다.
@@ -497,7 +529,7 @@ if (isMain) {
       combined.set(positions, cursor);
       cursor += positions.length;
     }
-    if (convert) combined = toYUp(combined);
+    combined = preparePositions(combined, { toYUp: convert, scale: unitToMeters });
     return { name, positions: combined };
   });
 
@@ -529,6 +561,10 @@ if (isMain) {
     source: positional[0],
     out: outPath,
     creaseDeg,
+    inputUnit,
+    outputUnit: "m",
+    scaleToMeters: unitToMeters,
+    lossyFeatures,
     parts: parts.map((part) => {
       const entry = {
         name: part.name,

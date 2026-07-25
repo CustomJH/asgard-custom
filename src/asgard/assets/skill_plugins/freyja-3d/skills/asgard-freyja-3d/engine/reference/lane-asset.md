@@ -44,16 +44,16 @@ node engine/scripts/scene_audit.mjs out.glb --target mobile
 - **단순화(simplify)는 마지막에, 눈으로 확인하며.** 실루엣이 무너지는 지점이 있다. 자동 비율 하나로 전 자산을 처리하지 않는다.
 - LOD 는 실제로 카메라 거리 편차가 큰 씬에서만 값을 한다. 고정 시점 씬에 LOD 는 복잡도만 늘린다.
 
-## 게임 준비 (game-ready) — CAD 산출물을 게임·제품 뷰 품질로
+## 엔진 프리뷰 — CAD 산출물을 안전한 출발점으로
 
 커널이 내보낸 지오메트리는 그대로 쓰면 조잡해 보인다. 면마다 프리미티브가 쪼개져 있고(드로우콜 낭비),
-법선이 평면 셰이딩이라 곡면이 각져 보이고, 머티리얼이 없다. 게임 준비의 최소 사다리:
+법선이 평면 셰이딩이라 곡면이 각져 보이고, 머티리얼이 없다. 다음은 **무텍스처 CAD/메시 프리뷰**의 최소 사다리다. UV·텍스처·리깅까지 갖춘 game-ready 자산이라는 뜻은 아니다.
 
 ```bash
 # 1단 — 무의존 폴리시: 부품 병합 + 크리스 스무딩 + PBR 머티리얼 (여기까지는 이 엔진 안에서 끝난다)
-node engine/scripts/mesh_polish.mjs build/part.glb --out game.glb --crease 40 \
+node engine/scripts/mesh_polish.mjs build/part.stl --out preview.glb --crease 40 \
      --materials '{"body":"steel","grip":"leather"}'    # 프리셋 또는 "#RRGGBB,metallic,roughness"
-node engine/scripts/scene_audit.mjs game.glb --target mobile   # 폴리시 후 예산 재확인
+node engine/scripts/scene_audit.mjs preview.glb --target mobile   # 폴리시 후 예산 재확인
 
 # 2단 — 압축·단순화: gltf-transform (pipeline 레인, 네트워크 필요)
 # 3단 — UV 전개·텍스처 베이크·유기 조형·리깅: Blender 헤드리스 (escalation.md)
@@ -61,6 +61,8 @@ node engine/scripts/scene_audit.mjs game.glb --target mobile   # 폴리시 후 �
 
 - 크리스 각 40° 가 하드서피스 기본값이다. 기계 부품의 모서리는 살리고 곡면은 잇는다. 둥근 유기형은 60~80°.
 - `mesh_polish` 는 같은 이름의 부품 조각을 병합한다 — 부품당 드로우콜 1, 스무딩이 조각 경계를 넘는다.
+- STL·OBJ·3MF는 기본적으로 mm로 읽어 glTF 규격의 m로 바꾼다. 미터 OBJ라면 `--unit m`을 명시한다.
+- `mesh_polish`는 UV·텍스처·스킨·모프·애니메이션이 있는 glTF를 기본 거부한다. 그 데이터를 보존하는 최적화는 glTF-Transform/Blender로 한다.
 - 여기까지로 안 되는 것(노멀맵 베이크, 스컬프트 디테일, 스킨 리깅)은 승급 대상이지 이 레인에서 흉내 낼 일이 아니다.
 
 ## 예제 수렵 — 없는 것은 만들지 말고 찾아라
@@ -69,6 +71,8 @@ node engine/scripts/scene_audit.mjs game.glb --target mobile   # 폴리시 후 �
 파이프라인(실측→최적화→예산)에 태우는 것이 만들기보다 항상 빠르고 항상 좋아 보인다.
 
 **실명 카탈로그가 `engine/data/asset_catalog.json` 에 있다** — Poly Haven HDRI(무드별 슬러그)·PBR 텍스처, ambientCG 머티리얼 ID, Kenney/Quaternius 팩, Khronos 샘플 모델의 검증된 URL 패턴·라이선스까지. 소스를 기억으로 더듬지 말고 카탈로그에서 고른다. 없는 것은 Sketchfab(CC0/CC-BY 필터)에서 모델별 라이선스를 확인하고 쓴다.
+
+도구·내보내기·판정 자체를 검증할 때는 `specimens.md`의 로컬 `inspection-prop`과 목적별 Khronos 표본을 먼저 쓴다. 로컬 표본은 형상·단위 기준이고, PBR·애니메이션 기준을 대신하지 않는다.
 
 | 소스 | 무엇 | 라이선스 |
 |---|---|---|
