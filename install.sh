@@ -231,6 +231,22 @@ main() {
   else
     info "uv ${D}absent — will bootstrap in step 2${X}"
   fi
+  # 디자인 엔진(프레이야 1·2) 스크립트 런타임. uv·python 처럼 여기 preflight 에서 점검한다 —
+  # 엔진과 그 검출기 번들은 휠에 실려 오므로 따로 설치할 게 없지만, node 가 없으면 검출기·훅·live 가
+  # 통째로 죽고 그 침묵이 "깨끗함"으로 읽힌다. 설치는 강행하지 않는다(사용자 런타임 선택 존중).
+  local node_hint="https://nodejs.org"
+  [ "$os" = "Darwin" ] && command -v brew >/dev/null 2>&1 && node_hint="brew install node (or https://nodejs.org)"
+  NODE_V="$(node -v 2>/dev/null || true)"
+  case "$NODE_V" in
+    v[0-9]*)
+      NODE_MAJOR="${NODE_V#v}"; NODE_MAJOR="${NODE_MAJOR%%[!0-9]*}"
+      if [ "${NODE_MAJOR:-0}" -ge 22 ]; then
+        ok "node ${D}${NODE_V} (design engines)${X}"
+      else
+        warn "node ${NODE_V} — Freyja design engines need >= 22. Upgrade: ${node_hint}"
+      fi ;;
+    *) warn "node not found — Freyja design engines (detector·hooks·live) need node >= 22. Install: ${node_hint}" ;;
+  esac
 
   # ── [2/3] install — bootstrap the toolchain (uv → CPython 3.14), then install asgard. ──
   phase "install · toolchain + asgard"
@@ -267,16 +283,6 @@ main() {
   else
     warn "not on PATH yet — restart shell (or run: uv tool update-shell)"
   fi
-  # 디자인 엔진(프레이야 1·2) 스크립트 런타임. 엔진과 그 검출기 번들은 휠에 실려 오므로
-  # 따로 설치할 게 없지만, node 가 없으면 검출기·훅·live 가 통째로 죽는다 — 조용히 반쪽으로
-  # 도는 것보다 지금 말해 주는 편이 낫다. 설치는 강행하지 않는다(사용자 런타임 선택 존중).
-  NODE_V="$(node -v 2>/dev/null || true)"
-  case "$NODE_V" in
-    v2[2-9]*|v[3-9][0-9]*) ok "node ${D}${NODE_V} (design engines)${X}" ;;
-    v*) warn "node ${NODE_V} — Freyja design engines need >= 22 (https://nodejs.org)" ;;
-    *)  info "node ${D}not found — Freyja design engines need it (https://nodejs.org)${X}" ;;
-  esac
-
   # shell completions — 로그인 셸($SHELL) 기준으로 배선. 실패해도 설치는 유효 (수동 안내만).
   if asgard completions --install >/dev/null 2>&1; then
     ok "completions ${D}wired ($(basename "${SHELL:-bash}") — restart shell to activate)${X}"

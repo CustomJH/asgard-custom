@@ -41,6 +41,18 @@ function Main {
     if ($haveUv) { Write-Ok ("uv " + (uv --version 2>$null) + " (already installed)") }
     else { Write-Info "uv absent - will bootstrap in step 2" }
 
+    # Freyja design engines run on node - checked here in preflight alongside uv/python.
+    # The engines and their detector bundle ride in the wheel, so nothing to install for
+    # them - but without node the detector, hooks and live mode are all dead, and silence
+    # there reads as "clean". We never force-install node (user's runtime choice).
+    $nodeV = try { (node -v 2>$null) } catch { $null }
+    if ($nodeV -match '^v(\d+)') {
+        if ([int]$Matches[1] -ge 22) { Write-Ok "node $nodeV (design engines)" }
+        else { Write-Warn2 "node $nodeV - Freyja design engines need >= 22. Upgrade: winget install OpenJS.NodeJS.LTS (or https://nodejs.org)" }
+    } else {
+        Write-Warn2 "node not found - Freyja design engines (detector/hooks/live) need node >= 22. Install: winget install OpenJS.NodeJS.LTS (or https://nodejs.org)"
+    }
+
     # ── [2/3] install ──
     Phase "install - toolchain + asgard"
     if (-not $haveUv) {
@@ -77,15 +89,6 @@ function Main {
     $cmd = Get-Command asgard -ErrorAction SilentlyContinue
     if ($cmd) { Write-Ok "on PATH $($cmd.Source)" }
     else { Write-Warn2 "not on PATH yet - restart the terminal (or run: uv tool update-shell)" }
-
-    # Freyja design engines run on node. The engines and their detector bundle ride
-    # in the wheel, so nothing to install for them - but without node the detector,
-    # hooks and live mode are all dead, and silence there reads as "clean".
-    $nodeV = try { (node -v 2>$null) } catch { $null }
-    if ($nodeV -match '^v(\d+)') {
-        if ([int]$Matches[1] -ge 22) { Write-Ok "node $nodeV (design engines)" }
-        else { Write-Warn2 "node $nodeV - Freyja design engines need >= 22 (https://nodejs.org)" }
-    } else { Write-Info "node not found - Freyja design engines need it (https://nodejs.org)" }
 
     Write-Host ""
     Write-Host "  installed" -ForegroundColor Green -NoNewline; Write-Host " - next:"
