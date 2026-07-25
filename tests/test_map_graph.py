@@ -257,6 +257,49 @@ export const useAck = async () => {
 }
 """
 
+_SERVICE_FIXTURE = """
+import { apiGet } from '../api/client'
+
+export const alarmService = {
+  list() {
+    return apiGet('/alarms/active')
+  },
+}
+
+export async function fetchOne(id) {
+  return apiGet(`/alarms/${id}`)
+}
+"""
+
+_SERVICE_CONSUMER_FIXTURE = """
+import { alarmService, fetchOne } from '@/services/alarm/alarmService'
+import type { AlarmRow } from '@/services/alarm/types'
+import { ghostService } from '@/services/nope/ghostService'
+import { helper } from '@/utils/helper'
+
+export function useAlarmFeed() {
+  const rows = alarmService.list()
+  const one = fetchOne(1)
+  const ghost = ghostService.load()
+  helper()
+  return { rows, one, ghost }
+}
+"""
+
+_CONSUMER_FIXTURE = """
+<script setup lang="ts">
+import { useAlarms } from '@/composables/useAlarms'
+import { useAuthStore } from '@/stores/auth.store'
+
+const { rows } = useAlarms()
+const auth = useAuthStore()
+const [open, setOpen] = useState(false)
+const label = registry.useAlarms()
+</script>
+
+<template><AlarmTable :rows="rows" /></template>
+"""
+
 _STORE_FIXTURE = """
 import { defineStore } from 'pinia'
 
@@ -349,6 +392,88 @@ class TestFrontendLane(Base):
         found = self.kinds("app/composables/useX.ts", "export function useX() { return $fetch('/x') }\n")
         self.assertEqual(len(found["api_call"]), 1)
 
+    def test_hook_calls_emit_provisional_use_evidence(self):
+        found = self.kinds("app/pages/alarms.vue", _CONSUMER_FIXTURE)
+        uses = {e.name: e for e in found["composable"]}
+        # 소비는 잠정 증거다 — 정체 확정은 그래프 빌드의 수렴이 맡으므로 이름은 원문 그대로다.
+        self.assertEqual(set(uses), {"useAlarms", "useAuthStore", "useState"})
+        self.assertEqual({(e.detail, e.confidence, e.scope_end) for e in uses.values()}, {("use", "candidate", 0)})
+
+    def test_comments_are_not_consumption_evidence(self):
+        source = "// wired via useGhost()\n/* usePhantom() */\nconst u = 'https://x/y' + useReal()\n"
+        uses = {e.name for e in self.kinds("app/lib/a.ts", source).get("composable", [])}
+        # 주석 속 산문·죽은 호출은 증거가 아니고, 문자열의 `//` 는 주석이 아니다
+        self.assertEqual(uses, {"useReal"})
+
+    def test_declaration_line_is_not_self_consumption(self):
+        found = self.kinds("app/composables/useAlarms.ts", _COMPOSABLE_FIXTURE)
+        composables = {(e.name, e.detail) for e in found["composable"]}
+        self.assertEqual(composables, {("useAlarms", ""), ("useAck", "")})
+        # `^\s*` 가 앞 개행을 삼켜도 선언 줄은 이름 토큰이 있는 줄이다
+        decl = {e.name: e.line for e in found["composable"]}
+        self.assertEqual(
+            _COMPOSABLE_FIXTURE.splitlines()[decl["useAlarms"] - 1].strip().split("(")[0], "export function useAlarms"
+        )
+
+    def test_store_aliases_map_accessor_to_store_id(self):
+        from asgard.map_graph.extract_tsjs import extract_store_aliases
+
+        self.assertEqual(extract_store_aliases(_STORE_FIXTURE), [("useAuthStore", "auth")])
+        self.assertEqual(extract_store_aliases("// const useDead = defineStore('dead')\n"), [])
+
+    def test_service_declared_in_convention_dir_with_body_spans(self):
+        found = self.kinds("app/services/alarm/alarmService.ts", _SERVICE_FIXTURE)
+        services = {e.name: e for e in found["service"]}
+        self.assertEqual(set(services), {"alarmService", "fetchOne"})
+        # 네임스페이스 객체 스팬이 자기 메서드의 api_call 을 포함한다
+        obj, call = services["alarmService"], found["api_call"][0]
+        self.assertTrue(obj.line <= call.line <= obj.scope_end)
+        # 관례 밖 같은 소스는 서비스를 주장하지 않는다
+        self.assertNotIn("service", self.kinds("app/lib/alarmService.ts", _SERVICE_FIXTURE))
+
+    def test_constant_object_in_services_dir_is_not_a_service(self):
+        source = (
+            "export const DEFAULT_OPTIONS = {\n  retries: 3,\n  timeout: 1000,\n}\n\n"
+            "export const tsService = {\n  list(p: Params = {}): Promise<Row[]> { return apiGet('/a') },\n}\n\n"
+            "export const arrowService = {\n  fetch: async () => apiGet('/b'),\n}\n"
+        )
+        names = {e.name for e in self.kinds("app/services/x.ts", source)["service"]}
+        # 호출 가능한 멤버가 근거다 — TS 반환 타입 표기와 화살표 값 둘 다 서비스로 선다
+        self.assertEqual(names, {"tsService", "arrowService"})
+
+    def test_service_consumption_proven_by_import_origin(self):
+        found = self.kinds("app/composables/useAlarmFeed.ts", _SERVICE_CONSUMER_FIXTURE)
+        uses = {e.name for e in found["service"]}
+        # 임포트 경로가 `services/` 인 런타임 심볼의 *호출*만 소비로 읽는다 —
+        # 타입 전용 임포트(AlarmRow)와 비-서비스 임포트(helper)는 제외된다.
+        # ghostService 는 여기서 잠정 통과하고, 선언이 없으므로 그래프 빌드에서 탈락한다.
+        self.assertEqual(uses, {"alarmService", "fetchOne", "ghostService"})
+        self.assertEqual({e.detail for e in found["service"]}, {"use"})
+
+    def test_service_import_without_call_is_not_consumption(self):
+        source = "import { alarmService } from '@/services/a'\nconst x = alarmService\n"
+        self.assertNotIn("service", self.kinds("app/pages/p.vue", f"<script setup>\n{source}</script>\n"))
+
+    def test_service_chain_reaches_route_in_scan(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "fe"\n')
+        self.write("app/services/alarm/alarmService.ts", _SERVICE_FIXTURE)
+        self.write("app/composables/useAlarmFeed.ts", _SERVICE_CONSUMER_FIXTURE)
+        self.write("app/pages/alarms.vue", "<script setup>\nconst f = useAlarmFeed()\n</script>\n")
+        self.write("api/server.ts", "app.get('/alarms/active', h)\n")
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        edges = {(e["source"], e["target"], e["kind"]) for e in state["edges"]}
+        # page → composable → service → api_call → route 전 구간
+        self.assertIn(("page:/alarms", "composable:useAlarmFeed", "uses"), edges)
+        self.assertIn(("composable:useAlarmFeed", "service:alarmService", "uses"), edges)
+        self.assertIn(("service:alarmService", "api_call:/alarms/active", "calls"), edges)
+        self.assertIn(("api_call:/alarms/active", "route:GET_/alarms/active", "calls"), edges)
+        # 임포트가 출처를 증명해도 리포에 선언이 없으면 노드를 세우지 않는다
+        self.assertNotIn("service:ghostService", {n["id"] for n in state["nodes"]})
+
     def test_page_flow_joins_inline_fetch_in_scan(self):
         from asgard.map_graph import graph_state, scan_graph
 
@@ -361,6 +486,46 @@ class TestFrontendLane(Base):
         # 페이지가 파일 본문을 소유한다 — 인라인 $fetch 가 페이지 플로우로 귀속 (근사 스팬 → candidate)
         # (api_call 의 `{}` 는 id 슬러그에서 `_` 로 정규화된다)
         self.assertEqual(edges.get(("page:/alarms/:id", "api_call:/api/alarms/_/detail", "calls")), "candidate")
+
+    def test_fe_logic_chain_edges_and_convergence_gate_in_scan(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "fe"\n')
+        self.write("app/composables/useAlarms.ts", _COMPOSABLE_FIXTURE)
+        self.write("app/stores/auth.store.ts", _STORE_FIXTURE)
+        self.write("app/pages/alarms.vue", _CONSUMER_FIXTURE)
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        edges = {(e["source"], e["target"], e["kind"]) for e in state["edges"]}
+        # 화면 → 로직 → 상태 체인이 선다 (TS 스팬은 근사라 candidate)
+        self.assertIn(("page:/alarms", "composable:useAlarms", "uses"), edges)
+        # 접근자 `useAuthStore` 는 별칭표로 `defineStore` id 노드에 수렴한다
+        self.assertIn(("page:/alarms", "store:auth", "uses"), edges)
+        kinds = {n["id"]: n["kind"] for n in state["nodes"]}
+        # 리포에 선언이 없는 프레임워크 원시 훅과 수신자 메서드 호출은 노드를 세우지 않는다
+        self.assertNotIn("composable:useState", kinds)
+        self.assertNotIn("store:useAuthStore", kinds)
+        # 소비 파일의 파일 엣지는 선언이 아니라 uses 다
+        self.assertIn(("file:app/pages/alarms.vue", "composable:useAlarms", "uses"), edges)
+        self.assertNotIn(("file:app/pages/alarms.vue", "composable:useAlarms", "declares"), edges)
+
+    def test_ambiguous_store_accessor_is_not_resolved(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.write("pyproject.toml", '[project]\nname = "fe"\n')
+        self.write("a/stores/x.ts", "export const useThing = defineStore('alpha', {})\n")
+        self.write("b/stores/y.ts", "export const useThing = defineStore('beta', {})\n")
+        self.write("app/pages/p.vue", "<script setup>\nconst t = useThing()\n</script>\n")
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        ids = {n["id"] for n in state["nodes"]}
+        # 접근자가 두 스토어로 갈리면 정체가 증명되지 않는다 — 어느 쪽으로도 잇지 않는다
+        self.assertEqual({i for i in ids if i.startswith("store:")}, {"store:alpha", "store:beta"})
+        edges = {(e["source"], e["target"]) for e in state["edges"]}
+        self.assertNotIn(("page:/p", "store:alpha"), edges)
+        self.assertNotIn(("page:/p", "store:beta"), edges)
 
     def test_component_declared_only_in_components_tree(self):
         decls = {
@@ -486,6 +651,120 @@ public class OrbitHomeController {
         self.assertEqual({e.name for e in found["external_service"]}, {"kafka", "oracle"})
         self.assertEqual(found["api_call"][0].name, "https://pay.example.com/v1")
         self.assertEqual(found["api_call"][0].confidence, "confirmed")
+
+
+class TestJvmCrossFileResolution(Base):
+    """계층형 Spring 앱의 라우트↔SQL — 같은 파일 스팬으로는 닿지 않는 다리."""
+
+    def seed_layers(self, *, extra_impl: str = "") -> None:
+        self.write("pyproject.toml", '[project]\nname = "be"\n')
+        self.write(
+            "svc/src/main/java/com/acme/rest/MeterController.java",
+            "package com.acme.rest;\n\n"
+            "import com.acme.spec.MeterService;\n"
+            "import org.springframework.web.bind.annotation.RestController;\n\n"
+            "@RestController\n"
+            '@RequestMapping("/api/meters")\n'
+            "public class MeterController {\n"
+            "    private final MeterService meterService;\n\n"
+            '    @GetMapping("/{id}")\n'
+            # 어노테이션 인자로 괄호가 중첩되는 시그니처 — 메서드 스팬이 여기서 끊기면 안 된다
+            "    public Object getMeter(@ScopeFilter(allowEmpty = true) Scope scope,\n"
+            "            @PathVariable Long id) {\n"
+            "        return meterService.findMeter(id);\n"
+            "    }\n"
+            "}\n",
+        )
+        self.write(
+            "svc/src/main/java/com/acme/spec/MeterService.java",
+            "package com.acme.spec;\n\npublic interface MeterService {\n    Object findMeter(Long id);\n}\n",
+        )
+        self.write(
+            "svc/src/main/java/com/acme/logic/MeterLogic.java",
+            "package com.acme.logic;\n\n"
+            "import com.acme.spec.MeterService;\n"
+            "import com.acme.store.MeterStore;\n\n"
+            "public class MeterLogic implements MeterService {\n"
+            "    private final MeterStore meterStore;\n\n"
+            "    @Override\n"
+            "    public Object findMeter(Long id) {\n"
+            "        return meterStore.findMeter(id);\n"
+            "    }\n"
+            "}\n",
+        )
+        self.write(
+            "svc/src/main/java/com/acme/store/MeterStore.java",
+            "package com.acme.store;\n\npublic interface MeterStore {\n    Object findMeter(Long id);\n}\n",
+        )
+        # MyBatis 매퍼 인터페이스가 Store 를 상속하고, XML namespace 가 그 FQN 이다
+        self.write(
+            "store/src/main/java/com/acme/store/MeterMapper.java",
+            "package com.acme.store;\n\npublic interface MeterMapper extends MeterStore {\n"
+            "    Object findMeter(Long id);\n}\n",
+        )
+        self.write("store/src/main/resources/mapper/MeterMapper.xml", _MAPPER_XML)
+        if extra_impl:
+            self.write("store/src/main/java/com/acme/store/OtherMeterStore.java", extra_impl)
+
+    def test_route_reaches_sql_statement_and_table_across_files(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        self.seed_layers()
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        edges = {(e["source"], e["target"], e["kind"]) for e in state["edges"]}
+        # 컨트롤러 → 스펙 인터페이스 → 구현 → 스토어 → 매퍼 XML 을 건너 라우트가 구문에 닿는다
+        self.assertIn(("route:GET_/api/meters/_id_", "db_access:MeterMapper.findMeter", "touches"), edges)
+        # 구문 → 테이블은 매퍼 XML 이 소유한다 — 둘이 이어져 라우트→테이블 체인이 읽힌다
+        self.assertIn(("db_access:MeterMapper.findMeter", "db_access:TCFG_METER", "touches"), edges)
+        detail = next(
+            e.get("detail", "")
+            for e in state["edges"]
+            if (e["source"], e["target"]) == ("route:GET_/api/meters/_id_", "db_access:MeterMapper.findMeter")
+        )
+        self.assertIn("MeterController.getMeter", detail)
+
+    def test_ambiguous_implementations_are_not_linked(self):
+        from asgard.map_graph import graph_state, scan_graph
+
+        # 같은 이름의 구문을 가진 매퍼가 둘이면 어느 빈이 뜨는지 정적으로 증명할 수 없다
+        self.seed_layers(
+            extra_impl="package com.acme.store;\n\npublic interface OtherMeterStore extends MeterStore {\n"
+            "    Object findMeter(Long id);\n}\n"
+        )
+        self.write(
+            "store/src/main/resources/mapper/OtherMeterMapper.xml",
+            '<mapper namespace="com.acme.store.OtherMeterStore">\n'
+            '<select id="findMeter">SELECT * FROM OTHER_METER</select>\n</mapper>\n',
+        )
+        scan_graph(self.root)
+        state = graph_state(self.root)
+        assert state is not None
+        linked = {
+            e["target"]
+            for e in state["edges"]
+            if e["source"] == "route:GET_/api/meters/_id_" and e["kind"] == "touches"
+        }
+        self.assertEqual(linked, set())
+
+    def test_non_field_receivers_are_not_resolved(self):
+        from asgard.map_graph.resolve_jvm import JvmIndex, index_java
+
+        source = (
+            "package com.acme.logic;\n\npublic class LocalOnly {\n"
+            "    public void run() {\n"
+            "        MeterStore local = factory.create();\n"
+            "        local.findMeter(1L);\n"
+            "    }\n}\n"
+        )
+        module = index_java("svc/LocalOnly.java", source)
+        index = JvmIndex([module], {"com.acme.store.MeterStore#findMeter": "db_access:MeterMapper.findMeter"})
+        unit = next(u for u in module.units if u.name == "run")
+        found, partial = index.statements_from(module, unit)
+        # 로컬 변수 수신자는 타입이 증명되지 않는다 — 잇지 않고 미해결로 표시한다
+        self.assertEqual(found, set())
+        self.assertTrue(partial)
 
 
 class TestJvmDbExtractors(Base):
