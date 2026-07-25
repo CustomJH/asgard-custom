@@ -34,7 +34,7 @@ import {
   resolveBackground,
   resolveBorderRadiusPx,
 } from '../../rules/checks.mjs';
-import { detectText, runTextContentAnalyzers } from '../regex/detect-text.mjs';
+import { detectText, runTextContentAnalyzers, runPageStructureAnalyzers } from '../regex/detect-text.mjs';
 import {
   StaticDocument,
   buildStaticStyleMap,
@@ -107,6 +107,30 @@ const STATIC_ELEMENT_RULES = [
   { id: 'gpt-thin-border-wide-shadow', selector: '*', run: (el, tag, style) => checkElementGptBorderShadow(el, style) },
 ];
 
+/**
+ * The four packages this engine parses with, taken from a real install when one
+ * is reachable and from the vendored bundle otherwise.
+ *
+ * Upstream resolves these as ordinary dependencies of the installed npm package.
+ * Asgard ships the engine as Python package data with no node_modules beside it,
+ * so every bare import threw and `detectHtml` fell through to the regex-only
+ * path — silently, since the caller cannot tell a clean page from an unparsed
+ * one. Bare specifiers stay first so a real install still wins.
+ */
+async function importStaticParser() {
+  try {
+    return await Promise.all([
+      import('htmlparser2'),
+      import('css-select'),
+      import('css-tree'),
+      import('domutils'),
+    ]);
+  } catch {
+    const bundle = await import('../../vendor/static-parser.mjs');
+    return [bundle.htmlparser2, bundle.cssSelect, bundle.csstree, bundle.domutils];
+  }
+}
+
 async function detectHtml(filePath, options = {}) {
   const profile = options?.profile;
   const html = profileStep(profile, {
@@ -124,12 +148,7 @@ async function detectHtml(filePath, options = {}) {
       ruleId: 'import-static-parser',
       target: filePath,
     }, async () => {
-      const [htmlparser2, cssSelect, csstree, domutils] = await Promise.all([
-        import('htmlparser2'),
-        import('css-select'),
-        import('css-tree'),
-        import('domutils'),
-      ]);
+      const [htmlparser2, cssSelect, csstree, domutils] = await importStaticParser();
       return {
         parseDocument: htmlparser2.parseDocument,
         selectAll: cssSelect.selectAll,
@@ -236,10 +255,17 @@ async function detectHtml(filePath, options = {}) {
     for (const f of runPageCheck('text-content', () => runTextContentAnalyzers(html, filePath, options))) {
       findings.push(finding(f.antipattern, filePath, f.snippet));
     }
+    // Page-structure analyzers: defects that are properties of the whole
+    // document rather than of an element — motion declared but unreachable,
+    // controls that resolve to nothing. Both are things a source read passes
+    // and only a delivered page reveals.
+    for (const f of runPageCheck('page-structure', () => runPageStructureAnalyzers(html, filePath, options))) {
+      findings.push(finding(f.antipattern, filePath, f.snippet));
+    }
   }
 
   // Static-HTML findings carry no line number, so only whole-file
-  // `impeccable-disable` directives apply here — exactly the standalone-document
+  // `freyja2-disable` directives apply here — exactly the standalone-document
   // waiver this primitive targets. Bypassed by `--no-config` / `--no-inline-ignores`.
   return options?.inlineIgnores === false ? findings : applyInlineIgnores(findings, html);
 }
