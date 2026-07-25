@@ -552,6 +552,61 @@ def _trinity_checks(root: str) -> list[dict]:
     return checks
 
 
+def _freyja_engine_dir() -> Path:
+    """Freyja 2 엔진 루트 — 훅 매니페스트의 `${FREYJA2_ENGINE}` 가 가리키는 그 경로.
+
+    번들 플러그인은 설치본에서 그 자리 그대로 실행되므로(복사 설치가 아니다) 경로는
+    레지스트리가 아는 자산 루트에서 유도한다 — 두 곳이 갈라지지 않게.
+    """
+    from ..skill_registry import _BUNDLED_PLUGINS_DIR
+
+    return Path(_BUNDLED_PLUGINS_DIR) / "freyja2/skills/asgard-freyja2/engine"
+
+
+def _design_engine_checks() -> list[dict]:
+    """디자인 엔진이 *실제로 완전체로* 실려 왔는지.
+
+    엔진2의 정적 HTML 검출기는 htmlparser2·css-select·css-tree·domutils 를 bare import
+    하고, 실패하면 경고 없이 정규식 경로로 되돌아간다. 원본 대조에서 그 폴백 상태의
+    검출력이 규칙 40종→15종이었다 — 조용하기 때문에 쓰는 쪽은 깨끗한 페이지와 구별할 수
+    없다. 그래서 번들을 휠에 실었고, 여기서 그 존재와 node 런타임을 확인한다.
+    """
+    engine = _freyja_engine_dir()
+    checks: list[dict] = []
+    bundle = engine / "scripts/detector/vendor/static-parser.mjs"
+    checks.append(
+        {
+            "name": "freyja2 static parser",
+            "ok": bundle.is_file(),
+            "detail": f"vendored ({bundle.stat().st_size // 1024}KB)"
+            if bundle.is_file()
+            else "missing — detector runs regex-only",
+            "fix": "재설치로 복구된다: asgard update (휠에 동봉돼 있어 별도 설치 없음)",
+        }
+    )
+    node = on_path("node")
+    version = ""
+    if node:
+        import subprocess
+
+        try:
+            version = subprocess.run([node, "-v"], capture_output=True, text=True, timeout=10).stdout.strip()
+        except Exception:
+            version = ""
+    major = int(version.lstrip("v").split(".")[0]) if version.lstrip("v").split(".")[0].isdigit() else 0
+    checks.append(
+        {
+            "name": "node (design engines)",
+            # 엔진 스크립트는 node >= 22 를 요구한다. 없으면 프레이야 자체는 돌지만
+            # 검출기·훅·live 가 전부 죽으므로 침묵보다 경고가 낫다.
+            "ok": bool(node) and major >= 22,
+            "detail": (f"{version} · {node}" if node else "not found") + ("" if major >= 22 else " — need >= 22"),
+            "fix": "install node >= 22 — https://nodejs.org (프레이야 엔진1·2 스크립트 런타임)",
+        }
+    )
+    return checks
+
+
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
     py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처)
@@ -582,6 +637,7 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
             "fix": "install uv — https://astral.sh/uv (asgard update · 훅 인터프리터 폴백 · uv 프로젝트 베이스라인에 필요)",
         },
     ]
+    checks += _design_engine_checks()
     if personal := _personal_memory_check(os.getcwd()):
         checks.append(personal)
     checks += _trinity_checks(os.getcwd())
@@ -591,7 +647,19 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
 
     if json_out:
         sys.stdout.write(
-            _json.dumps({"version": __version__, "runtime": runtime, "ok": ok, "checks": checks}, indent=2) + "\n"
+            _json.dumps(
+                {
+                    "version": __version__,
+                    "runtime": runtime,
+                    "ok": ok,
+                    # 훅 매니페스트(engine/hooks/)가 `${FREYJA2_ENGINE}` 로 참조하는 경로.
+                    # 설치 위치는 버전마다 달라지므로 하드코딩 대신 여기서 읽어 간다.
+                    "freyja2_engine": str(_freyja_engine_dir()),
+                    "checks": checks,
+                },
+                indent=2,
+            )
+            + "\n"
         )
         return 0 if ok else 1
     if not quiet:
