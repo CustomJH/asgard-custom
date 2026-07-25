@@ -72,6 +72,20 @@ def call_started(root: str, *, provider: str, model: str, transport: str, role: 
     return cid if _append(root, entry) else None
 
 
+def note(root: str, event: str, fields: dict) -> None:
+    """호출 쌍이 아닌 단발 사건 기록 (컨텍스트 압축 등) — 메타데이터만, fail-open.
+
+    call_started/returned 는 provider 왕복 1건을 두 줄로 나눠 적는 계약이라 왕복이 아닌
+    사건은 실을 자리가 없다. 압축은 왕복 0~1회짜리 사건이므로 한 줄로 적는다."""
+    if not enabled():
+        return
+    entry = _base(event, "%016x-%x" % (time.time_ns(), os.getpid()))
+    for key, value in (fields or {}).items():
+        if value not in (None, "", 0, False):
+            entry[key] = value
+    _append(root, entry)
+
+
 def call_returned(
     root: str,
     call_id: str | None,
