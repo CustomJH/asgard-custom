@@ -11,7 +11,7 @@ import {
   filterDetectionFindings,
   readDetectionConfig,
   shouldIgnoreDetectionFile,
-} from '../../lib/impeccable-config.mjs';
+} from '../../lib/vault-config.mjs';
 import {
   HTML_EXTENSIONS,
   buildImportGraph,
@@ -140,7 +140,7 @@ async function confirm(question) {
 }
 
 function printUsage() {
-  console.log(`Usage: impeccable detect [options] [file-or-dir-or-url...]
+  console.log(`Usage: freyja2 detect [options] [file-or-dir-or-url...]
 
 Scan files or URLs for UI anti-patterns and design quality issues.
 
@@ -153,8 +153,8 @@ Options:
                       e.g. --viewport 390x844 for a mobile-width pass
   --no-config         Do not apply project config, detector ignores, inline
                       ignore comments, or DESIGN.md
-  --no-inline-ignores Do not honor in-file impeccable-disable* ignore comments
-  --no-design-system  Do not load local DESIGN.md / .impeccable/design.json context
+  --no-inline-ignores Do not honor in-file freyja2-disable* ignore comments
+  --no-design-system  Do not load local DESIGN.md / .asgard/.vanadis/engine2/design.json context
   --no-advisory       Suppress advisory findings entirely (e.g. em-dash overuse)
   --help              Show this help message
 
@@ -164,16 +164,16 @@ Advisory findings:
   failure count so they never block automation. --no-advisory hides them.
 
 Project config:
-  Respects .impeccable/config.json and .impeccable/config.local.json detector
+  Respects .asgard/.vanadis/engine2/config.json and config.local.json detector
   settings: detector.ignoreRules, detector.ignoreFiles, detector.ignoreValues,
   and detector.designSystem.enabled.
 
 Inline ignores:
   In-file comments waive a finding where it lives and travel with the file:
-    <!-- impeccable-disable overused-font -- exported brand doc -->
-    .brand { font-family: Inter } /* impeccable-disable-line overused-font */
-    // impeccable-disable-next-line bounce-easing: intentional bounce
-  impeccable-disable applies to the whole file; -line / -next-line are scoped.
+    <!-- freyja2-disable overused-font -- exported brand doc -->
+    .brand { font-family: Inter } /* freyja2-disable-line overused-font */
+    // freyja2-disable-next-line bounce-easing: intentional bounce
+  freyja2-disable applies to the whole file; -line / -next-line are scoped.
   List one or more rule ids (comma-separated), or omit them / use * for all.
 
 Detection modes:
@@ -183,11 +183,11 @@ Detection modes:
                  http(s):// and file:// URLs)
 
 Examples:
-  impeccable detect src/
-  impeccable detect index.html
-  impeccable detect https://example.com
-  impeccable detect --json .
-  impeccable detect --no-config src/`);
+  freyja2 detect src/
+  freyja2 detect index.html
+  freyja2 detect https://example.com
+  freyja2 detect --json .
+  freyja2 detect --no-config src/`);
 }
 
 async function detectCli() {
@@ -261,7 +261,7 @@ async function detectCli() {
     process.exit(1);
   }
   const designSystemEnabled = configEnabled && !args.includes('--no-design-system') && detectionConfig.designSystem?.enabled !== false;
-  // Inline `impeccable-disable*` waivers are part of the scanned file, so they
+  // Inline `freyja2-disable*` waivers are part of the scanned file, so they
   // apply by default. `--no-config` (raw scan) and the dedicated
   // `--no-inline-ignores` both turn them off.
   const inlineIgnoresEnabled = configEnabled && !args.includes('--no-inline-ignores');
@@ -330,7 +330,7 @@ async function detectCli() {
                 process.stderr.write(
                   `\n${fwConfig.name} dev server detected on localhost:${fwConfig.port}.\n` +
                   `For more accurate results, scan the running site:\n` +
-                  `  npx impeccable detect http://localhost:${fwConfig.port}\n\n`
+                  `  node <engine>/scripts/detect.mjs http://localhost:${fwConfig.port}\n\n`
                 );
               } else if (probe.listening && !probe.matched) {
                 process.stderr.write(
@@ -341,7 +341,7 @@ async function detectCli() {
                 process.stderr.write(
                   `\n${fwConfig.name} project detected (${path.basename(fwConfig.configPath)}).\n` +
                   `Start the dev server and scan via URL for best results:\n` +
-                  `  npx impeccable detect http://localhost:${fwConfig.port}\n\n`
+                  `  node <engine>/scripts/detect.mjs http://localhost:${fwConfig.port}\n\n`
                 );
               }
             }

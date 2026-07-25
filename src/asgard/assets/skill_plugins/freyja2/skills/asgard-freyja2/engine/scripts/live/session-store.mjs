@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { getLegacyLiveSessionsDir, getLiveSessionsDir, safeSessionId } from '../lib/impeccable-paths.mjs';
+import { ensureVaultDirFor, getLegacyLiveSessionsDir, getLiveSessionsDir, safeSessionId } from '../lib/vault-paths.mjs';
 
 const COMPLETED_PHASES = new Set(['completed', 'discarded']);
 export const GENERATION_FENCED_PHASES = new Set([
@@ -14,7 +14,7 @@ export const GENERATION_FENCED_PHASES = new Set([
 export function createLiveSessionStore({ cwd = process.cwd(), sessionId } = {}) {
   const rootDir = getLiveSessionsDir(cwd);
   const legacyRootDir = getLegacyLiveSessionsDir(cwd);
-  fs.mkdirSync(rootDir, { recursive: true });
+  ensureVaultDirFor(rootDir, cwd);
 
   // No snapshot cache on purpose: appendEvent and getSnapshot both rebuild from
   // the journal so sequence numbers and phase fences never come from a stale

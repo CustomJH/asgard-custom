@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Canonical durable completion acknowledgement for Impeccable live sessions.
+ * Canonical durable completion acknowledgement for Freyja 2 live sessions.
  */
 
 import { createLiveSessionStore } from './live/session-store.mjs';
-import { readLiveServerInfo } from './lib/impeccable-paths.mjs';
+import { readLiveServerInfo } from './lib/vault-paths.mjs';
 
 function parseArgs(argv) {
   const out = { status: 'complete' };

@@ -6,7 +6,7 @@
  *   node <scripts_path>/pin.mjs pin <command>
  *   node <scripts_path>/pin.mjs unpin <command>
  *
- * `pin audit` creates a lightweight audit skill that redirects to Impeccable's audit workflow.
+ * `pin audit` creates a lightweight audit skill that redirects to Freyja 2's audit workflow.
  * `unpin audit` removes that shortcut.
  *
  * The script discovers harness directories (.claude/skills, .cursor/skills, etc.)
@@ -37,7 +37,7 @@ const VALID_COMMANDS = [
 ];
 
 // Marker to identify pinned skills (so unpin doesn't delete user skills)
-const PIN_MARKER = '<!-- impeccable-pinned-skill -->';
+const PIN_MARKER = '<!-- freyja2-pinned-skill -->';
 
 /**
  * Walk up from startDir to find a project root.
@@ -60,15 +60,15 @@ function findProjectRoot(startDir = process.cwd()) {
 }
 
 /**
- * Find harness skill directories that have an impeccable skill installed.
+ * Find harness skill directories that have an freyja2 skill installed.
  */
 function findHarnessDirs(projectRoot) {
   const dirs = [];
   for (const harness of HARNESS_DIRS) {
     const skillsDir = join(projectRoot, harness, 'skills');
-    // Only pin in harness dirs that already have impeccable installed
-    const impeccableDir = join(skillsDir, 'impeccable');
-    if (existsSync(impeccableDir) || existsSync(join(skillsDir, 'i-impeccable'))) {
+    // Only pin in harness dirs that already have freyja2 installed
+    const freyja2Dir = join(skillsDir, 'freyja2');
+    if (existsSync(freyja2Dir) || existsSync(join(skillsDir, 'i-freyja2'))) {
       dirs.push(skillsDir);
     }
   }
@@ -94,7 +94,7 @@ function commandPrefixForSkillsDir(skillsDir) {
 }
 
 function generatePinnedSkill(command, metadata, commandPrefix) {
-  const desc = metadata[command]?.description || `Shortcut for ${commandPrefix}impeccable ${command}.`;
+  const desc = metadata[command]?.description || `Shortcut for ${commandPrefix}freyja2 ${command}.`;
   const hint = metadata[command]?.argumentHint || '[target]';
 
   return `---
@@ -106,9 +106,9 @@ user-invocable: true
 
 ${PIN_MARKER}
 
-This is a pinned shortcut for \`${commandPrefix}impeccable ${command}\`.
+This is a pinned shortcut for \`${commandPrefix}freyja2 ${command}\`.
 
-Invoke ${commandPrefix}impeccable ${command}, passing along any arguments provided here, and follow its instructions.
+Invoke ${commandPrefix}freyja2 ${command}, passing along any arguments provided here, and follow its instructions.
 `;
 }
 
@@ -120,7 +120,7 @@ function pin(command, projectRoot) {
   const harnessDirs = findHarnessDirs(projectRoot);
 
   if (harnessDirs.length === 0) {
-    console.log('No harness directories with impeccable installed found.');
+    console.log('No harness directories with freyja2 installed found.');
     return false;
   }
 
@@ -184,7 +184,7 @@ function unpin(command, projectRoot) {
 
   if (removed > 0) {
     console.log(`\nUnpinned '${command}' from ${removed} location(s).`);
-    console.log(`Use Impeccable's '${command}' workflow directly to access it.`);
+    console.log(`Use Freyja 2's '${command}' workflow directly to access it.`);
   } else {
     console.log(`No pinned '${command}' shortcut found.`);
   }

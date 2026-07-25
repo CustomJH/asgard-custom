@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/impeccable/scripts/hook.mjs\"",
+            "command": "node \"${FREYJA2_ENGINE}/scripts/hook.mjs\"",
             "timeout": 5,
             "statusMessage": "Checking UI changes"
           }
@@ -18,7 +18,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"${CLAUDE_PLUGIN_ROOT}/skills/impeccable/scripts/hook.mjs\"",
+            "command": "node \"${FREYJA2_ENGINE}/scripts/hook.mjs\"",
             "timeout": 30,
             "statusMessage": "Design deep pass"
           }

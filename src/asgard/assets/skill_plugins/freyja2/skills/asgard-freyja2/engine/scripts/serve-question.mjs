@@ -10,8 +10,8 @@
  *   ANSWER: {"optionId":"...","steer":"..."}
  *
  * Exit codes: 0 answered · 2 timed out, closed without answering, or no
- * browser is available (IMPECCABLE_QUESTION_DISABLED, or a detected
- * CI/headless/remote environment; IMPECCABLE_QUESTION_FORCE=1 overrides
+ * browser is available (FREYJA2_QUESTION_DISABLED, or a detected
+ * CI/headless/remote environment; FREYJA2_QUESTION_FORCE=1 overrides
  * detection, --no-open skips it since the caller opens the URL itself).
  *
  * Payload (JSON file via --payload, or stdin):
@@ -64,6 +64,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { ensureVaultDir, vaultPath } from './lib/vault.mjs';
 
 function arg(name, fallback = null) {
   const i = process.argv.indexOf(`--${name}`);
@@ -73,7 +74,7 @@ function arg(name, fallback = null) {
 }
 const hasFlag = (name) => process.argv.includes(`--${name}`);
 
-if (process.env.IMPECCABLE_QUESTION_DISABLED) {
+if (process.env.FREYJA2_QUESTION_DISABLED) {
   console.log('serve-question: disabled in this session (no browser); use the structured question tool instead.');
   process.exit(2);
 }
@@ -84,13 +85,13 @@ if (process.env.IMPECCABLE_QUESTION_DISABLED) {
 // spurious exit 2 from those breaks the documented loop, which polls --wait
 // while it exits 3 and reads --schema before building a payload.
 const wantsBrowser = !hasFlag('no-open') && !hasFlag('wait') && !hasFlag('stop') && !hasFlag('schema');
-if (wantsBrowser && !process.env.IMPECCABLE_QUESTION_FORCE) {
+if (wantsBrowser && !process.env.FREYJA2_QUESTION_FORCE) {
   const headless =
     process.env.CI ||
     (process.env.SSH_CONNECTION && !process.env.DISPLAY) ||
     (process.platform === 'linux' && !process.env.DISPLAY && !process.env.WAYLAND_DISPLAY);
   if (headless) {
-    console.log('serve-question: no browser detected in this environment (CI/headless/remote); use the structured question tool instead. Set IMPECCABLE_QUESTION_FORCE=1 to serve anyway.');
+    console.log('serve-question: no browser detected in this environment (CI/headless/remote); use the structured question tool instead. Set FREYJA2_QUESTION_FORCE=1 to serve anyway.');
     process.exit(2);
   }
 }
@@ -116,7 +117,7 @@ function printAnswer(raw) {
 const payloadPath = arg('payload');
 const timeoutSec = Number(arg('timeout', '900'));
 const portArg = Number(arg('port', '0'));
-const QUESTION_DIR = path.join(process.cwd(), '.impeccable', 'questions');
+const QUESTION_DIR = vaultPath(process.cwd(), 'questions');
 const stateFile = (key) => path.join(QUESTION_DIR, `${key}.state.json`);
 const answerFile = (key) => path.join(QUESTION_DIR, `${key}.answer.json`);
 
@@ -125,8 +126,8 @@ if (hasFlag('schema')) {
     title: 'Choose the visual world',
     question: 'The roll assigned Fillmore Handbill. Keep it, take an alternate, or re-roll.',
     options: [
-      { id: 'assigned', label: 'Fillmore Handbill', kicker: 'THE ROLL', lineage: '1966-71 Fillmore psychedelic handbills', body: 'Why it fits, the first viewport, the honest risk.', hero: 'https://impeccable.style/worlds/cards/fillmore-handbill-hero.webp', board: 'https://impeccable.style/worlds/cards/fillmore-handbill.webp' },
-      { id: 'challenger-teletext', label: 'Teletext Service', lineage: 'broadcast teletext magazines', body: 'Fused alternate.', hero: 'https://impeccable.style/worlds/cards/broadcast-programming-teletext-service-hero.webp' },
+      { id: 'assigned', label: 'Fillmore Handbill', kicker: 'THE ROLL', lineage: '1966-71 Fillmore psychedelic handbills', body: 'Why it fits, the first viewport, the honest risk.', hero: 'https://freyja2.style/worlds/cards/fillmore-handbill-hero.webp', board: 'https://freyja2.style/worlds/cards/fillmore-handbill.webp' },
+      { id: 'challenger-teletext', label: 'Teletext Service', lineage: 'broadcast teletext magazines', body: 'Fused alternate.', hero: 'https://freyja2.style/worlds/cards/broadcast-programming-teletext-service-hero.webp' },
     ],
     reroll: true,
     canon: true,
@@ -199,7 +200,7 @@ if (hasFlag('update')) {
 if (hasFlag('start')) {
   if (!payloadPath) { console.error('serve-question: --start needs --payload <file>'); process.exit(1); }
   JSON.parse(fs.readFileSync(payloadPath, 'utf8'));
-  fs.mkdirSync(QUESTION_DIR, { recursive: true });
+  ensureVaultDir(QUESTION_DIR, process.cwd());
   const key = arg('key') || Math.random().toString(16).slice(2, 10);
   // In start mode the agent is alive and owns browser routing; the server
   // only opens the system browser itself when --open forces it.
@@ -290,12 +291,12 @@ function page() {
     </article>`).join('\n');
   return `<!doctype html>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${esc(payload.title || 'impeccable · decision')}</title>
+<title>${esc(payload.title || 'freyja2 · decision')}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@400;500;600&family=Alumni+Sans:wght@100;400&display=swap" rel="stylesheet">
 <style>
-  /* Neo kinpaku tokens, mirrored from impeccable.style kinpaku-tokens.css */
+  /* Neo kinpaku tokens, mirrored from freyja2.style kinpaku-tokens.css */
   :root {
     color-scheme: dark;
     --ks-kinpaku: oklch(84% 0.19 80.46);
@@ -398,7 +399,7 @@ function page() {
 <header>
   <div class="brand">
     <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 2.5 L13.5 2.5 L5.5 21.5 L5 21.5 Q2.5 21.5 2.5 19 L2.5 5 Q2.5 2.5 5 2.5 Z"/><path d="M16.5 2.5 L19 2.5 Q21.5 2.5 21.5 5 L21.5 19 Q21.5 21.5 19 21.5 L8.5 21.5 Z"/></svg>
-    <span class="wordmark">Impeccable</span>
+    <span class="wordmark">Freyja 2</span>
   </div>
 </header>
 <main>
@@ -575,7 +576,7 @@ const server = http.createServer((req, res) => {
       });
       const isReroll = parsed.optionId === 'reroll';
       if (detachedKey) {
-        fs.mkdirSync(QUESTION_DIR, { recursive: true });
+        ensureVaultDir(QUESTION_DIR, process.cwd());
         fs.writeFileSync(answerFile(detachedKey), answer + '\n');
       } else {
         printAnswer(answer);
@@ -593,7 +594,7 @@ server.listen(portArg, '127.0.0.1', () => {
   const { port } = server.address();
   const url = `http://127.0.0.1:${port}/`;
   if (hasFlag('detached-serve')) {
-    fs.mkdirSync(QUESTION_DIR, { recursive: true });
+    ensureVaultDir(QUESTION_DIR, process.cwd());
     fs.writeFileSync(stateFile(arg('key')), JSON.stringify({ pid: process.pid, port, url }));
   } else {
     console.log(`QUESTION URL: ${url}`);

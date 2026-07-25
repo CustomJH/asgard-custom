@@ -1,5 +1,5 @@
 /**
- * Anti-Pattern Browser Detector for Impeccable
+ * Anti-Pattern Browser Detector for Freyja 2
  * Copyright (c) 2026 Paul Bakaus
  * SPDX-License-Identifier: Apache-2.0
  *
@@ -7,7 +7,7 @@
  * Rebuild: node scripts/build-browser-detector.js
  *
  * Usage: <script src="detect-antipatterns-browser.js"></script>
- * Re-scan: window.impeccableScan()
+ * Re-scan: window.freyja2Scan()
  */
 (function () {
 if (typeof window === 'undefined') return;
@@ -3150,7 +3150,7 @@ const REPEATED_KICKER_SKIP_SELECTOR = [
   '[aria-label*="breadcrumb" i]',
   '[class*="breadcrumb" i]',
   '[aria-hidden="true"]',
-  '[data-impeccable-allow-kickers]',
+  '[data-freyja2-allow-kickers]',
 ].join(',');
 
 const REPEATED_KICKER_CARD_CONTEXT_SELECTOR = [
@@ -4047,7 +4047,7 @@ function checkElementQualityDOM(el) {
   const lineHeightPx = resolveLengthPx(style.lineHeight, fontSize);
   const letterSpacingPx = resolveLengthPx(style.letterSpacing, fontSize);
   const rect = el.getBoundingClientRect();
-  const lineMax = (typeof window !== 'undefined' && window.__IMPECCABLE_CONFIG__?.lineLengthMax) || 80;
+  const lineMax = (typeof window !== 'undefined' && window.__FREYJA2_CONFIG__?.lineLengthMax) || 80;
   const viewportWidth = (typeof window !== 'undefined' ? window.innerWidth : 0) || 0;
   return checkQuality({ el, tag, style, hasDirectText, textLen, fontSize, lineHeightPx, letterSpacingPx, rect, lineMax, viewportWidth, win: typeof window !== 'undefined' ? window : null });
 }
@@ -4372,8 +4372,8 @@ function checkTypography() {
   const fontUsage = new Map(); // primary font name → count of elements
   let totalTextElements = 0;
   for (const el of document.querySelectorAll('p, h1, h2, h3, h4, h5, h6, li, td, th, dd, blockquote, figcaption, a, button, label, span')) {
-    // Skip impeccable's own elements
-    if (el.closest && el.closest('.impeccable-overlay, .impeccable-label, .impeccable-banner, .impeccable-tooltip')) continue;
+    // Skip freyja2's own elements
+    if (el.closest && el.closest('.freyja2-overlay, .freyja2-label, .freyja2-banner, .freyja2-tooltip')) continue;
     // Only count elements that actually have visible direct text
     const hasText = [...el.childNodes].some(n => n.nodeType === 3 && n.textContent.trim().length > 0);
     if (!hasText) continue;
@@ -5973,8 +5973,8 @@ if (IS_BROWSER) {
   // Detect extension mode via the script tag's data attribute or the document element fallback.
   // currentScript is reliable for synchronously-executing scripts (which our IIFE is).
   const _myScript = document.currentScript;
-  const EXTENSION_MODE = (_myScript && _myScript.dataset.impeccableExtension === 'true')
-    || document.documentElement.dataset.impeccableExtension === 'true';
+  const EXTENSION_MODE = (_myScript && _myScript.dataset.freyja2Extension === 'true')
+    || document.documentElement.dataset.freyja2Extension === 'true';
 
   // Kinpaku gold — pinned to the site's brand token (see
   // site/styles/kinpaku-tokens.css --ks-kinpaku). Keep this in sync with
@@ -5997,38 +5997,38 @@ if (IS_BROWSER) {
   // Inject hover styles via CSS (more reliable than JS event listeners)
   const styleEl = document.createElement('style');
   styleEl.textContent = `
-    @keyframes impeccable-reveal {
+    @keyframes freyja2-reveal {
       from { opacity: 0; }
       to { opacity: 1; }
     }
-    .impeccable-overlay:not(.impeccable-banner) {
+    .freyja2-overlay:not(.freyja2-banner) {
       pointer-events: none;
       outline: 2px solid ${OUTLINE_COLOR};
       border-radius: 4px;
       transition: outline-color 0.15s ease;
-      animation: impeccable-reveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+      animation: freyja2-reveal 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
       animation-play-state: paused;
       border-top-left-radius: 0;
     }
-    .impeccable-overlay.impeccable-visible {
+    .freyja2-overlay.freyja2-visible {
       animation-play-state: running;
     }
-    .impeccable-overlay.impeccable-hover {
+    .freyja2-overlay.freyja2-hover {
       outline-color: ${BRAND_COLOR_HOVER};
       z-index: 100001 !important;
     }
-    .impeccable-overlay.impeccable-hover .impeccable-label {
+    .freyja2-overlay.freyja2-hover .freyja2-label {
       background: ${BRAND_COLOR_HOVER};
     }
-    .impeccable-overlay.impeccable-spotlight {
+    .freyja2-overlay.freyja2-spotlight {
       z-index: 100002 !important;
     }
-    .impeccable-overlay.impeccable-spotlight-dimmed {
+    .freyja2-overlay.freyja2-spotlight-dimmed {
       opacity: 0.15 !important;
       animation: none !important;
       filter: blur(3px);
     }
-    .impeccable-spotlight-backdrop {
+    .freyja2-spotlight-backdrop {
       position: fixed;
       top: 0; left: 0; right: 0; bottom: 0;
       backdrop-filter: blur(3px) brightness(0.6);
@@ -6039,10 +6039,10 @@ if (IS_BROWSER) {
       outline: none !important;
       animation: none !important;
     }
-    .impeccable-spotlight-backdrop.impeccable-visible {
+    .freyja2-spotlight-backdrop.freyja2-visible {
       opacity: 1;
     }
-    .impeccable-hidden .impeccable-overlay${EXTENSION_MODE ? '' : ':not(.impeccable-banner)'} {
+    .freyja2-hidden .freyja2-overlay${EXTENSION_MODE ? '' : ':not(.freyja2-banner)'} {
       display: none !important;
     }
   `;
@@ -6055,7 +6055,7 @@ if (IS_BROWSER) {
   function getSpotlightBackdrop() {
     if (!spotlightBackdrop) {
       spotlightBackdrop = document.createElement('div');
-      spotlightBackdrop.className = 'impeccable-spotlight-backdrop';
+      spotlightBackdrop.className = 'freyja2-spotlight-backdrop';
       document.body.appendChild(spotlightBackdrop);
     }
     return spotlightBackdrop;
@@ -6081,19 +6081,19 @@ if (IS_BROWSER) {
   function showSpotlight(target) {
     if (!target || !target.getBoundingClientRect) return;
     // Respect the spotlightBlur setting: if disabled, don't show the backdrop
-    if (window.__IMPECCABLE_CONFIG__?.spotlightBlur === false) {
+    if (window.__FREYJA2_CONFIG__?.spotlightBlur === false) {
       spotlightTarget = target;
       return;
     }
     spotlightTarget = target;
     const bd = getSpotlightBackdrop();
     updateSpotlightClipPath();
-    bd.classList.add('impeccable-visible');
+    bd.classList.add('freyja2-visible');
   }
 
   function hideSpotlight() {
     spotlightTarget = null;
-    if (spotlightBackdrop) spotlightBackdrop.classList.remove('impeccable-visible');
+    if (spotlightBackdrop) spotlightBackdrop.classList.remove('freyja2-visible');
   }
 
   function isInViewport(el) {
@@ -6145,7 +6145,7 @@ if (IS_BROWSER) {
 
   function repositionOverlays() {
     for (const o of overlays) {
-      if (!o._targetEl || o.classList.contains('impeccable-banner')) continue;
+      if (!o._targetEl || o.classList.contains('freyja2-banner')) continue;
       // Skip overlays whose target is currently hidden (display: none on the overlay)
       if (o.style.display === 'none') continue;
       positionOverlay(o);
@@ -6173,7 +6173,7 @@ if (IS_BROWSER) {
   let overlayIndex = 0;
   const visibilityObserver = new IntersectionObserver((entries) => {
     for (const entry of entries) {
-      const overlay = entry.target._impeccableOverlay;
+      const overlay = entry.target._freyja2Overlay;
       if (!overlay) continue;
       if (entry.isIntersecting) {
         overlay.style.display = '';
@@ -6188,7 +6188,7 @@ if (IS_BROWSER) {
             overlay.style.animationDelay = `${Math.min((overlay._staggerIndex || 0) * 60, 600)}ms`;
           }
           requestAnimationFrame(() => {
-            overlay.classList.add('impeccable-visible');
+            overlay.classList.add('freyja2-visible');
             if (overlay._checkLabel) overlay._checkLabel();
           });
         }
@@ -6203,9 +6203,9 @@ if (IS_BROWSER) {
     if (typeof overlay._cleanup === 'function') {
       try { overlay._cleanup(); } catch { /* best effort overlay teardown */ }
     }
-    if (overlay._targetEl && overlay._targetEl._impeccableOverlay === overlay) {
+    if (overlay._targetEl && overlay._targetEl._freyja2Overlay === overlay) {
       visibilityObserver.unobserve(overlay._targetEl);
-      delete overlay._targetEl._impeccableOverlay;
+      delete overlay._targetEl._freyja2Overlay;
     }
     const idx = overlays.indexOf(overlay);
     if (idx >= 0) overlays.splice(idx, 1);
@@ -6218,7 +6218,7 @@ if (IS_BROWSER) {
   document.addEventListener('transitionend', (e) => {
     if (e.propertyName !== 'transform') return;
     for (const o of overlays) {
-      if (!o._targetEl || o.classList.contains('impeccable-banner') || o.style.display === 'none') continue;
+      if (!o._targetEl || o.classList.contains('freyja2-banner') || o.style.display === 'none') continue;
       if (e.target === o._targetEl || e.target.contains(o._targetEl)) {
         positionOverlay(o);
       }
@@ -6226,13 +6226,13 @@ if (IS_BROWSER) {
   });
 
   const highlight = function(el, findings) {
-    if (el._impeccableOverlay) detachOverlay(el._impeccableOverlay);
+    if (el._freyja2Overlay) detachOverlay(el._freyja2Overlay);
     const hasSlop = findings.some(f => RULE_CATEGORY[f.type || f.id] === 'slop');
 
     const fixed = isInFixedContext(el);
     const rect = el.getBoundingClientRect();
     const outline = document.createElement('div');
-    outline.className = 'impeccable-overlay';
+    outline.className = 'freyja2-overlay';
     outline._targetEl = el;
     outline._isFixed = fixed;
     Object.assign(outline.style, {
@@ -6252,7 +6252,7 @@ if (IS_BROWSER) {
     const allText = entries.map(e => e.name).join(', ');
 
     const label = document.createElement('div');
-    label.className = 'impeccable-label';
+    label.className = 'freyja2-label';
     Object.assign(label.style, {
       position: 'absolute', bottom: '100%', left: '-2px',
       display: 'flex', alignItems: 'center',
@@ -6328,7 +6328,7 @@ if (IS_BROWSER) {
     // Start hidden; the IntersectionObserver will show it once the target is rendered
     outline.style.display = 'none';
     outline._staggerIndex = overlayIndex++;
-    el._impeccableOverlay = outline;
+    el._freyja2Overlay = outline;
     visibilityObserver.observe(el);
 
     // After first paint, check label width vs outline
@@ -6341,7 +6341,7 @@ if (IS_BROWSER) {
     // Hover: show detail text, darken
     const onMouseEnter = () => {
       isHovered = true;
-      outline.classList.add('impeccable-hover');
+      outline.classList.add('freyja2-hover');
       outline.style.outlineColor = BRAND_COLOR_HOVER;
       label.style.background = BRAND_COLOR_HOVER;
       if (cycleMode) {
@@ -6352,7 +6352,7 @@ if (IS_BROWSER) {
     };
     const onMouseLeave = () => {
       isHovered = false;
-      outline.classList.remove('impeccable-hover');
+      outline.classList.remove('freyja2-hover');
       outline.style.outlineColor = '';
       label.style.background = LABEL_BG;
       if (cycleMode) {
@@ -6375,7 +6375,7 @@ if (IS_BROWSER) {
   const showPageBanner = function(findings) {
     if (!findings.length) return;
     const banner = document.createElement('div');
-    banner.className = 'impeccable-overlay impeccable-banner';
+    banner.className = 'freyja2-overlay freyja2-banner';
     Object.assign(banner.style, {
       position: 'fixed', top: '0', left: '0', right: '0', zIndex: '100000',
       background: LABEL_BG, color: LABEL_INK,
@@ -6430,7 +6430,7 @@ if (IS_BROWSER) {
       let overlaysVisible = true;
       toggle.addEventListener('click', () => {
         overlaysVisible = !overlaysVisible;
-        document.body.classList.toggle('impeccable-hidden', !overlaysVisible);
+        document.body.classList.toggle('freyja2-hidden', !overlaysVisible);
         toggle.textContent = overlaysVisible ? '\u25C9' : '\u25CB'; // filled vs empty circle
         toggle.style.opacity = overlaysVisible ? '0.85' : '0.5';
       });
@@ -6469,7 +6469,7 @@ if (IS_BROWSER) {
 
     if (el.classList && el.classList.length > 0) {
       const classes = [...el.classList]
-        .filter(c => !c.startsWith('impeccable-') && !isLikelyHashedClass(c))
+        .filter(c => !c.startsWith('freyja2-') && !isLikelyHashedClass(c))
         .slice(0, 2);
       if (classes.length > 0) {
         sel += '.' + classes.map(c => CSS.escape(c)).join('.');
@@ -6624,8 +6624,8 @@ if (IS_BROWSER) {
     const candidates = [];
     for (const el of document.querySelectorAll('*')) {
       if (candidates.length >= maxCandidates) break;
-      if (el.closest('.impeccable-overlay, .impeccable-label, .impeccable-banner, .impeccable-tooltip')) continue;
-      if (el.closest('[id^="impeccable-live-"]')) continue;
+      if (el.closest('.freyja2-overlay, .freyja2-label, .freyja2-banner, .freyja2-tooltip')) continue;
+      if (el.closest('[id^="freyja2-live-"]')) continue;
       if (el === document.body || el === document.documentElement) continue;
       if (!isRenderedForBrowserRule(el)) continue;
 
@@ -7003,7 +7003,7 @@ if (IS_BROWSER) {
 
     for (const node of nodes) {
       if (!node || node.nodeType !== 1) continue;
-      if (node.closest?.('.impeccable-overlay, .impeccable-label, .impeccable-banner, .impeccable-tooltip')) continue;
+      if (node.closest?.('.freyja2-overlay, .freyja2-label, .freyja2-banner, .freyja2-tooltip')) continue;
       const tag = node.tagName?.toLowerCase();
       if (tag === 'img') {
         const sample = await sampleImageElement(node, point);
@@ -7205,11 +7205,11 @@ if (IS_BROWSER) {
 
   const printSummary = function(allFindings) {
     if (allFindings.length === 0) {
-      console.log('%c[impeccable] No anti-patterns found.', 'color: #22c55e; font-weight: bold');
+      console.log('%c[freyja2] No anti-patterns found.', 'color: #22c55e; font-weight: bold');
       return;
     }
     console.group(
-      `%c[impeccable] ${allFindings.length} anti-pattern${allFindings.length === 1 ? '' : 's'} found`,
+      `%c[freyja2] ${allFindings.length} anti-pattern${allFindings.length === 1 ? '' : 's'} found`,
       'color: oklch(84% 0.19 80.46); font-weight: bold'
     );
     for (const { el, findings } of allFindings) {
@@ -7254,7 +7254,7 @@ if (IS_BROWSER) {
   }
 
   function browserDesignSystemConfig() {
-    const raw = window.__IMPECCABLE_CONFIG__?.designSystem;
+    const raw = window.__FREYJA2_CONFIG__?.designSystem;
     if (!raw?.present) return null;
     const allowedFonts = new Set((raw.allowedFonts || []).map(normalizeBrowserFontName).filter(Boolean));
     const allowedColors = (raw.allowedColors || [])
@@ -7425,21 +7425,21 @@ if (IS_BROWSER) {
 
   function collectBrowserFindings() {
     const groupMap = new Map();
-    const _disabled = EXTENSION_MODE ? (window.__IMPECCABLE_CONFIG__?.disabledRules || []) : [];
+    const _disabled = EXTENSION_MODE ? (window.__FREYJA2_CONFIG__?.disabledRules || []) : [];
     const _ruleOk = (id) => !_disabled.length || !_disabled.includes(id);
     const designSystem = browserDesignSystemConfig();
     const designSeen = { fonts: new Set(), colors: new Set(), radii: new Set() };
     // All deterministic rules run in the browser and extension path.
 
     for (const el of document.querySelectorAll('*')) {
-      // Skip impeccable's own elements and any descendants (overlays, labels, banner, nav buttons)
-      if (el.closest('.impeccable-overlay, .impeccable-label, .impeccable-banner, .impeccable-tooltip')) continue;
+      // Skip freyja2's own elements and any descendants (overlays, labels, banner, nav buttons)
+      if (el.closest('.freyja2-overlay, .freyja2-label, .freyja2-banner, .freyja2-tooltip')) continue;
       // Skip browser extension elements (Claude, etc.)
       const elId = el.id || '';
       if (elId.startsWith('claude-') || elId.startsWith('cic-')) continue;
-      // Skip the impeccable live-mode overlay (highlight, tooltip, bar, picker, toast).
+      // Skip the freyja2 live-mode overlay (highlight, tooltip, bar, picker, toast).
       // These are inspector chrome, not part of the user's design.
-      if (el.closest('[id^="impeccable-live-"]')) continue;
+      if (el.closest('[id^="freyja2-live-"]')) continue;
       // Skip html/body -- page-level findings go in the banner, not a full-page overlay
       if (el === document.body || el === document.documentElement) continue;
 
@@ -7572,11 +7572,11 @@ if (IS_BROWSER) {
     }
 
     // Regex-on-HTML checks (shared with Node)
-    // Clone the document and strip impeccable-live overlay nodes before the
+    // Clone the document and strip freyja2-live overlay nodes before the
     // regex scan, so the inspector's own inline styles (transitions on top/
     // left/width/height, etc.) don't register as page anti-patterns.
     const docClone = document.documentElement.cloneNode(true);
-    for (const node of docClone.querySelectorAll('[id^="impeccable-live-"]')) {
+    for (const node of docClone.querySelectorAll('[id^="freyja2-live-"]')) {
       node.remove();
     }
     const htmlPatternFindings = checkHtmlPatterns(docClone.outerHTML);
@@ -7612,11 +7612,11 @@ if (IS_BROWSER) {
   }
 
   function shouldRunVisualContrast(options = {}) {
-    return options.visualContrast === true || window.__IMPECCABLE_CONFIG__?.visualContrast === true;
+    return options.visualContrast === true || window.__FREYJA2_CONFIG__?.visualContrast === true;
   }
 
   function visualContrastOptions(options = {}) {
-    const config = window.__IMPECCABLE_CONFIG__ || {};
+    const config = window.__FREYJA2_CONFIG__ || {};
     const scrollOffscreen = typeof options.scrollOffscreen === 'boolean'
       ? options.scrollOffscreen
       : typeof options.visualContrastScrollOffscreen === 'boolean'
@@ -7693,7 +7693,7 @@ if (IS_BROWSER) {
     if (!EXTENSION_MODE) return;
     const allFindings = browserFindingsFromMap(groupMap);
     window.postMessage({
-      source: 'impeccable-results',
+      source: 'freyja2-results',
       findings: serializeFindings(allFindings),
       count: allFindings.length,
       ...scanResultMeta(options),
@@ -7703,13 +7703,13 @@ if (IS_BROWSER) {
   function postExtensionError(err) {
     if (!EXTENSION_MODE) return;
     window.postMessage({
-      source: 'impeccable-error',
+      source: 'freyja2-error',
       message: err?.message || String(err),
     }, '*');
   }
 
   function reportVisualContrastError(err, detail = {}) {
-    window.dispatchEvent(new CustomEvent('impeccable-visual-contrast-error', {
+    window.dispatchEvent(new CustomEvent('freyja2-visual-contrast-error', {
       detail: {
         ...detail,
         message: err?.message || String(err),
@@ -7718,7 +7718,7 @@ if (IS_BROWSER) {
     if (EXTENSION_MODE) {
       postExtensionError(err);
     } else {
-      console.warn('[impeccable] visual contrast scan failed', err);
+      console.warn('[freyja2] visual contrast scan failed', err);
     }
   }
 
@@ -7751,7 +7751,7 @@ if (IS_BROWSER) {
             const added = addVisualContrastResult(groupMap, result, { decorate: true });
             if (added) {
               postSerializedFindings(groupMap, options);
-              window.dispatchEvent(new CustomEvent('impeccable-visual-contrast-resolved', {
+              window.dispatchEvent(new CustomEvent('freyja2-visual-contrast-resolved', {
                 detail: {
                   selector: result.selector,
                   status: result.status,
@@ -7835,7 +7835,7 @@ if (IS_BROWSER) {
     // In extension mode, post serialized results for the DevTools panel
     if (EXTENSION_MODE) {
       window.postMessage({
-        source: 'impeccable-results',
+        source: 'freyja2-results',
         findings: serializeFindings(allFindings),
         count: allFindings.length,
         ...scanResultMeta(options),
@@ -7897,9 +7897,9 @@ if (IS_BROWSER) {
   if (EXTENSION_MODE) {
     // Extension mode: listen for commands, don't auto-scan
     window.addEventListener('message', (e) => {
-      if (e.source !== window || !e.data || e.data.source !== 'impeccable-command') return;
+      if (e.source !== window || !e.data || e.data.source !== 'freyja2-command') return;
       if (e.data.action === 'scan') {
-        if (e.data.config) window.__IMPECCABLE_CONFIG__ = e.data.config;
+        if (e.data.config) window.__FREYJA2_CONFIG__ = e.data.config;
         try {
           scan(e.data.config || {});
         } catch (err) {
@@ -7907,15 +7907,15 @@ if (IS_BROWSER) {
         }
       }
       if (e.data.action === 'toggle-overlays') {
-        const visible = !document.body.classList.contains('impeccable-hidden');
-        document.body.classList.toggle('impeccable-hidden', visible);
-        window.postMessage({ source: 'impeccable-overlays-toggled', visible: !visible }, '*');
+        const visible = !document.body.classList.contains('freyja2-hidden');
+        document.body.classList.toggle('freyja2-hidden', visible);
+        window.postMessage({ source: 'freyja2-overlays-toggled', visible: !visible }, '*');
       }
       if (e.data.action === 'remove') {
         clearOverlays();
         styleEl.remove();
         if (spotlightBackdrop) { spotlightBackdrop.remove(); spotlightBackdrop = null; }
-        document.body.classList.remove('impeccable-hidden');
+        document.body.classList.remove('freyja2-hidden');
       }
       if (e.data.action === 'highlight') {
         try {
@@ -7926,15 +7926,15 @@ if (IS_BROWSER) {
               target.scrollIntoView({ behavior: 'instant', block: 'center' });
             }
             for (const o of overlays) {
-              if (o.classList.contains('impeccable-banner')) continue;
+              if (o.classList.contains('freyja2-banner')) continue;
               const isMatch = o._targetEl === target;
-              o.classList.toggle('impeccable-spotlight', isMatch);
-              o.classList.toggle('impeccable-spotlight-dimmed', !isMatch);
+              o.classList.toggle('freyja2-spotlight', isMatch);
+              o.classList.toggle('freyja2-spotlight-dimmed', !isMatch);
               if (isMatch) {
                 // Force the matching overlay visible immediately, don't wait for IntersectionObserver
                 o.style.display = '';
                 o.style.animation = 'none';
-                o.classList.add('impeccable-visible');
+                o.classList.add('freyja2-visible');
                 o._revealed = true;
                 positionOverlay(o);
               }
@@ -7946,19 +7946,19 @@ if (IS_BROWSER) {
       if (e.data.action === 'unhighlight') {
         hideSpotlight();
         for (const o of overlays) {
-          o.classList.remove('impeccable-spotlight');
-          o.classList.remove('impeccable-spotlight-dimmed');
+          o.classList.remove('freyja2-spotlight');
+          o.classList.remove('freyja2-spotlight-dimmed');
         }
       }
     });
-    window.postMessage({ source: 'impeccable-ready' }, '*');
+    window.postMessage({ source: 'freyja2-ready' }, '*');
   } else {
-    if (window.__IMPECCABLE_CONFIG__?.autoScan !== false) {
+    if (window.__FREYJA2_CONFIG__?.autoScan !== false) {
       const runAutoScan = () => {
         try {
           scan();
         } catch (err) {
-          console.warn('[impeccable] scan failed', err);
+          console.warn('[freyja2] scan failed', err);
         }
       };
       if (document.readyState === 'loading') {
@@ -7969,16 +7969,16 @@ if (IS_BROWSER) {
     }
   }
 
-  window.impeccableDetect = detect;
-  window.impeccableDetectAsync = detectAsync;
-  window.impeccableScan = scan;
-  window.impeccableScanAsync = scanAsync;
+  window.freyja2Detect = detect;
+  window.freyja2DetectAsync = detectAsync;
+  window.freyja2Scan = scan;
+  window.freyja2ScanAsync = scanAsync;
   // Raw measurement for the URL engine's content-hidden-at-rest pass: it
   // drives a reveal sweep from Node and thresholds the result itself.
-  window.impeccableMeasureHiddenText = measureHiddenTextDOM;
-  window.impeccableCollectVisualContrastCandidates = collectVisualContrastCandidates;
-  window.impeccableAnalyzeVisualContrast = analyzeVisualContrast;
-  window.impeccableGetLastVisualContrastAnalyses = () => lastVisualContrastAnalyses.slice();
+  window.freyja2MeasureHiddenText = measureHiddenTextDOM;
+  window.freyja2CollectVisualContrastCandidates = collectVisualContrastCandidates;
+  window.freyja2AnalyzeVisualContrast = analyzeVisualContrast;
+  window.freyja2GetLastVisualContrastAnalyses = () => lastVisualContrastAnalyses.slice();
 }
 
 })();

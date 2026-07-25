@@ -27,7 +27,7 @@ export async function wrapCli() {
   const args = process.argv.slice(2);
 
   if (args.includes('--help') || args.includes('-h')) {
-    console.log(`Usage: impeccable wrap [options]
+    console.log(`Usage: freyja2 wrap [options]
 
 Find an element in source and wrap it in a variant container.
 
@@ -314,25 +314,25 @@ The agent should insert variant HTML at insertLine.`);
   // replacement range to include the wrapper's `<div>` open / close lines
   // so the entire scaffold gets removed cleanly.
   const wrapperLines = isJsx ? [
-    indent + '<div data-impeccable-variants="' + id + '" data-impeccable-variant-count="' + count + '"' + ' ' + styleContents + '>',
-    indent + '  ' + commentSyntax.open + ' impeccable-variants-start ' + id + ' ' + commentSyntax.close,
+    indent + '<div data-freyja2-variants="' + id + '" data-freyja2-variant-count="' + count + '"' + ' ' + styleContents + '>',
+    indent + '  ' + commentSyntax.open + ' freyja2-variants-start ' + id + ' ' + commentSyntax.close,
     indent + '  ' + commentSyntax.open + ' Original ' + commentSyntax.close,
-    indent + '  <div data-impeccable-variant="original">',
+    indent + '  <div data-freyja2-variant="original">',
     reindentOriginal('    '),
     indent + '  </div>',
     indent + '  ' + commentSyntax.open + ' Variants: insert below this line ' + commentSyntax.close,
-    indent + '  ' + commentSyntax.open + ' impeccable-variants-end ' + id + ' ' + commentSyntax.close,
+    indent + '  ' + commentSyntax.open + ' freyja2-variants-end ' + id + ' ' + commentSyntax.close,
     indent + '</div>',
   ] : [
-    indent + commentSyntax.open + ' impeccable-variants-start ' + id + ' ' + commentSyntax.close,
-    indent + '<div data-impeccable-variants="' + id + '" data-impeccable-variant-count="' + count + '"' + ' ' + styleContents + '>',
+    indent + commentSyntax.open + ' freyja2-variants-start ' + id + ' ' + commentSyntax.close,
+    indent + '<div data-freyja2-variants="' + id + '" data-freyja2-variant-count="' + count + '"' + ' ' + styleContents + '>',
     indent + '  ' + commentSyntax.open + ' Original ' + commentSyntax.close,
-    indent + '  <div data-impeccable-variant="original">',
+    indent + '  <div data-freyja2-variant="original">',
     originalIndented,
     indent + '  </div>',
     indent + '  ' + commentSyntax.open + ' Variants: insert below this line ' + commentSyntax.close,
     indent + '</div>',
-    indent + commentSyntax.open + ' impeccable-variants-end ' + id + ' ' + commentSyntax.close,
+    indent + commentSyntax.open + ' freyja2-variants-end ' + id + ' ' + commentSyntax.close,
   ];
 
   let outputFile = targetFile;
@@ -644,18 +644,18 @@ function detectStyleMode(filePath) {
   if (ext === '.astro') {
     return {
       mode: 'astro-global-prefixed',
-      styleTag: '<style is:inline data-impeccable-css="SESSION_ID">',
+      styleTag: '<style is:inline data-freyja2-css="SESSION_ID">',
     };
   }
   return {
     mode: 'scoped',
-    styleTag: '<style data-impeccable-css="SESSION_ID">',
+    styleTag: '<style data-freyja2-css="SESSION_ID">',
   };
 }
 
 function buildCssSelectorPrefixExamples(styleMode, count) {
   if (styleMode !== 'astro-global-prefixed') return [];
-  return Array.from({ length: count }, (_, i) => `[data-impeccable-variant="${i + 1}"]`);
+  return Array.from({ length: count }, (_, i) => `[data-freyja2-variant="${i + 1}"]`);
 }
 
 function buildCssAuthoring(styleMode, count) {
@@ -665,12 +665,12 @@ function buildCssAuthoring(styleMode, count) {
       mode: styleMode.mode,
       styleTag: styleMode.styleTag,
       strategy: 'global-prefixed',
-      rulePattern: '[data-impeccable-variant="N"] > .variant-class { ... }',
-      selectorExamples: variantNumbers.map((n) => `[data-impeccable-variant="${n}"] > .variant-class`),
+      rulePattern: '[data-freyja2-variant="N"] > .variant-class { ... }',
+      selectorExamples: variantNumbers.map((n) => `[data-freyja2-variant="${n}"] > .variant-class`),
       requirements: [
         'Use the styleTag exactly; the is:inline attribute is required for this file.',
         'Put raw CSS directly between the styleTag opening and a plain </style> close.',
-        'Prefix every preview selector with the matching [data-impeccable-variant="N"] selector.',
+        'Prefix every preview selector with the matching [data-freyja2-variant="N"] selector.',
         'Keep selectors anchored to the generated variant wrapper; do not rely on component CSS scoping for preview rules.',
       ],
       forbidden: [
@@ -684,15 +684,15 @@ function buildCssAuthoring(styleMode, count) {
     mode: styleMode.mode,
     styleTag: styleMode.styleTag,
     strategy: 'scope-rule',
-    rulePattern: '@scope ([data-impeccable-variant="N"]) { :scope > .variant-class { ... } }',
-    selectorExamples: variantNumbers.map((n) => `@scope ([data-impeccable-variant="${n}"]) { :scope > .variant-class { ... } }`),
+    rulePattern: '@scope ([data-freyja2-variant="N"]) { :scope > .variant-class { ... } }',
+    selectorExamples: variantNumbers.map((n) => `@scope ([data-freyja2-variant="${n}"]) { :scope > .variant-class { ... } }`),
     requirements: [
-      'Use @scope blocks keyed to each [data-impeccable-variant="N"] wrapper.',
+      'Use @scope blocks keyed to each [data-freyja2-variant="N"] wrapper.',
       'Inside each @scope block, make :scope rules step into the replacement element with a descendant combinator.',
       'Use the styleTag exactly; do not add framework-specific style attributes unless this object says to.',
     ],
     forbidden: [
-      'Do not use global [data-impeccable-variant="N"] selector prefixes for this styleMode.',
+      'Do not use global [data-freyja2-variant="N"] selector prefixes for this styleMode.',
       'Do not add is:inline to the style tag for this styleMode.',
     ],
   };
@@ -702,7 +702,7 @@ function buildCssAuthoring(styleMode, count) {
  * Search project files for the query string (class name, ID, etc.)
  * Returns the first matching file path, or null.
  *
- * Only `node_modules`, `.git`, and `.impeccable` are skipped outright.
+ * Only `node_modules`, `.git`, and the artifact vault are skipped outright.
  * dist/build/out are left to the isGeneratedFile guard so the
  * `includeGenerated` second pass can still find the element there and report
  * `generatedMatch`.
@@ -757,7 +757,7 @@ function findElement(lines, query, tag = null) {
     const stripped = lines[i].trim();
     if (stripped.startsWith('<!--') || stripped.startsWith('{/*') || stripped.startsWith('//')) continue;
     // Skip lines already inside a variant wrapper
-    if (lines[i].includes('data-impeccable-variant')) continue;
+    if (lines[i].includes('data-freyja2-variant')) continue;
 
     const openerLine = findOpenerLine(lines, i, tag);
     if (openerLine === -1) continue;
@@ -783,7 +783,7 @@ function findAllElements(lines, query, tag = null) {
     if (!lines[i].includes(query)) continue;
     const stripped = lines[i].trim();
     if (stripped.startsWith('<!--') || stripped.startsWith('{/*') || stripped.startsWith('//')) continue;
-    if (lines[i].includes('data-impeccable-variant')) continue;
+    if (lines[i].includes('data-freyja2-variant')) continue;
     const openerLine = findOpenerLine(lines, i, tag);
     if (openerLine === -1) continue;
     if (seen.has(openerLine)) continue; // multiple matches inside the same element

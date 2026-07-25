@@ -31,7 +31,7 @@ export function buildCopyEditBatchPrompt(batch, { cwd = process.cwd() } = {}) {
     JSON.stringify(batch.repair, null, 2),
   ] : [];
   return [
-    'You are the Impeccable staged copy-edit batch applier.',
+    'You are the Freyja 2 staged copy-edit batch applier.',
     '',
     'Apply the staged browser copy edits to the real source files in this repository.',
     '',
@@ -60,11 +60,11 @@ export function buildCopyEditBatchPrompt(batch, { cwd = process.cwd() } = {}) {
     '- When user copy contains framework-sensitive characters such as >, keep the visible text exact but encode it as valid source. In JSX/TSX text nodes, use a quoted expression like {"alpha -> beta"} instead of raw text that contains >.',
     '- Replacement text must still be valid source syntax. If newText is display text inside JS, TS, JSX, Svelte, Astro, or data files and is not the existing typed value, quote or escape it as source text instead of pasting raw user text into code.',
     '- When the user changes a visible value back to a plain number and evidence shows the source model was numeric, replace the enclosing source value so the result is numeric, not a quoted string.',
-    '- Never copy browser edit-mode scaffolding into source: no contenteditable, data-impeccable-* markers, wrapper variants, generated style/script tags, or runtime-only attributes.',
+    '- Never copy browser edit-mode scaffolding into source: no contenteditable, data-freyja2-* markers, wrapper variants, generated style/script tags, or runtime-only attributes.',
     '- Preserve unrelated site/demo edits and unrelated staged changes.',
     '- After editing, check touched JS files with node --check where applicable and inspect touched Astro/HTML for obvious syntax damage.',
-    '- If package.json defines scripts.impeccable:manual-edit-validate, it must pass after edits.',
-    '- Check for leftover impeccable-carbonize markers or variant wrapper markers in touched files.',
+    '- If package.json defines scripts.freyja2:manual-edit-validate, it must pass after edits.',
+    '- Check for leftover freyja2-carbonize markers or variant wrapper markers in touched files.',
     '',
     'Final response contract:',
     'Return ONLY JSON, with no markdown fence and no prose.',
@@ -97,7 +97,7 @@ export async function runCopyEditBatchAgent(batch, opts = {}) {
   const env = opts.env || process.env;
   const provider = opts.provider || chooseCopyEditAgent({ env, chatAvailable: opts.chatAvailable });
   if (provider === 'mock') {
-    const delayMs = Number(env.IMPECCABLE_LIVE_COPY_AGENT_MOCK_DELAY_MS || 0);
+    const delayMs = Number(env.FREYJA2_LIVE_COPY_AGENT_MOCK_DELAY_MS || 0);
     if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs));
     return mockBatchResult(batch, env, cwd);
   }
@@ -113,7 +113,7 @@ export async function runCopyEditBatchAgent(batch, opts = {}) {
   }
 
   const prompt = buildCopyEditBatchPrompt(batch, { cwd });
-  const outDir = opts.outDir || fs.mkdtempSync(path.join(os.tmpdir(), 'impeccable-copy-batch-'));
+  const outDir = opts.outDir || fs.mkdtempSync(path.join(os.tmpdir(), 'freyja2-copy-batch-'));
   fs.mkdirSync(outDir, { recursive: true });
   const resultPath = path.join(outDir, 'result.json');
   const logPath = path.join(outDir, 'agent.log');
@@ -149,8 +149,8 @@ export function runCopyEditPostApplyChecks({ cwd = process.cwd(), files = [] } =
       failures.push({ file: relativeFile, reason: 'read_failed', message: err.message });
       continue;
     }
-    const markerMatch = findLeftoverImpeccableMarker(content);
-    if (markerMatch) failures.push({ file: relativeFile, reason: 'leftover_impeccable_marker', marker: markerMatch });
+    const markerMatch = findLeftoverFreyja2Marker(content);
+    if (markerMatch) failures.push({ file: relativeFile, reason: 'leftover_freyja2_marker', marker: markerMatch });
     if (/\.json$/.test(relativeFile)) {
       try {
         JSON.parse(content);
@@ -210,11 +210,11 @@ function checkFrameworkSourceSyntax(relativeFile, content) {
   }
 }
 
-function findLeftoverImpeccableMarker(content) {
-  const commentMarker = content.match(/^\s*(?:<!--|\{\/\*)\s*impeccable-carbonize-(?:start|end)\b|^\s*(?:<!--|\{\/\*)\s*impeccable-variants-(?:start|end)\b/m);
+function findLeftoverFreyja2Marker(content) {
+  const commentMarker = content.match(/^\s*(?:<!--|\{\/\*)\s*freyja2-carbonize-(?:start|end)\b|^\s*(?:<!--|\{\/\*)\s*freyja2-variants-(?:start|end)\b/m);
   if (commentMarker) return commentMarker[0];
 
-  const attrPattern = /\bdata-impeccable-(?:variants?|original-text|editable|text-wrap)\s*=/g;
+  const attrPattern = /\bdata-freyja2-(?:variants?|original-text|editable|text-wrap)\s*=/g;
   for (const line of content.split(/\r?\n/)) {
     attrPattern.lastIndex = 0;
     let match;
@@ -282,7 +282,7 @@ function readManualEditValidationScript(cwd) {
   if (!fs.existsSync(pkgPath)) return null;
   try {
     const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-    const script = pkg?.scripts?.['impeccable:manual-edit-validate'];
+    const script = pkg?.scripts?.['freyja2:manual-edit-validate'];
     return typeof script === 'string' && script.trim() ? script : null;
   } catch {
     return null;
@@ -338,7 +338,7 @@ function compactContextForBatch(value) {
 function stripLiveRuntimeHtml(html) {
   if (typeof html !== 'string') return html || null;
   return html
-    .replace(/\sdata-impeccable-(?:original-text|editable|text-wrap)(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/g, '')
+    .replace(/\sdata-freyja2-(?:original-text|editable|text-wrap)(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/g, '')
     .replace(/\scontenteditable(?:=(?:"[^"]*"|'[^']*'|[^\s>]+))?/g, '')
     .replace(/\sstyle=(["'])(?:(?!\1)[\s\S])*(?:-webkit-user-modify|user-select:\s*text|cursor:\s*text)(?:(?!\1)[\s\S])*\1/g, '');
 }
@@ -376,11 +376,11 @@ function normalizeBatchResult(result) {
 
 function mockBatchResult(batch, env, cwd = process.cwd()) {
   applyMockWrites(env, cwd);
-  const raw = env.IMPECCABLE_LIVE_COPY_AGENT_MOCK_RESULT;
+  const raw = env.FREYJA2_LIVE_COPY_AGENT_MOCK_RESULT;
   if (raw) {
     const parsed = parseCopyEditBatchResult(raw);
     if (parsed) return parsed;
-    throw new Error('Invalid IMPECCABLE_LIVE_COPY_AGENT_MOCK_RESULT JSON');
+    throw new Error('Invalid FREYJA2_LIVE_COPY_AGENT_MOCK_RESULT JSON');
   }
   return {
     status: 'done',
@@ -392,11 +392,11 @@ function mockBatchResult(batch, env, cwd = process.cwd()) {
 }
 
 function applyMockWrites(env, cwd) {
-  const raw = env.IMPECCABLE_LIVE_COPY_AGENT_MOCK_WRITES;
+  const raw = env.FREYJA2_LIVE_COPY_AGENT_MOCK_WRITES;
   if (!raw) return;
   const writes = tryParseJson(raw);
   if (!writes || typeof writes !== 'object' || Array.isArray(writes)) {
-    throw new Error('Invalid IMPECCABLE_LIVE_COPY_AGENT_MOCK_WRITES JSON');
+    throw new Error('Invalid FREYJA2_LIVE_COPY_AGENT_MOCK_WRITES JSON');
   }
   for (const [relativeFile, content] of Object.entries(writes)) {
     if (typeof relativeFile !== 'string' || typeof content !== 'string') continue;
@@ -432,7 +432,7 @@ export function chooseCopyEditAgent({
   authCheck = commandAuthed,
   chatAvailable = () => false,
 } = {}) {
-  const mode = (env.IMPECCABLE_LIVE_COPY_AGENT || 'auto').trim().toLowerCase();
+  const mode = (env.FREYJA2_LIVE_COPY_AGENT || 'auto').trim().toLowerCase();
   if (mode === '0' || mode === 'false' || mode === 'off' || mode === 'none') return null;
   if (mode === 'mock') return 'mock';
   if (mode === 'chat') return chatAvailable() ? 'chat' : null;
@@ -452,10 +452,10 @@ function runCodex(prompt, { cwd, env, resultPath, logPath, timeoutMs = DEFAULT_T
     '--dangerously-bypass-approvals-and-sandbox',
     '--ephemeral',
     '--output-last-message', resultPath,
-    '-c', `model_reasoning_effort="${env.IMPECCABLE_LIVE_COPY_AGENT_EFFORT || 'low'}"`,
+    '-c', `model_reasoning_effort="${env.FREYJA2_LIVE_COPY_AGENT_EFFORT || 'low'}"`,
   ];
-  if (env.IMPECCABLE_LIVE_COPY_AGENT_MODEL) {
-    args.push('--model', env.IMPECCABLE_LIVE_COPY_AGENT_MODEL);
+  if (env.FREYJA2_LIVE_COPY_AGENT_MODEL) {
+    args.push('--model', env.FREYJA2_LIVE_COPY_AGENT_MODEL);
   }
   args.push('-');
   return runAgentProcess('codex', args, prompt, { cwd, env, logPath, timeoutMs });
@@ -467,8 +467,8 @@ function runClaude(prompt, { cwd, env, resultPath, logPath, timeoutMs = DEFAULT_
     '--permission-mode', 'bypassPermissions',
     '--output-format', 'json',
   ];
-  if (env.IMPECCABLE_LIVE_COPY_AGENT_MODEL) {
-    args.push('--model', env.IMPECCABLE_LIVE_COPY_AGENT_MODEL);
+  if (env.FREYJA2_LIVE_COPY_AGENT_MODEL) {
+    args.push('--model', env.FREYJA2_LIVE_COPY_AGENT_MODEL);
   }
   args.push(prompt);
   // Forward env as-is so CLAUDE_CODE_OAUTH_TOKEN and ANTHROPIC_API_KEY flow
@@ -581,11 +581,11 @@ export function describeNoProviderError({
     lines.push('  • Codex CLI: not installed.');
   }
   if (chatAvailable()) {
-    lines.push('  • Chat: an Impeccable live session is polling but selection chose another provider — unexpected; please report.');
+    lines.push('  • Chat: an Freyja 2 live session is polling but selection chose another provider — unexpected; please report.');
   } else {
-    lines.push('  • Chat: no Impeccable live session is currently polling on this server. Start Impeccable live in your chat to route Apply through the chat agent.');
+    lines.push('  • Chat: no Freyja 2 live session is currently polling on this server. Start Freyja 2 live in your chat to route Apply through the chat agent.');
   }
-  lines.push('Fix one of the above, or set IMPECCABLE_LIVE_COPY_AGENT=mock for tests.');
+  lines.push('Fix one of the above, or set FREYJA2_LIVE_COPY_AGENT=mock for tests.');
   return lines.join('\n');
 }
 

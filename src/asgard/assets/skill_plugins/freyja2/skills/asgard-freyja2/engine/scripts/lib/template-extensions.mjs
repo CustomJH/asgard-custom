@@ -14,6 +14,7 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import { resolveVaultFile } from './vault.mjs';
 
 /**
  * Built-in markup extensions for Live's wrap/accept source search.
@@ -121,7 +122,7 @@ export function clearTemplateExtensionCache() {
 function readLiveTemplateExtensions(cwd) {
   const configured = [];
   for (const name of ['config.json', 'config.local.json']) {
-    const raw = safeReadJson(path.join(cwd, '.impeccable', name));
+    const raw = safeReadJson(resolveVaultFile(cwd, name));
     const detector = raw?.detector;
     if (detector && typeof detector === 'object' && !Array.isArray(detector)) {
       configured.push(...normalizeExtensionEntries(detector.extensions));

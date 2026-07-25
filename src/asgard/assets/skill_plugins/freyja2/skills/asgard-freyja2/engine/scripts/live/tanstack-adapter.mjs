@@ -13,7 +13,7 @@
  * live script on mount (client-only, after hydration). The adapter mounts that
  * component from the root document and removes it cleanly on stop.
  *
- * The managed component lives OUTSIDE `src/routes/` (in `src/impeccable/`) so
+ * The managed component lives OUTSIDE `src/routes/` (in `src/freyja2/`) so
  * the TanStack Router file-based route generator never treats it as a route.
  */
 
@@ -21,10 +21,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { buildLiveScriptSrc } from '../live-inject.mjs';
 
-export const TANSTACK_MARKER_OPEN = '{/* impeccable-live-tanstack-start */}';
-export const TANSTACK_MARKER_CLOSE = '{/* impeccable-live-tanstack-end */}';
-export const TANSTACK_COMPONENT_DIR = 'src/impeccable';
-export const TANSTACK_COMPONENT_BASENAME = 'ImpeccableLiveRoot';
+export const TANSTACK_MARKER_OPEN = '{/* freyja2-live-tanstack-start */}';
+export const TANSTACK_MARKER_CLOSE = '{/* freyja2-live-tanstack-end */}';
+export const TANSTACK_COMPONENT_DIR = 'src/freyja2';
+export const TANSTACK_COMPONENT_BASENAME = 'Freyja2LiveRoot';
 
 const ROOT_ROUTE_CANDIDATES = [
   'src/routes/__root.tsx',
@@ -65,11 +65,11 @@ export function applyTanStackLiveAdapter({ cwd = process.cwd(), port, token, pro
   const componentBody = buildTanStackLiveRootComponent(Number(port), token);
   const componentExisted = fs.existsSync(componentAbs);
   if (componentExisted && !isManagedComponent(fs.readFileSync(componentAbs, 'utf-8'))) {
-    // A non-Impeccable file already sits at our managed path — refuse to clobber.
+    // A non-Freyja 2 file already sits at our managed path — refuse to clobber.
     return {
       file: project.componentFile,
       error: 'tanstack_component_conflict',
-      hint: `${project.componentFile} already exists and is not managed by Impeccable Live`,
+      hint: `${project.componentFile} already exists and is not managed by Freyja 2 Live`,
     };
   }
   fs.mkdirSync(path.dirname(componentAbs), { recursive: true });
@@ -122,7 +122,7 @@ export function removeTanStackLiveAdapter({ cwd = process.cwd(), project = detec
 
 export function patchTanStackRoot(content, componentImport) {
   let out = String(content || '');
-  const importStatement = `import ImpeccableLiveRoot from '${componentImport}';`;
+  const importStatement = `import Freyja2LiveRoot from '${componentImport}';`;
 
   if (!out.includes(importStatement)) {
     out = insertAfterLastImport(out, importStatement);
@@ -131,7 +131,7 @@ export function patchTanStackRoot(content, componentImport) {
   if (!out.includes(TANSTACK_MARKER_OPEN)) {
     const block =
       `${TANSTACK_MARKER_OPEN}\n`
-      + `        <ImpeccableLiveRoot />\n`
+      + `        <Freyja2LiveRoot />\n`
       + `        ${TANSTACK_MARKER_CLOSE}\n        `;
     // Anchor before <Scripts …/> (the stable TanStack Start document marker);
     // fall back to before </body>.
@@ -157,7 +157,7 @@ export function unpatchTanStackRoot(content) {
   // (e.g. `<Scripts />`) so the file round-trips byte-for-byte.
   const blockRe = new RegExp(
     escapeRegExp(TANSTACK_MARKER_OPEN)
-    + '\\s*<ImpeccableLiveRoot\\s*/>\\s*'
+    + '\\s*<Freyja2LiveRoot\\s*/>\\s*'
     + escapeRegExp(TANSTACK_MARKER_CLOSE)
     + '\\r?\\n?[ \\t]*',
     'g',
@@ -165,7 +165,7 @@ export function unpatchTanStackRoot(content) {
   out = out.replace(blockRe, '');
   // Remove only the managed import line — not any following blank line.
   out = out.replace(
-    new RegExp("^import ImpeccableLiveRoot from '[^']*';[ \\t]*\\r?\\n", 'gm'),
+    new RegExp("^import Freyja2LiveRoot from '[^']*';[ \\t]*\\r?\\n", 'gm'),
     '',
   );
   return out;
@@ -173,17 +173,17 @@ export function unpatchTanStackRoot(content) {
 
 export function buildTanStackLiveRootComponent(port, token) {
   const liveSrc = buildLiveScriptSrc(Number(port), token);
-  return `/* impeccable-live-tanstack-start */
+  return `/* freyja2-live-tanstack-start */
 import { useEffect } from 'react';
 
 const LIVE_SRC = '${liveSrc}';
-const LIVE_SELECTOR = 'script[data-impeccable-live-tanstack]';
+const LIVE_SELECTOR = 'script[data-freyja2-live-tanstack]';
 
-// Dev-only mount for Impeccable Live. TanStack Start server-renders the root
+// Dev-only mount for Freyja 2 Live. TanStack Start server-renders the root
 // document, so this appends the live-mode bundle from the client after
 // hydration (mirrors the Nuxt/SvelteKit adapters). Renders nothing on the
 // server, so there is no hydration mismatch.
-export default function ImpeccableLiveRoot() {
+export default function Freyja2LiveRoot() {
   useEffect(() => {
     if (typeof document === 'undefined') return;
     const expected = new URL(LIVE_SRC, window.location.href).href;
@@ -194,8 +194,8 @@ export default function ImpeccableLiveRoot() {
     script = document.createElement('script');
     script.src = LIVE_SRC;
     script.async = true;
-    script.setAttribute('data-impeccable-live-tanstack', '');
-    script.setAttribute('data-impeccable-live-script', 'true');
+    script.setAttribute('data-freyja2-live-tanstack', '');
+    script.setAttribute('data-freyja2-live-script', 'true');
     document.head.appendChild(script);
 
     return () => {
@@ -212,10 +212,10 @@ export default function ImpeccableLiveRoot() {
 // helpers
 // ---------------------------------------------------------------------------
 
-// The managed mount component carries the `impeccable-live-tanstack` marker in
+// The managed mount component carries the `freyja2-live-tanstack` marker in
 // its leading comment and its script data-attribute; user files never do.
 function isManagedComponent(content) {
-  return String(content || '').includes('impeccable-live-tanstack');
+  return String(content || '').includes('freyja2-live-tanstack');
 }
 
 function findRootRouteFile(cwd) {

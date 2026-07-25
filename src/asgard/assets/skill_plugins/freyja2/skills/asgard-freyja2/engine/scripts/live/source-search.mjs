@@ -3,7 +3,7 @@
  *
  * Both scripts need the same thing: find the one project file containing a
  * string (wrap looks for the element's class/id/text, accept looks for the
- * session's `impeccable-variants-start` marker). They had two near-identical
+ * session's `freyja2-variants-start` marker). They had two near-identical
  * copies of the walk, and the copies drifted — same `EXTENSIONS` array declared
  * twice, same `searchDirs` array declared twice, one `realpathSync` guarded by
  * try/catch and the other not. That drift is what #374 had to patch in two
@@ -15,7 +15,6 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { IMPECCABLE_DIR } from '../lib/impeccable-paths.mjs';
 import { matchesTemplateExtension } from '../lib/template-extensions.mjs';
 
 /**
@@ -32,17 +31,21 @@ export const SOURCE_SEARCH_DIRS = Object.freeze([
 /**
  * Directories that are never project source.
  *
- * `.impeccable` is the critical entry, and it is not cosmetic. Progressive
- * publication stages each revision as `.impeccable/live/artifacts/
- * <id>-r<n>.<source-ext>`, and those artifacts carry the very marker accept
- * searches for. The walk reaches `.` for any project whose source is not under
- * one of the privileged roots above (this repo's own site lives in
- * `site/pages/`), and dot-directories sort before letters, so the artifact was
+ * The artifact vault is the critical entry, and it is not cosmetic.
+ * Progressive publication stages each revision as
+ * `.asgard/.vanadis/engine2/live/artifacts/<id>-r<n>.<source-ext>`, and those
+ * artifacts carry the very marker accept searches for. The walk reaches `.`
+ * for any project whose source is not under one of the privileged roots above
+ * (this repo's own site lives in `site/pages/`), so the artifact could be
  * found *before* the real file. isGeneratedFile then declined the accept, and
  * the agent fell back to carbonizing several hundred lines of stylesheet by
  * hand.
+ *
+ * Matched by directory name, so `.asgard` covers the vault along with the
+ * rest of Asgard's runtime state — none of it is ever project source. The
+ * retired `.impeccable` root stays listed for projects that still carry one.
  */
-export const NEVER_SOURCE_DIRS = Object.freeze(['node_modules', '.git', IMPECCABLE_DIR]);
+export const NEVER_SOURCE_DIRS = Object.freeze(['node_modules', '.git', '.asgard', '.impeccable']);
 
 const MAX_DEPTH = 5;
 

@@ -22,7 +22,7 @@ function arg(name, fallback = null) {
 }
 
 // ---------------------------------------------------------------------------
-// Fake mode (IMPECCABLE_IMAGE_GEN_FAKE=1)
+// Fake mode (FREYJA2_IMAGE_GEN_FAKE=1)
 //
 // Deterministic offline stand-in for the OpenAI call: same prompt -> identical
 // bytes, no network, no key, cost line reads $0.00. Used by the new-work smoke
@@ -181,7 +181,7 @@ function parseSize(sizeStr) {
   return [Number(m[1]), Number(m[2])];
 }
 
-if (process.env.IMPECCABLE_IMAGE_GEN_FAKE) {
+if (process.env.FREYJA2_IMAGE_GEN_FAKE) {
   const fakePromptFile = arg('prompt-file');
   const fakePrompt = fakePromptFile ? fs.readFileSync(fakePromptFile, 'utf8') : arg('prompt');
   const fakeOut = arg('out');

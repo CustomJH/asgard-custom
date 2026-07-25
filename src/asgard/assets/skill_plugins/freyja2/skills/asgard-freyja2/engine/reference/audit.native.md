@@ -102,7 +102,7 @@ For each issue, document:
 - **Impact**: How it affects users
 - **Guideline**: The HIG / Material rule it violates (if applicable)
 - **Recommendation**: How to fix it
-- **Suggested command**: Which command to use (prefer: /impeccable adapt, /impeccable animate, /impeccable audit, /impeccable bolder, /impeccable clarify, /impeccable colorize, /impeccable critique, /impeccable delight, /impeccable distill, /impeccable document, /impeccable harden, /impeccable layout, /impeccable onboard, /impeccable optimize, /impeccable overdrive, /impeccable polish, /impeccable quieter, /impeccable shape, /impeccable typeset)
+- **Suggested command**: Which command to use (prefer: /freyja2 adapt, /freyja2 animate, /freyja2 audit, /freyja2 bolder, /freyja2 clarify, /freyja2 colorize, /freyja2 critique, /freyja2 delight, /freyja2 distill, /freyja2 document, /freyja2 harden, /freyja2 layout, /freyja2 onboard, /freyja2 optimize, /freyja2 overdrive, /freyja2 polish, /freyja2 quieter, /freyja2 shape, /freyja2 typeset)
 
 ### Patterns & Systemic Issues
 
@@ -121,13 +121,13 @@ List recommended commands in priority order (P0 first, then P1, then P2):
 1. **[P?] `/command-name`**: Brief description (specific context from audit findings)
 2. **[P?] `/command-name`**: Brief description (specific context)
 
-**Rules**: Only recommend commands from: /impeccable adapt, /impeccable animate, /impeccable audit, /impeccable bolder, /impeccable clarify, /impeccable colorize, /impeccable critique, /impeccable delight, /impeccable distill, /impeccable document, /impeccable harden, /impeccable layout, /impeccable onboard, /impeccable optimize, /impeccable overdrive, /impeccable polish, /impeccable quieter, /impeccable shape, /impeccable typeset. Map findings to the most appropriate command. End with `/impeccable polish` as the final step if any fixes were recommended.
+**Rules**: Only recommend commands from: /freyja2 adapt, /freyja2 animate, /freyja2 audit, /freyja2 bolder, /freyja2 clarify, /freyja2 colorize, /freyja2 critique, /freyja2 delight, /freyja2 distill, /freyja2 document, /freyja2 harden, /freyja2 layout, /freyja2 onboard, /freyja2 optimize, /freyja2 overdrive, /freyja2 polish, /freyja2 quieter, /freyja2 shape, /freyja2 typeset. Map findings to the most appropriate command. End with `/freyja2 polish` as the final step if any fixes were recommended.
 
 After presenting the summary, tell the user:
 
 > You can ask me to run these one at a time, all at once, or in any order you prefer.
 >
-> Re-run `/impeccable audit` after fixes to see your score improve.
+> Re-run `/freyja2 audit` after fixes to see your score improve.
 
 **IMPORTANT**: Be thorough but actionable. Too many P3 issues creates noise. Focus on what actually matters.
 

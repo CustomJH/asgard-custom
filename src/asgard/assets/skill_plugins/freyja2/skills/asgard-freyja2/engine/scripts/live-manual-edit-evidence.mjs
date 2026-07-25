@@ -30,6 +30,7 @@ const CONTEXT_MATCH_PER_HINT = 2;
 const SKIP_DIRS = new Set([
   'node_modules',
   '.git',
+  '.asgard',
   '.impeccable',
   '.astro',
   '.next',
@@ -125,7 +126,7 @@ function buildContextHintsByRef(entry) {
       add(typeof item === 'string' ? item : item?.text);
     }
     const outer = typeof entry.element?.outerHTML === 'string' ? entry.element.outerHTML : '';
-    for (const match of outer.matchAll(/data-impeccable-original-text="([^"]*)"/g)) add(match[1]);
+    for (const match of outer.matchAll(/data-freyja2-original-text="([^"]*)"/g)) add(match[1]);
     if (typeof entry.element?.textContent === 'string') {
       for (const chunk of entry.element.textContent.split(/\s{2,}|\n|\t/)) add(chunk);
     }

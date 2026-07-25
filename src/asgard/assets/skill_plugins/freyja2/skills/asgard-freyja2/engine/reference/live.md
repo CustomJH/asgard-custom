@@ -8,15 +8,15 @@ A running dev server with hot module replacement (Vite, Next.js, Bun, etc.), OR 
 
 Execute in order. No step skipped, no step reordered.
 
-1. `live.mjs`: boot. If the request names or implies a file, route, or app inside a monorepo, infer the concrete path and run `node .claude/skills/impeccable/scripts/live.mjs --target <path>` instead; then run the rest of this live session from the returned `projectRoot`.
+1. `live.mjs`: boot. If the request names or implies a file, route, or app inside a monorepo, infer the concrete path and run `node .claude/skills/freyja2/scripts/live.mjs --target <path>` instead; then run the rest of this live session from the returned `projectRoot`.
 2. Open the app URL that serves `pageFile` (infer from `package.json`, docs, terminal output, or an open tab). Never use `serverPort`; it's the helper, not the app. **Cursor:** `browser_navigate` to that URL before polling; do not skip. **Other harnesses:** use the available browser tool; if the URL is uncertain, ask the user once.
 3. Poll loop with the default long timeout (600000 ms). Run `live-poll.mjs` again immediately after every event or `--reply`; Codex runs this one-shot poll in the foreground. Never pass a short `--timeout=`.
 
-The global bar **Impeccable mark** dims and shows a pulsing amber dot when no agent is long-polling `/poll`. Hover the mark for the hint; restart `live-poll.mjs` to reconnect.
+The global bar **Freyja 2 mark** dims and shows a pulsing amber dot when no agent is long-polling `/poll`. Hover the mark for the hint; restart `live-poll.mjs` to reconnect.
 4. On `generate`: reuse `event.scaffold` when present; read the screenshot if present; load the action's reference; deliver variants using the delivery policy below; `--reply done`; poll again. Generate in this thread. You already hold the project's tokens, conventions, and file layout; that context is the job, not overhead. During a live cycle the overlay's preview IS the verification channel: the user sees every variant rendered in their real page and picks. Do not screenshot, re-render, or QA variants between generate and accept; apply craft-floor's contrast, spacing, and type floors by construction as you write, not as a post-write inspection pass. Full verification, computed contrast, breakpoints, real-copy overflow, runs once at accept on the chosen variant during carbonize cleanup.
 5. On `steer`: read the message and `pageUrl`; do the work (page edits, navigation help, or a short reply in the `--reply` message); `--reply steer_done`; poll again. No pickup ack. The Steer bar unlocks when `steer_done` arrives over SSE.
 6. On `accept` / `discard`: the poll script runs `live-accept.mjs`, acknowledges the delivered event, and prints `_completionAck`. Plain accepts/discards are terminal immediately. Carbonize accepts remain recoverable until the foreground task runs `live-complete.mjs --id EVENT_ID`; finish that cleanup before polling again.
-7. If interrupted, run `live-status.mjs` or `live-resume.mjs` before guessing. The durable journal replays unacknowledged work after helper restart. A dropped SSE connection or a closed tab does not end the session: the journal under `.impeccable/live/sessions/` is canonical, the injected `live.js` re-attaches when the page reopens, and `live-resume.mjs` replays the active snapshot. Tell the user to reopen the app URL (or restart `live-poll.mjs`) and continue; fall back to the direct-edit loop only when `live-resume.mjs` reports no active session, never because disconnects felt frequent.
+7. If interrupted, run `live-status.mjs` or `live-resume.mjs` before guessing. The durable journal replays unacknowledged work after helper restart. A dropped SSE connection or a closed tab does not end the session: the journal under `.asgard/.vanadis/engine2/live/sessions/` is canonical, the injected `live.js` re-attaches when the page reopens, and `live-resume.mjs` replays the active snapshot. Tell the user to reopen the app URL (or restart `live-poll.mjs`) and continue; fall back to the direct-edit loop only when `live-resume.mjs` reports no active session, never because disconnects felt frequent.
 8. On `exit`: run the cleanup at the bottom.
 
 Harness policy:
@@ -33,12 +33,12 @@ Chat is overhead. No recap, no tutorial output, no pasting PRODUCT / DESIGN bodi
 ## Start
 
 ```bash
-node .claude/skills/impeccable/scripts/live.mjs
+node .claude/skills/freyja2/scripts/live.mjs
 ```
 
 Output JSON: `{ ok, serverPort, serverToken, pageFiles, hasProduct, product, productPath, hasDesign, design, designPath }`. `pageFiles` is the list of HTML entries the live script was injected into. Keep PRODUCT.md, DESIGN.md, and any surface brief already loaded by Setup in mind for variant generation: **DESIGN.md wins on visual decisions; PRODUCT.md wins on durable product and voice decisions; the surface brief wins on this surface's strategy.** When DESIGN.md is missing, identity is **not** absent; extract it from CSS variables, computed styles, and sibling components on the page (see Step 4 Phase A). Identity preservation is the default; departure requires the user's explicit redesign/replacement intent.
 
-`serverPort` and `serverToken` belong to the small **Impeccable live helper** HTTP server (serves `/live.js`, SSE, and `/poll`). That port is **not** your dev server and is usually not the URL you open to view the app. The browser page is whatever origin serves one of the `pageFiles` entries (Vite / Next / Bun / tunnel / LAN hostname).
+`serverPort` and `serverToken` belong to the small **Freyja 2 live helper** HTTP server (serves `/live.js`, SSE, and `/poll`). That port is **not** your dev server and is usually not the URL you open to view the app. The browser page is whatever origin serves one of the `pageFiles` entries (Vite / Next / Bun / tunnel / LAN hostname).
 
 If output is `{ ok: false, error: "config_missing" | "config_invalid", path }`, this project hasn't been configured for live mode (or its config is stale). See **First-time setup** at the bottom.
 
@@ -48,7 +48,7 @@ If output is `{ ok: false, error: "config_missing" | "config_invalid", path }`, 
 
 ```
 LOOP:
-  node .claude/skills/impeccable/scripts/live-poll.mjs   # default long timeout; no --timeout=
+  node .claude/skills/freyja2/scripts/live-poll.mjs   # default long timeout; no --timeout=
   Read JSON; dispatch on "type"
 
   "generate"  → Handle Generate; reply done; LOOP
@@ -64,7 +64,7 @@ LOOP:
 **Stream mode (experimental, not for Cursor):**
 
 ```
-node .claude/skills/impeccable/scripts/live-poll.mjs --stream   # stays running; one JSON line per event
+node .claude/skills/freyja2/scripts/live-poll.mjs --stream   # stays running; one JSON line per event
   Handle event; run --reply in a separate command
   Repeat until "exit" line → Cleanup
 ```
@@ -73,14 +73,14 @@ Stream keeps one process alive and waits for `--reply` ack before polling again.
 
 ## Recovery commands
 
-The live helper persists an append-only journal under `.impeccable/live/sessions/`. Browser checkpoints are advisory but durable; the journal is canonical. This is local durable recovery state, not project source.
+The live helper persists an append-only journal under `.asgard/.vanadis/engine2/live/sessions/`. Browser checkpoints are advisory but durable; the journal is canonical. This is local durable recovery state, not project source.
 
 Use these commands when the chat was interrupted, polling was missed, the helper restarted, or the browser reloaded:
 
 ```bash
-node .claude/skills/impeccable/scripts/live-status.mjs
-node .claude/skills/impeccable/scripts/live-resume.mjs --id SESSION_ID
-node .claude/skills/impeccable/scripts/live-complete.mjs --id SESSION_ID
+node .claude/skills/freyja2/scripts/live-status.mjs
+node .claude/skills/freyja2/scripts/live-resume.mjs --id SESSION_ID
+node .claude/skills/freyja2/scripts/live-complete.mjs --id SESSION_ID
 ```
 
 - `live-status.mjs` prints connected helper state, active durable sessions, and queued pending events. It works even when the helper is down by reading the journal directly.
@@ -105,16 +105,16 @@ When `event.mode === "insert"`:
 2. If `event.scaffold` is present, use it as the insert-helper result and do **not** run the helper again. Otherwise run the insert helper instead of wrap:
 
 ```bash
-node .claude/skills/impeccable/scripts/live-insert.mjs --id EVENT_ID --count EVENT_COUNT --position after \
+node .claude/skills/freyja2/scripts/live-insert.mjs --id EVENT_ID --count EVENT_COUNT --position after \
   --element-id "ANCHOR_ID" --classes "class1,class2" --tag "section" --text "ANCHOR_TEXT"
 ```
 
 - `--position` ← `event.insert.position` (`before` | `after`)
 - Anchor flags ← `event.insert.anchor` (same mapping as wrap: id, classes, tag, text)
 
-The scaffold has **no** `data-impeccable-variant="original"`. Variants are net-new HTML+CSS inserted at `insertLine`. On source-preview targets the scaffold carries `sourceWritten: false` with `wrapperBlock`, `replaceStartLine`, and `replaceEndLine` (here `replaceEndLine < replaceStartLine`, an insertion): splice your variants into `wrapperBlock` at the marker and insert the result at `replaceStartLine` in one edit, exactly as the wrap section describes, so the framework reloads once. Decide the visitor mode from the surface and load [craft-floor.md](craft-floor.md) before writing net-new markup (freeform only, no action sub-command). Deliver using the harness policy, then `--reply done`.
+The scaffold has **no** `data-freyja2-variant="original"`. Variants are net-new HTML+CSS inserted at `insertLine`. On source-preview targets the scaffold carries `sourceWritten: false` with `wrapperBlock`, `replaceStartLine`, and `replaceEndLine` (here `replaceEndLine < replaceStartLine`, an insertion): splice your variants into `wrapperBlock` at the marker and insert the result at `replaceStartLine` in one edit, exactly as the wrap section describes, so the framework reloads once. Decide the visitor mode from the surface and load [craft-floor.md](craft-floor.md) before writing net-new markup (freeform only, no action sub-command). Deliver using the harness policy, then `--reply done`.
 
-For Svelte/SvelteKit targets, `live-insert.mjs` returns `previewMode: "svelte-component"` with `mode: "insert"`, `file` pointing at a temporary `node_modules/.impeccable-live/<id>/manifest.json`, `componentDir` pointing at the variant component files, and `sourceFile` pointing at the real `.svelte` route. Write each inserted variant as a real Svelte component (`v1.svelte`, `v2.svelte`, …) under `componentDir`. Insert variants must be non-empty net-new content with a single top-level root, no `data-impeccable-*` attributes, and CSS in each component's `<style>` block. Do **not** edit the route source during generation; the browser mounts the temporary component before/after the live anchor while the user cycles variants. On Accept, `live-accept.mjs` inserts the selected component markup into `sourceFile` immediately and deletes the temp session after the source write succeeds.
+For Svelte/SvelteKit targets, `live-insert.mjs` returns `previewMode: "svelte-component"` with `mode: "insert"`, `file` pointing at a temporary `node_modules/.freyja2-live/<id>/manifest.json`, `componentDir` pointing at the variant component files, and `sourceFile` pointing at the real `.svelte` route. Write each inserted variant as a real Svelte component (`v1.svelte`, `v2.svelte`, …) under `componentDir`. Insert variants must be non-empty net-new content with a single top-level root, no `data-freyja2-*` attributes, and CSS in each component's `<style>` block. Do **not** edit the route source during generation; the browser mounts the temporary component before/after the live anchor while the user cycles variants. On Accept, `live-accept.mjs` inserts the selected component markup into `sourceFile` immediately and deletes the temp session after the source write succeeds.
 
 For non-Svelte targets, on accept/discard, `live-accept.mjs` removes the wrapper block; the anchor element is untouched.
 
@@ -142,7 +142,7 @@ When `event.scaffold` is present, the local helper already found the source and 
 **On source-preview targets `event.scaffold` carries `sourceWritten: false`.** The helper did NOT write the wrapper into source; it hands you the wrapper as `scaffold.wrapperBlock` plus the picked element's source range (`scaffold.replaceStartLine`, `scaffold.replaceEndLine`, 1-indexed). Write the wrapper **and** all variants in ONE edit: splice your variants into `wrapperBlock` at the "Variants: insert below this line" marker, then replace source lines `[replaceStartLine, replaceEndLine]` with the result. A separate scaffold write reloads the framework before your variant write lands, and a browser caught mid-reload misses the `done` and sits at 0/N; the single edit avoids it. (`replaceEndLine < replaceStartLine` means insert mode: insert `wrapperBlock`, remove nothing.) The `svelte-component` path never sets `sourceWritten`; it follows the component-preview flow below unchanged.
 
 ```bash
-node .claude/skills/impeccable/scripts/live-wrap.mjs --id EVENT_ID --count EVENT_COUNT --element-id "ELEMENT_ID" --classes "class1,class2" --tag "div" --text "TEXT_SNIPPET"
+node .claude/skills/freyja2/scripts/live-wrap.mjs --id EVENT_ID --count EVENT_COUNT --element-id "ELEMENT_ID" --classes "class1,class2" --tag "div" --text "TEXT_SNIPPET"
 ```
 
 Flag mapping. Keep them separate, don't collapse into `--query`:
@@ -158,7 +158,7 @@ If `--text` matches multiple candidates equally well, wrap exits with `{ error: 
 
 Output on success: `{ file, insertLine, commentSyntax, styleMode, styleTag, cssSelectorPrefixExamples, cssAuthoring }`. On source-preview targets it also returns `sourceWritten: false`, `wrapperBlock`, `replaceStartLine`, and `replaceEndLine` (write it yourself per the `event.scaffold` note above). When you run this command directly (no preflight scaffold), it writes the wrapper into source itself, so there is no `wrapperBlock` and you splice variants at `insertLine`.
 
-For Svelte/SvelteKit targets, `live-wrap.mjs` returns `previewMode: "svelte-component"` with `file` pointing at a temporary `node_modules/.impeccable-live/<id>/manifest.json`, `componentDir` pointing at the variant component files, and `sourceFile` pointing at the real `.svelte` route. Write each variant as a real Svelte component (`v1.svelte`, `v2.svelte`, …) under `componentDir`; use the `propContract` prop names for dynamic text (`{propName}`), not literal snapshot strings. Put variant CSS in each component's `<style>` block with semantic class selectors (no `@scope`, no `data-impeccable-*`). Reply with `--file` set to the manifest path; the browser dynamically imports and mounts the compiled components so Svelte HMR does not reset page state while the user cycles variants. On Accept, `live-accept.mjs` inlines the accepted component back into `sourceFile` immediately after source promotion succeeds.
+For Svelte/SvelteKit targets, `live-wrap.mjs` returns `previewMode: "svelte-component"` with `file` pointing at a temporary `node_modules/.freyja2-live/<id>/manifest.json`, `componentDir` pointing at the variant component files, and `sourceFile` pointing at the real `.svelte` route. Write each variant as a real Svelte component (`v1.svelte`, `v2.svelte`, …) under `componentDir`; use the `propContract` prop names for dynamic text (`{propName}`), not literal snapshot strings. Put variant CSS in each component's `<style>` block with semantic class selectors (no `@scope`, no `data-freyja2-*`). Reply with `--file` set to the manifest path; the browser dynamically imports and mounts the compiled components so Svelte HMR does not reset page state while the user cycles variants. On Accept, `live-accept.mjs` inlines the accepted component back into `sourceFile` immediately after source promotion succeeds.
 
 **Params on component-preview paths go in a sidecar, never as an attribute.** Svelte parses `{` inside an attribute value as the start of an expression, and both Svelte/Vue previews mount without an HTML variant wrapper. Declare params in `componentDir/params.json`, keyed by variant number, using the exact param schema from section 7:
 
@@ -179,8 +179,8 @@ Author the component `<style>` against `var(--p-<id>, default)` for `range`/`tog
 
 `styleMode` controls how preview CSS must be authored. Treat it as a detected capability mode, not a framework guess:
 
-- `scoped`: use `@scope ([data-impeccable-variant="N"])` rules.
-- `astro-global-prefixed`: use explicit `[data-impeccable-variant="N"]` selector prefixes and the exact `styleTag` returned by the tool.
+- `scoped`: use `@scope ([data-freyja2-variant="N"])` rules.
+- `astro-global-prefixed`: use explicit `[data-freyja2-variant="N"]` selector prefixes and the exact `styleTag` returned by the tool.
 
 Use `cssAuthoring` as the source of truth for the current file. It includes the exact `styleTag`, selector strategy, selector examples, requirements, and forbidden patterns. Do not apply a framework-specific exception unless the returned `styleMode` / `cssAuthoring.mode` says to.
 
@@ -194,7 +194,7 @@ All three carry `fallback: "agent-driven"`. Follow **Handle fallback** below.
 
 ### 3. Load the action's reference
 
-If `event.action` is `impeccable` (the default freeform action), work from SKILL.md's design rules plus [craft-floor.md](craft-floor.md), and decide the visitor mode from the selected surface. Do not load a sub-command reference. **Freeform is not a pass to skip parameters:** you still follow the composition budget and the freeform bias in **§7 Parameters** below. Sub-command files list MUST-have signature knobs; freeform has no such file, so sizing knobs from surface weight and primary axes is entirely on you.
+If `event.action` is `freyja2` (the default freeform action), work from SKILL.md's design rules plus [craft-floor.md](craft-floor.md), and decide the visitor mode from the selected surface. Do not load a sub-command reference. **Freeform is not a pass to skip parameters:** you still follow the composition budget and the freeform bias in **§7 Parameters** below. Sub-command files list MUST-have signature knobs; freeform has no such file, so sizing knobs from surface weight and primary axes is entirely on you.
 
 Any other `event.action` (`bolder`, `quieter`, `distill`, `polish`, `typeset`, `colorize`, `layout`, `adapt`, `animate`, `delight`, `overdrive`): Read `reference/<action>.md` before planning. Each sub-command encodes a specific discipline; skipping its reference produces generic output. Those files may require specific params; layer them on top of the §7 budget, not instead of it.
 
@@ -307,16 +307,16 @@ Use the `cssAuthoring` object returned by `live-wrap.mjs` to author the temporar
 
 ```html
 <!-- Variants: insert below this line -->
-<style data-impeccable-css="SESSION_ID">
+<style data-freyja2-css="SESSION_ID">
   /* rules matching cssAuthoring.rulePattern */
 </style>
-<div data-impeccable-variant="1">
+<div data-freyja2-variant="1">
   <!-- variant 1: full element replacement (single top-level element) -->
 </div>
-<div data-impeccable-variant="2" style="display: none">
+<div data-freyja2-variant="2" style="display: none">
   <!-- variant 2: full element replacement -->
 </div>
-<div data-impeccable-variant="3" style="display: none">
+<div data-freyja2-variant="3" style="display: none">
   <!-- variant 3: full element replacement -->
 </div>
 ```
@@ -327,24 +327,24 @@ The first variant has no `display: none` (visible by default). All others do. If
 
 The browser's MutationObserver accepts either delivery shape. On the transactional progressive path it shows arrived variants and pending dots immediately; Accept and Discard are available as soon as one variant exists. Accepting an arrived variant fences the worker before the browser releases the picker, so later publications are rejected.
 
-For `styleMode: "scoped"`, author every `:scope` rule with a descendant combinator. The `@scope` boundary is the **variant wrapper `<div data-impeccable-variant="N">`**, not the element you're designing. A bare `:scope { background: cream; }` styles the wrapper, not the inner replacement, so the cream lands on a `display: contents` shell while the actual element keeps page defaults. Always step in: `:scope > .card`, `:scope > section`, `:scope .hero-title`, etc. The fake test agent's CSS in `tests/live-e2e/agent.mjs` is a faithful template; every scoped rule starts `:scope > ...`.
+For `styleMode: "scoped"`, author every `:scope` rule with a descendant combinator. The `@scope` boundary is the **variant wrapper `<div data-freyja2-variant="N">`**, not the element you're designing. A bare `:scope { background: cream; }` styles the wrapper, not the inner replacement, so the cream lands on a `display: contents` shell while the actual element keeps page defaults. Always step in: `:scope > .card`, `:scope > section`, `:scope .hero-title`, etc. The fake test agent's CSS in `tests/live-e2e/agent.mjs` is a faithful template; every scoped rule starts `:scope > ...`.
 
-**JSX / TSX target files.** Wrap `<style>` content in a template literal so the CSS `{` / `}` aren't parsed as JSX expressions, and use `className=` / `style={{…}}` on every variant element. Keep `data-impeccable-*` attributes as-is; they're plain strings:
+**JSX / TSX target files.** Wrap `<style>` content in a template literal so the CSS `{` / `}` aren't parsed as JSX expressions, and use `className=` / `style={{…}}` on every variant element. Keep `data-freyja2-*` attributes as-is; they're plain strings:
 
 ```tsx
-<style data-impeccable-css="SESSION_ID">{`
-  @scope ([data-impeccable-variant="1"]) { ... }
-  @scope ([data-impeccable-variant="2"]) { ... }
+<style data-freyja2-css="SESSION_ID">{`
+  @scope ([data-freyja2-variant="1"]) { ... }
+  @scope ([data-freyja2-variant="2"]) { ... }
 `}</style>
-<div data-impeccable-variant="1">
+<div data-freyja2-variant="1">
   {/* variant 1 */}
 </div>
-<div data-impeccable-variant="2" style={{ display: 'none' }}>
+<div data-freyja2-variant="2" style={{ display: 'none' }}>
   {/* variant 2 */}
 </div>
 ```
 
-The wrap script already gives you a single-rooted JSX wrapper: a `<div data-impeccable-variants="…">` outer element with the marker comments tucked inside. Drop the variants block above into the "Variants: insert below this line" comment and the source stays valid TSX.
+The wrap script already gives you a single-rooted JSX wrapper: a `<div data-freyja2-variants="…">` outer element with the marker comments tucked inside. Drop the variants block above into the "Variants: insert below this line" comment and the source stays valid TSX.
 
 ### 7. Parameters (composition-sized, 0–4 per variant)
 
@@ -354,7 +354,7 @@ Each variant can expose **coarse** knobs alongside the full HTML/CSS replacement
 
 **When to add.** As soon as the variant’s scoped CSS has a meaningful continuous or stepped axis: density, color amount, type scale, motion intensity, column weight, and so on. If you can imagine the user muttering “a bit tighter” or “a touch more accent” **without** wanting a full regeneration, wire that axis. **Not** micro-margins or one-off nudges; those are not parameters.
 
-**Freeform (`action` is `impeccable`) bias.** You did not load a sub-command reference, so you must **choose** signature axes yourself. Match the budget table: for a hero or large composition, that means **2–3 axes per variant**, not 1. Prefer knobs that sit on the dimensions where your three variants actually differ (if density varies, expose it as a `steps` knob; if color commitment varies, expose it as a `range`). A hero that ships with **0** params is almost always a mistake, not a judgment call. A hero with exactly **1** param is underweight unless the design is genuinely a fixed-point comparison. Start from the budget table, not from zero.
+**Freeform (`action` is `freyja2`) bias.** You did not load a sub-command reference, so you must **choose** signature axes yourself. Match the budget table: for a hero or large composition, that means **2–3 axes per variant**, not 1. Prefer knobs that sit on the dimensions where your three variants actually differ (if density varies, expose it as a `steps` knob; if color commitment varies, expose it as a `range`). A hero that ships with **0** params is almost always a mistake, not a judgment call. A hero with exactly **1** param is underweight unless the design is genuinely a fixed-point comparison. Start from the budget table, not from zero.
 
 **Budget scales with the element's visual weight, not token budget.** Knobs need real estate to read as tunable; three sliders on a single control are noise.
 
@@ -370,7 +370,7 @@ Each variant can expose **coarse** knobs alongside the full HTML/CSS replacement
 **How to declare.** Put a JSON manifest on the variant wrapper (HTML/JSX path). **On the `svelte-component` path, do not use this attribute.** Declare params in `componentDir/params.json` keyed by variant number instead (see the component-preview paragraphs in the wrap section). The param schema below is identical for every path.
 
 ```html
-<div data-impeccable-variant="1" data-impeccable-params='[
+<div data-freyja2-variant="1" data-freyja2-params='[
   {"id":"color-amount","kind":"range","min":0,"max":1,"step":0.05,"default":0.5,"label":"Color amount"},
   {"id":"density","kind":"steps","default":"snug","label":"Density","options":[
     {"value":"airy","label":"Airy"},
@@ -389,14 +389,14 @@ Each variant can expose **coarse** knobs alongside the full HTML/CSS replacement
 - `steps`: segmented radio. Drives a data attribute `data-p-<id>` on the variant wrapper. Author CSS with `:scope[data-p-density="airy"] .grid { ... }`. Fields: `options` (array of `{value, label}`), `default` (string), `label`.
 - `toggle`: on/off switch. Drives BOTH a CSS var (`--p-<id>: 0|1`) and a data attribute (present when on, absent when off). Use whichever is more convenient. Fields: `default` (boolean), `label`.
 
-**Signature params per action.** For named sub-commands, read that action’s `reference/<action>.md` for one or two **MUST** params (e.g. `layout` → `density`). Those are non-negotiable when the design can express them. **Freeform has no file-level MUST**; the **Freeform (`impeccable`) bias** in this section is the stand-in. If the user’s action is both stylized and sub-command (e.g. `colorize`), the sub-command’s MUST list takes precedence for its axes; still respect the **Hard cap** and add no redundant duplicate knobs.
+**Signature params per action.** For named sub-commands, read that action’s `reference/<action>.md` for one or two **MUST** params (e.g. `layout` → `density`). Those are non-negotiable when the design can express them. **Freeform has no file-level MUST**; the **Freeform (`freyja2`) bias** in this section is the stand-in. If the user’s action is both stylized and sub-command (e.g. `colorize`), the sub-command’s MUST list takes precedence for its axes; still respect the **Hard cap** and add no redundant duplicate knobs.
 
 **Reset on variant switch.** User dials density on v1, flips to v2, v2 starts at v2's declared defaults. Known limitation; preservation across variants may land later.
 
 **On accept**, the browser sends the user's current values in the accept event. `live-accept.mjs` writes them as a sibling comment:
 
 ```html
-<!-- impeccable-param-values SESSION_ID: {"color-amount":0.7,"density":"packed"} -->
+<!-- freyja2-param-values SESSION_ID: {"color-amount":0.7,"density":"packed"} -->
 ```
 
 The carbonize cleanup step (see below) reads that comment and bakes the chosen values into the final CSS. For `steps`/`toggle` attribute selectors: keep only the branch matching the chosen value, drop the others, collapse `:scope[data-p-density="packed"] .grid` to a semantic class rule. For `range` vars: either substitute the literal or keep the var with the chosen value as its new default.
@@ -404,7 +404,7 @@ The carbonize cleanup step (see below) reads that comment and bakes the chosen v
 ### 8. Signal done
 
 ```bash
-node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID done --file RELATIVE_PATH
+node .claude/skills/freyja2/scripts/live-poll.mjs --reply EVENT_ID done --file RELATIVE_PATH
 ```
 
 `RELATIVE_PATH` is relative to project root (`public/index.html`, `src/App.tsx`, etc.); the browser fetches source directly if the dev server lacks HMR.
@@ -416,7 +416,7 @@ Then run `live-poll.mjs` again immediately.
 If wrap or generation fails after the browser has flipped to GENERATING (e.g. wrap landed on the wrong source branch and you've already reverted it, or generation hit an unrecoverable error), tell the **browser** so its bar resets to PICKING:
 
 ```bash
-node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
+node .claude/skills/freyja2/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
 ```
 
 Don't run `live-accept --discard` for this; that's a pure file mutator, the browser doesn't see it, and the bar gets stuck on the GENERATING dots forever (the user has to refresh). `--discard` is only correct when the **browser** initiated the discard (user clicked ✕ during CYCLING) and the agent is just running source-side cleanup the browser already triggered.
@@ -441,7 +441,7 @@ Read the candidate source until you're confident where a change to the element w
 
 The browser bar is waiting for variants. Even without a wrapper in source, you still need to show something:
 
-1. Manually write the wrapper scaffold into the **served** file (the one the browser actually loaded). Use the same structure `live-wrap.mjs` produces; `<!-- impeccable-variants-start ID --><div data-impeccable-variants="ID" data-impeccable-variant-count="3" style="display: contents">…</div><!-- end -->`.
+1. Manually write the wrapper scaffold into the **served** file (the one the browser actually loaded). Use the same structure `live-wrap.mjs` produces; `<!-- freyja2-variants-start ID --><div data-freyja2-variants="ID" data-freyja2-variant-count="3" style="display: contents">…</div><!-- end -->`.
 2. Insert your three variant divs inside it, same shape as the deterministic path.
 3. Signal done with `--reply EVENT_ID done --file <served file>`. The browser's no-HMR fallback will fetch and inject.
 
@@ -478,15 +478,15 @@ Event: `{id, variantId, _acceptResult, _completionAck}`. The poll script already
 
 ### Required after accept (carbonize)
 
-When `_acceptResult.carbonize === true`, the accepted variant was stitched into source with helper markers and inline CSS so the browser can render it immediately with no visual gap. That stitch-in is **temporary**. The agent must rewrite it into permanent form before doing anything else. Skipping this leaves dead `@scope` rules for unaccepted variants, a pointless `data-impeccable-variant` wrapper, and `impeccable-carbonize-start/end` comment noise in the source file; all of which accumulate across sessions.
+When `_acceptResult.carbonize === true`, the accepted variant was stitched into source with helper markers and inline CSS so the browser can render it immediately with no visual gap. That stitch-in is **temporary**. The agent must rewrite it into permanent form before doing anything else. Skipping this leaves dead `@scope` rules for unaccepted variants, a pointless `data-freyja2-variant` wrapper, and `freyja2-carbonize-start/end` comment noise in the source file; all of which accumulate across sessions.
 
 Do these five steps synchronously before the next poll. The source lock, generation epoch, and expected-source hash remain the final safety gates against a generator finishing concurrently with Accept.
 
-1. **Locate the carbonize block** in the source file (`_acceptResult.file`). It's bracketed by `<!-- impeccable-carbonize-start SESSION_ID -->` and `<!-- impeccable-carbonize-end SESSION_ID -->` and contains a `<style data-impeccable-css="SESSION_ID">` element. If the variant declared parameters, an `<!-- impeccable-param-values SESSION_ID: {...} -->` comment sits alongside the style tag with the user's chosen values; read it first; it drives steps 3 and 4 below.
+1. **Locate the carbonize block** in the source file (`_acceptResult.file`). It's bracketed by `<!-- freyja2-carbonize-start SESSION_ID -->` and `<!-- freyja2-carbonize-end SESSION_ID -->` and contains a `<style data-freyja2-css="SESSION_ID">` element. If the variant declared parameters, an `<!-- freyja2-param-values SESSION_ID: {...} -->` comment sits alongside the style tag with the user's chosen values; read it first; it drives steps 3 and 4 below.
 2. **Move the CSS rules** into the project's real stylesheet. Which stylesheet depends on the project (e.g. `site/styles/workflow.css` for an Astro project, or the component's co-located CSS file for a Vite/Next project; pick whichever already owns styling for the surrounding element).
-3. **Bake in parameter values while rewriting selectors.** For `@scope ([data-impeccable-variant="N"])` wrappers: retarget to real, semantic classes on the accepted HTML (`.why-visual--v2 .v2-label { … }`). For `:scope[data-p-<id>="VALUE"]` selectors: keep only the branch matching the chosen value from the param-values comment; drop the others (they're dead after accept). For `var(--p-<id>, DEFAULT)` in the CSS: either substitute the literal value, or if the param is still useful as a knob going forward, leave the var and update its initial declaration to the chosen value.
-4. **Unwrap the accepted content.** Delete the inner `<div data-impeccable-variant="N" style="display: contents">` that wraps it. On JSX/TSX, also delete the outer `<div data-impeccable-carbonize="SESSION_ID" style={{ display: 'contents' }}>` wrapper if present (accept adds it so ternary/`return` slots keep a single root). Drop `data-impeccable-params` and any `data-p-*` attributes; those are live-mode plumbing, not source.
-5. **Delete the inline `<style>` block, the `<!-- impeccable-param-values -->` comment if present, and both `<!-- impeccable-carbonize-start/end -->` markers.** Also drop any `@scope` rules for variants other than the accepted one; those are dead code now.
+3. **Bake in parameter values while rewriting selectors.** For `@scope ([data-freyja2-variant="N"])` wrappers: retarget to real, semantic classes on the accepted HTML (`.why-visual--v2 .v2-label { … }`). For `:scope[data-p-<id>="VALUE"]` selectors: keep only the branch matching the chosen value from the param-values comment; drop the others (they're dead after accept). For `var(--p-<id>, DEFAULT)` in the CSS: either substitute the literal value, or if the param is still useful as a knob going forward, leave the var and update its initial declaration to the chosen value.
+4. **Unwrap the accepted content.** Delete the inner `<div data-freyja2-variant="N" style="display: contents">` that wraps it. On JSX/TSX, also delete the outer `<div data-freyja2-carbonize="SESSION_ID" style={{ display: 'contents' }}>` wrapper if present (accept adds it so ternary/`return` slots keep a single root). Drop `data-freyja2-params` and any `data-p-*` attributes; those are live-mode plumbing, not source.
+5. **Delete the inline `<style>` block, the `<!-- freyja2-param-values -->` comment if present, and both `<!-- freyja2-carbonize-start/end -->` markers.** Also drop any `@scope` rules for variants other than the accepted one; those are dead code now.
 
 After the file is clean, the cleanup owner runs `live-complete.mjs --id SESSION_ID` and verifies `phase: "completed"`. Poll again only after that verification.
 
@@ -505,13 +505,13 @@ This is lighter than `generate`: no screenshot, no element context, no variant c
 When finished:
 
 ```bash
-node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID steer_done ["Optional short note for a browser toast"]
+node .claude/skills/freyja2/scripts/live-poll.mjs --reply EVENT_ID steer_done ["Optional short note for a browser toast"]
 ```
 
 On failure:
 
 ```bash
-node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
+node .claude/skills/freyja2/scripts/live-poll.mjs --reply EVENT_ID error "Short reason"
 ```
 
 Then poll again immediately. Do not send a separate "picked up" reply. The Steer bar stays locked until `steer_done` or `error` arrives over SSE.
@@ -535,11 +535,11 @@ Event: `{id, pageUrl, batch: {entries}, evidencePath?, chunk?, repair?, deadline
 
 The user already clicked Apply. Do not ask what to do, discard, or redirect to Go. The parent live thread keeps the foreground poll loop and sends the final `/poll --reply --data`.
 
-When native subagents are available, delegate source edits to `impeccable_manual_edit_applier` / `impeccable-manual-edit-applier`. Pass cwd, scripts path, event id, page URL, chunk/deadline, `batch`, `evidencePath`, and the canonical JSON result schema. The subagent must not poll or reply. If unavailable, apply inline with the same contract.
+When native subagents are available, delegate source edits to `freyja2_manual_edit_applier` / `freyja2-manual-edit-applier`. Pass cwd, scripts path, event id, page URL, chunk/deadline, `batch`, `evidencePath`, and the canonical JSON result schema. The subagent must not poll or reply. If unavailable, apply inline with the same contract.
 
 If `repair` is present, the previous Apply changed source but final validation failed. Fix the current source and return the same canonical JSON result; do not roll files back yourself. The browser will ask the user before any rollback.
 
-After source edits finish, reply exactly once with `node .claude/skills/impeccable/scripts/live-poll.mjs --reply EVENT_ID done --data '{"status":"done","appliedEntryIds":["8hexid"],"failed":[],"files":["src/page.html"],"notes":[]}'`. Use `status:"partial"` or `status:"error"` with `failed[]` when not every entry applied. Then poll again. Never reply without the event id; `--reply done --file ...` is invalid for manual Apply.
+After source edits finish, reply exactly once with `node .claude/skills/freyja2/scripts/live-poll.mjs --reply EVENT_ID done --data '{"status":"done","appliedEntryIds":["8hexid"],"failed":[],"files":["src/page.html"],"notes":[]}'`. Use `status:"partial"` or `status:"error"` with `failed[]` when not every entry applied. Then poll again. Never reply without the event id; `--reply done --file ...` is invalid for manual Apply.
 
 ## Exit
 
@@ -553,18 +553,18 @@ When the poll returns `exit`, proceed to cleanup. If the poll is still running a
 ## Cleanup
 
 ```bash
-node .claude/skills/impeccable/scripts/live-server.mjs stop
+node .claude/skills/freyja2/scripts/live-server.mjs stop
 ```
 
-Stops the HTTP server and runs `live-inject.mjs --remove` to strip `localhost:…/live.js` from the HTML entry. To stop the server but keep the inject tag (for a quick restart), use `stop --keep-inject`. `.impeccable/live/config.json` persists as project config for future sessions.
+Stops the HTTP server and runs `live-inject.mjs --remove` to strip `localhost:…/live.js` from the HTML entry. To stop the server but keep the inject tag (for a quick restart), use `stop --keep-inject`. `.asgard/.vanadis/engine2/live/config.json` persists as project config for future sessions.
 
 Then:
-- Remove any leftover variant wrappers (search for `impeccable-variants-start` markers).
-- Remove any leftover carbonize blocks (search for `impeccable-carbonize-start` markers).
+- Remove any leftover variant wrappers (search for `freyja2-variants-start` markers).
+- Remove any leftover carbonize blocks (search for `freyja2-carbonize-start` markers).
 
 ## First-time setup (config missing or invalid)
 
-If `live.mjs` outputs `{ ok: false, error: "config_missing" | "config_invalid", path }`, write the live config at the reported path. By default this is `.impeccable/live/config.json`.
+If `live.mjs` outputs `{ ok: false, error: "config_missing" | "config_invalid", path }`, write the live config at the reported path. By default this is `.asgard/.vanadis/engine2/live/config.json`.
 
 Schema:
 
@@ -602,7 +602,7 @@ Schema:
 
 Pick an anchor that exists in every file (`</body>` almost always works). Use `insertAfter` if the anchor should match **after** a specific line.
 
-**Framework adapters (auto-detected at inject time).** SvelteKit, Nuxt, and TanStack Start server-render their document shell, so a raw `<script>` in the entry template will not execute reliably. `live-inject.mjs` detects these from the project and routes to a dedicated adapter instead of the literal `files` patch: SvelteKit mounts a dev-only root component from `+layout.svelte`; Nuxt writes a dev-only `.client.ts` plugin; TanStack Start (detected by `@tanstack/react-start` plus `src/routes/__root.tsx`) patches the `__root` document to render a generated dev-only `src/impeccable/ImpeccableLiveRoot` component that appends the bundle on mount. The `files` value stays a valid detection/CSP hint but is not the literal insertion site. A plain TanStack Router SPA (no `@tanstack/react-start`) has a static `index.html` and takes the baseline Vite path with no adapter.
+**Framework adapters (auto-detected at inject time).** SvelteKit, Nuxt, and TanStack Start server-render their document shell, so a raw `<script>` in the entry template will not execute reliably. `live-inject.mjs` detects these from the project and routes to a dedicated adapter instead of the literal `files` patch: SvelteKit mounts a dev-only root component from `+layout.svelte`; Nuxt writes a dev-only `.client.ts` plugin; TanStack Start (detected by `@tanstack/react-start` plus `src/routes/__root.tsx`) patches the `__root` document to render a generated dev-only `src/freyja2/Freyja2LiveRoot` component that appends the bundle on mount. The `files` value stays a valid detection/CSP hint but is not the literal insertion site. A plain TanStack Router SPA (no `@tanstack/react-start`) has a static `index.html` and takes the baseline Vite path with no adapter.
 
 For multi-page sites, **prefer a glob over a literal file list**. New pages added later are picked up automatically on the next `live-inject.mjs` run; no config maintenance needed.
 
@@ -643,12 +643,12 @@ If `config.cspChecked === true`, skip this entire section. You already asked thi
 Otherwise, run the detection helper:
 
 ```bash
-node .claude/skills/impeccable/scripts/detect-csp.mjs
+node .claude/skills/freyja2/scripts/detect-csp.mjs
 ```
 
 Output: `{ shape, signals }` where `shape` is one of `append-arrays`, `append-string`, `middleware`, `meta-tag`, or `null`. The shape is named by *patch mechanism*, so one template covers many frameworks.
 
-- **`null`**: no CSP; skip to writing `.impeccable/live/config.json` with `cspChecked: true`.
+- **`null`**: no CSP; skip to writing `.asgard/.vanadis/engine2/live/config.json` with `cspChecked: true`.
 - **`append-arrays`**: CSP defined as structured directive arrays. Auto-patchable. See *append-arrays* below. Covers:
   - Monorepo helpers with `additionalScriptSrc` / `additionalConnectSrc` options (Next.js + shared config package)
   - SvelteKit `kit.csp.directives`
@@ -682,12 +682,12 @@ CSP expressed as structured directive arrays. Patch mechanism: declare a dev-onl
 **Declare near the top of the file that holds the CSP arrays:**
 
 ```ts
-// Dev-only allowance so impeccable live mode can load. Guarded by NODE_ENV.
-const __impeccableLiveDev =
+// Dev-only allowance so freyja2 live mode can load. Guarded by NODE_ENV.
+const __freyja2LiveDev =
   process.env.NODE_ENV === "development" ? ["http://localhost:8400"] : [];
 ```
 
-**Append `...__impeccableLiveDev` to the script-src and connect-src directive arrays.** Per-framework specifics:
+**Append `...__freyja2LiveDev` to the script-src and connect-src directive arrays.** Per-framework specifics:
 
 - **Next.js + monorepo helper**: edit the *app's* `next.config.*` (not the shared helper), appending to `additionalScriptSrc` and `additionalConnectSrc` passed into `createBaseNextConfig` (or equivalent). Keeps the shared package clean.
 - **SvelteKit**: edit `svelte.config.js`, appending to `kit.csp.directives['script-src']` and `kit.csp.directives['connect-src']`.
@@ -697,21 +697,21 @@ Reference outputs:
 - `tests/framework-fixtures/nextjs-turborepo/expected-after-patch.ts` (Next.js)
 - `tests/framework-fixtures/sveltekit-csp/expected-after-patch.js` (SvelteKit)
 
-Idempotency: if `__impeccableLiveDev` already exists in the file, the patch is already applied; skip asking and just mark `cspChecked: true`.
+Idempotency: if `__freyja2LiveDev` already exists in the file, the patch is already applied; skip asking and just mark `cspChecked: true`.
 
 #### append-string
 
 CSP built as a literal value string. Two-point patch: declare a dev-only string near the top, interpolate it into the CSP at the `script-src` and `connect-src` directives.
 
 ```ts
-// Dev-only allowance so impeccable live mode can load.
-const __impeccableLiveDev =
+// Dev-only allowance so freyja2 live mode can load.
+const __freyja2LiveDev =
   process.env.NODE_ENV === "development" ? " http://localhost:8400" : "";
 ```
 
 Then in the CSP value string:
-- `script-src 'self' 'unsafe-inline'` → `` `script-src 'self' 'unsafe-inline'${__impeccableLiveDev}` ``
-- `connect-src 'self'` → `` `connect-src 'self'${__impeccableLiveDev}` ``
+- `script-src 'self' 'unsafe-inline'` → `` `script-src 'self' 'unsafe-inline'${__freyja2LiveDev}` ``
+- `connect-src 'self'` → `` `connect-src 'self'${__freyja2LiveDev}` ``
 
 (Leading space on the dev string so it concatenates cleanly into the existing value. Convert the literal CSP directives into template strings as part of the edit if they aren't already.)
 
@@ -725,6 +725,6 @@ Reference outputs:
 
 ### Troubleshooting
 
-If a user says "no" to the CSP patch at setup time and later complains that live doesn't work: their dev CSP blocks `http://localhost:8400`. Fix: delete `cspChecked` from `.impeccable/live/config.json` and re-run `live.mjs`: setup will ask again.
+If a user says "no" to the CSP patch at setup time and later complains that live doesn't work: their dev CSP blocks `http://localhost:8400`. Fix: delete `cspChecked` from `.asgard/.vanadis/engine2/live/config.json` and re-run `live.mjs`: setup will ask again.
 
 Then re-run `live.mjs`.

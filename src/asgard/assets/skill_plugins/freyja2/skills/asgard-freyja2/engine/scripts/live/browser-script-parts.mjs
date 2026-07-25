@@ -34,16 +34,16 @@ export function readLiveBrowserScriptParts(parts, readFile = (filePath) => fs.re
 
 export function assembleLiveBrowserScript({ token, port, vocabulary, commandPrefix = '/', parts }) {
   const prelude =
-    `window.__IMPECCABLE_TOKEN__ = '${token}';\n` +
-    `window.__IMPECCABLE_PORT__ = ${port};\n` +
-    `window.__IMPECCABLE_COMMAND_PREFIX__ = ${JSON.stringify(commandPrefix)};\n` +
+    `window.__FREYJA2_TOKEN__ = '${token}';\n` +
+    `window.__FREYJA2_PORT__ = ${port};\n` +
+    `window.__FREYJA2_COMMAND_PREFIX__ = ${JSON.stringify(commandPrefix)};\n` +
     // Canonical command vocabulary (values + labels + icons). live-browser.js
     // builds its action picker from this instead of an inline copy.
-    `window.__IMPECCABLE_VOCAB__ = ${JSON.stringify(vocabulary)};\n`;
+    `window.__FREYJA2_VOCAB__ = ${JSON.stringify(vocabulary)};\n`;
 
   const body = parts.map((part) => {
     const file = part.file || path.basename(part.path || '');
-    return `// --- impeccable live script part: ${part.name} (${file}) ---\n${part.source}`;
+    return `// --- freyja2 live script part: ${part.name} (${file}) ---\n${part.source}`;
   }).join('\n');
 
   return prelude + body;

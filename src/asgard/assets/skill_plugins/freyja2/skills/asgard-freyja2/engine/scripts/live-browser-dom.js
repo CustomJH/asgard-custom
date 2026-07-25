@@ -1,5 +1,5 @@
 /**
- * Browser-side DOM helpers for Impeccable live mode.
+ * Browser-side DOM helpers for Freyja 2 live mode.
  *
  * Kept separate from live-browser.js so future browser script parts can share
  * chrome mounting, lookup, focus, and picker helpers without depending on the
@@ -55,7 +55,7 @@
         width: r.width, height: r.height,
       };
       return {
-        __impeccableFrozenAnchor: true,
+        __freyja2FrozenAnchor: true,
         tagName: el.tagName || 'DIV',
         id: el.id || '',
         classList: el.classList ? [...el.classList] : [],
@@ -75,7 +75,7 @@
     }
 
     function liveUiRoot() {
-      const uiRoot = root.__IMPECCABLE_LIVE_UI_ROOT__;
+      const uiRoot = root.__FREYJA2_LIVE_UI_ROOT__;
       if (uiRoot && typeof uiRoot.appendChild === 'function') return uiRoot;
       return doc.body;
     }
@@ -139,7 +139,7 @@
     };
   }
 
-  root.__IMPECCABLE_LIVE_DOM__ = {
+  root.__FREYJA2_LIVE_DOM__ = {
     version: 1,
     createLiveBrowserDomHelpers,
   };

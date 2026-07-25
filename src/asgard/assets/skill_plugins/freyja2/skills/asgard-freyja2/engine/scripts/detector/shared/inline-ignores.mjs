@@ -1,7 +1,7 @@
 /**
  * Inline, in-file ignore directives — eslint-disable-style waivers that live at
  * the point they apply and travel with the artifact instead of (or alongside)
- * an ignore in `.impeccable/config.json`.
+ * an ignore in the vault's `config.json`.
  *
  * A config ignore is the right default for repo-wide policy. This complements it
  * for the one case config can't cover: a waiver that belongs to a single file and
@@ -9,22 +9,22 @@
  * standalone document, an emailed HTML file, a snippet scanned out of context.
  *
  * Comment-syntax-agnostic: the directive is a raw token matched anywhere on a
- * line, so the same marker works across every comment style impeccable scans —
+ * line, so the same marker works across every comment style freyja2 scans —
  * `//`, `/* *\/`, `<!-- -->`, `#`, `{/* *\/}`, `{# #}`. Trailing comment closers
  * are stripped before the rule list is parsed.
  *
  * Syntax (reason optional; eslint `--` or biome `:` separator):
  *
- *   impeccable-disable <rule>[, <rule>...] [-- reason]   whole file
- *   impeccable-disable-line <rule>...      [-- reason]   the same line
- *   impeccable-disable-next-line <rule>... [-- reason]   the following line
- *   impeccable-disable                                   bare / `*` = every rule
+ *   freyja2-disable <rule>[, <rule>...] [-- reason]   whole file
+ *   freyja2-disable-line <rule>...      [-- reason]   the same line
+ *   freyja2-disable-next-line <rule>... [-- reason]   the following line
+ *   freyja2-disable                                   bare / `*` = every rule
  *
  * Examples:
  *
- *   <!-- impeccable-disable overused-font -- exported brand doc, font is first-party -->
- *   .brand { font-family: Inter; } /* impeccable-disable-line overused-font *\/
- *   // impeccable-disable-next-line bounce-easing: intentional playful affordance
+ *   <!-- freyja2-disable overused-font -- exported brand doc, font is first-party -->
+ *   .brand { font-family: Inter; } /* freyja2-disable-line overused-font *\/
+ *   // freyja2-disable-next-line bounce-easing: intentional playful affordance
  *
  * Behavior is suppression, for parity with config ignores: a matched directive
  * drops the finding. The inline reason is self-documenting in the diff; it is not
@@ -32,7 +32,10 @@
  * of the parsed rule list).
  */
 
-const DIRECTIVE_RE = /impeccable-(disable-next-line|disable-line|disable)\b[ \t]*([^\n\r]*)/gi;
+// `impeccable-` is the upstream spelling this engine was vendored under. Waivers
+// travel inside the artifact they apply to, so a file written before the rename —
+// or copied in from an upstream project — keeps working; new ones use `freyja2-`.
+const DIRECTIVE_RE = /(?:freyja2|impeccable)-(disable-next-line|disable-line|disable)\b[ \t]*([^\n\r]*)/gi;
 
 // Trailing comment closers, so `*/`, `*/}`, `-->`, `*}`, `#}`, `%>`, `}}` don't
 // leak into the rule list. Anchored to end-of-line; the leading `\s*` mops up the
@@ -85,8 +88,9 @@ function parseInlineIgnores(content) {
   const result = { file: new Set(), line: new Map(), nextLine: new Map() };
   const text = typeof content === 'string' ? content : '';
   // Cheap bail-out: the substring must be present for any directive to exist.
-  // Case-insensitive to match DIRECTIVE_RE's `i` flag (e.g. `Impeccable-Disable`).
-  if (!/impeccable-disable/i.test(text)) return result;
+  // Case-insensitive to match DIRECTIVE_RE's `i` flag (e.g. `Freyja2-Disable`),
+  // and it must admit the upstream spelling DIRECTIVE_RE still accepts.
+  if (!/(?:freyja2|impeccable)-disable/i.test(text)) return result;
 
   // Split on `\n` only, exactly as detectText numbers lines, so directive line
   // keys line up with finding `line` values (incl. on `\r`-only line endings).

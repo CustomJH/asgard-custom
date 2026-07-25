@@ -1,7 +1,7 @@
 /**
  * Svelte live-mode component injection helpers.
  *
- * Variants are real .svelte components under node_modules/.impeccable-live/<session-id>/.
+ * Variants are real .svelte components under node_modules/.freyja2-live/<session-id>/.
  * The browser mounts them via Svelte 5 mount(); accept inlines the chosen
  * variant back into the route source with props mapped to original bindings.
  */
@@ -11,14 +11,16 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash } from 'node:crypto';
 
-export const SVELTE_COMPONENT_ROOT = 'node_modules/.impeccable-live';
+import { VAULT_REL } from '../lib/vault.mjs';
+
+export const SVELTE_COMPONENT_ROOT = 'node_modules/.freyja2-live';
 export const SVELTE_RUNTIME_FILE = `${SVELTE_COMPONENT_ROOT}/__runtime.js`;
-export const DEFERRED_ACCEPTS_FILE = '.impeccable/live/deferred-svelte-component-accepts.json';
+export const DEFERRED_ACCEPTS_FILE = `${VAULT_REL}/live/deferred-svelte-component-accepts.json`;
 
 const MUSTACHE_RE = /\{([^{}]+)\}/g;
 
 export function shouldUseSvelteComponentInjection(filePath) {
-  if (/^(0|false|no)$/i.test(process.env.IMPECCABLE_LIVE_SVELTE_COMPONENT || '')) return false;
+  if (/^(0|false|no)$/i.test(process.env.FREYJA2_LIVE_SVELTE_COMPONENT || '')) return false;
   return path.extname(filePath).toLowerCase() === '.svelte';
 }
 
@@ -133,7 +135,7 @@ function buildVariantStub(variantNum, originalWithProps, contract) {
 }
 
 function buildInsertVariantStub(variantNum) {
-  return `${buildPropsScript([])}<div class="impeccable-insert-preview">Insert variant ${variantNum}</div>\n\n<style>\n  .impeccable-insert-preview { display: block; }\n</style>\n`;
+  return `${buildPropsScript([])}<div class="freyja2-insert-preview">Insert variant ${variantNum}</div>\n\n<style>\n  .freyja2-insert-preview { display: block; }\n</style>\n`;
 }
 
 export function scaffoldSvelteComponentSession({
@@ -309,7 +311,7 @@ function bakeParamValuesInCss(cssLines, paramValues) {
 
 function sanitizeAcceptedSvelteCss(cssLines, variantNum, paramValues = null, rootTag = 'div') {
   const css = String((cssLines || []).join('\n'));
-  if (!/data-impeccable-variant|impeccable-variant-ready/.test(css)) return cssLines;
+  if (!/data-freyja2-variant|freyja2-variant-ready/.test(css)) return cssLines;
 
   const rules = parseCssRules(css);
   const output = [];
@@ -325,14 +327,14 @@ function sanitizeAcceptedSvelteCss(cssLines, variantNum, paramValues = null, roo
 function appendSanitizedCssRule(output, rule, variantNum, paramValues, rootTag) {
   const prelude = rule.prelude.trim();
   const body = rule.body.trim();
-  if (!prelude || !body || /--impeccable-variant-ready\s*:/.test(body)) return;
+  if (!prelude || !body || /--freyja2-variant-ready\s*:/.test(body)) return;
 
   if (/^@scope\b/i.test(prelude)) {
-    if (/data-impeccable-variant/.test(prelude) && !selectorHasVariant(prelude, variantNum)) return;
+    if (/data-freyja2-variant/.test(prelude) && !selectorHasVariant(prelude, variantNum)) return;
     const inner = parseCssRules(body);
     for (const innerRule of inner) {
       const rewrittenPrelude = rewriteAcceptedSvelteSelector(innerRule.prelude, variantNum, paramValues, rootTag, true);
-      if (!rewrittenPrelude || /--impeccable-variant-ready\s*:/.test(innerRule.body)) continue;
+      if (!rewrittenPrelude || /--freyja2-variant-ready\s*:/.test(innerRule.body)) continue;
       output.push(formatCssRule(rewrittenPrelude, innerRule.body.trim()));
     }
     return;
@@ -411,11 +413,11 @@ function rewriteAcceptedSvelteSelector(prelude, variantNum, paramValues, rootTag
 
 function rewriteAcceptedSvelteSelectorPart(selector, variantNum, paramValues, rootTag, fromScope) {
   let out = selector.trim();
-  const hasVariant = /data-impeccable-variant/.test(out);
+  const hasVariant = /data-freyja2-variant/.test(out);
   if (hasVariant && !selectorHasVariant(out, variantNum)) return '';
   if (hasVariant) {
     out = out.replace(variantSelectorRegex(variantNum), '');
-    out = out.replace(/\[data-impeccable-variant=(["']).*?\1\]/g, '');
+    out = out.replace(/\[data-freyja2-variant=(["']).*?\1\]/g, '');
   }
 
   const paramResult = rewriteParamSelectors(out, paramValues);
@@ -486,7 +488,7 @@ function selectorHasVariant(selector, variantNum) {
 }
 
 function variantSelectorRegex(variantNum) {
-  return new RegExp(`\\[data-impeccable-variant=(["'])${escapeRegExp(String(variantNum))}\\1\\]`, 'g');
+  return new RegExp(`\\[data-freyja2-variant=(["'])${escapeRegExp(String(variantNum))}\\1\\]`, 'g');
 }
 
 function formatCssRule(selector, body) {
@@ -584,8 +586,8 @@ function inlineSvelteComponentInsertAccept({
   if (!svelteMarkupHasVisibleContent(markup)) {
     return { handled: false, error: 'Accepted Svelte insert variant is empty', ...resultBase };
   }
-  if (/\bdata-impeccable-[\w-]*\s*=/.test(markup)) {
-    return { handled: false, error: 'Accepted Svelte insert variant contains preview-only data-impeccable attributes', ...resultBase };
+  if (/\bdata-freyja2-[\w-]*\s*=/.test(markup)) {
+    return { handled: false, error: 'Accepted Svelte insert variant contains preview-only data-freyja2 attributes', ...resultBase };
   }
 
   const rootTag = matchOpeningTag(markup)?.tag || 'div';
@@ -743,7 +745,7 @@ export function removeAllSvelteComponentSessions(cwd = process.cwd()) {
 
 export function deferredAcceptsPath(cwd = process.cwd()) {
   const key = createHash('sha1').update(path.resolve(cwd)).digest('hex').slice(0, 16);
-  return path.join(os.tmpdir(), 'impeccable-live', key, 'deferred-svelte-component-accepts.json');
+  return path.join(os.tmpdir(), 'freyja2-live', key, 'deferred-svelte-component-accepts.json');
 }
 
 export function readDeferredAccepts(cwd = process.cwd()) {
@@ -812,14 +814,14 @@ export function buildSvelteComponentCssAuthoring(count) {
       'Keep the prop names from propContract; bind dynamic text with {propName}, not literal snapshot text.',
       'Put variant CSS in the component <style> block using semantic class selectors.',
       'Author param-driven CSS against var(--p-<id>, default) and [data-p-<id>] using :global(...) so the runtime knob values reach the mounted root.',
-      'Declare params in componentDir/params.json keyed by variant number (e.g. {"1": [...], "2": [...]}), NOT as a data-impeccable-params attribute.',
-      'Do not use @scope or data-impeccable-variant selectors in component files.',
+      'Declare params in componentDir/params.json keyed by variant number (e.g. {"1": [...], "2": [...]}), NOT as a data-freyja2-params attribute.',
+      'Do not use @scope or data-freyja2-variant selectors in component files.',
       'Do not edit the route source file during generation; only edit files under componentDir.',
     ],
     forbidden: [
       'Do not use @scope blocks in Svelte component variants.',
       'Do not copy live DOM snapshot text into markup when propContract provides bindings.',
-      'Do not add data-impeccable-* attributes inside component files. Svelte parses { in attribute values as an expression, so data-impeccable-params with JSON breaks the build; use componentDir/params.json instead.',
+      'Do not add data-freyja2-* attributes inside component files. Svelte parses { in attribute values as an expression, so data-freyja2-params with JSON breaks the build; use componentDir/params.json instead.',
     ],
     paramsFile: 'params.json',
   };

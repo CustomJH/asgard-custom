@@ -1,5 +1,5 @@
 /**
- * Framework-neutral Impeccable live chrome contract.
+ * Framework-neutral Freyja 2 live chrome contract.
  *
  * The production browser bundle is intentionally plain DOM so Svelte, React,
  * Vue, and static adapters can all mount the same chrome. This module is the
@@ -18,103 +18,103 @@ export const LIVE_UI_SURFACES = Object.freeze([
   {
     key: 'global-bottom-bar',
     ids: [
-      'impeccable-live-global-bar',
-      'impeccable-live-global-bar-brand',
-      'impeccable-live-pick-toggle',
-      'impeccable-live-insert-toggle',
-      'impeccable-live-detect-toggle',
-      'impeccable-live-detect-badge',
-      'impeccable-live-design-toggle',
-      'impeccable-live-page-chat',
-      'impeccable-live-page-chat-input',
-      'impeccable-live-page-chat-voice',
+      'freyja2-live-global-bar',
+      'freyja2-live-global-bar-brand',
+      'freyja2-live-pick-toggle',
+      'freyja2-live-insert-toggle',
+      'freyja2-live-detect-toggle',
+      'freyja2-live-detect-badge',
+      'freyja2-live-design-toggle',
+      'freyja2-live-page-chat',
+      'freyja2-live-page-chat-input',
+      'freyja2-live-page-chat-voice',
     ],
     states: ['rest', 'hover', 'focus-visible', 'pressed', 'active', 'tooltip'],
   },
   {
     key: 'pending-copy-edit-dock',
-    ids: ['impeccable-live-pending-dock'],
+    ids: ['freyja2-live-pending-dock'],
     states: ['closed', 'open', 'hover', 'pressed', 'loading', 'rollback', 'keep-fixing'],
   },
   {
     key: 'element-selection-chrome',
     ids: [
-      'impeccable-live-highlight',
-      'impeccable-live-tooltip',
-      'impeccable-live-bar',
-      'impeccable-live-selection-pill',
-      'impeccable-live-input',
-      'impeccable-live-configure-voice',
-      'impeccable-live-configure-bar-tooltip',
+      'freyja2-live-highlight',
+      'freyja2-live-tooltip',
+      'freyja2-live-bar',
+      'freyja2-live-selection-pill',
+      'freyja2-live-input',
+      'freyja2-live-configure-voice',
+      'freyja2-live-configure-bar-tooltip',
     ],
     states: ['rest', 'hover', 'focus-visible', 'pressed', 'disabled'],
   },
   {
     key: 'action-picker',
-    ids: ['impeccable-live-picker'],
+    ids: ['freyja2-live-picker'],
     states: ['closed', 'open', 'option-hover', 'option-focus'],
   },
   {
     key: 'edit-chrome',
-    ids: ['impeccable-live-edit-badge'],
+    ids: ['freyja2-live-edit-badge'],
     states: ['enabled', 'disabled', 'editing', 'cancel', 'save', 'edited-content'],
   },
   {
     key: 'generating-row',
-    ids: ['impeccable-live-bar', 'impeccable-live-shader'],
+    ids: ['freyja2-live-bar', 'freyja2-live-shader'],
     states: ['action-label', 'animated-dots', 'generating', 'done'],
   },
   {
     key: 'variant-cycling-row',
-    ids: ['impeccable-live-bar', 'impeccable-live-params-panel'],
+    ids: ['freyja2-live-bar', 'freyja2-live-params-panel'],
     states: ['variant-1', 'variant-2', 'variant-3', 'left-disabled', 'right-disabled', 'dot-click', 'accept', 'discard'],
   },
   {
     key: 'variant-params-panel',
-    ids: ['impeccable-live-params-panel'],
+    ids: ['freyja2-live-params-panel'],
     states: ['closed', 'open-above', 'open-below', 'range', 'steps', 'toggle'],
   },
   {
     key: 'saving-confirmed-rows',
-    ids: ['impeccable-live-bar'],
+    ids: ['freyja2-live-bar'],
     states: ['saving', 'applying-variant', 'confirmed'],
   },
   {
     key: 'insert-mode-chrome',
     ids: [
-      'impeccable-live-insert-line',
-      'impeccable-live-insert-placeholder',
-      'impeccable-live-placeholder-resize',
-      'impeccable-live-insert-input',
-      'impeccable-live-insert-voice',
-      'impeccable-live-insert-create',
-      'impeccable-live-insert-create-tooltip',
+      'freyja2-live-insert-line',
+      'freyja2-live-insert-placeholder',
+      'freyja2-live-placeholder-resize',
+      'freyja2-live-insert-input',
+      'freyja2-live-insert-voice',
+      'freyja2-live-insert-create',
+      'freyja2-live-insert-create-tooltip',
     ],
     states: ['toggle-active', 'line', 'placeholder', 'resize', 'enabled', 'disabled', 'tooltip'],
   },
   {
     key: 'annotation-chrome',
     ids: [
-      'impeccable-live-annot',
-      'impeccable-live-annot-svg',
-      'impeccable-live-annot-pins',
-      'impeccable-live-annot-clear',
+      'freyja2-live-annot',
+      'freyja2-live-annot-svg',
+      'freyja2-live-annot-pins',
+      'freyja2-live-annot-clear',
     ],
     states: ['overlay', 'drawing', 'pin', 'pin-edit', 'clear'],
   },
   {
     key: 'design-system-panel',
-    ids: ['impeccable-live-design-host'],
+    ids: ['freyja2-live-design-host'],
     states: ['closed', 'open', 'tabs', 'token-tiles', 'copy'],
   },
   {
     key: 'toasts-and-errors',
-    ids: ['impeccable-live-toast'],
+    ids: ['freyja2-live-toast'],
     states: ['normal', 'error', 'no-variants-mounted'],
   },
   {
     key: 'css-isolation-boundary',
-    ids: ['impeccable-live-root'],
+    ids: ['freyja2-live-root'],
     states: ['shadow-root', 'style-tags', 'hostile-css'],
   },
 ]);
@@ -125,8 +125,8 @@ export const LIVE_UI_COMPONENT_IDS = Object.freeze([
 
 export function resolveLiveUiRoot(env = globalThis) {
   const doc = env?.document;
-  const explicit = env?.__IMPECCABLE_LIVE_UI_ROOT__
-    || env?.window?.__IMPECCABLE_LIVE_UI_ROOT__;
+  const explicit = env?.__FREYJA2_LIVE_UI_ROOT__
+    || env?.window?.__FREYJA2_LIVE_UI_ROOT__;
   if (explicit && typeof explicit.appendChild === 'function') return explicit;
   return doc?.body || null;
 }
@@ -148,7 +148,7 @@ export function getLiveUiElementById(id, env = globalThis) {
 
 export function appendToLiveUiRoot(el, env = globalThis) {
   const root = resolveLiveUiRoot(env);
-  if (!root) throw new Error('Impeccable live UI root is not available');
+  if (!root) throw new Error('Freyja 2 live UI root is not available');
   root.appendChild(el);
   return el;
 }

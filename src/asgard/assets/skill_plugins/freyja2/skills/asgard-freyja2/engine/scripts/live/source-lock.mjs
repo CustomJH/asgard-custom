@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
-import { getLiveDir, isLiveServerPidReachable } from '../lib/impeccable-paths.mjs';
+import { ensureVaultFileDirFor, getLiveDir, isLiveServerPidReachable } from '../lib/vault-paths.mjs';
 
 // Only used to retire a lock whose contents we cannot read (empty or truncated
 // by a crash mid-write). A readable lock's fate is decided by its owner's
@@ -19,7 +19,7 @@ export function withSourceLockSync(file, owner, fn, {
   retryMs = 5,
 } = {}) {
   const lockPath = sourceLockPath(file, cwd);
-  fs.mkdirSync(path.dirname(lockPath), { recursive: true });
+  ensureVaultFileDirFor(lockPath, cwd);
   const deadline = Date.now() + Math.max(0, Number(waitMs) || 0);
   // Identifies this acquisition specifically, so release can tell our own lock
   // from a replacement that some other writer created.

@@ -2,14 +2,14 @@
  * CLI entry point: prepare everything needed to enter the live variant poll loop.
  *
  * Does (all in one command):
- *   1. Check .impeccable/live/config.json (returns config_missing if first-ever run)
+ *   1. Check .asgard/.vanadis/engine2/live/config.json (returns config_missing if first-ever run)
  *   2. Start the live server in the background (or reuse a running one)
  *   3. Inject the browser script tag into the project's entry file
  *   4. Read PRODUCT.md / DESIGN.md for project context
  *   5. Print a single JSON blob with everything the agent needs
  *
  * After this, the agent's only remaining steps are:
- *   - Open the project's live dev/preview URL in the browser (optional, if browser automation exists)—not `serverPort`; that port is the Impeccable helper for /live.js and /poll
+ *   - Open the project's live dev/preview URL in the browser (optional, if browser automation exists)—not `serverPort`; that port is the Freyja 2 helper for /live.js and /poll
  *   - Enter the harness-native poll loop: `node live-poll.mjs`
  *
  * Usage:
@@ -23,7 +23,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { loadContext, resolveTargetSelection } from './context.mjs';
 import { resolveFiles } from './live-inject.mjs';
-import { readLiveServerInfo } from './lib/impeccable-paths.mjs';
+import { readLiveServerInfo } from './lib/vault-paths.mjs';
 import { resolveLiveTarget } from './live-target.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -36,7 +36,7 @@ async function liveCli() {
     console.log(`Usage: node live.mjs
 
 Prepare everything for live variant mode in a single command:
-  - Checks .impeccable/live/config.json (required, created once per project)
+  - Checks .asgard/.vanadis/engine2/live/config.json (required, created once per project)
   - Starts (or reuses) the live server in the background
   - Injects the browser script tag
   - Reads PRODUCT.md / DESIGN.md for project context
@@ -66,7 +66,7 @@ The agent should then:
       ok: false,
       error: 'target_selection_required',
       ...targetSelection,
-      hint: 'Ask the user which app Impeccable should use, then rerun live from that child app cwd. Use --target <path> only as a fallback or explicit path diagnostic.',
+      hint: 'Ask the user which app Freyja 2 should use, then rerun live from that child app cwd. Use --target <path> only as a fallback or explicit path diagnostic.',
     }, null, 2));
     process.exit(0);
   }

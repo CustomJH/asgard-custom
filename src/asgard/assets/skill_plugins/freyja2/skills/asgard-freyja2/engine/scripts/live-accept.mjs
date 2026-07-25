@@ -16,7 +16,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { isGeneratedFile } from './lib/is-generated.mjs';
-import { getLiveDir, safeSessionId } from './lib/impeccable-paths.mjs';
+import { ensureVaultFileDirFor, getLiveDir, safeSessionId } from './lib/vault-paths.mjs';
 import { resolveLiveTemplateExtensions } from './lib/template-extensions.mjs';
 import { readBuffer as readManualEditsBuffer, writeBuffer as writeManualEditsBuffer } from './live/manual-edits-buffer.mjs';
 import { NEVER_SOURCE_DIRS, findSourceFile } from './live/source-search.mjs';
@@ -395,7 +395,7 @@ function handleDiscardUnlocked(id, lines, targetFile) {
  * Build carbonize stitch-in lines. JSX targets occupy a single child slot
  * (ternary branch, return value, etc.) — the same constraint as live-wrap.
  * When isJsx, tuck markers + <style> + variant wrapper inside one outer
- * <div data-impeccable-carbonize> so the slot keeps a single root node.
+ * <div data-freyja2-carbonize> so the slot keeps a single root node.
  */
 function buildCarbonizeReplacement({
   indent,
@@ -419,26 +419,26 @@ function buildCarbonizeReplacement({
 
   const pushCarbonizeBody = (bodyIndent) => {
     const bodyRestored = reindentContent(restored, indent, bodyIndent + '  ');
-    lines.push(bodyIndent + commentSyntax.open + ' impeccable-carbonize-start ' + id + ' ' + commentSyntax.close);
-    lines.push(bodyIndent + '<style data-impeccable-css="' + id + '">' + (isJsx ? '{`' : ''));
+    lines.push(bodyIndent + commentSyntax.open + ' freyja2-carbonize-start ' + id + ' ' + commentSyntax.close);
+    lines.push(bodyIndent + '<style data-freyja2-css="' + id + '">' + (isJsx ? '{`' : ''));
     for (const cssLine of cssContent) {
       lines.push(bodyIndent + cssLine.trimStart());
     }
     lines.push(bodyIndent + (isJsx ? '`}</style>' : '</style>'));
     if (paramValues && Object.keys(paramValues).length > 0) {
       lines.push(
-        bodyIndent + commentSyntax.open + ' impeccable-param-values ' + id + ': ' + JSON.stringify(paramValues) + ' ' + commentSyntax.close,
+        bodyIndent + commentSyntax.open + ' freyja2-param-values ' + id + ': ' + JSON.stringify(paramValues) + ' ' + commentSyntax.close,
       );
     }
-    lines.push(bodyIndent + commentSyntax.open + ' impeccable-carbonize-end ' + id + ' ' + commentSyntax.close);
-    lines.push(bodyIndent + '<div data-impeccable-variant="' + variantNum + '" ' + variantStyleAttr + '>');
+    lines.push(bodyIndent + commentSyntax.open + ' freyja2-carbonize-end ' + id + ' ' + commentSyntax.close);
+    lines.push(bodyIndent + '<div data-freyja2-variant="' + variantNum + '" ' + variantStyleAttr + '>');
     lines.push(...bodyRestored);
     lines.push(bodyIndent + '</div>');
   };
 
   if (isJsx) {
     const wrapperStyle = 'style={{ display: "contents" }}';
-    lines.push(indent + '<div data-impeccable-carbonize="' + id + '" ' + wrapperStyle + '>');
+    lines.push(indent + '<div data-freyja2-carbonize="' + id + '" ' + wrapperStyle + '>');
     pushCarbonizeBody(indent + '  ');
     lines.push(indent + '</div>');
   } else {
@@ -498,7 +498,7 @@ function buildAcceptedWrappedSource(id, variantNum, lines, targetFile, paramValu
   // - CSS block exists, OR
   // - variant HTML contains helper classes/attributes that need cleanup
   const variantText = variantContent.join('\n');
-  const hasHelperAttrs = variantText.includes('data-impeccable-variant');
+  const hasHelperAttrs = variantText.includes('data-freyja2-variant');
   const needsCarbonize = !!(cssContent || hasHelperAttrs);
 
   const restored = deindentContent(variantContent, indent);
@@ -528,14 +528,14 @@ function buildAcceptedWrappedSource(id, variantNum, lines, targetFile, paramValu
 
 function readSourceShadowPreviewMeta(content, id) {
   const escaped = escapeRegExp(id);
-  const wrapperRe = new RegExp('<[^>]+data-impeccable-variants=(["\'])' + escaped + '\\1[^>]*>');
+  const wrapperRe = new RegExp('<[^>]+data-freyja2-variants=(["\'])' + escaped + '\\1[^>]*>');
   const match = String(content || '').match(wrapperRe);
   if (!match) return null;
   const tag = match[0];
-  if (readHtmlAttr(tag, 'data-impeccable-preview') !== 'source-shadow') return null;
-  const sourceFile = readHtmlAttr(tag, 'data-impeccable-source-file');
-  const sourceStartLine = Number(readHtmlAttr(tag, 'data-impeccable-source-start'));
-  const sourceEndLine = Number(readHtmlAttr(tag, 'data-impeccable-source-end'));
+  if (readHtmlAttr(tag, 'data-freyja2-preview') !== 'source-shadow') return null;
+  const sourceFile = readHtmlAttr(tag, 'data-freyja2-source-file');
+  const sourceStartLine = Number(readHtmlAttr(tag, 'data-freyja2-source-start'));
+  const sourceEndLine = Number(readHtmlAttr(tag, 'data-freyja2-source-end'));
   if (!sourceFile || !Number.isFinite(sourceStartLine) || !Number.isFinite(sourceEndLine)) return null;
   return { sourceFile, sourceStartLine, sourceEndLine };
 }
@@ -565,8 +565,8 @@ function decodeHtmlAttr(value) {
 function findMarkerBlock(id, lines) {
   let start = -1;
   let end = -1;
-  const startPattern = 'impeccable-variants-start ' + id;
-  const endPattern = 'impeccable-variants-end ' + id;
+  const startPattern = 'freyja2-variants-start ' + id;
+  const endPattern = 'freyja2-variants-end ' + id;
 
   for (let i = 0; i < lines.length; i++) {
     if (start === -1 && lines[i].includes(startPattern)) start = i;
@@ -579,13 +579,13 @@ function findMarkerBlock(id, lines) {
 /**
  * Compute the line range to REPLACE (vs. just the marker range to extract
  * from). For JSX/TSX wrappers, live-wrap places the marker comments INSIDE
- * the `<div data-impeccable-variants="ID">` outer wrapper so the picked
+ * the `<div data-freyja2-variants="ID">` outer wrapper so the picked
  * element's JSX slot keeps a single child — a Fragment `<></>` would have
  * solved the multi-sibling case but failed inside `asChild` / cloneElement
  * parents with "Invalid prop supplied to React.Fragment".
  *
  * That means the marker block is enclosed by the wrapper `<div>` opener
- * (with `data-impeccable-variants="ID"`) and its matching `</div>`. We
+ * (with `data-freyja2-variants="ID"`) and its matching `</div>`. We
  * walk back to the opener and forward to the closer so accept/discard
  * remove the entire scaffold, not just the inner markers.
  *
@@ -597,7 +597,7 @@ function expandReplaceRange(block, lines, isJsx) {
 
   let { start, end } = block;
 
-  // Walk back for the wrapper `<div data-impeccable-variants="..."` opener.
+  // Walk back for the wrapper `<div data-freyja2-variants="..."` opener.
   // The attr may sit on a continuation line of a multi-line opening tag, so
   // also walk to the line that actually contains `<div`.
   for (let i = start - 1; i >= 0; i--) {
@@ -650,18 +650,18 @@ function escapeRegExp(value) {
 }
 
 function isVariantEndMarkerLine(line, id) {
-  return new RegExp('impeccable-variants-end\\s+' + escapeRegExp(id) + '(?:\\s|--|\\*/|$)').test(line);
+  return new RegExp('freyja2-variants-end\\s+' + escapeRegExp(id) + '(?:\\s|--|\\*/|$)').test(line);
 }
 
 function hasVariantWrapperAttr(line, id) {
   const escaped = escapeRegExp(id);
-  return new RegExp(`data-impeccable-variants\\s*=\\s*(?:"${escaped}"|'${escaped}'|\\{["']${escaped}["']\\})`).test(line);
+  return new RegExp(`data-freyja2-variants\\s*=\\s*(?:"${escaped}"|'${escaped}'|\\{["']${escaped}["']\\})`).test(line);
 }
 
 /**
  * Join wrapper lines into a single string with `<style>` elements removed so
  * marker matching and div-depth tracking aren't confused by:
- *   - CSS `@scope ([data-impeccable-variant="N"])` strings that look like the
+ *   - CSS `@scope ([data-freyja2-variant="N"])` strings that look like the
  *     HTML marker we're searching for
  *   - JSX self-closing `<style ... />` (no separate `</style>` to close on)
  *   - Same-line `<style>…</style>` blocks
@@ -741,7 +741,7 @@ function extractInnerByAttr(text, attrMatch) {
  */
 function extractOriginal(lines, block) {
   const text = stripStyleAndJoin(lines, block);
-  const inner = extractInnerByAttr(text, 'data-impeccable-variant="original"');
+  const inner = extractInnerByAttr(text, 'data-freyja2-variant="original"');
   if (inner === null) return [];
   return inner.split('\n');
 }
@@ -752,7 +752,7 @@ function extractOriginal(lines, block) {
  */
 function extractVariant(lines, block, variantNum) {
   const text = stripStyleAndJoin(lines, block);
-  const inner = extractInnerByAttr(text, 'data-impeccable-variant="' + variantNum + '"');
+  const inner = extractInnerByAttr(text, 'data-freyja2-variant="' + variantNum + '"');
   if (inner === null) return null;
   const result = inner.split('\n');
   // Collapse a lone empty leading/trailing line (common after string splice).
@@ -765,14 +765,14 @@ function extractVariant(lines, block, variantNum) {
  * Extract the colocated <style> block content (between the style tags).
  * Returns an array of CSS lines, or null if no style block found.
  *
- * Handles three shapes of `<style data-impeccable-css="ID" ...>`:
+ * Handles three shapes of `<style data-freyja2-css="ID" ...>`:
  *   1. Self-closing: `<style ... />` — no body; return null (nothing to carbonize).
  *   2. Same-line open+close: `<style>...</style>` — return the inner content.
  *   3. Multi-line: `<style>` on one line, `</style>` on a later line — return
  *      the lines between them.
  */
 function extractCss(lines, block, id) {
-  const styleAttr = 'data-impeccable-css="' + id + '"';
+  const styleAttr = 'data-freyja2-css="' + id + '"';
   let inStyle = false;
   const content = [];
 
@@ -902,7 +902,7 @@ const SEARCH_SKIP_DIRS = [...NEVER_SOURCE_DIRS, 'dist', 'build'];
 
 function findSessionFile(id, cwd) {
   const result = findSourceFile({
-    query: 'impeccable-variants-start ' + id,
+    query: 'freyja2-variants-start ' + id,
     cwd,
     extensions: resolveLiveTemplateExtensions(cwd),
     skipDirs: SEARCH_SKIP_DIRS,
@@ -926,7 +926,7 @@ function readAcceptReceipt(cwd, id) {
 
 function writeAcceptReceipt(cwd, id, receipt) {
   const file = acceptReceiptPath(cwd, id);
-  fs.mkdirSync(path.dirname(file), { recursive: true });
+  ensureVaultFileDirFor(file, cwd);
   const value = {
     id,
     ...receipt,

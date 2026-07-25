@@ -29,8 +29,8 @@ async function measureContentHiddenAfterReveal(page) {
     await new Promise(resolve => setTimeout(resolve, 700));
   });
   return page.evaluate(() => {
-    if (typeof window.impeccableMeasureHiddenText !== 'function') return null;
-    return window.impeccableMeasureHiddenText();
+    if (typeof window.freyja2MeasureHiddenText !== 'function') return null;
+    return window.freyja2MeasureHiddenText();
   });
 }
 
@@ -76,8 +76,8 @@ async function runVisualContrastFallback(page, serializedGroups, options, profil
       target,
     }, async () => {
       browserAnalyses = await page.evaluate(async ({ maxCandidates, scrollOffscreen }) => {
-        if (typeof window.impeccableAnalyzeVisualContrast !== 'function') return [];
-        return window.impeccableAnalyzeVisualContrast({ maxCandidates, scrollOffscreen });
+        if (typeof window.freyja2AnalyzeVisualContrast !== 'function') return [];
+        return window.freyja2AnalyzeVisualContrast({ maxCandidates, scrollOffscreen });
       }, { maxCandidates, scrollOffscreen });
       return browserAnalyses
         .filter(result => result.finding && !existingLowContrastSelectors.has(result.selector))
@@ -94,8 +94,8 @@ async function runVisualContrastFallback(page, serializedGroups, options, profil
       ruleId: 'collect-candidates',
       target,
     }, () => page.evaluate(({ maxCandidates }) => {
-      if (typeof window.impeccableCollectVisualContrastCandidates !== 'function') return [];
-      return window.impeccableCollectVisualContrastCandidates({ maxCandidates });
+      if (typeof window.freyja2CollectVisualContrastCandidates !== 'function') return [];
+      return window.freyja2CollectVisualContrastCandidates({ maxCandidates });
     }, { maxCandidates }));
   }
 
@@ -229,8 +229,8 @@ async function detectUrl(url, options = {}) {
       ruleId: 'configure-pure-detect',
       target: url,
     }, () => page.evaluate((designSystem) => {
-      window.__IMPECCABLE_CONFIG__ = {
-        ...(window.__IMPECCABLE_CONFIG__ || {}),
+      window.__FREYJA2_CONFIG__ = {
+        ...(window.__FREYJA2_CONFIG__ || {}),
         autoScan: false,
         ...(designSystem ? { designSystem } : {}),
       };
@@ -249,8 +249,8 @@ async function detectUrl(url, options = {}) {
       target: url,
     }, async () => {
       serializedGroups = await page.evaluate(() => {
-        if (!window.impeccableDetect) return [];
-        return window.impeccableDetect({ decorate: false, serialize: true });
+        if (!window.freyja2Detect) return [];
+        return window.freyja2Detect({ decorate: false, serialize: true });
       });
       return serializedGroups.flatMap(({ findings }) =>
         findings.map(f => ({ id: f.type, snippet: f.detail, ignoreValue: f.ignoreValue || '', severity: f.severity || '' }))

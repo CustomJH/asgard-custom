@@ -2,7 +2,7 @@
 /**
  * CLI helper: apply pending live copy edits as one AI-owned batch.
  *
- * The browser Save path stages copy edits in .impeccable/live. This script is
+ * The browser Save path stages copy edits in the vault's live/. This script is
  * called by /manual-edit-commit when the user clicks Apply copy edits. It gives
  * the local AI runner the full staged batch plus evidence, validates the files
  * the runner reports touching, and clears only entries reported as applied.
@@ -51,6 +51,7 @@ const ROLLBACK_EXTENSIONS = new Set([
   '.yml',
 ]);
 const ROLLBACK_SKIP_DIRS = new Set([
+  '.asgard',
   '.astro',
   '.git',
   '.impeccable',
@@ -172,7 +173,7 @@ function mergeUniqueStrings(...groups) {
 }
 
 function repairAttemptLimit(env = process.env) {
-  const value = Number(env.IMPECCABLE_LIVE_MANUAL_EDIT_REPAIR_ATTEMPTS || DEFAULT_REPAIR_ATTEMPTS);
+  const value = Number(env.FREYJA2_LIVE_MANUAL_EDIT_REPAIR_ATTEMPTS || DEFAULT_REPAIR_ATTEMPTS);
   if (!Number.isFinite(value)) return DEFAULT_REPAIR_ATTEMPTS;
   return Math.max(1, Math.min(10, Math.trunc(value)));
 }
@@ -1227,7 +1228,7 @@ async function main() {
     cwd: process.cwd(),
     pageUrl: argVal(args, '--page-url'),
     provider: argVal(args, '--provider') || undefined,
-    timeoutMs: Number(process.env.IMPECCABLE_LIVE_COPY_AGENT_TIMEOUT_MS || 120000),
+    timeoutMs: Number(process.env.FREYJA2_LIVE_COPY_AGENT_TIMEOUT_MS || 120000),
   });
   console.log(JSON.stringify(result));
 }

@@ -1,8 +1,8 @@
 /**
- * Impeccable Live Variant Mode - Browser Script
+ * Freyja 2 Live Variant Mode - Browser Script
  *
  * Injected into the user's page via <script src="http://localhost:PORT/live.js">.
- * The server prepends window.__IMPECCABLE_TOKEN__ and window.__IMPECCABLE_PORT__
+ * The server prepends window.__FREYJA2_TOKEN__ and window.__FREYJA2_PORT__
  * before this code.
  *
  * UI: a single floating bar that morphs between three states -
@@ -16,13 +16,13 @@
   // Guard against double-init. Bun's HTML loader may process the <script> tag
   // and create a bundled copy alongside the external load, or HMR may re-execute.
   // Check BEFORE reading token/port to catch all cases.
-  if (window.__IMPECCABLE_LIVE_INIT__) return;
-  window.__IMPECCABLE_LIVE_INIT__ = true;
+  if (window.__FREYJA2_LIVE_INIT__) return;
+  window.__FREYJA2_LIVE_INIT__ = true;
 
-  const TOKEN = window.__IMPECCABLE_TOKEN__;
-  const PORT = window.__IMPECCABLE_PORT__;
+  const TOKEN = window.__FREYJA2_TOKEN__;
+  const PORT = window.__FREYJA2_PORT__;
   if (!TOKEN || !PORT) {
-    window.__IMPECCABLE_LIVE_INIT__ = false; // reset so the real load can init
+    window.__FREYJA2_LIVE_INIT__ = false; // reset so the real load can init
     return;
   }
 
@@ -56,18 +56,18 @@
   // z-index: detect overlays use 99999, so our UI must be above them
   const Z = { highlight: 100001, bar: 100005, picker: 100007, toast: 100010 };
   const EASE = 'cubic-bezier(0.22, 1, 0.36, 1)'; // ease-out-quint
-  const PREFIX = 'impeccable-live';
-  const IMPECCABLE_COMMAND = (window.__IMPECCABLE_COMMAND_PREFIX__ || '/') + 'impeccable';
+  const PREFIX = 'freyja2-live';
+  const FREYJA2_COMMAND = (window.__FREYJA2_COMMAND_PREFIX__ || '/') + 'freyja2';
   const PICK_CURSOR_STYLE_ID = PREFIX + '-pick-cursor-style';
   const MANUAL_APPLY_STATE_TTL_MS = 15 * 60 * 1000;
-  const sessionState = window.__IMPECCABLE_LIVE_SESSION__?.createLiveBrowserSessionState({
+  const sessionState = window.__FREYJA2_LIVE_SESSION__?.createLiveBrowserSessionState({
     prefix: PREFIX,
     storage: localStorage,
     idFactory: () => crypto.randomUUID().replace(/-/g, '').slice(0, 8),
   });
   if (!sessionState) {
-    console.error('[impeccable] live-browser-session.js was not loaded. Live mode cannot start safely.');
-    window.__IMPECCABLE_LIVE_INIT__ = false;
+    console.error('[freyja2] live-browser-session.js was not loaded. Live mode cannot start safely.');
+    window.__FREYJA2_LIVE_INIT__ = false;
     return;
   }
   const HIGHLIGHT_TRANSITION =
@@ -85,11 +85,11 @@
 
   // Command vocabulary (values + labels + icons) comes from the canonical source,
   // skill/scripts/live/vocabulary.mjs, which live-server.mjs serializes into
-  // window.__IMPECCABLE_VOCAB__ when it serves /live.js (same injection path as
+  // window.__FREYJA2_VOCAB__ when it serves /live.js (same injection path as
   // the token/port above, so it is always present here). The icons stack above
   // each chip label and recolor to C.brand when selected (strokes use
   // currentColor). ACTIONS drives the picker grid; ICONS maps value -> svg.
-  const VOCAB = Array.isArray(window.__IMPECCABLE_VOCAB__) ? window.__IMPECCABLE_VOCAB__ : [];
+  const VOCAB = Array.isArray(window.__FREYJA2_VOCAB__) ? window.__FREYJA2_VOCAB__ : [];
   const ICONS = {};
   const ACTIONS = VOCAB.map((c) => {
     ICONS[c.value] = c.icon;
@@ -180,7 +180,7 @@
   let variantSelectionPromise = null;
   let recoveringEmptyCycling = false;
   let hasProjectContext = false;
-  let selectedAction = 'impeccable';
+  let selectedAction = 'freyja2';
   let selectedCount = 3;
   const browserOwner = sessionState.owner;
   let checkpointTimer = null;
@@ -193,9 +193,9 @@
   let scrollLockAnchorTop = null;
   let scrollLockRaf = null;
   let scrollLockAbort = null;
-  const SCROLL_ANCHOR_LOCK_ID = 'impeccable-scroll-anchor-lock';
-  const VARIANT_STATE_STYLE_ID = 'impeccable-variant-state';
-  const DISCARD_STATE_STYLE_ID = 'impeccable-discard-state';
+  const SCROLL_ANCHOR_LOCK_ID = 'freyja2-scroll-anchor-lock';
+  const VARIANT_STATE_STYLE_ID = 'freyja2-variant-state';
+  const DISCARD_STATE_STYLE_ID = 'freyja2-discard-state';
 
   // Dedicated key for scroll position - SEPARATE from LS_KEY so that
   // saveSession's state updates don't clobber a carefully-captured scrollY.
@@ -242,14 +242,14 @@
   // Helpers
   //
 
-  const domHelpers = window.__IMPECCABLE_LIVE_DOM__?.createLiveBrowserDomHelpers({
+  const domHelpers = window.__FREYJA2_LIVE_DOM__?.createLiveBrowserDomHelpers({
     prefix: PREFIX,
     skipTags: SKIP_TAGS,
     document,
   });
   if (!domHelpers) {
-    console.error('[impeccable] live-browser-dom.js was not loaded. Live mode cannot start safely.');
-    window.__IMPECCABLE_LIVE_INIT__ = false;
+    console.error('[freyja2] live-browser-dom.js was not loaded. Live mode cannot start safely.');
+    window.__FREYJA2_LIVE_INIT__ = false;
     return;
   }
   const {
@@ -268,9 +268,9 @@
     defangOutsideHandlers,
   } = domHelpers;
 
-  window.__IMPECCABLE_LIVE_CHROME_CORE__ = {
+  window.__FREYJA2_LIVE_CHROME_CORE__ = {
     version: 1,
-    adapter: window.__IMPECCABLE_LIVE_ADAPTER__ || 'dom',
+    adapter: window.__FREYJA2_LIVE_ADAPTER__ || 'dom',
     mountContract: LIVE_CHROME_MOUNT_CONTRACT,
     surfaces: LIVE_UI_SURFACES,
     componentIds: LIVE_UI_COMPONENT_IDS,
@@ -350,7 +350,7 @@
 
   function showHighlight(el) {
     if (!el || !highlightEl) return;
-    if (el.hasAttribute?.('data-impeccable-insert-placeholder')) return;
+    if (el.hasAttribute?.('data-freyja2-insert-placeholder')) return;
     const r = el.getBoundingClientRect();
     const top = (r.top - 2) + 'px', left = (r.left - 2) + 'px';
     const width = (r.width + 4) + 'px', height = (r.height + 4) + 'px';
@@ -573,7 +573,7 @@
     if (!annotActive) return;
 
     // 0) Insert placeholder edge resize - wins over draw / pins.
-    const resizeEdge = e.target.closest?.('[data-impeccable-placeholder-resize]')?.dataset.impeccablePlaceholderResize;
+    const resizeEdge = e.target.closest?.('[data-freyja2-placeholder-resize]')?.dataset.freyja2PlaceholderResize;
     if (resizeEdge && configureKind === 'insert' && placeholderElement) {
       startPlaceholderEdgeResize(resizeEdge, e);
       return;
@@ -918,13 +918,13 @@
   function stripManualEditRuntimeState(root) {
     if (!root || root.nodeType !== 1) return;
     unwrapMixedContentTextNodes(root);
-    const nodes = [root, ...root.querySelectorAll('[data-impeccable-editable], [data-impeccable-original-text], [data-impeccable-text-wrap]')];
+    const nodes = [root, ...root.querySelectorAll('[data-freyja2-editable], [data-freyja2-original-text], [data-freyja2-text-wrap]')];
     for (const node of nodes) {
-      const runtimeEditable = node.hasAttribute('data-impeccable-editable')
-        || node.hasAttribute('data-impeccable-original-text');
-      node.removeAttribute('data-impeccable-editable');
-      node.removeAttribute('data-impeccable-original-text');
-      node.removeAttribute('data-impeccable-text-wrap');
+      const runtimeEditable = node.hasAttribute('data-freyja2-editable')
+        || node.hasAttribute('data-freyja2-original-text');
+      node.removeAttribute('data-freyja2-editable');
+      node.removeAttribute('data-freyja2-original-text');
+      node.removeAttribute('data-freyja2-text-wrap');
       if (runtimeEditable) {
         node.removeAttribute('contenteditable');
         if (node.style) {
@@ -1426,7 +1426,7 @@
 
   function selectionTagLabel(el) {
     if (!el) return '';
-    if (el.hasAttribute?.('data-impeccable-insert-placeholder')) return 'slot';
+    if (el.hasAttribute?.('data-freyja2-insert-placeholder')) return 'slot';
     return el.tagName.toLowerCase();
   }
 
@@ -1827,7 +1827,7 @@
   }
 
   function applyPlaceholderSizingStyles(placeholder, sizing) {
-    placeholder.dataset.impeccablePlaceholderWidth = sizing.kind;
+    placeholder.dataset.freyja2PlaceholderWidth = sizing.kind;
     placeholder.style.flex = '';
     placeholder.style.minWidth = '';
     placeholder.style.maxWidth = '';
@@ -1845,14 +1845,14 @@
 
   function materializePlaceholderWidth(placeholder) {
     if (!placeholder) return;
-    const kind = placeholder.dataset.impeccablePlaceholderWidth;
+    const kind = placeholder.dataset.freyja2PlaceholderWidth;
     if (!placeholderWidthIsImplicit(kind)) return;
     const w = Math.max(PLACEHOLDER_MIN_WIDTH, Math.round(placeholder.offsetWidth));
     placeholder.style.flex = '';
     placeholder.style.minWidth = '';
     placeholder.style.maxWidth = '';
     placeholder.style.width = w + 'px';
-    placeholder.dataset.impeccablePlaceholderWidth = 'explicit';
+    placeholder.dataset.freyja2PlaceholderWidth = 'explicit';
   }
 
   function canCreateInsert({ prompt, comments, strokes }) {
@@ -2015,7 +2015,7 @@
    */
   function setLiveState(next) {
     state = next;
-    window.__IMPECCABLE_LIVE_STATE__ = next;
+    window.__FREYJA2_LIVE_STATE__ = next;
     syncPageInteractionCursor();
   }
 
@@ -2026,9 +2026,9 @@
       if (anchor) return anchor;
     }
     if (currentSessionId && (state === 'GENERATING' || state === 'CYCLING')) {
-      const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+      const wrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
       if (wrapper) {
-        const variantCount = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])').length;
+        const variantCount = wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])').length;
         if (variantCount > 0 && visibleVariant > 0) {
           const visEl = pickVariantContent(wrapper, visibleVariant);
           if (visEl) return visEl;
@@ -2097,15 +2097,15 @@
 
   function isInsertGeneratingSession() {
     if (state !== 'GENERATING' || !currentSessionId) return false;
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
-    return !!wrapper && wrapper.dataset.impeccableMode === 'insert';
+    const wrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
+    return !!wrapper && wrapper.dataset.freyja2Mode === 'insert';
   }
 
   /** Recreate the dotted placeholder if Astro/Vite HMR removed it mid-generation. */
   function ensureInsertPlaceholder() {
     if (!isInsertGeneratingSession()) return placeholderElement;
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
-    const variantCount = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])').length;
+    const wrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
+    const variantCount = wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])').length;
     if (variantCount > 0) return placeholderElement;
     if (placeholderElement && document.body.contains(placeholderElement)) return placeholderElement;
 
@@ -2170,7 +2170,7 @@
       if (spec.right != null) handle.style.right = spec.right + 'px';
       if (spec.width != null) handle.style.width = spec.width + 'px';
       if (spec.height != null) handle.style.height = spec.height + 'px';
-      handle.dataset.impeccablePlaceholderResize = spec.edge;
+      handle.dataset.freyja2PlaceholderResize = spec.edge;
       handle.setAttribute('aria-label', 'Resize placeholder');
       handle.title = 'Drag to resize';
       placeholderResizeLayerEl.appendChild(handle);
@@ -2225,7 +2225,7 @@
     });
     const placeholder = document.createElement('div');
     placeholder.id = PREFIX + '-insert-placeholder';
-    placeholder.setAttribute('data-impeccable-insert-placeholder', 'true');
+    placeholder.setAttribute('data-freyja2-insert-placeholder', 'true');
     placeholder.setAttribute('aria-hidden', 'true');
     Object.assign(placeholder.style, {
       boxSizing: 'border-box',
@@ -2343,10 +2343,10 @@
     const s = document.createElement('style');
     s.id = PREFIX + '-configure-input-style';
     s.textContent =
-      '@keyframes impeccable-configure-voice-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }' +
+      '@keyframes freyja2-configure-voice-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }' +
       '#' + PREFIX + '-input, #' + PREFIX + '-insert-input { box-sizing: border-box; height: ' + CONFIGURE_ROW_TRACK_H + '; line-height: ' + CONFIGURE_ROW_TRACK_H + '; padding: 0; margin: 0; caret-color: ' + CONFIGURE_PILL_TEXT + '; }' +
       '#' + PREFIX + '-input::placeholder, #' + PREFIX + '-insert-input::placeholder { color: ' + BP.textDim + '; opacity: 1; }' +
-      '#' + PREFIX + '-configure-voice[data-listening="true"] svg, #' + PREFIX + '-insert-voice[data-listening="true"] svg { animation: impeccable-configure-voice-pulse 1.1s ease-in-out infinite; }' +
+      '#' + PREFIX + '-configure-voice[data-listening="true"] svg, #' + PREFIX + '-insert-voice[data-listening="true"] svg { animation: freyja2-configure-voice-pulse 1.1s ease-in-out infinite; }' +
       '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-configure-voice[data-listening="true"] svg, #' + PREFIX + '-insert-voice[data-listening="true"] svg { animation: none; opacity: 1; } }' +
       '#' + PREFIX + '-configure-voice:hover, #' + PREFIX + '-insert-voice:hover { background: oklch(27% 0 0); color: ' + BP.accent + '; }';
     uiAppendStyle(s);
@@ -2648,7 +2648,7 @@
           width: '11px', height: '11px', borderRadius: '50%',
           border: '1.5px solid ' + BP.hairline,
           borderTopColor: BP.accent,
-          animation: 'impeccable-spin 0.6s linear infinite',
+          animation: 'freyja2-spin 0.6s linear infinite',
           boxSizing: 'border-box', flexShrink: '0',
         });
         spinner.setAttribute('aria-hidden', 'true');
@@ -2754,7 +2754,7 @@
       width: '14px', height: '14px', borderRadius: '50%',
       border: '2px solid ' + BP.hairline,
       borderTopColor: BP.accent,
-      animation: 'impeccable-spin 0.6s linear infinite',
+      animation: 'freyja2-spin 0.6s linear infinite',
       flexShrink: '0',
     });
     row.appendChild(spinner);
@@ -2985,7 +2985,7 @@
     if (recoveringEmptyCycling) return;
     recoveringEmptyCycling = true;
     try {
-      console.warn('[impeccable] Refusing to render empty variant cycling state:', reason);
+      console.warn('[freyja2] Refusing to render empty variant cycling state:', reason);
       const message = 'No variants were mounted. Please try again.';
       if (svelteComponentSession?.sessionId === currentSessionId) {
         abortSvelteComponentInjection(currentSessionId, message);
@@ -3004,8 +3004,8 @@
   // Variants may declare a parameter manifest via a JSON attribute on the
   // variant wrapper:
   //
-  //   <div data-impeccable-variant="1"
-  //        data-impeccable-params='[{"id":"density","kind":"steps",...}]'>
+  //   <div data-freyja2-variant="1"
+  //        data-freyja2-params='[{"id":"density","kind":"steps",...}]'>
   //
   // The panel docks to the right edge of the outline during CYCLING and
   // exposes 2-5 coarse knobs. Values apply to the variant wrapper so scoped
@@ -3100,13 +3100,13 @@
         || svelteComponentSession.wrapperEl
         || null;
     }
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
     if (!wrapper) return null;
-    return wrapper.querySelector('[data-impeccable-variant="' + visibleVariant + '"]');
+    return wrapper.querySelector('[data-freyja2-variant="' + visibleVariant + '"]');
   }
 
   function parseVariantParams(variantEl) {
-    // Svelte component variants can't carry a `data-impeccable-params` attribute:
+    // Svelte component variants can't carry a `data-freyja2-params` attribute:
     // the compiler reads `{` inside attribute values as expression delimiters, so
     // JSON-with-braces breaks the build. For that path the params live in a sidecar
     // params.json keyed by variant number, loaded into the session at mount time.
@@ -3116,13 +3116,13 @@
       return Array.isArray(params) ? params : [];
     }
     if (!variantEl) return [];
-    const raw = variantEl.getAttribute('data-impeccable-params');
+    const raw = variantEl.getAttribute('data-freyja2-params');
     if (!raw) return [];
     try {
       const parsed = JSON.parse(raw);
       return Array.isArray(parsed) ? parsed : [];
     } catch (err) {
-      console.warn('[impeccable] Invalid data-impeccable-params JSON:', err.message);
+      console.warn('[freyja2] Invalid data-freyja2-params JSON:', err.message);
       return [];
     }
   }
@@ -3138,7 +3138,7 @@
       variantEl.setAttribute(attr, String(value));
     }
     // Svelte component variants are client-mounted into
-    // [data-impeccable-component-mount] with no [data-impeccable-variant="N"]
+    // [data-freyja2-component-mount] with no [data-freyja2-variant="N"]
     // wrapper for the state stylesheet to target, and the element is not SSR'd,
     // so there is no React hydration to mismatch. Drive range/toggle --p-* inline
     // on the mounted element so scoped preview CSS resolves them.
@@ -3356,7 +3356,7 @@
       for (const node of children) {
         if (node.nodeType === 3 && /\S/.test(node.nodeValue || '')) {
           const wrap = document.createElement('span');
-          wrap.dataset.impeccableTextWrap = 'true';
+          wrap.dataset.freyja2TextWrap = 'true';
           wrap.textContent = node.nodeValue;
           rootEl.insertBefore(wrap, node);
           rootEl.removeChild(node);
@@ -3364,14 +3364,14 @@
       }
     }
     for (const child of Array.from(rootEl.children)) {
-      if (!child.dataset || !child.dataset.impeccableTextWrap) {
+      if (!child.dataset || !child.dataset.freyja2TextWrap) {
         wrapMixedContentTextNodes(child);
       }
     }
   }
   function unwrapMixedContentTextNodes(rootEl) {
     if (!rootEl || rootEl.nodeType !== 1) return;
-    const wraps = rootEl.querySelectorAll('[data-impeccable-text-wrap="true"]');
+    const wraps = rootEl.querySelectorAll('[data-freyja2-text-wrap="true"]');
     for (const wrap of wraps) {
       const parent = wrap.parentNode;
       if (!parent) continue;
@@ -3393,8 +3393,8 @@
       row.inlineWhiteSpace = row.el.style.whiteSpace;
       row.el.style.whiteSpace = getComputedStyle(row.el).whiteSpace;
       row.el.setAttribute('contenteditable', 'true');
-      row.el.dataset.impeccableEditable = 'true';
-      row.el.dataset.impeccableOriginalText = row.text;
+      row.el.dataset.freyja2Editable = 'true';
+      row.el.dataset.freyja2OriginalText = row.text;
       row.el.style.userSelect = 'text';
       row.el.style.cursor = 'text';
       row.el.style.outline = 'none';
@@ -3406,8 +3406,8 @@
     for (const row of inlineEditRows) {
       if (activeElementDeep() === row.el) row.el.blur();
       row.el.removeAttribute('contenteditable');
-      delete row.el.dataset.impeccableEditable;
-      delete row.el.dataset.impeccableOriginalText;
+      delete row.el.dataset.freyja2Editable;
+      delete row.el.dataset.freyja2OriginalText;
       row.el.style.whiteSpace = row.inlineWhiteSpace || '';
       row.el.style.userSelect = '';
       row.el.style.cursor = '';
@@ -3475,7 +3475,7 @@
   function restoreInlineEditDrafts() {
     for (const row of inlineEditRows) {
       if (inlineEditDrafts.has(row.el)) {
-        row.el.textContent = row.el.dataset.impeccableOriginalText;
+        row.el.textContent = row.el.dataset.freyja2OriginalText;
       }
     }
   }
@@ -3607,7 +3607,7 @@
     if (!el.classList || el.classList.length === 0) return '';
     const classes = [];
     for (const cls of el.classList) {
-      if (!cls || cls.indexOf('impeccable-') === 0) continue;
+      if (!cls || cls.indexOf('freyja2-') === 0) continue;
       classes.push(normalizeDocumentRefToken(cls));
       if (classes.length === 2) break;
     }
@@ -3638,7 +3638,7 @@
       ref: documentRefForElement(el),
       tagName: el.tagName ? el.tagName.toLowerCase() : null,
       id: el.id || null,
-      classes: el.classList ? [...el.classList].filter((cls) => cls.indexOf('impeccable-') !== 0) : [],
+      classes: el.classList ? [...el.classList].filter((cls) => cls.indexOf('freyja2-') !== 0) : [],
       originalText,
       newText,
       textContent: (el.textContent || '').slice(0, 500),
@@ -3658,7 +3658,7 @@
       out.push({
         ref: documentRefForElement(row.el),
         tag: row.el?.tagName ? row.el.tagName.toLowerCase() : null,
-        classes: row.el?.classList ? [...row.el.classList].filter((cls) => cls.indexOf('impeccable-') !== 0) : [],
+        classes: row.el?.classList ? [...row.el.classList].filter((cls) => cls.indexOf('freyja2-') !== 0) : [],
         text,
       });
       if (out.length >= 12) break;
@@ -3672,7 +3672,7 @@
       ref: documentRefForElement(el),
       tagName: el.tagName ? el.tagName.toLowerCase() : null,
       id: el.id || null,
-      classes: el.classList ? [...el.classList].filter((cls) => cls.indexOf('impeccable-') !== 0) : [],
+      classes: el.classList ? [...el.classList].filter((cls) => cls.indexOf('freyja2-') !== 0) : [],
       textContent: (el.textContent || '').slice(0, 1000),
       outerHTML: sanitizedContextOuterHTML(el, 10000) || null,
     };
@@ -3750,7 +3750,7 @@
       showAnnotOverlay(selectedElement);
       renderEditBadge('idle');
     } catch (err) {
-      console.error('[impeccable] manual edit stash failed:', err);
+      console.error('[freyja2] manual edit stash failed:', err);
       const detail = String(err?.message || '');
       if (detail.includes('newText cannot contain') || detail.includes('newText cannot be empty')) {
         showToast('Save rejected: ' + detail.replace(/^manual_edits:\s*/, ''), 5500);
@@ -3806,7 +3806,7 @@
     if (uiGetById(PREFIX + '-keyframes')) return;
     const style = document.createElement('style');
     style.id = PREFIX + '-keyframes';
-    style.textContent = '@keyframes impeccable-spin { to { transform: rotate(360deg); } }';
+    style.textContent = '@keyframes freyja2-spin { to { transform: rotate(360deg); } }';
     uiAppendStyle(style);
   }
 
@@ -4047,7 +4047,7 @@
       const data = await res.json();
       updatePendingCounter(data.count || 0);
     } catch (err) {
-      console.warn('[impeccable] failed to fetch pending count:', err);
+      console.warn('[freyja2] failed to fetch pending count:', err);
     }
   }
 
@@ -4076,19 +4076,19 @@
       const remaining = remainingManualEditCount(result);
       updatePendingCounter(remaining);
       if (result.failed && result.failed.length > 0) {
-        console.warn('[impeccable] some copy edits failed:', result.failed);
+        console.warn('[freyja2] some copy edits failed:', result.failed);
         showToast('Applied ' + (result.applied?.length || 0) + ', ' + result.failed.length + ' failed - see console', 5000);
       } else {
         const n = Array.isArray(result.applied) ? result.applied.length : (result.cleared || 0);
         if (n > 0) {
           showToast('Applied ' + n + ' edit' + (n === 1 ? '' : 's'), 2500);
         } else {
-          console.warn('[impeccable] apply returned no verified edits:', result);
+          console.warn('[freyja2] apply returned no verified edits:', result);
           showToast('No edits applied - see console', 4000);
         }
       }
     } catch (err) {
-      console.error('[impeccable] commit failed:', err);
+      console.error('[freyja2] commit failed:', err);
       showToast('Apply failed - see console', 4000);
     } finally {
       if (waitForSseCompletion) return;
@@ -4118,7 +4118,7 @@
         showToast('Discarded ' + count + ' copy edit' + (count === 1 ? '' : 's'), 2500);
       }
     } catch (err) {
-      console.error('[impeccable] discard failed:', err);
+      console.error('[freyja2] discard failed:', err);
       showToast('Discard failed - see console', 4000);
     }
   }
@@ -4162,7 +4162,7 @@
       if (pendingRollbackBtn) pendingRollbackBtn.style.display = 'none';
       if (pendingTrashBtn) pendingTrashBtn.style.display = 'inline-flex';
     } catch (err) {
-      console.error('[impeccable] repair retry failed:', err);
+      console.error('[freyja2] repair retry failed:', err);
       showToast('Repair retry failed - see console', 4000);
       showManualApplyDecision({ remainingCount: count, repair: readStoredManualApplyState() });
     }
@@ -4186,7 +4186,7 @@
       updatePendingCounter(numberOrNull(result.remainingCount) || 0);
       showToast('Rolled back source; copy edits are still staged.', 3500);
     } catch (err) {
-      console.error('[impeccable] manual Apply rollback failed:', err);
+      console.error('[freyja2] manual Apply rollback failed:', err);
       showToast('Rollback failed - see console', 4000);
     }
   }
@@ -4300,7 +4300,7 @@
       }
     }
     if (failures > 0) {
-      console.warn('[impeccable] skipped unsafe copy edit DOM restore for', failures, 'edit(s). Refresh to reset the page DOM.');
+      console.warn('[freyja2] skipped unsafe copy edit DOM restore for', failures, 'edit(s). Refresh to reset the page DOM.');
     }
     return failures;
   }
@@ -4312,7 +4312,7 @@
   }
 
   function mixedTextWrapRestoreHint(el) {
-    if (!el || !el.dataset || el.dataset.impeccableTextWrap !== 'true' || !el.parentElement) return null;
+    if (!el || !el.dataset || el.dataset.freyja2TextWrap !== 'true' || !el.parentElement) return null;
     const siblings = directMixedTextRestoreNodes(el.parentElement);
     const textIndex = siblings.indexOf(el);
     return {
@@ -4345,7 +4345,7 @@
       if (node.nodeType === 3) return /\S/.test(node.nodeValue || '');
       return node.nodeType === 1
         && node.dataset
-        && node.dataset.impeccableTextWrap === 'true'
+        && node.dataset.freyja2TextWrap === 'true'
         && /\S/.test(node.textContent || '');
     });
   }
@@ -4575,7 +4575,7 @@
         proxy = document.createElement('button');
         proxy.type = 'button';
         proxy.tabIndex = -1;
-        proxy.dataset.impeccableEditBadgeProxy = 'true';
+        proxy.dataset.freyja2EditBadgeProxy = 'true';
         proxy.setAttribute('aria-hidden', 'true');
         bindEditBadgeProxy(proxy, target);
         editBadgeProxyRoot.appendChild(proxy);
@@ -4607,9 +4607,9 @@
         '#' + PREFIX + '-edit-badge button { outline: none !important; box-shadow: 0 2px 8px rgba(0,0,0,0.1) !important; }' +
         '#' + PREFIX + '-edit-badge button:focus { outline: none !important; }' +
         '#' + PREFIX + '-edit-badge button:focus-visible { outline: none !important; }' +
-        '[data-impeccable-editable="true"] { outline: none !important; box-shadow: none !important; }' +
-        '[data-impeccable-editable="true"]:focus { outline: none !important; box-shadow: none !important; }' +
-        '[data-impeccable-editable="true"]:focus-visible { outline: none !important; box-shadow: none !important; }';
+        '[data-freyja2-editable="true"] { outline: none !important; box-shadow: none !important; }' +
+        '[data-freyja2-editable="true"]:focus { outline: none !important; box-shadow: none !important; }' +
+        '[data-freyja2-editable="true"]:focus-visible { outline: none !important; box-shadow: none !important; }';
       uiAppendStyle(s);
     }
   }
@@ -4841,9 +4841,9 @@
       return Object.values(svelteComponentSession.paramsByVariant || {})
         .reduce((total, params) => total + (Array.isArray(params) ? params.length : 0), 0);
     }
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
     if (!wrapper) return 0;
-    return [...wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])')]
+    return [...wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])')]
       .reduce((total, variant) => total + parseVariantParams(variant).length, 0);
   }
 
@@ -4940,7 +4940,7 @@
       scheduleCyclingBarSync(sessionId, num);
       return true;
     }
-    const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
     if (!wrapper) return false;
     updateVariantStateStylesheet(sessionId, num);
     // Unconditional refresh - covers first-reveal (no-op if state isn't
@@ -4960,8 +4960,8 @@
 
   function parseOriginalMarkupElement(originalMarkup) {
     const parser = new DOMParser();
-    const doc = parser.parseFromString('<div id="impeccable-anchor">' + originalMarkup + '</div>', 'text/html');
-    return doc.getElementById('impeccable-anchor')?.firstElementChild || null;
+    const doc = parser.parseFromString('<div id="freyja2-anchor">' + originalMarkup + '</div>', 'text/html');
+    return doc.getElementById('freyja2-anchor')?.firstElementChild || null;
   }
 
   function normalizeElementClassName(el) {
@@ -4991,7 +4991,7 @@
       && el.parentElement
       && document.body.contains(el)
       && !own(el)
-      && !el.closest?.('[data-impeccable-variants]');
+      && !el.closest?.('[data-freyja2-variants]');
   }
 
   function elementMatchesOriginalMarkup(liveEl, origContent) {
@@ -5116,7 +5116,7 @@
 
   function waitForVariantAnchorAndRetry({ filePath, sessionId, srcWrapper, checkpointReason }) {
     if (pendingVariantAnchorRetryObserver) pendingVariantAnchorRetryObserver.disconnect();
-    const origContent = srcWrapper?.querySelector('[data-impeccable-variant="original"] > :first-child');
+    const origContent = srcWrapper?.querySelector('[data-freyja2-variant="original"] > :first-child');
     if (!origContent) return;
     const originalMarkup = origContent.outerHTML;
 
@@ -5125,7 +5125,7 @@
       // A wrapper can land incomplete ("wrap HMR landed, variant insert did
       // not"); injectVariantsFromSource owns both cases - it replaces an
       // existing wrapper from source and clears recoveryWaitingForAnchor.
-      const wrapperLanded = !!document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+      const wrapperLanded = !!document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
       if (!wrapperLanded) {
         const liveEl = resolveLiveInjectionAnchor(originalMarkup);
         if (!liveEl?.parentElement) return;
@@ -5157,7 +5157,7 @@
   }
 
   function loadSvelteRuntime(runtimeModule, manifest) {
-    const modulePath = runtimeModule || '/src/lib/impeccable/__runtime.js';
+    const modulePath = runtimeModule || '/src/lib/freyja2/__runtime.js';
     const url = resolveComponentModuleUrl(manifest, modulePath);
     if (!svelteRuntimePromise) {
       svelteRuntimePromise = import(/* @vite-ignore */ url);
@@ -5166,7 +5166,7 @@
   }
 
   // Svelte component variants declare their params in a sidecar params.json under
-  // componentDir (keyed by variant number), because a `data-impeccable-params`
+  // componentDir (keyed by variant number), because a `data-freyja2-params`
   // attribute with JSON braces can't survive the Svelte compiler. Returns a map of
   // { "1": [...params], "2": [...] }; an empty object when the agent declared none.
   async function loadSvelteComponentParams(manifest) {
@@ -5219,8 +5219,8 @@
     const scopedCss = scopeCssToSveltePreview(css, sessionId);
     if (!scopedCss) return;
     const style = document.createElement('style');
-    style.dataset.impeccableSvelteComponentStyle = sessionId;
-    style.dataset.impeccableVariant = String(variantNum);
+    style.dataset.freyja2SvelteComponentStyle = sessionId;
+    style.dataset.freyja2Variant = String(variantNum);
     style.textContent = scopedCss;
     document.head.appendChild(style);
     svelteComponentSession.styleEl = style;
@@ -5233,7 +5233,7 @@
   }
 
   function scopeCssToSveltePreview(css, sessionId) {
-    const prefix = '[data-impeccable-variants="' + String(sessionId).replace(/"/g, '\\"') + '"] ';
+    const prefix = '[data-freyja2-variants="' + String(sessionId).replace(/"/g, '\\"') + '"] ';
     return scopeCssBlock(String(css || ''), prefix).trim();
   }
 
@@ -5406,7 +5406,7 @@
       if (svelteComponentSession?.sessionId === sessionId) {
         svelteComponentSession.swapAnchor = null;
       }
-      console.error('[impeccable] Failed to mount component variant ' + variantNum + ' for ' + sessionId + ':', err);
+      console.error('[freyja2] Failed to mount component variant ' + variantNum + ' for ' + sessionId + ':', err);
       return false;
     }
   }
@@ -5484,7 +5484,7 @@
       });
       if (state !== 'CYCLING') setLiveState('GENERATING');
 
-      const existingWrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+      const existingWrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
       if (existingWrapper && svelteComponentSession?.sessionId === sessionId) {
         recoveryWaitingForAnchor = false;
         svelteComponentSession.manifest = manifest;
@@ -5502,7 +5502,7 @@
 
       const liveEl = findLiveElementForSvelteManifest(manifest);
       if (!liveEl?.parentElement) {
-        console.warn('[impeccable] Could not find original element in live DOM.');
+        console.warn('[freyja2] Could not find original element in live DOM.');
         arrivedVariants = availableVariants;
         expectedVariants = Number(manifest.count) || expectedVariants || arrivedVariants;
         const saved = loadSession();
@@ -5516,13 +5516,13 @@
       }
 
       const wrapper = document.createElement('div');
-      wrapper.dataset.impeccableVariants = sessionId;
-      wrapper.dataset.impeccableVariantCount = String(manifest.count || expectedVariants || 1);
-      wrapper.dataset.impeccablePreview = componentPreviewMode;
+      wrapper.dataset.freyja2Variants = sessionId;
+      wrapper.dataset.freyja2VariantCount = String(manifest.count || expectedVariants || 1);
+      wrapper.dataset.freyja2Preview = componentPreviewMode;
       wrapper.style.display = 'contents';
 
       const mountTarget = document.createElement('div');
-      mountTarget.dataset.impeccableComponentMount = sessionId;
+      mountTarget.dataset.freyja2ComponentMount = sessionId;
       mountTarget.style.display = 'contents';
       wrapper.appendChild(mountTarget);
 
@@ -5583,9 +5583,9 @@
       positionBar();
       saveSession();
       if (parameterGenerationState === 'loading') completeParameterPublication();
-      console.log('[impeccable] Mounted ' + arrivedVariants + ' ' + manifest.framework + ' component variants.');
+      console.log('[freyja2] Mounted ' + arrivedVariants + ' ' + manifest.framework + ' component variants.');
     } catch (err) {
-      console.error('[impeccable] Failed to mount component-preview variants:', err);
+      console.error('[freyja2] Failed to mount component-preview variants:', err);
       abortSvelteComponentInjection(sessionId, 'Could not load variants. Fix the error and re-run.');
     }
   }
@@ -5615,11 +5615,11 @@
       if (svelteComponentSession?.sessionId === sessionId) {
         teardownSvelteComponentSession(true);
       } else {
-        const orphan = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        const orphan = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
         if (orphan) orphan.remove();
       }
     } catch (err) {
-      console.warn('[impeccable] Svelte component abort cleanup failed:', err);
+      console.warn('[freyja2] Svelte component abort cleanup failed:', err);
     }
     hideShaderOverlay();
     if (variantObserver) { variantObserver.disconnect(); variantObserver = null; }
@@ -5673,17 +5673,17 @@
         let srcWrapper = null;
 
         // Full-file parse works for HTML/JSX; Astro/Vue sources need marker extraction.
-        const startMark = '<!-- impeccable-variants-start ' + sessionId + ' -->';
-        const endMark = '<!-- impeccable-variants-end ' + sessionId + ' -->';
+        const startMark = '<!-- freyja2-variants-start ' + sessionId + ' -->';
+        const endMark = '<!-- freyja2-variants-end ' + sessionId + ' -->';
         const startIdx = html.indexOf(startMark);
         const endIdx = html.indexOf(endMark);
         const block = startIdx !== -1 && endIdx !== -1 && endIdx > startIdx
           ? html.slice(startIdx + startMark.length, endIdx).trim()
           : html;
         const doc = parser.parseFromString(normalizeSourceFallbackBlock(block, filePath), 'text/html');
-        srcWrapper = doc.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        srcWrapper = doc.querySelector('[data-freyja2-variants="' + sessionId + '"]');
         if (!srcWrapper) {
-          console.warn('[impeccable] Variant wrapper not found in source file.');
+          console.warn('[freyja2] Variant wrapper not found in source file.');
           return;
         }
 
@@ -5691,16 +5691,16 @@
         const wrapper = srcWrapper.cloneNode(true);
 
         // Wrapper already in DOM (wrap HMR landed, variant insert did not).
-        const existingWrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+        const existingWrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
         if (existingWrapper) {
           existingWrapper.parentElement.replaceChild(wrapper, existingWrapper);
         } else {
-          const origContent = srcWrapper.querySelector('[data-impeccable-variant="original"] > :first-child');
+          const origContent = srcWrapper.querySelector('[data-freyja2-variant="original"] > :first-child');
           if (!origContent) return;
 
           const liveEl = resolveLiveInjectionAnchor(origContent.outerHTML);
           if (!liveEl) {
-            console.warn('[impeccable] Could not find original element in live DOM.');
+            console.warn('[freyja2] Could not find original element in live DOM.');
             enterRecoveryWaitingForAnchor({
               filePath,
               sessionId,
@@ -5721,9 +5721,9 @@
 
         // Update state: count variants, preserving the user's current variant
         // when a late HMR/source reinjection lands after they have cycled.
-        const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
+        const variants = wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])');
         arrivedVariants = variants.length;
-        expectedVariants = parseInt(wrapper.dataset.impeccableVariantCount || arrivedVariants);
+        expectedVariants = parseInt(wrapper.dataset.freyja2VariantCount || arrivedVariants);
         if (arrivedVariants <= 0) {
           if (state === 'GENERATING') {
             // Mid-generation the source legitimately holds a scaffold wrapper
@@ -5732,7 +5732,7 @@
             // in-flight generation; stay in GENERATING — the variant observer
             // is armed and the server re-delivers a missed `done`.
             if (!opts.generationCompleted) {
-              console.log('[impeccable] Source has scaffold but no variants yet; still generating.');
+              console.log('[freyja2] Source has scaffold but no variants yet; still generating.');
               return;
             }
             // Generation finished, yet the read shows only the scaffold: the
@@ -5741,7 +5741,7 @@
             // here would strand the tab in GENERATING forever.
             const attempt = opts.attempt || 0;
             if (attempt < COMPLETED_SOURCE_FALLBACK_RETRIES) {
-              console.log('[impeccable] Generation is done but source shows no variants yet; retrying read ('
+              console.log('[freyja2] Generation is done but source shows no variants yet; retrying read ('
                 + (attempt + 1) + '/' + COMPLETED_SOURCE_FALLBACK_RETRIES + ').');
               setTimeout(() => {
                 if (state !== 'GENERATING' || currentSessionId !== sessionId) return;
@@ -5773,10 +5773,10 @@
         positionBar();
         saveSession();
         if (parameterGenerationState === 'loading') completeParameterPublication();
-        console.log('[impeccable] Injected ' + arrivedVariants + ' variants from source file.');
+        console.log('[freyja2] Injected ' + arrivedVariants + ' variants from source file.');
       })
       .catch(err => {
-        console.error('[impeccable] Failed to fetch source:', err);
+        console.error('[freyja2] Failed to fetch source:', err);
         showToast('Could not load variants. Try refreshing the page.', 5000);
       });
   }
@@ -5939,10 +5939,10 @@
     if (!currentSessionId) return;
     if (svelteComponentSession?.sessionId === currentSessionId) {
       const anchor = resolveSvelteComponentAnchor();
-      if (anchor && !anchor.__impeccableFrozenAnchor) selectedElement = anchor;
+      if (anchor && !anchor.__freyja2FrozenAnchor) selectedElement = anchor;
       return;
     }
-    const wrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
     if (!wrapper) return;
     const visEl = pickVariantContent(wrapper, visibleVariant);
     if (visEl) selectedElement = visEl;
@@ -5952,12 +5952,12 @@
     if (svelteComponentSession?.sessionId === sessionId && svelteComponentSession.mountedVariant > 0) {
       return svelteComponentSession.mountedVariant;
     }
-    const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
     if (!wrapper) return 0;
-    const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
+    const variants = wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])');
     for (const variant of variants) {
       if (!isVariantShown(variant)) continue;
-      const idx = parseInt(variant.dataset.impeccableVariant || '0', 10);
+      const idx = parseInt(variant.dataset.freyja2Variant || '0', 10);
       if (idx > 0) return idx;
     }
     return 0;
@@ -5971,7 +5971,7 @@
   // (it wraps all of them and gets correct bounds).
   function pickVariantContent(wrapper, index) {
     if (!wrapper) return null;
-    const variantDiv = wrapper.querySelector('[data-impeccable-variant="' + index + '"]');
+    const variantDiv = wrapper.querySelector('[data-freyja2-variant="' + index + '"]');
     if (!variantDiv) return null;
     const NON_VISUAL = new Set(['STYLE', 'SCRIPT', 'LINK', 'META', 'TEMPLATE']);
     const visual = [];
@@ -5995,13 +5995,13 @@
   const VARIANT_SHOW_DECL = 'display: block !important;';
 
   // Build a direct-child variant selector for a session. With `num`, targets a
-  // single variant (`… > [data-impeccable-variant="N"]`); without it, targets
-  // every variant via the bare `[data-impeccable-variant]` attribute.
+  // single variant (`… > [data-freyja2-variant="N"]`); without it, targets
+  // every variant via the bare `[data-freyja2-variant]` attribute.
   function variantStateSelector(sessionId, num) {
-    const wrapper = '[data-impeccable-variants="' + sessionId + '"]';
+    const wrapper = '[data-freyja2-variants="' + sessionId + '"]';
     const variant = num == null
-      ? '[data-impeccable-variant]'
-      : '[data-impeccable-variant="' + num + '"]';
+      ? '[data-freyja2-variant]'
+      : '[data-freyja2-variant="' + num + '"]';
     return wrapper + ' > ' + variant;
   }
 
@@ -6030,7 +6030,7 @@
 
     // Hide every variant except the visible one (incl. the SSR'd "original").
     const hideOthers = variantStateSelector(sessionId)
-      + ':not([data-impeccable-variant="' + num + '"]) { ' + VARIANT_HIDE_DECL + ' }';
+      + ':not([data-freyja2-variant="' + num + '"]) { ' + VARIANT_HIDE_DECL + ' }';
 
     // Force-show the visible variant (beats the source inline display:none on
     // v2/v3) and apply its knob values as custom properties.
@@ -6052,9 +6052,9 @@
       styleEl.id = DISCARD_STATE_STYLE_ID;
       (document.head || document.documentElement).appendChild(styleEl);
     }
-    const wrapper = '[data-impeccable-variants="' + sessionId + '"]';
-    styleEl.textContent = wrapper + ' > [data-impeccable-variant]:not([data-impeccable-variant="original"]) { display:none !important; }\n'
-      + wrapper + ' > [data-impeccable-variant="original"] { display:block !important; }';
+    const wrapper = '[data-freyja2-variants="' + sessionId + '"]';
+    styleEl.textContent = wrapper + ' > [data-freyja2-variant]:not([data-freyja2-variant="original"]) { display:none !important; }\n'
+      + wrapper + ' > [data-freyja2-variant="original"] { display:block !important; }';
   }
 
   function resolveScrollLockAnchorTop() {
@@ -6122,12 +6122,12 @@
 
     scrollLockObserver = new MutationObserver((mutations) => {
       for (const m of mutations) {
-        if (m.target?.closest?.('[data-impeccable-variants="' + sessionId + '"]')) {
+        if (m.target?.closest?.('[data-freyja2-variants="' + sessionId + '"]')) {
           schedule('mutation-in-wrapper');
           return;
         }
         for (const n of m.addedNodes) {
-          if (n.nodeType === 1 && (n.matches?.('[data-impeccable-variants="' + sessionId + '"]') || n.querySelector?.('[data-impeccable-variants="' + sessionId + '"]'))) {
+          if (n.nodeType === 1 && (n.matches?.('[data-freyja2-variants="' + sessionId + '"]') || n.querySelector?.('[data-freyja2-variants="' + sessionId + '"]'))) {
             schedule('wrapper-added');
             return;
           }
@@ -6206,22 +6206,22 @@
     const obs = new MutationObserver((mutations) => {
       if (updating) return;
 
-      // Only react to mutations that add nodes with data-impeccable-variant,
+      // Only react to mutations that add nodes with data-freyja2-variant,
       // or mutations inside the variant wrapper. Ignore our own bar/UI changes.
       let dominated = false;
       for (const m of mutations) {
-        if (m.target.closest?.('[data-impeccable-variants]')) { dominated = true; break; }
+        if (m.target.closest?.('[data-freyja2-variants]')) { dominated = true; break; }
         for (const n of m.addedNodes) {
           if (n.nodeType !== 1) continue;
           // Direct hit: the added node itself is the wrapper or a variant.
-          if (n.dataset?.impeccableVariants || n.dataset?.impeccableVariant) {
+          if (n.dataset?.freyja2Variants || n.dataset?.freyja2Variant) {
             dominated = true; break;
           }
           // Subtree hit: framework HMR (notably SvelteKit) sometimes replaces
           // a whole subtree where the wrapper is a descendant of the added
           // node. Without this check, the observer ignores those mutations
           // and the session stays in GENERATING forever.
-          if (n.querySelector?.('[data-impeccable-variants],[data-impeccable-variant]')) {
+          if (n.querySelector?.('[data-freyja2-variants],[data-freyja2-variant]')) {
             dominated = true; break;
           }
         }
@@ -6229,17 +6229,17 @@
       }
       if (!dominated) return;
 
-      const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+      const wrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
       if (!wrapper) return;
 
-      const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
+      const variants = wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])');
       const count = variants.length;
 
       // Re-anchor selectedElement if it was detached by live-wrap's HMR swap.
       // Without this, the shader / highlight / bar track a zero-rect phantom
       // and the overlay appears frozen.
       if (selectedElement && !document.body.contains(selectedElement)) {
-        const isInsert = wrapper.dataset.impeccableMode === 'insert';
+        const isInsert = wrapper.dataset.freyja2Mode === 'insert';
         if (isInsert) {
           const visEl = count > 0 ? pickVariantContent(wrapper, visibleVariant || 1) : null;
           if (visEl) {
@@ -6277,14 +6277,14 @@
         if (visEl) selectedElement = visEl;
       }
 
-      const expected = parseInt(wrapper.dataset.impeccableVariantCount || '0');
+      const expected = parseInt(wrapper.dataset.freyja2VariantCount || '0');
       if (expected > 0) expectedVariants = expected;
 
       if (arrivedVariants > 0) {
         setLiveState('CYCLING');
         recoveryWaitingForAnchor = false;
         hideShaderOverlay();
-        if (wrapper.dataset.impeccableMode === 'insert') finalizeInsertSession();
+        if (wrapper.dataset.freyja2Mode === 'insert') finalizeInsertSession();
         updateSelectedElement();
         showOrUpdateCyclingBar();
         disableInlineEdit();
@@ -6318,7 +6318,7 @@
         positionBar();
         if (state === 'CONFIGURING') positionEditBadge();
         const hiTarget = resolveBarAnchor();
-        if (hiTarget && !hiTarget.hasAttribute?.('data-impeccable-insert-placeholder')) {
+        if (hiTarget && !hiTarget.hasAttribute?.('data-freyja2-insert-placeholder')) {
           showHighlight(hiTarget);
         } else {
           hideHighlight();
@@ -6367,8 +6367,8 @@
       switch (msg.type) {
         case 'connected':
           hasProjectContext = !!msg.hasProjectContext;
-          if (!hasProjectContext) showToast(`No PRODUCT.md found. Variants will be brand-agnostic. Run ${IMPECCABLE_COMMAND} init to generate one.`, 7000);
-          console.log('[impeccable] Live mode connected.');
+          if (!hasProjectContext) showToast(`No PRODUCT.md found. Variants will be brand-agnostic. Run ${FREYJA2_COMMAND} init to generate one.`, 7000);
+          console.log('[freyja2] Live mode connected.');
           syncAgentPollingUi(!!msg.agentPolling);
           startAgentStatusPoll();
           restoreFromActiveSessions(msg.activeSessions, 'sse_connected');
@@ -6497,7 +6497,7 @@
             break;
           }
           if (maybeCompleteSteer(msg)) break;
-          console.error('[impeccable] Error:', msg.message);
+          console.error('[freyja2] Error:', msg.message);
           showToast('Error: ' + msg.message, 5000);
           hideBar();
           renderEditBadge('hidden');
@@ -6509,11 +6509,11 @@
     evtSource.onerror = () => {
       sseRetries++;
       if (sseRetries <= SSE_MAX_RETRIES) {
-        console.log('[impeccable] SSE connection lost. Retry ' + sseRetries + '/' + SSE_MAX_RETRIES + '...');
+        console.log('[freyja2] SSE connection lost. Retry ' + sseRetries + '/' + SSE_MAX_RETRIES + '...');
         return; // EventSource auto-reconnects
       }
       // Server is gone. Clean up gracefully.
-      console.log('[impeccable] Live server unreachable. Cleaning up UI.');
+      console.log('[freyja2] Live server unreachable. Cleaning up UI.');
       evtSource.close();
       evtSource = null;
       handleServerLost();
@@ -6538,7 +6538,7 @@
     // resume after a helper restart or page reload instead of treating a
     // transient disconnect as an explicit discard.
     selectedElement = null;
-    selectedAction = 'impeccable';
+    selectedAction = 'freyja2';
     setLiveState(recoveryState);
     if (currentSessionId) saveSession();
   }
@@ -6547,10 +6547,10 @@
     msg.token = TOKEN;
     function handleFailure(err) {
       if (opts && opts.throwOnError) {
-        console.error('[impeccable] Failed to send event:', err);
+        console.error('[freyja2] Failed to send event:', err);
         throw err;
       }
-      console.debug('[impeccable] Dropped optional live event:', err);
+      console.debug('[freyja2] Dropped optional live event:', err);
       return null;
     }
     return fetch('http://localhost:' + PORT + '/events', {
@@ -6835,7 +6835,7 @@
       if (e.key !== 'Escape') return;
       e.preventDefault();
       e.stopPropagation();
-      const original = e.target.dataset.impeccableOriginalText;
+      const original = e.target.dataset.freyja2OriginalText;
       if (original !== undefined) e.target.textContent = original;
       // Programmatic textContent doesn't fire the 'input' event, so the draft
       // map would otherwise hold the pre-cancel value and Apply would commit
@@ -7246,11 +7246,11 @@
   function shouldUseAncestorCropShaderProxy(el) {
     // TODO: Enable this proxy for React/Vue/etc. adapters once their live
     // preview mounts are covered by the same shader regression checks.
-    const adapter = String(window.__IMPECCABLE_LIVE_ADAPTER__ || '').toLowerCase();
+    const adapter = String(window.__FREYJA2_LIVE_ADAPTER__ || '').toLowerCase();
     if (adapter === 'svelte' || adapter === 'sveltekit') return true;
     if (isFrameworkComponentPreviewMode(currentPreviewMode) || svelteComponentSession) return true;
-    const wrapper = el?.closest?.('[data-impeccable-variants]');
-    return isFrameworkComponentPreviewMode(wrapper?.dataset?.impeccablePreview);
+    const wrapper = el?.closest?.('[data-freyja2-variants]');
+    return isFrameworkComponentPreviewMode(wrapper?.dataset?.freyja2Preview);
   }
 
   function paintsShaderProxySurface(node) {
@@ -7332,7 +7332,7 @@
         try {
           return await hideCaptureChromeForShaderProxy(() => captureElementFromRenderedAncestor(ms, el, opts));
         } catch (err) {
-          console.warn('[impeccable] Svelte ancestor crop capture failed, falling back to element capture:', err);
+          console.warn('[freyja2] Svelte ancestor crop capture failed, falling back to element capture:', err);
         }
       }
       const bg = resolveCanvasBackground(el);
@@ -7395,7 +7395,7 @@
     try {
       ({ blob, paper } = await captureElementToBlob(el, snapshot, rect));
     } catch (err) {
-      console.warn('[impeccable] capture failed, proceeding without screenshot:', err);
+      console.warn('[freyja2] capture failed, proceeding without screenshot:', err);
     }
     // Light up the shader overlay the moment capture is ready - no reason to
     // wait for the upload to complete before the user sees something alive.
@@ -7417,10 +7417,10 @@
           const { path: p } = await uploadRes.json();
           screenshotPath = p;
         } else {
-          console.warn('[impeccable] annotation upload failed:', uploadRes.status);
+          console.warn('[freyja2] annotation upload failed:', uploadRes.status);
         }
       } catch (err) {
-        console.warn('[impeccable] annotation upload failed:', err);
+        console.warn('[freyja2] annotation upload failed:', err);
       }
     }
     // Annotated requests must wait for capture + upload because the screenshot
@@ -7748,7 +7748,7 @@ void main() {
       gl.enableVertexAttribArray(uvLoc);
       gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 16, 8);
     } catch (err) {
-      console.warn('[impeccable] shader setup failed:', err);
+      console.warn('[freyja2] shader setup failed:', err);
       canvas.remove();
       return;
     }
@@ -7758,7 +7758,7 @@ void main() {
     try {
       bitmap = await createImageBitmap(blob);
     } catch (err) {
-      console.warn('[impeccable] shader bitmap decode failed:', err);
+      console.warn('[freyja2] shader bitmap decode failed:', err);
       const lose = gl.getExtension?.('WEBGL_lose_context');
       try { lose?.loseContext(); } catch {}
       showShaderBitmapFallback(canvas, blob);
@@ -7818,7 +7818,7 @@ void main() {
       clientSentAt: Date.now(),
     };
     if (!currentSessionId || arrivedVariants === 0) return;
-    const acceptWrapper = document.querySelector('[data-impeccable-variants="' + currentSessionId + '"]');
+    const acceptWrapper = document.querySelector('[data-freyja2-variants="' + currentSessionId + '"]');
     if (Object.keys(paramsCurrentValues).length > 0) {
       acceptPayload.paramValues = { ...paramsCurrentValues };
     }
@@ -7831,7 +7831,7 @@ void main() {
     const acceptedSessionId = currentSessionId;
     const acceptedVariant = visibleVariant;
     const acceptedIsSvelteComponent = svelteComponentSession?.sessionId === acceptedSessionId
-      || isFrameworkComponentPreviewMode(acceptWrapper?.dataset?.impeccablePreview);
+      || isFrameworkComponentPreviewMode(acceptWrapper?.dataset?.freyja2Preview);
     const acceptedSnapshot = snapshotAcceptedVariantDom(acceptedSessionId, acceptedVariant);
 
     setLiveState('SAVING');
@@ -7854,7 +7854,7 @@ void main() {
         // the background; the foreground picker is free immediately.
         markSessionHandled();
         setLiveState('CONFIRMED');
-        document.documentElement.dataset.impeccableAcceptToPickingMs = String(Date.now() - acceptPayload.clientSentAt);
+        document.documentElement.dataset.freyja2AcceptToPickingMs = String(Date.now() - acceptPayload.clientSentAt);
         scheduleAcceptCleanup(pending);
       })
       .catch(() => {
@@ -7908,8 +7908,8 @@ void main() {
   }
 
   function snapshotAcceptedVariantDom(sessionId, variantId) {
-    const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
-    const accepted = wrapper?.querySelector?.('[data-impeccable-variant="' + variantId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
+    const accepted = wrapper?.querySelector?.('[data-freyja2-variant="' + variantId + '"]');
     const root = accepted?.firstElementChild || null;
     return {
       acceptedHtml: accepted ? accepted.innerHTML : '',
@@ -7932,7 +7932,7 @@ void main() {
     if (!pending?.acceptedSelector) return false;
     const matches = [...document.querySelectorAll(pending.acceptedSelector)];
     return matches.length > 0
-      && matches.every((el) => !el.closest('[data-impeccable-variants],[data-impeccable-variant],[data-impeccable-carbonize]'));
+      && matches.every((el) => !el.closest('[data-freyja2-variants],[data-freyja2-variant],[data-freyja2-carbonize]'));
   }
 
   function ensureAcceptedDomClean(pending) {
@@ -7946,7 +7946,7 @@ void main() {
     }
     for (const wrapper of wrappers) {
       if (!wrapper?.isConnected) continue;
-      const accepted = wrapper.querySelector?.('[data-impeccable-variant="' + variantId + '"]');
+      const accepted = wrapper.querySelector?.('[data-freyja2-variant="' + variantId + '"]');
       if (!accepted) {
         wrapper.remove();
         continue;
@@ -7964,8 +7964,8 @@ void main() {
   function findAcceptedRuntimeWrappers(sessionId) {
     if (!sessionId) return [];
     return [...new Set([
-      ...document.querySelectorAll('[data-impeccable-variants="' + sessionId + '"]'),
-      ...document.querySelectorAll('[data-impeccable-carbonize="' + sessionId + '"]'),
+      ...document.querySelectorAll('[data-freyja2-variants="' + sessionId + '"]'),
+      ...document.querySelectorAll('[data-freyja2-carbonize="' + sessionId + '"]'),
     ])];
   }
 
@@ -7993,7 +7993,7 @@ void main() {
 
   function reloadAfterMissingAcceptedDom(pending) {
     if (acceptedDomAlreadyClean(pending)) return;
-    if (pending?.id && document.querySelector('[data-impeccable-variants="' + pending.id + '"]')) return;
+    if (pending?.id && document.querySelector('[data-freyja2-variants="' + pending.id + '"]')) return;
     location.reload();
   }
 
@@ -8013,24 +8013,24 @@ void main() {
     currentSessionId = null;
     parameterGenerationState = 'idle';
     parameterReadyAnnouncedSession = null;
-    selectedAction = 'impeccable';
+    selectedAction = 'freyja2';
     pendingAcceptedSession = null;
     renderEditBadge('hidden');
     setLiveState('PICKING');
   }
 
   function commitAcceptedVariantToDom(sessionId, variantId) {
-    const wrapper = document.querySelector('[data-impeccable-variants="' + sessionId + '"]');
+    const wrapper = document.querySelector('[data-freyja2-variants="' + sessionId + '"]');
     if (!wrapper) return false;
-    const accepted = wrapper.querySelector('[data-impeccable-variant="' + variantId + '"]');
+    const accepted = wrapper.querySelector('[data-freyja2-variant="' + variantId + '"]');
     if (!accepted || !accepted.firstElementChild) return false;
     const parent = wrapper.parentElement;
     if (!parent) return false;
 
-    const style = wrapper.querySelector('style[data-impeccable-css]');
-    if (style && !document.querySelector('style[data-impeccable-accepted-css="' + sessionId + '"]')) {
+    const style = wrapper.querySelector('style[data-freyja2-css]');
+    if (style && !document.querySelector('style[data-freyja2-accepted-css="' + sessionId + '"]')) {
       const promotedStyle = style.cloneNode(true);
-      promotedStyle.setAttribute('data-impeccable-accepted-css', sessionId);
+      promotedStyle.setAttribute('data-freyja2-accepted-css', sessionId);
       parent.insertBefore(promotedStyle, wrapper);
     }
 
@@ -8187,8 +8187,8 @@ void main() {
   }
 
   function restoreFromActiveSessions(activeSessions, reason) {
-    const wrapper = document.querySelector('[data-impeccable-variants]');
-    if (wrapper && !isFrameworkComponentPreviewMode(wrapper.dataset.impeccablePreview)) return false;
+    const wrapper = document.querySelector('[data-freyja2-variants]');
+    if (wrapper && !isFrameworkComponentPreviewMode(wrapper.dataset.freyja2Preview)) return false;
     if (svelteComponentSession?.sessionId === currentSessionId) return false;
     return restoreSessionWithoutWrapper(reason || 'sse_connected', activeSessions);
   }
@@ -8215,7 +8215,7 @@ void main() {
       ? currentPreviewFile
       : (summary.sourceFile || summary.previewFile || currentSourceFile || currentPreviewFile);
     if (!file) return;
-    console.log('[impeccable] Reconnected after generation completed; recovering variants from source.');
+    console.log('[freyja2] Reconnected after generation completed; recovering variants from source.');
     setTimeout(() => {
       if (sessionId !== currentSessionId || state !== 'GENERATING') return;
       if (arrivedVariants > 0 && arrivedVariants >= expectedVariants) return;
@@ -8286,7 +8286,7 @@ void main() {
       // reconciler later tries to remove a wrapper we already removed.
       // Schedule a 2s fallback that does the manual swap only if HMR hasn't
       // replaced the wrapper by then (keeps static-server / no-HMR flows alive).
-      const wrapper = document.querySelector('[data-impeccable-variants="' + cleanupSessionId + '"]');
+      const wrapper = document.querySelector('[data-freyja2-variants="' + cleanupSessionId + '"]');
       if (wrapper) {
         if (restoreOriginal) showOriginalDuringDiscard(cleanupSessionId);
         else wrapper.style.display = 'none';
@@ -8294,9 +8294,9 @@ void main() {
       setTimeout(function() {
         document.getElementById(DISCARD_STATE_STYLE_ID)?.remove();
         if (!cleanupSessionId) return;
-        const lateWrapper = document.querySelector('[data-impeccable-variants="' + cleanupSessionId + '"]');
+        const lateWrapper = document.querySelector('[data-freyja2-variants="' + cleanupSessionId + '"]');
         if (!lateWrapper) return;
-        const orig = lateWrapper.querySelector('[data-impeccable-variant="original"]');
+        const orig = lateWrapper.querySelector('[data-freyja2-variant="original"]');
         if (orig) {
           const content = orig.firstElementChild;
           if (content) {
@@ -8324,7 +8324,7 @@ void main() {
     currentSessionId = null;
     parameterGenerationState = 'idle';
     parameterReadyAnnouncedSession = null;
-    selectedAction = 'impeccable';
+    selectedAction = 'freyja2';
     renderEditBadge('hidden');
     setLiveState('PICKING');
   }
@@ -8385,10 +8385,10 @@ void main() {
   //
 
   // Resume an active variant session after HMR/page reload.
-  // If a [data-impeccable-variants] wrapper exists in the DOM, the agent wrote
+  // If a [data-freyja2-variants] wrapper exists in the DOM, the agent wrote
   // variants before HMR fired. Pick up where we left off.
   function resumeSession() {
-    const wrapper = document.querySelector('[data-impeccable-variants]');
+    const wrapper = document.querySelector('[data-freyja2-variants]');
     if (!wrapper) {
       if (restoreSessionWithoutWrapper('browser_resumed_without_wrapper')) return true;
       clearSession();
@@ -8396,18 +8396,18 @@ void main() {
       return false;
     }
 
-    const sessionId = wrapper.dataset.impeccableVariants;
+    const sessionId = wrapper.dataset.freyja2Variants;
 
     // Don't resume if this session was already accepted/discarded
     if (isSessionHandled(sessionId)) return false;
 
     // Svelte component sessions can't be resumed by counting DOM children: the
-    // wrapper holds a single mount target, not [data-impeccable-variant] nodes,
+    // wrapper holds a single mount target, not [data-freyja2-variant] nodes,
     // and a page reload unmounts every compiled variant. Counting children here
     // would strand the bar in CYCLING at 0/0. If there's no live in-memory mount
     // for this wrapper, it's an orphan (reload / failed mount): drop it and let
     // the live-server's SSE re-inject the manifest if the session is still live.
-    if (isFrameworkComponentPreviewMode(wrapper.dataset.impeccablePreview)
+    if (isFrameworkComponentPreviewMode(wrapper.dataset.freyja2Preview)
         && svelteComponentSession?.sessionId !== sessionId) {
       wrapper.remove();
       if (restoreSessionWithoutWrapper('browser_resumed_svelte_orphan_wrapper')) return true;
@@ -8416,12 +8416,12 @@ void main() {
       return false;
     }
 
-    if (isFrameworkComponentPreviewMode(wrapper.dataset.impeccablePreview)) {
+    if (isFrameworkComponentPreviewMode(wrapper.dataset.freyja2Preview)) {
       if (!svelteComponentSession?.mountedVariant) {
         return true;
       }
       currentSessionId = sessionId;
-      expectedVariants = Number(wrapper.dataset.impeccableVariantCount)
+      expectedVariants = Number(wrapper.dataset.freyja2VariantCount)
         || Number(svelteComponentSession.manifest?.count)
         || expectedVariants
         || 1;
@@ -8445,8 +8445,8 @@ void main() {
     }
 
     currentSessionId = sessionId;
-    expectedVariants = parseInt(wrapper.dataset.impeccableVariantCount || '0');
-    const variants = wrapper.querySelectorAll('[data-impeccable-variant]:not([data-impeccable-variant="original"])');
+    expectedVariants = parseInt(wrapper.dataset.freyja2VariantCount || '0');
+    const variants = wrapper.querySelectorAll('[data-freyja2-variant]:not([data-freyja2-variant="original"])');
     arrivedVariants = variants.length;
 
     // Restore state from localStorage if available
@@ -8467,7 +8467,7 @@ void main() {
     const resumedState = arrivedVariants > 0 ? 'CYCLING' : 'GENERATING';
 
     // Find the visible variant's content element for highlight positioning.
-    const isInsert = wrapper.dataset.impeccableMode === 'insert';
+    const isInsert = wrapper.dataset.freyja2Mode === 'insert';
     const visEl = visibleVariant > 0 ? pickVariantContent(wrapper, visibleVariant) : null;
     const origEl = pickVariantContent(wrapper, 'original');
     setLiveState(resumedState);
@@ -8519,7 +8519,7 @@ void main() {
               showShaderOverlay(shaderTarget, blob, rect, paper);
             }
           } catch (err) {
-            console.warn('[impeccable] shader resume failed:', err);
+            console.warn('[freyja2] shader resume failed:', err);
           }
         })();
       }
@@ -8548,8 +8548,8 @@ void main() {
   let activeDetectScanId = null;
   let pendingDetectScanId = null;
   const DETECT_EMPTY_MESSAGE = 'No detector issues found.';
-  const PICK_PREFS_KEY = 'impeccable-live-pick';
-  const INTERACTION_PREFS_KEY = 'impeccable-live-interaction';
+  const PICK_PREFS_KEY = 'freyja2-live-pick';
+  const INTERACTION_PREFS_KEY = 'freyja2-live-interaction';
   const PLACEHOLDER_DEFAULT_HEIGHT = 80;
   const PLACEHOLDER_MIN_HEIGHT = 48;
   const PLACEHOLDER_MIN_WIDTH = 120;
@@ -8661,10 +8661,10 @@ void main() {
   // dark pages. This keeps the bar from fighting with the host design.
   function detectPageTheme() {
     try {
-      // Dev override: set localStorage 'impeccable-dev-theme' to 'light' or
+      // Dev override: set localStorage 'freyja2-dev-theme' to 'light' or
       // 'dark' to preview the opposite palette without actually changing the
       // page bg. Used for screenshots and theme QA.
-      const override = localStorage.getItem('impeccable-dev-theme');
+      const override = localStorage.getItem('freyja2-dev-theme');
       if (override === 'light' || override === 'dark') return override;
 
       // Walk body → html, taking the first opaque background. The browser's
@@ -8882,8 +8882,8 @@ void main() {
   }
 
   function attachSteerFocusGuard() {
-    if (window.__IMPECCABLE_STEER_FOCUS_GUARD__) return;
-    window.__IMPECCABLE_STEER_FOCUS_GUARD__ = true;
+    if (window.__FREYJA2_STEER_FOCUS_GUARD__) return;
+    window.__FREYJA2_STEER_FOCUS_GUARD__ = true;
 
     document.addEventListener('mousedown', (e) => {
       notePagePointerDown(e);
@@ -8926,12 +8926,12 @@ void main() {
   }
 
   function steerFocusDebugEnabled() {
-    try { return localStorage.getItem('impeccable-steer-debug') === '1'; } catch { return false; }
+    try { return localStorage.getItem('freyja2-steer-debug') === '1'; } catch { return false; }
   }
 
   function steerFocusLog(reason, extra) {
     if (!steerFocusDebugEnabled()) return;
-    console.log('[impeccable.steer]', reason, {
+    console.log('[freyja2.steer]', reason, {
       state,
       pickActive,
       pageChatReady: !!pageChatInput,
@@ -8944,8 +8944,8 @@ void main() {
 
   function attachSteerFocusDebug() {
     if (!steerFocusDebugEnabled()) return;
-    if (window.__IMPECCABLE_STEER_FOCUS_DEBUG__) return;
-    window.__IMPECCABLE_STEER_FOCUS_DEBUG__ = true;
+    if (window.__FREYJA2_STEER_FOCUS_DEBUG__) return;
+    window.__FREYJA2_STEER_FOCUS_DEBUG__ = true;
     document.addEventListener('focusin', (e) => {
       if (!pageChatInput) return;
       steerFocusLog('focusin', { target: steerFocusTargetLabel(e.target) });
@@ -9062,7 +9062,7 @@ void main() {
         width: '4px', height: '4px', borderRadius: '50%',
         background: P.patinaPale,
         boxShadow: '0 0 6px ' + P.patinaSoft,
-        animation: 'impeccable-steer-dot 1.05s ease-in-out ' + (i * 0.14) + 's infinite',
+        animation: 'freyja2-steer-dot 1.05s ease-in-out ' + (i * 0.14) + 's infinite',
       }));
     }
     return wrap;
@@ -9363,7 +9363,7 @@ void main() {
 
     rec.onerror = (event) => {
       const code = event.error || 'unknown';
-      console.warn('[impeccable.voice] recognition error:', code);
+      console.warn('[freyja2.voice] recognition error:', code);
       const message = steerVoiceErrorMessage(code);
       stopVoice({ suppressSubmit: true, message: message || undefined });
     };
@@ -9377,7 +9377,7 @@ void main() {
     try {
       rec.start();
     } catch (err) {
-      console.warn('[impeccable.voice] start failed:', err);
+      console.warn('[freyja2.voice] start failed:', err);
       stopVoice({
         suppressSubmit: true,
         message: err?.message?.includes('already started')
@@ -9573,13 +9573,13 @@ void main() {
       const s = document.createElement('style');
       s.id = PREFIX + '-page-chat-style';
       s.textContent =
-        '@keyframes impeccable-steer-dot { 0%, 70%, 100% { opacity: 0.28; transform: scale(0.82); } 35% { opacity: 1; transform: scale(1); } }' +
-        '@keyframes impeccable-steer-processing { 0%, 100% { border-color: oklch(70% 0.12 188 / 0.28); box-shadow: 0 0 0 0 oklch(70% 0.12 188 / 0); } 50% { border-color: oklch(82% 0.07 188 / 0.55); box-shadow: 0 0 14px oklch(70% 0.12 188 / 0.18); } }' +
-        '@keyframes impeccable-voice-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }' +
-        '#' + PREFIX + '-page-chat[data-processing="true"] { animation: impeccable-steer-processing 1.6s ease-in-out infinite; }' +
+        '@keyframes freyja2-steer-dot { 0%, 70%, 100% { opacity: 0.28; transform: scale(0.82); } 35% { opacity: 1; transform: scale(1); } }' +
+        '@keyframes freyja2-steer-processing { 0%, 100% { border-color: oklch(70% 0.12 188 / 0.28); box-shadow: 0 0 0 0 oklch(70% 0.12 188 / 0); } 50% { border-color: oklch(82% 0.07 188 / 0.55); box-shadow: 0 0 14px oklch(70% 0.12 188 / 0.18); } }' +
+        '@keyframes freyja2-voice-pulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }' +
+        '#' + PREFIX + '-page-chat[data-processing="true"] { animation: freyja2-steer-processing 1.6s ease-in-out infinite; }' +
         '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-page-chat[data-processing="true"] { animation: none; border-color: oklch(70% 0.12 188 / 0.45); } #' + PREFIX + '-page-chat[data-processing="true"] [aria-hidden="true"] span { animation: none; opacity: 0.85; } }' +
         '#' + PREFIX + '-page-chat[data-voice-listening="true"] { border-color: oklch(70% 0.12 188 / 0.45); }' +
-        '#' + PREFIX + '-page-chat-voice[data-listening="true"] svg { animation: impeccable-voice-pulse 1.1s ease-in-out infinite; }' +
+        '#' + PREFIX + '-page-chat-voice[data-listening="true"] svg { animation: freyja2-voice-pulse 1.1s ease-in-out infinite; }' +
         '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-page-chat-voice[data-listening="true"] svg { animation: none; opacity: 1; } }' +
         '#' + PREFIX + '-page-chat-input::placeholder { color: oklch(72% 0 0); opacity: 1; }' +
         '#' + PREFIX + '-page-chat-input { caret-color: oklch(84% 0.19 80.46); }' +
@@ -9659,7 +9659,7 @@ void main() {
     steerFocusLog('page-chat-mounted', {});
   }
 
-  // Impeccable mark - same paths as site/components/Header.astro + favicon.svg.
+  // Freyja 2 mark - same paths as site/components/Header.astro + favicon.svg.
   function brandMarkSvg(color = C.brand, size = 18) {
     return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="${color}" aria-hidden="true">
       <path d="M5 2.5 L13.5 2.5 L5.5 21.5 L5 21.5 Q2.5 21.5 2.5 19 L2.5 5 Q2.5 2.5 5 2.5 Z"/>
@@ -9695,8 +9695,8 @@ void main() {
     // The tooltip is mouse-only, so carry the same distinction in the label or
     // screen-reader users are left with the vaguer of the two readings.
     globalBarBrandEl.setAttribute('aria-label', agentStatusMessage
-      ? 'Impeccable live mode - ' + (agentHasWorkInFlight() ? 'agent is working' : 'agent not polling')
-      : 'Impeccable live mode');
+      ? 'Freyja 2 live mode - ' + (agentHasWorkInFlight() ? 'agent is working' : 'agent not polling')
+      : 'Freyja 2 live mode');
     globalBarBrandEl.removeAttribute('title');
     globalBarBrandEl.style.cursor = agentStatusMessage ? 'help' : 'default';
     const mark = globalBarBrandEl.querySelector('[data-brand-mark]');
@@ -9802,8 +9802,8 @@ void main() {
         '  outline: none;' +
         '  box-shadow: 0 0 0 2px ' + P.accentSoft + ', 0 0 0 3px ' + P.accent + ';' +
         '}' +
-        '@keyframes impeccable-agent-dot { 0%, 100% { opacity: 0.45; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1); } }' +
-        '#' + PREFIX + '-global-bar-brand[data-agent-connected="false"] [data-agent-dot] { animation: impeccable-agent-dot 1.4s ease-in-out infinite; }' +
+        '@keyframes freyja2-agent-dot { 0%, 100% { opacity: 0.45; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1); } }' +
+        '#' + PREFIX + '-global-bar-brand[data-agent-connected="false"] [data-agent-dot] { animation: freyja2-agent-dot 1.4s ease-in-out infinite; }' +
         '@media (prefers-reduced-motion: reduce) { #' + PREFIX + '-global-bar-brand[data-agent-connected="false"] [data-agent-dot] { animation: none; opacity: 0.9; } }';
       uiAppendStyle(s);
     }
@@ -9829,7 +9829,7 @@ void main() {
     globalBarEl.id = PREFIX + '-global-bar';
     globalBarEl.dataset.theme = theme;
 
-    // Brand mark - kinpaku Impeccable icon (site header / favicon paths).
+    // Brand mark - kinpaku Freyja 2 icon (site header / favicon paths).
     const brand = el('span', {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
       alignSelf: 'stretch', position: 'relative',
@@ -9841,7 +9841,7 @@ void main() {
     brand.id = PREFIX + '-global-bar-brand';
     brand.dataset.agentConnected = 'false';
     brand.setAttribute('role', 'img');
-    brand.setAttribute('aria-label', 'Impeccable live mode - agent not polling');
+    brand.setAttribute('aria-label', 'Freyja 2 live mode - agent not polling');
 
     const brandMark = el('span', {
       display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
@@ -10018,7 +10018,7 @@ void main() {
       borderTopColor: 'transparent',
       color: C.ink,
       opacity: '0.9',
-      animation: 'impeccable-spin 0.6s linear infinite',
+      animation: 'freyja2-spin 0.6s linear infinite',
       flex: '0 0 auto',
       boxSizing: 'border-box',
     });
@@ -10267,13 +10267,13 @@ void main() {
     }
 
     // When pick/insert is active, make detect overlays click-through
-    document.querySelectorAll('.impeccable-overlay').forEach(o => {
+    document.querySelectorAll('.freyja2-overlay').forEach(o => {
       o.style.pointerEvents = (pickActive || insertActive) ? 'none' : '';
     });
     syncPageInteractionCursor();
   }
 
-  let detectReady = false; // true once detect script posts 'impeccable-ready'
+  let detectReady = false; // true once detect script posts 'freyja2-ready'
   let detectPendingScan = false; // scan requested before script was ready
 
   function requestDetectScan() {
@@ -10281,7 +10281,7 @@ void main() {
     activeDetectScanId = scanId;
     pendingDetectScanId = scanId;
     window.postMessage({
-      source: 'impeccable-command',
+      source: 'freyja2-command',
       action: 'scan',
       config: { scanId },
     }, '*');
@@ -10302,7 +10302,7 @@ void main() {
         detectPendingScan = true;
       }
     } else {
-      window.postMessage({ source: 'impeccable-command', action: 'remove' }, '*');
+      window.postMessage({ source: 'freyja2-command', action: 'remove' }, '*');
       activeDetectScanId = null;
       pendingDetectScanId = null;
       detectCount = 0;
@@ -10364,14 +10364,14 @@ void main() {
     detectScriptLoaded = true;
     const s = document.createElement('script');
     s.src = 'http://localhost:' + PORT + '/detect.js';
-    s.dataset.impeccableExtension = 'true';
+    s.dataset.freyja2Extension = 'true';
     document.head.appendChild(s);
   }
 
   function onDetectMessage(e) {
     if (!e.data || typeof e.data.source !== 'string') return;
     // Detection script is loaded and ready
-    if (e.data.source === 'impeccable-ready') {
+    if (e.data.source === 'freyja2-ready') {
       detectReady = true;
       if (detectPendingScan && detectActive) {
         detectPendingScan = false;
@@ -10379,7 +10379,7 @@ void main() {
       }
     }
     // Scan results arrived
-    if (e.data.source === 'impeccable-results') {
+    if (e.data.source === 'freyja2-results') {
       if (!detectActive) return;
       if (activeDetectScanId && e.data.scanId !== activeDetectScanId) return;
       detectCount = e.data.count || 0;
@@ -10446,19 +10446,19 @@ void main() {
     document.removeEventListener('keydown', handleKeyDown, true);
     window.removeEventListener('message', onDetectMessage);
     // Remove detection overlays
-    window.postMessage({ source: 'impeccable-command', action: 'remove' }, '*');
+    window.postMessage({ source: 'freyja2-command', action: 'remove' }, '*');
     setLiveState('IDLE');
     document.getElementById(PICK_CURSOR_STYLE_ID)?.remove();
     removeVariantStateStylesheet();
-    window.__IMPECCABLE_LIVE_INIT__ = false;
-    console.log('[impeccable] Live mode exited.');
+    window.__FREYJA2_LIVE_INIT__ = false;
+    console.log('[freyja2] Live mode exited.');
   }
 
   //
-  // Design System Panel - visualizes the project's .impeccable/design.json sidecar
+  // Design System Panel - visualizes the project's design.json sidecar
   //
 
-  const DESIGN_PREFS_KEY = 'impeccable-live-design-panel';
+  const DESIGN_PREFS_KEY = 'freyja2-live-design-panel';
   const DESIGN_PANEL_WIDTH = 440;
 
   let designHost = null;
@@ -10467,7 +10467,7 @@ void main() {
     open: false,
     tab: 'visual',          // 'visual' | 'raw'
     parsed: null,           // parseDesignMd output (frontmatter + body sections)
-    sidecar: null,          // .impeccable/design.json v2 payload (extensions + components + narrative)
+    sidecar: null,          // design.json sidecar v2 payload (extensions + components + narrative)
     hasMd: false,
     hasSidecar: false,
     present: null,          // true/false once fetch resolves
@@ -10538,8 +10538,8 @@ void main() {
     }
   }
 
-  // Neutral panel palette - deliberately NOT Impeccable-branded. The panel is
-  // a viewer of the project's design system, not an Impeccable surface.
+  // Neutral panel palette - deliberately NOT Freyja 2-branded. The panel is
+  // a viewer of the project's design system, not an Freyja 2 surface.
   const DP = {
     canvas:   'oklch(94% 0 0)',            // panel background
     tile:     'oklch(98.5% 0 0)',          // card-on-canvas
@@ -10938,7 +10938,7 @@ void main() {
     if (designState.present === false) {
       const empty = document.createElement('div');
       empty.className = 'empty';
-      empty.innerHTML = `<strong>No DESIGN.md yet</strong>Create one by running <code>${IMPECCABLE_COMMAND} document</code> in your terminal, then re-open this panel.`;
+      empty.innerHTML = `<strong>No DESIGN.md yet</strong>Create one by running <code>${FREYJA2_COMMAND} document</code> in your terminal, then re-open this panel.`;
       body.appendChild(empty);
       return;
     }
@@ -10968,7 +10968,7 @@ void main() {
     box.className = 'stale';
     box.innerHTML = `
       <span class="stale-dot"></span>
-      <span class="stale-text"><strong>DESIGN.md is newer than .impeccable/design.json.</strong> Run <code>${IMPECCABLE_COMMAND} document</code> to refresh the sidecar.</span>
+      <span class="stale-text"><strong>DESIGN.md is newer than the design.json sidecar.</strong> Run <code>${FREYJA2_COMMAND} document</code> to refresh the sidecar.</span>
     `;
     return box;
   }
@@ -10976,7 +10976,7 @@ void main() {
   function renderParsedMdCta() {
     const box = document.createElement('div');
     box.className = 'parsed-md-cta';
-    box.innerHTML = `<strong>Basic view</strong>This panel reads the tokens in your <code>DESIGN.md</code> frontmatter. Running <code>${IMPECCABLE_COMMAND} document</code> also generates a <code>.impeccable/design.json</code> sidecar with your project's actual component snippets (button, input, nav) and tonal ramps, rendered live below the tokens.`;
+    box.innerHTML = `<strong>Basic view</strong>This panel reads the tokens in your <code>DESIGN.md</code> frontmatter. Running <code>${FREYJA2_COMMAND} document</code> also generates a <code>design.json</code> sidecar with your project's actual component snippets (button, input, nav) and tonal ramps, rendered live below the tokens.`;
     return box;
   }
 
@@ -11436,7 +11436,7 @@ void main() {
 
   function cssSafe(v) {
     // Strip anything outside valid CSS value chars to prevent injection via
-    // .impeccable/design.json values rendered into inline style strings.
+    // design.json sidecar values rendered into inline style strings.
     return String(v).replace(/[<>"'`\n]/g, '');
   }
 
@@ -11609,21 +11609,21 @@ void main() {
 
     // Check for an active session to resume (variant wrapper already in DOM after HMR)
     if (!resumeSession()) {
-      console.log('[impeccable] Live variant mode ready. Hover over elements to pick one.');
+      console.log('[freyja2] Live variant mode ready. Hover over elements to pick one.');
       // SvelteKit (and any framework that hydrates after HTML parse) may add
       // the variant wrapper AFTER init runs. Watch for it and retry resume
       // once it appears. Disconnect on first hit.
       const scout = new MutationObserver(() => {
-        const wrapper = document.querySelector('[data-impeccable-variants]');
+        const wrapper = document.querySelector('[data-freyja2-variants]');
         if (!wrapper) return;
         scout.disconnect();
         if (resumeSession()) {
-          console.log('[impeccable] Resumed deferred session ' + currentSessionId + ' (post-hydration).');
+          console.log('[freyja2] Resumed deferred session ' + currentSessionId + ' (post-hydration).');
         }
       });
       scout.observe(document.body, { childList: true, subtree: true });
     } else {
-      console.log('[impeccable] Resumed active variant session ' + currentSessionId + ' (' + arrivedVariants + '/' + expectedVariants + ' variants).');
+      console.log('[freyja2] Resumed active variant session ' + currentSessionId + ' (' + arrivedVariants + '/' + expectedVariants + ' variants).');
     }
 
     if (state === 'IDLE' && (pickActive || insertActive)) setLiveState('PICKING');

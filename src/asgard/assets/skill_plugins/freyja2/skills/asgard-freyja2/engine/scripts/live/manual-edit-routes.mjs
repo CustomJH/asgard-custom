@@ -149,12 +149,12 @@ export function createManualEditRoutes({
             }
           }
           const envValue = currentEnv();
-          const requestedMode = (envValue.IMPECCABLE_LIVE_COPY_AGENT || 'auto').trim().toLowerCase();
+          const requestedMode = (envValue.FREYJA2_LIVE_COPY_AGENT || 'auto').trim().toLowerCase();
           const useChatRoute = requestedMode === 'chat'
             || (requestedMode === 'auto' && chatAgentLikelyActive());
           if (useChatRoute) {
             routedProvider = 'chat';
-            const timeoutMs = Number(envValue.IMPECCABLE_LIVE_COPY_AGENT_TIMEOUT_MS || 120000);
+            const timeoutMs = Number(envValue.FREYJA2_LIVE_COPY_AGENT_TIMEOUT_MS || 120000);
             result = await commitManualEdits({
               cwd: projectCwd(),
               pageUrl,
@@ -168,7 +168,7 @@ export function createManualEditRoutes({
               batch: commitBatch,
             });
           } else {
-            const timeoutMs = Number(envValue.IMPECCABLE_LIVE_COPY_AGENT_TIMEOUT_MS || 120000);
+            const timeoutMs = Number(envValue.FREYJA2_LIVE_COPY_AGENT_TIMEOUT_MS || 120000);
             const provider = ['codex', 'claude', 'mock'].includes(requestedMode) ? requestedMode : undefined;
             result = await commitManualEdits({
               cwd: projectCwd(),

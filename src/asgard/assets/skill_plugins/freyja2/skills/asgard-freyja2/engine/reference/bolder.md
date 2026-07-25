@@ -28,4 +28,4 @@ Strip the copy out of your planned section and study the bare structure. Does th
 - The conventions the section carried, including anything that drives an action, still work the same way.
 - The section is unmistakably the same brand, only more sure of itself.
 
-When the target holds its own without pulling the page apart, hand off to `/impeccable polish` for the final pass.
+When the target holds its own without pulling the page apart, hand off to `/freyja2 polish` for the final pass.

@@ -47,16 +47,16 @@
  * the staging rolls from the full approved pool.
  *
  * Challenger data resolves in order: a local catalog directory (the private
- * service repo, evals, and tests set IMPECCABLE_CATALOG_DIR), then the roll
- * API at impeccable.style, then a degraded assignment-only seed when both are
+ * service repo, evals, and tests set FREYJA2_CATALOG_DIR), then the roll
+ * API at freyja2.style, then a degraded assignment-only seed when both are
  * unavailable. --chosen sends the anonymous choice ping for API-dealt rolls;
- * DO_NOT_TRACK or IMPECCABLE_NO_TELEMETRY disables it.
+ * DO_NOT_TRACK or FREYJA2_NO_TELEMETRY disables it.
  *
  * Env vars:
- *   IMPECCABLE_CONCEPT_SEED — same as --from; for reproducible eval runs.
- *   IMPECCABLE_CATALOG_DIR  — directory holding the four catalog JSON files.
- *   IMPECCABLE_API_URL      — roll API base (default https://impeccable.style/api).
- *   IMPECCABLE_NO_TELEMETRY — disables the choice ping (DO_NOT_TRACK also honored).
+ *   FREYJA2_CONCEPT_SEED — same as --from; for reproducible eval runs.
+ *   FREYJA2_CATALOG_DIR  — directory holding the four catalog JSON files.
+ *   FREYJA2_API_URL      — roll API base (default https://freyja2.style/api).
+ *   FREYJA2_NO_TELEMETRY — disables the choice ping (DO_NOT_TRACK also honored).
  */
 
 import crypto from 'node:crypto';
@@ -74,11 +74,11 @@ import { readCompositionCatalog } from './lib/composition-catalog.mjs';
 const here = dirname(fileURLToPath(import.meta.url));
 
 // Data resolution order: a local catalog (the private service repo, evals, and
-// tests point IMPECCABLE_CATALOG_DIR at one), then the roll API, then a
+// tests point FREYJA2_CATALOG_DIR at one), then the roll API, then a
 // degraded assignment-only seed. The full catalog does not ship with the skill.
-const CATALOG_DIR = process.env.IMPECCABLE_CATALOG_DIR || here;
-const API_BASE = (process.env.IMPECCABLE_API_URL || 'https://impeccable.style/api').replace(/\/$/, '');
-const API_TIMEOUT_MS = Number(process.env.IMPECCABLE_API_TIMEOUT || 4000);
+const CATALOG_DIR = process.env.FREYJA2_CATALOG_DIR || here;
+const API_BASE = (process.env.FREYJA2_API_URL || 'https://freyja2.style/api').replace(/\/$/, '');
+const API_TIMEOUT_MS = Number(process.env.FREYJA2_API_TIMEOUT || 4000);
 // All API calls in one seed run share a single deadline so an unreachable
 // network degrades after one timeout total, never one timeout per call.
 let apiDeadline = null;
@@ -118,7 +118,7 @@ function loadLocal(catalogDir = CATALOG_DIR) {
 function requireLocalConcepts() {
   const local = loadLocal();
   if (!local) {
-    throw new Error('concept-seed: no local catalog (set IMPECCABLE_CATALOG_DIR or pass sourceConcepts)');
+    throw new Error('concept-seed: no local catalog (set FREYJA2_CATALOG_DIR or pass sourceConcepts)');
   }
   return local;
 }
@@ -148,7 +148,7 @@ async function fetchRoll({ scope, key, mode, reroll }) {
 }
 
 function telemetryDisabled() {
-  return Boolean(process.env.IMPECCABLE_NO_TELEMETRY || process.env.DO_NOT_TRACK);
+  return Boolean(process.env.FREYJA2_NO_TELEMETRY || process.env.DO_NOT_TRACK);
 }
 
 // Anonymous choice ping: records only that a dealt world was selected.
@@ -172,7 +172,7 @@ export async function pingChosen({ chosenId, key, scope, mode }) {
   }
 }
 
-const CARD_BASE = process.env.IMPECCABLE_CARD_BASE || 'https://impeccable.style/worlds/cards';
+const CARD_BASE = process.env.FREYJA2_CARD_BASE || 'https://freyja2.style/worlds/cards';
 
 export function renderChallenger(concept, index) {
   const system = concept.system.map(rule => `       - ${rule}`).join('\n');
@@ -331,7 +331,7 @@ const SEED_MODES = new Set(['persuade', 'operate', 'read', 'experience']);
 
 export function renderConceptSeed({
   scope = 'surface',
-  key = process.env.IMPECCABLE_CONCEPT_SEED || crypto.randomBytes(4).toString('hex'),
+  key = process.env.FREYJA2_CONCEPT_SEED || crypto.randomBytes(4).toString('hex'),
   reroll = 0,
   mode = null,
   candidateCount = 7,
@@ -493,7 +493,7 @@ habitual composition, but keep only structures that strengthen this product.\n`
     ? `TELEMETRY: if the resolved direction uses one of these challengers, rerun
   this script once with --chosen <challenger-id> --from ${key} --scope ${scope}${mode ? ` --mode ${mode}` : ''}
   after resolution. The ping is anonymous (chosen id only) and is skipped
-  automatically when DO_NOT_TRACK or IMPECCABLE_NO_TELEMETRY is set.\n`
+  automatically when DO_NOT_TRACK or FREYJA2_NO_TELEMETRY is set.\n`
     : '';
   return `${scope.toUpperCase()} CONCEPT SEED (key: ${key}; mode: ${mode ?? 'unscoped'}; source: ${data.source}; approved pool: ${data.poolRevision}; ${data.approvedCount}/${data.catalogCount} human-approved; rerun with --scope ${scope}${mode ? ` --mode ${mode}` : ''} --from ${key}${reroll > 0 ? ` --reroll ${reroll}` : ''} --candidate-count ${candidateCount} to reproduce this roll against this catalog revision)
 ${rerollBlock}ASSIGNED INDEX: ${buildIndex}
@@ -549,7 +549,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
         scope: scopeIdx !== -1 ? args[scopeIdx + 1] : 'surface',
         key: fromIdx !== -1
           ? args[fromIdx + 1]
-          : (process.env.IMPECCABLE_CONCEPT_SEED || crypto.randomBytes(4).toString('hex')),
+          : (process.env.FREYJA2_CONCEPT_SEED || crypto.randomBytes(4).toString('hex')),
         reroll: rerollIdx !== -1 ? Number(args[rerollIdx + 1]) : 0,
         mode: modeIdx !== -1 ? args[modeIdx + 1] : null,
         candidateCount: candidateCountIdx !== -1 ? Number(args[candidateCountIdx + 1]) : 7,

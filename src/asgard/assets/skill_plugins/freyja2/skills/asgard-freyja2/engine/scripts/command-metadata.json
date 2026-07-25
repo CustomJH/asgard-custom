@@ -1,10 +1,10 @@
 {
   "craft": {
-    "description": "Deprecated compatibility alias for an ordinary Impeccable new-work request. It adds no behavior; natural build and redesign requests use the same flow.",
+    "description": "Deprecated compatibility alias for an ordinary Freyja 2 new-work request. It adds no behavior; natural build and redesign requests use the same flow.",
     "argumentHint": "[feature description]"
   },
   "init": {
-    "description": "Sets up a project for impeccable. Runs a multi-round discovery interview when context is missing and writes PRODUCT.md (strategic: users, brand, principles); offers DESIGN.md (visual: colors, typography, components) when code exists; pre-configures live mode; then recommends the best commands to run next. Every other command reads these files before doing work. Use once per project.",
+    "description": "Sets up a project for freyja2. Runs a multi-round discovery interview when context is missing and writes PRODUCT.md (strategic: users, brand, principles); offers DESIGN.md (visual: colors, typography, components) when code exists; pre-configures live mode; then recommends the best commands to run next. Every other command reads these files before doing work. Use once per project.",
     "argumentHint": ""
   },
   "document": {

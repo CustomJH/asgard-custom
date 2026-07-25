@@ -114,7 +114,7 @@ async function captureVisualContrastCandidate(page, candidate, viewport) {
     clip,
     captureBeyondViewport: true,
   });
-  const token = `impeccable-contrast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const token = `freyja2-contrast-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const applied = await page.evaluate(({ selector, token, backgroundClipText }) => {
     let el;
     try {
@@ -123,24 +123,24 @@ async function captureVisualContrastCandidate(page, candidate, viewport) {
       return false;
     }
     if (!el) return false;
-    let style = document.getElementById('impeccable-visual-contrast-hide-style');
+    let style = document.getElementById('freyja2-visual-contrast-hide-style');
     if (!style) {
       style = document.createElement('style');
-      style.id = 'impeccable-visual-contrast-hide-style';
+      style.id = 'freyja2-visual-contrast-hide-style';
       style.textContent = [
-        '[data-impeccable-visual-contrast-target] {',
+        '[data-freyja2-visual-contrast-target] {',
         '  color: transparent !important;',
         '  -webkit-text-fill-color: transparent !important;',
         '  text-shadow: none !important;',
         '}',
-        '[data-impeccable-visual-contrast-target][data-impeccable-bgclip-text="true"] {',
+        '[data-freyja2-visual-contrast-target][data-freyja2-bgclip-text="true"] {',
         '  background-image: none !important;',
         '}',
       ].join('\n');
       document.head.appendChild(style);
     }
-    el.setAttribute('data-impeccable-visual-contrast-target', token);
-    if (backgroundClipText) el.setAttribute('data-impeccable-bgclip-text', 'true');
+    el.setAttribute('data-freyja2-visual-contrast-target', token);
+    if (backgroundClipText) el.setAttribute('data-freyja2-bgclip-text', 'true');
     return true;
   }, {
     selector: candidate.selector,
@@ -161,8 +161,8 @@ async function captureVisualContrastCandidate(page, candidate, viewport) {
       try {
         const el = document.querySelector(selector);
         if (el) {
-          el.removeAttribute('data-impeccable-visual-contrast-target');
-          el.removeAttribute('data-impeccable-bgclip-text');
+          el.removeAttribute('data-freyja2-visual-contrast-target');
+          el.removeAttribute('data-freyja2-bgclip-text');
         }
       } catch {
         // Ignore invalid or stale selectors during cleanup.

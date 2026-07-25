@@ -40,27 +40,27 @@ export function computeInsertLine(startLine, endLine, position) {
 export function buildInsertWrapperLines({ id, count, indent, commentSyntax, isJsx }) {
   const styleContents = isJsx ? 'style={{ display: "contents" }}' : 'style="display: contents"';
   const attrs =
-    'data-impeccable-variants="' + id + '" ' +
-    'data-impeccable-mode="insert" ' +
-    'data-impeccable-variant-count="' + count + '" ' +
+    'data-freyja2-variants="' + id + '" ' +
+    'data-freyja2-mode="insert" ' +
+    'data-freyja2-variant-count="' + count + '" ' +
     styleContents;
 
   if (isJsx) {
     return [
       indent + '<div ' + attrs + '>',
-      indent + '  ' + commentSyntax.open + ' impeccable-variants-start ' + id + ' ' + commentSyntax.close,
+      indent + '  ' + commentSyntax.open + ' freyja2-variants-start ' + id + ' ' + commentSyntax.close,
       indent + '  ' + commentSyntax.open + ' Variants: insert below this line ' + commentSyntax.close,
-      indent + '  ' + commentSyntax.open + ' impeccable-variants-end ' + id + ' ' + commentSyntax.close,
+      indent + '  ' + commentSyntax.open + ' freyja2-variants-end ' + id + ' ' + commentSyntax.close,
       indent + '</div>',
     ];
   }
 
   return [
-    indent + commentSyntax.open + ' impeccable-variants-start ' + id + ' ' + commentSyntax.close,
+    indent + commentSyntax.open + ' freyja2-variants-start ' + id + ' ' + commentSyntax.close,
     indent + '<div ' + attrs + '>',
     indent + '  ' + commentSyntax.open + ' Variants: insert below this line ' + commentSyntax.close,
     indent + '</div>',
-    indent + commentSyntax.open + ' impeccable-variants-end ' + id + ' ' + commentSyntax.close,
+    indent + commentSyntax.open + ' freyja2-variants-end ' + id + ' ' + commentSyntax.close,
   ];
 }
 

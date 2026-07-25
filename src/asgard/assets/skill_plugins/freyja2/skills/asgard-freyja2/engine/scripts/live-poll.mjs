@@ -13,7 +13,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { completionAckForAcceptResult, completionTypeForAcceptResult } from './live/completion.mjs';
-import { readLiveServerInfo } from './lib/impeccable-paths.mjs';
+import { readLiveServerInfo } from './lib/vault-paths.mjs';
 
 // Absolute path to a sibling script in this skill's scripts dir, so runtime
 // error hints print a directly-runnable command instead of a placeholder.
@@ -281,7 +281,7 @@ export async function runPollStream(base, token, {
   resolveTypes,
   perRequestTimeoutMs,
 } = {}) {
-  process.stderr.write('[impeccable-poll] stream mode: one JSON object per line on stdout; use --reply while this process stays running\n');
+  process.stderr.write('[freyja2-poll] stream mode: one JSON object per line on stdout; use --reply while this process stays running\n');
 
   while (shouldContinue()) {
     const event = await fetchNextEvent(base, token, { types, resolveTypes, perRequestTimeoutMs });
@@ -329,7 +329,7 @@ export async function pollCli() {
   const args = process.argv.slice(2);
 
   if (args.includes('--help') || args.includes('-h')) {
-    console.log(`Usage: impeccable poll [options]
+    console.log(`Usage: freyja2 poll [options]
 
 Wait for a browser event from the live variant server, or reply to one.
 

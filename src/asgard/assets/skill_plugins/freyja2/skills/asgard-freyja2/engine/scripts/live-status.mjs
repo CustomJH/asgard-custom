@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /**
- * Print durable recovery status for Impeccable live sessions.
+ * Print durable recovery status for Freyja 2 live sessions.
  */
 
 import { createLiveSessionStore } from './live/session-store.mjs';
-import { readLiveServerInfo } from './lib/impeccable-paths.mjs';
+import { readLiveServerInfo } from './lib/vault-paths.mjs';
 import { manualApplyResumeHint } from './live-resume.mjs';
 
 function readServerInfo() {

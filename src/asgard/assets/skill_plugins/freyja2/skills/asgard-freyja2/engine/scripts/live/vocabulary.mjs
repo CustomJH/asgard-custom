@@ -7,7 +7,7 @@
  *   - skill/scripts/live/event-validation.mjs — re-exports VISUAL_ACTIONS.
  *   - skill/scripts/live-browser.js — the real picker. It is served raw and
  *     injected as an IIFE, so it cannot import this at runtime; live-server.mjs
- *     serializes LIVE_COMMANDS into window.__IMPECCABLE_VOCAB__ alongside the
+ *     serializes LIVE_COMMANDS into window.__FREYJA2_VOCAB__ alongside the
  *     token/port, and live-browser.js builds its ICONS + ACTIONS from that.
  *   - site/components/LiveDemoPalette.astro — the marketing demo palette (imported
  *     at build time).
@@ -18,7 +18,7 @@
 const ICON_ATTRS = 'width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="display:block"';
 
 export const LIVE_COMMANDS = [
-  { value: 'impeccable', label: 'Freeform',  icon: `<svg ${ICON_ATTRS}><path d="M4 20l4-1L18 9l-3-3L5 16z"/><path d="M14 7l3 3"/></svg>` },
+  { value: 'freyja2', label: 'Freeform',  icon: `<svg ${ICON_ATTRS}><path d="M4 20l4-1L18 9l-3-3L5 16z"/><path d="M14 7l3 3"/></svg>` },
   { value: 'bolder',     label: 'Bolder',    icon: `<svg ${ICON_ATTRS}><rect x="6" y="12" width="4" height="7" rx="0.5"/><rect x="14" y="5" width="4" height="14" rx="0.5"/></svg>` },
   { value: 'quieter',    label: 'Quieter',   icon: `<svg ${ICON_ATTRS}><rect x="6" y="5" width="4" height="14" rx="0.5"/><rect x="14" y="12" width="4" height="7" rx="0.5"/></svg>` },
   { value: 'distill',    label: 'Distill',   icon: `<svg ${ICON_ATTRS}><path d="M4 5h16l-6 8v7l-4-2v-5z"/></svg>` },

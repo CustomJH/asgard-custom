@@ -11,8 +11,11 @@ const FALLBACK_DIRS = ['.agents/context', 'docs'];
 // Files/dirs whose presence marks a directory as a project root. Mirrors the
 // walk-up semantics of skill/scripts/context.mjs (`resolveProject`), which the
 // CLI can't import (separate tree). `.git` and `package.json` are the common
-// boundaries; `.impeccable` is our own project marker.
-const PROJECT_ROOT_MARKERS = ['.git', 'package.json', '.impeccable'];
+// boundaries; the artifact vault is our own project marker. Mirrors
+// skill/scripts/lib/vault.mjs; keep both in step.
+const VAULT_REL = '.asgard/.vanadis/engine2';
+const LEGACY_VAULT_REL = '.impeccable';
+const PROJECT_ROOT_MARKERS = ['.git', 'package.json', VAULT_REL, LEGACY_VAULT_REL];
 const COLOR_CHANNEL_TOLERANCE = 6;
 const RADIUS_TOLERANCE_PX = 0.5;
 const FONT_SIZE_TOLERANCE_PX = 0.5;
@@ -52,7 +55,8 @@ function resolveDesignMdPath(cwd = process.cwd()) {
 
 function resolveDesignSidecarPath(cwd = process.cwd(), contextDir = cwd) {
   const candidates = [
-    path.join(cwd, '.impeccable', 'design.json'),
+    path.join(cwd, VAULT_REL, 'design.json'),
+    path.join(cwd, LEGACY_VAULT_REL, 'design.json'),
     path.join(cwd, 'DESIGN.json'),
     path.join(contextDir, 'DESIGN.json'),
   ];
@@ -492,7 +496,7 @@ function designSystemStartDir(targetPath, cwd = process.cwd()) {
 //
 //   - A directory carrying a DESIGN.md (directly or in a fallback dir) IS the
 //     design root — that's where the rules live.
-//   - A directory carrying a project marker (.git / package.json / .impeccable)
+//   - A directory carrying a project marker (.git / package.json / the vault)
 //     but no DESIGN.md is a project BOUNDARY: the walk stops with no design
 //     system, so a sibling project never inherits a parent's or cwd's rules.
 //   - Reaching the home directory / filesystem root with neither means no

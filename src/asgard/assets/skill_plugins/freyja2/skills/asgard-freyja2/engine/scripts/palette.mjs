@@ -22,7 +22,7 @@
  *   node scripts/palette.mjs --from <key>     # hash <key> to a seed (deterministic)
  *
  * Env vars:
- *   IMPECCABLE_PALETTE_SEED — same as --from; useful for the eval harness
+ *   FREYJA2_PALETTE_SEED — same as --from; useful for the eval harness
  *     to make runs reproducible.
  */
 
@@ -466,7 +466,7 @@ function pickSeed(seeds, { id, from }) {
     if (!found) { console.error(`no seed with id "${id}"`); process.exit(2); }
     return found;
   }
-  const envFrom = process.env.IMPECCABLE_PALETTE_SEED;
+  const envFrom = process.env.FREYJA2_PALETTE_SEED;
   const key = from || envFrom;
   const unit = key ? hashUnit(key) : Math.random();
   return weightedPick(seeds, unit);
