@@ -80,7 +80,7 @@ class FreyjaThreeDContract(unittest.TestCase):
         routing = plugin["routing"]["asgard-freyja-3d"]
         self.assertEqual(routing["defaults"], ["freyja"])
         self.assertEqual(routing["agents"], ["freyja"])
-        for trigger in ("3d", "cad", "three.js", "webgpu", "stl"):
+        for trigger in ("3d", "cad", "three.js", "webgpu", "stl", "브리싱가멘"):
             self.assertIn(trigger, routing["triggers"])
 
     def test_skill_is_reachable_only_through_freyja(self):
@@ -90,6 +90,8 @@ class FreyjaThreeDContract(unittest.TestCase):
                 "asgard-freyja-3d", {name for name, _ in skill_registry.client_skill_bodies("worker", root)}
             )
             resolved = {name for name, _ in skill_registry.resolve_skills(root, "STL 3D 모델 만들어줘", "freyja")}
+            self.assertIn("asgard-freyja-3d", resolved)
+            resolved = {name for name, _ in skill_registry.resolve_skills(root, "브리싱가멘으로 해줘", "freyja")}
             self.assertIn("asgard-freyja-3d", resolved)
 
     def test_delivery_gates_and_vault_are_declared(self):
@@ -116,6 +118,8 @@ class FreyjaThreeDContract(unittest.TestCase):
             "budgets",
             "escalation",
             "research",
+            "specimens",
+            "electrical-enclosures",
         ):
             self.assertIn(f"{name}.md", body, f"SKILL.md 가 {name}.md 로 라우팅하지 않는다")
             self.assertTrue((reference / f"{name}.md").is_file(), f"{name}.md 문서가 없다")
@@ -185,6 +189,66 @@ class FreyjaThreeDContract(unittest.TestCase):
             elif preset["metallic"] <= 0.5:
                 self.assertGreaterEqual(luminance, dielectric_floor, f"{name}: 알베도가 30 sRGB 아래")
                 self.assertLessEqual(luminance, dielectric_ceiling, f"{name}: 알베도가 240 sRGB 위")
+
+    def test_reference_specimen_has_source_provenance_and_real_outputs(self):
+        specimen = _SKILL / "assets" / "inspection-prop"
+        for relative in (
+            "inspection-prop.py",
+            "ASSETS.md",
+            "build/inspection-prop.step",
+            "build/inspection-prop.stl",
+            "build/inspection-prop.glb",
+            "evidence/inspection-prop-sheet.png",
+            "build/diagnostics.json",
+            "evidence/mesh-audit.json",
+            "evidence/scene-audit.json",
+            "evidence/gltf-validator.json",
+        ):
+            path = specimen / relative
+            self.assertTrue(path.is_file(), f"기준 자산 누락: {relative}")
+            self.assertGreater(path.stat().st_size, 0, f"빈 기준 자산: {relative}")
+        diagnostics = json.loads((specimen / "build" / "diagnostics.json").read_text(encoding="utf-8"))
+        self.assertEqual(diagnostics["verdict"], "pass")
+        self.assertEqual(diagnostics["parts"][0]["bbox"]["size"], [60.0, 36.0, 52.0])
+        validator = json.loads((specimen / "evidence" / "gltf-validator.json").read_text(encoding="utf-8"))
+        self.assertEqual(validator["errors"], 0)
+        self.assertTrue((specimen / "evidence" / "inspection-prop-sheet.png").read_bytes().startswith(b"\x89PNG"))
+
+    def test_field_telemetry_specimen_has_two_verified_parts(self):
+        specimen = _SKILL / "assets" / "field-telemetry-kit"
+        for relative in (
+            "field-telemetry-kit.py",
+            "ASSETS.md",
+            "build/field-telemetry-kit.step",
+            "build/field-telemetry-kit.stl",
+            "build/field-telemetry-kit.glb",
+            "build/field-telemetry-kit-preview.glb",
+            "evidence/field-telemetry-kit-sheet.png",
+            "build/diagnostics.json",
+            "evidence/mesh-audit-meter.json",
+            "evidence/mesh-audit-gateway.json",
+            "evidence/mesh-polish.json",
+            "evidence/scene-audit.json",
+            "evidence/gltf-validator.json",
+        ):
+            path = specimen / relative
+            self.assertTrue(path.is_file(), f"전기·통신 기준 자산 누락: {relative}")
+            self.assertGreater(path.stat().st_size, 0, f"빈 전기·통신 기준 자산: {relative}")
+        diagnostics = json.loads((specimen / "build" / "diagnostics.json").read_text(encoding="utf-8"))
+        self.assertEqual(diagnostics["verdict"], "pass")
+        self.assertEqual([part["name"] for part in diagnostics["parts"]], ["energy_meter", "rs485_lte_gateway"])
+        self.assertEqual(diagnostics["parts"][0]["bbox"]["size"], [90.0, 69.0, 95.0])
+        self.assertEqual(diagnostics["assembly"][0]["level"], "pass")
+        self.assertGreaterEqual(diagnostics["assembly"][0]["clearance"], 10.0)
+        for name in ("mesh-audit-meter.json", "mesh-audit-gateway.json", "scene-audit.json"):
+            report = json.loads((specimen / "evidence" / name).read_text(encoding="utf-8"))
+            self.assertEqual(report["verdict"], "pass", name)
+        scene = json.loads((specimen / "evidence" / "scene-audit.json").read_text(encoding="utf-8"))
+        self.assertEqual(scene["drawCalls"], 2)
+        validator = json.loads((specimen / "evidence" / "gltf-validator.json").read_text(encoding="utf-8"))
+        self.assertEqual(validator["errors"], 0)
+        self.assertEqual(validator["warnings"], 0)
+        self.assertTrue((specimen / "evidence" / "field-telemetry-kit-sheet.png").read_bytes().startswith(b"\x89PNG"))
 
     def test_lookdev_catalog_is_consistent(self):
         """조명 리그·카메라 카탈로그의 내부 정합 — 리그가 가리키는 카메라 프리셋은 존재해야 한다."""
@@ -610,9 +674,13 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         payload = json.loads(proc.stdout)
         # 큐브: 8꼭짓점 × 인접면 3 = 24 정점이어야 크리스가 살아 있다.
         self.assertEqual(payload["vertices"], 24)
+        self.assertEqual(payload["inputUnit"], "mm")
+        self.assertEqual(payload["outputUnit"], "m")
         gltf = self._read_glb_json(self.project / "cube.glb")
         material = gltf["materials"][0]["pbrMetallicRoughness"]
         self.assertEqual(material["metallicFactor"], 1.0)
+        roundtrip = self._audit(self.project / "cube.glb")
+        self.assertEqual(roundtrip["bbox"]["size"], [10, 10, 10], "mm→m→mm 왕복 스케일이 깨졌다")
 
         # 16각 기둥: 옆면 사이 각 22.5° < 크리스 40° → 옆면 정점이 용접된다.
         import math as _math
@@ -685,6 +753,17 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertEqual(payload["triangles"], 6)
         gltf = self._read_glb_json(self.project / "merged.glb")
         self.assertEqual(len(gltf["meshes"]), 1)
+
+    def test_polish_refuses_to_destroy_animated_gltf(self):
+        def add_animation(gltf):
+            gltf["animations"] = [{"name": "idle", "channels": [], "samplers": []}]
+
+        glb = self.project / "animated.glb"
+        _write_minimal_glb(glb, triangles=3, mutate=add_animation)
+        proc = _node(str(_SCRIPTS / "mesh_polish.mjs"), str(glb), "--out", "lossy.glb", cwd=self.project)
+        self.assertEqual(proc.returncode, 2)
+        self.assertIn("손실 변환 거부", proc.stderr)
+        self.assertFalse((self.project / "lossy.glb").exists())
 
     def test_preflight_reports_lane_readiness(self):
         proc = _node(str(_SCRIPTS / "preflight.mjs"), str(self.project), "--json", cwd=self.project)
