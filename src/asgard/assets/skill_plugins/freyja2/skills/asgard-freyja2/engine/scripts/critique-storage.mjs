@@ -3,7 +3,7 @@
  * Critique persistence helper.
  *
  * Each critique run writes a per-target snapshot to
- *   .impeccable/critique/<timestamp>__<slug>.md
+ *   .asgard/.vanadis/engine2/critique/<timestamp>__<slug>.md
  * with a small YAML frontmatter carrying the score + P0/P1 counts.
  *
  * The polish workflow reads the latest matching snapshot at start as its
@@ -28,7 +28,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { getCritiqueDir } from './lib/impeccable-paths.mjs';
+import { ensureVaultDirFor, getCritiqueDir } from './lib/vault-paths.mjs';
 import { slugFromTarget } from './lib/target-slug.mjs';
 
 export { slugFromTarget } from './lib/target-slug.mjs';
@@ -45,6 +45,9 @@ export { slugFromTarget } from './lib/target-slug.mjs';
  * Filename-safe UTC ISO timestamp: hyphens for separators, trailing Z.
  * Plain colons aren't allowed on Windows filesystems.
  */
+/** Snapshots kept per target. The trend line reads five; nothing reads more. */
+export const SNAPSHOT_RETENTION = 5;
+
 export function nowFilenameStamp(date = new Date()) {
   const iso = date.toISOString();           // 2026-05-12T18:30:00.123Z
   return iso.replace(/[:.]/g, '-').replace(/-\d+Z$/, 'Z');
@@ -60,16 +63,38 @@ export function nowFilenameStamp(date = new Date()) {
 export function writeSnapshot({ slug, meta, body, cwd = process.cwd(), now = new Date() }) {
   if (!slug) throw new Error('writeSnapshot requires a slug');
   const dir = getCritiqueDir(cwd);
-  fs.mkdirSync(dir, { recursive: true });
+  ensureVaultDirFor(dir, cwd);
   const timestamp = nowFilenameStamp(now);
   const filePath = path.join(dir, `${timestamp}__${slug}.md`);
   // Spread `meta` first so internally computed `timestamp` and `slug`
   // always win. Otherwise a caller-supplied meta blob (parsed from the
-  // IMPECCABLE_CRITIQUE_META env var) could clobber them, leaving the
+  // FREYJA2_CRITIQUE_META env var) could clobber them, leaving the
   // filename in disagreement with its frontmatter and corrupting trends.
   const front = serializeFrontmatter({ ...meta, timestamp, slug });
   fs.writeFileSync(filePath, `${front}\n${body.trim()}\n`, 'utf-8');
+  pruneSnapshots(slug, cwd);
   return filePath;
+}
+
+/**
+ * Keep the last SNAPSHOT_RETENTION runs per target and delete the rest.
+ *
+ * The trend line reads five, polish reads one, and nothing reads the sixth-
+ * oldest ever again — so without this the vault grows one file per critique
+ * forever. Bounded here, at the only place that adds one, rather than left to
+ * a cleanup someone has to remember to run.
+ */
+export function pruneSnapshots(slug, cwd = process.cwd()) {
+  const all = listSnapshotsForSlug(slug, cwd);
+  const stale = all.slice(0, Math.max(0, all.length - SNAPSHOT_RETENTION));
+  const removed = [];
+  for (const filePath of stale) {
+    try {
+      fs.unlinkSync(filePath);
+      removed.push(filePath);
+    } catch { /* a locked or vanished file is the next run's problem */ }
+  }
+  return removed;
 }
 
 function serializeFrontmatter(obj) {
@@ -168,7 +193,7 @@ function main(argv) {
       // a JSON object on stdin if it wants structured frontmatter; otherwise
       // we write with minimal metadata.
       let meta = {};
-      const metaArg = process.env.IMPECCABLE_CRITIQUE_META;
+      const metaArg = process.env.FREYJA2_CRITIQUE_META;
       if (metaArg) {
         try { meta = JSON.parse(metaArg); } catch { /* ignore */ }
       }

@@ -2,7 +2,7 @@
  * CLI helper: insert/remove the live variant mode script tag in the project's
  * main HTML entry point.
  *
- * On first live run, the agent generates `.impeccable/live/config.json`
+ * On first live run, the agent generates `.asgard/.vanadis/engine2/live/config.json`
  * with the project's insertion target (framework-specific). On
  * every subsequent run, this script handles insert/remove deterministically
  * with zero LLM involvement.
@@ -21,7 +21,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveLiveConfigPath } from './lib/impeccable-paths.mjs';
+import { resolveLiveConfigPath } from './lib/vault-paths.mjs';
+import { VAULT_REL } from './lib/vault.mjs';
 import {
   applySvelteKitLiveAdapter,
   detectSvelteKitProject,
@@ -35,41 +36,28 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONFIG_PATH = resolveLiveConfigPath({ cwd: process.cwd(), scriptsDir: __dirname });
-const MARKER_OPEN_TEXT = 'impeccable-live-start';
-const MARKER_CLOSE_TEXT = 'impeccable-live-end';
-const NUXT_PLUGIN_MARKER = 'impeccable-live-nuxt-plugin';
-const NUXT_PLUGIN_NAME = 'impeccable-live.client.ts';
-const IGNORE_MARKER_OPEN = '# impeccable-live-ignore-start';
-const IGNORE_MARKER_CLOSE = '# impeccable-live-ignore-end';
+const MARKER_OPEN_TEXT = 'freyja2-live-start';
+const MARKER_CLOSE_TEXT = 'freyja2-live-end';
+const NUXT_PLUGIN_MARKER = 'freyja2-live-nuxt-plugin';
+const NUXT_PLUGIN_NAME = 'freyja2-live.client.ts';
+const IGNORE_MARKER_OPEN = '# freyja2-live-ignore-start';
+const IGNORE_MARKER_CLOSE = '# freyja2-live-ignore-end';
 
+// Only what live mode plants *outside* the vault, inside the project's own
+// source tree, where nothing else hides it. The vault itself needs no entry:
+// it sits under `.asgard/`, which Asgard already keeps out of git.
 export const LIVE_IGNORE_PATTERNS = Object.freeze([
-  '.impeccable/hook.cache.json',
-  '.impeccable/hook.pending.json',
-  '.impeccable/config.local.json',
-  '.impeccable/live/server.json',
-  '.impeccable/live/sessions/',
-  '.impeccable/live/previews/',
-  '.impeccable/live/annotations/',
-  '.impeccable/live/artifacts/',
-  '.impeccable/live/accept-receipts/',
-  '.impeccable/live/locks/',
-  '.impeccable/live/cache/',
-  '.impeccable/live/manual-edit-apply-transaction.json',
-  '.impeccable/live/manual-edit-events.jsonl',
-  '.impeccable/live/manual-edit-evidence/',
-  '.impeccable/live/pending-manual-edits.json',
-  '.impeccable/live/deferred-svelte-component-accepts.json',
-  '.impeccable-live.json',
-  '.impeccable-live/',
-  'app/.impeccable-live/',
-  'src/.impeccable-live/',
-  'node_modules/.impeccable-live/',
-  'src/lib/impeccable/ImpeccableLiveRoot.svelte',
-  'src/lib/impeccable/__runtime.js',
-  'src/lib/impeccable/[0-9a-f]*/',
-  'plugins/impeccable-live.client.ts',
-  'app/plugins/impeccable-live.client.ts',
-  'src/plugins/impeccable-live.client.ts',
+  '.freyja2-live.json',
+  '.freyja2-live/',
+  'app/.freyja2-live/',
+  'src/.freyja2-live/',
+  'node_modules/.freyja2-live/',
+  'src/lib/freyja2/Freyja2LiveRoot.svelte',
+  'src/lib/freyja2/__runtime.js',
+  'src/lib/freyja2/[0-9a-f]*/',
+  'plugins/freyja2-live.client.ts',
+  'app/plugins/freyja2-live.client.ts',
+  'src/plugins/freyja2-live.client.ts',
 ]);
 
 /**
@@ -89,12 +77,12 @@ export async function injectCli() {
     console.log(`Usage: node live-inject.mjs [options]
 
 Insert or remove the live mode script tag in the project's HTML entry point.
-Reads configuration from .impeccable/live/config.json.
+Reads configuration from .asgard/.vanadis/engine2/live/config.json.
 
 Modes:
   --port PORT   Insert script tag pointing at http://localhost:PORT/live.js
   --remove      Remove the script tag (if present)
-  --check       Print whether .impeccable/live/config.json exists and its content
+  --check       Print whether .asgard/.vanadis/engine2/live/config.json exists and its content
 
 Output (JSON):
   { ok, file, inserted|removed, config? }`);
@@ -312,7 +300,7 @@ export function detectNuxtProject(cwd = process.cwd()) {
 export function buildNuxtPlugin(port, token) {
   return `/* ${NUXT_PLUGIN_MARKER} */
 const liveSrc = '${buildLiveScriptSrc(port, token)}';
-const liveSelector = 'script[data-impeccable-live-nuxt]';
+const liveSelector = 'script[data-freyja2-live-nuxt]';
 
 export default defineNuxtPlugin(() => {
   if (!import.meta.dev || typeof document === 'undefined') return;
@@ -325,7 +313,7 @@ export default defineNuxtPlugin(() => {
   script = document.createElement('script');
   script.src = liveSrc;
   script.async = true;
-  script.dataset.impeccableLiveNuxt = '';
+  script.dataset.freyja2LiveNuxt = '';
   document.head.appendChild(script);
 
   import.meta.hot?.dispose(() => {
@@ -344,7 +332,7 @@ export function applyNuxtLiveAdapter({ cwd = process.cwd(), port, token, project
     return {
       file: project.pluginFile,
       error: 'nuxt_plugin_conflict',
-      hint: `${project.pluginFile} already exists and is not managed by Impeccable Live`,
+      hint: `${project.pluginFile} already exists and is not managed by Freyja 2 Live`,
     };
   }
 
@@ -371,7 +359,7 @@ export function removeNuxtLiveAdapter({ cwd = process.cwd(), project = detectNux
       file: project.pluginFile,
       removed: false,
       error: 'nuxt_plugin_conflict',
-      hint: `${project.pluginFile} is not managed by Impeccable Live`,
+      hint: `${project.pluginFile} is not managed by Freyja 2 Live`,
     };
   }
   fs.unlinkSync(absFile);
@@ -612,8 +600,8 @@ function insertTag(content, config, port, filePath, token) {
  */
 function removeTag(content, _syntax) {
   const patterns = [
-    /([ \t]*)<!--\s*impeccable-live-start\s*-->[\s\S]*?<!--\s*impeccable-live-end\s*-->([ \t]*(?:\r\n|\n|\r|$)?)/,
-    /([ \t]*)\{\/\*\s*impeccable-live-start\s*\*\/\}[\s\S]*?\{\/\*\s*impeccable-live-end\s*\*\/\}([ \t]*(?:\r\n|\n|\r|$)?)/,
+    /([ \t]*)<!--\s*freyja2-live-start\s*-->[\s\S]*?<!--\s*freyja2-live-end\s*-->([ \t]*(?:\r\n|\n|\r|$)?)/,
+    /([ \t]*)\{\/\*\s*freyja2-live-start\s*\*\/\}[\s\S]*?\{\/\*\s*freyja2-live-end\s*\*\/\}([ \t]*(?:\r\n|\n|\r|$)?)/,
   ];
   for (const pat of patterns) {
     let changed = false;
@@ -639,7 +627,7 @@ function removeTag(content, _syntax) {
 // localhost:PORT) is blocked unless the CSP explicitly allows that origin.
 //
 // On insert: append `http://localhost:PORT` to `script-src` and `connect-src`,
-// and stash the original `content` value in a `data-impeccable-csp-original`
+// and stash the original `content` value in a `data-freyja2-csp-original`
 // attribute (base64) so revert is exact.
 //
 // On remove: detect the marker attribute, decode it, restore the original
@@ -651,7 +639,7 @@ function removeTag(content, _syntax) {
 // Only the in-source meta-tag form gets the auto-patch.
 // ---------------------------------------------------------------------------
 
-const CSP_MARKER_ATTR = 'data-impeccable-csp-original';
+const CSP_MARKER_ATTR = 'data-freyja2-csp-original';
 
 function findCspMetaTags(content) {
   const out = [];

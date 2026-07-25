@@ -1,5 +1,5 @@
 /**
- * Shared library for the Impeccable design hook.
+ * Shared library for the Freyja 2 design hook.
  *
  * Pure-ish helpers split out from `hook.mjs` so unit tests can exercise
  * config parsing, finding filtering, dedup, render, and cache logic without
@@ -9,6 +9,7 @@
  *   ENVELOPE_PREFIX, ALLOWED_EXTS, ACK_EXTS, SENSITIVE_PATH, GENERATED_PATH, TRUTHY
  *   truthy(value)
  *   readConfig(cwd) / DEFAULT_CONFIG / getConfigPath(cwd) / getLocalConfigPath(cwd)
+ *   getConfigWritePath(cwd) / getLocalConfigWritePath(cwd) / hasVaultFootprint(cwd)
  *   resolveProjectPlatform(cwd) / isNativePlatform(platform)
  *   normalizeIgnoreValue(value)
  *   readCache(cwd) / persistCache(cwd, cache) / resolveCacheCwd(primaryFile, sessionCwd)
@@ -45,7 +46,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { extractPlatform, loadContext } from './context.mjs';
-import { IMPECCABLE_COMMAND } from './lib/provider.mjs';
+import { FREYJA2_COMMAND } from './lib/provider.mjs';
 // `detector.extensions` (issue #316) is shared with Live's source search, which
 // needs the same answer for `.heex` / `.blade.php` when it hunts for session
 // markers. lib/template-extensions.mjs owns the shape; re-exported here because
@@ -54,13 +55,23 @@ import {
   matchConfiguredExtension,
   mergeExtensions,
 } from './lib/template-extensions.mjs';
+// Every artifact this hook persists lives in the vault under `.asgard/`,
+// which Asgard already keeps out of git. See lib/vault.mjs.
+import {
+  VAULT_REL,
+  VAULT_SEGMENTS,
+  ensureVaultFileDir,
+  resolveVaultFile,
+  vaultDirFor,
+  vaultPath,
+} from './lib/vault.mjs';
 
 export { matchConfiguredExtension };
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export const ENVELOPE_PREFIX = '[impeccable@1]';
+export const ENVELOPE_PREFIX = '[freyja2@1]';
 
 export const ALLOWED_EXTS = new Set([
   '.tsx', '.jsx', '.html', '.htm', '.vue', '.svelte', '.astro',
@@ -106,7 +117,7 @@ export const TRUTHY = /^(1|true|yes|on)$/i;
 // overwhelmingly on copy-level rules, and that steady nag stream makes
 // models more conservative, while a single full pass at completion fixes
 // contrast/padding/glow just as reliably. Restore the old full per-edit
-// behavior with `.impeccable/config.json` → `hook: { "perEditRules": "all" }`.
+// behavior with the vault's `config.json` → `hook: { "perEditRules": "all" }`.
 export const IMMEDIATE_TIER_RULES = new Set([
   // Broken output.
   'broken-image',
@@ -132,7 +143,7 @@ export const IMMEDIATE_TIER_RULES = new Set([
 // and they never count as failures. The design hook skips them entirely by
 // default — in both the per-edit PostToolUse pass and the Stop deep pass — so
 // the agent is never nagged about a taste call a human might make on purpose.
-// A project opts back in with `.impeccable/config.json`:
+// A project opts back in with the vault's `config.json`:
 //   { "detector": { "advisoryRules": "include" } }
 // This set is the hook's own copy of the registry's `advisory: true` rules,
 // mirroring how IMMEDIATE_TIER_RULES lists rule ids inline so the hook stays
@@ -168,14 +179,14 @@ export const DEFAULT_CONFIG = Object.freeze({
   limits: { maxFindings: 5, maxChars: 8000, maxFileBytes: 131072 },
 });
 
-export const HOOK_LOCAL_IGNORE_PATTERNS = Object.freeze([
-  '.impeccable/hook.cache.json',
-  '.impeccable/hook.pending.json',
-  '.impeccable/config.local.json',
-]);
+// Empty on purpose. The hook's cache and local config live in the vault, and
+// the vault lives under `.asgard/`, which `asgard init` already keeps out of
+// git — so there is nothing left for this hook to add to an ignore file.
+// `ensureHookGitExcludes` now only retires the block older versions wrote.
+export const HOOK_LOCAL_IGNORE_PATTERNS = Object.freeze([]);
 
-const HOOK_IGNORE_MARKER_OPEN = '# impeccable-hook-ignore-start';
-const HOOK_IGNORE_MARKER_CLOSE = '# impeccable-hook-ignore-end';
+const HOOK_IGNORE_MARKER_OPEN = '# freyja2-hook-ignore-start';
+const HOOK_IGNORE_MARKER_CLOSE = '# freyja2-hook-ignore-end';
 const CACHE_MAX_SESSIONS = 8;
 export const EDIT_COUNT_THRESHOLD = 6;
 
@@ -199,20 +210,29 @@ function safeReadJson(filePath) {
   }
 }
 
+// Reads honor a config left by an older engine; writes always land in the vault.
 export function getConfigPath(cwd) {
-  return path.join(cwd, '.impeccable', 'config.json');
+  return resolveVaultFile(cwd, 'config.json');
 }
 
 export function getLocalConfigPath(cwd) {
-  return path.join(cwd, '.impeccable', 'config.local.json');
+  return resolveVaultFile(cwd, 'config.local.json');
+}
+
+export function getConfigWritePath(cwd) {
+  return vaultPath(cwd, 'config.json');
+}
+
+export function getLocalConfigWritePath(cwd) {
+  return vaultPath(cwd, 'config.local.json');
 }
 
 export function getCachePath(cwd) {
-  return path.join(cwd, '.impeccable', 'hook.cache.json');
+  return vaultPath(cwd, 'hook.cache.json');
 }
 
 export function getPendingPath(cwd) {
-  return path.join(cwd, '.impeccable', 'hook.pending.json');
+  return vaultPath(cwd, 'hook.pending.json');
 }
 
 export function resolveProjectCwd(event, fallback = process.cwd()) {
@@ -223,15 +243,16 @@ export function resolveProjectCwd(event, fallback = process.cwd()) {
 }
 
 function looksLikeProjectRoot(dir) {
-  return ['.git', 'package.json', '.impeccable'].some((marker) => {
+  const markers = ['.git', 'package.json', VAULT_SEGMENTS.join(path.sep), '.impeccable'];
+  return markers.some((marker) => {
     try { return fs.existsSync(path.join(dir, marker)); } catch { return false; }
   });
 }
 
-// Where `.impeccable/` (cache + config) lives for this event. Normally the
-// session cwd, untouched. But when the agent was launched from an umbrella
-// directory that is not itself a project (no .git, package.json, or
-// .impeccable), key to the edited file's nearest project root instead, so a
+// Where the vault (cache + config) lives for this event. Normally the session
+// cwd, untouched. But when the agent was launched from an umbrella directory
+// that is not itself a project (no .git, package.json, or vault), key to the
+// edited file's nearest project root instead, so a
 // multi-project launch dir doesn't accumulate a shared cross-project cache
 // (issue #305). Climbing stops at the home dir, falling back to the session
 // cwd when no marker is found.
@@ -608,12 +629,20 @@ export function persistCache(cwd, cache) {
   const target = getCachePath(cwd);
   try {
     ensureHookGitExcludes(cwd);
-    fs.mkdirSync(path.dirname(target), { recursive: true });
+    ensureVaultFileDir(target, cwd);
     fs.writeFileSync(target, JSON.stringify(cache));
     return true;
   } catch {
     return false;
   }
+}
+
+/** True when this project already carries engine artifacts, current or retired. */
+export function hasVaultFootprint(cwd) {
+  for (const dir of [vaultDirFor(cwd), path.join(cwd, '.impeccable')]) {
+    try { if (fs.existsSync(dir)) return true; } catch { /* unreadable: not a footprint */ }
+  }
+  return false;
 }
 
 export function ensureHookGitExcludes(cwd = process.cwd()) {
@@ -630,16 +659,14 @@ export function ensureHookGitExcludes(cwd = process.cwd()) {
     const markerOpen = `${HOOK_IGNORE_MARKER_OPEN} ${markerSuffix}`;
     const markerClose = `${HOOK_IGNORE_MARKER_CLOSE} ${markerSuffix}`;
     const existing = fs.existsSync(target.path) ? fs.readFileSync(target.path, 'utf-8') : '';
-    const block = [markerOpen, ...patterns, markerClose].join('\n');
-    const markerRe = new RegExp(`${escapeRegExp(markerOpen)}[\\s\\S]*?${escapeRegExp(markerClose)}`);
+    const markerRe = new RegExp(`${escapeRegExp(markerOpen)}[\\s\\S]*?${escapeRegExp(markerClose)}\\n?`);
 
-    let updated;
-    if (markerRe.test(existing)) {
-      updated = existing.replace(markerRe, block);
-    } else {
-      const prefix = existing.length === 0 ? '' : existing.endsWith('\n') ? existing : `${existing}\n`;
-      updated = `${prefix}${prefix.endsWith('\n\n') || prefix === '' ? '' : '\n'}${block}\n`;
-    }
+    // Nothing to exclude any more — the hook's state lives in the vault, under
+    // `.asgard/`. All that is left is removing the block older versions wrote,
+    // which now names a path that no longer exists.
+    const updated = patterns.length === 0
+      ? existing.replace(markerRe, '')
+      : writeExcludeBlock(existing, markerRe, [markerOpen, ...patterns, markerClose].join('\n'));
 
     if (updated !== existing) {
       fs.mkdirSync(path.dirname(target.path), { recursive: true });
@@ -655,6 +682,12 @@ export function ensureHookGitExcludes(cwd = process.cwd()) {
   } catch {
     return { mode: 'error', changed: false, patterns: [...HOOK_LOCAL_IGNORE_PATTERNS] };
   }
+}
+
+function writeExcludeBlock(existing, markerRe, block) {
+  if (markerRe.test(existing)) return existing.replace(markerRe, `${block}\n`);
+  const prefix = existing.length === 0 ? '' : existing.endsWith('\n') ? existing : `${existing}\n`;
+  return `${prefix}${prefix.endsWith('\n\n') || prefix === '' ? '' : '\n'}${block}\n`;
 }
 
 function resolveHookGitExcludeTarget(cwd) {
@@ -723,7 +756,7 @@ export function touchFile(cache, sessionId, filePath) {
 }
 
 export function suppressionNotice(filePath) {
-  return `${ENVELOPE_PREFIX} Suppressing further design hints on ${filePath}. More than ${EDIT_COUNT_THRESHOLD} edits in this session reached. Run ${IMPECCABLE_COMMAND} audit to revisit.`;
+  return `${ENVELOPE_PREFIX} Suppressing further design hints on ${filePath}. More than ${EDIT_COUNT_THRESHOLD} edits in this session reached. Run ${FREYJA2_COMMAND} audit to revisit.`;
 }
 
 // Glob → RegExp. Supports `**`, `*`, `?`, and `{a,b}` alternation.
@@ -978,7 +1011,7 @@ export function renderTemplate(findings, filePath, config, opts = {}) {
   const header = `${ENVELOPE_PREFIX} Design hook findings requiring review in ${display} (${total} issue(s)):`;
   const lines = shown.map((f) => formatFindingLine(f));
   const more = remaining > 0
-    ? `... and ${remaining} more (see ${IMPECCABLE_COMMAND} audit).`
+    ? `... and ${remaining} more (see ${FREYJA2_COMMAND} audit).`
     : null;
   const footer = directiveFooter(display);
 
@@ -1022,7 +1055,7 @@ function renderGroupedTemplate(groups, config, opts = {}) {
     shownCount += shown.length;
     const hidden = group.findings.length - shown.length;
     if (hidden > 0) {
-      lines.push(`- ... ${hidden} more in ${display} (see ${IMPECCABLE_COMMAND} audit).`);
+      lines.push(`- ... ${hidden} more in ${display} (see ${FREYJA2_COMMAND} audit).`);
     }
   }
 
@@ -1038,7 +1071,7 @@ function clampGroupedToBudget(header, lines, footer, maxChars) {
   const assemble = (linesArr, omitted) => [
     header,
     ...linesArr,
-    ...(omitted ? [`... and more (see ${IMPECCABLE_COMMAND} audit).`] : []),
+    ...(omitted ? [`... and more (see ${FREYJA2_COMMAND} audit).`] : []),
     '',
     footer,
   ].join('\n');
@@ -1071,7 +1104,7 @@ function clampToBudget(header, lines, more, footer, maxChars) {
   let assembled = assemble(working, moreText);
   while (assembled.length > maxChars && working.length > 1) {
     working.pop();
-    moreText = `... and more (see ${IMPECCABLE_COMMAND} audit).`;
+    moreText = `... and more (see ${FREYJA2_COMMAND} audit).`;
     assembled = assemble(working, moreText);
   }
   if (assembled.length > maxChars) {
@@ -1103,7 +1136,7 @@ function formatFindingIgnoreCommand(finding) {
   const value = extractFindingIgnoreValueRaw(finding);
   const valueArg = quoteCommandArg(value);
   const reason = quoteCommandArg(`User confirmed ${value} is intentional`);
-  return `${IMPECCABLE_COMMAND} hooks ignore-value ${rule} ${valueArg} --shared --reason ${reason}`;
+  return `${FREYJA2_COMMAND} hooks ignore-value ${rule} ${valueArg} --shared --reason ${reason}`;
 }
 
 function quoteCommandArg(value) {
@@ -1165,7 +1198,7 @@ export function resolveTargetFiles(event, projectCwd) {
 }
 
 export function resolveHarness(env = {}, event = null) {
-  const explicit = env?.IMPECCABLE_HOOK_HARNESS;
+  const explicit = env?.FREYJA2_HOOK_HARNESS;
   if (explicit === 'cursor') return 'cursor';
   if (explicit === 'github') return 'github';
   if (explicit === 'claude' || explicit === 'codex') return 'claude';
@@ -1435,7 +1468,7 @@ export function writeAuditLog(env, entry, cwd = process.cwd()) {
   // process cwd can differ from the project being edited.
   const baseCwd = entry && typeof entry.cwd === 'string' && entry.cwd ? entry.cwd : cwd;
   // Env wins; otherwise fall back to the unified config's hook.auditLog path.
-  let target = env?.IMPECCABLE_HOOK_LOG;
+  let target = env?.FREYJA2_HOOK_LOG;
   if (!target || typeof target !== 'string') {
     try { target = readConfig(baseCwd).auditLog; } catch { target = null; }
   }
@@ -1499,7 +1532,7 @@ export function setDetectorForTesting(impl) {
 //
 // All three are short (≤ ~40 tokens each) so the cumulative cost stays
 // bounded across a long active editing session. Users who explicitly want
-// silence-on-clean can set `IMPECCABLE_HOOK_QUIET=1` — runHook checks that
+// silence-on-clean can set `FREYJA2_HOOK_QUIET=1` — runHook checks that
 // env before emitting #2 or #3.
 //
 // Why not stay silent on dedup-clean? Earlier versions did. The model
@@ -1509,7 +1542,7 @@ export function setDetectorForTesting(impl) {
 // session" so the model knows it's a re-mind, not a new finding.
 // ────────────────────────────────────────────────────────────────────────
 
-const STEER_LINE = 'That does not mean the design is good: keep following the project design system and the impeccable skill guidance.';
+const STEER_LINE = 'That does not mean the design is good: keep following the project design system and the freyja2 skill guidance.';
 
 export function renderCleanAck(filePath, opts = {}) {
   const cwd = opts.cwd || process.cwd();
@@ -1548,7 +1581,7 @@ export function designSystemOptions(config, detector, projectCwd) {
 
 export function appendDesignSystemNote(text, scanOptions) {
   if (!text || !scanOptions?.designSystem?.mdNewerThanJson) return text;
-  return `${text}\n\n${ENVELOPE_PREFIX} DESIGN.md is newer than .impeccable/design.json. Run ${IMPECCABLE_COMMAND} document to refresh the design-system sidecar.`;
+  return `${text}\n\n${ENVELOPE_PREFIX} DESIGN.md is newer than ${VAULT_REL}/design.json. Run ${FREYJA2_COMMAND} document to refresh the design-system sidecar.`;
 }
 
 // The directive footer is the part of the hook output that steers model
@@ -1569,13 +1602,13 @@ function directiveFooter(display, opts = {}) {
   // for the path forever, which is far more than one noisy rule on a real UI
   // surface justifies, and it was previously the only option named here.
   const target = opts.grouped ? '<path>' : quoteCommandArg(display);
-  const fileIgnoreGuidance = `run \`${IMPECCABLE_COMMAND} hooks ignore-value <id> "*" --file ${target}\` to scope just that rule to the file, or \`${IMPECCABLE_COMMAND} hooks ignore-file ${target}\` only when the whole file is out of scope for design review (a fixture, a generated artifact, a deliberate demo)`;
+  const fileIgnoreGuidance = `run \`${FREYJA2_COMMAND} hooks ignore-value <id> "*" --file ${target}\` to scope just that rule to the file, or \`${FREYJA2_COMMAND} hooks ignore-file ${target}\` only when the whole file is out of scope for design review (a fixture, a generated artifact, a deliberate demo)`;
   return [
     'Handle these before finalizing: fix findings that are real design problems, or explicitly classify contextually intentional findings as false positives. Acknowledge what you changed or why you are leaving a finding unchanged.',
     '',
     'Use context judgment before editing. A finding is not automatically a defect; literal or domain-appropriate motion, intentional demos or fixtures, documentation of bad design, and user-confirmed choices can be valid as-is.',
     '',
-    `Do not change intentional design just to satisfy the hook, and do not silence a real finding with an inline ignore comment to skip fixing it. Suppress a finding only after the user explicitly confirms it is intentional. Prefer a config ignore (one reviewable place, the commands below); reach for an inline \`impeccable-disable <rule>\` comment only when the waiver must travel with a file that leaves the repo, such as an exported or standalone document. Prefer the narrowest persisted exception: run the exact \`${IMPECCABLE_COMMAND} hooks ignore-value ... --shared\` command shown next to a value-specific finding. For \`overused-font\`, use \`ignore-value\` for a specific font and use \`${IMPECCABLE_COMMAND} hooks ignore-rule overused-font --all-values\` only when the user asks to ignore overused fonts generally. For a finding whose line shows no exact ignore-value command, such as \`side-tab\`, ${fileIgnoreGuidance}; use \`${IMPECCABLE_COMMAND} hooks ignore-rule <id>\` only when the user asks to suppress the whole non-value-specific rule. Run ${IMPECCABLE_COMMAND} audit for the full pass.`,
+    `Do not change intentional design just to satisfy the hook, and do not silence a real finding with an inline ignore comment to skip fixing it. Suppress a finding only after the user explicitly confirms it is intentional. Prefer a config ignore (one reviewable place, the commands below); reach for an inline \`freyja2-disable <rule>\` comment only when the waiver must travel with a file that leaves the repo, such as an exported or standalone document. Prefer the narrowest persisted exception: run the exact \`${FREYJA2_COMMAND} hooks ignore-value ... --shared\` command shown next to a value-specific finding. For \`overused-font\`, use \`ignore-value\` for a specific font and use \`${FREYJA2_COMMAND} hooks ignore-rule overused-font --all-values\` only when the user asks to ignore overused fonts generally. For a finding whose line shows no exact ignore-value command, such as \`side-tab\`, ${fileIgnoreGuidance}; use \`${FREYJA2_COMMAND} hooks ignore-rule <id>\` only when the user asks to suppress the whole non-value-specific rule. Run ${FREYJA2_COMMAND} audit for the full pass.`,
   ].join('\n');
 }
 
@@ -1591,11 +1624,11 @@ export async function runHook({ stdinJson, env = {}, cwd = process.cwd(), now = 
 
   try {
     // Re-entrancy guard.
-    if (depthIsSet(env.IMPECCABLE_HOOK_DEPTH) || depthIsSet(env.CLAUDE_HOOK_DEPTH)) {
+    if (depthIsSet(env.FREYJA2_HOOK_DEPTH) || depthIsSet(env.CLAUDE_HOOK_DEPTH)) {
       return result({ reentrant: true, durationMs: 0 });
     }
 
-    if (truthy(env.IMPECCABLE_HOOK_DISABLED)) {
+    if (truthy(env.FREYJA2_HOOK_DISABLED)) {
       return result({ skipped: 'env-disabled', durationMs: 0 });
     }
 
@@ -1654,7 +1687,7 @@ export async function runHook({ stdinJson, env = {}, cwd = process.cwd(), now = 
     let suppressionWinner = null;
     let cleanAckDeduped = false;
     let skippedBytes = 0;
-    const quietMode = truthy(env.IMPECCABLE_HOOK_QUIET) || config.quiet === true;
+    const quietMode = truthy(env.FREYJA2_HOOK_QUIET) || config.quiet === true;
     let detectorThrewAny = false;
     let lastSkip = 'no-scannable-file';
     let suppressedHit = false;
@@ -1794,13 +1827,13 @@ export async function runHook({ stdinJson, env = {}, cwd = process.cwd(), now = 
     }
 
     // Persist only when the write is earned: fresh findings justify creating
-    // `.impeccable/` (dedup and suppression need it), deferred findings do
-    // too (the Stop deep pass needs the touched-file list to surface them),
-    // and an already-present `.impeccable/` dir marks a project that opted
-    // in. A non-UI edit, or a clean UI edit in a project with no Impeccable
-    // footprint, must be a no-op on disk (issues #344, #305).
+    // the vault (dedup and suppression need it), deferred findings do too (the
+    // Stop deep pass needs the touched-file list to surface them), and an
+    // already-present vault marks a project that opted in. A non-UI edit, or a
+    // clean UI edit in a project with no engine footprint, must be a no-op on
+    // disk (issues #344, #305).
     if (freshGroups.length > 0 || deferredTotal > 0
-      || (cacheDirty && fs.existsSync(path.join(projectCwd, '.impeccable')))) {
+      || (cacheDirty && hasVaultFootprint(projectCwd))) {
       persistCache(projectCwd, cache);
     }
 
@@ -1941,10 +1974,10 @@ export async function runStopHook({ stdinJson, env = {}, cwd = process.cwd(), no
 
   try {
     // Re-entrancy guard, same as the per-edit pass.
-    if (depthIsSet(env.IMPECCABLE_HOOK_DEPTH) || depthIsSet(env.CLAUDE_HOOK_DEPTH)) {
+    if (depthIsSet(env.FREYJA2_HOOK_DEPTH) || depthIsSet(env.CLAUDE_HOOK_DEPTH)) {
       return result({ reentrant: true, durationMs: 0 });
     }
-    if (truthy(env.IMPECCABLE_HOOK_DISABLED)) {
+    if (truthy(env.FREYJA2_HOOK_DISABLED)) {
       return result({ skipped: 'env-disabled', durationMs: 0 });
     }
 

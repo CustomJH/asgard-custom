@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Deep staleness pass over Impeccable's own project artifacts.
+ * Deep staleness pass over Freyja 2's own project artifacts.
  *
  *   node doctor.mjs                 # human-readable report
  *   node doctor.mjs --json          # machine-readable, for the skill command
@@ -25,8 +25,15 @@ import { fileURLToPath } from 'node:url';
 
 import { loadContext, extractPlatform, resolveTargetSelection } from './context.mjs';
 import { parseTargetOptions } from './lib/target-args.mjs';
-import { IMPECCABLE_COMMAND, IMPECCABLE_PROVIDER_ID } from './lib/provider.mjs';
+import { FREYJA2_COMMAND, FREYJA2_PROVIDER_ID } from './lib/provider.mjs';
 import { parseDesignMd } from './lib/design-parser.mjs';
+import {
+  VAULT_REL,
+  ensureVaultFileDir,
+  legacyVaultDirsFor,
+  resolveVaultFile,
+  vaultPath,
+} from './lib/vault.mjs';
 import {
   PRODUCT_SCHEMA_VERSION,
   readProductSchemaVersion,
@@ -47,6 +54,7 @@ import {
   checkDetectorIgnores,
   checkHookInstallation,
   checkLegacyLiveState,
+  checkLegacyVaultRoot,
   checkWorkspaces,
   loadKnownRuleIds,
 } from './lib/staleness-deep.mjs';
@@ -77,9 +85,9 @@ function usage() {
   return [
     `Usage: node doctor.mjs [--json] [--fix] [--target <path>]`,
     '',
-    "Report drift between this project's Impeccable artifacts and what the",
+    "Report drift between this project's Freyja 2 artifacts and what the",
     'installed version reads: PRODUCT.md, DESIGN.md and its sidecar,',
-    '.impeccable/config.json, surface briefs, and the design hook.',
+    `${VAULT_REL}/config.json, surface briefs, and the design hook.`,
     '',
     '  --json           Emit findings as JSON.',
     '  --fix            Apply the mechanical migrations (severity "auto") only.',
@@ -125,9 +133,10 @@ async function collect(cwd, targetOptions) {
     ...checkHookInstallation({
       projectRoot,
       repoRoot: ctx.repoRoot,
-      providerId: IMPECCABLE_PROVIDER_ID,
+      providerId: FREYJA2_PROVIDER_ID,
     }),
     ...checkLegacyLiveState({ projectRoot }),
+    ...checkLegacyVaultRoot({ projectRoot }),
     ...checkProjectRoots({
       patterns: readProjectRootPatterns(ctx.repoRoot),
       candidates: workspaceCandidates,
@@ -153,7 +162,7 @@ function readProjectRootPatterns(repoRoot) {
   const patterns = [];
   for (const name of ['config.json', 'config.local.json']) {
     try {
-      const raw = JSON.parse(fs.readFileSync(path.join(repoRoot, '.impeccable', name), 'utf-8'));
+      const raw = JSON.parse(fs.readFileSync(resolveVaultFile(repoRoot, name), 'utf-8'));
       if (Array.isArray(raw?.projectRoots)) {
         for (const entry of raw.projectRoots) {
           if (typeof entry === 'string' && entry.trim()) patterns.push(entry.trim());
@@ -185,9 +194,26 @@ function applyFixes(report) {
         skipped.push({ id: entry.id, reason: `${rel(canonical, report.projectRoot)} already exists; not overwriting` });
         continue;
       }
-      fs.mkdirSync(path.dirname(canonical), { recursive: true });
+      ensureVaultFileDir(canonical, report.projectRoot);
       fs.renameSync(present, canonical);
       applied.push(`Moved ${rel(present, report.projectRoot)} to ${rel(canonical, report.projectRoot)}.`);
+      continue;
+    }
+    if (entry.id === 'legacy-artifact-root') {
+      const moved = migrateRetiredVaultRoot(report.projectRoot);
+      if (moved.migrated.length) {
+        applied.push(`Moved ${moved.migrated.join(', ')} into ${VAULT_REL}/.`);
+      }
+      if (moved.removed.length) {
+        applied.push(`Removed the retired ${moved.removed.join(', ')}.`);
+      } else if (moved.kept.length) {
+        // Never overwritten: an entry that exists in both places is a real
+        // conflict, and picking a winner silently is how the wrong config wins.
+        skipped.push({
+          id: entry.id,
+          reason: `${moved.kept.join(', ')} already exists in the vault; the retired copy is left for you to compare`,
+        });
+      }
       continue;
     }
     if (entry.id === 'legacy-live-state') {
@@ -217,6 +243,50 @@ function rel(filePath, root) {
   return value && !value.startsWith('..') ? value.split(path.sep).join('/') : filePath;
 }
 
+/**
+ * Move what a retired `.impeccable/` root still holds into the vault, then
+ * remove the root if nothing is left. Entry-by-entry and never overwriting:
+ * a name present in both places is reported as a conflict rather than
+ * resolved, because the two files were written by different versions and only
+ * the user knows which one is current.
+ */
+function migrateRetiredVaultRoot(projectRoot) {
+  const migrated = [];
+  const kept = [];
+  const removed = [];
+  for (const legacyDir of legacyVaultDirsFor(projectRoot)) {
+    if (!fs.existsSync(legacyDir)) continue;
+    let entries = [];
+    try {
+      entries = fs.readdirSync(legacyDir);
+    } catch {
+      continue;
+    }
+    for (const name of entries) {
+      const from = path.join(legacyDir, name);
+      const to = vaultPath(projectRoot, name);
+      if (fs.existsSync(to)) {
+        kept.push(rel(from, projectRoot));
+        continue;
+      }
+      try {
+        ensureVaultFileDir(to, projectRoot);
+        fs.renameSync(from, to);
+        migrated.push(rel(from, projectRoot));
+      } catch {
+        kept.push(rel(from, projectRoot));
+      }
+    }
+    try {
+      fs.rmdirSync(legacyDir);
+      removed.push(rel(legacyDir, projectRoot));
+    } catch {
+      // Still holding a conflicted entry; the report says which.
+    }
+  }
+  return { migrated, kept, removed };
+}
+
 const SEVERITY_LABEL = {
   auto: 'automatic',
   mention: 'worth saying',
@@ -227,7 +297,7 @@ function renderText(report, fixes) {
   const lines = [];
   const { findings } = report;
 
-  lines.push(`Impeccable doctor: ${rel(report.projectRoot, process.cwd()) || '.'}`);
+  lines.push(`Freyja 2 doctor: ${rel(report.projectRoot, process.cwd()) || '.'}`);
   if (report.ctx.isMonorepo) {
     lines.push(`Monorepo, repo root ${rel(report.ctx.repoRoot, process.cwd()) || '.'}.`);
   }
@@ -275,7 +345,7 @@ function renderText(report, fixes) {
     }
   } else if (findings.some((entry) => entry.severity === 'auto')) {
     lines.push(`Run \`node doctor.mjs --fix\` to apply the automatic migrations, `
-      + `or \`${IMPECCABLE_COMMAND} doctor\` to work through all of them.`);
+      + `or \`${FREYJA2_COMMAND} doctor\` to work through all of them.`);
   }
 
   return lines.join('\n');
@@ -328,7 +398,7 @@ function invokedAsScript() {
 
 if (invokedAsScript()) {
   cli().catch((err) => {
-    process.stderr.write(`impeccable doctor failed: ${err?.message || err}\n`);
+    process.stderr.write(`freyja2 doctor failed: ${err?.message || err}\n`);
     process.exit(1);
   });
 }

@@ -1,5 +1,5 @@
 /**
- * Schema versions for the artifacts Impeccable writes, plus the readers and
+ * Schema versions for the artifacts Freyja 2 writes, plus the readers and
  * writers for the PRODUCT.md provenance stamp.
  *
  * Why schema versions rather than the skill version: a PRODUCT.md written by
@@ -19,7 +19,7 @@
 /** PRODUCT.md as init.md writes it today: the ten-section v4 record. */
 export const PRODUCT_SCHEMA_VERSION = 1;
 
-/** `.impeccable/design.json`, as documented in reference/document.md Step 4b. */
+/** The vault's `design.json`, as documented in reference/document.md Step 4b. */
 export const DESIGN_SIDECAR_SCHEMA_VERSION = 2;
 
 /**
@@ -35,7 +35,7 @@ export const PRODUCT_V4_SECTIONS = Object.freeze([
 ]);
 
 /**
- * Headings Impeccable used to read and no longer does, with the reason. The
+ * Headings Freyja 2 used to read and no longer does, with the reason. The
  * agent needs the reason: told only that a field is deprecated it tends to
  * preserve it "just in case", which is how a v3 register value keeps steering
  * v4 output.
@@ -46,11 +46,11 @@ export const PRODUCT_DEPRECATED_SECTIONS = Object.freeze({
     + "surface's brief. Nothing reads `## Register` any more.",
 });
 
-const PRODUCT_STAMP_RE = /^[ \t]*<!--[ \t]*impeccable:product-schema[ \t]+(\d+)[ \t]*-->[ \t]*$/im;
+const PRODUCT_STAMP_RE = /^[ \t]*<!--[ \t]*freyja2:product-schema[ \t]+(\d+)[ \t]*-->[ \t]*$/im;
 
 /** The literal stamp line, for the init template and for migrations. */
 export function productStampLine(version = PRODUCT_SCHEMA_VERSION) {
-  return `<!-- impeccable:product-schema ${version} -->`;
+  return `<!-- freyja2:product-schema ${version} -->`;
 }
 
 /**

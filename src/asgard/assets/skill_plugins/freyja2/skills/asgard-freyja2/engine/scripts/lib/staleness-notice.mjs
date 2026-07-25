@@ -21,16 +21,17 @@
  */
 
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
+
+import { resolveVaultFile, userCachePath } from './vault.mjs';
 
 const RENOTIFY_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000;
 
 // Resolved per call rather than at import so a test (or a sandboxed run) can
 // redirect the cache without reloading the module.
 function cachePath() {
-  return process.env.IMPECCABLE_STALENESS_CACHE
-    || path.join(os.homedir(), '.impeccable', 'staleness-check.json');
+  return process.env.FREYJA2_STALENESS_CACHE
+    || userCachePath('staleness-check.json');
 }
 
 function readCache() {
@@ -45,7 +46,7 @@ function readCache() {
 /**
  * Drop project entries whose newest stamp has aged past the renotify window.
  * They would be re-notified on the next boot anyway, so keeping them only lets
- * the file accumulate one entry per directory Impeccable has ever booted in
+ * the file accumulate one entry per directory Freyja 2 has ever booted in
  * (scratch dirs and test fixtures included).
  */
 function pruneCache(cache, now) {
@@ -78,17 +79,17 @@ function readJson(filePath) {
 }
 
 /**
- * Opt out with IMPECCABLE_NO_STALENESS_CHECK=1 or `"stalenessCheck": false` in
- * .impeccable/config.json. Local config overrides shared, matching how
+ * Opt out with FREYJA2_NO_STALENESS_CHECK=1 or `"stalenessCheck": false` in
+ * the vault's config.json. Local config overrides shared, matching how
  * updateCheck resolves.
  */
 export function stalenessCheckDisabled(roots = [process.cwd()]) {
-  if (process.env.IMPECCABLE_NO_STALENESS_CHECK) return true;
+  if (process.env.FREYJA2_NO_STALENESS_CHECK) return true;
   let value;
   for (const root of roots) {
     if (!root) continue;
     for (const name of ['config.json', 'config.local.json']) {
-      const raw = readJson(path.join(root, '.impeccable', name));
+      const raw = readJson(resolveVaultFile(root, name));
       if (raw && typeof raw === 'object' && typeof raw.stalenessCheck === 'boolean') {
         value = raw.stalenessCheck;
       }
@@ -153,7 +154,7 @@ export function buildStalenessDirective(findings) {
   const hasReportable = findings.some((entry) => entry.severity !== 'auto');
   const lines = [
     `CONTEXT_STALE:\n${JSON.stringify(payload, null, 2)}`,
-    "Impeccable's own project files have drifted from what this version reads. "
+    "Freyja 2's own project files have drifted from what this version reads. "
       + 'Do not stop, reorder, or expand the requested task for any of this.',
     'By severity: `auto` is a migration the next write to that file performs anyway, so apply it then and do not '
       + 'raise it with the user. `mention` gets one short line in your reply with the offered fix. `route` names the '

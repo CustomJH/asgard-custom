@@ -1,14 +1,15 @@
 /**
- * Staleness detection for Impeccable's own project artifacts: PRODUCT.md,
- * DESIGN.md and its `.impeccable/design.json` sidecar, `.impeccable/config.json`,
- * and persisted surface briefs.
+ * Staleness detection for the engine's own project artifacts: PRODUCT.md,
+ * DESIGN.md and its `design.json` sidecar, `config.json`, and persisted
+ * surface briefs. The latter three live in the Fólkvangr vault
+ * (`.asgard/.vanadis/engine2/`, see vault.mjs).
  *
  * Three kinds of drift live under "out of date", and they want different
  * handling:
  *
  *   1. Tool version drift. The installed skill is older than the published one.
  *      Owned by computeUpdateDirective in context.mjs, not by this module.
- *   2. Schema drift. An artifact was written by an older Impeccable: fields it
+ *   2. Schema drift. An artifact was written by an older Freyja 2: fields it
  *      no longer reads, fields it now expects, files in retired locations.
  *      Deterministic, and mostly fixable without asking anyone.
  *   3. Truth drift. The code moved on and the document no longer describes it.
@@ -36,6 +37,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { VAULT_REL, vaultCandidates, vaultPath } from './vault.mjs';
 import {
   PRODUCT_SCHEMA_VERSION,
   PRODUCT_DEPRECATED_SECTIONS,
@@ -94,13 +96,13 @@ function finding({ id, artifact, filePath = null, severity, summary, fix }) {
 
 /**
  * Every location a design sidecar may live, canonical first. Pure so that both
- * impeccable-paths (which resolves the project root) and context.mjs (which
- * cannot import impeccable-paths without a cycle) share one definition of
- * where the retired locations are.
+ * vault-paths (which resolves the project root) and context.mjs (which cannot
+ * import vault-paths without a cycle) share one definition of where the
+ * retired locations are.
  */
 export function designSidecarCandidatesFor(projectRoot, contextDir = projectRoot) {
   const candidates = [
-    path.join(projectRoot, '.impeccable', 'design.json'),
+    ...vaultCandidates(projectRoot, 'design.json'),
     path.join(projectRoot, 'DESIGN.json'),
   ];
   const contextLegacy = path.join(contextDir || projectRoot, 'DESIGN.json');
@@ -237,7 +239,7 @@ export function checkNativePlatformEvidence({ projectRoot, platform, product, pr
  * Sidecar drift: retired location, schema version behind, or older than the
  * DESIGN.md it extends. Costs three stats and one small JSON read.
  *
- * `sidecarCandidates` comes from impeccable-paths' resolver so this module
+ * `sidecarCandidates` comes from freyja2-paths' resolver so this module
  * stays out of the business of knowing where sidecars may live; the first
  * entry is the canonical location.
  */
@@ -295,7 +297,7 @@ export function checkDesignSidecar({ designPath, sidecarCandidates = [], project
   return findings;
 }
 
-// ─── .impeccable/config.json ───────────────────────────────────────────────
+// ─── the vault's config.json ───────────────────────────────────────────────
 
 /**
  * Unrecognized keys in the shared and local configs. A key nothing reads is
@@ -307,7 +309,8 @@ export function checkConfig({ projectRoot, repoRoot }) {
   const roots = [...new Set([projectRoot, repoRoot].filter(Boolean).map((root) => path.resolve(root)))];
   for (const root of roots) {
     for (const name of ['config.json', 'config.local.json']) {
-      const filePath = path.join(root, '.impeccable', name);
+      const filePath = vaultCandidates(root, name).find((candidate) => fs.existsSync(candidate))
+        || vaultPath(root, name);
       const raw = readJson(filePath);
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) continue;
       const rel = toRelative(filePath, projectRoot || root);
@@ -384,7 +387,7 @@ export function checkSurfaceBriefs({ candidates = [], projectRoot }) {
  * Takes the candidate list rather than computing it: the boot path has already
  * paid for that walk, and this module must not pay for it twice.
  */
-export function checkProjectRoots({ patterns = [], candidates = [], configuredIn = '.impeccable/config.json' }) {
+export function checkProjectRoots({ patterns = [], candidates = [], configuredIn = `${VAULT_REL}/config.json` }) {
   const positive = patterns.filter((pattern) => pattern && !String(pattern).trim().startsWith('!'));
   if (!positive.length || candidates.length) return [];
   return [finding({

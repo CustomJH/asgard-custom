@@ -3,7 +3,7 @@
  * boot. Shelling out to git, walking workspaces, resolving hook script paths,
  * and validating ignore lists against the live rule registry all belong here.
  *
- * The boot tier answers "did an older Impeccable write this". This tier also
+ * The boot tier answers "did an older Freyja 2 write this". This tier also
  * asks "does it still describe the code", which no file comparison can settle
  * on its own. Where the answer needs judgment, the finding reports a measured
  * proxy and says it is a proxy. It never claims a document is wrong because a
@@ -17,6 +17,8 @@ import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { LEGACY_VAULT_RELS, VAULT_REL, vaultCandidates, vaultPath } from './vault.mjs';
+
 const VISUAL_SOURCE_DIRS = ['src', 'app', 'pages', 'components', 'site', 'styles', 'public'];
 
 const HOOK_MANIFESTS_BY_PROVIDER = Object.freeze({
@@ -24,18 +26,18 @@ const HOOK_MANIFESTS_BY_PROVIDER = Object.freeze({
   codex: ['.codex/hooks.json'],
   agents: ['.codex/hooks.json'],
   cursor: ['.cursor/hooks.json'],
-  github: ['.github/hooks/impeccable.json'],
-  grok: ['.grok/hooks/impeccable.json'],
+  github: ['.github/hooks/freyja2.json'],
+  grok: ['.grok/hooks/freyja2.json'],
 });
 
 const HOOK_SCRIPT_MARKERS = [
-  'skills/impeccable/scripts/hook.mjs',
-  'skills/impeccable/scripts/hook-before-edit.mjs',
+  'skills/freyja2/scripts/hook.mjs',
+  'skills/freyja2/scripts/hook-before-edit.mjs',
 ];
 
-// Retired live-mode state locations. impeccable-paths still reads these as
+// Retired live-mode state locations. vault-paths still reads these as
 // fallbacks; reporting them is what eventually lets the fallbacks go.
-const LEGACY_LIVE_PATHS = ['.impeccable-live.json', '.impeccable-live'];
+const LEGACY_LIVE_PATHS = ['.freyja2-live.json', '.freyja2-live'];
 
 function finding({ id, artifact, filePath = null, severity, summary, fix }) {
   return { id, artifact, path: filePath, severity, summary, fix };
@@ -153,7 +155,8 @@ export function checkDetectorIgnores({ projectRoot, knownRuleIds = null }) {
   if (!projectRoot) return findings;
 
   for (const name of ['config.json', 'config.local.json']) {
-    const filePath = path.join(projectRoot, '.impeccable', name);
+    const filePath = vaultCandidates(projectRoot, name).find((c) => fs.existsSync(c))
+      || vaultPath(projectRoot, name);
     const raw = readJson(filePath);
     const detector = raw?.detector;
     if (!detector || typeof detector !== 'object') continue;
@@ -215,7 +218,7 @@ function collectHookCommands(value, out = []) {
   return out;
 }
 
-const HOOK_MARKER = /skills\/impeccable\/scripts\/hook(?:-before-edit)?\.mjs/;
+const HOOK_MARKER = /skills\/freyja2\/scripts\/hook(?:-before-edit)?\.mjs/;
 
 // Pull the script-path token out of a hook command line, placeholders intact.
 // The forms our manifests ship:
@@ -232,9 +235,9 @@ const HOOK_MARKER = /skills\/impeccable\/scripts\/hook(?:-before-edit)?\.mjs/;
 function hookScriptTokenFrom(command) {
   const str = String(command);
   if (!HOOK_MARKER.test(str)) return null;
-  const quoted = str.match(/"([^"]*skills\/impeccable\/scripts\/hook(?:-before-edit)?\.mjs)"/);
+  const quoted = str.match(/"([^"]*skills\/freyja2\/scripts\/hook(?:-before-edit)?\.mjs)"/);
   if (quoted) return quoted[1];
-  const bare = str.match(/([^\s"'|&;()]*skills\/impeccable\/scripts\/hook(?:-before-edit)?\.mjs)/);
+  const bare = str.match(/([^\s"'|&;()]*skills\/freyja2\/scripts\/hook(?:-before-edit)?\.mjs)/);
   return bare ? bare[1] : null;
 }
 
@@ -307,7 +310,7 @@ export function checkHookInstallation({ projectRoot, repoRoot, providerId }) {
           summary: `${installedAt} installs the design hook, but its script path does not exist: `
             + `${broken.map((command) => `\`${command}\``).join(', ')}. The hook runs as a no-op, so UI edits `
             + 'have been going unscanned while the project looks covered.',
-          fix: `Reinstall with \`impeccable hooks on\`, which rewrites the manifest against the skill's current location.`,
+          fix: `Reinstall with \`freyja2 hooks on\`, which rewrites the manifest against the skill's current location.`,
         }));
       }
     }
@@ -316,16 +319,18 @@ export function checkHookInstallation({ projectRoot, repoRoot, providerId }) {
   if (installedAt) {
     for (const root of roots) {
       for (const name of ['config.json', 'config.local.json']) {
-        const raw = readJson(path.join(root, '.impeccable', name));
+        const configPath = vaultCandidates(root, name).find((c) => fs.existsSync(c))
+          || vaultPath(root, name);
+        const raw = readJson(configPath);
         if (raw?.hook && raw.hook.enabled === false) {
           findings.push(finding({
             id: 'hook-enabled-conflict',
             artifact: 'config.json',
-            filePath: toRelative(path.join(root, '.impeccable', name), projectRoot || root),
+            filePath: toRelative(configPath, projectRoot || root),
             severity: 'mention',
             summary: `${installedAt} installs the design hook while this config sets \`hook.enabled: false\`, `
               + 'so the hook fires and then declines to scan.',
-            fix: 'Ask which was intended: `impeccable hooks on` to enable, or `impeccable hooks off` to uninstall '
+            fix: 'Ask which was intended: `freyja2 hooks on` to enable, or `freyja2 hooks off` to uninstall '
               + 'the manifest entry as well.',
           }));
           return findings;
@@ -339,6 +344,30 @@ export function checkHookInstallation({ projectRoot, repoRoot, providerId }) {
 
 // ─── retired locations ─────────────────────────────────────────────────────
 
+/**
+ * The retired artifact root. Everything is still *read* from it, so nothing is
+ * broken — but it sits at the project root, is visible to git, and outlives
+ * the run that wrote it, which is exactly what the vault exists to stop.
+ */
+export function checkLegacyVaultRoot({ projectRoot }) {
+  if (!projectRoot) return [];
+  const present = LEGACY_VAULT_RELS.filter((rel) => fs.existsSync(path.join(projectRoot, rel)));
+  if (!present.length) return [];
+  return [finding({
+    id: 'legacy-artifact-root',
+    artifact: 'artifact vault',
+    filePath: present.join(', '),
+    severity: 'auto',
+    summary: `Engine artifacts sit in the retired root(s) ${present.map((rel) => `\`${rel}\``).join(', ')}, `
+      + `which git can see. The current vault is \`${VAULT_REL}/\`, inside the \`.asgard/\` `
+      + 'directory Asgard already keeps out of git.',
+    fix: `Move what is worth keeping into \`${VAULT_REL}/\` and retire the old root — `
+      + '`doctor --fix` migrates what is there and removes the root; '
+      + '`node scripts/vault.mjs purge --legacy-only` deletes it outright. '
+      + 'Reads already fall back, so nothing breaks in the meantime.',
+  })];
+}
+
 export function checkLegacyLiveState({ projectRoot }) {
   if (!projectRoot) return [];
   const present = LEGACY_LIVE_PATHS.filter((rel) => fs.existsSync(path.join(projectRoot, rel)));
@@ -349,7 +378,7 @@ export function checkLegacyLiveState({ projectRoot }) {
     filePath: present.join(', '),
     severity: 'auto',
     summary: `Live-mode state sits in retired location(s): ${present.map((rel) => `\`${rel}\``).join(', ')}. `
-      + 'Current live mode writes under `.impeccable/live/`.',
+      + `Current live mode writes under \`${VAULT_REL}/live/\`.`,
     fix: 'These are read only through backward-compatible fallbacks and are safe to delete once no live session '
       + 'is running. No user decision is needed.',
   })];

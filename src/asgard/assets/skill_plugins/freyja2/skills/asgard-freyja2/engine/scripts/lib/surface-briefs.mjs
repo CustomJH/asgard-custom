@@ -1,11 +1,18 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { slugFromTarget } from './target-slug.mjs';
+import { ensureVaultFileDir, resolveVaultFile, vaultPath } from './vault.mjs';
 
 export const SURFACE_BRIEF_VERSION = 1;
 
+/** Where briefs are written: always the vault. */
 export function getSurfaceBriefDir(projectRoot) {
-  return path.join(projectRoot, '.impeccable', 'surfaces');
+  return vaultPath(projectRoot, 'surfaces');
+}
+
+/** Where briefs are read from: the vault, then any retired root. */
+export function resolveSurfaceBriefDir(projectRoot) {
+  return resolveVaultFile(projectRoot, 'surfaces');
 }
 
 export function normalizeSurfaceTarget(target, { projectRoot = process.cwd() } = {}) {
@@ -48,7 +55,7 @@ export function surfaceBriefPathForTarget(target, { projectRoot = process.cwd() 
   if (!normalized) return null;
   const slugInput = normalized.startsWith('route:') ? `route${normalized.slice('route:'.length)}` : normalized;
   const slug = slugFromTarget(slugInput, { cwd: projectRoot });
-  return slug ? path.join(getSurfaceBriefDir(projectRoot), `${slug}.md`) : null;
+  return slug ? path.join(resolveSurfaceBriefDir(projectRoot), `${slug}.md`) : null;
 }
 
 export function parseSurfaceBrief(text, filePath = null) {
@@ -84,7 +91,7 @@ export function parseSurfaceBrief(text, filePath = null) {
 }
 
 export function listSurfaceBriefs(projectRoot = process.cwd()) {
-  const dir = getSurfaceBriefDir(projectRoot);
+  const dir = resolveSurfaceBriefDir(projectRoot);
   let names;
   try {
     names = fs.readdirSync(dir).filter((name) => name.endsWith('.md')).sort();
@@ -137,7 +144,7 @@ export function writeSurfaceBrief({
     .filter((target) => target && target !== normalizedPrimary))];
   const slug = slugFromTarget(normalizedPrimary, { cwd: projectRoot });
   const filePath = surfaceBriefPathForTarget(normalizedPrimary, { projectRoot });
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  ensureVaultFileDir(filePath, projectRoot);
   const frontmatter = [
     '---',
     `version: ${SURFACE_BRIEF_VERSION}`,

@@ -1,11 +1,13 @@
 /**
- * CLI-side reader/writer for the unified `.impeccable` config.
+ * CLI-side reader/writer for the unified engine config, which lives in the
+ * Fólkvangr vault (see `vault.mjs`).
  *
  * The CLI (published to npm) and the skill scripts (bundled into the install)
  * live in separate trees and cannot share runtime code, so this duplicates a
- * small slice of skill/scripts/hook-lib.mjs — the config-path layout, detector
- * ignore semantics, and the `.git/info/exclude` handling. Keep the schema,
- * ignore filtering, and exclude marker in sync if either side changes.
+ * small slice of skill/scripts/hook-lib.mjs — the detector ignore semantics
+ * and the `.git/info/exclude` handling. Keep the schema, ignore filtering, and
+ * exclude marker in sync if either side changes. Path layout is *not*
+ * duplicated: both sides resolve it through `vault.mjs`.
  *
  * Schema (config.json shared / config.local.json gitignored, per-developer):
  *   {
@@ -15,15 +17,26 @@
  *   }
  */
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
-import { join, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
+import { existsSync, readFileSync, writeFileSync, statSync } from 'node:fs';
+import { join, isAbsolute, relative, resolve, sep } from 'node:path';
+import { VAULT_REL, ensureVaultFileDir, resolveVaultFile, vaultPath } from './vault.mjs';
 
+// Reads accept a config left behind by an older engine; writes only ever land
+// in the vault, so a read-then-write migrates the file without asking.
 export function getConfigPath(root) {
-  return join(root, '.impeccable', 'config.json');
+  return resolveVaultFile(root, 'config.json');
 }
 
 export function getLocalConfigPath(root) {
-  return join(root, '.impeccable', 'config.local.json');
+  return resolveVaultFile(root, 'config.local.json');
+}
+
+export function getConfigWritePath(root) {
+  return vaultPath(root, 'config.json');
+}
+
+export function getLocalConfigWritePath(root) {
+  return vaultPath(root, 'config.local.json');
 }
 
 function safeReadJson(filePath) {
@@ -72,7 +85,7 @@ function cloneRawDetectionConfig() {
 function applyDetectionConfigSource(config, raw) {
   if (!raw || typeof raw !== 'object') return config;
   // Advisory rules are opt-in for the design hook; the CLI carries the setting
-  // so config round-trips (e.g. `impeccable hooks ignore-value`) preserve it.
+  // so config round-trips (e.g. `freyja2 hooks ignore-value`) preserve it.
   if (raw.advisoryRules === 'include' || raw.advisoryRules === 'exclude') {
     config.advisoryRules = raw.advisoryRules;
   }
@@ -99,7 +112,7 @@ function uniqueStrings(values) {
 }
 
 /**
- * Detector filters shared by `npx impeccable detect` and the design hook.
+ * Detector filters shared by `node scripts/detect.mjs` and the design hook.
  * `hook.enabled` remains hook lifecycle state; manual CLI scans still run when
  * the hook is disabled, but they honor the same ignore rules and design-system
  * toggle.
@@ -124,9 +137,9 @@ export function readRawDetectionConfig(root, opts = {}) {
 }
 
 export function writeDetectionConfig(root, detectorConfig, opts = {}) {
-  const filePath = opts.local ? getLocalConfigPath(root) : getConfigPath(root);
+  const filePath = opts.local ? getLocalConfigWritePath(root) : getConfigWritePath(root);
   if (opts.local) ensureConfigGitExclude(root);
-  const existing = safeReadJson(filePath) || {};
+  const existing = safeReadJson(opts.local ? getLocalConfigPath(root) : getConfigPath(root)) || {};
   const existingHook = hookSection(existing);
   const nextHook = stripDetectorKeys(existingHook);
   const nextDetector = {
@@ -142,7 +155,7 @@ export function writeDetectionConfig(root, detectorConfig, opts = {}) {
   } else {
     delete next.hook;
   }
-  mkdirSync(dirname(filePath), { recursive: true });
+  ensureVaultFileDir(filePath, root);
   writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
   return filePath;
 }
@@ -589,44 +602,37 @@ export function getHookConsent(root) {
  * sibling keys, and ensure the file is gitignored.
  */
 export function setHookConsent(root, value) {
-  const filePath = getLocalConfigPath(root);
-  const existing = safeReadJson(filePath) || {};
+  const filePath = getLocalConfigWritePath(root);
+  const existing = safeReadJson(getLocalConfigPath(root)) || {};
   const hook = hookSection(existing) || {};
   const next = { ...existing, hook: { ...hook, consent: value } };
-  mkdirSync(dirname(filePath), { recursive: true });
+  ensureVaultFileDir(filePath, root);
   writeFileSync(filePath, `${JSON.stringify(next, null, 2)}\n`);
   ensureConfigGitExclude(root);
   return filePath;
 }
 
-const EXCLUDE_OPEN = '# impeccable-config-ignore-start';
-const EXCLUDE_CLOSE = '# impeccable-config-ignore-end';
-const EXCLUDE_PATTERNS = ['.impeccable/config.local.json'];
+const EXCLUDE_OPEN = '# freyja2-config-ignore-start';
+const EXCLUDE_CLOSE = '# freyja2-config-ignore-end';
+
 
 /**
- * Add config.local.json to `.git/info/exclude` so a developer's decision is
- * never committed. Idempotent via marker comments. Best-effort; returns false
- * when there is no resolvable git dir.
+ * There is nothing left to exclude: config.local.json lives in the vault under
+ * `.asgard/`, which Asgard already keeps out of git. What remains is cleanup —
+ * remove the block older versions wrote to `.git/info/exclude`, which now
+ * names a path that no longer exists. Best-effort; returns false when there is
+ * no resolvable git dir.
  */
 export function ensureConfigGitExclude(root) {
   try {
     const gitDir = resolveGitDir(root);
     if (!gitDir) return false;
     const target = join(gitDir, 'info', 'exclude');
-    const existing = existsSync(target) ? readFileSync(target, 'utf-8') : '';
-    const block = [EXCLUDE_OPEN, ...EXCLUDE_PATTERNS, EXCLUDE_CLOSE].join('\n');
-    const markerRe = new RegExp(`${escapeRegExp(EXCLUDE_OPEN)}[\\s\\S]*?${escapeRegExp(EXCLUDE_CLOSE)}`);
-    let updated;
-    if (markerRe.test(existing)) {
-      updated = existing.replace(markerRe, block);
-    } else {
-      const prefix = existing.length === 0 ? '' : existing.endsWith('\n') ? existing : `${existing}\n`;
-      updated = `${prefix}${block}\n`;
-    }
-    if (updated !== existing) {
-      mkdirSync(dirname(target), { recursive: true });
-      writeFileSync(target, updated);
-    }
+    if (!existsSync(target)) return true;
+    const raw = readFileSync(target, 'utf-8');
+    const blockRe = new RegExp(`${escapeRegExp(EXCLUDE_OPEN)}[\\s\\S]*?${escapeRegExp(EXCLUDE_CLOSE)}\\n?`);
+    const updated = raw.replace(blockRe, '');
+    if (updated !== raw) writeFileSync(target, updated);
     return true;
   } catch {
     return false;

@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 /**
- * The Impeccable hooks command manages the design hook runtime
- * via the `hook` key and shared detector ignores via the `detector` key in
- * .impeccable/config.json / .impeccable/config.local.json.
+ * The hooks command manages the design hook runtime via the `hook` key and
+ * shared detector ignores via the `detector` key in the Fólkvangr vault's
+ * config.json / config.local.json (.asgard/.vanadis/engine2/, see lib/vault.mjs).
  *
  * Usage:
  *   node hook-admin.mjs status                         # print current state
@@ -23,11 +23,15 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { IMPECCABLE_COMMAND } from './lib/provider.mjs';
+import { FREYJA2_COMMAND } from './lib/provider.mjs';
+
+import { VAULT_REL, ensureVaultFileDir } from './lib/vault.mjs';
 
 import {
   getConfigPath,
   getLocalConfigPath,
+  getConfigWritePath,
+  getLocalConfigWritePath,
   getCachePath,
   getPendingPath,
   readConfig,
@@ -38,12 +42,12 @@ import {
 } from './hook-lib.mjs';
 
 const ACTIONS = new Set(['status', 'on', 'off', 'ignore-rule', 'ignore-file', 'ignore-value', 'reset']);
-const IMPECCABLE_HOOK_COMMAND_MARKERS = [
-  'skills/impeccable/scripts/hook-probe.mjs',
-  'skills/impeccable/scripts/hook.mjs',
-  'skills/impeccable/scripts/hook-before-edit.mjs',
-  'skills/impeccable/scripts/hook-after-edit.mjs',
-  'skills/impeccable/scripts/hook-stop.mjs',
+const FREYJA2_HOOK_COMMAND_MARKERS = [
+  'skills/freyja2/scripts/hook-probe.mjs',
+  'skills/freyja2/scripts/hook.mjs',
+  'skills/freyja2/scripts/hook-before-edit.mjs',
+  'skills/freyja2/scripts/hook-after-edit.mjs',
+  'skills/freyja2/scripts/hook-stop.mjs',
 ];
 const TIMEOUT_SECONDS = 5;
 const STATUS_MESSAGE = 'Checking UI changes';
@@ -71,11 +75,11 @@ function stopManifestEntry(command) {
 const HOOK_MANIFEST_TARGETS = [
   {
     provider: '.claude',
-    skillRel: '.claude/skills/impeccable',
+    skillRel: '.claude/skills/freyja2',
     destRel: '.claude/settings.local.json',
     sharedDestRel: '.claude/settings.json',
     manifest: () => ({
-      description: 'Impeccable design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop.',
+      description: 'Freyja 2 design detector: immediate-tier checks after Edit/Write/MultiEdit on UI files, full-rule deep pass on Stop.',
       hooks: {
         PostToolUse: [
           {
@@ -83,20 +87,20 @@ const HOOK_MANIFEST_TARGETS = [
             hooks: [
               {
                 type: 'command',
-                command: 'node "${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs"',
+                command: 'node "${CLAUDE_PROJECT_DIR}/.claude/skills/freyja2/scripts/hook.mjs"',
                 timeout: TIMEOUT_SECONDS,
                 statusMessage: STATUS_MESSAGE,
               },
             ],
           },
         ],
-        Stop: [stopManifestEntry('node "${CLAUDE_PROJECT_DIR}/.claude/skills/impeccable/scripts/hook.mjs"')],
+        Stop: [stopManifestEntry('node "${CLAUDE_PROJECT_DIR}/.claude/skills/freyja2/scripts/hook.mjs"')],
       },
     }),
   },
   {
     provider: '.agents',
-    skillRel: '.agents/skills/impeccable',
+    skillRel: '.agents/skills/freyja2',
     destRel: '.codex/hooks.json',
     manifest: () => ({
       hooks: {
@@ -106,27 +110,27 @@ const HOOK_MANIFEST_TARGETS = [
             hooks: [
               {
                 type: 'command',
-                command: 'node ".agents/skills/impeccable/scripts/hook.mjs"',
+                command: 'node ".agents/skills/freyja2/scripts/hook.mjs"',
                 timeout: TIMEOUT_SECONDS,
                 statusMessage: STATUS_MESSAGE,
               },
             ],
           },
         ],
-        Stop: [stopManifestEntry('node ".agents/skills/impeccable/scripts/hook.mjs"')],
+        Stop: [stopManifestEntry('node ".agents/skills/freyja2/scripts/hook.mjs"')],
       },
     }),
   },
   {
     provider: '.cursor',
-    skillRel: '.cursor/skills/impeccable',
+    skillRel: '.cursor/skills/freyja2',
     destRel: '.cursor/hooks.json',
     manifest: () => ({
       version: 1,
       hooks: {
         preToolUse: [
           {
-            command: 'node ".cursor/skills/impeccable/scripts/hook-before-edit.mjs"',
+            command: 'node ".cursor/skills/freyja2/scripts/hook-before-edit.mjs"',
             timeout: TIMEOUT_SECONDS,
           },
         ],
@@ -139,8 +143,8 @@ const HOOK_MANIFEST_TARGETS = [
     // the cloud/app agent. Schema differs: lowercase `postToolUse`, flat entries,
     // `bash`/`timeoutSec`, and a `matcher` regex against the `edit`/`create` tools.
     provider: '.github',
-    skillRel: '.github/skills/impeccable',
-    destRel: '.github/hooks/impeccable.json',
+    skillRel: '.github/skills/freyja2',
+    destRel: '.github/hooks/freyja2.json',
     manifest: () => ({
       version: 1,
       hooks: {
@@ -148,7 +152,7 @@ const HOOK_MANIFEST_TARGETS = [
           {
             type: 'command',
             matcher: 'edit|create|apply_patch',
-            bash: 'node "$(git rev-parse --show-toplevel)/.github/skills/impeccable/scripts/hook.mjs"',
+            bash: 'node "$(git rev-parse --show-toplevel)/.github/skills/freyja2/scripts/hook.mjs"',
             timeoutSec: TIMEOUT_SECONDS,
           },
         ],
@@ -203,23 +207,23 @@ function stripDetectorKeys(raw) {
 // Write hook runtime config under `hook`, leaving detector filters in
 // `detector` and preserving sibling keys such as updateCheck.
 function writeHookConfig(cwd, hookConfig, opts = {}) {
-  const filePath = opts.local ? getLocalConfigPath(cwd) : getConfigPath(cwd);
+  const filePath = opts.local ? getLocalConfigWritePath(cwd) : getConfigWritePath(cwd);
   if (opts.local) ensureHookGitExcludes(cwd);
-  const existingRaw = readRawConfigFile(filePath).raw;
+  const existingRaw = readRawConfigFile(opts.local ? getLocalConfigPath(cwd) : getConfigPath(cwd)).raw;
   const existing = existingRaw && typeof existingRaw === 'object' && !Array.isArray(existingRaw) ? existingRaw : {};
   const existingHook = stripDetectorKeys(hookSection(existing));
   // Merge over the existing hook object so fields the merge helpers don't manage
-  // (consent, quiet, auditLog) survive an Impeccable hooks edit.
+  // (consent, quiet, auditLog) survive an Freyja 2 hooks edit.
   const next = { ...existing, hook: { ...existingHook, ...hookConfig } };
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  ensureVaultFileDir(filePath, cwd);
   fs.writeFileSync(filePath, JSON.stringify(next, null, 2) + '\n');
   return filePath;
 }
 
 function writeDetectorConfig(cwd, detectorConfig, opts = {}) {
-  const filePath = opts.local ? getLocalConfigPath(cwd) : getConfigPath(cwd);
+  const filePath = opts.local ? getLocalConfigWritePath(cwd) : getConfigWritePath(cwd);
   if (opts.local) ensureHookGitExcludes(cwd);
-  const existingRaw = readRawConfigFile(filePath).raw;
+  const existingRaw = readRawConfigFile(opts.local ? getLocalConfigPath(cwd) : getConfigPath(cwd)).raw;
   const existing = existingRaw && typeof existingRaw === 'object' && !Array.isArray(existingRaw) ? existingRaw : {};
   const nextHook = stripDetectorKeys(hookSection(existing));
   const existingDetector = mergeDetectorConfig(detectorSection(existing));
@@ -229,7 +233,7 @@ function writeDetectorConfig(cwd, detectorConfig, opts = {}) {
   };
   if (Object.keys(nextHook).length > 0) next.hook = nextHook;
   else delete next.hook;
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  ensureVaultFileDir(filePath, cwd);
   fs.writeFileSync(filePath, JSON.stringify(next, null, 2) + '\n');
   return filePath;
 }
@@ -300,11 +304,11 @@ function statusReport(cwd) {
   const shared = readRawConfigFile(getConfigPath(cwd));
   const local = readRawConfigFile(getLocalConfigPath(cwd));
   const cfg = readConfig(cwd);
-  const envKill = process.env.IMPECCABLE_HOOK_DISABLED;
-  const envState = envKill ? `IMPECCABLE_HOOK_DISABLED=${envKill}` : 'unset';
-  const cfgPath = path.relative(cwd, getConfigPath(cwd)) || '.impeccable/config.json';
-  const localPath = path.relative(cwd, getLocalConfigPath(cwd)) || '.impeccable/config.local.json';
-  const cachePath = path.relative(cwd, getCachePath(cwd)) || '.impeccable/hook.cache.json';
+  const envKill = process.env.FREYJA2_HOOK_DISABLED;
+  const envState = envKill ? `FREYJA2_HOOK_DISABLED=${envKill}` : 'unset';
+  const cfgPath = path.relative(cwd, getConfigPath(cwd)) || `${VAULT_REL}/config.json`;
+  const localPath = path.relative(cwd, getLocalConfigPath(cwd)) || `${VAULT_REL}/config.local.json`;
+  const cachePath = path.relative(cwd, getCachePath(cwd)) || `${VAULT_REL}/hook.cache.json`;
   const fileState = (info, relPath, absent) => {
     if (info.malformed) return `${relPath} (malformed; ignored)`;
     if (info.exists) return relPath;
@@ -313,14 +317,14 @@ function statusReport(cwd) {
   // Show the file scope. Dropping it rendered a file-scoped entry as
   // `design-system-font-size=*`, which reads as the project-wide wildcard this
   // command refuses — the opposite of what is on disk. Matches the
-  // `rule=value [files]` shape `impeccable ignores list` already prints.
+  // `rule=value [files]` shape `freyja2 ignores list` already prints.
   const ignoreValues = cfg.ignoreValues.map((entry) => {
     const scope = Array.isArray(entry.files) && entry.files.length ? ` [${entry.files.join(', ')}]` : '';
     return `${entry.rule}=${entry.value}${scope}`;
   });
 
   const lines = [
-    `Impeccable design hook`,
+    `Freyja 2 design hook`,
     `  state:        ${cfg.enabled ? 'enabled' : 'disabled'}`,
     `  shared file:  ${fileState(shared, cfgPath, 'using defaults; file not present')}`,
     `  local file:   ${fileState(local, localPath, 'not present')}`,
@@ -369,8 +373,8 @@ function repairHookManifests(cwd) {
     const dest = path.join(cwd, target.destRel);
     const sharedDest = target.sharedDestRel ? path.join(cwd, target.sharedDestRel) : null;
 
-    if (sharedDest && fileHasImpeccableHookMarker(sharedDest)) {
-      pruneImpeccableHookFromManifest(dest);
+    if (sharedDest && fileHasFreyja2HookMarker(sharedDest)) {
+      pruneFreyja2HookFromManifest(dest);
       result.already.push(target.provider);
       continue;
     }
@@ -424,7 +428,7 @@ function mergeHookManifests(existing, fresh) {
 
   const hookEvents = new Set([...Object.keys(existingHooks), ...Object.keys(freshHooks)]);
   for (const event of hookEvents) {
-    const preserved = stripImpeccableHookEntries(existingHooks[event]);
+    const preserved = stripFreyja2HookEntries(existingHooks[event]);
     const added = Array.isArray(freshHooks[event]) ? freshHooks[event] : [];
     const mergedEntries = [...preserved, ...added];
     if (mergedEntries.length > 0) merged.hooks[event] = mergedEntries;
@@ -432,7 +436,7 @@ function mergeHookManifests(existing, fresh) {
   return merged;
 }
 
-function fileHasImpeccableHookMarker(filePath) {
+function fileHasFreyja2HookMarker(filePath) {
   if (!fs.existsSync(filePath)) return false;
   let parsed;
   try {
@@ -442,47 +446,47 @@ function fileHasImpeccableHookMarker(filePath) {
   }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return false;
   if (!parsed.hooks || typeof parsed.hooks !== 'object') return false;
-  return valueHasImpeccableHookMarker(parsed.hooks);
+  return valueHasFreyja2HookMarker(parsed.hooks);
 }
 
-function valueHasImpeccableHookMarker(value) {
+function valueHasFreyja2HookMarker(value) {
   if (typeof value === 'string') {
-    return IMPECCABLE_HOOK_COMMAND_MARKERS.some((marker) => value.includes(marker));
+    return FREYJA2_HOOK_COMMAND_MARKERS.some((marker) => value.includes(marker));
   }
-  if (Array.isArray(value)) return value.some(valueHasImpeccableHookMarker);
-  if (value && typeof value === 'object') return Object.values(value).some(valueHasImpeccableHookMarker);
+  if (Array.isArray(value)) return value.some(valueHasFreyja2HookMarker);
+  if (value && typeof value === 'object') return Object.values(value).some(valueHasFreyja2HookMarker);
   return false;
 }
 
-function stripImpeccableHookEntry(entry) {
+function stripFreyja2HookEntry(entry) {
   if (!entry || typeof entry !== 'object') return entry;
   // `command`/`args`: Claude/Codex/Cursor. `bash`/`powershell`: GitHub Copilot's
   // flat entry shape, where the marker lives under the shell-command keys.
-  if (valueHasImpeccableHookMarker(entry.command) || valueHasImpeccableHookMarker(entry.args)
-    || valueHasImpeccableHookMarker(entry.bash) || valueHasImpeccableHookMarker(entry.powershell)) {
+  if (valueHasFreyja2HookMarker(entry.command) || valueHasFreyja2HookMarker(entry.args)
+    || valueHasFreyja2HookMarker(entry.bash) || valueHasFreyja2HookMarker(entry.powershell)) {
     return null;
   }
   if (!Array.isArray(entry.hooks)) return entry;
 
   const strippedHooks = entry.hooks
-    .map(stripImpeccableHookEntry)
+    .map(stripFreyja2HookEntry)
     .filter(Boolean);
 
-  if (strippedHooks.length === 0 && entry.hooks.some(valueHasImpeccableHookMarker)) {
+  if (strippedHooks.length === 0 && entry.hooks.some(valueHasFreyja2HookMarker)) {
     return null;
   }
   return { ...entry, hooks: strippedHooks };
 }
 
-function stripImpeccableHookEntries(entries) {
+function stripFreyja2HookEntries(entries) {
   if (!Array.isArray(entries)) return [];
   return entries
-    .map(stripImpeccableHookEntry)
+    .map(stripFreyja2HookEntry)
     .filter(Boolean);
 }
 
-function pruneImpeccableHookFromManifest(manifestPath) {
-  if (!fileHasImpeccableHookMarker(manifestPath)) return false;
+function pruneFreyja2HookFromManifest(manifestPath) {
+  if (!fileHasFreyja2HookMarker(manifestPath)) return false;
   let parsed;
   try {
     parsed = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
@@ -495,7 +499,7 @@ function pruneImpeccableHookFromManifest(manifestPath) {
     : {};
   const cleanedHooks = {};
   for (const [event, entries] of Object.entries(existingHooks)) {
-    const kept = stripImpeccableHookEntries(entries);
+    const kept = stripFreyja2HookEntries(entries);
     if (kept.length > 0) cleanedHooks[event] = kept;
   }
 
@@ -548,9 +552,9 @@ function parseIgnoreRuleArgs(args) {
 function addIgnoreRule(cwd, args) {
   const parsed = parseIgnoreRuleArgs(args);
   const rule = parsed.rule;
-  if (!rule) throw new Error(`Pass a rule id, e.g. ${IMPECCABLE_COMMAND} hooks ignore-rule side-tab`);
+  if (!rule) throw new Error(`Pass a rule id, e.g. ${FREYJA2_COMMAND} hooks ignore-rule side-tab`);
   if (rule === 'overused-font' && !parsed.allValues) {
-    throw new Error(`overused-font is value-specific by default. Use ${IMPECCABLE_COMMAND} hooks ignore-value overused-font <font> for a confirmed font, or ${IMPECCABLE_COMMAND} hooks ignore-rule overused-font --all-values only when the user asked to ignore overused fonts generally.`);
+    throw new Error(`overused-font is value-specific by default. Use ${FREYJA2_COMMAND} hooks ignore-value overused-font <font> for a confirmed font, or ${FREYJA2_COMMAND} hooks ignore-rule overused-font --all-values only when the user asked to ignore overused fonts generally.`);
   }
   const config = mergeDetectorConfig(readRawDetectorConfig(cwd));
   if (!config.ignoreRules.includes(rule)) config.ignoreRules.push(rule);
@@ -559,7 +563,7 @@ function addIgnoreRule(cwd, args) {
 }
 
 function addIgnoreFile(cwd, glob) {
-  if (!glob) throw new Error(`Pass a glob, e.g. ${IMPECCABLE_COMMAND} hooks ignore-file "src/legacy/**"`);
+  if (!glob) throw new Error(`Pass a glob, e.g. ${FREYJA2_COMMAND} hooks ignore-file "src/legacy/**"`);
   const config = mergeDetectorConfig(readRawDetectorConfig(cwd));
   if (!config.ignoreFiles.includes(glob)) config.ignoreFiles.push(glob);
   writeDetectorConfig(cwd, config);
@@ -611,7 +615,7 @@ function parseIgnoreValueArgs(args) {
     } else if (arg.startsWith('--')) {
       // Otherwise a typo folds into the value: `ignore-value overused-font Inter
       // --shard` stored the value "inter --shard", which matches no finding, and
-      // reported success. Matches `impeccable ignores add-value`.
+      // reported success. Matches `freyja2 ignores add-value`.
       throw new Error(`Unknown ignore-value flag: ${arg}`);
     } else {
       positionals.push(arg);
@@ -634,7 +638,7 @@ function parseIgnoreValueArgs(args) {
 function addIgnoreValue(cwd, args) {
   const parsed = parseIgnoreValueArgs(args);
   if (!parsed.rule || !parsed.value) {
-    throw new Error(`Pass a rule id and value, e.g. ${IMPECCABLE_COMMAND} hooks ignore-value overused-font Inter`);
+    throw new Error(`Pass a rule id and value, e.g. ${FREYJA2_COMMAND} hooks ignore-value overused-font Inter`);
   }
 
   if (parsed.shared && parsed.local) {
@@ -643,14 +647,14 @@ function addIgnoreValue(cwd, args) {
 
   // A bare `*` would suppress the rule everywhere, which is ignore-rule's job and
   // not what a finding in one file justifies. detector.ignoreValues honours a
-  // `files` scope, so require one — matching `impeccable ignores add-value`.
+  // `files` scope, so require one — matching `freyja2 ignores add-value`.
   if (parsed.value === '*' && parsed.files.length === 0) {
     // `ignore-rule overused-font` refuses on its own without --all-values, so
     // naming the bare form here would hand the user a second error.
     const projectWide = parsed.rule === 'overused-font'
-      ? `${IMPECCABLE_COMMAND} hooks ignore-rule ${parsed.rule} --all-values`
-      : `${IMPECCABLE_COMMAND} hooks ignore-rule ${parsed.rule}`;
-    throw new Error(`Wildcard value ignores must be scoped with --file <glob>, e.g. ${IMPECCABLE_COMMAND} hooks ignore-value design-system-font-size "*" --file "src/widget.js". To suppress the rule project-wide use ${projectWide}.`);
+      ? `${FREYJA2_COMMAND} hooks ignore-rule ${parsed.rule} --all-values`
+      : `${FREYJA2_COMMAND} hooks ignore-rule ${parsed.rule}`;
+    throw new Error(`Wildcard value ignores must be scoped with --file <glob>, e.g. ${FREYJA2_COMMAND} hooks ignore-value design-system-font-size "*" --file "src/widget.js". To suppress the rule project-wide use ${projectWide}.`);
   }
 
   const local = parsed.local;

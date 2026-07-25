@@ -1,19 +1,50 @@
+/**
+ * Project-root-aware layer over the Fólkvangr vault (see `vault.mjs`).
+ *
+ * Everything the engine persists about a project resolves through here, so
+ * `.asgard/.vanadis/engine2/` is stated once and the retired `.impeccable/` root stays
+ * readable without any caller knowing it existed.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { resolveProjectRoot } from '../context.mjs';
 import { designSidecarCandidatesFor } from './staleness.mjs';
-export { IMPECCABLE_COMMAND_PREFIX } from './provider.mjs';
+import {
+  VAULT_REL,
+  ensureVaultDir,
+  ensureVaultFileDir,
+  purgeVault,
+  resolveVaultFile,
+  sweepVault,
+  vaultCandidates,
+  vaultDirFor,
+  vaultPath,
+} from './vault.mjs';
+export { FREYJA2_COMMAND_PREFIX } from './provider.mjs';
+export {
+  VAULT_REL,
+  VAULT_SEGMENTS,
+  LEGACY_VAULT_RELS,
+  TRANSIENT_ENTRIES,
+  ensureVaultDir,
+  ensureVaultFileDir,
+  purgeVault,
+  sweepVault,
+  userCachePath,
+} from './vault.mjs';
 
-export const IMPECCABLE_DIR = '.impeccable';
+/** Vault location relative to the project root, kept for message text. */
+export const VAULT_DIR = VAULT_REL;
 export const LIVE_DIR = 'live';
 export const CRITIQUE_DIR = 'critique';
 
-export function getImpeccableDir(cwd = process.cwd(), options = {}) {
-  return path.join(resolveProjectRoot(cwd, options), IMPECCABLE_DIR);
+export function getVaultDir(cwd = process.cwd(), options = {}) {
+  return vaultDirFor(resolveProjectRoot(cwd, options));
 }
 
 export function getDesignSidecarPath(cwd = process.cwd(), options = {}) {
-  return path.join(getImpeccableDir(cwd, options), 'design.json');
+  return vaultPath(resolveProjectRoot(cwd, options), 'design.json');
 }
 
 export function getDesignSidecarCandidates(cwd = process.cwd(), contextDir = cwd, options = {}) {
@@ -25,7 +56,7 @@ export function resolveDesignSidecarPath(cwd = process.cwd(), contextDir = cwd, 
 }
 
 export function getLiveDir(cwd = process.cwd(), options = {}) {
-  return path.join(getImpeccableDir(cwd, options), LIVE_DIR);
+  return path.join(getVaultDir(cwd, options), LIVE_DIR);
 }
 
 export function getLiveConfigPath(cwd = process.cwd(), options = {}) {
@@ -37,12 +68,17 @@ export function getLegacyLiveConfigPath(scriptsDir) {
 }
 
 export function resolveLiveConfigPath({ cwd = process.cwd(), scriptsDir, env = process.env, targetPath } = {}) {
-  if (env.IMPECCABLE_LIVE_CONFIG && env.IMPECCABLE_LIVE_CONFIG.trim()) {
-    const configured = env.IMPECCABLE_LIVE_CONFIG.trim();
+  if (env.FREYJA2_LIVE_CONFIG && env.FREYJA2_LIVE_CONFIG.trim()) {
+    const configured = env.FREYJA2_LIVE_CONFIG.trim();
     return path.isAbsolute(configured) ? configured : path.resolve(cwd, configured);
   }
   const primary = getLiveConfigPath(cwd, { targetPath });
   if (fs.existsSync(primary)) return primary;
+  // A project set up by an older engine keeps its live config under the
+  // retired artifact root; adopt it rather than demanding a fresh setup.
+  for (const candidate of vaultCandidates(resolveProjectRoot(cwd, { targetPath }), LIVE_DIR, 'config.json')) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
   if (scriptsDir) {
     const legacy = getLegacyLiveConfigPath(scriptsDir);
     if (fs.existsSync(legacy)) return legacy;
@@ -55,7 +91,7 @@ export function getLiveServerPath(cwd = process.cwd(), options = {}) {
 }
 
 export function getLegacyLiveServerPath(cwd = process.cwd(), options = {}) {
-  return path.join(resolveProjectRoot(cwd, options), '.impeccable-live.json');
+  return path.join(resolveProjectRoot(cwd, options), '.freyja2-live.json');
 }
 
 export function readLiveServerInfo(cwd = process.cwd(), options = {}) {
@@ -87,7 +123,7 @@ export function isLiveServerPidReachable(pid) {
 
 export function writeLiveServerInfo(cwd = process.cwd(), info, options = {}) {
   const filePath = getLiveServerPath(cwd, options);
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  ensureVaultFileDir(filePath, resolveProjectRoot(cwd, options));
   fs.writeFileSync(filePath, JSON.stringify(info));
   return filePath;
 }
@@ -103,7 +139,7 @@ export function removeLiveServerInfo(cwd = process.cwd(), options = {}) {
  * preview manifests, generated component dirs). They arrive from CLI `--id`
  * arguments and HTTP payloads, so anything containing a separator or `..` must
  * be rejected before it reaches path.join, which would happily escape
- * `.impeccable/live/`. Real IDs are 8 hex chars; the tests use short slugs.
+ * `.asgard/.vanadis/engine2/live/`. Real IDs are 8 hex chars; the tests use short slugs.
  */
 export function safeSessionId(id) {
   if (typeof id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(id)) {
@@ -117,7 +153,7 @@ export function getLiveSessionsDir(cwd = process.cwd(), options = {}) {
 }
 
 export function getLegacyLiveSessionsDir(cwd = process.cwd(), options = {}) {
-  return path.join(resolveProjectRoot(cwd, options), '.impeccable-live', 'sessions');
+  return path.join(resolveProjectRoot(cwd, options), '.freyja2-live', 'sessions');
 }
 
 export function getLiveAnnotationsDir(cwd = process.cwd(), options = {}) {
@@ -125,11 +161,41 @@ export function getLiveAnnotationsDir(cwd = process.cwd(), options = {}) {
 }
 
 export function getCritiqueDir(cwd = process.cwd(), options = {}) {
-  return path.join(getImpeccableDir(cwd, options), CRITIQUE_DIR);
+  return path.join(getVaultDir(cwd, options), CRITIQUE_DIR);
+}
+
+/** Every location the critique record may live, canonical first. */
+export function getCritiqueDirCandidates(cwd = process.cwd(), options = {}) {
+  return vaultCandidates(resolveProjectRoot(cwd, options), CRITIQUE_DIR);
 }
 
 export function getLegacyLiveAnnotationsDir(cwd = process.cwd(), options = {}) {
-  return path.join(resolveProjectRoot(cwd, options), '.impeccable-live', 'annotations');
+  return path.join(resolveProjectRoot(cwd, options), '.freyja2-live', 'annotations');
+}
+
+/** Ensure a vault subdirectory exists, for a given cwd. */
+export function ensureVaultDirFor(dir, cwd = process.cwd(), options = {}) {
+  return ensureVaultDir(dir, resolveProjectRoot(cwd, options));
+}
+
+/** Ensure a vault file's parent directory exists. */
+export function ensureVaultFileDirFor(filePath, cwd = process.cwd(), options = {}) {
+  return ensureVaultFileDir(filePath, resolveProjectRoot(cwd, options));
+}
+
+/** Resolve a vault-relative file for a given cwd, retired roots included. */
+export function resolveVaultFileFor(rel, cwd = process.cwd(), options = {}) {
+  return resolveVaultFile(resolveProjectRoot(cwd, options), ...(Array.isArray(rel) ? rel : [rel]));
+}
+
+/** Clear the run-scoped vault entries for a given cwd. */
+export function sweepVaultFor(cwd = process.cwd(), options = {}) {
+  return sweepVault(resolveProjectRoot(cwd, options));
+}
+
+/** Remove the vault outright for a given cwd. */
+export function purgeVaultFor(cwd = process.cwd(), options = {}) {
+  return purgeVault(resolveProjectRoot(cwd, options));
 }
 
 function firstExisting(paths) {
