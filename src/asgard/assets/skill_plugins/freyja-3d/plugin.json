@@ -1,0 +1,72 @@
+{
+  "schema": 1,
+  "name": "freyja-3d",
+  "version": "1.0.0",
+  "description": "Freyja 3D engine (Brisingamen) — precision parametric CAD, realtime web 3D, 3D motion, and asset pipeline in one lane-routed skill, with a dependency-free verification runtime: offline multi-view rendering, mesh and kernel measurement (watertightness, wall thickness, overhang, assembly interference), glTF budget audit, and a static 3D defect detector. Node >= 18 for verification; uv + build123d only for the CAD lane.",
+  "skills": [
+    "asgard-freyja-3d"
+  ],
+  "routing": {
+    "asgard-freyja-3d": {
+      "triggers": [
+        "3d",
+        "3차원",
+        "brisingamen",
+        "브리싱아멘",
+        "cad",
+        "캐드",
+        "정밀 조형",
+        "조형",
+        "모형",
+        "파라메트릭",
+        "parametric",
+        "step 파일",
+        "stl",
+        "glb",
+        "gltf",
+        "three.js",
+        "threejs",
+        "webgpu",
+        "tsl",
+        "r3f",
+        "react three fiber",
+        "tresjs",
+        "threlte",
+        "메시",
+        "mesh",
+        "3d 프린트",
+        "3d 프린팅",
+        "3d print",
+        "프린팅",
+        "cnc",
+        "판금",
+        "사출",
+        "제조",
+        "dfm",
+        "3d 모션",
+        "3d 애니메이션",
+        "카메라 연출",
+        "리토폴로지",
+        "retopology",
+        "게임 에셋",
+        "게임 아트",
+        "히어로 에셋",
+        "hero asset",
+        "텍스처링",
+        "texturing",
+        "베이크",
+        "bake",
+        "pbr",
+        "게임 아티스트"
+      ],
+      "defaults": [
+        "freyja"
+      ],
+      "agents": [
+        "freyja"
+      ]
+    }
+  },
+  "source": "Asgard Freyja 3D Engine (Brisingamen)",
+  "license": "MIT"
+}
