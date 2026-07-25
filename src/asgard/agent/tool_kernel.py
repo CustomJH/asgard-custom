@@ -253,6 +253,25 @@ def _web_fetch(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(T.run_web_fetch(context.root, args), details={"fetched": True})
 
 
+def _context_recall(context: ToolContext, args: dict) -> ToolResult:
+    from .evicted import run_recall
+
+    return ToolResult(run_recall(context.root, args), details={"query": str(args.get("query", ""))[:120]})
+
+
+def _compaction_enabled(context: ToolContext) -> bool:
+    """압축이 꺼진 프로젝트에서는 회수할 것이 생기지 않는다 — 표면에서 뺀다.
+
+    반대로 켜져 있으면 보관소가 비어 있어도 노출한다: 툴 스키마는 세션 시작 시 동결돼
+    프롬프트 캐시 키를 이루므로, 첫 압축 시점에 표면이 바뀌면 캐시가 통째로 깨진다."""
+    try:
+        from .huginn import policy
+
+        return policy(context.root).mode != "off"
+    except Exception:
+        return True
+
+
 def _apply_patch(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(T.run_apply_patch(context.root, args, context.writes))
 
@@ -305,6 +324,11 @@ def build_session_registry(
     )
     registry.register(ToolSpec("read_document", "inspect", T.READ_DOCUMENT_TOOL, _read_document))
     registry.register(ToolSpec("web_fetch", "inspect", T.WEB_FETCH_TOOL, _web_fetch))
+    from .evicted import RECALL_TOOL
+
+    registry.register(
+        ToolSpec("context_recall", "inspect", RECALL_TOOL, _context_recall, available=_compaction_enabled)
+    )
     registry.register(
         ToolSpec(
             "str_replace_based_edit_tool",
