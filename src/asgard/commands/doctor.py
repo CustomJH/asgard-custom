@@ -584,6 +584,22 @@ def _design_engine_checks() -> list[dict]:
             "fix": "재설치로 복구된다: asgard update (휠에 동봉돼 있어 별도 설치 없음)",
         }
     )
+    # 3D 엔진(브리싱아멘)의 값어치는 검증 런타임에 있다 — 스크립트가 빠지면 형상을 측정하지
+    # 못한 채 "만들었다"만 남는다. 엔진2 번들과 같은 이유로 존재를 확인한다.
+    from ..skill_registry import _BUNDLED_PLUGINS_DIR
+
+    scripts = Path(_BUNDLED_PLUGINS_DIR) / "freyja-3d/skills/asgard-freyja-3d/engine/scripts"
+    required = ("shoot.mjs", "mesh_audit.mjs", "scene_audit.mjs", "detect3d.mjs", "preflight.mjs", "cad_build.py")
+    missing = [name for name in required if not (scripts / name).is_file()]
+    checks.append(
+        {
+            "name": "freyja 3d runtime",
+            "ok": not missing,
+            "detail": f"{len(required)} scripts bundled" if not missing else f"missing: {', '.join(missing)}",
+            "fix": "재설치로 복구된다: asgard update (휠에 동봉 — 렌더·측정·검출이 전부 이 스크립트에 있다)",
+        }
+    )
+
     node = on_path("node")
     version = ""
     if node:
@@ -601,7 +617,7 @@ def _design_engine_checks() -> list[dict]:
             # 검출기·훅·live 가 전부 죽으므로 침묵보다 경고가 낫다.
             "ok": bool(node) and major >= 22,
             "detail": (f"{version} · {node}" if node else "not found") + ("" if major >= 22 else " — need >= 22"),
-            "fix": "install node >= 22 — https://nodejs.org (프레이야 엔진1·2 스크립트 런타임)",
+            "fix": "install node >= 22 — https://nodejs.org (프레이야 엔진1·2·3D 스크립트 런타임)",
         }
     )
     return checks
