@@ -600,6 +600,22 @@ def _design_engine_checks() -> list[dict]:
         }
     )
 
+    # 엔진4(마르될)는 규칙 코퍼스 + 결정론 게이트다. 게이트가 빠지면 남는 건 자기채점뿐이고,
+    # 자기채점은 리뷰가 아니다 — 그래서 코퍼스가 아니라 판정기의 존재를 본다.
+    gate = Path(_BUNDLED_PLUGINS_DIR) / "freyja4/skills/asgard-freyja4/engine/scripts/slop_gate.mjs"
+    themes = Path(_BUNDLED_PLUGINS_DIR) / "freyja4/skills/asgard-freyja4/references/tokens.css"
+    gate_missing = [
+        label for label, path in (("slop_gate.mjs", gate), ("references/tokens.css", themes)) if not path.is_file()
+    ]
+    checks.append(
+        {
+            "name": "freyja4 gate runtime",
+            "ok": not gate_missing,
+            "detail": "gate + 20-theme tokens bundled" if not gate_missing else f"missing: {', '.join(gate_missing)}",
+            "fix": "재설치로 복구된다: asgard update (게이트가 없으면 슬롭 판정이 자기보고로 되돌아간다)",
+        }
+    )
+
     node = on_path("node")
     version = ""
     if node:
