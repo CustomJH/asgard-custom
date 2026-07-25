@@ -1,0 +1,119 @@
+Freyja 4 (Mardöll) — Asgard skill plugin
+=========================================
+
+This engine's rule corpus (the `references/` tree and the design flow it
+encodes) is a port of a third-party, MIT-licensed design skill. The design
+rules, the twenty-theme OKLCH token set, the macrostructure and component
+catalogues, the worked example builds, and the gate list itself are the
+upstream's work.
+
+Upstream license, reproduced in full as the MIT terms require:
+
+    MIT License
+
+    Copyright (c) 2026 Hallmark contributors
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+
+Parity with the upstream, verified
+----------------------------------
+
+158 upstream files were compared against this port with link targets stripped
+(paths moved; rules must not). Result: **157 identical on rule text, 0 missing,
+0 added, 1 differing** — `references/imagery-kit.md`, which carries one added
+provenance paragraph (delta 9 below). The flow's ten steps (0, 1, 2, 2.5, 2.6,
+3, 4, 5, 6, 7), all 21 macrostructures, all 20 themes, all 50 component
+archetypes, all 4 genres, the 6 cross-verb disciplines, the 3 verbs, the
+component-scope branch, and the 58-gate slop test are present unchanged.
+
+
+What this port changes, exhaustively
+------------------------------------
+
+Surface identity
+
+ 1. Renamed to the Asgard engine identity throughout. The output stamp is
+    `/* Freyja4 · ... */` and the verbs are `freyja4 audit|redesign|study`.
+ 2. The Step 5 preview block's version string reads `Freyja4 · v1.0.0`, matching
+    this plugin's version rather than the upstream skill's.
+ 3. Removed upstream sponsor branding from prompt copy. Third-party companies
+    named inside theme notes as *design references* are kept — those are factual
+    citations, not branding.
+
+Relocations (paths moved; no rule text altered)
+
+ 4. Project memory moved from a project-root dotfile to the Freyja vault at
+    `.asgard/.vanadis/engine4/` (log.json, preflight.json), matching engines 1,
+    2 and 3. Upstream's "respect any existing .gitignore" line becomes "the
+    vault is already outside git — never add an ignore entry", which is the
+    Asgard vault rule.
+ 5. Vendored, because the skill's own rules read them and the upstream shipped
+    them outside the skill directory:
+      references/tokens.css      ← site/css/tokens.css (the theme-diversification
+                                   rule reads its per-theme axis comments)
+      references/examples/       ← site/_tests/ minus _thumbs (worked builds cited
+                                   by hero-enrichment.md and by the human docs)
+      references/human/          ← docs/recipes.md, docs/study-examples.md (the
+                                   two files SKILL.md marks "do NOT auto-load")
+    Relative links were repointed to the new locations. Nothing else moved.
+
+Additions (this port has rules the upstream does not)
+
+ 6. An `## Asgard contract` section ahead of the flow, carrying five clauses:
+    the vault; "self-scoring is not a review"; delivery gates that must be
+    reported by name with silence counted as unverified; numbers must name their
+    source; Asgard-wide invariants are unchanged.
+ 7. `engine/scripts/slop_gate.mjs`, a dependency-free deterministic gate runtime
+    the upstream did not have. Step 7 splits into 7a self-report (unchanged
+    58-gate sweep), 7b machine verdict, 7c delivery gates. The Step 5 preview's
+    "Slop test" row now carries both judgments, labelled apart.
+ 8. One added bullet in Step 6's Build list: no dead motion — a declared
+    transition on a property nothing changes is a still image. This matches the
+    `inert-transition` rule engines 2 and 3 already enforce.
+ 9. A host-provenance paragraph in `references/imagery-kit.md`: the imagery CDN
+    is the upstream's host, not ours, so it is annotated as a may-vanish
+    dependency rather than rewritten into a URL that would never resolve.
+10. A header table naming engines 1–4 and their lanes, plus a rule that a
+    composed build must say which engine owned which decision, and a paragraph
+    in Step 4 handing real-object geometry to engine 3 instead of drawing it in
+    CSS.
+
+Deliberately NOT changed
+
+11. `site/_tests/verbs/redesign/notes.md` links to `../refine/`, which does not
+    exist upstream either. The port leaves the broken link alone and records it
+    by name in `tests/test_freyja4.py`, so new breakage is still caught.
+
+
+Two inconsistencies found inside the upstream corpus
+----------------------------------------------------
+
+Reported, not silently patched. Both are in the upstream's own files.
+
+  A. `tokens.css` defines `--color-accent-ink` as the accent tuned for use AS
+     text — in the Studio theme it is byte-identical to `--color-accent`. Slop
+     test gate 41 reads the same token as the ink placed ON an accent fill.
+     Following gate 41 literally against the shipped token yields red on red.
+     `slop_gate.mjs` therefore judges the substance (is text on an accent fill
+     readable) and reports the missing name as a note rather than a failure.
+
+  B. The Brutal theme ships neutrals at chroma 0.001–0.003, while gate 22 in the
+     same corpus requires a 0.005 floor. The shipped theme violates its own
+     gate. Builds using Brutal must lift the neutrals and say so.

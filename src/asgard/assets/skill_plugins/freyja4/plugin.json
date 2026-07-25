@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "name": "freyja4",
+  "version": "1.0.0",
+  "description": "Freyja 4 — Mardöll, the anti-slop surface engine. Picks a macrostructure before it picks a look, dresses it in one of twenty OKLCH themes (or a constructed custom palette), rotates structure across runs so two pages for two briefs are not colour-swaps of one template, and refuses the on-distribution defaults every model was trained into. Ships four verbs (build / audit / redesign / study), 21 macrostructures, 50 component archetypes, 4 genres, a 58-gate slop test, and a dependency-free deterministic gate runtime that judges the emitted HTML/CSS instead of trusting the model's self-report. Node >= 18 for verification.",
+  "skills": [
+    "asgard-freyja4"
+  ],
+  "routing": {
+    "asgard-freyja4": {
+      "triggers": [
+        "freyja4",
+        "freyja 4",
+        "프레이야4",
+        "프레이야 4",
+        "엔진4",
+        "엔진 4",
+        "4번엔진",
+        "4번 엔진",
+        "fourth engine",
+        "mardoll",
+        "mardöll",
+        "마르될",
+        "slop test",
+        "슬롭 테스트",
+        "슬롭테스트",
+        "안티슬롭",
+        "안티 슬롭",
+        "anti-slop",
+        "ai slop",
+        "ai 티",
+        "ai 티가",
+        "생성형 티",
+        "macrostructure",
+        "매크로구조",
+        "거시구조",
+        "슬롭 게이트",
+        "slop gate",
+        "디자인 감사",
+        "design audit",
+        "리디자인",
+        "테마 로테이션",
+        "theme rotation"
+      ],
+      "defaults": [
+        "freyja"
+      ],
+      "agents": [
+        "freyja"
+      ]
+    }
+  },
+  "source": "Asgard Freyja 4 Engine (Mardöll) — ported from a third-party MIT-licensed design skill; see NOTICE",
+  "license": "MIT"
+}
