@@ -211,6 +211,31 @@ const ANTIPATTERNS = [
     skillGuideline: 'numbered section markers',
   },
   {
+    id: 'inert-transition',
+    category: 'craft',
+    name: 'Transition that can never fire',
+    description:
+      'A `transition` is declared for a property whose value comes from a custom property that is '
+      + 'set exactly once and never changed — no script, no state selector rewrites it. The motion is '
+      + 'declared but unreachable, so the page ships a still frame while the source reads as animated. '
+      + 'Either drive the custom property (script, :hover/:focus/:checked, or a class the page toggles) '
+      + 'or delete the transition and stop claiming the motion.',
+    skillSection: 'Motion',
+    skillGuideline: 'one authored moment, and it has to actually run',
+  },
+  {
+    id: 'placeholder-link',
+    category: 'craft',
+    name: 'Controls that go nowhere',
+    description:
+      'Three or more links point at bare `#`, so the primary controls do not resolve. A page whose '
+      + 'navigation is inert is a mockup, not a built result: the craft floor asks for working controls, '
+      + 'and reviewers cannot tell a deliberate placeholder from an unfinished wire. Point each link at '
+      + 'its destination, or use a button with the action it performs.',
+    skillSection: 'States',
+    skillGuideline: 'working controls',
+  },
+  {
     id: 'em-dash-overuse',
     category: 'slop',
     // Advisory: humans use em-dashes legitimately, so this rule is opt-in noise

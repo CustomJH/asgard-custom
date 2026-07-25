@@ -10,10 +10,18 @@ Each of these is a check on the built result, not an intention.
 - **Depth:** shadows carry an offset and a soft blur. A zero-offset colored halo is decoration.
 - **Spacing:** tight groups, generous separation, more space above a heading than below it. Read the computed values.
 - **Type:** body measure 65–75ch, display max 6rem, tracking floor -0.04em, balanced headings, obvious scale and weight steps. Run the real copy at every breakpoint and fix what overflows.
-- **Motion:** one authored moment, not scattered effects and not one identical entrance on every section. Exponential ease-out from an already-visible default. Reach past transform and opacity: blur, backdrop-filter, clip-path, mask, and shadow belong to the palette when they stay smooth.
-- **States:** hover, disabled, loading, error, empty. Plus real content, working controls, responsive composition, keyboard focus.
+- **Motion:** one authored moment, not scattered effects and not one identical entrance on every section. Watch it run before claiming it: a `transition` whose driving value is written once and never changed is a still frame with animated-looking source, and `inert-transition` reports exactly that shape. Exponential ease-out from an already-visible default. Reach past transform and opacity: blur, backdrop-filter, clip-path, mask, and shadow belong to the palette when they stay smooth.
+- **States:** hover, disabled, loading, error, empty. Plus real content, working controls, responsive composition, keyboard focus. Name each of the five in the report as present or as deliberately n/a for this surface — a state nobody mentioned is a state nobody built.
 - **Copy:** the product's own language. Controls name their action; errors name the problem and the recovery.
 - **Coverage:** every brief requirement present and findable within seconds.
+
+## Deliver, don't declare
+
+Three of these checks pass a source read and fail a delivered page, so they are settled on the built result or not at all:
+
+- **Motion runs.** Trigger it. If nothing moves, either drive the value or delete the transition.
+- **Controls resolve.** Every link has a destination and every button an action. `placeholder-link` fires at three bare `#` hrefs; one or two are still yours to justify.
+- **The five states exist.** Hover and focus are the easy two. Loading, error, and empty are the ones that get skipped, and they are where a real user meets the page.
 
 ## Refuse
 

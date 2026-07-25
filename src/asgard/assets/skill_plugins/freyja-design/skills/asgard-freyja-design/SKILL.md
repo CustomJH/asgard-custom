@@ -40,8 +40,22 @@ When Freyja sets up a new project structure, or the frontend component structure
 - Never mix a primitive and a domain section in one file. Promote a piece to a shared atom or molecule only after two real usage sites exist — do not generalize speculatively from one.
 - An existing project convention wins on paths (`ui/` maps to the atom-molecule layer, `features/` or `widgets/` to the organism layer), but level judgment, one-way dependencies, and the mixed-file ban still apply. Reorganize directories only within the assigned scope.
 
+## Artifact vault
+
+Every artifact this engine persists about a project — preference log, run index and run directories, harness state, timeline, context and sync JSON — is written under `.asgard/.vanadis/engine1/`. `.asgard/.vanadis/` is the shared roof for Freyja's design engines; engine 2 writes beside it under `engine2/`, so a project running both keeps their state apart. Upstream wrote these to a `.vanadis/` directory at the project root, where git could see them; do not restore that.
+
+`asgard init` creates `.asgard/` and Asgard already keeps it out of git, so the vault owes no ignore entry of its own — never create or edit a `.gitignore` for it, and never offer to commit it. Nothing in the vault is the durable record: `preferences.md` is a staging buffer that `vanadis:learn` folds into `DESIGN.md`, and `DESIGN.md` is what the team keeps.
+
 Resolve upstream repository-relative paths under `references/vanadis/`. Use Asgard-equivalent tools when an upstream host-specific tool name differs; preserve the check and report it as unavailable rather than claiming it ran. Never use an upstream machine-specific absolute path.
 
 Resolve conflicts in this order: the user's explicit request and the existing product design system; accessibility and runtime correctness; Vanadis's system and workflow; the Vanadis restraint gate. The restraint gate removes unearned elements but must not erase useful identity, information structure, state feedback, or evidence.
 
 Before returning, render and use the result. Verify the primary task, desktop and mobile layout, keyboard focus, reduced motion, overflow, console output, and every gate selected by the Vanadis workflow.
+
+Three checks are settled on the rendered page, never on the source, because each one passes a code read and fails a delivered page. Report each by name; silence on one counts as skipped, not as passed.
+
+- **Motion runs.** Trigger every declared transition and animation and watch it. A transition whose driving value is written once and never changed is a still frame with animated-looking source.
+- **Controls resolve.** Every link has a destination and every button an action. A page of bare `#` hrefs is a mockup; `vanadis-final-qa` item [8] Links owns this and is not optional.
+- **The five states exist.** `vanadis-feel` §States asks for empty, loading, error, content, and skeleton on data components. Name each as built or as deliberately n/a for this surface.
+
+Running the harness means running its validation phases, not just its bootstrap: Phase 8 spawns `vanadis-a11y-auditor` then `vanadis-persona-tester`, and the `vanadis-final-qa` rubric is what closes the work. A restraint acceptance check you wrote about your own output is a self-report — say so plainly rather than presenting it as a review.

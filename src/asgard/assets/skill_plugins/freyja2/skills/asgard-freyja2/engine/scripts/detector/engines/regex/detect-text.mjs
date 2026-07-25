@@ -640,6 +640,88 @@ function runTextContentAnalyzers(content, filePath, options = {}) {
   return findings;
 }
 
+/**
+ * Page-structure analyzers.
+ *
+ * Kept in their own list rather than appended to REGEX_ANALYZERS: that array is
+ * reached by index from runTextContentAnalyzers (`REGEX_ANALYZERS[3 + i]`), so
+ * anything inserted near the text analyzers silently reassigns rule ids. These
+ * run on the whole page source for the same reason the text analyzers do — the
+ * defect is a property of the document, not of any one line.
+ */
+
+/** Interactive-ish properties worth transitioning; a dead transition on one of these is a real claim. */
+const TRANSITIONABLE = [
+  'left', 'right', 'top', 'bottom', 'width', 'height', 'transform',
+  'opacity', 'translate', 'rotate', 'scale', 'inset',
+];
+
+/**
+ * A transition declared for `prop: var(--x)` where `--x` is written exactly once
+ * in the document and nothing can rewrite it. Narrow on purpose: one assignment
+ * plus no script plus no state selector touching that custom property is the
+ * only shape reported, so a page whose JS lives in another file is not accused.
+ */
+function findInertTransitions(content, filePath) {
+  if (/<script[\s>]/i.test(content)) return [];
+  const findings = [];
+  const seen = new Set();
+  // Every `--name:` assignment in the document, including inline style attributes.
+  const assignments = new Map();
+  for (const match of content.matchAll(/(--[A-Za-z0-9_-]+)\s*:/g)) {
+    assignments.set(match[1], (assignments.get(match[1]) || 0) + 1);
+  }
+  for (const prop of TRANSITIONABLE) {
+    // `prop: var(--x)` anywhere, then a transition naming the same property.
+    const useRe = new RegExp(`(?:^|[;{\\s])${prop}\\s*:\\s*var\\(\\s*(--[A-Za-z0-9_-]+)`, 'g');
+    for (const use of content.matchAll(useRe)) {
+      const custom = use[1];
+      if (assignments.get(custom) !== 1) continue;
+      const transitionRe = new RegExp(`transition\\s*:[^;}]*\\b${prop}\\b`);
+      if (!transitionRe.test(content)) continue;
+      const key = `${prop}:${custom}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      findings.push(finding(
+        'inert-transition',
+        filePath,
+        `transition on \`${prop}\`, but \`${custom}\` is assigned once and never changed`,
+      ));
+    }
+  }
+  return findings;
+}
+
+const PLACEHOLDER_LINK_THRESHOLD = 3;
+
+/** `href="#"` exactly — `#section` is a real in-page destination and is not counted. */
+function findPlaceholderLinks(content, filePath) {
+  const matches = content.match(/<a\b[^>]*\bhref\s*=\s*["']#["']/gi);
+  const count = matches ? matches.length : 0;
+  if (count < PLACEHOLDER_LINK_THRESHOLD) return [];
+  return [finding('placeholder-link', filePath, `${count} links point at bare "#"`)];
+}
+
+const PAGE_STRUCTURE_ANALYZERS = [
+  { ruleId: 'inert-transition', run: findInertTransitions },
+  { ruleId: 'placeholder-link', run: findPlaceholderLinks },
+];
+
+function runPageStructureAnalyzers(content, filePath, options = {}) {
+  const profile = options?.profile;
+  if (!shouldRunPageAnalyzers(content, filePath)) return [];
+  const findings = [];
+  for (const { ruleId, run } of PAGE_STRUCTURE_ANALYZERS) {
+    findings.push(...profileFindings(profile, {
+      engine: 'regex',
+      phase: 'page-structure',
+      ruleId,
+      target: filePath,
+    }, () => run(content, filePath)));
+  }
+  return findings;
+}
+
 function detectText(content, filePath, options = {}) {
   const profile = options?.profile;
   const findings = [];
@@ -750,9 +832,14 @@ function detectText(content, filePath, options = {}) {
         target: filePath,
       }, () => analyzer(content, filePath)));
     }
+    // Page-structure analyzers run here as well as in detect-html: when the
+    // static parser's npm deps are absent, detectHtml falls back to this
+    // function, and a rule wired only into the parser path would never fire on
+    // the very .html files it exists to check.
+    deduped.push(...runPageStructureAnalyzers(content, filePath, options));
   }
 
-  // Inline `impeccable-disable*` waivers travel with the file; honor them unless
+  // Inline `freyja2-disable*` waivers travel with the file; honor them unless
   // explicitly bypassed (`--no-config` / `--no-inline-ignores`).
   return options?.inlineIgnores === false ? deduped : applyInlineIgnores(deduped, content);
 }
@@ -761,6 +848,8 @@ export {
   REGEX_MATCHERS,
   REGEX_ANALYZERS,
   TEXT_CONTENT_ANALYZER_IDS,
+  PAGE_STRUCTURE_ANALYZERS,
+  runPageStructureAnalyzers,
   extractStyleBlocks,
   extractCSSinJS,
   runRegexMatchers,
