@@ -19,9 +19,10 @@ from urllib.parse import urlsplit
 
 from ..code_map import MapError, _atomic_write, _files, _map_dir, _safe_component
 from .evidence import Evidence
-from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql
+from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql, strip_java_comments
 from .extract_python import extract_python
-from .extract_tsjs import extract_api_bases, extract_tsjs
+from .extract_tsjs import extract_api_bases, extract_store_aliases, extract_tsjs, resolve_fe_usage
+from .resolve_jvm import JavaModule, JvmIndex, index_java
 from .spring_props import SpringProps
 
 GRAPH_FILE = "GRAPH.md"
@@ -44,6 +45,7 @@ _EDGE_KIND = {
     "page": "declares",
     "store": "declares",
     "composable": "declares",
+    "service": "declares",
     "component": "declares",  # 소비(스팬 없음)는 빌드 시 "uses" 로 강등된다
     "command": "declares",
     "model": "declares",
@@ -60,8 +62,14 @@ _FLOW_KIND = {
     "external_service": "uses",
     "event": "emits",
     "component": "uses",  # 합성 소비 — page/component 스팬 안 태그가 atoms→page 체인을 만든다
+    # 로직 소비 — page/component 스팬 안 `useXxx()` 호출이 화면→로직→상태 체인을 만든다.
+    "composable": "uses",
+    "service": "uses",
+    "store": "uses",
 }
 EDGE_KINDS = ("declares", "calls", "touches", "uses", "emits")
+# 선언과 소비가 같은 종류로 수렴하는 개념 — 소비 쪽은 파일 엣지가 declares 가 아니다.
+_CONSUMABLE_KINDS = frozenset({"component", "composable", "service", "store"})
 # API↔라우트 브리지 — api_call 경로와 route 경로의 정규화 일치만 근거로 삼는 candidate 엣지.
 # 경로 변수 표기(`:id`/`{id}`/`{}`)는 와일드카드 세그먼트 하나로 수렴한다.
 _PLACEHOLDER_SEGMENT = re.compile(r"^(?::\w+|\{\w*\})$")
@@ -83,6 +91,7 @@ _KIND_LABEL = {
     "page": "pages",
     "store": "stores",
     "composable": "composables",
+    "service": "services",
     "component": "components",
     "command": "commands",
     "model": "models",
@@ -110,6 +119,7 @@ class GraphResult:
     edges: int
     flows: int
     api_links: int
+    jvm_links: int
     state_path: str
     graph_md_path: str
     changed: bool
@@ -165,11 +175,13 @@ def _stat_revision(root: Path) -> str:
     return "source-stat-sha256:" + digest.hexdigest()
 
 
-def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str, ...]], str]:
+def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str, ...]], str, list[JavaModule]]:
     scanned = 0
     collected: list[Evidence] = []
     props = SpringProps()
     base_table: dict[str, set[str]] = defaultdict(set)
+    alias_table: dict[str, set[str]] = defaultdict(set)
+    jvm_modules: list[JavaModule] = []
     digest = hashlib.sha256()
     stat_digest = hashlib.sha256()
     for rel in _files(root):
@@ -211,15 +223,23 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str,
             continue
         if suffix in _TSJS_SUFFIXES:
             base_table[_scope_of(rel.as_posix())].update(extract_api_bases(source))
+            for accessor, store_id in extract_store_aliases(source):
+                alias_table[accessor].add(store_id)
+        elif suffix == ".java":
+            # 주석 제거본으로 색인한다 — extract_java 와 같은 기준이라 줄 번호가 일치한다.
+            jvm_modules.append(index_java(rel.as_posix(), strip_java_comments(source)))
         collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source))
     # 스코프당 베이스가 상한을 넘으면 잡음이다 — 그 스코프는 통째로 버린다 (모호성 보존).
     api_bases = {scope: tuple(sorted(bases)) for scope, bases in base_table.items() if 0 < len(bases) <= _API_BASE_CAP}
+    # 접근자 하나가 서로 다른 스토어로 갈리면 정체가 증명되지 않는다 — 그 별칭은 쓰지 않는다.
+    store_aliases = {accessor: next(iter(ids)) for accessor, ids in alias_table.items() if len(ids) == 1}
     return (
         scanned,
-        props.promote(collected),
+        resolve_fe_usage(props.promote(collected), store_aliases),
         "source-sha256:" + digest.hexdigest(),
         api_bases,
         "source-stat-sha256:" + stat_digest.hexdigest(),
+        jvm_modules,
     )
 
 
@@ -376,12 +396,55 @@ def _api_route_links(
     return links
 
 
+def _jvm_route_links(collected: list[Evidence], modules: list[JavaModule] | None) -> dict[tuple[str, str, str], str]:
+    """라우트 → 도달 가능한 SQL 구문 — 계층을 건너뛴 크로스파일 엣지.
+
+    중간 계층(로직/스토어/매퍼)은 노드로 세우지 않는다. 대신 `detail` 에 해석 근거를 남겨
+    "왜 이 라우트가 이 구문에 닿는지"를 되짚을 수 있게 한다. 구문→테이블은 매퍼 XML 이
+    이미 소유하므로 라우트→구문→테이블 체인이 그래프에서 그대로 읽힌다.
+    """
+    if not modules:
+        return {}
+    # 매퍼 XML 이 증명한 `FQN#구문id` → db_access 노드 id
+    statements: dict[str, str] = {}
+    for item in collected:
+        if item.kind != "db_access" or not item.detail.startswith("mybatis-xml "):
+            continue
+        namespace = item.detail.split(" ", 1)[1]
+        for statement in collected:
+            if statement.kind == "db_access" and statement.file == item.file and "." in statement.name:
+                simple, _, member = statement.name.rpartition(".")
+                if simple == namespace.rsplit(".", 1)[-1]:
+                    statements[f"{namespace}#{member}"] = statement.node_id
+    if not statements:
+        return {}
+    index = JvmIndex(modules, statements)
+    links: dict[tuple[str, str, str], str] = {}
+    for route in collected:
+        if route.kind != "route" or not route.file.endswith(".java") or not route.scope_end:
+            continue
+        located = index.unit_for(route.file, route.scope_end)
+        if located is None:
+            continue
+        reached = index.statements_from(*located)
+        if reached is None:
+            continue  # 상한 초과 — 수렴 실패는 지어내지 않고 통째로 버린다
+        found, partial = reached
+        for statement_id in found:
+            coverage = "partial" if partial else "resolved"
+            links[(route.node_id, statement_id, "touches")] = (
+                f"jvm call chain via {located[1].owner}.{located[1].name} ({coverage})"
+            )
+    return links
+
+
 def _build_state(
     scanned: int,
     collected: list[Evidence],
     revision: str,
     api_bases: dict[str, tuple[str, ...]] | None = None,
     stat_revision: str = "",
+    jvm_modules: list[JavaModule] | None = None,
 ) -> dict:
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str, str], str] = {}
@@ -399,13 +462,19 @@ def _build_state(
         nodes.setdefault(
             file_id, {"id": file_id, "kind": "file", "name": item.file, "confidence": "confirmed", "files": []}
         )
-        # 컴포넌트 소비(스팬 없음)는 선언이 아니다 — 파일 엣지도 uses 로 표기한다.
-        file_edge = "uses" if item.kind == "component" and not item.scope_end else _EDGE_KIND[item.kind]
+        # 소비 증거(스팬 없는 `use` 표식)는 선언이 아니다 — 파일 엣지도 uses 로 표기한다.
+        consumed = item.detail == "use" and not item.scope_end and item.kind in _CONSUMABLE_KINDS
+        file_edge = "uses" if consumed else _EDGE_KIND[item.kind]
         edges[(file_id, item.node_id, file_edge)] = "confirmed"
     flows = _flow_edges(collected)
     edges.update(flows)
     link_details: dict[tuple[str, str, str], str] = {}
     for key, reason in _api_route_links(nodes, api_bases).items():
+        if key not in edges:
+            edges[key] = "candidate"
+            link_details[key] = reason
+    jvm_links = _jvm_route_links(collected, jvm_modules)
+    for key, reason in jvm_links.items():
         if key not in edges:
             edges[key] = "candidate"
             link_details[key] = reason
@@ -421,7 +490,8 @@ def _build_state(
             "nodes": len(nodes),
             "edges": len(edges),
             "flows": len(flows),
-            "api_links": len(link_details),
+            "api_links": len(link_details) - len(jvm_links),
+            "jvm_links": len(jvm_links),
         },
         "nodes": sorted(nodes.values(), key=lambda n: n["id"]),
         "edges": [
@@ -548,8 +618,8 @@ def _atomic_state_write(root: Path, path: Path, content: str) -> None:
 
 def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bool = False) -> GraphResult:
     base = Path(root).resolve()
-    scanned, collected, revision, api_bases, stat_revision = _collect(base)
-    state = _build_state(scanned, collected, revision, api_bases, stat_revision)
+    scanned, collected, revision, api_bases, stat_revision, jvm_modules = _collect(base)
+    state = _build_state(scanned, collected, revision, api_bases, stat_revision, jvm_modules)
     state_path = _state_file(base, _STATE_RELATIVE.name, create=False)
     state_json = json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True)
     graph_md = _render_graph_md(state)
@@ -587,6 +657,7 @@ def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bo
         edges=state["counts"]["edges"],
         flows=state["counts"]["flows"],
         api_links=state["counts"]["api_links"],
+        jvm_links=state["counts"].get("jvm_links", 0),
         state_path=str(state_path),
         graph_md_path=str(graph_md_path),
         changed=changed,

@@ -314,6 +314,7 @@ const LANES=[
   {label:"page",kinds:["page"]},
   {label:"component",kinds:["component"],tiered:true},
   {label:"composable · store",kinds:["composable","store"]},
+  {label:"service",kinds:["service"]},
   {label:"api_call",kinds:["api_call"]},
   {label:"route",kinds:["route"]},
   {label:"command · job · event",kinds:["command","job","event"]},

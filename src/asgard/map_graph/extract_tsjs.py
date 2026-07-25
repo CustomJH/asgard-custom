@@ -7,11 +7,18 @@ model)만 confirmed 로 표시하고 나머지는 전부 candidate 로 남긴다
 프론트 레인: 파일 기반 라우팅(page)·전역 상태(store)·관례 디렉터리 컴포저블(composable)·
 HTTP 래퍼 호출(api_call). 파일 경로에서 결정론적으로 유도되는 page 만 confirmed 이고,
 래퍼 호출은 베이스 URL 을 증명할 수 없어 candidate 로 남는다.
+
+컴포저블·서비스·스토어는 컴포넌트와 같이 선언과 소비 양쪽을 뽑아 이름으로 수렴시킨다 —
+그래야 page/component 스팬 안의 호출이 화면→로직→상태→API 플로우 엣지가 된다. 소비는
+잠정 증거로 나가고, 리포 안 선언(또는 스토어 접근자 별칭)으로 정체가 증명된 것만
+`resolve_fe_usage` 를 통과한다 — 이름만 보고 노드를 세우지 않는다. 소비의 근거는 종류마다
+다르다: 컴포저블·스토어는 `useXxx()` 관례, 서비스는 `services/` 임포트가 증명한 심볼의 호출.
 """
 
 from __future__ import annotations
 
 import re
+from dataclasses import replace
 from urllib.parse import urlsplit
 
 from .evidence import Evidence, safe_url
@@ -47,6 +54,24 @@ _COMPOSABLE = re.compile(
     r"^\s*export\s+(?:default\s+)?(?:async\s+)?(?:function\s+(use[A-Z]\w*)|const\s+(use[A-Z]\w*)\s*=)", re.M
 )
 _COMPOSABLE_DIRS = {"composables", "hooks"}
+# 컴포저블·스토어 소비 — `useXxx()` 호출 지점. 수신자 메서드(`x.useY()`)는 합성이 아니라 제외한다.
+# 정체 확정은 `resolve_fe_usage` 의 수렴이 맡는다 — 부정 목록을 두지 않는 이유는 프레임워크
+# 원시 훅(useState/useRouter/useFetch…)이 리포에 선언이 없어 자동으로 탈락하기 때문이다.
+_HOOK_USE = re.compile(r"(?<![\w.$])(use[A-Z]\w*)\s*\(")
+_USE_DETAIL = "use"
+# 서비스 모듈 — 선언은 관례 디렉터리의 네임스페이스 객체(`export const alarmService = {`)와
+# 자유 함수. 소비는 이름 접미사 관례가 아니라 **임포트 경로가 증명하는 심볼**의 호출 지점이다:
+# `import { alarmService } from '@/services/...'` 가 있어야 그 심볼의 호출을 서비스로 읽는다.
+_SERVICE_DIRS = {"services"}
+_SERVICE_OBJECT = re.compile(r"^\s*export\s+const\s+(\w+)\s*=\s*\{", re.M)
+_SERVICE_FUNCTION = re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(", re.M)
+_NAMED_IMPORT = re.compile(r"\bimport\s+(type\s+)?\{([^}]*)\}\s*from\s*['\"]([^'\"]+)['\"]")
+# 네임스페이스 객체가 서비스라는 근거 — 호출 가능한 멤버가 하나는 있어야 설정 상수와 갈린다.
+# 메서드 축약(`list(p): Promise<X> {`)·화살표·function 값을 다 담으려면 TS 타입 표기까지
+# 쫓아야 해서, 시그니처 모양을 정밀하게 그리는 대신 "본문에 호출 형태가 있다"로 넓게 잡는다.
+_CALLABLE_MEMBER = re.compile(r"\b\w+\s*\(|=>")
+# Pinia 접근자 별칭 — 소비는 `useAuthStore()` 로 나타나지만 노드 이름은 `defineStore` 의 id 다.
+_STORE_ALIAS = re.compile(r"\bconst\s+(use[A-Z]\w*)\s*=\s*defineStore\s*\(\s*['\"`]([\w./-]+)['\"`]")
 # 파일 기반 라우팅 관례 — 라우트 그룹 `(group)` 은 URL 에서 사라지고, `[param]`/`_param` 은
 # 경로 변수다. 확장자별 프레임워크 표기는 detail 로만 남긴다 (관례 추정이지 증명이 아니다).
 _SFC_SUFFIXES = (".vue", ".svelte")
@@ -97,11 +122,19 @@ def _line_of(text: str, offset: int) -> int:
 
 
 def _span_end_line(source: str, start: int, open_char: str, close_char: str, *, limit: int = 120_000) -> int:
-    """`start`(여는 문자 위치)의 짝이 닫히는 끝 줄 — 본문 스팬 근사. 실패 시 0.
+    """`start`(여는 문자 위치)의 짝이 닫히는 끝 줄 — 본문 스팬 근사. 실패 시 0."""
+    end = _span_end_offset(source, start, open_char, close_char, limit=limit)
+    return _line_of(source, end) if end >= 0 else 0
+
+
+def _span_end_offset(source: str, start: int, open_char: str, close_char: str, *, limit: int = 120_000) -> int:
+    """`start` 의 짝이 닫히는 오프셋 — 실패 시 -1.
 
     문자열('  "  `)·주석(// , /* */)을 건너뛰며 깊이를 센다. 템플릿 중첩 표현식까지는
     쫓지 않으므로(백틱 짝만 인식) 정규식 보조 추출기 수준의 근사다 — 빌더가 candidate 로 캡한다.
     """
+    if start < 0:
+        return -1
     index, depth, quote = start, 0, ""
     end = min(len(source), start + limit)
     while index < end:
@@ -116,20 +149,20 @@ def _span_end_line(source: str, start: int, open_char: str, close_char: str, *, 
         elif char == "/" and source[index + 1 : index + 2] == "/":
             index = source.find("\n", index)
             if index < 0:
-                return 0
+                return -1
         elif char == "/" and source[index + 1 : index + 2] == "*":
             closing = source.find("*/", index + 2)
             if closing < 0:
-                return 0
+                return -1
             index = closing + 1
         elif char == open_char:
             depth += 1
         elif char == close_char:
             depth -= 1
             if depth == 0:
-                return _line_of(source, index)
+                return index
         index += 1
-    return 0
+    return -1
 
 
 def _call_end_line(source: str, open_paren: int, *, limit: int = 120_000) -> int:
@@ -156,6 +189,48 @@ def _mask_sfc(source: str) -> str:
             keep[index] = True
     lines = source.split("\n")
     return "\n".join(line if keep[index] else "" for index, line in enumerate(lines))
+
+
+def _mask_comments(source: str) -> str:
+    """주석 본문을 공백으로 지운다 — 줄 번호·오프셋 보존이 계약이다.
+
+    주석은 증거가 아니다(extract_java 와 같은 원칙): 산문에 적힌 `useFoo()` 나 주석 처리된
+    죽은 호출이 소비 증거로 오인되는 것을 막는다. 문자열·템플릿 리터럴 안의 `//`(URL 등)는
+    주석이 아니므로 리터럴을 인식하며 지나간다.
+    """
+    out = list(source)
+    index, total, quote = 0, len(source), ""
+    while index < total:
+        char = source[index]
+        if quote:
+            if char == "\\":
+                index += 2
+                continue
+            if char == quote:
+                quote = ""
+            index += 1
+            continue
+        if char in "\"'`":
+            quote = char
+            index += 1
+            continue
+        if char == "/" and index + 1 < total:
+            following = source[index + 1]
+            if following == "/":
+                while index < total and source[index] != "\n":
+                    out[index] = " "
+                    index += 1
+                continue
+            if following == "*":
+                end = source.find("*/", index + 2)
+                end = total if end < 0 else end + 2
+                for cursor in range(index, end):
+                    if out[cursor] != "\n":
+                        out[cursor] = " "
+                index = end
+                continue
+        index += 1
+    return "".join(out)
 
 
 def _pascal(name: str) -> str:
@@ -268,6 +343,103 @@ def extract_api_bases(source: str) -> list[str]:
     return bases
 
 
+def _imported_service_symbols(code: str) -> set[str]:
+    """`services/` 모듈에서 들여온 런타임 심볼 — 소비를 이름 관례가 아니라 출처로 증명한다.
+
+    타입 전용 임포트(`import type {...}`, 인라인 `type Foo`)는 런타임 호출이 아니라 제외한다.
+    """
+    symbols: set[str] = set()
+    for match in _NAMED_IMPORT.finditer(code):
+        if match.group(1):
+            continue  # import type { … }
+        module = match.group(3)
+        if not any(part in _SERVICE_DIRS for part in module.split("/")):
+            continue
+        for raw in match.group(2).split(","):
+            symbol = raw.split(" as ")[-1].strip()
+            if symbol and not symbol.startswith("type "):
+                symbols.add(symbol)
+    return symbols
+
+
+def _service_evidence(path: str, code: str) -> list[Evidence]:
+    """서비스 모듈의 선언(관례 디렉터리)과 소비(임포트로 증명된 심볼의 호출 지점)."""
+    evidence: list[Evidence] = []
+    decl_lines: set[int] = set()
+    if _SERVICE_DIRS & set(path.split("/")[:-1]):
+        for match in _SERVICE_OBJECT.finditer(code):
+            brace = code.find("{", match.start(1))
+            closing = _span_end_offset(code, brace, "{", "}")
+            # 호출 가능한 멤버가 없으면 서비스 모듈이 아니라 설정 상수다 — 주장하지 않는다.
+            if closing < 0 or not _CALLABLE_MEMBER.search(code[brace : closing + 1]):
+                continue
+            line = _line_of(code, match.start(1))
+            decl_lines.add(line)
+            evidence.append(
+                Evidence(
+                    "service", match.group(1), path, line, "confirmed", scope_end=max(_line_of(code, closing), line)
+                )
+            )
+        for match in _SERVICE_FUNCTION.finditer(code):
+            line = _line_of(code, match.start(1))
+            decl_lines.add(line)
+            span = _body_end_line(code, match.end())
+            evidence.append(
+                Evidence("service", match.group(1), path, line, "confirmed", scope_end=max(span, line) if span else 0)
+            )
+    seen: set[tuple[str, int]] = set()
+    for symbol in _imported_service_symbols(code):
+        # 네임스페이스 멤버 호출(`alarmService.list(`)과 자유 함수 호출(`fetchAlarms(`) 둘 다.
+        for match in re.finditer(rf"(?<![\w.$]){re.escape(symbol)}\s*(?:\.\s*\w+\s*)?\(", code):
+            line = _line_of(code, match.start())
+            if (symbol, line) in seen or line in decl_lines:
+                continue
+            seen.add((symbol, line))
+            evidence.append(Evidence("service", symbol, path, line, "candidate", _USE_DETAIL))
+    return evidence
+
+
+def extract_store_aliases(source: str) -> list[tuple[str, str]]:
+    """Pinia 접근자 별칭 — `const useAuthStore = defineStore('auth')` → `(useAuthStore, auth)`.
+
+    스토어 소비 지점에는 접근자 이름만 나타나므로, 선언이 증명하는 이 짝이 없으면 소비는
+    스토어 노드로 수렴하지 못한다. 같은 접근자가 리포 안에서 서로 다른 id 로 갈리면
+    호출자가 해석을 포기한다 — 모호성은 지어내지 않는다.
+    """
+    return [(match.group(1), match.group(2)) for match in _STORE_ALIAS.finditer(_mask_comments(source))]
+
+
+def resolve_fe_usage(collected: list[Evidence], store_aliases: dict[str, str]) -> list[Evidence]:
+    """`useXxx()` 잠정 소비 증거의 정체를 리포 안 선언으로만 확정한다.
+
+    통과 조건은 둘뿐이다: 접근자 별칭표가 증명하는 스토어이거나, 리포 안에 선언된
+    컴포저블이거나. 어느 쪽도 아닌 이름(프레임워크 원시 훅, 외부 패키지 훅)은 선언을
+    소유한 소스가 없어 정체를 증명할 수 없으므로 버린다 — 이름만 보고 노드를 세우지 않는다.
+
+    서비스 소비도 같은 수렴을 거친다: 임포트가 출처를 증명해도 선언을 못 찾으면(리포 밖
+    패키지의 `services/` 경로 등) 노드를 세우지 않는다.
+    """
+    declared: dict[str, set[str]] = {}
+    for item in collected:
+        if item.kind in ("composable", "service") and item.detail != _USE_DETAIL:
+            declared.setdefault(item.kind, set()).add(item.name)
+    resolved: list[Evidence] = []
+    for item in collected:
+        if item.kind not in ("composable", "service") or item.detail != _USE_DETAIL:
+            resolved.append(item)
+            continue
+        if item.kind == "service":
+            if item.name in declared.get("service", ()):
+                resolved.append(item)
+            continue
+        store_id = store_aliases.get(item.name)
+        if store_id is not None:
+            resolved.append(replace(item, kind="store", name=store_id))
+        elif item.name in declared.get("composable", ()):
+            resolved.append(item)
+    return resolved
+
+
 def extract_tsjs(path: str, source: str) -> list[Evidence]:
     evidence: list[Evidence] = []
     if path.endswith(".prisma"):
@@ -331,32 +503,60 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
         confidence = "confirmed" if target.startswith(("http://", "https://")) else "candidate"
         wrapper = re.sub(r"\s+", "", match.group(1))
         evidence.append(Evidence("api_call", safe_url(target), path, line, confidence, wrapper))
-    for match in _PINIA_STORE.finditer(source):
-        line = _line_of(source, match.start())
-        open_paren = source.find("(", match.start(), match.end())
-        span = _call_end_line(source, open_paren) if open_paren >= 0 else 0
+    # 컴포저블·스토어 레인은 주석을 증거로 삼지 않는다 — 죽은 선언·산문 속 호출을 배제한다.
+    code = _mask_comments(source)
+    for match in _PINIA_STORE.finditer(code):
+        line = _line_of(code, match.start())
+        open_paren = code.find("(", match.start(), match.end())
+        span = _call_end_line(code, open_paren) if open_paren >= 0 else 0
         evidence.append(
             Evidence(
                 "store", match.group(1), path, line, "confirmed", "pinia", scope_end=max(span, line) if span else 0
             )
         )
-    for match in _REDUX_SLICE.finditer(source):
-        line = _line_of(source, match.start())
-        open_paren = source.find("(", match.start(), match.end())
-        span = _call_end_line(source, open_paren) if open_paren >= 0 else 0
+    for match in _REDUX_SLICE.finditer(code):
+        line = _line_of(code, match.start())
+        open_paren = code.find("(", match.start(), match.end())
+        span = _call_end_line(code, open_paren) if open_paren >= 0 else 0
         evidence.append(
             Evidence(
                 "store", match.group(1), path, line, "confirmed", "redux", scope_end=max(span, line) if span else 0
             )
         )
-    if _COMPOSABLE_DIRS & set(path.split("/")[:-1]):
-        for match in _COMPOSABLE.finditer(source):
-            name = match.group(1) or match.group(2)
-            line = _line_of(source, match.start())
-            span = _body_end_line(source, match.end())
-            evidence.append(
-                Evidence("composable", name, path, line, "confirmed", scope_end=max(span, line) if span else 0)
+    # 선언 줄 기록은 디렉터리와 무관하다 — 관례 밖 선언도 자기 이름의 소비가 아니다.
+    # 선언으로 *주장*하는 것만 관례 디렉터리로 제한한다.
+    decl_lines: set[int] = set()
+    in_convention = bool(_COMPOSABLE_DIRS & set(path.split("/")[:-1]))
+    for match in _COMPOSABLE.finditer(code):
+        # `^\s*` 는 앞선 빈 줄의 개행까지 삼킨다 — 정체의 줄은 이름 토큰이 있는 줄이다.
+        name_start = match.start(1) if match.group(1) else match.start(2)
+        line = _line_of(code, name_start)
+        decl_lines.add(line)
+        if not in_convention:
+            continue
+        span = _body_end_line(code, match.end())
+        evidence.append(
+            Evidence(
+                "composable",
+                match.group(1) or match.group(2),
+                path,
+                line,
+                "confirmed",
+                scope_end=max(span, line) if span else 0,
             )
+        )
+    # 소비 증거는 잠정이다 — 리포 안 선언으로 수렴하지 못하면 `resolve_fe_usage` 가 버린다.
+    # 호출 지점을 줄 단위로 남긴다: 한 파일의 선언자가 여럿이면 각자의 본문 스팬이 자기 몫의
+    # 호출을 가져가야 플로우 귀속이 맞는다 (이름으로 접으면 첫 선언자만 엣지를 얻는다).
+    seen_hooks: set[tuple[str, int]] = set()
+    for match in _HOOK_USE.finditer(code):
+        name = match.group(1)
+        line = _line_of(code, match.start())
+        if (name, line) in seen_hooks or line in decl_lines:
+            continue  # 선언 줄의 자기 이름은 소비가 아니다
+        seen_hooks.add((name, line))
+        evidence.append(Evidence("composable", name, path, line, "candidate", _USE_DETAIL))
+    evidence.extend(_service_evidence(path, code))
     for match in _DRIZZLE_TABLE.finditer(source):
         evidence.append(
             Evidence("model", match.group(1), path, _line_of(source, match.start()), "candidate", "drizzle")

@@ -216,6 +216,7 @@ def run_map_scan(*, dry_run: bool = False, json_out: bool = False, quiet: bool =
         ui.ok(
             f"{result.files_scanned} files → {result.evidence_count} evidence · {result.nodes} nodes"
             f" · {result.edges} edges · {result.flows} flows · {result.api_links} api links"
+            f" · {result.jvm_links} jvm links"
         )
         if dry_run:
             ui.step(("would update " if result.changed else "already current ") + result.graph_md_path)

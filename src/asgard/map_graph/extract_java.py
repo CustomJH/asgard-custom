@@ -119,8 +119,11 @@ def _line_of(text: str, offset: int) -> int:
     return text.count("\n", 0, offset) + 1
 
 
-def _strip_comments(source: str) -> str:
-    """주석 제거 — 줄 번호 보존을 위해 블록 주석은 동일 개수의 개행으로 치환한다."""
+def strip_java_comments(source: str) -> str:
+    """주석 제거 — 줄 번호 보존을 위해 블록 주석은 동일 개수의 개행으로 치환한다.
+
+    크로스파일 해석기(`resolve_jvm`)도 같은 기준을 써야 줄 번호가 증거와 일치한다.
+    """
     without_blocks = _BLOCK_COMMENT.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     return _LINE_COMMENT.sub("", without_blocks)
 
@@ -239,7 +242,7 @@ def _body_end_line(text: str, offset: int, *, limit: int = 120_000) -> int:
 
 
 def extract_java(path: str, source: str) -> list[Evidence]:
-    text = _strip_comments(source)
+    text = strip_java_comments(source)
     evidence: list[Evidence] = []
     imports = set(_IMPORT.findall(text))
 
@@ -418,26 +421,42 @@ def extract_mapper_xml(path: str, source: str) -> list[Evidence]:
     evidence = [
         Evidence("db_access", simple, path, _line_of(source, ns_match.start()), "confirmed", f"mybatis-xml {namespace}")
     ]
-    tables: list[Evidence] = []
-    seen_tables: set[str] = set()
-    for match in _SQL_TABLE.finditer(source):
-        raw = match.group(1).rstrip(".")
-        table = raw.rsplit(".", 1)[-1].upper()
-        if not table or table.casefold() in _SQL_STOPWORDS or table in seen_tables:
-            continue
-        seen_tables.add(table)
-        tables.append(Evidence("db_access", table, path, _line_of(source, match.start()), "candidate", "sql table ref"))
-    evidence.extend(tables)
+    # 구문 본문 스팬 — 닫는 태그까지. 스팬 안의 테이블 참조가 그 구문의 소비로 귀속되어
+    # `구문 → 테이블` 플로우가 선다 (파일 단위 테이블 나열보다 정확한 귀속이다).
+    statements: list[tuple[int, int, str, str]] = []  # (시작 오프셋, 끝 오프셋, 태그, id)
     for match in _STATEMENT.finditer(source):
+        closing = source.find(f"</{match.group(1)}>", match.end())
+        statements.append((match.start(), closing if closing >= 0 else match.end(), match.group(1), match.group(2)))
+    for start, end, tag, statement_id in statements:
+        line = _line_of(source, start)
+        span = _line_of(source, end)
         evidence.append(
             Evidence(
                 "db_access",
-                f"{simple}.{match.group(2)}",
+                f"{simple}.{statement_id}",
                 path,
-                _line_of(source, match.start()),
+                line,
                 "confirmed",
-                match.group(1),
+                tag,
+                scope_end=max(span, line),
             )
+        )
+    # 테이블 중복 제거는 구문 단위다 — 파일 단위로 접으면 같은 테이블을 쓰는 두 번째 구문이
+    # 증거를 잃어 귀속이 사라진다. 어느 구문에도 안 속한 참조는 파일 단위로 접는다.
+    seen_tables: set[tuple[int, str]] = set()
+    for match in _SQL_TABLE.finditer(source):
+        raw = match.group(1).rstrip(".")
+        table = raw.rsplit(".", 1)[-1].upper()
+        if not table or table.casefold() in _SQL_STOPWORDS:
+            continue
+        owner = next(
+            (index for index, (start, end, _, _) in enumerate(statements) if start <= match.start() <= end), -1
+        )
+        if (owner, table) in seen_tables:
+            continue
+        seen_tables.add((owner, table))
+        evidence.append(
+            Evidence("db_access", table, path, _line_of(source, match.start()), "candidate", "sql table ref")
         )
     return evidence
 
