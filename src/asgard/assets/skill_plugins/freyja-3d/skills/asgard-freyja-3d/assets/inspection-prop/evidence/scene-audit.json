@@ -1,0 +1,14 @@
+{
+  "scene": "../build/inspection-prop.glb",
+  "target": "mobile",
+  "bytes": 29156,
+  "triangles": 708,
+  "drawCalls": 17,
+  "materials": 0,
+  "images": 0,
+  "textureVramEstimate": 0,
+  "extensions": [],
+  "animations": 0,
+  "verdict": "pass",
+  "scope": "performance budget only; glTF conformance requires Khronos glTF Validator"
+}

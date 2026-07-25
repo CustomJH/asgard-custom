@@ -1,0 +1,92 @@
+{
+  "script": "/Users/yun/develop/personal_space/project/asgard-custom/src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/field-telemetry-kit.py",
+  "status": "ok",
+  "parts": [
+    {
+      "name": "energy_meter",
+      "valid": true,
+      "solids": 1,
+      "faces": 80,
+      "edges": 192,
+      "bbox": {
+        "min": [
+          0.0,
+          0.0,
+          0.0
+        ],
+        "max": [
+          90.0,
+          69.0,
+          95.0
+        ],
+        "size": [
+          90.0,
+          69.0,
+          95.0
+        ]
+      },
+      "volume": 575416.4,
+      "area": 46222.4,
+      "centerOfMass": [
+        44.987,
+        34.375,
+        47.49
+      ]
+    },
+    {
+      "name": "rs485_lte_gateway",
+      "valid": true,
+      "solids": 1,
+      "faces": 44,
+      "edges": 102,
+      "bbox": {
+        "min": [
+          105.0,
+          0.0,
+          0.0
+        ],
+        "max": [
+          130.0,
+          67.9,
+          82.5
+        ],
+        "size": [
+          25.0,
+          67.9,
+          82.5
+        ]
+      },
+      "volume": 119313.054,
+      "area": 17444.7858,
+      "centerOfMass": [
+        117.5,
+        32.8372,
+        37.1948
+      ]
+    }
+  ],
+  "exports": {
+    "step": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit.step",
+    "stl": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit.stl",
+    "glb": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit.glb"
+  },
+  "assembly": [
+    {
+      "pair": [
+        "energy_meter",
+        "rs485_lte_gateway"
+      ],
+      "interferenceVolume": 0.0,
+      "clearance": 15.0,
+      "level": "pass",
+      "message": "energy_meter–rs485_lte_gateway 간섭 없음, 간극 15.0mm."
+    }
+  ],
+  "stepRoundtrip": {
+    "id": "step-roundtrip",
+    "level": "pass",
+    "message": "STEP 왕복 일치 — 솔리드 2개, 부피 차 0.0%."
+  },
+  "checks": [],
+  "verdict": "pass"
+}

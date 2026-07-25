@@ -1,0 +1,33 @@
+{
+  "source": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit.glb",
+  "out": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit-preview.glb",
+  "creaseDeg": 38,
+  "inputUnit": "m",
+  "outputUnit": "m",
+  "scaleToMeters": 1,
+  "lossyFeatures": [],
+  "parts": [
+    {
+      "name": "energy_meter",
+      "material": "plastic",
+      "vertices": 384,
+      "triangles": 252,
+      "bake": {
+        "aoMean": 0.69,
+        "edgeMean": 0.354
+      }
+    },
+    {
+      "name": "rs485_lte_gateway",
+      "material": "aluminum",
+      "vertices": 528,
+      "triangles": 460,
+      "bake": {
+        "aoMean": 0.767,
+        "edgeMean": 0.462
+      }
+    }
+  ],
+  "triangles": 712,
+  "vertices": 912
+}

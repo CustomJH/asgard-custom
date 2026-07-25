@@ -1,0 +1,51 @@
+{
+  "scene": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit-preview.glb",
+  "target": "mobile",
+  "bytes": 43416,
+  "triangles": 712,
+  "drawCalls": 2,
+  "meshes": 2,
+  "nodes": 2,
+  "materials": 2,
+  "images": [],
+  "textureVramEstimate": 0,
+  "extensions": [],
+  "extensionsRequired": [],
+  "animations": 0,
+  "compressedPrimitives": 0,
+  "budget": {
+    "bytes": 5242880,
+    "triangles": 150000,
+    "drawCalls": 100,
+    "textureBytes": 52428800,
+    "maxTexture": 1024
+  },
+  "checks": [
+    {
+      "id": "filesize",
+      "level": "pass",
+      "message": "다운로드 0.04MB / 예산 5MB (mobile)"
+    },
+    {
+      "id": "triangles",
+      "level": "pass",
+      "message": "삼각형 712 / 예산 150,000"
+    },
+    {
+      "id": "drawcalls",
+      "level": "pass",
+      "message": "드로우콜(프리미티브×인스턴스) 2 / 예산 100 — 삼각형보다 이 숫자가 프레임을 결정한다."
+    },
+    {
+      "id": "texturememory",
+      "level": "pass",
+      "message": "추정 텍스처 VRAM 0.0MB / 예산 50MB"
+    },
+    {
+      "id": "geometrycompression",
+      "level": "pass",
+      "message": "지오메트리 압축이 없다 — meshopt(디코드가 빠르다) 또는 Draco(압축률이 높다) 중 하나를 적용하라."
+    }
+  ],
+  "verdict": "pass"
+}

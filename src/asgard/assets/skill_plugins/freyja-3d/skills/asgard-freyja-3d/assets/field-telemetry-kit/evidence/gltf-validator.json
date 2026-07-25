@@ -1,0 +1,24 @@
+{
+  "validator": "Khronos glTF Validator",
+  "version": "2.0.0-dev.3.10",
+  "assets": [
+    {
+      "asset": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit.glb",
+      "errors": 0,
+      "warnings": 0,
+      "infos": 0,
+      "hints": 0
+    },
+    {
+      "asset": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit-preview.glb",
+      "errors": 0,
+      "warnings": 0,
+      "infos": 0,
+      "hints": 0
+    }
+  ],
+  "errors": 0,
+  "warnings": 0,
+  "infos": 0,
+  "hints": 0
+}

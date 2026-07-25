@@ -1,0 +1,197 @@
+{
+  "model": "src/asgard/assets/skill_plugins/freyja-3d/skills/asgard-freyja-3d/assets/field-telemetry-kit/build/field-telemetry-kit.stl",
+  "unit": "mm",
+  "unitScaleToMm": 1,
+  "process": "sls",
+  "processLabel": "SLS / MJF (분말 소결·용융)",
+  "triangles": 252,
+  "shells": 2,
+  "shellSelected": 1,
+  "parts": [
+    {
+      "name": "stl",
+      "triangles": 712
+    }
+  ],
+  "bbox": {
+    "min": [
+      0,
+      0,
+      0
+    ],
+    "max": [
+      90,
+      69,
+      95
+    ],
+    "size": [
+      90,
+      69,
+      95
+    ]
+  },
+  "volume": 575416.405,
+  "surfaceArea": 46222.399,
+  "topology": {
+    "vertices": 128,
+    "edges": 378,
+    "openEdges": 0,
+    "nonManifoldEdges": 0,
+    "inconsistentEdges": 0,
+    "watertight": true
+  },
+  "degenerateTriangles": 0,
+  "wall": {
+    "samples": 252,
+    "min": 6,
+    "p01": 6,
+    "median": 60.8,
+    "minAt": [
+      27,
+      68.6,
+      44
+    ],
+    "thinnest": [
+      {
+        "value": 6,
+        "at": [
+          27,
+          68.6,
+          44
+        ]
+      },
+      {
+        "value": 6,
+        "at": [
+          29,
+          68.2,
+          44
+        ]
+      },
+      {
+        "value": 6,
+        "at": [
+          44,
+          68.6,
+          44
+        ]
+      },
+      {
+        "value": 6,
+        "at": [
+          46,
+          68.2,
+          44
+        ]
+      },
+      {
+        "value": 6,
+        "at": [
+          61,
+          68.6,
+          44
+        ]
+      }
+    ]
+  },
+  "overhang": {
+    "thresholdDeg": 45,
+    "ratio": 0.0225,
+    "area": 1038.6,
+    "worst": {
+      "tiltDeg": 0,
+      "at": [
+        39.167,
+        3.333,
+        56
+      ]
+    },
+    "hotspots": [
+      {
+        "tiltDeg": 0,
+        "area": 87.5,
+        "at": [
+          39.167,
+          3.333,
+          56
+        ]
+      },
+      {
+        "tiltDeg": 0,
+        "area": 87.5,
+        "at": [
+          50.833,
+          1.667,
+          56
+        ]
+      },
+      {
+        "tiltDeg": 0,
+        "area": 84.5,
+        "at": [
+          11.333,
+          54.667,
+          6
+        ]
+      },
+      {
+        "tiltDeg": 0,
+        "area": 84.5,
+        "at": [
+          15.667,
+          50.333,
+          6
+        ]
+      },
+      {
+        "tiltDeg": 0,
+        "area": 84.5,
+        "at": [
+          32.333,
+          50.333,
+          6
+        ]
+      }
+    ]
+  },
+  "checks": [
+    {
+      "id": "watertight",
+      "level": "pass",
+      "message": "닫힌 매니폴드 메시다."
+    },
+    {
+      "id": "shells",
+      "level": "pass",
+      "message": "셸 1/1 만 검사했다 (삼각형 252)",
+      "evidence": {
+        "shellTriangles": [
+          460,
+          252
+        ]
+      }
+    },
+    {
+      "id": "wall",
+      "level": "pass",
+      "message": "살두께 6mm (최소 6mm) ≥ SLS / MJF (분말 소결·용융) 한계 0.7mm"
+    },
+    {
+      "id": "overhang",
+      "level": "pass",
+      "message": "SLS / MJF (분말 소결·용융) 은 분말이 지지해 서포트 제약이 없다. 대신 분말 배출홀을 확인하라."
+    },
+    {
+      "id": "buildvolume",
+      "level": "pass",
+      "message": "조형 공간 330×280×380mm 안에 들어간다."
+    }
+  ],
+  "verdict": "pass",
+  "notes": [
+    "분말이 서포트 역할을 하므로 오버행 제약이 없다 — 대신 미소결 분말 배출홀(≥4mm)이 필수다.",
+    "조립체를 한 번에 인쇄할 수 있다. 움직이는 부품 사이 간극은 0.5mm 이상 두어라.",
+    "표면은 거칠다(Ra 10~20µm). 씰링·미관면은 후처리를 전제로 설계하라."
+  ],
+  "warnings": []
+}

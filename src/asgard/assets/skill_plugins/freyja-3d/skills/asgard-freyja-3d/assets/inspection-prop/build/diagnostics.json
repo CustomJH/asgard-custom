@@ -1,0 +1,50 @@
+{
+  "script": "../inspection-prop.py",
+  "status": "ok",
+  "parts": [
+    {
+      "name": "inspection_prop",
+      "valid": true,
+      "solids": 1,
+      "faces": 17,
+      "edges": 36,
+      "bbox": {
+        "min": [
+          -30.0,
+          -18.0,
+          0.0
+        ],
+        "max": [
+          30.0,
+          18.0,
+          52.0
+        ],
+        "size": [
+          60.0,
+          36.0,
+          52.0
+        ]
+      },
+      "volume": 22262.0902,
+      "area": 8000.7079,
+      "centerOfMass": [
+        -0.0,
+        0.0,
+        11.3229
+      ]
+    }
+  ],
+  "exports": {
+    "step": "inspection-prop.step",
+    "stl": "inspection-prop.stl",
+    "glb": "inspection-prop.glb"
+  },
+  "assembly": [],
+  "stepRoundtrip": {
+    "id": "step-roundtrip",
+    "level": "pass",
+    "message": "STEP 왕복 일치 — 솔리드 1개, 부피 차 0.0%."
+  },
+  "checks": [],
+  "verdict": "pass"
+}

@@ -1,0 +1,9 @@
+{
+  "validator": "Khronos glTF Validator",
+  "version": "2.0.0-dev.3.10",
+  "asset": "../build/inspection-prop.glb",
+  "errors": 0,
+  "warnings": 0,
+  "infos": 0,
+  "hints": 0
+}

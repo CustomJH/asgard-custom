@@ -1,0 +1,25 @@
+{
+  "model": "../build/inspection-prop.stl",
+  "unit": "mm",
+  "process": "fdm",
+  "triangles": 708,
+  "shells": 1,
+  "bbox": {
+    "size": [60, 36, 52]
+  },
+  "volume": 22261.233,
+  "topology": {
+    "openEdges": 0,
+    "nonManifoldEdges": 0,
+    "inconsistentEdges": 0,
+    "watertight": true
+  },
+  "wall": {
+    "min": 5.9832,
+    "p01": 5.9832
+  },
+  "overhang": {
+    "ratio": 0
+  },
+  "verdict": "pass"
+}
