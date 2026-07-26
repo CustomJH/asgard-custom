@@ -250,6 +250,17 @@ def cc_settings() -> str:
                                 }
                             ],
                         },
+                        # Micro-shape ratchet — judges only what this subagent's writes made worse than
+                        # HEAD. Unmatched (no matcher) because the discipline follows the writing, not
+                        # the role: any delivery agent that touched Python is judged the same way.
+                        {
+                            "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/craft-gate.py"',
+                                }
+                            ],
+                        },
                     ],
                     # Canon Law 10 (Trinity) — Stop-time verifier gate: diff-hash physical comparison.
                     "Stop": [
