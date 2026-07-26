@@ -136,10 +136,11 @@ asgard skills show asgard-thor-jarngreipr
 asgard skills disable asgard-worker-testing
 ```
 
-A local resource plugin is installed with `asgard plugins install <path>`. Freyja currently starts
-with only its core delivery contract and no bundled design specialists. Add each rebuilt skill only
-after its contract and routing are reviewed. A plugin contains `plugin.json` and declared `skills/<name>/`
-directories:
+A local resource plugin is installed with `asgard plugins install <path>`. Freyja ships its core
+delivery contract plus separately bundled specialist plugins — `freyja-design`, `freyja2`,
+`freyja4`, `freyja-3d`, `freyja-fjadrhamr`, and `freyja-sjonhverfing` — each disabled or enabled on
+its own with `asgard skills disable|enable`. A plugin contains `plugin.json` and declared
+`skills/<name>/` directories:
 
 ```json
 {"schema": 1, "name": "acme", "version": "1.0.0", "skills": ["acme-db"], "entrypoints": {"acme-db": "scripts/search.py"}}
