@@ -325,6 +325,32 @@ class TestMapCLI(CodeMapBase):
         self.assertFalse(drift["ok"])
         self.assertIn("managed drift", drift["detail"])
 
+    def test_doctor_does_not_read_the_generated_graph_as_a_manual_area(self):
+        """GRAPH.md 는 관리 산출물이다 — 수동 영역 문법으로 읽으면 라우트 노드가 유령 경로가 된다.
+
+        실측(26-07-26 helios): 그래프의 API 라우트 항목 ``- `/alarms/active` `` 이 절대경로 파일
+        참조로 읽혀 `asgard map update` 로도 지워지지 않는 unsafe 가 떴고, doctor 의 수리 안내는
+        생성 파일을 손으로 고치라는 잘못된 지시가 됐다."""
+        from asgard.code_map import refresh_map
+        from asgard.commands.doctor import _trinity_checks
+
+        self.write("AGENTS.md", "<!-- asgard:trinity -->\n")
+        self.write("pyproject.toml", '[project]\nname = "demo"\n')
+        self.write("src/demo/__init__.py")
+        refresh_map(self.root)
+        self.write(
+            ".asgard/map/GRAPH.md",
+            "# graph\n\n- `/alarms/active` — calls `GET /api/v2/alarms/active`?\n- `src/demo/__init__.py` — module\n",
+        )
+        check = next(c for c in _trinity_checks(self.root) if c["name"] == "codebase map")
+        self.assertTrue(check["ok"], check)
+        self.assertNotIn("/alarms/active", check["detail"])
+
+        # 사람이 소유하는 영역 지도의 유령 경로는 그대로 잡아야 한다 (제외가 넓어지지 않았음).
+        self.write(".asgard/map/area.md", "# map: area\n\n- `src/gone.py` — missing\n")
+        ghost = next(c for c in _trinity_checks(self.root) if c["name"] == "codebase map")
+        self.assertFalse(ghost["ok"], ghost)
+
     def test_setup_map_uses_git_root_from_nested_directory(self):
         from asgard.cli import app
 

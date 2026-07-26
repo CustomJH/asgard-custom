@@ -180,6 +180,27 @@ class TestRender(unittest.TestCase):
                 f.write("강력한 경쟁 우위를 보장한다.\n")
             self.assertTrue(lagom.changed_prose_violations(root, ["guide.md"], "13줄"))
 
+    def test_harness_generated_docs_are_not_prose(self):
+        """`.asgard/` 산출물은 코드가 만든 카탈로그다 — 문체 위반으로 잡으면 수리 지시를 받는
+        Worker 가 손댈 수 없는 제어 경로를 고치라는 요구가 된다 (26-07-26 helios 실측)."""
+        with tempfile.TemporaryDirectory() as root:
+            subprocess.run(["git", "init", "-q"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
+            subprocess.run(["git", "config", "user.name", "t"], cwd=root, check=True)
+            os.makedirs(os.path.join(root, ".asgard", "map"))
+            for rel in ("guide.md", ".asgard/map/GRAPH.md"):
+                with open(os.path.join(root, rel), "w", encoding="utf-8") as f:
+                    f.write("seed\n")
+            subprocess.run(["git", "add", "-A"], cwd=root, check=True)
+            subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
+            for rel in ("guide.md", ".asgard/map/GRAPH.md"):
+                with open(os.path.join(root, rel), "a", encoding="utf-8") as f:
+                    f.write("강력한 경쟁 우위를 보장한다.\n")
+            paths = ["guide.md", ".asgard/map/GRAPH.md"]
+            violations = lagom.changed_prose_violations(root, paths, "13줄")
+            self.assertTrue(violations)
+            self.assertFalse([v for v in violations if v.startswith(".asgard")], violations)
+
     def test_agents_md_carries_static_section(self):
         from asgard.templates import agents_md
 

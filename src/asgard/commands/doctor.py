@@ -327,7 +327,13 @@ def _trinity_checks(root: str) -> list[dict]:
         ghosts: list[str] = []
         unsafe: list[str] = []
         entries = 0
-        areas = sorted(f for f in os.listdir(mdir) if f.endswith(".md") and f not in ("INDEX.md", "PROJECT.md"))
+        # 관리 파일 3종은 수동 영역 문법의 대상이 아니다 — map_context.validate_area_maps 와 같은 제외
+        # 목록을 써야 한다. GRAPH.md 가 빠져 있어 그래프의 API 라우트 노드(`- `/alarms/active``)가
+        # 절대경로 파일 참조로 읽혔고, 생성 파일에 대해 영원히 지워지지 않는 unsafe 가 떴다 —
+        # doctor 의 수리 안내는 "손으로 유령 경로 제거"라 생성물을 손대라는 잘못된 지시가 된다.
+        areas = sorted(
+            f for f in os.listdir(mdir) if f.endswith(".md") and f not in ("GRAPH.md", "INDEX.md", "PROJECT.md")
+        )
         for fname in areas:
             area_path = Path(mdir, fname)
             if area_path.is_symlink() or bool(getattr(area_path, "is_junction", lambda: False)()):

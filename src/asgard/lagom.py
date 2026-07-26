@@ -146,12 +146,20 @@ def _added_prose(root: str, rel: str) -> str:
 
 
 def changed_prose_violations(root: str, paths: list[str], source: str = "") -> list[str]:
-    """변경된 문서의 추가 문장만 검사한다. 기존 문장과 코드 파일은 건드리지 않는다."""
+    """변경된 문서의 추가 문장만 검사한다. 기존 문장과 코드 파일은 건드리지 않는다.
+
+    `.asgard/` 아래 하네스 산출물(지도 GRAPH.md·PROJECT.md 등)은 제외한다 — 사람이 쓴 문장이
+    아니라 코드가 생성한 카탈로그라 문체 규칙의 대상이 아니고, 위반으로 잡히면 수리 지시를 받는
+    Worker 가 그 파일을 손댈 수도 없어(제어 경로 차단) 턴만 태운다 (26-07-26 helios 실측:
+    퀘스트 중 지도 갱신이 GRAPH.md 를 변경 파일에 올려 PASS 직후 무한 수리 전이)."""
     found: list[str] = []
     base = os.path.realpath(root)
+    managed = os.path.join(base, ".asgard")
     for raw in dict.fromkeys(paths):
         path = os.path.realpath(raw if os.path.isabs(raw) else os.path.join(root, raw))
         if os.path.commonpath((base, path)) != base or os.path.splitext(path)[1].lower() not in _PROSE_EXTENSIONS:
+            continue
+        if path == managed or path.startswith(managed + os.sep):
             continue
         rel = os.path.relpath(path, base)
         for item in style_violations(_added_prose(base, rel), source):
