@@ -333,6 +333,28 @@ class TestSyncProject(Base):
         self.assertEqual(len(wiring), 3)
         self.assertTrue(all(check["ok"] for check in wiring), wiring)
 
+    def test_doctor_sees_an_older_role_contract_not_just_a_missing_file(self):
+        # 26-07-26 실측: 프로젝트가 구세대 역할 문서(판정자 문서에 JS/TS 실행 레인 없음)로 도는데
+        # doctor 는 `10/10 present` 로 녹색이었다 — 계약은 존재가 아니라 내용이다.
+        from asgard.commands.doctor import _trinity_checks
+
+        sync_project(self.root, cc=True, cursor=False, codex=False)
+        name = lambda checks: [c for c in checks if c["name"] == "trinity role agents"][0]  # noqa: E731
+        fresh = name(_trinity_checks(self.root))
+        self.assertTrue(fresh["ok"], fresh)
+        self.assertIn("current", fresh["detail"])
+
+        agent = os.path.join(self.root, ".claude", "agents", "asgard-verifier.md")
+        body = open(agent, encoding="utf-8").read()
+        open(agent, "w", encoding="utf-8").write(body.replace("read-only guard", "read-only guard (older wording)"))
+        drifted = name(_trinity_checks(self.root))
+        self.assertFalse(drifted["ok"], drifted)
+        self.assertIn("asgard-verifier.md", drifted["detail"])
+        self.assertIn("asgard sync", drifted["fix"])
+
+        sync_project(self.root, cc=True, cursor=False, codex=False)  # 처방이 실제로 되돌린다
+        self.assertTrue(name(_trinity_checks(self.root))["ok"])
+
     def test_drift_repaired_user_edits_preserved(self):
         sync_project(self.root, cc=True, cursor=False, codex=False)
         j = os.path.join

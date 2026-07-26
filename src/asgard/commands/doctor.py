@@ -13,6 +13,37 @@ from ..platform import hook_python, on_path
 from ..templates.roles import ROLE_AGENTS
 
 
+def _stale_role_agents(root: str) -> list[str]:
+    """구세대 역할 계약을 들고 있는 스캐폴드 파일 이름.
+
+    존재 확인만 하던 검사는 드리프트를 못 봤다 — 26-07-26 실측: helios 의 역할 문서 10개 중 7개가
+    이전 세대였고(판정자 문서에 JS/TS 실행 레인 문단이 없었다) doctor 는 `10/10 present` 로 녹색을
+    보고했다. 계약은 파일 존재가 아니라 내용이다. 렌더러는 setup/sync 와 같은 것을 쓴다."""
+    from ..skill_registry import skill_catalog
+    from ..templates.roles import claude_agent
+
+    stale: list[str] = []
+    for fname, body in ROLE_AGENTS:
+        path = os.path.join(root, ".claude", "agents", fname)
+        agent = fname.removeprefix("asgard-").removesuffix(".md")
+        try:
+            expected = claude_agent(body, root) + skill_catalog(root, agent, loader="cli")  # setup 과 동일 조립
+            with open(path, encoding="utf-8") as handle:
+                if handle.read() != expected:
+                    stale.append(fname)
+        except Exception:
+            continue  # 읽기 실패는 존재 검사(missing)가 이미 다룬다 — 여기서 이중 보고하지 않는다
+    return stale
+
+
+def _map_drift_detail(managed) -> str:
+    """맵 드리프트 사유 — 항목 집합이 같고 본문만 달라지면 `+0 -0` 이라는 빈 경고가 떴다
+    (26-07-26 실측). 무엇이 다른지 못 말하는 경고는 잡음이므로 사실을 그대로 쓴다."""
+    if managed.added or managed.removed:
+        return f"managed drift: +{len(managed.added)} -{len(managed.removed)}"
+    return "managed projection is stale — same entries, changed detail"
+
+
 def _shared_memory_check(root: str) -> dict | None:
     """설정된 프로젝트 메모리의 trust·exact binding·readiness를 Trinity와 독립 진단한다."""
     try:
@@ -187,12 +218,19 @@ def _trinity_checks(root: str) -> list[dict]:
     checks.append({"name": "trinity policy", "ok": pol_ok, "detail": detail, "fix": fix})
     agents = [fname for fname, _ in ROLE_AGENTS]  # 역할 3종 + 딜리버리 계층 — 라이브러리가 소스
     missing = [a for a in agents if not os.path.exists(os.path.join(root, ".claude", "agents", a))]
+    stale = _stale_role_agents(root) if not missing else []
     checks.append(
         {
             "name": "trinity role agents",
-            "ok": not missing,
-            "detail": f"{len(agents)}/{len(agents)} present" if not missing else "missing: " + ", ".join(missing),
-            "fix": fix,
+            "ok": not missing and not stale,
+            "detail": (
+                f"{len(agents)}/{len(agents)} present · current"
+                if not missing and not stale
+                else "missing: " + ", ".join(missing)
+                if missing
+                else f"{len(stale)}/{len(agents)} on an older contract: " + ", ".join(stale[:4])
+            ),
+            "fix": fix if missing else "asgard sync — 스캐폴드를 현행 역할 계약으로 갱신",
         }
     )
     hooks = [
@@ -420,7 +458,7 @@ def _trinity_checks(root: str) -> list[dict]:
                                 else (
                                     "managed map is git-ignored — not shareable"
                                     if not managed.trackable
-                                    else f"managed drift: +{len(managed.added)} -{len(managed.removed)}"
+                                    else _map_drift_detail(managed)
                                 )
                             )
                         )
