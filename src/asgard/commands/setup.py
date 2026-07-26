@@ -10,6 +10,7 @@ from .. import ui
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..skill_registry import client_skill_bodies, skill_catalog
 from ..templates import (
+    BRAGI_SKILLS,
     BRIDGE_SKILL_MD,
     CC_FOLDERS,
     CURSOR_FOLDERS,
@@ -331,6 +332,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".claude", "skills", "asgard-provider", "SKILL.md"), direct_skill(BRIDGE_SKILL_MD)))
         # Lagom 스킬 — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축)
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in LAGOM_SKILLS]
+        # Bragi 스킬 — 보고문 사람 문체 감사·재작성 (다국어 판정기 asgard/bragi.py 소비)
+        files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in BRAGI_SKILLS]
         # /asgard-seal — gitmoji 사건 봉인 (한 봉인 한 사건 + 품질 게이트)
         files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD)))
         # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
@@ -395,7 +398,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         )
         files += [
             (j(root, ".agents", "skills", sname, "SKILL.md"), direct_skill(body, implicit=False))
-            for sname, body in LAGOM_SKILLS
+            for sname, body in [*LAGOM_SKILLS, *BRAGI_SKILLS]
         ]
         files.append(
             (j(root, ".agents", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD, implicit=False))

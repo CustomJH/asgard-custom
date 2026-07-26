@@ -48,6 +48,7 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "skill_scope",
                 "surface",
                 "lagom",
+                "bragi",
                 "charter",
                 "code_map",
                 "health",

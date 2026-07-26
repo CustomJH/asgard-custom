@@ -316,6 +316,17 @@ def uninstall(
     raise typer.Exit(run_uninstall(yes=yes, dry_run=dry_run))
 
 
+@app.command(help="grade text for machine-writing tells in any language (exit 1 = tells found)")
+def humanize(
+    file: str = typer.Argument(None, help="file to check; omit or '-' to read stdin"),
+    lang: str = typer.Option(None, "--lang", help="force a language instead of detecting it"),
+    as_json: bool = typer.Option(False, "--json", help="machine-readable findings"),
+) -> None:
+    from .commands.humanize import run_humanize
+
+    raise typer.Exit(run_humanize(file, lang=lang, as_json=as_json))
+
+
 @app.command(help="print or install shell completion (bash|zsh|fish)")
 def completions(
     shell: str = typer.Argument(None),

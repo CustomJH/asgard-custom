@@ -474,15 +474,21 @@ class TrinityRun:
     def _done_turn(self) -> str | None:
         """완료 후보 턴 — Lagom 문체 불변식 → 게이트 → close → 최종 보고."""
         hd = self._hd
-        # Lagom 문체는 프롬프트 권고가 아니라 완료 불변식이다. Verifier 자체에는 Lagom
-        # 프롬프트를 주입하지 않되, 하네스가 변경 문서의 추가행을 결정론 검사한다.
-        if hd.lagom:
+        # 문체는 프롬프트 권고가 아니라 완료 불변식이다. Verifier 자체에는 문체 프롬프트를
+        # 주입하지 않되, 하네스가 변경 문서의 추가행을 결정론 검사한다. 두 축을 함께 건다:
+        # Lagom = 근거 없는 효용 주장, Bragi = 언어 불문 기계 문체 흔적.
+        if hd.lagom or hd.bragi:
             try:
-                from ...lagom import changed_prose_violations
+                from ...lagom import changed_prose_violations, style_violations
 
+                checks = [style_violations] if hd.lagom else []
+                if hd.bragi:
+                    from ...bragi import violations as voice_violations
+
+                    checks.append(voice_violations)
                 state = json.loads(ql(hd.root, "state", session=self.sid).stdout or "{}")
                 style_failures = changed_prose_violations(
-                    hd.root, [str(p) for p in (state.get("changed_files") or [])], self.request
+                    hd.root, [str(p) for p in (state.get("changed_files") or [])], self.request, checks
                 )
             except Exception:
                 style_failures = []  # 검사기 장애는 기존 Verifier+게이트 경로를 막지 않는다

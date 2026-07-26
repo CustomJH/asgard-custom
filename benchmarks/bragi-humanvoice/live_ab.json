@@ -1,0 +1,974 @@
+{
+ "model": "qwen3:8b",
+ "rows": [
+  {
+   "lang": "en",
+   "task": 0,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 4,
+    "s1": 1,
+    "s2": 2,
+    "per_1k": 9.63,
+    "ids": [
+     "EN-unsupported-benefit",
+     "EN-copula-avoidance",
+     "EN-participle-analysis",
+     "U-length-uniformity"
+    ],
+    "chars": 1662
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 2,
+    "s1": 1,
+    "s2": 0,
+    "per_1k": 8.02,
+    "ids": [
+     "EN-unsupported-benefit",
+     "U-length-uniformity"
+    ],
+    "chars": 1621
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1108
+   },
+   "text_Z": "I have successfully implemented a cache mechanism for the session lookup in the authentication system, which significantly improved the performance of the login process. This change is crucial for the codebase as it reduces the latency associated with session lookups, thereby enhancing the user experience and scalability of the application. By caching session data, we minimize the need for repeated database queries, which is especially beneficial under high load conditions.\n\nThe implementation resulted in a notable performance improvement, with the p50 (50th percentile) login latency dropping from 1.2 seconds to 0.4 seconds. This represents a substantial reduction in response time, which can have a direct positive impact on user satisfaction and system throughput. The change was made in the `src/auth/session.py` file, where the session lookup logic was modified to incorporate a caching layer.\n\nDuring testing, 27 test cases were executed, and two of them failed due to issues related to cache expiry handling. These test failures indicate that the cache expiration logic may not be correctly implemented or synchronized with the session lifecycle. The remaining 25 tests passed successfully, confirming that the majority of the functionality is working as expected.\n\nThe current open task is to resolve the two failing tests related to cache expiry handling. This requires further investigation into how session data is invalidated and how the cache is updated when sessions expire. Once these issues are addressed, the cache implementation will be fully functional and reliable, ensuring consistent performance and correctness across all scenarios.",
+   "text_A": "I added a cache to the session lookup to improve performance, reducing the 50th percentile login time from 1.2s to 0.4s. This change significantly enhances the user experience by making the login process faster, which is critical for maintaining a responsive application. The cache was implemented in `src/auth/session.py`, and it has passed 25 out of 27 tests, with two test failures related to expiry handling.\n\nThe cache was implemented using the `@lru_cache` decorator from the standard library, which is efficient and requires no additional dependencies. This approach ensures that session lookups are handled quickly without introducing unnecessary complexity. The cache is applied to the session lookup function, which is a key part of the authentication flow, and it minimizes the need for repeated database queries.\n\nThe two failing tests are related to expiry handling, which suggests that the cache may not be correctly invalidating entries when sessions expire. This is a known edge case that requires careful handling to ensure that stale session data is not returned to users. The issue is isolated to the expiry logic and does not affect the core functionality of the cache.\n\nThe remaining work includes fixing the expiry handling tests to ensure the cache behaves correctly under all conditions. This will involve verifying that session entries are properly invalidated after their expiry time and that the cache does not return outdated session data. Once these tests are resolved, the cache will be fully functional and contribute to the overall performance and reliability of the authentication system.",
+   "text_B": "Added a cache to the session lookup, reducing the 50th percentile login time from 1.2s to 0.4s. This change improves performance by minimizing redundant database queries, making the authentication flow more efficient without compromising correctness. The update was applied to a single file: `src/auth/session.py`.\n\nThe cache was implemented with minimal code changes, using an in-memory cache to store session data temporarily. This approach avoids introducing new dependencies and leverages existing infrastructure. The implementation includes a cache expiry mechanism, though two tests related to expiry handling are currently failing.\n\nTwenty-seven tests were run after the change. Two tests related to cache expiry handling are still failing, indicating a need to refine the logic for managing cached session data. These tests should be prioritized to ensure the cache behaves correctly under various conditions.\n\nThe change is complete and ready for review. The next step is to address the failing tests to ensure the cache operates reliably. No further action is required for the rest of the codebase.",
+   "C": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 228
+   },
+   "text_C": "I added a cache to the session lookup, which reduced the 50th percentile login time from 1.2s to 0.4s. The change was made in `src/auth/session.py`, and it passed 25 out of 27 tests, with two failures related to expiry handling."
+  },
+  {
+   "lang": "en",
+   "task": 1,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 1,
+    "s2": 1,
+    "per_1k": 8.38,
+    "ids": [
+     "EN-unsupported-benefit",
+     "EN-copula-avoidance",
+     "U-length-uniformity"
+    ],
+    "chars": 2028
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 1,
+    "s2": 2,
+    "per_1k": 8.19,
+    "ids": [
+     "EN-unsupported-benefit",
+     "EN-participle-analysis",
+     "U-length-uniformity"
+    ],
+    "chars": 1831
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1451
+   },
+   "text_Z": "I have successfully ported the JVM cross-file resolver, significantly improving the accuracy of route-to-table path resolution within the codebase. This change is critical for enhancing the reliability of cross-file dependency resolution, which is essential for maintaining a clean and modular architecture. By addressing this resolver, we are better equipped to manage complex routing logic and ensure that the system can scale efficiently as the codebase grows.\n\nThe porting effort resulted in a substantial improvement in the number of correctly resolved routes. Previously, zero out of 250 routes were being resolved correctly, but after the implementation, 94 out of 250 routes are now being resolved accurately. This represents a 376% increase in successful route resolutions, which is a strong indicator of the resolver's effectiveness. The improvement is particularly notable in the route-to-table paths, where the resolver now correctly identifies the appropriate table for each route.\n\nA manual audit of 31 sample routes confirmed that there were no false positives, meaning that all resolved routes are indeed valid and correctly mapped. This level of accuracy is crucial for ensuring that the system behaves as expected and that there are no unintended side effects from the resolver's implementation. The absence of false positives also suggests that the resolver is robust and can be trusted to handle the majority of routing scenarios without requiring additional manual intervention.\n\nDespite these positive results, there are still some open tasks. Specifically, the backend layer nodes are still missing from the resolver implementation. These nodes are essential for fully supporting the cross-file resolution logic and ensuring that all routing paths are covered. Addressing this gap will be necessary to achieve full coverage and further improve the system's reliability. I recommend that this task be prioritized in the next development cycle to ensure a complete and comprehensive resolver implementation.",
+   "text_A": "I have successfully ported the JVM cross-file resolver, significantly improving the routing efficiency by increasing the number of resolved routes from 0 to 94 out of 250. This enhancement is critical for improving the system's ability to dynamically resolve and route requests across files, which is essential for maintaining scalability and performance in a complex codebase. The manual audit of 31 sample routes confirmed no false positives, ensuring the reliability of the new routing mechanism.\n\nThe implementation focused on optimizing the route-to-table mapping, leveraging existing structures and minimizing the need for new dependencies. By prioritizing standard library usage and avoiding unnecessary abstractions, the solution remains efficient and maintainable. The resolver now correctly identifies and directs requests to the appropriate handlers, reducing the overhead associated with manual routing configuration.\n\nDespite the progress, the backend layer nodes are still missing, which means the full routing capability across the entire codebase has not yet been realized. This is an important next step, as the backend nodes are necessary for handling more complex routing scenarios and ensuring the system can scale effectively. The current resolver is a solid foundation, but completing the backend layer will be essential for achieving the full potential of the cross-file routing system.\n\nThe work completed aligns with the principles of minimalism and efficiency, ensuring that the codebase remains clean, performant, and easy to maintain. The next steps involve addressing the missing backend layer nodes and verifying that the resolver integrates seamlessly with the rest of the system. This will ensure that the cross-file routing is fully functional and can support the evolving needs of the application.",
+   "text_B": "Ported the JVM cross-file resolver, improving route-to-table path resolution from 0 to 94 out of 250 routes. This change enhances the system's ability to correctly map routes to their corresponding table structures, reducing ambiguity and improving reliability. The resolver now aligns more closely with expected behavior, supporting better integration with downstream components.\n\nA manual audit of 31 sample routes confirmed no false positives, validating the accuracy of the updated resolver. This ensures that the current implementation correctly identifies valid routes without introducing incorrect mappings. The resolver now operates as intended for the tested cases, reducing the risk of misrouting or data inconsistencies.\n\nThe backend layer nodes remain unimplemented, representing an ongoing task. These nodes are critical for fully realizing the resolver's capabilities, as they will handle the actual processing and routing logic. Their absence means the resolver is functional but incomplete, requiring further development to support the full scope of the system's requirements.\n\nThe current implementation provides a solid foundation, with accurate route-to-table mapping and no false positives. However, the absence of backend nodes limits the resolver's ability to fully execute its intended purpose. Future work will focus on implementing these nodes to ensure the resolver can operate end-to-end without relying on external systems.",
+   "C": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 193
+   },
+   "text_C": "I ported the JVM cross-file resolver. Route-to-table paths increased from 0 to 94 out of 250 routes. A manual audit of 31 samples found 0 false positives. Backend layer nodes are still missing."
+  },
+  {
+   "lang": "en",
+   "task": 2,
+   "Z": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1886
+   },
+   "A": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1192
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1317
+   },
+   "text_Z": "I have successfully addressed three extraction false positives in the style gate within the codebase, specifically related to state classes, `!important` declarations, and semi-transparent surfaces. These issues were causing unnecessary or incorrect styling rules to be extracted, which could lead to unexpected visual behavior and complicate the styling process. By resolving these false positives, I have improved the accuracy and reliability of the style gate, ensuring that only valid and intended styling rules are processed. This enhancement contributes to a more maintainable and predictable codebase.\n\nThe specific changes involved refining the logic for identifying and excluding state classes, `!important` rules, and semi-transparent surfaces from the extraction process. These adjustments were made with careful consideration of the existing code structure and styling conventions to ensure compatibility and correctness. Each change was verified through testing to confirm that it resolved the false positives without introducing new issues.\n\nIn addition to fixing the false positives, I have added three regression tests to the test suite to ensure that these changes remain effective in the future. These tests are designed to catch any potential regressions that might reintroduce the false positives or break the functionality of the style gate. The full test suite now passes 1874 test cases, indicating that the overall stability and correctness of the system have been maintained and enhanced.\n\nThere are no open tasks related to this specific issue. The changes have been fully implemented, tested, and verified. However, ongoing monitoring and further testing are recommended to ensure long-term stability and to identify any additional edge cases that may arise. If further refinements or new issues are discovered, they can be addressed in subsequent iterations.",
+   "text_A": "I fixed three false positives in the style gate by addressing state classes, `!important` declarations, and semi-transparent surfaces. These changes improve the accuracy of the style gate, ensuring it correctly identifies and blocks problematic styles that could lead to inconsistent or unintended visual outcomes. This is critical for maintaining a clean, predictable, and maintainable codebase.\n\nThe specific changes included:\n- Removing or modifying state classes that were incorrectly flagged as problematic.\n- Adjusting or removing `!important` rules where they were unnecessary or conflicting.\n- Updating the detection logic for semi-transparent surfaces to better align with the intended styling rules.\n\nI also added three regression tests to ensure these changes do not introduce new issues and to catch any future regressions. The full test suite now passes 1874 tests, confirming the stability and reliability of the updated style gate.\n\nThe remaining open items include further refinement of the style gate's detection logic and the addition of more comprehensive tests to cover edge cases. These steps will help ensure the style gate remains robust and effective in the long term.",
+   "text_B": "Fixed three extraction false positives in the style gate by addressing state classes, `!important` rules, and semi-transparent surfaces. These changes improve the accuracy of the style gate, reducing unnecessary extractions and ensuring only relevant styles are processed. This is critical for maintaining clean, efficient code and preventing unintended visual side effects.\n\nThe fix involved refining the logic to exclude state classes that do not affect the visual output, handling `!important` declarations appropriately to avoid override conflicts, and adjusting the detection of semi-transparent surfaces to match actual rendering behavior. These adjustments ensure the style gate operates more reliably in edge cases.\n\nThree regression tests were added to verify the fixes, bringing the full test suite to 1874 passing tests. These tests focus on the specific scenarios where the false positives previously occurred, ensuring the changes are robust and maintainable.\n\nThe style gate now handles state classes, `!\n\n### What is still open\n\nNo further action is required at this time. The style gate is functioning as expected, and the regression tests provide confidence in the stability of the changes. If new edge cases or false positives are identified in the future, they can be addressed in a similar manner."
+  },
+  {
+   "lang": "en",
+   "task": 3,
+   "Z": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1987
+   },
+   "A": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1605
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1049
+   },
+   "text_Z": "I have successfully upgraded the map view to a 3D layout, enhancing the visual representation of the environment while maintaining compatibility with existing systems. This change is significant for the codebase as it improves user experience and supports more complex spatial interactions without requiring major overhauls to the camera or rendering logic. The upgrade ensures that the perspective is computed in world coordinates, which means the existing camera code remains untouched and continues to function as intended. This approach preserves the integrity of the current system while enabling more immersive and realistic visualizations.\n\nThe 3D layout upgrade was implemented with careful consideration for accessibility and performance. A reduced-motion guard was specifically added to the headless tests to ensure that automated testing does not trigger motion-related animations, which could otherwise interfere with test reliability or cause unnecessary resource consumption. This change aligns with best practices for inclusive design and ensures that the system remains robust and maintainable.\n\nThe upgrade has been verified to work as expected, with the 3D perspective rendering correctly in both interactive and headless environments. The existing camera code has been tested and confirmed to remain unaffected by the new layout, ensuring that all current functionality is preserved. The reduced-motion guard has also been successfully integrated into the test suite, preventing any unintended motion effects during automated testing.\n\nThere are no open items at this time, as the upgrade has been fully implemented and validated. The changes are now part of the stable codebase and are ready for further development or integration with additional features. If further enhancements or adjustments are needed, they can be addressed in subsequent iterations. The current state of the codebase is stable and meets the required standards for performance and accessibility.",
+   "text_A": "I upgraded the map view to a 3D layout, enabling a more immersive and spatially accurate representation of the environment. This change preserves the existing camera code by computing perspective in world coordinates, ensuring compatibility and minimizing disruption to the current system. The upgrade enhances user experience by providing a more intuitive spatial awareness, which is particularly valuable for applications requiring precise navigation or visualization.\n\nThe 3D layout was implemented with minimal code changes, leveraging existing structures to avoid unnecessary complexity. The perspective calculation was integrated into the rendering pipeline without altering the camera logic, maintaining the integrity of the original design. This approach ensures that the upgrade is both efficient and maintainable, reducing the risk of introducing new bugs or inconsistencies.\n\nTo support accessibility and user comfort, headless tests were updated to include a reduced-motion guard. This change ensures that automated tests do not trigger motion-based animations, which can be disorienting for users with motion sensitivity. The guard was implemented with a single conditional check, preserving test performance while improving inclusivity.\n\nThe upgrade is now complete and ready for integration. The 3D layout has been verified to work alongside the existing camera system, and the reduced-motion guard has been successfully added to the test suite. No further action is required at this time, though additional testing in real-world scenarios is recommended to fully validate the improvements.",
+   "text_B": "Upgraded the map view to a 3D layout, aligning with the codebase’s existing camera logic by computing perspective in world coordinates. This change preserves compatibility with the current camera system while enhancing the visual representation of spatial data.\n\nThe 3D layout introduces a new rendering pipeline that leverages world-space calculations for perspective, ensuring consistency with existing coordinate systems. This approach avoids the need to refactor the camera code, maintaining the integrity of the current rendering architecture.\n\nHeadless tests were updated to include a reduced-motion guard, ensuring accessibility for users with motion sensitivity. This change aligns with accessibility best practices and prevents potential discomfort from dynamic visual transitions.\n\nNo further action is required at this time. The 3D layout is functional and compatible with existing systems, and the accessibility guard is in place for headless testing. The next step would be to evaluate user feedback and consider additional refinements."
+  },
+  {
+   "lang": "en",
+   "task": 4,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 1,
+    "s2": 1,
+    "per_1k": 7.67,
+    "ids": [
+     "EN-unsupported-benefit",
+     "EN-participle-analysis",
+     "U-length-uniformity"
+    ],
+    "chars": 1694
+   },
+   "A": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1201
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1327
+   },
+   "text_Z": "I have successfully replaced the retry loop mechanism with an exponential backoff strategy, capped at 40 requests per minute, to better manage rate limiting and improve the system's resilience to API throttling. This change is significant for the codebase as it reduces the likelihood of hitting rate limits and improves the overall reliability and efficiency of the service, especially under high load or during periods of API instability.\n\nThe implementation involved modifying the retry logic to use exponential backoff instead of a fixed retry interval. This approach increases the time between retries exponentially, which helps to spread out the request load and avoid overwhelming the API endpoint. Additionally, the retry mechanism was updated to respect the rate limit cap of 40 requests per minute, ensuring that the system adheres to the service's constraints without exceeding them.\n\nThe results of this change were verified through a 6-hour soak test, during which the system was monitored for 429 errors. Before the implementation, the system experienced 118 such errors, but after the change, the number dropped to zero. This demonstrates that the new approach effectively mitigates rate limiting issues and significantly improves the system's ability to handle API constraints.\n\nThe configuration key `[provider] rpm` was used to set the rate limit cap, and it has been properly integrated into the system's configuration. This allows for easy adjustment of the rate limit if needed, without requiring changes to the retry logic itself. The configuration is now part of the system's runtime settings and is being used to enforce the rate limit cap across all relevant endpoints.",
+   "text_A": "I replaced the retry loop with exponential backoff, capped at 40 requests per minute, to better manage rate limiting and reduce the occurrence of 429 errors. This change is significant because it improves the system's resilience to API rate limits, ensuring more stable and predictable behavior under load.\n\nThe implementation introduced a configurable rate limit setting under the `[provider] rpm` key, allowing fine-grained control over request frequency. This change reduced 429 errors from 118 in the first 6 hours to 0 after the adjustment, demonstrating the effectiveness of the new approach in mitigating rate limit issues.\n\nThe solution leverages exponential backoff to dynamically adjust retry intervals, which helps avoid overwhelming the API endpoint. By capping the request rate at 40 per minute, the system now adheres to the provider's rate limit constraints without requiring additional infrastructure or complex logic.\n\nThe remaining open task is to monitor the long-term impact of this change on system performance and ensure that the rate limit configuration remains aligned with the provider's policies. Further adjustments may be needed if new constraints or usage patterns emerge.",
+   "text_B": "Replaced the retry loop with exponential backoff, capped at 40 requests per minute. This change reduces the risk of hitting rate limits by spreading out request timing, which is critical for maintaining service reliability under load. The update aligns with the provider's rate limit configuration, improving stability and reducing unnecessary retries.\n\nThe implementation introduced a new configuration key: `[provider] rpm` to control the request rate. Before the change, the system experienced 118 429 errors over 6 hours. After the update, no 429 errors were observed during the same period, demonstrating the effectiveness of the exponential backoff strategy in managing rate limits.\n\nThe change required modifying the retry logic to use exponential backoff instead of a fixed retry interval. A new configuration parameter was added to the provider settings to control the maximum requests per minute. These adjustments were made with minimal code changes, preserving existing functionality while improving resilience.\n\nNo further action is required for this task. The system now handles rate limits effectively, and the configuration is in place to allow for future adjustments if needed. The change has resolved the 429 error issue and should continue to provide stable performance under normal and peak load conditions."
+  },
+  {
+   "lang": "en",
+   "task": 5,
+   "Z": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1910
+   },
+   "A": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1394
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1241
+   },
+   "text_Z": "I have successfully consolidated two settings files into a single, unified configuration file to improve maintainability, reduce redundancy, and simplify future updates. This change is significant for the codebase as it streamlines the configuration management process, minimizes the risk of inconsistencies, and makes it easier for developers to locate and modify settings. By centralizing the configuration, we also enhance the overall readability and scalability of the application's setup.\n\nThe consolidation involved updating 14 call sites across the codebase to reference the new unified settings file. These updates were carefully made to ensure that all existing functionality remains intact. In addition, three legacy paths were retained for read compatibility, allowing the system to still access older configurations if needed. This approach ensures a smooth transition without disrupting existing workflows or data integrity.\n\nA total of 210 lines of code were removed during the consolidation process, reflecting the elimination of redundant and duplicated settings. In contrast, 96 new lines were added to implement the unified structure and ensure all necessary configurations were properly included. These additions were made with attention to clarity and consistency, reinforcing the benefits of a centralized configuration approach.\n\nWhile the core task of consolidating the settings files is complete, there are still some open items to address. Specifically, the legacy paths that were retained for compatibility should be reviewed in the future to determine if they can be safely removed or deprecated. Additionally, it would be beneficial to conduct a full audit of the codebase to ensure that all references to the old settings files have been properly updated and that no residual dependencies remain. These follow-up actions will further solidify the long-term benefits of this change.",
+   "text_A": "I consolidated two settings files into one, reducing redundancy and improving maintainability. This change simplifies the configuration structure, making it easier to manage and update in the future. By merging the files, I minimized the number of places where settings need to be referenced, which reduces the risk of inconsistencies and errors.\n\nThe consolidation required updating 14 call sites to reflect the new unified settings structure. I also preserved 3 legacy paths for read compatibility, ensuring that existing code that relies on the old structure can still function without immediate changes. This approach balances modernization with backward compatibility, minimizing disruption during the transition.\n\nI removed 210 lines of code and added 96 lines to implement the consolidated settings file. The reduction in lines reflects the elimination of duplicate definitions and redundant logic, while the addition of new code ensures the merged file is complete and functional. This change improves the overall clarity and efficiency of the codebase.\n\nThe task is complete, but there are still open items. The legacy paths will need to be gradually phased out as the codebase evolves, and a review of all configuration usage is recommended to ensure consistency. Additionally, documentation should be updated to reflect the new structure and any changes in how settings are accessed.",
+   "text_B": "Consolidated two settings files into one, reducing redundancy and improving maintainability. This change simplifies the codebase by eliminating duplicate configuration logic, making it easier to manage and update settings in the future. The update involved modifying 14 call sites to reference the new unified settings file, while preserving 3 legacy paths for backward compatibility.\n\nThe refactoring removed 210 lines of code and added 96 new lines, resulting in a net reduction of 114 lines. This improvement enhances readability and reduces the potential for configuration errors by centralizing settings management. The legacy paths were retained to ensure existing systems that rely on the old structure can still function without disruption.\n\nAll changes were made with minimal impact on the overall code structure, ensuring that the core functionality remains unaffected. The update was focused on reducing duplication and improving clarity, without introducing new dependencies or altering existing behavior.\n\nOne open item is the gradual phase-out of the legacy paths. While they are currently maintained for compatibility, a plan to remove them entirely in a future release should be considered to further streamline the codebase."
+  },
+  {
+   "lang": "ko",
+   "task": 0,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 5,
+    "per_1k": 24.79,
+    "ids": [
+     "KO-hype",
+     "KO-possibility-overuse",
+     "U-length-uniformity"
+    ],
+    "chars": 847
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 4,
+    "s1": 0,
+    "s2": 5,
+    "per_1k": 29.41,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "KO-possibility-overuse",
+     "U-length-uniformity"
+    ],
+    "chars": 680
+   },
+   "B": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 5.04,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "KO-translationese-particle"
+    ],
+    "chars": 595
+   },
+   "text_Z": "요청하신 작업은 세션 조회 시 캐시 기능을 추가하여 성능을 개선하는 것이었습니다. 이 변경은 사용자 로그인 처리 시간을 크게 단축시켜 시스템의 전체 성능을 향상시키는 데 중요한 역할을 합니다. 특히, 로그인 처리 시간(p50)이 1.2초에서 0.4초로 감소함으로써, 사용자 경험을 개선하고 서버 부하를 줄이는 데 기여할 수 있습니다. 이 작업은 코드베이스의 효율성과 확장성을 높이는 데 중요한 수정이었습니다.\n\n작업 결과, 캐시 기능이 성공적으로 추가되었으며, 로그인 처리 시간이 크게 개선되었습니다. 총 27개의 테스트 중 2개의 테스트가 실패했으며, 이는 캐시의 만료 처리(log expiry handling)에 관련된 문제로 보입니다. 이는 향후 추가 수정이 필요할 수 있는 부분입니다. 변경된 파일은 `src/auth/session.py`이며, 이 파일에서 세션 조회 로직에 캐시 메커니즘이 도입되었습니다.\n\n현재까지 확인된 결과, 캐시 기능이 정상적으로 동작하고 있으며, 로그인 처리 시간의 감소 효과는 명확히 확인되었습니다. 그러나 캐시의 만료 처리 로직에 문제가 발생했으므로, 이 부분을 정확히 파악하고 수정하는 것이 필요합니다. 이는 테스트 실패 사례를 해결하고, 캐시 기능의 안정성을 확보하는 데 필수적인 작업입니다.\n\n아직 해결되지 않은 문제는 캐시 만료 처리 관련 테스트 실패 2건입니다. 이는 캐시가 예상대로 제거되지 않거나, 만료 시간 계산에 오류가 있을 수 있습니다. 이 문제를 해결하면, 캐시 기능이 완전히 안정적으로 작동할 수 있으며, 시스템의 성능 향상 효과를 더욱 확실하게 보장할 수 있습니다. 이 작업을 완료하면, 코드베이스의 효율성과 유지보수성도 함께 향상될 것으로 기대됩니다.",
+   "text_A": "세션 검색에 캐시를 추가하여 성능을 개선했습니다. 이 변경으로 로그인 처리 시간(p50)이 1.2초에서 0.4초로 크게 개선되었습니다. 이는 사용자 경험 향상과 서버 부하 감소에 기여할 수 있는 중요한 최적화입니다. 변경된 파일은 `src/auth/session.py`이며, 주요 변경 사항은 세션 조회 로직에 캐시 메커니즘을 도입한 것입니다.\n\n구체적으로, 세션 검색 시 캐시를 활용하여 반복적인 데이터 조회를 줄였습니다. 이로 인해 처리 시간이 크게 단축되었으며, 시스템의 전체 성능을 향상시킬 수 있습니다. 또한, 캐시의 유효 시간을 관리하는 로직을 추가하여 캐시의 정확성을 유지하고, 데이터 일관성을 보장했습니다.\n\n테스트 결과는 27개의 테스트 중 2개가 실패했습니다. 실패한 테스트는 캐시 유효 시간 처리에 관련된 것으로 보이며, 이는 캐시의 만료 로직을 정확하게 구현해야 하는 문제입니다. 이 부분은 추후 개선이 필요하며, 현재는 테스트를 통과시키기 위한 수정이 진행 중입니다.\n\n현재 진행 중인 작업은 캐시 유효 시간 처리 로직의 정확성 확보입니다. 이는 캐시의 정확한 관리와 데이터 일관성을 보장하기 위해 필수적인 작업입니다. 또한, 테스트를 통과시키고, 캐시 메커니즘의 안정성을 검증하는 것이 다음 단계입니다. 이 작업이 완료되면, 세션 검색의 성능 개선 효과를 더욱 확고히 할 수 있을 것입니다.",
+   "text_B": "세션 검색에 캐시를 추가하여 로그인 처리 시간(p50)을 1.2초에서 0.4초로 크게 개선했습니다. 이 변경은 코드베이스의 성능을 크게 향상시키며, 특히 고빈도로 호출되는 세션 조회 로직에서 효과적입니다. 변경된 파일은 `src/auth/session.py`이며, 테스트 27개 중 2개의 실패 사례는 캐시 만료 처리 관련 문제로 확인되었습니다.\n\n캐시 추가로 인해 세션 조회 로직의 응답 시간이 크게 단축되었으며, 이는 사용자 경험 개선과 서버 부하 감소에 기여할 것으로 기대됩니다. 변경된 코드는 기존 로직을 최소한으로 수정하여, 유지보수성과 가독성을 유지하면서도 성능 향상을 달성했습니다.\n\n현재 진행 중인 작업은 캐시 만료 처리 관련 테스트 2개의 실패 사례를 해결하는 것입니다. 이는 캐시의 유효시간과 관련된 로직 검토 및 테스트 수정이 필요하며, 이 작업이 완료되면 전체 테스트 커버리지가 회복될 예정입니다.\n\n추가로, 이 변경은 다른 모듈과의 호환성 및 의존성을 최소화하여, 코드베이스의 안정성과 확장성을 높이는 데 기여할 것으로 예상됩니다. 앞으로는 캐시 관련 로직의 지속적인 모니터링과 최적화를 통해 성능 향상 효과를 지속적으로 확보할 계획입니다.",
+   "C": {
+    "grade": "A",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 31.75,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "U-length-uniformity"
+    ],
+    "chars": 504
+   },
+   "text_C": "세션 검색에 캐시를 추가해 성능을 개선했습니다. 로그인 처리 시간(p50)은 1.2초에서 0.4초로 줄었습니다. 변경된 파일은 `src/auth/session.py`이며, 세션 조회 로직에 캐시 메커니즘을 도입했습니다.\n\n세션 검색 시 캐시를 활용해 반복적인 데이터 조회를 줄였습니다. 처리 시간이 단축되면서 시스템 전체 성능도 향상됐습니다. 캐시 유효 시간을 관리하는 로직도 추가해 데이터 일관성을 보장했습니다.\n\n테스트는 27개 중 2개가 실패했습니다. 실패 테스트는 캐시 유효 시간 처리 관련한 것으로 보입니다. 이는 캐시 만료 로직을 정확히 구현해야 하는 문제입니다. 이 부분은 개선이 필요하며, 현재 테스트 통과를 위한 수정 중입니다.\n\n캐시 유효 시간 처리 로직의 정확성을 확보하는 작업이 진행 중입니다. 이는 캐시 관리와 데이터 일관성을 위해 필수적입니다. 테스트 통과와 캐시 메커니즘의 안정성 검증이 다음 단계입니다. 작업이 완료되면 세션 검색 성능 개선 효과가 더욱 확고해질 것입니다."
+  },
+  {
+   "lang": "ko",
+   "task": 1,
+   "Z": {
+    "grade": "C",
+    "fired": true,
+    "tells": 4,
+    "s1": 0,
+    "s2": 22,
+    "per_1k": 35.85,
+    "ids": [
+     "KO-comma-density",
+     "KO-future-assertion",
+     "KO-translationese-particle",
+     "U-length-uniformity"
+    ],
+    "chars": 1032
+   },
+   "A": {
+    "grade": "C",
+    "fired": true,
+    "tells": 4,
+    "s1": 0,
+    "s2": 9,
+    "per_1k": 29.41,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "KO-translationese-particle",
+     "U-length-uniformity"
+    ],
+    "chars": 782
+   },
+   "B": {
+    "grade": "A",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 4.72,
+    "ids": [
+     "KO-future-assertion",
+     "KO-translationese-particle",
+     "KO-plural-suffix"
+    ],
+    "chars": 636
+   },
+   "text_Z": "JVM 크로스 파일 리졸버를 포팅하여 코드베이스의 모듈 간 의존 관계를 명확히 하고, 경로 분석의 정확도를 높이는 데 기여했습니다. 이 작업은 코드베이스의 복잡성을 줄이고, 유지보수 및 확장성을 개선하는 데 중요한 역할을 합니다. 특히, 경로 분석의 정확도가 크게 향상되어, 전체 250개 경로 중 94개의 경로가 정확하게 식별되었으며, 수작업 검증을 통해 31개 샘플을 확인한 결과, 오류가 전혀 발생하지 않았습니다. 이는 리졸버의 신뢰성을 높이고, 향후 코드베이스의 안정성과 효율성을 보장하는 데 기반이 됩니다.\n\n구체적으로, JVM 크로스 파일 리졸버는 파일 간의 경로를 정확하게 식별하여, 코드베이스 내부의 의존 관계를 시각화하고 분석하는 데 사용됩니다. 이 작업을 통해 기존의 경로 분석 시스템이 개선되었으며, 특히 \"route-to-table\" 경로의 정확도가 0에서 94개로 상승했습니다. 이는 전체 경로 중 상당 부분이 정확하게 분석되었음을 의미합니다. 또한, 수작업 검증을 통해 31개 샘플을 확인한 결과, 정확도가 100%를 달성했으며, 이는 리졸버의 신뢰성을 높이는 데 기여했습니다.\n\n현재 진행 중인 작업 중에는 백엔드 레이어 노드가 여전히 누락된 문제가 있습니다. 이는 전체 코드베이스의 경로 분석이 완전하지 않으며, 일부 경로가 제대로 분석되지 않았음을 나타냅니다. 이는 향후 코드베이스의 전체적인 분석 정확도를 높이기 위해 해결해야 할 주요 과제입니다. 백엔드 레이어 노드의 추가는 전체 경로 분석의 완성도를 높이고, 코드베이스의 의존 관계를 더욱 명확하게 파악하는 데 기여할 것입니다.\n\n이 작업은 코드베이스의 모듈화와 유지보수성을 개선하는 데 중요한 기반이 되고 있으며, 특히 경로 분석의 정확도 향상은 향후 코드 변경 및 버그 수정 시 큰 도움이 될 것입니다. 또한, 수작업 검증을 통해 확인된 정확도는 리졸버의 신뢰성을 높이고, 향후 확장성과 안정성을 보장하는 데 기여합니다. 앞으로는 백엔드 레이어 노드의 추가를 통해 전체 경로 분석을 완성하고, 코드베이스의 분석 정확도를 더욱 높이는 데 집중할 계획입니다.",
+   "text_A": "JVM 크로스 파일 리졸버를 포팅하여 코드베이스의 경로 처리 효율성을 크게 개선했습니다. 이 작업은 250개의 라우트 중 94개의 경로를 정확하게 처리할 수 있도록 했으며, 수동 검토를 통해 31개 샘플에서 오류가 없음을 확인했습니다. 이는 코드베이스의 안정성과 신뢰성을 높이는 데 중요한 기여를 합니다.\n\n이 작업의 핵심은 라우트 테이블을 기반으로 한 경로 처리 로직을 재구성하여, 기존의 복잡한 로직을 단순화하고 성능을 향상시켰습니다. 특히, 라우트 테이블을 사용하여 경로를 직접 매핑함으로써, 기존의 중복된 로직을 제거하고 코드의 가독성과 유지보수성을 개선했습니다. 또한, 이 변경은 라우트 처리의 정확성을 높였으며, 수동 검토를 통해 31개 샘플에서 오류가 없음을 확인함으로써 신뢰성을 확보했습니다.\n\n현재 남아 있는 작업은 백엔드 레이어 노드의 구현입니다. 이 노드는 전체 시스템의 일관성과 기능 완성도를 높이기 위해 필수적인 요소입니다. 백엔드 레이어 노드가 구현되면, 전체 시스템의 유연성과 확장성을 극대화할 수 있으며, 사용자 요청 처리의 효율성도 크게 향상될 것입니다. 이 작업은 향후 기능 확장과 시스템 안정성에 중요한 기반이 될 것입니다.\n\n이 작업을 통해 코드베이스의 복잡도를 줄이고, 유지보수성을 높이는 데 기여했습니다. 또한, 경로 처리의 정확성과 성능 향상으로 인해 시스템의 전체적인 효율성도 개선되었습니다. 앞으로는 백엔드 레이Й어 노드의 구현을 통해 시스템의 완성도를 높이는 데 집중해야 합니다. 이는 향후 기능 확장과 사용자 경험 개선에 중요한 기반이 될 것입니다.",
+   "text_B": "JVM 크로스 파일 리졸버를 이식했습니다. 이 작업은 코드베이스의 경로 처리 효율성을 크게 개선하고, 복잡한 파일 간 의존 관계를 명확하게 관리할 수 있도록 합니다. 특히, 라우트 테이블의 경로 처리 성공률이 0%에서 94%로 크게 향상되었으며, 31개의 샘플을 수작업으로 검토한 결과 허위 양성(false positive)이 전혀 발견되지 않았습니다. 이는 리졸버의 정확성과 신뢰성을 높였음을 의미합니다.\n\n이 작업의 핵심은 라우트 테이블의 경로를 효율적으로 처리하는 로직을 재구성하고, 파일 간의 의존성을 명확히 매핑하는 것입니다. 이로 인해 코드베이스 내부의 경로 처리 로직이 단순화되었고, 유지보수 및 확장성도 향상되었습니다. 또한, 리졸버의 성능 향상으로 인해 전체 시스템의 응답 속도도 개선되었습니다.\n\n현재 남아 있는 작업은 백엔드 레이어 노드의 처리입니다. 이 노드들은 여전히 리졸버의 범위 밖에 있으며, 추가적인 작업이 필요합니다. 이 부분은 향후 개발 계획에 포함되어 있으며, 필요한 시점에 우선순위를 두어 처리할 예정입니다.\n\n전체적으로 이 작업은 코드베이스의 구조를 개선하고, 경로 처리의 신뢰성을 높이는 데 기여했습니다. 앞으로도 지속적인 검토와 개선을 통해 코드베이스의 안정성과 효율성을 유지해 나갈 계획입니다.",
+   "C": {
+    "grade": "C",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 6,
+    "per_1k": 13.1,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "KO-translationese-particle"
+    ],
+    "chars": 458
+   },
+   "text_C": "JVM 크로스 파일 리졸버를 포팅하여 코드베이스의 경로 처리 효율성을 개선했습니다. 라우트 테이블 기반 경로 처리 로직을 재구성해 250개의 라우트 중 94개를 정확하게 처리할 수 있도록 했으며, 수동 검토를 통해 31개 샘플에서 오류가 없음을 확인했습니다. 백엔드 레이어 노드는 아직 구현되지 않았습니다.\n\n라우트 처리 로직을 단순화하고 성능을 향상시켰습니다. 라우트 테이블을 사용해 경로를 직접 매핑함으로써 중복된 로직을 제거하고 코드의 가독성과 유지보수성을 개선했습니다. 수동 검토를 통해 31개 샘플에서 오류가 없음을 확인해 신뢰성을 확보했습니다.\n\n백엔드 레이어 노드는 전체 시스템의 일관성과 기능 완성도를 높이는 데 필수적입니다. 이 노드가 구현되면 시스템의 유연성과 확장성이 극대화되고, 사용자 요청 처리의 효율성도 향상될 것입니다. 이 작업은 향후 기능 확장과 시스템 안정성에 중요한 기반이 될 것입니다."
+  },
+  {
+   "lang": "ko",
+   "task": 2,
+   "Z": {
+    "grade": "C",
+    "fired": true,
+    "tells": 4,
+    "s1": 0,
+    "s2": 19,
+    "per_1k": 26.49,
+    "ids": [
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "U-ending-monotony",
+     "KO-plural-suffix"
+    ],
+    "chars": 755
+   },
+   "A": {
+    "grade": "C",
+    "fired": true,
+    "tells": 5,
+    "s1": 0,
+    "s2": 15,
+    "per_1k": 34.77,
+    "ids": [
+     "KO-comma-density",
+     "KO-future-assertion",
+     "KO-translationese-particle",
+     "KO-plural-suffix",
+     "U-length-uniformity"
+    ],
+    "chars": 834
+   },
+   "B": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 6.29,
+    "ids": [
+     "KO-hype",
+     "KO-possibility-overuse",
+     "KO-translationese-particle"
+    ],
+    "chars": 636
+   },
+   "text_Z": "요청하신 코드베이스의 스타일 게이트에서 발생하는 3개의 추출 오류(false positives)를 수정했습니다. 이 수정은 코드의 정확성과 유지보수성을 높이는 데 중요한 역할을 하며, 특히 스타일 규칙이 잘못 인식되는 문제를 해결함으로써 개발자들이 의도한 스타일을 정확하게 적용할 수 있도록 합니다. 또한, 이 작업을 통해 3개의 회귀 테스트를 추가하여 향후 변경 사항이 이전 기능에 영향을 주지 않도록 보장하고 있습니다.\n\n수정된 항목은 다음과 같습니다. 첫째, \"state classes\"에 대한 오류를 수정하여, 상태에 따른 스타일이 정확하게 인식되도록 했습니다. 둘째, \"!important\" 키워드가 포함된 스타일이 오해를 받지 않도록 처리를 개선했습니다. 셋째, 반투명 표면(semi-transparent surfaces)에 대한 추출 오류를 해결하여, 해당 스타일이 제대로 인식되도록 했습니다. 이들 수정을 통해 스타일 게이트의 정확도가 크게 향상되었습니다.\n\n테스트 결과는 전체 테스트 셋 중 1874개가 성공적으로 통과했습니다. 이는 기존 테스트 셋의 대부분이 정상적으로 작동하며, 수정된 부분이 다른 기능에 영향을 주지 않았음을 보여줍니다. 또한, 추가된 3개의 회귀 테스트는 앞으로 발생할 수 있는 문제가 사전에 감지할 수 있도록 도와줍니다.\n\n현재 진행 중인 작업은 없습니다. 모든 수정 사항과 테스트가 성공적으로 완료되었으며, 코드베이스의 안정성과 신뢰성을 높였습니다. 추가적인 변경 사항이 필요하다면 언제든지 요청해 주세요.",
+   "text_A": "3개의 스타일 게이트에서 발생하는 추출 오류인 상태 클래스, `!important`, 그리고 반투명 표면을 수정하여 정확도를 향상시켰습니다. 이 수정은 코드베이스의 일관성과 유지보수성을 높이는 데 중요한 역할을 합니다. 또한, 이 변경 사항을 검증하기 위해 3개의 회귀 테스트를 추가하여 전체 테스트 셋의 통과 수를 1874개로 확보했습니다. 이러한 조치는 스타일 규칙이 의도대로 작동하도록 보장하며, 향후 변경 사항이 예상치 못한 영향을 미치지 않도록 방어적 개발을 지원합니다.\n\n수정된 부분은 스타일 게이트의 핵심 로직에서 발생하는 오류를 제거함으로써, 불필요한 CSS 클래스나 특수한 스타일 속성을 제거하는 로직이 더 정확하게 작동하도록 했습니다. 특히, `!important`와 같은 강제 스타일이 제거되면서, 스타일 우선순위가 예상대로 작동하도록 보장했습니다. 반투명 표면의 처리는 UI의 시각적 일관성을 유지하는 데 기여했습니다.\n\n추가된 회귀 테스트는 각각의 수정 사항을 검증하는 데 사용되었으며, 전체 테스트 셋의 통과율을 확인하는 데 기여했습니다. 이 테스트들은 향후 스타lyn 게이트의 변경 사항이 예상치 못한 영향을 미치지 않도록 보장하는 역할을 합니다. 또한, 테스트 셋의 확장성과 신뢰성을 높이는 데 기여했습니다.\n\n이번 작업은 스타일 게이트의 정확도와 신뢰성을 높이는 데 중요한 기여를 했으며, 향후 코드베이스의 유지보수성과 확장성을 향상시키는 데 기반이 될 것입니다. 그러나, 추가적인 스타일 규칙의 검증 및 다른 스타일 관련 문제의 해결이 여전히 남아 있습니다. 이 작업을 통해 스타일 게이트의 신뢰성이 높아졌으나, 지속적인 모니터링과 테스트 확장이 필요합니다.",
+   "text_B": "코드베이스의 스타일 게이트에서 발생하는 3개의 추출 오류를 수정했습니다: 상태 클래스, `!important`, 그리고 반투명 표면 관련 항목입니다. 이 변경사항은 코드의 일관성과 유지보수성을 높이는 데 중요한 역할을 합니다. 또한, 3개의 회귀 테스트를 추가하여 전체 테스트 셋의 안정성을 확보했습니다. 현재 전체 테스트는 1874개를 통과하고 있습니다.\n\n수정된 항목 중 상태 클래스는 스타일 규칙을 명확히 구분하는 데 도움이 되며, `!important`는 스타일 우선순위를 제어하는 데 필수적인 요소입니다. 반투명 표면은 UI 디자인에서 시각적 효과를 조절하는 데 중요한 역할을 하므로, 이들 항목을 제거함으로써 코드베이스의 깨끗함과 가독성을 향상시켰습니다.\n\n추가된 회귀 테스트는 각 수정된 항목이 예상대로 동작하는지 확인하는 데 사용되었습니다. 테스트 결과는 모두 통과하여, 수정된 코드가 기존 기능에 영향을 주지 않음을 검증할 수 있습니다. 이는 향후 변경 사항이 안정적으로 작동하도록 보장합니다.\n\n아직 해결되지 않은 문제는 현재 스타일 게이트에서 발생할 수 있는 다른 잠재적 오류입니다. 이러한 문제들에 대한 추가 검토와 테스트가 필요하며, 향후 코드베이스의 유지보수성을 더욱 높이기 위해 지속적인 모니터링이 필요합니다.",
+   "C": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 611
+   },
+   "text_C": "3개의 스타일 게이트에서 발생하는 추출 오류인 상태 클래스, `!important`, 그리고 반투명 표면을 수정하여 정확도를 향상시켰습니다. 이 수정은 코드베이스의 일관성과 유지보수성을 높이는 데 중요한 역할을 합니다. 또한, 이 변경 사항을 검증하기 위해 3개의 회귀 테스트를 추가하여 전체 테스트 셋의 통과 수를 1,874개로 확보했습니다.\n\n수정된 부분은 스타일 게이트의 핵심 로직에서 발생하는 오류를 제거함으로써, 불필요한 CSS 클래스나 특수한 스타일 속성을 제거하는 로직이 더 정확하게 작동하도록 했습니다. 특히, `!important`와 같은 강제 스타일이 제거되면서, 스타일 우선순위가 예상대로 작동하도록 보장했습니다. 반투명 표면의 처리는 UI의 시각적 일관성을 유지하는 데 기여했습니다.\n\n추가된 회귀 테스트는 각각의 수정 사항을 검증하는 데 사용되었으며, 전체 테스트 셋의 통과율을 확인하는 데 기여했습니다. 이 테스트들은 향후 스타일 게이트의 변경 사항이 예상치 못한 영향을 미치지 않도록 보장하는 역할을 합니다.\n\n이번 작업은 스타일 게이트의 정확도와 신뢰성을 높이는 데 중요한 기여를 했으며, 향후 코드베이스의 유지보수성과 확장성을 향상시키는 데 기반이 될 것입니다."
+  },
+  {
+   "lang": "ko",
+   "task": 3,
+   "Z": {
+    "grade": "A",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 22.76,
+    "ids": [
+     "KO-future-assertion",
+     "KO-possibility-overuse",
+     "U-length-uniformity"
+    ],
+    "chars": 791
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 20.11,
+    "ids": [
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "U-length-uniformity"
+    ],
+    "chars": 895
+   },
+   "B": {
+    "grade": "C",
+    "fired": true,
+    "tells": 4,
+    "s1": 0,
+    "s2": 6,
+    "per_1k": 33.07,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "KO-translationese-particle",
+     "U-length-uniformity"
+    ],
+    "chars": 635
+   },
+   "text_Z": "지도 보기 기능을 3D 레이아웃으로 업그레이드했습니다. 이 변경은 기존 카메라 코드를 영향을 주지 않도록 세계 좌표계를 기준으로 시점 계산을 수행했습니다. 이는 코드베이스의 다른 부분에 영향을 주지 않으면서 시각적 표현을 향상시킬 수 있는 중요한 수정입니다. 또한, 헤드리스 테스트를 위해 감속 모션을 위한 `reduced-motion` 보호가 추가되었습니다. 이는 사용자 경험을 향상시키고, 접근성을 고려한 개선입니다.\n\n업그레이드된 3D 레이아웃은 세계 좌표계를 기준으로 시점 계산을 수행하여 기존 카메라 로직을 변경하지 않았습니다. 이는 기존 코드의 호환성을 유지하면서도 시각적 표현을 향상시켰습니다. 또한, 헤드리스 테스트를 위해 `reduced-motion` 보호가 추가되어, 테스트 중 감속 모션이 발생할 경우 사용자에게 적절한 경고가 제공됩니다. 이는 접근성과 사용자 경험을 동시에 고려한 개선입니다.\n\n테스트 결과는 모든 기능이 정상적으로 작동하며, 기존 카메라 로직에 영향을 주지 않았습니다. 또한, 헤드리스 테스트에서는 감속 모션이 발생할 경우 `reduced-motion` 보호가 제대로 작동하여 사용자에게 경고가 제공됩니다. 이는 코드베이스의 안정성과 접근성을 동시에 보장합니다.\n\n이제 남은 작업은 3D 레이아웃의 추가적인 UI 요소나 상호작용 기능을 구현하는 것입니다. 또한, 사용자에게 3D 뷰 전환 시 알림을 제공하는 기능도 추가해야 합니다. 이는 사용자 경험을 더욱 향상시키기 위한 다음 단계입니다. 현재까지의 작업은 성공적으로 완료되었으며, 추가 개선을 위한 작업은 진행 중입니다.",
+   "text_A": "3D 뷰를 업그레이드하여 시각적 표현을 향상시켰습니다. 이 변경은 기존 카메라 코드를 수정하지 않고 세계 좌표계에서 시점 계산을 통해 구현되었습니다. 이로 인해 기존 시스템의 호환성과 안정성이 유지되면서도 시각적 깊이와 현실감을 높일 수 있었습니다. 또한, 헤드리스 테스트를 위해 움직임이 줄어든 화면을 보장하는 `reduced-motion` 보호 메커니즘을 추가하여 사용자 경험과 접근성을 개선했습니다.\n\n이 업그레이드는 3D 레이아웃을 통해 사용자가 공간 관계를 더 직관적으로 이해할 수 있도록 했습니다. 세계 좌표계를 기반으로 시점이 계산되므로, 기존의 카메라 로직은 변경 없이 계속 작동하며, 이는 유지보수와 확장성을 높이는 데 기여했습니다. 또한, 헤드리스 테스트를 위해 `reduced-motion` 보호를 추가함으로써, 움직임이 많은 화면이 사용자에게 불편함을 주는 경우를 방지하고, 접근성이 높은 UI를 제공합니다.\n\n이 작업은 기존 코드베이스에 영향을 주지 않으면서도 시각적 표현을 크게 향상시켰습니다. 3D 뷰의 도입은 사용자 인터페이스의 현실감을 높이고, 시스템의 기능적 범위를 확장할 수 있는 기반이 됩니다. 또한, 헤드리스 테스트를 위한 `reduced-motion` 보호는 접근성과 사용자 경험을 동시에 고려한 설계로, 다양한 사용 환경에서 안정적인 동작을 보장합니다.\n\n현재 진행 중인 작업은 3D 뷰의 성능 최적화와 테스트 커버리지 확장을 포함합니다. 특히, 복잡한 3D 레이아웃이 성능에 미치는 영향을 분석하고, 최적화 방안을 마련하는 것이 다음 단계입니다. 또한, 사용자 피드백을 바탕으로 3D 뷰의 UI/UX를 보다 세밀하게 조정하는 작업도 진행 중입니다. 이와 같은 작업을 통해 3D 뷰가 사용자에게 더 유용하고 안정적인 경험을 제공할 수 있도록 만들 계획입니다.",
+   "text_B": "3D 뷰를 구현하여 맵 뷰를 업그레이드했습니다. 이 변경은 기존 카메라 코드를 수정하지 않고 세계 좌표계에서 시점 계산을 통해 이루어졌습니다. 이로 인해 기존 시스템과의 호환성은 유지되면서도 시각적 깊이와 현실감을 높일 수 있었습니다. 또한, 헤드리스 테스트를 위해 감동을 줄이기 위한 감속 모드 보호가 추가되었습니다. 이는 사용자 경험을 향상시키고, 접근성을 높이는 데 기여할 것입니다.\n\n3D 뷰 구현을 위해 세계 좌표계에서 시점 계산 로직을 추가했습니다. 이는 기존 카메라 코드에 영향을 주지 않으면서도 시각적 효과를 극대화할 수 있도록 설계되었습니다. 이 변경은 시스템의 확장성과 유연성을 높이는 데 기여했습니다.\n\n헤드리스 테스트를 위해 감속 모드 보호를 추가했습니다. 이는 사용자의 움직임이 느려지는 문제를 방지하고, 테스트 환경에서의 안정성을 높이는 데 도움이 됩니다. 이 보호는 사용자 경험을 향상시키고, 접근성을 높이는 데 기여할 것입니다.\n\n현재 진행 중인 작업은 사용자 인터페이스의 추가적인 최적화입니다. 이는 사용자 경험을 더욱 향상시키고, 시스템의 안정성을 높이는 데 기여할 것입니다. 또한, 테스트 환경에서의 다양한 시나리오를 검증하는 작업도 진행 중입니다. 이는 시스템의 신뢰성을 높이는 데 기여할 것입니다.",
+   "C": {
+    "grade": "A",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 22.62,
+    "ids": [
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "U-length-uniformity"
+    ],
+    "chars": 663
+   },
+   "text_C": "3D 뷰를 업그레이드했습니다. 시점은 세계 좌표계에서 계산되며, 기존 카메라 코드는 수정되지 않았습니다. 헤드리스 테스트를 위해 `reduced-motion` 보호를 추가했습니다.\n\n3D 레이아웃 도입으로 사용자가 공간 관계를 더 직관적으로 인식할 수 있게 되었습니다. 세계 좌표계 기반의 시점 계산 덕분에 기존 카메라 로직은 변경 없이 작동하며, 유지보수와 확장성에 도움이 됩니다. `reduced-motion` 보호는 움직임이 많은 화면이 사용자에게 불편함을 주는 경우를 방지하고, 접근성을 높이는 데 기여했습니다.\n\n기존 코드베이스에 영향을 주지 않으면서 시각적 표현을 개선했습니다. 3D 뷰 도입으로 사용자 인터페이스의 현실감이 높아졌고, 시스템 기능 범위가 확장될 수 있는 기반이 되었습니다. `reduced-motion` 보호는 접근성과 사용자 경험을 고려한 설계로, 다양한 환경에서 안정적인 동작을 보장합니다.\n\n현재 진행 중인 작업은 3D 뷰 성능 최적화와 테스트 커버리지 확장입니다. 복잡한 3D 레이아웃이 성능에 미치는 영향을 분석하고 최적화 방안을 마련하는 것이 다음 단계입니다. 사용자 피드백을 바탕으로 3D 뷰의 UI/UX를 세밀하게 조정하는 작업도 진행 중입니다. 이를 통해 3D 뷰가 사용자에게 더 유용하고 안정적인 경험을 제공할 수 있도록 만들 계획입니다."
+  },
+  {
+   "lang": "ko",
+   "task": 4,
+   "Z": {
+    "grade": "C",
+    "fired": true,
+    "tells": 4,
+    "s1": 0,
+    "s2": 18,
+    "per_1k": 40.05,
+    "ids": [
+     "KO-comma-density",
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "U-length-uniformity"
+    ],
+    "chars": 749
+   },
+   "A": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 893
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1119
+   },
+   "text_Z": "요청 처리 시 재시도 로직을 지수 백오프 전략으로 대체하여 시스템의 안정성과 효율성을 향상시켰습니다. 이 변경은 과도한 요청으로 인한 429 오류(요청 초과)를 줄이고, 서비스의 지속 가능성을 높이는 데 중요한 역할을 합니다. 특히, 요청 처리 속도를 제어함으로써 서버 부하를 줄이고, 사용자 경험을 개선하는 데 기여할 수 있습니다.\n\n변경 사항은 [provider] rpm이라는 구성 키를 통해 설정된 최대 40 요청/분의 제한을 기반으로 작동합니다. 이 전략은 요청이 거부될 경우 일정 시간 간격을 두고 다시 시도하게 하여, 서버에 과도한 부담을 주지 않도록 합니다. 6시간 동안의 테스트 기간 동안, 변경 전에는 118건의 429 오류가 발생했으나, 변경 후에는 0건으로 감소하여 변경의 효과를 입증했습니다.\n\n이 수정은 시스템의 장기적인 안정성과 확장성을 향상시키는 데 중요한 기여를 했습니다. 특히, 동시 요청이 증가하는 상황에서도 서버에 과도한 요청을 보내지 않도록 제어하는 데 성공했습니다. 또한, 구성 키를 통해 유연하게 설정이 가능하여, 향후 다른 제공업체나 환경에 적용할 때도 유연성을 제공합니다.\n\n현재까지는 모든 테스트 조건에서 예상한대로 작동하며, 429 오류가 완전히 제거되었습니다. 다만, 향후 다른 요청 유형이나 외부 시스템과의 상호작용에서 발생할 수 있는 추가적인 오류에 대한 모니터링과 대응 방안이 필요합니다. 또한, 지수 백오프 전략의 최적화 및 설정 값 조정에 대한 검토도 지속적으로 이루어져야 합니다.",
+   "text_A": "**완료 보고**\n\n요청 처리 시 재시도 로직을 지수적 백오프 전략으로 교체하여 시스템의 안정성과 효율성을 개선했습니다. 이 변경은 주어진 시간 동안 발생하는 429 에러(요청 과부하)의 수를 극적으로 줄이는 데 기여했습니다. 6시간 동안의 테스트 기간 동안 변경 전에는 118건의 429 에러가 발생했으나, 변경 후에는 0건으로 감소했습니다. 이는 시스템의 요청 처리 능력이 크게 향상되었음을 의미하며, 특히 고가용성 환경에서 중요한 성능 개선입니다.\n\n**구체적인 변경 사항**  \n기존의 단순한 재시도 로직은 요청이 과부하될 경우 지속적으로 동일한 요청을 반복하여 서버에 부담을 줄 수 있었습니다. 이에 따라 지수적 백오프 전략을 도입하여, 요청 실패 시 일정 시간 간격을 두고 재시도를 수행하게 하였습니다. 이 전략은 요청이 과부하될 경우 서버에 가해지는 부담을 줄이고, 시스내의 요청 처리 능력을 향상시킵니다. 또한, 40 요청/분의 제한을 설정하여, 요청의 빈도를 제어하고 과도한 요청을 방지하는 데 기여했습니다.\n\n**설정 변경**  \n이 변경을 적용하기 위해 `provider` 키 아래에 `rpm`이라는 설정 키를 추가하여 요청 처리 속도를 제어할 수 있도록 했습니다. 이 설정은 시스템의 요청 처리 능력을 조절하는 데 사용되며, 필요 시 유연하게 조정이 가능합니다. 이 설정은 시스템의 성능을 최적화하고, 과부하를 방지하는 데 중요한 역할을 합니다.\n\n**미해결 사항**  \n현재까지는 모든 테스트 기간 동안 429 에러가 발생하지 않았으나, 장기적인 테스트와 다양한 부하 조건에서의 성능을 확인하는 것이 필요합니다. 또한, 다른 프로바이더에서의 요청 처리 제한 설정이 동일하게 적용되는지 확인하는 작업이 필요합니다. 이는 시스템 전체의 일관된 성능을 보장하기 위해 중요합니다.",
+   "text_B": "I replaced the retry loop with exponential backoff, capped at 40 requests per minute, to better manage rate limiting and improve request reliability. This change reduced 429 errors from 118 to 0 over a 6-hour soak test, demonstrating improved rate limit handling.\n\nThe configuration key for this setting is `[provider] rpm`, which controls the maximum number of requests per minute. This allows for fine-grained control over the rate limiting behavior across different providers.\n\nThe change involved modifying the retry logic to use exponential backoff instead of a fixed retry interval. This approach increases the time between retries exponentially, reducing the likelihood of overwhelming the service with repeated requests.\n\nThe implementation was focused on minimizing code changes while ensuring the new logic effectively handles rate limiting. No new dependencies were added, and the solution was implemented with a minimal working implementation.\n\nThere are no open items related to this change. The new exponential backoff logic is now in place and has successfully eliminated 429 errors during the soak test."
+  },
+  {
+   "lang": "ko",
+   "task": 5,
+   "Z": {
+    "grade": "C",
+    "fired": true,
+    "tells": 6,
+    "s1": 0,
+    "s2": 27,
+    "per_1k": 55.63,
+    "ids": [
+     "KO-comma-density",
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "U-ending-monotony",
+     "KO-plural-suffix",
+     "U-length-uniformity"
+    ],
+    "chars": 719
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 6,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 24.52,
+    "ids": [
+     "KO-future-assertion",
+     "KO-hype",
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "KO-plural-suffix",
+     "U-length-uniformity"
+    ],
+    "chars": 571
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 684
+   },
+   "text_Z": "저는 사용자 요청에 따라 코드베이스 내 두 개의 설정 파일을 하나로 통합하는 작업을 수행했습니다. 이 작업은 코드베이스의 유지보수성을 높이고, 설정 관리의 일관성을 확보하는 데 중요한 의미가 있습니다. 설정 파일이 분산되어 있으면 유지보수 및 오류 수정이 어려워지기 때문에, 이를 통합함으로써 팀원들이 설정을 더 쉽게 이해하고 관리할 수 있도록 했습니다.\n\n구체적으로는 14개의 호출 위치를 업데이트하여 새로운 설정 파일에서 설정 값을 참조하도록 변경했습니다. 또한, 3개의 구식 경로를 유지해 읽기 호환성을 보장했습니다. 이 과정에서 총 210줄의 코드를 제거하고, 96줄의 새로운 코드를 추가하여 설정 파일을 최신화했습니다. 이는 코드베이스의 깨끗함과 가독성을 높이는 데 기여했습니다.\n\n현재까지는 설정 파일 통합 작업이 완료되었으며, 모든 호출 위치가 새로운 파일을 참조하도록 변경되었습니다. 다만, 일부 구식 경로가 여전히 존재하므로, 향후 버전에서는 점차 이 구식 경로를 제거해 가는 방향으로 작업을 진행할 예정입니다. 또한, 설정 파일의 사용법에 대한 문서화나 테스트를 추가하는 작업도 필요할 수 있습니다.\n\n이 작업을 통해 코드베이스의 설정 관리가 단일 포인트에서 이루어지도록 개선되었으며, 향후 변경 사항을 추적하고 관리하는 데 유리한 구조를 갖추게 되었습니다. 앞으로도 이러한 설정 관리의 일관성을 유지하며, 코드베이스의 안정성과 확장성을 높이는 데 기여할 계획입니다.",
+   "text_A": "두 설정 파일을 하나로 통합하여 코드베이스의 유지보수성을 높였습니다. 이 작업은 중복 코드를 제거하고 설정 관리의 일관성을 개선하는 데 중요한 역할을 합니다. 14개의 호출 위치를 업데이트하고, 3개의 유산 경로는 읽기 호환성을 위해 보존하여, 기존 시스템과의 호환성을 유지했습니다. 또한, 총 210줄의 코드를 제거하고 96줄의 새로운 코드를 추가함으로써 코드베이스의 크기를 줄이고, 읽기와 유지보수에 유리한 구조를 만들었습니다.\n\n이 변경사항은 설정 로직의 중복을 제거함으로써 향후 변경사항을 처리하는 데 시간을 절약할 수 있으며, 설정의 일관성과 명확성을 높여 팀원들 간의 협업을 용이하게 합니다. 또한, 제거된 코드는 불필요한 복잡성을 줄이고, 코드베이스의 가독성을 개선하는 데 기여했습니다.\n\n현재 남아 있는 작업은 설정 파일의 사용처를 전면 검토하여 모든 경로가 새로운 파일에서 제대로 작동하는지 확인하는 것입니다. 또한, 설정 변경에 따른 영향을 받는 다른 모듈이나 서비스에 대한 검증도 필요합니다. 이 작업을 완료하면 설정 통합이 완전히 완료되었고, 코드베이스의 일관성과 유지보수성을 극대화할 수 있습니다.",
+   "text_B": "코드베이스의 설정 관리 효율성을 높이기 위해 두 개의 설정 파일을 하나로 통합했습니다. 이 변경은 설정의 중복을 줄이고, 유지보수성을 개선하는 데 중요한 영향을 미칩니다. 14개의 호출 위치를 업데이트하고, 3개의 유산 경로를 유지해 읽기 호환성을 보장했습니다. 코드의 크기도 줄여 210줄을 제거하고 96줄을 추가했습니다.  \n\n통합 과정에서 기존 설정 파일의 경로와 구조를 분석해 유사한 설정 항목을 병합하고, 불필요한 중복 코드를 제거했습니다. 변경된 설정 항목은 기존 코드베이스의 동작에 영향을 주지 않도록 주의하며, 필요한 경우 명시적인 주석을 추가해 변경 사항을 명확히 했습니다.  \n\n아직 해결되지 않은 문제는 기존 설정 파일의 일부 경로가 여전히 사용되고 있다는 점입니다. 이는 단기적으로 호환성을 유지하기 위한 선택이었으나, 장기적으로는 이 경로를 완전히 제거하고 통합된 설정 파일만 사용하도록 전환해야 합니다.  \n\n또한, 통합된 설정 파일의 사용법과 변경 사항을 문서화해 팀원들이 쉽게 이해하고 적용할 수 있도록 할 필요가 있습니다. 이는 향후 유지보수 및 확장성을 높이는 데 기여할 것입니다.  \n\n마지막으로, 변경 사항을 검증하기 위해 단위 테스트를 추가하고, 설정 파일의 변경이 기존 로직에 영향을 주지 않는지 확인하는 작업이 필요합니다. 이는 코드베이스의 안정성을 유지하는 데 중요한 단계입니다.",
+   "C": {
+    "grade": "B",
+    "fired": true,
+    "tells": 5,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 24.39,
+    "ids": [
+     "KO-future-assertion",
+     "KO-possibility-overuse",
+     "KO-translationese-particle",
+     "KO-plural-suffix",
+     "U-length-uniformity"
+    ],
+    "chars": 533
+   },
+   "text_C": "두 설정 파일을 하나로 통합하여 코드베이스의 유지보수성을 높였습니다. 이 작업은 중복 코드를 제거하고 설정 관리의 일관성을 개선하는 데 중요한 역할을 합니다. 14개의 호출 위치를 업데이트하고, 3개의 유산 경로는 읽기 호환성을 위해 보존했습니다. 총 210줄의 코드를 제거하고 96줄의 새로운 코드를 추가함으로써 코드베이스의 크기를 줄이고, 읽기와 유지보수에 유리한 구조를 만들었습니다.\n\n설정 로직의 중복을 제거함으로써 향후 변경사항을 처리하는 데 시간을 절약할 수 있으며, 설정의 일관성과 명확성을 높여 팀원들 간의 협업을 용이하게 합니다. 제거된 코드는 불필요한 복잡성을 줄이고, 코드베이스의 가독성을 개선하는 데 기여했습니다.\n\n현재 남아 있는 작업은 설정 파일의 사용처를 전면 검토하여 모든 경로가 새로운 파일에서 제대로 작동하는지 확인하는 것입니다. 또한, 설정 변경에 따른 영향을 받는 다른 모듈이나 서비스에 대한 검증도 필요합니다. 이 작업을 완료하면 설정 통합이 완전히 완료되었고, 코드베이스의 일관성과 유지보수성을 높일 수 있습니다."
+  },
+  {
+   "lang": "vi",
+   "task": 0,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 1,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 1.61,
+    "ids": [
+     "VI-connector-pileup"
+    ],
+    "chars": 1867
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 1.77,
+    "ids": [
+     "VI-closing-formula",
+     "VI-connector-pileup"
+    ],
+    "chars": 1694
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1160
+   },
+   "text_Z": "Tôi đã thực hiện việc thêm một bộ nhớ cache vào quá trình tra cứu session trong hệ thống xác thực, nhằm tối ưu hiệu suất của quy trình đăng nhập. Việc này đặc biệt quan trọng đối với codebase vì nó giúp giảm thời gian phản hồi trong các trường hợp tra cứu session thường xuyên, từ đó cải thiện trải nghiệm người dùng và hiệu suất tổng thể của ứng dụng. Kết quả cho thấy hiệu quả rõ rệt, với thời gian trung bình cho login p50 giảm từ 1.2 giây xuống còn 0.4 giây, cho thấy sự cải thiện đáng kể về tốc độ.\n\nCụ thể, sau khi triển khai cache cho session lookup, tôi đã thực hiện 27 bài kiểm tra để đảm bảo tính toàn vẹn và hiệu quả của thay đổi. Trong số đó, có 2 bài kiểm tra bị lỗi liên quan đến việc xử lý thời gian hết hạn (expiry) của session. Điều này cho thấy rằng việc quản lý thời gian sống của session trong cache vẫn cần được kiểm tra kỹ lưỡng để tránh các lỗi liên quan đến session không còn hợp lệ hoặc bị giữ lại quá lâu. Tuy nhiên, phần lớn các bài kiểm tra đã thành công, cho thấy thay đổi này không gây ra sự cố nghiêm trọng trong các trường hợp thông thường.\n\nTập tin bị thay đổi duy nhất trong lần cập nhật này là `src/auth/session.py`, nơi tôi đã thêm cơ chế cache vào quy trình tra cứu session. Việc thay đổi này không ảnh hưởng đến các phần khác của hệ thống, đảm bảo tính tách biệt và dễ bảo trì trong tương lai. Ngoài ra, việc sử dụng cache cũng giúp giảm áp lực lên cơ sở dữ liệu, từ đó cải thiện khả năng mở rộng của hệ thống.\n\nHiện tại, vẫn còn một số vấn đề chưa được giải quyết, cụ thể là việc xử lý expiry của session trong cache. Các bài kiểm tra thất bại cho thấy có thể có sự không đồng bộ giữa thời gian hết hạn của session trong cơ sở dữ liệu và trong cache, dẫn đến các lỗi liên quan đến session không còn hợp lệ. Tôi sẽ tiếp tục kiểm tra và tối ưu cơ chế quản lý expiry để đảm bảo tính chính xác và an toàn của session trong hệ thống.",
+   "text_A": "Tôi đã thêm cơ chế cache vào quá trình tra cứu phiên bản (session lookup), giúp cải thiện đáng kể hiệu suất của ứng dụng. Việc tối ưu này đặc biệt quan trọng vì thời gian phản hồi trung vị (p50) cho yêu cầu đăng nhập đã giảm từ 1.2 giây xuống còn 0.4 giây, mang lại trải nghiệm người dùng mượt mà hơn và giảm áp lực lên hệ thống. Chỉ một file duy nhất (`src/auth/session.py`) đã được thay đổi, cho thấy sự thay đổi tập trung và tối ưu hiệu quả.\n\nCụ thể, việc triển khai cache đã giúp giảm đáng kể số lần truy cập cơ sở dữ liệu, đặc biệt là trong các trường hợp tra cứu phiên bản thường xuyên. Tuy nhiên, có hai trường hợp kiểm thử (test) liên quan đến xử lý thời gian hết hạn (expiry) của cache đã thất bại, cho thấy cần phải khắc phục các lỗi liên quan đến quản lý thời gian trong cache. Điều này có thể liên quan đến việc xử lý các trường hợp thời gian hết hạn không đúng cách hoặc không đồng bộ giữa các phiên bản.\n\nHiện tại, các thay đổi đã được tích hợp và kiểm thử cơ bản, nhưng vẫn cần khắc phục hai lỗi liên quan đến expiry để đảm bảo tính chính xác và ổn định của cache. Ngoài ra, cần theo dõi thêm hiệu suất trong môi trường sản xuất để đảm bảo rằng việc tối ưu không gây ra bất kỳ tác động tiêu cực nào khác. Việc xử lý các lỗi này sẽ giúp hoàn thiện hơn nữa cơ chế cache và đảm bảo tính toàn vẹn của dữ liệu.\n\nTóm lại, việc thêm cache vào session lookup là một bước tiến quan trọng trong việc tối ưu hiệu suất ứng dụng. Tuy nhiên, cần tiếp tục khắc phục các lỗi liên quan đến expiry để đảm bảo tính chính xác và ổn định của hệ thống. Việc theo dõi và đánh giá hiệu quả trong môi trường thực tế cũng là điều cần thiết để đảm bảo rằng tối ưu này mang lại lợi ích lâu dài cho ứng dụng.",
+   "text_B": "Tôi đã thêm cơ chế cache vào quá trình tra cứu phiên bản đăng nhập, giúp cải thiện hiệu suất đáng kể. Thời gian trung vị (p50) cho yêu cầu đăng nhập giảm từ 1.2 giây xuống còn 0.4 giây, mang lại trải nghiệm nhanh hơn cho người dùng. Thay đổi này được thực hiện trong tệp `src/auth/session.py`, và không yêu cầu thêm thư viện hay phụ thuộc nào mới.\n\nCụ thể, cache được áp dụng cho các yêu cầu tra cứu phiên bản đăng nhập, giúp giảm số lần truy cập cơ sở dữ liệu và tối ưu hóa hiệu suất. Tuy nhiên, có 2 trong tổng số 27 bài kiểm tra còn lỗi liên quan đến xử lý thời gian hết hạn (expiry) của cache. Điều này cho thấy cần kiểm tra kỹ hơn cách quản lý thời gian sống của các mục trong cache để đảm bảo tính chính xác và hiệu quả.\n\nViệc thay đổi này không làm thay đổi cấu trúc hay logic chính của hệ thống, chỉ tối ưu hóa một phần cụ thể liên quan đến hiệu suất. Tuy nhiên, cần khắc phục hai lỗi còn tồn tại để đảm bảo tính toàn vẹn và độ tin cậy của cơ chế cache.\n\nHiện tại, thay đổi đã được triển khai và có hiệu quả rõ rệt trong việc giảm thời gian phản hồi. Việc xử lý lỗi liên quan đến expiry sẽ được ưu tiên trong các bước tiếp theo để hoàn thiện tính năng.",
+   "C": {
+    "grade": "A",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 2.09,
+    "ids": [
+     "VI-closing-formula",
+     "VI-connector-pileup"
+    ],
+    "chars": 956
+   },
+   "text_C": "Tôi đã thêm cơ chế cache vào quá trình tra cứu phiên bản (session lookup), giúp cải thiện hiệu suất. Thời gian phản hồi trung vị (p50) cho yêu cầu đăng nhập giảm từ 1.2 giây xuống còn 0.4 giây. Chỉ một file duy nhất (`src/auth/session.py`) được thay đổi.\n\nViệc triển khai cache giúp giảm số lần truy cập cơ sở dữ liệu, đặc biệt trong các trường hợp tra cứu phiên bản thường xuyên. Tuy nhiên, có hai trường hợp kiểm thử liên quan đến xử lý thời gian hết hạn (expiry) của cache đã thất bại.\n\nHiện tại, các thay đổi đã được tích hợp và kiểm thử cơ bản. Tuy nhiên, vẫn cần khắc phục hai lỗi liên quan đến expiry để đảm bảo tính chính xác và ổn định của cache. Ngoài ra, cần theo dõi thêm hiệu suất trong môi trường sản xuất để đảm bảo việc tối ưu không gây tác động tiêu cực nào khác.\n\nTóm lại, việc thêm cache vào session lookup là bước tiến quan trọng trong tối ưu hiệu suất. Tuy nhiên, cần tiếp tục khắc phục lỗi expiry để đảm bảo tính ổn định của hệ thống."
+  },
+  {
+   "lang": "vi",
+   "task": 1,
+   "Z": {
+    "grade": "C",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 6,
+    "per_1k": 3.54,
+    "ids": [
+     "VI-closing-formula",
+     "VI-connector-pileup",
+     "VI-hype"
+    ],
+    "chars": 1695
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 10.53,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype",
+     "U-length-uniformity"
+    ],
+    "chars": 1140
+   },
+   "B": {
+    "grade": "A",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 10.04,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype",
+     "U-length-uniformity"
+    ],
+    "chars": 1395
+   },
+   "text_Z": "Tôi đã thực hiện việc di chuyển (port) bộ giải quyết đường dẫn liên file (cross-file resolver) cho JVM, nhằm cải thiện khả năng định tuyến đường dẫn trong hệ thống, đặc biệt là cho các trường hợp liên quan đến bảng chuyển hướng (route-to-table). Việc này rất quan trọng đối với codebase vì nó giúp tăng tính chính xác và hiệu quả trong việc xác định các đường dẫn phù hợp, từ đó hỗ trợ tối ưu hóa hiệu suất và bảo trì hệ thống. \n\nKết quả kiểm tra cho thấy, số lượng đường dẫn được xử lý đúng theo bảng chuyển hướng đã tăng từ 0 lên 94 trong tổng số 250 đường dẫn. Điều này cho thấy bộ giải quyết mới đã hoạt động hiệu quả và có khả năng xử lý một lượng lớn các trường hợp liên quan đến bảng chuyển hướng. Ngoài ra, khi tiến hành kiểm tra thủ công trên 31 mẫu, không phát hiện ra bất kỳ trường hợp sai sót nào, điều này khẳng định độ tin cậy và độ chính xác của giải pháp đã triển khai.\n\nMặc dù đã đạt được những kết quả tích cực, vẫn còn một số vấn đề chưa được giải quyết. Cụ thể, các nút trong lớp backend vẫn chưa được tích hợp đầy đủ vào hệ thống. Việc này có thể ảnh hưởng đến khả năng mở rộng và tích hợp của toàn bộ hệ thống, đặc biệt là khi cần xử lý các yêu cầu phức tạp hơn. Do đó, việc hoàn thiện các nút backend là một bước cần thiết tiếp theo để đảm bảo tính toàn diện và hiệu quả của hệ thống.\n\nTóm lại, việc port bộ giải quyết đường dẫn liên file cho JVM đã mang lại những cải tiến đáng kể trong khả năng định tuyến và xử lý đường dẫn, đồng thời được kiểm chứng qua các bài kiểm tra thực tế. Tuy nhiên, để hoàn thiện hệ thống, cần tiếp tục phát triển và tích hợp các thành phần backend còn thiếu. Tôi sẵn sàng hỗ trợ và phối hợp để hoàn tất các bước tiếp theo trong quá trình này.",
+   "text_A": "Tôi đã thực hiện việc di chuyển (port) bộ giải quyết đường dẫn (resolver) cho JVM, giúp cải thiện hiệu quả phân giải đường dẫn giữa các tệp. Việc này đặc biệt quan trọng vì nó làm tăng khả năng định tuyến chính xác và nhanh chóng, từ đó nâng cao hiệu suất tổng thể của hệ thống. Trong quá trình thực hiện, số lượng đường dẫn được xử lý đúng đã tăng từ 0 lên 94 trong tổng số 250 đường dẫn, cho thấy sự cải thiện đáng kể về độ chính xác và hiệu quả.\n\nCụ thể, sau khi thực hiện port, tôi đã tiến hành kiểm tra thủ công trên 31 mẫu đường dẫn và không phát hiện bất kỳ trường hợp sai sót nào, điều này khẳng định tính chính xác và tin cậy của giải pháp mới. Tuy nhiên, vẫn còn một số nút trong lớp backend chưa được tích hợp, điều này có thể ảnh hưởng đến khả năng mở rộng và bảo trì của hệ thống trong tương lai.\n\nViệc tích hợp đầy đủ các nút backend là một bước quan trọng tiếp theo để đảm bảo hệ thống hoạt động trơn tru và tối ưu. Ngoài ra, cần tiếp tục kiểm tra và tối ưu hóa các trường hợp còn lại để đảm bảo tính toàn diện của giải pháp. Tôi sẵn sàng hỗ trợ để hoàn tất các bước tiếp theo và đảm bảo hệ thống đạt được hiệu suất cao nhất.",
+   "text_B": "Tôi đã di chuyển bộ giải quyết đường dẫn liên file trên JVM, giúp cải thiện hiệu quả định tuyến từ 0 lên 94 trong tổng số 250 đường dẫn. Việc kiểm tra thủ công 31 mẫu đã xác nhận không có sai sót nào, cho thấy giải pháp hiện tại hoạt động chính xác. Việc này quan trọng vì nó làm giảm độ phức tạp và tăng tốc độ xử lý các yêu cầu trong hệ thống.\n\nCụ thể, quá trình di chuyển đã tối ưu hóa cách hệ thống xác định và phân phối các đường dẫn, giúp các yêu cầu được xử lý nhanh hơn và chính xác hơn. Các mẫu kiểm tra đã được chọn ngẫu nhiên và kiểm tra kỹ lưỡng, đảm bảo rằng không có trường hợp nào bị bỏ sót hoặc sai sót. Điều này cho thấy giải pháp hiện tại đủ tin cậy để triển khai trong môi trường sản xuất.\n\nTuy nhiên, vẫn còn một số điểm chưa hoàn tất. Các nút trong tầng backend vẫn chưa được tích hợp đầy đủ, điều này có thể ảnh hưởng đến khả năng mở rộng và hiệu suất tổng thể của hệ thống. Việc tích hợp các nút này là cần thiết để đảm bảo hệ thống hoạt động mượt mà và đáp ứng được nhu cầu sử dụng trong tương lai.\n\nViệc hoàn thiện các nút backend sẽ giúp hệ thống có khả năng xử lý nhiều yêu cầu đồng thời và phân phối tải một cách hiệu quả. Đây là bước quan trọng tiếp theo để đảm bảo hệ thống đạt được mục tiêu về hiệu suất và độ tin cậy. Trong quá trình triển khai, cần đảm bảo rằng các nút này được tích hợp một cách chính xác và không gây ra bất kỳ lỗi nào trong hệ thống hiện tại.",
+   "C": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 320
+   },
+   "text_C": "Tôi đã thực hiện việc port bộ resolver đường dẫn cho JVM, giúp cải thiện hiệu quả phân giải đường dẫn giữa các tệp. Số lượng đường dẫn được xử lý đúng tăng từ 0 lên 94 trong tổng số 250 đường dẫn. Tôi đã kiểm tra thủ công 31 mẫu và không phát hiện false positive nào. Một số nút trong lớp backend vẫn chưa được tích hợp."
+  },
+  {
+   "lang": "vi",
+   "task": 2,
+   "Z": {
+    "grade": "A",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 1.14,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype"
+    ],
+    "chars": 1754
+   },
+   "A": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1861
+   },
+   "B": {
+    "grade": "A",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 2,
+    "per_1k": 2.02,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype"
+    ],
+    "chars": 990
+   },
+   "text_Z": "Tôi đã thực hiện việc khắc phục 3 lỗi phát hiện sai trong quá trình trích xuất thuộc tính \"style\" trong hệ thống kiểm tra kiểu (style gate), cụ thể là các trường hợp liên quan đến lớp trạng thái (state classes), từ khóa !important và các bề mặt bán trong suốt (semi-transparent surfaces). Việc này rất quan trọng vì nó giúp cải thiện độ chính xác của hệ thống trong việc xác định các thuộc tính CSS cần thiết, từ đó đảm bảo mã nguồn được kiểm soát một cách hiệu quả và tránh các lỗi không mong muốn trong giao diện người dùng.\n\nCụ thể, tôi đã điều chỉnh logic kiểm tra để loại bỏ các trường hợp phát hiện sai trong ba trường hợp nêu trên. Với lớp trạng thái, hệ thống trước đây có thể nhầm lẫn giữa các lớp được sử dụng để thay đổi trạng thái và các lớp thông thường. Tôi đã cập nhật logic để phân biệt rõ ràng hơn. Đối với từ khóa !important, tôi đã thêm cơ chế kiểm tra để xác định rõ ràng rằng từ khóa này chỉ nên được sử dụng trong các trường hợp đặc biệt và không nên bị tự động trích xuất. Cuối cùng, với các bề mặt bán trong suốt, tôi đã điều chỉnh cách xử lý các giá trị opacity để tránh phát hiện sai các lớp có độ trong suốt thấp nhưng không thực sự cần thiết.\n\nTôi cũng đã thêm 3 bài kiểm tra hồi quy (regression tests) để đảm bảo rằng các thay đổi này không gây ra bất kỳ vấn đề nào trong các trường hợp khác. Hiện tại, bộ kiểm thử đầy đủ (full suite) đã có 1874 trường hợp được kiểm tra thành công, cho thấy hệ thống hoạt động ổn định và đáng tin cậy hơn sau khi cập nhật.\n\nVấn đề còn tồn tại là việc kiểm tra các trường hợp phức tạp hơn liên quan đến các thuộc tính CSS có thể bị nhầm lẫn trong tương lai. Tôi sẽ tiếp tục theo dõi và tối ưu hóa hệ thống để đảm bảo độ chính xác cao nhất trong việc trích xuất và kiểm tra các thuộc tính CSS.",
+   "text_A": "Tôi đã khắc phục 3 lỗi phát hiện sai trong bộ lọc kiểu (style gate), cụ thể là các lớp trạng thái (state classes), các quy tắc !important và các bề mặt semi-transparent. Việc sửa lỗi này giúp đảm bảo rằng các quy tắc CSS được áp dụng chính xác và không gây ra các xung đột không mong muốn trong giao diện. Đồng thời, tôi đã thêm 3 bài kiểm tra hồi quy để kiểm tra tính toàn vẹn của các thay đổi, giúp đảm bảo rằng các lỗi không tái phát trong tương lai. Bộ kiểm thử đầy đủ hiện tại có 1874 test case thành công, cho thấy hệ thống đang hoạt động ổn định và đáng tin cậy.\n\nCụ thể, việc xử lý các lớp trạng thái đã loại bỏ các quy tắc CSS không cần thiết, giúp giảm bớt độ phức tạp của mã và cải thiện khả năng bảo trì. Đối với các quy tắc !important, tôi đã điều chỉnh chúng để chỉ áp dụng khi thực sự cần thiết, tránh gây ra các xung đột không mong muốn giữa các quy tắc CSS. Về các bề mặt semi-transparent, tôi đã đảm bảo rằng chúng được áp dụng đúng cách và không làm ảnh hưởng đến trải nghiệm người dùng.\n\nViệc thêm 3 bài kiểm tra hồi quy giúp xác minh rằng các thay đổi không gây ra bất kỳ tác động tiêu cực nào đến các phần khác của hệ thống. Các bài kiểm tra này sẽ được thực hiện tự động trong mỗi lần build, đảm bảo rằng hệ thống luôn ổn định và không có lỗi phát sinh. Ngoài ra, việc cập nhật bộ kiểm thử cũng giúp tăng tính minh bạch và khả năng phát hiện lỗi sớm hơn trong quá trình phát triển.\n\nHiện tại, vẫn còn một số công việc chưa hoàn tất. Đầu tiên, cần tiếp tục theo dõi các test case để đảm bảo rằng tất cả các trường hợp đều được kiểm tra kỹ lưỡng. Thứ hai, cần xem xét các quy tắc CSS khác để xem có cần tối ưu thêm hay không. Cuối cùng, cần đảm bảo rằng các thay đổi này không ảnh hưởng đến các tính năng khác của ứng dụng. Những công việc này sẽ được ưu tiên trong các vòng phát triển tiếp theo để đảm bảo chất lượng tổng thể của hệ thống.",
+   "text_B": "Đã khắc phục 3 lỗi phát hiện sai trong bộ lọc phong cách: các lớp trạng thái, `!important` và bề mặt bán trong suốt. Thêm 3 bài kiểm tra lùi (regression tests). Tổng số bài kiểm tra hiện tại là 1874, tất cả đều thông qua.\n\nCác thay đổi này giúp cải thiện độ chính xác của bộ lọc phong cách, đảm bảo các quy tắc thiết kế được áp dụng đúng cách. Việc loại bỏ các lỗi phát hiện sai giúp giảm số lượng cảnh báo không cần thiết, từ đó tăng hiệu quả của quy trình kiểm tra.\n\nBa lỗi được khắc phục bao gồm:  \n1. Các lớp trạng thái không được xem là vi phạm quy tắc phong cách.  \n2. Sử dụng `!important` không bị coi là lỗi trong các trường hợp đặc biệt.  \n3. Bề mặt bán trong suốt không được xem là vi phạm nếu được sử dụng hợp lý trong thiết kế.\n\nHiện tại, bộ kiểm tra vẫn còn một số trường hợp chưa được xử lý, đặc biệt là các tình huống phức tạp liên quan đến tính linh hoạt trong thiết kế giao diện. Việc bổ sung thêm bài kiểm tra sẽ giúp đảm bảo tính toàn diện của bộ quy tắc trong tương lai."
+  },
+  {
+   "lang": "vi",
+   "task": 3,
+   "Z": {
+    "grade": "C",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 7,
+    "per_1k": 3.46,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype",
+     "VI-negative-parallelism"
+    ],
+    "chars": 2026
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 2.64,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype",
+     "VI-negative-parallelism"
+    ],
+    "chars": 1513
+   },
+   "B": {
+    "grade": "B",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 8.39,
+    "ids": [
+     "VI-connector-pileup",
+     "U-length-uniformity"
+    ],
+    "chars": 1430
+   },
+   "text_Z": "Tôi đã thực hiện nâng cấp giao diện bản đồ từ dạng 2D sang bố cục 3D, giúp cải thiện trải nghiệm người dùng và mở ra khả năng tùy chỉnh cao hơn cho các yếu tố trong không gian 3D. Việc nâng cấp này đặc biệt quan trọng vì nó cho phép mô hình hóa không gian một cách chính xác hơn, đồng thời giữ nguyên các phần mã liên quan đến camera hiện có, nhờ vào việc tính toán góc nhìn dựa trên tọa độ thế giới. Điều này đảm bảo tính nhất quán và tránh xung đột giữa các hệ thống hiện có trong codebase.\n\nCụ thể, việc chuyển đổi sang bố cục 3D đã được thực hiện mà không làm thay đổi logic xử lý camera hiện tại, nhờ vào việc tính toán góc nhìn dựa trên tọa độ thế giới thay vì tọa độ màn hình. Điều này giúp duy trì tính tương thích với các phần mã cũ, đồng thời mở ra khả năng mở rộng cho các tính năng mới trong tương lai. Ngoài ra, để đảm bảo trải nghiệm người dùng tốt nhất, các bài kiểm tra không có giao diện (headless tests) đã được cập nhật để sử dụng bộ lọc \"reduced-motion\", giúp tránh các hiệu ứng chuyển động gây khó chịu cho người dùng.\n\nViệc tích hợp bộ lọc \"reduced-motion\" trong các bài kiểm tra headless là một bước quan trọng nhằm đảm bảo rằng ứng dụng hoạt động mượt mà trên mọi thiết bị và phù hợp với các tiêu chuẩn tiếp cận người dùng. Điều này đặc biệt quan trọng khi ứng dụng có thể được sử dụng trong môi trường có hạn chế về chuyển động, như trong các thiết bị di động hoặc màn hình nhỏ. Việc này cũng giúp đảm bảo rằng các bài kiểm tra không chỉ kiểm tra tính năng mà còn kiểm tra khả năng thích ứng với các điều kiện khác nhau.\n\nTuy nhiên, vẫn còn một số việc chưa hoàn tất. Cụ thể, việc tối ưu hóa hiệu suất trong môi trường 3D vẫn đang được đánh giá, đặc biệt là khi có nhiều đối tượng được hiển thị đồng thời. Ngoài ra, cần thêm các trường hợp kiểm thử bổ sung để đảm bảo rằng các hiệu ứng 3D hoạt động đúng trong mọi tình huống, đặc biệt là khi có sự tương tác từ người dùng. Những công việc này sẽ được tiếp tục thực hiện trong các giai đoạn tiếp theo để đảm bảo chất lượng và tính ổn định của hệ thống.",
+   "text_A": "Tôi đã nâng cấp giao diện bản đồ lên bố cục 3D, cho phép người dùng trải nghiệm không gian một cách chân thực hơn. Việc tính toán góc nhìn dựa trên tọa độ thế giới đảm bảo tính nhất quán với mã nguồn hiện có liên quan đến camera, do đó không cần thay đổi phần logic hiện tại. Ngoài ra, để phù hợp với yêu cầu của các bài kiểm tra không có giao diện (headless tests), tôi đã bổ sung một cơ chế kiểm soát chuyển động, giúp đảm bảo trải nghiệm mượt mà cho người dùng có nhu cầu giảm chuyển động (reduced-motion).\n\nViệc nâng cấp này mang lại lợi ích lớn trong việc cải thiện khả năng tương tác và trực quan hóa dữ liệu không gian. Bằng cách sử dụng tọa độ thế giới để xác định góc nhìn, chúng tôi giữ nguyên tính linh hoạt của hệ thống camera hiện tại, tránh phải thay đổi sâu sắc trong kiến trúc. Điều này giúp giảm thiểu rủi ro về lỗi và đảm bảo tính ổn định của hệ thống.\n\nĐể hỗ trợ các bài kiểm tra tự động, tôi đã thêm một lớp bảo vệ (guard) cho các trường hợp chuyển động, đặc biệt là trong môi trường không có giao diện. Điều này không chỉ tuân thủ các tiêu chuẩn về trải nghiệm người dùng mà còn giúp đảm bảo tính hiệu quả trong việc kiểm thử hệ thống.\n\nCông việc vẫn còn một số điểm cần hoàn thiện, bao gồm việc tích hợp các bài kiểm tra cụ thể để kiểm tra hiệu quả của cơ chế reduced-motion và đảm bảo rằng trải nghiệm người dùng vẫn mượt mà trong cả hai trường hợp có và không có giao diện. Ngoài ra, cần tiếp tục theo dõi phản hồi từ người dùng để điều chỉnh và tối ưu hóa trải nghiệm 3D một cách phù hợp.",
+   "text_B": "Tôi đã nâng cấp chế độ xem bản đồ lên giao diện 3D, trong đó góc nhìn được tính toán dựa trên tọa độ thế giới, đảm bảo mã xử lý camera hiện tại không bị thay đổi. Việc này giúp cải thiện trải nghiệm người dùng bằng cách cung cấp góc nhìn trực quan hơn, đồng thời duy trì tính nhất quán trong hệ thống hiện có. Việc thêm lớp bảo vệ `reduced-motion` cho các bài kiểm tra không có giao diện (headless tests) giúp đảm bảo trải nghiệm phù hợp với người dùng có nhu cầu giảm chuyển động, góp phần cải thiện khả năng tiếp cận của ứng dụng.\n\nCụ thể, việc chuyển đổi sang bố cục 3D đã được thực hiện mà không làm thay đổi logic xử lý camera hiện có, nhờ vào việc tính toán góc nhìn dựa trên tọa độ thế giới thay vì tọa độ màn hình. Điều này giúp bảo vệ tính nhất quán và tránh xung đột giữa các hệ thống hiện có. Ngoài ra, lớp bảo vệ `reduced-motion` đã được thêm vào các bài kiểm tra không có giao diện để đảm bảo rằng các bài kiểm tra không bị ảnh hưởng bởi chuyển động không cần thiết, phù hợp với các thiết bị hoặc cài đặt đặc biệt.\n\nHiện tại, hệ thống vẫn hoạt động ổn định và các bài kiểm tra tự động vẫn được thực hiện thành công. Tuy nhiên, vẫn cần kiểm tra kỹ hơn để đảm bảo rằng các hiệu ứng chuyển động trong giao diện 3D không gây ra bất kỳ xung đột nào với các thiết bị hoặc cài đặt đặc biệt. Ngoài ra, có thể cần thêm các trường hợp kiểm thử bổ sung để đảm bảo tính tương thích và trải nghiệm người dùng trong mọi tình huống.",
+   "C": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 1038
+   },
+   "text_C": "Tôi đã nâng cấp giao diện bản đồ lên bố cục 3D, cho phép người dùng trải nghiệm không gian một cách chân thực hơn. Việc tính toán góc nhìn dựa trên tọa độ thế giới đảm bảo tính nhất quán với mã nguồn hiện có liên quan đến camera, do đó không cần thay đổi phần logic hiện tại. Ngoài ra, để phù hợp với yêu cầu của các bài kiểm tra không có giao diện, tôi đã bổ sung một cơ chế kiểm soát chuyển động, giúp đảm bảo trải nghiệm mượt mà cho người dùng có nhu cầu giảm chuyển động.\n\nViệc nâng cấp này không thay đổi hệ thống camera hiện tại, nhờ vào việc tính toán góc nhìn dựa trên tọa độ thế giới. Điều này giữ nguyên tính linh hoạt của hệ thống, tránh thay đổi sâu sắc trong kiến trúc. Đồng thời, việc thêm cơ chế kiểm soát chuyển động hỗ trợ các bài kiểm tra tự động, đặc biệt trong môi trường không có giao diện.\n\nCông việc vẫn còn một số điểm cần hoàn thiện, bao gồm tích hợp các bài kiểm tra cụ thể để kiểm tra hiệu quả của cơ chế reduced-motion và đảm bảo trải nghiệm người dùng mượt mà trong cả hai trường hợp có và không có giao diện."
+  },
+  {
+   "lang": "vi",
+   "task": 4,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 5,
+    "per_1k": 3.18,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype"
+    ],
+    "chars": 1574
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 9.98,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype",
+     "U-length-uniformity"
+    ],
+    "chars": 1503
+   },
+   "B": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 827
+   },
+   "text_Z": "Tôi đã thay thế vòng lặp thử lại (retry loop) bằng cơ chế backoff theo cấp số nhân, đồng thời giới hạn số lượng yêu cầu tối đa là 40 yêu cầu mỗi phút (RPM). Việc này rất quan trọng đối với codebase vì giúp giảm thiểu việc vượt quá giới hạn yêu cầu của dịch vụ bên thứ ba, từ đó tránh được các lỗi 429 (Too Many Requests) và cải thiện độ ổn định, hiệu suất của hệ thống trong các tình huống tải cao hoặc có sự cố tạm thời.\n\nKết quả kiểm tra cho thấy, trong một khoảng thời gian 6 giờ (soak test), số lượng lỗi 429 đã giảm đáng kể. Trước khi áp dụng thay đổi, hệ thống ghi nhận 118 lỗi 429 trong cùng khoảng thời gian. Sau khi thay thế bằng cơ chế exponential backoff và giới hạn RPM, số lỗi 429 đã giảm xuống 0. Điều này cho thấy thay đổi đã hiệu quả trong việc kiểm soát lượng yêu cầu và tránh vượt quá giới hạn của dịch vụ.\n\nTham số cấu hình liên quan đến việc thiết lập giới hạn RPM là [provider] rpm. Đây là một cấu hình quan trọng để điều chỉnh hành vi của hệ thống theo từng nhà cung cấp dịch vụ, đảm bảo rằng hệ thống hoạt động trong giới hạn cho phép và không gây ảnh hưởng đến dịch vụ bên thứ ba.\n\nHiện tại, hệ thống đã ổn định và không còn gặp lỗi 429 trong thời gian kiểm thử. Tuy nhiên, vẫn cần theo dõi thêm trong thời gian dài hơn để đảm bảo rằng cơ chế exponential backoff hoạt động hiệu quả trong các tình huống khác nhau, đặc biệt là khi có sự thay đổi về tải hoặc giới hạn của dịch vụ bên thứ ba. Ngoài ra, việc tối ưu hóa thêm các tham số như thời gian chờ ban đầu hoặc hệ số tăng trưởng của backoff cũng có thể được xem xét để cải thiện hơn nữa hiệu suất.",
+   "text_A": "Tôi đã thay thế vòng lặp thử lại bằng cơ chế backoff mũ, giới hạn ở 40 yêu cầu mỗi phút. Việc này giúp giảm đáng kể lỗi 429 trong quá trình kiểm thử kéo dài 6 giờ: từ 118 lỗi trước khi thay đổi xuống còn 0 lỗi sau khi áp dụng. Cấu hình được đặt tại khóa [provider] rpm, cho phép điều chỉnh tốc độ yêu cầu theo nhu cầu cụ thể của từng nhà cung cấp.\n\nViệc thay đổi này mang lại lợi ích quan trọng cho hệ thống bằng cách tối ưu hóa hiệu suất và giảm thiểu lỗi do quá tải. Thay vì lặp lại yêu cầu một cách tuyến tính, cơ chế backoff mũ giúp hệ thống tự động điều chỉnh thời gian chờ giữa các yêu cầu, tránh gây áp lực lên server. Điều này đặc biệt hữu ích trong môi trường có độ trễ cao hoặc bị giới hạn bởi các dịch vụ bên ngoài.\n\nHiệu quả của giải pháp được kiểm chứng qua số liệu cụ thể: sau khi triển khai, số lượng lỗi 429 đã giảm hoàn toàn trong thời gian kiểm thử. Điều này cho thấy cơ chế mới hoạt động hiệu quả và phù hợp với yêu cầu của hệ thống. Cấu hình [provider] rpm cũng cung cấp khả năng linh hoạt để tùy chỉnh theo từng nhà cung cấp, đảm bảo sự phù hợp với các điều kiện vận hành khác nhau.\n\nVẫn còn một số việc cần hoàn thiện, bao gồm việc kiểm tra thêm trong các tình huống khác nhau để đảm bảo tính ổn định của cơ chế backoff mũ. Ngoài ra, cần xem xét việc tích hợp cơ chế này vào các dịch vụ khác để đảm bảo tính nhất quán và tối ưu hóa toàn bộ hệ thống. Việc theo dõi và đánh giá hiệu quả trong thời gian dài cũng là một phần quan trọng để duy trì sự ổn định và hiệu suất của hệ thống.",
+   "text_B": "Tôi đã thay thế vòng lặp thử lại bằng cơ chế backoff mũ, giới hạn ở 40 yêu cầu mỗi phút. Kết quả sau 6 giờ kiểm thử cho thấy số lượng lỗi 429 đã giảm từ 118 xuống 0. Cấu hình chìa khóa là `[provider] rpm`.\n\nViệc áp dụng exponential backoff giúp hệ thống xử lý các lỗi tạm thời một cách hiệu quả hơn, tránh làm quá tải dịch vụ và cải thiện độ ổn định của ứng dụng. Việc giới hạn số lượng yêu cầu mỗi phút (40 RPM) đảm bảo rằng hệ thống không vượt quá giới hạn của nhà cung cấp, tránh bị chặn hoặc bị phạt do quá tải.\n\nHiện tại, lỗi 429 đã được khắc phục hoàn toàn trong thời gian kiểm thử. Tuy nhiên, cần theo dõi thêm trong thời gian dài để đảm bảo rằng cơ chế này hoạt động ổn định trong các điều kiện khác nhau. Ngoài ra, nên kiểm tra lại cấu hình `[provider] rpm` để đảm bảo rằng nó phù hợp với nhu cầu thực tế của hệ thống.",
+   "C": {
+    "grade": "A",
+    "fired": false,
+    "tells": 0,
+    "s1": 0,
+    "s2": 0,
+    "per_1k": 0.0,
+    "ids": [],
+    "chars": 927
+   },
+   "text_C": "Tôi đã thay thế vòng lặp thử lại bằng cơ chế backoff mũ, giới hạn ở 40 yêu cầu mỗi phút. Trong 6 giờ kiểm thử, số lỗi 429 giảm từ 118 xuống 0. Cấu hình được đặt tại khóa [provider] rpm.\n\nViệc thay đổi này giúp hệ thống tránh được lỗi 429 bằng cách điều chỉnh thời gian chờ giữa các yêu cầu thay vì lặp lại một cách tuyến tính. Cơ chế backoff mũ tự động giảm áp lực lên server, đặc biệt trong môi trường có độ trễ cao hoặc bị giới hạn bởi dịch vụ bên ngoài.\n\nHiệu quả được kiểm chứng qua số liệu: sau khi triển khai, lỗi 429 hoàn toàn biến mất trong thời gian kiểm thử. Cấu hình [provider] rpm cho phép tùy chỉnh tốc độ yêu cầu theo từng nhà cung cấp, đảm bảo phù hợp với điều kiện vận hành.\n\nCần tiếp tục kiểm tra trong các tình huống khác nhau để đảm bảo tính ổn định của cơ chế. Ngoài ra, nên xem xét tích hợp vào các dịch vụ khác để duy trì tính nhất quán. Việc theo dõi hiệu quả trong thời gian dài cũng cần được thực hiện."
+  },
+  {
+   "lang": "vi",
+   "task": 5,
+   "Z": {
+    "grade": "B",
+    "fired": true,
+    "tells": 2,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 2.74,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype"
+    ],
+    "chars": 1462
+   },
+   "A": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 10.41,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-negative-parallelism",
+     "U-length-uniformity"
+    ],
+    "chars": 1249
+   },
+   "B": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 3,
+    "per_1k": 11.15,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-hype",
+     "U-length-uniformity"
+    ],
+    "chars": 1166
+   },
+   "text_Z": "Tôi đã thực hiện việc hợp nhất hai tệp cấu hình thành một tệp duy nhất nhằm tối ưu hóa quản lý cấu hình và làm cho cấu trúc mã dễ bảo trì hơn. Việc này giúp giảm sự trùng lặp, cải thiện tính nhất quán trong toàn bộ codebase và hỗ trợ việc cập nhật cấu hình một cách hiệu quả hơn. Đây là bước quan trọng trong quá trình cải tiến chất lượng mã và chuẩn hóa quy trình phát triển.\n\nCụ thể, tôi đã cập nhật 14 điểm gọi (call sites) để đảm bảo rằng các tham chiếu đến các tệp cấu hình cũ được chuyển hướng đúng sang tệp mới. Đồng thời, tôi giữ lại 3 đường dẫn cũ để đảm bảo tính tương thích khi đọc dữ liệu, giúp các phần code cũ vẫn có thể hoạt động bình thường mà không cần thay đổi ngay lập tức. Việc này giúp giảm rủi ro về sự gián đoạn trong quá trình chuyển đổi.\n\nTrong quá trình thực hiện, tôi đã loại bỏ 210 dòng mã cũ từ hai tệp cấu hình và thêm vào 96 dòng mã mới để xây dựng tệp cấu hình tổng hợp. Điều này giúp giảm kích thước tổng thể của các tệp cấu hình, đồng thời làm rõ hơn cấu trúc và nội dung của từng phần. Các thay đổi này đã được kiểm tra kỹ lưỡng để đảm bảo tính chính xác và không gây ra lỗi trong hệ thống.\n\nTuy nhiên, vẫn còn một số việc chưa hoàn tất. Cụ thể, các phần code cũ tham chiếu đến các tệp cấu hình cũ vẫn cần được xem xét và cập nhật trong thời gian tới để loại bỏ hoàn toàn các đường dẫn cũ và đảm bảo rằng toàn bộ hệ thống chỉ sử dụng duy nhất tệp cấu hình mới. Việc này sẽ giúp tối ưu hóa hiệu suất và bảo trì mã trong dài hạn.",
+   "text_A": "Tôi đã hợp nhất hai tệp cấu hình thành một tệp duy nhất, giúp giảm độ phức tạp và cải thiện khả năng bảo trì của hệ thống. Việc này mang lại lợi ích lớn cho codebase vì nó loại bỏ sự trùng lặp, dễ dàng quản lý cấu hình và đảm bảo tính nhất quán trong toàn bộ ứng dụng. Việc cập nhật 14 điểm gọi và giữ lại 3 đường dẫn cũ để đảm bảo tương thích đọc giúp quá trình chuyển đổi mượt mà mà không làm gián đoạn các tính năng hiện có.\n\nCụ thể, tôi đã loại bỏ 210 dòng mã cũ và thêm 96 dòng mã mới để đảm bảo tính toàn vẹn và hiệu quả của tệp cấu hình mới. Các thay đổi này không chỉ giảm kích thước tệp mà còn giúp dễ dàng theo dõi và cập nhật trong tương lai. Việc loại bỏ các đường dẫn cũ không còn cần thiết giúp codebase trở nên gọn gàng hơn, đồng thời giảm nguy cơ lỗi do các tệp cấu hình không đồng bộ.\n\nTuy nhiên, vẫn còn một số việc chưa hoàn tất. Việc kiểm tra kỹ lưỡng các điểm gọi để đảm bảo không có lỗi trong quá trình chuyển đổi cần được thực hiện thêm. Ngoài ra, việc cập nhật tài liệu liên quan đến cấu hình cũng cần được thực hiện để đảm bảo các thành viên trong nhóm hiểu rõ cách sử dụng tệp cấu hình mới. Cuối cùng, cần theo dõi phản hồi từ các phần khác của hệ thống để đảm bảo không có tác động tiêu cực nào đến các tính năng hiện tại.",
+   "text_B": "Tôi đã hợp nhất hai tệp cấu hình thành một, giúp giảm sự phức tạp và cải thiện bảo trì code. Việc này làm giảm 210 dòng mã, đồng thời thêm 96 dòng để đảm bảo tính tương thích và tính toàn vẹn của hệ thống. 14 vị trí gọi đã được cập nhật để sử dụng tệp mới, trong khi 3 đường dẫn cũ vẫn được giữ lại để hỗ trợ đọc tương thích với các phiên bản trước.\n\nViệc hợp nhất tệp cấu hình giúp giảm sự phân tán thông tin, dễ dàng quản lý và cập nhật cấu hình trong tương lai. Các đường dẫn cũ vẫn được duy trì để tránh gián đoạn trong quá trình chuyển đổi, đảm bảo tính ổn định của hệ thống trong quá trình triển khai.\n\nTuy nhiên, vẫn còn một số điểm cần theo dõi. Các đường dẫn cũ cần được kiểm tra kỹ lưỡng để đảm bảo chúng không còn được sử dụng trong bất kỳ phần nào khác của hệ thống. Ngoài ra, cần thực hiện kiểm thử đầy đủ để xác nhận rằng việc hợp nhất không gây ra lỗi hoặc ảnh hưởng đến các tính năng hiện tại.\n\nCuối cùng, việc này là bước tiến quan trọng trong việc tối ưu hóa cấu trúc code và chuẩn bị cho các thay đổi trong tương lai. Nếu có bất kỳ thay đổi nào liên quan đến cấu hình, việc quản lý sẽ trở nên dễ dàng và hiệu quả hơn nhờ vào tệp cấu hình duy nhất.",
+   "C": {
+    "grade": "B",
+    "fired": true,
+    "tells": 3,
+    "s1": 0,
+    "s2": 4,
+    "per_1k": 14.78,
+    "ids": [
+     "VI-connector-pileup",
+     "VI-negative-parallelism",
+     "U-length-uniformity"
+    ],
+    "chars": 812
+   },
+   "text_C": "Tôi đã hợp nhất hai tệp cấu hình thành một, giúp giảm độ phức tạp và cải thiện khả năng bảo trì. Cập nhật 14 điểm gọi và giữ lại 3 đường dẫn cũ để đảm bảo tương thích đọc, đồng thời loại bỏ 210 dòng và thêm 96 dòng mới.  \n\nViệc hợp nhất không chỉ giảm kích thước tệp mà còn giúp dễ theo dõi và cập nhật trong tương lai. Loại bỏ các đường dẫn cũ không còn cần thiết giúp codebase gọn gàng hơn, đồng thời giảm nguy cơ lỗi do tệp cấu hình không đồng bộ.  \n\nTuy nhiên, vẫn còn một số việc chưa hoàn tất. Cần kiểm tra kỹ lưỡng các điểm gọi để đảm bảo không có lỗi trong quá trình chuyển đổi. Ngoài ra, cần cập nhật tài liệu liên quan đến cấu hình để nhóm hiểu rõ cách sử dụng tệp mới. Cuối cùng, cần theo dõi phản hồi từ các phần khác của hệ thống để đảm bảo không có tác động tiêu cực nào đến các tính năng hiện tại."
+  }
+ ]
+}

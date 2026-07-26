@@ -573,6 +573,7 @@ def restore_skill(root: str, name: str) -> tuple[bool, str]:
 def _bundled_names() -> frozenset[str]:
     """번들 스킬 이름 — 충돌 방지용 (lazy import — 상수 본문이 크다)."""
     try:
+        from .templates.bragi import BRAGI_SKILLS
         from .templates.eitri import EITRI_SKILLS
         from .templates.freyja import FREYJA_SKILLS
         from .templates.lagom import LAGOM_SKILLS
@@ -581,7 +582,16 @@ def _bundled_names() -> frozenset[str]:
         from .templates.worker import WORKER_SKILLS
 
         return frozenset(
-            n for n, _ in [*FREYJA_SKILLS, *THOR_SKILLS, *EITRI_SKILLS, *MIMIR_SKILLS, *WORKER_SKILLS, *LAGOM_SKILLS]
+            n
+            for n, _ in [
+                *FREYJA_SKILLS,
+                *THOR_SKILLS,
+                *EITRI_SKILLS,
+                *MIMIR_SKILLS,
+                *WORKER_SKILLS,
+                *LAGOM_SKILLS,
+                *BRAGI_SKILLS,
+            ]
         )
     except Exception:
         return frozenset()

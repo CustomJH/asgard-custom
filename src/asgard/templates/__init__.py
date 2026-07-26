@@ -5,6 +5,7 @@ Config + rules + folder scaffolding only. Hook SCRIPTS live in `asgard.hooks` an
 """
 
 from .agents import agents_md
+from .bragi import BRAGI_CANON, BRAGI_SKILLS
 from .bridge import BRIDGE_SKILL_MD
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_agent, codex_config, codex_rules
@@ -23,6 +24,8 @@ from .worker import WORKER_SKILLS
 
 __all__ = [
     "agents_md",
+    "BRAGI_CANON",
+    "BRAGI_SKILLS",
     "BRIDGE_SKILL_MD",
     "cc_settings",
     "CC_FOLDERS",

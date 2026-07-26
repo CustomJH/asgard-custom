@@ -2023,10 +2023,44 @@ class TestDirectGuard(Base):
         h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
         with mock.patch.object(h, "_rewrite_lagom_text", return_value="강력한 결과다."):
             h.handle("결과를 설명해")
-        self.assertIn("문체 검사를 통과하지 못", h.last_response_text)
+        # 봉합 문구는 UI 언어를 따른다 (기본 영어) — 한국어 하드코딩이 아니다
+        from asgard.i18n import t
+
+        self.assertEqual(h.last_response_text, t("style_gate_failed"))
         # 정본(닫는 문구)은 교정 블록으로 표시되고, 실패한 재작성문이 정본 자리를 차지하지 않는다
-        self.assertIn("문체 검사를 통과하지 못", "".join(h.texts))
+        self.assertIn(t("style_gate_failed"), "".join(h.texts))
         self.assertNotIn("강력한", "".join(h.texts))
+
+    def test_identity_carries_both_style_axes(self):
+        """두 계약은 모든 역할이 공유하는 신원에 실린다 — 딜리버리 자식도 같은 문체로 보고한다."""
+        h = FakeHeimdall(self.root, [], cls=self._cls_read())
+        self.assertIn("Lagom — Minimalism Contract", h.delivery_identity)
+        self.assertIn("Bragi — Human Voice Contract", h.delivery_identity)
+
+    def test_bragi_axis_survives_lagom_off(self):
+        """`/lagom off` 는 압축을 끄는 것이지 사람처럼 쓰기를 끄는 게 아니다 — 축이 독립이다."""
+        old = os.environ.get("LAGOM_MODE")
+        os.environ["LAGOM_MODE"] = "off"
+        try:
+            h = FakeHeimdall(self.root, [], cls=self._cls_read())
+            self.assertEqual(h.lagom, "")
+            self.assertIn("Bragi — Human Voice Contract", h.delivery_identity)
+        finally:
+            if old is None:
+                os.environ.pop("LAGOM_MODE", None)
+            else:
+                os.environ["LAGOM_MODE"] = old
+
+    def test_machine_writing_tells_trigger_the_rewrite_even_without_lagom_violations(self):
+        """근거 게이트는 통과하지만 기계 문체가 남은 답 — 패치 이전엔 그대로 나갔다."""
+        slop = "Great question! This change plays a crucial role in the codebase. I hope this helps!"
+        direct = FakeSession(SessionResult(text=slop, stop_reason="end_turn"), label="direct")
+        h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
+        with mock.patch.object(h, "_rewrite_lagom_text", return_value="캐시를 세션 조회에 붙였다.") as rewrite:
+            h.handle("무엇을 바꿨는지 알려줘")
+        rewrite.assert_called_once()
+        self.assertIn("U-chat-artifact", "\n".join(rewrite.call_args.args[2]))
+        self.assertEqual(h.last_response_text, "캐시를 세션 조회에 붙였다.")
 
     def test_lagom_off_keeps_direct_streaming_without_rewrite(self):
         old = os.environ.get("LAGOM_MODE")

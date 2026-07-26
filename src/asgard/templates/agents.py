@@ -2,6 +2,7 @@
 + Lagom contract. The only interpolation is the project name via __NAME__.
 Canon 13개조 본문은 canon.py 에 있다 — 여기서는 __CANON__ 자리에 끼워 넣는다 (__LAGOM__ 과 같은 방식)."""
 
+from .bragi import BRAGI_AGENTS_SECTION
 from .canon import CANON_SECTION
 from .lagom import LAGOM_AGENTS_SECTION
 
@@ -67,6 +68,7 @@ per-area `<area>.md` files are the deep maps agents draw as they explore.
 <!-- <<< asgard:map <<< -->
 
 __LAGOM__
+__BRAGI__
 <!-- >>> asgard:memory >>> -->
 ## Asgard — Personal/Project Memory (two kinds, hint layer)
 
@@ -92,4 +94,5 @@ def agents_md(name: str | None) -> str:
         _AGENTS_MD.replace("__NAME__", name or "")
         .replace("__CANON__", CANON_SECTION)
         .replace("__LAGOM__", LAGOM_AGENTS_SECTION)
+        .replace("__BRAGI__", BRAGI_AGENTS_SECTION)
     )

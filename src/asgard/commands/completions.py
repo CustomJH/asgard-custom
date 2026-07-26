@@ -34,6 +34,7 @@ _SUMMARY = {
     "plan": "Asgard Plan — local product planning workspace",
     "desktop": "Asgard Desktop — tasks, artifacts, and settings",
     "evolve": "self-evolution inbox — skill drafts",
+    "humanize": "Bragi — grade text for machine-writing tells, any language",
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
@@ -57,6 +58,7 @@ _FLAGS = {
     "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
     "desktop": ["--port", "--no-open", "--browser"],
     "evolve": [],
+    "humanize": ["--lang", "--json"],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
     "--provider": [

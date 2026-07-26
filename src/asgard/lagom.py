@@ -17,6 +17,7 @@ import json
 import os
 import re
 import subprocess
+from collections.abc import Callable
 
 MODES = ("off", "lite", "full")
 DEFAULT_MODE = "full"  # default-on — asgard init 프로젝트는 별도 설정 없이 full 로 돈다
@@ -145,8 +146,17 @@ def _added_prose(root: str, rel: str) -> str:
     return "\n".join(line[1:] for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
 
 
-def changed_prose_violations(root: str, paths: list[str], source: str = "") -> list[str]:
+def changed_prose_violations(
+    root: str,
+    paths: list[str],
+    source: str = "",
+    checks: "list[Callable[[str, str], list[str]]] | None" = None,
+) -> list[str]:
     """변경된 문서의 추가 문장만 검사한다. 기존 문장과 코드 파일은 건드리지 않는다.
+
+    checks = 적용할 검사기 목록 (text, source) -> 위반 문자열. 기본은 이 모듈의 근거 검사
+    하나뿐이고, 호출부가 Bragi 사람 문체 검사를 얹을 수 있다 — 파일 순회·diff 추출 로직을
+    한 곳에만 두기 위한 이음매다 (검사기마다 git 을 다시 돌리지 않는다).
 
     `.asgard/` 아래 하네스 산출물(지도 GRAPH.md·PROJECT.md 등)은 제외한다 — 사람이 쓴 문장이
     아니라 코드가 생성한 카탈로그라 문체 규칙의 대상이 아니고, 위반으로 잡히면 수리 지시를 받는
@@ -162,8 +172,10 @@ def changed_prose_violations(root: str, paths: list[str], source: str = "") -> l
         if path == managed or path.startswith(managed + os.sep):
             continue
         rel = os.path.relpath(path, base)
-        for item in style_violations(_added_prose(base, rel), source):
-            found.append(f"{rel}: {item}")
+        added = _added_prose(base, rel)
+        for check in checks or (style_violations,):
+            for item in check(added, source):
+                found.append(f"{rel}: {item}")
     return found
 
 

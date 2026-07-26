@@ -65,6 +65,7 @@ def _items(value) -> list[str]:
 def _builtin_plugins() -> dict[str, dict]:
     """Built-ins are imported lazily; several skill bodies are intentionally large."""
     from .templates import BRIDGE_SKILL_MD, SEAL_SKILL_MD, SELFTEST_MD
+    from .templates.bragi import BRAGI_SKILLS
     from .templates.eitri import EITRI_SKILLS
     from .templates.freyja import FREYJA_SKILLS, freyja_core_skill
     from .templates.lagom import LAGOM_SKILLS
@@ -114,6 +115,7 @@ def _builtin_plugins() -> dict[str, dict]:
             "resolver": "mimir",
         },
         "lagom": {"description": "Lagom review, debt, and compression modes", "skills": LAGOM_SKILLS},
+        "bragi": {"description": "Human-voice audit and rewrite for reports, any language", "skills": BRAGI_SKILLS},
     }
 
 
