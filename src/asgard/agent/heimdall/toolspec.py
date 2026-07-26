@@ -36,6 +36,26 @@ VERDICT_TOOL = {
                 "description": "true when the FAIL is a defect of the approach itself (structural) — "
                 "triggers Thinker replanning (false for minor fixable defects)",
             },
+            "findings": {
+                "type": "array",
+                "description": "Every defect this verdict rests on, each classified by who owns the "
+                "decision. Mechanical, low-risk defects are auto-fix (the retry turn resolves them). "
+                "A finding that contradicts what Odin explicitly asked for, or that changes "
+                "user-visible product behaviour, is ask-user — it belongs to Odin, not to a retry, "
+                "and it stops the loop. Observations that need nothing are no-op. A finding you "
+                "cannot classify is ask-user (fail closed).",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "string", "description": "Short stable id, e.g. f1."},
+                        "severity": {"type": "string", "enum": ["error", "warning", "info"]},
+                        "file": {"type": "string", "description": "file:line the finding is anchored to."},
+                        "action": {"type": "string", "enum": ["auto-fix", "ask-user", "no-op"]},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["id", "action", "description"],
+                },
+            },
             "why": {"type": "string"},
         },
         "required": ["verdict", "criteria", "commands"],

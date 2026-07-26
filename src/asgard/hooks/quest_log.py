@@ -1225,6 +1225,26 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
         full["research_only"] = True
     if ev.get("research_findings"):
         full["research_findings"] = str(ev["research_findings"])[:6000]
+    if isinstance(ev.get("findings"), list):
+        # verify 전용 부가 필드 — 결함의 소유자 분류 (기계 수리 auto-fix ↔ 사람 판단 ask-user).
+        # 알 수 없는 action 은 ask-user 로 닫는다: 분류 불가를 기계 수리로 흘리면 판단이 필요한
+        # 결함이 조용히 추측으로 해소된다. 필드 자체가 없는 판정은 종전 경로 그대로다.
+        rows = []
+        for index, item in enumerate(ev["findings"][:20], 1):
+            if not isinstance(item, dict) or not str(item.get("description") or "").strip():
+                continue
+            action = str(item.get("action") or "").strip().lower()
+            rows.append(
+                {
+                    "id": str(item.get("id") or f"f{index}")[:32],
+                    "severity": str(item.get("severity") or "")[:16],
+                    "file": str(item.get("file") or "")[:200],
+                    "action": action if action in ("auto-fix", "ask-user", "no-op") else "ask-user",
+                    "description": str(item["description"])[:600],
+                }
+            )
+        if rows:
+            full["findings"] = rows
     return full
 
 

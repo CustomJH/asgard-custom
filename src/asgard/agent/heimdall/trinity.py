@@ -32,6 +32,7 @@ from .roles import (
     _skill_support,
     _transition_line,
     delivery_canon_note,
+    work_shape_note,
     worker_canon_hint,
 )
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
@@ -74,6 +75,38 @@ def _runner_identity(cmd: str) -> str:
     if _PYTHONISH.match(head):
         head = "python"
     return shlex.join([head, *tokens[1:]])
+
+
+_FINDING_ACTIONS = ("auto-fix", "ask-user", "no-op")
+
+
+def _classified_findings(verdict: dict) -> list[dict]:
+    """판정에 실린 결함을 소유자별로 정규화 — 기계 수리(auto-fix)와 사람 판단(ask-user)을 가른다.
+
+    `findings` 자체는 선택 필드다: 아예 없으면 종전 경로 그대로 (재시도)라 회귀가 없다. 다만 판정자가
+    결함을 **올려 놓고** 분류를 빠뜨렸거나 모르는 값을 넣었다면 사람 쪽으로 닫는다 — 분류 불가를
+    기계 수리로 흘리면 판단이 필요한 결함이 조용히 추측으로 해소된다."""
+    raw = verdict.get("findings")
+    if not isinstance(raw, list):
+        return []
+    rows: list[dict] = []
+    for index, item in enumerate(raw, 1):
+        if not isinstance(item, dict):
+            continue
+        description = str(item.get("description") or "").strip()
+        if not description:
+            continue
+        action = str(item.get("action") or "").strip().lower()
+        rows.append(
+            {
+                "id": str(item.get("id") or f"f{index}").strip()[:32],
+                "severity": str(item.get("severity") or "").strip().lower()[:16],
+                "file": str(item.get("file") or "").strip()[:200],
+                "action": action if action in _FINDING_ACTIONS else "ask-user",
+                "description": description[:600],
+            }
+        )
+    return rows
 
 
 class TrinityRun:
@@ -354,11 +387,19 @@ class TrinityRun:
             )
 
         canon = delivery_canon_note(hd.root, self.request)
+        # 범위 형상 — Thinker 는 load_skill 표면이 없다 (read-only 계획 세션): 규율 이름을 배정
+        # 단위 브리프에 싣게 하는 loader="none" 판을 준다.
+        shape = work_shape_note(hd.root, self.request, self.cls, loader="none")
         primary_prompt = (
-            prompt + (thinker_recall if primary_memory_allowed else "") + canon + _UNITS_NOTE + self.budget_note
+            prompt + (thinker_recall if primary_memory_allowed else "") + canon + shape + _UNITS_NOTE + self.budget_note
         )
         fallback_prompt = (
-            prompt + (thinker_recall if fallback_memory_allowed else "") + canon + _UNITS_NOTE + self.budget_note
+            prompt
+            + (thinker_recall if fallback_memory_allowed else "")
+            + canon
+            + shape
+            + _UNITS_NOTE
+            + self.budget_note
         )
         fallback = (lambda: make(rp=hd.rp)) if allow_fallback and rrp is not hd.rp else None
         return hd._run_turn(make, primary_prompt, fallback, fallback_prompt=fallback_prompt)
@@ -669,7 +710,9 @@ class TrinityRun:
             return None
         writes: list[str] = []
 
-        skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root)
+        # task 를 넘겨야 카탈로그가 `[task-match]` 로 선표시된다 — 안 넘기면 설명 목록만 보고
+        # 모델이 전적으로 알아서 고르는 상태가 되고, 결정론 매칭분이 통째로 버려진다.
+        skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=self.request)
 
         def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None):
             # verifier 는 무주입 (mk_verifier) — 게이트 기준이 lagom 으로 흔들리면 안 된다
@@ -725,8 +768,10 @@ class TrinityRun:
         )
         fb = (lambda mw=mk_worker: mw(m=None, rl="worker", rp=hd.rp)) if self.rrp is not hd.rp else None
         canon_hint = worker_canon_hint(hd.root, self.request)
+        shape_note = work_shape_note(hd.root, self.request, self.cls)
         worker_prompt = (
-            f"Task: {self.request}\n\nPlan:\n{plan_part}{explore_note}{canon_hint}\n{retry_note}{self.budget_note}"
+            f"Task: {self.request}\n\nPlan:\n{plan_part}{explore_note}{canon_hint}{shape_note}"
+            f"\n{retry_note}{self.budget_note}"
         )
         fallback_worker_prompt = worker_prompt
         primary_memory_allowed = self.standard and hd._mem_allowed(self.rrp.profile.name, self.rrp.source)
@@ -764,6 +809,29 @@ class TrinityRun:
             ),
         )
         return None
+
+    def _intent_block(self) -> str:
+        """사전 등록된 의도 — 무엇이 **의도된 선택**인지 판정자에게 알린다.
+
+        판정자가 diff 만 보면 사용자가 일부러 고른 것과 실수를 구별할 방법이 없어, 의도된 결정을
+        결함으로 올리는 헛FAIL 이 난다. 의도는 Worker 의 자기서사가 아니다 — 사용자의 요청 원문과
+        착수 전에 고정된 criteria(`가정:` 포함)만 담는다. 증거를 대체하지 않는다는 문장을 함께
+        실어야 이 블록이 검증 면제로 오독되지 않는다."""
+        assumptions = [c for c in map(str, self.cls.get("criteria") or []) if c.strip().startswith("가정:")]
+        block = (
+            "\n<intent>\nWhat Odin set out to accomplish, in their own words:\n"
+            f"{self.request[:1500]}\n"
+            "Decisions fixed before the work started (criteria): "
+            f"{'; '.join(map(str, self.cls.get('criteria') or []))[:1200]}\n"
+        )
+        if assumptions:
+            block += "Assumptions recorded in place of an unanswered decision: " + "; ".join(assumptions)[:600] + "\n"
+        return (
+            block + "</intent>\n"
+            "Everything in that block was chosen on purpose. A change that follows it is not a defect for"
+            " following it — but the block is intent, never evidence: it can never stand in for a"
+            " verification command, and it is not the Worker's account of what it did.\n"
+        )
 
     def _verifier_turn(self) -> str | None:
         """판정 턴 — read-only 세션 + verdict 툴 강제, 하니스 관측 증거만 기록."""
@@ -814,7 +882,10 @@ class TrinityRun:
             + baseline_note
             + "This session has a read-only Bash guard — allowed: observation, git reads, verification runners"
             " (pytest/ruff/ty, including via `uv run`), `python -m pytest|compileall|py_compile`, `python -c"
-            " '<write-free smoke test>'`. File writes, heredocs, redirection, and $VAR are blocked — don't"
+            " '<write-free smoke test>'`, and — for a JS/TS repository — `node --check <file>`,"
+            " `node [--test] <script under tests/>`, `npm|pnpm|yarn test|lint|check` (`node -e` stays blocked,"
+            " so put the smoke in the repo's tests/ tree)."
+            " File writes, heredocs, redirection, and $VAR are blocked — don't"
             " burn the turn retrying variants of a blocked command; switch to an allowed lane immediately.\n"
             "This workspace is an isolated clone without a .venv — prefer `python -m pytest -x -q` for tests;"
             " `uv run` can fail for environment reasons, so if it fails, switch to `python -m` instead of"
@@ -823,7 +894,14 @@ class TrinityRun:
             "Do not chain Bash commands with shell operators (; && || redirection) — call each separately.\n"
             "Worker commentary is not input — judge only by diff and command execution. The verdict must be"
             " submitted via the verdict tool.\n"
-            "If the FAIL is a flaw in the approach itself, submit structural=true (triggers a replan).",
+            "If the FAIL is a flaw in the approach itself, submit structural=true (triggers a replan).\n"
+            + self._intent_block()
+            + "\nClassify every defect you raise in the verdict's `findings`: `auto-fix` for mechanical,"
+            " low-risk defects a retry turn resolves on its own judgment; `ask-user` for a finding that"
+            " contradicts what Odin explicitly asked for above or that changes user-visible product"
+            " behaviour — that decision is Odin's, not a retry's, and it stops the loop; `no-op` for an"
+            " observation that needs nothing. A finding you cannot classify is `ask-user` (fail closed)."
+            " Do not reach for `ask-user` to avoid a judgment the criteria already settle.",
             fb,
         )
         # 마지막 verdict 호출이 최종 판정 (다중 호출 시 정정 인정)
@@ -910,6 +988,8 @@ class TrinityRun:
             from ...failures import normalize_sig
 
             v["failure_sig"] = normalize_sig(str(v["failure_sig"]))
+        findings = _classified_findings(v)
+        ask_user = [f for f in findings if f["action"] == "ask-user"]
         # 증거는 하니스 관측 명령만 기록 — 모델 자가보고 commands 는 버린다
         ev = {
             "role": "verifier",
@@ -918,6 +998,8 @@ class TrinityRun:
             "commands": observed[-20:],
             "model": self.used_model,
         }
+        if findings:
+            ev["findings"] = findings[:20]
         if v.get("failure_sig"):
             ev["failure_sig"] = v["failure_sig"]
         self.structural = bool(v.get("structural")) and v.get("verdict") == "FAIL"
@@ -948,4 +1030,21 @@ class TrinityRun:
             hd._record_outcome(self.tc, "verify-append-rejected", self.saw_red)
             detail = (appended.stderr or appended.stdout or "verifier append rejected").strip()[:300]
             return f"⚠ Verifier 판정 기록 거부 — {detail} 퀘스트는 ACTIVE로 유지됩니다."
+        if ask_user:
+            lines = "\n".join(f"  · [{f['id']}] {f.get('file') or '—'} — {f['description'][:220]}" for f in ask_user)
+            if v["verdict"] == "FAIL":
+                # 판단이 사람 몫인 결함을 재시도에 맡기면 Worker 가 Odin 의 명시 지시를 추측으로
+                # 뒤집는다 — 기계 수리와 판단을 가르는 것이 이 분류의 전부다. 판정은 이미 기록됐다.
+                hd._escalate(self.sid)
+                hd._record_outcome(self.tc, "findings-escalate", self.saw_red)
+                return (
+                    f"⚠ Odin 결정 필요 — 판정이 Odin 의 지시를 다투는 결함 {len(ask_user)}건에 걸렸습니다 "
+                    f"(재시도로 대신 정할 수 없음).\n{lines}\n"
+                    f"퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
+                )
+            # PASS 는 criteria↔증거 매핑이 계약이므로 뒤집지 않는다 — 다만 판단이 사람 몫인 관측을
+            # 조용히 닫으면 "자동 해소"가 된다: 판정은 그대로 두고 화면에 올려 Odin 이 보게 한다.
+            hd.on_text(
+                f"  {ui.paint(ui._WARN, '!')} {ui.dim('Odin 판단 대기 관측 ' + str(len(ask_user)) + '건')}\n{lines}\n"
+            )
         return None
