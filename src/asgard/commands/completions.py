@@ -19,6 +19,7 @@ _SUMMARY = {
     "init": "scaffold a project for coding agents",
     "map": "project map — orientation, relation graph, and bounded context",
     "health": "codebase erosion signal — size, duplication, coupling, hotspots",
+    "craft": "micro-shape of THIS diff — unit size/nesting, resource lifetime, cost",
     "surface": "public API surface vs a base ref — breaking changes and call-site obligations",
     "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
@@ -43,6 +44,7 @@ _FLAGS = {
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
     "health": ["--snapshot", "--json", "--quiet"],
+    "craft": ["--base", "--path", "--json", "--quiet"],
     "surface": ["--base", "--json", "--quiet"],
     "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],
