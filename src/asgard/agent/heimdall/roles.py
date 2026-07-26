@@ -22,22 +22,10 @@ _ROLE_KEY = {
     "VERIFIER": "verifier",
 }
 
-# ── 모델 티어 — 정책 tier → anthropic 모델. 상황별 호출: 역할 기본 + full-verify/재계획 승급.
-# 명시 placement([trinity.<role>])와 알려지지 않은 커스텀 모델은 존중.
-_TIER_MODELS = {
-    "fast": "claude-haiku-4-5-20251001",
-    "standard": "claude-sonnet-5",
-    "high": "claude-opus-4-8",
-    "max": "claude-fable-5",
-}
-_TIER_UP = {"fast": "standard", "standard": "high", "high": "max", "max": "max"}
-
-
-def _model_tier(model: str) -> str | None:
-    """Known Anthropic full IDs and CLI aliases -> policy tier; unknown IDs inherit unchanged."""
-    name = model.lower()
-    tiers = (("max", "fable"), ("high", "opus"), ("standard", "sonnet"), ("fast", "haiku"))
-    return next((tier for tier, marker in tiers if marker in name), None)
+# ── 모델 티어 — 정책 tier → 모델. 상황별 호출: 역할 기본 + full-verify/재계획 승급.
+# 표 자체는 model_tiers 가 provider(모드)별로 해석한다 (claude CLI = 계열 별칭, API = 카탈로그
+# 캐시, 그 외 = 커레이션 하한) — 세대 교체에 이 파일은 개입하지 않는다. 명시 placement
+# ([trinity.<role>])와 알려지지 않은 커스텀 모델은 그대로 존중.
 
 
 # 탐색 발견 증류 넛지 문턱 — DIRECT 턴 커맨드 수가 이 이상이면 "탐색이 컸다"로 본다

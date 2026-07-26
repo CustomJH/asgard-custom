@@ -79,6 +79,31 @@ def _shared_memory_check(root: str) -> dict | None:
         }
 
 
+def _model_tier_check(root: str) -> dict | None:
+    """역할 티어가 실제로 어떤 모델로 해석되는지 — 표가 낡으면 여기서 보인다.
+
+    26-07-26 실측: 티어 표가 이전 세대에 박혀 있어 opus 세션이 역할 턴마다 조용히 내려갔는데
+    어느 표면에도 드러나지 않았다. 해석 결과를 보여 주고, API 모드면 카탈로그로 캐시를 갱신한다
+    (claude CLI 모드는 계열 별칭이라 갱신 대상이 아니다 — CLI 가 최신 세대로 해석한다)."""
+    try:
+        from ..model_tiers import TIERS, refresh
+        from ..providers import resolve
+
+        rp = resolve(root)
+        table, source = refresh(rp.profile.name, rp.profile.api_mode, rp.api_key or "")
+        if not table:
+            return {
+                "name": "model tiers",
+                "ok": True,
+                "detail": f"n/a · {rp.profile.name} 은 티어 매핑 없음 (설정 모델 그대로 사용)",
+                "fix": "",
+            }
+        shown = " · ".join(f"{tier}={table[tier]}" for tier in TIERS)
+        return {"name": "model tiers", "ok": True, "detail": f"{source} · {shown}", "fix": ""}
+    except Exception:
+        return None
+
+
 def _personal_memory_check(root: str) -> dict | None:
     """1차(개인) 메모리 주입 게이트 진단 — 무음 차단을 표면화한다.
 
@@ -678,6 +703,8 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     checks += _design_engine_checks()
     if personal := _personal_memory_check(os.getcwd()):
         checks.append(personal)
+    if tiers := _model_tier_check(os.getcwd()):
+        checks.append(tiers)
     checks += _trinity_checks(os.getcwd())
     security_ok = all(ch["ok"] for ch in checks if ch.get("security"))
     ok = bool(asgard) and security_ok

@@ -21,6 +21,7 @@ from unittest import mock
 
 from asgard.agent.heimdall import Heimdall
 from asgard.agent.session import SessionResult
+from asgard.model_tiers import tiers_for
 from asgard.providers import PROVIDERS, ResolvedProvider
 
 CLS_WRITE = {
@@ -840,6 +841,8 @@ class TestRoutePriorsE2E(Base):
 
 
 OPUS_DEFAULT = PROVIDERS["anthropic"].default_model
+# 티어 앵커 — 해석된 표에서 읽는다 (리터럴 모델 ID 는 세대 교체마다 낡는 앵커다)
+TIER = tiers_for("anthropic", "anthropic")
 
 
 class TestModelTiers(Base):
@@ -850,11 +853,27 @@ class TestModelTiers(Base):
 
     def test_policy_tiers_map_roles_to_models(self):
         h = self._h()
+        # 기대값은 리터럴이 아니라 해석된 표에서 — 세대가 올라가도 앵커가 낡지 않는다
+        table = tiers_for("anthropic", "anthropic")
         # worker 정책 티어는 standard 지만 코디네이터(opus=high)가 하한 — 위임 손은 세션 모델 아래로 안 내려간다
-        self.assertEqual(h._model_for("worker"), "claude-opus-4-8")
-        self.assertEqual(h._model_for("thinker"), "claude-opus-4-8")
-        self.assertEqual(h._model_for("verifier"), "claude-opus-4-8")
-        self.assertEqual(h._model_for("verifier", bump=True), "claude-fable-5")  # full-verify 승급
+        self.assertEqual(h._model_for("worker"), table["high"])
+        self.assertEqual(h._model_for("thinker"), table["high"])
+        self.assertEqual(h._model_for("verifier"), table["high"])
+        self.assertEqual(h._model_for("verifier", bump=True), table["max"])  # full-verify 승급
+
+    def test_tier_table_tracks_the_current_generation(self):
+        # 26-07-26 실측 회귀: 표가 이전 세대(opus-4-8)에 박혀 opus-5 세션이 역할 턴마다 조용히
+        # 내려갔다. high 티어는 코디네이터 별칭 `opus` 가 해석되는 세대와 같은 계열·최신이어야 한다.
+        from asgard.model_tiers import FAMILY, generation
+
+        table = tiers_for("anthropic", "anthropic")
+        for tier, marker in FAMILY.items():
+            self.assertIn(marker, table[tier])
+        self.assertGreater(generation(table["high"]), generation("claude-opus-4-8"))
+        # claude CLI 모드는 별칭 그대로 — CLI 가 최신 세대로 해석하므로 표 유지보수가 없다
+        self.assertEqual(tiers_for("claude-native", "claude_cli"), dict(FAMILY))
+        # 티어 개념이 없는 provider 는 스왑하지 않는다 (커스텀 ID 존중)
+        self.assertEqual(tiers_for("openai", "openai_responses"), {})
 
     def _set_coordinator(self, h, model):
         # role_rp 가 동일 rp 객체를 공유하므로 in-place 변이 (placement 오인 방지)
@@ -863,30 +882,30 @@ class TestModelTiers(Base):
     def test_coordinator_tier_floor(self):
         # 프론티어 코디네이터(max) — 전 역할이 fable 로 승급, bump 는 이미 천장
         h = self._h()
-        self._set_coordinator(h, "claude-fable-5")
-        self.assertEqual(h._model_for("worker"), "claude-fable-5")
-        self.assertEqual(h._model_for("verifier"), "claude-fable-5")
-        self.assertEqual(h._model_for("worker", bump=True), "claude-fable-5")
+        self._set_coordinator(h, TIER["max"])
+        self.assertEqual(h._model_for("worker"), TIER["max"])
+        self.assertEqual(h._model_for("verifier"), TIER["max"])
+        self.assertEqual(h._model_for("worker", bump=True), TIER["max"])
         # 코디네이터가 역할 티어보다 낮으면(haiku=fast) 하한은 무효 — 정책 티어 유지
         h2 = self._h()
-        self._set_coordinator(h2, "claude-haiku-4-5-20251001")
-        self.assertEqual(h2._model_for("worker"), "claude-sonnet-5")
-        self.assertEqual(h2._model_for("verifier"), "claude-opus-4-8")
+        self._set_coordinator(h2, TIER["fast"])
+        self.assertEqual(h2._model_for("worker"), TIER["standard"])
+        self.assertEqual(h2._model_for("verifier"), TIER["high"])
 
     def test_delivery_tiers(self):
         h = self._h()
-        self.assertEqual(h._delivery_model("freyja"), "claude-opus-4-8")
-        self.assertEqual(h._delivery_model("thor"), "claude-opus-4-8")
-        self.assertEqual(h._delivery_model("loki"), "claude-haiku-4-5-20251001")
+        self.assertEqual(h._delivery_model("freyja"), TIER["high"])
+        self.assertEqual(h._delivery_model("thor"), TIER["high"])
+        self.assertEqual(h._delivery_model("loki"), TIER["fast"])
         h.policy["delivery"]["thor"] = "custom"
         self.assertIsNone(h._delivery_model("thor"))
 
     def test_cli_aliases_keep_low_tier_role_floors(self):
         h = self._h(model="haiku")
-        self.assertEqual(h._model_for("worker"), "claude-sonnet-5")
-        self.assertEqual(h._model_for("verifier"), "claude-opus-4-8")
-        self.assertEqual(h._delivery_model("thor"), "claude-sonnet-5")
-        self.assertEqual(h._delivery_model("loki"), "claude-haiku-4-5-20251001")
+        self.assertEqual(h._model_for("worker"), TIER["standard"])
+        self.assertEqual(h._model_for("verifier"), TIER["high"])
+        self.assertEqual(h._delivery_model("thor"), TIER["standard"])
+        self.assertEqual(h._delivery_model("loki"), TIER["fast"])
 
     def test_explicit_delivery_placement_wins_over_floor(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -926,8 +945,8 @@ class TestModelTiers(Base):
     def test_session_model_override_swaps_model_only(self):
         h = self._h()
         # FakeHeimdall 은 _session 을 대체하므로 실제 구현을 직접 호출
-        s = Heimdall._session(h, "sys", role="worker", model="claude-sonnet-5")
-        self.assertEqual(s.rp.model, "claude-sonnet-5")
+        s = Heimdall._session(h, "sys", role="worker", model=TIER["standard"])
+        self.assertEqual(s.rp.model, TIER["standard"])
         self.assertEqual(s.rp.profile.name, "anthropic")
         self.assertEqual(h.role_rp["worker"].model, OPUS_DEFAULT)  # 원본 불변
 
@@ -935,8 +954,8 @@ class TestModelTiers(Base):
         h = self._h([worker({"w1.txt": "x\n"}, self.root), verifier("PASS")])
         out = h.handle("w1.txt 만들어")
         self.assertIn("과업 완수", out)
-        self.assertEqual(h.consumed[0].model, "claude-opus-4-8")  # worker=standard 이나 코디네이터(high) 하한
-        self.assertEqual(h.consumed[1].model, "claude-opus-4-8")  # verifier micro=high
+        self.assertEqual(h.consumed[0].model, TIER["high"])  # worker=standard 이나 코디네이터(high) 하한
+        self.assertEqual(h.consumed[1].model, TIER["high"])  # verifier micro=high
 
     def test_quest_events_record_used_model(self):
         # 모델 티어 → route-priors 데이터 축: 실사용 provider:model 이 로그에 남는다
@@ -945,7 +964,7 @@ class TestModelTiers(Base):
         d = os.path.join(self.root, ".asgard", "quest")
         log = "\n".join(open(os.path.join(d, f)).read() for f in os.listdir(d) if f.endswith(".jsonl"))
         self.assertIn('"role":"worker","event":"work"', log)
-        self.assertIn("anthropic:claude-opus-4-8", log)  # work·verify — 코디네이터 하한으로 동일 티어
+        self.assertIn(f"anthropic:{TIER['high']}", log)  # work·verify — 코디네이터 하한으로 동일 티어
 
     def test_second_replan_uses_thinker_alt_placement(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)

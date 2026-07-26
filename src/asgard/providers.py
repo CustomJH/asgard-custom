@@ -50,9 +50,11 @@ PROVIDERS: dict[str, ProviderProfile] = {
         display="Anthropic (Claude)",
         api_mode="anthropic",
         env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
-        default_model="claude-opus-4-8",
+        # 세대 고정값은 카탈로그 조회 실패 시의 하한이다 — 티어 해석은 model_tiers 가 소유한다
+        # (`asgard doctor` 가 계열별 최신판으로 캐시를 갱신한다).
+        default_model="claude-opus-5",
         signup_hint="https://platform.claude.com 에서 키 발급 후 export ANTHROPIC_API_KEY=...",
-        fallback_models=("claude-opus-4-8", "claude-sonnet-4-6", "claude-haiku-4-5"),
+        fallback_models=("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5"),
         context_window=200_000,
     ),
     # 네이티브 Claude Code — 로컬 claude CLI 를 Agent SDK 로 구동. API 키 대신

@@ -257,7 +257,8 @@ class TestNativeModelSelection(unittest.TestCase):
 
         self.assertIsNotNone(resolved)
         assert resolved is not None
-        self.assertEqual(resolved.model, "claude-sonnet-4-6")
+        # 두 번째 선택지 = 프로파일 커레이션의 두 번째 모델. 리터럴로 박으면 세대 교체마다 낡는다.
+        self.assertEqual(resolved.model, PROVIDERS["anthropic"].fallback_models[1])
 
     def test_openai_compatible_onboarding_discovers_models_before_selection(self):
         with (

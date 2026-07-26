@@ -20,6 +20,10 @@ import time
 import uuid
 from typing import Callable, Protocol
 
+from ...model_tiers import TIER_UP as _TIER_UP
+from ...model_tiers import TIERS
+from ...model_tiers import family_tier as _model_tier
+from ...model_tiers import tiers_for as _tiers_for
 from ...providers import ResolvedProvider, resolve_trinity
 from ..session import AgentSession, SessionResult, TurnCancelled, make_client, ql
 from .classify import (
@@ -37,12 +41,9 @@ from .planning import _resume_snapshot
 from .roles import (
     _DELIVERY_TIERS,
     _EXPLORE_NUDGE_MIN,
-    _TIER_MODELS,
-    _TIER_UP,
     _identity,
     _memory_save_support,
     _mimir_note,
-    _model_tier,
     _skill_support,
 )
 from .trinity import TrinityRun
@@ -332,7 +333,8 @@ class Heimdall:
         # 코디네이터 티어 하한 — 위임된 실행·판정 손이 세션 모델보다 약하면 그 손이 품질 하한이
         # 된다 (숨은 caller 추적처럼 코디네이터는 하는 일을 못 한다). 정책이 명시한 티어라도
         # 코디네이터 아래로는 내리지 않는다; 역매핑 불가 모델(커스텀 ID)은 하한 미적용.
-        order = list(_TIER_MODELS)
+        table = _tiers_for(rp.profile.name, rp.profile.api_mode)
+        order = list(TIERS)
         coord = _model_tier(rp.model)
         if coord is None:
             return None
@@ -340,7 +342,7 @@ class Heimdall:
             tier = coord
         if bump:
             tier = _TIER_UP.get(tier, tier)
-        return _TIER_MODELS.get(tier)
+        return table.get(tier)
 
     def dual_thinker_labels(self) -> tuple[str, str]:
         """Dual mode의 실제 provider:model 쌍 — 동일 모델 오설정을 진입 전에 차단한다."""
@@ -363,10 +365,11 @@ class Heimdall:
         if coord is None:
             return None
         # Loki는 의도된 저비용 반례 정찰. 실제 산출을 만드는 나머지 손만 코디네이터 하한 적용.
-        order = list(_TIER_MODELS)
+        table = _tiers_for(rp.profile.name, rp.profile.api_mode)
+        order = list(TIERS)
         if agent != "loki" and tier in order and order.index(coord) > order.index(tier):
             tier = coord
-        return _TIER_MODELS.get(tier)
+        return table.get(tier)
 
     def _classify(self, request: str) -> dict:
         # 1차 결정론 휴리스틱 (LLM 토큰 0) — 명백 케이스만. 모호하면 LLM 폴백.
