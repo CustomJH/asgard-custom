@@ -504,13 +504,44 @@ def detect_checks(root: str, policy: dict) -> list[str]:
         ]
     import shutil
 
-    if not any(os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")):
+    if any(os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")):
+        if os.path.exists(os.path.join(root, "uv.lock")) and shutil.which("uv"):
+            return ["uv run pytest -x -q"]
+        if shutil.which("pytest"):
+            return ["pytest -x -q"]
+    return _detect_node_checks(root)
+
+
+def _detect_node_checks(root: str) -> list[str]:
+    """JS/TS 저장소의 행위 베이스라인 — package.json 의 test 스크립트.
+
+    자동감지가 pytest 전용이던 탓에 JS/TS 저장소는 `baseline_checks` 를 손으로 넣지 않으면
+    **하네스 실행 증거 레인이 통째로 꺼진 채** 돌았다 (26-07-26 helios 실측: PASS 가 diff 정독과
+    `node --check` 문법 검사에 얹혔다). 보수 조건 두 개를 함께 요구한다: ① 실제 test 스크립트가
+    선언돼 있고 ② 의존성이 이미 설치돼 있다(node_modules). 미설치 상태의 러너 실패는 exit 1 이라
+    테스트 실패와 구분되지 않아 false-red 로 게이트를 인질로 잡기 때문이다 — 그 경우는 명시 설정만."""
+    import json as _json
+    import shutil
+
+    manifest = os.path.join(root, "package.json")
+    if not os.path.exists(manifest) or not os.path.isdir(os.path.join(root, "node_modules")):
         return []
-    if os.path.exists(os.path.join(root, "uv.lock")) and shutil.which("uv"):
-        return ["uv run pytest -x -q"]
-    if shutil.which("pytest"):
-        return ["pytest -x -q"]
-    return []
+    try:
+        with open(manifest, encoding="utf-8") as handle:
+            scripts = (_json.load(handle) or {}).get("scripts") or {}
+    except Exception:
+        return []
+    if not str(scripts.get("test") or "").strip():
+        return []
+    for lockfile, manager in (
+        ("pnpm-lock.yaml", "pnpm"),
+        ("yarn.lock", "yarn"),
+        ("package-lock.json", "npm"),
+        ("bun.lock", "npm"),
+    ):
+        if os.path.exists(os.path.join(root, lockfile)) and shutil.which(manager):
+            return [f"{manager} test"]
+    return ["npm test"] if shutil.which("npm") else []
 
 
 def gate_first_checks_available(root: str, policy: dict) -> bool:

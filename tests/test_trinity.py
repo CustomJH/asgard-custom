@@ -1255,6 +1255,50 @@ class TestDetectChecks(unittest.TestCase):
     def test_trivial_or_shell_composed_policy_is_rejected(self):
         self.assertEqual(self.detect(self.root, {"baseline_checks": ["true", "pytest -q && curl bad"]}), [])
 
+    # ── JS/TS 레인 — 자동감지가 pytest 전용이던 탓에 JS 저장소는 하네스 실행 증거가 통째로 꺼져
+    #    있었다 (26-07-26 helios 실측). 의존성이 설치된 경우에만 감지 — 미설치 러너 실패(exit 1)는
+    #    테스트 실패와 구분되지 않아 false-red 가 된다.
+    def package(self, scripts, lockfile=None):
+        with open(os.path.join(self.root, "package.json"), "w") as handle:
+            json.dump({"name": "x", "scripts": scripts}, handle)
+        os.makedirs(os.path.join(self.root, "node_modules"), exist_ok=True)
+        if lockfile:
+            self.touch(lockfile)
+
+    def test_node_project_with_installed_deps_uses_lockfile_manager(self):
+        self.package({"test": "vitest run"}, "pnpm-lock.yaml")
+        with self.which("pnpm", "npm"):
+            self.assertEqual(self.detect(self.root, {}), ["pnpm test"])
+
+    def test_node_project_without_lockfile_falls_back_to_npm(self):
+        self.package({"test": "vitest run"})
+        with self.which("npm"):
+            self.assertEqual(self.detect(self.root, {}), ["npm test"])
+
+    def test_node_project_without_installed_deps_is_not_detected(self):
+        with open(os.path.join(self.root, "package.json"), "w") as handle:
+            json.dump({"name": "x", "scripts": {"test": "vitest run"}}, handle)
+        with self.which("pnpm", "npm"):
+            self.assertEqual(self.detect(self.root, {}), [])
+
+    def test_node_project_without_test_script_is_not_detected(self):
+        self.package({"build": "vite build"}, "pnpm-lock.yaml")
+        with self.which("pnpm", "npm"):
+            self.assertEqual(self.detect(self.root, {}), [])
+
+    def test_python_markers_still_win_over_node(self):
+        self.touch("pyproject.toml")
+        self.package({"test": "vitest run"}, "pnpm-lock.yaml")
+        with self.which("pytest", "pnpm"):
+            self.assertEqual(self.detect(self.root, {}), ["pytest -x -q"])
+
+    def test_node_test_counts_as_a_behavior_runner(self):
+        from asgard.hooks import quest_log
+
+        self.package({"test": "vitest run"}, "pnpm-lock.yaml")
+        with self.which("pnpm", "npm"):
+            self.assertTrue(quest_log.gate_first_checks_available(self.root, {}))
+
 
 class TestStandardTransition(TrinityBase):
     """안전한 소형 write는 baseline 우선, 위험 신호가 있으면 독립 Verifier로 승격한다."""
