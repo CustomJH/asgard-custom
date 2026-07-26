@@ -2,7 +2,7 @@
 name: asgard-verifier
 description: Trinity Verifier — independent verification, structured PASS/FAIL/ESCALATE verdicts (no code edits). Dispatch to verify Worker results and issue completion verdicts.
 tools: Read, Grep, Glob, Bash, Agent
-model: opus
+model: inherit
 effort: high
 ---
 

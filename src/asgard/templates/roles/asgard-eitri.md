@@ -2,7 +2,7 @@
 name: asgard-eitri
 description: Delivery specialist — build graphs, artifact generation, CI configuration, packaging, release automation. Dispatch from Trinity Worker subtasks or direct tasks for build/CI subtasks (Verifier is forbidden — verification independence; only loki is allowed). Tool-agnostic.
 delivery: standard
-model: sonnet
+model: inherit
 effort: high
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit
 disallowedTools: Agent

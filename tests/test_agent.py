@@ -758,14 +758,15 @@ class TestDeliveryAgents(unittest.TestCase):
             self.assertEqual(set(defaults), roles, host)
 
     def test_claude_code_roles_pin_model_and_effort_by_work_type(self):
+        # 사고·구현·판정하는 손은 inherit(세션 모델 추종), 읽기 전용 정찰·안내만 저비용 고정.
         expected = {
-            "thinker": ("fable", "high"),
-            "worker": ("sonnet", "high"),
-            "verifier": ("opus", "high"),
-            "freyja": ("sonnet", "high"),
-            "thor-lead": ("fable", "high"),
-            "thor": ("sonnet", "high"),
-            "eitri": ("sonnet", "high"),
+            "thinker": ("inherit", "high"),
+            "worker": ("inherit", "high"),
+            "verifier": ("inherit", "high"),
+            "freyja": ("inherit", "high"),
+            "thor-lead": ("inherit", "high"),
+            "thor": ("inherit", "high"),
+            "eitri": ("inherit", "high"),
             "loki": ("opus", "low"),
             "mimir": ("sonnet", "high"),
         }

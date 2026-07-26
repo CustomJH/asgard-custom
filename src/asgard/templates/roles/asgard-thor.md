@@ -2,7 +2,7 @@
 name: asgard-thor
 description: Delivery specialist — backend: service code, domain rules, data processing, API, real-time, post-deploy runtime policy. Dispatch from Trinity Worker subtasks or direct tasks for backend subtasks (Verifier is forbidden — verification independence; only loki is allowed). Framework-agnostic.
 delivery: standard
-model: sonnet
+model: inherit
 effort: high
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit
 disallowedTools: Agent

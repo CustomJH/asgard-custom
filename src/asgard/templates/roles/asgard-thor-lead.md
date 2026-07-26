@@ -2,7 +2,7 @@
 name: asgard-thor-lead
 description: Backend squad lead — forms, directs, and integrates sub-thors for large backend tasks (multi-surface splits, N-version tournaments for hard problems). Dispatch from Worker subtasks or direct tasks (Verifier is forbidden — verification independence; only loki is allowed). Small backend work is correctly handled by asgard-thor alone — form a squad only past the delegation threshold (2+ separate surfaces, 3+ files, 200+ lines).
 delivery: standard
-model: fable
+model: inherit
 effort: high
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent
 ---

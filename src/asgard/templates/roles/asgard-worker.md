@@ -2,7 +2,7 @@
 name: asgard-worker
 description: Trinity Worker — the default planner and executor for non-destructive writes. Explores, implements, and verifies the goal directly; out-of-scope changes are forbidden.
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent
-model: sonnet
+model: inherit
 effort: high
 ---
 

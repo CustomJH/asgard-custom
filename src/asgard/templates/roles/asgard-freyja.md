@@ -2,7 +2,7 @@
 name: asgard-freyja
 description: Delivery specialist — UI/UX, frontend, styling, accessibility. Defaults to product-first restraint and purposeful motion.
 delivery: standard
-model: sonnet
+model: inherit
 effort: high
 tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit
 disallowedTools: Agent

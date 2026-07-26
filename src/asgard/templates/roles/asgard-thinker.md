@@ -2,7 +2,7 @@
 name: asgard-thinker
 description: Trinity Thinker — parallel decomposition and failure replanning only (read-only, no code changes). Dispatch only for explicit fan-out or observed structural/repeated failures.
 tools: Read, Grep, Glob, Bash, Agent
-model: fable
+model: inherit
 effort: high
 ---
 
