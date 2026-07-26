@@ -187,6 +187,24 @@ class GitDiffTest(unittest.TestCase):
         self.assertEqual(result.unparsed, ("lib.py",))
         self.assertEqual(result.changes, ())
 
+    def test_deleted_test_method_is_not_a_surface_break(self):
+        self._write("tests/test_thing.py", "class T:\n    def test_one(self):\n        pass\n")
+        self._write("benchmarks/harness.py", "def measure():\n    pass\n")
+        self._commit()
+        self._write("tests/test_thing.py", "class T:\n    pass\n")
+        os.remove(os.path.join(self.root, "benchmarks", "harness.py"))
+        result = surface.diff(self.root, "HEAD")
+        self.assertEqual(result.changes, (), "테스트·벤치는 공개 표면이 아니다")
+        self.assertEqual(result.files_compared, 0)
+
+    def test_test_callers_still_appear_as_edit_obligations(self):
+        self._write("lib.py", "def fetch_record(a, b):\n    return a\n")
+        self._write("tests/test_lib.py", "from lib import fetch_record\n\nfetch_record(1, 2)\n")
+        self._commit()
+        self._write("lib.py", "def fetch_record(a):\n    return a\n")
+        result = surface.diff(self.root, "HEAD")
+        self.assertIn("tests/test_lib.py", result.obligations["fetch_record"], "테스트 호출부는 진짜 의무다")
+
     def test_note_is_empty_when_surface_is_stable(self):
         self._write("lib.py", "def f(a):\n    return a\n")
         self._commit()

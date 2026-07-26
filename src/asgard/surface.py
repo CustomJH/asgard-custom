@@ -36,6 +36,12 @@ _MAX_SOURCE_BYTES = 512 * 1024
 _IGNORED_DIRS = frozenset(
     {".asgard", ".git", ".venv", "__pycache__", "build", "dist", "node_modules", "target", "vendor", "venv"}
 )
+# 표면을 **뜨지 않을** 영역. 테스트·벤치의 심볼은 아무도 호출하는 계약이 아니다 — 테스트 메서드
+# 하나를 지운 것이 `removed`(breaking) 로 올라오면 판정자는 가짜 편집 의무를 받는다. 반대로
+# 호출부 **후보**에서는 빼지 않는다: 바뀐 함수를 부르는 테스트는 진짜 고쳐야 할 곳이다.
+# `testing`·`bench` 는 진짜 패키지 이름으로도 쓰여서(pandas.testing) 넣지 않는다 — 표면을 조용히
+# 빠뜨리는 쪽이 가짜 의무보다 나쁘다. 관례가 확실한 이름만 건다.
+_NON_SURFACE_DIRS = frozenset({"benchmarks", "test", "tests"})
 
 
 @dataclass(frozen=True)
@@ -214,12 +220,22 @@ def _git(root: str, *args: str) -> tuple[int, str]:
         return (1, "")
 
 
+def is_surface_path(path: str) -> bool:
+    """이 파일의 심볼을 공개 표면으로 셀지. 테스트·벤치·산출물 트리는 표면이 아니다."""
+    parts = path.split("/")
+    if any(part in _NON_SURFACE_DIRS or part in _IGNORED_DIRS for part in parts[:-1]):
+        return False
+    name = parts[-1]
+    return not (name.startswith("test_") or name.endswith("_test.py") or name == "conftest.py")
+
+
 def changed_python(root: str, base: str) -> tuple[str, ...]:
-    """기준 대비 변경·추가·삭제된 .py 목록 (rename 은 양쪽 경로로 나온다)."""
+    """기준 대비 변경·추가·삭제된 **표면** .py 목록 (rename 은 양쪽 경로로 나온다)."""
     code, out = _git(root, "diff", "--name-only", base, "--", "*.py")
     if code != 0:
         return ()
-    return tuple(sorted({line.strip() for line in out.splitlines() if line.strip().endswith(".py")}))
+    found = {line.strip() for line in out.splitlines() if line.strip().endswith(".py")}
+    return tuple(sorted(path for path in found if is_surface_path(path)))
 
 
 def _at_ref(root: str, base: str, path: str) -> str | None:
