@@ -39,9 +39,19 @@ _FEATURE_PAT = re.compile(
 
 # ── 규율 렌즈 — 형상과 독립. 여러 개가 동시에 참일 수 있다 (회귀 버그 + 회귀 테스트) ──
 _LENS_PAT: dict[str, re.Pattern[str]] = {
+    # 버그는 대개 어휘가 아니라 **증상**으로 신고된다 ("다크 모드가 깨졌다", "목록이 안 나온다",
+    # "dark mode is broken"). 어휘만 잡으면 가장 흔한 신고 형태를 통째로 놓친다 — 26-07-26 실측:
+    # 증상 문장 15개 배터리에서 5/15 만 걸렸다. 증상 표현을 1급 신호로 편입한다.
     "bug": re.compile(
-        r"버그|디버깅|디버그|크래시|스택\s*트레이스|재현|원인\s*(?:규명|분석)|회귀|오류\s*(?:수정|해결)|안\s*(?:되|돼)"
-        r"|\bbugs?\b|\bdebug|\bcrash|traceback|stack\s*trace|reproduc|root\s+cause|\bregress",
+        r"버그|디버깅|디버그|크래시|스택\s*트레이스|재현|원인\s*(?:규명|분석|찾|파악)|회귀|오류\s*(?:수정|해결)"
+        r"|안\s*(?:되|돼)|깨졌|깨져|깨진|망가|먹통|안\s*(?:나오|나온|나와|보이|보인|먹)|나오지\s*않|보이지\s*않"
+        r"|반응이\s*없|이상하게|잘못\s*(?:나오|표시|계산|동작)|틀리게|틀린\s*값|갱신되지\s*않|반영되지\s*않"
+        r"|작동(?:하지|되지)\s*않|동작(?:하지|되지)\s*않|실패(?:한다|해|합니다|하는)|누락되(?:고|는|어)"
+        r"|\bbugs?\b|\bdebug|\bcrash|traceback|stack\s*trace|reproduc|root[\s-]*cause|\bregress"
+        r"|\bbroken\b|\bbreaks?\b|(?:doesn't|does\s+not|isn't|is\s+not|no\s+longer)\s+"
+        r"(?:work|working|render|load|update|show|appear|fire|run)"
+        r"|not\s+working|fails?\s+(?:to|silently|with)|\bfailing\b|find\s+the\s+cause"
+        r"|wrong\s+(?:value|result|total|number|order|state)|\bincorrect\b|misbehav",
         re.IGNORECASE,
     ),
     "test": re.compile(

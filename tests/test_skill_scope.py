@@ -69,6 +69,40 @@ class WorkShapeTest(unittest.TestCase):
         request = "리팩터링하면서 계층 경계 정리해줘"
         self.assertEqual(work_shape(request, _WRITE), work_shape(request, _WRITE))
 
+    def test_bug_lens_reads_symptoms_not_only_vocabulary(self):
+        # 버그는 대개 "버그" 라는 말 없이 증상으로 온다. 어휘만 잡던 판정은 실측 배터리에서
+        # 5/15 만 걸렸다 (26-07-26) — 가장 흔한 신고 형태를 통째로 놓치던 것.
+        symptoms = (
+            "다크 모드가 깨졌다. 원인을 찾아 고쳐줘",
+            "목록이 안 나온다 수정해줘",
+            "화면이 이상하게 나와 고쳐줘",
+            "저장 버튼 눌러도 반응이 없어 고쳐줘",
+            "숫자가 틀리게 계산된다 바로잡아줘",
+            "값이 갱신되지 않는다 고쳐줘",
+            "dark mode is broken, fix it",
+            "the list does not render, fix it",
+            "login fails silently — fix",
+            "wrong total is displayed, correct it",
+        )
+        for request in symptoms:
+            with self.subTest(request=request):
+                result = work_shape(request, _WRITE)
+                self.assertIn("bug", result["lenses"])
+                self.assertIn("asgard-worker-debugging", bound_skills(result))
+
+    def test_bug_lens_does_not_fire_on_ordinary_feature_work(self):
+        # 반대 방향 앵커 — 증상 신호를 넓히면서 기능 요청까지 버그로 끌고 오면 규율이 소음이 된다.
+        for request in (
+            "소셜 로그인 버튼 추가해줘",
+            "일본어 로케일 추가해줘",
+            "실패 시 토스트를 띄우는 UI 추가",
+            "결과가 나오는 화면 만들어줘",
+            "add a new endpoint for exports",
+            "다크 모드 테마 색을 조금 밝게",
+        ):
+            with self.subTest(request=request):
+                self.assertNotIn("bug", work_shape(request, _WRITE)["lenses"])
+
 
 class ScopeNoteTest(unittest.TestCase):
     def test_read_only_turn_costs_no_tokens(self):
