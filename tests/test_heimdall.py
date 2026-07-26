@@ -1199,6 +1199,44 @@ class TestClassifyHeuristic(Base):
         assert mixed is not None
         self.assertTrue(mixed["write_expected"])
 
+    def test_durable_user_fact_without_explicit_memory_command(self):
+        """실측 회귀 (26-07-26): "이제부터 썬더오브갓이라 불러라" 가 명시적 기억 명령 표에
+        없어 memory_save 도구가 안 열렸고, 모델이 셸아웃으로 우회하려다 read-only 레인에
+        막혀 "세션에서만 기억"으로 끝났다. 호칭·정체성·지속 지시는 명령 없이도 사실이다."""
+        from asgard.agent.heimdall import classify_heuristic as ch
+        from asgard.agent.heimdall import memory_write_intent
+
+        for q in (
+            "이제부터 썬더오브갓이라 불러라",
+            "앞으로 썬더오브갓이라고 불러줘",
+            "썬더오브갓이라고 불러줘",
+            "나를 썬더오브갓이라고 불러",
+            "내 이름은 썬더오브갓이야",
+            "사용자의 canonical 호칭은 썬더오브갓이다",
+            "항상 짧게 답해줘",
+            "이제부터 이모지 쓰지 마",
+            "앞으로 한국어로 답해",
+            "from now on call me Thunder",
+            "my name is Thunder",
+            "always use pytest for tests",
+        ):
+            self.assertTrue(memory_write_intent(q), q)
+        # 회상 질문·일회성 지시·잡담은 사실 선언이 아니다 — 오탐이면 잡담이 영구 저장된다
+        for q in (
+            "내 이름이 뭐야?",
+            "앞으로 어떻게 진행할까?",
+            "이제부터 뭘 해야 하지?",
+            "이제부터 시작하자",
+            "call me when the build finishes",
+            "이 함수 뭐 하는 거야?",
+            "테스트 좀 돌려줘",
+        ):
+            self.assertFalse(memory_write_intent(q), q)
+        # 지속 지시라도 repo write 가 섞이면 write 분기 — 게이트 우선은 그대로
+        mixed = ch("앞으로 이 규칙 지켜서 config.py 수정해줘")
+        assert mixed is not None
+        self.assertTrue(mixed["write_expected"])
+
     def test_explicit_parallel_write_routes_through_deep_planning(self):
         from asgard.agent.heimdall import classify_heuristic as ch
 

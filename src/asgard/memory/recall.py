@@ -8,7 +8,7 @@ import re
 
 from .index import _db
 from .policy import _memory_settings, index_budget, inject_enabled, memory_dir, scan_threats
-from .store import PAGES, _desc, _kind, _pages, _read, _today, poisoned, slugify
+from .store import PAGES, _desc, _kind, _pages, _read, _today, poisoned, slot_query_aliases, slugify
 
 _SNAPSHOT_WARN = "- … (index over budget — asgard memory lint)"
 
@@ -171,6 +171,9 @@ def query(
         ending = next((e for e in endings if word.endswith(e) and len(word) > len(e) + 1), None)
         if ending:
             scan_words.append(word[: -len(ending)])
+    # 정체성 슬롯 동의어 — "내 이름이 뭐야"가 "사용자의 호칭은 …" 페이지를 찾게 한다.
+    # 승계(ingest)가 정본 어휘를 슬롯 안에서 갈아끼우므로 질의도 슬롯 단위로 넓힌다.
+    scan_words.extend(slot_query_aliases(text))
     scan_words = list(dict.fromkeys(scan_words))
 
     def _scan_score(meta: dict, body: str) -> tuple[list[str], int]:

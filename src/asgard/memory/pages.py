@@ -17,6 +17,7 @@ from .store import (
     KINDS,
     _atomic_write,
     _fm_value,
+    _identity_slot,
     _kind,
     _lock,
     _page_path,
@@ -103,8 +104,13 @@ def _add_unlocked(d: str, text: str, title: str, kind: str, links: str, force: b
 
 def plan_ingest(text: str, d: str | None = None) -> dict:
     """ingest 계획 — 실행 없이 판정만 (CLI 승인 게이트가 이 계획을 사람에게 보여준다).
-    후보 top-3 중 최대 containment ≥ MERGE_CONTAINMENT 면 merge, 아니면 create."""
+
+    ① 같은 정체성 슬롯(이름·호칭·생일…)을 쓰는 user 페이지가 있으면 유사도와 무관하게 그
+    페이지로 merge — 단일값 사실은 누적 대상이 아니다. ② 아니면 후보 top-3 중 최대
+    containment ≥ MERGE_CONTAINMENT 면 merge, ③ 그 외 create."""
     d = d or memory_dir()
+    if slot_plan := _plan_identity_slot(text, d):
+        return slot_plan
     best, best_sim = None, 0.0
     for hit in query(text, k=3, d=d, track=False):
         pg = _read(d, hit["slug"])
@@ -122,6 +128,38 @@ def plan_ingest(text: str, d: str | None = None) -> dict:
             "rev": _rev(d, best["slug"]),  # 승인 시점 페이지 리비전 — 실행 시 대조 (2차 리뷰 ⑤)
         }
     return {"action": "create", "slug": None, "title": None, "sim": round(best_sim, 2)}
+
+
+def _plan_identity_slot(text: str, d: str) -> dict | None:
+    """같은 슬롯을 이미 가진 user 페이지로의 merge 계획 — 없으면 None.
+
+    슬롯 보유 페이지가 여럿이면(과거 create 누수로 이미 쌓인 모순) 가장 오래된 쪽을 정본으로
+    삼고 나머지는 absorb 목록에 실어 같은 승인으로 접는다. 정본 선택은 created→slug 정렬이라
+    결정론이다 — 계획을 두 번 세워도 같은 대상이 나온다."""
+    slot = _identity_slot(text)
+    if not slot:
+        return None
+    holders = []
+    for slug in _pages(d):
+        pg = _read(d, slug)
+        if not pg or _kind(pg[0]) != "user":
+            continue
+        if any(_identity_slot(p) == slot for p in re.split(r"\n\s*\n", pg[1].strip())):
+            holders.append((str(pg[0].get("created", "")), slug, pg[0].get("title", "")))
+    if not holders:
+        return None
+    holders.sort()
+    _, slug, title = holders[0]
+    return {
+        "action": "merge",
+        "slug": slug,
+        "title": title,
+        "sim": 1.0,
+        "rev": _rev(d, slug),
+        "slot": slot,
+        # 흡수 대상도 승인 시점 리비전을 함께 봉인한다 — 승인과 실행 사이에 바뀐 페이지를 지우지 않는다
+        "absorb": [[s, _rev(d, s)] for _, s, _ in holders[1:]],
+    }
 
 
 def _rev(d: str, slug: str) -> str:
@@ -168,7 +206,9 @@ def _preference_parts(text: str) -> tuple[str, frozenset[str]] | None:
 
 
 def _update_user_preference(body: str, text: str) -> tuple[str, str]:
-    """동일 preference key만 갱신한다. 복합값 축소·다른 key는 보존한다."""
+    """동일 슬롯/preference key만 갱신한다. 복합값 축소·다른 key는 보존한다."""
+    if slot := _identity_slot(text):
+        return _supersede_slot(body, text, slot)
     incoming = _preference_parts(text)
     if incoming is None:
         return body.rstrip() + f"\n\n{_today()}: {text.strip()}", "merged"
@@ -190,6 +230,44 @@ def _update_user_preference(body: str, text: str) -> tuple[str, str]:
         paragraphs[first] = text.strip()
         return "\n\n".join(p for i, p in enumerate(paragraphs) if i not in remove), "updated"
     return body.rstrip() + f"\n\n{_today()}: {text.strip()}", "merged"
+
+
+def _supersede_slot(body: str, text: str, slot: str) -> tuple[str, str]:
+    """같은 슬롯 문단을 새 사실로 교체한다 (append 아님). 슬롯이 없던 페이지면 추가한다."""
+    fact = text.strip()
+    paragraphs = re.split(r"\n\s*\n", body.strip())
+    matches = [i for i, paragraph in enumerate(paragraphs) if _identity_slot(paragraph) == slot]
+    if not matches:
+        return body.rstrip() + f"\n\n{fact}", "merged"
+    first, drop = matches[0], set(matches[1:])
+    paragraphs[first] = fact
+    updated = "\n\n".join(p for i, p in enumerate(paragraphs) if i not in drop)
+    return (body, "unchanged") if updated.strip() == body.strip() else (updated, "updated")
+
+
+def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
+    """계획이 지목한 같은-슬롯 중복 페이지를 접는다 (호출자가 _lock 보유). 반환 = 접힌 slug.
+
+    승인 시점 리비전이 어긋난 페이지는 지우지 않고 남긴다 — 승인 범위 밖의 변경을 삭제로
+    덮는 것보다 모순 하나를 lint 로 넘기는 편이 낫다."""
+    absorbed: list[str] = []
+    for entry in plan.get("absorb") or []:
+        slug, rev = (list(entry) + [""])[:2] if isinstance(entry, (list, tuple)) else (entry, "")
+        if not (isinstance(slug, str) and valid_slug(slug) and os.path.exists(_page_path(d, slug))):
+            continue
+        if rev and rev != _rev(d, slug):
+            log_op(d, "ingest:absorb-skipped", str(slug), "changed since approval")
+            continue
+        os.remove(_page_path(d, slug))
+        with contextlib.suppress(Exception):
+            conn = _db(d)
+            with conn:
+                for table in ("fts", "usage", "vec"):
+                    conn.execute(f"DELETE FROM {table} WHERE slug = ?", (slug,))  # noqa: S608 — 테이블명은 리터럴
+            conn.close()
+        log_op(d, "ingest:absorbed", str(slug), f"slot={plan.get('slot')}")
+        absorbed.append(str(slug))
+    return absorbed
 
 
 def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict | None = None) -> tuple[str, str]:
@@ -222,16 +300,27 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
             slug = plan["slug"]
             meta, body = _read(d, slug) or ({}, "")
             # crash가 정본 쓰기 후 approval finish 전에 발생했다면 stale rev보다 idempotence가 우선이다.
-            if _fact_present(body, text):
-                log_op(d, "ingest:unchanged", slug)
-                return "unchanged", slug
+            known = _fact_present(body, text)
             # 승인된 plan 은 리비전까지 대조 (2차 리뷰 ⑤) — 승인과 실행 사이 대상이 바뀌었으면 중단
-            if approved and plan.get("rev") and plan["rev"] != _rev(d, slug):
+            if not known and approved and plan.get("rev") and plan["rev"] != _rev(d, slug):
                 raise ValueError(f"stale plan: page '{slug}' changed since approval — re-run ingest")
+            # 같은 슬롯 중복 접기는 정본 본문과 독립이다: 사실이 이미 있어도 모순 페이지는 남아 있다
+            absorbed = _absorb_slot_dups(d, plan)
+            if known:
+                if not absorbed:
+                    log_op(d, "ingest:unchanged", slug)
+                    return "unchanged", slug
+                write_index(d)
+                log_op(d, "ingest:updated", slug, f"absorbed={len(absorbed)}")
+                return "updated", slug
             meta["updated"] = _today()
             if kind == "user" and _kind(meta) == "user":
                 merged, action = _update_user_preference(body, text)
                 if action == "unchanged":
+                    if absorbed:
+                        write_index(d)
+                        log_op(d, "ingest:updated", slug, f"absorbed={len(absorbed)}")
+                        return "updated", slug
                     log_op(d, "ingest:unchanged", slug)
                     return action, slug
                 if action == "updated":

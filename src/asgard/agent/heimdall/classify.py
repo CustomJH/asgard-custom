@@ -95,14 +95,55 @@ _MEMORY_WRITE_PAT = re.compile(
     r"|don'?t\s+forget\b|\bmemorize\b",
     re.IGNORECASE,
 )
+# 지속형 사용자 사실 — "기억해" 라는 말 없이도 다음 세션까지 살아야 하는 선언. 26-07-26 실측:
+# "이제부터 썬더오브갓이라 불러라" 가 위 표 어디에도 없어 memory_save 도구가 열리지 않았고,
+# 모델이 셸아웃(asgard memory ingest)으로 우회하려다 read-only 레인에 막혀 "세션에서만 기억"
+# 으로 끝났다. 명시 명령만 잡는 축으로는 이 부류를 영원히 놓친다 — 축을 하나 더 세운다.
+#
+# 정밀도 장치 둘: ① 의문문은 전부 제외 (선언이 아니라 회상 질문이다), ② 지속 부사(이제부터·
+# 항상)만으로는 안 잡고 지시·선호 표지가 같이 있어야 한다 ("이제부터 시작하자" 는 사실이 아니다).
+_IDENTITY_DECL_PAT = re.compile(
+    r"(?:내|제|나의|저의|사용자|유저)\s*(?:의)?\s*(?:[^\s,.]{1,12}\s+)?"
+    r"(?:이름|성함|닉네임|별명|호칭)(?:\s*[/·,]\s*(?:이름|성함|닉네임|별명|호칭))*\s*(?:은|는|이|가)"
+    r"|(?:나|저)(?:를|는)\s+[^\s?]{1,20}\s*(?:이?라고?|이?라)\s*(?:불러|부르)"
+    r"|(?:이제부터|앞으로|앞으론|지금부터)\s+[^?]{1,30}?(?:이?라고?|이?라)\s*(?:불러|부르)"
+    r"|[^\s?]{1,20}\s*(?:이?라고?|이?라)\s*(?:불러|부르)(?:줘|라|주세요|세요|주라)"
+    r"|\bmy\s+name\s+is\b"
+    r"|\bcall\s+me\b(?!\s+(?:when|if|back|after|before|at|on|in|later|tomorrow|asap|once))",
+    re.IGNORECASE,
+)
+_STANDING_PAT = re.compile(
+    r"(?:이제부터|앞으로|앞으론|지금부터|항상|늘|언제나|매번|웬만하면|되도록)\s"
+    r"[^?]{0,60}?"
+    r"(?:하지\s*마|하지\s*말|쓰지\s*마|말고|금지|선호|좋아해|싫어해|불러|부르"
+    r"|(?:으로|로|게|처럼)\s*(?:해|답|써|쓰|말)|해\s*줘|해라|하라|하세요|해야|써\s*줘|사용해|유지해)"
+    r"|(?:^|[.!?]\s)(?:from\s+now\s+on|going\s+forward)\b"
+    r"|\balways\s+(?:use|call|write|answer|respond|reply|prefer|include|avoid|keep)\b"
+    r"|\bnever\s+(?:use|call|write|include|mention|do)\b"
+    r"|\bi\s+(?:prefer|always\s+use)\b",
+    re.IGNORECASE,
+)
+# 회상 질문 배제 — "내 이름이 뭐야?" 는 _IDENTITY_DECL_PAT 의 주어부를 그대로 만족한다.
+_RECALL_QUESTION_PAT = re.compile(
+    r"\?\s*$|뭐(?:야|지|니|예요|에요|였)|뭔(?:가|지|데)|무엇|어떻게\s*(?:되|돼)|맞(?:아|나|지)|인가요|일까",
+)
 
 
 def memory_write_intent(request: str) -> bool:
-    """사용자의 명시적 기억 지시 여부 — 분류 소스(휴리스틱/LLM/폴백)와 무관한 결정론 판정.
+    """저장해야 할 사용자 사실 여부 — 분류 소스(휴리스틱/LLM/폴백)와 무관한 결정론 판정.
+
+    두 축의 합집합이다. ① 명시적 기억 명령("기억해줘"), ② 명령 없이도 지속되는 사용자 사실
+    선언(호칭·정체성·지속 지시). ②가 없으면 사용자는 매번 "기억해"를 붙여야 하고, 붙이지
+    않은 지시는 조용히 세션과 함께 사라진다 (26-07-26 실측).
 
     이 판정이 곧 저장 동의다: ingest 의 ask-before-save 게이트는 모델 자의 저장을 막는 장치이고,
     사용자가 발화로 직접 지시한 저장은 그 발화가 승인이다 (core 의 memory_save 계약이 소비)."""
-    return bool(_MEMORY_WRITE_PAT.search(" ".join(request.split())))
+    scan = " ".join(request.split())
+    if _MEMORY_WRITE_PAT.search(scan):
+        return True
+    if _RECALL_QUESTION_PAT.search(scan):
+        return False
+    return bool(_IDENTITY_DECL_PAT.search(scan) or _STANDING_PAT.search(scan))
 
 
 def has_write_verbs(request: str) -> bool:

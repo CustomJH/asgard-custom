@@ -158,6 +158,69 @@ def render_page(meta: dict, body: str) -> str:
     return f"---\n{fm}\n---\n\n{body.rstrip()}\n"
 
 
+# ── 단일값 정체성 슬롯 ────────────────────────────────────────────────────────
+# 사용자당 답이 하나뿐인 사실. 새 값은 옛 값 옆에 쌓이는 게 아니라
+# 옛 값을 대체한다. 26-07-26 실측: "이름=썬더오브갓"(07-21 13:27)과 "이름=번개썬더왕"(07-21
+# 14:05)이 containment 0.214 로 갈려 각자 페이지가 됐고, 회상이 둘을 0.016/0.016 으로 나란히
+# 돌려주는 바람에 에이전트가 "어느 쪽입니까"밖에 답할 수 없게 됐다. 슬롯이 없으면 저장소는
+# 사용자가 마음을 바꿀 때마다 모순을 하나씩 늘린다.
+_SLOT_SUBJECT = r"(?:사용자|유저|오딘|나|내|저|제|the\s+user|user|my)"
+_IDENTITY_SLOTS = (
+    ("name", r"이름|성함|닉네임|별명|호칭|name|nickname"),
+    ("birthday", r"생일|생년월일|birth\s*day|date\s+of\s+birth"),
+    ("timezone", r"타임존|시간대|time\s*zone"),
+    ("email", r"이메일|메일\s*주소|e-?mail"),
+    ("language", r"모국어|주\s*사용\s*언어|native\s+language"),
+)
+# 주어부에 붙은 슬롯어만 인정한다 — 본문 아무 데나 "이름"이 나온다고 정체성 사실은 아니다
+# ("helios-fe 의 번역 키 이름 규칙은…"). 주어와 슬롯어 사이는 수식어 한 뭉치까지만 허용.
+_SLOT_PATTERNS = tuple(
+    (
+        slot,
+        re.compile(
+            # "사용자의 canonical 이름/호칭은" — 수식어 한 뭉치와 슬래시로 이어붙인 슬롯어를 함께 허용
+            rf"^{_SLOT_SUBJECT}\s*(?:의)?\s*(?:[^\s,.]{{1,12}}\s+)?"
+            rf"(?:{words})(?:\s*[/·,]\s*(?:{words}))*\s*(?:은|는|이|가|:|\s+is\b)",
+            re.IGNORECASE,
+        ),
+    )
+    for slot, words in _IDENTITY_SLOTS
+)
+# "…라고 불러" 계열 — 주어(나를…)·지속 부사(이제부터…)·맨 명령형(…라고 불러줘) 셋 다 호칭 선언이다
+_CALL_ME_PAT = re.compile(
+    rf"^{_SLOT_SUBJECT}\s*(?:를|을|는|은)?\s*.{{0,30}}?(?:이?라고?\s*(?:불러|부르)|call\s+me)"
+    r"|(?:이제부터|앞으로|앞으론|지금부터)\s+[^?]{1,30}?(?:이?라고?|이?라)\s*(?:불러|부르)"
+    r"|[^\s?]{1,20}\s*(?:이?라고?|이?라)\s*(?:불러|부르)(?:줘|라|주세요|세요|주라)"
+    # "call me back/when done" 은 호칭 선언이 아니다 — 시간·조건 꼬리를 배제한다
+    r"|\bcall\s+me\b(?!\s+(?:when|if|back|after|before|at|on|in|later|tomorrow|asap|once))",
+    re.IGNORECASE,
+)
+
+
+def _identity_slot(text: str) -> str | None:
+    """단일값 정체성 슬롯 이름 — 해당 없으면 None. 날짜 prefix 병합분도 같은 문장으로 본다."""
+    statement = re.sub(r"^\d{4}-\d{2}-\d{2}(?:\s*\([^)]*\))?:\s*", "", text.strip())
+    for slot, pattern in _SLOT_PATTERNS:
+        if pattern.search(statement):
+            return slot
+    return "name" if _CALL_ME_PAT.search(statement) else None
+
+
+def slot_query_aliases(text: str) -> list[str]:
+    """질의어에 슬롯 낱말이 있으면 그 슬롯의 동의어 전부 — 없으면 빈 리스트.
+
+    승계는 정본의 어휘를 바꾼다("이름은 X" → "호칭은 X"). lexical 경로는 동의어를 모르므로
+    그 순간 "내 이름이 뭐야"가 회수에 실패한다. 색인이 아니라 질의를 넓히는 이유: FTS 행은
+    파생물이라 회수 경로가 정본으로 재검증하고(recall.query), 정본에 없는 낱말은 거기서 탈락한다."""
+    lowered = text.lower()
+    for _slot, words in _IDENTITY_SLOTS:
+        # 슬롯 표는 정규식이다 — 메타문자 없는 순수 낱말만 질의어로 쓴다
+        plain: list[str] = [w for w in words.split("|") if re.fullmatch(r"\w+", w)]
+        if any(w in lowered for w in plain):
+            return plain
+    return []
+
+
 def slugify(title: str) -> str:
     """유니코드(한국어) 보존 슬러그 — 공백→하이픈, 경로 위험 문자 제거. 빈 결과는 해시."""
     s = re.sub(r"[\s]+", "-", title.strip().lower())

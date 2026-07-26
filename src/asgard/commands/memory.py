@@ -263,7 +263,11 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
         else:
             plan = memory.plan_ingest(text)
         if plan["action"] == "merge":
-            ui.step(f"plan: merge into '{plan['title']}' ({plan['slug']}, sim={plan['sim']})")
+            why = f"slot={plan['slot']}" if plan.get("slot") else f"sim={plan['sim']}"
+            ui.step(f"plan: merge into '{plan['title']}' ({plan['slug']}, {why})")
+            # 흡수는 페이지 삭제다 — 승인 전에 반드시 눈에 보여야 한다
+            for slug, _rev in plan.get("absorb") or []:
+                ui.warn(f"plan: absorb (delete) contradicting page — {slug}")
         else:
             ui.step("plan: create new page")
         if not yes:

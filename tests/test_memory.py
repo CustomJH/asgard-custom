@@ -648,6 +648,86 @@ class TestIngestSelfLearning(MemoryBase):
         self.assertIn("Python", page[1])
         self.assertIn("Rust", page[1])
 
+    def test_identity_slot_supersedes_instead_of_accumulating(self):
+        """실측 회귀 (26-07-26): 이름 사실 두 개가 containment 0.214 로 갈려 각자 페이지가 됐고,
+        회상이 둘을 나란히 돌려주는 바람에 에이전트가 "어느 쪽입니까"밖에 답할 수 없었다."""
+        first = memory.ingest("사용자 이름은 썬더오브갓", kind="user")
+        self.assertEqual(first[0], "created")
+
+        second = memory.ingest("사용자의 닉네임/이름은 번개썬더왕", kind="user")
+
+        self.assertEqual(second, ("updated", first[1]))  # 새 페이지가 아니라 같은 슬롯 승계
+        self.assertEqual(memory._pages(self.d), [first[1]])
+        page = memory._read(self.d, first[1])
+        assert page is not None
+        self.assertNotIn("썬더오브갓", page[0].get("title", "") + page[1])
+        self.assertIn("번개썬더왕", page[0].get("title", "") + page[1])
+
+    def test_identity_slot_plan_absorbs_existing_contradiction(self):
+        """이미 쌓인 모순(구버전이 만든 두 장)은 다음 ingest 가 승인과 함께 접는다."""
+        memory.add("사용자 이름은 썬더오브갓", kind="user", title="사용자 이름은 썬더오브갓")
+        memory.add("사용자의 닉네임은 번개썬더왕", kind="user", title="사용자의 닉네임은 번개썬더왕")
+
+        plan = memory.plan_ingest("사용자의 호칭은 천둥신이다")
+        self.assertEqual(plan["action"], "merge")
+        self.assertEqual(plan["slot"], "name")
+        self.assertEqual([slug for slug, _rev in plan["absorb"]], ["사용자의-닉네임은-번개썬더왕"])
+
+        action, slug = memory.ingest("사용자의 호칭은 천둥신이다", kind="user", plan=plan)
+
+        self.assertEqual((action, slug), ("updated", "사용자-이름은-썬더오브갓"))
+        self.assertEqual(memory._pages(self.d), ["사용자-이름은-썬더오브갓"])
+        page = memory._read(self.d, slug)
+        assert page is not None
+        self.assertNotIn("번개썬더왕", page[1])
+        self.assertNotIn("썬더오브갓", page[1])
+
+    def test_identity_slot_absorb_skips_page_changed_since_approval(self):
+        """흡수는 삭제다 — 승인 범위 밖으로 바뀐 페이지는 지우지 않고 lint 로 넘긴다."""
+        memory.add("사용자 이름은 썬더오브갓", kind="user", title="사용자 이름은 썬더오브갓")
+        memory.add("사용자의 닉네임은 번개썬더왕", kind="user", title="사용자의 닉네임은 번개썬더왕")
+        plan = memory.plan_ingest("사용자의 호칭은 천둥신이다")
+        # 승인 후 흡수 대상만 바뀐 상황 (정본은 그대로) — 외부 편집으로 재현
+        victim = memory._page_path(self.d, "사용자의-닉네임은-번개썬더왕")
+        meta, _body = memory._read(self.d, "사용자의-닉네임은-번개썬더왕")
+        memory._atomic_write(victim, memory.render_page(meta, "사용자의 닉네임은 번개주먹왕"))
+
+        memory.ingest("사용자의 호칭은 천둥신이다", kind="user", plan=plan)
+
+        self.assertIn("사용자의-닉네임은-번개썬더왕", memory._pages(self.d))
+        log = open(os.path.join(self.d, memory.LOG), encoding="utf-8").read()
+        self.assertIn("[ingest:absorb-skipped]", log)
+
+    def test_distinct_identity_slots_coexist(self):
+        """이름·생일·타임존은 서로 다른 슬롯 — 승계가 남의 사실을 지우면 안 된다."""
+        _, slug = memory.ingest("사용자 이름은 썬더오브갓", kind="user")
+        memory.ingest("사용자 생일은 3월 3일이다", kind="user")
+        memory.ingest("사용자 타임존은 KST 이다", kind="user")
+        memory.ingest("사용자의 호칭은 천둥신이다", kind="user")
+
+        bodies = "\n".join(memory._read(self.d, s)[1] for s in memory._pages(self.d))
+        self.assertIn("천둥신", bodies)
+        self.assertNotIn("썬더오브갓", bodies)
+        self.assertIn("3월 3일", bodies)
+        self.assertIn("KST", bodies)
+
+    def test_non_identity_user_facts_are_not_slotted(self):
+        """슬롯 오탐 방지 — 주어부 밖의 '이름'은 정체성 사실이 아니다."""
+        _, first = memory.ingest("사용자는 파이썬을 선호한다", kind="user")
+        action, second = memory.ingest("변수 이름은 snake_case 로 쓴다", kind="user")
+
+        self.assertEqual(action, "created")
+        self.assertNotEqual(first, second)
+
+    def test_slot_synonym_survives_supersede_in_recall(self):
+        """승계는 정본 어휘를 바꾼다("이름"→"호칭") — 그래도 "내 이름"으로 회수돼야 한다."""
+        memory.ingest("사용자 이름은 썬더오브갓", kind="user")
+        memory.ingest("사용자의 호칭은 천둥신이다", kind="user")
+
+        for question in ("내 이름이 뭐야", "닉네임", "별명"):
+            hits = memory.query(question, k=3, track=False)
+            self.assertEqual([h["slug"] for h in hits], ["사용자-이름은-썬더오브갓"], question)
+
     def test_dissimilar_creates_new(self):
         _, s1 = memory.ingest("Lagom ultra 모드는 CUS-218에서 제거됐다.")
         a2, s2 = memory.ingest("커밋 메시지에 Co-Authored-By 푸터를 달지 않는다.")
