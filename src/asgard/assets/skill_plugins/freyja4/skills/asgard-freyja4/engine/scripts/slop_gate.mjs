@@ -75,6 +75,53 @@ const contrastRatio = (a, b) => {
 // nothing and makes a colour gate silently skip. Always extract with this.
 const COLOR_TOKEN = /#[0-9a-f]{3,8}\b|(?:oklch|oklab|rgba?|hsla?|lab|lch)\([^()]*\)|\b(?:black|white|red|blue|green|gray|grey|silver|navy|teal)\b/i;
 
+/**
+ * Alpha the value actually paints with. 1 is opaque; anything less composites
+ * over a backdrop this judge cannot see. `color-mix(in oklab, var(--accent) 8%,
+ * transparent)` is an 8 % tint, not the accent — reading its first colour literal
+ * at full strength turns a legible dark-surface chip into a contrast failure.
+ */
+function paintAlpha(value) {
+  const s = String(value).trim().toLowerCase();
+  const mix = s.match(/color-mix\([^,]*,(.+)\)$/s);
+  if (mix) {
+    const parts = mix[1].split(",").map((p) => p.trim());
+    if (parts.length === 2) {
+      const idx = parts.findIndex((p) => /^transparent\b/.test(p));
+      if (idx >= 0) {
+        // The mix percentage sits outside the colour's own parens. Drop those
+        // first or `oklch(72% 0.09 80) 8%` reads its lightness as the weight.
+        const weight = (p) => {
+          const m2 = p.replace(/\([^()]*\)/g, " ").match(/([\d.]+)\s*%/);
+          return m2 ? Number(m2[1]) / 100 : null;
+        };
+        const pct = weight(parts[1 - idx]);
+        if (pct !== null) return pct;
+        const own = weight(parts[idx]);
+        if (own !== null) return 1 - own;
+        return 0.5;
+      }
+    }
+    return 1;
+  }
+  if (/^transparent$/.test(s)) return 0;
+  let m = s.match(/^#([0-9a-f]{8})$/);
+  if (m) return parseInt(m[1].slice(6), 16) / 255;
+  m = s.match(/^#([0-9a-f]{4})$/);
+  if (m) return parseInt(m[1][3] + m[1][3], 16) / 255;
+  m = s.match(/^(?:rgba?|hsla?)\(([^)]*)\)$/);
+  if (m) {
+    // Four components means the last one is alpha; three means opaque. Counting
+    // beats a trailing-number match, which reads rgb(12,10,7) as alpha 7.
+    const parts = m[1].split(/[\s,/]+/).filter(Boolean);
+    if (parts.length !== 4) return 1;
+    return parts[3].endsWith("%") ? Number(parts[3].slice(0, -1)) / 100 : Number(parts[3]);
+  }
+  m = s.match(/^(?:oklch|oklab|lab|lch)\([^)]*\/\s*([\d.]+%?)\s*\)$/);
+  if (m) return m[1].endsWith("%") ? Number(m[1].slice(0, -1)) / 100 : Number(m[1]);
+  return 1;
+}
+
 /** First colour literal in a declaration value, parsed. Null when there is none. */
 function firstColor(value) {
   const m = String(value).match(COLOR_TOKEN);
@@ -429,6 +476,32 @@ function judge(bundle, genre) {
     return parts.length ? parts[parts.length - 1] : "";
   };
   const classesOf = (s) => new Set((normSelector(s).match(/\.[\w-]+/g) || []));
+  const contextOf = (s) => {
+    const parts = normSelector(s).split(/[\s>+~]+/).filter(Boolean);
+    return parts.slice(0, -1).join(" ");
+  };
+  const compoundTag = (c) => (c.match(/^[a-z][\w-]*/i) || [""])[0];
+  const compoundId = (c) => (c.match(/#[\w-]+/) || [""])[0];
+  const compoundClasses = (c) => new Set(c.match(/\.[\w-]+/g) || []);
+  /* Not every state is a pseudo-class. `.chip` / `.chip.on`, `.row` / `.row.is-open`,
+     `#tip` / `#tip.pinned` are one element too — the state rides on a class the
+     subject compound gains, so the strings differ where the element does not.
+     Compare the compounds structurally: the tag and the id have to agree, and a
+     class only has to overlap. The ancestor context below is what still keeps
+     `.zoombar button` and `.modebar button` apart; `.rk` and `.rn` never merge
+     here because their subject classes do not overlap. */
+  const sameSubject = (a, b) => {
+    if (a === b) return true;
+    if (compoundTag(a) !== compoundTag(b)) return false;
+    const ia = compoundId(a);
+    const ib = compoundId(b);
+    if (!ia !== !ib) return false;
+    if (ia && ib && ia !== ib) return false;
+    const ca = compoundClasses(a);
+    const cb = compoundClasses(b);
+    if (ca.size && cb.size) return [...ca].some((c) => cb.has(c));
+    return ca.size !== cb.size; // one side simply adds the state class
+  };
   /** Do two selectors address the same element in different states? */
   const sameElement = (a, b) => {
     for (const sa of a.split(",")) {
@@ -437,11 +510,15 @@ function judge(bundle, genre) {
         const nb = normSelector(sb);
         if (!na || !nb) continue;
         if (na === nb) return true;
-        if (subjectOf(sa) && subjectOf(sa) === subjectOf(sb)) {
-          const ca = classesOf(sa);
-          const cb = classesOf(sb);
-          if ([...ca].some((c) => cb.has(c))) return true;
-          if (!ca.size && !cb.size) return true;
+        if (subjectOf(sa) && sameSubject(subjectOf(sa), subjectOf(sb))) {
+          // The subjects match; the ancestor context decides. A bare `.chip` rule
+          // also paints `.legend .chip`, so an empty context matches anything —
+          // but two different non-empty contexts are two different elements
+          // unless they share a class somewhere in the chain.
+          const ctxA = contextOf(sa);
+          const ctxB = contextOf(sb);
+          if (!ctxA || !ctxB || ctxA === ctxB) return true;
+          if ([...classesOf(sa)].some((c) => classesOf(sb).has(c))) return true;
         }
       }
     }
@@ -788,6 +865,21 @@ function judge(bundle, genre) {
   /* 41 — the contrast failures that ship most often */
   {
     const f = [];
+    const notes = [];
+    // A translucent fill is not the colour it names. The rendered surface is that
+    // colour composited over whatever sits behind it, and a source-only judge has
+    // no backdrop — so say the ratio went unjudged instead of inventing one from
+    // the literal at full strength. 0.9 keeps near-opaque scrims in scope.
+    const OPAQUE_ENOUGH = 0.9;
+    const translucent = (r, d, v) => {
+      const a = paintAlpha(v);
+      if (a >= OPAQUE_ENOUGH) return false;
+      const note =
+        `${at(r, d)}  ${r.selector.trim().slice(0, 44)} — fill is ${Math.round(a * 100)}% opaque; ` +
+        "the rendered ratio depends on the backdrop, so it is not judged here";
+      if (!notes.includes(note)) notes.push(note);
+      return true;
+    };
     for (const r of rules) {
       if (isTokenBlock(r.selector)) continue;
       const cd = r.decls.filter((d) => d.prop === "color").pop();
@@ -796,6 +888,7 @@ function judge(bundle, genre) {
       const cv = tokens.resolve(cd.value).trim();
       const bvFull = tokens.resolve(bd.value).trim();
       if (/gradient|url\(/i.test(bvFull)) continue;
+      if (translucent(r, bd, bvFull)) continue;
       const fg = firstColor(cv);
       const bg = firstColor(bvFull);
       if (!fg || !bg) continue;
@@ -822,7 +915,6 @@ function judge(bundle, genre) {
     // it. Fail on the substance — an accent fill that inherits its ink, or one
     // whose ink misses 4.5:1. When another named token already clears it, say so
     // in a note rather than failing on the name alone; nothing is dropped silently.
-    const notes = [];
     const accentInk = tokens.resolved.get("--color-accent-ink");
     const accentVal = tokens.resolved.get("--color-accent");
     const accentRgb = accentVal ? firstColor(accentVal)?.rgb : null;
@@ -831,6 +923,9 @@ function judge(bundle, genre) {
       const bd = r.decls.filter((d) => /^background(-color)?$/.test(d.prop)).pop();
       if (!bd || !/var\(--color-accent\)/.test(bd.value)) continue;
       if (!carriesText(r)) continue; // decorative accent chip / bar — no ink to judge
+      // An accent *tint* is not an accent fill — `color-mix(accent 8%, transparent)`
+      // renders as the page beneath it, so --color-accent-ink does not apply.
+      if (translucent(r, bd, tokens.resolve(bd.value).trim())) continue;
       let cd = r.decls.filter((d) => d.prop === "color").pop();
       if (!cd) {
         // Inherit the colour this element carries in its BASE state. A sibling
@@ -1030,7 +1125,10 @@ function judge(bundle, genre) {
     for (const r of rules) for (const d of r.decls) changed.add(d.prop);
     for (const { r, d } of decls) {
       if (d.prop !== "transition" && d.prop !== "transition-property") continue;
-      const v = tokens.resolve(d.value);
+      // `transition: none!important` is the reduced-motion kill switch, not a
+      // transition. Strip the flag before splitting or the property list reads
+      // "none!important", which is not the literal "none" the filter below drops.
+      const v = tokens.resolve(d.value).replace(/!\s*important/gi, " ").trim();
       const props = (d.prop === "transition"
         ? v.split(",").map((p) => p.trim().split(/\s+/)[0])
         : v.split(",").map((p) => p.trim())).filter((p) => p && p !== "none" && !/^[\d.]/.test(p));
