@@ -52,6 +52,84 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("asgard skills resolve --agent mimir task"))
         self.assertFalse(is_readonly_bash_safe("asgard skills show ../escape"))
 
+    def test_readonly_allows_chained_observation(self):
+        # 26-07-26 helios 실측: 허용 읽기끼리의 연결이 통째로 차단돼 차단 39건의 최다 사유였다.
+        # 세그먼트마다 독립 판정하므로 연결은 새 권한을 만들지 않는다.
+        self.assertTrue(is_readonly_bash_safe("ls && ls src"))
+        self.assertTrue(is_readonly_bash_safe("ls; ls src"))
+        self.assertTrue(is_readonly_bash_safe("git status --porcelain && echo marker && git diff"))
+        self.assertTrue(is_readonly_bash_safe("ls src ||  ls ."))
+        self.assertTrue(is_readonly_bash_safe("ls;"))
+        self.assertTrue(is_readonly_bash_safe("find . -name '*.py' 2>/dev/null | head -20"))
+        # 모노레포의 기본 관측 형태 — `cd sub && <읽기>`
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, "sub"))
+            self.assertTrue(is_readonly_bash_safe("cd sub && ls -la", root))
+            self.assertTrue(is_readonly_bash_safe("cd sub; grep -rn x .", root))
+            self.assertFalse(is_readonly_bash_safe("cd /etc && ls", root))  # 경로 이탈은 그대로 차단
+            self.assertFalse(is_readonly_bash_safe("cd sub && rm -rf .", root))
+        self.assertTrue(is_readonly_bash_safe('python3 -c "print(1)" < /dev/null'))
+        self.assertTrue(is_readonly_bash_safe("cat x 2>&1 | head -3"))
+        self.assertTrue(
+            is_readonly_bash_safe("echo '{}' | python3 .claude/hooks/quest-log.py append --event work 2>&1 | head -5")
+        )
+        # 연결이 열려도 각 세그먼트 판정은 그대로 — 하나라도 쓰기면 전체 차단
+        self.assertFalse(is_readonly_bash_safe("ls && rm -rf src"))
+        self.assertFalse(is_readonly_bash_safe("ls; echo x > out.txt"))
+        self.assertFalse(is_readonly_bash_safe("ls & sleep 5"))
+        self.assertFalse(is_readonly_bash_safe("cat x > /etc/passwd"))
+        self.assertFalse(is_readonly_bash_safe("ls && cat /etc/passwd"))
+
+    def test_quest_bookkeeping_survives_host_path_and_trailing_line(self):
+        # 26-07-26 실측: Worker 가 quest 를 열지 못해 같은 명령을 형태만 바꿔 5회 재시도했다 —
+        # ① 호스트가 넘긴 절대경로 형태 ② 관측 뒤에 붙은 `\necho "EXIT:$?"` 한 줄.
+        with tempfile.TemporaryDirectory() as root:
+            os.makedirs(os.path.join(root, ".claude", "hooks"))
+            absolute = os.path.join(root, ".claude", "hooks", "quest-log.py")
+            self.assertTrue(is_readonly_bash_safe(f'python3 {absolute} open q1 --criteria "x"', root))
+            self.assertTrue(
+                is_readonly_bash_safe('python3 .claude/hooks/quest-log.py open q1 --criteria "a"\necho "EXIT:$?"', root)
+            )
+            # 프로젝트 밖 같은 이름의 스크립트는 신뢰 대상이 아니다
+            self.assertFalse(is_readonly_bash_safe("python3 /etc/hooks/quest-log.py open q1", root))
+            # 줄바꿈이 구분자가 되어도 히어독과 쓰기 세그먼트는 그대로 막힌다
+            self.assertFalse(is_readonly_bash_safe("cat <<EOF\nx\nEOF", root))
+            self.assertFalse(is_readonly_bash_safe("ls\nrm -rf src", root))
+            self.assertFalse(is_readonly_bash_safe("python3 -c \"import os\nos.remove('x')\"", root))
+
+    def test_readonly_stream_editors(self):
+        # sed/awk 는 -i 없이는 stdout 전용 관측이다. 스크립트 인자를 경로로 오독해 `/` 로 시작하는
+        # 정규식이 차단됐던 것도 함께 봉합 (26-07-26 실측).
+        self.assertTrue(is_readonly_bash_safe("sed -n '1,5p' README.md"))
+        self.assertTrue(is_readonly_bash_safe("sed -n '/error/p' README.md"))
+        self.assertTrue(is_readonly_bash_safe("awk '/^\\.dark \\{/,0' app.css"))
+        self.assertTrue(is_readonly_bash_safe("awk -v n=1 '{print $1}' README.md"))
+        self.assertFalse(is_readonly_bash_safe("sed -i 's/a/b/' README.md"))
+        self.assertFalse(is_readonly_bash_safe("sed -i.bak 's/a/b/' README.md"))
+        self.assertFalse(is_readonly_bash_safe("sed '1w /tmp/leak' README.md"))  # w = 파일 쓰기
+        self.assertFalse(is_readonly_bash_safe("sed '1r /etc/passwd' README.md"))  # r = 경로 검사 우회
+        self.assertFalse(is_readonly_bash_safe("sed -f script.sed README.md"))  # 스크립트 파일 = 판정 불가
+        self.assertFalse(is_readonly_bash_safe("awk '{print > \"out.txt\"}' README.md"))
+        self.assertFalse(is_readonly_bash_safe("awk '{system(\"rm x\")}' README.md"))
+        self.assertFalse(is_readonly_bash_safe("awk '{getline x < \"/etc/passwd\"; print x}' README.md"))
+        self.assertFalse(is_readonly_bash_safe("sed -n '1,5p' /etc/passwd"))
+        self.assertFalse(is_readonly_bash_safe("awk '{print}' /etc/passwd"))
+
+    def test_readonly_node_and_unit_workspace(self):
+        import tempfile
+
+        # 다중 테스트 경로 = pytest 다중 인자와 동형
+        self.assertTrue(is_readonly_bash_safe("node --test tests/a.check.mjs tests/b.check.mjs"))
+        self.assertFalse(is_readonly_bash_safe("node --test tests/a.check.mjs scripts/build.mjs"))
+        self.assertFalse(is_readonly_bash_safe("node scripts/build.mjs"))
+        # 하네스가 만든 격리 배정 작업공간은 프로젝트 밖이지만 하네스 소유 — 관측을 막지 않는다
+        workspace = os.path.join(tempfile.gettempdir(), "asgard-unit-u1-abcdef", "tests", "a.check.mjs")
+        with tempfile.TemporaryDirectory() as root:
+            self.assertTrue(is_readonly_bash_safe(f"node --test {workspace}", root))
+            self.assertTrue(is_readonly_bash_safe(f"ls {os.path.dirname(workspace)}", root))
+            other = os.path.join(tempfile.gettempdir(), "not-a-unit-ws", "a.check.mjs")
+            self.assertFalse(is_readonly_bash_safe(f"node --test {other}", root))
+
     def test_readonly_python_smoke_lane(self):
         # Verifier 계약("대표 함수 호출 스모크")의 실행 통로 — 쓰기 없는 python -c 는 허용,
         # 쓰기·프로세스·네트워크 API 는 fail-closed (26-07-21: 차단 변형 재시도로 턴 소진 봉합)
