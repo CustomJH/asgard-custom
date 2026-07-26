@@ -26,31 +26,54 @@ _TEMPLATE = """<!doctype html>
 <link rel="icon" href="data:,">
 <title>Asgard Map — 관계 그래프</title>
 <style>
+  /* Freyja4 · designed-as-app · component: graph workbench — canvas stage + control rail
+   * genre: modern-minimal (developer tool) · theme: custom "Asgard night + gold"
+   * anchor hue: 40 (gold) · paper #0C0A07 · accent #C6A45E · display + body: system mono/sans
+   * design system: the :root block below is the source of truth — the canvas reads it too,
+   *   so a retune of a token moves the drawing with the DOM. No design.md (docs stay out of tree).
+   * states shipped: default · hover · focus-visible · active · disabled.
+   *   loading / error / success do not exist on this surface — it renders a local snapshot,
+   *   it does not submit anything. Claiming them would be a checklist, not a state.
+   * diversification: suspended. This is a product surface, not a page in rotation —
+   *   a future Freyja4 run must not re-roll its macrostructure.
+   */
   :root{
     --vault:#0C0A07; --surface:#14110C; --surface-2:#1B160E; --surface-3:#241C11;
+    --hairline:#E6D096;
     --line:rgba(230,208,150,.10); --line-strong:rgba(230,208,150,.20);
     --gold:#C6A45E; --gold-lit:#E8C87E; --warn:#D2933F;
     --ink:#E9E0CA; --dim:#9C9179;
+    /* 무대·부유 패널의 반투명 면 — 아래 캔버스가 비치는 곳은 전부 토큰으로 */
+    --scrim:rgba(12,10,7,.92); --scrim-strong:rgba(12,10,7,.94); --panel:rgba(20,17,12,.88);
+    --glow:rgba(198,164,94,.055); --grid-line:rgba(230,208,150,.028);
+    /* 4pt 리듬 — 계기판은 조밀하지만 임의값은 쓰지 않는다 */
+    --space-2xs:4px; --space-xs:8px; --space-sm:12px; --space-md:16px;
+    --space-lg:20px; --space-xl:24px; --space-pull:-8px;
+    /* 이름 있는 이징·지속 — 브라우저 기본 ease 는 쓰지 않는다 */
+    --ease-out:cubic-bezier(.22,1,.36,1); --dur-quick:120ms; --dur-short:160ms;
     --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,"Cascadia Code",Consolas,monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI",Roboto,sans-serif;
   }
   *{box-sizing:border-box;margin:0}
-  html{color-scheme:dark;-webkit-text-size-adjust:100%}
+  html{color-scheme:dark;-webkit-text-size-adjust:100%;overflow-x:clip}
   body{background:var(--vault);color:var(--ink);font:14px/1.55 var(--sans);
-       height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr);overflow:hidden}
+       height:100vh;display:grid;grid-template-rows:auto minmax(0,1fr);
+       overflow-x:clip;overflow-y:hidden}
   button{font:inherit;color:inherit;cursor:pointer}
-  .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;
+  .sr{position:absolute;width:1px;height:1px;padding:0;margin:0;overflow:hidden;
       clip:rect(0,0,0,0);white-space:nowrap;border:0}
   input:focus-visible,select:focus-visible,button:focus-visible{outline:2px solid var(--gold);outline-offset:1px}
 
   /* ── 헤더 — 브랜드 로고 + 카운트 계기 ── */
-  header{display:flex;justify-content:space-between;align-items:center;gap:8px 22px;flex-wrap:wrap;
-         padding:10px 18px;border-bottom:1px solid var(--line);background:var(--surface)}
-  .brand{display:flex;align-items:center;gap:11px;min-width:0}
+  header{display:flex;justify-content:space-between;align-items:center;
+         gap:var(--space-xs) var(--space-lg);flex-wrap:wrap;
+         padding:var(--space-sm) var(--space-lg);border-bottom:1px solid var(--line);background:var(--surface)}
+  .brand{display:flex;align-items:center;gap:var(--space-sm);min-width:0}
   .mark{color:var(--gold);flex:none}
   img.mark{height:42px;width:auto;display:block}
-  h1{font:600 14.5px var(--mono);letter-spacing:.3em;color:var(--gold-lit)}
-  .sub{font-size:12.5px;color:var(--dim);margin-top:1px}
+  h1{font:600 14.5px var(--mono);letter-spacing:.3em;color:var(--gold-lit);
+     overflow-wrap:anywhere;min-width:0}
+  .sub{font-size:12.5px;color:var(--dim)}
   /* 카운트 계기 — 큰 tabular 수치 + 미세 라벨(관측소 게이지) */
   .stats{display:flex;gap:4px 20px;flex-wrap:wrap;align-items:baseline}
   .stats .g{display:flex;flex-direction:column;align-items:flex-end}
@@ -62,59 +85,70 @@ _TEMPLATE = """<!doctype html>
   main{display:grid;grid-template-columns:minmax(0,1fr) 360px;min-height:0}
 
   /* ── 무대 — 계기판 바닥(라디얼 글로우 + 24px 마이크로 그리드) ── */
+  /* 성좌(3차원)는 성운 헤이즈만 깐다 — 평면 그리드는 부피를 부정한다.
+     레인은 결정론 평면이라 그리드가 자리를 읽는 데 쓰인다(.flat 에서만 켠다). */
   #stage{position:relative;min-height:0;background:
-    radial-gradient(90% 75% at 50% 18%, rgba(198,164,94,.055), transparent 65%),
-    repeating-linear-gradient(0deg, rgba(230,208,150,.028) 0, rgba(230,208,150,.028) 1px, transparent 1px, transparent 24px),
-    repeating-linear-gradient(90deg, rgba(230,208,150,.028) 0, rgba(230,208,150,.028) 1px, transparent 1px, transparent 24px),
+    radial-gradient(120% 90% at 50% 40%, var(--glow), transparent 70%),
+    var(--vault)}
+  #stage.flat{background:
+    radial-gradient(90% 75% at 50% 18%, var(--glow), transparent 65%),
+    repeating-linear-gradient(0deg, var(--grid-line) 0, var(--grid-line) 1px, transparent 1px, transparent 24px),
+    repeating-linear-gradient(90deg, var(--grid-line) 0, var(--grid-line) 1px, transparent 1px, transparent 24px),
     var(--vault)}
   canvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
   canvas:focus-visible{outline:2px solid var(--gold);outline-offset:-2px}
-  .zoombar{position:absolute;top:12px;right:12px;display:flex;flex-direction:column;gap:6px;
-           background:rgba(12,10,7,.92);border-radius:10px;padding:4px}
+  .zoombar{position:absolute;top:var(--space-sm);right:var(--space-sm);display:flex;flex-direction:column;
+           gap:var(--space-xs);background:var(--scrim);border-radius:10px;padding:var(--space-2xs)}
   .zoombar button{width:44px;height:44px;display:flex;align-items:center;justify-content:center;padding:0;
-    background:rgba(20,17,12,.88);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
-    transition:border-color .15s ease,transform .12s ease}
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
+    transition:border-color var(--dur-short) var(--ease-out),transform var(--dur-quick) var(--ease-out)}
   .zoombar button:hover{border-color:var(--gold)}
   .zoombar button:active{transform:scale(.96)}
   /* 배치 모드 토글 — 성좌(물리) ⇄ 레인(계층 컬럼) */
-  .modebar{position:absolute;top:12px;left:12px;display:flex;background:rgba(20,17,12,.88);
+  .modebar{position:absolute;top:var(--space-sm);left:var(--space-sm);display:flex;background:var(--panel);
            border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
   .modebar button{border:0;background:none;color:var(--dim);font:11.5px var(--mono);
-                  letter-spacing:.06em;padding:0 15px;min-height:36px;transition:color .15s ease}
+                  letter-spacing:.06em;padding:0 var(--space-md);min-height:36px;
+                  transition:color var(--dur-short) var(--ease-out)}
   .modebar button+button{border-left:1px solid var(--line)}
   .modebar button[aria-pressed="true"]{color:var(--vault);background:var(--gold);font-weight:600}
   .modebar button[aria-pressed="false"]:hover{color:var(--gold-lit)}
-  .hint{position:absolute;left:14px;bottom:8px;font:10.5px var(--mono);color:var(--dim);
+  .hint{position:absolute;left:var(--space-md);bottom:var(--space-xs);font:10.5px var(--mono);color:var(--dim);
         pointer-events:none;max-width:72%}
   /* 표시 카운터 — 필터 결과가 침묵하지 않게 하는 상시 미니 게이지 */
-  .viscount{position:absolute;right:12px;bottom:8px;font:10.5px var(--mono);color:var(--dim);
+  .viscount{position:absolute;right:var(--space-sm);bottom:var(--space-xs);font:10.5px var(--mono);color:var(--dim);
             font-variant-numeric:tabular-nums;pointer-events:none}
   #visreset{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);z-index:4;
             background:var(--surface-2);border:1px solid var(--warn);border-radius:8px;
-            color:var(--ink);font:12.5px var(--mono);padding:12px 18px;min-height:44px}
+            color:var(--ink);font:12.5px var(--mono);padding:var(--space-sm) var(--space-lg);min-height:44px;
+            transition:border-color var(--dur-short) var(--ease-out)}
   #visreset:hover{border-color:var(--gold)}
-  #tip{position:absolute;left:0;top:0;z-index:5;pointer-events:none;background:rgba(12,10,7,.94);
-       border:1px solid var(--line-strong);border-radius:7px;padding:6px 9px;
+  #tip{position:absolute;left:0;top:0;z-index:5;pointer-events:none;background:var(--scrim-strong);
+       border:1px solid var(--line-strong);border-radius:7px;padding:var(--space-xs) var(--space-sm);
        font:11.5px var(--mono);max-width:260px;word-break:break-all}
-  #tip .k{color:var(--dim);font-size:10.5px;margin-top:1px}
+  #tip .k{color:var(--dim);font-size:10.5px}
 
   /* ── 조작반 ── */
   aside{border-left:1px solid var(--line);background:var(--surface);min-height:0;overflow-y:auto;
-        scrollbar-gutter:stable;padding:14px 16px 18px;display:flex;flex-direction:column;gap:12px}
+        scrollbar-gutter:stable;padding:var(--space-md) var(--space-md) var(--space-lg);
+        display:flex;flex-direction:column;gap:var(--space-sm)}
   input[type=search],select{width:100%;background:var(--surface-2);border:1px solid var(--line-strong);
-    border-radius:8px;color:var(--ink);font:12.5px var(--mono);padding:9px 11px;min-height:40px}
+    border-radius:8px;color:var(--ink);font:12.5px var(--mono);
+    padding:var(--space-xs) var(--space-sm);min-height:40px}
   input[type=search]::placeholder{color:var(--dim)}
-  .qhint{font:11.5px var(--mono);color:var(--dim);margin-top:-6px}
-  .sectitle{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin-bottom:6px}
+  .qhint{font:11.5px var(--mono);color:var(--dim);margin-top:var(--space-pull)}
+  .sectitle{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold);
+            margin-bottom:var(--space-xs)}
 
-  #detail{border-top:1px solid var(--line);padding-top:12px;font-size:12.5px}
+  #detail{border-top:1px solid var(--line);padding-top:var(--space-sm);font-size:12.5px}
   .d-empty{color:var(--dim)}
   .d-empty code{font-family:var(--mono);color:var(--ink)}
-  .d-kind{display:flex;align-items:center;gap:7px;font:11.5px var(--mono);color:var(--dim);margin-bottom:6px;flex-wrap:wrap}
+  .d-kind{display:flex;align-items:center;gap:var(--space-xs);font:11.5px var(--mono);color:var(--dim);
+          margin-bottom:var(--space-xs);flex-wrap:wrap}
   .d-kind i{width:9px;height:9px;border-radius:50%;flex:none}
   .d-deg{margin-left:auto;font-size:10.5px}
   .badge-cand{color:var(--warn);border:1px solid color-mix(in oklab,var(--warn) 45%,transparent);
-              border-radius:5px;padding:1px 7px;font-size:10.5px}
+              border-radius:5px;padding:0 var(--space-xs);font-size:10.5px;line-height:1.7}
   .d-id{font-family:var(--mono);font-size:14.5px;color:var(--gold-lit);word-break:break-all;
         user-select:all;margin-bottom:4px}
   .d-h{font:10.5px var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--gold);margin:12px 0 4px}
@@ -124,46 +158,50 @@ _TEMPLATE = """<!doctype html>
   .d-ev b{font:500 12px var(--mono);color:var(--ink)}
   .cand{color:var(--warn);font-weight:600}
   .d-det{color:var(--dim)}
-  .d-rec li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 8px;
-            padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .d-rec li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-2xs) var(--space-xs);
+            padding:var(--space-2xs) 0;border-bottom:1px solid var(--line);font-size:12.5px}
   .d-rec li:last-child{border-bottom:0}
   .d-rec .rt{color:var(--ink)}
-  .d-rec .rm{color:var(--warn);font:10.5px var(--mono);align-self:start;
-             border:1px solid color-mix(in oklab,var(--warn) 40%,transparent);border-radius:5px;padding:1px 6px}
+  .d-rec .rm{color:var(--warn);font:10.5px var(--mono);align-self:start;line-height:1.7;
+             border:1px solid color-mix(in oklab,var(--warn) 40%,transparent);border-radius:5px;
+             padding:0 var(--space-xs)}
   .d-rec .rf{grid-column:1/-1;color:var(--dim);font:11.5px var(--mono);word-break:break-all}
   .d-code{display:block;background:var(--surface-2);border:1px solid var(--line);border-radius:7px;
-          padding:8px 10px;font:11.5px var(--mono);color:var(--ink);word-break:break-all;user-select:all}
+          padding:var(--space-xs) var(--space-sm);font:11.5px var(--mono);color:var(--ink);
+          word-break:break-all;user-select:all}
   .d-rel{list-style:none}
   .d-rel li{border-bottom:1px solid var(--line)}
   .d-rel li:last-child{border-bottom:0}
-  .d-rel button{display:flex;align-items:center;gap:7px;width:100%;background:none;border:0;
-                padding:5px 0;text-align:left;font-size:12.5px;color:var(--ink);min-height:28px}
+  .d-rel button{display:flex;align-items:center;gap:var(--space-xs);width:100%;background:none;border:0;
+                padding:var(--space-2xs) 0;text-align:left;font-size:12.5px;color:var(--ink);min-height:28px}
   .d-rel i{width:8px;height:8px;border-radius:50%;flex:none}
   .d-rel .rk{font:10.5px var(--mono);color:var(--dim);flex:none}
   .d-rel .rn{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .d-rel button:hover .rn{color:var(--gold-lit)}
   .d-rel .rv{margin-left:auto;font:10.5px var(--mono);color:var(--dim);flex:none;max-width:38%;
              overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .d-rel .more{padding:5px 0;color:var(--dim);font:11.5px var(--mono)}
+  .d-rel .more{padding:var(--space-2xs) 0;color:var(--dim);font:11.5px var(--mono)}
   /* 체인 추적 — 상·하류 플로우 경로 */
-  .d-act{display:flex;gap:8px;margin:8px 0 2px}
+  .d-act{display:flex;gap:var(--space-xs);margin:var(--space-xs) 0 var(--space-2xs)}
   .d-act button{flex:1;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:7px;
-                padding:8px 10px;min-height:36px;font:11.5px var(--mono);color:var(--gold-lit);
-                transition:border-color .15s ease,background-color .15s ease}
+                padding:var(--space-xs) var(--space-sm);min-height:36px;font:11.5px var(--mono);color:var(--gold-lit);
+                transition:border-color var(--dur-short) var(--ease-out),background-color var(--dur-short) var(--ease-out)}
   .d-act button:hover{border-color:var(--gold)}
   .d-act button[aria-pressed="true"]{background:color-mix(in oklab,var(--gold) 13%,transparent);
                                      border-color:var(--gold)}
   .d-rel .dep{font:10.5px var(--mono);color:var(--gold);flex:none;min-width:20px}
   /* 검색 결과 — 순회 가능한 진입 리스트(수천 옵션 select 의 상위 동선) */
-  .results{max-height:224px;overflow-y:auto;margin-top:-6px}
-  .results button{padding:5px 6px;border-radius:6px}
+  .results{max-height:224px;overflow-y:auto;margin-top:var(--space-pull)}
+  .results button{padding:var(--space-2xs) var(--space-xs);border-radius:6px}
   .results li.act button{background:color-mix(in oklab,var(--gold) 10%,transparent)}
   .results .deg{margin-left:auto;color:var(--dim);font:10.5px var(--mono);flex:none}
 
-  .chips{display:flex;flex-wrap:wrap;gap:6px}
-  .chip{display:inline-flex;align-items:center;gap:6px;background:transparent;color:var(--dim);
-        border:1px solid var(--line-strong);border-radius:999px;padding:5px 11px;min-height:30px;
-        font:11.5px var(--mono);transition:border-color .15s ease,color .15s ease}
+  .chips{display:flex;flex-wrap:wrap;gap:var(--space-xs)}
+  .chip{display:inline-flex;align-items:center;gap:var(--space-xs);background:transparent;color:var(--dim);
+        border:1px solid var(--line-strong);border-radius:999px;
+        padding:var(--space-2xs) var(--space-sm);min-height:30px;
+        font:11.5px var(--mono);
+        transition:border-color var(--dur-short) var(--ease-out),color var(--dur-short) var(--ease-out)}
   .chip:disabled{opacity:.4;cursor:not-allowed}
   .chip:hover{border-color:var(--gold)}
   .chip.on{color:var(--ink);border-color:color-mix(in oklab,var(--gold) 55%,transparent);
@@ -171,38 +209,42 @@ _TEMPLATE = """<!doctype html>
   .chip i{width:8px;height:8px;border-radius:50%;flex:none;opacity:.35}
   .chip.on i{opacity:1}
   .chip .n{color:var(--dim);font-size:10.5px}
-  .subhint{font:10.5px var(--mono);color:var(--dim);margin-top:7px}
+  .subhint{font:10.5px var(--mono);color:var(--dim);margin-top:var(--space-xs)}
 
   /* 엣지 언어 — 범례가 곧 필터(클릭 토글) */
-  .ekl{list-style:none;display:grid;grid-template-columns:1fr 1fr;gap:2px 14px;
-       font:11.5px var(--mono);color:var(--dim)}
-  .ekl button{display:flex;align-items:center;gap:7px;min-height:26px;width:100%;
+  .ekl{list-style:none;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+       gap:var(--space-2xs) var(--space-md);font:11.5px var(--mono);color:var(--dim)}
+  .ekl button{display:flex;align-items:center;gap:var(--space-xs);min-height:26px;width:100%;
               background:none;border:0;padding:0;color:inherit;font:inherit;
-              transition:color .15s ease}
+              transition:color var(--dur-short) var(--ease-out)}
   .ekl button:hover{color:var(--ink)}
   .ekl button[aria-pressed="false"]{opacity:.35}
   .ekl button:disabled{opacity:.25;cursor:default}
   .ekl svg{flex:none}
   .ekl b{margin-left:auto;color:var(--ink);font-weight:500;font-variant-numeric:tabular-nums}
 
-  .foot{border-top:1px solid var(--line);padding-top:10px;color:var(--dim);font-size:11.5px;margin-top:auto}
+  .foot{border-top:1px solid var(--line);padding-top:var(--space-sm);color:var(--dim);
+        font-size:11.5px;margin-top:auto}
   .foot code{font-family:var(--mono);color:var(--ink)}
 
   @media (max-width:1080px){
     main{grid-template-columns:minmax(0,1fr) 300px}
-    aside{padding:12px 14px 16px}
+    aside{padding:var(--space-sm) var(--space-sm) var(--space-md)}
   }
   @media (max-width:720px){
-    body{display:block;height:auto;min-height:100vh;overflow:auto}
+    body{display:block;height:auto;min-height:100vh;overflow-x:clip;overflow-y:auto}
     main{display:block}
     #stage{height:58vh;min-height:340px}
     aside{border-left:0;border-top:1px solid var(--line-strong);overflow:visible}
-    .zoombar{top:auto;bottom:12px}
+    .zoombar{top:auto;bottom:var(--space-sm)}
+    /* 줌바가 아래로 내려오면 오른쪽 아래는 줌바 차지다 — 표시 카운터는 비는 왼쪽으로.
+       (힌트가 여기서 숨으므로 자리는 비어 있다) */
+    .viscount{right:auto;left:var(--space-md)}
     .hint{display:none}
     .stats b{font-size:15px}
-    .modebar button{min-height:42px;padding:0 17px}
+    .modebar button{min-height:42px;padding:0 var(--space-md)}
     input[type=search],select{min-height:44px;font-size:12.5px}
-    .chip{min-height:36px;padding:7px 13px}
+    .chip{min-height:36px;padding:var(--space-xs) var(--space-sm)}
   }
   @media (prefers-reduced-motion: reduce){
     *,*::before,*::after{transition:none!important;animation:none!important}
@@ -234,7 +276,7 @@ _TEMPLATE = """<!doctype html>
     <p class="viscount" id="viscount" aria-hidden="true"></p>
     <button type="button" id="visreset" hidden>필터로 모두 숨겨졌다 — 필터 초기화</button>
     <canvas id="c" tabindex="0" role="application" aria-describedby="hint"
-      aria-label="관계 그래프 캔버스 — 노드를 클릭하면 증거가 열린다. 화살표 키 이동, 더하기·빼기 줌, 0 전체 보기, v 배치 전환, t 체인 추적, Esc 해제. 캔버스 없이도 노드 선택 목록으로 탐색할 수 있다."></canvas>
+      aria-label="관계 그래프 캔버스 — 성좌는 3차원 공간이다. 노드를 클릭하면 증거가 열린다. 화살표 키로 궤도를 돌리고 Shift+화살표로 평면 이동, 더하기·빼기 줌, 0 전체 보기, v 배치 전환, t 체인 추적, Esc 해제. 캔버스 없이도 노드 선택 목록으로 탐색할 수 있다."></canvas>
     <div class="modebar" role="group" aria-label="배치 모드">
       <button type="button" id="modeStar" aria-pressed="true">성좌</button>
       <button type="button" id="modeLane" aria-pressed="false">레인</button>
@@ -244,7 +286,7 @@ _TEMPLATE = """<!doctype html>
       <button type="button" id="zoomOut" aria-label="축소"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
       <button type="button" id="zoomFit" aria-label="전체 보기"><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><circle cx="7.5" cy="7.5" r="4.2" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7.5 .8v3M7.5 11.2v3M.8 7.5h3M11.2 7.5h3" stroke="currentColor" stroke-width="1.3"/></svg></button>
     </div>
-    <p class="hint" id="hint">드래그 팬 · 휠·핀치 줌 · 클릭 선택 · 키: 화살표 / + − / 0 전체 / v 성좌⇄레인 / t 체인 / Esc</p>
+    <p class="hint" id="hint">드래그 궤도 · Shift+드래그 팬 · 휠·핀치 줌 · 클릭 선택 · 키: 화살표 궤도 / + − / 0 전체 / v 성좌⇄레인 / t 체인 / Esc</p>
     <div id="tip" hidden></div>
   </div>
   <aside aria-label="그래프 조작과 상세">
@@ -278,6 +320,26 @@ const KIND_COLORS = { file:"#6E7787", route:"#E8C87E", page:"#F0A268", store:"#D
   component:"#C9AD8C", command:"#D98E4A", model:"#85AEE8",
   db_access:"#4FB8AE", api_call:"#E88585", event:"#7B7BE0", job:"#B9C167", external_service:"#E08FB8" };
 const KIND_ORDER = ["route","page","component","store","composable","command","model","db_access","api_call","event","job","external_service","file"];
+// 팔레트 단일 출처 — 캔버스는 DOM 과 같은 :root 토큰을 읽는다. 하드코딩 사본을 남기면
+// 토큰을 손봤을 때 그림만 옛 색으로 남아 조용히 어긋난다. 폴백은 토큰 부재 시에만 쓰인다.
+const CSSVAR = getComputedStyle(document.documentElement);
+const tok = (n,fb)=>((CSSVAR.getPropertyValue(n)||"").trim()||fb);
+const PAL = { vault:tok("--vault","#0C0A07"), ink:tok("--ink","#E9E0CA"), dim:tok("--dim","#9C9179"),
+  gold:tok("--gold","#C6A45E"), goldLit:tok("--gold-lit","#E8C87E"), hair:tok("--hairline","#E6D096") };
+const UNKNOWN_KIND = "#888888"; // 종류 팔레트에 없는 노드 — 중립 회색(스캐너 결함 신호)
+// 캔버스는 알파를 따로 받지 않는다 — 그릴 색을 미리 합성해 둔다(프레임당 문자열 조립 없음)
+function alpha(hex,a){ const h=hex.replace("#","");
+  const v = h.length===3 ? h.split("").map(c=>c+c).join("") : h.slice(0,6);
+  return "rgba("+parseInt(v.slice(0,2),16)+","+parseInt(v.slice(2,4),16)+","+parseInt(v.slice(4,6),16)+","+a+")"; }
+const EDGE_GHOST=alpha(PAL.dim,.07), EDGE_BASE=alpha(PAL.dim,.3),
+      EDGE_BASE_SPACE=alpha(PAL.dim,.44), // 3차원은 깊이 밴드가 알파를 나눠 먹는다 — 바닥을 올려둔다
+      EDGE_LIT2=alpha(PAL.goldLit,.4), EDGE_LIT=alpha(PAL.goldLit,.75),
+      PATH_LINE=alpha(PAL.goldLit,.85), PATH_HEAD=alpha(PAL.goldLit,.9), ARROW=alpha(PAL.goldLit,.8),
+      VIA_BASE=alpha(PAL.dim,.24), VIA_LIT=alpha(PAL.goldLit,.55),
+      VIA_RING=alpha(PAL.goldLit,.6), VIA_RING_DIM=alpha(PAL.dim,.5),
+      HOVER_RING=alpha(PAL.ink,.6), LABEL_HALO=alpha(PAL.vault,.85),
+      LANE_LABEL=alpha(PAL.goldLit,.9), LANE_COUNT=alpha(PAL.dim,.9), LANE_TIER=alpha(PAL.dim,.75),
+      LANE_RULE=alpha(PAL.hair,.18), LANE_DIV=alpha(PAL.hair,.06);
 const EDGE_KINDS = ["declares","calls","touches","uses","emits"];
 const EDGE_DASH = { declares:[], calls:[7,4], touches:[2,4], uses:[11,3,2,3], emits:[4,3,1,3] };
 const FONT = '"SF Mono",Menlo,Consolas,monospace';
@@ -289,9 +351,14 @@ const tip = document.getElementById("tip");
 const picker = document.getElementById("nodeSelect");
 const legend = document.getElementById("legend");
 
-const nodes = DATA.nodes.map((n,i)=>({ ...n,
-  x: Math.cos(i*2.399963)*(60+Math.sqrt(i)*22), y: Math.sin(i*2.399963)*(60+Math.sqrt(i)*22),
-  vx:0, vy:0 }));
+// 성좌는 3차원이다 — 황금각 나선을 구면으로 올려 초기 부피를 준다(물리가 여기서 부푼다).
+// 레인 모드는 z=0 평면으로 접힌다.
+const nodes = DATA.nodes.map((n,i)=>{
+  const t=(i+0.5)/Math.max(1,DATA.nodes.length), zz=1-2*t, rr=Math.sqrt(Math.max(0,1-zz*zz));
+  const th=i*2.399963, span=60+Math.sqrt(i)*22;
+  return { ...n, x: Math.cos(th)*span*rr||Math.cos(th)*span, y: Math.sin(th)*span*rr||Math.sin(th)*span,
+    z: zz*span*0.55, vx:0, vy:0, vz:0 };
+});
 const byId = Object.fromEntries(nodes.map(n=>[n.id,n]));
 const edges = DATA.edges.filter(e=>byId[e.source]&&byId[e.target]);
 const degree = {}; edges.forEach(e=>{ degree[e.source]=(degree[e.source]||0)+1; degree[e.target]=(degree[e.target]||0)+1; });
@@ -333,6 +400,7 @@ let off={x:0,y:0}, scale=1, active=new Set(KIND_ORDER.filter(k=>kindCount[k])), 
   selected=null, hover=null, neighbors=new Set(), bridges=new Set(), previewKind=null,
   userCam=false, hot = REDUCED ? 0 : 260;
 let laneMode=false, laneHeads=[], laneH=0, morph=null, starSaved=false, settled=false, fileWasOn=true;
+let space=true, orbiting=false; // space = 성좌(3차원 시냅스 공간) · 레인은 평면으로 접힌다
 let trace=null, traceT=0, traceRaf=0, showCand=true, activeEdge=new Set(EDGE_KINDS);
 let cvx0=-1e9, cvy0=-1e9, cvx1=1e9, cvy1=1e9;
 
@@ -349,18 +417,42 @@ function state(n){
 }
 
 function tick(){
-  for(const n of nodes){ n.vx*= .82; n.vy*= .82; n.vx-=n.x*0.0018; n.vy-=n.y*0.0018; }
+  for(const n of nodes){ n.vx*= .82; n.vy*= .82; n.vz*= .82;
+    n.vx-=n.x*0.0018; n.vy-=n.y*0.0018; n.vz-=n.z*0.0024; } // z 는 살짝 더 조여 납작하지 않게 유지
   // ponytail: 큰 그래프는 근접 인덱스 80개만 반발; 전역 공간 인덱스는 실제 병목이 확인되면 추가한다.
   const repelSpan=nodes.length>800 ? 80 : nodes.length;
   for(let i=0;i<nodes.length;i++) for(let j=i+1;j<Math.min(nodes.length,i+repelSpan);j++){
-    const a=nodes[i],b=nodes[j]; let dx=b.x-a.x, dy=b.y-a.y;
-    const d2=dx*dx+dy*dy+0.01; if(d2>16000) continue;
-    const f=140/d2; dx*=f; dy*=f; a.vx-=dx; a.vy-=dy; b.vx+=dx; b.vy+=dy; }
+    const a=nodes[i],b=nodes[j]; let dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+    const d2=dx*dx+dy*dy+dz*dz+0.01; if(d2>16000) continue;
+    const f=140/d2; dx*=f; dy*=f; dz*=f;
+    a.vx-=dx; a.vy-=dy; a.vz-=dz; b.vx+=dx; b.vy+=dy; b.vz+=dz; }
   for(const e of edges){ const a=byId[e.source], b=byId[e.target];
-    const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1, f=(d-46)*0.004;
-    a.vx+=dx/d*f; a.vy+=dy/d*f; b.vx-=dx/d*f; b.vy-=dy/d*f; }
-  for(const n of nodes){ n.x+=n.vx; n.y+=n.vy; }
+    const dx=b.x-a.x, dy=b.y-a.y, dz=b.z-a.z;
+    const d=Math.hypot(dx,dy,dz)||1, f=(d-46)*0.004;
+    a.vx+=dx/d*f; a.vy+=dy/d*f; a.vz+=dz/d*f;
+    b.vx-=dx/d*f; b.vy-=dy/d*f; b.vz-=dz/d*f; }
+  for(const n of nodes){ n.x+=n.vx; n.y+=n.vy; n.z+=n.vz; }
 }
+
+// ── 카메라 — 궤도(요·피치) + 원근. 투영은 월드 단위로 끝나므로 아래 ctx 변환(팬·줌·fit)이 그대로 산다 ──
+// 초점거리는 결정이다: 1100 은 깊이가 읽히되 가장자리가 어안으로 휘지 않는 지점.
+const FOCAL=1100;
+// 시작 앵글도 결정이다 — 정면 데드센터는 미결정이다. 살짝 틀어 부피를 먼저 읽힌다.
+let yaw=0.42, pitch=-0.26, drift=0;
+function project(){
+  if(!space){ for(const n of nodes){ n.px=n.x; n.py=n.y; n.pz=0; n.k=1; } return; }
+  const cy=Math.cos(yaw), sy=Math.sin(yaw), cp=Math.cos(pitch), sp=Math.sin(pitch);
+  for(const n of nodes){
+    const xr=n.x*cy - n.z*sy;          // 요 회전
+    const zt=n.x*sy + n.z*cy;
+    const yr=n.y*cp - zt*sp;           // 피치 회전
+    const zr=n.y*sp + zt*cp;
+    const k=FOCAL/(FOCAL+zr);          // 원근 — 가까울수록 크고 밝다
+    n.px=xr*k; n.py=yr*k; n.pz=zr; n.k=k;
+  }
+}
+// 깊이 안개 — 먼 것은 금고색으로 잠긴다. 이것이 3D 를 읽히게 하는 유일한 장치다(블룸 스택 금지).
+function depth(k){ return Math.max(0.16, Math.min(1, (k-0.72)/0.62)); }
 
 function sizeCanvas(){
   canvas.width = stage.clientWidth*devicePixelRatio;
@@ -368,9 +460,10 @@ function sizeCanvas(){
 }
 function fit(){
   if(!nodes.length) return;
+  project(); // 투영된 자리로 재야 궤도를 돌린 뒤에도 전경이 맞는다
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9,seen=false;
   for(const n of nodes){ if(!state(n)) continue; seen=true;
-    if(n.x<x0)x0=n.x; if(n.x>x1)x1=n.x; if(n.y<y0)y0=n.y; if(n.y>y1)y1=n.y; }
+    if(n.px<x0)x0=n.px; if(n.px>x1)x1=n.px; if(n.py<y0)y0=n.py; if(n.py>y1)y1=n.py; }
   if(!seen) return;
   const bw=Math.max(60,x1-x0), bh=Math.max(60,y1-y0);
   // 레인 모드는 가로 전폭이 크다 — 좁은 뷰포트에서도 전경이 들어오게 플로어를 낮춘다
@@ -411,7 +504,7 @@ function laneLayout(){
     for(const o of groups){
       const gx0=x;
       o.g.forEach((n,i)=>{ const col=Math.floor(i/rows);
-        n.tx=x+col*colW; n.ty=-H/2+(i%rows)*rowH+((col%2)*rowH*0.5); });
+        n.tx=x+col*colW; n.ty=-H/2+(i%rows)*rowH+((col%2)*rowH*0.5); n.tz=0; });
       x+=Math.ceil(o.g.length/rows)*colW;
       if(o.t>=0) tiers.push({name:TIER_NAMES[o.t], x0:gx0, n:o.g.length});
       x+=gapG;
@@ -429,14 +522,16 @@ function laneLayout(){
 
 // ── 배치 모드 전환 — 성좌(물리) ⇄ 레인, 220ms 위치 보간(reduced-motion 은 즉시) ──
 function startMorph(){
-  for(const n of nodes){ n.mx=n.x; n.my=n.y; if(n.tx==null){ n.tx=n.x; n.ty=n.y; } }
+  for(const n of nodes){ n.mx=n.x; n.my=n.y; n.mz=n.z;
+    if(n.tx==null){ n.tx=n.x; n.ty=n.y; n.tz=n.z; } }
   morph={t0:performance.now()};
   requestAnimationFrame(morphStep);
 }
 function morphStep(now){
   if(!morph) return;
   let k=Math.min(1,(now-morph.t0)/220); k=1-Math.pow(1-k,3);
-  for(const n of nodes){ n.x=n.mx+(n.tx-n.mx)*k; n.y=n.my+(n.ty-n.my)*k; }
+  for(const n of nodes){ n.x=n.mx+(n.tx-n.mx)*k; n.y=n.my+(n.ty-n.my)*k;
+    n.z=n.mz+((n.tz??0)-n.mz)*k; }
   if(!userCam) fit();
   draw();
   if(k<1) requestAnimationFrame(morphStep); else morph=null;
@@ -444,11 +539,13 @@ function morphStep(now){
 function setMode(lane, opt){
   if(lane===laneMode) return;
   laneMode=lane;
+  space=!lane; // 레인은 결정론 평면 — 원근·성진·신호는 성좌의 것이다
+  stage.classList.toggle("flat", lane);
   document.getElementById("modeStar").setAttribute("aria-pressed",String(!lane));
   document.getElementById("modeLane").setAttribute("aria-pressed",String(lane));
   const fchip=[...legend.children].find(x=>x.dataset.kind==="file");
   if(lane){
-    if(!starSaved){ for(const n of nodes){ n.sx=n.x; n.sy=n.y; } starSaved=true; }
+    if(!starSaved){ for(const n of nodes){ n.sx=n.x; n.sy=n.y; n.sz=n.z; } starSaved=true; }
     hot=0;
     fileWasOn=active.has("file"); active.delete("file");
     if(fchip){ fchip.disabled=true; fchip.title="레인 모드 — 파일 노드는 접어둔다(증거·연계는 패널에)"; }
@@ -456,39 +553,85 @@ function setMode(lane, opt){
   } else {
     if(fchip){ fchip.disabled=false; fchip.removeAttribute("title"); }
     if(fileWasOn) active.add("file");
-    if(!starSaved){ for(const n of nodes){ n.sx=n.x; n.sy=n.y; } starSaved=true; }
+    if(!starSaved){ for(const n of nodes){ n.sx=n.x; n.sy=n.y; n.sz=n.z; } starSaved=true; }
     if(!settled){ // 성좌를 아직 정착시킨 적이 없다 — 레인 좌표를 잠시 치우고 시간 예산 정착
-      for(const n of nodes){ n.lx=n.x; n.ly=n.y; n.x=n.sx; n.y=n.sy; }
+      for(const n of nodes){ n.lx=n.x; n.ly=n.y; n.lz=n.z; n.x=n.sx; n.y=n.sy; n.z=n.sz; }
       const t0=performance.now(); let i=0;
       while(i<260 && performance.now()-t0<450){ tick(); i++; }
-      for(const n of nodes){ n.sx=n.x; n.sy=n.y; n.x=n.lx; n.y=n.ly; }
+      for(const n of nodes){ n.sx=n.x; n.sy=n.y; n.sz=n.z; n.x=n.lx; n.y=n.ly; n.z=n.lz; }
       settled=true;
     }
-    for(const n of nodes){ n.tx=n.sx; n.ty=n.sy; }
+    for(const n of nodes){ n.tx=n.sx; n.ty=n.sy; n.tz=n.sz; }
   }
+  const hintEl=document.getElementById("hint");
+  if(hintEl) hintEl.textContent = lane
+    ? "드래그 팬 · 휠·핀치 줌 · 클릭 선택 · 키: 화살표 / + − / 0 전체 / v 성좌⇄레인 / t 체인 / Esc"
+    : "드래그 궤도 · Shift+드래그 팬 · 휠·핀치 줌 · 클릭 선택 · 키: 화살표 궤도 / + − / 0 전체 / v 성좌⇄레인 / t 체인 / Esc";
   syncChips(); writeHash();
   if(selected && !state(selected)) select(null);
   userCam=false;
   if((opt&&opt.snap)||REDUCED){
-    for(const n of nodes){ if(n.tx!=null){ n.x=n.tx; n.y=n.ty; } }
+    for(const n of nodes){ if(n.tx!=null){ n.x=n.tx; n.y=n.ty; n.z=n.tz??0; } }
     fit(); draw();
   } else startMorph();
+  if(space) startLoop(); // 성좌로 돌아오면 신호·표류가 다시 산다
 }
 
+// 깊이 밴드 — 시냅스 섬유가 앞뒤로 갈라져 보이게 알파를 3단으로. 평면(레인)에서는 1단.
+const DEPTH_BANDS=[[0,0.93,0.34],[0.93,1.07,0.72],[1.07,9,1]];
 function strokeEdges(list, style, width){
   ctx.strokeStyle=style; ctx.lineWidth=width;
-  for(const k of EDGE_KINDS){
-    // 저줌 LOD — 대시 패턴은 판독 불가 구간(0.5x 미만)에서 실선으로 접는다
-    ctx.setLineDash(scale<0.5 ? [] : EDGE_DASH[k].map(v=>v/scale));
-    ctx.beginPath();
-    for(const e of list){ if(e.kind!==k) continue;
-      const a=byId[e.source], b=byId[e.target];
-      if((a.x<cvx0&&b.x<cvx0)||(a.x>cvx1&&b.x>cvx1)||(a.y<cvy0&&b.y<cvy0)||(a.y>cvy1&&b.y>cvy1)) continue;
-      ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
-    ctx.stroke();
+  const bands = space ? DEPTH_BANDS : [[-9,9,1]];
+  for(const [lo,hi,ba] of bands){
+    ctx.globalAlpha=ba;
+    for(const k of EDGE_KINDS){
+      // 저줌 LOD — 대시 패턴은 판독 불가 구간(0.5x 미만)에서 실선으로 접는다
+      ctx.setLineDash(scale<0.5 ? [] : EDGE_DASH[k].map(v=>v/scale));
+      ctx.beginPath();
+      for(const e of list){ if(e.kind!==k) continue;
+        const a=byId[e.source], b=byId[e.target];
+        if(space){ const mk=(a.k+b.k)/2; if(mk<lo||mk>=hi) continue; }
+        if((a.px<cvx0&&b.px<cvx0)||(a.px>cvx1&&b.px>cvx1)||(a.py<cvy0&&b.py<cvy0)||(a.py>cvy1&&b.py>cvy1)) continue;
+        ctx.moveTo(a.px,a.py); ctx.lineTo(b.px,b.py); }
+      ctx.stroke();
+    }
   }
+  ctx.globalAlpha=1;
   ctx.setLineDash([]);
 }
+
+// ── 우주 배경 — 화면 공간 시차 성진(줌에 딸려 커지지 않는다). 결정론 LCG 라 렌더가 재현된다 ──
+const STARS=(()=>{ let s=20260726;
+  const rnd=()=>{ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; };
+  return Array.from({length:260},()=>({ux:rnd(),uy:rnd(),layer:1+Math.floor(rnd()*3),a:.22+rnd()*.5,r:rnd()}));
+})();
+function drawStars(w,h){
+  const mod=(v,m)=>((v%m)+m)%m;
+  // 앞 층일수록 크고 밝고 더 많이 흐른다 — 시차가 깊이를 말한다
+  for(const st of STARS){
+    const px=mod(st.ux + yaw*st.layer*0.055 + off.x/(w*14), 1)*w;
+    const py=mod(st.uy + pitch*st.layer*0.045 + off.y/(h*14), 1)*h;
+    ctx.globalAlpha=st.a*(0.42+st.layer*0.19);
+    ctx.fillStyle = st.r>0.93 ? PAL.goldLit : PAL.ink; // 드물게 금빛 하나 — 단색 점묘가 되지 않게
+    ctx.beginPath(); ctx.arc(px,py,(0.45+st.r*0.95)*(0.6+st.layer*0.3)*devicePixelRatio,0,7); ctx.fill();
+  }
+  ctx.globalAlpha=1;
+}
+
+// ── 소마 글로우 — 종류색 스프라이트 1장을 캐시해 재사용(프레임당 그라디언트 생성 금지) ──
+const glowCache={};
+function glowSprite(col){
+  if(glowCache[col]) return glowCache[col];
+  const S=64, c=document.createElement("canvas"); c.width=c.height=S;
+  const g=c.getContext("2d"), grd=g.createRadialGradient(S/2,S/2,0,S/2,S/2,S/2);
+  grd.addColorStop(0, alpha(col,.5)); grd.addColorStop(.4, alpha(col,.14)); grd.addColorStop(1, alpha(col,0));
+  g.fillStyle=grd; g.fillRect(0,0,S,S);
+  return glowCache[col]=c;
+}
+// 시냅스 신호 — 허브 사이 상위 엣지 일부에만 신호점이 흐른다(전 엣지에 걸면 프레임을 먹는다)
+const PULSE_EDGES=edges.filter(e=>byId[e.source].kind!=="file")
+  .sort((a,b)=>((degree[b.source]||0)+(degree[b.target]||0))-((degree[a.source]||0)+(degree[a.target]||0)))
+  .slice(0,42).map((e,i)=>({e,phase:i/42}));
 
 // ── 체인 추적 — 선택 노드에서 플로우 상·하류 BFS(깊이 4) ──
 function traceLoop(ts){
@@ -518,9 +661,10 @@ function runTrace(n){
 }
 function fitTrace(){ // 체인 범위로 카메라 — 추적한 이야기가 화면에 들어온다
   if(!trace||trace.nodes.size<2) return;
+  project();
   let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
   for(const id of trace.nodes){ const n=byId[id]; if(!n) continue;
-    if(n.x<x0)x0=n.x; if(n.x>x1)x1=n.x; if(n.y<y0)y0=n.y; if(n.y>y1)y1=n.y; }
+    if(n.px<x0)x0=n.px; if(n.px>x1)x1=n.px; if(n.py<y0)y0=n.py; if(n.py>y1)y1=n.py; }
   const bw=Math.max(120,x1-x0), bh=Math.max(120,y1-y0);
   scale=Math.max(laneMode?0.06:.25, Math.min(2.2,
     Math.min(canvas.width*0.78/(bw*devicePixelRatio), canvas.height*0.72/(bh*devicePixelRatio))));
@@ -563,16 +707,18 @@ function draw(){
   ctx.setTransform(1,0,0,1,0,0); ctx.clearRect(0,0,w,h);
   if(!nodes.length){
     ctx.textAlign="center"; ctx.font=(13*devicePixelRatio)+"px "+FONT;
-    ctx.fillStyle="#E9E0CA"; ctx.fillText("그래프가 비어 있다", w/2, h/2-12*devicePixelRatio);
-    ctx.fillStyle="#9C9179"; ctx.fillText("asgard map scan 으로 관계를 수집한다", w/2, h/2+14*devicePixelRatio);
+    ctx.fillStyle=PAL.ink; ctx.fillText("그래프가 비어 있다", w/2, h/2-12*devicePixelRatio);
+    ctx.fillStyle=PAL.dim; ctx.fillText("asgard map scan 으로 관계를 수집한다", w/2, h/2+14*devicePixelRatio);
     ctx.textAlign="left"; return;
   }
+  project();
+  if(space) drawStars(w,h);
   let visN=0;
   for(const n of nodes) if(state(n)) visN++;
   updateVis(visN);
   if(!visN){ // 필터로 전멸 — 캔버스는 침묵하지 않는다(복구 버튼은 DOM #visreset)
     ctx.textAlign="center"; ctx.font=(13*devicePixelRatio)+"px "+FONT;
-    ctx.fillStyle="#9C9179";
+    ctx.fillStyle=PAL.dim;
     ctx.fillText("필터로 모든 노드가 숨겨졌다", w/2, h/2-40*devicePixelRatio);
     ctx.textAlign="left"; return;
   }
@@ -582,7 +728,7 @@ function draw(){
   // 월드 좌표 뷰포트 — 노드·라벨 패스는 화면 밖(여유 60)을 건너뛴다
   const vx0=(-w/2-off.x)/(scale*devicePixelRatio)-60, vy0=(-h/2-off.y)/(scale*devicePixelRatio)-60;
   const vx1=vx0+w/(scale*devicePixelRatio)+120, vy1=vy0+h/(scale*devicePixelRatio)+120;
-  const inView=n=>n.x>vx0&&n.x<vx1&&n.y>vy0&&n.y<vy1;
+  const inView=n=>n.px>vx0&&n.px<vx1&&n.py>vy0&&n.py<vy1;
   cvx0=vx0; cvy0=vy0; cvx1=vx1; cvy1=vy1; // 엣지 컬링 경계(strokeEdges 공유)
   const lit=[], lit2=[], base=[], ghost=[], via=[], viaN={}, path=[];
   for(const e of edges){
@@ -600,22 +746,22 @@ function draw(){
     else if(query && sa<2 && sb<2) ghost.push(e);
     else if(previewKind && a.kind!==previewKind && b.kind!==previewKind) ghost.push(e);
     else base.push(e); }
-  strokeEdges(ghost, "rgba(156,145,121,.07)", 0.8/scale);
-  strokeEdges(base, "rgba(156,145,121,.3)", 0.9/scale);
-  strokeEdges(lit2, "rgba(232,200,126,.4)", 1.1/scale);
-  strokeEdges(lit, "rgba(232,200,126,.75)", 1.5/scale);
+  strokeEdges(ghost, EDGE_GHOST, 0.8/scale);
+  strokeEdges(base, space?EDGE_BASE_SPACE:EDGE_BASE, 0.9/scale);
+  strokeEdges(lit2, EDGE_LIT2, 1.1/scale);
+  strokeEdges(lit, EDGE_LIT, 1.5/scale);
   if(trace && path.length){ // 체인 경로 — 유방향 대시가 하류 방향으로 흐른다(모션 불가 시 정적)
-    ctx.strokeStyle="rgba(232,200,126,.85)"; ctx.lineWidth=1.6/scale;
+    ctx.strokeStyle=PATH_LINE; ctx.lineWidth=1.6/scale;
     ctx.setLineDash([7/scale,5/scale]); ctx.lineDashOffset=-traceT/scale;
     ctx.beginPath();
     for(const e of path){ const a=byId[e.source], b=byId[e.target];
-      ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+      ctx.moveTo(a.px,a.py); ctx.lineTo(b.px,b.py); }
     ctx.stroke();
     ctx.setLineDash([]); ctx.lineDashOffset=0;
-    ctx.fillStyle="rgba(232,200,126,.9)";
+    ctx.fillStyle=PATH_HEAD;
     for(const e of path){ const a=byId[e.source], b=byId[e.target];
-      const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1, ux=dx/d, uy=dy/d;
-      const rr=radius(b)+2/scale, s=7/scale, tx=b.x-ux*rr, ty=b.y-uy*rr;
+      const dx=b.px-a.px, dy=b.py-a.py, d=Math.hypot(dx,dy)||1, ux=dx/d, uy=dy/d;
+      const rr=radius(b)*b.k+2/scale, s=7/scale, tx=b.px-ux*rr, ty=b.py-uy*rr;
       ctx.beginPath(); ctx.moveTo(tx,ty);
       ctx.lineTo(tx-ux*s-uy*s*0.5, ty-uy*s+ux*s*0.5);
       ctx.lineTo(tx-ux*s+uy*s*0.5, ty-uy*s-ux*s*0.5);
@@ -627,50 +773,80 @@ function draw(){
       if(!focus) viaBase.push(e); else if(bridges.has(e.source)) viaLit.push(e); }
     if(viaBase.length||viaLit.length){
       ctx.setLineDash([2/scale,3.5/scale]);
-      for(const [list,style,width] of [[viaBase,"rgba(156,145,121,.24)",0.8],[viaLit,"rgba(232,200,126,.55)",1.2]]){
+      for(const [list,style,width] of [[viaBase,VIA_BASE,0.8],[viaLit,VIA_LIT,1.2]]){
         if(!list.length) continue;
         ctx.strokeStyle=style; ctx.lineWidth=width/scale; ctx.beginPath();
         for(const e of list){ const a=byId[e.source], b=byId[e.target];
-          ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); }
+          ctx.moveTo(a.px,a.py); ctx.lineTo(b.px,b.py); }
         ctx.stroke(); }
       ctx.setLineDash([]);
       ctx.lineWidth=1/scale;
       for(const id in viaN){ if(viaN[id]<2) continue;
         if(focus && !bridges.has(id)) continue;
         const f=byId[id];
-        ctx.strokeStyle = focus ? "rgba(232,200,126,.6)" : "rgba(156,145,121,.5)";
-        ctx.beginPath(); ctx.arc(f.x,f.y,2.2,0,7); ctx.stroke(); }
+        ctx.strokeStyle = focus ? VIA_RING : VIA_RING_DIM;
+        ctx.beginPath(); ctx.arc(f.px,f.py,2.2*f.k,0,7); ctx.stroke(); }
     }
   }
   if(focus && lit.length){ // 방향(파일 → 개념)은 선택 시에만 화살촉으로 노출
-    ctx.fillStyle="rgba(232,200,126,.8)";
+    ctx.fillStyle=ARROW;
     for(const e of lit){ const a=byId[e.source], b=byId[e.target];
-      const dx=b.x-a.x, dy=b.y-a.y, d=Math.hypot(dx,dy)||1, ux=dx/d, uy=dy/d;
-      const rr=radius(b)+2/scale, s=7/scale, tx=b.x-ux*rr, ty=b.y-uy*rr;
+      const dx=b.px-a.px, dy=b.py-a.py, d=Math.hypot(dx,dy)||1, ux=dx/d, uy=dy/d;
+      const rr=radius(b)*b.k+2/scale, s=7/scale, tx=b.px-ux*rr, ty=b.py-uy*rr;
       ctx.beginPath(); ctx.moveTo(tx,ty);
       ctx.lineTo(tx-ux*s-uy*s*0.5, ty-uy*s+ux*s*0.5);
       ctx.lineTo(tx-ux*s+uy*s*0.5, ty-uy*s-ux*s*0.5);
       ctx.closePath(); ctx.fill(); } }
-  for(const n of nodes){ const s=state(n); if(!s||!inView(n)) continue;
-    const r=radius(n), dim=(s===1)
-      ||(trace ? !trace.nodes.has(n.id) : (focus&&n!==selected&&!neighbors.has(n.id)))
-      ||(previewKind&&n.kind!==previewKind);
-    ctx.globalAlpha = dim ? .16 : 1;
-    const col=KIND_COLORS[n.kind]||"#888888";
-    ctx.beginPath(); ctx.arc(n.x,n.y,r,0,7);
+  // 시냅스 신호 — 허브 사이를 오가는 점. 정지 상태에서도 망이 살아 있다는 유일한 신호다.
+  if(space && !REDUCED && PULSE_EDGES.length && !trace && !focus){
+    ctx.fillStyle=PATH_HEAD;
+    for(const p of PULSE_EDGES){
+      const a=byId[p.e.source], b=byId[p.e.target];
+      if(!state(a)||!state(b)) continue;
+      const u=((pulseT+p.phase)%1);
+      const x=a.px+(b.px-a.px)*u, y=a.py+(b.py-a.py)*u;
+      if(x<cvx0||x>cvx1||y<cvy0||y>cvy1) continue;
+      const kk=a.k+(b.k-a.k)*u;
+      ctx.globalAlpha=depth(kk)*0.85*Math.sin(u*Math.PI); // 양 끝에서 사그라든다
+      ctx.beginPath(); ctx.arc(x,y,1.7*kk/scale*Math.max(1,scale),0,7); ctx.fill();
+    }
+    ctx.globalAlpha=1;
+  }
+  // 페인터 순서 — 먼 것부터. 3차원에서 앞뒤가 뒤집히면 깊이가 통째로 무너진다.
+  const drawList=[];
+  for(const n of nodes){ const s=state(n); if(!s||!inView(n)) continue; drawList.push(n); }
+  if(space) drawList.sort((a,b)=>b.pz-a.pz);
+  const dimOf=(n,s)=>(s===1)
+    ||(trace ? !trace.nodes.has(n.id) : (focus&&n!==selected&&!neighbors.has(n.id)))
+    ||(previewKind&&n.kind!==previewKind);
+  if(space){ // 소마 글로우 — 허브만, 가산 합성 1패스(블룸·플레어 스택 없음)
+    ctx.globalCompositeOperation="lighter";
+    for(const n of drawList){ const r=radius(n)*n.k;
+      if(r<6.4||n.kind==="file") continue;
+      if(dimOf(n,state(n))) continue;
+      const g=glowSprite(KIND_COLORS[n.kind]||UNKNOWN_KIND), gr=r*3.4;
+      ctx.globalAlpha=depth(n.k)*0.9;
+      ctx.drawImage(g, n.px-gr, n.py-gr, gr*2, gr*2); }
+    ctx.globalCompositeOperation="source-over"; ctx.globalAlpha=1;
+  }
+  for(const n of drawList){ const s=state(n);
+    const r=radius(n)*n.k, dim=dimOf(n,s);
+    ctx.globalAlpha = dim ? .16 : (space ? depth(n.k) : 1);
+    const col=KIND_COLORS[n.kind]||UNKNOWN_KIND;
+    ctx.beginPath(); ctx.arc(n.px,n.py,r,0,7);
     if(n.confidence==="candidate"){ ctx.strokeStyle=col; // 빈 원이 저줌에서 채운 원으로 뭉개지지 않게 링 폭을 화면 반지름에 비례 클램프
       ctx.lineWidth=Math.min(1.4, Math.max(0.7, r*scale*0.42))/scale; ctx.stroke(); }
     else { ctx.fillStyle=col; ctx.fill(); }
     ctx.globalAlpha=1; }
-  if(hover && hover!==selected){ ctx.strokeStyle="rgba(233,224,202,.6)"; ctx.lineWidth=1.2/scale;
-    ctx.beginPath(); ctx.arc(hover.x,hover.y,radius(hover)+3/scale,0,7); ctx.stroke(); }
-  if(selected){ ctx.strokeStyle="#E8C87E"; ctx.lineWidth=1.6/scale;
-    ctx.beginPath(); ctx.arc(selected.x,selected.y,radius(selected)+3.5/scale,0,7); ctx.stroke(); }
+  if(hover && hover!==selected){ ctx.strokeStyle=HOVER_RING; ctx.lineWidth=1.2/scale;
+    ctx.beginPath(); ctx.arc(hover.px,hover.py,radius(hover)*hover.k+3/scale,0,7); ctx.stroke(); }
+  if(selected){ ctx.strokeStyle=PAL.goldLit; ctx.lineWidth=1.6/scale;
+    ctx.beginPath(); ctx.arc(selected.px,selected.py,radius(selected)*selected.k+3.5/scale,0,7); ctx.stroke(); }
   // 라벨 정책 — 기본 허브 14개, 검색 일치 30개, 줌인 시 개념 전체(1.4x)·파일까지(2.4x).
   // 우선순위(선택>호버>이웃>차수) 정렬 후 화면 공간 충돌 시 낮은 쪽을 접는다.
   const allConcept=scale>=1.4, allFiles=scale>=2.4;
   ctx.font=(11/scale).toFixed(2)+"px "+FONT;
-  ctx.lineWidth=3/scale; ctx.strokeStyle="rgba(12,10,7,.85)";
+  ctx.lineWidth=3/scale; ctx.strokeStyle=LABEL_HALO;
   let qLabels=0;
   const cands=[];
   for(const n of nodes){ if(state(n)!==2||!inView(n)) continue;
@@ -686,19 +862,22 @@ function draw(){
     if(!show) continue;
     const pri = n===selected ? 0 : n===hover ? 1 : (focus&&neighbors.has(n.id)) ? 2 : 3;
     cands.push({n, pri, deg:degree[n.id]||0, concept}); }
-  cands.sort((a,b)=>a.pri-b.pri || b.deg-a.deg);
+  // 가까운 것이 라벨 자리를 이긴다 — 3차원에서 뒤에 있는 이름이 앞을 가리면 깊이가 거짓말이 된다
+  cands.sort((a,b)=>a.pri-b.pri || (space ? b.n.k-a.n.k : 0) || b.deg-a.deg);
   const boxes=[], lh=13/scale;
   for(const c of cands){ const n=c.n;
     const t=n.name.length>26 ? n.name.slice(0,25)+"…" : n.name;
-    const lx=n.x+radius(n)+5/scale;
-    const x0=lx, x1=lx+ctx.measureText(t).width, y0=n.y-lh/2, y1=n.y+lh/2;
+    const lx=n.px+radius(n)*n.k+5/scale;
+    const x0=lx, x1=lx+ctx.measureText(t).width, y0=n.py-lh/2, y1=n.py+lh/2;
     let clash=false;
     for(const b of boxes){ if(x0<b.x1&&x1>b.x0&&y0<b.y1&&y1>b.y0){ clash=true; break; } }
     if(clash && c.pri>1) continue;
     boxes.push({x0,x1,y0,y1});
-    ctx.strokeText(t,lx,n.y);
-    ctx.fillStyle = n===selected ? "#E8C87E" : (c.concept ? "#E9E0CA" : "#9C9179");
-    ctx.fillText(t,lx,n.y); }
+    ctx.globalAlpha = space ? Math.max(.45, depth(n.k)) : 1;
+    ctx.strokeText(t,lx,n.py);
+    ctx.fillStyle = n===selected ? PAL.goldLit : (c.concept ? PAL.ink : PAL.dim);
+    ctx.fillText(t,lx,n.py);
+    ctx.globalAlpha=1; }
   ctx.setTransform(1,0,0,1,0,0);
   // 레인 헤더 — 화면 공간(줌과 무관한 판독성): 라벨·카운트·베이스라인·밴드 구분선
   if(laneMode&&laneHeads.length){
@@ -723,22 +902,22 @@ function draw(){
         if(lbl!==hd.label.toUpperCase()) lbl=lbl+"…";
         if(ctx.measureText(lbl).width+cw>avail) lbl=""; // 카운트-온리 축약
         const lw=lbl?ctx.measureText(lbl).width:0;
-        if(lbl){ ctx.fillStyle="rgba(232,200,126,.9)"; ctx.fillText(lbl, x0, hy); }
+        if(lbl){ ctx.fillStyle=PATH_HEAD; ctx.fillText(lbl, x0, hy); }
         ctx.font=(10.5*devicePixelRatio)+"px "+FONT;
-        ctx.fillStyle="rgba(156,145,121,.9)";
+        ctx.fillStyle=LANE_COUNT;
         ctx.fillText(String(hd.n), x0+lw+(lbl?7*devicePixelRatio:0), hy);
       }
-      ctx.strokeStyle="rgba(230,208,150,.18)"; ctx.lineWidth=1*devicePixelRatio;
+      ctx.strokeStyle=LANE_RULE; ctx.lineWidth=1*devicePixelRatio;
       ctx.beginPath(); ctx.moveTo(x0, hy+7*devicePixelRatio);
       ctx.lineTo(Math.max(x1,x0+30*devicePixelRatio), hy+7*devicePixelRatio); ctx.stroke();
       if(hd.tiers.length>1&&scale>0.55){ // 아토믹 서브밴드 — 확대 시에만
-        ctx.font=(9.5*devicePixelRatio)+"px "+FONT; ctx.fillStyle="rgba(156,145,121,.75)";
+        ctx.font=(9.5*devicePixelRatio)+"px "+FONT; ctx.fillStyle=LANE_TIER;
         for(const t of hd.tiers) ctx.fillText(t.name, SX(t.x0), hy+20*devicePixelRatio);
       }
       if(i<laneHeads.length-1){ const nx=laneHeads[i+1];
         const mx=SX((hd.x1+nx.x0)/2);
         if(mx>-10&&mx<w+10){
-          ctx.strokeStyle="rgba(230,208,150,.06)";
+          ctx.strokeStyle=LANE_DIV;
           ctx.beginPath(); ctx.moveTo(mx, Math.max(0,hy-12*devicePixelRatio));
           ctx.lineTo(mx, Math.min(h,SY(laneH/2)+14*devicePixelRatio)); ctx.stroke(); }
       }
@@ -748,7 +927,30 @@ function draw(){
 }
 // 대규모 그래프는 프레임당 2틱으로 정착 벽시계를 절반으로 줄인다(물리 자체는 동일).
 // 물리는 성좌 모드 전용 — 레인 모드는 결정론 배치라 정착 루프가 없다.
-function loop(){ if(!laneMode && hot-- > 0){ tick(); if(nodes.length>400) tick(); if(!userCam) fit(); draw(); requestAnimationFrame(loop); } else { settled=settled||!laneMode; draw(); } }
+// 성좌가 살아 있는 동안만 프레임을 쓴다: 정착 중 · 신호 흐르는 중 · 도착 표류 중.
+// 탭이 가려지면 멈추고(배터리), 모션 축소면 애초에 돌지 않는다.
+let pulseT=0, raf=0, lastTs=0, lastDraw=0;
+const DRIFT_TURNS=1400; // 도착 표류 — 부피를 한 번 읽히고 멈춘다(무한 턴테이블 아님)
+function ambient(){ return space && !REDUCED && !document.hidden; }
+function loop(ts){
+  raf=0;
+  const now=ts||performance.now();
+  const dt=lastTs ? Math.min(50, now-lastTs) : 16; lastTs=now;
+  let live=false, busy=false;
+  if(!laneMode && hot-- > 0){ tick(); if(nodes.length>400) tick(); if(!userCam) fit(); live=busy=true; }
+  else settled=settled||!laneMode;
+  if(ambient()){
+    pulseT=(pulseT+dt/5200)%1;                       // 신호 한 바퀴 ≈ 5.2초
+    if(!orbiting && drift<DRIFT_TURNS){ yaw+=0.00042*(dt/16); drift++; busy=true; }
+    live=true;
+  }
+  // 유휴 신호만 도는 구간은 30fps 로 접는다 — 개발 도구를 열어둔 채 팬을 돌리지 않는다.
+  // 정착·표류처럼 눈에 걸리는 구간은 전 프레임으로 그린다.
+  if(busy || now-lastDraw >= 32){ lastDraw=now; draw(); }
+  if(live) startLoop();
+}
+function startLoop(){ if(!raf) raf=requestAnimationFrame(loop); }
+document.addEventListener("visibilitychange", ()=>{ lastTs=0; if(!document.hidden) startLoop(); });
 let lastVis="";
 function updateVis(v){
   const t="표시 "+v+" / "+nodes.length;
@@ -767,7 +969,7 @@ function renderDetail(){
   if(!nodes.length){
     el.innerHTML='<p class="d-empty">그래프가 비어 있다 — <code>asgard map scan</code> 후 다시 연다.</p>'; return; }
   if(!selected){ el.innerHTML='<p class="d-empty">노드를 선택하면 file:line 증거가 나온다.</p>'; return; }
-  const n=selected, recs=(DATA.records||{})[n.id]||[], col=KIND_COLORS[n.kind]||"#888888";
+  const n=selected, recs=(DATA.records||{})[n.id]||[], col=KIND_COLORS[n.kind]||UNKNOWN_KIND;
   let h='<div class="d-kind"><i style="background:'+col+'"></i>'+esc(n.kind)
     +(n.confidence==="candidate" ? ' <span class="badge-cand">candidate — 단정 전 소스 확인</span>' : '')
     +'<span class="d-deg">이웃 '+(degree[n.id]||0)+'</span></div>'
@@ -794,7 +996,7 @@ function renderDetail(){
       +rel.slice(0,cap).map(r=>{
         const vb=r.via[0].split("/").pop(), vt=r.via.length>1 ? vb+" +"+(r.via.length-1) : vb;
         return '<li><button type="button" data-nid="'+esc(r.o.id)+'" title="'+esc(r.via.join(", "))+'">'
-          +'<i style="background:'+(KIND_COLORS[r.o.kind]||"#888888")+'"></i>'
+          +'<i style="background:'+(KIND_COLORS[r.o.kind]||UNKNOWN_KIND)+'"></i>'
           +'<span class="rk">'+esc(r.o.kind)+'</span><span class="rn">'+esc(r.o.name)+'</span>'
           +'<span class="rv">'+esc(vt)+'</span></button></li>'; }).join("")
       +(rel.length>cap ? '<li class="more">+'+(rel.length-cap)+' — trace 로 전체 추적</li>' : '')+'</ul>';
@@ -812,7 +1014,7 @@ function renderDetail(){
       const row=c=>{ const o=byId[c.id];
         return '<li><button type="button" data-nid="'+esc(c.id)+'">'
           +'<span class="dep">'+(c.up?"‹":"›").repeat(c.d)+'</span>'
-          +'<i style="background:'+(KIND_COLORS[o.kind]||"#888888")+'"></i>'
+          +'<i style="background:'+(KIND_COLORS[o.kind]||UNKNOWN_KIND)+'"></i>'
           +'<span class="rk">'+esc(o.kind)+'</span><span class="rn">'+esc(o.name)+'</span></button></li>'; };
       if(trace.up.length) h+='<ul class="d-rel">'+trace.up.slice(0,cap).map(row).join("")
         +(trace.up.length>cap ? '<li class="more">+'+(trace.up.length-cap)+' 상류 — trace 로 전체' : '')+'</ul>';
@@ -854,8 +1056,8 @@ function select(n, scrollTo){
   if(selected && scrollTo && MOBILE.matches)
     document.getElementById("detail").scrollIntoView({behavior:REDUCED?"auto":"smooth", block:"nearest"});
 }
-function centerOn(n){ userCam=true;
-  off.x=-n.x*scale*devicePixelRatio; off.y=-n.y*scale*devicePixelRatio; }
+function centerOn(n){ userCam=true; project();
+  off.x=-n.px*scale*devicePixelRatio; off.y=-n.py*scale*devicePixelRatio; }
 
 // ── 조작반 구성 ──
 (function(){
@@ -870,7 +1072,7 @@ function centerOn(n){ userCam=true;
   for(const k of KIND_ORDER){ if(!kindCount[k]) continue;
     const chip=document.createElement("button"); chip.type="button"; chip.className="chip on";
     chip.dataset.kind=k; chip.setAttribute("aria-pressed","true");
-    chip.innerHTML='<i style="background:'+(KIND_COLORS[k]||"#888888")+'"></i>'+esc(k)+' <span class="n">'+kindCount[k]+'</span>';
+    chip.innerHTML='<i style="background:'+(KIND_COLORS[k]||UNKNOWN_KIND)+'"></i>'+esc(k)+' <span class="n">'+kindCount[k]+'</span>';
     chip.onclick=e=>{
       if(e.altKey){ soloKind(k); return; }
       if(active.has(k)) active.delete(k); else active.add(k);
@@ -900,7 +1102,7 @@ function centerOn(n){ userCam=true;
     '<h2 class="sectitle">엣지 언어 — 클릭 = 필터</h2><ul class="ekl">'+EDGE_KINDS.map(k=>{
       const d=EDGE_DASH[k].join(" "), cnt=edgeKindCount[k]||0;
       return '<li><button type="button" data-ek="'+k+'" aria-pressed="true"'+(cnt?'':' disabled')+'>'
-        +'<svg viewBox="0 0 28 6" width="28" height="6" aria-hidden="true"><line x1="1" y1="3" x2="27" y2="3" stroke="#C6A45E" stroke-width="1.6"'
+        +'<svg viewBox="0 0 28 6" width="28" height="6" aria-hidden="true"><line x1="1" y1="3" x2="27" y2="3" stroke="var(--gold)" stroke-width="1.6"'
         +(d?' stroke-dasharray="'+d+'"':'')+'></line></svg>'
         +esc(k)+' <b>'+cnt+'</b></button></li>'; }).join("")+'</ul>';
   document.getElementById("ekinds").addEventListener("click", e=>{
@@ -955,7 +1157,7 @@ function renderResults(){
     }).slice(0,50).map(n=>n.id);
   resEl.innerHTML=resIds.map(id=>{ const n=byId[id];
     return '<li><button type="button" data-nid="'+esc(n.id)+'">'
-      +'<i style="background:'+(KIND_COLORS[n.kind]||"#888888")+'"></i>'
+      +'<i style="background:'+(KIND_COLORS[n.kind]||UNKNOWN_KIND)+'"></i>'
       +'<span class="rk">'+esc(n.kind)+'</span><span class="rn">'+esc(n.name)+'</span>'
       +'<span class="deg">이웃 '+(degree[n.id]||0)+'</span></button></li>'; }).join("");
   resEl.hidden=!resIds.length;
@@ -1020,14 +1222,21 @@ document.getElementById("zoomIn").onclick=()=>zoomAt(canvas.width/2,canvas.heigh
 document.getElementById("zoomOut").onclick=()=>zoomAt(canvas.width/2,canvas.height/2,scale*0.8);
 document.getElementById("zoomFit").onclick=()=>{ userCam=false; fit(); draw(); };
 
+// 궤도 — 첫 조작이 도착 표류를 끈다(자동 카메라를 멈출 수단이 조작 그 자체다)
+function orbitBy(dx,dy){
+  orbiting=true;
+  yaw += dx*0.006;
+  pitch = Math.max(-1.25, Math.min(1.25, pitch + dy*0.006));
+}
 function hitTest(e){
   const r=canvas.getBoundingClientRect();
   const px=((e.clientX-r.left)*devicePixelRatio-canvas.width/2-off.x)/(scale*devicePixelRatio);
   const py=((e.clientY-r.top)*devicePixelRatio-canvas.height/2-off.y)/(scale*devicePixelRatio);
   let best=null, bd=9/scale;
+  // 앞에 있는 것이 먼저 집힌다 — 같은 거리면 카메라에 가까운(k 가 큰) 쪽
   for(const n of nodes){ if(state(n)!==2) continue;
-    const d=Math.hypot(n.x-px,n.y-py)-radius(n);
-    if(d<bd){ bd=d; best=n; } }
+    const d=Math.hypot(n.px-px,n.py-py)-radius(n)*n.k;
+    if(d<bd || (d<0 && best && n.k>best.k)){ bd=Math.min(bd,d); best=n; } }
   return best;
 }
 function showTip(e,n){
@@ -1053,14 +1262,21 @@ canvas.addEventListener("pointermove", e=>{
   if(pointers.size){
     const prev=pointers.get(e.pointerId); if(!prev) return;
     if(pointers.size===1 && downPt){
-      moved+=Math.abs(e.clientX-prev.x)+Math.abs(e.clientY-prev.y);
-      if(moved>4){ off.x+=(e.clientX-prev.x)*devicePixelRatio; off.y+=(e.clientY-prev.y)*devicePixelRatio;
-        userCam=true; canvas.style.cursor="grabbing"; scheduleDraw(); } }
+      const dx=e.clientX-prev.x, dy=e.clientY-prev.y;
+      moved+=Math.abs(dx)+Math.abs(dy);
+      if(moved>4){
+        // 성좌에서 끌기는 궤도다 — 평면 이동은 Shift(또는 두 손가락)로 남겨둔다
+        if(space && !e.shiftKey) orbitBy(dx,dy);
+        else { off.x+=dx*devicePixelRatio; off.y+=dy*devicePixelRatio; userCam=true; }
+        canvas.style.cursor="grabbing"; scheduleDraw(); } }
     pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});
     if(pinch && pointers.size===2){ const p=[...pointers.values()];
       const d=Math.hypot(p[0].x-p[1].x,p[0].y-p[1].y)||1, r=canvas.getBoundingClientRect();
-      zoomAt(((p[0].x+p[1].x)/2-r.left)*devicePixelRatio, ((p[0].y+p[1].y)/2-r.top)*devicePixelRatio,
-        pinch.s*d/pinch.d); }
+      const mx=(p[0].x+p[1].x)/2, my=(p[0].y+p[1].y)/2;
+      // 두 손가락은 줌과 팬을 함께 — 터치에서도 평면 이동 수단이 남는다
+      if(pinch.mx!=null){ off.x+=(mx-pinch.mx)*devicePixelRatio; off.y+=(my-pinch.my)*devicePixelRatio; userCam=true; }
+      pinch.mx=mx; pinch.my=my;
+      zoomAt((mx-r.left)*devicePixelRatio, (my-r.top)*devicePixelRatio, pinch.s*d/pinch.d); }
     return;
   }
   const n=hitTest(e);
@@ -1081,10 +1297,12 @@ canvas.addEventListener("pointercancel", endPointer);
 canvas.addEventListener("pointerleave", ()=>{ if(hover){ hover=null; tip.hidden=true; draw(); } });
 canvas.addEventListener("keydown", e=>{
   const st=48*devicePixelRatio; let done=true;
-  if(e.key==="ArrowLeft"){ off.x+=st; userCam=true; }
-  else if(e.key==="ArrowRight"){ off.x-=st; userCam=true; }
-  else if(e.key==="ArrowUp"){ off.y+=st; userCam=true; }
-  else if(e.key==="ArrowDown"){ off.y-=st; userCam=true; }
+  // 성좌에서 화살표는 궤도를 돈다 — 평면 이동은 Shift+화살표
+  const orbitKeys = space && !e.shiftKey;
+  if(e.key==="ArrowLeft"){ if(orbitKeys) orbitBy(-34,0); else { off.x+=st; userCam=true; } }
+  else if(e.key==="ArrowRight"){ if(orbitKeys) orbitBy(34,0); else { off.x-=st; userCam=true; } }
+  else if(e.key==="ArrowUp"){ if(orbitKeys) orbitBy(0,-34); else { off.y+=st; userCam=true; } }
+  else if(e.key==="ArrowDown"){ if(orbitKeys) orbitBy(0,34); else { off.y-=st; userCam=true; } }
   else if(e.key==="+"||e.key==="=") zoomAt(canvas.width/2,canvas.height/2,scale*1.25);
   else if(e.key==="-"||e.key==="_") zoomAt(canvas.width/2,canvas.height/2,scale*0.8);
   else if(e.key==="0"){ userCam=false; fit(); }
@@ -1132,7 +1350,7 @@ if(H0){
     qHint.textContent = m ? m+"개 일치 — ↑↓ 이동 · Enter 선택" : "일치하는 노드가 없다"; }
   if(H0.sel&&byId[H0.sel]) select(byId[H0.sel]);
 }
-if(laneMode) draw(); else loop();
+if(laneMode) draw(); else startLoop();
 </script>
 </body>
 </html>
