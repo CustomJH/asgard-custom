@@ -901,5 +901,51 @@ class TestHindsightBackend(unittest.TestCase):
         )
 
 
+class TestConnectIdempotence(unittest.TestCase):
+    """재연결은 자기 뱅크를 자기 것으로 알아봐야 한다.
+
+    소유권 신원(project_uid/binding_id)은 설정 파일이 아니라 사이드카에 산다. connect 가 설정
+    섹션만 읽던 시절에는 재연결이 매번 새 uid 를 발급해 서버 마커와 어긋났고, 자기 뱅크를
+    "foreign" 으로 거절했다 — timeout 조정도, 설정 변경으로 무효화된 신뢰의 재승인도 불가능했다.
+    무효화 메시지가 안내하는 수리 명령이 바로 이 connect 라 막다른 길이었다 (26-07-26 실측)."""
+
+    def setUp(self):
+        FakeBackend.bindings = {}
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = os.path.realpath(self.temp.name)
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, cwd)
+        register_backend("fake", FakeBackend, replace=True)
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        patcher = mock.patch.dict(os.environ, {"HOME": home.name, "USERPROFILE": home.name})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _connect(self, **kwargs) -> int:
+        from asgard.commands.memory import run_connect
+
+        return run_connect("http://memory:8888", "demo-bank", engine="fake", **kwargs)
+
+    def test_reconnect_keeps_the_binding_and_can_change_the_timeout(self):
+        from asgard.memory_bridge import is_backend_trusted, read_binding_sidecar
+
+        self.assertEqual(self._connect(timeout=60), 0)
+        first = read_binding_sidecar(self.root)
+        self.assertTrue(first["project_uid"] and first["binding_id"])
+
+        self.assertEqual(self._connect(timeout=300), 0)
+        second = read_binding_sidecar(self.root)
+        self.assertEqual(second, first)
+
+        with open(os.path.join(self.root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as source:
+            saved = json.load(source)
+        self.assertEqual(saved["project_memory"]["timeout"], 300)
+        # 신뢰 지문은 timeout 을 포함한다 — 재연결이 곧 재승인이어야 게이트가 막다른 길이 아니다.
+        self.assertTrue(is_backend_trusted({**saved["project_memory"], **second}))
+
+
 if __name__ == "__main__":
     unittest.main()

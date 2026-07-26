@@ -518,10 +518,18 @@ def run_connect(
 
         root = os.getcwd()
         previous = dict(memory_bridge.project_memory_section(load_project(root)) or {})
-        previous_uid = str(previous.get("project_uid") or "").strip()
+        # 소유권 신원은 설정 파일이 아니라 사이드카(.asgard/memory/binding.json)에 산다 — 설정 섹션만
+        # 읽으면 재연결이 매번 새 project_uid 를 발급하고, 서버의 기존 마커와 어긋나 자기 뱅크를
+        # "foreign" 으로 거절한다. 그러면 timeout·endpoint 조정도, 설정 변경으로 무효화된 신뢰의
+        # 재승인도 불가능해진다 — 그 무효화가 안내하는 수리 명령이 바로 이 connect 다 (26-07-26 실측).
+        # find_config 는 이미 같은 사이드카를 병합한다 (단일 신원 출처).
+        sidecar = memory_bridge.read_binding_sidecar(root)
+        previous_uid = str(previous.get("project_uid") or sidecar.get("project_uid") or "").strip()
         project_uid = previous_uid or str(uuid.uuid4())
         explicit_project_id = bool(project_id and project_id.strip())
-        pid = str(project_id or previous.get("project_id") or previous.get("bank") or "").strip()
+        pid = str(
+            project_id or previous.get("project_id") or previous.get("bank") or sidecar.get("project_id") or ""
+        ).strip()
         if not pid:
             slug = re.sub(r"[^A-Za-z0-9._-]+", "-", os.path.basename(root)).strip("-.") or "project"
             pid = f"{slug}-{project_uid[:8]}"
@@ -532,7 +540,7 @@ def run_connect(
             and str(previous.get("endpoint") or previous.get("server") or "").rstrip("/") == endpoint.rstrip("/")
             and str(previous.get("project_id") or previous.get("bank") or "").strip() == pid
         )
-        binding_id = str(previous.get("binding_id") or "").strip() if same_target else ""
+        binding_id = str(previous.get("binding_id") or sidecar.get("binding_id") or "").strip() if same_target else ""
         config = {
             "engine": selected_engine,
             "endpoint": endpoint.rstrip("/"),
