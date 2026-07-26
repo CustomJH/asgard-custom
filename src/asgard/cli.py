@@ -237,6 +237,28 @@ def map_context(
     raise typer.Exit(run_map_context(query, refresh=refresh, managed_only=managed_only, json_out=json_))
 
 
+@app.command(help="public API surface vs a base ref — breaking signature changes and call-site obligations")
+def surface(
+    base: str = typer.Option("HEAD", "--base", help="git ref to compare against (default HEAD)"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.surface import run_surface
+
+    raise typer.Exit(run_surface(base=base, json_out=json_, quiet=quiet))
+
+
+@app.command(help="codebase erosion signal — size, duplication, coupling, hotspots, and the trend")
+def health(
+    snapshot: bool = typer.Option(False, "--snapshot", help="record this state so later runs can show a delta"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.health import run_health
+
+    raise typer.Exit(run_health(snapshot=snapshot, json_out=json_, quiet=quiet))
+
+
 setup_app = typer.Typer(help="set up or refresh project-aware Asgard assets", no_args_is_help=True)
 app.add_typer(setup_app, name="setup")
 
