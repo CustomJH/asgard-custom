@@ -100,6 +100,13 @@ Apply only the returned policies. Empty output means no extra policy. Do not als
 individual `.agents/skills` adapter; those remain available as explicit `/name` or `$name`
 overrides.
 
+The output ends with a `Work shape` block whenever the request implies a change. It states the
+deterministic size of the work — `slice`, `feature`, or `expedition` — the planning discipline that
+shape requires, and the names of any discipline skills whose triggers this request matched. Load
+each named skill with `asgard skills show <name>` before deciding; the match is deterministic, so it
+is not a suggestion to re-evaluate. Hold to the shape: do not inflate a slice into a feature to look
+thorough, and do not compress a feature into one sweep to look fast.
+
 For catalog management, use:
 
     asgard skills

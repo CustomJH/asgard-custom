@@ -292,6 +292,21 @@ def worker_canon_hint(root: str, task: str) -> str:
     )
 
 
+def work_shape_note(
+    root: str, request: str, cls: dict | None = None, *, agent: str = "worker", loader: str = "load_skill"
+) -> str:
+    """범위 형상 노트 — 결정론 사이징 + 결속 규율 스킬 지목 (fail-open: 실패는 빈 문자열).
+
+    read-only 요청이나 무매칭은 빈 문자열이라 토큰 회귀가 없다. 형상 판정은 순수 함수라
+    같은 지시에 같은 노트가 나온다 — 모델 자율 선택은 그대로 두고 발견 실패만 걷어내는 층이다."""
+    try:
+        from ...skill_scope import scope_note
+
+        return scope_note(root, request, cls, agent=agent, loader=loader)
+    except Exception:
+        return ""
+
+
 def _mimir_note(request: str) -> str:
     """미미르 안내 계약 주입 — 코드 이해·설명 요청의 DIRECT 턴 한정.
 

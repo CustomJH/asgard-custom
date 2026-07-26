@@ -15,7 +15,7 @@ from contextlib import ExitStack
 from ..session import TurnCancelled, ql
 from .journal import _record_writes
 from .planning import _plan_waves
-from .roles import _role_prompt, _skill_support
+from .roles import _role_prompt, _skill_support, work_shape_note
 from .toolspec import DISPATCH_TOOL
 
 
@@ -126,7 +126,11 @@ class WaveRunner:
 
         def run_unit(u: dict, writes: list[str], cwd: str | None = None):
             # writes 는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
-            skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root)
+            # 매칭 기준은 퀘스트 전체가 아니라 **이 단위의 과업 문장** — 단위마다 걸리는 규율이
+            # 다르다 (한 단위는 회귀 테스트, 다른 단위는 계층 경계).
+            unit_task = f"{u.get('subtask') or ''} {' '.join(map(str, u.get('criteria') or []))}".strip()
+            skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=unit_task)
+            shape_note = work_shape_note(hd.root, unit_task, {"write_expected": True, "task_class": "standard"})
 
             def mk(rp=None):
                 return hd._session(
@@ -148,7 +152,7 @@ class WaveRunner:
                 f"Target files: {', '.join(u['files']) or '(unspecified)'}\n"
                 f"criteria: {u['criteria']}\n{access_ctx}\n"
                 f"Implement only your assigned unit's scope (Canon 7) — "
-                f"do not touch other units' files.{budget_note}"
+                f"do not touch other units' files.{shape_note}{budget_note}"
             )
             fallback = (lambda: mk(rp=hd.rp)) if wrp is not hd.rp else None
             return u, hd._run_turn(mk, prompt, fallback), writes

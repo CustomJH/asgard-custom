@@ -129,10 +129,25 @@ def run_skills_resolve(agent: str, task: str | None, json_out: bool = False) -> 
         print("task is required", file=sys.stderr)
         return 2
     rows = resolve_skills(os.getcwd(), task, agent)
+    # 범위 형상 — 판정 표면(verifier/loki)에는 붙이지 않는다: 게이트에 advisory 지식 무주입 규율.
+    # 외부 호스트(Codex·Cursor)는 이 출력이 유일한 스킬 통로라 네이티브와 같은 사이징을 여기서 준다.
+    shape: dict | None = None
+    note = ""
+    if agent not in ("verifier", "loki"):
+        from ..skill_scope import scope_note, work_shape
+
+        shape = work_shape(task)
+        note = scope_note(os.getcwd(), task, agent=agent if agent != "thor-lead" else "thor", loader="cli")
     if json_out:
-        print(json.dumps([{"name": name, "body": body} for name, body in rows], ensure_ascii=False, indent=2))
-    elif rows:
+        payload: dict = {"skills": [{"name": name, "body": body} for name, body in rows]}
+        if shape:
+            payload["shape"] = shape
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+    if rows:
         print("\n\n".join(f"# Skill: {name}\n\n{body.rstrip()}" for name, body in rows))
+    if note:
+        print(note.strip())
     return 0
 
 
