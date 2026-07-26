@@ -209,6 +209,32 @@ _M: dict[str, tuple[str, str]] = {
         "⠶ style check rewrote the reply — the version below is canonical",
         "⠶ 문체 검사로 응답을 다듬었어요 — 아래가 정본이에요",
     ),
+    # Trinity 최종 보고 — 퀘스트 로그가 유일한 소스. 사람이 읽는 표면이라 UI 언어를 따른다
+    # (하드코딩 한국어였음 — 영어 기본 제품에서 한국어 보고가 나가던 것을 26-07-26 수리).
+    "report_done": (
+        "Done — verification PASS, diff hash matched, quest log closed.",
+        "과업 완수 — 검증 PASS + diff-hash 일치, 퀘스트 로그 닫힘.",
+    ),
+    # 영어 표면은 단복수를 맞춘다 — "1 turns" 는 사람이 쓴 문장으로 읽히지 않는다 (Bragi 계약).
+    "report_turns": ("{turns} · roles {roles}", "턴 {n} · 역할 {roles}"),
+    "report_evidence": ("Evidence", "증거"),
+    "report_assumptions": (
+        "Assumptions (Canon 8 — Odin's review needed):",
+        "가정 (Canon 8 — Odin 검토 필요):",
+    ),
+    "report_gate_blocks": (
+        "⚠ passed after {blocks} — the repair history is in the quest log",
+        "⚠ 게이트 차단 {n}회 후 통과 — 수리 이력은 퀘스트 로그 참조",
+    ),
+    "report_unit_turn": ("{n} turn", "턴 {n}"),
+    "report_unit_turns": ("{n} turns", "턴 {n}"),
+    "report_unit_block": ("{n} gate block", "게이트 차단 {n}회"),
+    "report_unit_blocks": ("{n} gate blocks", "게이트 차단 {n}회"),
+    # 문체 게이트 최종 봉합 — 재작성까지 실패한 턴에만 나온다 (초안은 정본이 되지 못한다).
+    "style_gate_failed": (
+        "The reply did not pass the style check. Narrow the request to the facts you want confirmed and resend.",
+        "문체 검사를 통과하지 못했습니다. 확인된 사실만 남기도록 범위를 좁혀 다시 요청해 주세요.",
+    ),
     "lagom_stats_tokens": (
         "session spend {tok} tokens (input+output)",
         "이번 세션에서 {tok} 토큰을 썼어요 (입력+출력)",

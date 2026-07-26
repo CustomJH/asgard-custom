@@ -666,23 +666,36 @@ class Heimdall:
                     continue
         except Exception:
             pass
+        from ...i18n import t
+
         roles = [e.get("role", "?") for e in events if e.get("event") in ("plan", "work", "verify")]
+        # 가정 접두는 두 표기를 다 받는다 — 한국어 세션의 `가정:` 은 계약 토큰이고(보존),
+        # 다른 언어로 답하는 세션은 `Assumption:` 을 쓴다. 둘 다 Canon 8 표면화 대상이다.
         assumptions = sorted(
-            {c for e in events for c in (e.get("criteria") or []) if str(c).strip().startswith("가정:")}
+            {
+                c
+                for e in events
+                for c in (e.get("criteria") or [])
+                if str(c).strip().startswith(("가정:", "Assumption:", "assumption:"))
+            }
         )
         last_pass = next((e for e in reversed(events) if e.get("event") == "verify" and e.get("verdict") == "PASS"), {})
         cmds = [c for c in (last_pass.get("commands") or []) if isinstance(c, dict)]
-        lines = ["과업 완수 — 검증 PASS + diff-hash 일치, 퀘스트 로그 닫힘."]
-        lines.append(f"턴 {len(events)} · 역할 {'→'.join(roles[-8:]) or '-'}")
+        lines = [t("report_done")]
+        turns = t("report_unit_turn" if len(events) == 1 else "report_unit_turns", n=len(events))
+        lines.append(t("report_turns", n=len(events), turns=turns, roles="→".join(roles[-8:]) or "-"))
         if cmds:
             lines.append(
-                "증거: " + "; ".join(f"{c.get('cmd', '?')[:60]} (exit {c.get('exit_code')})" for c in cmds[:4])
+                t("report_evidence")
+                + ": "
+                + "; ".join(f"{c.get('cmd', '?')[:60]} (exit {c.get('exit_code')})" for c in cmds[:4])
             )
         if assumptions:
-            lines.append("가정 (Canon 8 — Odin 검토 필요):")
+            lines.append(t("report_assumptions"))
             lines.extend(f"  · {a}" for a in assumptions[:8])
         if gate_blocks:
-            lines.append(f"⚠ 게이트 차단 {gate_blocks}회 후 통과 — 수리 이력은 퀘스트 로그 참조")
+            blocks = t("report_unit_block" if gate_blocks == 1 else "report_unit_blocks", n=gate_blocks)
+            lines.append(t("report_gate_blocks", n=gate_blocks, blocks=blocks))
         report = "\n".join(lines)
         self._last_completion = {
             "session_id": sid,

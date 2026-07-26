@@ -21,8 +21,11 @@ from unittest import mock
 
 from asgard.agent.heimdall import Heimdall
 from asgard.agent.session import SessionResult
+from asgard.i18n import t
 from asgard.model_tiers import tiers_for
 from asgard.providers import PROVIDERS, ResolvedProvider
+
+DONE = t("report_done")  # Trinity 최종 보고 첫 줄 — i18n 계약 앵커 (하드코딩 금지)
 
 CLS_WRITE = {
     "write_expected": True,
@@ -221,8 +224,8 @@ class TestTrinityLoop(Base):
     def test_happy_path_closes_quest_with_report(self):
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
-        self.assertIn("증거", out)  # 구조화 보고
+        self.assertIn(DONE, out)
+        self.assertIn(t("report_evidence"), out)  # 구조화 보고
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
 
@@ -238,7 +241,7 @@ class TestTrinityLoop(Base):
             cls=CLS_WRITE,
         )
         out = h.handle("변경이 필요 없는 요청")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertNotIn("PASS 무효화", "".join(h.texts))
 
     def test_pass_invalidation_is_visible_and_recoverable(self):
@@ -255,7 +258,7 @@ class TestTrinityLoop(Base):
             cls=CLS_WRITE,
         )
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertIn("PASS 무효화", "".join(h.texts))
 
     def test_dual_mode_runs_two_readonly_thinkers_then_one_worker(self):
@@ -277,7 +280,7 @@ class TestTrinityLoop(Base):
 
         out = h.handle("w1.txt 만들어")
 
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         planners = h.consumed[:2]
         self.assertEqual({s.role for s in planners}, {"thinker", "thinker_alt"})
         self.assertTrue(all(s.readonly for s in planners))
@@ -306,7 +309,7 @@ class TestTrinityLoop(Base):
 
         out = h.handle("외부 자료를 조사해 근거 기반 w1.txt를 만들어")
 
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "thinker", "worker", "verifier"])
         self.assertIn("[ASGARD_RESEARCH]", research.prompt)
         self.assertIn("scrapling-official", research.system)
@@ -341,7 +344,7 @@ class TestTrinityLoop(Base):
             out = h.handle("w1.txt 만들어")
 
         self.assertIn("close 거부", out)
-        self.assertNotIn("과업 완수", out)
+        self.assertNotIn(DONE, out)
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertIsNone(h._last_completion)
 
@@ -354,7 +357,7 @@ class TestTrinityLoop(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "criteria": ["guide.md 작성"]})
         out = h.handle("RAGX 소개를 guide.md에 작성해. 사실: Python 13줄, JSON 키 정렬")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "worker", "verifier"])
         self.assertIn("Lagom prose invariants", h.consumed[1].system)
         self.assertNotIn("efficiency ladder", h.consumed[1].system)  # 전체 Lagom 주입으로 판정 기준을 흔들지 않는다
@@ -385,7 +388,7 @@ class TestTrinityLoop(Base):
             out = h.handle("w1.txt 만들어")
         self.assertIn("사용자 승인 제안", out)
         self.assertEqual(retain.call_args.kwargs["user_text"], "w1.txt 만들어")
-        self.assertIn("과업 완수", retain.call_args.kwargs["assistant_text"])
+        self.assertIn(DONE, retain.call_args.kwargs["assistant_text"])
         self.assertTrue(propose.call_args.kwargs["verified"])
         self.assertIn("w1.txt", propose.call_args.kwargs["changed_files"])
 
@@ -454,7 +457,7 @@ class TestTrinityLoop(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         labels = [s.label for s in h.consumed]
         self.assertEqual(labels, ["worker", "verifier", "thinker", "worker", "verifier"])
         replan = h.consumed[2]
@@ -471,7 +474,7 @@ class TestTrinityLoop(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         retry = h.consumed[2]
         self.assertIn("FAILED: test-fails", retry.prompt)
         self.assertIn("assert 1==2", retry.prompt)
@@ -514,7 +517,7 @@ class TestTrinityLoop(Base):
             verifier("PASS"),
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
-        self.assertIn("과업 완수", h.handle("w1.txt와 missing.txt 만들어"))
+        self.assertIn(DONE, h.handle("w1.txt와 missing.txt 만들어"))
         self.assertIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_grep_no_match_is_absence_evidence_not_unresolved_failure(self):
@@ -528,7 +531,7 @@ class TestTrinityLoop(Base):
             {"cmd": "grep -Fx present w1.txt", "exit_code": 0},
         ]
         h = FakeHeimdall(self.root, [worker({"w1.txt": "present\n"}, self.root), absence], cls=CLS_WRITE)
-        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn(DONE, h.handle("w1.txt 만들어"))
         self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_failed_verification_command_is_resolved_by_exact_successful_rerun(self):
@@ -538,7 +541,7 @@ class TestTrinityLoop(Base):
             {"cmd": "pytest -q", "exit_code": 0},
         ]
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), resolved], cls=CLS_WRITE)
-        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn(DONE, h.handle("w1.txt 만들어"))
         self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_failed_runner_is_resolved_by_equivalent_runner_success(self):
@@ -550,7 +553,7 @@ class TestTrinityLoop(Base):
             {"cmd": "python -m pytest tests/test_memory.py -q", "exit_code": 0},
         ]
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), resolved], cls=CLS_WRITE)
-        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn(DONE, h.handle("w1.txt 만들어"))
         self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_failed_runner_with_different_target_stays_unresolved(self):
@@ -566,7 +569,7 @@ class TestTrinityLoop(Base):
             verifier("PASS"),
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
-        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn(DONE, h.handle("w1.txt 만들어"))
         self.assertIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_truncated_command_collision_does_not_resolve_failed_verification(self):
@@ -582,7 +585,7 @@ class TestTrinityLoop(Base):
             verifier("PASS"),
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
-        self.assertIn("과업 완수", h.handle("w1.txt 만들어"))
+        self.assertIn(DONE, h.handle("w1.txt 만들어"))
         self.assertIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_verify_event_records_harness_observed_commands(self):
@@ -604,7 +607,7 @@ class TestTrinityLoop(Base):
             out = h.handle("w1.txt 만들어")
         self.assertIn("Odin 결정 필요", out)
         self.assertIn("stale-pass", out)
-        self.assertNotIn("과업 완수", out)
+        self.assertNotIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "verifier"])
 
     def test_gate_block_then_repair_passes(self):
@@ -614,8 +617,9 @@ class TestTrinityLoop(Base):
         real_gate = [(True, "stale PASS — 물리 대조 불일치"), (False, "")]
         with mock.patch("asgard.agent.heimdall.trinity.gate", side_effect=real_gate):
             out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
-        self.assertIn("차단 1회", out)
+        self.assertIn(DONE, out)
+        # 단복수까지 맞춘 표면 — "1 gate blocks" 같은 문장은 사람 글로 읽히지 않는다
+        self.assertIn(t("report_unit_block", n=1), out)
 
 
 class TestCharterInjection(Base):
@@ -640,7 +644,7 @@ class TestCharterInjection(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)  # 게이트 정상 통과 — charter 가 순환을 막지 않음
+        self.assertIn(DONE, out)  # 게이트 정상 통과 — charter 가 순환을 막지 않음
         by = {}
         for s in h.consumed:
             by.setdefault(s.label, s)
@@ -685,7 +689,7 @@ class TestDeliveryCanonInjection(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         out = h.handle("신규 백엔드 API 설계 — 하우스 룰 준수로 w1.txt 만들어")
-        self.assertIn("과업 완수", out)  # 주입이 순환을 막지 않음
+        self.assertIn(DONE, out)  # 주입이 순환을 막지 않음
         by = self._consumed_by_label(h)
         self.assertIn("Delivery canon (binds the plan", by["thinker"].prompt)
         self.assertIn("asgard-thor-bilskirnir", by["thinker"].prompt)
@@ -736,7 +740,7 @@ class TestBlockedEvidenceParity(Base):
         ]
         seq = [worker({"w1.txt": "x\n"}, self.root), self._verifier_with(cmds)]
         out = FakeHeimdall(self.root, seq, cls=CLS_WRITE).handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
 
     def test_executed_failure_still_demotes_pass(self):
         cmds = [
@@ -751,7 +755,7 @@ class TestBlockedEvidenceParity(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         events = [json.loads(line) for line in self.quest_log_text().splitlines() if line.strip()]
         failures = [event for event in events if event.get("event") == "verify" and event.get("verdict") == "FAIL"]
         self.assertEqual(failures[0]["failure_sig"], "unresolved-verification-failure")
@@ -953,7 +957,7 @@ class TestModelTiers(Base):
     def test_worker_turn_floors_at_coordinator_tier(self):
         h = self._h([worker({"w1.txt": "x\n"}, self.root), verifier("PASS")])
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual(h.consumed[0].model, TIER["high"])  # worker=standard 이나 코디네이터(high) 하한
         self.assertEqual(h.consumed[1].model, TIER["high"])  # verifier micro=high
 
@@ -983,7 +987,7 @@ class TestModelTiers(Base):
         ]
         h = self._h(seq)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         thinkers = [s for s in h.consumed if s.label == "thinker"]
         self.assertEqual(thinkers[0].role, "thinker")  # 1차 재계획 = 기본 배치
         self.assertEqual(thinkers[1].role, "thinker_alt")  # 2차 = clean-slate 대체 모델
@@ -1002,7 +1006,7 @@ class TestModelTiers(Base):
         failed = FakeSession(SessionResult(text="", stop_reason="error"), effect=capped, label="verifier")
         h = self._h([worker({"w1.txt": "x\n"}, self.root), failed, verifier("PASS")])
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         verifier_sessions = [s for s in h.consumed if s.label == "verifier"]
         self.assertEqual([s.role for s in verifier_sessions], ["verifier", "verifier"])
         self.assertTrue(all(s.readonly for s in verifier_sessions))
@@ -1029,7 +1033,7 @@ class TestModelTiers(Base):
         ]
         h = self._h(seq)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         thinker_sessions = [s for s in h.consumed if s.label == "thinker"]
         self.assertEqual([s.role for s in thinker_sessions], ["thinker", "thinker"])
         self.assertTrue(all(s.readonly for s in thinker_sessions))
@@ -1224,7 +1228,7 @@ class TestClassifyHeuristic(Base):
 
         out = h.handle("u1과 u2를 독립 Worker 단위로 분해해 병렬 구현해줘")
 
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual(
             [session.label for session in h.consumed], ["thinker", "worker", "worker", "worker", "verifier"]
         )
@@ -1246,7 +1250,7 @@ class TestClassifyHeuristic(Base):
 
         out = h.handle("u1과 u2를 독립 Worker 단위로 분해해 병렬 구현해줘")
 
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual(
             [session.label for session in h.consumed],
             ["thinker", "thinker", "worker", "worker", "worker", "verifier"],
@@ -1355,7 +1359,7 @@ class TestBudget(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=self._cls())
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertIn("turn 3/3", h.consumed[2].prompt)  # 80% 도달 자기규제 주입
         self.assertIn("narrow scope", h.consumed[2].prompt)
 
@@ -1369,7 +1373,7 @@ class TestBudget(Base):
         h = FakeHeimdall(self.root, seq, cls=self._cls())
         out = h.handle("w1.txt 만들어")
         self.assertIn("예산", out)
-        self.assertNotIn("과업 완수", out)
+        self.assertNotIn(DONE, out)
         # 침묵 break 금지 — 어떤 전이가 왜 못 뛰었는지 Odin 보고에 실린다 (26-07-22 실측:
         # grace PASS 후 베이스라인 red 수리 전이가 막혔는데 "판정 실패"로 오독되는 보고).
         # 전이명은 승격 규칙(동종 red 2회 → THINKER_REPLAN)에 따라 달라진다 — 형식만 봉인.
@@ -1605,7 +1609,7 @@ class TestWaveParallel(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=cls)
         out = h.handle("u1, u2 만들고 요약")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         thinker_session = next(session for session in h.consumed if session.label == "thinker")
         verifier_session = next(session for session in h.consumed if session.label == "verifier")
         self.assertIn("MAP_CANARY", thinker_session.system)
@@ -1672,7 +1676,7 @@ class TestWaveParallel(Base):
             cls=dict(CLS_WRITE, ambiguous=True, parallel_requested=True),
         )
         h.policy.setdefault("ticket_runtime", {})["lease_seconds"] = 2
-        self.assertIn("과업 완수", h.handle("u1과 u2를 병렬 구현해줘"))
+        self.assertIn(DONE, h.handle("u1과 u2를 병렬 구현해줘"))
 
     def test_wave_worker_supplies_default_provider_fallback(self):
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
@@ -1944,7 +1948,7 @@ class TestWaveParallel(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=cls)
         out = h.handle("u1, u2 만들고 요약")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         replan = h.consumed[5]
         self.assertEqual(replan.label, "thinker-replan")
         self.assertIn("broken", replan.prompt)
@@ -1967,7 +1971,7 @@ class TestWaveParallel(Base):
 
         out = h.handle("u1, u2 만들고 요약")
 
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         workers = [session for session in h.consumed if session.label == "worker"]
         self.assertEqual(len(workers), 6)
         self.assertEqual(sum("Assigned unit 3" in session.prompt for session in workers), 2)
@@ -1984,7 +1988,7 @@ class TestDirectGuard(Base):
         seq = [direct, verifier("PASS")]
         h = FakeHeimdall(self.root, seq, cls=self._cls_read())
         out = h.handle("그냥 이거 처리해줘")
-        self.assertIn("과업 완수", out)  # 소급 quest → Verifier → 게이트 → close
+        self.assertIn(DONE, out)  # 소급 quest → Verifier → 게이트 → close
         self.assertIn("misroute", open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read())
 
     def test_direct_readonly_stays_taxless(self):
@@ -2101,7 +2105,7 @@ class TestExplorationHint(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=dict(CLS_WRITE, ambiguous=True))
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         w = [s for s in h.consumed if s.label == "worker"][1]
         self.assertIn("grep -rn foo src/", w.prompt)
         self.assertIn("no need to re-explore", w.prompt)
@@ -2230,7 +2234,7 @@ class TestStandardRoute(Base):
             cls={**CLS_WRITE, "task_class": "standard"},
         )
         out = h.handle("w1.txt 만들어")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker"])
         self.assertIn('"harness"', self.quest_log_text())
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
@@ -2245,7 +2249,7 @@ class TestStandardRoute(Base):
 
         out = h.handle("모호한 부분은 합리적으로 판단해서 w1.txt 만들어")
 
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
         self.assertIn("Success criteria:", work.prompt)
 
@@ -2263,7 +2267,7 @@ class TestStandardRoute(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
         out = h.handle("고쳐줘")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "worker"])
         self.assertIn("baseline-red", seq[1].prompt or "")  # 실패 체크가 재시도 컨텍스트로 전달
 
@@ -2276,7 +2280,7 @@ class TestStandardRoute(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls={**CLS_WRITE, "task_class": "standard"})
         out = h.handle("고쳐줘")
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         events = [json.loads(line) for line in self.quest_log_text().splitlines() if line.strip()]
         failures = [event for event in events if event.get("event") == "verify" and event.get("verdict") == "FAIL"]
         self.assertEqual(failures[0]["failure_sig"], "invalid-verdict-submitted")
@@ -2287,7 +2291,7 @@ class TestStandardRoute(Base):
         h = FakeHeimdall(self.root, seq, cls=cls)
         request = "Create w1.txt containing x"
         out = h.handle(request)
-        self.assertIn("과업 완수", out)
+        self.assertIn(DONE, out)
         self.assertIn(request, seq[1].prompt)
         self.assertNotIn("criteria: []", seq[1].prompt)
         opened = json.loads(self.quest_log_text().splitlines()[0])
