@@ -327,10 +327,15 @@ class DepthGateRuntime(unittest.TestCase):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "corpus"
             root.mkdir()
-            for index in range(900):
-                (root / f"surface-{index:04d}-with-a-long-enough-name.css").write_text(_SOUND, encoding="utf-8")
+            # 목록 항목은 절대 경로다 — tmpdir 접두사가 짧은 리눅스에서는 같은 개수로도
+            # 64KB 를 못 넘겨 전제가 무너진다. 고정 개수 대신 경로 길이에서 되짚는다.
+            stem = "surface-{:04d}-with-a-long-enough-name.css"
+            per_file = len(str(root / stem.format(0))) + 3  # 따옴표 둘 + 쉼표
+            count = max(900, 65536 * 3 // (per_file * 2))
+            for index in range(count):
+                (root / stem.format(index)).write_text(_SOUND, encoding="utf-8")
             payload, code = _gate(root)  # capture_output 이 파이프라 조건이 그대로 재현된다
-            self.assertEqual(len(payload["files"]), 900, "파일 목록이 잘렸다")
+            self.assertEqual(len(payload["files"]), count, "파일 목록이 잘렸다")
             self.assertGreater(len(json.dumps(payload)), 65536, "64KB 를 넘지 않아 시험이 성립하지 않는다")
             self.assertEqual(code, 0)
 
