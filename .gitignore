@@ -245,6 +245,7 @@ workspace/
 .asgard/memory/*
 !.asgard/memory/records/
 !.asgard/memory/records/**
+!.asgard/memory/binding.json
 !.asgard/.gitignore
 !.asgard/asgard-setting-project.json
 .claude/settings.local.json

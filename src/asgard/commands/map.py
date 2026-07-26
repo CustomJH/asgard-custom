@@ -187,11 +187,20 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
             ui.step(f"removed {path}")
         for issue in issues:
             ui.step(f"{issue.source}: {issue.reason}")
+        if not result.owned:
+            ui.step("PROJECT.md ownership marker missing — the managed map was overwritten by hand")
+        if not result.index_current:
+            ui.step("INDEX.md drift")
         if gitignore_changed:
             ui.step("gitignore: .gitignore is missing the Asgard map rules")
         if internal_changed:
             ui.step("gitignore: .asgard/.gitignore seed is missing")
-        ui.step("run: asgard map update")
+        # 추적 불가는 `map update` 로 못 고친다 — 무시 규칙을 걷어내야 풀린다. 이유를 안 실으면
+        # 아래 한 줄만 남아 "업데이트하라 → 여전히 빨강" 을 무한 반복하게 된다.
+        if not result.trackable:
+            ui.step("managed map is git-ignored — not shareable; drop the ignore rule or keep the map local by choice")
+        if result.added or result.removed or not result.owned or not result.index_current or gitignore_changed:
+            ui.step("run: asgard map update")
     return 0 if ok else 1
 
 
