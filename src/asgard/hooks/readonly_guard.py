@@ -32,7 +32,8 @@ READONLY_BASH_HINT = (
     "Read-only role Bash allowlist: inspection (ls/cat/grep/rg/find/stat/tree/wc), git reads "
     "(status/diff/log/show/grep/ls-files), verification runners (pytest/mypy/pyright/ty/ruff check/tsc "
     "--noEmit — including via uv|poetry|pipenv run), python -m pytest|unittest|compileall|py_compile, "
-    "python -c '<one-line smoke with no writes>', tests/ scripts. "
+    "python -c '<one-line smoke with no writes>', node --check <file>, node [--test] <tests/ script>, "
+    "npm|pnpm|yarn test|lint|check, tests/ scripts. "
     "Blocked: file writes, redirection (>), heredocs, $()/backticks/$VAR, paths outside the project. "
     "Use python -c instead of a scratch file, and for a uv project (uv.lock) use `uv run pytest -x -q`. "
     "A blocked command never ran — switch straight to an allowed lane instead of retrying a variant."
@@ -200,6 +201,26 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
         )
     if program == "go":
         return len(tokens) >= 2 and tokens[1] in {"test", "vet"}
+    if program == "node":
+        # Python 레인과 대칭인 검증 통로. 이게 없으면 JS/TS 저장소에서 판정자가 **아무것도 실행할
+        # 수 없어**, 배달물이 아무리 멀쩡해도 "실행 증거 없음 = FAIL" 로만 끝난다 (26-07-26 helios
+        # 실측: node·npm·python -c subprocess 전 레인이 막혀 판정이 정적 읽기로 후퇴).
+        # 임의 프로젝트 코드 실행은 이미 허용된 pytest 와 같은 수준의 노출이다 — 새 구멍이 아니라
+        # 같은 계약의 다른 런타임. 인라인 실행(-e/-p/--eval)은 쓰기 휴리스틱이 없어 제외한다.
+        flags = [t for t in tokens[1:] if t.startswith("-")]
+        operands = [t for t in tokens[1:] if not t.startswith("-")]
+        if any(
+            not (
+                f in {"--check", "--test", "--test-only"} or f.startswith(("--test-reporter=", "--test-name-pattern="))
+            )
+            for f in flags
+        ):
+            return False
+        if "--check" in flags:
+            return len(operands) == 1
+        if not operands:
+            return "--test" in flags  # bare `node --test` = 프로젝트 테스트 전체 (pytest 무인자와 동형)
+        return len(operands) == 1 and _is_test_path(operands[0])
     if program == "asgard" and len(tokens) >= 4 and tokens[1:3] == ["skills", "show"]:
         if not re.fullmatch(r"[a-z0-9][a-z0-9._-]{0,63}", tokens[3]):
             return False
@@ -228,11 +249,14 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
             # Verifier 계약의 한 줄 스모크 레인 — 파일 작성 없이 대표 함수를 직접 호출한다.
             return not _PY_SNIPPET_MUTATION.search(" ".join(tokens[2:]))
         if len(tokens) >= 2:
-            script = tokens[1].replace("\\", "/")
-            return script.endswith(".py") and (
-                os.path.basename(script).startswith("test_") or "/tests/" in f"/{script}"
-            )
+            return tokens[1].replace("\\", "/").endswith(".py") and _is_test_path(tokens[1])
     return False
+
+
+def _is_test_path(script: str) -> bool:
+    """테스트 자산 경로 판정 — `tests/` 아래이거나 파일명이 test 로 시작. 런타임 무관 (py·mjs·ts)."""
+    normalized = script.replace("\\", "/")
+    return os.path.basename(normalized).startswith("test") or "/tests/" in f"/{normalized}"
 
 
 def _shell_parts(command: str) -> tuple[list[list[str]], bool]:

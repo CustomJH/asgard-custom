@@ -251,6 +251,29 @@ class TestCapabilityPolicy(unittest.TestCase):
         with open(os.path.join(self.root, "base.txt"), encoding="utf-8") as f:
             self.assertEqual(f.read(), "base\n")
 
+    def test_readonly_role_has_a_node_verification_lane(self):
+        """JS/TS 저장소에서 판정자가 아무것도 실행하지 못하면 배달물은 늘 "실행 증거 없음"이다.
+
+        실측(26-07-26 helios): node·npm·python -c subprocess 전 레인이 막혀 판정이 정적 읽기로
+        후퇴했다. Python 쪽 `python tests/x.py` 와 대칭인 통로만 연다 — 인라인 실행(-e/--eval)은
+        쓰기 휴리스틱이 없어 계속 막힌다."""
+        from asgard.hooks.readonly_guard import is_readonly_bash_safe
+
+        for command in (
+            "node --check scripts/build.mjs",
+            "node --test tests/unit/build.check.mjs",
+            "node tests/unit/build.check.mjs",
+            "node --test",
+        ):
+            self.assertTrue(is_readonly_bash_safe(command), command)
+        for command in (
+            "node scripts/build.mjs",  # tests/ 밖 스크립트 실행 = 임의 실행
+            "node -e \"require('fs').writeFileSync('x','y')\"",
+            "node --eval 1",
+            "node --check a.mjs b.mjs",
+        ):
+            self.assertFalse(is_readonly_bash_safe(command), command)
+
     def test_builtin_input_validation_runs_before_handlers(self):
         registry = build_session_registry()
         ctx = ToolContext(root=self.root, role="worker")
