@@ -49,6 +49,7 @@ class TestFreyjaBaseline(unittest.TestCase):
                     "asgard-freyja-3d",
                     "asgard-freyja-design",
                     "asgard-freyja-fjadrhamr",
+                    "asgard-freyja-sjonhverfing",
                     "asgard-freyja2",
                     "asgard-freyja4",
                     # 프레임워크 불문 모듈 설계 규율 — 컴포넌트 경계도 같은 문법이라 의도적으로 공유.

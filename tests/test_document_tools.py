@@ -110,6 +110,7 @@ class BundledDocumentSkillTest(unittest.TestCase):
                 "asgard-freyja-3d",
                 "asgard-freyja-design",
                 "asgard-freyja-fjadrhamr",
+                "asgard-freyja-sjonhverfing",
                 "asgard-freyja2",
                 "asgard-freyja4",
                 "codebase-design",

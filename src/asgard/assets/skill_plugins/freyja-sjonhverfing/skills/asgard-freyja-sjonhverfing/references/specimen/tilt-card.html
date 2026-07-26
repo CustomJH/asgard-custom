@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>깊이 표본 — 기울기 카드</title>
+<style>
+  :root {
+    color-scheme: light dark;
+
+    --ink: oklch(0.22 0.02 260);
+    --ink-soft: oklch(0.44 0.02 260);
+    --paper: oklch(0.97 0.008 250);
+    --card-face: oklch(0.99 0.004 250);
+    --edge: oklch(0.88 0.012 250);
+    --accent: oklch(0.52 0.14 250);
+    --shadow-rest: oklch(0.22 0.02 260 / 0.10);
+    --shadow-lift: oklch(0.22 0.02 260 / 0.16);
+
+    --font-display: ui-serif, Georgia, "Nanum Myeongjo", serif;
+    --font-body: ui-sans-serif, system-ui, "Pretendard", sans-serif;
+
+    /* 원근 거리는 요소 폭의 2~4배. 카드가 320px 이므로 900px 이 자연스럽다. */
+    --depth-perspective: 900px;
+    --depth-lift: 20px;
+    --depth-tilt-max: 9deg;
+
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --dur-short: 220ms;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body { overflow-x: clip; }
+
+  body {
+    margin: 0;
+    padding: 4rem 1.5rem;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 1rem/1.6 var(--font-body);
+    display: grid;
+    justify-items: center;
+    gap: 2.5rem;
+  }
+
+  header { max-width: 46ch; }
+
+  h1 {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-display);
+    font-size: 2.5rem;
+    font-weight: 600;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  header p { margin: 0; color: var(--ink-soft); }
+
+  /* 무대: 원근은 부모가 한 번만 선언한다. 형제 카드가 하나의 소실점을 공유한다. */
+  .stage {
+    perspective: var(--depth-perspective);
+    perspective-origin: 50% 40%;
+    padding: 1rem;
+  }
+
+  /* 카드 자신은 3D 공간을 유지한다. 여기에 overflow·filter·opacity 를 얹으면 평면으로 되돌아간다. */
+  .card {
+    width: min(320px, 82vw);
+    transform-style: preserve-3d;
+    transform: rotateX(0deg) rotateY(0deg) translateZ(0px);
+    transition: box-shadow var(--dur-short) var(--ease-out);
+    border: 1px solid var(--edge);
+    border-radius: 14px;
+    background: var(--card-face);
+    box-shadow: 0 2px 6px var(--shadow-rest);
+  }
+
+  .card:hover,
+  .card:focus-visible {
+    box-shadow: 0 var(--depth-lift) calc(var(--depth-lift) * 1.6) var(--shadow-lift);
+  }
+
+  .card:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+
+  /* 면은 카드의 자식이다. translateZ 로 층을 나누면 기울일 때 시차가 생긴다. */
+  .face {
+    padding: 1.5rem;
+    transform: translateZ(28px);
+  }
+
+  .face h2 {
+    margin: 0 0 0.5rem;
+    font-family: var(--font-display);
+    font-size: 1.5rem;
+    font-weight: 600;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+    min-width: 0;
+  }
+
+  .face p { margin: 0 0 1rem; color: var(--ink-soft); }
+
+  .meta {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    border-top: 1px solid var(--edge);
+    padding-top: 1rem;
+    transform: translateZ(14px);
+  }
+
+  .note { max-width: 46ch; color: var(--ink-soft); font-size: 0.75rem; }
+
+  /* 저감 모션은 삭제가 아니라 대체다 — 깊이를 평면으로 되돌리고 정보는 남긴다. */
+  @media (prefers-reduced-motion: reduce) {
+    .stage { perspective: none; }
+    .card { transform: none; transition-duration: 1ms; }
+    .face, .meta { transform: none; }
+  }
+</style>
+</head>
+<body>
+  <header>
+    <h1>기울기 카드</h1>
+    <p>포인터가 어디에 있는지를 카드가 기울어 알려준다. 기울기는 정보를 옮기지 않는다 — 카드에 적힌 것은 기울이지 않아도 전부 읽힌다.</p>
+  </header>
+
+  <section class="stage">
+    <article class="card" tabindex="0" aria-labelledby="card-title">
+      <div class="face">
+        <h2 id="card-title">항로 기록 2·17</h2>
+        <p>북대서양 항로의 겨울 운항 기록. 표면 온도, 결빙 구간, 회항 판단까지 한 항차분이 들어 있다.</p>
+        <div class="meta">
+          <span>기록</span>
+          <span>18분</span>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <p class="note">이 표본은 기법을 보여주기 위한 것이다. 깊이가 무엇을 전달하는지 말할 수 없다면, 그 깊이는 빼는 편이 낫다.</p>
+
+<script type="module">
+  import { createAnimatable, createScope, utils } from "animejs";
+
+  createScope({ mediaQueries: { reduceMotion: "(prefers-reduced-motion: reduce)" } }).add((self) => {
+    const card = document.querySelector(".card");
+    const stage = document.querySelector(".stage");
+    if (!card || self.matches.reduceMotion) return;
+
+    const max = Number.parseFloat(getComputedStyle(card).getPropertyValue("--depth-tilt-max")) || 9;
+    // createAnimatable 은 값을 엔진의 한 프레임 루프로 모은다 — 포인터 이벤트마다 스타일을 쓰지 않는다.
+    const tilt = createAnimatable(card, { rotateX: 220, rotateY: 220, ease: "out(3)" });
+
+    const onMove = (event) => {
+      const box = card.getBoundingClientRect();
+      const px = utils.clamp((event.clientX - box.left) / box.width, 0, 1);
+      const py = utils.clamp((event.clientY - box.top) / box.height, 0, 1);
+      tilt.rotateY((px - 0.5) * 2 * max);
+      tilt.rotateX((0.5 - py) * 2 * max);
+    };
+
+    const rest = () => { tilt.rotateX(0); tilt.rotateY(0); };
+
+    stage.addEventListener("pointermove", onMove);
+    stage.addEventListener("pointerleave", rest);
+    card.addEventListener("blur", rest);
+  });
+</script>
+</body>
+</html>

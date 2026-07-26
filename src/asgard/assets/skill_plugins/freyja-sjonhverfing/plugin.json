@@ -1,0 +1,61 @@
+{
+  "schema": 1,
+  "name": "freyja-sjonhverfing",
+  "version": "1.0.0",
+  "description": "Freyja Sjónhverfing — depth on a flat plane. A technique layer, not a delivery engine: the depth ladder (L0 layering → L5 real 3D, with the hand-off point to the 3D engine made explicit), CSS 3D space construction (perspective roots, preserve-3d, the flattening property list, backface, hit-testing, text rasterization), anime.js v4 as the value engine (animate / createTimeline / createAnimatable / onScroll / createScope, transform-order trap, v3→v4, three.js adapter boundary), eight recipes, per-engine composition contracts that keep engines 1/2/3/4 independent, and a dependency-free deterministic depth gate (10 judged, 5 explicitly unjudged). Node >= 18 for verification.",
+  "skills": [
+    "asgard-freyja-sjonhverfing"
+  ],
+  "routing": {
+    "asgard-freyja-sjonhverfing": {
+      "triggers": [
+        "anime.js",
+        "animejs",
+        "sjonhverfing",
+        "시욘흐베르핑",
+        "눈속임",
+        "의사 3d",
+        "유사 3d",
+        "가짜 3d",
+        "평면 3d",
+        "pseudo 3d",
+        "pseudo-3d",
+        "2.5d",
+        "2.5차원",
+        "깊이감",
+        "입체감",
+        "원근",
+        "perspective",
+        "preserve-3d",
+        "transform-style",
+        "패럴랙스",
+        "parallax",
+        "시차 효과",
+        "틸트",
+        "tilt",
+        "3d 카드",
+        "카드 3d",
+        "플립 카드",
+        "flip card",
+        "뒤집기 카드",
+        "coverflow",
+        "코버플로",
+        "아이소메트릭",
+        "isometric",
+        "등각 투영",
+        "입체 글자",
+        "3d 텍스트",
+        "3d text",
+        "스크롤 연출"
+      ],
+      "defaults": [
+        "freyja"
+      ],
+      "agents": [
+        "freyja"
+      ]
+    }
+  },
+  "source": "Asgard Freyja Sjónhverfing (depth-on-a-plane technique layer)",
+  "license": "MIT"
+}
