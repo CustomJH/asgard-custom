@@ -689,8 +689,10 @@ class TestIngestSelfLearning(MemoryBase):
         plan = memory.plan_ingest("사용자의 호칭은 천둥신이다")
         # 승인 후 흡수 대상만 바뀐 상황 (정본은 그대로) — 외부 편집으로 재현
         victim = memory._page_path(self.d, "사용자의-닉네임은-번개썬더왕")
-        meta, _body = memory._read(self.d, "사용자의-닉네임은-번개썬더왕")
-        memory._atomic_write(victim, memory.render_page(meta, "사용자의 닉네임은 번개주먹왕"))
+        page = memory._read(self.d, "사용자의-닉네임은-번개썬더왕")
+        self.assertIsNotNone(page, "흡수 대상 페이지가 있어야 시나리오가 성립한다")
+        assert page is not None
+        memory._atomic_write(victim, memory.render_page(page[0], "사용자의 닉네임은 번개주먹왕"))
 
         memory.ingest("사용자의 호칭은 천둥신이다", kind="user", plan=plan)
 
@@ -705,7 +707,8 @@ class TestIngestSelfLearning(MemoryBase):
         memory.ingest("사용자 타임존은 KST 이다", kind="user")
         memory.ingest("사용자의 호칭은 천둥신이다", kind="user")
 
-        bodies = "\n".join(memory._read(self.d, s)[1] for s in memory._pages(self.d))
+        pages = [memory._read(self.d, s) for s in memory._pages(self.d)]
+        bodies = "\n".join(page[1] for page in pages if page is not None)
         self.assertIn("천둥신", bodies)
         self.assertNotIn("썬더오브갓", bodies)
         self.assertIn("3월 3일", bodies)

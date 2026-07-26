@@ -761,7 +761,10 @@ class TestJvmCrossFileResolution(Base):
         module = index_java("svc/LocalOnly.java", source)
         index = JvmIndex([module], {"com.acme.store.MeterStore#findMeter": "db_access:MeterMapper.findMeter"})
         unit = next(u for u in module.units if u.name == "run")
-        found, partial = index.statements_from(module, unit)
+        reached = index.statements_from(module, unit)
+        self.assertIsNotNone(reached, "상한을 넘지 않았으므로 버려지면 안 된다")
+        assert reached is not None
+        found, partial = reached
         # 로컬 변수 수신자는 타입이 증명되지 않는다 — 잇지 않고 미해결로 표시한다
         self.assertEqual(found, set())
         self.assertTrue(partial)
