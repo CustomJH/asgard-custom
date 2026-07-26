@@ -130,7 +130,14 @@ class WaveRunner:
             # 다르다 (한 단위는 회귀 테스트, 다른 단위는 계층 경계).
             unit_task = f"{u.get('subtask') or ''} {' '.join(map(str, u.get('criteria') or []))}".strip()
             skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=unit_task)
-            shape_note = work_shape_note(hd.root, unit_task, {"write_expected": True, "task_class": "standard"})
+            # 배정 단위의 target files 는 계획 시점에 이미 알려진 사실이다 — 지시 문구가 구조를
+            # 언급하지 않아도 손댈 형상(경계 교차·이미 큰 파일)으로 구조 규율이 켜진다.
+            shape_note = work_shape_note(
+                hd.root,
+                unit_task,
+                {"write_expected": True, "task_class": "standard"},
+                changed=u.get("files") or None,
+            )
 
             def mk(rp=None):
                 return hd._session(

@@ -768,7 +768,9 @@ class TrinityRun:
         )
         fb = (lambda mw=mk_worker: mw(m=None, rl="worker", rp=hd.rp)) if self.rrp is not hd.rp else None
         canon_hint = worker_canon_hint(hd.root, self.request)
-        shape_note = work_shape_note(hd.root, self.request, self.cls)
+        # 재시도 턴에는 퀘스트 귀속 변경이 이미 관측돼 있다 — 그 형상으로도 구조 규율을 켠다
+        # (첫 턴에는 목록이 비어 있어 텍스트 판정만 남는다: 회귀 없음).
+        shape_note = work_shape_note(hd.root, self.request, self.cls, changed=state.get("changed_files") or None)
         worker_prompt = (
             f"Task: {self.request}\n\nPlan:\n{plan_part}{explore_note}{canon_hint}{shape_note}"
             f"\n{retry_note}{self.budget_note}"
@@ -847,6 +849,24 @@ class TrinityRun:
 
         charter_v = hd._charter_note(hd.root, "verifier")  # 반례 렌즈 (판단③) — 게이트 대체 아님
         verifier_paths = tuple(str(path) for path in (st.get("changed_files") or []) if str(path))
+        # 판정 시점이 변경 형상을 아는 유일한 자리다 — 요청이 아키텍처를 말하지 않아도 관측된
+        # 형상이 구조적이면 아키텍처 검증 팩을 배정한다 (verifier.md 의 "assigned" 조건 충족).
+        shape_note_v = work_shape_note(
+            hd.root, self.request, self.cls, agent="verifier", loader="cli", changed=verifier_paths or None
+        )
+        # 공개 표면 대조 — verifier.md 는 "바뀐 공개 심볼의 호출부를 전수 대조"하라고 요구하지만
+        # 그 목록 만들기가 모델의 손 grep 에 맡겨져 있었다 (심볼 하나 빠뜨리면 그대로 통과).
+        # 퀘스트 기준 커밋 대비 시그니처 변화와 호출부 후보를 기계가 먼저 낸다 — grep 면제가
+        # 아니라 하한이다. fail-open: 기준이 없거나 계산이 실패하면 빈 문자열 (종전 동작).
+        surface_note = ""
+        try:
+            from ...surface import note as _surface_note
+
+            base = str(st.get("base_ref") or "").strip()
+            if base and base != "NONE":
+                surface_note = _surface_note(hd.root, base)
+        except Exception:
+            surface_note = ""
 
         def mk_verifier(m=self.model, rl="verifier", ch=charter_v, rp=None, paths=verifier_paths):
             session = hd._session(
@@ -897,6 +917,8 @@ class TrinityRun:
             " submitted via the verdict tool.\n"
             "If the FAIL is a flaw in the approach itself, submit structural=true (triggers a replan).\n"
             + self._intent_block()
+            + shape_note_v
+            + surface_note
             + "\nClassify every defect you raise in the verdict's `findings`: `auto-fix` for mechanical,"
             " low-risk defects a retry turn resolves on its own judgment; `ask-user` for a finding that"
             " contradicts what Odin explicitly asked for above or that changes user-visible product"

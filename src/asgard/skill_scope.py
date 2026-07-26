@@ -122,14 +122,19 @@ _SHAPE_CONTRACT: dict[str, str] = {
 }
 
 
-def work_shape(request: str, cls: dict | None = None) -> dict:
-    """지시 + 분류 → {shape, lenses, why}. 순수 함수 — LLM·IO 없음.
+def work_shape(request: str, cls: dict | None = None, facts: dict | None = None) -> dict:
+    """지시 + 분류 (+ 변경 사실) → {shape, lenses, why}. 순수 함수 — LLM·IO 없음.
 
     cls 가 없으면 텍스트만으로 판정한다 (외부 호스트 어댑터 경로). write 의도가 없으면 direct —
-    범위 규율을 붙일 대상 자체가 없다."""
+    범위 규율을 붙일 대상 자체가 없다.
+
+    `facts` 는 `change_facts()` 산출물이다. 구조 형상이 관측되면 요청 문구와 무관하게
+    architecture 렌즈를 켠다 — 침식은 아키텍처를 입에 담지 않는 변경에서 일어나므로."""
     text = " ".join((request or "").split())
     cls = cls or {}
     lenses = tuple(name for name, pattern in _LENS_PAT.items() if pattern.search(text))
+    if (facts or {}).get("structural") and "architecture" not in lenses:
+        lenses = (*lenses, "architecture")
     if cls and not cls.get("write_expected"):
         return {"shape": "direct", "lenses": lenses, "why": "read-only request"}
     if _EXPEDITION_PAT.search(text):
@@ -140,6 +145,47 @@ def work_shape(request: str, cls: dict | None = None) -> dict:
     if _FEATURE_PAT.search(text):
         return {"shape": "feature", "lenses": lenses, "why": "new surface marker (feature/page/endpoint)"}
     return {"shape": "slice", "lenses": lenses, "why": "single verifiable slice"}
+
+
+# ── 변경 형상 사실 — 지시 텍스트가 아니라 **손댄 것**에서 구조 규율을 켠다 ──
+# 왜: architecture 렌즈가 요청 문구에만 걸려 있으면 "엔드포인트 하나 추가해줘" 는 영원히 안
+# 걸린다. 그런데 침식은 정확히 그런 요청에서 일어난다 — 아키텍처를 말하지 않는 변경이
+# 경계를 넘고, 이미 큰 파일을 더 키운다. 그래서 관측된 변경 집합에서 사실을 뽑아 켠다.
+_STRUCTURAL_DIRS = 3  # 서로 다른 디렉터리 이상을 건드리면 산탄 수정 형태
+_STRUCTURAL_FILES = 5  # 한 슬라이스로 보기 어려운 파일 수
+
+
+def change_facts(root: str, changed: object) -> dict:
+    """관측된 변경 파일 집합 → 구조 규율 판정 사실. IO 는 크기 확인뿐 (지목 파일만 읽는다).
+
+    반환은 사실만 — 판정(렌즈 결속)은 `work_shape` 몫이다. 빈 입력은 빈 사실이고, 사실이
+    없으면 렌즈를 켜지 않는다 (fail-open: 모르는 것으로 규율을 강요하지 않는다).
+    """
+    paths = [str(p).strip().replace("\\", "/") for p in changed] if isinstance(changed, (list, tuple, set)) else []
+    paths = [p for p in paths if p]
+    if not paths:
+        return {"files": 0, "dirs": 0, "oversized": (), "structural": False, "why": ""}
+    dirs = {p.rsplit("/", 1)[0] if "/" in p else "." for p in paths}
+    try:
+        from .health import oversized as _oversized
+
+        big = _oversized(root, paths)
+    except Exception:  # 크기 확인 실패는 신호 부재로 취급 — 판정을 막지 않는다
+        big = ()
+    reasons = []
+    if len(dirs) >= _STRUCTURAL_DIRS:
+        reasons.append(f"{len(dirs)} directories touched")
+    if len(paths) >= _STRUCTURAL_FILES:
+        reasons.append(f"{len(paths)} files changed")
+    if big:
+        reasons.append(f"already-large file touched ({big[0]})")
+    return {
+        "files": len(paths),
+        "dirs": len(dirs),
+        "oversized": big,
+        "structural": bool(reasons),
+        "why": "; ".join(reasons),
+    }
 
 
 def bound_skills(shape_result: dict, available: set[str] | None = None) -> tuple[str, ...]:
@@ -159,15 +205,19 @@ def scope_note(
     *,
     agent: str = "worker",
     loader: str = "load_skill",
+    changed: object = None,
 ) -> str:
     """역할 프롬프트에 붙일 범위 블록. 매칭이 없으면 빈 문자열 (토큰 회귀 없음).
 
     결속 스킬은 레지스트리에서 그 역할에 실제로 열린 이름만 남긴다 — 비활성·미배정 스킬을
-    지목하면 모델이 존재하지 않는 것을 로드하려다 턴을 태운다 (fail-open: 조회 실패 = 무필터)."""
-    result = work_shape(request, cls)
+    지목하면 모델이 존재하지 않는 것을 로드하려다 턴을 태운다 (fail-open: 조회 실패 = 무필터).
+
+    `changed` 가 오면 그 변경 집합의 형상까지 판정에 넣는다 (관측된 구조 변경 → 구조 규율)."""
+    facts = change_facts(root, changed) if changed else None
+    result = work_shape(request, cls, facts)
     shape = result["shape"]
     if shape == "direct":
-        return ""
+        return ""  # read-only 턴에는 붙일 계획 규율이 없다 (형상 사실이 있어도 마찬가지)
     available: set[str] | None = None
     try:
         from .skill_registry import available_skills
@@ -181,6 +231,22 @@ def scope_note(
         f"shape: **{shape}** — {result['why']}",
         _SHAPE_CONTRACT[shape],
     ]
+    if facts and facts.get("structural"):
+        # 근거를 함께 싣는다 — "구조 규율을 켰다"만 있으면 모델이 왜인지 되짚느라 턴을 쓴다
+        lines.append(
+            f"Observed change shape is structural ({facts['why']}), so the architecture discipline is in scope"
+            " regardless of how the request was worded. This is an observation about the change, not a"
+            " licence to widen scope (Canon 7): keep the change minimal and report structural findings"
+            " outside scope instead of fixing them."
+        )
+        if "asgard-hlidskjalf" not in skills:
+            # 판정자는 스킬 배정 대상이 아니다 (검증 독립성 — skill_registry._ASSIGNABLE_AGENTS).
+            # 그래서 결속 목록으로는 못 주고, 역할 md 가 이미 쓰는 CLI 읽기 경로로 지목한다.
+            lines.append(
+                "This assigns the system-level architecture axis for this diff: load the canonical procedure"
+                " with `asgard skills show asgard-hlidskjalf` and judge layering/dependency direction,"
+                " coupling, and module boundaries with file:line evidence."
+            )
     if skills:
         verbs = {
             "load_skill": "Load each with the `load_skill` tool before deciding",

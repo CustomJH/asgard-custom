@@ -16,7 +16,7 @@ from asgard.agent.heimdall.roles import work_shape_note
 from asgard.agent.heimdall.toolspec import VERDICT_TOOL
 from asgard.agent.heimdall.trinity import _classified_findings
 from asgard.hooks.quest_log import normalize
-from asgard.skill_scope import bound_skills, scope_note, work_shape
+from asgard.skill_scope import bound_skills, change_facts, scope_note, work_shape
 from asgard.templates.roles import ROLE_AGENTS
 
 _WRITE = {"write_expected": True, "task_class": "standard"}
@@ -253,6 +253,121 @@ class RoleContractTest(unittest.TestCase):
         body = self._role("asgard-verifier.md")
         for token in ("`auto-fix`", "`ask-user`", "`no-op`", "fail closed", "<intent>"):
             self.assertIn(token, body)
+
+
+class ChangeFactsTest(unittest.TestCase):
+    """구조 규율이 **요청 문구가 아니라 손댄 형상**으로 켜지는지. 침식은 아키텍처를 말하지 않는
+    요청에서 일어나므로, 이 트리거가 없으면 규율은 이미 아는 사람에게만 붙는다."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.addCleanup(self.tmp.cleanup)
+
+    def _write(self, rel: str, lines: int) -> str:
+        import os
+
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write("\n".join(f"x{i} = {i}" for i in range(lines)))
+        return rel
+
+    def test_no_changes_means_no_facts(self):
+        facts = change_facts(self.root, [])
+        self.assertFalse(facts["structural"])
+        self.assertEqual(facts["files"], 0)
+
+    def test_many_directories_is_structural(self):
+        changed = [self._write(f"area{i}/mod.py", 5) for i in range(3)]
+        facts = change_facts(self.root, changed)
+        self.assertTrue(facts["structural"])
+        self.assertIn("directories touched", facts["why"])
+
+    def test_single_small_file_is_not_structural(self):
+        facts = change_facts(self.root, [self._write("pkg/one.py", 5)])
+        self.assertFalse(facts["structural"])
+        self.assertEqual(facts["why"], "")
+
+    def test_touching_an_already_large_file_is_structural(self):
+        from asgard.health import FILE_LINES_WARN
+
+        big = self._write("pkg/big.py", FILE_LINES_WARN + 10)
+        facts = change_facts(self.root, [big])
+        self.assertTrue(facts["structural"], "이미 큰 파일을 더 키우는 것이 침식의 주 경로다")
+        self.assertIn("already-large file", facts["why"])
+        self.assertEqual(facts["oversized"], (big,))
+
+    def test_structural_facts_bind_architecture_discipline(self):
+        """아키텍처를 한 마디도 안 하는 요청이 구조 형상만으로 규율을 얻는다."""
+        request = "설정 저장 엔드포인트 하나 추가해줘"
+        self.assertEqual(work_shape(request, _WRITE)["lenses"], (), "텍스트만으로는 안 걸린다(종전 동작)")
+        changed = [self._write(f"area{i}/mod.py", 5) for i in range(3)]
+        result = work_shape(request, _WRITE, change_facts(self.root, changed))
+        self.assertIn("architecture", result["lenses"])
+        self.assertEqual(bound_skills(result), ("codebase-design", "asgard-hlidskjalf"))
+
+    def test_facts_never_change_the_shape_only_the_lens(self):
+        """사실은 규율(렌즈)만 켠다 — 형상(slice/feature)은 계획 축이라 건드리지 않는다."""
+        request = "버튼 색 바꿔줘"
+        changed = [self._write(f"area{i}/mod.py", 5) for i in range(4)]
+        plain = work_shape(request, _WRITE)
+        with_facts = work_shape(request, _WRITE, change_facts(self.root, changed))
+        self.assertEqual(plain["shape"], with_facts["shape"])
+        self.assertEqual(plain["why"], with_facts["why"])
+
+    def test_read_only_turn_gets_no_note_even_when_structural(self):
+        changed = [self._write(f"area{i}/mod.py", 5) for i in range(3)]
+        note = scope_note(self.root, "설명해줘", {"write_expected": False}, changed=changed)
+        self.assertEqual(note, "")
+
+    def test_note_states_why_the_structural_lens_fired(self):
+        changed = [self._write(f"area{i}/mod.py", 5) for i in range(3)]
+        note = scope_note(self.root, "엔드포인트 추가", _WRITE, changed=changed)
+        self.assertIn("structural", note)
+        self.assertIn("directories touched", note)
+        self.assertIn("Canon 7", note, "범위 확대 면허가 아니라는 것을 같이 실어야 한다")
+
+    def test_every_bundled_manifest_only_names_assignable_agents(self):
+        """플러그인 `agents` 에 배정 불가 역할이 섞이면 매니페스트 검증 실패로 그 플러그인이
+        **조용히 사라진다** (fail-open continue). 전 번들을 훑어 그 함정을 봉인한다."""
+        import json
+        from pathlib import Path
+
+        from asgard.skill_registry import _ASSIGNABLE_AGENTS, _BUNDLED_PLUGINS_DIR
+
+        allowed = {*_ASSIGNABLE_AGENTS, "any"}
+        checked = 0
+        for manifest_path in sorted(Path(_BUNDLED_PLUGINS_DIR).glob("*/plugin.json")):
+            routing = json.loads(manifest_path.read_text(encoding="utf-8")).get("routing") or {}
+            for skill, route in routing.items():
+                for agent in (route or {}).get("agents") or ():
+                    checked += 1
+                    self.assertIn(
+                        agent, allowed, f"{manifest_path.parent.name}/{skill}: '{agent}' 는 배정 가능 역할이 아니다"
+                    )
+        self.assertGreater(checked, 0, "번들 매니페스트를 하나도 못 읽었다 — 경로 회귀")
+
+    def test_verifier_reaches_the_pack_without_a_skill_assignment(self):
+        """판정자는 스킬 배정 대상이 아니다 (검증 독립성) — 그래도 절차 정본에는 닿아야 한다.
+
+        `skill_registry._ASSIGNABLE_AGENTS` 에 verifier 가 없으므로 결속 목록으로는 줄 수 없다.
+        플러그인 `agents` 에 verifier 를 넣으면 매니페스트 검증이 통째로 실패해 그 플러그인이
+        조용히 사라진다 (26-07-26 실측). 그래서 CLI 읽기 경로로 지목하는 것이 유일한 정답이다."""
+        changed = [self._write(f"area{i}/mod.py", 5) for i in range(3)]
+        note = scope_note(self.root, "엔드포인트 추가", _WRITE, agent="verifier", loader="cli", changed=changed)
+        self.assertIn("asgard-hlidskjalf", note)
+        self.assertIn("architecture axis", note)
+
+    def test_missing_paths_do_not_raise(self):
+        """관측 목록에 지워진 파일이 섞여도 사실 수집은 죽지 않는다 (fail-open)."""
+        facts = change_facts(self.root, ["gone/nowhere.py", "also/missing.ts"])
+        self.assertEqual(facts["oversized"], ())
+        self.assertEqual(facts["files"], 2)
+
+    def test_non_list_input_is_empty_facts(self):
+        for bad in (None, "src/a.py", 3, {"a": 1}):
+            self.assertFalse(change_facts(self.root, bad)["structural"])
 
 
 if __name__ == "__main__":

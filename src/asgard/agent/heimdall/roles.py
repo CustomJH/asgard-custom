@@ -281,16 +281,25 @@ def worker_canon_hint(root: str, task: str) -> str:
 
 
 def work_shape_note(
-    root: str, request: str, cls: dict | None = None, *, agent: str = "worker", loader: str = "load_skill"
+    root: str,
+    request: str,
+    cls: dict | None = None,
+    *,
+    agent: str = "worker",
+    loader: str = "load_skill",
+    changed: object = None,
 ) -> str:
     """범위 형상 노트 — 결정론 사이징 + 결속 규율 스킬 지목 (fail-open: 실패는 빈 문자열).
 
     read-only 요청이나 무매칭은 빈 문자열이라 토큰 회귀가 없다. 형상 판정은 순수 함수라
-    같은 지시에 같은 노트가 나온다 — 모델 자율 선택은 그대로 두고 발견 실패만 걷어내는 층이다."""
+    같은 지시에 같은 노트가 나온다 — 모델 자율 선택은 그대로 두고 발견 실패만 걷어내는 층이다.
+
+    `changed` 는 관측된 변경 파일 목록이다. 넘기면 요청 문구가 아니라 **손댄 형상**으로도
+    구조 규율이 켜진다 (계획 대상 파일은 계획 시점에, 변경 파일은 판정 시점에 사실이 된다)."""
     try:
         from ...skill_scope import scope_note
 
-        return scope_note(root, request, cls, agent=agent, loader=loader)
+        return scope_note(root, request, cls, agent=agent, loader=loader, changed=changed)
     except Exception:
         return ""
 
