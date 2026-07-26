@@ -417,6 +417,61 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertEqual(_by_id(_gate(target)[0], 22)["status"], "fail")
         self.assertEqual(_by_id(_gate(target, "--genre", "modern-minimal")[0], 22)["status"], "n/a")
 
+    def test_class_carried_state_is_the_same_element(self) -> None:
+        """상태가 의사클래스가 아니라 클래스로 올 때도 같은 원소다 — `.chip` / `.chip.on`.
+
+        아스가르드 맵 화면에서 실측된 오탐이다. 주어 컴파운드를 문자열로 비교하면
+        클래스 하나가 붙었다는 이유로 다른 원소가 되고, 죽은 모션이 아닌 것이 죽었다고 잡힌다.
+        같은 규칙이 `.zoombar button` 과 `.modebar button` 을 뭉개서도 안 된다.
+        """
+        css = CLEAN_CSS + (
+            "\n.chip { color: var(--color-muted); transition: color var(--dur-short) var(--ease-out); }\n"
+            ".chip.on { color: var(--color-ink); }\n"
+            # 조상 문맥이 다른 같은 태그는 여전히 남남이다 — 이쪽은 진짜 죽은 모션이다.
+            ".zoombar button { transition: border-color var(--dur-short) var(--ease-out); }\n"
+            ".modebar button:hover { border-color: var(--color-accent); }\n"
+        )
+        html = CLEAN_HTML.replace("</main>", '  <button class="chip on" type="button">route</button>\n    </main>')
+        gate = _by_id(_gate(_write(self.root / "classstate", css=css, html=html))[0], "A1")
+        self.assertEqual(gate["status"], "fail", "조상 문맥이 다른 죽은 모션까지 통과시켰다")
+        joined = " ".join(gate["findings"])
+        self.assertNotIn(".chip transitions", joined, f"클래스 상태 변형을 오탐했다: {gate['findings']}")
+        self.assertIn(".zoombar button", joined, gate["findings"])
+
+    def test_reduced_motion_kill_switch_is_not_dead_motion(self) -> None:
+        """`transition: none!important` 는 모션이 아니라 모션을 끄는 스위치다."""
+        css = CLEAN_CSS.replace(
+            "  .btn { transition: none; }",
+            "  *, *::before, *::after { transition: none!important; animation: none!important; }",
+        )
+        gate = _by_id(_gate(_write(self.root / "killswitch", css=css))[0], "A1")
+        self.assertEqual(gate["status"], "pass", gate["findings"])
+
+    def test_translucent_fill_is_not_judged_as_an_opaque_surface(self) -> None:
+        """8% 틴트는 그 색이 아니다 — 뒤에 깔린 것과 합성된 면이다.
+
+        리터럴을 전강도로 읽으면 어두운 바탕의 읽히는 칩이 대비 실패로 떨어진다.
+        판정을 접되 침묵하지 않는다: 몇 % 불투명인지 근거로 남긴다.
+        """
+        css = CLEAN_CSS + (
+            "\n.tint { color: var(--color-ink);"
+            " background: color-mix(in oklab, var(--color-accent) 8%, transparent); }\n"
+        )
+        html = CLEAN_HTML.replace("</main>", '  <p class="tint">Eight per cent</p>\n    </main>')
+        gate = _by_id(_gate(_write(self.root / "tint", css=css, html=html))[0], 41)
+        self.assertEqual(gate["status"], "pass", gate["findings"])
+        self.assertTrue(
+            any("8% opaque" in n for n in gate["notes"]),
+            f"판정을 접고 근거를 남기지 않았다 (혼합 비율 오독 포함): {gate['notes']}",
+        )
+        # 불투명한 잉크-온-잉크는 그대로 떨어져야 한다 — 위 완화가 게이트를 무디게 만들면 안 된다.
+        opaque = CLEAN_CSS + "\n.tint { color: var(--color-accent); background: var(--color-accent); }\n"
+        self.assertEqual(
+            _by_id(_gate(_write(self.root / "opaquetint", css=opaque, html=html))[0], 41)["status"],
+            "fail",
+            "틴트 예외가 진짜 잉크-온-잉크까지 통과시켰다",
+        )
+
     def test_report_lands_in_the_vault(self) -> None:
         target = _write(self.root / "vaulted")
         cwd = self.root / "project"
