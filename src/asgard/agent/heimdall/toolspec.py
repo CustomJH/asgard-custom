@@ -6,9 +6,13 @@ Verifier verdict, 딜리버리 dispatch, thor 편대 fan-out.
 
 from __future__ import annotations
 
+from typing import Any
+
 from .roles import _DELIVERY
 
-VERDICT_TOOL = {
+# JSON 스키마다 — 값이 str·dict·list 로 섞인다. 선언을 안 달면 추론이 첫 값으로 좁혀져
+# 중첩 키를 파고드는 호출부가 전부 타입 오류가 된다.
+VERDICT_TOOL: dict[str, Any] = {
     "name": "verdict",
     "description": "Verifier only — submit a structured verdict. Call only after running the "
     "verification commands yourself.",

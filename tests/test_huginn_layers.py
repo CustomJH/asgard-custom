@@ -14,6 +14,7 @@ import sys
 import tempfile
 import unittest
 from types import SimpleNamespace
+from typing import Any
 from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -101,7 +102,8 @@ class Base(unittest.TestCase):
         self._tmp.cleanup()
 
     def engine(self, call=None, window=100_000, **overrides):
-        pol = CompressPolicy(**{**{"min_recovery_tokens": 100, "tail_tokens": 4_000}, **overrides})
+        settings: dict[str, Any] = {"min_recovery_tokens": 100, "tail_tokens": 4_000, **overrides}
+        pol = CompressPolicy(**settings)
         return Huginn(self.root, window, pol, call=call, now=_Clock(), session_id="s1")
 
 

@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from collections.abc import Callable
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 from asgard import (
@@ -298,7 +299,7 @@ class TestWiring(unittest.TestCase):
             subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True)
             with open(path, "a", encoding="utf-8") as fh:
                 fh.write("앞으로의 행보가 기대된다.\n")
-            checks = [lagom.style_violations, bragi.violations]
+            checks: list[Callable[[str, str], list[str]]] = [lagom.style_violations, bragi.violations]
             found = lagom.changed_prose_violations(root, ["guide.md"], "", checks)
             self.assertTrue(any("KO-closing-formula" in item for item in found), found)
             self.assertTrue(all(item.startswith("guide.md: ") for item in found), found)

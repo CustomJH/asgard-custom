@@ -27,6 +27,7 @@ import os
 import sys
 import urllib.error
 import urllib.request
+from typing import Any
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "src")))
 from asgard import bragi  # noqa: E402
@@ -124,7 +125,8 @@ def main() -> None:
             except (urllib.error.URLError, TimeoutError) as exc:
                 print(f"ollama unreachable at {OLLAMA}: {exc}", file=sys.stderr)
                 sys.exit(2)
-            row = {"lang": lang, "task": i, **{c: score(t) for c, t in texts.items()}}
+            # 한 행에 라벨(str)·과업 번호(int)·조건별 채점(dict) 이 섞인다 — JSON 행이라 Any 가 정직하다
+            row: dict[str, Any] = {"lang": lang, "task": i, **{c: score(t) for c, t in texts.items()}}
             row.update({f"text_{c}": t for c, t in texts.items()})
             a, sa, sb = texts["A"], row["A"], row["B"]
             # 조건 C — A 가 게이트를 울렸으면 실제 수리 프롬프트를 태운다

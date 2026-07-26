@@ -11,6 +11,7 @@ import os
 import sys
 import tempfile
 import unittest
+from typing import Any
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
@@ -246,7 +247,8 @@ class _Clock:
 
 
 def _engine(call=None, window=100_000, **overrides):
-    pol = CompressPolicy(**{**{"min_recovery_tokens": 100}, **overrides})
+    settings: dict[str, Any] = {"min_recovery_tokens": 100, **overrides}
+    pol = CompressPolicy(**settings)
     return Huginn(tempfile.mkdtemp(), window, pol, call=call, now=_Clock())
 
 
@@ -372,8 +374,11 @@ class TestGuards(unittest.TestCase):
         self.assertEqual(engine.effective_tail_tokens(), 10_000)
 
     def test_classify_failure(self):
-        auth = RuntimeError("x")
-        auth.status_code = 401
+        # 실제로 오는 예외는 SDK 가 status_code 를 달아 보낸다 — 표준 예외엔 없는 속성이라 흉내낸다
+        class _HttpError(RuntimeError):
+            status_code = 401
+
+        auth = _HttpError("x")
         self.assertEqual(classify_failure(auth), "auth")
         self.assertEqual(classify_failure(RuntimeError("Connection timed out")), "network")
         self.assertEqual(classify_failure(ValueError("bad json")), "other")
