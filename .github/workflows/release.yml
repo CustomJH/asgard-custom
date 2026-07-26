@@ -13,17 +13,47 @@ permissions:
   contents: write
 
 jobs:
-  release:
+  # 태그 ↔ __version__ 불일치 방어 — 불일치면 wheel 파일명이 태그와 어긋나
+  # install.sh 의 releases/download/v{tag}/asgard-{tag}-*.whl URL 이 404 가 된다.
+  # 품질 게이트보다 앞에 둔다: 초 단위로 끝나는 검사를 8분짜리 뒤에 세울 이유가 없다.
+  verify-tag:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      # 태그 ↔ __version__ 불일치 방어 — 불일치면 wheel 파일명이 태그와 어긋나
-      # install.sh 의 releases/download/v{tag}/asgard-{tag}-*.whl URL 이 404 가 된다.
       - name: Verify tag matches __version__
         run: |
           v="$(sed -n 's/.*__version__ = "\([^"]*\)".*/\1/p' src/asgard/__init__.py)"
           [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != __version__ $v — src/asgard/__init__.py 를 먼저 올리세요"; exit 1; }
+
+  # push/PR CI 는 꺼져 있다(ci.yml.disabled) — 그래서 태그가 **유일한** 검증 지점이다. 게이트를
+  # 안 걸면 lint·타입·테스트를 한 번도 안 돌린 wheel 이 install.sh 로 나간다. 로컬 베이스라인과
+  # 같은 4단: ruff check · ruff format --check · ty check · pytest.
+  quality:
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --group dev
+
+      - run: uv run ruff check
+
+      - run: uv run ruff format --check
+
+      - run: uv run ty check
+
+      - run: uv run pytest -q
+
+  release:
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: astral-sh/setup-uv@v5
 
