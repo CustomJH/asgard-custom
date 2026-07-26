@@ -1362,6 +1362,45 @@ class TestView(Base):
         self.assertIn("KIND_BOOST", html)  # 상시 라벨 종류 가중(차수 독점 방지)
         self.assertIn("trace.cam", html)  # 체인 해제 시 카메라 복원
 
+    def test_view_star_mode_is_three_dimensional(self):
+        """성좌 = 3차원 시냅스 공간, 레인 = 평면. 둘의 경계가 이 계약이다.
+
+        투영은 월드 좌표 단계에서 끝나야 한다 — 그래야 기존 팬·줌·fit(ctx 변환)이
+        그대로 살고, 레인 모드는 z=0·k=1 로 접혀 결정론 배치가 흔들리지 않는다.
+        """
+        from asgard.map_graph import build_view, scan_graph
+
+        self.seed()
+        scan_graph(self.root)
+        html = build_view(self.root)
+        # 3차원 물리 — z 축이 힘 계산에 실제로 들어간다(투영만 3D 인 척 하지 않는다)
+        self.assertIn("a.vz-=dz;", html)
+        self.assertIn("Math.hypot(dx,dy,dz)", html)
+        # 원근 투영 — 초점거리와 궤도 각
+        self.assertIn("const FOCAL=", html)
+        self.assertIn("function project()", html)
+        self.assertIn("FOCAL/(FOCAL+zr)", html)
+        self.assertIn("function orbitBy", html)
+        # 기존 2D 카메라가 살아 있어야 한다 — 투영이 월드 단위로 끝났다는 증거
+        self.assertIn("ctx.scale(scale*devicePixelRatio, scale*devicePixelRatio)", html)
+        # 깊이 단서 — 페인터 순서·안개·밴드
+        self.assertIn("drawList.sort((a,b)=>b.pz-a.pz)", html)
+        self.assertIn("function depth(k)", html)
+        self.assertIn("DEPTH_BANDS", html)
+        # 우주 — 결정론 성진(Math.random 금지: 렌더가 재현되어야 한다)
+        self.assertIn("const STARS=", html)
+        self.assertNotIn("Math.random", html)
+        # 레인은 평면 — 원근·성진·그리드가 모드로 갈린다
+        self.assertIn("space=!lane", html)
+        self.assertIn('stage.classList.toggle("flat", lane)', html)
+        self.assertIn("#stage.flat{background:", html)
+        # 모션 정직성 — 축소 모드는 상시 루프를 돌리지 않고, 탭이 가려지면 멈춘다
+        self.assertIn("space && !REDUCED && !document.hidden", html)
+        self.assertIn("visibilitychange", html)
+        # 자동 표류는 유한하고, 조작이 곧 정지 수단이다
+        self.assertIn("DRIFT_TURNS", html)
+        self.assertIn("orbiting=true", html)
+
     def test_view_without_state_raises(self):
         from asgard.map_graph import GraphError, build_view
 
