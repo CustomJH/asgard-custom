@@ -272,6 +272,79 @@ Classify all fallback/bypass code into two kinds:
 > Source: pipefail evidence format, two-way fallback classification — standard practice restated in our own words.
 """
 
+_MAGNI = """\
+---
+name: asgard-thor-magni
+description: Thor's son Magni — micro-craft: the shape of the code you are writing, the lifetime of what it allocates, and what it costs as input grows. Load before writing or restructuring any implementation, and before returning backend work.
+---
+
+# asgard-thor-magni — 🪨 Micro-Craft: Shape, Lifetime, Cost
+
+Magni lifted the giant's leg off Thor when the grown gods could not — not with more force, but because
+the right shape of effort at one point beat piling on. He is also who carries the hammer after the
+world ends. That is the standard here: **code that is still liftable by whoever comes next.**
+
+This skill is short on purpose. Structural requirements degrade an agent the more of them you hold at
+once — measured: assertion pass rates drop ~30 points from unconstrained to fully constrained backend
+tasks (Constraint decay, 2605.06445). So the enumerable rules are **not** carried in your attention:
+`asgard craft` carries them. What is written here is the ranked judgment the machine cannot make.
+
+## The ordering (when these conflict, higher wins)
+
+1. **Correct** — Mjölnir's canon. A fast, small, leak-free wrong answer is still wrong.
+2. **Bounded** — nothing you allocate may grow without a stated limit.
+3. **Shaped** — one function states one level of abstraction.
+4. **Cheap** — the cost curve, not the constant factor.
+
+Never trade 1 for 4. Trading 3 for 2 is allowed and sometimes correct — say so in the report.
+
+## Shape
+
+- A function that needs a section comment to be read is two functions. Extract the section, name it
+  after the guarantee it makes, and the comment becomes the name.
+- Nesting is a failure of ordering, not of complexity. Handle failure conditions first and return —
+  every guard clause you hoist drops the body one level.
+- The budgets (unit lines, nesting depth) are the machine's, not yours. When you exceed one, the
+  answer is never "raise the budget" and never "split at the line count" — find where the function
+  changes subject, and cut there.
+- Agents converge on degraded structures and then reinforce them (SlopCodeBench, 2603.24755). The
+  edit that lengthens an already-long function is the mechanism. Refuse that edit specifically.
+
+## Lifetime — assume the process runs for weeks
+
+- Every acquisition names its release **in the same breath**: `with` if the scope owns it, an explicit
+  handoff if the caller does. "It gets collected eventually" is not a lifetime.
+- Anything that can hold entries must state what removes them: a cap, an eviction rule, a TTL, or an
+  owner who clears it. A cache without an invalidation story is a leak with good manners.
+- The ones static analysis cannot see, so they are yours: registered listeners and subscriptions,
+  timers and background tasks, callbacks captured in closures that outlive their subject, retained
+  references in module-level state, and anything you attach per request or per turn.
+- Memory claims are measurement claims (Canon 8) — "no longer leaks" needs a before/after number over
+  a repeated run, not one pass.
+
+## Cost
+
+- State the complexity of what you write in terms of what grows: "O(files × routes), files dominates".
+  If you cannot name the growing quantity, you do not yet know what the code does.
+- Choosing the right data structure is not premature optimization — it is not optimization at all. The
+  ban on unmeasured optimization (Canon 7) restrains tuning constants, never a wrong container.
+- The shapes that turn ten-times-input into hundred-times-time: scanning a list inside a loop,
+  rebuilding a string or list by concatenation per iteration, inserting or removing at the front, a
+  query inside a loop. These have unconditionally better forms — use them from the start.
+- Hot-path numeric budgets stay Lightning's surface. This is about the curve, which matters before any
+  measurement exists because you cannot measure your way out of the wrong exponent.
+
+## Before returning
+
+Run `asgard craft` over your change. It judges only what this diff made worse — inherited debt is not
+yours and it will not stop you. Findings are not suggestions: fix them or return the reason the shape
+is right, with the evidence. It cannot see cross-file lifetime, unbounded instance state, or the cost
+of anything it cannot name — clearing the gate is the floor, not the verdict.
+
+> Sources: constraint decay in backend agents (2605.06445), long-horizon structural degradation
+> (2603.24755); the rest is standard practice restated in our own words.
+"""
+
 _EINHERJAR = """\
 ---
 name: asgard-thor-einherjar
@@ -329,12 +402,26 @@ THOR_SKILLS: list[tuple[str, str]] = [
     ("asgard-thor-jarngreipr", _JARNGREIPR),
     ("asgard-thor-gridarvol", _GRIDARVOL),
     ("asgard-thor-tanngrisnir", _TANNGRISNIR),
+    ("asgard-thor-magni", _MAGNI),
     ("asgard-thor-einherjar", _EINHERJAR),
 ]
 
 # 네이티브 디스패치 task → 전용 스킬 매칭 (파일 스킬 로더가 없는 asgard start 세션용 통로 —
 # 모드 A/B 는 파일 스킬이 담당). 부분 일치 키워드 + 단어 경계 정규식 + 동반어 조건 3층.
 _SUBSTR: dict[str, tuple[str, ...]] = {
+    "asgard-thor-magni": (
+        "리팩터",
+        "리팩토링",
+        "메모리 누수",
+        "누수",
+        "복잡도",
+        "자료구조",
+        "알고리즘",
+        "중첩",
+        "함수 분리",
+        "긴 함수",
+        "수명",
+    ),
     "asgard-thor-mjollnir": (
         "배치",
         "트랜잭션",
@@ -490,6 +577,19 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
     "asgard-thor-jarngreipr": (r"\bddl\b", r"\bdml\b"),
     "asgard-thor-gridarvol": (r"\bdebug", r"\bbugs?\b", r"\bcrash", r"\bbisect\b", r"\bflak(y|e)\b"),
     "asgard-thor-tanngrisnir": (r"\bcleanup\b", r"\bslop\b"),
+    # 미시 공예는 "그 단어를 말한 요청"에만 걸리면 안 된다 — 침식은 정확히 아무 단어도 말하지 않는
+    # 평범한 구현 요청에서 일어난다. 그래서 역할 파일이 반사(게이트 실행)를 항상 켜 두고, 여기서는
+    # 형상·수명·비용을 **논제로 삼은** 요청만 잡아 깊은 본문을 싣는다.
+    "asgard-thor-magni": (
+        r"\brefactor",
+        r"\bleaks?\b",
+        r"\bcomplexit(y|ies)\b",
+        r"\bo\(n",
+        r"\bbig-?o\b",
+        r"\bnest(ed|ing)\b",
+        r"\balgorithm",
+        r"\bdata structure",
+    ),
 }
 
 
