@@ -535,6 +535,18 @@ def criteria_contracts(criteria):
     return out[:5]  # 상한 — 계약 폭주가 verify 턴을 인질로 잡지 않게
 
 
+def contract_criteria(*sources):
+    """계약 추출 원본 — 문자열 항목을 실은 첫 후보. quest_log.py 와 동일 유지.
+
+    계약은 문자열 기준에만 담긴다. 판정자가 기준별 판정을 객체로 실은 이벤트를 원본으로 쓰면
+    한쪽은 계약 0건(명령 미실행), 게이트는 계약 있음(미충족)으로 갈려 Stop 이 영구 차단된다."""
+    for src in sources:
+        strings = [c for c in (src or []) if isinstance(c, str)]
+        if strings:
+            return strings
+    return []
+
+
 def unmet_contracts(root, criteria, rec):
     """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0 만 인정,
     산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore 로 diff-hash 밖일 수 있어
@@ -862,7 +874,7 @@ def main():
         unfinished = [unit for unit, status in ticket_state.items() if status != "done"]
         if unfinished:
             block(root, sid, "tickets-incomplete", units=", ".join(unfinished[:6]))
-        unmet = unmet_contracts(root, next((e.get("criteria") for e in events if e.get("criteria")), []), p)
+        unmet = unmet_contracts(root, contract_criteria(*(e.get("criteria") for e in events)), p)
         if unmet:
             block(root, sid, "criteria-unverified", unmet="; ".join(map(str, unmet[:3])))
         if not pass_evidence(p, no_change=current == EMPTY):

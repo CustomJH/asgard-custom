@@ -734,6 +734,22 @@ def criteria_contracts(criteria) -> list[dict]:
     return out[:5]  # 상한 — 계약 폭주가 verify 턴을 인질로 잡지 않게
 
 
+def contract_criteria(*sources) -> list:
+    """계약 추출 원본 — 문자열 항목을 실은 첫 후보. verifier_gate.py 와 동일 유지.
+
+    계약은 `"<설명> | verify: <명령>"` 문자열에만 담긴다. 그런데 판정자는 기준별 판정을
+    `[{"id":..,"status":"met","evidence":..}]` 객체로 실어 보낸다 — 역할 계약이 그것을 요구한다.
+    그 객체를 계약 원본으로 쓰면 계약이 0건으로 보여 하네스가 계약 명령을 실행하지 않는데,
+    게이트는 퀘스트 선언(문자열)에서 계약을 계속 읽으므로 영구 미충족이 된다 (26-07-26 실측:
+    CC 모드에서 `criteria-unverified` 로 Stop 이 막혀 세션이 49분간 종료하지 못했다).
+    형태로 원본을 고르면 두 경로가 같은 계약을 본다."""
+    for src in sources:
+        strings = [c for c in (src or []) if isinstance(c, str)]
+        if strings:
+            return strings
+    return []
+
+
 def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:
     """PASS 레코드(rec) 기준 미충족 계약 목록. 명령은 하네스 기록(criteria_checks)의 exit 0 만 인정,
     산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore 로 diff-hash 밖일 수 있어
@@ -2031,7 +2047,7 @@ def main() -> int:
                     if bl:
                         ev["baseline"] = bl
                 # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize 가 버림)
-                crit = ev.get("criteria") or next((e.get("criteria") for e in events if e.get("criteria")), [])
+                crit = contract_criteria(ev.get("criteria"), *(e.get("criteria") for e in events))
                 cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
                 if cc is not None:
                     ev["criteria_checks"] = cc
@@ -2122,7 +2138,7 @@ def main() -> int:
             ev["failure_sig"] = "unsafe-map-link"
         else:
             # criteria verify 계약 — 게이트-우선 경로도 계약을 결속한다: 계약 미충족이면 green 이어도 FAIL
-            crit = next((e.get("criteria") for e in events if e.get("criteria")), [])
+            crit = contract_criteria(*(e.get("criteria") for e in events))
             cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
             if cc is not None:
                 ev["criteria_checks"] = cc

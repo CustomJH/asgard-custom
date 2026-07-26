@@ -1833,6 +1833,42 @@ class TestCriteriaContracts(TrinityBase):
         self.assertEqual(out.get("decision"), "block")  # 게이트 동일 판정
         self.assertIn("contract", out.get("reason", ""))
 
+    def test_contract_binds_when_verifier_reports_criteria_as_objects(self):
+        # 26-07-26 실측 교착: 판정자가 기준별 판정을 객체로 실으면(역할 계약이 요구하는 형태)
+        # 계약이 0건으로 보여 하네스가 계약 명령을 실행하지 않는데 게이트는 퀘스트 선언에서
+        # 계약을 계속 읽어 `criteria-unverified` 로 Stop 을 영구 차단했다.
+        self.open_with("app.py 정상 실행 | verify: python3 app.py")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        body = {
+            "role": "verifier",
+            "event": "verify",
+            "criteria": [{"id": "c1", "desc": "app.py 정상 실행", "status": "met", "evidence": "실행 확인"}],
+            "commands": [{"cmd": "git status", "exit_code": 0}],
+        }
+        self.qlog("append", "--verdict", "PASS", "--session", "s1", stdin=json.dumps(body))
+        ev = json.loads(open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")).read().splitlines()[-1])
+        self.assertEqual(ev["criteria_checks"][0]["exit_code"], 0)  # 계약이 여전히 결속된다
+        self.assertEqual(jout(self.qlog("state"))["contracts_unmet"], [])
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")  # Stop 통과 — 교착 해소
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_object_criteria_do_not_mask_a_failing_contract(self):
+        # 반대 방향도 지킨다 — 객체 보고로 계약을 회피할 수 없다
+        self.open_with("app.py 정상 실행 | verify: python3 app.py")
+        self.write("app.py", "import sys; sys.exit(1)\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        body = {
+            "role": "verifier",
+            "event": "verify",
+            "criteria": [{"id": "c1", "status": "met", "evidence": "정독으로 확인"}],
+            "commands": [{"cmd": "git status", "exit_code": 0}],
+        }
+        self.qlog("append", "--verdict", "PASS", "--session", "s1", stdin=json.dumps(body))
+        self.assertTrue(jout(self.qlog("state"))["contracts_unmet"])
+        self.assertEqual(jout(self.gate()).get("decision"), "block")
+
     def test_artifacts_checked_live(self):
         self.open_with("산출물 존재 | artifacts: out.txt")
         self.write("app.py", "print('ok')\n")
