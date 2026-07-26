@@ -393,6 +393,16 @@ class Heimdall:
             for k in ("write_expected", "ambiguous", "destructive", "external_research", "shared"):
                 d[k] = bool(d.get(k))
             d["criteria"] = [str(c) for c in (d.get("criteria") or [])]
+            if not d["write_expected"] and has_write_verbs(request):
+                # 결정론 write 신호의 거부권 — 한 방향으로만 작동한다. 분류기가 write 요청을
+                # read-only 로 읽으면 Write 도구 없는 DIRECT 세션이 붙어 과업 자체가 불가능해지고,
+                # 반대 오판은 불필요한 Trinity 세금에 그친다 (비대칭). 이 경로에 오는 요청은
+                # 휴리스틱이 read/write 신호를 둘 다 본 것들이라, 사용자가 write 동사를 쓴 것은
+                # 사실이다 (26-07-26 helios 실측: "모듈 경계를 정리해서 …모아줘" 가 read-only 로
+                # 분류돼 리팩터링이 제안문으로 끝났다 — 부정구는 has_write_verbs 가 이미 제거한다).
+                # ambiguous 는 건드리지 않는다 — True 로 올리면 게이트-우선(BASELINE_VERIFY)
+                # 자격이 사라져 소형 수정이 최중량 검증으로 승격된다 (26-07-23 감사).
+                d["write_expected"] = True
             d["parallel_requested"] = bool(d["write_expected"] and _PARALLEL_WORK_PAT.search(request.lower()))
             if d.get("task_class") not in ("trivial", "standard", "deep"):
                 d["task_class"] = "standard"

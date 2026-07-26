@@ -40,10 +40,17 @@ _DESTRUCTIVE_PAT = re.compile(
     r"|drop\s+(table|database)|truncate\s+table|mkfs|dd\s+if=|전부\s*(삭제|지워)|다\s*지워|싹\s*지워",
     re.IGNORECASE,
 )
+# 재구성 계열 동사(정리·통합·분리·개선)는 실측으로 뒤늦게 들어왔다: "모듈 경계를 정리해서 공통
+# 로직을 한 곳으로 모아줘" 가 어느 항목에도 안 걸려 LLM 폴백으로 넘어갔고, 거기서 read-only 로
+# 오분류돼 Write 도구 없는 DIRECT 세션이 붙었다 (26-07-26 helios 실측). 오분류의 두 방향은
+# 대칭이 아니다 — write 를 read 로 읽으면 게이트를 통째로 우회하고, 반대는 불필요한 Trinity
+# 세금에 그친다. 그래서 이 표는 넓게 잡는 쪽으로 기운다.
 _WRITE_VERBS = (
     "만들", "생성해", "제작해", "수정해", "고쳐", "추가해", "구현해", "작성해", "바꿔", "변경해", "리팩터", "빼줘",
-    "삭제해", "지워", "적용해", "옮겨", "설치해", "완성해", "fix ", "implement", "refactor", "rename ", "install ",
+    "삭제해", "지워", "적용해", "옮겨", "설치해", "완성해", "정리해", "통합해", "합쳐", "분리해", "개선해",
+    "모아줘", "모아서", "없애", "교체해", "fix ", "implement", "refactor", "rename ", "install ",
     "create ", "write ", "modify ", "change ", "edit ", "add ", "update ", "delete ", "remove ", "move ", "copy ",
+    "consolidate", "extract ", "deduplicate", "clean up", "rewrite", "replace ",
 )  # fmt: skip
 _READ_VERBS = (
     "설명해", "알려", "뭐야", "무엇", "어떻게 동작", "왜 ", "읽", "답해", "분석해줘", "보여줘", "요약해", "조회",

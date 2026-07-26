@@ -1039,6 +1039,31 @@ class TestClassify(Base):
         self.assertFalse(d["write_expected"])
         self.assertEqual(d["task_class"], "standard")
 
+    def test_llm_read_only_verdict_cannot_override_a_deterministic_write_verb(self):
+        """분류기가 write 요청을 read-only 로 읽으면 Write 도구 없는 DIRECT 가 붙어 과업이 불가능해진다.
+
+        실측(26-07-26 helios): "모듈 경계를 정리해서 공통 로직을 한 곳으로 모아줘" 가 read-only 로
+        분류돼, 리팩터링이 파일 변경 없는 제안문으로 끝났다. 거부권은 한 방향 — read 를 write 로
+        승격만 하고, 그 반대는 없다 (오판 비용의 비대칭)."""
+        h = FakeHeimdall(self.root, [], cls=None)
+        payload = '{"write_expected":false,"ambiguous":false,"destructive":false,'
+        payload += '"external_research":false,"shared":false,"criteria":[],"task_class":"standard"}'
+        mock.patch.object(h, "_complete_text", lambda *a, **k: payload).start()
+        self.addCleanup(mock.patch.stopall)
+        d = Heimdall._classify(h, "이 스크립트들 읽어보고 중복을 정리해서 공통 로직으로 모아줘")
+        self.assertTrue(d["write_expected"])
+        # 게이트-우선 자격을 박탈하지 않는다 — ambiguous 승격은 소형 수정을 최중량 검증으로 민다.
+        self.assertFalse(d["ambiguous"])
+
+    def test_llm_read_only_verdict_stands_without_a_write_verb(self):
+        h = FakeHeimdall(self.root, [], cls=None)
+        payload = '{"write_expected":false,"ambiguous":false,"destructive":false,'
+        payload += '"external_research":false,"shared":false,"criteria":[],"task_class":"trivial"}'
+        mock.patch.object(h, "_complete_text", lambda *a, **k: payload).start()
+        self.addCleanup(mock.patch.stopall)
+        d = Heimdall._classify(h, "이 구조 어떤 의도인지 짚어줘")
+        self.assertFalse(d["write_expected"])
+
     def test_destructive_refused_without_sessions(self):
         cls = dict(CLS_WRITE, destructive=True)
         h = FakeHeimdall(self.root, [], cls=cls)
