@@ -120,7 +120,7 @@ class AdversarialBase(unittest.TestCase):
 
 class TestAdversarialVectors(AdversarialBase):
     def test_v1_forged_diff_hash_blocked(self):
-        """V1. 로그 직접 위조 — 가짜 PASS 이벤트 append (diff_hash 불일치) → stale 물리 대조 차단."""
+        """V1. 로그 직접 위조 — 체인 밖 가짜 PASS append는 물리 대조 전에 ledger가 차단."""
         self.open_quest(criteria="add feature")
         self.write("app.py", "print('changed')\n")
         forged = {
@@ -256,7 +256,7 @@ class TestGateEventMetrics(AdversarialBase):
         self.assertEqual(kinds.count("gate_escalate"), 1, events)
         self.assertEqual({e["code"] for e in events}, {"no-verdict"})
 
-    def test_stale_pass_block_carries_code(self):
+    def test_unprotected_forged_pass_is_rejected_by_ledger(self):
         self.open_quest()
         self.write("app.py", "print('changed')\n")
         forged = {
@@ -271,10 +271,10 @@ class TestGateEventMetrics(AdversarialBase):
             f.write(json.dumps(forged) + "\n")
         got, p = self.gate_decision("m2")
         self.assertEqual(got, "block", p.stdout + p.stderr)
-        self.assertEqual(self.read_events()[-1], {"event": "gate_block", "code": "stale-pass"})
+        self.assertEqual(self.read_events()[-1], {"event": "gate_block", "code": "ledger-invalid"})
         payload = json.loads(p.stdout)
-        self.assertEqual(payload.get("code"), "stale-pass")  # payload 코드 직독 — 문장 파싱 불필요
-        self.assertIn("[gate:stale-pass]", payload["reason"])  # 프로토콜 공통 운반자 = 메시지 태그
+        self.assertEqual(payload.get("code"), "ledger-invalid")  # payload 코드 직독 — 문장 파싱 불필요
+        self.assertIn("[gate:ledger-invalid]", payload["reason"])  # 프로토콜 공통 운반자 = 메시지 태그
 
     def test_doctor_aggregates_gate_events(self):
         from asgard.commands.doctor import _trinity_checks

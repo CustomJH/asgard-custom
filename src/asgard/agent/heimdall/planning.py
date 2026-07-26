@@ -104,9 +104,10 @@ def _plan_waves(units: list[dict], root: str | None = None) -> list[list[dict]]:
 
 def _resume_snapshot(root: str, qid: str) -> dict:
     """Materialize a resumable unit graph without replaying completed tickets."""
-    from ...hooks.quest_log import fold_tickets, load_events
+    from ...hooks.quest_log import fold_tickets, load_events, replay_ledger
 
     events = load_events(root, qid)
+    replayed = replay_ledger(events)
     tickets = fold_tickets(events)
     completed = {str(ticket["id"]) for ticket in tickets.values() if ticket["status"] == "done"}
     retryable = []
@@ -124,12 +125,11 @@ def _resume_snapshot(root: str, qid: str) -> dict:
                 ],
             }
         )
-    criteria = next((list(event.get("criteria") or []) for event in events if event.get("criteria")), [])
-    request = next((str(event.get("request")) for event in events if event.get("request")), "")
     return {
         "quest_id": qid,
-        "request": request,
-        "criteria": criteria,
+        "execution_id": replayed.get("execution_id"),
+        "request": replayed.get("request") or "",
+        "criteria": list(replayed.get("criteria") or []),
         "units": retryable,
         "completed": [ticket["id"] for ticket in tickets.values() if ticket["status"] == "done"],
         "blocked": [ticket["id"] for ticket in tickets.values() if ticket["status"] == "blocked"],

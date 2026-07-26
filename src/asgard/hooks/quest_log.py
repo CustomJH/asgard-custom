@@ -12,8 +12,9 @@
 # 왜 CLI 인가: TRINITY 의 "<20K 파라미터 코디네이터"의 하니스 등가물은 학습 모델이 아니라 결정론적
 # 구조다 — 배정(next)을 LLM 임의 판단이 아닌 코드가 내리게 해서 조율을 프롬프트가 아닌 구조로
 # 옮긴다 (TRINITY-inspired 적응).
-# 왜 O_APPEND 단일 write 인가: 위협 모델이 악의적 변조가 아니라 LLM 자기기만이라 lock/해시체인은
-# 과잉 (Codex 합의 — v1 탈락). 한 줄 원자 append 면 충분하다.
+# 왜 O_APPEND+해시체인인가: 한 줄 원자 append는 동시 writer의 절단은 막지만, 재개 전에 생긴
+# 수동 편집·부분 복사·중간 줄 유실은 탐지하지 못한다. v2는 각 줄을 이전 줄 해시에 묶는다.
+# 비밀키 서명이 아니라 crash/replay 무결성 장치다 — 악의적 로컬 writer를 막는다고 주장하지 않는다.
 # 완료 위조 방어는 이 파일 몫이 아니다 — verifier-gate.py 가 Stop 시점에 working-tree diff hash 를
 # 재계산해 물리 대조한다. 로그에 뭘 쓰든 워킹트리는 위조할 수 없다 (Goodhart 방어).
 # diff_hash 를 여기(append)서도 계산하는 이유: verifier 가 손으로 만든 해시는 gate 재계산과 어긋날
@@ -43,7 +44,7 @@ for _stream in (sys.stdout, sys.stderr):
         pass
 
 
-SCHEMA = 1
+SCHEMA = 2
 EMPTY = hashlib.sha256(b"").hexdigest()  # 변경 전무(diff 없음 + untracked 없음)의 정준 해시
 EVENTS = {
     "plan",
@@ -57,10 +58,12 @@ EVENTS = {
 }  # delegate: 중첩 디스패치 배정 기록 — Phase 2 통계가 배정 정책 학습
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}
 TICKET_STATUSES = {"todo", "in_progress", "done", "failed", "blocked"}
-# 로그 v1 = 16필드 고정. tier/effort/model 등은 v1 소비자 없음 → Phase 2.
+# v1의 16필드 + v2 실행/승인/체인 identity. tier/effort/model 등은 부가 관측 필드.
 FIELDS = [
     "schema",
     "quest_id",
+    "execution_id",
+    "acceptance_hash",
     "session_id",
     "turn",
     "ts",
@@ -75,6 +78,8 @@ FIELDS = [
     "verdict",
     "failure_sig",
     "failure_count",
+    "prev_event_hash",
+    "event_hash",
 ]
 
 # 정책 파일이 없어도 동작해야 하므로(fail-open) 기본값을 내장 — .asgard/trinity-policy.json 이 덮는다.
@@ -142,7 +147,94 @@ DEFAULT_POLICY: dict = {
     "gate_first_max_lines": 25,
     # 닫힌 퀘스트 로그 keep-last-N — 세션 상한 정책. 0 = 정리 없음(무한 누적).
     "quest_retention": 30,
+    # 병렬 Worker는 기본적으로 독립 clone에서 실행하고 검증된 patch만 canonical root에 병합.
+    "ticket_runtime": {"isolation": True, "lease_seconds": 300, "max_attempts": 3},
 }
+
+
+def _canonical_hash(value) -> str:
+    """Stable local integrity digest. This is tamper-evident, not an authenticity signature."""
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def acceptance_identity(
+    *,
+    request: str,
+    criteria,
+    base_ref: str,
+    ignored_snapshot: dict,
+    risk: dict,
+) -> str:
+    """Bind the exact requested outcome to the quest-start physical tree."""
+    return _canonical_hash(
+        {
+            "request": request,
+            "criteria": list(criteria or []),
+            "base_ref": base_ref,
+            "ignored_snapshot": ignored_snapshot,
+            "risk": risk,
+        }
+    )
+
+
+def event_identity(event: dict) -> str:
+    """Hash one event without its self-referential digest."""
+    return _canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
+
+
+def verification_identity(event: dict) -> str:
+    """Bind a PASS to one execution, acceptance contract, physical diff and evidence set."""
+    return _canonical_hash(
+        {
+            "execution_id": event.get("execution_id"),
+            "acceptance_hash": event.get("acceptance_hash"),
+            "diff_hash": event.get("diff_hash"),
+            "tree_ref": event.get("tree_ref"),
+            "level": event.get("level"),
+            "verdict": event.get("verdict"),
+            "commands": event.get("commands") or [],
+            "baseline": event.get("baseline") or {},
+            "criteria_checks": event.get("criteria_checks") or [],
+        }
+    )
+
+
+def ledger_integrity(events: list[dict]) -> tuple[bool, str]:
+    """Validate the v2 hash chain and immutable execution/acceptance identity.
+
+    A legacy unhashed prefix remains readable. Once a hashed event appears, every later event must
+    stay protected; this lets active v1 quests migrate on their next append without rewriting history.
+    """
+    previous = EMPTY
+    protected = False
+    execution_id = None
+    acceptance_hash = None
+    for index, event in enumerate(events, 1):
+        if not isinstance(event, dict) or event.get("_corrupt"):
+            return False, f"turn {index}: malformed JSON event"
+        hashed = bool(event.get("event_hash"))
+        if not hashed:
+            if protected:
+                return False, f"turn {index}: unhashed event after protected chain"
+            previous = event_identity(event)
+            continue
+        protected = True
+        if event.get("prev_event_hash") != previous:
+            return False, f"turn {index}: previous event hash mismatch"
+        if event.get("event_hash") != event_identity(event):
+            return False, f"turn {index}: event hash mismatch"
+        previous = str(event["event_hash"])
+        current_execution = event.get("execution_id")
+        current_acceptance = event.get("acceptance_hash")
+        if not current_execution or not current_acceptance:
+            return False, f"turn {index}: protected event lacks execution identity"
+        execution_id = execution_id or current_execution
+        acceptance_hash = acceptance_hash or current_acceptance
+        if current_execution != execution_id or current_acceptance != acceptance_hash:
+            return False, f"turn {index}: execution or acceptance identity changed"
+    return True, "protected" if protected else "legacy"
 
 
 def repo_root() -> str:
@@ -1154,11 +1246,15 @@ def load_events(root: str, qid: str) -> list[dict]:
     path = os.path.join(root, ".asgard", "quest", qid + ".jsonl")
     events = []
     try:
-        for line in open(path, encoding="utf-8"):
+        for line_number, line in enumerate(open(path, encoding="utf-8"), 1):
+            if not line.strip():
+                continue
             try:
                 events.append(json.loads(line))
             except Exception:
-                continue  # 깨진 한 줄이 로그 전체를 죽이면 안 된다
+                # Do not silently replay around a torn/corrupt event. The caller can report the
+                # exact line, while older valid unhashed logs remain readable.
+                events.append({"_corrupt": True, "_line": line_number})
     except Exception:
         pass
     return events
@@ -1200,8 +1296,13 @@ def quest_lock(root: str, qid: str):
 def _write_event_unlocked(root: str, qid: str, ev: dict, events: list[dict]) -> None:
     """quest_lock 보유 호출자 전용 append primitive."""
     path = os.path.join(quest_dir(root), qid + ".jsonl")
+    valid, detail = ledger_integrity(events)
+    if not valid:
+        raise ValueError(f"quest ledger integrity failure: {detail}")
     ev["turn"] = max((int(event.get("turn") or 0) for event in events), default=0) + 1
     ev["ts"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+    ev["prev_event_hash"] = str(events[-1].get("event_hash") or event_identity(events[-1])) if events else EMPTY
+    ev["event_hash"] = event_identity(ev)
     line = (json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
     fd = os.open(path, os.O_APPEND | os.O_WRONLY | os.O_CREAT, 0o644)
     try:
@@ -1220,11 +1321,27 @@ def write_event(root: str, qid: str, ev: dict) -> None:
 
 
 def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
-    """16필드 고정 스키마로 정규화 — 빠진 필드는 중립값, 모르는 필드는 버린다 (v1 계약 고정)."""
+    """고정 코어 스키마로 정규화 — 빠진 필드는 중립값, 모르는 stdin 필드는 버린다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
+    execution_id = next((e.get("execution_id") for e in events if e.get("execution_id")), None)
+    acceptance_hash = next((e.get("acceptance_hash") for e in events if e.get("acceptance_hash")), None)
+    if events and (not execution_id or not acceptance_hash):
+        # First v2 append upgrades a legacy quest without rewriting its historical prefix.
+        execution_id = "legacy-" + _canonical_hash({"quest_id": qid, "first": event_identity(events[0])})[:24]
+        acceptance_hash = _canonical_hash(
+            {
+                "execution_id": execution_id,
+                "base_ref": base_ref,
+                "request": next((e.get("request") for e in events if e.get("request")), ""),
+                "criteria": next((e.get("criteria") for e in events if e.get("criteria")), []),
+            }
+        )
     full = {
         "schema": SCHEMA,
         "quest_id": qid,
+        # Only `open` may seed these values. Subsequent stdin cannot replace the first event's identity.
+        "execution_id": execution_id or ev.get("execution_id"),
+        "acceptance_hash": acceptance_hash or ev.get("acceptance_hash"),
         "session_id": session,
         "turn": len(events) + 1,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -1272,6 +1389,9 @@ def normalize(ev: dict, events: list[dict], qid: str, session: str) -> dict:
         full["research_only"] = True
     if ev.get("research_findings"):
         full["research_findings"] = str(ev["research_findings"])[:6000]
+    for key in ("tree_ref", "verification_id"):
+        if ev.get(key):
+            full[key] = str(ev[key])[:128]
     if isinstance(ev.get("findings"), list):
         # verify 전용 부가 필드 — 결함의 소유자 분류 (기계 수리 auto-fix ↔ 사람 판단 ask-user).
         # 알 수 없는 action 은 ask-user 로 닫는다: 분류 불가를 기계 수리로 흘리면 판단이 필요한
@@ -1337,6 +1457,33 @@ def fold_tickets(events: list[dict]) -> dict[str, dict]:
     return tickets
 
 
+def replay_ledger(events: list[dict]) -> dict:
+    """Materialize durable execution state from events only; no working-tree reads."""
+    first = events[0] if events else {}
+    tickets = list(fold_tickets(events).values())
+    verifies = [event for event in events if event.get("event") == "verify"]
+    closed = [event for event in events if event.get("event") == "quest_closed"]
+    last_verify = verifies[-1] if verifies else {}
+    return {
+        "quest_id": first.get("quest_id"),
+        "execution_id": next((event.get("execution_id") for event in events if event.get("execution_id")), None),
+        "acceptance_hash": next(
+            (event.get("acceptance_hash") for event in events if event.get("acceptance_hash")), None
+        ),
+        "base_ref": first.get("base_ref"),
+        "request": first.get("request") or "",
+        "criteria": first.get("criteria") or [],
+        "turns": len(events),
+        "last_event": events[-1].get("event") if events else None,
+        "last_verdict": last_verify.get("verdict"),
+        "last_diff_hash": last_verify.get("diff_hash"),
+        "verification_id": last_verify.get("verification_id"),
+        "tickets": tickets,
+        "closed": bool(closed),
+        "close_decision": ((closed[-1].get("risk") or {}).get("decision") if closed else None),
+    }
+
+
 def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     """코디네이터 관찰용 요약 — next 의 입력이기도 하다."""
     base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
@@ -1388,8 +1535,22 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     if last_pass and not pass_fresh:
         stale, drift_out = stale_pass_scope(root, last_pass, events, changed)
         pass_fresh = not stale
+    replayed = replay_ledger(events)
+    identity_required = bool(replayed.get("execution_id"))
+    verification_valid = bool(
+        last_pass
+        and (
+            not identity_required
+            or (
+                last_pass.get("verification_id")
+                and last_pass.get("verification_id") == verification_identity(last_pass)
+            )
+        )
+    )
     return {
         "quest_id": qid,
+        "execution_id": replayed.get("execution_id"),
+        "acceptance_hash": replayed.get("acceptance_hash"),
         "base_ref": base_ref,
         "turns": len(events),
         "last_event": events[-1].get("event") if events else None,
@@ -1412,6 +1573,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         # gate 의 full_required 판정과 동일 기준 — 전이(DONE)와 close 가 gate 와 어긋나면 안 된다.
         "full_required": bool(sens) or bool(dts) or len(nt_files) > small["max_files"] or nt_lines > small["max_lines"],
         "pass_hash_match": pass_fresh,
+        "verification_identity_match": verification_valid,
         "drift_out_of_scope": drift_out[:10],  # 범위 밖 드리프트 — 관측용 (판정 아님)
         "pass_level": (last_pass or {}).get("level"),
         # PASS 의 성공 명령 증거 — 게이트와 동일 기준 (없으면 전이·close 가 거부 — 깊이 테스트가 발견한 구멍)
@@ -1463,6 +1625,12 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
         return "REJECTED", "no-evidence", "PASS has no successful verification-command evidence"
     if not s.get("pass_hash_match"):
         return "REJECTED", "stale-pass", "working tree changed after PASS (stale PASS) — re-verification required"
+    if s.get("execution_id") and not s.get("verification_identity_match"):
+        return (
+            "REJECTED",
+            "verification-identity",
+            "PASS evidence is not bound to this execution, acceptance contract and physical diff",
+        )
     if s.get("full_required") and s.get("pass_level") != "full":
         return "REJECTED", "micro-pass", "full-verify required (sensitive path/large diff) but got micro PASS"
     return "APPROVED", "ok", "verified PASS + diff-hash physical match"
@@ -1589,6 +1757,8 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
             return out("VERIFIER", why + " — repair/re-run the contract command and re-judge (Canon 10)")
         if code == "stale-pass":
             return out("VERIFIER", "working tree changed after PASS (stale PASS) — re-verification required")
+        if code == "verification-identity":
+            return out("VERIFIER", "PASS identity is not bound to this execution and diff — re-verification required")
         # micro-pass — gate 와 동일 판정: micro PASS 로 DONE 을 내면 Stop 에서 차단당한다 (판정 불일치 금지)
         return out("VERIFIER", "PASS is micro — sensitive path/large diff requires full-verify")
     if flags.external_research and has_write and not s.get("research_completed"):
@@ -1853,6 +2023,7 @@ def main() -> int:
             "open",
             "append",
             "state",
+            "replay",
             "next",
             "close",
             "verify-baseline",
@@ -1948,6 +2119,7 @@ def main() -> int:
         if "<snapshot-unavailable>" in ignored_snapshot:
             print(json.dumps({"error": "ignored-file snapshot unavailable"}), file=sys.stderr)
             return 1
+        execution_id = secrets.token_hex(16)
         ev = normalize(
             {
                 "role": "thinker",
@@ -1957,14 +2129,39 @@ def main() -> int:
                 "criteria": args.criteria,
                 "request": request,
                 "ignored_snapshot": ignored_snapshot,
+                "execution_id": execution_id,
+                "acceptance_hash": acceptance_identity(
+                    request=request,
+                    criteria=args.criteria,
+                    base_ref=base_ref,
+                    ignored_snapshot=ignored_snapshot,
+                    risk=risk,
+                ),
             },
-            load_events(root, qid),
+            [],
             qid,
             args.session,
         )
-        write_event(root, qid, ev)
+        # One qid represents one immutable execution. Reopening would mix two acceptance contracts.
+        with quest_lock(root, qid):
+            path = os.path.join(quest_dir(root), qid + ".jsonl")
+            if os.path.exists(path):
+                print(json.dumps({"error": "quest id already exists; resume it or choose a new id"}), file=sys.stderr)
+                return 1
+            _write_event_unlocked(root, qid, ev, [])
         set_active_quest(root, args.session, qid)
-        print(json.dumps({"opened": qid, "base_ref": base_ref, "turn": ev["turn"]}, ensure_ascii=False))
+        print(
+            json.dumps(
+                {
+                    "opened": qid,
+                    "execution_id": execution_id,
+                    "acceptance_hash": ev["acceptance_hash"],
+                    "base_ref": base_ref,
+                    "turn": ev["turn"],
+                },
+                ensure_ascii=False,
+            )
+        )
         return 0
 
     qid = sanitize(args.quest_id) if args.quest_id else active_quest(root, args.session)
@@ -1972,6 +2169,23 @@ def main() -> int:
         print(json.dumps({"error": "no active quest — run: quest-log open <quest-id>"}))
         return 1
     events = load_events(root, qid)
+    if not events:
+        print(json.dumps({"error": "quest ledger is missing or unreadable"}), file=sys.stderr)
+        return 1
+    ledger_ok, ledger_detail = ledger_integrity(events)
+    if not ledger_ok:
+        print(json.dumps({"error": "quest ledger integrity failure", "detail": ledger_detail}), file=sys.stderr)
+        return 1
+
+    if args.cmd == "replay":
+        print(
+            json.dumps(
+                {**replay_ledger(events), "ledger": ledger_detail},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
 
     if args.cmd.startswith("ticket-"):
         if args.cmd != "ticket-recover" and args.unit is None:
@@ -2084,10 +2298,17 @@ def main() -> int:
                     ev["criteria_checks"] = cc
                 # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope)
                 ev["tree_ref"] = current_tree_ref(root)
+                ev["verification_id"] = verification_identity(ev)
         write_event(root, qid, ev)
         print(
             json.dumps(
-                {"appended": ev["event"], "turn": ev["turn"], "verdict": ev["verdict"], "diff_hash": ev["diff_hash"]},
+                {
+                    "appended": ev["event"],
+                    "turn": ev["turn"],
+                    "verdict": ev["verdict"],
+                    "diff_hash": ev["diff_hash"],
+                    "verification_id": ev.get("verification_id"),
+                },
                 ensure_ascii=False,
             )
         )
@@ -2181,6 +2402,7 @@ def main() -> int:
         if ev["verdict"] == "PASS":
             # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (append 경로와 동일)
             ev["tree_ref"] = current_tree_ref(root)
+            ev["verification_id"] = verification_identity(ev)
         write_event(root, qid, ev)
         fails = [str(f) for c in results for f in (c.get("fails") or [])]  # run_baseline 채집 정형 실패 줄
         print(
@@ -2193,6 +2415,7 @@ def main() -> int:
                     "fails": fails[:5],
                     "turn": ev["turn"],
                     "diff_hash": ev["diff_hash"],
+                    "verification_id": ev.get("verification_id"),
                 },
                 ensure_ascii=False,
             )
@@ -2201,6 +2424,7 @@ def main() -> int:
 
     s = summarize(root, qid, events, policy)
     s["tests_available"] = tests_available(root)
+    s["ledger"] = ledger_detail
 
     if args.cmd == "state":
         print(json.dumps(s, ensure_ascii=False, indent=2))
@@ -2238,6 +2462,14 @@ def main() -> int:
                     "role": "odin",
                     "event": "quest_closed",
                     "risk": {"forced": forced, "decision": decision, "code": code},
+                    "verification_id": next(
+                        (
+                            event.get("verification_id")
+                            for event in reversed(events)
+                            if event.get("event") == "verify" and event.get("verdict") == "PASS"
+                        ),
+                        None,
+                    ),
                 },
                 events,
                 qid,

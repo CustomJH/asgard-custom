@@ -93,6 +93,64 @@ UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py 와
 _HOST_PROTOCOL = "claude"
 
 
+def _canonical_hash(value):
+    return hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def event_identity(event):
+    return _canonical_hash({key: value for key, value in event.items() if key != "event_hash"})
+
+
+def verification_identity(event):
+    return _canonical_hash(
+        {
+            "execution_id": event.get("execution_id"),
+            "acceptance_hash": event.get("acceptance_hash"),
+            "diff_hash": event.get("diff_hash"),
+            "tree_ref": event.get("tree_ref"),
+            "level": event.get("level"),
+            "verdict": event.get("verdict"),
+            "commands": event.get("commands") or [],
+            "baseline": event.get("baseline") or {},
+            "criteria_checks": event.get("criteria_checks") or [],
+        }
+    )
+
+
+def ledger_integrity(events):
+    """quest_log.py mirror — standalone deployed hook cannot import the package."""
+    previous = EMPTY
+    protected = False
+    execution_id = None
+    acceptance_hash = None
+    for index, event in enumerate(events, 1):
+        if not isinstance(event, dict) or event.get("_corrupt"):
+            return False, f"turn {index}: malformed JSON event"
+        hashed = bool(event.get("event_hash"))
+        if not hashed:
+            if protected:
+                return False, f"turn {index}: unhashed event after protected chain"
+            previous = event_identity(event)
+            continue
+        protected = True
+        if event.get("prev_event_hash") != previous:
+            return False, f"turn {index}: previous event hash mismatch"
+        if event.get("event_hash") != event_identity(event):
+            return False, f"turn {index}: event hash mismatch"
+        previous = str(event["event_hash"])
+        current_execution = event.get("execution_id")
+        current_acceptance = event.get("acceptance_hash")
+        if not current_execution or not current_acceptance:
+            return False, f"turn {index}: protected event lacks execution identity"
+        execution_id = execution_id or current_execution
+        acceptance_hash = acceptance_hash or current_acceptance
+        if current_execution != execution_id or current_acceptance != acceptance_hash:
+            return False, f"turn {index}: execution or acceptance identity changed"
+    return True, "protected" if protected else "legacy"
+
+
 def unattended(data):
     """무인 세션 신호 — 사람이 승인 루프에 없다. permission_mode 는 모든 훅 stdin 공통 필드."""
     return os.environ.get("ASGARD_UNATTENDED") == "1" or str(data.get("permission_mode")) in UNATTENDED_MODES
@@ -591,6 +649,7 @@ GATE_MESSAGES = {
     ),
     "unsafe-map": "unsafe code map symlink/junction: {targets}",
     "snapshot-fail": "Failed to snapshot the current working tree — cannot compute change evidence, refusing to close.",
+    "ledger-invalid": "Quest ledger integrity failed ({detail}) — replay or verification cannot trust this history.",
     "no-verdict": "Write quest without a Verifier verdict (PASS/ESCALATE) record.",
     "escalate-nudge": (
         "Ending with ESCALATE in an unattended session without attempting the work "
@@ -600,6 +659,9 @@ GATE_MESSAGES = {
         "ESCALATE again to pass."
     ),
     "stale-pass": "stale PASS — the working tree changed after PASS was recorded (physical diff mismatch). Re-verify.",
+    "verification-identity": (
+        "PASS evidence is not bound to this execution, acceptance contract and physical diff. Re-verify."
+    ),
     "no-criteria": "No success criteria in the log. Verification cannot stand without criteria.",
     "tickets-incomplete": "Incomplete tickets remain ({units}) — bring every unit to done before verifying.",
     "criteria-unverified": (
@@ -738,7 +800,7 @@ def orphan_writes(root, sid):
         qid = quest_pointer(root, sid, "last")
         if not qid:
             raise FileNotFoundError("no last quest for session")
-        events = []
+        events: list[dict] = []
         for line in open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
             try:
                 events.append(json.loads(line))
@@ -788,17 +850,24 @@ def main():
         if not qid:
             orphan_writes(root, sid)  # quest 미개설 우회 봉합 — write 흔적이 dirty 면 여기서 block
             sys.exit(0)  # write 흔적 없음 → 게이트 대상 아님
-        events = []
+        events: list[dict] = []
         try:
-            for line in open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
+            for line_number, line in enumerate(
+                open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"), 1
+            ):
+                if not line.strip():
+                    continue
                 try:
                     events.append(json.loads(line))
                 except Exception:
-                    continue
+                    events.append({"_corrupt": True, "_line": line_number})
         except Exception:
             sys.exit(0)  # 로그 읽기 실패 → warn+allow (fail-open)
         if not events:
             sys.exit(0)
+        ledger_ok, ledger_detail = ledger_integrity(events)
+        if not ledger_ok:
+            block(root, sid, "ledger-invalid", detail=ledger_detail)
         base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
         if not base_ref or base_ref == "NONE" or git(root, "rev-parse", "--verify", base_ref)[0] != 0:
             sys.stderr.write("asgard verifier-gate: cannot verify base_ref — allow (fail-open)\n")
@@ -865,6 +934,10 @@ def main():
             stale, _drift_out = stale_pass_scope(root, p, events, changed)
             if stale:
                 block(root, sid, "stale-pass")
+        if p.get("execution_id") and (
+            not p.get("verification_id") or p.get("verification_id") != verification_identity(p)
+        ):
+            block(root, sid, "verification-identity")
         if not any(e.get("criteria") for e in events):
             block(root, sid, "no-criteria")
         ticket_state = {}

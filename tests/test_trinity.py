@@ -161,6 +161,115 @@ class TestQuestLog(TrinityBase):
         self.assertEqual([json.loads(ln)["turn"] for ln in lines], [1, 2])
         self.assertTrue(open(os.path.join(self.root, ".asgard", "quest", "ACTIVE")).read().strip() == "q1")
 
+    def test_v2_chain_binds_execution_acceptance_and_replay(self):
+        opened = self.open_quest()
+        self.qlog(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"changed_files": ["app.py"]}),
+        )
+        replayed = jout(self.qlog("replay"))
+        events = [
+            json.loads(line) for line in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"), encoding="utf-8")
+        ]
+        self.assertEqual(replayed["ledger"], "protected")
+        self.assertEqual(replayed["execution_id"], opened["execution_id"])
+        self.assertEqual(replayed["acceptance_hash"], opened["acceptance_hash"])
+        self.assertEqual(events[1]["prev_event_hash"], events[0]["event_hash"])
+        self.assertEqual({event["execution_id"] for event in events}, {opened["execution_id"]})
+        self.assertEqual({event["acceptance_hash"] for event in events}, {opened["acceptance_hash"]})
+
+    def test_existing_quest_id_cannot_be_reopened_with_new_acceptance(self):
+        first = self.open_quest()
+        reopened = self.qlog("open", "q1", "--criteria", "different")
+        self.assertNotEqual(reopened.returncode, 0)
+        self.assertIn("already exists", reopened.stderr)
+        replayed = jout(self.qlog("replay"))
+        self.assertEqual(replayed["execution_id"], first["execution_id"])
+        self.assertEqual(replayed["criteria"], ["app.py prints ok"])
+
+    def test_legacy_quest_upgrades_on_first_v2_append_without_rewrite(self):
+        base = subprocess.run(
+            ["git", "rev-parse", "HEAD"], cwd=self.root, capture_output=True, text=True, check=True
+        ).stdout.strip()
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        os.makedirs(qdir, exist_ok=True)
+        legacy = {
+            "schema": 1,
+            "quest_id": "legacy",
+            "session_id": "s1",
+            "turn": 1,
+            "ts": "2026-01-01T00:00:00Z",
+            "role": "thinker",
+            "event": "plan",
+            "base_ref": base,
+            "risk": {"has_write": True},
+            "criteria": ["legacy criterion"],
+            "changed_files": [],
+            "diff_hash": None,
+            "commands": [],
+            "verdict": "NA",
+            "failure_sig": None,
+            "failure_count": 0,
+        }
+        with open(os.path.join(qdir, "legacy.jsonl"), "w", encoding="utf-8") as handle:
+            handle.write(json.dumps(legacy) + "\n")
+        appended = self.qlog("append", "legacy", "--event", "work", "--session", "s1")
+        self.assertEqual(appended.returncode, 0, appended.stderr)
+        replayed = jout(self.qlog("replay", "legacy"))
+        self.assertEqual(replayed["ledger"], "protected")
+        self.assertTrue(replayed["execution_id"].startswith("legacy-"))
+
+    def test_pass_and_close_share_one_verification_identity(self):
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"changed_files": ["app.py"]}),
+        )
+        verified = jout(self.verify())
+        self.assertTrue(verified["verification_id"])
+        self.assertEqual(self.qlog("close").returncode, 0)
+        events = [
+            json.loads(line) for line in open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"), encoding="utf-8")
+        ]
+        self.assertEqual(events[-2]["verification_id"], verified["verification_id"])
+        self.assertEqual(events[-1]["verification_id"], verified["verification_id"])
+        replayed = jout(self.qlog("replay", "q1"))
+        self.assertTrue(replayed["closed"])
+        self.assertEqual(replayed["close_decision"], "APPROVED")
+
+    def test_rehashed_pass_with_wrong_verification_identity_is_blocked(self):
+        from asgard.hooks.quest_log import event_identity
+
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"changed_files": ["app.py"]}),
+        )
+        self.verify()
+        path = os.path.join(self.root, ".asgard", "quest", "q1.jsonl")
+        events = [json.loads(line) for line in open(path, encoding="utf-8")]
+        events[-1]["verification_id"] = "forged"
+        events[-1]["event_hash"] = event_identity(events[-1])
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.writelines(json.dumps(event, ensure_ascii=False) + "\n" for event in events)
+        out = jout(self.gate())
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("[gate:verification-identity]", out.get("reason", ""))
+
     def test_open_accepts_original_request_via_bounded_stdin(self):
         request = "원본 요청 " + ("x" * 4096)
         opened = run(
@@ -1752,8 +1861,8 @@ class TestQuestScopedStale(TrinityBase):
         nxt = jout(self.qlog("next", "--write-expected"))
         self.assertEqual(nxt["next_role"], "VERIFIER")
 
-    def test_pass_without_tree_ref_falls_back_strict(self):
-        # tree_ref 없는 구 로그 — 귀속 대조 불가면 종전 엄격 판정 (fail-safe)
+    def test_tampered_pass_without_tree_ref_is_rejected_by_ledger(self):
+        # v2 로그에서 tree_ref를 지우는 것은 판정 의미 변경이다 — 재생 전에 해시체인이 차단한다.
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.work("app.py")
@@ -1764,7 +1873,12 @@ class TestQuestScopedStale(TrinityBase):
         with open(self.events_path(), "w", encoding="utf-8") as f:
             f.writelines(json.dumps(e, ensure_ascii=False) + "\n" for e in lines)
         self.write("foreign.txt", "drift\n")
-        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")
+        next_result = self.qlog("next", "--write-expected")
+        self.assertNotEqual(next_result.returncode, 0)
+        self.assertIn("ledger integrity", next_result.stderr)
+        out = jout(self.gate())
+        self.assertEqual(out.get("decision"), "block")
+        self.assertIn("[gate:ledger-invalid]", out.get("reason", ""))
 
     def test_gate_parity_foreign_drift_allows_owned_drift_blocks(self):
         # Stop 게이트도 동일 판정 (단일 출처 원칙) — 귀속 밖 드리프트 allow, 귀속 드리프트 block

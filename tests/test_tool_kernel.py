@@ -27,6 +27,7 @@ class TestRegistry(unittest.TestCase):
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py open q --criteria x"))
+        self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py replay q"))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close"))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py ticket-claim --unit 1 --worker w1"))
         self.assertTrue(

@@ -25,6 +25,7 @@ GATE_MESSAGES: dict[str, str] = {
     ),
     "unsafe-map": "unsafe code map symlink/junction: {targets}",
     "snapshot-fail": "Failed to snapshot the current working tree — cannot compute change evidence, refusing to close.",
+    "ledger-invalid": "Quest ledger integrity failed ({detail}) — replay or verification cannot trust this history.",
     "no-verdict": "Write quest without a Verifier verdict (PASS/ESCALATE) record.",
     "escalate-nudge": (
         "Ending with ESCALATE in an unattended session without attempting the work "
@@ -34,6 +35,9 @@ GATE_MESSAGES: dict[str, str] = {
         "ESCALATE again to pass."
     ),
     "stale-pass": "stale PASS — the working tree changed after PASS was recorded (physical diff mismatch). Re-verify.",
+    "verification-identity": (
+        "PASS evidence is not bound to this execution, acceptance contract and physical diff. Re-verify."
+    ),
     "no-criteria": "No success criteria in the log. Verification cannot stand without criteria.",
     "tickets-incomplete": "Incomplete tickets remain ({units}) — bring every unit to done before verifying.",
     "criteria-unverified": (

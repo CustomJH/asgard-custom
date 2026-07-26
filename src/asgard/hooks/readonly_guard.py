@@ -401,6 +401,7 @@ def _safe_asgard_hook(tokens: list[str], root: str | None = None) -> bool:
             "open",
             "append",
             "state",
+            "replay",
             "next",
             "close",
             "ticket-claim",

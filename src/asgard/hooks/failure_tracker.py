@@ -17,6 +17,7 @@
 import json
 import os
 import re
+import subprocess
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
@@ -85,37 +86,45 @@ def log_fail(proj: str, sid: str, key: str, n: int) -> None:
     fail-open: 로그가 없거나(quest 미사용) 어떤 오류든 조용히 넘어간다 — 경고 주입은 계속된다."""
     try:
         qdir = os.path.join(proj, ".asgard", "quest")
-        qid = open(os.path.join(qdir, "ACTIVE")).read().strip()
+        pointers = (
+            os.path.join(qdir, "sessions", sid + ".active"),
+            os.path.join(qdir, "ACTIVE"),  # legacy single-session fallback
+        )
+        qid = ""
+        for pointer in pointers:
+            try:
+                qid = open(pointer, encoding="utf-8").read().strip()
+            except OSError:
+                continue
+            if qid:
+                break
         if not qid:
             return
-        path = os.path.join(qdir, qid + ".jsonl")
-        turn = sum(1 for _ in open(path, encoding="utf-8")) + 1
-        import time
-
         ev = {
-            "schema": 1,
-            "quest_id": qid,
-            "session_id": sid,
-            "turn": turn,
-            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
             "role": "worker",
             "event": "fail",
-            "base_ref": None,
-            "risk": {},
-            "criteria": [],
-            "changed_files": [],
-            "diff_hash": None,
-            "commands": [],
-            "verdict": "NA",
             "failure_sig": key,
             "failure_count": n,
         }
-        line = (json.dumps(ev, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
-        fd = os.open(path, os.O_APPEND | os.O_WRONLY)  # quest-log 와 같은 O_APPEND 단일 write
-        try:
-            os.write(fd, line)
-        finally:
-            os.close(fd)
+        # quest-log owns locking, monotonic turns and the v2 hash chain. A second writer that
+        # reimplements the JSONL schema would make replay unverifiable.
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(os.path.dirname(__file__), "quest_log.py"),
+                "append",
+                qid,
+                "--session",
+                sid,
+            ],
+            input=json.dumps(ev, ensure_ascii=False),
+            text=True,
+            cwd=proj,
+            capture_output=True,
+            timeout=10,
+            env={**os.environ, "CLAUDE_PROJECT_DIR": proj},
+            check=False,
+        )
     except Exception:
         pass
 
