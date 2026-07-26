@@ -51,6 +51,9 @@ class TestFreyjaBaseline(unittest.TestCase):
                     "asgard-freyja-fjadrhamr",
                     "asgard-freyja2",
                     "asgard-freyja4",
+                    # 프레임워크 불문 모듈 설계 규율 — 컴포넌트 경계도 같은 문법이라 의도적으로 공유.
+                    # 프레이야 전용 엔진이 다른 표면으로 새지 않는다는 불변식은 아래 assertNotIn 이 진다.
+                    "codebase-design",
                 ],
             )
             self.assertNotIn(

@@ -102,6 +102,8 @@ class BundledDocumentSkillTest(unittest.TestCase):
         worker = {row["name"] for row in skill_registry.available_skills(self.root, "worker")}
         self.assertIn("hwpx", worker)
         self.assertIn("playwright-cli", worker)
+        # 문서·브라우저 도구는 freyja 로 새지 않는다. codebase-design 은 프레임워크 불문 모듈 설계
+        # 규율이라 의도적으로 전 딜리버리 표면에 열려 있다 (컴포넌트 경계도 같은 문법).
         self.assertEqual(
             {row["name"] for row in skill_registry.available_skills(self.root, "freyja")},
             {
@@ -110,6 +112,7 @@ class BundledDocumentSkillTest(unittest.TestCase):
                 "asgard-freyja-fjadrhamr",
                 "asgard-freyja2",
                 "asgard-freyja4",
+                "codebase-design",
             },
         )
         self.assertIn(
