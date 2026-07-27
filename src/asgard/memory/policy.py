@@ -40,7 +40,9 @@ _SECRET_PATTERNS = (
     re.compile(
         r"(?i)\b(?:password|passwd|api[_-]?key|access[_-]?token|secret[_-]?key)\b\s*[:=]\s*[\"']?([^\s\"']{8,})"
     ),
-    re.compile(r"\b(?:sk|gh[oprsu]|github_pat)_[A-Za-z0-9_-]{16,}\b"),
+    # Provider keys are hyphenated, not underscored (sk-ant-…, sk-proj-…, sk-…). Matching only
+    # the `_` form let every Anthropic/OpenAI key through the scan and into an injected page.
+    re.compile(r"\b(?:sk|gh[oprsu]|github_pat)[_-][A-Za-z0-9_-]{16,}\b"),
     re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/=-]{16,}"),
     re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),

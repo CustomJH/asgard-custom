@@ -97,7 +97,12 @@ _IMPORTANT_CODE_WORDS = frozenset(
 def _git_paths(root: str) -> list[str] | None:
     try:
         result = subprocess.run(["git", "ls-files", "-z"], cwd=root, capture_output=True, check=True, timeout=10)
-        return [p.decode("utf-8", "surrogateescape") for p in result.stdout.split(b"\0") if p]
+        tracked = [p.decode("utf-8", "surrogateescape") for p in result.stdout.split(b"\0") if p]
+        # `git ls-files` succeeds with zero output when the project sits inside a parent repo
+        # that ignores it (vendored under an ignored dir) or when nothing is committed yet.
+        # Returning [] would suppress the _walk_paths fallback and make the whole scan a
+        # silent no-op, so treat "git knows nothing here" the same as "git unavailable".
+        return tracked or None
     except Exception:
         return None
 
