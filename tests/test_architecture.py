@@ -41,6 +41,7 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "sandbox",
                 "failures",
                 "picker",
+                "winterm",
             }
         ),
     ),

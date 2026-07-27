@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import sys
 
-from .. import theme, ui
+from .. import theme, ui, winterm
 from ..i18n import t
 from .session import ql
 
@@ -756,6 +756,8 @@ class _Dock:
         import os
         import select
 
+        if winterm.IS_WINDOWS:  # select 는 Windows 에서 소켓 전용 — fd 를 주면 첫 턴에 스레드가 죽는다
+            return self._read_keys_win()
         fd = sys.stdin.fileno()
         carry = b""
         while not self._stop_reader.is_set():
@@ -768,6 +770,19 @@ class _Dock:
                 return
             if not chunk:
                 return
+            text, carry = _decode_keys(carry + chunk)
+            if text:
+                self._apply_keys(text)
+
+    def _read_keys_win(self) -> None:
+        """Windows 키 리더 — 콘솔을 한 글자씩 폴링해 POSIX 와 같은 _decode_keys 에 얹는다.
+        VT 입력이 켜져 있으면 화살표가 ESC 시퀀스로 쪼개져 오는데, carry 가 미완성 접두를
+        들고 있다가 완성되는 순간 폐기하므로 초안에 쓰레기가 섞이지 않는다."""
+        carry = b""
+        while not self._stop_reader.is_set():
+            chunk = winterm.poll_key()
+            if not chunk:
+                continue
             text, carry = _decode_keys(carry + chunk)
             if text:
                 self._apply_keys(text)
@@ -878,6 +893,8 @@ def _cursor_row() -> int | None:
     Enter 직후 ~100ms 창이라 선타이핑 유실 위험은 실질 0."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
+    if winterm.IS_WINDOWS:  # 콘솔에 직접 물어본다 — 왕복도 타임아웃도 없다
+        return winterm.cursor_row()
     try:
         import os
         import re
@@ -917,6 +934,9 @@ def _echo_off():
     라이브 입력 리더가 소비해 입력행에 표시하고, 턴 종료 시 pt 프롬프트에 프리필된다.
     ISIG 는 유지 — Ctrl-C 턴 중단 계약 불변. termios 없는 플랫폼·non-tty 는 no-op."""
     from contextlib import contextmanager
+
+    if winterm.IS_WINDOWS:  # 같은 계약을 콘솔 모드로 (ENABLE_PROCESSED_INPUT 유지 = ISIG 유지)
+        return winterm.cbreak()
 
     @contextmanager
     def _cm():

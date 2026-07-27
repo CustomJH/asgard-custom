@@ -9,11 +9,26 @@ import sys
 import threading
 import time
 
-from . import theme
+from . import theme, winterm
 
-# TERM=dumb 또는 미설정이면 ANSI 미지원 — 색을 끈다 (docker exec 등에서 raw 코드가 뜨는 것 방지).
-_TERM = os.environ.get("TERM", "")
-_COLOR = sys.stdout.isatty() and not os.environ.get("NO_COLOR") and _TERM not in ("", "dumb")
+
+def color_capable() -> bool:
+    """ANSI 지원 여부 — 이 한 판정에 UI 전체가 달려 있다 (색·픽커 패널·하단 독·pt 입력 프레임).
+
+    POSIX 는 TERM 이 정본이다: 미설정·dumb 이면 docker exec 같은 자리에서 raw 코드가 뜨므로 끈다.
+    **Windows 는 TERM 을 아예 쓰지 않는다.** 같은 규칙을 태우면 Windows Terminal 이 dumb 으로
+    판정돼 위 넷이 한꺼번에 꺼지고, 사용자에겐 "터미널 UI 가 적용 안 된 asgard" 로 보인다
+    (26-07-27 실측). Windows 의 정본은 환경변수가 아니라 콘솔 핸들 — VT 처리를 켤 수 있으면
+    ANSI 를 이해하는 콘솔이고, 파이프·파일로 물렸으면 그 호출이 실패해 저절로 색이 꺼진다.
+    """
+    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
+        return False
+    if winterm.IS_WINDOWS:
+        return winterm.enable_vt()
+    return os.environ.get("TERM", "") not in ("", "dumb")
+
+
+_COLOR = color_capable()
 _QUIET = False
 _MARK = "⠶"  # ⠶ — small brand dot-mark (Yggdrasil), painted gold (theme.PRIMARY)
 # 시맨틱 색 — 토큰(theme.py)에서 유도. 여기 외 raw 코드 직접 쓰지 말 것.

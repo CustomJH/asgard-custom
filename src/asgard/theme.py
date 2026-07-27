@@ -25,7 +25,20 @@ DANGER = "#DC2626"
 LOGO_GRAD = ["#F5E6B0", "#E9CE79", "#D4AF37", "#BD9A2F", "#A28327", "#856B1F"]
 LOGO_GRAD_LIGHT = ["#8A6D1E", "#8A6D1E", "#6F5716", "#6F5716", "#6F5716", "#6F5716"]
 
-_TRUECOLOR = "truecolor" in os.environ.get("COLORTERM", "") or "24bit" in os.environ.get("COLORTERM", "")
+
+def _truecolor() -> bool:
+    """24bit 색 가능 여부. COLORTERM 이 정본이지만 Windows 는 그 변수를 안 쓴다 — VT 를 켤 수
+    있는 콘솔이면(Windows Terminal·Win10 1703+ conhost) 24bit 를 이해하므로 로고 그라디언트를
+    256색 근사로 뭉개지 않는다."""
+    colorterm = os.environ.get("COLORTERM", "")
+    if "truecolor" in colorterm or "24bit" in colorterm:
+        return True
+    from . import winterm
+
+    return winterm.IS_WINDOWS and winterm.enable_vt()
+
+
+_TRUECOLOR = _truecolor()
 
 
 def _x256(r: int, g: int, b: int) -> int:

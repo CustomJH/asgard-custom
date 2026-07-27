@@ -79,3 +79,36 @@ jobs:
                       "$env:USERPROFILE\.local\bin"
           asgard --version
           asgard --help
+
+  # Terminal capability, on a real console. Windows sets no TERM, so the POSIX probe
+  # ("TERM unset => dumb") read Windows Terminal as a teleprinter and switched the whole UI off -
+  # colour, the picker panel, the bottom dock and the prompt_toolkit frame, all on one flag.
+  # The fix asks the console handle instead. A dev machine can never run that code, and a fake
+  # kernel32 cannot prove the ctypes marshalling matches the real Win32 - a truncated handle or a
+  # mismatched struct stays green against a double and fails silently on the real thing. Only a
+  # Windows runner answers that, so this job drives winterm against an actual console.
+  terminal:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --group dev
+
+      - name: Console capability against a real console
+        shell: powershell
+        run: |
+          uv run python -m pytest tests/test_winterm_real_console.py tests/test_winterm.py tests/test_color_capability.py -v
+          if ($LASTEXITCODE -ne 0) { throw 'winterm is not sound on a real Windows console' }
+
+      # A skip here is not a pass: if the console could not be opened, the real-console layer
+      # proved nothing and the job must say so rather than report green.
+      - name: The real-console layer actually ran
+        shell: powershell
+        run: |
+          uv run python -m pytest tests/test_winterm_real_console.py -q --no-header -rs |
+            Tee-Object -Variable out
+          if ($out -match 'skipped') { throw 'the real-console checks were skipped - nothing was proven' }
