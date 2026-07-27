@@ -264,6 +264,7 @@ def cc_hook_files(hooks_dir: str) -> list[tuple[str, str]]:
         (j(hooks_dir, "unattended-context.py"), hook("unattended-context")),  # Canon 8 무인 감지
         (j(hooks_dir, "subagent-gate.py"), hook("subagent-gate")),  # 역할 로그 규율 (SubagentStop)
         (j(hooks_dir, "craft-gate.py"), hook("craft-gate")),  # 미시 형상 래칫 (SubagentStop)
+        (j(hooks_dir, "tutor-note.py"), hook("tutor-note")),  # 되짚기 카드 (Stop, 안 막음)
         # Lagom — 훅 3종 + 캐논 단일 소스 (훅이 모드 필터해 주입)
         (j(hooks_dir, "lagom-activate.py"), hook("lagom-activate")),
         (j(hooks_dir, "lagom-tracker.py"), hook("lagom-tracker")),
@@ -367,6 +368,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".cursor", "hooks", "subagent-gate.py"), hook("subagent-gate")),
             (j(root, ".cursor", "hooks", "verifier-gate.py"), hook("verifier-gate")),
             (j(root, ".cursor", "hooks", "write-sentinel.py"), hook("write-sentinel")),
+            (j(root, ".cursor", "hooks", "tutor-note.py"), hook("tutor-note")),
             (j(root, ".cursor", "hooks", "memory-activate.py"), hook("memory-activate")),
             (j(root, ".cursor", "hooks", "map-activate.py"), hook("map-activate")),
         ]
@@ -383,6 +385,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".codex", "hooks", "subagent-gate.py"), hook("subagent-gate")),
             (j(root, ".codex", "hooks", "verifier-gate.py"), hook("verifier-gate")),
             (j(root, ".codex", "hooks", "write-sentinel.py"), hook("write-sentinel")),
+            (j(root, ".codex", "hooks", "tutor-note.py"), hook("tutor-note")),
             (j(root, ".codex", "hooks", "memory-activate.py"), hook("memory-activate")),
             (j(root, ".codex", "hooks", "map-activate.py"), hook("map-activate")),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),

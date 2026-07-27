@@ -952,6 +952,17 @@ class Heimdall:
                     self._recap_event(t("recap_ev_distill"))
         except Exception:
             pass
+        # 되짚기 — 이 턴이 쓴 코드를 사용자 앞에 물음으로 되돌린다. 외부 클라이언트는 Stop 훅이
+        # 하는 일인데, 네이티브 루프에는 끼어들 훅이 없어서(단일 프로세스) 도달 경로를 여기 둔다.
+        # 물음이 없거나 직전 턴과 같으면 침묵한다 — 카드가 매 턴 나오면 셋째 턴부터 안 읽힌다.
+        try:
+            from ...tutor import turn_note
+
+            card = turn_note(self.root, self._last_quest_id)
+            if card:
+                out += "\n\n" + card
+        except Exception:
+            pass  # 되짚기 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
         return out
 
     def cancel(self) -> None:

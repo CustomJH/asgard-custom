@@ -109,6 +109,7 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/verifier-gate.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/tutor-note.py cursor"},
                     ],
                     "postToolUseFailure": [{"command": f"{py} .cursor/hooks/failure-tracker.py"}],
                 },

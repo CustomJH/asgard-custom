@@ -260,6 +260,31 @@ def craft(
     raise typer.Exit(run_craft(base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet))
 
 
+@app.command(help="hand THIS diff back to you — what changed, and the questions only you can answer")
+def tutor(
+    base: str = typer.Option("HEAD", "--base", help="git ref to compare against (default HEAD)"),
+    path: list[str] = typer.Option(None, "--path", help="review these paths instead of the diff (repeatable)"),
+    report: bool = typer.Option(False, "--report", help="also write a markdown review to .asgard/tutor/"),
+    out: str = typer.Option("", "--out", help="write the markdown review to this path instead"),
+    limit: int = typer.Option(6, "--limit", help="checkpoints shown on screen (the report carries all)"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.tutor import run_tutor
+
+    raise typer.Exit(
+        run_tutor(
+            base=base,
+            paths=tuple(path or ()),
+            json_out=json_,
+            report=report,
+            out=out,
+            limit=limit,
+            quiet=quiet,
+        )
+    )
+
+
 @app.command(help="backend procedure engine — verb playbooks, the next verb, and the correctness gate")
 def thor(
     verb: str = typer.Argument(

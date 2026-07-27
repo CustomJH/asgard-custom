@@ -278,6 +278,12 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
                                 },
+                                # 되짚기 — 이 턴이 쓴 코드를 사용자 앞에 물음으로 되돌린다. 절대
+                                # 안 막는다(health 등급): 되짚기가 관문이 되면 사람이 먼저 끈다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/tutor-note.py"',
+                                },
                             ]
                         },
                     ],

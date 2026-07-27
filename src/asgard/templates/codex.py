@@ -121,6 +121,11 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.p
 [[hooks.Stop.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
+
+# Tutor — hand this turn's code back to the human as questions. Never blocks (health-grade).
+[[hooks.Stop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/tutor-note.py" codex'
 """
 
 _CODEX_RULES = """\

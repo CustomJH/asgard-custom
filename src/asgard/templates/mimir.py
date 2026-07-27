@@ -95,9 +95,60 @@ The severed head cannot walk on its own — the one who walks is always the one 
 - Where retrieval fails, never repeat the same explanation — change the angle (control flow ↔ data flow ↔ concrete value journey).
 """
 
+_AUGA = """\
+---
+name: asgard-mimir-auga
+description: Odin's eye in Mimir's well — deep knowledge of handing a change back to the person who must own it. Load after writing or changing code, before the closing report.
+---
+
+# asgard-mimir-auga — 👁️ Handing the Change Back
+
+Odin paid an eye for one drink from the well. Sight was never the free part — the one who wants to see pays, and no one can pay on their behalf.
+
+## What this skill is for
+
+- The other two Mimir skills explain code the reader did not write. This one covers the harder case: **code the reader did not write but now owns** — because an agent wrote it for them.
+- Failure mode this exists against: the change lands, the tests pass, the report says "done", and six weeks later nobody in the room can say why the retry loop has a 3-second sleep. The code got written; nobody got taught.
+- Success is not "my explanation was clear". Success is **the reader can reconstruct the change without me** — and can name what they would break if they changed it.
+
+## The facts are not yours to write
+
+- Run `asgard tutor --report` and use what it produces. The inventory (files, ±lines, added/changed/removed units), the call-site obligations, the review checkpoints — all of it is machine-derived and deterministic.
+- Never hand-write the change inventory. A hand-written one is a claim; the generated one is a measurement, and only one of those survives being wrong.
+- If the tutor listed something under "기계가 못 본 것", carry that into your report verbatim. A gap you delete is a gap the reader believes does not exist.
+- Where the tutor and your memory of the turn disagree, the tutor is right about *what* changed. You are the only source for *why*.
+
+## The why is yours, and it is exactly three answers
+
+- **What were you trying to do?** — the goal in the reader's vocabulary, not the diff restated. "Retries were hiding a dead upstream" beats "added a counter to `_fetch`".
+- **Why this way?** — the constraint that picked this shape. If no constraint picked it, say that; "no strong reason, this was the smallest change" is a legitimate and useful answer.
+- **What did you reject, and why?** — the highest-value line in the whole report. A rejected alternative is the only part of your reasoning the code cannot show, and it is the first thing the next person will re-propose.
+- Three or four sentences per answer. If it runs longer, the change was more than one change — say so, and name the seam.
+
+## Do not answer the reader's questions for them
+
+- The checkpoints the tutor produces are **questions, not a to-do list you close on their behalf**. Handing over an answered checklist reproduces the exact problem this layer exists to prevent.
+- Ask, then stop. Do not append "(the answer is X)". If you already know X, that is your line in the *why* section, not a substitute for their reading.
+- Never grade your own change. "Clean", "robust", "production-ready" are the reader's verdicts to reach; self-assessment in a delivery report is noise at best and cover at worst.
+- One exception: if a checkpoint is a false alarm, say so with evidence and move it out of their way — a question you know is dead costs the reader real attention.
+
+## Order decides whether any of it sticks
+
+- Put the **checkpoints before the deep explanation** in the closing report. Read-then-quiz produces recognition; quiz-then-read produces retrieval, and only retrieval survives the week.
+- Point at code rather than reproducing it: `path:line` per claim. A pasted block gets skimmed; an anchor gets opened, and only the opened one was actually read.
+- Rank ruthlessly and stop at three. A twenty-item review is read as zero items — the tutor already ranks, so respect the ranking instead of flattening it back out.
+
+## Fading (this is not a per-turn ritual)
+
+- The tutor's card is latched per change-signature: the same questions do not come back turn after turn. Match that in prose — do not re-narrate a change the reader already worked through.
+- Small, reversible, well-anchored change: the generated card is the whole report. Adding paragraphs around it is dilution, not service.
+- Scale the hand-back to what is actually at stake — a new public contract, a deletion, a swallowed failure, a new dependency. Ceremony on trivia teaches the reader to skip the ceremony, and then it is not there when it matters.
+"""
+
 MIMIR_SKILLS: list[tuple[str, str]] = [
     ("asgard-mimir-brunnr", _BRUNNR),
     ("asgard-mimir-hofud", _HOFUD),
+    ("asgard-mimir-auga", _AUGA),
 ]
 
 # 네이티브 디스패치 task → 전용 스킬 매칭 (파일 스킬 로더가 없는 asgard start 세션용 통로 —
@@ -139,6 +190,28 @@ _SUBSTR: dict[str, tuple[str, ...]] = {
         "멘토링",
         "인지부채",
         "cognitive debt",
+    ),
+    # 되짚기 — "무엇을 바꿨는지 정리해"·"내가 리뷰할 수 있게" 계열. `설명해` 는 brunnr 과 겹치므로
+    # 넣지 않는다: 이 스킬의 트리거는 **이번 변경을 넘긴다**는 뜻이 분명한 어휘로만 좁힌다.
+    "asgard-mimir-auga": (
+        "코드 리뷰",
+        "code review",
+        "리뷰 가이드",
+        "review guide",
+        "되짚",
+        "변경 보고",
+        "변경 요약",
+        "무엇이 바뀌",
+        "뭐가 바뀌",
+        "어떻게 바꿨",
+        "어떻게 바뀌었",
+        "what changed",
+        "change report",
+        "리뷰할 수 있게",
+        "직접 확인",
+        "셀프 리뷰",
+        "self-review",
+        "체크리스트",
     ),
 }
 # 짧은 ASCII 용어는 단어 경계 필수 — 부분 일치면 detour→tour, quizzical→quiz 류 통제 불가.
