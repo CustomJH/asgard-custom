@@ -8,14 +8,14 @@ WaveRunner 는 planning 이 정렬한 wave 를 물리 실행하는 협력자다:
 from __future__ import annotations
 
 import json
-import os
-import threading
 from contextlib import ExitStack
 
 from ..session import TurnCancelled, ql
 from .journal import _record_writes
+from .patch_merge import merge_unit_patches
 from .planning import _plan_waves
 from .roles import _role_prompt, _skill_support, work_shape_note
+from .ticket_lease import TicketLease
 from .toolspec import DISPATCH_TOOL
 
 
@@ -44,85 +44,17 @@ class WaveRunner:
         wrp = hd.role_rp.get("worker", hd.rp)
         used_model = f"{wrp.profile.name}:{hd._model_for('worker') or wrp.model}"
 
-        def record_ticket(u: dict, status: str, *, error: str = "", changed_files: list[str] | None = None) -> None:
-            ql(
-                hd.root,
-                "append",
-                session=sid,
-                stdin=json.dumps(
-                    {
-                        "role": "worker" if status != "todo" else "thinker",
-                        "event": "ticket",
-                        "unit": u["id"],
-                        "ticket_status": status,
-                        "subtask": u["subtask"],
-                        "changed_files": changed_files if changed_files is not None else u.get("files", []),
-                        "criteria": u.get("criteria", []),
-                        "access": u.get("access", []),
-                        "ticket_error": error,
-                    }
-                ),
-            )
-
         ticket_policy = hd.policy.get("ticket_runtime") or {}
-        lease_seconds = int(ticket_policy.get("lease_seconds") or 300)
-        max_attempts = int(ticket_policy.get("max_attempts") or 3)
         isolation = bool(ticket_policy.get("isolation", True))
-
-        def claim_ticket(u: dict) -> str:
-            claimed = ql(
-                hd.root,
-                "ticket-claim",
-                "--unit",
-                str(u["id"]),
-                "--worker",
-                f"native:{sid}:{u['id']}",
-                "--lease-seconds",
-                str(lease_seconds),
-                "--max-attempts",
-                str(max_attempts),
-                session=sid,
-            )
-            if claimed.returncode != 0:
-                raise RuntimeError(claimed.stderr.strip() or f"ticket {u['id']} claim failed")
-            return str(json.loads(claimed.stdout)["claim_token"])
-
-        def finish_ticket(u: dict, token: str, status: str, *, error: str = "") -> str:
-            args = [
-                "ticket-finish",
-                "--unit",
-                str(u["id"]),
-                "--claim-token",
-                token,
-                "--status",
-                status,
-            ]
-            if error:
-                args += ["--error", error[:500]]
-            finished = ql(hd.root, *args, session=sid)
-            if finished.returncode != 0:
-                raise RuntimeError(finished.stderr.strip() or f"ticket {u['id']} finish failed")
-            return str(json.loads(finished.stdout)["status"])
-
-        def shorten_claim_lease(u: dict, token: str) -> None:
-            shortened = ql(
-                hd.root,
-                "ticket-heartbeat",
-                "--unit",
-                str(u["id"]),
-                "--claim-token",
-                token,
-                "--lease-seconds",
-                "1",
-                session=sid,
-            )
-            if shortened.returncode != 0:
-                raise RuntimeError(
-                    shortened.stderr.strip() or shortened.stdout.strip() or f"ticket {u['id']} lease shortening failed"
-                )
+        tickets = TicketLease(
+            hd,
+            sid,
+            lease_seconds=int(ticket_policy.get("lease_seconds") or 300),
+            max_attempts=int(ticket_policy.get("max_attempts") or 3),
+        )
 
         for unit in units:
-            record_ticket(unit, "todo")
+            tickets.record(unit, "todo")
 
         def run_unit(u: dict, writes: list[str], cwd: str | None = None):
             # writes 는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
@@ -164,53 +96,13 @@ class WaveRunner:
             fallback = (lambda: mk(rp=hd.rp)) if wrp is not hd.rp else None
             return u, hd._run_turn(mk, prompt, fallback), writes
 
-        heartbeat_controls: dict[object, tuple[threading.Event, threading.Thread]] = {}
-
-        def stop_heartbeat(u: dict) -> None:
-            control = heartbeat_controls.pop(u["id"], None)
-            if control:
-                stop, beat = control
-                stop.set()
-                beat.join()
-
         def run_claimed(u: dict, writes: list[str], token: str, cwd: str | None = None):
-            stop = threading.Event()
-            heartbeat_error: list[str] = []
-
-            def heartbeat() -> None:
-                interval = max(1.0, min(30.0, lease_seconds / 3))
-                while not stop.wait(interval):
-                    try:
-                        beat_result = ql(
-                            hd.root,
-                            "ticket-heartbeat",
-                            "--unit",
-                            str(u["id"]),
-                            "--claim-token",
-                            token,
-                            "--lease-seconds",
-                            str(lease_seconds),
-                            session=sid,
-                        )
-                    except Exception as exc:
-                        heartbeat_error.append(f"{type(exc).__name__}: {str(exc)[:250]}")
-                        stop.set()
-                        return
-                    if beat_result.returncode != 0:
-                        heartbeat_error.append(
-                            (beat_result.stderr or beat_result.stdout or "ticket heartbeat rejected").strip()[:300]
-                        )
-                        stop.set()
-                        return
-
-            beat = threading.Thread(target=heartbeat, name=f"asgard-ticket-{u['id']}", daemon=True)
-            beat.start()
-            heartbeat_controls[u["id"]] = (stop, beat)
-            # 빠른 sibling이 먼저 끝나도 느린 sibling의 fan-in·patch merge까지 lease가 살아 있어야 한다.
-            # merge finally가 모든 heartbeat를 join한 직후 ticket-finish를 수행한다.
+            # 빠른 sibling 이 먼저 끝나도 느린 sibling 의 fan-in·patch merge 까지 lease 가 살아 있어야
+            # 한다. merge finally 가 모든 heartbeat 를 join 한 직후 ticket-finish 를 수행한다.
+            heartbeat_errors = tickets.start_heartbeat(u, token)
             result = run_unit(u, writes, cwd)
-            if heartbeat_error:
-                raise RuntimeError(f"ticket lease heartbeat failed: {heartbeat_error[0]}")
+            if heartbeat_errors:
+                raise RuntimeError(f"ticket lease heartbeat failed: {heartbeat_errors[0]}")
             return result
 
         for wave in _plan_waves(units, hd.root):
@@ -230,82 +122,15 @@ class WaveRunner:
                         for unit in pending:
                             workspaces[unit["id"]] = workspace_stack.enter_context(UnitWorkspace(hd.root, unit["id"]))
                     cwd_by_id = {unit["id"]: workspaces[unit["id"]].path if isolation else None for unit in pending}
-                    claims_by_id: dict[str, str] = {}
-                    for unit in pending:
-                        try:
-                            claims_by_id[unit["id"]] = claim_ticket(unit)
-                        except Exception as claim_error:
-                            # A later claim failure must not strand earlier units until lease expiry.
-                            cleanup_errors: list[Exception] = []
-                            for claimed in pending:
-                                token = claims_by_id.get(claimed["id"])
-                                if token:
-                                    try:
-                                        finish_ticket(
-                                            claimed, token, "failed", error="wave claim aborted before dispatch"
-                                        )
-                                    except Exception as cleanup_error:
-                                        cleanup_errors.append(cleanup_error)
-                                        try:
-                                            shorten_claim_lease(claimed, token)
-                                        except Exception as expiry_error:
-                                            cleanup_errors.append(expiry_error)
-                            if cleanup_errors:
-                                raise RuntimeError(
-                                    f"{claim_error}; claim cleanup failed: "
-                                    + "; ".join(str(error) for error in cleanup_errors)
-                                ) from claim_error
-                            raise
+                    tickets.begin_wave()
+                    tickets.claim_all(pending)
                 except Exception:
                     workspace_stack.close()
                     raise
                 failures: list[tuple[dict, Exception]] = []
                 outs = []
                 actual_writes: dict[object, list[str]] = {}
-                finished_claims: set[str] = set()
                 cancelled_cleanup = False  # 취소 전파 중 표식 — finally 의 close 실패가 failed 정산을 피하게
-
-                def settle_ticket(u: dict, status: str, *, error: str = "") -> str:
-                    token = claims_by_id[u["id"]]
-                    final = finish_ticket(u, token, status, error=error)
-                    finished_claims.add(token)
-                    return final
-
-                def release_unfinished(candidates: list[dict]) -> list[Exception]:
-                    """취소 전용 — 티켓을 failed 로 정산하지 않고 lease 만 반납한다.
-                    취소는 실패가 아니다: 재개(resume)가 같은 티켓을 그대로 재클레임할 수 있어야 한다."""
-                    cleanup_errors: list[Exception] = []
-                    for candidate in candidates:
-                        token = claims_by_id.get(candidate["id"])
-                        if not token or token in finished_claims:
-                            continue
-                        try:
-                            shorten_claim_lease(candidate, token)
-                        except Exception as expiry_error:
-                            cleanup_errors.append(expiry_error)
-                    return cleanup_errors
-
-                def fail_unfinished(candidates: list[dict], error: BaseException) -> list[Exception]:
-                    cleanup_errors: list[Exception] = []
-                    for candidate in candidates:
-                        token = claims_by_id.get(candidate["id"])
-                        if not token or token in finished_claims:
-                            continue
-                        try:
-                            settle_ticket(
-                                candidate,
-                                "failed",
-                                error=f"{error.__class__.__name__}: {str(error)[:400]}",
-                            )
-                        except Exception as cleanup_error:
-                            cleanup_errors.append(cleanup_error)
-                            # If ticket-finish itself is unavailable, stop renewing and shorten
-                            # the still-valid claim so resume is blocked for at most one second.
-                            try:
-                                shorten_claim_lease(candidate, token)
-                            except Exception as expiry_error:
-                                cleanup_errors.append(expiry_error)
-                    return cleanup_errors
 
                 try:
                     if len(pending) == 1:
@@ -315,7 +140,7 @@ class WaveRunner:
                                 run_claimed(
                                     u0,
                                     writes_by_id[u0["id"]],
-                                    claims_by_id[u0["id"]],
+                                    tickets.token(u0) or "",
                                     cwd_by_id[u0["id"]],
                                 )
                             ]
@@ -331,7 +156,7 @@ class WaveRunner:
                                     run_claimed,
                                     u,
                                     writes_by_id[u["id"]],
-                                    claims_by_id[u["id"]],
+                                    tickets.token(u) or "",
                                     cwd_by_id[u["id"]],
                                 ): u
                                 for u in pending
@@ -344,62 +169,20 @@ class WaveRunner:
                                 except Exception as e:
                                     failures.append((futs[fut], e))
                     if isolation:
-                        from ..unit_workspace import WorkspaceError
-
-                        patches = {
-                            u["id"]: workspaces[u["id"]].capture(
-                                extra_paths=tuple(writes_by_id[u["id"]])
-                                + tuple(path for path in r.writes if path not in writes_by_id[u["id"]])
-                            )
-                            for u, r, _ in outs
-                        }
-                        scope_failed = set()
-                        for u, _, _ in outs:
-                            declared = [os.path.normpath(str(path)).replace(os.sep, "/") for path in u["files"]]
-                            outside = [
-                                path
-                                for path in patches[u["id"]].paths
-                                if not any(
-                                    path == allowed or path.startswith(allowed.rstrip("/") + "/")
-                                    for allowed in declared
-                                )
-                            ]
-                            if outside:
-                                scope_failed.add(u["id"])
-                                failures.append((u, WorkspaceError("scope violation: " + ", ".join(sorted(outside)))))
-                        outs = [out for out in outs if out[0]["id"] not in scope_failed]
-                        path_owners: dict[str, list[dict]] = {}
-                        for u, _, _ in outs:
-                            for path in patches[u["id"]].paths:
-                                path_owners.setdefault(path, []).append(u)
-                        conflicted = {u["id"] for owners in path_owners.values() if len(owners) > 1 for u in owners}
-                        kept = []
-                        for out in outs:
-                            u = out[0]
-                            if u["id"] in conflicted:
-                                paths = sorted(
-                                    path for path, owners in path_owners.items() if u in owners and len(owners) > 1
-                                )
-                                failures.append((u, WorkspaceError("actual path overlap: " + ", ".join(paths))))
-                                continue
-                            try:
-                                workspaces[u["id"]].apply(patches[u["id"]])
-                                actual_writes[u["id"]] = list(patches[u["id"]].paths)
-                                kept.append(out)
-                            except Exception as e:
-                                failures.append((u, e))
-                        outs = kept
+                        outs, merged_writes, merge_failures = merge_unit_patches(outs, workspaces, writes_by_id)
+                        actual_writes.update(merged_writes)
+                        failures.extend(merge_failures)
                 except TurnCancelled:
                     cancelled_cleanup = True
                     # 하트비트를 먼저 멈춘다 — lease 를 줄인 뒤 멈추면 그 사이 갱신이 되살린다 (경합)
                     for unit in pending:
-                        stop_heartbeat(unit)
-                    cleanup_errors = release_unfinished(pending)
+                        tickets.stop_heartbeat(unit)
+                    cleanup_errors = tickets.release_unfinished(pending)
                     if cleanup_errors:
                         hd.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
                     raise
                 except Exception as exc:
-                    cleanup_errors = fail_unfinished(pending, exc)
+                    cleanup_errors = tickets.fail_unfinished(pending, exc)
                     if cleanup_errors:
                         hd.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
                     raise
@@ -410,9 +193,9 @@ class WaveRunner:
                         except Exception as close_error:
                             # 취소 전파 중의 close 실패는 티켓 실패 정산이 아니다 — lease 반납만
                             cleanup_errors = (
-                                release_unfinished(pending)
+                                tickets.release_unfinished(pending)
                                 if cancelled_cleanup
-                                else fail_unfinished(pending, close_error)
+                                else tickets.fail_unfinished(pending, close_error)
                             )
                             if cleanup_errors:
                                 hd.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")
@@ -421,7 +204,7 @@ class WaveRunner:
                         # Capture/apply/overlap bookkeeping can raise before per-unit finish.
                         # Always reclaim every wave heartbeat before propagating any exception.
                         for unit in pending:
-                            stop_heartbeat(unit)
+                            tickets.stop_heartbeat(unit)
                 try:
                     outs.sort(key=lambda o: order[o[0]["id"]])  # 완료순 → 배정순 — 로그 결정론 유지
                     completion_errors: list[Exception] = []
@@ -434,13 +217,13 @@ class WaveRunner:
                         unit_note = f"│ 단위 {u['id']} 완료 · 파일 {len(unit_writes)}개"
                         hd.on_text(f"  {ui.dim(unit_note)}\n")
                         try:
-                            settle_ticket(u, "done")
+                            tickets.settle(u, "done")
                         except Exception as e:
                             # One ticket-control failure must not prevent sibling units' durable
                             # work events and ticket completions from being recorded.
                             completion_errors.append(e)
                         finally:
-                            stop_heartbeat(u)
+                            tickets.stop_heartbeat(u)
                         work_event = ql(
                             hd.root,
                             "append",
@@ -471,7 +254,7 @@ class WaveRunner:
                         _record_writes(hd.root, sid, all_writes)
                         for u, e in failures:
                             try:
-                                final = settle_ticket(
+                                final = tickets.settle(
                                     u,
                                     "failed",
                                     error=f"{e.__class__.__name__}: {str(e)[:400]}",
@@ -480,7 +263,7 @@ class WaveRunner:
                                 completion_errors.append(finish_error)
                                 continue
                             finally:
-                                stop_heartbeat(u)
+                                tickets.stop_heartbeat(u)
                             if final == "failed":
                                 retry.append(u)
                                 hd.on_text(f"  ⚠ 단위 {u['id']} 실패 — 재배정 예정 ({e.__class__.__name__})\n")
@@ -493,7 +276,7 @@ class WaveRunner:
                         raise terminal[0][1]
                     pending = retry
                 except Exception as post_error:
-                    cleanup_errors = fail_unfinished(pending, post_error)
+                    cleanup_errors = tickets.fail_unfinished(pending, post_error)
                     if cleanup_errors:
                         raise RuntimeError(
                             f"{post_error}; claim cleanup failed: " + "; ".join(str(error) for error in cleanup_errors)

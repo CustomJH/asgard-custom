@@ -11,6 +11,7 @@ FakeSession 이 스크립트된 응답·verdict 툴콜·관측 커맨드를 돌�
 실행: uv run pytest tests/test_heimdall.py
 """
 
+import contextlib
 import json
 import os
 import subprocess
@@ -1824,6 +1825,7 @@ class TestWaveParallel(Base):
         with (
             mock.patch.object(h, "_run_turn", side_effect=turn),
             mock.patch("asgard.agent.heimdall.waves.ql", side_effect=fail_work_append),
+            mock.patch("asgard.agent.heimdall.ticket_lease.ql", side_effect=fail_work_append),
         ):
             with self.assertRaisesRegex(RuntimeError, "forced work append failure"):
                 h._run_worker_waves("wave-completion-error", "task", units, "")
@@ -1858,16 +1860,16 @@ class TestWaveParallel(Base):
                 patches = [
                     mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
                     mock.patch("asgard.agent.heimdall.waves.ql", side_effect=raised_ql),
+                    mock.patch("asgard.agent.heimdall.ticket_lease.ql", side_effect=raised_ql),
                 ]
                 if scenario == "record-writes":
                     patches.append(
                         mock.patch("asgard.agent.heimdall.waves._record_writes", side_effect=OSError("writes failed"))
                     )
-                with (
-                    patches[0],
-                    patches[1],
-                    patches[2] if len(patches) == 3 else mock.patch.object(h, "history", h.history),
-                ):
+                # 인덱스로 조립하면 패치를 하나 더할 때마다 산술이 깨진다 — 전부 적용한다
+                with contextlib.ExitStack() as stack:
+                    for patch in patches:
+                        stack.enter_context(patch)
                     with self.assertRaises(OSError):
                         h._run_worker_waves(qid, "task", units, "")
                 self.assertFalse(any(thread.name.startswith("asgard-ticket-") for thread in threading.enumerate()))
@@ -1913,6 +1915,7 @@ class TestWaveParallel(Base):
         with (
             mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
             mock.patch("asgard.agent.heimdall.waves.ql", side_effect=fail_finish),
+            mock.patch("asgard.agent.heimdall.ticket_lease.ql", side_effect=fail_finish),
         ):
             with self.assertRaisesRegex(RuntimeError, "finish unavailable"):
                 h._run_worker_waves("wave-finish-error", "task", [unit], "")
@@ -1936,6 +1939,7 @@ class TestWaveParallel(Base):
         with (
             mock.patch.object(h, "_run_turn", return_value=SessionResult(text="ok", stop_reason="end_turn")),
             mock.patch("asgard.agent.heimdall.waves.ql", side_effect=fail_control),
+            mock.patch("asgard.agent.heimdall.ticket_lease.ql", side_effect=fail_control),
         ):
             with self.assertRaises(RuntimeError) as raised:
                 h._run_worker_waves("wave-control-error", "task", [unit], "")
