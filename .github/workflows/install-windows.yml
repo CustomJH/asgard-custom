@@ -1,0 +1,81 @@
+name: install-windows
+
+# Windows PowerShell 5.1 is the one host install.ps1 exists for and the one host a developer machine
+# here cannot reach. Everything else about the installer can be checked locally (PSScriptAnalyzer
+# proves the syntax and cmdlets exist in 5.1; the smoke proves the failure paths on pwsh) - what only
+# a Windows runner can answer is whether the real thing works on the real interpreter.
+#
+# On demand only. push/PR CI is off in this repo by design (ci.yml.disabled); this is a check you
+# reach for when install.ps1 changes, not a tax on every push. The branch trigger exists because
+# `workflow_dispatch` can only be dispatched once the file is on the default branch - pushing an
+# `installer-check/…` branch runs it without touching main first.
+#   git push origin HEAD:installer-check/<name>
+#   gh workflow run install-windows.yml --ref <branch>   # once it is on main
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "installer-check/**"
+
+jobs:
+  # Failure paths, on both interpreters the installer can land on. `powershell` is the built-in
+  # Windows PowerShell 5.1 - the default shell of the people hitting this bug - and `pwsh` is 7.x.
+  smoke:
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [powershell, pwsh]
+    defaults:
+      run:
+        shell: ${{ matrix.host }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host interpreter
+        run: $PSVersionTable | Format-List PSVersion, PSEdition
+
+      - name: Static invariants (5.1 syntax + cmdlet availability)
+        shell: pwsh
+        run: |
+          Install-Module PSScriptAnalyzer -Force -Scope CurrentUser -AllowClobber
+          $syntax = @{ Rules = @{ PSUseCompatibleSyntax = @{ Enable = $true; TargetVersions = @('5.1', '7.0') } } }
+          $r = Invoke-ScriptAnalyzer -Path ./install.ps1 -Settings $syntax -IncludeRule PSUseCompatibleSyntax
+          if ($r) { $r | Format-List RuleName, Line, Message; throw 'install.ps1 is not Windows PowerShell 5.1 clean' }
+          'syntax OK'
+
+      - name: Behavioural smoke
+        env:
+          ASGARD_NO_PAUSE: "1"
+        run: ./tests/install_ps1_smoke.ps1
+
+  # The happy path, for real, on Windows PowerShell 5.1: bootstrap uv, fetch a standalone CPython,
+  # install asgard from this checkout, and prove the CLI answers. ASGARD_INSTALL_SPEC points at the
+  # working tree so the run tests the code in the PR rather than the last published wheel.
+  real-install:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: uv already present?
+        shell: powershell
+        run: |
+          $c = Get-Command uv -ErrorAction SilentlyContinue
+          if ($c) { "uv preinstalled at $($c.Source) - the astral bootstrap path will be skipped" }
+          else { "no uv - the run will exercise the uv bootstrap" }
+
+      - name: Run install.ps1
+        shell: powershell
+        env:
+          ASGARD_NO_PAUSE: "1"
+          ASGARD_INSTALL_SPEC: ${{ github.workspace }}
+        run: ./install.ps1
+
+      - name: asgard runs
+        shell: powershell
+        run: |
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+                      [Environment]::GetEnvironmentVariable('Path', 'User') + ';' +
+                      "$env:USERPROFILE\.local\bin"
+          asgard --version
+          asgard --help

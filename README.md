@@ -14,6 +14,19 @@ Windows (PowerShell):
 irm https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.ps1 | iex
 ```
 
+Neither installer needs a system Python, Node, or git — `uv` fetches a standalone CPython 3.14 of its
+own. If the Windows install does fail, it stops on a message instead of closing the terminal: the
+reason, what to try, an environment table, and a full transcript written to
+`%TEMP%\asgard-install-<timestamp>.log`. Set `ASGARD_NO_PAUSE=1` to skip the keypress in automation.
+
+If the `irm` line itself fails with an SSL/TLS error, the fetch died before the installer could run —
+older Windows PowerShell 5.1 hosts still default to TLS 1.0. Enable TLS 1.2 for the session first:
+
+```powershell
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+irm https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.ps1 | iex
+```
+
 Installs `asgard` to `~/.local/bin`. Then:
 
 ```bash
