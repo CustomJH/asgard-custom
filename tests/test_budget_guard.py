@@ -347,10 +347,12 @@ class TestLimitsConfig(unittest.TestCase):
         경고는 p90 아래에서 먼저 울리고, 차단은 p95 이상 p99 이하 — 정상 작업의 95% 이상은
         차단을 느끼지 못하고 걸리는 것은 꼬리뿐이다. 숫자를 흔들면 이 테스트가 먼저 깨진다."""
         p90, p95, p99 = 6_271_519, 13_680_984, 24_504_250
-        self.assertLessEqual(bg.DEFAULTS["warn_cost_units"], p90)
-        self.assertGreaterEqual(bg.DEFAULTS["session_cost_units"], p95)
-        self.assertLessEqual(bg.DEFAULTS["session_cost_units"], p99)
-        self.assertLess(bg.DEFAULTS["warn_cost_units"], bg.DEFAULTS["session_cost_units"])
+        # DEFAULTS 는 enforce("block") 때문에 str|int 표다 — 숫자로 좁혀야 비교가 성립한다.
+        warn, ceiling = int(bg.DEFAULTS["warn_cost_units"]), int(bg.DEFAULTS["session_cost_units"])
+        self.assertLessEqual(warn, p90)
+        self.assertGreaterEqual(ceiling, p95)
+        self.assertLessEqual(ceiling, p99)
+        self.assertLess(warn, ceiling)
 
 
 if __name__ == "__main__":
