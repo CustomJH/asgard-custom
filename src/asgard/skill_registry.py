@@ -157,9 +157,20 @@ def _entrypoints(manifest: dict, skills: list[str]) -> dict[str, str]:
     return result
 
 
+def _read_text(path: str) -> str:
+    """읽고 반드시 닫는다. 실패는 그대로 올린다 — 여기서 삼키면 호출부의 판정이 조용히 바뀐다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _skill_md(plugin: dict, name: str) -> str:
+    """플러그인의 SKILL.md 본문. 같은 경로 조립이 여섯 곳에 흩어져 있어 한 자리로 모은다."""
+    return _read_text(os.path.join(plugin["root"], "skills", name, "SKILL.md"))
+
+
 def _validate_manifest(root: str) -> dict:
     try:
-        manifest = json.load(open(os.path.join(root, "plugin.json"), encoding="utf-8"))
+        manifest = json.loads(_read_text(os.path.join(root, "plugin.json")))
     except (OSError, ValueError, TypeError) as exc:
         raise ValueError("plugin.json is missing or invalid") from exc
     name = str(manifest.get("name") or "")
@@ -184,7 +195,7 @@ def _validate_manifest(root: str) -> dict:
         path = os.path.join(directory, "SKILL.md")
         if os.path.islink(directory) or os.path.islink(path) or not os.path.isfile(path):
             raise ValueError(f"skill must be a regular file: {skill}")
-        text = open(path, encoding="utf-8").read()
+        text = _read_text(path)
         parsed = _file_skill(text)
         if not parsed or parsed[0].get("name") != skill:
             raise ValueError(f"skill frontmatter is invalid or name differs: {skill}")
@@ -352,7 +363,7 @@ def skills(root: str) -> list[dict]:
         for name in plugin["skills"]:
             if name in seen:
                 continue
-            text = open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
+            text = _skill_md(plugin, name)
             rows.append(
                 {
                     "name": name,
@@ -372,7 +383,7 @@ def skills(root: str) -> list[dict]:
                 "description": str(skill.get("description") or ""),
                 "plugin": "learned",
                 "origin": "project" if str(skill.get("path", "")).startswith(os.path.realpath(root)) else "global",
-                "invocation": "model" if _implicit(open(str(skill["path"]), encoding="utf-8").read()) else "user",
+                "invocation": "model" if _implicit(_read_text(str(skill["path"]))) else "user",
             }
         )
         seen.add(name)
@@ -380,7 +391,7 @@ def skills(root: str) -> list[dict]:
         for name in plugin["skills"]:
             if name in seen:
                 continue
-            text = open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
+            text = _skill_md(plugin, name)
             rows.append(
                 {
                     "name": name,
@@ -401,13 +412,13 @@ def show_skill(root: str, name: str) -> str | None:
                 return text
     for plugin in bundled_plugins().values():
         if name in plugin["skills"]:
-            return open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
+            return _skill_md(plugin, name)
     learned = learned_skills(root).get(name)
     if learned:
-        return open(str(learned["path"]), encoding="utf-8").read()
+        return _read_text(str(learned["path"]))
     for plugin in installed_plugins().values():
         if name in plugin["skills"]:
-            return open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
+            return _skill_md(plugin, name)
     return None
 
 
@@ -602,7 +613,7 @@ def _resolve_file_plugins(root: str, task: str, agent: str, sources: dict[str, d
     policy = _skill_policy(root)
     for plugin in sources.values():
         for name in plugin["skills"]:
-            text = open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
+            text = _skill_md(plugin, name)
             parsed = _file_skill(text)
             if not parsed:
                 continue
@@ -684,7 +695,7 @@ def client_skill_bodies(agent: str, root: str | None = None, *, include_learned:
                 hits.setdefault(name, body)
     for plugin in [*bundled_plugins().values(), *installed_plugins().values()]:
         for name in plugin["skills"]:
-            text = open(os.path.join(plugin["root"], "skills", name, "SKILL.md"), encoding="utf-8").read()
+            text = _skill_md(plugin, name)
             parsed = _file_skill(text)
             if not parsed:
                 continue

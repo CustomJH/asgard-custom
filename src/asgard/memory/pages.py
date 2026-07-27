@@ -165,7 +165,8 @@ def _plan_identity_slot(text: str, d: str) -> dict | None:
 def _rev(d: str, slug: str) -> str:
     """페이지 리비전 = 원문 sha1 — plan 승인과 실행 사이의 변경 감지용."""
     try:
-        return hashlib.sha1(open(_page_path(d, slug), "rb").read()).hexdigest()[:12]
+        with open(_page_path(d, slug), "rb") as handle:
+            return hashlib.sha1(handle.read()).hexdigest()[:12]
     except Exception:
         return ""
 
@@ -427,7 +428,9 @@ def lint(d: str | None = None) -> list[dict]:
         index_path = os.path.join(d, INDEX)
         if os.path.exists(index_path):
             try:
-                if open(index_path, encoding="utf-8").read() != build_index(d):
+                with open(index_path, encoding="utf-8") as handle:
+                    stale_index = handle.read() != build_index(d)
+                if stale_index:
                     findings.append(
                         {"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"}
                     )
@@ -499,7 +502,9 @@ def lint(d: str | None = None) -> list[dict]:
             {"level": "warn", "code": "index-over-budget", "slug": INDEX, "msg": f"{size}/{index_budget()} chars"}
         )
     try:
-        if open(os.path.join(d, INDEX), encoding="utf-8").read() != build_index(d):
+        with open(os.path.join(d, INDEX), encoding="utf-8") as handle:
+            stale = handle.read() != build_index(d)
+        if stale:
             findings.append(
                 {"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"}
             )

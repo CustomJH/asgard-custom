@@ -53,7 +53,8 @@ def curate(root: str, apply: bool = False) -> dict:
             continue  # .archive 등 숨김
         path = os.path.join(skills_dir, name, SKILL_FILE)
         try:
-            parsed = parse_skill_md(open(path, encoding="utf-8").read())
+            with open(path, encoding="utf-8") as handle:
+                parsed = parse_skill_md(handle.read())
         except OSError:
             parsed = None
         if not parsed:

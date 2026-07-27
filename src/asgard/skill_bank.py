@@ -38,7 +38,8 @@ def _approval_key(create: bool = False) -> bytes | None:
         st = os.lstat(path)
         if os.path.islink(path) or st.st_mode & 0o077 or (hasattr(os, "getuid") and st.st_uid != os.getuid()):
             return None
-        key = open(path, "rb").read()
+        with open(path, "rb") as handle:
+            key = handle.read()
         return key if len(key) >= 32 else None
     except FileNotFoundError:
         if not create:
@@ -145,12 +146,14 @@ def _load(dirs: list[str]) -> dict[str, dict]:
                 continue
             p = os.path.join(d, name, SKILL_FILE)
             try:
-                text = open(p, encoding="utf-8").read()
+                with open(p, encoding="utf-8") as handle:
+                    text = handle.read()
             except OSError:
                 continue
             if os.path.realpath(d) == project_dir:
                 try:
-                    receipt = json.load(open(os.path.join(d, name, APPROVAL_FILE), encoding="utf-8"))
+                    with open(os.path.join(d, name, APPROVAL_FILE), encoding="utf-8") as handle:
+                        receipt = json.load(handle)
                 except OSError, ValueError, TypeError:
                     continue
                 if not _valid_project_approval(project_root, name, text, receipt):
@@ -206,7 +209,8 @@ def record_use(root: str, names: list[str]) -> None:
     try:
         os.makedirs(d, exist_ok=True)
         try:
-            usage = json.load(open(f, encoding="utf-8"))
+            with open(f, encoding="utf-8") as handle:
+                usage = json.load(handle)
         except Exception:
             usage = {}
         now = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
@@ -214,7 +218,8 @@ def record_use(root: str, names: list[str]) -> None:
             u = usage.get(name) or {"uses": 0}
             usage[name] = {"uses": int(u.get("uses", 0)) + 1, "last_used": now}
         tmp = f"{f}.{os.getpid()}.tmp"
-        json.dump(usage, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(usage, handle, ensure_ascii=False, indent=1)
         os.replace(tmp, f)
     except Exception:
         pass
@@ -222,7 +227,8 @@ def record_use(root: str, names: list[str]) -> None:
 
 def usage(root: str) -> dict:
     try:
-        d = json.load(open(os.path.join(root, ".asgard", "state", USAGE_FILE), encoding="utf-8"))
+        with open(os.path.join(root, ".asgard", "state", USAGE_FILE), encoding="utf-8") as handle:
+            d = json.load(handle)
         return d if isinstance(d, dict) else {}
     except Exception:
         return {}

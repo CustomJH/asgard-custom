@@ -29,7 +29,19 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
     (
         "foundation",
         frozenset(
-            {"settings", "platform", "theme", "ui", "i18n", "io_journal", "registry", "sandbox", "failures", "picker"}
+            {
+                "settings",
+                "platform",
+                "theme",
+                "ui",
+                "i18n",
+                "io_journal",
+                "io_files",
+                "registry",
+                "sandbox",
+                "failures",
+                "picker",
+            }
         ),
     ),
     ("providers", frozenset({"providers", "openai_codex", "model_tiers"})),

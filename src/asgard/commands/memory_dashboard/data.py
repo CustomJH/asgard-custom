@@ -27,7 +27,8 @@ def _repo_logo() -> bytes | None:
     for _ in range(6):
         cand = os.path.join(here, "assets", "individual", "13-gold-brand-logo.png")
         if os.path.isfile(cand):
-            return open(cand, "rb").read()
+            with open(cand, "rb") as handle:
+                return handle.read()
         here = os.path.dirname(here)
     return None
 
@@ -201,7 +202,8 @@ _LOG_LINE = re.compile(r"^-\s+(\S+)\s+\[([^\]]+)\]\s+(\S+)(?:\s+—\s+(.*))?$")
 def log_data(d: str, n: int = 40) -> list[dict]:
     path = os.path.join(d, memory.LOG)
     try:
-        lines = open(path, encoding="utf-8").read().splitlines()
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
     except Exception:
         return []
     out: list[dict] = []
@@ -230,7 +232,8 @@ def log_query(d: str, offset: int = 0, limit: int = 60, op: str | None = None, d
     day 는 **로컬 날짜** 접두 매칭(활동 히트맵 셀 → 해당 일자 딥링크 — 히트맵 집계와 동일 기준)."""
     path = os.path.join(d, memory.LOG)
     try:
-        lines = open(path, encoding="utf-8").read().splitlines()
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
     except Exception:
         return {"entries": [], "total": 0, "offset": 0, "limit": limit}
     offset = max(0, int(offset))
@@ -254,7 +257,8 @@ def activity_data(d: str) -> dict:
     타임라인(log_data)은 최근 N건, 여기는 집계만 — payload 가 페이지 수와 무관하게 작다."""
     path = os.path.join(d, memory.LOG)
     try:
-        lines = open(path, encoding="utf-8").read().splitlines()
+        with open(path, encoding="utf-8") as handle:
+            lines = handle.read().splitlines()
     except Exception:
         return {"days": {}, "ops": {}, "total": 0, "first": "", "last": ""}
     days: dict[str, int] = {}
@@ -293,7 +297,8 @@ def norn_data(d: str) -> dict:
     for name in names[:12]:
         path = os.path.join(rdir, name)
         try:
-            lines = open(path, encoding="utf-8").read().splitlines()
+            with open(path, encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
         except OSError:
             continue
         ops = [ln[2:].strip() for ln in lines if ln.startswith("- ")]

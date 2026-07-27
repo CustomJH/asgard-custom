@@ -64,7 +64,8 @@ def _load_plan(plan_id: str, text: str, kind: str) -> dict:
         raise ValueError("invalid approval plan id")
     path = os.path.join(_pending_dir(), f"{plan_id}.json")
     try:
-        raw = open(path, encoding="utf-8").read()
+        with open(path, encoding="utf-8") as handle:
+            raw = handle.read()
     except OSError as e:
         raise ValueError("approval plan not found or already consumed — re-run ingest") from e
     if not hmac.compare_digest(hashlib.sha256(raw.encode()).hexdigest(), plan_id):

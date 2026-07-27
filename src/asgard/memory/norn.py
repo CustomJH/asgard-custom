@@ -116,7 +116,8 @@ def _state_path(d: str) -> str:
 
 def _load_state(d: str) -> dict:
     try:
-        state = json.load(open(_state_path(d), encoding="utf-8"))
+        with open(_state_path(d), encoding="utf-8") as handle:
+            state = json.load(handle)
         return state if isinstance(state, dict) else {}
     except Exception:
         return {}
@@ -130,7 +131,8 @@ def _save_state(d: str, state: dict) -> None:
 def _log_lines(d: str) -> int:
     """log.md 누적 연산 행 수 — 노른 트리거의 결정적 활동 신호 (LLM·중요도 점수 불요)."""
     try:
-        return sum(1 for line in open(os.path.join(d, LOG), encoding="utf-8") if line.startswith("- "))
+        with open(os.path.join(d, LOG), encoding="utf-8") as handle:
+            return sum(1 for line in handle if line.startswith("- "))
     except Exception:
         return 0
 

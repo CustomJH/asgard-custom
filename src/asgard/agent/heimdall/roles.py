@@ -322,7 +322,8 @@ def _identity(root: str) -> str:
     p = os.path.join(root, "AGENTS.md")
     if os.path.exists(p):
         try:
-            return open(p, encoding="utf-8").read() + NATIVE_NOTE
+            with open(p, encoding="utf-8") as handle:
+                return handle.read() + NATIVE_NOTE
         except Exception:
             pass
     return agents_md(os.path.basename(root)) + NATIVE_NOTE  # 내장 정체성 (스캐폴드 불요)

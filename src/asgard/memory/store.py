@@ -278,7 +278,8 @@ def seed_defaults(d: str | None = None) -> list[str]:
 
 def _read(d: str, slug: str) -> tuple[dict, str] | None:
     try:
-        return parse_page(open(_page_path(d, slug), encoding="utf-8").read())
+        with open(_page_path(d, slug), encoding="utf-8") as handle:
+            return parse_page(handle.read())
     except Exception:  # 없음·파싱 실패·경로 순회 시도 전부 None (fail-safe)
         return None
 

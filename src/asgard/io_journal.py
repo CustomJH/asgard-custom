@@ -33,7 +33,8 @@ def _append(root: str, entry: dict) -> bool:
         os.makedirs(os.path.join(root, ".asgard", "state"), exist_ok=True)
         gi = os.path.join(root, ".asgard", ".gitignore")
         if not os.path.exists(gi):  # quest_dir 와 동일한 자가 설치 — 저널이 첫 기록자일 수 있다
-            open(gi, "w").write("*\n")
+            with open(gi, "w", encoding="utf-8") as handle:
+                handle.write("*\n")
         path = journal_path(root)
         try:
             if os.path.getsize(path) > MAX_BYTES:

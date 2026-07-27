@@ -119,8 +119,9 @@ def _prune_stale_skill_adapters(
             if path in expected_paths:
                 continue
             try:
-                if open(path, encoding="utf-8").read() not in generated:
-                    continue
+                with open(path, encoding="utf-8") as handle:
+                    if handle.read() not in generated:
+                        continue
             except OSError:
                 continue
             removed += 1
@@ -129,7 +130,9 @@ def _prune_stale_skill_adapters(
                 metadata = os.path.join(os.path.dirname(path), "agents", "openai.yaml")
                 expected = openai_skill_metadata(direct_skill(body, implicit=False))
                 try:
-                    if expected and open(metadata, encoding="utf-8").read() == expected:
+                    with open(metadata, encoding="utf-8") as handle:
+                        stale = bool(expected) and handle.read() == expected
+                    if stale:
                         os.unlink(metadata)
                         os.rmdir(os.path.dirname(metadata))
                 except OSError:
@@ -160,7 +163,8 @@ def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool =
         prev = None
         if os.path.exists(path):
             try:
-                prev = open(path, encoding="utf-8").read()
+                with open(path, encoding="utf-8") as handle:
+                    prev = handle.read()
             except Exception:
                 counts["skipped"] += 1
                 continue
@@ -221,7 +225,8 @@ def _autoregister_cwd() -> None:
         return
     agents = os.path.join(root, "AGENTS.md")
     try:
-        txt = open(agents, encoding="utf-8").read()
+        with open(agents, encoding="utf-8") as handle:
+            txt = handle.read()
     except OSError:
         return
     if "asgard:" not in txt:

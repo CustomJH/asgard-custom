@@ -32,10 +32,12 @@ def _record_writes(root: str, sid: str, writes: list[str]) -> None:
     os.makedirs(d, exist_ok=True)
     f = os.path.join(d, f"writes-{sid}.json")
     try:
-        prev = json.load(open(f))
+        with open(f, encoding="utf-8") as handle:
+            prev = json.load(handle)
     except Exception:
         prev = []
     merged = prev + [w for w in writes if w not in prev]
     tmp = f"{f}.{os.getpid()}.tmp"
-    json.dump(merged[:500], open(tmp, "w"))
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(merged[:500], handle)
     os.replace(tmp, f)

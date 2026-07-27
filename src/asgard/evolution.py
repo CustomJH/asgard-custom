@@ -22,6 +22,7 @@ import re
 import shutil
 import time
 
+from . import io_files
 from .skill_bank import APPROVAL_FILE, SKILL_FILE, approval_receipt, learned_skills, parse_skill_md
 
 EVO_DIR = "evolution"
@@ -53,25 +54,20 @@ def _evo_dir(root: str, *parts: str) -> str:
 
 
 def _load_seen(root: str) -> dict:
-    try:
-        d = json.load(open(_evo_dir(root, SEEN_FILE), encoding="utf-8"))
-        return d if isinstance(d, dict) else {}
-    except Exception:
-        return {}
+    d = io_files.read_json(_evo_dir(root, SEEN_FILE))
+    return d if isinstance(d, dict) else {}
 
 
 def _save_seen(root: str, seen: dict) -> None:
-    os.makedirs(_evo_dir(root), exist_ok=True)
-    p = _evo_dir(root, SEEN_FILE)
-    tmp = f"{p}.{os.getpid()}.tmp"
-    json.dump(seen, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=1)
-    os.replace(tmp, p)
+    io_files.write_json(_evo_dir(root, SEEN_FILE), seen)
 
 
 def _read_quest(path: str) -> list[dict]:
     events = []
     try:
-        for line in open(path, encoding="utf-8"):
+        with open(path, encoding="utf-8") as handle:
+            lines = list(handle)
+        for line in lines:
             line = line.strip()
             if line:
                 try:
@@ -169,7 +165,8 @@ def record_correction(root: str, user_text: str, assistant_text: str = "") -> bo
         path = _evo_dir(root, CORRECTIONS_FILE)
         rows: list[dict] = []
         try:
-            rows = [json.loads(line) for line in open(path, encoding="utf-8") if line.strip()]
+            with open(path, encoding="utf-8") as handle:
+                rows = [json.loads(line) for line in handle if line.strip()]
         except OSError, ValueError:
             rows = []
         if any(r.get("signal") == signal for r in rows):
@@ -195,7 +192,8 @@ def record_correction(root: str, user_text: str, assistant_text: str = "") -> bo
 
 def _corrections(root: str) -> list[dict]:
     try:
-        return [json.loads(line) for line in open(_evo_dir(root, CORRECTIONS_FILE), encoding="utf-8") if line.strip()]
+        with open(_evo_dir(root, CORRECTIONS_FILE), encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if line.strip()]
     except OSError, ValueError:
         return []
 
@@ -325,10 +323,8 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
     p = _evo_dir(root, PENDING, cid, SKILL_FILE)
     orig = f"{p}.orig"
     if not os.path.exists(orig):  # 결정론 초안 백업 — latch 때문에 재생성 불가, 내용 열화 시 복구선
-        open(orig, "w", encoding="utf-8").write(draft)
-    tmp = f"{p}.{os.getpid()}.tmp"
-    open(tmp, "w", encoding="utf-8").write(raw[start:].rstrip() + "\n")
-    os.replace(tmp, p)
+        io_files.write_text(orig, draft)
+    io_files.write_text(p, raw[start:].rstrip() + "\n")
     return True, f"증류 완료 — {cid} 초안이 다듬어졌다 (여전히 pending, 승인 필요. 원본: SKILL.md.orig)"
 
 
@@ -337,7 +333,7 @@ def _stage_candidate(root: str, seen: dict, signal: str, name: str, skill_md: st
     cid = _cand_id(signal)
     d = _evo_dir(root, PENDING, cid)
     os.makedirs(d, exist_ok=True)
-    open(os.path.join(d, SKILL_FILE), "w", encoding="utf-8").write(skill_md)
+    io_files.write_text(os.path.join(d, SKILL_FILE), skill_md)
     meta = {
         "id": cid,
         "name": name,
@@ -345,7 +341,7 @@ def _stage_candidate(root: str, seen: dict, signal: str, name: str, skill_md: st
         "created": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         **meta_extra,
     }
-    json.dump(meta, open(os.path.join(d, "meta.json"), "w", encoding="utf-8"), ensure_ascii=False, indent=1)
+    io_files.write_json(os.path.join(d, "meta.json"), meta)
     seen[signal] = {"status": "proposed", "id": cid, "ts": meta["created"]}
     return meta
 
@@ -429,18 +425,16 @@ def nudge_line(root: str) -> str | None:
     state_dir = os.path.join(root, ".asgard", "state")
     state_path = os.path.join(state_dir, "evolve-nudge.json")
     try:
-        if json.load(open(state_path, encoding="utf-8")).get("digest") == digest:
+        if (io_files.read_json(state_path) or {}).get("digest") == digest:
             return None
-    except Exception:
+    except AttributeError:
         pass
     try:
-        os.makedirs(state_dir, exist_ok=True)
-        tmp = f"{state_path}.{os.getpid()}.tmp"
-        json.dump(
+        io_files.write_json(
+            state_path,
             {"digest": digest, "count": len(signals), "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-            open(tmp, "w", encoding="utf-8"),
+            indent=None,
         )
-        os.replace(tmp, state_path)
     except OSError:
         return None  # latch 를 기록할 수 없으면 침묵 — 반복 넛지가 침묵보다 나쁘다
     return f"진화 후보 신호 {len(signals)}건 — asgard evolve scan 으로 채굴 후 검토·승인 (hard-won 교훈)"
@@ -453,18 +447,14 @@ def pending_list(root: str) -> list[dict]:
     out = []
     for cid in sorted(os.listdir(d)):
         try:
-            out.append(json.load(open(os.path.join(d, cid, "meta.json"), encoding="utf-8")))
-        except Exception:
+            out.append(io_files.read_json(os.path.join(d, cid, "meta.json"), {}))
+        except OSError:
             continue
     return out
 
 
 def show(root: str, cid: str) -> str | None:
-    p = _evo_dir(root, PENDING, cid, SKILL_FILE)
-    try:
-        return open(p, encoding="utf-8").read()
-    except OSError:
-        return None
+    return io_files.read_text(_evo_dir(root, PENDING, cid, SKILL_FILE)) or None
 
 
 def approve(root: str, cid: str) -> tuple[bool, str]:
@@ -487,9 +477,7 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
         return False, f"이름 충돌: 번들 스킬 '{name}' 과 겹친다."
     dst = os.path.join(root, ".asgard", "skills", name)
     os.makedirs(dst, exist_ok=True)
-    tmp = os.path.join(dst, f".{SKILL_FILE}.tmp")
-    open(tmp, "w", encoding="utf-8").write(text)
-    os.replace(tmp, os.path.join(dst, SKILL_FILE))
+    io_files.write_text(os.path.join(dst, SKILL_FILE), text)
     approval = approval_receipt(
         root,
         name,
@@ -498,14 +486,9 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
         approved_at=time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         candidate_id=cid,
     )
-    approval_tmp = os.path.join(dst, f".{APPROVAL_FILE}.tmp")
-    open(approval_tmp, "w", encoding="utf-8").write(json.dumps(approval, ensure_ascii=False, sort_keys=True) + "\n")
-    os.replace(approval_tmp, os.path.join(dst, APPROVAL_FILE))
+    io_files.write_json(os.path.join(dst, APPROVAL_FILE), approval, indent=None, sort_keys=True)
     src = _evo_dir(root, PENDING, cid)
-    try:
-        cmeta = json.load(open(os.path.join(src, "meta.json"), encoding="utf-8"))
-    except Exception:
-        cmeta = {"id": cid, "signal": cid}
+    cmeta = io_files.read_json(os.path.join(src, "meta.json"), {"id": cid, "signal": cid})
     seen = _load_seen(root)
     seen[str(cmeta.get("signal", cid))] = {
         "status": "approved",
@@ -523,10 +506,7 @@ def reject(root: str, cid: str, reason: str = "") -> tuple[bool, str]:
     src = _evo_dir(root, PENDING, cid)
     if not os.path.isdir(src):
         return False, f"후보 없음: {cid}"
-    try:
-        cmeta = json.load(open(os.path.join(src, "meta.json"), encoding="utf-8"))
-    except Exception:
-        cmeta = {"signal": cid}
+    cmeta = io_files.read_json(os.path.join(src, "meta.json"), {"signal": cid})
     seen = _load_seen(root)
     seen[str(cmeta.get("signal", cid))] = {
         "status": "rejected",

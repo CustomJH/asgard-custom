@@ -886,7 +886,8 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
         if os.path.isdir(path):
             return _cap("\n".join(sorted(os.listdir(path))[:500]))
         try:
-            lines = open(path, encoding="utf-8", errors="replace").read().splitlines()
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                lines = handle.read().splitlines()
         except FileNotFoundError:
             raise ToolError(f"파일 없음: {rel}")
         rng = tool_input.get("view_range")
@@ -903,26 +904,30 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
         os.makedirs(os.path.dirname(path) or root, exist_ok=True)
         if os.path.exists(path):  # 계약: 기존 파일은 백업 후 덮어쓴다
             os.replace(path, path + ".bak")
-        open(path, "w", encoding="utf-8").write(tool_input.get("file_text") or "")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(tool_input.get("file_text") or "")
         writes.append(rel)
         return f"created {rel}"
 
     if cmd == "str_replace":
         old = tool_input.get("old_str") or ""
         try:
-            text = open(path, encoding="utf-8").read()
+            with open(path, encoding="utf-8") as handle:
+                text = handle.read()
         except FileNotFoundError:
             raise ToolError(f"파일 없음: {rel}")
         n = text.count(old)
         if n != 1:
             raise ToolError(f"old_str 매치 {n}회 — 정확히 1회여야 합니다 (더 좁혀서 재시도)")
-        open(path, "w", encoding="utf-8").write(text.replace(old, tool_input.get("new_str") or "", 1))
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text.replace(old, tool_input.get("new_str") or "", 1))
         writes.append(rel)
         return f"edited {rel}"
 
     if cmd == "insert":
         try:
-            lines = open(path, encoding="utf-8").read().splitlines(keepends=True)
+            with open(path, encoding="utf-8") as handle:
+                lines = handle.read().splitlines(keepends=True)
         except FileNotFoundError:
             raise ToolError(f"파일 없음: {rel}")
         at = int(tool_input.get("insert_line") or 0)
@@ -932,7 +937,8 @@ def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
         if not ins.endswith("\n"):
             ins += "\n"
         lines.insert(at, ins)
-        open(path, "w", encoding="utf-8").write("".join(lines))
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("".join(lines))
         writes.append(rel)
         return f"inserted into {rel}"
 

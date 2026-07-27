@@ -664,7 +664,9 @@ class Heimdall:
 
         events = []
         try:
-            for line in open(os.path.join(self.root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
+            with open(os.path.join(self.root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
+                quest_lines = list(handle)
+            for line in quest_lines:
                 try:
                     events.append(json.loads(line))
                 except Exception:

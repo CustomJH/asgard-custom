@@ -50,7 +50,8 @@ def project_path(root: str) -> str:
 
 def _read_json(path: str) -> dict | None:
     try:
-        d = json.load(open(path, encoding="utf-8"))
+        with open(path, encoding="utf-8") as handle:
+            d = json.load(handle)
         return d if isinstance(d, dict) else None
     except Exception:
         return None
@@ -108,7 +109,8 @@ def section(name: str, root: str | None = None) -> dict:
 def _atomic_json(path: str, data: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = f"{path}.{os.getpid()}.tmp"
-    json.dump(data, open(tmp, "w", encoding="utf-8"), ensure_ascii=False, indent=2)
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(data, handle, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
 
 
