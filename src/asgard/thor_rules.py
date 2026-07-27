@@ -59,17 +59,35 @@ _PUBLISH = frozenset({"publish", "send_message", "sendmail", "send_mail", "enque
 _MONEY = re.compile(
     r"(?i)(?:^|_)(?:amount|price|balance|salary|payroll|invoice|subtotal|refund|krw|usd|금액|가격|잔액)(?:_|$)"
 )
+# 비율은 금액이 아니다. 환율·이자율·할인율은 본래 분수라 부동소수가 **옳고**, 0.1+0.2 문제는
+# 최소단위가 있는 금액에서만 성립한다. 통화 토큰(usd·krw)이 이 부류를 도로 끌어들여서 따로 뺀다 —
+# 실측(JVM 1,373파일)에서 이 규칙의 유일한 오탐이 `USD_TO_VND_RATE` 였다.
+_RATE = re.compile(r"(?i)(?:^|_)(?:rate|ratio|percent|pct|factor|multiplier|환율|비율|이율)(?:_|$)")
 
 
 def _at(spans: list[Unit], line: int) -> str:
     return _owner(spans, line)
 
 
-def secret_name(name: str) -> bool:
-    """이름이 시크릿을 담는 자리인가. 중괄호 계열 판정기도 같은 자를 쓴다 (단일 출처)."""
+def _snake(name: str) -> str:
+    """camelCase → snake. JVM·TS 관용구가 camelCase 라, 밑줄 경계로만 재면 그쪽에서 규칙이 죽는다."""
     for pattern in _CAMEL:
         name = pattern.sub("_", name)
-    return bool(_SECRET_NAME.search(name.lower()))
+    return name.lower()
+
+
+def secret_name(name: str) -> bool:
+    """이름이 시크릿을 담는 자리인가. 중괄호 계열 판정기도 같은 자를 쓴다 (단일 출처)."""
+    return bool(_SECRET_NAME.search(_snake(name)))
+
+
+def money_name(name: str) -> bool:
+    """이름이 화폐 **금액**을 담는 자리인가 — `totalPrice` 처럼 붙여 쓴 것까지 (단일 출처).
+
+    비율은 뺀다: `USD_TO_VND_RATE` 는 통화 토큰을 갖지만 환율이고, 환율에 부동소수는 옳은 선택이다.
+    """
+    snake = _snake(name)
+    return bool(_MONEY.search(snake)) and not _RATE.search(snake)
 
 
 # ── ① SQL 문자열 보간 ───────────────────────────────────────────────
@@ -347,15 +365,15 @@ def _money_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
     for node in ast.walk(tree):
         if isinstance(node, ast.AnnAssign) and isinstance(node.annotation, ast.Name):
             name = getattr(node.target, "id", getattr(node.target, "attr", ""))
-            if node.annotation.id == "float" and _MONEY.search(name):
+            if node.annotation.id == "float" and money_name(name):
                 note(node.lineno, name)
         elif isinstance(node, ast.arg) and isinstance(node.annotation, ast.Name):
-            if node.annotation.id == "float" and _MONEY.search(node.arg):
+            if node.annotation.id == "float" and money_name(node.arg):
                 note(node.lineno, node.arg)
         elif isinstance(node, ast.Call) and getattr(node.func, "id", "") == "float" and len(node.args) == 1:
             inner = node.args[0]
             name = getattr(inner, "id", getattr(inner, "attr", ""))
-            if name and _MONEY.search(name):
+            if name and money_name(name):
                 note(node.lineno, name)
     return out
 

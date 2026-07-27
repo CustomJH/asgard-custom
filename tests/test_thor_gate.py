@@ -13,7 +13,7 @@ import subprocess
 import tempfile
 import unittest
 
-from asgard import thor_gate, thor_lex, thor_rules
+from asgard import thor_gate, thor_lex, thor_rules, thor_survey
 from asgard.commands.thor import VERBS, run_thor
 
 
@@ -208,15 +208,24 @@ class Honesty(unittest.TestCase):
             self.assertEqual(1, len(report.undetermined))
 
     def test_brace_languages_report_unmeasured_rules(self):
+        """JVM 밖 중괄호 계열은 공통 셋 셋만 잰다 — 나머지는 못 쟀다고 실어야 한다."""
+        with tempfile.TemporaryDirectory() as root:
+            with open(os.path.join(root, "a.ts"), "w", encoding="utf-8") as handle:
+                handle.write("const x = 1;\n")
+            report = thor_gate.judge(root, ["a.ts"])
+            self.assertEqual(("a.ts",), report.judged)
+            missing = dict(report.unmeasured)["a.ts"]
+            for rule in ("call-no-timeout", "tx-external-io", "money-float"):
+                self.assertIn(rule, missing)
+
+    def test_timeout_is_unmeasured_even_on_jvm(self):
+        """타임아웃 설정은 호출부가 아니라 빈 정의·설정 파일에 있다 — 한 문장으로 부재를 증명 못 한다."""
         with tempfile.TemporaryDirectory() as root:
             with open(os.path.join(root, "a.java"), "w", encoding="utf-8") as handle:
                 handle.write("class A {}\n")
-            report = thor_gate.judge(root, ["a.java"])
-            self.assertEqual(("a.java",), report.judged)
-            missing = dict(report.unmeasured)["a.java"]
+            missing = dict(thor_gate.judge(root, ["a.java"]).unmeasured)["a.java"]
             self.assertIn("call-no-timeout", missing)
-            self.assertIn("tx-external-io", missing)
-            self.assertIn("money-float", missing)
+            self.assertNotIn("money-float", missing)
 
     def test_python_measures_every_rule(self):
         with tempfile.TemporaryDirectory() as root:
@@ -239,6 +248,166 @@ class VerbSurface(unittest.TestCase):
 
     def test_menu_needs_no_argument(self):
         self.assertEqual(0, run_thor(quiet=True))
+
+
+class JvmRules(unittest.TestCase):
+    """JVM 에서만 발화하는 둘 — 금액과 트랜잭션. 언어가 더 많이 말해 주는 만큼 더 잰다."""
+
+    def _java(self, source: str, lang: str = "java") -> list:
+        from asgard.craft_lex import units
+
+        spans = list((units(source, lang) or {}).values())
+        found = thor_lex.findings(source, "t." + lang, spans, lang)
+        assert found is not None
+        return found
+
+    def test_typed_money_declaration_blocks(self):
+        """정적 타입 언어에선 선언에 타입이 붙어 있어 파이썬보다 오히려 잘 보인다."""
+        for lang, source in (
+            ("java", "class A { void f() { double amount = 0.0; } }"),
+            ("java", "class A { void f() { double totalPrice = 0.0; } }"),
+            ("kotlin", "class A { fun f() { val amount: Double = 0.0 } }"),
+        ):
+            with self.subTest(source=source):
+                self.assertIn("money-float", _rules(self._java(source, lang), blocking=True))
+
+    def test_bigdecimal_is_the_right_answer_not_a_defect(self):
+        self.assertEqual(set(), _rules(self._java("class A { void f() { BigDecimal amount = X; } }")))
+
+    def test_rate_is_not_an_amount(self):
+        """환율·이자율은 본래 분수라 부동소수가 옳다 — 실측 오탐 1건이 `USD_TO_VND_RATE` 였다."""
+        for name in ("USD_TO_VND_RATE", "exchangeRate", "discountRatio"):
+            with self.subTest(name=name):
+                source = "class A { void f() { double %s = 1.0; } }" % name
+                self.assertEqual(set(), _rules(self._java(source)))
+
+    def test_external_call_inside_transactional_blocks(self):
+        source = (
+            "class A {\n  @Transactional\n  public void pay() {\n"
+            "    repo.save(o);\n    restTemplate.postForObject(url, b, String.class);\n  }\n}"
+        )
+        self.assertIn("tx-external-io", _rules(self._java(source), blocking=True))
+
+    def test_transactional_without_external_call_is_silent(self):
+        source = "class A {\n  @Transactional\n  public void pay() {\n    repo.save(o);\n  }\n}"
+        self.assertEqual(set(), _rules(self._java(source)))
+
+    def test_external_call_outside_a_transaction_is_silent(self):
+        """애너테이션이 없는 메서드의 외부 호출은 이 규칙의 관심사가 아니다."""
+        source = "class A {\n  public void pay() {\n    restTemplate.postForObject(u, b, String.class);\n  }\n}"
+        self.assertEqual(set(), _rules(self._java(source)))
+
+    def test_method_name_colliding_with_a_type_keyword_is_still_judged(self):
+        """`record` 는 자바 record 타입 키워드라 craft_lex 가 단위로 못 잡는다. 단위를 못 잡았다는
+        이유로 정확성 규칙이 조용히 꺼지면 안 된다 — 실전 검증이 잡은 결함이고, `record` 는 결제·
+        감사 코드에서 아주 흔한 메서드 이름이다."""
+        source = (
+            "class A {\n  @Transactional\n  public void record(Long id, double amt) {\n"
+            "    jdbc.update(q, id);\n    restTemplate.postForObject(u, amt, String.class);\n  }\n}"
+        )
+        self.assertIn("tx-external-io", _rules(self._java(source), blocking=True))
+
+    def test_class_level_transactional_covers_its_methods(self):
+        """클래스 애너테이션은 실제로 모든 public 메서드를 트랜잭션에 넣는다 — 그대로 읽는다."""
+        source = (
+            "@Transactional\nclass A {\n  public void pay() {\n"
+            "    restTemplate.postForObject(u, b, String.class);\n  }\n}"
+        )
+        self.assertIn("tx-external-io", _rules(self._java(source), blocking=True))
+
+    def test_bodyless_declaration_is_not_a_transaction_body(self):
+        """인터페이스·추상 메서드는 본문이 없다 — 다음 중괄호를 본문으로 오인하면 안 된다."""
+        source = (
+            "interface A {\n  @Transactional\n  void pay();\n}\n"
+            "class B {\n  void other() { restTemplate.postForObject(u, b, String.class); }\n}"
+        )
+        self.assertEqual(set(), _rules(self._java(source)))
+
+    def test_annotation_does_not_leak_across_methods(self):
+        """파일 어딘가의 @Transactional 을 끌어오면 안 된다 — 시그니처 바로 위만 본다."""
+        source = (
+            "class A {\n  @Transactional\n  public void a() { repo.save(o); }\n\n\n\n\n\n"
+            "  public void b() {\n    restTemplate.postForObject(u, b, String.class);\n  }\n}"
+        )
+        self.assertEqual(set(), _rules(self._java(source)))
+
+
+class LanguageCoverage(unittest.TestCase):
+    def test_jvm_measures_more_than_other_brace_languages(self):
+        self.assertEqual(set(thor_gate.JVM_RULES) - set(thor_gate.LEX_RULES), {"money-float", "tx-external-io"})
+
+    def test_unmeasured_reflects_the_language(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name, body in (("a.java", "class A {}\n"), ("b.ts", "const x = 1;\n")):
+                with open(os.path.join(root, name), "w", encoding="utf-8") as handle:
+                    handle.write(body)
+            missing = dict(thor_gate.judge(root, ["a.java", "b.ts"]).unmeasured)
+            self.assertNotIn("money-float", missing["a.java"])  # JVM 은 잰다
+            self.assertIn("money-float", missing["b.ts"])  # TS 는 못 잰다
+            self.assertIn("call-no-timeout", missing["a.java"])  # 타임아웃은 어디서도 못 잰다
+
+
+class SurveySidecar(unittest.TestCase):
+    """정찰 기록은 세션을 넘어 살아야 하고, 기계가 사람의 답을 지우면 안 된다."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", self.root], check=False))
+        self._manifest('[project]\nname="x"\n')
+        os.makedirs(os.path.join(self.root, "src"), exist_ok=True)
+        with open(os.path.join(self.root, "src", "a.py"), "w", encoding="utf-8") as handle:
+            handle.write("x = 1\n")
+
+    def _manifest(self, body: str) -> None:
+        with open(os.path.join(self.root, "pyproject.toml"), "w", encoding="utf-8") as handle:
+            handle.write(body)
+
+    def test_detection_comes_from_files_not_guesses(self):
+        survey = thor_survey.detect(self.root)
+        self.assertEqual(["Python"], survey.ecosystems)
+        self.assertIn("pytest", survey.verifiers)
+        self.assertEqual(["python"], survey.languages)
+
+    def test_judgement_starts_blank_and_is_never_invented(self):
+        survey = thor_survey.detect(self.root)
+        self.assertEqual(list(thor_survey.JUDGEMENT_KEYS), survey.blanks)
+        self.assertEqual({}, survey.judgement)
+
+    def test_record_survives_a_reload(self):
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        again = thor_survey.load(self.root)
+        assert again is not None
+        self.assertEqual("flat", again.judgement["layering"])
+
+    def test_redetection_preserves_human_answers(self):
+        """기계가 다시 훑어도 사람이 적어 둔 판단은 남는다 — 안 그러면 아무도 안 적는다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        self._manifest('[project]\nname="x"\ndependencies=["requests"]\n')
+        merged = thor_survey.refresh(self.root, {})
+        self.assertEqual("flat", merged.judgement["layering"])
+
+    def test_manifest_change_marks_the_record_stale(self):
+        thor_survey.save(self.root, thor_survey.detect(self.root))
+        fresh = thor_survey.load(self.root)
+        assert fresh is not None
+        self.assertFalse(thor_survey.stale(self.root, fresh))
+        self._manifest('[project]\nname="x"\ndependencies=["requests"]\n')
+        self.assertTrue(thor_survey.stale(self.root, fresh))
+
+    def test_unknown_note_key_is_rejected(self):
+        """어휘를 고정하지 않으면 기록이 곧 자유 서술이 되고, 자유 서술은 다음 세션이 못 읽는다."""
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, cwd)
+        self.assertEqual(2, run_thor("survey", notes=("nonsense=x",), quiet=True))
+        self.assertEqual(2, run_thor("survey", notes=("layering=",), quiet=True))
+
+    def test_corrupt_sidecar_reads_as_absent(self):
+        """깨진 기록을 반쯤 믿느니 없는 것으로 친다 — 정찰을 다시 하면 그만이다."""
+        os.makedirs(os.path.dirname(os.path.join(self.root, thor_survey.REL)), exist_ok=True)
+        with open(os.path.join(self.root, thor_survey.REL), "w", encoding="utf-8") as handle:
+            handle.write("{not json")
+        self.assertIsNone(thor_survey.load(self.root))
 
 
 if __name__ == "__main__":

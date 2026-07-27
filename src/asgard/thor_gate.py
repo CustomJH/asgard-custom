@@ -33,7 +33,10 @@ PYTHON_RULES = (
     "naive-now",
 )
 LEX_RULES = ("sql-interpolated", "swallowed-exception", "secret-literal")
+# JVM 은 타입 선언과 애너테이션이 있어 둘을 더 잰다 (thor_lex 모듈 docstring 참조).
+JVM_RULES = LEX_RULES + ("money-float", "tx-external-io")
 _NO_CATCH = ("go", "rust")
+_JVM = ("java", "kotlin")
 
 
 @dataclass(frozen=True)
@@ -59,7 +62,8 @@ def _spans(text: str, lang: str) -> list[Unit]:
 def _rules_for(lang: str) -> tuple[str, ...]:
     if lang == "python":
         return PYTHON_RULES
-    return tuple(r for r in LEX_RULES if not (r == "swallowed-exception" and lang in _NO_CATCH))
+    fired = JVM_RULES if lang in _JVM else LEX_RULES
+    return tuple(r for r in fired if not (r == "swallowed-exception" and lang in _NO_CATCH))
 
 
 def _language(rel: str) -> str | None:

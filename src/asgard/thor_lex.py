@@ -1,9 +1,16 @@
 """토르 게이트 규칙 (중괄호 계열) — Java·Kotlin·C#·TS/JS·Go·Swift·Rust.
 
-Python 만 판정하는 백엔드 게이트는 거의 아무 백엔드도 판정하지 못한다. 그래서 어휘 수준으로
-옮길 수 있는 규칙 셋만 여기로 옮긴다: **삼킨 예외 · 하드코딩된 시크릿 · SQL 문자열 보간**.
-타임아웃·트랜잭션·금액은 옮기지 않는다 — 클라이언트마다 이름이 다르고 문법만으로는 못 가른다.
-못 옮긴 규칙은 미측정으로 정직하게 보고한다(`thor_gate.unmeasured`).
+Python 만 판정하는 백엔드 게이트는 거의 아무 백엔드도 판정하지 못한다. 그래서 어휘 수준에서
+증명되는 것을 여기로 옮긴다. 전 언어 공통 셋: **삼킨 예외 · 하드코딩된 시크릿 · SQL 문자열 보간**.
+JVM 에는 둘을 더 옮겼다 — **부동소수 금액**과 **@Transactional 안의 외부 I/O**.
+
+JVM 에서 그 둘이 되는 이유는 어휘가 더 똑똑해서가 아니라 언어가 더 많이 말해 주기 때문이다.
+`double amount` 는 선언에 타입이 붙어 있어 추론이 필요 없고(파이썬보다 오히려 쉽다),
+`@Transactional` 은 경계를 애너테이션으로 못 박아 준다(`with` 를 따라가는 것보다 쉽다).
+
+타임아웃은 여전히 안 옮겼다 — 클라이언트마다 이름이 다르고, 설정이 호출부가 아니라 빈 정의나
+설정 파일에 있어서 한 문장 안에서 부재를 증명할 수 없다. 못 옮긴 규칙은 미측정으로 정직하게
+보고한다(`thor_gate.unmeasured`).
 
 `craft_lex.scrub` 을 쓰는 곳과 원문을 쓰는 곳이 갈린다. 구조(빈 catch 본문)는 문자열·주석이
 지워진 사본에서 봐야 문자열 안의 `catch {}` 에 속지 않고, 내용(SQL·시크릿)은 원문에서만 보인다.
@@ -15,7 +22,7 @@ import re
 
 from .craft_lex import language, scrub
 from .craft_rules import Finding, Unit, _owner
-from .thor_rules import _SQL_CLAUSE, _SQL_VERB, _VALUE_SLOT, _secretish, secret_name
+from .thor_rules import _SQL_CLAUSE, _SQL_VERB, _VALUE_SLOT, _secretish, money_name, secret_name
 
 # 이 파일이 판정하는 언어. Rust 는 catch 가 없고 Go 도 없다 — 시크릿·SQL 만 걸린다.
 JUDGED = frozenset({"java", "kotlin", "csharp", "ts", "go", "swift", "rust"})
@@ -167,6 +174,104 @@ def _sql_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: lis
     return out
 
 
+# ── ④ 부동소수 금액 (JVM 한정) ───────────────────────────────────────
+# 정적 타입 언어에서는 이게 Python 보다 **더** 잘 보인다 — 선언에 타입이 붙어 있어서 추론이 필요
+# 없다. `double amount` 는 그 자리에서 끝나는 사실이다.
+_JVM_MONEY_DECL = re.compile(
+    r"\b(?:double|float|Double|Float|BigDecimal)\s+([A-Za-z_]\w*)\s*[=;,)]"  # Java: double amount
+    r"|\b(?:val|var)\s+([A-Za-z_]\w*)\s*:\s*(?:Double|Float)\b"  # Kotlin: val amount: Double
+)
+
+
+def _money_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: list[int]) -> list[Finding]:
+    out: list[Finding] = []
+    for match in _JVM_MONEY_DECL.finditer(clean):
+        name = match.group(1) or match.group(2) or ""
+        # BigDecimal 은 금액에 **옳은** 타입이다 — 이름만 보고 걸면 정답을 결함으로 만든다.
+        if "BigDecimal" in match.group(0) or not money_name(name):
+            continue
+        line = _line_of(starts, match.start())
+        out.append(
+            Finding(
+                "money-float",
+                rel,
+                line,
+                _owner(spans, line),
+                f"{name} 을 부동소수로 다룬다 — 0.1 + 0.2 는 0.3 이 아니다",
+                "정수 최소단위(원·센트)나 BigDecimal 로 바꿔라",
+            )
+        )
+    return out
+
+
+# ── ⑤ 트랜잭션 안의 외부 I/O (JVM 한정) ──────────────────────────────
+# `@Transactional` 은 경계를 **선언**으로 못 박아 준다 — 파이썬의 `with` 보다 찾기 쉽다.
+_TX_ANNOTATION = re.compile(r"@Transactional\b")
+# 커밋 전에 되돌릴 수 없는 부수효과를 내는 호출들. 이름이 곧 의미인 것만 넣는다.
+_JVM_EXTERNAL = re.compile(
+    r"\b(?:restTemplate|webClient|httpClient|feignClient|okHttpClient)\s*\.|"
+    r"\b(?:kafkaTemplate|rabbitTemplate|jmsTemplate|sqsClient|snsClient)\s*\.\s*(?:send|convertAndSend|publish)|"
+    r"\bHttpClient\s*\.\s*newHttpClient\b|\bmailSender\s*\.\s*send"
+)
+
+
+def _body_after(clean: str, start: int) -> tuple[int, int] | None:
+    """애너테이션 뒤에 오는 메서드 본문의 (여는 중괄호, 닫는 중괄호). 못 맞추면 None.
+
+    `craft_lex` 의 단위 추출에 기대지 않고 직접 맞춘다. 그쪽은 `record` 를 자바 record 타입 키워드로
+    읽어서 `void record(...)` 를 단위로 잡지 못하는데(실전 검증에서 발견), 단위를 못 잡았다는 이유로
+    **정확성 규칙이 조용히 꺼지면** 안 된다. 침묵이 곧 통과가 되는 구조는 게이트가 아니다.
+    """
+    depth = 0
+    for i in range(start, len(clean)):
+        char = clean[i]
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == ";" and depth == 0:
+            return None  # 본문 없는 선언 (인터페이스·추상 메서드)
+        elif char == "{" and depth == 0:
+            close, level = i, 0
+            for j in range(i, len(clean)):
+                if clean[j] == "{":
+                    level += 1
+                elif clean[j] == "}":
+                    level -= 1
+                    if level == 0:
+                        close = j
+                        break
+            return (i, close) if close > i else None
+    return None
+
+
+def _tx_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: list[int]) -> list[Finding]:
+    out: list[Finding] = []
+    for annotation in _TX_ANNOTATION.finditer(clean):
+        span = _body_after(clean, annotation.end())
+        if span is None:
+            continue
+        open_at, close_at = span
+        hit = _JVM_EXTERNAL.search(clean, open_at, close_at)
+        if hit is None:
+            continue
+        line = _line_of(starts, hit.start())
+        out.append(
+            Finding(
+                "tx-external-io",
+                rel,
+                line,
+                _owner(spans, line),
+                "@Transactional 안에서 외부 호출 — 커밋 전 부수효과는 롤백이 되돌리지 못한다",
+                "트랜잭션 밖으로 빼거나 outbox 로 옮겨라",
+            )
+        )
+    return out
+
+
+_JVM = frozenset({"java", "kotlin"})
+
+
 def findings(text: str, rel: str, spans: list[Unit], lang: str) -> list[Finding] | None:
     if lang not in JUDGED:
         return None
@@ -175,6 +280,9 @@ def findings(text: str, rel: str, spans: list[Unit], lang: str) -> list[Finding]
     out = _secret_findings(text, rel, spans, starts) + _sql_findings(text, clean, rel, spans, starts)
     if lang not in _NO_CATCH:
         out.extend(_catch_findings(text, clean, rel, spans, starts, lang))
+    if lang in _JVM:
+        out.extend(_money_findings(text, clean, rel, spans, starts))
+        out.extend(_tx_findings(text, clean, rel, spans, starts))
     return sorted(out, key=lambda f: (f.line, f.rule))
 
 
