@@ -32,11 +32,13 @@ an input is externally controlled, or whether your idempotency story is real. Th
 ## The verbs
 
 Run `asgard thor <verb>` to load a playbook. With no argument, `asgard thor` reads the working tree
-and recommends the next two or three.
+**and the survey record** and recommends the next two or three — including `survey` itself when this
+repository has never been surveyed, when the manifests have changed since it was, or when judgement
+fields are still blank.
 
 | Verb | Take it when | Canon it loads | Gate |
 |---|---|---|---|
-| `survey` | first backend task in this repo, or the stack is unstated | — | — |
+| `survey` | first backend task in this repo, or the stack is unstated | — | persists to `.asgard/thor/` |
 | `shape` | before writing: boundaries, contracts, failure shape | bilskirnir · clean-hexagonal (opt-in) | — |
 | `diagnose` | a defect, regression, or incident — **before** any edit | gridarvol | — |
 | `implement` | writing the change | magni · thjalfi · mjollnir/lightning | craft |

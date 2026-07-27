@@ -12,8 +12,16 @@ import json
 import os
 from dataclasses import asdict
 
-from .. import thor_gate, ui
+from .. import thor_gate, thor_survey, ui
 from .health import _project_root
+
+# 빈칸마다 "무엇을 읽어야 답이 나오는가"를 같이 싣는다 — 질문만 던지는 화면은 답을 안내하지 못한다.
+_BLANK_HINT = {
+    "layering": "무엇이 무엇에 의존하는가 — import 방향을 두세 모듈에서 확인",
+    "errors": "실패가 코드인가 예외인가 — 카탈로그가 있는가, 즉흥 문자열인가",
+    "transactions": "트랜잭션 경계를 어느 계층이 소유하는가",
+    "cleanup": "자원을 누가 어디서 닫는가",
+}
 
 _ENGINE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -72,9 +80,15 @@ def _menu(root: str) -> int:
     changed = thor_gate.changed_paths(root)
     judged = [p for p in changed if thor_gate._language(p)]
     picks: list[tuple[str, str]] = []
+    recorded = thor_survey.load(root)
+    if recorded is None:
+        picks.append(("survey", "이 저장소를 아직 정찰하지 않았다 — 무엇이 지배하는지부터"))
+    elif thor_survey.stale(root, recorded):
+        picks.append(("survey", "매니페스트가 바뀌었다 — 정찰 기록이 낡았다"))
+    elif recorded.blanks:
+        picks.append(("survey", f"정찰에 빈칸이 남았다 — {', '.join(recorded.blanks)}"))
     if not changed:
-        picks = [("survey", "변경이 없다 — 여기서 무엇이 지배하는지부터 읽는다"),
-                 ("shape", "쓸 것이 정해졌으면 경계부터 정한다")]  # fmt: skip
+        picks.append(("shape", "변경이 없다 — 쓸 것이 정해졌으면 경계부터 정한다"))
     else:
         report = thor_gate.judge(root, judged) if judged else None
         if report and report.blocking:
@@ -91,12 +105,69 @@ def _menu(root: str) -> int:
         seen.add(verb)
         ui.step(f"asgard thor {verb}")
         ui.step(ui.dim(f"    {why}"))
+    if recorded and not thor_survey.stale(root, recorded):
+        known = " · ".join(recorded.ecosystems) or "생태계 미상"
+        ui.step(ui.dim(f"정찰 기록: {known} — {', '.join(recorded.languages) or '언어 미상'}"))
     ui.phase("전체 동사")
     for verb, (summary, canon) in VERBS.items():
         gate = _GATED.get(verb)
         tail = f"  [{canon}]" + (f" · {gate}" if gate else "")
         ui.step(f"  {verb:<10} {summary}{ui.dim(tail)}")
     ui.step(ui.dim("추천은 제안이다 — 무엇을 부를지는 사람이 정한다"))
+    ui.done()
+    return 0
+
+
+# ── 정찰 ────────────────────────────────────────────────────────────
+
+
+def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
+    """탐지는 기계가, 판단은 사람이. 빈칸을 추측으로 채우지 않는 것이 이 명령의 계약이다."""
+    parsed: dict[str, str] = {}
+    for note in notes:
+        key, _, value = note.partition("=")
+        key = key.strip().lower()
+        if key not in thor_survey.JUDGEMENT_KEYS or not value.strip():
+            ui.warn(f"모르는 정찰 항목: {note}")
+            ui.step(ui.dim("쓸 수 있는 것 — " + ", ".join(thor_survey.JUDGEMENT_KEYS)))
+            return 2
+        parsed[key] = value.strip()
+    survey = thor_survey.refresh(root, parsed)
+    thor_survey.save(root, survey)
+
+    if json_out:
+        print(
+            json.dumps(
+                {
+                    "ecosystems": survey.ecosystems,
+                    "manifests": survey.manifests,
+                    "languages": survey.languages,
+                    "verifiers": survey.verifiers,
+                    "judgement": survey.judgement,
+                    "blanks": survey.blanks,
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    ui.head("thor survey · 여기서 무엇이 지배하는가")
+    ui.step(f"생태계 — {' · '.join(survey.ecosystems) or '매니페스트를 찾지 못했다'}")
+    ui.step(f"언어 — {', '.join(survey.languages) or '판정기가 아는 언어 없음'}")
+    ui.step(f"검증 명령 후보 — {', '.join(survey.verifiers) or '없음 (직접 찾아라)'}")
+    if survey.judgement:
+        ui.phase("적어 둔 판단")
+        for key, value in survey.judgement.items():
+            ui.step(f"  {key:<13} {value}")
+    if survey.blanks:
+        ui.phase(f"빈칸 {len(survey.blanks)} — 코드를 읽어야 아는 것")
+        for key in survey.blanks:
+            ui.step(f"  {key:<13} {_BLANK_HINT[key]}")
+        ui.step(ui.dim("    채우려면 — asgard thor survey --note 'layering=<한 줄>'"))
+        ui.step(ui.dim("    추측으로 채우지 마라 — 거짓말하는 기록은 없느니만 못하다"))
+    else:
+        ui.ok("빈칸 없음 — 다음 세션은 이 기록을 그대로 쓴다")
     ui.done()
     return 0
 
@@ -181,6 +252,7 @@ def run_thor(
     *,
     base: str = "HEAD",
     paths: tuple[str, ...] = (),
+    notes: tuple[str, ...] = (),
     json_out: bool = False,
     quiet: bool = False,
 ) -> int:
@@ -195,4 +267,10 @@ def run_thor(
         ui.warn(f"모르는 동사: {verb}")
         ui.step(ui.dim("아는 동사 — " + ", ".join([*VERBS, "gate"])))
         return 2
+    if name == "survey":
+        # 정찰만 결정론 절반을 갖는다 — 매니페스트는 기계가 읽는 편이 사람보다 낫고 빠짐없다.
+        # `--note` 로 부른 것은 "배운다"가 아니라 "적는다"이므로 플레이북을 다시 싣지 않는다.
+        if not notes and not json_out:
+            _show(name)
+        return _run_survey(root, notes, json_out)
     return _show(name)

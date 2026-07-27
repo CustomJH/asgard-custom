@@ -49,7 +49,7 @@ _FLAGS = {
     "health": ["--snapshot", "--json", "--quiet"],
     "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
-    "thor": ["--base", "--path", "--json", "--quiet"],
+    "thor": ["--base", "--json", "--note", "--path", "--quiet"],
     "tutor": ["--base", "--path", "--report", "--out", "--limit", "--json", "--quiet"],
     "surface": ["--base", "--json", "--quiet"],
     "setup": [],

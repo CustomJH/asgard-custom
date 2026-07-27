@@ -3,11 +3,32 @@
 Take this on the first backend task in a repository, or whenever you cannot state the conventions in
 one line. It costs a few reads and saves the file that does not belong.
 
+**This verb persists.** `asgard thor survey` writes what it learns to `.asgard/thor/stack.json`, so
+the next session starts from your answers instead of re-deriving them. That matters beyond the saved
+reads: a repository re-read from scratch every time gets read slightly differently every time, and
+those differences harden into per-file conventions.
+
+## The split — the machine detects, you judge
+
+Step 1 is already done for you. `asgard thor survey` reads the manifests and reports the ecosystem,
+the languages present, and the candidate verifier commands — all of it file-backed, none of it
+guessed. Steps 2–5 are yours, because they need the code read.
+
+Record each answer as you get it:
+
+    asgard thor survey --note 'layering=<one line>'
+    asgard thor survey --note 'errors=<one line>' --note 'transactions=<one line>'
+
+Valid keys: `layering`, `errors`, `transactions`, `cleanup`. The command lists the blanks that remain
+and refuses keys it does not know — a free-form record is one the next session cannot read.
+
+**Never fill a blank with a guess.** An empty field costs one read next session; a wrong field costs
+a file that does not belong, and it will be believed. Leaving it blank is the honest answer.
+
 ## Procedure
 
-1. **Find the manifest.** `package.json`, `pom.xml`, `build.gradle(.kts)`, `pyproject.toml`,
-   `go.mod`, `Cargo.toml`, `*.csproj`. Name the runtime, the framework, and the version. Do not
-   assume a framework from directory names alone.
+1. **Find the manifest** — `asgard thor survey` does this. Confirm what it reports matches what you
+   see; do not assume a framework from directory names alone.
 2. **Read two or three modules closest to where you will write** — not the ones with the best names,
    the ones nearest the write location. From them, answer four questions in one line each:
    - **Layering** — what depends on what, and which direction imports flow.
@@ -37,6 +58,10 @@ an answer the next file will contradict.
 One line, and carry it into every later verb:
 
     Detected: <runtime+framework>, <storage/access>, <layering>, <error model>; verifier: <command>
+
+If `asgard thor` says the record is **stale**, the manifests changed since it was written. Dependency
+changes and convention changes travel together often enough that the judgement fields are suspect
+too — re-read before trusting them.
 
 ## Next
 

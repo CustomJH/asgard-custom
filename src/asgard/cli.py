@@ -305,12 +305,17 @@ def thor(
     path: list[str] = typer.Option(
         None, "--path", help="gate only: judge these paths instead of the diff (repeatable)"
     ),
+    note: list[str] = typer.Option(
+        None, "--note", help="survey only: record a judgement as key=value (layering|errors|transactions|cleanup)"
+    ),
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     from .commands.thor import run_thor
 
-    raise typer.Exit(run_thor(verb, base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet))
+    raise typer.Exit(
+        run_thor(verb, base=base, paths=tuple(path or ()), notes=tuple(note or ()), json_out=json_, quiet=quiet)
+    )
 
 
 @app.command(help="codebase erosion signal — size, duplication, coupling, hotspots, and the trend")
