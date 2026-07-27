@@ -302,5 +302,74 @@ class TestInstall(unittest.TestCase):
             self.assertEqual(shells, ["bash", "zsh"])  # zsh=로그인 셸(흔적 무), bash=흔적, fish=호출 안 됨
 
 
+class TestDescriptionEscaping(unittest.TestCase):
+    """설명문에 셸 메타문자가 들어가도 스크립트가 살아야 한다.
+
+    이 가드가 없을 때 실제로 일어난 일: 설명에 아포스트로피(`verb's`)와 백틱을 넣었더니 zsh 기능
+    시험 6개가 한 번에 죽었고, 증상이 "모든 명령이 사라짐"이라 원인이 안 보였다. 저자가 특수문자를
+    피하기를 기대하는 대신 생성기가 막고, 그걸 여기서 증명한다.
+    """
+
+    HOSTILE = "a verb's playbook, `gate`, and a colon: plus a backslash \\ end"
+
+    def _with_hostile(self, shell: str) -> str:
+        summary = dict(comp._SUMMARY)
+        summary["doctor"] = self.HOSTILE
+        with mock.patch.object(comp, "_SUMMARY", summary):
+            return _script(shell)
+
+    @unittest.skipUnless(shutil.which("zsh"), "zsh not installed")
+    def test_zsh_script_still_parses(self):
+        script = self._with_hostile("zsh")
+        with tempfile.TemporaryDirectory(prefix="asgard-esc-") as d:
+            path = os.path.join(d, "_asgard")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(script)
+            r = subprocess.run(["zsh", "-n", path], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    @unittest.skipUnless(shutil.which("zsh"), "zsh not installed")
+    def test_zsh_still_lists_every_command(self):
+        """파싱만 되고 목록이 비면 그것도 파손이다 — 명령이 전부 나오는지까지 본다."""
+        script = self._with_hostile("zsh")
+        with tempfile.TemporaryDirectory(prefix="asgard-esc-") as d:
+            path = os.path.join(d, "_asgard")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(script)
+            harness = textwrap.dedent(f"""\
+                typeset -ga RESULT; RESULT=()
+                compadd() {{ :; }}
+                _describe() {{
+                  local name=${{@[-1]}}
+                  local -a pairs; pairs=(${{(P)name}})
+                  RESULT+=(${{pairs%%:*}})
+                }}
+                source "{path}"
+                words=(asgard ""); CURRENT=2
+                _asgard
+                print -rl -- $RESULT
+            """)
+            r = subprocess.run(["zsh", "-fc", harness], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertEqual({x for x in r.stdout.splitlines() if x}, set(comp._SUMMARY))
+
+    @unittest.skipUnless(shutil.which("fish"), "fish not installed")
+    def test_fish_script_still_parses(self):
+        script = self._with_hostile("fish")
+        with tempfile.TemporaryDirectory(prefix="asgard-esc-") as d:
+            path = os.path.join(d, "asgard.fish")
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(script)
+            r = subprocess.run(["fish", "-n", path], capture_output=True, text=True)
+            self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_escaping_is_a_no_op_for_todays_descriptions(self):
+        """오늘의 설명문엔 특수문자가 없다 — 이스케이프를 넣어도 출력이 바이트 동일해야 한다."""
+        for name, desc in comp._SUMMARY.items():
+            with self.subTest(name=name):
+                self.assertEqual(desc, comp._zsh_desc(desc))
+                self.assertEqual(desc, comp._fish_desc(desc))
+
+
 if __name__ == "__main__":
     unittest.main()

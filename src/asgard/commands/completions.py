@@ -198,6 +198,22 @@ complete -F _asgard asgard
 """
 
 
+def _zsh_desc(text: str) -> str:
+    """zsh `_describe` 는 `'name:desc'` 를 홑따옴표 안에서 읽는다.
+
+    그래서 설명문의 홑따옴표는 문자열을 **끝내고**, 콜론은 이름과 설명의 **경계**가 된다. 둘 중
+    하나만 들어가도 스크립트가 통째로 깨지는데, 증상이 "모든 명령이 사라짐"이라 원인이 안 보인다
+    (실측: 설명에 `verb's` 와 백틱을 넣었더니 zsh 기능 시험 6개가 한 번에 죽었다). 저자가 특수문자를
+    피하기를 기대하는 대신 여기서 막는다.
+    """
+    return text.replace("'", "'\\''").replace(":", "\\:")
+
+
+def _fish_desc(text: str) -> str:
+    """fish 의 홑따옴표 안에서 이스케이프로 읽히는 것은 `\\'` 와 `\\\\` 둘뿐이다."""
+    return text.replace("\\", "\\\\").replace("'", "\\'")
+
+
 def _bash() -> str:
     value_cases = "\n".join(
         f'    {opt}) COMPREPLY=( $(compgen -W "{" ".join(vals)}" -- "$cur") ); return ;;'
@@ -338,7 +354,7 @@ fi
 
 
 def _zsh() -> str:
-    cmds = "\n".join(f"    '{name}:{desc}'" for name, desc in _SUMMARY.items())
+    cmds = "\n".join(f"    '{name}:{_zsh_desc(desc)}'" for name, desc in _SUMMARY.items())
     value_cases = "\n".join(f"    {opt}) compadd -- {' '.join(vals)}; return ;;" for opt, vals in _VALUES.items())
     cases = []
     for name in _SUMMARY:
@@ -451,7 +467,7 @@ def _fish() -> str:
     top = f"not __fish_seen_subcommand_from {all_cmds}"
     lines = ["complete -c asgard -f"]
     for name, desc in _SUMMARY.items():
-        lines.append(f"complete -c asgard -n \"{top}\" -a {name} -d '{desc}'")
+        lines.append(f"complete -c asgard -n \"{top}\" -a {name} -d '{_fish_desc(desc)}'")
     lines.append(f'complete -c asgard -n "{top}" -l help -s h')
     lines.append(f'complete -c asgard -n "{top}" -l version -s v')
     for name in _SUMMARY:
