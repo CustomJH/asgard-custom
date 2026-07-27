@@ -66,6 +66,8 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "health",
                 "craft",
                 "craft_rules",
+                "craft_lex",
+                "craft_c",
                 "map_context",
                 "map_graph",
                 "evolution",

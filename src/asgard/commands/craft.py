@@ -23,6 +23,13 @@ _RULE_LABEL = {
     "unbounded-accumulator": "모듈 스코프가 자라기만 한다",
     "quadratic-scan": "입력이 열 배면 시간이 백 배다",
     "file-growth": "파일이 문턱을 넘었다",
+    # C 계열 — 회수해 주는 런타임이 없으니 이름도 더 분명해야 한다
+    "c-alloc-unfreed": "할당에 주인이 없다",
+    "c-alloc-unchecked": "할당 실패를 안 본다",
+    "c-realloc-self-assign": "realloc 자기대입 — 실패하면 원본을 잃는다",
+    "c-handle-unclosed": "연 것을 안 닫는다",
+    "c-unbounded-copy": "대상 크기를 모르는 복사",
+    "c-quadratic-scan": "입력이 열 배면 시간이 백 배다",
 }
 
 
