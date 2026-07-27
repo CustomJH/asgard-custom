@@ -57,7 +57,8 @@ def state_dir(proj: str) -> str:
     gi = os.path.join(d, ".gitignore")
     if not os.path.exists(gi):
         try:
-            open(gi, "w").write("*\n")
+            with open(gi, "w", encoding="utf-8") as handle:
+                handle.write("*\n")
         except Exception:
             pass
     return d
@@ -149,7 +150,8 @@ def main() -> None:
         counts = {}
         if os.path.exists(path):
             try:
-                counts = json.load(open(path))
+                with open(path, encoding="utf-8") as handle:
+                    counts = json.load(handle)
             except Exception:
                 counts = {}  # 깨진 상태 파일은 카운트 리셋 — 훅을 죽이는 것보다 낫다
         key = tool + "|" + sig(err)
@@ -157,7 +159,8 @@ def main() -> None:
         n = counts[key]
         try:
             tmp = "%s.%d.tmp" % (path, os.getpid())  # temp+rename — 크래시 절단이 카운트를 리셋하지 않게
-            json.dump(counts, open(tmp, "w"))
+            with open(tmp, "w", encoding="utf-8") as handle:
+                json.dump(counts, handle)
             os.replace(tmp, path)
         except Exception:
             pass  # 저장 실패해도 이번 경고 판정은 진행 (fail-open)

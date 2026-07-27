@@ -229,7 +229,7 @@ def load_credentials() -> dict:
     import json
 
     try:
-        with open(CRED_PATH) as f:
+        with open(CRED_PATH, encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}

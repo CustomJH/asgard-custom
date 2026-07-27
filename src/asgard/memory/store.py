@@ -98,7 +98,7 @@ def _lock(d: str):
     """디렉토리 단위 배타 락 — 동시 add/ingest/remove 직렬화 (P1).
     posix=fcntl, Windows=msvcrt(2차 리뷰 ⑥), 둘 다 없으면 best-effort no-op."""
     os.makedirs(d, exist_ok=True)
-    fh = open(os.path.join(d, ".lock"), "a+")
+    fh = open(os.path.join(d, ".lock"), "a+", encoding="utf-8")
     _chmod(os.path.join(d, ".lock"), 0o600)
     try:
         if fcntl is not None:

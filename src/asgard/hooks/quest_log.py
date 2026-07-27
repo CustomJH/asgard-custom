@@ -256,13 +256,17 @@ def quest_dir(root: str) -> str:
     os.makedirs(os.path.join(d, "quest"), exist_ok=True)
     gi = os.path.join(d, ".gitignore")
     canonical = "*\n!.gitignore\n!map/\n!map/**\n!asgard-setting-project.json\n"
+    current = ""
     try:
-        current = open(gi).read() if os.path.exists(gi) else ""
+        if os.path.exists(gi):
+            with open(gi, encoding="utf-8") as handle:
+                current = handle.read()
     except Exception:
         current = ""
     if not current or current.strip() == "*":
         try:
-            open(gi, "w").write(canonical)
+            with open(gi, "w", encoding="utf-8") as handle:
+                handle.write(canonical)
         except Exception:
             pass
     return os.path.join(d, "quest")
@@ -972,7 +976,8 @@ def quest_owned_files(root: str, events: list[dict]) -> set[str]:
     }
     for sid in {str(e.get("session_id")) for e in events if e.get("session_id")}:
         try:
-            journal = json.load(open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json")))
+            with open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json"), encoding="utf-8") as handle:
+                journal = json.load(handle)
             owned.update(_rel_to_root(root, p) for p in journal if str(p).strip())
         except Exception:
             pass
@@ -1011,7 +1016,8 @@ def load_policy(root: str) -> dict:
     p = dict(DEFAULT_POLICY)
     # 신규 통합 설정(asgard-setting-project.json 의 trinity_policy) 우선, 구 파일 폴백 (fail-open)
     try:
-        cfg = json.load(open(os.path.join(root, ".asgard", "asgard-setting-project.json")))
+        with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
+            cfg = json.load(handle)
         pol = cfg.get("trinity_policy") if isinstance(cfg, dict) else None
         if isinstance(pol, dict):
             p.update(pol)
@@ -1019,7 +1025,8 @@ def load_policy(root: str) -> dict:
     except Exception:
         pass
     try:
-        p.update(json.load(open(os.path.join(root, ".asgard", "trinity-policy.json"))))
+        with open(os.path.join(root, ".asgard", "trinity-policy.json"), encoding="utf-8") as handle:
+            p.update(json.load(handle))
     except Exception:
         pass  # 정책 파일 없음/깨짐 → 내장 기본값 (fail-open)
     return p
@@ -1034,7 +1041,8 @@ def load_policy(root: str) -> dict:
 def load_priors(root: str) -> dict:
     for rel in (os.path.join("state", "route-priors.json"), "route-priors.json"):  # 신규 state/ 우선
         try:
-            return json.load(open(os.path.join(root, ".asgard", rel)))
+            with open(os.path.join(root, ".asgard", rel), encoding="utf-8") as handle:
+                return json.load(handle)
         except Exception:
             continue
     return {}  # 없음/깨짐 = 이력 없음 (fail-open — 기본 문턱)
@@ -1056,7 +1064,8 @@ def update_priors(root: str, task_class: str, red: bool) -> None:
         except FileNotFoundError:
             pass
         tmp = "%s.%d.tmp" % (f, os.getpid())  # temp+rename — 크래시 절단이 이력을 리셋하지 않게
-        json.dump(p, open(tmp, "w"))
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(p, handle)
         os.replace(tmp, f)
     except Exception:
         pass

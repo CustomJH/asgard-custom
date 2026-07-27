@@ -55,7 +55,7 @@ def _read_store() -> dict:
     if AUTH_PATH.is_symlink():
         raise OAuthError("Refusing to read a symlinked Asgard auth store.", code="auth_store_unsafe")
     try:
-        payload = json.loads(AUTH_PATH.read_text())
+        payload = json.loads(AUTH_PATH.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return {}
     except (OSError, json.JSONDecodeError) as exc:

@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from .. import ui
+from .. import io_files, ui
 from ..hooks import script as hook  # hook("git-guard") → the hook's source, scaffolded verbatim
 from ..skill_registry import client_skill_bodies, skill_catalog
 from ..templates import (
@@ -187,16 +187,21 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     # 덮어쓰기여도 사용자 데이터 보유 파일 3종은 보존 병합한다 — 스캐폴드(asgard 소유 로직)만
     # 최신으로 갈고, 프로젝트에 쌓인 값은 유지 (로그·퀘스트·상태·맵 데이터는 애초에 스캐폴드
     # 대상이 아니라 건드리지 않는다). sync 의 파일별 갱신 정책과 같은 계열.
+    # 쓰기는 전부 io_files 를 지난다. Path.write_text 는 인코딩을 안 주면 로케일 기본값으로 쓰고,
+    # 그 값이 cp949 인 한국어 Windows 에서는 스캐폴드에 흔한 엠대시 한 글자에 UnicodeEncodeError 로
+    # 죽는다 (실기 확인 26-07-27: `asgard init --cc` 가 93파일 중 앞쪽에서 중단). 게다가 그 시점엔
+    # 파일이 이미 열려 잘려 있어서, 크래시가 사용자 프로젝트에 반쪽 파일을 남긴다 — io_files 는
+    # utf-8 고정에 tmp+replace 라 두 문제가 같이 사라진다.
     def _write(p: str, content: str) -> None:
         prev = Path(p).read_text(encoding="utf-8") if os.path.exists(p) else None
         if os.path.basename(p) == "asgard-setting-project.json" and prev is not None:
-            Path(p).write_text(merge_project_settings(prev, content))
+            io_files.write_text(p, merge_project_settings(prev, content))
             ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 기존 설정값 유지)"))
             return
         if rel(p) == os.path.join(".claude", "settings.json") and prev is not None:
             from .sync import merge_cc_settings  # 지연 임포트 — sync 가 setup 을 임포트한다 (순환 방지)
 
-            Path(p).write_text(merge_cc_settings(prev, content))
+            io_files.write_text(p, merge_cc_settings(prev, content))
             ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 사용자 permissions 유지)"))
             return
         if os.path.basename(p) == "AGENTS.md" and os.path.dirname(p) in (cwd, os.getcwd()) and prev is not None:
@@ -204,10 +209,10 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
 
             merged = merge_agents_md(prev, content)
             # 마커 없는 파일 = 전면 사용자 소유였던 경우 — init 은 명시적 리셋이라 템플릿으로 교체
-            Path(p).write_text(merged if merged is not None else content)
+            io_files.write_text(p, merged if merged is not None else content)
             ui.ok(ui.dim(rel(p)) + (ui.dim(" (병합 — 마커 밖 내용 유지)") if merged is not None else ""))
             return
-        Path(p).write_text(content)
+        io_files.write_text(p, content)
         ui.ok(ui.dim(rel(p)))
 
     ui.phase(f"scaffold · {len(files)} file(s)")
@@ -215,7 +220,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
         Path(p).parent.mkdir(parents=True, exist_ok=True)
         if _is_root_gitignore(p):  # 병합 — 기존 사용자 규칙 보존, asgard 블록만 갱신
             prev = Path(p).read_text(encoding="utf-8") if os.path.exists(p) else None
-            Path(p).write_text(merge_gitignore(prev))
+            io_files.write_text(p, merge_gitignore(prev))
             ui.ok(ui.dim(rel(p)) + ("" if prev is None else ui.dim(" (asgard 블록 갱신)")))
             continue
         if _seed_kind(p) == "preserve" and os.path.lexists(p):

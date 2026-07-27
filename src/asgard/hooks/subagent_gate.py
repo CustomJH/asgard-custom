@@ -66,7 +66,8 @@ def block(root, sid, agent, reason, *, protocol="claude"):
     path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")
     counts = {}
     try:
-        counts = json.load(open(path))
+        with open(path, encoding="utf-8") as handle:
+            counts = json.load(handle)
         counts = counts if isinstance(counts, dict) else {}
     except Exception:
         pass
@@ -75,7 +76,8 @@ def block(root, sid, agent, reason, *, protocol="claude"):
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = "%s.%d.tmp" % (path, os.getpid())  # temp+rename — 크래시 절단이 카운터를 리셋하지 않게
-        json.dump(counts, open(tmp, "w"))
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump(counts, handle)
         os.replace(tmp, path)
     except Exception:
         pass
@@ -522,11 +524,13 @@ def main():
         # 통과 → 이 역할의 차단 카운터 리셋 (다음 위반은 새로 계수)
         try:
             path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")
-            counts = json.load(open(path))
+            with open(path, encoding="utf-8") as handle:
+                counts = json.load(handle)
             if isinstance(counts, dict) and agent in counts:
                 counts.pop(agent)
                 tmp = "%s.%d.tmp" % (path, os.getpid())
-                json.dump(counts, open(tmp, "w"))
+                with open(tmp, "w", encoding="utf-8") as handle:
+                    json.dump(counts, handle)
                 os.replace(tmp, path)
         except Exception:
             pass

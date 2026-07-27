@@ -185,5 +185,74 @@ class TestDoctorWindows(unittest.TestCase):
         self.assertIn("uv tool update-shell", path_check["fix"])
 
 
+class TestTextIOCarriesItsEncoding(unittest.TestCase):
+    """텍스트 입출력은 인코딩을 스스로 들고 다녀야 한다 — 안 주면 로케일 기본값으로 열린다.
+
+    왜 형상으로 재는가: POSIX 호스트의 기본값은 utf-8 이라 인코딩을 빠뜨린 코드가 여기서는
+    언제나 통과한다. 목킹으로도 못 잡는다 — 바꿔야 하는 것이 인터프리터가 시작할 때 정해지는
+    로케일이기 때문이다. 그래서 실행이 아니라 호출 형상을 본다.
+
+    26-07-27 실기(한국어 Windows, 로케일 cp949): `asgard init --cc` 가 93파일 중 앞쪽에서
+    UnicodeEncodeError 로 죽었다. 원인은 스캐폴드 본문의 엠대시 한 글자였고, 죽은 자리는
+    인코딩을 안 준 `Path.write_text` 였다. 게다가 그 시점엔 파일이 이미 열려 잘려 있어
+    사용자 프로젝트에 반쪽 파일이 남았다.
+
+    벤더링 자산(assets/)은 상류 사본이라 제외한다 — 여기서 고치면 다음 동기화에 되돌아온다.
+    """
+
+    def _offenders(self) -> list[str]:
+        import ast
+
+        import asgard
+
+        root = os.path.dirname(os.path.abspath(asgard.__file__))
+        out: list[str] = []
+        for dirpath, dirnames, files in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d != "assets"]
+            for fname in sorted(files):
+                if not fname.endswith(".py"):
+                    continue
+                path = os.path.join(dirpath, fname)
+                with open(path, encoding="utf-8") as handle:
+                    tree = ast.parse(handle.read())
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    hit = self._verdict(node)
+                    if hit:
+                        out.append(f"{os.path.relpath(path, root)}:{node.lineno} {hit}")
+        return out
+
+    @staticmethod
+    def _verdict(node) -> str:
+        import ast
+
+        func = node.func
+        if "encoding" in {kw.arg for kw in node.keywords}:
+            return ""
+        first = node.args[0] if node.args else None
+        if isinstance(func, ast.Name) and func.id == "open":
+            mode = node.args[1].value if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) else "r"
+            return "" if "b" in str(mode) else "open()"
+        if isinstance(func, ast.Attribute) and func.attr == "open":
+            # os.open 은 fd 라 인코딩이 없고, urlopen 계열의 `.open(req)` 은 첫 인자가 모드가 아니다.
+            if isinstance(func.value, ast.Name) and func.value.id in ("os", "webbrowser", "sys"):
+                return ""
+            if first is not None and not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
+                return ""
+            mode = first.value if isinstance(first, ast.Constant) else "r"
+            return "" if "b" in str(mode) else "Path.open()"
+        if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
+            # io_files 의 동명 함수는 인코딩을 자기 안에서 준다 (그게 그 모듈의 존재 이유다).
+            if isinstance(func.value, ast.Name) and func.value.id == "io_files":
+                return ""
+            return f"Path.{func.attr}()"
+        return ""
+
+    def test_no_text_io_relies_on_the_locale_default(self):
+        offenders = self._offenders()
+        self.assertEqual(offenders, [], "인코딩 없는 텍스트 입출력 — cp949 호스트에서 깨진다:\n" + "\n".join(offenders))
+
+
 if __name__ == "__main__":
     unittest.main()

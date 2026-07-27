@@ -55,23 +55,27 @@ def main() -> None:
         gi = os.path.join(base, ".gitignore")
         if not os.path.exists(gi):
             try:
-                open(gi, "w").write("*\n")
+                with open(gi, "w", encoding="utf-8") as handle:
+                    handle.write("*\n")
             except Exception:
                 pass
         f = os.path.join(d, "writes-" + sid + ".json")
         writes = []
         try:
-            writes = json.load(open(f))
+            with open(f, encoding="utf-8") as handle:
+                writes = json.load(handle)
         except Exception:
             try:  # 레거시(.asgard/ 직하) 세션 잔재 승계 — 세션 중 업그레이드 대비
-                writes = json.load(open(os.path.join(base, "writes-" + sid + ".json")))
+                with open(os.path.join(base, "writes-" + sid + ".json"), encoding="utf-8") as handle:
+                    writes = json.load(handle)
             except Exception:
                 writes = []
         for item in paths:
             rel = os.path.relpath(item, proj) if os.path.isabs(item) else item
             if rel not in writes and len(writes) < 500:  # cap — 상태 파일 폭주 방지
                 writes.append(rel)
-        json.dump(writes, open(f, "w"))
+        with open(f, "w", encoding="utf-8") as handle:
+            json.dump(writes, handle)
     except Exception:
         pass  # 관측용 훅 — 어떤 오류든 세션을 방해하지 않는다
     sys.exit(0)

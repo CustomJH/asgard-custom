@@ -407,7 +407,8 @@ def quest_owned_files(root, events):
     }
     for sid in {str(e.get("session_id")) for e in events if e.get("session_id")}:
         try:
-            journal = json.load(open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json")))
+            with open(os.path.join(root, ".asgard", "state", f"writes-{sid}.json"), encoding="utf-8") as handle:
+                journal = json.load(handle)
             owned.update(_rel_to_root(root, p) for p in journal if str(p).strip())
         except Exception:
             pass
@@ -694,14 +695,16 @@ def block(root, sid, code, **params):
     path = block_counter_path(root, sid)
     n = 0
     try:
-        n = int(json.load(open(path)).get("n", 0))
+        with open(path, encoding="utf-8") as handle:
+            n = int(json.load(handle).get("n", 0))
     except Exception:
         pass
     n += 1
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = "%s.%d.tmp" % (path, os.getpid())  # temp+rename — 크래시 절단이 카운터를 리셋하지 않게
-        json.dump({"n": n}, open(tmp, "w"))
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump({"n": n}, handle)
         os.replace(tmp, path)
     except Exception:
         pass
@@ -781,7 +784,8 @@ def orphan_writes(root, sid):
     writes = None
     for rel in (os.path.join("state", "writes-" + sid + ".json"), "writes-" + sid + ".json"):  # 신규 state/ 우선
         try:
-            writes = json.load(open(os.path.join(root, ".asgard", rel)))
+            with open(os.path.join(root, ".asgard", rel), encoding="utf-8") as handle:
+                writes = json.load(handle)
             break
         except Exception:
             continue
@@ -879,7 +883,8 @@ def main():
         # 신규 통합 설정 우선, 구 파일 폴백 — quest_log.load_policy 와 동일 유지 (단일 출처 원칙)
         loaded = False
         try:
-            cfg = json.load(open(os.path.join(root, ".asgard", "asgard-setting-project.json")))
+            with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
+                cfg = json.load(handle)
             pol = cfg.get("trinity_policy") if isinstance(cfg, dict) else None
             if isinstance(pol, dict):
                 policy.update(pol)
@@ -888,7 +893,8 @@ def main():
             pass
         if not loaded:
             try:
-                policy.update(json.load(open(os.path.join(root, ".asgard", "trinity-policy.json"))))
+                with open(os.path.join(root, ".asgard", "trinity-policy.json"), encoding="utf-8") as handle:
+                    policy.update(json.load(handle))
             except Exception:
                 pass
 
@@ -919,7 +925,8 @@ def main():
                 marker = os.path.join(root, ".asgard", "escalate-nudge-" + sid)
                 if not os.path.exists(marker):
                     try:
-                        open(marker, "w").write("1")
+                        with open(marker, "w", encoding="utf-8") as handle:
+                            handle.write("1")
                     except Exception:
                         pass
                     block(root, sid, "escalate-nudge")
