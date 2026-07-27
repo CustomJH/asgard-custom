@@ -1457,6 +1457,34 @@ def fold_tickets(events: list[dict]) -> dict[str, dict]:
     return tickets
 
 
+def _norm_path(path) -> str:
+    return os.path.normpath(str(path)).replace("\\", "/")
+
+
+def verifiable_units(tickets: list[dict]) -> list[str]:
+    """Pipeline (not barrier) eligibility: a `done` unit may verify immediately once its `files`
+    no longer overlap any still-open (`todo`/`in_progress`) unit's `files` — Workflow tool's
+    `pipeline` semantics (no cross-item barrier) ported to Mode B ticket units. This is early
+    *verification* eligibility only; the final close/PASS gate (completion_decision) still
+    requires every ticket `done` — no change to that barrier.
+
+    Fail-closed on undeclared files: an open unit with no declared `files` has not proven it is
+    disjoint from anything, so no unit is early-verifiable until every open unit declares its
+    files (absence of a declaration is not evidence of no overlap)."""
+    open_files: set[str] = set()
+    for ticket in tickets:
+        if ticket.get("status") in ("todo", "in_progress"):
+            files = [_norm_path(f) for f in (ticket.get("files") or [])]
+            if not files:
+                return []
+            open_files.update(files)
+    return [
+        str(ticket["id"])
+        for ticket in tickets
+        if ticket.get("status") == "done" and open_files.isdisjoint(_norm_path(f) for f in (ticket.get("files") or []))
+    ]
+
+
 def replay_ledger(events: list[dict]) -> dict:
     """Materialize durable execution state from events only; no working-tree reads."""
     first = events[0] if events else {}
@@ -1526,6 +1554,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     _research_i = [i for i, e in enumerate(events) if e.get("event") == "work" and e.get("research_only")]
     last_research = events[_research_i[-1]] if _research_i else {}
     tickets = fold_tickets(events)
+    verifiable = verifiable_units(list(tickets.values()))
     ticket_counts = {
         status: sum(1 for ticket in tickets.values() if ticket["status"] == status) for status in TICKET_STATUSES
     }
@@ -1595,6 +1624,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "sig_risk": signature_risk(root, base_ref),
         "tickets": list(tickets.values()),
         "ticket_counts": {status: count for status, count in ticket_counts.items() if count},
+        # Pipeline eligibility (no cross-unit barrier) — units safe to verify now, before the
+        # whole batch is `done`. Final close/PASS keeps the full barrier (completion_decision).
+        "verifiable_units": verifiable,
     }
 
 

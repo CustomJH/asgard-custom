@@ -2301,6 +2301,67 @@ class TestSubagentGate(TrinityBase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("overlap", result.stderr.lower())
 
+    def test_verifier_pretool_unit_marker_allows_early_verification_of_disjoint_done_unit(self):
+        self.open_quest()
+        self.ticket(1)
+        self.ticket(2)
+        self.finish_ticket(1)
+        result = self.sg(
+            "",
+            event="PreToolUse",
+            tool_input={"subagent_type": "asgard-verifier", "prompt": "[ASGARD_UNIT:1] verify unit 1 now"},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_verifier_pretool_unit_marker_denies_when_unit_not_done(self):
+        self.open_quest()
+        self.ticket(1)
+        self.ticket(2)
+        result = self.sg(
+            "",
+            event="PreToolUse",
+            tool_input={"subagent_type": "asgard-verifier", "prompt": "[ASGARD_UNIT:1] verify unit 1 now"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("not done", result.stderr.lower())
+
+    def test_verifier_pretool_unit_marker_denies_when_overlapping_unit_still_open(self):
+        self.open_quest()
+        self.qlog(
+            "append",
+            stdin=json.dumps(
+                {
+                    "role": "thinker",
+                    "event": "ticket",
+                    "unit": 1,
+                    "ticket_status": "todo",
+                    "subtask": "unit 1",
+                    "changed_files": ["shared.py"],
+                }
+            ),
+        )
+        self.qlog(
+            "append",
+            stdin=json.dumps(
+                {
+                    "role": "thinker",
+                    "event": "ticket",
+                    "unit": 2,
+                    "ticket_status": "todo",
+                    "subtask": "unit 2",
+                    "changed_files": ["shared.py"],
+                }
+            ),
+        )
+        self.finish_ticket(1)
+        result = self.sg(
+            "",
+            event="PreToolUse",
+            tool_input={"subagent_type": "asgard-verifier", "prompt": "[ASGARD_UNIT:1] verify unit 1 now"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("overlap", result.stderr.lower())
+
     def test_verifier_pretool_rejects_dependent_worker_dispatched_before_fan_in(self):
         self.open_quest()
         self.ticket(1)
@@ -2654,6 +2715,75 @@ class TestQuestPrune(TrinityBase):
         self.assertEqual(len([n for n in os.listdir(qdir) if n.endswith(".jsonl")]), 2)
 
 
+class TestPipelineVerification(TrinityBase):
+    """Mode B barrier -> pipeline: a done unit whose files do not overlap any still-open
+    unit's files is immediately verifiable, without waiting for the whole wave (see
+    quest_log.verifiable_units)."""
+
+    def ticket(self, unit, files):
+        return self.qlog(
+            "append",
+            stdin=json.dumps(
+                {
+                    "role": "thinker",
+                    "event": "ticket",
+                    "unit": unit,
+                    "ticket_status": "todo",
+                    "subtask": "unit %s" % unit,
+                    "changed_files": files,
+                }
+            ),
+        )
+
+    def finish(self, unit):
+        claim = jout(self.qlog("ticket-claim", "--unit", str(unit), "--worker", "w%s" % unit))
+        return self.qlog(
+            "ticket-finish", "--unit", str(unit), "--claim-token", claim["claim_token"], "--status", "done"
+        )
+
+    def test_nonoverlapping_done_unit_is_immediately_verifiable(self):
+        self.open_quest()
+        self.ticket(1, ["a.py"])
+        self.ticket(2, ["b.py"])
+        self.qlog("ticket-claim", "--unit", "2", "--worker", "w2")
+        self.finish(1)
+        self.assertEqual(jout(self.qlog("state"))["verifiable_units"], ["1"])
+
+    def test_overlapping_in_progress_unit_blocks_early_verification(self):
+        self.open_quest()
+        self.ticket(1, ["shared.py"])
+        self.ticket(2, ["shared.py"])
+        self.qlog("ticket-claim", "--unit", "2", "--worker", "w2")
+        self.finish(1)
+        self.assertEqual(jout(self.qlog("state"))["verifiable_units"], [])
+
+    def test_open_unit_with_no_declared_files_blocks_all_early_verification(self):
+        # Absence of a `files` declaration on a still-open unit is not proof of no overlap —
+        # fail-closed: no unit is early-verifiable until every open unit declares its files.
+        self.open_quest()
+        self.ticket(1, ["a.py"])
+        self.ticket(2, [])
+        self.finish(1)
+        self.assertEqual(jout(self.qlog("state"))["verifiable_units"], [])
+
+    def test_path_normalization_treats_dot_slash_prefix_as_same_file(self):
+        self.open_quest()
+        self.ticket(1, ["./a.py"])
+        self.ticket(2, ["a.py"])
+        self.qlog("ticket-claim", "--unit", "2", "--worker", "w2")
+        self.finish(1)
+        self.assertEqual(jout(self.qlog("state"))["verifiable_units"], [])
+
+    def test_final_close_still_requires_every_ticket_done(self):
+        self.open_quest()
+        self.ticket(1, ["a.py"])
+        self.ticket(2, ["b.py"])
+        self.qlog("ticket-claim", "--unit", "2", "--worker", "w2")
+        self.finish(1)
+        self.assertEqual(jout(self.qlog("state"))["verifiable_units"], ["1"])
+        self.assertNotEqual(self.qlog("close").returncode, 0)
+
+
 class TestPolicyMirror(unittest.TestCase):
     """정책 3중 미러 정합 — 템플릿 시드가 훅 정본을 그대로 실어야 4모드(네이티브·CC·Codex·Cursor)가
     같은 기준으로 판정한다. load_policy 는 파일 키가 내장값을 통째로 덮으므로(update) 시드 드리프트는
@@ -2677,6 +2807,28 @@ class TestPolicyMirror(unittest.TestCase):
         for key, value in verifier_gate.DEFAULT_POLICY.items():
             self.assertIn(key, quest_log.DEFAULT_POLICY)
             self.assertEqual(value, quest_log.DEFAULT_POLICY[key], key)
+
+    def test_subagent_gate_verifiable_units_mirrors_quest_log(self):
+        from asgard.hooks import quest_log, subagent_gate
+
+        cases = [
+            [{"unit": 1, "status": "done", "files": ["a.py"]}, {"unit": 2, "status": "todo", "files": ["b.py"]}],
+            [
+                {"unit": 1, "status": "done", "files": ["shared.py"]},
+                {"unit": 2, "status": "todo", "files": ["shared.py"]},
+            ],
+            [{"unit": 1, "status": "done", "files": ["a.py"]}, {"unit": 2, "status": "todo", "files": []}],
+            [
+                {"unit": 1, "status": "done", "files": ["./a.py"]},
+                {"unit": 2, "status": "in_progress", "files": ["a.py"]},
+            ],
+        ]
+        for tickets in cases:
+            self.assertEqual(
+                quest_log.verifiable_units([{**t, "id": t["unit"]} for t in tickets]),
+                subagent_gate.verifiable_units(tickets),
+                tickets,
+            )
 
 
 if __name__ == "__main__":

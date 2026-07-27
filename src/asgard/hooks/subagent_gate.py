@@ -271,8 +271,64 @@ def ticket_view(events: list[dict]) -> dict[str, dict]:
             "unit": event["unit"],
             "status": event.get("ticket_status") or current.get("status") or "todo",
             "access": event.get("access") if isinstance(event.get("access"), list) else current.get("access") or [],
+            "files": event.get("changed_files") or current.get("files") or [],
         }
     return tickets
+
+
+def _norm_path(path) -> str:
+    return os.path.normpath(str(path)).replace("\\", "/")
+
+
+def verifiable_units(tickets: list[dict]) -> list[str]:
+    """quest_log.py 의 verifiable_units 와 동일 유지 (단일 출처 원칙, TestPolicyMirror 로 정합 확인)."""
+    open_files: set[str] = set()
+    for ticket in tickets:
+        if ticket.get("status") in ("todo", "in_progress"):
+            files = [_norm_path(f) for f in (ticket.get("files") or [])]
+            if not files:
+                return []
+            open_files.update(files)
+    return [
+        str(ticket["unit"])
+        for ticket in tickets
+        if ticket.get("status") == "done" and open_files.isdisjoint(_norm_path(f) for f in (ticket.get("files") or []))
+    ]
+
+
+def unit_marker(tool_input: dict) -> str | None:
+    """Verifier 조기(파이프라인) 디스패치의 [ASGARD_UNIT:<id>] 마커 — record_worker_dispatch 와
+    동일한 파싱 규칙(같은 unit 이 같은 문자열 키로 귀결)을 독립적으로 미러링한다."""
+    prompt = str(
+        tool_input.get("prompt")
+        or tool_input.get("task")
+        or tool_input.get("message")
+        or tool_input.get("description")
+        or ""
+    )
+    match = re.search(r"\[ASGARD_UNIT:([^\]]+)\]", prompt)
+    if not match:
+        return None
+    raw_unit = match.group(1).strip()
+    return str(int(raw_unit)) if raw_unit.isdigit() else raw_unit[:80]
+
+
+def pipeline_denial_reason(tickets: dict[str, dict], unit: str) -> str:
+    """왜 이 유닛이 아직 조기 검증 대상이 아닌지 — done 아님 / 파일 미선언 / 파일 충돌 순으로 구체화."""
+    ticket = tickets.get(unit)
+    if not ticket:
+        return "unknown unit %s" % unit
+    if ticket["status"] != "done":
+        return "unit %s is not done yet (status: %s)" % (unit, ticket["status"])
+    open_tickets = [t for t in tickets.values() if t["status"] in ("todo", "in_progress")]
+    undeclared = sorted(str(t["unit"]) for t in open_tickets if not t.get("files"))
+    if undeclared:
+        return "open unit(s) declared no files (disjointness unprovable): " + ", ".join(undeclared)
+    mine = {_norm_path(f) for f in ticket.get("files") or []}
+    overlapping = sorted(str(t["unit"]) for t in open_tickets if mine & {_norm_path(f) for f in t.get("files") or []})
+    if overlapping:
+        return "unit %s files overlap with still-open unit(s): %s" % (unit, ", ".join(overlapping))
+    return "unit %s is not yet early-verifiable" % unit
 
 
 def mode_b_receipts(root: str, qid: str, sid: str) -> tuple[list[dict], list[dict]]:
@@ -384,12 +440,21 @@ def main():
                     deny_pretool(protocol, "Asgard Mode B: Worker Agent prompt requires [ASGARD_UNIT:<id>] marker")
             elif target == "asgard-verifier":
                 tickets = ticket_view(load_quest_events(root, qid))
-                unfinished = sorted(str(ticket["unit"]) for ticket in tickets.values() if ticket["status"] != "done")
-                if unfinished:
-                    deny_pretool(protocol, "Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished))
-                problem = physical_worker_problem(root, qid, sid, tickets)
-                if problem:
-                    deny_pretool(protocol, "Asgard Mode B: " + problem)
+                unit = unit_marker(tool_input)
+                if unit is not None:
+                    # 유닛 단위 조기(파이프라인) 검증 — 전 티켓 done 배리어와 동시성 감사
+                    # (physical_worker_problem) 는 웨이브 전체용이라 여기선 전제가 아니다.
+                    if unit not in verifiable_units(list(tickets.values())):
+                        deny_pretool(protocol, "Asgard Mode B: " + pipeline_denial_reason(tickets, unit))
+                else:
+                    unfinished = sorted(
+                        str(ticket["unit"]) for ticket in tickets.values() if ticket["status"] != "done"
+                    )
+                    if unfinished:
+                        deny_pretool(protocol, "Asgard Mode B: unfinished ticket(s): " + ", ".join(unfinished))
+                    problem = physical_worker_problem(root, qid, sid, tickets)
+                    if problem:
+                        deny_pretool(protocol, "Asgard Mode B: " + problem)
             if protocol == "cursor":
                 sys.stdout.write(json.dumps({"permission": "allow"}))
             sys.exit(0)
