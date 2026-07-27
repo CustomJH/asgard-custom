@@ -21,12 +21,13 @@ REGISTRY: dict[str, str] = {
     "verifier-gate": "verifier_gate",  # Trinity — Canon 10 훅 강제, Stop 시점 diff-hash 물리 대조
     "write-sentinel": "write_sentinel",  # Trinity — Post-Write/Edit 기록, quest 미개설 write 우회 봉합
     "unattended-context": "unattended_context",  # Canon 8 — 무인 세션 감지·계약 주입
-    "subagent-gate": "subagent_gate",  # Trinity — SubagentStop 역할 로그 규율 강제 (CC 전용)
+    "subagent-gate": "subagent_gate",  # Trinity — SubagentStop 역할 로그 규율 강제 (3클라이언트 공통)
     "craft-gate": "craft_gate",  # 미시 형상 래칫 — SubagentStop, 이 세션의 쓰기만 판정
+    "budget-guard": "budget_guard",  # 소비 상한 — UserPromptSubmit/PreToolUse(Task), 쓰기 전 차단
     "tutor-note": "tutor_note",  # 되짚기 — Stop, 사용자에게 물음을 넘긴다 (막지 않는다)
     "lagom-activate": "lagom_activate",  # Lagom — SessionStart 모드 초기화·룰 주입
     "lagom-tracker": "lagom_tracker",  # Lagom — UserPromptSubmit 전환·영속·비활성·보상
-    "lagom-subagent": "lagom_subagent",  # Lagom — SubagentStart 재주입, verifier 제외 (CC 전용)
+    "lagom-subagent": "lagom_subagent",  # Lagom — SubagentStart 재주입, verifier 제외 (3클라이언트 공통)
     "memory-activate": "memory_activate",  # Memory v3 — SessionStart 스냅샷 주입 + Thinker 한정 SubagentStart
     "charter-activate": "charter_activate",  # Charter — 프로젝트 북극성 주입 (모드 B: Session/UserPrompt/Subagent)
     "map-activate": "map_activate",  # Project map — turn-start refresh + bounded role context

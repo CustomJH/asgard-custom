@@ -19,6 +19,7 @@ _SUMMARY = {
     "init": "scaffold a project for coding agents",
     "map": "project map — orientation, relation graph, and bounded context",
     "health": "codebase erosion signal — size, duplication, coupling, hotspots",
+    "budget": "what this session has spent — cost units, raw components, per-lane attribution",
     "craft": "micro-shape of THIS diff — unit size/nesting, resource lifetime, cost",
     "thor": "backend procedure engine — verb playbooks, the next verb, and the correctness gate",
     "tutor": "hand THIS diff back to you — what changed, and the questions only you can answer",
@@ -46,6 +47,7 @@ _FLAGS = {
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
     "health": ["--snapshot", "--json", "--quiet"],
+    "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
     "thor": ["--base", "--path", "--json", "--quiet"],
     "tutor": ["--base", "--path", "--report", "--out", "--limit", "--json", "--quiet"],

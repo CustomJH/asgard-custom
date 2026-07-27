@@ -248,6 +248,17 @@ def surface(
     raise typer.Exit(run_surface(base=base, json_out=json_, quiet=quiet))
 
 
+@app.command(help="what this session has spent — weighted cost units, raw components, and per-lane attribution")
+def budget(
+    transcript: str = typer.Option("", "--transcript", help="read this transcript instead of the newest one"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.budget import run_budget
+
+    raise typer.Exit(run_budget(transcript=transcript, json_out=json_, quiet=quiet))
+
+
 @app.command(help="micro-shape of THIS diff — unit size/nesting, resource lifetime, and cost, ratcheted vs a base")
 def craft(
     base: str = typer.Option("HEAD", "--base", help="git ref to compare against (default HEAD)"),
