@@ -246,13 +246,17 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     return 0
 
 
-def cc_hook_files(hooks_dir: str) -> list[tuple[str, str]]:
-    """`.claude/hooks/` 에 깔 훅 표 — 본문이 아니라 데이터라서 함수 밖에 산다.
+def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, str]]:
+    """한 클라이언트의 `hooks/` 에 깔 훅 표 — 본문이 아니라 데이터라서 함수 밖에 산다.
 
     plan_files 안에 두면 훅을 하나 더할 때마다 이미 200행인 함수가 길어진다 (craft 게이트가
-    잡은 자리). 표를 이름 있는 자리로 옮기면 추가는 표에 한 줄이고 함수는 안 자란다."""
+    잡은 자리). 표를 이름 있는 자리로 옮기면 추가는 표에 한 줄이고 함수는 안 자란다.
+
+    표가 클라이언트별로 갈라지지 않는 것이 핵심이다 — 세 모드가 같은 규율을 지려면 같은 파일이
+    깔려야 하고, 어느 이벤트에 매다는지만 클라이언트 설정(cc_settings/cursor_hooks_json/
+    codex_config)이 정한다. 갈라지는 항목은 호스트에만 있는 표면 하나뿐이다 (CC statusLine)."""
     j = os.path.join
-    return [
+    files = [
         (j(hooks_dir, "git-guard.py"), hook("git-guard")),
         (j(hooks_dir, "release-guard.py"), hook("release-guard")),  # 외부 부작용 승인 게이트
         (j(hooks_dir, "readonly-guard.py"), hook("readonly-guard")),
@@ -264,19 +268,22 @@ def cc_hook_files(hooks_dir: str) -> list[tuple[str, str]]:
         (j(hooks_dir, "unattended-context.py"), hook("unattended-context")),  # Canon 8 무인 감지
         (j(hooks_dir, "subagent-gate.py"), hook("subagent-gate")),  # 역할 로그 규율 (SubagentStop)
         (j(hooks_dir, "craft-gate.py"), hook("craft-gate")),  # 미시 형상 래칫 (SubagentStop)
+        (j(hooks_dir, "budget-guard.py"), hook("budget-guard")),  # 소비 상한 (UserPromptSubmit/PreToolUse Agent)
         (j(hooks_dir, "tutor-note.py"), hook("tutor-note")),  # 되짚기 카드 (Stop, 안 막음)
         # Lagom — 훅 3종 + 캐논 단일 소스 (훅이 모드 필터해 주입)
         (j(hooks_dir, "lagom-activate.py"), hook("lagom-activate")),
         (j(hooks_dir, "lagom-tracker.py"), hook("lagom-tracker")),
         (j(hooks_dir, "lagom-subagent.py"), hook("lagom-subagent")),
         (j(hooks_dir, "lagom-canon.md"), LAGOM_CANON),
-        (j(hooks_dir, "lagom-statusline.sh"), LAGOM_STATUSLINE_SH),  # CC statusLine 스크립트
         # Memory v3 — 개인 위키 스냅샷 주입 (SessionStart + Thinker 한정 SubagentStart)
         (j(hooks_dir, "memory-activate.py"), hook("memory-activate")),
         # Charter — 프로젝트 북극성 주입 (Session/UserPrompt=through_line, Subagent=역할별)
         (j(hooks_dir, "charter-activate.py"), hook("charter-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
     ]
+    if client == "claude-code":  # statusLine 은 CC 에만 있는 표면 — 다른 클라이언트엔 걸 자리가 없다
+        files.append((j(hooks_dir, "lagom-statusline.sh"), LAGOM_STATUSLINE_SH))
+    return files
 
 
 def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> tuple[list[tuple[str, str]], str]:
@@ -330,7 +337,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         ]
         for d, desc in CC_FOLDERS:
             files.append((j(root, ".claude", d, "README.md"), f"# .claude/{d}/\n\n{desc}\n"))
-        files += cc_hook_files(j(root, ".claude", "hooks"))
+        files += hook_files(j(root, ".claude", "hooks"), "claude-code")
         # Trinity 역할 서브에이전트 3종 (모드 B 디스패치 대상) — 직관명, 신화명은 딜리버리 계층 전용.
         for fname, content in ROLE_AGENTS:
             agent = fname.removeprefix("asgard-").removesuffix(".md")
@@ -359,37 +366,19 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".cursor", "rules", "000-agents.mdc"), cursor_rule()))
         for d, desc in CURSOR_FOLDERS:
             files.append((j(root, ".cursor", d, "README.md"), f"# .cursor/{d}/\n\n{desc}\n"))
-        files += [
-            (j(root, ".cursor", "hooks.json"), cursor_hooks_json()),
-            (j(root, ".cursor", "hooks", "git-guard.py"), hook("git-guard")),  # same script, auto-detects Cursor
-            (j(root, ".cursor", "hooks", "release-guard.py"), hook("release-guard")),
-            (j(root, ".cursor", "hooks", "failure-tracker.py"), hook("failure-tracker")),
-            (j(root, ".cursor", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 B 로그 CLI
-            (j(root, ".cursor", "hooks", "subagent-gate.py"), hook("subagent-gate")),
-            (j(root, ".cursor", "hooks", "verifier-gate.py"), hook("verifier-gate")),
-            (j(root, ".cursor", "hooks", "write-sentinel.py"), hook("write-sentinel")),
-            (j(root, ".cursor", "hooks", "tutor-note.py"), hook("tutor-note")),
-            (j(root, ".cursor", "hooks", "memory-activate.py"), hook("memory-activate")),
-            (j(root, ".cursor", "hooks", "map-activate.py"), hook("map-activate")),
-        ]
+        # 훅 표는 CC 와 같은 것 하나 — 스크립트가 호스트를 자동 감지하고, 어느 이벤트에 다는지만
+        # hooks.json 이 정한다 (같은 규율, 다른 배선).
+        files.append((j(root, ".cursor", "hooks.json"), cursor_hooks_json()))
+        files += hook_files(j(root, ".cursor", "hooks"), "cursor")
         files += [(j(root, ".cursor", "agents", fname), cursor_agent(content, root)) for fname, content in ROLE_AGENTS]
 
     # Codex reads root AGENTS.md natively — add custom agents, hooks, and native command rules.
     if codex:
         files += [
             (j(root, ".codex", "config.toml"), codex_config()),
-            (j(root, ".codex", "hooks", "git-guard.py"), hook("git-guard")),
-            (j(root, ".codex", "hooks", "release-guard.py"), hook("release-guard")),
-            (j(root, ".codex", "hooks", "failure-tracker.py"), hook("failure-tracker")),
-            (j(root, ".codex", "hooks", "quest-log.py"), hook("quest-log")),  # Trinity 모드 B 로그 CLI
-            (j(root, ".codex", "hooks", "subagent-gate.py"), hook("subagent-gate")),
-            (j(root, ".codex", "hooks", "verifier-gate.py"), hook("verifier-gate")),
-            (j(root, ".codex", "hooks", "write-sentinel.py"), hook("write-sentinel")),
-            (j(root, ".codex", "hooks", "tutor-note.py"), hook("tutor-note")),
-            (j(root, ".codex", "hooks", "memory-activate.py"), hook("memory-activate")),
-            (j(root, ".codex", "hooks", "map-activate.py"), hook("map-activate")),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
         ]
+        files += hook_files(j(root, ".codex", "hooks"), "codex")  # CC·Cursor 와 같은 훅 표
         files += [
             (j(root, ".codex", "agents", fname.removesuffix(".md") + ".toml"), codex_agent(content, root))
             for fname, content in ROLE_AGENTS

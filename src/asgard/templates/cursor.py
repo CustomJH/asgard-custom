@@ -60,19 +60,35 @@ def cursor_hooks_json() -> str:
             {
                 "version": 1,
                 "hooks": {
+                    # 주입 계층(lagom·charter·무인 계약)은 sessionStart 에 모인다 — Cursor 의
+                    # beforeSubmitPrompt 는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks,
+                    # 26-07-27 확인: 출력이 continue/user_message 뿐).
                     "sessionStart": [
+                        {"command": f"{py} .cursor/hooks/lagom-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/charter-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/unattended-context.py cursor"},
                     ],
                     "beforeSubmitPrompt": [
+                        # 소비 상한 — 주입 통로는 없지만 차단(continue:false)은 된다.
+                        {"command": f"{py} .cursor/hooks/budget-guard.py cursor prompt"},
+                        {"command": f"{py} .cursor/hooks/lagom-tracker.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                     ],
                     "beforeShellExecution": [
+                        # Canon 4 읽기 절반 — shell 우회 credential 덤프 차단
+                        {"command": f"{py} .cursor/hooks/secret-guard.py cursor"},
                         {"command": f"{py} .cursor/hooks/git-guard.py"},
                         {"command": f"{py} .cursor/hooks/release-guard.py"},
+                        {"command": f"{py} .cursor/hooks/readonly-guard.py cursor"},
                     ],
                     "preToolUse": [
+                        {
+                            "matcher": "Task",
+                            "command": f"{py} .cursor/hooks/budget-guard.py cursor task",
+                        },
                         {
                             "matcher": "Task",
                             "command": f"{py} .cursor/hooks/subagent-gate.py pre",
@@ -85,19 +101,39 @@ def cursor_hooks_json() -> str:
                             "matcher": "Task",
                             "command": f"{py} .cursor/hooks/map-activate.py cursor",
                         },
+                        # Canon 4 + 통제 표면 보호 — 판정에 역할 신원이 필요 없는 규율만 여기서 돈다
+                        # (preToolUse 페이로드엔 agent_type 이 없다; 읽기전용 역할은 에이전트
+                        # 프론트매터 `readonly: true` 가 네이티브로 막는다).
+                        {
+                            "matcher": "Write|Edit|Delete",
+                            "command": f"{py} .cursor/hooks/readonly-guard.py cursor",
+                        },
+                        {
+                            "matcher": "Write|Edit|Delete",
+                            "command": f"{py} .cursor/hooks/secret-guard.py cursor",
+                        },
+                        # Canon 4 읽기 절반 — 자격 저장소는 이름만으로 판정 (읽은 뒤엔 늦다)
+                        {
+                            "matcher": "Read|Grep|Glob",
+                            "command": f"{py} .cursor/hooks/secret-guard.py cursor",
+                        },
                     ],
                     "subagentStart": [
                         {
                             "matcher": "^asgard-(thinker|worker|verifier)$",
                             "command": f"{py} .cursor/hooks/subagent-gate.py start",
                         },
+                        {"command": f"{py} .cursor/hooks/lagom-subagent.py cursor"},
+                        {"command": f"{py} .cursor/hooks/charter-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                     ],
                     "subagentStop": [
                         {
                             "matcher": "^asgard-(thinker|worker|verifier)$",
                             "command": f"{py} .cursor/hooks/subagent-gate.py stop",
-                        }
+                        },
+                        # 미시 형상 래칫 — 매처 없음: 규율은 역할이 아니라 쓴 코드를 따라간다
+                        {"command": f"{py} .cursor/hooks/craft-gate.py cursor"},
                     ],
                     "postToolUse": [
                         {

@@ -38,6 +38,29 @@ from .roles import (
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
+_CRAFT_MAX_BLOCKS = 2  # hooks/craft_gate.py MAX_BLOCKS 와 동일 유지 (모드 간 같은 상한)
+_CRAFT_MAX_PATHS = 200  # 판정 인자 폭주 방지 — craft_gate 훅과 같은 상한
+
+
+def _craft_blocking(root: str, paths: list[str]) -> list[dict]:
+    """이 퀘스트가 쓴 경로의 막는 판정 — craft(예산)와 thor gate(정확성)를 따로 부른다.
+
+    한 호출로 묶으면 한쪽 판정기의 고장이 양쪽 판정을 조용히 통과시킨다 (craft-gate 훅과 같은
+    규약). 두 판정기 모두 HEAD 대조 래칫이라 물려받은 부채는 여기서 안 걸린다."""
+    from dataclasses import asdict
+
+    from ... import craft as _craft
+    from ... import thor_gate as _thor_gate
+
+    out: list[dict] = []
+    for label, module in (("craft", _craft), ("thor gate", _thor_gate)):
+        try:
+            report = module.judge(root, tuple(paths[:_CRAFT_MAX_PATHS]))
+        except Exception:
+            continue  # 이 판정기가 고장 났다 — 나머지 판정은 살린다
+        out += [{"gate": label, **asdict(finding)} for finding in report.blocking]
+    return out
+
 
 _PYTHONISH = re.compile(r"^python[0-9.]*$")
 
@@ -153,6 +176,7 @@ class TrinityRun:
         self.fail_history: list[str] = []  # 턴별 실패 이력 — THINKER_REPLAN 에 주입
         self.gate_sigs: dict[str, int] = {}  # 게이트 차단 사유별 카운트
         self.gate_blocks = 0
+        self.craft_blocks = 0  # 형상 래칫 차단 횟수 — 상한은 hooks/craft_gate.py 와 같다
         self.saw_red = False  # 이 퀘스트에서 하네스 베이스라인 red 관측 — prior 집계 축
         self.replans = 0  # 재계획 횟수 — 2회+ 는 clean-slate: thinker_alt placement 또는 티어 승급
         self.wave_plan_pending = False  # 새 Thinker 계획의 units는 WORKER_RETRY 전이여도 한 번 실행
@@ -471,57 +495,112 @@ class TrinityRun:
             self.fail_history.append(f"baseline-red: {failing[:200]}")
         return None
 
-    def _done_turn(self) -> str | None:
-        """완료 후보 턴 — Lagom 문체 불변식 → 게이트 → close → 최종 보고."""
+    def _craft_blocked(self) -> bool:
+        """미시 형상(craft) + 백엔드 정확성(thor gate) 래칫 — 수리 턴이 필요하면 True.
+
+        모드 B 는 craft-gate 훅이 SubagentStop 에서 같은 두 판정기를 부른다. 네이티브엔 그
+        이벤트가 없어 완료 후보 턴이 같은 자리를 맡는다 — 같은 규율, 다른 배선. 판정 대상은
+        퀘스트에 귀속된 변경뿐이고, 물려받은 부채는 판정기가 자체 래칫으로 통과시킨다.
+
+        상한 2회는 훅과 같은 이유다: 막기만 하는 게이트는 작업을 인질로 잡는다. 3번째는 경고와
+        함께 통과시키되 판정 사실은 화면에 남긴다 (조용한 통과 금지)."""
         hd = self._hd
-        # 문체는 프롬프트 권고가 아니라 완료 불변식이다. Verifier 자체에는 문체 프롬프트를
-        # 주입하지 않되, 하네스가 변경 문서의 추가행을 결정론 검사한다. 두 축을 함께 건다:
-        # Lagom = 근거 없는 효용 주장, Bragi = 언어 불문 기계 문체 흔적.
-        if hd.lagom or hd.bragi:
-            try:
-                from ...lagom import changed_prose_violations, style_violations
+        paths = self._quest_paths()
+        blocking = _craft_blocking(hd.root, paths) if paths else []
+        if not blocking:
+            return False
+        detail = "; ".join(
+            f"[{f.get('gate')}/{f.get('rule')}] {f.get('path')}:{f.get('line')} — {f.get('detail')}"
+            for f in blocking[:6]
+        )
+        if self.craft_blocks >= _CRAFT_MAX_BLOCKS:
+            hd.on_text(
+                f"  {ui.paint(ui._WARN, '!')} "
+                f"{ui.dim(f'craft: {len(blocking)}건 미수리 통과 (상한 {_CRAFT_MAX_BLOCKS}회) — {detail[:200]}')}\n"
+            )
+            return False
+        self.craft_blocks += 1
+        return self._fail_and_repair(
+            "craft-shape",
+            detail,
+            "asgard craft --json / asgard thor gate --json",
+            "harness",
+            f"This change made {len(blocking)} thing(s) worse than they were at HEAD — fix them, "
+            "or state with evidence why the shape is right. Re-check with `asgard craft` and `asgard thor gate`.",
+        )
 
-                checks = [style_violations] if hd.lagom else []
-                if hd.bragi:
-                    from ...bragi import violations as voice_violations
+    def _quest_paths(self) -> list[str]:
+        """이 퀘스트에 귀속된 변경 경로 — 워킹트리엔 타 세션 작업이 섞일 수 있어 로그가 정본이다."""
+        try:
+            state = json.loads(ql(self._hd.root, "state", session=self.sid).stdout or "{}")
+        except Exception:
+            return []
+        return [str(path) for path in (state.get("changed_files") or []) if str(path)]
 
-                    checks.append(voice_violations)
-                state = json.loads(ql(hd.root, "state", session=self.sid).stdout or "{}")
-                style_failures = changed_prose_violations(
-                    hd.root, [str(p) for p in (state.get("changed_files") or [])], self.request, checks
-                )
-            except Exception:
-                style_failures = []  # 검사기 장애는 기존 Verifier+게이트 경로를 막지 않는다
-            if style_failures:
-                self.saw_red = True
-                why = "; ".join(style_failures[:8])
-                self.last_fail = {
-                    "sig": "lagom-style",
-                    "why": why,
+    def _fail_and_repair(self, sig: str, why: str, cmd: str, role: str, retry: str) -> bool:
+        """하네스 판정 FAIL 을 로그에 남기고 수리 턴을 예약한다 — 완료 불변식들의 공통 자리."""
+        commands = [{"cmd": cmd, "exit_code": 1}]
+        self.saw_red = True
+        self.last_fail = {"sig": sig, "why": why, "criteria": self.cls["criteria"], "commands": commands}
+        self.fail_history.append(f"{sig}: {why[:200]}")
+        ql(
+            self._hd.root,
+            "append",
+            "--verdict",
+            "FAIL",
+            "--level",
+            "full",
+            session=self.sid,
+            stdin=json.dumps(
+                {
+                    "role": role,
+                    "event": "verify",
                     "criteria": self.cls["criteria"],
-                    "commands": [{"cmd": "lagom-style-check --changed-prose", "exit_code": 1}],
+                    "commands": commands,
+                    "failure_sig": sig,
                 }
-                self.fail_history.append(f"lagom-style: {why[:200]}")
-                ql(
-                    hd.root,
-                    "append",
-                    "--verdict",
-                    "FAIL",
-                    "--level",
-                    "full",
-                    session=self.sid,
-                    stdin=json.dumps(
-                        {
-                            "role": "verifier",
-                            "event": "verify",
-                            "criteria": self.cls["criteria"],
-                            "commands": [{"cmd": "lagom-style-check --changed-prose", "exit_code": 1}],
-                            "failure_sig": "lagom-style",
-                        }
-                    ),
-                )
-                self.pending = ("WORKER_RETRY", "Lagom style invariant violated — rewrite the changed docs")
-                return None
+            ),
+        )
+        self.pending = ("WORKER_RETRY", retry)
+        return True
+
+    def _style_blocked(self) -> bool:
+        """문체 불변식 — 위반이면 수리 턴을 예약하고 True.
+
+        문체는 프롬프트 권고가 아니라 완료 불변식이다. Verifier 자체에는 문체 프롬프트를
+        주입하지 않되, 하네스가 변경 문서의 추가행을 결정론 검사한다. 두 축을 함께 건다:
+        Lagom = 근거 없는 효용 주장, Bragi = 언어 불문 기계 문체 흔적."""
+        hd = self._hd
+        if not (hd.lagom or hd.bragi):
+            return False
+        try:
+            from ...lagom import changed_prose_violations, style_violations
+
+            checks = [style_violations] if hd.lagom else []
+            if hd.bragi:
+                from ...bragi import violations as voice_violations
+
+                checks.append(voice_violations)
+            style_failures = changed_prose_violations(hd.root, self._quest_paths(), self.request, checks)
+        except Exception:
+            return False  # 검사기 장애는 기존 Verifier+게이트 경로를 막지 않는다
+        if not style_failures:
+            return False
+        return self._fail_and_repair(
+            "lagom-style",
+            "; ".join(style_failures[:8]),
+            "lagom-style-check --changed-prose",
+            "verifier",
+            "Lagom style invariant violated — rewrite the changed docs",
+        )
+
+    def _done_turn(self) -> str | None:
+        """완료 후보 턴 — 문체·형상 불변식 → 게이트 → close → 최종 보고."""
+        hd = self._hd
+        # 두 불변식 모두 수리 턴을 예약하고 이번 턴을 끝낸다 (모드 B 의 Stop·SubagentStop 게이트와
+        # 같은 규율 — 네이티브엔 그 이벤트가 없어 완료 후보 턴이 그 자리를 맡는다).
+        if self._style_blocked() or self._craft_blocked():
+            return None
         blocked, reason = gate(hd.root, self.sid)
         if blocked:  # 전이/게이트 판정 불일치 — 사유별 수리 턴 강제 (무수리 재시도 금지)
             self.gate_blocks += 1

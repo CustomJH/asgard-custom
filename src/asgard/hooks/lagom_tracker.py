@@ -159,25 +159,63 @@ def canon_text():
         return ""
 
 
+CLIENTS = {"claude-code", "codex", "cursor"}
+
+
+def client():
+    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
+    return raw if raw in CLIENTS else "claude-code"
+
+
+def emit(current_client, text):
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    한 번만 쓴다: 이 훅은 문장을 이어 붙이는 자리가 여럿이라 조각마다 JSON 을 뱉으면 파손된다.
+
+    Cursor 의 beforeSubmitPrompt 는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks, 26-07-27
+    확인: 출력은 continue/user_message 뿐) — 그래서 사람에게 보이는 문장으로 내보낸다. 캐논
+    자체는 같은 클라이언트의 sessionStart(lagom-activate)가 이미 주입한다."""
+    if not text:
+        return
+    if current_client == "cursor":
+        sys.stdout.write(json.dumps({"user_message": text}, ensure_ascii=False) + "\n")
+    elif current_client == "codex":
+        sys.stdout.write(
+            json.dumps(
+                {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}},
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    else:
+        sys.stdout.write(text)
+
+
 def main():
     try:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+    said = ""
     try:
         prompt = str(data.get("prompt") or "")
-        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+        root = (
+            os.environ.get("CLAUDE_PROJECT_DIR")
+            or os.environ.get("CURSOR_PROJECT_DIR")
+            or data.get("cwd")
+            or os.getcwd()
+        )
 
         if _DEACTIVATE.match(prompt):
             write_state(root, "off")
-            sys.stdout.write("[lagom] off — minimalism contract lifted. Reactivate: /lagom full")
+            emit(client(), "[lagom] off — minimalism contract lifted. Reactivate: /lagom full")
             sys.exit(0)
 
         if _BARE.match(prompt):
             cur = read_state(root)
-            sys.stdout.write(
+            emit(
+                client(),
                 "[lagom] current mode: %s (switch: /lagom <mode>, persist: /lagom default <mode>)"
-                % (cur or config_mode(root))
+                % (cur or config_mode(root)),
             )
             sys.exit(0)
 
@@ -185,40 +223,39 @@ def main():
         if m:
             is_default, target = bool(m.group(1)), m.group(2).strip().lower()
             if norm(target) is None:  # review 포함 — 세션 스킬 전용, 모드 아님
-                sys.stdout.write(
+                emit(
+                    client(),
                     "[lagom] '%s' is not a valid mode (off|lite|full%s)"
-                    % (target, " — review is a session-only skill" if target == "review" else "")
+                    % (target, " — review is a session-only skill" if target == "review" else ""),
                 )
                 sys.exit(0)
             target = norm(target)
             write_state(root, target)
             if is_default:
                 ok = persist_default(root, target)
-                sys.stdout.write(
-                    "[lagom] default %s %s"
-                    % (
-                        target,
-                        "persisted (asgard-setting-project.json)"
-                        if ok
-                        else "— failed to persist config, applied to this session only",
-                    )
+                said = "[lagom] default %s %s" % (
+                    target,
+                    "persisted (asgard-setting-project.json)"
+                    if ok
+                    else "— failed to persist config, applied to this session only",
                 )
             else:
-                sys.stdout.write("[lagom] mode → %s (this session only)" % target)
+                said = "[lagom] mode → %s (this session only)" % target
             if target != "off":
                 canon = canon_text()
                 if canon:
-                    sys.stdout.write("\n\n" + render(canon, target))
+                    said += "\n\n" + render(canon, target)
+            emit(client(), said)
             sys.exit(0)
 
-        # 보상 주입 — SessionStart 훅이 없는 표면(Codex/Cursor): 상태파일 부재 = 첫 프롬프트
+        # 보상 주입 — SessionStart 훅이 없는 표면: 상태파일 부재 = 첫 프롬프트
         if read_state(root) is None:  # 신규 state/ + 레거시 2종 전부 부재 (read_state 가 판정)
             mode = config_mode(root)
             write_state(root, mode)
             if mode != "off":
                 canon = canon_text()
                 if canon:
-                    sys.stdout.write("[lagom] mode=%s\n\n%s" % (mode, render(canon, mode)))
+                    emit(client(), "[lagom] mode=%s\n\n%s" % (mode, render(canon, mode)))
     except Exception:
         pass  # fail-open
     sys.exit(0)

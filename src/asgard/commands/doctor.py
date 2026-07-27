@@ -646,6 +646,76 @@ def _trinity_checks(root: str) -> list[dict]:
     return checks
 
 
+# 세 클라이언트가 공유하는 규율 — 한쪽에만 깔린 게이트는 기능이 아니라 드리프트다.
+# lagom-statusline.sh 는 CC 에만 있는 표면(statusLine)이라 이 표에 없다.
+_PARITY_HOOKS = (
+    "git-guard.py",
+    "release-guard.py",
+    "readonly-guard.py",
+    "secret-guard.py",
+    "failure-tracker.py",
+    "quest-log.py",
+    "verifier-gate.py",
+    "write-sentinel.py",
+    "unattended-context.py",
+    "subagent-gate.py",
+    "craft-gate.py",
+    "budget-guard.py",
+    "tutor-note.py",
+    "lagom-activate.py",
+    "lagom-tracker.py",
+    "lagom-subagent.py",
+    "lagom-canon.md",
+    "memory-activate.py",
+    "charter-activate.py",
+    "map-activate.py",
+)
+# 파일만 깔리고 배선이 없으면 그 규율은 없는 것과 같다 — 설정 원문에 이름이 있는지로 본다.
+_PARITY_WIRED = tuple(
+    name.removesuffix(".py") for name in _PARITY_HOOKS if name.endswith(".py") and name != "quest-log.py"
+)
+
+
+def _mode_parity_check(root: str) -> list[dict]:
+    """모드 간 규율 대조 — 설치된 클라이언트마다 같은 훅이 깔리고 배선돼 있는가.
+
+    `asgard init` 은 한 표에서 세 클라이언트를 깔지만, 옛 스캐폴드가 남은 프로젝트는 한 모드에만
+    게이트가 있는 상태로 굳는다. 그 차이는 사용자가 모드를 바꿔 보기 전에는 안 보인다."""
+    checks: list[dict] = []
+    for client, folder, config_name in (
+        ("CC", ".claude", "settings.json"),
+        ("Cursor", ".cursor", "hooks.json"),
+        ("Codex", ".codex", "config.toml"),
+    ):
+        if not os.path.isdir(os.path.join(root, folder)):
+            continue
+        hooks_dir = os.path.join(root, folder, "hooks")
+        missing = [name for name in _PARITY_HOOKS if not os.path.exists(os.path.join(hooks_dir, name))]
+        try:
+            with open(os.path.join(root, folder, config_name), encoding="utf-8") as handle:
+                config_text = handle.read()
+        except OSError:
+            config_text = ""
+        unwired = [name for name in _PARITY_WIRED if name not in config_text]
+        detail = "동일 규율 배선"
+        if missing or unwired:
+            parts = []
+            if missing:
+                parts.append("파일 없음: " + ", ".join(missing[:6]))
+            if unwired:
+                parts.append("미배선: " + ", ".join(unwired[:6]))
+            detail = " · ".join(parts)
+        checks.append(
+            {
+                "name": f"mode parity ({client})",
+                "ok": not missing and not unwired,
+                "detail": detail,
+                "fix": "asgard sync — 세 모드에 같은 훅 표를 다시 깐다",
+            }
+        )
+    return checks
+
+
 def _freyja_engine_dir() -> Path:
     """Freyja 2 엔진 루트 — 훅 매니페스트의 `${FREYJA2_ENGINE}` 가 가리키는 그 경로.
 
@@ -769,6 +839,7 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     if tiers := _model_tier_check(os.getcwd()):
         checks.append(tiers)
     checks += _trinity_checks(os.getcwd())
+    checks += _mode_parity_check(os.getcwd())  # 모드 간 규율 대조
     security_ok = all(ch["ok"] for ch in checks if ch.get("security"))
     ok = bool(asgard) and security_ok
     runtime = f"python {sys.version.split()[0]}"

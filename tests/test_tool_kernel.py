@@ -160,21 +160,19 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("git grep --open-files-in-pager 'touch PWNED' needle"))
         self.assertFalse(is_readonly_bash_safe("git --paginate log"))
 
-    def test_main_thread_personal_memory_contract_commands(self):
-        """AGENTS.md 개인 메모리 계약(query·ingest)은 메인 스레드에서 기본 동작 —
-        read-only 서브에이전트(Verifier/Loki)는 무주입 원칙대로 계속 차단 (오딘 결정 26-07-23)."""
+    def test_role_owns_the_policy_not_the_thread(self):
+        """규율은 역할에 붙는다 — 읽기전용 역할은 어떤 명령이든 차단, 메인 세션은 배정된 역할을
+        직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그 역할의 몫이다.
+
+        개인 메모리 계약 명령(query·ingest)만 메인 스레드에 뚫어 주던 예외(26-07-23)는 이 규칙에
+        흡수돼 사라졌다 — 예외가 필요했던 이유가 "신원 없음 = 읽기전용"이라는 전제였고, 그 전제가
+        모드 B 의 단일 변경을 교착시켰다 (subagent-gate 가 유닛 마커 없는 Worker 디스패치를 거부해
+        우회로도 없다). 퀘스트 귀속은 write-sentinel + Stop 게이트 소관이다."""
         import io
         import json as j
         from unittest import mock
 
         from asgard.hooks import readonly_guard
-
-        # 분류기: 계약 명령만, 단일 명령만
-        self.assertTrue(readonly_guard._main_thread_memory_safe('asgard memory query "닉네임"'))
-        self.assertTrue(readonly_guard._main_thread_memory_safe("asgard memory ingest '사실' --kind decision"))
-        self.assertFalse(readonly_guard._main_thread_memory_safe("asgard memory remove page"))
-        self.assertFalse(readonly_guard._main_thread_memory_safe("asgard memory query a | tee out"))
-        self.assertFalse(readonly_guard._main_thread_memory_safe("asgard skills show x"))
 
         def verdict(agent: str, command: str) -> bool:
             payload = j.dumps({"agent_type": agent, "tool_name": "Bash", "tool_input": {"command": command}})
@@ -185,11 +183,13 @@ class TestRegistry(unittest.TestCase):
                     return exc.code != 2
             return True
 
-        self.assertTrue(verdict("", 'asgard memory query "닉네임"'))  # 메인 스레드 허용
+        self.assertTrue(verdict("", 'asgard memory query "닉네임"'))  # 메인 세션 = 배정된 역할 수행
         self.assertTrue(verdict("", "asgard memory ingest '사실' --kind decision"))
+        self.assertTrue(verdict("", "asgard memory remove page"))
+        self.assertTrue(verdict("asgard-worker", "touch new_file.py"))  # 쓰기 역할은 쓴다
         self.assertFalse(verdict("asgard-verifier", 'asgard memory query "닉네임"'))  # 게이트 역할 불변
         self.assertFalse(verdict("asgard-loki", "asgard memory ingest '사실'"))
-        self.assertFalse(verdict("", "asgard memory remove page"))  # 비계약 명령 불변
+        self.assertFalse(verdict("asgard-mimir", "touch new_file.py"))
 
     def test_duplicate_name_is_rejected(self):
         registry = ToolRegistry()

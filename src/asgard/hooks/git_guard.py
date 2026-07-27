@@ -242,8 +242,10 @@ def main() -> None:
                 json.dumps(
                     {
                         "permission": "deny",
-                        "userMessage": "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
-                        "agentMessage": "This " + label + " was blocked by the Asgard Canon (Law 3/6). "
+                        # 필드명은 snake_case 가 Cursor 계약이다 (cursor.com/docs/hooks, 26-07-27 확인) —
+                        # camelCase 로 보내면 차단은 되지만 가르치는 문장이 통째로 버려진다.
+                        "user_message": "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
+                        "agent_message": "This " + label + " was blocked by the Asgard Canon (Law 3/6). "
                         "Get Odin's explicit per-action consent; do not retry." + hint,
                     },
                     separators=(",", ":"),

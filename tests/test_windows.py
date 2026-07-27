@@ -108,9 +108,13 @@ class TestTemplatesWindowsWiring(unittest.TestCase):
         self.assertTrue(all(c.startswith('python3 "') for c in self._hook_cmds(s)))
 
     def test_cursor_hooks_windows(self):
+        # 계약은 "Windows 면 py 접두"이지 "n번째 훅이 무엇인가"가 아니다 — 위치로 재면 레인 앞에
+        # 훅을 하나 더할 때마다 무관한 Windows 테스트가 깨진다 (26-07-27 secret-guard 읽기 측이 그랬다).
         with mock.patch("asgard.templates.cursor.hook_python", return_value="py"):
             h = json.loads(cursor_hooks_json())
-        self.assertEqual(h["hooks"]["beforeShellExecution"][0]["command"], "py .cursor/hooks/git-guard.py")
+        shell = [entry["command"] for entry in h["hooks"]["beforeShellExecution"]]
+        self.assertTrue(shell and all(c.startswith("py .cursor/hooks/") for c in shell))
+        self.assertIn("py .cursor/hooks/git-guard.py", shell)
         self.assertEqual(h["hooks"]["postToolUseFailure"][0]["command"], "py .cursor/hooks/failure-tracker.py")
 
     def test_codex_config_windows(self):

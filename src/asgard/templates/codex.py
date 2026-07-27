@@ -24,11 +24,20 @@ _CODEX_CONFIG = """\
 max_depth = 2
 
 # Memory v3 — session snapshot, prompt-specific recall, Thinker-only context, verified turn sync.
+# Lagom (output restraint) and the Charter north star ride the same events — one contract per mode.
 [[hooks.SessionStart]]
 
 [[hooks.SessionStart.hooks]]
 type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/lagom-activate.py" codex'
+
+[[hooks.SessionStart.hooks]]
+type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.py" codex'
 
 [[hooks.SessionStart.hooks]]
 type = "command"
@@ -36,9 +45,28 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" 
 
 [[hooks.UserPromptSubmit]]
 
+# Spend ceiling — judged before the turn starts. The heaviest sessions never spawn a subagent,
+# so the main lane needs its own checkpoint (see budget_guard.py for the measurement).
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/budget-guard.py" codex prompt'
+
+# Canon 8 — an unattended session is detected from permission_mode, which only a hook can see.
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/unattended-context.py" codex'
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/lagom-tracker.py" codex'
+
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.py" codex'
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
@@ -49,6 +77,12 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" 
 [[hooks.PreToolUse]]
 matcher = "^Bash$"
 
+# Canon Law 4, read half — a shell that dumps credentials (cat .env, env, keychain reads) puts them
+# in the transcript, and the transcript is re-sent to the model provider on every later turn.
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/secret-guard.py" codex'
+
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.py"'
@@ -56,6 +90,34 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/git-guard.py"'
 [[hooks.PreToolUse.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/release-guard.py"'
+
+# Control-surface protection. PreToolUse carries no agent identity here, so this lane enforces only
+# the identity-free rules (writes into .codex/.claude/.asgard, paths outside the repo); read-only
+# roles are held by each agent's own `sandbox_mode = "read-only"`.
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/readonly-guard.py" codex'
+
+[[hooks.PreToolUse]]
+matcher = "^(apply_patch|Write|Edit)$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/readonly-guard.py" codex'
+
+# Canon Law 4 — a secret is blocked at the moment it would be written to a file.
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/secret-guard.py" codex'
+
+# Canon Law 4, read half — credential stores are judged by name, because by the time their content
+# could be inspected they have already been read. Templates (.env.example) stay exempt.
+[[hooks.PreToolUse]]
+matcher = "^(Read|Grep|Glob)$"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/secret-guard.py" codex'
 
 # Canon Law 9 — soft 3-strike loop tracker. Codex PostToolUse carries tool_name + tool_response
 # (Claude's schema), so it runs the SAME failure-tracker.py and shares the .asgard/ state cross-tool.
@@ -78,10 +140,23 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/write-sentinel.py
 
 [[hooks.SubagentStart.hooks]]
 type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/lagom-subagent.py" codex'
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.py" codex'
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
 [[hooks.PreToolUse]]
 matcher = "^Agent$"
+
+# Judged before the spawn — SubagentStop is after the money is already spent.
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/budget-guard.py" codex task'
 
 [[hooks.PreToolUse.hooks]]
 type = "command"
@@ -107,6 +182,13 @@ matcher = "^asgard-(thinker|worker|verifier)$"
 [[hooks.SubagentStop.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/subagent-gate.py" codex'
+
+# Micro-shape ratchet — unmatched, because the discipline follows the writing, not the role.
+[[hooks.SubagentStop]]
+
+[[hooks.SubagentStop.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/craft-gate.py" codex'
 
 [[hooks.Stop]]
 

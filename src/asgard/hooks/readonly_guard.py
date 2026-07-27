@@ -85,7 +85,10 @@ _SED_WRITE = re.compile(r"(?<![A-Za-z])[wWrR](?![A-Za-z])")
 _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\|")
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
-_CONTROL_PATHS = (".claude", ".asgard")
+# 통제 표면은 클라이언트마다 다른 디렉토리에 산다 — 한 클라이언트만 보호하면 같은 규율이
+# 모드에 따라 있고 없다. 스캐폴드(훅·에이전트·설정)는 어느 모드에서도 작업 대상이 아니다.
+_CONTROL_PATHS = (".claude", ".cursor", ".codex", ".agents", ".asgard")
+_HOOK_DIRS = (".claude/hooks/", ".cursor/hooks/", ".codex/hooks/")
 _PRIVATE_CONTROL_PATHS = (".asgard/quest", ".asgard/receipts", ".asgard/state")
 
 
@@ -393,7 +396,9 @@ def _safe_asgard_hook(tokens: list[str], root: str | None = None) -> bool:
         except ValueError:
             return False
     script = os.path.normpath(script).replace("\\", "/")
-    if not script.startswith(".claude/hooks/") or script.count("/") != 2:
+    # 훅이 사는 디렉토리는 클라이언트마다 다르다 — `.claude/hooks/` 만 인정하면 Cursor·Codex 세션의
+    # 퀘스트 기장이 통째로 막혀 역할이 로그를 못 연다 (모드 간 같은 동작이 깨지는 자리).
+    if not script.startswith(_HOOK_DIRS) or script.count("/") != 2:
         return False
     name = os.path.basename(script)
     if name == "quest-log.py":
@@ -439,39 +444,66 @@ def is_readonly_bash_safe(command: str, root: str | None = None) -> bool:
     return all(_safe_segment(shlex.join(part), root) for part in parts)
 
 
-_MEMORY_MAIN_COMMANDS = {"query", "ingest"}
+def _deny(protocol: str, message: str) -> None:
+    """차단 응답 — Cursor 는 permission JSON, Claude Code/Codex 는 exit 2 + stderr (git-guard 와 동일 규약)."""
+    if protocol == "cursor":
+        sys.stdout.write(
+            json.dumps({"permission": "deny", "user_message": message, "agent_message": message}, ensure_ascii=False)
+        )
+        raise SystemExit(0)
+    print(message, file=sys.stderr)
+    raise SystemExit(2)
 
 
-def _main_thread_memory_safe(command: str) -> bool:
-    """Personal-memory contract commands (AGENTS.md) — main thread only.
-    `query` is a read; `ingest` is guarded by its own ask-before-save gate plus the client's
-    tool-permission prompt. Read-only subagents (Verifier/Loki/...) stay blocked — the
-    no-injection principle for gate roles is not relaxed here."""
-    parts, valid = _shell_parts(command.strip())
-    if not valid or len(parts) != 1:
-        return False
-    tokens = parts[0]
-    return (
-        len(tokens) >= 3
-        and os.path.basename(tokens[0]) == "asgard"
-        and tokens[1] == "memory"
-        and tokens[2] in _MEMORY_MAIN_COMMANDS
-    )
+def _refusal(control: bool, tool_name: str, command: str, path: str) -> str:
+    """거부 사유 문장 — 실제 규칙과 도구에 맞아야 가르친다.
+
+    통제 표면 차단에 "읽기전용 역할" 문장을 붙이면 쓰기 권한이 있는 역할이 자기 신원을 의심하며
+    턴을 태우고, Edit 차단에 Bash 허용목록을 붙이면 없는 레인을 찾는다 (26-07-26 실측)."""
+    target = command[:160] if tool_name == "Bash" else (path[:160] or "(no path)")
+    if control:
+        return (
+            f"Asgard control-surface policy blocked {tool_name}: {target}\n"
+            "Scaffolds and harness state (.claude/.cursor/.codex/.agents/.asgard) and paths outside "
+            "the repo are not work targets — no role edits them. Change the Asgard config through its "
+            "own commands (asgard init/sync), and keep the change inside the project."
+        )
+    if tool_name == "Bash":
+        return f"Asgard read-only role policy blocked mutating or unclassified Bash: {target}\n{READONLY_BASH_HINT}"
+    return f"Asgard read-only role policy blocked a file write via {tool_name}: {target}\n{READONLY_WRITE_HINT}"
+
+
+def _allow(protocol: str) -> None:
+    """Cursor 는 침묵을 허용으로 안 본다 — 명시적 allow 가 프로토콜 요구사항 (git-guard 와 동일)."""
+    if protocol == "cursor":
+        sys.stdout.write(json.dumps({"permission": "allow"}, separators=(",", ":")))
+    raise SystemExit(0)
 
 
 def main() -> None:
+    protocol = sys.argv[1] if len(sys.argv) > 1 else "claude"
     try:
         data = json.load(sys.stdin)
-        agent = str(data.get("agent_type") or "")
-        tool_name = str(data.get("tool_name") or "Bash")
-        tool_input = data.get("tool_input") or {}
+        agent = str(data.get("agent_type") or data.get("agent_name") or data.get("subagent_type") or "")
+        # Cursor beforeShellExecution 은 command 를 최상위에 싣고 tool_input 이 없다 — git-guard 와
+        # 같은 판별자로 셸 페이로드를 Bash 호출로 정규화한다.
+        if "tool_input" not in data and data.get("command") is not None:
+            tool_name, tool_input = "Bash", {"command": data.get("command")}
+        else:
+            tool_name = str(data.get("tool_name") or "Bash")
+            tool_input = data.get("tool_input") or {}
         command = str(tool_input.get("command") or "")
     except Exception:
+        _allow(protocol)
         return
-    # Main-thread Odin is coordination/read-only; mutations belong to explicit
-    # Worker/Freyja/Thor/Eitri subagents. Tool-lifecycle hooks provide agent_type for them.
-    readonly = not agent or agent in _READONLY_AGENTS
-    memory_main_ok = tool_name == "Bash" and not agent and _main_thread_memory_safe(command)
+    # 규율은 세션이 아니라 **역할**에 붙는다 (tool_kernel.ROLE_CAPABILITIES 가 정본): worker 계열은
+    # mutate 를 갖고, thinker/verifier/loki/ullr/mimir 은 안 갖는다. 신원이 없는 호출은 메인 세션이
+    # 전이 함수가 배정한 역할을 직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그 역할의 몫이다 —
+    # 신원 부재를 읽기전용으로 읽으면 모드 B 의 단일 변경이 통째로 막힌다: subagent-gate 가
+    # `[ASGARD_UNIT:<id>]` 없는 asgard-worker 디스패치를 거부하므로 우회로도 없다 (양쪽 차단 = 교착).
+    # 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel 이 기록하고 Stop 의 verifier-gate 가
+    # 물리 대조로 잡는다. 같은 것을 두 시점에 재판하면 조기 교정이 아니라 교착이 된다.
+    readonly = agent in _READONLY_AGENTS
     root = str(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())
     path = str(tool_input.get("file_path") or tool_input.get("path") or tool_input.get("notebook_path") or "")
     normalized_path = os.path.normpath(path).replace("\\", "/")
@@ -509,25 +541,13 @@ def main() -> None:
         or readonly
         and (
             tool_name in {"Write", "Edit", "NotebookEdit"}
-            or (tool_name == "Bash" and not is_readonly_bash_safe(command, root) and not memory_main_ok)
+            or (tool_name == "Bash" and not is_readonly_bash_safe(command, root))
         )
     )
     if denied:
-        # 거부 사유는 도구에 맞아야 가르친다 — Edit 차단에 Bash 허용목록을 붙이면 모델이 없는
-        # 레인을 찾다 턴을 태운다 (26-07-26 실측: Edit 차단 메시지가 "unclassified Bash" 였다).
-        if tool_name == "Bash":
-            print(
-                f"Asgard read-only role policy blocked mutating or unclassified Bash: {command[:160]}"
-                f"\n{READONLY_BASH_HINT}",
-                file=sys.stderr,
-            )
-        else:
-            print(
-                f"Asgard read-only role policy blocked a file write via {tool_name}: {path[:160] or '(no path)'}"
-                f"\n{READONLY_WRITE_HINT}",
-                file=sys.stderr,
-            )
-        raise SystemExit(2)
+        control = private_control_access or control_write or control_shell_write or path_escape
+        _deny(protocol, _refusal(control, tool_name, command, path))
+    _allow(protocol)
 
 
 if __name__ == "__main__":

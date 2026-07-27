@@ -107,9 +107,15 @@ def cc_settings() -> str:
                     ],
                     # Canon 8 (무인이면 진행) — 자동화 permission_mode 감지 시 무인 계약 주입.
                     # Lagom tracker — /lagom 전환·영속·비활성 문구.
+                    # budget-guard — 턴 시작 전 세션 누적 판정. 최대 지출 세션은 서브에이전트를
+                    # 한 번도 안 쓴다(381세션 실측)이라 메인 레인에도 지점이 필요하다.
                     "UserPromptSubmit": [
                         {
                             "hooks": [
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/budget-guard.py" claude-code prompt',
+                                },
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/unattended-context.py"',
@@ -175,18 +181,30 @@ def cc_settings() -> str:
                     ],
                     "PreToolUse": [
                         # Trinity mode B — Worker/Verifier 디스패치 게이트 (unit 마커·ticket 물리 대조)
+                        # budget-guard — 스폰 **전** 판정. SubagentStop 은 돈이 이미 나간 뒤라 무의미하다
+                        # (헬리오스 선행 연구의 실패 지점 — budget_guard.py 모듈 주석 참조).
                         {
                             "matcher": "Agent",
                             "hooks": [
                                 {
                                     "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/budget-guard.py" claude-code task',
+                                },
+                                {
+                                    "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/subagent-gate.py"',
-                                }
+                                },
                             ],
                         },
                         {
                             "matcher": "Bash",
                             "hooks": [
+                                # Canon 4 읽기 절반 — shell 로 우회한 credential 덤프(cat .env·env·
+                                # keychain)를 막는다. 읽힌 값은 매 턴 프로바이더로 재전송된다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"',
+                                },
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.py"',
@@ -208,6 +226,17 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/readonly-guard.py"',
                                 },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"',
+                                },
+                            ],
+                        },
+                        # Canon 4 읽기 절반 — 자격 저장소는 이름만으로 판정한다 (내용을 보려면
+                        # 이미 읽은 뒤라 늦다). .env.example 같은 템플릿은 면제.
+                        {
+                            "matcher": "Read|Grep|Glob|NotebookRead",
+                            "hooks": [
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/secret-guard.py"',

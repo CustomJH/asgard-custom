@@ -100,7 +100,7 @@ def deny_pretool(protocol: str, message: str) -> None:
     if protocol == "cursor":
         sys.stdout.write(
             json.dumps(
-                {"permission": "deny", "userMessage": message, "agentMessage": message},
+                {"permission": "deny", "user_message": message, "agent_message": message},
                 ensure_ascii=False,
             )
         )

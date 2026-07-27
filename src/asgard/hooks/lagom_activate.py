@@ -108,13 +108,35 @@ def render(canon, mode):
     return "\n".join(out).replace("__MODE__", mode)
 
 
+CLIENTS = {"claude-code", "codex", "cursor"}
+
+
+def client():
+    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
+    return raw if raw in CLIENTS else "claude-code"
+
+
+def emit(current_client, text):
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    Cursor=additional_context, Claude Code/Codex=SessionStart 평문 stdout."""
+    if current_client == "cursor":
+        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
+    else:
+        sys.stdout.write(text)
+
+
 def main():
     try:
         data = json.load(sys.stdin)
     except Exception:
         data = {}
     try:
-        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+        root = (
+            os.environ.get("CLAUDE_PROJECT_DIR")
+            or os.environ.get("CURSOR_PROJECT_DIR")
+            or data.get("cwd")
+            or os.getcwd()
+        )
         mode = read_state(root)  # 세션 전환값이 기본값을 이긴다
         if mode is None:
             mode = config_mode(root)
@@ -127,7 +149,10 @@ def main():
         canon = open(
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"), encoding="utf-8"
         ).read()
-        sys.stdout.write("[lagom] mode=%s (source=%s)\n\n%s" % (mode, data.get("source") or "?", render(canon, mode)))
+        emit(
+            client(),
+            "[lagom] mode=%s (source=%s)\n\n%s" % (mode, data.get("source") or "?", render(canon, mode)),
+        )
     except Exception:
         pass  # fail-open — 캐논 파일 부재 등 어떤 실패도 세션을 막지 않는다
     sys.exit(0)

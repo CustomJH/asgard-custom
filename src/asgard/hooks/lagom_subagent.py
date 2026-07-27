@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# Asgard lagom-subagent — SubagentStart 재주입 (Claude Code 전용 이벤트).
+# Asgard lagom-subagent — SubagentStart 재주입 (Claude Code·Cursor·Codex 공통 이벤트).
 #
 # SessionStart 컨텍스트는 부모 스레드 한정 — 서브에이전트에 전파되지 않는다. 이 보상이 없으면
 # 서브에이전트 작업은 전부 lagom 밖에서 돈다. 동작:
@@ -84,14 +84,40 @@ def matcher_pattern(root):
     return ""
 
 
+CLIENTS = {"claude-code", "codex", "cursor"}
+
+
+def client():
+    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
+    return raw if raw in CLIENTS else "claude-code"
+
+
+def emit(current_client, text):
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약)."""
+    if current_client == "cursor":
+        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
+    else:
+        sys.stdout.write(
+            json.dumps(
+                {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": text}},
+                ensure_ascii=False,
+            )
+        )
+
+
 def main():
     try:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
     try:
-        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        agent = str(data.get("agent_type") or "")
+        root = (
+            os.environ.get("CLAUDE_PROJECT_DIR")
+            or os.environ.get("CURSOR_PROJECT_DIR")
+            or data.get("cwd")
+            or os.getcwd()
+        )
+        agent = str(data.get("agent_type") or data.get("agent_name") or data.get("subagent_type") or "")
         if agent in NEVER_INJECT:
             sys.exit(0)
         mode = read_state(root)
@@ -107,17 +133,7 @@ def main():
         canon = open(
             os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"), encoding="utf-8"
         ).read()
-        sys.stdout.write(
-            json.dumps(
-                {
-                    "hookSpecificOutput": {
-                        "hookEventName": "SubagentStart",
-                        "additionalContext": "[lagom] mode=%s\n\n%s" % (mode, render(canon, mode)),
-                    }
-                },
-                ensure_ascii=False,
-            )
-        )
+        emit(client(), "[lagom] mode=%s\n\n%s" % (mode, render(canon, mode)))
     except Exception:
         pass  # 훅 자체 오류 = 무개입 (서브에이전트를 막지 않는다)
     sys.exit(0)

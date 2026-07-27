@@ -69,6 +69,22 @@ environment at install time).
 Do not use emoji pictograms in user-visible text — when a marker is needed, use text glyphs
 (✓ ⚠ ✗ ▸ · ⠶) only."""
 
+# Canon 8 — 무인 세션은 모델이 스스로 알 수 없다. 모드 B 는 unattended-context 훅이 훅 stdin 의
+# permission_mode 로 감지해 이 계약을 주입한다; 네이티브는 headless 진입에서 ASGARD_UNATTENDED 를
+# 켜므로 여기서 같은 문장을 싣는다 (hooks/unattended_context.py 와 동일 유지 — 단일 문구).
+UNATTENDED_NOTE = """
+
+[asgard] Unattended session detected — Canon 8 auto-proceed is in effect: do not end the session
+waiting on a question or approval. Pick a defensible default, log the assumption as a plan criteria
+`가정: ...` item, and proceed immediately — state the assumptions and alternatives in the final
+report. ESCALATE is for blockers you cannot proceed past only — never use it to request approval."""
+
+
+def unattended_note() -> str:
+    """무인 세션이면 Canon 8 계약, 아니면 빈 문자열 (대화형 세션은 이 문장을 못 느낀다)."""
+    return UNATTENDED_NOTE if os.environ.get("ASGARD_UNATTENDED") == "1" else ""
+
+
 LAGOM_VERIFIER_NOTE = """
 
 ## Lagom prose invariants (prose deliverables only)
@@ -319,14 +335,18 @@ def _mimir_note(request: str) -> str:
 
 
 def _identity(root: str) -> str:
+    """세션 정체성 — 캐논(AGENTS.md) + 네이티브 규칙 + 이 세션이 무인인지.
+
+    무인 여부는 "이 세션이 네이티브 루프다"와 같은 등급의 세션 사실이라 정체성에 붙는다
+    (모드 B 에서 unattended-context 훅이 메인 스레드에 주입하는 것과 같은 자리)."""
     p = os.path.join(root, "AGENTS.md")
     if os.path.exists(p):
         try:
             with open(p, encoding="utf-8") as handle:
-                return handle.read() + NATIVE_NOTE
+                return handle.read() + NATIVE_NOTE + unattended_note()
         except Exception:
             pass
-    return agents_md(os.path.basename(root)) + NATIVE_NOTE  # 내장 정체성 (스캐폴드 불요)
+    return agents_md(os.path.basename(root)) + NATIVE_NOTE + unattended_note()  # 내장 정체성 (스캐폴드 불요)
 
 
 def _role_prompt(fname: str) -> str:

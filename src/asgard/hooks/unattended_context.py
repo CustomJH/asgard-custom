@@ -22,6 +22,31 @@ for _stream in (sys.stdout, sys.stderr):
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # verifier_gate.py 와 동일 유지
 
 
+CLIENTS = {"claude-code", "codex", "cursor"}
+
+
+def client():
+    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
+    return raw if raw in CLIENTS else "claude-code"
+
+
+def emit(current_client, text):
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    Cursor=additional_context, Codex=hookSpecificOutput, Claude Code=평문 stdout."""
+    if current_client == "cursor":
+        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
+    elif current_client == "codex":
+        sys.stdout.write(
+            json.dumps(
+                {"hookSpecificOutput": {"hookEventName": "UserPromptSubmit", "additionalContext": text}},
+                ensure_ascii=False,
+            )
+            + "\n"
+        )
+    else:
+        sys.stdout.write(text)
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -31,12 +56,13 @@ def main():
     if os.environ.get("ASGARD_UNATTENDED") != "1" and mode not in UNATTENDED_MODES:
         sys.exit(0)
     # NOTE: the `가정:` criteria-prefix token is matched elsewhere in the codebase — keep it literal.
-    sys.stdout.write(
+    emit(
+        client(),
         "[asgard] Unattended session detected (permission_mode=%s) — Canon 8 auto-proceed "
         "is in effect: do not end the session waiting on a question or approval. Pick a defensible default, "
         "log the assumption as a plan criteria `가정: ...` item, and proceed immediately — state the "
         "assumptions and alternatives in the final report. ESCALATE is for blockers you cannot proceed "
-        "past only — never use it to request approval." % (mode or "env")
+        "past only — never use it to request approval." % (mode or "env"),
     )
     sys.exit(0)
 

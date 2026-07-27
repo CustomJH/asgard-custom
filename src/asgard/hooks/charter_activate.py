@@ -94,34 +94,50 @@ def section_for(agent):
     return "identity"  # 메인·딜리버리(freyja/thor/eitri/loki) — through_line 만 (네이티브 delivery_identity 대응)
 
 
+CLIENTS = {"claude-code", "codex", "cursor"}
+
+
+def client():
+    raw = str(sys.argv[1] if len(sys.argv) > 1 else "claude-code")
+    return raw if raw in CLIENTS else "claude-code"
+
+
+def emit(current_client, agent, text):
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    Cursor=additional_context, Claude Code/Codex=서브에이전트만 hookSpecificOutput, 그 밖엔 평문."""
+    if current_client == "cursor":
+        sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
+    elif agent:  # SubagentStart — JSON additionalContext (lagom-subagent 스키마)
+        sys.stdout.write(
+            json.dumps(
+                {"hookSpecificOutput": {"hookEventName": "SubagentStart", "additionalContext": text}},
+                ensure_ascii=False,
+            )
+        )
+    else:  # SessionStart/UserPromptSubmit — 평문 stdout (lagom-activate 스키마)
+        sys.stdout.write(text)
+
+
 def main():
     try:
         data = json.load(sys.stdin)
     except Exception:
         data = {}
     try:
-        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+        root = (
+            os.environ.get("CLAUDE_PROJECT_DIR")
+            or os.environ.get("CURSOR_PROJECT_DIR")
+            or data.get("cwd")
+            or os.getcwd()
+        )
         ch = load_charter(root)
         if not ch:
             sys.exit(0)  # charter 미설정 — 무개입 (토큰 회귀 없음)
-        agent = str(data.get("agent_type") or "")
+        agent = str(data.get("agent_type") or data.get("agent_name") or data.get("subagent_type") or "")
         body = render(ch, section_for(agent))
         if not body:
             sys.exit(0)
-        if agent:  # SubagentStart — JSON additionalContext (lagom-subagent 스키마)
-            sys.stdout.write(
-                json.dumps(
-                    {
-                        "hookSpecificOutput": {
-                            "hookEventName": "SubagentStart",
-                            "additionalContext": "[charter]\n\n%s" % body,
-                        }
-                    },
-                    ensure_ascii=False,
-                )
-            )
-        else:  # SessionStart/UserPromptSubmit — 평문 stdout (lagom-activate 스키마)
-            sys.stdout.write("[charter]\n\n%s" % body)
+        emit(client(), agent, "[charter]\n\n%s" % body)
     except Exception:
         pass  # fail-open — 어떤 실패도 세션을 막지 않는다
     sys.exit(0)
