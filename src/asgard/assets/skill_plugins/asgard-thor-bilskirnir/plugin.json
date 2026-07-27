@@ -1,11 +1,12 @@
 {
   "schema": 1,
   "name": "asgard-thor-bilskirnir",
-  "version": "2",
-  "description": "Thor backend policy pack — house conventions plus minimal Clean and Hexagonal architecture boundaries",
+  "version": "3",
+  "description": "Thor backend policy pack — house conventions, minimal Clean and Hexagonal architecture boundaries, and wire-protocol discipline with a hardware-free reference oracle",
   "skills": [
     "asgard-thor-bilskirnir",
-    "asgard-thor-clean-hexagonal"
+    "asgard-thor-clean-hexagonal",
+    "asgard-thor-vimur"
   ],
   "routing": {
     "asgard-thor-bilskirnir": {
@@ -47,6 +48,40 @@
         "ports & adapters",
         "포트 앤 어댑터",
         "port and adapter"
+      ],
+      "agents": [
+        "thor",
+        "thor-lead"
+      ]
+    },
+    "asgard-thor-vimur": {
+      "triggers": [
+        "모드버스",
+        "modbus",
+        "프로토콜",
+        "protocol",
+        "시리얼",
+        "serial",
+        "rs485",
+        "rs-485",
+        "crc",
+        "체크섬",
+        "checksum",
+        "프레이밍",
+        "framing",
+        "레지스터 맵",
+        "register map",
+        "슬레이브",
+        "마스터",
+        "필드버스",
+        "fieldbus",
+        "계장",
+        "통신 규격",
+        "패킷 파싱",
+        "packet parsing",
+        "바이트 순서",
+        "endian",
+        "엔디안"
       ],
       "agents": [
         "thor",

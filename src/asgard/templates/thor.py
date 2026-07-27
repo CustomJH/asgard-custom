@@ -345,6 +345,57 @@ of anything it cannot name — clearing the gate is the floor, not the verdict.
 > (2603.24755); the rest is standard practice restated in our own words.
 """
 
+_THJALFI = """\
+---
+name: asgard-thor-thjalfi
+description: Thor's servant Thjalfi, who runs ahead into every land — per-language canon: which standard governs, what the compiler will not catch, and which verifier the ecosystem already ships. Load before writing in a language you have not already established conventions for in this project.
+---
+
+# asgard-thor-thjalfi — 🗺 Language Canon Reconnaissance
+
+Thjalfi goes ahead of Thor into lands Thor does not know and comes back with what matters there.
+That is this skill's whole job: before you write, know **what governs here**.
+
+## How references are handled (the rule, before the table)
+
+1. **The project outranks the standard.** Existing layering, error conventions, and idioms in this
+   repository win over anything below. A canon that contradicts the code you are extending produces
+   a file that does not belong. Report the discrepancy; do not silently "fix" the codebase's style.
+2. **Name the standard, do not carry it.** Standards are long, versioned, and licensed. What is
+   written here is which one applies and what it costs you to ignore it. When a specific rule decides
+   your change, read the current text of that rule — not this table, and not memory (Canon 12).
+3. **Run the ecosystem's own verifier before inventing checks.** Every language below already ships
+   the tool that finds its characteristic defect. A hand-rolled check that duplicates it is waste,
+   and worse, it disagrees eventually.
+4. **`asgard craft` covers the mechanical part in the languages it knows.** Where it is silent, the
+   burden is entirely yours — silence there means "not measured", never "clean".
+
+## What governs where
+
+| Language | Governing reference | What the compiler will not catch | Run this |
+|---|---|---|---|
+| C | MISRA C:2025 (constrained subset) · CERT C (safe use of risky features) | ownership of every allocation, failure of every allocation, destination size of every copy, integer overflow and implicit conversion | `clang-tidy`, `cppcheck`, and a sanitizer build (`-fsanitize=address,undefined`) |
+| C++ | C++ Core Guidelines · MISRA C++ where safety-critical | who owns this pointer, exception paths that skip cleanup, dangling references into temporaries, silent copies in hot paths | `clang-tidy` (`bugprone-*`, `cppcoreguidelines-*`), sanitizers |
+| Rust | ownership and borrowing rules; API guidelines | the compiler catches memory safety — what it does not catch is `unwrap` on real error paths, blocking calls inside async, and `unsafe` blocks whose invariant is never written down | `cargo clippy -D warnings`, `cargo miri` for `unsafe` |
+| Go | Effective Go and the standard library's own idioms | goroutine and channel lifetime (who stops this, and when), data races, unchecked errors, `defer` inside a loop | `go vet`, `go test -race`, `errcheck` |
+| Java / Kotlin | the project's framework conventions first; JVM concurrency semantics | resource closing on every path, mutable shared state across threads, equals/hashCode contracts, lazy-loading traps at the boundary | `-Xlint`, ErrorProne / SpotBugs, `ktlint` + `detekt` |
+| C# | .NET framework guidelines | `IDisposable` never disposed, `async void`, captured contexts deadlocking, `struct` copy semantics | analyzers (`dotnet format`, Roslyn rules) |
+| TypeScript / JS | the project's own tsconfig strictness | anything an `any` or a cast hides, unawaited promises, listeners and intervals never removed | `tsc --noEmit` under the project's strictest setting, `eslint` |
+| Python | the project's typing level | resource lifetime without `with`, mutable default arguments, unbounded caches and module state | `ruff`, the project's type checker |
+
+## Reading a language you do not know yet
+
+Do not translate your habits into it. Read two or three of the closest existing modules first and
+name, in one line, what that project does for: error propagation, resource cleanup, boundary
+validation, and concurrency. If the project has not decided one of those, that gap is a finding —
+report it rather than inventing an answer that the next file will contradict.
+
+The ordering from `asgard-thor-magni` does not change per language: correct, then bounded, then
+shaped, then cheap. What changes is only who enforces it — in Rust the compiler owns "bounded" and
+you own "shaped"; in C you own all four and the standards above exist because that is hard.
+"""
+
+
 _EINHERJAR = """\
 ---
 name: asgard-thor-einherjar
@@ -403,12 +454,24 @@ THOR_SKILLS: list[tuple[str, str]] = [
     ("asgard-thor-gridarvol", _GRIDARVOL),
     ("asgard-thor-tanngrisnir", _TANNGRISNIR),
     ("asgard-thor-magni", _MAGNI),
+    ("asgard-thor-thjalfi", _THJALFI),
     ("asgard-thor-einherjar", _EINHERJAR),
 ]
 
 # 네이티브 디스패치 task → 전용 스킬 매칭 (파일 스킬 로더가 없는 asgard start 세션용 통로 —
 # 모드 A/B 는 파일 스킬이 담당). 부분 일치 키워드 + 단어 경계 정규식 + 동반어 조건 3층.
 _SUBSTR: dict[str, tuple[str, ...]] = {
+    "asgard-thor-thjalfi": (
+        "c 언어",
+        "c++",
+        "임베디드",
+        "펌웨어",
+        "포인터",
+        "관용구",
+        "코딩 표준",
+        "정적 분석",
+        "언어 표준",
+    ),
     "asgard-thor-magni": (
         "리팩터",
         "리팩토링",
@@ -580,6 +643,18 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
     # 미시 공예는 "그 단어를 말한 요청"에만 걸리면 안 된다 — 침식은 정확히 아무 단어도 말하지 않는
     # 평범한 구현 요청에서 일어난다. 그래서 역할 파일이 반사(게이트 실행)를 항상 켜 두고, 여기서는
     # 형상·수명·비용을 **논제로 삼은** 요청만 잡아 깊은 본문을 싣는다.
+    "asgard-thor-thjalfi": (
+        # 짧은 언어 이름은 단독으로 못 쓴다 — `\bc\b` 하나면 "c 드라이브"·"plan c" 까지 걸린다.
+        r"\bc\+\+",
+        r"\bc(?:89|90|99|11|17|23)\b",
+        r"c\s*(?:언어|코드|파일|헤더)",
+        r"\bmisra\b",
+        r"\bcert c\b",
+        r"\bclippy\b",
+        r"\bgo vet\b",
+        r"\bsanitiz",
+        r"\bidiomatic\b",
+    ),
     "asgard-thor-magni": (
         r"\brefactor",
         r"\bleaks?\b",
@@ -640,7 +715,13 @@ def _drop_hit(t: str) -> bool:
     return _any(t, r"\bdrop\b", r"\balter\b") and _any(t, _DB_CONTEXT, r"컬럼", r"\bcolumn\b")
 
 
+def _c_lang_hit(t: str) -> bool:
+    """`C 로 …` 는 언어 지목일 수도, "plan c 로 가자" 일 수도 있다 — 만드는 동사가 있을 때만."""
+    return bool(_any(t, r"\bc\s*로\b")) and bool(_any(t, r"구현|작성|만들|짜|포팅|포트|이식|고쳐|리팩터"))
+
+
 _COMPANION: dict[str, tuple] = {
+    "asgard-thor-thjalfi": (_c_lang_hit,),
     "asgard-thor-lightning": (_cache_hit,),
     "asgard-thor-jarngreipr": (_index_hit, _schema_hit, _drop_hit),
 }
