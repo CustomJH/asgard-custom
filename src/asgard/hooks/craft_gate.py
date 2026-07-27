@@ -106,7 +106,9 @@ def _blocking(exe: str, root: str, paths: list[str]) -> list[dict]:
         for path in paths[:200]:  # 인자 폭주 방지 — 상한 초과분은 아래에서 잘린 사실로 싣는다
             cmd += ["--path", path]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=90, cwd=root)
+            result = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=90, cwd=root, encoding="utf-8", errors="replace"
+            )
             found = list(json.loads(result.stdout or "{}").get("blocking") or [])
         except Exception:
             continue  # 이 게이트가 고장 났다 — 나머지 게이트의 판정은 살린다 (게이트는 규율이지 관문이 아니다)

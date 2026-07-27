@@ -64,7 +64,9 @@ def _lesson(exe: str, root: str, paths: list[str]) -> dict:
     for path in paths[:200]:
         cmd += ["--path", path]
     try:
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=120, cwd=root)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=120, cwd=root, encoding="utf-8", errors="replace"
+        )
         return json.loads(result.stdout or "{}")
     except Exception:
         return {}

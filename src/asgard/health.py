@@ -571,7 +571,13 @@ def scan(root: str) -> Snapshot:
 def _head(root: str) -> str:
     try:
         proc = subprocess.run(
-            ["git", "rev-parse", "--short", "HEAD"], cwd=root, capture_output=True, text=True, timeout=15
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=15,
+            encoding="utf-8",
+            errors="replace",
         )
         return proc.stdout.strip() if proc.returncode == 0 else "unknown"
     except OSError, subprocess.SubprocessError:

@@ -188,6 +188,11 @@ class TestDoctorWindows(unittest.TestCase):
 class TestTextIOCarriesItsEncoding(unittest.TestCase):
     """텍스트 입출력은 인코딩을 스스로 들고 다녀야 한다 — 안 주면 로케일 기본값으로 열린다.
 
+    문이 둘이다. 파일(`open`/`read_text`/`write_text`)과 **자식 프로세스 파이프**
+    (`subprocess.run(..., text=True)`). 처음엔 파일만 봤다가 `asgard update` 가 같은 로케일에서
+    `UnicodeDecodeError: 'cp949' codec can't decode byte 0xec` 로 죽었다 — uv 가 UTF-8 로 낸
+    출력을 cp949 로 디코딩한 것이다. 한쪽만 막은 가드는 막았다는 착각만 준다.
+
     왜 형상으로 재는가: POSIX 호스트의 기본값은 utf-8 이라 인코딩을 빠뜨린 코드가 여기서는
     언제나 통과한다. 목킹으로도 못 잡는다 — 바꿔야 하는 것이 인터프리터가 시작할 때 정해지는
     로케일이기 때문이다. 그래서 실행이 아니라 호출 형상을 본다.
@@ -247,6 +252,14 @@ class TestTextIOCarriesItsEncoding(unittest.TestCase):
             if isinstance(func.value, ast.Name) and func.value.id == "io_files":
                 return ""
             return f"Path.{func.attr}()"
+        # 두 번째 문 — 자식 프로세스의 stdout/stderr 도 텍스트 모드면 로케일로 디코딩된다.
+        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+        if name in ("run", "Popen", "check_output", "check_call", "call"):
+            module = getattr(getattr(func, "value", None), "id", "") if isinstance(func, ast.Attribute) else ""
+            if module not in ("subprocess", "sp", ""):
+                return ""
+            if {kw.arg for kw in node.keywords} & {"text", "universal_newlines"}:
+                return f"subprocess.{name}(text=True)"
         return ""
 
     def test_no_text_io_relies_on_the_locale_default(self):

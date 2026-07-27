@@ -51,7 +51,11 @@ def _download(url: str, dest: str) -> None:
 def _uv_install(spec: str, label: str) -> int:
     with ui.spin(label):
         r = subprocess.run(
-            ["uv", "tool", "install", "--force", "--python", "3.14", spec], capture_output=True, text=True
+            ["uv", "tool", "install", "--force", "--python", "3.14", spec],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
     return r.returncode
 

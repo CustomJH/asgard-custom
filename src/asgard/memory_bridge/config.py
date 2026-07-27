@@ -235,11 +235,7 @@ def _apply_private_acl(path: str, *, directory: bool = False) -> None:
     )
     for command in commands:
         result = subprocess.run(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+            command, capture_output=True, text=True, timeout=10, check=False, encoding="utf-8", errors="replace"
         )
         if result.returncode != 0:
             raise OSError(f"failed to secure project-memory approval state ACL: {path}")

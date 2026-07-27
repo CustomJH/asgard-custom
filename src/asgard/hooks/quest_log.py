@@ -242,7 +242,14 @@ def repo_root() -> str:
     if r:
         return r
     try:
-        out = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, timeout=10)
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            encoding="utf-8",
+            errors="replace",
+        )
         if out.returncode == 0 and out.stdout.strip():
             return out.stdout.strip()
     except Exception:
@@ -1878,11 +1885,7 @@ def refresh_managed_map(root: str) -> tuple[bool, str | None]:
         for command in (["asgard", "map", "update", "--quiet"], ["asgard", "map", "scan", "--quiet"]):
             try:
                 completed = subprocess.run(
-                    command,
-                    cwd=root,
-                    capture_output=True,
-                    text=True,
-                    timeout=60,
+                    command, cwd=root, capture_output=True, text=True, timeout=60, encoding="utf-8", errors="replace"
                 )
             except Exception as cli_exc:
                 return False, f"{import_error}; CLI fallback {cli_exc.__class__.__name__}: {str(cli_exc)[:200]}"

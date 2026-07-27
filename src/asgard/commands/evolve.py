@@ -21,6 +21,8 @@ def _root(start: str = ".") -> str:
             text=True,
             timeout=10,
             check=False,
+            encoding="utf-8",
+            errors="replace",
         )
         if proc.returncode == 0 and proc.stdout.strip():
             return str(Path(proc.stdout.strip()).resolve())

@@ -121,7 +121,15 @@ class Lesson:
 def _at_base(root: str, rel: str, base: str) -> str | None:
     """base 시점의 본문. 새 파일이면 None."""
     try:
-        proc = subprocess.run(["git", "show", f"{base}:{rel}"], cwd=root, capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(
+            ["git", "show", f"{base}:{rel}"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            encoding="utf-8",
+            errors="replace",
+        )
     except OSError, subprocess.SubprocessError:
         return None
     return proc.stdout if proc.returncode == 0 else None
@@ -130,7 +138,15 @@ def _at_base(root: str, rel: str, base: str) -> str | None:
 def _numstat(root: str, base: str) -> dict[str, tuple[int, int]]:
     """경로 → (추가행, 삭제행). 바이너리(`-`)는 0 — 못 센 것을 0 이라 부르되 인벤토리에는 남긴다."""
     try:
-        proc = subprocess.run(["git", "diff", "--numstat", base], cwd=root, capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(
+            ["git", "diff", "--numstat", base],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding="utf-8",
+            errors="replace",
+        )
     except OSError, subprocess.SubprocessError:
         return {}
     out: dict[str, tuple[int, int]] = {}

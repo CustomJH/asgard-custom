@@ -167,7 +167,14 @@ def snapshot_data(root: str) -> dict:
 def _workspace_files(root: str) -> list[dict]:
     try:
         result = subprocess.run(
-            ["git", "status", "--short"], cwd=root, capture_output=True, text=True, timeout=10, check=False
+            ["git", "status", "--short"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
         )
     except Exception:
         return []
@@ -196,6 +203,8 @@ def _run_task(task_id: str, root: str) -> None:
             env={**os.environ, "ASGARD_UNATTENDED": "1"},
             start_new_session=os.name == "posix",
             creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+            encoding="utf-8",
+            errors="replace",
         )
         with _TASK_LOCK:
             if task_id in _TASKS:

@@ -127,7 +127,12 @@ def _added_prose(root: str, rel: str) -> str:
     """추적 파일은 diff 추가행, 미추적 파일은 전체 본문을 반환한다."""
     tracked = (
         subprocess.run(
-            ["git", "-C", root, "ls-files", "--error-unmatch", "--", rel], capture_output=True, text=True, timeout=30
+            ["git", "-C", root, "ls-files", "--error-unmatch", "--", rel],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            encoding="utf-8",
+            errors="replace",
         ).returncode
         == 0
     )
@@ -142,6 +147,8 @@ def _added_prose(root: str, rel: str) -> str:
         capture_output=True,
         text=True,
         timeout=30,
+        encoding="utf-8",
+        errors="replace",
     ).stdout
     return "\n".join(line[1:] for line in diff.splitlines() if line.startswith("+") and not line.startswith("+++"))
 

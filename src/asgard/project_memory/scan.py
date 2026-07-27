@@ -143,7 +143,14 @@ def changed_paths(root: str) -> list[str]:
 def source_revision(root: str) -> str:
     try:
         head = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=root, text=True, capture_output=True, check=True, timeout=10
+            ["git", "rev-parse", "HEAD"],
+            cwd=root,
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+            encoding="utf-8",
+            errors="replace",
         ).stdout.strip()
         status = subprocess.run(
             ["git", "status", "--porcelain=v1", "-z"], cwd=root, capture_output=True, check=True, timeout=10

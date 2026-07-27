@@ -196,6 +196,8 @@ def main():
                 text=True,
                 timeout=15,
                 cwd=root,
+                encoding="utf-8",
+                errors="replace",
             )
             try:
                 result = json.loads(r.stdout or "{}") if r.returncode == 0 else {}
@@ -208,7 +210,15 @@ def main():
             # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch 는 CLI 가 관리).
             # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 외부 클라이언트 훅 전용이다.
             try:
-                n = subprocess.run([exe, "evolve", "nudge"], capture_output=True, text=True, timeout=10, cwd=root)
+                n = subprocess.run(
+                    [exe, "evolve", "nudge"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=root,
+                    encoding="utf-8",
+                    errors="replace",
+                )
                 nudge = (n.stdout or "").strip()
                 if n.returncode == 0 and nudge:
                     messages.append("⠶ " + nudge.splitlines()[0])
@@ -218,7 +228,13 @@ def main():
             # 스폰하고, off 는 넛지 한 줄만 (latch·모드 분기 전부 CLI 단일 출처)
             try:
                 n = subprocess.run(
-                    [exe, "memory", "norn", "--wake"], capture_output=True, text=True, timeout=10, cwd=root
+                    [exe, "memory", "norn", "--wake"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=root,
+                    encoding="utf-8",
+                    errors="replace",
                 )
                 nudge = (n.stdout or "").strip()
                 if n.returncode == 0 and nudge:
@@ -236,7 +252,7 @@ def main():
             cmd = [exe, "memory", "recall", "--provider", mode, "--", prompt]
         else:
             cmd = [exe, "memory", "snapshot", "--provider", mode]
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace")
         note = (r.stdout or "").strip()
         if r.returncode == 0 and note:
             if mode == "cursor":

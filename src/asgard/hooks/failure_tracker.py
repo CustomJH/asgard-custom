@@ -125,6 +125,8 @@ def log_fail(proj: str, sid: str, key: str, n: int) -> None:
             timeout=10,
             env={**os.environ, "CLAUDE_PROJECT_DIR": proj},
             check=False,
+            encoding="utf-8",
+            errors="replace",
         )
     except Exception:
         pass

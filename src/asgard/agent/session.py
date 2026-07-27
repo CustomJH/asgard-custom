@@ -1034,6 +1034,8 @@ def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subpr
         input=stdin,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         cwd=root,
         timeout=300,  # append(PASS) 가 하네스 베이스라인 체크를 직접 돌린다 (체크당 기본 120s)
     )
@@ -1049,6 +1051,8 @@ def gate(root: str, session: str = "native") -> tuple[bool, str]:
         text=True,
         cwd=root,
         timeout=60,
+        encoding="utf-8",
+        errors="replace",
     )
     if '"block"' in (p.stdout or ""):
         try:

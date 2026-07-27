@@ -786,7 +786,9 @@ def _design_engine_checks() -> list[dict]:
         import subprocess
 
         try:
-            version = subprocess.run([node, "-v"], capture_output=True, text=True, timeout=10).stdout.strip()
+            version = subprocess.run(
+                [node, "-v"], capture_output=True, text=True, timeout=10, encoding="utf-8", errors="replace"
+            ).stdout.strip()
         except Exception:
             version = ""
     major = int(version.lstrip("v").split(".")[0]) if version.lstrip("v").split(".")[0].isdigit() else 0

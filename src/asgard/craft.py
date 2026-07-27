@@ -46,7 +46,15 @@ class Report:
 
 def _base_text(root: str, rel: str, base: str) -> str | None:
     try:
-        proc = subprocess.run(["git", "show", f"{base}:{rel}"], cwd=root, capture_output=True, text=True, timeout=20)
+        proc = subprocess.run(
+            ["git", "show", f"{base}:{rel}"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            timeout=20,
+            encoding="utf-8",
+            errors="replace",
+        )
     except OSError, subprocess.SubprocessError:
         return None
     return proc.stdout if proc.returncode == 0 else None
@@ -154,7 +162,9 @@ def changed_paths(root: str, base: str = "HEAD") -> tuple[str, ...]:
     out: list[str] = []
     for args in (["diff", "--name-only", base], ["ls-files", "--others", "--exclude-standard"]):
         try:
-            proc = subprocess.run(["git", *args], cwd=root, capture_output=True, text=True, timeout=30)
+            proc = subprocess.run(
+                ["git", *args], cwd=root, capture_output=True, text=True, timeout=30, encoding="utf-8", errors="replace"
+            )
         except OSError, subprocess.SubprocessError:
             continue
         if proc.returncode == 0:

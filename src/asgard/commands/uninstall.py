@@ -15,7 +15,9 @@ def _installed() -> bool:
     env: dict[str, str] = {**os.environ, "NO_COLOR": "1"}
     env.pop("FORCE_COLOR", None)
     try:
-        out = subprocess.run(["uv", "tool", "list"], capture_output=True, text=True, env=env).stdout
+        out = subprocess.run(
+            ["uv", "tool", "list"], capture_output=True, text=True, env=env, encoding="utf-8", errors="replace"
+        ).stdout
     except OSError:
         return False
     return any(line.split(" ", 1)[0] == "asgard" for line in out.splitlines())
@@ -35,7 +37,9 @@ def run_uninstall(yes: bool = False, dry_run: bool = False) -> int:
 
     ui.phase("remove uv tool")
     with ui.spin("uninstalling asgard…"):
-        result = subprocess.run(["uv", "tool", "uninstall", "asgard"], capture_output=True, text=True)
+        result = subprocess.run(
+            ["uv", "tool", "uninstall", "asgard"], capture_output=True, text=True, encoding="utf-8", errors="replace"
+        )
     if result.returncode == 0:
         ui.done("asgard removed")
         return 0

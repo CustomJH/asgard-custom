@@ -114,6 +114,8 @@ def _hook_guard(root: str, module: str, tool_input: dict) -> str | None:
             text=True,
             timeout=10,
             cwd=root,
+            encoding="utf-8",
+            errors="replace",
         )
         if p.returncode != 0:
             return (p.stderr or p.stdout or module + " 차단").strip()[:500]
@@ -427,6 +429,8 @@ def _extract_hwp(path: str) -> str:
                 text=True,
                 timeout=_TIMEOUT,
                 check=False,
+                encoding="utf-8",
+                errors="replace",
             )
         except FileNotFoundError as exc:
             raise ToolError("HWP 읽기에는 Node.js 18+가 필요합니다") from exc
@@ -557,6 +561,7 @@ def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None)
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
+        encoding="utf-8",
         errors="replace",
         **group,
     )
@@ -655,6 +660,7 @@ class BackgroundProcessManager:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            encoding="utf-8",
             errors="replace",
             **group,
         )

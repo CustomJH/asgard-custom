@@ -84,9 +84,21 @@ def _private_workspace(root: str, name: str) -> Path:
 
     git = shutil.which("git")
     if git:
-        top = subprocess.run([git, "-C", root, "rev-parse", "--show-toplevel"], capture_output=True, text=True)
+        top = subprocess.run(
+            [git, "-C", root, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
         if top.returncode == 0:
-            dirty = subprocess.run([git, "-C", root, "status", "--porcelain"], capture_output=True, text=True)
+            dirty = subprocess.run(
+                [git, "-C", root, "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+            )
             if dirty.stdout.strip():
                 sys.stderr.write("Note: private workspace starts from HEAD; uncommitted host changes are not copied.\n")
             cloned = subprocess.run([git, "clone", "--local", "--no-hardlinks", root, str(target)], check=False)
@@ -121,7 +133,14 @@ def run_container(root: str, *, shared: bool = False, name: str | None = None) -
         return 2
 
     image = f"asgard-runtime:{__version__}"
-    inspected = subprocess.run([engine, "image", "inspect", image], capture_output=True, text=True, check=False)
+    inspected = subprocess.run(
+        [engine, "image", "inspect", image],
+        capture_output=True,
+        text=True,
+        check=False,
+        encoding="utf-8",
+        errors="replace",
+    )
     if inspected.returncode:
         kit = str(files("asgard").joinpath("assets", "container_kit"))
         built = subprocess.run(
@@ -172,19 +191,31 @@ def run(root: str, *, shared: bool = False, name: str | None = None) -> int:
             sys.stderr.write("Private-clone isolation requires Git; use --execution sandbox-shared.\n")
             return 2
         git = subprocess.run(
-            [git_bin, "-C", root, "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False
+            [git_bin, "-C", root, "rev-parse", "--show-toplevel"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
         )
         if git.returncode:
             sys.stderr.write("Private-clone isolation requires a Git repository; use --execution sandbox-shared.\n")
             return 2
         dirty = subprocess.run(
-            [git_bin, "-C", root, "status", "--porcelain"], capture_output=True, text=True, check=False
+            [git_bin, "-C", root, "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
         )
         if dirty.stdout.strip():
             sys.stderr.write("Note: private clone starts from HEAD; uncommitted host changes are not copied.\n")
 
     name = name or sandbox_name(root, shared)
-    listed = subprocess.run([sbx, "ls", "-q"], capture_output=True, text=True, check=False)
+    listed = subprocess.run(
+        [sbx, "ls", "-q"], capture_output=True, text=True, check=False, encoding="utf-8", errors="replace"
+    )
     if listed.returncode == 0 and name in listed.stdout.splitlines():
         return subprocess.run([sbx, "run", "--name", name], cwd=root, check=False).returncode
 

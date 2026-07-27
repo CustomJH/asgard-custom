@@ -131,12 +131,24 @@ def _git_status(root: str) -> str:
 
     try:
         b = subprocess.run(
-            ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True, timeout=3
+            ["git", "-C", root, "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            encoding="utf-8",
+            errors="replace",
         )
         if b.returncode != 0:
             return ""
         branch = b.stdout.strip()
-        d = subprocess.run(["git", "-C", root, "status", "--porcelain"], capture_output=True, text=True, timeout=3)
+        d = subprocess.run(
+            ["git", "-C", root, "status", "--porcelain"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+            encoding="utf-8",
+            errors="replace",
+        )
         return branch + ("*" if d.stdout.strip() else "")
     except Exception:
         return ""

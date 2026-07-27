@@ -720,7 +720,12 @@ class Heimdall:
 
         try:
             p = subprocess.run(
-                ["git", "-C", self.root, "status", "--porcelain"], capture_output=True, text=True, timeout=30
+                ["git", "-C", self.root, "status", "--porcelain"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                encoding="utf-8",
+                errors="replace",
             )
             return p.stdout if p.returncode == 0 else ""
         except Exception:

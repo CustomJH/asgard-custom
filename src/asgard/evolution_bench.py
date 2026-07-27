@@ -62,7 +62,16 @@ def _shell_runner(root: str, cmd: str, metric: str, timeout: int) -> Callable[[s
         env = {**os.environ, "ASGARD_LEARNED_DISABLE": disable}
         try:
             proc = subprocess.run(
-                cmd, shell=True, cwd=root, env=env, capture_output=True, text=True, timeout=timeout, check=False
+                cmd,
+                shell=True,
+                cwd=root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                check=False,
+                encoding="utf-8",
+                errors="replace",
             )
         except subprocess.TimeoutExpired:
             return None

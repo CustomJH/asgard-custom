@@ -85,7 +85,9 @@ def maintain(exe, root, force=False):
     if not force and time.time() - newest < REFRESH_SECONDS:
         return
     for command in ([exe, "map", "update", "--quiet"], [exe, "map", "scan", "--quiet"]):
-        result = subprocess.run(command, capture_output=True, text=True, timeout=30, cwd=root)
+        result = subprocess.run(
+            command, capture_output=True, text=True, timeout=30, cwd=root, encoding="utf-8", errors="replace"
+        )
         if result.returncode != 0:
             return
     try:
@@ -119,7 +121,9 @@ def main():
         if current_event == "Stop":
             return 0
         cmd = [exe, "map", "context", "--query", query(data)]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=15, cwd=root)
+        result = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=15, cwd=root, encoding="utf-8", errors="replace"
+        )
         note = (result.stdout or "").strip()
         if result.returncode == 0 and note:
             emit(current_mode, current_event, note)
