@@ -29,10 +29,10 @@ _ACQUIRE = frozenset(
     {"open", "Popen", "NamedTemporaryFile", "TemporaryFile", "ThreadPoolExecutor", "ProcessPoolExecutor"}
 )
 _RELEASE = frozenset({"close", "shutdown", "terminate", "kill", "wait", "communicate", "__exit__"})
-# `os.open` 은 이름만 같고 물건이 다르다 — 파일 객체가 아니라 int fd 라서 해제도 `os.close(fd)`
-# 나 `os.fdopen(fd)` 로의 소유 이전으로 일어난다. 같은 자로 재면 전부 오탐이 된다(실측: 저장소
-# 전수에서 이 한 가지가 오탐의 절반). 미검출로 남긴다.
-_ACQUIRE_EXCLUDE_BASE = frozenset({"os"})
+# 이름만 `open` 이고 자원이 아닌 것들. `os.open` 은 파일 객체가 아니라 int fd 라서 해제가
+# `os.close(fd)`·`os.fdopen(fd)` 로 일어나고, `webbrowser.open(url)` 은 아예 bool 을 돌려준다.
+# 같은 자로 재면 둘 다 오탐이 된다(실측: 전수에서 os 가 오탐의 절반, webbrowser 가 잔여의 절반).
+_ACQUIRE_EXCLUDE_BASE = frozenset({"os", "webbrowser"})
 _CACHE_DECORATORS = frozenset({"lru_cache", "cache"})
 _GROW = frozenset({"append", "add", "extend", "update", "setdefault", "insert", "appendleft"})
 _SHRINK = frozenset({"clear", "pop", "popleft", "popitem", "remove", "discard"})
@@ -276,7 +276,15 @@ def _released(scope: ast.AST, target: str) -> bool:
             return True
         if isinstance(node, ast.Assign) and isinstance(node.value, ast.Name) and node.value.id == target:
             return any(isinstance(t, ast.Attribute) for t in node.targets)  # self.x = f — 소유 이전
+        if isinstance(node, (ast.Dict, ast.List, ast.Tuple, ast.Set)) and _holds(node, target):
+            return True  # 컨테이너에 담긴 순간 수명은 그 컨테이너 주인의 것이다
     return False
+
+
+def _holds(container: ast.AST, target: str) -> bool:
+    """자료구조 리터럴이 그 이름을 담고 있는가 — `{"process": p, …}` 는 소유를 표에 넘긴 것이다."""
+    values = container.values if isinstance(container, ast.Dict) else getattr(container, "elts", [])
+    return any(isinstance(v, ast.Name) and v.id == target for v in values)
 
 
 def _acquire_findings(tree: ast.AST, rel: str, spans: list[Unit], parents: dict[int, ast.AST]) -> list[Finding]:
@@ -287,6 +295,8 @@ def _acquire_findings(tree: ast.AST, rel: str, spans: list[Unit], parents: dict[
             continue
         name = _acquire_name(node)
         if name not in _ACQUIRE:
+            continue
+        if _detached(node):
             continue
         holder = _holder(node, parents)
         if holder is not None and _released(_scope_of(node, parents, tree), holder):
@@ -305,6 +315,24 @@ def _acquire_findings(tree: ast.AST, rel: str, spans: list[Unit], parents: dict[
             )
         )
     return out
+
+
+def _detached(call: ast.Call) -> bool:
+    """의도적 분리 스폰인가 — 새 세션에서 파이프 없이 띄운 프로세스.
+
+    붙잡을 핸들도 잃을 출력도 없으므로 이 규칙이 말하는 종류의 자원이 아니다. 훅 타임아웃과
+    긴 작업을 격리하려고 일부러 손을 놓는 형태를, 손을 놓았다는 이유로 결함이라 부를 수는 없다.
+    """
+    keywords = {kw.arg: kw.value for kw in call.keywords}
+    session = keywords.get("start_new_session")
+    if not (isinstance(session, ast.Constant) and session.value is True):
+        return False
+    streams = ("stdout", "stderr", "stdin")
+    return all(_is_devnull(keywords.get(name)) for name in streams)
+
+
+def _is_devnull(node: ast.AST | None) -> bool:
+    return isinstance(node, ast.Attribute) and node.attr == "DEVNULL"
 
 
 def _holder(call: ast.Call, parents: dict[int, ast.AST]) -> str | None:

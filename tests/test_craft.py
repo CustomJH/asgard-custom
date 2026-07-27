@@ -107,6 +107,33 @@ class ResourceLifetimeTest(unittest.TestCase):
         for src in (managed, closed, handed):
             self.assertEqual(_patterns(src), set(), src)
 
+    def test_webbrowser_open_is_not_a_resource(self):
+        """이름만 open 이고 bool 을 돌려준다 — 자원으로 재면 브라우저 여는 자리마다 오탐이 난다."""
+        src = "import webbrowser\n\ndef f(url):\n    if not webbrowser.open(url):\n        raise OSError\n"
+        self.assertEqual(_patterns(src), set())
+
+    def test_a_handle_stored_in_a_container_has_an_owner(self):
+        """`{"process": p}` 로 표에 담기면 수명은 그 표 주인의 것이다 — 지역에서 닫을 일이 아니다."""
+        src = 'import subprocess\n\ndef f(self, cmd):\n    p = subprocess.Popen(cmd)\n    job = {"process": p}\n    self.jobs["x"] = job\n'
+        self.assertEqual(_patterns(src), set())
+
+    def test_a_deliberate_detached_spawn_is_not_a_leak(self):
+        """새 세션에 파이프 없이 띄운 프로세스는 붙잡을 핸들도 잃을 출력도 없다."""
+        detached = (
+            "import subprocess\n\ndef f(exe):\n    subprocess.Popen(\n        [exe],\n"
+            "        stdout=subprocess.DEVNULL,\n        stderr=subprocess.DEVNULL,\n"
+            "        stdin=subprocess.DEVNULL,\n        start_new_session=True,\n    )\n"
+        )
+        self.assertEqual(_patterns(detached), set())
+
+    def test_a_piped_spawn_is_still_judged(self):
+        """면제는 파이프가 없을 때만이다 — 파이프를 열어두고 손을 놓으면 그건 누수다."""
+        piped = (
+            "import subprocess\n\ndef f(exe):\n    subprocess.Popen(\n        [exe],\n"
+            "        stdout=subprocess.PIPE,\n        start_new_session=True,\n    )\n"
+        )
+        self.assertIn("unclosed-acquire", _patterns(piped))
+
     def test_os_open_is_not_judged_by_the_file_object_rule(self):
         """int fd 는 해제 규약이 다르다 — 같은 자로 재면 전부 오탐이 된다 (미검출로 남긴 영역)."""
         src = "import os\n\ndef f(p):\n    fd = os.open(p, os.O_RDONLY)\n    os.close(fd)\n"

@@ -63,6 +63,28 @@ class TestScan(unittest.TestCase):
         )
         self.assertEqual(health.scan(self.root).deep_units, 1)
 
+    def test_an_elif_chain_is_one_level_not_six(self) -> None:
+        """ast 는 elif 를 orelse 안의 If 로 표현한다 — 그대로 세면 평평한 분기 사슬이 깊이가 된다.
+
+        읽는 사람에게 elif 여섯은 한 단이고, 그걸 중첩으로 세면 계측이 부채를 과대 계상한다
+        (실측: 이 보정 하나로 저장소의 깊은 함수가 35 → 22 로 내려갔다).
+        """
+        chain = "def pick(v):\n    if v == 0:\n        return 0\n"
+        chain += "".join(f"    elif v == {i}:\n        return {i}\n" for i in range(1, 7))
+        _write(self.root, "pkg/__init__.py", "")
+        _write(self.root, "pkg/chain.py", chain)
+        self.assertEqual(health.scan(self.root).deep_units, 0)
+
+    def test_a_real_else_block_still_nests(self) -> None:
+        """면제는 elif 사슬에만 준다 — else 안에 진짜로 들여쓴 블록은 그대로 한 단이다."""
+        body = (
+            "def f(a):\n    if a:\n        return 1\n    else:\n        for b in a:\n"
+            "            while b:\n                with b:\n                    with a:\n                        return 2\n"
+        )
+        _write(self.root, "pkg/__init__.py", "")
+        _write(self.root, "pkg/nested.py", body)
+        self.assertEqual(health.scan(self.root).deep_units, 1)
+
     def test_clone_detection_finds_cross_file_duplication(self) -> None:
         """같은 6행 블록이 두 파일에 있으면 두 파일 모두 중복 행으로 표시된다."""
         _write(self.root, "pkg/__init__.py", "")

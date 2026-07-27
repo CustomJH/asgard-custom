@@ -300,6 +300,14 @@ def _python_units(text: str) -> tuple[int, int, int, int]:
 _BRANCHING = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith, ast.Try, ast.match_case)
 
 
+def _elif(parent: ast.AST, child: ast.AST) -> bool:
+    """`elif` 인가. ast 는 elif 를 orelse 안의 If 로 표현해서 평평한 분기 사슬이 중첩으로 잡힌다 —
+    분기 여섯 개짜리 elif 사슬이 깊이 7 로 나온다. 읽는 사람에게 그것은 한 단이다."""
+    if not (isinstance(parent, ast.If) and isinstance(child, ast.If)):
+        return False  # 자식이 If 일 때만 elif 다 — 안 그러면 문장 하나짜리 else 블록도 전부 면제된다
+    return len(parent.orelse) == 1 and parent.orelse[0] is child
+
+
 def _depth(fn: ast.AST) -> int:
     """함수 본문의 분기 중첩 깊이. 중첩 함수는 자기 깊이로 따로 세므로 여기서 내려가지 않는다."""
 
@@ -308,7 +316,8 @@ def _depth(fn: ast.AST) -> int:
         for child in ast.iter_child_nodes(node):
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 continue
-            best = max(best, walk(child, depth + 1 if isinstance(child, _BRANCHING) else depth))
+            deeper = isinstance(child, _BRANCHING) and not _elif(node, child)
+            best = max(best, walk(child, depth + 1 if deeper else depth))
         return best
 
     return walk(fn, 0)
