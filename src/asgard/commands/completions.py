@@ -20,6 +20,7 @@ _SUMMARY = {
     "map": "project map — orientation, relation graph, and bounded context",
     "health": "codebase erosion signal — size, duplication, coupling, hotspots",
     "craft": "micro-shape of THIS diff — unit size/nesting, resource lifetime, cost",
+    "thor": "backend procedure engine — verb playbooks, the next verb, and the correctness gate",
     "surface": "public API surface vs a base ref — breaking changes and call-site obligations",
     "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
@@ -45,6 +46,7 @@ _FLAGS = {
     "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
     "health": ["--snapshot", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
+    "thor": ["--base", "--path", "--json", "--quiet"],
     "surface": ["--base", "--json", "--quiet"],
     "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],

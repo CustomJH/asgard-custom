@@ -260,6 +260,23 @@ def craft(
     raise typer.Exit(run_craft(base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet))
 
 
+@app.command(help="backend procedure engine — verb playbooks, the next verb, and the correctness gate")
+def thor(
+    verb: str = typer.Argument(
+        "", help="survey|shape|diagnose|implement|migrate|integrate|harden|scale|sweep|evidence|squad|gate"
+    ),
+    base: str = typer.Option("HEAD", "--base", help="gate only: git ref to compare against (default HEAD)"),
+    path: list[str] = typer.Option(
+        None, "--path", help="gate only: judge these paths instead of the diff (repeatable)"
+    ),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.thor import run_thor
+
+    raise typer.Exit(run_thor(verb, base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet))
+
+
 @app.command(help="codebase erosion signal — size, duplication, coupling, hotspots, and the trend")
 def health(
     snapshot: bool = typer.Option(False, "--snapshot", help="record this state so later runs can show a delta"),

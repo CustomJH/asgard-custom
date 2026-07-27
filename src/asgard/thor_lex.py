@@ -1,0 +1,183 @@
+"""토르 게이트 규칙 (중괄호 계열) — Java·Kotlin·C#·TS/JS·Go·Swift·Rust.
+
+Python 만 판정하는 백엔드 게이트는 거의 아무 백엔드도 판정하지 못한다. 그래서 어휘 수준으로
+옮길 수 있는 규칙 셋만 여기로 옮긴다: **삼킨 예외 · 하드코딩된 시크릿 · SQL 문자열 보간**.
+타임아웃·트랜잭션·금액은 옮기지 않는다 — 클라이언트마다 이름이 다르고 문법만으로는 못 가른다.
+못 옮긴 규칙은 미측정으로 정직하게 보고한다(`thor_gate.unmeasured`).
+
+`craft_lex.scrub` 을 쓰는 곳과 원문을 쓰는 곳이 갈린다. 구조(빈 catch 본문)는 문자열·주석이
+지워진 사본에서 봐야 문자열 안의 `catch {}` 에 속지 않고, 내용(SQL·시크릿)은 원문에서만 보인다.
+"""
+
+from __future__ import annotations
+
+import re
+
+from .craft_lex import language, scrub
+from .craft_rules import Finding, Unit, _owner
+from .thor_rules import _SQL_CLAUSE, _SQL_VERB, _VALUE_SLOT, _secretish, secret_name
+
+# 이 파일이 판정하는 언어. Rust 는 catch 가 없고 Go 도 없다 — 시크릿·SQL 만 걸린다.
+JUDGED = frozenset({"java", "kotlin", "csharp", "ts", "go", "swift", "rust"})
+_NO_CATCH = frozenset({"go", "rust"})  # catch 문법 자체가 없다 — 규칙을 발화시키지 않는다
+
+# 잡아도 반례가 없는 넓은 예외 타입. 좁은 타입의 침묵은 알림에 그친다(Python 쪽과 같은 갈래).
+_BROAD_TYPE = re.compile(r"\b(Exception|Throwable|RuntimeException|Error|NSError|Any)\b")
+_CATCH_EMPTY = re.compile(r"\bcatch\b([^{;]*)\{(\s*)\}")
+# 언어별 선언 문법을 하나로 — `val x = "..."`, `String x = "..."`, `x: String = "..."`, `x := "..."`.
+_ASSIGN = re.compile(
+    r"""(?:^|[;{}\s])(?:(?:const|let|var|val|final|static|readonly|private|public|protected)\s+)*"""
+    r"""(?:[A-Za-z_][\w<>\[\].]*\s+)?([A-Za-z_]\w*)\s*(?::\s*[\w<>\[\].?]+\s*)?(?::?=)\s*(["'`])([^"'`\n]*)\2"""
+)
+# 문자열 안의 구멍 — Kotlin/Swift `$x`·`\(x)`, TS/Kotlin `${...}`, C# `{0}`, Java `%s`.
+_HOLE_IN_STRING = re.compile(r"\$\{[^}]*\}|\$[A-Za-z_]\w*|\\\([^)]*\)|\{\d+\}|%[sdf]")
+_STRING = re.compile(r"(\"(?:[^\"\\\n]|\\.)*\"|`(?:[^`\\]|\\.)*`)", re.S)
+# 문자열 뒤에 이어지는 `+ <식별자>` — 자바·C# 의 고전적인 질의 조립.
+_CONCAT_HOLE = re.compile(r"\+\s*(?![\"'`])[A-Za-z_(]")
+
+
+def _line_of(starts: list[int], offset: int) -> int:
+    lo, hi = 0, len(starts) - 1
+    while lo < hi:
+        mid = (lo + hi + 1) // 2
+        if starts[mid] <= offset:
+            lo = mid
+        else:
+            hi = mid - 1
+    return lo + 1
+
+
+def _starts(text: str) -> list[int]:
+    out, pos = [0], 0
+    for line in text.split("\n")[:-1]:
+        pos += len(line) + 1
+        out.append(pos)
+    return out
+
+
+# ── ① 삼킨 예외 ────────────────────────────────────────────────────
+
+
+def _catch_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: list[int], lang: str) -> list[Finding]:
+    out: list[Finding] = []
+    for match in _CATCH_EMPTY.finditer(clean):
+        line = _line_of(starts, match.start())
+        header = match.group(1)
+        # 본문에 주석이 있으면 "의도된 침묵"의 근거가 코드에 남아 있는 것 — 알림으로 낮춘다.
+        body = raw[match.start(2) : match.end(2)]
+        # TS/JS 의 catch 는 타입을 못 붙인다 — 전부 넓다. 타입 없는 catch 를 좁다고 읽으면 이 언어
+        # 에서는 규칙이 통째로 발화하지 않는다.
+        broad = lang == "ts" or bool(_BROAD_TYPE.search(header)) or not header.strip().strip("()")
+        blocking = broad and "//" not in body and "/*" not in body
+        out.append(
+            Finding(
+                "swallowed-exception",
+                rel,
+                line,
+                _owner(spans, line),
+                "catch 본문이 비어 있다" + ("" if broad else " (좁은 타입)"),
+                "처리할 수 없으면 문맥을 붙여 전파해라 — 삼킬 근거가 있으면 그 근거를 코드에 남겨라",
+                blocking=blocking,
+            )
+        )
+    return out
+
+
+# ── ② 하드코딩된 시크릿 ─────────────────────────────────────────────
+
+
+def _secret_findings(raw: str, rel: str, spans: list[Unit], starts: list[int]) -> list[Finding]:
+    out: list[Finding] = []
+    for match in _ASSIGN.finditer(raw):
+        name, value = match.group(1), match.group(3)
+        if not secret_name(name) or not _secretish(value):
+            continue
+        line = _line_of(starts, match.start(1))
+        out.append(
+            Finding(
+                "secret-literal",
+                rel,
+                line,
+                _owner(spans, line),
+                f"{name} 에 비밀처럼 생긴 문자열이 박혀 있다",
+                "환경변수·시크릿 저장소로 옮기고, 이미 커밋됐으면 그 값을 폐기해라",
+            )
+        )
+    return out
+
+
+# ── ③ SQL 문자열 보간 ───────────────────────────────────────────────
+
+
+def _statements(clean: str) -> list[tuple[int, int]]:
+    """문장 경계 — 질의는 여러 줄에 걸쳐 이어붙여지므로 줄 단위로는 못 본다."""
+    out: list[tuple[int, int]] = []
+    start = 0
+    for i, char in enumerate(clean):
+        if char in ";{}":
+            if i > start:
+                out.append((start, i))
+            start = i + 1
+    if start < len(clean):
+        out.append((start, len(clean)))
+    return out
+
+
+def _sql_holes(region: str) -> list[str] | None:
+    """SQL 질의면 각 구멍 앞의 문맥을, 아니면 None."""
+    literals = [m.group(1)[1:-1] for m in _STRING.finditer(region)]
+    if not literals:
+        return None
+    flat = " ".join(literals)
+    if not (_SQL_VERB.search(flat) and _SQL_CLAUSE.search(flat)):
+        return None
+    before: list[str] = []
+    for literal in literals:
+        cursor = 0
+        for hole in _HOLE_IN_STRING.finditer(literal):
+            before.append(literal[cursor : hole.start()])
+            cursor = hole.end()
+    for match in _CONCAT_HOLE.finditer(region):
+        prior = _STRING.findall(region[: match.start()])
+        before.append(prior[-1][1:-1] if prior else "")
+    return before or None
+
+
+def _sql_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: list[int]) -> list[Finding]:
+    out: list[Finding] = []
+    for start, end in _statements(clean):
+        before = _sql_holes(raw[start:end])
+        if before is None:
+            continue
+        value_slot = any(_VALUE_SLOT.search(chunk.rstrip()) for chunk in before)
+        line = _line_of(starts, start + len(raw[start:end]) - len(raw[start:end].lstrip()))
+        out.append(
+            Finding(
+                "sql-interpolated",
+                rel,
+                line,
+                _owner(spans, line),
+                "값 자리에 문자열 보간" if value_slot else "SQL 문자열을 보간으로 조립 (식별자 자리)",
+                "파라미터 바인딩으로 옮겨라 — 값 자리는 바인딩으로 전부 대체된다"
+                if value_slot
+                else "식별자는 바인딩이 안 된다 — 허용 목록으로 좁히고 그 근거를 남겨라",
+                blocking=value_slot,
+            )
+        )
+    return out
+
+
+def findings(text: str, rel: str, spans: list[Unit], lang: str) -> list[Finding] | None:
+    if lang not in JUDGED:
+        return None
+    clean = scrub(text, lang)
+    starts = _starts(text)
+    out = _secret_findings(text, rel, spans, starts) + _sql_findings(text, clean, rel, spans, starts)
+    if lang not in _NO_CATCH:
+        out.extend(_catch_findings(text, clean, rel, spans, starts, lang))
+    return sorted(out, key=lambda f: (f.line, f.rule))
+
+
+def lang_of(path: str) -> str | None:
+    lang = language(path)
+    return lang if lang in JUDGED else None
