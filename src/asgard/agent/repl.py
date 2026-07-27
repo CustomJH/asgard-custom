@@ -966,160 +966,179 @@ class _Reconfigure(Exception):
         self.rp, self.msg = rp, msg
 
 
+def _trinity_models(root: str) -> None:
+    """/trinity models — 호스트별 역할 모델 현황."""
+    from ..commands.role import role_model_state
+
+    for host, roles in role_model_state(root).items():
+        sys.stdout.write(f"  {ui.bold(host)}\n")
+        for role, selected in roles.items():
+            if host == "native":
+                value = f"{selected['provider']}:{selected['model']}"
+            else:
+                value = str(selected["model"])
+                if selected.get("effort"):
+                    value += f" · effort={selected['effort']}"
+            sys.stdout.write(f"    {ui.paint(_O, role.ljust(12))} {value}\n")
+
+
+def _trinity_model(args: list[str], root: str, rp) -> None:
+    """/trinity model — 역할별 모델 지정·초기화. 인자가 없으면 대화형으로 고른다."""
+    values = args[1:] or _prompt_role_model(root, rp)
+    if not values:
+        return
+    _apply_role_model(values, root, rp)
+
+
+def _prompt_role_model(root: str, rp) -> list[str] | None:
+    """인자 없는 /trinity model — 대화형으로 (host, role, model) 을 고른다.
+
+    None 은 "고르지 못했다"이고 이유는 셋이다 — 프롬프트 불가·사용자 취소·native 위임.
+    셋 다 호출부가 할 일이 없다는 점에서 같아서 한 값으로 합쳤다."""
+    from ..commands.role import MODEL_HOSTS, role_model_state
+    from ..templates.agent_models import AGENT_MODEL_DEFAULTS
+    from .onboard import can_prompt
+
+    if not can_prompt():
+        sys.stdout.write(f"  {ui.dim(t('trinity_model_usage'))}\n")
+        return None
+    from ..picker import Option, available, pick
+
+    try:
+        if available():  # 인터랙티브 패널 — host→role→model 연계 창 (번호 입력은 폴백)
+            picked = pick(t("pick_host"), [Option(n, n) for n in MODEL_HOSTS])
+            if picked is None:
+                raise EOFError
+            host = picked
+            if host == "native":
+                _cmd_trinity("/trinity set", root, rp)
+                return None
+            state = role_model_state(root)[host]
+            roles = tuple(AGENT_MODEL_DEFAULTS[host])
+            picked = pick(t("pick_role"), [Option(n, n, detail=str(state[n]["model"])) for n in roles])
+            if picked is None:
+                raise EOFError
+            role = picked
+            current = str(state[role]["model"])
+            recommended = AGENT_MODEL_DEFAULTS[host][role]["model"]
+            models = list(
+                dict.fromkeys([current, recommended, *(item["model"] for item in AGENT_MODEL_DEFAULTS[host].values())])
+            )
+            mopts = [Option("", t("model_override_clear"))]
+            for model_id in models:
+                tags = []
+                if model_id == current:
+                    tags.append(t("current_tag"))
+                if model_id == recommended:
+                    tags.append(t("recommended_tag"))
+                mopts.append(Option(model_id, model_id, detail=", ".join(tags), current=model_id == current))
+            sel = pick(t("pick_model"), mopts, default=models.index(current) + 1, manual_hint=t("picker_manual_model"))
+            if sel is None:
+                raise EOFError
+            values = ["reset", host, role] if sel == "" else [host, role, sel]
+        else:
+            sys.stdout.write(f"\n  {ui.bold(t('pick_host'))}\n")
+            for i, name in enumerate(MODEL_HOSTS, 1):
+                sys.stdout.write(f"    {ui.paint(_O, str(i))} {name}\n")
+            choice = input("  " + t("number") + " [1]: ").strip() or "1"
+            if choice.lower() == "q":
+                raise EOFError
+            host = MODEL_HOSTS[int(choice) - 1]
+            if host == "native":
+                _cmd_trinity("/trinity set", root, rp)
+                return None
+
+            state = role_model_state(root)[host]
+            roles = tuple(AGENT_MODEL_DEFAULTS[host])
+            sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
+            for i, name in enumerate(roles, 1):
+                sys.stdout.write(f"    {ui.paint(_O, str(i))} {name} {ui.dim('· ' + state[name]['model'])}\n")
+            choice = input("  " + t("number") + " [1]: ").strip() or "1"
+            if choice.lower() == "q":
+                raise EOFError
+            role = roles[int(choice) - 1]
+
+            current = str(state[role]["model"])
+            recommended = AGENT_MODEL_DEFAULTS[host][role]["model"]
+            models = list(
+                dict.fromkeys([current, recommended, *(item["model"] for item in AGENT_MODEL_DEFAULTS[host].values())])
+            )
+            sys.stdout.write(f"\n  {ui.bold(t('pick_model'))}\n")
+            sys.stdout.write(f"    {ui.paint(_O, '0')} {t('model_override_clear')}\n")
+            for i, model_id in enumerate(models, 1):
+                tags = []
+                if model_id == current:
+                    tags.append(t("current_tag"))
+                if model_id == recommended:
+                    tags.append(t("recommended_tag"))
+                suffix = ui.dim(" · " + ", ".join(tags)) if tags else ""
+                sys.stdout.write(f"    {ui.paint(_O, str(i))} {model_id}{suffix}\n")
+            sys.stdout.write(f"    {ui.dim('m ' + t('model_id_prompt') + ' · q cancel')}\n")
+            default = str(models.index(current) + 1)
+            choice = input("  " + t("number") + f" [{default}]: ").strip() or default
+            if choice.lower() == "q":
+                raise EOFError
+            if choice == "0":
+                values = ["reset", host, role]
+            elif choice.lower() == "m":
+                values = [host, role, input("  " + t("model_id_prompt") + ": ").strip()]
+            else:
+                values = [host, role, models[int(choice) - 1]]
+    except ValueError, IndexError, EOFError, KeyboardInterrupt:
+        sys.stdout.write(f"  {t('cancelled')}\n")
+        return None
+    return values
+
+
+def _apply_role_model(values: list[str], root: str, rp) -> None:
+    """확정된 인자로 역할 모델을 저장하거나 초기화한다."""
+    from ..commands.role import configure_role_model
+
+    reset = values[:1] == ["reset"]
+    if reset:
+        values = values[1:]
+    if len(values) < 2 or (not reset and len(values) < 3) or len(values) > (2 if reset else 4):
+        sys.stdout.write(f"  {ui.dim(t('trinity_model_usage'))}\n")
+        return
+    host, role = values[:2]
+    model = None if reset else values[2]
+    extra = None if reset or len(values) < 4 else values[3]
+    try:
+        result = configure_role_model(
+            root,
+            host,
+            role,
+            model=model,
+            effort=extra if host != "native" else None,
+            provider=extra if host == "native" else None,
+            reset=reset,
+        )
+    except ValueError as exc:
+        sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {exc}\n")
+        return
+    effective = result["effective"]
+    value = f"{effective.get('provider')}:" if host == "native" else ""
+    value += str(effective["model"])
+    if effective.get("effort"):
+        value += f" · effort={effective['effort']}"
+    msg = t("trinity_model_reset" if reset else "trinity_model_saved", host=host, role=role, value=value)
+    if host == "native":
+        raise _Reconfigure(rp, msg)
+    sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
+    return
+
+
 def _cmd_trinity(cmd: str, root: str, rp) -> None:
     """/trinity — 역할 배치와 Dual Thinker 세션·프로젝트 모드."""
     from ..providers import PROVIDERS, resolve_trinity, save_config_section
 
     args = cmd.split()[1:]
     if args[:1] == ["models"]:
-        from ..commands.role import role_model_state
-
-        for host, roles in role_model_state(root).items():
-            sys.stdout.write(f"  {ui.bold(host)}\n")
-            for role, selected in roles.items():
-                if host == "native":
-                    value = f"{selected['provider']}:{selected['model']}"
-                else:
-                    value = str(selected["model"])
-                    if selected.get("effort"):
-                        value += f" · effort={selected['effort']}"
-                sys.stdout.write(f"    {ui.paint(_O, role.ljust(12))} {value}\n")
+        _trinity_models(root)
         return
 
     if args[:1] == ["model"]:
-        from ..commands.role import MODEL_HOSTS, configure_role_model, role_model_state
-
-        values = args[1:]
-        if not values:
-            from ..templates.agent_models import AGENT_MODEL_DEFAULTS
-            from .onboard import can_prompt
-
-            if not can_prompt():
-                sys.stdout.write(f"  {ui.dim(t('trinity_model_usage'))}\n")
-                return
-            from ..picker import Option, available, pick
-
-            try:
-                if available():  # 인터랙티브 패널 — host→role→model 연계 창 (번호 입력은 폴백)
-                    picked = pick(t("pick_host"), [Option(n, n) for n in MODEL_HOSTS])
-                    if picked is None:
-                        raise EOFError
-                    host = picked
-                    if host == "native":
-                        _cmd_trinity("/trinity set", root, rp)
-                        return
-                    state = role_model_state(root)[host]
-                    roles = tuple(AGENT_MODEL_DEFAULTS[host])
-                    picked = pick(t("pick_role"), [Option(n, n, detail=str(state[n]["model"])) for n in roles])
-                    if picked is None:
-                        raise EOFError
-                    role = picked
-                    current = str(state[role]["model"])
-                    recommended = AGENT_MODEL_DEFAULTS[host][role]["model"]
-                    models = list(
-                        dict.fromkeys(
-                            [current, recommended, *(item["model"] for item in AGENT_MODEL_DEFAULTS[host].values())]
-                        )
-                    )
-                    mopts = [Option("", t("model_override_clear"))]
-                    for model_id in models:
-                        tags = []
-                        if model_id == current:
-                            tags.append(t("current_tag"))
-                        if model_id == recommended:
-                            tags.append(t("recommended_tag"))
-                        mopts.append(Option(model_id, model_id, detail=", ".join(tags), current=model_id == current))
-                    sel = pick(
-                        t("pick_model"), mopts, default=models.index(current) + 1, manual_hint=t("picker_manual_model")
-                    )
-                    if sel is None:
-                        raise EOFError
-                    values = ["reset", host, role] if sel == "" else [host, role, sel]
-                else:
-                    sys.stdout.write(f"\n  {ui.bold(t('pick_host'))}\n")
-                    for i, name in enumerate(MODEL_HOSTS, 1):
-                        sys.stdout.write(f"    {ui.paint(_O, str(i))} {name}\n")
-                    choice = input("  " + t("number") + " [1]: ").strip() or "1"
-                    if choice.lower() == "q":
-                        raise EOFError
-                    host = MODEL_HOSTS[int(choice) - 1]
-                    if host == "native":
-                        _cmd_trinity("/trinity set", root, rp)
-                        return
-
-                    state = role_model_state(root)[host]
-                    roles = tuple(AGENT_MODEL_DEFAULTS[host])
-                    sys.stdout.write(f"\n  {ui.bold(t('pick_role'))}\n")
-                    for i, name in enumerate(roles, 1):
-                        sys.stdout.write(f"    {ui.paint(_O, str(i))} {name} {ui.dim('· ' + state[name]['model'])}\n")
-                    choice = input("  " + t("number") + " [1]: ").strip() or "1"
-                    if choice.lower() == "q":
-                        raise EOFError
-                    role = roles[int(choice) - 1]
-
-                    current = str(state[role]["model"])
-                    recommended = AGENT_MODEL_DEFAULTS[host][role]["model"]
-                    models = list(
-                        dict.fromkeys(
-                            [current, recommended, *(item["model"] for item in AGENT_MODEL_DEFAULTS[host].values())]
-                        )
-                    )
-                    sys.stdout.write(f"\n  {ui.bold(t('pick_model'))}\n")
-                    sys.stdout.write(f"    {ui.paint(_O, '0')} {t('model_override_clear')}\n")
-                    for i, model_id in enumerate(models, 1):
-                        tags = []
-                        if model_id == current:
-                            tags.append(t("current_tag"))
-                        if model_id == recommended:
-                            tags.append(t("recommended_tag"))
-                        suffix = ui.dim(" · " + ", ".join(tags)) if tags else ""
-                        sys.stdout.write(f"    {ui.paint(_O, str(i))} {model_id}{suffix}\n")
-                    sys.stdout.write(f"    {ui.dim('m ' + t('model_id_prompt') + ' · q cancel')}\n")
-                    default = str(models.index(current) + 1)
-                    choice = input("  " + t("number") + f" [{default}]: ").strip() or default
-                    if choice.lower() == "q":
-                        raise EOFError
-                    if choice == "0":
-                        values = ["reset", host, role]
-                    elif choice.lower() == "m":
-                        values = [host, role, input("  " + t("model_id_prompt") + ": ").strip()]
-                    else:
-                        values = [host, role, models[int(choice) - 1]]
-            except ValueError, IndexError, EOFError, KeyboardInterrupt:
-                sys.stdout.write(f"  {t('cancelled')}\n")
-                return
-
-        reset = values[:1] == ["reset"]
-        if reset:
-            values = values[1:]
-        if len(values) < 2 or (not reset and len(values) < 3) or len(values) > (2 if reset else 4):
-            sys.stdout.write(f"  {ui.dim(t('trinity_model_usage'))}\n")
-            return
-        host, role = values[:2]
-        model = None if reset else values[2]
-        extra = None if reset or len(values) < 4 else values[3]
-        try:
-            result = configure_role_model(
-                root,
-                host,
-                role,
-                model=model,
-                effort=extra if host != "native" else None,
-                provider=extra if host == "native" else None,
-                reset=reset,
-            )
-        except ValueError as exc:
-            sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {exc}\n")
-            return
-        effective = result["effective"]
-        value = f"{effective.get('provider')}:" if host == "native" else ""
-        value += str(effective["model"])
-        if effective.get("effort"):
-            value += f" · effort={effective['effort']}"
-        msg = t("trinity_model_reset" if reset else "trinity_model_saved", host=host, role=role, value=value)
-        if host == "native":
-            raise _Reconfigure(rp, msg)
-        sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
+        _trinity_model(args, root, rp)
         return
 
     if args[:1] == ["dual"]:
