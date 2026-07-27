@@ -375,3 +375,77 @@ def test_dock_reader_stops_when_asked(monkeypatch) -> None:
     dock._stop_reader.set()
     dock._read_keys()
     assert dock.take_pending() == ("", False)
+
+
+# — 형상 래칫 —
+#
+# 이 결함의 성질상 회귀는 개발기에서 절대 안 보인다. 그래서 "윈도우가 POSIX 코드에 닿지
+# 않는다"와 "독이 쓰는 ANSI 를 윈도우 콘솔이 안다"를 형상으로 못 박는다. 둘 다 깨지면
+# 증상이 크래시가 아니라 침묵이라 테스트 말고는 잡을 방법이 없다.
+
+_POSIX_ONLY = {"termios", "select", "fcntl"}
+_GUARDED = ("_cursor_row", "_echo_off", "_read_keys")
+
+
+def _repl_ast():
+    import ast
+    import inspect
+
+    from asgard.agent import repl
+
+    return ast, ast.parse(inspect.getsource(repl))
+
+
+def _function(tree, name):
+    import ast
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and node.name == name:
+            return node
+    raise AssertionError(f"{name} 이 사라졌다 — 앵커를 고쳐라")
+
+
+@pytest.mark.parametrize("name", _GUARDED)
+def test_windows_branch_comes_before_any_posix_call(name: str) -> None:
+    """윈도우 분기는 POSIX 코드보다 **먼저** 와야 한다.
+
+    순서가 뒤집히면 윈도우에서 termios/select 가 먼저 닿는다. select 는 소켓 전용이라 리더
+    스레드가 조용히 죽고, termios 는 아예 없어 예외로 빠진다 — 둘 다 화면엔 흔적이 없다.
+    """
+    ast, tree = _repl_ast()
+    body = _function(tree, name).body
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant):
+        body = body[1:]  # 독스트링은 코드가 아니다
+
+    guard = posix = None
+    for stmt in body:
+        for node in ast.walk(stmt):
+            if guard is None and isinstance(node, ast.Attribute) and node.attr == "IS_WINDOWS":
+                guard = node.lineno
+            if posix is None:
+                imported = isinstance(node, ast.Import) and any(a.name in _POSIX_ONLY for a in node.names)
+                called = (
+                    isinstance(node, ast.Attribute)
+                    and isinstance(node.value, ast.Name)
+                    and node.value.id in _POSIX_ONLY
+                )
+                if imported or called:
+                    posix = node.lineno
+
+    assert guard is not None, f"{name} 에 윈도우 분기가 없다"
+    assert posix is None or guard < posix, f"{name}: POSIX 코드(L{posix})가 윈도우 분기(L{guard})보다 앞선다"
+
+
+def test_the_dock_only_speaks_ansi_that_windows_understands() -> None:
+    """독의 커서 산술은 전부 ANSI 로 나간다 — 윈도우 콘솔이 모르는 시퀀스가 하나라도 섞이면
+    프레임이 깨지는데, 깨진 화면은 예외를 내지 않는다. 최종 바이트를 Microsoft 문서 집합에 가둔다."""
+    import inspect
+    import re
+
+    from asgard.agent import repl
+
+    folded = re.sub(r"\{[^{}]*\}", "0", inspect.getsource(repl))  # f-string 표현식은 자리표시자로
+    finals = {m.group(1) for m in re.finditer(r"\\x1b\[[0-9;?]*([A-Za-z])", folded)}
+    # Microsoft "Console Virtual Terminal Sequences" 중 이 저장소가 쓰는 것 + 키 입력 시퀀스
+    documented = set("ABCDEFGHJKSTfmnsu~")
+    assert finals <= documented, f"윈도우 콘솔이 모르는 CSI 최종바이트: {sorted(finals - documented)}"

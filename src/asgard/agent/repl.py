@@ -753,11 +753,11 @@ class _Dock:
     # — 라이브 입력 리더 (자체 스레드) —
 
     def _read_keys(self) -> None:
+        if winterm.IS_WINDOWS:  # select 는 Windows 에서 소켓 전용 — fd 를 주면 첫 턴에 스레드가 죽는다
+            return self._read_keys_win()
         import os
         import select
 
-        if winterm.IS_WINDOWS:  # select 는 Windows 에서 소켓 전용 — fd 를 주면 첫 턴에 스레드가 죽는다
-            return self._read_keys_win()
         fd = sys.stdin.fileno()
         carry = b""
         while not self._stop_reader.is_set():
