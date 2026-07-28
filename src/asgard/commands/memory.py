@@ -1424,7 +1424,7 @@ def run_project_ingest(
         if yes and not is_backend_trusted(cfg):
             raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
         ready, failed = ingest.plan(list(paths), strategy=strategy or None)
-        rows = [
+        rows: list[dict] = [
             {
                 "name": d.name,
                 "path": d.path,

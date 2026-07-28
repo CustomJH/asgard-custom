@@ -11,6 +11,7 @@ import json
 from collections.abc import Iterable
 from contextlib import ExitStack
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from ..session import TurnCancelled, ql
 from .journal import _record_writes
@@ -20,6 +21,9 @@ from .roles import _role_prompt, _skill_support, work_shape_note
 from .ticket_lease import TicketLease
 from .todo import TodoBoard, files_note
 from .toolspec import DISPATCH_TOOL
+
+if TYPE_CHECKING:  # core 가 이 모듈을 임포트하므로 런타임 임포트는 순환이다
+    from .core import Heimdall
 
 
 def _execute_pending(run_claimed, pending: list[dict], writes_by_id: dict, tickets: TicketLease, cwd_by_id: dict):
@@ -71,7 +75,7 @@ class _Ledger:
     목록이어야 하고 중복 판정은 집합이어야 하는데, 둘을 따로 두면 반드시 어긋난다.
     """
 
-    hd: object
+    hd: Heimdall
     sid: str
     board: TodoBoard
     tickets: TicketLease

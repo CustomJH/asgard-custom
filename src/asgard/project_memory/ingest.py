@@ -299,11 +299,18 @@ def ensure_strategies(cfg: dict) -> dict:
 
     backend = get_backend(cfg)
     try:
-        current = backend.bank_config().get("retain_strategies") or {}
+        # 뱅크 설정 표면은 backend 선택 사항이다 — 공용 Protocol 이 요구하지 않는다.
+        # 없는 backend 에서 그냥 부르면 AttributeError 로 ingest 전체가 죽으므로, 없으면
+        # 전략을 안 심고 그 사실을 정직하게 돌려준다 (문서는 기본 전략으로 처리된다).
+        read = getattr(backend, "bank_config", None)
+        write = getattr(backend, "update_bank_config", None)
+        if not (callable(read) and callable(write)):
+            return {"changed": False, "strategies": {}, "reason": "backend exposes no bank config surface"}
+        current = read().get("retain_strategies") or {}
         if all(current.get(name) == body for name, body in STRATEGIES.items()):
             return {"changed": False, "strategies": current}
         merged = {**current, **STRATEGIES}
-        backend.update_bank_config({"retain_strategies": merged, "retain_default_strategy": DEFAULT_STRATEGY})
+        write({"retain_strategies": merged, "retain_default_strategy": DEFAULT_STRATEGY})
         return {"changed": True, "strategies": merged}
     finally:
         backend.close()
