@@ -1074,7 +1074,8 @@ class TestSyncTurnCLI(ProjectMemoryBase):
 
         self.assertEqual(result.exit_code, 0, result.output)
         changed.assert_not_called()
-        scan.assert_called_once_with(self.root, changed_paths=[])
+        # --inventory 없이는 digest 계층을 켜지 않는다 — 전수 등록은 명시 opt-in 이다
+        scan.assert_called_once_with(self.root, changed_paths=[], inventory=False)
 
 
 class TestCooperativeRecall(ProjectMemoryBase):

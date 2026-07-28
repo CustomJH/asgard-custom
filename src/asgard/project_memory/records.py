@@ -79,6 +79,12 @@ class ArtifactCandidate:
     extractor: str
     symbols: tuple[str, ...] = ()
     imports: tuple[str, ...] = ()
+    # 등록 계층 — "full" 은 본문 전체, "digest" 는 머리글(경로·심볼·임포트·요약)만 보낸다.
+    # 26-07-28 신설: 점수 미달을 **버리는** 대신 얇게 등록한다. 이 저장소 실측으로 등록 대상이
+    # 217/4994(4.3%) 뿐이었고 repl.py·session.py 같은 핵심 소스가 통째로 빠져 있었다.
+    # digest 도 record 1개 = 실제 파일 1개라 결정론 검증(source+content_hash)이 그대로 성립한다 —
+    # 신뢰 게이트를 건드리지 않고 커버리지만 올리는 유일한 자리다.
+    tier: str = "full"
 
 
 @dataclasses.dataclass(frozen=True)

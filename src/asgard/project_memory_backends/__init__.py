@@ -16,6 +16,8 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Literal, Protocol, runtime_checkable
 
 MAX_HTTP_RESPONSE_BYTES = 2 * 1024 * 1024
+MAX_BACKEND_TIMEOUT = 1800  # 초 — 서버측 LLM 타임아웃(600s)과 청킹 여유를 덮는다
+_BASE_RETAIN_FIELDS = frozenset({"content", "context", "document_id", "update_mode", "tags", "metadata"})
 BACKEND_API_VERSION = 2
 BINDING_DOCUMENT_ID = "asgard:project-binding:v1"
 BINDING_SCHEMA = 1
@@ -50,6 +52,10 @@ class ProjectMemoryRecord:
     metadata: Mapping[str, object] = dataclasses.field(default_factory=dict)
     tags: tuple[str, ...] = ()
     context: str = ""
+    # 이 사실에 발생 시각이 없는가 — 코드·규격은 시점이 아니라 리비전으로 산다.
+    timeless: bool = False
+    # 확정 엔티티 (이름, 타입) — 서버의 자동 추출과 합쳐진다. chunks 모드에서는 유일 출처다.
+    entities: tuple[tuple[str, str], ...] = ()
 
 
 @dataclasses.dataclass(frozen=True)
@@ -133,6 +139,8 @@ class BackendCapabilities:
     transactional_commit: bool = False
     ownership_binding: bool = False
     atomic_binding_create: bool = False
+    file_upload: bool = False
+    document_text_stored: bool = False
 
 
 @dataclasses.dataclass(frozen=True)
@@ -180,15 +188,20 @@ class HindsightBackend:
         self.project_id = settings.project_id
         self.endpoint = settings.endpoint
         self.timeout = settings.timeout
+        self._retain_fields: frozenset[str] | None = None
+        self._features: dict | None = None
 
     def _post(self, path: str, payload: Mapping[str, object]) -> dict:
+        return self._request("POST", path, payload)
+
+    def _request(self, method: str, path: str, payload: Mapping[str, object]) -> dict:
         project_path = urllib.parse.quote(self.project_id, safe="")
         url = f"{self.endpoint}/v1/default/banks/{project_path}{path}"
         request = urllib.request.Request(
             url,
             data=json.dumps(dict(payload)).encode(),
             headers={"Content-Type": "application/json"},
-            method="POST",
+            method=method,
         )
         with urllib.request.urlopen(request, timeout=self.timeout) as response:
             decoded = json.loads(self._read_bounded(response).decode() or "{}")
@@ -216,6 +229,64 @@ class HindsightBackend:
             raise ValueError(f"project memory backend response exceeds {MAX_HTTP_RESPONSE_BYTES} bytes")
         return payload
 
+    def server_features(self) -> dict:
+        """서버가 스스로 신고하는 기능 플래그 — `GET /version` (0.8.3 실측).
+
+        openapi 스키마 파싱보다 싸고 정확하다. 스키마는 "필드가 있는가"만 말하지만 플래그는
+        "이 배포에서 켜져 있는가"를 말한다 (file_upload_api·store_document_text 등)."""
+        if self._features is not None:
+            return self._features
+        features: dict = {}
+        with contextlib.suppress(Exception):
+            request = urllib.request.Request(f"{self.endpoint}/version", method="GET")
+            with urllib.request.urlopen(request, timeout=min(self.timeout, 10)) as response:
+                payload = json.loads(self._read_bounded(response).decode() or "{}")
+            if isinstance(payload, dict):
+                raw = payload.get("features")
+                features = {
+                    "api_version": str(payload.get("api_version") or ""),
+                    **({str(k): bool(v) for k, v in raw.items()} if isinstance(raw, Mapping) else {}),
+                }
+        self._features = features
+        return features
+
+    def supports(self, feature: str) -> bool:
+        """서버가 이 기능을 켰다고 신고했는가. 모르면 False (없는 기능을 부르지 않는다)."""
+        return bool(self.server_features().get(feature))
+
+    def retain_fields(self) -> frozenset[str]:
+        """서버가 실제로 받는 retain 항목 필드 — /openapi.json 에서 읽는다 (버전 추측 금지).
+
+        26-07-28 조사: Hindsight 문서끼리 어긋난다 (SDK 문서는 entities·observation_scopes 를
+        적고 HTTP 레퍼런스는 없다고 한다). raw HTTP 를 쓰는 우리에게 정본은 **서버 스키마**다 —
+        문서 대신 스키마를 읽고, 모르는 필드는 보내지 않는다. 실서버 0.8.3 에서 entities·
+        observation_scopes·strategy·timestamp 4 개가 이 경로로 자동 발견됐다."""
+        if self._retain_fields is not None:
+            return self._retain_fields
+        fields = _BASE_RETAIN_FIELDS
+        with contextlib.suppress(Exception):
+            request = urllib.request.Request(f"{self.endpoint}/openapi.json", method="GET")
+            with urllib.request.urlopen(request, timeout=min(self.timeout, 10)) as response:
+                spec = json.loads(self._read_bounded(response).decode() or "{}")
+            discovered = _retain_item_properties(spec)
+            if discovered:
+                fields = frozenset(discovered)
+        self._retain_fields = fields
+        return fields
+
+    def bank_config(self) -> dict:
+        """뱅크 설정 읽기. 응답은 {"bank_id":…, "config":{…}} 로 중첩돼 있다 — 26-07-28 실측:
+        최상위에서 찾으면 언제나 None 이라 "설정이 안 걸렸다"고 오판한다."""
+        payload = self._get("/config", missing_ok=True) or {}
+        nested = payload.get("config")
+        return dict(nested) if isinstance(nested, Mapping) else {}
+
+    def update_bank_config(self, updates: Mapping[str, object]) -> dict:
+        """뱅크 설정 갱신. 서버 스키마가 {"updates": {...}} 로 감싸기를 요구한다."""
+        payload = self._request("PATCH", "/config", {"updates": dict(updates)})
+        nested = payload.get("config")
+        return dict(nested) if isinstance(nested, Mapping) else {}
+
     def capabilities(self) -> BackendCapabilities:
         return BackendCapabilities(
             semantic_search=True,
@@ -226,6 +297,9 @@ class HindsightBackend:
             namespace_isolation=True,
             stable_replace=True,
             ownership_binding=True,
+            # 배포마다 켜짐이 다르다 — 서버 신고를 그대로 옮긴다
+            file_upload=self.supports("file_upload_api"),
+            document_text_stored=self.supports("store_document_text"),
         )
 
     def readiness(self) -> BackendReadiness:
@@ -288,8 +362,10 @@ class HindsightBackend:
         return hits
 
     def retain(self, records: Sequence[ProjectMemoryRecord]) -> BackendWriteResult:
-        items = [
-            {
+        allowed = self.retain_fields()
+        items = []
+        for record in records:
+            item: dict = {
                 "content": record.text,
                 "context": record.context,
                 "document_id": record.record_id,
@@ -297,8 +373,13 @@ class HindsightBackend:
                 "tags": list(record.tags),
                 "metadata": dict(record.metadata),
             }
-            for record in records
-        ]
+            # 서버가 받는다고 말한 선택 필드만 덧붙인다. 코드·규격에는 발생 시각이 없다 —
+            # timestamp 를 지금으로 두면 서버의 상대시간 해석이 파일 나이를 오늘로 착각한다.
+            if "timestamp" in allowed and record.timeless:
+                item["timestamp"] = "unset"
+            if "entities" in allowed and record.entities:
+                item["entities"] = [{"text": name, "type": kind} for name, kind in record.entities]
+            items.append(item)
         output = self._post("/memories", {"items": items, "async": False})
         success = output.get("success") is True
         accepted = tuple(record.record_id for record in records) if success else ()
@@ -380,6 +461,28 @@ class HindsightBackend:
         return None
 
 
+def _retain_item_properties(spec: Mapping[str, object]) -> set[str]:
+    """OpenAPI 문서에서 retain item 의 속성 이름을 뽑는다. 못 찾으면 빈 집합.
+
+    스키마 **이름**은 배포마다 달라질 수 있으므로 **모양**으로 찾는다 — `content` 를 가진
+    오브젝트 스키마 중 기본 필드를 가장 많이 겹치는 것이 retain item 이다."""
+    schemas = spec.get("components")
+    schemas = schemas.get("schemas") if isinstance(schemas, Mapping) else None
+    if not isinstance(schemas, Mapping):
+        return set()
+    best: set[str] = set()
+    for definition in schemas.values():
+        if not isinstance(definition, Mapping) or definition.get("type") != "object":
+            continue
+        properties = definition.get("properties")
+        if not isinstance(properties, Mapping) or "content" not in properties:
+            continue
+        names = {str(key) for key in properties}
+        if len(names & _BASE_RETAIN_FIELDS) >= 3 and len(names) > len(best):
+            best = names
+    return best
+
+
 BackendFactory = Callable[[BackendSettings], Any]
 _FACTORIES: dict[str, BackendFactory] = {"hindsight": HindsightBackend}
 ENTRY_POINT_GROUP = "asgard.project_memory_backends"
@@ -438,8 +541,11 @@ def parse_settings(config: Mapping[str, object]) -> BackendSettings:
     timeout_value = config.get("timeout")
     options_value = config.get("options")
     timeout = 15 if timeout_value is None else int(str(timeout_value))
-    if not 1 <= timeout <= 300:
-        raise ValueError("project memory timeout must be between 1 and 300 seconds")
+    # 상한 300s 는 서버가 그보다 오래 걸릴 수 있다는 사실보다 먼저 정해진 값이었다. 26-07-28 실측:
+    # 로컬 12B 추출이 문서 하나에 57s, 서버 LLM 타임아웃도 600s 로 올렸다. 클라이언트가 서버보다
+    # 먼저 포기하면 등록은 서버에서 성공하고 우리만 실패로 기록한다 — 그 어긋남이 manifest 를 속인다.
+    if not 1 <= timeout <= MAX_BACKEND_TIMEOUT:
+        raise ValueError(f"project memory timeout must be between 1 and {MAX_BACKEND_TIMEOUT} seconds")
     if options_value is not None and not isinstance(options_value, Mapping):
         raise ValueError("project memory options must be an object")
     options = {str(key): value for key, value in options_value.items()} if isinstance(options_value, Mapping) else {}

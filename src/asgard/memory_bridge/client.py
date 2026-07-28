@@ -82,6 +82,42 @@ def server_retain(cfg: dict, content: str) -> dict:
     )
 
 
+_MAX_DECLARED_ENTITIES = 40
+_DEFAULT_ENTITY_TYPE = "CODE_SYMBOL"
+# 우리 심볼 표기는 "class:Foo" / "function:bar" 다. 서버에는 **이름만** 보내고 종류는 type 으로
+# 넘긴다 — 26-07-28 실서버 실측: 접두사째 보냈더니 자동 추출된 `LedgerRenderer` 옆에
+# `class:LedgerRenderer` 가 따로 서서 같은 것이 그래프에 둘로 앉았다. 엔티티 해소가 할 일을
+# 우리가 망친 것이다.
+_SYMBOL_KINDS = {"class": "CLASS", "function": "FUNCTION", "method": "METHOD", "const": "CONSTANT"}
+
+
+def _declared_entities(metadata: dict) -> tuple[tuple[str, str], ...]:
+    """아티팩트 메타데이터의 심볼을 확정 엔티티로 올린다.
+
+    서버는 본문에서 엔티티를 자동 추출하는데, digest 계층은 본문이 머리글뿐이라 추출할 산문이
+    거의 없다. 그런데 그 파일이 무슨 함수·클래스를 가졌는지는 우리가 이미 파싱해서 안다 —
+    추측이 아니라 결정론 사실이므로 확정 엔티티로 넘기는 편이 정확하고 싸다."""
+    raw = str(metadata.get("symbols") or "")
+    seen: list[tuple[str, str]] = []
+    for part in raw.split(","):
+        token = part.strip()
+        if not token:
+            continue
+        prefix, separator, remainder = token.partition(":")
+        name, kind = (
+            (remainder.strip(), _SYMBOL_KINDS[prefix])
+            if separator and prefix in _SYMBOL_KINDS
+            else (token, _DEFAULT_ENTITY_TYPE)
+        )
+        if not name or len(name) > 128 or any(ch in name for ch in "\n\r<>"):
+            continue
+        if (name, kind) not in seen:
+            seen.append((name, kind))
+        if len(seen) >= _MAX_DECLARED_ENTITIES:
+            break
+    return tuple(seen)
+
+
 def server_retain_items(cfg: dict, items: list[dict]) -> dict:
     """Exact binding을 확인한 뒤 canonical item을 선택 backend에 쓴다."""
     from . import expected_backend_binding, is_backend_trusted, verify_backend_binding
@@ -117,6 +153,10 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
                 metadata=dict(metadata) if isinstance(metadata, dict) else {},
                 tags=tuple(str(tag) for tag in tags) if isinstance(tags, list) else (),
                 context=str(item.get("context") or ""),
+                # 결정론 projection(코드·문서 아티팩트)은 발생 시각이 없는 사실이다 —
+                # 시점은 source_revision 이 진다. 대화 turn 은 실제로 그때 일어난 일이라 제외.
+                timeless=(metadata or {}).get("origin") == "deterministic" if isinstance(metadata, dict) else False,
+                entities=_declared_entities(metadata if isinstance(metadata, dict) else {}),
             )
         )
     backend = get_backend(cfg)

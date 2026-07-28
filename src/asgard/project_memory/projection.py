@@ -33,6 +33,23 @@ PROJECTION_VERSION = 3
 PROJECTION_LOCK_TTL = 300
 
 
+_SUMMARY_MAX = 400
+
+
+def _digest_body(candidate: ArtifactCandidate) -> str:
+    """머리글 계층 본문 — 파일이 무엇인지 한눈에 알 만큼만. 본문 전체는 싣지 않는다.
+
+    첫 의미 있는 줄(모듈 독스트링·제목·주석)을 요약으로 쓴다. 그게 없으면 이 파일에 대해
+    말할 수 있는 건 이미 머리글의 경로·심볼·임포트가 다 말했다."""
+    summary = ""
+    for raw in candidate.content.splitlines():
+        line = raw.strip().strip("#/*-\"' \t")
+        if len(line) >= 12 and not line.startswith(("import ", "from ", "<!", "<?")):
+            summary = line[:_SUMMARY_MAX]
+            break
+    return f"Summary: {summary or '(none)'}\nTier: digest — 본문은 저장소의 이 경로에 있다.\n"
+
+
 def artifact_item(
     candidate: ArtifactCandidate,
     project_id: str,
@@ -53,8 +70,12 @@ def artifact_item(
         f"Imports: {imports or '(none)'}\n"
         f"Importance: {candidate.importance}\n\n"
     )
+    # digest 계층은 본문을 싣지 않는다 — 머리글만으로도 "이 프로젝트에 무엇이 있는지"는
+    # 회수된다. 본문을 다 보내면 backend 가 파일마다 LLM 추출을 돌려 비용이 파일 수에 비례한다.
+    # 검증은 어느 계층이든 같다: metadata.source 의 실제 파일 해시를 본다 (본문 대조가 아니다).
+    body = candidate.content if candidate.tier == "full" else _digest_body(candidate)
     return {
-        "content": header + candidate.content,
+        "content": header + body,
         "context": f"asgard project artifact {candidate.kind}",
         "document_id": f"asgard:artifact:{path_hash}",
         "update_mode": "replace",
@@ -72,6 +93,7 @@ def artifact_item(
             "imports": imports,
             "kind": candidate.kind,
             "importance": candidate.importance,
+            "tier": candidate.tier,
             "scope": "project",
             "status": "active",
             "confidence": "verified",

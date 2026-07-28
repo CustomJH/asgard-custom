@@ -226,6 +226,55 @@ def filter_project_hits(
     return clean, dropped
 
 
+RELATION_EXPANSION_CAP = 3  # 관계로 딸려오는 record 상한 — 이웃이 본체를 밀어내면 안 된다
+
+
+def _relation_neighbors(root: str, seed_ids: set[str], cap: int = RELATION_EXPANSION_CAP) -> list[tuple[str, str, str]]:
+    """적중 record 의 1홉 이웃 — [(record_id, 관계 표기, 본문)]. 없으면 빈 리스트.
+
+    왜 필요한가: backend 검색은 **말이 닮은 것**을 찾는다. 그런데 프로젝트 지식에서 정작
+    필요한 이웃은 말이 안 닮았다 — "이 정책이 무엇에 의존하는가"는 어휘가 아니라 관계다
+    (리서치 정합: 임베딩·희소검색은 자연어 발견을 늘리지만 정확한 의존이 걸린 과업에는
+    그래프 제약이 따로 필요하다). record 는 이미 타입 있는 관계를 갖고 있었는데
+    (records.RELATIONS 8종) 회수가 한 번도 그걸 안 봤다.
+
+    양방향으로 걷는다: a 가 b 를 가리키면 b 도 a 의 이웃이다. 관계 방향은 표기에 남긴다 —
+    `dependsOn`(나감)과 `dependsOn⁻`(들어옴)은 읽는 사람에게 전혀 다른 사실이다.
+
+    정본(`.asgard/memory/records/`)에서 직접 읽으므로 신뢰 게이트를 우회하지 않는다.
+    게이트가 backend 응답을 대조하는 그 원본이 여기 입력이다."""
+    try:
+        from .project_memory import load_canonical_records
+
+        records = {record.record_id: record for record, _path, _digest in load_canonical_records(root)}
+    except Exception:
+        return []
+    found: list[tuple[str, str, str]] = []
+    seen = set(seed_ids)
+    for seed_id in sorted(seed_ids):
+        seed = records.get(seed_id)
+        if seed is None:
+            continue
+        edges: list[tuple[str, str]] = [
+            (str(rel.get("target") or ""), str(rel.get("type") or "")) for rel in seed.relations
+        ]
+        edges += [
+            (rid, f"{rel.get('type')}⁻")
+            for rid, record in records.items()
+            for rel in record.relations
+            if str(rel.get("target") or "") == seed_id
+        ]
+        for target, relation in edges:
+            neighbor = records.get(target)
+            if not target or target in seen or neighbor is None or neighbor.status != "active":
+                continue
+            seen.add(target)
+            found.append((target, f"{seed_id} {relation}", neighbor.content))
+            if len(found) >= cap:
+                return found
+    return found
+
+
 def project_recall_note(query: str, *, start: str | None = None, max_results: int = 5) -> str:
     """현재 프로젝트 backend를 검색한다. 불능·미신뢰·무적중은 빈 문자열로 fail-open."""
     try:
@@ -283,6 +332,16 @@ def project_recall_note(query: str, *, start: str | None = None, max_results: in
 
         if not rows:
             return ""
+        # 관계 확장 — 적중한 record 가 가리키는 이웃을 남은 예산 안에서만 붙인다.
+        # 뒤에 붙이는 게 의도다: 이웃은 질의에 답한 것이 아니라 답한 것이 의존하는 것이다.
+        seed_ids = {
+            str(hit["metadata"].get("record_id") or "") for hit in filtered if isinstance(hit.get("metadata"), dict)
+        }
+        for record_id, edge, content in _relation_neighbors(root, {rid for rid in seed_ids if rid}):
+            row = f"- {_neutralize(content)[:300]} [via {_neutralize(edge)[:120]}; record: {_neutralize(record_id)[:120]}]"
+            if len(prefix + "\n".join([*rows, row]) + suffix) > PROJECT_RECALL_BUDGET:
+                break
+            rows.append(row)
         return prefix + "\n".join(rows) + suffix
     except Exception:
         return ""

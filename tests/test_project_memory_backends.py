@@ -687,16 +687,19 @@ class TestHindsightBackend(unittest.TestCase):
             }
         )
         document = {"original_text": binding.to_json(), "id": "asgard:project-binding:v1", "bank_id": "demo"}
+        # retain 은 첫 호출에서 /openapi.json 을 읽어 서버가 받는 필드를 확인한다 (인스턴스당 1회).
+        # 그래서 호출 순서는 [openapi GET, memories POST, documents GET] 이다.
         with mock.patch(
             "urllib.request.urlopen",
-            side_effect=[Response({"success": True, "items_count": 1}), Response(document)],
+            side_effect=[Response({}), Response({"success": True, "items_count": 1}), Response(document)],
         ) as urlopen:
             result = backend.write_binding(binding)
             observed = backend.read_binding()
 
         self.assertTrue(result.success)
         self.assertEqual(observed, binding)
-        self.assertTrue(urlopen.call_args_list[1].args[0].full_url.endswith("/documents/asgard%3Aproject-binding%3Av1"))
+        self.assertTrue(urlopen.call_args_list[0].args[0].full_url.endswith("/openapi.json"))
+        self.assertTrue(urlopen.call_args_list[2].args[0].full_url.endswith("/documents/asgard%3Aproject-binding%3Av1"))
 
     def test_malformed_binding_document_fails_closed(self):
         class Response:

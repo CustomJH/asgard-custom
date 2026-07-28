@@ -12,6 +12,8 @@ from collections.abc import Sequence
 
 from .records import MAX_ARTIFACT_BYTES, ArtifactCandidate, scan_secrets
 
+FULL_TIER_SCORE = 35  # 이 위는 본문 전체, 아래는 머리글만 (scan_project(inventory=True) 일 때)
+
 _SKIP_DIRS = frozenset(
     {
         ".git",
@@ -58,6 +60,54 @@ _TEXT_EXTENSIONS = frozenset(
         ".rs",
         ".java",
         ".proto",
+        # 26-07-28 실측으로 추가 — 이 목록이 좁아서 프로젝트 소스가 "비텍스트"로 빠지고 있었다.
+        # 이 저장소 하나에서만 .html 367 · .mjs 145 · .cjs 19 · .css 17 개가 등록 대상 밖이었다.
+        ".mjs",
+        ".cjs",
+        ".css",
+        ".scss",
+        ".sass",
+        ".less",
+        ".html",
+        ".htm",
+        ".vue",
+        ".svelte",
+        ".astro",
+        ".kt",
+        ".kts",
+        ".swift",
+        ".rb",
+        ".php",
+        ".c",
+        ".h",
+        ".cc",
+        ".cpp",
+        ".hpp",
+        ".cs",
+        ".scala",
+        ".ex",
+        ".exs",
+        ".erl",
+        ".lua",
+        ".dart",
+        ".zig",
+        ".ps1",
+        ".psm1",
+        ".zsh",
+        ".fish",
+        ".csv",
+        ".tsv",
+        ".ini",
+        ".cfg",
+        ".conf",
+        ".properties",
+        ".graphql",
+        ".gql",
+        ".tf",
+        ".tfvars",
+        ".hcl",
+        ".gradle",
+        ".cmake",
     }
 )
 _MANIFESTS = frozenset(
@@ -351,11 +401,17 @@ def _canonical_repo_path(root: str, path: str) -> str | None:
     return os.path.relpath(full, root).replace(os.sep, "/")
 
 
-def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[ArtifactCandidate]:
+def scan_project(
+    root: str, changed_paths: Sequence[str] | None = None, *, inventory: bool = False
+) -> list[ArtifactCandidate]:
     """중요한 tracked 코드·문서를 결정적으로 선별한다.
 
     `changed_paths=None`이면 Git 상태를 읽고, 명시한 빈 목록은 전체 baseline 중요도만 평가한다.
-    source 파일 전체를 무차별 retain하지 않고 중요도 35점 이상만 반환한다.
+    기본은 중요도 35점 이상(full 계층)만 반환한다.
+
+    `inventory=True` 면 미달분도 **digest 계층**으로 함께 반환한다 — 본문 대신 머리글만 등록해
+    "이 프로젝트에 무엇이 있는지"를 전수로 회수 가능하게 만든다. 두 계층 모두 record 1개가
+    실제 파일 1개에 대응하므로 결정론 검증(source+content_hash)은 동일하게 성립한다.
     """
     root = os.path.realpath(root)
     raw_changed = changed_paths if changed_paths is not None else globals()["changed_paths"](root)
@@ -388,7 +444,10 @@ def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[
         if not content.strip() or scan_secrets(content):
             continue
         score, kind, importance, reasons = _assess(norm, content, norm in changed)
-        if score < 35:
+        # 점수는 이제 **버릴지**가 아니라 **얼마나 두껍게** 등록할지를 정한다. 미달분도 머리글로
+        # 등록해야 "이 프로젝트에 무엇이 있는지"가 회수 가능해진다 (26-07-28 커버리지 실측).
+        tier = "full" if score >= FULL_TIER_SCORE else "digest"
+        if tier == "digest" and not inventory:
             continue
         # The same raw-byte digest is used by pre-publication TOCTOU checks and ambient
         # freshness checks. Text-mode universal-newline conversion would make CRLF files
@@ -408,6 +467,7 @@ def scan_project(root: str, changed_paths: Sequence[str] | None = None) -> list[
                 extractor=extractor,
                 symbols=symbols,
                 imports=imports,
+                tier=tier,
             )
         )
     return candidates

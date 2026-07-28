@@ -66,6 +66,10 @@ from .records import (
     scan_secrets,
     validate_record,
 )
+
+# reflect 는 서브모듈 이름이다 — 같은 이름의 함수를 여기서 재수출하면 `project_memory.reflect`
+# 가 모듈이 아니라 함수로 가려진다. 회고 함수는 `from .reflect import reflect` 로 쓴다.
+from .reflect import ReflectUnavailable, reflect_mode
 from .retain import _completion_kind, propose_completion, retain_turn
 from .scan import (
     _IMPORTANT_CODE_WORDS,
@@ -106,6 +110,7 @@ __all__ = [
     "ArtifactCandidate",
     "CompletionProposalResult",
     "ProjectRecord",
+    "ReflectUnavailable",
     "TurnRetentionResult",
     "ValidationResult",
     "_IMPORTANT_CODE_WORDS",
@@ -139,6 +144,7 @@ __all__ = [
     "backend_target",
     "changed_paths",
     "commit_approved_record",
+    "reflect_mode",
     "load_canonical_records",
     "load_projection_manifest",
     "projection_plan",
