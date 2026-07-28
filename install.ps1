@@ -472,6 +472,13 @@ function Main {
     if ($cmd) { Write-Ok ("on PATH " + $cmd.Source) }
     else { Write-Warn2 "not on PATH yet - restart the terminal (or run: uv tool update-shell)" }
 
+    # Memory search model - fetch it here. Skipping it means the user meets a ~45s download
+    # in the middle of real work the first time memory runs. Waiting belongs in the install.
+    # Failure is a warning only: without the model, search still runs on the lexical path.
+    $r = Invoke-Native 'asgard' @('memory', 'semantic', 'warmup') -Quiet
+    if ($r.Code -eq 0) { Write-Ok "memory search model ready" }
+    else { Write-Warn2 "memory search model skipped - lexical search works; retry: asgard memory semantic warmup" }
+
     Write-Host ""
     Tint "  installed" 'Green' -NoNewline; Write-Host " - next:"
     Write-Host "    asgard doctor   " -NoNewline; Tint "# verify" 'DarkGray'

@@ -289,6 +289,14 @@ main() {
   else
     info "completions ${D}skipped — run: asgard completions --install${X}"
   fi
+  # 메모리 시맨틱 검색 모델 — 여기서 받아 둔다. 안 받으면 사용자가 처음 메모리를 쓰는 순간
+  # 작업 중에 46초를 만난다. 기다림은 예상되는 자리(설치)에 두는 게 맞다.
+  # 실패는 경고로 끝낸다 — 모델이 없어도 검색은 lexical 2경로로 그대로 돈다 (fail-open).
+  if spin "fetching memory search model (~1GB, once)…" asgard memory semantic warmup; then
+    ok "memory search ${D}semantic model ready${X}"
+  else
+    warn "memory search model skipped — lexical search works; retry: asgard memory semantic warmup"
+  fi
 
   printf '\n  %s✔ installed%s — next:\n' "$G" "$X"
   printf '    %sasgard doctor%s   %s# verify%s\n' "$B" "$X" "$D" "$X"

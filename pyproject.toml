@@ -14,14 +14,23 @@ dependencies = [
     "prompt-toolkit>=3.0",
     "pypdf>=6.14.2",  # native PDF text extraction
     "python-hwpx>=3.5.0",  # HWPX parsing/editing for the bundled Korean document skill
+    # Office 계층(Sága) — 순수 파이썬 OOXML. LibreOffice·pandoc 없이도 생성/읽기/검증이 서야
+    # `uv tool install asgard` 한 줄로 끝나는 설치 약속이 유지된다. 렌더는 별도 외부 관문.
+    "python-docx>=1.1",
+    "python-pptx>=1.0",
+    "openpyxl>=3.1",
     "pyyaml>=6.0.3",  # built-in DESIGN.md Python linter
     "coloraide>=8.10",  # CSS color parsing + WCAG contrast for DESIGN.md
+    # 시맨틱 검색 (1차 메모리 3번째 RRF 스트림) — torch 무의존 정적 임베더.
+    # 26-07-27 실측으로 기본 의존성으로 승격: 켜면 hit@1 0.750→0.850, 놓친 질의 11→2건, 회귀 0.
+    # 한국어가 걸린 결정이다 — 작은 정적 모델(potion-base-8M 등)은 한국어 판별력이 음수라
+    # (관련 문장보다 무관 문장을 더 가깝다고 본다) 다국어 모델 외엔 선택지가 없었다.
+    "model2vec>=0.8",
 ]
 
-# 옵트인 시맨틱 검색 (1차 메모리 3번째 RRF 스트림) — 미설치면 lexical 2경로로 fail-open.
-# 기본 의존성에 넣지 않는다: torch 무의존 경량(model2vec)이라도 기본 설치는 제로 의존 원칙 유지.
+# 남겨 두는 별칭 — 구 설치 스크립트의 `asgard[semantic]` 를 깨지 않는다 (이제 기본 포함).
 [project.optional-dependencies]
-semantic = ["model2vec>=0.8"]
+semantic = []
 
 # curl|bash install path: `uv tool install asgard` exposes this console script.
 [project.scripts]

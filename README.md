@@ -178,6 +178,36 @@ files are copied intact and text references are available through `asgard skills
 Only Python entrypoints explicitly listed in the manifest can run, through
 `asgard skills run <name> ...`; arbitrary hooks and shell commands are never registered.
 
+## Documents (Sága)
+
+```bash
+asgard office outline                                  # 23 document and deck genres
+asgard office outline design-doc -o spec.md            # a build-ready skeleton
+asgard office build docx spec.md -o design.docx        # also: pptx, xlsx
+asgard office verify design.docx --strict              # the static delivery gate
+asgard office fill form.docx --values v.json -o out.docx
+asgard office template list|show|new|adopt|check|render
+asgard office render design.docx                       # PDF + page images (needs LibreOffice)
+```
+
+Documents are built from a spec, not typed into a binary: Markdown with YAML front matter for
+Word and PowerPoint, YAML for Excel. Build, read, fill, and verify are pure Python — no Word,
+LibreOffice, or pandoc is needed, so a one-command install has the whole lane. `verify` proves
+what a machine can prove without a renderer: text past its box, shapes off the canvas, contrast
+under the WCAG floor, dangling package relationships, unfilled `{{placeholders}}`, and
+spreadsheet formulas that would open as `#NAME?`. Rendering to PDF is the one external gate,
+and it exits non-zero rather than skipping the visual check quietly.
+
+Templates are directories, discovered from `.asgard/office/templates/` (project),
+`~/.asgard/office/templates/` (user), and the bundled set, nearest scope winning by name. A
+template carries a field schema, so `template check` fails on a missing required value before
+the build rather than inside the delivered document. `template adopt --from FILE` turns a
+document somebody else designed — a letterhead, a client shell, a government form — into one by
+scanning its placeholders. The same `{{field}}` and `{{#rows}}…{{/rows}}` grammar works in a
+Markdown skeleton, a `.docx`, a `.pptx`, and an `.xlsx`. Korean `.hwp`/`.hwpx` stays with the
+bundled `hwpx` skill. Agents reach the same engine through
+`asgard skills run asgard-office -- …`.
+
 ## Project Map
 
 ```bash
@@ -220,12 +250,82 @@ canonical files in a dedicated cloud or external folder, configure it once on ea
 
 ```bash
 asgard memory path --set "/path/to/cloud/Asgard Memory"
-asgard memory obsidian
-asgard memory path --reset  # restore ~/.asgard/memory
+asgard memory obsidian            # scaffold the vault config, rebuild maps/, and open it
+asgard memory obsidian --refresh  # prepare and rebuild without opening
+asgard memory path --reset        # restore ~/.asgard/memory
 ```
 
-`ASGARD_MEMORY_DIR` remains the session-level override. Obsidian must open the configured folder as
-a vault once before its URI can focus `index.md`. Avoid writing from multiple machines at the same
-time; cloud storage synchronizes the files but does not provide a cross-machine lock.
+### Semantic search
+
+Personal memory searches by meaning as well as by letters, on by default. A multilingual static
+embedder (`potion-multilingual-128M`, no torch, no API, no network after the first fetch) joins
+the lexical streams as a third rank-fusion input.
+
+```bash
+asgard memory semantic          # status: mode, model, dimensions
+asgard memory semantic warmup   # fetch the model now instead of mid-search
+asgard memory semantic off      # back to the lexical two-stream path
+```
+
+Measured on 40 pages / 80 paraphrase queries: hit@1 0.750 → 0.850, missed queries 11 → 2, no
+regressions; Korean 0.787 → 0.894. The cost is a ~1.2s model load per process, and the first
+run fetches roughly 1GB. Turning it off restores the previous behaviour exactly — stored pages
+are untouched, and every path fails open to lexical search if the embedder cannot load.
+
+Smaller static models were measured and rejected: `potion-base-8M` and `potion-retrieval-32M`
+score *negative* discrimination on Korean (they rank an unrelated sentence closer than a related
+one), so the load time they save is not buyable quality. An ollama embedding path was also
+measured and not built — `nomic-embed-text` lost on both quality and latency.
+
+`ASGARD_MEMORY_DIR` remains the session-level override. `maps/` is a derived table of contents
+(by kind, recent, orphans and dead links) that lives outside the `index.md` injection budget and
+is rebuilt whenever the canonical pages change. Obsidian must open the configured folder as a
+vault once before its URI can focus `index.md`.
+
+### Durability and sync
+
+Canonical pages are text, so backups and sync move files, never a database. Archives carry a
+digest manifest and are verified before a restore replaces anything; the pre-restore state is
+always kept.
+
+```bash
+asgard memory backup                      # snapshot pages/ + archive/ + SCHEMA.md + log.md
+asgard memory backup list | verify | restore | prune
+asgard memory sync --set-remote <path> --transport dir   # shared folder, NAS, cloud folder
+asgard memory sync --set-remote <git-url> --transport git
+asgard memory sync --dry-run              # three-way plan before it writes
+asgard memory sync --status
+```
+
+Sync compares a saved baseline against both sides, so a deletion is never resurrected and a new
+page is never silently dropped. When both sides edited the same page it keeps yours, stores
+theirs under `conflicts/`, and keeps reporting the conflict until a human resolves it. The
+append-only `log.md` merges by union instead of conflicting.
+
+### Self-evolution
+
+```bash
+asgard memory norn                # consolidate the wiki (LLM proposes, code decides)
+asgard memory pattern             # learn observations about you from past turns
+asgard memory ask "<question>"    # answer from personal + episodic + project memory
+asgard memory provider --set ollama:gemma4:12b   # who curates personal memory
+asgard memory project-evolve      # stale, duplicate, contradictory project records
+```
+
+`pattern` derives explicit and deductive observations from conversation turns, honcho-style.
+Every explicit claim must be lexically grounded in the turn it cites, deductive ones need two
+turns, and confidence comes from evidence count rather than the model's own claim; what survives
+becomes wiki pages plus a compact peer card. `project-evolve` applies the same discipline to the
+second tier and stages its deltas for approval instead of writing them.
+
+By default the main provider curates personal memory. `asgard memory provider` points curation at
+a different one (a local model for private data, a stronger one for better consolidation);
+`ASGARD_MEMORY_MANAGER` overrides it for one session. Without any provider, storing, searching,
+and recall keep working — only the LLM passes pause, and `asgard doctor` says so.
+
+`asgard memory project-reflect` asks the backend's LLM first. When the server has none — a bank
+running index-only, an expired gateway key — the local provider answers instead, using the
+Git-canonical records as evidence, and the output always names which path answered. Set
+`[project_memory].reflect` to `backend` or `local` to pin it.
 
 Use `asgard memory connect` to configure a backend and `asgard doctor` to verify its binding and readiness.
