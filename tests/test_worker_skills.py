@@ -128,7 +128,8 @@ class TestNativeWiring(unittest.TestCase):
 
         from asgard.agent.heimdall import TrinityRun, WaveRunner
 
-        self.assertIn("_skill_support", inspect.getsource(WaveRunner.run))
+        # 앵커는 클래스 전체 — 메서드가 쪼개져도 "wave 경로에 로더가 있다"는 불변식은 그대로다
+        self.assertIn("_skill_support", inspect.getsource(WaveRunner))
         self.assertIn("_skill_support", inspect.getsource(TrinityRun._worker_turn))
 
     def test_verifier_and_loki_not_injected(self):

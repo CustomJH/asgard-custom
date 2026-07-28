@@ -34,6 +34,17 @@ _IMPORT_PATTERNS = [
 # git 가시성 검사에서 눈감아 주는 아티팩트 — .gitignore 자산 스코프 재제외와 동일 목록.
 _IGNORABLE = ("__pycache__", "node_modules")
 
+# 블록 주석 안의 지정자는 import 가 아니다. JSDoc 의 타입 참조가 대표적으로
+#   @param {import('../../types/client.js').Client.Options} options
+# 처럼 생겨서 동적 import 패턴에 그대로 걸린다. 실제로 번들된 서드파티(undici)에서
+# 나왔고, 런타임에는 아무것도 로드하지 않는다. 주석을 먼저 걷어내고 판정한다.
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+_LINE_COMMENT = re.compile(r"(?m)^[ \t]*//.*$")
+
+
+def _strip_comments(text: str) -> str:
+    return _LINE_COMMENT.sub("", _BLOCK_COMMENT.sub("", text))
+
 
 class TestVendoredAssetIntegrity(unittest.TestCase):
     def test_relative_imports_resolve(self):
@@ -46,7 +57,7 @@ class TestVendoredAssetIntegrity(unittest.TestCase):
             if "node_modules" in src.parts:
                 continue
             scanned += 1
-            text = src.read_text(encoding="utf-8", errors="replace")
+            text = _strip_comments(src.read_text(encoding="utf-8", errors="replace"))
             for pat in _IMPORT_PATTERNS:
                 for spec in pat.findall(text):
                     target = (src.parent / spec).resolve()
