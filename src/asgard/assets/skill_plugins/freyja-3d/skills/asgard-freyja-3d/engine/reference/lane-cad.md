@@ -2,6 +2,8 @@
 
 실제로 만들 물건. 판정 기준은 "그럴듯한가"가 아니라 **치수가 맞고, 조립되고, 그 공정으로 만들 수 있는가**다.
 
+이 레인의 정본 산출물은 **STEP** 이다. STL·3MF·GLB 는 STEP 에서 갈라져 나온 부산물이고, 렌더는 증거이지 산출물이 아니다. 순서를 뒤집으면 — 메시를 먼저 만들고 STEP 을 나중에 맞추려 하면 — 치수가 어디서 깨졌는지 영영 알 수 없다.
+
 ## 도구 선택
 
 | 도구 | 쓸 때 | 안 쓸 때 |
@@ -9,12 +11,47 @@
 | **build123d** (기본) | B-Rep 커널(OpenCASCADE), STEP 출력, 파라메트릭, 조립·간섭 검사. 에이전트가 쓰기 가장 좋다 — 선형적 파이썬 코드에 이름 붙은 중간 상태가 남는다. | — |
 | **CadQuery** | 기존 코드베이스가 CadQuery 일 때. 같은 커널이라 능력은 동등하고, 학습 데이터가 더 많아 LLM 첫 시도 성공률이 높다. | 새로 시작하는데 특별한 이유가 없을 때 |
 | **OpenSCAD** | 사용자가 이미 `.scad` 를 쓸 때, 또는 순수 CSG 로 충분한 단순 형상 | STEP·필렛·정밀 공차가 필요할 때 (메시 기반이라 B-Rep 이 아니다) |
+| **implicit CAD** | 브라우저 안에서 도는 SDF 조형, 절차적 형상, 부드러운 불리언 | 치수 계약이 있는 제조물 (`lane-implicit.md`) |
 | **Blender + Python** | 유기적 형상, 서브디비전, 리깅, 렌더링. 제조가 아니라 표현이 목적일 때 | 치수 정확도가 목적일 때 |
-| **JSCAD / manifold** | 브라우저 안에서 도는 CSG 가 필요할 때 | 어셈블리·STEP |
 
-STEP 출력이 필요하면 선택지는 B-Rep 커널뿐이다(build123d/CadQuery). 메시 도구는 STEP 을 만들지 못한다 — 확장자만 바꾼 가짜 변환에 속지 않는다.
+STEP 출력이 필요하면 선택지는 B-Rep 커널뿐이다(build123d/CadQuery). 메시 도구는 STEP 을 만들지 못한다 — 확장자만 바꾼 가짜 변환에 속지 않는다. `cad_gate` 의 `fake-step` 규칙이 이것만 잡는다.
 
-## 코드 규약
+## 정본 루프
+
+```bash
+CAD=engine/scripts/cad.py           # 도구 하나의 입구 (uv 격리 실행)
+
+python $CAD step    model.py                                          # ① STEP + 위상 산출물
+python $CAD inspect refs model.step --facts --planes --positioning    # ② 기준 검증
+python $CAD inspect measure model.step --from '#f13' --to '#f14' --axis z   # ③ 명세 치수마다
+python $CAD snapshot --job shots.json                                 # ④ 보고 대조
+node engine/scripts/cad_gate.mjs <납품 경로>                            # ⑤ 배달 자격
+```
+
+1. **STEP 을 만든다.** 소스가 정본이고 STEP 은 그 결과다. `scripts/step` 은 STEP 옆에 숨은 위상 산출물(`.<이름>.step.glb`)도 같이 쓴다 — refs·measure·snapshot 이 전부 그것을 읽으므로 선택이 아니다.
+2. **기준을 읽는다.** `refs --facts --planes --positioning` 은 생성한 모든 산출물에 대해 무조건 돌린다. 크기·솔리드 수·라벨·주요 평면이 여기서 나온다.
+3. **명세를 하나씩 잰다.** 사용자가 말한 치수·간극·관계는 **전부** `measure`/`align`/`frame` 으로 확인한다. 도면에서 딴 치수도 같다. 안 잰 치수는 "확인함"이 아니라 "미확인"이다.
+4. **본다.** 스냅샷은 의무다(`cad-snapshot.md`). 결정론 검사가 통과했다는 사실은 건너뛸 이유가 되지 못한다 — 결정론 검사는 자기가 부호화한 것만 잡고, 형상이 요청과 다른 것은 부호화되지 않는다.
+5. **배달 자격을 기계에 묻는다.** `cad_gate` 가 막으면 막힌 이유를 고친다. 판정 기준을 낮춰서 통과시키지 않는다.
+
+조립체면 ③과 ④ 사이에 간섭 검사가 들어간다:
+
+```bash
+python $CAD step model.py                              # 납품 STEP 은 여기서만 나온다
+uv run --no-project --python 3.12 --with build123d \
+   python engine/scripts/cad_build.py model.py --json   # 쌍별 간섭 부피·최소 간극
+node engine/scripts/mesh_audit.mjs build/model.stl --process fdm   # 수밀·살두께·오버행
+```
+
+`cad_build.py` 와 `mesh_audit.mjs` 는 STEP 런타임이 **내지 않는 두 숫자**를 낸다: 쌍별 간섭 부피와 공정별 제조 판정. refs·measure·align 은 그 둘을 대신하지 못한다.
+
+주의: `cad_build.py --out` 이 내보내는 STEP 에는 **위상 산출물이 없다.** refs·measure·align·snapshot 이 읽을 것이 없으므로 그 STEP 에 대해 셀렉터 측정을 했다고 말할 수 없다. 진단 산출물은 금고(`.asgard/.vanadis/3d/`)에 두고, 납품 STEP 은 `step` 이 낸 것을 쓴다.
+
+`cad_gate` 는 이 상황을 두 단계로 가른다 — 메시 감사(`mesh_audit`)와 렌더 증거가 같이 있으면 **경고**(다른 경로로 검증된 배달이라 막지 않지만 셀렉터 측정을 주장할 수는 없다), 둘 다 없으면 **차단**(아무것으로도 검증되지 않았다). 막는 기준은 "다르게 검증했는가"가 아니라 "검증했는가"다.
+
+## 소스 규약
+
+한 소스 파일이 두 파이프라인을 다 먹인다. 형상을 두 번 적지 않는다.
 
 ```python
 """브래킷 — 명세는 여기 위에 그대로 적는다."""
@@ -26,18 +63,41 @@ WIDTH = 40.0
 HOLE_D = 5.0
 FIT_GAP = 0.3          # FDM 끼워맞춤 간극 — dfm.md 기준
 
-with BuildPart() as bracket:
-    Box(WIDTH, PLATE_T, HEIGHT, align=(Align.MIN, Align.MIN, Align.MIN))
-    ...
-
-# 2. 조립체는 이름 있는 딕셔너리로 내보낸다. cad_build.py 가 이 규약을 읽는다.
-PARTS = {"bracket": bracket.part, "bolt": bolt.part}
+def gen_step():
+    """STEP 레인의 정본 진입점. 반환값이 곧 형상이다."""
+    with BuildPart() as bracket:
+        Box(WIDTH, PLATE_T, HEIGHT, align=(Align.MIN, Align.MIN, Align.MIN))
+        ...
+    result = bracket.part
+    result.label = "bracket"      # 라벨이 없으면 위상 추적이 끊긴다
+    return result
 ```
 
+- **`gen_step()` 을 정의한다.** `scripts/step` 이 읽는 규약이고, `cad_build.py` 도 이제 같은 함수를 먼저 본다. 조립체는 라벨 붙은 `Compound` 를 반환하면 `cad_build.py` 가 자식을 부품으로 펴서 쌍별 간섭을 잰다.
+- **출력 경로를 `gen_step()` 안에 적지 않는다.** 경로는 CLI 가 소유한다.
 - **align 을 명시한다.** 기본 정렬은 도구마다 다르다. `Align.MIN` 으로 원점 기준을 고정해두면 위치 오류가 사라진다.
 - **선택자는 위상이 아니라 의미로 쓴다.** `edges()[3]` 은 파라미터를 바꾸는 순간 다른 에지를 가리킨다. `filter_by(Axis.Z).sort_by(Axis.Y)[-2:]` 처럼 기하학적 조건으로 고른다.
 - **assert 를 넣는다.** `assert bracket.part.volume > 0`, `assert len(bracket.part.solids()) == 1`. 스크립트가 실패로 죽는 편이 잘못된 STEP 을 내보내는 것보다 낫다.
-- **필렛·챔퍼는 마지막에, 작게 시작한다.** 필렛 실패(`BRep_API: command not done`)는 반경이 인접 형상보다 클 때 난다. `max_fillet()` 으로 상한을 찾거나 반경을 줄인다.
+- **필렛·챔퍼는 마지막에, 작게 시작한다.** 필렛 실패(`BRep_API: command not done`)는 반경이 인접 형상보다 클 때 난다.
+- **불리언 도구는 넘치게 만든다.** 관통 컷은 들어가는 면과 나오는 면을 1mm 씩 지나가게 한다. 면이 정확히 겹치는 것이 커널 실패의 고전이다.
+
+## 기본값
+
+사용자가 달리 말하지 않으면 이렇게 두고, **가정한 것은 보고에 적는다**. 이것들은 1차 조형 기본값이지 공차·제조·인증 주장이 아니다.
+
+| 항목 | 기본 |
+|---|---|
+| 단위 | mm |
+| 기준면 / 상방 | XY / +Z |
+| 원점 | 부품 중심 (판=footprint 중심, 축대칭=회전축, 외함=바닥면 중심) |
+| 출력 형상 | 닫힌 양의 부피 솔리드 |
+| 소형 플라스틱 외함 벽 | 2.0–3.0 mm |
+| 장식 필렛 | 1.0–3.0 mm |
+| M3 / M4 / M5 관통 여유 구멍 | 3.4 / 4.5 / 5.5 mm |
+
+**되묻는 문턱은 좁다.** 없는 정보가 조립을 불가능하게 하거나, 끼워맞춤·안전·규격에 걸릴 때만 한 가지를 묻는다. 그 외에는 가정하고 진행하되 가정을 적는다. 묻지 않고 채운 치수는 환각이다 — 근거: ProCAD(arXiv 2602.03045)는 사전 확인만으로 Chamfer 거리 79.9% 감소, 무효율 4.8%→0.9%.
+
+명세를 브리프로 옮기는 절차, 특히 **참조 이미지와 2D 도면**을 받았을 때는 `cad-brief.md` 를 적재한다.
 
 ## 견고한 모델 문법 — RMS 이식
 
@@ -48,22 +108,7 @@ PARTS = {"bracket": bracket.part, "bolt": bolt.part}
 3. **면은 깨지기 쉬운 참조다.** `faces()[3]` 인덱스는 CAD 의 "면 클릭 참조"와 같은 취약점이다 — 위 코드 규약의 술어 셀렉터(`filter_by`·`sort_by`)가 Onshape 쿼리 변수의 등가물이고, 파라미터 변경 후에도 스스로 재해석된다.
 4. **스케치는 완전 구속이 원칙이다.** 코드에서는: 치수가 전부 이름 있는 상수에서 나오고, 유도값은 식으로 계산한다. 어중간하게 손으로 넣은 중간값은 파라미터가 0 이나 극단을 지날 때 방향이 뒤집힌다.
 
-한 파일 = 한 마스터 모델이 여러 부품(`PARTS`)을 내보내는 구조가 스켈레톤 기법의 코드 번역이다 — 공유 치수는 한 곳에서만 바꾼다.
-
-## 루프
-
-```bash
-uv run --no-project --python 3.12 --with build123d python engine/scripts/cad_build.py model.py --out build
-node engine/scripts/shoot.mjs build/model.stl --out shots --views front,right,top,iso --highlight overhang
-node engine/scripts/mesh_audit.mjs build/model.stl --process fdm
-```
-
-1. **빌드.** 실패하면 트레이스백이 곧 수리 단서다. `cad_build.py` 는 실패해도 JSON 으로 트레이스백을 남긴다.
-2. **커널 숫자를 읽는다.** 부피가 0 이거나 솔리드가 0 이면 형상이 아니라 서피스만 남은 것이다. 유효성(`valid`)이 False 면 부울 연산이 깨졌다.
-3. **렌더를 연다.** 4면 이상. 대칭 형상이면 iso 2개를 추가한다. **이미지를 열지 않고 "확인했다"고 쓰지 않는다.**
-4. **제조 판정.** `mesh_audit` 의 수밀·살두께·오버행. 조립체는 `--shell N` 으로 부품마다 따로 잰다(여러 부품이 한 메시에 있으면 광선이 이웃 부품에 닿아 살두께가 거짓으로 얇게 나온다).
-5. **간섭.** `cad_build.py` 가 쌍마다 간섭 부피와 최소 간극을 낸다. 간섭 부피 > 0 은 그냥 실패다 — "조금 겹친다"는 상태는 존재하지 않는다.
-6. **회귀.** 파라미터를 바꾼 뒤 `mesh_audit --baseline 이전.json` 으로 무엇이 변했는지 본다.
+한 파일 = 한 마스터 모델이 여러 부품을 내보내는 구조가 스켈레톤 기법의 코드 번역이다 — 공유 치수는 한 곳에서만 바꾼다.
 
 ## 자주 나오는 실패와 원인
 
@@ -74,19 +119,17 @@ node engine/scripts/mesh_audit.mjs build/model.stl --process fdm
 | 부피는 나오는데 수밀이 아니다 | 자기교차, 0 두께 면 | 문제 영역을 렌더로 좁힌 뒤 형상 순서 재구성 |
 | 슬라이서가 열린 메시라고 한다 | 내보내기 편차(deflection)가 너무 크다 | `--deflection 0.01` 로 낮춘다 |
 | 실물이 안 맞는다 | 공정 수축·간극을 설계에 넣지 않았다 | dfm.md 의 간극표를 파라미터로 넣고 테스트 조각부터 뽑는다 |
+| `measure` 는 되는데 숫자가 옛날 형상이다 | STEP 을 다시 뽑고 위상 산출물을 갱신하지 않았다 | `step` 으로 재생성. `cad_gate` 의 `topology-stale` 이 이것만 잡는다 |
+| 셀렉터 `#f7` 이 다른 면을 가리킨다 | 파라미터가 바뀌어 면 순서가 달라졌다 | 셀렉터는 매번 `refs` 로 다시 딴다 — 대화 사이에 기억하지 않는다 |
 
-## 조립체
+수리 절차 전체는 `cad-repair.md`.
 
-- 부품마다 **자기 원점**에서 모델링하고, 위치는 `Location`/`move` 로 마지막에 준다. 처음부터 절대 좌표로 그리면 수정이 불가능해진다.
-- 결합면에는 반드시 간극을 넣는다. 0 간극은 조립 불가와 같은 말이다(공정별 값은 dfm.md).
-- **간섭 검사는 선택이 아니다.** 눈으로 보면 붙어 보이는 것이 커널에서는 73mm³ 겹쳐 있을 수 있다. 이 숫자는 사람이 볼 수 없다.
-- 표준 부품(나사, 베어링, 커넥터)은 직접 모델링하지 말고 STEP 을 구해 넣는다 — 나사산을 그리는 순간 파일이 무거워지고 정확도는 오히려 떨어진다. 관통 구멍과 자리파기만 모델링하고 나사는 참조로 둔다.
+## 조립체·2D·구매 부품
 
-## 2D 도면·전개
-
-- 도면(DXF/SVG)은 `ExportDXF`/`ExportSVG` 로 낸다. 판금·레이저 절단은 도면이 최종 산출물이다.
-- 도면에는 **기준면(datum)과 공차**를 적는다. 공차 없는 도면은 "알아서 하라"는 뜻이고, 그러면 안 맞는다.
-- 치수는 기능에서 나온다. 맞물리는 면부터 치수를 걸고, 나머지는 그 결과로 둔다.
+- 조립·조인트·메이팅 데이텀·정렬 검증: `cad-assembly.md`
+- 셀렉터 문법과 검증 동사(refs·measure·align·frame·diff): `cad-refs.md`
+- 도면·전개·절단(DXF), 슬라이싱, 절단 서비스 사전 검사: `lane-fabricate.md`
+- 나사·베어링·모터 같은 **기성품은 직접 모델링하지 않는다.** `python $CAD parts "M3 socket head 12" --download` 로 실제 STEP 을 받아 `import_step` 으로 넣는다. 나사산을 그리는 순간 파일이 무거워지고 정확도는 오히려 떨어진다.
 
 ## 넘겨야 할 때
 

@@ -770,9 +770,14 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         payload = json.loads(proc.stdout)
         lanes = {lane["lane"]: lane for lane in payload["lanes"]}
-        self.assertEqual(set(lanes), {"verify", "cad", "realtime", "motion", "pipeline", "game"})
+        self.assertEqual(
+            set(lanes),
+            {"verify", "cad", "fabricate", "robot", "viewer", "realtime", "motion", "pipeline", "game"},
+        )
         self.assertTrue(lanes["verify"]["ready"], "검증 런타임은 의존성이 없어 항상 준비 상태여야 한다")
         self.assertTrue(lanes["game"]["ready"], "폴리시 경로는 무의존이라 항상 준비 상태여야 한다")
+        # 뷰어는 번들 서버라 추가 설치가 없다 — 벤더 트리가 있는 한 준비 상태다.
+        self.assertTrue(lanes["viewer"]["ready"], "뷰어 번들은 추가 설치 없이 준비 상태여야 한다")
 
     _LOOK_RULES = {"env-missing", "ambient-only-lighting", "debug-look-shipped", "primary-color-material"}
 

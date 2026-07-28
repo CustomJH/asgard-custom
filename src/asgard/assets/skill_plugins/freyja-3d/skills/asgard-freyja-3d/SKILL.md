@@ -1,6 +1,6 @@
 ---
 name: asgard-freyja-3d
-description: "Freyja's 3D engine — Brisingamen (브리싱가멘/브리싱아멘). Use for parametric and precision CAD (build123d/CadQuery/OpenSCAD, STEP/STL/3MF/GLB, DFM and tolerance), industrial electrical and telecom enclosures, realtime web 3D (Three.js WebGPU/TSL/WebGL2, React Three Fiber, TresJS, Threlte, glTF delivery and performance budgets), camera and interaction motion, procedural or sourced static assets, product visualization, and mesh diagnosis. Provides shape-only offline views, kernel and mesh measurement, scene budget audit, a static defect detector, and verified reference assets. Escalate electrical safety/certification, sculpting, character rigging, simulation, cinematic rendering, artist UVs, and texture painting to the responsible expert pipeline."
+description: "Freyja's 3D engine — Brisingamen (브리싱가멘/브리싱아멘). Use for parametric and precision CAD (build123d/CadQuery/OpenSCAD, STEP-first generation with addressable selector refs, measurement, assembly joints and mating datums, DFM and tolerance), fabrication handoff (DXF cut layouts, FDM G-code slicing and validation, sheet-cutting preflight, print jobs), off-the-shelf STEP part sourcing, robot description files (URDF/SRDF/SDF, MoveIt2), implicit GLSL SDF modelling, industrial electrical and telecom enclosures, realtime web 3D (Three.js WebGPU/TSL/WebGL2, React Three Fiber, TresJS, Threlte, glTF delivery and performance budgets), camera and interaction motion, procedural or sourced static assets, product visualization, and mesh diagnosis. Provides CAD-workbench snapshot rendering, kernel and mesh measurement, interference and clearance checks, scene budget audit, a static defect detector, a local review viewer, and a blocking delivery gate. Escalate electrical safety/certification, sculpting, character rigging, FEA/CFD simulation, cinematic rendering, artist UVs, and texture painting to the responsible expert pipeline."
 ---
 
 # Brisingamen — Freyja의 3D 엔진
@@ -14,29 +14,40 @@ description: "Freyja's 3D engine — Brisingamen (브리싱가멘/브리싱아�
 | 레인 | 언제 | 문서 |
 |---|---|---|
 | **cad** | 실제로 만들 물건. 치수·공차·조립·제조(3D 프린트, CNC, 판금, 사출). STEP 이 필요하면 무조건 이 레인. | `engine/reference/lane-cad.md` |
+| **fabricate** | 만들어져 나오게 하는 일. 2D 도면·절단 레이아웃(DXF), FDM 슬라이싱(G-code), 절단 서비스 사전 검사, 프린터 작업 전송. | `engine/reference/lane-fabricate.md` |
+| **robot** | 로봇 기술 파일. URDF 구조, SRDF 계획 의미론(MoveIt2), SDF 시뮬레이터·월드. | `engine/reference/lane-robot.md` |
+| **implicit** | GLSL 부호 거리장 조형. 부드러운 불리언, TPMS 격자, 절차적 형상. 실험적이고 기본이 아니다. | `engine/reference/lane-implicit.md` |
 | **realtime** | 브라우저·앱에서 도는 3D. 씬 구성, 머티리얼·라이팅, WebGPU/TSL, 로딩, 성능 예산. | `engine/reference/lane-realtime.md` |
 | **motion** | 카메라 연출, 스크롤 구동, 타임라인, 인터랙션, 물리. | `engine/reference/lane-motion.md` |
 | **asset** | 모델을 확보·정리하는 일. 생성형 3D, 리토폴로지, 압축, 라이선스. | `engine/reference/lane-asset.md` |
 | **art** | 히어로 자산을 현업 공정으로. 실루엣→하이폴리→베이크→마스크 텍스처→룩뎁, 예산·텍셀 밀도 기준. | `engine/reference/lane-art.md` |
 
-한 요청이 두 레인을 넘나드는 것이 정상이다(예: 제품 구성기 = cad + realtime + motion). 레인을 고르는 것은 순서를 고르는 것이지 배제하는 것이 아니다.
+한 요청이 두 레인을 넘나드는 것이 정상이다(예: 제품 구성기 = cad + realtime + motion, 발주 가능한 케이스 = cad + fabricate). 레인을 고르는 것은 순서를 고르는 것이지 배제하는 것이 아니다.
+
+**순서는 고정이다: cad 가 검증을 끝낸 다음에 fabricate 가 온다.** 검증 안 된 형상을 절단이나 프린터에 태우지 않는다.
+
+레인 공통 보조 문서: `engine/reference/lane-viewer.md`(로컬 리뷰 서버 — 모든 레인의 산출물을 연다).
 
 ## 고정 순서
 
 1. **명세 확정** — `engine/reference/clarify.md`. 치수·단위·용도·공정·대상 기기 중 결과를 바꾸는 항목이 비어 있으면 **먼저 묻는다**. 묻지 않고 채운 치수는 환각이다. 근거: ProCAD(arXiv 2602.03045)는 사전 확인만으로 Chamfer 거리 79.9% 감소, 무효율 4.8%→0.9%.
 2. **환경 확인** — `node engine/scripts/preflight.mjs [프로젝트]`. 막힌 레인이 있으면 지금 말한다. 나중에 "안 됐다"고 말하지 않는다.
-3. **레인 문서 적재** — 해당 레인 문서 + `engine/reference/verify.md`. cad 레인은 `engine/reference/dfm.md`, realtime 레인은 `engine/reference/budgets.md` 를 같이 적재한다. 미터·모뎀·게이트웨이·전원 장치처럼 활선/통신/RF가 있는 외함은 `engine/reference/electrical-enclosures.md` 도 적재하고, 안전 입력이 없으면 외관/배치 표본에서 멈춘다. 룩이 보이는 산출물(렌더 납품·realtime·art)은 만들기 직전 `engine/reference/look-floor.md` 를 적재한다 — 치수가 맞아도 초보 티가 나면 배달이 아니다. 조명·카메라·재질을 고르는 단계면 `engine/reference/lookdev.md` 와 `engine/data/` 카탈로그를 같이 적재한다. 새 파이프라인·도구를 검증하거나 표본이 필요하면 `engine/reference/specimens.md` 의 로컬 기준 자산부터 돌린다.
-4. **만든다** — 코드가 곧 모델이다. 파라메트릭 변수는 상단에 모으고, 마법의 숫자를 형상 안에 묻지 않는다.
-5. **측정한다** — 커널·메시가 낸 숫자로. `cad_build.py` / `mesh_audit.mjs` / `scene_audit.mjs` / `detect3d.mjs`.
-6. **본다** — `shoot.mjs` 로 여러 방향의 **형상 증거**를 만들고 PNG 를 실제로 연다. 이 렌더러는 재질·텍스처·IBL·톤매핑을 그리지 않으므로 룩 판정에는 쓰지 않는다. 룩이 납품물인 경우 Blender/실제 엔진/브라우저의 뷰티 렌더도 따로 열어 본다. 근거: CADCodeVerify(ICLR 2025)·EvoCAD·3DCodeBench 모두, 렌더를 되먹이는 루프가 있을 때만 형상 오류가 잡힌다고 보고한다.
-7. **고친다** — 검출된 항목을 코드에서 고친다. 판정 기준을 낮춰서 통과시키지 않는다.
-8. **배달한다** — 아래 배달 게이트를 이름으로 하나씩 보고한다.
+3. **레인 문서 적재** — 해당 레인 문서 + `engine/reference/verify.md`. cad 레인은 `engine/reference/dfm.md` 와 `cad-refs.md`·`cad-snapshot.md` 를, 조립체면 `cad-assembly.md` 를, 참조 이미지나 2D 도면을 받았으면 `cad-brief.md` 를, realtime 레인은 `engine/reference/budgets.md` 를 같이 적재한다. 미터·모뎀·게이트웨이·전원 장치처럼 활선/통신/RF가 있는 외함은 `engine/reference/electrical-enclosures.md` 도 적재하고, 안전 입력이 없으면 외관/배치 표본에서 멈춘다. 룩이 보이는 산출물(렌더 납품·realtime·art)은 만들기 직전 `engine/reference/look-floor.md` 를 적재한다 — 치수가 맞아도 초보 티가 나면 배달이 아니다. 조명·카메라·재질을 고르는 단계면 `engine/reference/lookdev.md` 와 `engine/data/` 카탈로그를 같이 적재한다. 새 파이프라인·도구를 검증하거나 표본이 필요하면 `engine/reference/specimens.md` 의 로컬 기준 자산부터 돌린다.
+4. **만든다** — 코드가 곧 모델이다. 파라메트릭 변수는 상단에 모으고, 마법의 숫자를 형상 안에 묻지 않는다. cad 레인은 `gen_step()` 규약을 쓴다.
+5. **측정한다** — 커널·메시가 낸 숫자로. cad 레인은 `cad.py inspect refs --facts --planes --positioning` 을 **모든 생성물에 예외 없이** 돌리고, 사용자가 말한 치수마다 `measure`/`align`/`frame` 을 건다. 그 위에 `cad_build.py`(쌍별 간섭·간극) / `mesh_audit.mjs`(공정) / `scene_audit.mjs` / `detect3d.mjs`.
+6. **본다** — `cad.py snapshot` 으로 CAD 워크벤치 뷰(면 + 에지 라인워크, 단면, 은선)를 만들고 PNG 를 **실제로 연다**. 스냅샷은 의무이고, 결정론 검사 통과는 건너뛸 이유가 되지 못한다(`cad-snapshot.md`). 무의존 대체가 필요하면 `shoot.mjs` — 다만 그것은 위치와 법선만 그리므로 룩 판정에 쓰지 않는다. 룩이 납품물인 경우 Blender/실제 엔진/브라우저의 뷰티 렌더도 따로 열어 본다. 근거: CADCodeVerify(ICLR 2025)·EvoCAD·3DCodeBench 모두, 렌더를 되먹이는 루프가 있을 때만 형상 오류가 잡힌다고 보고한다.
+7. **고친다** — 검출된 항목을 코드에서 고친다. 판정 기준을 낮춰서 통과시키지 않는다. 절차는 `cad-repair.md`.
+8. **기계에 배달 자격을 묻는다** — `node engine/scripts/cad_gate.mjs <납품 경로>`. 막히면 고친다.
+9. **배달한다** — 아래 배달 게이트를 이름으로 하나씩 보고한다.
 
 ## 배달 게이트 (3D)
 
-세 가지는 소스를 읽어서는 절대 판정할 수 없다. 산출물에서 확인하고, **항목 이름을 그대로 적어 보고**한다. 침묵은 통과가 아니라 미확인이다.
+산출물에서 확인하고, **항목 이름을 그대로 적어 보고**한다. 침묵은 통과가 아니라 미확인이다.
+
+기계가 지는 몫과 사람이 지는 몫이 갈린다. `cad_gate.mjs` 가 바이트로 증명되는 것을 막고(가짜 STEP, 신선하지 않은 위상 산출물, 아무것으로도 검증되지 않은 형상, 렌더 증거 없음, 간섭 부피 > 0, 단위 없는 DXF), 그 위의 판단은 아래 네 항목이 진다. **게이트 통과는 아래 네 항목의 면제가 아니다** — 게이트는 못 재는 것을 `unjudged` 로 이름 붙여 같이 낸다.
 
 - **형상이 맞는가.** 렌더 이미지를 직접 열어서, 요청한 형상의 특징(구멍 위치, 벽 두께, 조립 방향, 비율)을 하나씩 대조했다. "코드상 맞다"는 확인이 아니다.
+- **명세를 다 쟀는가.** 사용자가 말한 치수·간극·관계마다 `measure`/`align`/`frame` 결과가 있다. 안 잰 것은 "미확인"으로 적었다. 도면에서 딴 치수도 같은 기준이다.
 - **만들 수 있는가 / 돌아가는가.** cad 레인은 `mesh_audit` 판정(수밀·살두께·오버행)과 조립 간섭이 통과했다. realtime 레인은 `scene_audit` 예산과 `detect3d` FAIL 0 이다.
 - **움직임이 살아 있는가.** 선언한 모션을 실제로 트리거해서 봤다. `enableDamping` 을 켜고 `controls.update()` 를 부르지 않은 코드는 정지 화면이다 — `detect3d` 의 `inert-controls` 가 이것만 잡는다. 저감 모션(prefers-reduced-motion) 경로도 같은 기준으로 확인한다.
 - **초보 티가 없는가.** 실제 DCC/엔진/브라우저의 뷰티 렌더에서 `look-floor.md` 의 검증 항목(조명·접지·카메라·재질·실루엣·톤·스케일)을 대조했고, 거부 목록과 겹치는 선택이 브리프 근거 없이 남아 있지 않다. `shoot.mjs` 형상 시트만으로 매긴 룩 판정은 미확인이다.
@@ -45,9 +56,24 @@ description: "Freyja's 3D engine — Brisingamen (브리싱가멘/브리싱아�
 
 ## 런타임
 
-전부 `engine/scripts/` 아래에 있고, 자체 검증 스크립트는 **의존성이 없다**(node 내장 모듈만; node 18+). 설치·네트워크·브라우저·GPU 를 요구하지 않는다. 다만 `scene_audit` 는 성능 예산 감사이지 glTF 규격 적합성 검사기가 아니다. 납품 GLB/glTF 는 Khronos glTF Validator도 통과시킨다.
+두 층이다.
+
+**① 무의존 층** — `engine/scripts/*.mjs`. node 내장 모듈만 쓴다(node 18+). 설치·네트워크·브라우저·GPU 를 요구하지 않는다. 다만 `scene_audit` 는 성능 예산 감사이지 glTF 규격 적합성 검사기가 아니다. 납품 GLB/glTF 는 Khronos glTF Validator도 통과시킨다.
+
+**② CAD 커널 층** — `engine/scripts/cad.py` 가 입구이고, 실행체는 `engine/vendor/text-to-cad/` 에 벤더링돼 있다. uv 로 매번 격리 실행하므로(python 3.12 고정) 저장소 환경을 건드리지 않는다. **첫 실행은 커널 휠을 받느라 오래 걸린다 — 그 사실을 사용자에게 먼저 말한다.** 출처·라이선스·상류와의 차이는 `engine/vendor/text-to-cad/UPSTREAM.md` 와 플러그인 루트 `NOTICE`.
 
 ```bash
+CAD=engine/scripts/cad.py                                   # ② CAD 커널 층 입구
+python $CAD step     <model.py>                             # STEP + 위상 산출물 (+ --stl --3mf --glb)
+python $CAD inspect  refs <target> [#선택자...] --facts --planes --positioning
+python $CAD inspect  measure|align|frame|diff <target> ...  # 셀렉터 기반 검증 (cad-refs.md)
+python $CAD snapshot --job <job.json>                       # CAD 워크벤치 렌더 — 에지·단면·은선·GIF
+python $CAD dxf      <drawing.py>                           # 2D 도면·절단 레이아웃
+python $CAD gcode    discover|inspect|slice|validate ...    # FDM 슬라이싱
+python $CAD parts    "M3 socket head 12" --download         # 기성 STEP 부품 카탈로그
+python $CAD urdf|srdf|sdf <source.py>                       # 로봇 기술 파일
+node engine/scripts/cad_gate.mjs <납품 경로>                  # 배달 자격 판정 (막는다)
+
 node engine/scripts/preflight.mjs [경로]                    # 이 기계에서 되는 레인 확인
 node engine/scripts/shoot.mjs <model> --out shots \         # 오프라인 다면 렌더 → PNG 증거
      --views front,right,top,iso --highlight overhang|thick
@@ -67,7 +93,9 @@ uv run --no-project --python 3.12 --with build123d \
 - `shoot.mjs` 는 위치와 면 법선만 그리는 형상 검사기다. PBR·UV·텍스처·스킨·모프·애니메이션·룩 판정은 실제 DCC/런타임의 렌더 증거가 필요하다.
 - `mesh_polish.mjs` 는 STL·OBJ·무텍스처 CAD GLB용이다. UV·텍스처·스킨·모프·애니메이션이 있는 glTF는 손실 변환을 거부한다. 원본 glTF 최적화는 glTF-Transform/Blender를 쓰고, 의도적으로 버릴 때만 `--force-lossy`를 명시한다.
 - 단위: 제조 판정은 전부 mm 다. glTF 는 규격상 미터라 `mesh_audit` 이 자동 환산한다(`--unit` 으로 강제 지정).
-- `cad_build.py` 는 `PARTS = {"이름": 형상}` 규약을 읽고, 부품이 둘 이상이면 쌍마다 간섭 부피와 최소 간극을 잰다.
+- `cad_build.py` 는 `gen_step()` 을 먼저 보고, 없으면 `PARTS = {"이름": 형상}` 규약을 읽는다. 라벨 붙은 `Compound` 는 자식을 부품으로 펴서 **쌍마다 간섭 부피와 최소 간극**을 잰다. 그 두 숫자는 CAD 커널 층의 `refs`·`measure`·`align` 이 내지 않는다 — 그래서 두 층이 같이 돈다.
+- **`cad_build.py --out` 의 STEP 은 진단물이지 납품물이 아니다.** 위상 산출물이 없어 `refs`·`snapshot` 이 읽지 못한다. 납품 STEP 은 `cad.py step` 이 낸 것을 쓴다.
+- `cad.py` 는 uv 를 요구한다. 없으면 설치 방법을 말하고 멈춘다 — 되는 척하지 않는다.
 
 ## 산출물 금고
 
@@ -79,5 +107,7 @@ uv run --no-project --python 3.12 --with build123d \
 
 - 사용자 표면의 언어·이모지 규약, 접근성 바닥(대비, 키보드 포커스, prefers-reduced-motion), 증거 우선 보고는 Asgard 전역 규약 그대로다.
 - 3D 는 접근성 면제 구역이 아니다. 3D 로만 전달되는 정보에는 텍스트 대안이 있어야 하고, 카메라 자동 이동에는 정지 경로가 있어야 한다.
-- 상류 도구(text-to-cad, cad-khana, synaps-cad, 상용 CAD, 생성형 3D 서비스)로 넘길 시점과 방법은 `engine/reference/escalation.md` 에 있다. 이 엔진으로 안 되는 일을 되는 척하지 않는다.
+- 상류 도구(cad-khana, synaps-cad, 상용 CAD, FEA/CFD, Blender, 생성형 3D 서비스)로 넘길 시점과 방법은 `engine/reference/escalation.md` 에 있다. 이 엔진으로 안 되는 일을 되는 척하지 않는다.
+- 벤더링된 CAD 런타임은 **상류의 저작물**이다. 고칠 일이 생기면 `UPSTREAM.md` 의 편차 목록에 적고 고친다 — 조용히 갈라지면 다음 동기화가 불가능해진다.
+- fabricate 레인의 마지막 칸(프린터 전송, 절단 발주)은 **실물과 돈이 움직인다.** 되돌리기 어렵거나 바깥으로 나가는 동작은 사용자 승인을 먼저 받는다는 전역 규약이 그대로 걸린다.
 - 이 엔진의 판단 근거가 된 논문·벤치마크·실측은 `engine/reference/research.md` 에 출처와 함께 있다. 규칙을 바꾸려면 그 근거부터 확인한다.

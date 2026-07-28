@@ -8,7 +8,6 @@
 
 | 도구 | 언제 넘기는가 | 비용 |
 |---|---|---|
-| **text-to-cad** (earthtojake, MIT) | CAD 를 넘어선 하드웨어 워크플로 전체가 필요할 때 — URDF/SRDF/SDF 로봇 기술, G-code 슬라이싱, 규격 STEP 부품 검색, 프린터 작업 전송, 시트 절단 서비스 사전 검사 | 별도 설치(`npx skills install earthtojake/text-to-cad`), Python 3.11+, uv |
 | **cad-khana** (Apache-2.0) | build123d 진단 루프를 CLI 로 굳히고 싶을 때. 정투상 라인아트 도면 생성, 진단 diff | uv, OCP 뷰어(선택) |
 | **synaps-cad** (MIT/Apache-2.0) | OpenSCAD 소스를 정확 유리수 연산으로 다뤄야 할 때, 브라우저 내 CAD IDE 가 필요할 때 | Rust 빌드 또는 웹 데모, 초기 프로토타입 단계 |
 | **WebGPU/TSL 전용 스킬** (dgreenheck, MIT) | TSL 셰이더·컴퓨트를 깊게 파야 할 때. r183+ API 예제 모음 | Claude Code 스킬 설치 |
@@ -56,9 +55,16 @@ bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB")
 - **결과를 되돌려 받을 수 있는가.** 상류 도구가 STEP/GLB 를 내면 이 엔진의 검증 루프로 다시 들어올 수 있다. 그렇게 설계한다.
 - **사용자가 그 비용을 낼 준비가 됐는가.** 설치·계정이 필요한 경로는 먼저 말하고 승인을 받는다.
 
+## 예전에 넘기던 것 — 이제 이 엔진 안에 있다
+
+로봇 기술 파일(URDF/SRDF/SDF), G-code 슬라이싱, 기성 STEP 부품 검색, 프린터 작업 전송, 시트 절단 서비스 사전 검사, 셀렉터 기반 STEP 검증, 조립 조인트, CAD 워크벤치 스냅샷, 암시적 SDF 조형, 로컬 리뷰 뷰어. **더 이상 승급 대상이 아니다.**
+
+`engine/vendor/text-to-cad/` 에 런타임이 벤더링돼 있고, 입구는 `engine/scripts/cad.py`, 레인 문서는 `lane-cad.md`·`lane-fabricate.md`·`lane-robot.md`·`lane-implicit.md`·`lane-viewer.md`. 이것들을 "설치가 필요한 외부 도구"라고 말하지 않는다 — 필요한 것은 uv 와 node 뿐이다.
+
 ## 넘기지 않아도 되는 흔한 오해
 
 - "STEP 을 만들려면 상용 CAD 가 필요하다" — build123d/CadQuery 가 OpenCASCADE 커널로 직접 낸다.
 - "3D 렌더를 보려면 GPU 나 브라우저가 필요하다" — `shoot.mjs` 는 node 만으로 다면 렌더를 만든다.
 - "웹 3D 성능은 실기기에서만 알 수 있다" — 자산 예산은 정적으로 판정된다. 프레임률만 실기기 영역이다.
 - "생성형 3D 가 CAD 를 대체한다" — 치수가 없는 메시는 제조 산출물이 아니다.
+- "나사·베어링·모터는 직접 모델링해야 한다" — `cad.py parts` 가 16,000여 개 카탈로그에서 실제 STEP 을 받는다. 나사산을 그리면 파일만 무거워지고 정확도는 오히려 떨어진다.

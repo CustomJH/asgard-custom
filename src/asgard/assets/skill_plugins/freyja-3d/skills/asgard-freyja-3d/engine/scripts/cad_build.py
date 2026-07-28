@@ -6,12 +6,19 @@
     uv run --no-project --python 3.12 --with build123d --with lib3mf python cad_build.py model.py --formats step,stl,glb,3mf
 
 모델 스크립트 규약(위에서부터 먼저 찾은 것을 쓴다):
+    def gen_step(): ...                         # STEP 파이프라인 정본 — 반환값이 곧 형상이다
     PARTS = {"housing": housing, "lid": lid}   # 이름 있는 조립체 — 간섭·간극 검사를 받는다
     result / part / assembly = <Shape>          # 단일 부품
     (없으면) 모듈 전역에서 build123d Shape 를 수집한다
 
+`gen_step()` 을 먼저 보는 이유: STEP 레인의 정본 진입점이 `vendor/text-to-cad/skills/cad/scripts/step`
+이고 그 규약이 `gen_step()` 이다. 한 소스 파일이 두 파이프라인을 다 먹이게 해서, 조립체를 간섭
+검사하려고 형상을 두 번 적는 일이 없게 한다. 라벨 붙은 Compound 를 반환하면 자식이 곧 부품 이름이
+되어 그대로 쌍별 간섭 검사에 들어간다.
+
 에이전트가 이 도구를 쓰는 이유는 하나다. 코드가 실행됐다는 사실과 형상이 맞다는 사실은 다르며,
-후자는 커널이 측정한 숫자로만 확인된다.
+후자는 커널이 측정한 숫자로만 확인된다. 이 스크립트가 STEP 레인에서 갖는 고유 몫은 **쌍별 간섭
+부피와 최소 간극**이다 — cadpy 의 refs/measure/align 은 그 둘을 내지 않는다.
 """
 
 from __future__ import annotations
@@ -22,6 +29,15 @@ import runpy
 import sys
 import traceback
 from pathlib import Path
+
+# 한국어 Windows(cp949)·서구권 Windows(cp1252) 콘솔은 이 파일의 엠대시·엔대시를 싣지 못하고,
+# stdout 기본 오류 처리기가 strict 라 진단 보고를 다 만들어놓고 마지막 write 에서 죽는다
+# (실측: `'cp949' codec can't encode character '—' in position 408`). UTF-8 강제.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+    except Exception:
+        pass
 
 EXPORT_NAMES = ("PARTS", "parts", "result", "part", "assembly", "model", "shape")
 
@@ -43,8 +59,32 @@ def _is_shape(bd, value) -> bool:
     return isinstance(value, bd.Shape)
 
 
+def _explode_compound(bd, name: str, shape) -> dict:
+    """라벨 붙은 Compound 는 자식을 부품으로 편다 — 쌍별 간섭 검사의 단위가 부품이라서다.
+
+    자식이 하나뿐이거나 라벨이 없으면 펴지 않는다. 이름 없는 조각 둘을 part_0/part_1 로
+    불러봐야 간섭 보고를 읽을 수 없다.
+    """
+    children = [child for child in getattr(shape, "children", ()) or () if _is_shape(bd, child)]
+    if len(children) < 2:
+        return {name: shape}
+    labels = [str(getattr(child, "label", "") or "") for child in children]
+    if not all(labels) or len(set(labels)) != len(labels):
+        return {name: shape}
+    return dict(zip(labels, children, strict=True))
+
+
 def collect_parts(bd, namespace: dict) -> dict:
     """모델 스크립트의 전역에서 내보낼 형상을 규약 순서대로 찾는다."""
+    generator = namespace.get("gen_step")
+    if callable(generator):
+        produced = generator()
+        if isinstance(produced, dict) and produced and all(_is_shape(bd, item) for item in produced.values()):
+            return {str(key): item for key, item in produced.items()}
+        if _is_shape(bd, produced):
+            label = str(getattr(produced, "label", "") or "") or "part"
+            return _explode_compound(bd, label, produced)
+
     for name in EXPORT_NAMES:
         value = namespace.get(name)
         if isinstance(value, dict) and value and all(_is_shape(bd, item) for item in value.values()):
