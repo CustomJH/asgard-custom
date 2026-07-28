@@ -170,6 +170,102 @@ def _personal_memory_check(root: str) -> dict | None:
         return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
 
 
+def _memory_semantic_check() -> dict | None:
+    """개인 메모리 시맨틱 스트림 상태 — 켜져 있다는 것과 실제로 도는 것을 구분해 보고한다.
+
+    memory_semantic 계약이 "active() 로 활성/비활성을 대시보드·doctor 에 그대로 노출한다
+    (숨기지 않는다)"고 적어 놓고 배선이 없던 자리다. 기본이 켜진 뒤로는 더 중요해졌다 —
+    켠 줄 알았는데 임베더를 못 불러 2경로로 도는 상태가 가장 조용한 실패다.
+
+    실측 근거 (26-07-27, 40페이지·80질의): hit@1 0.750→0.850, 놓친 질의 11→2건, 회귀 0건.
+    대가는 프로세스당 로드 ~1.2초, 첫 실행은 모델 내려받기 ~35초·약 1GB."""
+    try:
+        from .. import memory_semantic
+
+        mode = memory_semantic.mode()
+        if mode == "off":
+            return {
+                "name": "personal memory semantic",
+                "ok": True,
+                "detail": "off — lexical 2경로로 동작 (명시적으로 끈 상태)",
+                "fix": "다시 켜려면 asgard memory semantic on",
+            }
+        active = memory_semantic.active()
+        status = memory_semantic.status()
+        if active:
+            return {
+                "name": "personal memory semantic",
+                "ok": True,
+                "detail": f"on · {status.get('model') or '?'} · {status.get('dim') or 0}d",
+                "fix": "",
+            }
+        cached = memory_semantic.model_cached()
+        return {
+            "name": "personal memory semantic",
+            "ok": False,
+            "detail": (
+                f"mode={mode} 인데 임베더를 못 불렀다 — 2경로로 폴백 중"
+                + ("" if cached else " (모델을 아직 안 받았다)")
+            ),
+            "fix": "asgard memory semantic warmup (실패하면 asgard memory semantic off 로 명시적으로 끈다)",
+        }
+    except Exception:
+        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
+
+
+def _memory_curator_check(root: str) -> dict | None:
+    """개인 메모리를 손질하는 provider 진단.
+
+    관리자가 없으면 노른·패턴 학습이 멈춘다. 그런데 저장·검색·회상은 LLM 없이 그대로 돌기
+    때문에 사용자에게는 아무 일도 안 일어난 것처럼 보인다 — 조용히 멈춘 자가 진화를 보이게 한다."""
+    try:
+        from ..memory.manager import describe
+
+        row = describe(root)
+        origin = {"main": "메인 provider", "config": "설정 지정", "env": "env override"}.get(
+            row["source"], row["source"]
+        )
+        if row.get("ready"):
+            return {
+                "name": "personal memory curator",
+                "ok": True,
+                "detail": f"{row.get('provider')} {row.get('model', '')} ({origin})",
+                "fix": "",
+            }
+        return {
+            "name": "personal memory curator",
+            "ok": False,
+            "detail": "없음 — 노른·패턴 학습이 멈춘다 (저장·검색·회상은 정상)",
+            "fix": "asgard memory provider --set <provider>[:<model>] (또는 메인 provider 연결)",
+        }
+    except Exception:
+        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
+
+
+def _memory_durability_check() -> dict | None:
+    """개인 메모리의 내구성 — 백업 유무와 동기화 원격. 정본이 한 기계에만 있으면 그렇게 말한다."""
+    try:
+        from ..memory import backup as backup_mod
+        from ..memory import sync as sync_mod
+
+        state = backup_mod.state_note()
+        remote = sync_mod.status()
+        parts = [f"backups {state['count']}" + (f" (latest {state['latest']})" if state["latest"] else "")]
+        parts.append(f"remote {remote['transport']}" if remote["configured"] else "remote 미설정")
+        if remote["unresolved_conflicts"]:
+            parts.append(f"미해결 충돌 {len(remote['unresolved_conflicts'])}")
+        # 빈 위키는 잃을 게 없다 — 아직 아무것도 안 적은 사람에게 백업을 재촉하지 않는다
+        durable = state["count"] > 0 or remote["configured"] or remote["local_files"] <= 1
+        return {
+            "name": "personal memory durability",
+            "ok": durable,
+            "detail": " · ".join(parts),
+            "fix": "" if durable else "asgard memory backup · asgard memory sync --set-remote <path-or-url>",
+        }
+    except Exception:
+        return None
+
+
 def _manual_area_issues(root: str, mdir: str) -> tuple[list[str], list[str], int, list[str]]:
     """수동 영역 파일의 (유령, 위험, 항목 수, 영역 목록).
 
@@ -805,6 +901,53 @@ def _design_engine_checks() -> list[dict]:
     return checks
 
 
+def _office_checks() -> list[dict]:
+    """Sága 문서 계층. 생성·읽기·검증은 순수 파이썬이라 항상 서야 하고, 렌더만 외부 관문이다."""
+    from ..skill_registry import _BUNDLED_PLUGINS_DIR
+
+    checks: list[dict] = []
+    missing = []
+    for label, module in (("python-docx", "docx"), ("python-pptx", "pptx"), ("openpyxl", "openpyxl")):
+        try:
+            __import__(module)
+        except ImportError:
+            missing.append(label)
+    checks.append(
+        {
+            "name": "office engines",
+            "ok": not missing,
+            "detail": "docx · pptx · xlsx bundled" if not missing else f"missing: {', '.join(missing)}",
+            "fix": "재설치로 복구된다: asgard update (기본 의존성 — 빠지면 문서 생성 자체가 죽는다)",
+        }
+    )
+
+    scripts = Path(_BUNDLED_PLUGINS_DIR) / "asgard-office/skills/asgard-office/scripts"
+    required = ("build_docx.py", "build_pptx.py", "build_xlsx.py", "extract.py", "verify.py", "fill.py", "outline.py")
+    absent = [name for name in required if not (scripts / name).is_file()]
+    checks.append(
+        {
+            "name": "office lanes",
+            "ok": not absent,
+            "detail": f"{len(required)} lane scripts bundled" if not absent else f"missing: {', '.join(absent)}",
+            "fix": "재설치로 복구된다: asgard update (휠에 동봉 — 생성·읽기·검증이 전부 이 스크립트에 있다)",
+        }
+    )
+
+    # 렌더는 없어도 되는 게 정상이다. 관문이 없다는 사실만 정확히 알리고 실패로 세지 않는다.
+    soffice = on_path("soffice") or on_path("libreoffice") or os.environ.get("ASGARD_SOFFICE", "")
+    if not soffice and sys.platform == "darwin" and Path("/Applications/LibreOffice.app").exists():
+        soffice = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    checks.append(
+        {
+            "name": "office render gate",
+            "ok": True,
+            "detail": (soffice or "LibreOffice not found — verify still runs, render and --recalc do not"),
+            "fix": "선택 사항: brew install --cask libreoffice (PDF·페이지 이미지·수식 재계산에만 쓰인다)",
+        }
+    )
+    return checks
+
+
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
     py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처)
@@ -836,8 +979,15 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
         },
     ]
     checks += _design_engine_checks()
+    checks += _office_checks()
     if personal := _personal_memory_check(os.getcwd()):
         checks.append(personal)
+    if curator := _memory_curator_check(os.getcwd()):
+        checks.append(curator)
+    if semantic := _memory_semantic_check():
+        checks.append(semantic)
+    if durability := _memory_durability_check():
+        checks.append(durability)
     if tiers := _model_tier_check(os.getcwd()):
         checks.append(tiers)
     checks += _trinity_checks(os.getcwd())

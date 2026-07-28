@@ -86,14 +86,36 @@ def health_data(d: str) -> dict:
     counts = {"error": 0, "warn": 0, "info": 0}
     for f in findings:
         counts[f["level"]] = counts.get(f["level"], 0) + 1
-    size = len(memory.build_index(d))
-    budget = memory.index_budget()
-    pct = round(100 * size / budget) if budget else 0
-    state = "crit" if size > budget else "warn" if pct >= 85 else "ok"
+    sections = []
+    for kind, used, budget in memory.section_usage(d):
+        pct = round(100 * used / budget) if budget else 0
+        sections.append(
+            {
+                "kind": kind,
+                "size": used,
+                "budget": budget,
+                "pct": pct,
+                "state": "crit" if used > budget else "warn" if pct >= 85 else "ok",
+            }
+        )
+    size = sum(s["size"] for s in sections)
+    total = sum(s["budget"] for s in sections)
+    pct = round(100 * size / total) if total else 0
     return {
         "findings": findings,
         "counts": counts,
-        "budget": {"size": size, "budget": budget, "pct": pct, "state": state},
+        # 총량은 요약일 뿐이다 — 통합할 자리는 칸이 정한다. 한 칸이라도 넘치면 전체가 crit.
+        "budget": {
+            "size": size,
+            "budget": total,
+            "pct": pct,
+            "state": "crit"
+            if any(s["state"] == "crit" for s in sections)
+            else "warn"
+            if any(s["state"] == "warn" for s in sections)
+            else "ok",
+            "sections": sections,
+        },
     }
 
 

@@ -39,6 +39,7 @@ _SUMMARY = {
     "desktop": "Asgard Desktop — tasks, artifacts, and settings",
     "evolve": "self-evolution inbox — skill drafts",
     "humanize": "Bragi — grade text for machine-writing tells, any language",
+    "office": "Sága — build, read, verify, and fill documents",
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
@@ -50,7 +51,23 @@ _FLAGS = {
     "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
     "thor": ["--base", "--json", "--note", "--path", "--quiet"],
-    "tutor": ["--base", "--path", "--report", "--out", "--limit", "--json", "--quiet"],
+    "tutor": [
+        "--base",
+        "--path",
+        "--report",
+        "--out",
+        "--limit",
+        "--progress",
+        "--brief",
+        "--text",
+        "--answer",
+        "--dismiss",
+        "--note",
+        "--collect",
+        "--record",
+        "--json",
+        "--quiet",
+    ],
     "surface": ["--base", "--json", "--quiet"],
     "setup": [],
     "update": ["--dry-run", "--no-sync", "--quiet"],
@@ -66,6 +83,7 @@ _FLAGS = {
     "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
     "desktop": ["--port", "--no-open", "--browser"],
     "evolve": [],
+    "office": [],
     "humanize": ["--lang", "--json"],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
@@ -122,6 +140,15 @@ _SKILLS_SUB = {
     "disable": "disable a project skill",
 }
 _PLUGINS_SUB = {"list": "list plugins", "install": "install a local data-only plugin"}
+_OFFICE_SUB = {
+    "build": "spec to docx, pptx, or xlsx",
+    "read": "document to Markdown or JSON",
+    "verify": "static delivery gate",
+    "fill": "fill placeholders in an existing file",
+    "render": "PDF and page images",
+    "outline": "genre skeletons",
+    "template": "template registry",
+}
 _MAP_SUB = {
     "generate": "create the deterministic project map",
     "update": "refresh structural facts",
@@ -161,13 +188,21 @@ _MEM_SUB = {
     "path": "print or configure the memory directory",
     "norn": "evolve the wiki (LLM deltas, deterministic apply)",
     "norn-restore": "restore a page archived by a norn pass",
-    "obsidian": "open the personal memory wiki in Obsidian",
+    "pattern": "learn observations about Odin from past turns",
+    "ask": "answer a question about Odin from every memory tier",
+    "provider": "show or set the provider that curates personal memory",
+    "semantic": "semantic search state (status/on/off/warmup)",
+    "backup": "snapshot, verify, or restore the canonical wiki",
+    "sync": "sync the wiki with a shared folder or git remote",
+    "obsidian": "prepare and open the personal memory wiki in Obsidian",
     "connect": "select and trust a project-memory backend",
     "project-scan": "preview important project artifacts",
     "project-sync": "sync approved artifacts to the selected backend",
     "project-approve": "approve a staged project-memory record",
     "project-rehydrate": "replay Git canonical records to the selected backend",
     "project-reflect": "LLM-synthesized answer over the project bank (advisory)",
+    "project-evolve": "find stale, duplicate, or contradictory project records",
+    "project-ingest": "parse thrown documents into project memory",
     "mcp": "stdio MCP bridge (shared memory)",
 }
 _PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}
@@ -291,6 +326,15 @@ def _bash() -> str:
                 "    plugins)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_PLUGINS_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "office":
+            cases.append(
+                "    office)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_OFFICE_SUB)} --help" -- "$cur") )\n'
+                '      elif [ "${COMP_WORDS[2]}" = "build" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
+                '        COMPREPLY=( $(compgen -W "docx pptx xlsx" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "memory":
@@ -420,6 +464,15 @@ def _zsh() -> str:
                 "    skills)\n"
                 "      if (( CURRENT == 3 )); then\n"
                 f"        compadd -- {' '.join(_SKILLS_SUB)} --help\n"
+                "      fi ;;"
+            )
+        elif name == "office":
+            cases.append(
+                "    office)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_OFFICE_SUB)} --help\n"
+                "      elif [[ $words[3] == build && CURRENT == 4 ]]; then\n"
+                "        compadd -- docx pptx xlsx\n"
                 "      fi ;;"
             )
         elif name == "plugins":
@@ -565,6 +618,13 @@ def _fish() -> str:
     plugins_top = "__fish_seen_subcommand_from plugins; and not __fish_seen_subcommand_from " + " ".join(_PLUGINS_SUB)
     for sub, desc in _PLUGINS_SUB.items():
         lines.append(f"complete -c asgard -n \"{plugins_top}\" -a {sub} -d '{desc}'")
+    office_top = "__fish_seen_subcommand_from office; and not __fish_seen_subcommand_from " + " ".join(_OFFICE_SUB)
+    for sub, desc in _OFFICE_SUB.items():
+        lines.append(f"complete -c asgard -n \"{office_top}\" -a {sub} -d '{desc}'")
+    lines.append(
+        'complete -c asgard -n "__fish_seen_subcommand_from office; and __fish_seen_subcommand_from build" '
+        '-a "docx pptx xlsx"'
+    )
     lines.append(
         'complete -c asgard -n "__fish_seen_subcommand_from tools; and __fish_seen_subcommand_from list" -l json'
     )

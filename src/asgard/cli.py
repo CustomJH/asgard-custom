@@ -273,16 +273,32 @@ def craft(
 
 @app.command(help="hand THIS diff back to you — what changed, and the questions only you can answer")
 def tutor(
+    words: list[str] = typer.Argument(
+        None, help="your answer (--answer) · the false-alarm reason (--dismiss) · the request text (--brief)"
+    ),
     base: str = typer.Option("HEAD", "--base", help="git ref to compare against (default HEAD)"),
     path: list[str] = typer.Option(None, "--path", help="review these paths instead of the diff (repeatable)"),
     report: bool = typer.Option(False, "--report", help="also write a markdown review to .asgard/tutor/"),
     out: str = typer.Option("", "--out", help="write the markdown review to this path instead"),
     limit: int = typer.Option(6, "--limit", help="checkpoints shown on screen (the report carries all)"),
+    progress: bool = typer.Option(False, "--progress", help="what you have actually taken ownership of, over time"),
+    brief: bool = typer.Option(False, "--brief", help="before you start: questions still open where you are headed"),
+    text: str = typer.Option("", "--text", help="the request text --brief matches against"),
+    answer: str = typer.Option("", "--answer", help="close a question with your answer (checkpoint mark)"),
+    dismiss: str = typer.Option("", "--dismiss", help="close a question as a false alarm (checkpoint mark)"),
+    note: str = typer.Option("", "--note", help="the answer or the dismissal reason"),
+    collect: bool = typer.Option(
+        False, "--collect", help="harvest the answers you wrote into the review report (--out picks another file)"
+    ),
+    record: bool = typer.Option(False, "--record", help="count these questions in the growth record (hooks only)"),
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     from .commands.tutor import run_tutor
 
+    # 답은 따옴표 없이 그냥 쓰는 것이 사람이 실제로 치는 방식이다 — `--note` 를 기억해야만
+    # 답할 수 있으면 답은 안 온다. 명시 옵션이 있으면 그쪽이 이긴다(스크립트 경로 보존).
+    loose = " ".join(words or ()).strip()
     raise typer.Exit(
         run_tutor(
             base=base,
@@ -292,6 +308,14 @@ def tutor(
             out=out,
             limit=limit,
             quiet=quiet,
+            record=record,
+            progress=progress,
+            brief=brief,
+            text=text or loose,
+            answer=answer,
+            dismiss=dismiss,
+            note=note or loose,
+            collect=collect,
         )
     )
 
@@ -299,7 +323,7 @@ def tutor(
 @app.command(help="backend procedure engine — verb playbooks, the next verb, and the correctness gate")
 def thor(
     verb: str = typer.Argument(
-        "", help="survey|shape|diagnose|implement|migrate|integrate|harden|scale|sweep|evidence|squad|gate"
+        "", help="survey|shape|diagnose|implement|migrate|integrate|harden|scale|sweep|evidence|squad|gate|trail"
     ),
     base: str = typer.Option("HEAD", "--base", help="gate only: git ref to compare against (default HEAD)"),
     path: list[str] = typer.Option(
@@ -590,17 +614,16 @@ def memory_default(
     raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
-@memory_app.command("add", help="add a page (rejects on injection scan or index budget)")
+@memory_app.command("add", help="add a page (rejects on injection scan)")
 def memory_add(
     text: str = typer.Argument(..., help="the fact/insight to remember"),
     title: str = typer.Option(None, "--title", help="page title (default: first line)"),
     kind: str = typer.Option("note", "--kind", help="note|user|decision|insight|reference|feedback"),
     links: str = typer.Option("", "--links", help="related slugs, comma-separated"),
-    force: bool = typer.Option(False, "--force", help="bypass the index budget gate"),
 ) -> None:
     from .commands.memory import run_add
 
-    raise typer.Exit(run_add(text, title, kind, links, force))
+    raise typer.Exit(run_add(text, title, kind, links))
 
 
 @memory_app.command("ingest", help="absorb new knowledge — near-duplicates merge into existing pages")
@@ -728,6 +751,58 @@ def memory_path(
     raise typer.Exit(run_path(directory, reset))
 
 
+@memory_app.command("provider", help="show or set the provider that curates personal memory")
+def memory_provider(
+    set_: str = typer.Option(
+        "", "--set", help="provider[:model] to curate personal memory (empty --clear restores the main provider)"
+    ),
+    clear: bool = typer.Option(False, "--clear", help="fall back to the main provider"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_provider
+
+    raise typer.Exit(run_provider(set_, clear, json_))
+
+
+@memory_app.command("semantic", help="semantic search state (status|on|off|warmup)")
+def memory_semantic(
+    action: str = typer.Argument("status", help="status|on|off|warmup"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_semantic
+
+    raise typer.Exit(run_semantic(action, json_))
+
+
+@memory_app.command("backup", help="snapshot the canonical wiki (create/list/restore/verify/prune)")
+def memory_backup(
+    action: str = typer.Argument("create", help="create|list|restore|verify|prune"),
+    name: str = typer.Option("", "--name", help="backup name for restore/verify (default: latest)"),
+    label: str = typer.Option("", "--label", help="short label appended to the archive name"),
+    keep: int = typer.Option(0, "--keep", help="retention count (default 10)"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_backup
+
+    raise typer.Exit(run_backup(action, name, label, keep, json_))
+
+
+@memory_app.command("sync", help="sync the canonical wiki with a shared folder or git remote")
+def memory_sync(
+    set_remote: str = typer.Option("", "--set-remote", help="persist the sync remote (folder path or git URL)"),
+    transport: str = typer.Option("dir", "--transport", help="dir|git — used with --set-remote"),
+    branch: str = typer.Option("main", "--branch", help="git branch (git transport only)"),
+    unset: bool = typer.Option(False, "--unset", help="forget the configured remote"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="print the plan without writing"),
+    adopt: bool = typer.Option(False, "--adopt", help="use a non-empty unmarked folder as the remote"),
+    status_: bool = typer.Option(False, "--status", help="print remote, last sync, and unresolved conflicts"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_sync
+
+    raise typer.Exit(run_sync(set_remote, transport, branch, unset, dry_run, adopt, status_, json_))
+
+
 @memory_app.command("norn", help="evolve the wiki — LLM proposes deltas, deterministic code applies (dry-run)")
 def memory_norn(
     apply: bool = typer.Option(False, "--apply", help="commit the validated deltas (backup + report)"),
@@ -743,6 +818,28 @@ def memory_norn(
     from .commands.memory import run_norn
 
     raise typer.Exit(run_norn(apply, nudge, json_, auto, wake))
+
+
+@memory_app.command("pattern", help="learn patterns about Odin from past turns (dry-run; --apply promotes)")
+def memory_pattern(
+    apply: bool = typer.Option(False, "--apply", help="promote the validated observations into the wiki"),
+    due: bool = typer.Option(False, "--due", hidden=True, help="hook surface: report whether a pass is due"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_pattern
+
+    raise typer.Exit(run_pattern(apply, json_, due))
+
+
+@memory_app.command("ask", help="answer a question about Odin from personal, episodic, and project memory")
+def memory_ask(
+    question: str = typer.Argument(..., help="natural-language question about the user"),
+    k: int = typer.Option(5, "-k", help="evidence per source"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_ask
+
+    raise typer.Exit(run_ask(question, k, json_))
 
 
 @memory_app.command("norn-restore", help="restore a page archived by a norn pass")
@@ -763,11 +860,14 @@ def memory_project_reflect(
     raise typer.Exit(run_project_reflect(question, budget, json_))
 
 
-@memory_app.command("obsidian", help="open the personal memory wiki in Obsidian")
-def memory_obsidian() -> None:
+@memory_app.command("obsidian", help="prepare the wiki as an Obsidian vault (config + maps) and open it")
+def memory_obsidian(
+    refresh: bool = typer.Option(False, "--refresh", help="prepare the vault and rebuild maps without opening"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
     from .commands.memory import run_obsidian
 
-    raise typer.Exit(run_obsidian())
+    raise typer.Exit(run_obsidian(refresh, json_))
 
 
 @memory_app.command("dashboard", help="open a read-only local dashboard for the personal memory wiki")
@@ -814,23 +914,55 @@ def memory_connect(
 @memory_app.command("project-scan", help="preview important code/docs eligible for project memory")
 def memory_project_scan(
     all_files: bool = typer.Option(False, "--all", help="bootstrap scan of all important tracked artifacts"),
+    inventory: bool = typer.Option(
+        False, "--inventory", help="also list lower-scoring files as digest-tier (header only, full coverage)"
+    ),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.memory import run_project_scan
 
-    raise typer.Exit(run_project_scan(all_files=all_files, json_out=json_))
+    raise typer.Exit(run_project_scan(all_files=all_files, json_out=json_, inventory=inventory))
 
 
 @memory_app.command("project-sync", help="sync approved important code/docs into the selected project-memory backend")
 def memory_project_sync(
     all_files: bool = typer.Option(False, "--all", help="bootstrap all important tracked artifacts"),
+    inventory: bool = typer.Option(
+        False, "--inventory", help="also register lower-scoring files as digest-tier (header only, full coverage)"
+    ),
     yes: bool = typer.Option(False, "--yes", "-y", help="execute the previewed external write"),
     plan_id: str | None = typer.Option(None, "--plan-id", help="SHA-256 plan id emitted by the preview"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.memory import run_project_sync
 
-    raise typer.Exit(run_project_sync(all_files=all_files, yes=yes, json_out=json_, plan_id=plan_id))
+    raise typer.Exit(
+        run_project_sync(all_files=all_files, yes=yes, json_out=json_, plan_id=plan_id, inventory=inventory)
+    )
+
+
+@memory_app.command(
+    "project-evolve", help="find stale/duplicate/contradictory project records (dry-run; --apply stages approvals)"
+)
+def memory_project_evolve(
+    apply: bool = typer.Option(False, "--apply", help="stage the validated deltas for approval"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_evolve
+
+    raise typer.Exit(run_project_evolve(apply, json_))
+
+
+@memory_app.command("project-ingest", help="parse thrown documents (pdf/docx/hwp/md/…) into project memory")
+def memory_project_ingest(
+    paths: list[str] = typer.Argument(..., metavar="FILE...", help="documents to ingest"),
+    strategy: str = typer.Option("", "--strategy", help="document|record — override the automatic choice"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="stage the previewed documents for approval"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_ingest
+
+    raise typer.Exit(run_project_ingest(paths, strategy, yes, json_))
 
 
 @memory_app.command("project-approve", help="approve and commit one pending project-memory proposal")
@@ -1014,6 +1146,103 @@ def run(
     raise typer.Exit(
         run_prompt(prompt, provider=provider, model=model, json_out=json_, resume=resume, quest_id=quest, dual=dual)
     )
+
+
+# Sága — the document lane. `asgard skills run asgard-office -- …` is the agent's
+# surface; this is the same engine for a person, with a rendered catalog.
+office_app = typer.Typer(help="Sága — build, read, verify, and fill documents", invoke_without_command=True)
+app.add_typer(office_app, name="office")
+
+
+@office_app.callback()
+def office_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.office import run_office_outline
+
+        raise typer.Exit(run_office_outline("", "en", "", False))
+
+
+@office_app.command("build", help="build a document from a spec (docx | pptx | xlsx)")
+def office_build(
+    lane: str = typer.Argument(..., metavar="docx|pptx|xlsx"),
+    spec: str = typer.Argument(..., metavar="<spec file>"),
+    output: str = typer.Option(..., "-o", "--output"),
+    template: str = typer.Option("", "--template", help="named template from the Office registry"),
+    values: str = typer.Option("", "--values", help="JSON/YAML values for {{placeholders}}"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.office import run_office_build
+
+    raise typer.Exit(run_office_build(lane, spec, output, template, values, json_))
+
+
+@office_app.command("read", help="read a document back out as Markdown or JSON")
+def office_read(
+    path: str = typer.Argument(..., metavar="<file>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.office import run_office_read
+
+    raise typer.Exit(run_office_read(path, json_))
+
+
+@office_app.command("verify", help="static delivery gate — overflow, contrast, placeholders, formulas")
+def office_verify(
+    path: str = typer.Argument(..., metavar="<file>"),
+    strict: bool = typer.Option(False, "--strict", help="fail on warnings as well as errors"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.office import run_office_verify
+
+    raise typer.Exit(run_office_verify(path, strict, json_))
+
+
+@office_app.command("fill", help="fill {{placeholders}} in a file somebody else designed")
+def office_fill(
+    path: str = typer.Argument(..., metavar="<file>"),
+    values: str = typer.Option("", "--values"),
+    output: str = typer.Option("", "-o", "--output"),
+    scan: bool = typer.Option(False, "--scan", help="list the placeholders instead of filling them"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.office import run_office_fill
+
+    raise typer.Exit(run_office_fill(path, values, output, scan, json_))
+
+
+@office_app.command("render", help="PDF and page images, or workbook recalculation (needs LibreOffice)")
+def office_render(
+    path: str = typer.Argument(None, metavar="<file>"),
+    outdir: str = typer.Option("", "-o", "--outdir"),
+    probe: bool = typer.Option(False, "--probe", help="report which external tools are available"),
+    recalc: bool = typer.Option(False, "--recalc", help="evaluate an .xlsx and cache the results in place"),
+) -> None:
+    from .commands.office import run_office_render
+
+    raise typer.Exit(run_office_render(path, outdir, probe, recalc))
+
+
+@office_app.command("outline", help="genre skeletons — 23 document and deck shapes")
+def office_outline(
+    genre: str = typer.Argument("", metavar="[genre]"),
+    language: str = typer.Option("en", "--language", help="en|ko heading language"),
+    output: str = typer.Option("", "-o", "--output"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.office import run_office_outline
+
+    raise typer.Exit(run_office_outline(genre, language, output, json_))
+
+
+@office_app.command(
+    "template",
+    help="template registry: list | show | new | adopt | check | render",
+    context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
+)
+def office_template(ctx: typer.Context) -> None:
+    from .commands.office import run_office_template
+
+    raise typer.Exit(run_office_template(list(ctx.args) or ["list"]))
 
 
 if __name__ == "__main__":

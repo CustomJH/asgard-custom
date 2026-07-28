@@ -147,9 +147,9 @@ def _guard(fn: Callable[[], int]) -> int:
         return 1
 
 
-def run_add(text: str, title: str | None, kind: str, links: str, force: bool) -> int:
+def run_add(text: str, title: str | None, kind: str, links: str) -> int:
     def _do() -> int:
-        slug, path = memory.add(text, title=title, kind=kind, links=links, force=force)
+        slug, path = memory.add(text, title=title, kind=kind, links=links)
         ui.ok(f"added {slug} → {path}")
         return 0
 
@@ -470,19 +470,38 @@ def run_path(directory: str | None = None, reset: bool = False) -> int:
     return _guard(_do)
 
 
-def run_obsidian() -> int:
+def run_obsidian(refresh_only: bool = False, json_out: bool = False) -> int:
+    """개인 위키를 Obsidian vault 로 준비하고 연다 — 설정 스캐폴드 + 목차 재생성 + URI 열기."""
+
     def _do() -> int:
-        vault = memory.ensure_home()
-        if not os.path.isdir(os.path.join(vault, ".obsidian")):
-            raise ValueError(f"open this folder as an Obsidian vault once, then retry: {vault}")
+        from ..memory import vault as vault_mod
+
+        state = vault_mod.refresh()
+        vault = state["directory"]
+        if json_out:
+            print(_json.dumps(state, ensure_ascii=False, indent=2))
+            return 0
+        if state["scaffolded"]:
+            ui.step(f"vault 설정 생성 · {', '.join(state['scaffolded'])}")
+        ui.step(f"목차 갱신 · {len(state['maps'])}개 지도 · {state['pages']} page(s)")
+        if refresh_only:
+            ui.ok(f"vault 준비됨 → {vault}")
+            return 0
+        # Obsidian URI 는 이미 등록된 vault 만 연다. 설정만 심어서는 등록되지 않으므로,
+        # 한 번은 사람이 "Open folder as vault" 를 해야 한다 — 그 한 번을 정확히 안내한다.
         uri = f"obsidian://open?path={quote(os.path.join(vault, memory.INDEX), safe='')}"
-        if sys.platform == "darwin":
-            subprocess.run(["open", uri], check=True)
-        elif os.name == "nt":  # pragma: no cover - Windows 전용
-            os.startfile(uri)  # type: ignore[attr-defined]
-        elif not webbrowser.open(uri):  # pragma: no cover - Linux desktop 환경 의존
-            raise OSError("could not open the Obsidian URI")
+        try:
+            if sys.platform == "darwin":
+                subprocess.run(["open", uri], check=True)
+            elif os.name == "nt":  # pragma: no cover - Windows 전용
+                os.startfile(uri)  # type: ignore[attr-defined]
+            elif not webbrowser.open(uri):  # pragma: no cover - Linux desktop 환경 의존
+                raise OSError("could not open the Obsidian URI")
+        except Exception as exc:
+            ui.warn(f"Obsidian URI 열기 실패 ({type(exc).__name__}) — 폴더를 직접 vault 로 연다: {vault}")
+            return 1
         ui.ok(f"opened personal memory in Obsidian → {vault}")
+        ui.step(f"열리지 않으면 Obsidian 에서 이 폴더를 vault 로 한 번 연다: {vault}")
         return 0
 
     return _guard(_do)
@@ -624,28 +643,28 @@ def run_mcp() -> int:
     return memory_bridge.serve()
 
 
-def _project_candidates(root: str, all_files: bool):
+def _project_candidates(root: str, all_files: bool, inventory: bool = False):
     from .. import project_memory
 
     if all_files:
-        return project_memory.scan_project(root, changed_paths=[])
+        return project_memory.scan_project(root, changed_paths=[], inventory=inventory)
     changed = project_memory.changed_paths(root)
     if not changed:
         return []
     selected = set(changed)
     return [
         candidate
-        for candidate in project_memory.scan_project(root, changed_paths=changed)
+        for candidate in project_memory.scan_project(root, changed_paths=changed, inventory=inventory)
         if candidate.path in selected
     ]
 
 
-def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
+def run_project_scan(all_files: bool = False, json_out: bool = False, inventory: bool = False) -> int:
     """등록 기준을 통과한 중요 artifact 후보를 읽기 전용으로 출력한다."""
 
     def _do() -> int:
         root = os.getcwd()
-        candidates = _project_candidates(root, all_files)
+        candidates = _project_candidates(root, all_files, inventory)
         rows = [
             {
                 "path": candidate.path,
@@ -658,6 +677,7 @@ def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
                 "extractor": candidate.extractor,
                 "symbols": list(candidate.symbols),
                 "imports": list(candidate.imports),
+                "tier": candidate.tier,
             }
             for candidate in candidates
         ]
@@ -681,7 +701,11 @@ def run_project_scan(all_files: bool = False, json_out: bool = False) -> int:
 
 
 def run_project_sync(
-    all_files: bool = False, yes: bool = False, json_out: bool = False, plan_id: str | None = None
+    all_files: bool = False,
+    yes: bool = False,
+    json_out: bool = False,
+    plan_id: str | None = None,
+    inventory: bool = False,
 ) -> int:
     """중요 artifact를 stable record ID로 선택된 프로젝트 backend에 projection한다."""
 
@@ -699,7 +723,7 @@ def run_project_sync(
         target = backend_target(cfg)
         engine = str(target["engine"])
         project_id = str(target["project_id"])
-        candidates = _project_candidates(root, all_files)
+        candidates = _project_candidates(root, all_files, inventory)
         if not yes:
             revision = project_memory.source_revision(root)
             plan = project_memory.projection_plan(root, project_id, candidates, force=all_files, target=target)
@@ -949,34 +973,498 @@ def run_norn_restore(slug: str) -> int:
 
 
 def run_project_reflect(question: str, budget: str = "low", json_out: bool = False) -> int:
-    """프로젝트 메모리 backend 의 Reflect 합성 답변 — 읽기 전용 자문 (게이트 증거 아님)."""
+    """프로젝트 메모리 회고 — backend LLM 우선, 없으면 이쪽 provider 합성 (읽기 전용 자문)."""
 
     def _do() -> int:
+        from ..project_memory.reflect import ReflectUnavailable, reflect
         from ..project_memory_backends import get_backend
 
         found = find_config(os.getcwd())
         if not found:
             raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
-        _, cfg = found
+        root, cfg = found
         if not is_backend_trusted(cfg):
             raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
         backend = get_backend(cfg)
         try:
-            reflect = getattr(backend, "reflect", None)
-            if not callable(reflect):
-                raise ValueError(f"backend '{backend.engine}' does not support reflect")
-            output = reflect(question, budget=budget)
+            output = reflect(root, backend, question, budget=budget, cfg=cfg)
+        except ReflectUnavailable as exc:
+            ui.fail(str(exc))
+            ui.step('서버 LLM 없이 답하려면 provider 를 연결하거나 [project_memory].reflect 를 "local" 로 둔다')
+            return 1
         finally:
             backend.close()
         facts = output.get("based_on") or {}
         memories = facts.get("memories") if isinstance(facts, dict) else None
         if json_out:
             print(_json.dumps(output, ensure_ascii=False, indent=2))
-            return 0
-        ui.head(f"project memory reflect · engine={backend.engine} · project_id={backend.project_id}")
-        print(str(output.get("text") or "").strip())
+            return 0 if str(output.get("text") or "").strip() else 1
+        ui.head(
+            f"project memory reflect · engine={backend.engine} · project_id={backend.project_id} "
+            f"· source={output.get('source', 'backend')}"
+        )
+        text = str(output.get("text") or "").strip()
+        if not text:
+            ui.warn(f"답을 만들지 못했다 — {output.get('detail') or '근거 없음'}")
+            return 1
+        print(text)
         if isinstance(memories, list) and memories:
             print(ui.dim(f"근거 memories {len(memories)}건 — 자문일 뿐 완료 증거가 아니다"))
+        if output.get("source") == "local":
+            print(ui.dim(f"backend LLM 없이 이쪽 provider 가 합성 · {output.get('detail', '')}"))
         return 0
+
+    return _guard(_do)
+
+
+def run_backup(
+    action: str = "create",
+    name: str = "",
+    label: str = "",
+    keep: int = 0,
+    json_out: bool = False,
+) -> int:
+    """개인 메모리 정본 백업 — create/list/restore/verify/prune."""
+
+    def _do() -> int:
+        from ..memory import backup as mb
+
+        d = memory.ensure_home()
+        keep_n = keep or mb.KEEP_DEFAULT
+        if action == "list":
+            rows = mb.listing(d)
+            if json_out:
+                print(_json.dumps({"backups": rows}, ensure_ascii=False, indent=2))
+                return 0
+            ui.head(f"memory backups · {len(rows)}건 · {os.path.join(d, mb.BACKUPS_DIR)}")
+            for row in rows:
+                ui.step(f"{row['name']} · {row['bytes'] / 1024:.1f} KiB")
+            if not rows:
+                ui.warn("백업 없음 — `asgard memory backup` 으로 첫 스냅샷을 만든다")
+            return 0
+        if action == "verify":
+            summary = mb.verify(mb.resolve(d, name or "latest"))
+            if json_out:
+                print(_json.dumps(summary, ensure_ascii=False, indent=2))
+            else:
+                ui.ok(f"무결성 확인: {os.path.basename(summary['path'])} · {summary['members']} member(s)")
+            return 0
+        if action == "restore":
+            summary = mb.restore(name or "latest", d)
+            if json_out:
+                print(_json.dumps(summary, ensure_ascii=False, indent=2))
+            else:
+                ui.ok(
+                    f"복원됨: {summary['restored']} · {summary['pages']} page(s) 재색인 · "
+                    f"직전 상태는 {summary['safety_backup']} 로 보관"
+                )
+            return 0
+        if action == "prune":
+            removed = mb.prune(d, keep=keep_n)
+            if json_out:
+                print(_json.dumps({"pruned": removed, "keep": keep_n}, ensure_ascii=False, indent=2))
+            else:
+                ui.ok(f"정리됨: {len(removed)}건 삭제 · 최신 {keep_n}건 유지")
+            return 0
+        summary = mb.create(d, label=label, keep=keep_n)
+        mb.write_manifest_sidecar(d, summary)
+        if json_out:
+            print(_json.dumps(summary, ensure_ascii=False, indent=2))
+        else:
+            ui.ok(
+                f"백업됨: {summary['name']} · {summary['pages']} page(s)"
+                + (f" · archive {summary['archived']}" if summary["archived"] else "")
+            )
+        return 0
+
+    return _guard(_do)
+
+
+def run_sync(
+    set_remote: str = "",
+    transport: str = "dir",
+    branch: str = "main",
+    unset: bool = False,
+    dry_run: bool = False,
+    adopt: bool = False,
+    status_only: bool = False,
+    json_out: bool = False,
+) -> int:
+    """개인 메모리 서버 연동 — dir(공유 폴더) 또는 git(원격 저장소) 전송."""
+
+    def _do() -> int:
+        from ..memory import sync as ms
+
+        if unset:
+            ms.clear_settings()
+            ui.ok("동기화 원격 해제됨")
+            return 0
+        if set_remote:
+            saved = ms.save_settings(set_remote, transport=transport, branch=branch)
+            ui.ok(f"동기화 원격 설정: transport={saved['transport']} · {saved['remote']}")
+            if not status_only:
+                return 0
+        if status_only:
+            state = ms.status()
+            if json_out:
+                print(_json.dumps(state, ensure_ascii=False, indent=2))
+                return 0
+            ui.head("memory sync status")
+            ui.step(f"remote · {state['remote'] or '미설정'} ({state['transport'] or '-'})")
+            ui.step(f"last sync · {state['last_sync'] or '없음'}")
+            ui.step(f"tracked · {state['tracked']} / local {state['local_files']}")
+            if state["unresolved_conflicts"]:
+                ui.warn(f"미해결 충돌 {len(state['unresolved_conflicts'])}건 — conflicts/ 를 확인한다")
+            return 0
+        result = ms.sync(dry_run=dry_run, adopt=adopt)
+        if json_out:
+            print(_json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if not result.get("conflict") else 1
+        head = "sync plan" if dry_run else "sync"
+        ui.head(f"memory {head} · {result['transport']} · {result['remote']}")
+        if result["transport"] == "git":
+            if result.get("conflict"):
+                ui.fail("원격과 갈라졌다 — 메모리 홈에서 직접 정리해야 한다")
+                ui.step(f"git -C {memory.memory_dir()} pull --rebase origin {result['branch']}")
+                return 1
+            if dry_run:
+                for path in result.get("pending", []):
+                    ui.step(f"pending · {path}")
+                if not result.get("pending"):
+                    ui.ok("로컬 변경 없음")
+                return 0
+            ui.ok(
+                f"committed={len(result.get('committed', []))} pushed={result.get('pushed')} "
+                f"head={result.get('head', '') or '-'}"
+            )
+            if not result.get("pushed"):
+                ui.warn(result.get("detail", "") or "push 실패 — 원격 권한을 확인한다")
+                return 1
+            return 0
+        for key, verb in (
+            ("push", "push"),
+            ("pull", "pull"),
+            ("delete_local", "delete local"),
+            ("delete_remote", "delete remote"),
+            ("merge", "merge log"),
+        ):
+            for path in result.get(key, []):
+                ui.step(f"{verb} · {path}")
+        for path in result.get("conflict", []):
+            ui.warn(f"conflict · {path}")
+        if result.get("conflict_copies"):
+            ui.warn(f"원격본 보존: {len(result['conflict_copies'])}건 → conflicts/ (로컬 정본은 유지)")
+        moved = sum(len(result.get(k, [])) for k in ("push", "pull", "delete_local", "delete_remote", "merge"))
+        if dry_run:
+            ui.ok(f"계획 {moved}건 · 충돌 {len(result.get('conflict', []))}건 — 적용하려면 --dry-run 을 뺀다")
+        else:
+            ui.ok(f"동기화 완료: {moved}건 반영 · 충돌 {len(result.get('conflict', []))}건")
+        return 1 if result.get("conflict") else 0
+
+    return _guard(_do)
+
+
+def run_provider(set_spec: str = "", clear: bool = False, json_out: bool = False) -> int:
+    """개인 메모리를 손질하는 provider 를 보이거나 바꾼다 (기본 = 메인 provider)."""
+
+    def _do() -> int:
+        from ..memory import manager
+
+        if clear:
+            manager.save_manager("")
+            ui.ok("개인 메모리 관리자 해제 — 메인 provider 가 손질한다")
+        elif set_spec:
+            saved = manager.save_manager(set_spec)
+            ui.ok(f"개인 메모리 관리자: {saved['provider']}" + (f" · {saved['model']}" if saved["model"] else ""))
+        row = manager.describe(os.getcwd())
+        if json_out:
+            print(_json.dumps(row, ensure_ascii=False, indent=2))
+            return 0 if row.get("ready") else 1
+        ui.head("personal memory · manager")
+        origin = {"main": "메인 provider", "config": "설정 지정", "env": f"env {manager.MANAGER_ENV}"}
+        ui.step(
+            f"curator · {row.get('provider') or '미해석'} {row.get('model') or ''} ({origin.get(row['source'], row['source'])})"
+        )
+        if row.get("configured") and row.get("main_provider"):
+            ui.step(f"main · {row['main_provider']} {row.get('main_model', '')}")
+        ui.step(f"inject · {'on' if row['inject_enabled'] else 'off (kill switch)'}")
+        if not row.get("ready"):
+            ui.warn("관리자 호출 불가 — " + "; ".join(row.get("missing") or ["provider 미설정"]))
+            ui.step("손질(norn·pattern)만 멈춘다 — 저장·검색·회상은 LLM 없이 그대로 돈다")
+            return 1
+        if row["inject_enabled"] and not row.get("inject_allowed", True):
+            ui.warn(f"주입 차단 — {row.get('provider')} 는 개인 메모리를 읽지 못한다 (관리는 가능)")
+            ui.step(f'허용하려면 ~/.asgard 전역 설정 "memory".providers 에 "{row.get("provider")}" 추가')
+        return 0
+
+    return _guard(_do)
+
+
+def run_pattern(apply: bool = False, json_out: bool = False, due_only: bool = False) -> int:
+    """패턴 학습 — 대화 원문에서 오딘 관측을 뽑아 개인 위키로 승격 (기본 dry-run)."""
+
+    def _do() -> int:
+        from ..memory import pattern
+        from ..memory.manager import ManagerUnavailable
+
+        root, d = os.getcwd(), memory.ensure_home()
+        if due_only:  # 훅 소비 표면 — due + latch 통과 시 한 줄, 그 외 침묵
+            if json_out:
+                due, why = pattern.pattern_due(root, d)
+                print(_json.dumps({"due": due, "reason": why}, ensure_ascii=False))
+                return 0
+            line = pattern.nudge_line(root, d)
+            if line:
+                print(line)
+            return 0
+        try:
+            plan = pattern.plan_pattern(root, d)
+        except Exception as exc:
+            # 관리자가 없든 호출이 실패했든 패턴 학습만 멈춘다 — 저장·검색·회상은 무LLM 경로다
+            reason = str(exc) if isinstance(exc, ManagerUnavailable) else f"{type(exc).__name__}: {exc}"
+            ui.warn(f"패턴 학습을 돌리지 못했다 — {reason}")
+            ui.step("`asgard memory provider --set <provider>` 로 관리자를 지정하거나 메인 provider 를 고친다")
+            return 1
+        if not apply:
+            if json_out:
+                print(_json.dumps(plan, ensure_ascii=False, indent=2, default=str))
+                return 0
+            ui.head(f"pattern plan · {len(plan.get('turns') or [])} turn(s) 검토")
+            for row in plan["observations"]:
+                ui.step(
+                    f"{row['kind']} · {row['text'][:90]} "
+                    f"({row['confidence']}, grounding {row['grounding']}, turns {row['evidence']})"
+                )
+            for row in plan["dropped"]:
+                ui.warn(f"기각 · {str(row['observation'].get('text', ''))[:70]} — {row['reason']}")
+            if not plan["observations"]:
+                ui.ok(plan.get("reason") or "승격할 관측 없음")
+            else:
+                ui.ok(f"{len(plan['observations'])}건 승격 대기 — 적용하려면 --apply")
+            return 0
+        result = pattern.apply_pattern(root, plan, d)
+        if json_out:
+            print(_json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return 0 if not result["failed"] else 1
+        for row in result["failed"]:
+            ui.fail(f"{row['kind']} 실패 — {row.get('error', '')}")
+        ui.ok(
+            f"패턴 적용: {len(result['applied'])}건 (실패 {len(result['failed'])}건) · "
+            f"리포트 {os.path.relpath(result['report'], d)}"
+            + (f" · peer card [[{result['peer_card']}]]" if result["peer_card"] else "")
+        )
+        return 0 if not result["failed"] else 1
+
+    return _guard(_do)
+
+
+def run_ask(question: str, k: int = 5, json_out: bool = False) -> int:
+    """오딘에 대한 자연어 질문 — 개인 관측·에피소드·프로젝트 메모리를 근거로 답한다."""
+
+    def _do() -> int:
+        from ..memory import pattern
+        from ..memory.manager import ManagerUnavailable
+
+        root, d = os.getcwd(), memory.ensure_home()
+        try:
+            result = pattern.ask(question, root, d, k=k)
+        except Exception as exc:
+            # provider 가 없든(ManagerUnavailable) 있는데 실패했든(호출 중 오류) 결과는 같다:
+            # 합성은 못 하지만 근거는 이미 손에 있다. 회수까지 같이 죽일 이유가 없다.
+            reason = str(exc) if isinstance(exc, ManagerUnavailable) else f"{type(exc).__name__}: {exc}"
+            ui.warn(f"답을 합성하지 못했다 — {reason}")
+            evidence = pattern.gather_evidence(question, root, d, k=k)
+            if json_out:
+                print(_json.dumps({"answer": "", "evidence": evidence, "error": reason}, ensure_ascii=False, indent=2))
+                return 1
+            for rows in evidence.values():
+                for row in rows:
+                    ui.step(f"[{row['id']}] {row['text'][:160]}")
+            ui.step("근거만 보여준다 — 합성은 provider 를 고친 뒤 다시")
+            return 1
+        if json_out:
+            print(_json.dumps(result, ensure_ascii=False, indent=2))
+            return 0 if result["used"] else 1
+        if not result["used"]:
+            ui.warn("근거 없음 — 개인 위키·에피소드·프로젝트 메모리 어디에도 관련 기록이 없다")
+            return 1
+        counts = {scope: len(rows) for scope, rows in result["evidence"].items() if rows}
+        ui.head("memory ask · " + " · ".join(f"{scope} {n}" for scope, n in counts.items()))
+        print(result["answer"])
+        return 0
+
+    return _guard(_do)
+
+
+def run_project_evolve(apply: bool = False, json_out: bool = False) -> int:
+    """프로젝트 메모리 진화 패스 — 낡은 record 를 찾아 승인 대기로 올린다 (기본 dry-run)."""
+
+    def _do() -> int:
+        from ..project_memory import evolve as evolve_mod
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+        root, cfg = found
+        if apply and not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        try:
+            plan = evolve_mod.plan_evolve(root)
+        except RuntimeError as exc:  # provider 미충족 — 신호만 보여주고 물러난다
+            sig = evolve_mod.signals(root)
+            ui.warn(f"제안을 만들 provider 가 없다 — {exc}")
+            ui.step(
+                f"결정론 신호만: 사라진 출처 {len(sig['missing_sources'])}건 · 근사 중복 {len(sig['near_duplicates'])}건"
+            )
+            return 1
+        if not apply:
+            if json_out:
+                print(_json.dumps(plan, ensure_ascii=False, indent=2, default=str))
+                return 0
+            sig = plan["signals"]
+            ui.head(f"project memory evolve · record {sig.get('active', 0)}/{sig.get('total', 0)} active")
+            for record_id in sig.get("missing_sources", []):
+                ui.step(f"신호 · 출처가 사라진 record — {record_id}")
+            for row in sig.get("near_duplicates", []):
+                ui.step(f"신호 · 근사 중복 {row['a']} ≈ {row['b']} ({row['overlap']})")
+            for op in plan["ops"]:
+                if op["op"] == "retire":
+                    ui.step(f"retire · {op['record_id']} — {op['source']} 사라짐")
+                elif op["op"] == "insight":
+                    ui.step(f"insight · {op['title'][:70]} ← {', '.join(op['sources'])}")
+                else:
+                    ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — {op['why']}")
+            for row in plan["dropped"]:
+                ui.warn(f"기각 · {row['op'].get('op', '?')} — {row['reason']}")
+            if not plan["ops"]:
+                ui.ok(plan.get("reason") or "제안 없음")
+            else:
+                ui.ok(f"{len(plan['ops'])}건 제안 — 승인 대기로 올리려면 --apply")
+            return 0
+        result = evolve_mod.apply_evolve(root, cfg, plan)
+        if json_out:
+            print(_json.dumps(result, ensure_ascii=False, indent=2, default=str))
+            return 0 if not result["failed"] else 1
+        for row in result["failed"]:
+            ui.fail(f"{row['op']} 실패 — {row.get('error', '')}")
+        for row in result["staged"]:
+            ui.ok(f"{row['op']} 승인 대기 · {row['record_id']} — asgard memory project-approve {row['approval_id']}")
+        for row in result["reported"]:
+            ui.warn(f"contradiction · {row['a']} ↔ {row['b']} — 사람이 해소 (자동 쓰기 없음)")
+        ui.step(
+            f"승인 {len(result['staged'])}건 대기 · 실패 {len(result['failed'])}건 · 보고 {len(result['reported'])}건"
+        )
+        return 0 if not result["failed"] else 1
+
+    return _guard(_do)
+
+
+def run_semantic(action: str = "status", json_out: bool = False) -> int:
+    """시맨틱 검색 상태·워밍업·켜고 끄기. 첫 실행의 긴 내려받기를 여기서 미리 치른다."""
+
+    def _do() -> int:
+        from .. import memory_semantic as sem
+
+        if action in ("on", "off"):
+            from ..settings import load_global, save_global
+
+            configured = dict(load_global().get("memory") or {})
+            configured["semantic"] = "local" if action == "on" else "off"
+            save_global("memory", configured)
+            ui.ok(f"시맨틱 검색 {'켬' if action == 'on' else '끔'}")
+            if action == "off":
+                ui.step("lexical 2경로로 그대로 돈다 — 저장된 기억은 손대지 않는다")
+                return 0
+        if action in ("on", "warmup"):
+            if not sem.model_cached():
+                ui.step("임베딩 모델을 처음 내려받는다 — 약 1GB, 수십 초 걸린다 (한 번만)")
+            state = sem.warmup()
+            if json_out:
+                print(_json.dumps(state, ensure_ascii=False, indent=2))
+                return 0 if state["active"] else 1
+            if not state["active"]:
+                ui.fail("임베더를 불러오지 못했다 — lexical 2경로로 계속 돈다")
+                ui.step("uv tool install --force asgard (model2vec 이 빠졌을 수 있다)")
+                return 1
+            ui.ok(f"준비됨: {state['model']} · {state['dim']}d · {state['seconds']}s")
+            return 0
+        status = sem.status()
+        if json_out:
+            print(_json.dumps({**status, "model_cached": sem.model_cached()}, ensure_ascii=False, indent=2))
+            return 0 if status["active"] else 1
+        ui.head("personal memory · semantic")
+        ui.step(f"mode · {status['mode']}")
+        if status["active"]:
+            ui.ok(f"동작 중 · {status['model']} · {status['dim']}d")
+        elif status["mode"] == "off":
+            ui.step("꺼짐 — `asgard memory semantic on` 으로 켠다")
+        else:
+            ui.warn("켜져 있지만 임베더를 못 불렀다 — lexical 2경로로 폴백 중")
+            return 1
+        return 0
+
+    return _guard(_do)
+
+
+def run_project_ingest(
+    paths: list[str],
+    strategy: str = "",
+    yes: bool = False,
+    json_out: bool = False,
+) -> int:
+    """던진 문서를 파싱·판정해 프로젝트 메모리 승인 대기로 올린다 (기본 미리보기)."""
+
+    def _do() -> int:
+        from ..project_memory import ingest
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+        root, cfg = found
+        if yes and not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        ready, failed = ingest.plan(list(paths), strategy=strategy or None)
+        rows = [
+            {
+                "name": d.name,
+                "path": d.path,
+                "kind": d.kind,
+                "strategy": d.strategy,
+                "auto_strategy": d.signals.get("auto_strategy"),
+                "overridden": d.signals.get("overridden"),
+                "chars": len(d.text),
+                "entities": [name for name, _kind in d.entities],
+                "document_id": d.document_id,
+                "signals": d.signals,
+            }
+            for d in ready
+        ]
+        if not yes:
+            payload = {"documents": rows, "failed": failed, "approved": False}
+            if json_out:
+                print(_json.dumps(payload, ensure_ascii=False, indent=2))
+                return 0
+            ui.head(f"project memory ingest · {len(ready)} document(s)")
+            for row in rows:
+                mark = " (지정)" if row["overridden"] else ""
+                ui.step(
+                    f"{row['name']} · {row['kind']} · 전략 {row['strategy']}{mark} · "
+                    f"{row['chars']:,}자 · 엔티티 {len(row['entities'])}"
+                )
+            for row in failed:
+                ui.warn(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
+            if ready:
+                ui.warn("아직 저장하지 않음 — 검토 후 --yes 를 붙인다")
+            return 0 if ready or not failed else 1
+        ingest.ensure_strategies(cfg)
+        staged = ingest.stage_documents(root, cfg, ready)
+        if json_out:
+            print(_json.dumps({"staged": staged, "failed": failed}, ensure_ascii=False, indent=2))
+            return 0 if not failed else 1
+        for row in staged:
+            ui.ok(f"{row['name']} · 승인 대기 — asgard memory project-approve {row['approval_id']}")
+        for row in failed:
+            ui.fail(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
+        return 0 if not failed else 1
 
     return _guard(_do)

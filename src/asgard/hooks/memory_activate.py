@@ -241,6 +241,23 @@ def main():
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
                 pass  # 노른 넛지 불능도 Stop 을 막지 않는다
+            # 패턴 학습 넛지 — 마지막 패스 이후 턴이 문턱만큼 쌓였을 때만 한 줄. 노른이 위키를
+            # 손질한다면 이쪽은 대화에서 오딘에 대한 관측을 길어 올린다 (승격은 언제나 사람 검토).
+            try:
+                n = subprocess.run(
+                    [exe, "memory", "pattern", "--due"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=root,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                nudge = (n.stdout or "").strip()
+                if n.returncode == 0 and nudge:
+                    messages.append("⠶ " + nudge.splitlines()[0])
+            except Exception:
+                pass  # 패턴 넛지 불능도 Stop 을 막지 않는다
             if messages:
                 key = "followup_message" if mode == "cursor" else "systemMessage"
                 sys.stdout.write(json.dumps({key: "\n\n".join(messages)}, ensure_ascii=False) + "\n")
