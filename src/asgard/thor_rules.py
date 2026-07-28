@@ -33,6 +33,23 @@ _SQL_CLAUSE = re.compile(r"\b(FROM|INTO|SET|WHERE|VALUES|JOIN)\b", re.I)
 _VALUE_SLOT = re.compile(r"(?:[=<>!]=|[=<>]|<>|\bLIKE\b|\bBETWEEN\b)\s*$", re.I)
 _PRINTF = re.compile(r"%(?:\(\w+\))?[sdifr]")
 _HOLE = "\x00"
+# CLI 플래그는 질의어가 아니다. `--from`·`--merge` 는 도움말 문자열의 낱말이고, SQL 에서 `--` 는
+# 주석의 시작이라 그 뒤도 질의 본문이 아니다 — 어느 쪽으로 읽어도 지우는 것이 맞다.
+# (실측: helios 1,999파일에서 막는 SQL 판정 2건이 전부 이 형상 — DB 를 안 만지는 빌드 스크립트의
+#  사용법 문자열이었다. `--merge` 가 동사로, `--from` 이 절로 읽혔다.)
+_CLI_FLAG = re.compile(r"(?<!\w)-{1,2}[A-Za-z][\w-]*")
+
+
+def sql_shaped(text: str) -> bool:
+    """질의문처럼 생겼는가 — 동사와 절을 **함께** 요구한다. 두 판정기의 단일 출처.
+
+    넘기는 것은 **구멍을 지운 뒤의 질의 본문**이어야 한다. 보간식 자체(`${LOCALES.join('|')}`)를
+    본문에 섞으면 그 안의 메서드 이름이 절로 읽힌다 — 파이썬 판정기는 애초에 구멍 안을 보지
+    않으므로, 이것은 중괄호 계열을 파이썬과 같은 자로 맞추는 일이기도 하다.
+    """
+    body = _CLI_FLAG.sub(" ", text)
+    return bool(_SQL_VERB.search(body) and _SQL_CLAUSE.search(body))
+
 
 # ── 시크릿 ──────────────────────────────────────────────────────────
 _SECRET_NAME = re.compile(
@@ -128,8 +145,7 @@ def _template(node: ast.AST) -> tuple[str, list[str]] | None:
 def _split(template: str) -> tuple[str, list[str]] | None:
     if _HOLE not in template:
         return None
-    flat = template.replace(_HOLE, " ")
-    if not (_SQL_VERB.search(flat) and _SQL_CLAUSE.search(flat)):
+    if not sql_shaped(template.replace(_HOLE, " ")):
         return None
     return (template, [chunk for chunk in template.split(_HOLE)[:-1]])
 

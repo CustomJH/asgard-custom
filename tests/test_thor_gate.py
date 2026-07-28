@@ -8,12 +8,13 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import tempfile
 import unittest
 
-from asgard import thor_gate, thor_lex, thor_rules, thor_survey
+from asgard import thor_gate, thor_lex, thor_rules, thor_survey, thor_trail
 from asgard.commands.thor import VERBS, run_thor
 
 
@@ -78,6 +79,28 @@ class SqlInterpolation(unittest.TestCase):
 
     def test_comment_is_not_code(self):
         self.assertEqual(set(), _rules(_lex('// SELECT * FROM users WHERE id = " + x', "java")))
+
+    def test_a_cli_usage_string_is_not_a_query(self):
+        """도움말 문자열이 막는 판정을 받았다 — 실측 오탐 2건이 전부 이 형상이었다.
+
+        우연 셋이 겹친다: `--merge` 가 동사로, `--from` 이 절로, 자리표시자 `<` 가 값 자리
+        연산자로 읽혔다. SQL 에서 `--` 는 주석의 시작이므로 어느 쪽으로 읽어도 지우는 것이 맞다.
+        """
+        usage = "const s = `Usage: cli --from <file> --merge --locale <${LOCALES.join('|')}>`;"
+        self.assertEqual(set(), _rules(_lex(usage, "ts")))
+
+    def test_an_interpolated_expression_is_not_query_text(self):
+        """백틱 문자열은 `${...}` 안의 식까지 통째로 잡힌다 — 그 안의 `join` 이 절로 읽혔다.
+
+        파이썬 판정기는 애초에 구멍 안을 보지 않는다. 구멍을 지우고 재는 것은 중괄호 계열을
+        파이썬과 같은 자로 맞추는 일이다.
+        """
+        self.assertEqual(set(), _rules(_lex("const s = `updated ${rows.join(', ')} rows`;", "ts")))
+
+    def test_a_real_query_still_blocks_beside_them(self):
+        """좁힌 뒤에도 진짜 보간은 그대로 막혀야 한다 — 오탐을 지우려다 규칙을 끄면 안 된다."""
+        source = "const q = `SELECT id FROM users WHERE id = ${uid}`;"
+        self.assertIn("sql-interpolated", _rules(_lex(source, "ts"), blocking=True))
 
 
 class SwallowedException(unittest.TestCase):
@@ -235,6 +258,20 @@ class Honesty(unittest.TestCase):
 
 
 class VerbSurface(unittest.TestCase):
+    """동사 표면. **개발자의 저장소에 자취를 남기지 않는다** — 시험이 계측을 오염시키면 계측이 거짓말한다.
+
+    `run_thor` 는 부른 동사를 `.asgard/thor/trail.jsonl` 에 적는다. 시험이 이 저장소 안에서 돌면
+    아무도 부른 적 없는 `migrate`·`scale`·`squad` 가 자취에 쌓이고, 그 자취로 이행률을 재면
+    측정 대상이 측정 도구를 오염시킨 값이 나온다 (실측: 한 세션에서 243회가 그렇게 쌓였다).
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", self.root], check=False))
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, cwd)
+
     def test_every_verb_has_a_playbook(self):
         for verb in VERBS:
             with self.subTest(verb=verb):
@@ -244,10 +281,17 @@ class VerbSurface(unittest.TestCase):
         self.assertEqual(2, run_thor("nonsense", quiet=True))
 
     def test_gate_verb_runs_the_judge(self):
-        self.assertIn(run_thor("gate", paths=("src/asgard/thor_gate.py",), quiet=True), (0, 1))
+        with open(os.path.join(self.root, "a.py"), "w", encoding="utf-8") as handle:
+            handle.write("q = f'SELECT id FROM t WHERE id = {uid}'\n")
+        self.assertEqual(1, run_thor("gate", paths=("a.py",), quiet=True))  # 막는 판정 → 1
 
     def test_menu_needs_no_argument(self):
         self.assertEqual(0, run_thor(quiet=True))
+
+    def test_calling_a_verb_leaves_a_trail_entry(self):
+        """자취가 안 남으면 이행률을 잴 수 없다 — 표면과 계측이 한 자리에서 이어져 있는지 못박는다."""
+        run_thor("shape", quiet=True)
+        self.assertEqual(["shape"], [s.verb for s in thor_trail.load(self.root)])
 
 
 class JvmRules(unittest.TestCase):
@@ -377,14 +421,14 @@ class SurveySidecar(unittest.TestCase):
         thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
         again = thor_survey.load(self.root)
         assert again is not None
-        self.assertEqual("flat", again.judgement["layering"])
+        self.assertEqual("flat", again.text_of("layering"))
 
     def test_redetection_preserves_human_answers(self):
         """기계가 다시 훑어도 사람이 적어 둔 판단은 남는다 — 안 그러면 아무도 안 적는다."""
         thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
         self._manifest('[project]\nname="x"\ndependencies=["requests"]\n')
         merged = thor_survey.refresh(self.root, {})
-        self.assertEqual("flat", merged.judgement["layering"])
+        self.assertEqual("flat", merged.text_of("layering"))
 
     def test_manifest_change_marks_the_record_stale(self):
         thor_survey.save(self.root, thor_survey.detect(self.root))
@@ -393,6 +437,93 @@ class SurveySidecar(unittest.TestCase):
         self.assertFalse(thor_survey.stale(self.root, fresh))
         self._manifest('[project]\nname="x"\ndependencies=["requests"]\n')
         self.assertTrue(thor_survey.stale(self.root, fresh))
+
+    def _judged_file(self, rel: str) -> None:
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write("y = 2\n")
+
+    def test_a_written_judgement_carries_when_it_was_written(self):
+        """출처 없는 판단은 낡았는지 물어볼 수조차 없다 — 다음 세션이 그대로 믿는다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        again = thor_survey.load(self.root)
+        assert again is not None
+        note = again.judgement["layering"]
+        self.assertTrue(note.sourced)
+        self.assertTrue(note.at.startswith("20"))
+        self.assertEqual([], again.unsourced)
+
+    def test_an_old_record_reads_as_unsourced_not_as_fresh(self):
+        """구 형식에는 시각이 없다. 그 칸을 '지금'으로 채우면 사이드카가 거짓말을 시작한다."""
+        os.makedirs(os.path.dirname(os.path.join(self.root, thor_survey.REL)), exist_ok=True)
+        with open(os.path.join(self.root, thor_survey.REL), "w", encoding="utf-8") as handle:
+            json.dump({"judgement": {"layering": "flat"}, "manifests": ["pyproject.toml"]}, handle)
+        loaded = thor_survey.load(self.root)
+        assert loaded is not None
+        self.assertEqual("flat", loaded.text_of("layering"))  # 기록은 버리지 않는다
+        self.assertEqual(["layering"], loaded.unsourced)
+        self.assertEqual({}, thor_survey.drifted(self.root, loaded))  # 모르는 것을 움직였다고 하지 않는다
+
+    def test_a_new_package_drifts_a_judgement_that_predates_it(self):
+        """판단 넷은 전부 코드를 읽어야 아는 것이다 — 매니페스트만 보면 그 넷의 낡음을 못 잰다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        recorded = thor_survey.load(self.root)
+        assert recorded is not None
+        self.assertEqual({}, thor_survey.drifted(self.root, recorded))
+        self.assertFalse(thor_survey.stale(self.root, recorded))  # 매니페스트는 그대로다
+        self._judged_file("src/adapters/http.py")
+        self.assertEqual({"layering": ("구조",)}, thor_survey.drifted(self.root, recorded))
+
+    def test_another_file_in_an_existing_package_is_not_a_layering_change(self):
+        """실측에서 이 형상이 매일 나왔다 — 여기서 흔들면 경고가 배경 소음이 되어 아무도 안 본다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        recorded = thor_survey.load(self.root)
+        assert recorded is not None
+        self._judged_file("src/b.py")
+        self.assertEqual({}, thor_survey.drifted(self.root, recorded))
+
+    def test_editing_a_file_is_not_a_structure_change(self):
+        """내용까지 재면 커밋마다 전부 낡음이 된다 — 언제나 켜진 경고는 꺼진 경고와 같다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        recorded = thor_survey.load(self.root)
+        assert recorded is not None
+        with open(os.path.join(self.root, "src", "a.py"), "w", encoding="utf-8") as handle:
+            handle.write("x = 1\n" * 50)
+        self.assertEqual({}, thor_survey.drifted(self.root, recorded))
+
+    def test_rewriting_one_judgement_does_not_refresh_the_others(self):
+        """옛 판단에 새 지문을 찍으면 그 순간 낡음이 지워진다 — 신선도가 통째로 거짓이 된다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat", "errors": "codes"}))
+        self._judged_file("src/adapters/http.py")
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"errors": "exceptions"}))
+        recorded = thor_survey.load(self.root)
+        assert recorded is not None
+        self.assertEqual({"layering": ("구조",)}, thor_survey.drifted(self.root, recorded))
+        self.assertEqual("exceptions", recorded.text_of("errors"))
+
+    def test_a_changed_fingerprint_ruler_is_not_reported_as_movement(self):
+        """자가 바뀌면 옛 지문과 새 지문은 비교가 안 된다.
+
+        그때 '구조가 움직였다'고 말하면 움직인 것은 저장소가 아니라 판정기인데 사람은 저장소를
+        본다 — 실측에서 자를 한 번 바꾸자 판단 넷이 전부 영구 낡음으로 떴다.
+        """
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        recorded = thor_survey.load(self.root)
+        assert recorded is not None
+        aged = thor_survey.Note("flat", recorded.judgement["layering"].at, "", "olderruler:deadbeefdeadbeef")
+        recorded.judgement["layering"] = aged
+        self.assertEqual({}, thor_survey.drifted(self.root, recorded))  # 움직였다고 하지 않는다
+        self.assertEqual(["layering"], thor_survey.unmeasured(recorded))  # 못 쟀다고 말한다
+
+    def test_a_current_ruler_is_measured_not_excused(self):
+        """못 잰다는 출구가 넓어지면 신선도가 통째로 침묵한다 — 지금 자로 적은 것은 계속 재야 한다."""
+        thor_survey.save(self.root, thor_survey.refresh(self.root, {"layering": "flat"}))
+        recorded = thor_survey.load(self.root)
+        assert recorded is not None
+        self.assertEqual([], thor_survey.unmeasured(recorded))
+        self._judged_file("src/adapters/http.py")
+        self.assertEqual({"layering": ("구조",)}, thor_survey.drifted(self.root, recorded))
 
     def test_unknown_note_key_is_rejected(self):
         """어휘를 고정하지 않으면 기록이 곧 자유 서술이 되고, 자유 서술은 다음 세션이 못 읽는다."""
@@ -408,6 +539,139 @@ class SurveySidecar(unittest.TestCase):
         with open(os.path.join(self.root, thor_survey.REL), "w", encoding="utf-8") as handle:
             handle.write("{not json")
         self.assertIsNone(thor_survey.load(self.root))
+
+
+class VerbTrail(unittest.TestCase):
+    """절차가 지켜지는지 재려면 먼저 적혀야 한다. 이 자취는 **사실만** 적고 판정하지 않는다."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(lambda: subprocess.run(["rm", "-rf", self.root], check=False))
+
+    def _steps(self, *pairs: tuple[str, int]) -> list[thor_trail.Step]:
+        for verb, changed in pairs:
+            thor_trail.record(self.root, verb, changed)
+        return thor_trail.load(self.root)
+
+    def test_a_verb_call_is_recorded_with_what_the_machine_could_measure(self):
+        thor_trail.record(self.root, "shape", 3)
+        steps = thor_trail.load(self.root)
+        self.assertEqual(1, len(steps))
+        self.assertEqual("shape", steps[0].verb)
+        self.assertEqual(3, steps[0].changed)
+        self.assertTrue(steps[0].at.startswith("20"))
+        self.assertIsNone(steps[0].blocking)
+
+    def test_a_gate_run_carries_its_verdict_on_the_same_axis(self):
+        """게이트 판정과 그 뒤의 결과가 같은 축에 없으면 '통과 후 무엇이 샜나'를 못 묻는다."""
+        thor_trail.record(self.root, "gate", 2, 5)
+        seen = thor_trail.adherence(thor_trail.load(self.root))
+        self.assertEqual(1, len(seen.gates))
+        self.assertEqual(5, seen.gates[0].blocking)
+        self.assertEqual(1, seen.blocked_runs)
+
+    def test_a_clean_gate_run_is_not_counted_as_blocked(self):
+        thor_trail.record(self.root, "gate", 2, 0)
+        self.assertEqual(0, thor_trail.adherence(thor_trail.load(self.root)).blocked_runs)
+
+    def test_adherence_reports_order_skips_and_backtracks_as_facts(self):
+        steps = self._steps(("diagnose", 1), ("shape", 1), ("implement", 2), ("shape", 2), ("sweep", 2))
+        seen = thor_trail.adherence(steps)
+        self.assertEqual(("diagnose", "shape", "implement", "sweep"), seen.called)  # 처음 부른 순서
+        self.assertTrue(seen.reached_terminal)
+        self.assertIn("survey", seen.skipped)
+
+    def test_never_reaching_the_terminal_verb_is_visible(self):
+        """모든 길은 sweep → evidence 로 끝난다는 계약이 지켜졌는지가 한 칸으로 보여야 한다."""
+        seen = thor_trail.adherence(self._steps(("shape", 1), ("implement", 1)))
+        self.assertFalse(seen.reached_terminal)
+
+    def test_the_gate_is_not_a_procedure_verb(self):
+        """`gate` 는 절차 동사가 아니라 판정이다 — 부른 동사 목록에 섞이면 안 부른 동사가 거짓이 된다."""
+        seen = thor_trail.adherence(self._steps(("implement", 1), ("gate", 1), ("sweep", 1)))
+        self.assertNotIn("gate", seen.called)
+        self.assertNotIn("gate", seen.skipped)
+
+    def test_no_verb_order_is_enforced_because_no_single_arc_exists(self):
+        """`diagnose → shape` 는 버그 수리에서 옳고 `shape → diagnose` 는 신규 기능에서 옳다.
+
+        선형 호를 가정하고 역행을 세면 전자가 결함으로 찍힌다 — 없는 계약을 지표로 만드는 것은
+        사실이 아니라 판단이 사실인 척하는 것이라, 그 지표는 넣었다가 걷어냈다.
+        """
+        self.assertFalse(hasattr(thor_trail.Adherence, "backwards"))
+        for sequence in (("diagnose", "shape"), ("shape", "diagnose")):
+            with self.subTest(sequence=sequence):
+                seen = thor_trail.adherence([thor_trail.Step("", v, 0) for v in sequence])
+                self.assertEqual(set(sequence), set(seen.called))
+
+    def test_the_arc_order_comes_from_the_single_source(self):
+        """동사를 하나 더할 때 한쪽만 고쳐지면 이행률이 조용히 틀려진다."""
+        self.assertEqual(tuple(VERBS), thor_trail._order())
+
+    def test_a_corrupt_line_does_not_discard_the_trail(self):
+        thor_trail.record(self.root, "shape", 1)
+        with open(os.path.join(self.root, thor_trail.REL), "a", encoding="utf-8") as handle:
+            handle.write("{not json\n")
+        thor_trail.record(self.root, "sweep", 1)
+        self.assertEqual(["shape", "sweep"], [s.verb for s in thor_trail.load(self.root)])
+
+    def test_the_trail_is_bounded(self):
+        """자취도 자라기만 하면 자원이다 — 자기 게이트의 unbounded-accumulator 와 같은 자를 자신에게."""
+        for _ in range(thor_trail.KEEP + 20):
+            thor_trail.record(self.root, "shape", 0)
+        self.assertEqual(thor_trail.KEEP, len(thor_trail.load(self.root)))
+
+    def _quest(self, qid: str, *events: dict) -> None:
+        qdir = os.path.join(self.root, ".asgard", "quest")
+        os.makedirs(qdir, exist_ok=True)
+        with open(os.path.join(qdir, qid + ".jsonl"), "w", encoding="utf-8") as handle:
+            for event in events:
+                handle.write(json.dumps(event) + "\n")
+
+    def test_a_clean_gate_followed_by_a_failed_verify_is_an_escape(self):
+        """claim ④ 의 축 — 새 기록을 만들지 않고 있는 두 기록을 시각으로 잇는다."""
+        thor_trail.record(self.root, "gate", 2, 0)
+        at = thor_trail.load(self.root)[0].at
+        self._quest("q1", {"event": "verify", "verdict": "FAIL", "at": "2099-01-01T00:00:00+00:00"})
+        found = thor_trail.escapes(self.root)
+        self.assertEqual(1, len(found))
+        self.assertTrue(found[0].escaped)
+        self.assertEqual(at, found[0].gate_at)
+
+    def test_a_blocking_gate_followed_by_a_failure_is_not_an_escape(self):
+        """게이트가 이미 막고 있었으면 검증이 잡은 것은 새어 나간 것이 아니다."""
+        thor_trail.record(self.root, "gate", 2, 3)
+        self._quest("q1", {"event": "verify", "verdict": "FAIL", "at": "2099-01-01T00:00:00+00:00"})
+        self.assertFalse(thor_trail.escapes(self.root)[0].escaped)
+
+    def test_a_clean_gate_followed_by_a_pass_is_not_an_escape(self):
+        thor_trail.record(self.root, "gate", 2, 0)
+        self._quest("q1", {"event": "verify", "verdict": "PASS", "at": "2099-01-01T00:00:00+00:00"})
+        self.assertFalse(thor_trail.escapes(self.root)[0].escaped)
+
+    def test_a_verify_with_no_prior_gate_is_not_a_sample(self):
+        """게이트를 안 돌린 검증을 표본에 넣으면 분모가 부풀어 비율이 통째로 거짓이 된다."""
+        thor_trail.record(self.root, "gate", 2, 0)
+        self._quest("q1", {"event": "verify", "verdict": "FAIL", "at": "2000-01-01T00:00:00+00:00"})
+        self.assertEqual([], thor_trail.escapes(self.root))
+
+    def test_non_verify_events_are_not_counted(self):
+        thor_trail.record(self.root, "gate", 2, 0)
+        self._quest("q1", {"event": "work", "at": "2099-01-01T00:00:00+00:00"})
+        self.assertEqual([], thor_trail.escapes(self.root))
+
+    def test_no_gate_run_means_no_join_at_all(self):
+        self._quest("q1", {"event": "verify", "verdict": "FAIL", "at": "2099-01-01T00:00:00+00:00"})
+        self.assertEqual([], thor_trail.escapes(self.root))
+
+    def test_recording_never_blocks_the_verb(self):
+        """계측이 작업을 막으면 그것은 계측이 아니라 관문이다."""
+        blocked = os.path.join(self.root, "ro")
+        os.makedirs(blocked)
+        os.chmod(blocked, 0o500)
+        self.addCleanup(os.chmod, blocked, 0o700)
+        thor_trail.record(blocked, "shape", 0)  # 예외가 새어 나오면 실패
+        self.assertEqual([], thor_trail.load(blocked))
 
 
 if __name__ == "__main__":

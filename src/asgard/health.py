@@ -259,6 +259,33 @@ def _iter_files(root: str) -> tuple[list[tuple[str, str]], int]:
     return (out, dropped)
 
 
+# 게이트가 손대지 않는 디렉터리. `IGNORED_DIRS` 에서 `skill_plugins` 하나를 뺀 것이고, 뺀 이유가
+# 이 목록이 따로 있는 이유다: **게이트는 작업을 막으므로, 의심스러울 때 추세보다 좁아야 한다.**
+# `skill_plugins/` 는 우리가 쓴 코드가 사는 곳이기도 해서(`asgard_hwpx.py` 같은), 통째로 빼면
+# 자사 코드가 영원히 판정 밖으로 나간다 — 실측에서 좁힌 목록이 파일 3개를 더 재면서 막는 판정은
+# 똑같이 0건이었다. 공짜로 얻는 적용 범위를 버릴 이유가 없다.
+GATE_SKIP_DIRS = IGNORED_DIRS - {"skill_plugins"}
+
+
+def borrowed(rel: str) -> str | None:
+    """남의 코드인가 — 맞으면 그 사유를, 아니면 None. 두 게이트가 이 자를 같이 쓴다.
+
+    `health` 는 추세를 낼 때 이 디렉터리들을 이미 뺐지만 `craft`·`thor gate` 에는 같은 자가 없어서,
+    벤더링 번들을 떨구면 그 순간 게이트가 남의 코드로 빨개졌다 (실측: 추적되지 않은 vendor 한 벌에
+    막는 판정 52건, 그중 20건이 minified `dist/assets/*.js` — 처방을 읽을 사람도 고칠 사람도 없다).
+
+    래칫이 못 막는 이유가 여기 있다. 래칫은 base 와 비교하는데 **추적되지 않은 파일에는 base 가
+    없다** — 그래서 벤더링을 새로 떨구면 전부 이번 변경의 책임으로 잡힌다.
+
+    제외는 판정이 아니라 **미판정**이다. 호출부는 이것을 `undetermined` 로 실어야 한다.
+    "0건"이 "안 봤다"를 뜻할 수 있으면 게이트가 아니라 알리바이가 된다 (thor_gate 모듈 계약).
+    """
+    for part in rel.replace(os.sep, "/").split("/")[:-1]:
+        if part in GATE_SKIP_DIRS:
+            return f"{part}/ 아래 — 벤더링·산출물 경로라 이 변경의 책임이 아니다"
+    return None
+
+
 def _read(root: str, rel: str) -> str | None:
     try:
         with open(os.path.join(root, rel), encoding="utf-8", errors="replace") as fh:

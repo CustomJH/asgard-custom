@@ -5,7 +5,9 @@
 """
 
 import os
+import shutil
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
@@ -350,6 +352,27 @@ class TestThorLead(unittest.TestCase):
             "No completion claims",
         ):
             self.assertIn(anchor, self.lead)
+
+    def test_lead_owns_the_union_gate_run(self):
+        """서브의 stop 훅은 자기 쓰기만 본다. 상한 2회는 (세션, 역할)마다라 서브 N 이면 탈출구도 N 이다.
+
+        그래서 "서브가 다 통과했다"는 "합집합에 막는 판정이 없다"를 뜻하지 않는다 — 합집합을 다시
+        재는 자리가 편대장이고, 그 의무가 역할 파일에 없으면 아무 데도 없다.
+        """
+        self.assertIn("Re-run both gates over the union", self.lead)
+        self.assertIn("asgard craft", self.lead)
+        self.assertIn("asgard thor gate", self.lead)
+
+    def test_the_cap_that_makes_the_union_run_necessary_is_real(self):
+        """역할 문서가 근거로 삼는 사실을 코드에서 확인한다 — 문서만 고치면 근거가 곧 낡는다."""
+        from asgard.hooks.craft_gate import MAX_BLOCKS, _bump
+
+        self.assertEqual(2, MAX_BLOCKS)
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root, True)
+        counts = [_bump(root, "s1", "asgard-thor") for _ in range(3)]
+        self.assertEqual([1, 2, 3], counts)  # 3회차는 상한 초과 → 미수리 통과
+        self.assertEqual(1, _bump(root, "s1", "asgard-freyja"))  # 상한은 역할마다 따로 선다
 
     def test_sub_thor_squad_membership_contract(self):
         sub = self.roles["asgard-thor.md"]

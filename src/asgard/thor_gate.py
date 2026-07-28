@@ -20,7 +20,7 @@ from . import craft_rules, thor_lex, thor_rules
 from .craft import _base_text, changed_paths
 from .craft_lex import units as lex_units
 from .craft_rules import Finding, Unit
-from .health import _read
+from .health import _read, borrowed
 
 # 언어별로 실제 발화하는 규칙 — 미측정을 정직하게 세기 위한 단일 출처.
 PYTHON_RULES = (
@@ -84,6 +84,8 @@ def _key(finding: Finding) -> tuple[str, str, str]:
 
 def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str | None, tuple[str, ...]]:
     """(판정, 물려받아 넘긴 건수, 미판정 사유, 못 잰 규칙)."""
+    if why := borrowed(rel):
+        return ([], 0, why, ())
     text = _read(root, rel)
     if text is None:
         return ([], 0, "읽지 못했다", ())

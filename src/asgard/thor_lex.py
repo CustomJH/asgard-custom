@@ -22,7 +22,7 @@ import re
 
 from .craft_lex import language, scrub
 from .craft_rules import Finding, Unit, _owner
-from .thor_rules import _SQL_CLAUSE, _SQL_VERB, _VALUE_SLOT, _secretish, money_name, secret_name
+from .thor_rules import _VALUE_SLOT, _secretish, money_name, secret_name, sql_shaped
 
 # 이 파일이 판정하는 언어. Rust 는 catch 가 없고 Go 도 없다 — 시크릿·SQL 만 걸린다.
 JUDGED = frozenset({"java", "kotlin", "csharp", "ts", "go", "swift", "rust"})
@@ -135,8 +135,10 @@ def _sql_holes(region: str) -> list[str] | None:
     literals = [m.group(1)[1:-1] for m in _STRING.finditer(region)]
     if not literals:
         return None
-    flat = " ".join(literals)
-    if not (_SQL_VERB.search(flat) and _SQL_CLAUSE.search(flat)):
+    # 구멍을 **지운 뒤**에 질의인지 묻는다. 백틱 문자열은 `${...}` 안의 식까지 통째로 잡히므로,
+    # 원문 그대로 재면 보간식 안의 메서드 이름이 질의어가 된다(실측: `LOCALES.join('|')` 의
+    # `join` 이 절로 읽혀 빌드 스크립트가 막혔다). 질의 본문이 아닌 것은 판정에 넣지 않는다.
+    if not sql_shaped(" ".join(_HOLE_IN_STRING.sub(" ", literal) for literal in literals)):
         return None
     before: list[str] = []
     for literal in literals:
