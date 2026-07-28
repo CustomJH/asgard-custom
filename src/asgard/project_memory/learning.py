@@ -155,7 +155,9 @@ def apply(backend) -> dict:
             model_operations.append({"id": model_id, "action": "updated", "operation_id": str(result["operation_id"])})
         elif not model_ready(existing) or bool(existing.get("is_stale")):
             result = refresh_model(model_id)
-            model_operations.append({"id": model_id, "action": "refreshed", "operation_id": str(result["operation_id"])})
+            model_operations.append(
+                {"id": model_id, "action": "refreshed", "operation_id": str(result["operation_id"])}
+            )
 
     consolidation = consolidate([["record"]])
     return {
