@@ -26,7 +26,7 @@ import re
 from .norn import _FORBIDDEN_INSIGHT, _confidence
 from .pages import add, lint
 from .policy import scan_secrets, scan_threats
-from .recall import _containment, _jaccard
+from .recall import _containment, _content_words, _jaccard, _neutralize, _stem_hit, _stopword
 from .store import _atomic_write, _pages, _read, _today, ensure_home, log_op, poisoned, render_page
 
 STATE_FILE = "pattern-state.json"
@@ -42,6 +42,8 @@ GROUNDING_FLOOR = 0.34  # explicit 주장의 내용어가 인용 턴에 남아 �
 DUP_FLOOR = 0.55  # 기존 페이지와 이만큼 겹치면 새 관측이 아니다
 TURNS_THRESHOLD = 20  # 마지막 패스 이후 누적 턴 문턱 (config [memory].pattern_turns_threshold)
 MIN_INTERVAL_DAYS = 1
+EVIDENCE_CHARS = 400  # 되묻기에 싣는 관측 본문 상한 (제목 포함)
+TURN_EVIDENCE_CHARS = 200  # 턴 근거는 요청/응답 두 쪽이라 절반씩
 
 # 관측이 될 수 없는 것: 한 번의 사정(환경 실패·도구 불평)은 사람에 대한 사실이 아니다.
 # 노른의 금지 캡처를 그대로 쓴다 — 같은 자기중독을 막는 같은 규칙이다.
@@ -208,20 +210,20 @@ def signals(root: str, d: str | None = None) -> dict:
 # ── 계획 (LLM 제안 → 결정적 검증) ──────────────────────────────────────────────
 
 
-def _content_words(text: str) -> set[str]:
-    """접지 비교용 내용어 — 2자 이상 토큰. 조사·기호는 분리자로 흘려보낸다."""
-    return {word.lower() for word in re.split(r"[^\w가-힣]+", text) if len(word) >= 2}
-
-
 def _grounded(text: str, turns: list[dict]) -> float:
-    """주장의 내용어 중 인용 턴에 실제로 있는 비율. 접지 없는 explicit 은 허구다."""
-    claim = _content_words(text) - _content_words("오딘 사용자 유저 user odin the is are 는 은 이 가 를 을")
+    """주장의 내용어 중 인용 턴에 실제로 있는 비율. 접지 없는 explicit 은 허구다.
+
+    낱말 대조는 집합 교집합이 아니라 어간 일치다 (`_stem_hit`). 한국어는 조사·어미가 뒤에
+    붙어서 교집합으로 재면 **완벽히 접지된 관측이 0.000 이 나온다** — "금요일에 배포하지
+    않는다"와 "금요일에는 배포를 안 하는 게"가 한 낱말도 안 겹친다. 실측(26-07-28,
+    한국어 4·영어 1): 접지된 관측 5건 중 3건이 플로어 미달로 오탈락했고, 어간 일치로
+    바꾸니 5/5 통과했다. 허구 5건은 두 방식 모두 통과 0 (교집합 0.000, 어간 최대 0.167)
+    이라 판별력은 오히려 벌어진다 — 플로어를 낮춘 게 아니라 자를 고친 것이다."""
+    claim = {word for word in _content_words(text) if not _stopword(word)}
     if not claim:
         return 0.0
-    haystack: set[str] = set()
-    for turn in turns:
-        haystack |= _content_words(f"{turn['request']} {turn['response']}")
-    return len(claim & haystack) / len(claim)
+    haystack = " ".join(f"{turn['request']} {turn['response']}" for turn in turns).lower()
+    return sum(1 for word in claim if _stem_hit(word, haystack)) / len(claim)
 
 
 def _parse_observations(raw: str) -> list[dict]:
@@ -476,23 +478,39 @@ what would settle it — never fill the gap with a plausible guess."""
 
 
 def gather_evidence(question: str, root: str, d: str | None = None, k: int = 5) -> dict:
-    """되묻기 근거 수집 — 개인 관측 + 에피소드 + 프로젝트 메모리. 전부 fail-open."""
+    """되묻기 근거 수집 — 개인 관측 + 에피소드 + 프로젝트 메모리. 전부 fail-open.
+
+    근거는 **본문**이어야 한다. 제목만 실어 보내면 모델은 답을 못 짓고, 못 지었다는 사실도
+    드러나지 않는다 — 근거 칸이 비어 있지 않으니 모든 계기가 초록으로 보인다. 그리고 본문을
+    싣는 순간 여기는 주입면이 되므로, 회수 블록과 같은 위생을 건다 (오염 페이지 제외 ·
+    각괄호 무력화 · 한 줄로 접기)."""
     d = ensure_home(d)
     evidence: dict[str, list[dict]] = {"observations": [], "episodes": [], "project": []}
+
+    def _clean(*parts: str) -> str:
+        """근거 한 조각 — 경계 문자를 무력화하고 한 줄로 접는다. 줄바꿈을 그대로 실으면
+        예산만 축내고, 근거 목록을 한 줄씩 읽는 CLI 표면에서는 행이 서로 섞인다."""
+        return re.sub(r"\s+", " ", _neutralize(" ".join(parts))).strip()
+
     with contextlib.suppress(Exception):
         from .recall import query
 
-        evidence["observations"] = [
-            {"id": f"obs:{hit['slug']}", "text": str(hit.get("excerpt") or hit.get("title") or "")[:400]}
-            for hit in query(question, k=k, d=d)
-        ]
+        for hit in query(question, k=k, d=d):
+            page = _read(d, hit["slug"])
+            if page is None or poisoned(*page):
+                continue
+            title = str(hit.get("title") or hit["slug"])
+            text = _clean(title, "—", page[1])[:EVIDENCE_CHARS]
+            evidence["observations"].append({"id": f"obs:{hit['slug']}", "text": text})
     with contextlib.suppress(Exception):
         from ..agent.episodes import search
 
-        evidence["episodes"] = [
-            {"id": f"turn:{hit['seq']}", "text": f"{hit.get('request', '')[:200]} → {hit.get('excerpt', '')[:200]}"}
-            for hit in search(root, question, k=k)
-        ]
+        for hit in search(root, question, k=k):
+            request, excerpt = str(hit.get("request", "")), str(hit.get("excerpt", ""))
+            if scan_threats(request, excerpt):
+                continue  # 원문 유래 오염 구간 — 근거로도 안 싣는다
+            head, tail = _clean(request)[:TURN_EVIDENCE_CHARS], _clean(excerpt)[:TURN_EVIDENCE_CHARS]
+            evidence["episodes"].append({"id": f"turn:{hit['seq']}", "text": f"{head} → {tail}"})
     with contextlib.suppress(Exception):
         from ..memory_context import project_recall_note
 

@@ -61,6 +61,37 @@ def _containment(a: str, b: str) -> float:
     return len(ga & gb) / (min(len(ga), len(gb)) or 1)
 
 
+# ── 근거 접지 원시함수 — 패턴(관측)과 노른(통찰)이 같은 자를 쓴다 ─────────────────
+
+
+def _content_words(text: str) -> set[str]:
+    """접지 비교용 내용어 — 2자 이상 토큰. 조사·기호는 분리자로 흘려보낸다."""
+    return {word.lower() for word in re.split(r"[^\w가-힣]+", text) if len(word) >= 2}
+
+
+def _stem_hit(word: str, haystack: str) -> bool:
+    """낱말이 건초더미에 어간으로 남아 있는가.
+
+    집합 교집합으로는 한국어 접지를 못 잰다 — 조사·어미가 낱말 **뒤**에 붙어서 "금요일"과
+    "금요일에는"이 서로 남남이 된다. 그래서 앞에서부터 잘라 보며 어간을 찾는다 (영어의
+    굴절 deploy/deploying 도 같은 자로 걸린다). 절반 미만으로는 안 자른다: 두 글자만
+    남기고 맞히기 시작하면 우연 일치가 접지로 둔갑한다."""
+    floor = max(2, (len(word) + 1) // 2)
+    return any(word[:cut] in haystack for cut in range(len(word), floor - 1, -1))
+
+
+# 접지 판정에서 빼는 주어·기능어 — 누구에 대한 기록인지는 접지의 증거가 아니다.
+_GROUNDING_STOP = frozenset("오딘 사용자 유저 user odin the is are was were and or for with that this it its".split())
+
+
+def _stopword(word: str) -> bool:
+    """주어·기능어인가 — 조사·어미가 붙어도 같은 낱말이다 ("오딘은" = 오딘).
+
+    꼬리 길이를 제한하는 이유: 앞을 우연히 공유하는 남의 낱말까지 삼키면 안 된다
+    ("withdraw" 는 "with" 가 아니다)."""
+    return any(word.startswith(stop) and len(word) - len(stop) <= 3 for stop in _GROUNDING_STOP)
+
+
 RRF_K = 60  # rank-fusion 표준 상수 — 상위 랭크 간 격차를 완만히 눌러 단일 경로 독주를 막는다
 SEM_FLOOR = 0.20  # 시맨틱 후보 진입 문턱 — 이 미만 코사인은 후보로도 안 넣는다(약연관 잡음 차단).
 TEMPORAL_KINDS = frozenset({"reference"})
@@ -107,6 +138,22 @@ RERANK_MAX_WEIGHT = 0.5  # max 와 상위평균의 배합 — 1.0 이면 순수 
 # 리랭크가 이기는 자리와 지는 자리가 갈리기 때문에 둔 손잡이다: 사실 질문은 리랭크가 맞고,
 # 간접 질문("내가 좋아할 만한 걸 추천해줘")은 어휘가 맞다. 어느 쪽도 항상 옳지 않다.
 RERANK_BASE_WEIGHT = 1.0
+# 2단계를 끄는 세션 오버라이드 — 시맨틱 스트림의 ASGARD_MEMORY_SEMANTIC 과 같은 모양이다.
+# 어블레이션(리랭크 ON/OFF A/B)을 몽키패치 없이 재현할 수 있어야 남이 그 수치를 검증한다.
+# held-out 실측(26-07-28)에서 이 단계가 대화형 코퍼스 밖에서는 이득을 못 낸다는 반례가
+# 나왔으므로, 끄는 길은 벤치 전용 장치가 아니라 정식 스위치여야 한다.
+_RERANK_ENV = "ASGARD_MEMORY_RERANK"
+
+
+def rerank_enabled() -> bool:
+    """구절 리랭크를 이번 세션에서 쓰는가 — env 우선, 설정 폴백, 기본 ON."""
+    env = (os.environ.get(_RERANK_ENV) or "").strip().lower()
+    if env:
+        return env not in ("off", "0", "false", "no")
+    try:
+        return str(_memory_settings().get("rerank", "on")).strip().lower() not in ("off", "0", "false", "no")
+    except Exception:
+        return True
 
 
 def _passages(body: str) -> list[str]:
@@ -406,7 +453,7 @@ def query(
     # 스트림 하나로 넣으면 가중이 1/5 로 희석돼 실측 이득이 +2.4pp → +0.4pp 로 죽었다
     # (LongMemEval-S 500문항). 이 신호는 그만큼 강하다 — 대등하게 세워야 값을 한다.
     base_order = sorted(cand, key=lambda slug: (-rrf[slug], slug))
-    if rerank_order := _rerank_order(text, cand, base_order[:RERANK_CANDIDATES]):
+    if rerank_enabled() and (rerank_order := _rerank_order(text, cand, base_order[:RERANK_CANDIDATES])):
         fused = dict.fromkeys(cand, 0.0)
         _add_ranks(fused, [(slug, rrf[slug]) for slug in base_order], RERANK_BASE_WEIGHT)
         _add_ranks(fused, rerank_order)

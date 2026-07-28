@@ -8,8 +8,12 @@
 - 전면 재작성 금지. 델타 단위 제안만 받아야 반복 손질이 기억을 뭉개지 않는다.
 - 각 op 는 기계 검증을 통과한 것만 남는다 — LLM 의 주장은 검증 입력일 뿐이다:
   merge 는 결정적 유사도 플로어 미달이면 기각, archive 는 lint decay-candidate 만 자격,
-  insight 는 실존 소스 2개 이상 + 인젝션/시크릿 스캔 통과, confidence 는 근거 수로
-  코드가 계산한다 (자기 신고 불신).
+  insight 는 실존 소스 2개 이상 + 인젝션/시크릿 스캔 + **근거 접지** + **극성** 통과
+  (세 물음이 다 다르다: 소스가 있는가 · 통찰이 그 소스에서 나왔는가 · 나왔는데 뒤집지는
+  않았는가. 어휘를 그대로 쓰면서 부정만 떼어 낸 문장은 접지가 오히려 높다),
+  confidence 는 근거 수로 코드가 계산한다 (자기 신고 불신).
+- 그래도 결정론이 답할 수 없는 물음이 남는다 — "출처에서 왔고 뒤집지도 않았는데 틀린
+  추론". 그래서 통찰은 기본적으로 자동 승격되지 않는다 (norn_insight_auto 옵트인).
 - 환경 의존 실패·도구 부정 주장은 기억으로 굳히지 않는다 — 그날의 사정이 원칙으로
   박제되면 미래의 자신을 거부하는 근거가 된다.
 - 적용 전 pages/ 전체 백업 (norn-backups/, 최근 5개 유지), 삭제 없음 — archive 는
@@ -31,7 +35,7 @@ from .index import _db, write_index
 from .pages import lint
 from .pages import merge as _merge_pages
 from .policy import _memory_settings, memory_dir, scan_secrets, scan_threats
-from .recall import _containment, _jaccard
+from .recall import _containment, _content_words, _jaccard, _stem_hit, _stopword
 from .store import (
     LOG,
     PAGES,
@@ -74,6 +78,64 @@ LINK_BAND_SEMANTIC = (0.25, 0.80)
 INSIGHT_MAX_CHARS = 1200
 INSIGHT_MIN_SOURCES, INSIGHT_MAX_SOURCES = 2, 6
 
+# 통찰 접지 대역 — 소스의 **실존**이 아니라 **내용**을 보는 자.
+#
+# 검증기가 파일 존재·개수·스캔만 보면 LLM 은 무관한 페이지 두 장을 근거로 달아 허구를
+# 정본으로 만들 수 있다. 실측(26-07-28): "금요일 배포 회피" + "점심에는 국수" 를 근거로
+# 제안된 "오딘은 매주 화성으로 이주한다" 가 기각 사유 하나 없이 통과해 기본 safe 에서
+# 자동 적용됐다. 패턴 계층이 explicit 관측에 이미 거는 접지를, 통찰에도 건다.
+#
+# 값은 실측에서 왔다 (진짜 통찰 7건 · 허구 4건, 한국어·영어 혼합):
+#   허구            0.000 – 0.167  (주제어만 빌린 반쪽 허구가 0.167 로 최고)
+#   진짜(정직한 출처) 0.375 – 0.636
+# 0.25 는 그 사이에 있되 허구 쪽에 붙여 둔 값이다 — 통찰은 귀납이라 출처에 없던 추상어
+# ("경향", "습관")를 정당하게 데려오므로 관측용 플로어(pattern.GROUNDING_FLOOR 0.34)를
+# 그대로 쓰면 진짜를 벤다. 대신 접지가 옅은 구간은 버리지 않고 사람에게 넘긴다:
+# 자율 적용은 0.40 이상만, 그 아래는 접수하되 제안으로 남는다. 코퍼스가 11건짜리
+# 손수 만든 표본이라 자동 자격에는 여유를 더 둔다 — 틀렸을 때 비용이 다르다.
+INSIGHT_GROUNDING_FLOOR = 0.25
+INSIGHT_AUTO_FLOOR = 0.40
+
+# 극성 판정 창 — 낱말에 붙은 부정을 어디까지 보고 읽을 것인가.
+#
+# 접지는 "어디서 왔는가"를 묻지 "참인가"를 묻지 않는다. 두 물음은 다르고, 앞의 것만 물으면
+# 어휘 재조합 거짓말이 통과한다. 실측 반례(26-07-28): 출처 "금요일에는 배포하지 않는다" ·
+# "배포 전에 테스트를 전부 돌린다" 에서 뽑은 "금요일마다 테스트 없이 배포한다" 가 접지
+# 0.714 로 통과했다 — 낱말은 전부 출처에서 왔는데 주장은 정반대다.
+#
+# 그 자리를 닫는 결정적 신호가 극성이다. 다만 부정의 **작용역**이 언어마다 다르다:
+#
+#   한국어 — 낱말에 붙어 인접에서 끝난다: "배포하지 않는다", "테스트 없이"
+#   영어   — 동사에 붙어 절 오른쪽 전체를 덮는다: "never deploys on Fridays"
+#            (부정어와 대상 낱말 사이가 멀다 — 인접 창으로는 영영 못 본다)
+#
+# 그래서 뒤는 짧은 창으로, 앞은 **절 단위**로 읽는다. 절 경계에 등위접속사를 넣는 것이
+# 핵심이다: "avoids Friday deploys **and** always tests first" 에서 avoids 는 and 를 넘지
+# 못한다. 이 경계가 없으면 정직한 통찰이 자기 문장의 앞 절 때문에 부정으로 물든다 (실측).
+POLARITY_PRE, POLARITY_POST, POLARITY_CLAUSE = 14, 12, 80
+
+# 낱말 뒤에 붙어 그 낱말을 부정하는 것들 (한국어 어미·보조용언 + 영어 후치 전치사).
+_NEG_AFTER = re.compile(
+    r"않|못하|못한|못\s|없|말라|마라|금지|피하|피해|지양|삼가|회피|자제|거부|중단|아니|"
+    r"(?:^|\s)안\s|\bwithout\b|\bnever\b|\bnot\b|\bno\b|\brather than\b|\binstead of\b",
+    re.IGNORECASE,
+)
+# 낱말 앞 — 절 작용역. 영어 부정어만 본다: 한국어의 앞선 부정("결코")은 뒤의 "않"과 짝을
+# 이루므로 _NEG_AFTER 가 이미 잡고, 절까지 넓히면 옆 낱말까지 부정으로 물든다.
+_NEG_BEFORE = re.compile(
+    r"\b(?:not|never|no|without|avoids?|avoiding|refrains?|skips?|cannot|can'?t|don'?t|"
+    r"doesn'?t|didn'?t|won'?t|rarely|seldom)\b",
+    re.IGNORECASE,
+)
+# 낱말 앞 — 인접 작용역. 한국어 강조 부정 부사는 뒤 낱말 하나만 덮는 것으로 본다.
+_NEG_BEFORE_ADJACENT = re.compile(r"결코|절대|(?:^|\s)안\s|(?:^|\s)못\s")
+# 절 경계 — 구두점과 등위·종속 접속사. 부정은 이 선을 넘지 못한다.
+_CLAUSE_EDGE = re.compile(
+    r"[.;:,!?()\[\]\n]|\b(?:and|but|or|yet|while|whereas|though|although|however|because|so)\b",
+    re.IGNORECASE,
+)
+
+
 # 자기중독 방지 — 환경 의존 실패·도구 부정 주장은 통찰이 아니라 그날의 사정이다.
 _FORBIDDEN_INSIGHT = re.compile(
     r"command not found|no such file|permission denied|not installed|rate.?limit|"
@@ -95,7 +157,13 @@ _NORN_SYS = (
     '- {"op":"insight","title":"...","text":"...","sources":["<slug>","<slug>"],"why":"..."} — a NEW '
     "higher-order pattern that is only visible across 2+ existing pages (inductive reasoning: "
     "preferences, tendencies, recurring behaviors). The text must be self-contained, declarative, "
-    "grounded ONLY in the listed source pages, and must not merely restate a single page.\n"
+    "grounded ONLY in the listed source pages, and must not merely restate a single page. "
+    "Deterministic code checks that grounding: the insight must reuse the concrete vocabulary of "
+    "its sources, and EVERY listed source must contribute to it. Do not pad the source list — a "
+    "page that the insight does not actually draw on will be rejected as decoration. Code also "
+    "checks polarity: an insight that reuses source vocabulary while flipping what the sources "
+    "assert (dropping or adding a negation) is rejected. If sources genuinely disagree with each "
+    "other, that is a `contradiction` for a human to resolve, not an insight to synthesize.\n"
     '- {"op":"contradiction","a":"<slug>","b":"<slug>","why":"..."} — two pages make incompatible '
     "claims. Report only; a human resolves it.\n"
     '- {"op":"link","a":"<slug>","b":"<slug>","why":"..."} — two EXISTING pages are related but '
@@ -218,6 +286,111 @@ def signals(d: str | None = None) -> dict:
 def _confidence(n_sources: int) -> str:
     """근거 수가 confidence 를 결정한다 — 2=low, 3~4=medium, 5+=high (LLM 자기 신고 불신)."""
     return "high" if n_sources >= 5 else "medium" if n_sources >= 3 else "low"
+
+
+def _insight_grounding(title: str, text: str, sources: list[tuple[dict, str]]) -> tuple[float, list[float]]:
+    """통찰의 내용어가 출처에 실제로 남아 있는 비율과, **출처별** 기여도.
+
+    두 값이 다른 일을 한다. 총량은 "이 문장이 어디서 왔는가"를 묻고 (허구는 0 에 붙는다),
+    출처별 기여도는 "이 근거가 정말 근거인가"를 묻는다 — 통찰은 2장 이상에 걸쳐야만 보이는
+    것이라는 계약(_NORN_SYS)이라, 아무것도 기여하지 않는 소스가 끼어 있으면 그 계약은
+    거짓이다. 총량만 보면 진짜 소스 하나에 장식 소스를 달아 문턱을 넘길 수 있다."""
+    claim = {w for w in _content_words(f"{title} {text}") if not _stopword(w)}
+    if not claim:
+        return 0.0, []
+    haystacks = [f"{meta.get('title', '')} {body}".lower() for meta, body in sources]
+    total = sum(1 for w in claim if any(_stem_hit(w, h) for h in haystacks)) / len(claim)
+    per_source = [sum(1 for w in claim if _stem_hit(w, h)) / len(claim) for h in haystacks]
+    return total, per_source
+
+
+def _spans(word: str, haystack: str) -> list[tuple[int, int]]:
+    """낱말이 건초더미에 나타난 자리들 — `_stem_hit` 과 **같은 어간 규칙**으로 찾는다.
+
+    접지가 "있다/없다"로 답하는 자리를 극성은 "어디에 있나"로 물어야 해서 위치가 필요하다.
+    두 함수가 다른 어간 규칙을 쓰면 접지는 통과했는데 극성은 낱말을 못 찾는 일이 생긴다."""
+    floor = max(2, (len(word) + 1) // 2)
+    for cut in range(len(word), floor - 1, -1):
+        stem = word[:cut]
+        found: list[tuple[int, int]] = []
+        at = haystack.find(stem)
+        while at != -1:
+            found.append((at, at + len(stem)))
+            at = haystack.find(stem, at + 1)
+        if found:
+            return found
+    return []
+
+
+def _anchors(text: str) -> set[str]:
+    """극성을 물을 만한 낱말 — 짧은 기능어는 뺀다.
+
+    한국어와 영어의 낱말 길이가 같은 뜻을 담지 않는다: "배포"는 두 글자로 내용어지만
+    영어의 두세 글자는 대개 전치사·관사다("on", "to", "the"). 그런 낱말은 부분 문자열로
+    남의 낱말 안에서도 걸려("on" ⊂ "front") 극성 판정을 흔든다. 척도를 문자 체계로 가른다."""
+    return {w for w in _content_words(text) if not _stopword(w) and not (w.isascii() and len(w) < 4)}
+
+
+def _clause_before(haystack: str, start: int) -> str:
+    """낱말이 속한 절의 시작부터 낱말 앞까지 — 영어 부정의 작용역."""
+    window = haystack[max(0, start - POLARITY_CLAUSE) : start]
+    edges = [m.end() for m in _CLAUSE_EDGE.finditer(window)]
+    return window[edges[-1] :] if edges else window
+
+
+def _polarity(word: str, haystack: str) -> int | None:
+    """낱말에 붙은 극성 — +1 긍정, -1 부정, None = 언급 없음 **또는 혼재**.
+
+    혼재를 판정하지 않는 것이 이 함수의 안전장치다. 한 문서가 같은 낱말을 긍정으로도
+    부정으로도 쓰면("배포에 신중하며 … 금요일 배포를 피하고") 그 문서는 이 낱말에 대해
+    아무 편도 들지 않는다 — 모르는 것을 모른다고 말해야 진짜 통찰이 극성으로 잘리지 않는다."""
+    signs = set()
+    for start, end in _spans(word, haystack):
+        negated = (
+            bool(_NEG_AFTER.search(haystack[end : end + POLARITY_POST]))
+            or bool(_NEG_BEFORE_ADJACENT.search(haystack[max(0, start - POLARITY_PRE) : start]))
+            or bool(_NEG_BEFORE.search(_clause_before(haystack, start)))
+        )
+        signs.add(-1 if negated else 1)
+    return signs.pop() if len(signs) == 1 else None
+
+
+def _polarity_conflict(title: str, text: str, sources: list[tuple[dict, str]]) -> tuple[str, str] | None:
+    """통찰이 출처의 주장을 **뒤집었는가** — (낱말, 사유) 또는 None.
+
+    접지 점수로는 못 잡는 거짓말의 모양이 하나 있다: 출처의 어휘를 그대로 쓰면서 부정만
+    떼거나 붙이는 것. 그런 문장은 접지가 오히려 **높다** (낱말이 전부 출처에서 왔으니까).
+
+    표식은 만장일치일 때만 단다 — 그 낱말을 언급한 모든 출처가 통찰과 반대 극성일 때.
+    한 출처라도 통찰 편이면 그건 모순이 아니라 출처들 사이의 이견이고, 이견의 해소는
+    contradiction op 가 사람에게 넘길 일이다.
+
+    **왜 기각이 아니라 표식인가** (26-07-28 측정으로 정해졌다). 이 신호는 어휘만 보므로
+    진짜 뒤집기와 우연한 극성 반전을 못 가른다. 둘은 형상이 같다:
+
+        거짓말  통찰 "테스트 **없이** 배포" ↔ 출처 "테스트를 전부 돌린다"
+        참      통찰 "문제 **없이** 배포"   ↔ 출처 "문제를 즉시 해결한다"
+
+    가르려면 "테스트는 하는 일이고 문제는 겪는 상태"라는 세계 지식이 필요하다 — 어휘
+    정련으로 닿지 않는 자리다. 충돌 앵커 수로도 안 갈렸다(진짜 거짓말 4건 중 2건이 앵커
+    1개, 오탐 후보도 1~2개 — 완전히 겹친다).
+
+    그래서 이 신호는 **자동 승격을 막는 데만** 쓴다: 되돌리기 어려운 쪽(정본화)에는 이
+    정밀도로 충분하고, 후보 지식을 없애는 쪽에는 부족하다. 사람에게는 표식이 붙어 간다 —
+    "이 낱말을 확인하라"는 말이 "이 통찰은 없다"보다 언제나 더 쓸모 있다."""
+    claim = f"{title} {text}".lower()
+    haystacks = [f"{meta.get('title', '')} {body}".lower() for meta, body in sources]
+    # 긴 낱말부터 본다 — 기각 사유에 실리는 것은 처음 걸린 낱말이고, 사람이 판단하려면
+    # 그 낱말이 "on" 이 아니라 "fridays" 여야 한다.
+    for word in sorted(_anchors(claim), key=lambda w: (-len(w), w)):
+        mine = _polarity(word, claim)
+        if mine is None:
+            continue
+        theirs = [p for p in (_polarity(word, hay) for hay in haystacks) if p is not None]
+        if theirs and all(p == -mine for p in theirs):
+            side = "출처는 부정하는데 통찰은 긍정한다" if mine > 0 else "출처는 긍정하는데 통찰은 부정한다"
+            return word, side
+    return None
 
 
 def _parse_ops(raw: str) -> list[dict]:
@@ -371,7 +544,8 @@ def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
             if not (INSIGHT_MIN_SOURCES <= len(sources) <= INSIGHT_MAX_SOURCES):
                 _drop(op, f"insight: needs {INSIGHT_MIN_SOURCES}–{INSIGHT_MAX_SOURCES} distinct sources")
                 continue
-            if any(_clean(s) is None for s in sources):
+            pages = [_clean(s) for s in sources]
+            if any(pg is None for pg in pages):
                 _drop(op, "insight: source page missing or poisoned")
                 continue
             if _FORBIDDEN_INSIGHT.search(title + " " + text):
@@ -381,16 +555,31 @@ def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
             if threat:
                 _drop(op, f"insight: {threat}")
                 continue
-            accepted.append(
-                {
-                    "op": "insight",
-                    "title": title,
-                    "text": text,
-                    "sources": sources,
-                    "confidence": _confidence(len(sources)),
-                    "why": str(op.get("why", ""))[:200],
-                }
-            )
+            # 소스가 실존한다는 것과 통찰이 그 소스에서 나왔다는 것은 다른 말이다.
+            score, per_source = _insight_grounding(title, text, [pg for pg in pages if pg])
+            if score < INSIGHT_GROUNDING_FLOOR:
+                _drop(op, f"insight: not grounded in its sources ({score:.2f} < {INSIGHT_GROUNDING_FLOOR})")
+                continue
+            if (weakest := min(per_source, default=0.0)) <= 0:
+                idle = sources[per_source.index(weakest)]
+                _drop(op, f"insight: source [[{idle}]] contributes nothing — not a cross-page pattern")
+                continue
+            row = {
+                "op": "insight",
+                "title": title,
+                "text": text,
+                "sources": sources,
+                "grounding": round(score, 3),
+                "confidence": _confidence(len(sources)),
+                "why": str(op.get("why", ""))[:200],
+            }
+            # 접지가 높다는 것은 출처의 어휘를 썼다는 뜻이지 출처에 동의한다는 뜻이 아니다.
+            # 표식이지 기각이 아닌 이유는 _polarity_conflict 독스트링에 있다 — 이 신호는
+            # 자동 승격을 막을 만큼은 강하지만 후보 지식을 없앨 만큼 정밀하지는 않다.
+            if conflict := _polarity_conflict(title, text, [pg for pg in pages if pg]):
+                word, side = conflict
+                row["polarity_conflict"] = f"{word}: {side}"
+            accepted.append(row)
         else:  # contradiction — 보고 전용, 페이지 실존만 확인
             a, b = op.get("a"), op.get("b")
             if not _clean(a) or not _clean(b) or a == b:
@@ -516,7 +705,10 @@ def apply_norn(d: str | None, plan: dict) -> dict:
 
                 date = _today()
                 provenance = " ".join(f"[[{s}]]" for s in op["sources"])
-                body = f"{op['text']}\n\nsources: {provenance} (norn {date}, confidence: {op['confidence']})"
+                body = (
+                    f"{op['text']}\n\nsources: {provenance} (norn {date}, "
+                    f"confidence: {op['confidence']}, grounding: {op.get('grounding', '?')})"
+                )
                 slug, _ = add(body, title=op["title"], kind="insight", links=",".join(op["sources"]), d=d)
                 applied.append({**op, "slug": slug})
             elif op["op"] == "link":
@@ -547,13 +739,21 @@ def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict], b
             lines.append(f"- archive: {op['slug']} — {op['why']} (복원: asgard memory norn-restore {op['slug']})")
         elif op["op"] == "insight":
             srcs = ", ".join(f"[[{s}]]" for s in op["sources"])
-            lines.append(f"- insight: [[{op.get('slug', '')}]] ({op['confidence']}) ← {srcs}")
+            lines.append(
+                f"- insight: [[{op.get('slug', '')}]] ({op['confidence']}, "
+                f"grounding {op.get('grounding', '?')}) ← {srcs}"
+            )
         else:
             lines.append(f"- ⚠ contradiction: [[{op['a']}]] ↔ [[{op['b']}]] — {op['why']} (사람이 해소)")
     for op in failed:
         lines.append(f"- ✗ {op['op']} 실패 — {op.get('error', '')}")
     for op in plan.get("proposed") or []:  # 자율 런의 잔류 제안 — 백그라운드 결과도 흔적을 남긴다
-        target = op.get("slug") or f"{op.get('src', '')} → {op.get('dst', '')}"
+        if op["op"] == "insight":  # 사람에게 넘어온 통찰 — 판단할 재료를 같이 적는다
+            target = f"{op.get('title', '')} (grounding {op.get('grounding', '?')})"
+            if flag := op.get("polarity_conflict"):
+                target += f" ⚠ 극성 충돌 [{flag}] — 출처와 대조할 것"
+        else:
+            target = op.get("slug") or f"{op.get('src', '')} → {op.get('dst', '')}"
         lines.append(f"- (제안) {op['op']}: {target} — 검토: asgard memory norn")
     for row in plan.get("dropped") or []:
         lines.append(f"- (기각) {row['op'].get('op', '?')} — {row['reason']}")
@@ -573,14 +773,28 @@ def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict], b
 # 것만이다. 게이트는 여전히 어떤 메모리도 완료 증거로 신뢰하지 않는다.
 #
 #   off  — 자율 없음: 전부 제안 (넛지만)
-#   safe — insight(순수 추가·remove 로 즉시 가역)·contradiction(보고 전용)만 자동, 기본값
+#   safe — contradiction(보고 전용)만 자동, 기본값
 #   full — merge·archive 까지 자동 (백업+복원 가능하지만 형태 변경 — 명시 선택)
+#
+# 통찰(insight)은 어느 모드에도 기본으로 들어가지 않는다. 26-07-28 판정:
+#
+# 통찰을 자동에서 뺀 것은 게이트가 약해서가 아니라 **게이트가 답할 수 없는 물음이라서**다.
+# 검증기가 결정론으로 답할 수 있는 것은 "이 문장이 출처에서 왔는가"(접지)와 "출처의 주장을
+# 뒤집었는가"(극성)까지다. "출처에서 왔고, 뒤집지도 않았는데, 그래도 틀린 추론"은 결정론이
+# 잡을 수 있는 모양이 아니다 — 귀납의 비약은 형상이 없다.
+#
+# 가역성은 이 자리에서 자격이 되지 못한다. remove 로 지울 수 있다는 사실은, 허구가 정본
+# 자리에 앉아 회수에 섞여 나가고 다른 통찰의 출처가 되던 시간을 되돌려 주지 않는다.
+# 그래서 기본은 "접수하되 사람이 연다"이고, 자동은 그 비용을 아는 사람이 켜는 것이다:
+#
+#   [memory] norn_insight_auto = true   — 켜도 접지 INSIGHT_AUTO_FLOOR 이상 + 극성 충돌
+#                                          없음만 자동이고, mode=off 에서는 여전히 안 켜진다.
 
 AUTO_MODES = ("off", "safe", "full")
 _AUTO_OPS = {
     "off": frozenset(),
-    "safe": frozenset({"insight", "contradiction"}),
-    "full": frozenset({"merge", "archive", "insight", "contradiction"}),
+    "safe": frozenset({"contradiction"}),
+    "full": frozenset({"merge", "archive", "contradiction"}),
 }
 
 
@@ -593,11 +807,41 @@ def auto_mode() -> str:
         return "safe"
 
 
-def partition_ops(ops: list[dict], mode: str) -> tuple[list[dict], list[dict]]:
-    """검증 통과 op 를 (자동 적용분, 제안 잔류분) 으로 가른다 — 모드가 자격을 정한다."""
+def insight_auto() -> bool:
+    """통찰 자동 승격 옵트인 — config [memory].norn_insight_auto (기본 false).
+
+    기본이 false 인 이유는 위 주석에 있다. 이 스위치는 "검증기를 믿는다"가 아니라
+    "검증기가 못 잡는 오류를 내가 감당한다"는 선언이다."""
+    try:
+        value = _memory_settings().get("norn_insight_auto", False)
+        if isinstance(value, str):
+            return value.strip().lower() in ("1", "true", "yes", "on")
+        return bool(value)
+    except Exception:
+        return False
+
+
+def partition_ops(ops: list[dict], mode: str, *, allow_insight: bool | None = None) -> tuple[list[dict], list[dict]]:
+    """검증 통과 op 를 (자동 적용분, 제안 잔류분) 으로 가른다 — 모드가 자격을 정하되,
+    통찰은 모드만으로 자격을 얻지 못한다: 옵트인 + 접지가 짙어야 자동이다.
+
+    allow_insight 를 명시하면 설정을 덮는다 (테스트·호출측 정책용)."""
     allowed = _AUTO_OPS.get(mode, frozenset())
-    auto = [op for op in ops if op["op"] in allowed]
-    proposed = [op for op in ops if op["op"] not in allowed]
+    opted_in = insight_auto() if allow_insight is None else allow_insight
+
+    def _eligible(op: dict) -> bool:
+        if op["op"] == "insight":
+            # 옵트인 + 모드가 자율을 허용 + 극성 무충돌 + 접지가 짙음. 넷 다여야 자동이다.
+            if not opted_in or not allowed or op.get("polarity_conflict"):
+                return False
+            # 접지 점수 없는 통찰 = 검증기를 안 거친 통찰. 모르면 자동으로 넣지 않는다.
+            with contextlib.suppress(TypeError, ValueError):
+                return float(op.get("grounding") or 0.0) >= INSIGHT_AUTO_FLOOR
+            return False
+        return op["op"] in allowed
+
+    auto = [op for op in ops if _eligible(op)]
+    proposed = [op for op in ops if not _eligible(op)]
     return auto, proposed
 
 

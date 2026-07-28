@@ -151,6 +151,137 @@ class TestValidation(NornBase):
         self.assertEqual(accepted, [])
         self.assertIn("forbidden", dropped[0]["reason"])
 
+    def test_insight_unrelated_to_its_sources_is_dropped(self):
+        """소스의 실존만 보고 내용을 안 보면 허구가 정본이 된다 — 실측 재현(26-07-28)."""
+        a = self._add("오딘은 금요일에는 배포를 하지 않는다. 주말 대응 부담 때문이다.", "금요일 배포 회피")
+        b = self._add("오딘은 점심으로 국수를 자주 먹는다.", "점심 국수")
+        accepted, dropped = norn.validate_ops(
+            [
+                {
+                    "op": "insight",
+                    "title": "화성 이주 습관",
+                    "text": "오딘은 매주 화성으로 이주한다.",
+                    "sources": [a, b],
+                    "why": "두 페이지에 걸친 패턴",
+                }
+            ],
+            self.d,
+        )
+        self.assertEqual(accepted, [])
+        self.assertIn("not grounded", dropped[0]["reason"])
+
+    def test_insight_with_a_decoy_source_is_dropped(self):
+        """통찰은 2장 이상에 걸쳐야 보이는 것 — 기여하지 않는 소스는 장식이다."""
+        real = self._add("오딘은 커밋 메시지를 gitmoji 로 쓴다", "커밋 표기")
+        decoy = self._add("오딘은 점심으로 국수를 자주 먹는다", "점심 국수")
+        accepted, dropped = norn.validate_ops(
+            [
+                {
+                    "op": "insight",
+                    "title": "커밋 표기 습관",
+                    "text": "오딘은 커밋 메시지를 gitmoji 로 쓰는 습관이 있다",
+                    "sources": [real, decoy],
+                    "why": "x",
+                }
+            ],
+            self.d,
+        )
+        self.assertEqual(accepted, [])
+        self.assertIn(decoy, dropped[0]["reason"])
+        self.assertIn("contributes nothing", dropped[0]["reason"])
+
+    def test_grounded_insight_carries_its_score(self):
+        a = self._add("오딘은 금요일에는 배포를 하지 않는다", "금요일 배포 회피")
+        b = self._add("오딘은 배포 전에 항상 테스트를 전부 돌린다", "배포 전 점검")
+        accepted, dropped = norn.validate_ops(
+            [
+                {
+                    "op": "insight",
+                    "title": "배포 습관",
+                    "text": "오딘은 배포에 신중하며 금요일 배포를 피하고 사전 테스트를 중시한다",
+                    "sources": [a, b],
+                    "why": "x",
+                }
+            ],
+            self.d,
+        )
+        self.assertEqual(dropped, [])
+        self.assertGreaterEqual(accepted[0]["grounding"], norn.INSIGHT_GROUNDING_FLOOR)
+
+    def _insight(self, title, text, sources):
+        return norn.validate_ops(
+            [{"op": "insight", "title": title, "text": text, "sources": sources, "why": "x"}], self.d
+        )
+
+    def _deploy_sources(self):
+        return (
+            self._add("오딘은 금요일에는 배포를 하지 않는다. 주말 대응 부담 때문이다.", "금요일 배포 회피"),
+            self._add("오딘은 배포 전에 항상 테스트를 전부 돌린다", "배포 전 점검"),
+        )
+
+    def test_an_insight_that_inverts_its_sources_is_flagged(self):
+        """접지가 높다는 것은 출처의 어휘를 썼다는 뜻이지 동의한다는 뜻이 아니다 — 실측 반례(26-07-28).
+
+        낱말은 전부 출처에서 왔고 접지 0.714 로 통과했지만 주장은 정반대다. 표식이지 기각이
+        아닌 이유는 `_polarity_conflict` 독스트링에 있다 — 이 자로는 진짜 뒤집기와 우연한
+        극성 반전이 안 갈린다. 대신 자동 승격은 확실히 막힌다 (아래 partition 테스트)."""
+        a, b = self._deploy_sources()
+        accepted, dropped = self._insight("배포 습관", "오딘은 금요일마다 테스트 없이 배포한다", [a, b])
+        self.assertEqual(dropped, [])
+        self.assertIn("테스트", accepted[0]["polarity_conflict"])
+
+    def test_adding_a_negation_the_sources_do_not_carry_is_flagged(self):
+        a, b = self._deploy_sources()
+        accepted, _dropped = self._insight("테스트 습관", "오딘은 배포 전에 테스트를 돌리지 않는다", [a, b])
+        self.assertTrue(accepted[0].get("polarity_conflict"))
+
+    def test_dropping_a_negation_the_sources_do_carry_is_flagged(self):
+        a, b = self._deploy_sources()
+        accepted, _dropped = self._insight("금요일 습관", "오딘은 금요일에도 배포를 한다", [a, b])
+        self.assertTrue(accepted[0].get("polarity_conflict"))
+
+    def test_english_negation_scopes_over_the_clause_not_the_neighbouring_word(self):
+        """영어는 부정이 동사에 붙어 절을 덮는다 — 인접 창만 보면 이 반례를 놓친다."""
+        a = self._add("Odin never deploys on Fridays.", "friday freeze")
+        b = self._add("Odin runs the full test suite before every deploy.", "pre deploy tests")
+        accepted, _dropped = self._insight("deploy habit", "Odin deploys on Fridays without tests.", [a, b])
+        self.assertTrue(accepted[0].get("polarity_conflict"))
+
+    def test_an_honest_english_generalisation_is_not_flagged(self):
+        """같은 절 경계가 정직한 통찰도 지킨다 — 'avoids ... and always tests' 의 and 를 넘지 않는다."""
+        a = self._add("Odin never deploys on Fridays.", "friday freeze")
+        b = self._add("Odin runs the full test suite before every deploy.", "pre deploy tests")
+        accepted, dropped = self._insight(
+            "deploy caution",
+            "Odin is cautious about deploys: he avoids Friday deploys and always tests first.",
+            [a, b],
+        )
+        self.assertEqual(dropped, [])
+        self.assertNotIn("polarity_conflict", accepted[0])
+
+    def test_an_insight_that_keeps_the_negation_is_not_flagged(self):
+        """부정을 담은 통찰 자체는 죄가 없다 — 출처가 같은 편이면 표식이 안 붙는다."""
+        a, b = self._deploy_sources()
+        accepted, dropped = self._insight(
+            "금요일 규율", "오딘은 금요일에 배포하지 않으며 배포 전 테스트를 지킨다", [a, b]
+        )
+        self.assertEqual(dropped, [])
+        self.assertNotIn("polarity_conflict", accepted[0])
+
+    def test_sources_that_disagree_do_not_convict_the_insight(self):
+        """출처끼리 갈리면 그것은 모순이지 통찰의 거짓말이 아니다 — 만장일치일 때만 표식이 붙는다."""
+        a = self._add("오딘은 금요일에는 배포를 하지 않는다", "금요일 배포 회피")
+        b = self._add("오딘은 금요일에도 배포를 한다", "금요일 배포 강행")
+        accepted, dropped = self._insight("금요일 습관", "오딘은 금요일에 배포를 한다", [a, b])
+        self.assertEqual(dropped, [])
+        self.assertNotIn("polarity_conflict", accepted[0])
+
+    def test_the_flag_survives_into_the_report_a_human_reads(self):
+        a, b = self._deploy_sources()
+        accepted, _dropped = self._insight("배포 습관", "오딘은 금요일마다 테스트 없이 배포한다", [a, b])
+        report = norn._write_report(self.d, {"proposed": accepted}, [], [], "")
+        self.assertIn("극성 충돌", open(report, encoding="utf-8").read())
+
     def test_insight_injection_scan_blocks(self):
         a = self._add("정상 관측 하나", "관측a")
         b = self._add("정상 관측 둘", "관측b")
@@ -277,27 +408,76 @@ class TestAutonomyTiers(NornBase):
     def test_auto_mode_default_safe(self):
         self.assertEqual(norn.auto_mode(), "safe")
 
-    def test_partition_safe_allows_only_additive_ops(self):
+    def test_partition_safe_reports_but_never_writes(self):
+        """safe 는 '보고'까지다 — 페이지를 새로 만드는 통찰은 기본적으로 사람을 지난다."""
         ops = [
             {"op": "merge", "src": "a", "dst": "b"},
             {"op": "archive", "slug": "c"},
-            {"op": "insight", "title": "t"},
+            {"op": "insight", "title": "t", "grounding": 0.8},
             {"op": "contradiction", "a": "x", "b": "y"},
         ]
         auto, proposed = norn.partition_ops(ops, "safe")
-        self.assertEqual([o["op"] for o in auto], ["insight", "contradiction"])
-        self.assertEqual([o["op"] for o in proposed], ["merge", "archive"])
+        self.assertEqual([o["op"] for o in auto], ["contradiction"])
+        self.assertEqual([o["op"] for o in proposed], ["merge", "archive", "insight"])
         auto_full, proposed_full = norn.partition_ops(ops, "full")
-        self.assertEqual(len(auto_full), 4)
-        self.assertEqual(proposed_full, [])
+        self.assertEqual([o["op"] for o in auto_full], ["merge", "archive", "contradiction"])
+        self.assertEqual([o["op"] for o in proposed_full], ["insight"])
         auto_off, proposed_off = norn.partition_ops(ops, "off")
         self.assertEqual(auto_off, [])
         self.assertEqual(len(proposed_off), 4)
 
-    def test_run_auto_safe_applies_insight_keeps_merge_proposed(self):
+    def test_insight_never_auto_applies_without_the_opt_in(self):
+        """결정론이 못 답하는 물음이 남아 있는 한, 통찰은 기본적으로 제안이다 (26-07-28)."""
+        strong = {"op": "insight", "title": "t", "grounding": 0.95}
+        for mode in ("off", "safe", "full"):
+            auto, proposed = norn.partition_ops([strong], mode)
+            self.assertEqual(auto, [], f"mode={mode} 에서 통찰이 자동 적용됐다")
+            self.assertEqual(proposed, [strong])
+
+    def test_opt_in_lets_a_well_grounded_insight_through_except_in_off(self):
+        strong = {"op": "insight", "title": "t", "grounding": 0.95}
+        for mode in ("safe", "full"):
+            auto, _ = norn.partition_ops([strong], mode, allow_insight=True)
+            self.assertEqual(auto, [strong], f"mode={mode} 옵트인이 무시됐다")
+        auto_off, _ = norn.partition_ops([strong], "off", allow_insight=True)
+        self.assertEqual(auto_off, [])  # off 는 옵트인보다 세다 — 자율 없음이 자율 없음이다
+
+    def test_a_polarity_flagged_insight_never_auto_applies_even_opted_in(self):
+        """표식의 값은 여기서 치러진다 — 자를 만큼 정밀하진 않아도, 자동 정본화는 확실히 막는다."""
+        flagged = {"op": "insight", "title": "t", "grounding": 0.95, "polarity_conflict": "테스트: …"}
+        clean = {"op": "insight", "title": "u", "grounding": 0.95}
+        auto, proposed = norn.partition_ops([flagged, clean], "full", allow_insight=True)
+        self.assertEqual(auto, [clean])
+        self.assertEqual(proposed, [flagged])
+
+    def test_opt_in_is_read_from_settings(self):
+        strong = {"op": "insight", "title": "t", "grounding": 0.95}
+        with mock.patch.object(norn, "_memory_settings", return_value={"norn_insight_auto": True}):
+            self.assertTrue(norn.insight_auto())
+            auto, _ = norn.partition_ops([strong], "safe")
+            self.assertEqual(auto, [strong])
+        with mock.patch.object(norn, "_memory_settings", return_value={}):
+            self.assertFalse(norn.insight_auto())
+
+    def test_insight_without_a_grounding_score_never_auto_applies(self):
+        """검증기를 안 거친 통찰 = 접지를 모르는 통찰. 모르면 자동으로 넣지 않는다."""
+        for mode in ("safe", "full"):  # 옵트인을 켜도 접지는 면제되지 않는다
+            auto, proposed = norn.partition_ops([{"op": "insight", "title": "t"}], mode, allow_insight=True)
+            self.assertEqual(auto, [])
+            self.assertEqual(len(proposed), 1)
+
+    def test_weakly_grounded_insight_is_proposed_not_applied(self):
+        """검증은 통과했지만 접지가 옅다 — 버리지도, 자동으로 굳히지도 않는다."""
+        weak = {"op": "insight", "title": "t", "grounding": norn.INSIGHT_AUTO_FLOOR - 0.05}
+        strong = {"op": "insight", "title": "t", "grounding": norn.INSIGHT_AUTO_FLOOR}
+        auto, proposed = norn.partition_ops([weak, strong], "safe", allow_insight=True)
+        self.assertEqual(auto, [strong])
+        self.assertEqual(proposed, [weak])
+
+    def test_run_auto_safe_keeps_insight_and_merge_proposed(self):
         a = self._add("사용자는 uv run pytest 를 선호한다", "선호 a")
         b = self._add("사용자는 uv run pytest 를 선호한다 — 항상", "선호 b")
-        c = self._add("금요일 배포 관측 하나", "관측 c")
+        c = self._add("사용자는 커밋 전에 pytest 를 돌린다", "관측 c")
         raw = json.dumps(
             {
                 "ops": [
@@ -305,7 +485,7 @@ class TestAutonomyTiers(NornBase):
                     {
                         "op": "insight",
                         "title": "테스트 습관",
-                        "text": "사용자는 pytest 기반 검증을 선호하는 경향이 있다",
+                        "text": "사용자는 pytest 로 검증하는 것을 선호하며 커밋 전에 반드시 돌린다",
                         "sources": [a, c],
                         "why": "pattern",
                     },
@@ -315,14 +495,37 @@ class TestAutonomyTiers(NornBase):
         with mock.patch.object(norn, "_complete", return_value=raw):
             result = norn.run_auto(self.tmp, self.d)
         self.assertEqual(result["mode"], "safe")
-        self.assertEqual([o["op"] for o in result["applied"]], ["insight"])
-        self.assertEqual([o["op"] for o in result["proposed"]], ["merge"])
+        self.assertEqual(result["applied"], [])
+        self.assertEqual([o["op"] for o in result["proposed"]], ["merge", "insight"])
         self.assertTrue(os.path.exists(memory._page_path(self.d, a)))  # merge 미적용 — 제안 잔류
-        slug = result["applied"][0]["slug"]
-        meta, _body = self._page(slug)
-        self.assertEqual(meta.get("kind"), "insight")
         report = open(result["report"], encoding="utf-8").read()  # 백그라운드 제안도 흔적을 남긴다
         self.assertIn("(제안) merge", report)
+        self.assertIn("(제안) insight", report)
+
+    def test_run_auto_with_the_opt_in_writes_the_insight_page(self):
+        a = self._add("사용자는 uv run pytest 를 선호한다", "선호 a")
+        c = self._add("사용자는 커밋 전에 pytest 를 돌린다", "관측 c")
+        raw = json.dumps(
+            {
+                "ops": [
+                    {
+                        "op": "insight",
+                        "title": "테스트 습관",
+                        "text": "사용자는 pytest 로 검증하는 것을 선호하며 커밋 전에 반드시 돌린다",
+                        "sources": [a, c],
+                        "why": "pattern",
+                    }
+                ]
+            }
+        )
+        with (
+            mock.patch.object(norn, "_complete", return_value=raw),
+            mock.patch.object(norn, "insight_auto", return_value=True),
+        ):
+            result = norn.run_auto(self.tmp, self.d)
+        self.assertEqual([o["op"] for o in result["applied"]], ["insight"])
+        meta, _body = self._page(result["applied"][0]["slug"])
+        self.assertEqual(meta.get("kind"), "insight")
 
     def test_run_auto_advances_state_even_without_ops(self):
         self._add("페이지 하나", "하나")
@@ -417,8 +620,8 @@ class TestNornLinkOp(NornBase):
         norn.apply_norn(self.d, {"ops": accepted})
 
         self.assertEqual(accepted[0]["scale"], "semantic")
-        self.assertIn(b, memory._read(self.d, a)[0]["links"])
-        self.assertIn(a, memory._read(self.d, b)[0]["links"])  # 한쪽만 적으면 관계가 반쪽으로 읽힌다
+        self.assertIn(b, self._page(a)[0]["links"])
+        self.assertIn(a, self._page(b)[0]["links"])  # 한쪽만 적으면 관계가 반쪽으로 읽힌다
 
     def test_an_unrelated_pair_is_refused_however_confident_the_why(self):
         a, _, c = self._pages()
