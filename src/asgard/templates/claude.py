@@ -136,6 +136,12 @@ def cc_settings() -> str:
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
                                 },
+                                # 되짚기의 앞쪽 절반 — 같은 자리를 다시 건드리기 **전에** 남은 물음을
+                                # 사용자에게만 꺼낸다. 모델 컨텍스트에 넣으면 모델이 대신 답해 버린다.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/tutor-note.py" claude brief',
+                                },
                             ]
                         },
                     ],

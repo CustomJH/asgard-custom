@@ -72,6 +72,12 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
+# Tutor, forward half — before touching the same place again, put the questions still open there
+# in front of the human. User-facing only: a model that reads them answers them on the user's behalf.
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/tutor-note.py" codex brief'
+
 # Canon enforcement — deterministic PreToolUse guard. Same stdin schema as Claude Code, so
 # the guard is the same git-guard.py. Trust once via the /hooks CLI (or --dangerously-bypass-hook-trust).
 [[hooks.PreToolUse]]

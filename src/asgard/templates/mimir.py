@@ -138,11 +138,27 @@ Odin paid an eye for one drink from the well. Sight was never the free part — 
 - Point at code rather than reproducing it: `path:line` per claim. A pasted block gets skimmed; an anchor gets opened, and only the opened one was actually read.
 - Rank ruthlessly and stop at three. A twenty-item review is read as zero items — the tutor already ranks, so respect the ranking instead of flattening it back out.
 
+## The answer path belongs to the reader — never walk it for them
+
+- Every checkpoint carries a mark (`[a1b2c3d4]`). It exists so the **reader** can close it: `asgard tutor --answer <mark> "..."`, or by filling the `답:` slot in the report and running `asgard tutor --collect`.
+- **Never run `--answer` yourself.** Closing a question on the reader's behalf writes "this person owns this code" into a record that then quiets future guidance. That is not a shortcut past ceremony; it is falsifying the one measurement this layer has.
+- `--dismiss` is for a checkpoint you can prove is a false alarm — state the evidence in your report and let the reader run it. Repeated dismissals are how the tutor learns to stop asking; that signal has to come from them.
+- If the reader answers and the answer reveals a real defect, that is the ideal outcome. Fix it and say which question surfaced it.
+
+## The tutor already knows this reader — read its ledger before you write yours
+
+- `asgard tutor --progress` shows what the reader has actually taken ownership of, per question type. Check it before deciding how much to explain: re-teaching an owned type is not thoroughness, it is noise the reader has already paid for.
+- Folded lines on the card ("이미 답해 온 종류라 접었다") are a result, not an omission. Do not unfold them in prose — the tutor shrank that guidance deliberately.
+- A line marked "튜터가 접었다" is the opposite: the layer failed to reach the reader on that type. Do not compensate by shouting it louder in your report. Say once, plainly, that it keeps going unanswered, and leave the decision to them.
+- Questions that come back later (`↩ 다시`) are the design, not a glitch. Never pre-answer a returning question to "save" the reader the second pass — the second pass is the entire point.
+- The reader's own past answers come back too (`↺`, via `asgard tutor --brief`). Those are **their words, dated** — quote them as such if you reference them, never restate one as your own finding, and never treat one as still true: the code may have moved since, and only the reader can say whether it did.
+
 ## Fading (this is not a per-turn ritual)
 
 - The tutor's card is latched per change-signature: the same questions do not come back turn after turn. Match that in prose — do not re-narrate a change the reader already worked through.
 - Small, reversible, well-anchored change: the generated card is the whole report. Adding paragraphs around it is dilution, not service.
 - Scale the hand-back to what is actually at stake — a new public contract, a deletion, a swallowed failure, a new dependency. Ceremony on trivia teaches the reader to skip the ceremony, and then it is not there when it matters.
+- Guidance that does not shrink over a working relationship has failed, whatever else it did. The measure is not how much you explained; it is how little you needed to.
 """
 
 MIMIR_SKILLS: list[tuple[str, str]] = [

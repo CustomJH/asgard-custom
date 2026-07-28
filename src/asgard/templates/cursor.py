@@ -76,6 +76,9 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/lagom-tracker.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
+                        # 되짚기의 앞쪽 절반 — 주입 통로가 없어도 `user_message` 로 **사용자에게**는
+                        # 닿는다. 원래 모델에 넣지 않을 층이라 이 제약이 여기서는 제약이 아니다.
+                        {"command": f"{py} .cursor/hooks/tutor-note.py cursor brief"},
                     ],
                     "beforeShellExecution": [
                         # Canon 4 읽기 절반 — shell 우회 credential 덤프 차단

@@ -18,16 +18,23 @@
 
 래칫은 `craft` 와 같다: base 에 이미 있던 것은 다시 묻지 않는다. 물음도 부채라서, 매 턴 같은
 것을 물으면 세 번째부터 아무도 안 읽는다.
+
+물음을 놓은 **뒤**는 `tutor_growth` 가 센다 — 답했는가, 건너뛰었는가, 그래서 다음엔 얼마나 말할
+것인가(조절), 안 답한 것을 언제 다시 꺼낼 것인가(재방문). 이 모듈은 계속 "이번 변경의 사실"만
+만들고, 그 사실을 사람에 맞춰 **줄이는** 일은 여기 아래쪽 조립부에서만 일어난다. 나누는 이유는
+하나다: 사실이 사람에 따라 달라지기 시작하면 `--json` 이 두 사람에게 다른 답을 내게 된다.
 """
 
 from __future__ import annotations
 
 import hashlib
 import os
+import re
 import subprocess
+import time
 from dataclasses import dataclass, replace
 
-from . import craft, craft_lex, surface, tutor_probes
+from . import craft, craft_lex, surface, tutor_growth, tutor_probes
 from .craft_rules import Unit
 from .health import _read
 from .io_files import read_json, write_json
@@ -56,6 +63,40 @@ KIND_LABEL = {
     "untested-surface": "판정 없는 새 표면",
     "todo-left": "안 끝난 표식",
 }
+# 다시 물을 때의 **각도**. 같은 문장을 네 번째로 놓는 것은 재방문이 아니라 반복이고, 반복은
+# 답을 못 받은 이유를 그대로 한 번 더 재현한다. 인출이 실패한 자리에서 바꿀 것은 목소리 크기가
+# 아니라 각도다 — 결과를 묻던 것을 신호로, 신호를 묻던 것을 복구로 옮긴다. 0번은 최초 문장이라
+# 여기 없다(Checkpoint.ask 가 갖는다). 각도가 떨어지면 마지막 각도를 유지한다.
+ANGLES: dict[str, tuple[str, ...]] = {
+    "contract-break": (
+        "이 계약을 쓰던 코드를 지금 처음 보는 사람이 있다면, 그 사람은 무엇을 먼저 실행해 봐야 하는가?",
+        "되돌려야 한다면 어디를 되돌리는가 — 한 줄로 말할 수 있는가?",
+    ),
+    "behavior-removed": (
+        "이 동작이 없어서 깨지는 상황을 하나만 말해 보라. 하나도 못 대겠다면 그건 왜인가?",
+        "이걸 다시 살려야 할 날이 온다면, 무엇을 근거로 그 판단을 내리는가?",
+    ),
+    "test-removed": (
+        "이 테스트가 잡던 실패를 지금 일부러 만들면, 무엇이 빨개지는가?",
+        "지운 판정을 대신하는 것이 없다면 — 없어도 되는 이유를 한 줄로 적어 보라.",
+    ),
+    "silent-failure": (
+        "이 예외가 지금 하루에 100번씩 일어나고 있다면, 당신은 그걸 어떻게 알아차리는가?",
+        "여기서 삼키는 대신 위로 올렸다면 무엇이 깨지는가? 그게 삼키는 이유인가?",
+    ),
+    "new-dependency": (
+        "이게 내일 폐기되거나 라이선스가 바뀐다면 당신은 무엇을 해야 하는가?",
+        "이 의존이 하는 일 중 실제로 쓰는 것은 얼마인가? 나머지도 같이 짊어질 값인가?",
+    ),
+    "untested-surface": (
+        "다음 사람이 이걸 반대로 고쳐 놓으면, 무엇이 그 사실을 알려 주는가?",
+        "판정을 안 붙이기로 했다면 그 결정은 지금 어디에 적혀 있는가?",
+    ),
+    "todo-left": (
+        "이 표식을 지우려면 그 전에 무엇이 끝나야 하는가?",
+        "여섯 달 뒤 이 줄을 처음 보는 사람은, 무엇을 해야 하는지 알 수 있는가?",
+    ),
+}
 
 
 @dataclass(frozen=True)
@@ -74,6 +115,7 @@ class Checkpoint:
     what: str
     why: str
     ask: str
+    key: str = ""  # 식별용 구분자 — 아래 `cid` 주석 참고. 비면 `unit` 이 그 일을 한다
 
     @property
     def weight(self) -> int:
@@ -82,6 +124,18 @@ class Checkpoint:
     @property
     def where(self) -> str:
         return f"{self.path}:{self.line}" + (f" {self.unit}" if self.unit else "")
+
+    @property
+    def cid(self) -> str:
+        """이 물음의 이름. 사용자가 답을 되돌려 보낼 때 쓰는 유일한 좌표다.
+
+        **줄 번호를 안 쓴다** — 답을 적는 사이에 위에서 함수가 길어지면 좌표가 바뀌는 식별자는
+        식별자가 아니다. 대신 `key` 로 한 파일 안의 물음을 가른다: 의존 물음의 `unit` 은 비어
+        있고 한 함수 안의 삼킴도 이름이 같아서, 좌표만으로는 `requests` 와 `yaml` 이 **같은
+        물음**이 된다(실측). 그러면 답 하나가 안 답한 물음까지 닫는다 — 기록이 거짓이 되는
+        가장 조용한 경로다.
+        """
+        return tutor_growth.cid(self.kind, self.path, self.key or self.unit)
 
 
 @dataclass(frozen=True)
@@ -256,6 +310,7 @@ def _python_points(rel: str, text: str, before: str, own: frozenset[str]) -> lis
             f"{sig.split('@', 1)[0]} 를 잡고 아무것도 하지 않는다 — 이유가 어디에도 안 적혀 있다",
             "삼킨 예외는 실패를 성공처럼 보이게 만든다. 의도한 fail-open 인지 흘린 것인지는 코드만 보고 알 수 없다",
             "이 예외가 실제로 일어나면 사용자 화면에는 무엇이 보이는가? 아무것도 안 보이는 게 맞다면 왜인가?",
+            sig,  # 한 함수 안에 삼킴이 둘이면 `unit` 이 같다 — 예외 종류까지 넣어야 다른 물음이 된다
         )
         for sig, line in sorted(_fresh(tutor_probes.swallows(text), tutor_probes.swallows(before)).items())
     ]
@@ -269,6 +324,7 @@ def _python_points(rel: str, text: str, before: str, own: frozenset[str]) -> lis
                 f"외부 의존 `{name}` 이 이 파일에 새로 들어왔다",
                 "의존 하나는 코드보다 오래 남는다 — 버전·보안·라이선스·이관 비용이 전부 따라 들어온다",
                 f"`{name}` 이 하는 일을 직접 짜면 몇 줄인가? 그 줄 수를 이 비용과 바꿀 값이 있는가?",
+                name,  # 의존 물음은 `unit` 이 비어 있다 — 이름이 없으면 한 파일의 의존 전부가 한 물음이 된다
             )
         )
     return out
@@ -284,6 +340,7 @@ def _mark_point(rel: str, sig: str, line: int) -> Checkpoint:
         f"{kind} 표식이 새로 남았다 — {body or '(내용 없음)'}",
         "표식은 저자가 스스로 '여기 안 끝났다'고 적은 자리다. 안 갚기로 했다면 표식이 아니라 결정으로 남아야 한다",
         "이건 언제 갚는가? 안 갚을 것이면 왜 남겨 두는가?",
+        sig,  # 한 파일의 표식이 여럿이면 본문이 유일한 구분자다 (`unit` 은 비어 있다)
     )
 
 
@@ -417,6 +474,209 @@ def _normalise(paths: object) -> list[str]:
     return sorted({rel for raw in paths if (rel := str(raw).strip().replace(os.sep, "/"))})
 
 
+# ── 조절·재방문 (사실을 사람에 맞춰 줄인다) ───────────────────────
+
+
+def angled(point: Checkpoint, asks: int) -> Checkpoint:
+    """같은 물음을 다시 놓을 때 각도를 바꾼 문장으로 갈아 끼운다. 1회차는 원문 그대로."""
+    turns = ANGLES.get(point.kind, ())
+    index = tutor_growth.angle(point.kind, asks) - 1
+    if index < 0 or not turns:
+        return point
+    return replace(point, ask=turns[min(index, len(turns) - 1)])
+
+
+def shaped(root: str, points: tuple[Checkpoint, ...]) -> list[tuple[Checkpoint, str]]:
+    """(물음, 크기) 목록 — 크기는 `full` · `ask` · `fold` · `quiet`.
+
+    이 저장소에서 이미 세 번 답한 종류를 네 번째에도 같은 분량으로 설명하면, 그건 배려가 아니라
+    사용자 시간을 쓰는 일이다(안내는 줄어드는 것이 목표다). 반대로 접는다고 지우지는 않는다 —
+    접힌 줄은 화면에 남아서 "이 종류도 이번에 있었다"는 사실을 계속 말한다.
+
+    문장의 각도도 여기서 정해진다: 같은 물음을 두 번째로 놓는 자리면 두 번째 각도로 갈아 끼운다.
+    `record` 뒤에 부르는 것이 계약이다 — 회차를 세기 전에 각도를 고르면 한 박자씩 밀린다.
+    """
+    data = tutor_growth.load(root)
+    out: list[tuple[Checkpoint, str]] = []
+    for point in points:
+        entry = data["open"].get(point.cid)
+        asks = int(entry.get("asks") or 1) if isinstance(entry, dict) else 1
+        out.append((angled(point, asks), tutor_growth.form(data, point.kind)))
+    return out
+
+
+def revisits(root: str, now: float | None = None, cap: int = 2, skip: object = ()) -> list[tutor_growth.Revisit]:
+    """때가 됐고 **코드가 아직 거기 있는** 물음 — 각도를 바꿔서, 다음 회차 예약까지 끝내서 준다.
+
+    없는 자리를 열어 보라고 두 번 말하면 사용자는 이 카드를 통째로 안 믿는다. 그래서 재방문은
+    기록만으로 결정하지 않고 매번 나무를 한 번 본다 — 되짚기가 유일하게 파일을 다시 읽는 자리다.
+    죽은 좌표는 여기서 만료로 닫힌다(조용히 지우지 않는다).
+
+    `skip` 은 이번 턴이 방금 물은 자리다. 같은 물음이 위(이번 변경)와 아래(재방문)에 두 번 실리면
+    읽는 쪽은 그걸 두 건으로 세고, 두 번 실린 화면은 한 번도 안 읽힌다.
+    """
+    seen = {str(s) for s in skip} if isinstance(skip, (list, tuple, set, frozenset)) else set()
+    alive, dead = [], []
+    for row in tutor_growth.due(root, now, cap=max(cap * 4, 8)):
+        if row.cid in seen:
+            continue
+        (alive if _alive(root, row) else dead).append(row)
+    if dead:
+        tutor_growth.expire(root, [row.cid for row in dead], "gone", now)
+    out = []
+    for row in alive[:cap]:
+        turns = ANGLES.get(row.kind, ())
+        index = row.asks - 1  # asks 는 아래 record 에서 곧 +1 된다 — 그 회차의 각도를 미리 고른다
+        ask = turns[min(index, len(turns) - 1)] if turns and index >= 0 else row.ask
+        out.append(replace(row, ask=ask, asks=row.asks + 1))
+    if out:
+        record(
+            root,
+            [{"kind": r.kind, "path": r.path, "unit": r.unit, "key": r.key, "ask": r.ask} for r in out],
+            now,
+        )
+    return out
+
+
+def _alive(root: str, row: tutor_growth.Revisit) -> bool:
+    """좌표가 아직 살아 있는가. **모르면 살아 있다고 본다** — 물음을 조용히 지우는 쪽이 더 나쁘다.
+
+    단위 이름이 본문 어디에도 없으면 확실히 사라진 것이다. 이름이 있으면(다른 곳에서 언급만 하는
+    경우 포함) 살아 있다고 친다. 단위가 없는 물음(표식 등)은 파일 존재만 본다 — 표식 한 줄의
+    생사까지 여기서 다시 판정하면 판정기가 두 벌이 된다.
+    """
+    text = _read(root, row.path)
+    if text is None:
+        return False
+    return True if not row.unit else row.unit.rsplit(".", 1)[-1] in text
+
+
+def hand_back(
+    root: str,
+    points: tuple[Checkpoint, ...],
+    limit: int = 3,
+    count: bool = True,
+    now: float | None = None,
+) -> tuple[list[tuple[Checkpoint, str]], list[tutor_growth.Revisit]]:
+    """화면에 실릴 모양 + 되돌아온 물음. 두 도달 경로(훅·네이티브)가 같은 함수를 쓴다.
+
+    **화면에 실린 것만 센다.** 판정이 119건을 찾아도 카드에 셋이 올라갔으면 물은 것은 셋이다 —
+    나머지를 세면 사용자가 본 적 없는 물음이 "건너뛴 것"으로 기록되고, 그러면 조절이 사람이 아닌
+    판정기의 크기를 따라간다(실측: 400파일 넓은 진단 한 번이 기록을 119건으로 부풀렸다).
+
+    세는 것이 먼저이고 문장을 고르는 것이 나중이다 — 회차를 센 뒤라야 그 회차의 각도가 나온다.
+    """
+    data = tutor_growth.load(root)
+    shown = [p for p in points if tutor_growth.form(data, p.kind) not in ("fold", "quiet")][:limit]
+    if count and shown:
+        record(root, shown, now)
+    rows = shaped(root, points)
+    back = revisits(root, now, skip=[p.cid for p in points]) if count else []
+    return (rows, back)
+
+
+def record(root: str, points: object, now: float | None = None) -> dict[str, str]:
+    """놓은 물음을 성장 기록에 남긴다 — 중복 호출에 안전(같은 턴에 훅과 네이티브가 겹쳐 돈다).
+
+    `now` 를 그대로 넘기는 것이 계약이다. 여기서 시계를 갈아 끼우면 재방문 사다리가 제자리를
+    맴돈다 — 예약은 미래 시각으로 재고 판정은 현재 시각으로 하면 영원히 "아직 때가 아니다"가 된다.
+    """
+    try:
+        return tutor_growth.note_asked(root, points, now)
+    except Exception:
+        return {}  # 기록 실패가 화면을 막지 않는다 — 되짚기는 규율이지 관문이 아니다
+
+
+# ── 앞서 말하는 층 (일을 시작하기 전) ──────────────────────────────
+
+_TOKEN = re.compile(r"[A-Za-z0-9_./\\-]{3,}")
+# 자기 힘으로는 자리를 못 가리키는 조각. `src` 한 글자에 나무 전체가 걸리면 이 줄은 배경 소음이
+# 되고, 배경 소음이 된 안내는 켜져 있어도 꺼진 것과 같다. 확장자·구조 디렉터리가 여기 온다.
+_WEAK = frozenset("src lib test tests spec py js ts tsx jsx go rs java kt md json toml yaml yml".split())
+
+
+def brief(root: str, text: str = "", paths: object = (), cap: int = 3) -> str:
+    """**들어가기 전에** 이 자리에 남아 있는 답 없는 물음. 없으면 빈 문자열.
+
+    되짚기는 지금까지 전부 사후였다 — 다 쓰고 나서 물었다. 그런데 같은 자리를 다시 건드리는
+    순간이야말로 지난번 물음이 값을 갖는 유일한 때다: 그때는 "언젠가 볼 것"이었지만 지금은
+    **지금 여는 파일**이다. 사후 카드가 부채를 적는 층이면 이건 부채를 만나는 층이다.
+
+    새로 판정하지 않는다 — 이미 열려 있는 물음만 좌표로 거른다. 여기서 파일을 다시 읽기 시작하면
+    턴 시작이 느려지고, 느린 안내는 꺼지는 안내다.
+    """
+    named = set(_normalise(paths))
+    here = named or _here(root, _keys(text or ""))
+    if not here:
+        return ""
+    hit = [r for r in tutor_growth.open_points(root) if r.path in here]
+    back = tutor_growth.recall(root, here)
+    if not hit and not back:
+        return ""
+    hit.sort(key=lambda r: (-WEIGHT.get(r.kind, 0), r.opened))
+    lines = []
+    if hit:
+        lines.append(f"⠶ 들어가기 전 — 이 자리에 답 없는 물음 {len(hit)}건이 남아 있다.")
+        for row in hit[:cap]:
+            lines.append(f"  {KIND_LABEL.get(row.kind, row.kind)} — {row.where}  [{row.cid}]")
+            lines.append(f"    ▸ {row.ask}")
+        if len(hit) > cap:
+            lines.append(f"  …외 {len(hit) - cap}건")
+    lines += _recall_lines(back, bool(hit))
+    return "\n".join(lines)
+
+
+def _here(root: str, keys: set[str]) -> set[str]:
+    """요청 문장이 가리키는 자리 — 열린 물음이 안 남은 자리도 포함한다(회상은 거기서 나온다)."""
+    if not keys:
+        return set()
+    return {path for path, units in tutor_growth.places(root).items() if _touches(path, units, keys)}
+
+
+def _recall_lines(back: list[tutor_growth.Said], after_questions: bool) -> list[str]:
+    """그때 당신이 한 답을 그대로 되돌려 준다 — 기계의 판정으로 다시 쓰지 않는다.
+
+    날짜를 반드시 붙인다. 그 사이 코드가 바뀌었을 수 있고, 바뀌었는지는 여기서 못 정한다 —
+    "당신이 그때 이렇게 말했다"는 사실만 참이고, 지금도 맞는지는 사람이 본다.
+    """
+    if not back:
+        return []
+    now = time.time()
+    head = "  " if after_questions else "⠶ 들어가기 전 — "
+    lines = [f"{head}이 자리에 대해 **당신이 예전에 한 답**이 있다."]
+    for row in back:
+        days = row.days(now)
+        when = f"{days}일 전" if days else "오늘"
+        tag = "오탐으로 닫음" if row.dismissed else "답"
+        lines.append(f"  ↺ {row.where} — {when} {tag}")
+        lines.append(f"    “{row.said}”")
+    return lines
+
+
+def _keys(text: str) -> set[str]:
+    """요청 문장에서 자리를 가리킬 수 있는 조각만. `app.py` 는 통째로도, 쪼개서도 센다."""
+    out: set[str] = set()
+    for raw in _TOKEN.findall(text):
+        for piece in [raw, *re.split(r"[/\\.]", raw)]:
+            key = piece.lower().strip("-_")
+            if len(key) >= 3 and key not in _WEAK:
+                out.add(key)
+    return out
+
+
+def _touches(path: str, units: set[str], keys: set[str]) -> bool:
+    """요청 문장이 이 자리를 가리키는가 — 경로 조각과 단위 이름만 본다(0-LLM).
+
+    느슨하게 맞추면 아무 요청에나 남의 물음이 붙고, 그러면 이 줄은 배경 소음이 된다. 그래서
+    경로의 **조각 하나가 통째로** 일치할 때만 센다 (`heimdall` ○, `dall` ✕).
+    """
+    parts = {p.lower() for p in re.split(r"[/\\.]", path) if p}
+    parts.add(path.lower())
+    parts.add(os.path.basename(path).lower())
+    parts |= {u.rsplit(".", 1)[-1].lower() for u in units if u}
+    return bool(parts & keys)
+
+
 # ── 네이티브 루프 도달 경로 ────────────────────────────────────────
 
 
@@ -433,11 +693,12 @@ def turn_note(root: str, sid: object, limit: int = 3) -> str:
         return ""
     lesson = review(root, "HEAD", paths)
     points = lesson.ranked
-    if not points:
+    rows, back = hand_back(root, points, limit)
+    if not points and not back:
         return ""  # 물을 것이 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
-    if _repeat(root, key, points):
+    if _repeat(root, key, points, back):
         return ""
-    return _card(lesson, points, limit)
+    return _card(lesson, rows, back, limit)
 
 
 def _session_writes(root: str, sid: str) -> list[str]:
@@ -448,10 +709,10 @@ def _session_writes(root: str, sid: str) -> list[str]:
     return [str(row) for row in rows] if isinstance(rows, list) else []
 
 
-def _repeat(root: str, sid: str, points: tuple[Checkpoint, ...]) -> bool:
+def _repeat(root: str, sid: str, points: tuple[Checkpoint, ...], back: list[tutor_growth.Revisit]) -> bool:
     """같은 물음을 매 턴 다시 놓으면 세 번째부터 아무도 안 읽는다 — 지문이 같으면 침묵."""
     path = os.path.join(root, ".asgard", "state", f"tutor-{sid}.json")
-    sig = _fingerprint(points)
+    sig = _fingerprint(points, back)
     seen = (read_json(path, {}) or {}).get("signature")
     try:
         write_json(path, {"signature": sig})
@@ -460,23 +721,72 @@ def _repeat(root: str, sid: str, points: tuple[Checkpoint, ...]) -> bool:
     return seen == sig
 
 
-def _fingerprint(points: tuple[Checkpoint, ...]) -> str:
-    raw = "\n".join(sorted(f"{p.kind}|{p.path}|{p.unit}" for p in points))
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+def _fingerprint(points: tuple[Checkpoint, ...], back: list[tutor_growth.Revisit]) -> str:
+    """물음 집합의 지문. 재방문도 지문에 넣는다 — 안 넣으면 이번 턴에 처음 돌아온 옛 물음이
+    "직전 턴과 같은 카드"로 판정돼 통째로 사라진다(래치가 자기 성장 경로를 막는다)."""
+    rows = [f"{p.kind}|{p.path}|{p.unit}" for p in points] + [f"revisit|{r.cid}|{r.asks}" for r in back]
+    return hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()[:16]
 
 
-def _card(lesson: Lesson, points: tuple[Checkpoint, ...], limit: int) -> str:
+def _card(
+    lesson: Lesson,
+    rows: list[tuple[Checkpoint, str]],
+    back: list[tutor_growth.Revisit],
+    limit: int,
+) -> str:
     added, removed = lesson.touched
     lines = [
         f"⠶ 되짚기 — 이번 턴 {len(lesson.files)}개 파일 · +{added:,}/-{removed:,}행."
         " 아래는 **기계가 못 답하는** 것들이다.",
         "",
     ]
-    for point in points[:limit]:
-        lines.append(f"  {KIND_LABEL.get(point.kind, point.kind)} — {point.where}")
-        lines.append(f"    ▸ {point.ask}")
-    if len(points) > limit:
-        lines.append(f"  …외 {len(points) - limit}건")
+    lines += _card_points(rows, limit)
+    lines += _card_back(back)
     lines.append("")
-    lines.append("  전체와 '왜 이렇게 했는가' 빈칸: `asgard tutor --report`")
+    lines.append(
+        '  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`'
+        " · 전체와 '왜 이렇게 했는가' 빈칸은 `asgard tutor --report`"
+    )
     return "\n".join(lines)
+
+
+def _card_points(rows: list[tuple[Checkpoint, str]], limit: int) -> list[str]:
+    """펼친 것 · 접은 것 · 넘친 것. 셋을 같은 화면에 두는 것이 이 카드의 정직성이다."""
+    lines: list[str] = []
+    folded: dict[str, int] = {}
+    quiet: dict[str, int] = {}
+    shown = 0
+    for point, form in rows:
+        if form in ("fold", "quiet"):
+            bucket = folded if form == "fold" else quiet
+            bucket[point.kind] = bucket.get(point.kind, 0) + 1
+            continue
+        if shown >= limit:
+            continue
+        lines.append(f"  {KIND_LABEL.get(point.kind, point.kind)} — {point.where}  [{point.cid}]")
+        lines.append(f"    ▸ {point.ask}")
+        shown += 1
+    over = sum(1 for _, form in rows if form not in ("fold", "quiet")) - shown
+    if over > 0:
+        lines.append(f"  …외 {over}건")
+    if folded:
+        lines.append(f"  {_folded_line(folded)} — 이미 답해 온 종류라 접었다")
+    if quiet:
+        lines.append(f"  {_folded_line(quiet)} — 계속 못 닿아서 튜터가 접었다 (`asgard tutor --progress`)")
+    return lines
+
+
+def _folded_line(counts: dict[str, int]) -> str:
+    return " · ".join(f"{KIND_LABEL.get(kind, kind)} {n}건" for kind, n in sorted(counts.items()))
+
+
+def _card_back(back: list[tutor_growth.Revisit]) -> list[str]:
+    """되돌아온 물음. 답을 받은 적이 없다는 사실을 숨기지 않고 각도만 바꿔서 다시 놓는다."""
+    now = time.time()
+    lines: list[str] = []
+    for row in back:
+        days = row.days(now)
+        when = f"{days}일 전에 물었고" if days else "오늘 물었고"
+        lines.append(f"  ↩ 다시 — {row.where}  [{row.cid}]  ({when} 아직 답이 없다)")
+        lines.append(f"    ▸ {row.ask}")
+    return lines
