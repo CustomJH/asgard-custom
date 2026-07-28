@@ -117,6 +117,25 @@ class ResourceLifetimeTest(unittest.TestCase):
         src = 'import subprocess\n\ndef f(self, cmd):\n    p = subprocess.Popen(cmd)\n    job = {"process": p}\n    self.jobs["x"] = job\n'
         self.assertEqual(_patterns(src), set())
 
+    def test_a_handle_stored_by_subscript_has_an_owner(self):
+        """`table["k"] = p` 는 `self.p = p` 와 같은 인계다 — 한쪽만 알면 같은 코드가 경로마다 다르게 읽힌다.
+
+        holder 가 있으면 `_released` 가, 없으면 `_handed_off` 가 판정하는데 후자만 Subscript 를
+        알아서, 이 형태가 막는 오탐으로 나왔다 (실측: 실트리 10,769파일에서 8건).
+        """
+        src = 'import subprocess\n\ndef f(cmd, table):\n    p = subprocess.Popen(cmd)\n    table["proc"] = p\n'
+        self.assertEqual(_patterns(src), set())
+
+    def test_an_alias_before_the_handoff_does_not_end_the_search(self):
+        """`q = p` 에서 판정을 끝내면 그 **뒤**의 진짜 인계를 못 본다 — 스캔은 계속되어야 한다."""
+        src = "import subprocess\n\nclass S:\n    def f(self, cmd):\n        p = subprocess.Popen(cmd)\n        q = p\n        self.p = p\n"
+        self.assertEqual(_patterns(src), set())
+
+    def test_an_alias_alone_is_still_a_leak(self):
+        """면제는 소유가 **다른 객체로** 갈 때만이다 — 지역 이름끼리 옮겨 담은 것은 인계가 아니다."""
+        src = "import subprocess\n\ndef f(cmd):\n    p = subprocess.Popen(cmd)\n    q = p\n"
+        self.assertIn("unclosed-acquire", _patterns(src))
+
     def test_a_deliberate_detached_spawn_is_not_a_leak(self):
         """새 세션에 파이프 없이 띄운 프로세스는 붙잡을 핸들도 잃을 출력도 없다."""
         detached = (

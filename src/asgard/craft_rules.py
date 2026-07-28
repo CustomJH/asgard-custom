@@ -274,8 +274,19 @@ def _released(scope: ast.AST, target: str) -> bool:
                 return True
         if isinstance(node, (ast.Return, ast.Yield)) and isinstance(node.value, ast.Name) and node.value.id == target:
             return True
-        if isinstance(node, ast.Assign) and isinstance(node.value, ast.Name) and node.value.id == target:
-            return any(isinstance(t, ast.Attribute) for t in node.targets)  # self.x = f — 소유 이전
+        if (
+            isinstance(node, ast.Assign)
+            and isinstance(node.value, ast.Name)
+            and node.value.id == target
+            and any(isinstance(t, (ast.Attribute, ast.Subscript)) for t in node.targets)
+        ):
+            # `self.x = f` 와 `table["k"] = f` 는 같은 인계다 — `_handed_off` 와 같은 자를 쓴다.
+            # 한쪽만 아는 형태가 있으면 같은 코드가 경로에 따라 다르게 읽힌다(실측: holder 가
+            # 있으면 여기로, 없으면 `_handed_off` 로 갈려서 subscript 인계가 누수로 찍혔다).
+            #
+            # 판정을 여기서 끝내지 않는 것도 같은 이유다. 앞선 `q = f` 같은 단순 별칭에서
+            # 곧장 False 를 돌려주면 **그 뒤의 진짜 인계를 못 본다** — 스캔은 계속되어야 한다.
+            return True
         if isinstance(node, (ast.Dict, ast.List, ast.Tuple, ast.Set)) and _holds(node, target):
             return True  # 컨테이너에 담긴 순간 수명은 그 컨테이너 주인의 것이다
     return False

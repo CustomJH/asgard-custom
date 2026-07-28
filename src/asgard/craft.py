@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 from . import craft_c, craft_lex, craft_rules
 from .craft_rules import Finding, Unit, shape_findings
-from .health import FILE_LINES_WARN, _code_lines, _read
+from .health import FILE_LINES_WARN, _code_lines, _read, borrowed
 
 # 언어 → health 의 주석 규약 이름 (코드 행 수를 언어에 맞게 센다)
 _COMMENT_LANG = {
@@ -102,6 +102,8 @@ def _patterns(text: str, rel: str, spans: list[Unit], lang: str) -> list[Finding
 
 def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str | None]:
     """(판정, 물려받아 넘긴 건수, 미판정 사유)."""
+    if why := borrowed(rel):
+        return ([], 0, why)
     text = _read(root, rel)
     if text is None:
         return ([], 0, "읽지 못했다")

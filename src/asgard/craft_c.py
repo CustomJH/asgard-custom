@@ -56,6 +56,30 @@ def _line_at(region: str, offset: int, unit: Unit) -> int:
     return unit.line + region.count("\n", 0, offset)
 
 
+_CALL_ARG_SLOT = re.compile(r"\w\s*\(\s*(?:[^()]*,\s*)?$")  # `fgetc(` · `memcpy(dst, ` — 인자 자리
+
+
+def _returned(region: str, name: str) -> bool:
+    """반환식이 그 이름을 **넘기는가**, 아니면 그냥 **쓰는가**.
+
+    `return f;` 와 `return cond ? f : NULL;` 은 소유를 호출자에게 넘긴다. 그러나
+    `return fgetc(f);` 와 `return buf[0];` 은 자원을 **읽은 결과**를 돌려줄 뿐이고 자원 자체는
+    이 함수에 남는다. 둘을 "반환문 안에 이름이 보인다"로 똑같이 읽으면, C 에서 가장 흔한 형상에서
+    누수 규칙이 조용히 꺼진다 — 실측에서 `fopen`·`malloc` 두 규칙이 이 한 줄 때문에 함께 죽었다.
+    """
+    bare = re.escape(name)
+    for statement in re.finditer(r"\breturn\b([^;]*);", region):
+        expression = statement.group(1)
+        for hit in re.finditer(r"\b" + bare + r"\b", expression):
+            after = expression[hit.end() :].lstrip()
+            if after[:1] in ("[", "(", ".", "-"):
+                continue  # buf[0] · f(…) · f->fd — 이름을 통해 무언가를 읽는 것이다
+            if _CALL_ARG_SLOT.search(expression[: hit.start()]):
+                continue  # fgetc(f) — 인자 자리이지 반환값이 아니다
+            return True
+    return False
+
+
 def _owner_escapes(region: str, name: str, *, via_call: bool) -> bool:
     """소유가 이 함수 밖으로 나갔는가 — 반환·필드 대입·별칭·(선택적으로) 다른 호출의 인자.
 
@@ -64,7 +88,7 @@ def _owner_escapes(region: str, name: str, *, via_call: bool) -> bool:
     (`fgetc(f)`). 같은 규칙으로 읽으면 전자는 오탐이 되고 후자는 미검출이 된다.
     """
     bare = re.escape(name)
-    if re.search(r"\breturn\b[^;]*\b" + bare + r"\b", region):
+    if _returned(region, name):
         return True
     if re.search(r"(?:->|\.)\s*\w+\s*=\s*" + bare + r"\s*;", region):
         return True

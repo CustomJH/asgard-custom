@@ -109,6 +109,28 @@ class CMemoryTest(unittest.TestCase):
         for src in (freed, returned, given, out_param):
             self.assertNotIn("c-alloc-unfreed", _rules(src), src)
 
+    def test_using_a_resource_inside_a_return_is_not_handing_it_off(self):
+        """`return fgetc(f)` 는 자원을 **읽은 결과**를 돌려줄 뿐이고 자원은 이 함수에 남는다.
+
+        "반환문 안에 이름이 보인다"로 읽으면 C 에서 가장 흔한 형상에서 규칙이 조용히 꺼진다 —
+        같은 누수가 `int c = fgetc(f); return c;` 로 쓰면 잡히고 한 줄로 합치면 안 잡혔다.
+        """
+        used = 'int f(const char *p) {\n    FILE *h = fopen(p, "r");\n    if (!h) return -1;\n    return fgetc(h);\n}\n'
+        indexed = "int f(int n) {\n    char *b = malloc(n);\n    if (!b) return -1;\n    return b[0];\n}\n"
+        self.assertIn("c-handle-unclosed", _rules(used))
+        self.assertIn("c-alloc-unfreed", _rules(indexed))
+
+    def test_returning_the_resource_itself_still_hands_it_off(self):
+        """좁히는 쪽이 넓히는 쪽을 잡아먹으면 안 된다 — 진짜 인계 네 형태는 그대로 통과해야 한다."""
+        plain = "char *f(int n) {\n    char *b = malloc(n);\n    if (!b) return NULL;\n    return b;\n}\n"
+        cast = "char *f(int n) {\n    char *b = malloc(n);\n    if (!b) return NULL;\n    return (char *)b;\n}\n"
+        parens = "char *f(int n) {\n    char *b = malloc(n);\n    if (!b) return NULL;\n    return (b);\n}\n"
+        ternary = (
+            "char *f(int n, int c) {\n    char *b = malloc(n);\n    if (!b) return NULL;\n    return c ? b : NULL;\n}\n"
+        )
+        for src in (plain, cast, parens, ternary):
+            self.assertNotIn("c-alloc-unfreed", _rules(src), src)
+
     def test_an_unchecked_allocation_is_caught_and_a_checked_one_is_not(self):
         unchecked = "void f(int n) {\n    char *b = malloc(n);\n    b[0] = 1;\n    free(b);\n}\n"
         checked = "void f(int n) {\n    char *b = malloc(n);\n    if (b == NULL) return;\n    free(b);\n}\n"
