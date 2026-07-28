@@ -97,10 +97,10 @@ DISTRACTORS = [
 def build_wiki(d: str, extra_distractors: int) -> None:
     memory.ensure_home(d)
     for title, body in TARGETS:
-        memory.add(body, title=title, kind="note", d=d, force=True)
+        memory.add(body, title=title, kind="note", d=d)
     pool = DISTRACTORS * (extra_distractors // len(DISTRACTORS) + 1)
     for i, (title, body) in enumerate(pool[:extra_distractors]):
-        memory.add(body, title=f"{title}-{i}", kind="note", d=d, force=True)
+        memory.add(body, title=f"{title}-{i}", kind="note", d=d)
     memory.reindex(d)  # 벡터 파생물까지 생성
 
 

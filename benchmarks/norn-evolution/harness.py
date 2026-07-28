@@ -119,20 +119,20 @@ def build_wiki(d: str) -> dict:
     memory.ensure_home(d)
     truth: dict[str, set[str]] = {}
     for i, (a, b) in enumerate(DUP_PAIRS):
-        s1, _ = memory.add(a, title=f"규칙 관측 {i}a", d=d, force=True)
-        s2, _ = memory.add(b, title=f"규칙 관측 {i}b", d=d, force=True)
+        s1, _ = memory.add(a, title=f"규칙 관측 {i}a", d=d)
+        s2, _ = memory.add(b, title=f"규칙 관측 {i}b", d=d)
         truth[f"dup:{i}"] = {s1, s2}
     for i, (_, obs) in enumerate(PATTERN_CLUSTERS):
         slugs = set()
         for j, text in enumerate(obs):
-            s, _ = memory.add(text, title=f"활동 관측 {i}-{j}", d=d, force=True)
+            s, _ = memory.add(text, title=f"활동 관측 {i}-{j}", d=d)
             slugs.add(s)
         truth[f"pattern:{i}"] = slugs
     for i, text in enumerate(UNIQUE_FACTS):
-        s, _ = memory.add(text, title=f"고유 사실 {i}", d=d, force=True)
+        s, _ = memory.add(text, title=f"고유 사실 {i}", d=d)
         truth[f"unique:{i}"] = {s}
     for i, text in enumerate(STALE_NOTES):
-        s, _ = memory.add(text, title=f"부패 노트 {i}", d=d, force=True)
+        s, _ = memory.add(text, title=f"부패 노트 {i}", d=d)
         _age(d, s, 120)
     memory.reindex(d)
     return {k: sorted(v) for k, v in truth.items()}
