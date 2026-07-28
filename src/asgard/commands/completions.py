@@ -40,6 +40,7 @@ _SUMMARY = {
     "evolve": "self-evolution inbox — skill drafts",
     "humanize": "Bragi — grade text for machine-writing tells, any language",
     "office": "Sága — build, read, verify, and fill documents",
+    "k6": "asgard-k6 — Docker load testing, and the harness that checks itself",
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
@@ -84,6 +85,7 @@ _FLAGS = {
     "desktop": ["--port", "--no-open", "--browser"],
     "evolve": [],
     "office": [],
+    "k6": [],  # bare `asgard k6` = doctor (레인이 설 준비가 됐는지부터 본다)
     "humanize": ["--lang", "--json"],
 }
 _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 _FREE_OPTS
@@ -149,6 +151,13 @@ _OFFICE_SUB = {
     "outline": "genre skeletons",
     "template": "template registry",
 }
+_K6_SUB = {
+    "doctor": "runner, k6 build, kit, scenarios",
+    "scenarios": "built-in and project load scenarios",
+    "run": "run a scenario and record the verdict",
+    "selftest": "does the harness tell the truth",
+    "report": "render a recorded run",
+}
 _MAP_SUB = {
     "generate": "create the deterministic project map",
     "update": "refresh structural facts",
@@ -202,6 +211,7 @@ _MEM_SUB = {
     "project-rehydrate": "replay Git canonical records to the selected backend",
     "project-reflect": "LLM-synthesized answer over the project bank (advisory)",
     "project-evolve": "find stale, duplicate, or contradictory project records",
+    "project-learn": "configure Hindsight observations and project mental models",
     "project-ingest": "parse thrown documents into project memory",
     "mcp": "stdio MCP bridge (shared memory)",
 }
@@ -335,6 +345,13 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_OFFICE_SUB)} --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "build" ] && [ "$COMP_CWORD" -eq 3 ]; then\n'
                 '        COMPREPLY=( $(compgen -W "docx pptx xlsx" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "k6":
+            cases.append(
+                "    k6)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_K6_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "memory":
@@ -473,6 +490,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_OFFICE_SUB)} --help\n"
                 "      elif [[ $words[3] == build && CURRENT == 4 ]]; then\n"
                 "        compadd -- docx pptx xlsx\n"
+                "      fi ;;"
+            )
+        elif name == "k6":
+            cases.append(
+                "    k6)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_K6_SUB)} --help\n"
                 "      fi ;;"
             )
         elif name == "plugins":

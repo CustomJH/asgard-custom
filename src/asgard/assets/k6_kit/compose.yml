@@ -1,0 +1,56 @@
+# asgard-k6 — 부하 시험 부트스트랩 (수동 운용 경로)
+#
+# 평소 경로는 CLI 다: `asgard k6 run <시나리오>` 가 같은 이미지·같은 마운트로 컨테이너를
+# 한 번 띄우고 요약을 회수한다. 이 파일은 그 스택을 **사람이 직접** 붙들고 있고 싶을 때
+# (표적을 바꿔 가며 여러 번 돌리거나, pacer 를 띄워 두고 다른 도구로 두들길 때) 쓴다.
+#
+# 이미지 기본값은 CLI 와 같은 값이어야 한다 — tests/test_k6.py 가 두 값을 대조해 봉인한다.
+#
+#   docker compose -f compose.yml up pacer -d
+#   docker compose -f compose.yml run --rm k6 run /asgard/scenarios/selftest.js
+#
+# 컨테이너 안에서 표적 주소는 `http://pacer:8799` 다 (호스트에서 볼 때는 :8799 매핑).
+
+name: asgard-k6
+
+services:
+  # 거동을 아는 표적 — 하네스 자신을 검증할 때만 쓴다. 실제 부하 대상이 아니다.
+  pacer:
+    image: python:3.14-alpine
+    working_dir: /asgard
+    volumes:
+      - ./pacer.py:/asgard/pacer.py:ro
+    command:
+      - python3
+      - /asgard/pacer.py
+      - --host=0.0.0.0
+      - --port=8799
+      - --latency-ms=${ASGARD_K6_PACER_LATENCY_MS:-80}
+      - --error-rate=${ASGARD_K6_PACER_ERROR_RATE:-0}
+      - --max-concurrency=${ASGARD_K6_PACER_CONCURRENCY:-0}
+    ports:
+      - "${ASGARD_K6_PACER_PORT:-8799}:8799"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request;urllib.request.urlopen('http://127.0.0.1:8799/health')"]
+      interval: 2s
+      timeout: 2s
+      retries: 15
+
+  k6:
+    image: ${ASGARD_K6_IMAGE:-grafana/k6:latest}
+    # 키트는 읽기 전용, 요약이 나갈 자리만 쓰기 가능 — 시나리오가 자기 정의를 못 고친다.
+    volumes:
+      - .:/asgard:ro
+      - ${ASGARD_K6_OUT_DIR:-./out}:/asgard/out
+    environment:
+      ASGARD_K6_TARGET: ${ASGARD_K6_TARGET:-http://pacer:8799}
+      ASGARD_K6_OUT: /asgard/out/summary.json
+      ASGARD_K6_VUS: ${ASGARD_K6_VUS:-4}
+      ASGARD_K6_ITERATIONS: ${ASGARD_K6_ITERATIONS:-60}
+      ASGARD_K6_P95_MAX: ${ASGARD_K6_P95_MAX:-5000}
+    extra_hosts:
+      # 호스트에서 도는 표적(로컬 개발 서버)을 컨테이너에서 부를 때의 이름
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      pacer:
+        condition: service_healthy

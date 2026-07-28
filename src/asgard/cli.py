@@ -764,9 +764,9 @@ def memory_provider(
     raise typer.Exit(run_provider(set_, clear, json_))
 
 
-@memory_app.command("semantic", help="semantic search state (status|on|off|warmup)")
+@memory_app.command("semantic", help="semantic search state (status|on|off|warmup|nudge)")
 def memory_semantic(
-    action: str = typer.Argument("status", help="status|on|off|warmup"),
+    action: str = typer.Argument("status", help="status|on|off|warmup|nudge"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.memory import run_semantic
@@ -808,7 +808,9 @@ def memory_norn(
     apply: bool = typer.Option(False, "--apply", help="commit the validated deltas (backup + report)"),
     nudge: bool = typer.Option(False, "--nudge", hidden=True, help="hook surface: one latched line when due"),
     auto: bool = typer.Option(
-        False, "--auto", help="autonomous pass: apply ops the norn_auto tier allows (safe=insight only)"
+        False,
+        "--auto",
+        help="autonomous pass: apply ops the norn_auto tier allows (safe=contradiction; insights stay proposals)",
     ),
     wake: bool = typer.Option(
         False, "--wake", hidden=True, help="hook surface: spawn a detached --auto run when due (tier-gated)"
@@ -953,16 +955,29 @@ def memory_project_evolve(
     raise typer.Exit(run_project_evolve(apply, json_))
 
 
+@memory_app.command("project-learn", help="configure Hindsight observations and living project mental models")
+def memory_project_learn(
+    apply: bool = typer.Option(False, "--apply", help="apply learning config and schedule consolidation"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_project_learn
+
+    raise typer.Exit(run_project_learn(apply, json_))
+
+
 @memory_app.command("project-ingest", help="parse thrown documents (pdf/docx/hwp/md/…) into project memory")
 def memory_project_ingest(
     paths: list[str] = typer.Argument(..., metavar="FILE...", help="documents to ingest"),
     strategy: str = typer.Option("", "--strategy", help="document|record — override the automatic choice"),
     yes: bool = typer.Option(False, "--yes", "-y", help="stage the previewed documents for approval"),
+    lane: str = typer.Option(
+        "", "--lane", help="graph|local — override the automatic lane (large documents default to local)"
+    ),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.memory import run_project_ingest
 
-    raise typer.Exit(run_project_ingest(paths, strategy, yes, json_))
+    raise typer.Exit(run_project_ingest(paths, strategy, yes, json_, lane))
 
 
 @memory_app.command("project-approve", help="approve and commit one pending project-memory proposal")
@@ -1243,6 +1258,78 @@ def office_template(ctx: typer.Context) -> None:
     from .commands.office import run_office_template
 
     raise typer.Exit(run_office_template(list(ctx.args) or ["list"]))
+
+
+k6_app = typer.Typer(
+    help="asgard-k6 — Docker load testing, and the harness that checks itself", invoke_without_command=True
+)
+app.add_typer(k6_app, name="k6")
+
+
+@k6_app.callback()
+def k6_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.k6 import run_k6_doctor
+
+        raise typer.Exit(run_k6_doctor(False))
+
+
+@k6_app.command("doctor", help="is the lane ready — runner, k6 build, kit, scenarios")
+def k6_doctor(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.k6 import run_k6_doctor
+
+    raise typer.Exit(run_k6_doctor(json_))
+
+
+@k6_app.command("scenarios", help="built-in and project load scenarios")
+def k6_scenarios(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.k6 import run_k6_list
+
+    raise typer.Exit(run_k6_list(json_))
+
+
+@k6_app.command("run", help="run a load scenario and record the verdict (exit 1 = thresholds breached)")
+def k6_run(
+    scenario: str = typer.Argument(..., metavar="<scenario|path.js>"),
+    target: str = typer.Option("", "--target", help="base URL under load"),
+    vus: int = typer.Option(0, "--vus", help="peak virtual users"),
+    duration: str = typer.Option("", "--duration", help="hold time, e.g. 30s"),
+    iterations: int = typer.Option(0, "--iterations", help="fixed request count (shared-iterations scenarios)"),
+    p95_max: float = typer.Option(0.0, "--p95-max", help="threshold in ms — the gate this run must clear"),
+    env: list[str] = typer.Option(
+        [], "--env", "-e", help="KEY=VALUE for the scenario (a bare UPPERCASE key gets the ASGARD_K6_ prefix)"
+    ),
+    runner: str = typer.Option("", "--runner", help="docker | podman | native"),
+    json_: bool = typer.Option(False, "--json"),
+    no_record: bool = typer.Option(False, "--no-record", help="do not keep the run under .asgard/k6/runs/"),
+) -> None:
+    from .commands.k6 import run_k6_run
+
+    raise typer.Exit(
+        run_k6_run(scenario, target, vus, duration, iterations, p95_max, list(env), runner, json_, not no_record)
+    )
+
+
+@k6_app.command("selftest", help="does the harness tell the truth — measured against a target whose behavior is known")
+def k6_selftest(
+    json_: bool = typer.Option(False, "--json"),
+    latency_ms: float = typer.Option(80.0, "--latency-ms", help="service time the reference target injects"),
+    iterations: int = typer.Option(40, "--iterations"),
+    vus: int = typer.Option(4, "--vus"),
+) -> None:
+    from .commands.k6 import run_k6_selftest
+
+    raise typer.Exit(run_k6_selftest(json_, latency_ms, iterations, vus))
+
+
+@k6_app.command("report", help="render a recorded run (defaults to the latest)")
+def k6_report(
+    path: str = typer.Argument("", metavar="[run dir | report.json]"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.k6 import run_k6_report
+
+    raise typer.Exit(run_k6_report(path, json_))
 
 
 if __name__ == "__main__":
