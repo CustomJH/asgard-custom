@@ -936,6 +936,9 @@ class TestHindsightBackend(unittest.TestCase):
             raise AssertionError(url)
 
         backend = get_backend({"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "demo"})
+        # 학습층 표면은 공용 프로토콜이 아니라 Hindsight 고유다 — 그래서 여기서 좁힌다.
+        # learning.py 와 doctor.py 가 getattr 로 있는지 물어 보고 쓰는 것도 같은 이유다.
+        assert isinstance(backend, HindsightBackend)
         spec = {"id": "asgard-architecture", "name": "Architecture", "source_query": "architecture"}
         with mock.patch("urllib.request.urlopen", side_effect=respond):
             self.assertEqual(backend.consolidate([["record"]])["operation_id"], "consolidate-1")

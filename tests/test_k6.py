@@ -27,8 +27,8 @@ from asgard import k6
 
 def _load_pacer():
     spec = importlib.util.spec_from_file_location("asgard_k6_pacer", k6.pacer_script())
+    assert spec is not None and spec.loader is not None, "키트가 배송한 pacer 를 못 읽었다"
     module = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
@@ -121,7 +121,7 @@ class TestScenarioResolution(unittest.TestCase):
             path = Path(root, "custom.js")
             path.write_text("// one-off\n", encoding="utf-8")
             scenario = k6.find_scenario(str(path))
-            self.assertIsNotNone(scenario)
+            assert scenario is not None, "직접 경로는 그 자체로 시나리오여야 한다"
             self.assertEqual(scenario.name, "custom")
             self.assertEqual(scenario.origin, "project")
 
@@ -204,7 +204,7 @@ class TestSummaryParsing(unittest.TestCase):
             with self.subTest(payload=payload), self.assertRaises(k6.SummaryError):
                 k6.parse_summary(payload)
         with self.assertRaises(k6.SummaryError):
-            k6.parse_summary([])  # type: ignore[arg-type]
+            k6.parse_summary([])  # ty: ignore[invalid-argument-type]  — 계약 밖 타입도 거절하는지 본다
 
     def test_verdict_needs_both_halves(self):
         breached = _summary(thresholds=[{"metric": "http_req_duration", "expression": "p(95)<5", "ok": False}])
@@ -303,9 +303,12 @@ class TestRunnerResolution(unittest.TestCase):
         import shutil
 
         if shutil.which("docker"):
-            self.assertEqual(k6.resolve_runner("docker").kind, "docker")
+            docker = k6.resolve_runner("docker")
+            assert docker is not None, "docker 가 PATH 에 있는데 러너를 못 찾았다"
+            self.assertEqual(docker.kind, "docker")
         if shutil.which("k6"):
             runner = k6.resolve_runner("native")
+            assert runner is not None, "k6 가 PATH 에 있는데 러너를 못 찾았다"
             self.assertEqual(runner.kind, "native")
             self.assertFalse(runner.containerized)
 
