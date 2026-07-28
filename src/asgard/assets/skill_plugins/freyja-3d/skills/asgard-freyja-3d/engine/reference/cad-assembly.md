@@ -101,12 +101,12 @@ python $CAD inspect measure assembly.step --from '#o1.1.f3' --to '#o1.2.f1' --ax
 그리고 **간섭은 선택이 아니다**:
 
 ```bash
-uv run --no-project --python 3.12 --with build123d python engine/scripts/cad_build.py assembly.py --json
+uv run --no-project --python 3.12 --with build123d python engine/scripts/cad.py step assembly.py --json
 ```
 
 눈으로 보면 붙어 보이는 것이 커널에서는 73mm³ 겹쳐 있을 수 있다. 이 숫자는 사람이 볼 수 없고, refs·measure·align 도 내지 않는다. **간섭 부피 > 0 은 그냥 실패다** — "조금 겹친다"는 상태는 존재하지 않는다. `cad_gate` 의 `interference` 규칙이 이것을 막는다.
 
-결합면에는 반드시 간극을 넣는다. 0 간극은 조립 불가와 같은 말이다(공정별 값은 `dfm.md`). 다만 리드가 얹히는 안착면처럼 **flush 가 의도인 곳은 0 이 맞다** — `cad_build.py` 가 목표 간극 미만이라고 WARN 을 내면, 의도한 0 인지 실수인지 사람이 판단해서 적는다.
+결합면에는 반드시 간극을 넣는다. 0 간극은 조립 불가와 같은 말이다(공정별 값은 `dfm.md`). 다만 리드가 얹히는 안착면처럼 **flush 가 의도인 곳은 0 이 맞다** — `cad.py step` 가 목표 간극 미만이라고 WARN 을 내면, 의도한 0 인지 실수인지 사람이 판단해서 적는다.
 
 ## 어긋났을 때 고칠 자리
 

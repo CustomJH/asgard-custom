@@ -232,7 +232,7 @@ function judge(files, options) {
         "topology-stale",
         step,
         `위상 산출물이 다른 STEP 을 가리킨다(기록 ${recorded.slice(0, 12)}… ≠ 실제 ${actual.slice(0, 12)}…). ` +
-          "측정은 성공하지만 옛 형상을 측정한다. scripts/step 으로 다시 생성해야 한다.",
+          "측정은 성공하지만 옛 형상을 측정한다. cad.py step 으로 다시 생성해야 한다.",
       );
     }
   }

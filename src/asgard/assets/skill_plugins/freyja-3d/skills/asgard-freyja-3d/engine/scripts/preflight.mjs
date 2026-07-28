@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { parseArgs } from "./core/cli.mjs";
 
 const SCRIPTS_DIR = dirname(fileURLToPath(import.meta.url));
-const VENDOR = join(SCRIPTS_DIR, "..", "vendor", "text-to-cad");
+const CADLIB = join(SCRIPTS_DIR, "cadlib");
 
 const { positional, options } = parseArgs(process.argv.slice(2), { flags: ["json"] });
 const root = positional[0] || process.cwd();
@@ -41,10 +41,15 @@ const trois = dependencies["@tresjs/core"] || dependencies["troisjs"] || null;
 const threlte = dependencies["@threlte/core"] || null;
 const gsap = dependencies.gsap || null;
 
-// CAD 커널 층은 벤더링된 런타임이 실제로 있어야 돈다. 없는데 READY 라고 말하면
-// 나중에 "안 됐다"가 된다 — preflight 의 존재 이유가 그것을 막는 것이다.
-const cadRuntime = existsSync(join(VENDOR, "skills", "cad", "scripts", "step"));
-const viewerRuntime = existsSync(join(VENDOR, "skills", "cad-viewer", "scripts", "viewer", "backend", "server.mjs"));
+// 런타임이 실제로 있어야 READY 라고 말한다. 없는데 READY 면 나중에 "안 됐다"가 되고,
+// preflight 의 존재 이유가 바로 그것을 막는 것이다.
+//
+// 두 갈래로 나뉜다. 검증 동사(inspect·gcode·urdf)는 순수 파이썬이라 **uv 도 커널도 없이** 돌고,
+// 형상을 만드는 일(step)만 커널을 요구한다. 이 구분을 preflight 가 흐리면 사용자는 검증조차
+// 못 하는 줄 알고 물러선다.
+const cadRuntime = existsSync(join(CADLIB, "steplane.py"));
+const viewerRuntime = existsSync(join(SCRIPTS_DIR, "view.mjs"));
+const verifyReady = cadRuntime && Boolean(python);
 const cadReady = Boolean(uv) && cadRuntime;
 
 const lanes = [
@@ -56,38 +61,52 @@ const lanes = [
     needs: "없음 — 이 엔진의 모든 검증 스크립트는 의존성이 없다.",
   },
   {
+    lane: "measure",
+    label: "산출물 판독·검증 (STEP·DXF·G-code·로봇 파일 — 커널 불필요)",
+    ready: verifyReady,
+    detail: [python ? python : "python3 없음", cadRuntime ? "cadlib 있음" : "cadlib 없음"].join(", "),
+    needs: verifyReady
+      ? "없음 — python engine/scripts/cad.py inspect|gcode|urdf|srdf|sdf 가 설치 없이 바로 돈다."
+      : !python
+        ? "python3 가 필요하다."
+        : "engine/scripts/cadlib/ 이 없다 — 스킬 설치가 깨졌다.",
+  },
+  {
     lane: "cad",
-    label: "정밀 조형 (STEP 우선 파라메트릭 CAD)",
+    label: "정밀 조형 (STEP 우선 파라메트릭 CAD — 커널 필요)",
     ready: cadReady,
-    detail: [uv ? `uv ${uv}` : "uv 없음", cadRuntime ? "벤더 런타임 있음" : "벤더 런타임 없음"].join(", "),
+    detail: [uv ? `uv ${uv}` : "uv 없음", cadRuntime ? "cadlib 있음" : "cadlib 없음"].join(", "),
     needs: !uv
-      ? "uv 를 설치하라: curl -LsSf https://astral.sh/uv/install.sh | sh"
+      ? "uv 를 설치하라: curl -LsSf https://astral.sh/uv/install.sh | sh (형상 생성만 필요하고, 검증은 uv 없이 돈다)"
       : !cadRuntime
-        ? "engine/vendor/text-to-cad/ 가 없다. UPSTREAM.md 의 재동기화 절차를 보라."
+        ? "engine/scripts/cadlib/ 이 없다 — 스킬 설치가 깨졌다."
         : "python engine/scripts/cad.py step <model.py> — 최초 1회 CAD 커널 휠을 내려받아 오래 걸린다.",
   },
   {
     lane: "fabricate",
-    label: "도면·슬라이싱·발주 (DXF·G-code·절단·프린터)",
-    ready: cadReady,
-    detail: cadReady ? "cad.py dxf|gcode|parts 준비" : "cad 레인이 막혀 있다",
-    needs: cadReady
+    label: "도면·슬라이싱·발주 (DXF·G-code·절단)",
+    ready: verifyReady,
+    detail: [
+      verifyReady ? "gcode·dxf check 준비" : "판독 레인이 막혀 있다",
+      uv ? "dxf 생성 준비" : "dxf 생성은 uv 필요",
+    ].join(", "),
+    needs: verifyReady
       ? "슬라이싱은 실제 슬라이서가 필요하다: python engine/scripts/cad.py gcode discover (없으면 brew install --cask orcaslicer)"
-      : "cad 레인을 먼저 뚫어라.",
+      : "판독 레인을 먼저 뚫어라.",
   },
   {
     lane: "robot",
-    label: "로봇 기술 파일 (URDF·SRDF·SDF)",
-    ready: Boolean(uv) && existsSync(join(VENDOR, "skills", "urdf", "scripts", "urdf")),
-    detail: uv ? `uv ${uv}` : "uv 없음",
-    needs: "python engine/scripts/cad.py urdf|srdf|sdf <source.py>. MoveIt2 대화 리뷰는 별도 conda·ROS 설치가 필요하다.",
+    label: "로봇 기술 파일 (URDF·SRDF·SDF — 커널 불필요)",
+    ready: verifyReady,
+    detail: verifyReady ? "생성·검증 모두 표준 라이브러리로 돈다" : "python3 없음",
+    needs: "python engine/scripts/cad.py urdf|srdf|sdf <source.py>. SRDF 는 --urdf 로 교차 검증을 같이 돌려라.",
   },
   {
     lane: "viewer",
     label: "로컬 리뷰 뷰어",
     ready: nodeMajor >= 18 && viewerRuntime,
-    detail: viewerRuntime ? "번들 서버 있음(추가 설치 불필요)" : "뷰어 번들 없음",
-    needs: "node engine/vendor/text-to-cad/skills/cad-viewer/scripts/viewer/backend/server.mjs --host 127.0.0.1 --port 4178 (그 뒤 ?dir= 로 산출물 위치를 준다)",
+    detail: viewerRuntime ? "네이티브 서버(서버측 렌더 — 브라우저 3D 의존 없음)" : "view.mjs 없음",
+    needs: "node engine/scripts/view.mjs --dir <산출물 디렉터리> --port 4178",
   },
   {
     lane: "realtime",

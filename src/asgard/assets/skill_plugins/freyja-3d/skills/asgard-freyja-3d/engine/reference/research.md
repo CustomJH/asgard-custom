@@ -18,7 +18,7 @@
 - **Text2CAD** (NeurIPS 2024) — DeepCAD 에 4단계 추상화의 자연어 주석 660K 를 붙인 첫 대규모 텍스트-CAD 데이터셋.
 - **CAD-Recode** — 점군 → 실행 가능한 Python CAD 코드. 출력 코드가 **범용 LLM 이 읽고 편집할 수 있다**는 점이 핵심 — 결과물이 블랙박스 메시가 아니라 편집 가능한 프로그램이다.
 - **cadrille** (ICLR 2026) — 멀티모달(점군·이미지·텍스트) + 온라인 RL. DeepCAD IoU 92.2, Fusion360 84.6, 무효율 0.0%. CadQuery Python 을 생성 타깃으로 삼는 계열의 도달점.
-- **Embodied CAD** (arXiv 2606.31252) — 한 번에 전체 스크립트를 쓰는 대신 **계층화된 CAD 스킬에서 액션을 골라 커널에 실행시키고 솔버 피드백으로 수리·학습**. 산업용 CAD 는 문법적으로 유효한 코드가 아니라 커널이 받아들이는 형상을 요구한다. → 커널 진단(`cad_build.py`)을 루프에 넣은 근거.
+- **Embodied CAD** (arXiv 2606.31252) — 한 번에 전체 스크립트를 쓰는 대신 **계층화된 CAD 스킬에서 액션을 골라 커널에 실행시키고 솔버 피드백으로 수리·학습**. 산업용 CAD 는 문법적으로 유효한 코드가 아니라 커널이 받아들이는 형상을 요구한다. → 커널 진단(`cad.py step`)을 루프에 넣은 근거.
 - **BenchCAD**(arXiv 2605.10865), **Text2CAD-Bench**(arXiv 2605.18430) — 산업 표준 기준의 프로그램 CAD 벤치마크.
 - **build123d vs CadQuery** — 같은 OpenCASCADE 커널, build123d 는 LLM 이 생성하기 쉬운 선형·상태 명시 구조. CadQuery 는 학습 데이터가 많아 첫 시도 성공률이 높다. → `lane-cad.md` 의 도구 선택표.
 - **Resilient Modeling Strategy** — Gebhard, Solid Edge University 2013(학술 비교: Camba·Contero·Company, *Computer-Aided Design* 2016). 기준→뼈대→몸통→디테일→변형→**모서리 격리(필렛 맨 뒤)** 의 6그룹 순서와 상향 참조 규칙. 면 참조의 취약성(topology naming failure)과 완전 구속 원칙은 SolidWorks/Onshape 실무 문서(Engineers Rule, Onshape 포럼·쿼리 변수) 공통. 스켈레톤/마스터 모델은 PTC Creo 톱다운 설계 문서가 정본. → `lane-cad.md` 견고한 모델 문법.
@@ -26,7 +26,7 @@
 
 ## 진단 우선 워크플로
 
-- **cad-khana** (Apache-2.0) — build123d 를 감싸 `diagnostics.json`(간섭·간극·살두께·오버행)을 내는 CLI. "스크립트의 assert 가 위반되면 빌드 실패가 된다 — 기하 제약은 희망이 아니라 강제된다." → `cad_build.py` 의 설계 원리(측정값을 루프에 넣기).
+- **cad-khana** (Apache-2.0) — build123d 를 감싸 `diagnostics.json`(간섭·간극·살두께·오버행)을 내는 CLI. "스크립트의 assert 가 위반되면 빌드 실패가 된다 — 기하 제약은 희망이 아니라 강제된다." → `cad.py step` 의 설계 원리(측정값을 루프에 넣기).
 
 ## 제조 규칙
 

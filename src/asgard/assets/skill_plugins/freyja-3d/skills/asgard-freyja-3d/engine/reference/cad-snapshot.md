@@ -18,10 +18,10 @@
 
 | 도구 | 무엇을 그리는가 | 무엇에 쓰는가 |
 |---|---|---|
-| `snapshot` (벤더링, playwright+three.js) | CAD 워크벤치 뷰 — 면 + **에지 라인워크**, 단면, 은선, 와이어프레임, 궤도 GIF | **형상 대조의 정본.** STEP/조립체 리뷰 |
-| `shoot.mjs` (무의존, node 내장) | 위치와 면 법선만 | 설치·브라우저가 막힌 환경의 대체, 빠른 형상 확인 |
+| `snapshot.mjs` (무의존, node 내장) | CAD 워크벤치 뷰 — 면 + **특징 에지 라인워크**(실루엣·접힘), 단면, 궤도 GIF, 컨택트 시트 | **형상 대조의 정본.** STEP/조립체 리뷰 |
+| `shoot.mjs` (무의존, node 내장) | 위치와 면 법선만 — 에지를 그리지 않는다 | 오버행·살두께 하이라이트가 필요한 빠른 확인 |
 
-`shoot.mjs` 는 재질·텍스처·IBL·톤매핑을 그리지 않는다. **룩 판정에 쓰지 않는다.** `snapshot` 도 CAD 워크벤치 뷰이지 뷰티 렌더가 아니다 — 룩이 납품물이면 실제 DCC/엔진/브라우저의 렌더를 따로 열고 `look-floor.md` 로 판정한다.
+둘 다 재질·텍스처·IBL·톤매핑을 그리지 않는다. **룩 판정에 쓰지 않는다.** `snapshot` 은 CAD 워크벤치 뷰이지 뷰티 렌더가 아니다 — 룩이 납품물이면 실제 DCC/엔진/브라우저의 렌더를 따로 열고 `look-floor.md` 로 판정한다.
 
 ## 기본 패킷
 
@@ -49,7 +49,7 @@
 ```
 
 ```bash
-python engine/scripts/cad.py snapshot --job shots.json
+node engine/scripts/snapshot.mjs --job shots.json
 ```
 
 마주 보는 iso 두 장이 핵심이다 — 뒤·좌·아래 면이 **의심해서가 아니라 기본으로** 한 장에는 잡힌다. top 은 패턴·대칭 검사, front 는 실루엣 검사.

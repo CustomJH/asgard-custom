@@ -56,7 +56,11 @@ python $CAD sdf  world.py
 
 ## 리뷰
 
-`.urdf`·`.srdf`·`.sdf` 는 `lane-viewer.md` 의 로컬 뷰어에서 연다. SRDF 는 선택적으로 MoveIt2 서버를 붙여 IK·경로 계획을 대화적으로 볼 수 있다(`vendor/.../cad-viewer/references/moveit2-server.md`) — 사용자가 그 상호작용을 실제로 필요로 할 때만 켠다. conda 환경과 ROS 설치가 필요하다.
+`.urdf`·`.srdf`·`.sdf` 는 `lane-viewer.md` 의 로컬 뷰어에서 원문으로 연다.
+
+**SRDF 는 URDF 와 같이 검증한다** — `python $CAD srdf check robot.srdf --urdf robot.urdf`. 이때만 존재하지 않는 링크를 가리키는 계획 그룹, URDF 한계를 벗어난 그룹 상태, 라디안 자리에 들어온 도(degree), 근거 없이 넓은 비활성 충돌 행렬이 잡힌다. URDF 없이 돌린 SRDF 검증은 문법 검사에 지나지 않고, 도구가 그 사실을 미확인으로 적는다.
+
+IK·경로 계획을 대화적으로 보려면 MoveIt2 환경이 따로 필요하다(conda·ROS). 이 엔진의 범위 밖이므로 사용자가 그 상호작용을 실제로 필요로 할 때만, 설치 비용을 먼저 말하고 켠다.
 
 ## 보고
 

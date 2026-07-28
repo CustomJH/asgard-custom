@@ -129,7 +129,9 @@ class FreyjaThreeDContract(unittest.TestCase):
             "mesh_audit.mjs",
             "scene_audit.mjs",
             "detect3d.mjs",
-            "cad_build.py",
+            "snapshot.mjs",
+            "view.mjs",
+            "implicit.mjs",
         ):
             self.assertIn(script, body)
             self.assertTrue((_SCRIPTS / script).is_file(), f"{script} 스크립트가 없다")
@@ -772,7 +774,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         lanes = {lane["lane"]: lane for lane in payload["lanes"]}
         self.assertEqual(
             set(lanes),
-            {"verify", "cad", "fabricate", "robot", "viewer", "realtime", "motion", "pipeline", "game"},
+            {"verify", "measure", "cad", "fabricate", "robot", "viewer", "realtime", "motion", "pipeline", "game"},
         )
         self.assertTrue(lanes["verify"]["ready"], "검증 런타임은 의존성이 없어 항상 준비 상태여야 한다")
         self.assertTrue(lanes["game"]["ready"], "폴리시 경로는 무의존이라 항상 준비 상태여야 한다")

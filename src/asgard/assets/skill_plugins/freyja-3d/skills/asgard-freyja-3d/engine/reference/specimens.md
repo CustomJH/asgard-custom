@@ -19,7 +19,7 @@
 
 ```bash
 uv run --no-project --python 3.12 --with build123d \
-  python engine/scripts/cad_build.py assets/inspection-prop/inspection-prop.py \
+  python engine/scripts/cad.py step assets/inspection-prop/inspection-prop.py \
   --out assets/inspection-prop/build
 node engine/scripts/shoot.mjs assets/inspection-prop/build/inspection-prop.stl \
   --out assets/inspection-prop/evidence --views front,right,top,iso --json
@@ -37,7 +37,7 @@ node engine/scripts/scene_audit.mjs assets/inspection-prop/build/inspection-prop
 
 ```bash
 uv run --no-project --python 3.12 --with build123d \
-  python engine/scripts/cad_build.py assets/field-telemetry-kit/field-telemetry-kit.py \
+  python engine/scripts/cad.py step assets/field-telemetry-kit/field-telemetry-kit.py \
   --out assets/field-telemetry-kit/build --clearance 10
 node engine/scripts/shoot.mjs assets/field-telemetry-kit/build/field-telemetry-kit.stl \
   --out assets/field-telemetry-kit/evidence --views front,right,back,top,iso --json

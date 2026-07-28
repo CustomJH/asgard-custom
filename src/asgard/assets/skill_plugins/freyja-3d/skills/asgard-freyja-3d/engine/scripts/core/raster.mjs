@@ -124,10 +124,17 @@ export function blit(target, source, x0, y0) {
 /**
  * 한 방향에서 메시를 정사영으로 그린다.
  * @param {object} scene { positions, faceCache, ranges }
- * @param {object} options { view, size, radius, center, highlight }
+ * @param {object} options
+ *   view       뷰 이름, 또는 { direction: [x,y,z], up?: [x,y,z] } 로 임의 카메라
+ *   edges      featureEdges() 결과 — 주면 CAD 워크벤치 라인워크를 얹는다
+ *   clip       { axis: 'x'|'y'|'z', at: number, keep: 'min'|'max' } — 단면
+ *   highlight  (faceIndex) => [r,g,b] | null
  */
-export function render(scene, { view = "iso", size = 420, radius, center, highlight = null, background } = {}) {
-  const camera = VIEWS[view] || VIEWS.iso;
+export function render(
+  scene,
+  { view = "iso", size = 420, radius, center, highlight = null, background, edges = null, clip = null } = {},
+) {
+  const camera = typeof view === "object" && view ? { dir: view.direction, up: view.up || [0, 0, 1] } : VIEWS[view] || VIEWS.iso;
   const forward = normalize(camera.dir);
   let up = camera.up;
   if (Math.abs(forward[0] * up[0] + forward[1] * up[1] + forward[2] * up[2]) > 0.99) up = [0, 1, 0];
@@ -153,9 +160,24 @@ export function render(scene, { view = "iso", size = 420, radius, center, highli
   const key = normalize([0.4, 0.75, 0.5]);
   const fill = normalize([-0.6, -0.3, 0.35]);
 
+  // 단면: 자르는 평면 바깥의 삼각형을 통째로 버린다. 삼각형을 쪼개지 않으므로 절단면이
+  // 톱니로 나온다 — 내부 배치를 보는 용도지 절단면 형상을 재는 용도가 아니다.
+  const clipAxis = clip ? { x: 0, y: 1, z: 2 }[String(clip.axis || "z").toLowerCase()] ?? 2 : -1;
+  const clipKeepMin = clip ? String(clip.keep || "min") === "min" : true;
+  const clipAt = clip ? Number(clip.at) : 0;
+  const clipped = (i) => {
+    if (clipAxis < 0) return false;
+    for (let corner = 0; corner < 3; corner += 1) {
+      const value = positions[i + corner * 3 + clipAxis];
+      if (clipKeepMin ? value > clipAt : value < clipAt) return true;
+    }
+    return false;
+  };
+
   for (let f = 0; f < faceCache.count; f += 1) {
     if (faceCache.areas[f] <= 0) continue;
     const i = f * 9;
+    if (clipped(i)) continue;
     const a = project(i);
     let b = project(i + 3);
     let c = project(i + 6);
@@ -223,7 +245,53 @@ export function render(scene, { view = "iso", size = 420, radius, center, highli
     image.data[i * 4 + 1] = Math.round(image.data[i * 4 + 1] * 0.45);
     image.data[i * 4 + 2] = Math.round(image.data[i * 4 + 2] * 0.45);
   }
+
+  // 특징 에지 라인워크. 깊이 버퍼로 가려진 선은 그리지 않되, 자기 자신에 가려지지 않게
+  // 카메라 쪽으로 살짝 당긴다(z-파이팅 방지). 이 선들이 CAD 워크벤치 뷰의 본체다.
+  if (edges && edges.length) {
+    const bias = (radius * 2) / size * 1.5;
+    for (let e = 0; e < edges.length; e += 6) {
+      if (clipAxis >= 0) {
+        const a = edges[e + clipAxis];
+        const b = edges[e + 3 + clipAxis];
+        if (clipKeepMin ? a > clipAt || b > clipAt : a < clipAt || b < clipAt) continue;
+      }
+      const p = projectPoint(edges[e], edges[e + 1], edges[e + 2]);
+      const q = projectPoint(edges[e + 3], edges[e + 4], edges[e + 5]);
+      drawLine(image, depth, size, p, q, bias);
+    }
+  }
   return image;
+
+  function projectPoint(x, y, z) {
+    const dx = x - center[0];
+    const dy = y - center[1];
+    const dz = z - center[2];
+    return [
+      size / 2 + (dx * right[0] + dy * right[1] + dz * right[2]) * scale,
+      size / 2 - (dx * trueUp[0] + dy * trueUp[1] + dz * trueUp[2]) * scale,
+      dx * forward[0] + dy * forward[1] + dz * forward[2],
+    ];
+  }
+}
+
+/** 깊이 시험을 거치는 브레젠험 선. 보이는 모서리만 남는다. */
+function drawLine(image, depth, size, a, b, bias) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1])));
+  for (let step = 0; step <= steps; step += 1) {
+    const t = step / steps;
+    const x = Math.round(a[0] + (b[0] - a[0]) * t);
+    const y = Math.round(a[1] + (b[1] - a[1]) * t);
+    if (x < 0 || y < 0 || x >= size || y >= size) continue;
+    const z = a[2] + (b[2] - a[2]) * t;
+    const offset = y * size + x;
+    if (!Number.isFinite(depth[offset])) continue; // 배경 위에는 그리지 않는다
+    if (z > depth[offset] + bias) continue; // 형상 뒤에 숨은 모서리
+    image.data[offset * 4] = 28;
+    image.data[offset * 4 + 1] = 30;
+    image.data[offset * 4 + 2] = 36;
+    image.data[offset * 4 + 3] = 255;
+  }
 }
 
 /** 뷰 이미지들을 격자로 붙이고 머리글·치수를 얹은 컨택트 시트를 만든다. */

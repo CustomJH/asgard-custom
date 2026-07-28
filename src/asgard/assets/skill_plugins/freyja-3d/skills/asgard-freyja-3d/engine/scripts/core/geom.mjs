@@ -61,6 +61,67 @@ export function faces(positions) {
   return { count, normals, areas, centers, degenerate };
 }
 
+/**
+ * 특징 에지 — 실루엣(경계)과 접힘(crease)만 남긴다.
+ *
+ * CAD 워크벤치 뷰가 뷰티 렌더와 다른 지점이 여기다. 삼각형을 셰이딩만 하면 평면 위의 구멍
+ * 테두리와 모따기 경계가 안 보인다. 사람이 "이 형상이 맞는가"를 판정할 때 실제로 보는 것은
+ * 그 선들이다.
+ *
+ * 판정 기준은 인접 두 삼각형의 법선 사이 각도다. 문턱을 넘으면 접힘이고, 인접면이 하나뿐이면
+ * 열린 경계다. 곡면을 잘게 쪼갠 삼각형끼리는 각도가 작아 선이 그려지지 않으므로, 원기둥 옆면이
+ * 줄무늬로 덮이지 않는다.
+ *
+ * @param {Float32Array} positions 9n 삼각형 수프
+ * @param {object} cache faces(positions) 결과
+ * @param {object} options { angle: 접힘 판정 각도(도), weld: 정점 병합 격자(mm) }
+ * @returns {Float32Array} 에지 끝점 6개씩 [x1,y1,z1,x2,y2,z2, …]
+ */
+export function featureEdges(positions, cache, { angle = 24, weld = 1e-4 } = {}) {
+  const threshold = Math.cos((angle * Math.PI) / 180);
+  const quantum = 1 / weld;
+  const key = (i) =>
+    `${Math.round(positions[i] * quantum)},${Math.round(positions[i + 1] * quantum)},${Math.round(positions[i + 2] * quantum)}`;
+
+  // 에지 → 인접 삼각형 목록. 정점을 격자로 병합해야 같은 모서리가 하나로 모인다.
+  const shared = new Map();
+  for (let f = 0; f < cache.count; f += 1) {
+    if (cache.areas[f] <= 0) continue;
+    const i = f * 9;
+    const corners = [key(i), key(i + 3), key(i + 6)];
+    for (let c = 0; c < 3; c += 1) {
+      const a = corners[c];
+      const b = corners[(c + 1) % 3];
+      if (a === b) continue; // 퇴화 에지
+      const id = a < b ? `${a}|${b}` : `${b}|${a}`;
+      let entry = shared.get(id);
+      if (entry === undefined) {
+        entry = { faces: [], p: [positions[i + c * 3], positions[i + c * 3 + 1], positions[i + c * 3 + 2]], q: null };
+        const n = ((c + 1) % 3) * 3;
+        entry.q = [positions[i + n], positions[i + n + 1], positions[i + n + 2]];
+        shared.set(id, entry);
+      }
+      entry.faces.push(f);
+    }
+  }
+
+  const out = [];
+  for (const entry of shared.values()) {
+    const { faces: adjacent, p, q } = entry;
+    let keep = adjacent.length === 1; // 열린 경계는 무조건 그린다
+    if (!keep && adjacent.length >= 2) {
+      const [a, b] = adjacent;
+      const dot =
+        cache.normals[a * 3] * cache.normals[b * 3] +
+        cache.normals[a * 3 + 1] * cache.normals[b * 3 + 1] +
+        cache.normals[a * 3 + 2] * cache.normals[b * 3 + 2];
+      keep = Math.abs(dot) < threshold;
+    }
+    if (keep) out.push(p[0], p[1], p[2], q[0], q[1], q[2]);
+  }
+  return new Float32Array(out);
+}
+
 /** 부호 있는 부피(㎣ 단위 가정). 감김이 일관되고 닫힌 메시에서만 물리적 의미가 있다. */
 export function volume(positions) {
   let total = 0;

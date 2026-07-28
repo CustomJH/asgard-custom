@@ -1,8 +1,8 @@
 {
   "schema": 1,
   "name": "freyja-3d",
-  "version": "2.0.0",
-  "description": "Freyja 3D engine (Brisingamen) — STEP-first parametric CAD with addressable selector refs, measurement and assembly joints, CAD-workbench snapshot review, fabrication handoff (DXF cut layouts, FDM G-code slicing, sheet-cutting preflight, print jobs), off-the-shelf STEP part sourcing, robot description files (URDF/SRDF/SDF), implicit GLSL SDF modelling, industrial electrical/telecom enclosures, realtime web 3D, 3D motion, and asset pipeline in one lane-routed skill. Includes interference and clearance checks, mesh and kernel measurement, glTF budget audit, static defect detection, a local review viewer, verified reference assets, and a blocking delivery gate. Electrical safety/certification, FEA/CFD, and glTF conformance remain explicit external gates. Node >= 18 for verification; uv for the CAD kernel lane.",
+  "version": "3.0.0",
+  "description": "Freyja 3D engine (Brisingamen) — STEP-first parametric CAD with addressable selector refs, measurement and assembly interference/clearance, CAD-workbench snapshot review, fabrication handoff (DXF cut layouts and kernel-free DXF audit, FDM G-code slicing and static validation, sheet-cutting preflight), off-the-shelf STEP sourcing from a configured catalog, robot description files (URDF/SRDF/SDF) with URDF-SRDF cross-validation, implicit signed-distance-field modelling with a native surface-nets mesher, industrial electrical/telecom enclosures, realtime web 3D, 3D motion, and asset pipeline in one lane-routed skill. Runs entirely on Asgard-native code: a kernel-free ISO 10303-21 STEP reader, an offline software rasteriser with feature-edge linework and orbit GIF, and a server-side review viewer that ships no browser 3D library. Reading and verifying delivered artifacts needs no install at all; only shape generation needs the B-Rep kernel. Includes glTF budget audit, static defect detection, verified reference assets, and a blocking delivery gate. Electrical safety/certification, FEA/CFD, and glTF conformance remain explicit external gates. Node >= 18 for verification; uv only for the CAD kernel lane.",
   "skills": [
     "asgard-freyja-3d"
   ],
@@ -75,12 +75,7 @@
         "orcaslicer",
         "prusaslicer",
         "cura",
-        "sendcutsend",
         "발주",
-        "밤부",
-        "bambu",
-        "프린터 전송",
-        "step.parts",
         "기성품",
         "규격 부품",
         "나사",
@@ -128,7 +123,12 @@
         "치수",
         "셀렉터",
         "cad 뷰어",
-        "cad viewer"
+        "cad viewer",
+        "서피스 넷",
+        "surface nets",
+        "무커널",
+        "위상 산출물",
+        "셀렉터 측정"
       ],
       "defaults": [
         "freyja"

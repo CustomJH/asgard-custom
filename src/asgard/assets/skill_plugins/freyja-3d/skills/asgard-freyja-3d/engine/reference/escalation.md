@@ -57,9 +57,9 @@ bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB")
 
 ## 예전에 넘기던 것 — 이제 이 엔진 안에 있다
 
-로봇 기술 파일(URDF/SRDF/SDF), G-code 슬라이싱, 기성 STEP 부품 검색, 프린터 작업 전송, 시트 절단 서비스 사전 검사, 셀렉터 기반 STEP 검증, 조립 조인트, CAD 워크벤치 스냅샷, 암시적 SDF 조형, 로컬 리뷰 뷰어. **더 이상 승급 대상이 아니다.**
+로봇 기술 파일(URDF/SRDF/SDF), G-code 슬라이싱과 정적 검증, 시트 절단 사전 검사, 셀렉터 기반 STEP 검증, 조립 간섭·간극, CAD 워크벤치 스냅샷, 암시적 SDF 조형, 로컬 리뷰 뷰어. **더 이상 승급 대상이 아니다.**
 
-`engine/vendor/text-to-cad/` 에 런타임이 벤더링돼 있고, 입구는 `engine/scripts/cad.py`, 레인 문서는 `lane-cad.md`·`lane-fabricate.md`·`lane-robot.md`·`lane-implicit.md`·`lane-viewer.md`. 이것들을 "설치가 필요한 외부 도구"라고 말하지 않는다 — 필요한 것은 uv 와 node 뿐이다.
+런타임은 `engine/scripts/cadlib/`(파이썬)과 `engine/scripts/*.mjs`(노드)에 있고 전부 이 엔진의 코드다. 입구는 `engine/scripts/cad.py`, 레인 문서는 `lane-cad.md`·`lane-fabricate.md`·`lane-robot.md`·`lane-implicit.md`·`lane-viewer.md`. 이것들을 "설치가 필요한 외부 도구"라고 말하지 않는다 — **판독·검증은 아무것도 필요 없고**, 형상 생성에만 uv 가 든다.
 
 ## 넘기지 않아도 되는 흔한 오해
 
@@ -67,4 +67,4 @@ bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB")
 - "3D 렌더를 보려면 GPU 나 브라우저가 필요하다" — `shoot.mjs` 는 node 만으로 다면 렌더를 만든다.
 - "웹 3D 성능은 실기기에서만 알 수 있다" — 자산 예산은 정적으로 판정된다. 프레임률만 실기기 영역이다.
 - "생성형 3D 가 CAD 를 대체한다" — 치수가 없는 메시는 제조 산출물이 아니다.
-- "나사·베어링·모터는 직접 모델링해야 한다" — `cad.py parts` 가 16,000여 개 카탈로그에서 실제 STEP 을 받는다. 나사산을 그리면 파일만 무거워지고 정확도는 오히려 떨어진다.
+- "나사·베어링·모터는 직접 모델링해야 한다" — 나사산을 그리면 파일만 무거워지고 정확도는 오히려 떨어진다. 카탈로그가 설정돼 있으면 `cad.py parts` 로 실제 STEP 을 받고, 없으면 **치수를 명시한 자리표시자**를 만들고 보고에 그렇게 적는다(`lane-cad.md`).

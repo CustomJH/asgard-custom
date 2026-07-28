@@ -19,35 +19,30 @@ STEP 출력이 필요하면 선택지는 B-Rep 커널뿐이다(build123d/CadQuer
 ## 정본 루프
 
 ```bash
-CAD=engine/scripts/cad.py           # 도구 하나의 입구 (uv 격리 실행)
+CAD=engine/scripts/cad.py           # 도구 하나의 입구
 
-python $CAD step    model.py                                          # ① STEP + 위상 산출물
+python $CAD step    model.py                                          # ① STEP + 위상 산출물 + 조립 진단
 python $CAD inspect refs model.step --facts --planes --positioning    # ② 기준 검증
 python $CAD inspect measure model.step --from '#f13' --to '#f14' --axis z   # ③ 명세 치수마다
-python $CAD snapshot --job shots.json                                 # ④ 보고 대조
+node engine/scripts/snapshot.mjs model.step --out shots               # ④ 보고 대조
 node engine/scripts/cad_gate.mjs <납품 경로>                            # ⑤ 배달 자격
 ```
 
-1. **STEP 을 만든다.** 소스가 정본이고 STEP 은 그 결과다. `scripts/step` 은 STEP 옆에 숨은 위상 산출물(`.<이름>.step.glb`)도 같이 쓴다 — refs·measure·snapshot 이 전부 그것을 읽으므로 선택이 아니다.
-2. **기준을 읽는다.** `refs --facts --planes --positioning` 은 생성한 모든 산출물에 대해 무조건 돌린다. 크기·솔리드 수·라벨·주요 평면이 여기서 나온다.
+1. **STEP 을 만든다.** 소스가 정본이고 STEP 은 그 결과다. `step` 은 STEP 옆에 숨은 위상 산출물(`.<이름>.step.glb`)도 같이 쓴다 — refs·measure·snapshot·뷰어가 전부 그것을 읽으므로 선택이 아니다.
+2. **기준을 읽는다.** `refs --facts --planes --positioning` 은 생성한 모든 산출물에 대해 무조건 돌린다. 크기·솔리드 수·라벨·주요 평면이 여기서 나온다. **커널 없이 즉시 돈다.**
 3. **명세를 하나씩 잰다.** 사용자가 말한 치수·간극·관계는 **전부** `measure`/`align`/`frame` 으로 확인한다. 도면에서 딴 치수도 같다. 안 잰 치수는 "확인함"이 아니라 "미확인"이다.
 4. **본다.** 스냅샷은 의무다(`cad-snapshot.md`). 결정론 검사가 통과했다는 사실은 건너뛸 이유가 되지 못한다 — 결정론 검사는 자기가 부호화한 것만 잡고, 형상이 요청과 다른 것은 부호화되지 않는다.
 5. **배달 자격을 기계에 묻는다.** `cad_gate` 가 막으면 막힌 이유를 고친다. 판정 기준을 낮춰서 통과시키지 않는다.
 
-조립체면 ③과 ④ 사이에 간섭 검사가 들어간다:
+**STEP 을 내는 도구는 하나뿐이다.** 예전에는 STEP 을 내는 도구와 조립을 진단하는 도구가 따로 있었고, 둘이 서로 다른 STEP 을 만들었으며 그중 하나에만 위상 산출물이 붙었다. 그래서 "진단 도구가 낸 STEP 에 셀렉터 측정을 했다고 말하지 말라"는 경고가 필요했다. 경고로 막는 함정은 언젠가 빠지므로 함정을 없앴다 — 이제 `step` 하나가 STEP·위상 산출물·쌍별 간섭·왕복 대조를 함께 낸다.
+
+조립체면 ③과 ④ 사이에 공정 감사가 들어간다:
 
 ```bash
-python $CAD step model.py                              # 납품 STEP 은 여기서만 나온다
-uv run --no-project --python 3.12 --with build123d \
-   python engine/scripts/cad_build.py model.py --json   # 쌍별 간섭 부피·최소 간극
 node engine/scripts/mesh_audit.mjs build/model.stl --process fdm   # 수밀·살두께·오버행
 ```
 
-`cad_build.py` 와 `mesh_audit.mjs` 는 STEP 런타임이 **내지 않는 두 숫자**를 낸다: 쌍별 간섭 부피와 공정별 제조 판정. refs·measure·align 은 그 둘을 대신하지 못한다.
-
-주의: `cad_build.py --out` 이 내보내는 STEP 에는 **위상 산출물이 없다.** refs·measure·align·snapshot 이 읽을 것이 없으므로 그 STEP 에 대해 셀렉터 측정을 했다고 말할 수 없다. 진단 산출물은 금고(`.asgard/.vanadis/3d/`)에 두고, 납품 STEP 은 `step` 이 낸 것을 쓴다.
-
-`cad_gate` 는 이 상황을 두 단계로 가른다 — 메시 감사(`mesh_audit`)와 렌더 증거가 같이 있으면 **경고**(다른 경로로 검증된 배달이라 막지 않지만 셀렉터 측정을 주장할 수는 없다), 둘 다 없으면 **차단**(아무것으로도 검증되지 않았다). 막는 기준은 "다르게 검증했는가"가 아니라 "검증했는가"다.
+쌍별 간섭 부피와 최소 간극은 `step` 이 이미 냈다(부품이 둘 이상일 때 자동). `mesh_audit` 은 그와 다른 숫자를 낸다 — 공정별 제조 판정. refs·measure·align 은 그 둘 중 어느 것도 대신하지 못한다.
 
 ## 소스 규약
 
@@ -73,7 +68,7 @@ def gen_step():
     return result
 ```
 
-- **`gen_step()` 을 정의한다.** `scripts/step` 이 읽는 규약이고, `cad_build.py` 도 이제 같은 함수를 먼저 본다. 조립체는 라벨 붙은 `Compound` 를 반환하면 `cad_build.py` 가 자식을 부품으로 펴서 쌍별 간섭을 잰다.
+- **`gen_step()` 을 정의한다.** `cad.py step` 이 읽는 규약이다. 조립체는 라벨 붙은 `Compound` 를 반환하면 자식이 곧 부품 이름이 되어 그대로 쌍별 간섭 검사에 들어간다.
 - **출력 경로를 `gen_step()` 안에 적지 않는다.** 경로는 CLI 가 소유한다.
 - **align 을 명시한다.** 기본 정렬은 도구마다 다르다. `Align.MIN` 으로 원점 기준을 고정해두면 위치 오류가 사라진다.
 - **선택자는 위상이 아니라 의미로 쓴다.** `edges()[3]` 은 파라미터를 바꾸는 순간 다른 에지를 가리킨다. `filter_by(Axis.Z).sort_by(Axis.Y)[-2:]` 처럼 기하학적 조건으로 고른다.
@@ -129,7 +124,9 @@ def gen_step():
 - 조립·조인트·메이팅 데이텀·정렬 검증: `cad-assembly.md`
 - 셀렉터 문법과 검증 동사(refs·measure·align·frame·diff): `cad-refs.md`
 - 도면·전개·절단(DXF), 슬라이싱, 절단 서비스 사전 검사: `lane-fabricate.md`
-- 나사·베어링·모터 같은 **기성품은 직접 모델링하지 않는다.** `python $CAD parts "M3 socket head 12" --download` 로 실제 STEP 을 받아 `import_step` 으로 넣는다. 나사산을 그리는 순간 파일이 무거워지고 정확도는 오히려 떨어진다.
+- 나사·베어링·모터 같은 **기성품은 직접 모델링하지 않는다.** 나사산을 그리는 순간 파일이 무거워지고 정확도는 오히려 떨어진다.
+  - 부품 카탈로그가 설정돼 있으면(`ASGARD_CAD_CATALOG` 또는 `--catalog`) `python $CAD parts search "M3 socket head 12"` 로 찾고 `download` 로 받아 `import_step` 으로 넣는다.
+  - **설정돼 있지 않으면 부품을 지어내지 않는다.** 치수를 명시한 자리표시자(관통 구멍 지름, 머리 지름·높이, 유효 길이)를 만들고, 보고에 **"실물 STEP 아님 — 자리표시자"** 라고 적는다. 그 문장 없이 납품하지 않는다. 볼트가 1mm 짧은 조립체는 도면상 완벽하다.
 
 ## 넘겨야 할 때
 
