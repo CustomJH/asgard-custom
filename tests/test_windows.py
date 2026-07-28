@@ -258,7 +258,10 @@ class TestTextIOCarriesItsEncoding(unittest.TestCase):
             module = getattr(getattr(func, "value", None), "id", "") if isinstance(func, ast.Attribute) else ""
             if module not in ("subprocess", "sp", ""):
                 return ""
-            if {kw.arg for kw in node.keywords} & {"text", "universal_newlines"}:
+            keywords = {kw.arg for kw in node.keywords}
+            # `encoding=` 을 같이 준 텍스트 모드는 로케일을 안 탄다 — 그게 바로 이 검사가 요구하는 형태다.
+            # 이걸 안 보면 정답을 오답으로 잡는다 (실측: commands/office.py 는 이미 utf-8 로 고정돼 있다).
+            if keywords & {"text", "universal_newlines"} and "encoding" not in keywords:
                 return f"subprocess.{name}(text=True)"
         return ""
 
