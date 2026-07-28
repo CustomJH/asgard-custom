@@ -113,9 +113,9 @@ def summarize(rows: list[dict]) -> dict:
         return round(sum(r[key] for r in subset) / len(subset), 4) if subset else 0.0
 
     metrics = [f"recall_any_at_{k}" for k in K_VALUES] + ["ndcg_at_10", "mrr"]
-    by_type: dict[str, dict] = {}
+    by_type: dict[str, list[dict]] = {}
     for row in rows:
-        by_type.setdefault(str(row["question_type"]), []).append(row)  # type: ignore[arg-type]
+        by_type.setdefault(str(row["question_type"]), []).append(row)
     return {
         "n": len(rows),
         "overall": {m: avg(m, rows) for m in metrics},
@@ -130,10 +130,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", required=True)
     parser.add_argument("--limit", type=int, default=0)
-    # 샤드 실행용 — 전량 한 번에 돌리면 실행 환경의 시간 상한에 걸린다. 결과는 merge.py 가 합친다.
+    # 샤드 실행용 — 전량 한 번에 돌리면 실행 환경의 시간 상한에 걸린다. 샤드 결과는 rows 를
+    # 이어 붙인 뒤 summarize() 를 다시 돌리면 합쳐진다 (전용 병합 도구는 없다).
     parser.add_argument("--offset", type=int, default=0)
     parser.add_argument("--out", default=os.path.join(os.path.dirname(__file__), "results.json"))
     parser.add_argument("--semantic", default="on", choices=["on", "off"])
+    # 구절 리랭크 A/B — 전/후 표를 코드 되돌리기 없이 재현하기 위한 스위치.
+    parser.add_argument("--rerank", default="on", choices=["on", "off"])
     parser.add_argument("--kind", default="note")  # reference 로 두면 최신성 보정(TEMPORAL_KINDS)이 켜진다
     parser.add_argument("--event-dates", action="store_true")  # 세션 날짜를 event 메타로 심는다
     parser.add_argument("--only-type", default="")  # 한 유형만 (예: temporal-reasoning)
@@ -141,6 +144,10 @@ def main() -> int:
 
     os.environ["ASGARD_MEMORY_SEMANTIC"] = args.semantic
     os.environ["ASGARD_MEMORY_INJECT"] = "off"  # 주입면은 이 벤치와 무관하다
+
+    # 2단계 어블레이션은 제품의 정식 스위치를 쓴다 — 벤치가 몽키패치로 만든 상태는
+    # 사용자가 재현할 수 없는 상태다. off 면 리랭크 도입 이전과 같은 순위가 나온다.
+    os.environ["ASGARD_MEMORY_RERANK"] = args.rerank
 
     with open(args.data, encoding="utf-8") as handle:
         entries = json.load(handle)
@@ -168,11 +175,19 @@ def main() -> int:
                 flush=True,
             )
 
+    # 실험군은 **결과 파일 안에서** 자기를 밝혀야 한다. 파일명(`...-rerank-off.json`)이 실험군을
+    # 주장하면 그 주장은 검증 불가다 — 이름은 사람이 붙이고, 나중에 바뀌고, 옮겨진다. 감사자가
+    # 두 결과를 비교할 때 무엇과 무엇을 비교하는지는 파일 내용만으로 확정돼야 한다.
     report = {
         "dataset": os.path.basename(args.data),
         "semantic": args.semantic,
+        "rerank": args.rerank,
         "kind": args.kind,
         "event_dates": args.event_dates,
+        "only_type": args.only_type,
+        "offset": args.offset,
+        "limit": args.limit,
+        "argv": sys.argv[1:],
         "seconds": round(time.monotonic() - started, 1),
         **summarize(rows),
         "rows": rows,
