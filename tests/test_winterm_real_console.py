@@ -39,7 +39,7 @@ def console(monkeypatch):
     """
     import ctypes
 
-    k = ctypes.WinDLL("kernel32", use_last_error=True)
+    k = ctypes.WinDLL("kernel32", use_last_error=True)  # ty: ignore[unresolved-attribute]
     k.CreateFileW.restype = ctypes.c_void_p
     k.CreateFileW.argtypes = [
         ctypes.c_wchar_p,
@@ -103,7 +103,9 @@ def test_enable_vt_actually_sets_the_bit_on_the_console(console) -> None:
 
 def test_screen_buffer_info_unpacks_a_real_struct(console) -> None:
     """필드 순서가 어긋나면 엉뚱한 좌표가 나온다 — 커서는 창 안에 있어야 한다."""
-    got = winterm._screen_buffer_info(winterm._std_handle(winterm.STD_OUTPUT))
+    handle = winterm._std_handle(winterm.STD_OUTPUT)
+    assert handle is not None
+    got = winterm._screen_buffer_info(handle)
     assert got is not None
     cursor_y, window_top = got
     assert cursor_y >= window_top >= 0

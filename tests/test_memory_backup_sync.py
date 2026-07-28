@@ -57,7 +57,11 @@ class BackupTest(MemoryHomeBase):
         self._add("무결성 검사 대상", "probe")
         path = mb.create(self.d)["path"]
         with tarfile.open(path, "r:gz") as archive:
-            members = {info.name: archive.extractfile(info).read() for info in archive if info.isfile()}
+            members = {}
+            for info in archive:
+                handle = archive.extractfile(info) if info.isfile() else None
+                if handle is not None:
+                    members[info.name] = handle.read()
         members["pages/probe.md"] = "---\ntitle: swapped\n---\n\n조작된 본문\n".encode()
         with tarfile.open(path, "w:gz") as archive:
             for name, data in members.items():

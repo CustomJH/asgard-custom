@@ -51,9 +51,12 @@ def _asgard_bin() -> str | None:
 class ShippedHookRuns(unittest.TestCase):
     """스캐폴드 → 결함 작성 → 배포본 훅 실행 → 호스트 규약대로 차단. 한 줄도 목킹하지 않는다."""
 
+    bin: str  # skipIf 가 None 을 걸러내지만 타입은 그 사실을 모른다 — 여기서 고정한다
+
     def setUp(self):
-        self.bin = _asgard_bin()
-        assert self.bin is not None
+        found = _asgard_bin()
+        assert found is not None, "skipIf 가 걸러냈어야 한다"
+        self.bin = found
         self.root = tempfile.mkdtemp(prefix="craftgate-e2e-")
         self.addCleanup(shutil.rmtree, self.root, True)
         self._git("init")

@@ -249,6 +249,7 @@ class TestDocxLane(unittest.TestCase):
 
         out, _ = self._build("---\npage: {size: letter, margins: {left: 10mm}}\n---\n\ntext\n")
         section = Document(str(out)).sections[0]
+        assert section.page_width is not None and section.left_margin is not None
         self.assertAlmostEqual(section.page_width.mm, 215.9, places=1)
         self.assertAlmostEqual(section.left_margin.mm, 10.0, places=1)
 
@@ -271,6 +272,7 @@ class TestDocxLane(unittest.TestCase):
             self.root,
             ("docx", "md"),
         )
+        assert template is not None
         self.assertEqual(template.name, "themed")
         self.assertEqual(front["theme"]["primary"], "112233", "template supplies what the spec omits")
         self.assertEqual(front["theme"]["accent"], "AABBCC", "the spec wins key by key")
@@ -617,7 +619,7 @@ class TestBundledWiring(unittest.TestCase):
         from asgard.skill_registry import bundled_plugins
 
         plugin = bundled_plugins().get("asgard-office")
-        self.assertIsNotNone(plugin, "the office plugin must validate against the plugin schema")
+        assert plugin is not None, "the office plugin must validate against the plugin schema"
         self.assertEqual(plugin["skills"], ["asgard-office"])
         self.assertEqual(plugin["entrypoints"], {"asgard-office": "asgard_office.py"})
         self.assertIn("worker", plugin["routing"]["asgard-office"]["agents"])
@@ -694,7 +696,8 @@ class TestBundledWiring(unittest.TestCase):
                 if template.origin != "bundled":
                     continue
                 with self.subTest(template=template.name):
-                    self.assertIsNotNone(template.example, "a bundled template ships a worked example")
+                    assert template.body is not None, "a bundled template ships a skeleton"
+                    assert template.example is not None, "a bundled template ships a worked example"
                     out = root / f"{template.name}.{template.kind}"
                     report = builders[template.kind](
                         template.body, out, template_name=template.name, values_path=template.example, root=root

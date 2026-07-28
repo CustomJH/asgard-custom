@@ -140,7 +140,7 @@ class SemanticDoctorTest(ManagerBase):
         from asgard.commands.doctor import _memory_semantic_check
 
         row = _memory_semantic_check()
-        self.assertIsNotNone(row)
+        assert row is not None
         return row
 
     def test_default_is_on(self):
