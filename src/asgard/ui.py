@@ -77,6 +77,34 @@ def oneline(s: str, limit: int | None = None) -> str:
     return one
 
 
+def disp_width(s: str) -> int:
+    """표시 폭 — CJK 전각(W/F)은 2칸. 터미널이 어디서 줄을 접는지의 단일 기준."""
+    import unicodedata
+
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+
+
+def fit(s: str, cols: int) -> str:
+    """단일 논리 행 + **표시 폭** 기준 절단 (넘치면 … 로 닫는다).
+
+    oneline 과 갈리는 지점은 한 가지다: 글자 수가 아니라 칸 수를 센다. 한국어 한 글자는 두 칸이라
+    글자 수로 자르면 절반 폭에서 터미널이 줄을 접고, 접힌 자리에서 보드·독의 열 계산이 무너진다.
+    """
+    one = " ".join(str(s).split())
+    if disp_width(one) <= cols:
+        return one
+    import unicodedata
+
+    budget, used, out = max(1, cols - 1), 0, []
+    for ch in one:
+        w = 2 if unicodedata.east_asian_width(ch) in "WF" else 1
+        if used + w > budget:
+            break
+        out.append(ch)
+        used += w
+    return "".join(out) + "…"
+
+
 def set_quiet(q: bool) -> None:
     global _QUIET
     _QUIET = q
