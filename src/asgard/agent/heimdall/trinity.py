@@ -17,7 +17,7 @@ import tempfile
 import time
 import uuid
 
-from ... import theme, ui
+from ... import i18n, theme, ui
 from ...hooks.quest_log import EMPTY as _EMPTY_DIFF
 from ...hooks.quest_log import inspection_evidence as _inspection_evidence
 from ...hooks.quest_log import trivial_evidence as _trivial_evidence
@@ -271,7 +271,8 @@ class TrinityRun:
         flag_args += ["--task-class", self.tc]  # prior 승격 문턱 축
 
         if self.resume_units:
-            hd.on_text(f"  {ui.dim(f'│ ↻ resume {self.qid} — unfinished {len(self.resume_units)}단위')}\n")
+            # i18n.t 를 모듈 경유로 부른다 — 이 메서드의 `t` 는 턴 번호다 (from-import 는 그 위를 덮는다)
+            hd.on_text(f"  {ui.dim('│ ↻ ' + i18n.t('todo_resume', qid=self.qid, n=len(self.resume_units)))}\n")
             hd._run_worker_waves(self.sid, self.request, self.resume_units, "\n(resumed after process restart)")
             self.had_wave_plan = True
 

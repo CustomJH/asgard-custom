@@ -317,10 +317,8 @@ def _term_rows() -> int:
 
 
 def _disp_w(s: str) -> int:
-    """표시 폭 — CJK 전각(W/F) 2칸. 독 입력행 절단·캐럿 열 계산 공용."""
-    import unicodedata
-
-    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in s)
+    """표시 폭 — CJK 전각(W/F) 2칸. 독 입력행 절단·캐럿 열 계산 공용 (정본은 ui.disp_width)."""
+    return ui.disp_width(s)
 
 
 def _decode_keys(raw: bytes) -> tuple[str, bytes]:

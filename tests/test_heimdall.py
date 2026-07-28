@@ -21,6 +21,7 @@ import unittest
 from unittest import mock
 
 from asgard.agent.heimdall import Heimdall
+from asgard.agent.heimdall.todo import files_note
 from asgard.agent.session import SessionResult
 from asgard.i18n import t
 from asgard.model_tiers import tiers_for
@@ -1675,9 +1676,15 @@ class TestWaveParallel(Base):
             unit: [e.get("ticket_status") for e in events if e.get("event") == "ticket" and e.get("unit") == unit]
             for unit in (1, 2, 3)
         }
-        self.assertEqual(ticket_statuses[1], ["todo", "in_progress", "done"])
-        self.assertEqual(ticket_statuses[2], ["todo", "in_progress", "done"])
-        self.assertEqual(ticket_statuses[3], ["todo", "in_progress", "done"])
+        # 하트비트가 `in_progress` 를 한 줄 더 남기므로 정확한 목록을 단언하면 부하에서 깨진다
+        # (실측: 다른 pytest 와 CPU 를 나눠 쓰는 동안 `todo, in_progress, in_progress, done`).
+        # 고정할 것은 개수가 아니라 **수명주기의 모양**이다 — 열고, 진행하고, 닫는다.
+        for unit in (1, 2, 3):
+            with self.subTest(unit=unit):
+                seen = ticket_statuses[unit]
+                self.assertEqual("todo", seen[0])
+                self.assertEqual("done", seen[-1])
+                self.assertEqual({"in_progress"}, set(seen[1:-1]))
         from asgard.hooks.quest_log import load_events, load_policy, summarize
 
         quest_file = next(
@@ -1766,8 +1773,10 @@ class TestWaveParallel(Base):
         recorded = json.load(open(os.path.join(self.root, ".asgard", "state", "writes-wave-partial.json")))
         self.assertIn("ok.txt", recorded)  # 성공 단위 쓰기가 게이트 증거로 남는다
         joined = "".join(h.texts)
-        self.assertIn("단위 1 완료", joined)
-        self.assertIn("단위 2 실패", joined)
+        # 진행 보드가 단위별로 닫힌다 — 완료 한 줄, 재배정 한 줄, 예산 소진 한 줄 (i18n 앵커)
+        self.assertIn(f"✓ 1  a · {files_note(1)}", joined)
+        self.assertIn(f"✗ 2  b · {t('todo_unit_retry', e='RuntimeError')}", joined)
+        self.assertIn(f"⚠ 2  b · {t('todo_unit_exhausted')}", joined)
         events = [json.loads(ln) for ln in self.quest_log_text().splitlines() if ln.strip()]
         statuses = {
             unit: [e.get("ticket_status") for e in events if e.get("event") == "ticket" and e.get("unit") == unit]

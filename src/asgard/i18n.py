@@ -209,6 +209,19 @@ _M: dict[str, tuple[str, str]] = {
         "⠶ style check rewrote the reply — the version below is canonical",
         "⠶ 문체 검사로 응답을 다듬었어요 — 아래가 정본이에요",
     ),
+    # 배정 단위 진행 보드 — Thinker 가 쪼갠 단위를 열어 보이고 하나씩 닫는다 (agent/heimdall/todo.py).
+    "todo_head": ("assignment units · {n}", "배정 단위 {n}개"),
+    "todo_squad_head": ("squad tasks · {n}", "편대 과업 {n}개"),
+    "todo_summary_done": ("{n} done", "완료 {n}"),
+    "todo_summary_left": ("{n} unfinished", "미완 {n}"),
+    "todo_resume": ("resume {qid} · {n} unfinished", "resume {qid} · 미완 {n}단위"),
+    "todo_wave_parallel": ("wave [{ids}] · {n} units in parallel", "wave [{ids}] · 병렬 {n}단위"),
+    "todo_wave_single": ("wave [{ids}] · single", "wave [{ids}] · 단독"),
+    # 영어 표면은 단복수를 맞춘다 — "1 files" 는 사람이 쓴 문장으로 읽히지 않는다 (Bragi 계약).
+    "todo_unit_file": ("{n} file", "파일 {n}개"),
+    "todo_unit_files": ("{n} files", "파일 {n}개"),
+    "todo_unit_retry": ("failed — reassigning ({e})", "실패 — 재배정 예정 ({e})"),
+    "todo_unit_exhausted": ("failed — retry budget exhausted", "실패 — retry budget 소진"),
     # Trinity 최종 보고 — 퀘스트 로그가 유일한 소스. 사람이 읽는 표면이라 UI 언어를 따른다
     # (하드코딩 한국어였음 — 영어 기본 제품에서 한국어 보고가 나가던 것을 26-07-26 수리).
     "report_done": (

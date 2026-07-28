@@ -47,6 +47,37 @@ READ_DOCUMENT_TOOL = {
         "required": ["path"],
     },
 }
+INGEST_DOCUMENT_TOOL = {
+    "name": "ingest_document",
+    "description": (
+        "Put a document into this project's shared memory so the whole team inherits it. "
+        "Use it when the user hands over a requirements doc, spec, protocol sheet, plan, or "
+        "decision record and asks to analyse it, set it up, or remember it for the project. "
+        "Parses pdf/docx/hwp/hwpx/md/txt, picks the retain strategy from the document's own "
+        "shape, lifts requirement IDs into entities, and stages the write for human approval — "
+        "nothing lands in shared memory until a person approves it. Reports what it decided."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "paths": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Document paths. Absolute or project-relative; the file may live outside the repo.",
+            },
+            "strategy": {
+                "type": "string",
+                "enum": ["document", "record"],
+                "description": (
+                    "Override the automatic choice. 'document' stores verbatim chunks with no LLM "
+                    "extraction (static specs, requirements). 'record' extracts facts and consolidates "
+                    "observations (decisions, incidents). Omit to let the shape decide."
+                ),
+            },
+        },
+        "required": ["paths"],
+    },
+}
 WEB_FETCH_TOOL = {
     "name": "web_fetch",
     "description": "Fetch a public HTTP(S) URL and return bounded text or HTML. Private/internal addresses are blocked.",
@@ -437,6 +468,45 @@ def _extract_hwp(path: str) -> str:
         if result.returncode:
             raise ToolError((result.stderr or result.stdout or "HWP 변환 실패").strip()[:2000])
         return _extract_hwpx(converted)
+
+
+def run_ingest_document(root: str, tool_input: dict) -> str:
+    """문서를 프로젝트 메모리 승인 대기로 올린다 — 사람은 파일만 던지면 된다.
+
+    쓰기가 아니라 **제안**이다. 팀 공유 스코프라 승인 없이 들어가지 않는다 (프로젝트 메모리
+    계약 그대로). 그래서 이 도구는 inspect 권한으로 충분하고, 실제 등록은 사람이 승인한다."""
+    from ..memory_bridge import find_config, is_backend_trusted
+    from ..project_memory import ingest
+
+    raw = tool_input.get("paths")
+    paths = [str(p) for p in raw if str(p).strip()] if isinstance(raw, list) else []
+    if not paths:
+        raise ToolError("paths 가 비었습니다")
+    if len(paths) > 20:
+        raise ToolError("한 번에 20개까지 처리합니다")
+    resolved = [p if os.path.isabs(p) else os.path.join(root, p) for p in paths]
+    found = find_config(root)
+    if not found:
+        raise ToolError("프로젝트 메모리가 연결돼 있지 않습니다 — asgard memory connect <endpoint>")
+    project_root, cfg = found
+    if not is_backend_trusted(cfg):
+        raise ToolError("이 기계에서 신뢰되지 않은 backend 입니다 — asgard memory connect 로 재승인")
+    strategy = str(tool_input.get("strategy") or "").strip() or None
+    ready, failed = ingest.plan(resolved, strategy=strategy)
+    if not ready:
+        detail = "; ".join(f"{os.path.basename(r['path'])}: {r['error']}" for r in failed) or "읽을 문서가 없습니다"
+        raise ToolError(detail)
+    ingest.ensure_strategies(cfg)
+    staged = ingest.stage_documents(project_root, cfg, ready)
+    lines = [f"{len(staged)}건을 승인 대기로 올렸습니다 (승인 전에는 공유 메모리에 들어가지 않습니다)."]
+    for row in staged:
+        lines.append(
+            f"- {row['name']} · {row['kind']} · 전략 {row['strategy']} · {row['chars']:,}자 · "
+            f"엔티티 {row['entities']}\n  승인: asgard memory project-approve {row['approval_id']}"
+        )
+    for row in failed:
+        lines.append(f"- (읽지 못함) {os.path.basename(row['path'])} — {row['error']}")
+    return "\n".join(lines)
 
 
 def run_document(root: str, tool_input: dict) -> str:

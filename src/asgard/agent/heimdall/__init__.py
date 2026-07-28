@@ -21,6 +21,7 @@ Claude Code/Codex/Cursor 세션과 퀘스트 로그을 이어 쓴다 (크로스�
   toolspec — 네이티브 세션 툴 스키마 (순수 데이터)
   journal  — .asgard/state 텔레메트리·write sentinel IO
   dispatch — 딜리버리 위임·편대 fan-out (DeliveryDispatch 협력자)
+  todo     — 배정 단위 진행 보드 (계획 목록 → 단위별 상태 전이 → 최종판)
   waves    — 배정 단위 wave 실행·티켓 lease (WaveRunner 협력자)
   trinity  — 퀘스트 순환 상태기계 (TrinityRun)
   core     — Heimdall 오케스트레이터 (세션·모델·라우팅)
@@ -44,6 +45,7 @@ from .roles import (
     _role_prompt,
     _skill_support,
 )
+from .todo import TodoBoard
 from .toolspec import (
     DISPATCH_TOOL,
     THOR_SQUAD_TOOL,
@@ -61,6 +63,7 @@ __all__ = [
     "NATIVE_NOTE",
     "SessionLike",
     "THOR_SQUAD_TOOL",
+    "TodoBoard",
     "TrinityRun",
     "VERDICT_TOOL",
     "WaveRunner",

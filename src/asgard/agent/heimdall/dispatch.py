@@ -13,6 +13,7 @@ import re
 from ... import theme, ui
 from ..session import TurnCancelled, ql
 from .roles import _DELIVERY, _DELIVERY_READONLY, _LEAD_BASE, _skill_support
+from .todo import TodoBoard, files_note
 from .toolspec import THOR_SQUAD_TOOL
 
 
@@ -135,42 +136,56 @@ class DeliveryDispatch:
                         raise WorkspaceError("scope violation: " + ", ".join(sorted(outside)))
                 return index, spec, result, patch
 
+            # 편대 브리프도 배정 단위와 같은 성격의 목록이다 — 대장이 뭘 몇 개로 나눠 던졌는지를
+            # 오딘 쪽 표면에 세운다. 자식 세션은 quiet 라 여기 말고는 진행이 보이지 않는다.
+            board = TodoBoard(hd.on_text, head_key="todo_squad_head")
+            board.plan((spec["id"], str(spec.get("task") or "")) for spec in tasks)
             completed = []
             failures: list[dict] = []
-            with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
-                futures = {pool.submit(run_one, i, spec): spec for i, spec in enumerate(tasks)}
-                for future in as_completed(futures):
-                    spec = futures[future]
-                    try:
-                        completed.append(future.result())
-                    except TurnCancelled:
-                        raise  # 취소는 편대 실패가 아니다 — 공유 이벤트로 나머지도 곧 멈춘다
-                    except Exception as exc:
-                        failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
-
-            completed.sort(key=lambda item: item[0])
             payload = []
-            for _, spec, result, patch in completed:
-                if mode == "tournament":
-                    rel = f"deliverables/thor-tournament/{spec['id']}.patch"
-                    dest = os.path.join(squad_root, rel)
-                    os.makedirs(os.path.dirname(dest), exist_ok=True)
-                    with open(dest, "wb") as fh:
-                        fh.write(patch.data)
-                    if rel not in worker_result_writes:
-                        worker_result_writes.append(rel)
-                    payload.append(
-                        {"id": spec["id"], "patch": rel, "paths": list(patch.paths), "summary": result.text[-1200:]}
-                    )
-                    continue
-                try:
-                    UnitWorkspace(squad_root, f"thor-{spec['id']}").apply(patch)
-                except Exception as exc:
-                    failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
-                    continue
-                writes = list(patch.paths)
-                worker_result_writes.extend(w for w in writes if w not in worker_result_writes)
-                payload.append({"id": spec["id"], "writes": writes, "summary": result.text[-1200:]})
+            # 한 과업이 done 이 되는 시점은 자식이 끝난 때가 아니라 산출물이 정착한 때다 —
+            # split 은 패치 적용까지, tournament 는 패치 회수까지가 그 과업의 끝이다.
+            try:
+                board.start(spec["id"] for spec in tasks)
+                with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
+                    futures = {pool.submit(run_one, i, spec): spec for i, spec in enumerate(tasks)}
+                    for future in as_completed(futures):
+                        spec = futures[future]
+                        try:
+                            completed.append(future.result())
+                        except TurnCancelled:
+                            raise  # 취소는 편대 실패가 아니다 — 공유 이벤트로 나머지도 곧 멈춘다
+                        except Exception as exc:
+                            board.mark(spec["id"], "failed", type(exc).__name__)
+                            failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+
+                completed.sort(key=lambda item: item[0])
+                for _, spec, result, patch in completed:
+                    if mode == "tournament":
+                        rel = f"deliverables/thor-tournament/{spec['id']}.patch"
+                        dest = os.path.join(squad_root, rel)
+                        os.makedirs(os.path.dirname(dest), exist_ok=True)
+                        with open(dest, "wb") as fh:
+                            fh.write(patch.data)
+                        if rel not in worker_result_writes:
+                            worker_result_writes.append(rel)
+                        payload.append(
+                            {"id": spec["id"], "patch": rel, "paths": list(patch.paths), "summary": result.text[-1200:]}
+                        )
+                        board.mark(spec["id"], "done", rel)
+                        continue
+                    try:
+                        UnitWorkspace(squad_root, f"thor-{spec['id']}").apply(patch)
+                    except Exception as exc:
+                        board.mark(spec["id"], "failed", type(exc).__name__)
+                        failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+                        continue
+                    writes = list(patch.paths)
+                    worker_result_writes.extend(w for w in writes if w not in worker_result_writes)
+                    payload.append({"id": spec["id"], "writes": writes, "summary": result.text[-1200:]})
+                    board.mark(spec["id"], "done", files_note(len(writes)))
+            finally:
+                board.close()
             out: dict = {"mode": mode, "results": payload, "failures": failures}
             if mode == "tournament":
                 out["note"] = (

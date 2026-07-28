@@ -8,7 +8,9 @@ WaveRunner 는 planning 이 정렬한 wave 를 물리 실행하는 협력자다:
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from contextlib import ExitStack
+from dataclasses import dataclass, field
 
 from ..session import TurnCancelled, ql
 from .journal import _record_writes
@@ -16,7 +18,83 @@ from .patch_merge import merge_unit_patches
 from .planning import _plan_waves
 from .roles import _role_prompt, _skill_support, work_shape_note
 from .ticket_lease import TicketLease
+from .todo import TodoBoard, files_note
 from .toolspec import DISPATCH_TOOL
+
+
+def _execute_pending(run_claimed, pending: list[dict], writes_by_id: dict, tickets: TicketLease, cwd_by_id: dict):
+    """대기 단위를 실행하고 (완료, 실패) 로 가른다. 한 개면 직렬, 여럿이면 최대 3 병렬.
+
+    실패를 던지지 않고 **모아서 돌려주는** 것이 이 함수의 계약이다 — 한 단위가 죽어도 형제 단위의
+    쓰기·이벤트는 정산되어야 하고(CUS-247), 그러려면 여기서 예외가 새어 나가면 안 된다.
+    유일한 예외가 `TurnCancelled` 다: 취소는 티켓 실패가 아니라 세션 종료라 재배정 예산을
+    소모시키지 않고 그대로 전파한다.
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    outs: list = []
+    failures: list[tuple[dict, Exception]] = []
+
+    def claim(u: dict):
+        return run_claimed(u, writes_by_id[u["id"]], tickets.token(u) or "", cwd_by_id[u["id"]])
+
+    if len(pending) == 1:
+        try:
+            outs = [claim(pending[0])]
+        except TurnCancelled:
+            raise
+        except Exception as e:
+            failures.append((pending[0], e))
+        return (outs, failures)
+
+    with ThreadPoolExecutor(max_workers=min(3, len(pending))) as ex:
+        # ex.map 금지 — lazy 예외 재발생이 성공 단위 후처리까지 끊는다 (CUS-247)
+        futs = {ex.submit(claim, u): u for u in pending}
+        for fut in as_completed(futs):
+            try:
+                outs.append(fut.result())
+            except TurnCancelled:
+                raise  # 공유 이벤트로 나머지도 곧 멈춘다
+            except Exception as e:
+                failures.append((futs[fut], e))
+    return (outs, failures)
+
+
+@dataclass
+class _Ledger:
+    """wave 하나가 쌓는 증거 — 쓰기 목록·단위 결과·티켓 장부·진행 보드.
+
+    정산은 두 갈래(성공 단위·실패 단위)로 갈리는데 둘이 만지는 것이 같다. 갈래마다 열두 개를
+    인자로 나르면 어느 갈래가 무엇을 빠뜨렸는지 읽어서 알 수 없게 되므로, 한 덩어리로 든다.
+
+    `writes` 와 `_seen` 이 한 자리에 있는 것이 이 타입의 요점이다. 순서는 증거 재현성 때문에
+    목록이어야 하고 중복 판정은 집합이어야 하는데, 둘을 따로 두면 반드시 어긋난다.
+    """
+
+    hd: object
+    sid: str
+    board: TodoBoard
+    tickets: TicketLease
+    used_model: str
+    writes: list[str] = field(default_factory=list)
+    results: dict = field(default_factory=dict)
+    _seen: set[str] = field(default_factory=set)
+
+    def merge(self, new: Iterable[str]) -> None:
+        """순서는 유지하고 중복만 거른다.
+
+        목록을 매번 처음부터 훑으면 단위 수가 열 배일 때 시간은 백 배다 — 이 저장소의 자기
+        게이트(`craft` 의 quadratic-scan)가 바로 이 자리를 두 번 짚었다.
+        """
+        for path in new:
+            if path not in self._seen:
+                self._seen.add(path)
+                self.writes.append(path)
+
+    def persist(self) -> None:
+        """센티넬을 디스크에 확정한다. 실패할 수 있는 티켓 호출보다 **먼저** 불러야 한다 —
+        유실되면 디스크의 쓰기가 게이트에 orphan 으로 남는다 (CUS-247)."""
+        _record_writes(self.hd.root, self.sid, self.writes)
 
 
 class WaveRunner:
@@ -25,7 +103,93 @@ class WaveRunner:
     def __init__(self, hd):
         self._hd = hd
 
+    # ── 정산 ────────────────────────────────────────────────────────
+    # 성공과 실패를 따로 두는 이유: 두 갈래의 **불변식이 다르다**. 성공 쪽은 한 단위의 티켓
+    # 실패가 형제 단위의 기록을 막으면 안 되고(그래서 오류를 모아서 나중에 던진다), 실패 쪽은
+    # 재시도 가능한 것과 소진된 것을 갈라야 한다. 한 함수에 섞으면 그 두 규칙이 서로를 가린다.
+
+    def _settle_done(self, led: _Ledger, outs: list, actual_writes: dict) -> list[Exception]:
+        """완료 단위의 쓰기·결과·티켓·work 이벤트를 확정한다. 오류는 모아서 돌려준다."""
+        errors: list[Exception] = []
+        for u, r, writes in outs:
+            unit_writes = actual_writes.get(u["id"], writes + [w for w in r.writes if w not in writes])
+            led.merge(unit_writes)
+            led.persist()  # 실패할 수 있는 티켓 호출보다 먼저 — 유실되면 쓰기가 orphan 이 된다
+            led.results[u["id"]] = r.text[-2000:]
+            led.board.mark(u["id"], "done", files_note(len(unit_writes)))
+            try:
+                led.tickets.settle(u, "done")
+            except Exception as e:
+                # 한 티켓 제어 실패가 형제 단위의 영속 기록을 막아서는 안 된다.
+                errors.append(e)
+            finally:
+                led.tickets.stop_heartbeat(u)
+            event = ql(
+                led.hd.root,
+                "append",
+                session=led.sid,
+                stdin=json.dumps(
+                    {
+                        "role": "worker",
+                        "event": "work",
+                        "unit": u["id"],
+                        "changed_files": unit_writes[:50],
+                        "commands": r.commands[-20:],
+                        "model": led.used_model,
+                    }
+                ),
+            )
+            if event.returncode != 0:
+                errors.append(RuntimeError(event.stderr.strip() or f"ticket {u['id']} work event append failed"))
+        return errors
+
+    def _settle_failed(
+        self, led: _Ledger, failures: list, writes_by_id: dict, isolation: bool, errors: list[Exception]
+    ) -> tuple[list[dict], list[tuple]]:
+        """실패 단위를 재시도와 소진으로 가른다. (재시도할 것, 끝난 것)."""
+        from ...i18n import t
+
+        if not failures:
+            return ([], [])
+        # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace 의 실패
+        # delta 는 폐기됐으므로 canonical write sentinel 에 거짓 기록하지 않는다.
+        if not isolation:
+            for u, _ in failures:
+                led.merge(writes_by_id[u["id"]])
+        led.persist()
+        retry: list[dict] = []
+        terminal: list[tuple[dict, Exception]] = []
+        for u, e in failures:
+            try:
+                final = led.tickets.settle(u, "failed", error=f"{e.__class__.__name__}: {str(e)[:400]}")
+            except Exception as finish_error:
+                errors.append(finish_error)
+                continue
+            finally:
+                led.tickets.stop_heartbeat(u)
+            if final == "failed":
+                retry.append(u)
+                led.board.mark(u["id"], "failed", t("todo_unit_retry", e=e.__class__.__name__))
+            else:
+                terminal.append((u, e))
+                led.board.mark(u["id"], "blocked", t("todo_unit_exhausted"))
+        return (retry, terminal)
+
     def run(self, sid: str, request: str, units: list[dict], budget_note: str) -> None:
+        """진행 보드를 열고 wave 실행에 넘긴다 — 보드는 어떤 경로로 끝나든 닫는다.
+
+        중단(취소·fatal)도 보드를 닫는 이유: 그 시점의 최종 상태가 곧 "어디까지 갔는가"다.
+        보드가 안 닫히면 오딘은 실패 보고만 보고 어느 단위가 남았는지 다시 퀘스트 로그를 뒤져야 한다.
+        """
+        # 계획을 먼저 연다 — 티켓 장부(퀘스트 로그)와 같은 목록을 오딘 쪽 표면에도 세운다.
+        board = TodoBoard(self._hd.on_text)
+        board.plan((unit["id"], unit.get("subtask") or "") for unit in units)
+        try:
+            self._run(sid, request, units, budget_note, board)
+        finally:
+            board.close()
+
+    def _run(self, sid: str, request: str, units: list[dict], budget_note: str, board: TodoBoard) -> None:
         """배정 단위 wave 병렬 실행 — access list 격리 + 파일 겹침 직렬화.
 
         격리 원칙 (Fugu §3.2.2 orchestration collapse 방지): 각 단위는 자기 subtask +
@@ -34,16 +198,11 @@ class WaveRunner:
 
         부분 실패 (CUS-247): 한 단위가 fatal 로 죽어도 성공 단위의 ql append·writes 기록을
         먼저 확정한 뒤 예외를 전파한다 — 유실되면 디스크의 쓰기가 게이트에 orphan 으로 남는다."""
-        from concurrent.futures import ThreadPoolExecutor, as_completed
-
         from ... import ui
+        from ...i18n import t
 
         hd = self._hd
-        results: dict = {}  # unit id → 결과 텍스트 (access 컨텍스트 소스)
-        all_writes: list[str] = []
         wrp = hd.role_rp.get("worker", hd.rp)
-        used_model = f"{wrp.profile.name}:{hd._model_for('worker') or wrp.model}"
-
         ticket_policy = hd.policy.get("ticket_runtime") or {}
         isolation = bool(ticket_policy.get("isolation", True))
         tickets = TicketLease(
@@ -52,6 +211,8 @@ class WaveRunner:
             lease_seconds=int(ticket_policy.get("lease_seconds") or 300),
             max_attempts=int(ticket_policy.get("max_attempts") or 3),
         )
+        led = _Ledger(hd, sid, board, tickets, f"{wrp.profile.name}:{hd._model_for('worker') or wrp.model}")
+        results = led.results  # access 컨텍스트 소스 — 장부와 같은 객체를 본다
 
         for unit in units:
             tickets.record(unit, "todo")
@@ -107,11 +268,12 @@ class WaveRunner:
 
         for wave in _plan_waves(units, hd.root):
             ids = ", ".join(str(u["id"]) for u in wave)
-            wave_note = "병렬 %d단위" % len(wave) if len(wave) > 1 else "단독"
-            hd.on_text(f"  {ui.dim(f'│ ⋔ wave [{ids}] — {wave_note}')}\n")
+            key = "todo_wave_parallel" if len(wave) > 1 else "todo_wave_single"
+            hd.on_text(f"  {ui.dim('│ ⋔ ' + t(key, ids=ids, n=len(wave)))}\n")
             pending = list(wave)
             order = {u["id"]: i for i, u in enumerate(wave)}
             while pending:
+                board.start(u["id"] for u in pending)
                 writes_by_id: dict = {u["id"]: [] for u in pending}
                 workspace_stack = ExitStack()
                 workspaces = {}
@@ -133,41 +295,7 @@ class WaveRunner:
                 cancelled_cleanup = False  # 취소 전파 중 표식 — finally 의 close 실패가 failed 정산을 피하게
 
                 try:
-                    if len(pending) == 1:
-                        u0 = pending[0]
-                        try:
-                            outs = [
-                                run_claimed(
-                                    u0,
-                                    writes_by_id[u0["id"]],
-                                    tickets.token(u0) or "",
-                                    cwd_by_id[u0["id"]],
-                                )
-                            ]
-                        except TurnCancelled:
-                            raise  # 취소는 티켓 실패가 아니다 — 재배정 예산을 소모하지 않고 전파
-                        except Exception as e:
-                            failures.append((u0, e))
-                    else:
-                        with ThreadPoolExecutor(max_workers=min(3, len(pending))) as ex:
-                            # ex.map 금지 — lazy 예외 재발생이 성공 단위 후처리까지 끊는다 (CUS-247)
-                            futs = {
-                                ex.submit(
-                                    run_claimed,
-                                    u,
-                                    writes_by_id[u["id"]],
-                                    tickets.token(u) or "",
-                                    cwd_by_id[u["id"]],
-                                ): u
-                                for u in pending
-                            }
-                            for fut in as_completed(futs):
-                                try:
-                                    outs.append(fut.result())
-                                except TurnCancelled:
-                                    raise  # 취소는 티켓 실패가 아니다 — 공유 이벤트로 나머지도 곧 멈춘다
-                                except Exception as e:
-                                    failures.append((futs[fut], e))
+                    outs, failures = _execute_pending(run_claimed, pending, writes_by_id, tickets, cwd_by_id)
                     if isolation:
                         outs, merged_writes, merge_failures = merge_unit_patches(outs, workspaces, writes_by_id)
                         actual_writes.update(merged_writes)
@@ -207,69 +335,8 @@ class WaveRunner:
                             tickets.stop_heartbeat(unit)
                 try:
                     outs.sort(key=lambda o: order[o[0]["id"]])  # 완료순 → 배정순 — 로그 결정론 유지
-                    completion_errors: list[Exception] = []
-                    for u, r, writes in outs:
-                        unit_writes = actual_writes.get(u["id"], writes + [w for w in r.writes if w not in writes])
-                        all_writes.extend(w for w in unit_writes if w not in all_writes)
-                        # Persist the write sentinel before a potentially failing ticket-finish call.
-                        _record_writes(hd.root, sid, all_writes)
-                        results[u["id"]] = r.text[-2000:]
-                        unit_note = f"│ 단위 {u['id']} 완료 · 파일 {len(unit_writes)}개"
-                        hd.on_text(f"  {ui.dim(unit_note)}\n")
-                        try:
-                            tickets.settle(u, "done")
-                        except Exception as e:
-                            # One ticket-control failure must not prevent sibling units' durable
-                            # work events and ticket completions from being recorded.
-                            completion_errors.append(e)
-                        finally:
-                            tickets.stop_heartbeat(u)
-                        work_event = ql(
-                            hd.root,
-                            "append",
-                            session=sid,
-                            stdin=json.dumps(
-                                {
-                                    "role": "worker",
-                                    "event": "work",
-                                    "unit": u["id"],
-                                    "changed_files": unit_writes[:50],
-                                    "commands": r.commands[-20:],
-                                    "model": used_model,
-                                }
-                            ),
-                        )
-                        if work_event.returncode != 0:
-                            completion_errors.append(
-                                RuntimeError(work_event.stderr.strip() or f"ticket {u['id']} work event append failed")
-                            )
-                    retry: list[dict] = []
-                    terminal: list[tuple[dict, Exception]] = []
-                    if failures:
-                        # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace의
-                        # 실패 delta는 폐기됐으므로 canonical write sentinel에 거짓 기록하지 않는다.
-                        if not isolation:
-                            for u, _ in failures:
-                                all_writes.extend(w for w in writes_by_id[u["id"]] if w not in all_writes)
-                        _record_writes(hd.root, sid, all_writes)
-                        for u, e in failures:
-                            try:
-                                final = tickets.settle(
-                                    u,
-                                    "failed",
-                                    error=f"{e.__class__.__name__}: {str(e)[:400]}",
-                                )
-                            except Exception as finish_error:
-                                completion_errors.append(finish_error)
-                                continue
-                            finally:
-                                tickets.stop_heartbeat(u)
-                            if final == "failed":
-                                retry.append(u)
-                                hd.on_text(f"  ⚠ 단위 {u['id']} 실패 — 재배정 예정 ({e.__class__.__name__})\n")
-                            else:
-                                terminal.append((u, e))
-                                hd.on_text(f"  ⚠ 단위 {u['id']} 실패 — retry budget 소진\n")
+                    completion_errors = self._settle_done(led, outs, actual_writes)
+                    retry, terminal = self._settle_failed(led, failures, writes_by_id, isolation, completion_errors)
                     if completion_errors:
                         raise RuntimeError("; ".join(str(error) for error in completion_errors))
                     if terminal:
@@ -282,4 +349,4 @@ class WaveRunner:
                             f"{post_error}; claim cleanup failed: " + "; ".join(str(error) for error in cleanup_errors)
                         ) from post_error
                     raise
-        _record_writes(hd.root, sid, all_writes)
+        led.persist()

@@ -594,6 +594,22 @@ class Heimdall:
                 self.on_text(f"⚠ 프로젝트 맵 시작 갱신 실패 — 맵 없이 진행 ({warning})\n")
         return self.map_note
 
+    def _tutor_brief(self, request: str) -> None:
+        """되짚기의 앞쪽 절반 — 같은 자리를 다시 건드리기 **전에** 남은 물음을 사용자 앞에 놓는다.
+
+        `on_text` 로만 나간다. 모델 컨텍스트(map_note 처럼)에 넣지 않는 것이 이 층의 요점이다 —
+        모델이 열린 물음을 보면 그 물음에 대신 답해 버리고, 그러면 되짚기가 막으려던 일이 바로
+        그 자리에서 일어난다(미미르 auga 계약: 물음은 대신 닫아 주는 체크리스트가 아니다).
+        """
+        try:
+            from ...tutor import brief
+
+            card = brief(self.root, request)
+            if card:
+                self.on_text(card + "\n\n")
+        except Exception:
+            pass  # 브리핑 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
+
     def _escalate(self, sid: str) -> None:
         """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
         ql(
@@ -1022,6 +1038,7 @@ class Heimdall:
         with self._state_lock:
             self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL 이 턴 종료 후 회수
         self._prepare_map(request)
+        self._tutor_brief(request)
         # cancel_event 는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
         self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (문지기가 길을 살피는 문구)
