@@ -11,6 +11,7 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import json
+import re
 import secrets
 
 from ..project_memory_backends import (
@@ -89,6 +90,8 @@ _DEFAULT_ENTITY_TYPE = "CODE_SYMBOL"
 # `class:LedgerRenderer` 가 따로 서서 같은 것이 그래프에 둘로 앉았다. 엔티티 해소가 할 일을
 # 우리가 망친 것이다.
 _SYMBOL_KINDS = {"class": "CLASS", "function": "FUNCTION", "method": "METHOD", "const": "CONSTANT"}
+_RETAIN_STRATEGY = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+_OBSERVATION_SCOPE_MODES = {"per_tag", "combined", "all_combinations", "shared"}
 
 
 def _declared_entities(metadata: dict) -> tuple[tuple[str, str], ...]:
@@ -116,6 +119,56 @@ def _declared_entities(metadata: dict) -> tuple[tuple[str, str], ...]:
         if len(seen) >= _MAX_DECLARED_ENTITIES:
             break
     return tuple(seen)
+
+
+def _retain_entities(item: dict, metadata: dict) -> tuple[tuple[str, str], ...]:
+    """명시 엔티티와 결정론 artifact 심볼을 하나의 검증된 목록으로 합친다."""
+    seen = list(_declared_entities(metadata))
+    raw = item.get("entities")
+    if raw is None:
+        return tuple(seen)
+    if not isinstance(raw, list):
+        raise ValueError("project memory entities must be a list")
+    for row in raw:
+        if not isinstance(row, dict):
+            raise ValueError("project memory entity must be an object")
+        name = str(row.get("text") or "").strip()
+        kind = str(row.get("type") or _DEFAULT_ENTITY_TYPE).strip().upper()
+        if (
+            not name
+            or len(name) > 128
+            or len(kind) > 64
+            or not re.fullmatch(r"[A-Z][A-Z0-9_]{0,63}", kind)
+            or any(ch in name for ch in "\n\r<>")
+        ):
+            raise ValueError("invalid project memory entity")
+        pair = (name, kind)
+        if pair not in seen:
+            seen.append(pair)
+        if len(seen) >= _MAX_DECLARED_ENTITIES:
+            break
+    return tuple(seen)
+
+
+def _observation_scopes(item: dict) -> str | tuple[tuple[str, ...], ...] | None:
+    raw = item.get("observation_scopes")
+    if raw is None:
+        return None
+    if isinstance(raw, str):
+        if raw not in _OBSERVATION_SCOPE_MODES:
+            raise ValueError("invalid project memory observation scope")
+        return raw
+    if not isinstance(raw, list) or not raw:
+        raise ValueError("project memory observation scopes must be a non-empty list")
+    scopes: list[tuple[str, ...]] = []
+    for scope in raw:
+        if not isinstance(scope, list) or not scope:
+            raise ValueError("project memory observation scope must be a non-empty tag list")
+        tags = tuple(str(tag).strip() for tag in scope)
+        if any(not tag or len(tag) > 128 or any(ch in tag for ch in "\n\r<>") for tag in tags):
+            raise ValueError("invalid project memory observation scope tag")
+        scopes.append(tags)
+    return tuple(scopes)
 
 
 def server_retain_items(cfg: dict, items: list[dict]) -> dict:
@@ -146,6 +199,12 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
         ):
             raise ValueError("project memory write ownership envelope does not match the active binding")
         tags = item.get("tags")
+        strategy = str(item.get("strategy") or "").strip()
+        if strategy and not _RETAIN_STRATEGY.fullmatch(strategy):
+            raise ValueError("invalid project memory retain strategy")
+        timestamp = item.get("timestamp")
+        if timestamp not in (None, "", "unset"):
+            raise ValueError("project memory timestamp must be 'unset' when explicitly supplied")
         records.append(
             ProjectMemoryRecord(
                 record_id=record_id,
@@ -155,8 +214,10 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
                 context=str(item.get("context") or ""),
                 # 결정론 projection(코드·문서 아티팩트)은 발생 시각이 없는 사실이다 —
                 # 시점은 source_revision 이 진다. 대화 turn 은 실제로 그때 일어난 일이라 제외.
-                timeless=(metadata or {}).get("origin") == "deterministic" if isinstance(metadata, dict) else False,
-                entities=_declared_entities(metadata if isinstance(metadata, dict) else {}),
+                timeless=timestamp == "unset" or metadata.get("origin") == "deterministic",
+                entities=_retain_entities(item, metadata),
+                strategy=strategy,
+                observation_scopes=_observation_scopes(item),
             )
         )
     backend = get_backend(cfg)
@@ -184,6 +245,26 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
     if result.error:
         output["error"] = result.error
     return output
+
+
+def server_consolidate(cfg: dict, tag_scopes: list[list[str]]) -> dict:
+    """Exact binding을 확인한 뒤 backend가 지원하는 observation 작업을 예약한다."""
+    from . import is_backend_trusted, verify_backend_binding
+
+    if not is_backend_trusted(cfg):
+        raise PermissionError("project memory backend target is not trusted")
+    backend = get_backend(cfg)
+    try:
+        verify_backend_binding(cfg, backend=backend)
+        consolidate = getattr(backend, "consolidate", None)
+        if not callable(consolidate):
+            return {"status": "unsupported"}
+        output = consolidate(tag_scopes)
+        verify_backend_binding(cfg, backend=backend)
+        return dict(output)
+    finally:
+        with contextlib.suppress(Exception):
+            backend.close()
 
 
 def backend_target(cfg: dict) -> dict:

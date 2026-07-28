@@ -903,6 +903,56 @@ class TestHindsightBackend(unittest.TestCase):
             },
         )
 
+    def test_hindsight_learning_surface_uses_native_endpoints(self):
+        class Response:
+            def __init__(self, payload):
+                self.payload = payload
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, size=-1):
+                return json.dumps(self.payload).encode()
+
+        requests = []
+
+        def respond(request, timeout=None):
+            del timeout
+            requests.append(request)
+            url = request.full_url
+            if url.endswith("/consolidate"):
+                return Response({"operation_id": "consolidate-1", "deduplicated": True})
+            if url.endswith("/mental-models?detail=full"):
+                return Response({"items": [{"id": "asgard-architecture", "name": "Architecture"}]})
+            if url.endswith("/mental-models"):
+                return Response({"operation_id": "create-1", "mental_model_id": "asgard-architecture"})
+            if url.endswith("/mental-models/asgard-architecture/refresh"):
+                return Response({"operation_id": "refresh-1"})
+            if url.endswith("/mental-models/asgard-architecture"):
+                return Response({"id": "asgard-architecture", "name": "Architecture"})
+            raise AssertionError(url)
+
+        backend = get_backend({"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "demo"})
+        spec = {"id": "asgard-architecture", "name": "Architecture", "source_query": "architecture"}
+        with mock.patch("urllib.request.urlopen", side_effect=respond):
+            self.assertEqual(backend.consolidate([["record"]])["operation_id"], "consolidate-1")
+            self.assertEqual(backend.list_mental_models()[0]["id"], "asgard-architecture")
+            self.assertEqual(backend.create_mental_model(spec)["operation_id"], "create-1")
+            self.assertEqual(
+                backend.update_mental_model("asgard-architecture", {"name": "Architecture"})["id"],
+                "asgard-architecture",
+            )
+            self.assertEqual(backend.refresh_mental_model("asgard-architecture")["operation_id"], "refresh-1")
+
+        self.assertEqual(
+            [request.get_method() for request in requests],
+            ["POST", "GET", "POST", "PATCH", "POST"],
+        )
+        self.assertEqual(json.loads(requests[0].data), {"observation_scopes": [["record"]]})
+
 
 class TestConnectIdempotence(unittest.TestCase):
     """재연결은 자기 뱅크를 자기 것으로 알아봐야 한다.

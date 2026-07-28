@@ -24,6 +24,7 @@ class FakeHindsight(BaseHTTPRequestHandler):
     """recall/retain 두 표면만 흉내 — 요청 본문을 클래스에 기록 (검증 표면)."""
 
     store: list[dict] = []
+    consolidate_requests: list[dict] = []
     recall_results: list[dict] = []
     fail_retain = False
     project_uid = "11111111-1111-4111-8111-111111111111"
@@ -60,6 +61,9 @@ class FakeHindsight(BaseHTTPRequestHandler):
         body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
         if self.path.endswith("/memories/recall"):
             out = {"results": type(self).recall_results}
+        elif self.path.endswith("/consolidate"):
+            type(self).consolidate_requests.append(body)
+            out = {"operation_id": "consolidate-test"}
         else:
             if type(self).fail_retain:
                 type(self).fail_retain = False
@@ -87,6 +91,7 @@ class BridgeBase(unittest.TestCase):
 
     def setUp(self):
         FakeHindsight.store = []
+        FakeHindsight.consolidate_requests = []
         FakeHindsight.recall_results = []
         FakeHindsight.fail_retain = False
         self.tmp = tempfile.mkdtemp(prefix="asgard-bridge-")
@@ -698,6 +703,7 @@ class TestRetainTwoStep(BridgeBase):
         self.assertIn("프로젝트 결정: 임베딩은 다국어 모델 고정", item["content"])
         self.assertEqual(item["metadata"]["source"], "README.md")
         self.assertEqual(item["update_mode"], "replace")
+        self.assertEqual(FakeHindsight.consolidate_requests, [{"observation_scopes": [["record"]]}])
         records = os.path.join(self.root, ".asgard", "memory", "records")
         self.assertEqual(len([name for name in os.listdir(records) if name.endswith(".md")]), 1)
 

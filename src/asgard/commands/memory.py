@@ -173,6 +173,21 @@ def run_sync_turn(mode: str) -> int:
             record_correction(
                 os.getcwd(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
             )
+        # 개인 에피소드 레인 적재 — 네이티브 루프의 `_persist_turn` 이 하는 일을 외부
+        # 클라이언트는 여기서 한다. 프로젝트 메모리 연결 **앞**에 두는 것이 핵심이다:
+        # 개인 대화 원문은 팀 뱅크와 무관하고, 아래 early-return 뒤에 두면 프로젝트가
+        # 안 붙은 저장소에서는 에피소드가 영영 안 쌓인다 (26-07-28 실측 결함).
+        # 원문은 credential 편집(turn_store._redact) 후 0600 로컬 파일에만 남는다.
+        with contextlib.suppress(Exception):
+            from ..agent.turn_store import append_turn
+
+            append_turn(
+                os.getcwd(),
+                str(payload.get("user_text") or ""),
+                str(payload.get("assistant_text") or ""),
+                quest_id=str(payload.get("quest_id") or "") or None,
+                session_id=str(payload.get("session_id") or mode),
+            )
         found = find_config(os.getcwd())
         if not found:
             print(_json.dumps({"status": "skipped", "reason": "project memory not connected"}))
@@ -443,7 +458,9 @@ def run_recall(text: str, provider: str | None = None) -> int:
         from ..memory_context import recall_note
 
         # include_skills: CC 훅 표면 한정 — learned 스킬 포인터를 회수에 동봉 (자가발전×메모리 결합).
-        print(recall_note(text, start=os.getcwd(), include_skills=True), end="")
+        # include_episodes: 같은 표면 한정 — 네이티브만 갖고 있던 과거 세션 회상을 외부
+        # 클라이언트에도 준다 (쓰기는 run_sync_turn, 읽기는 여기 — 두 반쪽이 짝을 이룬다).
+        print(recall_note(text, start=os.getcwd(), include_skills=True, include_episodes=True), end="")
     return 0
 
 
@@ -901,7 +918,8 @@ def run_norn(
                 else:
                     ui.ok(f"{op['op']} · {op.get('slug') or op.get('src', '')}")
             for op in result["proposed"]:
-                ui.step(f"제안 잔류 · {op['op']} — asgard memory norn 으로 검토")
+                flag = f" ⚠ 극성 충돌 [{op['polarity_conflict']}]" if op.get("polarity_conflict") else ""
+                ui.step(f"제안 잔류 · {op['op']}{flag} — asgard memory norn 으로 검토")
             if result["report"]:
                 ui.step(f"리포트 · {os.path.relpath(result['report'], d)}")
             if not result["applied"] and not result["proposed"]:
@@ -934,6 +952,9 @@ def run_norn(
                 ui.step(f"archive · {op['slug']} — {op['why']}")
             elif op["op"] == "insight":
                 ui.step(f"insight · {op['title']} ({op['confidence']}) ← {', '.join(op['sources'])}")
+                # 적용 전에 반드시 보여야 하는 표식 — 출처의 주장을 뒤집었을 수 있다는 신호다.
+                if flag := op.get("polarity_conflict"):
+                    ui.warn(f"  ⚠ 극성 충돌 [{flag}] — 출처와 대조하고 적용할 것")
             else:
                 ui.warn(f"contradiction · {op['a']} ↔ {op['b']} — {op['why']}")
         for row in plan["dropped"]:
@@ -1359,12 +1380,89 @@ def run_project_evolve(apply: bool = False, json_out: bool = False) -> int:
     return _guard(_do)
 
 
+def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> int:
+    """승인 project record를 Hindsight observation·mental model 학습층으로 올린다."""
+
+    def _do() -> int:
+        from ..memory_bridge import verify_backend_binding
+        from ..project_memory import learning
+        from ..project_memory_backends import get_backend
+
+        found = find_config(os.getcwd())
+        if not found:
+            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+        _root, cfg = found
+        if not is_backend_trusted(cfg):
+            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+        backend = get_backend(cfg)
+        try:
+            verify_backend_binding(cfg, backend=backend)
+            output = learning.apply(backend) if apply_changes else learning.plan(backend)
+            verify_backend_binding(cfg, backend=backend)
+        finally:
+            backend.close()
+        if json_out:
+            print(_json.dumps(output, ensure_ascii=False, indent=2))
+            return 0
+        ui.head("project memory · Hindsight learning")
+        if apply_changes:
+            ui.ok("observation 정책과 mental model을 적용했다")
+            ui.step(f"consolidation operation · {output['consolidation_operation_id']}")
+            for row in output["models"]:
+                ui.step(f"{row['id']} · {row['action']} · operation {row['operation_id']}")
+            if not output["models"]:
+                ui.step("mental models · already current")
+        else:
+            ui.step(f"observation config · {'ready' if output['configured'] else 'drifted'}")
+            ui.step(
+                f"mental models · missing {len(output['missing_models'])} · drifted {len(output['drifted_models'])}"
+            )
+            for row in output["models"]:
+                state = "stale" if row["stale"] else "ready" if row["ready"] else "building"
+                ui.step(f"{row['id']} · {state}")
+            if not output["configured"] or output["missing_models"] or output["drifted_models"]:
+                ui.warn("적용하려면 `asgard memory project-learn --apply`")
+        return 0
+
+    return _guard(_do)
+
+
+SEMANTIC_NUDGE_FLAG = "semantic-warmup-nudged"
+
+
+def _semantic_nudge_line(d: str) -> str:
+    """시맨틱이 켜져 있는데 모델이 아직 없을 때만 한 줄. 한 번 말하면 다시 말하지 않는다.
+
+    왜 훅이 아니라 여기인가: 훅은 자식의 stderr 를 삼키므로 "준비 중" 메시지가 사용자에게
+    닿지 않는다. 그리고 훅은 시간 상한 안에서 도느라 내려받기를 아예 시작하지 않는다
+    (memory_semantic.deadline_bound). 그래서 **사람에게 보이는 통로**로 한 번 알려야
+    신규 설치가 시맨틱 없이 조용히 계속 도는 일이 없다."""
+    from .. import memory_semantic as sem
+
+    if sem.mode() == "off" or sem.model_cached():
+        return ""
+    flag = os.path.join(d, SEMANTIC_NUDGE_FLAG)
+    if os.path.exists(flag):
+        return ""
+    try:
+        with open(flag, "w", encoding="utf-8") as handle:
+            handle.write(memory._today())
+    except OSError:
+        return ""  # 표시를 못 남기면 되풀이 말하느니 침묵한다
+    return "시맨틱 검색이 아직 준비되지 않았다 (어휘 회수로 도는 중) — asgard memory semantic warmup"
+
+
 def run_semantic(action: str = "status", json_out: bool = False) -> int:
     """시맨틱 검색 상태·워밍업·켜고 끄기. 첫 실행의 긴 내려받기를 여기서 미리 치른다."""
 
     def _do() -> int:
         from .. import memory_semantic as sem
 
+        if action == "nudge":  # 훅 전용 — 준비 안 됐을 때만 한 줄, latch 는 여기가 소유한다
+            line = _semantic_nudge_line(memory.ensure_home())
+            if line:
+                print(line)
+            return 0
         if action in ("on", "off"):
             from ..settings import load_global, save_global
 
@@ -1411,6 +1509,7 @@ def run_project_ingest(
     strategy: str = "",
     yes: bool = False,
     json_out: bool = False,
+    lane: str = "",
 ) -> int:
     """던진 문서를 파싱·판정해 프로젝트 메모리 승인 대기로 올린다 (기본 미리보기)."""
 
@@ -1423,13 +1522,15 @@ def run_project_ingest(
         root, cfg = found
         if yes and not is_backend_trusted(cfg):
             raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
-        ready, failed = ingest.plan(list(paths), strategy=strategy or None)
+        ready, failed = ingest.plan(list(paths), strategy=strategy or None, lane=lane or None)
         rows: list[dict] = [
             {
                 "name": d.name,
                 "path": d.path,
                 "kind": d.kind,
                 "strategy": d.strategy,
+                "lane": d.lane,
+                "graph_units": d.graph_units,
                 "auto_strategy": d.signals.get("auto_strategy"),
                 "overridden": d.signals.get("overridden"),
                 "chars": len(d.text),
@@ -1449,20 +1550,30 @@ def run_project_ingest(
                 mark = " (지정)" if row["overridden"] else ""
                 ui.step(
                     f"{row['name']} · {row['kind']} · 전략 {row['strategy']}{mark} · "
-                    f"{row['chars']:,}자 · 엔티티 {len(row['entities'])}"
+                    f"{row['chars']:,}자 · 엔티티 {len(row['entities'])} · 레인 {row['lane']}"
                 )
+                if row["lane"] == ingest.LANE_LOCAL:
+                    ui.warn(
+                        f"  {row['name']} 은 그래프 수용 상한을 넘는다 "
+                        f"(예측 unit {row['graph_units']} > {ingest.GRAPH_UNIT_CEILING}) — "
+                        "저장소 정본 + 로컬 인덱스로 간다 (검색은 되고, 뱅크는 지킨다)"
+                    )
             for row in failed:
                 ui.warn(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
             if ready:
                 ui.warn("아직 저장하지 않음 — 검토 후 --yes 를 붙인다")
             return 0 if ready or not failed else 1
-        ingest.ensure_strategies(cfg)
+        if any(d.lane == ingest.LANE_GRAPH for d in ready):
+            ingest.ensure_strategies(cfg)
         staged = ingest.stage_documents(root, cfg, ready)
         if json_out:
             print(_json.dumps({"staged": staged, "failed": failed}, ensure_ascii=False, indent=2))
             return 0 if not failed else 1
         for row in staged:
-            ui.ok(f"{row['name']} · 승인 대기 — asgard memory project-approve {row['approval_id']}")
+            if row["lane"] == ingest.LANE_LOCAL:
+                ui.ok(f"{row['name']} · 저장소 정본 → {row['canonical_path']} (커밋하면 팀과 공유된다)")
+            else:
+                ui.ok(f"{row['name']} · 승인 대기 — asgard memory project-approve {row['approval_id']}")
         for row in failed:
             ui.fail(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
         return 0 if not failed else 1

@@ -56,6 +56,10 @@ class ProjectMemoryRecord:
     timeless: bool = False
     # 확정 엔티티 (이름, 타입) — 서버의 자동 추출과 합쳐진다. chunks 모드에서는 유일 출처다.
     entities: tuple[tuple[str, str], ...] = ()
+    # 선택 backend가 지원할 때만 전달되는 retain 힌트. Hindsight는 item별 strategy와
+    # observation scope를 받아 같은 프로젝트 안에서도 정적 문서와 관계형 기록을 다르게 다룬다.
+    strategy: str = ""
+    observation_scopes: str | tuple[tuple[str, ...], ...] | None = None
 
 
 @dataclasses.dataclass(frozen=True)
@@ -379,6 +383,11 @@ class HindsightBackend:
                 item["timestamp"] = "unset"
             if "entities" in allowed and record.entities:
                 item["entities"] = [{"text": name, "type": kind} for name, kind in record.entities]
+            if "strategy" in allowed and record.strategy:
+                item["strategy"] = record.strategy
+            if "observation_scopes" in allowed and record.observation_scopes is not None:
+                scopes = record.observation_scopes
+                item["observation_scopes"] = [list(scope) for scope in scopes] if isinstance(scopes, tuple) else scopes
             items.append(item)
         output = self._post("/memories", {"items": items, "async": False})
         success = output.get("success") is True
@@ -411,6 +420,43 @@ class HindsightBackend:
         text = output.get("text")
         if not isinstance(text, str):
             raise ValueError("project memory backend returned a malformed reflect response")
+        return output
+
+    def consolidate(self, tag_scopes: Sequence[Sequence[str]]) -> dict:
+        """선택 태그의 미통합 fact만 observation으로 올리는 비동기 작업을 예약한다."""
+        scopes = [[str(tag) for tag in scope] for scope in tag_scopes if scope]
+        if not scopes:
+            raise ValueError("project memory consolidation requires at least one non-empty tag scope")
+        output = self._post("/consolidate", {"observation_scopes": scopes})
+        if not isinstance(output.get("operation_id"), str):
+            raise ValueError("project memory backend returned a malformed consolidation result")
+        return output
+
+    def list_mental_models(self) -> list[dict]:
+        output = self._get("/mental-models?detail=full") or {}
+        items = output.get("items")
+        if not isinstance(items, list) or not all(isinstance(item, Mapping) for item in items):
+            raise ValueError("project memory backend returned malformed mental models")
+        return [dict(item) for item in items]
+
+    def create_mental_model(self, spec: Mapping[str, object]) -> dict:
+        output = self._post("/mental-models", spec)
+        if not isinstance(output.get("operation_id"), str):
+            raise ValueError("project memory backend returned a malformed mental-model result")
+        return output
+
+    def update_mental_model(self, model_id: str, spec: Mapping[str, object]) -> dict:
+        path = "/mental-models/" + urllib.parse.quote(model_id, safe="")
+        output = self._request("PATCH", path, spec)
+        if str(output.get("id") or "") != model_id:
+            raise ValueError("project memory backend returned a malformed mental-model update")
+        return output
+
+    def refresh_mental_model(self, model_id: str) -> dict:
+        path = "/mental-models/" + urllib.parse.quote(model_id, safe="") + "/refresh"
+        output = self._post(path, {})
+        if not isinstance(output.get("operation_id"), str):
+            raise ValueError("project memory backend returned a malformed mental-model refresh result")
         return output
 
     def read_binding(self) -> ProjectMemoryBinding | None:

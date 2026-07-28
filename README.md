@@ -310,6 +310,7 @@ asgard memory pattern             # learn observations about you from past turns
 asgard memory ask "<question>"    # answer from personal + episodic + project memory
 asgard memory provider --set ollama:gemma4:12b   # who curates personal memory
 asgard memory project-evolve      # stale, duplicate, contradictory project records
+asgard memory project-learn       # Hindsight observations + living project mental models
 ```
 
 `pattern` derives explicit and deductive observations from conversation turns, honcho-style.
