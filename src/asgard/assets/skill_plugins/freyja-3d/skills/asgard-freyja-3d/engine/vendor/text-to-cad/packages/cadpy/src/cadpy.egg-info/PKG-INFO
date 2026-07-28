@@ -1,7 +1,0 @@
-Metadata-Version: 2.4
-Name: cadpy
-Version: 0.3.9
-Summary: Shared STEP/GLB topology artifact generation runtime for CAD skills.
-Requires-Python: >=3.12
-Requires-Dist: build123d
-Requires-Dist: cadquery-ocp

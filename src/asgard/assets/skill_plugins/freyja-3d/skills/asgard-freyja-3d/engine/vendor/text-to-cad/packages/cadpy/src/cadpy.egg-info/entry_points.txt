@@ -1,2 +1,0 @@
-[console_scripts]
-cadpy-step-artifact = cadpy.step_artifact:main

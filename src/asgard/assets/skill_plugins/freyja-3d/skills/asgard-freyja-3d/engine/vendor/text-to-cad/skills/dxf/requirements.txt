@@ -1,2 +1,0 @@
---editable ../../packages/cadpy
-ezdxf
