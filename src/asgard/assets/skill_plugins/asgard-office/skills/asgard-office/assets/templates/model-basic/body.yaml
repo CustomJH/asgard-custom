@@ -1,0 +1,54 @@
+title: "{{title}}"
+author: "{{author}}"
+
+# Inputs, then logic, then output — on separate sheets, in that order.
+# Blue text on yellow marks a cell a human fills in; everything else is a formula.
+sheets:
+  - name: Assumptions
+    title: Assumptions
+    columns:
+      - {header: Item, width: 34}
+      - {header: Value, width: 14}
+      - {header: Source, width: 46}
+    rows:
+      - ["{{driver_label}}", {{driver_value}}, "{{driver_source}}"]
+    inputs: [B4]
+    notes:
+      B4: "{{driver_source}}"
+    legend: true
+
+  - name: Model
+    columns:
+      - {header: Period, width: 12}
+      - {header: Base, width: 16, format: "$#,##0"}
+      - {header: Driver effect, width: 16, format: "$#,##0"}
+      - {header: Total, width: 16, format: "$#,##0"}
+    rows:
+      - ["Q1", 0, 0, 0]
+      - ["Q2", 0, 0, 0]
+      - ["Q3", 0, 0, 0]
+      - ["Q4", 0, 0, 0]
+    cells:
+      C2: "=B2*Assumptions!$B$4"
+      C3: "=B3*Assumptions!$B$4"
+      C4: "=B4*Assumptions!$B$4"
+      C5: "=B5*Assumptions!$B$4"
+      D2: "=B2+C2"
+      D3: "=B3+C3"
+      D4: "=B4+C4"
+      D5: "=B5+C5"
+    freeze: A2
+
+  - name: Output
+    title: Summary
+    columns:
+      - {header: Metric, width: 30}
+      - {header: Value, width: 18, format: "$#,##0"}
+    rows:
+      - ["Base cost", 0]
+      - ["Driver effect", 0]
+      - ["Total", 0]
+    cells:
+      B4: "=SUM(Model!B2:B5)"
+      B5: "=SUM(Model!C2:C5)"
+      B6: "=SUM(Model!D2:D5)"

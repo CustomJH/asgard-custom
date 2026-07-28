@@ -1,0 +1,46 @@
+schema = 1
+name = "model-basic"
+kind = "xlsx"
+title = "Three-sheet model"
+description = "Assumptions, Model, Output on separate sheets — inputs marked blue on yellow, every derived cell a formula. The shape a reviewer expects before they read a single number."
+genre = "model"
+
+[theme]
+primary = "1E2761"
+surface = "F2F4F9"
+font_body = "Arial"
+
+[[fields]]
+key = "title"
+label = "Model title"
+type = "text"
+required = true
+example = "FY26 operating cost model"
+
+[[fields]]
+key = "author"
+label = "Author"
+type = "text"
+required = true
+example = "Operations"
+
+[[fields]]
+key = "driver_label"
+label = "The one assumption the model turns on"
+type = "text"
+required = true
+example = "Retry amplification"
+
+[[fields]]
+key = "driver_value"
+label = "Its value, as a fraction for a percentage"
+type = "number"
+required = true
+example = 0.32
+
+[[fields]]
+key = "driver_source"
+label = "Where that number came from"
+type = "text"
+required = true
+example = "H1 measured, batch-ingest logs"

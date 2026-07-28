@@ -1,0 +1,37 @@
+Asgard Office (Sága)
+Copyright (c) Asgard contributors. Released under the MIT licence.
+
+Original work. No third-party skill, prompt, or asset is vendored here.
+
+The problem space was surveyed before this was written — see
+skills/asgard-office/references/landscape.md for the full list, star counts, and
+the reasoning behind each choice. Two entries in that survey carry conditions
+worth restating:
+
+  * Anthropic's document skills (anthropics/skills, skills/{docx,pptx,xlsx,pdf})
+    are source-available, not open source. Their licence forbids reproduction,
+    derivative works, and redistribution. They were read to understand what the
+    problem demands and nothing was copied from them; every line here is
+    original work built on MIT- and Apache-licensed libraries. This is why the
+    lane is a clean-room implementation rather than a vendoring, and why it
+    differs in architecture (pure Python with no required system binaries, a
+    static gate that runs without a renderer, one placeholder grammar across all
+    three formats, a schema-checked template registry).
+
+  * python-docx-template (docxtpl, LGPL-2.1) established the convention of
+    Jinja-style placeholders and repeating table rows inside a .docx. That idea
+    is reimplemented here, not depended on, so the same grammar works
+    identically in .docx, .pptx, and .xlsx.
+
+Runtime dependencies, all permissively licensed and installed from PyPI rather
+than vendored:
+
+  python-docx   MIT        Word read/write
+  python-pptx   MIT        PowerPoint read/write
+  openpyxl      MIT        Excel read/write
+  pypdf         BSD-3      PDF read
+  PyYAML        MIT        spec front matter
+
+LibreOffice is used opportunistically for rendering and workbook recalculation
+when it is present on the machine. It is never bundled, never required, and its
+absence is reported rather than worked around.

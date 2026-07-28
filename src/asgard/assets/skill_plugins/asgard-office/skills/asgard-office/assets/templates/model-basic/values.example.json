@@ -1,0 +1,7 @@
+{
+  "title": "FY26 operating cost model",
+  "author": "Operations",
+  "driver_label": "Retry amplification",
+  "driver_value": 0.32,
+  "driver_source": "H1 measured, batch-ingest logs"
+}

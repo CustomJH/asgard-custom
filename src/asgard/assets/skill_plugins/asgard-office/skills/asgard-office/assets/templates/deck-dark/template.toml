@@ -1,0 +1,63 @@
+schema = 1
+name = "deck-dark"
+kind = "pptx"
+title = "Dark-open deck"
+description = "Dark title and section slides, light content — the sandwich structure. Every ink colour is contrast-corrected against its own ground at build time."
+genre = "deck"
+
+[theme]
+primary = "10151F"
+secondary = "1E2761"
+accent = "E8A33D"
+background = "FFFFFF"
+surface = "F2F4F9"
+text = "1F2933"
+muted = "5B6572"
+font_head = "Calibri"
+font_body = "Calibri"
+font_cjk = "맑은 고딕"
+
+[defaults]
+size = "16x9"
+
+[[fields]]
+key = "title"
+label = "Deck title"
+type = "text"
+required = true
+example = "H1 operations review"
+
+[[fields]]
+key = "subtitle"
+label = "One line stating the conclusion"
+type = "text"
+required = false
+example = "Availability and quality held; cost is the open axis"
+
+[[fields]]
+key = "author"
+label = "Presenter"
+type = "text"
+required = true
+example = "Operations"
+
+[[fields]]
+key = "company"
+label = "Organisation"
+type = "text"
+required = false
+example = "Nuriflex"
+
+[[fields]]
+key = "date"
+label = "Date"
+type = "date"
+required = true
+example = "2026-07-28"
+
+[[fields]]
+key = "footer"
+label = "Running footer"
+type = "text"
+required = false
+example = "H1 review"

@@ -1,0 +1,72 @@
+schema = 1
+name = "report-ko"
+kind = "docx"
+title = "한국어 업무 보고서"
+description = "표지·목차·번호 매긴 제목을 갖춘 한국어 보고서. CJK 서체가 지정되어 있어 Word 가 서체를 임의로 대체하지 않는다."
+genre = "report"
+language = "ko"
+
+[theme]
+primary = "1E2761"
+secondary = "52606D"
+accent = "9A3412"
+surface = "F5F7FA"
+muted = "6B7684"
+font_head = "Calibri"
+font_body = "Calibri"
+font_cjk = "맑은 고딕"
+size_body = 10.5
+line_spacing = 1.4
+
+[page]
+size = "a4"
+margins = { top = "25mm", bottom = "25mm", left = "22mm", right = "22mm" }
+
+[defaults]
+toc = true
+number_headings = true
+cover = true
+
+[[fields]]
+key = "title"
+label = "문서 제목"
+type = "text"
+required = true
+example = "2026 상반기 운영 보고"
+description = "표지와 머리글에 함께 쓰인다"
+
+[[fields]]
+key = "author"
+label = "작성 주체"
+type = "text"
+required = true
+example = "운영팀"
+
+[[fields]]
+key = "company"
+label = "기관·회사"
+type = "text"
+required = false
+example = "Nuriflex"
+
+[[fields]]
+key = "date"
+label = "작성일"
+type = "date"
+required = true
+example = "2026-07-28"
+
+[[fields]]
+key = "period"
+label = "보고 기간"
+type = "text"
+required = false
+example = "2026-01-01 ~ 2026-06-30"
+
+[[fields]]
+key = "classification"
+label = "보안 등급"
+type = "text"
+required = false
+example = "대외비"
+description = "바닥글에 쪽번호와 함께 표시된다"
