@@ -78,6 +78,33 @@ def _shared_memory_check(root: str) -> dict | None:
                 readiness = backend.readiness()
                 enabled = [name for name, supported in asdict(backend.capabilities()).items() if supported]
                 engine, project_id = backend.engine, backend.project_id
+                learning_detail = ""
+                learning_ok = True
+                if engine == "hindsight":
+                    from ..project_memory.learning import MODEL_SPECS, model_ready
+
+                    read_config = getattr(backend, "bank_config", None)
+                    list_models = getattr(backend, "list_mental_models", None)
+                    if callable(read_config) and callable(list_models):
+                        bank_config = read_config()
+                        models = {
+                            str(model.get("id") or ""): model for model in list_models() if isinstance(model, dict)
+                        }
+                        expected = {str(spec["id"]) for spec in MODEL_SPECS}
+                        ready_models = sum(model_ready(models.get(model_id, {})) for model_id in expected)
+                        learning_ok = (
+                            bank_config.get("enable_observations") is True
+                            and bank_config.get("enable_auto_consolidation") is False
+                            and ready_models == len(expected)
+                        )
+                        learning_detail = (
+                            f" · observations={'on' if bank_config.get('enable_observations') else 'off'}"
+                            f" · auto_consolidation={'on' if bank_config.get('enable_auto_consolidation') else 'scoped'}"
+                            f" · mental_models={ready_models}/{len(expected)}"
+                        )
+                    else:
+                        learning_ok = False
+                        learning_detail = " · learning surface unavailable"
             finally:
                 backend.close()
             # auto_retain off 는 유효한 선택이지만 무음이면 "2차 메모리에 안 쌓이는" 증상의
@@ -87,9 +114,10 @@ def _shared_memory_check(root: str) -> dict | None:
                 + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
                 + f" · auto_retain={'on' if mcfg.get('auto_retain_turns') else 'off'}"
                 + (f" · capabilities={','.join(enabled)}" if enabled else "")
+                + learning_detail
                 + (f" · {readiness.detail}" if readiness.detail else "")
             )
-            ok = readiness.status == "ready"
+            ok = readiness.status == "ready" and learning_ok
         except Exception as exc:
             detail = f"engine={mcfg.get('engine', 'hindsight')} · unavailable · {type(exc).__name__}: {exc}"
             ok = False
@@ -97,7 +125,7 @@ def _shared_memory_check(root: str) -> dict | None:
             "name": "shared memory backend",
             "ok": ok,
             "detail": detail,
-            "fix": "" if ok else "backend/plugin 설치·기동·인증 확인 또는 asgard memory connect 재설정",
+            "fix": ("" if ok else "backend 연결을 점검하고 Hindsight면 `asgard memory project-learn --apply` 실행"),
             "security": True,
         }
     except Exception as exc:
