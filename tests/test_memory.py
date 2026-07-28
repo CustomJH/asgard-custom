@@ -27,6 +27,13 @@ from asgard import memory, settings
 from asgard.cli import app
 
 
+def memory_semantic_env() -> str:
+    """시맨틱 모드 env 이름 — conftest 가 전 테스트를 off 로 밀폐하므로 되돌릴 때 쓴다."""
+    from asgard import memory_semantic as sem
+
+    return sem._ENV
+
+
 def _ingest_process(text: str, memory_dir: str, plan: dict, start, results) -> None:
     os.environ[memory.MEMORY_ENV] = memory_dir
     start.wait()
@@ -51,6 +58,12 @@ class MemoryBase(unittest.TestCase):
             else:
                 os.environ[k] = v
         shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _page(self, slug: str) -> tuple[dict, str]:
+        """방금 쓴 페이지를 되읽는다 — 없으면 그 자체가 결함이라 여기서 끊는다."""
+        page = memory._read(self.d, slug)
+        assert page is not None, f"page not found: {slug}"
+        return page
 
 
 class TestScaffoldAndAdd(MemoryBase):
@@ -1832,18 +1845,18 @@ class TestEventGrounding(MemoryBase):
         body = "어제 회의에서 릴리스를 미루기로 했다"
         slug, _ = memory.add(body)
 
-        meta, stored = memory._read(self.d, slug)
+        meta, stored = self._page(slug)
 
         self.assertEqual(meta["event"], (today - _dt.timedelta(days=1)).isoformat())
         self.assertEqual(stored.strip(), body)  # 본문은 한 글자도 안 고친다
 
     def test_a_fact_without_any_time_expression_carries_no_event(self):
         slug, _ = memory.add("커밋에 Co-Authored-By 푸터를 붙이지 않는다")
-        self.assertNotIn("event", memory._read(self.d, slug)[0])
+        self.assertNotIn("event", self._page(slug)[0])
 
     def test_version_and_port_numbers_are_not_mistaken_for_dates(self):
         slug, _ = memory.add("포트는 8080 이고 버전은 1.2.3 이다")
-        self.assertNotIn("event", memory._read(self.d, slug)[0])
+        self.assertNotIn("event", self._page(slug)[0])
 
 
 class TestFenceScrubber(unittest.TestCase):
@@ -1968,3 +1981,108 @@ class TestPassageRerank(MemoryBase):
         long_body = "\n".join(f"문장 {i} 환불 정책에 대한 긴 설명이 이어진다" for i in range(30))
 
         self.assertEqual(recall._rerank_order("환불", {"a": ({}, long_body)}, ["a"]), [])
+
+    def test_rerank_can_be_switched_off_for_a_session(self):
+        """어블레이션은 제품 스위치로 해야 남이 재현한다 — 벤치 전용 몽키패치는 재현이 아니다."""
+        from asgard.memory import recall
+
+        self.assertTrue(recall.rerank_enabled())  # 기본 ON
+        for value, expected in (("off", False), ("0", False), ("false", False), ("on", True), ("", True)):
+            with self.subTest(value=value):
+                if value:
+                    os.environ[recall._RERANK_ENV] = value
+                else:
+                    os.environ.pop(recall._RERANK_ENV, None)
+                self.addCleanup(os.environ.pop, recall._RERANK_ENV, None)
+                self.assertEqual(recall.rerank_enabled(), expected)
+
+    def test_switching_rerank_off_restores_the_pre_rerank_ranking(self):
+        """스위치가 실제로 2단계를 건너뛰는가 — 끄면 긴 페이지가 다시 묻힌다."""
+        from asgard.memory import recall
+
+        self._embedder()
+        filler = "\n".join(f"잡담 {i} 오늘 날씨가 좋고 점심을 먹었다는 이야기" for i in range(30))
+        memory.add(f"{filler}\n환불 정책은 7일 이내에만 가능하다는 규정\n{filler}", title="buried", d=self.d)
+        memory.add("\n".join(f"환불 절차 {i} 개요만 반복되는 문서" for i in range(30)), title="loud", d=self.d)
+
+        os.environ[recall._RERANK_ENV] = "off"
+        self.addCleanup(os.environ.pop, recall._RERANK_ENV, None)
+        off = [h["slug"] for h in memory.query("환불 정책은 며칠 이내인가", k=2, d=self.d, track=False)]
+        os.environ[recall._RERANK_ENV] = "on"
+        on = [h["slug"] for h in memory.query("환불 정책은 며칠 이내인가", k=2, d=self.d, track=False)]
+
+        self.assertEqual(sorted(off), sorted(on))  # 회수 범위는 그대로 — 2단계는 순위만 고친다
+        self.assertTrue(off and on)
+
+
+class TestColdStartUnderADeadline(MemoryBase):
+    """신규 설치의 첫 자동 회수 — 훅은 10초 상한 안에서 돈다.
+
+    그 안에서 임베딩 모델(수십 초)을 받기 시작하면 상한에 잘려 죽고, 다음 프롬프트도 같은
+    자리에서 다시 죽는다. 진전이 없는 채로 시맨틱이 영영 안 켜지고, 훅이 자식의 stderr 를
+    삼키므로 사용자는 그 사실조차 모른다. 그래서 상한 안에서는 **받지 않는다**.
+
+    이 묶음은 env 로 시맨틱을 켜지 않는다 — 그러면 conftest 의 밀폐가 풀려 테스트가 진짜
+    1GB 를 받는다. mode 와 model_cached 를 직접 물려 "켜져 있고 캐시는 없다"를 만든다."""
+
+    def setUp(self):
+        super().setUp()
+        from asgard import memory_semantic as sem
+
+        sem.reset()
+        self.addCleanup(sem.reset)
+        os.environ.pop(sem._DEADLINE_ENV, None)
+        self.addCleanup(os.environ.pop, sem._DEADLINE_ENV, None)
+        # 켜져 있으나 아직 못 받은 상태. _load_local 도 항상 막는다 — 테스트는 절대 안 받는다.
+        self.fake: dict[str, mock.MagicMock] = {}
+        for name, value in (("mode", "local"), ("model_cached", False), ("_load_local", None)):
+            patcher = mock.patch.object(sem, name, return_value=value)
+            self.fake[name] = patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_a_deadline_bound_process_never_starts_the_first_download(self):
+        from asgard import memory_semantic as sem
+
+        os.environ[sem._DEADLINE_ENV] = "1"
+        self.assertIsNone(sem.embedder())
+        self.fake["_load_local"].assert_not_called()  # 상한 안에서는 적재를 시작조차 하면 안 된다
+
+    def test_without_the_deadline_the_load_is_still_attempted(self):
+        """플래그가 원인임을 못 박는다 — 없으면 평시대로 적재를 시도한다 (warmup 복구 경로)."""
+        from asgard import memory_semantic as sem
+
+        self.assertFalse(sem.deadline_bound())
+        sem.embedder()
+        self.assertEqual(self.fake["_load_local"].call_count, 1)
+
+    def test_lexical_recall_survives_when_semantic_is_skipped(self):
+        from asgard import memory_semantic as sem
+
+        # 훅 프로세스는 처음부터 끝까지 상한 안이다 — 쓰기(색인)도 그 안에서 일어난다.
+        os.environ[sem._DEADLINE_ENV] = "1"
+        memory.add("오딘은 금요일에는 배포를 하지 않는다", title="배포 습관", kind="user", d=self.d)
+        hits = memory.query("금요일 배포", k=3, d=self.d, track=False)
+
+        self.assertTrue(hits, "시맨틱이 빠져도 어휘 회수는 살아야 한다")
+        self.assertEqual(hits[0]["title"], "배포 습관")
+        self.fake["_load_local"].assert_not_called()
+
+    def test_the_user_is_told_once_that_semantic_is_not_ready(self):
+        from asgard.commands import memory as memcmd
+
+        memory.ensure_home(self.d)
+        first = memcmd._semantic_nudge_line(self.d)
+        second = memcmd._semantic_nudge_line(self.d)
+
+        self.assertIn("warmup", first)
+        self.assertEqual(second, "", "같은 말을 매 턴 되풀이하지 않는다")
+
+    def test_no_nudge_when_the_model_is_ready_or_semantic_is_off(self):
+        from asgard.commands import memory as memcmd
+
+        memory.ensure_home(self.d)
+        self.fake["model_cached"].return_value = True
+        self.assertEqual(memcmd._semantic_nudge_line(self.d), "")
+        self.fake["model_cached"].return_value = False
+        self.fake["mode"].return_value = "off"
+        self.assertEqual(memcmd._semantic_nudge_line(self.d), "")

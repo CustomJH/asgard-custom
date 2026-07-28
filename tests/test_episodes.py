@@ -165,6 +165,71 @@ class TestEpisodeNote(Base):
         self.assertNotIn("ignore all previous", note)
 
 
+class TestExternalClientLane(Base):
+    """외부 클라이언트(Claude/Codex/Cursor)도 에피소드를 쌓고 되찾는다 — 26-07-28 결함 수리.
+
+    이전에는 Stop 훅이 프로젝트 sync-turn 만 불러서, 네이티브 Heimdall 만 개인 원문을
+    적재했다. 쓰기(run_sync_turn)와 읽기(recall_note include_episodes)가 짝을 이뤄야
+    "어떤 클라이언트에서도 사용자를 배운다"가 성립한다."""
+
+    def _sync_turn(self, payload: dict) -> dict:
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            result = CliRunner().invoke(
+                app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload)
+            )
+        finally:
+            os.chdir(cwd)
+        self.assertEqual(result.exit_code, 0, result.stdout or str(result.exception))
+        return json.loads(result.stdout)
+
+    def test_turn_is_stored_even_without_a_project_backend(self):
+        out = self._sync_turn(
+            {
+                "session_id": "cc-1",
+                "turn_id": "t1",
+                "user_text": "vLLM 게이트웨이 주소가 뭐였지",
+                "assistant_text": "gpu2 wams-summary 로 연결한다",
+            }
+        )
+        self.assertEqual(out["status"], "skipped")  # 프로젝트 메모리는 여전히 미연결
+        hits = episodes.search(self.root, "vLLM 게이트웨이")
+        self.assertTrue(hits, "프로젝트 미연결 저장소에서 개인 에피소드가 적재되지 않았다")
+        self.assertEqual(hits[0]["sid"], "cc-1")
+
+    def test_quest_attribution_travels_with_the_turn(self):
+        self._sync_turn(
+            {
+                "session_id": "cc-2",
+                "user_text": "인덱스 캐시를 고쳐줘",
+                "assistant_text": "캐시 무효화를 수정했다",
+                "quest_id": "quest-42",
+            }
+        )
+        turns = episodes.turns_for_quest(self.root, "quest-42")
+        self.assertEqual(len(turns), 1)
+        self.assertIn("캐시", turns[0]["response"])
+
+    def test_empty_turn_is_not_stored(self):
+        self._sync_turn({"session_id": "cc-3", "user_text": "", "assistant_text": "무언가"})
+        self.assertEqual(episodes.stats(self.root)["turns"], 0)
+
+    def test_hook_recall_surface_carries_the_episode_block(self):
+        from asgard import memory_context
+
+        for i in range(6):  # _EXCLUDE_TAIL 을 넘겨야 과거로 인정된다
+            turn_store.append_turn(self.root, f"질문 {i} 인덱스 캐시", f"답 {i} 캐시 무효화 규칙")
+        note = memory_context.recall_note("인덱스 캐시", start=self.root, include_episodes=True)
+        self.assertIn("<episode-recall", note)
+        plain = memory_context.recall_note("인덱스 캐시", start=self.root)
+        self.assertNotIn("<episode-recall", plain)  # 기본은 꺼짐 — 네이티브 이중 주입 방지
+
+
 class TestCompaction(unittest.TestCase):
     def test_under_budget_untouched(self):
         self.assertEqual(episodes.compact_text("짧다", 500), "짧다")

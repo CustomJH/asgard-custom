@@ -172,6 +172,18 @@ def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int, str
     return None
 
 
+_DEADLINE_ENV = "ASGARD_MEMORY_NO_DOWNLOAD"
+
+
+def deadline_bound() -> bool:
+    """이 프로세스가 남의 시간 상한 안에서 도는가 — 훅이 자식에게 켜 준다.
+
+    켜져 있으면 첫 내려받기를 **시작하지 않는다**. 시작해 봐야 상한에 잘려 죽고, 죽으면서
+    다음 호출도 같은 자리에서 다시 죽기 때문이다 (진전이 없다). 시맨틱만 빠지고 어휘·그래프
+    스트림은 그대로 도므로 회수는 나빠질 뿐 멈추지 않는다."""
+    return bool((os.environ.get(_DEADLINE_ENV) or "").strip())
+
+
 def embedder() -> Callable[[str], list[float]] | None:
     """활성 임베더 콜러블 또는 None. 결과를 캐시한다 (무거운 모델 재로드 방지)."""
     if _OVERRIDE is not None:
@@ -180,6 +192,10 @@ def embedder() -> Callable[[str], list[float]] | None:
         return None
     if _CACHE["loaded"]:
         return _CACHE["fn"]
+    if deadline_bound() and not model_cached():
+        # 시간 상한 안에서는 35초짜리 첫 내려받기를 열지 않는다. 준비는 warmup 이 한다.
+        _CACHE["loaded"], _CACHE["fn"], _CACHE["dim"] = True, None, 0
+        return None
     _CACHE["loaded"] = True
     # 처음 한 번은 모델을 받느라 수십 초가 걸린다. 그 침묵이 "멈춘 것"으로 보이므로 한 줄 알린다 —
     # 프로세스당 한 번, stderr 로만 (산출을 파이프로 받는 소비자를 오염시키지 않는다).

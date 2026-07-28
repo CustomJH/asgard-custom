@@ -147,12 +147,27 @@ def _completion_context(root: str, session_id: str) -> dict:
             )
         except Exception:
             continue
-        matches.append((os.path.getmtime(os.path.join(quest_dir, name)), summary, verified))
+        matches.append((os.path.getmtime(os.path.join(quest_dir, name)), qid, summary, verified))
     if not matches:
-        return {"verified": False, "changed_files": [], "evidence": []}
-    _, summary, verified = max(matches, key=lambda row: row[0])
+        return {"verified": False, "changed_files": [], "evidence": [], "quest_id": _active_quest(root)}
+    _, qid, summary, verified = max(matches, key=lambda row: row[0])
     changed = sorted(str(path) for path in (summary.get("changed_files") or []) if str(path))
-    return {"verified": True, "changed_files": changed, "evidence": verified.get("commands") or []}
+    return {
+        "verified": True,
+        "changed_files": changed,
+        "evidence": verified.get("commands") or [],
+        "quest_id": qid,
+    }
+
+
+def _active_quest(root: str) -> str:
+    """완료 사건이 없을 때의 귀속 좌표 — 에피소드 계층은 미완 퀘스트의 턴도 찾을 수 있어야 한다."""
+    try:
+        from asgard.hooks.quest_log import active_quest
+
+        return str(active_quest(root) or "")
+    except Exception:
+        return ""
 
 
 def main():
@@ -171,6 +186,11 @@ def main():
         exe = shutil.which("asgard")
         if not exe:
             sys.exit(0)  # asgard CLI 부재 = 메모리 기능 없음 — 조용히 통과
+        # 이 훅의 자식들은 전부 10초 상한 안에서 돈다. 신규 설치의 첫 회수가 그 안에서 임베딩
+        # 모델(수십 초)을 받기 시작하면 상한에 잘려 죽고, 다음 프롬프트도 같은 자리에서 다시
+        # 죽는다 — 진전이 없는 채로 시맨틱이 영영 안 켜진다. 그래서 자식에게 "받지 마라"를
+        # 알린다: 시맨틱만 빠지고 어휘·그래프 회수는 그대로 돈다. 준비는 warmup 이 맡는다.
+        os.environ["ASGARD_MEMORY_NO_DOWNLOAD"] = "1"
         if event == "Stop":
             user, assistant = _latest_turn(data)
             if not user or not assistant:
@@ -258,6 +278,23 @@ def main():
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
                 pass  # 패턴 넛지 불능도 Stop 을 막지 않는다
+            # 시맨틱 준비 넛지 — 이 훅은 자식의 stderr 를 삼키므로 "준비 중" 알림이 사용자에게
+            # 닿지 않는다. 여기가 사람에게 보이는 유일한 통로다 (한 번만 — latch 는 CLI 소유).
+            try:
+                n = subprocess.run(
+                    [exe, "memory", "semantic", "nudge"],
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    cwd=root,
+                    encoding="utf-8",
+                    errors="replace",
+                )
+                nudge = (n.stdout or "").strip()
+                if n.returncode == 0 and nudge:
+                    messages.append("⠶ " + nudge.splitlines()[0])
+            except Exception:
+                pass  # 준비 넛지 불능도 Stop 을 막지 않는다
             if messages:
                 key = "followup_message" if mode == "cursor" else "systemMessage"
                 sys.stdout.write(json.dumps({key: "\n\n".join(messages)}, ensure_ascii=False) + "\n")
