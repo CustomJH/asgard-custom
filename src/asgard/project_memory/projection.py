@@ -79,6 +79,8 @@ def artifact_item(
         "context": f"asgard project artifact {candidate.kind}",
         "document_id": f"asgard:artifact:{path_hash}",
         "update_mode": "replace",
+        "strategy": "document",
+        "timestamp": "unset",
         "tags": [f"project:{project_id}", "artifact", f"kind:{candidate.kind}", f"importance:{candidate.importance}"],
         "metadata": {
             "source": candidate.path,

@@ -496,14 +496,23 @@ def run_ingest_document(root: str, tool_input: dict) -> str:
     if not ready:
         detail = "; ".join(f"{os.path.basename(r['path'])}: {r['error']}" for r in failed) or "읽을 문서가 없습니다"
         raise ToolError(detail)
-    ingest.ensure_strategies(cfg)
+    if any(d.lane == ingest.LANE_GRAPH for d in ready):
+        ingest.ensure_strategies(cfg)
     staged = ingest.stage_documents(project_root, cfg, ready)
-    lines = [f"{len(staged)}건을 승인 대기로 올렸습니다 (승인 전에는 공유 메모리에 들어가지 않습니다)."]
+    lines = [f"{len(staged)}건을 처리했습니다 (승인 전에는 공유 메모리에 들어가지 않습니다)."]
     for row in staged:
-        lines.append(
+        head = (
             f"- {row['name']} · {row['kind']} · 전략 {row['strategy']} · {row['chars']:,}자 · "
-            f"엔티티 {row['entities']}\n  승인: asgard memory project-approve {row['approval_id']}"
+            f"엔티티 {row['entities']} · 레인 {row['lane']}"
         )
+        if row["lane"] == ingest.LANE_LOCAL:
+            # 그래프에 넣으면 뱅크가 죽는 크기 — 저장소 정본 + 로컬 인덱스로 보냈다.
+            lines.append(
+                f"{head}\n  저장소 정본: {row['canonical_path']} "
+                f"(예측 unit {row['graph_units']} > 상한 {ingest.GRAPH_UNIT_CEILING} — 커밋하면 팀과 공유)"
+            )
+        else:
+            lines.append(f"{head}\n  승인 대기 — asgard memory project-approve {row['approval_id']}")
     for row in failed:
         lines.append(f"- (읽지 못함) {os.path.basename(row['path'])} — {row['error']}")
     return "\n".join(lines)

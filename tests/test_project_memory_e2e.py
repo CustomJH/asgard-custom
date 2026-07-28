@@ -26,15 +26,34 @@ from asgard.project_memory import evolve as evolve_mod
 from asgard.project_memory import reflect as reflect_mod
 from asgard.project_memory.canonical import save_canonical_record
 from asgard.project_memory.records import ProjectRecord
-from asgard.project_memory_backends import get_backend
+from asgard.project_memory_backends import HindsightBackend, get_backend
+
+
+def hindsight_backend(cfg: dict) -> HindsightBackend:
+    """스키마 판독은 Hindsight 고유 계약이라 프로토콜 타입으로는 부를 수 없다.
+    구현체를 실제로 받았는지 확인하고 넘긴다 — 못 받았으면 그 자체가 결함이다."""
+    backend = get_backend(cfg)
+    assert isinstance(backend, HindsightBackend), f"expected HindsightBackend, got {type(backend).__name__}"
+    return backend
+
+
+class FakeServer(ThreadingHTTPServer):
+    """가짜 Hindsight 의 상태를 들고 있는 서버 — 핸들러는 요청마다 새로 만들어지므로
+    뱅크·호출 기록은 서버가 소유해야 한다. 그 소유 관계를 타입으로도 적어 둔다."""
+
+    documents: dict[str, dict]
+    openapi: dict
+    retain_calls: list
+    llm_enabled: bool
 
 
 class FakeHindsight(BaseHTTPRequestHandler):
     """뱅크 하나를 메모리에 들고 있는 최소 Hindsight. 상태는 서버 인스턴스가 소유한다."""
 
     protocol_version = "HTTP/1.1"
+    server: FakeServer  # 위 소유 관계 — 좁히지 않으면 상태 접근이 전부 미지의 속성이 된다
 
-    def log_message(self, *args):  # pragma: no cover - 테스트 출력 오염 방지
+    def log_message(self, format: str, *args: object) -> None:  # pragma: no cover - 테스트 출력 오염 방지
         return
 
     def _send(self, code: int, payload: object) -> None:
@@ -104,7 +123,7 @@ class ProjectMemoryE2EBase(unittest.TestCase):
         self.root = os.path.join(self.tmp, "project")
         os.makedirs(self.root, exist_ok=True)
         subprocess.run(["git", "init", "-q", self.root], check=True)
-        self.server = ThreadingHTTPServer(("127.0.0.1", 0), FakeHindsight)
+        self.server = FakeServer(("127.0.0.1", 0), FakeHindsight)
         self.server.documents = {}
         self.server.llm_enabled = True
         self.server.retain_calls = []
@@ -123,6 +142,9 @@ class ProjectMemoryE2EBase(unittest.TestCase):
                             "tags": {},
                             "metadata": {},
                             "timestamp": {},
+                            "entities": {},
+                            "strategy": {},
+                            "observation_scopes": {},
                         },
                     }
                 }
@@ -181,9 +203,9 @@ class RecordAndRecallTest(ProjectMemoryE2EBase):
             self.assertEqual(backend.readiness().status, "ready")
             self.assertIsNone(backend.read_binding())
             marker = ProjectMemoryBinding(
-                project_uid=self.cfg["project_uid"],
-                binding_id=self.cfg["binding_id"],
-                project_id=self.cfg["project_id"],
+                project_uid=str(self.cfg["project_uid"]),
+                binding_id=str(self.cfg["binding_id"]),
+                project_id=str(self.cfg["project_id"]),
             )
             self.assertTrue(backend.write_binding(marker).success)
             self.assertEqual(backend.read_binding(), marker)
@@ -463,8 +485,8 @@ class InventoryCoverageTest(ProjectMemoryE2EBase):
             by_path["src/widget_helper.py"],
             "e2e-bank",
             "rev-1",
-            project_uid=self.cfg["project_uid"],
-            binding_id=self.cfg["binding_id"],
+            project_uid=str(self.cfg["project_uid"]),
+            binding_id=str(self.cfg["binding_id"]),
         )
         self.assertTrue(
             _eligible_for_automatic_context(self.root, dict(item["metadata"]), self.cfg),
@@ -481,7 +503,7 @@ class RetainCapabilityTest(ProjectMemoryE2EBase):
     26-07-28 조사: Hindsight 문서 두 곳이 어긋난다(SDK 쪽은 entities·observation_scopes 를
     retain 인자로 적고 HTTP 레퍼런스는 없다고 한다). 버전을 추측하는 대신 스키마를 읽는다."""
 
-    def _record(self, *, timeless: bool):
+    def _payload(self, *, timeless: bool):
         from asgard.project_memory_backends import ProjectMemoryRecord
 
         return ProjectMemoryRecord(
@@ -494,7 +516,7 @@ class RetainCapabilityTest(ProjectMemoryE2EBase):
         )
 
     def test_schema_is_read_from_the_server(self):
-        backend = get_backend(self.cfg)
+        backend = hindsight_backend(self.cfg)
         try:
             self.assertIn("timestamp", backend.retain_fields())
             self.assertIn("content", backend.retain_fields())
@@ -504,7 +526,7 @@ class RetainCapabilityTest(ProjectMemoryE2EBase):
     def test_timeless_artifact_is_sent_as_unset_when_supported(self):
         backend = get_backend(self.cfg)
         try:
-            self.assertTrue(backend.retain([self._record(timeless=True)]).success)
+            self.assertTrue(backend.retain([self._payload(timeless=True)]).success)
         finally:
             backend.close()
         item = self.server.retain_calls[-1]["items"][0]
@@ -513,25 +535,58 @@ class RetainCapabilityTest(ProjectMemoryE2EBase):
     def test_conversation_turn_keeps_its_real_time(self):
         backend = get_backend(self.cfg)
         try:
-            backend.retain([self._record(timeless=False)])
+            backend.retain([self._payload(timeless=False)])
         finally:
             backend.close()
         self.assertNotIn("timestamp", self.server.retain_calls[-1]["items"][0])
 
+    def test_bridge_preserves_hindsight_learning_fields_end_to_end(self):
+        from asgard import memory_bridge
+
+        item = {
+            "content": "[ProjectRecord:decision]\nRecord: decision.memory\n\nHindsight를 프로젝트 기억으로 쓴다.",
+            "context": "asgard project decision",
+            "document_id": "asgard:record:decision-memory",
+            "update_mode": "replace",
+            "strategy": "record",
+            "timestamp": "unset",
+            "observation_scopes": "shared",
+            "entities": [{"text": "Hindsight", "type": "SYSTEM"}],
+            "tags": ["project:e2e-bank", "kind:decision"],
+            "metadata": {
+                "scope": "project",
+                "kind": "decision",
+                "project_uid": self.cfg["project_uid"],
+                "binding_id": self.cfg["binding_id"],
+            },
+        }
+        with (
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch("asgard.memory_bridge.verify_backend_binding"),
+        ):
+            result = memory_bridge.server_retain_items(self.cfg, [item])
+
+        self.assertTrue(result["success"])
+        sent = self.server.retain_calls[-1]["items"][0]
+        self.assertEqual(sent["strategy"], "record")
+        self.assertEqual(sent["timestamp"], "unset")
+        self.assertEqual(sent["observation_scopes"], "shared")
+        self.assertEqual(sent["entities"], [{"text": "Hindsight", "type": "SYSTEM"}])
+
     def test_unknown_field_is_not_sent_to_an_older_server(self):
         # timestamp 를 모르는 서버 — 스키마에 없으면 보내지 않는다 (400 을 만들지 않는다)
         self.server.openapi["components"]["schemas"]["RetainItem"]["properties"].pop("timestamp")
-        backend = get_backend(self.cfg)
+        backend = hindsight_backend(self.cfg)
         try:
             self.assertNotIn("timestamp", backend.retain_fields())
-            backend.retain([self._record(timeless=True)])
+            backend.retain([self._payload(timeless=True)])
         finally:
             backend.close()
         self.assertNotIn("timestamp", self.server.retain_calls[-1]["items"][0])
 
     def test_unreadable_schema_falls_back_to_base_fields(self):
         self.server.openapi = {"openapi": "3.1.0"}  # components 없음
-        backend = get_backend(self.cfg)
+        backend = hindsight_backend(self.cfg)
         try:
             fields = backend.retain_fields()
         finally:

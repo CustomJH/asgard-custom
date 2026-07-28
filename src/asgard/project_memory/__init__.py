@@ -10,6 +10,11 @@ Asgard 메모리는 개인(로컬)과 프로젝트(선택 backend) 두 종류뿐
   scan       — 아티팩트 채굴: Git/worktree 스캔·구조 fingerprint·중요도 평가
   projection — manifest·kernel lock·plan/plan-id·backend sync
   retain     — turn retain·완료 제안 (stage/approve 승인 흐름 진입점)
+  ingest     — 던져진 문서의 추출·판정·레인 배정 (`project_memory.ingest`)
+  documents  — 그래프가 감당 못 하는 큰 문서의 로컬 레인 (`project_memory.documents`)
+
+레인이 둘인 것은 backend 가 둘이라는 뜻이 아니다 — 정본은 여전히 Git 하나이고, 갈리는
+것은 회수 경로다 (documents 독스트링의 실측 근거 참고).
 """
 
 from ..memory import scan_threats

@@ -117,7 +117,10 @@ class TestRegistrationPolicy(ProjectMemoryBase):
         self.assertEqual(item["update_mode"], "replace")
         self.assertEqual(item["context"], "asgard project decision")
         self.assertIn("project:asgard", item["tags"])
+        self.assertIn("record", item["tags"])
         self.assertIn("kind:decision", item["tags"])
+        self.assertEqual(item["strategy"], "record")
+        self.assertEqual(item["observation_scopes"], "shared")
         self.assertEqual(item["metadata"]["source"], "README.md")
         self.assertEqual(item["metadata"]["source_revision"], "abc1234")
         self.assertIn("supersedes: decision-cognee-proposal", item["content"])
@@ -177,11 +180,20 @@ class TestCanonicalProjectRecords(ProjectMemoryBase):
                 project_memory.commit_approved_record(self.root, cfg, aid)
 
         self.assertEqual(len(project_memory.load_canonical_records(self.root)), 1)
-        with mock.patch(
-            "asgard.project_memory.canonical.server_retain_items", return_value={"success": True, "items_count": 1}
+        with (
+            mock.patch(
+                "asgard.project_memory.canonical.server_retain_items",
+                return_value={"success": True, "items_count": 1},
+            ),
+            mock.patch(
+                "asgard.project_memory.canonical.server_consolidate",
+                return_value={"operation_id": "learn-1"},
+            ) as consolidate,
         ):
             result = project_memory.commit_approved_record(self.root, cfg, aid)
         self.assertEqual(result["canonical_path"].split(os.sep)[:3], [".asgard", "memory", "records"])
+        self.assertEqual(result["learning"]["operation_id"], "learn-1")
+        consolidate.assert_called_once_with(cfg, [["record"]])
 
     def test_rehydrate_plan_is_bound_to_current_target(self):
         project_memory.save_canonical_record(self.root, self.record())

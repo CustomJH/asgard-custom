@@ -69,6 +69,10 @@ _GITIGNORE_BLOCK = (
     ".asgard/memory/*\n"
     "!.asgard/memory/records/\n"
     "!.asgard/memory/records/**\n"
+    # 로컬 레인 문서 정본 — 팀에는 뱅크가 아니라 저장소가 나른다 (project_memory.documents).
+    # 파생 인덱스(documents.db)는 `.asgard/memory/*` 가 그대로 무시한다 — 되살릴 수 있는 것은 안 나른다.
+    "!.asgard/memory/documents/\n"
+    "!.asgard/memory/documents/**\n"
     "!.asgard/memory/binding.json\n"
     "!.asgard/.gitignore\n"
     "!.asgard/asgard-setting-project.json\n"
@@ -83,7 +87,8 @@ _GITIGNORE_BLOCK = (
 # state/·quest/ 등 런타임은 "*" 가 전부 무시한다.
 _ASGARD_GITIGNORE = (
     "*\n!.gitignore\n!map/\n!map/**\n"
-    "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n!memory/binding.json\n"
+    "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
+    "!memory/documents/\n!memory/documents/**\n!memory/binding.json\n"
     "!asgard-setting-project.json\n"
 )
 

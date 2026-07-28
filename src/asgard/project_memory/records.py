@@ -183,8 +183,13 @@ def record_item(
         "context": f"asgard project {record.kind}",
         "document_id": f"asgard:record:{stable_record}",
         "update_mode": "replace",
+        "strategy": "record",
+        # session·kind·importance 태그는 provenance/filter 용이다. 관찰을 그 조합마다 갈라 놓으면
+        # 같은 프로젝트 결정이 중복 학습되므로 프로젝트 뱅크 전체의 한 observation 층으로 모은다.
+        "observation_scopes": "shared",
         "tags": [
             f"project:{project}",
+            "record",
             f"kind:{record.kind}",
             f"importance:{record.importance}",
             f"status:{record.status}",

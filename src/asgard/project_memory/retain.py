@@ -65,6 +65,10 @@ def retain_turn(
         "context": "asgard project conversation turn",
         "document_id": document_id,
         "update_mode": "replace",
+        "strategy": "record",
+        # session/mode 태그는 추적용일 뿐 학습 경계가 아니다. 프로젝트 전반의 반복 결정과
+        # 교정을 한 observation으로 축적해야 Hindsight가 세션을 넘어 배운다.
+        "observation_scopes": "shared",
         "tags": [f"project:{project}", "kind:turn", f"mode:{clean_mode}"],
         "metadata": {
             "scope": "project",

@@ -248,8 +248,10 @@ class ToolSurfaceTest(unittest.TestCase):
                         "name": "요구사항.md",
                         "kind": "specification",
                         "strategy": "document",
+                        "lane": ingest.LANE_GRAPH,
                         "entities": 2,
                         "chars": 500,
+                        "graph_units": 1,
                         "document_id": "asgard:doc:x",
                         "approval_id": "abc123",
                     }

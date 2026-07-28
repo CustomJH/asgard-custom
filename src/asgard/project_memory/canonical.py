@@ -13,7 +13,7 @@ from typing import Any, cast
 
 import yaml
 
-from ..memory_bridge import backend_target, claim_retain, finish_retain, server_retain_items
+from ..memory_bridge import backend_target, claim_retain, finish_retain, server_consolidate, server_retain_items
 from .records import ProjectRecord, record_item, validate_record
 
 RECORD_SCHEMA = "asgard-project-memory-v1"
@@ -243,9 +243,18 @@ def commit_approved_record(root: str, cfg: dict, approval_id: str) -> dict:
             ) from exc
         raise
     finish_retain(root, approval_id, token, success=True)
+    learning: dict = {}
+    if raw_record is not None:
+        # 정본·backend 저장 성공이 먼저다. observation 예약은 파생 학습층이라 실패해도 승인된
+        # 기록을 실패로 되돌리지 않는다 — 다음 project-learn 패스가 미통합 record를 다시 줍는다.
+        try:
+            learning = server_consolidate(cfg, [["record"]])
+        except Exception as exc:
+            learning = {"status": "pending", "error": type(exc).__name__}
     return {
         **result,
         "canonical_path": os.path.relpath(canonical_path, os.path.realpath(root)) if canonical_path else "",
+        "learning": learning,
     }
 
 

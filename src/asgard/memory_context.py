@@ -390,6 +390,33 @@ def learned_skills_note(query: str, *, start: str | None = None, cap: int = LEAR
         return ""  # 스킬 힌트 불능이 회수를 막지 않는다 (fail-open)
 
 
+def project_document_note(query: str, *, start: str | None = None) -> str:
+    """로컬 레인 문서 구간 — 그래프가 감당 못 해 저장소 정본으로 내려온 큰 문서들.
+
+    프로젝트 backend 연결과 무관하게 돈다: 정본이 저장소에 있고 인덱스가 로컬이라
+    서버가 죽어 있어도, 오프라인에서도 회수된다 (project_memory.documents 참고)."""
+    try:
+        from .project_memory import documents
+
+        root = start or os.getcwd()
+        found = find_config(root)
+        return documents.note(query, found[0] if found else os.path.realpath(root))
+    except Exception:
+        return ""  # fail-open — 문서 레인 불능이 회수를 막지 않는다
+
+
+def episode_recall_note(query: str, *, start: str | None = None) -> str:
+    """과거 세션 원문의 관련 구간 — 승격 메모리가 못 덮는 층 (비권위, fail-open).
+
+    네이티브 루프는 heimdall 이 직접 붙이므로 여기서는 외부 클라이언트 표면만 쓴다."""
+    try:
+        from .agent.episodes import episode_note
+
+        return episode_note(query, os.path.realpath(start or os.getcwd()))
+    except Exception:
+        return ""  # 에피소드 불능이 회수를 막지 않는다
+
+
 def recall_note(
     query: str,
     *,
@@ -397,12 +424,17 @@ def recall_note(
     personal_k: int = 3,
     project_k: int = 5,
     include_skills: bool = False,
+    include_episodes: bool = False,
 ) -> str:
     """한 질의로 두 메모리를 조회하되 결과 scope를 절대 섞지 않는다.
 
     include_skills 는 CC 훅 표면(run_recall)만 켠다 — 네이티브 루프는 디스패치 라우팅이
-    스킬 본문을 직접 주입하므로 여기서 또 흘리면 이중 주입이 된다."""
+    스킬 본문을 직접 주입하므로 여기서 또 흘리면 이중 주입이 된다.
+    include_episodes 도 같은 이유로 훅 표면만 켠다 — 네이티브는 heimdall 이 직접 붙인다."""
     personal = memory.recall_note(query, k=personal_k)
     project = project_recall_note(query, start=start, max_results=project_k)
+    # 로컬 레인은 backend 연결과 무관하게 항상 조회한다 — 정본이 저장소에 있기 때문이다.
+    document = project_document_note(query, start=start)
     skills = learned_skills_note(query, start=start) if include_skills else ""
-    return personal + project + skills
+    episodes = episode_recall_note(query, start=start) if include_episodes else ""
+    return personal + project + document + skills + episodes
