@@ -392,3 +392,61 @@ class TestHindsightReflect(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNornLinkOp(NornBase):
+    """link — 기존 페이지 둘을 잇는 연산. 그래프가 스스로 촘촘해지는 유일한 통로다."""
+
+    def _pages(self):
+        import math
+
+        from asgard import memory_semantic as sem
+
+        vec = {"릴리스": [1.0, 0.0, 0.0], "배포": [0.5, math.sqrt(3) / 2, 0.0], "점심": [0.0, 0.0, 1.0]}
+        sem.set_embedder(lambda t: next((v for k, v in vec.items() if k in t), [0.0, 1.0, 0.0]))
+        self.addCleanup(sem.set_embedder, None)
+        a, _ = memory.add("릴리스 전에 태그를 먼저 찍는다", title="릴리스 태그 규칙", kind="reference", d=self.d)
+        b, _ = memory.add("배포 승인은 두 사람이 확인한다", title="배포 승인 절차", kind="decision", d=self.d)
+        c, _ = memory.add("점심은 김치찌개를 먹는다", title="점심 취향", kind="user", d=self.d)
+        return a, b, c
+
+    def test_a_related_pair_is_linked_on_both_sides(self):
+        a, b, _ = self._pages()
+
+        accepted, _ = norn.validate_ops([{"op": "link", "a": a, "b": b, "why": "릴리스 절차의 앞뒤"}], self.d)
+        norn.apply_norn(self.d, {"ops": accepted})
+
+        self.assertEqual(accepted[0]["scale"], "semantic")
+        self.assertIn(b, memory._read(self.d, a)[0]["links"])
+        self.assertIn(a, memory._read(self.d, b)[0]["links"])  # 한쪽만 적으면 관계가 반쪽으로 읽힌다
+
+    def test_an_unrelated_pair_is_refused_however_confident_the_why(self):
+        a, _, c = self._pages()
+
+        accepted, dropped = norn.validate_ops(
+            [{"op": "link", "a": a, "b": c, "why": "둘 다 오딘에 관한 것이라 깊이 연결된다"}], self.d
+        )
+
+        self.assertEqual(accepted, [])
+        self.assertIn("floor", dropped[0]["reason"])
+
+    def test_link_cannot_be_used_to_dodge_a_merge(self):
+        a, _ = memory.add("릴리스 전에 태그를 먼저 찍는다", title="태그 규칙", kind="reference", d=self.d)
+        b, _ = memory.add(
+            "릴리스 전에 태그를 먼저 찍는다고 정했다", title="태그 규칙 재확인", kind="reference", d=self.d
+        )
+
+        accepted, dropped = norn.validate_ops([{"op": "link", "a": a, "b": b, "why": "관련 있다"}], self.d)
+
+        self.assertEqual(accepted, [])
+        self.assertIn("propose merge", dropped[0]["reason"])
+
+    def test_the_link_makes_a_page_reachable_that_neither_text_stream_finds(self):
+        a, b, _ = self._pages()
+        accepted, _ = norn.validate_ops([{"op": "link", "a": a, "b": b, "why": "릴리스 절차의 앞뒤"}], self.d)
+        norn.apply_norn(self.d, {"ops": accepted})
+
+        hits = {h["slug"]: h["streams"] for h in memory.query("두 사람 확인", k=5, d=self.d, explain=True)}
+
+        self.assertIn(a, hits)  # 어휘로도 시맨틱으로도 안 걸리는 페이지가
+        self.assertTrue(hits[a]["graph"])  # 오직 그래프로 딸려온다

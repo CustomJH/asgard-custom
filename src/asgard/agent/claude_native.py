@@ -353,7 +353,7 @@ async def _run_async(sess, user_content: str, result) -> None:
                     gap = time.monotonic() - t0
                     if gap >= 2:
                         sess._thought_line(gap)
-                sess.on_text(d["text"])
+                sess.emit_text(d["text"])
         elif isinstance(msg, AssistantMessage):
             for b in msg.content:
                 if isinstance(b, TextBlock):
@@ -368,7 +368,7 @@ async def _run_async(sess, user_content: str, result) -> None:
                         # 빈 블록으로 지우지 않는다.
                         result.text = b.text  # anthropic 트랜스포트와 동일 — 마지막 어시스턴트 텍스트
                     if not streamed:  # 구 CLI(델타 미지원) 폴백 — 기존 전체 블록 방출
-                        sess.on_text(b.text)
+                        sess.emit_text(b.text)
                 elif isinstance(b, ToolUseBlock):
                     _observe_use(sess, result, b, pending)
         elif isinstance(msg, UserMessage) and isinstance(msg.content, list):

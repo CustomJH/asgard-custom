@@ -44,6 +44,7 @@ from .store import (
     ensure_home,
     log_op,
     poisoned,
+    render_page,
     valid_slug,
 )
 
@@ -57,6 +58,19 @@ OPS_THRESHOLD = 25  # log.md 신규 연산 누적 문턱 — config [memory].nor
 MIN_INTERVAL_DAYS = 3  # 노른 간 최소 간격 — config [memory].norn_min_interval_days
 MERGE_FLOOR = 0.25  # merge 결정적 유사도 플로어 — LLM 주장과 무관하게 코드가 본다
 MAX_MERGES, MAX_ARCHIVES, MAX_INSIGHTS, MAX_CONTRADICTIONS = 3, 3, 2, 3
+# 링크는 파괴적이지 않아(페이지가 안 지워진다) 캡이 넉넉하다. 그래도 상한은 둔다 —
+# 전부를 전부에 잇는 그래프는 아무것도 안 잇는 그래프와 회수 성능이 같다.
+MAX_LINKS = 6
+# 링크 접지 대역 — 아래는 남남, 위는 링크가 아니라 병합이다
+# (LLM 이 link 로 merge 를 피해가는 길을 막는 상한).
+#
+# 대역이 척도마다 다른 게 핵심이다. 어휘 유사도와 코사인은 같은 자로 잴 수 없다:
+# MERGE_FLOOR 0.25 는 어휘 척도에서 뽑은 값인데, 같은 0.25 를 코사인에 대면 의미가 통하는
+# 거의 모든 쌍이 병합 대상으로 잘못 분류된다 — 이 저장소 실측이 이미 말해 준다
+# (recall.SEM_FLOOR 주석: 교차언어 정답조차 절대 코사인 0.18–0.29). 한 상수를 두 척도에
+# 돌려쓰면 대역이 사라진다.
+LINK_BAND_LEXICAL = (0.12, MERGE_FLOOR)
+LINK_BAND_SEMANTIC = (0.25, 0.80)
 INSIGHT_MAX_CHARS = 1200
 INSIGHT_MIN_SOURCES, INSIGHT_MAX_SOURCES = 2, 6
 
@@ -83,7 +97,10 @@ _NORN_SYS = (
     "preferences, tendencies, recurring behaviors). The text must be self-contained, declarative, "
     "grounded ONLY in the listed source pages, and must not merely restate a single page.\n"
     '- {"op":"contradiction","a":"<slug>","b":"<slug>","why":"..."} — two pages make incompatible '
-    "claims. Report only; a human resolves it.\n\n"
+    "claims. Report only; a human resolves it.\n"
+    '- {"op":"link","a":"<slug>","b":"<slug>","why":"..."} — two EXISTING pages are related but '
+    "distinct: one gives context the other needs, they belong to the same decision, or knowing one "
+    "makes the other findable. Do NOT use this for pages that state the same fact — that is a merge.\n\n"
     "Rules:\n"
     '- Output STRICT JSON: {"ops":[...]} and nothing else. No prose, no code fences.\n'
     "- Be conservative. An empty ops list is a valid, common outcome — do not invent work.\n"
@@ -214,6 +231,51 @@ def _parse_ops(raw: str) -> list[dict]:
     return [op for op in ops if isinstance(op, dict)]
 
 
+def _existing_links(meta: dict) -> set[str]:
+    return {s.strip() for s in str(meta.get("links") or "").split(",") if s.strip()}
+
+
+def _relatedness(d: str, a: str, b: str, pa: tuple[dict, str], pb: tuple[dict, str]) -> tuple[float, str]:
+    """두 페이지의 근접도와 **어느 자로 쟀는지** — ("semantic"|"lexical"). 척도를 같이 돌려주는
+    이유는 대역이 척도마다 다르기 때문이다 (LINK_BAND_* 참조).
+
+    링크는 **말이 다른데 관련된** 것을 잇는 연산이라 어휘만으로 재면 잴 수가 없다("릴리스
+    태그 규칙"과 "배포 전 확인 목록"은 겹치는 낱말이 거의 없다). 그래서 벡터가 있으면 그걸
+    본다. 벡터가 없을 때만 어휘로 내려오고, 그 경우 링크는 보수적으로 덜 생긴다 — 근거 없이
+    잇느니 안 잇는 쪽이다."""
+    with contextlib.suppress(Exception):
+        from .. import memory_semantic as sem
+        from .index import _db
+
+        if sem.active():
+            conn = _db(d)
+            rows = {
+                row[0]: sem.unpack(row[1])
+                for row in conn.execute("SELECT slug, data FROM vec WHERE slug IN (?,?)", (a, b)).fetchall()
+            }
+            conn.close()
+            if a in rows and b in rows:
+                return max(0.0, sem.cosine(rows[a], rows[b])), "semantic"
+    ta = pa[0].get("title", "") + " " + pa[1]
+    tb = pb[0].get("title", "") + " " + pb[1]
+    return max(_containment(ta, tb), _jaccard(ta, tb)), "lexical"
+
+
+def _add_link(d: str, a: str, b: str) -> None:
+    """양쪽 frontmatter 에 서로를 적는다. 회수(PPR)는 어차피 무향이지만 사람이 페이지를 열었을 때
+    한쪽에서만 보이면 관계가 반쪽으로 읽힌다."""
+    for source, target in ((a, b), (b, a)):
+        pg = _read(d, source)
+        if not pg:
+            continue
+        meta, body = pg
+        links = _existing_links(meta)
+        if target in links:
+            continue
+        meta = {**meta, "links": ",".join(sorted(links | {target})), "updated": _today()}
+        _atomic_write(_page_path(d, source), render_page(meta, body))
+
+
 def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
     """결정적 검증 — 통과한 op 와 (op, 기각 사유). LLM 주장은 검증 입력일 뿐이다."""
     floor = _merge_floor()
@@ -221,8 +283,14 @@ def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
     decay_ok = {f["slug"] for f in lint_findings if f["code"] == "decay-candidate"}
     accepted: list[dict] = []
     dropped: list[dict] = []
-    counts = {"merge": 0, "archive": 0, "insight": 0, "contradiction": 0}
-    caps = {"merge": MAX_MERGES, "archive": MAX_ARCHIVES, "insight": MAX_INSIGHTS, "contradiction": MAX_CONTRADICTIONS}
+    counts = {"merge": 0, "archive": 0, "insight": 0, "contradiction": 0, "link": 0}
+    caps = {
+        "merge": MAX_MERGES,
+        "archive": MAX_ARCHIVES,
+        "insight": MAX_INSIGHTS,
+        "contradiction": MAX_CONTRADICTIONS,
+        "link": MAX_LINKS,
+    }
 
     def _drop(op: dict, reason: str) -> None:
         dropped.append({"op": op, "reason": reason})
@@ -258,6 +326,33 @@ def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
                 continue
             accepted.append(
                 {"op": "merge", "src": src, "dst": dst, "sim": round(sim, 2), "why": str(op.get("why", ""))[:200]}
+            )
+        elif kind == "link":
+            a, b = op.get("a"), op.get("b")
+            pa, pb = _clean(a), _clean(b)
+            if not pa or not pb or a == b:
+                _drop(op, "link: a/b missing, poisoned, or identical")
+                continue
+            if b in _existing_links(pa[0]) and a in _existing_links(pb[0]):
+                _drop(op, "link: already linked")
+                continue
+            sim, scale = _relatedness(d, str(a), str(b), pa, pb)
+            low, high = LINK_BAND_SEMANTIC if scale == "semantic" else (LINK_BAND_LEXICAL[0], floor)
+            if sim < low:
+                _drop(op, f"link: {scale} relatedness {sim:.2f} < floor {low:.2f} (deterministic backstop)")
+                continue
+            if sim >= high:
+                _drop(op, f"link: {scale} relatedness {sim:.2f} ≥ {high:.2f} — propose merge, not link")
+                continue
+            accepted.append(
+                {
+                    "op": "link",
+                    "a": a,
+                    "b": b,
+                    "sim": round(sim, 2),
+                    "scale": scale,
+                    "why": str(op.get("why", ""))[:200],
+                }
             )
         elif kind == "archive":
             slug = op.get("slug")
@@ -307,10 +402,12 @@ def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
 
 
 def _complete(root: str, system: str, user: str) -> str:
-    """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다."""
-    from ..agent.oneshot import complete_once
+    """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다.
 
-    return complete_once(root, system, user, max_tokens=3000)
+    개인 메모리를 손질하는 provider 는 memory.manager 가 정한다 (기본 = 메인 provider)."""
+    from .manager import complete
+
+    return complete(root, system, user, max_tokens=3000)
 
 
 def plan_norn(root: str, d: str | None = None) -> dict:
@@ -422,6 +519,9 @@ def apply_norn(d: str | None, plan: dict) -> dict:
                 body = f"{op['text']}\n\nsources: {provenance} (norn {date}, confidence: {op['confidence']})"
                 slug, _ = add(body, title=op["title"], kind="insight", links=",".join(op["sources"]), d=d)
                 applied.append({**op, "slug": slug})
+            elif op["op"] == "link":
+                _add_link(d, op["a"], op["b"])
+                applied.append(op)
             else:  # contradiction — 보고 전용
                 applied.append(op)
         except ValueError as e:  # 예산 초과·경합 등 — 노른은 부분 실패를 정직하게 남긴다

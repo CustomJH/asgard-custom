@@ -8,7 +8,25 @@ import re
 from ..settings import PROJECT_FILE
 
 MEMORY_ENV = "ASGARD_MEMORY_DIR"
-INDEX_BUDGET = 2200  # chars — 주입면 상한 검증값. config [memory].index_budget_chars 로 조정
+
+# 주입면 예산 — 부분(kind)별로 따로 건다.
+#
+# 총량 하나로 묶으면 수가 많은 칸이 값비싼 칸을 굶긴다: reference 가 쏟아지는 순간
+# user·feedback 이 카탈로그에서 밀려나는데, 정작 사람이 같은 말을 두 번 안 하게 만드는 건
+# 뒤쪽이다. 그래서 구분선을 kind 로 두고 칸마다 상한을 준다.
+#
+# 단위는 토큰이 아니라 문자다 — 토큰은 모델마다 변하지만 문자는 안 변한다.
+# 그리고 이 값은 **저장을 막지 않는다**. 예산이 정하는 건 "프롬프트에 몇 자를 실을지"뿐이고,
+# 지식은 예산과 무관하게 pages/ 에 남는다 (예산 밖 전체 목록은 maps/, 검색은 query 가 전부 본다).
+KIND_BUDGETS: dict[str, int] = {
+    "user": 1400,  # 오딘이 누구인가 — 수는 적고 값은 제일 비싸다
+    "feedback": 1600,  # 일하는 방식 교정 — 두 번 말하지 않게 하는 값
+    "decision": 1600,  # 확정된 판정 — 되묻지 않게
+    "insight": 1400,  # 스스로 벼려낸 것
+    "reference": 2000,  # 수가 가장 많은 칸
+    "note": 1200,  # 미분류 catch-all — 제일 싸다
+}
+INDEX_BUDGET = sum(KIND_BUDGETS.values())  # 전 부분 합계 (표시·계산용)
 
 # 주입 스캔 — 위협 문구 패턴 strict 축약판. 메모리는 프롬프트에 주입되므로
 # 오염 엔트리는 세션 전체·세션 간 지속된다. 걸리면 저장 거부 (사람이 고쳐서 재시도).
@@ -23,6 +41,48 @@ _THREATS = (
     r"\b(curl|wget)\s+https?://",
     r"[A-Za-z0-9+/]{120,}={0,2}",  # 장문 base64 블롭 — 은닉 페이로드 의심
 )
+
+# 비가시 문자 — 사람 눈에 안 보이지만 모델은 읽는다. 메모리는 프롬프트에 주입되므로
+# 여기 심으면 사람이 페이지를 읽어봐도 아무것도 이상하지 않은데 지시는 전달된다
+# (제로폭 문자로 낱말 사이에 문장을 숨기거나, BiDi override 로 화면에 보이는 순서를 뒤집는다).
+# 정규식으로는 이걸 못 잡는다 — _THREATS 의 `이전 지시를 무시` 는 글자 사이에 U+200B 하나만
+# 끼면 통과한다. 그래서 패턴이 아니라 문자 자체를 막는다.
+_INVISIBLE = {
+    "​",  # zero width space
+    "‌",  # zero width non-joiner
+    "‍",  # zero width joiner
+    "⁠",  # word joiner
+    "﻿",  # zero width no-break space (BOM)
+    "­",  # soft hyphen
+    "᠎",  # mongolian vowel separator
+    "‪",  # LTR embedding
+    "‫",  # RTL embedding
+    "‬",  # pop directional formatting
+    "‭",  # LTR override
+    "‮",  # RTL override
+    "⁦",  # LTR isolate
+    "⁧",  # RTL isolate
+    "⁨",  # first strong isolate
+    "⁩",  # pop directional isolate
+}
+# 태그 변이 셀렉터(U+E0000~U+E007F) — 아스키 한 자씩을 비가시 코드포인트로 옮겨 적는 은닉 통로다.
+# 범위라서 집합이 아니라 경계로 검사한다.
+_TAG_RANGE = (0xE0000, 0xE007F)
+
+
+def scan_invisible(*texts: str | None) -> str | None:
+    """비가시 문자 검사 — 걸리면 코드포인트 요약, 없으면 None.
+
+    \\t·\\n·\\r 은 통과시킨다 (정상 서식). 그 외 Cf(format) 계열과 태그 범위를 막는다."""
+    for text in texts:
+        if not text:
+            continue
+        for ch in text:
+            code = ord(ch)
+            if ch in _INVISIBLE or _TAG_RANGE[0] <= code <= _TAG_RANGE[1]:
+                return f"invisible character U+{code:04X}"
+    return None
+
 
 _SECRET_PLACEHOLDERS = (
     "example",
@@ -71,12 +131,33 @@ def _memory_settings() -> dict:
         return {}
 
 
-def index_budget() -> int:
+def kind_budgets() -> dict[str, int]:
+    """부분별 주입 예산 — config `[memory.index_budget]` 의 kind 키로 칸마다 조정한다.
+
+    미지정 kind 는 기본값을 쓰고, 0 은 그 칸을 주입에서 통째로 뺀다 (저장은 계속 된다).
+    알 수 없는 키는 무시한다 — 오타가 조용히 새 칸을 만들지 않는다."""
+    budgets = dict(KIND_BUDGETS)
+    try:
+        table = _memory_settings().get("index_budget")
+        if isinstance(table, dict):
+            for kind, value in table.items():
+                if kind in budgets and value is not None:
+                    budgets[kind] = max(0, int(value))
+    except Exception:
+        return dict(KIND_BUDGETS)
+    return budgets
+
+
+def index_budget() -> int | None:
+    """전 부분에 걸리는 총량 상한 (chars). None = 부분별 예산만 적용 (기본값).
+
+    구 설정 `index_budget_chars` 가 여기로 들어온다 — 칸을 쪼갠 뒤에도 "블록 전체가
+    이보다 커지지 않는다"를 한 줄로 보증해야 하는 자리(좁은 컨텍스트 창)가 있다."""
     try:
         value = _memory_settings().get("index_budget_chars")
-        return max(0, int(value)) if value is not None else INDEX_BUDGET
+        return max(0, int(value)) if value is not None else None
     except Exception:
-        return INDEX_BUDGET
+        return None
 
 
 def inject_enabled() -> bool:
@@ -120,7 +201,12 @@ def inject_allowed(provider: str | None = None, provider_source: str | None = No
 
 def scan_threats(*texts: str | None) -> str | None:
     """인젝션/유출 패턴 검사 — 하나라도 걸리면 요약 반환, 전부 무해하면 None.
-    본문만이 아니라 주입되는 모든 필드(title·links·meta)를 같이 넘긴다 (P0)."""
+    본문만이 아니라 주입되는 모든 필드(title·links·meta)를 같이 넘긴다 (P0).
+
+    비가시 문자를 먼저 본다: 패턴 검사보다 앞서야 한다. 글자 사이에 제로폭 하나만 끼면
+    아래 정규식은 전부 헛돌고, 모델은 그걸 읽는다."""
+    if invisible := scan_invisible(*texts):
+        return invisible
     for text in texts:
         if not text:
             continue

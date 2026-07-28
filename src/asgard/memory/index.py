@@ -40,6 +40,12 @@ def build_index(d: str) -> str:
 def write_index(d: str) -> str:
     text = build_index(d)
     _atomic_write(os.path.join(d, INDEX), text)
+    # index.md 는 주입면이라 예산에 묶여 있다. 예산 밖 전체 목차는 maps/ 가 진다 —
+    # 같은 파생 시점에 같이 갱신돼야 vault 를 열었을 때 목차가 거짓말하지 않는다.
+    with contextlib.suppress(Exception):  # 파생 목차 실패가 지식 쓰기를 막지 않는다
+        from .vault import write_maps
+
+        write_maps(d)
     return text
 
 

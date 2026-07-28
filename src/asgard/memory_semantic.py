@@ -1,4 +1,4 @@
-"""개인 메모리 시맨틱 스트림 (옵트인) — Tier0 검색을 lexical → hybrid 로.
+"""개인 메모리 시맨틱 스트림 (기본 켜짐) — Tier0 검색을 lexical → hybrid 로.
 
 배경 (26-07-18): agentmemory 실사 결론 — 1차 메모리로 그대로 채택은 부적합(iii 상주
 데몬·KV 필터 격리·기본 벡터 OFF)하나, 검색 파이프라인(3-스트림 RRF + 로컬 임베딩)은
@@ -10,14 +10,32 @@
     파일 md 가 여전히 지식의 정본이다. 벡터는 pages/ 를 절대 대체하지 않는다.
   · **fail-open** — 임베더 미설치 또는 설정 off 면 embedder()=None → query() 가 기존 2경로
     (FTS5 BM25 + 정본 스캔) 로 완전히 동일하게 동작한다. 어떤 예외도 검색을 막지 않는다.
-  · **의존성 제로 기본** — 벡터 수학(pack/cosine)은 stdlib(array·math)만 쓴다. 임베딩 모델
-    라이브러리만 옵트인 로드다. 설치 안 하면 아무 것도 안 깔린 채로 2경로가 돈다.
+  · **stdlib 수학** — 벡터 수학(pack/cosine)은 stdlib(array·math)만 쓴다. 임베딩 모델
+    라이브러리(model2vec)는 26-07-27 부터 기본 의존성이지만, 없거나 못 불러도 2경로가 돈다.
   · **정직한 상태** — agentmemory 는 "로컬 임베딩 기본"이라 광고하고 실제론 OFF 였다. 우리는
     active() 로 활성/비활성을 대시보드·doctor 에 그대로 노출한다 (숨기지 않는다).
 
-옵트인 방법:  설정 [memory].semantic = "local"  (기본 "off")
-             모델 [memory].semantic_model = "sentence-transformers/all-MiniLM-L6-v2" (선택)
-             env  ASGARD_MEMORY_SEMANTIC 로 세션 오버라이드 (off|local).
+설정:  [memory].semantic = "local" | "off"  (**기본 "local"** — 26-07-27 오딘 결정)
+      모델 [memory].semantic_model (선택, 기본은 아래 다국어 정적 모델)
+      env  ASGARD_MEMORY_SEMANTIC 로 세션 오버라이드 (off|local).
+
+기본을 켜기로 한 근거 (실측 26-07-27, 40페이지·80질의 벤치):
+  hit@1 0.750 → 0.850, 놓친 질의 11 → 2건, **회귀 0건**. 한국어는 0.787 → 0.894.
+  대가는 프로세스당 모델 로드 ~1.4초(첫 실행은 모델 내려받느라 ~35초·약 1GB)다.
+  오딘 판단: 지연을 감수하고 회수 품질을 택한다. 끄려면 semantic="off" 한 줄이면 되고,
+  그때는 lexical 2경로로 **완전히 동일하게** 돌아간다 (fail-open 계약 불변).
+
+모델 선택이 한국어에 걸려 있다 (같은 날 실측, 관련 문장 − 무관 문장 코사인 차):
+  potion-base-8M        한국어 -0.011 · 영어 +0.270   ← 한국어를 아예 구분 못 한다
+  potion-retrieval-32M  한국어 -0.023 · 영어 +0.133   ← 마찬가지
+  potion-multilingual   한국어 +0.261 · 영어 +0.147   ← 유일하게 성립
+  작은 모델은 로드가 3배 빠르지만(345ms vs 962ms) 한국어에서 **음수 판별력**이다 —
+  무관한 문장을 관련 문장보다 가깝다고 본다. 속도로 바꿀 수 있는 품질이 아니라서 큰 쪽을 쓴다.
+
+ollama 임베딩 경로를 붙이지 않은 이유 (같은 벤치에서 실측):
+  nomic-embed-text(768d) 는 hit@1 0.812 로 model2vec potion-multilingual-128M(0.850) 보다
+  낮았고, 한국어는 0.766 vs 0.894 로 크게 뒤졌으며, 질의 지연은 19.4ms vs 3.8ms 로 5배였다.
+  HTTP 왕복을 검색 경로에 넣을 값이 없다. 로컬 정적 임베더가 이 과업에서 더 낫다.
 """
 
 from __future__ import annotations
@@ -36,6 +54,7 @@ _CACHE: dict[str, Any] = {"loaded": False, "fn": None, "dim": 0, "model": ""}
 
 DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_STATIC_MODEL = "minishlab/potion-multilingual-128M"
+DEFAULT_MODE = "local"  # 26-07-27 오딘 결정 — 회수 품질을 위해 지연을 감수한다 (모듈 독스트링 근거)
 _ENV = "ASGARD_MEMORY_SEMANTIC"
 
 
@@ -50,14 +69,17 @@ def _settings() -> dict:
 
 
 def mode() -> str:
-    """시맨틱 모드 — env 우선, 설정 폴백, 기본 'off'. 'off' 이외는 로컬 임베딩 시도."""
+    """시맨틱 모드 — env 우선, 설정 폴백, 기본 'local'. 'off' 이외는 로컬 임베딩 시도.
+
+    기본이 'local' 이어도 임베더가 없으면 _load_local 이 None 을 돌려 2경로로 폴백한다 —
+    켜져 있다는 것과 도는 것은 다르고, 그 차이는 doctor 가 말한다."""
     env = (os.environ.get(_ENV) or "").strip().lower()
     if env:
         return env
     try:
-        return str(_settings().get("semantic", "off")).strip().lower() or "off"
+        return str(_settings().get("semantic", DEFAULT_MODE)).strip().lower() or DEFAULT_MODE
     except Exception:
-        return "off"
+        return DEFAULT_MODE
 
 
 def _model_name() -> str:
@@ -80,6 +102,43 @@ def set_embedder(fn: Callable[[str], list[float]] | None) -> None:
 def reset() -> None:
     """로드 캐시 초기화 — 설정/모드 변경 후 재평가용."""
     _CACHE.update({"loaded": False, "fn": None, "dim": 0, "model": ""})
+
+
+@contextlib.contextmanager
+def _quiet_hub(quiet: bool = True, offline: bool | None = None):
+    """모델 허브의 진행 막대를 잠재운다.
+
+    기본으로 켜진 뒤로는 `memory query` 한 번마다 남의 라이브러리 진행 막대가 stderr 로
+    새어 나온다 — 사용자 표면은 우리 것이어야 한다. 막대를 보여 주는 자리는 **처음 받을 때**
+    하나뿐이다 (거기서는 1GB 를 받는 중이라는 사실이 곧 필요한 정보다)."""
+    import logging
+
+    keys = ["HF_HUB_DISABLE_PROGRESS_BARS", "HF_HUB_DISABLE_TELEMETRY"]
+    # 조용함과 오프라인은 다른 축이다. 평시 로드는 둘 다 원하지만(이미 받아 둔 모델은 갱신
+    # 확인 왕복이 낭비다), 워밍업은 조용하되 네트워크는 열어야 한다 — 깨진 캐시를 고치는
+    # 경로가 바로 거기이기 때문이다. 묶어 두면 복구가 불가능해진다.
+    if offline is None:
+        offline = quiet and model_cached()
+    if offline:
+        keys.append("HF_HUB_OFFLINE")
+    previous = {key: os.environ.get(key) for key in keys}
+    logger = logging.getLogger("huggingface_hub")
+    level = logger.level
+    if quiet:
+        for key in keys:
+            os.environ[key] = "1"
+        logger.setLevel(logging.ERROR)
+    elif offline:  # 조용하지 않아도 오프라인 지정은 존중한다
+        os.environ["HF_HUB_OFFLINE"] = "1"
+    try:
+        yield
+    finally:
+        logger.setLevel(level)
+        for key, value in previous.items():
+            if value is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = value
 
 
 def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int, str] | None:
@@ -122,7 +181,16 @@ def embedder() -> Callable[[str], list[float]] | None:
     if _CACHE["loaded"]:
         return _CACHE["fn"]
     _CACHE["loaded"] = True
-    loaded = _load_local(_model_name())
+    # 처음 한 번은 모델을 받느라 수십 초가 걸린다. 그 침묵이 "멈춘 것"으로 보이므로 한 줄 알린다 —
+    # 프로세스당 한 번, stderr 로만 (산출을 파이프로 받는 소비자를 오염시키지 않는다).
+    warming = bool(_CACHE.get("warmup"))
+    if not warming and not model_cached():
+        with contextlib.suppress(Exception):
+            import sys
+
+            print("⠶ 메모리 시맨틱 검색 준비 중 — 임베딩 모델을 처음 받는다 (한 번만)", file=sys.stderr)
+    with _quiet_hub(quiet=not warming or model_cached(), offline=False if warming else None):
+        loaded = _load_local(_model_name())
     if loaded is None:
         _CACHE["fn"], _CACHE["dim"] = None, 0
         return None
@@ -141,6 +209,56 @@ def status() -> dict:
     if _OVERRIDE is not None:
         return {"mode": mode(), "active": True, "model": "injected", "dim": len(_OVERRIDE("x"))}
     return {"mode": mode(), "active": fn is not None, "model": _CACHE.get("model", ""), "dim": _CACHE.get("dim", 0)}
+
+
+def model_cached() -> bool:
+    """기본 모델이 이미 디스크에 있는가 — 첫 실행의 긴 내려받기를 예고하기 위한 판정.
+
+    HuggingFace 캐시 규약(models--<org>--<name>)만 본다. 라이브러리를 부르지 않으므로
+    이 함수는 모델을 로드하지 않는다 (판정 때문에 35초를 쓰면 판정의 의미가 없다)."""
+    name = _model_name()
+    target = DEFAULT_STATIC_MODEL if name == DEFAULT_MODEL else name
+    if "/" not in target:
+        return False
+    slug = "models--" + target.replace("/", "--")
+    roots = [
+        os.path.join(
+            os.environ.get("HF_HOME") or os.path.join(os.path.expanduser("~"), ".cache", "huggingface"), "hub"
+        ),
+        os.path.join(os.path.expanduser("~"), ".cache", "huggingface", "hub"),
+    ]
+    return any(os.path.isdir(os.path.join(root, slug)) for root in roots)
+
+
+def warmup() -> dict:
+    """모델을 미리 내려받아 로드한다 — 첫 검색이 조용히 35초 멈추는 일을 없앤다.
+
+    평시 경로와 달리 여기서는 네트워크를 막지 않는다 — 워밍업은 **복구 경로**이기도 하다.
+    캐시가 깨진 상태에서 오프라인으로 열면 고칠 방법이 없어지고, 그때 사용자가 부르는 명령이
+    바로 이것이다. 진행 막대도 그대로 보여 준다 (1GB 를 받는 중이라는 사실이 곧 필요한 정보다).
+
+    반환 = {"active", "model", "dim", "downloaded", "seconds"}. 실패해도 예외를 올리지 않는다:
+    워밍업 실패는 검색을 막지 않고, 그저 시맨틱 없이 도는 것뿐이다 (fail-open 계약)."""
+    import time
+
+    had_cache = model_cached()
+    start = time.perf_counter()
+    reset()
+    # 캐시가 있으면 조용히, 없으면 진행을 보여 준다. 네트워크는 어느 쪽이든 연다 (복구 경로).
+    _CACHE["warmup"] = True
+    fn = embedder()
+    _CACHE.pop("warmup", None)
+    elapsed = time.perf_counter() - start
+    if fn is not None:
+        with contextlib.suppress(Exception):
+            fn("warmup probe")
+    return {
+        "active": fn is not None,
+        "model": _CACHE.get("model", ""),
+        "dim": _CACHE.get("dim", 0),
+        "downloaded": not had_cache,
+        "seconds": round(elapsed, 1),
+    }
 
 
 def embed(text: str) -> list[float] | None:

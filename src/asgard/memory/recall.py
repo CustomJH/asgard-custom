@@ -7,10 +7,40 @@ import os
 import re
 
 from .index import _db
-from .policy import _memory_settings, index_budget, inject_enabled, memory_dir, scan_threats
-from .store import PAGES, _desc, _kind, _pages, _read, _today, poisoned, slot_query_aliases, slugify
+from .policy import (
+    _INVISIBLE,
+    _memory_settings,
+    index_budget,
+    inject_enabled,
+    kind_budgets,
+    memory_dir,
+    scan_threats,
+)
+from .store import (
+    PAGES,
+    _desc,
+    _kind,
+    _pages,
+    _read,
+    _today,
+    poisoned,
+    slot_query_aliases,
+    slugify,
+)
+from .temporal import event_date
 
 _SNAPSHOT_WARN = "- … (index over budget — asgard memory lint)"
+
+# 칸 이름 — 사람이 읽는 표면이라 세계관 어휘를 쓴다. 순서가 곧 주입 순서다:
+# 값비싼 칸을 앞에 둬서 총량 상한이 걸릴 때 뒤(싼 칸)부터 잘리게 한다.
+_SECTIONS: tuple[tuple[str, str], ...] = (
+    ("user", "오딘은 누구인가"),
+    ("feedback", "일하는 방식"),
+    ("decision", "확정된 판정"),
+    ("insight", "벼려낸 통찰"),
+    ("reference", "참조 사실"),
+    ("note", "메모"),
+)
 
 # ── 검색 (query) — LLM 0. trigram FTS, 실패 시 파일 스캔 fail-open ─────────────────
 
@@ -57,12 +87,96 @@ def _temporal_multiplier(meta: dict, today: _dt.date | None = None) -> float:
     if _kind(meta) not in TEMPORAL_KINDS:
         return 1.0
     try:
-        updated = _dt.date.fromisoformat(str(meta.get("updated") or meta.get("created") or ""))
+        # 사건 시각 우선 — "작년에 정한 규칙"을 오늘 적었다고 최신 사실이 되진 않는다
+        updated = _dt.date.fromisoformat(event_date(meta))
     except ValueError:
         return 1.0
     days = max(0, ((today or _dt.date.today()) - updated).days)
     recency = max(0.1, min(1.0, 1.0 - days / TEMPORAL_DAYS))
     return 1.0 + TEMPORAL_ALPHA * (recency - 0.5)
+
+
+RERANK_CANDIDATES = 20  # 리랭크 대상 — RRF 상위 이만큼만 다시 본다 (전량 재계산은 비싸다)
+RERANK_PASSAGE_CHARS = 600
+RERANK_MAX_PASSAGES = 40  # 페이지 하나에서 볼 구절 상한 (~24,000자까지 덮는다)
+# 이만큼 구절이 안 나오는 페이지는 리랭크 대상이 아니다 — 희석이 없으면 되돌릴 것도 없다.
+RERANK_MIN_PASSAGES = 3
+RERANK_TOP_PASSAGES = 3  # 평균에 쓸 상위 구절 수
+RERANK_MAX_WEIGHT = 0.5  # max 와 상위평균의 배합 — 1.0 이면 순수 max (선호 유형에서 −13pp)
+# 융합에서 기존 4스트림 순위에 주는 가중 (리랭크는 항상 1.0). 1.0 = 대등.
+# 리랭크가 이기는 자리와 지는 자리가 갈리기 때문에 둔 손잡이다: 사실 질문은 리랭크가 맞고,
+# 간접 질문("내가 좋아할 만한 걸 추천해줘")은 어휘가 맞다. 어느 쪽도 항상 옳지 않다.
+RERANK_BASE_WEIGHT = 1.0
+
+
+def _passages(body: str) -> list[str]:
+    """구절 분할 — 줄(=대화 턴·문단) 경계로 쪼개고, 긴 줄은 다시 자른다.
+
+    한 구절이 길면 희석 문제가 그대로 되돌아오므로 상한을 건다."""
+    out: list[str] = []
+    for line in body.splitlines():
+        line = line.strip()
+        if len(line) < 12:
+            continue
+        for start in range(0, len(line), RERANK_PASSAGE_CHARS):
+            out.append(line[start : start + RERANK_PASSAGE_CHARS])
+            if len(out) >= RERANK_MAX_PASSAGES:
+                return out
+    return out
+
+
+def _rerank_order(text: str, cand: dict, ranked: list[str]) -> list[tuple[str, float]]:
+    """구절 최대 유사도 순위 — 페이지가 길수록 통짜 임베딩이 못 보는 것을 되찾는다.
+
+    페이지 벡터 하나는 문서 전체의 평균이라, 긴 페이지에서는 정작 답이 든 한 문장이 나머지
+    수천 자에 희석된다 (LongMemEval-S 실측: 세션 중앙값 1만 자). 구절로 쪼개 최댓값을 쓰면
+    같은 임베더로도 순위가 날카로워진다 — 새 모델도, torch 도 필요 없다.
+
+    **다섯 번째 스트림일 뿐 대체가 아니다.** 실측(500문항)에서 이 점수로 순위를 통째로
+    갈아치우면 어휘·그래프 신호를 버려 이득이 반으로 줄었다. RRF 에 한 표로 넣는 게 낫다.
+
+    **비용은 이득이 있는 곳에서만 낸다.** 짧은 페이지는 아래 길이 게이트에서 통째로 빠지므로
+    정상적인 개인 메모리(사실 한 건 = 수백 자)에서는 이 함수가 사실상 아무 일도 안 한다.
+    긴 페이지가 실제로 쌓인 위키에서만 구절 임베딩 비용을 내고 그만큼 순위를 되찾는다.
+    후보를 잘라 예산을 아끼는 방식은 실측에서 역효과였다 — 앞 구절만 보면 답이 뒤에 있을 때
+    놓치고(−0.8pp), 후보를 앞쪽 몇 개로 줄이면 재정렬할 범위 자체가 사라져 이득이 0이 된다.
+
+    실패는 조용히 빈 리스트 — 시맨틱이 꺼져 있으면 기존 4스트림 그대로 돈다."""
+    from .. import memory_semantic as sem
+
+    if not sem.active() or not ranked:
+        return []
+    query_vec = sem.embed(text)
+    if query_vec is None:
+        return []
+    scored: list[tuple[str, float]] = []
+    for slug in ranked:
+        entry = cand.get(slug)
+        if not entry:
+            continue
+        chunks = _passages(entry[1])
+        # 짧은 페이지는 건너뛴다. 리랭크는 **희석을 되돌리는** 연산인데, 페이지 전체가 한 구절이면
+        # 되돌릴 희석이 없다 — 그런데도 순위에 한 표를 더 주면 같은 시맨틱 신호를 두 번 세는 셈이라
+        # 어휘 신호가 묻힌다. 실측(100페이지 실코퍼스)에서 직접질의 hit@1 이 1.00 → 0.60 으로 무너졌다.
+        # 개인 메모리의 정상 페이지는 사실 한 건이라 여기서 대부분 걸러지고, 대화 로그처럼
+        # 길게 자란 페이지만 리랭크를 받는다.
+        if len(chunks) < RERANK_MIN_PASSAGES:
+            continue
+        sims = [sem.cosine(query_vec, vec) for passage in chunks if (vec := sem.embed(passage))]
+        if not sims:
+            continue
+        # 최댓값만 쓰면 너무 뾰족하다. 사실 질문은 한 문장이 답이라 max 가 맞지만, 간접 질문
+        # ("내가 좋아할 만한 걸 추천해줘")은 문서 전체의 주제 일치가 답이라 max 가 엉뚱한 한 줄을
+        # 집는다 — 실측에서 선호 유형만 −13pp 였다. 상위 몇 구절의 평균을 섞어 둘 다 살린다.
+        top_sims = sorted(sims, reverse=True)[:RERANK_TOP_PASSAGES]
+        scored.append(
+            (slug, RERANK_MAX_WEIGHT * top_sims[0] + (1 - RERANK_MAX_WEIGHT) * (sum(top_sims) / len(top_sims)))
+        )
+    # 대상이 둘 미만이면 순위라 부를 것이 없다 — 아무것도 안 한다 (기존 4스트림 그대로).
+    if len(scored) < 2:
+        return []
+    scored.sort(key=lambda pair: (-pair[1], pair[0]))
+    return [pair for pair in scored if pair[1] > 0.0]
 
 
 def _graph_order(pages: dict[str, tuple[dict, str]], seeds: dict[str, float]) -> list[tuple[str, float]]:
@@ -261,12 +375,12 @@ def query(
     # LLM 추출 그래프/별도 DB 없이 기존 Zettelkasten 링크를 실제 검색 신호로 재사용한다.
     seed_scores = dict.fromkeys(cand, 0.0)
 
-    def _add_ranks(scores: dict[str, float], ordered: list[tuple[str, float]]) -> None:
+    def _add_ranks(scores: dict[str, float], ordered: list[tuple[str, float]], weight: float = 1.0) -> None:
         rank, prev = 0, None
         for i, (slug, s) in enumerate(ordered):
             if s != prev:
                 rank, prev = i + 1, s
-            scores[slug] += 1.0 / (RRF_K + rank)
+            scores[slug] += weight / (RRF_K + rank)
 
     for ordered in (fts_order, scan_order, sem_order):
         _add_ranks(seed_scores, ordered)
@@ -286,6 +400,17 @@ def query(
     _add_ranks(rrf, scan_order)
     _add_ranks(rrf, sem_order)  # 비활성이면 빈 리스트 → 무영향
     _add_ranks(rrf, graph_order)  # 링크가 없거나 A/B off면 빈 리스트 → 무영향
+
+    # 2단계 — 4스트림이 정한 상위권만 구절 단위로 다시 보고, 그 순위와 **1:1 로** 융합한다.
+    # 회수 범위는 안 넓히고 순위만 고친다. 왜 다섯 번째 스트림이 아니라 2단계인가:
+    # 스트림 하나로 넣으면 가중이 1/5 로 희석돼 실측 이득이 +2.4pp → +0.4pp 로 죽었다
+    # (LongMemEval-S 500문항). 이 신호는 그만큼 강하다 — 대등하게 세워야 값을 한다.
+    base_order = sorted(cand, key=lambda slug: (-rrf[slug], slug))
+    if rerank_order := _rerank_order(text, cand, base_order[:RERANK_CANDIDATES]):
+        fused = dict.fromkeys(cand, 0.0)
+        _add_ranks(fused, [(slug, rrf[slug]) for slug in base_order], RERANK_BASE_WEIGHT)
+        _add_ranks(fused, rerank_order)
+        rrf = fused
 
     # 빠르게 낡는 reference만 시간 multiplier를 계산하되 RRF 동률 안에서만 쓴다.
     # k=60 RRF의 인접 순위 차가 작아 전역 곱셈은 약한 최신성만으로 강한 관련도를 뒤집는다.
@@ -354,14 +479,34 @@ def _track(d: str, hits: list[dict]) -> list[dict]:
 
 
 def _neutralize(s: str) -> str:
-    """주입면 경계 무력화 (P0) — 각괄호를 유사문자로 치환해 태그/펜스 탈출 차단."""
-    return s.replace("<", "‹").replace(">", "›")
+    """주입면 경계 무력화 (P0) — 각괄호를 유사문자로 치환해 태그/펜스 탈출 차단.
+
+    비가시 문자는 여기서도 벗긴다. poisoned() 가 이미 막지만 그건 '페이지째 제외'라
+    저장 이전에 심어진 것·판정을 비껴간 것이 남는다. 주입면에서 한 번 더 벗기는 값이
+    제외보다 크다 — 마지막 관문은 조용히 무해하게 만드는 쪽이 낫다."""
+    stripped = "".join(c for c in s if c not in _INVISIBLE and not 0xE0000 <= ord(c) <= 0xE007F)
+    return stripped.replace("<", "‹").replace(">", "›")
 
 
-def _snapshot_rows(d: str) -> list[str]:
-    """주입용 카탈로그 행 — 페이지 재검증(오염 제외) + 경계 무력화 + kind 화이트리스트.
-    index.md 와 별도(주입 안전용)."""
-    rows: list[str] = []
+def _row(title: str, desc: str) -> str:
+    """카탈로그 행 — 제목과 설명이 같은 말이면 한 번만 적는다.
+
+    한 문장짜리 페이지에서는 title 이 곧 본문 첫 줄이고 _desc 도 본문 첫 줄이라, 그대로 두면
+    주입면의 절반이 같은 문장의 반복이 된다. 자르는 길이가 달라(제목 80·설명 90) 한쪽이 다른
+    쪽의 접두사가 되므로 긴 쪽을 남긴다 — 잘림이 덜한 쪽이다."""
+    if desc.startswith(title) or title.startswith(desc):
+        return f"- {max(title, desc, key=len)}"
+    return f"- {title} — {desc}"
+
+
+def _snapshot_rows(d: str) -> list[tuple[str, str]]:
+    """주입용 카탈로그 행 — (kind, row). 페이지 재검증(오염 제외) + 경계 무력화 + kind 화이트리스트.
+    index.md 와 별도(주입 안전용)이다.
+
+    행에 kind 를 적지 않는다 — 칸 머리글이 이미 말하므로 행마다 반복하면 그만큼 예산만 먹는다.
+    정렬은 칸 안에서 updated 내림차순: 예산이 모자랄 때 알파벳순으로 자르면 무엇이 살아남는지가
+    임의가 된다(슬러그 첫 글자가 운을 가른다). 최신이 먼저 살아야 잘림이 뜻을 갖는다."""
+    rows: list[tuple[str, str, str]] = []
     for slug in _pages(d):
         pg = _read(d, slug)
         if not pg:
@@ -370,12 +515,83 @@ def _snapshot_rows(d: str) -> list[str]:
         if poisoned(meta, body):
             continue  # 오염 페이지는 주입 제외 (lint 전이라도)
         title = _neutralize(meta.get("title", slug))
-        rows.append(f"- {title} `{_kind(meta)}` — {_neutralize(_desc(meta, body))}")
-    return rows
+        rows.append((_kind(meta), str(meta.get("updated", "")), _row(title, _neutralize(_desc(meta, body)))))
+    rows.sort(key=lambda r: (r[1], r[2]), reverse=True)
+    return [(kind, row) for kind, _updated, row in rows]
+
+
+def _section(kind: str, label: str, rows: list[str], budget: int) -> str:
+    """칸 하나 렌더 — 머리글에 사용률을 적는다. 빈 칸·예산 0 은 빈 문자열.
+
+    사용률을 100% 로 깎지 않는다: 저장은 무제한이라 칸은 실제로 넘칠 수 있고, `143%` 라고
+    적혀 있어야 모델이 그 칸을 통합하자고 먼저 말한다. 계기가 거짓말하면 계기가 아니다.
+    예산은 행에만 건다 — 머리글은 계기판이라 예산 밖이다."""
+    if budget <= 0 or not rows:
+        return ""
+    full = sum(len(r) + 1 for r in rows)
+    kept: list[str] = []
+    used = 0
+    for row in rows:
+        if used + len(row) + 1 > budget:
+            break
+        kept.append(row)
+        used += len(row) + 1
+    if len(kept) < len(rows):  # 잘림 — 경고 한 줄도 예산 안에서 (자리 없으면 행을 물린다)
+        while kept and used + len(_SNAPSHOT_WARN) + 1 > budget:
+            used -= len(kept.pop()) + 1
+        if not kept:
+            return ""
+        kept.append(_SNAPSHOT_WARN)
+    if not kept:
+        return ""
+    pct = round(100 * full / budget)
+    return f"## {label} `{kind}` [{pct}% — {full:,}/{budget:,} chars]\n" + "\n".join(kept)
+
+
+def section_usage(d: str | None = None) -> list[tuple[str, int, int]]:
+    """칸별 (kind, 실제 주입 문자수, 예산). 페이지가 없는 칸은 빼고 _SECTIONS 순서로.
+
+    lint·대시보드가 "어느 칸이 꽉 찼나"를 묻는 유일한 통로다. 세는 대상은 주입 행이라
+    잘림 여부와 무관하게 '원래 얼마인지'를 돌려준다 — 넘친 양을 알아야 통합 판단이 선다."""
+    d = d or memory_dir()
+    rows = _snapshot_rows(d)
+    budgets = kind_budgets()
+    usage: list[tuple[str, int, int]] = []
+    for kind, _label in _SECTIONS:
+        used = sum(len(r) + 1 for k, r in rows if k == kind)
+        if used:
+            usage.append((kind, used, budgets.get(kind, 0)))
+    return usage
+
+
+def _fit_total(prefix: str, body: str, suffix: str, budget: int) -> str:
+    """총량 상한 — 조립된 블록을 뒤에서부터 잘라 예산 안에 넣는다 (구 index_budget_chars).
+
+    뒤가 먼저 죽는 건 의도다: _SECTIONS 가 값비싼 칸을 앞에 세워 뒀다."""
+    lines = body.split("\n")
+    truncated = False
+    while lines:
+        while lines and lines[-1].startswith("## "):  # 행 없는 머리글은 계기가 아니라 껍데기
+            lines.pop()
+            truncated = True
+        if not lines:
+            break
+        candidate = [*lines, _SNAPSHOT_WARN] if truncated else lines
+        text = prefix + "\n".join(candidate) + suffix
+        if len(text) <= budget:
+            return text
+        lines.pop()
+        truncated = True
+    warned = prefix + _SNAPSHOT_WARN + suffix
+    return warned if len(warned) <= budget else ""
 
 
 def snapshot_note(d: str | None = None) -> str:
-    """세션 프롬프트 주입분 — 카탈로그를 예산 내로 동결. 페이지 없으면 빈 문자열 (무변화).
+    """세션 프롬프트 주입분 — 카탈로그를 부분(kind)별 예산 안에서 동결. 페이지 없으면 빈 문자열.
+
+    칸을 나누는 이유는 예산이 아니라 굶주림이다. 총량 하나면 수가 많은 칸(reference)이
+    값비싼 칸(user·feedback)을 밀어내는데, 사람이 같은 말을 반복하지 않게 만드는 건 뒤쪽이다.
+    칸마다 상한을 주면 어느 칸도 굶지 않는다.
 
     "동결" 계약 = Heimdall 인스턴스 수명. self.identity 에 1회 결합 후 세션 중 불변
     (KV 캐시 보존). /lagom 등 Heimdall 재생성 경로에서만 재렌더된다."""
@@ -386,32 +602,61 @@ def snapshot_note(d: str | None = None) -> str:
         rows = _snapshot_rows(d)
         if not rows:
             return ""
-        budget = index_budget()
+        budgets = kind_budgets()
         prefix = (
             '\n\n<memory-context scope="personal">\n'
             "개인 메모리 카탈로그 (힌트 — 완료 증거 아님). 상세는 asgard memory query.\n"
         )
         suffix = "\n</memory-context>"
-        lines, truncated = ["# Memory Index", ""], False
-        if len(prefix + "\n".join(lines) + suffix) > budget:
+        sections = [
+            block
+            for kind, label in _SECTIONS
+            if (block := _section(kind, label, [r for k, r in rows if k == kind], budgets.get(kind, 0)))
+        ]
+        if not sections:
             return ""
-        for r in rows:
-            if len(prefix + "\n".join([*lines, r]) + suffix) > budget:
-                truncated = True
-                break
-            lines.append(r)
-        if truncated:
-            while len(lines) > 2 and len(prefix + "\n".join([*lines, _SNAPSHOT_WARN]) + suffix) > budget:
-                lines.pop()
-            if len(prefix + "\n".join([*lines, _SNAPSHOT_WARN]) + suffix) <= budget:
-                lines.append(_SNAPSHOT_WARN)
-        catalog = "\n".join(lines)
-        return prefix + catalog + suffix
+        body = "\n".join(sections)
+        total = index_budget()
+        if total is not None:
+            return _fit_total(prefix, body, suffix, total)
+        return prefix + body + suffix
     except Exception:
         return ""  # fail-open — 메모리 불능이 세션을 막지 않는다
 
 
 RECALL_BUDGET = 900  # chars — 회수 블록 상한 (턴마다 붙으므로 카탈로그보다 훨씬 작게)
+
+
+def _diversify(hits: list[dict], k: int) -> list[dict]:
+    """한 종류가 회수 블록을 독식하지 못하게 자른다 — 순위는 건드리지 않는다.
+
+    같은 공간에 섞여 있는 서로 다른 성격의 기억은 서로를 대체할 수 있는 근거처럼 회수된다
+    (MemGuard, arXiv 2605.28009 — "heterogeneous memory contamination"). asgard 는 kind 로
+    성격을 이미 구분해 두었는데 회수는 그걸 안 봤다: reference 세 장이 상위를 차지하면
+    바로 아래의 feedback("이렇게 하지 말라던 그것")이 블록에 못 들어온다. 값이 다른 게 아니라
+    종류가 다른 것이라 순위로만 자르면 안 되는 자리다.
+
+    한 종류 상한은 과반(k=3 이면 2). 다른 종류에 후보가 없으면 상한을 안 걸고 그대로 채운다 —
+    다양성을 위해 빈 줄을 남기지는 않는다."""
+    cap = max(1, (k + 1) // 2)
+    if len({h.get("kind") for h in hits}) < 2:
+        return hits[:k]
+    picked: list[dict] = []
+    seen: dict[str, int] = {}
+    for hit in hits:  # 1차 — 상한을 지키며 순위대로
+        kind = str(hit.get("kind") or "")
+        if seen.get(kind, 0) >= cap:
+            continue
+        picked.append(hit)
+        seen[kind] = seen.get(kind, 0) + 1
+        if len(picked) == k:
+            return picked
+    for hit in hits:  # 2차 — 자리가 남으면 상한을 풀고 순위대로 채운다
+        if hit not in picked:
+            picked.append(hit)
+            if len(picked) == k:
+                break
+    return picked
 
 
 def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
@@ -421,9 +666,11 @@ def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
     try:
         if not inject_enabled():
             return ""
-        hits = query(text, k=k, d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
+        # 넉넉히 뽑아 종류를 섞은 뒤 k 개로 줄인다 — 왜인지는 _diversify 참조.
+        hits = query(text, k=max(k, k * 2), d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
         if not hits:
             return ""
+        hits = _diversify(hits, k)
         prefix = '\n\n<memory-recall scope="personal">\n요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n'
         suffix = "\n</memory-recall>"
         if len(prefix + suffix) > RECALL_BUDGET:

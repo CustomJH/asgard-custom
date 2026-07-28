@@ -1,11 +1,15 @@
 """위그드라실 (Yggdrasil) — Asgard 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki 패턴
 (Karpathy gist 442a6bf5) 의 파일 정본 계층.
 
-귀속 (26-07-23 확정): 메모리는 **소유자 스코프**다. 개인 메모리의 소유자는 오딘(사용자) —
-오딘의 기억이면서, 오딘을 섬기는 에이전트가 자신의 기억처럼 빌려 쓴다 (소유=오딘, 사용=에이전트).
-향후 에이전트별 세팅 옵션이 생기면 같은 메커니즘에 소유자만 에이전트로 바뀌어 각 에이전트의
-독립 메모리로 동작한다. 사용자 표면 설명도 오딘 귀속으로 말한다
+귀속 (26-07-23 확정 · 26-07-28 경계 명시): 메모리는 **소유자 스코프**다. 지금 개인 메모리의
+소유자는 오딘(사용자) — 오딘의 기억이면서, 오딘을 섬기는 에이전트가 자신의 기억처럼 빌려 쓴다
+(소유=오딘, 사용=에이전트). 사용자 표면 설명도 현재는 오딘 귀속으로 말한다
 (templates/agents.py asgard:memory · templates/memory.py 계약).
+
+**소유자는 고정값이 아니라 변수다.** 지금 오딘인 것은 프로파일 시스템이 아직 없기 때문이고,
+프로파일이 생기면 같은 메커니즘에 소유자만 바뀌어 **이 메모리는 에이전트의 것이 된다**
+(오딘 정정 26-07-28). 그러니 새 표면을 지을 때 귀속을 "오딘"이라는 낱말로 굳히지 말 것 —
+소유자를 참조하는 형태로 써 두면 프로파일이 붙는 순간 문구가 아니라 값만 갈린다.
 
 원칙 (memory v3, 26-07-15 확정):
   정본 = ~/.asgard/memory/ 의 md 파일 (사람이 읽고 고칠 수 있는 텍스트 —
@@ -73,12 +77,15 @@ from .pages import (
 from .policy import (
     _THREATS,
     INDEX_BUDGET,
+    KIND_BUDGETS,
     MEMORY_ENV,
     _memory_settings,
     index_budget,
     inject_allowed,
     inject_enabled,
+    kind_budgets,
     memory_dir,
+    scan_invisible,
     scan_secrets,
     scan_threats,
 )
@@ -98,6 +105,7 @@ from .recall import (
     distill_nudge,
     query,
     recall_note,
+    section_usage,
     snapshot_note,
 )
 from .store import (
@@ -129,6 +137,7 @@ from .store import (
     slugify,
     valid_slug,
 )
+from .temporal import event_date, ground_event_date
 
 __all__ = [
     "DB",
@@ -138,6 +147,7 @@ __all__ = [
     "DUP_JACCARD",
     "INDEX",
     "INDEX_BUDGET",
+    "KIND_BUDGETS",
     "KINDS",
     "LOG",
     "MEMORY_ENV",
@@ -192,6 +202,7 @@ __all__ = [
     "ensure_home",
     "export_okf",
     "index_budget",
+    "kind_budgets",
     "ingest",
     "inject_allowed",
     "inject_enabled",
@@ -208,9 +219,13 @@ __all__ = [
     "remove",
     "render_page",
     "scan_threats",
+    "scan_invisible",
     "scan_secrets",
     "seed_defaults",
     "slugify",
+    "event_date",
+    "ground_event_date",
+    "section_usage",
     "snapshot_note",
     "usage_stats",
     "valid_slug",

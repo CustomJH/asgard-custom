@@ -28,6 +28,8 @@ from dataclasses import dataclass, field
 from typing import Callable
 
 from ..io_journal import call_returned, call_started
+from ..memory.fence import FenceScrubber
+from ..memory.fence import scrub as _fence_scrub
 from ..providers import ResolvedProvider
 from .tool_kernel import ToolContext, build_session_registry, execute_tool, to_openai_tool
 
@@ -192,6 +194,9 @@ class AgentSession:
         # 세션 중 schema 를 동결해 prompt cache key 와 실제 호출 가능 표면을 일치시킨다.
         self.tools = self.registry.schemas(ToolContext(root=self.cwd, role=self.role, readonly=self.readonly))
         self.on_text = on_text or (lambda s: None)
+        # 모델이 되뱉은 메모리 펜스를 표면에 닿기 전에 걷어낸다. 델타를 가로질러 쪼개진
+        # 태그는 정규식으로 못 잡으므로 상태기계를 턴 내내 들고 간다 (memory.fence).
+        self._fence = FenceScrubber()
         # 라이브 상태 신호 — 침묵 구간(thinking·툴 실행)에 스피너 등을 띄울 훅. None = 해제.
         self.on_status = on_status or (lambda s: None)
         self.on_tokens = on_tokens
@@ -341,8 +346,22 @@ class AgentSession:
     def _journal_error(self, jid: str | None, t0: float, e: Exception) -> None:
         call_returned(self.root, jid, duration_ms=(time.monotonic() - t0) * 1000, error=f"{type(e).__name__}: {e}")
 
+    def emit_text(self, text: str) -> None:
+        """모델 본문 델타 전용 출구 — 펜스를 걷어낸 부분만 표면으로 보낸다.
+
+        상태선(_tool_line 등)은 여기를 안 탄다: 우리가 만든 문자열이라 걸러낼 것이 없고,
+        같은 상태기계를 공유하면 모델 델타의 미완 태그 판정이 엉킨다."""
+        if visible := self._fence.feed(text):
+            self.on_text(visible)
+
+    def _fence_tail(self) -> None:
+        """스트림 종료 — 붙잡아 둔 꼬리를 흘려보낸다 (미종료 블록이면 버려진다)."""
+        if tail := self._fence.flush():
+            self.on_text(tail)
+
     def run(self, user_content: str) -> SessionResult:
         outcome = "failed"
+        self._fence.reset()  # 턴 경계 — 이전 턴의 미완 상태가 이번 턴을 삼키지 않는다
         if self.readonly and not self._explicit_cwd:
             from .unit_workspace import UnitWorkspace, WorkspaceError
 
@@ -577,7 +596,7 @@ class AgentSession:
                             if gap >= 2:
                                 self._thought_line(gap)
                         parts.append(text)
-                        self.on_text(text)
+                        self.emit_text(text)
                     if not self._cancelled():
                         resp = stream.get_final_message()
             except Exception as e:
@@ -588,12 +607,13 @@ class AgentSession:
             if resp is None:  # 취소 중단 — 부분 텍스트를 assistant 로 닫아 히스토리 API-유효 유지
                 call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, error="cancelled")
                 self.messages.append({"role": "assistant", "content": "".join(parts) or "[사용자 취소]"})
-                result.text = "".join(parts)
+                self._fence_tail()
+                result.text = _fence_scrub("".join(parts))
                 result.stop_reason = "cancelled"
                 return result
             self.messages.append({"role": "assistant", "content": resp.content})
             self._note_server_compaction(resp.content)  # T3 — provider 가 압축했으면 계측
-            result.text = "".join(b.text for b in resp.content if b.type == "text")
+            result.text = _fence_scrub("".join(b.text for b in resp.content if b.type == "text"))
             result.stop_reason = resp.stop_reason or ""
             u = getattr(resp, "usage", None)
             counts: dict[str, int] = {}
@@ -744,7 +764,7 @@ class AgentSession:
                             self._thought_line(time.monotonic() - think_t0)
                             think_t0 = None
                         text_buf.append(d.content)
-                        self.on_text(d.content)
+                        self.emit_text(d.content)
                     for tc in d.tool_calls or []:
                         slot = calls.setdefault(tc.index, {"id": "", "name": "", "args": ""})
                         if tc.id:
@@ -761,7 +781,8 @@ class AgentSession:
             self.on_status(None)
             if think_t0 is not None:  # thinking 후 바로 툴콜 — 텍스트 없이 끝난 경우
                 self._thought_line(time.monotonic() - think_t0)
-            result.text = "".join(text_buf)
+            self._fence_tail()
+            result.text = _fence_scrub("".join(text_buf))
             if self._cancelled():  # 스트림 중단 — 부분 텍스트를 assistant 로 닫아 히스토리 유효 유지
                 self.messages.append({"role": "assistant", "content": result.text or "[사용자 취소]"})
                 result.stop_reason = "cancelled"
@@ -949,8 +970,8 @@ class AgentSession:
                 and (self._codex_reasoning_replay_enabled or replay.get("type") != "reasoning")
             ]
             if text:
-                result.text = text
-                self.on_text(text)
+                result.text = _fence_scrub(text)
+                self.emit_text(text)
             if response_status == "incomplete":
                 details = getattr(response, "incomplete_details", None)
                 reason = str(getattr(details, "reason", "") or "incomplete")

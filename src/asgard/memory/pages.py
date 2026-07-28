@@ -8,9 +8,9 @@ import hashlib
 import os
 import re
 
-from .index import _db, _fts_upsert, _index_row, build_index, write_index
-from .policy import index_budget, memory_dir, scan_secrets, scan_threats
-from .recall import _containment, _jaccard, query
+from .index import _db, _fts_upsert, build_index, write_index
+from .policy import memory_dir, scan_secrets, scan_threats
+from .recall import _containment, _jaccard, query, section_usage
 from .store import (
     DEFAULT_KIND,
     INDEX,
@@ -31,6 +31,7 @@ from .store import (
     slugify,
     valid_slug,
 )
+from .temporal import ground_event_date
 
 STALE_DAYS = 90  # lint 부패 후보 기준 — 90일 무갱신 + 사용 0회
 # ingest 병합 문턱 — containment(포함 계수)로 판정: Jaccard 는 길이 차에 취약해 "같은 사실의
@@ -56,9 +57,11 @@ def add(
     kind: str = DEFAULT_KIND,
     links: str = "",
     d: str | None = None,
-    force: bool = False,
 ) -> tuple[str, str]:
-    """페이지 생성. 반환 = (slug, path). 스캔 위반·예산 초과·잘못된 kind 는 ValueError."""
+    """페이지 생성. 반환 = (slug, path). 스캔 위반·잘못된 kind 는 ValueError.
+
+    예산은 저장을 막지 않는다 — 주입면 상한은 "프롬프트에 몇 자 실을지"의 문제고, 지식은
+    pages/ 에 남는다. 카탈로그가 꽉 찬 건 lint 가 칸별로 일러준다."""
     d = ensure_home(d)
     if not text.strip():
         raise ValueError("empty memory text")
@@ -74,22 +77,20 @@ def add(
     if secret := scan_secrets(text, title, links):
         raise ValueError(f"secret scan: {secret}")
     with _lock(d):
-        slug, path = _add_unlocked(d, text, title, kind, links, force)
+        slug, path = _add_unlocked(d, text, title, kind, links)
     return slug, path
 
 
-def _add_unlocked(d: str, text: str, title: str, kind: str, links: str, force: bool) -> tuple[str, str]:
+def _add_unlocked(d: str, text: str, title: str, kind: str, links: str) -> tuple[str, str]:
     """호출자가 _lock(d)을 보유한 add 본체 — ingest create의 락 공백 방지."""
     slug = _fresh_slug(d, slugify(title), text)
     meta = {"title": title, "kind": kind, "created": _today(), "updated": _today()}
+    # 사건 시각 — 기록 시각과 다르다. "작년에 정한 규칙"을 오늘 적으면 기록은 오늘, 사건은 작년.
+    # 본문은 안 고치고 메타에만 적는다 (temporal.ground_event_date 참조).
+    if event := ground_event_date(text):
+        meta["event"] = event
     if links:
         meta["links"] = links
-    projected = len(build_index(d)) + len(_index_row(slug, meta, text)) + 1
-    if not force and projected > index_budget():
-        raise ValueError(
-            f"index budget exceeded ({projected}/{index_budget()} chars) — "
-            "consolidate first (asgard memory merge/remove), or --force"
-        )
     path = _page_path(d, slug)
     _atomic_write(path, render_page(meta, text))
     write_index(d)
@@ -345,7 +346,7 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
             log_op(d, "ingest:unchanged", existing)
             return "unchanged", existing
         title = _fm_value(next(ln.strip().lstrip("# ") for ln in text.splitlines() if ln.strip()))[:80]
-        slug, _ = _add_unlocked(d, text, title, kind, "", False)
+        slug, _ = _add_unlocked(d, text, title, kind, "")
         log_op(d, "ingest:created", slug)
         return "created", slug
 
@@ -496,11 +497,19 @@ def lint(d: str | None = None) -> list[dict]:
         for s2, t2 in items[i + 1 :]:
             if _jaccard(t1, t2) >= DUP_JACCARD:
                 findings.append({"level": "warn", "code": "near-duplicate", "slug": s1, "msg": f"≈ {s2}"})
-    size = len(build_index(d))
-    if size > index_budget():
-        findings.append(
-            {"level": "warn", "code": "index-over-budget", "slug": INDEX, "msg": f"{size}/{index_budget()} chars"}
-        )
+    # 칸별 초과 — 넘친 칸만 지목한다. "인덱스가 크다"는 어디를 통합할지 안 알려준다.
+    # 재는 대상은 실제 주입 행이다: index.md 행은 pages/<slug>.md 링크를 달고 있는데
+    # 그 링크는 프롬프트에 한 글자도 안 실린다 — 안 실리는 문자로 경고하면 계기가 거짓말한다.
+    for kind, used, budget in section_usage(d):
+        if used > budget:
+            findings.append(
+                {
+                    "level": "warn",
+                    "code": "index-over-budget",
+                    "slug": f"{INDEX}#{kind}",
+                    "msg": f"{used}/{budget} chars",
+                }
+            )
     try:
         with open(os.path.join(d, INDEX), encoding="utf-8") as handle:
             stale = handle.read() != build_index(d)
