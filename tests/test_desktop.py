@@ -9,13 +9,23 @@ import urllib.error
 import urllib.request
 from unittest import mock
 
-from asgard.commands import desktop
+from asgard.commands import desktop, desktop_store
 
 
 class DesktopCase(unittest.TestCase):
     def setUp(self):
         with desktop._TASK_LOCK:
             desktop._TASKS.clear()
+        # 기억이 생긴 뒤로 테스트는 자기 자리를 갖고 놀아야 한다 — 실측: 첫 판에서 테스트의
+        # 임시 디렉터리들이 사용자의 실제 프로젝트 등록부에 그대로 쌓였다.
+        home = tempfile.mkdtemp(prefix="asgard-desktop-home-")
+        patcher = mock.patch.dict(os.environ, {desktop_store.DESKTOP_HOME_ENV: home})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        self.desktop_home = home
+        desktop._LOADED_ROOTS.clear()
+        desktop._CURRENT_ROOT = None
+        desktop._SERVER = None
 
 
 class TestDispatch(DesktopCase):
@@ -27,8 +37,12 @@ class TestDispatch(DesktopCase):
         self.assertIn("Asgard Desktop", page)
         self.assertIn("플러그인과 스킬", page)
         self.assertIn("승인 필요", page)
-        self.assertIn(".inspector[hidden]{display:none}", page)
-        self.assertNotIn("Studio", page)
+        # 증거 판은 기본으로 닫혀 있다 — 재설계로 클래스는 .evidence 가 됐고 계약은 그대로다
+        self.assertIn(".evidence[hidden]{display:none}", page)
+        # 이 표면의 이름은 이제 Asgard Studio 다(사용자 결정). 그러니 이 검사가 지킬 것은
+        # 이름이 아니라 **폐기된 세스룸니르 표면이 되살아나지 않는 것**이다.
+        self.assertNotIn("세스룸니르", page)
+        self.assertNotIn("studio_dashboard", page)
         self.assertNotIn('src="http', page)
 
     def test_logo_health_and_unknown_routes(self):

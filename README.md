@@ -240,6 +240,47 @@ Maps are navigation hints, not completion evidence. Thinker/Worker must still re
 definitions and usages that a plan depends on, while `asgard doctor` checks managed-map
 drift plus stale, malformed, oversized, or unsafe entries in manual area maps.
 
+## Desktop
+
+```bash
+asgard desktop            # native app when installed, browser fallback otherwise
+asgard desktop --browser  # skip the native shell
+```
+
+A loopback workspace over the same ownership the CLI uses: `asgard run` executes the work,
+`settings.py` persists configuration, and the central registry stays the catalog source of truth.
+Tasks are **kept on disk** under `<project>/.asgard/desktop/tasks.jsonl`, so recent work and its
+artifacts survive closing the window; a task that was still running when the process died is
+re-read as `interrupted` rather than reported as live. Tasks belong to the project they ran in —
+switching the open project swaps the history with it, and the machine-level list of projects lives
+in `~/.asgard/desktop/projects.json` (`ASGARD_DESKTOP_HOME` relocates it).
+
+Changed files open in place: the inspector reads the file or its `git diff` through endpoints that
+resolve every path with `realpath` and refuse anything outside the project root, including symlinks
+that point out. `⌘K` searches tasks, projects, skills, and screens. The surface shares one
+night-and-gold token set with `asgard map` and the memory dashboard, so the three windows read as
+one product.
+
+### Surface gate
+
+```bash
+asgard freyja-gate            # judge the visual surfaces this change touched
+asgard freyja-gate --json     # same, machine-readable
+```
+
+Named alongside `asgard craft` (micro-shape) and `asgard thor gate` (backend correctness), and it
+carries the same ratchet: **inherited debt never blocks; only what this change made worse does.**
+It writes no rules of its own — it calls the judge each Freyja engine already ships (today that is
+engine 4's `slop_gate.mjs`) and reports, by name, every engine it could *not* measure, so a clean
+result never quietly means "nothing was checked".
+
+Two of engine 4's gates exist because of a measured failure: an agent named the engine, ran only its
+artifact judge, skipped the design flow, and shipped a screen a human called AI slop on sight.
+`A3` now requires the pre-emit self-critique to be recorded in the stamp with all six axes at 3 or
+above — the flow's own rule says anything lower triggers a revision pass before emit, so shipping
+below it is a rule violation the tool can see. `A4` fails a grid of same-class cards on equal
+tracks, the welcome-screen fingerprint that started it. The SubagentStop gate hook runs all three.
+
 ## Agents (Einherjar)
 
 One install can host many agents. An agent owns its **identity** and its **tier-1
