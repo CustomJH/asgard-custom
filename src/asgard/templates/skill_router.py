@@ -10,6 +10,11 @@ def _field(skill_md: str, name: str) -> str:
     return match.group(1).strip() if match else ""
 
 
+def _plain(value: str) -> str:
+    """YAML 인용부호를 벗긴 사람 표면용 값 — 프론트매터로 되돌려 쓰는 자리엔 쓰지 않는다."""
+    return value[1:-1].strip() if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'" else value
+
+
 def routed_skill(skill_md: str, agent: str) -> str:
     """Legacy deterministic wrapper retained so sync can recognize old generated files."""
     name = _field(skill_md, "name")
@@ -38,11 +43,16 @@ def direct_skill(skill_md: str, *, implicit: bool = True) -> str:
     allowed = _field(skill_md, "allowed-tools")
     explicit = not implicit or _field(skill_md, "disable-model-invocation").lower() in ("true", "yes", "1", "on")
     explicit_line = "disable-model-invocation: true\n" if explicit else ""
-    tools = " ".join(part for part in (allowed, "Bash(asgard skills *)") if part)
+    # 인자 힌트는 사용자 표면이다 — 상류가 적어 뒀으면 어댑터에서도 살려야 `/name <args>` 안내가 산다.
+    hint = _field(skill_md, "argument-hint")
+    hint_line = f"argument-hint: {hint}\n" if hint else ""
+    # 쉼표로 잇는다 — 공백으로 이으면 상류 목록의 마지막 항목이 `WebSearch Bash(asgard skills *)`
+    # 한 덩어리가 돼 그 도구와 우리 통로가 함께 사라진다 (allowed-tools 는 쉼표 구분 목록).
+    tools = ", ".join(part for part in (allowed, "Bash(asgard skills *)") if part)
     return f"""---
 name: {name}
 description: {description}
-{explicit_line}allowed-tools: {tools}
+{hint_line}{explicit_line}allowed-tools: {tools}
 ---
 
 # Asgard central skill adapter
@@ -57,7 +67,8 @@ def openai_skill_metadata(skill_md: str) -> str | None:
     if _field(skill_md, "disable-model-invocation").lower() not in ("true", "yes", "1", "on"):
         return None
     name = _field(skill_md, "name")
-    description = _field(skill_md, "description")
+    # 상류 프론트매터가 인용된 설명을 쓰면 그 따옴표가 사용자에게 보이는 문장 첫 글자가 된다.
+    description = _plain(_field(skill_md, "description"))
     display = " ".join(part.capitalize() for part in name.split("-"))
     return (
         "interface:\n"

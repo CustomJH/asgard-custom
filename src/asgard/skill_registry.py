@@ -27,6 +27,9 @@ _PLUGIN_BYTE_CAP = 64 * 1024 * 1024
 _RESOLVED_BODY_BUDGET = 16_000
 _BUNDLED_PLUGINS_DIR = Path(__file__).with_name("assets") / "skill_plugins"
 _ASSIGNABLE_AGENTS = frozenset(("worker", "freyja", "thor", "thor-lead", "eitri", "mimir"))
+# 앵커 스킬이 프로젝트 옆에 풀리는 자리와, 어느 판본이 풀렸는지 적어 두는 표식.
+_ANCHOR_DIR = (".asgard", "skills")
+_ANCHOR_STAMP = ".asgard-skill.json"
 
 
 def _description(text: str) -> str:
@@ -168,6 +171,94 @@ def _skill_md(plugin: dict, name: str) -> str:
     return _read_text(os.path.join(plugin["root"], "skills", name, "SKILL.md"))
 
 
+def _anchor_target(root: str, name: str) -> str:
+    return os.path.join(root, *_ANCHOR_DIR, name)
+
+
+def _tree_files(root: str) -> set[str]:
+    """Relative paths of a skill tree, minus what unpacking never copies (bytecode) or adds (stamp)."""
+    found: set[str] = set()
+    for current, dirs, files in os.walk(root):
+        dirs[:] = [name for name in dirs if name != "__pycache__"]
+        for name in files:
+            if name.endswith((".pyc", ".pyo")) or (current == root and name == _ANCHOR_STAMP):
+                continue
+            found.add(os.path.relpath(os.path.join(current, name), root))
+    return found
+
+
+def anchor_skill(root: str, plugin: dict, name: str) -> str:
+    """Unpack one anchored skill tree beside the project and return the directory holding SKILL.md.
+
+    Idempotent: a stamp records which plugin revision is on disk, so this is a no-op until an
+    Asgard update changes the shipped tree.  A project that cannot be written to (read-only
+    checkout, foreign cwd) falls back to the wheel copy — the caller only needs a real path.
+    """
+    source = os.path.join(plugin["root"], "skills", name)
+    target = _anchor_target(root, name)
+    marker = {"plugin": plugin["name"], "version": plugin["version"], "revision": plugin["revision"]}
+    try:
+        # 판본만 보면 손으로 지운 파일을 영원히 못 본다 — 이 트리를 가리켜 놓고 그 안이 비어 있으면
+        # 스킬은 파이썬 역추적으로 죽는다. 배송한 파일이 전부 제자리인지까지 확인하고 통과시킨다
+        # (실행 부산물 같은 여분은 눈감는다 — 엔진이 자기 자리에 .pyc 를 남긴다).
+        if json.loads(_read_text(os.path.join(target, _ANCHOR_STAMP))) == marker and not _tree_files(source).difference(
+            _tree_files(target)
+        ):
+            return target
+    except OSError, ValueError:
+        pass
+    home = os.path.dirname(target)
+    try:
+        os.makedirs(home, mode=0o700, exist_ok=True)
+        # 이 트리는 파생물이다 — 셋업 전이라 `.asgard/.gitignore` 가 아직 없어도 커밋에 안 섞이게.
+        Path(os.path.join(home, ".gitignore")).write_text("*\n", encoding="utf-8")
+        temp = tempfile.mkdtemp(prefix=f".{name}.", dir=home)
+        try:
+            staging = os.path.join(temp, name)
+            shutil.copytree(source, staging, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            Path(os.path.join(staging, _ANCHOR_STAMP)).write_text(
+                json.dumps(marker, ensure_ascii=False) + "\n", encoding="utf-8"
+            )
+            if os.path.lexists(target):
+                shutil.rmtree(target, ignore_errors=True)
+            os.replace(staging, target)
+        finally:
+            shutil.rmtree(temp, ignore_errors=True)
+    except OSError:
+        return source
+    return target
+
+
+def _anchor_md(directory: str, name: str, frontmatter: str, lines: int) -> str:
+    """Hand back where the skill lives instead of its body; the original file stays the only policy."""
+    return (
+        f"---{frontmatter}---\n\n"
+        f"# {name} — read this skill from disk\n\n"
+        "This skill ships its own runtime and resolves every path against the directory holding\n"
+        "its `SKILL.md`, so it is delivered as a location rather than as text. Asgard unpacked it:\n\n"
+        f"    SKILL_DIR={directory}\n\n"
+        "Before doing anything else:\n\n"
+        # 줄 수를 준다 — 이만한 파일은 어떤 리더든 한 번에 안 준다. 어디까지 읽었는지 알아야
+        # 이어 읽고, 그래야 파일 뒤쪽의 계약(LAW·합성 규칙)이 통째로 빠지지 않는다.
+        f"1. Read `$SKILL_DIR/SKILL.md` — all {lines} lines of it. If your reader returns only part\n"
+        "   of the file, continue from where it stopped until you reach the last line. That file is\n"
+        "   the canonical instruction set; this pointer carries no policy and overrides nothing.\n"
+        "2. Use the `SKILL_DIR` above wherever the skill asks for the directory containing the\n"
+        "   SKILL.md you just read. Do not search the filesystem for it.\n"
+        "3. Then follow that file exactly, including any setup or preflight step it defines.\n"
+    )
+
+
+def _delivered_md(root: str, plugin: dict, name: str, *, unpack: bool = True) -> str:
+    """The text a client receives for one file-backed skill: its body, or its location if anchored."""
+    text = _skill_md(plugin, name)
+    if name not in plugin.get("anchored", ()):
+        return text
+    directory = anchor_skill(root, plugin, name) if unpack else _anchor_target(root, name)
+    frontmatter = text.split("---", 2)[1] if text.startswith("---") else "\n"
+    return _anchor_md(directory, name, frontmatter, len(text.splitlines()))
+
+
 def _validate_manifest(root: str) -> dict:
     try:
         manifest = json.loads(_read_text(os.path.join(root, "plugin.json")))
@@ -232,6 +323,12 @@ def _validate_manifest(root: str) -> dict:
             "agents": compatible,
             "implicit": skill_implicit[skill],
         }
+    # 앵커 스킬 — 본문이 자기 디렉터리를 기준으로 경로를 푸는 스킬(엔진 스크립트를 데리고 다니는
+    # 벤더링 팩)은 카탈로그로 본문을 흘려보내면 그 경로가 전부 끊긴다. 선언한 스킬만 디스크에
+    # 풀고 위치를 넘긴다 — 선언 안 한 스킬은 지금까지처럼 본문 그대로다.
+    anchored = _items(manifest.get("anchored"))
+    if set(anchored).difference(normalized):
+        raise ValueError("plugin anchored must list declared skills")
     _safe_tree(root)
     entrypoints = _entrypoints(manifest, normalized)
     for skill, relative in entrypoints.items():
@@ -244,6 +341,7 @@ def _validate_manifest(root: str) -> dict:
         "version": str(manifest.get("version") or "0"),
         "description": str(manifest.get("description") or ""),
         "skills": normalized,
+        "anchored": anchored,
         "routing": routing,
         "entrypoints": entrypoints,
         "source": str(manifest.get("source") or ""),
@@ -412,13 +510,13 @@ def show_skill(root: str, name: str) -> str | None:
                 return text
     for plugin in bundled_plugins().values():
         if name in plugin["skills"]:
-            return _skill_md(plugin, name)
+            return _delivered_md(root, plugin, name)
     learned = learned_skills(root).get(name)
     if learned:
         return _read_text(str(learned["path"]))
     for plugin in installed_plugins().values():
         if name in plugin["skills"]:
-            return _skill_md(plugin, name)
+            return _delivered_md(root, plugin, name)
     return None
 
 
@@ -629,7 +727,8 @@ def _resolve_file_plugins(root: str, task: str, agent: str, sources: dict[str, d
                 continue
             matched = sum(1 for trigger in route["triggers"] if trigger in task)
             if matched:
-                hits.append((-matched, name, body))
+                delivered = _file_skill(_delivered_md(root, plugin, name))
+                hits.append((-matched, name, delivered[1] if delivered else body))
     hits.sort()
     return [(name, body) for _, name, body in hits[:_PLUGIN_CAP]]
 
@@ -695,7 +794,8 @@ def client_skill_bodies(agent: str, root: str | None = None, *, include_learned:
                 hits.setdefault(name, body)
     for plugin in [*bundled_plugins().values(), *installed_plugins().values()]:
         for name in plugin["skills"]:
-            text = _skill_md(plugin, name)
+            # 스캐폴딩·목록 경로다 — 여기서 앵커를 풀지 않는다 (본문은 프론트매터만 소비된다).
+            text = _delivered_md(root, plugin, name, unpack=False)
             parsed = _file_skill(text)
             if not parsed:
                 continue

@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "name": "last30days-skill",
+  "version": "3.18.4",
+  "description": "Last-30-days research across Reddit, X, YouTube, TikTok, Hacker News, Polymarket, GitHub, and the web",
+  "skills": ["last30days"],
+  "anchored": ["last30days"],
+  "routing": {
+    "last30days": {
+      "triggers": [
+        "last30days",
+        "last 30 days",
+        "past 30 days",
+        "trend research",
+        "trending topics",
+        "what people are saying",
+        "public sentiment",
+        "community reaction",
+        "market reaction",
+        "reddit",
+        "hacker news",
+        "hackernews",
+        "polymarket",
+        "지난 30일",
+        "최근 30일",
+        "최근 한 달",
+        "지난 한 달",
+        "최신 동향",
+        "동향 조사",
+        "트렌드 조사",
+        "여론",
+        "커뮤니티 반응",
+        "소셜 반응",
+        "시장 반응",
+        "요즘 반응"
+      ],
+      "defaults": ["worker"],
+      "agents": ["worker", "freyja", "thor", "thor-lead"]
+    }
+  },
+  "source": "https://github.com/mvanhorn/last30days-skill",
+  "revision": "0188da7ce7a216978434210eece23d79c48c821b",
+  "license": "MIT"
+}

@@ -187,6 +187,17 @@ files are copied intact and text references are available through `asgard skills
 Only Python entrypoints explicitly listed in the manifest can run, through
 `asgard skills run <name> ...`; arbitrary hooks and shell commands are never registered.
 
+A skill listed in `plugin.json`'s `anchored` array is delivered as a location instead of a body.
+Asgard unpacks its tree into `<project>/.asgard/skills/<name>/` and returns a short pointer naming
+that directory, so the client reads the original `SKILL.md` from disk. This is for packs that carry
+their own runtime and resolve paths against the directory holding their `SKILL.md` — a body long
+enough to be truncated by a host's command-output ceiling would otherwise arrive half-read, and
+paths relative to the skill directory would have no anchor at all. The unpacked tree is derived
+state: it is git-ignored, refreshed when the shipped version changes, and falls back to the
+installed copy when the project cannot be written to. The bundled `last30days` research skill —
+Reddit, X, YouTube, TikTok, Hacker News, Polymarket, GitHub, and the web over a 30-day window — is
+delivered this way and is available in every mode after install, with no extra setup.
+
 ## Documents (Sága)
 
 ```bash
