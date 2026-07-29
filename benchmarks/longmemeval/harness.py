@@ -140,6 +140,8 @@ def main() -> int:
     # QPP 분산 게이트 A/B. "off" = 게이트 없음(도입 전 거동), 숫자 = 그 문턱,
     # 미지정 = 제품 기본값(RERANK_DISPERSION_FLOOR). 산출물이 자기 실험군을 밝히도록 기록한다.
     parser.add_argument("--dispersion", default="")
+    # 게이트 모양 A/B — hard(기권) vs soft(감쇠). 산출물이 자기 실험군을 밝힌다.
+    parser.add_argument("--gate", default="", choices=["", "hard", "soft"])
     parser.add_argument("--kind", default="note")  # reference 로 두면 최신성 보정(TEMPORAL_KINDS)이 켜진다
     parser.add_argument("--event-dates", action="store_true")  # 세션 날짜를 event 메타로 심는다
     parser.add_argument("--only-type", default="")  # 한 유형만 (예: temporal-reasoning)
@@ -156,6 +158,8 @@ def main() -> int:
     # 산출물에 적는다 — 나중에 상수가 바뀌면 이 파일이 어느 문턱의 결과인지 알 수 없어진다.
     if args.dispersion:
         os.environ["ASGARD_MEMORY_RERANK_DISPERSION"] = "0" if args.dispersion == "off" else args.dispersion
+    if args.gate:
+        os.environ["ASGARD_MEMORY_RERANK_GATE"] = args.gate
     from asgard.memory import recall as _recall
 
     _effective_floor = _recall._dispersion_floor() if args.rerank == "on" else None
@@ -194,6 +198,7 @@ def main() -> int:
         "semantic": args.semantic,
         "rerank": args.rerank,
         "dispersion_floor": _effective_floor,
+        "gate_mode": _recall._gate_mode() if args.rerank == "on" else None,
         "kind": args.kind,
         "event_dates": args.event_dates,
         "only_type": args.only_type,

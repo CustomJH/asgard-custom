@@ -163,6 +163,31 @@ _RERANK_ENV = "ASGARD_MEMORY_RERANK"
 # NQC 는 코퍼스 점수로 정규화하지만 우리에겐 그 상수가 없다. 코사인은 척도가 고정
 # ([-1,1]) 이고 후보 집합이 작으므로 **변동계수**(σ/μ)를 쓴다 — 척도 무관이고 stdlib 로 끝난다.
 RERANK_DISPERSION_ENV = "ASGARD_MEMORY_RERANK_DISPERSION"
+# 게이트의 **모양** — 기권(hard)인가 감쇠(soft)인가.
+#
+# 처음 낸 것은 hard 였다: 분산이 문턱 미만이면 리랭크 표를 아예 안 던진다. held-out 계측이
+# 그 대가를 정확히 보여 줬다 (26-07-29):
+#   V2(새 도메인) 퇴행 9건 → 2건  ← 얻은 것
+#   M(건초더미 9배) R@5 동일하나 NDCG −0.9pp · MRR −1.4pp  ← 치른 것
+# M 에서 리랭크는 순증(27:14)이었으므로, 낮은 분산 질의에서도 **순위를 다듬는 몫**이 있었는데
+# 기권이 그걸 통째로 버린 것이다. 신호가 약하다는 것과 신호가 없다는 것은 다른 말이다.
+#
+# soft 는 그 사이를 열어 본 시도다: 분산을 **확신도**로 읽어 융합 가중을 낮춘다.
+#   w(σ/μ) = min(1, 분산 / 문턱)
+# 문턱 이상이면 1.0 이라 S 의 이득은 정의상 보존되고, 문턱 미만에서만 비례해 줄어든다.
+#
+# **재 봤고, 안 됐다 (26-07-29 3벌 실측).** 감쇠가 너무 완만하다 — V2 에서 해를 끼치던 질의의
+# 분산이 문턱 **바로 아래**(0.82~0.95 × 문턱)에 몰려 있어서 가중이 0.8 이상으로 거의 안 깎인다.
+#
+#   V2 R@5:  OFF 0.800 · 게이트없음 0.750(4:9) · **hard 0.780(0:2)** · soft 0.760(4:8)
+#   S  R@5:  게이트없음 0.956 · **hard 0.960** · soft 0.956 (게이트없음과 동률)
+#
+# 즉 soft 는 게이트 없음과 거의 같다 — 지키려던 것을 못 지킨다. 그래서 기본은 **hard** 다.
+# soft 를 남겨 두는 이유는 이 판정이 취향이 아니라 계측이었음을 남이 재현할 수 있어야 하기
+# 때문이다 (`--gate soft`). hard 가 M 에서 치르는 MRR −1.4pp 는 여전히 열린 값이고, 그걸
+# 되찾으려면 지금 신호가 못 주는 구분이 필요하다 — 다음 라운드의 held-out 몫이다.
+RERANK_GATE_ENV = "ASGARD_MEMORY_RERANK_GATE"
+RERANK_GATE_MODE = "hard"
 # 문턱은 **개발 집합(S)에서만** 뽑았다. held-out(M·V2)을 보고 고르면 그 절의 증거값이
 # 그 자리에서 사라진다 — 보고서가 스스로 경계한 그 행동이다.
 #
@@ -207,6 +232,31 @@ def _dispersion_floor() -> float:
         return RERANK_DISPERSION_FLOOR
 
 
+def _gate_mode() -> str:
+    """게이트 모양 — env > 설정 > 기본 soft. `hard` 는 기권(도입 당시 거동, 보고서 재현용)."""
+    env = (os.environ.get(RERANK_GATE_ENV) or "").strip().lower()
+    if env in ("hard", "soft"):
+        return env
+    try:
+        mode = str(_memory_settings().get("rerank_gate", RERANK_GATE_MODE)).strip().lower()
+        return mode if mode in ("hard", "soft") else RERANK_GATE_MODE
+    except Exception:
+        return RERANK_GATE_MODE
+
+
+def _gate_weight(dispersion: float, floor: float) -> float:
+    """리랭크 스트림에 줄 융합 가중 — 1.0 이면 기존과 동일, 0.0 이면 표를 안 던진다.
+
+    문턱이 0(게이트 없음)이면 항상 1.0 이라 도입 전과 바이트 동일하게 돈다."""
+    if floor <= 0.0:
+        return 1.0
+    if dispersion >= floor:
+        return 1.0
+    if _gate_mode() == "hard":
+        return 0.0
+    return max(0.0, dispersion / floor)
+
+
 def _dispersion(scores: list[float]) -> float:
     """후보 점수의 변동계수 σ/μ — 후보들이 갈리는 정도. 못 재면 0.0.
 
@@ -237,7 +287,7 @@ def _passages(body: str) -> list[str]:
     return out
 
 
-def _rerank_order(text: str, cand: dict, ranked: list[str]) -> list[tuple[str, float]]:
+def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[str, float]], float]:
     """구절 최대 유사도 순위 — 페이지가 길수록 통짜 임베딩이 못 보는 것을 되찾는다.
 
     페이지 벡터 하나는 문서 전체의 평균이라, 긴 페이지에서는 정작 답이 든 한 문장이 나머지
@@ -253,14 +303,15 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> list[tuple[str, f
     후보를 잘라 예산을 아끼는 방식은 실측에서 역효과였다 — 앞 구절만 보면 답이 뒤에 있을 때
     놓치고(−0.8pp), 후보를 앞쪽 몇 개로 줄이면 재정렬할 범위 자체가 사라져 이득이 0이 된다.
 
-    실패는 조용히 빈 리스트 — 시맨틱이 꺼져 있으면 기존 4스트림 그대로 돈다."""
+    반환 = (순위, 융합 가중). 가중은 QPP 게이트가 정한다 — 1.0 이면 기존과 대등, 0.0 이면
+    표를 안 던진다. 실패는 조용히 빈 순위 — 시맨틱이 꺼져 있으면 기존 4스트림 그대로 돈다."""
     from .. import memory_semantic as sem
 
     if not sem.active() or not ranked:
-        return []
+        return [], 0.0
     query_vec = sem.embed(text)
     if query_vec is None:
-        return []
+        return [], 0.0
     scored: list[tuple[str, float]] = []
     for slug in ranked:
         entry = cand.get(slug)
@@ -286,18 +337,18 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> list[tuple[str, f
         )
     # 대상이 둘 미만이면 순위라 부를 것이 없다 — 아무것도 안 한다 (기존 4스트림 그대로).
     if len(scored) < 2:
-        return []
-    # QPP 게이트 — 후보들이 안 갈리면 표를 던지지 않는다 (위 RERANK_DISPERSION_FLOOR 참조).
-    # 회수 범위도 기존 순위도 안 건드린다: 기권은 "4스트림 결과 그대로"라는 뜻이다.
+        return [], 0.0
+    # QPP 게이트 — 후보들이 안 갈리면 리랭크의 발언권을 줄인다 (위 RERANK_GATE_ENV 참조).
+    # 회수 범위도 기존 순위도 안 건드린다: 가중 0 은 "4스트림 결과 그대로"라는 뜻이다.
     #
     # 분산은 문턱과 **무관하게** 항상 계산한다. 실수 스무 개의 평균과 제곱합이라 비용이 없고,
     # 단락 평가로 건너뛰면 게이트를 끈 상태에서 이 값을 관측할 수 없다 — 보정(문턱을 뽑는 일)은
     # 정의상 게이트가 꺼진 실행에서 해야 하므로, 그때 계기가 죽으면 보정 자체가 불가능해진다.
-    dispersion = _dispersion([score for _slug, score in scored])
-    if dispersion < _dispersion_floor():
-        return []
+    weight = _gate_weight(_dispersion([score for _slug, score in scored]), _dispersion_floor())
+    if weight <= 0.0:
+        return [], 0.0
     scored.sort(key=lambda pair: (-pair[1], pair[0]))
-    return [pair for pair in scored if pair[1] > 0.0]
+    return [pair for pair in scored if pair[1] > 0.0], weight
 
 
 def _graph_order(pages: dict[str, tuple[dict, str]], seeds: dict[str, float]) -> list[tuple[str, float]]:
@@ -527,11 +578,14 @@ def query(
     # 스트림 하나로 넣으면 가중이 1/5 로 희석돼 실측 이득이 +2.4pp → +0.4pp 로 죽었다
     # (LongMemEval-S 500문항). 이 신호는 그만큼 강하다 — 대등하게 세워야 값을 한다.
     base_order = sorted(cand, key=lambda slug: (-rrf[slug], slug))
-    if rerank_enabled() and (rerank_order := _rerank_order(text, cand, base_order[:RERANK_CANDIDATES])):
-        fused = dict.fromkeys(cand, 0.0)
-        _add_ranks(fused, [(slug, rrf[slug]) for slug in base_order], RERANK_BASE_WEIGHT)
-        _add_ranks(fused, rerank_order)
-        rrf = fused
+    if rerank_enabled():
+        rerank_order, rerank_weight = _rerank_order(text, cand, base_order[:RERANK_CANDIDATES])
+        if rerank_order and rerank_weight > 0.0:
+            fused = dict.fromkeys(cand, 0.0)
+            _add_ranks(fused, [(slug, rrf[slug]) for slug in base_order], RERANK_BASE_WEIGHT)
+            # 가중은 QPP 게이트가 정한다: 후보가 갈리면 1.0(대등), 안 갈리면 그만큼 작게.
+            _add_ranks(fused, rerank_order, rerank_weight)
+            rrf = fused
 
     # 빠르게 낡는 reference만 시간 multiplier를 계산하되 RRF 동률 안에서만 쓴다.
     # k=60 RRF의 인접 순위 차가 작아 전역 곱셈은 약한 최신성만으로 강한 관련도를 뒤집는다.

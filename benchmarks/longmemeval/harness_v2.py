@@ -82,6 +82,8 @@ def main() -> int:
     ap.add_argument("--rerank", choices=["on", "off"], default="on")
     # QPP 분산 게이트 A/B — harness.py 와 같은 계약. "off" = 게이트 없음, 미지정 = 제품 기본값.
     ap.add_argument("--dispersion", default="")
+    # 게이트 모양 A/B — hard(기권) vs soft(감쇠). 산출물이 자기 실험군을 밝힌다.
+    ap.add_argument("--gate", default="", choices=["", "hard", "soft"])
     ap.add_argument("--gold-rule", choices=["any", "all"], default="all")
     ap.add_argument("--min-phrase", type=int, default=5)
     ap.add_argument("--out", required=True)
@@ -92,6 +94,8 @@ def main() -> int:
     os.environ["ASGARD_MEMORY_RERANK"] = args.rerank  # 제품의 정식 스위치 — 몽키패치 아님
     if args.dispersion:
         os.environ["ASGARD_MEMORY_RERANK_DISPERSION"] = "0" if args.dispersion == "off" else args.dispersion
+    if args.gate:
+        os.environ["ASGARD_MEMORY_RERANK_GATE"] = args.gate
 
     from asgard import memory
     from asgard.memory import recall as _recall
@@ -186,6 +190,7 @@ def main() -> int:
         "dataset": "longmemeval-v2 (small haystack, derived gold)",
         "rerank": args.rerank,
         "dispersion_floor": effective_floor,
+        "gate_mode": _recall._gate_mode() if args.rerank == "on" else None,
         "gold_rule": args.gold_rule,
         "min_phrase": args.min_phrase,
         "state_budget": args.state_budget,
