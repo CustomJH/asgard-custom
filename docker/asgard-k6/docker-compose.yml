@@ -1,4 +1,4 @@
-# asgard-k6 — 부하 시험 부트스트랩 (수동 운용 경로)
+# asgard-k6 — 부하 시험 스택 (수동 운용 경로)
 #
 # 평소 경로는 CLI 다: `asgard k6 run <시나리오>` 가 같은 이미지·같은 마운트로 컨테이너를
 # 한 번 띄우고 요약을 회수한다. 이 파일은 그 스택을 **사람이 직접** 붙들고 있고 싶을 때
@@ -6,8 +6,28 @@
 #
 # 이미지 기본값은 CLI 와 같은 값이어야 한다 — tests/test_k6.py 가 두 값을 대조해 봉인한다.
 #
-#   docker compose -f compose.yml up pacer -d
-#   docker compose -f compose.yml run --rm k6 run /asgard/scenarios/selftest.js
+# ── 볼륨은 **프로젝트의 `.asgard/k6/`** 에서 온다
+#
+# 이 파일이 서 있는 자리(체크아웃의 `docker/`)나 셸의 현재 디렉터리가 아니라, 부하를 재려는
+# **그 프로젝트**가 볼륨의 집이다. 설치본에는 `src/` 가 없고, 한 설치본을 여러 프로젝트가
+# 함께 쓰기 때문이다 — 마운트 원본이 프로젝트 밖에 있으면 "이 실행이 어떤 키트를 봤나"가
+# 프로젝트 밖에서 정해진다. `asgard k6 sync` 가 그 자리를 세운다:
+#
+#   .asgard/k6/kit/    배송된 키트의 실물 — `/asgard` 로 읽기 전용 마운트
+#   .asgard/k6/out/    수동 실행의 요약이 떨어지는 자리 (CLI 경로는 `runs/` 로 간다)
+#
+# 기본값은 이 저장소 자신의 레인(`../../.asgard/k6`)이다. 다른 프로젝트를 잴 때는 그 프로젝트의
+# 레인을 절대 경로로 가리킨다:
+#
+#   asgard k6 sync                                  # 그 프로젝트에서 한 번
+#   export ASGARD_K6_LANE=/path/to/project/.asgard/k6
+#   docker compose -f docker/asgard-k6/docker-compose.yml up pacer -d
+#
+# ── 이미지를 굽는다 (빌드 컨텍스트는 저장소 루트 — 키트 정본이 src/ 아래 있다)
+#
+#   docker build -f docker/asgard-k6/Dockerfile -t asgard-k6:local .
+#   ASGARD_K6_IMAGE=asgard-k6:local docker compose -f docker/asgard-k6/docker-compose.yml \
+#     run --rm k6 run /asgard/scenarios/selftest.js
 #
 # 컨테이너 안에서 표적 주소는 `http://pacer:8799` 다 (호스트에서 볼 때는 :8799 매핑).
 
@@ -19,7 +39,7 @@ services:
     image: python:3.14-alpine
     working_dir: /asgard
     volumes:
-      - ./pacer.py:/asgard/pacer.py:ro
+      - ${ASGARD_K6_LANE:-../../.asgard/k6}/kit/pacer.py:/asgard/pacer.py:ro
     command:
       - python3
       - /asgard/pacer.py
@@ -39,9 +59,11 @@ services:
   k6:
     image: ${ASGARD_K6_IMAGE:-grafana/k6:latest}
     # 키트는 읽기 전용, 요약이 나갈 자리만 쓰기 가능 — 시나리오가 자기 정의를 못 고친다.
+    # 우리 이미지에도 같은 키트가 구워져 있지만 **정본은 배송본**이라 그 위에 덮어 마운트한다.
+    # 원본은 프로젝트 레인에 실체화된 사본이다 (`asgard k6 sync`).
     volumes:
-      - .:/asgard:ro
-      - ${ASGARD_K6_OUT_DIR:-./out}:/asgard/out
+      - ${ASGARD_K6_LANE:-../../.asgard/k6}/kit:/asgard:ro
+      - ${ASGARD_K6_OUT_DIR:-${ASGARD_K6_LANE:-../../.asgard/k6}/out}:/asgard/out
     environment:
       ASGARD_K6_TARGET: ${ASGARD_K6_TARGET:-http://pacer:8799}
       ASGARD_K6_OUT: /asgard/out/summary.json

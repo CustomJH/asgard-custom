@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -34,10 +35,18 @@ from importlib.resources import files
 from pathlib import Path
 
 SUMMARY_SCHEMA = "asgard-k6-summary-v1"
-DEFAULT_IMAGE = "grafana/k6:latest"
 SUMMARY_NAME = "summary.json"
 CONTAINER_MOUNT = "/asgard"
-PROJECT = "asgard-k6"  # 컨테이너·compose 프로젝트 이름의 정본
+PROJECT = "asgard-k6"  # 컨테이너·compose 프로젝트·이미지 이름의 정본
+
+# 레인이 프로젝트 안에서 쓰는 자리. 도커에 넘기는 호스트 경로는 **전부 여기 아래**다.
+LANE_DIR = "k6"
+
+# 우리가 굽는 이미지 (docker/asgard-k6/Dockerfile). 있으면 이것을 쓰고, 없으면 공개 이미지로
+# 내려간다 — 자동으로 빌드하지는 않는다. 설치본에는 빌드 컨텍스트(src/)가 없고, 부하 측정
+# 도중에 몇 분짜리 이미지 빌드가 끼어드는 것은 그 자체가 측정 방해다.
+OWNED_IMAGE = PROJECT
+DEFAULT_IMAGE = "grafana/k6:latest"
 
 # k6 는 임계값이 깨지면 이 코드로 끝난다. 실패(비정상 종료)와 판정(임계값 미달)은 다른 사건이다.
 THRESHOLD_EXIT = 99
@@ -46,16 +55,135 @@ _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
 _ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
+# ──────────────────────────────────────────────────────── 레인의 집 (프로젝트 기준)
+
+
+def project_root(start: str | os.PathLike[str] | None = None) -> Path:
+    """이 명령이 선 자리에서 **프로젝트**를 찾는다 — 볼륨의 집이 여기서 갈린다.
+
+    현재 디렉터리를 그대로 프로젝트로 쓰면 `src/` 안에서 부른 실행이 거기에 `.asgard/` 를
+    새로 파고, 같은 프로젝트의 키트와 기록이 두 곳으로 갈라진다. 그래서 위로 걸어 표식을
+    찾되 **가장 가까운 표식이 이긴다** — 표식 종류로 우선순위를 매기면 안 된다. 아스가르드는
+    자격 증명을 `~/.asgard/` 에 두므로, `.asgard` 를 먼저 다 훑으면 홈 아래의 저장소가
+    자기 `.git` 을 지나쳐 홈을 프로젝트로 잡는다. 둘 다 없으면 선 자리가 프로젝트다."""
+    here = Path(start or os.getcwd()).resolve()
+    for candidate in (here, *here.parents):
+        if (candidate / ".asgard").is_dir() or (candidate / ".git").exists():
+            return candidate
+    return here
+
+
+def lane_dir(root: str | os.PathLike[str]) -> Path:
+    """`<프로젝트>/.asgard/k6` — 이 프로젝트에서 레인이 쓰는 모든 것의 집."""
+    return Path(root) / ".asgard" / LANE_DIR
+
+
+def mounted_kit_dir(root: str | os.PathLike[str]) -> Path:
+    """도커에 `/asgard` 로 넘어가는 **호스트 경로**. 설치 위치가 아니라 프로젝트 안이다."""
+    return lane_dir(root) / "kit"
+
+
+def runs_dir(root: str | os.PathLike[str]) -> Path:
+    return lane_dir(root) / "runs"
+
+
+def compose_out_dir(root: str | os.PathLike[str]) -> Path:
+    """수동 compose 스택이 요약을 떨어뜨리는 자리 — CLI 경로(`runs/`)와 섞이지 않게 따로."""
+    return lane_dir(root) / "out"
+
+
 # ────────────────────────────────────────────────────────────── 키트와 시나리오
 
 
 def kit_dir() -> Path:
-    """설치본에 실려 오는 키트 경로 (시나리오·라이브러리·pacer·compose)."""
+    """설치본에 실려 오는 키트 경로 — 시나리오·라이브러리·기준 표적. **정본은 여기 하나다.**
+
+    다만 이 경로를 도커에 그대로 넘기지는 않는다. 여기는 설치 접두사(휠이 풀린 자리)라
+    기계마다 다르고 프로젝트마다 같다 — 볼륨의 집이 될 수 없다. 실제로 마운트되는 것은
+    이 정본을 프로젝트 안으로 실체화한 `sync_kit()` 의 산물이다.
+
+    도커 산출물(Dockerfile·compose)은 `docker/asgard-k6/` 에 따로 산다. 굽는 것과 실려 가는
+    것을 갈라 둔 이유: 이미지는 저장소에서 만들고 관리하지만, 시나리오는 `uv tool install`
+    한 사람의 기계에도 있어야 `asgard k6 run` 이 선다."""
     return Path(str(files("asgard").joinpath("assets", "k6_kit")))
 
 
 def pacer_script() -> Path:
     return kit_dir() / "pacer.py"
+
+
+def docker_dir() -> Path | None:
+    """`docker/asgard-k6/` — 이미지와 compose 의 집. 저장소 체크아웃에서만 존재한다."""
+    root = Path(__file__).resolve().parents[2]  # src/asgard/k6.py → 저장소 루트
+    candidate = root / "docker" / PROJECT
+    return candidate if (candidate / "Dockerfile").is_file() else None
+
+
+def _kit_signature(source: Path) -> str:
+    """키트 내용의 지문 — 판 번호가 아니라 **내용**으로 재동기화를 판단한다.
+
+    버전으로 재면 개발 중 편집한 시나리오가 프로젝트에 안 내려가고, mtime 으로 재면
+    재설치 때마다 이유 없이 다시 복사한다."""
+    digest = hashlib.sha256()
+    for path in sorted(p for p in source.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
+        digest.update(path.relative_to(source).as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
+
+
+def kit_is_synced(root: str | os.PathLike[str]) -> bool:
+    """이 프로젝트에 실린 키트가 지금 배송본과 **같은가** — 두 트리를 직접 잰다.
+
+    기록해 둔 지문과 배송본만 대조하면 실린 쪽이 바뀐 것을 못 본다. 그러면 누군가
+    `.asgard/k6/kit/` 안을 고쳐도 레인은 "배송본과 같다"고 말하고, 컨테이너는 고쳐진
+    키트를 돈다 — `/asgard` 를 읽기 전용으로 거는 이유(시나리오가 자기 정의를 못 고친다)가
+    호스트 쪽에서 새는 것이다. 그래서 양쪽을 다 잰다."""
+    target = mounted_kit_dir(root)
+    if not target.is_dir():
+        return False
+    try:
+        return _kit_signature(target) == _kit_signature(kit_dir())
+    except OSError:
+        return False
+
+
+def sync_kit(root: str | os.PathLike[str], *, force: bool = False) -> Path:
+    """배송된 키트를 **이 프로젝트의 `.asgard/k6/kit/`** 에 실체화하고 그 경로를 준다.
+
+    왜 설치 위치를 바로 마운트하지 않나: 그 경로는 프로젝트의 것이 아니다. `uv tool install`
+    한 기계에서는 도구 venv 안(공유 접두사)이고, 체크아웃에서는 `src/` 아래이며, 도커 데스크톱이
+    공유하지 않는 자리일 수도 있다. 하나의 설치본을 여러 프로젝트가 함께 쓰는 이상 "지금 이
+    실행이 어떤 키트를 마운트했나"도 프로젝트 밖에서 정해진다. 프로젝트 안으로 내려 두면
+    그 답이 파일로 남고, 수동 compose 경로도 같은 실물을 본다.
+
+    재동기화는 내용 지문으로 판단한다 — 같으면 손대지 않으므로 매 실행 호출해도 싸다."""
+    source = kit_dir()
+    target = mounted_kit_dir(root)
+    if not force and kit_is_synced(root):
+        return target
+
+    # 덮어 쓰지 않고 통째로 갈아 끼운다: 이전 판에서 사라진 시나리오가 그대로 살아남거나,
+    # 반쯤 복사된 키트로 부하를 재는 사고를 막는다.
+    staging = target.parent / f".kit-staging-{os.getpid()}"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    shutil.rmtree(staging, ignore_errors=True)
+    try:
+        shutil.copytree(source, staging, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+        shutil.rmtree(target, ignore_errors=True)
+        staging.replace(target)
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    return target
+
+
+def prepare_lane(root: str | os.PathLike[str], *, force: bool = False) -> Path:
+    """실행 전에 레인의 자리를 세운다 — 마운트 원본(kit)과 산출 자리(runs·out)."""
+    kit = sync_kit(root, force=force)
+    runs_dir(root).mkdir(parents=True, exist_ok=True)
+    compose_out_dir(root).mkdir(parents=True, exist_ok=True)
+    return kit
 
 
 @dataclass(frozen=True)
@@ -75,12 +203,18 @@ def builtin_scenarios() -> dict[str, Scenario]:
 
 
 def project_scenarios(root: str | os.PathLike[str]) -> dict[str, Scenario]:
-    """프로젝트가 직접 쓴 시나리오 — `.asgard/k6/*.js`. 같은 이름이면 프로젝트가 이긴다."""
+    """프로젝트가 직접 쓴 시나리오. 같은 이름이면 프로젝트가 이긴다.
+
+    자리는 `.asgard/k6/scenarios/*.js` 다. 레인 바로 밑(`.asgard/k6/*.js`)도 계속 잡히지만
+    — 이전에 거기 둔 것을 깨지 않는다 — 새로 쓰는 것은 `scenarios/` 로 간다: 레인 밑은
+    이제 키트·기록·산출이 함께 사는 자리라, 시나리오 하나를 컨테이너에 넣으려고 그 전부를
+    읽기 전용으로 끌고 들어가게 된다."""
     out: dict[str, Scenario] = {}
-    base = Path(root) / ".asgard" / "k6"
-    if base.is_dir():
-        for path in sorted(base.glob("*.js")):
-            out[path.stem] = Scenario(path.stem, path, "project")
+    lane = lane_dir(root)
+    for base in (lane, lane / "scenarios"):  # 뒤가 이긴다 — 명시적인 자리가 정본
+        if base.is_dir():
+            for path in sorted(base.glob("*.js")):
+                out[path.stem] = Scenario(path.stem, path, "project")
     return out
 
 
@@ -116,10 +250,40 @@ class Runner:
         return f"{self.kind} ({self.image})" if self.containerized else f"{self.kind} k6"
 
 
+def owned_image_tags() -> list[str]:
+    """우리가 굽는 이미지의 후보 태그 — 버전 태그가 먼저, 개발용 `:local` 이 다음."""
+    from . import __version__
+
+    return [f"{OWNED_IMAGE}:{__version__}", f"{OWNED_IMAGE}:local"]
+
+
 def default_image() -> str:
-    """기본 이미지. 떠 있는 태그를 쓰는 대신 **실행마다 판을 보고서에 새긴다** —
-    `latest` 로 잰 수치가 어느 k6 였는지는 나중에 복원할 수 없기 때문이다."""
+    """환경이 고정한 이미지, 아니면 공개 k6. 여기는 엔진을 안 부르는 순수 폴백이다."""
     return os.environ.get("ASGARD_K6_IMAGE") or DEFAULT_IMAGE
+
+
+def resolve_image(engine_binary: str = "") -> str:
+    """실제로 쓸 이미지. `ASGARD_K6_IMAGE` → 로컬에 구워진 `asgard-k6:*` → 공개 k6.
+
+    우리 이미지를 자동으로 빌드하지는 않는다. 설치본에는 빌드 컨텍스트가 없고, 부하를 재려던
+    명령이 몇 분짜리 이미지 빌드로 바뀌는 것은 그 자체가 측정 방해다 — `asgard k6 doctor` 가
+    지금 어느 이미지인지와 굽는 한 줄을 말해 준다."""
+    pinned = os.environ.get("ASGARD_K6_IMAGE")
+    if pinned:
+        return pinned
+    if engine_binary:
+        for tag in owned_image_tags():
+            probe = subprocess.run(
+                [engine_binary, "image", "inspect", tag],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+            if probe.returncode == 0:
+                return tag
+    return DEFAULT_IMAGE
 
 
 def resolve_runner(prefer: str = "") -> Runner | None:
@@ -128,17 +292,16 @@ def resolve_runner(prefer: str = "") -> Runner | None:
     도커를 먼저 보는 이유는 취향이 아니다 — 이미지가 고정되면 같은 부하 형상이 다른
     기계에서도 같은 도구로 돌아간다. 네이티브 k6 는 판이 사람마다 다르다."""
     prefer = (prefer or os.environ.get("ASGARD_K6_RUNNER") or "").strip().lower()
-    image = default_image()
     if prefer == "native":
         binary = shutil.which("k6")
         return Runner("native", binary) if binary else None
     if prefer in ("docker", "podman"):
         binary = shutil.which(prefer)
-        return Runner(prefer, binary, image) if binary else None
+        return Runner(prefer, binary, resolve_image(binary)) if binary else None
     for engine in ("docker", "podman"):
         binary = shutil.which(engine)
         if binary:
-            return Runner(engine, binary, image)
+            return Runner(engine, binary, resolve_image(binary))
     binary = shutil.which("k6")
     return Runner("native", binary) if binary else None
 
@@ -181,6 +344,7 @@ def build_argv(
     *,
     quiet: bool = True,
     container_name: str = "",
+    kit: str | os.PathLike[str] | None = None,
 ) -> list[str]:
     """러너·시나리오·환경 → 실제로 실행될 argv. 순수 함수 — 테스트가 여기를 본다.
 
@@ -189,10 +353,15 @@ def build_argv(
       요약   `/asgard/out`  쓰기 가능 (여기 하나만)
       프로젝트 시나리오는 `/asgard/project` 로 따로 들어온다 — 그래야 `../lib/asgard.js`
       상대 임포트가 키트 라이브러리로 정확히 떨어진다.
+
+    `kit` 은 `/asgard` 로 들어갈 **호스트 경로**다. 부르는 쪽이 `sync_kit()` 으로 프로젝트
+    안에 세운 자리를 넘긴다 — 안 넘기면 설치 접두사를 마운트하게 되고, 그것은 프로젝트의
+    것이 아니다. 기본값을 배송 경로로 둔 것은 러너 없이 조립만 보는 자리(테스트) 때문이다.
     """
     env = dict(env or {})
     _validate_env(env)
     out_dir = Path(out_dir)
+    kit_source = Path(kit) if kit is not None else kit_dir()
 
     if not runner.containerized:
         merged = {**env, "ASGARD_K6_OUT": str(out_dir / SUMMARY_NAME)}
@@ -219,7 +388,7 @@ def build_argv(
         # 호스트에서 도는 표적을 컨테이너 안에서 부를 수 있게 — 리눅스에서도 같은 이름이 선다.
         "--add-host=host.docker.internal:host-gateway",
         "-v",
-        f"{kit_dir()}:{CONTAINER_MOUNT}:ro",
+        f"{kit_source}:{CONTAINER_MOUNT}:ro",
         "-v",
         f"{out_dir}:{CONTAINER_MOUNT}/out",
     ]
@@ -374,12 +543,13 @@ def run_scenario(
     runner: Runner,
     out_dir: str | os.PathLike[str],
     env: dict[str, str] | None = None,
+    kit: str | os.PathLike[str] | None = None,
     timeout: float = 1800.0,
     quiet: bool = True,
     stream: bool = False,
     k6_version: str = "",
 ) -> Report:
-    """시나리오 하나를 돌리고 요약을 회수한다."""
+    """시나리오 하나를 돌리고 요약을 회수한다. `kit` 은 `/asgard` 로 갈 호스트 경로다."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     if runner.containerized:
@@ -394,7 +564,7 @@ def run_scenario(
     if summary_path.exists():
         summary_path.unlink()  # 이전 실행의 요약을 이번 결과로 읽는 사고를 막는다
 
-    argv = build_argv(runner, scenario, out, env, quiet=quiet)
+    argv = build_argv(runner, scenario, out, env, quiet=quiet, kit=kit)
     try:
         done = subprocess.run(
             argv,
@@ -554,6 +724,7 @@ def selftest(
     *,
     runner: Runner | None = None,
     out_dir: str | os.PathLike[str],
+    kit: str | os.PathLike[str] | None = None,
     latency_ms: float = 80.0,
     iterations: int = 40,
     vus: int = 4,
@@ -589,6 +760,7 @@ def selftest(
                 probe,
                 runner=runner,
                 out_dir=out_root / "truth",
+                kit=kit,
                 env={
                     "ASGARD_K6_TARGET": container_target(runner, pacer.port),
                     "ASGARD_K6_ITERATIONS": str(iterations),
@@ -674,6 +846,7 @@ def selftest(
                 probe,
                 runner=runner,
                 out_dir=out_root / "gate",
+                kit=kit,
                 env={
                     "ASGARD_K6_TARGET": container_target(runner, pacer.port),
                     "ASGARD_K6_ITERATIONS": str(iterations),
@@ -738,6 +911,7 @@ def selftest(
                 probe,
                 runner=runner,
                 out_dir=out_root / "saturate",
+                kit=kit,
                 env={
                     "ASGARD_K6_TARGET": container_target(runner, pacer.port),
                     "ASGARD_K6_ITERATIONS": str(iterations),
@@ -781,10 +955,6 @@ def selftest(
 
 
 # ─────────────────────────────────────────────────────────────────── 기록
-
-
-def runs_dir(root: str | os.PathLike[str]) -> Path:
-    return Path(root) / ".asgard" / "k6" / "runs"
 
 
 def record_run(root: str | os.PathLike[str], report: Report, stamp: str) -> Path:

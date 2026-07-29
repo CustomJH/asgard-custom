@@ -4,7 +4,8 @@
 한 계약 안에 있고, **하네스 자신이 참을 말하는지 검사하는 판**이 딸려 온다.
 
 ```bash
-asgard k6 doctor                 # 러너·k6 판·키트·시나리오
+asgard k6 doctor                 # 러너·k6 판·볼륨의 집·시나리오
+asgard k6 sync                   # 배송 키트를 이 프로젝트의 .asgard/k6/ 에 실체화 (run 이 자동으로 부른다)
 asgard k6 selftest               # 하네스 정합성 — 여기가 녹색이 아니면 아래 수치는 근거가 아니다
 asgard k6 scenarios              # 내장 + 프로젝트 시나리오
 asgard k6 run http-smoke --target http://127.0.0.1:8080/health --vus 10 --duration 30s --p95-max 300
@@ -43,8 +44,9 @@ asgard k6 report                 # 마지막 실행 다시 보기
 | `recall` | 2차 메모리 백엔드 recall — 아스가르드가 매 턴 치는 요청 모양 |
 | `saturate` | VU 계단 — 포화점 탐색(램프는 단계를 평균으로 뭉갠다) |
 
-프로젝트 전용 시나리오는 `.asgard/k6/*.js` 에 두면 같은 이름 공간에 잡히고, 이름이 겹치면
-프로젝트가 이긴다. 시나리오가 지켜야 할 계약은 두 줄이다:
+프로젝트 전용 시나리오는 `.asgard/k6/scenarios/*.js` 에 두면 같은 이름 공간에 잡히고, 이름이
+겹치면 프로젝트가 이긴다 (레인 바로 밑 `.asgard/k6/*.js` 도 계속 잡힌다 — 예전에 거기 둔 것을
+깨지 않는다). 시나리오가 지켜야 할 계약은 두 줄이다:
 
 ```js
 import { summarize, target, TREND_STATS } from '../lib/asgard.js'
@@ -57,19 +59,29 @@ export function handleSummary(data) { return summarize(data, { scenario: 'mine',
 
 ## 표면 뒤의 것들
 
-- **이미지** 기본 `grafana/k6:latest`. `ASGARD_K6_IMAGE` 로 고정할 수 있다. 태그가 떠 있는
-  동안에도 실행마다 k6 판을 보고서에 새기므로, 나중에 "어느 판으로 잰 값인가"를 물을 수 있다.
+- **이미지** 우리가 굽는 `asgard-k6` 가 로컬에 있으면 그것을, 없으면 `grafana/k6:latest` 를
+  쓴다 (`ASGARD_K6_IMAGE` 로 고정 가능). 이미지 정의와 수동 운용 스택은 이 키트가 아니라
+  **`docker/asgard-k6/`** 에 산다 — 굽는 것과 실려 가는 것을 갈라 뒀다. 어느 쪽이든 실행마다
+  k6 판이 보고서에 새겨져, 나중에 "어느 판으로 잰 값인가"를 물을 수 있다.
 - **러너** 도커/포드먼 우선, 없으면 네이티브 `k6`. `--runner native` 또는 `ASGARD_K6_RUNNER`.
   도커를 먼저 보는 이유는 판이 고정되기 때문이다.
 - **마운트** 키트는 `/asgard` 에 **읽기 전용**(시나리오가 자기 정의를 못 고친다), 쓰기는
   `/asgard/out` 하나뿐. `out/`·`project/` 디렉터리가 키트 안에 비어 있는 이유가 이것이다 —
   읽기 전용 마운트 안에는 마운트 지점을 새로 만들 수 없다.
+- **볼륨의 집** 도커에 넘어가는 호스트 경로는 전부 **잴 프로젝트의 `.asgard/k6/`** 아래다:
+  `kit/`(마운트 원본) · `runs/`(CLI 기록) · `out/`(수동 compose 요약). 배송 경로를 그대로
+  마운트하지 않는 이유는 그것이 프로젝트의 것이 아니기 때문이다 — 설치 접두사는 기계마다
+  다르고 프로젝트마다 같아서, 마운트 원본을 거기 두면 "이 실행이 어떤 키트를 봤나"가
+  프로젝트 밖에서 정해진다. `asgard k6 sync` 가 내용 지문을 보고 실체화하며(같으면 손대지
+  않는다), `asgard k6 doctor` 의 `mount` 줄이 지금 걸린 것을 말한다.
 - **기록** 실행은 `.asgard/k6/runs/<시각>-<시나리오>/report.json` 에 남는다.
 - **표적 주소** 컨테이너 안에서 호스트를 부를 때는 `host.docker.internal` (리눅스에서도
   `--add-host` 로 같은 이름이 선다).
 
-## compose (수동 운용)
+## 도커 쪽 집
 
-`compose.yml` 은 같은 이미지·같은 마운트로 pacer + k6 를 스택으로 띄운다. 표적을 바꿔 가며
-여러 번 두들기거나 pacer 를 띄워 둔 채 다른 도구를 붙일 때 쓴다. 기본 이미지 값은 CLI 와
-같아야 하고, `tests/test_k6.py` 가 두 값을 대조해 봉인한다.
+이미지(`Dockerfile`)와 수동 운용 스택(`docker-compose.yml`)은 **`docker/asgard-k6/`** 에 있다
+(`docker/asgard-project-memory/` 와 나란히). 이미지에는 이 키트가 함께 구워져 마운트 없이도
+단독으로 돌지만, **정본은 언제나 이 디렉터리**다 — 아스가르드가 이미지를 몰 때 같은 키트를
+읽기 전용으로 덮어 마운트하기 때문이다. `tests/test_k6.py` 가 Dockerfile 의 COPY 원본과
+compose 의 기본 이미지 값을 봉인해 두 집이 갈라지지 않게 한다.

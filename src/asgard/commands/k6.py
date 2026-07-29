@@ -6,10 +6,8 @@
 """
 
 import json
-import os
 import shutil
 import sys
-import tempfile
 import time
 
 from rich import box
@@ -43,6 +41,20 @@ def _mark(ok: bool) -> Text:
     return Text("pass", style="bold green") if ok else Text("FAIL", style="bold red")
 
 
+def _root() -> str:
+    """이 명령이 볼 프로젝트 — 볼륨의 집. 선 자리가 아니라 `.asgard/` 가 있는 자리다."""
+    return str(k6.project_root())
+
+
+def _prepare(root: str) -> str | None:
+    """실행 전에 레인 자리를 세우고 마운트할 키트 경로를 준다. 못 세우면 이유를 말한다."""
+    try:
+        return str(k6.prepare_lane(root))
+    except OSError as exc:
+        print(f"레인 자리를 세우지 못했다 ({k6.lane_dir(root)}): {exc}", file=sys.stderr)
+        return None
+
+
 def _parse_env(pairs: list[str]) -> dict[str, str]:
     env: dict[str, str] = {}
     for item in pairs or []:
@@ -63,17 +75,30 @@ def _parse_env(pairs: list[str]) -> dict[str, str]:
 
 def run_k6_doctor(json_: bool = False) -> int:
     runner = k6.resolve_runner()
+    root = _root()
     kit = k6.kit_dir()
-    found = k6.scenarios(os.getcwd())
+    lane = k6.lane_dir(root)
+    mounted = k6.mounted_kit_dir(root)
+    synced = k6.kit_is_synced(root)
+    home = k6.docker_dir()
+    found = k6.scenarios(root)
     version = k6.runner_version(runner) if runner else ""
+    image = runner.image if runner else ""
+    owned = image.split(":")[0] == k6.OWNED_IMAGE
     state = {
         "schema": "asgard-k6-doctor-v1",
         "runner": runner.label() if runner else "",
         "runner_kind": runner.kind if runner else "",
-        "image": runner.image if runner else "",
+        "image": image,
+        "image_owned": owned,
         "k6_version": version,
+        "root": root,
+        "lane": str(lane),
         "kit": str(kit),
         "kit_ok": (kit / "lib" / "asgard.js").is_file() and (kit / "pacer.py").is_file(),
+        "kit_mounted": str(mounted),
+        "kit_synced": synced,
+        "docker_home": str(home) if home else "",
         "scenarios": {name: s.origin for name, s in found.items()},
         "ready": bool(runner) and bool(version),
     }
@@ -87,8 +112,22 @@ def run_k6_doctor(json_: bool = False) -> int:
     table.add_row(
         Text("runner", style=theme.SUBTEXT), Text(state["runner"] or "없음 — docker/podman 또는 k6 설치 필요")
     )
+    if runner and runner.containerized:
+        # 어느 이미지로 재는지는 수치의 일부다 — 우리 이미지인지 빌려 온 이미지인지 말한다.
+        table.add_row(
+            Text("image", style=theme.SUBTEXT),
+            Text(f"{image}  {'(asgard 소유)' if owned else '(공개 이미지 — 태그가 움직인다)'}"),
+        )
     table.add_row(Text("k6", style=theme.SUBTEXT), Text(version or "판을 읽지 못했다 (이미지 pull 이 필요할 수 있다)"))
-    table.add_row(Text("kit", style=theme.SUBTEXT), Text(str(kit)))
+    # 볼륨의 집이 어디인가는 수치의 일부다 — 마운트되는 것은 배송 경로가 아니라 이 프로젝트의 사본이다.
+    table.add_row(Text("project", style=theme.SUBTEXT), Text(root))
+    table.add_row(Text("kit", style=theme.SUBTEXT), Text(f"{kit}  (배송 정본)"))
+    table.add_row(
+        Text("mount", style=theme.SUBTEXT),
+        Text(f"{mounted}  {'(동기)' if synced else '(미동기 — asgard k6 sync)'}"),
+    )
+    if home:
+        table.add_row(Text("docker", style=theme.SUBTEXT), Text(str(home)))
     table.add_row(
         Text("scenarios", style=theme.SUBTEXT),
         Text(", ".join(f"{n}({s.origin[0]})" for n, s in found.items()) or "없음"),
@@ -98,7 +137,55 @@ def run_k6_doctor(json_: bool = False) -> int:
     if not state["ready"]:
         print("  docker(또는 podman)를 켜거나 k6 를 설치한 뒤 다시 보라.", file=sys.stderr)
         return 1
+    if home and runner and runner.containerized and not owned:
+        print(f"  이미지를 고정하려면: docker build -f docker/{k6.PROJECT}/Dockerfile -t {k6.OWNED_IMAGE}:local .")
     print("  정합성 검사: asgard k6 selftest")
+    return 0
+
+
+# ──────────────────────────────────────────────────────────────────── sync
+
+
+def run_k6_sync(force: bool = False, json_: bool = False) -> int:
+    """배송된 키트를 이 프로젝트의 `.asgard/k6/` 에 실체화한다 — 볼륨의 원본을 세우는 자리.
+
+    `asgard k6 run` 은 매 실행 자동으로 부른다. 이 명령이 따로 있는 이유는 수동 compose
+    경로 때문이다: 사람이 스택을 붙들고 있으려면 마운트 원본이 먼저 있어야 한다."""
+    root = _root()
+    try:
+        kit = k6.prepare_lane(root, force=force)
+    except OSError as exc:
+        print(f"레인 자리를 세우지 못했다 ({k6.lane_dir(root)}): {exc}", file=sys.stderr)
+        return 1
+    lane = k6.lane_dir(root)
+    if json_:
+        print(
+            json.dumps(
+                {
+                    "schema": "asgard-k6-sync-v1",
+                    "root": root,
+                    "lane": str(lane),
+                    "kit": str(kit),
+                    "out": str(k6.compose_out_dir(root)),
+                    "runs": str(k6.runs_dir(root)),
+                    "source": str(k6.kit_dir()),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+
+    table = Table.grid(padding=(0, 2))
+    table.add_column(min_width=12, overflow="fold")
+    table.add_column(ratio=1, overflow="fold")
+    table.add_row(Text("project", style=theme.SUBTEXT), Text(root))
+    table.add_row(Text("kit", style=theme.SUBTEXT), Text(f"{kit}  ← {k6.kit_dir()}"))
+    table.add_row(Text("out", style=theme.SUBTEXT), Text(str(k6.compose_out_dir(root))))
+    table.add_row(Text("runs", style=theme.SUBTEXT), Text(str(k6.runs_dir(root))))
+    _panel("lane volumes", table, k6.PROJECT)
+    print("  수동 스택: ASGARD_K6_LANE=" + str(lane))
+    print(f"            docker compose -f docker/{k6.PROJECT}/docker-compose.yml up pacer -d")
     return 0
 
 
@@ -106,7 +193,7 @@ def run_k6_doctor(json_: bool = False) -> int:
 
 
 def run_k6_list(json_: bool = False) -> int:
-    found = k6.scenarios(os.getcwd())
+    found = k6.scenarios(_root())
     if json_:
         print(
             json.dumps(
@@ -130,7 +217,7 @@ def run_k6_list(json_: bool = False) -> int:
             Text(_headline(scenario.path), style=theme.SUBTEXT),
         )
     _panel("load scenarios", table, f"{len(found)}")
-    print("  프로젝트 시나리오는 .asgard/k6/*.js 에 두면 같은 이름으로 잡힌다.")
+    print("  프로젝트 시나리오는 .asgard/k6/scenarios/*.js 에 두면 같은 이름으로 잡힌다.")
     return 0
 
 
@@ -165,7 +252,7 @@ def run_k6_run(
     json_: bool = False,
     record: bool = True,
 ) -> int:
-    root = os.getcwd()
+    root = _root()
     scenario = k6.find_scenario(scenario_name, root)
     if scenario is None:
         print(f"그런 시나리오가 없다: {scenario_name} (asgard k6 scenarios)", file=sys.stderr)
@@ -174,6 +261,9 @@ def run_k6_run(
     if runner is None:
         print("러너가 없다 — docker/podman 또는 k6 가 필요하다.", file=sys.stderr)
         return 2
+    kit = _prepare(root)
+    if kit is None:
+        return 1
 
     try:
         env = _parse_env(env_pairs or [])
@@ -205,6 +295,7 @@ def run_k6_run(
             runner=runner,
             out_dir=out_dir,
             env=env,
+            kit=kit,
             k6_version=version,
         )
     except k6.SummaryError as exc:
@@ -283,13 +374,24 @@ def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: i
     if runner is None:
         print("러너가 없다 — docker/podman 또는 k6 가 필요하다.", file=sys.stderr)
         return 2
+    root = _root()
+    kit = _prepare(root)
+    if kit is None:
+        return 1
     if not json_:
         print(f"  하네스 정합성 검사 · {runner.label()}")
         print("  거동을 아는 표적(pacer)에 걸어 세 판을 돈다 — truth · gate · saturate")
 
-    workdir = tempfile.mkdtemp(prefix="asgard-k6-selftest-")
+    # 시스템 임시 디렉터리가 아니라 레인 안에서 돈다: 세 판의 산출도 컨테이너에 마운트되는
+    # 볼륨이고, 마운트되는 것은 전부 프로젝트 아래라는 규칙에 예외를 두지 않는다. 임시
+    # 디렉터리가 엔진과 공유되는지는 엔진 설정에 달렸지만(도커 데스크톱 기본값은 공유하고,
+    # 홈만 공유하는 VM 러너도 있다) 프로젝트 경로는 어차피 공유되어야 하는 자리다.
+    workdir = k6.lane_dir(root) / "selftest"
+    shutil.rmtree(workdir, ignore_errors=True)
     try:
-        result = k6.selftest(runner=runner, out_dir=workdir, latency_ms=latency_ms, iterations=iterations, vus=vus)
+        result = k6.selftest(
+            runner=runner, out_dir=workdir, kit=kit, latency_ms=latency_ms, iterations=iterations, vus=vus
+        )
     finally:
         shutil.rmtree(workdir, ignore_errors=True)
 
@@ -325,7 +427,7 @@ def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: i
 
 
 def run_k6_report(path: str = "", json_: bool = False) -> int:
-    root = os.getcwd()
+    root = _root()
     if not path:
         runs = k6.runs_dir(root)
         candidates = sorted(runs.glob("*/report.json")) if runs.is_dir() else []

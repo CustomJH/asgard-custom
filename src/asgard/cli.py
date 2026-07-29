@@ -1281,6 +1281,16 @@ def k6_doctor(json_: bool = typer.Option(False, "--json")) -> None:
     raise typer.Exit(run_k6_doctor(json_))
 
 
+@k6_app.command("sync", help="materialise the kit into this project's .asgard/k6/ — the volumes docker mounts")
+def k6_sync(
+    force: bool = typer.Option(False, "--force", help="re-copy even when the kit already matches"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.k6 import run_k6_sync
+
+    raise typer.Exit(run_k6_sync(force, json_))
+
+
 @k6_app.command("scenarios", help="built-in and project load scenarios")
 def k6_scenarios(json_: bool = typer.Option(False, "--json")) -> None:
     from .commands.k6 import run_k6_list
