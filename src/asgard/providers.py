@@ -282,6 +282,21 @@ def save_credential(provider: str, api_key: str, base_url: str = "", model: str 
             pass
 
 
+def _catalog_model_ids(items) -> list[str]:
+    """카탈로그 항목 → 에이전트 모델 id, 등장 순서대로 중복 없이.
+
+    중복 제거를 `dict.fromkeys` 로 하는 이유: 리스트에 `not in` 으로 물으면 항목마다 지금까지의
+    목록을 통째로 훑어, 카탈로그가 커질수록 시간이 제곱으로 는다 (code_map._symbols 와 같은 자)."""
+    out: list[str] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        model_id = normalize_model_id(item.get("id"))
+        if model_id and is_agent_model_id(model_id):
+            out.append(model_id)
+    return list(dict.fromkeys(out))
+
+
 def provider_models(
     rp: ResolvedProvider, timeout: float = 8.0, on_fallback: Callable[[str], None] | None = None
 ) -> list[str]:
@@ -338,22 +353,15 @@ def provider_models(
             return use_fallback("catalog response too large")
         payload = json.loads(raw.decode())
         items = payload if isinstance(payload, list) else payload.get("data", [])
-        live: list[str] = []
-        for item in items:
-            if not isinstance(item, dict):
-                continue
-            model_id = normalize_model_id(item.get("id"))
-            if not model_id or not is_agent_model_id(model_id):
-                continue
-            if model_id not in live:
-                live.append(model_id)
+        live = _catalog_model_ids(items)
     except Exception:
         return use_fallback("live catalog request failed")
     if not live:
         return use_fallback("live catalog was empty")
     live_set = set(live)
     preferred = [model for model in fallback if model in live_set]
-    return preferred + [model for model in live if model not in set(preferred)]
+    taken = set(preferred)  # 밖에서 한 번 — 컴프리헨션 안에 두면 항목마다 preferred 를 다시 해싱한다
+    return preferred + [model for model in live if model not in taken]
 
 
 def _lock_down(path: str) -> None:

@@ -15,7 +15,7 @@ import subprocess
 import tempfile
 import tomllib
 import unicodedata
-from collections import Counter
+from collections import Counter, deque
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -539,11 +539,13 @@ def _diversify(rows: list[tuple[str, list[str], list[str]]]) -> list[tuple[str, 
         parts = row[0].split("/")
         groups.setdefault("/".join(parts[:2]), []).append(row)
     ordered: list[tuple[str, list[str], list[str]]] = []
-    queues = [queue for queue in groups.values()]
+    # deque 인 이유는 `popleft` 하나다 — 리스트의 `pop(0)` 은 한 번 꺼낼 때마다 뒤 전체를 앞으로
+    # 민다. 라운드로빈은 모든 행을 정확히 한 번씩 꺼내므로 그 이동이 행 수의 제곱으로 쌓인다.
+    queues = [deque(queue) for queue in groups.values()]
     while queues:
         remaining = []
         for queue in queues:
-            ordered.append(queue.pop(0))
+            ordered.append(queue.popleft())
             if queue:
                 remaining.append(queue)
         queues = remaining

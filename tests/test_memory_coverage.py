@@ -125,6 +125,81 @@ class TestCoverageReportsReality(CoverageCase):
         self.assertEqual(calls, [])
 
 
+class TestFastPathNeverLies(CoverageCase):
+    """정상 상태 메모 — 빠른 길은 판정을 바꾸면 안 된다. 바꾸면 그건 최적화가 아니라 결함이다."""
+
+    def _exact(self) -> dict:
+        """메모를 지우고 정확한 경로로만 잰 결과."""
+        conn = memory._db(self.d)
+        with conn:
+            conn.execute("DELETE FROM meta WHERE key = 'coverage_ok'")
+        conn.close()
+        return memory.vec_coverage(self.d)
+
+    def test_the_memo_agrees_with_the_exact_computation(self):
+        self.embedder()
+        for index in range(5):
+            memory.add(f"오딘에 대한 서로 다른 사실 번호 {index} 이고 자립 문장이다", kind="note", d=self.d)
+        warm = memory.vec_coverage(self.d)  # 메모를 심는다
+        cached = memory.vec_coverage(self.d)  # 빠른 길
+        self.assertEqual(cached, warm)
+        self.assertEqual(cached, self._exact())
+
+    def test_editing_a_page_invalidates_the_memo(self):
+        """지문은 stat 이다 — 본문이 바뀌면 크기나 mtime 이 바뀌어 빠른 길이 닫힌다."""
+        self.embedder()
+        memory.add("오딘은 uv 로 테스트를 돌린다", kind="feedback", d=self.d)
+        self.assertTrue(memory.vec_coverage(self.d)["ok"])
+        slug = memory._pages(self.d)[0]
+        meta, _body = memory._read(self.d, slug)
+        memory._atomic_write(
+            memory._page_path(self.d, slug),
+            memory.render_page(meta, "완전히 다른 본문이다 이것은 그리고 훨씬 더 길다 " * 4),
+        )
+        report = memory.vec_coverage(self.d)
+        self.assertFalse(report["ok"])
+        self.assertEqual(report["stale"], 1)
+
+    def test_a_failing_state_is_never_memoized(self):
+        """고장을 캐시하면 고친 뒤에도 고장이라 말한다 — 이 함수가 고치려던 그 병이다."""
+        sem.set_embedder(None)
+        memory.add("오딘은 uv 로 테스트를 돌린다", kind="feedback", d=self.d)
+        self.embedder()
+        self.assertFalse(memory.vec_coverage(self.d)["ok"])
+        conn = memory._db(self.d)
+        memo = conn.execute("SELECT value FROM meta WHERE key = 'coverage_ok'").fetchone()
+        conn.close()
+        self.assertIsNone(memo)
+
+    def test_the_memo_does_not_hide_a_swapped_embedder(self):
+        """모델 대조는 형상이 아니라 **이 프로세스가 무엇을 로드했는가**라 빠른 길도 다시 본다."""
+        self.embedder()
+        memory.add("오딘은 uv 로 테스트를 돌린다", kind="feedback", d=self.d)
+        self.assertTrue(memory.vec_coverage(self.d)["ok"])  # 메모 심김
+        conn = memory._db(self.d)
+        with conn:
+            conn.execute("UPDATE meta SET value = 'other/model-B' WHERE key = 'vec_model'")
+        conn.close()
+        report = memory.vec_coverage(self.d)
+        self.assertTrue(report["model_mismatch"])
+        self.assertFalse(report["ok"])
+
+    def test_the_fast_path_reads_no_page(self):
+        """빠른 길의 존재 이유 — 페이지를 한 장도 안 읽는다."""
+        self.embedder()
+        for index in range(5):
+            memory.add(f"오딘에 대한 서로 다른 사실 번호 {index} 이고 자립 문장이다", kind="note", d=self.d)
+        memory.vec_coverage(self.d)  # 메모를 심는다
+        reads: list[str] = []
+        original = memory.index._read
+        memory.index._read = lambda directory, slug: reads.append(slug) or original(directory, slug)  # type: ignore[assignment]
+        try:
+            self.assertTrue(memory.vec_coverage(self.d)["ok"])
+        finally:
+            memory.index._read = original  # type: ignore[assignment]
+        self.assertEqual(reads, [])
+
+
 class TestSurfacesTellTheTruth(CoverageCase):
     def test_lint_reports_the_drift(self):
         sem.set_embedder(None)

@@ -1144,6 +1144,13 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     ok = bool(asgard) and security_ok
     runtime = f"python {sys.version.split()[0]}"
 
+    return _emit_doctor(checks, ok=ok, runtime=runtime, json_out=json_out, quiet=quiet)
+
+
+def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, quiet: bool) -> int:
+    """판정 결과를 표면으로. **판정과 갈라 두는 이유**는 종료코드가 하나라는 것이다 —
+    두 표면이 같은 `ok` 를 쓰는지 한자리에서 보이지 않으면, 한쪽만 고쳐 두 표면이 다른 답을
+    내는 일이 조용히 생긴다 (`--json` 이 통과인데 화면은 실패인 doctor 는 doctor 가 아니다)."""
     if json_out:
         sys.stdout.write(
             _json.dumps(

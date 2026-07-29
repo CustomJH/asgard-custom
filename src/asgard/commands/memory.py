@@ -1591,43 +1591,52 @@ def run_semantic(action: str = "status", json_out: bool = False) -> int:
                 return 1
             ui.ok(f"준비됨: {state['model']} · {state['dim']}d · {state['seconds']}s")
             return 0
-        status = sem.status()
-        coverage = memory.vec_coverage(memory.ensure_home())
-        if json_out:
-            print(
-                _json.dumps(
-                    {**status, "model_cached": sem.model_cached(), "coverage": coverage},
-                    ensure_ascii=False,
-                    indent=2,
-                )
-            )
-            return 0 if status["active"] and coverage["ok"] else 1
-        ui.head("personal memory · semantic")
-        ui.step(f"mode · {status['mode']}")
-        if status["active"]:
-            ui.ok(f"임베더 · {status['model']} · {status['dim']}d")
-        elif status["mode"] == "off":
-            ui.step("꺼짐 — `asgard memory semantic on` 으로 검색을 켠다")
-            return 0
-        else:
-            ui.warn("켜져 있지만 임베더를 못 불렀다 — lexical 2경로로 폴백 중")
-            return 1
-        # 임베더가 선다는 것과 시맨틱이 회수에 기여한다는 것은 다른 말이다. 덮지 못한 페이지는
-        # 어휘 경로로만 찾히는데, 그 사실이 여기 안 적히면 사용자는 켰다고 믿은 채로 못 받는다.
-        if coverage["ok"]:
-            ui.ok(f"색인 · {coverage['fresh']}/{coverage['pages']} 페이지 (100%)")
-            return 0
-        detail = f"{coverage['fresh']}/{coverage['pages']} 페이지 ({coverage['coverage'] * 100:.0f}%)"
-        parts = [
-            f"낡음 {coverage['stale']}" if coverage["stale"] else "",
-            f"고아 {coverage['orphan']}" if coverage["orphan"] else "",
-        ]
-        suffix = " · " + " · ".join(p for p in parts if p) if any(parts) else ""
-        ui.warn(f"색인 · {detail}{suffix} — 덮이지 않은 페이지는 시맨틱으로 안 찾힌다")
-        ui.step("asgard memory reindex")
-        return 1
+        return _emit_semantic_status(json_out)
 
     return _guard(_do)
+
+
+def _emit_semantic_status(json_out: bool) -> int:
+    """시맨틱 **상태 표시**. 켜고 끄기·워밍업과 갈라 두는 이유는 부수효과다 — 앞의 셋은 설정을
+    바꾸거나 1GB 를 내려받고, 이쪽은 아무것도 안 바꾼다. 한 함수에 있으면 "상태를 봤더니
+    켜졌다"가 가능한 모양이 되고, 조회가 안전하지 않은 명령은 사람이 안 쓴다."""
+    from .. import memory_semantic as sem
+
+    status = sem.status()
+    coverage = memory.vec_coverage(memory.ensure_home())
+    if json_out:
+        print(
+            _json.dumps(
+                {**status, "model_cached": sem.model_cached(), "coverage": coverage},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0 if status["active"] and coverage["ok"] else 1
+    ui.head("personal memory · semantic")
+    ui.step(f"mode · {status['mode']}")
+    if status["active"]:
+        ui.ok(f"임베더 · {status['model']} · {status['dim']}d")
+    elif status["mode"] == "off":
+        ui.step("꺼짐 — `asgard memory semantic on` 으로 검색을 켠다")
+        return 0
+    else:
+        ui.warn("켜져 있지만 임베더를 못 불렀다 — lexical 2경로로 폴백 중")
+        return 1
+    # 임베더가 선다는 것과 시맨틱이 회수에 기여한다는 것은 다른 말이다. 덮지 못한 페이지는
+    # 어휘 경로로만 찾히는데, 그 사실이 여기 안 적히면 사용자는 켰다고 믿은 채로 못 받는다.
+    if coverage["ok"]:
+        ui.ok(f"색인 · {coverage['fresh']}/{coverage['pages']} 페이지 (100%)")
+        return 0
+    detail = f"{coverage['fresh']}/{coverage['pages']} 페이지 ({coverage['coverage'] * 100:.0f}%)"
+    parts = [
+        f"낡음 {coverage['stale']}" if coverage["stale"] else "",
+        f"고아 {coverage['orphan']}" if coverage["orphan"] else "",
+    ]
+    suffix = " · " + " · ".join(p for p in parts if p) if any(parts) else ""
+    ui.warn(f"색인 · {detail}{suffix} — 덮이지 않은 페이지는 시맨틱으로 안 찾힌다")
+    ui.step("asgard memory reindex")
+    return 1
 
 
 def run_project_ingest(

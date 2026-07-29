@@ -329,6 +329,7 @@ def extract_api_bases(source: str) -> list[str]:
     브리지가 상대 경로 api_call 의 후보 접두로 시도한다 (노드 이름은 원문 보존).
     """
     bases: list[str] = []
+    taken: set[str] = set()  # 순서는 bases 가, 중복 판정은 이쪽이 진다 — 선언이 많은 파일에서 제곱 방지
     for match in _API_BASE_DECL.finditer(source):
         name = re.sub(r"[_$]", "", match.group(1)).casefold()
         if name not in _API_BASE_NAMES:
@@ -338,8 +339,9 @@ def extract_api_bases(source: str) -> list[str]:
             continue  # 계산식 잔여 — 정체가 아니다
         path = urlsplit(raw).path if raw.startswith(("http://", "https://")) else raw
         path = "/" + path.strip("/")
-        if path != "/" and path not in bases:
+        if path != "/" and path not in taken:
             bases.append(path)
+            taken.add(path)
     return bases
 
 

@@ -40,6 +40,22 @@ class TestCrossLaneDedup(unittest.TestCase):
         )
         self.assertEqual(len(chosen), 1)
 
+    def test_a_short_fact_inside_a_long_excerpt_is_collapsed(self):
+        """포함계수를 쓰는 **이유** — 레인마다 같은 사실의 길이가 크게 다르다.
+
+        개인 위키는 사실을 한 줄로 적고, 문서 레인은 그 문장을 품은 220자 발췌를 낸다.
+        대칭 척도(Jaccard 류)는 길이 차이에 눌려 이 쌍을 남남으로 보지만, 프롬프트에는
+        같은 사실이 두 번 실린다 — 고정 예산에서 그건 다른 증거의 자리를 뺏는 일이다."""
+        fact = "릴리스는 태그를 먼저 찍고 배포한다"
+        excerpt = (
+            "release.md · 3.2 배포 절차: 이 절에서는 배포 파이프라인의 각 단계를 설명한다. "
+            f"{fact}. 이후 단계는 모니터링 대시보드에서 오류율을 확인하고 임계치를 넘으면 "
+            "자동으로 이전 태그로 되돌린다. 관련 런북은 별도 문서를 참조하라."
+        )
+        chosen = select([Candidate("a", fact), Candidate("b", excerpt)], LANES, budget=4000)
+        self.assertEqual(len(chosen), 1)
+        self.assertEqual(chosen[0].lane, "a")  # 짧고 정제된 쪽이 남는다 (앞선 레인)
+
     def test_distinct_facts_across_lanes_both_survive(self):
         chosen = select(
             [

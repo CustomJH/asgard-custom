@@ -11,6 +11,7 @@ from .policy import memory_dir
 from .store import (
     DB,
     INDEX,
+    PAGES,
     _atomic_write,
     _chmod,
     _desc,
@@ -153,6 +154,31 @@ def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> N
         _meta_set(conn, "vec_model", model)
 
 
+def _pages_fingerprint(d: str) -> str:
+    """페이지 디렉터리의 stat 지문 — 이름·크기·mtime 만 본다 (파일을 열지 않는다).
+
+    `documents.py` 의 `_manifest` 와 같은 규율이다. 읽기가 0 인 이유는 `os.scandir` 이 항목마다
+    stat 을 사실상 공짜로 주기 때문이고, 그래서 이 지문은 "확인해 둔 결론을 재사용해도 되는가"의
+    싸고 보수적인 답이 된다. 실패하면 빈 문자열 — 지문이 없으면 빠른 길도 없고, 정확한 경로가
+    돈다 (fail-safe: 캐시를 못 믿을 때 캐시를 쓰는 일은 없다)."""
+    try:
+        rows = []
+        with os.scandir(os.path.join(d, PAGES)) as entries:
+            for entry in sorted(entries, key=lambda row: row.name):
+                if not entry.name.endswith(".md"):
+                    continue
+                info = entry.stat()
+                rows.append(f"{entry.name}:{info.st_size}:{info.st_mtime_ns}")
+        return hashlib.sha256("|".join(rows).encode()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _coverage_token(fingerprint: str, model: str, pages: int, vectors: int) -> str:
+    """메모 키 — 형상·임베더·개수가 모두 같아야 지난 결론을 재사용한다."""
+    return f"{fingerprint}:{model}:{pages}:{vectors}"
+
+
 def vec_coverage(d: str | None = None) -> dict:
     """시맨틱 파생 인덱스가 정본을 실제로 덮는가 — **임베더를 로드하지 않는** 순수 판정.
 
@@ -172,7 +198,17 @@ def vec_coverage(d: str | None = None) -> dict:
       orphan = 정본에 없는 slug 의 벡터 (prune 대상)
       coverage = fresh / pages  (페이지가 0이면 1.0 — 덮을 것이 없으면 결함도 없다)
 
-    임베더를 안 부르는 것이 계약이다: 상태를 재느라 35초를 쓰면 그건 상태 계기가 아니다."""
+    임베더를 안 부르는 것이 계약이다: 상태를 재느라 35초를 쓰면 그건 상태 계기가 아니다.
+
+    **비용.** 정확한 판정은 페이지마다 본문을 읽어 sha 를 다시 만든다 — 1,000 페이지에서 42ms
+    다 (실측 26-07-29). 이 함수는 SessionStart 훅(`memory semantic nudge`)·lint·doctor·status
+    가 부르므로 그 값을 매번 내면 계기가 자기가 지키는 것보다 비싸진다. 그래서 **정상 상태를
+    메모**한다: 페이지 디렉터리의 stat 지문(이름·크기·mtime)이 그대로이고 임베더도 그대로면
+    이미 확인한 결론을 그대로 돌려준다. 지문은 `os.scandir` 이 이미 주는 값이라 읽기가 0 이다.
+
+    메모하는 것은 **ok 상태뿐**이다. 고장 상태를 캐시하면 고친 뒤에도 고장이라고 말하게 되고,
+    그건 이 함수가 고치려던 바로 그 병(계기가 실사와 어긋남)이다. 지문이 조금이라도 다르면
+    정확한 경로로 떨어진다 — 캐시는 빠른 길이지 판정의 근거가 아니다."""
     d = d or memory_dir()
     pages = _pages(d)
     result = {
@@ -190,22 +226,42 @@ def vec_coverage(d: str | None = None) -> dict:
         conn = _db(d)
     except Exception:
         return result
+    fingerprint = _pages_fingerprint(d)
     try:
         rows = dict(conn.execute("SELECT slug, sha FROM vec").fetchall())
         result["model"] = _meta_get(conn, "vec_model")
+        memo = _meta_get(conn, "coverage_ok")
     except Exception:
-        rows = {}
+        rows, memo = {}, ""
     finally:
         with contextlib.suppress(Exception):
             conn.close()
+
+    from .. import memory_semantic as sem
+
+    current = sem.loaded_model()
+    stored = str(result["model"])
+    # 빠른 길 — 지난번에 "전부 덮였다"고 확인한 그 형상 그대로인가. 페이지를 한 장도 안 읽는다.
+    if memo and fingerprint and memo == _coverage_token(fingerprint, stored, len(pages), len(rows)):
+        result["vectors"] = len(rows)
+        result["fresh"] = len(pages)
+        result["coverage"] = 1.0
+        result["ok"] = not (current and stored and current != stored)
+        result["model_mismatch"] = not result["ok"]
+        if result["model_mismatch"]:
+            result["fresh"], result["stale"], result["coverage"] = 0, len(pages), 0.0
+        return result
+
     fresh = 0
     stale = 0
     for slug in pages:
-        stored = rows.get(slug)
-        if stored is None:
+        # 이름을 `stored` 로 두지 않는다: 위에서 그건 **임베더 모델명**이고, 같은 이름을 쓰면
+        # 루프가 그걸 sha 로 덮어써서 아래 모델 대조가 항상 불일치가 된다 (26-07-29 실측 결함).
+        stored_sha = rows.get(slug)
+        if stored_sha is None:
             continue
         pg = _read(d, slug)
-        if pg and hashlib.sha1(_vec_text(*pg).encode()).hexdigest() == stored:
+        if pg and hashlib.sha1(_vec_text(*pg).encode()).hexdigest() == stored_sha:
             fresh += 1
         else:
             stale += 1
@@ -213,10 +269,6 @@ def vec_coverage(d: str | None = None) -> dict:
     # 같으면 코사인이 조용히 엉뚱한 값을 내므로(길이가 다를 때만 0 을 돌려준다) sha 만으로는
     # 이 드리프트를 못 본다. 지금 로드된 모델이 있을 때만 대조한다 — 판정 때문에 모델을
     # 불러오지는 않는다 (`loaded_model()` 은 로드를 유발하지 않는다).
-    from .. import memory_semantic as sem
-
-    current = sem.loaded_model()
-    stored = str(result["model"])
     mismatch = bool(rows) and bool(current) and bool(stored) and current != stored
     if mismatch:
         stale += fresh
@@ -224,10 +276,19 @@ def vec_coverage(d: str | None = None) -> dict:
     result["vectors"] = len(rows)
     result["fresh"] = fresh
     result["stale"] = stale
-    result["orphan"] = sum(1 for slug in rows if slug not in set(pages))
+    result["orphan"] = len(rows.keys() - set(pages))  # 집합 하나로 — 행마다 pages 를 다시 해싱하지 않게
     result["coverage"] = 1.0 if not pages else round(fresh / len(pages), 4)
     result["model_mismatch"] = mismatch
     result["ok"] = fresh == len(pages) and not result["orphan"] and not mismatch
+    # 정상 상태만 메모한다 (위 독스트링 참조 — 고장을 캐시하면 고친 뒤에도 고장이라 말한다).
+    # 모델 불일치는 메모에 안 넣는다: 그건 형상이 아니라 **이 프로세스가 무엇을 로드했는가**라
+    # 매 호출 다시 봐야 한다. 그래서 빠른 길도 이 판정만은 다시 한다.
+    if result["ok"] and fingerprint:
+        with contextlib.suppress(Exception):
+            conn = _db(d)
+            with conn:
+                _meta_set(conn, "coverage_ok", _coverage_token(fingerprint, stored, len(pages), len(rows)))
+            conn.close()
     return result
 
 

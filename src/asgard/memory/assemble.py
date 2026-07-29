@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from .recall import RRF_K, _containment
+from .recall import RRF_K, _grams
 
 # 레인 간 중복 판정 문턱 — 포함계수. Jaccard 가 아니라 containment 인 이유는 길이가 크게
 # 다른 두 표현(정본 전문 vs 200자 발췌)이 같은 사실일 때 Jaccard 는 그걸 못 잡기 때문이다.
@@ -93,7 +93,34 @@ def _value(candidate: Candidate) -> float:
     return 1.0 / (RRF_K + candidate.rank + 1)
 
 
-def _redundant(candidate: Candidate, chosen: list[Candidate], floor: float) -> bool:
+class _Grams:
+    """후보별 trigram 집합 캐시 — 같은 본문의 그램을 두 번 만들지 않는다.
+
+    왜 필요한가: 중복 판정은 (고른 것 × 후보) 쌍마다 도는데 `_containment` 는 호출마다 양쪽
+    그램을 새로 만든다. 후보가 30개면 그램 생성이 수백 번이고 본문은 수백 자다 — 이건 **매 턴**
+    도는 경로라 그대로 두면 조립기가 자기가 아끼는 것보다 비싸진다 (실측 26-07-29: 후보 60에서
+    3.72ms). 그램은 본문에만 의존하므로 한 번 만들어 재사용하면 결과는 **바이트 동일**하고
+    비용만 선형으로 떨어진다."""
+
+    __slots__ = ("_cache",)
+
+    def __init__(self) -> None:
+        self._cache: dict[str, set[str]] = {}
+
+    def of(self, text: str) -> set[str]:
+        grams = self._cache.get(text)
+        if grams is None:
+            grams = _grams(text)
+            self._cache[text] = grams
+        return grams
+
+    def containment(self, a: str, b: str) -> float:
+        """포함 계수 |A∩B|/min(|A|,|B|) — `recall._containment` 와 같은 정의, 캐시만 다르다."""
+        ga, gb = self.of(a), self.of(b)
+        return len(ga & gb) / (min(len(ga), len(gb)) or 1)
+
+
+def _redundant(candidate: Candidate, chosen: list[Candidate], floor: float, grams: _Grams) -> bool:
     """이미 고른 **다른 레인의** 것 중 하나라도 이 후보를 품으면 중복이다.
 
     왜 레인 **안**은 안 보는가. 중복의 두 종류는 고칠 자리가 다르다:
@@ -108,7 +135,7 @@ def _redundant(candidate: Candidate, chosen: list[Candidate], floor: float) -> b
     그리고 오판의 대가가 비대칭이다: 구별되는 사실을 버리는 것이 중복 한 줄보다 훨씬 나쁘다.
     좁은 규칙이 넓은 규칙보다 안전하고, 넓힐 근거는 계측이 생긴 뒤에 생긴다."""
     return any(
-        picked.lane != candidate.lane and _containment(candidate.body, picked.body) >= floor for picked in chosen
+        picked.lane != candidate.lane and grams.containment(candidate.body, picked.body) >= floor for picked in chosen
     )
 
 
@@ -133,6 +160,7 @@ def select(
     chosen: list[Candidate] = []
     used = 0
     opened: set[str] = set()
+    grams = _Grams()
 
     def _take(pool: list[Candidate], ceiling: int) -> None:
         nonlocal used
@@ -143,7 +171,8 @@ def select(
             entry = 0 if candidate.lane in opened else overhead.get(candidate.lane, 0)
             if used + entry + candidate.cost > ceiling:
                 continue  # 이 후보는 안 들어가도 더 짧은 뒤 후보는 들어갈 수 있다
-            if _redundant(candidate, chosen, dedup):
+            # 예산 판정을 **먼저** 한다: 안 들어갈 후보의 그램을 만드는 것은 순수한 낭비다.
+            if _redundant(candidate, chosen, dedup, grams):
                 continue
             chosen.append(candidate)
             opened.add(candidate.lane)

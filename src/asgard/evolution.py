@@ -232,10 +232,12 @@ def _tokens(text: str) -> list[str]:
     """트리거 후보 토큰 — ascii 4자+ 또는 한글 2자+ 단어, 불용어 제외 (결정론)."""
     words = re.findall(r"[A-Za-z][A-Za-z0-9_.-]{3,}|[가-힣]{2,}", text)
     out: list[str] = []
+    taken: set[str] = set()  # 순서는 out 이, 중복 판정은 이쪽이 진다 — 긴 글에서 제곱이 되지 않게
     for w in words:
         lw = w.lower().strip(".-_")
-        if lw and lw not in _STOPWORDS and lw not in out:
+        if lw and lw not in _STOPWORDS and lw not in taken:
             out.append(lw)
+            taken.add(lw)
     return out
 
 

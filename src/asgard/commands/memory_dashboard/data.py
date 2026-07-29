@@ -179,7 +179,7 @@ def graph_data(d: str) -> dict:
     for e in sem_edges:  # 의미 엣지도 고아 판정에 기여 — 링크 없어도 의미로 이어져 있으면 고아가 아니다
         degree[e["from"]] = degree.get(e["from"], 0) + 1
         degree[e["to"]] = degree.get(e["to"], 0) + 1
-    orphans = sorted(s for s in slugs if degree.get(s, 0) == 0)
+    orphans = {s for s in slugs if degree.get(s, 0) == 0}  # 집합인 이유 — 아래 루프가 서고 전체를 돈다
     for slug in sorted(slugs):
         if slug not in kinds:
             continue
@@ -206,7 +206,7 @@ def graph_data(d: str) -> dict:
     return {
         "nodes": nodes,
         "edges": edges + sem_edges,
-        "orphans": orphans,
+        "orphans": sorted(orphans),
         "dead": dead,
         "sem_capped": vec_count > SEM_EDGE_MAX_NODES,
         "sem_cap": SEM_EDGE_MAX_NODES,
@@ -764,7 +764,8 @@ def snapshot_data(d: str | None = None) -> dict:
             "semantic_state": sem["state"],
             "inject": bool(memory.inject_enabled()),  # 킬스위치 — 꺼져 있으면 어떤 provider 로도 안 나간다
             "budget": health["budget"],
-            "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
+            # UTC(aware)로 잡아 표시 경계에서 현지로 돌린다 — 찍히는 글자는 같고, 값이 시간대를 안다.
+            "generated": _dt.datetime.now(_dt.UTC).astimezone().strftime("%Y-%m-%d %H:%M"),
         },
         "health": health,
         "catalog": catalog,
