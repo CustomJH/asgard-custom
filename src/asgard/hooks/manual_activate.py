@@ -47,6 +47,15 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
+# 숫자 파싱 실패 두 종. 이름으로 묶는 이유는 취향이 아니다: 훅은 asgard 의 venv 가 아니라
+# 사용자 PATH 의 python3 로 돈다(`platform.hook_python`). 괄호 없는 다중 except 는 3.14+
+# 문법(PEP 758)이라 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError 가 되고, 훅 계약이
+# fail-open 이라 그 죽음이 **조용하다** — 사용자는 계층이 켜진 줄 안다. 그렇다고 괄호로 쓰면
+# 이 리포의 포매터(target-version=py314)가 도로 벗긴다. 이름은 포매터가 못 건드린다.
+# tests/test_architecture.py 의 문법 바닥 검사가 이 불변식을 지킨다.
+_BAD_NUMBER = (TypeError, ValueError)
+_BAD_PATH = (OSError, ValueError)  # 끊어진 링크 · 순환 · 다른 드라이브(Windows) — 같은 이유로 이름
+
 
 def _meaningful(text):
     return _COMMENT.sub("", text).strip()
@@ -126,16 +135,34 @@ def max_chars(root):
             continue
         try:
             return max(MIN_CHARS, min(CEIL_CHARS, int(raw)))
-        except TypeError, ValueError:
+        except _BAD_NUMBER:
             return MAX_CHARS
     return MAX_CHARS
 
 
-def _primary_in(base):
-    return [os.path.join(base, n) for n in MANUAL_NAMES if os.path.isfile(os.path.join(base, n))]
+def _inside(path, fence):
+    """manual.py _inside() 와 동일 유지 — 링크 대상이 울타리 안인가 (fence=None 이면 참).
+
+    울타리 없이 두면 저장소가 커밋한 `MANUAL.md -> ../../.ssh/id_rsa` 가 그대로 매뉴얼이 되어
+    프롬프트로 나간다. 훅은 PreToolUse 판독 게이트가 보는 자리가 아니라 여기서 막아야 한다."""
+    if fence is None:
+        return True
+    try:
+        base = os.path.realpath(fence)
+        return os.path.commonpath([os.path.realpath(path), base]) == base
+    except _BAD_PATH:
+        return False
 
 
-def _fragments_in(base):
+def _primary_in(base, fence=None):
+    found = [os.path.join(base, n) for n in MANUAL_NAMES if os.path.isfile(os.path.join(base, n))]
+    kept, escaped = [], []
+    for path in found:
+        (kept if _inside(path, fence) else escaped).append(path)
+    return kept, escaped
+
+
+def _fragments_in(base, fence=None):
     frag_dir = os.path.join(base, MANUAL_DIR)
     names = []
     if os.path.isdir(frag_dir):
@@ -148,34 +175,39 @@ def _fragments_in(base):
         except OSError:
             names = []
     paths = [os.path.join(frag_dir, n) for n in names]
-    return paths[:FRAGMENT_CAP], paths[FRAGMENT_CAP:]
+    kept = [p for p in paths if _inside(p, fence)]
+    escaped = [p for p in paths if not _inside(p, fence)]
+    return kept[:FRAGMENT_CAP], kept[FRAGMENT_CAP:], escaped
 
 
 def discover(root):
-    """manual.py discover() 와 동일 유지 — {files[], shadowed[], dropped[]} (절대경로, 실릴 순서)."""
+    """manual.py discover() 와 동일 유지 — {files[], shadowed[], dropped[], escaped[]}."""
     root = os.path.abspath(root)
-    files, shadowed, dropped = [], [], []
+    files, shadowed, dropped, escaped = [], [], [], []
 
-    def take(base, with_fragments):
-        found = _primary_in(base)
+    def take(base, with_fragments, fence):
+        found, out = _primary_in(base, fence)
+        escaped.extend(out)
         if found:
             files.append(found[0])
             shadowed.extend(found[1:])
         if with_fragments:
-            keep, drop = _fragments_in(base)
+            keep, drop, frag_out = _fragments_in(base, fence)
             files.extend(keep)
             dropped.extend(drop)
+            escaped.extend(frag_out)
 
-    take(home(), True)  # ① 공통 — 이 기계의 모든 프로젝트
-    take(root, False)  # ② 이 프로젝트 — 리포 루트
-    take(os.path.join(root, ASGARD_DIR), True)  # ③ 이 프로젝트 — 보조 자리 + 조각
+    # 울타리: 프로젝트 층은 리포 안, 공통 층(홈)은 없음 — manual.py 와 동일 판정.
+    take(home(), True, None)  # ① 공통 — 이 기계의 모든 프로젝트
+    take(root, False, root)  # ② 이 프로젝트 — 리포 루트
+    take(os.path.join(root, ASGARD_DIR), True, root)  # ③ 이 프로젝트 — 보조 자리 + 조각
     seen, unique = set(), []
     for path in files:  # 홈 안에서 돌면 같은 파일이 두 층에 걸린다 — 순서를 지키며 한 번만
         real = os.path.realpath(path)
         if real not in seen:
             seen.add(real)
             unique.append(path)
-    return {"files": unique, "shadowed": shadowed, "dropped": dropped}
+    return {"files": unique, "shadowed": shadowed, "dropped": dropped, "escaped": escaped}
 
 
 def is_common(path):

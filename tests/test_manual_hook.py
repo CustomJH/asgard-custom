@@ -186,6 +186,23 @@ class TestSingleSource(ManualHookBase):
         self.assert_parity()
         self.assertNotIn("truncated at the size limit", self.body(self.hook({"source": "startup"}).stdout))
 
+    @unittest.skipIf(sys.platform == "win32", "심볼릭 링크 생성에 권한이 필요하다 (Windows)")
+    def test_parity_when_a_link_escapes_the_repo(self):
+        """울타리도 정본과 같이 간다 — 모드 B 가 안 막으면 모드 B 로 새기만 한다.
+
+        훅은 저장소에 복사돼 나가는 별개 파일이라, 정본에만 울타리를 치면 CC·Codex·Cursor 는
+        그대로 `MANUAL.md -> ~/.ssh/id_rsa` 를 읽어 additionalContext 로 싣는다. 여기서
+        대조하는 대상은 렌더 문자열이지만, 같으려면 **해석이 먼저 같아야** 한다."""
+        target = os.path.join(self.home.name, "id_rsa")
+        with open(target, "w", encoding="utf-8") as handle:
+            handle.write("-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n")
+        os.symlink(target, os.path.join(self.root, "MANUAL.md"))
+        self.write("CUSTOM.md", "- 실제 규칙")
+        self.assert_parity()
+        out = self.hook({"source": "startup"}).stdout
+        self.assertNotIn("BEGIN OPENSSH", out)
+        self.assertIn("실제 규칙", out)
+
     def test_parity_when_only_comments(self):
         self.write("MANUAL.md", "<!-- 안내만 -->")
         for payload, _ in self.CASES:

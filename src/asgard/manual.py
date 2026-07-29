@@ -123,13 +123,44 @@ def home() -> str:
         return os.path.abspath(os.path.join(os.environ.get("HOME") or os.path.expanduser("~"), ASGARD_DIR))
 
 
-def _primary_in(base: str) -> list[str]:
-    """한 디렉터리 안의 후보를 우선순위 순 절대경로로 — [0] 이 이기고 나머지는 가려진다."""
-    return [os.path.join(base, n) for n in MANUAL_NAMES if os.path.isfile(os.path.join(base, n))]
+def _inside(path: str, fence: str | None) -> bool:
+    """링크를 따라간 실제 대상이 울타리 안인가 (`fence=None` 이면 무조건 참).
+
+    왜 필요한가: `os.path.isfile` 도 `os.listdir` 도 심볼릭 링크를 따라가고, `.md` 판정은
+    **링크 이름**에 걸린다. git 은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 저장소가
+    `MANUAL.md -> ../../.ssh/id_rsa` 하나만 담고 있으면 그 내용이 곧 매뉴얼이 되어 매 세션
+    프롬프트로 나간다. 이 계층은 도구 호출이 아니라서 판독 게이트(`hooks/secret_guard.py`)가
+    보는 자리가 아니다 — 여기서 안 막으면 아무도 안 막는다.
+
+    울타리는 **프로젝트 층에만** 친다. 공통 층(홈)은 오딘 자신의 디렉터리이고, 자기 노트를
+    링크로 걸어 두는 것은 정당한 사용이다. 거기에 쓸 수 있는 자는 이미 더 나은 수를 갖는다.
+
+    링크 자체를 금하지 않고 **대상의 자리**만 본다: 저장소 안에서 문서를 한 곳에 모아 두고
+    링크로 거는 구성은 정상이며, 그건 막을 이유가 없다."""
+    if fence is None:
+        return True
+    try:
+        base = os.path.realpath(fence)
+        return os.path.commonpath([os.path.realpath(path), base]) == base
+    except OSError, ValueError:  # 끊어진 링크 · 순환 · 다른 드라이브(Windows)
+        return False
 
 
-def _fragments_in(base: str) -> tuple[list[str], list[str]]:
-    """`<base>/manual/*.md` 를 파일명 정렬 순으로 — (실을 것, 상한 초과로 뺀 것)."""
+def _primary_in(base: str, fence: str | None = None) -> tuple[list[str], list[str]]:
+    """한 디렉터리 안의 후보를 우선순위 순 절대경로로 — (울타리 안, 울타리 밖).
+
+    첫 반환값의 [0] 이 이기고 나머지는 가려진다. 울타리 밖은 **없는 것으로 친다** — 그래서
+    `MANUAL.md` 가 트리 밖을 가리키면 그 다음 별칭이 정상적으로 이긴다."""
+    found = [os.path.join(base, n) for n in MANUAL_NAMES if os.path.isfile(os.path.join(base, n))]
+    kept: list[str] = []
+    escaped: list[str] = []
+    for path in found:
+        (kept if _inside(path, fence) else escaped).append(path)
+    return kept, escaped
+
+
+def _fragments_in(base: str, fence: str | None = None) -> tuple[list[str], list[str], list[str]]:
+    """`<base>/manual/*.md` 를 파일명 정렬 순으로 — (실을 것, 상한 초과, 울타리 밖)."""
     frag_dir = os.path.join(base, MANUAL_DIR)
     names: list[str] = []
     if os.path.isdir(frag_dir):
@@ -142,39 +173,50 @@ def _fragments_in(base: str) -> tuple[list[str], list[str]]:
         except OSError:
             names = []
     paths = [os.path.join(frag_dir, n) for n in names]
-    return paths[:FRAGMENT_CAP], paths[FRAGMENT_CAP:]
+    kept = [p for p in paths if _inside(p, fence)]
+    escaped = [p for p in paths if not _inside(p, fence)]
+    return kept[:FRAGMENT_CAP], kept[FRAGMENT_CAP:], escaped
 
 
 def discover(root: str | None = None) -> dict:
     """파일 해석만 — 읽지 않는다. doctor·CLI 가 "무엇이 있고 무엇이 가려졌나"를 말하는 소스.
 
-    반환: {files[], shadowed[], dropped[]} — 전부 **절대경로**, `files` 는 실릴 순서 그대로다:
-    공통(홈) → 프로젝트(리포 루트 → `.asgard/`) → 프로젝트 조각. 자리끼리는 서로 가리지 않는다 —
-    가림은 **같은 디렉터리 안 별칭끼리만**. 조각 디렉터리는 `manual/` 하나뿐이라, 리포 루트에
-    `manual/` 을 두는 프로젝트(남의 문서 폴더)와는 안 부딪힌다."""
+    반환: {files[], shadowed[], dropped[], escaped[]} — 전부 **절대경로**, `files` 는 실릴 순서
+    그대로다: 공통(홈) → 프로젝트(리포 루트 → `.asgard/`) → 프로젝트 조각. 자리끼리는 서로 가리지
+    않는다 — 가림은 **같은 디렉터리 안 별칭끼리만**. 조각 디렉터리는 `manual/` 하나뿐이라, 리포
+    루트에 `manual/` 을 두는 프로젝트(남의 문서 폴더)와는 안 부딪힌다.
+
+    `escaped` 는 링크가 저장소 밖을 가리켜 뺀 것이다 (`_inside`). 조용히 빼지 않고 돌려주는
+    이유는 이 계층의 나머지 침묵과 같다 — 안 실린 데는 이유가 있고, `doctor` 가 그걸 말한다."""
     root = os.path.abspath(root or os.getcwd())
     common = home()
     files: list[str] = []
     shadowed: list[str] = []
     dropped: list[str] = []
+    escaped: list[str] = []
 
-    def take(base: str, *, with_fragments: bool) -> None:
-        found = _primary_in(base)
+    def take(base: str, *, with_fragments: bool, fence: str | None) -> None:
+        found, out = _primary_in(base, fence)
+        escaped.extend(out)
         if found:
             files.append(found[0])
             shadowed.extend(found[1:])  # 별칭 중복 — 하나만 이긴다, doctor 가 경고한다
         if with_fragments:
-            keep, drop = _fragments_in(base)
+            keep, drop, frag_out = _fragments_in(base, fence)
             files.extend(keep)
             dropped.extend(drop)
+            escaped.extend(frag_out)
 
-    take(common, with_fragments=True)  # ① 공통 — 이 기계의 모든 프로젝트
-    take(root, with_fragments=False)  # ② 이 프로젝트 — 리포 루트
-    take(os.path.join(root, ASGARD_DIR), with_fragments=True)  # ③ 이 프로젝트 — 보조 자리 + 조각
+    # 울타리: 프로젝트 층은 리포 안, 공통 층(홈)은 없음 — 근거는 `_inside` 주석.
+    take(common, with_fragments=True, fence=None)  # ① 공통 — 이 기계의 모든 프로젝트
+    take(root, with_fragments=False, fence=root)  # ② 이 프로젝트 — 리포 루트
+    # ③ 이 프로젝트 — 보조 자리 + 조각. 울타리는 `.asgard/` 가 아니라 **리포**다: 저장소 안에서
+    # `.asgard/manual/x.md -> ../../docs/rules.md` 로 거는 구성은 정상이다.
+    take(os.path.join(root, ASGARD_DIR), with_fragments=True, fence=root)
     # 홈 안에서 asgard 를 돌리면 같은 파일이 두 층에 걸린다 — 순서를 지키며 한 번만 싣는다.
     seen: set[str] = set()
     files = [p for p in files if not (os.path.realpath(p) in seen or seen.add(os.path.realpath(p)))]
-    return {"files": files, "shadowed": shadowed, "dropped": dropped}
+    return {"files": files, "shadowed": shadowed, "dropped": dropped, "escaped": escaped}
 
 
 def is_common(path: str) -> bool:

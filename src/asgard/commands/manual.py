@@ -39,6 +39,7 @@ def _state(root: str) -> dict:
         "files": [lab(root, p) for p in found["files"]],
         "shadowed": [lab(root, p) for p in found["shadowed"]],
         "dropped": [lab(root, p) for p in found["dropped"]],
+        "escaped": [lab(root, p) for p in found["escaped"]],
         "inert": inert,
         "unmarked": unmarked,
         "sources": loaded["sources"] if loaded else [],
@@ -110,6 +111,10 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
         )
     if st["dropped"]:
         ui.warn(f"조각 상한({manual_mod.FRAGMENT_CAP}개) 초과로 제외: " + ", ".join(st["dropped"]))
+    if st["escaped"]:
+        # 링크 대상이 저장소 밖이다. 매뉴얼은 도구 호출이 아니라 판독 게이트가 안 보는 자리라,
+        # 실었다면 그 파일이 통째로 프롬프트에 나갔다. 뺀 사실을 반드시 눈에 보이게 둔다.
+        ui.warn("저장소 밖을 가리키는 링크 — 안 싣는다: " + ", ".join(st["escaped"]))
     if not st["common"]:
         ui.step(ui.dim(f"    모든 프로젝트 공통 규칙은 {_tilde(st['home'])}/MANUAL.md 에"))
     ui.done()

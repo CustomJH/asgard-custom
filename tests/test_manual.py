@@ -262,6 +262,73 @@ class TestFragments(ManualBase):
         self.assertEqual(loaded["sources"], ["MANUAL.md"])
 
 
+@unittest.skipIf(sys.platform == "win32", "심볼릭 링크 생성에 권한이 필요하다 (Windows)")
+class TestSymlinkFence(ManualBase):
+    """저장소 밖을 가리키는 링크는 안 싣는다.
+
+    왜 이 검사가 있는가: `os.path.isfile` 도 `os.listdir` 도 링크를 따라가고 `.md` 판정은
+    **링크 이름**에 걸린다. git 은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 울타리가
+    없으면 저장소가 `MANUAL.md -> ~/.ssh/id_rsa` 하나만 담아도 그 내용이 매 세션 프롬프트로
+    나간다. 매뉴얼 로더는 도구 호출이 아니라서 판독 게이트(`hooks/secret_guard.py`)가 보는
+    자리가 아니다 — 여기서 안 막으면 아무도 안 막는다.
+
+    울타리는 **프로젝트 층에만** 친다. 공통 층(홈)은 오딘 자신의 디렉터리이고 자기 노트를
+    링크로 걸어 두는 것은 정당한 사용이다."""
+
+    def secret(self, name: str, text: str) -> str:
+        """리포 **밖**의 파일 — 링크가 노리는 표적."""
+        path = os.path.join(self._home.name, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        return path
+
+    def test_root_manual_linking_outside_the_repo_is_not_loaded(self):
+        target = self.secret("id_rsa", "-----BEGIN OPENSSH PRIVATE KEY-----\nsecret\n")
+        os.symlink(target, os.path.join(self.root, "MANUAL.md"))
+        self.assertIsNone(M.load_manual(self.root))
+        self.assertNotIn("BEGIN OPENSSH", M.note(self.root))
+        self.assertEqual(M.discover(self.root)["escaped"], [os.path.join(self.root, "MANUAL.md")])
+
+    def test_fragment_linking_outside_the_repo_is_not_loaded(self):
+        target = self.secret("dotenv", "AWS_SECRET_ACCESS_KEY=hunter2\n")
+        self.write("MANUAL.md", "- 성한 규칙")
+        os.makedirs(os.path.join(self.root, ".asgard", "manual"), exist_ok=True)
+        os.symlink(target, os.path.join(self.root, ".asgard", "manual", "00-x.md"))
+        loaded = M.load_manual(self.root)
+        assert loaded is not None
+        self.assertEqual(loaded["sources"], ["MANUAL.md"])  # 성한 것은 계속 실린다
+        self.assertNotIn("hunter2", loaded["body"])
+
+    def test_escaped_alias_lets_the_next_one_win(self):
+        """울타리 밖은 **없는 것으로 친다** — 가려진 게 아니라 후보에서 빠진다."""
+        os.symlink(self.secret("id_rsa", "secret"), os.path.join(self.root, "MANUAL.md"))
+        self.write("CUSTOM.md", "- 실제 규칙")
+        loaded = M.load_manual(self.root)
+        assert loaded is not None
+        self.assertEqual(loaded["sources"], ["CUSTOM.md"])
+        self.assertEqual(loaded["shadowed"], [])
+
+    def test_link_staying_inside_the_repo_still_works(self):
+        """링크 자체를 금하지 않는다 — 저장소 안에서 문서를 모아 두는 구성은 정상이다."""
+        self.write("docs/rules.md", "- 저장소 안 규칙")
+        os.symlink(os.path.join(self.root, "docs", "rules.md"), os.path.join(self.root, "MANUAL.md"))
+        loaded = M.load_manual(self.root)
+        assert loaded is not None
+        self.assertIn("저장소 안 규칙", loaded["body"])
+        self.assertEqual(M.discover(self.root)["escaped"], [])
+
+    def test_common_layer_may_link_anywhere(self):
+        """홈은 오딘의 자리다 — 거기에 쓸 수 있는 자는 이미 더 나은 수를 갖는다."""
+        notes = os.path.join(self._home.name, "my-notes.md")
+        with open(notes, "w", encoding="utf-8") as handle:
+            handle.write("- 내 공통 규칙")
+        os.makedirs(M.home(), exist_ok=True)
+        os.symlink(notes, os.path.join(M.home(), "MANUAL.md"))
+        loaded = M.load_manual(self.root)
+        assert loaded is not None
+        self.assertIn("내 공통 규칙", loaded["body"])
+
+
 class TestInertness(ManualBase):
     def test_comment_only_file_is_not_a_manual(self):
         self.write("MANUAL.md", "<!-- just a note -->\n\n")

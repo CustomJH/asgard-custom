@@ -704,6 +704,12 @@ def _trinity_checks(root: str) -> list[dict]:
         problems = []
         if found["shadowed"]:
             problems.append("별칭 중복 — 무시된다: " + ", ".join(_rel(root, p) for p in found["shadowed"]))
+        # 링크가 저장소 밖을 가리켜 뺀 것. 다른 항목과 달리 이건 사고일 수도, 심어진 것일 수도
+        # 있다 — 어느 쪽이든 사용자가 알아야 한다 (조용히 빼면 심은 쪽만 이득이다).
+        if found["escaped"]:
+            problems.append(
+                "저장소 밖을 가리키는 링크 — 안 싣는다: " + ", ".join(_rel(root, p) for p in found["escaped"])
+            )
         if loaded and loaded["truncated"]:
             problems.append(f"상한 절단 {loaded['chars']}자 — 뒷부분 미주입")
         if found["dropped"]:
