@@ -45,6 +45,20 @@ AGENT_TARGETS = {
 ANCHOR = {"plan": "verify", "work": "verify", "verify": "work"}
 
 
+def _read_text(path: str) -> str:
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _load_json(path: str):
+    with open(path, encoding="utf-8") as handle:
+        return json.load(handle)
+
+
 def trivial_evidence(cmd):
     """quest_log.py 의 trivial_evidence 와 동일 유지 (단일 출처 원칙)."""
     c = " ".join(str(cmd).split())
@@ -116,7 +130,7 @@ def quest_pointer(root: str, sid: str) -> str | None:
     sessions = os.path.join(root, ".asgard", "quest", "sessions")
     session_path = os.path.join(sessions, name + ".active")
     try:
-        qid = open(session_path, encoding="utf-8").read().strip()
+        qid = _read_text(session_path).strip()
         if qid:
             return qid
     except Exception:
@@ -125,7 +139,7 @@ def quest_pointer(root: str, sid: str) -> str | None:
         return None
     try:
         active = {
-            open(os.path.join(sessions, entry), encoding="utf-8").read().strip()
+            _read_text(os.path.join(sessions, entry)).strip()
             for entry in os.listdir(sessions)
             if entry.endswith(".active")
         }
@@ -138,7 +152,7 @@ def quest_pointer(root: str, sid: str) -> str | None:
         return None
     for path in (os.path.join(root, ".asgard", "quest", "ACTIVE"),):
         try:
-            qid = open(path, encoding="utf-8").read().strip()
+            qid = _read_text(path).strip()
             if qid:
                 return qid
         except Exception:
@@ -182,7 +196,7 @@ def record_agent_stop(root: str, qid: str, agent_id: str, agent: str = "", task:
             for name in os.listdir(directory):
                 if not name.startswith("agent-"):
                     continue
-                record = json.load(open(os.path.join(directory, name), encoding="utf-8"))
+                record = _load_json(os.path.join(directory, name))
                 if (
                     record.get("agent_type") == agent
                     and record.get("stopped_at") is None
@@ -249,17 +263,25 @@ def record_worker_dispatch(root: str, qid: str, sid: str, tool_use_id: str, tool
     return True
 
 
-def load_quest_events(root: str, qid: str) -> list[dict]:
-    events = []
+def read_quest_events(root: str, qid: str) -> tuple[list[dict], bool]:
+    """(이벤트, 읽기 성공 여부). 둘째 값을 버리면 안 된다 — **읽기 실패와 빈 로그는 다른 사실**이고,
+    섞는 순간 fail-open 게이트가 fail-closed 로 뒤집힌다(로그를 못 읽었을 뿐인데 차단)."""
+    events: list[dict] = []
     try:
-        for line in open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
-            try:
-                events.append(json.loads(line))
-            except Exception:
-                continue
+        with open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    continue  # 찢어진 줄 하나 — 로그 전체를 못 읽은 것과는 다르다(그쪽은 아래 False)
     except Exception:
-        pass
-    return events
+        return events, False
+    return events, True
+
+
+def load_quest_events(root: str, qid: str) -> list[dict]:
+    """읽기 실패를 빈 목록으로 삼키는 쪽 — 실패해도 막지 않는 호출부 전용."""
+    return read_quest_events(root, qid)[0]
 
 
 def ticket_view(events: list[dict]) -> dict[str, dict]:
@@ -344,7 +366,7 @@ def mode_b_receipts(root: str, qid: str, sid: str) -> tuple[list[dict], list[dic
         if not name.endswith(".json"):
             continue
         try:
-            record = json.load(open(os.path.join(directory, name), encoding="utf-8"))
+            record = _load_json(os.path.join(directory, name))
         except Exception:
             continue
         if record.get("quest_id") != qid or record.get("session_id") != sid:
@@ -468,14 +490,8 @@ def main():
         if event in {"SubagentStart", "subagentStart", "start"}:
             record_agent_start(root, qid, sid, agent, agent_id, task)
             sys.exit(0)
-        events = []
-        try:
-            for line in open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
-                try:
-                    events.append(json.loads(line))
-                except Exception:
-                    continue
-        except Exception:
+        events, readable = read_quest_events(root, qid)
+        if not readable:
             sys.exit(0)  # 로그 읽기 실패 → allow (fail-open)
 
         anchor = ANCHOR[want]
