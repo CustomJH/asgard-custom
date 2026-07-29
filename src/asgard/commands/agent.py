@@ -135,7 +135,15 @@ def run_agent_create(
 
     canon = profiles.normalize(name)
     if json_out:
-        print(json.dumps({"created": canon, "path": path, **profiles.manifest(canon)}, ensure_ascii=False, indent=2))
+        # 명세를 펼쳐 넣으면 그 안의 `created`(생성 시각)가 이 자리의 `created`(만든 에이전트 id)를
+        # 덮어써, JSON 계약이 조용히 숫자를 뱉었다 (실측 26-07-29). 명세는 중첩해 충돌을 없앤다.
+        print(
+            json.dumps(
+                {"created": canon, "path": path, "manifest": profiles.manifest(canon)},
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
         return 0
 
     ui.head(f"agent · {canon} 세움")

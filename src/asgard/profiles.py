@@ -130,12 +130,29 @@ def profiles_root() -> str:
     return os.path.join(root(), PROFILES_DIR)
 
 
+CUSTOM = "custom"  # 이름 붙지 않은 홈 (컨테이너 볼륨 등) — 이름이 아니라 "지금 그 홈"을 뜻한다
+
+
 def profile_dir(name: str) -> str:
-    """이름 → 홈 경로. `default` 는 뿌리 자신이다 (마이그레이션 0)."""
+    """이름 → 홈 경로. `default` 는 뿌리 자신이다 (마이그레이션 0).
+
+    `custom` 은 이름이 아니라 **지금 이 프로세스의 홈**을 가리키는 표지다. 도커처럼
+    `ASGARD_HOME=/opt/agent-data` 를 통째로 준 경우가 여기다 — 그 홈은 `profiles/` 아래 있지
+    않으므로 이름으로 되짚을 수 없고, 되짚으려 들면 `profiles/custom` 이라는 없는 자리를
+    가리켜 정체성도 명세도 조용히 사라진다 (실측 26-07-29)."""
     canon = normalize(name)
     if canon == DEFAULT:
         return root()
+    if canon == CUSTOM:
+        # `home()` 을 부르지 않는다 — scoped("custom") 이면 서로를 되불러 무한 재귀가 된다.
+        return _env_home() or root()
     return os.path.join(profiles_root(), canon)
+
+
+def _env_home() -> str:
+    """ASGARD_HOME 원문 → 절대경로. 미설정이면 빈 문자열."""
+    raw = str(os.environ.get("ASGARD_HOME") or "").strip()
+    return os.path.abspath(os.path.expanduser(raw)) if raw else ""
 
 
 # ── 활성 해석 ────────────────────────────────────────────────────────────────────
@@ -417,8 +434,6 @@ def note(name: str | None = None) -> str:
     바이트 단위로 같아야 한다 (토큰 회귀 0). 기본 에이전트도 AGENT.md 를 적으면 실린다 —
     "안 적었으면 침묵"이 규칙이지 "기본은 침묵"이 규칙이 아니다."""
     canon = normalize(name) if name else active()
-    if canon == "custom":
-        return ""
     body = _meaningful(identity(canon))
     if not body:
         return ""
@@ -427,9 +442,24 @@ def note(name: str | None = None) -> str:
         head = body[:IDENTITY_MAX]
         nl = head.rfind("\n")
         body = head[:nl] if nl > IDENTITY_MAX // 2 else head
-    display = str(manifest(canon).get("name") or canon)
-    label = display if display == canon else f"{display} ({canon})"
-    return "\n\n" + render_identity(label, body, truncated)
+    return "\n\n" + render_identity(label_for(canon), body, truncated)
+
+
+def label_for(name: str) -> str:
+    """헤더에 쓸 이름 — hooks/agent_activate.py `label_for()` 와 **동일 유지 (단일 출처 원칙)**.
+
+    `custom`(이름 없는 홈 — 컨테이너 볼륨 등)은 id 가 없으므로 명세의 표시 이름을 쓰고,
+    그것도 없으면 홈 디렉터리 이름을 쓴다. "custom" 이라고만 적으면 컨테이너 여럿을 띄웠을 때
+    로그에서 누가 누군지 구분이 안 된다."""
+    canon = normalize(name)
+    meta_name = str(manifest(canon).get("name") or "")
+    if canon == CUSTOM:
+        # manifest() 는 이름이 없으면 id 를 채워 넣는다 — 그 기본값은 이름이 아니다.
+        if meta_name and meta_name != CUSTOM:
+            return meta_name
+        return os.path.basename(profile_dir(canon).rstrip(os.sep)) or CUSTOM
+    display = meta_name or canon
+    return display if display == canon else f"{display} ({canon})"
 
 
 # ── 내장 명부 (아스가르드 고유 에이전트) ──────────────────────────────────────────────

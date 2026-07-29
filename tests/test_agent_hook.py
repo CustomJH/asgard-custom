@@ -199,6 +199,60 @@ class TestPlacementIsSingleSource(AgentHookBase):
         self.assertEqual(self._picked(self.body(result.stdout)), "alpha")
 
 
+class TestContainerHome(AgentHookBase):
+    """컨테이너 안에서 CC/Codex 를 돌리는 경우 — 훅이 호스트가 아니라 그 볼륨을 읽어야 한다.
+
+    실측 26-07-29: 훅의 `sticky()` 가 모르는 `ASGARD_HOME` 을 DEFAULT 로 접어, 컨테이너
+    에이전트가 **호스트의 `~/.asgard`** 를 자기 정체성으로 받고 있었다. 기억은 맞는 곳에
+    쓰면서 정체성만 남의 것이 되는, 제일 알아채기 어려운 형태의 어긋남이다."""
+
+    def setUp(self):
+        super().setUp()
+        self.container = os.path.join(self.tmp.name, "opt", "agent-data")
+        os.makedirs(self.container, exist_ok=True)
+        with open(os.path.join(self.container, "AGENT.md"), "w", encoding="utf-8") as handle:
+            handle.write("나는 컨테이너 전용 에이전트다. 로그 분석만 한다.")
+        # 호스트 쪽에는 다른 정체성을 심어 둔다 — 잘못 읽으면 이게 나온다.
+        os.makedirs(os.path.join(self.home.name, ".asgard"), exist_ok=True)
+        with open(os.path.join(self.home.name, ".asgard", "AGENT.md"), "w", encoding="utf-8") as handle:
+            handle.write("나는 호스트의 기본 에이전트다.")
+
+    def hook(self, payload=None, client="claude-code"):  # type: ignore[override]
+        env = {k: v for k, v in os.environ.items() if not k.startswith(("CLAUDE_", "CURSOR_", "ASGARD_"))}
+        env["HOME"] = self.home.name
+        env["ASGARD_HOME"] = self.container
+        return subprocess.run(
+            [sys.executable, os.path.join(self.hooks, "agent-activate.py"), client],
+            input=json.dumps({"cwd": self.root, **(payload or {})}),
+            capture_output=True,
+            text=True,
+            cwd=self.root,
+            env=env,
+            timeout=30,
+        )
+
+    def test_hook_reads_the_volume_not_the_host(self):
+        body = self.body(self.hook().stdout)
+        self.assertIn("로그 분석만 한다", body)
+        self.assertNotIn("호스트의 기본 에이전트", body)
+
+    def test_hook_matches_the_native_render_for_a_volume_home(self):
+        from asgard import profiles
+
+        prev = dict(os.environ)
+        os.environ["HOME"] = self.home.name
+        os.environ["ASGARD_HOME"] = self.container
+        try:
+            native = profiles.note().strip()
+        finally:
+            os.environ.clear()
+            os.environ.update(prev)
+        self.assertEqual(self.body(self.hook().stdout), native)
+
+    def test_header_names_the_volume(self):
+        self.assertIn("agent-data", self.body(self.hook().stdout))
+
+
 class TestClientSchemas(AgentHookBase):
     def setUp(self):
         super().setUp()

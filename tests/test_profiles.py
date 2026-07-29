@@ -297,6 +297,65 @@ class TestSubprocessPropagation(ProfileBase):
         self.assertEqual(profiles.fallback_warning(), "")  # 전파됐으면 조용하다
 
 
+class TestContainerHome(ProfileBase):
+    """이름 없는 홈 — 도커처럼 볼륨 하나를 통째로 `ASGARD_HOME` 으로 주는 경우.
+
+    그 홈은 `~/.asgard/profiles/` 아래 있지 않아 **이름으로 되짚을 수 없다**. 그걸 `custom`
+    이라는 표지로만 다루고 경로를 안 이어주면, 그 프로세스는 기억은 제대로 쓰면서 정체성만
+    조용히 잃는다 (실측 26-07-29 — `profiles/custom` 이라는 없는 자리를 읽고 있었다).
+    컨테이너로 에이전트를 띄우는 흐름 전체가 이 한 갈래에 달려 있다."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.container = os.path.join(self.home, "opt", "agent-data")
+        os.makedirs(self.container, exist_ok=True)
+        os.environ["ASGARD_HOME"] = self.container
+
+    def test_the_volume_is_that_process_home(self):
+        self.assertEqual(profiles.home(), self.container)
+        self.assertEqual(profiles.active(), profiles.CUSTOM)
+
+    def test_tier1_memory_is_that_volume(self):
+        """컨테이너에게는 그 홈의 memory/ 가 곧 '디폴트 메모리'다."""
+        from asgard.memory import add, ensure_home, memory_dir
+
+        self.assertEqual(memory_dir(), os.path.join(self.container, "memory"))
+        ensure_home()
+        add("the container agent recorded this", kind="note")
+        self.assertTrue(os.listdir(os.path.join(self.container, "memory", "pages")))
+        # 호스트의 뿌리는 안 건드린다
+        self.assertFalse(os.path.isdir(os.path.join(profiles.root(), "memory", "pages")))
+
+    def test_identity_in_the_volume_is_injected(self):
+        with open(os.path.join(self.container, profiles.IDENTITY), "w", encoding="utf-8") as handle:
+            handle.write("나는 컨테이너 전용 에이전트다. 로그 분석만 한다.")
+        note = profiles.note()
+        self.assertIn("로그 분석만 한다", note)
+
+    def test_the_header_names_the_volume_not_the_word_custom(self):
+        """컨테이너를 여럿 띄우면 전부 'custom' 이라 로그에서 누가 누군지 구분이 안 된다."""
+        with open(os.path.join(self.container, profiles.IDENTITY), "w", encoding="utf-8") as handle:
+            handle.write("body")
+        self.assertIn("agent-data", profiles.note())
+
+    def test_manifest_name_wins_over_the_directory_name(self):
+        with open(os.path.join(self.container, profiles.IDENTITY), "w", encoding="utf-8") as handle:
+            handle.write("body")
+        with open(os.path.join(self.container, profiles.MANIFEST), "w", encoding="utf-8") as handle:
+            json.dump({"name": "로그 분석가"}, handle)
+        self.assertIn("로그 분석가", profiles.note())
+
+    def test_scoping_to_custom_does_not_recurse(self):
+        """`profile_dir('custom')` 이 `home()` 을 부르면 스코프 안에서 서로를 되불러 죽는다."""
+        with profiles.scoped(profiles.CUSTOM):
+            self.assertEqual(profiles.home(), self.container)
+
+    def test_env_overlay_propagates_the_volume_to_children(self):
+        overlay = profiles.env_overlay()
+        self.assertEqual(overlay["ASGARD_HOME"], self.container)
+        self.assertEqual(overlay["ASGARD_PROFILE"], "")  # 상속된 낡은 이름을 지운다
+
+
 class TestSwarmBinding(ProfileBase):
     def setUp(self) -> None:
         super().setUp()
@@ -361,6 +420,79 @@ class TestSwarmBinding(ProfileBase):
         with swarm.scoped_for(self.root, role="verifier"):
             ensure_home()
             self.assertEqual(_pages(memory_dir()), [], "Verifier 가 Worker 의 기억을 보면 게이트가 무의미해진다")
+
+
+class TestNativeCompositionEndToEnd(ProfileBase):
+    """네이티브 루프의 **실제** `_session` 조립 — 역할마다 맞는 정체성·기억·홈이 붙는가.
+
+    기존 Heimdall 테스트는 `_session` 을 통째로 대역으로 갈아끼우므로 이 조립을 안 지나간다.
+    여기서는 진짜 메서드를 태우고 `AgentSession` 생성 인자만 가로챈다 — 조립이 빠지면
+    "배치는 했는데 프롬프트엔 아무것도 안 실리는" 무증상 결함이 되기 때문이다."""
+
+    def _heimdall(self, root: str):
+        """진짜 Heimdall — `AgentSession` 생성만 가로채 조립 결과를 본다."""
+        from asgard.agent.heimdall import core as core_mod
+        from asgard.providers import PROVIDERS, ResolvedProvider
+
+        captured: list[dict] = []
+
+        class _Stub:
+            def __init__(self, *args, **kwargs):
+                # _session 은 (client, rp, root, system) 을 위치로 넘긴다
+                captured.append({**kwargs, "system": args[3] if len(args) > 3 else kwargs.get("system", "")})
+
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(core_mod, "AgentSession", _Stub).start()
+        mock.patch.object(core_mod, "make_client", lambda _rp: object()).start()
+        rp = ResolvedProvider(profile=PROVIDERS["anthropic"], model="claude-x", api_key="k")
+        return core_mod.Heimdall(rp, root, on_text=lambda _s: None), captured
+
+    def test_each_role_gets_its_own_agents_identity_and_home(self):
+        root = self.project()
+        profiles.create("arch")
+        profiles.create("qa")
+        for who, text in (("arch", "나는 설계만 한다."), ("qa", "나는 반례만 찾는다.")):
+            with open(os.path.join(profiles.profile_dir(who), profiles.IDENTITY), "w", encoding="utf-8") as handle:
+                handle.write(text)
+        swarm.bind(root, "arch", role="thinker")
+        swarm.bind(root, "qa", role="verifier")
+
+        hd, captured = self._heimdall(root)
+        hd._session("BASE-PROMPT", role="thinker")
+        hd._session("BASE-PROMPT", role="verifier")
+
+        thinker, verifier = captured[-2], captured[-1]
+        self.assertIn("나는 설계만 한다.", thinker["system"])
+        self.assertNotIn("나는 반례만 찾는다.", thinker["system"])
+        self.assertIn("나는 반례만 찾는다.", verifier["system"])
+        self.assertEqual(thinker["agent"], "arch")
+        self.assertEqual(verifier["agent"], "qa")
+
+    def test_no_placement_leaves_the_prompt_untouched(self):
+        """배치도 정체성도 없는 설치 — 이 계층이 통째로 없는 것과 같아야 한다."""
+        root = self.project()
+        hd, captured = self._heimdall(root)
+        hd._session("BASE-PROMPT", role="worker")
+        self.assertEqual(captured[-1]["system"], "BASE-PROMPT")
+
+    def test_role_memory_snapshot_follows_the_placed_agent(self):
+        """Verifier 가 Worker 의 일지를 못 보는 것이 이 레인의 값어치 — 스냅샷 단계에서 갈린다."""
+        from asgard.memory import add, ensure_home
+
+        root = self.project()
+        profiles.create("worker-agent")
+        profiles.create("verifier-agent")
+        with profiles.scoped("worker-agent"):
+            ensure_home()
+            add("the worker wrote this into its own log", kind="note")
+        with profiles.scoped("verifier-agent"):
+            ensure_home()
+        swarm.bind(root, "worker-agent", role="worker")
+        swarm.bind(root, "verifier-agent", role="verifier")
+
+        hd, _ = self._heimdall(root)
+        self.assertIn("the worker wrote this", hd._memory_snap_for("worker"))
+        self.assertNotIn("the worker wrote this", hd._memory_snap_for("verifier"))
 
 
 class TestSessionCarriesTheAgent(ProfileBase):

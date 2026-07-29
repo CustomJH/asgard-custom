@@ -30,6 +30,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 # profiles.py 상수와 동일 유지
 DEFAULT = "default"
+CUSTOM = "custom"  # 이름 붙지 않은 홈 (컨테이너 볼륨 등) — 이름이 아니라 "지금 그 홈"
 PROFILES_DIR = "profiles"
 ACTIVE_FILE = "active_profile"
 MANIFEST = "profile.json"
@@ -67,8 +68,23 @@ def root_dir():
     return os.path.join(home, ".asgard")
 
 
+def env_home():
+    """ASGARD_HOME 원문 → 절대경로. 미설정이면 빈 문자열 (profiles._env_home 과 동일 유지)."""
+    raw = str(os.environ.get("ASGARD_HOME") or "").strip()
+    return os.path.abspath(os.path.expanduser(raw)) if raw else ""
+
+
 def profile_dir(name):
-    return root_dir() if name == DEFAULT else os.path.join(root_dir(), PROFILES_DIR, name)
+    """profiles.profile_dir() 과 동일 유지 — `custom` 은 이름이 아니라 지금 그 홈이다.
+
+    도커처럼 `ASGARD_HOME=/opt/agent-data` 를 통째로 준 홈은 `profiles/` 아래 있지 않아
+    이름으로 되짚을 수 없다. 이 분기가 없으면 훅이 컨테이너 대신 **호스트의 `~/.asgard`** 를
+    읽어, 컨테이너 에이전트의 정체성이 통째로 사라진다 (실측 26-07-29)."""
+    if name == DEFAULT:
+        return root_dir()
+    if name == CUSTOM:
+        return env_home() or root_dir()
+    return os.path.join(root_dir(), PROFILES_DIR, name)
 
 
 def _norm(value):
@@ -87,16 +103,19 @@ def _exists(name):
 
 
 def sticky():
-    """루트의 끈끈한 활성 — env 가 있으면 env 가 먼저 (profiles.active() 와 동일 유지)."""
-    env_home = str(os.environ.get("ASGARD_HOME") or "").strip()
-    if env_home:
-        resolved = os.path.realpath(os.path.expanduser(env_home))
+    """루트의 끈끈한 활성 — env 가 있으면 env 가 먼저 (profiles.active() 와 동일 유지).
+
+    모르는 ASGARD_HOME 은 DEFAULT 가 아니라 `custom` 이다. DEFAULT 로 접으면 훅이 호스트의
+    `~/.asgard` 를 읽어, 컨테이너로 띄운 에이전트가 자기 정체성 대신 남의 것을 받는다."""
+    home = env_home()
+    if home:
+        resolved = os.path.realpath(home)
         if resolved == os.path.realpath(root_dir()):
             return DEFAULT
         parent, base = os.path.split(resolved)
         if os.path.realpath(parent) == os.path.realpath(os.path.join(root_dir(), PROFILES_DIR)):
-            return _norm(base) or DEFAULT
-        return DEFAULT
+            return _norm(base) or CUSTOM
+        return CUSTOM
     env_name = _norm(os.environ.get("ASGARD_PROFILE"))
     if env_name:
         return env_name
@@ -156,9 +175,18 @@ def note(name):
         head = body[:IDENTITY_MAX]
         nl = head.rfind("\n")
         body = head[:nl] if nl > IDENTITY_MAX // 2 else head
-    display = str((_read_json(os.path.join(profile_dir(name), MANIFEST)) or {}).get("name") or name)
-    label = display if display == name else "%s (%s)" % (display, name)
-    return render(label, body, truncated)
+    return render(label_for(name), body, truncated)
+
+
+def label_for(name):
+    """profiles.label_for() 와 동일 유지 — 이름 없는 홈은 홈 디렉터리 이름으로 부른다."""
+    meta_name = str((_read_json(os.path.join(profile_dir(name), MANIFEST)) or {}).get("name") or "")
+    if name == CUSTOM:
+        if meta_name and meta_name != CUSTOM:
+            return meta_name
+        return os.path.basename(profile_dir(name).rstrip(os.sep)) or CUSTOM
+    display = meta_name or name
+    return display if display == name else "%s (%s)" % (display, name)
 
 
 CLIENTS = {"claude-code", "codex", "cursor"}
