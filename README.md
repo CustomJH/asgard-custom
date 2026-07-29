@@ -333,6 +333,18 @@ the `agent-activate` hook in Claude Code, Cursor, and Codex. An agent with
 nothing written in its identity file stays silent: prompts are byte-identical to
 an install that never used this layer.
 
+To run one agent on its own — a container, a second machine, a CI runner — hand
+it a home instead of a name:
+
+```bash
+docker run -e ASGARD_HOME=/data -v agent-vol:/data …   # /data/memory is that agent's tier-1 memory
+```
+
+That volume *is* the agent: `/data/memory` behaves exactly like the default
+memory, `/data/AGENT.md` is its identity, and the host's `~/.asgard` is never
+touched. Asgard names it after the directory, so several containers stay
+distinguishable in logs.
+
 ## Memory
 
 Asgard has exactly two memory types: personal local Markdown/SQLite memory and
