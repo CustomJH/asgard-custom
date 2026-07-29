@@ -3,37 +3,82 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="위그드라실 — Asgard 개인 1차 메모리(Tier0 로컬 위키) 관측 대시보드. 개요·기억 성좌 그래프·서고 카탈로그·운영 연대기·활동 열지도. 읽기 전용, 나이트+골드 다크 단일 테마.">
+<meta name="description" content="위그드라실 — Asgard 개인 1차 메모리(Tier0 로컬 위키) 관측 대시보드. 개요·기억 성좌 그래프·서고 카탈로그·전달·정리·운영 연대기·활동 열지도. 읽기 전용, 나이트+골드 다크 단일 테마.">
 <title>위그드라실 · Asgard Yggdrasil</title>
 <style>
+  /* Freyja4 · designed-as-app · component: observatory console — width-adaptive tab shell
+   * genre: modern-minimal (developer tool) · theme: custom "Asgard night + gold"
+   * anchor hue: 40 (gold) · paper #0C0A07 · accent #C6A45E · display serif + mono/sans body
+   * design system: this :root block is the single source of truth. The constellation canvas
+   *   reads the same tokens, so retuning one moves the drawing with the DOM.
+   * states shipped: default · hover · focus-visible · active · disabled · loading (skeleton)
+   *   · error (retry card) · empty (onboarding). success is n/a — this surface renders a local
+   *   snapshot and submits nothing, so a success state would be a checklist, not a state.
+   * width: --shell-max is user-owned (좁게·기본·넓게·전체, persisted) and the body is a
+   *   container — layout tiers branch on the shell's real width, not the screen's, so the
+   *   switch actually changes the layout. Extra width becomes more columns, never longer
+   *   prose lines — text blocks keep their own measure cap.
+   * diversification: suspended. A product surface shared with `asgard map`, not a page in
+   *   rotation — a future Freyja4 run must not re-roll its macrostructure or theme.
+   */
   :root{
+    /* 면 — 금고 바닥에서 올라오는 4단 */
     --vault:#0C0A07; --surface-1:#14110C; --surface-2:#1B160E; --surface-3:#241C11;
+    --splash-bg:#080604;
     --line:rgba(230,208,150,.09); --line-strong:rgba(230,208,150,.17);
+    /* 금 — 룬 골드가 기준, 밝은 쪽이 잉크 */
     --rune-gold:#C6A45E; --gold-lit:#E8C87E; --gem:#5E8A6E;
     --ink:#E9E0CA; --ink-dim:#9C9179; --ink-ghost:rgba(233,224,202,.55);
     --heal:#86A860; --warn:#D2933F; --crit:#C25B46; --info:#6E8BA8;
+    /* 상태 면·잉크 — 반투명 혼합 대신 실색 토큰: 대비를 계산할 수 있어야 계기다 */
+    --crit-fill:#1E100C; --crit-line:#7A392B; --crit-ink:#E88A73;
+    --warn-fill:#1E170C; --warn-line:#7A5B26; --warn-ink:#E8B673;
+    --info-fill:#0E151C; --info-line:#3B566B; --info-ink:#9CBEDC;
+    --gem-fill:#0E1710;  --gem-line:#3B5C46;  --gem-ink:#9FC9AC;
+    --gold-fill:#1C1710; --gold-hover:rgba(198,164,94,.18); --mark-fill:rgba(198,164,94,.28);
+    /* 부유·비침 — 아래가 비치는 곳은 전부 토큰으로 */
+    --panel:rgba(20,17,12,.88); --scrim:rgba(12,10,7,.95); --overlay:rgba(8,6,4,.62);
+    --glow:rgba(198,164,94,.06); --glow-soft:rgba(198,164,94,.05);
+    --sheen:rgba(230,208,150,.05);
+    --heat-1:rgba(198,164,94,.22); --heat-2:rgba(198,164,94,.45); --heat-2-line:rgba(198,164,94,.3);
+    --heat-3:rgba(214,182,110,.72); --heat-3-line:rgba(198,164,94,.45); --heat-4:#E8C87E;
+    /* 4pt 리듬 — 계기판은 조밀하지만 임의값은 쓰지 않는다 */
+    --space-2xs:4px; --space-xs:8px; --space-sm:12px; --space-md:16px;
+    --space-lg:20px; --space-xl:24px; --space-2xl:32px; --space-3xl:48px;
+    /* 껍데기 폭 — 사용자가 소유한다. data-width 가 이 한 값만 갈아 끼운다. */
+    --shell-max:1180px; --shell-pad:clamp(16px,3vw,40px);
+    /* 글 폭 상한 — 껍데기가 넓어져도 읽는 줄은 길어지지 않는다 */
+    --measure:74ch;
+    /* z 계단 — 이름 있는 6단, 즉석 숫자 금지 */
+    --z-raised:10; --z-sticky:200; --z-modal:400; --z-splash:600;
+    --ease-out:cubic-bezier(.22,1,.36,1); --dur-quick:120ms; --dur-short:160ms; --dur-mid:220ms;
     --serif:"Iowan Old Style","Palatino Linotype","Palatino","AppleMyungjo","Nanum Myeongjo","Times New Roman",serif;
     --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI",Roboto,sans-serif;
     --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,"Cascadia Code",monospace;
   }
+  /* 폭 모드 — 넓은 화면을 '더 긴 줄'이 아니라 '더 많은 열'로 쓴다 */
+  html[data-width="snug"]{--shell-max:960px}
+  html[data-width="wide"]{--shell-max:1560px}
+  html[data-width="full"]{--shell-max:none;--shell-pad:clamp(16px,2vw,32px)}
   *{box-sizing:border-box}
-  html{color-scheme:dark;-webkit-text-size-adjust:100%}
+  html{color-scheme:dark;-webkit-text-size-adjust:100%;overflow-x:clip}
   body{margin:0;background:var(--vault);color:var(--ink);font-family:var(--sans);font-size:15px;line-height:1.6;
-    background-image:radial-gradient(120% 70% at 50% -10%, rgba(198,164,94,.06), transparent 60%);
-    background-attachment:fixed;min-height:100vh}
-  .skip{position:absolute;left:-999px;top:0;background:var(--surface-3);color:var(--gold-lit);padding:10px 16px;border-radius:6px;z-index:120}
-  .skip:focus{left:16px;top:16px}
-  .vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 20px}
+    background-image:radial-gradient(120% 70% at 50% -10%, var(--glow), transparent 60%);
+    background-attachment:fixed;min-height:100dvh;overflow-x:clip}
+  .skip{position:absolute;left:-999px;top:0;background:var(--surface-3);color:var(--gold-lit);
+    padding:var(--space-sm) var(--space-md);border-radius:6px;z-index:var(--z-modal)}
+  .skip:focus{left:var(--space-md);top:var(--space-md)}
+  .vh{position:absolute;width:1px;height:1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+  .wrap{max-width:var(--shell-max);margin:0 auto;padding-inline:var(--shell-pad)}
   a{color:var(--gold-lit)}
   code,.mono{font-family:var(--mono)}
   .num{font-family:var(--mono);font-variant-numeric:tabular-nums}
   .dimnote{color:var(--ink-dim);font-size:12px;font-weight:400}
-  mark{background:rgba(198,164,94,.28);color:var(--gold-lit);border-radius:2px;padding:0 1px}
+  mark{background:var(--mark-fill);color:var(--gold-lit);border-radius:2px;padding:0}
 
   /* ── 스플래시 — 로고 점등 씬 (세션 1회, 콘텐츠 페인트 비차단 오버레이) ── */
-  #splash{position:fixed;inset:0;z-index:100;background:#080604;display:flex;flex-direction:column;
-    align-items:center;justify-content:center;gap:26px;transition:opacity .55s ease}
+  #splash{position:fixed;inset:0;z-index:var(--z-splash);background:var(--splash-bg);display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:var(--space-xl);transition:opacity .55s ease}
   #splash.out{opacity:0;pointer-events:none}
   #splash img{width:min(52vw,320px);height:auto;animation:splash-ignite 1.15s cubic-bezier(.25,.6,.25,1) both}
   /* 폴백 마크는 CSS 로 숨긴다 — SVG 요소에는 hidden 속성이 적용되지 않는다 (실측 결함 수정) */
@@ -45,278 +90,436 @@
     to{opacity:1;transform:scale(1);filter:brightness(1) saturate(1)}}
   @keyframes splash-word{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
 
-  /* ── 헤더 — 탭 바와 통합한 최소 헤더 (고정 로고 없음) ── */
-  header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:8px 24px;flex-wrap:wrap;
-    padding-top:26px;padding-bottom:10px}
-  .kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--rune-gold);margin:0 0 4px}
-  h1{font-family:var(--serif);font-weight:500;font-size:clamp(21px,3.2vw,26px);letter-spacing:-.01em;margin:0;color:var(--gold-lit)}
-  .meta-line{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--ink-dim);display:flex;gap:6px 16px;flex-wrap:wrap;justify-content:flex-end}
-  .meta-line b{color:var(--ink)}
+  /* ── 헤더 — 브랜드 락업(asgard map 과 같은 마크) + 계기 + 조작 ── */
+  header.top{display:flex;justify-content:space-between;align-items:flex-end;gap:var(--space-xs) var(--space-xl);flex-wrap:wrap;
+    padding-top:var(--space-xl);padding-bottom:var(--space-sm)}
+  .brand{display:flex;align-items:center;gap:var(--space-sm);min-width:0}
+  .brand .mark{color:var(--rune-gold);flex:none}
+  /* 마크 높이 = 옆 텍스트 락업(kicker + 워드마크) 높이 — 둘이 어긋나면 락업이 아니라 나란한 두 조각이다 */
+  .brand img.mark{height:48px;width:auto;display:block}
+  /* SVG 요소에는 hidden 속성이 먹지 않는다 — 폴백 마크는 CSS 로 가리고 클래스로 연다 */
+  .brand svg.mark{display:none}
+  .brand.no-img svg.mark{display:block}
+  .brand .lock{min-width:0}
+  .kicker{font-family:var(--mono);font-size:10.5px;letter-spacing:.3em;text-transform:uppercase;color:var(--rune-gold);
+    margin:0 0 var(--space-2xs)}
+  h1{font-family:var(--serif);font-weight:500;font-size:clamp(21px,3.2vw,26px);letter-spacing:-.01em;margin:0;color:var(--gold-lit);
+    overflow-wrap:anywhere;min-width:0}
+  .meta-line{font-family:var(--mono);font-size:11px;letter-spacing:.05em;color:var(--ink-dim);display:flex;
+    gap:var(--space-xs) var(--space-md);flex-wrap:wrap;justify-content:flex-end}
+  .meta-line{max-width:min(100%,720px)}
+  .meta-line b{color:var(--ink);overflow-wrap:anywhere;min-width:0}
+  .meta-line .dir{display:inline-block;max-width:38ch;overflow:hidden;text-overflow:ellipsis;
+    white-space:nowrap;vertical-align:bottom;direction:rtl;text-align:left}
   .meta-line .on{color:var(--heal)} .meta-line .off{color:var(--ink-ghost)}
-  .hright{display:flex;flex-direction:column;align-items:flex-end;gap:7px}
-  .livebar{display:flex;align-items:center;gap:8px}
-  .live-badge{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
-    color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:5px 12px}
+  .hright{display:flex;flex-direction:column;align-items:flex-end;gap:var(--space-xs)}
+  .livebar{display:flex;align-items:center;gap:var(--space-xs);flex-wrap:wrap;justify-content:flex-end}
+  .live-badge{display:inline-flex;align-items:center;gap:var(--space-xs);font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;
+    color:var(--ink-dim);border:1px solid var(--line);border-radius:999px;padding:var(--space-2xs) var(--space-sm);white-space:nowrap}
   .live-dot{width:6px;height:6px;border-radius:50%;background:var(--heal);flex:none;animation:live-pulse 2.4s ease-in-out infinite}
-  .live-badge.err{color:var(--crit);border-color:color-mix(in oklab,var(--crit) 45%,transparent)}
+  .live-badge.err{color:var(--crit-ink);border-color:var(--crit-line)}
   .live-badge.err .live-dot{background:var(--crit);animation:none}
   .live-badge.idle .live-dot{background:var(--ink-ghost);animation:none}
   @keyframes live-pulse{0%,100%{opacity:1}50%{opacity:.35}}
   .live-btn{width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;
-    background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit)}
+    background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
+    transition:border-color var(--dur-short) var(--ease-out),transform var(--dur-quick) var(--ease-out)}
   .live-btn:hover{border-color:var(--rune-gold)}
   .live-btn:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
   .live-btn:active{transform:scale(.96)}
   .live-btn[disabled]{opacity:.45;cursor:default;transform:none}
   .live-btn[disabled] svg{animation:live-spin .8s linear infinite}
   @keyframes live-spin{to{transform:rotate(360deg)}}
+  /* 폭 스위치 — 세그먼티드. 셸의 최대 폭은 사용자 소유라 항상 보이는 자리에 둔다. */
+  .widthbar{display:inline-flex;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;overflow:hidden}
+  .widthbar button{appearance:none;border:0;background:none;color:var(--ink-dim);font-family:var(--mono);font-size:11px;
+    letter-spacing:.04em;padding:0 var(--space-sm);min-height:44px;cursor:pointer;white-space:nowrap;
+    transition:color var(--dur-short) var(--ease-out),background-color var(--dur-short) var(--ease-out)}
+  .widthbar button+button{border-left:1px solid var(--line)}
+  .widthbar button:hover{color:var(--gold-lit)}
+  .widthbar button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:-2px}
+  .widthbar button[aria-pressed="true"]{color:var(--vault);background:var(--rune-gold);font-weight:600}
+  .widthbar button:disabled{opacity:.4;cursor:not-allowed}
 
-  /* ── 탭 바 (agentmemory 셸 — APG tablist: roving tabindex + aria-selected) ── */
-  .tabbar{display:flex;gap:2px;border-bottom:1px solid var(--line-strong);overflow-x:auto;overflow-y:hidden}
-  .tabbar [role=tab]{appearance:none;background:none;border:none;border-bottom:2px solid transparent;color:var(--ink-dim);
-    font-family:var(--sans);font-size:13.5px;letter-spacing:.02em;padding:12px 16px;min-height:44px;cursor:pointer;
-    display:inline-flex;align-items:center;gap:8px;white-space:nowrap;margin-bottom:-1px}
+  /* ── 탭 바 (APG tablist: roving tabindex + aria-selected) — 최상위 내비라 상단에 붙는다 ── */
+  .tabrail{position:sticky;top:0;z-index:var(--z-sticky);background:var(--vault);
+    box-shadow:0 1px 0 var(--line-strong)}
+  .tabbar{display:flex;gap:var(--space-2xs);overflow-x:auto;overflow-y:hidden;scrollbar-width:thin}
+  .tabbar [role=tab]{appearance:none;background:none;border:none;color:var(--ink-dim);
+    font-family:var(--sans);font-size:13.5px;letter-spacing:.02em;padding:var(--space-sm) var(--space-md);min-height:44px;cursor:pointer;
+    display:inline-flex;align-items:center;gap:var(--space-xs);white-space:nowrap;
+    box-shadow:inset 0 -2px 0 transparent;transition:color var(--dur-short) var(--ease-out)}
   .tabbar [role=tab] svg{color:currentColor;opacity:.8;flex:none}
   .tabbar [role=tab]:hover{color:var(--ink)}
-  .tabbar [role=tab].on{color:var(--gold-lit);border-bottom-color:var(--rune-gold)}
+  .tabbar [role=tab].on{color:var(--gold-lit);box-shadow:inset 0 -2px 0 var(--rune-gold)}
   .tabbar [role=tab]:focus-visible{outline:2px solid var(--rune-gold);outline-offset:-2px}
+  .tabbar [role=tab] .tcount{font-family:var(--mono);font-size:10px;color:var(--ink-ghost);font-variant-numeric:tabular-nums}
 
   .view{display:none}
   .view.active{display:block;animation:view-in .22s ease-out}
   @keyframes view-in{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
   /* main.wrap — .wrap(클래스)이 main(요소)보다 특이도가 높아 padding 쇼트핸드에 상단 여백이 먹혔던
      잠복 결함 수정: 복합 선택자(0-1-1)로 탭바와 콘텐츠 사이 호흡을 실제로 확보한다 */
-  main.wrap{padding-top:28px;padding-bottom:90px}
+  main.wrap{padding-top:28px;padding-bottom:88px;
+    container-type:inline-size;container-name:shell}
 
-  h2{font-family:var(--serif);font-weight:500;font-size:17px;color:var(--gold-lit);margin:0 0 14px;letter-spacing:.01em;display:flex;align-items:center;gap:9px}
-  h2 svg{color:var(--rune-gold);flex:none}
-  .panel{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:20px}
-  .grid{display:grid;gap:18px}
-  @media(min-width:860px){.two{grid-template-columns:1fr 1fr}.side{grid-template-columns:auto 1fr}}
+  h2{font-family:var(--serif);font-weight:500;font-size:17px;color:var(--gold-lit);margin:0 0 var(--space-md);letter-spacing:.01em;
+    display:flex;align-items:center;gap:var(--space-xs);overflow-wrap:anywhere;min-width:0}
+  h2 svg{color:var(--rune-gold);flex:none;overflow-wrap:anywhere;min-width:0}
+  h3{font-family:var(--serif);font-weight:500;font-size:14.5px;color:var(--ink);margin:0 0 var(--space-xs);
+    overflow-wrap:anywhere;min-width:0}
+  .panel{background:var(--surface-1);border:1px solid var(--line);border-radius:12px;padding:var(--space-lg)}
+  .grid{display:grid;gap:var(--space-lg)}
+  @container shell (min-width:54rem){.two{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.side{grid-template-columns:auto minmax(0,1fr)}}
 
-  /* ── 개요 — 통계 카드 그리드 → 게이지+건강 → 시맨틱 → 2단 (agentmemory Dashboard 구성) ── */
-  .stats5{grid-template-columns:repeat(auto-fit,minmax(160px,1fr));margin-bottom:18px}
-  .stat{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:12px 16px}
-  .stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:26px;line-height:1.1;color:var(--gold-lit)}
-  .stat .l{font-size:12px;color:var(--ink);margin-top:5px}
-  .stat .s{font-size:11px;color:var(--ink-ghost);margin-top:2px}
-  .stat.crit .v{color:var(--crit)} .stat.warn .v{color:var(--warn)}
-  .gauge-card{display:flex;align-items:center;gap:18px;margin:0}
-  .gauge-card figcaption{font-size:12.5px;color:var(--ink-dim);line-height:1.5}
-  .gauge-card .lab,.semstrip .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--rune-gold)}
-  .semstrip{display:flex;gap:12px;align-items:baseline;flex-wrap:wrap;padding:13px 20px;margin:0 0 18px;font-size:13px;color:var(--ink-dim)}
+  /* ── 개요 — 12열 위에 서로 다른 span 을 얹는다(균등 3단 카드 격자를 쓰지 않는 이유) ── */
+  .stats5{grid-template-columns:repeat(auto-fit,minmax(184px,1fr));margin-bottom:var(--space-lg)}
+  .stat{background:var(--surface-2);border:1px solid var(--line);border-radius:10px;padding:var(--space-sm) var(--space-md);min-width:0}
+  .stat .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:26px;line-height:1.1;color:var(--gold-lit);
+    overflow-wrap:anywhere;min-width:0}
+  .stat .l{font-size:12px;color:var(--ink);margin-top:var(--space-2xs)}
+  .stat .s{font-size:11px;color:var(--ink-ghost);margin-top:var(--space-2xs)}
+  .stat.crit .v{color:var(--crit-ink)} .stat.warn .v{color:var(--warn-ink)} .stat.ok .v{color:var(--heal)}
+  /* 벤또 격자 — 크기가 다른 타일이 사각형 하나를 빈틈없이 채운다. 리듬은 카드를 똑같이
+     맞춰서가 아니라 **스팬을 달리해서** 나온다(1x1 · 2x1 · 1x2 · 2x2). 열 스팬만 주고
+     행 스팬을 안 주면 밑변이 들쭉날쭉해지고, 그건 벤또가 아니라 안 맞은 격자다.
+     자리 배정은 template-areas 로 못 박는다 — 자동 배치는 데이터 양에 따라 구멍을 만든다. */
+  .ovgrid{display:grid;gap:var(--space-lg);grid-template-columns:minmax(0,1fr);margin-bottom:var(--space-lg)}
+  @container shell (min-width:54rem){
+    /* 영역 배정은 영역이 **정의된 단계 안에서만** 한다. 밖에 두면 좁은 폭에서 이름 있는 줄이
+       없어 여섯 타일이 같은 암묵 종류에 포개진다(실측: 전부 y=20 에 겹쳤다). */
+    .ov-gauge{grid-area:gauge} .ov-inject{grid-area:inject} .ov-sem{grid-area:sem}
+    .ov-health{grid-area:health} .ov-log{grid-area:log} .ov-use{grid-area:use}
+    .ovgrid{grid-template-columns:repeat(2,minmax(0,1fr));grid-auto-rows:minmax(160px,auto);
+      grid-template-areas:
+        "gauge  inject"
+        "sem    inject"
+        "log    health"
+        "log    use"}
+  }
+  @container shell (min-width:82rem){
+    .ovgrid{grid-template-columns:repeat(4,minmax(0,1fr));
+      grid-template-areas:
+        "gauge  inject inject sem"
+        "health log    log    use"
+        "health log    log    use"}
+  }
+  /* 타일 속 채움 — 타일이 늘어난 만큼 안의 목록도 늘어나야 한다. 목록을 위에 붙여 두면
+     타일 아래가 빈 상자가 되고, 그 순간 벤또는 다시 안 맞은 격자로 보인다. */
+  .ovgrid>.panel:not(.gauge-card){display:flex;flex-direction:column;min-width:0}
+  .ovgrid .flist,.ovgrid .log,.ovgrid .uselist{flex:1;min-height:0;max-height:none;overflow:auto}
+  .ovgrid .gauge-card{flex-wrap:wrap}
+  .gauge-card{display:flex;align-items:center;gap:var(--space-lg);margin:0}
+  .gauge-card figcaption{font-size:12.5px;color:var(--ink-dim);line-height:1.5;min-width:0}
+  .gauge-card .lab{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--rune-gold)}
 
-  .flist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px;max-height:300px;overflow:auto}
-  .flist li{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:baseline;font-size:13px;padding-bottom:8px;border-bottom:1px solid var(--line)}
+  .flist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-xs);max-height:300px;overflow:auto}
+  .flist li{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-sm);align-items:baseline;font-size:13px;
+    padding-bottom:var(--space-xs);border-bottom:1px solid var(--line)}
   .flist li:last-child{border-bottom:none}
   .flist .sl{font-family:var(--mono);font-size:12px;color:var(--gold-lit)}
   .flist .ms{color:var(--ink-dim);font-size:12.5px}
 
   .uselist{list-style:none;padding:0;margin:0}
-  .uselist li{display:grid;grid-template-columns:1fr auto auto;gap:12px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line);font-size:13px}
+  .uselist li{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:var(--space-sm);align-items:center;
+    padding:var(--space-xs) 0;border-bottom:1px solid var(--line);font-size:13px}
   .uselist li:last-child{border-bottom:none}
   .uselist .u{font-family:var(--mono);color:var(--gold-lit);font-variant-numeric:tabular-nums}
   .uselist .du{font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
 
   .log{list-style:none;padding:0;margin:0;max-height:320px;overflow:auto}
-  .log li{display:grid;grid-template-columns:auto auto 1fr;gap:12px;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .log li{display:grid;grid-template-columns:auto auto minmax(0,1fr);gap:var(--space-sm);align-items:baseline;
+    padding:var(--space-2xs) 0;border-bottom:1px solid var(--line);font-size:12.5px}
   .log li:last-child{border-bottom:none}
   .log .ts{font-family:var(--mono);font-size:10.5px;color:var(--ink-ghost);white-space:nowrap}
   .log .op{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;color:var(--rune-gold);white-space:nowrap}
   .log .sl{font-family:var(--mono);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 
-  /* ── 기억 성좌 (일급 그래프 뷰 — 기존 물리 시뮬 그대로 이관) ── */
-  .gbody{display:grid;gap:14px;grid-template-columns:minmax(0,1fr)}
-  @media(min-width:980px){.gbody{grid-template-columns:minmax(0,1fr) 296px}}
+  /* ── 기억 성좌 (일급 그래프 뷰 — 물리 시뮬 캔버스) ── */
+  .gbody{display:grid;gap:var(--space-md);grid-template-columns:minmax(0,1fr)}
+  @container shell (min-width:62rem){.gbody{grid-template-columns:minmax(0,1fr) 296px}}
+  @container shell (min-width:82rem){.gbody{grid-template-columns:minmax(0,1fr) 340px}}
   .gwrap{position:relative;border:1px solid var(--line);border-radius:10px;overflow:hidden;height:400px;
-    background:radial-gradient(90% 80% at 50% 28%, rgba(198,164,94,.05), transparent 70%), var(--surface-2)}
-  @media(min-width:980px){.gwrap{height:560px}}
+    background:radial-gradient(90% 80% at 50% 28%, var(--glow-soft), transparent 70%), var(--surface-2)}
+  @container shell (min-width:62rem){.gwrap{height:min(64dvh,620px)}}
   #gcanvas{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;touch-action:none}
   #gcanvas:focus-visible{outline:2px solid var(--rune-gold);outline-offset:-2px}
-  .gctrl{position:absolute;top:10px;right:10px;display:flex;flex-direction:column;gap:6px}
+  .gctrl{position:absolute;top:var(--space-sm);right:var(--space-sm);display:flex;flex-direction:column;gap:var(--space-xs)}
   .gctrl button{width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;
-    background:rgba(20,17,12,.88);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit)}
+    background:var(--panel);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit)}
   .gctrl button:hover{border-color:var(--rune-gold)}
   .gctrl button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .ghint{position:absolute;left:12px;bottom:6px;margin:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;
+  .gctrl button:active{transform:scale(.96)}
+  .ghint{position:absolute;left:var(--space-sm);bottom:var(--space-xs);margin:0;font-family:var(--mono);font-size:10px;letter-spacing:.04em;
     color:var(--ink-ghost);pointer-events:none;max-width:78%}
-  .gtip{position:absolute;pointer-events:none;z-index:5;background:rgba(12,10,7,.95);border:1px solid var(--line-strong);
-    border-radius:8px;padding:8px 11px;font-size:12px;line-height:1.5;opacity:0;transition:opacity .15s ease;max-width:250px}
+  .gtip{position:absolute;pointer-events:none;z-index:var(--z-raised);background:var(--scrim);border:1px solid var(--line-strong);
+    border-radius:8px;padding:var(--space-xs) var(--space-sm);font-size:12px;line-height:1.5;opacity:0;transition:opacity .15s ease;max-width:250px}
   .gtip.on{opacity:1}
   .gtip .tt-t{color:var(--ink);font-weight:600}
   .gtip .tt-k{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em}
   .gtip .tt-m{color:var(--ink-dim);font-size:11px;font-family:var(--mono)}
-  .gside{display:flex;flex-direction:column;gap:14px;max-height:560px;overflow-y:auto;padding-right:2px}
+  .gside{display:flex;flex-direction:column;gap:var(--space-md);max-height:min(64dvh,620px);overflow-y:auto;padding-right:var(--space-2xs)}
   .gside input[type=search]{width:100%;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;
-    color:var(--ink);font-family:var(--sans);font-size:14px;padding:10px 12px}
+    color:var(--ink);font-family:var(--sans);font-size:14px;padding:var(--space-sm)}
   .gside input[type=search]::placeholder{color:var(--ink-dim)}
   .gside input[type=search]:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px;border-color:var(--rune-gold)}
-  .gstats{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-  .gstats .cell{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+  .gstats{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:var(--space-xs)}
+  .gstats .cell{background:var(--surface-2);border:1px solid var(--line);border-radius:8px;padding:var(--space-xs) var(--space-sm);min-width:0}
   .gstats .cell .v{font-family:var(--mono);font-variant-numeric:tabular-nums;font-size:19px;color:var(--gold-lit);line-height:1.2}
   .gstats .cell .l{font-size:10.5px;color:var(--ink-dim)}
-  .gstats .cell.bad .v{color:var(--crit)} .gstats .cell.warn .v{color:var(--warn)}
-  .gfilters{display:flex;flex-direction:column;gap:2px}
-  .fitem{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--ink);padding:7px 6px;border-radius:6px;cursor:pointer}
+  .gstats .cell.bad .v{color:var(--crit-ink)} .gstats .cell.warn .v{color:var(--warn-ink)}
+  .gfilters{display:flex;flex-direction:column;gap:var(--space-2xs)}
+  .fitem{display:flex;align-items:center;gap:var(--space-xs);font-size:13px;color:var(--ink);padding:var(--space-xs);border-radius:6px;cursor:pointer}
   .fitem:hover{background:var(--surface-2)}
   .fitem input{accent-color:var(--rune-gold);width:15px;height:15px;margin:0}
   .fitem input:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
   .fitem .cnt{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--ink-dim)}
-  .glegend{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--ink-dim)}
-  .glegend li{display:flex;align-items:center;gap:9px}
+  .glegend{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-xs);font-size:12px;color:var(--ink-dim)}
+  .glegend li{display:flex;align-items:center;gap:var(--space-xs)}
   .glegend svg{flex:none}
-  .sectitle{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--rune-gold);margin:0 0 8px}
-  .gdet{background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;padding:14px}
-  .gdet-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:8px}
+  .sectitle{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--rune-gold);margin:0 0 var(--space-xs)}
+  .gdet{background:var(--surface-2);border:1px solid var(--line-strong);border-radius:10px;padding:var(--space-md)}
+  .gdet-head{display:flex;justify-content:space-between;align-items:center;gap:var(--space-sm);margin-bottom:var(--space-xs)}
   .gclose{background:none;border:1px solid var(--line-strong);border-radius:6px;color:var(--ink-dim);
-    font-family:var(--mono);font-size:11px;padding:5px 14px;cursor:pointer;min-height:44px;min-width:44px}
+    font-family:var(--mono);font-size:11px;padding:var(--space-2xs) var(--space-md);cursor:pointer;min-height:44px;min-width:44px}
   .gclose:hover{color:var(--gold-lit);border-color:var(--rune-gold)}
   .gclose:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .gdet-title{font-family:var(--serif);font-weight:500;font-size:15.5px;color:var(--gold-lit);margin:0 0 2px}
-  .gdet-slug{font-size:11px;color:var(--ink-dim);margin:0 0 10px}
-  .gdet-meta{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;margin:0 0 10px;font-size:12px}
+  .gdet-title{font-family:var(--serif);font-weight:500;font-size:15.5px;color:var(--gold-lit);margin:0;
+    overflow-wrap:anywhere;min-width:0}
+  .gdet-slug{font-size:11px;color:var(--ink-dim);margin:var(--space-2xs) 0 var(--space-sm)}
+  .gdet-meta{display:grid;grid-template-columns:auto minmax(0,1fr);gap:var(--space-2xs) var(--space-sm);margin:0 0 var(--space-sm);font-size:12px}
   .gdet-meta dt{color:var(--ink-dim)} .gdet-meta dd{margin:0;font-family:var(--mono);font-size:11.5px;color:var(--ink)}
   .gdet-body{font-family:var(--mono);font-size:11.5px;line-height:1.65;color:var(--ink);white-space:pre-wrap;word-break:break-word;
-    background:var(--surface-1);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin:0 0 10px;max-height:220px;overflow:auto}
-  .gdet-poison{color:var(--crit);font-size:12.5px;border:1px solid color-mix(in oklab,var(--crit) 45%,transparent);
-    background:color-mix(in oklab,var(--crit) 10%,var(--surface-1));border-radius:8px;padding:9px 12px;margin:0 0 10px}
-  .gdet-links{display:flex;flex-wrap:wrap;gap:6px}
+    background:var(--surface-1);border:1px solid var(--line);border-radius:8px;padding:var(--space-sm);margin:0 0 var(--space-sm);
+    max-height:220px;overflow:auto}
+  .gdet-poison{color:var(--crit-ink);font-size:12.5px;border:1px solid var(--crit-line);
+    background:var(--crit-fill);border-radius:8px;padding:var(--space-xs) var(--space-sm);margin:0 0 var(--space-sm)}
+  .gdet-links{display:flex;flex-wrap:wrap;gap:var(--space-xs)}
   .lchip{background:var(--surface-1);border:1px solid var(--line-strong);border-radius:999px;color:var(--gold-lit);
-    font-family:var(--mono);font-size:11px;padding:5px 13px;cursor:pointer;min-height:44px}
+    font-family:var(--mono);font-size:11px;padding:var(--space-2xs) var(--space-sm);cursor:pointer;min-height:44px;white-space:nowrap}
   .lchip:hover{border-color:var(--rune-gold)}
   .lchip:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .glist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:4px}
-  .glist li{font-family:var(--mono);font-size:12px;color:var(--ink-dim);display:flex;align-items:center;gap:8px}
+  .glist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-2xs)}
+  .glist li{font-family:var(--mono);font-size:12px;color:var(--ink-dim);display:flex;align-items:center;gap:var(--space-xs)}
   .glist .dot{width:7px;height:7px;border-radius:50%;background:var(--warn);flex:none}
-  .linklike{background:none;border:none;padding:6px 2px;margin:-6px 0;color:var(--gold-lit);font-family:inherit;font-size:inherit;
+  .linklike{background:none;border:none;padding:var(--space-xs) var(--space-2xs);margin:0;color:var(--gold-lit);font:inherit;
     cursor:pointer;text-align:left;border-radius:4px}
   .linklike:hover{text-decoration:underline}
   .linklike:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
 
-  /* ── 서고 — 검색(질의 스트림 프리즘 통합) + 종류 칩 + 카탈로그 표 ── */
-  .search{display:flex;gap:10px;margin-bottom:12px}
+  /* ── 서고 — 검색(검색 경로 통합) + 종류 칩 + 카탈로그 표 ── */
+  .search{display:flex;gap:var(--space-sm);margin-bottom:var(--space-sm)}
   .search input{flex:1;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink);
-    font-family:var(--sans);font-size:15px;padding:11px 14px;min-width:0}
+    font-family:var(--sans);font-size:15px;padding:var(--space-sm) var(--space-md);min-width:0}
   .search input::placeholder{color:var(--ink-dim)}
   .search input:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px;border-color:var(--rune-gold)}
   .search button{background:var(--surface-3);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
-    font-family:var(--mono);font-size:13px;letter-spacing:.06em;padding:0 18px;cursor:pointer;min-height:44px}
+    font-family:var(--mono);font-size:13px;letter-spacing:.06em;padding:0 var(--space-lg);cursor:pointer;min-height:44px;white-space:nowrap}
   .search button:hover{border-color:var(--rune-gold)}
   .search button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .legend{display:flex;gap:14px;font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--ink-dim);margin-bottom:12px;flex-wrap:wrap}
-  .legend i{display:inline-block;width:16px;height:4px;border-radius:2px;vertical-align:middle;margin-right:5px}
-  .chips{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
-  .chip{display:inline-flex;align-items:center;gap:7px;background:var(--surface-2);border:1px solid var(--line-strong);
-    border-radius:999px;color:var(--ink-dim);font-family:var(--mono);font-size:11.5px;padding:0 15px;min-height:44px;cursor:pointer}
+  .legend{display:flex;gap:var(--space-md);font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--ink-dim);
+    margin-bottom:var(--space-sm);flex-wrap:wrap}
+  .legend i{display:inline-block;width:16px;height:4px;border-radius:2px;vertical-align:middle;margin-right:var(--space-2xs)}
+  .chips{display:flex;gap:var(--space-xs);flex-wrap:wrap;margin:0 0 var(--space-md)}
+  .chip{display:inline-flex;align-items:center;gap:var(--space-xs);background:var(--surface-2);border:1px solid var(--line-strong);
+    border-radius:999px;color:var(--ink-dim);font-family:var(--mono);font-size:11.5px;padding:0 var(--space-md);min-height:44px;cursor:pointer;
+    white-space:nowrap;transition:border-color var(--dur-short) var(--ease-out),color var(--dur-short) var(--ease-out)}
   .chip:hover{border-color:var(--rune-gold);color:var(--ink)}
   .chip:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .chip.on{color:var(--gold-lit);border-color:var(--rune-gold);background:color-mix(in oklab,var(--rune-gold) 12%,var(--surface-1))}
+  .chip.on{color:var(--gold-lit);border-color:var(--rune-gold);background:var(--gold-fill)}
+  .chip:disabled{opacity:.4;cursor:not-allowed}
   .chip .cnt{color:var(--ink-ghost);font-size:10px}
-  .qrow{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:center;background:var(--surface-2);
-    border:1px solid var(--line);border-radius:9px;padding:11px 14px;margin-bottom:8px;cursor:pointer;
-    transition:border-color .2s ease,transform .2s ease}
+  .qrow{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-md);align-items:center;background:var(--surface-2);
+    border:1px solid var(--line);border-radius:9px;padding:var(--space-sm) var(--space-md);margin-bottom:var(--space-xs);cursor:pointer;
+    transition:border-color var(--dur-mid) var(--ease-out),transform var(--dur-mid) var(--ease-out)}
   .qrow:hover,.qrow:focus-within{border-color:var(--line-strong);transform:translateY(-1px)}
   .qrow:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .qrow .t{font-size:14.5px;color:var(--ink)}
-  .qrow .t .sub{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:3px}
-  .qrow .t .snip{display:block;font-size:12.5px;color:var(--ink-dim);margin-top:4px;max-width:62ch}
-  .lanes{display:flex;flex-direction:column;gap:3px;width:104px}
-  .lane{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:var(--ink-dim)}
+  .qrow .t{font-size:14.5px;color:var(--ink);min-width:0}
+  .qrow .t .sub{display:block;font-family:var(--mono);font-size:11px;color:var(--ink-dim);margin-top:var(--space-2xs)}
+  .qrow .t .snip{display:block;font-size:12.5px;color:var(--ink-dim);margin-top:var(--space-2xs);max-width:var(--measure)}
+  .lanes{display:flex;flex-direction:column;gap:var(--space-2xs);width:104px}
+  .lane{display:flex;align-items:center;gap:var(--space-xs);font-family:var(--mono);font-size:9px;letter-spacing:.06em;color:var(--ink-dim)}
   .lane .bar{height:4px;border-radius:2px;flex:1;background:var(--line-strong)}
   .lane.on.fts .bar{background:var(--rune-gold)} .lane.on.sem .bar{background:var(--gem)} .lane.on.scan .bar{background:var(--info)}
   .lane.off{opacity:.3}
-  .dbox{margin:-2px 0 8px}
-  tr.dtr>td{padding:2px 10px 12px}
-  .dwrap .gdet{margin-top:6px}
-  .ubar{display:inline-block;width:56px;height:5px;border-radius:3px;background:var(--surface-3);margin-right:8px;vertical-align:2px;overflow:hidden}
+  .dbox{margin:0 0 var(--space-xs)}
+  tr.dtr>td{padding:var(--space-2xs) var(--space-sm) var(--space-sm)}
+  .dwrap .gdet{margin-top:var(--space-xs)}
+  .ubar{display:inline-block;width:56px;height:5px;border-radius:3px;background:var(--surface-3);margin-right:var(--space-xs);
+    vertical-align:2px;overflow:hidden}
   .ubar i{display:block;height:100%;background:var(--rune-gold)}
 
   /* ── 칩·글리프 ── */
-  .kchip{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--ink);
-    background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:2px 10px 2px 7px;white-space:nowrap}
+  .kchip{display:inline-flex;align-items:center;gap:var(--space-xs);font-family:var(--mono);font-size:11px;letter-spacing:.03em;color:var(--ink);
+    background:var(--surface-2);border:1px solid var(--line);border-radius:999px;padding:0 var(--space-sm);white-space:nowrap}
   .kchip svg{flex:none;color:var(--rune-gold)}
-  .fchip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-family:var(--mono);border-radius:6px;padding:2px 8px;border:1px solid}
-  .f-crit{color:var(--crit);border-color:color-mix(in oklab,var(--crit) 45%,transparent);background:color-mix(in oklab,var(--crit) 12%,var(--surface-1))}
-  .f-warn{color:var(--warn);border-color:color-mix(in oklab,var(--warn) 42%,transparent);background:color-mix(in oklab,var(--warn) 12%,var(--surface-1))}
-  .f-info{color:var(--info);border-color:color-mix(in oklab,var(--info) 40%,transparent);background:color-mix(in oklab,var(--info) 12%,var(--surface-1))}
+  .fchip{display:inline-flex;align-items:center;gap:var(--space-xs);font-size:11.5px;font-family:var(--mono);border-radius:6px;
+    padding:0 var(--space-xs);border:1px solid;white-space:nowrap}
+  .f-crit{color:var(--crit-ink);border-color:var(--crit-line);background:var(--crit-fill)}
+  .f-warn{color:var(--warn-ink);border-color:var(--warn-line);background:var(--warn-fill)}
+  .f-info{color:var(--info-ink);border-color:var(--info-line);background:var(--info-fill)}
 
   /* ── 카탈로그 표 ── */
   table{width:100%;border-collapse:collapse;font-size:13.5px}
-  caption{text-align:left;color:var(--ink-dim);font-size:12px;margin-bottom:8px}
-  th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
-  thead th{color:var(--rune-gold);font-family:var(--mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;font-weight:500;border-bottom:1px solid var(--line-strong)}
+  caption{text-align:left;color:var(--ink-dim);font-size:12px;margin-bottom:var(--space-xs)}
+  th,td{text-align:left;padding:var(--space-xs) var(--space-sm);border-bottom:1px solid var(--line);vertical-align:top}
+  thead th{color:var(--rune-gold);font-family:var(--mono);font-size:10px;letter-spacing:.11em;text-transform:uppercase;font-weight:500;
+    border-bottom:1px solid var(--line-strong);white-space:nowrap}
   tbody tr:last-child td{border-bottom:none}
   tbody tr:hover{background:var(--surface-2)}
   td.ti{color:var(--ink)} td.di{color:var(--ink-dim)} .rt{text-align:right;font-variant-numeric:tabular-nums;font-family:var(--mono)}
-  .poison{color:var(--crit);font-family:var(--mono);font-size:10.5px;border:1px solid color-mix(in oklab,var(--crit) 45%,transparent);border-radius:5px;padding:1px 6px;margin-right:6px}
+  .poison{color:var(--crit-ink);font-family:var(--mono);font-size:10.5px;border:1px solid var(--crit-line);background:var(--crit-fill);
+    border-radius:5px;padding:0 var(--space-2xs);margin-right:var(--space-2xs)}
 
-  /* ── 연대기 — 좌우 교차 수직 타임라인 (agentmemory Timeline 구성) ── */
-  .chrono{position:relative;padding:6px 0}
+  /* ── 전달 — 이 기억이 프롬프트로 나가는 모습 그대로 ── */
+  .injgrid{display:grid;gap:var(--space-lg);grid-template-columns:minmax(0,1fr)}
+  @container shell (min-width:64rem){.injgrid{grid-template-columns:minmax(0,7fr) minmax(0,5fr)}}
+  .injstate{display:flex;align-items:center;gap:var(--space-sm);flex-wrap:wrap;border:1px solid var(--line-strong);
+    background:var(--surface-2);border-radius:10px;padding:var(--space-sm) var(--space-md);margin:0 0 var(--space-md);font-size:13px}
+  .injstate .sw{display:inline-flex;align-items:center;gap:var(--space-xs);font-family:var(--mono);font-size:11px;letter-spacing:.06em;
+    border-radius:999px;padding:var(--space-2xs) var(--space-sm);border:1px solid;white-space:nowrap}
+  .injstate .sw.on{color:var(--heal);border-color:var(--gem-line);background:var(--gem-fill)}
+  .injstate .sw.off{color:var(--crit-ink);border-color:var(--crit-line);background:var(--crit-fill)}
+  .injstate .note{color:var(--ink-dim);font-size:12.5px;max-width:var(--measure)}
+  .injblock{font-family:var(--mono);font-size:11.5px;line-height:1.7;color:var(--ink);white-space:pre-wrap;word-break:break-word;
+    background:var(--vault);border:1px solid var(--line-strong);border-radius:10px;padding:var(--space-md);margin:0;
+    max-height:min(56dvh,620px);overflow:auto}
+  .injblock .fence{color:var(--rune-gold)}
+  .injblock .head{color:var(--gold-lit)}
+  .injblock .warnline{color:var(--warn-ink)}
+  .injmeter{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-sm)}
+  .injmeter li{display:grid;grid-template-columns:minmax(0,1fr);gap:var(--space-2xs);padding-bottom:var(--space-sm);
+    border-bottom:1px solid var(--line)}
+  .injmeter li:last-child{border-bottom:none}
+  .injmeter .row{display:flex;align-items:baseline;gap:var(--space-xs);flex-wrap:wrap}
+  .injmeter .nm{color:var(--ink);font-size:13px}
+  .injmeter .kd{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim)}
+  .injmeter .pc{margin-left:auto;font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);font-variant-numeric:tabular-nums}
+  .injmeter .track{height:6px;border-radius:3px;background:var(--surface-3);overflow:hidden}
+  .injmeter .fill{display:block;height:100%;background:var(--rune-gold)}
+  .injmeter li.warn .fill{background:var(--warn)} .injmeter li.crit .fill{background:var(--crit)}
+  .injmeter li.warn .pc{color:var(--warn-ink)} .injmeter li.crit .pc{color:var(--crit-ink)}
+  .injmeter .drop{font-size:12px;color:var(--warn-ink);margin:0}
+  .injmeter .mute{font-size:12px;color:var(--ink-dim);margin:0}
+  .injex{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-2xs)}
+  .injex li{display:flex;align-items:center;gap:var(--space-xs);font-size:12.5px;color:var(--ink-dim)}
+
+  /* ── 정리 — 노른 자가 진화 (리포트·계보·모순·보관) ── */
+  .nrngrid{display:grid;gap:var(--space-lg);grid-template-columns:minmax(0,1fr)}
+  @container shell (min-width:54rem){.nrngrid{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+  @container shell (min-width:82rem){.nrngrid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  .modes{display:flex;gap:var(--space-xs);flex-wrap:wrap;margin:0 0 var(--space-md)}
+  .mode{display:inline-flex;align-items:center;gap:var(--space-xs);font-family:var(--mono);font-size:11px;letter-spacing:.05em;
+    border:1px solid var(--line-strong);border-radius:999px;padding:var(--space-2xs) var(--space-sm);color:var(--ink-dim);white-space:nowrap}
+  .mode b{color:var(--ink);font-weight:500}
+  .mode.on{color:var(--heal);border-color:var(--gem-line);background:var(--gem-fill)}
+  .mode.off{color:var(--ink-dim)}
+  .lineage{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-sm)}
+  .lineage li{border:1px solid var(--line);border-radius:9px;padding:var(--space-sm);background:var(--surface-2)}
+  .lineage .tt{color:var(--ink);font-size:13.5px;overflow-wrap:anywhere}
+  .lineage .src{display:flex;flex-wrap:wrap;gap:var(--space-2xs);margin-top:var(--space-xs)}
+  .lineage .arrow{font-family:var(--mono);font-size:11px;color:var(--rune-gold);margin-right:var(--space-2xs)}
+  .conf{font-family:var(--mono);font-size:10.5px;border-radius:5px;padding:0 var(--space-2xs);border:1px solid;white-space:nowrap}
+  .conf-high{color:var(--heal);border-color:var(--gem-line);background:var(--gem-fill)}
+  .conf-medium{color:var(--warn-ink);border-color:var(--warn-line);background:var(--warn-fill)}
+  .conf-low{color:var(--ink-dim);border-color:var(--line-strong);background:var(--surface-3)}
+  .contra{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-sm)}
+  .contra li{border:1px solid var(--warn-line);background:var(--warn-fill);border-radius:9px;padding:var(--space-sm)}
+  .contra .pair{display:flex;align-items:center;gap:var(--space-xs);flex-wrap:wrap;font-family:var(--mono);font-size:12px;color:var(--warn-ink)}
+  .contra .why{font-size:12.5px;color:var(--ink-dim);margin:var(--space-2xs) 0 0;max-width:var(--measure)}
+  .arcs{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:var(--space-2xs)}
+  .arcs li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:var(--space-xs);align-items:center;
+    padding:var(--space-xs) 0;border-bottom:1px solid var(--line);font-size:12.5px}
+  .arcs li:last-child{border-bottom:none}
+  .arcs .sl{font-family:var(--mono);color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .arcs .dt{font-family:var(--mono);font-size:11px;color:var(--ink-dim);white-space:nowrap}
+  .cmd{display:block;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:6px;
+    padding:var(--space-xs) var(--space-sm);color:var(--gold-lit);font-family:var(--mono);font-size:11.5px;user-select:all;
+    overflow-wrap:anywhere}
+
+  /* ── 원본/파생 표 — 무엇을 잃으면 기억이 사라지는가 ── */
+  .drv{list-style:none;padding:0;margin:0;display:grid;gap:var(--space-xs);grid-template-columns:minmax(0,1fr)}
+  @container shell (min-width:46rem){.drv{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}}
+  .drv li{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:var(--space-xs) var(--space-sm);align-items:center;
+    border:1px solid var(--line);border-radius:8px;padding:var(--space-xs) var(--space-sm);background:var(--surface-2)}
+  .drv .tag{font-family:var(--mono);font-size:10px;letter-spacing:.08em;border-radius:5px;padding:0 var(--space-2xs);
+    border:1px solid;white-space:nowrap}
+  .drv .tag.canon{color:var(--gold-lit);border-color:var(--rune-gold);background:var(--gold-fill)}
+  .drv .tag.derived{color:var(--ink-dim);border-color:var(--line-strong);background:var(--surface-3)}
+  .drv .nm{font-family:var(--mono);font-size:12px;color:var(--ink);overflow-wrap:anywhere}
+  .drv .nt{grid-column:2/-1;font-size:11.5px;color:var(--ink-dim)}
+  .drv .qty{font-family:var(--mono);font-size:11px;color:var(--ink-dim);white-space:nowrap;font-variant-numeric:tabular-nums}
+  .drv li.gone{opacity:.5}
+
+  /* ── 연대기 — 좌우 교차 수직 타임라인 ── */
+  .chrono{position:relative;padding:var(--space-xs) 0}
   .chrono::before{content:"";position:absolute;left:50%;top:0;bottom:0;width:1px;background:var(--line-strong)}
-  .cdate{position:relative;text-align:center;margin:18px 0 16px;z-index:1}
+  .cdate{position:relative;text-align:center;margin:var(--space-lg) 0 var(--space-md);z-index:var(--z-raised)}
   .cdate span{background:var(--surface-3);border:1px solid var(--line-strong);border-radius:999px;color:var(--rune-gold);
-    font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;padding:4px 14px}
-  .citem{position:relative;width:50%;padding:0 26px 14px}
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;padding:var(--space-2xs) var(--space-md);white-space:nowrap}
+  .citem{position:relative;width:50%;padding:0 var(--space-xl) var(--space-md)}
   .citem.right{margin-left:50%}
   .cdot{position:absolute;top:14px;width:9px;height:9px;border-radius:50%;border:2px solid var(--vault)}
   .citem.left .cdot{right:-5.5px}
   .citem.right .cdot{left:-5.5px}
-  .ccard{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:10px 13px}
-  .chead{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+  .ccard{background:var(--surface-2);border:1px solid var(--line);border-radius:9px;padding:var(--space-sm)}
+  .chead{display:flex;align-items:center;gap:var(--space-xs);flex-wrap:wrap}
   .ctime{font-family:var(--mono);font-size:10px;color:var(--ink-ghost);margin-left:auto}
-  .cdet{color:var(--ink-dim);font-size:12px;margin-top:5px;word-break:break-word}
-  .obadge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10.5px;border:1px solid;border-radius:5px;padding:2px 7px}
-  @media(max-width:760px){
+  .cdet{color:var(--ink-dim);font-size:12px;margin-top:var(--space-2xs);word-break:break-word}
+  .obadge{display:inline-flex;align-items:center;gap:var(--space-2xs);font-family:var(--mono);font-size:10.5px;border:1px solid;
+    border-radius:5px;padding:0 var(--space-2xs);white-space:nowrap}
+  @container shell (max-width:46rem){
     .chrono::before{left:10px}
-    .citem{width:100%;padding:0 0 12px 28px}
+    .citem{width:100%;padding:0 0 var(--space-sm) var(--space-xl)}
     .citem.right{margin-left:0}
     .citem.left .cdot,.citem.right .cdot{left:6px;right:auto}
   }
 
-  /* ── 활동 — 52주 열지도 + 작업 분포 + 피드 (agentmemory Activity 구성) ── */
-  .heat{display:flex;gap:6px;align-items:flex-start}
-  .heat-days{display:grid;grid-template-rows:repeat(7,11px);gap:3px;font-family:var(--mono);font-size:9px;color:var(--ink-ghost);flex:none}
-  .heat-scroll{overflow-x:auto;padding-bottom:4px}
-  .heat-grid{display:grid;grid-template-rows:repeat(7,11px);grid-auto-flow:column;grid-auto-columns:11px;gap:3px}
+  /* ── 활동 — 52주 열지도 + 작업 분포 + 피드 ── */
+  .heat{display:flex;gap:var(--space-xs);align-items:flex-start}
+  .heat-days{display:grid;grid-template-rows:repeat(7,11px);gap:var(--space-2xs);font-family:var(--mono);font-size:9px;color:var(--ink-ghost);flex:none}
+  .heat-scroll{overflow-x:auto;padding-bottom:var(--space-2xs)}
+  .heat-grid{display:grid;grid-template-rows:repeat(7,11px);grid-auto-flow:column;grid-auto-columns:11px;gap:var(--space-2xs)}
   .heat-cell{width:11px;height:11px;border-radius:2.5px;background:var(--surface-2);border:1px solid var(--line);padding:0}
   button.heat-cell{cursor:pointer;appearance:none}
   button.heat-cell:hover{border-color:var(--rune-gold)}
   button.heat-cell:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
-  .heat-cell.lv1{background:rgba(198,164,94,.22)}
-  .heat-cell.lv2{background:rgba(198,164,94,.45);border-color:rgba(198,164,94,.3)}
-  .heat-cell.lv3{background:rgba(214,182,110,.72);border-color:rgba(198,164,94,.45)}
-  .heat-cell.lv4{background:#E8C87E;border-color:#E8C87E}
-  .heat-legend{display:flex;align-items:center;gap:4px;justify-content:flex-end;margin-top:8px;font-family:var(--mono);font-size:10px;color:var(--ink-ghost)}
-  .bars{display:flex;flex-direction:column;gap:9px}
-  .bar-row{display:grid;grid-template-columns:88px 1fr auto;gap:10px;align-items:center;font-size:12.5px}
+  .heat-cell.lv1{background:var(--heat-1)}
+  .heat-cell.lv2{background:var(--heat-2);border-color:var(--heat-2-line)}
+  .heat-cell.lv3{background:var(--heat-3);border-color:var(--heat-3-line)}
+  .heat-cell.lv4{background:var(--heat-4);border-color:var(--heat-4)}
+  .heat-legend{display:flex;align-items:center;gap:var(--space-2xs);justify-content:flex-end;margin-top:var(--space-xs);
+    font-family:var(--mono);font-size:10px;color:var(--ink-ghost)}
+  .bars{display:flex;flex-direction:column;gap:var(--space-xs)}
+  .bar-row{display:grid;grid-template-columns:88px minmax(0,1fr) auto;gap:var(--space-sm);align-items:center;font-size:12.5px}
   .bar-label{font-family:var(--mono);font-size:11px;color:var(--ink-dim);overflow:hidden;text-overflow:ellipsis}
   .bar-track{height:7px;background:var(--surface-3);border-radius:4px;overflow:hidden}
   .bar-fill{height:100%;border-radius:4px}
   .bar-val{font-family:var(--mono);font-size:11px;color:var(--ink)}
 
-  .empty{color:var(--ink-dim);font-size:13px;padding:8px 0}
+  .empty{color:var(--ink-dim);font-size:13px;padding:var(--space-xs) 0}
 
   /* ── 스켈레톤 — 레이아웃 맞춘 자리 지킴 (300ms 이전엔 숨겨 순간 플래시를 막는다 — 쉰 로딩 캐논) ── */
   .skel{animation:skel-appear .01s .3s both}
   .skel .sk{background:var(--surface-2);border-radius:6px;position:relative;overflow:hidden}
   .skel .sk::after{content:"";position:absolute;inset:0;transform:translateX(-100%);
-    background:linear-gradient(90deg,transparent,rgba(230,208,150,.05),transparent);
+    background:linear-gradient(90deg,transparent,var(--sheen),transparent);
     animation:skel-sheen 1.6s ease-in-out infinite}
   @keyframes skel-appear{from{opacity:0}to{opacity:1}}
   @keyframes skel-sheen{to{transform:translateX(100%)}}
-  .skel-stat{border:1px solid var(--line);border-radius:10px;padding:12px 16px;background:var(--surface-1)}
+  .skel-stat{border:1px solid var(--line);border-radius:10px;padding:var(--space-sm) var(--space-md);background:var(--surface-1)}
   .skel-stat .sk{height:26px;width:56%}
-  .skel-stat .sk+.sk{height:12px;width:80%;margin-top:8px}
-  .skel-row .sk{height:14px;margin:12px 0}
+  .skel-stat .sk+.sk{height:12px;width:80%;margin-top:var(--space-xs)}
+  .skel-row .sk{height:14px;margin:var(--space-sm) 0}
   .skel-row .sk:nth-child(2n){width:72%}
 
   /* ── 로드 실패 — 무슨 일이·왜·무엇을 (쉰 에러 3질문) + 재시도 ── */
-  .loaderr{display:flex;flex-direction:column;gap:8px;align-items:flex-start;border:1px solid color-mix(in oklab,var(--crit) 40%,transparent);
-    background:color-mix(in oklab,var(--crit) 7%,var(--surface-1));border-radius:10px;padding:14px 16px;margin-bottom:16px;
+  .loaderr{display:flex;flex-direction:column;gap:var(--space-xs);align-items:flex-start;border:1px solid var(--crit-line);
+    background:var(--crit-fill);border-radius:10px;padding:var(--space-md);margin-bottom:var(--space-md);
     color:var(--ink);font-size:13px;line-height:1.55}
   .loaderr .why{color:var(--ink-dim);font-size:12.5px}
   .loaderr button{background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
-    font-family:var(--mono);font-size:12px;padding:0 18px;min-height:44px;cursor:pointer}
+    font-family:var(--mono);font-size:12px;padding:0 var(--space-lg);min-height:44px;cursor:pointer;white-space:nowrap}
   .loaderr button:hover{border-color:var(--rune-gold)}
   .loaderr button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
 
@@ -328,72 +531,81 @@
   .spark{display:inline-flex;align-items:flex-end;margin-left:auto}
   .spark svg{display:block}
 
-  /* ── 관문 호출 — ⌘K 명령 팔레트 (읽기 전용 항해: 탭·별 점프) ── */
-  .palette-hint{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 13px;cursor:pointer;
+  /* ── 빠른 이동 — ⌘K 명령 팔레트 (읽기 전용 항해: 탭·별 점프) ── */
+  .palette-hint{display:inline-flex;align-items:center;gap:var(--space-xs);min-height:44px;padding:0 var(--space-sm);cursor:pointer;
     background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--ink-dim);
-    font-family:var(--mono);font-size:11px;letter-spacing:.04em}
+    font-family:var(--mono);font-size:11px;letter-spacing:.04em;white-space:nowrap}
   .palette-hint:hover{border-color:var(--rune-gold);color:var(--ink)}
   .palette-hint:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
   .palette-hint kbd{font-family:var(--mono);font-size:10px;border:1px solid var(--line-strong);border-radius:4px;
-    padding:2px 5px;color:var(--gold-lit);background:var(--surface-1)}
-  #pal{position:fixed;inset:0;z-index:110;display:none;align-items:flex-start;justify-content:center;
-    padding:12vh 20px 20px;background:rgba(8,6,4,.62)}
+    padding:0 var(--space-2xs);color:var(--gold-lit);background:var(--surface-1)}
+  #pal{position:fixed;inset:0;z-index:var(--z-modal);display:none;align-items:flex-start;justify-content:center;
+    padding:12dvh var(--space-lg) var(--space-lg);background:var(--overlay)}
   #pal.on{display:flex}
   .pal-box{width:min(560px,100%);background:var(--surface-1);border:1px solid var(--line-strong);border-radius:12px;
     overflow:hidden;overscroll-behavior:contain}
   #pal.on .pal-box{animation:pal-in .22s cubic-bezier(.22,1,.36,1) both}
   @keyframes pal-in{from{opacity:0;transform:scale(.98) translateY(-6px)}to{opacity:1;transform:none}}
   .pal-box input{width:100%;background:none;border:none;border-bottom:1px solid var(--line);color:var(--ink);
-    font-family:var(--sans);font-size:15px;padding:15px 18px;outline:none}
+    font-family:var(--sans);font-size:15px;padding:var(--space-md) var(--space-lg);outline:none}
   .pal-box input::placeholder{color:var(--ink-dim)}
-  .pal-list{list-style:none;margin:0;padding:6px;max-height:46vh;overflow-y:auto}
-  .pal-list li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;cursor:pointer;
+  .pal-list{list-style:none;margin:0;padding:var(--space-xs);max-height:46dvh;overflow-y:auto}
+  .pal-list li{display:flex;align-items:center;gap:var(--space-sm);padding:var(--space-sm);border-radius:8px;cursor:pointer;
     font-size:13.5px;color:var(--ink);min-height:44px}
   .pal-list li svg{flex:none;color:var(--rune-gold);opacity:.85}
   .pal-list li .sub{font-family:var(--mono);font-size:10.5px;color:var(--ink-dim);margin-left:auto;white-space:nowrap}
-  .pal-list li[aria-selected=true]{background:color-mix(in oklab,var(--rune-gold) 11%,var(--surface-1));color:var(--gold-lit)}
+  .pal-list li[aria-selected=true]{background:var(--gold-fill);color:var(--gold-lit)}
   .pal-list li[aria-selected=true] .sub{color:var(--ink-dim)}
-  .pal-empty{padding:16px 14px;color:var(--ink-dim);font-size:13px}
-  .pal-foot{display:flex;gap:14px;padding:9px 16px;border-top:1px solid var(--line);
+  .pal-empty{padding:var(--space-md);color:var(--ink-dim);font-size:13px}
+  .pal-foot{display:flex;gap:var(--space-md);padding:var(--space-xs) var(--space-md);border-top:1px solid var(--line);
     font-family:var(--mono);font-size:10px;color:var(--ink-ghost)}
 
   /* ── 빈 서고 온보딩 — 빈 표 대신 행동 유도 ── */
-  .onboard{display:flex;flex-direction:column;align-items:flex-start;gap:10px;padding:20px 4px;color:var(--ink-dim);font-size:13px;line-height:1.6}
+  .onboard{display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-sm);padding:var(--space-lg) var(--space-2xs);
+    color:var(--ink-dim);font-size:13px;line-height:1.6}
   .onboard svg{color:var(--rune-gold)}
-  .onboard p{margin:0}
+  .onboard p{margin:0;max-width:var(--measure)}
   .onboard b{color:var(--ink);font-weight:600}
   .onboard code{display:inline-block;background:var(--surface-2);border:1px solid var(--line-strong);border-radius:6px;
-    padding:9px 13px;color:var(--gold-lit);font-size:12px;user-select:all}
+    padding:var(--space-xs) var(--space-sm);color:var(--gold-lit);font-size:12px;user-select:all}
 
   /* ── 연대기 페이지네이션 + 날짜 딥링크 필터 ── */
-  .pgn{display:flex;align-items:center;justify-content:center;gap:12px;margin-top:16px;
+  .pgn{display:flex;align-items:center;justify-content:center;gap:var(--space-sm);margin-top:var(--space-md);
     font-family:var(--mono);font-size:11.5px;color:var(--ink-dim);flex-wrap:wrap}
   .pgn button{background:var(--surface-2);border:1px solid var(--line-strong);border-radius:8px;color:var(--gold-lit);
-    font-family:var(--mono);font-size:12px;padding:0 16px;min-height:44px;cursor:pointer}
+    font-family:var(--mono);font-size:12px;padding:0 var(--space-md);min-height:44px;cursor:pointer;white-space:nowrap}
   .pgn button:hover{border-color:var(--rune-gold)}
   .pgn button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
   .pgn button[disabled]{opacity:.35;cursor:default;border-color:var(--line)}
-  .dayflt{display:inline-flex;align-items:center;gap:9px;background:color-mix(in oklab,var(--rune-gold) 10%,var(--surface-1));
+  .dayflt{display:inline-flex;align-items:center;gap:var(--space-xs);background:var(--gold-fill);
     border:1px solid var(--rune-gold);border-radius:999px;color:var(--gold-lit);font-family:var(--mono);font-size:11.5px;
-    padding:5px 8px 5px 15px;margin:0 0 14px}
+    padding:var(--space-2xs) var(--space-xs) var(--space-2xs) var(--space-md);margin:0 0 var(--space-md);white-space:nowrap}
   .dayflt button{background:none;border:none;color:var(--gold-lit);cursor:pointer;font-family:var(--mono);font-size:11px;
     min-width:34px;min-height:34px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center}
-  .dayflt button:hover{background:rgba(198,164,94,.18)}
+  .dayflt button:hover{background:var(--gold-hover)}
   .dayflt button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
 
-  /* ── 성좌 시맨틱 opt-in 안내 ── */
-  .semhint{display:flex;gap:9px;align-items:flex-start;border:1px dashed color-mix(in oklab,var(--gem) 55%,transparent);
-    border-radius:8px;padding:10px 12px;font-size:12px;color:var(--ink-dim);line-height:1.55;margin:0}
-  .semhint svg{flex:none;color:var(--gem);margin-top:2px}
+  /* ── 성좌 · 뜻 검색 안내 ── */
+  .semhint{display:flex;gap:var(--space-xs);align-items:flex-start;border:1px dashed var(--gem-line);
+    border-radius:8px;padding:var(--space-sm);font-size:12px;color:var(--ink-dim);line-height:1.55;margin:0}
+  .semhint svg{flex:none;color:var(--gem);transform:translateY(2px)}
   .semhint code{color:var(--gold-lit);font-size:11px}
-  footer{margin-top:50px;padding-top:20px;border-top:1px solid var(--line);color:var(--ink-ghost);font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-align:center}
+  footer{margin-top:var(--space-3xl);padding-top:var(--space-lg);border-top:1px solid var(--line);color:var(--ink-ghost);
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-align:center}
 
+  @media(max-width:52rem){
+    header.top{align-items:flex-start}
+    .hright{align-items:stretch;width:100%}
+    .livebar{justify-content:flex-start}
+    .meta-line{justify-content:flex-start}
+    .brand img.mark{height:40px}
+  }
   @media(prefers-reduced-motion:reduce){
     #splash{display:none}
     .qrow{transition:none}
     .view.active{animation:none}
     .live-dot,.live-btn[disabled] svg{animation:none}
-    .live-btn:active{transform:none}
+    .live-btn:active,.gctrl button:active{transform:none}
     .skel{animation-delay:0s}
     .skel .sk::after{animation:none}
     .wake .stat{animation:none}
@@ -438,14 +650,31 @@
 <a class="skip" href="#main" data-t>본문으로 건너뛰기</a>
 
 <header class="wrap top">
-  <div>
-    <p class="kicker">Asgard · Yggdrasil — Tier0 Memory</p>
-    <h1 data-t>위그드라실</h1>
+  <!-- 브랜드 락업 — 위그드라실 마크. asgard map 이 읽는 것과 같은 파일(assets/yggdrasil-mark.png)이라
+       두 창이 같은 마크를 든다. 이 메모리 시스템의 이름이 곧 위그드라실이라 마크도 그 나무다. -->
+  <div class="brand">
+    <img class="mark" id="brandImg" src="__MARK__" alt="">
+    <svg class="mark" id="brandMark" viewBox="0 0 120 96" width="38" height="30" aria-hidden="true" hidden>
+      <path d="M18 90V52a42 42 0 0 1 84 0v38" fill="none" stroke="currentColor" stroke-width="7"/>
+      <path d="M33 90V55a27 27 0 0 1 54 0v35" fill="none" stroke="currentColor" stroke-width="5.5"/>
+      <path d="M48 90V58a12 12 0 0 1 24 0v32" fill="none" stroke="currentColor" stroke-width="4.5"/>
+      <path d="M10 90h100" stroke="currentColor" stroke-width="7"/>
+    </svg>
+    <div class="lock">
+      <p class="kicker">Asgard · Yggdrasil — Tier0 Memory</p>
+      <h1 data-t>위그드라실</h1>
+    </div>
   </div>
   <div class="hright">
     <div class="livebar">
-      <button type="button" class="live-btn" id="langBtn" data-action="lang-toggle" style="width:auto;min-width:44px;padding:0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.04em" aria-label="Switch language — 언어 전환">EN</button>
-      <button type="button" class="palette-hint" id="palOpen" data-action="palette-open" aria-haspopup="dialog"><span data-t>관문 호출</span>&nbsp;<kbd>⌘K</kbd></button>
+      <div class="widthbar" role="group" aria-label="화면 폭" data-t-aria>
+        <button type="button" data-action="width-set" data-width="snug" aria-pressed="false" data-t>좁게</button>
+        <button type="button" data-action="width-set" data-width="cozy" aria-pressed="true" data-t>기본</button>
+        <button type="button" data-action="width-set" data-width="wide" aria-pressed="false" data-t>넓게</button>
+        <button type="button" data-action="width-set" data-width="full" aria-pressed="false" data-t>최대</button>
+      </div>
+      <button type="button" class="live-btn" id="langBtn" data-action="lang-toggle" style="width:auto;min-width:44px;padding:0 12px;font-family:var(--mono);font-size:11px;letter-spacing:.04em" aria-label="언어 전환" data-t-aria>EN</button>
+      <button type="button" class="palette-hint" id="palOpen" data-action="palette-open" aria-haspopup="dialog"><span data-t>빠른 이동</span>&nbsp;<kbd>⌘K</kbd></button>
       <span class="live-badge idle" id="liveBadge"><span class="live-dot" aria-hidden="true"></span><span id="liveText">갱신 30s · <span id="liveTime" class="num">—</span></span></span>
       <button type="button" class="live-btn" id="refreshBtn" data-action="refresh-now" aria-label="지금 새로고침" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M12.3 8.2a5 5 0 1 1-1.2-4.4" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M12.6 1.2v3h-3" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
     </div>
@@ -453,16 +682,21 @@
   </div>
 </header>
 
-<!-- 탭 바 — agentmemory 뷰어 셸 이식: 해시 딥링크 + 탭별 lazy-load. 데이터가 실존하는 5탭만. -->
-<nav class="wrap" aria-label="관측 창 내비게이션" data-t-aria>
-  <div class="tabbar" id="tabBar" role="tablist" aria-label="관측 창 보기" data-t-aria>
+<!-- 탭 바 — 해시 딥링크 + 탭별 lazy-load. 데이터가 실존하는 7탭만 (가짜 탭 금지).
+     최상위 내비라 상단에 붙는다 — 폭을 넓혀 스크롤이 길어져도 이동 수단은 손에 남는다. -->
+<div class="tabrail">
+<nav class="wrap" aria-label="화면 이동" data-t-aria>
+  <div class="tabbar" id="tabBar" role="tablist" aria-label="화면 목록" data-t-aria>
     <button type="button" role="tab" id="tab-개요" data-tab="개요" class="on" aria-selected="true" aria-controls="view-개요" tabindex="0"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 10a5.5 5.5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.3"/><path d="M7 10L9.6 6.6" stroke="currentColor" stroke-width="1.3"/><circle cx="7" cy="10" r="1.1" fill="currentColor"/></svg><span data-t>개요</span></button>
     <button type="button" role="tab" id="tab-성좌" data-tab="성좌" aria-selected="false" aria-controls="view-성좌" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="3" cy="3.5" r="1.3" fill="currentColor"/><circle cx="11" cy="2.8" r="1" fill="currentColor"/><circle cx="7" cy="8" r="1.6" fill="currentColor"/><circle cx="11.5" cy="11" r="1.2" fill="currentColor"/><path d="M3 3.5L7 8l4-5.2M7 8l4.5 3" stroke="currentColor" stroke-width=".8" fill="none" opacity=".6"/></svg><span data-t>성좌</span></button>
     <button type="button" role="tab" id="tab-서고" data-tab="서고" aria-selected="false" aria-controls="view-서고" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.8" y="1.8" width="10.4" height="10.4" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M1.8 5.5h10.4M5.5 5.5V12.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>서고</span></button>
+    <button type="button" role="tab" id="tab-전달" data-tab="전달" aria-selected="false" aria-controls="view-전달" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 1.6v7.2" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M4.4 6.4L7 9l2.6-2.6" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2.2 10.4v1.2a.8.8 0 0 0 .8.8h8a.8.8 0 0 0 .8-.8v-1.2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg><span data-t>전달</span></button>
+    <button type="button" role="tab" id="tab-정리" data-tab="정리" aria-selected="false" aria-controls="view-정리" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M12.2 8.6A5.4 5.4 0 1 1 5.4 1.8 4.2 4.2 0 0 0 12.2 8.6z" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="9.4" cy="4.4" r=".9" fill="currentColor"/></svg><span data-t>정리</span></button>
     <button type="button" role="tab" id="tab-연대기" data-tab="연대기" aria-selected="false" aria-controls="view-연대기" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="5.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M7 4v3.2l2.4 1.6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>연대기</span></button>
     <button type="button" role="tab" id="tab-활동" data-tab="활동" aria-selected="false" aria-controls="view-활동" tabindex="-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><rect x="1.5" y="1.5" width="5" height="5" rx="1" fill="currentColor" opacity=".35"/><rect x="7.7" y="1.5" width="5" height="5" rx="1" fill="currentColor" opacity=".6"/><rect x="1.5" y="7.7" width="5" height="5" rx="1" fill="currentColor" opacity=".85"/><rect x="7.7" y="7.7" width="5" height="5" rx="1" fill="currentColor"/></svg><span data-t>활동</span></button>
   </div>
 </nav>
+</div>
 
 <main id="main" class="wrap">
 
@@ -470,31 +704,45 @@
   <section class="view active" id="view-개요" role="tabpanel" aria-labelledby="tab-개요">
     <div class="grid stats5" id="ovStats" aria-label="서고 통계" data-t-aria><div class="skel" style="display:contents" aria-hidden="true"><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div></div></div>
     <div id="ovOnboard"></div>
-    <div class="grid side" style="margin-bottom:18px">
-      <figure class="panel gauge-card">
+    <!-- 12열 위의 서로 다른 span — 같은 크기 카드 3단은 쓰지 않는다. 폭이 늘면 열이 늘고,
+         글이 실리는 종류은 measure 상한을 따로 갖는다(줄이 길어지지 않는다). -->
+    <div class="ovgrid">
+      <!-- 윗줄 = 계기(분량·전달·뜻검색), 아랫줄 = 목록(건강·연대기·회수).
+           높이가 비슷한 것끼리 묶어야 밑이 크게 비지 않는다. span 합은 줄마다 정확히 12. -->
+      <figure class="panel gauge-card ov-gauge">
         <div id="gauge" aria-hidden="true"></div>
         <figcaption>
-          <div class="lab" data-t>룬-링 인덱스 예산</div>
+          <div class="lab" data-t>카탈로그 분량</div>
           <div id="budgetText" style="margin-top:6px">—</div>
         </figcaption>
       </figure>
-      <section class="panel" aria-label="건강 진단" data-t-aria>
+      <section class="panel ov-inject" aria-label="전달 요약" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v7" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5.2 6.4L8 9.2l2.8-2.8" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2.6 11.4v1.2a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg><span data-t>AI 에게 가는 분량</span></h2>
+        <div id="ovInject"></div>
+      </section>
+      <section class="panel ov-sem" aria-label="뜻 검색 준비" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="10.5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.2 6.4l3.2 2.8" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.5 2"/></svg><span data-t>뜻 검색 준비</span></h2>
+        <div id="ovSem"></div>
+      </section>
+      <section class="panel ov-health" aria-label="건강 진단" data-t-aria>
         <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.5 2.4v3.6c0 3.4-2.3 5.5-5.5 6.5-3.2-1-5.5-3.1-5.5-6.5V3.9z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5.6 8l1.7 1.7 3.1-3.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>건강 진단</span></h2>
         <ul class="flist" id="findList"></ul>
       </section>
-    </div>
-    <p class="panel semstrip" id="semState"></p>
-    <div class="grid two">
-      <section class="panel" aria-label="최근 연대기 발췌" data-t-aria>
+      <section class="panel ov-log" aria-label="최근 연대기 발췌" data-t-aria>
         <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8M4 5.5h8M4 8.5h5M4 11.5h6" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>연대기 발췌</span><span class="spark" id="ovSpark"></span></h2>
         <ul class="log" id="ovLog"></ul>
         <p style="margin:12px 0 0"><button type="button" class="linklike" data-action="open-tab" data-tab="연대기" data-t>연대기 전체 보기 →</button></p>
       </section>
-      <section class="panel" aria-label="회수 상위" data-t-aria>
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v5l3 2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>자주 회수됨</span></h2>
+      <section class="panel ov-use" aria-label="자주 꺼내 쓴 기억" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v5l3 2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="8" cy="8" r="6" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>자주 꺼내 쓴 기억</span></h2>
         <ul class="uselist" id="topUse"></ul>
       </section>
     </div>
+    <section class="panel" aria-label="원본과 다시 만드는 파일" data-t-aria>
+      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11v8a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 4.5l1.4-2h8.2l1.4 2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 7.6h3.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>원본과 다시 만드는 파일</span></h2>
+      <p class="dimnote" style="margin:0 0 14px;max-width:var(--measure)" data-t>pages/ 만 원본입니다. 나머지는 다시 만들어지는 것이거나 정리가 남긴 기록이라, 지워도 지식은 죽지 않습니다.</p>
+      <ul class="drv" id="ovDerived"></ul>
+    </section>
   </section>
 
   <!-- ══ 성좌 — 일급 그래프 뷰 (기존 Canvas 물리 시뮬 그대로 이관) ══ -->
@@ -504,7 +752,7 @@
       <div class="gbody">
         <div class="gwrap">
           <canvas id="gcanvas" tabindex="0" role="application" aria-describedby="gHelp" data-t-aria
-            aria-label="기억 성좌 캔버스 — 페이지가 별, 링크·의미 유사가 별자리 선. 화살표 키로 이동, 대괄호 키로 노드 순회."></canvas>
+            aria-label="기억 성좌 — 페이지가 별, 직접 링크와 뜻이 비슷한 관계가 별자리 선입니다. 화살표 키로 이동, 대괄호 키로 페이지 순회."></canvas>
           <div class="gctrl" role="group" aria-label="성좌 보기 조절" data-t-aria>
             <button type="button" data-action="g-zoom-in" aria-label="확대" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M7.5 2.5v10M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
             <button type="button" data-action="g-zoom-out" aria-label="축소" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -513,28 +761,28 @@
           <div class="gtip" id="gTip" aria-hidden="true"></div>
           <p class="ghint" id="gHelp" data-t>드래그 이동 · 휠 줌 · 키보드: 화살표 팬 / + − 줌 / ] [ 노드 순회 / Enter 상세로 / Esc 해제 / 0 초기화</p>
         </div>
-        <aside class="gside" aria-label="성좌 조작반" data-t-aria>
+        <aside class="gside" aria-label="성좌 조절" data-t-aria>
           <div>
-            <label class="vh" for="gq" data-t>성좌에서 노드 검색</label>
-            <input id="gq" type="search" placeholder="노드 검색 — 제목·슬러그" data-t-ph autocomplete="off">
+            <label class="vh" for="gq" data-t>성좌에서 페이지 찾기</label>
+            <input id="gq" type="search" placeholder="페이지 검색 — 제목·이름" data-t-ph autocomplete="off">
           </div>
           <div id="gDetail"></div>
           <div class="gstats" id="gStats" aria-label="성좌 통계" data-t-aria></div>
           <div>
-            <p class="sectitle" data-t>종류 필터 — 색+형태 이중 인코딩</p>
+            <p class="sectitle" data-t>종류 필터 — 색과 모양으로 구분</p>
             <div id="gFilters" class="gfilters"></div>
           </div>
           <div>
-            <p class="sectitle" data-t>엣지 언어</p>
+            <p class="sectitle" data-t>선이 뜻하는 것</p>
             <ul class="glegend">
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#C6A45E" stroke-width="2"/></svg><span data-t>명시 링크 — 실선 골드</span></li>
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#5E8A6E" stroke-width="2" stroke-dasharray="4 3"/></svg><span data-t>의미 유사 — 점선 비취 (코사인 가중)</span></li>
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h16" stroke="#C25B46" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M20 2l6 6M26 2l-6 6" stroke="#C25B46" stroke-width="1.4"/></svg><span data-t>죽은 링크 — 붉은 절단선</span></li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#C6A45E" stroke-width="2"/></svg><span data-t>직접 링크 — 금색 실선</span></li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#5E8A6E" stroke-width="2" stroke-dasharray="4 3"/></svg><span data-t>뜻이 비슷함 — 초록 점선</span></li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h16" stroke="#C25B46" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M20 2l6 6M26 2l-6 6" stroke="#C25B46" stroke-width="1.4"/></svg><span data-t>끊어진 링크 — 붉은 절단선</span></li>
             </ul>
           </div>
           <div id="gSemHint"></div>
           <div>
-            <p class="sectitle"><span data-t>고아 성단</span> <span id="orphanCount" class="num"></span></p>
+            <p class="sectitle"><span data-t>연결 없는 페이지</span> <span id="orphanCount" class="num"></span></p>
             <ul class="glist" id="orphanList"></ul>
           </div>
         </aside>
@@ -543,25 +791,86 @@
     </section>
   </section>
 
-  <!-- ══ 서고 — 카탈로그 + 질의 스트림 프리즘 통합 (agentmemory Memories 구성) ══ -->
+  <!-- ══ 서고 — 카탈로그 + 검색 경로 통합 (agentmemory Memories 구성) ══ -->
   <section class="view" id="view-서고" role="tabpanel" aria-labelledby="tab-서고">
     <section class="panel" aria-label="서고 카탈로그" data-t-aria>
       <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 6.5h11M6.5 6.5v7" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>서고</span> <span id="catCount" class="num dimnote"></span></h2>
       <form class="search" id="searchForm" role="search">
         <label for="q" class="vh" data-t>서고 검색어</label>
-        <input id="q" name="q" type="search" placeholder="서고 검색 — 제목·본문·의미까지 한 번에 (읽기 전용)" data-t-ph autocomplete="off">
+        <input id="q" name="q" type="search" placeholder="검색 — 제목·본문·뜻까지 한 번에 (읽기 전용)" data-t-ph autocomplete="off">
         <button type="submit" data-t>검색</button>
       </form>
       <div class="legend" id="legend">
-        <span class="sectitle" style="margin:0" data-t>질의 스트림 프리즘</span>
-        <span><i style="background:var(--rune-gold)"></i><span data-t>전문 검색 FTS</span></span>
-        <span><i style="background:var(--info)"></i><span data-t>본문 스캔</span></span>
-        <span><i style="background:var(--gem)"></i><span data-t>의미 검색</span></span>
+        <span class="sectitle" style="margin:0" data-t>검색 경로</span>
+        <span><i style="background:var(--rune-gold)"></i><span data-t>글자 검색</span></span>
+        <span><i style="background:var(--info)"></i><span data-t>본문 훑기</span></span>
+        <span><i style="background:var(--gem)"></i><span data-t>뜻 검색</span></span>
         <span id="semNote"></span>
       </div>
       <div id="kindChips" class="chips" role="group" aria-label="종류 필터" data-t-aria></div>
       <div id="sortChips" class="chips" role="group" aria-label="정렬 기준" data-t-aria></div>
       <div id="libBody" aria-live="polite"><p class="vh">불러오는 중…</p><div class="skel skel-row" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>
+    </section>
+  </section>
+
+  <!-- ══ 전달 — 이 기억이 프롬프트로 나가는 모습 그대로. 저장된 것과 나가는 것은 같지 않다. ══ -->
+  <section class="view" id="view-전달" role="tabpanel" aria-labelledby="tab-전달">
+    <section class="panel" aria-label="전달" data-t-aria>
+      <h2><svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true"><path d="M8.5 2v7.6" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5.4 6.8L8.5 9.9l3.1-3.1" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2.6 12v1.4a1 1 0 0 0 1 1h9.8a1 1 0 0 0 1-1V12" stroke="currentColor" stroke-width="1.3" fill="none"/></svg><span data-t>전달</span> <span id="injMeta" class="num dimnote"></span></h2>
+      <div id="injState"></div>
+      <div class="injgrid">
+        <div>
+          <p class="sectitle" data-t>AI 에게 그대로 전달되는 내용</p>
+          <pre class="injblock" id="injBlock" tabindex="0" aria-label="전달 내용 원문" data-t-aria>—</pre>
+          <p class="dimnote" style="margin:12px 0 0;max-width:var(--measure)" data-t>앞뒤 빈 줄만 접었을 뿐, 나머지는 실제로 전달되는 글자 그대로입니다. 여기 없는 것은 AI 도 못 봅니다.</p>
+        </div>
+        <div>
+          <p class="sectitle" data-t>종류별 한도 — 어디가 모자라고 어디가 넘치는가</p>
+          <ul class="injmeter" id="injMeter"></ul>
+          <div id="injExcluded" style="margin-top:20px"></div>
+        </div>
+      </div>
+    </section>
+  </section>
+
+  <!-- ══ 정리 — 노른 자가 진화. 검증을 통과한 델타만 남고, 모순은 사람에게 넘어온다. ══ -->
+  <section class="view" id="view-정리" role="tabpanel" aria-labelledby="tab-정리">
+    <section class="panel" aria-label="노른 정리" data-t-aria>
+      <h2><svg width="17" height="17" viewBox="0 0 17 17" aria-hidden="true"><path d="M14.2 10A6.2 6.2 0 1 1 6.4 2.2 4.8 4.8 0 0 0 14.2 10z" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="10.8" cy="5" r="1" fill="currentColor"/></svg><span data-t>노른 정리</span> <span id="nornMeta" class="num dimnote"></span></h2>
+      <div class="modes" id="nornModes"></div>
+      <div class="nrngrid">
+        <section aria-label="insight 계보" data-t-aria>
+          <h3 data-t>통찰 계보</h3>
+          <p class="dimnote" style="margin:0 0 12px" data-t>출처 페이지에서 벼려낸 통찰과, 코드가 계산한 확신도입니다.</p>
+          <ul class="lineage" id="nornInsights"></ul>
+        </section>
+        <section aria-label="모순" data-t-aria>
+          <h3 data-t>모순 — 사람이 풀 일</h3>
+          <p class="dimnote" style="margin:0 0 12px" data-t>노른은 어긋난 기록을 고치지 않고 알리기만 합니다.</p>
+          <ul class="contra" id="nornContra"></ul>
+        </section>
+        <section aria-label="정리 리포트" data-t-aria>
+          <h3 data-t>정리 리포트</h3>
+          <p class="dimnote" style="margin:0 0 12px" data-t>매 정리가 남긴 기록 — reports/ 는 예산 밖입니다.</p>
+          <ul class="log" id="nornReports"></ul>
+        </section>
+      </div>
+    </section>
+    <div class="grid two" style="margin-top:20px">
+      <section class="panel" aria-label="보관함" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3" width="12.4" height="3" rx=".8" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3.2 6v6.4a.8.8 0 0 0 .8.8h8a.8.8 0 0 0 .8-.8V6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 9h3.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>보관함</span> <span id="arcMeta" class="num dimnote"></span></h2>
+        <p class="dimnote" style="margin:0 0 12px;max-width:var(--measure)" data-t>접어 둔 페이지입니다. 지운 것이 아니라 옮긴 것이라 언제든 되살릴 수 있습니다.</p>
+        <ul class="arcs" id="nornArchive"></ul>
+      </section>
+      <section class="panel" aria-label="오딘 피어 카드" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.4" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 13.4a5 5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>피어 카드</span> <span id="peerMeta" class="num dimnote"></span></h2>
+        <p class="dimnote" style="margin:0 0 12px;max-width:var(--measure)" data-t>사용자에 대해 관찰한 것을 모아 만든 요약입니다 — 근거 페이지에서 다시 만들어집니다.</p>
+        <ul class="arcs" id="peerCard"></ul>
+      </section>
+    </div>
+    <section class="panel" style="margin-top:20px" aria-label="백업" data-t-aria>
+      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.4 8.4A5.4 5.4 0 1 1 12.2 4" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M12.6 1.2v3.2H9.4" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>정리 직전 백업</span> <span id="bkMeta" class="num dimnote"></span></h2>
+      <ul class="arcs" id="nornBackups"></ul>
     </section>
   </section>
 
@@ -574,17 +883,6 @@
       <div class="chrono" id="chronBody" aria-live="polite"><p class="vh">불러오는 중…</p><div class="skel skel-row" aria-hidden="true"><div class="sk"></div><div class="sk"></div><div class="sk"></div><div class="sk"></div></div></div>
       <div id="chronPgn"></div>
     </section>
-    <!-- 노른 손질 이력 — insight 계보 + 리포트 (자가 진화의 가시화) -->
-    <div class="grid two" style="margin-top:18px">
-      <section class="panel" aria-label="노른 insight 계보" data-t-aria>
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.2 9.4A5.6 5.6 0 1 1 6.6 2.8a4.4 4.4 0 0 0 6.6 6.6z" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>노른 insight 계보</span> <span id="nornMeta" class="num dimnote"></span></h2>
-        <ul class="log" id="nornInsights"></ul>
-      </section>
-      <section class="panel" aria-label="노른 리포트" data-t-aria>
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="1.8" width="11" height="12.4" rx="1.2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M5 5h6M5 8h6M5 11h4" stroke="currentColor" stroke-width="1.1"/></svg><span data-t>노른 리포트</span> <span id="nornRepMeta" class="num dimnote"></span></h2>
-        <ul class="log" id="nornReports"></ul>
-      </section>
-    </div>
   </section>
 
   <!-- ══ 활동 — 52주 열지도 + 작업 분포 + 피드 (agentmemory Activity 구성) ══ -->
@@ -608,8 +906,8 @@
   <footer data-t>위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI 에서</footer>
 </main>
 
-<!-- 관문 호출 — ⌘K 명령 팔레트: 탭·별을 이름으로 항해한다 (읽기 전용, 스냅샷 데이터만) -->
-<div id="pal" role="dialog" aria-modal="true" aria-label="관문 호출 — 탭과 페이지로 이동" data-t-aria>
+<!-- 빠른 이동 — ⌘K 명령 팔레트: 탭·별을 이름으로 항해한다 (읽기 전용, 스냅샷 데이터만) -->
+<div id="pal" role="dialog" aria-modal="true" aria-label="빠른 이동 — 탭과 페이지로 이동" data-t-aria>
   <div class="pal-box">
     <label class="vh" for="palQ" data-t>이동할 탭 또는 페이지 검색</label>
     <input id="palQ" type="text" placeholder="어디로 갈까요 — 탭 또는 페이지 이름" data-t-ph
@@ -638,46 +936,43 @@ try{
 const EN = {
   "본문으로 건너뛰기": "Skip to content",
   "위그드라실": "Yggdrasil",
-  "관문 호출": "Gate Call",
+  "빠른 이동": "Gate Call",
   "지금 새로고침": "Refresh now",
   "불러오는 중…": "Loading…",
-  "관측 창 내비게이션": "Observatory navigation",
-  "관측 창 보기": "Observatory views",
+  "화면 이동": "Observatory navigation",
+  "화면 목록": "Observatory views",
   "개요": "Overview", "성좌": "Constellation", "서고": "Library", "연대기": "Chronicle", "활동": "Activity",
   "서고 통계": "Library stats",
-  "룬-링 인덱스 예산": "Rune-ring index budget",
+  "카탈로그 분량": "Catalog size",
   "건강 진단": "Health check",
   "최근 연대기 발췌": "Recent chronicle excerpt",
   "연대기 발췌": "Chronicle excerpt",
   "연대기 전체 보기 →": "View full chronicle →",
-  "회수 상위": "Top recalls",
-  "자주 회수됨": "Frequently recalled",
+  "자주 꺼내 쓴 기억": "Frequently recalled",
   "기억 성좌 그래프": "Memory constellation graph",
   "기억 성좌": "Memory constellation",
-  "기억 성좌 캔버스 — 페이지가 별, 링크·의미 유사가 별자리 선. 화살표 키로 이동, 대괄호 키로 노드 순회.":
-    "Memory constellation canvas — pages are stars; links and semantic similarity draw the lines. Arrow keys pan, bracket keys cycle nodes.",
+  "기억 성좌 — 페이지가 별, 직접 링크와 뜻이 비슷한 관계가 별자리 선입니다. 화살표 키로 이동, 대괄호 키로 페이지 순회.":
+    "Memory constellation — pages are stars; direct links and meaning-similarity draw the lines. Arrow keys pan, bracket keys cycle pages.",
   "성좌 보기 조절": "Constellation view controls",
   "확대": "Zoom in", "축소": "Zoom out", "처음 위치로": "Reset view",
   "드래그 이동 · 휠 줌 · 키보드: 화살표 팬 / + − 줌 / ] [ 노드 순회 / Enter 상세로 / Esc 해제 / 0 초기화":
-    "Drag to pan · wheel to zoom · keys: arrows pan / + − zoom / ] [ cycle nodes / Enter opens detail / Esc clears / 0 resets",
-  "성좌 조작반": "Constellation panel",
+    "Drag to pan · wheel to zoom · keys: arrows pan / + − zoom / ] [ cycle pages / Enter opens detail / Esc clears / 0 resets",
+  "성좌 조절": "Constellation panel",
   "성좌 통계": "Constellation stats",
-  "성좌에서 노드 검색": "Search nodes in the constellation",
-  "노드 검색 — 제목·슬러그": "Search nodes — title or slug",
-  "종류 필터 — 색+형태 이중 인코딩": "Kind filter — color + shape dual encoding",
-  "엣지 언어": "Edge language",
-  "명시 링크 — 실선 골드": "Explicit link — solid gold",
-  "의미 유사 — 점선 비취 (코사인 가중)": "Semantic similarity — dashed jade (cosine-weighted)",
-  "죽은 링크 — 붉은 절단선": "Dead link — red cut line",
-  "고아 성단": "Orphan cluster",
+  "성좌에서 페이지 찾기": "Find a page in the constellation",
+  "페이지 검색 — 제목·이름": "Search pages — title or name",
+  "종류 필터 — 색과 모양으로 구분": "Kind filter — color + shape dual encoding",
+  "선이 뜻하는 것": "Edge language",
+  "직접 링크 — 금색 실선": "Explicit link — solid gold",
+  "뜻이 비슷함 — 초록 점선": "Semantic similarity — dashed jade (cosine-weighted)",
+  "끊어진 링크 — 붉은 절단선": "Dead link — red cut line",
   "서고 카탈로그": "Library catalog",
   "서고 검색어": "Library search query",
-  "서고 검색 — 제목·본문·의미까지 한 번에 (읽기 전용)": "Search the library — title, body and meaning at once (read-only)",
+  "검색 — 제목·본문·뜻까지 한 번에 (읽기 전용)": "Search the library — title, body and meaning at once (read-only)",
   "검색": "Search",
-  "질의 스트림 프리즘": "Query stream prism",
-  "전문 검색 FTS": "Full-text FTS",
-  "본문 스캔": "Body scan",
-  "의미 검색": "Semantic",
+  "검색 경로": "Search paths",
+  "글자 검색": "Full-text FTS",
+  "본문 훑기": "Body scan",
   "종류 필터": "Kind filter",
   "정렬 기준": "Sort by",
   "운영 연대기": "Operations chronicle",
@@ -687,7 +982,119 @@ const EN = {
   "최근 피드": "Recent feed",
   "위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI 에서":
     "Yggdrasil · Asgard personal memory · read-only observatory · local only (127.0.0.1) · edits happen in the CLI",
-  "관문 호출 — 탭과 페이지로 이동": "Gate Call — jump to tabs and pages",
+  "빠른 이동 — 탭과 페이지로 이동": "Gate Call — jump to tabs and pages",
+  /* ── 폭 스위치 · 브랜드 ── */
+  "화면 폭": "Shell width",
+  "벡터 차원이 섞였습니다 — 모델을 바꾼 뒤 재색인을 안 한 상태입니다. asgard memory reindex":
+    "Vector dimensions are mixed — the model changed and nothing was reindexed. asgard memory reindex",
+
+  "위험이 감지돼 본문을 숨겼습니다. 확인하려면:":
+    "Something risky was detected, so the body is hidden. To inspect it:",
+
+  "원본 — 사람이 읽고 고치는 md 파일": "canon — the md files you read and edit",
+  "원본 — 덧붙이기만 하는 작업 기록": "canon — append-only operations log",
+  "원본 — 저장 규칙": "canon — the storage schema",
+  "자동생성 — asgard memory reindex 로 다시 만듦": "rebuilt — asgard memory reindex",
+  "자동생성 — 검색·사용기록·벡터 (손상 시 자동 복구)": "rebuilt — search, usage and vectors (self-heals)",
+  "자동생성 — Obsidian 목차": "rebuilt — Obsidian index",
+  "기록 — 정리·패턴 보고서": "record — tending and pattern reports",
+  "보관 — 되살릴 수 있음": "archived — can be brought back",
+  "백업 — 정리 직전 원본 사본": "backup — a copy taken just before tending",
+  "설정 — Obsidian 으로 열기 위한 최소 설정": "config — the minimum needed to open it in Obsidian",
+
+  "언어 전환": "Switch language",
+  "꺼 두셨습니다 — 지금은 제목·본문 글자 검색만 씁니다.":
+    "You switched it off — only title and body text search are in use.",
+  "켜져 있지만 못 돕니다": "on, but cannot run",
+  "뜻 검색에 쓰는 부품이 설치에 빠져 있습니다. 기본으로 함께 깔리는 것이라, 설치가 오래된 경우입니다.":
+    "The part meaning-search needs is missing from this install. It ships by default, so the install is an old one.",
+  "모델을 아직 안 받았습니다. 한 번만 받아 두면 그다음부터는 바로 씁니다.":
+    "The model has not been downloaded yet. Fetch it once and it is ready from then on.",
+  "설정은 켜짐인데 준비가 안 됐습니다.": "The setting is on but it is not ready.",
+  "개 종류": " sections",
+
+  "모델이 올라와 있습니다": "the model is loaded",
+  "저장된 벡터가 실제로 돌았음을 증명합니다": "stored vectors prove it actually ran",
+  "부품과 모델은 준비됐고, 아직 벡터는 없습니다": "parts and model are ready; no vectors yet",
+  "페이지가 ": "Past ",
+  "장을 넘어 뜻 연결선 계산을 접었습니다 — 직접 링크만 그립니다.":
+    " pages, meaning-link computation is folded — only direct links are drawn.",
+
+  "좁게": "Snug", "기본": "Cozy", "넓게": "Wide", "최대": "Max",
+  /* ── 전달 ── */
+  "전달": "Injection", "정리": "Tending",
+  "AI 에게 가는 분량": "What leaves for the prompt",
+  "전달 요약": "Injection summary",
+  "전달 켜짐": "injection on", "전달 꺼짐": "injection off",
+  "대화가 시작될 때 목록이 한 번 고정되어 AI 에게 함께 전달됩니다.":
+    "The catalog freezes once at session start and rides into the prompt.",
+  "전달이 꺼져 있어 어떤 AI 에게도 나가지 않습니다.":
+    "The kill switch is down — nothing leaves for any provider.",
+  "전달 분량": "Section total", "한도를 넘은 종류": "Over-budget sections",
+  "전달 전체 보기 →": "See everything that leaves →",
+  "AI 에게 그대로 전달되는 내용": "The block that rides into the session prompt",
+  "전달 내용 원문": "Injection block, verbatim",
+  "앞뒤 빈 줄만 접었을 뿐, 나머지는 실제로 전달되는 글자 그대로입니다. 여기 없는 것은 AI 도 못 봅니다.":
+    "Only the leading and trailing seam newlines are folded; the rest is exactly what snapshot_note() returns. What is missing here, the model never sees.",
+  "종류별 한도 — 어디가 모자라고 어디가 넘치는가": "Section budgets — who starves, who overflows",
+  "대화가 시작될 때 한 번 고정되고, 그 대화 동안 바뀌지 않습니다.":
+    "Frozen once at session start and unchanged for that session (KV cache stays warm).",
+  "전달이 꺼져 있습니다 — 아래 내용은 비어 있고, 어떤 AI 도 이 기억을 못 봅니다.":
+    "The kill switch is down — the block below is empty and no model sees this memory.",
+  "전체 한도 ": "total cap ", "검색 결과 한도 ": "recall cap ", "잘림": "truncated",
+  "전달되는 내용이 없습니다 — 저장된 페이지가 없거나 전달이 꺼져 있습니다.":
+    "No block is injected — either there are no pages, or the kill switch is down.",
+  "한도 0 — 저장은 되지만 전달되지 않습니다": "budget 0 — stored, never injected",
+  "행이 밀려났습니다: ": " row(s) pushed out: ",
+  "행 전부 실림": " row(s), all carried",
+  "전달할 내용이 없습니다": "No sections to inject",
+  "전달에서 빠진 것": "Excluded from injection",
+  "위험 감지": "flagged", "외 ": "and ", "장": " more",
+  "없음 — 위험 감지로 빠진 페이지가 없습니다.": "None — no page was excluded as poisoned.",
+  /* ── 뜻 검색 준비 · 원본과 파생 ── */
+  "뜻 검색 준비": "Semantic coverage", "뜻 검색 준비": "Semantic coverage",
+  "뜻으로 찾을 수 있는 페이지": "Pages searchable by meaning",
+  "장은 아직 뜻으로 못 찾습니다 — asgard memory reindex 를 돌리면 채워집니다":
+    " page(s) carry no vector, so semantic search and semantic edges cannot see them — asgard memory reindex",
+  "원본과 다시 만드는 파일": "Canon and derivatives",
+  "pages/ 만 원본입니다. 나머지는 다시 만들어지는 것이거나 정리가 남긴 기록이라, 지워도 지식은 죽지 않습니다.":
+    "Only pages/ is canon. The rest is regenerated or left behind by tending — deleting it does not kill the knowledge.",
+  "원본": "canon", "자동생성": "derived", "없음": "absent", "개": "",
+  /* ── 정리 (노른) ── */
+  "노른 정리": "Norn tending",
+  "자율 모드": "Autonomy", "통찰 자동 승격": "Auto-promote insights",
+  "자동 없음 — 전부 사람이 실행합니다": "Nothing automatic — a human runs every pass",
+  "병합·보관·모순까지 자동입니다": "merge, archive and contradiction all run automatically",
+  "모순 보고만 자동입니다": "only contradiction reporting runs automatically",
+  "통찰은 제안까지만 — 사람이 엽니다": "insights stop at proposal — a human opens them",
+  "insight 계보": "Insight lineage", "통찰 계보": "Insight lineage",
+  "출처 페이지에서 벼려낸 통찰과, 코드가 계산한 확신도입니다.":
+    "Insights forged from source pages, with the confidence the code computed.",
+  "출처 링크 없음": "no source links",
+  "아직 통찰이 없습니다 — 노른이 패턴을 승격하면 계보가 남습니다.":
+    "No insight yet — a lineage appears once Norn promotes a pattern.",
+  "모순": "Contradictions", "모순 — 사람이 풀 일": "Contradictions — a human's job",
+  "노른은 어긋난 기록을 고치지 않고 알리기만 합니다.": "Norn reports conflicting records; it never resolves them.",
+  "어긋난 기록이 보고된 적 없습니다.": "No conflicting record has ever been reported.",
+  "정리 리포트": "Tending reports",
+  "매 정리가 남긴 기록 — reports/ 는 예산 밖입니다.": "What each pass left behind — reports/ sits outside the budget.",
+  "리포트 없음 — asgard memory norn 으로 첫 정리를 실행하세요.":
+    "No report yet — run asgard memory norn for a first pass.",
+  "변경 없음": "no change", "승격 ": "promoted ", "기각 ": "dropped ",
+  "통찰": " insights", "리포트": " reports",
+  "보관함": "Archive",
+  "접어 둔 페이지입니다. 지운 것이 아니라 옮긴 것이라 언제든 되살릴 수 있습니다.":
+    "Pages folded away. They were moved, not deleted, so any of them can come back.",
+  "접어 둔 페이지가 없습니다.": "Nothing has been folded away.",
+  "정리 직전 백업": "Pre-tending backups", "백업": "Backups",
+  "백업 없음 — 병합·보관을 실행한 적이 없습니다.": "No backup — no merge or archive has run.",
+  "오딘 피어 카드": "Owner peer card", "피어 카드": "Peer card",
+  "사용자에 대해 관찰한 것을 모아 만든 요약입니다 — 근거 페이지에서 다시 만들어집니다.":
+    "A summary of owner observations gathered by pattern learning — a derivative, rebuilt from its source pages.",
+  "카드 있음 · ": "card · ", "재료 ": "sources ",
+  "재료는 있는데 카드가 아직 없습니다 — asgard memory pattern 이 만듭니다.":
+    "The sources exist but the card does not yet — asgard memory pattern writes it.",
+  "소유자 관측(kind=user)이 아직 없습니다.": "No owner observation (kind=user) yet.",
   "이동할 탭 또는 페이지 검색": "Search tabs or pages to jump to",
   "어디로 갈까요 — 탭 또는 페이지 이름": "Where to — tab or page name",
   "이동 후보": "Jump candidates",
@@ -695,26 +1102,25 @@ const EN = {
   "갱신 30s": "refresh 30s",
   "갱신 실패 — 재시도 대기": "Refresh failed — retrying soon",
   "페이지": "Pages",
-  "시맨틱": "Semantic",
+  "뜻 검색": "Semantic search",
+  "켜짐": "on", "꺼둠": "off", "준비 안 됨": "not ready",
   "오늘": "today",
   "서고에 쌓인 기록": "entries in the library",
   "종류": "Kinds",
   "비어 있음": "empty",
-  "회수 총합": "Total recalls",
-  "검색이 실제로 꺼내 쓴 횟수": "times search actually pulled a page",
-  "죽은 링크": "Dead links",
-  "가리키는 페이지가 없는 링크 — 정리 대상": "links pointing nowhere — clean these up",
-  "끊긴 참조 없음": "no broken references",
-  "고아 페이지": "Orphan pages",
+  "꺼내 쓴 횟수": "Total recalls",
+  "검색이 이 기억을 실제로 꺼내 쓴 횟수": "times search actually pulled a page",
+  "끊어진 링크": "Dead links",
+  "가리키는 페이지가 없는 링크": "links pointing nowhere — clean these up",
+  "끊어진 링크 없음": "no broken references",
+  "연결 없는 페이지": "Orphan pages",
   "어떤 페이지와도 이어지지 않음": "connected to nothing",
   "모두 연결됨": "all connected",
-  "예산 초과 — add 가 거부됩니다. 페이지를 통합하세요": "Over budget — add is rejected; consolidate pages",
+  "한도 초과 — 넘친 종류의 뒷줄이 전달에서 잘립니다. 페이지를 합쳐 주세요":
+    "Over budget — the tail rows of the overflowing section are cut from the injection; consolidate pages",
   "예산 임박": "Near budget",
   "여유": "Healthy",
   "건강함 — 발견된 문제 없음": "Healthy — no findings",
-  "시맨틱 회수": "Semantic recall",
-  "의미 유사 엣지(점선)와 SEM 레인이 켜져 있습니다": "semantic edges (dashed) and the SEM lane are live",
-  "켜기 전까지는 전문 검색(FTS)·본문 스캔만 사용합니다": "until enabled, only full-text search and body scan are used",
   "로그 없음": "No log entries",
   "아직 회수 기록 없음": "No recalls yet",
   "서고가 비어 있습니다 — 첫 페이지를 기록하면 개요·성좌·연대기가 함께 깨어납니다.":
@@ -723,10 +1129,10 @@ const EN = {
     "The library is empty — one line below creates your first page.",
   "아직 기록이 없습니다 — 첫 작업이 기록되면 여기에 나타납니다.":
     "No records yet — the first operation will appear here.",
-  "아직 활동 기록이 없습니다 — 첫 기록이 첫 칸을 밝힙니다.":
+  "아직 활동 기록이 없습니다 — 첫 기록이 이 열지도를 밝힙니다.":
     "No activity yet — the first record lights the first cell.",
   "전체": "All",
-  "(시맨틱 비활성 — opt-in)": "(semantic off — opt-in)",
+  "(뜻 검색은 아직 안 씁니다)": "(semantic search not in use yet)",
   "정렬": "Sort", "갱신순": "Updated", "회수순": "Recalls", "제목순": "Title",
   "제목을 누르면 상세가 펼쳐집니다": "Click a title to expand its detail",
   "갱신": "Updated", "회수": "Recalls",
@@ -736,15 +1142,14 @@ const EN = {
   "닫기": "Close", "상세 닫기": "Close detail",
   "페이지를 찾을 수 없습니다 — 끊어진 링크가 가리키던 자리입니다.": "Page not found — this is where a broken link pointed.",
   "생성": "Created", "최근 회수": "Last recall",
-  "오염 격리됨": "Quarantined (poisoned)",
   "연결된 페이지": "Linked pages",
   "성좌에서 보기": "View in constellation",
   "상세를 불러오지 못했습니다": "Couldn't load detail",
   "선택 해제": "Selection cleared",
-  "고아": "orphan", "오염 격리": "quarantined",
-  "별 (페이지)": "Stars (pages)", "명시 링크": "Explicit links", "의미 엣지": "Semantic edges",
+  "고아": "orphan", "위험 감지 격리": "quarantined",
+  "페이지": "Pages", "직접 링크": "Direct links", "뜻 연결선": "Meaning links",
   "아직 별이 없습니다 — asgard memory add 로 첫 기억을 남기세요": "No stars yet — asgard memory add records your first memory",
-  "고아 없음 — 모두 연결됨": "No orphans — all connected",
+  "모두 어딘가와 이어져 있습니다": "No orphans — all connected",
   "아직 페이지가 없습니다.": "No pages yet.",
   " (필터 적용)": " (filtered)",
   "조건에 맞는 기록이 없습니다 — 필터를 해제해 보세요.": "No records match — try clearing the filters.",
@@ -762,7 +1167,7 @@ const EN = {
   "스냅샷 로드 실패: ": "Snapshot load failed: ",
   "검색 실패: ": "Search failed: ",
 };
-const T = (s) => (LANG === "en" && EN[s]) || s;
+const T = (s) => (LANG === "en" && Object.hasOwn(EN, s)) ? EN[s] : s;  // 빈 번역("개"→"")도 유효한 번역이다 — truthy 판정이면 한국어가 새어 나온다
 const CNT = (n) => LANG === "en" ? n + (n === 1 ? " op" : " ops") : n + "건";
 const TIMES = (n) => LANG === "en" ? n + "×" : n + "회";
 function applyStaticLang(){
@@ -1120,7 +1525,7 @@ function renderGraph(){
     }
   });
 
-  // ── 죽은 링크 — 붉은 절단선 스텁 + 십자 표식 ──
+  // ── 끊어진 링크 — 붉은 절단선 스텁 + 십자 표식 ──
   G.deadEdges.forEach((de) => {
     const s = map[de.from];
     if(!s || !G.filters[s.kind]) return;
@@ -1347,7 +1752,8 @@ function detailHtml(p, opts){
   html += '<dl class="gdet-meta">' + drow(T("생성"), p.created) + drow(T("갱신"), p.updated)
     + drow(T("회수"), TIMES(p.uses)) + drow(T("최근 회수"), p.last_used) + '</dl>';
   if(p.poisoned){
-    html += '<p class="gdet-poison">' + esc(p.quarantine || T("오염 격리됨")) + '</p>';
+    html += '<p class="gdet-poison">' + T("위험이 감지돼 본문을 숨겼습니다. 확인하려면:")
+      + (p.quarantine_cmd ? ' <code class="cmd" style="margin-top:8px">' + esc(p.quarantine_cmd) + '</code>' : "") + '</p>';
   } else {
     if(p.body) html += '<pre class="gdet-body">' + esc(truncate(p.body, 1200)) + '</pre>';
     const outs = [];
@@ -1414,7 +1820,7 @@ function bindGraphInteraction(){
         tip.innerHTML = '<div class="tt-t">' + esc(hoverNode.title) + '</div>'
           + '<div class="tt-k" style="color:' + st.c + '">' + kdisp + '</div>'
           + '<div class="tt-m">' + mdisp
-          + (hoverNode.orphan ? ' · ' + T("고아") : '') + (hoverNode.poisoned ? ' · ' + T("오염 격리") : '') + '</div>';
+          + (hoverNode.orphan ? ' · ' + T("고아") : '') + (hoverNode.poisoned ? ' · ' + T("위험 감지 격리") : '') + '</div>';
         const rect = canvas.getBoundingClientRect();
         tip.style.left = Math.min(e.clientX - rect.left + 12, rect.width - 200) + "px";
         tip.style.top = (e.clientY - rect.top + 12) + "px";
@@ -1500,10 +1906,10 @@ function renderGraphStats(g){
   const semCount = g.edges.filter((e) => e.type === "semantic").length;
   const linkCount = g.edges.filter((e) => !e.dead && e.type !== "semantic").length;
   $("gStats").innerHTML =
-      '<div class="cell"><div class="v">' + g.nodes.length + '</div><div class="l">' + T("별 (페이지)") + '</div></div>'
-    + '<div class="cell"><div class="v">' + linkCount + '</div><div class="l">' + T("명시 링크") + '</div></div>'
-    + '<div class="cell"><div class="v">' + semCount + '</div><div class="l">' + T("의미 엣지") + '</div></div>'
-    + '<div class="cell' + (g.dead ? " bad" : "") + '"><div class="v">' + g.dead + '</div><div class="l">' + T("죽은 링크") + '</div></div>';
+      '<div class="cell"><div class="v">' + g.nodes.length + '</div><div class="l">' + T("페이지") + '</div></div>'
+    + '<div class="cell"><div class="v">' + linkCount + '</div><div class="l">' + T("직접 링크") + '</div></div>'
+    + '<div class="cell"><div class="v">' + semCount + '</div><div class="l">' + T("뜻 연결선") + '</div></div>'
+    + '<div class="cell' + (g.dead ? " bad" : "") + '"><div class="v">' + g.dead + '</div><div class="l">' + T("끊어진 링크") + '</div></div>';
   $("gCount").textContent = LANG === "en"
     ? "· stars " + g.nodes.length + " · lines " + g.edges.length
     : "· 별 " + g.nodes.length + " · 선 " + g.edges.length;
@@ -1569,9 +1975,10 @@ bindImeSafeSearch($("gq"), 200, (v) => {
 
 /* ══ 앱 셸 — 탭 바 + URL 해시 라우팅 + 탭별 lazy-load (agentmemory 뷰어 구성 이식) ══ */
 
-const TAB_IDS = ["개요", "성좌", "서고", "연대기", "활동"];
+const TAB_IDS = ["개요", "성좌", "서고", "전달", "정리", "연대기", "활동"];
 const APP = { active: "개요", loaded: {}, snap: null, snapPromise: null, graphReady: false, graphSig: "",
-  kind: "", op: "", q: "", sort: "updated", day: "", chronOffset: 0, inline: null, ovWoken: false };
+  kind: "", op: "", q: "", sort: "updated", day: "", chronOffset: 0, inline: null, ovWoken: false,
+  inj: null, injPromise: null };
 
 function normalizeTab(t){ return TAB_IDS.indexOf(t) >= 0 ? t : ""; }
 function tabFromRoute(){
@@ -1611,6 +2018,9 @@ async function loadTab(tab){
       case "개요": if(!APP.loaded["개요"]){ renderOverview(s); APP.loaded["개요"] = true; } break;
       case "성좌": refreshGraph(s); break;
       case "서고": if(!APP.loaded["서고"]){ renderKindChips(s); renderLibrary(); APP.loaded["서고"] = true; } break;
+      // 전달은 스냅샷과 별도 엔드포인트다 — 블록 원문이 커서 이 탭을 열 때만 받는다.
+      case "전달": if(!APP.loaded["전달"]){ renderInjection(await fetchInjection()); APP.loaded["전달"] = true; } break;
+      case "정리": if(!APP.loaded["정리"]){ renderNorn(s); APP.loaded["정리"] = true; } break;
       case "연대기": if(!APP.loaded["연대기"]){ renderChronicle(s); APP.loaded["연대기"] = true; } break;
       case "활동": if(!APP.loaded["활동"]){ renderActivity(s); APP.loaded["활동"] = true; } break;
     }
@@ -1623,6 +2033,17 @@ async function loadTab(tab){
         + '<button type="button" data-action="retry-load">' + T("다시 시도") + '</button></div>');
     }
   }
+}
+// 전달 — 스냅샷과 다른 통로. 갱신 때 캐시를 버려 다음 진입이 새 블록을 받는다.
+function fetchInjection(){
+  if(APP.inj) return Promise.resolve(APP.inj);
+  if(!APP.injPromise){
+    APP.injPromise = fetch("/api/injection", { cache: "no-store" })
+      .then((r) => r.json())
+      .then((j) => { APP.inj = j; return j; })
+      .catch((e) => { APP.injPromise = null; throw e; });
+  }
+  return APP.injPromise;
 }
 function fetchSnap(){
   if(APP.snap) return Promise.resolve(APP.snap);
@@ -1653,6 +2074,8 @@ function renderActiveTab(s){
     case "개요": renderOverview(s); APP.loaded["개요"] = true; break;
     case "성좌": refreshGraph(s); break; // 데이터 불변이면 시뮬 유지 — 드래그 배치를 부수지 않는다
     case "서고": renderKindChips(s); renderLibrary(); APP.loaded["서고"] = true; break;
+    case "전달": fetchInjection().then((j) => { renderInjection(j); APP.loaded["전달"] = true; }).catch(() => {}); break;
+    case "정리": renderNorn(s); APP.loaded["정리"] = true; break;
     case "연대기": renderChronicle(s); APP.loaded["연대기"] = true; break;
     case "활동": renderActivity(s); APP.loaded["활동"] = true; break;
   }
@@ -1668,6 +2091,7 @@ async function refreshNow(){
     APP.snap = s;
     APP.snapPromise = Promise.resolve(s);
     renderMeta(s);
+    APP.inj = null; APP.injPromise = null; // 전달도 같이 낡는다 — 캐시를 버려야 다음 진입이 새 블록을 본다
     APP.loaded = {}; // 비활성 탭은 다음 진입 때 새 데이터로 lazy 재렌더
     renderActiveTab(s);
     setLiveBadge(true);
@@ -1692,9 +2116,10 @@ document.addEventListener("visibilitychange", () => {
 function renderMeta(s){
   const m = s.meta;
   $("metaLine").innerHTML =
-    '<span>' + T("서고") + ' <b>' + esc(m.dir) + '</b></span>'
+    '<span>' + T("서고") + ' <b class="dir" title="' + esc(m.dir) + '">' + esc(m.dir) + '</b></span>'
     + '<span>' + T("페이지") + ' <b class="num">' + m.pages + '</b></span>'
-    + '<span>' + T("시맨틱") + ' <b class="' + (m.semantic ? "on" : "off") + '">' + (m.semantic ? "on · " + esc(m.semantic_mode) : "off") + '</b></span>'
+    + '<span>' + T("뜻 검색") + ' <b class="' + (m.semantic ? "on" : "off") + '">'
+      + (m.semantic ? T("켜짐") : m.semantic_mode === "off" ? T("꺼둠") : T("준비 안 됨")) + '</b></span>'
     + '<span>' + esc(m.generated) + '</span>';
 }
 // 성좌 데이터 서명 — 폴링 갱신 때 이 값이 같으면 재시드하지 않는다 (드래그 배치 보존)
@@ -1705,11 +2130,19 @@ function graphSig(g){
   });
 }
 function renderOrphans(s){
+  const capEl = $("gSemHint");
+  if(capEl && s.graph.sem_capped){
+    capEl.innerHTML = '<p class="semhint"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'
+      + '<path d="M7 1.8l5.4 9.4H1.6z" fill="none" stroke="currentColor" stroke-width="1.2"/>'
+      + '<path d="M7 5.6v2.4" stroke="currentColor" stroke-width="1.2"/></svg><span>'
+      + T("페이지가 ") + s.graph.sem_cap + T("장을 넘어 뜻 연결선 계산을 접었습니다 — 직접 링크만 그립니다.")
+      + '</span></p>';
+  }
   $("orphanCount").textContent = "· " + s.graph.orphans.length;
   $("orphanList").innerHTML = s.graph.orphans.slice(0, 12).map((o) =>
     '<li><span class="dot"></span><button type="button" class="linklike mono" style="font-size:12px" data-slug="' + esc(o) + '">' + esc(o) + '</button></li>').join("")
     || (s.graph.nodes.length
-      ? '<li class="empty" style="color:var(--heal)">' + T("고아 없음 — 모두 연결됨") + '</li>'
+      ? '<li class="empty" style="color:var(--heal)">' + T("모두 어딘가와 이어져 있습니다") + '</li>'
       : '<li class="empty">' + T("아직 페이지가 없습니다.") + '</li>');
 }
 function renderSemHint(s){
@@ -1749,7 +2182,7 @@ function refreshGraph(s){
   seedGraph(s);
 }
 
-/* ══ 개요 — 통계 카드 → 게이지+건강 → 시맨틱 → 2단 (agentmemory Dashboard 순서) ══ */
+/* ══ 개요 — 통계 띠 + 벤또 격자(계기 줄 / 목록 줄) + 원본·파생 표 ══ */
 
 function ovCard(v, label, sub, cls){
   return '<div class="stat ' + cls + '"><div class="v num">' + v + '</div><div class="l">' + esc(label) + '</div><div class="s">' + esc(sub) + '</div></div>';
@@ -1816,9 +2249,9 @@ function renderOverview(s){
   $("ovStats").innerHTML =
       ovCard(cat.length, T("페이지"), T("서고에 쌓인 기록"), "")
     + ovCard(kn.length, T("종류"), kn.slice(0, 3).map((k) => k + " " + kinds[k]).join(" · ") || T("비어 있음"), "")
-    + ovCard(usesSum, T("회수 총합"), T("검색이 실제로 꺼내 쓴 횟수"), "")
-    + ovCard(g.dead, T("죽은 링크"), g.dead ? T("가리키는 페이지가 없는 링크 — 정리 대상") : T("끊긴 참조 없음"), g.dead ? "crit" : "")
-    + ovCard(g.orphans.length, T("고아 페이지"), g.orphans.length ? T("어떤 페이지와도 이어지지 않음") : T("모두 연결됨"), g.orphans.length ? "warn" : "");
+    + ovCard(usesSum, T("꺼내 쓴 횟수"), T("검색이 이 기억을 실제로 꺼내 쓴 횟수"), "")
+    + ovCard(g.dead, T("끊어진 링크"), g.dead ? T("가리키는 페이지가 없는 링크") : T("끊어진 링크 없음"), g.dead ? "crit" : "")
+    + ovCard(g.orphans.length, T("연결 없는 페이지"), g.orphans.length ? T("어떤 페이지와도 이어지지 않음") : T("모두 연결됨"), g.orphans.length ? "warn" : "");
   const ov = $("ovStats");
   ov.classList.toggle("wake", first && !REDUCED);
   Array.prototype.forEach.call(ov.children, (el, i) => el.style.setProperty("--i", i));
@@ -1828,17 +2261,12 @@ function renderOverview(s){
   renderSpark(s.activity);
   $("budgetText").innerHTML = '<b class="num" style="color:var(--gold-lit)">' + b.size + '</b> / ' + b.budget + (LANG === "en" ? " chars" : "자")
     + '<br><span style="color:' + (b.state === "crit" ? "var(--crit)" : b.state === "warn" ? "var(--warn)" : "var(--ink-dim)") + '">'
-    + (b.state === "crit" ? T("예산 초과 — add 가 거부됩니다. 페이지를 통합하세요") : b.state === "warn" ? T("예산 임박") : T("여유")) + '</span>';
+    + (b.state === "crit" ? T("한도 초과 — 넘친 종류의 뒷줄이 전달에서 잘립니다. 페이지를 합쳐 주세요") : b.state === "warn" ? T("예산 임박") : T("여유")) + '</span>';
 
   const fl = $("findList");
   if(!s.health.findings.length){ fl.innerHTML = '<li style="grid-template-columns:1fr;color:var(--heal)">' + T("건강함 — 발견된 문제 없음") + '</li>'; }
   else fl.innerHTML = s.health.findings.slice(0, 40).map((f) =>
     '<li>' + fchip(f.level) + '<span><span class="sl">' + esc(f.slug) + '</span> <span class="ms">' + esc(f.code) + ' — ' + esc(f.msg) + '</span></span></li>').join("");
-
-  $("semState").innerHTML = '<span class="lab">' + T("시맨틱 회수") + '</span> '
-    + (s.meta.semantic
-      ? '<span><b style="color:var(--heal)">on</b> · ' + esc(s.meta.semantic_mode) + ' — ' + T("의미 유사 엣지(점선)와 SEM 레인이 켜져 있습니다") + '</span>'
-      : '<span><b style="color:var(--ink-ghost)">off</b> — ' + T("켜기 전까지는 전문 검색(FTS)·본문 스캔만 사용합니다") + '</span>');
 
   $("ovLog").innerHTML = s.log.slice(0, 8).map(logRow).join("") || '<li class="empty">' + T("로그 없음") + '</li>';
 
@@ -1846,6 +2274,144 @@ function renderOverview(s){
   $("topUse").innerHTML = top.length ? top.map((u) =>
     '<li><span class="ti"><button type="button" class="linklike mono" style="font-size:12.5px" data-slug="' + esc(u.slug) + '">' + esc(u.slug) + '</button></span><span class="u">' + u.uses + '×</span><span class="du">' + daysAgo(u.last_used) + '</span></li>').join("")
     : '<li class="empty">' + T("아직 회수 기록 없음") + '</li>';
+
+  renderOvInject(s);
+  renderOvSemantic(s);
+  renderDerived(s);
+}
+
+/* ── 개요 · AI 에게 가는 분량 — 저장량이 아니라 전송량을 말한다 ── */
+function renderOvInject(s){
+  const el = $("ovInject");
+  if(!el) return;
+  const b = s.meta.budget, on = s.meta.inject !== false;
+  const over = (b.sections || []).filter((x) => x.state === "crit").length;
+  el.innerHTML =
+    '<div class="injstate" style="margin-bottom:14px">'
+    + '<span class="sw ' + (on ? "on" : "off") + '">' + (on ? T("전달 켜짐") : T("전달 꺼짐")) + '</span>'
+    + '<span class="note">' + (on
+        ? T("대화가 시작될 때 목록이 한 번 고정되어 AI 에게 함께 전달됩니다.")
+        : T("전달이 꺼져 있어 어떤 AI 에게도 나가지 않습니다.")) + '</span></div>'
+    + '<ul class="uselist"><li><span class="ti">' + T("전달 분량") + '</span><span class="u num">' + b.size + '</span><span class="du">/ ' + b.budget + '</span></li>'
+    + '<li><span class="ti">' + T("한도를 넘은 종류") + '</span><span class="u num" style="color:' + (over ? "var(--crit-ink)" : "var(--heal)") + '">' + over + '</span><span class="du">' + (b.sections || []).length + T("개 종류") + '</span></li></ul>'
+    + '<p style="margin:12px 0 0"><button type="button" class="linklike" data-action="open-tab" data-tab="전달">' + T("전달 전체 보기 →") + '</button></p>';
+}
+
+/* ── 개요 · 뜻 검색 준비 — "켜짐"과 "이 서고에 벡터가 있음"은 다른 말이다 ── */
+function renderOvSemantic(s){
+  const el = $("ovSem");
+  if(!el) return;
+  const sem = s.semantic || { state: "off", mode: "off", vectors: 0, pages: 0, pct: 0, model: "", dim: 0 };
+  // 세 상태를 가른다 — 내가 껐다 / 켜져 있는데 못 돈다 / 정상. 앞의 둘을 같이 'off' 라고
+  // 적으면 사용자는 원인을 못 찾는다(기본값은 켜짐이라 대개 두 번째다).
+  if(sem.state !== "ready"){
+    el.innerHTML = sem.mode === "off"
+      ? '<p class="empty" style="margin:0">' + T("꺼 두셨습니다 — 지금은 제목·본문 글자 검색만 씁니다.") + '</p>'
+      : '<div class="injstate" style="margin:0"><span class="sw off">' + T("켜져 있지만 못 돕니다") + '</span>'
+        + '<span class="note">' + (sem.blocked === "library"
+            ? T("뜻 검색에 쓰는 부품이 설치에 빠져 있습니다. 기본으로 함께 깔리는 것이라, 설치가 오래된 경우입니다.")
+            : sem.blocked === "model"
+            ? T("모델을 아직 안 받았습니다. 한 번만 받아 두면 그다음부터는 바로 씁니다.")
+            : T("설정은 켜짐인데 준비가 안 됐습니다.")) + '</span></div>'
+        + (sem.fix ? '<code class="cmd" style="margin-top:12px">' + esc(sem.fix) + '</code>' : "");
+    return;
+  }
+  const gap = Math.max(0, (sem.pages || 0) - (sem.vectors || 0));
+  el.innerHTML =
+    '<ul class="injmeter"><li class="' + (sem.pct >= 100 ? "" : sem.pct >= 60 ? "warn" : "crit") + '">'
+    + '<div class="row"><span class="nm">' + T("뜻으로 찾을 수 있는 페이지") + '</span>'
+    + '<span class="pc num">' + sem.vectors + ' / ' + sem.pages + ' · ' + sem.pct + '%</span></div>'
+    + '<span class="track"><i class="fill" style="width:' + Math.min(100, sem.pct) + '%"></i></span>'
+    + (gap ? '<p class="drop">' + gap + T("장은 아직 뜻으로 못 찾습니다 — asgard memory reindex 를 돌리면 채워집니다") + '</p>' : "")
+    + (sem.dim_mixed ? '<p class="drop">' + T("벡터 차원이 섞였습니다 — 모델을 바꾼 뒤 재색인을 안 한 상태입니다. asgard memory reindex") + '</p>' : "")
+    + '</li></ul>'
+    + '<p class="dimnote" style="margin:12px 0 0">'
+      + (sem.evidence === "loaded" ? T("모델이 올라와 있습니다") + " · " + esc(sem.model || "—")
+         : sem.evidence === "vectors" ? T("저장된 벡터가 실제로 돌았음을 증명합니다")
+         : T("부품과 모델은 준비됐고, 아직 벡터는 없습니다"))
+      + ' · ' + esc(sem.mode) + '</p>';
+}
+
+/* ── 개요 · 원본과 파생 — 무엇을 잃으면 기억이 사라지는가 ── */
+function renderDerived(s){
+  const el = $("ovDerived");
+  if(!el) return;
+  const rows = (s.derived && s.derived.rows) || [];
+  el.innerHTML = rows.map((r) => {
+    const qty = !r.exists ? T("없음") : r.kind === "dir" ? r.n + T("개") : fmtBytes(r.n);
+    return '<li class="' + (r.exists ? "" : "gone") + '">'
+      + '<span class="tag ' + (r.canon ? "canon" : "derived") + '">' + (r.canon ? T("원본") : T("자동생성")) + '</span>'
+      + '<span class="nm">' + esc(r.name) + '</span>'
+      + '<span class="qty">' + qty + '</span>'
+      + '<span class="nt">' + esc(T(r.note)) + '</span></li>';
+  }).join("") || '<li class="empty">—</li>';
+}
+function fmtBytes(n){
+  n = Number(n) || 0;
+  if(n < 1024) return n + " B";
+  if(n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+  return (n / 1024 / 1024).toFixed(1) + " MB";
+}
+
+/* ══ 전달 — AI 에게 가는 내용 원문 + 종류별 한도 + 제외분 ══ */
+function renderInjection(j){
+  j = j || { enabled: false, text: "", chars: 0, sections: [], excluded: [], excluded_total: 0 };
+  const meta = $("injMeta");
+  if(meta) meta.textContent = j.chars + (LANG === "en" ? " chars" : "자") + (j.truncated ? " · " + T("잘림") : "");
+  const st = $("injState");
+  if(st){
+    st.innerHTML = '<div class="injstate">'
+      + '<span class="sw ' + (j.enabled ? "on" : "off") + '">' + (j.enabled ? T("전달 켜짐") : T("전달 꺼짐")) + '</span>'
+      + '<span class="note">' + (j.enabled
+          ? T("대화가 시작될 때 한 번 고정되고, 그 대화 동안 바뀌지 않습니다.")
+          : T("전달이 꺼져 있습니다 — 아래 내용은 비어 있고, 어떤 AI 도 이 기억을 못 봅니다.")) + '</span>'
+      + (j.total_budget != null ? '<span class="sw" style="color:var(--ink-dim);border-color:var(--line-strong)">'
+          + T("전체 한도 ") + j.total_budget + '</span>' : "")
+      + '<span class="sw" style="color:var(--ink-dim);border-color:var(--line-strong)">' + T("검색 결과 한도 ") + (j.recall_budget || 0) + '</span>'
+      + '</div>';
+  }
+  const blk = $("injBlock");
+  if(blk){
+    blk.innerHTML = j.text ? highlightInjection(j.text)
+      : '<span class="dimnote">' + T("전달되는 내용이 없습니다 — 저장된 페이지가 없거나 전달이 꺼져 있습니다.") + '</span>';
+  }
+  const mt = $("injMeter");
+  if(mt){
+    mt.innerHTML = (j.sections || []).map((sec) => {
+      const cls = sec.muted ? "crit" : sec.kept < sec.rows ? "crit" : sec.pct >= 85 ? "warn" : "";
+      return '<li class="' + cls + '">'
+        + '<div class="row"><span class="nm">' + esc(sec.label) + '</span><span class="kd">' + esc(sec.kind) + '</span>'
+        + '<span class="pc num">' + sec.pct + '% · ' + sec.full + '/' + sec.budget + '</span></div>'
+        + '<span class="track"><i class="fill" style="width:' + Math.min(100, sec.pct) + '%"></i></span>'
+        + (sec.muted ? '<p class="drop">' + T("한도 0 — 저장은 되지만 전달되지 않습니다") + '</p>' : "")
+        + (!sec.muted && sec.kept < sec.rows
+            ? '<p class="drop">' + (sec.rows - sec.kept) + T("행이 밀려났습니다: ") + sec.dropped.map(esc).join(" · ") + '</p>' : "")
+        + (!sec.muted && sec.rows && sec.kept === sec.rows ? '<p class="mute">' + sec.kept + T("행 전부 실림") + '</p>' : "")
+        + '</li>';
+    }).join("") || '<li class="empty">' + T("전달할 내용이 없습니다") + '</li>';
+  }
+  const ex = $("injExcluded");
+  if(ex){
+    ex.innerHTML = '<p class="sectitle">' + T("전달에서 빠진 것") + '</p>'
+      + ((j.excluded || []).length
+        ? '<ul class="injex">' + j.excluded.map((p) =>
+            '<li><span class="poison">' + T("위험 감지") + '</span><button type="button" class="linklike mono" style="font-size:12px" data-slug="'
+            + esc(p.slug) + '">' + esc(p.title || p.slug) + '</button></li>').join("") + '</ul>'
+          + (j.excluded_total > j.excluded.length
+              ? '<p class="dimnote" style="margin-top:8px">' + T("외 ") + (j.excluded_total - j.excluded.length) + T("장") + '</p>' : "")
+        : '<p class="empty" style="margin:0">' + T("없음 — 위험 감지로 빠진 페이지가 없습니다.") + '</p>');
+  }
+}
+// 블록 원문 강조 — 펜스·종류 머리글·잘림 경고만 물들인다 (내용은 원문 그대로)
+function highlightInjection(text){
+  // 앞뒤 이음 개행만 접는다 — 블록이 앞선 프롬프트에 눌어붙지 않게 하는 이음매라 내용이 아니다.
+  // 글자 수(injMeta)는 접기 전 실제 길이를 그대로 쓴다.
+  return esc(String(text).replace(/^\n+/, "").replace(/\n+$/, "")).split("\n").map((line) => {
+    if(/^&lt;\/?memory-context/.test(line)) return '<span class="fence">' + line + '</span>';
+    if(/^## /.test(line)) return '<span class="head">' + line + '</span>';
+    if(/^- … /.test(line)) return '<span class="warnline">' + line + '</span>';
+    return line;
+  }).join("\n");
 }
 function logRow(l){
   const oc = opStyle(l.op);
@@ -1854,7 +2420,7 @@ function logRow(l){
     + (l.detail ? ' <span style="color:var(--ink-ghost)">' + esc(l.detail) + '</span>' : "") + '</span></li>';
 }
 
-/* ══ 서고 — 카탈로그 표 + 질의 스트림 프리즘 통합 (agentmemory Memories 구성) ══ */
+/* ══ 서고 — 카탈로그 표 + 검색 경로 통합 (agentmemory Memories 구성) ══ */
 
 function renderKindChips(s){
   const counts = {};
@@ -1878,7 +2444,7 @@ function renderKindChips(s){
     + kinds.map((k) => chip(k, shapeSwatch(k) + esc(kindName(k)) + ' <span class="cnt">' + counts[k] + '</span>')).join("");
   renderSortChips();
   $("catCount").textContent = s.catalog.length ? "· " + s.catalog.length : "";
-  $("semNote").innerHTML = s.meta.semantic ? "" : '<span style="color:var(--ink-ghost)">' + T("(시맨틱 비활성 — opt-in)") + '</span>';
+  $("semNote").innerHTML = s.meta.semantic ? "" : '<span style="color:var(--ink-ghost)">' + T("(뜻 검색은 아직 안 씁니다)") + '</span>';
 }
 // 정렬 토글 — updated(기본)/회수/제목, aria-pressed 칩
 const SORTS = [["updated", "갱신순"], ["uses", "회수순"], ["title", "제목순"]];
@@ -2025,37 +2591,104 @@ function closeInlineDetail(refocus){
 
 const CHRON_LIMIT = 60; // 60건 페이지 — /api/log 서버 페이지네이션 소비
 function renderNorn(s){
-  const dr = (s && s.norn) || { reports: [], insights: [], auto_mode: "safe" };
+  const dr = (s && s.norn) || { reports: [], insights: [], auto_mode: "safe", insight_auto: false,
+    contradictions: [], archive: [], backups: [], patterns: [] };
   const meta = $("nornMeta");
-  if(meta) meta.textContent = T("자율 모드 ") + dr.auto_mode + " · " + dr.insights.length;
-  const rmeta = $("nornRepMeta");
-  if(rmeta) rmeta.textContent = String(dr.reports.length);
+  if(meta) meta.textContent = dr.insights.length + T("통찰") + " · " + dr.reports.length + T("리포트");
+
+  // 자율 모드 — 노른이 사람 승인 없이 무엇까지 하는지가 이 창의 첫 문장이어야 한다
+  const modes = $("nornModes");
+  if(modes){
+    const auto = dr.auto_mode || "safe";
+    const autoNote = auto === "off" ? T("자동 없음 — 전부 사람이 실행합니다")
+      : auto === "full" ? T("병합·보관·모순까지 자동입니다")
+      : T("모순 보고만 자동입니다");
+    modes.innerHTML =
+      '<span class="mode ' + (auto === "off" ? "off" : "on") + '"><b>' + T("자율 모드") + '</b> ' + esc(auto) + '</span>'
+      + '<span class="mode ' + (dr.insight_auto ? "on" : "off") + '"><b>' + T("통찰 자동 승격") + '</b> '
+      + (dr.insight_auto ? "on" : "off") + '</span>'
+      + '<span class="mode off">' + esc(autoNote) + '</span>'
+      + (dr.insight_auto ? "" : '<span class="mode off">' + T("통찰은 제안까지만 — 사람이 엽니다") + '</span>');
+  }
+
   const insEl = $("nornInsights");
   if(insEl){
     insEl.innerHTML = dr.insights.length
-      ? dr.insights.map((i) =>
-          '<li><span class="ts">' + esc(i.created || "") + '</span><span class="op">' + esc(i.confidence || "—")
-          + '</span><span class="sl"><a href="#" data-slug="' + esc(i.slug) + '">' + esc(i.title) + '</a>'
-          + (i.sources && i.sources.length
-              ? ' <span class="dimnote">← ' + i.sources.map(esc).join(", ") + '</span>' : "")
-          + '</span></li>').join("")
-      : '<li><span class="ts"></span><span class="op"></span><span class="sl dimnote">'
-        + T("insight 없음 — 노른이 패턴을 승격하면 계보가 남는다") + '</span></li>';
+      ? dr.insights.map((i) => {
+          const c = (i.confidence || "").toLowerCase();
+          return '<li><div class="row" style="display:flex;gap:8px;align-items:baseline;flex-wrap:wrap">'
+            + '<button type="button" class="linklike tt" data-slug="' + esc(i.slug) + '">' + esc(i.title) + '</button>'
+            + (c ? '<span class="conf conf-' + esc(c) + '">' + esc(c) + '</span>' : "")
+            + '<span class="dimnote" style="margin-left:auto">' + esc(i.created || "") + ' · ' + (i.uses || 0) + '×</span></div>'
+            + (i.sources && i.sources.length
+                ? '<div class="src"><span class="arrow">←</span>' + i.sources.map((sc) =>
+                    '<button type="button" class="lchip" data-slug="' + esc(sc) + '">' + esc(sc) + '</button>').join("") + '</div>'
+                : '<div class="src dimnote">' + T("출처 링크 없음") + '</div>')
+            + '</li>';
+        }).join("")
+      : '<li class="empty">' + T("아직 통찰이 없습니다 — 노른이 패턴을 승격하면 계보가 남습니다.") + '</li>';
   }
+
+  const conEl = $("nornContra");
+  if(conEl){
+    conEl.innerHTML = (dr.contradictions || []).length
+      ? dr.contradictions.map((c) =>
+          '<li><div class="pair"><button type="button" class="linklike mono" data-slug="' + esc(c.a) + '">' + esc(c.a) + '</button>'
+          + '<span>↔</span><button type="button" class="linklike mono" data-slug="' + esc(c.b) + '">' + esc(c.b) + '</button></div>'
+          + '<p class="why">' + esc(c.why || "") + '</p></li>').join("")
+      : '<li class="empty" style="border:0;background:none;padding:0">' + T("어긋난 기록이 보고된 적 없습니다.") + '</li>';
+  }
+
   const repEl = $("nornReports");
   if(repEl){
-    const sum = (c) => ["merge","archive","insight","contradiction","proposed"].map((k) => c[k] ? k + " " + c[k] : "")
+    const sum = (c) => ["merge","archive","insight","contradiction","proposed","dropped"].map((k) => c[k] ? k + " " + c[k] : "")
       .filter(Boolean).join(" · ") || T("변경 없음");
-    repEl.innerHTML = dr.reports.length
-      ? dr.reports.map((r) =>
-          '<li><span class="ts">' + esc(r.name.replace(/^norn-|\.md$/g, "")) + '</span><span class="op">norn</span>'
-          + '<span class="sl">' + esc(sum(r.counts)) + '</span></li>').join("")
-      : '<li><span class="ts"></span><span class="op"></span><span class="sl dimnote">'
-        + T("리포트 없음 — asgard memory norn 으로 첫 통합을 실행") + '</span></li>';
+    const rows = (dr.reports || []).map((r) =>
+        '<li><span class="ts">' + esc(r.name.replace(/^norn-|\.md$/g, "")) + '</span><span class="op">norn</span>'
+        + '<span class="sl">' + esc(sum(r.counts)) + '</span></li>')
+      .concat((dr.patterns || []).map((r) =>
+        '<li><span class="ts">' + esc(r.name.replace(/^pattern-|\.md$/g, "")) + '</span><span class="op" style="color:var(--gem)">pattern</span>'
+        + '<span class="sl">' + T("승격 ") + r.applied + ' · ' + T("기각 ") + r.dropped + '</span></li>'));
+    repEl.innerHTML = rows.join("")
+      || '<li><span class="ts"></span><span class="op"></span><span class="sl dimnote">'
+        + T("리포트 없음 — asgard memory norn 으로 첫 정리를 실행하세요.") + '</span></li>';
+  }
+
+  const arcEl = $("nornArchive");
+  if(arcEl){
+    const am = $("arcMeta");
+    if(am) am.textContent = String((dr.archive || []).length);
+    arcEl.innerHTML = (dr.archive || []).length
+      ? dr.archive.map((a) =>
+          '<li><span class="sl">' + esc(a.slug) + '</span><span class="dt">' + esc(a.ts) + '</span>'
+          + '<code class="cmd" style="grid-column:1/-1">' + esc(a.restore) + '</code></li>').join("")
+      : '<li class="empty">' + T("접어 둔 페이지가 없습니다.") + '</li>';
+  }
+
+  const bkEl = $("nornBackups");
+  if(bkEl){
+    const bm = $("bkMeta");
+    if(bm) bm.textContent = String((dr.backups || []).length);
+    bkEl.innerHTML = (dr.backups || []).length
+      ? dr.backups.map((b) =>
+          '<li><span class="sl">' + esc(b.name) + '</span><span class="dt">' + b.pages + T("장") + '</span></li>').join("")
+      : '<li class="empty">' + T("백업 없음 — 병합·보관을 실행한 적이 없습니다.") + '</li>';
+  }
+
+  const peer = (s && s.peer) || { exists: false, rows: [], slug: "" };
+  const peerEl = $("peerCard");
+  if(peerEl){
+    const pm = $("peerMeta");
+    if(pm) pm.textContent = peer.exists ? T("카드 있음 · ") + peer.rows.length : peer.rows.length ? T("재료 ") + peer.rows.length : "";
+    peerEl.innerHTML = peer.rows.length
+      ? peer.rows.map((r) =>
+          '<li><span class="sl" style="white-space:normal">' + esc(r.text) + '</span>'
+          + '<button type="button" class="linklike mono dt" data-slug="' + esc(r.slug) + '">' + esc(r.slug) + '</button></li>').join("")
+        + (peer.exists ? "" : '<li class="empty">' + T("재료는 있는데 카드가 아직 없습니다 — asgard memory pattern 이 만듭니다.") + '</li>')
+      : '<li class="empty">' + T("소유자 관측(kind=user)이 아직 없습니다.") + '</li>';
   }
 }
 function renderChronicle(s){
-  renderNorn(s); // 노른 손질 이력 — 연대기와 같은 스냅샷으로 동장한다
   const a = (s && s.activity) || { ops: {}, total: 0 };
   const fams = Object.keys(a.ops).sort((x, y) => a.ops[y] - a.ops[x]);
   const chip = (f, label) => {
@@ -2170,7 +2803,7 @@ function renderActivity(s){
     + (a.first ? " · " + a.first + " ~ " + a.last : "");
 
   if(!a.total){
-    $("heatWrap").innerHTML = onboardHtml(T("아직 활동 기록이 없습니다 — 첫 기록이 첫 칸을 밝힙니다."));
+    $("heatWrap").innerHTML = onboardHtml(T("아직 활동 기록이 없습니다 — 첫 기록이 이 열지도를 밝힙니다."));
     $("opBars").innerHTML = '<p class="empty">' + T("기록 없음") + '</p>';
     $("actFeed").innerHTML = '<li class="empty">' + T("기록 없음") + '</li>';
     return;
@@ -2223,7 +2856,7 @@ function renderActivity(s){
   $("actFeed").innerHTML = s.log.slice(0, 14).map(logRow).join("") || '<li class="empty">' + T("기록 없음") + '</li>';
 }
 
-/* ══ 관문 호출 — ⌘K 명령 팔레트 (읽기 전용 항해: 스냅샷 데이터만 쓴다) ══════════ */
+/* ══ 빠른 이동 — ⌘K 명령 팔레트 (읽기 전용 항해: 스냅샷 데이터만 쓴다) ══════════ */
 
 const PAL = { sel: 0, items: [], opener: null };
 const PAL_GLYPH = {
@@ -2350,6 +2983,7 @@ document.addEventListener("click", (ev) => {
     loadTab(APP.active);
   }
   else if(act === "open-tab") switchTab(t.getAttribute("data-tab"));
+  else if(act === "width-set") setWidth(t.getAttribute("data-width"));
   else if(t.hasAttribute("data-slug")) gotoSlug(t.getAttribute("data-slug"));
 });
 document.addEventListener("keydown", (ev) => {
@@ -2406,6 +3040,39 @@ setTimeout(dismissSplash, 5000); // 어떤 실패에도 스플래시가 화면�
 
 // 플랫폼별 단축키 표기 — 맥은 ⌘K, 그 외 Ctrl K
 try{ if(!/Mac|iP/.test(navigator.platform || "")) $("palOpen").querySelector("kbd").textContent = "Ctrl K"; }catch(e){}
+
+/* ── 화면 폭 — 셸의 최대 폭은 사용자 소유다 ──────────────────────────────────────
+   넓히면 줄이 길어지는 게 아니라 열이 늘어난다(그리드는 span, 글 종류은 --measure 상한).
+   선택은 localStorage 에 남고, 성좌 캔버스는 폭이 바뀐 만큼 다시 잰다. */
+const WIDTHS = ["snug", "cozy", "wide", "full"];
+function setWidth(mode, quiet){
+  mode = WIDTHS.indexOf(mode) >= 0 ? mode : "cozy";
+  // cozy 는 :root 기본값 그대로 — 속성을 비워 두면 폭 토큰이 한 곳에서만 정의된다
+  if(mode === "cozy") document.documentElement.removeAttribute("data-width");
+  else document.documentElement.setAttribute("data-width", mode);
+  document.querySelectorAll('[data-action="width-set"]').forEach((b) => {
+    b.setAttribute("aria-pressed", b.getAttribute("data-width") === mode ? "true" : "false");
+  });
+  if(!quiet){
+    try{ localStorage.setItem("asgard-dash-width", mode); }catch(e){}
+    // 캔버스는 CSS 픽셀이 아니라 실측 크기로 그린다 — 폭이 바뀌면 다시 재야 한다
+    if(typeof resizeCanvas === "function" && APP.graphReady){ resizeCanvas(); if(!G.raf) renderGraph(); }
+  }
+}
+(function initWidth(){
+  let saved = "cozy";
+  try{ saved = localStorage.getItem("asgard-dash-width") || "cozy"; }catch(e){}
+  setWidth(saved, true);
+})();
+
+// 브랜드 마크 — 로고 에셋이 없으면 관문 삼중 아치로 우아하게 저하 (map 뷰와 같은 앵커)
+(function initBrand(){
+  const img = $("brandImg"), mark = $("brandMark");
+  if(!img || !mark) return;
+  const show = () => { img.remove(); mark.removeAttribute("hidden"); mark.parentElement.classList.add("no-img"); };
+  if(!img.getAttribute("src")){ show(); return; }
+  img.addEventListener("error", show);
+})();
 
 applyStaticLang(); // 언어 적용은 첫 렌더 전 — 정적 마크업을 한 번에 재도장
 switchTab(tabFromRoute() || "개요", { replaceRoute: true });

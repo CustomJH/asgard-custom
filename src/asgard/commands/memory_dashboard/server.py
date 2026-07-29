@@ -10,7 +10,7 @@ from importlib.resources import files as _files
 from urllib.parse import parse_qs, urlsplit
 
 from ... import memory, ui
-from .data import _LOGO_URI, log_query, page_data, search_data, snapshot_data
+from .data import _LOGO_URI, _MARK_URI, injection_data, log_query, page_data, search_data, snapshot_data
 
 # ── 라우팅 (소켓 없이 단위 테스트 가능한 순수 디스패치) ──────────────────────────────
 
@@ -39,6 +39,10 @@ def dispatch(method: str, path: str, params: dict[str, list[str]], d: str | None
         return 200, "text/html; charset=utf-8", render_html().encode("utf-8")
     if path == "/api/snapshot":
         body = _json.dumps(snapshot_data(d), ensure_ascii=False).encode("utf-8")
+        return 200, "application/json; charset=utf-8", body
+    if path == "/api/injection":
+        # 주입면은 스냅샷 블록 원문을 통째로 싣는다 — 페이로드가 커서 탭이 열릴 때만 부른다.
+        body = _json.dumps(injection_data(d), ensure_ascii=False).encode("utf-8")
         return 200, "application/json; charset=utf-8", body
     if path == "/api/search":
         q = (params.get("q") or [""])[0]
@@ -153,7 +157,8 @@ def _open(url: str) -> None:
 
 
 def render_html() -> str:
-    return _PAGE.replace("__LOGO__", _LOGO_URI)
+    # 두 자리에 서로 다른 그림이 들어간다 — 스플래시는 브랜드 락업, 헤더는 위그드라실 마크(map 과 공유).
+    return _PAGE.replace("__LOGO__", _LOGO_URI).replace("__MARK__", _MARK_URI)
 
 
 # 자기완결 단일 HTML 에셋 — 로고 png(_packaged_logo)와 같은 importlib.resources 패턴, import 시 1회 로드

@@ -44,6 +44,26 @@ def _logo_data_uri() -> str:
 _LOGO_URI = _logo_data_uri()
 
 
+def _packaged_mark() -> bytes | None:
+    """헤더 브랜드 마크 — 위그드라실 엠블럼. `asgard map` 이 읽는 바로 그 파일이다
+    (map_graph/view.py `_logo_data_uri`). 같은 파일을 쓰는 것이 두 창을 한 제품으로
+    묶는 실제 배선이다 — 각자 다른 로고를 인라인하면 '공통 앵커'는 말뿐이 된다."""
+    try:
+        from importlib.resources import files
+
+        return (files("asgard") / "assets" / "yggdrasil-mark.png").read_bytes()
+    except Exception:
+        return None
+
+
+def _mark_data_uri() -> str:
+    data = _packaged_mark()
+    return "data:image/png;base64," + base64.b64encode(data).decode() if data else ""
+
+
+_MARK_URI = _mark_data_uri()
+
+
 # ── 데이터 조립 (전부 읽기 전용, asgard.memory 실함수) ──────────────────────────────
 
 
@@ -175,27 +195,70 @@ def graph_data(d: str) -> dict:
                 "orphan": slug in orphans,
             }
         )
-    return {"nodes": nodes, "edges": edges + sem_edges, "orphans": orphans, "dead": dead}
+    # 의미 연결선을 접었으면 그렇다고 말한다 — 조용히 비면 "이어진 게 없다"로 읽힌다.
+    vec_count = 0
+    try:
+        conn = memory._db(d)
+        vec_count = int(conn.execute("SELECT count(*) FROM vec").fetchone()[0])
+        conn.close()
+    except Exception:
+        pass
+    return {
+        "nodes": nodes,
+        "edges": edges + sem_edges,
+        "orphans": orphans,
+        "dead": dead,
+        "sem_capped": vec_count > SEM_EDGE_MAX_NODES,
+        "sem_cap": SEM_EDGE_MAX_NODES,
+    }
 
 
 SEM_EDGE_FLOOR = 0.35  # 의미 엣지 문턱 — 검색 floor(0.20)보다 높게: 그래프는 확신 연결만
 SEM_EDGE_TOP = 3  # 노드당 의미 엣지 상한 — 완전그래프化 방지
+# 쌍 비교 상한 — 이 계산은 O(n²)이고 30초 폴링마다 스냅샷 안에서 돈다. 실측(26-07-29, M-series):
+#   150p 88ms · 400p 582ms · 800p 2,195ms.  800페이지에서 창이 2초씩 멈추면 관측 창이 아니다.
+# 넘으면 의미 연결선을 접고 그 사실을 그래프에 실어 보낸다 — 조용히 비면 "연결이 없다"로 읽힌다.
+SEM_EDGE_MAX_NODES = 500
+_SEM_EDGE_CACHE: dict[str, tuple[str, list[dict]]] = {}  # dir → (벡터 지문, 엣지)
+
+
+def _vec_signature(rows: list[tuple[str, bytes]]) -> str:
+    """벡터 집합 지문 — 이 값이 같으면 엣지도 같다. 행 읽기는 O(n)이라 값싸고,
+    아낄 대상은 그 뒤의 O(n²) 코사인이다."""
+    import hashlib
+
+    h = hashlib.blake2b(digest_size=16)
+    for slug, data in sorted(rows):
+        h.update(slug.encode("utf-8"))
+        h.update(data)
+    return h.hexdigest()
 
 
 def _semantic_edges(d: str, slugs: set[str]) -> list[dict]:
     """저장된 벡터로 페이지 간 의미 유사 엣지 생성 (type=semantic). 벡터 없으면 빈 리스트.
 
     [[링크]] 없이도 '같은 주제' 페이지가 그래프에서 이어진다 — agentmemory 지식그래프의
-    핵심 가치를 우리 파생물(vec 테이블)로 재현. LLM 0, 읽기 전용, fail-open."""
+    핵심 가치를 우리 파생물(vec 테이블)로 재현. LLM 0, 읽기 전용, fail-open.
+
+    30초 폴링은 대개 **같은 데이터**를 다시 본다. 그런데도 매번 전 쌍을 다시 재고 있었다 —
+    벡터 지문이 같으면 답도 같으므로 그때는 계산 자체를 건너뛴다."""
     try:
         from ... import memory_semantic as sem
 
         conn = memory._db(d)
         rows = conn.execute("SELECT slug, data FROM vec").fetchall()
         conn.close()
-        vecs = {s: sem.unpack(b) for s, b in rows if s in slugs}
-        if len(vecs) < 2:
+        rows = [(s, b) for s, b in rows if s in slugs]
+        if len(rows) < 2:
             return []
+        sig = _vec_signature(rows)
+        cached = _SEM_EDGE_CACHE.get(d)
+        if cached and cached[0] == sig:
+            return cached[1]
+        if len(rows) > SEM_EDGE_MAX_NODES:
+            _SEM_EDGE_CACHE[d] = (sig, [])
+            return []
+        vecs = {s: sem.unpack(b) for s, b in rows}
         best: dict[str, list[tuple[float, str]]] = {s: [] for s in vecs}
         items = sorted(vecs.items())
         for i, (s1, v1) in enumerate(items):
@@ -213,6 +276,7 @@ def _semantic_edges(d: str, slugs: set[str]) -> list[dict]:
                     continue
                 seen.add(key)
                 edges.append({"from": key[0], "to": key[1], "dead": False, "type": "semantic", "w": round(cos, 3)})
+        _SEM_EDGE_CACHE[d] = (sig, edges)
         return edges
     except Exception:
         return []  # fail-open — 그래프는 링크 엣지만으로 계속
@@ -306,10 +370,11 @@ def activity_data(d: str) -> dict:
 
 
 def norn_data(d: str) -> dict:
-    """노른 손질 이력 — 리포트 목록 + insight 계보 (연대기 탭 편입, 읽기 전용).
+    """노른 손질 이력 — 리포트 목록 + insight 계보 + 모순·보관·백업 (손질 탭, 읽기 전용).
 
     리포트는 reports/norn-*.md 파생물(원문 그대로 요약), insight 계보는 kind=insight
-    페이지의 sources 링크·confidence 를 카탈로그에서 재구성한다."""
+    페이지의 sources 링크·confidence 를 카탈로그에서 재구성한다. 모순은 사람이 풀 일이라
+    리포트 안에 묻어두지 않고 따로 세워 올린다(노른은 보고만 하고 고치지 않는다)."""
     reports: list[dict] = []
     rdir = os.path.join(d, "reports")
     try:
@@ -353,7 +418,127 @@ def norn_data(d: str) -> dict:
             }
         )
     insights.sort(key=lambda r: r["created"], reverse=True)
-    return {"reports": reports, "insights": insights[:20], "auto_mode": _norn_auto_mode()}
+    return {
+        "reports": reports,
+        "insights": insights[:20],
+        "auto_mode": _norn_auto_mode(),
+        "insight_auto": _norn_insight_auto(),
+        "contradictions": _contradictions(reports),
+        "archive": archive_data(d),
+        "backups": backup_data(d),
+        "patterns": pattern_reports(d),
+    }
+
+
+_CONTRADICTION = re.compile(r"^⚠\s*contradiction:\s*\[\[([^\]]+)\]\]\s*↔\s*\[\[([^\]]+)\]\]\s*—\s*(.*)$")
+
+
+def _contradictions(reports: list[dict]) -> list[dict]:
+    """리포트에 적힌 모순만 따로 뽑는다 — 노른이 고치지 않고 사람에게 넘긴 것들.
+
+    같은 쌍이 손질을 돌 때마다 다시 적히므로 (a,b) 로 dedupe 하고 가장 최근 리포트만 남긴다.
+    reports 는 최신순이므로 처음 만난 쌍이 최신이다."""
+    out: list[dict] = []
+    seen: set[tuple[str, str]] = set()
+    for report in reports:
+        for op in report.get("ops") or []:
+            m = _CONTRADICTION.match(op.strip())
+            if not m:
+                continue
+            a, b = m.group(1), m.group(2)
+            key = (min(a, b), max(a, b))
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(
+                {"a": a, "b": b, "why": m.group(3).replace("(사람이 해소)", "").strip(), "report": report["name"]}
+            )
+    return out[:20]
+
+
+_ARCHIVE_SNAP = re.compile(r"^(?P<slug>.+)-(?P<ts>\d{14})\.md$")
+
+
+def archive_data(d: str) -> list[dict]:
+    """보관함 — norn archive 가 옮겨 둔 페이지. 삭제가 아니라 이동이라 되살릴 수 있다.
+
+    같은 slug 의 스냅샷이 여럿이면 최신만 세운다 (restore 가 최신을 복귀시키므로 표시도 최신)."""
+    adir = os.path.join(d, "archive")
+    latest: dict[str, str] = {}
+    try:
+        names = os.listdir(adir)
+    except OSError:
+        return []
+    for name in names:
+        m = _ARCHIVE_SNAP.match(name)
+        if not m:
+            continue
+        slug, ts = m.group("slug"), m.group("ts")
+        if ts > latest.get(slug, ""):
+            latest[slug] = ts
+    rows = [
+        {"slug": slug, "ts": f"{ts[0:4]}-{ts[4:6]}-{ts[6:8]}", "restore": f"asgard memory norn-restore {slug}"}
+        for slug, ts in latest.items()
+    ]
+    rows.sort(key=lambda r: r["ts"], reverse=True)
+    return rows[:40]
+
+
+def backup_data(d: str) -> list[dict]:
+    """노른 백업 — merge/archive 직전 pages/ 전량 스냅샷 (최근 5개 유지)."""
+    bdir = os.path.join(d, "norn-backups")
+    rows: list[dict] = []
+    try:
+        names = sorted(os.listdir(bdir), reverse=True)
+    except OSError:
+        return []
+    for name in names[:8]:
+        path = os.path.join(bdir, name)
+        try:
+            pages = len([n for n in os.listdir(path) if n.endswith(".md")])
+        except OSError:
+            continue
+        rows.append({"name": name, "pages": pages})
+    return rows
+
+
+def pattern_reports(d: str) -> list[dict]:
+    """패턴 학습 리포트 — 관측이 페이지로 승격되기까지의 검증 기록 (reports/pattern-*.md)."""
+    rdir = os.path.join(d, "reports")
+    out: list[dict] = []
+    try:
+        names = sorted((n for n in os.listdir(rdir) if n.startswith("pattern-") and n.endswith(".md")), reverse=True)
+    except OSError:
+        return []
+    for name in names[:8]:
+        try:
+            with open(os.path.join(rdir, name), encoding="utf-8") as handle:
+                lines = handle.read().splitlines()
+        except OSError:
+            continue
+        ops = [ln[2:].strip() for ln in lines if ln.startswith("- ")]
+        out.append(
+            {
+                "name": name,
+                "ops": ops[:12],
+                "applied": sum(1 for op in ops if not op.startswith(("✗", "(기각)"))),
+                "dropped": sum(1 for op in ops if op.startswith(("✗", "(기각)"))),
+            }
+        )
+    return out
+
+
+def peer_card_data(d: str) -> dict:
+    """오딘 피어 카드 — kind=user 관측이 모인 요약 한 장. 재료(근거 페이지)와 카드 실존을 같이 준다.
+
+    카드는 파생물이라 없을 수 있다 — 그때는 '재료는 n개 있는데 카드가 아직 없다'가 정직한 표시다."""
+    try:
+        from ...memory.pattern import PEER_CARD_SLUG, peer_card_rows
+
+        rows = [{"slug": slug, "text": text} for slug, text in peer_card_rows(d)]
+        return {"slug": PEER_CARD_SLUG, "exists": memory._read(d, PEER_CARD_SLUG) is not None, "rows": rows[:20]}
+    except Exception:
+        return {"slug": "", "exists": False, "rows": []}
 
 
 def _norn_auto_mode() -> str:
@@ -365,26 +550,219 @@ def _norn_auto_mode() -> str:
         return "safe"
 
 
-def _semantic_status() -> dict:
+def _norn_insight_auto() -> bool:
+    """통찰 자동 승격이 켜져 있는가 — 기본은 꺼짐(옵트인). 꺼져 있으면 통찰은 제안까지만 간다."""
+    try:
+        from ...memory.norn import insight_auto
+
+        return bool(insight_auto())
+    except Exception:
+        return False
+
+
+def semantic_data(d: str) -> dict:
+    """의미 검색 상태 + **벡터 커버리지** + 못 도는 이유.
+
+    켜져 있다는 말과 이 서고에 실제로 벡터가 있다는 말은 다르다 — 모델을 나중에 켰다면
+    옛 페이지에는 벡터가 없고, 의미 검색·의미 엣지는 그 페이지들을 못 본다. 커버리지가
+    그 차이를 드러내는 유일한 계기라서 상태 옆에 같이 세운다.
+
+    더 나쁜 혼동이 하나 더 있었다: 기본값은 켜짐(mode=local)인데 라이브러리가 없으면
+    동작만 실패한다. 그때 화면이 그냥 "off" 라고 적으면 사용자가 **자기가 끈 것**과
+    **켜져 있는데 못 도는 것**을 구별할 수 없다 — 원인을 못 찾으니 고칠 수도 없다.
+    그래서 설정(mode)과 실동작을 따로 싣고, 어긋나면 왜인지까지 말한다.
+
+    **모델을 올려서 확인하지 않는다.** 예전에는 상태 한 줄을 적으려고 sem.status() 를 불렀고,
+    그게 임베더를 로드해 관측 창 하나가 1.45GB 를 물었다 (실측 25MB → 1,471MB). 창은 보는
+    곳이지 돌리는 곳이 아니다.
+
+    대신 더 강한 증거를 쓴다: **이 서고의 페이지에 벡터가 있으면 임베딩은 이미 돌았다.**
+    모델을 새로 올려 "될 것 같다"를 확인하는 것보다, 남아 있는 벡터가 "됐었다"를 증명한다.
+    벡터가 없을 때만 준비 상태(라이브러리·모델 캐시)로 예측하고, 예측임을 밝힌다."""
+    out: dict = {
+        "active": False,  # 이 프로세스에 임베더가 실제로 올라와 있는가 (관측)
+        "mode": "off",  # 설정값
+        "model": "",
+        "dim": 0,
+        "vectors": 0,
+        "pages": 0,
+        "pct": 0,
+        "state": "off",  # off | ready | blocked
+        "evidence": "none",  # loaded(로드됨) | vectors(벡터가 증명) | none(예측)
+        "blocked": "",  # 켜짐인데 못 도는 사유
+        "fix": "",
+        "dims": [],  # 저장된 벡터의 차원들 — 둘 이상이면 모델이 바뀐 것이다
+        "dim_mixed": False,
+    }
+    try:
+        conn = memory._db(d)
+        out["vectors"] = int(conn.execute("SELECT count(*) FROM vec").fetchone()[0])
+        # 모델을 바꾸면 옛 벡터는 차원이 달라지고, cosine 은 길이가 다르면 0 을 돌려준다
+        # (차원 오염 방지). 그래서 검색이 **조용히** 아무것도 못 찾는다 — 벡터 수는 그대로라
+        # 커버리지만 보면 멀쩡해 보인다. 섞인 차원이 그 사실을 드러내는 유일한 값이다.
+        dims = [int(r[0]) for r in conn.execute("SELECT DISTINCT dim FROM vec").fetchall() if r[0]]
+        conn.close()
+        out["dims"] = sorted(dims)
+        out["dim_mixed"] = len(dims) > 1
+    except Exception:
+        pass
+    out["pages"] = len(memory._pages(d))
+    out["pct"] = round(100 * out["vectors"] / out["pages"]) if out["pages"] else 0
     try:
         from ... import memory_semantic as sem
 
-        return {"active": bool(sem.active()), "mode": str(sem.mode())}
+        out["mode"] = str(sem.mode())
+        if out["mode"] == "off":
+            return out
+        # 이미 올라와 있으면 그 사실을 그대로 쓴다 (새로 로드하지는 않는다)
+        cache = getattr(sem, "_CACHE", {})
+        if cache.get("loaded") and cache.get("fn") is not None:
+            out.update({"active": True, "state": "ready", "evidence": "loaded"})
+            out["model"], out["dim"] = str(cache.get("model", "")), int(cache.get("dim", 0))
+            return out
+        has_lib = _embedder_installed()
+        if not has_lib:
+            # model2vec 는 기본 의존성이다(26-07-27 승격) — 없으면 설치가 그 이전 것이다
+            out.update({"state": "blocked", "blocked": "library", "fix": "asgard memory semantic status"})
+        elif out["vectors"]:
+            # 벡터가 남아 있다 = 임베딩이 실제로 돌았다. 모델을 다시 올려 물을 필요가 없다.
+            out.update({"state": "ready", "evidence": "vectors"})
+        elif not sem.model_cached():
+            out.update({"state": "blocked", "blocked": "model", "fix": "asgard memory semantic warmup"})
+        else:
+            # 부품도 모델도 있는데 아직 벡터가 없다 — 될 것으로 보이지만 확인된 건 아니다
+            out.update({"state": "ready", "evidence": "none"})
     except Exception:
-        return {"active": False, "mode": "off"}
+        pass
+    return out
+
+
+def _embedder_installed() -> bool:
+    """임베더 라이브러리가 설치돼 있는가 — **import 하지 않고** 판정한다.
+    import 하는 순간 무거운 의존성이 딸려 올라오므로, 존재 확인은 spec 조회로 끝낸다."""
+    from importlib.util import find_spec
+
+    for name in ("model2vec", "sentence_transformers"):
+        try:
+            if find_spec(name) is not None:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def derived_data(d: str) -> dict:
+    """정본과 파생물의 경계 — 무엇을 잃으면 지식이 죽고, 무엇은 다시 만들어지는가.
+
+    pages/ 만 정본이다. index.md·state.db·maps/ 는 pages/ 에서 재생성되고, reports/·
+    archive/·norn-backups/ 는 손질이 남긴 기록이다. 이 표가 없으면 사용자는 백업할 것과
+    지워도 되는 것을 구분할 방법이 없다 — 대시보드가 답할 수 있는데 안 답하던 물음이었다."""
+
+    def _stat(rel: str, kind: str, canon: bool, note: str) -> dict:
+        path = os.path.join(d, rel)
+        row = {"name": rel, "kind": kind, "canon": canon, "note": note, "exists": os.path.exists(path), "n": 0}
+        if not row["exists"]:
+            return row
+        if os.path.isdir(path):
+            try:
+                row["n"] = len([n for n in os.listdir(path) if not n.startswith(".")])
+            except OSError:
+                row["n"] = 0
+        else:
+            try:
+                row["n"] = os.path.getsize(path)
+            except OSError:
+                row["n"] = 0
+        return row
+
+    return {
+        "dir": d,
+        "rows": [
+            _stat(memory.PAGES, "dir", True, "원본 — 사람이 읽고 고치는 md 파일"),
+            _stat(memory.LOG, "file", True, "원본 — 덧붙이기만 하는 작업 기록"),
+            _stat(memory.SCHEMA, "file", True, "원본 — 저장 규칙"),
+            _stat(memory.INDEX, "file", False, "자동생성 — asgard memory reindex 로 다시 만듦"),
+            _stat(memory.DB, "file", False, "자동생성 — 검색·사용기록·벡터 (손상 시 자동 복구)"),
+            _stat("maps", "dir", False, "자동생성 — Obsidian 목차"),
+            _stat("reports", "dir", False, "기록 — 정리·패턴 보고서"),
+            _stat("archive", "dir", False, "보관 — 되살릴 수 있음"),
+            _stat("norn-backups", "dir", False, "백업 — 정리 직전 원본 사본"),
+            _stat(".obsidian", "dir", False, "설정 — Obsidian 으로 열기 위한 최소 설정"),
+        ],
+    }
+
+
+def _row_title(row: str) -> str:
+    """주입 행 `- 제목 — 설명` 에서 제목만. 형식이 어긋나면 행 전체를 돌려준다 (fail-open)."""
+    text = row[2:] if row.startswith("- ") else row
+    return text.split(" — ", 1)[0].strip()
+
+
+def injection_data(d: str | None = None) -> dict:
+    """주입면 — 이 기억이 세션 프롬프트에 **실제로** 어떻게 실리는가 (읽기 전용).
+
+    다른 패널은 "무엇이 저장돼 있나"를 말한다. 여기는 "무엇이 모델에게 가나"를 말한다 —
+    킬스위치·오염 제외·칸 예산·총량 상한 때문에 둘은 같지 않고, 지금까지 대시보드는
+    그 차이를 게이지 하나로만 암시했다. 보여 주는 문자열은 재구성이 아니라 snapshot_note()
+    가 돌려주는 바로 그 블록이다 — 재구성하면 그 순간부터 화면과 프롬프트가 갈린다.
+
+    잘림 판정도 실함수(_section)를 그대로 부른다: 유지되는 행은 언제나 앞에서부터의
+    연속분이므로, 남은 행 수를 세면 밀려난 행이 정확히 나온다."""
+    d = memory.ensure_home(d)
+    from ...memory.recall import _SECTIONS, _SNAPSHOT_WARN, _section, _snapshot_rows
+
+    enabled = bool(memory.inject_enabled())
+    text = memory.snapshot_note(d)
+    rows = _snapshot_rows(d)
+    budgets = memory.kind_budgets()
+    sections: list[dict] = []
+    for kind, label in _SECTIONS:
+        kind_rows = [r for k, r in rows if k == kind]
+        budget = int(budgets.get(kind, 0))
+        block = _section(kind, label, kind_rows, budget)
+        kept = [ln for ln in block.split("\n")[1:] if ln and ln != _SNAPSHOT_WARN] if block else []
+        full = sum(len(r) + 1 for r in kind_rows)
+        sections.append(
+            {
+                "kind": kind,
+                "label": label,
+                "budget": budget,
+                "full": full,
+                "used": sum(len(r) + 1 for r in kept),
+                "pct": round(100 * full / budget) if budget else 0,
+                "rows": len(kind_rows),
+                "kept": len(kept),
+                "muted": budget <= 0 and bool(kind_rows),  # 예산 0 — 저장은 되지만 주입은 안 된다
+                "dropped": [_row_title(r) for r in kind_rows[len(kept) :]][:12],
+            }
+        )
+    poisoned = [{"slug": row["slug"], "title": row["title"]} for row in catalog_data(d) if row.get("poisoned")]
+    return {
+        "enabled": enabled,
+        "text": text,
+        "chars": len(text),
+        "total_budget": memory.index_budget(),
+        "recall_budget": memory.RECALL_BUDGET,
+        "truncated": _SNAPSHOT_WARN in text,
+        "sections": sections,
+        "excluded": poisoned[:20],
+        "excluded_total": len(poisoned),
+    }
 
 
 def snapshot_data(d: str | None = None) -> dict:
     d = memory.ensure_home(d)
     health = health_data(d)
     catalog = catalog_data(d)
-    sem = _semantic_status()
+    sem = semantic_data(d)
     return {
         "meta": {
             "dir": d,
             "pages": len(catalog),
-            "semantic": sem["active"],
+            "semantic": sem["state"] == "ready",
             "semantic_mode": sem["mode"],
+            "semantic_state": sem["state"],
+            "inject": bool(memory.inject_enabled()),  # 킬스위치 — 꺼져 있으면 어떤 provider 로도 안 나간다
             "budget": health["budget"],
             "generated": _dt.datetime.now().strftime("%Y-%m-%d %H:%M"),
         },
@@ -394,7 +772,10 @@ def snapshot_data(d: str | None = None) -> dict:
         "graph": graph_data(d),
         "log": log_data(d, n=120),  # 연대기 탭 분량 — 집계는 activity 가 담당
         "activity": activity_data(d),
-        "norn": norn_data(d),  # 노른 손질 이력 + insight 계보 (연대기 탭)
+        "norn": norn_data(d),  # 노른 손질 이력 + insight 계보 + 모순·보관 (손질 탭)
+        "semantic": sem,  # 벡터 커버리지 — "켜짐"과 "이 서고에 벡터가 있음"은 다른 말이다
+        "derived": derived_data(d),  # 정본/파생 경계
+        "peer": peer_card_data(d),  # 오딘 피어 카드 (패턴 학습 산출)
     }
 
 
@@ -423,7 +804,8 @@ def page_data(slug: str, d: str | None = None) -> dict:
         "poisoned": bool(threat),
     }
     if threat:
-        out["quarantine"] = f"오염 격리됨 — 수리: asgard memory show {slug} --unsafe"
+        # 문장은 클라이언트가 번역하고, 서버는 명령만 준다 — 슬러그가 낀 통문장은 사전에 못 올린다
+        out["quarantine_cmd"] = f"asgard memory show {slug} --unsafe"
     else:
         out["body"] = body
         out["refs"] = re.findall(r"\[\[([^\]]+)\]\]", body)
@@ -434,9 +816,11 @@ def search_data(q: str, k: int, d: str | None = None) -> dict:
     d = d or memory.memory_dir()
     q = (q or "").strip()[:200]
     k = max(1, min(int(k or 5), 25))
-    sem = _semantic_status()
     if not q:
-        return {"q": q, "k": k, "semantic_active": sem["active"], "hits": []}
+        # 빈 질의에 임베더를 올리지 않는다 — 검색을 안 하는데 모델을 물 이유가 없다.
+        return {"q": q, "k": k, "semantic_active": semantic_data(d)["state"] == "ready", "hits": []}
     # 관측 무해 — track=False: 대시보드 열람이 usage/decay 통계를 왜곡하지 않는다.
+    # 질의는 시맨틱 스트림을 실제로 쓰므로 임베더가 여기서 올라온다 — 쓰는 자리에서 낸다.
     hits = memory.query(q, k=k, d=d, track=False, explain=True)
-    return {"q": q, "k": k, "semantic_active": sem["active"], "hits": hits}
+    # 스트림별 실제 적중은 hit["streams"] 가 hit 단위로 말한다 — 여기 플래그는 가용 여부다.
+    return {"q": q, "k": k, "semantic_active": semantic_data(d)["state"] == "ready", "hits": hits}
