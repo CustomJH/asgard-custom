@@ -538,15 +538,28 @@ def project_synthesis_rows(query: str, *, start: str | None = None) -> list[str]
     같은 backend 로 "알아서 아는" 느낌을 내는 자리가 정확히 이 통합 계층이다.
 
     lexical 문턱을 둔다: 질의 도메인어가 하나도 안 걸리면 기권한다. 종합문은 프로젝트
-    전체를 요약하므로 무조건 주입하면 매 턴 같은 글이 실려 잡음이 된다."""
+    전체를 요약하므로 무조건 주입하면 매 턴 같은 글이 실려 잡음이 된다.
+
+    게이트 셋은 형제 레인과 같은 것을 쓴다. 이 레인만 빠뜨렸던 자리라 근거를 적어 둔다:
+    ① 킬스위치(`inject_enabled`) — 로컬 레인(documents·episodes)이 자기 안에서 한 번 더 보는
+      이유와 같다. 호출부가 이미 `inject_allowed` 로 막지만, 게이트를 호출부에만 두면 새 호출부가
+      생길 때 조용히 새는 자리가 된다.
+    ② 신뢰(`is_backend_trusted`) — 이 파일의 내용은 로컬에 있지만 **출처는 backend** 다
+      (`snapshot()` 이 `list_mental_models()` 를 받아 적는다). 사용자가 명시적으로 connect 하지
+      않은 backend 의 글이 clone 만으로 주입되면 안 된다. 신뢰 저장소는 리포 밖(`~/.asgard`)이라
+      저장소가 자기 자신을 신뢰하게 만들 수 없다 — 소유권 필드 대조와 달리 이건 못 위조한다.
+    ③ 오염 검사(`scan_threats`) — 종합문은 backend LLM 이 쓴 글이고 사람이 문장까지 승인한 것이
+      아니다. 형제 레인이 원문에 거는 검사를 여기라고 뺄 근거가 없다."""
     try:
         from .project_memory.learning import load_synthesis
 
+        if not memory.inject_enabled():
+            return []
         found = find_config(start or os.getcwd())
         if not found:
             return []
         root, cfg = found
-        if cfg.get("inject_synthesis") is False:
+        if cfg.get("inject_synthesis") is False or not is_backend_trusted(cfg):
             return []
         models = load_synthesis(
             root,
@@ -560,6 +573,8 @@ def project_synthesis_rows(query: str, *, start: str | None = None) -> list[str]
         for model_index, model in enumerate(models):
             name = str(model.get("name") or model.get("id") or "")
             for section_index, section in enumerate(_synthesis_sections(str(model.get("content") or ""))):
+                if memory.scan_threats(section, name):
+                    continue  # 원문 유래 오염 구간 — 주입 제외
                 haystack = section.lower()
                 score = sum(1 for term in set(terms) if term in haystack)
                 if score:

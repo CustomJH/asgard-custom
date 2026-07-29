@@ -211,13 +211,19 @@ def snapshot(backend, root: str, *, project_uid: str = "", binding_id: str = "")
 
 
 def load_synthesis(root: str, *, project_uid: str = "", binding_id: str = "") -> list[dict]:
-    """로컬 종합층 사본 — 소유권이 어긋나거나 없으면 빈 리스트 (fail-open)."""
+    """로컬 종합층 사본 — 소유권이 어긋나거나 없으면 빈 리스트 (fail-open).
+
+    빈 소유권은 **불일치로 친다**. 안 그러면 `"" != ""` 가 거짓이라 대조가 저절로 통과한다:
+    소유권 필드를 비운 사본을 심고 설정에서 binding 을 빼면 게이트가 있는 채로 무력해진다.
+    소유권을 못 대는 사본은 주인을 모르는 사본이고, 주인을 모르면 안 싣는다."""
     try:
         with open(os.path.join(root, SYNTHESIS_FILENAME), encoding="utf-8") as handle:
             payload = json.load(handle)
     except OSError, ValueError:
         return []
     if not isinstance(payload, dict) or payload.get("schema") != "asgard-project-synthesis-v1":
+        return []
+    if not project_uid or not binding_id:
         return []
     if payload.get("project_uid") != project_uid or payload.get("binding_id") != binding_id:
         return []
