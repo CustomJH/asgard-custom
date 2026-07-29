@@ -68,7 +68,7 @@ def _shared_memory_check(root: str) -> dict | None:
             except Exception:
                 pass
             return None
-        _, mcfg = found
+        mroot, mcfg = found
         try:
             if not is_backend_trusted(mcfg):
                 raise PermissionError("untrusted backend target; run asgard memory connect")
@@ -81,7 +81,7 @@ def _shared_memory_check(root: str) -> dict | None:
                 learning_detail = ""
                 learning_ok = True
                 if engine == "hindsight":
-                    from ..project_memory.learning import MODEL_SPECS, model_ready
+                    from ..project_memory.learning import MODEL_SPECS, load_synthesis, model_ready
 
                     read_config = getattr(backend, "bank_config", None)
                     list_models = getattr(backend, "list_mental_models", None)
@@ -92,15 +92,26 @@ def _shared_memory_check(root: str) -> dict | None:
                         }
                         expected = {str(spec["id"]) for spec in MODEL_SPECS}
                         ready_models = sum(model_ready(models.get(model_id, {})) for model_id in expected)
+                        # 종합층이 만들어졌다고 주입되는 것이 아니다 — 회수는 로컬 사본만 읽는다.
+                        # 모델은 준비됐는데 사본이 없으면 그 층은 어떤 프롬프트에도 안 실린다.
+                        synthesis = len(
+                            load_synthesis(
+                                mroot,
+                                project_uid=str(mcfg.get("project_uid") or ""),
+                                binding_id=str(mcfg.get("binding_id") or ""),
+                            )
+                        )
                         learning_ok = (
                             bank_config.get("enable_observations") is True
                             and bank_config.get("enable_auto_consolidation") is False
                             and ready_models == len(expected)
+                            and synthesis > 0
                         )
                         learning_detail = (
                             f" · observations={'on' if bank_config.get('enable_observations') else 'off'}"
                             f" · auto_consolidation={'on' if bank_config.get('enable_auto_consolidation') else 'scoped'}"
                             f" · mental_models={ready_models}/{len(expected)}"
+                            f" · synthesis_injected={synthesis}"
                         )
                     else:
                         learning_ok = False

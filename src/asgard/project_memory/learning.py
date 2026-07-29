@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+import json
+import os
 from collections.abc import Mapping
 
 from .ingest import BANK_DEFAULTS, STRATEGIES
+
+# 종합층 로컬 사본. 파생물이라 정본(records/)과 달리 저장소에 커밋되지 않는다
+# (.asgard/.gitignore 의 `memory/*` 가 이미 덮는다).
+SYNTHESIS_FILENAME = os.path.join(".asgard", "memory", "synthesis.json")
+SYNTHESIS_MAX_CHARS = 8000  # 모델 하나가 뱅크 전체를 실어 나르는 것을 막는다
 
 MODEL_SPECS: tuple[dict, ...] = (
     {
@@ -168,4 +175,65 @@ def apply(backend) -> dict:
     }
 
 
-__all__ = ["BANK_DEFAULTS", "MODEL_SPECS", "apply", "model_ready", "plan"]
+def snapshot(backend, root: str, *, project_uid: str = "", binding_id: str = "") -> int:
+    """준비된 mental model 을 로컬 사본으로 내린다 — 반환 = 저장한 모델 수.
+
+    왜 파일로 내리는가: 종합층은 이미 만들고 있었는데 아무도 안 읽었다 (`doctor` 가 개수만
+    셌다). 회수 때마다 원격으로 목록을 다시 부르면 턴 시작에 두 번째 왕복이 붙고, 서버가
+    죽으면 종합층이 통째로 사라진다. 큰 문서 레인(documents)과 같은 결로 간다 — 원본은
+    backend 에 있고, 소비는 로컬에서 한다.
+
+    소유권 필드를 같이 적는다: 다른 binding 으로 옮겨 간 저장소에서 남은 사본이 되살아나
+    남의 프로젝트 종합을 주입하는 경로를 닫는다."""
+    models = [
+        {
+            "id": str(model.get("id") or ""),
+            "name": str(model.get("name") or ""),
+            "content": str(model.get("content") or "").strip()[:SYNTHESIS_MAX_CHARS],
+            "refreshed_at": str(model.get("last_refreshed_at") or ""),
+        }
+        for model in backend.list_mental_models()
+        if str(model.get("id") or "").startswith("asgard-") and model_ready(model) and not model.get("is_stale")
+    ]
+    path = os.path.join(root, SYNTHESIS_FILENAME)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    payload = {
+        "schema": "asgard-project-synthesis-v1",
+        "project_uid": project_uid,
+        "binding_id": binding_id,
+        "models": models,
+    }
+    tmp = f"{path}.tmp"
+    with open(tmp, "w", encoding="utf-8") as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=1)
+    os.replace(tmp, path)
+    return len(models)
+
+
+def load_synthesis(root: str, *, project_uid: str = "", binding_id: str = "") -> list[dict]:
+    """로컬 종합층 사본 — 소유권이 어긋나거나 없으면 빈 리스트 (fail-open)."""
+    try:
+        with open(os.path.join(root, SYNTHESIS_FILENAME), encoding="utf-8") as handle:
+            payload = json.load(handle)
+    except OSError, ValueError:
+        return []
+    if not isinstance(payload, dict) or payload.get("schema") != "asgard-project-synthesis-v1":
+        return []
+    if payload.get("project_uid") != project_uid or payload.get("binding_id") != binding_id:
+        return []
+    models = payload.get("models")
+    if not isinstance(models, list):
+        return []
+    return [model for model in models if isinstance(model, dict) and str(model.get("content") or "").strip()]
+
+
+__all__ = [
+    "BANK_DEFAULTS",
+    "MODEL_SPECS",
+    "SYNTHESIS_FILENAME",
+    "apply",
+    "load_synthesis",
+    "model_ready",
+    "plan",
+    "snapshot",
+]

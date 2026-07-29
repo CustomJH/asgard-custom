@@ -265,49 +265,64 @@ def _neutralize(s: str) -> str:
     return s.replace("<", "‹").replace(">", "›")
 
 
+NOTE_PREFIX = (
+    '\n\n<episode-recall scope="session">\n'
+    "과거 세션 관련 구간 (비권위 참고 — 완료 증거 아님. 보존 가치가 있으면 asgard memory ingest):\n"
+)
+NOTE_SUFFIX = "\n</episode-recall>"
+
+
+def episode_rows(request: str, root: str, k: int = 3) -> list[str]:
+    """과거 세션 관련 구간 본문 목록 — 렌더도 예산도 없다 (조립기가 건다).
+
+    오염 검사는 여기서 한다: 이 레인은 저장 게이트가 없는 원문이라 주입 시점이 유일한 관문이다."""
+    from ..memory.policy import inject_enabled, scan_threats
+
+    if not inject_enabled():
+        return []
+    hits = search(root, request, k=k + _EXCLUDE_TAIL)
+    if not hits:
+        return []
+    top = max(h["seq"] for h in hits)
+    try:
+        conn = _db(root)
+        try:
+            latest = _meta_get(conn, "seq")
+        finally:
+            conn.close()
+    except Exception:
+        latest = top
+    out: list[str] = []
+    for h in [h for h in hits if h["seq"] <= latest - _EXCLUDE_TAIL][:k]:
+        if scan_threats(h["request"], h["excerpt"]):
+            continue  # 원문 유래 오염 구간 — 주입 제외
+        head = _neutralize(h["request"])[:60]
+        body = _neutralize(h["excerpt"])[:200]
+        tag = f" quest:{h['quest'][:24]}" if h["quest"] else ""
+        out.append(f"[t{h['seq']}{tag}] {head} → {body}")
+    return out
+
+
 def episode_note(request: str, root: str, k: int = 3) -> str:
     """요청 관련 과거 세션 구간의 비권위 주입 블록 (0-LLM 결정론).
 
     개인 recall(승격 메모리)과 달리 저장 게이트가 없는 원문이므로 주입 시점에
     scan_threats 로 오염 구간을 걸러낸다. 최근 _EXCLUDE_TAIL 턴은 라이브 history 가
-    이미 싣고 있어 제외. 무적중·킬스위치 off·실패 = 빈 문자열 (무변화)."""
-    try:
-        from ..memory.policy import inject_enabled, scan_threats
+    이미 싣고 있어 제외. 무적중·킬스위치 off·실패 = 빈 문자열 (무변화).
 
-        if not inject_enabled():
-            return ""
-        hits = search(root, request, k=k + _EXCLUDE_TAIL)
-        if not hits:
-            return ""
-        top = max(h["seq"] for h in hits)
-        try:
-            conn = _db(root)
-            try:
-                latest = _meta_get(conn, "seq")
-            finally:
-                conn.close()
-        except Exception:
-            latest = top
-        hits = [h for h in hits if h["seq"] <= latest - _EXCLUDE_TAIL][:k]
-        prefix = (
-            '\n\n<episode-recall scope="session">\n'
-            "과거 세션 관련 구간 (비권위 참고 — 완료 증거 아님. 보존 가치가 있으면 asgard memory ingest):\n"
-        )
-        suffix = "\n</episode-recall>"
-        rows: list[str] = []
-        for h in hits:
-            if scan_threats(h["request"], h["excerpt"]):
-                continue  # 원문 유래 오염 구간 — 주입 제외
-            head = _neutralize(h["request"])[:60]
-            body = _neutralize(h["excerpt"])[:200]
-            tag = f" quest:{h['quest'][:24]}" if h["quest"] else ""
-            row = f"- [t{h['seq']}{tag}] {head} → {body}"
-            if len(prefix + "\n".join([*rows, row]) + suffix) > EPISODE_BUDGET:
-                break
-            rows.append(row)
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 싣는 자리는 조립기로 간다."""
+    try:
+        from ..memory.assemble import Candidate, Lane, assemble
+
+        rows = episode_rows(request, root, k=k)
         if not rows:
             return ""
-        return prefix + "\n".join(rows) + suffix
+        lane = Lane("episode", NOTE_PREFIX, NOTE_SUFFIX, EPISODE_BUDGET)
+        return assemble(
+            [Candidate("episode", body, rank=index) for index, body in enumerate(rows)],
+            (lane,),
+            budget=EPISODE_BUDGET,
+        )
     except Exception:
         return ""  # fail-open
 

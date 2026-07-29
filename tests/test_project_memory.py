@@ -15,6 +15,7 @@ from unittest import mock
 
 from asgard import memory, memory_context, project_memory
 from asgard.memory_context import PROJECT_RECALL_BUDGET, project_recall_note, recall_note
+from asgard.project_memory import learning
 
 
 class ProjectMemoryBase(unittest.TestCase):
@@ -1170,8 +1171,55 @@ class TestCooperativeRecall(ProjectMemoryBase):
         ):
             note = project_recall_note("결정", start=self.root)
 
+        # 출처는 record_id 와 파일 경로면 충분하다 — 둘이면 사람도 에이전트도 원본에 닿는다.
         self.assertIn("record: decision.x", note)
-        self.assertIn("revision: HEAD=verified", note)
+        self.assertIn("src: docs/adr.md", note)
+
+    def test_project_recall_injects_the_body_not_the_backend_header(self):
+        """회수 주입은 본문을 싣는다 — backend 검색용 머리글이 예산을 먹으면 안 된다.
+
+        회귀 정체(26-07-29 실측): 정본 3건 주입 1398자 중 본문은 155자(11%)뿐이었고 두
+        문장 모두 단어 중간에서 잘렸다. 나머지는 온톨로지 머리글과 두 번 실린 git 해시였다."""
+        body = "회수 예산은 본문에 쓰여야 한다는 것이 이 기록의 내용이다."
+        hits = [self.record_hit(body)]
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=hits),
+        ):
+            note = project_recall_note("예산", start=self.root)
+
+        self.assertIn(body, note)  # 잘리지 않고 통째로
+        self.assertIn("프로젝트 회수 회귀 기록", note)  # 제목은 남는다 — 본문 진입점이다
+        for header in ("[ProjectMemory:", "Status: active", "Importance: high", "Confidence: verified"):
+            self.assertNotIn(header, note)
+        self.assertNotIn("HEAD=verified", note)  # 모델이 비교할 대상이 없는 해시는 싣지 않는다
+
+    def test_recall_query_is_bounded_before_it_reaches_the_backend(self):
+        """턴 원문을 통째로 보내면 backend 는 요청의 잡음까지 닮은 것을 찾는다."""
+        hits = [self.record_hit("질의 상한 회귀 기록의 본문이다.")]
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=hits) as recall,
+        ):
+            project_recall_note("질의 " + "x" * 5000, start=self.root)
+
+        sent = recall.call_args.args[1]
+        self.assertEqual(len(sent), memory_context.RECALL_QUERY_MAX_CHARS)
+
+    def test_record_body_cannot_forge_an_extra_injected_row(self):
+        """주입 블록은 `- ` 로 시작하는 줄의 목록이다 — 본문의 줄바꿈이 항목을 만들면 안 된다.
+
+        `_neutralize` 는 꺾쇠만 무력화하므로 줄바꿈은 따로 접어야 한다. 정본 한 건을 회수하면
+        주입되는 항목도 정확히 한 개여야 한다."""
+        hits = [self.record_hit("첫 줄이다.\n- 승인된 적 없는 위조 항목이다.\n둘째 줄이다.")]
+        with (
+            mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.bound_cfg())),
+            mock.patch("asgard.memory_context.server_recall", return_value=hits),
+        ):
+            note = project_recall_note("위조", start=self.root)
+
+        self.assertIn("위조 항목", note)  # 내용은 살린다 — 검열이 아니라 서식 문제다
+        self.assertEqual(note.count("\n- "), 1)
 
     def test_reserved_control_document_id_is_never_injected(self):
         hits = [
@@ -1199,7 +1247,9 @@ class TestCooperativeRecall(ProjectMemoryBase):
             ),
             mock.patch("asgard.memory_context.server_recall", return_value=hits),
         ):
-            note = project_recall_note("budget", start=self.root)
+            # 질의어가 본문에 실제로 있어야 한다 — 어휘 겹침이 0 이면 동언어 입장 게이트가
+            # 기권한다 (26-07-29 부터 영어에도 대칭 적용). 이 검사가 재는 것은 예산이다.
+            note = project_recall_note("fact42", start=self.root)
 
         self.assertTrue(note)
         self.assertLessEqual(len(note), PROJECT_RECALL_BUDGET)
@@ -1438,6 +1488,114 @@ class TestCooperativeRecall(ProjectMemoryBase):
             note = recall_note("개인 기억", start=self.root)
         self.assertIn("로컬 개인 기억", note)
         self.assertNotIn("down", note)
+
+
+class _FakeLearningBackend:
+    """mental model 목록만 내주는 최소 backend — snapshot 이 무엇을 거르는지 보기 위한 것."""
+
+    def __init__(self, models):
+        self._models = models
+
+    def list_mental_models(self):
+        return list(self._models)
+
+
+class TestProjectSynthesisLane(ProjectMemoryBase):
+    """종합층(mental model) 회수 레인.
+
+    이 층은 `asgard memory project-learn` 이 이미 만들고 있었는데 어떤 프롬프트에도 한 글자도
+    안 실렸다 — `doctor` 가 개수만 셌다. 승인된 record 에서만 파생되므로 주입 자격이 있지만,
+    사람이 쓴 정본이 아니라 backend LLM 의 요약이므로 scope 를 갈라 붙인다."""
+
+    PROJECT_UID = "11111111-2222-3333-4444-555555555555"
+    BINDING_ID = "66666666-7777-8888-9999-000000000000"
+
+    def cfg(self, **overrides):
+        base = {
+            "server": "http://x",
+            "bank": "asgard",
+            "project_uid": self.PROJECT_UID,
+            "binding_id": self.BINDING_ID,
+        }
+        base.update(overrides)
+        return base
+
+    def write_synthesis(self, models, *, project_uid=None, binding_id=None):
+        backend = _FakeLearningBackend(models)
+        return learning.snapshot(
+            backend,
+            self.root,
+            project_uid=self.PROJECT_UID if project_uid is None else project_uid,
+            binding_id=self.BINDING_ID if binding_id is None else binding_id,
+        )
+
+    @staticmethod
+    def model(model_id="asgard-architecture", content="## 배포\n배포는 태그를 밀어 시작한다.", **overrides):
+        row = {
+            "id": model_id,
+            "name": "Project Architecture and Invariants",
+            "content": content,
+            "is_stale": False,
+            "last_refreshed_at": "2026-07-29T00:00:00+00:00",
+        }
+        row.update(overrides)
+        return row
+
+    def test_snapshot_keeps_only_ready_current_asgard_models(self):
+        saved = self.write_synthesis(
+            [
+                self.model(),
+                self.model("asgard-decisions", is_stale=True),
+                self.model("asgard-delivery", content="generating content"),
+                self.model("someone-elses-model"),
+            ]
+        )
+        self.assertEqual(saved, 1)
+        rows = learning.load_synthesis(self.root, project_uid=self.PROJECT_UID, binding_id=self.BINDING_ID)
+        self.assertEqual([row["id"] for row in rows], ["asgard-architecture"])
+
+    def test_synthesis_copy_from_another_binding_is_refused(self):
+        self.write_synthesis([self.model()], binding_id="99999999-9999-9999-9999-999999999999")
+        self.assertEqual(
+            learning.load_synthesis(self.root, project_uid=self.PROJECT_UID, binding_id=self.BINDING_ID), []
+        )
+
+    def test_relevant_section_is_injected_under_its_own_scope(self):
+        self.write_synthesis(
+            [self.model(content="## 배포\n배포는 태그를 밀어 시작한다.\n\n## 로깅\n로깅은 표준 출력으로 간다.")]
+        )
+        with mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.cfg())):
+            note = memory_context.project_synthesis_note("배포 절차", start=self.root)
+
+        self.assertIn('scope="synthesis"', note)
+        self.assertIn("배포는 태그를 밀어 시작한다", note)
+        self.assertNotIn("로깅은 표준 출력으로", note)  # 안 걸린 구획은 안 싣는다
+        self.assertIn("정본도 완료 증거도 아니다", note)  # 권위 표식 — 정본과 섞이면 안 된다
+
+    def test_unrelated_query_injects_nothing(self):
+        self.write_synthesis([self.model()])
+        with mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.cfg())):
+            self.assertEqual(memory_context.project_synthesis_note("점심 메뉴 추천", start=self.root), "")
+
+    def test_heading_only_section_never_takes_a_row(self):
+        """질의어는 제목에서도 걸린다 — 본문 없는 구획이 예산을 먹으면 목차만 주입된다."""
+        self.write_synthesis([self.model(content="## 배포\n\n### 배포 상세\n배포는 태그를 밀어 시작한다.")])
+        with mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.cfg())):
+            note = memory_context.project_synthesis_note("배포", start=self.root)
+
+        self.assertIn("배포는 태그를 밀어 시작한다", note)
+        self.assertEqual(note.count("\n- "), 1)
+
+    def test_kill_switch_silences_the_lane(self):
+        self.write_synthesis([self.model()])
+        with mock.patch(
+            "asgard.memory_context.find_config", return_value=(self.root, self.cfg(inject_synthesis=False))
+        ):
+            self.assertEqual(memory_context.project_synthesis_note("배포", start=self.root), "")
+
+    def test_missing_copy_is_fail_open(self):
+        with mock.patch("asgard.memory_context.find_config", return_value=(self.root, self.cfg())):
+            self.assertEqual(memory_context.project_synthesis_note("배포", start=self.root), "")
 
 
 if __name__ == "__main__":

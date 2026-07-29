@@ -780,32 +780,62 @@ def _diversify(hits: list[dict], k: int) -> list[dict]:
     return picked
 
 
+RECALL_PREFIX = '\n\n<memory-recall scope="personal">\n요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n'
+RECALL_SUFFIX = "\n</memory-recall>"
+
+
+def recall_rows(text: str, k: int = 3, d: str | None = None) -> list[str]:
+    """회수 본문 목록 — **렌더도 예산도 여기서 안 한다**.
+
+    레인을 후보 생산자로 갈라 둔 이유는 조립기(`memory.assemble`)가 여섯 레인을 하나의
+    예산 위에서 겨루게 하고 레인 간 중복을 걷어내야 하기 때문이다. 각 레인이 자기 예산을
+    자기가 자르던 시절에는 같은 사실이 다섯 레인으로 다섯 번 실릴 수 있었다."""
+    if not inject_enabled():
+        return []
+    # 넉넉히 뽑아 종류를 섞은 뒤 k 개로 줄인다 — 왜인지는 _diversify 참조.
+    hits = query(text, k=max(k, k * 2), d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
+    if not hits:
+        return []
+    return [_hit_row(h) for h in _diversify(hits, k)]
+
+
+def _hit_row(hit: dict) -> str:
+    """회수 한 줄 — 제목과 발췌가 같은 말이면 한 번만 적는다.
+
+    스냅샷 쪽은 이미 이 규율을 갖고 있었는데(`_row`) 회수 쪽에는 없었다. 한 문장짜리 페이지는
+    title 이 곧 본문이고 snippet 도 그 본문에서 잘라 오므로, 그대로 두면 **같은 문장이 한 줄에
+    두 번** 실린다 (실측 26-07-29: 182자 중 절반이 반복). 레인 간 중복을 걷어내면서 한 줄
+    안의 중복을 남겨 두는 것은 앞뒤가 안 맞는다."""
+    title = _neutralize(str(hit["title"]))[:120]
+    snippet = _neutralize(str(hit["snippet"]))[:160]
+    head = f"{title} `{hit['kind']}`"
+    if not snippet:
+        return head
+    # 한쪽이 다른 쪽을 품으면 긴 쪽만 남긴다 — 자르는 길이가 달라(120/160) 접두사 관계가 흔하다.
+    if snippet in title or title in snippet:
+        return f"{max(title, snippet, key=len)} `{hit['kind']}`"
+    return f"{head} — {snippet}"
+
+
 def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
     """요청 기반 zero-LLM 회수 블록 — DIRECT/Thinker 턴 시작 시 결정론 주입 (감사 권고:
     "모델이 자발적으로 CLI 를 부르는" 순응 의존을 없앤다). query 가 오염 페이지를 이미
-    제외하므로 여기선 경계 무력화 + 예산만. 무적중·킬스위치 off = 빈 문자열 (무변화)."""
+    제외하므로 여기선 경계 무력화 + 예산만. 무적중·킬스위치 off = 빈 문자열 (무변화).
+
+    이 레인 **혼자** 쓰는 표면(`asgard memory recall`·개인 메모리만 보는 호출)용이다. 여섯
+    레인을 같이 싣는 자리는 `memory_context.recall_note` 가 조립기로 간다."""
     try:
-        if not inject_enabled():
-            return ""
-        # 넉넉히 뽑아 종류를 섞은 뒤 k 개로 줄인다 — 왜인지는 _diversify 참조.
-        hits = query(text, k=max(k, k * 2), d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
-        if not hits:
-            return ""
-        hits = _diversify(hits, k)
-        prefix = '\n\n<memory-recall scope="personal">\n요청 관련 개인 메모리 (힌트 — 완료 증거 아님):\n'
-        suffix = "\n</memory-recall>"
-        if len(prefix + suffix) > RECALL_BUDGET:
-            return ""
-        rows: list[str] = []
-        for h in hits:
-            title = _neutralize(str(h["title"]))[:120]
-            row = f"- {title} `{h['kind']}` — {_neutralize(str(h['snippet']))[:160]}"
-            if len(prefix + "\n".join([*rows, row]) + suffix) > RECALL_BUDGET:
-                break
-            rows.append(row)
+        rows = recall_rows(text, k=k, d=d)
         if not rows:
             return ""
-        return prefix + "\n".join(rows) + suffix
+        from .assemble import Candidate, Lane, assemble
+
+        lane = Lane("personal", RECALL_PREFIX, RECALL_SUFFIX, RECALL_BUDGET)
+        return assemble(
+            [Candidate("personal", body, rank=index) for index, body in enumerate(rows)],
+            (lane,),
+            budget=RECALL_BUDGET,
+        )
     except Exception:
         return ""  # fail-open
 

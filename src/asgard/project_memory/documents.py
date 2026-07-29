@@ -367,34 +367,50 @@ def _neutralize(s: str) -> str:
     return s.replace("<", "‹").replace(">", "›")
 
 
+NOTE_PREFIX = (
+    '\n\n<memory-recall scope="project-document">\n'
+    "요청 관련 프로젝트 문서 구간 (힌트 — 원문 발췌이지 완료 증거가 아님):\n"
+)
+NOTE_SUFFIX = "\n</memory-recall>"
+
+
+def rows(query: str, root: str, k: int = 2) -> list[str]:
+    """관련 문서 구간 본문 목록 — 렌더도 예산도 없다 (조립기가 건다).
+
+    오염 검사는 여기서 한다: 문서 원문은 사람이 승인해 정본이 됐지만 **본문 안의 문장까지**
+    승인한 것은 아니다 (규격서에 남이 심어 둔 지시가 있을 수 있다)."""
+    from ..memory.policy import inject_enabled, scan_threats
+
+    if not inject_enabled():
+        return []
+    out: list[str] = []
+    for hit in search(root, query, k=k):
+        if scan_threats(hit["excerpt"], hit["heading"]):
+            continue  # 원문 유래 오염 구간 — 주입 제외
+        where = f" · {hit['heading']}" if hit["heading"] else ""
+        out.append(f"{_neutralize(hit['name'])}{_neutralize(where)}: {_neutralize(hit['excerpt'])}")
+    return out
+
+
 def note(query: str, root: str, k: int = 2) -> str:
     """관련 문서 구간의 비권위 주입 블록. 무적중·킬스위치 off·실패 = 빈 문자열.
 
     문서 원문은 승인 게이트를 지나 정본이 됐지만 **완료 증거는 아니다** — 규격서에 적혀
-    있다는 것과 그렇게 구현됐다는 것은 다른 말이고, 그 구분이 무너지면 게이트가 무의미해진다."""
-    try:
-        from ..memory.policy import inject_enabled, scan_threats
+    있다는 것과 그렇게 구현됐다는 것은 다른 말이고, 그 구분이 무너지면 게이트가 무의미해진다.
 
-        if not inject_enabled():
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 싣는 자리는 조립기로 간다."""
+    try:
+        from ..memory.assemble import Candidate, Lane, assemble
+
+        found = rows(query, root, k=k)
+        if not found:
             return ""
-        hits = search(root, query, k=k)
-        if not hits:
-            return ""
-        prefix = (
-            '\n\n<memory-recall scope="project-document">\n'
-            "요청 관련 프로젝트 문서 구간 (힌트 — 원문 발췌이지 완료 증거가 아님):\n"
+        lane = Lane("document", NOTE_PREFIX, NOTE_SUFFIX, DOCUMENT_BUDGET)
+        return assemble(
+            [Candidate("document", body, rank=index) for index, body in enumerate(found)],
+            (lane,),
+            budget=DOCUMENT_BUDGET,
         )
-        suffix = "\n</memory-recall>"
-        rows: list[str] = []
-        for hit in hits:
-            if scan_threats(hit["excerpt"], hit["heading"]):
-                continue  # 원문 유래 오염 구간 — 주입 제외
-            where = f" · {hit['heading']}" if hit["heading"] else ""
-            row = f"- {_neutralize(hit['name'])}{_neutralize(where)}: {_neutralize(hit['excerpt'])}"
-            if len(prefix + "\n".join([*rows, row]) + suffix) > DOCUMENT_BUDGET:
-                break
-            rows.append(row)
-        return prefix + "\n".join(rows) + suffix if rows else ""
     except Exception:
         return ""  # fail-open — 문서 회수 불능이 대화를 막지 않는다
 
