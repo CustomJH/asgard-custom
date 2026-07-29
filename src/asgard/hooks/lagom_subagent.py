@@ -31,6 +31,15 @@ _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 NEVER_INJECT = ("asgard-verifier",)  # 검증 기준 오염 방지 — Verifier 무주입 원칙 (heimdall 과 동일)
 
 
+def _read_text(path):
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def norm(m):
     m = str(m or "").strip().lower()
     return m if m in MODES else None
@@ -67,13 +76,14 @@ def matcher_pattern(root):
         return pat
     # 신규 JSON 설정 우선, 구 config.toml 폴백 — settings.py 와 동일 유지 (단일 출처 원칙)
     try:
-        cfg = json.load(open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8"))
+        with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
+            cfg = json.load(handle)
         if isinstance(cfg, dict):
             return str((cfg.get("lagom") or {}).get("subagent_matcher") or "")
     except Exception:
         pass
     try:
-        txt = open(os.path.join(root, ".asgard", "config.toml"), encoding="utf-8").read()
+        txt = _read_text(os.path.join(root, ".asgard", "config.toml"))
         sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
         if sec:
             kv = re.search(r'^\s*subagent_matcher\s*=\s*"(.*?)"', sec.group(1), re.M)
@@ -130,9 +140,7 @@ def main():
                     sys.exit(0)
             except re.error:
                 pass  # 잘못된 정규식 = matcher 없음 취급 → 주입 (fail-open=주입)
-        canon = open(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"), encoding="utf-8"
-        ).read()
+        canon = _read_text(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"))
         emit(client(), "[lagom] mode=%s\n\n%s" % (mode, render(canon, mode)))
     except Exception:
         pass  # 훅 자체 오류 = 무개입 (서브에이전트를 막지 않는다)

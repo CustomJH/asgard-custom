@@ -33,6 +33,20 @@ _BARE = re.compile(r"^\s*/lagom\s*$", re.I)
 _DEACTIVATE = re.compile(r"^\s*(stop lagom|normal mode)\s*[.!]?\s*$", re.I)
 
 
+def _read_text(path):
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _write_text(path, text):
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text)
+
+
 def norm(m):
     m = str(m or "").strip().lower()
     return m if m in MODES else None
@@ -75,7 +89,7 @@ def config_mode(root):
                 return m
             continue
         try:
-            txt = open(scope_toml, encoding="utf-8").read()
+            txt = _read_text(scope_toml)
         except Exception:
             continue
         sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
@@ -124,17 +138,18 @@ def persist_default(root, mode):
         new = os.path.join(asg, "asgard-setting-project.json")
         legacy = os.path.join(asg, "config.toml")
         if not os.path.exists(new) and os.path.exists(legacy):
-            txt = open(legacy, encoding="utf-8").read()
+            txt = _read_text(legacy)
             block = '[lagom]\nmode = "%s"\n' % mode
             pat = r"^\[lagom\][^\[]*"
             if re.search(pat, txt, re.M):
                 txt = re.sub(pat, block, txt, count=1, flags=re.M)
             else:
                 txt = (txt.rstrip() + "\n\n" + block) if txt.strip() else block
-            open(legacy, "w", encoding="utf-8").write(txt)
+            _write_text(legacy, txt)
             return True
         try:
-            data = json.load(open(new, encoding="utf-8"))
+            with open(new, encoding="utf-8") as handle:
+                data = json.load(handle)
             if not isinstance(data, dict):
                 data = {}
         except Exception:
@@ -154,7 +169,7 @@ def persist_default(root, mode):
 
 def canon_text():
     try:
-        return open(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"), encoding="utf-8").read()
+        return _read_text(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"))
     except Exception:
         return ""
 

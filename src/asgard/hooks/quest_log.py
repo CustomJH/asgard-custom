@@ -46,6 +46,12 @@ for _stream in (sys.stdout, sys.stderr):
 
 SCHEMA = 2
 EMPTY = hashlib.sha256(b"").hexdigest()  # 변경 전무(diff 없음 + untracked 없음)의 정준 해시
+# 숫자 파싱 실패 두 종. 이름으로 묶는 이유: 훅은 asgard 의 venv 가 아니라 사용자 PATH 의
+# python3 로 돈다(`platform.hook_python`). 괄호 없는 다중 except 는 3.14+ 문법(PEP 758)이라
+# 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError 가 되고, 훅 계약이 fail-open 이라 그
+# 죽음이 **조용하다**. 그렇다고 괄호로 쓰면 포매터(target-version=py314)가 도로 벗긴다 —
+# 이름은 못 건드린다. tests/test_architecture.py 의 문법 바닥 검사가 이 불변식을 지킨다.
+_BAD_NUMBER = (TypeError, ValueError)
 EVENTS = {
     "plan",
     "work",
@@ -235,6 +241,20 @@ def ledger_integrity(events: list[dict]) -> tuple[bool, str]:
         if current_execution != execution_id or current_acceptance != acceptance_hash:
             return False, f"turn {index}: execution or acceptance identity changed"
     return True, "protected" if protected else "legacy"
+
+
+def _read_text(path: str) -> str:
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다(없음/깨짐/권한).
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _read_bytes(path: str) -> bytes:
+    with open(path, "rb") as handle:
+        return handle.read()
 
 
 def repo_root() -> str:
@@ -513,7 +533,7 @@ def diff_state(
         full_path = os.path.join(root, p)
         is_link = os.path.islink(full_path)
         try:
-            after = symlink_map_state(full_path) if is_link else open(full_path, "rb").read()
+            after = symlink_map_state(full_path) if is_link else _read_bytes(full_path)
         except OSError:
             after = None
         if (before if before_rc == 0 else None) != after:
@@ -1118,7 +1138,7 @@ def active_quest(root: str, session: str | None = None) -> str | None:
     if session is not None:
         session_path = _session_pointer(root, session)
         try:
-            qid = open(session_path, encoding="utf-8").read().strip()
+            qid = _read_text(session_path).strip()
             if qid:
                 return qid
         except Exception:
@@ -1130,7 +1150,7 @@ def active_quest(root: str, session: str | None = None) -> str | None:
         # session은 active Quest가 정확히 하나일 때만 안전하게 승계한다. 둘 이상이면 fail closed.
         try:
             active = {
-                open(os.path.join(sessions, name), encoding="utf-8").read().strip()
+                _read_text(os.path.join(sessions, name)).strip()
                 for name in os.listdir(sessions)
                 if name.endswith(".active")
             }
@@ -1144,7 +1164,7 @@ def active_quest(root: str, session: str | None = None) -> str | None:
     paths.append(os.path.join(root, ".asgard", "quest", "ACTIVE"))  # v1 fallback
     for path in paths:
         try:
-            qid = open(path, encoding="utf-8").read().strip()
+            qid = _read_text(path).strip()
             if qid:
                 return qid
         except Exception:
@@ -1161,7 +1181,7 @@ def set_active_quest(root: str, session: str, qid: str) -> None:
 def clear_active_quest(root: str, session: str, qid: str) -> None:
     for path in (_session_pointer(root, session), os.path.join(quest_dir(root), "ACTIVE")):
         try:
-            if open(path, encoding="utf-8").read().strip() == qid:  # compare-and-delete
+            if _read_text(path).strip() == qid:  # compare-and-delete
                 os.remove(path)
                 _fsync_dir(os.path.dirname(path))
         except FileNotFoundError:
@@ -1177,7 +1197,7 @@ def _mtime(path: str) -> float:
 
 def _pointer_qid(path: str) -> str:
     try:
-        return open(path, encoding="utf-8").read().strip()
+        return _read_text(path).strip()
     except Exception:
         return ""
 
@@ -1262,15 +1282,16 @@ def load_events(root: str, qid: str) -> list[dict]:
     path = os.path.join(root, ".asgard", "quest", qid + ".jsonl")
     events = []
     try:
-        for line_number, line in enumerate(open(path, encoding="utf-8"), 1):
-            if not line.strip():
-                continue
-            try:
-                events.append(json.loads(line))
-            except Exception:
-                # Do not silently replay around a torn/corrupt event. The caller can report the
-                # exact line, while older valid unhashed logs remain readable.
-                events.append({"_corrupt": True, "_line": line_number})
+        with open(path, encoding="utf-8") as handle:
+            for line_number, line in enumerate(handle, 1):
+                if not line.strip():
+                    continue
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    # Do not silently replay around a torn/corrupt event. The caller can report the
+                    # exact line, while older valid unhashed logs remain readable.
+                    events.append({"_corrupt": True, "_line": line_number})
     except Exception:
         pass
     return events
@@ -1445,11 +1466,11 @@ def fold_tickets(events: list[dict]) -> dict[str, dict]:
         )
         try:
             attempt = int(str(attempt_value)) if attempt_value is not None else 0
-        except TypeError, ValueError:
+        except _BAD_NUMBER:
             attempt = 0
         try:
             max_attempts = int(str(max_attempts_value)) if max_attempts_value is not None else 3
-        except TypeError, ValueError:
+        except _BAD_NUMBER:
             max_attempts = 3
         tickets[key] = {
             "id": event["unit"],

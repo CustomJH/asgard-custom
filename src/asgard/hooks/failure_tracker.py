@@ -94,7 +94,8 @@ def log_fail(proj: str, sid: str, key: str, n: int) -> None:
         qid = ""
         for pointer in pointers:
             try:
-                qid = open(pointer, encoding="utf-8").read().strip()
+                with open(pointer, encoding="utf-8") as handle:
+                    qid = handle.read().strip()
             except OSError:
                 continue
             if qid:

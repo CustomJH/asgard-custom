@@ -29,6 +29,15 @@ _ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
 _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
 
+def _read_text(path):
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
 def norm(m):
     m = str(m or "").strip().lower()
     return m if m in MODES else None
@@ -85,7 +94,7 @@ def config_mode(root):
                 return m
             continue
         try:
-            txt = open(scope_toml, encoding="utf-8").read()
+            txt = _read_text(scope_toml)
         except Exception:
             continue
         sec = re.search(r"(?ms)^\[lagom\]\s*$(.*?)(?=^\[|\Z)", txt)
@@ -146,9 +155,7 @@ def main():
                 pass
         if mode == "off":
             sys.exit(0)  # 무주입 — off 는 흔적도 없어야 한다 (토큰 회귀 없음)
-        canon = open(
-            os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"), encoding="utf-8"
-        ).read()
+        canon = _read_text(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"))
         emit(
             client(),
             "[lagom] mode=%s (source=%s)\n\n%s" % (mode, data.get("source") or "?", render(canon, mode)),

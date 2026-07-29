@@ -219,6 +219,36 @@ class TestLayeredArchitecture(unittest.TestCase):
             scan(tree, f, guarded=False)
         self.assertFalse(violations, "훅 자립 계약 위반:\n" + "\n".join(violations))
 
+    def test_hooks_parse_on_old_python(self):
+        """훅 문법 바닥 — hooks/*.py 는 사용자 PATH 의 `python3` 로 돈다, asgard 의 venv 가 아니라.
+
+        `platform.hook_python()` 은 `shutil.which("python3")` 이 찾은 것을 그대로 쓴다. 그래서
+        asgard 자신의 `requires-python` 은 훅에 대한 보장이 못 된다 — 훅이 최신 문법을 쓰면
+        조금 낡은 기계에서 임포트 시점 SyntaxError 가 되고, 훅 계약은 fail-open 이라 그 죽음이
+        **조용하다**: 사용자는 계층이 켜진 줄 알고 아무 일도 안 일어난다.
+
+        실제로 그 자리가 있었다: 괄호 없는 다중 except (PEP 758, 3.14+) 가 세 군데 있었고,
+        3.13 기계에서는 매뉴얼 계층과 퀘스트 로그가 통째로 증발하는 상태였다.
+
+        바닥을 3.9 로 잡는다 — "python3 라고 불리는 것"의 현실적 하한이다. 문법만 본다
+        (`ast` 는 실행하지 않는다). 새 문법이 정말 필요하면 이 상수를 올리되, 그건 훅이 도는
+        기계의 최소 사양을 올리겠다는 **명시적 결정**이어야 한다."""
+        floor = (3, 9)
+        hooks_dir = os.path.join(SRC, "hooks")
+        broken: list[str] = []
+        for f in sorted(os.listdir(hooks_dir)):
+            if not f.endswith(".py"):
+                continue
+            src = open(os.path.join(hooks_dir, f), encoding="utf-8").read()
+            try:
+                ast.parse(src, filename=f, feature_version=floor)
+            except SyntaxError as exc:
+                broken.append(f"hooks/{f}:{exc.lineno} — {exc.msg}")
+        self.assertFalse(
+            broken,
+            f"훅이 python {floor[0]}.{floor[1]} 에서 파싱되지 않는다 (조용히 죽는다):\n" + "\n".join(broken),
+        )
+
 
 def _layer(top: str) -> str:
     return LAYERS[_RANK[top]][0]

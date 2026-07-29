@@ -264,6 +264,13 @@ def _released(scope: ast.AST, target: str) -> bool:
     따라갈 수 없고, 따라가지 못하는 것을 누수라고 부르면 그것은 판정이 아니라 짐작이다.
     """
     for node in ast.walk(scope):
+        if isinstance(node, (ast.With, ast.AsyncWith)) and any(
+            isinstance(item.context_expr, ast.Name) and item.context_expr.id == target for item in node.items
+        ):
+            # `h = open(p)` 뒤의 `with h:` — `_managed` 는 획득이 `with` **식 안**에 있을 때만 아는데,
+            # 여는 실패와 읽는 실패를 따로 다뤄야 하면 획득을 밖으로 뺄 수밖에 없다(hooks/budget_guard
+            # 의 원장 읽기가 그것이다). 그 정답 형상을 누수로 읽으면 게이트가 자기 처방을 막는다.
+            return True
         if isinstance(node, ast.Call):
             func = node.func
             if isinstance(func, ast.Attribute):

@@ -156,6 +156,20 @@ def unattended(data):
     return os.environ.get("ASGARD_UNATTENDED") == "1" or str(data.get("permission_mode")) in UNATTENDED_MODES
 
 
+def _read_text(path):
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _read_bytes(path):
+    with open(path, "rb") as handle:
+        return handle.read()
+
+
 def git(root, *args, binary=False):
     # color.ui=false 강제 — quest_log.py 의 git 과 동일 유지 (ANSI 가 경로 파싱을 오염)
     try:
@@ -334,7 +348,7 @@ def diff_state(root, base_ref, ignored_base=None):
         full_path = os.path.join(root, p)
         is_link = os.path.islink(full_path)
         try:
-            after = symlink_map_state(full_path) if is_link else open(full_path, "rb").read()
+            after = symlink_map_state(full_path) if is_link else _read_bytes(full_path)
         except OSError:
             after = None
         if (before if before_rc == 0 else None) != after:
@@ -743,7 +757,7 @@ def quest_pointer(root, sid, kind="active"):
     sessions = os.path.join(root, ".asgard", "quest", "sessions")
     session_path = os.path.join(sessions, name + "." + kind)
     try:
-        qid = open(session_path, encoding="utf-8").read().strip()
+        qid = _read_text(session_path).strip()
         if qid:
             return qid
     except Exception:
@@ -753,7 +767,7 @@ def quest_pointer(root, sid, kind="active"):
             return None  # 이 세션은 이미 닫혔음 — 다른 세션으로 fallback 금지
         try:
             active = {
-                open(os.path.join(sessions, entry), encoding="utf-8").read().strip()
+                _read_text(os.path.join(sessions, entry)).strip()
                 for entry in os.listdir(sessions)
                 if entry.endswith(".active")
             }
@@ -767,7 +781,7 @@ def quest_pointer(root, sid, kind="active"):
     # kind="last": 승인된 close 는 legacy LAST 도 항상 기록한다 — 세션 포인터 부재 시 안전 폴백
     for path in [os.path.join(root, ".asgard", "quest", "ACTIVE" if kind == "active" else "LAST")]:
         try:
-            qid = open(path, encoding="utf-8").read().strip()
+            qid = _read_text(path).strip()
             if qid:
                 return qid
         except Exception:
@@ -805,11 +819,12 @@ def orphan_writes(root, sid):
         if not qid:
             raise FileNotFoundError("no last quest for session")
         events: list[dict] = []
-        for line in open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"):
-            try:
-                events.append(json.loads(line))
-            except Exception:
-                continue
+        with open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    events.append(json.loads(line))
+                except Exception:
+                    continue
         base_ref = next((e.get("base_ref") for e in events if e.get("base_ref")), None)
         closed = [e for e in events if e.get("event") == "quest_closed"]
         close_risk = (closed[-1].get("risk") or {}) if closed else {}
@@ -856,15 +871,14 @@ def main():
             sys.exit(0)  # write 흔적 없음 → 게이트 대상 아님
         events: list[dict] = []
         try:
-            for line_number, line in enumerate(
-                open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8"), 1
-            ):
-                if not line.strip():
-                    continue
-                try:
-                    events.append(json.loads(line))
-                except Exception:
-                    events.append({"_corrupt": True, "_line": line_number})
+            with open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
+                for line_number, line in enumerate(handle, 1):
+                    if not line.strip():
+                        continue
+                    try:
+                        events.append(json.loads(line))
+                    except Exception:
+                        events.append({"_corrupt": True, "_line": line_number})
         except Exception:
             sys.exit(0)  # 로그 읽기 실패 → warn+allow (fail-open)
         if not events:

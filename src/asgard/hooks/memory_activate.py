@@ -72,18 +72,28 @@ def _message_text(value) -> str:
     return ""
 
 
-def _latest_turn(data: dict) -> tuple[str, str]:
-    user = str(data.get("prompt") or "").strip()
-    assistant = str(data.get("last_assistant_message") or "").strip()
-    path = str(data.get("transcript_path") or "")
-    if (not user or not assistant) and path:
-        try:
-            latest_user = ""
-            for line in open(path, encoding="utf-8"):
+def _read_text(path: str) -> str:
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def _transcript_turn(path: str, user: str, assistant: str) -> tuple[str, str]:
+    """대화 기록에서 마지막 (사용자, 어시스턴트) 짝. 못 읽으면 받은 값을 그대로 돌려준다.
+
+    `_latest_turn` 에서 갈라 나온 이유는 깊이다 — 조건·try·with·루프·try 가 한 함수에 겹치면
+    읽는 사람이 어느 실패가 어디로 가는지 못 따라간다."""
+    latest_user = ""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
                 try:
                     row = json.loads(line)
                 except Exception:
-                    continue
+                    continue  # 찢어진 줄 하나 — 기록 전체를 버리는 것보다 그 줄만 건너뛰는 편이 낫다
                 message = row.get("message") if isinstance(row.get("message"), dict) else row
                 role = str(message.get("role") or row.get("role") or row.get("type") or "")
                 text = _message_text(message.get("content"))
@@ -91,8 +101,17 @@ def _latest_turn(data: dict) -> tuple[str, str]:
                     latest_user = text
                 elif role == "assistant" and text:
                     user, assistant = latest_user or user, text
-        except Exception:
-            pass
+    except Exception:
+        pass  # 기록을 못 읽어도 훅은 무개입으로 통과한다 — 여기서 올리면 세션 시작이 막힌다
+    return user, assistant
+
+
+def _latest_turn(data: dict) -> tuple[str, str]:
+    user = str(data.get("prompt") or "").strip()
+    assistant = str(data.get("last_assistant_message") or "").strip()
+    path = str(data.get("transcript_path") or "")
+    if (not user or not assistant) and path:
+        return _transcript_turn(path, user, assistant)
     return user, assistant
 
 
@@ -106,7 +125,7 @@ def _completion_context(root: str, session_id: str) -> dict:
         os.path.join(quest_dir, "LAST"),
     ):
         try:
-            qid = open(pointer, encoding="utf-8").read().strip()
+            qid = _read_text(pointer).strip()
             if qid:
                 last_ids.add(qid)
         except Exception:
@@ -116,9 +135,8 @@ def _completion_context(root: str, session_id: str) -> dict:
         name = qid + ".jsonl"
         events = []
         try:
-            events = [
-                json.loads(line) for line in open(os.path.join(quest_dir, name), encoding="utf-8") if line.strip()
-            ]
+            with open(os.path.join(quest_dir, name), encoding="utf-8") as handle:
+                events = [json.loads(line) for line in handle if line.strip()]
         except Exception:
             continue
         if not events or not any(str(event.get("session_id")) == session_id for event in events):
