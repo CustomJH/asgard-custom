@@ -77,6 +77,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "craft_lex",
                 "craft_c",
                 "thor_gate",
+                # freyja_gate — 시각 표면의 래칫. craft(형상)·thor_gate(정확성)와 같은 층이고
+                # 같은 계약을 진다. 규칙을 스스로 갖지 않고 각 엔진이 배송한 판정기를 부른다.
+                "freyja_gate",
                 "thor_trail",
                 "thor_survey",
                 "thor_rules",

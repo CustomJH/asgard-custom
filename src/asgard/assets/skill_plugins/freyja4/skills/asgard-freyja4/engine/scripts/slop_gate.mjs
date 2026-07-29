@@ -1164,6 +1164,159 @@ function judge(bundle, genre) {
     add("A2", "no placeholder links (Asgard)", f, { na: !hasHtml });
   }
 
+  /* 5 — 두꺼운 색 세로 획을 두른 카드 (side-stripe card)
+   *
+   * 실측으로 들어온 결함이다. 사용자가 화면을 보고 "이 왼쪽 표시가 AI 슬롭"이라고 짚었는데,
+   * 이 판정기는 그 게이트를 **판정하지도, 못 잰다고 선언하지도 않고** 있었다. 그건 통과보다
+   * 나쁘다 — 안 본 것을 안 봤다고도 안 하면 보고서가 거짓말을 한다.
+   *
+   * 세로 획은 `border-left`/`border-inline-start` 로도, `box-shadow: inset Npx 0 0` 로도 그린다.
+   * 후자가 더 흔한 요즘 표기라 둘 다 본다. 2px 를 넘고 색이 강조색 계열이면 문다. */
+  {
+    const f = [];
+    const ACCENTISH = /(accent|gold|brand|primary|rune)/i;
+    for (const { r, d } of decls) {
+      const v = tokens.resolve(d.value);
+      if (/^border-(left|right|inline-start|inline-end)$/.test(d.prop)) {
+        const px = Number((v.match(/(-?[\d.]+)px/) || [])[1] || 0);
+        if (px >= 2 && ACCENTISH.test(d.value)) {
+          f.push(`${at(r, d)}  ${r.selector.trim().slice(0, 36)} — ${d.prop}: ${px}px 강조색 세로 획`);
+        }
+      } else if (d.prop === "box-shadow" && /\binset\b/.test(v)) {
+        // inset <x> 0 0 <color> — 세로 획을 그림자로 그리는 표기
+        for (const part of v.split(/,(?![^(]*\))/)) {
+          const m = part.match(/inset\s+(-?[\d.]+)px\s+0(?:px)?\s+0(?:px)?\s+([^,]*)/i);
+          if (m && Math.abs(Number(m[1])) >= 2 && ACCENTISH.test(m[2] + d.value)) {
+            f.push(`${at(r, d)}  ${r.selector.trim().slice(0, 36)} — inset ${m[1]}px 강조색 세로 획`);
+          }
+        }
+      }
+    }
+    add(5, "no side-stripe card — a coloured bar on the edge is a template tell", f);
+  }
+
+  /* 3 — 아이콘이 제목 위에 얹힌 3열 균등 카드 격자 (A4 가 잡는 균일 격자의 아이콘 판) */
+  {
+    const f = [];
+    if (hasHtml) {
+      for (const root of html) {
+        for (const n of walk(root)) {
+          const kids = n.children.filter((k) => k.tag);
+          if (kids.length !== 3) continue;
+          const iconTop = kids.every((k) => {
+            const first = k.children.find((c) => c.tag);
+            return first && (first.tag === "svg" || first.tag === "img" || /icon/i.test(cls(first)));
+          });
+          if (iconTop) f.push(`html:${n.line}  <${n.tag} class="${cls(n).slice(0, 28)}"> — 아이콘 위 제목의 3열 카드`);
+        }
+      }
+    }
+    add(3, "no icon-above-heading three-card grid", f, { na: !hasHtml });
+  }
+
+  /* 4 — 카드 안의 카드 */
+  {
+    const f = [];
+    if (hasHtml) {
+      const CARDY = /(^|\s)(card|tile|panel|box)(\s|$|__|-)/i;
+      for (const root of html) {
+        for (const n of walk(root)) {
+          if (!CARDY.test(cls(n))) continue;
+          for (const inner of walk(n)) {
+            if (CARDY.test(cls(inner))) {
+              f.push(`html:${inner.line}  <${inner.tag} class="${cls(inner).slice(0, 24)}"> 가 카드 안에 또 카드`);
+              break;
+            }
+          }
+        }
+      }
+    }
+    add(4, "no card nested inside a card", f, { na: !hasHtml });
+  }
+
+  /* Asgard A3 — 흐름의 증거: 사전 자기비평이 스탬프에 기록되었는가.
+   *
+   * 이 도구는 산출물을 판정한다. 그런데 실측된 실패는 **산출물이 아니라 흐름**에서 났다:
+   * 에이전트가 엔진 이름을 부르고, 판정기만 돌려 PASS 를 받고, 설계 흐름(장르·매크로 구조·
+   * 사전 자기비평)은 건너뛰었다. 판정기가 통과시킨 그 화면은 사람이 보자마자 슬롭이라고 했다.
+   *
+   * 생각했는지는 기계가 못 본다. 그러나 **규칙이 적으라고 한 것을 적었는지**는 본다.
+   * SKILL 의 계약: 여섯 축을 매기고, 3 미만이면 emit 전에 수정 패스를 돈다. 그러므로
+   * 축이 없거나 3 미만인 채로 출하된 산출물은, 내용과 무관하게 규칙 위반이다. */
+  {
+    const f = [];
+    const AXES = [["P", "Philosophy"], ["H", "Hierarchy"], ["E", "Execution"],
+                  ["S", "Specificity"], ["R", "Restraint"], ["V", "Variety"]];
+    const stamp = firstCssComment || "";
+    // 이 게이트는 "네가 **주장한** 흐름이 실제로 돌았는가"를 묻는다 — 주장이 없으면 물을 것도
+    // 없다. 남의 엔진 산출물(숀헤르빙 표본 등)까지 마르될의 흐름으로 재면 그건 판정이 아니라
+    // 월권이다. 도장이 아예 없는 경우는 게이트 20 이 이미 말하므로 여기서 겹쳐 말하지 않는다.
+    const claimsFreyja4 = /Freyja4\s*·/.test(stamp);
+    if (!claimsFreyja4) {
+      // 주장이 없다 — 판정 대상이 아니다. 게이트 20 이 도장 부재를 이미 말한다.
+      add("A3", "pre-emit critique is recorded and clears 3 (Asgard)", [], { na: true });
+    } else if (!/pre-?emit\s+critique/i.test(stamp)) {
+      f.push("스탬프에 pre-emit critique 가 없다 — 여섯 축을 매겼다는 기록이 없으면 흐름은 안 돈 것으로 본다");
+    } else {
+      for (const [key, name] of AXES) {
+        const m = stamp.match(new RegExp(`\\b${key}\\s*([1-5])\\b`));
+        if (!m) { f.push(`pre-emit critique 에 ${key}(${name}) 축이 없다`); continue; }
+        if (Number(m[1]) < 3) {
+          f.push(`${key}(${name}) = ${m[1]} — 3 미만은 emit 전에 수정 패스를 돌아야 한다. 점수가 아니라 코드를 고쳐라`);
+        }
+      }
+    }
+    if (claimsFreyja4) add("A3", "pre-emit critique is recorded and clears 3 (Asgard)", f);
+  }
+
+  /* Asgard A4 — 균일 타일 격자: 같은 클래스의 카드 N장이 등폭 트랙에 늘어선 모양.
+   *
+   * 게이트 3 은 "아이콘 위 제목의 3열 격자"만 잡는다. 실측에서 슬롭으로 읽힌 것은 아이콘이
+   * 없는 **2×2 등폭 카드 넷**이었다 — AI 채팅앱 환영 화면의 지문. 무게가 전부 같으면 그것은
+   * 위계가 아니라 격자이고, 읽는 사람은 "생성된 화면"으로 읽는다. 스팬을 달리하거나,
+   * 카드를 줄이거나, 글 한 줄로 바꿔라. */
+  {
+    const f = [];
+    // `repeat(N, 1fr)` 와 `1fr 1fr` / `minmax(0,1fr) minmax(0,1fr)` 두 표기를 같은 것으로 본다
+    const REPEAT_EQUAL = /repeat\(\s*([2-9])\s*,\s*(?:minmax\(\s*0\s*,\s*)?1fr/;
+    const gridSelectors = [];
+    for (const { r, d } of decls) {
+      if (d.prop !== "grid-template-columns") continue;
+      const v = tokens.resolve(d.value).trim();
+      const repeated = v.match(REPEAT_EQUAL);
+      if (repeated) { gridSelectors.push({ r, d, tracks: Number(repeated[1]) }); continue; }
+      const tracks = v.split(/\s+(?![^(]*\))/).filter(Boolean);
+      if (tracks.length >= 2 && tracks.every((t) => t === tracks[0] && /1fr/.test(t))) {
+        gridSelectors.push({ r, d, tracks: tracks.length });
+      }
+    }
+    if (gridSelectors.length && hasHtml) {
+      const classOf = (n) => (n.attrs?.class || "").trim();
+      for (const root of html) {
+        for (const n of walk(root)) {
+          const kids = n.children.filter((k) => k.tag && !/^(script|style|template)$/.test(k.tag));
+          if (kids.length < 3) continue;
+          const first = classOf(kids[0]);
+          if (!first) continue;
+          if (!kids.every((k) => classOf(k) === first)) continue;
+          // 카드 모양인지: 자식마다 글을 나르는 요소가 둘 이상(제목 + 설명). 칩·내비 링크는
+          // 한 덩어리라 여기서 걸리지 않는다 — 균일함 자체가 죄는 아니다.
+          const cardish = kids.every((k) => k.children.filter((c) => c.tag).length >= 2);
+          if (!cardish) continue;
+          const holder = cls(n);
+          const matched = gridSelectors.find(({ r }) =>
+            r.selector.split(",").some((sel) => {
+              const m = sel.trim().match(/\.([A-Za-z0-9_-]+)\s*$/);
+              return m && holder.split(/\s+/).includes(m[1].toLowerCase());
+            }));
+          if (!matched) continue;
+          f.push(`html:${n.line}  <${n.tag} class="${holder.slice(0, 28)}"> — 같은 클래스 카드 ${kids.length}장이 등폭 ${matched.tracks}열에 늘어섰다 (환영/기능 카드 지문)`);
+        }
+      }
+    }
+    add("A4", "no uniform tile grid — weight must differ (Asgard)", f, { na: !hasHtml });
+  }
+
   return gates;
 }
 

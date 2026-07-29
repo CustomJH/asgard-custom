@@ -53,7 +53,9 @@ JUDGED_SUFFIXES = (
     ".h",
     ".cpp",
 )
-GATES = (("craft", ["craft"]), ("thor gate", ["thor", "gate"]))
+# 세 번째 게이트 — 시각 표면. 규칙은 각 프레이야 엔진이 배송한 판정기가 갖고, 이 훅은
+# 세 게이트를 같은 `blocking` 계약으로만 읽는다.
+GATES = (("craft", ["craft"]), ("thor gate", ["thor", "gate"]), ("freyja gate", ["freyja-gate"]))
 
 
 def _writes(root: str, sid: str) -> list[str]:

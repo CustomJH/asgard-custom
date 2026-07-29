@@ -23,6 +23,7 @@ _SUMMARY = {
     "health": "codebase erosion signal — size, duplication, coupling, hotspots",
     "budget": "what this session has spent — cost units, raw components, per-lane attribution",
     "craft": "micro-shape of THIS diff — unit size/nesting, resource lifetime, cost",
+    "freyja-gate": "visual surfaces of THIS diff — judged by each Freyja engine, ratcheted vs a base",
     "thor": "backend procedure engine — verb playbooks, the next verb, and the correctness gate",
     "tutor": "hand THIS diff back to you — what changed, and the questions only you can answer",
     "surface": "public API surface vs a base ref — breaking changes and call-site obligations",
@@ -52,9 +53,10 @@ _FLAGS = {
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
-    "health": ["--snapshot", "--json", "--quiet"],
+    "health": ["--snapshot", "--next", "--steps", "--json", "--quiet"],
     "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
+    "freyja-gate": ["--base", "--path", "--json"],
     "thor": ["--base", "--json", "--note", "--path", "--quiet"],
     "tutor": [
         "--base",

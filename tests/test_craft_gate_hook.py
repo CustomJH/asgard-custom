@@ -32,7 +32,7 @@ class MergedJudgement(unittest.TestCase):
 
     def _run(self, outputs: dict[str, object]) -> list[dict]:
         def fake(cmd, **kwargs):
-            verb = "thor gate" if "thor" in cmd else "craft"
+            verb = "thor gate" if "thor" in cmd else ("freyja gate" if "freyja-gate" in cmd else "craft")
             result = mock.Mock()
             payload = outputs.get(verb)
             if isinstance(payload, Exception):
@@ -43,15 +43,17 @@ class MergedJudgement(unittest.TestCase):
         with mock.patch.object(craft_gate.subprocess, "run", side_effect=fake):
             return craft_gate._blocking("asgard", "/tmp", ["a.py"])
 
-    def test_both_gates_are_called_and_tagged(self):
+    def test_every_gate_is_called_and_tagged(self):
+        """세 게이트는 근거가 다르다 — 형상 · 정확성 · 표면. 판정은 합치되 출처는 안 섞는다."""
         found = self._run(
             {
                 "craft": {"blocking": [{"rule": "unit-oversize", "path": "a.py", "line": 1}]},
                 "thor gate": {"blocking": [{"rule": "sql-interpolated", "path": "a.py", "line": 9}]},
+                "freyja gate": {"blocking": [{"gate": "A4", "path": "p.html", "detail": "균일 타일 격자"}]},
             }
         )
-        self.assertEqual(["craft", "thor gate"], [f["gate"] for f in found])
-        self.assertEqual({"unit-oversize", "sql-interpolated"}, {f["rule"] for f in found})
+        self.assertEqual(["craft", "thor gate", "freyja gate"], [f["gate"] for f in found])
+        self.assertEqual({"unit-oversize", "sql-interpolated"}, {f.get("rule") for f in found if f.get("rule")})
 
     def test_one_gate_failing_does_not_silence_the_other(self):
         """한 호출로 묶으면 하나의 고장이 둘 다 조용히 통과시킨다 — 그래서 따로 부른다."""

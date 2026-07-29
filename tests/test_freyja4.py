@@ -29,7 +29,9 @@ _GATE = _SKILL / "engine" / "scripts" / "slop_gate.mjs"
 # 판정 가능한 모든 게이트를 통과하도록 만든 기준 산출물. 이 픽스처가 깨지면
 # 게이트 집합이 서로 모순됐다는 뜻이다(= 어떤 페이지도 통과할 수 없다).
 CLEAN_CSS = """\
-/* Freyja4 · macrostructure: Workbench · tone: technical · anchor hue: 200 */
+/* Freyja4 · macrostructure: Workbench · tone: technical · anchor hue: 200
+ * pre-emit critique: P4 H4 E4 S4 R4 V4 — 게이트 A3 은 흐름의 증거를 요구한다: 여섯 축을
+ * 기록하지 않은 산출물은 내용과 무관하게 규칙 위반이다. 기준 산출물도 예외가 아니다. */
 :root {
   --color-paper: oklch(96% 0.008 250);
   --color-paper-2: oklch(92% 0.010 250);

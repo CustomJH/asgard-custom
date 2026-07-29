@@ -442,6 +442,21 @@ def craft(
     raise typer.Exit(run_craft(base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet))
 
 
+@app.command(
+    "freyja-gate",
+    help="visual surfaces of THIS diff — judged by each Freyja engine, ratcheted vs a base",
+)
+def freyja_gate(
+    base: str = typer.Option("HEAD", "--base", help="git ref to compare against (default HEAD)"),
+    path: list[str] = typer.Option(None, "--path", help="judge these paths instead of the diff (repeatable)"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    """엔진 이름만 부르고 흐름은 안 도는 실패를 표면에서 잡는다 — 규칙은 각 엔진의 판정기가 갖는다."""
+    from .freyja_gate import run_gate
+
+    raise typer.Exit(run_gate(base=base, json_out=json_, paths=tuple(path or ())))
+
+
 @app.command(help="hand THIS diff back to you — what changed, and the questions only you can answer")
 def tutor(
     words: list[str] = typer.Argument(

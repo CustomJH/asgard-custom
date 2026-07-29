@@ -1024,6 +1024,13 @@ def _design_engine_checks() -> list[dict]:
         }
     )
 
+    checks.append(_node_check())
+    return checks
+
+
+def _node_check() -> dict:
+    """엔진 스크립트 런타임. 번들 존재 확인과 갈라 두는 이유: 실려 왔는가와 **돌릴 수 있는가**는
+    다른 실패다. 파일은 다 있는데 node 가 없으면 처방이 `asgard update` 가 아니라 node 설치다."""
     node = on_path("node")
     version = ""
     if node:
@@ -1035,18 +1042,16 @@ def _design_engine_checks() -> list[dict]:
             ).stdout.strip()
         except Exception:
             version = ""
-    major = int(version.lstrip("v").split(".")[0]) if version.lstrip("v").split(".")[0].isdigit() else 0
-    checks.append(
-        {
-            "name": "node (design engines)",
-            # 엔진 스크립트는 node >= 22 를 요구한다. 없으면 프레이야 자체는 돌지만
-            # 검출기·훅·live 가 전부 죽으므로 침묵보다 경고가 낫다.
-            "ok": bool(node) and major >= 22,
-            "detail": (f"{version} · {node}" if node else "not found") + ("" if major >= 22 else " — need >= 22"),
-            "fix": "install node >= 22 — https://nodejs.org (프레이야 엔진1·2·3D 스크립트 런타임)",
-        }
-    )
-    return checks
+    head = version.lstrip("v").split(".")[0]
+    major = int(head) if head.isdigit() else 0
+    return {
+        "name": "node (design engines)",
+        # 엔진 스크립트는 node >= 22 를 요구한다. 없으면 프레이야 자체는 돌지만
+        # 검출기·훅·live 가 전부 죽으므로 침묵보다 경고가 낫다.
+        "ok": bool(node) and major >= 22,
+        "detail": (f"{version} · {node}" if node else "not found") + ("" if major >= 22 else " — need >= 22"),
+        "fix": "install node >= 22 — https://nodejs.org (프레이야 엔진1·2·3D 스크립트 런타임)",
+    }
 
 
 def _office_checks() -> list[dict]:
