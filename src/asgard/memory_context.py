@@ -28,6 +28,63 @@ _QUERY_STOPWORDS = frozenset(
         "알려줘",
         "대해서",
         "대한",
+        # 영어 — 같은 값의 낱말. 이게 없으면 영어 질의의 도메인어 판정이 무너진다:
+        # "what", "the", "is" 는 거의 모든 영어 본문에 있으므로 하나만 걸려도 통과가 되고,
+        # 그러면 게이트가 켜져 있어도 아무것도 안 거른다 (계기만 있고 이빨이 없는 상태).
+        "the",
+        "this",
+        "that",
+        "what",
+        "which",
+        "where",
+        "when",
+        "who",
+        "how",
+        "why",
+        "and",
+        "or",
+        "but",
+        "for",
+        "with",
+        "from",
+        "into",
+        "about",
+        "was",
+        "were",
+        "are",
+        "is",
+        "be",
+        "been",
+        "have",
+        "has",
+        "had",
+        "do",
+        "does",
+        "did",
+        "can",
+        "could",
+        "should",
+        "would",
+        "will",
+        "our",
+        "your",
+        "their",
+        "its",
+        "it",
+        "we",
+        "you",
+        "they",
+        "me",
+        "my",
+        "project",
+        "info",
+        "information",
+        "memory",
+        "current",
+        "related",
+        "tell",
+        "show",
+        "give",
     }
 )
 _QUERY_PARTICLES = (
@@ -52,16 +109,8 @@ _QUERY_PARTICLES = (
 )
 
 
-def _same_language_lexical_admission(query: str, text: str) -> bool:
-    """한국어 동언어 질의의 무근거 자동 주입만 보수적으로 차단한다.
-
-    Hindsight 0.8.x recall 결과에는 안정적인 relevance score가 없어서 임의의 점수 문턱을
-    둘 수 없다. 양쪽 모두 한국어일 때 도메인어가 하나도 겹치지 않는 경우만 기권하고,
-    영어↔한국어 교차언어 검색은 backend 순위를 그대로 보존한다.
-    """
-    body = text.split("\n\n", 1)[-1]
-    if not query.strip() or not re.search(r"[가-힣]", query) or not re.search(r"[가-힣]", body):
-        return True
+def _query_terms(query: str) -> list[str]:
+    """질의에서 뽑은 도메인어 — 조사를 떼고 불용어를 버린다 (한국어는 `\\b`가 안 듣는다)."""
     terms: list[str] = []
     for raw in re.findall(r"[A-Za-z0-9@._+-]+|[가-힣]+", query.lower()):
         candidates = [raw]
@@ -71,6 +120,42 @@ def _same_language_lexical_admission(query: str, text: str) -> bool:
         for candidate in candidates:
             if len(candidate) >= 2 and candidate not in _QUERY_STOPWORDS:
                 terms.append(candidate)
+    return terms
+
+
+def _dominant_script(text: str) -> str:
+    """이 글의 주된 문자체계 — "hangul" | "latin" | "" (판정 불가).
+
+    글자 수로 정한다. 섞임을 이렇게 다루는 이유는 한국어 질의가 기술 용어를 라틴 문자로
+    품는 일이 흔하기 때문이다 ("uv 로 테스트 돌려"). '라틴 글자가 있는가'로 판정하면 그런
+    질의가 영어 본문과 같은 언어로 오인돼 교차언어 회수가 막힌다."""
+    hangul = len(re.findall(r"[가-힣]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    if not hangul and not latin:
+        return ""
+    return "hangul" if hangul >= latin else "latin"
+
+
+def _same_language_lexical_admission(query: str, text: str) -> bool:
+    """동언어 질의의 무근거 자동 주입을 보수적으로 차단한다 (언어 대칭).
+
+    Hindsight 0.8.x recall 결과에는 안정적인 relevance score가 없어서 임의의 점수 문턱을
+    둘 수 없다. 그래서 쓰는 자가 어휘 겹침이다: 질의와 본문이 **같은 문자체계**인데
+    도메인어가 하나도 안 겹치면 기권한다. 교차언어(한국어 질의 ↔ 영어 본문)는 어휘가 안
+    겹치는 것이 정상이므로 backend 순위를 그대로 보존한다.
+
+    26-07-29 수정 — 이 게이트는 원래 **양쪽이 한글일 때만** 돌았다. 영어↔영어는 검사가
+    아예 없어서 backend 순위를 무조건 믿었다. 근거(점수 부재)는 언어와 무관한데 결과만
+    비대칭이었고, 그 대가는 영어 프로젝트가 잡음 통제를 못 받는 것이다 — 세계에 배포하는
+    도구에서 그쪽이 오히려 다수 경로다. 판정을 '한글인가'에서 '주된 문자체계가 같은가'로
+    바꾸면 기존 한국어 거동은 그대로면서 영어에도 같은 자가 선다."""
+    body = text.split("\n\n", 1)[-1]
+    if not query.strip():
+        return True
+    script = _dominant_script(query)
+    if not script or script != _dominant_script(body):
+        return True  # 교차언어 또는 판정 불가 — backend 순위를 존중한다
+    terms = _query_terms(query)
     haystack = text.lower()
     return not terms or any(term in haystack for term in terms)
 
