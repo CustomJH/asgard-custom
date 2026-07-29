@@ -143,6 +143,21 @@ def build_wiki(d: str) -> dict:
 MAX_PASSES = 3
 
 
+def _remap_merge(truth: dict, op: dict) -> None:
+    """머지된 슬러그를 정답 집합에서 갈아 끼운다 — 원본이 사라졌으므로 대상이 정답이 된다."""
+    for group in truth.values():
+        if op["src"] in group:
+            group.discard(op["src"])
+            group.add(op["dst"])
+
+
+def _remap_insight(truth: dict, op: dict) -> None:
+    """통찰 페이지도 패턴 질의의 정답이다 — 출처를 품은 패턴 군에만 더한다."""
+    for key, group in truth.items():
+        if key.startswith("pattern:") and set(op["sources"]) & group:
+            group.add(op["slug"])
+
+
 def run_norn(d: str, truth: dict) -> dict:
     """norn 을 수확이 없을 때까지(≤3패스) 적용. truth 를 remap 하고 op 로그를 반환."""
     truth = {k: set(v) for k, v in truth.items()}
@@ -156,15 +171,10 @@ def run_norn(d: str, truth: dict) -> dict:
         for op in result["applied"]:
             ops_log.append({k: v for k, v in op.items() if k != "text"})
             if op["op"] == "merge":
-                for group in truth.values():
-                    if op["src"] in group:
-                        group.discard(op["src"])
-                        group.add(op["dst"])
+                _remap_merge(truth, op)
             elif op["op"] == "insight":
                 insight_slugs.add(op["slug"])
-                for key, group in truth.items():
-                    if key.startswith("pattern:") and set(op["sources"]) & group:
-                        group.add(op["slug"])  # 통찰 페이지도 패턴 질의의 정답이다
+                _remap_insight(truth, op)
         if not result["applied"]:
             break
     return {"truth": {k: sorted(v) for k, v in truth.items()}, "insights": sorted(insight_slugs), "ops": ops_log}
