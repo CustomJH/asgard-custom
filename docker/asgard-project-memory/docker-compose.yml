@@ -3,7 +3,7 @@
 # 용도: 프로젝트 단위 공유 메모리. DB 하나에 여러 사용자가 bank(=프로젝트) 단위로 retain/recall.
 # 임베디드 pg0 대신 외부 PostgreSQL(pgvector) 채택 — 독립 백업(pg_dump)·재시작 안전·표준 운영 우선.
 #
-# 기본 구성 원칙 (2026-07-23 확정):
+# 기본 구성 원칙 (2026-07-23 확정, 2026-07-29 실서버 대조로 보강):
 #   · MCP 도구 기본 활성화 — 클라이언트는 single-bank `/mcp/{bank_id}/` 마운트(0.8.3 실측 29 tools)로 접속.
 #     bank 생성/열람 도구(create_bank·list_banks·get_bank_stats)는 multi-bank `/mcp/`에만 있어
 #     구조적으로 미노출 = bank 생성/관리는 관리자 전용(REST·UI). 설정으로 건들지 않는다.
@@ -11,6 +11,14 @@
 #     provider 를 none 으로 두면 chunk 저장 모드로 강등(관찰·Reflect 꺼짐) — fail-safe 폴백.
 #   · mission 항목(retain/observations/reflect)은 전부 빈칸이 기본 — Asgard 어댑터가 이미
 #     증류된 record 를 쓰므로 추가 조향은 추출 왜곡 위험만 키운다 (README §mission 결정).
+#
+# ── 이 파일이 상정하는 백엔드 (26-07-29 실측) ───────────────────────────────────
+# LLM 은 내부망 LiteLLM 게이트웨이의 `wams-summary` 다. **아래 상한들은 전부 이 실측에서 나왔다**:
+#   · 모델      Qwen/Qwen3.5-35B-A3B-GPTQ-Int4, `--max-model-len 16384`
+#   · 게이트웨이 request_timeout 180s · num_retries 2 · max_parallel_requests 7 · rpm 60
+#   · 게이트웨이가 `chat_template_kwargs.enable_thinking=false` 를 이미 붙인다 (thinking 끔)
+# 컨텍스트 16384 가 이 구성의 지배 제약이다. retain·consolidation·reflect 의 토큰 상한을
+# 업스트림 기본값대로 두면 전부 이 한 줄에 걸려 400 이 난다 — 아래 세 자리가 그 대응이다.
 #
 # 기동:  cp .env.example .env  →  비밀번호 채움  →  docker compose up -d
 # ⚠ 내부망/VPN 전제 — Hindsight MCP·REST 는 기본 무인증이다 (README §보안).
@@ -45,7 +53,9 @@ services:
       - "${HINDSIGHT_UI_PORT:-9999}:9999" # 웹 UI (bank 관리 = 관리자 표면)
     environment:
       HINDSIGHT_API_DATABASE_URL: postgresql://hindsight:${HINDSIGHT_DB_PASSWORD:?set HINDSIGHT_DB_PASSWORD in .env}@postgres:5432/hindsight
-      # LLM — retain(사실 추출)·관찰 통합·Reflect 에 쓰인다. recall(TEMPR)은 LLM 0.
+
+      # ── LLM 연결 ────────────────────────────────────────────────────────────
+      # retain(사실 추출)·관찰 통합·Reflect 에 쓰인다. recall(TEMPR)은 LLM 0.
       # 기본 .env 는 내부망 OpenAI 호환 게이트웨이 연결(엔드포인트·모델명·키는 .env 에만 둔다).
       # 폴백은 호스트 ollama(qwen3:8b, .env 주석 블록). none 이면 chunk 저장 모드로 강등.
       HINDSIGHT_API_LLM_PROVIDER: ${HINDSIGHT_LLM_PROVIDER:-none}
@@ -67,36 +77,125 @@ services:
       # 뱅크·아이템별로 못 바꾼다 — 서버 전역 하나뿐이라, 강제하지 않는 것이 유일하게 옳다.
       # 사람이 읽는 표면의 언어는 Asgard 가 따로 만든다. 여기는 원문을 지키는 자리다.
       HINDSIGHT_API_LLM_OUTPUT_LANGUAGE: ${HINDSIGHT_LLM_OUTPUT_LANGUAGE:-}
+
       # LLM 호출 상한. 업스트림 기본 120s 는 로컬 12B 추출에 모자란다 — 26-07-28 실측:
       # 한 문장 추출이 33.7s, 큐가 겹치면 120s 를 넘겨 retain 이 500 으로 끊겼다.
       # 느린 것과 실패하는 것은 다르다. 여유를 줘서 실패를 지연으로 되돌린다.
+      #
+      # 게이트웨이 구성에서는 이 값이 **직접 상한이 아니다**. LiteLLM 이 자기 request_timeout
+      # (180s)으로 먼저 끊고 num_retries=2 로 되민다 — 최악 ~540s 다. 여기를 180 근처로
+      # 좁히면 게이트웨이가 재시도로 살려낼 요청을 우리가 먼저 죽인다. 600 은 그 사다리가
+      # 끝까지 돌게 두려는 값이지 "10분을 기다리겠다"는 뜻이 아니다.
       HINDSIGHT_API_LLM_TIMEOUT: ${HINDSIGHT_LLM_TIMEOUT:-600}
       HINDSIGHT_API_RETAIN_LLM_TIMEOUT: ${HINDSIGHT_RETAIN_LLM_TIMEOUT:-600}
       HINDSIGHT_API_CONSOLIDATION_LLM_TIMEOUT: ${HINDSIGHT_CONSOLIDATION_LLM_TIMEOUT:-600}
-      # 로컬 Ollama는 한 모델 프로세스가 요청을 처리한다. 업스트림도 local LLM에는 1을
-      # 권장한다 — 기본 32면 consolidation과 mental-model refresh가 겹쳐 호스트를 압박한다.
+
+      # 동시 호출 상한 (업스트림 기본 32).
+      # 로컬 Ollama 는 한 모델 프로세스가 요청을 처리하므로 1 이어야 한다.
+      # 게이트웨이는 다르다 — max_parallel_requests=7 이라 병렬을 받아낸다. 다만 그 7은
+      # **WAMS 제품과 나눠 쓰는 예산**이다. .env 에서 3 으로 올리는 것이 기본 권고 —
+      # 절반 아래로 잡아 우리 대량 retain 이 제품 트래픽을 굶기지 않게 한다.
+      # 성능이 아니라 이웃에 대한 몫이라, compose 기본값은 가장 안전한 1 로 남긴다.
       HINDSIGHT_API_LLM_MAX_CONCURRENT: ${HINDSIGHT_LLM_MAX_CONCURRENT:-1}
       # consolidation 예약 2 + 일반 작업 1. mental-model 작업도 하나씩만 claim한다.
+      # (업스트림 기본은 10 이다 — 이 자리에 "32" 라고 적혀 있던 주석은 26-07-29 이미지
+      #  직접 확인으로 정정했다. 32 는 LLM_MAX_CONCURRENT 의 기본값이었다.)
       HINDSIGHT_API_WORKER_MAX_SLOTS: ${HINDSIGHT_WORKER_MAX_SLOTS:-3}
+      # 한 consolidation 안의 LLM 병렬도 (업스트림 기본 4). 위 MAX_CONCURRENT 예산을
+      # 한 작업이 통째로 먹지 않도록 1 로 둔다.
+      HINDSIGHT_API_CONSOLIDATION_LLM_PARALLELISM: ${HINDSIGHT_CONSOLIDATION_LLM_PARALLELISM:-1}
+      # 컨테이너를 다시 만들어도 async operation recovery 신원이 유지돼야 한다. 비워 두면
+      # (업스트림 기본 None) 재기동 때 신원이 갈려 진행 중이던 작업을 아무도 회수하지 않는다.
+      HINDSIGHT_API_WORKER_ID: ${HINDSIGHT_WORKER_ID:-asgard-project-memory-hindsight}
+
       # mission 조향 — 기본 빈칸(헤더 주석의 결정 참고). 필요해지면 .env 로만 켠다.
       HINDSIGHT_API_RETAIN_MISSION: ${HINDSIGHT_RETAIN_MISSION:-}
-      # retain 추출 출력 상한 — 컨텍스트 짧은 백엔드(vLLM max-model-len 등)에 맞춰 .env 로 낮춘다.
-      # 업스트림 기본 64000 은 max-model-len 16384 게이트웨이에서 400 (2026-07-23 실증).
-      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: ${HINDSIGHT_RETAIN_MAX_COMPLETION_TOKENS:-64000}
-      # 임베딩 — 반드시 다국어로 시작 (기본 bge-small-en 은 한국어 취약. 벡터 차원이
-      # 스키마에 고정되므로 나중에 바꾸면 전체 재임베딩 — 첫 기동 전에 확정할 것).
+
+      # ── 16384 컨텍스트에 맞춘 토큰 상한 3종 ─────────────────────────────────
+      # retain 추출 출력 상한 — 업스트림 기본 64000 은 max-model-len 16384 게이트웨이에서
+      # 400 (2026-07-23 실증). chunk size(3000)보다는 커야 해서 8192.
+      HINDSIGHT_API_RETAIN_MAX_COMPLETION_TOKENS: ${HINDSIGHT_RETAIN_MAX_COMPLETION_TOKENS:-8192}
+      # consolidation 출력 상한 — 업스트림 기본은 **None(무제한)** 이라 retain 만 막아 두면
+      # 관찰 통합이 같은 벽에 그대로 부딪힌다. retain 을 8192 로 낮추고 여기를 비워 두는 것이
+      # 26-07-29 대조에서 드러난 구멍이었다.
+      #
+      # ⚠ 처음에 4096 으로 잡았다가 실부하에서 틀린 것이 드러났다. 서버가 돌려준 문장:
+      #   "maximum context length is 16384 tokens. However, you requested 4096 output tokens
+      #    and your prompt contains at least 12289 input tokens, for a total of at least 16385"
+      # **1 토큰 초과**다. 출력만 보고 잡으면 안 되고 입력+출력의 합을 봐야 한다 —
+      # 그리고 그 입력은 배치 크기가 정한다. 아래 세 값은 **같이** 움직여야 하는 한 세트다.
+      # (최악 ≈ source 3072 + 관찰 4×256 + 프롬프트 ~1.5k + 출력 3072 ≈ 8.7k — 16384 안에 여유)
+      #
+      # 이 초과의 증상은 조용하다. consolidation 은 배치를 **건너뛰고 계속 간다**
+      # ("skipping batch") — 클라이언트는 성공을 보고, 관찰만 소리 없이 빈다.
+      HINDSIGHT_API_CONSOLIDATION_MAX_COMPLETION_TOKENS: ${HINDSIGHT_CONSOLIDATION_MAX_COMPLETION_TOKENS:-3072}
+      HINDSIGHT_API_CONSOLIDATION_SOURCE_FACTS_MAX_TOKENS: ${HINDSIGHT_CONSOLIDATION_SOURCE_FACTS_MAX_TOKENS:-3072}
+      # 한 LLM 호출에 묶는 메모리 수 (업스트림 기본 8). 입력 길이를 정하는 값이라
+      # 컨텍스트가 짧은 백엔드에서는 이것이 첫 번째 손잡이다.
+      HINDSIGHT_API_CONSOLIDATION_LLM_BATCH_SIZE: ${HINDSIGHT_CONSOLIDATION_LLM_BATCH_SIZE:-4}
+      # Reflect 입력 컨텍스트 상한 — 업스트림 기본 **100000**. 16384 모델에 여섯 배다.
+      # 뱅크가 커지면 reflect 는 반드시 컨텍스트 초과로 죽는다(사실이 적을 때만 우연히 산다).
+      # 10000 = 16384 에서 프롬프트·출력 몫을 뺀 자리.
+      HINDSIGHT_API_REFLECT_MAX_CONTEXT_TOKENS: ${HINDSIGHT_REFLECT_MAX_CONTEXT_TOKENS:-10000}
+      # Reflect 반복 상한과 벽시계. 기본은 10회/300s 인데, 게이트웨이 한 번 왕복이 최악
+      # ~540s(180s×재시도 2)라 기본 조합은 첫 반복에서 벽시계에 걸린다. 3회/900s 로 맞춘다.
+      HINDSIGHT_API_REFLECT_MAX_ITERATIONS: ${HINDSIGHT_REFLECT_MAX_ITERATIONS:-3}
+      HINDSIGHT_API_REFLECT_WALL_TIMEOUT: ${HINDSIGHT_REFLECT_WALL_TIMEOUT:-900}
+
+      # ── 임베딩 ──────────────────────────────────────────────────────────────
+      # 반드시 다국어로 시작 (벡터 차원이 스키마에 고정되므로 나중에 바꾸면 전체 재임베딩 —
+      # 첫 기동 전에 확정할 것). 0.8.4 부터는 업스트림 기본도 같은 모델이 됐지만,
+      # 차원을 고정하는 값이라 기본값에 기대지 않고 명시한다.
+      # e5 계열은 query/passage 접두사가 정확도의 일부다 — 업스트림 기본이 이미
+      # 'query: '/'passage: ' 라 건드리지 않는다 (26-07-29 기동 로그로 확인).
       HINDSIGHT_API_EMBEDDINGS_PROVIDER: onnx
       HINDSIGHT_API_EMBEDDINGS_ONNX_MODEL_ID: intfloat/multilingual-e5-small
+
+      # ── 리랭커 ──────────────────────────────────────────────────────────────
       # 기본 cross-encoder/ms-marco-MiniLM-L-6-v2 는 영어 전용이라 한국어 semantic
       # top-1을 뒤집는다. Hindsight 공식 multilingual 권장 모델로 고정한다.
-      HINDSIGHT_API_RERANKER_PROVIDER: local
-      HINDSIGHT_API_RERANKER_LOCAL_MODEL: BAAI/bge-reranker-v2-m3
-      # 첫 기동은 모델 다운로드로 수 분 걸린다 — 조급한 헬스체크 실패 방지
+      # ⚠ 이 두 줄이 실서버에 빠져 있었다 (26-07-29 대조): 기동 로그가
+      #   "Reranker: initializing local provider with model cross-encoder/ms-marco-MiniLM-L-6-v2"
+      # 였다 — provider=local 은 맞는데 모델이 기본값이라, 한국어 뱅크가 영어 리랭커로
+      # 12일 동안 서비스되고 있었다. **provider 만 보고 "다국어로 떴다"고 읽으면 안 된다.**
+      # provider 는 `local`(이 컨테이너 CPU) 과 `litellm`(원격 GPU 엔드포인트) 둘 다 쓴다.
+      # 어느 쪽이든 **모델은 같은 bge-reranker-v2-m3** 이어야 품질이 같다 — 바뀌는 건 어디서
+      # 도느냐뿐이다. 아래 litellm 3종은 provider 가 litellm 일 때만 읽힌다.
+      HINDSIGHT_API_RERANKER_PROVIDER: ${HINDSIGHT_RERANKER_PROVIDER:-local}
+      HINDSIGHT_API_RERANKER_LOCAL_MODEL: ${HINDSIGHT_RERANKER_LOCAL_MODEL:-BAAI/bge-reranker-v2-m3}
+      HINDSIGHT_API_RERANKER_LITELLM_API_BASE: ${HINDSIGHT_RERANKER_LITELLM_API_BASE:-}
+      HINDSIGHT_API_RERANKER_LITELLM_API_KEY: ${HINDSIGHT_RERANKER_LITELLM_API_KEY:-}
+      HINDSIGHT_API_RERANKER_LITELLM_MODEL: ${HINDSIGHT_RERANKER_LITELLM_MODEL:-cohere/rerank-english-v3.0}
+      # 리랭크는 회수 지연의 거의 전부다 (26-07-28 서버 로그: graph 0.003s vs rerank 20.675s).
+      # 비용은 후보 수 × 후보 길이 — 그래서 **후보 수가 유일하게 우리가 쥔 손잡이**다.
+      # 업스트림 기본 300 은 GPU 리랭커 전제고, 여기는 CPU(12코어) + 568M 다국어 모델이다.
+      HINDSIGHT_API_RERANKER_MAX_CANDIDATES: ${HINDSIGHT_RERANKER_MAX_CANDIDATES:-80}
+      # 길이가 제각각인 후보를 길이순으로 묶어 패딩 낭비를 줄인다. CPU 리랭크에서만 의미가
+      # 있어 업스트림 기본은 꺼져 있다 — 우리는 CPU 라 켠다.
+      HINDSIGHT_API_RERANKER_LOCAL_BUCKET_BATCHING: ${HINDSIGHT_RERANKER_LOCAL_BUCKET_BATCHING:-true}
+
+      # 첫 기동은 모델 다운로드로 수 분 걸린다 — 조급한 헬스체크 실패 방지.
+      # (업스트림 기본 300s. bge-reranker-v2-m3 은 2GB대라 300s 로는 모자랄 수 있다.)
       HINDSIGHT_API_MODEL_INIT_TIMEOUT: "900"
+
+      # ── 운영 표면 ───────────────────────────────────────────────────────────
       # MCP 표면 — 기본 활성(2차 메모리 기본 구성). 무인증이므로 내부망 밖 노출 시 off.
       HINDSIGHT_API_MCP_ENABLED: ${HINDSIGHT_MCP_ENABLED:-true}
       # MCP 클라이언트에 얹을 배포별 사용 지침(빈칸 기본) — 예: "이 서버는 힌트다. 완료 증거로 쓰지 마라."
       HINDSIGHT_API_MCP_INSTRUCTIONS: ${HINDSIGHT_MCP_INSTRUCTIONS:-}
+      # LLM 연결 점검 엔드포인트(POST /v1/default/banks/{id}/health/llm).
+      # 업스트림 기본은 **false** 라, 켜지 않으면 "LLM 이 실제로 붙어 있나"를 물어볼 방법이
+      # retain 을 한 번 던져 보는 것밖에 없다. 게이트웨이가 죽었는지 뱅크가 빈 건지
+      # 구분하려면 이 문이 필요하다 — 진단 전용이고 쓰기가 없다.
+      HINDSIGHT_API_ENABLE_BANK_LLM_HEALTH: ${HINDSIGHT_ENABLE_BANK_LLM_HEALTH:-true}
+      # LLM 요청 트레이스 (기본 켜짐·보존 1일). 추출이 왜 그렇게 나왔는지는 이 기록으로만
+      # 사후 확인된다 (GET /v1/default/banks/{id}/llm-requests). 보존일을 늘리면 DB 가 큰다.
+      HINDSIGHT_API_LLM_TRACE_ENABLED: ${HINDSIGHT_LLM_TRACE_ENABLED:-true}
+      HINDSIGHT_API_LLM_TRACE_RETENTION_DAYS: ${HINDSIGHT_LLM_TRACE_RETENTION_DAYS:-3}
+      # keyword arm 의 형태소 언어. CJK 토큰화가 없어 한국어 keyword 는 약하다 —
+      # 다국어 임베딩+리랭커가 그 몫을 메운다는 것이 현재 구성의 전제다 (README §설계 결정).
+      # 이 줄은 바꾸라는 게 아니라, 기본값이 english 라는 사실을 눈에 보이게 두려는 것이다.
+      HINDSIGHT_API_TEXT_SEARCH_EXTENSION_NATIVE_LANGUAGE: ${HINDSIGHT_TEXT_SEARCH_NATIVE_LANGUAGE:-english}
     # 메모리 상한 — 없으면 호스트 VM 전체를 쓰다가 커널이 프로세스를 죽인다. 26-07-28 실측:
     # 대용량 문서 회수가 11.5GiB 를 먹고 `Killed`, 재기동 시 큐가 부활해 3회 반복.
     #
