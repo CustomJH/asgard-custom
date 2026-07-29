@@ -22,8 +22,28 @@ from .craft_rules import Finding, Unit, _owner
 
 # ── SQL ────────────────────────────────────────────────────────────
 # 두 무리를 **함께** 요구한다 — "select" 한 단어만으로는 문서 문자열·UI 라벨까지 걸린다.
+# 그런데 함께 있는 것만으로는 모자랐다. 산문은 두 낱말을 다 갖는다 (실측: 자사 트리에서 이 규칙의
+# 판정 4건 중 2건이 SQL 이 아니었다 — `f"plan: merge into '{title}' ({slug}, {why})"` 는 UI 한 줄이고,
+# 스킬 라우터 본문은 "select and load ..." 와 "directly from PATH" 가 각각 동사·절로 읽혔다).
+# 그래서 셋을 더 요구한다: ① 동사가 **문장을 연다** ② 절이 동사 **뒤에** 온다 ③ 동사와 절의 **짝이
+# 맞는다**. 질의문에서 동사는 언제나 문장의 첫 낱말이고, 산문에서는 거의 언제나 아니다.
 _SQL_VERB = re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE|MERGE)\b", re.I)
-_SQL_CLAUSE = re.compile(r"\b(FROM|INTO|SET|WHERE|VALUES|JOIN)\b", re.I)
+# 동사마다 뒤에 설 수 있는 절. 짝을 안 보면 `merge ... where` 처럼 존재하지 않는 조합도 질의가 된다.
+_CLAUSE_FOR = {
+    "SELECT": re.compile(r"\b(FROM|JOIN|WHERE)\b", re.I),
+    "INSERT": re.compile(r"\b(INTO|VALUES|SELECT)\b", re.I),
+    "UPDATE": re.compile(r"\b(SET|FROM|JOIN|WHERE)\b", re.I),
+    "DELETE": re.compile(r"\b(FROM|WHERE|USING)\b", re.I),
+    "MERGE": re.compile(r"\b(INTO|USING)\b", re.I),
+}
+# 문장을 여는 자리 — 문자열의 처음, 괄호 뒤(하위 질의), 세미콜론 뒤, 줄바꿈 뒤.
+_STMT_OPEN = "(;\n\r"
+# 동사 **앞**에 설 수 있는 유일한 낱말들. 질의어가 아닌 낱말이 앞에 있으면 그 문장은 산문이다.
+_LEAD_IN = frozenset(
+    {"EXPLAIN", "ANALYZE", "WITH", "RECURSIVE", "AS", "UNION", "ALL", "EXCEPT", "INTERSECT",
+     "EXISTS", "NOT", "IN", "THEN", "ELSE", "DO", "BEGIN", "RETURNING", "MATCHED"}
+)  # fmt: skip
+_TAIL_WORD = re.compile(r"[A-Za-z_]\w*$")
 # 값 자리 = **비교 연산자 바로 뒤**. 여기 들어갈 수 있는 것은 값 하나뿐이라 바인딩으로 전부
 # 대체되고, 그래서 반례가 없다.
 #
@@ -40,15 +60,32 @@ _HOLE = "\x00"
 _CLI_FLAG = re.compile(r"(?<!\w)-{1,2}[A-Za-z][\w-]*")
 
 
+def _opens_statement(body: str, at: int) -> bool:
+    """이 자리의 동사가 문장을 여는가. 앞에 질의어 아닌 낱말이 있으면 그것은 산문이다."""
+    head = body[:at].rstrip(" \t")
+    if not head or head[-1] in _STMT_OPEN:
+        return True
+    word = _TAIL_WORD.search(head)
+    return bool(word and word.group(0).upper() in _LEAD_IN)
+
+
 def sql_shaped(text: str) -> bool:
-    """질의문처럼 생겼는가 — 동사와 절을 **함께** 요구한다. 두 판정기의 단일 출처.
+    """질의문처럼 생겼는가 — **문장을 여는** 동사와 그 뒤의 **짝 맞는** 절을 요구한다. 단일 출처.
 
     넘기는 것은 **구멍을 지운 뒤의 질의 본문**이어야 한다. 보간식 자체(`${LOCALES.join('|')}`)를
     본문에 섞으면 그 안의 메서드 이름이 절로 읽힌다 — 파이썬 판정기는 애초에 구멍 안을 보지
     않으므로, 이것은 중괄호 계열을 파이썬과 같은 자로 맞추는 일이기도 하다.
+
+    본문이 여러 리터럴을 이어붙인 것이면 **줄바꿈으로** 이어 넘겨라. 리터럴 하나하나가 질의를
+    열 수 있는데, 공백으로 이으면 앞 리터럴의 마지막 낱말이 동사 앞에 서서 문장을 닫아버린다.
     """
     body = _CLI_FLAG.sub(" ", text)
-    return bool(_SQL_VERB.search(body) and _SQL_CLAUSE.search(body))
+    for match in _SQL_VERB.finditer(body):
+        if not _opens_statement(body, match.start()):
+            continue
+        if _CLAUSE_FOR[match.group(1).upper()].search(body[match.end() :]):
+            return True
+    return False
 
 
 # ── 시크릿 ──────────────────────────────────────────────────────────

@@ -138,7 +138,9 @@ def _sql_holes(region: str) -> list[str] | None:
     # 구멍을 **지운 뒤**에 질의인지 묻는다. 백틱 문자열은 `${...}` 안의 식까지 통째로 잡히므로,
     # 원문 그대로 재면 보간식 안의 메서드 이름이 질의어가 된다(실측: `LOCALES.join('|')` 의
     # `join` 이 절로 읽혀 빌드 스크립트가 막혔다). 질의 본문이 아닌 것은 판정에 넣지 않는다.
-    if not sql_shaped(" ".join(_HOLE_IN_STRING.sub(" ", literal) for literal in literals)):
+    # 줄바꿈으로 잇는다 — 리터럴 하나하나가 질의를 열 수 있다. 공백으로 이으면 앞 리터럴의
+    # 마지막 낱말이 동사 앞에 서서, 질의를 여는 리터럴이 산문 한가운데로 읽힌다(sql_shaped 계약).
+    if not sql_shaped("\n".join(_HOLE_IN_STRING.sub(" ", literal) for literal in literals)):
         return None
     before: list[str] = []
     for literal in literals:
@@ -217,6 +219,24 @@ _JVM_EXTERNAL = re.compile(
 )
 
 
+def _match_brace(clean: str, open_at: int) -> int | None:
+    """`open_at` 의 여는 중괄호와 짝인 닫는 중괄호 위치. 안 닫히면 None.
+
+    `_body_after` 에서 들어냈다 — 본문 **시작**을 찾는 일과 그 본문의 **끝**을 맞추는 일은
+    서로 다른 문제이고, 한 함수에 두면 괄호 깊이 변수가 둘(`depth`·`level`) 살아 있는 자리가
+    생긴다. 이름이 없으면 그 둘을 헷갈리는 순간을 아무도 못 잡는다.
+    """
+    level = 0
+    for j in range(open_at, len(clean)):
+        if clean[j] == "{":
+            level += 1
+        elif clean[j] == "}":
+            level -= 1
+            if level == 0:
+                return j if j > open_at else None
+    return None
+
+
 def _body_after(clean: str, start: int) -> tuple[int, int] | None:
     """애너테이션 뒤에 오는 메서드 본문의 (여는 중괄호, 닫는 중괄호). 못 맞추면 None.
 
@@ -234,16 +254,8 @@ def _body_after(clean: str, start: int) -> tuple[int, int] | None:
         elif char == ";" and depth == 0:
             return None  # 본문 없는 선언 (인터페이스·추상 메서드)
         elif char == "{" and depth == 0:
-            close, level = i, 0
-            for j in range(i, len(clean)):
-                if clean[j] == "{":
-                    level += 1
-                elif clean[j] == "}":
-                    level -= 1
-                    if level == 0:
-                        close = j
-                        break
-            return (i, close) if close > i else None
+            close = _match_brace(clean, i)
+            return None if close is None else (i, close)
     return None
 
 

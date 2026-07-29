@@ -116,6 +116,33 @@ good("sql-ts-clause-only-in-hole", "ts", "const s = `update count = ${rows.join(
 good("sql-ts-not-sql", "ts", "const s = `deleted ${n} entries from cache`;")
 good("sql-go-param", "go", 'func f(u string) { db.Query("SELECT id FROM t WHERE id = $1", u) }')
 good("sql-kt-const", "kotlin", 'class R { val q = "SELECT id FROM users WHERE active = 1" }')
+# 실코퍼스에서 손검사로 건져 온 산문 — 동사와 절을 **함께** 가졌지만 질의문이 아닌 것들.
+# (자사 트리 2건 · helios 2건 · pi 3건 · platty 1건. pi 의 `tool-stats.ts` 는 HTML 대시보드
+#  템플릿인데 **막는** 판정이 떴다 — 산문 하나가 작업을 세울 수 있었다는 뜻이다.)
+good("sql-py-ui-merge-into", "python", "ui.step(f\"plan: merge into '{title}' ({slug}, {why})\")")
+good("sql-py-prose-mid-select", "python", 'body = f"Before work, select and load {name} — run it directly from PATH"')
+good(
+    "sql-ts-error-merge-into",
+    "ts",
+    "export function f(a: string, b: string) { throw new Error(`edits ${a} and ${b} overlap. "
+    "Merge them into one edit or target disjoint regions.`); }",
+)
+good(
+    "sql-ts-html-delete",
+    "ts",
+    'export function f(id: string) { return `<button data-id="${id}">Delete</button>'
+    '<p class="from-cache">cached</p>`; }',
+)
+# 동사가 문장 첫머리에 서는 자리 넷 — 좁힌 자가 이것들까지 놓치면 규칙이 죽은 것이다.
+bad("sql-py-multiline", "python", "sql-interpolated", 'q = f"""\n    SELECT id\n    FROM t\n    WHERE id = {uid}\n"""')
+bad("sql-py-cte", "python", "sql-interpolated", 'q = f"WITH r AS (SELECT id FROM u WHERE k = {key}) SELECT a FROM t"')
+bad("sql-py-explain", "python", "sql-interpolated", 'q = f"EXPLAIN SELECT a FROM t WHERE id = {uid}"')
+bad(
+    "sql-java-second-literal",  # 한 문장에 리터럴이 둘 — 질의를 **여는** 리터럴이 첫째가 아니다
+    "java",
+    "sql-interpolated",
+    'class R { String f(String u) { return log("q: ") + "SELECT id FROM t WHERE id = " + u; } }',
+)
 
 # ── ② swallowed-exception ───────────────────────────────────────────
 bad(
@@ -335,6 +362,13 @@ bad(
 )
 bad("leak-passed-to-call", "python", "unclosed-acquire", "def f(p, sink):\n    h = open(p)\n    sink(h)\n")
 good("leak-with", "python", "def f(p):\n    with open(p) as h:\n        return h.read()\n")
+# 여는 실패와 읽는 실패를 따로 다루려면 획득이 `with` 밖으로 나온다 — 그래도 닫히는 형상이다.
+good(
+    "leak-with-held-name",
+    "python",
+    "def f(p, log):\n    try:\n        h = open(p)\n    except OSError:\n        log('open failed')\n"
+    "        return None\n    with h:\n        return h.read()\n",
+)
 good(
     "leak-try-finally",
     "python",
