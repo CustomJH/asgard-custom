@@ -26,13 +26,16 @@ phase() { STEP=$((STEP + 1)); printf '\n  %s%s[%d/%d]%s %s%s%s\n' "$B" "$C" "$ST
 # spin <label> <cmd…> — run cmd in the background, animate a braille spinner beside <label>, return
 # cmd's exit code. Non-tty: run silently, no animation. The spinner line is cleared when cmd finishes
 # (callers print their own ✔). Braille via a bash array (${fr[i]}) — slicing a multibyte glyph garbles.
+# Elapsed seconds ride along from 1s on: the slow steps here are a ~1GB model fetch and a toolchain
+# download, and "moving" alone doesn't tell you whether to keep waiting. install.ps1 mirrors this.
 spin() {
   local label="$1"; shift
   if [ "$TTY" != 1 ]; then "$@" >/dev/null 2>&1; return $?; fi
-  "$@" >/dev/null 2>&1 & local pid=$! rc=0
+  "$@" >/dev/null 2>&1 & local pid=$! rc=0 t0=$SECONDS el=0 age=''
   local fr=(⣾ ⣽ ⣻ ⢿ ⡿ ⣟ ⣯ ⣷) i=0
   while kill -0 "$pid" 2>/dev/null; do
-    printf '\r  %s%s%s %s' "$C" "${fr[i]}" "$X" "$label"
+    el=$(( SECONDS - t0 )); age=''; [ "$el" -ge 1 ] && age=" · ${el}s"
+    printf '\r\033[K  %s%s%s %s%s%s%s' "$C" "${fr[i]}" "$X" "$label" "$D" "$age" "$X"
     i=$(( (i + 1) % 8 )); sleep 0.08
   done
   wait "$pid" || rc=$?

@@ -1,11 +1,15 @@
 # Asgard installer - Windows PowerShell entry point. Same flow as install.sh:
 # uv bootstrap -> standalone CPython 3.14 -> `uv tool install asgard`. No system Python/Node/git.
 #   irm https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.ps1 | iex
-# Env: ASGARD_VERSION (pin X.Y.Z) - ASGARD_INSTALL_SPEC (override source) - ASGARD_NO_PAUSE=1 - NO_COLOR
+# Env: ASGARD_VERSION (pin X.Y.Z) - ASGARD_INSTALL_SPEC (override source) - ASGARD_NO_PAUSE=1 -
+#      NO_COLOR (plain output) - ASGARD_FORCE_UI=1 (draw the full UI even when stdout is redirected) -
+#      ASGARD_ASCII=1 (keep the colour and the spinner, drop the Unicode glyph set)
 #
 # This file is deliberately ASCII-only and Windows PowerShell 5.1 syntax-only. It is fetched as text
 # and run through Invoke-Expression, so one PS7-only operator or one mis-decoded byte would take the
-# whole script down at parse time - before any handler inside it could say why.
+# whole script down at parse time - before any handler inside it could say why. Every glyph the user
+# sees is therefore built at RUNTIME from a code point ([char]0x2714) or from a base64 payload, never
+# typed into the source: the look matches install.sh without a single non-ASCII byte on the wire.
 #
 # Three rules keep a failure readable instead of closing the user's terminal:
 #   1. Nothing in this session calls `exit` while work is in flight. Under `irm | iex` an `exit`
@@ -26,7 +30,7 @@
 $script:AsgardPrevEap = $ErrorActionPreference
 $script:AsgardPrevProgress = $ProgressPreference
 $ErrorActionPreference = 'Stop'
-$ProgressPreference = 'SilentlyContinue'   # the IWR progress bar is slow and noisy in conhost
+$ProgressPreference = 'SilentlyContinue'   # we draw our own activity; IWR's bar is slow and noisy
 
 $AsgardRepoSlug = 'CustomJH/asgard-custom'
 $AsgardFailMark = 'ASGARD_FAIL::'
@@ -34,27 +38,175 @@ $AsgardFailMark = 'ASGARD_FAIL::'
 $script:AsgardLog = New-Object System.Collections.ArrayList
 $script:AsgardHints = New-Object System.Collections.ArrayList
 $script:AsgardStep = 0
-$script:AsgardUseColor = -not $env:NO_COLOR
+
+# -- terminal capability ------------------------------------------------------------------------
+# Three separate questions, because on Windows they have three different answers:
+#   colour    - can we tint at all (a console, and the user did not set NO_COLOR)
+#   VT        - are ANSI escapes understood (bold and dim exist ONLY here; the console-attribute
+#               API that every Windows host has had since forever knows neither)
+#   rich      - can the console DRAW the Unicode set. This is a property of the terminal's font,
+#               not of the shell, and only a terminal that names itself can be trusted with it.
+#               Legacy conhost names itself nowhere and answers a braille glyph with a box.
+# Defaults are the ASCII set, so a failure anywhere above still leaves every surface printable.
+$script:AsgardColor = $false
+$script:AsgardVT = $false
+$script:AsgardRich = $false
+$script:AsgardAnim = $false
+$script:AsgardPrevOutEnc = $null
+$script:AsgardGlyph = @{
+    ok = '+'; warn = '!'; info = '-'; fail = 'X'; sep = '-'
+    spin = @('-', '\', '|', '/')
+}
+
+# install.sh's palette, expressed twice: as SGR parameters for hosts that speak ANSI, and as
+# ConsoleColor names for hosts that do not. Same names on both sides so a call site never chooses.
+$script:AsgardSgr = @{ ok = '32'; warn = '33'; fail = '31'; info = '2'; step = '1;36'; head = '1;97'; strong = '1'; dim = '2' }
+$script:AsgardCC = @{ ok = 'Green'; warn = 'Yellow'; fail = 'Red'; info = 'DarkGray'; step = 'Cyan'; head = 'White'; strong = 'White'; dim = 'DarkGray' }
+
+# install.sh's braille wheel, by code point: U+28FE U+28FD U+28FB U+28BF U+287F U+28DF U+28EF U+28F7
+$script:AsgardSpinCp = @(0x28FE, 0x28FD, 0x28FB, 0x28BF, 0x287F, 0x28DF, 0x28EF, 0x28F7)
+
+# The brand lockup - byte-identical to install.sh's ART block, carried as base64 because the source
+# file must stay ASCII. tests/test_install_ps1.py decodes this and compares it to install.sh, so the
+# two installers cannot drift apart silently.
+$script:AsgardLogo = @(
+    'ICDioIDioIDioIDioIDiooDioaTio7bio7bio7bio7LioKTio4DioIDioIDioIDioIAgIOKggOKggOKggOKisOKhhOKggOKggOKggOKggOKg',
+    'gOKigOKjpOKjpuKjhOKhgOKggOKggOKggOKggOKjoOKjpuKjgOKggOKggOKggOKggOKggOKggOKjpuKggOKggOKggOKggOKgsOKjtuKjtuKj',
+    'tuKjpuKhgOKggOKggOKgkOKjtuKjpuKjhOKggOKggOKggAogIOKggOKggOKigOKjvOKjveKju+Khn+Kjv+Kjt+Kiq+Kjn+Kjr+Kjp+KhgOKg',
+    'gOKggCAg4qCA4qCA4qKA4qO/4qO34qCA4qCA4qCA4qCA4qKw4qO/4qCL4qCI4qCZ4qCB4qCA4qCA4qOg4qG+4qCL4qCI4qCb4qCA4qCA4qCA',
+    '4qCA4qCA4qO44qO/4qGG4qCA4qCA4qCA4qCA4qO/4qGH4qCA4qCZ4qO34qGE4qCA4qCA4qO/4qGP4qC74qO34qGE4qCACiAg4qCA4qCA4qO4',
+    '4qK94qOm4qG34qO74qO74qGf4qOf4qK+4qO04qOv4qOn4qCA4qCAICDioIDioIDio7zioY/iorvio4fioIDioIDioIDioIjioJviorfio6Ti',
+    'oYDioIDioIDiorjio7/ioIHioIDioIDio4Dio4DioIDioIDioIDioqDio7/ioJnio7/ioYDioIDioIDioIDio7/ioYfio4Dio7TioJ/ioIDi',
+    'oIDioIDio7/ioYfioIDioIjiorvioYYKICDioIDioIDiorvioL3ioIfioIHio7jiorjioYfio7fioIjioLjioK/ioZ/ioIDioIAgIOKggOKi',
+    'sOKhv+KigOKhiOKjv+KhhOKggOKggOKggOKggOKggOKgmeKiv+KjpuKggOKgmOKiv+KjhOKggOKggOKiueKhj+KggOKggOKggOKjvuKgh+Kj',
+    'gOKiueKjp+KggOKggOKggOKjv+Khv+Kiu+Kjp+KggOKggOKggOKggOKjv+Khh+KggOKjoOKhv+KggwogIOKggOKggOKgiOKis+KjsuKjtuKh',
+    'v+KjvuKjt+Kiv+KjtuKjluKhnuKggeKggOKggCAg4qKA4qO/4qCB4qC74qCD4qK44qO34qGA4qCA4qCw4qO24qOk4qO04qC/4qCD4qCA4qCA',
+    '4qCA4qCZ4qK34qOk4qO84qGH4qCA4qCA4qO44qGf4qCY4qCf4qCB4qK74qOG4qCA4qCA4qO/4qGH4qCA4qC54qO34qGA4qCA4qCA4qO/4qOn',
+    '4qG+4qCL4qCA4qCACiAg4qCA4qCA4qCA4qCA4qCI4qCT4qC74qCv4qC14qCf4qCa4qCJ4qCA4qCA4qCA4qCAICDioInioInioIHioIDioIDi',
+    'oIjioInioIHioIDioIDioIDioInioIHioIDioIDioIDioIDioIDioIDioIDioInioLnioIPioIDioIjioInioInioIDioIDioIDioInioIni',
+    'oIHioIjioInioInioIDioIDioIjioInioIDioIjioInioInioIDioIDioIDioIAKICDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDi',
+    'lIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIDilIAg4peHIOKUgOKUgOKUgOKUgOKU',
+    'gOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKUgOKU',
+    'gA=='
+)
+$script:AsgardLogoWidth = 68
+
+# The same lockup for a console that cannot draw braille - a wordmark in characters every Windows
+# font has had since code page 437. Not a downgrade to a bare word: the install should look like the
+# same product on conhost as it does in Windows Terminal.
+$script:AsgardWordmark = @(
+    '      _    ____   ____    _    ____  ____',
+    '     / \  / ___| / ___|  / \  |  _ \|  _ \',
+    '    / _ \ \___ \| |  _  / _ \ | |_) | | | |',
+    '   / ___ \ ___) | |_| |/ ___ \|  _ <| |_| |',
+    '  /_/   \_\____/ \____/_/   \_\_| \_\____/',
+    '  ------------------ <> -------------------'
+)
+$script:AsgardWordmarkWidth = 43
+
+function Initialize-Terminal {
+    if ($env:NO_COLOR) { return }
+    $forced = $false
+    if ($env:ASGARD_FORCE_UI) { $forced = $true }
+    $redirected = $false
+    try { $redirected = [Console]::IsOutputRedirected } catch { $redirected = $false }
+    if ($redirected -and -not $forced) { return }
+    $script:AsgardColor = $true
+    $script:AsgardAnim = $true
+    try { if ($Host.UI -and $Host.UI.SupportsVirtualTerminal) { $script:AsgardVT = $true } } catch { }
+    if ($forced) { $script:AsgardVT = $true }
+
+    # A terminal that identifies itself is a terminal with a modern font stack and glyph fallback.
+    # Windows Terminal, ConEmu, VS Code and every third-party emulator set one of these; the legacy
+    # console sets none of them, and that silence is the signal to stay on the ASCII set.
+    # ASGARD_ASCII is the manual override for a console that names itself and still cannot draw
+    # (a pinned raster font) - the mirror of install.sh's ASGARD_NO_IMAGE.
+    if ($env:ASGARD_ASCII) { return }
+    $named = $false
+    foreach ($v in @($env:WT_SESSION, $env:ConEmuANSI, $env:TERM_PROGRAM, $env:TERM, $env:ASGARD_FORCE_UI)) {
+        if ($v) { $named = $true }
+    }
+    if (-not $named) { return }
+    # Nothing above ASCII reaches the screen until the console is told to speak UTF-8: the default
+    # output encoding is the OEM code page, which turns every glyph we own into a question mark.
+    try {
+        $script:AsgardPrevOutEnc = [Console]::OutputEncoding
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false
+    } catch {
+        $script:AsgardPrevOutEnc = $null
+        return
+    }
+    $frames = @()
+    foreach ($cp in $script:AsgardSpinCp) { $frames += [string][char]$cp }
+    $script:AsgardGlyph = @{
+        ok = [string][char]0x2714      # heavy check
+        warn = '!'
+        info = [string][char]0x00B7    # middle dot
+        fail = [string][char]0x2717    # ballot X
+        sep = [string][char]0x00B7
+        spin = $frames
+    }
+    $script:AsgardRich = $true
+}
+
+# Restore-Terminal - the console code page is process-wide state, and under `irm | iex` the process
+# is the user's own shell. Whatever we changed goes back exactly as the preferences do.
+function Restore-Terminal {
+    if ($script:AsgardPrevOutEnc) {
+        try { [Console]::OutputEncoding = $script:AsgardPrevOutEnc } catch { }
+        $script:AsgardPrevOutEnc = $null
+    }
+}
+
+function Get-Glyph ($name) { return [string]$script:AsgardGlyph[$name] }
+
+function Get-ConsoleWidth {
+    $w = 0
+    try { if ($Host.UI -and $Host.UI.RawUI -and $Host.UI.RawUI.WindowSize) { $w = [int]$Host.UI.RawUI.WindowSize.Width } } catch { $w = 0 }
+    if ($w -lt 40) { $w = 80 }
+    return $w
+}
 
 # -- output - every line also lands in the transcript we can write out on failure ---------------
 function Add-Log ($text) { [void]$script:AsgardLog.Add([string]$text) }
 function Add-Hint ($text) { [void]$script:AsgardHints.Add([string]$text) }
 
-function Tint ($text, $color, [switch]$NoNewline) {
-    if ($script:AsgardUseColor -and $color) { Write-Host $text -ForegroundColor $color -NoNewline:$NoNewline }
-    else { Write-Host $text -NoNewline:$NoNewline }
+# Write-Part <text> <role> - one fragment in one role. ANSI where it is understood, because bold and
+# dim carry half of install.sh's look and the console-attribute API has neither; console colours
+# otherwise, so a host without VT still gets green/yellow/red rather than a wall of grey.
+function Write-Part ($text, $role, [switch]$NoNewline) {
+    if (-not $script:AsgardColor -or -not $role) { Write-Host $text -NoNewline:$NoNewline; return }
+    if ($script:AsgardVT -and $script:AsgardSgr.ContainsKey($role)) {
+        $esc = [string][char]27
+        Write-Host ($esc + '[' + $script:AsgardSgr[$role] + 'm' + $text + $esc + '[0m') -NoNewline:$NoNewline
+        return
+    }
+    if ($script:AsgardCC.ContainsKey($role)) {
+        Write-Host $text -ForegroundColor $script:AsgardCC[$role] -NoNewline:$NoNewline
+        return
+    }
+    Write-Host $text -NoNewline:$NoNewline
 }
 
-function Write-Ok ($msg) {
-    Add-Log ("  OK  " + $msg)
-    Write-Host "  " -NoNewline; Tint "OK " 'Green' -NoNewline; Write-Host $msg
+# Write-Mark <role> <msg> <detail> - install.sh's result line: two spaces, a tinted glyph, the
+# message, and the parenthetical detail dimmed behind it. The transcript keeps an ASCII tag instead
+# of the glyph, so a log file stays readable wherever it is opened.
+function Write-Mark ($role, $msg, $detail) {
+    $tag = @{ ok = 'OK'; warn = '!'; info = '.'; fail = 'X' }[$role]
+    $line = '  ' + ([string]$tag).PadRight(3) + $msg
+    if ($detail) { $line = $line + ' ' + $detail }
+    Add-Log $line
+    Write-Host '  ' -NoNewline
+    Write-Part (Get-Glyph $role) $role -NoNewline
+    Write-Host (' ' + $msg) -NoNewline
+    if ($detail) { Write-Part (' ' + $detail) 'dim' -NoNewline }
+    Write-Host ''
 }
-function Write-Info ($msg) { Add-Log ("   .  " + $msg); Tint ("   . " + $msg) 'DarkGray' }
-function Write-Warn2 ($msg) {
-    Add-Log ("  !   " + $msg)
-    Write-Host "  " -NoNewline; Tint "!  " 'Yellow' -NoNewline; Write-Host $msg
-}
-function Write-Trace ($msg) { Add-Log ("      | " + $msg); Tint ("      | " + $msg) 'DarkGray' }
+
+function Write-Ok ($msg, $detail) { Write-Mark 'ok' $msg $detail }
+function Write-Info ($msg, $detail) { Write-Mark 'info' $msg $detail }
+function Write-Warn2 ($msg, $detail) { Write-Mark 'warn' $msg $detail }
+function Write-Trace ($msg) { Add-Log ("      | " + $msg); Write-Part ("      | " + $msg) 'dim' }
 
 # Fail <msg> - expected, explained failure. Throws instead of exiting so the terminal survives long
 # enough to show the reason; the marker tells the bottom handler this is a message, not a crash.
@@ -64,8 +216,95 @@ function Phase ($title) {
     $script:AsgardStep++
     Write-Host ""
     Add-Log ("[" + $script:AsgardStep + "/3] " + $title)
-    Tint ("  [" + $script:AsgardStep + "/3] ") 'Cyan' -NoNewline
-    Tint $title 'White'
+    Write-Host "  " -NoNewline
+    Write-Part ("[" + $script:AsgardStep + "/3]") 'step' -NoNewline
+    Write-Host " " -NoNewline
+    Write-Part $title 'head'
+}
+
+# -- banner ---------------------------------------------------------------------------------------
+# Get-BannerVersion - best effort, exactly install.sh's ladder: pinned env -> a local checkout ->
+# __init__.py on main. Never throws and never blocks for long: the banner is decoration, and a dead
+# network must cost the install five seconds, not the install.
+function Get-BannerVersion {
+    if ($env:ASGARD_VERSION) { return $env:ASGARD_VERSION }
+    if ($env:ASGARD_INSTALL_SPEC) {
+        try {
+            $local = Join-Path $env:ASGARD_INSTALL_SPEC 'src\asgard\__init__.py'
+            if (Test-Path $local) {
+                $m = [regex]::Match((Get-Content $local -Raw), '__version__\s*=\s*"([^"]+)"')
+                if ($m.Success) { return $m.Groups[1].Value }
+            }
+        } catch { }
+    }
+    try {
+        $url = 'https://raw.githubusercontent.com/' + $AsgardRepoSlug + '/main/src/asgard/__init__.py'
+        $body = Invoke-RestMethod -Uri $url -UseBasicParsing -TimeoutSec 5
+        $m = [regex]::Match([string]$body, '__version__\s*=\s*"([^"]+)"')
+        if ($m.Success) { return $m.Groups[1].Value }
+    } catch { }
+    return ''
+}
+
+# Write-VersionLine - dim (vX.Y.Z), right-aligned so it sits under the wordmark. No-op when unknown.
+function Write-VersionLine ($version, $width) {
+    if (-not $version) { return }
+    $tag = '(v' + $version + ')'
+    $pad = $width - $tag.Length
+    if ($pad -lt 2) { $pad = 2 }
+    Write-Part ((' ' * $pad) + $tag) 'dim'
+}
+
+function Write-Banner {
+    Write-Host ""
+    $width = $script:AsgardWordmarkWidth
+    $drawn = $false
+    if ($script:AsgardRich) {
+        $art = ''
+        try { $art = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String(($script:AsgardLogo -join ''))) } catch { $art = '' }
+        if ($art) {
+            foreach ($line in ($art -split "`n")) { Write-Part ($line.TrimEnd()) 'head' }
+            $width = $script:AsgardLogoWidth
+            $drawn = $true
+        }
+    }
+    if (-not $drawn) { foreach ($line in $script:AsgardWordmark) { Write-Part $line 'head' } }
+    # The version is fetched AFTER the art is on screen: something appears instantly even when the
+    # lookup is waiting on a network that will never answer.
+    Write-VersionLine (Get-BannerVersion) $width
+    Write-Part ("  " + (Get-Glyph 'info') + " make anything, your way") 'dim'
+    Write-Host ""
+}
+
+# -- activity - the spinner ------------------------------------------------------------------------
+# Clear-SpinLine / Write-SpinFrame - install.sh's `spin`, in PowerShell. The frame is redrawn in
+# place with a carriage return; the line is padded to the console width every frame so a shrinking
+# label cannot leave debris behind, and it is wiped entirely before the caller prints its own mark.
+function Clear-SpinLine {
+    if (-not $script:AsgardAnim) { return }
+    $w = (Get-ConsoleWidth) - 1
+    Write-Host (([string][char]13) + (' ' * $w) + ([string][char]13)) -NoNewline
+}
+
+function Write-SpinFrame ($label, $index, $started) {
+    $frames = $script:AsgardGlyph['spin']
+    $frame = [string]$frames[$index % $frames.Count]
+    $tail = ''
+    try {
+        $secs = [int]((Get-Date) - $started).TotalSeconds
+        if ($secs -ge 1) { $tail = ' ' + (Get-Glyph 'info') + ' ' + $secs + 's' }
+    } catch { $tail = '' }
+    $width = Get-ConsoleWidth
+    $budget = $width - 5 - $tail.Length
+    if ($budget -lt 10) { $budget = 10 }
+    $text = [string]$label
+    if ($text.Length -gt $budget) { $text = $text.Substring(0, $budget - 1) + '.' }
+    Write-Host (([string][char]13) + '  ') -NoNewline
+    Write-Part $frame 'step' -NoNewline
+    Write-Host (' ' + $text) -NoNewline
+    if ($tail) { Write-Part $tail 'dim' -NoNewline }
+    $pad = $width - 1 - (3 + 1 + $text.Length + $tail.Length)
+    if ($pad -gt 0) { Write-Host (' ' * $pad) -NoNewline }
 }
 
 # -- process helpers ---------------------------------------------------------------------------
@@ -75,20 +314,114 @@ function Test-Cmd ($name) {
     return $false
 }
 
+# Format-NativeArg - one argument, quoted the way CommandLineToArgvW will read it back.
+# Start-Process takes an ARRAY but joins it into one command line with a plain space and no quoting
+# of its own, so an argument holding a space arrives at the child split in two. Measured here on
+# `sh -c 'sleep 2; echo hi'`, which reached the child as four arguments. The install's own arguments
+# happen to be space-free today except the install source - and `C:\Users\Jane Doe\asgard` is an
+# ordinary place to keep a checkout.
+function Format-NativeArg ($value) {
+    $s = [string]$value
+    if ($s -ne '' -and -not ($s -match '[\s"]')) { return $s }
+    $out = '"'
+    $slashes = 0
+    foreach ($ch in $s.ToCharArray()) {
+        if ($ch -eq '\') { $slashes++; continue }
+        if ($ch -eq '"') {
+            # Backslashes are literal unless they run into a quote, where each one must be doubled
+            # and the quote itself escaped - otherwise the child sees the quote as a delimiter.
+            $out += ('\' * ($slashes * 2 + 1)) + '"'
+        } else {
+            $out += ('\' * $slashes) + $ch
+        }
+        $slashes = 0
+    }
+    return $out + ('\' * ($slashes * 2)) + '"'
+}
+
+# Resolve-Exe - Start-Process wants a program, not a shell name. Get-Command can answer with an alias
+# or several matches; the first Application's own path is the unambiguous thing to launch.
+function Resolve-Exe ($name) {
+    try {
+        $matched = @(Get-Command $name -ErrorAction SilentlyContinue)
+        foreach ($c in $matched) { if ($c.CommandType -eq 'Application' -and $c.Source) { return $c.Source } }
+    } catch { }
+    return $name
+}
+
+# Invoke-Spun <file> <args> <label> - run an executable while a spinner turns beside <label>, and
+# report by exit code. Output goes to two temp FILES rather than a pipe: a pipe would have to be
+# drained on this thread, which is the thread drawing the animation, and a full pipe buffer would
+# deadlock a long download. Start-Process is the only launcher in Windows PowerShell that redirects
+# to a file, and splatting keeps it correct for a command with no arguments at all.
+function Invoke-Spun ($File, $Arguments, $Label) {
+    $outFile = [IO.Path]::GetTempFileName()
+    $errFile = [IO.Path]::GetTempFileName()
+    $lines = New-Object System.Collections.ArrayList
+    $code = 9009
+    try {
+        $sp = @{
+            FilePath = (Resolve-Exe $File); NoNewWindow = $true; PassThru = $true
+            RedirectStandardOutput = $outFile; RedirectStandardError = $errFile
+        }
+        if ($Arguments -and $Arguments.Count -gt 0) {
+            $quoted = @()
+            foreach ($a in $Arguments) { $quoted += (Format-NativeArg $a) }
+            $sp['ArgumentList'] = $quoted
+        }
+        $proc = Start-Process @sp
+        $started = Get-Date
+        $i = 0
+        while (-not $proc.HasExited) {
+            Write-SpinFrame $Label $i $started
+            $i++
+            Start-Sleep -Milliseconds 80
+        }
+        $proc.WaitForExit()
+        $code = $proc.ExitCode
+        if ($null -eq $code) { $code = 0 }
+    } catch {
+        [void]$lines.Add($_.Exception.Message)
+        $code = 9009
+    } finally {
+        Clear-SpinLine
+    }
+    foreach ($f in @($outFile, $errFile)) {
+        try {
+            if (Test-Path $f) {
+                foreach ($line in (Get-Content -Path $f -ErrorAction SilentlyContinue)) {
+                    if ($line) { [void]$lines.Add([string]$line) }
+                }
+            }
+        } catch { }
+        try { Remove-Item $f -Force -ErrorAction SilentlyContinue } catch { }
+    }
+    foreach ($line in $lines) { Add-Log ("      | " + $line) }
+    return (New-Object psobject -Property @{ Code = $code; Output = ($lines -join [Environment]::NewLine) })
+}
+
 # Invoke-Native <file> <args> - run an executable and report by exit code, never by exception.
 # $ErrorActionPreference is forced to 'Continue' for the call: with 'Stop' in effect, Windows
 # PowerShell converts a native command's redirected stderr into a terminating NativeCommandError,
 # and tools like uv write ordinary progress there. Returns @{ Code; Output }.
+# -Spin <label> animates the wait instead of scrolling the tool's output past the user. Where no
+# animation is possible (redirected output, NO_COLOR, CI) the label is printed as a plain line and
+# the output is streamed as before - a log file wants the detail that a screen does not.
 function Invoke-Native {
     param(
         [Parameter(Mandatory = $true)][string]$File,
         [string[]]$Arguments = @(),
-        [switch]$Quiet
+        [switch]$Quiet,
+        [string]$Spin
     )
     if (-not (Test-Cmd $File)) {
         $miss = "'" + $File + "' not found on PATH"
         Add-Log ("      | " + $miss)
         return (New-Object psobject -Property @{ Code = 9009; Output = $miss })
+    }
+    if ($Spin) {
+        if ($script:AsgardAnim) { return (Invoke-Spun $File $Arguments $Spin) }
+        Write-Info $Spin
     }
     $prev = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -118,6 +451,16 @@ function Invoke-Native {
         $ErrorActionPreference = $prev
     }
     return (New-Object psobject -Property @{ Code = $code; Output = ($lines -join [Environment]::NewLine) })
+}
+
+# Get-UvVersion - just the number. `uv --version` answers "uv 0.9.2", and the mark line already
+# says "uv", so printing the raw output gives "uv uv 0.9.2". install.sh takes the same second field.
+function Get-UvVersion {
+    $r = Invoke-Native 'uv' @('--version') -Quiet
+    $text = ([string]$r.Output).Trim()
+    $parts = $text -split '\s+'
+    if ($parts.Count -ge 2) { return $parts[1] }
+    return $text
 }
 
 function Get-PowerShellExe {
@@ -178,7 +521,7 @@ function Hold-Window ($prompt) {
     try { if ([Console]::IsInputRedirected) { return } } catch { }
     try { if (-not [Environment]::UserInteractive) { return } } catch { }
     Write-Host ""
-    Tint ("  " + $prompt) 'DarkGray'
+    Write-Part ("  " + $prompt) 'dim'
     $read = $false
     try {
         if ($Host.UI -and $Host.UI.RawUI) {
@@ -216,6 +559,18 @@ function Get-EnvReport {
         [void]$rows.Add("arch          " + $archName + " (process " + $bits + ")")
     } catch { }
     try { [void]$rows.Add("policy        " + (Get-ExecutionPolicy -Scope Process) + " (process)") } catch { }
+    # The terminal's own capability, because "the installer printed boxes" and "the installer printed
+    # nothing while it worked" are both answered by this row and by nothing else in the report.
+    try {
+        $caps = 'ascii'
+        if ($script:AsgardRich) { $caps = 'unicode' }
+        $vt = 'no-vt'
+        if ($script:AsgardVT) { $vt = 'vt' }
+        $term = $env:WT_SESSION
+        if ($term) { $term = 'windows-terminal' } else { $term = $env:TERM_PROGRAM }
+        if (-not $term) { $term = 'console' }
+        [void]$rows.Add("terminal      " + $term + " (" + $caps + ", " + $vt + ")")
+    } catch { }
     foreach ($probe in @(@('uv', '--version'), @('python', '--version'), @('node', '-v'), @('git', '--version'))) {
         $name = $probe[0]
         $line = $name.PadRight(14) + "not found"
@@ -244,32 +599,39 @@ function Show-Failure ($err) {
     $expected = $msg.StartsWith($AsgardFailMark)
     if ($expected) { $msg = $msg.Substring($AsgardFailMark.Length) }
 
+    Clear-SpinLine
     Write-Host ""
-    Tint ("  X  " + $msg) 'Red'
+    Write-Part ("  " + (Get-Glyph 'fail') + "  " + $msg) 'fail'
     Add-Log ("  X  " + $msg)
     if (-not $expected) {
         # Unexpected crash - the position block is the only thing that says which line died.
         Add-Log $where
-        if ($where) { Tint $where 'DarkGray' }
+        if ($where) { Write-Part $where 'dim' }
         Add-Hint 'This one is a bug in the installer, not in your machine. Please report the log below.'
     }
     if ($script:AsgardHints.Count -gt 0) {
         Write-Host ""
-        Tint "  try:" 'White'
-        foreach ($h in $script:AsgardHints) { Add-Log ("   -> " + $h); Tint ("   -> " + $h) 'DarkGray' }
+        Write-Part "  try:" 'head'
+        foreach ($h in $script:AsgardHints) { Add-Log ("   -> " + $h); Write-Part ("   -> " + $h) 'dim' }
     }
     Write-Host ""
-    Tint "  environment:" 'White'
-    foreach ($row in (Get-EnvReport)) { Add-Log ("     " + $row); Tint ("     " + $row) 'DarkGray' }
+    Write-Part "  environment:" 'head'
+    foreach ($row in (Get-EnvReport)) { Add-Log ("     " + $row); Write-Part ("     " + $row) 'dim' }
     $log = Save-Transcript
     if ($log) {
         Write-Host ""
-        Tint ("  full log: " + $log) 'DarkGray'
+        Write-Part ("  full log: " + $log) 'dim'
     }
 }
 
 # -- install steps -----------------------------------------------------------------------------
+# Run-once: this is called before the banner (whose version lookup is the FIRST https request the
+# script makes - on 5.1 it would be refused without the line below) and again from preflight, which
+# is where a person expects to be told that the host's TLS could not be raised.
+$script:AsgardWebReady = $false
 function Initialize-Web {
+    if ($script:AsgardWebReady) { return }
+    $script:AsgardWebReady = $true
     # TLS 1.2 is not the default in Windows PowerShell 5.1 and github.com refuses anything older.
     # The proxy line matters on managed networks, where an authenticating proxy otherwise answers
     # every download with 407 and no explanation.
@@ -299,26 +661,24 @@ function Install-Uv {
         'try { [Net.WebRequest]::DefaultWebProxy.Credentials = [Net.CredentialCache]::DefaultCredentials } catch { };' +
         'Invoke-RestMethod https://astral.sh/uv/install.ps1 -UseBasicParsing | Invoke-Expression'
         $enc = [Convert]::ToBase64String([Text.Encoding]::Unicode.GetBytes($inner))
-        Write-Info "uv via astral.sh (child shell)..."
-        $null = Invoke-Native $ps @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-EncodedCommand', $enc)
+        $null = Invoke-Native $ps @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-NonInteractive', '-EncodedCommand', $enc) -Spin 'bootstrapping uv...'
         Update-PathFromEnvironment
         if (Test-Cmd 'uv') { return $true }
     } else {
         Add-Hint 'no powershell.exe or pwsh.exe was found to host the uv installer'
     }
     if (Test-Cmd 'winget') {
-        Write-Info "uv via winget..."
-        $null = Invoke-Native 'winget' @('install', '--id', 'astral-sh.uv', '-e', '--source', 'winget',
-            '--accept-package-agreements', '--accept-source-agreements')
+        $wingetArgs = @('install', '--id', 'astral-sh.uv', '-e', '--source', 'winget')
+        $wingetArgs += @('--accept-package-agreements', '--accept-source-agreements')
+        $null = Invoke-Native 'winget' $wingetArgs -Spin 'uv via winget...'
         Update-PathFromEnvironment
         if (Test-Cmd 'uv') { return $true }
     }
     foreach ($py in @('py', 'python', 'python3')) {
         if (-not (Test-Cmd $py)) { continue }
-        Write-Info ("uv via " + $py + " -m pip...")
         $pyArgs = @('-m', 'pip', 'install', '--user', '--upgrade', 'uv')
         if ($py -eq 'py') { $pyArgs = @('-3') + $pyArgs }
-        $null = Invoke-Native $py $pyArgs
+        $null = Invoke-Native $py $pyArgs -Spin ("uv via " + $py + " -m pip...")
         Update-PathFromEnvironment
         if (Test-Cmd 'uv') { return $true }
     }
@@ -346,18 +706,20 @@ function Get-LatestVersion {
 # A function rather than a block inside Main so the smoke can run it on a stripped-down host and read
 # what it says, without the install phase behind it reaching the network.
 function Invoke-Preflight {
-    Phase "preflight - check environment"
+    Phase ("preflight " + (Get-Glyph 'sep') + " check environment")
     if ($PSVersionTable.PSVersion.Major -lt 5) {
         Add-Hint 'Windows PowerShell 5.1 ships with Windows 10/11 and Server 2016+; older hosts can install PowerShell 7 from https://aka.ms/powershell'
         Fail ("this installer needs PowerShell 5.1 or newer - this is " + $PSVersionTable.PSVersion)
     }
-    Write-Ok ("powershell " + $PSVersionTable.PSVersion)
+    Write-Ok "powershell" ([string]$PSVersionTable.PSVersion)
+    $arch = $env:PROCESSOR_ARCHITECTURE
+    if (-not $arch) { $arch = 'unknown' }
+    Write-Ok "platform" ("Windows/" + $arch.ToLowerInvariant())
     Initialize-Web
 
     $haveUv = Test-Cmd 'uv'
     if ($haveUv) {
-        $r = Invoke-Native 'uv' @('--version') -Quiet
-        Write-Ok ($r.Output + " (already installed)")
+        Write-Ok "uv" ((Get-UvVersion) + " (already installed)")
     } else {
         Write-Info "uv absent - will bootstrap in step 2"
     }
@@ -372,7 +734,7 @@ function Invoke-Preflight {
         $r = Invoke-Native 'python' @('--version') -Quiet
         if ($r.Code -eq 0) { $pyLine = $r.Output.Trim() }
     }
-    if ($pyLine) { Write-Ok ($pyLine + " (not required - uv brings its own)") }
+    if ($pyLine) { Write-Ok $pyLine "(not required - uv brings its own)" }
     else { Write-Info "no system python - not required, uv installs a standalone CPython 3.14" }
 
     # Freyja design engines run on node - checked here in preflight alongside uv/python. The engines
@@ -385,7 +747,7 @@ function Invoke-Preflight {
         if ($r.Code -eq 0) { $nodeV = $r.Output.Trim() }
     }
     if ($nodeV -match '^v(\d+)') {
-        if ([int]$Matches[1] -ge 22) { Write-Ok ("node " + $nodeV + " (design engines)") }
+        if ([int]$Matches[1] -ge 22) { Write-Ok "node" ($nodeV + " (design engines)") }
         else { Write-Warn2 ("node " + $nodeV + " - Freyja design engines need >= 22. Upgrade: winget install OpenJS.NodeJS.LTS (or https://nodejs.org)") }
     } else {
         Write-Warn2 "node not found - Freyja design engines (detector/hooks/live) need node >= 22. Install: winget install OpenJS.NodeJS.LTS (or https://nodejs.org). Asgard installs fine without it."
@@ -394,14 +756,14 @@ function Invoke-Preflight {
 }
 
 function Main {
-    Write-Host ""
-    Tint "  ASGARD" 'White'
-    Tint "  make anything, your way" 'DarkGray'
+    Initialize-Terminal
+    Initialize-Web   # before the banner: its version lookup is this script's first https request
+    Write-Banner
 
     $haveUv = Invoke-Preflight
 
     # -- [2/3] install --
-    Phase "install - toolchain + asgard"
+    Phase ("install " + (Get-Glyph 'sep') + " toolchain + asgard")
     if (-not $haveUv) {
         if (-not (Install-Uv)) {
             Add-Hint 'install uv by hand, then re-run this script: https://docs.astral.sh/uv/getting-started/installation/'
@@ -409,16 +771,14 @@ function Main {
             Add-Hint 'if uv did install, open a NEW terminal so PATH picks it up'
             Fail "uv bootstrap failed - every method above was tried"
         }
-        $r = Invoke-Native 'uv' @('--version') -Quiet
-        Write-Ok $r.Output
+        Write-Ok "uv" (Get-UvVersion)
     }
 
     # Best-effort: uv downloads the interpreter on demand at install time anyway. Reported honestly
     # either way - the old script printed "OK python 3.14" even when this step had failed.
-    Write-Info "preparing python 3.14..."
-    $r = Invoke-Native 'uv' @('python', 'install', '3.14')
+    $r = Invoke-Native 'uv' @('python', 'install', '3.14') -Spin 'preparing python 3.14...'
     if ($r.Code -eq 0) {
-        Write-Ok "python 3.14"
+        Write-Ok "python" "3.14"
     } else {
         Write-Warn2 "python 3.14 pre-install skipped (uv will fetch it on demand)"
         Add-Log $r.Output
@@ -438,8 +798,7 @@ function Main {
         $from = "https://github.com/" + $AsgardRepoSlug + "/releases/download/v" + $v + "/asgard-" + $v + "-py3-none-any.whl"
         $desc = "v" + $v + " wheel"
     }
-    Write-Info ("installing asgard (" + $desc + ")...")
-    $r = Invoke-Native 'uv' @('tool', 'install', '--force', '--python', '3.14', $from)
+    $r = Invoke-Native 'uv' @('tool', 'install', '--force', '--python', '3.14', $from) -Spin ("installing asgard (" + $desc + ")...")
     if ($r.Code -ne 0) {
         Add-Hint 'the uv output above carries the real reason (network, proxy, or a bad version pin)'
         Add-Hint 'pin a known-good version and retry: $env:ASGARD_VERSION = "X.Y.Z"'
@@ -447,10 +806,10 @@ function Main {
     }
     $null = Invoke-Native 'uv' @('tool', 'update-shell') -Quiet
     Update-PathFromEnvironment
-    Write-Ok "asgard linked (uv tool)"
+    Write-Ok "asgard" "linked (uv tool)"
 
     # -- [3/3] verify --
-    Phase "verify - check install"
+    Phase ("verify " + (Get-Glyph 'sep') + " check install")
     # PATH was just re-read from the registry, but fall back to uv's bin directory by path before
     # calling this a failure - "installed fine, shell not reloaded" must not read as a broken install.
     $exe = 'asgard'
@@ -469,20 +828,28 @@ function Main {
     }
     Write-Ok ("asgard v" + $r.Output.Trim())
     $cmd = Get-Command asgard -ErrorAction SilentlyContinue
-    if ($cmd) { Write-Ok ("on PATH " + $cmd.Source) }
+    if ($cmd) { Write-Ok "on PATH" $cmd.Source }
     else { Write-Warn2 "not on PATH yet - restart the terminal (or run: uv tool update-shell)" }
 
     # Memory search model - fetch it here. Skipping it means the user meets a ~45s download
     # in the middle of real work the first time memory runs. Waiting belongs in the install.
     # Failure is a warning only: without the model, search still runs on the lexical path.
-    $r = Invoke-Native 'asgard' @('memory', 'semantic', 'warmup') -Quiet
-    if ($r.Code -eq 0) { Write-Ok "memory search model ready" }
+    # $exe, not the bare name: on a shell whose PATH has not been reloaded the bare name is a
+    # 9009, and the user would be told the model was skipped when nothing had even been tried.
+    $r = Invoke-Native $exe @('memory', 'semantic', 'warmup') -Spin 'fetching memory search model (~1GB, once)...'
+    if ($r.Code -eq 0) { Write-Ok "memory search" "semantic model ready" }
     else { Write-Warn2 "memory search model skipped - lexical search works; retry: asgard memory semantic warmup" }
 
     Write-Host ""
-    Tint "  installed" 'Green' -NoNewline; Write-Host " - next:"
-    Write-Host "    asgard doctor   " -NoNewline; Tint "# verify" 'DarkGray'
-    Write-Host "    asgard --help"
+    Write-Host "  " -NoNewline
+    Write-Part ((Get-Glyph 'ok') + " installed") 'ok' -NoNewline
+    Write-Host " - next:"
+    Write-Host "    " -NoNewline
+    Write-Part "asgard doctor" 'strong' -NoNewline
+    Write-Host "   " -NoNewline
+    Write-Part "# verify" 'dim'
+    Write-Host "    " -NoNewline
+    Write-Part "asgard --help" 'strong'
     Write-Host ""
 }
 
@@ -499,6 +866,7 @@ try {
 }
 $ErrorActionPreference = $script:AsgardPrevEap
 $ProgressPreference = $script:AsgardPrevProgress
+Restore-Terminal
 if ($script:AsgardFailed) {
     Hold-Window "install failed - press any key to close this window."
     $global:LASTEXITCODE = 1

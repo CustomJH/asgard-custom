@@ -19,6 +19,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import re
 import shutil
@@ -27,6 +28,7 @@ import unittest
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INSTALL_PS1 = os.path.join(ROOT, "install.ps1")
+INSTALL_SH = os.path.join(ROOT, "install.sh")
 
 # `# -- entry` 아래는 일이 다 끝난 뒤의 꼬리다 — 창을 붙잡아 둔 다음에만 프로세스를 끝낼 수 있다.
 ENTRY_MARK = "# -- entry"
@@ -54,6 +56,40 @@ def _code_lines() -> list[tuple[int, str]]:
         if not stripped or stripped.startswith("#") or _is_string_literal(stripped):
             continue
         out.append((i, line))
+    return out
+
+
+def _sh() -> str:
+    with open(INSTALL_SH, encoding="utf-8") as fh:
+        return fh.read()
+
+
+def _statements() -> list[tuple[int, str]]:
+    """코드 줄을 **문장** 단위로 접은 것 — 인자 목록이 다음 줄로 넘어간 호출도 한 덩어리로 본다.
+
+    (`Invoke-Native 'winget' @('install', …,\\n  '--accept-…') -Spin …` 처럼 꼬리에 붙은
+    `-Spin` 이 둘째 줄에 있으면, 줄 단위 검사는 그 호출을 "스피너 없음"으로 오독한다.)
+    """
+    out: list[tuple[int, str]] = []
+    buf, start, prev = "", 0, -2
+    for num, line in _code_lines():
+        stripped = line.strip()
+        # 줄이 붙어 있지 않으면(주석·문자열 페이로드가 사이에 걸러졌으면) 잇지 않는다 —
+        # 이으면 남남인 두 문장이 한 덩어리가 되어 검사가 엉뚱한 것을 읽는다 (실측: winget 호출의
+        # 둘째 줄이 걸러져 다음 문장과 붙었고, 그 바람에 -Spin 이 "없는" 것으로 보였다).
+        if buf and num != prev + 1:
+            out.append((start, buf))
+            buf = ""
+        if not buf:
+            start = num
+        buf = (buf + " " + stripped).strip() if buf else stripped
+        prev = num
+        if stripped.endswith(",") or stripped.endswith("+"):
+            continue  # 인자 목록·문자열 연결이 이어진다
+        out.append((start, buf))
+        buf = ""
+    if buf:
+        out.append((start, buf))
     return out
 
 
@@ -248,6 +284,217 @@ class InstallPs1Diagnostics(unittest.TestCase):
         self.assertEqual(len(hits), 1, f"expected exactly one 'node not found' surface, got {hits}")
         self.assertTrue(hits[0].startswith("Write-Warn2"), f"node absence must be a warning, not a Fail:\n  {hits[0]}")
         self.assertIn("installs fine without it", hits[0])
+
+
+class InstallPs1SurfaceParity(unittest.TestCase):
+    """윈도우 설치 화면은 install.sh 와 **같은 화면**이어야 한다.
+
+    사용자 요구가 그것이다 — "리눅스나 맥에서 설치하는 것처럼 똑같이". 그런데 ps1 은 ASCII 만
+    담을 수 있어(위 Encoding 참조) 같은 글리프를 코드포인트와 base64 로 우회해 싣는다. 우회한
+    사본은 원본이 바뀌어도 안 따라간다 — **그 드리프트가 여기서 잡히지 않으면 아무 데서도 안
+    잡힌다.** 아래 검사는 전부 "두 파일이 같은 것을 그리는가"만 묻는다.
+    """
+
+    def _sh_art(self) -> str:
+        m = re.search(r"cat <<'ART'\n(.*?)\nART\n", _sh(), re.S)
+        self.assertIsNotNone(m, "install.sh no longer carries an ART block to mirror")
+        assert m is not None
+        return m.group(1)
+
+    def _ps_glyphs(self) -> dict[str, str]:
+        """install.ps1 의 **리치** 글리프 표 (두 번째 AsgardGlyph 할당) → {이름: 실제 글자}."""
+        blocks = re.findall(r"\$script:AsgardGlyph = @\{(.*?)^\s*\}", _text(), re.S | re.M)
+        self.assertGreaterEqual(len(blocks), 2, "install.ps1 lost its ASCII/Unicode glyph pair")
+        rich = blocks[1]
+        out: dict[str, str] = {}
+        for name, cp in re.findall(r"(\w+) = \[string\]\[char\](0x[0-9A-Fa-f]+)", rich):
+            out[name] = chr(int(cp, 16))
+        for name, lit in re.findall(r"(\w+) = '([^']*)'", rich):
+            out.setdefault(name, lit)
+        return out
+
+    def _sh_mark(self, fn: str) -> str:
+        """install.sh 의 ok/warn/info/die 가 찍는 글리프 — printf 서식의 첫 %s…%s 사이 한 글자."""
+        m = re.search(rf"^{fn}\(\)\s+\{{ printf '[^']*?%s(.)%s", _sh(), re.M)
+        self.assertIsNotNone(m, f"install.sh:{fn}() no longer looks like a mark printer")
+        assert m is not None
+        return m.group(1)
+
+    def test_logo_is_byte_identical_to_install_sh(self) -> None:
+        """브랜드 락업은 base64 로 실려 있다 — 디코드하면 install.sh 의 ART 와 **바이트가 같아야** 한다.
+
+        같은 그림을 두 파일에 손으로 두 번 적으면 한쪽만 고쳐진다. 여기서는 한쪽을 고치면 이
+        검사가 즉시 빨개진다.
+        """
+        m = re.search(r"\$script:AsgardLogo = @\((.*?)\n\)", _text(), re.S)
+        self.assertIsNotNone(m, "install.ps1 lost its logo payload")
+        assert m is not None
+        blob = "".join(re.findall(r"'([A-Za-z0-9+/=]*)'", m.group(1)))
+        try:
+            art = base64.b64decode(blob, validate=True).decode("utf-8")
+        except Exception as e:  # noqa: BLE001 — 어떤 실패든 "그림이 안 나온다"로 같다
+            self.fail(f"install.ps1's logo payload does not decode: {e}")
+        self.assertEqual(
+            art,
+            self._sh_art(),
+            "install.ps1's logo has drifted from install.sh's. Regenerate it:\n"
+            '  python -c "import re,base64,textwrap;'
+            "s=open('install.sh',encoding='utf-8').read();"
+            "a=re.search(chr(34)+r'cat <<.ART.\\n(.*?)\\nART\\n'+chr(34),s,re.S).group(1);"
+            'print(textwrap.wrap(base64.b64encode(a.encode()).decode(),108))"',
+        )
+
+    def test_logo_width_matches_the_art(self) -> None:
+        """버전 꼬리표는 락업 오른쪽 끝에 맞춰 흘려 쓴다 — 폭이 틀리면 허공에 뜬다."""
+        m = re.search(r"\$script:AsgardLogoWidth = (\d+)", _text())
+        self.assertIsNotNone(m, "install.ps1 lost its logo width")
+        assert m is not None
+        widths = {len(line) for line in self._sh_art().splitlines()}
+        self.assertEqual({int(m.group(1))}, widths, "the version line is aligned to the wrong column")
+
+    def test_spinner_frames_match_install_sh(self) -> None:
+        """스피너는 같은 점자 바퀴여야 한다 (ps1 은 코드포인트로 싣는다)."""
+        m = re.search(r"local fr=\(([^)]*)\)", _sh())
+        self.assertIsNotNone(m, "install.sh no longer has a spinner frame list")
+        assert m is not None
+        sh_frames = [ord(c) for c in m.group(1).split()]
+        cps = re.search(r"\$script:AsgardSpinCp = @\(([^)]*)\)", _text())
+        self.assertIsNotNone(cps, "install.ps1 lost its spinner code points")
+        assert cps is not None
+        ps_frames = [int(h.strip(), 16) for h in cps.group(1).split(",")]
+        self.assertEqual(ps_frames, sh_frames, "the two installers spin different wheels")
+
+    def test_result_marks_match_install_sh(self) -> None:
+        """✔ / ! / · / ✗ — 결과 한 줄의 어휘가 같아야 같은 화면으로 읽힌다."""
+        rich = self._ps_glyphs()
+        for ps_name, sh_fn in (("ok", "ok"), ("warn", "warn"), ("info", "info"), ("fail", "die")):
+            self.assertEqual(
+                rich.get(ps_name),
+                self._sh_mark(sh_fn),
+                f"install.ps1's '{ps_name}' glyph differs from install.sh's {sh_fn}()",
+            )
+
+    def test_phases_match_install_sh(self) -> None:
+        """단계 수와 제목이 같아야 한다 — [n/3] 의 분모가 갈리면 진행 감각부터 달라진다."""
+        titles = re.findall(r'^\s*phase "([^"]+)"', _sh(), re.M)
+        self.assertEqual(len(titles), 3, f"install.sh no longer has three phases: {titles}")
+        steps = re.search(r"^STEP=0; STEPS=(\d+)", _sh(), re.M)
+        self.assertIsNotNone(steps, "install.sh lost its phase denominator")
+        assert steps is not None
+        self.assertEqual(int(steps.group(1)), len(titles))
+
+        calls = [s for _, s in _statements() if s.startswith("Phase ")]
+        self.assertEqual(len(calls), len(titles), f"install.ps1 has {len(calls)} phases, install.sh has {len(titles)}")
+        self.assertIn('"/3"' if '"/3"' in _text() else "/3", _text(), "install.ps1's phase denominator is not 3")
+        for title, call in zip(titles, calls, strict=True):
+            for half in title.split("·"):
+                self.assertIn(
+                    half.strip(),
+                    call,
+                    f"install.ps1's phase reads differently from install.sh's {title!r}:\n  {call}",
+                )
+
+    def test_slow_steps_animate(self) -> None:
+        """오래 걸리는 단계는 전부 스피너를 단다 — 이 설치기가 고치려는 증상이 그것이다.
+
+        (신고: "프로그레스 바나 이런 게 안 보인다". 정체는 uv 부트스트랩·인터프리터 내려받기·휠
+        설치·~1GB 모델 내려받기 넷이 아무 표시 없이 조용했던 것.)
+        """
+        slow = {
+            "-EncodedCommand": "uv bootstrap (astral.sh child shell)",
+            "'winget'": "uv via winget",
+            "'-m', 'pip'": "uv via pip",
+            "'python', 'install'": "uv python install",
+            "'tool', 'install'": "uv tool install",
+            "'memory', 'semantic', 'warmup'": "memory search model",
+        }
+        for num, stmt in _statements():
+            if "Invoke-Native" not in stmt:
+                continue
+            for marker, what in slow.items():
+                if marker in stmt and "-Spin" not in stmt:
+                    self.fail(
+                        f"install.ps1:{num} runs a slow step ({what}) with no spinner - the screen "
+                        f"sits dead while it works:\n  {stmt}"
+                    )
+
+    def test_terminal_state_is_handed_back(self) -> None:
+        """콘솔 출력 인코딩은 프로세스 전역이고, `irm | iex` 에서 그 프로세스는 **사용자 셸**이다.
+
+        ErrorActionPreference 와 같은 이유로 반드시 되돌려야 하고, 되돌리는 자리는 창을 붙잡기
+        전이어야 한다 (붙잡는 동안 사용자 콘솔이 우리 코드페이지로 남아 있으면 안 된다).
+        """
+        text = _text()
+        self.assertIn("function Restore-Terminal", text, "nothing puts the console encoding back")
+        self.assertRegex(text, r"\$script:AsgardPrevOutEnc = \[Console\]::OutputEncoding")
+        entry_line = next(i for i, line in enumerate(_lines(), start=1) if line.startswith(ENTRY_MARK))
+        tail = [(n, s) for n, s in _statements() if n > entry_line]
+        restores = [n for n, s in tail if "Restore-Terminal" in s]
+        holds = [n for n, s in tail if "Hold-Window" in s]
+        self.assertTrue(restores, "the guarded tail never restores the console")
+        self.assertTrue(holds, "the guarded tail never holds the window")
+        self.assertLess(min(restores), min(holds), "the console is restored after the window hold, not before")
+
+    def test_capability_probe_runs_inside_the_handler(self) -> None:
+        """능력 판정이 Main 밖에서 던지면 아무 안내 없이 죽는다 — 판정은 try 안쪽에 있어야 한다."""
+        body = _text().split("function Main {", 1)
+        self.assertEqual(len(body), 2, "Main is gone")
+        first = [line.strip() for line in body[1].splitlines() if line.strip()][0]
+        self.assertEqual(first, "Initialize-Terminal", f"Main must probe the terminal first, got: {first}")
+
+    def test_spinner_always_clears_its_line(self) -> None:
+        """스피너 줄을 안 지우면 다음 ✔ 가 그 위에 겹쳐 찍힌다 — 실패로 빠져나갈 때도 마찬가지."""
+        self.assertRegex(
+            _text(),
+            r"\} finally \{\s*\n\s*Clear-SpinLine\s*\n\s*\}",
+            "Invoke-Spun must clear the spinner line in a finally block (a throw leaves it on screen)",
+        )
+        self.assertRegex(
+            _text(),
+            r"function Show-Failure[^\n]*\n(?:.*\n)*?\s*Clear-SpinLine",
+            "the failure handler must wipe a spinner still on screen before printing the reason",
+        )
+
+    def test_tls_is_raised_before_the_first_request(self) -> None:
+        """배너의 버전 조회가 이 스크립트의 **첫 https 요청**이다.
+
+        Windows PowerShell 5.1 은 TLS 1.0 으로 나가고 github 는 그걸 거절한다 — 순서가 뒤집히면
+        버전 줄이 조용히 사라진다(실패가 try 안에서 삼켜지므로 아무도 이유를 못 본다).
+        """
+        body = _text().split("function Main {", 1)[1]
+        web = body.find("Initialize-Web")
+        banner = body.find("Write-Banner")
+        self.assertGreater(web, -1, "Main never configures TLS")
+        self.assertGreater(banner, -1, "Main never draws the banner")
+        self.assertLess(web, banner, "the banner's version lookup runs before TLS 1.2 is enabled")
+
+    def test_the_font_probe_still_asks_the_terminal_to_name_itself(self) -> None:
+        """리치 글리프의 진짜 전제는 **폰트**인데, 폰트는 물어볼 수가 없다.
+
+        그래서 "터미널이 자기 이름을 대는가"로 대신 묻는다 — Windows Terminal·ConEmu·VS Code·
+        서드파티 에뮬레이터는 전부 자기를 밝히고, 글리프를 박스로 그리는 레거시 conhost 만
+        아무 이름도 대지 않는다. 이 목록이 사라지면 그 conhost 에 점자 박스가 뜬다.
+        (행동 스모크로는 못 잡는 자리다: 스모크는 FORCE_UI 로 이 관문을 항상 통과시킨다.)
+        """
+        m = re.search(r"foreach \(\$v in @\(([^)]*)\)\) \{\s*\n\s*if \(\$v\) \{ \$named = \$true \}", _text())
+        self.assertIsNotNone(m, "install.ps1 no longer asks the terminal to identify itself")
+        assert m is not None
+        for signal in ("$env:WT_SESSION", "$env:ConEmuANSI", "$env:TERM_PROGRAM", "$env:TERM"):
+            self.assertIn(signal, m.group(1), f"{signal} dropped from the terminal probe")
+        self.assertIn(
+            "if ($env:ASGARD_ASCII) { return }",
+            _text(),
+            "ASGARD_ASCII is the escape hatch for a console that names itself and still cannot draw",
+        )
+
+    def test_network_calls_cannot_hang_the_install(self) -> None:
+        """배너의 버전 조회까지 포함해 모든 HTTP 호출에 타임아웃 — 기본값은 무한대에 가깝다.
+
+        장식 한 줄 때문에 설치가 안 끝나는 것은 "진행 표시가 없다"의 최악형이다.
+        """
+        for num, stmt in _statements():
+            if re.search(r"\bInvoke-(WebRequest|RestMethod)\b", stmt):
+                self.assertIn("-TimeoutSec", stmt, f"install.ps1:{num} can block forever:\n  {stmt}")
 
 
 if __name__ == "__main__":

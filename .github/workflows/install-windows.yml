@@ -64,10 +64,15 @@ jobs:
           if ($c) { "uv preinstalled at $($c.Source) - the astral bootstrap path will be skipped" }
           else { "no uv - the run will exercise the uv bootstrap" }
 
+      # ASGARD_FORCE_UI drives the animated path on purpose. A CI step's stdout is redirected, so
+      # without it the installer would take the plain branch and the spinner - Start-Process with
+      # redirected output, native argument quoting, the UTF-8 console switch - would never run on
+      # Windows at all. Those are the lines a developer machine here can never execute.
       - name: Run install.ps1
         shell: powershell
         env:
           ASGARD_NO_PAUSE: "1"
+          ASGARD_FORCE_UI: "1"
           ASGARD_INSTALL_SPEC: ${{ github.workspace }}
         run: ./install.ps1
 

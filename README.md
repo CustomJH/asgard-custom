@@ -15,7 +15,16 @@ irm https://raw.githubusercontent.com/CustomJH/asgard-custom/main/install.ps1 | 
 ```
 
 Neither installer needs a system Python, Node, or git — `uv` fetches a standalone CPython 3.14 of its
-own. If the Windows install does fail, it stops on a message instead of closing the terminal: the
+own. Both draw the same screen: the brand lockup, three numbered phases, and a spinner on every step
+that takes a while (the toolchain download and the one-time memory search model are the slow ones).
+Re-running either line updates an existing install.
+
+On Windows the glyph set follows the terminal. Windows Terminal, VS Code and ConEmu get the full
+Unicode look; the legacy console, which draws boxes instead of braille, gets an ASCII wordmark and an
+ASCII spinner. Force that plainer set anywhere with `ASGARD_ASCII=1`, drop colour entirely with
+`NO_COLOR=1`, or keep the full UI when output is redirected with `ASGARD_FORCE_UI=1`.
+
+If the Windows install does fail, it stops on a message instead of closing the terminal: the
 reason, what to try, an environment table, and a full transcript written to
 `%TEMP%\asgard-install-<timestamp>.log`. Set `ASGARD_NO_PAUSE=1` to skip the keypress in automation.
 
