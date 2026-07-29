@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as _dt
+import math
 import os
 import re
 
@@ -144,6 +145,38 @@ RERANK_BASE_WEIGHT = 1.0
 # 나왔으므로, 끄는 길은 벤치 전용 장치가 아니라 정식 스위치여야 한다.
 _RERANK_ENV = "ASGARD_MEMORY_RERANK"
 
+# ── 리랭크 적용 게이트 — 길이가 아니라 **점수 분산**으로 (26-07-29) ────────────────────
+#
+# 왜 바꾸는가. held-out 실측(V2, 웹/기업 에이전트 궤적)에서 구절 리랭크는 −5.0pp 였고
+# 피해가 `static-environment` 유형에 몰렸다(0:5). 보고서의 가설은 "같은 환경의 궤적은 UI
+# 어휘를 공유해서, 구절로 쪼개 보면 질의 낱말을 되울리는 구절이 어디에나 있다" 였다. 즉
+# **구별이 안 되는 코퍼스**에서 리랭크가 잡음을 신호로 착각한다.
+#
+# 그런데 기존 게이트(`RERANK_MIN_PASSAGES`)는 **길이만** 본다. 길이는 그 실패를 예측하지
+# 못한다 — V2 궤적은 충분히 길다. 필요한 것은 "이 질의에 대해 후보들이 갈리는가"를 재는 자다.
+#
+# 그 자는 정보검색에 이미 있다: **Query Performance Prediction (QPP)**. 그중 NQC
+# (Normalized Query Commitment, Shtok et al.)는 상위 문서 점수의 **표준편차**를 쓰고,
+# 낮은 분산을 query drift — 질의와 무관한 문서가 상위를 점령한 상태 — 의 증거로 읽는다.
+# 여기 옮기면 정확히 V2 의 실패 모양이다: 모든 구절이 비슷해 보이면 순위를 바꿀 근거가 없다.
+#
+# NQC 는 코퍼스 점수로 정규화하지만 우리에겐 그 상수가 없다. 코사인은 척도가 고정
+# ([-1,1]) 이고 후보 집합이 작으므로 **변동계수**(σ/μ)를 쓴다 — 척도 무관이고 stdlib 로 끝난다.
+RERANK_DISPERSION_ENV = "ASGARD_MEMORY_RERANK_DISPERSION"
+# 문턱은 **개발 집합(S)에서만** 뽑았다. held-out(M·V2)을 보고 고르면 그 절의 증거값이
+# 그 자리에서 사라진다 — 보고서가 스스로 경계한 그 행동이다.
+#
+# 보정 규칙(`benchmarks/longmemeval/calibrate_dispersion.py`, 산출물 calibration-dispersion.json):
+#   floor = 0.99 × min{ 분산(q) : q ∈ S, 리랭크가 그 질의를 0→1 로 이긴 경우 }
+# 즉 "리랭크가 실제로 값을 한 질의는 하나도 안 막는다"를 **구성으로** 보장하는 가장 큰 문턱이다.
+# S 점수를 최대화하는 값을 찾지 않는다 — 그건 30문항 위 2문항을 좇는 과적합이다.
+#
+# S 500문항 실측 (26-07-29): 리랭크 발동 500 · 이김 13 · 짐 4 · 무변화 483.
+#   이긴 질의의 분산 [0.1518 … 0.3548]  ·  진 질의의 분산 [0.1237, 0.1275, 0.1548, 0.3643]
+#   → floor 0.1503 에서 **이긴 13건 전부 통과, 진 4건 중 2건 차단**, 전체 기권률 6.2%.
+# 진 사례가 분포 하단에 몰린 것이 NQC 의 주장(낮은 분산 = query drift)과 방향이 같다.
+RERANK_DISPERSION_FLOOR = 0.1503
+
 
 def rerank_enabled() -> bool:
     """구절 리랭크를 이번 세션에서 쓰는가 — env 우선, 설정 폴백, 기본 ON."""
@@ -154,6 +187,38 @@ def rerank_enabled() -> bool:
         return str(_memory_settings().get("rerank", "on")).strip().lower() not in ("off", "0", "false", "no")
     except Exception:
         return True
+
+
+def _dispersion_floor() -> float:
+    """리랭크 표를 던지기 위해 필요한 최소 변동계수 — env > 설정 > 기본.
+
+    0 이면 게이트 없음(도입 전 거동과 바이트 동일). 어블레이션이 몽키패치 없이 되어야
+    남이 그 수치를 검증한다 — `ASGARD_MEMORY_RERANK` 와 같은 모양의 손잡이다."""
+    env = (os.environ.get(RERANK_DISPERSION_ENV) or "").strip()
+    if env:
+        try:
+            return max(0.0, float(env))
+        except ValueError:
+            return RERANK_DISPERSION_FLOOR
+    try:
+        value = _memory_settings().get("rerank_dispersion")
+        return max(0.0, float(value)) if value is not None else RERANK_DISPERSION_FLOOR
+    except Exception:
+        return RERANK_DISPERSION_FLOOR
+
+
+def _dispersion(scores: list[float]) -> float:
+    """후보 점수의 변동계수 σ/μ — 후보들이 갈리는 정도. 못 재면 0.0.
+
+    평균이 0 이하면 정의되지 않는다(코사인이 전부 0 근처인 경우) — 그때는 갈리지 않는다고
+    본다. 두 개 미만도 마찬가지다: 순위라 부를 것이 없으면 분산도 없다."""
+    if len(scores) < 2:
+        return 0.0
+    mean = sum(scores) / len(scores)
+    if mean <= 0.0:
+        return 0.0
+    variance = sum((score - mean) ** 2 for score in scores) / len(scores)
+    return math.sqrt(variance) / mean
 
 
 def _passages(body: str) -> list[str]:
@@ -221,6 +286,15 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> list[tuple[str, f
         )
     # 대상이 둘 미만이면 순위라 부를 것이 없다 — 아무것도 안 한다 (기존 4스트림 그대로).
     if len(scored) < 2:
+        return []
+    # QPP 게이트 — 후보들이 안 갈리면 표를 던지지 않는다 (위 RERANK_DISPERSION_FLOOR 참조).
+    # 회수 범위도 기존 순위도 안 건드린다: 기권은 "4스트림 결과 그대로"라는 뜻이다.
+    #
+    # 분산은 문턱과 **무관하게** 항상 계산한다. 실수 스무 개의 평균과 제곱합이라 비용이 없고,
+    # 단락 평가로 건너뛰면 게이트를 끈 상태에서 이 값을 관측할 수 없다 — 보정(문턱을 뽑는 일)은
+    # 정의상 게이트가 꺼진 실행에서 해야 하므로, 그때 계기가 죽으면 보정 자체가 불가능해진다.
+    dispersion = _dispersion([score for _slug, score in scored])
+    if dispersion < _dispersion_floor():
         return []
     scored.sort(key=lambda pair: (-pair[1], pair[0]))
     return [pair for pair in scored if pair[1] > 0.0]

@@ -80,6 +80,8 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--state-budget", type=int, default=4000)
     ap.add_argument("--rerank", choices=["on", "off"], default="on")
+    # QPP 분산 게이트 A/B — harness.py 와 같은 계약. "off" = 게이트 없음, 미지정 = 제품 기본값.
+    ap.add_argument("--dispersion", default="")
     ap.add_argument("--gold-rule", choices=["any", "all"], default="all")
     ap.add_argument("--min-phrase", type=int, default=5)
     ap.add_argument("--out", required=True)
@@ -88,8 +90,13 @@ def main() -> int:
     os.environ["ASGARD_MEMORY_SEMANTIC"] = "on"
     os.environ["ASGARD_MEMORY_INJECT"] = "off"
     os.environ["ASGARD_MEMORY_RERANK"] = args.rerank  # 제품의 정식 스위치 — 몽키패치 아님
+    if args.dispersion:
+        os.environ["ASGARD_MEMORY_RERANK_DISPERSION"] = "0" if args.dispersion == "off" else args.dispersion
 
     from asgard import memory
+    from asgard.memory import recall as _recall
+
+    effective_floor = _recall._dispersion_floor() if args.rerank == "on" else None
 
     questions = [json.loads(line) for line in open(os.path.join(args.root, "questions.jsonl"), encoding="utf-8")]
     haystacks = json.load(open(os.path.join(args.root, "haystacks", "lme_v2_small.json"), encoding="utf-8"))
@@ -178,6 +185,7 @@ def main() -> int:
     report = {
         "dataset": "longmemeval-v2 (small haystack, derived gold)",
         "rerank": args.rerank,
+        "dispersion_floor": effective_floor,
         "gold_rule": args.gold_rule,
         "min_phrase": args.min_phrase,
         "state_budget": args.state_budget,
