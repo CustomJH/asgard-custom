@@ -516,9 +516,15 @@ def thor(
 @app.command(help="codebase erosion signal — size, duplication, coupling, hotspots, and the trend")
 def health(
     snapshot: bool = typer.Option(False, "--snapshot", help="record this state so later runs can show a delta"),
+    next_: bool = typer.Option(False, "--next", help="the control signal — measured error and the next small step"),
+    steps: int = typer.Option(1, "--steps", help="how many steps the controller may emit (--next only)"),
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
+    if next_:
+        from .commands.health import run_next
+
+        raise typer.Exit(run_next(steps=steps, json_out=json_, quiet=quiet))
     from .commands.health import run_health
 
     raise typer.Exit(run_health(snapshot=snapshot, json_out=json_, quiet=quiet))

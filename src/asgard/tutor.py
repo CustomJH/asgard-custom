@@ -34,7 +34,7 @@ import subprocess
 import time
 from dataclasses import dataclass, replace
 
-from . import craft, craft_lex, surface, tutor_growth, tutor_probes
+from . import craft, craft_lex, loop, surface, tutor_growth, tutor_probes
 from .craft_rules import Unit
 from .health import _read
 from .io_files import read_json, write_json
@@ -159,6 +159,14 @@ class Lesson:
     files: tuple[FileChange, ...]
     checkpoints: tuple[Checkpoint, ...]
     undetermined: tuple[tuple[str, str], ...]
+    # 컨트롤러가 이 자리를 고른 근거 (`loop.mandate_for`). 사람이 쓴 변경이면 항상 비어 있다.
+    #
+    # 계약 ①("답을 주지 않는다")과 다투지 않는 이유: 이것은 코드에 대한 답이 아니라 **좌표에
+    # 대한 사실**이다. "이 함수가 왜 이렇게 생겼나"는 여전히 안 적는다(그건 계약 ③ 의 빈칸이고
+    # 저자 몫이다). 여기 싣는 것은 "왜 하필 이 파일 이 줄이었나"인데, 루프가 쓴 변경에는 그
+    # 물음에 답할 저자가 아예 없다 — diff 어디에도 안 적혀 있고 사람이 유도할 방법도 없다.
+    # 빈칸을 비워 두는 것과 답이 없는 물음을 남기는 것은 다르다. 후자는 부채다.
+    mandate: tuple[dict, ...] = ()
 
     @property
     def ranked(self) -> tuple[Checkpoint, ...]:
@@ -459,7 +467,10 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
         contract = [point for point in contract if point.path in scope]
         gaps = [gap for gap in gaps if gap[0] in scope]
     points.extend(_anchored(point, anchors) for point in contract)
-    return Lesson(base, tuple(files), tuple(points), tuple(unknown + gaps))
+    # 컨트롤러 근거는 **손댄 경로에 대해서만** 싣는다 — 안 건드린 자리의 지시를 이번 되짚기에
+    # 붙이면 craft 래칫이 막는 것과 같은 종류의 오귀속이 된다.
+    mandate = loop.mandate_for(root, targets)
+    return Lesson(base, tuple(files), tuple(points), tuple(unknown + gaps), mandate)
 
 
 def _anchored(point: Checkpoint, anchors: dict[str, dict[str, int]]) -> Checkpoint:

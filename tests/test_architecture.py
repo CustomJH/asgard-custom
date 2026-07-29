@@ -69,6 +69,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "manual",  # 커스텀 매뉴얼 — charter 와 같은 자리(설정 해석 + 프롬프트 렌더)
                 "code_map",
                 "health",
+                # loop — 컨트롤러. health(센서)·craft_rules(단위) 위에 서고, 고르기만 한다.
+                # 센서와 같은 층인 이유는 둘 다 판단을 내리지 않기 때문이다 — 적용은 위층 몫.
+                "loop",
                 "craft",
                 "craft_rules",
                 "craft_lex",

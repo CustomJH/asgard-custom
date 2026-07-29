@@ -128,13 +128,64 @@ def _payload(lesson: tutor.Lesson, rows: list[tuple[tutor.Checkpoint, str]], bac
                 for r in back
             ],
             "undetermined": [{"path": p, "why": w} for p, w in lesson.undetermined],
+            "mandate": list(lesson.mandate),
         },
         ensure_ascii=False,
         indent=2,
     )
 
 
+def _emit_mandate(lesson: tutor.Lesson) -> None:
+    """컨트롤러가 이 자리를 고른 근거. 사람이 쓴 변경이면 아무것도 안 그린다 (근거가 없다)."""
+    if not lesson.mandate:
+        return
+    ui.phase(f"왜 이 자리였나 — 컨트롤러가 고름 ({len(lesson.mandate)}건)")
+    for m in lesson.mandate:
+        where = f"{m.get('path')}:{m.get('line')}" + (f" {m['unit']}" if m.get("unit") else "")
+        ui.step(f"{m.get('step')}  {where}")
+        ui.step(
+            ui.dim(
+                f"    지표 {m.get('metric')} {m.get('current')} → 목표 {m.get('target')}"
+                f" ({m.get('source')}) · 읽을 줄 {m.get('read')} · 점수 {m.get('score')}"
+            )
+        )
+        ui.step(ui.dim(f"    {m.get('why')}"))
+        for other in m.get("runners_up") or []:
+            ui.step(ui.dim(f"    밀린 후보: {other}"))
+
+
 # ── 보고서 ─────────────────────────────────────────────────────────
+
+
+def _report_mandate(lesson: tutor.Lesson) -> list[str]:
+    """0 절 — 좌표의 출처. **2 절(왜 이렇게 했는가)을 대신 채우지 않는다.**
+
+    두 절은 다른 물음이다. 0 절은 "왜 하필 여기였나"이고 답이 기계에 있다. 2 절은 "왜 이렇게
+    고쳤나"이고 답은 코드를 쓴 쪽에만 있다 — 컨트롤러는 자리를 골랐을 뿐 설계를 안 했다.
+    섞으면 저자가 2 절을 이미 채워진 것으로 읽고 넘긴다.
+    """
+    if not lesson.mandate:
+        return []
+    lines = [
+        "## 0. 왜 이 자리였나",
+        "",
+        "이 변경은 요청이 아니라 **컨트롤러가 고른 것**이다. 아래는 그 선택의 기계 근거다 —",
+        "diff 에는 안 적혀 있고 코드를 읽어서 유도할 수도 없다.",
+        "",
+    ]
+    for m in lesson.mandate:
+        where = f"`{m.get('path')}:{m.get('line')}`" + (f" `{m['unit']}`" if m.get("unit") else "")
+        lines += [
+            f"- **{m.get('step')}** {where}",
+            f"  - 움직이려는 지표: `{m.get('metric')}` — 지금 {m.get('current')}, 목표 {m.get('target')}"
+            f" ({m.get('source')})",
+            f"  - 검증하려고 읽어야 하는 줄: **{m.get('read')}** · 점수 {m.get('score')}",
+            f"  - {m.get('why')}",
+        ]
+        for other in m.get("runners_up") or []:
+            lines.append(f"  - 밀린 후보: {other}")
+    lines.append("")
+    return lines
 
 
 def _report_files(lesson: tutor.Lesson) -> list[str]:
@@ -182,6 +233,7 @@ def _report(lesson: tutor.Lesson) -> str:
         f"`asgard tutor` 가 기준 `{lesson.base}` 대비 만든 자료다. 사실은 기계가, 답은 사람이 채운다.",
         "",
     ]
+    lines += _report_mandate(lesson)
     lines += _report_files(lesson)
     lines += ["", "## 2. 왜 이렇게 했는가", "", _WHY_SLOT]
     lines += ["", *_report_points(lesson)]
@@ -367,6 +419,7 @@ def run_tutor(
         ui.ok(f"{lesson.base} 대비 변경 없음 — 되짚을 것이 없다")
         ui.done()
         return 0
+    _emit_mandate(lesson)
     _emit_inventory(lesson)
     _emit_points(rows, limit)
     _emit_back(back)
