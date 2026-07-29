@@ -240,6 +240,47 @@ Maps are navigation hints, not completion evidence. Thinker/Worker must still re
 definitions and usages that a plan depends on, while `asgard doctor` checks managed-map
 drift plus stale, malformed, oversized, or unsafe entries in manual area maps.
 
+## Agents (Einherjar)
+
+One install can host many agents. An agent owns its **identity** and its **tier-1
+memory**; the project owns the shared world (map, charter, manual, quest log) and
+only declares who works there. Raising an agent is not reinstalling Asgard —
+credentials, the project registry, and caches stay machine-level.
+
+```bash
+asgard agent list                          # every agent, plus built-ins not yet raised
+asgard agent create qa --from loki \
+  -d "adversarial QA — counterexamples, regressions"
+asgard agent use qa                        # this machine's active agent
+asgard -A qa memory add "…"                # or one command as that agent
+```
+
+Built-in Asgard agents (freyja, thor, mimir, eitri, loki, …) are selectable by
+name and are raised on demand, seeded with their own identity. Your own agents
+start from a blank identity file you write yourself.
+
+Inside a project, place agents instead of switching them:
+
+```bash
+asgard agent bind qa                       # this project's default agent
+asgard agent bind saga-doc --mode codex    # that mode's sessions run as this agent
+asgard agent bind qa --role verifier       # a Trinity role runs as this agent
+asgard agent where                         # who works here, and which declaration won
+```
+
+Binding different agents to different roles gives you an **agent swarm**: each
+role runs on its own tier-1 memory, so the Verifier cannot read the Worker's
+log. That separation is a filesystem boundary, not a prompt instruction — it is
+what keeps the verdict independent. Placements are declared per project and
+fail open: an agent name this machine does not have falls back to the default
+and is reported by `asgard doctor`, so a repo shared with a teammate never
+blocks their session.
+
+Identity and placement reach all four modes — inline in the native loop, and via
+the `agent-activate` hook in Claude Code, Cursor, and Codex. An agent with
+nothing written in its identity file stays silent: prompts are byte-identical to
+an install that never used this layer.
+
 ## Memory
 
 Asgard has exactly two memory types: personal local Markdown/SQLite memory and

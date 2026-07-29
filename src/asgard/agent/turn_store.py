@@ -26,8 +26,12 @@ _KEEP_TURNS: int = 400
 
 
 def _dir(root: str) -> str:
+    # 세션 이력은 에이전트의 것이다 — 같은 리포에서 두 에이전트가 일해도 서로의 턴을 안 잇는다
+    # (`--continue` 가 남의 대화를 이어받으면 정체성이 섞인다). 기본 에이전트는 예전 경로 그대로.
+    from ..profiles import home
+
     key = hashlib.sha256(os.path.realpath(root).encode()).hexdigest()[:16]
-    return os.path.join(os.path.expanduser("~"), ".asgard", "sessions", key)
+    return os.path.join(home(), "sessions", key)
 
 
 def _path(root: str) -> str:

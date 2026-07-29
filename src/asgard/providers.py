@@ -189,6 +189,22 @@ class ResolvedProvider:
 CRED_PATH = os.path.join(os.path.expanduser("~"), ".asgard", "credentials.json")
 
 
+def cred_path() -> str:
+    """자격 저장소 — 기계 기본, 단 활성 에이전트가 자기 사본을 두면 그쪽.
+
+    기본이 공유인 이유: 에이전트를 하나 추가할 때마다 다시 로그인시키면 스웜을 못 쓴다.
+    예외를 여는 이유: 스웜에서 여러 에이전트가 한 계정을 두드리면 서로의 rate limit 을 굶긴다
+    — `<프로파일 홈>/credentials.json` 을 두면 그 에이전트만 자기 계정으로 나간다.
+    기본 에이전트는 두 경로가 같은 파일이므로 이 분기가 무의미하다 (그래서 명시 제외)."""
+    from .profiles import home, root
+
+    own_home = home()
+    if os.path.realpath(own_home) == os.path.realpath(root()):
+        return CRED_PATH
+    own = os.path.join(own_home, "credentials.json")
+    return own if os.path.exists(own) else CRED_PATH
+
+
 def normalize_model_id(value: object) -> str:
     """설정·terminal에 안전한 model ID만 허용한다."""
     model_id = str(value or "").strip()
@@ -229,7 +245,7 @@ def load_credentials() -> dict:
     import json
 
     try:
-        with open(CRED_PATH, encoding="utf-8") as f:
+        with open(cred_path(), encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return {}
@@ -246,7 +262,8 @@ def save_credential(provider: str, api_key: str, base_url: str = "", model: str 
     if model:
         entry["model"] = model
     creds[provider] = entry
-    parent = os.path.dirname(CRED_PATH)
+    target = cred_path()
+    parent = os.path.dirname(target)
     os.makedirs(parent, exist_ok=True)
     fd, tmp = tempfile.mkstemp(prefix=".credentials-", suffix=".tmp", dir=parent)
     try:
@@ -256,8 +273,8 @@ def save_credential(provider: str, api_key: str, base_url: str = "", model: str 
             json.dump(creds, f, indent=2)
             f.flush()
             os.fsync(f.fileno())
-        os.replace(tmp, CRED_PATH)
-        _lock_down(CRED_PATH)
+        os.replace(tmp, target)
+        _lock_down(target)
     finally:
         try:
             os.unlink(tmp)

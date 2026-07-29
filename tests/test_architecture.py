@@ -38,6 +38,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "io_journal",
                 "io_files",
                 "registry",
+                # profiles — 에인헤랴르 홈 해석. settings 가 이걸 부르므로 settings 보다 아래여야
+                # 하고, 실제로 무의존이다 (내장 명부만 templates 를 lazy 로 본다).
+                "profiles",
                 "sandbox",
                 "failures",
                 "picker",
@@ -84,6 +87,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "evolution_bench",
                 "skill_curator",
                 "templates",
+                # swarm — 프로젝트가 루트의 에이전트를 배치하는 규칙. 설정 해석 + 배치 판정이라
+                # charter/manual 과 같은 자리이고, agent(application)·commands 가 이걸 쓴다.
+                "swarm",
                 "hooks",
             }
         ),

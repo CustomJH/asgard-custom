@@ -14,7 +14,9 @@ from .. import ui
 # ── 명령 표면 — cli.py 등록 명령과 동기 (hidden(upgrade) 제외) ─────────────────────
 _SUMMARY = {
     "doctor": "check the install",
+    "manual": "your own project rules (MANUAL.md) — what is loaded, from where, how big",
     "start": "open the Asgard terminal (Heimdall)",
+    "agent": "agents (Einherjar) — many agents on one install, each with its own tier-1 memory",
     "auth": "manage Asgard-owned provider logins",
     "init": "scaffold a project for coding agents",
     "map": "project map — orientation, relation graph, and bounded context",
@@ -44,7 +46,9 @@ _SUMMARY = {
 }
 _FLAGS = {
     "doctor": ["--json", "--quiet"],
+    "manual": ["--show", "--section", "--json", "--quiet"],
     "start": ["--check", "--provider", "--model", "--continue", "--execution", "--sandbox-name"],
+    "agent": [],
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
@@ -112,6 +116,17 @@ _ROLE_SUB = {
     "run": "run one role turn",
 }
 _AUTH_SUB = {"login": "sign in", "status": "check login", "logout": "remove login"}
+_AGENT_SUB = {
+    "list": "every agent on this machine",
+    "show": "one agent — identity, memory size, capabilities",
+    "create": "raise a new agent",
+    "use": "make this the machine's active agent",
+    "describe": "set what this agent is good at",
+    "delete": "remove an agent and its tier-1 memory",
+    "bind": "place an agent in this project (default · mode · role)",
+    "unbind": "drop a placement",
+    "where": "who works here, and which declaration won",
+}
 _ROLES = ["thinker", "worker", "verifier"]
 _MODEL_HOSTS = ["native", "claude-code", "cursor", "codex"]
 _MODEL_FLAGS = ["--effort", "--provider", "--reset", "--help"]
@@ -187,6 +202,9 @@ _MEM_SUB = {
     "episodes": "search raw session transcript segments",
     "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
+    "proposals": "pending memory proposals awaiting your approval",
+    "approve": "approve a staged memory proposal",
+    "discard": "discard a staged memory proposal",
     "reindex": "rebuild derived index",
     "export-okf": "export personal memory as an OKF bundle",
     "show": "print one page",
@@ -226,7 +244,7 @@ _asgard() {
   cmd="${COMP_WORDS[1]}"
   if [ "$COMP_CWORD" -eq 1 ]; then
     case "$cur" in
-      -*) COMPREPLY=( $(compgen -W "--help --version" -- "$cur") ) ;;
+      -*) COMPREPLY=( $(compgen -W "--help --version --agent" -- "$cur") ) ;;
       *)  COMPREPLY=( $(compgen -W "__CMDS__" -- "$cur") ) ;;
     esac
     return
@@ -289,6 +307,13 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_AUTH_SUB)} --help" -- "$cur") )\n'
                 '      elif [ "$COMP_CWORD" -eq 3 ]; then\n'
                 '        COMPREPLY=( $(compgen -W "openai-native" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "agent":
+            cases.append(
+                "    agent)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_AGENT_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "map":
@@ -395,7 +420,7 @@ _asgard() {
 __CMDS__
   )
   if (( CURRENT == 2 )); then
-    if [[ $words[2] == -* ]]; then compadd -- --help --version; else _describe -t commands 'asgard command' cmds; fi
+    if [[ $words[2] == -* ]]; then compadd -- --help --version --agent; else _describe -t commands 'asgard command' cmds; fi
     return
   fi
   case $words[CURRENT-1] in
@@ -441,6 +466,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_AUTH_SUB)} --help\n"
                 "      elif (( CURRENT == 4 )); then\n"
                 "        compadd -- openai-native\n"
+                "      fi ;;"
+            )
+        elif name == "agent":
+            cases.append(
+                "    agent)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_AGENT_SUB)} --help\n"
                 "      fi ;;"
             )
         elif name == "map":
@@ -547,6 +579,8 @@ def _fish() -> str:
         lines.append(f"complete -c asgard -n \"{top}\" -a {name} -d '{_fish_desc(desc)}'")
     lines.append(f'complete -c asgard -n "{top}" -l help -s h')
     lines.append(f'complete -c asgard -n "{top}" -l version -s v')
+    # 전역 --agent — 어느 하위 명령이든 그 에이전트로 돈다 (cli._main 콜백)
+    lines.append(f'complete -c asgard -n "{top}" -l agent -s A -x')
     for name in _SUMMARY:
         cond = f"__fish_seen_subcommand_from {name}"
         for flag in _FLAGS[name]:
@@ -563,6 +597,9 @@ def _fish() -> str:
     auth_top = "__fish_seen_subcommand_from auth; and not __fish_seen_subcommand_from " + " ".join(_AUTH_SUB)
     for sub, desc in _AUTH_SUB.items():
         lines.append(f"complete -c asgard -n \"{auth_top}\" -a {sub} -d '{desc}'")
+    agent_top = "__fish_seen_subcommand_from agent; and not __fish_seen_subcommand_from " + " ".join(_AGENT_SUB)
+    for sub, desc in _AGENT_SUB.items():
+        lines.append(f"complete -c asgard -n \"{agent_top}\" -a {sub} -d '{desc}'")
     for sub in _AUTH_SUB:
         lines.append(
             f'complete -c asgard -n "__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from {sub}" '

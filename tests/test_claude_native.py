@@ -554,6 +554,32 @@ class TestBanGuards(_Sess):
         with mock.patch.dict("os.environ", env, clear=True):
             self.assertEqual(claude_native._guard_env(), {})
 
+    def test_sdk_env_propagates_the_active_agent(self):
+        """CLI 가 띄우는 훅은 부모의 컨텍스트 스코프를 못 본다 — env 로 넘겨야 자기 홈에 쓴다.
+
+        이 자리를 빼먹으면 역할마다 다른 에이전트를 세운 스웜에서 자식이 남의 1차 기억에 쓰고,
+        조용해서 며칠 뒤에나 발견된다 (hermes 이슈 18594 와 같은 자리)."""
+        import os
+        import tempfile
+
+        from asgard import profiles
+
+        with tempfile.TemporaryDirectory() as home:
+            clean = {k: v for k, v in os.environ.items() if not k.startswith("ASGARD_")}
+            with mock.patch.dict("os.environ", {**clean, "HOME": home}, clear=True):
+                profiles.create("qa")
+                with profiles.scoped("qa"):
+                    env = claude_native._sdk_env(None, UV_CACHE_DIR="/tmp/x")
+                self.assertEqual(env["ASGARD_PROFILE"], "qa")
+                self.assertEqual(env["ASGARD_HOME"], profiles.profile_dir("qa"))
+                self.assertEqual(env["UV_CACHE_DIR"], "/tmp/x")  # 호출부 추가분은 보존
+
+    def test_sdk_env_still_neutralizes_the_proxy(self):
+        """에이전트 전파를 얹어도 구독 보호는 그대로여야 한다 (두 오버레이는 독립)."""
+        with mock.patch.dict("os.environ", {"ANTHROPIC_BASE_URL": "https://gw.example.com"}):
+            with mock.patch.object(claude_native, "detect_auth", return_value=("keychain", "")):
+                self.assertEqual(claude_native._sdk_env()["ANTHROPIC_BASE_URL"], "")
+
     def test_detect_auth_api_key_warns_billing(self):
         with mock.patch.dict("os.environ", {"ANTHROPIC_API_KEY": "sk-x"}):
             kind, detail = claude_native.detect_auth()

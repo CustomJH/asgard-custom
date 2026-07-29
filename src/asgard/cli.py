@@ -19,13 +19,39 @@ def _version(value: bool) -> None:
         raise typer.Exit()
 
 
+def _agent(value: str) -> None:
+    """--agent 를 ASGARD_PROFILE 로 옮긴다 — 하위 명령이 무엇이든 그 에이전트로 돈다.
+
+    is_eager 라 하위 명령보다 먼저 실행된다. 홈 해석(profiles.home)은 전부 호출 시점이라
+    여기서 env 를 세우면 이후 모든 경로가 그 에이전트를 가리킨다 (모듈 상수 캐시 없음)."""
+    if not value:
+        return
+    import os
+
+    from .profiles import validate
+
+    try:
+        os.environ["ASGARD_PROFILE"] = validate(value)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from exc
+
+
 @app.callback()
 def _main(
     version: bool = typer.Option(
         False, "--version", "-v", callback=_version, is_eager=True, help="show version and exit"
     ),
+    agent: str = typer.Option(
+        "",
+        "--agent",
+        "-A",
+        callback=_agent,
+        is_eager=True,
+        help="run this command as a specific agent (its own tier-1 memory, settings, sessions)",
+    ),
 ) -> None:
-    """Root callback — hosts the global --version flag."""
+    """Root callback — hosts the global --version / --agent flags."""
 
 
 @app.command(help="check the install — runtime, PATH, and project wiring")
@@ -36,6 +62,151 @@ def doctor(
     from .commands.doctor import run_doctor
 
     raise typer.Exit(run_doctor(json_out=json_, quiet=quiet))
+
+
+@app.command(help="your own project rules (MANUAL.md) — what is loaded, from where, how big")
+def manual(
+    show: bool = typer.Option(False, "--show", help="print the exact text the agents receive"),
+    section: str = typer.Option("identity", "--section", help="identity | thinker | worker | verifier"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.manual import run_manual
+
+    raise typer.Exit(run_manual(show=show, section=section, json_out=json_, quiet=quiet))
+
+
+agent_app = typer.Typer(help="agents (Einherjar) — many agents on one install, each with its own tier-1 memory")
+app.add_typer(agent_app, name="agent")
+app.add_typer(agent_app, name="einherjar", hidden=True)  # 세계관 별칭 — 같은 앱, 도움말 중복 없음
+
+
+@agent_app.command("list", help="every agent on this machine — plus the built-in ones not yet raised")
+def agent_list(
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_list
+
+    raise typer.Exit(run_agent_list(json_out=json_, quiet=quiet))
+
+
+@agent_app.command("show", help="one agent — identity, tier-1 memory size, what it can do")
+def agent_show(
+    name: str = typer.Argument(..., help="agent id"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_show
+
+    raise typer.Exit(run_agent_show(name, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("create", help="raise a new agent — its own home, identity and tier-1 memory")
+def agent_create(
+    name: str = typer.Argument(..., help="agent id — [a-z0-9][a-z0-9_-]*"),
+    from_: str = typer.Option(None, "--from", help="seed the identity from a built-in Asgard agent (freyja, loki, …)"),
+    description: str = typer.Option(
+        None, "--description", "-d", help="what this agent is good at — the swarm reads it"
+    ),
+    can: list[str] = typer.Option(None, "--can", help="a capability this agent has (repeatable)"),
+    clone: str = typer.Option(
+        None, "--clone", help="copy settings/identity/skills from an existing agent (never its memory)"
+    ),
+    display: str = typer.Option(None, "--name", help="display name"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_create
+
+    raise typer.Exit(
+        run_agent_create(
+            name,
+            based_on=from_,
+            description=description,
+            can=list(can or []),
+            clone_from=clone,
+            display=display,
+            json_out=json_,
+            quiet=quiet,
+        )
+    )
+
+
+@agent_app.command("use", help="make this the machine's active agent (built-in names are raised on demand)")
+def agent_use(
+    name: str = typer.Argument(..., help="agent id, or 'default'"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_use
+
+    raise typer.Exit(run_agent_use(name, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("describe", help="set what this agent is good at — the sentence the swarm routes on")
+def agent_describe(
+    name: str = typer.Argument(..., help="agent id"),
+    description: str = typer.Argument(None, help="one or two sentences"),
+    can: list[str] = typer.Option(None, "--can", help="a capability this agent has (repeatable, replaces the list)"),
+    display: str = typer.Option(None, "--name", help="display name"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_describe
+
+    raise typer.Exit(
+        run_agent_describe(name, description, can=list(can or []), display=display, json_out=json_, quiet=quiet)
+    )
+
+
+@agent_app.command("delete", help="remove an agent — its tier-1 memory goes with it")
+def agent_delete(
+    name: str = typer.Argument(..., help="agent id"),
+    yes: bool = typer.Option(False, "--yes", help="skip the confirmation"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_delete
+
+    raise typer.Exit(run_agent_delete(name, yes=yes, json_out=json_, quiet=quiet))
+
+
+@agent_app.command(
+    "bind", help="place an agent in THIS project — as its default, per mode, or per Trinity role (swarm)"
+)
+def agent_bind(
+    name: str = typer.Argument(..., help="agent id"),
+    mode: str = typer.Option(None, "--mode", help="native | claude-code | cursor | codex"),
+    role: str = typer.Option(None, "--role", help="thinker | worker | verifier | …"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_bind
+
+    raise typer.Exit(run_agent_bind(name, mode=mode, role=role, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("unbind", help="drop a placement from this project")
+def agent_unbind(
+    mode: str = typer.Option(None, "--mode", help="native | claude-code | cursor | codex"),
+    role: str = typer.Option(None, "--role", help="thinker | worker | verifier | …"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_unbind
+
+    raise typer.Exit(run_agent_unbind(mode=mode, role=role, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("where", help="who works here, and which declaration won")
+def agent_where(
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_where
+
+    raise typer.Exit(run_agent_where(json_out=json_, quiet=quiet))
 
 
 @app.command(help="open the Asgard terminal (Heimdall) — chat, connect a provider, run tasks")

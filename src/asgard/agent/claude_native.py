@@ -316,11 +316,11 @@ async def _run_async(sess, user_content: str, result) -> None:
         # UV_CACHE_DIR: CC 샌드박스(allowUnsandboxedCommands=False)가 ~/.cache/uv 쓰기를 거부해
         # `uv run` 이 환경 실패하는 사례 실측(26-07-22) — 캐시를 세션 cwd 내부(.gitignore 된
         # .cache/uv)로 고정해 env 조작 없이 동작하게 한다. 프로젝트 파일(pyproject) 오염 금지.
-        env={
-            "BASH_MAX_TIMEOUT_MS": "120000",
-            "UV_CACHE_DIR": os.path.join(sess.cwd, ".cache", "uv"),
-            **_guard_env(sess),
-        },
+        env=_sdk_env(
+            sess,
+            BASH_MAX_TIMEOUT_MS="120000",
+            UV_CACHE_DIR=os.path.join(sess.cwd, ".cache", "uv"),
+        ),
     )
 
     pending: dict[str, tuple[str, str, float, int]] = {}  # tool_use_id → (sym, detail, t0, cmd_idx)
@@ -430,6 +430,10 @@ def _guard_env(sess=None) -> dict:
 
     구독 인증 + 게이트웨이 조합은 차단 리스크(OpenCode 사례) — API 키 인증일 때만 존중.
     SDK env 는 os.environ 상속 + 오버레이라 제거 불가 → 빈 문자열로 무력화한다.
+
+    **프록시 말고는 아무것도 안 건드린다** — 프록시가 없으면 빈 dict 다. 에이전트 전파처럼
+    성격이 다른 오버레이는 호출부에서 합친다 (`_sdk_env`), 안 그러면 "프록시가 없으면 env 를
+    안 건드린다"는 이 함수의 계약을 검사하는 게이트가 무의미해진다.
     """
     if os.environ.get("ANTHROPIC_BASE_URL") and detect_auth()[0] != "api_key":
         if sess is not None:
@@ -438,6 +442,17 @@ def _guard_env(sess=None) -> dict:
             sess.on_text(f"  {ui.dim('⬢ ANTHROPIC_BASE_URL 무시 — 구독 인증은 프록시 없이 직결 (차단 방지)')}\n")
         return {"ANTHROPIC_BASE_URL": ""}
     return {}
+
+
+def _sdk_env(sess=None, **extra: str) -> dict:
+    """SDK 로 넘길 env 오버레이 — 프록시 가드 + **활성 에이전트 전파** + 호출부 추가분.
+
+    에이전트를 안 넘기면 CLI 가 띄우는 훅이 부모의 스코프를 모른 채 끈끈한 기본값을 읽는다.
+    역할마다 다른 에이전트를 세운 스웜에서 그건 곧 "자식이 남의 홈에 쓴다"이고, 조용해서
+    며칠 뒤에나 발견된다 (hermes 이슈 18594 와 같은 자리)."""
+    from ..profiles import env_overlay
+
+    return {**extra, **env_overlay(), **_guard_env(sess)}
 
 
 def _observe_use(sess, result, b, pending) -> None:
@@ -518,7 +533,7 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
             skills=[],
             max_turns=1,
             cwd=root,
-            env=_guard_env(),
+            env=_sdk_env(),
         )
         out = ""
         async for msg in _drained(query(prompt=user, options=options)):

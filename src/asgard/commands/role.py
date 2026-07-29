@@ -231,6 +231,16 @@ def run_role_run(role: str, task: str) -> int:
         sys.stdout.write(s)
         sys.stdout.flush()
 
+    # 역할 배치(스웜)는 브릿지에도 선다 — 모드가 갈린다고 규율이 갈리면 그건 드리프트다.
+    # 호스트(CC·Cursor·Codex)가 이 CLI 로 역할 턴을 넘기면 그 턴은 배치된 에이전트의 홈에서
+    # 돈다: 자기 1차 기억·자기 스킬·자기 설정.
+    from ..swarm import resolve as _agent_for_role
+
+    try:
+        placed_agent = _agent_for_role(root, role=role)
+    except Exception:
+        placed_agent = ""
+
     sess = AgentSession(
         make_client(rrp),
         rrp,
@@ -241,6 +251,7 @@ def run_role_run(role: str, task: str) -> int:
         on_text=_out,
         role=role,
         readonly=role != "worker",
+        agent=placed_agent or None,
     )
     r = sess.run(prompt)
 

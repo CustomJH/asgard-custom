@@ -176,8 +176,14 @@ class AgentSession:
         cancel_event: threading.Event | None = None,
         on_lifecycle: Callable[[str, str], None] | None = None,
         on_tool: Callable[[str, dict], None] | None = None,
+        agent: str | None = None,
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
+        # 이 세션을 도는 에이전트 (에인헤랴르 id). None = 활성 에이전트 그대로.
+        # 스웜에서 역할마다 다른 에이전트를 세우면 여기 이름이 박히고, run() 이 그 홈으로
+        # 스코프를 열어 **턴 안의 메모리 도구까지** 그 에이전트의 1차 기억을 쓴다.
+        # 생성자에서 스코프를 열어봐야 소용없다 — 툴 호출은 run() 안에서 일어난다.
+        self.agent = agent or None
         # root는 Quest/journal/config의 canonical 소유자, cwd는 도구와 provider subprocess의 실행 공간.
         # 기본값은 기존 동작과 동일하다.
         self.cwd = os.path.abspath(cwd or root)
@@ -360,6 +366,19 @@ class AgentSession:
             self.on_text(tail)
 
     def run(self, user_content: str) -> SessionResult:
+        """턴 실행 — 이 세션에 에이전트가 박혀 있으면 그 에이전트의 홈으로 스코프를 열고 돈다.
+
+        스코프를 **여기서** 여는 이유: 메모리 회수·저장은 턴 안의 툴 호출이라 생성자 시점의
+        스코프는 이미 닫혀 있다. contextvar 라 스레드/태스크마다 독립적이므로, 역할 셋을
+        병렬로 돌려도 서로의 홈을 덮어쓰지 않는다 (환경변수였다면 덮어쓴다)."""
+        if not self.agent:
+            return self._run(user_content)
+        from ..profiles import scoped
+
+        with scoped(self.agent):
+            return self._run(user_content)
+
+    def _run(self, user_content: str) -> SessionResult:
         outcome = "failed"
         self._fence.reset()  # 턴 경계 — 이전 턴의 미완 상태가 이번 턴을 삼키지 않는다
         if self.readonly and not self._explicit_cwd:

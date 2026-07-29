@@ -34,10 +34,24 @@ LEGACY_MEMORY = "memory-server.json"
 
 
 def global_dir() -> str:
-    # os.path.expanduser("~") 는 Windows 에서 HOME 을 보지 않고 USERPROFILE/HOMEDRIVE+HOMEPATH
-    # 만 본다(posix 는 HOME 우선) — HOME 을 명시 우선해 플랫폼 간 일관성 + 테스트 모킹 가능성 확보.
-    home = os.environ.get("HOME") or os.path.expanduser("~")
-    return os.path.join(home, ".asgard")
+    """활성 에이전트의 홈 — 기본 에이전트면 `~/.asgard` 그대로 (마이그레이션 0).
+
+    프로파일 계층이 붙기 전까지 이 함수는 곧 기계 뿌리였다. 지금은 **에이전트의 사유 홈**이고,
+    기계 단위 자산(자격증명·projects.json)은 `machine_dir()` 이 따로 가리킨다. `~/.asgard` 를
+    직접 조립하던 코드는 둘 중 하나를 골라야 한다 — 그 선택이 곧 "이 파일이 누구 것인가"다."""
+    from .profiles import home
+
+    return home()
+
+
+def machine_dir() -> str:
+    """기계 단위 뿌리 `~/.asgard` — 에이전트가 몇이든 하나 (자격증명·레지스트리·캐시).
+
+    os.path.expanduser("~") 는 Windows 에서 HOME 을 보지 않고 USERPROFILE/HOMEDRIVE+HOMEPATH
+    만 본다(posix 는 HOME 우선) — HOME 을 명시 우선해 플랫폼 간 일관성 + 테스트 모킹 가능성 확보."""
+    from .profiles import root
+
+    return root()
 
 
 def global_path() -> str:
@@ -65,12 +79,34 @@ def _read_toml(path: str) -> dict:
         return {}
 
 
-def load_global() -> dict:
-    """글로벌 설정 — 신규 JSON 우선, 없으면 구 config.toml (섹션 구조 동일해 그대로 사용)."""
-    d = _read_json(global_path())
+def _own_global(directory: str) -> dict:
+    """한 홈의 글로벌 설정 — 신규 JSON 우선, 없으면 구 config.toml (섹션 구조 동일해 그대로 사용)."""
+    d = _read_json(os.path.join(directory, GLOBAL_FILE))
     if d is not None:
         return d
-    return _read_toml(os.path.join(global_dir(), LEGACY_TOML))
+    return _read_toml(os.path.join(directory, LEGACY_TOML))
+
+
+def load_global() -> dict:
+    """활성 에이전트의 글로벌 설정 — 기계 뿌리 위에 에이전트 것을 **키 단위로** 덮는다.
+
+    왜 통째 교체가 아닌가: 사용자가 한 번 맞춘 ui·lagom·언어를 에이전트마다 다시 맞추게 하면
+    "에이전트 추가"가 "설정 반복"이 된다. 반대로 provider·model·memory 는 에이전트마다 달라야
+    쓸모가 있다. 그래서 기본은 물려받고, 적어 넣은 키만 갈린다 (프로젝트>글로벌과 같은 규율)."""
+    own_dir = global_dir()
+    machine = machine_dir()
+    own = _own_global(own_dir)
+    if os.path.realpath(own_dir) == os.path.realpath(machine):
+        return own
+    merged = dict(_own_global(machine))
+    for name, value in own.items():
+        if isinstance(value, dict) and isinstance(merged.get(name), dict):
+            section_view = dict(merged[name])
+            section_view.update(value)
+            merged[name] = section_view
+        else:
+            merged[name] = value
+    return merged
 
 
 def _load_legacy_project(root: str) -> dict:
@@ -98,6 +134,15 @@ def load_project(root: str) -> dict:
     return _load_legacy_project(root)
 
 
+def own_global(name: str) -> dict:
+    """활성 에이전트가 **자기 파일에 직접 적은** 섹션만 (상속분 제외).
+
+    경로처럼 "물려받으면 안 되는 값"을 위한 창구다. 예: 뿌리에 `memory.directory` 가 있으면
+    load_global 병합으로 모든 에이전트가 그 한 디렉터리를 가리키게 되고 격리가 조용히 무너진다.
+    그런 키는 이 함수로 자기 선언만 본다."""
+    return dict(_own_global(global_dir()).get(name) or {})
+
+
 def section(name: str, root: str | None = None) -> dict:
     """섹션 병합 뷰 — 프로젝트 > 글로벌, 키 단위 덮어쓰기. root=None 이면 글로벌만."""
     out = dict(load_global().get(name) or {})
@@ -116,8 +161,11 @@ def _atomic_json(path: str, data: dict) -> None:
 
 def save_global(section_name: str, kv: dict) -> str:
     """글로벌 섹션 저장 — 섹션 **교체** (다른 섹션 불변; 구 save_config_section 계약 계승 —
-    병합이면 배치 전환 시 낡은 키가 남는다). 최초 저장 시 구 config.toml 내용 자동 승계."""
-    data = load_global()
+    병합이면 배치 전환 시 낡은 키가 남는다). 최초 저장 시 구 config.toml 내용 자동 승계.
+
+    쓰기는 **활성 에이전트의 파일에만** 한다 — 병합 뷰를 저장하면 뿌리의 값이 프로파일로
+    복제돼, 뿌리를 고쳐도 안 따라오는 유령 사본이 된다."""
+    data = _own_global(global_dir())
     data[section_name] = {k: v for k, v in kv.items() if v is not None}
     _atomic_json(global_path(), data)
     return global_path()
@@ -199,11 +247,16 @@ def migrate_project(root: str) -> list[str]:
 
 
 def migrate_global() -> list[str]:
-    """구 ~/.asgard/config.toml → asgard-setting-global.json (구 파일은 보존 — 타 버전 공존 안전)."""
-    if os.path.exists(global_path()):
+    """구 ~/.asgard/config.toml → asgard-setting-global.json (구 파일은 보존 — 타 버전 공존 안전).
+
+    이관 대상은 언제나 **기계 뿌리**다. 구 config.toml 은 프로파일 계층이 생기기 전 유물이라
+    프로파일 홈에는 존재할 수 없고, 활성 에이전트를 따라가면 뿌리의 유산이 영영 안 옮겨진다."""
+    machine = machine_dir()
+    target = os.path.join(machine, GLOBAL_FILE)
+    if os.path.exists(target):
         return []
-    legacy = _read_toml(os.path.join(global_dir(), LEGACY_TOML))
+    legacy = _read_toml(os.path.join(machine, LEGACY_TOML))
     if not legacy:
         return []
-    _atomic_json(global_path(), legacy)
+    _atomic_json(target, legacy)
     return [f"global settings → {GLOBAL_FILE}"]

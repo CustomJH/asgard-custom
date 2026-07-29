@@ -114,19 +114,40 @@ _SECRET_PATTERNS = (
 def memory_dir() -> str:
     path = os.environ.get(MEMORY_ENV) or ""
     if not path:
-        configured = _memory_settings().get("directory")
+        configured = _own_memory_settings().get("directory")
         path = configured if isinstance(configured, str) else ""
     if path.strip():
         return os.path.abspath(os.path.expanduser(path))
-    return os.path.join(os.path.expanduser("~"), ".asgard", "memory")
+    # 1차 기억은 **에이전트의 것**이다 (26-07-29 프로파일 계층). 기본 에이전트면 예전 그대로
+    # ~/.asgard/memory, 이름 붙은 에이전트면 자기 홈 아래 — 같은 기계에 선 두 에이전트가
+    # 서로의 일지를 못 본다. 명시 override(ASGARD_MEMORY_DIR·설정)는 여전히 위에 있다.
+    from ..profiles import home
+
+    return os.path.join(home(), "memory")
 
 
 def _memory_settings() -> dict:
-    """글로벌 [memory] 섹션 — asgard-setting-global.json 우선, 구 config.toml 폴백 (settings.py)."""
+    """글로벌 [memory] 섹션 — asgard-setting-global.json 우선, 구 config.toml 폴백 (settings.py).
+
+    예산·주입 게이트처럼 **물려받아도 되는** 값을 읽는다 (에이전트마다 다시 맞추게 하지 않는다)."""
     try:
         from ..settings import load_global
 
         return dict(load_global().get("memory") or {})
+    except Exception:
+        return {}
+
+
+def _own_memory_settings() -> dict:
+    """활성 에이전트가 자기 파일에 직접 적은 [memory] 만 — `directory` 전용 창구.
+
+    경로는 상속되면 안 된다: 뿌리에 `memory.directory` 가 하나 있으면 병합 뷰에서는 모든
+    에이전트가 그 디렉터리를 가리키고, 1차 기억 격리가 설정 한 줄에 조용히 무너진다.
+    자기가 선언한 경로만 이긴다 (안 적었으면 자기 홈)."""
+    try:
+        from ..settings import own_global
+
+        return own_global("memory")
     except Exception:
         return {}
 
