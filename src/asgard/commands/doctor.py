@@ -658,6 +658,84 @@ def _trinity_checks(root: str) -> list[dict]:
             "fix": fix,
         }
     )
+    # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 이 계층은 조용히 실패한다(이름 오타·주석 안·별칭
+    # 중복·상한 절단) — 어느 쪽이든 에이전트는 평소처럼 돌고 사용자는 규칙이 먹은 줄 안다.
+    # 그래서 "안 실리는 이유"만 ⚠ 로 세운다. 매뉴얼 미작성은 결함이 아니다 (ok).
+    try:
+        from ..manual import MANUAL_NAMES, MAX_CHARS, discover, enabled, has_marker, load_manual
+        from ..manual import label as _rel  # 지역 `label` 루프 변수와 이름이 겹친다 — 검사기가 잡은 자리
+
+        found = discover(root)
+        loaded = load_manual(root)
+        problems = []
+        if found["shadowed"]:
+            problems.append("별칭 중복 — 무시된다: " + ", ".join(_rel(root, p) for p in found["shadowed"]))
+        if loaded and loaded["truncated"]:
+            problems.append(f"상한 절단 {loaded['chars']}자 — 뒷부분 미주입")
+        if found["dropped"]:
+            problems.append(f"조각 상한 초과 {len(found['dropped'])}개 제외")
+        # `MANUAL.md` 는 흔한 이름이다 — 이미 그 이름의 제품 문서를 가진 리포에 설치되면 그 문서가
+        # 통째로 프롬프트에 실린다. 손으로 쓴 진짜 매뉴얼과 구분할 방법이 없어 막지는 않고, **큰**
+        # 표식 없는 파일만 짚는다 (작은 파일은 사용자가 직접 쓴 규칙일 가능성이 압도적이다).
+        if loaded and loaded["chars"] >= MAX_CHARS // 2:
+            stranger = [_rel(root, p) for p in found["files"] if os.path.dirname(p) == root and not has_marker(p)]
+            if stranger:
+                problems.append(
+                    f"{', '.join(stranger)} 가 통째로 실리는 중 ({loaded['chars']}자) — 의도한 매뉴얼이 맞는지 확인"
+                )
+        if not enabled(root):
+            detail = "off (manual.mode) — 어떤 모드에도 안 실린다"
+        elif loaded:
+            layers = f"공통 {len(loaded['common'])} + 프로젝트 {len(loaded['project'])}"
+            detail = f"{layers} · {loaded['chars']} chars · 4-mode injected"
+        elif found["files"]:
+            detail = "파일은 있으나 주입 없음 — 주석뿐 (규칙은 주석 밖에)"
+        else:
+            detail = f"없음 — 루트 {MANUAL_NAMES[0]} 에 쓰면 4모드에 실린다"
+        checks.append(
+            {
+                "name": "custom manual",
+                "ok": not problems,
+                "detail": detail if not problems else " · ".join(problems),
+                "fix": "asgard manual — 무엇이 어디서 실리는지 대조",
+            }
+        )
+    except Exception:
+        pass  # 진단이 진단 대상을 막지 않는다 (fail-open)
+    # 에인헤랴르 — 이 프로젝트에서 누가 일하는가. 이 계층도 조용히 빗나간다: 없는 이름을 배치하면
+    # 그 자리는 말없이 기본으로 돌고, 서브프로세스에 env 를 안 넘기면 자식이 남의 홈에 쓴다.
+    # 배치 없음은 결함이 아니다 (ok) — 조용히 빗나가는 두 경우만 ⚠ 로 세운다.
+    try:
+        from ..profiles import active, fallback_warning, listing
+        from ..swarm import describe
+
+        d = describe(root)
+        agents = listing()
+        problems = []
+        for miss in d["missing"]:
+            scope = miss["scope"] + (f" {miss['key']}" if miss["key"] else "")
+            problems.append(f"{scope} 에 배치된 {miss['agent']!r} 이 이 기계에 없다 — 기본으로 돈다")
+        if warning := fallback_warning():
+            problems.append(warning)
+        placed = d["binding"]
+        if d["swarm"]:
+            detail = "스웜 — " + " · ".join(f"{k}={v}" for k, v in sorted(placed["roles"].items()))
+        elif placed["default"] or placed["modes"] or placed["roles"]:
+            detail = f"이 프로젝트: {d['effective']['session']} · 에이전트 {len(agents)}"
+        elif len(agents) > 1:
+            detail = f"에이전트 {len(agents)} · 활성 {active()} · 이 프로젝트에 배치 선언 없음"
+        else:
+            detail = "기본 에이전트 하나 — `asgard agent create <이름>` 으로 늘린다"
+        checks.append(
+            {
+                "name": "agents (Einherjar)",
+                "ok": not problems,
+                "detail": detail if not problems else " · ".join(problems),
+                "fix": "asgard agent where — 누가 일하고 어느 선언이 이겼는지 대조",
+            }
+        )
+    except Exception:
+        pass  # fail-open
     # Lagom — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off 도 유효한 선택).
     try:
         from ..lagom import default_mode, read_state
@@ -792,6 +870,8 @@ _PARITY_HOOKS = (
     "lagom-canon.md",
     "memory-activate.py",
     "charter-activate.py",
+    "manual-activate.py",
+    "agent-activate.py",
     "map-activate.py",
 )
 # 파일만 깔리고 배선이 없으면 그 규율은 없는 것과 같다 — 설정 원문에 이름이 있는지로 본다.

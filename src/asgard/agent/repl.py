@@ -267,6 +267,8 @@ _COMMAND_HELP = {
     "/trinity dual default on": "h_trinity",
     "/trinity dual default off": "h_trinity",
     "/bridge": "h_bridge",
+    "/manual": "h_manual",
+    "/manual show": "h_manual",
     "/lagom": "h_lagom",
     "/lagom off": "h_lagom",
     "/lagom lite": "h_lagom",
@@ -426,7 +428,9 @@ def _pt_toolbar():
 def _history_path() -> str:
     import os
 
-    hp = os.path.join(os.path.expanduser("~"), ".asgard", "history")
+    from ..profiles import home
+
+    hp = os.path.join(home(), "history")  # 입력 이력도 에이전트의 것 (turn_store 와 같은 규율)
     os.makedirs(os.path.dirname(hp), exist_ok=True)
     return hp
 
@@ -578,7 +582,7 @@ def _setup_readline() -> None:
         readline.parse_and_bind("bind ^I rl_complete")
     else:
         readline.parse_and_bind("tab: complete")
-    hp = os.path.join(os.path.expanduser("~"), ".asgard", "history")
+    hp = _history_path()
     try:
         os.makedirs(os.path.dirname(hp), exist_ok=True)
         readline.read_history_file(hp)
@@ -1292,6 +1296,40 @@ def _cmd_bridge(cmd: str, root: str) -> None:
     sys.stdout.write(f"  {ui.dim(t('bridge_usage'))}\n")
 
 
+def _cmd_manual(cmd: str, root: str) -> None:
+    """/manual — 내가 쓴 프로젝트 규칙이 뭐가 실렸는지. '/manual show' 는 모델이 받는 원문.
+
+    네이티브는 세션 생성 시 1회 렌더라(KV 캐시·재현성) 이 화면은 **디스크 현재값**을 읽는다 —
+    편집 직후 여기서 보이는 것과 이번 세션 프롬프트가 다를 수 있어서, 그 사실을 같이 말한다."""
+    import os
+
+    from ..manual import MANUAL_NAMES, enabled, home, load_manual, max_chars, note
+
+    if cmd.split()[1:2] == ["show"]:
+        text = note(root, "identity").strip()
+        sys.stdout.write(("\n".join("  " + line for line in text.splitlines()) if text else f"  {ui.dim('—')}") + "\n")
+        return
+    if not enabled(root):
+        sys.stdout.write(f"  {ui.paint(_O, 'manual'.ljust(9))} {ui.dim(t('manual_off'))}\n")
+        return
+    loaded = load_manual(root)
+    if not loaded:
+        user = os.environ.get("HOME") or os.path.expanduser("~")
+        common = home().replace(user, "~", 1) + "/" + MANUAL_NAMES[0]
+        sys.stdout.write(f"  {ui.paint(_O, 'manual'.ljust(9))} {ui.dim(t('manual_none'))}\n")
+        sys.stdout.write(f"  {' ' * 9} {ui.dim(common + ' (공통) · ' + MANUAL_NAMES[0] + ' (이 프로젝트)')}\n")
+        return
+    sys.stdout.write(
+        f"  {ui.paint(_O, 'manual'.ljust(9))} {loaded['chars']} / {max_chars(root)} chars"
+        f" {ui.dim('(공통 ' + str(len(loaded['common'])) + ' + 프로젝트 ' + str(len(loaded['project'])) + ')')}\n"
+    )
+    for src in loaded["sources"]:
+        sys.stdout.write(f"  {' ' * 9} {ui.dim(src)}\n")
+    if loaded["shadowed"]:
+        sys.stdout.write(f"  {' ' * 9} {ui.paint(ui._WARN, '⚠')} shadowed: {ui.dim(', '.join(loaded['shadowed']))}\n")
+    sys.stdout.write(f"  {' ' * 9} {ui.dim(t('manual_frozen'))}\n")
+
+
 def _cmd_lagom(cmd: str, root: str, rp) -> None:
     """/lagom — 모드 표시. '/lagom <mode>' 세션 전환, '/lagom default <mode>' 영속.
     전환은 _Reconfigure 로 Heimdall 을 재생성한다 — 역할 프롬프트의 lagom 렌더가 새 모드로 갱신."""
@@ -1400,6 +1438,8 @@ def slash(cmd: str, root: str, rp) -> bool:
         _cmd_trinity(cmd, root, rp)
     elif c == "/bridge":
         _cmd_bridge(cmd, root)
+    elif c == "/manual":
+        _cmd_manual(cmd, root)
     elif c == "/lagom":
         _cmd_lagom(cmd, root, rp)
     elif c == "/quest":

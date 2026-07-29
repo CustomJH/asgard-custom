@@ -398,12 +398,14 @@ class TrinityRun:
             # 답변 소스 배지 — primary 경로 주입만 집계 (폴백 한정 주입은 provider 오류 희귀 경로)
             hd._record_recall(thinker_recall)
         charter = hd._charter_note(hd.root, "thinker")
+        manual = hd._manual_note(hd.root, "thinker")  # 오딘이 쓴 프로젝트 규칙 → criteria 로 환원하라
 
         def make(rp=None, role=sess_role, selected=model):
             placed = rp or rrp
-            memory = hd._memory_snap if hd._mem_allowed(placed.profile.name, placed.source) else ""
+            # 역할에 다른 에이전트가 배치돼 있으면 **그 에이전트의** 1차 기억이 실린다 (스웜).
+            memory = hd._memory_snap_for(role) if hd._mem_allowed(placed.profile.name, placed.source) else ""
             return hd._session(
-                _role_prompt("asgard-thinker.md") + hd.lagom + charter + memory + hd.map_note,
+                _role_prompt("asgard-thinker.md") + hd.lagom + charter + manual + memory + hd.map_note,
                 role=role,
                 model=selected if rp is None else None,
                 readonly=True,
@@ -650,7 +652,7 @@ class TrinityRun:
 
             def make(rp=None):
                 return hd._session(
-                    _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
+                    _role_prompt("asgard-worker.md") + hd.lagom + hd.manual_worker + skill_note + hd.map_note,
                     extra_tools=skill_tools,
                     handlers=skill_handlers,
                     role="worker",
@@ -934,6 +936,7 @@ class TrinityRun:
         changed = ", ".join((st.get("changed_files") or [])[:20]) or "(none)"
 
         charter_v = hd._charter_note(hd.root, "verifier")  # 반례 렌즈 (판단③) — 게이트 대체 아님
+        manual_v = hd._manual_note(hd.root, "verifier")  # 명시 규칙 위반 = 반례, 역시 criteria 대체 아님
         verifier_paths = tuple(str(path) for path in (st.get("changed_files") or []) if str(path))
         # 판정 시점이 변경 형상을 아는 유일한 자리다 — 요청이 아키텍처를 말하지 않아도 관측된
         # 형상이 구조적이면 아키텍처 검증 팩을 배정한다 (verifier.md 의 "assigned" 조건 충족).
@@ -954,9 +957,9 @@ class TrinityRun:
         except Exception:
             surface_note = ""
 
-        def mk_verifier(m=self.model, rl="verifier", ch=charter_v, rp=None, paths=verifier_paths):
+        def mk_verifier(m=self.model, rl="verifier", ch=charter_v, rp=None, paths=verifier_paths, mn=manual_v):
             session = hd._session(
-                _role_prompt("asgard-verifier.md") + ch + (LAGOM_VERIFIER_NOTE if hd.lagom else ""),
+                _role_prompt("asgard-verifier.md") + ch + mn + (LAGOM_VERIFIER_NOTE if hd.lagom else ""),
                 extra_tools=[VERDICT_TOOL],
                 handlers={"verdict": lambda i: "Verdict received"},
                 role=rl,

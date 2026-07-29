@@ -119,6 +119,16 @@ class Heimdall:
 
         self._charter_note = _charter_note
         self.charter_identity = _charter_note(root, "identity")
+        # 커스텀 매뉴얼 — 오딘이 루트 `MANUAL.md`(+`.asgard/`)에 쓴 프로젝트 규칙. identity 절은
+        # 메인·딜리버리가, 역할 절(thinker/worker/verifier)은 각 프롬프트가 가져간다. charter 와
+        # 달리 Worker 도 받는다 — "이 프로젝트에선 코드를 이렇게 써라"가 본문이라 코드를 쓰는
+        # 역할에 안 닿으면 계층 자체가 무의미하다 (hooks/manual_activate.section_for 와 같은 판정).
+        # 세션 생성 시 1회 렌더 = 세션 중 파일이 바뀌어도 프롬프트 불변 (KV 캐시·재현성 보존).
+        from ...manual import note as _manual_note
+
+        self._manual_note = _manual_note
+        self.manual_identity = _manual_note(root, "identity")
+        self.manual_worker = _manual_note(root, "worker")
         # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더
         # (세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
         # 주입 매트릭스: DIRECT(identity)·호출된 Thinker = 스냅샷+회수. standard Worker는
@@ -130,11 +140,27 @@ class Heimdall:
 
         self._memory_snap = _memory_note()  # 동결 원본 — 역할별 게이트는 아래에서
         self._mem_allowed = _mem_allowed
+        # 스웜 — 이 프로젝트가 역할마다 다른 에이전트를 세워 뒀는가 (.asgard 의 [agents].roles).
+        # 세워 뒀으면 그 역할의 세션은 **그 에이전트의 홈**에서 돌고, 1차 기억 스냅샷도 거기서
+        # 뜬다. 배치가 없으면 이 딕셔너리가 비어 있고 아래 경로는 전부 종전과 바이트 동일하다.
+        from ...swarm import resolve as _swarm_resolve
+        from ...swarm import swarm as _swarm_roles
+
+        try:
+            self._role_agent: dict[str, str] = _swarm_roles(root)
+            self._session_agent: str = _swarm_resolve(root, mode="native")
+        except Exception:  # 배치 해석 실패가 세션 시동을 막으면 안 된다 (fail-open)
+            self._role_agent, self._session_agent = {}, ""
+        self._role_memory_snap: dict[str, str] = {}
+        self._agent_note_cache: dict[str, str] = {}
+        self._memory_note_fn = _memory_note
         self._memory_provider_allowed = _mem_allowed(rp.profile.name, rp.source)
         self.memory_note = self._memory_snap if self._memory_provider_allowed else ""
         # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/eitri/loki)은 코디네이터가 아니다.
         # 특히 loki 는 Verifier 의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
-        self.delivery_identity = _identity(root) + self.lagom + self.bragi + self.charter_identity
+        self.delivery_identity = (
+            _identity(root) + self.lagom + self.bragi + self.charter_identity + self.manual_identity
+        )
         self.identity = self.delivery_identity + self.memory_note
         self.map_note = ""  # 요청마다 최신화되는 bounded volatile context; cached identity와 분리.
         self._map_warnings: set[str] = set()
@@ -284,6 +310,49 @@ class Heimdall:
                 row["elapsed_s"] = 0.0
         return rows
 
+    def _agent_for(self, role: str | None) -> str | None:
+        """이 역할을 도는 에이전트 id — 배치가 없으면 None (활성 에이전트 그대로).
+
+        세션 전체가 다른 에이전트로 고정돼 있으면(모드 배치) 역할 배치가 없어도 그 이름을 쓴다.
+        "해당 세션에서는 그 에이전트로만 동작한다"가 이 한 줄이다."""
+        placed = self._role_agent.get(role or "")
+        return placed or (self._session_agent or None)
+
+    def _agent_note_for(self, role: str | None) -> str:
+        """이 역할을 도는 에이전트의 정체성 블록 — 없으면 빈 문자열.
+
+        역할당 1회 렌더 후 캐시 (프롬프트 프리픽스 안정 = KV 캐시 보존)."""
+        agent = self._agent_for(role)
+        if not agent:
+            return ""
+        key = role or ""
+        if key not in self._agent_note_cache:
+            from ...profiles import note as _agent_note
+
+            try:
+                self._agent_note_cache[key] = _agent_note(agent)
+            except Exception:
+                self._agent_note_cache[key] = ""
+        return self._agent_note_cache[key]
+
+    def _memory_snap_for(self, role: str | None) -> str:
+        """역할별 1차 기억 스냅샷 — 배치된 에이전트가 있으면 **그 에이전트의** 기억.
+
+        역할당 1회만 뜨고 캐시한다 (세션 생성 시 1회 렌더 규율 유지 — KV 캐시·재현성).
+        배치가 없으면 종전의 동결 원본을 그대로 돌려준다 (프롬프트 무변화)."""
+        agent = self._role_agent.get(role or "")
+        if not agent:
+            return self._memory_snap
+        if role not in self._role_memory_snap:
+            from ...profiles import scoped
+
+            try:
+                with scoped(agent):
+                    self._role_memory_snap[role or ""] = self._memory_note_fn()
+            except Exception:
+                self._role_memory_snap[role or ""] = ""  # 그 에이전트의 기억을 못 읽으면 무주입
+        return self._role_memory_snap.get(role or "", self._memory_snap)
+
     def _session(
         self,
         system: str,
@@ -297,6 +366,10 @@ class Heimdall:
         cwd: str | None = None,
     ) -> AgentSession:
         session_status, lifecycle = self._session_observer(role or ("readonly" if readonly else "legacy"))
+        # 에이전트 정체성 — 이 한 자리에서 모든 역할 세션에 얹는다. 호출부마다 붙이면 새 역할이
+        # 생길 때마다 빠뜨릴 자리가 늘어난다. 정체성이 비었거나(주석뿐) 배치가 없으면 빈 문자열이라
+        # 프로파일을 안 쓰는 설치의 프롬프트는 바이트 단위로 종전과 같다.
+        system = system + self._agent_note_for(role)
         rp = rp_override or self.role_rp.get(role or "", self.rp)
         if model and model != rp.model:  # 상황별 모델 스왑 — provider 는 유지, 모델만
             from dataclasses import replace
@@ -318,6 +391,7 @@ class Heimdall:
             cancel_event=self.cancel_event,
             on_lifecycle=lifecycle,
             on_tool=self._record_tool,
+            agent=self._agent_for(role),
         )
 
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:

@@ -5,7 +5,7 @@
 계층 (아래가 하위 — 상위는 하위만 임포트할 수 있다):
   foundation   settings·platform·theme·ui·i18n·io_journal·io_files·registry — 무의존 기반
   providers    providers·openai_codex — 외부 LLM/자격 인프라
-  domain       memory군·skill_bank·lagom·charter·code_map·health·surface·craft·thor_gate·tutor·evolution·templates·hooks — 비즈니스 규칙
+  domain       memory군·skill_bank·lagom·charter·manual·code_map·health·surface·craft·thor_gate·tutor·evolution·templates·hooks — 비즈니스 규칙
   application  agent — 오케스트레이션 (Heimdall/Trinity/세션)
   interface    cli·commands — 진입점·표면
 
@@ -66,6 +66,7 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "lagom",
                 "bragi",
                 "charter",
+                "manual",  # 커스텀 매뉴얼 — charter 와 같은 자리(설정 해석 + 프롬프트 렌더)
                 "code_map",
                 "health",
                 "craft",

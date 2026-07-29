@@ -100,6 +100,14 @@ def cc_settings() -> str:
                                 },
                                 {
                                     "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/manual-activate.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-activate.py"',
+                                },
+                                {
+                                    "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
                                 },
                             ],
@@ -134,6 +142,14 @@ def cc_settings() -> str:
                                 },
                                 {
                                     "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/manual-activate.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-activate.py"',
+                                },
+                                {
+                                    "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/map-activate.py"',
                                 },
                                 # 되짚기의 앞쪽 절반 — 같은 자리를 다시 건드리기 **전에** 남은 물음을
@@ -158,6 +174,14 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/charter-activate.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/manual-activate.py"',
+                                },
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/agent-activate.py"',
                                 },
                                 {
                                     "type": "command",

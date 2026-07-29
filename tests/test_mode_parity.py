@@ -26,6 +26,8 @@ DISCIPLINES = (
     "craft-gate",
     "budget-guard",
     "charter-activate",
+    "manual-activate",
+    "agent-activate",
     "lagom-activate",
     "lagom-tracker",
     "lagom-subagent",

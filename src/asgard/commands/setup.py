@@ -15,6 +15,7 @@ from ..templates import (
     CC_FOLDERS,
     CURSOR_FOLDERS,
     LAGOM_CANON,
+    MANUAL_STARTER_MD,
     MAP_INDEX_MD,
     SEAL_SKILL_MD,
     SELFTEST_MD,
@@ -76,6 +77,14 @@ _GITIGNORE_BLOCK = (
     "!.asgard/memory/binding.json\n"
     "!.asgard/.gitignore\n"
     "!.asgard/asgard-setting-project.json\n"
+    # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 팀이 공유해야 값이 나온다 (한 사람 머리에만 있는
+    # 규칙은 규칙이 아니다). 별칭 넷을 다 뚫는 건 로더가 넷을 다 인식하기 때문이다.
+    "!.asgard/MANUAL.md\n"
+    "!.asgard/CUSTOM_MANUAL.md\n"
+    "!.asgard/CUSTOM.md\n"
+    "!.asgard/RULES.md\n"
+    "!.asgard/manual/\n"
+    "!.asgard/manual/**\n"
     ".claude/settings.local.json\n"
     ".claude/**/*.local.*\n"
     f"{_GITIGNORE_END}\n"
@@ -90,6 +99,8 @@ _ASGARD_GITIGNORE = (
     "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
     "!memory/documents/\n!memory/documents/**\n!memory/binding.json\n"
     "!asgard-setting-project.json\n"
+    # 커스텀 매뉴얼 — 루트 블록과 합의돼야 추적된다 (둘 중 하나만 막아도 공유 불가).
+    "!MANUAL.md\n!CUSTOM_MANUAL.md\n!CUSTOM.md\n!RULES.md\n!manual/\n!manual/**\n"
 )
 
 
@@ -162,6 +173,11 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             return "preserve"
         if r == os.path.join(".asgard", "map", "INDEX.md"):
             return "overwrite"
+        # 커스텀 매뉴얼 — 사용자 소유다. "이미 있음"으로 셋업 전체를 막으면, 루트에 자기 MANUAL.md 를
+        # 가진 리포는 `asgard init` 자체를 못 돌린다 (--force 는 다른 스캐폴드를 덮으라는 뜻이라 답이
+        # 아니다). 자리 확인만 하고 지나가며, 실제 보존은 _write 의 MANUAL.md 분기가 한다.
+        if os.path.basename(p) == "MANUAL.md":
+            return "keep"
         return None
 
     ui.head(label)
@@ -208,6 +224,12 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
 
             io_files.write_text(p, merge_cc_settings(prev, content))
             ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 사용자 permissions 유지)"))
+            return
+        # 커스텀 매뉴얼은 오딘이 쓴 규칙이다 — init 재실행이 덮으면 프로젝트 규율이 통째로 증발한다.
+        # 파일이 없을 때만 안내 템플릿을 심는다 (sync._policy = keep 과 같은 계약). 루트 MANUAL.md 는
+        # 흔한 이름이라 남의 제품 문서일 수도 있다 — 그것도 덮으면 안 되므로 판정은 같다.
+        if os.path.basename(p) == "MANUAL.md" and prev is not None:
+            ui.ok(ui.dim(rel(p)) + ui.dim(" (보존 — 사용자 소유 규칙)"))
             return
         if os.path.basename(p) == "AGENTS.md" and os.path.dirname(p) in (cwd, os.getcwd()) and prev is not None:
             from .sync import merge_agents_md
@@ -289,6 +311,9 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "memory-activate.py"), hook("memory-activate")),
         # Charter — 프로젝트 북극성 주입 (Session/UserPrompt=through_line, Subagent=역할별)
         (j(hooks_dir, "charter-activate.py"), hook("charter-activate")),
+        # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙 주입 (루트 MANUAL.md + .asgard/, 없으면 무개입)
+        (j(hooks_dir, "manual-activate.py"), hook("manual-activate")),
+        (j(hooks_dir, "agent-activate.py"), hook("agent-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
     ]
     if client == "claude-code":  # statusLine 은 CC 에만 있는 표면 — 다른 클라이언트엔 걸 자리가 없다
@@ -315,6 +340,10 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
 
     files: list[tuple[str, str]] = [
         (j(root, "AGENTS.md"), agents_md(name)),
+        # 커스텀 매뉴얼 자리 — AGENTS.md 옆(메인 루트)이다: "저건 아스가르드 것, 이건 내 것"이
+        # 첫 화면에서 읽혀야 사용자가 규칙을 쓴다. 안내문이 전부 HTML 주석이라 깔려 있어도 주입은 0
+        # (토큰 회귀 없음). 사용자 소유 파일이라 재스캐폴드는 절대 안 덮는다 (_write / sync._policy).
+        (j(root, "MANUAL.md"), MANUAL_STARTER_MD),
         # 루트 .gitignore — 없으면 생성, 있으면 asgard 마커 블록만 병합 (write 시점, merge_gitignore).
         # 런타임 상태(.asgard/)·로컬 설정만 무시; 스캐폴드는 커밋해 팀과 공유.
         (j(root, ".gitignore"), _GITIGNORE_BLOCK),
@@ -508,7 +537,30 @@ def run_setup(
             memory.seed_defaults()
         except Exception as exc:  # 개인 메모리는 fail-open — 프로젝트 setup을 막지 않는다.
             ui.warn(f"personal memory defaults skipped: {exc}")
+        seed_common_manual()
     return rc
+
+
+def seed_common_manual() -> str | None:
+    """공통 매뉴얼 자리(`~/.asgard/MANUAL.md`)를 없을 때만 깐다 — 깔린 경로 또는 None.
+
+    프로젝트 스캐폴드 목록(plan_files)에 넣을 수 없다: 리포 밖 파일이라 "존재하는 파일" 게이트도
+    dry-run 미리보기도 프로젝트 기준이다. 안내문이 전부 주석이라 깔려 있어도 주입은 0이고,
+    이미 있으면 한 글자도 안 건드린다 (사용자 규칙 = 절대 안 덮는다)."""
+    from ..manual import home
+    from ..templates.manual import COMMON_MANUAL_STARTER_MD
+
+    try:
+        path = os.path.join(home(), "MANUAL.md")
+        if os.path.lexists(path):
+            return None
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        io_files.write_text(path, COMMON_MANUAL_STARTER_MD)
+        ui.ok(ui.dim(path) + ui.dim(" (공통 매뉴얼 자리 — 모든 프로젝트)"))
+        return path
+    except Exception as exc:  # 홈 쓰기 실패가 프로젝트 셋업을 막지 않는다 (fail-open)
+        ui.warn(f"공통 매뉴얼 자리 생략: {exc}")
+        return None
 
 
 # ── init — interactive onboarding. TTY: full-screen Textual picker (init_tui.py), with a Rich prompt

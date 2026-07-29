@@ -41,6 +41,14 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.
 
 [[hooks.SessionStart.hooks]]
 type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/manual-activate.py" codex'
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py" codex'
+
+[[hooks.SessionStart.hooks]]
+type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/map-activate.py" codex'
 
 [[hooks.UserPromptSubmit]]
@@ -67,6 +75,14 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.p
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.py" codex'
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/manual-activate.py" codex'
+
+[[hooks.UserPromptSubmit.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py" codex'
 
 [[hooks.UserPromptSubmit.hooks]]
 type = "command"
@@ -151,6 +167,14 @@ command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/lagom-subagent.py
 [[hooks.SubagentStart.hooks]]
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/charter-activate.py" codex'
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/manual-activate.py" codex'
+
+[[hooks.SubagentStart.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/agent-activate.py" codex'
 
 [[hooks.SubagentStart.hooks]]
 type = "command"

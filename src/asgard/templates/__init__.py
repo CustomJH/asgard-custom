@@ -13,6 +13,7 @@ from .cursor import CURSOR_FOLDERS, cursor_agent, cursor_hooks_json, cursor_rule
 from .eitri import EITRI_SKILLS
 from .freyja import FREYJA_SKILLS, freyja_core_skill
 from .lagom import LAGOM_CANON, render_lagom
+from .manual import MANUAL_STARTER_MD
 from .map import MAP_INDEX_MD
 from .mimir import MIMIR_SKILLS, mimir_core_skill
 from .seal import SEAL_SKILL_MD
@@ -46,6 +47,7 @@ __all__ = [
     "thor_core_skill",
     "eitri_core_skill",
     "LAGOM_CANON",
+    "MANUAL_STARTER_MD",
     "MAP_INDEX_MD",
     "render_lagom",
     "SEAL_SKILL_MD",

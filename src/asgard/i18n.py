@@ -170,6 +170,26 @@ _M: dict[str, tuple[str, str]] = {
         "per-tool CLI bridge · '/bridge <tool> on|off'",
         "도구별 CLI 브릿지 · '/bridge <도구> on|off'",
     ),
+    "h_manual": (
+        "your own project rules (MANUAL.md) — what is loaded · '/manual show' for the text",
+        "내가 쓴 프로젝트 규칙 (MANUAL.md) — 뭐가 실렸는지 · '/manual show'로 원문",
+    ),
+    "manual_none": (
+        "no manual — write rules in MANUAL.md and every role in every mode reads them",
+        "MANUAL.md 에 규칙을 쓰면 모든 모드·모든 역할이 읽어요",
+    ),
+    "manual_inert": (
+        "the file is there but nothing is loaded — rules go outside the comment markers",
+        "파일은 있는데 실리는 게 없어요 — 규칙은 주석 밖에 써야 해요",
+    ),
+    "manual_off": (
+        "off (manual.mode) — not injected in any mode",
+        "꺼짐 (manual.mode) — 어떤 모드에도 안 실려요",
+    ),
+    "manual_frozen": (
+        "loaded when this session opened — edits apply on the next session",
+        "이 세션이 열릴 때 읽은 내용이에요 — 편집분은 다음 세션부터 적용돼요",
+    ),
     # lagom
     "h_lagom": (
         "minimalism contract (just-enough code & replies) — '/lagom' shows the modes",

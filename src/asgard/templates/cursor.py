@@ -67,6 +67,8 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/lagom-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/charter-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/manual-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/agent-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/unattended-context.py cursor"},
                     ],
@@ -128,6 +130,8 @@ def cursor_hooks_json() -> str:
                         },
                         {"command": f"{py} .cursor/hooks/lagom-subagent.py cursor"},
                         {"command": f"{py} .cursor/hooks/charter-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/manual-activate.py cursor"},
+                        {"command": f"{py} .cursor/hooks/agent-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                     ],
                     "subagentStop": [

@@ -81,8 +81,36 @@ Personal memory is a local wiki (`~/.asgard/memory/`); the canonical source for 
 - **Role isolation** — The Thinker receives snapshot + recall when invoked. A native standard Worker receives only request-relevant personal recall; a deep Worker receives no personal memory. Verifier/Loki are permanently injection-free.
 <!-- <<< asgard:memory <<< -->
 
+<!-- >>> asgard:manual >>> -->
+## Asgard — Odin's Manual (`MANUAL.md`, two layers)
+
+Everything above is Asgard's own identity and is replaced wholesale on `asgard sync`. Odin's own rules live in files Asgard never rewrites, in two layers:
+
+- **Machine-wide** — `~/.asgard/MANUAL.md` (+ `~/.asgard/manual/*.md`). Applies to every repository Odin opens.
+- **This repository** — `MANUAL.md` next to this file (+ `.asgard/MANUAL.md`, `.asgard/manual/*.md`). Applies here only.
+
+Aliases in either location, in precedence order: `CUSTOM_MANUAL.md`, `CUSTOM.md`, `RULES.md` — one per directory ever loads.
+
+- **You do not need to read them** — when they have content they are injected into every role, in every mode, as a `## Manual — written by Odin` block (native loop inline; Claude Code / Cursor / Codex via the `manual-activate` hook). If you do not see that block, the files are empty or commented out.
+- **Order** — machine-wide first, this repository after. Where the two collide, the repository-specific rule wins; say which one you followed.
+- **Authority** — those rules carry Odin's own authority (Canon 1) and are the one documented exception to Canon 13. They add to the Canon and never replace it: Canon 2, 3, and 4 still win. On any other conflict, follow the manual and say which rule you applied and what it overrode.
+- **Where rules go** — a rule Odin wants enforced belongs in a manual, not in this file's Conventions section. `## Conventions` below is reference text for whoever opens AGENTS.md; the manual is what actually reaches every agent.
+- **`asgard manual`** reports what is loaded, from which layer, and whether an alias is being shadowed.
+<!-- <<< asgard:manual <<< -->
+
+<!-- >>> asgard:agents >>> -->
+## Asgard — Agents (Einherjar)
+
+One install can host many agents. An agent owns its identity (`AGENT.md`) and its **tier-1 memory** — `~/.asgard/profiles/<id>/`, or `~/.asgard` itself for the default agent. The project owns the shared world (map, charter, manual, quest log) and only declares *who works here*, under `[agents]` in `.asgard/asgard-setting-project.json`: a project default, a per-mode agent, or a per-role agent.
+
+- **You may be one of several.** When a `## Agent — …` block is present, that is who you are for this session (native loop inline; Claude Code / Cursor / Codex via the `agent-activate` hook). No block means the default agent with no custom identity written — behave exactly as before.
+- **Your memory is yours alone.** Tier-1 recall reaches only your own pages. When roles are bound to different agents, the Verifier cannot read the Worker's log — that separation is a filesystem boundary, not a promise, and it is what makes the verdict independent. Do not try to route around it.
+- **`asgard agent where`** reports who works here and which declaration won; `asgard agent list` shows every agent and the size of its memory.
+<!-- <<< asgard:agents <<< -->
+
 ## Conventions
-<!-- Add project conventions, build/test commands, and architecture notes here. -->
+<!-- Reference notes for humans reading this file — build/test commands, architecture notes.
+     Rules you want every agent to follow belong in `MANUAL.md` instead (injected everywhere). -->
 
 ## Asgard wiring check
 If asked to "run asgard check", reply with exactly: `ASGARD_OK — loaded from AGENTS.md`.

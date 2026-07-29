@@ -30,6 +30,8 @@ REGISTRY: dict[str, str] = {
     "lagom-subagent": "lagom_subagent",  # Lagom — SubagentStart 재주입, verifier 제외 (3클라이언트 공통)
     "memory-activate": "memory_activate",  # Memory v3 — SessionStart 스냅샷 주입 + Thinker 한정 SubagentStart
     "charter-activate": "charter_activate",  # Charter — 프로젝트 북극성 주입 (모드 B: Session/UserPrompt/Subagent)
+    "manual-activate": "manual_activate",  # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙 주입 (루트 MANUAL.md)
+    "agent-activate": "agent_activate",  # 에인헤랴르 — 이 세션을 도는 에이전트의 정체성 주입 (배치 해석 포함)
     "map-activate": "map_activate",  # Project map — turn-start refresh + bounded role context
 }
 

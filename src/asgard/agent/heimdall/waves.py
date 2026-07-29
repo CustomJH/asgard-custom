@@ -238,7 +238,7 @@ class WaveRunner:
 
             def mk(rp=None):
                 return hd._session(
-                    _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
+                    _role_prompt("asgard-worker.md") + hd.lagom + hd.manual_worker + skill_note + hd.map_note,
                     extra_tools=[DISPATCH_TOOL, *skill_tools],
                     handlers={"dispatch": hd._dispatch_handler(sid, writes, cwd), **skill_handlers},
                     role="worker",

@@ -153,10 +153,12 @@ class TestAgentsMerge(Base):
     def test_blocks_replaced_user_content_preserved(self):
         new = agents_md("proj")
         old = new.replace("Odin first", "옛날 문구")  # 구버전 블록 시뮬레이션
-        old = old.replace(
-            "<!-- Add project conventions, build/test commands, and architecture notes here. -->",
-            "uv run pytest — 우리 팀 규칙",
-        )
+        # 마커 **밖**의 사용자 자리 = 마지막 asgard 블록 뒤 (Conventions 이하). 문구를 리터럴로 박으면
+        # 템플릿이 한 글자 바뀔 때 replace 가 조용히 no-op 이 되고, 테스트는 "보존됐다"가 아니라
+        # "애초에 안 넣었다"를 통과시킨다 — 자리를 마커로 찾아서 그 함정을 없앤다.
+        tail = "<!-- <<< asgard:manual <<< -->"
+        self.assertIn(tail, old)
+        old = old.replace(tail, tail + "\n\nuv run pytest — 우리 팀 규칙")
         merged = merge_agents_md(old, new)
         assert merged is not None
         self.assertIn("Odin first", merged)  # 블록은 최신으로

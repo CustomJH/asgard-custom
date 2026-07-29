@@ -88,6 +88,8 @@ def _policy(root: str, path: str) -> str:
         return "json-merge"
     if rel == os.path.join(".asgard", "asgard-setting-project.json"):
         return "keep"  # 사용자 튜닝(정책·project-memory backend·배치) 존중 — 없을 때만 시드
+    if rel == "MANUAL.md" or rel == os.path.join(".asgard", "MANUAL.md"):
+        return "keep"  # 오딘이 쓴 규칙 — 재스캐폴드가 덮으면 그건 Canon 3 급 데이터 손실이다
     return "overwrite"
 
 
