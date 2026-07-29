@@ -1955,7 +1955,7 @@ class TestPassageRerank(MemoryBase):
         self._embedder()
         cand = {"a": ({}, "환불 정책은 7일 이내다."), "b": ({}, "배포는 화요일에 한다.")}
 
-        self.assertEqual(recall._rerank_order("환불 정책", cand, ["a", "b"]), [])
+        self.assertEqual(recall._rerank_order("환불 정책", cand, ["a", "b"]), ([], 0.0))
 
     def test_a_long_page_is_reranked_by_its_best_passages(self):
         from asgard.memory import recall
@@ -1967,9 +1967,10 @@ class TestPassageRerank(MemoryBase):
             "loud": ({}, "\n".join(f"배포 절차 {i} 를 다시 정리한 문서 내용" for i in range(30))),
         }
 
-        order = recall._rerank_order("환불 정책", cand, ["loud", "buried"])
+        order, weight = recall._rerank_order("환불 정책", cand, ["loud", "buried"])
 
         self.assertEqual([slug for slug, _score in order][0], "buried")  # 묻혀 있던 쪽이 올라온다
+        self.assertGreater(weight, 0.0)  # 표를 던졌다면 발언권이 있어야 한다
 
     def test_rerank_is_inert_when_the_semantic_stream_is_off(self):
         from asgard import memory_semantic as sem
@@ -1980,7 +1981,7 @@ class TestPassageRerank(MemoryBase):
         self.addCleanup(sem.reset)
         long_body = "\n".join(f"문장 {i} 환불 정책에 대한 긴 설명이 이어진다" for i in range(30))
 
-        self.assertEqual(recall._rerank_order("환불", {"a": ({}, long_body)}, ["a"]), [])
+        self.assertEqual(recall._rerank_order("환불", {"a": ({}, long_body)}, ["a"]), ([], 0.0))
 
     def test_rerank_can_be_switched_off_for_a_session(self):
         """어블레이션은 제품 스위치로 해야 남이 재현한다 — 벤치 전용 몽키패치는 재현이 아니다."""
