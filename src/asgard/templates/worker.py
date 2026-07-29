@@ -1,11 +1,11 @@
 """Worker 공통 스킬 2종 — 도메인 불문 코드 작업의 심화 지식 (체계적 디버깅·테스트 설계).
 
 표준 엔지니어링 관행을 우리 용어로 재서술한 자체 캐논이다 — 외부 텍스트 재배포 없음.
-딜리버리 전문가(프레이야·토르·에이트리)의 도메인 스킬과 달리 이 층은 Worker 표면 공통이다 —
-백엔드든 프론트든 버그 원인 규명과 테스트 설계의 문법은 하나다.
+딜리버리 전문가의 도메인 스킬과 달리 이 층은 Worker와 그 백엔드 딜리버리인 Thor 계열에 공통이다 —
+버그 원인 규명과 테스트 설계의 문법은 하나다.
 
 CC(.claude/skills/)와 Cursor·Codex 공용(.agents/skills/) 양 스코프에 스캐폴드되어 모드 A/B 에서
-파일 스킬로 로드되고, 네이티브(asgard start)는 heimdall 이 Worker system 에 직접 주입한다.
+파일 스킬로 로드되고, 네이티브(asgard start)는 Worker·Thor 카탈로그에서 필요할 때 로드한다.
 Verifier/loki 무주입 — 게이트·판정 표면에는 advisory 지식을 넣지 않는다 (skill_bank 헌법과 동일 규율)."""
 
 import re
@@ -106,7 +106,7 @@ WORKER_SKILLS: list[tuple[str, str]] = [
     ("asgard-worker-testing", _TESTING),
 ]
 
-# Worker task → 공통 스킬 매칭 (네이티브 Worker system 주입용 통로 — 모드 A/B 는 파일 스킬이 담당).
+# Worker·Thor task → 공통 스킬 매칭 (네이티브 카탈로그 task-match 통로 — 모드 A/B 는 파일 스킬이 담당).
 # Worker 는 모든 과업이 지나는 표면이라 과주입이 곧 노이즈다 — 트리거는 보수적으로 유지한다.
 _SUBSTR: dict[str, tuple[str, ...]] = {
     "asgard-worker-debugging": (
@@ -150,11 +150,11 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
 
 
 def resolve_worker_skills(task: str) -> list[tuple[str, str]]:
-    """Worker task → 매칭된 공통 스킬 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
+    """Worker·Thor task → 매칭된 공통 스킬 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
 
     무매칭 = 빈 리스트 (fail-open — role 계약 기준으로 진행). 복수 매칭은 전부 주입 —
     "회귀 버그 수정 + 회귀 테스트 고정" 처럼 두 표면이 한 과업인 경우가 실재한다.
-    호출측은 Worker 한정 — Verifier/loki 는 부르지 않는다 (게이트 무결성)."""
+    호출측은 Worker·Thor 계열 한정 — Verifier/loki 는 부르지 않는다 (게이트 무결성)."""
     t = task.lower()
 
     def hit(name: str) -> bool:

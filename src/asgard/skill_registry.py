@@ -88,9 +88,9 @@ def _builtin_plugins() -> dict[str, dict]:
             ],
         },
         "worker": {
-            "description": "Common Worker debugging and testing policy",
+            "description": "Common delivery debugging and testing policy",
             "skills": WORKER_SKILLS,
-            "agents": ("worker",),
+            "agents": ("worker", "thor", "thor-lead"),
             "resolver": "worker",
         },
         "freyja": {

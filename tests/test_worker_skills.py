@@ -14,6 +14,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from asgard.templates.worker import WORKER_SKILLS, resolve_worker_skills  # noqa: E402
 
 _SKILL_NAMES = ("asgard-worker-debugging", "asgard-worker-testing")
+_COMMON_AGENTS = ("worker", "thor", "thor-lead")
 
 
 def _names(task: str) -> list[str]:
@@ -72,16 +73,18 @@ class TestSkillBodies(unittest.TestCase):
         self.assertIn("a metric, not a goal", t)  # 커버리지
         self.assertIn("asgard-eitri-draupnir", t)  # CI 층 상호 참조
 
-    def test_worker_role_uses_generated_discovery_catalog(self):
+    def test_worker_and_thor_roles_use_generated_discovery_catalog(self):
         from asgard.commands.setup import plan_files
         from asgard.templates.roles import ROLE_AGENTS
 
         role = dict(ROLE_AGENTS)["asgard-worker.md"]
         self.assertIn("load_skill", role)
         files, _ = plan_files(cc=True, cursor=False, codex=False, root="/tmp/x")
-        generated = dict(files)["/tmp/x/.claude/agents/asgard-worker.md"]
-        for sname in _SKILL_NAMES:
-            self.assertIn(sname, generated)
+        by_path = dict(files)
+        for agent in _COMMON_AGENTS:
+            generated = by_path[f"/tmp/x/.claude/agents/asgard-{agent}.md"]
+            for sname in _SKILL_NAMES:
+                self.assertIn(sname, generated)
 
 
 class TestSkillResolver(unittest.TestCase):
@@ -111,16 +114,22 @@ class TestSkillResolver(unittest.TestCase):
 class TestNativeWiring(unittest.TestCase):
     """네이티브 progressive disclosure — 메타데이터 색인 + 선택된 본문만 도구 로드."""
 
-    def test_worker_support_defers_full_body_until_selected(self):
+    def test_worker_and_thor_support_defer_full_body_until_selected(self):
         from asgard.agent.heimdall import _skill_support
+        from asgard.skill_registry import resolve_skills
 
-        note, tools, handlers = _skill_support("worker")
-        self.assertIn("<available_skills>", note)
-        self.assertIn("asgard-worker-debugging", note)
-        self.assertNotIn("Reproduce first (no reproduction, no fix)", note)
-        self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
-        loaded = handlers["load_skill"]({"name": "asgard-worker-debugging"})
-        self.assertIn("Reproduce first (no reproduction, no fix)", loaded)
+        for agent in _COMMON_AGENTS:
+            with self.subTest(agent=agent):
+                note, tools, handlers = _skill_support(agent)
+                self.assertIn("<available_skills>", note)
+                self.assertIn("asgard-worker-debugging", note)
+                self.assertIn("asgard-worker-testing", note)
+                self.assertNotIn("Reproduce first (no reproduction, no fix)", note)
+                self.assertEqual([tool["name"] for tool in tools], ["load_skill"])
+                loaded = handlers["load_skill"]({"name": "asgard-worker-testing"})
+                self.assertIn("must be seen to fail once", loaded)
+                routed = {name for name, _ in resolve_skills(".", "회귀 버그 테스트", agent)}
+                self.assertTrue(set(_SKILL_NAMES) <= routed)
 
     def test_both_worker_paths_expose_loader(self):
         # wave 병렬 경로 + 단일 WORKER 경로 둘 다 — 한쪽만 배선되면 경로에 따라 지식이 사라진다
