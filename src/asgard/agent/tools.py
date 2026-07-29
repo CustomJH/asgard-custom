@@ -47,6 +47,43 @@ READ_DOCUMENT_TOOL = {
         "required": ["path"],
     },
 }
+MEMORY_PROPOSE_TOOL = {
+    "name": "memory_propose",
+    "description": (
+        "Propose one durable fact for your own tier-1 memory — the memory that survives across "
+        "sessions and belongs to this agent alone. Nothing is stored when you call this: it queues "
+        "the fact and returns a proposal id for the user to approve.\n\n"
+        "PROPOSE WHEN (do it as it happens, don't wait to be asked):\n"
+        "- The user corrects you, or says how they want work done ('don't do X', 'always Y')\n"
+        "- The user states a preference, habit, or fact about themselves\n"
+        "- You settle a decision with the user that will still bind you next session\n"
+        "- You learn a durable fact about this environment, tool, or convention\n\n"
+        "DO NOT PROPOSE: task progress, what you just finished, session outcomes, temporary state, "
+        "anything easily rediscovered by reading a file, or anything about the repository's code "
+        "(that is project memory, not yours). Secrets and credentials are rejected outright.\n\n"
+        "Write one self-contained sentence that still makes sense a year from now: absolute dates, "
+        "named tools, no 'yesterday' and no 'the above'. Fewer, sturdier facts beat many guesses."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "text": {
+                "type": "string",
+                "description": "The fact, as one self-contained sentence.",
+            },
+            "kind": {
+                "type": "string",
+                "enum": ["user", "feedback", "decision", "insight", "reference", "note"],
+                "description": (
+                    "'user' who the user is · 'feedback' how they want you to work · "
+                    "'decision' a settled call · 'insight' something you worked out · "
+                    "'reference' a durable lookup fact · 'note' anything else."
+                ),
+            },
+        },
+        "required": ["text", "kind"],
+    },
+}
 INGEST_DOCUMENT_TOOL = {
     "name": "ingest_document",
     "description": (
@@ -468,6 +505,28 @@ def _extract_hwp(path: str) -> str:
         if result.returncode:
             raise ToolError((result.stderr or result.stdout or "HWP 변환 실패").strip()[:2000])
         return _extract_hwpx(converted)
+
+
+def run_memory_propose(root: str, tool_input: dict) -> str:
+    """개인 기억 쓰기 제안 — 대기열에만 올린다. 사람이 승인해야 정본이 된다.
+
+    쓰기가 아니라 **제안**이라 inspect 권한으로 충분하다 (`ingest_document` 와 같은 결).
+    거절 사유는 문장으로 돌려준다 — 에이전트가 읽고 고쳐 다시 낼 수 있어야 한다."""
+    del root  # 개인 기억은 프로젝트가 아니라 에이전트에 붙는다 (memory_dir 이 프로파일별)
+    from ..memory import propose
+
+    text = str(tool_input.get("text") or "").strip()
+    kind = str(tool_input.get("kind") or "note").strip()
+    try:
+        record = propose.stage(text, kind=kind)
+    except ValueError as exc:
+        raise ToolError(str(exc)) from exc
+    verb = "기존 페이지에 병합" if record.get("plan_action") == "merge" else "새 페이지 생성"
+    return (
+        f"제안 대기 (아직 저장 안 됨) — proposal_id: {record['id']}\n"
+        f"kind={record['kind']} · 승인하면 {verb}\n---\n{record['text']}\n---\n"
+        f"사용자에게 이 내용을 보여주고 승인을 받아라. 승인 명령: asgard memory approve {record['id']}"
+    )
 
 
 def run_ingest_document(root: str, tool_input: dict) -> str:

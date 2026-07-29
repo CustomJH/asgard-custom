@@ -255,6 +255,10 @@ def _ingest_document(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(T.run_ingest_document(context.root, args), details={"documents": count})
 
 
+def _memory_propose(context: ToolContext, args: dict) -> ToolResult:
+    return ToolResult(T.run_memory_propose(context.root, args), details={"kind": str(args.get("kind", ""))})
+
+
 def _web_fetch(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(T.run_web_fetch(context.root, args), details={"fetched": True})
 
@@ -333,6 +337,8 @@ def build_session_registry(
     # 사람은 명령어를 치지 않는다 — 문서를 던지고 "이거 프로젝트에 넣어줘"라고 말한다.
     # 그 말이 닿을 자리가 여기다. 쓰기가 아니라 승인 대기 제안이라 inspect 로 충분하다.
     registry.register(ToolSpec("ingest_document", "inspect", T.INGEST_DOCUMENT_TOOL, _ingest_document))
+    # 제안은 쓰기가 아니다 — 대기열에만 들어가고 사람이 승인해야 정본이 된다. 그래서 inspect.
+    registry.register(ToolSpec("memory_propose", "inspect", T.MEMORY_PROPOSE_TOOL, _memory_propose))
     from .evicted import RECALL_TOOL
 
     registry.register(

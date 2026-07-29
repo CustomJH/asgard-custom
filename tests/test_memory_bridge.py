@@ -166,6 +166,19 @@ class BridgeBase(unittest.TestCase):
         res = r["result"]
         return res["content"][0]["text"], res.get("isError", False)
 
+    def tool_names(self, start=None):
+        return [t["name"] for t in self.rpc("tools/list", start=start)["result"]["tools"]]
+
+    def personal_tools(self, start=None):
+        """프로젝트 게이트 **밖**의 툴 — 이 기억은 에이전트에 붙는다."""
+        personal = {t["name"] for t in mb.server._PERSONAL_TOOLS}
+        return [name for name in self.tool_names(start) if name in personal]
+
+    def project_tools(self, start=None):
+        """설정·trust·binding 셋을 다 통과해야 노출되는 툴."""
+        personal = {t["name"] for t in mb.server._PERSONAL_TOOLS}
+        return [name for name in self.tool_names(start) if name not in personal]
+
 
 class TestConfigDiscovery(BridgeBase):
     def test_backend_trust_is_machine_local_and_target_specific(self):
@@ -395,7 +408,9 @@ class TestProtocol(BridgeBase):
     def test_untrusted_changed_backend_hides_tools_and_rejects_calls(self):
         mb.write_config(self.root, f"http://127.0.0.1:{self.port}", "proj-test", timeout=16)
 
-        self.assertEqual(self.rpc("tools/list")["result"]["tools"], [])
+        # 프로젝트 툴은 전부 사라진다. 개인 기억 툴은 이 게이트 밖이다 — 그 기억은 프로젝트가
+        # 아니라 에이전트에 붙으므로 공유 backend 의 신뢰 상태와 무관하다.
+        self.assertEqual(self.project_tools(), [])
         text, error = self.call("memory_recall", {"query": "private prompt"})
         self.assertTrue(error)
         self.assertIn("trusted", text)
@@ -420,13 +435,16 @@ class TestProtocol(BridgeBase):
 
     def test_tools_gated_by_config(self):
         names = [t["name"] for t in self.rpc("tools/list")["result"]["tools"]]
-        self.assertEqual(names, ["memory_recall", "memory_retain", "memory_retain_commit"])
+        self.assertEqual(names, ["memory_propose", "memory_recall", "memory_retain", "memory_retain_commit"])
         # 파괴 툴 비노출 (Hindsight 원 표면 29~32종 차단이 브릿지의 존재 이유)
         for banned in ("delete_bank", "clear_memories", "delete_document", "reflect"):
             self.assertNotIn(banned, names)
         bare = os.path.join(self.tmp, "bare2")
         os.makedirs(bare)
-        self.assertEqual(self.rpc("tools/list", start=bare)["result"]["tools"], [])  # 미설정 = 무소음
+        # 미설정 프로젝트에서 **프로젝트** 툴은 무소음. 개인 기억 툴은 남는다 — 공유 backend 가
+        # 없는 저장소에서도 에이전트는 자기 기억을 제안할 수 있어야 한다.
+        self.assertEqual(self.project_tools(start=bare), [])
+        self.assertEqual(self.personal_tools(start=bare), ["memory_propose"])
 
     def test_call_without_config_is_clean_error(self):
         bare = os.path.join(self.tmp, "bare3")
@@ -469,7 +487,7 @@ class TestRecall(BridgeBase):
         with mock.patch(
             "asgard.memory_bridge.server.verify_backend_binding", side_effect=PermissionError("foreign binding")
         ):
-            self.assertEqual(self.rpc("tools/list")["result"]["tools"], [])
+            self.assertEqual(self.project_tools(), [])  # 개인 기억 툴은 이 게이트 밖
             text, error = self.call("memory_recall", {"query": "private prompt"})
 
         self.assertTrue(error)

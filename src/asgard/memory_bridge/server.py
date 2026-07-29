@@ -10,7 +10,6 @@ from .. import __version__
 from .client import (
     PROTOCOL_VERSION,
     RECALL_OUTPUT_BUDGET,
-    _neutralize,
     backend_target,
     server_recall,
 )
@@ -18,6 +17,43 @@ from .config import find_config, stage_retain
 from .trust import is_backend_trusted, verify_backend_binding
 
 # ── MCP 툴 정의 — 최소 표면 (파괴 툴 비노출) ─────────────────────────────────────────
+
+# 개인 기억 툴 — **프로젝트 binding 과 무관하게** 노출된다. 이 메모리는 프로젝트가 아니라
+# 에이전트에 붙으므로(profiles.home()), 프로젝트 backend 가 없거나 신뢰되지 않은 저장소에서도
+# 에이전트는 자기 기억을 제안할 수 있어야 한다. 아래 _TOOLS(프로젝트 전용)와 게이트가 다르다.
+_PERSONAL_TOOLS = [
+    {
+        "name": "memory_propose",
+        "description": (
+            "Propose one durable fact for your own tier-1 memory — the memory that survives across "
+            "sessions and belongs to this agent alone. Nothing is stored when you call this: it "
+            "queues the fact and returns a proposal id for the user to approve.\n\n"
+            "PROPOSE WHEN: the user corrects you or states how they want work done; the user shares "
+            "a preference or a fact about themselves; you settle a decision that still binds you next "
+            "session; you learn a durable fact about this environment or convention.\n\n"
+            "DO NOT PROPOSE: task progress, what you just finished, temporary state, anything "
+            "rediscoverable by reading a file, or facts about the repository's code (that is project "
+            "memory — use memory_retain). Secrets are rejected outright.\n\n"
+            "One self-contained sentence that still makes sense a year from now."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "text": {"type": "string", "description": "The fact, as one self-contained sentence."},
+                "kind": {
+                    "type": "string",
+                    "enum": ["user", "feedback", "decision", "insight", "reference", "note"],
+                    "description": (
+                        "'user' who the user is · 'feedback' how they want you to work · "
+                        "'decision' a settled call · 'insight' something you worked out · "
+                        "'reference' a durable lookup fact · 'note' anything else."
+                    ),
+                },
+            },
+            "required": ["text", "kind"],
+        },
+    }
+]
 
 _TOOLS = [
     {
@@ -115,6 +151,27 @@ def _text_result(rid, text: str, is_error: bool = False) -> dict:
     }
 
 
+def _call_personal_tool(name: str, args: dict) -> tuple[str, bool]:
+    """개인 기억 툴 — 프로젝트 설정·binding 을 안 본다 (이 기억은 에이전트의 것이다)."""
+    if name != "memory_propose":
+        return f"unknown tool: {name}", True
+    from ..memory import propose
+
+    try:
+        record = propose.stage(str(args.get("text") or ""), kind=str(args.get("kind") or "note"))
+    except ValueError as exc:
+        return f"{exc}", True
+    except Exception as exc:
+        return f"{type(exc).__name__}: {exc}", True
+    verb = "기존 페이지에 병합" if record.get("plan_action") == "merge" else "새 페이지 생성"
+    return (
+        f"제안 대기 (아직 저장 안 됨) — proposal_id: {record['id']}\n"
+        f"kind={record['kind']} · 승인하면 {verb}\n---\n{record['text']}\n---\n"
+        f"사용자에게 이 내용을 보여주고 승인을 받아라. 승인 명령: asgard memory approve {record['id']}",
+        False,
+    )
+
+
 def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
     """툴 실행 — 반환 = (텍스트, is_error). 서버 오류는 텍스트로 (세션 불사)."""
     try:
@@ -129,12 +186,17 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
                 max_results=int(args.get("max_results") or 8),
                 query=str(args.get("query", "")),
             )
+            from ..memory_context import hit_body, hit_provenance
+
             clean, used = [], 0
             for h in filtered:
-                t = str(h["text"])
-                source = _neutralize(str(h["metadata"].get("source") or "").strip())[:160]
-                source_note = f" [source: {source}]" if source else ""
-                row = f"- {_neutralize(t)[:300]}{source_note}"
+                # ambient 주입과 같은 렌더러다. 이전의 300자 상한은 backend 온톨로지 머리글
+                # (약 321자)에 통째로 먹혀 본문을 한 글자도 못 실었다 — 응답이 항상
+                # "Title/Status/Importance/Confidence/Source@해시" 로만 끝났다.
+                body = hit_body(h)
+                if not body:
+                    continue
+                row = f"- {body}{hit_provenance(h['metadata'])}"
                 if used + len(row) + 1 > RECALL_OUTPUT_BUDGET:
                     break
                 clean.append(row)
@@ -243,9 +305,19 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
         except Exception as exc:
             binding_error = str(exc) or type(exc).__name__
     if method == "tools/list":
-        # 설정이 없거나 machine-local trust가 없는 프로젝트는 툴 미노출.
-        return {"jsonrpc": "2.0", "id": rid, "result": {"tools": _TOOLS if bound else []}}
+        # 프로젝트 툴은 설정·trust·binding 셋을 다 통과해야 노출된다. 개인 기억 툴은 그
+        # 게이트 **밖**이다 — 이 기억은 프로젝트가 아니라 에이전트에 붙으므로, 공유 backend 가
+        # 없는 저장소에서도 에이전트는 자기 기억을 제안할 수 있어야 한다.
+        return {
+            "jsonrpc": "2.0",
+            "id": rid,
+            "result": {"tools": [*_PERSONAL_TOOLS, *(_TOOLS if bound else [])]},
+        }
     if method == "tools/call":
+        params = msg.get("params") or {}
+        if str(params.get("name", "")) in {tool["name"] for tool in _PERSONAL_TOOLS}:
+            text, err = _call_personal_tool(str(params.get("name", "")), params.get("arguments") or {})
+            return _text_result(rid, text, err)
         if not found:
             return _text_result(
                 rid,
@@ -267,7 +339,6 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
                 True,
             )
         root, cfg = found
-        params = msg.get("params") or {}
         text, err = _call_tool(str(params.get("name", "")), params.get("arguments") or {}, root, cfg)
         return _text_result(rid, text, err)
     return None

@@ -841,6 +841,30 @@ def memory_lint(json_: bool = typer.Option(False, "--json")) -> None:
     raise typer.Exit(run_lint(json_))
 
 
+@memory_app.command("proposals", help="pending memory proposals the agent staged for your approval")
+def memory_proposals(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.memory import run_proposals
+
+    raise typer.Exit(run_proposals(json_))
+
+
+@memory_app.command("approve", help="approve a staged memory proposal (writes it to the wiki)")
+def memory_approve(
+    proposal_id: str = typer.Argument(..., help="proposal id from `asgard memory proposals`"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_approve
+
+    raise typer.Exit(run_approve(proposal_id, json_))
+
+
+@memory_app.command("discard", help="discard a staged memory proposal without writing it")
+def memory_discard(proposal_id: str = typer.Argument(...)) -> None:
+    from .commands.memory import run_discard
+
+    raise typer.Exit(run_discard(proposal_id))
+
+
 @memory_app.command("reindex", help="rebuild index.md + state.db from pages/ (canonical)")
 def memory_reindex() -> None:
     from .commands.memory import run_reindex

@@ -381,10 +381,83 @@ def run_lint(json_out: bool) -> int:
     return _guard(_do)
 
 
+def run_proposals(json_out: bool = False) -> int:
+    """에이전트가 올린 개인 기억 제안 대기열 — 사람이 읽고 승인하는 자리."""
+
+    def _do() -> int:
+        from ..memory import propose
+
+        rows = propose.pending()
+        if json_out:
+            print(_json.dumps(rows, ensure_ascii=False, indent=2))
+            return 0
+        if not rows:
+            ui.step("대기 중인 기억 제안 없음")
+            return 0
+        ui.head(f"personal memory · 제안 {len(rows)}건")
+        for row in rows:
+            verb = "병합" if row.get("plan_action") == "merge" else "새 페이지"
+            age = max(0, int((time.time() - float(row.get("created") or 0)) / 60))
+            ui.step(f"{row['id']}  `{row['kind']}` · {verb} · {age}분 전 · agent={row.get('agent') or '?'}")
+            ui.step(f"  {row['text'][:220]}")
+        ui.step("승인: asgard memory approve <id>   ·   버림: asgard memory discard <id>")
+        return 0
+
+    return _guard(_do)
+
+
+def run_approve(proposal_id: str, json_out: bool = False) -> int:
+    """제안 하나를 승인해 정본에 쓴다."""
+
+    def _do() -> int:
+        from ..memory import propose
+
+        try:
+            action, slug = propose.commit(proposal_id)
+        except ValueError as exc:
+            ui.fail(str(exc))
+            return 1
+        if json_out:
+            print(_json.dumps({"action": action, "slug": slug}, ensure_ascii=False))
+            return 0
+        ui.ok(f"{action} · {slug}")
+        return 0
+
+    return _guard(_do)
+
+
+def run_discard(proposal_id: str) -> int:
+    """제안 하나를 버린다."""
+
+    def _do() -> int:
+        from ..memory import propose
+
+        if propose.discard(proposal_id):
+            ui.ok(f"버림 · {proposal_id}")
+            return 0
+        ui.fail(f"없거나 이미 처리된 제안 id · {proposal_id}")
+        return 1
+
+    return _guard(_do)
+
+
 def run_reindex() -> int:
     def _do() -> int:
-        n = memory.reindex()
+        d = memory.ensure_home()
+        n = memory.reindex(d)
+        coverage = memory.vec_coverage(d)
         ui.ok(f"reindexed {n} pages → index.md + state.db")
+        # 고쳤으면 표시를 지운다 — 안 지우면 넛지가 영영 침묵해 다음 드리프트를 못 알린다.
+        with contextlib.suppress(OSError):
+            os.remove(os.path.join(d, COVERAGE_NUDGE_FLAG))
+        from .. import memory_semantic as sem
+
+        if sem.mode() == "off":
+            ui.step("시맨틱 꺼짐 — 벡터는 만들지 않았다 (lexical 2경로)")
+        elif coverage["ok"]:
+            ui.ok(f"시맨틱 색인 · {coverage['fresh']}/{coverage['pages']} 페이지")
+        else:
+            ui.warn(f"시맨틱 색인 · {coverage['fresh']}/{coverage['pages']} 페이지 — 임베더를 못 불렀다")
         return 0
 
     return _guard(_do)
@@ -1391,13 +1464,22 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
         found = find_config(os.getcwd())
         if not found:
             raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
-        _root, cfg = found
+        root, cfg = found
         if not is_backend_trusted(cfg):
             raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
         backend = get_backend(cfg)
         try:
             verify_backend_binding(cfg, backend=backend)
             output = learning.apply(backend) if apply_changes else learning.plan(backend)
+            # 종합층 로컬 사본을 갱신한다 — 회수는 이 파일만 읽는다 (턴마다 두 번째 왕복 금지).
+            # apply 직후에는 아직 refresh 가 도는 중일 수 있다: 그때는 준비된 것만 내려가고,
+            # 다음 실행이 나머지를 집는다.
+            output["synthesis_models"] = learning.snapshot(
+                backend,
+                root,
+                project_uid=str(cfg.get("project_uid") or ""),
+                binding_id=str(cfg.get("binding_id") or ""),
+            )
             verify_backend_binding(cfg, backend=backend)
         finally:
             backend.close()
@@ -1412,6 +1494,7 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
                 ui.step(f"{row['id']} · {row['action']} · operation {row['operation_id']}")
             if not output["models"]:
                 ui.step("mental models · already current")
+            ui.step(f"synthesis 로컬 사본 · {output['synthesis_models']}개 (회수 주입 대상)")
         else:
             ui.step(f"observation config · {'ready' if output['configured'] else 'drifted'}")
             ui.step(
@@ -1420,6 +1503,7 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
             for row in output["models"]:
                 state = "stale" if row["stale"] else "ready" if row["ready"] else "building"
                 ui.step(f"{row['id']} · {state}")
+            ui.step(f"synthesis 로컬 사본 · {output['synthesis_models']}개 (회수 주입 대상)")
             if not output["configured"] or output["missing_models"] or output["drifted_models"]:
                 ui.warn("적용하려면 `asgard memory project-learn --apply`")
         return 0
@@ -1428,6 +1512,8 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
 
 
 SEMANTIC_NUDGE_FLAG = "semantic-warmup-nudged"
+# 색인 드리프트는 되풀이될 수 있는 고장이라 표시를 따로 둔다 — reindex 가 지운다.
+COVERAGE_NUDGE_FLAG = "semantic-coverage-nudged"
 
 
 def _semantic_nudge_line(d: str) -> str:
@@ -1439,9 +1525,28 @@ def _semantic_nudge_line(d: str) -> str:
     신규 설치가 시맨틱 없이 조용히 계속 도는 일이 없다."""
     from .. import memory_semantic as sem
 
-    if sem.mode() == "off" or sem.model_cached():
+    if sem.mode() == "off":
         return ""
-    flag = os.path.join(d, SEMANTIC_NUDGE_FLAG)
+    # 두 가지 다른 고장을 한 통로로 알린다. ① 모델이 아직 없다 (내려받기 전) ② 모델은 있는데
+    # 파생 벡터가 정본을 안 덮는다. ②가 더 조용한 고장이다 — 임베더가 서니 상태 표면은 전부
+    # "동작 중"이라고 말하는데 시맨틱 스트림은 매번 빈 리스트를 낸다 (실측 26-07-29:
+    # 페이지 2장·vec 0행). 사용자는 모델 로드 비용만 내고 이득은 0을 받는다.
+    message = ""
+    if not sem.model_cached():
+        message = "시맨틱 검색이 아직 준비되지 않았다 (어휘 회수로 도는 중) — asgard memory semantic warmup"
+    else:
+        coverage = memory.vec_coverage(d)
+        if not coverage["ok"] and coverage["pages"]:
+            missing = coverage["pages"] - coverage["fresh"]
+            message = (
+                f"시맨틱 색인이 정본을 못 덮는다 — {coverage['fresh']}/{coverage['pages']} 페이지 "
+                f"(미색인·낡음 {missing}건). 임베더는 서 있으니 비용은 내고 이득은 없다 — asgard memory reindex"
+            )
+    if not message:
+        return ""
+    # latch 는 사유별로 나눈다: "준비 안 됨"을 한 번 말했다고 그 뒤에 생긴 색인 드리프트까지
+    # 침묵하면, 고쳐야 할 두 번째 고장이 첫 번째 고장의 표시에 먹힌다.
+    flag = os.path.join(d, SEMANTIC_NUDGE_FLAG if not sem.model_cached() else COVERAGE_NUDGE_FLAG)
     if os.path.exists(flag):
         return ""
     try:
@@ -1449,7 +1554,7 @@ def _semantic_nudge_line(d: str) -> str:
             handle.write(memory._today())
     except OSError:
         return ""  # 표시를 못 남기면 되풀이 말하느니 침묵한다
-    return "시맨틱 검색이 아직 준비되지 않았다 (어휘 회수로 도는 중) — asgard memory semantic warmup"
+    return message
 
 
 def run_semantic(action: str = "status", json_out: bool = False) -> int:
@@ -1487,19 +1592,40 @@ def run_semantic(action: str = "status", json_out: bool = False) -> int:
             ui.ok(f"준비됨: {state['model']} · {state['dim']}d · {state['seconds']}s")
             return 0
         status = sem.status()
+        coverage = memory.vec_coverage(memory.ensure_home())
         if json_out:
-            print(_json.dumps({**status, "model_cached": sem.model_cached()}, ensure_ascii=False, indent=2))
-            return 0 if status["active"] else 1
+            print(
+                _json.dumps(
+                    {**status, "model_cached": sem.model_cached(), "coverage": coverage},
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            return 0 if status["active"] and coverage["ok"] else 1
         ui.head("personal memory · semantic")
         ui.step(f"mode · {status['mode']}")
         if status["active"]:
-            ui.ok(f"동작 중 · {status['model']} · {status['dim']}d")
+            ui.ok(f"임베더 · {status['model']} · {status['dim']}d")
         elif status["mode"] == "off":
-            ui.step("꺼짐 — `asgard memory semantic on` 으로 켠다")
+            ui.step("꺼짐 — `asgard memory semantic on` 으로 검색을 켠다")
+            return 0
         else:
             ui.warn("켜져 있지만 임베더를 못 불렀다 — lexical 2경로로 폴백 중")
             return 1
-        return 0
+        # 임베더가 선다는 것과 시맨틱이 회수에 기여한다는 것은 다른 말이다. 덮지 못한 페이지는
+        # 어휘 경로로만 찾히는데, 그 사실이 여기 안 적히면 사용자는 켰다고 믿은 채로 못 받는다.
+        if coverage["ok"]:
+            ui.ok(f"색인 · {coverage['fresh']}/{coverage['pages']} 페이지 (100%)")
+            return 0
+        detail = f"{coverage['fresh']}/{coverage['pages']} 페이지 ({coverage['coverage'] * 100:.0f}%)"
+        parts = [
+            f"낡음 {coverage['stale']}" if coverage["stale"] else "",
+            f"고아 {coverage['orphan']}" if coverage["orphan"] else "",
+        ]
+        suffix = " · " + " · ".join(p for p in parts if p) if any(parts) else ""
+        ui.warn(f"색인 · {detail}{suffix} — 덮이지 않은 페이지는 시맨틱으로 안 찾힌다")
+        ui.step("asgard memory reindex")
+        return 1
 
     return _guard(_do)
 
