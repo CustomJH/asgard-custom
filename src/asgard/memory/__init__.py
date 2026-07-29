@@ -51,6 +51,7 @@ from .index import (
     build_index,
     reindex,
     usage_stats,
+    vec_coverage,
     write_index,
 )
 from .okf import export_okf
@@ -229,5 +230,6 @@ __all__ = [
     "snapshot_note",
     "usage_stats",
     "valid_slug",
+    "vec_coverage",
     "write_index",
 ]

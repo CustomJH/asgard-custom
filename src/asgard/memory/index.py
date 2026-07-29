@@ -64,6 +64,9 @@ def _connect(path: str) -> sqlite3.Connection:
         # vec = 시맨틱 스트림 파생물 (옵트인). sha 로 본문 변경만 재임베딩, data 는 float32 BLOB.
         # 지워도·모델 바뀌어도 정본(pages/)에서 reindex 로 복원 — 파일이 여전히 정본이다.
         conn.execute("CREATE TABLE IF NOT EXISTS vec(slug TEXT PRIMARY KEY, sha TEXT, dim INT, data BLOB)")
+        # 파생 계층의 운영 메타 — 어떤 임베더로 만든 벡터인가. 이게 없으면 모델을 갈아도
+        # sha 는 그대로라(본문이 안 바뀌었으므로) 낡은 차원의 벡터가 조용히 남는다.
+        conn.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
         return conn
     except Exception:
         conn.close()
@@ -110,6 +113,21 @@ def _vec_text(meta: dict, body: str) -> str:
     return f"{title}\n{title}\n{body}".strip()
 
 
+def _meta_get(conn: sqlite3.Connection, key: str) -> str:
+    with contextlib.suppress(Exception):
+        row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+        return str(row[0]) if row else ""
+    return ""
+
+
+def _meta_set(conn: sqlite3.Connection, key: str, value: str) -> None:
+    with contextlib.suppress(Exception):
+        conn.execute(
+            "INSERT INTO meta(key, value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            (key, value),
+        )
+
+
 def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> None:
     """시맨틱 활성 시에만 벡터 저장 (파생물). 본문 sha 불변이면 재임베딩 생략.
     비활성/실패는 무해 — 벡터 없이 query 가 2경로로 fail-open 한다."""
@@ -120,8 +138,9 @@ def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> N
     text = _vec_text(meta, body)
     sha = hashlib.sha1(text.encode()).hexdigest()
     row = conn.execute("SELECT sha FROM vec WHERE slug = ?", (slug,)).fetchone()
-    if row and row[0] == sha:
-        return  # 본문 무변경 — 재임베딩 비용 회피
+    model = sem.loaded_model()
+    if row and row[0] == sha and _meta_get(conn, "vec_model") == model:
+        return  # 본문·임베더 무변경 — 재임베딩 비용 회피
     vector = sem.embed(text)
     if vector is None:
         return
@@ -130,6 +149,86 @@ def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> N
         "ON CONFLICT(slug) DO UPDATE SET sha=excluded.sha, dim=excluded.dim, data=excluded.data",
         (slug, sha, len(vector), sem.pack(vector)),
     )
+    if model:
+        _meta_set(conn, "vec_model", model)
+
+
+def vec_coverage(d: str | None = None) -> dict:
+    """시맨틱 파생 인덱스가 정본을 실제로 덮는가 — **임베더를 로드하지 않는** 순수 판정.
+
+    왜 이 함수가 필요한가 (26-07-29 실측): 이 기계의 개인 메모리는 페이지 2장에 vec 0행이었고,
+    그런데도 `semantic status` 는 "동작 중"이라고 말했다. 두 문장이 다 참이다 — 임베더는
+    로드되고, 벡터는 없다. `active()` 는 **임베더가 서는가**를 묻지 **회수에 기여하는가**를
+    묻지 않기 때문이다. 그 간극에서 사용자는 매 질의마다 모델 로드 비용(~1초)을 내고 기여는
+    0을 받는다.
+
+    이건 남에게 지적한 것과 같은 형태의 결함이다: `memory_semantic` 독스트링이 "agentmemory 는
+    로컬 임베딩 기본이라 광고하고 실제론 OFF 였다 — 우리는 그대로 노출한다"고 적어 뒀는데,
+    정직함이 한 층 얕은 데서 멈춰 있었다. 이 함수가 그 한 층이다.
+
+    반환 = {pages, vectors, fresh, stale, orphan, coverage, model, ok}
+      fresh  = 현재 본문 sha 와 일치하는 벡터 (실제로 회수에 쓰이는 것)
+      stale  = 벡터는 있는데 본문이 그 뒤 바뀐 것
+      orphan = 정본에 없는 slug 의 벡터 (prune 대상)
+      coverage = fresh / pages  (페이지가 0이면 1.0 — 덮을 것이 없으면 결함도 없다)
+
+    임베더를 안 부르는 것이 계약이다: 상태를 재느라 35초를 쓰면 그건 상태 계기가 아니다."""
+    d = d or memory_dir()
+    pages = _pages(d)
+    result = {
+        "pages": len(pages),
+        "vectors": 0,
+        "fresh": 0,
+        "stale": 0,
+        "orphan": 0,
+        "coverage": 1.0,
+        "model": "",
+        "model_mismatch": False,
+        "ok": True,
+    }
+    try:
+        conn = _db(d)
+    except Exception:
+        return result
+    try:
+        rows = dict(conn.execute("SELECT slug, sha FROM vec").fetchall())
+        result["model"] = _meta_get(conn, "vec_model")
+    except Exception:
+        rows = {}
+    finally:
+        with contextlib.suppress(Exception):
+            conn.close()
+    fresh = 0
+    stale = 0
+    for slug in pages:
+        stored = rows.get(slug)
+        if stored is None:
+            continue
+        pg = _read(d, slug)
+        if pg and hashlib.sha1(_vec_text(*pg).encode()).hexdigest() == stored:
+            fresh += 1
+        else:
+            stale += 1
+    # 임베더가 바뀌면 본문 sha 는 그대로여도 벡터는 **다른 공간의 것**이다. 차원이 우연히
+    # 같으면 코사인이 조용히 엉뚱한 값을 내므로(길이가 다를 때만 0 을 돌려준다) sha 만으로는
+    # 이 드리프트를 못 본다. 지금 로드된 모델이 있을 때만 대조한다 — 판정 때문에 모델을
+    # 불러오지는 않는다 (`loaded_model()` 은 로드를 유발하지 않는다).
+    from .. import memory_semantic as sem
+
+    current = sem.loaded_model()
+    stored = str(result["model"])
+    mismatch = bool(rows) and bool(current) and bool(stored) and current != stored
+    if mismatch:
+        stale += fresh
+        fresh = 0
+    result["vectors"] = len(rows)
+    result["fresh"] = fresh
+    result["stale"] = stale
+    result["orphan"] = sum(1 for slug in rows if slug not in set(pages))
+    result["coverage"] = 1.0 if not pages else round(fresh / len(pages), 4)
+    result["model_mismatch"] = mismatch
+    result["ok"] = fresh == len(pages) and not result["orphan"] and not mismatch
+    return result
 
 
 def reindex(d: str | None = None) -> int:

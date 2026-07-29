@@ -8,10 +8,11 @@ import hashlib
 import os
 import re
 
-from .index import _db, _fts_upsert, build_index, write_index
+from .index import _db, _fts_upsert, build_index, vec_coverage, write_index
 from .policy import memory_dir, scan_secrets, scan_threats
 from .recall import _containment, _jaccard, query, section_usage
 from .store import (
+    DB,
     DEFAULT_KIND,
     INDEX,
     KINDS,
@@ -519,4 +520,27 @@ def lint(d: str | None = None) -> list[dict]:
             )
     except Exception:
         findings.append({"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"})
+    # 시맨틱 파생 인덱스가 정본을 덮는가. index.md 의 낡음은 이미 보는데 벡터의 낡음은 안 봤다 —
+    # 그런데 이쪽이 더 조용하다: index.md 가 낡으면 목차가 틀리지만, 벡터가 없으면 검색 경로
+    # 하나가 통째로 사라지면서 상태 표면은 계속 "on" 이라고 말한다 (실측 26-07-29).
+    # 임베더를 로드하지 않는 판정이라 lint 가 무거워지지 않는다.
+    with contextlib.suppress(Exception):
+        from .. import memory_semantic as sem
+
+        if sem.mode() != "off":
+            coverage = vec_coverage(d)
+            if not coverage["ok"] and coverage["pages"]:
+                findings.append(
+                    {
+                        "level": "warn",
+                        "code": "vec-stale",
+                        "slug": DB,
+                        "msg": (
+                            f"시맨틱 색인 {coverage['fresh']}/{coverage['pages']} 페이지"
+                            + (f" · 낡음 {coverage['stale']}" if coverage["stale"] else "")
+                            + (f" · 고아 {coverage['orphan']}" if coverage["orphan"] else "")
+                            + " — run: asgard memory reindex"
+                        ),
+                    }
+                )
     return findings

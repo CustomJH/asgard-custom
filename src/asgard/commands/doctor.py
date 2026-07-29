@@ -221,10 +221,33 @@ def _memory_semantic_check() -> dict | None:
         active = memory_semantic.active()
         status = memory_semantic.status()
         if active:
+            # 임베더가 선다는 것으로 끝내면 안 된다. 파생 벡터가 정본을 안 덮으면 이 스트림은
+            # 매 질의 빈 리스트를 내는데 상태 표면은 전부 "on" 이라고 말한다 — 이 기계에서
+            # 실제로 그랬다 (26-07-29: 페이지 2장·vec 0행·active True). 남에게 지적한 것과
+            # 같은 형태의 거짓 상태라, 커버리지를 같은 칸에서 본다.
+            from .. import memory
+
+            coverage = memory.vec_coverage()
+            if not coverage["ok"] and coverage["pages"]:
+                return {
+                    "name": "personal memory semantic",
+                    "ok": False,
+                    "detail": (
+                        f"임베더는 서는데 색인이 정본을 못 덮는다 — "
+                        f"{coverage['fresh']}/{coverage['pages']} 페이지"
+                        + (f" · 낡음 {coverage['stale']}" if coverage["stale"] else "")
+                        + (f" · 고아 {coverage['orphan']}" if coverage["orphan"] else "")
+                        + " (덮이지 않은 페이지는 시맨틱으로 안 찾힌다)"
+                    ),
+                    "fix": "asgard memory reindex",
+                }
             return {
                 "name": "personal memory semantic",
                 "ok": True,
-                "detail": f"on · {status.get('model') or '?'} · {status.get('dim') or 0}d",
+                "detail": (
+                    f"on · {status.get('model') or '?'} · {status.get('dim') or 0}d"
+                    f" · 색인 {coverage['fresh']}/{coverage['pages']}"
+                ),
                 "fix": "",
             }
         cached = memory_semantic.model_cached()

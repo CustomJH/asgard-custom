@@ -16,8 +16,17 @@
     active() 로 활성/비활성을 대시보드·doctor 에 그대로 노출한다 (숨기지 않는다).
 
 설정:  [memory].semantic = "local" | "off"  (**기본 "local"** — 26-07-27 오딘 결정)
-      모델 [memory].semantic_model (선택, 기본은 아래 다국어 정적 모델)
       env  ASGARD_MEMORY_SEMANTIC 로 세션 오버라이드 (off|local).
+
+모델 바꾸기 — 기본값은 아래 실측으로 고른 potion-multilingual-128M 이고, **언제든 갈 수 있다**:
+      [memory].semantic_model = "<hf 모델 이름>"     설정 파일 (영구)
+      ASGARD_MEMORY_SEMANTIC_MODEL=<hf 모델 이름>    환경 변수 (세션)
+  model2vec 정적 모델을 먼저 시도하고, 못 읽으면 sentence-transformers 로 넘어간다.
+  그래서 두 계열 모델 이름을 다 쓸 수 있다.
+
+  ⚠ 바꾼 뒤에는 **asgard memory reindex** 를 돌려야 한다. 저장된 벡터는 옛 모델의 차원이고,
+  cosine 은 길이가 다르면 0 을 돌려주므로(차원 오염 방지) 재색인 전까지 의미 검색은 조용히
+  아무것도 못 찾는다. 대시보드 '의미 검색 준비' 칸이 벡터가 섞였음을 표시한다.
 
 기본을 켜기로 한 근거 (실측 26-07-27, 40페이지·80질의 벤치):
   hit@1 0.750 → 0.850, 놓친 질의 11 → 2건, **회귀 0건**. 한국어는 0.787 → 0.894.
@@ -52,8 +61,14 @@ from typing import Any
 _OVERRIDE: Callable[[str], list[float]] | None = None
 _CACHE: dict[str, Any] = {"loaded": False, "fn": None, "dim": 0, "model": ""}
 
-DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
-DEFAULT_STATIC_MODEL = "minishlab/potion-multilingual-128M"
+# 기본 모델 — 26-07-27 벤치가 고르고 26-07-29 오딘이 재확인했다. 한국어 판별력이 유일하게
+# 성립한 모델이라 바꿀 때는 한국어부터 확인할 것 (독스트링의 코사인 차 표 참조).
+# 내려받기가 길다는 점은 고려했으나, 어차피 설치 시점에 한 번 치르는 값이라 기준이 아니다
+# (install.sh 가 `asgard memory semantic warmup` 으로 미리 받는다).
+# 바꾸는 길은 두 개다 — [memory].semantic_model 또는 ASGARD_MEMORY_SEMANTIC_MODEL.
+DEFAULT_MODEL = "minishlab/potion-multilingual-128M"
+# 구 이름 — 한때 "정적 폴백 전용 모델"이었다. 지금은 그게 곧 기본값이라 같은 값을 가리킨다.
+DEFAULT_STATIC_MODEL = DEFAULT_MODEL
 DEFAULT_MODE = "local"  # 26-07-27 오딘 결정 — 회수 품질을 위해 지연을 감수한다 (모듈 독스트링 근거)
 _ENV = "ASGARD_MEMORY_SEMANTIC"
 
@@ -142,33 +157,39 @@ def _quiet_hub(quiet: bool = True, offline: bool | None = None):
 
 
 def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int, str] | None:
-    """로컬 임베더 로드 — sentence-transformers 우선, model2vec 폴백. 미설치면 None (fail-open).
+    """로컬 임베더 로드 — **model2vec(정적) 우선**, sentence-transformers 폴백.
+    미설치면 None (fail-open). 반환 = (embed_fn, dim, 실제 모델명).
 
-    반환 = (embed_fn, dim, 실제 모델명). 어떤 import·로드 실패도 삼켜 None — 검색은 계속돼야 한다.
-    """
-    with contextlib.suppress(Exception):
-        from sentence_transformers import SentenceTransformer  # type: ignore
+    순서가 반대였다. sentence-transformers 를 먼저 시도하면, 그게 설치된 환경에서는 기본
+    모델 이름이 ST 쪽으로 해석돼 **한국어 검증을 받은 적 없는 모델이 조용히 이겼다** —
+    벤치가 고른 값이 실제로 쓰이지 않으면 그건 기본값이 아니다. 고른 모델을 먼저 연다.
 
-        model = SentenceTransformer(model_name)
-        dim = int(model.get_sentence_embedding_dimension())
+    ST 경로는 남겨 둔다: 사용자가 semantic_model 로 ST 계열 이름을 지정하면 model2vec 이
+    그 이름을 못 읽고, 그때 여기로 넘어온다. 즉 두 계열을 다 쓸 수 있다.
 
-        def _embed(text: str) -> list[float]:
-            vec = model.encode([text], normalize_embeddings=True)[0]
-            return [float(x) for x in vec]
-
-        return _embed, dim, model_name
-    with contextlib.suppress(Exception):  # 경량 폴백 — torch 없는 정적 임베딩
+    어떤 import·로드 실패도 삼켜 None — 검색은 계속돼야 한다."""
+    with contextlib.suppress(Exception):  # torch 무의존 정적 임베더 (기본 경로)
         from model2vec import StaticModel
 
-        static_model_name = DEFAULT_STATIC_MODEL if model_name == DEFAULT_MODEL else model_name
-        model = StaticModel.from_pretrained(static_model_name)
+        model = StaticModel.from_pretrained(model_name)
 
-        def _embed2(text: str) -> list[float]:
+        def _embed_static(text: str) -> list[float]:
             vec = model.encode(text)
             return _normalize([float(x) for x in vec])
 
-        probe = _embed2("dimension probe")
-        return _embed2, len(probe), static_model_name
+        probe = _embed_static("dimension probe")
+        return _embed_static, len(probe), model_name
+    with contextlib.suppress(Exception):  # 사용자가 ST 계열 모델을 지정한 경우
+        from sentence_transformers import SentenceTransformer  # type: ignore
+
+        st_model = SentenceTransformer(model_name)
+        dim = int(st_model.get_sentence_embedding_dimension())
+
+        def _embed_st(text: str) -> list[float]:
+            vec = st_model.encode([text], normalize_embeddings=True)[0]
+            return [float(x) for x in vec]
+
+        return _embed_st, dim, model_name
     return None
 
 
@@ -215,8 +236,28 @@ def embedder() -> Callable[[str], list[float]] | None:
 
 
 def active() -> bool:
-    """시맨틱 스트림이 이번 세션에서 실제로 동작하는가 (대시보드·doctor 표시용)."""
+    """임베더가 이번 세션에서 서는가.
+
+    **주의 — 이것은 "회수에 기여하는가"가 아니다.** 임베더가 서 있어도 파생 벡터가 정본을
+    안 덮으면 시맨틱 스트림은 빈 리스트를 낸다 (실측 26-07-29: 페이지 2장·vec 0행에서
+    active() 는 True). 사람에게 보여 줄 상태는 이 값 하나가 아니라 `memory.vec_coverage()`
+    와 **같이** 읽어야 한다."""
     return embedder() is not None
+
+
+def loaded_model() -> str:
+    """이미 로드된 임베더의 모델명 — **로드를 유발하지 않는다** (없으면 빈 문자열).
+
+    파생 인덱스에 "어떤 임베더로 만든 벡터인가"를 적기 위한 접근자다. `status()` 는
+    embedder() 를 부르므로 이 자리에 쓸 수 없다 — 색인 경로가 상태 조회 때문에 35초짜리
+    첫 내려받기를 여는 일은 없어야 한다.
+
+    주입 임베더(테스트·커스텀)는 `injected` 로 보고한다. 빈 문자열로 두면 주입 임베더로 만든
+    벡터와 진짜 모델로 만든 벡터가 파생 인덱스에서 구분되지 않아, 둘을 오가면 낡은 공간의
+    벡터가 조용히 살아남는다."""
+    if _OVERRIDE is not None:
+        return "injected"
+    return str(_CACHE.get("model") or "")
 
 
 def status() -> dict:
@@ -228,12 +269,14 @@ def status() -> dict:
 
 
 def model_cached() -> bool:
-    """기본 모델이 이미 디스크에 있는가 — 첫 실행의 긴 내려받기를 예고하기 위한 판정.
+    """설정된 모델이 이미 디스크에 있는가 — 첫 실행의 긴 내려받기를 예고하기 위한 판정.
 
     HuggingFace 캐시 규약(models--<org>--<name>)만 본다. 라이브러리를 부르지 않으므로
-    이 함수는 모델을 로드하지 않는다 (판정 때문에 35초를 쓰면 판정의 의미가 없다)."""
-    name = _model_name()
-    target = DEFAULT_STATIC_MODEL if name == DEFAULT_MODEL else name
+    이 함수는 모델을 로드하지 않는다 (판정 때문에 35초를 쓰면 판정의 의미가 없다).
+
+    예전에는 기본 이름(ST)과 실제 로드 모델(potion)이 달라 여기서 이름을 갈아 끼웠다.
+    이제 기본값이 곧 로드되는 모델이라 그 매핑이 없다 — 묻는 이름과 보는 캐시가 같다."""
+    target = _model_name()
     if "/" not in target:
         return False
     slug = "models--" + target.replace("/", "--")
