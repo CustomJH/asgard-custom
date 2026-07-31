@@ -1,0 +1,28 @@
+{
+  "schema": 1,
+  "name": "asgard-planning",
+  "version": "1.0.0",
+  "description": "Sequential product planning from evidence and problem framing through requirements, flows, validation, and implementation handoff",
+  "skills": ["asgard-planning"],
+  "routing": {
+    "asgard-planning": {
+      "triggers": [
+        "기획",
+        "제품 계획",
+        "서비스 계획",
+        "prd",
+        "product requirement",
+        "functional specification",
+        "기능 명세",
+        "요구사항",
+        "유저 플로우",
+        "user flow",
+        "roadmap",
+        "우선순위"
+      ],
+      "defaults": ["worker"],
+      "agents": ["worker"]
+    }
+  },
+  "license": "MIT"
+}

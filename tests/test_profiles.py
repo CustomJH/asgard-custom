@@ -226,6 +226,15 @@ class TestCrud(ProfileBase):
         self.assertTrue(profiles._meaningful(body))
         self.assertIn("adversarial", profiles.manifest("qa")["description"].lower())
 
+    def test_planner_is_a_builtin_profile_with_a_sequential_planning_contract(self):
+        self.assertIn("planner", profiles.builtin_roster())
+        profiles.ensure("planner")
+        body = profiles.identity("planner")
+        self.assertIn("asgard-planning", body)
+        self.assertIn("AI 제안", body)
+        self.assertIn("사용자 결정", body)
+        self.assertEqual(profiles.manifest("planner")["based_on"], "planner")
+
     def test_blank_identity_is_comments_only_so_it_stays_silent(self):
         """씨앗 없이 만든 에이전트의 AGENT.md 는 안내 주석뿐 — 주석뿐이면 없는 것으로 친다
         (manual.py 와 같은 규율). 안내문을 배송해도 프롬프트가 안 늘어나는 근거."""

@@ -37,6 +37,22 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual(skill_registry.resolve_skills(self.root, "회귀 버그 테스트", "verifier"), [])
         self.assertIn("worker", {plugin["name"] for plugin in skill_registry.plugins()})
 
+    def test_planning_skill_is_bundled_and_worker_routed(self):
+        plugin = skill_registry.bundled_plugins()["asgard-planning"]
+        self.assertEqual(plugin["skills"], ["asgard-planning"])
+        names = {
+            name
+            for name, _ in skill_registry.resolve_skills(
+                self.root,
+                "기획 에이전트로 PRD와 유저 플로우를 순서대로 설계해줘",
+                "worker",
+            )
+        }
+        self.assertIn("asgard-planning", names)
+        body = skill_registry.load_skill_for_agent(self.root, "worker", "asgard-planning")
+        self.assertIn("근거 → 문제/기회", body)
+        self.assertIn("정상·빈·오류·권한·복구·접근성", body)
+
     def test_catalog_prioritizes_matches_without_hiding_other_skills(self):
         matched = {name for name, _ in skill_registry.resolve_skills(self.root, "로그인 폼 접근성 개선", "freyja")}
         catalog = skill_registry.skill_catalog(self.root, "freyja", matched=matched)
