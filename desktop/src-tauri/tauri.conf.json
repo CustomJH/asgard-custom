@@ -15,6 +15,13 @@
   "bundle": {
     "active": true,
     "category": "DeveloperTool",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "shortDescription": "Asgard tasks, artifacts, and settings",
     "longDescription": "Native desktop workspace for running Asgard tasks, reviewing artifacts, and managing local settings.",
     "macOS": {
