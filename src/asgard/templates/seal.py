@@ -91,11 +91,34 @@ Disambiguating confusable pairs — when ambiguous, pick a single **dominant int
     ("일감은 폴더에 살지 않는다" ✗ — that is a body opening, not a subject).
   **Target 50 chars, hard cap 72** (emoji excluded), no trailing period, capitalize the first
   letter if in English. scope is the module/package/area name (required in a monorepo).
-- **body** — **what and why**: the motivating problem → the approach taken (including rejected
-  alternatives) → the impact, in that order. Don't repeat how — the diff already says that. Back
+- **body** — **what changed in the code, and what for**: the motivating problem → what you actually
+  changed (named: files, functions, symbols, settings) → the impact, in that order. Back
   performance/improvement claims with numbers. **Wrap at 72 chars**.
   The body may be omitted only for one-line changes (typos etc.) where the diff alone makes the
   why obvious — otherwise it is required.
+- **register — an engineering record, not an essay.** This is the single most common failure, and
+  it survives every other rule: the message is grammatical, correctly scoped, correctly split, and
+  still says nothing a maintainer can use. A commit message is read by someone bisecting a
+  regression at 2 a.m. Write for that reader.
+  - **Name the code.** Every claim in the body should point at something in the diff — a path, a
+    function, a constant, a flag, a config key. A body with no identifier in it is a red flag.
+  - **No aphorisms, metaphors, or narration.** Do not open with a maxim, close with a moral, or
+    personify the code. "The ruler was wrong, not the surface", "a window belongs to a person, not
+    a folder", "one missed nudge was one lesson lost forever" — all of these are essay sentences.
+    They read well and they tell the 2 a.m. reader nothing.
+  - **No rhetorical questions, no second person, no suspense.** State the finding first; do not
+    build to it.
+  - **Cut any sentence that would survive unchanged in a different commit.** If it is true of the
+    project in general rather than of this diff, it does not belong here.
+  - Concision is not the point — a long body is fine when the change is subtle. Every sentence
+    just has to carry a fact about *this* change.
+
+  | Essay (✗) | Record (✓) |
+  |---|---|
+  | 창은 사람의 것이고, 일감은 폴더에 살지 않는다 | 데스크탑 시작 자리를 cwd 대신 개인 워크스페이스로 고정 |
+  | 놓친 넛지 하나가 교훈 하나의 영구 소실이었다 | 퀘스트 종료 시 evolution.autoscan 으로 자동 채굴 (기본 on) |
+  | 자를 세워 두고 자기 몸을 안 재면 그 자는 남에게만 들이대는 것이 된다 | 신설 규칙을 저장소에 적용 — 198파일의 주석·독스트링 교정 |
+  | The ruler was wrong, not the surface | Reorder STATE_BITS alternatives so `focus-visible` matches before `focus` |
 - **grammar** — subject and body follow the Bragi grammar contract. In Korean a particle attaches
   to the word before it, and a Latin word, number, or code span is still that word
   (`quest_log.py를`, `UTF-8로`, `HEAD와` — never `quest_log.py 를`); do not coin clipped words
@@ -163,6 +186,9 @@ That said, over-splitting is also a defect: each commit must be **self-contained
 | subject doesn't match the diff | The diff is the truth — fit the subject to the diff |
 | Past-tense or third-person English subject ("added", "fixes") | Unify to imperative mood (the "If applied..." test) |
 | A subject that is an aphorism or metaphor instead of the change ("일감은 폴더에 살지 않는다") | Name the change in the subject; move the line into the body if it earns its place |
+| A body written as an essay — maxims, metaphors, personified code, a moral at the end | Rewrite as a record: problem → what changed (named files/functions/settings) → impact |
+| A body with no identifier in it — no path, function, constant, flag, or config key | Name what you touched; a maintainer bisecting a regression cannot search prose |
+| A sentence that would be equally true in another commit | Delete it — the body describes this diff, not the project |
 | Broken grammar in either language — a detached Korean particle (`config.py 를`), a coined clipping (불요), a verbless English fragment | Rewrite per the grammar rule; the 50/72 budget never justifies it |
 | Unsubstantiated "performance improvement" claim in the body | Back it with numbers, or drop the claim |
 

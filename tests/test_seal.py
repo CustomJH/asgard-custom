@@ -72,6 +72,15 @@ class TestSkillBody(unittest.TestCase):
         self.assertIn("Korean has no commit imperative", SEAL_SKILL_MD)
         self.assertIn("aphorism", SEAL_SKILL_MD)  # 경구는 제목이 아니라 본문 첫 줄이다
 
+    def test_body_is_an_engineering_record_not_an_essay(self):
+        """가장 자주 무너지는 자리 — 규칙을 다 지키고도 정비하는 사람이 쓸 수 없는 글이 나온다."""
+        self.assertIn("an engineering record, not an essay", SEAL_SKILL_MD)
+        self.assertIn("Name the code", SEAL_SKILL_MD)  # 본문의 주장은 diff 의 무언가를 가리킨다
+        self.assertIn("No aphorisms, metaphors, or narration", SEAL_SKILL_MD)
+        # 일반론은 이 커밋의 것이 아니다 — 다른 커밋에서도 참이면 지운다
+        self.assertIn("survive unchanged in a different commit", SEAL_SKILL_MD)
+        self.assertIn("bisecting a regression", SEAL_SKILL_MD)  # 독자를 못 박는다
+
     def test_grammar_is_not_traded_for_the_line_budget(self):
         """50/72는 줄 예산이지 조사를 떼거나 낱말을 자를 근거가 아니다."""
         self.assertIn("quest_log.py를", SEAL_SKILL_MD)  # 붙여 쓴 본보기
