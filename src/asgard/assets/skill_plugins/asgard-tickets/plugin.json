@@ -1,0 +1,38 @@
+{
+  "schema": 1,
+  "name": "asgard-tickets",
+  "version": "1.0.0",
+  "description": "Track work as tickets while doing it — open, start, and hand to review on the Linear-shaped workspace board that the human sees in Asgard Studio",
+  "skills": ["asgard-tickets"],
+  "routing": {
+    "asgard-tickets": {
+      "triggers": [
+        "티켓",
+        "티켓팅",
+        "이슈",
+        "일감",
+        "업무 보드",
+        "백로그",
+        "backlog",
+        "ticket",
+        "issue",
+        "issue tracker",
+        "sprint",
+        "스프린트",
+        "사이클",
+        "cycle",
+        "트리아지",
+        "triage",
+        "마일스톤",
+        "milestone",
+        "로드맵",
+        "프로젝트 진척",
+        "무엇을 해야",
+        "what should i work on"
+      ],
+      "defaults": ["worker"],
+      "agents": ["worker", "freyja", "thor", "thor-lead", "eitri", "mimir"]
+    }
+  },
+  "license": "MIT"
+}
