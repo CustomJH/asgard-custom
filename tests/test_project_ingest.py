@@ -263,6 +263,46 @@ class ToolSurfaceTest(unittest.TestCase):
         self.assertIn("승인 대기", out)
         self.assertIn("project-approve abc123", out)
 
+    def _staged_row(self) -> dict:
+        return {
+            "name": "요구사항.md",
+            "kind": "specification",
+            "strategy": "document",
+            "lane": ingest.LANE_GRAPH,
+            "entities": 2,
+            "chars": 500,
+            "graph_units": 1,
+            "document_id": "asgard:doc:x",
+            "approval_id": "abc123",
+        }
+
+    def _run_with_autosave(self, commit):
+        from asgard.agent.tools import run_ingest_document
+
+        with (
+            mock.patch(
+                "asgard.memory_bridge.find_config", return_value=(self.tmp, {"engine": "hindsight", "autosave": True})
+            ),
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch.object(ingest, "ensure_strategies", return_value={"changed": False, "strategies": {}}),
+            mock.patch.object(ingest, "stage_documents", return_value=[self._staged_row()]),
+            mock.patch("asgard.project_memory.commit_approved_record", commit),
+        ):
+            return run_ingest_document(self.tmp, {"paths": [self.path]})
+
+    def test_autosave_commits_the_staged_document(self):
+        commit = mock.Mock(return_value={"success": True})
+        out = self._run_with_autosave(commit)
+        commit.assert_called_once_with(self.tmp, {"engine": "hindsight", "autosave": True}, "abc123")
+        self.assertIn("저장 완료", out)
+        self.assertNotIn("승인 대기", out)
+
+    def test_autosave_failure_hands_the_approval_id_back(self):
+        """한 건이 막혀도 나머지는 들어가고, 막힌 건은 사람이 그 id 로 이어받는다."""
+        out = self._run_with_autosave(mock.Mock(side_effect=RuntimeError("backend down")))
+        self.assertIn("자동저장 실패", out)
+        self.assertIn("project-approve abc123", out)
+
     def test_tool_is_registered_as_inspect_not_mutate(self):
         # 승인 대기 제안이므로 쓰기 권한이 필요 없다 — 권한이 넓으면 게이트가 헐거워진다
         import asgard.agent.tools as tools_module

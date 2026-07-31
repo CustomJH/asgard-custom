@@ -869,6 +869,17 @@ def memory_proposals(json_: bool = typer.Option(False, "--json")) -> None:
     raise typer.Exit(run_proposals(json_))
 
 
+@memory_app.command("autosave", help="save memories without the approval round-trip (tier-1 and/or tier-2)")
+def memory_autosave(
+    state: str = typer.Argument(None, metavar="[on|off]", help="omit to show the current state"),
+    tier: str = typer.Option("both", "--tier", help="personal (tier-1) | project (tier-2) | both"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.memory import run_autosave
+
+    raise typer.Exit(run_autosave(state, tier, json_))
+
+
 @memory_app.command("approve", help="approve a staged memory proposal (writes it to the wiki)")
 def memory_approve(
     proposal_id: str = typer.Argument(..., help="proposal id from `asgard memory proposals`"),
@@ -1224,6 +1235,8 @@ def memory_mcp() -> None:
 
 
 # Asgard Plan — 생각을 PRD·기능 구조·유저 플로우로 정리하는 로컬 표면.
+# 폴더에 안 매인다: 문서는 워크스페이스(`<에이전트 홈>/studio/plans.json`)에 살고, 어디서
+# 열든 같은 목록이 뜬다. 기획은 코드가 아직 없는 데서 시작하기 때문이다.
 plan_app = typer.Typer(help="Asgard Plan — local product planning workspace", invoke_without_command=True)
 app.add_typer(plan_app, name="plan")
 
@@ -1252,16 +1265,240 @@ def plan_dashboard(
     raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
-@app.command(help="open Asgard Desktop — tasks, artifacts, and settings")
+# 업무 — Studio 보드와 같은 저장소를 창 없이 만지는 손 (<에이전트 홈>/studio/workspace.db).
+ticket_app = typer.Typer(
+    help="Asgard 업무 보드 — 티켓 발급·이동·연결 (Studio 창과 같은 저장소)",
+    invoke_without_command=True,
+)
+app.add_typer(ticket_app, name="ticket")
+
+
+@ticket_app.callback()
+def ticket_default(ctx: typer.Context) -> None:
+    """서브커맨드 없이 `asgard ticket`을 치면 지금의 보드를 보여 준다."""
+    if ctx.invoked_subcommand is not None:
+        return
+    from .commands.ticket import run_board
+
+    raise typer.Exit(run_board(json_out=False))
+
+
+@ticket_app.command("board", help="상태 칸으로 접은 지금의 보드")
+def ticket_board(
+    team: str = typer.Option("", "--team", help="팀 키로 좁힌다 — `.` 은 이 폴더의 팀 (기본: 워크스페이스 전체)"),
+    project: str = typer.Option("", "--project", help="프로젝트 이름 또는 id"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_board
+
+    raise typer.Exit(run_board(json_out, team, project))
+
+
+@ticket_app.command("list", help="티켓 목록 — 우선순위 순 (긴급이 먼저, '없음'이 맨 뒤)")
+def ticket_list(
+    status: str = typer.Option("", "--status", "-s", help="상태로 거르기 (쉼표로 여럿)"),
+    assignee: str = typer.Option("", "--assignee", "-a", help="담당으로 거르기"),
+    label: str = typer.Option("", "--label", "-l", help="라벨로 거르기"),
+    cycle: str = typer.Option("", "--cycle", "-c", help="주기 번호 또는 이름"),
+    query: str = typer.Option("", "--query", "-q", help="제목·설명·번호 부분 일치"),
+    open_only: bool = typer.Option(False, "--open", help="완료·취소를 뺀 것만"),
+    team: str = typer.Option("", "--team", help="팀 키로 좁힌다 — `.` 은 이 폴더의 팀 (기본: 워크스페이스 전체)"),
+    project: str = typer.Option("", "--project", help="프로젝트 이름 또는 id"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_list
+
+    raise typer.Exit(run_list(status, assignee, label, cycle, query, open_only, json_out, team, project))
+
+
+@ticket_app.command("new", help="티켓 발급 — 번호는 한 번만 나오고 다시 쓰이지 않는다")
+def ticket_new(
+    title: str = typer.Argument(..., help="무엇을 끝내면 되는지 (주제가 아니라 결과로)"),
+    body: str = typer.Option("", "--body", "-b", help="맥락·재현·수용 기준"),
+    status: str = typer.Option("todo", "--status", "-s", help="backlog|todo|in_progress|in_review|done|canceled"),
+    priority: int = typer.Option(0, "--priority", "-p", help="1 긴급 · 2 높음 · 3 보통 · 4 낮음 · 0 없음"),
+    assignee: str = typer.Option("", "--assignee", "-a", help="담당"),
+    labels: str = typer.Option("", "--label", "-l", help="라벨 (쉼표로 여럿)"),
+    parent: str = typer.Option("", "--parent", help="상위 티켓 — 한 겹까지"),
+    estimate: int = typer.Option(None, "--estimate", "-e", help="추정 포인트"),
+    team: str = typer.Option("", "--team", help="이 팀에 끊는다 (기본: 결속된 폴더면 그 팀, 아니면 기본 팀)"),
+    project: str = typer.Option("", "--project", help="프로젝트에 붙인다 — 팀을 가로지른다"),
+    milestone: str = typer.Option("", "--milestone", help="프로젝트 안의 마일스톤"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_new
+
+    raise typer.Exit(
+        run_new(title, body, status, priority, assignee, labels, parent, estimate, json_out, team, project, milestone)
+    )
+
+
+@ticket_app.command("show", help="티켓 한 건 — 본문·하위·관계·댓글·활동")
+def ticket_show(
+    ref: str = typer.Argument(..., help="번호(PRJ-12), 숫자(12), 또는 id"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_show
+
+    raise typer.Exit(run_show(ref, json_out))
+
+
+@ticket_app.command("move", help="상태를 옮긴다 — 시작·완료 시각이 함께 기록된다")
+def ticket_move(
+    ref: str = typer.Argument(..., help="번호 또는 id"),
+    status: str = typer.Argument(..., help="backlog|todo|in_progress|in_review|done|canceled"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_move
+
+    raise typer.Exit(run_move(ref, status, json_out))
+
+
+@ticket_app.command("set", help="준 칸만 바꾼다 — 안 준 칸은 그대로 둔다")
+def ticket_set(
+    ref: str = typer.Argument(..., help="번호 또는 id"),
+    title: str = typer.Option("", "--title", "-t"),
+    body: str = typer.Option("", "--body", "-b"),
+    priority: int = typer.Option(None, "--priority", "-p"),
+    assignee: str = typer.Option(None, "--assignee", "-a", help="빈 문자열이면 담당을 뗀다"),
+    labels: str = typer.Option(None, "--label", "-l", help="쉼표로 여럿 — 통째로 갈아 끼운다"),
+    estimate: int = typer.Option(None, "--estimate", "-e"),
+    parent: str = typer.Option(None, "--parent", help="빈 문자열이면 상위에서 뗀다"),
+    cycle: str = typer.Option(None, "--cycle", "-c", help="빈 문자열이면 주기에서 뺀다"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_set
+
+    raise typer.Exit(run_set(ref, title, body, priority, assignee, labels, estimate, parent, cycle, json_out))
+
+
+@ticket_app.command("comment", help="티켓에 한 줄 남긴다")
+def ticket_comment(
+    ref: str = typer.Argument(..., help="번호 또는 id"),
+    text: str = typer.Argument(..., help="남길 말"),
+    author: str = typer.Option("", "--author", help="글쓴이 (기본 cli)"),
+) -> None:
+    from .commands.ticket import run_comment
+
+    raise typer.Exit(run_comment(ref, text, author))
+
+
+@ticket_app.command("link", help="티켓을 잇는다 — blocks 는 방향이 있다 (ref 가 other 를 막는다)")
+def ticket_link(
+    ref: str = typer.Argument(..., help="막는 쪽"),
+    other: str = typer.Argument(..., help="막히는 쪽"),
+    kind: str = typer.Option("blocks", "--kind", "-k", help="blocks|relates|duplicates"),
+    remove: bool = typer.Option(False, "--remove", help="잇지 말고 끊는다"),
+) -> None:
+    from .commands.ticket import run_link
+
+    raise typer.Exit(run_link(ref, other, kind, remove))
+
+
+@ticket_app.command("delete", help="티켓을 지운다 — 번호는 다시 발급되지 않는다")
+def ticket_delete(ref: str = typer.Argument(..., help="번호 또는 id")) -> None:
+    from .commands.ticket import run_delete
+
+    raise typer.Exit(run_delete(ref))
+
+
+@ticket_app.command("cycle", help="주기(사이클) — 목록·신설·마감. 닫으면 안 끝난 일감이 다음 주기로 넘어간다")
+def ticket_cycle(
+    new: str = typer.Option("", "--new", "-n", help="이 이름으로 새 주기를 연다"),
+    close: str = typer.Option("", "--close", help="이 번호/이름의 주기를 닫는다"),
+    team: str = typer.Option("", "--team", help="어느 팀의 주기인가 (기본: 결속된 폴더면 그 팀, 아니면 기본 팀)"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_cycle
+
+    raise typer.Exit(run_cycle(new, close, json_out, team))
+
+
+@ticket_app.command("team", help="팀 — 번호의 주인, 워크플로·사이클·트리아지의 단위")
+def ticket_team(
+    new: str = typer.Option("", "--new", "-n", help="이 이름으로 팀을 세운다"),
+    key: str = typer.Option("", "--key", help="번호 앞자리 (기본: 이름에서 뽑는다)"),
+    triage: str = typer.Option("", "--triage", help="on|off — 밖에서 들어온 일감을 인박스에 세운다"),
+    cycle_weeks: int = typer.Option(0, "--cycle-weeks", help="사이클 길이(주)"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_teams
+
+    raise typer.Exit(run_teams(new, key, triage, cycle_weeks, json_out))
+
+
+@ticket_app.command("project", help="프로젝트 — 끝이 있는 일. 팀을 가로지른다")
+def ticket_project(
+    new: str = typer.Option("", "--new", "-n", help="이 이름으로 프로젝트를 연다"),
+    show: str = typer.Option("", "--show", help="이 프로젝트의 상세 (마일스톤·진척·보고)"),
+    status: str = typer.Option("", "--status", "-s", help="backlog|planned|started|paused|completed|canceled|open"),
+    lead: str = typer.Option("", "--lead", help="리드 한 사람 — 책임이 갈리지 않게"),
+    target: str = typer.Option("", "--target", help="목표일 YYYY-MM-DD"),
+    teams: str = typer.Option("", "--teams", help="참여 팀 키 (쉼표로 여럿)"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_projects
+
+    raise typer.Exit(run_projects(new, show, status, lead, target, teams, json_out))
+
+
+@ticket_app.command("milestone", help="프로젝트 안의 마일스톤 — 목록·신설·완료")
+def ticket_milestone(
+    project: str = typer.Argument(..., help="프로젝트 이름 또는 id"),
+    new: str = typer.Option("", "--new", "-n", help="이 이름으로 마일스톤을 만든다"),
+    target: str = typer.Option("", "--target", help="목표일 YYYY-MM-DD"),
+    done: str = typer.Option("", "--done", help="이 마일스톤을 완료로 표시한다"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_milestone
+
+    raise typer.Exit(run_milestone(project, new, target, done, json_out))
+
+
+@ticket_app.command("update", help="프로젝트 진행 보고 — 건강도는 사람이 적는다")
+def ticket_update(
+    project: str = typer.Argument(..., help="프로젝트 이름 또는 id"),
+    body: str = typer.Option("", "--body", "-b", help="이번에 무엇이 됐고 무엇이 남았는지"),
+    health: str = typer.Option("", "--health", help="on_track|at_risk|off_track"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_update
+
+    raise typer.Exit(run_update(project, body, health, json_out))
+
+
+@ticket_app.command("triage", help="팀의 인박스 — 아직 받아들이지 않은 일감")
+def ticket_triage(
+    accept: str = typer.Option("", "--accept", help="이 번호를 받아들여 보드로 넣는다"),
+    decline: str = typer.Option("", "--decline", help="이 번호를 거절한다 (취소로 닫고 이유를 남긴다)"),
+    note: str = typer.Option("", "--note", help="받거나 거절하며 남길 한 줄"),
+    json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.ticket import run_triage
+
+    raise typer.Exit(run_triage(accept, decline, note, json_out))
+
+
+@ticket_app.command("import", help="폴더마다 보드가 하나이던 시절의 저장소를 워크스페이스로 들여온다")
+def ticket_import(json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로")) -> None:
+    from .commands.ticket import run_import
+
+    raise typer.Exit(run_import(json_out))
+
+
+@app.command(help="open Asgard Studio — tasks, planning, artifacts, skills, and settings")
 def desktop(
     port: int = typer.Option(8766, "--port", "-p", help="local port (falls back to a free port if taken)"),
     no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
     browser: bool = typer.Option(False, "--browser", help="use a browser instead of the native Tauri app"),
+    root: str = typer.Option(
+        "", "--root", help="작업 공간을 정해서 연다 (기본: 여기가 프로젝트면 여기, 아니면 최근 프로젝트)"
+    ),
 ) -> None:
-    """Open the local Asgard Desktop workspace."""
+    """Open Asgard Studio. 프로젝트 안이 아니어도 열린다 — 작업 공간은 창에서 고른다."""
     from .commands.desktop import run_desktop
 
-    raise typer.Exit(run_desktop(port=port, open_browser=not no_open, prefer_native=not browser))
+    raise typer.Exit(run_desktop(port=port, open_browser=not no_open, prefer_native=not browser, root=root or None))
 
 
 # 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 승인만이 활성화 경로.

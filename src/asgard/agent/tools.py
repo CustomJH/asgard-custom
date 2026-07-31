@@ -50,15 +50,16 @@ READ_DOCUMENT_TOOL = {
 MEMORY_PROPOSE_TOOL = {
     "name": "memory_propose",
     "description": (
-        "Propose one durable fact for your own tier-1 memory — the memory that survives across "
-        "sessions and belongs to this agent alone. Nothing is stored when you call this: it queues "
-        "the fact and returns a proposal id for the user to approve.\n\n"
-        "PROPOSE WHEN (do it as it happens, don't wait to be asked):\n"
+        "Record one durable fact in your own tier-1 memory — the memory that survives across "
+        "sessions and belongs to this agent alone. Whether it lands at once or waits for the user's "
+        "approval is the user's setting (memory.autosave); the response says which happened, so "
+        "read it before you tell the user anything.\n\n"
+        "RECORD WHEN (do it as it happens, don't wait to be asked):\n"
         "- The user corrects you, or says how they want work done ('don't do X', 'always Y')\n"
         "- The user states a preference, habit, or fact about themselves\n"
         "- You settle a decision with the user that will still bind you next session\n"
         "- You learn a durable fact about this environment, tool, or convention\n\n"
-        "DO NOT PROPOSE: task progress, what you just finished, session outcomes, temporary state, "
+        "DO NOT RECORD: task progress, what you just finished, session outcomes, temporary state, "
         "anything easily rediscovered by reading a file, or anything about the repository's code "
         "(that is project memory, not yours). Secrets and credentials are rejected outright.\n\n"
         "Write one self-contained sentence that still makes sense a year from now: absolute dates, "
@@ -91,8 +92,9 @@ INGEST_DOCUMENT_TOOL = {
         "Use it when the user hands over a requirements doc, spec, protocol sheet, plan, or "
         "decision record and asks to analyse it, set it up, or remember it for the project. "
         "Parses pdf/docx/hwp/hwpx/md/txt, picks the retain strategy from the document's own "
-        "shape, lifts requirement IDs into entities, and stages the write for human approval — "
-        "nothing lands in shared memory until a person approves it. Reports what it decided."
+        "shape, lifts requirement IDs into entities, and either stages the write for human approval "
+        "or commits it at once when the user turned on project_memory.autosave. Reports what it "
+        "decided and which of the two happened."
     ),
     "input_schema": {
         "type": "object",
@@ -138,6 +140,93 @@ PROCESS_TOOL = {
             "command": {"type": "string", "description": "Required for start."},
             "process_id": {"type": "string", "description": "Required for poll/stop."},
             "wait_seconds": {"type": "number", "description": "Poll wait, 0-10 seconds; default 0."},
+        },
+        "required": ["action"],
+    },
+}
+TICKET_TOOL = {
+    "name": "ticket",
+    "description": (
+        "Read and write the work tracker — the same board the human sees in Asgard Studio. "
+        "Shaped like Linear: a workspace holds TEAMS (each owns its numbering, workflow states, "
+        "cycles and triage inbox) and PROJECTS (dated bodies of work that cut across teams, with "
+        "milestones). Tickets are numbered once and forever (PRJ-12), so you can refer to one by "
+        "number in later turns and in the next session. The board is NOT tied to the folder you "
+        "are standing in: reading always covers the whole workspace, so a ticket filed in one repo "
+        "is visible from any other. Narrow with team='<KEY>' when you mean one team, or team='.' "
+        "for the team bound to this folder.\n\n"
+        "TRACK THE WORK YOU ARE DOING. When the human asks for something that is more than a "
+        "one-liner, open a ticket first (action=create), move it with action=start when you begin, "
+        "and action=finish when the change is ready for review. That is what makes the board a "
+        "record of what actually happened rather than a wishlist.\n\n"
+        "ALSO FILE A TICKET when you find work you are NOT doing right now:\n"
+        "- A defect you noticed while working on something else\n"
+        "- Follow-up the user deferred ('later', 'not now', 'in a separate pass')\n"
+        "- A step you had to skip, or a limitation you hit and worked around\n"
+        "- A piece you split off a large request so the remainder stays reviewable\n"
+        "Filing is how you stop losing that work. A sentence in your final message is forgotten "
+        "by the next session; a ticket is not.\n\n"
+        "DO NOT FILE: vague ideas with no owner or trigger, or a second ticket for work an open "
+        "ticket already covers. One ticket per piece of work — a ticket that says 'improve things' "
+        "cannot be finished.\n\n"
+        "Write the title as the outcome ('결제 재시도에 지수 백오프 적용'), not as a topic ('결제 재시도'). "
+        "Put reproduction, constraints, and acceptance criteria in the body.\n\n"
+        "Actions: list · get · create · start · finish · update · comment · link · projects. Use "
+        "`list` before `create` when the work might already be tracked — duplicates cost the human "
+        "more than they cost you. Never invent a project name: call `projects` and use one that exists."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "action": {
+                "type": "string",
+                "enum": ["list", "get", "create", "start", "finish", "update", "comment", "link", "projects"],
+            },
+            "ref": {
+                "type": "string",
+                "description": "Ticket number (PRJ-12) or id. Required for get/start/finish/update/comment/link.",
+            },
+            "title": {"type": "string", "description": "Outcome-shaped title. Required for create."},
+            "body": {"type": "string", "description": "Context, reproduction, acceptance criteria."},
+            "status": {
+                "type": "string",
+                "description": (
+                    "Workflow state slug. The defaults are backlog · todo · in_progress · in_review · "
+                    "done · canceled, but a team may define its own — call action=get or list to see "
+                    "what this team uses. Default for a new ticket is 'todo'."
+                ),
+            },
+            "priority": {
+                "type": "integer",
+                "description": "1 urgent · 2 high · 3 medium · 4 low · 0 none (default).",
+            },
+            "assignee": {"type": "string", "description": "Who owns it. Leave empty when unknown."},
+            "labels": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Free-form labels; created on first use.",
+            },
+            "parent": {"type": "string", "description": "Parent ticket for a sub-ticket. One level only."},
+            "estimate": {"type": "integer", "description": "Effort points, 0-999."},
+            "team": {
+                "type": "string",
+                "description": (
+                    "Team key (e.g. ENG). On action=list, omitting it reads the WHOLE workspace; "
+                    "pass '.' to narrow to the team bound to this folder. On writes, omitting it "
+                    "files into this folder's bound team, or the workspace default team if none."
+                ),
+            },
+            "project": {"type": "string", "description": "Project name or id — a dated body of work that spans teams."},
+            "milestone": {"type": "string", "description": "Milestone inside that project. Needs `project` as well."},
+            "kind": {
+                "type": "string",
+                "enum": ["blocks", "relates", "duplicates"],
+                "description": "Relation for action=link. 'blocks' means ref blocks other.",
+            },
+            "other": {"type": "string", "description": "The other ticket, for action=link."},
+            "text": {"type": "string", "description": "Comment body, for action=comment; the note for start/finish."},
+            "query": {"type": "string", "description": "Substring filter over title/body/number, for action=list."},
+            "open_only": {"type": "boolean", "description": "action=list: only tickets that are not done or canceled."},
         },
         "required": ["action"],
     },
@@ -508,9 +597,10 @@ def _extract_hwp(path: str) -> str:
 
 
 def run_memory_propose(root: str, tool_input: dict) -> str:
-    """개인 기억 쓰기 제안 — 대기열에만 올린다. 사람이 승인해야 정본이 된다.
+    """개인 기억 쓰기 — 기본은 대기열(사람이 승인해야 정본), 자동저장이 켜져 있으면 즉시 저장.
 
-    쓰기가 아니라 **제안**이라 inspect 권한으로 충분하다 (`ingest_document` 와 같은 결).
+    어느 쪽인지는 이 함수가 정하지 않는다: `propose.submit` 이 설정 하나를 읽고 정하고,
+    표면은 그 결과를 옮긴다 (MCP 와 같은 문장 — `propose.outcome_text`).
     거절 사유는 문장으로 돌려준다 — 에이전트가 읽고 고쳐 다시 낼 수 있어야 한다."""
     del root  # 개인 기억은 프로젝트가 아니라 에이전트에 붙는다 (memory_dir 이 프로파일별)
     from ..memory import propose
@@ -518,15 +608,149 @@ def run_memory_propose(root: str, tool_input: dict) -> str:
     text = str(tool_input.get("text") or "").strip()
     kind = str(tool_input.get("kind") or "note").strip()
     try:
-        record = propose.stage(text, kind=kind)
+        outcome = propose.submit(text, kind=kind)
     except ValueError as exc:
         raise ToolError(str(exc)) from exc
-    verb = "기존 페이지에 병합" if record.get("plan_action") == "merge" else "새 페이지 생성"
-    return (
-        f"제안 대기 (아직 저장 안 됨) — proposal_id: {record['id']}\n"
-        f"kind={record['kind']} · 승인하면 {verb}\n---\n{record['text']}\n---\n"
-        f"사용자에게 이 내용을 보여주고 승인을 받아라. 승인 명령: asgard memory approve {record['id']}"
-    )
+    return propose.outcome_text(outcome)
+
+
+def _ticket_line(ticket: dict) -> str:
+    from ..studio import tickets as T
+
+    # 팀이 지은 상태 이름이 있으면 그것을 든다 — 기본 여섯 칸만 아는 표로 읽으면
+    # 팀이 만든 '배포 대기' 에서 KeyError 로 죽는다.
+    label = ticket.get("status_label") or T.STATUS_LABEL.get(ticket["status"], ticket["status"])
+    bits = [f"{ticket['key']} [{label}]", ticket["title"]]
+    if ticket.get("triage"):
+        bits.append("트리아지 대기")
+    if ticket["priority"]:
+        bits.append(f"우선순위 {T.PRIORITY_LABEL[ticket['priority']]}")
+    if ticket["assignee"]:
+        bits.append(f"담당 {ticket['assignee']}")
+    if ticket.get("project"):
+        bits.append(f"프로젝트 {ticket['project']['name']}")
+    if ticket["labels"]:
+        bits.append("라벨 " + "/".join(label["name"] for label in ticket["labels"]))
+    if ticket["blocked_by"]:
+        bits.append("막힘 ← " + ", ".join(ticket["blocked_by"]))
+    return " · ".join(bits)
+
+
+def run_ticket(root: str, tool_input: dict) -> str:
+    """일감 한 건을 읽거나 남긴다 — 사람이 스튜디오에서 보는 그 보드.
+
+    툴이 하는 말은 **번호를 포함한 한 줄**이다. 모델이 다음 턴에 그 번호로 다시 부를 수 있어야
+    이 계층이 쓸모가 있다 — "티켓을 만들었습니다"만 돌려주면 그 티켓은 만든 순간 잃어버린다."""
+    from ..studio import tickets as T
+
+    action = str(tool_input.get("action") or "").strip()
+    ref = str(tool_input.get("ref") or "").strip()
+    actor = "agent"
+    try:
+        if action == "list":
+            rows = T.list_tickets(
+                root,
+                query=str(tool_input.get("query") or ""),
+                open_only=bool(tool_input.get("open_only")),
+                team=str(tool_input.get("team") or "") or None,
+                project=str(tool_input.get("project") or "") or None,
+                limit=60,
+            )
+            if not rows:
+                return "no tickets match"
+            rows.sort(key=T.sort_key)
+            return "\n".join(_ticket_line(row) for row in rows)
+        if action == "projects":
+            from ..studio import projects as P
+
+            rows = P.list_projects(status="open")
+            if not rows:
+                return "no open projects"
+            return "\n".join(
+                f"{row['name']} [{row['status']}] · 진척 {row['done']}/{row['total']}"
+                + (f" · 팀 {', '.join(t['key'] for t in row['teams'])}" if row["teams"] else "")
+                + (f" · 리드 {row['lead']}" if row["lead"] else "")
+                for row in rows
+            )
+        if action == "get":
+            ticket = T.get_ticket(root, ref)
+            lines = [_ticket_line(ticket)]
+            if ticket["body"]:
+                lines += ["", ticket["body"]]
+            for child in ticket["children_list"]:
+                lines.append("  하위 " + _ticket_line(child))
+            for note in ticket["comments_list"][-6:]:
+                lines.append(f"  댓글 {note['author'] or '익명'}: {note['body'][:200]}")
+            return "\n".join(lines)
+        if action == "create":
+            ticket = T.create_ticket(
+                root,
+                str(tool_input.get("title") or ""),
+                body=str(tool_input.get("body") or ""),
+                status=str(tool_input.get("status") or "todo"),
+                priority=tool_input.get("priority") or 0,
+                assignee=str(tool_input.get("assignee") or ""),
+                estimate=tool_input.get("estimate"),
+                labels=tool_input.get("labels") or (),
+                parent=str(tool_input.get("parent") or "") or None,
+                team=str(tool_input.get("team") or "") or None,
+                project=str(tool_input.get("project") or "") or None,
+                milestone=str(tool_input.get("milestone") or "") or None,
+                source="agent",
+                reporter=actor,
+                actor=actor,
+            )
+            # 팀이 트리아지를 켜 뒀으면 이 티켓은 보드가 아니라 인박스에 선다. 그 사실을
+            # 모델에게 돌려줘야 "만들었으니 됐다" 로 끝내지 않고 사람에게 알린다.
+            if ticket.get("triage"):
+                return f"filed {_ticket_line(ticket)} — 팀 인박스(트리아지)에 세웠습니다. 사람이 받아야 보드로 갑니다."
+            return f"filed {_ticket_line(ticket)}"
+        # start·finish 는 update 의 지름길이다. 상태 슬러그를 외우게 하는 대신 **동작**을 준다:
+        # 시작하면 진행 중으로 가고 담당이 붙고, 끝내면 검토 중으로 간다(완료가 아니다 —
+        # 프로세스가 끝난 것과 사람이 받아들인 것은 다른 일이다).
+        if action in ("start", "finish"):
+            target = "in_progress" if action == "start" else "in_review"
+            changes: dict = {"status": target}
+            if action == "start" and not str(tool_input.get("assignee") or ""):
+                changes["assignee"] = actor
+            ticket = T.update_ticket(root, ref, changes, actor=actor)
+            note = str(tool_input.get("text") or "")
+            if note:
+                T.add_comment(root, ref, note, author=actor)
+            return f"{'started' if action == 'start' else 'ready for review'} {_ticket_line(ticket)}"
+        if action == "update":
+            changes = {
+                key: tool_input[key]
+                for key in (
+                    "title",
+                    "body",
+                    "status",
+                    "priority",
+                    "assignee",
+                    "estimate",
+                    "labels",
+                    "parent",
+                    "team",
+                    "project",
+                    "milestone",
+                )
+                if key in tool_input
+            }
+            if not changes:
+                raise ToolError("update needs at least one field to change")
+            return f"updated {_ticket_line(T.update_ticket(root, ref, changes, actor=actor))}"
+        if action == "comment":
+            T.add_comment(root, ref, str(tool_input.get("text") or ""), author=actor)
+            return f"commented on {ref}"
+        if action == "link":
+            kind = str(tool_input.get("kind") or "blocks")
+            other = str(tool_input.get("other") or "")
+            return f"linked {_ticket_line(T.link_tickets(root, ref, kind, other, actor=actor))}"
+    except T.TicketError as exc:
+        raise ToolError(str(exc)) from exc
+    except T.StoreError as exc:
+        raise ToolError(f"the studio ticket store is unavailable: {exc}") from exc
+    raise ToolError(f"unknown ticket action: {action}")
 
 
 def run_ingest_document(root: str, tool_input: dict) -> str:
@@ -558,7 +782,17 @@ def run_ingest_document(root: str, tool_input: dict) -> str:
     if any(d.lane == ingest.LANE_GRAPH for d in ready):
         ingest.ensure_strategies(cfg)
     staged = ingest.stage_documents(project_root, cfg, ready)
-    lines = [f"{len(staged)}건을 처리했습니다 (승인 전에는 공유 메모리에 들어가지 않습니다)."]
+    from ..memory_bridge import autosave_enabled
+
+    auto = autosave_enabled(cfg)
+    lines = [
+        f"{len(staged)}건을 처리했습니다."
+        + (
+            " 자동저장(project_memory.autosave)이라 승인 없이 등록합니다."
+            if auto
+            else " 승인 전에는 공유 메모리에 들어가지 않습니다."
+        )
+    ]
     for row in staged:
         head = (
             f"- {row['name']} · {row['kind']} · 전략 {row['strategy']} · {row['chars']:,}자 · "
@@ -570,6 +804,17 @@ def run_ingest_document(root: str, tool_input: dict) -> str:
                 f"{head}\n  저장소 정본: {row['canonical_path']} "
                 f"(예측 unit {row['graph_units']} > 상한 {ingest.GRAPH_UNIT_CEILING} — 커밋하면 팀과 공유)"
             )
+        elif auto:
+            # 실패해도 approval_id 는 살아 있다 — 문서 한 건이 막혀도 나머지는 계속 들어가고,
+            # 막힌 건은 사람이 그 id 로 이어받는다 (부분 성공을 전체 실패로 만들지 않는다).
+            try:
+                from ..project_memory import commit_approved_record
+
+                commit_approved_record(project_root, cfg, row["approval_id"])
+            except Exception as exc:
+                lines.append(f"{head}\n  자동저장 실패 — asgard memory project-approve {row['approval_id']} ({exc})")
+            else:
+                lines.append(f"{head}\n  저장 완료 (자동저장)")
         else:
             lines.append(f"{head}\n  승인 대기 — asgard memory project-approve {row['approval_id']}")
     for row in failed:

@@ -39,7 +39,8 @@ _SUMMARY = {
     "plugins": "Asgard plugin catalog",
     "memory": "Yggdrasil — personal memory · LLM wiki",
     "plan": "Asgard Plan — local product planning workspace",
-    "desktop": "Asgard Desktop — tasks, artifacts, and settings",
+    "desktop": "Asgard Studio — tasks, artifacts, and settings (프로젝트 밖에서도 열린다)",
+    "ticket": "Asgard 업무 — workspace, teams, projects, and the tickets the agent shares",
     "evolve": "self-evolution inbox — skill drafts",
     "humanize": "Bragi — grade text for machine-writing tells, any language",
     "office": "Sága — build, read, verify, and fill documents",
@@ -88,7 +89,8 @@ _FLAGS = {
     "plugins": [],
     "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
     "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
-    "desktop": ["--port", "--no-open", "--browser"],
+    "desktop": ["--browser", "--no-open", "--port", "--root"],
+    "ticket": [],  # bare `asgard ticket` = 보드 (플래그는 서브커맨드가 든다)
     "evolve": [],
     "office": [],
     "k6": [],  # bare `asgard k6` = doctor (레인이 설 준비가 됐는지부터 본다)
@@ -205,6 +207,7 @@ _MEM_SUB = {
     "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
     "proposals": "pending memory proposals awaiting your approval",
+    "autosave": "save memories without the approval round-trip",
     "approve": "approve a staged memory proposal",
     "discard": "discard a staged memory proposal",
     "reindex": "rebuild derived index",
@@ -236,6 +239,24 @@ _MEM_SUB = {
     "mcp": "stdio MCP bridge (shared memory)",
 }
 _PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}
+_TICKET_SUB = {
+    "board": "the board, folded into status columns",
+    "list": "tickets in priority order",
+    "new": "file a ticket (numbers are never reissued)",
+    "show": "one ticket — body, sub-tickets, links, comments, activity",
+    "move": "change status (start and finish times follow)",
+    "set": "change only the fields you name",
+    "comment": "leave a note on a ticket",
+    "link": "block, relate, or mark a duplicate",
+    "delete": "remove a ticket (its number stays retired)",
+    "cycle": "cycles — list, open, close (closing rolls unfinished work forward)",
+    "team": "teams — the owner of the numbering, workflow, cycles, and triage",
+    "project": "projects — dated work that cuts across teams",
+    "milestone": "milestones inside a project",
+    "update": "a project progress note (health is written by a human)",
+    "triage": "the team inbox — accept, decline",
+    "import": "bring an old per-folder board into the workspace",
+}
 
 # ── bash ──────────────────────────────────────────────────────────────────────
 _BASH_TPL = """\
@@ -393,6 +414,13 @@ def _bash() -> str:
                 "    plan)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_PLAN_SUB)} --help" -- "$cur") )\n'
+                "      fi ;;"
+            )
+        elif name == "ticket":
+            cases.append(
+                "    ticket)\n"
+                '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_TICKET_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
         elif name == "evolve":
@@ -554,6 +582,13 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_PLAN_SUB)} --help\n"
                 "      fi ;;"
             )
+        elif name == "ticket":
+            cases.append(
+                "    ticket)\n"
+                "      if (( CURRENT == 3 )); then\n"
+                f"        compadd -- {' '.join(_TICKET_SUB)} --help\n"
+                "      fi ;;"
+            )
         elif name == "evolve":
             cases.append(
                 "    evolve)\n"
@@ -665,6 +700,9 @@ def _fish() -> str:
     plan_top = "__fish_seen_subcommand_from plan; and not __fish_seen_subcommand_from " + " ".join(_PLAN_SUB)
     for sub, desc in _PLAN_SUB.items():
         lines.append(f"complete -c asgard -n \"{plan_top}\" -a {sub} -d '{desc}'")
+    ticket_top = "__fish_seen_subcommand_from ticket; and not __fish_seen_subcommand_from " + " ".join(_TICKET_SUB)
+    for sub, desc in _TICKET_SUB.items():
+        lines.append(f"complete -c asgard -n \"{ticket_top}\" -a {sub} -d '{desc}'")
     evo_top = "__fish_seen_subcommand_from evolve; and not __fish_seen_subcommand_from " + " ".join(_EVOLVE_SUB)
     for sub, desc in _EVOLVE_SUB.items():
         lines.append(f"complete -c asgard -n \"{evo_top}\" -a {sub} -d '{desc}'")

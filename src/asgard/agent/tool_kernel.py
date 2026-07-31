@@ -259,6 +259,24 @@ def _memory_propose(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(T.run_memory_propose(context.root, args), details={"kind": str(args.get("kind", ""))})
 
 
+_TICKET_READS = frozenset({"list", "get", "projects"})
+
+
+def _ticket_capability(args: dict) -> str:
+    """읽기는 inspect, 쓰기는 execute.
+
+    mutate 가 아닌 이유는 memory_propose 와 같다: 티켓은 사용자의 소스가 아니라 워크스페이스
+    (`<에이전트 홈>/studio/`)에 사는 에이전트 소유 상태다 — 리포 안에는 아무것도 안 남는다.
+    그래서 이 툴은 작업 트리를 안 건드린다. mutate 로 잠그면
+    **결함을 찾은 Verifier 가 그 결함을 적어 둘 수 없다** — 읽기 전용 역할이야말로 티켓을
+    가장 많이 끊어야 하는 자리다."""
+    return "inspect" if args.get("action") in _TICKET_READS else "execute"
+
+
+def _ticket(context: ToolContext, args: dict) -> ToolResult:
+    return ToolResult(T.run_ticket(context.root, args), details={"action": str(args.get("action", ""))})
+
+
 def _web_fetch(context: ToolContext, args: dict) -> ToolResult:
     return ToolResult(T.run_web_fetch(context.root, args), details={"fetched": True})
 
@@ -290,6 +308,37 @@ def _process_capability(args: dict) -> str:
     if args.get("action") != "start":
         return "execute"
     return "execute" if is_readonly_bash_safe(str(args.get("command") or "")) else "mutate"
+
+
+def _register_agent_state_tools(registry: "ToolRegistry") -> None:
+    """에이전트가 소유한 상태를 만지는 툴들 — 워크스페이스의 소스가 아니라 그 옆에 사는 것들.
+
+    셋 다 `mutate` 가 아닌 이유가 같다: 개인 메모리는 워크스페이스 밖이고, 프로젝트 메모리와
+    티켓은 `.asgard/` 안의 에이전트 소유 자리다. 여기를 mutate 로 잠그면 **읽기 전용 역할이
+    자기가 찾은 것을 아무 데도 못 적는다**."""
+    # 사람은 명령어를 치지 않는다 — 문서를 던지고 "이거 프로젝트에 넣어줘"라고 말한다.
+    # 그 말이 닿을 자리가 여기다. 쓰기가 아니라 승인 대기 제안이라 inspect 로 충분하다.
+    registry.register(ToolSpec("ingest_document", "inspect", T.INGEST_DOCUMENT_TOOL, _ingest_document))
+    # 자동저장이 켜지면 이 툴은 제안이 아니라 저장이다 — 그래서 inspect 가 아니라 execute 다
+    # (roles.MEMORY_SAVE_TOOL 과 같은 판정: 개인 메모리는 워크스페이스 밖이라 repo readonly 와
+    # 무관하고, 그래서 mutate 도 아니다). execute 는 모든 역할이 갖고 있어 노출은 안 좁아진다.
+    registry.register(ToolSpec("memory_propose", "execute", T.MEMORY_PROPOSE_TOOL, _memory_propose))
+    # 일감을 스스로 끊는 자리. 못 한 일·미룬 일·쪼갠 일이 마지막 보고문 한 줄로만 남으면
+    # 다음 세션이 그것을 못 읽는다 — 번호가 붙어야 다음 턴에도 그 일을 부를 수 있다.
+    registry.register(
+        ToolSpec(
+            "ticket",
+            _ticket_capability,
+            T.TICKET_TOOL,
+            _ticket,
+            visible_capabilities=frozenset({"inspect", "execute"}),
+        )
+    )
+    from .evicted import RECALL_TOOL
+
+    registry.register(
+        ToolSpec("context_recall", "inspect", RECALL_TOOL, _context_recall, available=_compaction_enabled)
+    )
 
 
 def build_session_registry(
@@ -334,16 +383,7 @@ def build_session_registry(
     )
     registry.register(ToolSpec("read_document", "inspect", T.READ_DOCUMENT_TOOL, _read_document))
     registry.register(ToolSpec("web_fetch", "inspect", T.WEB_FETCH_TOOL, _web_fetch))
-    # 사람은 명령어를 치지 않는다 — 문서를 던지고 "이거 프로젝트에 넣어줘"라고 말한다.
-    # 그 말이 닿을 자리가 여기다. 쓰기가 아니라 승인 대기 제안이라 inspect 로 충분하다.
-    registry.register(ToolSpec("ingest_document", "inspect", T.INGEST_DOCUMENT_TOOL, _ingest_document))
-    # 제안은 쓰기가 아니다 — 대기열에만 들어가고 사람이 승인해야 정본이 된다. 그래서 inspect.
-    registry.register(ToolSpec("memory_propose", "inspect", T.MEMORY_PROPOSE_TOOL, _memory_propose))
-    from .evicted import RECALL_TOOL
-
-    registry.register(
-        ToolSpec("context_recall", "inspect", RECALL_TOOL, _context_recall, available=_compaction_enabled)
-    )
+    _register_agent_state_tools(registry)
     registry.register(
         ToolSpec(
             "str_replace_based_edit_tool",
