@@ -77,10 +77,12 @@ from .pages import (
 )
 from .policy import (
     _THREATS,
+    AUTOSAVE_ENV,
     INDEX_BUDGET,
     KIND_BUDGETS,
     MEMORY_ENV,
     _memory_settings,
+    autosave_enabled,
     index_budget,
     inject_allowed,
     inject_enabled,
@@ -145,6 +147,7 @@ from .store import (
 from .temporal import event_date, ground_event_date
 
 __all__ = [
+    "AUTOSAVE_ENV",
     "DB",
     "DEFAULT_KIND",
     "DEFAULT_SKILL_PREFERENCE_SLUG",
@@ -205,6 +208,7 @@ __all__ = [
     "_vec_text",
     "_vec_upsert",
     "add",
+    "autosave_enabled",
     "build_index",
     "distill_nudge",
     "ensure_home",

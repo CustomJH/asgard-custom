@@ -11,6 +11,7 @@ from .index import _db
 from .policy import (
     _INVISIBLE,
     _memory_settings,
+    autosave_enabled,
     index_budget,
     inject_enabled,
     kind_budgets,
@@ -928,6 +929,9 @@ def distill_nudge(request: str, response: str, root: str) -> str:
         if not paths:
             return ""
         fact = f"{req[:80]} → {', '.join(paths)}"
-        return f'⠶ 탐색 발견 저장 후보 (승인 전엔 저장되지 않음):\n  asgard memory ingest "{fact}" --kind reference'
+        # 안내문의 괄호는 장식이 아니라 계약이다 — 자동저장이 켜진 기계에서 "승인 전엔 저장되지
+        # 않음"이라고 적으면, 그 명령을 친 사람은 자기가 뭘 했는지 모른 채 저장하게 된다.
+        gate = "자동저장 켜짐 — 실행하면 바로 저장됩니다" if autosave_enabled() else "승인 전엔 저장되지 않음"
+        return f'⠶ 탐색 발견 저장 후보 ({gate}):\n  asgard memory ingest "{fact}" --kind reference'
     except Exception:
         return ""  # fail-open — 넛지는 실행을 인질로 잡지 않는다

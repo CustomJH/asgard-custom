@@ -23,6 +23,16 @@
   · 주입면에도 안 실린다 — 회수는 `pages/` 만 본다.
   · 인젝션·credential 스캔을 **제안 시점과 승인 시점 두 번** 한다 (사이에 파일이 바뀔 수 있다).
 
+## 자동저장 (26-07-30 — 사용자 선택)
+
+기본은 위 그대로다. 그런데 승인을 **매번** 요구하면, 사용자가 자기 이름을 말한 자리에서도
+대화가 끊기고 터미널 명령 한 줄을 치라는 안내가 나간다. 안 치면 그 사실은 영영 안 남고,
+다음 세션이 같은 것을 또 묻는다 — 게이트가 기억을 지키는 게 아니라 기억을 막는다.
+
+그래서 게이트를 없애는 대신 **사용자 손에** 뒀다: `memory.autosave` 가 켜져 있으면 제안이
+아니라 저장이다 (`submit`). 켜져도 안 바뀌는 것 — 인젝션·credential 스캔, 근사 중복 병합,
+프로파일 격리. 이 설정은 **글로벌에서만** 읽는다 (`policy.autosave_enabled` 의 이유 참조).
+
 ## 에이전트 격리 (프로파일)
 
 대기열은 `memory_dir()` 안에 산다. 그 경로가 이미 프로파일별로 갈리므로(`profiles.home()`)
@@ -41,7 +51,7 @@ import secrets
 import time
 
 from .pages import ingest, plan_ingest
-from .policy import scan_secrets, scan_threats
+from .policy import autosave_enabled, scan_secrets, scan_threats
 from .store import DEFAULT_KIND, KINDS, _atomic_write, ensure_home, log_op
 
 QUEUE_FILE = "proposals.json"
@@ -91,11 +101,10 @@ def _agent() -> str:
         return ""
 
 
-def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
-    """제안 하나를 대기열에 올린다 — **저장은 안 한다**. 반환 = 제안 레코드.
+def _prepare(text: str, kind: str) -> str:
+    """저장 후보 한 건을 정규화하고 문턱을 태운다 — 제안이든 자동저장이든 **같은 문턱**이다.
 
     거절은 예외가 아니라 ValueError 다: 에이전트가 이유를 읽고 고쳐 다시 낼 수 있어야 한다."""
-    d = ensure_home(d)
     body = " ".join(str(text or "").split())
     if not body:
         raise ValueError("빈 제안 — 저장할 사실을 한 문장으로 적어라")
@@ -107,6 +116,13 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
         raise ValueError(f"injection scan: {threat} — 저장 거부")
     if secret := scan_secrets(body):
         raise ValueError(f"{secret} — 자격증명으로 보이는 내용은 기억에 안 넣는다")
+    return body
+
+
+def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
+    """제안 하나를 대기열에 올린다 — **저장은 안 한다**. 반환 = 제안 레코드."""
+    d = ensure_home(d)
+    body = _prepare(text, kind)
 
     now = time.time()
     rows = _live(_load(d), now)
@@ -129,6 +145,55 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
     _save(d, rows[-MAX_PENDING:])
     log_op(d, "propose", record["id"], f"kind={kind} agent={record['agent'] or '?'}")
     return dict(record)
+
+
+def submit(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
+    """에이전트의 저장 요청 하나 — 자동저장이면 바로 쓰고, 아니면 대기열에 올린다.
+
+    툴 표면(네이티브 `memory_propose`·MCP `memory_propose`)이 부르는 **단 하나의** 진입점이다.
+    설정을 표면마다 읽으면 모드마다 답이 갈린다 — 갈리면 사용자가 "어디선 저장되고 어디선
+    안 되는" 기억을 갖게 되고, 그건 기억이 아니라 복권이다.
+
+    반환은 두 갈래가 같은 모양이고 `saved` 로만 갈린다:
+      · 자동저장 on  → {"saved": True,  "action": created|merged|…, "slug": …}
+      · 자동저장 off → {"saved": False, "id": 제안 id, "plan_action": …}  (기존 계약 그대로)
+    """
+    d = ensure_home(d)
+    body = _prepare(text, kind)
+    if not autosave_enabled():
+        return {"saved": False, **stage(body, kind=kind, d=d)}
+    action, slug = ingest(body, kind=kind, d=d)
+    # 같은 사실이 대기열에 남아 있으면 사람이 "이미 저장된 것"을 다시 승인하게 된다 — 자동저장은
+    # 그 사실에 대한 승인 요청을 함께 거둔다 (설정을 켜기 전에 쌓인 제안이 남을 수 있다).
+    for row in pending(d):
+        if row.get("text") == body and row.get("kind") == kind:
+            discard(str(row.get("id") or ""), d)
+    log_op(d, "autosave", slug, f"kind={kind} agent={_agent() or '?'} -> {action}")
+    return {"saved": True, "action": action, "slug": slug, "kind": kind, "text": body}
+
+
+def outcome_text(outcome: dict) -> str:
+    """`submit` 결과를 에이전트가 읽을 한 덩어리로 — 자동저장이면 승인 안내를 **안 낸다**.
+
+    두 표면(MCP·네이티브)이 같은 문장을 쓴다. 갈리면 같은 설정으로도 모드마다 사용자가 다른
+    말을 듣고, "저장했다는데 안 됐다"가 어느 쪽 말인지 아무도 못 가린다."""
+    if outcome.get("saved"):
+        action = str(outcome.get("action") or "")
+        verb = {"created": "새 페이지", "merged": "기존 페이지에 병합", "unchanged": "이미 있던 사실"}.get(
+            action, action
+        )
+        return (
+            f"저장 완료 (memory.autosave=on) — {outcome.get('slug')} · {verb}\n"
+            f"---\n{outcome.get('text') or ''}\n---\n"
+            "사용자에게 저장했다고 알려라. 승인 명령을 안내하지 마라 — 이미 정본에 들어갔다."
+        )
+    verb = "기존 페이지에 병합" if outcome.get("plan_action") == "merge" else "새 페이지 생성"
+    return (
+        f"제안 대기 (아직 저장 안 됨) — proposal_id: {outcome['id']}\n"
+        f"kind={outcome['kind']} · 승인하면 {verb}\n---\n{outcome['text']}\n---\n"
+        f"사용자에게 이 내용을 보여주고 승인을 받아라. 승인 명령: asgard memory approve {outcome['id']}\n"
+        "매번 묻는 것이 번거롭다고 하면 자동저장을 안내하라: asgard memory autosave on --tier personal"
+    )
 
 
 def pending(d: str | None = None) -> list[dict]:
@@ -196,9 +261,12 @@ __all__ = [
     "QUEUE_FILE",
     "SCHEMA",
     "TTL_SECONDS",
+    "autosave_enabled",
     "commit",
     "discard",
     "get",
+    "outcome_text",
     "pending",
     "stage",
+    "submit",
 ]

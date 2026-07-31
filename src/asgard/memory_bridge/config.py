@@ -77,6 +77,21 @@ def project_memory_disabled(section: Mapping[str, object] | None) -> bool:
     return str(value).strip().lower() in ("false", "off", "0")
 
 
+def autosave_enabled(cfg: Mapping[str, object] | None) -> bool:
+    """2차(프로젝트) 메모리 자동저장 — `project_memory.autosave`, 기본 off.
+
+    켜면 `memory_retain` 이 approval_id 를 돌려주고 기다리는 대신 그 자리에서 커밋한다.
+    지나는 길은 **한 글자도 안 바뀐다**: 검증(validate_record)·Git 정본 선기록·backend 반영은
+    사람이 승인했을 때와 똑같은 `commit_approved_record` 를 그대로 탄다. 사라지는 것은 왕복뿐이다.
+
+    1차와 달리 이 값은 프로젝트 설정에서 읽는다 — 이 기억의 스코프가 프로젝트이기 때문이다.
+    그래도 남의 저장소 설정 하나로 쓰기가 열리지는 않는다: 커밋은 여전히 **이 기계에서 신뢰된
+    backend**(is_backend_trusted)에서만 일어나고, 그 신뢰는 사람이 `asgard memory connect` 로 준다."""
+    if not cfg:
+        return False
+    return str(cfg.get("autosave", "off")).strip().lower() in ("on", "1", "true", "yes")
+
+
 def project_memory_section(project: dict) -> dict | None:
     """통합 설정에서 프로젝트 메모리 섹션을 고른다 — project_memory 우선, 구 memory 폴백.
 

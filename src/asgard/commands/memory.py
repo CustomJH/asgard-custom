@@ -14,7 +14,6 @@ import json as _json
 import os
 import re
 import secrets
-import shutil
 import subprocess
 import sys
 import threading
@@ -286,7 +285,12 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
                 ui.warn(f"plan: absorb (delete) contradicting page — {slug}")
         else:
             ui.step("plan: create new page")
-        if not yes:
+        # 자동저장은 이 표면에도 같은 답을 해야 한다 — 툴에서는 바로 저장되는데 CLI 에서만
+        # 되묻는다면, 사용자가 켠 설정이 어디서 듣는지를 매번 기억해야 한다.
+        auto = memory.autosave_enabled()
+        if auto and not yes:
+            ui.step("autosave on — 승인 없이 저장합니다 (끄기: asgard memory autosave off --tier personal)")
+        if not yes and not auto:
             if not sys.stdin.isatty():
                 approval_id = _save_plan(text, kind, plan)
                 ui.step(f"approval-id: {approval_id}")
@@ -401,6 +405,66 @@ def run_proposals(json_out: bool = False) -> int:
             ui.step(f"{row['id']}  `{row['kind']}` · {verb} · {age}분 전 · agent={row.get('agent') or '?'}")
             ui.step(f"  {row['text'][:220]}")
         ui.step("승인: asgard memory approve <id>   ·   버림: asgard memory discard <id>")
+        ui.step("매번 승인이 번거로우면: asgard memory autosave on --tier personal")
+        return 0
+
+    return _guard(_do)
+
+
+_AUTOSAVE_TIERS = ("personal", "project", "both")
+
+
+def _autosave_state() -> tuple[bool, bool | None]:
+    """(1차, 2차) 현재 상태 — 2차는 프로젝트 메모리 미연결이면 None (끈 것과 다르다)."""
+    from ..memory import autosave_enabled as personal_on
+    from ..memory_bridge import autosave_enabled as project_on
+
+    found = find_config(os.getcwd())
+    return personal_on(), (project_on(found[1]) if found else None)
+
+
+def run_autosave(state: str | None, tier: str, json_out: bool = False) -> int:
+    """기억 자동저장 토글 — 승인 왕복을 켜고 끄는 하나뿐인 표면 (1차·2차 각각).
+
+    상태만 묻는 호출(state=None)이 기본이다: 설정은 조용히 바뀌면 안 되고, 조용히 켜져 있어도
+    안 된다. 켜 놓고 잊은 자동저장은 "왜 이게 저장돼 있지"의 답을 아무 데서도 못 찾게 만든다."""
+
+    def _do() -> int:
+        if tier not in _AUTOSAVE_TIERS:
+            ui.fail(f"tier 는 {' | '.join(_AUTOSAVE_TIERS)} 중 하나여야 합니다")
+            return 1
+        if state is not None and state not in ("on", "off"):
+            ui.fail("상태는 on 또는 off 여야 합니다")
+            return 1
+        want = state == "on"
+        if state is not None and tier in ("personal", "both"):
+            from ..settings import own_global, save_global
+
+            save_global("memory", {**own_global("memory"), "autosave": want})
+        if state is not None and tier in ("project", "both"):
+            found = find_config(os.getcwd())
+            if not found:
+                ui.warn("프로젝트 메모리가 연결돼 있지 않아 2차 자동저장은 건너뜁니다 (asgard memory connect)")
+            else:
+                from ..settings import load_project, save_project
+
+                root = found[0]
+                section = dict(load_project(root).get("project_memory") or {})
+                save_project(root, "project_memory", {**section, "autosave": want})
+        personal, project = _autosave_state()
+        if json_out:
+            print(_json.dumps({"personal": personal, "project": project}, ensure_ascii=False))
+            return 0
+        ui.head("memory autosave")
+        ui.step(f"1차 개인 기억 (memory.autosave)          · {'on' if personal else 'off'}")
+        ui.step(
+            "2차 프로젝트 기억 (project_memory.autosave) · "
+            + ("미연결" if project is None else ("on" if project else "off"))
+        )
+        if personal or project:
+            ui.step("자동저장이 켜져도 인젝션·credential 스캔과 중복 병합은 그대로 지납니다")
+        else:
+            ui.step("켜기: asgard memory autosave on [--tier personal|project|both]")
         return 0
 
     return _guard(_do)
@@ -951,31 +1015,10 @@ def run_norn(
         from ..memory import norn as norn_mod
 
         d = memory.ensure_home()
-        if wake:  # 훅 소비 표면 — due 아니면 침묵, due 면 모드별 분기 (latch 는 상태 공유)
-            due, reason = norn_mod.norn_due(d)
-            if not due:
-                return 0
-            mode = norn_mod.auto_mode()
-            if mode == "off":
-                line = norn_mod.nudge_line(d)
-                if line:
-                    print(line)
-                return 0
-            state = norn_mod._load_state(d)
-            digest = str(norn_mod._log_lines(d))
-            if state.get("auto_spawn_digest") == digest:
-                return 0  # 같은 누적 상태로 이미 스폰 — 중복 백그라운드 방지
-            state["auto_spawn_digest"] = digest
-            norn_mod._save_state(d, state)
-            exe = shutil.which("asgard") or sys.argv[0]
-            subprocess.Popen(  # 분리 스폰 — 훅 타임아웃(10s)과 LLM 소요(수십 s)를 격리한다
-                [exe, "memory", "norn", "--auto"],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                stdin=subprocess.DEVNULL,
-                start_new_session=True,
-            )
-            print(f"위그드라실 노른 자동 통합 시작 — {reason} (모드 {mode}: 추가는 자율, 병합·보관은 제안)")
+        if wake:  # 훅 소비 표면 — 판정·등급 분기·latch·스폰은 전부 norn.wake 단일 출처
+            line = norn_mod.wake(os.getcwd(), d)
+            if line:
+                print(line)
             return 0
         if auto:  # 자율 실행 본체 — 모드 자격분만 적용, 잔류분은 제안으로 보고
             result = norn_mod.run_auto(os.getcwd(), d)

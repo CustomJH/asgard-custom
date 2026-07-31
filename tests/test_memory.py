@@ -194,6 +194,65 @@ class TestMemoryDirectoryConfig(MemoryBase):
         self.assertEqual(memory.memory_dir(), os.path.join(self.tmp, ".asgard", "memory"))
 
 
+class TestAutosaveCommand(MemoryBase):
+    """`asgard memory autosave` — 왕복을 켜고 끄는 하나뿐인 표면.
+
+    설정은 조용히 바뀌어도, 조용히 켜져 있어도 안 된다: 상태 조회가 기본이고 켜고 끈 뒤에도
+    두 계층의 현재 값을 그대로 되읽어 보여준다."""
+
+    def setUp(self):
+        super().setUp()
+        # 2차는 cwd 에서 프로젝트를 찾는다 — 격리 안 하면 이 저장소의 설정을 시험이 고친다.
+        self._cwd = os.getcwd()
+        os.chdir(self.tmp)
+        self.addCleanup(os.chdir, self._cwd)
+
+    def test_bare_call_reports_both_tiers_without_changing_anything(self):
+        result = CliRunner().invoke(app, ["memory", "autosave", "--json"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(json.loads(result.output), {"personal": False, "project": None})
+
+    def test_personal_tier_turns_on_and_off(self):
+        result = CliRunner().invoke(app, ["memory", "autosave", "on", "--tier", "personal", "--json"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertTrue(json.loads(result.output)["personal"])
+        self.assertTrue(memory.autosave_enabled())
+        self.assertIs(settings.load_global()["memory"]["autosave"], True)
+
+        result = CliRunner().invoke(app, ["memory", "autosave", "off", "--tier", "personal", "--json"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(json.loads(result.output)["personal"])
+        self.assertFalse(memory.autosave_enabled())
+
+    def test_it_keeps_the_rest_of_the_memory_section(self):
+        """섹션 저장은 교체다 — 자동저장을 켜면서 주입 킬스위치를 지우면 안 된다."""
+        settings.save_global("memory", {"inject": "off"})
+        CliRunner().invoke(app, ["memory", "autosave", "on", "--tier", "personal"])
+        self.assertEqual(settings.load_global()["memory"]["inject"], "off")
+
+    def test_unknown_tier_and_state_are_refused(self):
+        for args in (["memory", "autosave", "on", "--tier", "everything"], ["memory", "autosave", "maybe"]):
+            result = CliRunner().invoke(app, args)
+            self.assertEqual(result.exit_code, 1, result.output)
+        self.assertFalse(memory.autosave_enabled())
+
+    def test_ingest_stops_asking_when_autosave_is_on(self):
+        """툴에서는 바로 저장되는데 CLI 만 되묻는다면, 설정이 어디서 듣는지를 매번 외워야 한다."""
+        result = CliRunner().invoke(app, ["memory", "ingest", "오딘의 이름은 썬더오브갓2 다", "--kind", "user"])
+        self.assertEqual(result.exit_code, 1, result.output)  # 비대화형 + 자동저장 off = 저장 안 함
+        self.assertEqual(memory._pages(self.d), [])
+
+        CliRunner().invoke(app, ["memory", "autosave", "on", "--tier", "personal"])
+        result = CliRunner().invoke(app, ["memory", "ingest", "오딘의 이름은 썬더오브갓2 다", "--kind", "user"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertEqual(len(memory._pages(self.d)), 1)
+
+    def test_project_tier_without_a_connection_says_so_and_leaves_tier_one_alone(self):
+        result = CliRunner().invoke(app, ["memory", "autosave", "on", "--tier", "project"])
+        self.assertEqual(result.exit_code, 0, result.output)
+        self.assertFalse(memory.autosave_enabled())
+
+
 class TestOkfExport(MemoryBase):
     def test_cli_exports_bundle(self):
         memory.add("기억", title="기억")

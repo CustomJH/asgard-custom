@@ -13,7 +13,7 @@ from .client import (
     backend_target,
     server_recall,
 )
-from .config import find_config, stage_retain
+from .config import autosave_enabled, find_config, stage_retain
 from .trust import is_backend_trusted, verify_backend_binding
 
 # ── MCP 툴 정의 — 최소 표면 (파괴 툴 비노출) ─────────────────────────────────────────
@@ -25,9 +25,10 @@ _PERSONAL_TOOLS = [
     {
         "name": "memory_propose",
         "description": (
-            "Propose one durable fact for your own tier-1 memory — the memory that survives across "
-            "sessions and belongs to this agent alone. Nothing is stored when you call this: it "
-            "queues the fact and returns a proposal id for the user to approve.\n\n"
+            "Record one durable fact in your own tier-1 memory — the memory that survives across "
+            "sessions and belongs to this agent alone. Whether it is stored at once or queued for "
+            "the user's approval is the user's setting (memory.autosave); the response says which "
+            "happened, so read it before telling the user anything.\n\n"
             "PROPOSE WHEN: the user corrects you or states how they want work done; the user shares "
             "a preference or a fact about themselves; you settle a decision that still binds you next "
             "session; you learn a durable fact about this environment or convention.\n\n"
@@ -74,8 +75,10 @@ _TOOLS = [
     {
         "name": "memory_retain",
         "description": (
-            "프로젝트 공유 메모리 저장 1단계 — 즉시 저장되지 않는다. 미리보기와 approval_id 를 "
-            "반환하니, 내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit 을 호출하라. "
+            "프로젝트 공유 메모리 저장. 기본은 2단계다 — 미리보기와 approval_id 를 반환하니 "
+            "내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit 을 호출하라. "
+            "사용자가 자동저장(project_memory.autosave)을 켜 뒀으면 이 호출로 커밋까지 끝난다 — "
+            "어느 쪽인지는 응답이 말하니 그것을 읽고 사용자에게 전하라. "
             "넘기기 전에 반드시: 자립적인 사실 한 건으로 정제하고, 개인 약어·세계관 용어는 "
             "프로젝트 공용 어휘로 재서술한다 (용어 방화벽)."
         ),
@@ -158,18 +161,12 @@ def _call_personal_tool(name: str, args: dict) -> tuple[str, bool]:
     from ..memory import propose
 
     try:
-        record = propose.stage(str(args.get("text") or ""), kind=str(args.get("kind") or "note"))
+        outcome = propose.submit(str(args.get("text") or ""), kind=str(args.get("kind") or "note"))
     except ValueError as exc:
         return f"{exc}", True
     except Exception as exc:
         return f"{type(exc).__name__}: {exc}", True
-    verb = "기존 페이지에 병합" if record.get("plan_action") == "merge" else "새 페이지 생성"
-    return (
-        f"제안 대기 (아직 저장 안 됨) — proposal_id: {record['id']}\n"
-        f"kind={record['kind']} · 승인하면 {verb}\n---\n{record['text']}\n---\n"
-        f"사용자에게 이 내용을 보여주고 승인을 받아라. 승인 명령: asgard memory approve {record['id']}",
-        False,
-    )
+    return propose.outcome_text(outcome), False
 
 
 def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
@@ -246,6 +243,28 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
                 binding_id=str(cfg.get("binding_id") or ""),
             )
             aid = stage_retain(root, item, target=backend_target(cfg))
+            if autosave_enabled(cfg):
+                # 스테이징은 건너뛰지 않는다 — 커밋 경로가 approval_id 를 요구하고, 그 경로가
+                # Git 정본 선기록·digest 대조를 들고 있다. 자동저장이 없애는 것은 **왕복**이지
+                # 검증이 아니다. 커밋이 실패하면 id 는 그대로 살아 있으니 사람이 이어받으면 된다.
+                try:
+                    from ..project_memory import commit_approved_record
+
+                    out = commit_approved_record(root, cfg, aid)
+                except Exception as exc:
+                    return (
+                        f"자동저장 실패 ({type(exc).__name__}: {exc})\n"
+                        f"승인 대기로 남겨 뒀다 — approval_id: {aid}\n---\n{item['content']}\n---\n"
+                        "사용자에게 사정을 알리고, 승인받은 뒤 memory_retain_commit 을 호출하라.",
+                        False,
+                    )
+                canonical = f" · canonical={out['canonical_path']}" if out.get("canonical_path") else ""
+                return (
+                    f"저장 완료 (project_memory.autosave=on, engine={cfg['engine']}, "
+                    f"project_id={cfg['project_id']}){canonical}\n---\n{item['content']}\n---\n"
+                    "사용자에게 저장했다고 알려라. memory_retain_commit 을 부르지 마라 — 이미 커밋됐다.",
+                    False,
+                )
             return (
                 f"승인 대기 (즉시 저장 안 됨) — approval_id: {aid}\n---\n{item['content']}\n---\n"
                 "이 내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit 을 호출하라.",

@@ -230,6 +230,30 @@ def inject_enabled() -> bool:
         return True
 
 
+AUTOSAVE_ENV = "ASGARD_MEMORY_AUTOSAVE"
+_ON = ("on", "1", "true", "yes")
+
+
+def autosave_enabled() -> bool:
+    """1차(개인) 기억 자동저장 — env ASGARD_MEMORY_AUTOSAVE > 글로벌 `memory.autosave`, 기본 off.
+
+    켜면 에이전트의 저장 요청이 대기열을 거치지 않고 바로 정본에 들어간다. 끄면 지금까지처럼
+    제안 → 사람 승인이다. **게이트 자체를 없애는 것이 아니라 게이트를 사용자 손에 두는 것**이다:
+    스캔(인젝션·credential)과 근사 중복 병합은 어느 쪽이든 그대로 지난다.
+
+    왜 프로젝트 설정은 안 보는가: 이 값이 답하는 질문은 "모델이 승인 없이 **내** 기억에 쓸 수
+    있는가"다. `.asgard/asgard-setting-project.json` 은 남의 저장소에서 clone 으로 딸려 오는
+    파일이라, 거기서 이 값을 켤 수 있으면 설정이 아니라 구멍이다 (개인 기억 툴이 프로젝트
+    binding 을 안 보는 것과 같은 규율 — memory_bridge.server._call_personal_tool)."""
+    v = (os.environ.get(AUTOSAVE_ENV) or "").strip().lower()
+    if v:
+        return v in _ON
+    try:
+        return str(_memory_settings().get("autosave", "off")).strip().lower() in _ON
+    except Exception:
+        return False
+
+
 # 훅 배선 클라이언트 모드 — 오딘이 직접 실행하는 코딩 에이전트 호스트. 개인 메모리는 오딘의
 # 기억이라 어느 호스트에서든 같은 기억을 본다 (오딘 결정 26-07-23). allowlist 는 네이티브 루프의
 # 임의 원격 provider 통제 표면이므로 클라이언트 모드에는 적용하지 않는다 — 끄려면 킬스위치

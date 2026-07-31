@@ -21,7 +21,7 @@ asgard memory query "<query>" --json   # FTS + word + semantic (opt-in) + explic
 asgard memory show <slug>               # full page text
 ```
 
-## Writing — always through the approval gate
+## Writing — one path, and the user decides whether it asks first
 
 **Never edit or create** files under `~/.asgard/memory/` directly (no Write/Edit). Saving has exactly one path:
 
@@ -29,11 +29,18 @@ asgard memory show <slug>               # full page text
 asgard memory ingest "<one self-contained fact>" --kind <note|user|decision|insight|reference|feedback>
 ```
 
-1. ingest prints a plan (create / merge into an existing page) and an `approval-id`
-2. Show the plan to the user and get approval (ask-before-save)
-3. Only on approval, re-run with the **same body, kind, and ID**:
-   `asgard memory ingest "<same body>" --kind <same kind> --yes --plan-id <approval-id>`
-4. The ID is bound to the approved action, target, and revision, and is consumed exactly once. On a stale error, re-plan from the start
+Whether that command asks first is the user's setting — check it once per session with `asgard memory autosave`:
+
+- **autosave on** — the command saves as it runs. Tell the user what you stored; do not hand them an approval command.
+- **autosave off** (default) — the approval gate applies:
+  1. ingest prints a plan (create / merge into an existing page) and an `approval-id`
+  2. Show the plan to the user and get approval (ask-before-save)
+  3. Only on approval, re-run with the **same body, kind, and ID**:
+     `asgard memory ingest "<same body>" --kind <same kind> --yes --plan-id <approval-id>`
+  4. The ID is bound to the approved action, target, and revision, and is consumed exactly once. On a stale error, re-plan from the start
+
+If the user is visibly tired of approving every fact, tell them the switch exists — `asgard memory autosave on
+[--tier personal|project|both]` — and that scans and dedup-merge still apply either way. Never turn it on for them.
 
 ## Invariants
 
@@ -54,7 +61,9 @@ asgard memory project-sync --all       # plan only, no external writes
 asgard memory project-sync --all --yes --plan-id <preview-plan-id> # run only after approving the same snapshot
 ```
 
-Saving project facts uses only the two-step flow: MCP `memory_retain` → user approval → `memory_retain_commit`.
+Saving project facts uses the two-step flow: MCP `memory_retain` → user approval → `memory_retain_commit`.
+When the user turned on `project_memory.autosave`, `memory_retain` commits in that one call and says so in its
+response — read the response and report what actually happened instead of assuming either shape.
 commit writes the canonical record to the repo's `.asgard/memory/records/` first, then reflects it to the backend. Backend
 restore runs only via `asgard memory project-rehydrate` preview → `--yes --plan-id`.
 Always fill `record_id`, `kind`, `title`, `content`, `source`, `source_revision`, `importance`,
