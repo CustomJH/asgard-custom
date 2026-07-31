@@ -2,17 +2,17 @@
 
 ## 이 레인의 오류가 문법이 아닌 이유
 
-무효한 XML 은 파서가 잡는다. 실제로 사람을 다치게 하는 것은 **그럴듯한데 틀린 파일**이다:
+무효한 XML은 파서가 잡는다. 실제로 사람을 다치게 하는 것은 **그럴듯한데 틀린 파일**이다:
 축이 뒤집힌 조인트, 도(degree)를 라디안 자리에 넣은 그룹 상태, 근거 없이 넓은 비활성 충돌 행렬,
 질량이 0 인 링크. 전부 문법적으로 완전하다.
 
-그래서 검증은 문법이 아니라 **의미**를 본다. 그리고 셋 중 둘 사이의 관계까지 본다 — SRDF 는
-URDF 위에 얹히는 계층이라, URDF 를 같이 주면 존재하지 않는 링크를 가리키는 계획 그룹과 한계를
+그래서 검증은 문법이 아니라 **의미**를 본다. 그리고 셋 중 둘 사이의 관계까지 본다 — SRDF는
+URDF 위에 얹히는 계층이라, URDF를 같이 주면 존재하지 않는 링크를 가리키는 계획 그룹과 한계를
 벗어난 그룹 상태를 잡는다. 이것이 이 모듈이 이전 판보다 늘린 몫이다.
 
 ## 규약
 
-`gen_urdf()` / `gen_srdf()` / `gen_sdf()` 를 정의한 파이썬이 정본이고 XML 은 생성물이다. 반환값은
+`gen_urdf()` / `gen_srdf()` / `gen_sdf()`를 정의한 파이썬이 정본이고 XML은 생성물이다. 반환값은
 문자열, `xml.etree.ElementTree.Element`, 또는 `ElementTree` 중 하나면 된다.
 
 검증은 **생성할 때 자동으로** 돈다. 별도 `validate` 동사를 두지 않는다 — 따로 두면 안 돌린다.
@@ -36,19 +36,19 @@ RADIAN_SUSPICION = 2 * math.pi
 
 
 def generate(kind: str, script: str | Path, out: str | Path | None, *, urdf: str | Path | None = None) -> Report:
-    """소스를 실행해 XML 을 쓰고, 쓴 것을 곧바로 검증한다."""
+    """소스를 실행해 XML을 쓰고, 쓴 것을 곧바로 검증한다."""
     script = Path(script).resolve()
     report = Report(tool=kind, target=str(script))
     namespace = runpy.run_path(str(script), run_name=f"__{kind}_model__")
     generator = namespace.get(f"gen_{kind}")
     if not callable(generator):
-        report.fail("contract", f"소스에 `gen_{kind}()` 가 없다 — 이 레인의 정본 진입점이다.")
+        report.fail("contract", f"소스에 `gen_{kind}()`가 없다 — 이 레인의 정본 진입점이다.")
         return report
 
     produced = generator()
     text = _to_xml_text(produced)
     if text is None:
-        report.fail("contract", f"`gen_{kind}()` 가 XML 을 돌려주지 않았다: {type(produced).__name__}")
+        report.fail("contract", f"`gen_{kind}()`가 XML을 돌려주지 않았다: {type(produced).__name__}")
         return report
 
     target = Path(out) if out else script.parent / f"{script.stem}.{kind}"
@@ -73,13 +73,13 @@ def _to_xml_text(value: object) -> str | None:
 
 
 def validate(kind: str, path: str | Path, *, urdf: str | Path | None = None) -> Report:
-    """생성된 문서를 의미 수준으로 본다. URDF 를 같이 주면 SRDF 교차 검증까지 간다."""
+    """생성된 문서를 의미 수준으로 본다. URDF를 같이 주면 SRDF 교차 검증까지 간다."""
     path = Path(path)
     report = Report(tool=f"{kind} validate", target=str(path))
     try:
         root = ET.fromstring(path.read_text(encoding="utf-8"))
     except (OSError, ET.ParseError) as error:
-        report.fail("xml", f"XML 을 읽지 못했다: {error}")
+        report.fail("xml", f"XML을 읽지 못했다: {error}")
         return report
 
     if kind == "urdf":
@@ -109,7 +109,7 @@ def _check_urdf(report: Report, root: ET.Element) -> None:
     name = root.get("name") or ""
     report.facts["로봇"] = name or "(이름 없음)"
     if not name:
-        report.fail("urdf-name", "<robot> 에 name 이 없다 — 하류 도구가 네임스페이스를 못 만든다.")
+        report.fail("urdf-name", "<robot> 에 name이 없다 — 하류 도구가 네임스페이스를 못 만든다.")
 
     links, joints = parse_urdf(root)
     report.facts["링크 / 조인트"] = f"{len(links)} / {len(joints)}"
@@ -124,18 +124,18 @@ def _check_urdf(report: Report, root: ET.Element) -> None:
     children: set[str] = set()
     dangling: list[str] = []
     for joint_name, joint in joints.items():
-        # ElementTree 의 Element 는 자식이 없으면 falsy 다. `find(...) or 기본값` 은 실재하는
-        # <parent link="..."/> 를 조용히 삼킨다 — 반드시 `is None` 으로 가른다.
+        # ElementTree의 Element는 자식이 없으면 falsy 다. `find(...) or 기본값`은 실재하는
+        # <parent link="..."/> 를 조용히 삼킨다 — 반드시 `is None`으로 가른다.
         parent = _attr(joint.find("parent"), "link")
         child = _attr(joint.find("child"), "link")
         for role, value in (("parent", parent), ("child", child)):
             if not value:
-                report.fail("urdf-joint-link", f"조인트 {joint_name} 에 {role} link 이 없다.")
+                report.fail("urdf-joint-link", f"조인트 {joint_name}에 {role} link이 없다.")
             elif value not in links:
                 dangling.append(f"{joint_name}.{role}={value}")
         if child:
             if child in children:
-                report.fail("urdf-tree", f"링크 {child} 가 두 조인트의 자식이다 — URDF 는 트리여야 한다.")
+                report.fail("urdf-tree", f"링크 {child}가 두 조인트의 자식이다 — URDF는 트리여야 한다.")
             children.add(child)
     if dangling:
         report.fail("urdf-dangling", "존재하지 않는 링크를 가리키는 조인트가 있다: " + ", ".join(dangling[:8]))
@@ -153,12 +153,12 @@ def _check_urdf(report: Report, root: ET.Element) -> None:
     for joint_name, joint in joints.items():
         kind = joint.get("type") or ""
         if kind not in JOINT_TYPES:
-            report.fail("urdf-joint-type", f"조인트 {joint_name} 의 type 이 규격 밖이다: {kind!r}")
+            report.fail("urdf-joint-type", f"조인트 {joint_name}의 type이 규격 밖이다: {kind!r}")
             continue
         if kind in BOUNDED_JOINTS:
             limit = joint.find("limit")
             if limit is None:
-                report.fail("urdf-limit", f"{kind} 조인트 {joint_name} 에 <limit> 이 없다 — 계획기가 무한 범위로 읽는다.")
+                report.fail("urdf-limit", f"{kind} 조인트 {joint_name}에 <limit> 이 없다 — 계획기가 무한 범위로 읽는다.")
             else:
                 _check_limit(report, joint_name, limit, kind)
         axis = joint.find("axis")
@@ -202,33 +202,33 @@ def _check_duplicates(report: Report, kind: str, names: list[str]) -> None:
 def _check_limit(report: Report, joint_name: str, limit: ET.Element, kind: str) -> None:
     for attribute in ("effort", "velocity"):
         if limit.get(attribute) is None:
-            report.fail("urdf-limit", f"조인트 {joint_name} 의 <limit> 에 {attribute} 가 없다(규격 필수).")
+            report.fail("urdf-limit", f"조인트 {joint_name}의 <limit> 에 {attribute}가 없다(규격 필수).")
     lower, upper = _float(limit.get("lower")), _float(limit.get("upper"))
     if kind == "revolute" and (lower is None or upper is None):
-        report.fail("urdf-limit", f"revolute 조인트 {joint_name} 에 lower/upper 가 없다.")
+        report.fail("urdf-limit", f"revolute 조인트 {joint_name}에 lower/upper가 없다.")
     elif lower is not None and upper is not None:
         if lower > upper:
-            report.fail("urdf-limit", f"조인트 {joint_name} 의 lower({lower}) 가 upper({upper}) 보다 크다.")
+            report.fail("urdf-limit", f"조인트 {joint_name}의 lower({lower})가 upper({upper})보다 크다.")
         elif kind == "revolute" and max(abs(lower), abs(upper)) > RADIAN_SUSPICION:
             report.unverified(
                 "urdf-radians",
-                f"조인트 {joint_name} 의 한계가 ±{max(abs(lower), abs(upper)):g} 로 2π 를 넘는다 — "
-                "도(degree)를 라디안 자리에 넣었을 수 있다. URDF 는 라디안이다.",
+                f"조인트 {joint_name}의 한계가 ±{max(abs(lower), abs(upper)):g}로 2π 를 넘는다 — "
+                "도(degree)를 라디안 자리에 넣었을 수 있다. URDF는 라디안이다.",
             )
 
 
 def _check_axis(report: Report, joint_name: str, axis: ET.Element) -> None:
     values = _triple(axis.get("xyz"))
     if values is None:
-        report.fail("urdf-axis", f"조인트 {joint_name} 의 axis xyz 를 읽지 못했다.")
+        report.fail("urdf-axis", f"조인트 {joint_name}의 axis xyz를 읽지 못했다.")
         return
     length = math.dist((0.0, 0.0, 0.0), values)
     if length == 0:
-        report.fail("urdf-axis", f"조인트 {joint_name} 의 회전축이 영벡터다.")
+        report.fail("urdf-axis", f"조인트 {joint_name}의 회전축이 영벡터다.")
     elif abs(length - 1.0) > 1e-3:
         report.unverified(
             "urdf-axis",
-            f"조인트 {joint_name} 의 축 길이가 {length:.4f} 다 — 규격은 단위벡터를 요구한다(파서마다 다르게 정규화한다).",
+            f"조인트 {joint_name}의 축 길이가 {length:.4f} 다 — 규격은 단위벡터를 요구한다(파서마다 다르게 정규화한다).",
         )
 
 
@@ -237,7 +237,7 @@ def _check_rpy(report: Report, label: str, rpy: str | None) -> None:
     if values and max(abs(value) for value in values) > RADIAN_SUSPICION:
         report.unverified(
             "urdf-radians",
-            f"{label} 의 rpy 최대값이 {max(abs(value) for value in values):g} 로 2π 를 넘는다 — 도를 넣었을 수 있다.",
+            f"{label}의 rpy 최대값이 {max(abs(value) for value in values):g}로 2π 를 넘는다 — 도를 넣었을 수 있다.",
         )
 
 
@@ -245,25 +245,25 @@ def _check_inertial(report: Report, link_name: str, inertial: ET.Element) -> Non
     mass = inertial.find("mass")
     value = _float(mass.get("value")) if mass is not None else None
     if value is None:
-        report.fail("urdf-mass", f"링크 {link_name} 의 <mass> 를 읽지 못했다.")
+        report.fail("urdf-mass", f"링크 {link_name}의 <mass> 를 읽지 못했다.")
     elif value <= 0:
-        report.fail("urdf-mass", f"링크 {link_name} 의 질량이 {value} 다 — 시뮬레이터가 발산한다.")
+        report.fail("urdf-mass", f"링크 {link_name}의 질량이 {value} 다 — 시뮬레이터가 발산한다.")
 
     inertia = inertial.find("inertia")
     if inertia is None:
-        report.fail("urdf-inertia", f"링크 {link_name} 에 <inertia> 가 없다.")
+        report.fail("urdf-inertia", f"링크 {link_name}에 <inertia> 가 없다.")
         return
     diagonal = [_float(inertia.get(key)) for key in ("ixx", "iyy", "izz")]
     if any(item is None for item in diagonal):
-        report.fail("urdf-inertia", f"링크 {link_name} 의 관성 대각 성분을 읽지 못했다.")
+        report.fail("urdf-inertia", f"링크 {link_name}의 관성 대각 성분을 읽지 못했다.")
         return
     ixx, iyy, izz = (float(item) for item in diagonal)  # type: ignore[arg-type]
     if min(ixx, iyy, izz) <= 0:
-        report.fail("urdf-inertia", f"링크 {link_name} 의 관성 대각에 0 이하가 있다({ixx}, {iyy}, {izz}).")
+        report.fail("urdf-inertia", f"링크 {link_name}의 관성 대각에 0 이하가 있다({ixx}, {iyy}, {izz}).")
     elif not (ixx + iyy >= izz and iyy + izz >= ixx and ixx + izz >= iyy):
         report.fail(
             "urdf-inertia",
-            f"링크 {link_name} 의 관성 텐서가 삼각 부등식을 어긴다({ixx}, {iyy}, {izz}) — 물리적으로 불가능한 강체다.",
+            f"링크 {link_name}의 관성 텐서가 삼각 부등식을 어긴다({ixx}, {iyy}, {izz}) — 물리적으로 불가능한 강체다.",
         )
 
 
@@ -310,15 +310,15 @@ def _check_srdf(report: Report, root: ET.Element, urdf_path: str | Path | None) 
     report.facts["그룹 / 상태 / EE / 비활성쌍"] = f"{len(groups)} / {len(states)} / {len(effectors)} / {len(disabled)}"
 
     if not groups:
-        report.fail("srdf-empty", "계획 그룹이 하나도 없다 — MoveIt 이 계획할 대상이 없다.")
+        report.fail("srdf-empty", "계획 그룹이 하나도 없다 — MoveIt이 계획할 대상이 없다.")
 
-    # ── SRDF 가 넘보면 안 되는 것 ─────────────────────────────────────────────
+    # ── SRDF가 넘보면 안 되는 것 ─────────────────────────────────────────────
     trespass = [tag for tag in ("link", "joint", "transmission", "gazebo") if root.find(tag) is not None]
-    # <joint> 는 virtual_joint·passive_joint 와 다르다 — 최상위 <joint> 만 침범이다.
+    # <joint> 는 virtual_joint·passive_joint와 다르다 — 최상위 <joint> 만 침범이다.
     if trespass:
         report.fail(
             "srdf-scope",
-            f"SRDF 에 구조 요소가 들어 있다: <{'>, <'.join(trespass)}>. 형상·관성·조인트 원점은 URDF 몫이다.",
+            f"SRDF에 구조 요소가 들어 있다: <{'>, <'.join(trespass)}>. 형상·관성·조인트 원점은 URDF 몫이다.",
         )
 
     urdf_links: dict[str, ET.Element] = {}
@@ -330,14 +330,14 @@ def _check_srdf(report: Report, root: ET.Element, urdf_path: str | Path | None) 
             report.facts["대조한 URDF"] = str(urdf_path)
             urdf_name = urdf_root.get("name") or ""
             if name and urdf_name and name != urdf_name:
-                report.fail("srdf-name", f"SRDF 의 robot name({name}) 이 URDF({urdf_name}) 와 다르다 — MoveIt 이 못 붙인다.")
+                report.fail("srdf-name", f"SRDF의 robot name({name})이 URDF({urdf_name})와 다르다 — MoveIt이 못 붙인다.")
         except (OSError, ET.ParseError) as error:
-            report.unverified("srdf-cross", f"URDF 를 읽지 못해 교차 검증을 건너뛴다: {error}")
+            report.unverified("srdf-cross", f"URDF를 읽지 못해 교차 검증을 건너뛴다: {error}")
     else:
         report.unverified(
             "srdf-cross",
-            "URDF 를 주지 않아 교차 검증을 못 했다 — 존재하지 않는 링크를 가리키는 그룹이 있어도 여기서는 안 잡힌다. "
-            "`--urdf <경로>` 로 같이 주라.",
+            "URDF를 주지 않아 교차 검증을 못 했다 — 존재하지 않는 링크를 가리키는 그룹이 있어도 여기서는 안 잡힌다. "
+            "`--urdf <경로>`로 같이 주라.",
         )
 
     if not urdf_links:
@@ -347,28 +347,28 @@ def _check_srdf(report: Report, root: ET.Element, urdf_path: str | Path | None) 
     for group_name, group in groups.items():
         for child in group:
             if child.tag == "link":
-                _require(report, "srdf-group-link", child.get("name"), urdf_links, f"그룹 {group_name} 의 링크")
+                _require(report, "srdf-group-link", child.get("name"), urdf_links, f"그룹 {group_name}의 링크")
             elif child.tag == "joint":
-                _require(report, "srdf-group-joint", child.get("name"), urdf_joints, f"그룹 {group_name} 의 조인트")
+                _require(report, "srdf-group-joint", child.get("name"), urdf_joints, f"그룹 {group_name}의 조인트")
             elif child.tag == "chain":
                 for role in ("base_link", "tip_link"):
-                    _require(report, "srdf-chain", child.get(role), urdf_links, f"그룹 {group_name} 의 {role}")
+                    _require(report, "srdf-chain", child.get(role), urdf_links, f"그룹 {group_name}의 {role}")
             elif child.tag == "group":
                 if child.get("name") not in groups:
-                    report.fail("srdf-subgroup", f"그룹 {group_name} 이 없는 하위 그룹을 가리킨다: {child.get('name')}")
+                    report.fail("srdf-subgroup", f"그룹 {group_name}이 없는 하위 그룹을 가리킨다: {child.get('name')}")
 
     # ── 그룹 상태가 한계 안인가 ───────────────────────────────────────────────
     for state in states:
         state_name = state.get("name") or "(이름 없음)"
         group_name = state.get("group") or ""
         if group_name and group_name not in groups:
-            report.fail("srdf-state-group", f"그룹 상태 {state_name} 이 없는 그룹을 가리킨다: {group_name}")
+            report.fail("srdf-state-group", f"그룹 상태 {state_name}이 없는 그룹을 가리킨다: {group_name}")
         for entry in state.findall("joint"):
             joint_name = entry.get("name") or ""
             value = _float(entry.get("value"))
             joint = urdf_joints.get(joint_name)
             if joint is None:
-                report.fail("srdf-state-joint", f"그룹 상태 {state_name} 이 없는 조인트를 가리킨다: {joint_name}")
+                report.fail("srdf-state-joint", f"그룹 상태 {state_name}이 없는 조인트를 가리킨다: {joint_name}")
                 continue
             if value is None:
                 continue
@@ -376,7 +376,7 @@ def _check_srdf(report: Report, root: ET.Element, urdf_path: str | Path | None) 
             if kind == "revolute" and abs(value) > RADIAN_SUSPICION:
                 report.fail(
                     "srdf-degrees",
-                    f"그룹 상태 {state_name} 의 {joint_name} 값이 {value:g} 다 — 라디안이라면 {value / math.pi:.1f}π 회전이다. "
+                    f"그룹 상태 {state_name}의 {joint_name} 값이 {value:g} 다 — 라디안이라면 {value / math.pi:.1f}π 회전이다. "
                     "도(degree)를 넣었을 가능성이 높다.",
                 )
                 continue
@@ -385,15 +385,15 @@ def _check_srdf(report: Report, root: ET.Element, urdf_path: str | Path | None) 
             if kind in BOUNDED_JOINTS and lower is not None and upper is not None and not (lower <= value <= upper):
                 report.fail(
                     "srdf-state-limit",
-                    f"그룹 상태 {state_name} 의 {joint_name}={value:g} 가 URDF 한계 [{lower:g}, {upper:g}] 밖이다.",
+                    f"그룹 상태 {state_name}의 {joint_name}={value:g}가 URDF 한계 [{lower:g}, {upper:g}] 밖이다.",
                 )
 
     # ── 엔드이펙터 ────────────────────────────────────────────────────────────
     for effector in effectors:
         effector_name = effector.get("name") or "(이름 없음)"
         if effector.get("group") and effector.get("group") not in groups:
-            report.fail("srdf-ee-group", f"엔드이펙터 {effector_name} 이 없는 그룹을 가리킨다: {effector.get('group')}")
-        _require(report, "srdf-ee-link", effector.get("parent_link"), urdf_links, f"엔드이펙터 {effector_name} 의 parent_link")
+            report.fail("srdf-ee-group", f"엔드이펙터 {effector_name}이 없는 그룹을 가리킨다: {effector.get('group')}")
+        _require(report, "srdf-ee-link", effector.get("parent_link"), urdf_links, f"엔드이펙터 {effector_name}의 parent_link")
 
     # ── 비활성 충돌쌍 ─────────────────────────────────────────────────────────
     unknown_pairs = 0
@@ -415,12 +415,12 @@ def _check_srdf(report: Report, root: ET.Element, urdf_path: str | Path | None) 
         report.ok("srdf-collision", f"비활성 충돌쌍 {len(disabled)}개 — 가능한 조합의 {len(disabled) / max(possible, 1):.0%}.")
 
     if not [check for check in report.checks if check.level == "fail"]:
-        report.ok("srdf-cross", f"URDF 와 교차 검증했다 — 그룹 {len(groups)}개가 실재하는 링크·조인트를 가리킨다.")
+        report.ok("srdf-cross", f"URDF와 교차 검증했다 — 그룹 {len(groups)}개가 실재하는 링크·조인트를 가리킨다.")
 
 
 def _require(report: Report, rule: str, value: str | None, universe: dict[str, ET.Element], label: str) -> None:
     if value and value not in universe:
-        report.fail(rule, f"{label} 이 URDF 에 없다: {value}")
+        report.fail(rule, f"{label}이 URDF에 없다: {value}")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -435,7 +435,7 @@ def _check_sdf(report: Report, root: ET.Element) -> None:
     version = root.get("version") or ""
     report.facts["SDFormat"] = version or "(없음)"
     if not version:
-        report.fail("sdf-version", "<sdf> 에 version 이 없다 — 파서가 스키마를 못 고른다.")
+        report.fail("sdf-version", "<sdf> 에 version이 없다 — 파서가 스키마를 못 고른다.")
 
     worlds = root.findall("world")
     models = root.findall("model")
@@ -460,7 +460,7 @@ def _check_sdf_model(report: Report, model: ET.Element) -> None:
     links = {element.get("name", "") for element in model.findall("link") if element.get("name")}
     joints = model.findall("joint")
     if not links:
-        report.fail("sdf-model", f"모델 {name} 에 링크가 없다.")
+        report.fail("sdf-model", f"모델 {name}에 링크가 없다.")
         return
     for joint in joints:
         joint_name = joint.get("name") or "(이름 없음)"
@@ -468,9 +468,9 @@ def _check_sdf_model(report: Report, model: ET.Element) -> None:
             element = joint.find(role)
             value = (element.text or "").strip() if element is not None else ""
             if not value:
-                report.fail("sdf-joint", f"모델 {name} 의 조인트 {joint_name} 에 <{role}> 이 없다.")
+                report.fail("sdf-joint", f"모델 {name}의 조인트 {joint_name}에 <{role}> 이 없다.")
             elif value not in links and value != "world":
-                report.fail("sdf-joint", f"모델 {name} 의 조인트 {joint_name} 이 없는 링크를 가리킨다: {value}")
+                report.fail("sdf-joint", f"모델 {name}의 조인트 {joint_name}이 없는 링크를 가리킨다: {value}")
     static = model.find("static")
     is_static = (static.text or "").strip().lower() in ("1", "true") if static is not None else False
     massless = [
@@ -481,7 +481,7 @@ def _check_sdf_model(report: Report, model: ET.Element) -> None:
     if massless and not is_static:
         report.unverified(
             "sdf-inertial",
-            f"모델 {name} 에서 <inertial> 없는 링크가 {len(massless)}개다 — 시뮬레이터가 기본 관성을 지어낸다.",
+            f"모델 {name}에서 <inertial> 없는 링크가 {len(massless)}개다 — 시뮬레이터가 기본 관성을 지어낸다.",
         )
     report.ok("sdf-model", f"모델 {name} — 링크 {len(links)}개, 조인트 {len(joints)}개.")
 
@@ -490,7 +490,7 @@ def _check_sdf_model(report: Report, model: ET.Element) -> None:
 
 
 def _attr(element: ET.Element | None, name: str) -> str:
-    """`find()` 결과에서 속성을 꺼낸다. 자식 없는 Element 가 falsy 인 함정을 여기 한 곳에 가둔다."""
+    """`find()` 결과에서 속성을 꺼낸다. 자식 없는 Element가 falsy 인 함정을 여기 한 곳에 가둔다."""
     return (element.get(name) or "") if element is not None else ""
 
 

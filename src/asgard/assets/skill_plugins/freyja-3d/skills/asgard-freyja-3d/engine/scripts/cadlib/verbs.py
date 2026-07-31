@@ -2,7 +2,7 @@
 
 ## 왜 이 동사들이 커널을 안 부르는가
 
-셀렉터 표는 STEP 을 만들 때 이미 커널이 훑어서 위상 산출물에 적어 뒀다. 면의 법선·중심·면적,
+셀렉터 표는 STEP을 만들 때 이미 커널이 훑어서 위상 산출물에 적어 뒀다. 면의 법선·중심·면적,
 에지의 길이, 부품의 부피가 전부 거기 있다. 그러니 **재는 일에는 커널이 다시 필요 없다.**
 
 이 사실이 실무에서 갖는 뜻은 크다. 검증 한 번에 수백 MB 휠과 수십 초를 쓰던 것이, 파일 하나를
@@ -11,10 +11,10 @@
 
 ## 서수의 위험과 그 대응
 
-`#f7` 은 안정된 이름이 아니다. 파라미터를 바꿔 STEP 을 다시 뽑으면 7번 면은 다른 면이 된다.
-그래서 규칙 하나가 문서 전체를 관통한다: **셀렉터는 쓰기 직전에 `refs` 로 다시 딴다.**
+`#f7`은 안정된 이름이 아니다. 파라미터를 바꿔 STEP을 다시 뽑으면 7번 면은 다른 면이 된다.
+그래서 규칙 하나가 문서 전체를 관통한다: **셀렉터는 쓰기 직전에 `refs`로 다시 딴다.**
 
-여기서는 자료구조로도 받친다 — 모든 동사가 먼저 `stepHash` 를 대조하고, 표가 STEP 보다 낡았으면
+여기서는 자료구조로도 받친다 — 모든 동사가 먼저 `stepHash`를 대조하고, 표가 STEP보다 낡았으면
 측정값을 내기 전에 그 사실을 말한다. 낡은 표로 잰 숫자는 틀린 숫자가 아니라 **다른 형상의 맞는
 숫자**라 더 위험하다.
 """
@@ -91,43 +91,43 @@ def resolve(sidecar: topology.Sidecar, selector: str) -> Resolved:
     entries = sidecar.entries(KINDS[kind])
     if not entries:
         raise SelectorError(
-            f"위상 산출물에 {KINDS[kind]} 표가 없다 — `cad.py step` 을 --detail 없이 돌렸거나 표가 비었다."
+            f"위상 산출물에 {KINDS[kind]} 표가 없다 — `cad.py step`을 --detail 없이 돌렸거나 표가 비었다."
         )
 
     for entry in entries:
         if str(entry.get("id")) == body:
             return Resolved(selector=f"#{body}", kind=kind, entry=entry)
 
-    # 어커런스가 하나뿐인 모델은 `#f13` 과 `#o1.f13` 을 같게 취급한다 — 문서가 그렇게 쓴다.
+    # 어커런스가 하나뿐인 모델은 `#f13`과 `#o1.f13`을 같게 취급한다 — 문서가 그렇게 쓴다.
     tail = body.split(".")[-1]
     matches = [entry for entry in entries if str(entry.get("id", "")).split(".")[-1] == tail]
     if len(matches) == 1:
         return Resolved(selector=f"#{body}", kind=kind, entry=matches[0])
     if len(matches) > 1:
         owners = ", ".join(f"#{entry['id']}" for entry in matches[:6])
-        raise SelectorError(f"{selector} 는 어커런스가 여럿이라 모호하다 — 하나를 고르라: {owners}")
+        raise SelectorError(f"{selector}는 어커런스가 여럿이라 모호하다 — 하나를 고르라: {owners}")
 
     available = ", ".join(f"#{entry['id']}" for entry in entries[:8])
-    raise SelectorError(f"{selector} 를 표에서 찾지 못했다. 있는 것: {available}{' …' if len(entries) > 8 else ''}")
+    raise SelectorError(f"{selector}를 표에서 찾지 못했다. 있는 것: {available}{' …' if len(entries) > 8 else ''}")
 
 
 def freshness(report: Report, step_path: str, sidecar: topology.Sidecar | None) -> topology.Sidecar | None:
-    """표가 이 STEP 의 것인지 먼저 묻는다. 아니면 측정을 계속하되 그 사실을 판정에 남긴다."""
+    """표가 이 STEP의 것인지 먼저 묻는다. 아니면 측정을 계속하되 그 사실을 판정에 남긴다."""
     if sidecar is None:
         report.unverified(
             "topology-missing",
-            f"위상 산출물({topology.sidecar_path(step_path).name})이 없다 — 이 STEP 에 대한 셀렉터 측정을 할 수 없다. "
-            "`cad.py step` 으로 생성하라.",
+            f"위상 산출물({topology.sidecar_path(step_path).name})이 없다 — 이 STEP에 대한 셀렉터 측정을 할 수 없다. "
+            "`cad.py step`으로 생성하라.",
         )
         return None
     digest = stepfile.sha256_file(step_path)
     if not sidecar.step_hash:
-        report.unverified("topology-unreadable", "위상 산출물에 stepHash 가 없다 — 신선도를 판정하지 못한다.")
+        report.unverified("topology-unreadable", "위상 산출물에 stepHash가 없다 — 신선도를 판정하지 못한다.")
     elif not sidecar.is_fresh_for(digest):
         report.fail(
             "topology-stale",
-            "위상 산출물이 이 STEP 보다 낡았다. 지금 재면 **다른 형상의 숫자**가 나온다 — "
-            "`cad.py step` 으로 다시 생성하라.",
+            "위상 산출물이 이 STEP보다 낡았다. 지금 재면 **다른 형상의 숫자**가 나온다 — "
+            "`cad.py step`으로 다시 생성하라.",
             {"stepHash": digest, "artifactHash": sidecar.step_hash},
         )
     return sidecar
@@ -166,7 +166,7 @@ def refs(
                 "부품": ", ".join(static.products) or "(이름 없음)",
             }
         )
-        # 치수는 **커널이 잰 값**을 먼저 쓴다. 위상 산출물의 부품 bbox 를 합치면 그것이 진짜
+        # 치수는 **커널이 잰 값**을 먼저 쓴다. 위상 산출물의 부품 bbox를 합치면 그것이 진짜
         # bbox 이고, 무커널 추정은 산출물이 없을 때의 차선이다. 어느 쪽을 냈는지 항상 표시한다.
         size, note = _measured_size(sidecar), "위상 산출물 — 커널이 잰 값"
         if size is None:
@@ -215,7 +215,7 @@ def refs(
 
 
 def _measured_size(sidecar: topology.Sidecar | None) -> tuple[float, float, float] | None:
-    """위상 산출물에 커널이 적어 둔 부품 bbox 들을 합쳐 전체 bbox 를 낸다."""
+    """위상 산출물에 커널이 적어 둔 부품 bbox 들을 합쳐 전체 bbox를 낸다."""
     if sidecar is None:
         return None
     lo = [float("inf")] * 3
@@ -260,7 +260,7 @@ def measure(step_path: str, *, source: str, target: str, axis: str | None) -> Re
 
     a, b = first.point, second.point
     if a is None or b is None:
-        report.unverified("measure", f"{source} 또는 {target} 에 좌표가 없다 — 잴 수 없다.")
+        report.unverified("measure", f"{source} 또는 {target}에 좌표가 없다 — 잴 수 없다.")
         return report
 
     if axis:
@@ -293,7 +293,7 @@ def measure(step_path: str, *, source: str, target: str, axis: str | None) -> Re
 
 
 def align(step_path: str, *, moving: str, target: str, mode: str, axis: str) -> Report:
-    """두 참조가 맞닿아야 하는데 얼마나 어긋났는가. **읽기 전용 델타다** — STEP 을 고치지 않는다."""
+    """두 참조가 맞닿아야 하는데 얼마나 어긋났는가. **읽기 전용 델타다** — STEP을 고치지 않는다."""
     report = Report(tool="inspect align", target=step_path)
     sidecar = freshness(report, step_path, topology.load_for(step_path))
     if sidecar is None:
@@ -318,25 +318,25 @@ def align(step_path: str, *, moving: str, target: str, mode: str, axis: str) -> 
     else:  # flush — bbox 면끼리 맞춘다
         boxes = [(entry.entry.get("bbox") or {}) for entry in (first, second)]
         if not all(isinstance(box.get("min"), list) and isinstance(box.get("max"), list) for box in boxes):
-            report.unverified("align", "bbox 가 없어 flush 정렬을 못 낸다 — center 모드를 쓰라.")
+            report.unverified("align", "bbox가 없어 flush 정렬을 못 낸다 — center 모드를 쓰라.")
             return report
         delta = float(boxes[0]["min"][index]) - float(boxes[1]["max"][index])
 
     report.facts.update({"moving": first.selector, "target": second.selector, "mode": mode, "축": key})
     report.facts["델타(mm)"] = round(delta, 6)
     if abs(delta) <= 1e-4:
-        report.ok("align", f"{first.selector} 와 {second.selector} 가 {key} 축으로 맞닿아 있다 (델타 {round(delta, 6)}mm).")
+        report.ok("align", f"{first.selector}와 {second.selector}가 {key} 축으로 맞닿아 있다 (델타 {round(delta, 6)}mm).")
     else:
         report.fail(
             "align",
-            f"{first.selector} 가 {second.selector} 에서 {key} 축으로 {round(delta, 4)}mm 어긋났다. "
+            f"{first.selector}가 {second.selector}에서 {key} 축으로 {round(delta, 4)}mm 어긋났다. "
             "소스에서 고치고 다시 생성하라 — 이 동사는 고치지 않는다.",
         )
     return report
 
 
 def frame(step_path: str, selector: str) -> Report:
-    """이 참조의 월드 좌표계. 방향이 맞는가, 축이 X/Y/Z 와 정렬됐는가."""
+    """이 참조의 월드 좌표계. 방향이 맞는가, 축이 X/Y/Z와 정렬됐는가."""
     report = Report(tool="inspect frame", target=step_path)
     sidecar = freshness(report, step_path, topology.load_for(step_path))
     if sidecar is None:
@@ -350,17 +350,17 @@ def frame(step_path: str, selector: str) -> Report:
     report.facts.update({"참조": found.selector, "종류": found.entry.get("type", ""), "중심": _vector(found.point)})
     normal = found.normal
     if normal is None:
-        report.unverified("frame", f"{found.selector} 에 법선이 없다 — 방향을 판정하지 못한다.")
+        report.unverified("frame", f"{found.selector}에 법선이 없다 — 방향을 판정하지 못한다.")
         return report
     report.facts["법선"] = _vector(normal)
     axis, cosine = _dominant_axis(normal)
     report.facts["주축"] = f"{axis} (정렬도 {round(cosine, 4)})"
     if cosine > 0.9999:
-        report.ok("frame", f"{found.selector} 의 법선이 {axis} 축과 정렬돼 있다.")
+        report.ok("frame", f"{found.selector}의 법선이 {axis} 축과 정렬돼 있다.")
     else:
         report.unverified(
             "frame",
-            f"{found.selector} 의 법선이 어느 주축과도 정렬돼 있지 않다(최근접 {axis}, 정렬도 {round(cosine, 4)}). "
+            f"{found.selector}의 법선이 어느 주축과도 정렬돼 있지 않다(최근접 {axis}, 정렬도 {round(cosine, 4)}). "
             "의도한 기울기인지 소스에서 확인하라.",
         )
     return report
@@ -379,7 +379,7 @@ def diff(before_path: str, after_path: str, *, planes: bool) -> Report:
         old, new = getattr(before, key), getattr(after, key)
         report.facts[label] = f"{old} → {new}" + (f" ({new - old:+d})" if new != old else "")
 
-    # diff 는 두 파일을 **같은 방법으로** 재는 것이 중요하다. 한쪽만 커널 값을 쓰면 변화가
+    # diff는 두 파일을 **같은 방법으로** 재는 것이 중요하다. 한쪽만 커널 값을 쓰면 변화가
     # 아니라 방법 차이를 변화로 읽는다. 그래서 양쪽 모두 무커널 경계로 통일한다.
     (old_size, method), (new_size, _) = before.best_size_mm(), after.best_size_mm()
     if old_size and new_size:
@@ -403,7 +403,7 @@ def diff(before_path: str, after_path: str, *, planes: bool) -> Report:
     if planes:
         report.unverified(
             "planes",
-            "평면 단위 대조는 두 파일의 위상 산출물이 모두 있어야 한다 — 무커널 diff 는 인구조사까지만 낸다.",
+            "평면 단위 대조는 두 파일의 위상 산출물이 모두 있어야 한다 — 무커널 diff는 인구조사까지만 낸다.",
         )
     if not report.checks:
         report.ok("diff", "인구조사와 치수가 모두 같다 — 바이트만 달라졌다(생성 시각 등).")

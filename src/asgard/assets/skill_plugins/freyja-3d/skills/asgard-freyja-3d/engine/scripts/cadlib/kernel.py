@@ -6,10 +6,10 @@
 돈다. 그래서 여기서 지키는 규율이 둘이다:
 
 1. **커널 부재는 정직한 종료다.** import 실패를 예외 문자열로 흘리지 않고, 무엇을 어떻게 깔면
-   되는지 한 줄로 말하고 종료코드 3 으로 죽는다. 3 은 "환경이 없다"를 뜻하고 1(검증 실패)과
-   다르다 — 이 둘을 섞으면 CI 가 설치 문제를 품질 문제로 읽는다.
-2. **커널이 못 잰 것을 우리가 추정하지 않는다.** 부피가 안 나오면 None 이고, 그 None 은 하류에서
-   `warn`(미확인)이 된다. 0 으로 채우거나 근사치를 넣지 않는다.
+   되는지 한 줄로 말하고 종료코드 3으로 죽는다. 3은 "환경이 없다"를 뜻하고 1(검증 실패)과
+   다르다 — 이 둘을 섞으면 CI가 설치 문제를 품질 문제로 읽는다.
+2. **커널이 못 잰 것을 우리가 추정하지 않는다.** 부피가 안 나오면 None 이고, 그 None은 하류에서
+   `warn`(미확인)이 된다. 0으로 채우거나 근사치를 넣지 않는다.
 
 ## 소스 규약
 
@@ -18,9 +18,9 @@
     def gen_step(): ...                        # 정본 진입점 — 반환값이 곧 형상
     PARTS = {"housing": housing, "lid": lid}   # 이름 있는 조립체
     result / part / assembly = <Shape>         # 단일 부품
-    (없으면) 모듈 전역에서 Shape 를 수집한다
+    (없으면) 모듈 전역에서 Shape를 수집한다
 
-라벨 붙은 `Compound` 를 반환하면 자식이 곧 부품 이름이 되어 그대로 쌍별 간섭 검사에 들어간다.
+라벨 붙은 `Compound`를 반환하면 자식이 곧 부품 이름이 되어 그대로 쌍별 간섭 검사에 들어간다.
 """
 
 from __future__ import annotations
@@ -35,9 +35,9 @@ from typing import Any
 EXPORT_NAMES = ("PARTS", "parts", "result", "part", "assembly", "model", "shape")
 
 INSTALL_HINT = (
-    "build123d 를 찾지 못했다. CAD 커널 레인은 격리 실행을 전제로 한다:\n"
+    "build123d를 찾지 못했다. CAD 커널 레인은 격리 실행을 전제로 한다:\n"
     "  python engine/scripts/cad.py step <model.py>\n"
-    "런처가 uv 로 python 3.12 + build123d 를 매번 격리해 부른다(저장소 환경을 건드리지 않는다).\n"
+    "런처가 uv로 python 3.12 + build123d를 매번 격리해 부른다(저장소 환경을 건드리지 않는다).\n"
     "첫 실행은 커널 휠을 받느라 오래 걸린다."
 )
 
@@ -59,9 +59,9 @@ def is_shape(bd: Any, value: object) -> bool:
 
 
 def _explode_compound(bd: Any, name: str, shape: Any) -> dict[str, Any]:
-    """라벨 붙은 Compound 는 자식을 부품으로 편다 — 쌍별 검사의 단위가 부품이라서다.
+    """라벨 붙은 Compound는 자식을 부품으로 편다 — 쌍별 검사의 단위가 부품이라서다.
 
-    자식이 하나뿐이거나 라벨이 없으면 펴지 않는다. 이름 없는 조각 둘을 part_0/part_1 로
+    자식이 하나뿐이거나 라벨이 없으면 펴지 않는다. 이름 없는 조각 둘을 part_0/part_1로
     불러봐야 간섭 보고를 읽을 수 없다.
     """
     children = [child for child in getattr(shape, "children", ()) or () if is_shape(bd, child)]
@@ -110,7 +110,7 @@ def run_source(script: str | Path) -> dict:
 
 
 def _valid(shape: Any) -> bool:
-    """is_valid 는 build123d 버전에 따라 속성이거나 메서드다 — 둘 다 받는다."""
+    """is_valid는 build123d 버전에 따라 속성이거나 메서드다 — 둘 다 받는다."""
     attribute = getattr(shape, "is_valid", None)
     return bool(attribute()) if callable(attribute) else bool(attribute)
 
@@ -150,7 +150,7 @@ def _geom_type(entity: Any) -> str:
 
 
 def measure_shape(bd: Any, name: str, shape: Any) -> dict:
-    """부품 하나의 커널 측정치. 못 잰 항목은 None 으로 남고 하류에서 미확인이 된다."""
+    """부품 하나의 커널 측정치. 못 잰 항목은 None으로 남고 하류에서 미확인이 된다."""
     entry: dict = {
         "name": name,
         "valid": _valid(shape),
@@ -200,10 +200,10 @@ def pair_checks(parts: dict[str, Any], clearance_limit: float) -> list[dict]:
                 entry["message"] = f"{first}–{second} 간섭·간극을 재지 못했다 — 커널 오류: {reasons}"
             elif interference > 1e-6:
                 entry["level"] = "fail"
-                entry["message"] = f"{first} 와 {second} 가 {interference}mm³ 만큼 서로를 파고든다."
+                entry["message"] = f"{first}와 {second}가 {interference}mm³ 만큼 서로를 파고든다."
             elif clearance < clearance_limit:
                 entry["level"] = "warn"
-                entry["message"] = f"{first}–{second} 간극 {clearance}mm 가 목표 {clearance_limit}mm 미만이다."
+                entry["message"] = f"{first}–{second} 간극 {clearance}mm가 목표 {clearance_limit}mm 미만이다."
             else:
                 entry["level"] = "pass"
                 entry["message"] = f"{first}–{second} 간섭 없음, 간극 {clearance}mm."
@@ -220,9 +220,9 @@ def build_index(bd: Any, parts: dict[str, Any], *, step_hash: str, version: str,
     """위상 산출물에 실을 셀렉터 표를 만든다.
 
     서수는 여기서 정해진다: 어커런스는 부품 순서, 면·에지·버텍스는 커널이 훑은 순서. 그 순서가
-    이 파일에 박히는 순간 안정된 이름이 되고, 다음에 STEP 을 다시 뽑으면 이 파일도 같이 갱신되어
-    새 순서를 얻는다. **이 파일을 안 갱신하고 STEP 만 갱신하는 것**이 이 레인의 조용한 오답이라
-    `stepHash` 가 같이 들어간다.
+    이 파일에 박히는 순간 안정된 이름이 되고, 다음에 STEP을 다시 뽑으면 이 파일도 같이 갱신되어
+    새 순서를 얻는다. **이 파일을 안 갱신하고 STEP만 갱신하는 것**이 이 레인의 조용한 오답이라
+    `stepHash`가 같이 들어간다.
     """
     occurrences: list[dict] = []
     shapes: list[dict] = []
@@ -307,9 +307,9 @@ def build_index(bd: Any, parts: dict[str, Any], *, step_hash: str, version: str,
 
 
 def tessellate(bd: Any, shape: Any, deflection: float, angular: float) -> tuple[list[float], list[int]] | None:
-    """렌더용 삼각망. 커널 API 를 먼저 쓰고, 없으면 STL 을 거쳐 간다.
+    """렌더용 삼각망. 커널 API를 먼저 쓰고, 없으면 STL을 거쳐 간다.
 
-    build123d 는 판올림에서 `tessellate` 의 시그니처를 바꾼 적이 있다. 한 경로만 믿으면 판올림
+    build123d는 판올림에서 `tessellate`의 시그니처를 바꾼 적이 있다. 한 경로만 믿으면 판올림
     때 조용히 그림이 사라지므로 STL 경유를 폴백으로 둔다 — 느리지만 항상 된다.
     """
     for attempt in (
@@ -343,7 +343,7 @@ def tessellate(bd: Any, shape: Any, deflection: float, angular: float) -> tuple[
 
 
 def _read_binary_stl(path: Path) -> tuple[list[float], list[int]] | None:
-    """바이너리 STL 을 읽어 정점 중복을 접는다. glTF 는 인덱스 메시를 원한다."""
+    """바이너리 STL을 읽어 정점 중복을 접는다. glTF는 인덱스 메시를 원한다."""
     try:
         raw = path.read_bytes()
     except OSError:
@@ -418,12 +418,12 @@ def export(
             written["3mf"] = str(path)
         except Exception as error:
             written["3mf"] = None
-            written["3mfError"] = f"{error} (lib3mf 가 필요하다 — 런처에 --with lib3mf 를 더하라)"
+            written["3mfError"] = f"{error} (lib3mf가 필요하다 — 런처에 --with lib3mf를 더하라)"
     return written
 
 
 def step_roundtrip(bd: Any, parts: dict[str, Any], step_path: str) -> dict:
-    """내보낸 STEP 을 도로 읽어 커널 수준으로 대조한다.
+    """내보낸 STEP을 도로 읽어 커널 수준으로 대조한다.
 
     파일이 써졌다는 사실과 그 파일이 맞다는 사실은 다르다. 내보내기가 조용히 형상을 잃는 사고
     (열린 셸, 라벨 소실, 단위 뒤바뀜)가 여기서만 잡힌다.

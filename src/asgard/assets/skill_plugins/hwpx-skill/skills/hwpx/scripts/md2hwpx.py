@@ -478,7 +478,7 @@ def md_to_section(md_text: str, template: str = "report") -> tuple[str, str]:
             i += 1
             continue
 
-        # 코드 블록 (``` 로 시작)
+        # 코드 블록 (```로 시작)
         if stripped.startswith('```'):
             i += 1
             code_lines = []

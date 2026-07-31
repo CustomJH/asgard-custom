@@ -7,14 +7,14 @@
 
 거동은 전부 결정론이다 (난수 없음):
 
-  지연        요청마다 정확히 ``--latency-ms`` 를 잔다.
-  오류        ``--error-rate`` 는 확률이 아니라 **주기**다. 0.25 면 4번째 요청마다 500 —
-              N 건을 보내면 실패 건수는 floor(N/4) 로 미리 안다.
-  동시성 상한 ``--max-concurrency`` 를 넘는 요청은 세마포어에서 줄을 선다. 처리량 천장은
-              Little's law 로 C/S (상한 ÷ 서비스 시간) 이고, 이 값과 하네스가 보고한
+  지연        요청마다 정확히 ``--latency-ms``를 잔다.
+  오류        ``--error-rate``는 확률이 아니라 **주기**다. 0.25 면 4번째 요청마다 500 —
+              N 건을 보내면 실패 건수는 floor(N/4)로 미리 안다.
+  동시성 상한 ``--max-concurrency``를 넘는 요청은 세마포어에서 줄을 선다. 처리량 천장은
+              Little's law로 C/S (상한 ÷ 서비스 시간) 이고, 이 값과 하네스가 보고한
               처리량이 어긋나면 부하 생성기가 동시성을 안 걸었다는 뜻이다.
 
-``/stats`` 는 서버가 자기 쪽에서 센 값을 준다. 클라이언트(k6)가 보고한 건수와 이 값이
+``/stats``는 서버가 자기 쪽에서 센 값을 준다. 클라이언트(k6)가 보고한 건수와 이 값이
 다르면 둘 중 하나는 요청을 흘린 것이다 — 어느 쪽도 조용히 넘어가면 안 되는 사건이다.
 
 단독 실행 가능 (표준 라이브러리만):
@@ -50,7 +50,7 @@ class Pacer:
         self.peak_in_flight = 0
         self.by_path: dict[str, int] = {}
 
-    # 오류는 확률이 아니라 주기다 — N 건에서 실패 건수가 floor(N*rate) 로 계산된다.
+    # 오류는 확률이 아니라 주기다 — N 건에서 실패 건수가 floor(N*rate)로 계산된다.
     def _next_ticket(self, path: str) -> tuple[int, bool]:
         with self._lock:
             self.total += 1
@@ -61,7 +61,7 @@ class Pacer:
         if self.error_rate >= 1:
             return ticket, True
         period = 1.0 / self.error_rate
-        # floor(n/period) 가 증가하는 지점이 실패 — 주기 4 면 4·8·12번째
+        # floor(n/period)가 증가하는 지점이 실패 — 주기 4 면 4·8·12번째
         return ticket, int(ticket // period) > int((ticket - 1) // period)
 
     def _enter(self) -> None:
@@ -81,7 +81,7 @@ class Pacer:
             self._gate.release()
 
     def handle(self, path: str, sleep_ms: float | None = None) -> tuple[int, bool]:
-        """요청 하나를 규정대로 처리하고 (상태코드, 실패여부) 를 준다."""
+        """요청 하나를 규정대로 처리하고 (상태코드, 실패여부)를 준다."""
         _, failed = self._next_ticket(path)
         self._enter()
         try:

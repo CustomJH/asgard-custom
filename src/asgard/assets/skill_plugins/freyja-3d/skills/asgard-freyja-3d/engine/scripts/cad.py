@@ -11,13 +11,13 @@
     python cad.py dxf      check    drawing.dxf
     python cad.py gcode    discover | inspect | slice | validate
     python cad.py parts    search "M3 socket head 12" | download <id> -o parts/m3.step
-    python cad.py urdf     robot.py        # srdf · sdf 도 같다
+    python cad.py urdf     robot.py        # srdf · sdf도 같다
 
 ## 두 갈래로 나뉘는 이유
 
 도구마다 요구가 다르다. **형상을 만드는 일**에는 B-Rep 커널이 들고, 커널은 무겁다(첫 실행에
-수백 MB 휠). **이미 만들어진 것에서 사실을 읽는 일**에는 아무것도 안 든다 — STEP 도 DXF 도
-G-code 도 URDF 도 전부 텍스트고, 위상 산출물은 우리가 쓴 파일이다.
+수백 MB 휠). **이미 만들어진 것에서 사실을 읽는 일**에는 아무것도 안 든다 — STEP도 DXF도
+G-code도 URDF도 전부 텍스트고, 위상 산출물은 우리가 쓴 파일이다.
 
 그래서 라우터가 가른다:
 
@@ -30,7 +30,7 @@ G-code 도 URDF 도 전부 텍스트고, 위상 산출물은 우리가 쓴 파�
 
 ## 커널 레인의 격리
 
-`uv run --no-project` 로 매번 새로 세운다. 저장소의 파이썬(3.14)과 커널이 휠을 내는 버전(3.12)이
+`uv run --no-project`로 매번 새로 세운다. 저장소의 파이썬(3.14)과 커널이 휠을 내는 버전(3.12)이
 달라도 되고, 프로젝트 환경을 건드리지 않는다. 재진입 표시는 환경변수 하나다 — 이 파일이 스스로를
 격리 안에서 다시 부른다.
 """
@@ -68,9 +68,9 @@ def _isolate(tool: str, argv: list[str]) -> int:
     uv = shutil.which("uv")
     if uv is None:
         sys.stderr.write(
-            f"uv 를 찾지 못했다. `{tool}` 은 격리 실행을 전제로 한다.\n"
+            f"uv를 찾지 못했다. `{tool}`은 격리 실행을 전제로 한다.\n"
             "  설치: curl -LsSf https://astral.sh/uv/install.sh | sh\n"
-            "  (검증 동사 inspect·gcode·urdf 는 uv 없이 바로 돈다.)\n"
+            "  (검증 동사 inspect·gcode·urdf는 uv 없이 바로 돈다.)\n"
         )
         return 3
 
@@ -97,9 +97,9 @@ def _step(argv: list[str]) -> Report:
     from cadlib import steplane  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(prog="cad.py step", description="소스에서 STEP·위상 산출물·진단을 낸다")
-    parser.add_argument("script", help="`gen_step()` 을 정의한 파이썬 소스")
+    parser.add_argument("script", help="`gen_step()`을 정의한 파이썬 소스")
     parser.add_argument("--out", default="build", help="산출물 디렉터리 (기본 build)")
-    parser.add_argument("--formats", default="step,stl", help="쉼표 구분 (step,stl,glb,3mf) — step 은 항상 포함된다")
+    parser.add_argument("--formats", default="step,stl", help="쉼표 구분 (step,stl,glb,3mf) — step은 항상 포함된다")
     parser.add_argument("--deflection", type=float, default=0.05, help="메시 선형 편차 mm (기본 0.05)")
     parser.add_argument("--angular", type=float, default=0.3, help="메시 각도 편차 rad (기본 0.3)")
     parser.add_argument("--clearance", type=float, default=0.2, help="조립 간극 목표 mm (기본 0.2)")
@@ -181,14 +181,14 @@ def _dxf(argv: list[str]) -> Report:
     from cadlib import drawing  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(prog="cad.py dxf", description="DXF 생성과 검사")
-    parser.add_argument("script", help="`gen_dxf()` 를 정의한 소스, 또는 `check` 다음에 .dxf 경로")
+    parser.add_argument("script", help="`gen_dxf()`를 정의한 소스, 또는 `check` 다음에 .dxf 경로")
     parser.add_argument("path", nargs="?", help="`check` 일 때 검사할 .dxf")
     parser.add_argument("-o", "--out", help="출력 경로")
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)
     if args.script == "check":
         if not args.path:
-            parser.error("check 는 검사할 .dxf 경로가 필요하다")
+            parser.error("check는 검사할 .dxf 경로가 필요하다")
         return drawing.inspect(args.path)
     return drawing.generate(args.script, args.out)
 
@@ -214,7 +214,7 @@ def _gcode(argv: list[str]) -> Report:
     slice_parser.add_argument("--execute", action="store_true", help="실제로 슬라이서를 부른다")
     slice_parser.add_argument("--search-path", help=argparse.SUPPRESS)
 
-    validate = sub.add_parser("validate", help="생성된 G-code 를 정적으로 본다")
+    validate = sub.add_parser("validate", help="생성된 G-code를 정적으로 본다")
     validate.add_argument("--gcode", required=True)
     validate.add_argument("--profile", required=True)
 
@@ -243,7 +243,7 @@ def _gcode(argv: list[str]) -> Report:
         return report
     report.facts["명령"] = " ".join(command)
     if not args.execute:
-        report.unverified("dry-run", "드라이런이다 — 아무것도 실행하지 않았다. 명령을 확인한 뒤 --execute 를 붙여라.")
+        report.unverified("dry-run", "드라이런이다 — 아무것도 실행하지 않았다. 명령을 확인한 뒤 --execute를 붙여라.")
         return report
     completed = subprocess.run(command, check=False, capture_output=True, text=True)
     report.facts["종료코드"] = completed.returncode
@@ -251,9 +251,9 @@ def _gcode(argv: list[str]) -> Report:
         report.fail("slice", f"슬라이서가 실패했다: {(completed.stderr or completed.stdout or '').strip()[:400]}")
         return report
     if not Path(args.output).is_file():
-        report.fail("slice", "슬라이서가 0 을 냈는데 출력 파일이 없다.")
+        report.fail("slice", "슬라이서가 0을 냈는데 출력 파일이 없다.")
         return report
-    report.ok("slice", f"{args.output} 를 만들었다. 프린터로 넘기기 전에 `gcode validate` 를 돌려라.")
+    report.ok("slice", f"{args.output}를 만들었다. 프린터로 넘기기 전에 `gcode validate`를 돌려라.")
     return report
 
 
@@ -267,7 +267,7 @@ def _parts(argv: list[str]) -> Report:
     search.add_argument("query")
     search.add_argument("--limit", type=int, default=8)
 
-    download = sub.add_parser("download", help="STEP 을 받는다")
+    download = sub.add_parser("download", help="STEP을 받는다")
     download.add_argument("part_id")
     download.add_argument("-o", "--out", required=True)
 
@@ -285,7 +285,7 @@ def _robot(kind: str, argv: list[str]) -> Report:
     from cadlib import robot  # noqa: PLC0415
 
     parser = argparse.ArgumentParser(prog=f"cad.py {kind}", description=f"{kind.upper()} 생성과 검증 (커널 불필요)")
-    parser.add_argument("script", help=f"`gen_{kind}()` 를 정의한 소스, 또는 `check` 다음에 기존 파일")
+    parser.add_argument("script", help=f"`gen_{kind}()`를 정의한 소스, 또는 `check` 다음에 기존 파일")
     parser.add_argument("path", nargs="?", help=f"`check` 일 때 검사할 .{kind}")
     parser.add_argument("-o", "--out", help="출력 경로")
     parser.add_argument("--urdf", help="SRDF 교차 검증에 쓸 URDF (강력 권장)")
@@ -293,7 +293,7 @@ def _robot(kind: str, argv: list[str]) -> Report:
     args = parser.parse_args(argv)
     if args.script == "check":
         if not args.path:
-            parser.error("check 는 검사할 파일 경로가 필요하다")
+            parser.error("check는 검사할 파일 경로가 필요하다")
         return robot.validate(kind, args.path, urdf=args.urdf)
     return robot.generate(kind, args.script, args.out, urdf=args.urdf)
 

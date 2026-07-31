@@ -1414,8 +1414,8 @@ def detect_char_border_bug(path):
     """글자모양에 테두리가 박힌 변환기 버그인지 탐지.
 
     hwp2hwpx는 글자모양(charPr) 대다수에 동일한 SOLID 테두리 borderFill을
-    참조시킨다(문서 전체 글자에 네모 테두리). 의도적 글자 테두리(일부 charPr만)
-    와 구분하기 위해, charPr의 절반 이상이 '실제 테두리선이 있는' borderFill을
+    참조시킨다(문서 전체 글자에 네모 테두리). 의도적 글자 테두리(일부
+    charPr만)와 구분하기 위해, charPr의 절반 이상이 '실제 테두리선이 있는' borderFill을
     참조할 때만 버그로 판정한다.
 
     Returns: {"bug": bool, "bordered_charpr": int, "total_charpr": int}
@@ -1848,8 +1848,8 @@ def set_header_footer_hwpx(src, dst, kind, text, apply=None, align=None):
     텍스트로 갱신한다 — 정부 양식은 머리말 슬롯을 2개 두기도 해서, 첫 개만
     채우면 한컴이 다른 슬롯을 골라 일부 페이지에 안 보이는 사고가 난다.
     apply=None이면 각 슬롯의 기존 applyPageType를 보존하고, align 미지정이면
-    기존 정렬을 보존한다(텍스트만 교체). 헤더 내부는 셀과 동형(subList>p>run>t)
-    이라 replace_cell_text를 재사용하며, 수정 문단의 stale linesegarray는
+    기존 정렬을 보존한다(텍스트만 교체). 헤더 내부는 셀과
+    동형(subList>p>run>t)이라 replace_cell_text를 재사용하며, 수정 문단의 stale linesegarray는
     build_splices가 자동 제거한다.
     """
     if apply is not None:
@@ -2877,8 +2877,8 @@ def set_cell_style_hwpx(src, dst, table_idx, row, col,
     """셀 배경색(--bg) 및/또는 테두리(--border on/off) 설정.
 
     셀의 현재 borderFillIDRef가 가리키는 borderFill을 복제해 요청한 변경을
-    적용한 새 borderFill을 header.xml에 (없으면) 추가하고, 셀의 borderFillIDRef
-    를 그쪽으로 바꾼다. 같은 셀만 영향을 받으므로 다른 셀의 모양은 보존된다.
+    적용한 새 borderFill을 header.xml에 (없으면) 추가하고, 셀의
+    borderFillIDRef를 그쪽으로 바꾼다. 같은 셀만 영향을 받으므로 다른 셀의 모양은 보존된다.
 
     ★ claw 대비 의도적 분기: claw-hwp는 set_cell_background/border에 <hp:cellzone>
     + char-shade를 쓰지만, 여기서는 셀 자신의 borderFillIDRef를 복제·변형한

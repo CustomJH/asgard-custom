@@ -1,4 +1,4 @@
-"""기성품 조달 — 규격 부품의 STEP 을 받아 오거나, 못 받으면 그 사실을 말한다.
+"""기성품 조달 — 규격 부품의 STEP을 받아 오거나, 못 받으면 그 사실을 말한다.
 
 ## 왜 나사산을 그리지 않는가
 
@@ -67,7 +67,7 @@ def search(query: str, *, catalog: str | None, limit: int = 8) -> Report:
 
     items = payload.get("results") if isinstance(payload, dict) else payload
     if not isinstance(items, list) or not items:
-        report.unverified("no-match", f"카탈로그가 {query!r} 에 대해 후보를 내지 않았다.")
+        report.unverified("no-match", f"카탈로그가 {query!r}에 대해 후보를 내지 않았다.")
         return report
 
     for order, item in enumerate(items[:limit], start=1):
@@ -76,12 +76,12 @@ def search(query: str, *, catalog: str | None, limit: int = 8) -> Report:
         report.facts[f"{order}. {item.get('id', '?')}"] = (
             f"{item.get('name', '')} — {item.get('standard', '')} {item.get('size', '')}".strip()
         )
-    report.ok("search", f"후보 {min(len(items), limit)}건. `--download <id>` 로 STEP 을 받는다.")
+    report.ok("search", f"후보 {min(len(items), limit)}건. `--download <id>`로 STEP을 받는다.")
     return report
 
 
 def download(part_id: str, out: str | Path, *, catalog: str | None) -> Report:
-    """STEP 을 받아 체크섬까지 확인한다. 받은 파일이 STEP 이 맞는지도 본다."""
+    """STEP을 받아 체크섬까지 확인한다. 받은 파일이 STEP이 맞는지도 본다."""
     from . import stepfile  # noqa: PLC0415 — 순환 없음, 지역 임포트로 의존을 얕게 둔다
 
     report = Report(tool="parts download", target=part_id)
@@ -97,7 +97,7 @@ def download(part_id: str, out: str | Path, *, catalog: str | None) -> Report:
 
     href = str(meta.get("step_url") or meta.get("url") or "")
     if not href:
-        report.fail("no-step", f"{part_id} 에 STEP 내려받기 주소가 없다.")
+        report.fail("no-step", f"{part_id}에 STEP 내려받기 주소가 없다.")
         return report
 
     target = Path(out)
@@ -106,7 +106,7 @@ def download(part_id: str, out: str | Path, *, catalog: str | None) -> Report:
         with urllib.request.urlopen(href, timeout=TIMEOUT) as response:  # noqa: S310 — 설정된 카탈로그만 부른다
             target.write_bytes(response.read())
     except (urllib.error.URLError, OSError) as failure:
-        report.unverified("download", f"STEP 을 받지 못했다: {failure}")
+        report.unverified("download", f"STEP을 받지 못했다: {failure}")
         return report
 
     report.facts["산출물"] = str(target)
@@ -124,12 +124,12 @@ def download(part_id: str, out: str | Path, *, catalog: str | None) -> Report:
         report.unverified("checksum", "카탈로그가 체크섬을 주지 않았다 — 무결성을 확인하지 못했다.")
 
     if not stepfile.looks_like_step(target):
-        report.fail("not-step", "받은 파일이 ISO-10303-21 머리표를 갖고 있지 않다 — STEP 이 아니다.")
+        report.fail("not-step", "받은 파일이 ISO-10303-21 머리표를 갖고 있지 않다 — STEP이 아니다.")
         return report
 
     facts = stepfile.read(target)
     report.facts["솔리드 / 면"] = f"{facts.solids} / {facts.faces}"
-    report.ok("download", f"{part_id} 를 받았다. `import_step` 으로 조립체에 넣어라.")
+    report.ok("download", f"{part_id}를 받았다. `import_step`으로 조립체에 넣어라.")
     return report
 
 

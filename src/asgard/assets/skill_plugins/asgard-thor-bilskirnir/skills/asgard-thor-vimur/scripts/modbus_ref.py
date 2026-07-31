@@ -64,7 +64,7 @@ def lrc(payload: bytes) -> int:
 
 
 def rtu_encode(unit: int, pdu: bytes) -> bytes:
-    """주소 + PDU + CRC. CRC 는 **하위 바이트 먼저** 나간다 — 나머지 필드와 반대다."""
+    """주소 + PDU + CRC. CRC는 **하위 바이트 먼저** 나간다 — 나머지 필드와 반대다."""
     body = bytes([unit]) + pdu
     return body + struct.pack("<H", crc16(body))
 
@@ -80,7 +80,7 @@ def rtu_decode(frame: bytes) -> tuple[int, bytes]:
 
 
 def rtu_silent_interval(baud: int) -> float:
-    """프레임 경계는 침묵이다 — 3.5 문자 시간. 19200 초과는 규격이 1.75ms 로 고정한다."""
+    """프레임 경계는 침묵이다 — 3.5 문자 시간. 19200 초과는 규격이 1.75ms로 고정한다."""
     if baud > 19200:
         return 0.00175
     return 3.5 * 11.0 / baud  # 문자 하나 = 시작1 + 데이터8 + 패리티1 + 정지1 = 11비트
@@ -90,7 +90,7 @@ def rtu_silent_interval(baud: int) -> float:
 
 
 def tcp_encode(transaction: int, unit: int, pdu: bytes) -> bytes:
-    """MBAP 헤더 + PDU. TCP 에는 CRC 가 없다 — 무결성은 아래 계층이 이미 보장한다."""
+    """MBAP 헤더 + PDU. TCP 에는 CRC가 없다 — 무결성은 아래 계층이 이미 보장한다."""
     return struct.pack(">HHHB", transaction, 0, len(pdu) + 1, unit) + pdu
 
 
@@ -99,9 +99,9 @@ def tcp_decode(frame: bytes) -> tuple[int, int, bytes]:
         raise FrameError(f"MBAP 헤더가 모자란다 ({len(frame)}바이트) — 헤더만 7바이트다")
     transaction, protocol, length, unit = struct.unpack(">HHHB", frame[:7])
     if protocol != 0:
-        raise FrameError(f"프로토콜 식별자가 0 이 아니다 ({protocol}) — Modbus 가 아니다")
+        raise FrameError(f"프로토콜 식별자가 0이 아니다 ({protocol}) — Modbus가 아니다")
     if length != len(frame) - 6:
-        raise FrameError(f"길이 필드 {length} 가 실제 {len(frame) - 6} 와 다르다 — 스트림을 잘못 잘랐다")
+        raise FrameError(f"길이 필드 {length}가 실제 {len(frame) - 6}와 다르다 — 스트림을 잘못 잘랐다")
     return (transaction, unit, frame[7:])
 
 
@@ -109,12 +109,12 @@ def tcp_decode(frame: bytes) -> tuple[int, int, bytes]:
 
 
 def read_request(function: int, address: int, count: int) -> bytes:
-    """주소는 **0 기반**이다. 문서의 홀딩 레지스터 40001 은 여기서 0 이다 — 이 한 칸이 가장 흔한 결함."""
+    """주소는 **0 기반**이다. 문서의 홀딩 레지스터 40001은 여기서 0 이다 — 이 한 칸이 가장 흔한 결함."""
     limit = MAX_READ_COILS if function in (0x01, 0x02) else MAX_READ_REGISTERS
     if not 1 <= count <= limit:
-        raise FrameError(f"개수 {count} 가 기능 {function:#04x} 의 범위(1..{limit})를 벗어난다")
+        raise FrameError(f"개수 {count}가 기능 {function:#04x}의 범위(1..{limit})를 벗어난다")
     if not 0 <= address <= 0xFFFF:
-        raise FrameError(f"주소 {address} 가 16비트를 벗어난다")
+        raise FrameError(f"주소 {address}가 16비트를 벗어난다")
     return struct.pack(">BHH", function, address, count)
 
 
@@ -189,7 +189,7 @@ class Device:
 
 class _Handler(socketserver.BaseRequestHandler):
     def handle(self) -> None:
-        device: Device = self.server.device  # ty: ignore[unresolved-attribute] — serve() 가 심는다
+        device: Device = self.server.device  # ty: ignore[unresolved-attribute] — serve()가 심는다
         while True:
             head = _recv_exact(self.request, 6)
             if head is None:
@@ -205,7 +205,7 @@ class _Handler(socketserver.BaseRequestHandler):
 
 
 def _recv_exact(sock: socket.socket, size: int) -> bytes | None:
-    """부분 수신은 정상이다 — TCP 는 메시지 경계를 지켜주지 않는다. 한 번 읽고 끝내면 간헐 실패한다."""
+    """부분 수신은 정상이다 — TCP는 메시지 경계를 지켜주지 않는다. 한 번 읽고 끝내면 간헐 실패한다."""
     buffer = b""
     while len(buffer) < size:
         chunk = sock.recv(size - len(buffer))
@@ -237,14 +237,14 @@ def _checks() -> list[tuple[str, bool, str]]:
         out.append((name, got == want, f"got {got!r} want {want!r}"))
 
     check("CRC-16/MODBUS 표준 확인값", hex(crc16(b"123456789")), "0x4b37")
-    check("CRC 는 하위 바이트 먼저 나간다", rtu_encode(1, b"\x03\x00\x00\x00\x01")[-2:].hex(), "840a")
+    check("CRC는 하위 바이트 먼저 나간다", rtu_encode(1, b"\x03\x00\x00\x00\x01")[-2:].hex(), "840a")
     check("LRC 2의 보수", lrc(b"\x01\x03\x00\x00\x00\x01"), 0xFB)
 
     frame = rtu_encode(17, b"\x03\x00\x6b\x00\x03")
     check("RTU 왕복", rtu_decode(frame), (17, b"\x03\x00\x6b\x00\x03"))
     corrupted = bytearray(frame)
     corrupted[3] ^= 0x01
-    out.append(("CRC 가 한 비트 변조를 잡는다", _raises(lambda: rtu_decode(bytes(corrupted))), "예외가 안 났다"))
+    out.append(("CRC가 한 비트 변조를 잡는다", _raises(lambda: rtu_decode(bytes(corrupted))), "예외가 안 났다"))
 
     tcp = tcp_encode(0x1234, 5, b"\x03\x00\x00\x00\x02")
     check("MBAP 왕복", tcp_decode(tcp), (0x1234, 5, b"\x03\x00\x00\x00\x02"))
@@ -265,8 +265,8 @@ def _checks() -> list[tuple[str, bool, str]]:
 
     check("워드 순서 big", decode_u32([0x0001, 0x0000], "big"), 0x00010000)
     check("워드 순서 little", decode_u32([0x0001, 0x0000], "little"), 0x00000001)
-    check("t3.5 는 19200 초과에서 고정", rtu_silent_interval(115200), 0.00175)
-    out.append(("t3.5 는 저속에서 보드율을 탄다", rtu_silent_interval(9600) > 0.0035, "9600 에서 3.5ms 이하"))
+    check("t3.5는 19200 초과에서 고정", rtu_silent_interval(115200), 0.00175)
+    out.append(("t3.5는 저속에서 보드율을 탄다", rtu_silent_interval(9600) > 0.0035, "9600에서 3.5ms 이하"))
     return out
 
 

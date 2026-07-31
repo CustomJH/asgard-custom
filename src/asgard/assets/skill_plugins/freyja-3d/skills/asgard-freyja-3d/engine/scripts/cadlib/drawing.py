@@ -2,10 +2,10 @@
 
 ## 두 몫이 한 파일에 있는 이유
 
-생성은 `ezdxf` 가 필요하다(만들려면 라이브러리가 든다). 그런데 **검사는 아니다.** ASCII DXF 는
+생성은 `ezdxf`가 필요하다(만들려면 라이브러리가 든다). 그런데 **검사는 아니다.** ASCII DXF는
 그룹코드 쌍의 평문 나열이라, 단위·레이어·엔티티·닫힘 여부·도면 범위가 전부 표면에서 읽힌다.
 
-이전 판에서는 "이미 있는 .dxf 를 검사하려면 ezdxf 로 직접 읽어라"가 문서의 답이었다. 그 말은
+이전 판에서는 "이미 있는 .dxf를 검사하려면 ezdxf로 직접 읽어라"가 문서의 답이었다. 그 말은
 검사가 사람 손에 맡겨졌다는 뜻이고, 손에 맡겨진 검사는 바쁠 때 건너뛴다. 여기서는 설치 없이 도는
 검사를 붙여서 건너뛸 이유를 없앤다.
 
@@ -26,7 +26,7 @@ from typing import Any
 
 from .report import Report
 
-# $INSUNITS 값. 1=inch, 4=mm 만 치수를 신뢰한다 — 나머지는 절단 서비스가 되묻는다.
+# $INSUNITS 값. 1=inch, 4=mm만 치수를 신뢰한다 — 나머지는 절단 서비스가 되묻는다.
 UNITS = {
     0: ("미지정", None),
     1: ("inch", 25.4),
@@ -42,7 +42,7 @@ CONTOUR_TYPES = ("LWPOLYLINE", "POLYLINE", "CIRCLE", "ELLIPSE", "SPLINE", "ARC",
 
 
 def generate(script: str | Path, out: str | Path | None) -> Report:
-    """`gen_dxf()` 를 정의한 파이썬 소스를 실행해 DXF 를 쓴다. 출력 경로는 CLI 가 소유한다."""
+    """`gen_dxf()`를 정의한 파이썬 소스를 실행해 DXF를 쓴다. 출력 경로는 CLI가 소유한다."""
     import runpy  # noqa: PLC0415 — 소스 실행 경로에서만 필요하다
 
     script = Path(script).resolve()
@@ -50,18 +50,18 @@ def generate(script: str | Path, out: str | Path | None) -> Report:
     try:
         import ezdxf  # noqa: F401, PLC0415
     except ImportError as error:
-        report.fail("ezdxf-missing", f"ezdxf 를 찾지 못했다 — 런처(`cad.py dxf`)로 실행하라. 원인: {error}")
+        report.fail("ezdxf-missing", f"ezdxf를 찾지 못했다 — 런처(`cad.py dxf`)로 실행하라. 원인: {error}")
         return report
 
     namespace = runpy.run_path(str(script), run_name="__dxf_model__")
     generator = namespace.get("gen_dxf")
     if not callable(generator):
-        report.fail("contract", "소스에 `gen_dxf()` 가 없다 — DXF 레인의 정본 진입점이다.")
+        report.fail("contract", "소스에 `gen_dxf()`가 없다 — DXF 레인의 정본 진입점이다.")
         return report
 
     document: Any = generator()
     if not hasattr(document, "saveas"):
-        report.fail("contract", f"`gen_dxf()` 가 ezdxf 문서를 돌려주지 않았다: {type(document).__name__}")
+        report.fail("contract", f"`gen_dxf()`가 ezdxf 문서를 돌려주지 않았다: {type(document).__name__}")
         return report
 
     target = Path(out) if out else script.parent / f"{script.stem}.dxf"
@@ -76,18 +76,18 @@ def generate(script: str | Path, out: str | Path | None) -> Report:
 
 
 def inspect(path: str | Path) -> Report:
-    """DXF 를 그룹코드로 직접 읽어 검사한다. 의존성 없음 — 어떤 DXF 에나 돈다."""
+    """DXF를 그룹코드로 직접 읽어 검사한다. 의존성 없음 — 어떤 DXF 에나 돈다."""
     path = Path(path)
     report = Report(tool="dxf inspect", target=str(path))
     raw = path.read_bytes()
 
     if raw[:18].decode("latin-1", "replace").startswith("AutoCAD Binary DXF"):
-        report.unverified("dxf-binary", "바이너리 DXF 다 — 이 검사는 ASCII DXF 만 읽는다. 판정 불능이다.")
+        report.unverified("dxf-binary", "바이너리 DXF 다 — 이 검사는 ASCII DXF만 읽는다. 판정 불능이다.")
         return report
 
     pairs = _pairs(raw.decode("utf-8", errors="replace"))
     if not pairs:
-        report.fail("dxf-empty", "그룹코드 쌍을 하나도 읽지 못했다 — DXF 가 아니거나 손상됐다.")
+        report.fail("dxf-empty", "그룹코드 쌍을 하나도 읽지 못했다 — DXF가 아니거나 손상됐다.")
         return report
 
     header = _header(pairs)
@@ -100,11 +100,11 @@ def inspect(path: str | Path) -> Report:
     if insunits is None or int(insunits) not in TRUSTED_UNITS:
         report.fail(
             "dxf-units",
-            f"$INSUNITS 가 {name} 다 — 절단 서비스가 치수를 신뢰하지 않는다. "
-            "소스에 `doc.units = ezdxf.units.MM` 을 넣어라. 조용히 재스케일하지 않는다.",
+            f"$INSUNITS가 {name} 다 — 절단 서비스가 치수를 신뢰하지 않는다. "
+            "소스에 `doc.units = ezdxf.units.MM`을 넣어라. 조용히 재스케일하지 않는다.",
         )
     else:
-        report.ok("dxf-units", f"단위가 {name} 로 명시돼 있다.")
+        report.ok("dxf-units", f"단위가 {name}로 명시돼 있다.")
 
     # ── 엔티티·레이어 ─────────────────────────────────────────────────────────
     total = sum(entities.values())
@@ -149,7 +149,7 @@ def inspect(path: str | Path) -> Report:
         if min(extents) <= 0:
             report.fail("dxf-degenerate", "도면 범위의 한 변이 0 이다 — 형상이 한 직선 위에 있다.")
     else:
-        report.unverified("dxf-extents", "$EXTMIN/$EXTMAX 를 읽지 못했다 — 도면 크기를 판정하지 못한다.")
+        report.unverified("dxf-extents", "$EXTMIN/$EXTMAX를 읽지 못했다 — 도면 크기를 판정하지 못한다.")
 
     return report
 
@@ -158,7 +158,7 @@ def inspect(path: str | Path) -> Report:
 
 
 def _pairs(text: str) -> list[tuple[int, str]]:
-    """DXF 는 (그룹코드, 값)이 한 줄씩 번갈아 나온다. 그 구조만 믿고 읽는다."""
+    """DXF는 (그룹코드, 값)이 한 줄씩 번갈아 나온다. 그 구조만 믿고 읽는다."""
     lines = text.splitlines()
     out: list[tuple[int, str]] = []
     for index in range(0, len(lines) - 1, 2):
@@ -171,7 +171,7 @@ def _pairs(text: str) -> list[tuple[int, str]]:
 
 
 def _header(pairs: list[tuple[int, str]]) -> dict[str, float]:
-    """HEADER 섹션의 변수. 코드 9 가 이름이고 바로 다음 쌍이 값이다."""
+    """HEADER 섹션의 변수. 코드 9가 이름이고 바로 다음 쌍이 값이다."""
     header: dict[str, float] = {}
     for position, (code, value) in enumerate(pairs):
         if code != 9 or position + 1 >= len(pairs):
@@ -181,7 +181,7 @@ def _header(pairs: list[tuple[int, str]]) -> dict[str, float]:
             header[value] = float(following[1])
         except ValueError:
             continue
-        # 좌표형 변수($EXTMIN 등)는 10/20/30 으로 이어진다 — 축마다 따로 담는다.
+        # 좌표형 변수($EXTMIN 등)는 10/20/30으로 이어진다 — 축마다 따로 담는다.
         for axis_offset, suffix in ((1, ".x"), (2, ".y"), (3, ".z")):
             if position + axis_offset < len(pairs):
                 axis_code, axis_value = pairs[position + axis_offset]
@@ -215,7 +215,7 @@ def _entities(pairs: list[tuple[int, str]]) -> tuple[dict[str, int], set[str]]:
 
 
 def _polyline_closure(pairs: list[tuple[int, str]]) -> tuple[int, int]:
-    """LWPOLYLINE 의 코드 70 비트 0 이 닫힘 플래그다. 엔티티마다 첫 70 만 본다."""
+    """LWPOLYLINE의 코드 70 비트 0이 닫힘 플래그다. 엔티티마다 첫 70만 본다."""
     closed = open_count = 0
     current: str | None = None
     seen_flag = False

@@ -82,10 +82,10 @@ def _load_profile(path):
 
 
 def _field(entry):
-    """프로필 값을 (value, format, coords) 로 정규화.
+    """프로필 값을 (value, format, coords)로 정규화.
 
-    entry 가 str 이면 (그 문자열, None, None).
-    entry 가 dict 이면 value/format 및 옵션 table/row/col/section 좌표.
+    entry가 str 이면 (그 문자열, None, None).
+    entry가 dict 이면 value/format 및 옵션 table/row/col/section 좌표.
     """
     if isinstance(entry, dict):
         value = entry.get("value", entry.get("val", ""))
@@ -248,7 +248,7 @@ def cmd_detect(args):
         "checkbox_keys": checkbox_keys,
         "bracket_keys": bracket_keys,
         "annotation_keys": annotation_keys,
-        "note": "키 이름만 — 기존 값/PII 는 읽어 출력하지 않음",
+        "note": "키 이름만 — 기존 값/PII는 읽어 출력하지 않음",
     })
     return 0
 
@@ -281,7 +281,7 @@ def cmd_fill(args):
 
     filled, unmatched, modified, cell_errors = engine.fill_hwpx(
         args.source, args.out, values or None, cells or None)
-    # 엔진의 filled 엔트리에는 value 가 들어있으므로 라벨/개수만 추출.
+    # 엔진의 filled 엔트리에는 value가 들어있으므로 라벨/개수만 추출.
     filled_count = len(filled)
     filled_labels = [str(f.get("label", "")) for f in filled]
 

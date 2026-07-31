@@ -8,10 +8,10 @@
     warn   못 잰 것, 또는 기준 미달이지만 배달을 막을 근거는 못 되는 것 = **미확인**
     fail   실제로 돌렸고 기준을 어겼다
 
-`warn` 을 "가벼운 fail" 로 쓰지 않는다. 여기서 warn 은 **판정 불능**이 정본 의미다. 이 구분이
+`warn`을 "가벼운 fail"로 쓰지 않는다. 여기서 warn은 **판정 불능**이 정본 의미다. 이 구분이
 흐려지면 보고가 다시 거짓말을 시작한다.
 
-종료코드도 같은 축에 붙는다: fail 이 하나라도 있으면 1, 아니면 0. warn 은 종료코드를 바꾸지
+종료코드도 같은 축에 붙는다: fail이 하나라도 있으면 1, 아니면 0. warn은 종료코드를 바꾸지
 않는다 — 미확인은 실패가 아니지만, 보고문에서는 절대 생략되지 않는다.
 """
 
@@ -26,7 +26,7 @@ LEVELS = ("pass", "warn", "fail")
 
 @dataclass(frozen=True)
 class Check:
-    """검사 하나의 결과. `id` 는 기계가 잡는 손잡이고, `message` 는 사람이 읽는 문장이다."""
+    """검사 하나의 결과. `id`는 기계가 잡는 손잡이고, `message`는 사람이 읽는 문장이다."""
 
     id: str
     level: str
@@ -130,9 +130,9 @@ def _scalar(value: object) -> str:
 
 
 def utf8_console() -> None:
-    """한국어 Windows(cp949)·서구권 Windows(cp1252) 콘솔에서 보고문이 마지막 write 에 죽는 것을 막는다.
+    """한국어 Windows(cp949)·서구권 Windows(cp1252) 콘솔에서 보고문이 마지막 write에 죽는 것을 막는다.
 
-    실측 사고: 진단을 다 만들어놓고 `'cp949' codec can't encode character '—'` 로 종료.
+    실측 사고: 진단을 다 만들어놓고 `'cp949' codec can't encode character '—'`로 종료.
     저장소 본체가 같은 결함을 두 번 고쳤고 스킬 스크립트는 그 청소에서 빠져 있었다.
     """
     for stream in (sys.stdout, sys.stderr):

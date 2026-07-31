@@ -89,7 +89,7 @@ def main():
 
     base = os.path.basename(target)
     sys.stderr.write(
-        "[report-placeholder] 차단: " + base + " 에 예시 기관명 '"
+        "[report-placeholder] 차단: " + base + "에 예시 기관명 '"
         + PLACEHOLDER + "'(report-template.hwpx placeholder)이 남아 있습니다.\n"
         "실제 보고서로 전달하기 전에 기관명을 교체하세요:\n"
         "  python3 ${CLAUDE_SKILL_DIR}/scripts/fill_hwpx.py replace "
