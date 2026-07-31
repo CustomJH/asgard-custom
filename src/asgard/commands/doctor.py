@@ -47,7 +47,7 @@ def _map_drift_detail(managed) -> str:
 def _shared_memory_check(root: str) -> dict | None:
     """설정된 프로젝트 메모리의 trust·exact binding·readiness를 Trinity와 독립 진단한다."""
     try:
-        from ..memory_bridge import find_config, is_backend_trusted, verify_backend_binding
+        from ..memory_bridge import autosave_enabled, find_config, is_backend_trusted, verify_backend_binding
         from ..project_memory_backends import get_backend
 
         found = find_config(root, strict=True)
@@ -124,6 +124,9 @@ def _shared_memory_check(root: str) -> dict | None:
                 f"engine={engine} · project_id={project_id} · {readiness.status}"
                 + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
                 + f" · auto_retain={'on' if mcfg.get('auto_retain_turns') else 'off'}"
+                # 자동저장은 무음이면 안 된다 — 켜져 있으면 "승인한 적 없는 기록"이 쌓이고,
+                # 꺼져 있으면 "승인 안 해서 안 쌓인" 것이다. 둘 다 여기서 보여야 구분된다.
+                + f" · autosave={'on' if autosave_enabled(mcfg) else 'off'}"
                 + (f" · capabilities={','.join(enabled)}" if enabled else "")
                 + learning_detail
                 + (f" · {readiness.detail}" if readiness.detail else "")
@@ -181,14 +184,17 @@ def _personal_memory_check(root: str) -> dict | None:
     전 세션에서 조용히 끈다 (개인정보 방화벽 — 의도된 기본값). 방화벽 자체는 유지하되,
     "저장은 되는데 어떤 세션도 회상하지 못하는" 상태를 사용자가 볼 수 있어야 한다."""
     try:
-        from ..memory import inject_allowed, inject_enabled
+        from ..memory import autosave_enabled, inject_allowed, inject_enabled
         from ..providers import resolve
 
+        # 쓰기 쪽 상태도 같은 줄에 싣는다 — 이 검사는 "내 기억이 어떻게 드나드는가"의 창이고,
+        # 자동저장은 그 문의 한쪽 짝이다 (읽기=inject, 쓰기=autosave).
+        save = f" · autosave={'on' if autosave_enabled() else 'off (승인 필요)'}"
         if not inject_enabled():
             return {
                 "name": "personal memory inject",
                 "ok": True,
-                "detail": "off (kill switch — 의도된 비활성)",
+                "detail": "off (kill switch — 의도된 비활성)" + save,
                 "fix": "",
             }
         rp = resolve(root)
@@ -196,13 +202,13 @@ def _personal_memory_check(root: str) -> dict | None:
             return {
                 "name": "personal memory inject",
                 "ok": True,
-                "detail": f"on · provider={rp.profile.name}",
+                "detail": f"on · provider={rp.profile.name}" + save,
                 "fix": "",
             }
         return {
             "name": "personal memory inject",
             "ok": False,
-            "detail": f"blocked · 프로젝트 선택 provider({rp.profile.name})는 개인 메모리 주입이 기본 거부",
+            "detail": f"blocked · 프로젝트 선택 provider({rp.profile.name})는 개인 메모리 주입이 기본 거부" + save,
             "fix": f'~/.asgard/asgard-setting-global.json 의 "memory".providers 에 "{rp.profile.name}" 추가 (명시 허용)',
         }
     except Exception:
@@ -304,6 +310,18 @@ def _memory_curator_check(root: str) -> dict | None:
         return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
 
 
+def _dead_local_remote(remote: str) -> bool:
+    """설정된 원격이 **로컬 경로인데 사라진** 경우. 원격 URL 은 여기서 판정하지 않는다.
+
+    doctor 가 물어야 할 것은 "적어 두었는가"가 아니라 "정본이 살아남는가"다. 로컬 경로 원격은
+    지워지면 그대로 무효인데 설정 파일에는 그대로 남는다 — 26-07-31 실측: 과거 E2E 세션이 남긴
+    `…/.tmp-mem-test/bare` 를 가리킨 채 doctor 가 내구성 ✔ 를 주고 있었다 (백업 0 · 원격 사망)."""
+    path = remote.strip()
+    if not path or "://" in path or path.startswith("git@"):
+        return False  # URL 형태 — 도달성은 네트워크 없이 못 묻는다 (fail-open)
+    return not os.path.exists(os.path.expanduser(path))
+
+
 def _memory_durability_check() -> dict | None:
     """개인 메모리의 내구성 — 백업 유무와 동기화 원격. 정본이 한 기계에만 있으면 그렇게 말한다."""
     try:
@@ -312,12 +330,17 @@ def _memory_durability_check() -> dict | None:
 
         state = backup_mod.state_note()
         remote = sync_mod.status()
+        dead = bool(remote["configured"]) and _dead_local_remote(str(remote.get("remote") or ""))
+        usable_remote = bool(remote["configured"]) and not dead
         parts = [f"backups {state['count']}" + (f" (latest {state['latest']})" if state["latest"] else "")]
-        parts.append(f"remote {remote['transport']}" if remote["configured"] else "remote 미설정")
+        if dead:
+            parts.append(f"remote {remote['transport']} — 경로 없음: {str(remote.get('remote') or '')[:60]}")
+        else:
+            parts.append(f"remote {remote['transport']}" if remote["configured"] else "remote 미설정")
         if remote["unresolved_conflicts"]:
             parts.append(f"미해결 충돌 {len(remote['unresolved_conflicts'])}")
         # 빈 위키는 잃을 게 없다 — 아직 아무것도 안 적은 사람에게 백업을 재촉하지 않는다
-        durable = state["count"] > 0 or remote["configured"] or remote["local_files"] <= 1
+        durable = state["count"] > 0 or usable_remote or remote["local_files"] <= 1
         return {
             "name": "personal memory durability",
             "ok": durable,
@@ -596,6 +619,38 @@ def _last_seen(name: str, skills: dict, use: dict) -> float:
         return _cal.timegm(_time.strptime(str(val), fmt))
     except ValueError, TypeError:
         return _time.time()  # 날짜 불명 = 판정 보류 (fail-open)
+
+
+def _baseline_checks_check(root: str) -> dict | None:
+    """게이트의 독립 증거 레인 — 적어 둔 체크가 실제로 도는가.
+
+    `baseline_checks` 는 안전 표를 넘은 것만 실행된다. 표를 못 넘은 항목은 조용히 사라지는데,
+    그러면 설정한 사람은 체크가 도는 줄 알고, 게이트는 독립 증거 없이 모델이 신고한 exit code 를
+    그대로 받는다 (26-07-31 실측: 절대경로 인터프리터 하나로 레인 전체가 침묵했다)."""
+    try:
+        from ..hooks import quest_log as quest_log_mod
+
+        policy = quest_log_mod.load_policy(root)
+        if not policy.get("baseline_checks"):
+            return None  # 자동 감지 레인 — 사용자가 적은 것이 없으니 말할 것도 없다
+        accepted, rejected = quest_log_mod.configured_checks(policy)
+    except Exception:
+        return None
+    if not rejected:
+        return {
+            "name": "baseline checks",
+            "ok": True,
+            "detail": f"{len(accepted)}개 실행 대상",
+            "fix": "",
+        }
+    return {
+        "name": "baseline checks",
+        "ok": False,
+        "detail": f"{len(accepted)}개 실행 · 안전 표 밖이라 **실행되지 않음** {len(rejected)}개: "
+        + ", ".join(cmd[:60] for cmd in rejected[:3]),
+        "fix": "체크는 테스트 러너 형상만 실행된다 — `pytest …` / `python -m pytest …` / "
+        "`uv run pytest …` 형태로 적어라 (셸 합성·스크립트 직접 실행은 거부된다)",
+    }
 
 
 def _trinity_checks(root: str) -> list[dict]:
@@ -941,6 +996,12 @@ def _mode_parity_check(root: str) -> list[dict]:
         except OSError:
             config_text = ""
         unwired = [name for name in _PARITY_WIRED if name not in config_text]
+        # 폴더가 있다고 아스가르드가 깔린 것은 아니다 — 클라이언트가 스스로 만드는 자리이기도 하다
+        # (CC 는 `.claude/settings.local.json` 만으로도 폴더를 만든다). 훅 디렉터리도 없고 배선도
+        # 한 줄 없으면 **설치된 적 없는 모드**이므로 드리프트라고 말할 것이 없다 — 그 자리에 경고를
+        # 세우면 `asgard sync` 를 시켜도 사라지지 않는 영구 경고가 된다 (26-07-31 실측).
+        if not os.path.isdir(hooks_dir) and len(unwired) == len(_PARITY_WIRED):
+            continue
         detail = "동일 규율 배선"
         if missing or unwired:
             parts = []
@@ -1143,6 +1204,8 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
         checks.append(durability)
     if tiers := _model_tier_check(os.getcwd()):
         checks.append(tiers)
+    if baseline := _baseline_checks_check(os.getcwd()):
+        checks.append(baseline)
     checks += _trinity_checks(os.getcwd())
     checks += _mode_parity_check(os.getcwd())  # 모드 간 규율 대조
     security_ok = all(ch["ok"] for ch in checks if ch.get("security"))
