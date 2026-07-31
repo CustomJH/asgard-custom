@@ -263,11 +263,6 @@ _M: dict[str, tuple[str, str]] = {
     "report_unit_turns": ("{n} turns", "턴 {n}"),
     "report_unit_block": ("{n} gate block", "게이트 차단 {n}회"),
     "report_unit_blocks": ("{n} gate blocks", "게이트 차단 {n}회"),
-    # 문체 게이트 최종 봉합 — 재작성까지 실패한 턴에만 나온다 (초안은 정본이 되지 못한다).
-    "style_gate_failed": (
-        "The reply did not pass the style check. Narrow the request to the facts you want confirmed and resend.",
-        "문체 검사를 통과하지 못했습니다. 확인된 사실만 남기도록 범위를 좁혀 다시 요청해 주세요.",
-    ),
     "lagom_stats_tokens": (
         "session spend {tok} tokens (input+output)",
         "이번 세션에서 {tok} 토큰을 썼어요 (입력+출력)",

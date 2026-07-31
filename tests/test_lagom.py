@@ -148,6 +148,31 @@ class TestRender(unittest.TestCase):
             found = lagom.style_violations(f"코드 규모가 작아 {claim}.", "코드는 13줄이다.")
             self.assertTrue(any("unsupported benefit" in item for item in found), (claim, found))
 
+    def test_maintenance_word_alone_is_a_fact_not_a_benefit_claim(self):
+        """ "유지보수"라는 단어가 곧 효용 주장은 아니다 — 주장 형태만 잡는다 (26-07-30)."""
+        found = lagom.style_violations("유지보수 절차는 RUNBOOK 문서에 적혀 있다.", "절차 어디 있어?")
+        self.assertFalse(any("유지보수" in item for item in found), found)
+
+    def test_hedged_guarantee_is_not_counted_as_an_unsupported_claim(self):
+        """부정형은 주장의 반대다 — 위반으로 세면 재작성기가 정직한 단서를 지운다."""
+        for hedge in ("동시 실행은 보장되지 않는다", "순서를 보장할 수 없다"):
+            found = lagom.style_violations(hedge, "동시 실행 순서 알려줘")
+            self.assertFalse(any("보장" in item for item in found), (hedge, found))
+        self.assertTrue(any("보장" in item for item in lagom.style_violations("실행 순서를 보장한다")))
+
+    def test_undefined_acronym_is_advisory_and_does_not_force_a_rewrite(self):
+        """세상의 약어와 하네스 자신의 상태 이름은 강제 항목이 아니다 (판정 근거가 없다)."""
+        found = lagom.style_violations("측정에는 NPS 지표를 썼고 VERIFY 는 PASS 였다.", "무슨 지표를 썼어?")
+        self.assertTrue(any("undefined term: NPS" in item for item in found), found)
+        self.assertFalse(any(term in "".join(found) for term in ("VERIFY", "PASS")), found)
+        self.assertEqual(lagom.blocking(found), [])  # 조언뿐 — 재작성을 부르지 않는다
+
+    def test_blocking_keeps_decidable_violations_and_survives_file_prefix(self):
+        found = lagom.style_violations("혁신적 RAGX 플랫폼이다.")
+        must_fix = lagom.blocking([f"docs/guide.md: {item}" for item in found])
+        self.assertTrue(any("hype" in item for item in must_fix), must_fix)
+        self.assertFalse(any("undefined term" in item for item in must_fix), must_fix)
+
     def test_style_violations_does_not_hide_banned_words_inside_generated_quotes(self):
         found = lagom.style_violations('"혁신적", "강력한" 표현은 사용하지 않았다.')
         self.assertTrue(any("혁신적" in item for item in found), found)

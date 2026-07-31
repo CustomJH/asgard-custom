@@ -843,17 +843,25 @@ class Heimdall:
 
     def _enforce_lagom_text(self, request: str, draft: str) -> str:
         """활성 축의 자연어 응답을 검사하고 한 번 재작성한다. 위반 없음(대부분)이면 스트리밍된
-        초안이 곧 정본. 재작성·봉합 시 호출부(_direct)가 교정 표식과 함께 정본을 표시한다.
+        초안이 곧 정본. 재작성 채택 시 호출부(_direct)가 교정 표식과 함께 정본을 표시한다.
 
         두 축은 독립이다 — Lagom(근거·압축)은 `/lagom off` 로 꺼지고, Bragi(사람 문체)는
-        설정 bragi.mode 로 꺼진다. 채택 기준도 다르다: 근거 위반은 무관용(한 건도 남으면 기각),
-        문체 잔여는 개선이면 채택한다. 잔여 한 건으로 답을 통째로 버리면 사용자는 답 대신
-        안내문만 받게 되고, 그게 문체 흔적 하나보다 나쁘다."""
+        설정 bragi.mode 로 꺼진다. 재작성은 강제 항목(advisory 제외)이 있을 때만 돌고,
+        채택 기준은 하나다: 강제 항목이 실제로 줄었고 근거 위반을 새로 만들지 않았으면
+        그것이 정본, 아니면 스트리밍된 초안이 정본이다.
+
+        이 층은 답을 삭제하지 않는다 (26-07-30). 이전 계약은 재작성 후에도 근거 위반이
+        한 건 남으면 본문을 통째로 버리고 안내문("문체 검사를 통과하지 못했습니다")만
+        내보냈다. 실측에서 남는 건 대부분 검사기 오탐이었고 — 세션 응답 9,770건 중 21%가
+        `undefined term`, 그 대부분이 GPS·USB 같은 세상 어휘와 PASS·HEAD 같은 하네스 자신의
+        상태 이름 — 재작성기가 사실을 잃지 않고 지울 수 있는 대상이 아니었다. 게다가 본문은
+        이미 라이브 스트리밍된 뒤라, 사용자는 답을 읽고 나서 그 답이 무효라는 통보를 받았다.
+        문체 흔적 한 건보다 답이 사라지는 쪽이 나쁘다."""
         if not (self.lagom or self.bragi):
             return draft
         from ...bragi import violations as voice_violations
         from ...i18n import t
-        from ...lagom import style_violations
+        from ...lagom import blocking, style_violations
 
         def _check(text: str) -> tuple[list[str], list[str]]:
             return (
@@ -862,8 +870,9 @@ class Heimdall:
             )
 
         grounding, voice = _check(draft)
-        if not grounding and not voice:
-            return draft
+        must_fix = blocking(grounding + voice)
+        if not must_fix:
+            return draft  # 조언만 남은 턴은 초안이 정본 — 모델 재호출 없이 통과
         self.on_status(t("lagom_fixing"))  # 재작성도 모델 호출 — 침묵 구간 커버
         try:
             revised = self._rewrite_lagom_text(request, draft, grounding + voice)
@@ -871,11 +880,26 @@ class Heimdall:
             revised = ""
         finally:
             self.on_status(None)
-        if revised:
-            after_grounding, after_voice = _check(revised)
-            if not after_grounding and (not after_voice or len(after_voice) < len(voice)):
-                return revised
-        return t("style_gate_failed")
+        after_grounding, after_voice = _check(revised) if revised else (grounding, voice)
+        after_fix = blocking(after_grounding + after_voice)
+        # 채택 = 근거 위반이 늘지 않았고 강제 항목이 줄었다. 재작성이 실패(빈 문자열·예외)하면
+        # 두 집합이 같아져 자동으로 초안 유지 — 모델 호출 실패가 답을 잃는 경로가 없다.
+        adopted = (
+            bool(revised)
+            and len(blocking(after_grounding)) <= len(blocking(grounding))
+            and len(after_fix) < len(must_fix)
+        )
+        _log_classify(
+            self.root,
+            {
+                "event": "style_gate",
+                "adopted": adopted,
+                "before": len(must_fix),
+                "after": len(after_fix),
+                "residual": (after_fix if adopted else must_fix)[:6],
+            },
+        )
+        return revised if adopted else draft
 
     def _direct(self, request: str, memory_intent: bool = False) -> str:
         """DIRECT 응답 — 본문은 on_text 로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.

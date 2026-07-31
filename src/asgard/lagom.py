@@ -32,7 +32,9 @@ _HYPE = re.compile(
     re.IGNORECASE,
 )
 _UNSUPPORTED = (
-    ("보장", re.compile(r"보장")),
+    # 부정형은 주장이 아니라 유보다 — "보장되지 않는다"를 위반으로 세면 재작성기가 정직한
+    # 단서를 지우게 된다 (하이프를 잡으려다 하이프의 반대를 지운다).
+    ("보장", re.compile(r"보장(?!\s*(?:되지\s*않|하지\s*않|할\s*수\s*없|되는\s*것은\s*아니))")),
     ("효과 담보", re.compile(r"담보")),
     ("즉시 배포", re.compile(r"즉시\s*배포")),
     ("제약 없음", re.compile(r"제약(?:이|은)?\s*없")),
@@ -46,38 +48,106 @@ _UNSUPPORTED = (
     ("기술 부채 감소", re.compile(r"기술\s*부채.{0,12}(?:절감|감소|줄)")),
     ("근원적 해결", re.compile(r"근원적(?:으로)?\s*해결")),
     ("설정 없는 즉시 실행", re.compile(r"환경\s*설정\s*없이|바로\s*실행\s*가능")),
-    ("유지보수 효과", re.compile(r"유지보수|유지관리")),
+    # 단어 자체가 아니라 효용 주장 형태만 잡는다 — "유지보수 절차는 문서에 있다" 같은 사실
+    # 서술까지 위반으로 세면 재작성기가 지울 수 없는 잔여만 쌓인다 (26-07-30).
+    ("유지보수 효과", re.compile(r"유지(?:보수|관리).{0,12}(?:쉬|용이|편|낮|줄|좋|향상|개선|절감)")),
 )
 _FOREIGN_DUP = re.compile(r"[가-힣]{2,}\s*\([A-Za-z][A-Za-z0-9 .+/#-]{1,40}\)")
 _COINED_TERM = re.compile(r"무의존성|제로\s*디펜던시", re.IGNORECASE)
 _CORRECTION_META = re.compile(r"문체\s*(?:계약|정책|규율)|하이프|대체안.{0,12}제시|요청.{0,20}쓸\s*수\s*없")
 _ACRONYM = re.compile(r"(?<![A-Z0-9])[A-Z][A-Z0-9]{2,9}(?![A-Z0-9])")
+_ROMAN_NUMERAL = re.compile(r"^[IVXLCDM]+$")
+# 이 규칙이 잡으려는 건 모델이 만들어 낸 축약(RAGX)이지 세상의 약어가 아니다. 실측(사용자
+# 세션 응답 9,770건)에서 근거 위반의 대부분이 여기서 나왔고 GPS·USB·NASA 같은 일반 어휘였다
+# (26-07-30). 널리 통용되는 약어와 하네스 자신의 상태 이름은 면제한다 — 재작성기가 사실을
+# 잃지 않고는 지울 수 없는 대상이라, 남겨 두면 잔여 위반만 쌓인다.
 _KNOWN_TERMS = {
     "API",
+    "ARM",
     "ASCII",
+    "AWS",
+    "CDN",
     "CLI",
     "CPU",
     "CSS",
+    "CSV",
+    "DNS",
+    "DOM",
+    "ENV",
+    "FAQ",
+    "GIF",
+    "GPS",
     "GPU",
     "HTML",
     "HTTP",
     "HTTPS",
+    "IDE",
+    "ISO",
+    "JPEG",
     "JSON",
+    "JWT",
+    "LLM",
+    "MCP",
+    "NPM",
+    "ORM",
+    "PDF",
+    "PNG",
     "PR",
+    "RAG",
     "RAM",
+    "REPL",
     "REST",
     "SDK",
     "SQL",
+    "SSH",
+    "SSL",
+    "SVG",
+    "TCP",
+    "TLS",
+    "TOML",
+    "TTL",
     "TUI",
     "UI",
     "URL",
+    "USB",
     "UTF",
     "UUID",
     "UX",
     "XML",
     "YAML",
 }
+# 하네스가 사용자에게 보여 온 자신의 상태·역할 이름 — 대문자지만 축약이 아니다.
+_SURFACE_TOKENS = {
+    "BLOCK",
+    "DIRECT",
+    "DONE",
+    "FAIL",
+    "HEAD",
+    "PASS",
+    "PLAN",
+    "REPLAN",
+    "THINKER",
+    "TODO",
+    "VERIFY",
+    "WORK",
+}
+# 첫 등장 자리에서 곧바로 정의한 형태는 허용한다 — 한국어(`RAGX는`, `RAGX:`)와
+# 영어(`RAGX (Retrieval...)`, `RAGX is`, `RAGX stands for`, `RAGX —`) 양쪽.
+_DEFINED_AT_MENTION = r"\s*(?:는|은|란|이란|이라는|:|\(|—|--?\s|is\b|are\b|means\b|stands for\b)"
 _PROSE_EXTENSIONS = {".md", ".mdx", ".txt", ".rst", ".adoc"}
+# 조언 표식 — 재작성기에는 그대로 전달되지만 재작성·수리를 혼자서 강제하지는 않는다.
+# 판정이 확실한 위반(하이프·근거 없는 효용 주장)과 판정할 수 없는 신호를 가르는 자리다.
+ADVISORY = "advisory: "
+
+
+def is_advisory(finding: str) -> bool:
+    """조언 항목 여부 — 파일 접두(`docs/x.md: ...`)가 붙어도 판별된다."""
+    return ADVISORY in finding
+
+
+def blocking(findings: list[str]) -> list[str]:
+    """재작성·수리를 강제하는 항목만 남긴다."""
+    return [f for f in findings if not is_advisory(f)]
 
 
 def _lintable_text(text: str) -> str:
@@ -97,7 +167,10 @@ def _lintable_text(text: str) -> str:
 
 
 def style_violations(text: str, source: str = "") -> list[str]:
-    """명백한 Lagom 문체 위반을 반환한다. source에 명시된 효용 주장은 새 추론으로 보지 않는다."""
+    """명백한 Lagom 문체 위반을 반환한다. source에 명시된 효용 주장은 새 추론으로 보지 않는다.
+
+    `ADVISORY` 접두가 붙은 항목은 조언이다 — 재작성 입력에는 실리되 혼자서 재작성·수리를
+    강제하지 않는다. 소비자는 `blocking()` 으로 강제 항목만 골라 판정한다."""
     body = _lintable_text(text)
     evidence = _lintable_text(source)
     found: list[str] = []
@@ -114,12 +187,15 @@ def style_violations(text: str, source: str = "") -> list[str]:
             found.append(f"unsupported benefit claim: {label}")
     source_terms = set(_ACRONYM.findall(evidence))
     for term in dict.fromkeys(_ACRONYM.findall(body)):
-        if term in _KNOWN_TERMS or term in source_terms:
+        if term in _KNOWN_TERMS or term in _SURFACE_TOKENS or term in source_terms:
             continue
-        # 첫 등장 자리에서 곧바로 정의한 형태는 허용한다: `RAGX는 ...`, `RAGX: ...`, `RAGX(...)`.
-        if re.search(rf"(?<![A-Z0-9]){re.escape(term)}(?![A-Z0-9])\s*(?:는|은|이란|:|\()", body):
+        if _ROMAN_NUMERAL.match(term):  # III·VII 은 축약이 아니다
             continue
-        found.append(f"undefined term: {term}")
+        if re.search(rf"(?<![A-Z0-9]){re.escape(term)}(?![A-Z0-9]){_DEFINED_AT_MENTION}", body):
+            continue
+        # 조언에 둔다 — 이 자리에서 만들어 낸 축약(RAGX)과 세상의 약어(NASA)를 가를 근거가
+        # 검사기에 없다. 실측 1,377종 중 사실상 전부가 후자였다 (26-07-30).
+        found.append(f"{ADVISORY}undefined term: {term}")
     return found
 
 

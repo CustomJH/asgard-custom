@@ -2069,18 +2069,34 @@ class TestDirectGuard(Base):
         self.assertIn("⠶", joined)  # 교정 표식(언어 중립 글리프) — 초안과 정본이 갈렸음을 알린다
         self.assertIn(h.last_response_text, joined)
 
-    def test_active_lagom_fails_closed_when_rewrite_still_violates_style(self):
+    def test_failed_rewrite_keeps_the_streamed_draft_instead_of_deleting_the_answer(self):
+        # 26-07-30: 재작성이 나아지지 않아도 답은 남는다 — 본문은 이미 스트리밍된 뒤라
+        # 안내문으로 바꿔치면 사용자는 읽은 답이 무효라는 통보만 받는다.
         direct = FakeSession(SessionResult(text="혁신적 결과다.", stop_reason="end_turn"), label="direct")
         h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
         with mock.patch.object(h, "_rewrite_lagom_text", return_value="강력한 결과다."):
             h.handle("결과를 설명해")
-        # 봉합 문구는 UI 언어를 따른다 (기본 영어) — 한국어 하드코딩이 아니다
-        from asgard.i18n import t
+        self.assertEqual(h.last_response_text, "혁신적 결과다.")  # 초안이 정본
+        joined = "".join(h.texts)
+        self.assertNotIn("강력한", joined)  # 채택 못 한 재작성문은 표시되지 않는다
+        self.assertNotIn("⠶", joined)  # 교정 표식도 없다 — 갈린 정본이 없으므로
 
-        self.assertEqual(h.last_response_text, t("style_gate_failed"))
-        # 정본(닫는 문구)은 교정 블록으로 표시되고, 실패한 재작성문이 정본 자리를 차지하지 않는다
-        self.assertIn(t("style_gate_failed"), "".join(h.texts))
-        self.assertNotIn("강력한", "".join(h.texts))
+    def test_rewrite_failure_does_not_lose_the_answer(self):
+        """재작성 모델 호출이 터져도 초안이 정본으로 남는다 (일시 장애 = 답 소실 아님)."""
+        direct = FakeSession(SessionResult(text="혁신적 결과다.", stop_reason="end_turn"), label="direct")
+        h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
+        with mock.patch.object(h, "_rewrite_lagom_text", side_effect=RuntimeError("boom")):
+            h.handle("결과를 설명해")
+        self.assertEqual(h.last_response_text, "혁신적 결과다.")
+
+    def test_advisory_only_findings_skip_the_rewrite_call(self):
+        """조언만 남은 답(세상의 약어 한 건)은 모델 재호출 없이 그대로 통과한다."""
+        direct = FakeSession(SessionResult(text="측정에는 NPS 지표를 썼다.", stop_reason="end_turn"), label="direct")
+        h = FakeHeimdall(self.root, [direct], cls=self._cls_read())
+        with mock.patch.object(h, "_rewrite_lagom_text") as rewrite:
+            h.handle("무슨 지표를 썼어?")
+        rewrite.assert_not_called()
+        self.assertEqual(h.last_response_text, "측정에는 NPS 지표를 썼다.")
 
     def test_identity_carries_both_style_axes(self):
         """두 계약은 모든 역할이 공유하는 신원에 실린다 — 딜리버리 자식도 같은 문체로 보고한다."""
