@@ -5,31 +5,21 @@ from __future__ import annotations
 import json as _json
 import re
 import threading
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from importlib.resources import files as _files
 from urllib.parse import parse_qs, urlsplit
 
 from ... import memory, ui
+from .. import loopback
 from .data import _LOGO_URI, _MARK_URI, injection_data, log_query, page_data, search_data, snapshot_data
 
 # ── 라우팅 (소켓 없이 단위 테스트 가능한 순수 디스패치) ──────────────────────────────
 
 
-_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1", "[::1]"})
-
-
-def host_allowed(host_header: str | None) -> bool:
-    """DNS 리바인딩 방어 — Host 헤더의 호스트명이 루프백이어야 한다. 개인 메모리는 로컬
-    전용이므로, 외부 도메인이 사용자의 브라우저를 통해 127.0.0.1 을 읽는 표면을 봉쇄한다
-    (읽기 전용이어도 카탈로그·스니펫에 사적 내용이 실릴 수 있다 — memory.py P0 정합)."""
-    if not host_header:
-        return False
-    h = host_header.strip().lower()
-    if h.startswith("["):  # IPv6 리터럴 [::1]:port
-        h = h.split("]")[0] + "]"
-    elif ":" in h:  # host:port
-        h = h.rsplit(":", 1)[0]
-    return h in _LOOPBACK_HOSTS
+# 루프백 경계와 응답 헤더는 세 창이 한 벌을 나눠 쓴다 (`commands.loopback`). 여기 다시
+# 적으면 언젠가 셋이 갈라지고, 실제로 갈라져 있었다 — 이 창만 Referrer-Policy 가 없었다.
+_LOOPBACK_HOSTS = loopback.LOOPBACK_HOSTS
+host_allowed = loopback.host_allowed
 
 
 def dispatch(method: str, path: str, params: dict[str, list[str]], d: str | None = None) -> tuple[int, str, bytes]:
@@ -74,22 +64,10 @@ def dispatch(method: str, path: str, params: dict[str, list[str]], d: str | None
     return 404, "text/plain; charset=utf-8", b"not found"
 
 
-class _Handler(BaseHTTPRequestHandler):
+class _Handler(loopback.LoopbackHandler):
     server_version = "AsgardMemoryDashboard"
 
-    def _send(self, status: int, ctype: str, body: bytes, head_only: bool = False) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        self.send_header(
-            "Content-Security-Policy",
-            "default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'self'",
-        )
-        self.end_headers()
-        if not head_only:
-            self.wfile.write(body)
+    _send = loopback.LoopbackHandler.send_guarded
 
     def _route(self, head_only: bool = False) -> None:
         if not host_allowed(self.headers.get("Host")):
@@ -108,9 +86,6 @@ class _Handler(BaseHTTPRequestHandler):
 
     def do_HEAD(self) -> None:
         self._route(head_only=True)
-
-    def log_message(self, format: str, *args: object) -> None:  # 조용히 (요청 로그 억제)
-        return
 
 
 def _bind(host: str, port: int) -> ThreadingHTTPServer:

@@ -161,7 +161,7 @@ class TestRouting(DashboardBase):
         self.assertIn("nodeCount > 1000 ? 6 : nodeCount > 200 ? 12 : 24", html)
         self.assertIn("rms < 0.05", html)
         # 엣지 삼중 언어 — 의미(점선)·죽은 링크(절단선)를 링크와 시각 구별
-        self.assertIn("뜻이 비슷함", html)
+        self.assertIn("의미가 비슷함", html)
         self.assertIn("끊어진 링크", html)
         # IME-safe 검색 — 한글 조합 중 트리거 금지
         self.assertIn("compositionstart", html)
@@ -811,8 +811,8 @@ class TestSemanticAndDerived(DashboardBase):
 
     def test_surface_distinguishes_the_two_off_states(self):
         html = dash.render_html()
-        self.assertIn("꺼 두셨습니다", html)  # 사용자가 끈 경우
-        self.assertIn("켜져 있지만 못 돕니다", html)  # 설정은 켜짐인데 준비 안 됨
+        self.assertIn("꺼져 있습니다", html)  # 사용자가 끈 경우
+        self.assertIn("켜져 있지만 동작하지 않습니다", html)  # 설정은 켜짐인데 준비 안 됨
         self.assertIn('sem.mode === "off"', html)  # 두 갈래를 실제로 가른다
 
     def test_derived_rows_separate_canon_from_regenerable(self):
@@ -1180,7 +1180,7 @@ class TestSemanticEdgeCost(DashboardBase):
     def test_surface_reports_the_fold(self):
         html = dash.render_html()
         self.assertIn("sem_capped", html)
-        self.assertIn("장을 넘어 뜻 연결선 계산을 접었습니다", html)
+        self.assertIn("장을 넘어 의미 연결선 계산을 생략했습니다", html)
 
 
 class TestShellWidthAndBrand(DashboardBase):
