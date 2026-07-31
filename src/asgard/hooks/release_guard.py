@@ -2,11 +2,11 @@
 # Asgard release-guard — 부작용 승인 모델 (환경 × 외부 부작용). 외부 공개 부작용을 가진 명령
 # (패키지 publish / 이미지 push / git tag push / deploy)을 실행 전에 차단한다.
 #
-# 근거: 딜리버리 계약(asgard-thor·asgard-eitri) — "publish·push·deploy 는 직접 실행 금지,
+# 근거: 딜리버리 계약(asgard-thor·asgard-eitri) — "publish·push·deploy는 직접 실행 금지,
 # 실행 계획(대상·영향·되돌리기)을 반환하고 승인은 Odin 몫" — 을 프롬프트가 아니라 도구로 강제.
-# 로컬 빌드·테스트·dry-run 은 건드리지 않는다: 여기 잡히는 것은 조직 밖으로 나가는 명령뿐이다.
+# 로컬 빌드·테스트·dry-run은 건드리지 않는다: 여기 잡히는 것은 조직 밖으로 나가는 명령뿐이다.
 #
-# 프로토콜·fail-open 원리는 git-guard 와 동일 (단일 스크립트, 페이로드 모양으로 툴 자동 감지):
+# 프로토콜·fail-open 원리는 git-guard와 동일 (단일 스크립트, 페이로드 모양으로 툴 자동 감지):
 #   • Claude Code / Codex (PreToolUse): {"tool_input": {"command": ...}} → 차단 = exit 2 + stderr.
 #   • Cursor (beforeShellExecution):    {"command": ...}                 → 차단 = stdout {"permission":"deny"}, exit 0.
 # 가드 자체가 죽으면 모든 명령이 막혀 사용자를 인질로 잡으므로 오류 시 무조건 allow.
@@ -18,10 +18,10 @@ import shlex
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -30,7 +30,7 @@ _WRAPPERS = {"sudo", "command", "exec", "time", "nohup", "env"}
 
 
 def _segments(command: str) -> list[list[str]]:
-    """Shell-tokenize enough to separate command chains (git-guard 와 동일 접근)."""
+    """Shell-tokenize enough to separate command chains (git-guard와 동일 접근)."""
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;()<>")
         lexer.whitespace_split = True
@@ -121,7 +121,7 @@ def _reason(prog: str, args: list[str]) -> str | None:
     if prog in {"mvn", "mvnw"} and "deploy" in nonflag:
         return "package publish"
     if prog in {"gradle", "gradlew"} and any("publish" in t.lower() and "local" not in t.lower() for t in nonflag):
-        return "package publish"  # publishToMavenLocal 은 로컬 — 허용
+        return "package publish"  # publishToMavenLocal은 로컬 — 허용
     if prog == "dotnet" and sub == "nuget" and "push" in nonflag:
         return "package publish"
     if prog == "helm":
@@ -140,12 +140,12 @@ def _reason(prog: str, args: list[str]) -> str | None:
 
     if prog == "git" and sub == "push":
         if any(t in {"--tags", "--follow-tags"} for t in args) or any("refs/tags/" in t for t in args):
-            return "git tag push"  # 브랜치 push 는 일상 흐름 — 태그(=릴리스 공표)만 잡는다
+            return "git tag push"  # 브랜치 push는 일상 흐름 — 태그(=릴리스 공표)만 잡는다
 
     if sub in _DEPLOY_SUBCOMMANDS.get(prog, ()):
         return "deploy"
     if prog == "vercel" and (sub in {"", "deploy"} or "--prod" in args):
-        return "deploy"  # 인자 없는 `vercel` 도 배포다
+        return "deploy"  # 인자 없는 `vercel`도 배포다
     if prog == "gcloud" and "deploy" in nonflag:
         return "deploy"
     return None

@@ -259,11 +259,11 @@ class HindsightBackend:
         return bool(self.server_features().get(feature))
 
     def retain_fields(self) -> frozenset[str]:
-        """서버가 실제로 받는 retain 항목 필드 — /openapi.json 에서 읽는다 (버전 추측 금지).
+        """서버가 실제로 받는 retain 항목 필드 — /openapi.json에서 읽는다 (버전 추측 금지).
 
-        26-07-28 조사: Hindsight 문서끼리 어긋난다 (SDK 문서는 entities·observation_scopes 를
-        적고 HTTP 레퍼런스는 없다고 한다). raw HTTP 를 쓰는 우리에게 정본은 **서버 스키마**다 —
-        문서 대신 스키마를 읽고, 모르는 필드는 보내지 않는다. 실서버 0.8.3 에서 entities·
+        26-07-28 조사: Hindsight 문서끼리 어긋난다 (SDK 문서는 entities·observation_scopes를
+        적고 HTTP 레퍼런스는 없다고 한다). raw HTTP를 쓰는 우리에게 정본은 **서버 스키마**다 —
+        문서 대신 스키마를 읽고, 모르는 필드는 보내지 않는다. 실서버 0.8.3에서 entities·
         observation_scopes·strategy·timestamp 4 개가 이 경로로 자동 발견됐다."""
         if self._retain_fields is not None:
             return self._retain_fields
@@ -279,14 +279,14 @@ class HindsightBackend:
         return fields
 
     def bank_config(self) -> dict:
-        """뱅크 설정 읽기. 응답은 {"bank_id":…, "config":{…}} 로 중첩돼 있다 — 26-07-28 실측:
-        최상위에서 찾으면 언제나 None 이라 "설정이 안 걸렸다"고 오판한다."""
+        """뱅크 설정 읽기. 응답은 {"bank_id":…, "config":{…}}로 중첩돼 있다 — 26-07-28 실측:
+        최상위에서 찾으면 언제나 None이라 "설정이 안 걸렸다"고 오판한다."""
         payload = self._get("/config", missing_ok=True) or {}
         nested = payload.get("config")
         return dict(nested) if isinstance(nested, Mapping) else {}
 
     def update_bank_config(self, updates: Mapping[str, object]) -> dict:
-        """뱅크 설정 갱신. 서버 스키마가 {"updates": {...}} 로 감싸기를 요구한다."""
+        """뱅크 설정 갱신. 서버 스키마가 {"updates": {...}}로 감싸기를 요구한다."""
         payload = self._request("PATCH", "/config", {"updates": dict(updates)})
         nested = payload.get("config")
         return dict(nested) if isinstance(nested, Mapping) else {}
@@ -378,7 +378,7 @@ class HindsightBackend:
                 "metadata": dict(record.metadata),
             }
             # 서버가 받는다고 말한 선택 필드만 덧붙인다. 코드·규격에는 발생 시각이 없다 —
-            # timestamp 를 지금으로 두면 서버의 상대시간 해석이 파일 나이를 오늘로 착각한다.
+            # timestamp를 지금으로 두면 서버의 상대시간 해석이 파일 나이를 오늘로 착각한다.
             if "timestamp" in allowed and record.timeless:
                 item["timestamp"] = "unset"
             if "entities" in allowed and record.entities:
@@ -404,7 +404,7 @@ class HindsightBackend:
     def reflect(self, query: str, budget: str = "low", max_tokens: int = 2048) -> dict:
         """Reflect — bank 전체를 근거로 LLM 합성 답변. 반환 = {"text", "based_on"?}.
 
-        읽기 전용 자문 표면이다: 산출은 backend LLM 의 종합이지 Git 정본이 아니므로
+        읽기 전용 자문 표면이다: 산출은 backend LLM의 종합이지 Git 정본이 아니므로
         자동 컨텍스트 주입 자격이 없다 (게이트·trust 필터 계약과 무관한 별도 소비면)."""
         if budget not in {"low", "mid", "high"}:
             raise ValueError("reflect budget must be low|mid|high")
@@ -508,9 +508,9 @@ class HindsightBackend:
 
 
 def _retain_item_properties(spec: Mapping[str, object]) -> set[str]:
-    """OpenAPI 문서에서 retain item 의 속성 이름을 뽑는다. 못 찾으면 빈 집합.
+    """OpenAPI 문서에서 retain item의 속성 이름을 뽑는다. 못 찾으면 빈 집합.
 
-    스키마 **이름**은 배포마다 달라질 수 있으므로 **모양**으로 찾는다 — `content` 를 가진
+    스키마 **이름**은 배포마다 달라질 수 있으므로 **모양**으로 찾는다 — `content`를 가진
     오브젝트 스키마 중 기본 필드를 가장 많이 겹치는 것이 retain item 이다."""
     schemas = spec.get("components")
     schemas = schemas.get("schemas") if isinstance(schemas, Mapping) else None
@@ -587,9 +587,9 @@ def parse_settings(config: Mapping[str, object]) -> BackendSettings:
     timeout_value = config.get("timeout")
     options_value = config.get("options")
     timeout = 15 if timeout_value is None else int(str(timeout_value))
-    # 상한 300s 는 서버가 그보다 오래 걸릴 수 있다는 사실보다 먼저 정해진 값이었다. 26-07-28 실측:
-    # 로컬 12B 추출이 문서 하나에 57s, 서버 LLM 타임아웃도 600s 로 올렸다. 클라이언트가 서버보다
-    # 먼저 포기하면 등록은 서버에서 성공하고 우리만 실패로 기록한다 — 그 어긋남이 manifest 를 속인다.
+    # 상한 300s는 서버가 그보다 오래 걸릴 수 있다는 사실보다 먼저 정해진 값이었다. 26-07-28 실측:
+    # 로컬 12B 추출이 문서 하나에 57s, 서버 LLM 타임아웃도 600s로 올렸다. 클라이언트가 서버보다
+    # 먼저 포기하면 등록은 서버에서 성공하고 우리만 실패로 기록한다 — 그 어긋남이 manifest를 속인다.
     if not 1 <= timeout <= MAX_BACKEND_TIMEOUT:
         raise ValueError(f"project memory timeout must be between 1 and {MAX_BACKEND_TIMEOUT} seconds")
     if options_value is not None and not isinstance(options_value, Mapping):

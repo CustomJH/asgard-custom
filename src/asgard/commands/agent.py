@@ -7,7 +7,7 @@
   · 이 프로젝트에서 누가 일하나 (bind · unbind)
 
 만드는 것(루트)과 쓰는 것(프로젝트)을 같은 명령 아래 두되 문장으로 갈라 놓는다 — 사용자가
-"만들었는데 왜 안 도나"에서 헤매는 자리가 정확히 그 경계이기 때문이다. `where` 는 그래서
+"만들었는데 왜 안 도나"에서 헤매는 자리가 정확히 그 경계이기 때문이다. `where`는 그래서
 결과만 말하지 않고 **어느 선언이 이겼는지**를 같이 말한다.
 """
 
@@ -74,7 +74,7 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
                 return 0
             ui.head(f"agent · {canon} (내장 — 아직 안 세움)")
             ui.step(str(roster[canon]["description"]))
-            ui.step(ui.dim(f"    `asgard agent use {canon}` 로 세운다"))
+            ui.step(ui.dim(f"    `asgard agent use {canon}`로 세운다"))
             ui.done()
             return 0
         print(json.dumps({"error": f"에이전트 {canon!r} 없음"}, ensure_ascii=False))
@@ -103,7 +103,7 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
     if body:
         ui.ok(f"정체성 {len(body)}자 — {payload['identity_path']}")
     else:
-        ui.warn(f"정체성 비어 있음 (주석뿐) — {payload['identity_path']} 에 쓰면 세션에 실린다")
+        ui.warn(f"정체성 비어 있음 (주석뿐) — {payload['identity_path']}에 쓰면 세션에 실린다")
     ui.done()
     return 0
 
@@ -152,7 +152,7 @@ def run_agent_create(
     ui.step(ui.dim(f"    정체성    {os.path.join(path, profiles.IDENTITY)}"))
     if not description and not based_on:
         ui.warn(
-            "설명이 없다 — 스웜이 일을 어디로 보낼지 고를 때 읽는 유일한 문장이다. `asgard agent describe` 로 채워라"
+            "설명이 없다 — 스웜이 일을 어디로 보낼지 고를 때 읽는 유일한 문장이다. `asgard agent describe`로 채워라"
         )
     ui.step("")
     ui.step(f"이 에이전트로 일하려면:  {ui.bold(f'asgard agent use {canon}')}")
@@ -271,7 +271,7 @@ def run_agent_bind(
             f"스웜 — 역할 {len(placed)}개가 서로 다른 에이전트로 돈다: "
             + " · ".join(f"{k}={v}" for k, v in placed.items())
         )
-        ui.step(ui.dim("    각자 자기 1차 기억을 쓴다 — Verifier 가 Worker 의 일지를 못 본다"))
+        ui.step(ui.dim("    각자 자기 1차 기억을 쓴다 — Verifier가 Worker의 일지를 못 본다"))
     ui.done()
     return 0
 
@@ -317,13 +317,13 @@ def run_agent_where(*, json_out: bool = False, quiet: bool = False) -> int:
         ui.step(f"역할 {r.ljust(12)} {agent}")
     if not (b["default"] or b["modes"] or b["roles"]):
         ui.step(ui.dim("이 프로젝트에는 배치 선언이 없다 — 루트의 활성 에이전트가 그대로 일한다"))
-        ui.step(ui.dim("    `asgard agent bind <이름>` 으로 이 프로젝트만의 대표를 정할 수 있다"))
+        ui.step(ui.dim("    `asgard agent bind <이름>`으로 이 프로젝트만의 대표를 정할 수 있다"))
     if d["swarm"]:
         ui.step("")
         ui.ok("스웜 — 역할마다 다른 에이전트, 각자 자기 1차 기억")
     for miss in d["missing"]:
         scope = miss["scope"] + (f" {miss['key']}" if miss["key"] else "")
-        ui.warn(f"{scope} 에 배치된 {miss['agent']!r} 이 이 기계에 없다 — 그 자리는 기본으로 돈다")
+        ui.warn(f"{scope}에 배치된 {miss['agent']!r}이 이 기계에 없다 — 그 자리는 기본으로 돈다")
     warning = profiles.fallback_warning()
     if warning:
         ui.warn(warning)

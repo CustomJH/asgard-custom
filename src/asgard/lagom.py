@@ -1,13 +1,13 @@
 """Lagom — 미니멀리즘 사다리(코드 축) + 산출 압축(산출 축)의 모드 계층.
 
 2계층 상태 (26-07-15 설정 통합):
-  영속 기본값  asgard-setting-{project,global}.json 의 lagom.mode (구 config.toml 폴백)
+  영속 기본값  asgard-setting-{project,global}.json의 lagom.mode (구 config.toml 폴백)
               + LAGOM_MODE env
   세션 런타임  .asgard/state/lagom-mode.json — 훅 3종·네이티브 루프가 공유하는 유일한 접점
 
 resolve 우선순위: 플래그 > LAGOM_MODE env > 프로젝트 설정 > 글로벌 설정 > 기본 full.
-review 는 세션 한정 스킬 모드 — 영속 기본값으로 저장 불가 (원본 설계 계승).
-훅은 standalone(무임포트)이라 이 모듈을 쓰지 못한다 — 같은 규칙을 각 훅이 내장하며
+review는 세션 한정 스킬 모드 — 영속 기본값으로 저장 불가 (원본 설계 계승).
+훅은 standalone이라 이 모듈을 쓰지 못한다 — 같은 규칙을 각 훅이 내장하며
 "동일 유지 (단일 출처 원칙)" 주석으로 이 파일을 가리킨다.
 """
 
@@ -20,7 +20,7 @@ import subprocess
 from collections.abc import Callable
 
 MODES = ("off", "lite", "full")
-DEFAULT_MODE = "full"  # default-on — asgard init 프로젝트는 별도 설정 없이 full 로 돈다
+DEFAULT_MODE = "full"  # default-on — asgard init 프로젝트는 별도 설정 없이 full로 돈다
 STATE_FILE = "lagom-mode.json"  # <root>/.asgard/state/ 아래 — 런타임 상태 격리 (설정 아님)
 # 레거시 (읽기 호환 → 다음 쓰기에서 제거): .asgard/ 직하 json(0.4.x 말) / 단일 문자열(0.4.1 이하)
 LEGACY_STATE_FILES = ("lagom-mode.json", "lagom-mode")
@@ -170,7 +170,7 @@ def style_violations(text: str, source: str = "") -> list[str]:
     """명백한 Lagom 문체 위반을 반환한다. source에 명시된 효용 주장은 새 추론으로 보지 않는다.
 
     `ADVISORY` 접두가 붙은 항목은 조언이다 — 재작성 입력에는 실리되 혼자서 재작성·수리를
-    강제하지 않는다. 소비자는 `blocking()` 으로 강제 항목만 골라 판정한다."""
+    강제하지 않는다. 소비자는 `blocking()`으로 강제 항목만 골라 판정한다."""
     body = _lintable_text(text)
     evidence = _lintable_text(source)
     found: list[str] = []
@@ -189,7 +189,7 @@ def style_violations(text: str, source: str = "") -> list[str]:
     for term in dict.fromkeys(_ACRONYM.findall(body)):
         if term in _KNOWN_TERMS or term in _SURFACE_TOKENS or term in source_terms:
             continue
-        if _ROMAN_NUMERAL.match(term):  # III·VII 은 축약이 아니다
+        if _ROMAN_NUMERAL.match(term):  # III·VII은 축약이 아니다
             continue
         if re.search(rf"(?<![A-Z0-9]){re.escape(term)}(?![A-Z0-9]){_DEFINED_AT_MENTION}", body):
             continue
@@ -239,12 +239,12 @@ def changed_prose_violations(
 
     checks = 적용할 검사기 목록 (text, source) -> 위반 문자열. 기본은 이 모듈의 근거 검사
     하나뿐이고, 호출부가 Bragi 사람 문체 검사를 얹을 수 있다 — 파일 순회·diff 추출 로직을
-    한 곳에만 두기 위한 이음매다 (검사기마다 git 을 다시 돌리지 않는다).
+    한 곳에만 두기 위한 이음매다 (검사기마다 git을 다시 돌리지 않는다).
 
     `.asgard/` 아래 하네스 산출물(지도 GRAPH.md·PROJECT.md 등)은 제외한다 — 사람이 쓴 문장이
     아니라 코드가 생성한 카탈로그라 문체 규칙의 대상이 아니고, 위반으로 잡히면 수리 지시를 받는
-    Worker 가 그 파일을 손댈 수도 없어(제어 경로 차단) 턴만 태운다 (26-07-26 helios 실측:
-    퀘스트 중 지도 갱신이 GRAPH.md 를 변경 파일에 올려 PASS 직후 무한 수리 전이)."""
+    Worker가 그 파일을 손댈 수도 없어(제어 경로 차단) 턴만 태운다 (26-07-26 helios 실측:
+    퀘스트 중 지도 갱신이 GRAPH.md를 변경 파일에 올려 PASS 직후 무한 수리 전이)."""
     found: list[str] = []
     base = os.path.realpath(root)
     managed = os.path.join(base, ".asgard")

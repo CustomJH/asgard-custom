@@ -4,7 +4,7 @@
 
 빈 문서에 첫 초안을 넣는 것은 아무것도 지우지 않으므로 바로 쓴다. 반대로 이미 사람이
 손댄 칸을 모델이 다시 쓰는 것은 되돌릴 수 없는 일이라, 그때는 글만 돌려주고 반영은
-사람이 누른다(`propose_section`). "AI 가 내 문장을 조용히 갈아치웠다"가 이 기획 화면에서
+사람이 누른다(`propose_section`). "AI가 내 문장을 조용히 갈아치웠다"가 이 기획 화면에서
 가장 비싼 실패다.
 
 대화 한 턴도 여기 있다. 사용자의 말과 답을 **같은 왕복 안에서** 기록에 남기기 때문이다 —
@@ -85,7 +85,7 @@ def propose_section(plan_id: str, section: str, request: str, selection: str = "
 
 
 def draft_spec(plan_id: str, note: str = "", replace: bool = False, root: str = "") -> dict[str, Any]:
-    """PRD → 기능 명세서. `replace` 가 아니면 기존 항목 뒤에 이어 붙인다."""
+    """PRD → 기능 명세서. `replace`가 아니면 기존 항목 뒤에 이어 붙인다."""
     plan = store.load_plan(plan_id)
     items = planner.draft_spec(_model_root(plan, root), plan, note)
 

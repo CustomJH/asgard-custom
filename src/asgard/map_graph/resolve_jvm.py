@@ -1,7 +1,7 @@
 """JVM 크로스파일 심볼 해석 — 라우트가 실제로 어떤 SQL 구문에 닿는지 잇는다.
 
-같은 파일 스팬 규칙만으로는 계층형 Spring 앱에서 라우트와 DB 가 영원히 단절된다:
-컨트롤러 파일에는 SQL 이 없고, SQL 은 여러 계층 건너 매퍼 XML 에 있다. 이 모듈은
+같은 파일 스팬 규칙만으로는 계층형 Spring 앱에서 라우트와 DB가 영원히 단절된다:
+컨트롤러 파일에는 SQL이 없고, SQL은 여러 계층 건너 매퍼 XML에 있다. 이 모듈은
 **소스 리터럴만으로 증명되는** 다리를 놓는다. 네 조각이 전부 소스에 적혀 있다:
 
     import  com.nuriflex.helios.mapper.user.UserConfigMapper;   ← 타입의 정체(FQN)
@@ -12,7 +12,7 @@
 지어내지 않는다. 하나라도 못 풀면 잇지 않는다 — 수신자가 로컬 변수·정적 호출·메서드
 인자이거나, 인터페이스 구현체가 여럿이거나, 타입 이름이 리포에서 유일하지 않으면 포기한다.
 계층 자체는 노드로 세우지 않는다(개념 그래프의 어휘를 늘리지 않는다). 대신 라우트에서
-도달한 SQL 구문으로 바로 엣지를 내고, 구문→테이블은 매퍼 XML 이 이미 소유한다.
+도달한 SQL 구문으로 바로 엣지를 내고, 구문→테이블은 매퍼 XML이 이미 소유한다.
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ _PACKAGE = re.compile(r"^\s*package\s+([\w.]+)\s*;", re.M)
 _IMPORT_FQN = re.compile(r"^\s*import\s+(?:static\s+)?([\w.$]+)\s*;", re.M)
 _TYPE_HEAD = re.compile(r"\b(?:class|interface|enum|record)\s+(\w+)([^{;]*)\{")
 _SUPER_NAME = re.compile(r"\b([A-Z]\w*)")
-# 필드 주입 — Lombok `@RequiredArgsConstructor` + final 필드가 Spring 의 지배 관용구다.
+# 필드 주입 — Lombok `@RequiredArgsConstructor` + final 필드가 Spring의 지배 관용구다.
 _FIELD = re.compile(
     r"\b(?:private|protected|public)\s+(?:static\s+)?(?:final\s+)?([A-Z]\w*)(?:\s*<[^;=()]*>)?\s+(\w+)\s*[;=]"
 )
@@ -144,7 +144,7 @@ def index_java(path: str, text: str) -> JavaModule:
 
 
 class JvmIndex:
-    """리포 전역 심볼 색인 — FQN 으로 타입·메서드·SQL 구문을 찾는다."""
+    """리포 전역 심볼 색인 — FQN으로 타입·메서드·SQL 구문을 찾는다."""
 
     def __init__(self, modules: list[JavaModule], statements: dict[str, str]) -> None:
         self._modules = {module.path: module for module in modules}
@@ -201,7 +201,7 @@ class JvmIndex:
         """`타입#메서드` → (SQL 구문 노드, 이어서 걸을 메서드 본문, 미해결 여부).
 
         런타임에 어느 빈이 주입되는지는 정적으로 못 정한다. 그래서 후보를 좁히는 축은
-        **증명된 사실**뿐이다: 매퍼 XML 이 그 이름의 구문을 실제로 선언했는가, 혹은 그 이름의
+        **증명된 사실**뿐이다: 매퍼 XML이 그 이름의 구문을 실제로 선언했는가, 혹은 그 이름의
         본문을 실제로 가진 후손이 하나뿐인가. 둘 다 여럿이면 모호성으로 보고 잇지 않는다.
         """
         statement = self._statements.get(f"{fqn}#{method}")
@@ -215,7 +215,7 @@ class JvmIndex:
         if len(proven) == 1:
             return self._statements[f"{proven[0]}#{method}"], None, False
         if len(proven) > 1:
-            return None, None, True  # SQL 이 여러 후손에 있다 — 어느 쪽이 뜨는지 증명 불가
+            return None, None, True  # SQL이 여러 후손에 있다 — 어느 쪽이 뜨는지 증명 불가
         bodied = [child for child in descendants if self._own_unit(child, method) is not None]
         if len(bodied) == 1:
             return None, self._own_unit(bodied[0], method), False

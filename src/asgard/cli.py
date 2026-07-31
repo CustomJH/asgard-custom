@@ -20,10 +20,10 @@ def _version(value: bool) -> None:
 
 
 def _agent(value: str) -> None:
-    """--agent 를 ASGARD_PROFILE 로 옮긴다 — 하위 명령이 무엇이든 그 에이전트로 돈다.
+    """--agent를 ASGARD_PROFILE로 옮긴다 — 하위 명령이 무엇이든 그 에이전트로 돈다.
 
-    is_eager 라 하위 명령보다 먼저 실행된다. 홈 해석(profiles.home)은 전부 호출 시점이라
-    여기서 env 를 세우면 이후 모든 경로가 그 에이전트를 가리킨다 (모듈 상수 캐시 없음)."""
+    is_eager라 하위 명령보다 먼저 실행된다. 홈 해석(profiles.home)은 전부 호출 시점이라
+    여기서 env를 세우면 이후 모든 경로가 그 에이전트를 가리킨다 (모듈 상수 캐시 없음)."""
     if not value:
         return
     import os
@@ -298,8 +298,8 @@ def map_default(
     ctx: typer.Context,
     no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
 ) -> None:
-    """서브커맨드 없이 `asgard map` 만 치면 관계 그래프 뷰가 열린다 (`asgard memory` 와 동일 UX).
-    운영 서브커맨드(generate/update/scan/…)와 --help 는 그대로다."""
+    """서브커맨드 없이 `asgard map`만 치면 관계 그래프 뷰가 열린다 (`asgard memory`와 동일 UX).
+    운영 서브커맨드(generate/update/scan/…)와 --help는 그대로다."""
     if ctx.invoked_subcommand is not None:
         return
     from .commands.map import run_map_view
@@ -482,7 +482,7 @@ def tutor(
 ) -> None:
     from .commands.tutor import run_tutor
 
-    # 답은 따옴표 없이 그냥 쓰는 것이 사람이 실제로 치는 방식이다 — `--note` 를 기억해야만
+    # 답은 따옴표 없이 그냥 쓰는 것이 사람이 실제로 치는 방식이다 — `--note`를 기억해야만
     # 답할 수 있으면 답은 안 온다. 명시 옵션이 있으면 그쪽이 이긴다(스크립트 경로 보존).
     loose = " ".join(words or ()).strip()
     raise typer.Exit(
@@ -574,7 +574,7 @@ def update(
     raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run, sync=not no_sync))
 
 
-# `upgrade` 별칭 — 구 TS CLI(asgard-cli)의 근육기억 호환. start 안 /update 와 동일 플로우.
+# `upgrade` 별칭 — 구 TS CLI(asgard-cli)의 근육기억 호환. start 안 /update와 동일 플로우.
 app.command("upgrade", hidden=True, help="alias of `update`")(update)
 
 
@@ -623,7 +623,7 @@ def completions(
     raise typer.Exit(run_completions(shell, install=install))
 
 
-# Trinity 역할 브릿지 — 호스트 도구(Claude Code/Codex/Cursor)가 [trinity.<role>] 배치 provider 로
+# Trinity 역할 브릿지 — 호스트 도구(Claude Code/Codex/Cursor)가 [trinity.<role>] 배치 provider로
 # 역할 턴을 위임할 때 쓴다 (asgard-provider 스킬 참조). [bridge] 기본 꺼짐 = 내부 모델로만 동작.
 role_app = typer.Typer(help="Trinity role bridge — run a single role on its placed provider", no_args_is_help=True)
 app.add_typer(role_app, name="role")
@@ -785,7 +785,7 @@ def plugins_install(source: str = typer.Argument(..., metavar="<path>")) -> None
 
 
 # 위그드라실 (Yggdrasil) — 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki (v3 P1).
-# 정본 = ~/.asgard/memory 의 md, index/state.db 는 파생. 커맨드는 기능명 memory 유지 + 세계관 별칭.
+# 정본 = ~/.asgard/memory의 md, index/state.db는 파생. 커맨드는 기능명 memory 유지 + 세계관 별칭.
 memory_app = typer.Typer(help="Yggdrasil — personal memory · LLM wiki (ingest/query/lint)", invoke_without_command=True)
 app.add_typer(memory_app, name="memory")
 app.add_typer(memory_app, name="yggdrasil", hidden=True)  # 세계관 별칭 — 같은 앱, 도움말 중복 없음
@@ -797,8 +797,8 @@ def memory_default(
     port: int = typer.Option(8765, "--port", "-p", help="dashboard port (bare `asgard memory` only)"),
     no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
 ) -> None:
-    """서브커맨드 없이 `asgard memory` 만 치면 위그드라실 대시보드가 열린다 (agentmemory 식
-    원커맨드 UX). 운영 서브커맨드(add/query/…)와 --help 는 그대로다."""
+    """서브커맨드 없이 `asgard memory`만 치면 위그드라실 대시보드가 열린다 (agentmemory 식
+    원커맨드 UX). 운영 서브커맨드(add/query/…)와 --help는 그대로다."""
     if ctx.invoked_subcommand is not None:
         return
     from .commands.memory_dashboard import run_dashboard
@@ -1285,7 +1285,7 @@ def ticket_default(ctx: typer.Context) -> None:
 
 @ticket_app.command("board", help="상태 칸으로 접은 지금의 보드")
 def ticket_board(
-    team: str = typer.Option("", "--team", help="팀 키로 좁힌다 — `.` 은 이 폴더의 팀 (기본: 워크스페이스 전체)"),
+    team: str = typer.Option("", "--team", help="팀 키로 좁힌다 — `.`은 이 폴더의 팀 (기본: 워크스페이스 전체)"),
     project: str = typer.Option("", "--project", help="프로젝트 이름 또는 id"),
     json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
 ) -> None:
@@ -1302,7 +1302,7 @@ def ticket_list(
     cycle: str = typer.Option("", "--cycle", "-c", help="주기 번호 또는 이름"),
     query: str = typer.Option("", "--query", "-q", help="제목·설명·번호 부분 일치"),
     open_only: bool = typer.Option(False, "--open", help="완료·취소를 뺀 것만"),
-    team: str = typer.Option("", "--team", help="팀 키로 좁힌다 — `.` 은 이 폴더의 팀 (기본: 워크스페이스 전체)"),
+    team: str = typer.Option("", "--team", help="팀 키로 좁힌다 — `.`은 이 폴더의 팀 (기본: 워크스페이스 전체)"),
     project: str = typer.Option("", "--project", help="프로젝트 이름 또는 id"),
     json_out: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
 ) -> None:
@@ -1383,7 +1383,7 @@ def ticket_comment(
     raise typer.Exit(run_comment(ref, text, author))
 
 
-@ticket_app.command("link", help="티켓을 잇는다 — blocks 는 방향이 있다 (ref 가 other 를 막는다)")
+@ticket_app.command("link", help="티켓을 잇는다 — blocks는 방향이 있다 (ref가 other를 막는다)")
 def ticket_link(
     ref: str = typer.Argument(..., help="막는 쪽"),
     other: str = typer.Argument(..., help="막히는 쪽"),

@@ -9,9 +9,9 @@
 채울 수 없고 채우려 들면 안 된다 — 빈칸으로 남겨 코드를 쓴 쪽이 채우고 사용자가 검사한다.
 
 여기 표면이 넷 더 있다. 물음만 놓고 끝나던 층을 **왕복**으로 만드는 것들이다:
-`--answer`/`--dismiss` 는 답이 돌아오는 통로(답이 없으면 이 층은 아무것도 못 배운다),
-`--collect` 는 보고서에 손으로 적은 답을 한 번에 걷어 오는 통로(편집기에서 적는 것이 실제
-사람이 답하는 방식이다), `--progress` 는 그 왕복이 쌓인 결과, `--brief` 는 같은 자리를 다시
+`--answer`/`--dismiss`는 답이 돌아오는 통로(답이 없으면 이 층은 아무것도 못 배운다),
+`--collect`는 보고서에 손으로 적은 답을 한 번에 걷어 오는 통로(편집기에서 적는 것이 실제
+사람이 답하는 방식이다), `--progress`는 그 왕복이 쌓인 결과, `--brief`는 같은 자리를 다시
 건드리기 **전에** 남은 물음을 꺼내는 통로다.
 """
 
@@ -31,7 +31,7 @@ _WHY_SLOT = (
     "> 이 절은 기계가 채우지 않는다. 코드를 쓴 쪽이 여기에 답을 적고, 읽는 쪽이 그 답을 검사한다.\n"
     "> 세 가지만 적으면 된다 — **무엇을 하려 했는가 / 왜 이 방법인가 / 버린 방법은 무엇이고 왜 버렸는가**.\n"
 )
-_ANSWER_SLOT = "  - 답: "  # `--collect` 가 되읽는 자리 — 형식을 바꾸면 그 파서도 같이 바꿔야 한다
+_ANSWER_SLOT = "  - 답: "  # `--collect`가 되읽는 자리 — 형식을 바꾸면 그 파서도 같이 바꿔야 한다
 _CID_RE = re.compile(r"`([0-9a-f]{8})`")
 _ITEM_RE = re.compile(r"^\s*- \[.\] ")
 _LADDER = ("○○○", "●○○", "●●○", "●●●")
@@ -63,7 +63,7 @@ def _emit_inventory(lesson: tutor.Lesson) -> None:
         ui.step(f"{change.path}{flag} +{change.added}/-{change.removed}")
         ui.step(ui.dim(f"    {_units_line(change)}"))
     if len(lesson.files) > 20:
-        ui.step(ui.dim(f"    …외 {len(lesson.files) - 20}개 (`--json` 이 전부를 싣는다)"))
+        ui.step(ui.dim(f"    …외 {len(lesson.files) - 20}개 (`--json`이 전부를 싣는다)"))
 
 
 def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
@@ -80,7 +80,7 @@ def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
             ui.step(ui.dim(f"    {point.why}"))
         ui.step(f"    ▸ {point.ask}")
     if len(open_rows) > limit:
-        ui.step(ui.dim(f"    …외 {len(open_rows) - limit}건 (`asgard tutor --report` 가 전부를 싣는다)"))
+        ui.step(ui.dim(f"    …외 {len(open_rows) - limit}건 (`asgard tutor --report`가 전부를 싣는다)"))
     _emit_folded(rows)
 
 
@@ -213,7 +213,7 @@ def _report_points(lesson: tutor.Lesson) -> list[str]:
         lines.append("기계가 짚을 자리는 없었다. 그래도 위 2절의 답이 스스로 납득되는지는 사람만 판정할 수 있다.")
         return lines
     lines.append("체크박스는 읽었다는 뜻이 아니라 **답했다**는 뜻이다.")
-    lines.append("`답:` 칸에 적고 `asgard tutor --collect` 를 돌리면 답이 성장 기록으로 들어간다.")
+    lines.append("`답:` 칸에 적고 `asgard tutor --collect`를 돌리면 답이 성장 기록으로 들어간다.")
     lines.append("")
     for point in lesson.ranked:
         lines += [
@@ -230,7 +230,7 @@ def _report(lesson: tutor.Lesson) -> str:
     lines = [
         "# 변경 되짚기",
         "",
-        f"`asgard tutor` 가 기준 `{lesson.base}` 대비 만든 자료다. 사실은 기계가, 답은 사람이 채운다.",
+        f"`asgard tutor`가 기준 `{lesson.base}` 대비 만든 자료다. 사실은 기계가, 답은 사람이 채운다.",
         "",
     ]
     lines += _report_mandate(lesson)
@@ -300,7 +300,7 @@ def _run_collect(root: str, path: str) -> int:
     answers = collect(read_text(full))
     ui.head("tutor · 보고서에 적힌 답을 걷는다")
     if not answers:
-        ui.ok(f"{os.path.relpath(full, root)} 에 채워진 `답:` 칸이 없다 — 걷을 것이 없다")
+        ui.ok(f"{os.path.relpath(full, root)}에 채워진 `답:` 칸이 없다 — 걷을 것이 없다")
         ui.done()
         return 0
     taken, missed = 0, 0
@@ -367,7 +367,7 @@ def _emit_said(data: dict) -> None:
         where = str(row.get("path") or "")
         ui.step(f"{tag} — {where}{' ' + str(row.get('unit')) if row.get('unit') else ''}")
         ui.step(ui.dim(f"    “{ui.oneline(str(row.get('said')), 90)}”"))
-    ui.step(ui.dim("    같은 자리를 다시 열면 `asgard tutor --brief` 가 이 문장을 되돌려 준다"))
+    ui.step(ui.dim("    같은 자리를 다시 열면 `asgard tutor --brief`가 이 문장을 되돌려 준다"))
 
 
 # ── 진입점 ─────────────────────────────────────────────────────────
@@ -391,7 +391,7 @@ def run_tutor(
     note: str = "",
     collect: bool = False,
 ) -> int:
-    """종료 코드는 언제나 0 — 튜터는 규율이지 관문이 아니다(`health` 와 같은 등급)."""
+    """종료 코드는 언제나 0 — 튜터는 규율이지 관문이 아니다(`health`와 같은 등급)."""
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
 
@@ -405,8 +405,8 @@ def run_tutor(
         return _run_brief(root, text, paths, quiet or json_out)
 
     lesson = tutor.review(root, base, paths)
-    # 화면에 실렸으면 물은 것이다 — 사람이 보는 호출은 그대로 센다. `--json` 만 예외로 두는 이유:
-    # 기계가 훑어보는 호출까지 세면 "몇 번 물었나"가 사람이 몇 번 봤나와 무관해진다(`--record` 로 켠다).
+    # 화면에 실렸으면 물은 것이다 — 사람이 보는 호출은 그대로 센다. `--json`만 예외로 두는 이유:
+    # 기계가 훑어보는 호출까지 세면 "몇 번 물었나"가 사람이 몇 번 봤나와 무관해진다(`--record`로 켠다).
     # 세는 범위는 `limit` 까지다 — 판정이 100건을 찾아도 화면에 여섯이면 물은 것은 여섯이다.
     rows, back = tutor.hand_back(root, lesson.ranked, limit, count=record or not json_out)
 
@@ -445,7 +445,7 @@ def _run_close(root: str, answer: str, dismiss: str, note: str) -> int:
         ok, message = tutor_growth.dismiss(root, dismiss, note)
     (ui.ok if ok else ui.warn)(message)
     if not ok:
-        ui.step(ui.dim("    열린 물음은 `asgard tutor --progress` 로 볼 수 있다"))
+        ui.step(ui.dim("    열린 물음은 `asgard tutor --progress`로 볼 수 있다"))
     ui.done()
     return 0
 
@@ -453,8 +453,8 @@ def _run_close(root: str, answer: str, dismiss: str, note: str) -> int:
 def _run_brief(root: str, text: str, paths: tuple[str, ...], quiet: bool) -> int:
     """카드 한 장 또는 침묵.
 
-    `--quiet` 는 훅이 켠다. 훅에게 "없다"는 말은 사용자 화면에 그대로 실릴 빈 카드가 되고, 빈
-    카드는 다음 카드의 신뢰를 깎는다 — `ui.ok` 는 판정 줄이라 quiet 을 무시하므로(ui 계약) 여기서
+    `--quiet`는 훅이 켠다. 훅에게 "없다"는 말은 사용자 화면에 그대로 실릴 빈 카드가 되고, 빈
+    카드는 다음 카드의 신뢰를 깎는다 — `ui.ok`는 판정 줄이라 quiet을 무시하므로(ui 계약) 여기서
     끊는다. 사람이 직접 친 경우에만 "없다"고 답한다.
     """
     card = tutor.brief(root, text, paths)

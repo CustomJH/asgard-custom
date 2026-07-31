@@ -24,7 +24,7 @@ PENDING_TTL = 3600  # 승인 id 만료 (초) — 승인과 실행 사이가 길�
 PENDING_LOCK_STALE = 60  # pending JSON lock은 짧은 local critical section에만 유지된다
 
 
-# ── 설정 탐색 — cwd 에서 상향 (모노레포·서브디렉토리 실행 대응) ─────────────────────
+# ── 설정 탐색 — cwd에서 상향 (모노레포·서브디렉토리 실행 대응) ─────────────────────
 
 
 class ProjectMemoryConfigError(ValueError):
@@ -38,7 +38,7 @@ def _binding_sidecar_path(root: str) -> str:
 def read_binding_sidecar(root: str) -> dict:
     """바인딩 사이드카(.asgard/memory/binding.json) — 아스가르드가 관리하는 내부 신원.
 
-    project_uid·binding_id 는 사용자가 읽고 고치는 설정이 아니라 connect 가 발급·검증하는
+    project_uid·binding_id는 사용자가 읽고 고치는 설정이 아니라 connect가 발급·검증하는
     소유권 마커다 (오딘 지적 26-07-23: 설정 파일에는 사람이 만지는 키만). git 추적으로 팀과
     공유된다. 깨진 파일은 없음과 동일 (fail-safe)."""
     try:
@@ -55,7 +55,7 @@ def _write_binding_sidecar(root: str, project_id: str, project_uid: str, binding
     path = _binding_sidecar_path(root)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     payload = {
-        "_comment": "asgard memory connect 가 관리하는 프로젝트 메모리 소유권 마커 — 직접 수정 금지",
+        "_comment": "asgard memory connect가 관리하는 프로젝트 메모리 소유권 마커 — 직접 수정 금지",
         "project_id": project_id,
         "project_uid": project_uid,
         "binding_id": binding_id,
@@ -68,7 +68,7 @@ def _write_binding_sidecar(root: str, project_id: str, project_uid: str, binding
 
 
 def project_memory_disabled(section: Mapping[str, object] | None) -> bool:
-    """`enabled` 토글 — 명시적 false/off/0 만 비활성. 부재·그 외 값 = 활성 (기본 on)."""
+    """`enabled` 토글 — 명시적 false/off/0만 비활성. 부재·그 외 값 = 활성 (기본 on)."""
     if not section:
         return False
     value = section.get("enabled")
@@ -80,13 +80,13 @@ def project_memory_disabled(section: Mapping[str, object] | None) -> bool:
 def autosave_enabled(cfg: Mapping[str, object] | None) -> bool:
     """2차(프로젝트) 메모리 자동저장 — `project_memory.autosave`, 기본 off.
 
-    켜면 `memory_retain` 이 approval_id 를 돌려주고 기다리는 대신 그 자리에서 커밋한다.
+    켜면 `memory_retain`이 approval_id를 돌려주고 기다리는 대신 그 자리에서 커밋한다.
     지나는 길은 **한 글자도 안 바뀐다**: 검증(validate_record)·Git 정본 선기록·backend 반영은
-    사람이 승인했을 때와 똑같은 `commit_approved_record` 를 그대로 탄다. 사라지는 것은 왕복뿐이다.
+    사람이 승인했을 때와 똑같은 `commit_approved_record`를 그대로 탄다. 사라지는 것은 왕복뿐이다.
 
     1차와 달리 이 값은 프로젝트 설정에서 읽는다 — 이 기억의 스코프가 프로젝트이기 때문이다.
     그래도 남의 저장소 설정 하나로 쓰기가 열리지는 않는다: 커밋은 여전히 **이 기계에서 신뢰된
-    backend**(is_backend_trusted)에서만 일어나고, 그 신뢰는 사람이 `asgard memory connect` 로 준다."""
+    backend**(is_backend_trusted)에서만 일어나고, 그 신뢰는 사람이 `asgard memory connect`로 준다."""
     if not cfg:
         return False
     return str(cfg.get("autosave", "off")).strip().lower() in ("on", "1", "true", "yes")
@@ -95,9 +95,9 @@ def autosave_enabled(cfg: Mapping[str, object] | None) -> bool:
 def project_memory_section(project: dict) -> dict | None:
     """통합 설정에서 프로젝트 메모리 섹션을 고른다 — project_memory 우선, 구 memory 폴백.
 
-    `_` 로 시작하는 키는 스캐폴드가 심는 주석·입력 예제(_comment·_example)라 설정으로 치지
+    `_`로 시작하는 키는 스캐폴드가 심는 주석·입력 예제(_comment·_example)라 설정으로 치지
     않는다. 실 설정 키가 하나도 없으면 None — opt-in 미연결(공란 시드) 상태로, 깨진 설정과
-    구별된다 (미연결 시드를 malformed 로 읽으면 fresh init 이 doctor 에서 빨갛게 뜬다)."""
+    구별된다 (미연결 시드를 malformed로 읽으면 fresh init이 doctor에서 빨갛게 뜬다)."""
     for name in (PROJECT_SECTION, LEGACY_PROJECT_SECTION):
         raw = project.get(name)
         if isinstance(raw, dict):
@@ -199,7 +199,7 @@ def write_config(
     }
     parse_settings({key: value for key, value in config.items() if value is not None})
     # 설정 파일에는 사람이 만지는 키만 남긴다 — uid·binding 신원은 사이드카로 (오딘 결정 26-07-23).
-    # save_project 는 섹션을 통째 교체하므로 구 스키마의 잔존 uid·binding 키도 함께 사라진다.
+    # save_project는 섹션을 통째 교체하므로 구 스키마의 잔존 uid·binding 키도 함께 사라진다.
     visible = {key: value for key, value in config.items() if key not in ("project_uid", "binding_id")}
     # 구 memory 섹션은 함께 제거 — 남기면 정본이 이원화되고 폴백 리더가 낡은 값을 읽는다.
     path = save_project(root, PROJECT_SECTION, visible, drop=(LEGACY_PROJECT_SECTION,))
@@ -208,7 +208,7 @@ def write_config(
     return path
 
 
-# ── 승인 대기 (2단 retain) — 개인 위키 plan-id 와 동일 계약 ───────────────────────────
+# ── 승인 대기 (2단 retain) — 개인 위키 plan-id와 동일 계약 ───────────────────────────
 
 
 def _pending_path(root: str) -> str:

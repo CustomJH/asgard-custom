@@ -9,29 +9,29 @@
   T1 프룬   tail 토큰 예산 밖 tool_result 본문 비우기             LLM 무호출
   T2 요약   head/tail 보호 + 중간 구간 구조화 인수인계            LLM 1회
 
-조정 표면 — asgard-setting-{project,global}.json 의 `compress` 섹션 (프로젝트가 글로벌을 덮는다):
-  mode                off | prune | full          기본 full (off = 무개입, prune = T0+T1 만)
+조정 표면 — asgard-setting-{project,global}.json의 `compress` 섹션 (프로젝트가 글로벌을 덮는다):
+  mode                off | prune | full          기본 full (off = 무개입, prune = T0+T1만)
   prune_at            0.80   프룬 발동 비율 (컨텍스트 창 대비)
-  summary_at          0.90   요약 발동 비율 — prune_at 보다 낮게 적으면 prune_at 으로 올라간다
+  summary_at          0.90   요약 발동 비율 — prune_at보다 낮게 적으면 prune_at으로 올라간다
   protect_first_n     2      머리 보호 메시지 수 (최초 요청·첫 응답 = 과제 정의)
-  tail_tokens         20000  꼬리 보호 토큰 예산 — 창의 1/4 로 자동 상한
+  tail_tokens         20000  꼬리 보호 토큰 예산 — 창의 1/4로 자동 상한
   min_recovery_tokens 4000   이만큼 못 걷으면 무개입 (캐시 재작성 비용 게이트)
   summary_max_tokens  4000   요약 출력 상한
 
-발동은 단계형이다: 프룬 80% / 요약 90% (config [compress] 로 조정). T0 은 T1 과 같이 탄다 —
+발동은 단계형이다: 프룬 80% / 요약 90% (config [compress]로 조정). T0은 T1과 같이 탄다 —
 프롬프트 캐시는 프리픽스 매치라 히스토리를 건드리는 순간 그 뒤가 전부 무효화되고, 매 턴 위생을
 돌리면 캐시 재작성 비용이 절감분을 먹는다. 그래서 히스토리 변형은 임계 교차 시점에만 일어난다.
 같은 이유로 최소 회수 게이트가 있다 — 회수량이 캐시 재작성 값어치에 못 미치면 아예 안 건드린다.
 
-권위는 여기 없다. 잘려나간 구간의 원문은 turns.jsonl 과 에피소드 인덱스가 이미 들고 있고,
+권위는 여기 없다. 잘려나간 구간의 원문은 turns.jsonl과 에피소드 인덱스가 이미 들고 있고,
 게이트 증거·퀘스트 로그는 애초에 이 층을 지나지 않는다. 요약은 대화 맥락의 편의 사본일 뿐이다.
 
 트랜스포트별 적용:
-  anthropic        T0+T1+T2 — assistant content 는 SDK 객체라 읽기만 하고 변형 대상에서 뺀다
+  anthropic        T0+T1+T2 — assistant content는 SDK 객체라 읽기만 하고 변형 대상에서 뺀다
   openai_compat    T0+T1+T2 — role=tool 메시지가 프룬 대상
   codex_responses  T1 — function_call_output 프룬 (stateless 재전송이라 안 걸면 무한 성장)
-  openai_responses 미개입 — previous_response_id 로 서버가 상태를 쥐고 truncation="auto" 가 이미 건다
-  claude_cli       미개입 — Claude Code 가 자체 압축을 소유
+  openai_responses 미개입 — previous_response_id로 서버가 상태를 쥐고 truncation="auto"가 이미 건다
+  claude_cli       미개입 — Claude Code가 자체 압축을 소유
 
 모든 실패는 fail-open — 압축이 세션을 죽이지 않는다.
 """
@@ -137,7 +137,7 @@ class CompressPolicy:
     tail_tokens: int = 20_000
     min_recovery_tokens: int = 4_000
     summary_max_tokens: int = 4_000
-    vault: bool = True  # T4 — 방출 구간을 보관하고 context_recall 로 되짚게 한다
+    vault: bool = True  # T4 — 방출 구간을 보관하고 context_recall로 되짚게 한다
     lessons: bool = True  # ACON — 실패 사례에서 요약 지침을 누적한다
     server_side: bool = False  # T3 — anthropic 서버측 압축 (opt-in, 실패 시 클라이언트측 폴백)
     server_trigger_tokens: int = 0  # 0 = summary_at 비율에서 유도
@@ -319,7 +319,7 @@ def _is_ack(msg: object) -> bool:
 
 
 def extract_handoff(messages: list) -> tuple[str | None, list]:
-    """기존 핸드오프 쌍을 히스토리에서 떼어내고 (본문, 나머지) 를 준다.
+    """기존 핸드오프 쌍을 히스토리에서 떼어내고 (본문, 나머지)를 준다.
 
     쌓기 금지가 핵심이다 — 핸드오프가 여럿 살아 있으면 낡은 지시가 계속 살아남고, 요약이
     요약을 요약하며 원문에서 멀어진다. 트랜스크립트에는 항상 최신 1건만 존재한다."""
@@ -370,13 +370,13 @@ def _prunable_end(messages: list, tail_tokens: int, min_keep: int = 4) -> int:
 def hygiene_and_prune(messages: list, *, tail_tokens: int, min_recovery_tokens: int) -> tuple[list, dict]:
     """T0+T1 — LLM 무호출 결정론 압축. (새 메시지 목록, 사건 dict) 반환.
 
-    회수량이 min_recovery_tokens 에 못 미치면 아무것도 건드리지 않고 돌려준다: 히스토리를
+    회수량이 min_recovery_tokens에 못 미치면 아무것도 건드리지 않고 돌려준다: 히스토리를
     한 바이트만 바꿔도 프롬프트 캐시의 그 뒤 전부가 무효화되므로, 재작성 비용을 못 갚는
-    소액 회수는 순손실이다 (OpenCode 의 PRUNE_MINIMUM 과 같은 판단)."""
+    소액 회수는 순손실이다 (OpenCode의 PRUNE_MINIMUM과 같은 판단)."""
     end = _prunable_end(messages, tail_tokens)
     before = estimate_tokens(messages)
 
-    # 원본 불변 — 실제로 바꾼 메시지만 얕은 복사한다 (assistant 의 SDK 객체는 복사도 변형도 안 한다).
+    # 원본 불변 — 실제로 바꾼 메시지만 얕은 복사한다 (assistant의 SDK 객체는 복사도 변형도 안 한다).
     out = list(messages)
     pruned = folded = 0
     seen: dict[str, int] = {}  # tool_result 본문 해시 → 마지막 등장 위치
@@ -453,7 +453,7 @@ def hygiene_and_prune(messages: list, *, tail_tokens: int, min_recovery_tokens: 
 def prune_codex_items(items: list, *, tail_tokens: int, min_recovery_tokens: int) -> tuple[list, int]:
     """codex_responses 전용 — function_call_output 본문 프룬. (새 목록, 회수 토큰).
 
-    Codex 는 store=false 라 매 iteration 히스토리 전체를 재전송한다. 여기에 프룬이 없으면
+    Codex는 store=false라 매 iteration 히스토리 전체를 재전송한다. 여기에 프룬이 없으면
     툴 출력이 무한 누적돼 컨텍스트 한도 초과 400 으로만 터진다."""
 
     def _item_tokens(item: object) -> int:
@@ -504,7 +504,7 @@ def _tool_use_ids(msg: object) -> set[str]:
 def sanitize_tool_pairs(messages: list) -> list:
     """고아 tool_result / tool 메시지를 제거한다.
 
-    압축은 경계를 자르는 일이라 tool_use 는 앞에 남고 tool_result 만 잘려나가거나 그 반대가
+    압축은 경계를 자르는 일이라 tool_use는 앞에 남고 tool_result만 잘려나가거나 그 반대가
     생긴다. 그대로 보내면 anthropic·openai 모두 400 이다 — 압축이 세션을 죽이는 가장 흔한 길."""
     available: set[str] = set()
     for msg in messages:
@@ -528,12 +528,12 @@ def sanitize_tool_pairs(messages: list) -> list:
                 or str(b.get("tool_use_id") or "") in available
             ]
             if not kept:
-                continue  # tool_result 만 있던 메시지가 통째로 고아가 됐다
+                continue  # tool_result만 있던 메시지가 통째로 고아가 됐다
             if len(kept) != len(content):
                 msg = {**msg, "content": kept}
         out.append(msg)
 
-    # 반대 방향 — 결과가 사라진 tool_use 가 남았는지. assistant content 는 SDK 객체라 블록
+    # 반대 방향 — 결과가 사라진 tool_use가 남았는지. assistant content는 SDK 객체라 블록
     # 단위 수술을 하지 않는다: 짝 없는 호출이 남은 메시지는 통째로 뺀다.
     answered: set[str] = set()
     for msg in out:
@@ -557,7 +557,7 @@ def sanitize_tool_pairs(messages: list) -> list:
 
 
 def _align_head_end(messages: list, n: int) -> int:
-    """head 는 assistant 로 끝나야 한다 — 뒤에 붙는 핸드오프(user)와 역할이 겹치지 않게."""
+    """head는 assistant로 끝나야 한다 — 뒤에 붙는 핸드오프(user)와 역할이 겹치지 않게."""
     n = max(0, min(n, len(messages)))
     if n == 0:
         return 0
@@ -567,7 +567,7 @@ def _align_head_end(messages: list, n: int) -> int:
 
 
 def _is_real_user_turn(msg: object) -> bool:
-    """사람이 친 턴인가 — tool_result 만 실린 user 메시지는 전송 규약상의 껍데기다."""
+    """사람이 친 턴인가 — tool_result만 실린 user 메시지는 전송 규약상의 껍데기다."""
     if not isinstance(msg, dict) or _role(msg) != "user":
         return False
     if is_handoff(msg):
@@ -581,8 +581,8 @@ def _is_real_user_turn(msg: object) -> bool:
 
 
 def _align_tail_start(messages: list, start: int, floor: int) -> int:
-    """tail 은 진짜 user 턴에서 시작해야 한다 — 앞에 붙는 ack(assistant)와 교대가 맞고,
-    tool_result 로 시작해 고아가 되는 일도 없다. 보존 쪽(뒤로)을 먼저 찾는다."""
+    """tail은 진짜 user 턴에서 시작해야 한다 — 앞에 붙는 ack(assistant)와 교대가 맞고,
+    tool_result로 시작해 고아가 되는 일도 없다. 보존 쪽(뒤로)을 먼저 찾는다."""
     for i in range(min(start, len(messages) - 1), floor - 1, -1):
         if _is_real_user_turn(messages[i]):
             return i
@@ -637,7 +637,7 @@ _SERVER_MIN_TRIGGER = 50_000  # API 최소치 — 그 아래는 요청이 거절
 def server_side_kwargs(pol: CompressPolicy, window: int) -> dict:
     """서버측 압축 요청 필드. 미사용이면 빈 dict — 호출자는 그대로 전개하면 된다.
 
-    요약 지시는 우리 핸드오프 계약을 그대로 넘긴다: instructions 는 기본 프롬프트를 '대체'하므로
+    요약 지시는 우리 핸드오프 계약을 그대로 넘긴다: instructions는 기본 프롬프트를 '대체'하므로
     (보완이 아니다) 비워두면 provider 기본 요약이 우리 규율을 무시한다."""
     if not pol.server_side:
         return {}
@@ -690,7 +690,7 @@ def classify_failure(exc: BaseException) -> str:
 class Huginn:
     """세션 1개의 압축 상태. 가드(안티스래시·쿨다운)는 여기 산다.
 
-    call 은 (prompt, max_tokens) -> str 인 요약 호출자다. 세션이 트랜스포트를 알고 주입한다 —
+    call은 (prompt, max_tokens) -> str 인 요약 호출자다. 세션이 트랜스포트를 알고 주입한다 —
     이 클래스는 와이어를 모른다 (테스트가 가짜 호출자를 꽂을 수 있는 이유)."""
 
     def __init__(self, root: str, window: int, pol: CompressPolicy, call=None, now=time.monotonic, session_id=""):
@@ -699,7 +699,7 @@ class Huginn:
         self.compressions = 0
         self.prunes = 0
         self.archived = 0  # T4 — 보관소로 내려보낸 방출 행 수
-        self.server_compactions = 0  # T3 — provider 가 수행한 압축 횟수
+        self.server_compactions = 0  # T3 — provider가 수행한 압축 횟수
         self._ineffective = 0
         self._cooldown_until = 0.0
         self._summary_disabled = False
@@ -718,7 +718,7 @@ class Huginn:
         return int(self.window * self.policy.summary_at)
 
     def effective_tail_tokens(self) -> int:
-        """보호 tail 이 창의 1/4 을 넘으면 압축할 중간 구간이 남지 않아 매 턴 무효 압축이 돈다."""
+        """보호 tail이 창의 1/4을 넘으면 압축할 중간 구간이 남지 않아 매 턴 무효 압축이 돈다."""
         return max(1_000, min(self.policy.tail_tokens, self.window // 4))
 
     def summary_blocked(self) -> str:
@@ -776,7 +776,7 @@ class Huginn:
 
     def _summarize(self, messages: list, tail_tokens: int) -> tuple[list, dict]:
         call = self.call
-        if call is None:  # summary_blocked() 가 이미 걸렀지만 계약은 여기서도 닫는다
+        if call is None:  # summary_blocked()가 이미 걸렀지만 계약은 여기서도 닫는다
             return messages, {"tier": "summary", "failure": "no_caller"}
         before = estimate_tokens(messages)
         previous, working = extract_handoff(messages)
@@ -845,7 +845,7 @@ class Huginn:
             "iterative": bool(previous),
             "duration_ms": duration_ms,
         }
-        # T4 — 잘라낸 구간은 태우지 않고 보관소로 내려보낸다 (context_recall 로 되짚기).
+        # T4 — 잘라낸 구간은 태우지 않고 보관소로 내려보낸다 (context_recall로 되짚기).
         archived = self._archive(middle)
         if archived:
             event["archived"] = archived
@@ -925,7 +925,7 @@ class Huginn:
             return {}
 
     def note_server_compaction(self, content: object) -> bool:
-        """응답에 compaction 블록이 있었으면 계측한다 — provider 가 우리 대신 압축한 것."""
+        """응답에 compaction 블록이 있었으면 계측한다 — provider가 우리 대신 압축한 것."""
         try:
             if not has_compaction_block(content):
                 return False
@@ -957,10 +957,10 @@ class Huginn:
 
 
 def make_caller(session) -> object | None:
-    """세션의 provider 로 요약 1회 호출하는 호출자. 미지원 트랜스포트는 None."""
+    """세션의 provider로 요약 1회 호출하는 호출자. 미지원 트랜스포트는 None."""
     mode = session.rp.profile.api_mode
     if mode in {"claude_cli", "openai_responses"}:
-        return None  # 각각 Claude Code / 서버측 truncation 이 압축을 소유한다
+        return None  # 각각 Claude Code / 서버측 truncation이 압축을 소유한다
 
     def call(prompt: str, max_tokens: int) -> str:
         from ..io_journal import call_returned, call_started

@@ -1,7 +1,7 @@
 """기획 대화의 지능 — 한 줄에서 질문을, 답에서 PRD를, PRD에서 명세서를, 명세서에서 플로우를.
 
 여기 있는 모든 호출은 **앞 문서를 입력으로 받는다**. 그것이 이 계층의 유일한 규칙이다:
-기능 명세서는 PRD 를 읽고 만들고, 유저 플로우는 PRD 의 개요와 명세서의 기능을 읽고 만든다.
+기능 명세서는 PRD를 읽고 만들고, 유저 플로우는 PRD의 개요와 명세서의 기능을 읽고 만든다.
 근거 없이 지어내는 것을 막는 장치도 여기 있다 — 프롬프트가 "모르면 열린 질문으로 남겨라"라고
 말하고, 만들어진 항목은 어느 칸/어느 기능에서 왔는지(`source`)를 달고 나온다.
 
@@ -265,9 +265,9 @@ def reply(root: str, plan: dict[str, Any], message: str) -> str:
 
 
 def _materialize_items(rows: list[Any], roles: list[str]) -> list[dict[str, Any]]:
-    """모델의 임시 key 를 저장소 id 로 바꾸고, 부모를 못 찾은 항목은 버린다.
+    """모델의 임시 key를 저장소 id로 바꾸고, 부모를 못 찾은 항목은 버린다.
 
-    두 번 도는 이유는 부모가 뒤에 올 수 있기 때문이다 — 먼저 id 를 전부 발급하고,
+    두 번 도는 이유는 부모가 뒤에 올 수 있기 때문이다 — 먼저 id를 전부 발급하고,
     그다음에 잇는다. 층과 부모가 어긋나면(3층인데 부모가 없거나 1층인데 부모가 있으면)
     저장소가 어차피 막으므로 여기서 조용히 떨어뜨린다."""
     known_roles = {role.casefold(): role for role in roles}
@@ -315,7 +315,7 @@ def _materialize_items(rows: list[Any], roles: list[str]) -> list[dict[str, Any]
 
 
 def _materialize_flow(payload: dict[str, Any], feature_ids: set[str]) -> dict[str, Any]:
-    """구획·노드·연결선을 저장소 id 로 옮긴다. 없는 노드를 가리키는 선은 버린다."""
+    """구획·노드·연결선을 저장소 id로 옮긴다. 없는 노드를 가리키는 선은 버린다."""
     section_ids: dict[str, str] = {}
     sections = []
     for row in payload.get("sections") or []:

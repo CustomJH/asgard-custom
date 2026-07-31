@@ -1,14 +1,14 @@
 """loop — 컨트롤러. 센서가 잰 오차를 **다음 한 걸음**으로 바꾼다.
 
-왜 `health` 안이 아닌가. 센서와 컨트롤러는 다른 부품이다. `health` 는 "지금 어떤가"를 재고
+왜 `health` 안이 아닌가. 센서와 컨트롤러는 다른 부품이다. `health`는 "지금 어떤가"를 재고
 아무것도 고르지 않는다 — 그 모듈의 명시 계약이다. 고르는 일에는 판단이 들어가고, 판단은
 튜닝 대상이다. 측정과 같은 파일에 있으면 문턱을 만질 때마다 측정값이 따라 움직이는 것처럼
 보인다. 그래서 여기서 고른다.
 
-**set point.** 컨트롤러는 오차 없이 못 돈다. 오차는 목표가 있어야 존재하고, `health` 의 추세
+**set point.** 컨트롤러는 오차 없이 못 돈다. 오차는 목표가 있어야 존재하고, `health`의 추세
 (두 스냅샷의 차)는 오차가 아니라 방향일 뿐이다. 기본 목표는 **이 나무가 기록한 가장 좋은
-값**이다. 사람이 숫자를 지어낼 필요가 없고, 설정이 비어도 계층이 돈다. 이것은 `craft` 의
-래칫을 나무 수준으로 올린 것이다 — `craft` 는 "이번 변경이 더 나쁘게 만든 것"을 막고,
+값**이다. 사람이 숫자를 지어낼 필요가 없고, 설정이 비어도 계층이 돈다. 이것은 `craft`의
+래칫을 나무 수준으로 올린 것이다 — `craft`는 "이번 변경이 더 나쁘게 만든 것"을 막고,
 여기는 "이 나무가 한 번 도달했던 곳"으로 되돌린다. 설정이 있으면 설정이 이긴다.
 
 **선택 규칙은 위험 최소다.** 점수는 하나뿐이다:
@@ -16,19 +16,19 @@
     점수 = 값 / 위험 = (지표 상대오차 × 변경빈도 가중) / **이 걸음을 검증하려고 사람이 읽어야 하는 줄 수**
 
 분모가 이 모듈의 요지다. 큰 것부터 고치는 컨트롤러는 리뷰 불가능한 걸음을 루프에 넣는다 —
-그게 정확히 blind 루프가 4만 줄 PR 을 만드는 경로다. 읽을 줄 수로 나누면 "같은 지표를 같은
+그게 정확히 blind 루프가 4만 줄 PR을 만드는 경로다. 읽을 줄 수로 나누면 "같은 지표를 같은
 크기만큼 움직이는 후보 중 가장 작은 것"이 저절로 이긴다. 분자의 변경빈도는 핫스팟 분석
 (복잡 × 빈번 = 결함 확률 최선 예측자)에서 온다 — 안 건드리는 파일을 예쁘게 만드는 것은
 값이 없다.
 
 걸음 종류를 나누는 이유도 같다. 함수 추출은 파일 안에서 끝나 호출부가 안 움직이고, 모듈
-분할은 import 를 따라 밖으로 번진다. 둘을 같은 줄자로 재면 컨트롤러가 위험을 못 본다.
+분할은 import를 따라 밖으로 번진다. 둘을 같은 줄자로 재면 컨트롤러가 위험을 못 본다.
 
 **못 본 것은 못 봤다고 적는다.** 목표를 받았지만 후보를 못 내는 지표(`cycles` — 개수만 알고
-순환 경로를 모른다)는 `undetermined` 로 싣는다. 0 건이 "안 봤다"를 뜻하면 컨트롤러가 아니라
-알리바이다 (`thor_gate`·`health.borrowed` 와 같은 규약).
+순환 경로를 모른다)는 `undetermined`로 싣는다. 0 건이 "안 봤다"를 뜻하면 컨트롤러가 아니라
+알리바이다 (`thor_gate`·`health.borrowed`와 같은 규약).
 
-**아무것도 막지 않는다.** `health` 와 같은 등급이다. 컨트롤러는 제안만 하고, 적용은 액추에이터
+**아무것도 막지 않는다.** `health`와 같은 등급이다. 컨트롤러는 제안만 하고, 적용은 액추에이터
 (사람이든 에이전트든)의 몫이며, 적용된 변경은 `craft` 래칫과 `tutor` 되짚기를 그대로 지난다.
 """
 
@@ -44,7 +44,7 @@ SIGNAL_PATH = ("health", "next.json")
 
 # 걸음 종류 — 이름이 곧 "무엇이 움직이는가"다.
 EXTRACT = "extract"  # 파일 안에서 끝난다. 호출부 불변.
-SPLIT = "split"  # 모듈을 가른다. import 가 따라 움직인다.
+SPLIT = "split"  # 모듈을 가른다. import가 따라 움직인다.
 DEDUPE = "dedupe"  # 복제를 합친다. 여러 파일이 함께 움직인다.
 DECOUPLE = "decouple"  # 의존 방향을 바꾼다. 가장 멀리 번진다.
 
@@ -89,7 +89,7 @@ class Target:
 
 @dataclass(frozen=True)
 class Candidate:
-    """다음 걸음 후보 1개. `read` 가 위험이고, 점수의 분모다."""
+    """다음 걸음 후보 1개. `read`가 위험이고, 점수의 분모다."""
 
     metric: str
     step: str
@@ -179,7 +179,7 @@ def targets(root: str, snap: health.Snapshot) -> tuple[Target, ...]:
 
 @dataclass(frozen=True)
 class _FileFact:
-    """파일 1개에 대해 컨트롤러가 쓰는 사실 전부. 단위 수준은 `_survey` 의 두 번째 반환값이
+    """파일 1개에 대해 컨트롤러가 쓰는 사실 전부. 단위 수준은 `_survey`의 두 번째 반환값이
     따로 진다 — 정밀 측정이 되는 언어가 Python 뿐이라, 한 자료형에 섞으면 나머지 언어에서
     빈 칸을 "단위가 없다"로 읽게 된다."""
 
@@ -191,7 +191,7 @@ class _FileFact:
 def _survey(root: str) -> tuple[list[_FileFact], dict[str, dict[str, craft_rules.Unit]], int]:
     """센서와 **같은 파일 집합**을 본다 — 컨트롤러가 벤더링에 일을 배정하면 안 된다.
 
-    `health.scan` 의 제외 규칙(`_iter_files`)을 그대로 물려받는 것이 계약이다. 여기서 따로
+    `health.scan`의 제외 규칙(`_iter_files`)을 그대로 물려받는 것이 계약이다. 여기서 따로
     걸러내면 두 목록이 갈라져, 센서가 안 세는 파일에 컨트롤러가 작업을 낸다.
     """
     listing, _ = health._iter_files(root)
@@ -224,8 +224,8 @@ def _score(value: float, read: int) -> float:
 def _unit_candidates(target: Target, facts: list[_FileFact], units: dict, max_churn: int) -> list[Candidate]:
     """함수 추출 후보 — 파일 안에서 끝나므로 읽을 줄 수는 그 함수의 행 수다.
 
-    두 지표의 **셈 단위가 다르다**는 것이 이 함수의 요지다. `big_units` 는 단위를 세므로
-    하나 내리면 하나 준다. `deep_units` 는 **파일을 센다** — 한 파일에 깊은 함수가 둘이면
+    두 지표의 **셈 단위가 다르다**는 것이 이 함수의 요지다. `big_units`는 단위를 세므로
+    하나 내리면 하나 준다. `deep_units`는 **파일을 센다** — 한 파일에 깊은 함수가 둘이면
     하나만 내려도 그 파일은 여전히 깊은 파일이라 지표가 **전혀 안 움직인다**.
 
     그래서 파일 단위 지표는 후보도 파일 단위로 묶고, 읽을 줄 수를 그 파일의 위반 단위 **전부**로
@@ -288,7 +288,7 @@ def _unit_candidates(target: Target, facts: list[_FileFact], units: dict, max_ch
 
 
 def _file_candidates(target: Target, facts: list[_FileFact], snap: health.Snapshot, max_churn: int) -> list[Candidate]:
-    """모듈 분할·결합 해소 후보 — import 가 따라 움직이므로 읽을 줄 수는 파일 전체다."""
+    """모듈 분할·결합 해소 후보 — import가 따라 움직이므로 읽을 줄 수는 파일 전체다."""
     threshold = health.FILE_LINES_SEVERE if target.metric == "severe_files" else health.FILE_LINES_WARN
     coupling = {str(c.get("path")): c for c in snap.coupling_top}
     step = METRIC_STEP[target.metric]
@@ -364,13 +364,13 @@ def _dup_candidates(target: Target, facts: list[_FileFact], snap: health.Snapsho
 
 
 def next_signal(root: str, snap: health.Snapshot | None = None, limit: int = 1) -> Signal:
-    """오차 → 다음 걸음. 순수 관측 — 파일을 쓰지 않는다 (`record` 가 쓴다)."""
+    """오차 → 다음 걸음. 순수 관측 — 파일을 쓰지 않는다 (`record`가 쓴다)."""
     snapshot = snap if snap is not None else health.scan(root)
     goals = targets(root, snapshot)
     undetermined: list[tuple[str, str]] = []
     if not goals:
         why = (
-            "기록이 없다 — `asgard health --snapshot` 으로 첫 점을 찍어야 목표가 생긴다"
+            "기록이 없다 — `asgard health --snapshot`으로 첫 점을 찍어야 목표가 생긴다"
             if not health._history(root)
             else "모든 지표가 목표 이하 — 되돌릴 오차가 없다"
         )
@@ -415,7 +415,7 @@ def signal_path(root: str) -> str:
 
 
 def record(root: str, signal: Signal) -> str:
-    """control signal 을 정본으로 남긴다 — 튜터가 "왜 이 자리인가"를 여기서 읽는다."""
+    """control signal을 정본으로 남긴다 — 튜터가 "왜 이 자리인가"를 여기서 읽는다."""
     payload = {
         "commit": signal.commit,
         "targets": [asdict(t) | {"error": t.error, "rel_error": t.rel_error} for t in signal.targets],
@@ -438,7 +438,7 @@ def load(root: str) -> dict | None:
 def mandate_for(root: str, paths: object) -> tuple[dict, ...]:
     """지목된 경로 중 **컨트롤러가 고른 자리**의 선택 근거. 없으면 빈 튜플.
 
-    튜터가 쓰는 자리다. 이것은 답이 아니라 사실이다 — 사람이 diff 만 보고는 "왜 하필 이
+    튜터가 쓰는 자리다. 이것은 답이 아니라 사실이다 — 사람이 diff만 보고는 "왜 하필 이
     파일인가"를 유도할 수 없다. 루프가 쓴 변경에는 그 물음에 답할 저자가 없어서, 기계가
     아는 것을 기계가 실어야 한다 (`tutor` 계약 ③ 의 빈칸이 비어 있는 유일한 경우).
     """

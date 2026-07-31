@@ -1,9 +1,9 @@
-"""claude_cli 트랜스포트 — 로컬 claude CLI(Claude Code)를 Agent SDK 로 구동.
+"""claude_cli 트랜스포트 — 로컬 claude CLI(Claude Code)를 Agent SDK로 구동.
 
-anthropic/openai_compat 과 달리 내부 루프를 Claude Code 하네스가 소유한다. Asgard 계약은
-유지: 시스템 프롬프트 주입, 커스텀 툴(dispatch/verdict) 핸들러는 in-process MCP 로 이쪽
+anthropic/openai_compat과 달리 내부 루프를 Claude Code 하네스가 소유한다. Asgard 계약은
+유지: 시스템 프롬프트 주입, 커스텀 툴(dispatch/verdict) 핸들러는 in-process MCP로 이쪽
 프로세스에서 실행, 커맨드·쓰기·토큰은 이벤트 스트림 관찰로 집계. 인증은 CLI 해석 그대로
-(구독 keychain → CLAUDE_CODE_OAUTH_TOKEN → ANTHROPIC_API_KEY) — Asgard 는 키를 만지지 않는다.
+(구독 keychain → CLAUDE_CODE_OAUTH_TOKEN → ANTHROPIC_API_KEY) — Asgard는 키를 만지지 않는다.
 
 주의: 구독 인증은 개인 사용 한정 (Anthropic ToS — 제3자 서비스에 구독 로그인 제공 금지).
 
@@ -34,18 +34,18 @@ _WRITE_TOOLS = ("Write", "Edit", "NotebookEdit")
 
 # ── 밴/차단 방어 ──────────────────────────────────────────────
 # 동시 CLI 세션 상한 — 구독 트래픽 폭주(다중 병렬 에이전트) 방지. Heimdall 딜리버리
-# 웨이브(≤3 병렬)까지 수용하되 그 이상은 직렬화. env ASGARD_CLAUDE_MAX_CONCURRENT 로 조정.
+# 웨이브(≤3 병렬)까지 수용하되 그 이상은 직렬화. env ASGARD_CLAUDE_MAX_CONCURRENT로 조정.
 _MAX_CONCURRENT = max(1, int(os.environ.get("ASGARD_CLAUDE_MAX_CONCURRENT", "3") or 3))
 _spawn_gate = threading.BoundedSemaphore(_MAX_CONCURRENT)
 # 턴 wall-clock 상한 — CLI 행(hang) 시 영구 블록 방지 (CUS-246). 정상 장기 턴(대형 구현)을
-# 죽이지 않게 기본 1시간. permit 대기에도 같은 상한 — 행 세션이 permit 을 안 놓는 경우 방어.
+# 죽이지 않게 기본 1시간. permit 대기에도 같은 상한 — 행 세션이 permit을 안 놓는 경우 방어.
 _TURN_TIMEOUT_S = max(60.0, float(os.environ.get("ASGARD_CLAUDE_TURN_TIMEOUT_S", "3600") or 3600))
 
 # ── 단일 데몬 이벤트 루프 ─────────────────────────────────────
 # 매 턴 asyncio.run() 새 루프 생성/종료는 SDK subprocess child watcher·async
 # generator 잔여와 충돌한다 ("aclose(): already running", "Loop … is closed").
 # 프로세스 수명 동안 데몬 스레드에서 루프 하나를 돌리고 모든 코루틴을 거기 제출 —
-# 루프가 안 닫히니 child watcher 도 고정, 스레드풀 병렬 딜리버리도 같은 루프 공유.
+# 루프가 안 닫히니 child watcher도 고정, 스레드풀 병렬 딜리버리도 같은 루프 공유.
 _loop = None
 _loop_lock = threading.Lock()
 
@@ -64,8 +64,8 @@ def _bg_loop():
 def _submit(coro, timeout: float | None = None):
     """코루틴을 데몬 루프에 제출하고 완료까지 블록 (asyncio.run 대체).
 
-    timeout 초과 시 future 취소(_drained finally 가 CLI subprocess 정리) 후 TimeoutError —
-    classify_api_error 가 이름 기반 retryable 로 분류해 새 세션 재시도로 이어진다."""
+    timeout 초과 시 future 취소(_drained finally가 CLI subprocess 정리) 후 TimeoutError —
+    classify_api_error가 이름 기반 retryable로 분류해 새 세션 재시도로 이어진다."""
     fut = asyncio.run_coroutine_threadsafe(coro, _bg_loop())
     try:
         return fut.result(timeout)
@@ -74,7 +74,7 @@ def _submit(coro, timeout: float | None = None):
             raise
         fut.cancel()
         raise TimeoutError(
-            f"claude CLI 턴 {timeout:.0f}s 초과 — 행 의심, 취소 후 재시도 (ASGARD_CLAUDE_TURN_TIMEOUT_S 로 조정)"
+            f"claude CLI 턴 {timeout:.0f}s 초과 — 행 의심, 취소 후 재시도 (ASGARD_CLAUDE_TURN_TIMEOUT_S로 조정)"
         ) from None
 
 
@@ -95,9 +95,7 @@ def detect_auth() -> tuple[str, str]:
     cred = os.path.join(os.path.expanduser("~"), ".claude", ".credentials.json")
     if os.path.exists(cred):
         return "keychain", "~/.claude/.credentials.json (claude /login)"
-    if (
-        sys.platform == "darwin"
-    ):  # macOS 는 keychain 저장 — 존재 여부만 (값 조회 금지). os.uname 은 유닉스 전용이라 금지
+    if sys.platform == "darwin":  # macOS는 keychain 저장 — 존재 여부만 (값 조회 금지). os.uname은 유닉스 전용이라 금지
         import subprocess
 
         p = subprocess.run(
@@ -112,7 +110,7 @@ def detect_auth() -> tuple[str, str]:
 
 @dataclass(frozen=True)
 class ClaudeNativeClient:
-    """make_client 반환용 마커 — 실제 호출은 Agent SDK 가 CLI 를 스폰. 존재 확인만 담당."""
+    """make_client 반환용 마커 — 실제 호출은 Agent SDK가 CLI를 스폰. 존재 확인만 담당."""
 
     cli_path: str
 
@@ -133,7 +131,7 @@ def make_native_client() -> ClaudeNativeClient:
 def _bridge_tool(sess, spec: dict, result):
     """Asgard 커스텀 툴(dict 스키마 + sync 핸들러) → SDK in-process MCP 툴.
 
-    핸들러는 sync(딜리버리 세션 스폰 등 장시간 블로킹 가능) — to_thread 로 돌려
+    핸들러는 sync(딜리버리 세션 스폰 등 장시간 블로킹 가능) — to_thread로 돌려
     SDK 리더 루프(제어 프로토콜)를 막지 않는다.
     """
     from claude_agent_sdk import tool
@@ -155,20 +153,20 @@ def _bridge_tool(sess, spec: dict, result):
 
 
 def run(sess, user_content: str):
-    """AgentSession.run 의 claude_cli 분기 본체. sess = AgentSession (session.py)."""
+    """AgentSession.run의 claude_cli 분기 본체. sess = AgentSession (session.py)."""
     from .session import SessionResult
 
     if sess.rp.base_url:
         # 구독 인증 + 커스텀 엔드포인트 프록시 조합은 OpenCode류 차단 트리거 — 원천 거부.
-        raise RuntimeError("claude-native 는 base_url 미지원 — 프록시+구독 조합은 차단 리스크 (config 에서 제거)")
+        raise RuntimeError("claude-native는 base_url 미지원 — 프록시+구독 조합은 차단 리스크 (config에서 제거)")
     result = SessionResult(text="", stop_reason="")
     sess.messages.append({"role": "user", "content": user_content})  # 관찰용 — 전송 히스토리는 CLI 세션 소유
     from claude_agent_sdk import ProcessError
 
     try:
         if getattr(sess, "_nested_dispatch", False):
-            # 딜리버리 디스패치 자식 — 부모 worker 가 permit 을 쥔 채 이 결과를 기다린다.
-            # 여기서 permit 을 재요구하면 재진입 데드락 (CUS-246): 병렬 worker 3개가 permit
+            # 딜리버리 디스패치 자식 — 부모 worker가 permit을 쥔 채 이 결과를 기다린다.
+            # 여기서 permit을 재요구하면 재진입 데드락 (CUS-246): 병렬 worker 3개가 permit
             # 3개를 전부 점유한 채 자식 3개가 영구 대기. 자식 동시성은 부모 웨이브(≤3)에 유계.
             _submit(_run_async(sess, user_content, result), timeout=_TURN_TIMEOUT_S)
         else:
@@ -184,7 +182,7 @@ def run(sess, user_content: str):
     except ProcessError as e:
         if _is_usage_cap(str(e), e.stderr or ""):
             raise UsageCapError(
-                f"구독 사용량 한도 도달 — 리셋까지 대기하거나 --provider anthropic (API) 로 전환. 원문: {str(e)[:200]}"
+                f"구독 사용량 한도 도달 — 리셋까지 대기하거나 --provider anthropic (API)로 전환. 원문: {str(e)[:200]}"
             ) from e
         raise
     if result.text:
@@ -213,7 +211,7 @@ async def _run_async(sess, user_content: str, result) -> None:
     from . import tools as native_tools
     from .tool_kernel import ROLE_CAPABILITIES
 
-    custom = [tl for tl in sess.tools if "input_schema" in tl]  # bash/editor 는 스키마리스 내장 — 제외
+    custom = [tl for tl in sess.tools if "input_schema" in tl]  # bash/editor는 스키마리스 내장 — 제외
     mcp_servers: dict = {}
     # Explicit readonly and canonical role policy both constrain SDK built-ins.
     # A mismatched caller cannot turn Verifier into a writer by omitting readonly=True.
@@ -227,7 +225,7 @@ async def _run_async(sess, user_content: str, result) -> None:
         allowed.append("mcp__asgard__*")
 
     denied_tool_ids: set[str] = set()
-    sess._denied_tool_ids = denied_tool_ids  # _observe_result 가 차단 증거를 실행 실패와 구분한다
+    sess._denied_tool_ids = denied_tool_ids  # _observe_result가 차단 증거를 실행 실패와 구분한다
 
     async def _canonical_tool_guard(
         hook_input: HookInput, tool_use_id: str | None, _context: HookContext
@@ -300,21 +298,21 @@ async def _run_async(sess, user_content: str, result) -> None:
         },
         max_turns=sess.max_iterations,
         mcp_servers=mcp_servers,
-        # 유저/프로젝트 MCP 설정(~/.claude.json, .mcp.json) 차단 — Asgard 가 툴 표면을 소유한다.
-        # 없으면 무관 유저 MCP 가 역할 세션에 노출 (bypassPermissions 라 실사용 가능)
-        # + classify 가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (t1 4/4 실측).
+        # 유저/프로젝트 MCP 설정(~/.claude.json, .mcp.json) 차단 — Asgard가 툴 표면을 소유한다.
+        # 없으면 무관 유저 MCP가 역할 세션에 노출 (bypassPermissions라 실사용 가능)
+        # + classify가 툴 호출을 시도해 max_turns(1) 초과로 전량 fallback (t1 4/4 실측).
         strict_mcp_config=True,
         # SDK 기본(None)은 ~/.claude와 project/local settings·hooks·skills를 전부 로드한다.
         # Asgard child는 role prompt/tool surface를 하니스가 소유하므로 ambient 확장을 봉인한다.
         setting_sources=[],
         skills=[],
         hooks=hooks,
-        resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run() 부터 같은 CLI 세션 이어가기
+        resume=getattr(sess, "_claude_session_id", None),  # 두 번째 run()부터 같은 CLI 세션 이어가기
         include_partial_messages=True,  # 텍스트 델타 스트리밍 — anthropic 트랜스포트와 체감 패리티
         # BASH_MAX_TIMEOUT_MS: 네이티브 트랜스포트 120s 하드캡(tools._TIMEOUT)과 패리티 —
         # 모델이 timeout 연장(기본 최대 10분)으로 폭주 명령을 키우지 못하게 상한.
         # UV_CACHE_DIR: CC 샌드박스(allowUnsandboxedCommands=False)가 ~/.cache/uv 쓰기를 거부해
-        # `uv run` 이 환경 실패하는 사례 실측(26-07-22) — 캐시를 세션 cwd 내부(.gitignore 된
+        # `uv run`이 환경 실패하는 사례 실측(26-07-22) — 캐시를 세션 cwd 내부(.gitignore 된
         # .cache/uv)로 고정해 env 조작 없이 동작하게 한다. 프로젝트 파일(pyproject) 오염 금지.
         env=_sdk_env(
             sess,
@@ -332,8 +330,8 @@ async def _run_async(sess, user_content: str, result) -> None:
     gen = query(prompt=user_content, options=options)
     async for msg in _drained(gen):
         if sess.cancel_event.is_set():
-            # 협조적 취소 — break 가 _drained finally 의 gen.aclose() 를 부르고, SDK 가
-            # CLI subprocess 를 정리한다. 취소 결과는 Heimdall 이 TurnCancelled 로 승격.
+            # 협조적 취소 — break가 _drained finally의 gen.aclose()를 부르고, SDK가
+            # CLI subprocess를 정리한다. 취소 결과는 Heimdall이 TurnCancelled로 승격.
             result.stop_reason = "cancelled"
             break
         if isinstance(msg, StreamEvent):
@@ -377,8 +375,8 @@ async def _run_async(sess, user_content: str, result) -> None:
                     _observe_result(sess, result, b, pending)
         elif isinstance(msg, ResultMessage):
             sess._claude_session_id = msg.session_id
-            # Claude Code 가 자체적으로 프롬프트 캐싱을 적용한다 — 주입 불필요, 계측만 패리티.
-            # 캐시 적중분은 input_tokens 에서 빠지므로 합산 안 하면 지출·적중률이 전부 누락된다.
+            # Claude Code가 자체적으로 프롬프트 캐싱을 적용한다 — 주입 불필요, 계측만 패리티.
+            # 캐시 적중분은 input_tokens에서 빠지므로 합산 안 하면 지출·적중률이 전부 누락된다.
             u = msg.usage or {}
             inp = u.get("input_tokens") or 0
             cr = u.get("cache_read_input_tokens") or 0
@@ -393,7 +391,7 @@ async def _run_async(sess, user_content: str, result) -> None:
             }.get(msg.subtype, msg.subtype)
             if msg.is_error and _is_usage_cap(msg.result or "", *(msg.errors or [])):
                 raise UsageCapError(
-                    "구독 사용량 한도 도달 — 리셋까지 대기하거나 --provider anthropic (API) 로 전환. "
+                    "구독 사용량 한도 도달 — 리셋까지 대기하거나 --provider anthropic (API)로 전환. "
                     f"원문: {(msg.result or (msg.errors or ['?'])[0])[:200]}"
                 )
             if msg.result and not result.text:
@@ -402,10 +400,10 @@ async def _run_async(sess, user_content: str, result) -> None:
 
 
 async def _drained(gen):
-    """query async generator 를 소비하고 finally 에서 명시적으로 닫는다.
+    """query async generator를 소비하고 finally에서 명시적으로 닫는다.
 
-    async for 정상 종료 후에도 SDK 는 subprocess/백그라운드 태스크를 남길 수 있어,
-    루프 회수 전에 gen.aclose() 로 확정 정리 — asyncgen shutdown 잔여 경고를 없앤다.
+    async for 정상 종료 후에도 SDK는 subprocess/백그라운드 태스크를 남길 수 있어,
+    루프 회수 전에 gen.aclose()로 확정 정리 — asyncgen shutdown 잔여 경고를 없앤다.
     """
     try:
         async for msg in gen:
@@ -429,10 +427,10 @@ def _guard_env(sess=None) -> dict:
     """구독 보호 env 오버레이 — 상속된 ANTHROPIC_BASE_URL(프록시)을 무력화.
 
     구독 인증 + 게이트웨이 조합은 차단 리스크(OpenCode 사례) — API 키 인증일 때만 존중.
-    SDK env 는 os.environ 상속 + 오버레이라 제거 불가 → 빈 문자열로 무력화한다.
+    SDK env는 os.environ 상속 + 오버레이라 제거 불가 → 빈 문자열로 무력화한다.
 
     **프록시 말고는 아무것도 안 건드린다** — 프록시가 없으면 빈 dict 다. 에이전트 전파처럼
-    성격이 다른 오버레이는 호출부에서 합친다 (`_sdk_env`), 안 그러면 "프록시가 없으면 env 를
+    성격이 다른 오버레이는 호출부에서 합친다 (`_sdk_env`), 안 그러면 "프록시가 없으면 env를
     안 건드린다"는 이 함수의 계약을 검사하는 게이트가 무의미해진다.
     """
     if os.environ.get("ANTHROPIC_BASE_URL") and detect_auth()[0] != "api_key":
@@ -445,11 +443,11 @@ def _guard_env(sess=None) -> dict:
 
 
 def _sdk_env(sess=None, **extra: str) -> dict:
-    """SDK 로 넘길 env 오버레이 — 프록시 가드 + **활성 에이전트 전파** + 호출부 추가분.
+    """SDK로 넘길 env 오버레이 — 프록시 가드 + **활성 에이전트 전파** + 호출부 추가분.
 
-    에이전트를 안 넘기면 CLI 가 띄우는 훅이 부모의 스코프를 모른 채 끈끈한 기본값을 읽는다.
+    에이전트를 안 넘기면 CLI가 띄우는 훅이 부모의 스코프를 모른 채 끈끈한 기본값을 읽는다.
     역할마다 다른 에이전트를 세운 스웜에서 그건 곧 "자식이 남의 홈에 쓴다"이고, 조용해서
-    며칠 뒤에나 발견된다 (hermes 이슈 18594 와 같은 자리)."""
+    며칠 뒤에나 발견된다 (hermes 이슈 18594와 같은 자리)."""
     from ..profiles import env_overlay
 
     return {**extra, **env_overlay(), **_guard_env(sess)}
@@ -466,7 +464,7 @@ def _observe_use(sess, result, b, pending) -> None:
 
     args = dict(b.input)
     sym, detail = sess._tool_preview(b.name, args)
-    # 표시 폭 절단은 렌더 계층 담당 (AgentSession._execute 와 동일 규칙) — 폭주 방어 상한만.
+    # 표시 폭 절단은 렌더 계층 담당 (AgentSession._execute와 동일 규칙) — 폭주 방어 상한만.
     sess.on_status(_ui.oneline(f"{sym} {detail}", 240))
 
     # Claude Code built-ins bypass ToolKernel, so adapt their activity back to the
@@ -507,7 +505,7 @@ def _observe_result(sess, result, b, pending) -> None:
         "✕" if failed else sym, detail + (" — 차단" if blocked else " — 실패" if failed else ""), time.monotonic() - t0
     )
     if cmd_idx >= 0:
-        # CLI 는 exit code 미노출 — is_error 로 근사. 가드가 차단한 호출은 실행된 적이 없으므로
+        # CLI는 exit code 미노출 — is_error로 근사. 가드가 차단한 호출은 실행된 적이 없으므로
         # 증거에서 제외 표식 (커널 경로의 blocked 미기록과 패리티 — 미해소 실패 오판 방지).
         result.commands[cmd_idx]["exit_code"] = 1 if b.is_error else 0
         if blocked:
@@ -519,7 +517,7 @@ def _observe_result(sess, result, b, pending) -> None:
 
 
 def complete_text(system: str, user: str, model: str = "", root: str | None = None) -> str:
-    """비스트리밍 단발 completion — heimdall._complete_text 의 claude_cli 대응 (툴 전부 제거, 1턴)."""
+    """비스트리밍 단발 completion — heimdall._complete_text의 claude_cli 대응 (툴 전부 제거, 1턴)."""
 
     async def _go() -> str:
         from claude_agent_sdk import ClaudeAgentOptions, ResultMessage, query
@@ -528,7 +526,7 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
             system_prompt=system,
             model=model or None,
             tools=[],  # 내장 툴 전부 제거 — 순수 텍스트 완성
-            strict_mcp_config=True,  # tools=[] 는 유저 MCP 를 못 막는다 — classify 순수성 보장 (t1 4/4 원인)
+            strict_mcp_config=True,  # tools=[]는 유저 MCP를 못 막는다 — classify 순수성 보장 (t1 4/4 원인)
             setting_sources=[],
             skills=[],
             max_turns=1,
@@ -541,7 +539,7 @@ def complete_text(system: str, user: str, model: str = "", root: str | None = No
                 out = msg.result or ""
         return out
 
-    if not _spawn_gate.acquire(timeout=_TURN_TIMEOUT_S):  # classify 도 CLI 스폰 — 동시성 상한 공유
+    if not _spawn_gate.acquire(timeout=_TURN_TIMEOUT_S):  # classify도 CLI 스폰 — 동시성 상한 공유
         raise TimeoutError(f"CLI 세션 슬롯 대기 {_TURN_TIMEOUT_S:.0f}s 초과 — 행 세션 의심")
     try:
         return _submit(_go(), timeout=_TURN_TIMEOUT_S)  # 데몬 루프 재사용

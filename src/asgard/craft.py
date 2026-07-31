@@ -1,13 +1,13 @@
-"""asgard craft — 이번 변경분의 미시 형상 판정. `health` 가 나무를 재면 이쪽은 **손댄 자리**를 잰다.
+"""asgard craft — 이번 변경분의 미시 형상 판정. `health`가 나무를 재면 이쪽은 **손댄 자리**를 잰다.
 
-왜 따로인가: health 는 추세를 산출물로 내고 아무것도 막지 않는다(모듈 docstring 참조). 그런데
+왜 따로인가: health는 추세를 산출물로 내고 아무것도 막지 않는다(모듈 docstring 참조). 그런데
 추세는 이미 악화 방향이고, 추세를 되돌리는 행위는 항상 "다음 한 번의 변경"에서 일어난다. 나무
 전체를 판정하면 43,000행의 기존 부채가 전부 걸려 아무 작업도 못 하고, 아무것도 판정하지 않으면
 같은 부채가 매 턴 조금씩 늘어난다. 그래서 이 모듈의 계약은 **래칫** 하나다:
 
     이미 있던 것은 막지 않는다. 이번 변경이 **더 나쁘게 만든 것**만 막는다.
 
-규칙 자체는 `craft_rules` 가 갖는다 — 이 파일이 아는 것은 base 를 어떻게 구하고, 무엇을 이번
+규칙 자체는 `craft_rules`가 갖는다 — 이 파일이 아는 것은 base를 어떻게 구하고, 무엇을 이번
 변경의 책임으로 볼지, 그리고 못 판정한 것을 어떻게 정직하게 실을지뿐이다.
 """
 
@@ -21,7 +21,7 @@ from . import craft_c, craft_lex, craft_rules
 from .craft_rules import Finding, Unit, shape_findings
 from .health import FILE_LINES_WARN, _code_lines, _read, borrowed
 
-# 언어 → health 의 주석 규약 이름 (코드 행 수를 언어에 맞게 센다)
+# 언어 → health의 주석 규약 이름 (코드 행 수를 언어에 맞게 센다)
 _COMMENT_LANG = {
     "python": "Python", "c": "C", "cpp": "C++", "java": "Java", "kotlin": "Kotlin",
     "go": "Go", "rust": "Rust", "csharp": "C#", "swift": "Swift", "ts": "TypeScript",
@@ -83,7 +83,7 @@ def _file_note(rel: str, text: str, before: str | None, lang: str) -> list[Findi
 
 
 def _language(rel: str) -> str | None:
-    """판정 가능한 언어인가. Python 은 구문 트리로, 중괄호 계열은 어휘로 잰다."""
+    """판정 가능한 언어인가. Python은 구문 트리로, 중괄호 계열은 어휘로 잰다."""
     return "python" if rel.endswith(".py") else craft_lex.language(rel)
 
 
@@ -126,7 +126,7 @@ def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str
 
 
 def _inherited(before: str | None, lang: str) -> set[tuple[str, str, str]]:
-    """base 에 이미 있던 형상 — 물려받은 부채는 이번 변경의 책임이 아니다."""
+    """base에 이미 있던 형상 — 물려받은 부채는 이번 변경의 책임이 아니다."""
     if before is None:
         return set()
     prior = _units(before, lang)
@@ -136,7 +136,7 @@ def _inherited(before: str | None, lang: str) -> set[tuple[str, str, str]]:
 
 
 def judge(root: str, paths: object, base: str = "HEAD") -> Report:
-    """지목된 경로만 판정한다 — 나무 전수 스캔은 health 의 일이다."""
+    """지목된 경로만 판정한다 — 나무 전수 스캔은 health의 일이다."""
     rels = _normalise(paths)
     findings: list[Finding] = []
     judged: list[str] = []

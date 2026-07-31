@@ -3,8 +3,8 @@
 #
 # 헬리오스 교훈(2026-04-27, ref/asgard-helios): 실제 자산을 날린 건 "파괴적" 목록 밖의 평범한
 # 명령이었다 — bare `git stash`(전체 트리를 걷어감; 병렬 세션의 미커밋분까지)와 checkout -- <path>.
-# stash 는 drop/clear 만이 아니라 쓰기 계열 전부(bare/push/save/-u)를 막는다. 읽기·복원 계열
-# (list/show/apply/pop/branch)만 통과. 헬리오스는 stash push 를 스냅샷 후 허용했지만, 이 레포는
+# stash는 drop/clear 만이 아니라 쓰기 계열 전부(bare/push/save/-u)를 막는다. 읽기·복원 계열
+# (list/show/apply/pop/branch)만 통과. 헬리오스는 stash push를 스냅샷 후 허용했지만, 이 레포는
 # 병렬 세션이 상시라 스냅샷으로도 부족 — 하드 블록 + wip 브랜치 커밋 유도가 정책이다.
 #
 # 왜 스크립트 하나로 모든 툴을 받는가: BLOCK 목록이 단일 출처여야 해서다. 툴별로 스크립트를
@@ -23,16 +23,16 @@ import shlex
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
 
-# 패턴 공통: `[^|;&]*` 는 명령 구분자(| ; &)를 넘지 않게 탐색을 제한한다 —
-# `git push && rm -f x` 의 `-f` 를 push 의 플래그로 오인해 차단하는 오탐을 막는다.
+# 패턴 공통: `[^|;&]*`는 명령 구분자(| ; &)를 넘지 않게 탐색을 제한한다 —
+# `git push && rm -f x`의 `-f`를 push의 플래그로 오인해 차단하는 오탐을 막는다.
 _GIT = (
     r"\bgit(?:\s+(?:-C(?:\s+\S+|\S+)|-c(?:\s+\S+|\S+)|--(?:git-dir|work-tree|namespace|config-env)"
     r"(?:=\S+|\s+\S+)|--(?:exec-path|super-prefix)=\S+|-(?:p|P)|--(?:no-pager|paginate|bare|literal-pathspecs|no-replace-objects)))*\s+"
@@ -43,7 +43,7 @@ BLOCK = [
     (
         _GIT + r"push\b[^|;&]*--force-with-lease\b",
         "force-push",
-    ),  # lease 도 결국 덮어쓰기 — 의도를 명시하려고 별도 항목
+    ),  # lease도 결국 덮어쓰기 — 의도를 명시하려고 별도 항목
     (_GIT + r"reset\s+--hard\b", "reset --hard"),  # 워킹트리+인덱스 즉시 소실
     (
         _GIT + r"checkout\b[^|;&]*\s--(?:\s|$)",
@@ -55,20 +55,20 @@ BLOCK = [
     (
         _GIT + r"clean\s+-[a-zA-Z]*f",
         "clean -f",
-    ),  # 언트래킹 파일 영구 삭제; [a-zA-Z]*f 로 -fd, -xf 등 조합 플래그도 포착
-    (_GIT + r"branch\s+-D\b", "branch -D"),  # 병합 확인 없는 강제 삭제 (-d 는 안전하므로 허용)
+    ),  # 언트래킹 파일 영구 삭제; [a-zA-Z]*f로 -fd, -xf 등 조합 플래그도 포착
+    (_GIT + r"branch\s+-D\b", "branch -D"),  # 병합 확인 없는 강제 삭제 (-d는 안전하므로 허용)
     (_GIT + r"(rebase|filter-branch|filter-repo)\b", "history rewrite"),  # 커밋 해시가 바뀜 = 증거 재작성
     (_GIT + r"update-ref\s+-d\b", "update-ref -d"),  # ref 직접 삭제 (위 우회 경로)
     (
         # 쓰기 계열 stash 전부 — bare/push/save/-u/drop/clear. 읽기·복원(list/show/apply/pop/branch/
-        # create/store)만 lookahead 로 통과. bare stash 는 전체 트리를 걷어가 병렬 세션 미커밋분까지 소실.
+        # create/store)만 lookahead로 통과. bare stash는 전체 트리를 걷어가 병렬 세션 미커밋분까지 소실.
         _GIT + r"stash\b(?!\s+(?:list|show|apply|pop|branch|create|store)\b)",
         "stash (worktree sweep)",
     ),
-    (_GIT + r"reflog\s+(delete|expire)\b", "drop history"),  # 복구 지점 제거 — Law 3 의 마지막 보루
+    (_GIT + r"reflog\s+(delete|expire)\b", "drop history"),  # 복구 지점 제거 — Law 3의 마지막 보루
     (_GIT + r"rm\b[^|;&]*(?:\s-[a-zA-Z]*[rf]|\s--force\b)", "rm force (worktree delete)"),  # 수정분 무시 삭제
     (
-        # .git 디렉터리 자체 삭제 = 저장소 전체 증거 파기. .github/.gitignore 는 (/|공백|끝) 경계로 제외.
+        # .git 디렉터리 자체 삭제 = 저장소 전체 증거 파기. .github/.gitignore는 (/|공백|끝) 경계로 제외.
         r"\brm\b[^|;&]*\s(?:\S*/)?\.git(?:/\S*)?(?:\s|$)",
         "delete .git (repository destruction)",
     ),
@@ -150,10 +150,10 @@ def _git_subcommand(words: list[str], start: int) -> tuple[str, list[str], str |
 
 
 # 읽기·복원 계열만 통과 — 나머지 stash 서브커맨드(bare/push/save 및 -u 류 플래그 시작)는 전부
-# 워킹트리를 걷어가므로 차단. create/store 는 트리를 건드리지 않는 스냅샷용 저수준 명령.
+# 워킹트리를 걷어가므로 차단. create/store는 트리를 건드리지 않는 스냅샷용 저수준 명령.
 _STASH_READONLY = {"list", "show", "apply", "pop", "branch", "create", "store"}
 
-# rm 경로가 .git 자체를 겨냥하는지 — .github/.gitignore 는 뒤가 word 문자라 매치되지 않는다.
+# rm 경로가 .git 자체를 겨냥하는지 — .github/.gitignore는 뒤가 word 문자라 매치되지 않는다.
 _DOT_GIT = re.compile(r"(^|/)\.git(/|$)")
 
 
@@ -225,10 +225,10 @@ def main() -> None:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
-    # 프로토콜 감지: Cursor 는 command 를 최상위에, Claude Code / Codex 는 tool_input 안에 넣는다.
+    # 프로토콜 감지: Cursor는 command를 최상위에, Claude Code / Codex는 tool_input 안에 넣는다.
     # "tool_input" 키 유무가 두 스키마를 가르는 가장 단순하고 안정적인 판별자다.
     cursor = "tool_input" not in data
-    # str(... or ""): command 가 없거나 문자열이 아닌 페이로드에도 죽지 않고 "매치 없음"으로 흘러간다.
+    # str(... or ""): command가 없거나 문자열이 아닌 페이로드에도 죽지 않고 "매치 없음"으로 흘러간다.
     cmd = str((data.get("command") if cursor else (data.get("tool_input") or {}).get("command")) or "")
 
     label = blocked_reason(cmd)
@@ -242,8 +242,8 @@ def main() -> None:
                 json.dumps(
                     {
                         "permission": "deny",
-                        # 필드명은 snake_case 가 Cursor 계약이다 (cursor.com/docs/hooks, 26-07-27 확인) —
-                        # camelCase 로 보내면 차단은 되지만 가르치는 문장이 통째로 버려진다.
+                        # 필드명은 snake_case가 Cursor 계약이다 (cursor.com/docs/hooks, 26-07-27 확인) —
+                        # camelCase로 보내면 차단은 되지만 가르치는 문장이 통째로 버려진다.
                         "user_message": "Asgard Canon Law 3/6 — irreversible git op (" + label + "). Blocked.",
                         "agent_message": "This " + label + " was blocked by the Asgard Canon (Law 3/6). "
                         "Get Odin's explicit per-action consent; do not retry." + hint,
@@ -252,7 +252,7 @@ def main() -> None:
                 )
             )
             sys.exit(0)
-        # Claude Code / Codex: exit 2 가 차단 신호, stderr 가 에이전트에게 그대로 전달된다.
+        # Claude Code / Codex: exit 2가 차단 신호, stderr가 에이전트에게 그대로 전달된다.
         print(
             "Asgard Canon Law 3/6 — irreversible git op (" + label + "). "
             "Get Odin's explicit consent first (per action, per target)." + hint,
@@ -260,7 +260,7 @@ def main() -> None:
         )
         sys.exit(2)
 
-    if cursor:  # Cursor 는 침묵을 허용으로 안 본다 — 명시적 allow 응답이 프로토콜 요구사항.
+    if cursor:  # Cursor는 침묵을 허용으로 안 본다 — 명시적 allow 응답이 프로토콜 요구사항.
         sys.stdout.write(json.dumps({"permission": "allow"}, separators=(",", ":")))
     sys.exit(0)
 

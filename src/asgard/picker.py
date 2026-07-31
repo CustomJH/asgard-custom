@@ -4,8 +4,8 @@ opencode식 연계 창: 한 패널 안에서 ↑↓ 이동·타이핑 즉시 필
 이루어진다. 시각 언어는 REPL 입력 프레임과 동일(라운드 프레임·골드 캡·hairline rule).
 패널은 transient — 닫히면 스스로 지워지고 선택 결과 한 줄만 스크롤백에 남는다.
 
-TTY 가 아니거나 색이 꺼져 있으면 available() 이 False — 호출부는 기존 번호 입력
-폴백을 그대로 쓴다 (파이프·CI·테스트 무회귀). ASGARD_PLAIN_SELECT=1 로 강제 폴백.
+TTY가 아니거나 색이 꺼져 있으면 available()이 False — 호출부는 기존 번호 입력
+폴백을 그대로 쓴다 (파이프·CI·테스트 무회귀). ASGARD_PLAIN_SELECT=1로 강제 폴백.
 """
 
 from __future__ import annotations
@@ -47,10 +47,10 @@ def _match(option: Option, terms: list[str]) -> bool:
 
 
 def pick(title: str, options: list[Option], *, default: int = 0, manual_hint: str = "") -> str | None:
-    """선택 패널을 띄우고 확정된 Option.value 를 돌려준다 (취소 None).
+    """선택 패널을 띄우고 확정된 Option.value를 돌려준다 (취소 None).
 
-    manual_hint 가 주어지면 필터 텍스트를 그대로 쓰는 수동 행이 열린다 — 이때 반환값은
-    옵션 목록 밖의 원시 입력일 수 있다 (호출부가 정규화). available() 이 참일 때만 부를 것.
+    manual_hint가 주어지면 필터 텍스트를 그대로 쓰는 수동 행이 열린다 — 이때 반환값은
+    옵션 목록 밖의 원시 입력일 수 있다 (호출부가 정규화). available()이 참일 때만 부를 것.
     """
     if not options:
         return None
@@ -98,7 +98,7 @@ def pick(title: str, options: list[Option], *, default: int = 0, manual_hint: st
         visible = rows()
         cursor = min(state.cursor, len(visible) - 1) if visible else 0
         state.cursor = cursor
-        # 가시 창 — 커서 주변 _MAX_ROWS 행, 넘침은 … n more 로 표기
+        # 가시 창 — 커서 주변 _MAX_ROWS 행, 넘침은 … n more로 표기
         start = max(0, min(cursor - _MAX_ROWS // 2, len(visible) - _MAX_ROWS))
         end = min(len(visible), start + _MAX_ROWS)
         if start > 0:

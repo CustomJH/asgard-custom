@@ -41,8 +41,8 @@ def build_index(d: str) -> str:
 def write_index(d: str) -> str:
     text = build_index(d)
     _atomic_write(os.path.join(d, INDEX), text)
-    # index.md 는 주입면이라 예산에 묶여 있다. 예산 밖 전체 목차는 maps/ 가 진다 —
-    # 같은 파생 시점에 같이 갱신돼야 vault 를 열었을 때 목차가 거짓말하지 않는다.
+    # index.md는 주입면이라 예산에 묶여 있다. 예산 밖 전체 목차는 maps/ 가 진다 —
+    # 같은 파생 시점에 같이 갱신돼야 vault를 열었을 때 목차가 거짓말하지 않는다.
     with contextlib.suppress(Exception):  # 파생 목차 실패가 지식 쓰기를 막지 않는다
         from .vault import write_maps
 
@@ -50,7 +50,7 @@ def write_index(d: str) -> str:
     return text
 
 
-# ── FTS5 파생 인덱스 (state.db) — 지워도·손상돼도 reindex 로 복원 ─────────────────
+# ── FTS5 파생 인덱스 (state.db) — 지워도·손상돼도 reindex로 복원 ─────────────────
 
 
 def _connect(path: str) -> sqlite3.Connection:
@@ -60,13 +60,13 @@ def _connect(path: str) -> sqlite3.Connection:
             "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5"
             "(slug UNINDEXED, title, kind UNINDEXED, body, tokenize='trigram')"
         )
-        # usage 는 운영 메타 (지식 아님) — 페이지 파일을 더럽히지 않고 여기서만 추적
+        # usage는 운영 메타 (지식 아님) — 페이지 파일을 더럽히지 않고 여기서만 추적
         conn.execute("CREATE TABLE IF NOT EXISTS usage(slug TEXT PRIMARY KEY, uses INT DEFAULT 0, last_used TEXT)")
-        # vec = 시맨틱 스트림 파생물 (옵트인). sha 로 본문 변경만 재임베딩, data 는 float32 BLOB.
-        # 지워도·모델 바뀌어도 정본(pages/)에서 reindex 로 복원 — 파일이 여전히 정본이다.
+        # vec = 시맨틱 스트림 파생물 (옵트인). sha로 본문 변경만 재임베딩, data는 float32 BLOB.
+        # 지워도·모델 바뀌어도 정본(pages/)에서 reindex로 복원 — 파일이 여전히 정본이다.
         conn.execute("CREATE TABLE IF NOT EXISTS vec(slug TEXT PRIMARY KEY, sha TEXT, dim INT, data BLOB)")
         # 파생 계층의 운영 메타 — 어떤 임베더로 만든 벡터인가. 이게 없으면 모델을 갈아도
-        # sha 는 그대로라(본문이 안 바뀌었으므로) 낡은 차원의 벡터가 조용히 남는다.
+        # sha는 그대로라(본문이 안 바뀌었으므로) 낡은 차원의 벡터가 조용히 남는다.
         conn.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
         return conn
     except Exception:
@@ -91,7 +91,7 @@ def _db(d: str) -> sqlite3.Connection:
         with contextlib.suppress(OSError):
             os.remove(path)
         conn = _connect(path)
-    _chmod(path, 0o600)  # sqlite 는 umask 기본(0644)으로 만든다 — 개인 메모리 파생물도 0600 (2차 리뷰 ④)
+    _chmod(path, 0o600)  # sqlite는 umask 기본(0644)으로 만든다 — 개인 메모리 파생물도 0600 (2차 리뷰 ④)
     return conn
 
 
@@ -131,7 +131,7 @@ def _meta_set(conn: sqlite3.Connection, key: str, value: str) -> None:
 
 def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> None:
     """시맨틱 활성 시에만 벡터 저장 (파생물). 본문 sha 불변이면 재임베딩 생략.
-    비활성/실패는 무해 — 벡터 없이 query 가 2경로로 fail-open 한다."""
+    비활성/실패는 무해 — 벡터 없이 query가 2경로로 fail-open 한다."""
     from .. import memory_semantic as sem
 
     if not sem.active():
@@ -155,10 +155,10 @@ def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> N
 
 
 def _pages_fingerprint(d: str) -> str:
-    """페이지 디렉터리의 stat 지문 — 이름·크기·mtime 만 본다 (파일을 열지 않는다).
+    """페이지 디렉터리의 stat 지문 — 이름·크기·mtime만 본다 (파일을 열지 않는다).
 
-    `documents.py` 의 `_manifest` 와 같은 규율이다. 읽기가 0 인 이유는 `os.scandir` 이 항목마다
-    stat 을 사실상 공짜로 주기 때문이고, 그래서 이 지문은 "확인해 둔 결론을 재사용해도 되는가"의
+    `documents.py`의 `_manifest`와 같은 규율이다. 읽기가 0 인 이유는 `os.scandir`이 항목마다
+    stat을 사실상 공짜로 주기 때문이고, 그래서 이 지문은 "확인해 둔 결론을 재사용해도 되는가"의
     싸고 보수적인 답이 된다. 실패하면 빈 문자열 — 지문이 없으면 빠른 길도 없고, 정확한 경로가
     돈다 (fail-safe: 캐시를 못 믿을 때 캐시를 쓰는 일은 없다)."""
     try:
@@ -183,28 +183,28 @@ def vec_coverage(d: str | None = None) -> dict:
     """시맨틱 파생 인덱스가 정본을 실제로 덮는가 — **임베더를 로드하지 않는** 순수 판정.
 
     왜 이 함수가 필요한가 (26-07-29 실측): 이 기계의 개인 메모리는 페이지 2장에 vec 0행이었고,
-    그런데도 `semantic status` 는 "동작 중"이라고 말했다. 두 문장이 다 참이다 — 임베더는
-    로드되고, 벡터는 없다. `active()` 는 **임베더가 서는가**를 묻지 **회수에 기여하는가**를
+    그런데도 `semantic status`는 "동작 중"이라고 말했다. 두 문장이 다 참이다 — 임베더는
+    로드되고, 벡터는 없다. `active()`는 **임베더가 서는가**를 묻지 **회수에 기여하는가**를
     묻지 않기 때문이다. 그 간극에서 사용자는 매 질의마다 모델 로드 비용(~1초)을 내고 기여는
     0을 받는다.
 
-    이건 남에게 지적한 것과 같은 형태의 결함이다: `memory_semantic` 독스트링이 "agentmemory 는
+    이건 남에게 지적한 것과 같은 형태의 결함이다: `memory_semantic` 독스트링이 "agentmemory는
     로컬 임베딩 기본이라 광고하고 실제론 OFF 였다 — 우리는 그대로 노출한다"고 적어 뒀는데,
     정직함이 한 층 얕은 데서 멈춰 있었다. 이 함수가 그 한 층이다.
 
     반환 = {pages, vectors, fresh, stale, orphan, coverage, model, ok}
-      fresh  = 현재 본문 sha 와 일치하는 벡터 (실제로 회수에 쓰이는 것)
+      fresh  = 현재 본문 sha와 일치하는 벡터 (실제로 회수에 쓰이는 것)
       stale  = 벡터는 있는데 본문이 그 뒤 바뀐 것
-      orphan = 정본에 없는 slug 의 벡터 (prune 대상)
+      orphan = 정본에 없는 slug의 벡터 (prune 대상)
       coverage = fresh / pages  (페이지가 0이면 1.0 — 덮을 것이 없으면 결함도 없다)
 
     임베더를 안 부르는 것이 계약이다: 상태를 재느라 35초를 쓰면 그건 상태 계기가 아니다.
 
-    **비용.** 정확한 판정은 페이지마다 본문을 읽어 sha 를 다시 만든다 — 1,000 페이지에서 42ms
-    다 (실측 26-07-29). 이 함수는 SessionStart 훅(`memory semantic nudge`)·lint·doctor·status
-    가 부르므로 그 값을 매번 내면 계기가 자기가 지키는 것보다 비싸진다. 그래서 **정상 상태를
+    **비용.** 정확한 판정은 페이지마다 본문을 읽어 sha를 다시 만든다 — 1,000 페이지에서 42ms
+    다 (실측 26-07-29). 이 함수는 SessionStart 훅(`memory semantic
+    nudge`)·lint·doctor·status가 부르므로 그 값을 매번 내면 계기가 자기가 지키는 것보다 비싸진다. 그래서 **정상 상태를
     메모**한다: 페이지 디렉터리의 stat 지문(이름·크기·mtime)이 그대로이고 임베더도 그대로면
-    이미 확인한 결론을 그대로 돌려준다. 지문은 `os.scandir` 이 이미 주는 값이라 읽기가 0 이다.
+    이미 확인한 결론을 그대로 돌려준다. 지문은 `os.scandir`이 이미 주는 값이라 읽기가 0 이다.
 
     메모하는 것은 **ok 상태뿐**이다. 고장 상태를 캐시하면 고친 뒤에도 고장이라고 말하게 되고,
     그건 이 함수가 고치려던 바로 그 병(계기가 실사와 어긋남)이다. 지문이 조금이라도 다르면
@@ -255,8 +255,8 @@ def vec_coverage(d: str | None = None) -> dict:
     fresh = 0
     stale = 0
     for slug in pages:
-        # 이름을 `stored` 로 두지 않는다: 위에서 그건 **임베더 모델명**이고, 같은 이름을 쓰면
-        # 루프가 그걸 sha 로 덮어써서 아래 모델 대조가 항상 불일치가 된다 (26-07-29 실측 결함).
+        # 이름을 `stored`로 두지 않는다: 위에서 그건 **임베더 모델명**이고, 같은 이름을 쓰면
+        # 루프가 그걸 sha로 덮어써서 아래 모델 대조가 항상 불일치가 된다 (26-07-29 실측 결함).
         stored_sha = rows.get(slug)
         if stored_sha is None:
             continue
@@ -265,10 +265,10 @@ def vec_coverage(d: str | None = None) -> dict:
             fresh += 1
         else:
             stale += 1
-    # 임베더가 바뀌면 본문 sha 는 그대로여도 벡터는 **다른 공간의 것**이다. 차원이 우연히
-    # 같으면 코사인이 조용히 엉뚱한 값을 내므로(길이가 다를 때만 0 을 돌려준다) sha 만으로는
+    # 임베더가 바뀌면 본문 sha는 그대로여도 벡터는 **다른 공간의 것**이다. 차원이 우연히
+    # 같으면 코사인이 조용히 엉뚱한 값을 내므로(길이가 다를 때만 0을 돌려준다) sha 만으로는
     # 이 드리프트를 못 본다. 지금 로드된 모델이 있을 때만 대조한다 — 판정 때문에 모델을
-    # 불러오지는 않는다 (`loaded_model()` 은 로드를 유발하지 않는다).
+    # 불러오지는 않는다 (`loaded_model()`은 로드를 유발하지 않는다).
     mismatch = bool(rows) and bool(current) and bool(stored) and current != stored
     if mismatch:
         stale += fresh
@@ -276,7 +276,7 @@ def vec_coverage(d: str | None = None) -> dict:
     result["vectors"] = len(rows)
     result["fresh"] = fresh
     result["stale"] = stale
-    result["orphan"] = len(rows.keys() - set(pages))  # 집합 하나로 — 행마다 pages 를 다시 해싱하지 않게
+    result["orphan"] = len(rows.keys() - set(pages))  # 집합 하나로 — 행마다 pages를 다시 해싱하지 않게
     result["coverage"] = 1.0 if not pages else round(fresh / len(pages), 4)
     result["model_mismatch"] = mismatch
     result["ok"] = fresh == len(pages) and not result["orphan"] and not mismatch
@@ -306,7 +306,7 @@ def reindex(d: str | None = None) -> int:
                     _fts_upsert(conn, d, slug)
                 _vec_prune(conn, pages)  # 소실 페이지의 벡터 파생물 정리
             conn.close()
-        except sqlite3.DatabaseError as e:  # connect 는 됐지만 쓰기 중 손상 — 파일 폐기 후 재구축
+        except sqlite3.DatabaseError as e:  # connect는 됐지만 쓰기 중 손상 — 파일 폐기 후 재구축
             if conn is not None:
                 with contextlib.suppress(Exception):
                     conn.close()
@@ -326,7 +326,7 @@ def reindex(d: str | None = None) -> int:
 
 
 def _vec_prune(conn: sqlite3.Connection, pages: list[str]) -> None:
-    """정본에 없는 slug 의 벡터 행 제거 — 파생물 고아 청소 (fail-open)."""
+    """정본에 없는 slug의 벡터 행 제거 — 파생물 고아 청소 (fail-open)."""
     with contextlib.suppress(Exception):
         keep = set(pages)
         stale = [r[0] for r in conn.execute("SELECT slug FROM vec").fetchall() if r[0] not in keep]

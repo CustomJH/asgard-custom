@@ -4,7 +4,7 @@
 # SessionStart 컨텍스트는 부모 스레드 한정 — 서브에이전트에 전파되지 않는다. 이 보상이 없으면
 # 서브에이전트 작업은 전부 lagom 밖에서 돈다. 동작:
 #   상태파일 off/부재 → 무개입 (lagom 비활성 세션 존중)
-#   asgard-verifier → 무주입 (게이트 기준이 lagom 으로 흔들리면 안 된다 — 게이트 신뢰 원칙)
+#   asgard-verifier → 무주입 (게이트 기준이 lagom으로 흔들리면 안 된다 — 게이트 신뢰 원칙)
 #   matcher(LAGOM_SUBAGENT_MATCHER env > [lagom].subagent_matcher) 있으면 agent_type 매치 시만
 # fail-open 방향 주의: matcher 파싱 실패·정규식 오류는 **주입**으로 폴백한다 — 룰 누락이
 # 더 큰 실패다 (원본 설계 계승). 훅 자체 오류만 무개입 통과.
@@ -14,27 +14,27 @@ import re
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
 
 MODES = ("off", "lite", "full")
 
-# 모드 마커 필터 — templates/lagom.py render_lagom 과 동일 유지 (단일 출처 원칙)
+# 모드 마커 필터 — templates/lagom.py render_lagom과 동일 유지 (단일 출처 원칙)
 _ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
 _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
-NEVER_INJECT = ("asgard-verifier",)  # 검증 기준 오염 방지 — Verifier 무주입 원칙 (heimdall 과 동일)
+NEVER_INJECT = ("asgard-verifier",)  # 검증 기준 오염 방지 — Verifier 무주입 원칙 (heimdall과 동일)
 
 
 def _read_text(path):
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -60,7 +60,7 @@ def read_state(root):
 
 
 def render(canon, mode):
-    """lagom_activate.py render 와 동일 유지 (단일 출처 원칙: templates render_lagom)."""
+    """lagom_activate.py render와 동일 유지 (단일 출처 원칙: templates render_lagom)."""
     out = []
     for line in canon.splitlines():
         m = _ROW.match(line) or _EXAMPLE.match(line)
@@ -74,7 +74,7 @@ def matcher_pattern(root):
     pat = os.environ.get("LAGOM_SUBAGENT_MATCHER")
     if pat:
         return pat
-    # 신규 JSON 설정 우선, 구 config.toml 폴백 — settings.py 와 동일 유지 (단일 출처 원칙)
+    # 신규 JSON 설정 우선, 구 config.toml 폴백 — settings.py와 동일 유지 (단일 출처 원칙)
     try:
         with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
             cfg = json.load(handle)
@@ -103,7 +103,7 @@ def client():
 
 
 def emit(current_client, text):
-    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약)."""
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약)."""
     if current_client == "cursor":
         sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
     else:

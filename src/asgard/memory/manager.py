@@ -3,14 +3,14 @@
 개인 메모리의 손질(노른)·패턴 학습·회고 합성은 전부 LLM 호출이다. 기본값은 **지금 쓰는
 메인 provider** 다 — 오딘이 고른 모델이 오딘의 기억을 본다. 그게 이 계층의 규칙이고,
 따로 고를 이유가 있을 때만 (`[memory].manager`) 갈아끼운다: 개인 기억을 원격 대형 모델에
-보내고 싶지 않아 로컬 ollama 로 돌리는 경우, 반대로 메인이 로컬이라 손질 품질이 부족한 경우.
+보내고 싶지 않아 로컬 ollama로 돌리는 경우, 반대로 메인이 로컬이라 손질 품질이 부족한 경우.
 
-주입(읽기)과 관리(쓰기)는 다른 문이다. inject_allowed 는 "이 provider 에게 기억을 보여줘도
+주입(읽기)과 관리(쓰기)는 다른 문이다. inject_allowed는 "이 provider에게 기억을 보여줘도
 되는가"를 판정하고, 여기는 "누가 기억을 손질하는가"를 정한다. 관리자를 따로 지정하면
-그 provider 도 기억을 보게 되므로, describe() 가 두 판정을 한 화면에 같이 보고한다.
+그 provider도 기억을 보게 되므로, describe()가 두 판정을 한 화면에 같이 보고한다.
 
-호출측 계약: complete() 는 provider 미충족을 ManagerUnavailable 로 올린다. 배경 지능은
-fail-open 이 원칙이다 — 관리자가 없다고 기억 자체가 멈추면 안 된다 (읽기·저장은 무LLM).
+호출측 계약: complete()는 provider 미충족을 ManagerUnavailable로 올린다. 배경 지능은
+fail-open이 원칙이다 — 관리자가 없다고 기억 자체가 멈추면 안 된다 (읽기·저장은 무LLM).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ MAX_TOKENS = 3000
 
 
 class ManagerUnavailable(RuntimeError):
-    """개인 메모리를 손질할 provider 가 없다 — 호출측이 조용히 물러날 신호."""
+    """개인 메모리를 손질할 provider가 없다 — 호출측이 조용히 물러날 신호."""
 
 
 def _parse_spec(spec: str) -> tuple[str, str]:
@@ -55,7 +55,7 @@ def manager_config() -> dict:
 
 
 def save_manager(spec: str) -> dict:
-    """관리 provider 를 전역 설정에 기록한다. 빈 문자열이면 해제 (= 메인 provider 로 복귀)."""
+    """관리 provider를 전역 설정에 기록한다. 빈 문자열이면 해제 (= 메인 provider로 복귀)."""
     from ..settings import load_global, save_global
 
     configured = dict(load_global().get("memory") or {})
@@ -97,7 +97,7 @@ def available(root: str | None = None) -> bool:
 
 
 def complete(root: str, system: str, user: str, max_tokens: int = MAX_TOKENS) -> str:
-    """관리 provider 로 단발 완성 1회. 미충족은 ManagerUnavailable."""
+    """관리 provider로 단발 완성 1회. 미충족은 ManagerUnavailable."""
     resolved, source = resolve_manager(root)
     if resolved.missing:
         raise ManagerUnavailable(

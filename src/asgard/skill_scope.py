@@ -5,12 +5,12 @@
 같은 write 요청이라도 한 조각짜리 수직 슬라이스인지, 스펙 표면을 먼저 고정해야 하는 기능인지,
 결정이 아직 스펙을 막고 있는 원정인지에 따라 계획 규율이 달라야 한다.
 
-왜 결정론인가 — 스킬 카탈로그는 이미 설명만 노출하고 모델이 `load_skill` 로 고르는 구조인데,
+왜 결정론인가 — 스킬 카탈로그는 이미 설명만 노출하고 모델이 `load_skill`로 고르는 구조인데,
 파일 플러그인의 트리거 매칭이 `trigger in task` 부분 문자열이라 한국어 지시에는 사실상 불발한다
-("소셜 로그인 버튼 추가해줘" 는 어느 영어 트리거에도 안 걸린다). 범위를 코드가 먼저 재고 결속
+("소셜 로그인 버튼 추가해줘"는 어느 영어 트리거에도 안 걸린다). 범위를 코드가 먼저 재고 결속
 스킬을 **이름으로** 지목해 주면, 모델의 자율 선택은 그대로 두면서 발견 실패만 걷어낸다.
 
-`work_shape` 는 순수 함수 (LLM·IO 없음). `scope_note` 만 레지스트리를 조회해 실제로 그 역할에
+`work_shape`는 순수 함수 (LLM·IO 없음). `scope_note`만 레지스트리를 조회해 실제로 그 역할에
 열려 있는 스킬로 이름을 걸러 낸다 — 없는 스킬을 지목하는 노트는 거짓말이므로.
 """
 
@@ -29,7 +29,7 @@ _EXPEDITION_PAT = re.compile(
     r"|multi-?session|\bgreenfield\b|from\s+scratch|ground\s+up",
     re.IGNORECASE,
 )
-# 기능 표식 — 슬라이스 하나로 안 끝나는 신설 표면. cls 축(deep/parallel)이 이미 잡으면 불요.
+# 기능 표식 — 슬라이스 하나로 안 끝나는 신설 표면. cls 축(deep/parallel)이 이미 잡으면 불필요.
 _FEATURE_PAT = re.compile(
     r"신규\s*(?:기능|화면|페이지|엔드포인트|모듈|서비스|api)|기능\s*(?:추가|개발|구현|신설)"
     r"|화면\s*(?:추가|신설)|페이지\s*(?:추가|신설)|엔드포인트\s*(?:추가|신설)"
@@ -41,7 +41,7 @@ _FEATURE_PAT = re.compile(
 _LENS_PAT: dict[str, re.Pattern[str]] = {
     # 버그는 대개 어휘가 아니라 **증상**으로 신고된다 ("다크 모드가 깨졌다", "목록이 안 나온다",
     # "dark mode is broken"). 어휘만 잡으면 가장 흔한 신고 형태를 통째로 놓친다 — 26-07-26 실측:
-    # 증상 문장 15개 배터리에서 5/15 만 걸렸다. 증상 표현을 1급 신호로 편입한다.
+    # 증상 문장 15개 배터리에서 5/15만 걸렸다. 증상 표현을 1급 신호로 편입한다.
     "bug": re.compile(
         r"버그|디버깅|디버그|크래시|스택\s*트레이스|재현|원인\s*(?:규명|분석|찾|파악)|회귀|오류\s*(?:수정|해결)"
         r"|안\s*(?:되|돼)|깨졌|깨져|깨진|망가|먹통|안\s*(?:나오|나온|나와|보이|보인|먹)|나오지\s*않|보이지\s*않"
@@ -84,7 +84,7 @@ _LENS_PAT: dict[str, re.Pattern[str]] = {
     ),
 }
 
-# 렌즈 → 결속 스킬. 존재 여부는 scope_note 가 레지스트리로 확인한다 (없는 이름은 지목하지 않음).
+# 렌즈 → 결속 스킬. 존재 여부는 scope_note가 레지스트리로 확인한다 (없는 이름은 지목하지 않음).
 _LENS_SKILLS: dict[str, tuple[str, ...]] = {
     "bug": ("asgard-worker-debugging",),
     "test": ("asgard-worker-testing",),
@@ -96,7 +96,7 @@ _LENS_SKILLS: dict[str, tuple[str, ...]] = {
 
 # 형상별 계획 규율 — 상류 공개 스킬군(정렬→스펙→슬라이스→구현→리뷰)의 우리 말 재서술.
 # 산출물을 만드는 오케스트레이터(`/blueprint`·`/quests`·`/expedition`)는 사용자 호출로 남긴다:
-# 자율 턴이 docs/specs·docs/quests 를 임의로 낳으면 범위 밖 산출물이다 (Canon 7).
+# 자율 턴이 docs/specs·docs/quests를 임의로 낳으면 범위 밖 산출물이다 (Canon 7).
 _SHAPE_CONTRACT: dict[str, str] = {
     "direct": ("Read-only turn — answer from what you observe. No plan artifacts, no files."),
     "slice": (
@@ -125,10 +125,10 @@ _SHAPE_CONTRACT: dict[str, str] = {
 def work_shape(request: str, cls: dict | None = None, facts: dict | None = None) -> dict:
     """지시 + 분류 (+ 변경 사실) → {shape, lenses, why}. 순수 함수 — LLM·IO 없음.
 
-    cls 가 없으면 텍스트만으로 판정한다 (외부 호스트 어댑터 경로). write 의도가 없으면 direct —
+    cls가 없으면 텍스트만으로 판정한다 (외부 호스트 어댑터 경로). write 의도가 없으면 direct —
     범위 규율을 붙일 대상 자체가 없다.
 
-    `facts` 는 `change_facts()` 산출물이다. 구조 형상이 관측되면 요청 문구와 무관하게
+    `facts`는 `change_facts()` 산출물이다. 구조 형상이 관측되면 요청 문구와 무관하게
     architecture 렌즈를 켠다 — 침식은 아키텍처를 입에 담지 않는 변경에서 일어나므로."""
     text = " ".join((request or "").split())
     cls = cls or {}
@@ -148,7 +148,7 @@ def work_shape(request: str, cls: dict | None = None, facts: dict | None = None)
 
 
 # ── 변경 형상 사실 — 지시 텍스트가 아니라 **손댄 것**에서 구조 규율을 켠다 ──
-# 왜: architecture 렌즈가 요청 문구에만 걸려 있으면 "엔드포인트 하나 추가해줘" 는 영원히 안
+# 왜: architecture 렌즈가 요청 문구에만 걸려 있으면 "엔드포인트 하나 추가해줘"는 영원히 안
 # 걸린다. 그런데 침식은 정확히 그런 요청에서 일어난다 — 아키텍처를 말하지 않는 변경이
 # 경계를 넘고, 이미 큰 파일을 더 키운다. 그래서 관측된 변경 집합에서 사실을 뽑아 켠다.
 _STRUCTURAL_DIRS = 3  # 서로 다른 디렉터리 이상을 건드리면 산탄 수정 형태
@@ -156,7 +156,7 @@ _STRUCTURAL_FILES = 5  # 한 슬라이스로 보기 어려운 파일 수
 
 
 def change_facts(root: str, changed: object) -> dict:
-    """관측된 변경 파일 집합 → 구조 규율 판정 사실. IO 는 크기 확인뿐 (지목 파일만 읽는다).
+    """관측된 변경 파일 집합 → 구조 규율 판정 사실. IO는 크기 확인뿐 (지목 파일만 읽는다).
 
     반환은 사실만 — 판정(렌즈 결속)은 `work_shape` 몫이다. 빈 입력은 빈 사실이고, 사실이
     없으면 렌즈를 켜지 않는다 (fail-open: 모르는 것으로 규율을 강요하지 않는다).
@@ -212,7 +212,7 @@ def scope_note(
     결속 스킬은 레지스트리에서 그 역할에 실제로 열린 이름만 남긴다 — 비활성·미배정 스킬을
     지목하면 모델이 존재하지 않는 것을 로드하려다 턴을 태운다 (fail-open: 조회 실패 = 무필터).
 
-    `changed` 가 오면 그 변경 집합의 형상까지 판정에 넣는다 (관측된 구조 변경 → 구조 규율)."""
+    `changed`가 오면 그 변경 집합의 형상까지 판정에 넣는다 (관측된 구조 변경 → 구조 규율)."""
     facts = change_facts(root, changed) if changed else None
     result = work_shape(request, cls, facts)
     shape = result["shape"]
@@ -241,7 +241,7 @@ def scope_note(
         )
         if "asgard-hlidskjalf" not in skills:
             # 판정자는 스킬 배정 대상이 아니다 (검증 독립성 — skill_registry._ASSIGNABLE_AGENTS).
-            # 그래서 결속 목록으로는 못 주고, 역할 md 가 이미 쓰는 CLI 읽기 경로로 지목한다.
+            # 그래서 결속 목록으로는 못 주고, 역할 md가 이미 쓰는 CLI 읽기 경로로 지목한다.
             lines.append(
                 "This assigns the system-level architecture axis for this diff: load the canonical procedure"
                 " with `asgard skills show asgard-hlidskjalf` and judge layering/dependency direction,"

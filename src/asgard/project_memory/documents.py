@@ -9,16 +9,16 @@
 가장 건강했다 — 밀도는 변수가 아니었다.
 
 바꿀 수 있는 것은 다 바꿔 봤다. 청크를 줄여 단위가 회수 예산에 들어오게 하니 적중이
-0→10 으로 살아났지만, 지연은 문서 96,000자에서 41~67s 로 평평했다 — 후보가 늘어난 만큼
+0→10으로 살아났지만, 지연은 문서 96,000자에서 41~67s로 평평했다 — 후보가 늘어난 만큼
 하나가 싸져 총합이 그대로다. 즉 **큰 한국어 문서는 어떤 청크 크기로도 이 배포에서
-회수되지 않는다.** 회수 시간은 units 에 선형(≈0.38s/unit)이고, 턴 시작 주입은 5초에서
+회수되지 않는다.** 회수 시간은 units에 선형(≈0.38s/unit)이고, 턴 시작 주입은 5초에서
 잘리므로 그래프 레인이 감당하는 것은 12 units(≈12,000자)까지다.
 
 그 위는 그래프에 넣지 않는다:
 
-  정본 = `.asgard/memory/documents/` 의 텍스트 파일 — 팀에는 **뱅크가 아니라 저장소가**
+  정본 = `.asgard/memory/documents/`의 텍스트 파일 — 팀에는 **뱅크가 아니라 저장소가**
          나른다 (Git). 승인 게이트가 지키려던 것("공유 스코프의 쓰기는 사람을 지난다")은
-         여기서도 지켜진다: 파일은 커밋 전까지 공유되지 않고, git status 에 그대로 보인다.
+         여기서도 지켜진다: 파일은 커밋 전까지 공유되지 않고, git status에 그대로 보인다.
   검색 = 그 정본에서 만든 로컬 FTS5 인덱스 — 파생물이라 지워도·손상돼도 재생성된다.
 
 "통합 관리, 분리 저장"이 깨지지 않는 이유: 정본은 여전히 하나이고 팀이 공유한다. 갈리는
@@ -39,8 +39,8 @@ DOCUMENT_SCHEMA = "asgard-project-document-v1"
 DOCUMENTS_RELATIVE_DIR = os.path.join(".asgard", "memory", "documents")
 INDEX_RELATIVE_PATH = os.path.join(".asgard", "memory", "documents.db")
 
-RRF_K = 60  # memory.recall·episodes 와 동일 — 순위 융합 표준 상수
-DOCUMENT_BUDGET = 900  # chars — 주입 블록 상한 (프로젝트 recall 1600 보다 작게)
+RRF_K = 60  # memory.recall·episodes와 동일 — 순위 융합 표준 상수
+DOCUMENT_BUDGET = 900  # chars — 주입 블록 상한 (프로젝트 recall 1600보다 작게)
 _EXCERPT_WIDTH = 220
 CHUNK_CHARS = 1200  # 회수 단위. 절 제목을 앞에 달아 두므로 조각만 읽어도 어디인지 안다
 CHUNK_MIN = 120  # 이보다 짧은 꼬리는 앞 조각에 붙인다 — 한 줄짜리 조각은 검색 잡음이다
@@ -58,7 +58,7 @@ def _unsafe_path(path: str) -> bool:
 
 
 def documents_dir(root: str, *, create: bool = False) -> str:
-    """프로젝트 루트 아래 정본 디렉터리만 허용한다 (canonical.records_dir 과 같은 계약)."""
+    """프로젝트 루트 아래 정본 디렉터리만 허용한다 (canonical.records_dir과 같은 계약)."""
     root = os.path.realpath(root)
     path = os.path.join(root, DOCUMENTS_RELATIVE_DIR)
     for component in (os.path.join(root, ".asgard"), os.path.join(root, ".asgard", "memory"), path):
@@ -98,7 +98,7 @@ def save_document(root: str, document) -> str:
 
     같은 파일을 다시 던지면 내용 해시가 파일명에 들어 있어 **다른 파일**이 된다 — 이전
     개정판이 남는 것은 의도다. 요구사항서의 이전 판은 지워야 할 쓰레기가 아니라 무엇이
-    언제 바뀌었는지의 증거이고, 지우는 결정은 사람이 git 에서 한다."""
+    언제 바뀌었는지의 증거이고, 지우는 결정은 사람이 git에서 한다."""
     directory = documents_dir(root, create=True)
     meta = {
         "schema": DOCUMENT_SCHEMA,
@@ -151,7 +151,7 @@ def chunk(text: str) -> list[tuple[str, str]]:
 
     제목 경계에서 먼저 자르고 남은 긴 덩어리만 길이로 자른다. 순서가 반대면 한 절이 두
     조각으로 갈릴 때 뒤쪽 조각이 자기가 어느 절인지 잃는다 — 요구사항서에서 그것은
-    "3.2.1 이 무엇을 요구하는가"를 못 찾는다는 뜻이다."""
+    "3.2.1이 무엇을 요구하는가"를 못 찾는다는 뜻이다."""
     marks = [(m.start(), (m.group(2) or m.group(4) or "").strip()) for m in _HEADING.finditer(text)]
     sections: list[tuple[str, str]] = []
     if not marks or marks[0][0] > 0:
@@ -202,7 +202,7 @@ def _connect(path: str) -> sqlite3.Connection:
 
 
 def _db(root: str) -> sqlite3.Connection:
-    """파생 인덱스 연결 — 손상 파일은 격리 후 재생성 (memory.index·episodes 와 동일 계약)."""
+    """파생 인덱스 연결 — 손상 파일은 격리 후 재생성 (memory.index·episodes와 동일 계약)."""
     path = _index_path(root)
     os.makedirs(os.path.dirname(path), exist_ok=True)
     try:
@@ -233,7 +233,7 @@ def lane_present(root: str) -> bool:
     """이 저장소가 로컬 레인을 쓰는가 — 정본이 있거나, 있었던 흔적(인덱스)이 있는가.
 
     회수는 프로젝트마다 매 턴 돈다. 레인을 안 쓰는 저장소에 빈 인덱스 파일을 만들어 두면
-    쓰지도 않는 `.asgard/memory/` 를 온 저장소에 심는 셈이다 — 파생물은 필요할 때 생긴다."""
+    쓰지도 않는 `.asgard/memory/`를 온 저장소에 심는 셈이다 — 파생물은 필요할 때 생긴다."""
     try:
         directory = documents_dir(root)
     except ValueError:
@@ -246,7 +246,7 @@ def lane_present(root: str) -> bool:
 def sync(root: str) -> int:
     """정본 → 인덱스. 지문이 같으면 아무것도 하지 않고, 다르면 통째로 다시 만든다.
 
-    증분을 안 하는 이유는 정본이 append-only 가 아니기 때문이다 (사람이 지우고 되돌린다).
+    증분을 안 하는 이유는 정본이 append-only가 아니기 때문이다 (사람이 지우고 되돌린다).
     문서 수는 수십 단위라 전체 재구축이 싸다 — 여기서 아낄 것은 시간이 아니라 정합성이다.
     반환 = 인덱스된 조각 수."""
     try:
@@ -297,7 +297,7 @@ def search(root: str, text: str, k: int = 3) -> list[dict]:
     """문서 정본 전문 검색 (0-LLM) — FTS trigram + lexical 스캔 2-스트림 RRF.
 
     반환 hit = {seq, name, heading, excerpt, score}. 그래프가 하던 일을 대신하는 자리라
-    회수 경로는 검증된 것(episodes·memory.recall 과 같은 융합)을 그대로 쓴다."""
+    회수 경로는 검증된 것(episodes·memory.recall과 같은 융합)을 그대로 쓴다."""
     try:
         if not lane_present(root):
             return []  # 파생물은 필요할 때 생긴다 — 빈 인덱스조차 만들지 않는다

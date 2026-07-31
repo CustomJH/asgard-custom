@@ -1,11 +1,11 @@
 """evolution — 회고 증류기 + 진화 인박스 (자가발전 C1/C2, CUS-253·254).
 
-quest 로그(.asgard/quest/*.jsonl)에서 hard-won 신호(실패를 딛고 PASS 에 도달한 퀘스트)만
+quest 로그(.asgard/quest/*.jsonl)에서 hard-won 신호(실패를 딛고 PASS에 도달한 퀘스트)만
 결정론적으로 선별해 스킬 초안을 만들고, .asgard/evolution/pending/ 인박스에 스테이징한다.
 승인(asgard evolve approve)만이 learned 스킬 뱅크(.asgard/skills/)로 설치하는 유일한 경로다.
 
 설계 근거 (CUS-251 리서치):
-- 선별은 결정론, 가치 판단은 사용자 — 저신호 휴리스틱 양산은 승인율을 0 으로 만든다는
+- 선별은 결정론, 가치 판단은 사용자 — 저신호 휴리스틱 양산은 승인율을 0으로 만든다는
   실증 교훈. 여기서는 "FAIL→PASS 전환"이라는 고신호만 후보가 된다 (hard-won 교훈).
 - 캡처 금지 필터 — 환경 의존 실패·일시 장애는 스킬이 아니다 (실전 교훈: 도구 부정 주장을
   캡처하면 몇 달간 자기 인용해 스스로 거부하게 된다).
@@ -108,7 +108,7 @@ def _quest_signal(events: list[dict]) -> dict | None:
         "changed_files": [str(f) for f in (final.get("changed_files") or [])][:10],
         "subtasks": subtasks[:4],
         "task_class": str((events[0].get("risk") or {}).get("task_class") or ""),
-        # 함정 섹션 수록분도 금지 필터 적용 — 마지막 sig 만 걸러도 앞선 환경 노이즈가
+        # 함정 섹션 수록분도 금지 필터 적용 — 마지막 sig만 걸러도 앞선 환경 노이즈가
         # 초안 본문에 박제되는 누수가 있었다 (26-07-16)
         "fail_whys": [
             str(e.get("failure_sig"))[:200]
@@ -149,9 +149,9 @@ def correction_signal(user_text: str) -> str | None:
 
 
 def record_correction(root: str, user_text: str, assistant_text: str = "") -> bool:
-    """정정 발화를 corrections.jsonl 에 스테이징한다 (탐지 실패·중복·위협 = False, 무해).
+    """정정 발화를 corrections.jsonl에 스테이징한다 (탐지 실패·중복·위협 = False, 무해).
 
-    저장은 신호 원문뿐 — 스킬 초안 변환은 mine() 이 latch 와 함께 수행한다."""
+    저장은 신호 원문뿐 — 스킬 초안 변환은 mine()이 latch와 함께 수행한다."""
     try:
         phrase = correction_signal(user_text)
         if not phrase:
@@ -222,7 +222,7 @@ def _correction_draft(row: dict) -> tuple[str, str]:
         "",
         "## 근거",
         "- 이 카드는 사용자 정정 발화의 증거 초안이다 — 승인 전에 '무엇을 어떻게 바꿔야 하는가'를",
-        "  일반화 원칙으로 다듬어라 (특히 triggers 와 description).",
+        "  일반화 원칙으로 다듬어라 (특히 triggers와 description).",
         "",
     ]
     return name, "\n".join(body)
@@ -232,7 +232,7 @@ def _tokens(text: str) -> list[str]:
     """트리거 후보 토큰 — ascii 4자+ 또는 한글 2자+ 단어, 불용어 제외 (결정론)."""
     words = re.findall(r"[A-Za-z][A-Za-z0-9_.-]{3,}|[가-힣]{2,}", text)
     out: list[str] = []
-    taken: set[str] = set()  # 순서는 out 이, 중복 판정은 이쪽이 진다 — 긴 글에서 제곱이 되지 않게
+    taken: set[str] = set()  # 순서는 out이, 중복 판정은 이쪽이 진다 — 긴 글에서 제곱이 되지 않게
     for w in words:
         lw = w.lower().strip(".-_")
         if lw and lw not in _STOPWORDS and lw not in taken:
@@ -257,7 +257,7 @@ def _draft(sig: dict) -> tuple[str, str]:
     body = [
         "---",
         f"name: {name}",
-        f"description: {desc_src[:150]} — FAIL {sig['fail_count']}회{esc} 후 PASS 로 도달한 교훈",
+        f"description: {desc_src[:150]} — FAIL {sig['fail_count']}회{esc} 후 PASS로 도달한 교훈",
         f"triggers: {', '.join(triggers)}",
         "agent: worker",
         "origin: retrospective",
@@ -290,10 +290,10 @@ def _cand_id(signal: str) -> str:
 
 _POLISH_SYS = (
     "스킬 초안 편집기. 입력은 에이전트 세션의 실측 증거로 만든 SKILL.md 초안이다. "
-    "같은 SKILL.md 형식으로만 다시 써서 출력한다 (설명·코드펜스 금지, --- frontmatter 로 시작). "
+    "같은 SKILL.md 형식으로만 다시 써서 출력한다 (설명·코드펜스 금지, --- frontmatter로 시작). "
     "규칙: (1) 증거에 없는 사실을 지어내지 않는다 — 전략·함정 서술을 일반화 가능한 원칙 문장으로 "
-    "다듬는 것만 허용. (2) frontmatter 의 name/agent/origin/created/evidence 는 그대로 보존. "
-    "(3) triggers 는 재발 상황을 잡을 실질 키워드로 개선 가능. (4) description 은 한 문장. "
+    "다듬는 것만 허용. (2) frontmatter의 name/agent/origin/created/evidence는 그대로 보존. "
+    "(3) triggers는 재발 상황을 잡을 실질 키워드로 개선 가능. (4) description은 한 문장. "
     "(5) 환경 의존 실패·도구에 대한 부정 주장은 쓰지 않는다."
 )
 
@@ -301,8 +301,8 @@ _POLISH_SYS = (
 def polish(root: str, cid: str) -> tuple[bool, str]:
     """LLM 증류 (opt-in) — pending 초안을 원칙 수준 서술로 다듬는다. 실패 = 초안 유지 (fail-open).
 
-    닫힌 과업이다: LLM 은 초안 '재작성'만 한다 — 스킬 가치 판단(승인)은 여전히 사용자 몫이고,
-    산출물은 pending 에 머무른다 (LLM open-ended 판단 금지, CUS-251)."""
+    닫힌 과업이다: LLM은 초안 '재작성'만 한다 — 스킬 가치 판단(승인)은 여전히 사용자 몫이고,
+    산출물은 pending에 머무른다 (LLM open-ended 판단 금지, CUS-251)."""
     draft = show(root, cid)
     if draft is None:
         return False, f"후보 없음: {cid}"
@@ -321,7 +321,7 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
     old_meta, _ = parse_skill_md(draft) or ({}, "")
     new_meta, _ = parsed
     if str(new_meta.get("name")) != str(old_meta.get("name")):
-        return False, "LLM 이 보존 필드(name)를 바꿈 — 결정론 초안 유지 (satisficing backstop)"
+        return False, "LLM이 보존 필드(name)를 바꿈 — 결정론 초안 유지 (satisficing backstop)"
     p = _evo_dir(root, PENDING, cid, SKILL_FILE)
     orig = f"{p}.orig"
     if not os.path.exists(orig):  # 결정론 초안 백업 — latch 때문에 재생성 불가, 내용 열화 시 복구선
@@ -331,7 +331,7 @@ def polish(root: str, cid: str) -> tuple[bool, str]:
 
 
 def _stage_candidate(root: str, seen: dict, signal: str, name: str, skill_md: str, meta_extra: dict) -> dict:
-    """후보 1건을 pending 에 스테이징 + seen latch. 반환 = 후보 메타 (채굴원 공용)."""
+    """후보 1건을 pending에 스테이징 + seen latch. 반환 = 후보 메타 (채굴원 공용)."""
     cid = _cand_id(signal)
     d = _evo_dir(root, PENDING, cid)
     os.makedirs(d, exist_ok=True)
@@ -410,13 +410,13 @@ def autoscan_enabled() -> bool:
     """퀘스트가 닫힐 때 스스로 채굴하는가 — env > 글로벌 `evolution.autoscan`, 기본 on.
 
     채굴은 **능력을 바꾸지 않는다**: 결과는 pending 인박스의 초안 파일이고, 라우팅에 서려면
-    여전히 사람의 `approve` 가 필요하다. 그래서 여기는 norn 과 같은 경계에 선다 — 순수 추가·완전
-    가역은 자율, 형태를 바꾸는 것은 동의 (norn.partition_ops 와 같은 규율).
+    여전히 사람의 `approve`가 필요하다. 그래서 여기는 norn과 같은 경계에 선다 — 순수 추가·완전
+    가역은 자율, 형태를 바꾸는 것은 동의 (norn.partition_ops와 같은 규율).
 
     왜 기본을 켜는가. 넛지만 두었더니 신호가 **실제로 채굴되지 않았다** (26-07-31 실측: 이
     저장소에 hard-won 신호 2건이 닷새째 남아 있었고 인박스는 한 번도 만들어진 적이 없다).
-    넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch 라 놓치면 영영 조용하고, 퀘스트 로그는
-    keep-last-N 으로 지워진다 — 교훈이 조용히 사라지는 쪽이 기본값이었다."""
+    넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch라 놓치면 영영 조용하고, 퀘스트 로그는
+    keep-last-N으로 지워진다 — 교훈이 조용히 사라지는 쪽이 기본값이었다."""
     value = str(os.environ.get(AUTOSCAN_ENV) or "").strip().lower()
     if value:
         return value in ("on", "1", "true", "yes")
@@ -454,7 +454,7 @@ def _latched(root: str, digest: str, count: int) -> bool:
             indent=None,
         )
     except OSError:
-        return True  # latch 를 기록할 수 없으면 침묵 — 반복 넛지가 침묵보다 나쁘다
+        return True  # latch를 기록할 수 없으면 침묵 — 반복 넛지가 침묵보다 나쁘다
     return False
 
 
@@ -462,7 +462,7 @@ def nudge_line(root: str) -> str | None:
     """채굴하고, **승인 대기 초안**을 한 줄로 — 대기 집합이 변했을 때만 (latch).
 
     네 모드가 전부 이 한 지점을 지난다: 외부 클라이언트는 Stop 훅(memory-activate)이
-    `asgard evolve nudge` 로, 네이티브 루프는 quest close 에서 직접 부른다.
+    `asgard evolve nudge`로, 네이티브 루프는 quest close에서 직접 부른다.
 
     종전에는 "미채굴 신호가 있다"고 알리고 채굴은 사람이 치게 했다 — 그래서 놓친 넛지 하나가
     교훈 하나의 영구 소실이었다. 이제 채굴까지는 하니스가 하고(가역·비활성), 사람에게는
@@ -475,7 +475,7 @@ def nudge_line(root: str) -> str | None:
         if _latched(root, digest, len(items)):
             return None
         fresh = f" (방금 {len(mined)}건 채굴)" if mined else ""
-        return f"학습 후보 {len(items)}건 대기{fresh} — asgard evolve list 로 검토·승인 (미승인 = 미적용)"
+        return f"학습 후보 {len(items)}건 대기{fresh} — asgard evolve list로 검토·승인 (미승인 = 미적용)"
     qdir = os.path.join(root, ".asgard", "quest")
     seen = _load_seen(root)
     signals = sorted(
@@ -493,7 +493,7 @@ def nudge_line(root: str) -> str | None:
     digest = hashlib.sha1("\0".join(signals).encode()).hexdigest()
     if _latched(root, digest, len(signals)):
         return None
-    return f"진화 후보 신호 {len(signals)}건 — asgard evolve scan 으로 채굴 후 검토·승인 (hard-won 교훈)"
+    return f"진화 후보 신호 {len(signals)}건 — asgard evolve scan으로 채굴 후 검토·승인 (hard-won 교훈)"
 
 
 def pending_list(root: str) -> list[dict]:
@@ -519,18 +519,18 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
     이곳이 pending → 활성의 유일한 관문이다 (자동 활성화 경로 없음, CUS-251 헌법)."""
     text = show(root, cid)
     if text is None:
-        return False, f"후보 없음: {cid} (asgard evolve list 로 확인)"
+        return False, f"후보 없음: {cid} (asgard evolve list로 확인)"
     parsed = parse_skill_md(text)
     if not parsed:
-        return False, "frontmatter 불량 — name/triggers 필수. pending SKILL.md 를 고친 뒤 재시도."
+        return False, "frontmatter 불량 — name/triggers 필수. pending SKILL.md를 고친 뒤 재시도."
     meta, _body = parsed
     name = str(meta["name"])
     if "재발-트리거-직접-기입" in meta["triggers"]:
-        return False, "triggers 가 placeholder 그대로다 — 실제 재발 키워드로 바꾼 뒤 재시도."
+        return False, "triggers가 placeholder 그대로다 — 실제 재발 키워드로 바꾼 뒤 재시도."
     if name in learned_skills(root):
-        return False, f"이름 충돌: learned 스킬 '{name}' 이 이미 있다."
+        return False, f"이름 충돌: learned 스킬 '{name}'이 이미 있다."
     if name in _bundled_names():
-        return False, f"이름 충돌: 번들 스킬 '{name}' 과 겹친다."
+        return False, f"이름 충돌: 번들 스킬 '{name}'과 겹친다."
     dst = os.path.join(root, ".asgard", "skills", name)
     os.makedirs(dst, exist_ok=True)
     io_files.write_text(os.path.join(dst, SKILL_FILE), text)
@@ -554,7 +554,7 @@ def approve(root: str, cid: str) -> tuple[bool, str]:
     }
     _save_seen(root, seen)
     shutil.rmtree(src, ignore_errors=True)
-    return True, f"설치됨: .asgard/skills/{name}/ — 다음 디스패치부터 자동 라우팅 (재시작 불요)"
+    return True, f"설치됨: .asgard/skills/{name}/ — 다음 디스패치부터 자동 라우팅 (재시작 불필요)"
 
 
 def reject(root: str, cid: str, reason: str = "") -> tuple[bool, str]:
@@ -579,7 +579,7 @@ def reject(root: str, cid: str, reason: str = "") -> tuple[bool, str]:
 
 
 def archive_skill(root: str, name: str) -> tuple[bool, str]:
-    """보관 전이 — 삭제 없는 비활성화 (라우팅 스캔이 .archive 를 건너뛴다). 복원 = 되돌리기."""
+    """보관 전이 — 삭제 없는 비활성화 (라우팅 스캔이 .archive를 건너뛴다). 복원 = 되돌리기."""
     src = os.path.join(root, ".asgard", "skills", name)
     if not os.path.isdir(src):
         return False, f"learned 스킬 없음: {name}"
@@ -599,9 +599,9 @@ def restore_skill(root: str, name: str) -> tuple[bool, str]:
         return False, f"아카이브에 없음: {name}"
     dst = os.path.join(root, ".asgard", "skills", name)
     if os.path.isdir(dst):
-        return False, f"활성 스킬 '{name}' 이 이미 있다 — 먼저 archive 하거나 이름을 정리하라."
+        return False, f"활성 스킬 '{name}'이 이미 있다 — 먼저 archive 하거나 이름을 정리하라."
     if name in _bundled_names():
-        return False, f"이름 충돌: 번들 스킬 '{name}' 과 겹친다 (아카이브 중 번들이 추가됨)."
+        return False, f"이름 충돌: 번들 스킬 '{name}'과 겹친다 (아카이브 중 번들이 추가됨)."
     shutil.move(os.path.join(adir, snaps[-1]), dst)
     return True, f"복원됨: .asgard/skills/{name}/ — 다음 디스패치부터 다시 라우팅 (최신 스냅샷 {snaps[-1]})"
 

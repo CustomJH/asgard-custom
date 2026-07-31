@@ -1,7 +1,7 @@
 """인터랙티브 온보딩 — 세션 안 provider 연결·로그인 흐름.
 
 키 없이 start 진입 → provider 선택 → 키 입력(getpass, 에코 없음) → ~/.asgard/credentials.json
-저장(chmod 600, config 와 분리). env var 는 여전히 우선(export 한 사용자 무회귀). 비-TTY 에선
+저장(chmod 600, config와 분리). env var는 여전히 우선(export 한 사용자 무회귀). 비-TTY 에선
 온보딩 불가 — 호출부가 처방으로 폴백한다.
 """
 
@@ -131,7 +131,7 @@ def select_model_id(root: str, rp: ResolvedProvider, model: str, *, persist: boo
             selected.rpm = rp.rpm
         return selected
     selected = resolve(root, provider=rp.profile.name, model=model)
-    if rp.rpm:  # resolve 재해석은 config 만 본다 — 방금 입력한 rpm 을 승계해 함께 저장
+    if rp.rpm:  # resolve 재해석은 config만 본다 — 방금 입력한 rpm을 승계해 함께 저장
         selected.rpm = rp.rpm
     if selected.profile.name not in FIXED_ENDPOINT_PROVIDERS:
         selected.base_url = rp.base_url
@@ -191,7 +191,7 @@ def onboard(root: str, preselect: str | None = None) -> ResolvedProvider | None:
         model = input("  " + t("model_id_prompt") + ": ").strip()
 
     key = ""
-    if not p.key_optional:  # 로컬 provider(ollama 등)는 키 불요 — 입력 생략
+    if not p.key_optional:  # 로컬 provider(ollama 등)는 키 불필요 — 입력 생략
         try:
             key = getpass.getpass("  " + t("api_key_prompt", p=p.display) + ": ").strip()
         except EOFError, KeyboardInterrupt:

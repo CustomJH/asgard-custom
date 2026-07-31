@@ -1,4 +1,4 @@
-"""backend-neutral 소비 표면 — 선택 backend 에 대한 recall·retain·target fingerprint.
+"""backend-neutral 소비 표면 — 선택 backend에 대한 recall·retain·target fingerprint.
 
 trust 검증 함수(is_backend_trusted·verify_backend_binding·expected_backend_binding)는
 호출 시점에 패키지 파사드에서 lazy import 한다 — 소비자 테스트가
@@ -28,7 +28,7 @@ PROTOCOL_VERSION = "2025-03-26"
 
 
 def _neutralize(s: str) -> str:
-    """경계 무력화 — memory._neutralize 와 동일 유지 (단일 출처 원칙)."""
+    """경계 무력화 — memory._neutralize와 동일 유지 (단일 출처 원칙)."""
     return s.replace("<", "‹").replace(">", "›")
 
 
@@ -85,9 +85,9 @@ def server_retain(cfg: dict, content: str) -> dict:
 
 _MAX_DECLARED_ENTITIES = 40
 _DEFAULT_ENTITY_TYPE = "CODE_SYMBOL"
-# 우리 심볼 표기는 "class:Foo" / "function:bar" 다. 서버에는 **이름만** 보내고 종류는 type 으로
+# 우리 심볼 표기는 "class:Foo" / "function:bar" 다. 서버에는 **이름만** 보내고 종류는 type으로
 # 넘긴다 — 26-07-28 실서버 실측: 접두사째 보냈더니 자동 추출된 `LedgerRenderer` 옆에
-# `class:LedgerRenderer` 가 따로 서서 같은 것이 그래프에 둘로 앉았다. 엔티티 해소가 할 일을
+# `class:LedgerRenderer`가 따로 서서 같은 것이 그래프에 둘로 앉았다. 엔티티 해소가 할 일을
 # 우리가 망친 것이다.
 _SYMBOL_KINDS = {"class": "CLASS", "function": "FUNCTION", "method": "METHOD", "const": "CONSTANT"}
 _RETAIN_STRATEGY = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
@@ -213,7 +213,7 @@ def server_retain_items(cfg: dict, items: list[dict]) -> dict:
                 tags=tuple(str(tag) for tag in tags) if isinstance(tags, list) else (),
                 context=str(item.get("context") or ""),
                 # 결정론 projection(코드·문서 아티팩트)은 발생 시각이 없는 사실이다 —
-                # 시점은 source_revision 이 진다. 대화 turn 은 실제로 그때 일어난 일이라 제외.
+                # 시점은 source_revision이 진다. 대화 turn은 실제로 그때 일어난 일이라 제외.
                 timeless=timestamp == "unset" or metadata.get("origin") == "deterministic",
                 entities=_retain_entities(item, metadata),
                 strategy=strategy,

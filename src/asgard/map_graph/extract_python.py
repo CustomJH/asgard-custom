@@ -1,7 +1,7 @@
 """Python 증거 추출기 — ast 기반 정본 추출기.
 
 지어내지 않는다: 데코레이터·베이스 클래스·임포트처럼 구문이 직접 증명하는 것만 confirmed,
-수신자 타입을 못 묶는 호출 패턴은 candidate 로 남긴다.
+수신자 타입을 못 묶는 호출 패턴은 candidate로 남긴다.
 """
 
 from __future__ import annotations
@@ -156,7 +156,7 @@ def extract_python(path: str, source: str) -> list[Evidence]:
 
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            # 본문 스팬 — 데코레이터 줄부터 함수 끝 줄까지. AST 가 직접 증명하는 포함 관계다.
+            # 본문 스팬 — 데코레이터 줄부터 함수 끝 줄까지. AST가 직접 증명하는 포함 관계다.
             span_end = max(node.end_lineno or node.lineno, node.lineno)
             for decorator in node.decorator_list:
                 attr, call = _decorator_call(decorator)

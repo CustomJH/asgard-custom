@@ -1,6 +1,6 @@
 """원복 백업(오딘 지시 26-07-24) — 맵 뷰 고도화 전 레이아웃 원본.
 
-원복 절차: view.py 에서 `from .view_legacy import _TEMPLATE_LEGACY as _TEMPLATE` 로
+원복 절차: view.py에서 `from .view_legacy import _TEMPLATE_LEGACY as _TEMPLATE`로
 활성 템플릿을 전환한다. 전체 사본: ref/backup/map-view-legacy-20260724/.
 """
 
@@ -297,7 +297,7 @@ function draw(){
   if(!nodes.length){
     ctx.textAlign="center"; ctx.font=(13*devicePixelRatio)+"px "+FONT;
     ctx.fillStyle="#E9E0CA"; ctx.fillText("그래프가 비어 있다", w/2, h/2-12*devicePixelRatio);
-    ctx.fillStyle="#9C9179"; ctx.fillText("asgard map scan 으로 관계를 수집한다", w/2, h/2+14*devicePixelRatio);
+    ctx.fillStyle="#9C9179"; ctx.fillText("asgard map scan으로 관계를 수집한다", w/2, h/2+14*devicePixelRatio);
     ctx.textAlign="left"; return;
   }
   ctx.translate(w/2+off.x, h/2+off.y); ctx.scale(scale*devicePixelRatio, scale*devicePixelRatio);
@@ -442,7 +442,7 @@ function renderDetail(){
           +'<i style="background:'+(KIND_COLORS[r.o.kind]||"#888888")+'"></i>'
           +'<span class="rk">'+esc(r.o.kind)+'</span><span class="rn">'+esc(r.o.name)+'</span>'
           +'<span class="rv">'+esc(vt)+'</span></button></li>'; }).join("")
-      +(rel.length>cap ? '<li class="more">+'+(rel.length-cap)+' — trace 로 전체 추적</li>' : '')+'</ul>';
+      +(rel.length>cap ? '<li class="more">+'+(rel.length-cap)+' — trace로 전체 추적</li>' : '')+'</ul>';
   }
   if(recs.length) h+='<h3 class="d-h">관련 기록 — 프로젝트 메모리</h3><ul class="d-rec">'
     +recs.map(r=>'<li><span class="rt">'+esc(r.title)+'</span><span class="rm">'+esc(r.match)+'</span>'
@@ -533,7 +533,7 @@ qEl.addEventListener("input", ()=>{
   query=qEl.value.trim().toLowerCase(); buildOptions();
   if(query){ const m=nodes.filter(n=>active.has(n.kind)&&matches(n)).length;
     qHint.hidden=false;
-    qHint.textContent = m ? m+"개 일치 — Enter 로 첫 노드 선택" : "일치하는 노드가 없다"; }
+    qHint.textContent = m ? m+"개 일치 — Enter로 첫 노드 선택" : "일치하는 노드가 없다"; }
   else qHint.hidden=true;
   draw();
 });

@@ -7,13 +7,13 @@
 
 측정 대상은 실증 문헌에서 유지보수 비용·결함률과의 상관이 확인된 지표군으로 제한한다:
 
-- **크기** — god module/god method. Tornhill & Borg, *Code Red* (TechDebt 2022, arXiv 2203.04374)
-  의 code health 구성 요소이자 ISO/IEC 5055 유지보수성 항목. 함수 70행은 CodeScene 관례 문턱.
-- **중복** — 토큰 정규화 클론 블록. GitClear 의 AI 코드 품질 추적에서 생성형 도입 이후 가장
+- **크기** — god module/god method. Tornhill & Borg, *Code Red* (TechDebt 2022, arXiv
+  2203.04374)의 code health 구성 요소이자 ISO/IEC 5055 유지보수성 항목. 함수 70행은 CodeScene 관례 문턱.
+- **중복** — 토큰 정규화 클론 블록. GitClear의 AI 코드 품질 추적에서 생성형 도입 이후 가장
   뚜렷하게 움직인 신호다(복사·붙여넣기 상승, 리팩터 하락). 에이전트 특유의 침식 형태라
   우리에게 가장 값이 크다.
-- **결합** — 모듈 fan-in/fan-out 과 순환. 아키텍처 침식(erosion) 문헌의 표준 계측이며,
-  `tests/test_architecture.py` 가 이미 봉인한 *방향* 규칙이 잡지 못하는 *농도*를 잡는다.
+- **결합** — 모듈 fan-in/fan-out과 순환. 아키텍처 침식(erosion) 문헌의 표준 계측이며,
+  `tests/test_architecture.py`가 이미 봉인한 *방향* 규칙이 잡지 못하는 *농도*를 잡는다.
 - **핫스팟** — 변경 빈도 × 크기. 복잡하면서 자주 바뀌는 파일이 결함 확률이 가장 높다는
   핫스팟 분석의 산출물. 크기 단독보다 수리 우선순위 신호로 낫다.
 
@@ -22,11 +22,11 @@
 수정이 막힌다. ② 침식은 절대값이 아니라 **추세**로 나타나므로, 한 시점의 값은 판정 근거가
 못 된다. 그래서 산출물은 스냅샷과 그 사이의 델타이고, 판정은 사람 몫으로 남긴다. 확정된
 구조 위반을 기계가 막아야 한다면 그 경로는 이 모듈이 아니라 fitness function(계층 테스트·
-lint 규칙)이다 — `asgard-hlidskjalf` 의 봉인 제안이 그 길이다.
+lint 규칙)이다 — `asgard-hlidskjalf`의 봉인 제안이 그 길이다.
 
-**측정 불능은 미측정으로 남긴다** (fail-closed 표기). 함수 단위·결합 지표는 Python 만
-정밀하다. 다른 언어 파일은 크기·중복·변경 빈도만 실어 보내고 `unmeasured` 에 센다 —
-0 으로 채워 "깨끗하다"로 읽히게 하지 않는다.
+**측정 불능은 미측정으로 남긴다** (fail-closed 표기). 함수 단위·결합 지표는 Python만
+정밀하다. 다른 언어 파일은 크기·중복·변경 빈도만 실어 보내고 `unmeasured`에 센다 —
+0으로 채워 "깨끗하다"로 읽히게 하지 않는다.
 """
 
 from __future__ import annotations
@@ -53,12 +53,12 @@ HISTORY_KEEP = 60  # history.jsonl 보존 스냅샷 수
 _MAX_SOURCE_BYTES = 512 * 1024
 _TOP_N = 10  # 보고에 싣는 상위 항목 수
 
-# 벤더링·산출물·격리 영역 — 우리 나무의 추세가 아니다. code_map._IGNORED_DIRS 와 목적이
+# 벤더링·산출물·격리 영역 — 우리 나무의 추세가 아니다. code_map._IGNORED_DIRS와 목적이
 # 다르므로(그쪽은 오리엔테이션 맵 범위) 공유하지 않고 여기서 따로 든다.
 #
-# `skill_plugins` 는 상류에서 이식해 온 스킬 번들이 사는 우리 관례 디렉터리다. 설정 exclude 로
+# `skill_plugins`는 상류에서 이식해 온 스킬 번들이 사는 우리 관례 디렉터리다. 설정 exclude로
 # 빼면 그 설정 파일이 `.asgard/` 째로 gitignore 되는 리포에서는 규칙이 따라가지 않아, 다른
-# 클론·CI 가 남의 코드를 우리 추세로 읽는다 (실측: 654파일·중복 14% 대 160파일·5%). 관례
+# 클론·CI가 남의 코드를 우리 추세로 읽는다 (실측: 654파일·중복 14% 대 160파일·5%). 관례
 # 이름이므로 기본값으로 든다.
 IGNORED_DIRS = frozenset(
     {
@@ -143,7 +143,7 @@ _REPEAT_OK = ("import ", "from ", "#include", "using ", "require(", "package ", 
 
 @dataclass(frozen=True)
 class FileHealth:
-    """파일 1개의 침식 지표. `precise=False` 면 unit/depth 는 측정하지 않은 것(0 이 아님)."""
+    """파일 1개의 침식 지표. `precise=False` 면 unit/depth는 측정하지 않은 것(0이 아님)."""
 
     path: str
     lang: str
@@ -155,7 +155,7 @@ class FileHealth:
     big_units: int  # UNIT_LINES_WARN 초과 함수 수
     churn: int  # 관측 창 안에서 이 파일을 건드린 커밋 수
     dup_lines: int  # 클론 블록에 참여한 코드 행 수
-    fan_out: int = 0  # 내부 모듈 의존 수 (precise 만)
+    fan_out: int = 0  # 내부 모듈 의존 수 (precise만)
     fan_in: int = 0
     precise: bool = False
     test: bool = False
@@ -168,7 +168,7 @@ class Snapshot:
     commit: str
     files: int
     unmeasured_files: int  # 함수 단위·결합을 측정하지 못한 파일 수
-    excluded_files: int  # 설정 exclude glob 에 걸려 빠진 파일 수 (조용한 절단 금지)
+    excluded_files: int  # 설정 exclude glob에 걸려 빠진 파일 수 (조용한 절단 금지)
     code_lines: int
     test_files: int
     test_code_lines: int
@@ -193,7 +193,7 @@ class Snapshot:
 
 @dataclass(frozen=True)
 class Delta:
-    """지표 1개의 추세. `direction` 은 값의 부호가 아니라 **나빠졌는지**를 말한다."""
+    """지표 1개의 추세. `direction`은 값의 부호가 아니라 **나빠졌는지**를 말한다."""
 
     metric: str
     before: float
@@ -233,7 +233,7 @@ def _is_test(rel: str) -> bool:
 
 
 def _iter_files(root: str) -> tuple[list[tuple[str, str]], int]:
-    """((리포 상대 posix 경로, 언어) 목록, exclude 로 빠진 수). 심볼릭 링크·거대 파일은 뺀다."""
+    """((리포 상대 posix 경로, 언어) 목록, exclude로 빠진 수). 심볼릭 링크·거대 파일은 뺀다."""
     excludes = _excludes(root)
     out: list[tuple[str, str]] = []
     dropped = 0
@@ -259,9 +259,9 @@ def _iter_files(root: str) -> tuple[list[tuple[str, str]], int]:
     return (out, dropped)
 
 
-# 게이트가 손대지 않는 디렉터리. `IGNORED_DIRS` 에서 `skill_plugins` 하나를 뺀 것이고, 뺀 이유가
+# 게이트가 손대지 않는 디렉터리. `IGNORED_DIRS`에서 `skill_plugins` 하나를 뺀 것이고, 뺀 이유가
 # 이 목록이 따로 있는 이유다: **게이트는 작업을 막으므로, 의심스러울 때 추세보다 좁아야 한다.**
-# `skill_plugins/` 는 우리가 쓴 코드가 사는 곳이기도 해서(`asgard_hwpx.py` 같은), 통째로 빼면
+# `skill_plugins/`는 우리가 쓴 코드가 사는 곳이기도 해서(`asgard_hwpx.py` 같은), 통째로 빼면
 # 자사 코드가 영원히 판정 밖으로 나간다 — 실측에서 좁힌 목록이 파일 3개를 더 재면서 막는 판정은
 # 똑같이 0건이었다. 공짜로 얻는 적용 범위를 버릴 이유가 없다.
 GATE_SKIP_DIRS = IGNORED_DIRS - {"skill_plugins"}
@@ -270,14 +270,14 @@ GATE_SKIP_DIRS = IGNORED_DIRS - {"skill_plugins"}
 def borrowed(rel: str) -> str | None:
     """남의 코드인가 — 맞으면 그 사유를, 아니면 None. 두 게이트가 이 자를 같이 쓴다.
 
-    `health` 는 추세를 낼 때 이 디렉터리들을 이미 뺐지만 `craft`·`thor gate` 에는 같은 자가 없어서,
+    `health`는 추세를 낼 때 이 디렉터리들을 이미 뺐지만 `craft`·`thor gate` 에는 같은 자가 없어서,
     벤더링 번들을 떨구면 그 순간 게이트가 남의 코드로 빨개졌다 (실측: 추적되지 않은 vendor 한 벌에
     막는 판정 52건, 그중 20건이 minified `dist/assets/*.js` — 처방을 읽을 사람도 고칠 사람도 없다).
 
-    래칫이 못 막는 이유가 여기 있다. 래칫은 base 와 비교하는데 **추적되지 않은 파일에는 base 가
+    래칫이 못 막는 이유가 여기 있다. 래칫은 base와 비교하는데 **추적되지 않은 파일에는 base가
     없다** — 그래서 벤더링을 새로 떨구면 전부 이번 변경의 책임으로 잡힌다.
 
-    제외는 판정이 아니라 **미판정**이다. 호출부는 이것을 `undetermined` 로 실어야 한다.
+    제외는 판정이 아니라 **미판정**이다. 호출부는 이것을 `undetermined`로 실어야 한다.
     "0건"이 "안 봤다"를 뜻할 수 있으면 게이트가 아니라 알리바이가 된다 (thor_gate 모듈 계약).
     """
     for part in rel.replace(os.sep, "/").split("/")[:-1]:
@@ -328,8 +328,8 @@ _BRANCHING = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith,
 
 
 def _elif(parent: ast.AST, child: ast.AST) -> bool:
-    """`elif` 인가. ast 는 elif 를 orelse 안의 If 로 표현해서 평평한 분기 사슬이 중첩으로 잡힌다 —
-    분기 여섯 개짜리 elif 사슬이 깊이 7 로 나온다. 읽는 사람에게 그것은 한 단이다."""
+    """`elif` 인가. ast는 elif를 orelse 안의 If로 표현해서 평평한 분기 사슬이 중첩으로 잡힌다 —
+    분기 여섯 개짜리 elif 사슬이 깊이 7로 나온다. 읽는 사람에게 그것은 한 단이다."""
     if not (isinstance(parent, ast.If) and isinstance(child, ast.If)):
         return False  # 자식이 If 일 때만 elif 다 — 안 그러면 문장 하나짜리 else 블록도 전부 면제된다
     return len(parent.orelse) == 1 and parent.orelse[0] is child
@@ -351,10 +351,10 @@ def _depth(fn: ast.AST) -> int:
 
 
 def _churn(root: str) -> tuple[dict[str, int], int]:
-    """(경로 → 커밋 수, 관측한 커밋 수). git 이 없거나 이력이 짧으면 빈 지도 — 오류 아님."""
+    """(경로 → 커밋 수, 관측한 커밋 수). git이 없거나 이력이 짧으면 빈 지도 — 오류 아님."""
     try:
         proc = subprocess.run(
-            # quotepath=false: 한글 경로가 \xxx 로 이스케이프돼 매칭이 깨지는 것을 막는다
+            # quotepath=false: 한글 경로가 \xxx로 이스케이프돼 매칭이 깨지는 것을 막는다
             ["git", "-c", "core.quotepath=false", "log", f"-n{CHURN_COMMITS}", "--format=%x00", "--name-only"],
             cwd=root,
             capture_output=True,
@@ -384,7 +384,7 @@ def _clones(sources: dict[str, list[tuple[int, str]]]) -> tuple[dict[str, set[in
 
     CLONE_WINDOW 행 창을 해시해 2회 이상 나타난 창의 행을 중복으로 표시한다. 창이 겹쳐도
     행 집합으로 합치므로 이중 계상이 없다. import 류 반복 행은 창 구성에서 제외한다.
-    Type-1/2 클론(공백·주석 차이)까지가 사정거리 — 이름만 바꾼 Type-3 는 못 잡는다(한계).
+    Type-1/2 클론(공백·주석 차이)까지가 사정거리 — 이름만 바꾼 Type-3는 못 잡는다(한계).
     """
     buckets: dict[str, list[tuple[str, tuple[int, ...]]]] = {}
     for path, lines in sources.items():
@@ -423,14 +423,14 @@ def _py_module(rel: str, roots: tuple[str, ...]) -> str | None:
 
 
 def _package_roots(paths: list[str]) -> tuple[str, ...]:
-    """`__init__.py` 를 가진 최상위 패키지의 부모 디렉터리들 — import 해석의 기준점."""
+    """`__init__.py`를 가진 최상위 패키지의 부모 디렉터리들 — import 해석의 기준점."""
     roots = {rel[: -len(f"{rel.split('/')[-2]}/__init__.py")] for rel in paths if rel.endswith("/__init__.py")}
     tops = {r for r in roots if not any(r != other and r.startswith(other) for other in roots)}
     return tuple(sorted(tops))
 
 
 def _import_graph(root: str, texts: dict[str, str], roots: tuple[str, ...]) -> dict[str, set[str]]:
-    """내부 모듈 간 top-level import 그래프. 외부 패키지·함수 내부 lazy import 는 제외한다."""
+    """내부 모듈 간 top-level import 그래프. 외부 패키지·함수 내부 lazy import는 제외한다."""
     modules = {rel: mod for rel in texts if (mod := _py_module(rel, roots))}
     known = set(modules.values())
     graph: dict[str, set[str]] = {mod: set() for mod in known}
@@ -440,7 +440,7 @@ def _import_graph(root: str, texts: dict[str, str], roots: tuple[str, ...]) -> d
         except SyntaxError, ValueError, RecursionError:
             continue
         pkg = mod.split(".")[:-1]
-        for node in tree.body:  # top-level 만 — 함수 내부 lazy import 는 의도된 탈출구
+        for node in tree.body:  # top-level만 — 함수 내부 lazy import는 의도된 탈출구
             targets: list[str] = []
             if isinstance(node, ast.Import):
                 targets = [alias.name for alias in node.names]
@@ -450,8 +450,8 @@ def _import_graph(root: str, texts: dict[str, str], roots: tuple[str, ...]) -> d
                     head = ".".join([*base, node.module] if node.module else base)
                 else:
                     head = node.module or ""
-                # `from . import sibling` 은 패키지 __init__ 에 대한 의존이 아니다 — 형제 모듈만 센다.
-                # node.module 이 있을 때만 head 자체를 대상으로 올린다 (`from a.b import c` → a.b 도 의존).
+                # `from . import sibling`은 패키지 __init__에 대한 의존이 아니다 — 형제 모듈만 센다.
+                # node.module이 있을 때만 head 자체를 대상으로 올린다 (`from a.b import c` → a.b도 의존).
                 targets = [f"{head}.{alias.name}" for alias in node.names if head]
                 if node.module:
                     targets.append(head)
@@ -612,9 +612,9 @@ def _head(root: str) -> str:
 
 
 def oversized(root: str, paths: object) -> tuple[str, ...]:
-    """주어진 경로 중 FILE_LINES_WARN 을 넘는 것만. 전수 스캔 없이 그 파일들만 읽는다.
+    """주어진 경로 중 FILE_LINES_WARN을 넘는 것만. 전수 스캔 없이 그 파일들만 읽는다.
 
-    턴마다 부르는 자리(트리니티 프롬프트 조립)가 소비처이므로 `scan()` 을 쓸 수 없다 —
+    턴마다 부르는 자리(트리니티 프롬프트 조립)가 소비처이므로 `scan()`을 쓸 수 없다 —
     나무 전체를 훑는 비용은 신호 수집용이고, 이쪽은 지목한 파일에 대한 즉답이어야 한다.
     """
     if not isinstance(paths, (list, tuple, set, frozenset)):

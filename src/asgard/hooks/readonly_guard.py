@@ -16,10 +16,10 @@ import sys
 import tempfile
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -27,7 +27,7 @@ for _stream in (sys.stdout, sys.stderr):
 _READONLY_AGENTS = {"asgard-thinker", "asgard-verifier", "asgard-loki", "asgard-ullr", "asgard-mimir"}
 _PYTHON = {"python", "python3", "pypy", "pypy3"}
 
-# 차단이 가르치지 않으면 모델은 같은 명령의 변형으로 턴을 태운다 (26-07-21 실측: Verifier 가
+# 차단이 가르치지 않으면 모델은 같은 명령의 변형으로 턴을 태운다 (26-07-21 실측: Verifier가
 # python3 -c 차단 후 히어독·TMPDIR·py_compile 변형 10여 회 순차 시도). 거부 사유에 항상 동봉.
 READONLY_BASH_HINT = (
     "Read-only role Bash allowlist: inspection (ls/cat/grep/rg/find/stat/tree/wc), git reads "
@@ -44,14 +44,14 @@ READONLY_BASH_HINT = (
 )
 
 # 쓰기 도구 거부 — 읽기전용 역할에는 쓰기 레인 자체가 없다. Bash 허용목록을 보여 주면 오히려
-# "다른 명령으로 쓰면 되나" 로 오독된다: 소유자를 가리키는 것이 유일한 처방이다.
+# "다른 명령으로 쓰면 되나"로 오독된다: 소유자를 가리키는 것이 유일한 처방이다.
 READONLY_WRITE_HINT = (
     "Read-only roles never write files. Hand the change to a write-capable role instead "
     "(Worker/Freyja/Thor/Eitri), or report the required change in your verdict/findings."
 )
 
-# python -c 스니펫의 쓰기 표면 휴리스틱 — 이미 허용된 pytest 도 임의 프로젝트 코드를 실행하므로
-# 이 분기가 그보다 넓지 않다. 적대 봉쇄가 아니라 실수 방지: 명시적 쓰기·프로세스·네트워크 API 가
+# python -c 스니펫의 쓰기 표면 휴리스틱 — 이미 허용된 pytest도 임의 프로젝트 코드를 실행하므로
+# 이 분기가 그보다 넓지 않다. 적대 봉쇄가 아니라 실수 방지: 명시적 쓰기·프로세스·네트워크 API가
 # 보이면 fail-closed. 없으면 Verifier 계약(대표 함수 호출 스모크)의 유일한 실행 통로로 허용.
 _PY_SNIPPET_MUTATION = re.compile(
     r"subprocess|os\.(?:system|popen|remove|unlink|rename|replace|rmdir|mkdir|makedirs|chmod|chown|truncate)"
@@ -63,7 +63,7 @@ _PY_SNIPPET_MUTATION = re.compile(
 _INSPECT = {
     "cat",
     "diff",
-    "echo",  # stdout 전용 — 파일 리다이렉션은 _shell_parts 가 이미 막는다
+    "echo",  # stdout 전용 — 파일 리다이렉션은 _shell_parts가 이미 막는다
     "fd",
     "file",
     "find",
@@ -79,9 +79,9 @@ _INSPECT = {
     "wc",
 }
 # sed 스크립트의 파일 접근 명령 — w/W(쓰기)·r/R(읽기)는 경로 검사를 우회하는 표면이라 함께 막는다
-# (`sed '1w /tmp/leak'`·`sed '1r /etc/passwd'`). 낱글자 경계로만 잡아 단어 속 w/r 은 통과한다.
+# (`sed '1w /tmp/leak'`·`sed '1r /etc/passwd'`). 낱글자 경계로만 잡아 단어 속 w/r은 통과한다.
 _SED_WRITE = re.compile(r"(?<![A-Za-z])[wWrR](?![A-Za-z])")
-# awk 프로그램의 쓰기·실행·파일읽기 표면. 비교 연산자 `>` 까지 함께 걸리지만 관측용 awk 는 쓰지 않는다.
+# awk 프로그램의 쓰기·실행·파일읽기 표면. 비교 연산자 `>`까지 함께 걸리지만 관측용 awk는 쓰지 않는다.
 _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\|")
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
@@ -119,7 +119,7 @@ def _within_unit_workspace(candidate: str) -> bool:
     """하네스가 만든 격리 배정 작업공간 판정 — 프로젝트 밖이지만 하네스 소유 경로다.
 
     26-07-26 실측: wave 단위가 격리 워크스페이스($TMPDIR/asgard-unit-*)에서 뛸 때, 그 안의
-    자기 파일을 절대경로로 가리키는 `node --test <ws>/tests/...`·`git -C <ws> status` 가 경로
+    자기 파일을 절대경로로 가리키는 `node --test <ws>/tests/...`·`git -C <ws> status`가 경로
     이탈로 차단됐다 — 격리 레인과 경로 레인이 서로를 막아 관측 자체가 불가능해진다."""
     resolved = os.path.realpath(candidate)
     temp_root = os.path.realpath(tempfile.gettempdir())
@@ -190,7 +190,7 @@ _STREAM_EDITORS = {"sed", "gsed", "awk", "gawk", "nawk", "mawk"}
 def _safe_stream_editor(program: str, tokens: list[str], root: str | None) -> bool:
     """sed/awk 판정 — 인플레이스와 스크립트 내 쓰기 표면만 제외하면 stdout 전용 관측이다.
 
-    스크립트 인자는 경로가 아니므로 경로 이탈 검사에서 뺀다: 정규식이 `/` 로 시작하면
+    스크립트 인자는 경로가 아니므로 경로 이탈 검사에서 뺀다: 정규식이 `/`로 시작하면
     (`awk '/^\\.dark/,0'`) 절대경로로 오독돼 정당한 관측이 차단됐다 (26-07-26 실측)."""
     is_sed = program.endswith("sed")
     args = tokens[1:]
@@ -241,7 +241,7 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
         return True
     if program == "cd":
         # 디렉터리 이동은 쓰기가 아니다. 경로는 위에서 이미 root(또는 하네스 작업공간) 안으로
-        # 검사됐다. `cd sub && <관측>` 은 모노레포에서 가장 흔한 관측 형태다 — 이걸 막으면
+        # 검사됐다. `cd sub && <관측>`은 모노레포에서 가장 흔한 관측 형태다 — 이걸 막으면
         # 연결 허용의 이득이 절반은 사라진다 (26-07-26 실측: 재검증 런의 차단 2건이 전부 이 형태).
         return len(tokens) <= 2
     if _safe_asgard_hook(tokens, root):
@@ -285,7 +285,7 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
         # Python 레인과 대칭인 검증 통로. 이게 없으면 JS/TS 저장소에서 판정자가 **아무것도 실행할
         # 수 없어**, 배달물이 아무리 멀쩡해도 "실행 증거 없음 = FAIL" 로만 끝난다 (26-07-26 helios
         # 실측: node·npm·python -c subprocess 전 레인이 막혀 판정이 정적 읽기로 후퇴).
-        # 임의 프로젝트 코드 실행은 이미 허용된 pytest 와 같은 수준의 노출이다 — 새 구멍이 아니라
+        # 임의 프로젝트 코드 실행은 이미 허용된 pytest와 같은 수준의 노출이다 — 새 구멍이 아니라
         # 같은 계약의 다른 런타임. 인라인 실행(-e/-p/--eval)은 쓰기 휴리스틱이 없어 제외한다.
         flags = [t for t in tokens[1:] if t.startswith("-")]
         operands = [t for t in tokens[1:] if not t.startswith("-")]
@@ -300,7 +300,7 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
             return len(operands) == 1
         if not operands:
             return "--test" in flags  # bare `node --test` = 프로젝트 테스트 전체 (pytest 무인자와 동형)
-        # 여러 테스트 파일을 한 번에 — `pytest a b` 와 동형. 단일 operand 만 받으면 판정자가 파일마다
+        # 여러 테스트 파일을 한 번에 — `pytest a b`와 동형. 단일 operand만 받으면 판정자가 파일마다
         # 턴을 나눠 써야 한다 (26-07-26 실측: 다중 형태 차단 후 한 파일씩 재시도).
         return all(_is_test_path(operand) for operand in operands)
     if program == "asgard" and len(tokens) >= 4 and tokens[1:3] == ["skills", "show"]:
@@ -336,7 +336,7 @@ def _safe_segment(segment: str, root: str | None = None) -> bool:
 
 
 def _is_test_path(script: str) -> bool:
-    """테스트 자산 경로 판정 — `tests/` 아래이거나 파일명이 test 로 시작. 런타임 무관 (py·mjs·ts)."""
+    """테스트 자산 경로 판정 — `tests/` 아래이거나 파일명이 test로 시작. 런타임 무관 (py·mjs·ts)."""
     normalized = script.replace("\\", "/")
     return os.path.basename(normalized).startswith("test") or "/tests/" in f"/{normalized}"
 
@@ -346,7 +346,7 @@ def _is_test_path(script: str) -> bool:
 # 같은 관측을 변형으로 재시도해 턴을 태운다 (26-07-26 helios 실측: 차단 39건의 최다 사유).
 # 단일 `&`(백그라운드)는 구분자가 아니다 — 판정 밖에서 계속 도는 프로세스를 허용하지 않는다.
 _SEGMENT_SEPARATORS = {"|", "||", "&&", ";"}
-# 폐기 리다이렉션 — /dev/null 로 버리거나 스트림을 합치는 형태는 프로젝트 파일을 만들지 않는다.
+# 폐기 리다이렉션 — /dev/null로 버리거나 스트림을 합치는 형태는 프로젝트 파일을 만들지 않는다.
 _DISCARD_REDIRECTION = re.compile(r"\s*(?:\d?>>?\s*/dev/null|\d?>&\s*[12]|<\s*/dev/null)")
 
 
@@ -355,7 +355,7 @@ def _shell_parts(command: str) -> tuple[list[list[str]], bool]:
     command = _DISCARD_REDIRECTION.sub("", command)
     if "$(" in command or "`" in command:
         return [], False
-    # 줄바꿈은 `;` 와 같은 구분자다 — 히어독(`<<`)은 아래 토큰 검사가 계속 막는다. 줄바꿈 자체를
+    # 줄바꿈은 `;`와 같은 구분자다 — 히어독(`<<`)은 아래 토큰 검사가 계속 막는다. 줄바꿈 자체를
     # 금지하면 모델이 관측 뒤에 `\necho "EXIT:$?"` 같은 한 줄을 붙였을 때 명령 전체가 죽는다
     # (26-07-26 실측: 프로토콜 기록 명령이 이 형태로 반복 차단됐다).
     command = command.replace("\n", " ; ")
@@ -389,14 +389,14 @@ def _safe_asgard_hook(tokens: list[str], root: str | None = None) -> bool:
     script = tokens[1].replace("\\", "/")
     if os.path.isabs(script) and root:
         # 절대경로 형태도 같은 훅이다 — 호스트가 프로젝트 절대경로를 그대로 넘기는 일이 흔한데
-        # 상대 형태만 인정하면 프로토콜 기록 명령이 막힌다 (26-07-26 실측: Worker 가 quest 를
+        # 상대 형태만 인정하면 프로토콜 기록 명령이 막힌다 (26-07-26 실측: Worker가 quest를
         # 열지 못해 같은 명령을 형태만 바꿔 5회 재시도했다). root 안으로 환원해 판정한다.
         try:
             script = os.path.relpath(os.path.realpath(script), os.path.realpath(root)).replace("\\", "/")
         except ValueError:
             return False
     script = os.path.normpath(script).replace("\\", "/")
-    # 훅이 사는 디렉토리는 클라이언트마다 다르다 — `.claude/hooks/` 만 인정하면 Cursor·Codex 세션의
+    # 훅이 사는 디렉토리는 클라이언트마다 다르다 — `.claude/hooks/`만 인정하면 Cursor·Codex 세션의
     # 퀘스트 기장이 통째로 막혀 역할이 로그를 못 연다 (모드 간 같은 동작이 깨지는 자리).
     if not script.startswith(_HOOK_DIRS) or script.count("/") != 2:
         return False
@@ -416,7 +416,7 @@ def _safe_asgard_hook(tokens: list[str], root: str | None = None) -> bool:
             "verify-baseline",
         }:
             return False
-        # close --force 는 검증 실패 상태의 관리적 해제(Odin 동의) — read-only 역할의 권한이 아니다.
+        # close --force는 검증 실패 상태의 관리적 해제(Odin 동의) — read-only 역할의 권한이 아니다.
         return not (tokens[2] == "close" and "--force" in tokens[3:])
     return name == "verifier-gate.py"
 
@@ -445,7 +445,7 @@ def is_readonly_bash_safe(command: str, root: str | None = None) -> bool:
 
 
 def _deny(protocol: str, message: str) -> None:
-    """차단 응답 — Cursor 는 permission JSON, Claude Code/Codex 는 exit 2 + stderr (git-guard 와 동일 규약)."""
+    """차단 응답 — Cursor는 permission JSON, Claude Code/Codex는 exit 2 + stderr (git-guard와 동일 규약)."""
     if protocol == "cursor":
         sys.stdout.write(
             json.dumps({"permission": "deny", "user_message": message, "agent_message": message}, ensure_ascii=False)
@@ -474,7 +474,7 @@ def _refusal(control: bool, tool_name: str, command: str, path: str) -> str:
 
 
 def _allow(protocol: str) -> None:
-    """Cursor 는 침묵을 허용으로 안 본다 — 명시적 allow 가 프로토콜 요구사항 (git-guard 와 동일)."""
+    """Cursor는 침묵을 허용으로 안 본다 — 명시적 allow가 프로토콜 요구사항 (git-guard와 동일)."""
     if protocol == "cursor":
         sys.stdout.write(json.dumps({"permission": "allow"}, separators=(",", ":")))
     raise SystemExit(0)
@@ -485,7 +485,7 @@ def main() -> None:
     try:
         data = json.load(sys.stdin)
         agent = str(data.get("agent_type") or data.get("agent_name") or data.get("subagent_type") or "")
-        # Cursor beforeShellExecution 은 command 를 최상위에 싣고 tool_input 이 없다 — git-guard 와
+        # Cursor beforeShellExecution은 command를 최상위에 싣고 tool_input이 없다 — git-guard와
         # 같은 판별자로 셸 페이로드를 Bash 호출로 정규화한다.
         if "tool_input" not in data and data.get("command") is not None:
             tool_name, tool_input = "Bash", {"command": data.get("command")}
@@ -496,12 +496,12 @@ def main() -> None:
     except Exception:
         _allow(protocol)
         return
-    # 규율은 세션이 아니라 **역할**에 붙는다 (tool_kernel.ROLE_CAPABILITIES 가 정본): worker 계열은
-    # mutate 를 갖고, thinker/verifier/loki/ullr/mimir 은 안 갖는다. 신원이 없는 호출은 메인 세션이
+    # 규율은 세션이 아니라 **역할**에 붙는다 (tool_kernel.ROLE_CAPABILITIES가 정본): worker 계열은
+    # mutate를 갖고, thinker/verifier/loki/ullr/mimir은 안 갖는다. 신원이 없는 호출은 메인 세션이
     # 전이 함수가 배정한 역할을 직접 수행하는 자리(MAIN_WORKER)라 쓰기가 그 역할의 몫이다 —
-    # 신원 부재를 읽기전용으로 읽으면 모드 B 의 단일 변경이 통째로 막힌다: subagent-gate 가
+    # 신원 부재를 읽기전용으로 읽으면 모드 B의 단일 변경이 통째로 막힌다: subagent-gate가
     # `[ASGARD_UNIT:<id>]` 없는 asgard-worker 디스패치를 거부하므로 우회로도 없다 (양쪽 차단 = 교착).
-    # 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel 이 기록하고 Stop 의 verifier-gate 가
+    # 퀘스트 없는 쓰기는 이 훅의 소관이 아니다 — write-sentinel이 기록하고 Stop의 verifier-gate가
     # 물리 대조로 잡는다. 같은 것을 두 시점에 재판하면 조기 교정이 아니라 교착이 된다.
     readonly = agent in _READONLY_AGENTS
     root = str(data.get("cwd") or os.environ.get("CLAUDE_PROJECT_DIR") or os.getcwd())

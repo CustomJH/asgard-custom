@@ -70,7 +70,7 @@ def _db(root: str) -> sqlite3.Connection:
 def archive(root: str, rows: list[tuple[str, str]], *, session_id: str = "") -> int:
     """방출된 (role, text) 행들을 보관한다. 반환 = 실제 기록 건수.
 
-    text 는 호출자가 이미 편집(redact)한 상태로 넘긴다 — 이 층은 저장만 한다."""
+    text는 호출자가 이미 편집(redact)한 상태로 넘긴다 — 이 층은 저장만 한다."""
     if not rows:
         return 0
     try:
@@ -101,7 +101,7 @@ def archive(root: str, rows: list[tuple[str, str]], *, session_id: str = "") -> 
 
 
 def recall(root: str, query: str, k: int = 5) -> list[dict]:
-    """방출 구간 검색 — FTS trigram + lexical 스캔 2-스트림 RRF (episodes 와 동일 기계).
+    """방출 구간 검색 — FTS trigram + lexical 스캔 2-스트림 RRF (episodes와 동일 기계).
 
     반환 hit = {seq, ts, role, excerpt, score}."""
     try:

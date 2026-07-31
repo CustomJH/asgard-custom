@@ -50,7 +50,7 @@ def read_artifact(root: str, params: dict[str, list[str]]) -> tuple[int, str, by
 
 
 def read_diff(root: str, params: dict[str, list[str]]) -> tuple[int, str, bytes]:
-    """그 파일의 git diff. 저장소가 아니거나 추적 밖이면 빈 diff 를 정직하게 돌려준다."""
+    """그 파일의 git diff. 저장소가 아니거나 추적 밖이면 빈 diff를 정직하게 돌려준다."""
     rel = (params.get("path") or [""])[0]
     target = _confine(root, rel)
     if target is None:
@@ -72,7 +72,7 @@ def read_diff(root: str, params: dict[str, list[str]]) -> tuple[int, str, bytes]
     diff = _trim(result.stdout)
     note = ""
     if not diff:
-        # 추적 밖 파일은 `git diff` 가 조용하다 — "변경 없음"이라고 말하면 새 파일을 없는 파일로 만든다
+        # 추적 밖 파일은 `git diff`가 조용하다 — "변경 없음"이라고 말하면 새 파일을 없는 파일로 만든다
         note = "이 파일에는 커밋되지 않은 변경이 없습니다"
         try:
             status = subprocess.run(

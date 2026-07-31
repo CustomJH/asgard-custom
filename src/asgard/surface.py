@@ -4,19 +4,19 @@
 기준) → 구현. 스펙과 코드 사이, **어떤 타입·시그니처·경계를 새로 만들 것인지 미리 고정하는
 단계**가 없었다. 업계가 이 층에 수렴한 근거는 두 갈래다:
 
-- 스펙 주도 개발 도구들이 전부 spec → **design** → tasks → implement 로 같은 층을 세운다
-  (GitHub Spec Kit 의 Specify/Plan/Tasks/Implement, Kiro 의 spec/design/tasks/impl). 설계를
+- 스펙 주도 개발 도구들이 전부 spec → **design** → tasks → implement로 같은 층을 세운다
+  (GitHub Spec Kit의 Specify/Plan/Tasks/Implement, Kiro의 spec/design/tasks/impl). 설계를
   앞으로 당기면 깨진 인터페이스와 재작업이 줄어든다는 것이 그들의 주장이다.
-- CodePlan (Microsoft Research, arXiv 2309.12499, ACM PACMSE) 은 리포 규모 변경을 **계획
+- CodePlan (Microsoft Research, arXiv 2309.12499, ACM PACMSE)은 리포 규모 변경을 **계획
   문제**로 두고, 의존 그래프 + 변경 may-impact 분석으로 "이 편집 다음에 반드시 처리해야 하는
   편집 의무(edit obligation)"의 그래프를 만든다. 모델의 기억이 아니라 그래프가 후속 편집을
   지정한다는 것이 핵심이다.
 
-우리에게 없던 것은 그 **기계적 사실**이다. `asgard-verifier.md` 는 바뀐 공개 심볼의 호출부를
-전수 대조하라고 요구하지만, 그 목록을 만드는 일이 모델의 손 grep 에 맡겨져 있었다 — 심볼
+우리에게 없던 것은 그 **기계적 사실**이다. `asgard-verifier.md`는 바뀐 공개 심볼의 호출부를
+전수 대조하라고 요구하지만, 그 목록을 만드는 일이 모델의 손 grep에 맡겨져 있었다 — 심볼
 하나를 빠뜨리면 그대로 통과한다. 이 모듈은 그 목록을 결정론으로 만든다.
 
-**사정거리와 한계.** Python 만 정밀하다(AST). 호출부 후보는 **이름 기반**이므로 동적 디스패치·
+**사정거리와 한계.** Python만 정밀하다(AST). 호출부 후보는 **이름 기반**이므로 동적 디스패치·
 getattr·문자열 참조는 잡지 못하고, 같은 이름의 남의 심볼을 잡을 수 있다 — 그래서 산출물의
 이름은 `candidates` 이고 "전수 증명"이라고 말하지 않는다. 판정은 사람·판정자 몫이다.
 """
@@ -37,9 +37,9 @@ _IGNORED_DIRS = frozenset(
     {".asgard", ".git", ".venv", "__pycache__", "build", "dist", "node_modules", "target", "vendor", "venv"}
 )
 # 표면을 **뜨지 않을** 영역. 테스트·벤치의 심볼은 아무도 호출하는 계약이 아니다 — 테스트 메서드
-# 하나를 지운 것이 `removed`(breaking) 로 올라오면 판정자는 가짜 편집 의무를 받는다. 반대로
+# 하나를 지운 것이 `removed`(breaking)로 올라오면 판정자는 가짜 편집 의무를 받는다. 반대로
 # 호출부 **후보**에서는 빼지 않는다: 바뀐 함수를 부르는 테스트는 진짜 고쳐야 할 곳이다.
-# `testing`·`bench` 는 진짜 패키지 이름으로도 쓰여서(pandas.testing) 넣지 않는다 — 표면을 조용히
+# `testing`·`bench`는 진짜 패키지 이름으로도 쓰여서(pandas.testing) 넣지 않는다 — 표면을 조용히
 # 빠뜨리는 쪽이 가짜 의무보다 나쁘다. 관례가 확실한 이름만 건다.
 _NON_SURFACE_DIRS = frozenset({"benchmarks", "test", "tests"})
 
@@ -61,7 +61,7 @@ class Sig:
 
 @dataclass(frozen=True)
 class Change:
-    """표면 변화 1건. `breaking` 은 **호출부 관점** — 호출부가 그대로면 깨지는지를 말한다."""
+    """표면 변화 1건. `breaking`은 **호출부 관점** — 호출부가 그대로면 깨지는지를 말한다."""
 
     path: str
     qualname: str
@@ -230,7 +230,7 @@ def is_surface_path(path: str) -> bool:
 
 
 def changed_python(root: str, base: str) -> tuple[str, ...]:
-    """기준 대비 변경·추가·삭제된 **표면** .py 목록 (rename 은 양쪽 경로로 나온다)."""
+    """기준 대비 변경·추가·삭제된 **표면** .py 목록 (rename은 양쪽 경로로 나온다)."""
     code, out = _git(root, "diff", "--name-only", base, "--", "*.py")
     if code != 0:
         return ()
@@ -256,7 +256,7 @@ def _worktree(root: str, path: str) -> str | None:
 
 
 def _identifiers(qualnames: object) -> tuple[str, ...]:
-    """qualname 집합 → 검색할 말단 식별자. `Class.method` 는 `method` 로 찾는다."""
+    """qualname 집합 → 검색할 말단 식별자. `Class.method`는 `method`로 찾는다."""
     if not isinstance(qualnames, (list, tuple, set, frozenset)):
         return ()
     return tuple(sorted({str(q).rsplit(".", 1)[-1] for q in qualnames if str(q).strip()}))
@@ -293,7 +293,7 @@ def candidates(root: str, qualnames: object, exclude: object = ()) -> dict[str, 
 def diff(root: str, base: str = "HEAD", *, with_candidates: bool = True) -> SurfaceDiff:
     """기준 대비 공개 표면 변화 + 각 파괴적 변화의 호출부 후보.
 
-    변경된 .py 만 대조한다 — 나무 전체 표면을 뜨는 것은 이 질문에 필요하지 않다.
+    변경된 .py만 대조한다 — 나무 전체 표면을 뜨는 것은 이 질문에 필요하지 않다.
     """
     paths = changed_python(root, base)
     changes: list[Change] = []
@@ -326,7 +326,7 @@ def diff(root: str, base: str = "HEAD", *, with_candidates: bool = True) -> Surf
 def note(root: str, base: str = "HEAD") -> str:
     """판정자·구현자 프롬프트에 실을 블록. 변화가 없으면 빈 문자열 (토큰 회귀 없음).
 
-    이 블록은 grep 을 **면제하지 않는다**: 기계가 만든 하한을 주고, 그 위에서 확인하게 한다.
+    이 블록은 grep을 **면제하지 않는다**: 기계가 만든 하한을 주고, 그 위에서 확인하게 한다.
     """
     try:
         result = diff(root, base)

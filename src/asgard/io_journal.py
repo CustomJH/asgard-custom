@@ -6,8 +6,8 @@ Hindsight)와 절대 혼합하지 않는다.
 
 계약:
   - 기록 실패는 실행을 막지 않는다 (fail-open — 관측이 실행을 인질로 잡지 않는다).
-  - started 기록이 실패하면 call_id 를 반환하지 않아 returned 도 억제된다 (반쪽 레코드 방지).
-  - env ASGARD_IO_JOURNAL=off 로 전체 비활성.
+  - started 기록이 실패하면 call_id를 반환하지 않아 returned도 억제된다 (반쪽 레코드 방지).
+  - env ASGARD_IO_JOURNAL=off로 전체 비활성.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import os
 import time
 
 SCHEMA = 1
-MAX_BYTES = 10_000_000  # 초과 시 .1 로 1세대 로테이션 — 무한 성장 방지 (~5만 호출 분량)
+MAX_BYTES = 10_000_000  # 초과 시 .1로 1세대 로테이션 — 무한 성장 방지 (~5만 호출 분량)
 
 
 def journal_path(root: str) -> str:
@@ -32,7 +32,7 @@ def _append(root: str, entry: dict) -> bool:
     try:
         os.makedirs(os.path.join(root, ".asgard", "state"), exist_ok=True)
         gi = os.path.join(root, ".asgard", ".gitignore")
-        if not os.path.exists(gi):  # quest_dir 와 동일한 자가 설치 — 저널이 첫 기록자일 수 있다
+        if not os.path.exists(gi):  # quest_dir와 동일한 자가 설치 — 저널이 첫 기록자일 수 있다
             with open(gi, "w", encoding="utf-8") as handle:
                 handle.write("*\n")
         path = journal_path(root)
@@ -62,7 +62,7 @@ def _base(event: str, call_id: str) -> dict:
 
 
 def call_started(root: str, *, provider: str, model: str, transport: str, role: str | None = None) -> str | None:
-    """호출 직전 기록. 반환된 call_id 를 call_returned 에 넘긴다 — None 이면 기록 억제."""
+    """호출 직전 기록. 반환된 call_id를 call_returned에 넘긴다 — None 이면 기록 억제."""
     if not enabled():
         return None
     cid = "%016x-%x" % (time.time_ns(), os.getpid())  # 시간순 정렬 가능
@@ -76,7 +76,7 @@ def call_started(root: str, *, provider: str, model: str, transport: str, role: 
 def note(root: str, event: str, fields: dict) -> None:
     """호출 쌍이 아닌 단발 사건 기록 (컨텍스트 압축 등) — 메타데이터만, fail-open.
 
-    call_started/returned 는 provider 왕복 1건을 두 줄로 나눠 적는 계약이라 왕복이 아닌
+    call_started/returned는 provider 왕복 1건을 두 줄로 나눠 적는 계약이라 왕복이 아닌
     사건은 실을 자리가 없다. 압축은 왕복 0~1회짜리 사건이므로 한 줄로 적는다."""
     if not enabled():
         return
@@ -96,9 +96,9 @@ def call_returned(
     counts: dict[str, int] | None = None,
     **kw: int,
 ) -> None:
-    """호출 종료 기록 — counts/키워드는 토큰 계측(0/None 은 생략). error 는 예외 요약 문자열.
+    """호출 종료 기록 — counts/키워드는 토큰 계측(0/None은 생략). error는 예외 요약 문자열.
 
-    dict 계측은 counts= 로 받는다 — **splat 은 int 값이 error(str) 파라미터에 바인딩될 수
+    dict 계측은 counts= 로 받는다 — **splat은 int 값이 error(str) 파라미터에 바인딩될 수
     있다고 타입체커가 판정하므로 시그니처에서 분리."""
     if not call_id:
         return

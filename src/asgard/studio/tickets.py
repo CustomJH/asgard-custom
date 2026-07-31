@@ -1,6 +1,6 @@
 """티켓 — 스튜디오가 스스로 발급하고 관리하는 일감 한 건.
 
-형상은 Linear 를 따른다. 그 도구가 옳아서가 아니라, **일을 세는 어휘가 이미 그 모양으로
+형상은 Linear를 따른다. 그 도구가 옳아서가 아니라, **일을 세는 어휘가 이미 그 모양으로
 합의돼 있어서**다: 상태 이름은 팀이 짓되 범주는 다섯으로 접히고, 우선순위는 '없음'이 맨
 뒤로 가라앉으며, 하위 티켓과 차단 관계는 별개의 축이다([[vocab]]).
 
@@ -8,7 +8,7 @@
         ├─ 프로젝트 ── 마일스톤         팀을 가로지르는 축 — 티켓은 프로젝트 하나에만
         └─ 이니셔티브
 
-**번호는 한 번만 발급된다.** `NOR-12` 는 그 팀에서 영원히 그 티켓이다 — 지워도 번호는
+**번호는 한 번만 발급된다.** `NOR-12`는 그 팀에서 영원히 그 티켓이다 — 지워도 번호는
 재사용하지 않는다. 사람이 대화에서 부르는 이름이라, 같은 이름이 두 번 나오면 대화가 깨진다.
 
 **상태 변경은 시각을 남긴다.** 진행으로 옮기면 `started_at`, 완료면 `completed_at`. 되돌리면
@@ -192,7 +192,7 @@ def _slugs_of_type(conn: sqlite3.Connection, team_id: str | None, kinds: frozens
     """이 범주에 드는 상태 슬러그들 — **셈은 범주가 한다**.
 
     기본 여섯 칸의 이름표로 세면 팀이 만든 '배포 대기'(범주 started)가 어느 셈에도 안 잡힌다:
-    보드에는 카드가 있는데 '진행 0' 이라고 말하는 계기판이 된다. 이름은 팀이 짓고, 열림·진행을
+    보드에는 카드가 있는데 '진행 0'이라고 말하는 계기판이 된다. 이름은 팀이 짓고, 열림·진행을
     세는 것은 언제나 다섯 범주다.
 
     팀을 안 고른 자리(워크스페이스 전체)에서도 같다 — 그때는 **모든 팀의 이름**을 합쳐 센다."""
@@ -242,11 +242,11 @@ _HERE = frozenset({".", "here", "folder", "root"})
 def _read_scope(conn: sqlite3.Connection, root: str | None, team: Any = None) -> sqlite3.Row | None:
     """읽을 때 어느 팀을 볼 것인가. None 이면 워크스페이스 전체다 — **그게 기본이다.**
 
-    여태는 아무것도 안 주면 이 폴더에 매인 팀을 봤다. 그래서 같은 `asgard ticket list` 가 선
+    여태는 아무것도 안 주면 이 폴더에 매인 팀을 봤다. 그래서 같은 `asgard ticket list`가 선
     자리에 따라 다른 답을 냈고, 저장소 밖에서 켠 창은 자기 일감을 못 찾았다. 일감은 폴더의
     것이 아니라 사람의 것이다 — 폴더는 이제 **거르는 값**이지 경계가 아니다.
 
-    규칙 셋: 명시한 팀이 이긴다 · `.` 은 이 폴더에 매인 팀 · 나머지는 전부 워크스페이스 전체."""
+    규칙 셋: 명시한 팀이 이긴다 · `.`은 이 폴더에 매인 팀 · 나머지는 전부 워크스페이스 전체."""
     if not team:
         return None
     if isinstance(team, str):
@@ -264,7 +264,7 @@ def _read_scope(conn: sqlite3.Connection, root: str | None, team: Any = None) ->
 def _write_team(conn: sqlite3.Connection, root: str | None, team: Any = None) -> sqlite3.Row:
     """적을 때 어느 팀에 적을 것인가 — 없으면 만든다(쓰기 경로라 자리를 만들어도 된다).
 
-    폴더가 팀을 **암묵으로** 만들지는 않는다(`ensure_team` 을 보라). 결속을 걸어 둔 폴더에서는
+    폴더가 팀을 **암묵으로** 만들지는 않는다(`ensure_team`을 보라). 결속을 걸어 둔 폴더에서는
     그 팀에 적히고, 아니면 워크스페이스의 기본 팀에 적힌다."""
     if isinstance(team, str) and team.strip().lower() in _EVERY | _HERE:
         team = None
@@ -303,7 +303,7 @@ def _resolve(
 
 
 def _find(conn: sqlite3.Connection, ref: Any, scope: sqlite3.Row | None = None) -> sqlite3.Row | None:
-    """id 든 `NOR-12` 든 같은 문으로 받는다 — 사람은 번호로 부르고 기계는 id 로 부른다."""
+    """id 든 `NOR-12` 든 같은 문으로 받는다 — 사람은 번호로 부르고 기계는 id로 부른다."""
     if not isinstance(ref, str):
         return None
     ref = ref.strip()
@@ -314,7 +314,7 @@ def _find(conn: sqlite3.Connection, ref: Any, scope: sqlite3.Row | None = None) 
     upper = ref.upper()
     if _KEY.fullmatch(upper):
         return conn.execute("SELECT * FROM tickets WHERE key = ?", (upper,)).fetchone()
-    # 접두어 없이 번호만 부르는 손을 받아 준다 — 대화에서는 "12번" 이라고 말한다.
+    # 접두어 없이 번호만 부르는 손을 받아 준다 — 대화에서는 "12번"이라고 말한다.
     # 번호는 팀 안에서만 유일하므로, 어느 팀을 보고 있는지가 답을 가른다.
     if ref.isdigit():
         if scope is not None:
@@ -436,7 +436,7 @@ def close_cycle(root: str, ref: Any, roll: bool = True, team: Any = None) -> dic
     """사이클은 팀의 것이라 **하나를 골라야** 닫을 수 있다.
 
     읽기의 기본은 워크스페이스 전체지만 여기서 그 규칙을 쓰면 늘 "팀이 없다"가 된다. 그래서
-    자리를 고르는 방식은 `create_cycle` 과 같다 — 결속된 폴더면 그 팀, 아니면 기본 팀. 다만
+    자리를 고르는 방식은 `create_cycle`과 같다 — 결속된 폴더면 그 팀, 아니면 기본 팀. 다만
     **만들지는 않는다**: 없는 팀의 사이클을 닫는다는 말은 성립하지 않는다."""
     from . import teams as T
     from .teams import ensure_team
@@ -551,7 +551,7 @@ def _new_fields(
     due_at: Any,
 ) -> dict[str, Any]:
     """새 티켓의 검사 끝난 칸들 — 상태와 무관한 것만. 상태가 함의하는 시각은 팀을 알아야
-    찍을 수 있어서(범주가 팀의 워크플로에 달렸다) `_status_moments` 가 따로 진다."""
+    찍을 수 있어서(범주가 팀의 워크플로에 달렸다) `_status_moments`가 따로 진다."""
     if source not in SOURCES:
         raise TicketError(f"source must be one of: {', '.join(SOURCES)}")
     now = _now()
@@ -570,7 +570,7 @@ def _new_fields(
 
 
 def _status_moments(conn: sqlite3.Connection, team_id: str | None, status: str) -> dict[str, Any]:
-    """`todo` 로 만든 티켓에 `started_at` 이 붙어 있으면 리드타임이 처음부터 거짓말한다."""
+    """`todo`로 만든 티켓에 `started_at`이 붙어 있으면 리드타임이 처음부터 거짓말한다."""
     kind, now = _type_of(conn, team_id, status), _now()
     return {
         "started_at": now if kind == "started" else None,
@@ -645,8 +645,8 @@ def _apply(conn: sqlite3.Connection, row: sqlite3.Row, changes: dict[str, Any], 
     team_id = row["team_id"]
     sets: dict[str, Any] = {}
     if "team" in changes:
-        # 팀을 옮겨도 **번호는 안 바뀐다**. `NOR-12` 는 이미 대화에 나온 이름이라, 옮겼다고
-        # 다시 발급하면 그 대화가 가리키는 것이 사라진다(Linear 도 이때 번호를 새로 준다는
+        # 팀을 옮겨도 **번호는 안 바뀐다**. `NOR-12`는 이미 대화에 나온 이름이라, 옮겼다고
+        # 다시 발급하면 그 대화가 가리키는 것이 사라진다(Linear도 이때 번호를 새로 준다는
         # 점이 다른데, 여기서는 대화가 유일한 색인이라 이름을 지키는 쪽이 더 크다).
         target = find_team(conn, changes["team"])
         if target is None:
@@ -719,8 +719,8 @@ def _parent_id(conn: sqlite3.Connection, row: sqlite3.Row, value: Any) -> str | 
 def _status_change(conn: sqlite3.Connection, row: sqlite3.Row, status: str) -> dict[str, Any]:
     """상태와 그 상태가 함의하는 시각을 함께 낸다.
 
-    되돌릴 때 시각을 지우는 것이 핵심이다 — `completed_at` 이 남은 '진행 중' 티켓은 리드타임을
-    조용히 거짓말한다. 다시 진행으로 가면 `started_at` 은 **처음 시작한 때를 지킨다**(재개는
+    되돌릴 때 시각을 지우는 것이 핵심이다 — `completed_at`이 남은 '진행 중' 티켓은 리드타임을
+    조용히 거짓말한다. 다시 진행으로 가면 `started_at`은 **처음 시작한 때를 지킨다**(재개는
     새 시작이 아니다)."""
     if status == row["status"]:
         return {}
@@ -741,7 +741,7 @@ def _status_change(conn: sqlite3.Connection, row: sqlite3.Row, status: str) -> d
 def _name(conn: sqlite3.Connection, field: str, value: Any) -> str:
     """활동 줄에 적힐 사람 말.
 
-    id 를 그대로 적으면 안 된다 — '주기 → 0ff957e74e7c…' 는 아무에게도 아무 말이 아니다.
+    id를 그대로 적으면 안 된다 — '주기 → 0ff957e74e7c…'는 아무에게도 아무 말이 아니다.
     이 자리는 나중에 읽는 사람을 위한 것이라, 저장하는 순간의 이름을 굳혀 둔다(주기 이름이
     나중에 바뀌어도 그때 그렇게 불렀다는 기록은 그대로다)."""
     if field == "status":
@@ -826,7 +826,7 @@ def add_comment(root: str, ref: Any, body: str, author: str = "") -> dict[str, A
 
 
 def link_tickets(root: str, ref: Any, kind: str, other: Any, actor: str = "") -> dict[str, Any]:
-    """`kind='blocks'` 면 ref 가 other 를 막는다. 방향은 한 번만 적고 반대편은 질의로 읽는다."""
+    """`kind='blocks'` 면 ref가 other를 막는다. 방향은 한 번만 적고 반대편은 질의로 읽는다."""
     if kind not in LINK_KINDS:
         raise TicketError(f"kind must be one of: {', '.join(LINK_KINDS)}")
     with writing() as conn:
@@ -846,7 +846,7 @@ def link_tickets(root: str, ref: Any, kind: str, other: Any, actor: str = "") ->
 
 
 def _blocks(conn: sqlite3.Connection, source_id: str, target_id: str) -> bool:
-    """source 가 target 을 (여러 다리 건너서라도) 막고 있는가 — 순환 차단 검사."""
+    """source가 target을 (여러 다리 건너서라도) 막고 있는가 — 순환 차단 검사."""
     seen, frontier = {source_id}, [source_id]
     while frontier:
         current = frontier.pop()
@@ -881,7 +881,7 @@ def unlink_tickets(root: str, ref: Any, kind: str, other: Any) -> bool:
 def triage_queue(root: str | None = None, team: Any = None, limit: int = 100) -> list[dict[str, Any]]:
     """아직 받아들이지 않은 것들. 미룬 것(snooze)은 시간이 되기 전까지 빠진다.
 
-    Linear 의 트리아지와 같은 뜻이다: 밖에서 들어온 일감을 팀의 워크플로에 **넣기 전에**
+    Linear의 트리아지와 같은 뜻이다: 밖에서 들어온 일감을 팀의 워크플로에 **넣기 전에**
     한 번 본다. 에이전트가 스스로 끊은 티켓이 여기 서는 이유가 그거다 — 기계가 만든 일감이
     사람의 백로그에 곧장 섞이면, 백로그는 곧 아무도 안 보는 목록이 된다."""
     if _untouched():
@@ -1127,7 +1127,7 @@ def find_ticket(root: str, ref: Any) -> dict[str, Any] | None:
 def tickets_for_task(root: str, task_id: str) -> list[dict[str, Any]]:
     """그 스튜디오 작업이 나온 티켓들 — 끝난 작업이 결과를 돌려줄 자리를 찾는 문.
 
-    범위를 안 좁힌다: 작업 id 는 워크스페이스에서 유일하고, 작업이 어느 팀의 티켓에서
+    범위를 안 좁힌다: 작업 id는 워크스페이스에서 유일하고, 작업이 어느 팀의 티켓에서
     나왔는지는 그 티켓이 안다."""
     task_id = str(task_id or "").strip()
     if not task_id or _untouched():
@@ -1160,7 +1160,7 @@ def list_tickets(
 ) -> list[dict[str, Any]]:
     """필터는 전부 AND 다. 안 준 것은 안 거른다.
 
-    `unassigned`·`blocked`·`overdue` 는 화면의 현황 타일이 그대로 누르는 문이다. 셋 다 여기서
+    `unassigned`·`blocked`·`overdue`는 화면의 현황 타일이 그대로 누르는 문이다. 셋 다 여기서
     거른다 — 화면이 받아 놓고 한 번 더 거르면 칸 머리의 건수와 카드 수가 어긋난다.
 
     트리아지 대기분은 **기본으로 빠진다**: 아직 받아들이지 않은 일감이 보드에 섞이면
@@ -1237,7 +1237,7 @@ def _column_clauses(
         clauses.append("t.source = ?")
         args.append(source)
     if query:
-        # LIKE 로 충분하다: 워크스페이스의 티켓은 수천 건 규모라 FTS 인덱스를 따로 재우고
+        # LIKE로 충분하다: 워크스페이스의 티켓은 수천 건 규모라 FTS 인덱스를 따로 재우고
         # 동기화 어긋남을 감시하는 비용이 얻는 것보다 크다. 한국어도 부분 문자열로 걸린다.
         needle = f"%{str(query).strip().lower()}%"
         clauses.append("(LOWER(t.title) LIKE ? OR LOWER(t.body) LIKE ? OR LOWER(t.key) LIKE ?)")
@@ -1256,7 +1256,7 @@ def _join_clauses(
     project: Any,
     milestone: Any,
 ) -> str:
-    """이름을 id 로 풀어야 하는 조건들 — 저장소가 열려 있어야 세울 수 있다. clauses/args 를 늘린다."""
+    """이름을 id로 풀어야 하는 조건들 — 저장소가 열려 있어야 세울 수 있다. clauses/args를 늘린다."""
     joins = ""
     if label:
         joins = " JOIN ticket_labels tl ON tl.ticket_id = t.id JOIN labels l ON l.id = tl.label_id"
@@ -1385,7 +1385,7 @@ def _triage_count(conn: sqlite3.Connection, team_id: str | None) -> int:
 def _tally(
     conn: sqlite3.Connection, now: float, team_id: str | None, open_slugs: tuple[str, ...] = OPEN_STATUSES
 ) -> dict[str, Any]:
-    """현황의 셈 부분. `_` 로 시작하는 두 칸은 호출자가 접어서 쓰는 원자재다.
+    """현황의 셈 부분. `_`로 시작하는 두 칸은 호출자가 접어서 쓰는 원자재다.
 
     '열린 것'의 목록을 인자로 받는 이유: 팀이 상태 이름을 스스로 짓기 때문이다. 기본 여섯의
     슬러그로 굳혀 두면 팀이 만든 칸의 티켓이 어느 셈에도 안 잡힌다."""
@@ -1462,7 +1462,7 @@ def _tally(
 
 def _empty_summary(root: str | None) -> dict[str, Any]:
     """아직 한 건도 없는 워크스페이스의 현황. 셈은 전부 0 이지만 **어휘와 접두어는 진짜다** —
-    화면이 '첫 티켓을 만들면 NOR-1 이 됩니다' 를 말할 수 있어야 한다."""
+    화면이 '첫 티켓을 만들면 NOR-1이 됩니다'를 말할 수 있어야 한다."""
     return {
         "prefix": prefix(root or ""),
         "team": None,

@@ -15,7 +15,7 @@ EVIDENCE_KINDS = (
     "component",  # UI 컴포넌트 — 선언(components/ 트리)과 템플릿 태그 소비가 이름으로 수렴
     "store",  # 프론트 전역 상태 (Pinia/Redux slice)
     "composable",  # 프론트 재사용 로직 (composables/hooks 관례 디렉터리)
-    "service",  # 프론트 서비스 모듈 (services 관례 디렉터리) — 외부 SaaS 는 external_service 다
+    "service",  # 프론트 서비스 모듈 (services 관례 디렉터리) — 외부 SaaS는 external_service 다
     "command",  # CLI 커맨드 표면
     "model",  # 데이터 모델 (ORM/스키마/검증 모델)
     "db_access",  # 데이터베이스 접근 지점
@@ -29,7 +29,7 @@ _ID_SAFE = re.compile(r"[^\w./:@-]+")
 
 
 def safe_url(value: str) -> str:
-    """그래프 프로젝션에 credential/query/fragment 를 복제하지 않는 URL 표기."""
+    """그래프 프로젝션에 credential/query/fragment를 복제하지 않는 URL 표기."""
     try:
         parsed = urlsplit(value)
         hostname = f"[{parsed.hostname}]" if parsed.hostname and ":" in parsed.hostname else parsed.hostname

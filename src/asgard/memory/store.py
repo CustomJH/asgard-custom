@@ -36,24 +36,24 @@ _DEFAULT_SKILL_PREFERENCE = """사용자는 프론트엔드·UI·모션·영상�
 _SCHEMA_MD = """# Memory Schema — 개인 위키 규약
 
 이 디렉토리는 asgard 개인 메모리의 **정본**이다 (LLM Wiki 패턴).
-`pages/*.md` 가 지식이고, `index.md`·`state.db` 는 재생성 가능한 파생물이다.
+`pages/*.md`가 지식이고, `index.md`·`state.db`는 재생성 가능한 파생물이다.
 
 ## 페이지 규약
 - 파일 = 사실/개체/개념 1개. frontmatter: `title` / `kind` / `created` / `updated` / `links`
 - kind: note | user | decision | insight | reference | feedback
-- 본문은 자립적으로 — 다른 페이지는 [[slug]] 로 연결
+- 본문은 자립적으로 — 다른 페이지는 [[slug]]로 연결
 - 코드/저장소에서 1분 내 파악 가능한 사실은 저장하지 않는다
 
 ## 운영 (asgard memory <op>)
 - ingest: 새 지식 흡수 — 근사 중복은 기존 페이지에 병합 (승인 게이트 경유)
-- query: FTS 검색 — 가치 있는 종합 결과는 add 로 새 페이지 승격 (복리)
+- query: FTS 검색 — 가치 있는 종합 결과는 add로 새 페이지 승격 (복리)
 - lint: 건강 점검 — 고아·죽은 링크·부패 후보·중복 쌍·칸 예산 초과·오염
 - merge/remove: 통합·삭제 (넘친 칸 해소) · reindex: pages/ 에서 파생 전체 재생성
 
 ## 불변식
 - 저장에는 상한이 없다 — 예산은 **주입면**에만 걸린다 (지식은 언제나 pages/ 에 남는다)
 - 주입 카탈로그는 kind 별로 칸이 나뉘고 칸마다 상한이 있다 — 넘친 칸은 머리글에 100% 초과로
-  표시되고 lint 가 그 칸을 지목한다: 그 칸만 병합·삭제로 통합하라
+  표시되고 lint가 그 칸을 지목한다: 그 칸만 병합·삭제로 통합하라
 - 여기 저장된 무엇도 게이트의 완료 증거가 될 수 없다 (메모리는 힌트다)
 - **개인 스코프 전용** — 이 위키의 내용·용어(개인 약어, 세계관 용어, 사적 축약)는
   프로젝트 공유 메모리로 그대로 내보내지 않는다. 공유 스코프에 쓸 때는 프로젝트
@@ -163,7 +163,7 @@ def render_page(meta: dict, body: str) -> str:
 # ── 단일값 정체성 슬롯 ────────────────────────────────────────────────────────
 # 사용자당 답이 하나뿐인 사실. 새 값은 옛 값 옆에 쌓이는 게 아니라
 # 옛 값을 대체한다. 26-07-26 실측: "이름=썬더오브갓"(07-21 13:27)과 "이름=번개썬더왕"(07-21
-# 14:05)이 containment 0.214 로 갈려 각자 페이지가 됐고, 회상이 둘을 0.016/0.016 으로 나란히
+# 14:05)이 containment 0.214로 갈려 각자 페이지가 됐고, 회상이 둘을 0.016/0.016으로 나란히
 # 돌려주는 바람에 에이전트가 "어느 쪽입니까"밖에 답할 수 없게 됐다. 슬롯이 없으면 저장소는
 # 사용자가 마음을 바꿀 때마다 모순을 하나씩 늘린다.
 _SLOT_SUBJECT = r"(?:사용자|유저|오딘|나|내|저|제|the\s+user|user|my)"
@@ -175,7 +175,7 @@ _IDENTITY_SLOTS = (
     ("language", r"모국어|주\s*사용\s*언어|native\s+language"),
 )
 # 주어부에 붙은 슬롯어만 인정한다 — 본문 아무 데나 "이름"이 나온다고 정체성 사실은 아니다
-# ("helios-fe 의 번역 키 이름 규칙은…"). 주어와 슬롯어 사이는 수식어 한 뭉치까지만 허용.
+# ("helios-fe의 번역 키 이름 규칙은…"). 주어와 슬롯어 사이는 수식어 한 뭉치까지만 허용.
 _SLOT_PATTERNS = tuple(
     (
         slot,
@@ -193,7 +193,7 @@ _CALL_ME_PAT = re.compile(
     rf"^{_SLOT_SUBJECT}\s*(?:를|을|는|은)?\s*.{{0,30}}?(?:이?라고?\s*(?:불러|부르)|call\s+me)"
     r"|(?:이제부터|앞으로|앞으론|지금부터)\s+[^?]{1,30}?(?:이?라고?|이?라)\s*(?:불러|부르)"
     r"|[^\s?]{1,20}\s*(?:이?라고?|이?라)\s*(?:불러|부르)(?:줘|라|주세요|세요|주라)"
-    # "call me back/when done" 은 호칭 선언이 아니다 — 시간·조건 꼬리를 배제한다
+    # "call me back/when done"은 호칭 선언이 아니다 — 시간·조건 꼬리를 배제한다
     r"|\bcall\s+me\b(?!\s+(?:when|if|back|after|before|at|on|in|later|tomorrow|asap|once))",
     re.IGNORECASE,
 )
@@ -236,7 +236,7 @@ def valid_slug(slug: str) -> bool:
 
 
 def _page_path(d: str, slug: str) -> str:
-    """pages/<slug>.md — realpath 가 pages/ 하위임을 강제 (경로 순회 차단, P0)."""
+    """pages/<slug>.md — realpath가 pages/ 하위임을 강제 (경로 순회 차단, P0)."""
     pages = os.path.join(d, PAGES)
     if os.path.islink(d) or os.path.islink(pages):
         raise ValueError("memory canonical directories must not be symlinks")
@@ -293,7 +293,7 @@ def _desc(meta: dict, body: str) -> str:
 
 def _kind(meta: dict) -> str:
     """kind 화이트리스트 강제 (2차 리뷰 ①) — 외부 편집으로 심은 임의 문자열이 표시/주입면에
-    도달하지 못한다. 미등재 kind 는 note 로 강등."""
+    도달하지 못한다. 미등재 kind는 note로 강등."""
     k = meta.get("kind", DEFAULT_KIND)
     return k if k in KINDS else DEFAULT_KIND
 

@@ -3,10 +3,10 @@
 단일 본문을 두 위치에 배포한다 — Claude Code(.claude/skills/) · Cursor+Codex 공용(.agents/skills/,
 양 툴의 네이티브 스킬 스코프이자 동일 SKILL.md 포맷: cursor.com/docs/skills ·
 developers.openai.com/codex/skills). 본문이 훅 디렉터리를 자동감지하므로 툴별 렌더링이 없다
-(quest-log 훅의 프로토콜 자동감지와 같은 원칙). 게이트 체크는 verifier-gate.py 가 있을 때만 (현재 Claude 전용).
+(quest-log 훅의 프로토콜 자동감지와 같은 원칙). 게이트 체크는 verifier-gate.py가 있을 때만 (현재 Claude 전용).
 
-계층 설계 — 왜 하니스 슬라이스를 temp repo 에서 도는가: 실 repo 에 FAIL quest 를 시드하면
-그 세션의 Stop 게이트가 PASS 를 요구하며 사용자를 가둔다 (E2E 에서 실측된 함정)."""
+계층 설계 — 왜 하니스 슬라이스를 temp repo에서 도는가: 실 repo에 FAIL quest를 시드하면
+그 세션의 Stop 게이트가 PASS를 요구하며 사용자를 가둔다 (E2E에서 실측된 함정)."""
 
 SELFTEST_MD = """\
 ---

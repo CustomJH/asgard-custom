@@ -1,33 +1,33 @@
 #!/usr/bin/env python3
 # Asgard charter-activate — 프로젝트 북극성(Charter) 주입 (모드 B: Claude Code/Codex/Cursor).
 #
-# 네이티브 Heimdall 은 charter.py note() 를 프롬프트에 직접 주입하지만, 모드 B 는 서브에이전트가
-# AGENTS.md 를 읽는 구조라 닿지 않는다 — lagom/memory 와 동일하게 훅으로 보상한다. 동작:
-#   agent_type 없음 (SessionStart/UserPromptSubmit) → through_line 만 stdout 주입 (설계①, 메인 스레드)
+# 네이티브 Heimdall은 charter.py note()를 프롬프트에 직접 주입하지만, 모드 B는 서브에이전트가
+# AGENTS.md를 읽는 구조라 닿지 않는다 — lagom/memory와 동일하게 훅으로 보상한다. 동작:
+#   agent_type 없음 (SessionStart/UserPromptSubmit) → through_line만 stdout 주입 (설계①, 메인 스레드)
 #   agent_type 있음 (SubagentStart) → 역할별 JSON additionalContext:
 #     asgard-thinker  → through_line + coherence(criteria 환원 지시)  협업②
 #     asgard-verifier → through_line + coherence(반례 렌즈, 게이트 대체 아님 명시)  판단③
-#     그 외(worker/딜리버리) → through_line 만 — coherence 를 게이트 강제 criteria 로 흘리지 않는다
-# 렌더 문구는 asgard/charter.py note() 와 **동일 유지 (단일 출처 원칙)** — 훅은 무임포트라 재구현한다.
+#     그 외(worker/딜리버리) → through_line만 — coherence를 게이트 강제 criteria로 흘리지 않는다
+# 렌더 문구는 asgard/charter.py note()와 **동일 유지 (단일 출처 원칙)** — 훅은 임포트를 못 하므로 재구현한다.
 # fail-open: charter 부재·파손·훅 오류는 전부 무개입 통과 (exit 0) — 세션을 막지 않는다.
 import json
 import os
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
 
-COHERENCE_CAP = 8  # 프롬프트 팽창 방지 — charter.py _coherence_block 과 동일
+COHERENCE_CAP = 8  # 프롬프트 팽창 방지 — charter.py _coherence_block과 동일
 
 
 def load_charter(root):
-    """charter.py load_charter 와 동일 유지 — {through_line, coherence:[...]} 또는 None."""
+    """charter.py load_charter와 동일 유지 — {through_line, coherence:[...]} 또는 None."""
     try:
         with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as f:
             cfg = json.load(f)
@@ -50,7 +50,7 @@ def _coherence_block(items):
 
 
 def render(ch, section):
-    """charter.py note() 와 동일 유지 (단일 출처 원칙)."""
+    """charter.py note()와 동일 유지 (단일 출처 원칙)."""
     through, coherence = ch["through_line"], ch["coherence"]
     if section == "identity":
         if not through:
@@ -90,8 +90,8 @@ def section_for(agent):
     if agent == "asgard-verifier":
         return "verifier"
     if agent == "asgard-worker":
-        return ""  # 네이티브 패리티 — Worker 는 worker.md+lagom 만 (charter 무주입, Fugu 격리)
-    return "identity"  # 메인·딜리버리(freyja/thor/eitri/loki) — through_line 만 (네이티브 delivery_identity 대응)
+        return ""  # 네이티브 패리티 — Worker는 worker.md+lagom만 (charter 무주입, Fugu 격리)
+    return "identity"  # 메인·딜리버리(freyja/thor/eitri/loki) — through_line만 (네이티브 delivery_identity 대응)
 
 
 CLIENTS = {"claude-code", "codex", "cursor"}
@@ -103,7 +103,7 @@ def client():
 
 
 def emit(current_client, agent, text):
-    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약).
     Cursor=additional_context, Claude Code/Codex=서브에이전트만 hookSpecificOutput, 그 밖엔 평문."""
     if current_client == "cursor":
         sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")

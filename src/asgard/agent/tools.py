@@ -3,11 +3,11 @@
 Anthropic-defined 툴(스키마리스)을 쓰는 이유: 모델이 이 계약으로 훈련돼 있어 프롬프트 비용 없이
 정확히 동작한다. 핸들러 계약(레퍼런스 문서 그대로):
   bash        {command} | {restart: true}
-  text_editor view/create/str_replace/insert — str_replace 는 정확히 1회 매치만 허용
+  text_editor view/create/str_replace/insert — str_replace는 정확히 1회 매치만 허용
 
 보안 경계 (여기서만 지킨다 — 모델 출력은 전부 불신):
   * 모든 파일 경로는 프로젝트 루트 안으로 격리 (resolve 후 is_relative_to)
-  * bash 는 git-guard 훅을 배포 형태(subprocess stdin 계약)로 통과해야 실행 — 로직 중복 금지
+  * bash는 git-guard 훅을 배포 형태(subprocess stdin 계약)로 통과해야 실행 — 로직 중복 금지
   * 타임아웃·출력 상한 — 무한 명령/출력 폭주가 루프를 인질로 잡지 않게
 """
 
@@ -249,7 +249,7 @@ _MAX_FETCH_BYTES = 5 * 1024 * 1024
 
 
 class ToolError(Exception):
-    """핸들러 실패 — 메시지가 그대로 is_error tool_result 로 나간다 (모델이 복구하게)."""
+    """핸들러 실패 — 메시지가 그대로 is_error tool_result로 나간다 (모델이 복구하게)."""
 
 
 def _confine(root: str, path: str) -> str:
@@ -289,15 +289,15 @@ def _release_guard(root: str, command: str) -> str | None:
     return _hook_guard(root, "asgard.hooks.release_guard", {"command": command})
 
 
-# 셸 파괴 명령 가드 (Canon 3) — git 계열은 git-guard 훅이 단일 출처, 여기는 비-git 만.
-# 루트 안 rm -rf 는 허용 (스크래치 정리는 정당 + git 이 복구 지점) — 루트 밖·조상 경로만 차단.
+# 셸 파괴 명령 가드 (Canon 3) — git 계열은 git-guard 훅이 단일 출처, 여기는 비-git만.
+# 루트 안 rm -rf는 허용 (스크래치 정리는 정당 + git이 복구 지점) — 루트 밖·조상 경로만 차단.
 _DEV_DESTRUCTIVE = re.compile(r"\bmkfs(\.\w+)?\b|\bdd\b[^|;&]*\bof=/dev/")
 _CONTROL_PATHS = (".asgard", ".claude")
 
 
 def _destructive_guard(root: str, cmd: str) -> str | None:
     """rm -rf 급 삭제가 프로젝트 루트 밖을 노리면 차단. 파싱 불가 세그먼트는 fail-open
-    (lagom: 셸 문법 전체 해석은 안 한다 — 게이트·git 이 최종 방어선)."""
+    (lagom: 셸 문법 전체 해석은 안 한다 — 게이트·git이 최종 방어선)."""
     if _DEV_DESTRUCTIVE.search(cmd):
         return f"파괴 명령 차단: {cmd[:80]} (Canon 3 — 디바이스 파괴는 Odin 동의로도 네이티브 루프 밖)"
     rr = os.path.realpath(root)
@@ -316,7 +316,7 @@ def _destructive_guard(root: str, cmd: str) -> str | None:
                 continue
             p = os.path.realpath(os.path.expanduser(t) if t.startswith(("~", "/")) else os.path.join(root, t))
             if p != rr and not p.startswith(rr + os.sep):
-                return f"rm -rf 가 프로젝트 루트 밖을 대상: {t} (Canon 3 — Odin 명시 동의 필요)"
+                return f"rm -rf가 프로젝트 루트 밖을 대상: {t} (Canon 3 — Odin 명시 동의 필요)"
     return None
 
 
@@ -599,10 +599,10 @@ def _extract_hwp(path: str) -> str:
 def run_memory_propose(root: str, tool_input: dict) -> str:
     """개인 기억 쓰기 — 기본은 대기열(사람이 승인해야 정본), 자동저장이 켜져 있으면 즉시 저장.
 
-    어느 쪽인지는 이 함수가 정하지 않는다: `propose.submit` 이 설정 하나를 읽고 정하고,
-    표면은 그 결과를 옮긴다 (MCP 와 같은 문장 — `propose.outcome_text`).
+    어느 쪽인지는 이 함수가 정하지 않는다: `propose.submit`이 설정 하나를 읽고 정하고,
+    표면은 그 결과를 옮긴다 (MCP와 같은 문장 — `propose.outcome_text`).
     거절 사유는 문장으로 돌려준다 — 에이전트가 읽고 고쳐 다시 낼 수 있어야 한다."""
-    del root  # 개인 기억은 프로젝트가 아니라 에이전트에 붙는다 (memory_dir 이 프로파일별)
+    del root  # 개인 기억은 프로젝트가 아니라 에이전트에 붙는다 (memory_dir이 프로파일별)
     from ..memory import propose
 
     text = str(tool_input.get("text") or "").strip()
@@ -618,7 +618,7 @@ def _ticket_line(ticket: dict) -> str:
     from ..studio import tickets as T
 
     # 팀이 지은 상태 이름이 있으면 그것을 든다 — 기본 여섯 칸만 아는 표로 읽으면
-    # 팀이 만든 '배포 대기' 에서 KeyError 로 죽는다.
+    # 팀이 만든 '배포 대기'에서 KeyError로 죽는다.
     label = ticket.get("status_label") or T.STATUS_LABEL.get(ticket["status"], ticket["status"])
     bits = [f"{ticket['key']} [{label}]", ticket["title"]]
     if ticket.get("triage"):
@@ -701,11 +701,11 @@ def run_ticket(root: str, tool_input: dict) -> str:
                 actor=actor,
             )
             # 팀이 트리아지를 켜 뒀으면 이 티켓은 보드가 아니라 인박스에 선다. 그 사실을
-            # 모델에게 돌려줘야 "만들었으니 됐다" 로 끝내지 않고 사람에게 알린다.
+            # 모델에게 돌려줘야 "만들었으니 됐다"로 끝내지 않고 사람에게 알린다.
             if ticket.get("triage"):
                 return f"filed {_ticket_line(ticket)} — 팀 인박스(트리아지)에 세웠습니다. 사람이 받아야 보드로 갑니다."
             return f"filed {_ticket_line(ticket)}"
-        # start·finish 는 update 의 지름길이다. 상태 슬러그를 외우게 하는 대신 **동작**을 준다:
+        # start·finish는 update의 지름길이다. 상태 슬러그를 외우게 하는 대신 **동작**을 준다:
         # 시작하면 진행 중으로 가고 담당이 붙고, 끝내면 검토 중으로 간다(완료가 아니다 —
         # 프로세스가 끝난 것과 사람이 받아들인 것은 다른 일이다).
         if action in ("start", "finish"):
@@ -764,7 +764,7 @@ def run_ingest_document(root: str, tool_input: dict) -> str:
     raw = tool_input.get("paths")
     paths = [str(p) for p in raw if str(p).strip()] if isinstance(raw, list) else []
     if not paths:
-        raise ToolError("paths 가 비었습니다")
+        raise ToolError("paths가 비었습니다")
     if len(paths) > 20:
         raise ToolError("한 번에 20개까지 처리합니다")
     resolved = [p if os.path.isabs(p) else os.path.join(root, p) for p in paths]
@@ -773,7 +773,7 @@ def run_ingest_document(root: str, tool_input: dict) -> str:
         raise ToolError("프로젝트 메모리가 연결돼 있지 않습니다 — asgard memory connect <endpoint>")
     project_root, cfg = found
     if not is_backend_trusted(cfg):
-        raise ToolError("이 기계에서 신뢰되지 않은 backend 입니다 — asgard memory connect 로 재승인")
+        raise ToolError("이 기계에서 신뢰되지 않은 backend 입니다 — asgard memory connect로 재승인")
     strategy = str(tool_input.get("strategy") or "").strip() or None
     ready, failed = ingest.plan(resolved, strategy=strategy)
     if not ready:
@@ -805,8 +805,8 @@ def run_ingest_document(root: str, tool_input: dict) -> str:
                 f"(예측 unit {row['graph_units']} > 상한 {ingest.GRAPH_UNIT_CEILING} — 커밋하면 팀과 공유)"
             )
         elif auto:
-            # 실패해도 approval_id 는 살아 있다 — 문서 한 건이 막혀도 나머지는 계속 들어가고,
-            # 막힌 건은 사람이 그 id 로 이어받는다 (부분 성공을 전체 실패로 만들지 않는다).
+            # 실패해도 approval_id는 살아 있다 — 문서 한 건이 막혀도 나머지는 계속 들어가고,
+            # 막힌 건은 사람이 그 id로 이어받는다 (부분 성공을 전체 실패로 만들지 않는다).
             try:
                 from ..project_memory import commit_approved_record
 
@@ -855,8 +855,8 @@ def run_document(root: str, tool_input: dict) -> str:
 
 
 class _TailBuffer:
-    """실행 중 상한이 걸리는 꼬리 버퍼 — 출력 폭주가 RAM 을 인질로 잡지 않게 읽는 즉시 버린다.
-    bash 는 오류·실패 사유가 끝에 몰리므로 꼬리 보존 (view 는 머리 유지 _cap)."""
+    """실행 중 상한이 걸리는 꼬리 버퍼 — 출력 폭주가 RAM을 인질로 잡지 않게 읽는 즉시 버린다.
+    bash는 오류·실패 사유가 끝에 몰리므로 꼬리 보존 (view는 머리 유지 _cap)."""
 
     def __init__(self, limit: int = _MAX_OUT) -> None:
         self.limit = limit
@@ -890,7 +890,7 @@ class _TailBuffer:
 
 def _kill_group(p: subprocess.Popen) -> None:
     """프로세스 그룹 전체 종료(손자 포함) — SIGTERM 유예 2s 후 그룹에 무조건 SIGKILL.
-    셸 부모가 먼저 죽고 손자만 SIGTERM 을 무시하는 경우를 놓치지 않는다. Windows 는 트리 킬."""
+    셸 부모가 먼저 죽고 손자만 SIGTERM을 무시하는 경우를 놓치지 않는다. Windows는 트리 킬."""
     if os.name != "posix":
         try:
             subprocess.run(["taskkill", "/F", "/T", "/PID", str(p.pid)], capture_output=True)
@@ -926,7 +926,7 @@ def validate_bash_command(root: str, command: str) -> str | None:
 
 
 def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None) -> tuple[str, int | None]:
-    """(output, exit_code). exit_code 는 퀘스트 로그 commands 증거용.
+    """(output, exit_code). exit_code는 퀘스트 로그 commands 증거용.
     cancel 이벤트가 켜지면 프로세스 그룹째 종료 — 취소는 즉시성이 생명이라 0.2s 폴링."""
     if tool_input.get("restart"):
         return "shell restarted (stateless — cwd는 프로젝트 루트 고정)", 0
@@ -1256,15 +1256,15 @@ def run_apply_patch(root: str, tool_input: dict, writes: list[str]) -> str:
 
 
 def run_editor(root: str, tool_input: dict, writes: list[str]) -> str:
-    """text_editor 계약. write 계열은 writes 에 상대경로 기록 — 게이트의 write-sentinel 대응."""
+    """text_editor 계약. write 계열은 writes에 상대경로 기록 — 게이트의 write-sentinel 대응."""
     cmd = tool_input.get("command")
     path = _confine(root, str(tool_input.get("path") or ""))
-    rel = os.path.relpath(path, os.path.realpath(root))  # path 는 realpath — 기준도 풀어야 함 (macOS /var 심링크)
+    rel = os.path.relpath(path, os.path.realpath(root))  # path는 realpath — 기준도 풀어야 함 (macOS /var 심링크)
 
     if cmd in ("create", "str_replace", "insert"):
         if rel == ".asgard" or rel.startswith(".asgard/") or rel == ".claude" or rel.startswith(".claude/"):
             raise ToolError("Asgard 제어 경로는 모델이 변경할 수 없음")
-        # secret-guard 훅 (Canon Law 4) — mode B 와 동일 차단 지점(파일 쓰기). shell 우회는
+        # secret-guard 훅 (Canon Law 4) — mode B와 동일 차단 지점(파일 쓰기). shell 우회는
         # 훅 헤더에 문서화된 알려진 구멍 (양 모드 공통).
         body = str(tool_input.get("file_text") or tool_input.get("new_str") or tool_input.get("insert_text") or "")
         blocked = _hook_guard(root, "asgard.hooks.secret_guard", {"file_path": rel, "content": body})

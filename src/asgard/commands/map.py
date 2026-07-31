@@ -197,8 +197,8 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
             ui.step("gitignore: .gitignore is missing the Asgard map rules")
         if internal_changed:
             ui.step("gitignore: .asgard/.gitignore seed is missing")
-        # 추적 불가는 `map update` 로 못 고친다 — 무시 규칙을 걷어내야 풀린다. 이유를 안 실으면
-        # 아래 한 줄만 남아 "업데이트하라 → 여전히 빨강" 을 무한 반복하게 된다.
+        # 추적 불가는 `map update`로 못 고친다 — 무시 규칙을 걷어내야 풀린다. 이유를 안 실으면
+        # 아래 한 줄만 남아 "업데이트하라 → 여전히 빨강"을 무한 반복하게 된다.
         if not result.trackable:
             ui.step("managed map is git-ignored — not shareable; drop the ignore rule or keep the map local by choice")
         if result.added or result.removed or not result.owned or not result.index_current or gitignore_changed:
@@ -237,9 +237,9 @@ def run_map_scan(*, dry_run: bool = False, json_out: bool = False, quiet: bool =
 
 
 def _resolve_concept(state: dict, node_id: str) -> tuple[str, str | None]:
-    """개념어 원콜 진입 — 정확한 id 가 아니고 매치가 정확히 하나면 그 노드로 해석한다.
+    """개념어 원콜 진입 — 정확한 id가 아니고 매치가 정확히 하나면 그 노드로 해석한다.
 
-    복수 매치는 해석하지 않는다(지어내기 금지) — trace 가 앵커 동봉 후보 목록으로 거부한다.
+    복수 매치는 해석하지 않는다(지어내기 금지) — trace가 앵커 동봉 후보 목록으로 거부한다.
     """
     from ..map_graph import concept_candidates
 
@@ -277,7 +277,7 @@ def run_map_trace(
         return 0
     ui.head(f"map · trace {node_id}")
     if resolved_from:
-        ui.step(f"resolved: {resolved_from} → {node_id} (유일 매치 — 다르면 `asgard map list` 로 확인)")
+        ui.step(f"resolved: {resolved_from} → {node_id} (유일 매치 — 다르면 `asgard map list`로 확인)")
     if not hops:
         ui.step("no adjacent edges — 인접 지도가 비어 있다 (전수 부재의 증거가 아님)")
     for hop in hops:
@@ -391,7 +391,7 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
         return 0
     ui.head(f"map · impact {node_id}")
     if resolved_from:
-        ui.step(f"resolved: {resolved_from} → {node_id} (유일 매치 — 다르면 `asgard map list` 로 확인)")
+        ui.step(f"resolved: {resolved_from} → {node_id} (유일 매치 — 다르면 `asgard map list`로 확인)")
     for label, hops in (("upstream — 이 노드에 닿는 것", upstream), ("downstream — 이 노드가 만지는 것", downstream)):
         ui.step(f"[{label}]")
         if not hops:
@@ -409,7 +409,7 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
     ui.step(f"coverage: depth {depth} · all edge kinds · candidates {candidates}")
     if truncated:
         ui.step(f"{truncated} nodes at depth limit still have unexplored edges — raise --depth to continue")
-    ui.step("no-edge ≠ no-dependency — 정적 레인 인접 지도다; `?` candidate 는 원문 확인 전 단정 금지")
+    ui.step("no-edge ≠ no-dependency — 정적 레인 인접 지도다; `?` candidate는 원문 확인 전 단정 금지")
     for record in records:
         ui.step(f"관련 기록: {record['title']} [{record['match']}]")
     return 0

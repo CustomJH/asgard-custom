@@ -1,6 +1,6 @@
-"""경량 i18n — 기본 영어, config/env 로 한국어 전환.
+"""경량 i18n — 기본 영어, config/env로 한국어 전환.
 
-문자열은 (en, ko) 튜플 테이블. t(key, **kw) 가 현재 언어로 렌더한다. 언어 해석 우선순위:
+문자열은 (en, ko) 튜플 테이블. t(key, **kw)가 현재 언어로 렌더한다. 언어 해석 우선순위:
 프로젝트 .asgard/config.toml [ui] lang → ~/.asgard/config.toml → env ASGARD_LANG → 기본 "en".
 (시스템 로케일은 보지 않는다 — "기본 영어, 명시 설정 시 한국어" 규칙.)
 
@@ -176,7 +176,7 @@ _M: dict[str, tuple[str, str]] = {
     ),
     "manual_none": (
         "no manual — write rules in MANUAL.md and every role in every mode reads them",
-        "MANUAL.md 에 규칙을 쓰면 모든 모드·모든 역할이 읽어요",
+        "MANUAL.md에 규칙을 쓰면 모든 모드·모든 역할이 읽어요",
     ),
     "manual_inert": (
         "the file is there but nothing is loaded — rules go outside the comment markers",
@@ -229,7 +229,7 @@ _M: dict[str, tuple[str, str]] = {
         "⠶ style check rewrote the reply — the version below is canonical",
         "⠶ 문체 검사로 응답을 다듬었어요 — 아래가 정본이에요",
     ),
-    # 배정 단위 진행 보드 — Thinker 가 쪼갠 단위를 열어 보이고 하나씩 닫는다 (agent/heimdall/todo.py).
+    # 배정 단위 진행 보드 — Thinker가 쪼갠 단위를 열어 보이고 하나씩 닫는다 (agent/heimdall/todo.py).
     "todo_head": ("assignment units · {n}", "배정 단위 {n}개"),
     "todo_squad_head": ("squad tasks · {n}", "편대 과업 {n}개"),
     "todo_summary_done": ("{n} done", "완료 {n}"),
@@ -237,7 +237,7 @@ _M: dict[str, tuple[str, str]] = {
     "todo_resume": ("resume {qid} · {n} unfinished", "resume {qid} · 미완 {n}단위"),
     "todo_wave_parallel": ("wave [{ids}] · {n} units in parallel", "wave [{ids}] · 병렬 {n}단위"),
     "todo_wave_single": ("wave [{ids}] · single", "wave [{ids}] · 단독"),
-    # 영어 표면은 단복수를 맞춘다 — "1 files" 는 사람이 쓴 문장으로 읽히지 않는다 (Bragi 계약).
+    # 영어 표면은 단복수를 맞춘다 — "1 files"는 사람이 쓴 문장으로 읽히지 않는다 (Bragi 계약).
     "todo_unit_file": ("{n} file", "파일 {n}개"),
     "todo_unit_files": ("{n} files", "파일 {n}개"),
     "todo_unit_retry": ("failed — reassigning ({e})", "실패 — 재배정 예정 ({e})"),
@@ -248,7 +248,7 @@ _M: dict[str, tuple[str, str]] = {
         "Done — verification PASS, diff hash matched, quest log closed.",
         "과업 완수 — 검증 PASS + diff-hash 일치, 퀘스트 로그 닫힘.",
     ),
-    # 영어 표면은 단복수를 맞춘다 — "1 turns" 는 사람이 쓴 문장으로 읽히지 않는다 (Bragi 계약).
+    # 영어 표면은 단복수를 맞춘다 — "1 turns"는 사람이 쓴 문장으로 읽히지 않는다 (Bragi 계약).
     "report_turns": ("{turns} · roles {roles}", "턴 {n} · 역할 {roles}"),
     "report_evidence": ("Evidence", "증거"),
     "report_assumptions": (
@@ -336,7 +336,7 @@ def current() -> str:
 
 
 def load_lang(root: str | None = None) -> str:
-    """설정 ui.lang → env ASGARD_LANG → 'en'. set_lang 도 함께 수행하고 결과를 반환.
+    """설정 ui.lang → env ASGARD_LANG → 'en'. set_lang도 함께 수행하고 결과를 반환.
     설정 파일 = asgard-setting-{project,global}.json (settings.py — 구 config.toml 폴백 내장)."""
     lang = None
     try:
@@ -355,7 +355,7 @@ def load_lang(root: str | None = None) -> str:
 
 
 def save_lang(lang: str, root: str | None = None) -> bool:
-    """언어를 프로젝트 asgard-setting-project.json 의 ui.lang 에 저장하고 즉시 적용."""
+    """언어를 프로젝트 asgard-setting-project.json의 ui.lang에 저장하고 즉시 적용."""
     if lang not in LANGS:
         return False
     try:
@@ -377,7 +377,7 @@ def t(key: str, **kw) -> str:
 # ── 침묵 구간 라이브 라벨 — 등불 옆 상황극 문구 (단조로움 방지) ─────────────────
 # 모델이 생각하는 동안 매번 다른 세계관 문구가 뜬다. 공용 풀 + 역할(페르소나)별 풀에서
 # 무작위 — 역할 풀이 있으면 절반 확률로 우선해 "지금 누가 무엇을 하는지"가 배어나게.
-# (en, ko) 규약은 _M 과 동일. t() 키가 아닌 전용 함수인 이유 = 호출마다 무작위 선택.
+# (en, ko) 규약은 _M과 동일. t() 키가 아닌 전용 함수인 이유 = 호출마다 무작위 선택.
 _THINKING_COMMON: list[tuple[str, str]] = [
     ("reading the runes…", "룬을 읽는 중…"),
     ("Huginn and Muninn are circling…", "후긴과 무닌이 하늘을 도는 중…"),
@@ -432,7 +432,7 @@ _THINKING_ROLE: dict[str, list[tuple[str, str]]] = {
 
 
 def thinking(role: str | None = None) -> str:
-    """침묵 구간 라벨 한 개 — 호출마다 달라진다. role 은 페르소나명('-lead' 접미 무시)."""
+    """침묵 구간 라벨 한 개 — 호출마다 달라진다. role은 페르소나명('-lead' 접미 무시)."""
     import random
 
     role_pool = _THINKING_ROLE.get((role or "").removesuffix("-lead"), [])

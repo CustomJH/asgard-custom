@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 # Asgard write-sentinel — Trinity 강제화의 잃어버린 반쪽 (verifier-gate 보강).
 #
-# 구멍: verifier-gate 는 "활성 quest 로그가 없으면 allow" (fail-open). 모델이 로그를 아예 안 열고
-# 파일을 쓰면 게이트가 영원히 안 걸린다 — Canon 10 이 프롬프트 순응에만 매달리게 된다.
-# 봉합: PostToolUse(Write|Edit|NotebookEdit)가 "이 세션이 쓴 파일 경로"를 기록하고, gate 가 Stop 에서
-# "기록된 경로가 지금도 dirty 한데 quest 로그가 없다" 를 deterministic violation 으로 차단한다.
+# 구멍: verifier-gate는 "활성 quest 로그가 없으면 allow" (fail-open). 모델이 로그를 아예 안 열고
+# 파일을 쓰면 게이트가 영원히 안 걸린다 — Canon 10이 프롬프트 순응에만 매달리게 된다.
+# 봉합: PostToolUse(Write|Edit|NotebookEdit)가 "이 세션이 쓴 파일 경로"를 기록하고, gate가 Stop에서
+# "기록된 경로가 지금도 dirty 한데 quest 로그가 없다"를 deterministic violation으로 차단한다.
 #
-# 왜 플래그가 아니라 경로 목록인가: 되돌린 write(net-zero)와 사용자의 기존 dirt 를 구분하려면
-# "세션이 만진 경로가 여전히 HEAD 와 다른가"를 봐야 한다. 플래그면 둘 다 오차단.
-# lagom: 도구 계층 write 만 잡는다 — Bash 경유 mutation(echo > file)은 못 본다. 그 경로는
-# quest 로그의 commands 기록 + git-guard 가 부분 커버; 완전 봉합이 필요해지면 Bash 훅에서
+# 왜 플래그가 아니라 경로 목록인가: 되돌린 write(net-zero)와 사용자의 기존 dirt를 구분하려면
+# "세션이 만진 경로가 여전히 HEAD와 다른가"를 봐야 한다. 플래그면 둘 다 오차단.
+# lagom: 도구 계층 write만 잡는다 — Bash 경유 mutation(echo > file)은 못 본다. 그 경로는
+# quest 로그의 commands 기록 + git-guard가 부분 커버; 완전 봉합이 필요해지면 Bash 훅에서
 # redirection 파싱 추가.
 import json
 import os
@@ -17,10 +17,10 @@ import re
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -33,7 +33,7 @@ def main() -> None:
     try:
         resp = data.get("tool_response") or data.get("tool_output")
         if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
-            sys.exit(0)  # 실패한 write 는 파일을 못 바꿨다 — 기록 안 함
+            sys.exit(0)  # 실패한 write는 파일을 못 바꿨다 — 기록 안 함
         tool_input = data.get("tool_input") if isinstance(data.get("tool_input"), dict) else {}
         path = str(tool_input.get("file_path") or tool_input.get("path") or "")
         paths = [path] if path else []

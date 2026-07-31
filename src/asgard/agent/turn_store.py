@@ -1,11 +1,11 @@
 """완결 턴 영속 — Heimdall 층의 (요청, 최종 응답)만 기록한다.
 
-트랜스포트 메시지는 영속하지 않는다: SDK 객체·tool 쌍·암호화 reasoning 은 와이어별로 달라
+트랜스포트 메시지는 영속하지 않는다: SDK 객체·tool 쌍·암호화 reasoning은 와이어별로 달라
 복원이 불가능하거나 위험하고, 대화 맥락으로 유효한 것은 transport-독립인 최상위 문답뿐이다.
 권위는 여기 없다 — Git·퀘스트 로그·게이트 증거가 소유한다. 복원은 대화 맥락(history)만 되살린다.
 
 저장소: ~/.asgard/sessions/<root-sha16>/turns.jsonl
-  - 루트는 realpath 의 sha256 16자리 — 같은 basename 프로젝트 간 충돌 없음
+  - 루트는 realpath의 sha256 16자리 — 같은 basename 프로젝트 간 충돌 없음
   - dir 0700 / file 0600, append-only, 손상 라인은 조용히 스킵 (마지막 줄 절단 내성)
 모든 실패는 fail-open — 영속 문제로 본 세션이 죽으면 안 된다.
 """
@@ -19,15 +19,13 @@ import time
 
 _TAIL_BYTES = 256 * 1024  # 복원 시 파일 꼬리만 읽는다 — 장수 파일도 복원 비용 상수
 _RESPONSE_CAP = 4000  # history 소비 계약(500자 절단)보다 넉넉하게 — 전문 보존은 목적 아님
-_MAX_BYTES: int = (
-    2 * 1024 * 1024
-)  # 보존 정책 — 초과 시 최근 _KEEP_TURNS 만 남기고 재작성. 테스트가 치환하는 가변 정책값
+_MAX_BYTES: int = 2 * 1024 * 1024  # 보존 정책 — 초과 시 최근 _KEEP_TURNS만 남기고 재작성. 테스트가 치환하는 가변 정책값
 _KEEP_TURNS: int = 400
 
 
 def _dir(root: str) -> str:
     # 세션 이력은 에이전트의 것이다 — 같은 리포에서 두 에이전트가 일해도 서로의 턴을 안 잇는다
-    # (`--continue` 가 남의 대화를 이어받으면 정체성이 섞인다). 기본 에이전트는 예전 경로 그대로.
+    # (`--continue`가 남의 대화를 이어받으면 정체성이 섞인다). 기본 에이전트는 예전 경로 그대로.
     from ..profiles import home
 
     key = hashlib.sha256(os.path.realpath(root).encode()).hexdigest()[:16]
@@ -62,7 +60,7 @@ def append_turn(
 ) -> None:
     """완결 턴 1건 append. 빈 응답·실패는 조용히 무시.
 
-    quest_id/session_id 는 에피소드 계층의 귀속 신호 — 없으면 필드 자체를 생략해
+    quest_id/session_id는 에피소드 계층의 귀속 신호 — 없으면 필드 자체를 생략해
     구 소비자(load_turns)와 라인 호환을 유지한다."""
     if not (request.strip() and response.strip()):
         return
@@ -82,8 +80,8 @@ def append_turn(
         line = json.dumps(record, ensure_ascii=False)
         fd = os.open(_path(root), os.O_WRONLY | os.O_CREAT | os.O_APPEND, 0o600)
         with os.fdopen(fd, "a", encoding="utf-8") as f:
-            if hasattr(os, "fchmod"):  # Windows 미존재 — POSIX 만 보정
-                os.fchmod(fd, 0o600)  # O_CREAT 은 기존 파일 권한을 안 고친다 — 소유자 전용 강제
+            if hasattr(os, "fchmod"):  # Windows 미존재 — POSIX만 보정
+                os.fchmod(fd, 0o600)  # O_CREAT은 기존 파일 권한을 안 고친다 — 소유자 전용 강제
             f.write(line + "\n")
         _prune(root)
     except OSError:
@@ -91,8 +89,8 @@ def append_turn(
 
 
 def _prune(root: str) -> None:
-    """보존 정책 — 파일이 _MAX_BYTES 를 넘으면 최근 _KEEP_TURNS 만 남기고 원자 재작성.
-    실패는 무해 (다음 append 가 재시도). 파일 축소는 에피소드 인덱스가 전체 재구축으로 감지."""
+    """보존 정책 — 파일이 _MAX_BYTES를 넘으면 최근 _KEEP_TURNS만 남기고 원자 재작성.
+    실패는 무해 (다음 append가 재시도). 파일 축소는 에피소드 인덱스가 전체 재구축으로 감지."""
     try:
         p = _path(root)
         if os.path.getsize(p) <= _MAX_BYTES:

@@ -202,7 +202,7 @@ def _files(root: Path) -> list[Path]:
                 key=lambda p: p.as_posix(),
             )
             # 빈 성공은 경계가 아니라 경계 부재다: 상위 저장소가 ignore 한 하위 트리(레퍼런스
-            # 사본·벤더 복사본)에서 ls-files 는 성공하면서 아무것도 못 본다. 사용자가 가리킨
+            # 사본·벤더 복사본)에서 ls-files는 성공하면서 아무것도 못 본다. 사용자가 가리킨
             # 루트가 곧 프로젝트다 — 조용한 빈 지도 대신 walk 폴백으로 내려간다.
             if listed:
                 return listed
@@ -539,7 +539,7 @@ def _diversify(rows: list[tuple[str, list[str], list[str]]]) -> list[tuple[str, 
         parts = row[0].split("/")
         groups.setdefault("/".join(parts[:2]), []).append(row)
     ordered: list[tuple[str, list[str], list[str]]] = []
-    # deque 인 이유는 `popleft` 하나다 — 리스트의 `pop(0)` 은 한 번 꺼낼 때마다 뒤 전체를 앞으로
+    # deque 인 이유는 `popleft` 하나다 — 리스트의 `pop(0)`은 한 번 꺼낼 때마다 뒤 전체를 앞으로
     # 민다. 라운드로빈은 모든 행을 정확히 한 번씩 꺼내므로 그 이동이 행 수의 제곱으로 쌓인다.
     queues = [deque(queue) for queue in groups.values()]
     while queues:
@@ -705,8 +705,8 @@ def _atomic_write(root: Path, path: Path, content: str) -> None:
 
 
 def refresh_map(root: str | os.PathLike[str], *, dry_run: bool = False, force: bool = False) -> MapResult:
-    """force=True 는 소유권 거부만 우회한다 (init — 현재 디렉토리가 정본인 명시 재설정).
-    안전 검사(심링크·경로 탈출·예약 파일명 충돌)는 force 와 무관하게 하드 에러."""
+    """force=True는 소유권 거부만 우회한다 (init — 현재 디렉토리가 정본인 명시 재설정).
+    안전 검사(심링크·경로 탈출·예약 파일명 충돌)는 force와 무관하게 하드 에러."""
     base = Path(root).resolve()
     content, files_scanned, landmarks, project = _render(base)
     map_dir = _map_dir(base, create=not dry_run)

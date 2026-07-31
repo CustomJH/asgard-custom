@@ -1,17 +1,17 @@
-"""프로젝트 메모리 회고 — backend LLM 이 있으면 그쪽, 없으면 여기서 합성한다.
+"""프로젝트 메모리 회고 — backend LLM이 있으면 그쪽, 없으면 여기서 합성한다.
 
-Hindsight 의 reflect 는 **서버의 LLM** 이 뱅크 전체를 근거로 답을 만든다. 그런데 서버는
+Hindsight의 reflect는 **서버의 LLM**이 뱅크 전체를 근거로 답을 만든다. 그런데 서버는
 환경마다 다르다 — 사내 게이트웨이가 안 붙은 인스턴스, LLM 없이 색인만 도는 배포, 키가
-만료된 서버. 그때 reflect 는 실패하고, 2차 메모리는 "저장은 되는데 물어볼 수는 없는" 상태가
+만료된 서버. 그때 reflect는 실패하고, 2차 메모리는 "저장은 되는데 물어볼 수는 없는" 상태가
 된다. 저장된 지식이 그대로 있는데 답만 못 하는 건 서버 사정이지 지식의 사정이 아니다.
 
 그래서 판정을 이렇게 나눈다.
-  backend — 서버 LLM 이 답한다 (기본. 뱅크 전체를 보는 건 서버가 더 잘한다)
-  local   — 이쪽 provider 가 답한다. 근거는 **Git 정본 record** 와 backend 의 검색 히트다
-  auto    — backend 를 먼저 시도하고, 못 하면 local 로 내려간다 (기본값)
+  backend — 서버 LLM이 답한다 (기본. 뱅크 전체를 보는 건 서버가 더 잘한다)
+  local   — 이쪽 provider가 답한다. 근거는 **Git 정본 record**와 backend의 검색 히트다
+  auto    — backend를 먼저 시도하고, 못 하면 local로 내려간다 (기본값)
 
-local 경로가 근거로 삼는 것은 Git 정본이다. backend 는 재생 가능한 검색 인덱스일 뿐이고
-정본은 `.asgard/memory/records/` 에 있다 — 서버가 아무것도 못 해도 근거는 여기 남아 있다.
+local 경로가 근거로 삼는 것은 Git 정본이다. backend는 재생 가능한 검색 인덱스일 뿐이고
+정본은 `.asgard/memory/records/`에 있다 — 서버가 아무것도 못 해도 근거는 여기 남아 있다.
 어느 경로로 답했는지는 언제나 산출에 실어 보낸다. 자문의 출처를 숨기면 자문이 아니다.
 """
 
@@ -36,7 +36,7 @@ Rules:
 
 
 class ReflectUnavailable(RuntimeError):
-    """backend 도 local 도 답할 수 없다 — 호출측이 사용자에게 처방을 보여줄 신호."""
+    """backend도 local도 답할 수 없다 — 호출측이 사용자에게 처방을 보여줄 신호."""
 
 
 def reflect_mode(cfg: Mapping[str, object] | None) -> str:
@@ -60,7 +60,7 @@ def canonical_evidence(root: str, question: str, k: int) -> list[dict]:
     try:
         loaded = load_canonical_records(root)
     except Exception:
-        return []  # 손상 record 하나가 회고 전체를 막지 않는다 (lint 가 따로 보고한다)
+        return []  # 손상 record 하나가 회고 전체를 막지 않는다 (lint가 따로 보고한다)
     question_words = _words(question)
     ranked: list[tuple[int, dict]] = []
     for record, path, _digest in loaded:
@@ -109,7 +109,7 @@ def backend_evidence(backend, question: str, k: int) -> list[dict]:
 
 
 def gather_evidence(root: str, backend, question: str, budget: str = "low") -> list[dict]:
-    """local 합성용 근거 — Git 정본 우선, backend 검색 히트로 보강. record_id 로 중복 제거."""
+    """local 합성용 근거 — Git 정본 우선, backend 검색 히트로 보강. record_id로 중복 제거."""
     k = BUDGET_K.get(budget, BUDGET_K["low"])
     rows = canonical_evidence(root, question, k)
     seen = {row["id"] for row in rows}
@@ -121,14 +121,14 @@ def gather_evidence(root: str, backend, question: str, budget: str = "low") -> l
 
 
 def _complete(root: str, system: str, user: str, max_tokens: int) -> str:
-    """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다. 메인 provider 를 쓴다."""
+    """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다. 메인 provider를 쓴다."""
     from ..agent.oneshot import complete_once
 
     return complete_once(root, system, user, max_tokens=max_tokens)
 
 
 def local_reflect(root: str, backend, question: str, budget: str = "low", max_tokens: int = 2048) -> dict:
-    """이쪽 provider 로 합성한다. 근거가 없으면 합성하지 않고 그렇게 보고한다."""
+    """이쪽 provider로 합성한다. 근거가 없으면 합성하지 않고 그렇게 보고한다."""
     import json
 
     evidence = gather_evidence(root, backend, question, budget)

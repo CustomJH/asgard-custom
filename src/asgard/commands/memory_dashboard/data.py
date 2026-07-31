@@ -38,14 +38,14 @@ def _logo_data_uri() -> str:
         data = loader()
         if data:
             return "data:image/png;base64," + base64.b64encode(data).decode()
-    return ""  # 없으면 HTML 이 인라인 SVG 마크로 우아하게 저하
+    return ""  # 없으면 HTML이 인라인 SVG 마크로 우아하게 저하
 
 
 _LOGO_URI = _logo_data_uri()
 
 
 def _packaged_mark() -> bytes | None:
-    """헤더 브랜드 마크 — 위그드라실 엠블럼. `asgard map` 이 읽는 바로 그 파일이다
+    """헤더 브랜드 마크 — 위그드라실 엠블럼. `asgard map`이 읽는 바로 그 파일이다
     (map_graph/view.py `_logo_data_uri`). 같은 파일을 쓰는 것이 두 창을 한 제품으로
     묶는 실제 배선이다 — 각자 다른 로고를 인라인하면 '공통 앵커'는 말뿐이 된다."""
     try:
@@ -72,7 +72,7 @@ def _desc_of(meta: dict, body: str) -> str:
 
 
 def catalog_data(d: str) -> list[dict]:
-    """pages/ frontmatter 카탈로그. 오염 페이지는 본문·설명을 비우고 poisoned 로 표시만 한다."""
+    """pages/ frontmatter 카탈로그. 오염 페이지는 본문·설명을 비우고 poisoned로 표시만 한다."""
     usage = {u["slug"]: u for u in memory.usage_stats(d)}
     rows: list[dict] = []
     for slug in memory._pages(d):
@@ -140,7 +140,7 @@ def health_data(d: str) -> dict:
 
 
 def graph_data(d: str) -> dict:
-    """본문 [[slug]] + frontmatter links 로 링크 그래프. 고아·죽은 링크 탐지."""
+    """본문 [[slug]] + frontmatter links로 링크 그래프. 고아·죽은 링크 탐지."""
     slugs = set(memory._pages(d))
     usage = {u["slug"]: u for u in memory.usage_stats(d)}
     nodes: list[dict] = []
@@ -314,8 +314,8 @@ def _local_day(ts: str) -> str:
 
 
 def log_query(d: str, offset: int = 0, limit: int = 60, op: str | None = None, day: str | None = None) -> dict:
-    """연대기 페이지네이션 + 필터 — 최신순. op 는 접두 매칭(add ← add:decision),
-    day 는 **로컬 날짜** 접두 매칭(활동 히트맵 셀 → 해당 일자 딥링크 — 히트맵 집계와 동일 기준)."""
+    """연대기 페이지네이션 + 필터 — 최신순. op는 접두 매칭(add ← add:decision),
+    day는 **로컬 날짜** 접두 매칭(활동 히트맵 셀 → 해당 일자 딥링크 — 히트맵 집계와 동일 기준)."""
     path = os.path.join(d, memory.LOG)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -340,7 +340,7 @@ def log_query(d: str, offset: int = 0, limit: int = 60, op: str | None = None, d
 
 def activity_data(d: str) -> dict:
     """전체 운영 로그 집계 — Activity 탭(연간 히트맵·op 분포)용. log.md 전량을 일 단위로 센다.
-    타임라인(log_data)은 최근 N건, 여기는 집계만 — payload 가 페이지 수와 무관하게 작다."""
+    타임라인(log_data)은 최근 N건, 여기는 집계만 — payload가 페이지 수와 무관하게 작다."""
     path = os.path.join(d, memory.LOG)
     try:
         with open(path, encoding="utf-8") as handle:
@@ -359,7 +359,7 @@ def activity_data(d: str) -> dict:
         days[day] = days.get(day, 0) + 1
         ops[op] = ops.get(op, 0) + 1
         total += 1
-    # first/last 는 파일 순서가 아니라 날짜 값으로 — 외부 편집으로 순서가 어긋난 로그에 강건
+    # first/last는 파일 순서가 아니라 날짜 값으로 — 외부 편집으로 순서가 어긋난 로그에 강건
     return {
         "days": days,
         "ops": ops,
@@ -373,7 +373,7 @@ def norn_data(d: str) -> dict:
     """노른 손질 이력 — 리포트 목록 + insight 계보 + 모순·보관·백업 (손질 탭, 읽기 전용).
 
     리포트는 reports/norn-*.md 파생물(원문 그대로 요약), insight 계보는 kind=insight
-    페이지의 sources 링크·confidence 를 카탈로그에서 재구성한다. 모순은 사람이 풀 일이라
+    페이지의 sources 링크·confidence를 카탈로그에서 재구성한다. 모순은 사람이 풀 일이라
     리포트 안에 묻어두지 않고 따로 세워 올린다(노른은 보고만 하고 고치지 않는다)."""
     reports: list[dict] = []
     rdir = os.path.join(d, "reports")
@@ -436,8 +436,8 @@ _CONTRADICTION = re.compile(r"^⚠\s*contradiction:\s*\[\[([^\]]+)\]\]\s*↔\s*\
 def _contradictions(reports: list[dict]) -> list[dict]:
     """리포트에 적힌 모순만 따로 뽑는다 — 노른이 고치지 않고 사람에게 넘긴 것들.
 
-    같은 쌍이 손질을 돌 때마다 다시 적히므로 (a,b) 로 dedupe 하고 가장 최근 리포트만 남긴다.
-    reports 는 최신순이므로 처음 만난 쌍이 최신이다."""
+    같은 쌍이 손질을 돌 때마다 다시 적히므로 (a,b)로 dedupe 하고 가장 최근 리포트만 남긴다.
+    reports는 최신순이므로 처음 만난 쌍이 최신이다."""
     out: list[dict] = []
     seen: set[tuple[str, str]] = set()
     for report in reports:
@@ -460,9 +460,9 @@ _ARCHIVE_SNAP = re.compile(r"^(?P<slug>.+)-(?P<ts>\d{14})\.md$")
 
 
 def archive_data(d: str) -> list[dict]:
-    """보관함 — norn archive 가 옮겨 둔 페이지. 삭제가 아니라 이동이라 되살릴 수 있다.
+    """보관함 — norn archive가 옮겨 둔 페이지. 삭제가 아니라 이동이라 되살릴 수 있다.
 
-    같은 slug 의 스냅샷이 여럿이면 최신만 세운다 (restore 가 최신을 복귀시키므로 표시도 최신)."""
+    같은 slug의 스냅샷이 여럿이면 최신만 세운다 (restore가 최신을 복귀시키므로 표시도 최신)."""
     adir = os.path.join(d, "archive")
     latest: dict[str, str] = {}
     try:
@@ -568,12 +568,12 @@ def semantic_data(d: str) -> dict:
     그 차이를 드러내는 유일한 계기라서 상태 옆에 같이 세운다.
 
     더 나쁜 혼동이 하나 더 있었다: 기본값은 켜짐(mode=local)인데 라이브러리가 없으면
-    동작만 실패한다. 그때 화면이 그냥 "off" 라고 적으면 사용자가 **자기가 끈 것**과
+    동작만 실패한다. 그때 화면이 그냥 "off"라고 적으면 사용자가 **자기가 끈 것**과
     **켜져 있는데 못 도는 것**을 구별할 수 없다 — 원인을 못 찾으니 고칠 수도 없다.
     그래서 설정(mode)과 실동작을 따로 싣고, 어긋나면 왜인지까지 말한다.
 
-    **모델을 올려서 확인하지 않는다.** 예전에는 상태 한 줄을 적으려고 sem.status() 를 불렀고,
-    그게 임베더를 로드해 관측 창 하나가 1.45GB 를 물었다 (실측 25MB → 1,471MB). 창은 보는
+    **모델을 올려서 확인하지 않는다.** 예전에는 상태 한 줄을 적으려고 sem.status()를 불렀고,
+    그게 임베더를 로드해 관측 창 하나가 1.45GB를 물었다 (실측 25MB → 1,471MB). 창은 보는
     곳이지 돌리는 곳이 아니다.
 
     대신 더 강한 증거를 쓴다: **이 서고의 페이지에 벡터가 있으면 임베딩은 이미 돌았다.**
@@ -597,7 +597,7 @@ def semantic_data(d: str) -> dict:
     try:
         conn = memory._db(d)
         out["vectors"] = int(conn.execute("SELECT count(*) FROM vec").fetchone()[0])
-        # 모델을 바꾸면 옛 벡터는 차원이 달라지고, cosine 은 길이가 다르면 0 을 돌려준다
+        # 모델을 바꾸면 옛 벡터는 차원이 달라지고, cosine은 길이가 다르면 0을 돌려준다
         # (차원 오염 방지). 그래서 검색이 **조용히** 아무것도 못 찾는다 — 벡터 수는 그대로라
         # 커버리지만 보면 멀쩡해 보인다. 섞인 차원이 그 사실을 드러내는 유일한 값이다.
         dims = [int(r[0]) for r in conn.execute("SELECT DISTINCT dim FROM vec").fetchall() if r[0]]
@@ -622,7 +622,7 @@ def semantic_data(d: str) -> dict:
             return out
         has_lib = _embedder_installed()
         if not has_lib:
-            # model2vec 는 기본 의존성이다(26-07-27 승격) — 없으면 설치가 그 이전 것이다
+            # model2vec는 기본 의존성이다(26-07-27 승격) — 없으면 설치가 그 이전 것이다
             out.update({"state": "blocked", "blocked": "library", "fix": "asgard memory semantic status"})
         elif out["vectors"]:
             # 벡터가 남아 있다 = 임베딩이 실제로 돌았다. 모델을 다시 올려 물을 필요가 없다.
@@ -681,19 +681,19 @@ def derived_data(d: str) -> dict:
             _stat(memory.PAGES, "dir", True, "원본 — 사람이 읽고 고치는 md 파일"),
             _stat(memory.LOG, "file", True, "원본 — 덧붙이기만 하는 작업 기록"),
             _stat(memory.SCHEMA, "file", True, "원본 — 저장 규칙"),
-            _stat(memory.INDEX, "file", False, "자동생성 — asgard memory reindex 로 다시 만듦"),
+            _stat(memory.INDEX, "file", False, "자동생성 — asgard memory reindex로 다시 만듦"),
             _stat(memory.DB, "file", False, "자동생성 — 검색·사용기록·벡터 (손상 시 자동 복구)"),
             _stat("maps", "dir", False, "자동생성 — Obsidian 목차"),
             _stat("reports", "dir", False, "기록 — 정리·패턴 보고서"),
             _stat("archive", "dir", False, "보관 — 되살릴 수 있음"),
             _stat("norn-backups", "dir", False, "백업 — 정리 직전 원본 사본"),
-            _stat(".obsidian", "dir", False, "설정 — Obsidian 으로 열기 위한 최소 설정"),
+            _stat(".obsidian", "dir", False, "설정 — Obsidian으로 열기 위한 최소 설정"),
         ],
     }
 
 
 def _row_title(row: str) -> str:
-    """주입 행 `- 제목 — 설명` 에서 제목만. 형식이 어긋나면 행 전체를 돌려준다 (fail-open)."""
+    """주입 행 `- 제목 — 설명`에서 제목만. 형식이 어긋나면 행 전체를 돌려준다 (fail-open)."""
     text = row[2:] if row.startswith("- ") else row
     return text.split(" — ", 1)[0].strip()
 
@@ -703,8 +703,8 @@ def injection_data(d: str | None = None) -> dict:
 
     다른 패널은 "무엇이 저장돼 있나"를 말한다. 여기는 "무엇이 모델에게 가나"를 말한다 —
     킬스위치·오염 제외·칸 예산·총량 상한 때문에 둘은 같지 않고, 지금까지 대시보드는
-    그 차이를 게이지 하나로만 암시했다. 보여 주는 문자열은 재구성이 아니라 snapshot_note()
-    가 돌려주는 바로 그 블록이다 — 재구성하면 그 순간부터 화면과 프롬프트가 갈린다.
+    그 차이를 게이지 하나로만 암시했다. 보여 주는 문자열은 재구성이 아니라
+    snapshot_note()가 돌려주는 바로 그 블록이다 — 재구성하면 그 순간부터 화면과 프롬프트가 갈린다.
 
     잘림 판정도 실함수(_section)를 그대로 부른다: 유지되는 행은 언제나 앞에서부터의
     연속분이므로, 남은 행 수를 세면 밀려난 행이 정확히 나온다."""
@@ -771,7 +771,7 @@ def snapshot_data(d: str | None = None) -> dict:
         "catalog": catalog,
         "usage": memory.usage_stats(d),
         "graph": graph_data(d),
-        "log": log_data(d, n=120),  # 연대기 탭 분량 — 집계는 activity 가 담당
+        "log": log_data(d, n=120),  # 연대기 탭 분량 — 집계는 activity가 담당
         "activity": activity_data(d),
         "norn": norn_data(d),  # 노른 손질 이력 + insight 계보 + 모순·보관 (손질 탭)
         "semantic": sem,  # 벡터 커버리지 — "켜짐"과 "이 서고에 벡터가 있음"은 다른 말이다
@@ -782,7 +782,7 @@ def snapshot_data(d: str | None = None) -> dict:
 
 def page_data(slug: str, d: str | None = None) -> dict:
     """페이지 상세 (그래프/목록 클릭 스루) — 읽기 전용. 오염 페이지는 본문 미노출(격리 카드),
-    수리는 CLI `asgard memory show --unsafe` 로만 (run_show 와 동일 규율)."""
+    수리는 CLI `asgard memory show --unsafe` 로만 (run_show와 동일 규율)."""
     d = d or memory.memory_dir()
     if not memory.valid_slug(slug):
         return {"error": "invalid slug"}
@@ -823,5 +823,5 @@ def search_data(q: str, k: int, d: str | None = None) -> dict:
     # 관측 무해 — track=False: 대시보드 열람이 usage/decay 통계를 왜곡하지 않는다.
     # 질의는 시맨틱 스트림을 실제로 쓰므로 임베더가 여기서 올라온다 — 쓰는 자리에서 낸다.
     hits = memory.query(q, k=k, d=d, track=False, explain=True)
-    # 스트림별 실제 적중은 hit["streams"] 가 hit 단위로 말한다 — 여기 플래그는 가용 여부다.
+    # 스트림별 실제 적중은 hit["streams"]가 hit 단위로 말한다 — 여기 플래그는 가용 여부다.
     return {"q": q, "k": k, "semantic_active": semantic_data(d)["state"] == "ready", "hits": hits}

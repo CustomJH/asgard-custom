@@ -4,10 +4,10 @@
 # 세 가지 축:
 #   전환   /lagom lite|full|off          → 상태파일 갱신 (세션 한정)
 #   영속   /lagom default lite|full|off  → 프로젝트 [lagom].mode 기록 + 상태 갱신
-#           (review 는 세션 한정 스킬 모드 — 전환·영속 둘 다 기각, 원본 #377 계승)
+#           (review는 세션 한정 스킬 모드 — 전환·영속 둘 다 기각, 원본 #377 계승)
 #   비활성 "stop lagom" / "normal mode" 전문 입력 (대소문자 무시, 말미 구두점 허용) → off
 # 보상: 상태파일이 없으면(SessionStart 훅이 없는 표면 — Codex/Cursor) 기본값을 기록하고,
-# 활성 모드면 첫 프롬프트에 캐논을 주입한다. CC 는 lagom-activate 가 먼저 기록하므로 무개입.
+# 활성 모드면 첫 프롬프트에 캐논을 주입한다. CC는 lagom-activate가 먼저 기록하므로 무개입.
 # stdout + exit 0 = 컨텍스트 주입 (공식 스키마). 모든 오류는 무개입 통과 (fail-open).
 import json
 import os
@@ -15,17 +15,17 @@ import re
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
 
 MODES = ("off", "lite", "full")
 
-# 모드 마커 필터 — templates/lagom.py render_lagom 과 동일 유지 (단일 출처 원칙)
+# 모드 마커 필터 — templates/lagom.py render_lagom과 동일 유지 (단일 출처 원칙)
 _ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
 _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 _SWITCH = re.compile(r"^\s*/lagom(?:\s+(default))?\s+([a-zA-Z]+)\s*$", re.I)
@@ -34,9 +34,9 @@ _DEACTIVATE = re.compile(r"^\s*(stop lagom|normal mode)\s*[.!]?\s*$", re.I)
 
 
 def _read_text(path):
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -67,7 +67,7 @@ def read_state(root):
 
 
 def config_mode(root):
-    """lagom_activate.py config_mode 와 동일 유지 (단일 출처 원칙: asgard/lagom.py)."""
+    """lagom_activate.py config_mode와 동일 유지 (단일 출처 원칙: asgard/lagom.py)."""
     m = norm(os.environ.get("LAGOM_MODE"))
     if m:
         return m
@@ -76,7 +76,7 @@ def config_mode(root):
         (os.path.join(root, ".asgard", "asgard-setting-project.json"), os.path.join(root, ".asgard", "config.toml")),
         (os.path.join(home, ".asgard", "asgard-setting-global.json"), os.path.join(home, ".asgard", "config.toml")),
     ):
-        # 신규 JSON 설정이 그 스코프의 정본 — 있으면 구 TOML 미참조 (settings.py 와 동일 유지)
+        # 신규 JSON 설정이 그 스코프의 정본 — 있으면 구 TOML 미참조 (settings.py와 동일 유지)
         cfg = None
         try:
             with open(scope_json, encoding="utf-8") as f:
@@ -102,7 +102,7 @@ def config_mode(root):
 
 
 def render(canon, mode):
-    """lagom_activate.py render 와 동일 유지 (단일 출처 원칙: templates render_lagom)."""
+    """lagom_activate.py render와 동일 유지 (단일 출처 원칙: templates render_lagom)."""
     out = []
     for line in canon.splitlines():
         m = _ROW.match(line) or _EXAMPLE.match(line)
@@ -130,9 +130,9 @@ def write_state(root, mode):
 
 
 def persist_default(root, mode):
-    """프로젝트 lagom.mode 영속 — asgard-setting-project.json 병합 편집 (settings.save_project 와
-    동일 유지, 단일 출처 원칙). 미이관 프로젝트(신규 파일 없음 + 구 config.toml 존재)는 구 TOML 에
-    기록한다 — 신규 파일을 만들면 TOML 의 다른 섹션이 통째로 가려지기 때문 (이관은 asgard sync 몫)."""
+    """프로젝트 lagom.mode 영속 — asgard-setting-project.json 병합 편집 (settings.save_project와
+    동일 유지, 단일 출처 원칙). 미이관 프로젝트(신규 파일 없음 + 구 config.toml 존재)는 구 TOML에
+    기록한다 — 신규 파일을 만들면 TOML의 다른 섹션이 통째로 가려지기 때문 (이관은 asgard sync 몫)."""
     try:
         asg = os.path.join(root, ".asgard")
         new = os.path.join(asg, "asgard-setting-project.json")
@@ -183,10 +183,10 @@ def client():
 
 
 def emit(current_client, text):
-    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
-    한 번만 쓴다: 이 훅은 문장을 이어 붙이는 자리가 여럿이라 조각마다 JSON 을 뱉으면 파손된다.
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약).
+    한 번만 쓴다: 이 훅은 문장을 이어 붙이는 자리가 여럿이라 조각마다 JSON을 뱉으면 파손된다.
 
-    Cursor 의 beforeSubmitPrompt 는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks, 26-07-27
+    Cursor의 beforeSubmitPrompt는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks, 26-07-27
     확인: 출력은 continue/user_message 뿐) — 그래서 사람에게 보이는 문장으로 내보낸다. 캐논
     자체는 같은 클라이언트의 sessionStart(lagom-activate)가 이미 주입한다."""
     if not text:
@@ -264,7 +264,7 @@ def main():
             sys.exit(0)
 
         # 보상 주입 — SessionStart 훅이 없는 표면: 상태파일 부재 = 첫 프롬프트
-        if read_state(root) is None:  # 신규 state/ + 레거시 2종 전부 부재 (read_state 가 판정)
+        if read_state(root) is None:  # 신규 state/ + 레거시 2종 전부 부재 (read_state가 판정)
             mode = config_mode(root)
             write_state(root, mode)
             if mode != "off":

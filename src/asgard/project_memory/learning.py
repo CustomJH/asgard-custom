@@ -9,7 +9,7 @@ from collections.abc import Mapping
 from .ingest import BANK_DEFAULTS, STRATEGIES
 
 # 종합층 로컬 사본. 파생물이라 정본(records/)과 달리 저장소에 커밋되지 않는다
-# (.asgard/.gitignore 의 `memory/*` 가 이미 덮는다).
+# (.asgard/.gitignore의 `memory/*`가 이미 덮는다).
 SYNTHESIS_FILENAME = os.path.join(".asgard", "memory", "synthesis.json")
 SYNTHESIS_MAX_CHARS = 8000  # 모델 하나가 뱅크 전체를 실어 나르는 것을 막는다
 
@@ -176,14 +176,14 @@ def apply(backend) -> dict:
 
 
 def snapshot(backend, root: str, *, project_uid: str = "", binding_id: str = "") -> int:
-    """준비된 mental model 을 로컬 사본으로 내린다 — 반환 = 저장한 모델 수.
+    """준비된 mental model을 로컬 사본으로 내린다 — 반환 = 저장한 모델 수.
 
-    왜 파일로 내리는가: 종합층은 이미 만들고 있었는데 아무도 안 읽었다 (`doctor` 가 개수만
+    왜 파일로 내리는가: 종합층은 이미 만들고 있었는데 아무도 안 읽었다 (`doctor`가 개수만
     셌다). 회수 때마다 원격으로 목록을 다시 부르면 턴 시작에 두 번째 왕복이 붙고, 서버가
     죽으면 종합층이 통째로 사라진다. 큰 문서 레인(documents)과 같은 결로 간다 — 원본은
-    backend 에 있고, 소비는 로컬에서 한다.
+    backend에 있고, 소비는 로컬에서 한다.
 
-    소유권 필드를 같이 적는다: 다른 binding 으로 옮겨 간 저장소에서 남은 사본이 되살아나
+    소유권 필드를 같이 적는다: 다른 binding으로 옮겨 간 저장소에서 남은 사본이 되살아나
     남의 프로젝트 종합을 주입하는 경로를 닫는다."""
     models = [
         {
@@ -213,8 +213,8 @@ def snapshot(backend, root: str, *, project_uid: str = "", binding_id: str = "")
 def load_synthesis(root: str, *, project_uid: str = "", binding_id: str = "") -> list[dict]:
     """로컬 종합층 사본 — 소유권이 어긋나거나 없으면 빈 리스트 (fail-open).
 
-    빈 소유권은 **불일치로 친다**. 안 그러면 `"" != ""` 가 거짓이라 대조가 저절로 통과한다:
-    소유권 필드를 비운 사본을 심고 설정에서 binding 을 빼면 게이트가 있는 채로 무력해진다.
+    빈 소유권은 **불일치로 친다**. 안 그러면 `"" != ""`가 거짓이라 대조가 저절로 통과한다:
+    소유권 필드를 비운 사본을 심고 설정에서 binding을 빼면 게이트가 있는 채로 무력해진다.
     소유권을 못 대는 사본은 주인을 모르는 사본이고, 주인을 모르면 안 싣는다."""
     try:
         with open(os.path.join(root, SYNTHESIS_FILENAME), encoding="utf-8") as handle:

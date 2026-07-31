@@ -5,12 +5,12 @@
 다른 항목과 손으로 이어야 했다. 구조는 맞았지만 그 구조를 **사람이 조립**하고 있었다.
 
 그래서 여기서는 사람이 드는 것을 하나로 줄인다 — **말**. 한 줄을 적으면 대화가 시작되고,
-그 대화가 PRD 를 채우고, 채워진 PRD 가 기능 명세서의 입력이 되고, 명세서가 유저 플로우의
+그 대화가 PRD를 채우고, 채워진 PRD가 기능 명세서의 입력이 되고, 명세서가 유저 플로우의
 입력이 된다. 순서를 건너뛸 수 없는 이유는 규칙이라서가 아니라 **뒤 문서의 재료가 앞 문서**이기
-때문이다: `readiness()` 가 막는 것은 권한이 아니라 빈 입력이다.
+때문이다: `readiness()`가 막는 것은 권한이 아니라 빈 입력이다.
 
 두 가지를 일부러 나눠 둔다:
-  · `phase` 는 **커서**다 — 지금 사람이 어느 문서를 보고 있는가. 진척이 아니다.
+  · `phase`는 **커서**다 — 지금 사람이 어느 문서를 보고 있는가. 진척이 아니다.
   · 진척은 늘 내용에서 **파생**한다(`readiness`) — 저장하면 "다 됐다고 적힌 빈 문서"가 생긴다.
 
 PRD 다섯 칸 중 앞 넷은 산문이고 마지막 '속성'만 구조를 가진다. 역할·환경은 아래 두 문서가
@@ -32,7 +32,7 @@ from ..io_files import read_json, write_json
 
 SCHEMA_VERSION = 2
 
-# 커서가 설 수 있는 자리. 'done' 은 문서 셋이 다 찬 뒤 사람이 닫은 상태다.
+# 커서가 설 수 있는 자리. 'done'은 문서 셋이 다 찬 뒤 사람이 닫은 상태다.
 PHASES = ("intake", "prd", "spec", "flow", "done")
 
 PRD_SECTIONS = (
@@ -45,13 +45,13 @@ PRD_SECTIONS = (
 PRD_SECTION_IDS = tuple(section for section, _, _ in PRD_SECTIONS)
 _PRD_LABEL = {section: label for section, label, _ in PRD_SECTIONS}
 
-# 기능 명세서 세 층. PRD 가 '무엇을 왜'라면 이 문서는 '어떻게 작동하는가'다.
+# 기능 명세서 세 층. PRD가 '무엇을 왜'라면 이 문서는 '어떻게 작동하는가'다.
 SPEC_LEVELS = ((1, "요구사항"), (2, "기능"), (3, "상세 기능"))
 SPEC_LEVEL_LABEL = dict(SPEC_LEVELS)
 PRIORITIES = ("low", "medium", "high")
 ITEM_STATUSES = ("todo", "doing", "done", "hold")
 
-# 유저 플로우 노드 넷. 'section' 은 그 구획의 최상위 페이지이자 구획 자신의 대표다.
+# 유저 플로우 노드 넷. 'section'은 그 구획의 최상위 페이지이자 구획 자신의 대표다.
 NODE_TYPES = ("start", "section", "page", "action")
 
 CHAT_ROLES = ("user", "asgard")
@@ -88,8 +88,8 @@ class PlanNotReady(ValueError):
 def store_path() -> str:
     """기획의 정본 자리 — **워크스페이스 하나**, 폴더당 하나가 아니다.
 
-    기획은 코드가 아직 없는 데서 시작한다. 그런데 여태 이 파일은 `<프로젝트>/.asgard/plan/`
-    에 살았다 — 그래서 문서를 열려면 먼저 어느 폴더에서 열었는지가 맞아야 했고, 저장소가
+    기획은 코드가 아직 없는 데서 시작한다. 그런데 여태 이 파일은
+    `<프로젝트>/.asgard/plan/`에 살았다 — 그래서 문서를 열려면 먼저 어느 폴더에서 열었는지가 맞아야 했고, 저장소가
     없는 아이디어는 적을 자리가 없었으며, 폴더를 옮기면 기획이 통째로 사라졌다. 일감이
     워크스페이스로 간 것과 같은 이유로([[studio.db]]) 여기도 같이 간다."""
     return os.path.join(_home(), "plans.json")
@@ -114,7 +114,7 @@ def _home() -> str:
 def new_plan(idea: str, title: str = "", root: str = "") -> dict[str, Any]:
     """한 줄에서 시작한다 — 고를 것은 없다. 제목은 안 주면 그 한 줄에서 깎는다.
 
-    `root` 는 이 기획이 **가리키는** 폴더지 사는 자리가 아니다. 비워도 된다 — 코드가 아직
+    `root`는 이 기획이 **가리키는** 폴더지 사는 자리가 아니다. 비워도 된다 — 코드가 아직
     없는 기획이 그렇고, 그게 기본이다."""
     idea = " ".join(str(idea or "").split())
     if not idea or len(idea) > _MAX_TEXT:
@@ -245,7 +245,7 @@ def _checked_prd(prd: Any) -> dict[str, Any]:
     if not isinstance(sections, dict):
         raise ValueError("prd.sections must be an object")
     # 칸은 정본 다섯 개 고정 — 없으면 채우고 모르는 것은 버린다. 문구를 다듬는 순간
-    # 사용자의 `plans.json` 이 "정본이 아니다"로 거부되면 안 된다.
+    # 사용자의 `plans.json`이 "정본이 아니다"로 거부되면 안 된다.
     checked = {}
     for section in PRD_SECTION_IDS:
         row = sections.get(section) or {}
@@ -489,7 +489,7 @@ def load_state() -> dict[str, Any]:
 
 
 def list_plans(root: str = "") -> dict[str, Any]:
-    """워크스페이스의 기획 전부. `root` 는 **거르는 값이지 경계가 아니다** — 주면 그 폴더를
+    """워크스페이스의 기획 전부. `root`는 **거르는 값이지 경계가 아니다** — 주면 그 폴더를
     가리키는 기획만 골라 주고, 안 주면 전부다(창의 기본이 이쪽이다)."""
     state = load_state()
     plans = state["plans"]
@@ -713,7 +713,7 @@ def import_root(root: str, *, force: bool = False) -> dict[str, Any]:
 
     **원본은 안 지운다.** 반입이 뭔가 잘못됐을 때 돌아갈 곳이 있어야 하고, 그 폴더를 아직
     옛 버전으로 여는 사람이 있을 수 있다. 두 번 불러도 두 번 안 들어온다 — 표식 파일이
-    '이미 왔다'를 든다. 들어온 기획은 그 폴더를 `root` 로 가리킨다(사는 자리가 아니라 링크)."""
+    '이미 왔다'를 든다. 들어온 기획은 그 폴더를 `root`로 가리킨다(사는 자리가 아니라 링크)."""
     root = os.path.abspath(root)
     source = project_store_path(root)
     out: dict[str, Any] = {"root": root, "imported": False, "plans": 0, "reason": ""}

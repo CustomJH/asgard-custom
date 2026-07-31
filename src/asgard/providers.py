@@ -1,6 +1,6 @@
 """Provider 계층 — 모델 연결의 선언적 추상화.
 
-프로파일은 provider 의 사실만 선언하고
+프로파일은 provider의 사실만 선언하고
 (이름·env·엔드포인트·기본 모델), 클라이언트 구성·스트리밍은 소유하지 않는다 — 그건
 에이전트 루프 몫. 설정 해석도 여기서: 프로젝트 → 글로벌 → 기본값.
 
@@ -20,14 +20,14 @@ from typing import Callable
 
 @dataclass(frozen=True)
 class ProviderProfile:
-    """선언적 프로파일 — provider 의 사실만. 클라이언트/스트리밍 소유 금지."""
+    """선언적 프로파일 — provider의 사실만. 클라이언트/스트리밍 소유 금지."""
 
     name: str
     display: str
     api_mode: str  # "anthropic" | "openai_compat" | "openai_responses" | "codex_responses" | "claude_cli"
     env_vars: tuple[str, ...]  # API 키 후보 env var (첫 매치 승리)
     default_model: str
-    base_url: str = ""  # openai_compat 필수, anthropic 은 SDK 기본
+    base_url: str = ""  # openai_compat 필수, anthropic은 SDK 기본
     models_url: str = ""  # 모델 catalog endpoint. 비면 {base_url}/models
     signup_hint: str = ""  # 키 없을 때 처방 한 줄
     extra_body: dict = field(default_factory=dict)  # provider 고유 요청 필드 (nvidia reasoning 등)
@@ -50,25 +50,25 @@ PROVIDERS: dict[str, ProviderProfile] = {
         display="Anthropic (Claude)",
         api_mode="anthropic",
         env_vars=("ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"),
-        # 세대 고정값은 카탈로그 조회 실패 시의 하한이다 — 티어 해석은 model_tiers 가 소유한다
-        # (`asgard doctor` 가 계열별 최신판으로 캐시를 갱신한다).
+        # 세대 고정값은 카탈로그 조회 실패 시의 하한이다 — 티어 해석은 model_tiers가 소유한다
+        # (`asgard doctor`가 계열별 최신판으로 캐시를 갱신한다).
         default_model="claude-opus-5",
-        signup_hint="https://platform.claude.com 에서 키 발급 후 export ANTHROPIC_API_KEY=...",
+        signup_hint="https://platform.claude.com에서 키 발급 후 export ANTHROPIC_API_KEY=...",
         fallback_models=("claude-opus-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5"),
         context_window=200_000,
     ),
-    # 네이티브 Claude Code — 로컬 claude CLI 를 Agent SDK 로 구동. API 키 대신
-    # 구독(Pro/Max) keychain 로그인·CLAUDE_CODE_OAUTH_TOKEN 을 그대로 쓴다. 키 해석은
-    # CLI/SDK 몫이라 key_optional — env 후보는 표시·우선순위 확인용일 뿐 SDK 로 전달 안 함.
+    # 네이티브 Claude Code — 로컬 claude CLI를 Agent SDK로 구동. API 키 대신
+    # 구독(Pro/Max) keychain 로그인·CLAUDE_CODE_OAUTH_TOKEN을 그대로 쓴다. 키 해석은
+    # CLI/SDK 몫이라 key_optional — env 후보는 표시·우선순위 확인용일 뿐 SDK로 전달 안 함.
     "claude-native": ProviderProfile(
         name="claude-native",
         display="Claude Code (native CLI)",
         api_mode="claude_cli",
         env_vars=("CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_API_KEY"),
-        default_model="opus",  # CLI 별칭 — claude 가 최신 모델로 해석 (full ID 도 허용)
+        default_model="opus",  # CLI 별칭 — claude가 최신 모델로 해석 (full ID도 허용)
         signup_hint="claude CLI 설치 + 구독 로그인(claude /login) 또는 CLAUDE_CODE_OAUTH_TOKEN export",
         fallback_models=("opus", "sonnet", "haiku"),
-        key_optional=True,  # 구독 keychain 로그인이면 env 키 불요
+        key_optional=True,  # 구독 keychain 로그인이면 env 키 불필요
         context_window=200_000,
     ),
     # OpenAI API — 공식 endpoint + Responses API. 제네릭 OpenAI-compatible와 분리해 최신
@@ -80,7 +80,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("OPENAI_API_KEY",),
         base_url="https://api.openai.com/v1",
         default_model="gpt-5.6-sol",
-        signup_hint="platform.openai.com 에서 키 발급 후 export OPENAI_API_KEY=...",
+        signup_hint="platform.openai.com에서 키 발급 후 export OPENAI_API_KEY=...",
         fallback_models=("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"),
         context_window=1_050_000,
     ),
@@ -93,19 +93,19 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=(),
         base_url="https://chatgpt.com/backend-api/codex",
         default_model="gpt-5.6-sol",
-        signup_hint="asgard auth login openai-native 로 ChatGPT 구독 로그인",
+        signup_hint="asgard auth login openai-native로 ChatGPT 구독 로그인",
         fallback_models=("gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.4-mini"),
         key_optional=True,
         context_window=258_400,
     ),
-    # 제네릭 OpenAI-호환 — OpenAI/OpenRouter/Ollama류. base_url 은 config 로 지정.
+    # 제네릭 OpenAI-호환 — OpenAI/OpenRouter/Ollama류. base_url은 config로 지정.
     "openai_compat": ProviderProfile(
         name="openai_compat",
         display="OpenAI-compatible",
         api_mode="openai_compat",
         env_vars=("OPENAI_API_KEY",),
-        default_model="",  # compat 은 모델 기본값 없음 — config 필수
-        signup_hint="config 에 base_url·model 지정 + api_key_env 의 env var export",
+        default_model="",  # compat은 모델 기본값 없음 — config 필수
+        signup_hint="config에 base_url·model 지정 + api_key_env의 env var export",
     ),
     # OpenRouter — 범용 compat 설정으로도 연결 가능하지만, 별도 프로파일로 키와 공식 endpoint를
     # 고정하면 프로젝트 설정이 credential 목적지를 바꿀 수 없고 live catalog 온보딩도 바로 된다.
@@ -116,24 +116,24 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("OPENROUTER_API_KEY",),
         base_url="https://openrouter.ai/api/v1",
         default_model="",  # 모델 변화가 빠르므로 연결 시 live catalog에서 선택
-        signup_hint="openrouter.ai/settings/keys 에서 키 발급 후 export OPENROUTER_API_KEY=...",
+        signup_hint="openrouter.ai/settings/keys에서 키 발급 후 export OPENROUTER_API_KEY=...",
     ),
-    # Ollama — 로컬 서버 (openai_compat 엔드포인트). 키 불요, 모델은 ollama pull 로 준비.
+    # Ollama — 로컬 서버 (openai_compat 엔드포인트). 키 불필요, 모델은 ollama pull로 준비.
     "ollama": ProviderProfile(
         name="ollama",
         display="Ollama (local)",
         api_mode="openai_compat",
-        env_vars=("OLLAMA_API_KEY",),  # 원격 ollama 등 특수 환경용 — 보통 불요
+        env_vars=("OLLAMA_API_KEY",),  # 원격 ollama 등 특수 환경용 — 보통 불필요
         base_url="http://localhost:11434/v1",
         default_model="gemma4:12b-mlx",
-        signup_hint="ollama serve 실행 + ollama pull gemma4:12b-mlx (API 키 불요)",
+        signup_hint="ollama serve 실행 + ollama pull gemma4:12b-mlx (API 키 불필요)",
         fallback_models=("gemma4:12b-mlx",),
         key_optional=True,
         context_window=128_000,
     ),
-    # NVIDIA NIM — openai_compat 특수화. reasoning 파라미터는 extra_body 로 (enable_thinking·reasoning_budget).
-    # 무료 티어는 API 키 기준 전역 ~40 RPM (모델 합산, 초과 = 429) — default_rpm 으로 선제 스로틀.
-    # 상향 승급(200 RPM 등) 시 config [provider] rpm 으로 조절, -1 = 해제.
+    # NVIDIA NIM — openai_compat 특수화. reasoning 파라미터는 extra_body로 (enable_thinking·reasoning_budget).
+    # 무료 티어는 API 키 기준 전역 ~40 RPM (모델 합산, 초과 = 429) — default_rpm으로 선제 스로틀.
+    # 상향 승급(200 RPM 등) 시 config [provider] rpm으로 조절, -1 = 해제.
     "nvidia": ProviderProfile(
         name="nvidia",
         display="NVIDIA NIM",
@@ -141,7 +141,7 @@ PROVIDERS: dict[str, ProviderProfile] = {
         env_vars=("NVIDIA_API_KEY",),
         base_url="https://integrate.api.nvidia.com/v1",
         default_model="nvidia/nemotron-3-ultra-550b-a55b",
-        signup_hint="build.nvidia.com 에서 nvapi- 키 발급 후 export NVIDIA_API_KEY=...",
+        signup_hint="build.nvidia.com에서 nvapi- 키 발급 후 export NVIDIA_API_KEY=...",
         extra_body={"chat_template_kwargs": {"enable_thinking": True}, "reasoning_budget": 16384},
         extra_body_models=("nvidia/nemotron-3-ultra-550b-a55b",),
         fallback_models=(
@@ -172,7 +172,7 @@ class ResolvedProvider:
         "default"  # default | ~/.asgard/asgard-setting-global.json | .asgard/asgard-setting-project.json | flag
     )
     missing: list[str] = field(default_factory=list)  # 사람이 읽는 미충족 항목
-    # 컨텍스트 창 override — profile 미상(0)인 openai_compat/nvidia 류에서 프룬 트리거·창 % 를
+    # 컨텍스트 창 override — profile 미상(0)인 openai_compat/nvidia 류에서 프룬 트리거·창 %를
     # 살리는 config [provider] context_window 값. 0 = 미지정 (profile 값 사용).
     context_window: int = 0
     # RPM override — config [provider] rpm. 0 = 미지정 (profile default_rpm), -1 = 명시 해제.
@@ -193,8 +193,8 @@ def cred_path() -> str:
     """자격 저장소 — 기계 기본, 단 활성 에이전트가 자기 사본을 두면 그쪽.
 
     기본이 공유인 이유: 에이전트를 하나 추가할 때마다 다시 로그인시키면 스웜을 못 쓴다.
-    예외를 여는 이유: 스웜에서 여러 에이전트가 한 계정을 두드리면 서로의 rate limit 을 굶긴다
-    — `<프로파일 홈>/credentials.json` 을 두면 그 에이전트만 자기 계정으로 나간다.
+    예외를 여는 이유: 스웜에서 여러 에이전트가 한 계정을 두드리면 서로의 rate limit을 굶긴다
+    — `<프로파일 홈>/credentials.json`을 두면 그 에이전트만 자기 계정으로 나간다.
     기본 에이전트는 두 경로가 같은 파일이므로 이 분기가 무의미하다 (그래서 명시 제외)."""
     from .profiles import home, root
 
@@ -241,7 +241,7 @@ def _open_model_catalog(req: urllib_request.Request, timeout: float):
 
 
 def load_credentials() -> dict:
-    """~/.asgard/credentials.json — provider별 {"api_key": ...}. config 와 분리된 키 격리 저장소."""
+    """~/.asgard/credentials.json — provider별 {"api_key": ...}. config와 분리된 키 격리 저장소."""
     import json
 
     try:
@@ -252,7 +252,7 @@ def load_credentials() -> dict:
 
 
 def save_credential(provider: str, api_key: str, base_url: str = "", model: str = "") -> None:
-    """키를 credentials.json 에 저장 — chmod 600, config.toml 에는 절대 안 넣는다 (Canon 4)."""
+    """키를 credentials.json에 저장 — chmod 600, config.toml 에는 절대 안 넣는다 (Canon 4)."""
     import json
 
     creds = load_credentials()
@@ -285,8 +285,8 @@ def save_credential(provider: str, api_key: str, base_url: str = "", model: str 
 def _catalog_model_ids(items) -> list[str]:
     """카탈로그 항목 → 에이전트 모델 id, 등장 순서대로 중복 없이.
 
-    중복 제거를 `dict.fromkeys` 로 하는 이유: 리스트에 `not in` 으로 물으면 항목마다 지금까지의
-    목록을 통째로 훑어, 카탈로그가 커질수록 시간이 제곱으로 는다 (code_map._symbols 와 같은 자)."""
+    중복 제거를 `dict.fromkeys`로 하는 이유: 리스트에 `not in`으로 물으면 항목마다 지금까지의
+    목록을 통째로 훑어, 카탈로그가 커질수록 시간이 제곱으로 는다 (code_map._symbols와 같은 자)."""
     out: list[str] = []
     for item in items:
         if not isinstance(item, dict):
@@ -360,13 +360,13 @@ def provider_models(
         return use_fallback("live catalog was empty")
     live_set = set(live)
     preferred = [model for model in fallback if model in live_set]
-    taken = set(preferred)  # 밖에서 한 번 — 컴프리헨션 안에 두면 항목마다 preferred 를 다시 해싱한다
+    taken = set(preferred)  # 밖에서 한 번 — 컴프리헨션 안에 두면 항목마다 preferred를 다시 해싱한다
     return preferred + [model for model in live if model not in taken]
 
 
 def _lock_down(path: str) -> None:
-    """키 파일을 소유자 단독 접근으로 — POSIX 는 chmod 600, Windows 는 POSIX 비트가 무시되므로
-    icacls 로 상속 차단 + 현재 사용자 단독 ACL (best-effort, 실패해도 저장은 유효)."""
+    """키 파일을 소유자 단독 접근으로 — POSIX는 chmod 600, Windows는 POSIX 비트가 무시되므로
+    icacls로 상속 차단 + 현재 사용자 단독 ACL (best-effort, 실패해도 저장은 유효)."""
     if os.name != "nt":
         os.chmod(path, 0o600)  # 기존 파일이었어도 강제
         return
@@ -412,8 +412,8 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
     if provider:
         source = "flag"
         if conf.get("name") and conf["name"] != provider:
-            # config 의 model/base_url/api_key_env 는 그 config 의 provider 전용 —
-            # 플래그로 provider 를 바꾸면 타 provider 설정이 새면 안 된다.
+            # config의 model/base_url/api_key_env는 그 config의 provider 전용 —
+            # 플래그로 provider를 바꾸면 타 provider 설정이 새면 안 된다.
             conf = {}
     profile = PROVIDERS.get(name)
     if profile is None:
@@ -449,7 +449,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         rpm=rpm,
     )
 
-    # API 키 해석 — env var(프로파일 후보) 우선, 없으면 credentials.json. env 는 export 한 사용자를
+    # API 키 해석 — env var(프로파일 후보) 우선, 없으면 credentials.json. env는 export 한 사용자를
     # 존중(무회귀), 파일은 온보딩으로 저장한 것. 둘 다 없으면 온보딩 대상(missing).
     candidates = ([trusted_global["api_key_env"]] if trusted_global.get("api_key_env") else []) + list(profile.env_vars)
     env_var = next((v for v in candidates if os.environ.get(v)), "")
@@ -459,7 +459,7 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         rp.api_key, rp.key_source = cred["api_key"], "credentials.json"
     elif profile.key_optional:
         if profile.api_mode == "claude_cli":
-            rp.key_source = "claude login (keychain)"  # 인증은 CLI 가 해석 — 키 값 불요
+            rp.key_source = "claude login (keychain)"  # 인증은 CLI가 해석 — 키 값 불필요
         elif profile.api_mode == "codex_responses":
             rp.key_source = "Asgard ChatGPT OAuth"
             try:
@@ -469,13 +469,13 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
             except Exception:
                 rp.missing.append("ChatGPT OAuth 없음 — asgard auth login openai-native")
         else:
-            rp.api_key, rp.key_source = "ollama", "local (keyless)"  # openai SDK 는 빈 키 거부 — 더미
+            rp.api_key, rp.key_source = "ollama", "local (keyless)"  # openai SDK는 빈 키 거부 — 더미
     else:
-        rp.missing.append(f"API 키 없음 ({name}) — asgard start 에서 입력하거나 {' / '.join(candidates)} export")
+        rp.missing.append(f"API 키 없음 ({name}) — asgard start에서 입력하거나 {' / '.join(candidates)} export")
     if not rp.model:
         rp.missing.append("model 미지정 — 온보딩에서 입력하거나 --model")
     if profile.api_mode in {"openai_compat", "openai_responses"} and not rp.base_url:
-        rp.missing.append("base_url 미지정 — openai_compat 은 온보딩에서 입력하거나 [provider] base_url")
+        rp.missing.append("base_url 미지정 — openai_compat은 온보딩에서 입력하거나 [provider] base_url")
     return rp
 
 
@@ -497,7 +497,7 @@ def resolve_trinity(
         "base_url": "..."           # openai_compat 계열만 필요시
       }}
 
-    미지정 역할은 default 그대로 — 호출측은 `is default` 로 배치 여부를 구분할 수 있다.
+    미지정 역할은 default 그대로 — 호출측은 `is default`로 배치 여부를 구분할 수 있다.
     미충족(missing) 판단·폴백은 호출측(Heimdall) 몫: 여기선 사실만 해석한다.
     """
     from .settings import load_global, load_project
@@ -543,8 +543,8 @@ def project_section(root: str | None, section: str) -> dict:
 
 
 def save_config_section(root: str | None, section: str, values: dict | None) -> str:
-    """프로젝트 asgard-setting-project.json 의 한 섹션만 병합 편집 (다른 섹션 불변).
-    values 가 비면 섹션 제거. `trinity.worker` 식 점 섹션 지원. 반환 = 파일 경로.
+    """프로젝트 asgard-setting-project.json의 한 섹션만 병합 편집 (다른 섹션 불변).
+    values가 비면 섹션 제거. `trinity.worker` 식 점 섹션 지원. 반환 = 파일 경로.
     최초 저장 시 구 config.toml 등 레거시 내용을 자동 승계한다 (settings.load_project)."""
     from .settings import _atomic_json, load_project, project_path
 
@@ -575,7 +575,7 @@ def bridge_flags(root: str | None = None) -> dict[str, bool]:
 
     asgard-setting-{global,project}.json:
       "bridge": {
-        "claude-code": true,  # Claude Code 가 배치된 역할을 asgard CLI 로 위임
+        "claude-code": true,  # Claude Code가 배치된 역할을 asgard CLI로 위임
         "codex": false,
         "cursor": false
       }

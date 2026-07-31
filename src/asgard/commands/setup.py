@@ -52,16 +52,16 @@ from ..templates.thor import (
     thor_core_skill,
 )
 
-# 루트 .gitignore 마커 블록 (AGENTS.md 와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
+# 루트 .gitignore 마커 블록 (AGENTS.md와 같은 idempotent 마커 패턴). 런타임 상태·로컬 설정만
 # 무시한다 — .claude 스캐폴드(훅·에이전트·settings.json)는 커밋해 팀과 공유하는 것이 asgard 사상.
-# .asgard/.gitignore 가 이미 자가 무시하지만, 루트에도 명시해 `git status` 를 처음부터 깨끗하게.
-# `.asgard/` (디렉토리 패턴)이 아니라 `.asgard/*` + negation 인 이유: 디렉토리째 무시하면 git 이
+# .asgard/.gitignore가 이미 자가 무시하지만, 루트에도 명시해 `git status`를 처음부터 깨끗하게.
+# `.asgard/` (디렉토리 패턴)이 아니라 `.asgard/*` + negation 인 이유: 디렉토리째 무시하면 git이
 # 하위로 내려가지 않아 map/과 memory/records/ 재포함이 불가능하다 — 둘 다 팀 공유 자산이다.
 _GITIGNORE_BEGIN = "# >>> asgard >>>"
 _GITIGNORE_END = "# <<< asgard <<<"
 _GITIGNORE_BLOCK = (
     f"{_GITIGNORE_BEGIN}\n"
-    "# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)\n"
+    "# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json은 커밋 — 팀 공유)\n"
     "!.asgard/\n"
     ".asgard/*\n"
     "!.asgard/map/\n"
@@ -71,7 +71,7 @@ _GITIGNORE_BLOCK = (
     "!.asgard/memory/records/\n"
     "!.asgard/memory/records/**\n"
     # 로컬 레인 문서 정본 — 팀에는 뱅크가 아니라 저장소가 나른다 (project_memory.documents).
-    # 파생 인덱스(documents.db)는 `.asgard/memory/*` 가 그대로 무시한다 — 되살릴 수 있는 것은 안 나른다.
+    # 파생 인덱스(documents.db)는 `.asgard/memory/*`가 그대로 무시한다 — 되살릴 수 있는 것은 안 나른다.
     "!.asgard/memory/documents/\n"
     "!.asgard/memory/documents/**\n"
     "!.asgard/memory/binding.json\n"
@@ -91,9 +91,9 @@ _GITIGNORE_BLOCK = (
 )
 
 # .asgard 내부 자가 무시 — 런타임 상태(quest/·config·priors)는 무시하고 지도와 승인 record만 추적.
-# 루트 블록과 합의돼야 한다 (둘 중 하나라도 공유 경로를 막으면 추적 불가 — smoke 가 실추적 검증).
+# 루트 블록과 합의돼야 한다 (둘 중 하나라도 공유 경로를 막으면 추적 불가 — smoke가 실추적 검증).
 # asgard-setting-project.json = 팀 공유 설정 (trinity 정책·project-memory backend 선택, 비밀 없음) — 커밋 대상.
-# state/·quest/ 등 런타임은 "*" 가 전부 무시한다.
+# state/·quest/ 등 런타임은 "*"가 전부 무시한다.
 _ASGARD_GITIGNORE = (
     "*\n!.gitignore\n!map/\n!map/**\n"
     "!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
@@ -130,10 +130,10 @@ def merge_project_settings(existing: str | None, seeded: str) -> str:
     """재스캐폴드 시 통합 설정(asgard-setting-project.json) 병합 — 사용자 값 보존이 기본.
 
     사용자 소유 섹션(project_memory 연결·lagom·agent_models·provider 등 전부)은 기존 값을
-    유지하고 시드는 누락 섹션만 채운다. trinity_policy 만 asgard 소유 로직이라 최신 시드로
+    유지하고 시드는 누락 섹션만 채운다. trinity_policy만 asgard 소유 로직이라 최신 시드로
     갱신한다 (시드 드리프트 = 4모드 정책 패치 무효화, 26-07-23 sensitive_paths 회귀). 프로젝트
-    레벨 구 memory 섹션에 실 설정이 있으면 project_memory 로 승격한다 (write_config 와 같은
-    개명 계약). 파손 JSON 은 시드로 재생한다."""
+    레벨 구 memory 섹션에 실 설정이 있으면 project_memory로 승격한다 (write_config와 같은
+    개명 계약). 파손 JSON은 시드로 재생한다."""
     import json
 
     seed = json.loads(seeded)
@@ -161,21 +161,21 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
     def rel(p: str) -> str:
         return p[len(cwd) + 1 :] if p.startswith(cwd + os.sep) else p
 
-    def _is_root_gitignore(p: str) -> bool:  # 루트 .gitignore 는 병합 대상 — existing 거부·덮어쓰기 예외
+    def _is_root_gitignore(p: str) -> bool:  # 루트 .gitignore는 병합 대상 — existing 거부·덮어쓰기 예외
         return os.path.basename(p) == ".gitignore" and os.path.dirname(p) in (cwd, os.getcwd())
 
     # asgard 소유 런타임 시드 — `asgard map`·훅이 init 전에 lazy 생성할 수 있어 존재해도 차단하지 않는다.
-    # .asgard/.gitignore 는 기존 내용 보존(map.py 선례 — 사용자 로컬 예외 존중), INDEX.md 는 asgard
-    # 소유 규칙 계약이라 덮어쓴다 (refresh_map 이 어차피 템플릿으로 재동기화).
+    # .asgard/.gitignore는 기존 내용 보존(map.py 선례 — 사용자 로컬 예외 존중), INDEX.md는 asgard
+    # 소유 규칙 계약이라 덮어쓴다 (refresh_map이 어차피 템플릿으로 재동기화).
     def _seed_kind(p: str) -> str | None:
         r = rel(p)
         if r == os.path.join(".asgard", ".gitignore"):
             return "preserve"
         if r == os.path.join(".asgard", "map", "INDEX.md"):
             return "overwrite"
-        # 커스텀 매뉴얼 — 사용자 소유다. "이미 있음"으로 셋업 전체를 막으면, 루트에 자기 MANUAL.md 를
-        # 가진 리포는 `asgard init` 자체를 못 돌린다 (--force 는 다른 스캐폴드를 덮으라는 뜻이라 답이
-        # 아니다). 자리 확인만 하고 지나가며, 실제 보존은 _write 의 MANUAL.md 분기가 한다.
+        # 커스텀 매뉴얼 — 사용자 소유다. "이미 있음"으로 셋업 전체를 막으면, 루트에 자기 MANUAL.md를
+        # 가진 리포는 `asgard init` 자체를 못 돌린다 (--force는 다른 스캐폴드를 덮으라는 뜻이라 답이
+        # 아니다). 자리 확인만 하고 지나가며, 실제 보존은 _write의 MANUAL.md 분기가 한다.
         if os.path.basename(p) == "MANUAL.md":
             return "keep"
         return None
@@ -207,12 +207,12 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
 
     # 덮어쓰기여도 사용자 데이터 보유 파일 3종은 보존 병합한다 — 스캐폴드(asgard 소유 로직)만
     # 최신으로 갈고, 프로젝트에 쌓인 값은 유지 (로그·퀘스트·상태·맵 데이터는 애초에 스캐폴드
-    # 대상이 아니라 건드리지 않는다). sync 의 파일별 갱신 정책과 같은 계열.
-    # 쓰기는 전부 io_files 를 지난다. Path.write_text 는 인코딩을 안 주면 로케일 기본값으로 쓰고,
-    # 그 값이 cp949 인 한국어 Windows 에서는 스캐폴드에 흔한 엠대시 한 글자에 UnicodeEncodeError 로
-    # 죽는다 (실기 확인 26-07-27: `asgard init --cc` 가 93파일 중 앞쪽에서 중단). 게다가 그 시점엔
-    # 파일이 이미 열려 잘려 있어서, 크래시가 사용자 프로젝트에 반쪽 파일을 남긴다 — io_files 는
-    # utf-8 고정에 tmp+replace 라 두 문제가 같이 사라진다.
+    # 대상이 아니라 건드리지 않는다). sync의 파일별 갱신 정책과 같은 계열.
+    # 쓰기는 전부 io_files를 지난다. Path.write_text는 인코딩을 안 주면 로케일 기본값으로 쓰고,
+    # 그 값이 cp949 인 한국어 Windows 에서는 스캐폴드에 흔한 엠대시 한 글자에 UnicodeEncodeError로
+    # 죽는다 (실기 확인 26-07-27: `asgard init --cc`가 93파일 중 앞쪽에서 중단). 게다가 그 시점엔
+    # 파일이 이미 열려 잘려 있어서, 크래시가 사용자 프로젝트에 반쪽 파일을 남긴다 — io_files는
+    # utf-8 고정에 tmp+replace라 두 문제가 같이 사라진다.
     def _write(p: str, content: str) -> None:
         prev = Path(p).read_text(encoding="utf-8") if os.path.exists(p) else None
         if os.path.basename(p) == "asgard-setting-project.json" and prev is not None:
@@ -220,13 +220,13 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 기존 설정값 유지)"))
             return
         if rel(p) == os.path.join(".claude", "settings.json") and prev is not None:
-            from .sync import merge_cc_settings  # 지연 임포트 — sync 가 setup 을 임포트한다 (순환 방지)
+            from .sync import merge_cc_settings  # 지연 임포트 — sync가 setup을 임포트한다 (순환 방지)
 
             io_files.write_text(p, merge_cc_settings(prev, content))
             ui.ok(ui.dim(rel(p)) + ui.dim(" (병합 — 사용자 permissions 유지)"))
             return
         # 커스텀 매뉴얼은 오딘이 쓴 규칙이다 — init 재실행이 덮으면 프로젝트 규율이 통째로 증발한다.
-        # 파일이 없을 때만 안내 템플릿을 심는다 (sync._policy = keep 과 같은 계약). 루트 MANUAL.md 는
+        # 파일이 없을 때만 안내 템플릿을 심는다 (sync._policy = keep과 같은 계약). 루트 MANUAL.md는
         # 흔한 이름이라 남의 제품 문서일 수도 있다 — 그것도 덮으면 안 되므로 판정은 같다.
         if os.path.basename(p) == "MANUAL.md" and prev is not None:
             ui.ok(ui.dim(rel(p)) + ui.dim(" (보존 — 사용자 소유 규칙)"))
@@ -235,7 +235,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             from .sync import merge_agents_md
 
             merged = merge_agents_md(prev, content)
-            # 마커 없는 파일 = 전면 사용자 소유였던 경우 — init 은 명시적 리셋이라 템플릿으로 교체
+            # 마커 없는 파일 = 전면 사용자 소유였던 경우 — init은 명시적 리셋이라 템플릿으로 교체
             io_files.write_text(p, merged if merged is not None else content)
             ui.ok(ui.dim(rel(p)) + (ui.dim(" (병합 — 마커 밖 내용 유지)") if merged is not None else ""))
             return
@@ -279,7 +279,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
 
 
 def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, str]]:
-    """한 클라이언트의 `hooks/` 에 깔 훅 표 — 본문이 아니라 데이터라서 함수 밖에 산다.
+    """한 클라이언트의 `hooks/`에 깔 훅 표 — 본문이 아니라 데이터라서 함수 밖에 산다.
 
     plan_files 안에 두면 훅을 하나 더할 때마다 이미 200행인 함수가 길어진다 (craft 게이트가
     잡은 자리). 표를 이름 있는 자리로 옮기면 추가는 표에 한 줄이고 함수는 안 자란다.
@@ -316,7 +316,7 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "agent-activate.py"), hook("agent-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
     ]
-    if client == "claude-code":  # statusLine 은 CC 에만 있는 표면 — 다른 클라이언트엔 걸 자리가 없다
+    if client == "claude-code":  # statusLine은 CC 에만 있는 표면 — 다른 클라이언트엔 걸 자리가 없다
         files.append((j(hooks_dir, "lagom-statusline.sh"), LAGOM_STATUSLINE_SH))
     return files
 
@@ -350,21 +350,21 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
     ]
 
     # Trinity — 정책은 툴 중립 .asgard/ (크로스툴 공유), 통합 설정 파일의 trinity_policy
-    # 섹션으로 (26-07-15 설정 통합). .gitignore 를 함께 심는 이유: 훅이 첫 실행 때 lazy 로 만들지만,
-    # setup 직후 커밋하면 정책·상태가 사용자 repo 에 섞인다.
+    # 섹션으로 (26-07-15 설정 통합). .gitignore를 함께 심는 이유: 훅이 첫 실행 때 lazy로 만들지만,
+    # setup 직후 커밋하면 정책·상태가 사용자 repo에 섞인다.
     files += [
         (j(root, ".asgard", "asgard-setting-project.json"), project_settings()),
         (j(root, ".asgard", ".gitignore"), _ASGARD_GITIGNORE),
-        # 코드베이스 지도 시드 — INDEX 는 규칙 문서(asgard 소유), 영역 지도는 에이전트가 그린다.
+        # 코드베이스 지도 시드 — INDEX는 규칙 문서(asgard 소유), 영역 지도는 에이전트가 그린다.
         (j(root, ".asgard", "map", "INDEX.md"), MAP_INDEX_MD),
     ]
 
     # Claude Code — bridge import + settings (permission floor + hook wiring) + Canon guards.
     # 의도적으로 standalone(비-플러그인) 배치다. CC 플러그인으로 묶으면 에이전트명이 네임스페이스돼
     # (`asgard:asgard-thinker`) settings.json 매처와 훅 내부의 이름 등식(readonly/subagent/memory/
-    # charter)이 조용히 fail-open 하고, readonly-guard 의 `.claude/hooks/` allowlist·lagom-canon
-    # sibling 읽기도 깨진다. 배포·버전·팀 공유는 init/sync/update 가 이미 담당 — 스킬의 승인
-    # 완화는 프론트매터 allowed-tools 로, 강제는 훅으로 (승인과 강제는 별 계층).
+    # charter)이 조용히 fail-open 하고, readonly-guard의 `.claude/hooks/` allowlist·lagom-canon
+    # sibling 읽기도 깨진다. 배포·버전·팀 공유는 init/sync/update가 이미 담당 — 스킬의 승인
+    # 완화는 프론트매터 allowed-tools로, 강제는 훅으로 (승인과 강제는 별 계층).
     if cc:
         files += [
             (j(root, ".claude", "CLAUDE.md"), "@../AGENTS.md\n"),
@@ -405,8 +405,8 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files.append((j(root, ".cursor", "rules", "000-agents.mdc"), cursor_rule()))
         for d, desc in CURSOR_FOLDERS:
             files.append((j(root, ".cursor", d, "README.md"), f"# .cursor/{d}/\n\n{desc}\n"))
-        # 훅 표는 CC 와 같은 것 하나 — 스크립트가 호스트를 자동 감지하고, 어느 이벤트에 다는지만
-        # hooks.json 이 정한다 (같은 규율, 다른 배선).
+        # 훅 표는 CC와 같은 것 하나 — 스크립트가 호스트를 자동 감지하고, 어느 이벤트에 다는지만
+        # hooks.json이 정한다 (같은 규율, 다른 배선).
         files.append((j(root, ".cursor", "hooks.json"), cursor_hooks_json()))
         files += hook_files(j(root, ".cursor", "hooks"), "cursor")
         files += [(j(root, ".cursor", "agents", fname), cursor_agent(content, root)) for fname, content in ROLE_AGENTS]
@@ -417,14 +417,14 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
             (j(root, ".codex", "config.toml"), codex_config()),
             (j(root, ".codex", "rules", "canon.rules"), codex_rules()),
         ]
-        files += hook_files(j(root, ".codex", "hooks"), "codex")  # CC·Cursor 와 같은 훅 표
+        files += hook_files(j(root, ".codex", "hooks"), "codex")  # CC·Cursor와 같은 훅 표
         files += [
             (j(root, ".codex", "agents", fname.removesuffix(".md") + ".toml"), codex_agent(content, root))
             for fname, content in ROLE_AGENTS
         ]
 
     # asgard-test 자가 테스트 스킬 — .agents/skills/ 는 Cursor·Codex 공용 네이티브 스코프
-    # (cursor.com/docs/skills · developers.openai.com/codex/skills), Claude Code 만 .claude/skills/.
+    # (cursor.com/docs/skills · developers.openai.com/codex/skills), Claude Code만 .claude/skills/.
     # 같은 SKILL.md 포맷이라 본문은 하나다.
     if cursor or codex:
         files.append((j(root, ".agents", "skills", "asgard-skills", "SKILL.md"), MANAGED_ROUTER_SKILL_MD))
@@ -514,9 +514,9 @@ def run_setup(
             refresh_map(os.getcwd(), dry_run=True)  # map 경로/소유권 preflight — scaffold가 링크를 따라 쓰기 전 차단.
             scan_graph(os.getcwd(), dry_run=True)
         except (MapOwnershipError, GraphOwnershipError) as exc:
-            # init 은 현재 디렉토리를 정본으로 삼는 명시 재설정 — 마커 없는(사람 소유·타 프로젝트 유래)
-            # 지도는 경고 후 재귀속해 엎어쓴다. force 는 소유권만 우회하므로 안전 검사는 재검사에서 잡힌다.
-            ui.warn(f"{exc} — init 이 현재 디렉토리 기준으로 재생성(재귀속)")
+            # init은 현재 디렉토리를 정본으로 삼는 명시 재설정 — 마커 없는(사람 소유·타 프로젝트 유래)
+            # 지도는 경고 후 재귀속해 엎어쓴다. force는 소유권만 우회하므로 안전 검사는 재검사에서 잡힌다.
+            ui.warn(f"{exc} — init이 현재 디렉토리 기준으로 재생성(재귀속)")
             refresh_map(os.getcwd(), dry_run=True, force=True)
             scan_graph(os.getcwd(), dry_run=True, force=True)
     except (GraphError, MapError) as exc:
@@ -524,10 +524,10 @@ def run_setup(
         return 2
     files, label = plan_files(cc, cursor, codex)
     rc = _scaffold(files, label, force, dry_run)
-    if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync` 가 세팅된 프로젝트를 찾는 근거
+    if rc == 0 and not dry_run:  # 레지스트리 기록 — `asgard sync`가 세팅된 프로젝트를 찾는 근거
         from .. import memory, registry
 
-        # 초기 프로젝트 방향을 즉시 그린다; 이후 훅이 주기적으로 갱신. init 은 현재 디렉토리가
+        # 초기 프로젝트 방향을 즉시 그린다; 이후 훅이 주기적으로 갱신. init은 현재 디렉토리가
         # 정본이므로 낡거나 마커 없는 기존 지도는 스캔 결과로 엎어쓴다 (force=소유권만 우회).
         refresh_map(os.getcwd(), force=True)
         scan_graph(os.getcwd(), force=True)
@@ -605,7 +605,7 @@ def _run_profile(profile: str, force: bool, dry_run: bool) -> int:
 
 
 def _apply_lagom(lagom: str | None, dry_run: bool, rc: int) -> int:
-    """init --lagom <mode> — 스캐폴드 성공 후 프로젝트 [lagom].mode 영속 (기본 full 은 무기록,
+    """init --lagom <mode> — 스캐폴드 성공 후 프로젝트 [lagom].mode 영속 (기본 full은 무기록,
     resolve 기본값이 이미 full — 사다리 1단: 필요 없는 설정은 만들지 않는다)."""
     if rc != 0 or dry_run or not lagom:
         return rc

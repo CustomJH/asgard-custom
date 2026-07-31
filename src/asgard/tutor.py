@@ -1,8 +1,8 @@
 """asgard tutor — 이번 변경을 **사용자가 직접 되짚게** 만드는 층.
 
-`craft` 가 손댄 자리를 재고 막는다면, 여기는 손댄 자리를 **사람에게 돌려준다**. 필요한 이유는
+`craft`가 손댄 자리를 재고 막는다면, 여기는 손댄 자리를 **사람에게 돌려준다**. 필요한 이유는
 하나다: 에이전트가 코드를 다 쓰고 "완료"라고 말하면, 아무도 못 건드리는 저장소가 서서히
-만들어진다. 코드는 늘어나는데 그 코드를 읽은 사람이 없기 때문이다. 인지부채는 AI 를 얼마나
+만들어진다. 코드는 늘어나는데 그 코드를 읽은 사람이 없기 때문이다. 인지부채는 AI를 얼마나
 쓰느냐가 아니라 **관여 순서**의 함수다 — 사람이 나중에 읽으면 안 남고, 먼저 물으면 남는다
 (미미르 캐논과 같은 근거 축). 그래서 이 모듈은 설명을 더 하는 장치가 아니라 **설명을 덜 하고
 물음을 남기는** 장치다. 성공 지표도 같다: 에이전트 없이 이 변경을 재구성할 수 있는가.
@@ -11,18 +11,18 @@
 
   ① 답을 주지 않는다. 볼 자리(`file:line`)와 물음만 준다 — 튜터가 대신 이해해 주면 이 층의
      목적이 그 자리에서 사라진다.
-  ② 아무것도 막지 않는다. `health` 와 같은 등급이다 — 튜터가 관문이 되면 사람이 튜터를 끈다.
+  ② 아무것도 막지 않는다. `health`와 같은 등급이다 — 튜터가 관문이 되면 사람이 튜터를 끈다.
   ③ 사실만 기계가 만든다. "무엇이 어떻게 바뀌었나"는 여기서 결정론으로 뽑고, "왜 그렇게
      했나"는 **빈칸으로 남긴다** — 그 칸은 코드를 쓴 쪽이 채우고 사용자가 검사한다.
   ④ 못 본 것은 못 봤다고 적는다. 조용한 절단은 "0건"을 "안 봤다"로 만든다.
 
-래칫은 `craft` 와 같다: base 에 이미 있던 것은 다시 묻지 않는다. 물음도 부채라서, 매 턴 같은
+래칫은 `craft`와 같다: base에 이미 있던 것은 다시 묻지 않는다. 물음도 부채라서, 매 턴 같은
 것을 물으면 세 번째부터 아무도 안 읽는다.
 
-물음을 놓은 **뒤**는 `tutor_growth` 가 센다 — 답했는가, 건너뛰었는가, 그래서 다음엔 얼마나 말할
+물음을 놓은 **뒤**는 `tutor_growth`가 센다 — 답했는가, 건너뛰었는가, 그래서 다음엔 얼마나 말할
 것인가(조절), 안 답한 것을 언제 다시 꺼낼 것인가(재방문). 이 모듈은 계속 "이번 변경의 사실"만
 만들고, 그 사실을 사람에 맞춰 **줄이는** 일은 여기 아래쪽 조립부에서만 일어난다. 나누는 이유는
-하나다: 사실이 사람에 따라 달라지기 시작하면 `--json` 이 두 사람에게 다른 답을 내게 된다.
+하나다: 사실이 사람에 따라 달라지기 시작하면 `--json`이 두 사람에게 다른 답을 내게 된다.
 """
 
 from __future__ import annotations
@@ -41,7 +41,7 @@ from .io_files import read_json, write_json
 
 MAX_PATHS = 400  # 한 번에 읽을 파일 상한 — 초과분은 잘린 사실로 싣는다(조용한 절단 금지)
 # (인벤토리, 확인할 자리, 미판정 사유, 단위→줄). 마지막 칸은 표면 판정에 좌표를 주기 위한 것이다 —
-# surface 는 심볼 이름만 알고 줄을 모르는데, `file:1` 은 사람이 열어 볼 수 없는 좌표다.
+# surface는 심볼 이름만 알고 줄을 모르는데, `file:1`은 사람이 열어 볼 수 없는 좌표다.
 _Judged = tuple["FileChange", list["Checkpoint"], str | None, dict[str, int]]
 # 확인 순위 — 사람의 눈은 유한하다. 계약이 깨진 자리가 표식보다 먼저 온다.
 WEIGHT = {
@@ -66,7 +66,7 @@ KIND_LABEL = {
 # 다시 물을 때의 **각도**. 같은 문장을 네 번째로 놓는 것은 재방문이 아니라 반복이고, 반복은
 # 답을 못 받은 이유를 그대로 한 번 더 재현한다. 인출이 실패한 자리에서 바꿀 것은 목소리 크기가
 # 아니라 각도다 — 결과를 묻던 것을 신호로, 신호를 묻던 것을 복구로 옮긴다. 0번은 최초 문장이라
-# 여기 없다(Checkpoint.ask 가 갖는다). 각도가 떨어지면 마지막 각도를 유지한다.
+# 여기 없다(Checkpoint.ask가 갖는다). 각도가 떨어지면 마지막 각도를 유지한다.
 ANGLES: dict[str, tuple[str, ...]] = {
     "contract-break": (
         "이 계약을 쓰던 코드를 지금 처음 보는 사람이 있다면, 그 사람은 무엇을 먼저 실행해 봐야 하는가?",
@@ -103,7 +103,7 @@ ANGLES: dict[str, tuple[str, ...]] = {
 class Checkpoint:
     """사용자가 **직접** 확인해야 하는 자리 하나.
 
-    `what` 은 기계가 뽑은 사실, `why` 는 왜 당신 눈이 필요한가, `ask` 는 당신이 답할 수 있어야
+    `what`은 기계가 뽑은 사실, `why`는 왜 당신 눈이 필요한가, `ask`는 당신이 답할 수 있어야
     하는 물음이다. 셋을 나눠 두는 이유: 사실과 물음이 한 문장에 섞이면 읽는 쪽이 물음까지
     설명으로 읽고 넘어간다 — 그러면 읽은 사람은 늘고 답한 사람은 그대로다.
     """
@@ -115,7 +115,7 @@ class Checkpoint:
     what: str
     why: str
     ask: str
-    key: str = ""  # 식별용 구분자 — 아래 `cid` 주석 참고. 비면 `unit` 이 그 일을 한다
+    key: str = ""  # 식별용 구분자 — 아래 `cid` 주석 참고. 비면 `unit`이 그 일을 한다
 
     @property
     def weight(self) -> int:
@@ -130,8 +130,8 @@ class Checkpoint:
         """이 물음의 이름. 사용자가 답을 되돌려 보낼 때 쓰는 유일한 좌표다.
 
         **줄 번호를 안 쓴다** — 답을 적는 사이에 위에서 함수가 길어지면 좌표가 바뀌는 식별자는
-        식별자가 아니다. 대신 `key` 로 한 파일 안의 물음을 가른다: 의존 물음의 `unit` 은 비어
-        있고 한 함수 안의 삼킴도 이름이 같아서, 좌표만으로는 `requests` 와 `yaml` 이 **같은
+        식별자가 아니다. 대신 `key`로 한 파일 안의 물음을 가른다: 의존 물음의 `unit`은 비어
+        있고 한 함수 안의 삼킴도 이름이 같아서, 좌표만으로는 `requests`와 `yaml`이 **같은
         물음**이 된다(실측). 그러면 답 하나가 안 답한 물음까지 닫는다 — 기록이 거짓이 되는
         가장 조용한 경로다.
         """
@@ -198,7 +198,7 @@ def _at_base(root: str, rel: str, base: str) -> str | None:
 
 
 def _numstat(root: str, base: str) -> dict[str, tuple[int, int]]:
-    """경로 → (추가행, 삭제행). 바이너리(`-`)는 0 — 못 센 것을 0 이라 부르되 인벤토리에는 남긴다."""
+    """경로 → (추가행, 삭제행). 바이너리(`-`)는 0 — 못 센 것을 0이라 부르되 인벤토리에는 남긴다."""
     try:
         proc = subprocess.run(
             ["git", "diff", "--numstat", base],
@@ -239,10 +239,10 @@ def _inventory(rel: str, now: dict[str, Unit], old: dict[str, Unit], stat: tuple
 
 
 def _stat(rel: str, text: str | None, stats: dict[str, tuple[int, int]]) -> tuple[int, int]:
-    """추적되지 않은 새 파일은 `git diff --numstat` 에 안 나온다 — 본문 전체가 이번에 추가된 것이다.
+    """추적되지 않은 새 파일은 `git diff --numstat`에 안 나온다 — 본문 전체가 이번에 추가된 것이다.
 
-    안 세면 신규 파일이 전부 `+0/-0` 으로 보이고, 그러면 보고서에서 가장 큰 변경이 가장 작아
-    보인다. 0 은 "안 바뀜"이라는 뜻으로 읽히므로 못 센 것을 0 으로 두면 그건 거짓말이다.
+    안 세면 신규 파일이 전부 `+0/-0`으로 보이고, 그러면 보고서에서 가장 큰 변경이 가장 작아
+    보인다. 0은 "안 바뀜"이라는 뜻으로 읽히므로 못 센 것을 0으로 두면 그건 거짓말이다.
     """
     known = stats.get(rel)
     if known is not None:
@@ -315,10 +315,10 @@ def _python_points(rel: str, text: str, before: str, own: frozenset[str]) -> lis
             rel,
             line,
             sig.split("@", 1)[-1],
-            f"{sig.split('@', 1)[0]} 를 잡고 아무것도 하지 않는다 — 이유가 어디에도 안 적혀 있다",
+            f"{sig.split('@', 1)[0]}를 잡고 아무것도 하지 않는다 — 이유가 어디에도 안 적혀 있다",
             "삼킨 예외는 실패를 성공처럼 보이게 만든다. 의도한 fail-open 인지 흘린 것인지는 코드만 보고 알 수 없다",
             "이 예외가 실제로 일어나면 사용자 화면에는 무엇이 보이는가? 아무것도 안 보이는 게 맞다면 왜인가?",
-            sig,  # 한 함수 안에 삼킴이 둘이면 `unit` 이 같다 — 예외 종류까지 넣어야 다른 물음이 된다
+            sig,  # 한 함수 안에 삼킴이 둘이면 `unit`이 같다 — 예외 종류까지 넣어야 다른 물음이 된다
         )
         for sig, line in sorted(_fresh(tutor_probes.swallows(text), tutor_probes.swallows(before)).items())
     ]
@@ -329,10 +329,10 @@ def _python_points(rel: str, text: str, before: str, own: frozenset[str]) -> lis
                 rel,
                 line,
                 "",
-                f"외부 의존 `{name}` 이 이 파일에 새로 들어왔다",
+                f"외부 의존 `{name}`이 이 파일에 새로 들어왔다",
                 "의존 하나는 코드보다 오래 남는다 — 버전·보안·라이선스·이관 비용이 전부 따라 들어온다",
-                f"`{name}` 이 하는 일을 직접 짜면 몇 줄인가? 그 줄 수를 이 비용과 바꿀 값이 있는가?",
-                name,  # 의존 물음은 `unit` 이 비어 있다 — 이름이 없으면 한 파일의 의존 전부가 한 물음이 된다
+                f"`{name}`이 하는 일을 직접 짜면 몇 줄인가? 그 줄 수를 이 비용과 바꿀 값이 있는가?",
+                name,  # 의존 물음은 `unit`이 비어 있다 — 이름이 없으면 한 파일의 의존 전부가 한 물음이 된다
             )
         )
     return out
@@ -348,7 +348,7 @@ def _mark_point(rel: str, sig: str, line: int) -> Checkpoint:
         f"{kind} 표식이 새로 남았다 — {body or '(내용 없음)'}",
         "표식은 저자가 스스로 '여기 안 끝났다'고 적은 자리다. 안 갚기로 했다면 표식이 아니라 결정으로 남아야 한다",
         "이건 언제 갚는가? 안 갚을 것이면 왜 남겨 두는가?",
-        sig,  # 한 파일의 표식이 여럿이면 본문이 유일한 구분자다 (`unit` 은 비어 있다)
+        sig,  # 한 파일의 표식이 여럿이면 본문이 유일한 구분자다 (`unit`은 비어 있다)
     )
 
 
@@ -364,10 +364,10 @@ def _removal_points(rel: str, gone: list[str], old: dict[str, Unit]) -> list[Che
                 rel,
                 old[name].line if name in old else 1,
                 name,
-                f"`{name}` 이 사라졌다 ({old[name].lines}행)" if name in old else f"`{name}` 이 사라졌다",
-                "판정이 사라진 것과 기능이 사라진 것은 diff 에서 똑같이 보인다"
+                f"`{name}`이 사라졌다 ({old[name].lines}행)" if name in old else f"`{name}`이 사라졌다",
+                "판정이 사라진 것과 기능이 사라진 것은 diff에서 똑같이 보인다"
                 if is_test
-                else "삭제는 diff 에서 가장 조용한 변경이다 — 부르던 곳이 남아 있어도 실행 전엔 티가 안 난다",
+                else "삭제는 diff에서 가장 조용한 변경이다 — 부르던 곳이 남아 있어도 실행 전엔 티가 안 난다",
                 "이 테스트가 지키던 조건은 지금 무엇이 지키는가?"
                 if is_test
                 else "이걸 부르던 곳은 어디였고, 왜 이제 필요 없는가?",
@@ -380,7 +380,7 @@ def _removal_points(rel: str, gone: list[str], old: dict[str, Unit]) -> list[Che
 
 
 def _surface_points(root: str, base: str) -> tuple[list[Checkpoint], list[tuple[str, str]]]:
-    """공개 시그니처 변화 + 호출부 후보. 목록을 손 grep 에 맡기지 않는 것이 surface 의 존재 이유다."""
+    """공개 시그니처 변화 + 호출부 후보. 목록을 손 grep에 맡기지 않는 것이 surface의 존재 이유다."""
     try:
         diff = surface.diff(root, base)
     except Exception:
@@ -459,7 +459,7 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
             (f"(+{len(targets) - MAX_PATHS} more)", f"한 번에 {MAX_PATHS}개까지만 읽었다 — 경로를 좁혀 다시 보라")
         )
     contract, gaps = _surface_points(root, base)
-    # 경로를 지목받았으면 표면 판정도 그 안으로 자른다. surface 는 나무 전체의 변경을 보는데,
+    # 경로를 지목받았으면 표면 판정도 그 안으로 자른다. surface는 나무 전체의 변경을 보는데,
     # 훅은 "이 세션이 쓴 경로"만 넘긴다 — 안 자르면 남이 만든 계약 파괴를 이 턴의 물음으로
     # 돌려주게 되고, 그건 craft 래칫이 막는 것과 똑같은 종류의 오귀속이다.
     scope = set(named)
@@ -474,7 +474,7 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
 
 
 def _anchored(point: Checkpoint, anchors: dict[str, dict[str, int]]) -> Checkpoint:
-    """표면 판정에 좌표를 붙인다. `file:1` 은 사람이 열어 볼 수 없는 좌표라 물음이 도달하지 않는다."""
+    """표면 판정에 좌표를 붙인다. `file:1`은 사람이 열어 볼 수 없는 좌표라 물음이 도달하지 않는다."""
     line = anchors.get(point.path, {}).get(point.unit)
     return point if line is None else replace(point, line=line)
 
@@ -523,7 +523,7 @@ def revisits(root: str, now: float | None = None, cap: int = 2, skip: object = (
     기록만으로 결정하지 않고 매번 나무를 한 번 본다 — 되짚기가 유일하게 파일을 다시 읽는 자리다.
     죽은 좌표는 여기서 만료로 닫힌다(조용히 지우지 않는다).
 
-    `skip` 은 이번 턴이 방금 물은 자리다. 같은 물음이 위(이번 변경)와 아래(재방문)에 두 번 실리면
+    `skip`은 이번 턴이 방금 물은 자리다. 같은 물음이 위(이번 변경)와 아래(재방문)에 두 번 실리면
     읽는 쪽은 그걸 두 건으로 세고, 두 번 실린 화면은 한 번도 안 읽힌다.
     """
     seen = {str(s) for s in skip} if isinstance(skip, (list, tuple, set, frozenset)) else set()
@@ -537,7 +537,7 @@ def revisits(root: str, now: float | None = None, cap: int = 2, skip: object = (
     out = []
     for row in alive[:cap]:
         turns = ANGLES.get(row.kind, ())
-        index = row.asks - 1  # asks 는 아래 record 에서 곧 +1 된다 — 그 회차의 각도를 미리 고른다
+        index = row.asks - 1  # asks는 아래 record에서 곧 +1 된다 — 그 회차의 각도를 미리 고른다
         ask = turns[min(index, len(turns) - 1)] if turns and index >= 0 else row.ask
         out.append(replace(row, ask=ask, asks=row.asks + 1))
     if out:
@@ -589,7 +589,7 @@ def hand_back(
 def record(root: str, points: object, now: float | None = None) -> dict[str, str]:
     """놓은 물음을 성장 기록에 남긴다 — 중복 호출에 안전(같은 턴에 훅과 네이티브가 겹쳐 돈다).
 
-    `now` 를 그대로 넘기는 것이 계약이다. 여기서 시계를 갈아 끼우면 재방문 사다리가 제자리를
+    `now`를 그대로 넘기는 것이 계약이다. 여기서 시계를 갈아 끼우면 재방문 사다리가 제자리를
     맴돈다 — 예약은 미래 시각으로 재고 판정은 현재 시각으로 하면 영원히 "아직 때가 아니다"가 된다.
     """
     try:
@@ -607,7 +607,7 @@ _WEAK = frozenset("src lib test tests spec py js ts tsx jsx go rs java kt md jso
 
 
 def brief(root: str, text: str = "", paths: object = (), cap: int = 3) -> str:
-    """**들어가기 전에** 이 자리에 남아 있는 답 없는 물음. 없으면 빈 문자열.
+    """**들어가기 전에**이 자리에 남아 있는 답 없는 물음. 없으면 빈 문자열.
 
     되짚기는 지금까지 전부 사후였다 — 다 쓰고 나서 물었다. 그런데 같은 자리를 다시 건드리는
     순간이야말로 지난번 물음이 값을 갖는 유일한 때다: 그때는 "언젠가 볼 것"이었지만 지금은
@@ -665,7 +665,7 @@ def _recall_lines(back: list[tutor_growth.Said], after_questions: bool) -> list[
 
 
 def _keys(text: str) -> set[str]:
-    """요청 문장에서 자리를 가리킬 수 있는 조각만. `app.py` 는 통째로도, 쪼개서도 센다."""
+    """요청 문장에서 자리를 가리킬 수 있는 조각만. `app.py`는 통째로도, 쪼개서도 센다."""
     out: set[str] = set()
     for raw in _TOKEN.findall(text):
         for piece in [raw, *re.split(r"[/\\.]", raw)]:
@@ -713,7 +713,7 @@ def turn_note(root: str, sid: object, limit: int = 3) -> str:
 
 
 def _session_writes(root: str, sid: str) -> list[str]:
-    """이 세션이 쓴 경로 (write sentinel). 사용자가 원래 갖고 있던 dirt 는 이 턴의 물음이 아니다."""
+    """이 세션이 쓴 경로 (write sentinel). 사용자가 원래 갖고 있던 dirt는 이 턴의 물음이 아니다."""
     if not sid:
         return []
     rows = read_json(os.path.join(root, ".asgard", "state", f"writes-{sid}.json"), [])

@@ -1,7 +1,7 @@
-"""Desktop 의 디스크 기억 — 작업 기록과 프로젝트 등록부.
+"""Desktop의 디스크 기억 — 작업 기록과 프로젝트 등록부.
 
 여태 데스크탑의 작업은 프로세스 메모리 딕셔너리에만 있었다. 창을 닫으면 최근 작업도
-산출물도 통째로 사라졌고, "산출물 0" 은 아무것도 안 했다는 뜻이 아니라 **기억이 없다**는
+산출물도 통째로 사라졌고, "산출물 0"은 아무것도 안 했다는 뜻이 아니라 **기억이 없다**는
 뜻이었다. 이 계층이 그 절반을 디스크로 내린다.
 
 자리:
@@ -17,7 +17,7 @@
     않고도 "내가 최근에 뭘 하고 있었지"에 답할 수 있어야 한다. 색인이 그 답을 든다.
     색인은 편의지 정본이 아니다 — 지워도 프로젝트의 기록에서 다시 세울 수 있다.
   · 살아 있던 상태(running/queued/paused)는 프로세스와 함께 죽는다. 다시 읽을 때
-    `interrupted` 로 정규화한다 — 죽은 작업을 "실행 중"이라고 말하는 창은 계기가 아니다.
+    `interrupted`로 정규화한다 — 죽은 작업을 "실행 중"이라고 말하는 창은 계기가 아니다.
   · 실패해도 화면은 산다(fail-open). 기록이 없어서 화면이 안 뜨는 것이 더 나쁜 고장이다.
 """
 
@@ -97,7 +97,7 @@ def scratch_root() -> str:
     """프로젝트가 없을 때 서는 자리.
 
     창은 폴더가 아니라 사람의 것이다 — 아무 프로젝트도 안 열고도 물어보고 시켜야 한다.
-    그렇다고 홈 디렉터리에서 돌리면 사용자의 집 전체가 작업 경계가 되고, `.asgard/` 가
+    그렇다고 홈 디렉터리에서 돌리면 사용자의 집 전체가 작업 경계가 되고, `.asgard/`가
     거기에 생긴다. 그래서 **자기 자리**를 하나 판다: 여기는 아스가르드가 소유한 폴더라
     더럽혀도 남의 것을 안 건드린다."""
     return os.path.join(machine_dir(), SCRATCH_DIR)
@@ -119,9 +119,9 @@ def is_scratch(root: str | None) -> bool:
 def looks_like_project(path: str | None) -> bool:
     """이 폴더를 프로젝트로 볼 것인가 — 자리에 있는 표식으로만 판정한다.
 
-    `asgard desktop` 은 어디서든 실행될 수 있다(독에서 누르면 홈이나 `/` 다). 그때 cwd 를
-    말없이 프로젝트로 등록하면 등록부가 쓰레기가 되고, 사용자의 홈에 `.asgard/desktop/`
-    이 생긴다. 표식이 없으면 프로젝트가 아니라고 말한다."""
+    `asgard desktop`은 어디서든 실행될 수 있다(독에서 누르면 홈이나 `/` 다). 그때 cwd를
+    말없이 프로젝트로 등록하면 등록부가 쓰레기가 되고, 사용자의 홈에
+    `.asgard/desktop/`이 생긴다. 표식이 없으면 프로젝트가 아니라고 말한다."""
     if not path:
         return False
     target = os.path.abspath(os.path.expanduser(path))
@@ -176,12 +176,12 @@ def _atomic_write(path: str, text: str) -> bool:
 
 
 def public_task(task: dict) -> dict:
-    """디스크·API 로 나가는 형태 — 내부 핸들 제거."""
+    """디스크·API로 나가는 형태 — 내부 핸들 제거."""
     return {key: value for key, value in task.items() if key not in _DROP_KEYS}
 
 
 def load_tasks(root: str) -> list[dict]:
-    """그 프로젝트의 작업 기록. 살아 있던 상태는 interrupted 로 정규화한다."""
+    """그 프로젝트의 작업 기록. 살아 있던 상태는 interrupted로 정규화한다."""
     path = tasks_path(root)
     rows: list[dict] = []
     try:
@@ -207,14 +207,14 @@ def load_tasks(root: str) -> list[dict]:
 
 
 def write_tasks(root: str, tasks: list[dict]) -> bool:
-    """기록 전체를 다시 쓴다 — 건수가 KEEP_TASKS 라 추가 비용보다 단순함이 이긴다."""
+    """기록 전체를 다시 쓴다 — 건수가 KEEP_TASKS라 추가 비용보다 단순함이 이긴다."""
     body = "".join(json.dumps(public_task(task), ensure_ascii=False) + "\n" for task in tasks[-KEEP_TASKS:])
     with _IO_LOCK:
         return _atomic_write(tasks_path(root), body)
 
 
 def save_task(root: str, task: dict) -> bool:
-    """한 건 upsert — 같은 id 는 갈아 끼우고, 없으면 뒤에 붙인다.
+    """한 건 upsert — 같은 id는 갈아 끼우고, 없으면 뒤에 붙인다.
 
     본문은 프로젝트에, 머리글은 기계에. 두 자리에 같은 순간 적히므로 목록과 상세가 어긋나지
     않는다. 색인 쓰기가 실패해도 본문 저장의 성패를 뒤집지 않는다 — 편의가 정본을 못 이긴다."""
@@ -299,7 +299,7 @@ def index_task(root: str, task: dict) -> bool:
 def feed(limit: int = 200) -> list[dict]:
     """전 프로젝트의 최근 작업 — 최신 순.
 
-    살아 있던 상태는 여기서도 `interrupted` 로 정규화한다: 창을 새로 열었는데 남의
+    살아 있던 상태는 여기서도 `interrupted`로 정규화한다: 창을 새로 열었는데 남의
     프로젝트의 옛 작업이 '실행 중'으로 떠 있으면, 그 줄은 계기가 아니라 거짓말이다.
     자리에 없는 프로젝트의 줄은 `missing` 표시만 달고 남긴다 — 마운트 안 된 외장 디스크의
     이력을 조용히 지우는 쪽이 사용자가 더 크게 잃는다."""
@@ -395,7 +395,7 @@ def browse(path: str | None = None, *, show_hidden: bool = False) -> dict:
     start = str(path or "").strip()
     target = os.path.abspath(os.path.expanduser(start)) if start else os.path.abspath(os.path.expanduser("~"))
     if not os.path.isdir(target):
-        raise ValueError(f"{target} 은(는) 폴더가 아닙니다")
+        raise ValueError(f"{target}은(는) 폴더가 아닙니다")
     try:
         with os.scandir(target) as scan:
             rows = [
@@ -408,9 +408,9 @@ def browse(path: str | None = None, *, show_hidden: bool = False) -> dict:
                 if entry.is_dir(follow_symlinks=False) and (show_hidden or not entry.name.startswith("."))
             ]
     except PermissionError as exc:
-        raise ValueError(f"{target} 을(를) 열 권한이 없습니다") from exc
+        raise ValueError(f"{target}을(를) 열 권한이 없습니다") from exc
     except OSError as exc:
-        raise ValueError(f"{target} 을(를) 읽지 못했습니다") from exc
+        raise ValueError(f"{target}을(를) 읽지 못했습니다") from exc
     rows.sort(key=lambda row: row["name"].casefold())
     registered = {os.path.abspath(row["root"]) for row in _read_projects()}
     parent = os.path.dirname(target)

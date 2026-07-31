@@ -1,4 +1,4 @@
-"""HTTP 계층 — 루프백 전용 서버·라우팅. 프론트엔드 HTML 은 assets/memory_dashboard.html 에셋."""
+"""HTTP 계층 — 루프백 전용 서버·라우팅. 프론트엔드 HTML은 assets/memory_dashboard.html 에셋."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from .data import _LOGO_URI, _MARK_URI, injection_data, log_query, page_data, se
 
 
 # 루프백 경계와 응답 헤더는 세 창이 한 벌을 나눠 쓴다 (`commands.loopback`). 여기 다시
-# 적으면 언젠가 셋이 갈라지고, 실제로 갈라져 있었다 — 이 창만 Referrer-Policy 가 없었다.
+# 적으면 언젠가 셋이 갈라지고, 실제로 갈라져 있었다 — 이 창만 Referrer-Policy가 없었다.
 _LOOPBACK_HOSTS = loopback.LOOPBACK_HOSTS
 host_allowed = loopback.host_allowed
 
@@ -132,7 +132,7 @@ def _open(url: str) -> None:
 
 
 def render_html() -> str:
-    # 두 자리에 서로 다른 그림이 들어간다 — 스플래시는 브랜드 락업, 헤더는 위그드라실 마크(map 과 공유).
+    # 두 자리에 서로 다른 그림이 들어간다 — 스플래시는 브랜드 락업, 헤더는 위그드라실 마크(map과 공유).
     return _PAGE.replace("__LOGO__", _LOGO_URI).replace("__MARK__", _MARK_URI)
 
 

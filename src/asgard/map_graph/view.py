@@ -1,7 +1,7 @@
-"""자립형 그래프 뷰 — 외부 리소스 0 의 단일 HTML 로 관계 그래프를 그린다.
+"""자립형 그래프 뷰 — 외부 리소스 0의 단일 HTML로 관계 그래프를 그린다.
 
-`asgard map`(bare) / `asgard map view` 가 연다. 산출물은 런타임 상태
-(`.asgard/state/map-view.html`) 로, git 에 추적되지 않는다.
+`asgard map`(bare) / `asgard map view`가 연다. 산출물은 런타임 상태
+(`.asgard/state/map-view.html`)로, git에 추적되지 않는다.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _TEMPLATE = """<!doctype html>
     /* 4pt 리듬 — 계기판은 조밀하지만 임의값은 쓰지 않는다 */
     --space-2xs:4px; --space-xs:8px; --space-sm:12px; --space-md:16px;
     --space-lg:20px; --space-xl:24px; --space-pull:-8px;
-    /* 이름 있는 이징·지속 — 브라우저 기본 ease 는 쓰지 않는다 */
+    /* 이름 있는 이징·지속 — 브라우저 기본 ease는 쓰지 않는다 */
     --ease-out:cubic-bezier(.22,1,.36,1); --dur-quick:120ms; --dur-short:160ms;
     --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,"Cascadia Code",Consolas,monospace;
     --sans:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Segoe UI",Roboto,sans-serif;
@@ -190,7 +190,7 @@ _TEMPLATE = """<!doctype html>
   .d-act button[aria-pressed="true"]{background:color-mix(in oklab,var(--gold) 13%,transparent);
                                      border-color:var(--gold)}
   .d-rel .dep{font:10.5px var(--mono);color:var(--gold);flex:none;min-width:20px}
-  /* 검색 결과 — 순회 가능한 진입 리스트(수천 옵션 select 의 상위 동선) */
+  /* 검색 결과 — 순회 가능한 진입 리스트(수천 옵션 select의 상위 동선) */
   .results{max-height:224px;overflow-y:auto;margin-top:var(--space-pull)}
   .results button{padding:var(--space-2xs) var(--space-xs);border-radius:6px}
   .results li.act button{background:color-mix(in oklab,var(--gold) 10%,transparent)}
@@ -295,7 +295,7 @@ _TEMPLATE = """<!doctype html>
       <input id="q" type="search" placeholder="노드 검색 — 이름·id" autocomplete="off" spellcheck="false">
     </div>
     <p class="qhint" id="qhint" hidden></p>
-    <ul class="d-rel results" id="results" hidden aria-label="검색 결과 — 위아래 화살표로 이동, Enter 로 선택"></ul>
+    <ul class="d-rel results" id="results" hidden aria-label="검색 결과 — 위아래 화살표로 이동, Enter로 선택"></ul>
     <div>
       <label class="sr" for="nodeSelect">노드 선택 — 증거 보기</label>
       <select id="nodeSelect"></select>
@@ -320,7 +320,7 @@ const KIND_COLORS = { file:"#6E7787", route:"#E8C87E", page:"#F0A268", store:"#D
   component:"#C9AD8C", command:"#D98E4A", model:"#85AEE8",
   db_access:"#4FB8AE", api_call:"#E88585", event:"#7B7BE0", job:"#B9C167", external_service:"#E08FB8" };
 const KIND_ORDER = ["route","page","component","store","composable","command","model","db_access","api_call","event","job","external_service","file"];
-// 팔레트 단일 출처 — 캔버스는 DOM 과 같은 :root 토큰을 읽는다. 하드코딩 사본을 남기면
+// 팔레트 단일 출처 — 캔버스는 DOM과 같은 :root 토큰을 읽는다. 하드코딩 사본을 남기면
 // 토큰을 손봤을 때 그림만 옛 색으로 남아 조용히 어긋난다. 폴백은 토큰 부재 시에만 쓰인다.
 const CSSVAR = getComputedStyle(document.documentElement);
 const tok = (n,fb)=>((CSSVAR.getPropertyValue(n)||"").trim()||fb);
@@ -418,7 +418,7 @@ function state(n){
 
 function tick(){
   for(const n of nodes){ n.vx*= .82; n.vy*= .82; n.vz*= .82;
-    n.vx-=n.x*0.0018; n.vy-=n.y*0.0018; n.vz-=n.z*0.0024; } // z 는 살짝 더 조여 납작하지 않게 유지
+    n.vx-=n.x*0.0018; n.vy-=n.y*0.0018; n.vz-=n.z*0.0024; } // z는 살짝 더 조여 납작하지 않게 유지
   // ponytail: 큰 그래프는 근접 인덱스 80개만 반발; 전역 공간 인덱스는 실제 병목이 확인되면 추가한다.
   const repelSpan=nodes.length>800 ? 80 : nodes.length;
   for(let i=0;i<nodes.length;i++) for(let j=i+1;j<Math.min(nodes.length,i+repelSpan);j++){
@@ -435,7 +435,7 @@ function tick(){
 }
 
 // ── 카메라 — 궤도(요·피치) + 원근. 투영은 월드 단위로 끝나므로 아래 ctx 변환(팬·줌·fit)이 그대로 산다 ──
-// 초점거리는 결정이다: 1100 은 깊이가 읽히되 가장자리가 어안으로 휘지 않는 지점.
+// 초점거리는 결정이다: 1100은 깊이가 읽히되 가장자리가 어안으로 휘지 않는 지점.
 const FOCAL=1100;
 // 시작 앵글도 결정이다 — 정면 데드센터는 미결정이다. 살짝 틀어 부피를 먼저 읽힌다.
 let yaw=0.42, pitch=-0.26, drift=0;
@@ -451,7 +451,7 @@ function project(){
     n.px=xr*k; n.py=yr*k; n.pz=zr; n.k=k;
   }
 }
-// 깊이 안개 — 먼 것은 금고색으로 잠긴다. 이것이 3D 를 읽히게 하는 유일한 장치다(블룸 스택 금지).
+// 깊이 안개 — 먼 것은 금고색으로 잠긴다. 이것이 3D를 읽히게 하는 유일한 장치다(블룸 스택 금지).
 function depth(k){ return Math.max(0.16, Math.min(1, (k-0.72)/0.62)); }
 
 function sizeCanvas(){
@@ -520,7 +520,7 @@ function laneLayout(){
   laneH=H;
 }
 
-// ── 배치 모드 전환 — 성좌(물리) ⇄ 레인, 220ms 위치 보간(reduced-motion 은 즉시) ──
+// ── 배치 모드 전환 — 성좌(물리) ⇄ 레인, 220ms 위치 보간(reduced-motion은 즉시) ──
 function startMorph(){
   for(const n of nodes){ n.mx=n.x; n.my=n.y; n.mz=n.z;
     if(n.tx==null){ n.tx=n.x; n.ty=n.y; n.tz=n.z; } }
@@ -600,7 +600,7 @@ function strokeEdges(list, style, width){
   ctx.setLineDash([]);
 }
 
-// ── 우주 배경 — 화면 공간 시차 성진(줌에 딸려 커지지 않는다). 결정론 LCG 라 렌더가 재현된다 ──
+// ── 우주 배경 — 화면 공간 시차 성진(줌에 딸려 커지지 않는다). 결정론 LCG라 렌더가 재현된다 ──
 const STARS=(()=>{ let s=20260726;
   const rnd=()=>{ s=(s*1103515245+12345)&0x7fffffff; return s/0x7fffffff; };
   return Array.from({length:260},()=>({ux:rnd(),uy:rnd(),layer:1+Math.floor(rnd()*3),a:.22+rnd()*.5,r:rnd()}));
@@ -677,7 +677,7 @@ function clearTrace(){
   trace=null; traceT=0;
 }
 
-// ── 뷰 상태 영속 — URL hash: 리로드 생존 + 공유 앵커(카메라는 제외, fit 이 소유) ──
+// ── 뷰 상태 영속 — URL hash: 리로드 생존 + 공유 앵커(카메라는 제외, fit이 소유) ──
 let hashT=0;
 function writeHash(){
   clearTimeout(hashT);
@@ -708,7 +708,7 @@ function draw(){
   if(!nodes.length){
     ctx.textAlign="center"; ctx.font=(13*devicePixelRatio)+"px "+FONT;
     ctx.fillStyle=PAL.ink; ctx.fillText("그래프가 비어 있다", w/2, h/2-12*devicePixelRatio);
-    ctx.fillStyle=PAL.dim; ctx.fillText("asgard map scan 으로 관계를 수집한다", w/2, h/2+14*devicePixelRatio);
+    ctx.fillStyle=PAL.dim; ctx.fillText("asgard map scan으로 관계를 수집한다", w/2, h/2+14*devicePixelRatio);
     ctx.textAlign="left"; return;
   }
   project();
@@ -885,7 +885,7 @@ function draw(){
     const SY=v=>v*scale*devicePixelRatio + h/2+off.y;
     const hy=Math.max(56*devicePixelRatio, SY(-laneH/2)-24*devicePixelRatio);
     ctx.textBaseline="alphabetic";
-    // 슬롯 분할 — 각 레인 라벨은 자기 레인 x0 에 앵커되고 다음 레인 시작 전까지만 쓴다.
+    // 슬롯 분할 — 각 레인 라벨은 자기 레인 x0에 앵커되고 다음 레인 시작 전까지만 쓴다.
     // 좁으면 말줄임 → 카운트-온리로 축약하되 무명 레인은 만들지 않는다. 스태거·접힘 없음.
     const zbLeft=w-70*devicePixelRatio, zbBottom=176*devicePixelRatio; // 줌바 점유 영역 회피
     for(let i=0;i<laneHeads.length;i++){ const hd=laneHeads[i];
@@ -944,7 +944,7 @@ function loop(ts){
     if(!orbiting && drift<DRIFT_TURNS){ yaw+=0.00042*(dt/16); drift++; busy=true; }
     live=true;
   }
-  // 유휴 신호만 도는 구간은 30fps 로 접는다 — 개발 도구를 열어둔 채 팬을 돌리지 않는다.
+  // 유휴 신호만 도는 구간은 30fps로 접는다 — 개발 도구를 열어둔 채 팬을 돌리지 않는다.
   // 정착·표류처럼 눈에 걸리는 구간은 전 프레임으로 그린다.
   if(busy || now-lastDraw >= 32){ lastDraw=now; draw(); }
   if(live) startLoop();
@@ -999,7 +999,7 @@ function renderDetail(){
           +'<i style="background:'+(KIND_COLORS[r.o.kind]||UNKNOWN_KIND)+'"></i>'
           +'<span class="rk">'+esc(r.o.kind)+'</span><span class="rn">'+esc(r.o.name)+'</span>'
           +'<span class="rv">'+esc(vt)+'</span></button></li>'; }).join("")
-      +(rel.length>cap ? '<li class="more">+'+(rel.length-cap)+' — trace 로 전체 추적</li>' : '')+'</ul>';
+      +(rel.length>cap ? '<li class="more">+'+(rel.length-cap)+' — trace로 전체 추적</li>' : '')+'</ul>';
   }
   // 체인 추적 — 플로우가 있는 개념만(파일은 증거 캐리어)
   const fIn=(IN[n.id]||[]).length, fOut=(OUT[n.id]||[]).length;
@@ -1017,9 +1017,9 @@ function renderDetail(){
           +'<i style="background:'+(KIND_COLORS[o.kind]||UNKNOWN_KIND)+'"></i>'
           +'<span class="rk">'+esc(o.kind)+'</span><span class="rn">'+esc(o.name)+'</span></button></li>'; };
       if(trace.up.length) h+='<ul class="d-rel">'+trace.up.slice(0,cap).map(row).join("")
-        +(trace.up.length>cap ? '<li class="more">+'+(trace.up.length-cap)+' 상류 — trace 로 전체' : '')+'</ul>';
+        +(trace.up.length>cap ? '<li class="more">+'+(trace.up.length-cap)+' 상류 — trace로 전체' : '')+'</ul>';
       if(trace.down.length) h+='<ul class="d-rel">'+trace.down.slice(0,cap).map(row).join("")
-        +(trace.down.length>cap ? '<li class="more">+'+(trace.down.length-cap)+' 하류 — trace 로 전체' : '')+'</ul>';
+        +(trace.down.length>cap ? '<li class="more">+'+(trace.down.length-cap)+' 하류 — trace로 전체' : '')+'</ul>';
       h+='<p class="subhint">체인은 필터와 무관하게 전체 플로우를 따른다 · 깊이 4 · 클릭 = 이동</p>';
     }
   }
@@ -1035,7 +1035,7 @@ document.getElementById("detail").addEventListener("click", e=>{
     renderDetail(); draw(); return; }
   const b=e.target.closest("[data-nid]"); if(!b) return;
   const n=byId[b.dataset.nid]; if(!n) return;
-  // select 가 체인 카메라를 복원하므로, 센터링은 select 이후에 건다
+  // select가 체인 카메라를 복원하므로, 센터링은 select 이후에 건다
   ensureKind(n.kind); select(n); centerOn(n); scheduleDraw();
 });
 function select(n, scrollTo){
@@ -1233,7 +1233,7 @@ function hitTest(e){
   const px=((e.clientX-r.left)*devicePixelRatio-canvas.width/2-off.x)/(scale*devicePixelRatio);
   const py=((e.clientY-r.top)*devicePixelRatio-canvas.height/2-off.y)/(scale*devicePixelRatio);
   let best=null, bd=9/scale;
-  // 앞에 있는 것이 먼저 집힌다 — 같은 거리면 카메라에 가까운(k 가 큰) 쪽
+  // 앞에 있는 것이 먼저 집힌다 — 같은 거리면 카메라에 가까운(k가 큰) 쪽
   for(const n of nodes){ if(state(n)!==2) continue;
     const d=Math.hypot(n.px-px,n.py-py)-radius(n)*n.k;
     if(d<bd || (d<0 && best && n.k>best.k)){ bd=Math.min(bd,d); best=n; } }
@@ -1357,9 +1357,9 @@ if(laneMode) draw(); else startLoop();
 """
 
 
-# 원복 백업: view_legacy.py — `from .view_legacy import _TEMPLATE_LEGACY as _TEMPLATE` 로 전환
+# 원복 백업: view_legacy.py — `from .view_legacy import _TEMPLATE_LEGACY as _TEMPLATE`로 전환
 def _logo_data_uri() -> str:
-    """위그드라실 엠블럼(yggdrasil-mark.png)을 데이터 URI 로 — 실패 시 빈 값(img 는 onerror 로 숨김)."""
+    """위그드라실 엠블럼(yggdrasil-mark.png)을 데이터 URI로 — 실패 시 빈 값(img는 onerror로 숨김)."""
     try:
         raw = (files("asgard") / "assets" / "yggdrasil-mark.png").read_bytes()
     except Exception:

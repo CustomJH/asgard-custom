@@ -1,25 +1,25 @@
 #!/usr/bin/env python3
 # Asgard unattended-context — Canon 8(무인이면 진행)의 감지층.
 #
-# 모델은 headless 여부를 스스로 알 수 없다 — Claude Code 는 print(-p) 모드 신호를 시스템 프롬프트에
-# 주입하지 않는다 (code.claude.com/docs/en/headless, 2026-07 확인). 훅만이 안다: 모든 훅 stdin 에
-# permission_mode 가 온다. bypassPermissions/dontAsk = 사람이 승인 루프에 없는 자동화 실행이므로
-# UserPromptSubmit 에서 무인 계약을 컨텍스트로 주입한다 (stdout + exit 0 = 컨텍스트 주입, 공식 스키마).
+# 모델은 headless 여부를 스스로 알 수 없다 — Claude Code는 print(-p) 모드 신호를 시스템 프롬프트에
+# 주입하지 않는다 (code.claude.com/docs/en/headless, 2026-07 확인). 훅만이 안다: 모든 훅 stdin에
+# permission_mode가 온다. bypassPermissions/dontAsk = 사람이 승인 루프에 없는 자동화 실행이므로
+# UserPromptSubmit에서 무인 계약을 컨텍스트로 주입한다 (stdout + exit 0 = 컨텍스트 주입, 공식 스키마).
 # 나머지 모드는 무개입 — 인터랙티브 세션은 이 훅의 존재를 느끼지 못한다. 오류는 전부 allow (fail-open).
 import json
 import os
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
 
-UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # verifier_gate.py 와 동일 유지
+UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # verifier_gate.py와 동일 유지
 
 
 CLIENTS = {"claude-code", "codex", "cursor"}
@@ -31,7 +31,7 @@ def client():
 
 
 def emit(current_client, text):
-    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약).
     Cursor=additional_context, Codex=hookSpecificOutput, Claude Code=평문 stdout."""
     if current_client == "cursor":
         sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")

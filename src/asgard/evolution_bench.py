@@ -1,20 +1,20 @@
 """evolution_bench — learned 스킬 A/B 검증 하니스 (자가발전 C4, CUS-251 후속).
 
 승인된 스킬이 실제로 도움이 되는지 개입(intervention)으로 실측한다: 같은 벤치 명령을
-스킬 OFF(baseline) / ON(variant) 로 반복 실행해 METRIC 을 수집하고, MAD(중앙절대편차)
-노이즈 플로어 대비 몇 배 개선인지로 keep/discard 를 판정한다.
+스킬 OFF(baseline) / ON(variant)로 반복 실행해 METRIC을 수집하고, MAD(중앙절대편차)
+노이즈 플로어 대비 몇 배 개선인지로 keep/discard를 판정한다.
 
 설계 근거 (CUS-251 리서치):
 - MAD confidence — run < 3 또는 MAD = 0 이면 confidence 없음
   (우연을 채택하지 않는다). 개선은 "노이즈의 몇 배"로만 말한다.
 - 개입 검증 — SkillGen(arXiv 2605.10999): 스킬 채택은 성능에 양의 효과가 실측될 때만.
-- 짧은 루프 — 판정은 1회 A/B 로 끝난다. 자율 반복 최적화 루프는 두지 않는다
+- 짧은 루프 — 판정은 1회 A/B로 끝난다. 자율 반복 최적화 루프는 두지 않는다
   (리워드 해킹은 반복 길이에 비례 — ICLR 2026 RSI 실측).
-- 계보 보존 — 모든 판정을 bench.jsonl 에 append (DGM 아카이브 원칙). 판정은 기록이고,
+- 계보 보존 — 모든 판정을 bench.jsonl에 append (DGM 아카이브 원칙). 판정은 기록이고,
   archive 실행은 여전히 사용자 몫 (자동 처분 없음).
 
-벤치 명령 계약: 명령은 stdout 에 `METRIC <name>=<float>` 한 줄을 출력한다 (마지막 매치 채택).
-baseline 런에는 ASGARD_LEARNED_DISABLE=<skill> 이 주입된다 — resolve_learned 가 이를 존중한다.
+벤치 명령 계약: 명령은 stdout에 `METRIC <name>=<float>` 한 줄을 출력한다 (마지막 매치 채택).
+baseline 런에는 ASGARD_LEARNED_DISABLE=<skill> 이 주입된다 — resolve_learned가 이를 존중한다.
 """
 
 from __future__ import annotations
@@ -92,7 +92,7 @@ def run_ab(
 ) -> dict:
     """스킬 OFF/ON A/B — 판정 레코드 반환 + bench.jsonl append.
 
-    runner(disable) 는 1회 실행해 metric 값을 반환 (테스트 주입점 — 기본은 shell 실행).
+    runner(disable)는 1회 실행해 metric 값을 반환 (테스트 주입점 — 기본은 shell 실행).
     verdict: keep(스킬이 유의미하게 낫다) / discard(유의미하게 나쁘다) / inconclusive."""
     run = runner or _shell_runner(root, cmd, metric, timeout)
     baseline = [v for v in (run(skill) for _ in range(runs)) if v is not None]

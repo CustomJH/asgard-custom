@@ -1,6 +1,6 @@
 """설정·스킬·역할 쓰기 — 창에서 고른 것을 디스크의 정본으로.
 
-읽기는 `snapshot` 이 진다. 여기는 **쓰는 쪽**이라 검사가 두껍다: 모르는 칸은 버리고,
+읽기는 `snapshot`이 진다. 여기는 **쓰는 쪽**이라 검사가 두껍다: 모르는 칸은 버리고,
 화면이 안 보여 준 값은 지우지 않고 그대로 얹는다(안 보여 준 것을 지우면 창이 설정을 삼킨다).
 """
 
@@ -18,13 +18,13 @@ _PROVIDER_UNSHOWN = ("base_url", "api_key_env", "context_window", "rpm")
 
 def _carry_unshown_provider_keys(scope: str, root: str, values: object) -> object:
     """섹션 저장은 **교체** 계약이다 — 보내지 않은 키는 사라진다. 창은 엔진 이름과 모델만
-    보여 주므로, 모델 하나 바꾸는 동작이 손으로 적어 둔 base_url·rpm 을 조용히 지워 왔다.
+    보여 주므로, 모델 하나 바꾸는 동작이 손으로 적어 둔 base_url·rpm을 조용히 지워 왔다.
 
-    다만 엔진 자체가 바뀌면 그 키들은 **옛 엔진의 것**이라 함께 버린다 — providers.resolve 가
-    이름이 달라진 config 를 통째로 버리는 것과 같은 규율이다.
+    다만 엔진 자체가 바뀌면 그 키들은 **옛 엔진의 것**이라 함께 버린다 — providers.resolve가
+    이름이 달라진 config를 통째로 버리는 것과 같은 규율이다.
 
-    받는 것이 `dict` 라고 적혀 있었지만 실제로는 무엇이든 받아 넘긴다(검사는 아래
-    `_validate_settings` 가 한다). 형이 거짓이면 검사기가 매번 손을 든다 — 계약을 사실에 맞춘다."""
+    받는 것이 `dict`라고 적혀 있었지만 실제로는 무엇이든 받아 넘긴다(검사는 아래
+    `_validate_settings`가 한다). 형이 거짓이면 검사기가 매번 손을 든다 — 계약을 사실에 맞춘다."""
     from ...settings import load_global, load_project
 
     if not isinstance(values, dict):
@@ -97,7 +97,7 @@ def save_settings(payload: dict, root: str) -> tuple[int, str, bytes]:
     except (TypeError, ValueError) as exc:
         return _json_body(400, {"error": str(exc)})
     # 저장은 값을 바꾸는 데서 끝나지 않는다 — 바뀐 값으로 **다시 해석한 엔진**까지 함께 돌려준다.
-    # 여태는 settings 만 돌려줘서, 엔진을 바꿔도 창은 옛 엔진의 연결 상태를 계속 말했다.
+    # 여태는 settings만 돌려줘서, 엔진을 바꿔도 창은 옛 엔진의 연결 상태를 계속 말했다.
     return _json_body(
         200,
         {"saved": path, "settings": snapshot.settings_state(root), "provider": snapshot._provider_state(root)},

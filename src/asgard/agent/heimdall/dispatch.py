@@ -1,6 +1,6 @@
 """딜리버리 디스패치 — 전문가 위임 + thor 편대 fan-out.
 
-DeliveryDispatch 는 Heimdall 이 소유하는 협력자다: 세션 생성·모델 선택·토큰 계측은
+DeliveryDispatch는 Heimdall이 소유하는 협력자다: 세션 생성·모델 선택·토큰 계측은
 오케스트레이터(hd)에 위임하고, 여기는 위임 계약(스킬 주입·격리 workspace·scope 검증)만 진다.
 """
 
@@ -19,7 +19,7 @@ from .toolspec import THOR_SQUAD_TOOL
 
 def _checked_run(session, prompt: str):
     """child 세션 실행 + 취소 승격 — 취소된 산출이 편입(capture/apply)되기 전에 끊는다.
-    child.run 직호출은 core._run_turn 의 TurnCancelled 승격을 우회한다 (Codex 교차 리뷰 지적)."""
+    child.run 직호출은 core._run_turn의 TurnCancelled 승격을 우회한다 (Codex 교차 리뷰 지적)."""
     result = session.run(prompt)
     if getattr(result, "stop_reason", "") == "cancelled":
         raise TurnCancelled()
@@ -137,14 +137,14 @@ class DeliveryDispatch:
                 return index, spec, result, patch
 
             # 편대 브리프도 배정 단위와 같은 성격의 목록이다 — 대장이 뭘 몇 개로 나눠 던졌는지를
-            # 오딘 쪽 표면에 세운다. 자식 세션은 quiet 라 여기 말고는 진행이 보이지 않는다.
+            # 오딘 쪽 표면에 세운다. 자식 세션은 quiet라 여기 말고는 진행이 보이지 않는다.
             board = TodoBoard(hd.on_text, head_key="todo_squad_head")
             board.plan((spec["id"], str(spec.get("task") or "")) for spec in tasks)
             completed = []
             failures: list[dict] = []
             payload = []
-            # 한 과업이 done 이 되는 시점은 자식이 끝난 때가 아니라 산출물이 정착한 때다 —
-            # split 은 패치 적용까지, tournament 는 패치 회수까지가 그 과업의 끝이다.
+            # 한 과업이 done이 되는 시점은 자식이 끝난 때가 아니라 산출물이 정착한 때다 —
+            # split은 패치 적용까지, tournament는 패치 회수까지가 그 과업의 끝이다.
             try:
                 board.start(spec["id"] for spec in tasks)
                 with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
@@ -221,7 +221,7 @@ class DeliveryDispatch:
             system = _DELIVERY[agent]
             base = _LEAD_BASE.get(agent)
             if base:
-                # "코어 계약 전부 상속"을 선언이 아니라 최종 system bytes 로 강제한다.
+                # "코어 계약 전부 상속"을 선언이 아니라 최종 system bytes로 강제한다.
                 system += f"\n\n# Inherited {base} core contract\n\n" + _DELIVERY[base]
             system += "\n\n" + hd.delivery_identity
             if agent != "loki":
@@ -248,8 +248,8 @@ class DeliveryDispatch:
                 role=agent,
                 cwd=cwd,
             )
-            # claude_cli: 부모 worker 가 spawn permit 을 쥔 채 이 핸들러를 기다린다 —
-            # 자식이 permit 을 재요구하면 재진입 데드락 (CUS-246). 재획득 없이 실행.
+            # claude_cli: 부모 worker가 spawn permit을 쥔 채 이 핸들러를 기다린다 —
+            # 자식이 permit을 재요구하면 재진입 데드락 (CUS-246). 재획득 없이 실행.
             child._nested_dispatch = True
             r = _checked_run(child, task)
             hd._track_cache(r)

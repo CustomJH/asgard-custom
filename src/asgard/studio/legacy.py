@@ -4,7 +4,7 @@
 반입이 끝나도 지우지 않는다 — 반입이 뭔가 잘못됐을 때 돌아갈 곳이 있어야 하기 때문이다.
 두 번 부르면 두 번 들어오지 않는다: 저장소 안 결속 파일이 '이미 왔다'를 들고 있다.
 
-**번호를 지킨다.** 옛 보드의 `ASG-12` 는 새 팀에서도 `ASG-12` 다. 접두어가 이미 다른 팀에
+**번호를 지킨다.** 옛 보드의 `ASG-12`는 새 팀에서도 `ASG-12` 다. 접두어가 이미 다른 팀에
 쓰이고 있으면 그때만 팀 키를 비켜 주고(`ASG2`), 그 사실을 반입 결과에 적어 돌려준다 —
 조용히 번호를 바꾸면 어제 적어 둔 메모가 오늘 다른 티켓을 가리킨다.
 """
@@ -30,7 +30,7 @@ def was_imported(root: str) -> bool:
 
 
 def pending_roots(roots: list[str]) -> list[str]:
-    """아직 안 들여온 옛 보드를 든 폴더들 — 창과 CLI 가 '들여올까요?'를 물을 근거."""
+    """아직 안 들여온 옛 보드를 든 폴더들 — 창과 CLI가 '들여올까요?'를 물을 근거."""
     return [root for root in roots if root and os.path.isfile(legacy_db_path(root)) and not was_imported(root)]
 
 

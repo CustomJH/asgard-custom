@@ -4,7 +4,7 @@
 할 수 있는 일은 여기 적힌 표가 전부다. 표에 없는 연산은 존재하지 않는다 — 새 연산은
 이름을 얻고 검사를 통과해야 들어온다.
 
-모든 연산은 **초안을 제자리에서 고치는 함수**다. 검사·개정 번호·기록은 `store.mutate` 가
+모든 연산은 **초안을 제자리에서 고치는 함수**다. 검사·개정 번호·기록은 `store.mutate`가
 한 잠금 안에서 진다. 그래서 여기서는 규칙만 쓴다: 무엇이 무엇의 자식인지, 무엇을 지우면
 무엇이 같이 사라지는지.
 """
@@ -180,7 +180,7 @@ _NODE_FIELDS = frozenset({"type", "title", "section", "source"})
 
 
 def _node_delete(plan: dict[str, Any], payload: dict[str, Any]) -> None:
-    """노드를 지우면 그 노드에 걸린 선도 함께 — 남기면 저장소가 '없는 노드' 로 막는다."""
+    """노드를 지우면 그 노드에 걸린 선도 함께 — 남기면 저장소가 '없는 노드'로 막는다."""
     target = str(payload.get("id") or "")
     plan["flow"]["nodes"] = [row for row in plan["flow"]["nodes"] if row["id"] != target]
     plan["flow"]["edges"] = [e for e in plan["flow"]["edges"] if target not in (e["from"], e["to"])]

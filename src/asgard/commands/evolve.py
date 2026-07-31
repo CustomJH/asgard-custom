@@ -53,7 +53,7 @@ def run_scan(quiet: bool = False) -> int:
 
 def run_nudge() -> int:
     """훅 소비 표면 — 미채굴 신호가 새로 생겼을 때만 한 줄 출력 (latch), 그 외 침묵.
-    memory-activate Stop 훅이 subprocess 로 부른다 — 로직은 evolution.nudge_line 단일 출처."""
+    memory-activate Stop 훅이 subprocess로 부른다 — 로직은 evolution.nudge_line 단일 출처."""
     line = evo.nudge_line(_root())
     if line:
         print(line)
@@ -64,7 +64,7 @@ def run_list() -> int:
     root = _root()
     items = evo.pending_list(root)
     if not items:
-        print("인박스 비어 있음 — asgard evolve scan 으로 퀘스트 로그를 채굴")
+        print("인박스 비어 있음 — asgard evolve scan으로 퀘스트 로그를 채굴")
         return 0
     print(ui.bold(f"pending {len(items)}건") + ui.dim(" — 초안은 승인 전에 파일을 직접 다듬어도 된다"))
     for m in items:
@@ -112,7 +112,7 @@ def run_bench(skill: str, cmd: str, metric: str, runs: int, direction: str, time
     conf = f"{r['confidence']:.2f}×MAD" if r["confidence"] is not None else "판정 불가 (run<3 또는 MAD=0)"
     print(f"  baseline(OFF) median={r['baseline_median']}  variant(ON) median={r['variant_median']}  conf={conf}")
     mark = {"keep": ui.ok, "discard": ui.warn}.get(r["verdict"], ui.step)
-    mark(f"verdict: {r['verdict']}" + (" — asgard evolve archive 로 보관 권장" if r["verdict"] == "discard" else ""))
+    mark(f"verdict: {r['verdict']}" + (" — asgard evolve archive로 보관 권장" if r["verdict"] == "discard" else ""))
     print(ui.dim("계보: .asgard/evolution/bench.jsonl (판정은 기록 — 처분은 사용자 몫)"))
     return 0 if r["verdict"] != "discard" else 1
 

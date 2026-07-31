@@ -1,6 +1,6 @@
 """AGENTS.md — canonical agent guide: Asgard identity (worldview) + Canon (13 laws) + Trinity loop
 + Lagom contract. The only interpolation is the project name via __NAME__.
-Canon 13개조 본문은 canon.py 에 있다 — 여기서는 __CANON__ 자리에 끼워 넣는다 (__LAGOM__ 과 같은 방식)."""
+Canon 13개조 본문은 canon.py에 있다 — 여기서는 __CANON__ 자리에 끼워 넣는다 (__LAGOM__과 같은 방식)."""
 
 from .bragi import BRAGI_AGENTS_SECTION
 from .canon import CANON_SECTION

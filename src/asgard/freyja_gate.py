@@ -1,7 +1,7 @@
-"""asgard freyja gate — 이번 변경분의 **시각 표면** 판정. craft 가 형상을, thor 가 정확성을 잰다면 이쪽은 표면이다.
+"""asgard freyja gate — 이번 변경분의 **시각 표면** 판정. craft가 형상을, thor가 정확성을 잰다면 이쪽은 표면이다.
 
 왜 필요한가 (실측된 실패에서 나왔다):
-    에이전트가 "프레이야 엔진 4로 했다"고 말하고, 엔진의 판정기 하나만 돌려 PASS 를 받고,
+    에이전트가 "프레이야 엔진 4로 했다"고 말하고, 엔진의 판정기 하나만 돌려 PASS를 받고,
     설계 흐름(장르·매크로 구조·사전 자기비평)은 건너뛰었다. 판정기는 산출물만 보므로 통과했고,
     사람은 그 화면을 보자마자 "AI 슬롭"이라고 했다.
 
@@ -9,7 +9,7 @@
     이미 가진 **자기 판정기를 불러** 이번에 손댄 표면에만 물린다. 규칙을 여기서 다시 쓰지
     않는 이유는 하나다 — 규칙이 두 곳에 있으면 둘은 반드시 갈라진다.
 
-계약은 craft·thor 와 같은 **래칫**이다:
+계약은 craft·thor와 같은 **래칫**이다:
 
     이미 있던 것은 막지 않는다. 이번 변경이 **더 나쁘게 만든 것**만 막는다.
 
@@ -37,7 +37,7 @@ _TIMEOUT = 90
 
 @dataclass(frozen=True)
 class Engine:
-    """엔진 하나. `runtime` 은 그 엔진이 스스로 배송하는 판정기의 플러그인 상대 경로."""
+    """엔진 하나. `runtime`은 그 엔진이 스스로 배송하는 판정기의 플러그인 상대 경로."""
 
     key: str
     name: str
@@ -126,7 +126,7 @@ def _node() -> str | None:
 
 
 def _run_slop_gate(runtime: str, target: str, genre: str = "modern-minimal") -> list[tuple[str, str]] | None:
-    """엔진 4 판정기를 JSON 으로 돌린다. (gate, detail) 목록 — None 이면 판정 자체가 불가."""
+    """엔진 4 판정기를 JSON으로 돌린다. (gate, detail) 목록 — None 이면 판정 자체가 불가."""
     node = _node()
     if not node:
         return None
@@ -148,8 +148,8 @@ def _run_slop_gate(runtime: str, target: str, genre: str = "modern-minimal") -> 
         payload = json.loads(raw)
     except ValueError:
         return None
-    # 계약: 판정기는 게이트 전부를 `gates` 로 주고 각자 status 를 갖는다. 실패만 걷는다 —
-    # `manual` 은 판정기가 스스로 "이건 사람 몫"이라 한 것이라 게이트가 대신 막지 않는다.
+    # 계약: 판정기는 게이트 전부를 `gates`로 주고 각자 status를 갖는다. 실패만 걷는다 —
+    # `manual`은 판정기가 스스로 "이건 사람 몫"이라 한 것이라 게이트가 대신 막지 않는다.
     out: list[tuple[str, str]] = []
     for gate in payload.get("gates") or []:
         if gate.get("status") != "fail":
@@ -191,7 +191,7 @@ def _judge_surface(root: str, rel: str, base: str, engine: Engine, runtime: str)
 
 
 def _strip_locus(detail: str) -> str:
-    """`파일:줄  본문` 에서 자리를 떼어 낸다 — 같은 지적이 줄만 밀렸다고 새 결함이 되면 안 된다."""
+    """`파일:줄  본문`에서 자리를 떼어 낸다 — 같은 지적이 줄만 밀렸다고 새 결함이 되면 안 된다."""
     if "  " in detail:
         head, _, tail = detail.partition("  ")
         if ":" in head and head.rsplit(":", 1)[-1].isdigit():
@@ -219,7 +219,7 @@ def judge(root: str, paths: "tuple[str, ...] | list[str] | None" = None, base: s
             report.unjudged.append(f"{engine.name} — {reason} ({engine.judges})")
             continue
         if engine.key != "freyja4":
-            # 다른 엔진의 판정기는 입력 계약이 다르다(3D 는 모델, 숀헤르빙은 장면). 표면 파일을
+            # 다른 엔진의 판정기는 입력 계약이 다르다(3D는 모델, 숀헤르빙은 장면). 표면 파일을
             # 그대로 물리면 거짓 판정이 난다 — 안 재는 편이 정직하다.
             report.unjudged.append(f"{engine.name} — 이 게이트가 물릴 입력이 아니다 ({engine.judges})")
             continue
@@ -230,7 +230,7 @@ def judge(root: str, paths: "tuple[str, ...] | list[str] | None" = None, base: s
             judged_any = judged_any or judged
             report.findings.extend(fresh)
         if not judged_any:
-            report.unjudged.append(f"{engine.name} — node 를 못 찾아 판정기를 못 돌렸다")
+            report.unjudged.append(f"{engine.name} — node를 못 찾아 판정기를 못 돌렸다")
             report.engines.remove(engine.name)
     return report
 
@@ -243,7 +243,7 @@ def run_gate(
 ) -> int:
     """`asgard freyja-gate` — 종료 코드 1 이면 이번 변경이 표면을 더 나쁘게 만들었다.
 
-    JSON 키는 craft·thor gate 와 같은 계약이다(`blocking`) — SubagentStop 훅이 세 게이트를
+    JSON 키는 craft·thor gate와 같은 계약이다(`blocking`) — SubagentStop 훅이 세 게이트를
     같은 방식으로 읽어야 하나가 고장 나도 나머지 판정이 산다."""
     from . import ui
 

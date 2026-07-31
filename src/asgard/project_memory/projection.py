@@ -71,8 +71,8 @@ def artifact_item(
         f"Importance: {candidate.importance}\n\n"
     )
     # digest 계층은 본문을 싣지 않는다 — 머리글만으로도 "이 프로젝트에 무엇이 있는지"는
-    # 회수된다. 본문을 다 보내면 backend 가 파일마다 LLM 추출을 돌려 비용이 파일 수에 비례한다.
-    # 검증은 어느 계층이든 같다: metadata.source 의 실제 파일 해시를 본다 (본문 대조가 아니다).
+    # 회수된다. 본문을 다 보내면 backend가 파일마다 LLM 추출을 돌려 비용이 파일 수에 비례한다.
+    # 검증은 어느 계층이든 같다: metadata.source의 실제 파일 해시를 본다 (본문 대조가 아니다).
     body = candidate.content if candidate.tier == "full" else _digest_body(candidate)
     return {
         "content": header + body,

@@ -10,16 +10,16 @@
 
 이 구조의 결함은 크기가 아니라 **아무도 전체를 안 본다**는 것이다:
 
-  · **중복이 안 걸러진다.** 같은 사실이 개인 페이지로·프로젝트 record 로·문서 발췌로·
+  · **중복이 안 걸러진다.** 같은 사실이 개인 페이지로·프로젝트 record로·문서 발췌로·
     종합 구획으로·에피소드 구간으로 동시에 실릴 수 있고 그걸 막는 것이 없었다. 검색 문헌은
-    이걸 lateral redundancy 라 부르고, 고정 예산에서 중복은 곧 **다른 증거의 자리를 뺏는
+    이걸 lateral redundancy라 부르고, 고정 예산에서 중복은 곧 **다른 증거의 자리를 뺏는
     일**이다 (AdaGReS, arXiv 2512.25052 — 집합 수준 목적함수 = 관련도 − 집합 내 중복).
   · **레인끼리 못 겨룬다.** 각 레인은 "나한테 뭔가 있나"만 묻고 "이 7천 자가 최선인가"는
     아무도 안 묻는다. 프로젝트 레인이 3,000자를 안 쓰고 남겨도 개인 레인은 900자에서 잘린다.
 
 ## 이 모듈이 하는 일
 
-고정 예산 위의 **탐욕 선택**이다 (Replace-don't-Expand, arXiv 2512.10787 과 같은 결):
+고정 예산 위의 **탐욕 선택**이다 (Replace-don't-Expand, arXiv 2512.10787과 같은 결):
 
   1. **레인 간 값의 척도** — 순수 RRF `1/(K+rank)`. 레인 가중치를 **안 만든다**: 레인마다
      점수 척도가 달라 섞을 수 없고, 그래서 이 저장소는 어디서나 순위만 융합한다. 어느 레인이든
@@ -37,9 +37,9 @@
 
 ## 계약
 
-  · 순수 함수다 — IO 도 설정 읽기도 없다. 레인이 후보를 만들고, 이 모듈은 고르기만 한다.
+  · 순수 함수다 — IO도 설정 읽기도 없다. 레인이 후보를 만들고, 이 모듈은 고르기만 한다.
   · 레인이 하나뿐이면 결과는 그 레인이 혼자 쓰던 것과 같다 (중복 제거만 추가).
-  · 실패는 호출측 fail-open 에 맡긴다 — 여기서 예외를 삼키면 버그가 조용해진다.
+  · 실패는 호출측 fail-open에 맡긴다 — 여기서 예외를 삼키면 버그가 조용해진다.
 """
 
 from __future__ import annotations
@@ -48,9 +48,9 @@ import dataclasses
 
 from .recall import RRF_K, _grams
 
-# 레인 간 중복 판정 문턱 — 포함계수. Jaccard 가 아니라 containment 인 이유는 길이가 크게
-# 다른 두 표현(정본 전문 vs 200자 발췌)이 같은 사실일 때 Jaccard 는 그걸 못 잡기 때문이다.
-# 값의 근거: pages.MERGE_CONTAINMENT(0.45) 를 뽑은 그 실측. 여기서는 조금 더 보수적으로
+# 레인 간 중복 판정 문턱 — 포함계수. Jaccard가 아니라 containment 인 이유는 길이가 크게
+# 다른 두 표현(정본 전문 vs 200자 발췌)이 같은 사실일 때 Jaccard는 그걸 못 잡기 때문이다.
+# 값의 근거: pages.MERGE_CONTAINMENT(0.45)를 뽑은 그 실측. 여기서는 조금 더 보수적으로
 # 잡는다 — 병합(두 페이지를 영구히 합침)은 되돌리기 어렵지만 주입 중복 제거는 한 턴짜리라
 # 오판의 대가가 비대칭이면서도, **구별되는 사실을 버리는 쪽**이 훨씬 나쁘기 때문이다.
 DEDUP_CONTAINMENT = 0.55
@@ -60,7 +60,7 @@ DEDUP_CONTAINMENT = 0.55
 class Candidate:
     """레인 하나가 내놓는 회수 후보 한 건.
 
-    body 는 렌더될 본문(앞의 `- ` 는 렌더가 붙인다), suffix 는 출처 표기다. 예산은 둘 다
+    body는 렌더될 본문(앞의 `- `는 렌더가 붙인다), suffix는 출처 표기다. 예산은 둘 다
     포함해 세지만 **중복 판정은 body 로만** 한다 — 같은 사실을 다른 레인이 내면 출처 표기는
     당연히 다르고, 그걸 비교에 넣으면 중복이 중복으로 안 보인다."""
 
@@ -96,7 +96,7 @@ def _value(candidate: Candidate) -> float:
 class _Grams:
     """후보별 trigram 집합 캐시 — 같은 본문의 그램을 두 번 만들지 않는다.
 
-    왜 필요한가: 중복 판정은 (고른 것 × 후보) 쌍마다 도는데 `_containment` 는 호출마다 양쪽
+    왜 필요한가: 중복 판정은 (고른 것 × 후보) 쌍마다 도는데 `_containment`는 호출마다 양쪽
     그램을 새로 만든다. 후보가 30개면 그램 생성이 수백 번이고 본문은 수백 자다 — 이건 **매 턴**
     도는 경로라 그대로 두면 조립기가 자기가 아끼는 것보다 비싸진다 (실측 26-07-29: 후보 60에서
     3.72ms). 그램은 본문에만 의존하므로 한 번 만들어 재사용하면 결과는 **바이트 동일**하고
@@ -115,7 +115,7 @@ class _Grams:
         return grams
 
     def containment(self, a: str, b: str) -> float:
-        """포함 계수 |A∩B|/min(|A|,|B|) — `recall._containment` 와 같은 정의, 캐시만 다르다."""
+        """포함 계수 |A∩B|/min(|A|,|B|) — `recall._containment`와 같은 정의, 캐시만 다르다."""
         ga, gb = self.of(a), self.of(b)
         return len(ga & gb) / (min(len(ga), len(gb)) or 1)
 
@@ -129,7 +129,7 @@ def _redundant(candidate: Candidate, chosen: list[Candidate], floor: float, gram
         문서 발췌에도 정당하게 존재한다 (각각 다른 신뢰 등급과 수명을 갖는다). 저장 쪽에서
         고칠 수 없고, 주입면이 유일하게 고칠 수 있는 자리다.
       · 레인 **안** 중복은 저장의 결함이다. 개인 위키에 거의 같은 페이지가 둘 있으면 그건
-        합쳐야 할 페이지이고, `lint` 가 이미 `near-duplicate` 로 지목한다. 주입에서 조용히
+        합쳐야 할 페이지이고, `lint`가 이미 `near-duplicate`로 지목한다. 주입에서 조용히
         가리면 사용자는 고쳐야 할 것이 있다는 사실 자체를 못 본다 — 계기를 끄는 셈이다.
 
     그리고 오판의 대가가 비대칭이다: 구별되는 사실을 버리는 것이 중복 한 줄보다 훨씬 나쁘다.
@@ -155,7 +155,7 @@ def select(
     order = {lane.key: index for index, lane in enumerate(lanes)}
     # 레인이 실제로 쓰이면 머리글·꼬리도 프롬프트에 실린다. 예산은 **최종 문자열**에 걸려야
     # 하므로 그 몫을 같이 청구한다 — 행만 세면 블록마다 수십~수백 자가 상한 밖으로 샌다
-    # (구 동작은 `len(prefix + rows + suffix)` 로 재고 있었고, 그 계약을 지켜야 한다).
+    # (구 동작은 `len(prefix + rows + suffix)`로 재고 있었고, 그 계약을 지켜야 한다).
     overhead = {lane.key: len(lane.prefix) + len(lane.suffix) for lane in lanes}
     chosen: list[Candidate] = []
     used = 0
@@ -224,7 +224,7 @@ def assemble(
 def stats(candidates: list[Candidate], chosen: list[Candidate]) -> dict:
     """조립 결과 계기 — 무엇이 들어가고 무엇이 밀렸나 (대시보드·테스트·감사용).
 
-    `dropped_redundant` 를 따로 세는 이유: 예산이 모자라 밀린 것과 중복이라 버린 것은 전혀
+    `dropped_redundant`를 따로 세는 이유: 예산이 모자라 밀린 것과 중복이라 버린 것은 전혀
     다른 사건인데 합쳐 놓으면 "예산을 늘려야 하나"라는 잘못된 질문으로 간다."""
     picked = set(id(c) for c in chosen)
     lanes_in = sorted({c.lane for c in candidates})

@@ -1,7 +1,7 @@
 """커스텀 매뉴얼 — 오딘이 직접 쓴 규칙을 아스가르드 정체성 **위에** 얹는 유일한 자리.
 
 왜 새 집이 필요한가: 정체성(AGENTS.md = 세계관 + 캐논 13조 + Trinity 루프)은 템플릿이 소유한다.
-`asgard sync` 가 `<!-- >>> asgard:* >>>` 마커 블록을 통째로 갈아끼우므로 그 안에 쓴 사용자 규칙은
+`asgard sync`가 `<!-- >>> asgard:* >>>` 마커 블록을 통째로 갈아끼우므로 그 안에 쓴 사용자 규칙은
 갱신 때 사라진다. 그래서 아스가르드가 **절대 안 덮는** 파일을 따로 둔다. 자리는 두 층이다:
 
     ~/.asgard/MANUAL.md        공통    — 이 기계의 **모든 프로젝트**에 걸린다
@@ -23,14 +23,14 @@
 쓰라고 만든 자리가 안 보이면 그 계층은 없는 것과 같다 — `AGENTS.md` 옆에 나란히 놓여야 "저건
 아스가르드 것, 이건 내 것"이 첫 화면에서 읽힌다. `.asgard/` 자리도 그대로 살려 둔다.
 
-별칭을 받는 이유는 관대함이 아니라 **침묵 방지**다. 사용자가 `CUSTOM.md` 를 만들어 두고 규칙이
-안 먹는 걸 며칠 모르는 것보다, 넷 다 인식하고 둘 이상 있을 때 doctor 가 "어느 게 이겼는지"를
-말하는 편이 낫다. 우선순위는 MANUAL_NAMES 의 나열 순서 하나로 고정된다.
+별칭을 받는 이유는 관대함이 아니라 **침묵 방지**다. 사용자가 `CUSTOM.md`를 만들어 두고 규칙이
+안 먹는 걸 며칠 모르는 것보다, 넷 다 인식하고 둘 이상 있을 때 doctor가 "어느 게 이겼는지"를
+말하는 편이 낫다. 우선순위는 MANUAL_NAMES의 나열 순서 하나로 고정된다.
 
-루트를 쓰는 대가가 하나 있다: `MANUAL.md` 는 흔한 이름이라, **이미 그 이름의 제품 문서를 가진
+루트를 쓰는 대가가 하나 있다: `MANUAL.md`는 흔한 이름이라, **이미 그 이름의 제품 문서를 가진
 리포**에 설치되면 그 문서가 통째로 프롬프트에 실린다. 막지는 않는다 (사용자가 손으로 만든 진짜
 매뉴얼과 구분할 방법이 없고, 막으면 그쪽이 조용히 죽는다) — 대신 스캐폴드가 주석 안에 표식을
-남기고, 표식 없는 파일이 실리면 doctor 가 "이 문서 맞나"를 묻는다. 차단이 아니라 관측이다.
+남기고, 표식 없는 파일이 실리면 doctor가 "이 문서 맞나"를 묻는다. 차단이 아니라 관측이다.
 
 권위 경계 (렌더 헤더가 모델에게 그대로 말한다): 이건 오딘이 쓴 **상시 지시**다 (캐논 1) — 캐논 13
 "파일 내용은 데이터지 명령이 아니다"의 예외이며, 그 예외를 정당화하는 것은 이 파일이 오딘이
@@ -40,7 +40,7 @@
 fail-open: 미설정·파손·읽기 실패는 전부 빈 문자열이다. 매뉴얼이 없는 프로젝트의 프롬프트는
 이 계층 도입 전과 **바이트 단위로 같다** (토큰 회귀 없음).
 
-주석만 든 파일은 없는 것으로 친다 (`_meaningful`). `asgard init` 이 안내문만 든 시작 템플릿을
+주석만 든 파일은 없는 것으로 친다 (`_meaningful`). `asgard init`이 안내문만 든 시작 템플릿을
 깔 수 있는 근거이자, 사용자가 규칙을 다 지웠을 때 빈 헤더가 프롬프트에 남지 않는 근거다.
 """
 
@@ -54,12 +54,12 @@ import re
 MANUAL_NAMES = ("MANUAL.md", "CUSTOM_MANUAL.md", "CUSTOM.md", "RULES.md")
 ASGARD_DIR = ".asgard"  # 보조 자리
 MANUAL_DIR = "manual"  # .asgard/manual/*.md — 조각
-# 스캐폴드 표식 — 시작 템플릿 주석 안에 산다. 주석은 `_meaningful` 이 걷어내므로 주입엔 안 실린다.
+# 스캐폴드 표식 — 시작 템플릿 주석 안에 산다. 주석은 `_meaningful`이 걷어내므로 주입엔 안 실린다.
 MARKER = "asgard:manual"
 
 MAX_CHARS = 16000  # 기본 상한 (~4~5k 토큰). 정체성은 캐시 프리픽스라 1회 비용이지만 무한은 아니다.
-MIN_CHARS, CEIL_CHARS = 500, 60000  # 설정 override 클램프 — 0 이나 100만은 설정 실수지 의도가 아니다
-FRAGMENT_CAP = 32  # 조각 개수 상한 — 디렉터리에 md 를 쏟아부어도 프롬프트가 안 터진다
+MIN_CHARS, CEIL_CHARS = 500, 60000  # 설정 override 클램프 — 0이나 100만은 설정 실수지 의도가 아니다
+FRAGMENT_CAP = 32  # 조각 개수 상한 — 디렉터리에 md를 쏟아부어도 프롬프트가 안 터진다
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
@@ -78,7 +78,7 @@ def _read(path: str) -> str:
 
 
 def _mode(root: str | None) -> str:
-    """ASGARD_MANUAL env > 프로젝트 설정 > 글로벌 설정 > on (bragi.current_mode 와 같은 사다리)."""
+    """ASGARD_MANUAL env > 프로젝트 설정 > 글로벌 설정 > on (bragi.current_mode와 같은 사다리)."""
     raw = str(os.environ.get("ASGARD_MANUAL") or "").strip().lower()
     if raw in ("on", "off"):
         return raw
@@ -126,8 +126,8 @@ def home() -> str:
 def _inside(path: str, fence: str | None) -> bool:
     """링크를 따라간 실제 대상이 울타리 안인가 (`fence=None` 이면 무조건 참).
 
-    왜 필요한가: `os.path.isfile` 도 `os.listdir` 도 심볼릭 링크를 따라가고, `.md` 판정은
-    **링크 이름**에 걸린다. git 은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 저장소가
+    왜 필요한가: `os.path.isfile`도 `os.listdir`도 심볼릭 링크를 따라가고, `.md` 판정은
+    **링크 이름**에 걸린다. git은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 저장소가
     `MANUAL.md -> ../../.ssh/id_rsa` 하나만 담고 있으면 그 내용이 곧 매뉴얼이 되어 매 세션
     프롬프트로 나간다. 이 계층은 도구 호출이 아니라서 판독 게이트(`hooks/secret_guard.py`)가
     보는 자리가 아니다 — 여기서 안 막으면 아무도 안 막는다.
@@ -149,8 +149,8 @@ def _inside(path: str, fence: str | None) -> bool:
 def _primary_in(base: str, fence: str | None = None) -> tuple[list[str], list[str]]:
     """한 디렉터리 안의 후보를 우선순위 순 절대경로로 — (울타리 안, 울타리 밖).
 
-    첫 반환값의 [0] 이 이기고 나머지는 가려진다. 울타리 밖은 **없는 것으로 친다** — 그래서
-    `MANUAL.md` 가 트리 밖을 가리키면 그 다음 별칭이 정상적으로 이긴다."""
+    첫 반환값의 [0]이 이기고 나머지는 가려진다. 울타리 밖은 **없는 것으로 친다** — 그래서
+    `MANUAL.md`가 트리 밖을 가리키면 그 다음 별칭이 정상적으로 이긴다."""
     found = [os.path.join(base, n) for n in MANUAL_NAMES if os.path.isfile(os.path.join(base, n))]
     kept: list[str] = []
     escaped: list[str] = []
@@ -160,7 +160,7 @@ def _primary_in(base: str, fence: str | None = None) -> tuple[list[str], list[st
 
 
 def _fragments_in(base: str, fence: str | None = None) -> tuple[list[str], list[str], list[str]]:
-    """`<base>/manual/*.md` 를 파일명 정렬 순으로 — (실을 것, 상한 초과, 울타리 밖)."""
+    """`<base>/manual/*.md`를 파일명 정렬 순으로 — (실을 것, 상한 초과, 울타리 밖)."""
     frag_dir = os.path.join(base, MANUAL_DIR)
     names: list[str] = []
     if os.path.isdir(frag_dir):
@@ -179,15 +179,15 @@ def _fragments_in(base: str, fence: str | None = None) -> tuple[list[str], list[
 
 
 def discover(root: str | None = None) -> dict:
-    """파일 해석만 — 읽지 않는다. doctor·CLI 가 "무엇이 있고 무엇이 가려졌나"를 말하는 소스.
+    """파일 해석만 — 읽지 않는다. doctor·CLI가 "무엇이 있고 무엇이 가려졌나"를 말하는 소스.
 
-    반환: {files[], shadowed[], dropped[], escaped[]} — 전부 **절대경로**, `files` 는 실릴 순서
+    반환: {files[], shadowed[], dropped[], escaped[]} — 전부 **절대경로**, `files`는 실릴 순서
     그대로다: 공통(홈) → 프로젝트(리포 루트 → `.asgard/`) → 프로젝트 조각. 자리끼리는 서로 가리지
     않는다 — 가림은 **같은 디렉터리 안 별칭끼리만**. 조각 디렉터리는 `manual/` 하나뿐이라, 리포
-    루트에 `manual/` 을 두는 프로젝트(남의 문서 폴더)와는 안 부딪힌다.
+    루트에 `manual/`을 두는 프로젝트(남의 문서 폴더)와는 안 부딪힌다.
 
-    `escaped` 는 링크가 저장소 밖을 가리켜 뺀 것이다 (`_inside`). 조용히 빼지 않고 돌려주는
-    이유는 이 계층의 나머지 침묵과 같다 — 안 실린 데는 이유가 있고, `doctor` 가 그걸 말한다."""
+    `escaped`는 링크가 저장소 밖을 가리켜 뺀 것이다 (`_inside`). 조용히 빼지 않고 돌려주는
+    이유는 이 계층의 나머지 침묵과 같다 — 안 실린 데는 이유가 있고, `doctor`가 그걸 말한다."""
     root = os.path.abspath(root or os.getcwd())
     common = home()
     files: list[str] = []
@@ -200,7 +200,7 @@ def discover(root: str | None = None) -> dict:
         escaped.extend(out)
         if found:
             files.append(found[0])
-            shadowed.extend(found[1:])  # 별칭 중복 — 하나만 이긴다, doctor 가 경고한다
+            shadowed.extend(found[1:])  # 별칭 중복 — 하나만 이긴다, doctor가 경고한다
         if with_fragments:
             keep, drop, frag_out = _fragments_in(base, fence)
             files.extend(keep)
@@ -210,10 +210,10 @@ def discover(root: str | None = None) -> dict:
     # 울타리: 프로젝트 층은 리포 안, 공통 층(홈)은 없음 — 근거는 `_inside` 주석.
     take(common, with_fragments=True, fence=None)  # ① 공통 — 이 기계의 모든 프로젝트
     take(root, with_fragments=False, fence=root)  # ② 이 프로젝트 — 리포 루트
-    # ③ 이 프로젝트 — 보조 자리 + 조각. 울타리는 `.asgard/` 가 아니라 **리포**다: 저장소 안에서
-    # `.asgard/manual/x.md -> ../../docs/rules.md` 로 거는 구성은 정상이다.
+    # ③ 이 프로젝트 — 보조 자리 + 조각. 울타리는 `.asgard/`가 아니라 **리포**다: 저장소 안에서
+    # `.asgard/manual/x.md -> ../../docs/rules.md`로 거는 구성은 정상이다.
     take(os.path.join(root, ASGARD_DIR), with_fragments=True, fence=root)
-    # 홈 안에서 asgard 를 돌리면 같은 파일이 두 층에 걸린다 — 순서를 지키며 한 번만 싣는다.
+    # 홈 안에서 asgard를 돌리면 같은 파일이 두 층에 걸린다 — 순서를 지키며 한 번만 싣는다.
     seen: set[str] = set()
     files = [p for p in files if not (os.path.realpath(p) in seen or seen.add(os.path.realpath(p)))]
     return {"files": files, "shadowed": shadowed, "dropped": dropped, "escaped": escaped}
@@ -231,7 +231,7 @@ def is_common(path: str) -> bool:
 def label(root: str, path: str) -> str:
     """표시용 이름 — 프로젝트 안이면 상대경로, 홈 안이면 `~/…`, 그 밖은 절대경로.
 
-    프로젝트를 먼저 본다: 홈 아래에 체크아웃한 저장소가 `~/…` 로 표시되면 공통 규칙처럼 읽힌다."""
+    프로젝트를 먼저 본다: 홈 아래에 체크아웃한 저장소가 `~/…`로 표시되면 공통 규칙처럼 읽힌다."""
     root, path = os.path.abspath(root or os.getcwd()), os.path.abspath(path)
     if path.startswith(root + os.sep):
         return os.path.relpath(path, root).replace(os.sep, "/")
@@ -242,10 +242,10 @@ def label(root: str, path: str) -> str:
 
 
 def has_marker(path: str) -> bool:
-    """`asgard init` 이 깐 자리인가 — 스캐폴드 표식은 주석 안이라 주입엔 안 실린다.
+    """`asgard init`이 깐 자리인가 — 스캐폴드 표식은 주석 안이라 주입엔 안 실린다.
 
-    루트 `MANUAL.md` 는 흔한 이름이라, 이미 그 이름의 제품 문서를 가진 리포에 설치되면 그 문서가
-    통째로 프롬프트에 실린다. 표식은 그 경우를 doctor 가 "낯선 문서"로 짚게 해 준다 — 차단이
+    루트 `MANUAL.md`는 흔한 이름이라, 이미 그 이름의 제품 문서를 가진 리포에 설치되면 그 문서가
+    통째로 프롬프트에 실린다. 표식은 그 경우를 doctor가 "낯선 문서"로 짚게 해 준다 — 차단이
     아니라 관측이다 (사용자가 직접 만든 매뉴얼도 표식이 없으니 막으면 안 된다)."""
     return MARKER in _read(path)
 
@@ -261,9 +261,9 @@ def load_manual(root: str | None = None) -> dict | None:
     """정규화된 매뉴얼 또는 None (미설정·꺼짐·주석뿐·읽기 실패).
 
     반환: {body, sources[], common[], project[], shadowed[], dropped[], chars, truncated} —
-    sources 는 실제로 내용이 있어 본문에 들어간 파일만 (빈 조각은 헤더에 이름조차 안 남는다).
-    common/project 는 그 sources 를 층별로 가른 것 — 렌더가 "충돌하면 나중 것이 이긴다"를
-    말할지 판단하는 근거이자, CLI·doctor 가 어느 층이 걸렸는지 보여 주는 소스다."""
+    sources는 실제로 내용이 있어 본문에 들어간 파일만 (빈 조각은 헤더에 이름조차 안 남는다).
+    common/project는 그 sources를 층별로 가른 것 — 렌더가 "충돌하면 나중 것이 이긴다"를
+    말할지 판단하는 근거이자, CLI·doctor가 어느 층이 걸렸는지 보여 주는 소스다."""
     if not enabled(root):
         return None
     root = os.path.abspath(root or os.getcwd())
@@ -299,8 +299,8 @@ def load_manual(root: str | None = None) -> dict | None:
     }
 
 
-# 렌더 문구는 hooks/manual_activate.py 와 **동일 유지 (단일 출처 원칙)** — 훅은 무임포트라
-# 재구현하고, tests/test_manual_hook.py 가 두 렌더가 같은 문자열을 내는지 대조한다.
+# 렌더 문구는 hooks/manual_activate.py와 **동일 유지 (단일 출처 원칙)** — 훅은 임포트를 못 하므로
+# 재구현하고, tests/test_manual_hook.py가 두 렌더가 같은 문자열을 내는지 대조한다.
 SECTIONS = ("identity", "thinker", "worker", "verifier")
 
 _HEADER = "## Manual — written by Odin (%s)"
@@ -342,7 +342,7 @@ _SUFFIX = {
 
 
 def render(manual: dict, section: str = "identity") -> str:
-    """주입 본문 — hooks/manual_activate.py `render()` 와 바이트 동일해야 한다."""
+    """주입 본문 — hooks/manual_activate.py `render()`와 바이트 동일해야 한다."""
     parts = [_HEADER % ", ".join(manual["sources"]), _AUTHORITY]
     if manual.get("common") and manual.get("project"):
         parts.append(_LAYERS)

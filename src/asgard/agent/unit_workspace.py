@@ -20,8 +20,8 @@ class WorkspaceError(RuntimeError):
     pass
 
 
-# quest_log._junk 와 동일 유지 (단일 출처 원칙) — 실행 캐시는 단위 산출물이 아니다.
-# .gitignore 없는 프로젝트에서 단위 검증(pytest 류)이 만든 __pycache__/.pytest_cache 가
+# quest_log._junk와 동일 유지 (단일 출처 원칙) — 실행 캐시는 단위 산출물이 아니다.
+# .gitignore 없는 프로젝트에서 단위 검증(pytest 류)이 만든 __pycache__/.pytest_cache가
 # 캡처 패치에 편입되면 scope 검증·병합이 캐시 때문에 실패한다 (26-07-17 편대 라이브 실측).
 _JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv"}
 

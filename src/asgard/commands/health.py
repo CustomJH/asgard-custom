@@ -1,6 +1,6 @@
 """asgard health — 나무 침식 신호의 사람 표면. 판정하지 않는다: 세고, 추세를 보여준다.
 
-절대값으로 차단하지 않는 이유는 `health` 모듈 docstring 에 있다. 이 표면의 계약은 두 줄이다:
+절대값으로 차단하지 않는 이유는 `health` 모듈 docstring에 있다. 이 표면의 계약은 두 줄이다:
 ① 측정하지 못한 것을 측정한 것처럼 보이게 하지 않는다(미측정·제외 수를 항상 함께 싣는다),
 ② 나빠진 지표를 화면 위쪽에 올린다 — 좋아진 지표를 세는 것은 이 도구의 일이 아니다.
 """
@@ -14,7 +14,7 @@ from .. import health, loop, ui
 
 
 def _project_root(start: str) -> str:
-    """git 루트 — 없으면 현재 디렉터리. code_map 과 같은 규칙."""
+    """git 루트 — 없으면 현재 디렉터리. code_map과 같은 규칙."""
     import os
 
     cur = os.path.abspath(start)
@@ -118,7 +118,7 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
     snap = health.scan(root)
-    # 추세는 기록 **전에** 계산한다 — 방금 찍은 점과 자기를 비교하면 항상 flat 이 된다
+    # 추세는 기록 **전에** 계산한다 — 방금 찍은 점과 자기를 비교하면 항상 flat이 된다
     tr = health.trend(root, snap)
     if snapshot:
         health.record(root)
@@ -165,7 +165,7 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
             ui.step(ui.dim(f"{_LABEL.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}"))
     else:
         ui.phase("추세")
-        ui.step(ui.dim("기록이 없다 — `asgard health --snapshot` 으로 첫 점을 찍으면 다음 실행부터 델타가 나온다"))
+        ui.step(ui.dim("기록이 없다 — `asgard health --snapshot`으로 첫 점을 찍으면 다음 실행부터 델타가 나온다"))
 
     if snap.hotspots:
         ui.phase(f"핫스팟 — 변경빈도 × 크기 (최근 {snap.churn_window}커밋)")

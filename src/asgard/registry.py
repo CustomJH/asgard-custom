@@ -1,8 +1,8 @@
-"""projects registry — ~/.asgard/projects.json. setup 이 스캐폴딩한 프로젝트를 기록해
-`asgard sync` 가 "asgard 가 세팅된 모든 디렉토리" 를 찾을 수 있게 한다 (파일시스템 스캔 없음).
+"""projects registry — ~/.asgard/projects.json. setup이 스캐폴딩한 프로젝트를 기록해
+`asgard sync`가 "asgard가 세팅된 모든 디렉토리"를 찾을 수 있게 한다 (파일시스템 스캔 없음).
 
-엔트리 = {root, cc, cursor, codex, updated}. root 로 dedupe (재-init 은 프로필 갱신).
-이 파일은 로컬 머신 상태다 — credentials.json 과 같은 계층, 프로젝트 repo 에는 절대 안 들어간다."""
+엔트리 = {root, cc, cursor, codex, updated}. root로 dedupe (재-init은 프로필 갱신).
+이 파일은 로컬 머신 상태다 — credentials.json과 같은 계층, 프로젝트 repo 에는 절대 안 들어간다."""
 
 import json
 import os
@@ -44,7 +44,7 @@ def record(root: str, cc: bool, cursor: bool, codex: bool) -> None:
 
 
 def forget(root: str) -> None:
-    """엔트리 제거 (sync 가 사라진 루트를 정리할 때)."""
+    """엔트리 제거 (sync가 사라진 루트를 정리할 때)."""
     root = os.path.realpath(root)
     try:
         projects = [p for p in load() if os.path.realpath(str(p["root"])) != root]

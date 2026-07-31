@@ -8,7 +8,7 @@ Anthropic RCT 2026)·안내 줄이기(인지적 도제, Collins 1989).
 CC(.claude/skills/)와 Cursor·Codex 공용(.agents/skills/) 양 스코프에 스캐폴드되어 모드
 A/B/네이티브 전부에서 로드 가능하다. 코어 계약 스킬은 mimir_core_skill (role 파일 단일 소스)
 — 이 모듈은 심화 층만 담당한다. 네이티브 DIRECT 턴(설명 과업의 실제 경로)은 dispatch 툴이
-없는 read-only 단일 세션이므로 mimir_note 가 모드 A 처럼 계약을 인라인 주입한다."""
+없는 read-only 단일 세션이므로 mimir_note가 모드 A처럼 계약을 인라인 주입한다."""
 
 import re
 
@@ -168,7 +168,7 @@ MIMIR_SKILLS: list[tuple[str, str]] = [
 ]
 
 # 네이티브 디스패치 task → 전용 스킬 매칭 (파일 스킬 로더가 없는 asgard start 세션용 통로 —
-# 모드 A/B 는 파일 스킬이 담당). 단순 사실 질의("반환 타입이 뭔가")는 무매칭 fail-open —
+# 모드 A/B는 파일 스킬이 담당). 단순 사실 질의("반환 타입이 뭔가")는 일치 없음 fail-open —
 # role 본문만으로 충분하다. "학습"·"안내" 단독은 오발원(학습률·안내 문구)이라 트리거에 넣지 않는다.
 _SUBSTR: dict[str, tuple[str, ...]] = {
     "asgard-mimir-brunnr": (
@@ -207,7 +207,7 @@ _SUBSTR: dict[str, tuple[str, ...]] = {
         "인지부채",
         "cognitive debt",
     ),
-    # 되짚기 — "무엇을 바꿨는지 정리해"·"내가 리뷰할 수 있게" 계열. `설명해` 는 brunnr 과 겹치므로
+    # 되짚기 — "무엇을 바꿨는지 정리해"·"내가 리뷰할 수 있게" 계열. `설명해`는 brunnr과 겹치므로
     # 넣지 않는다: 이 스킬의 트리거는 **이번 변경을 넘긴다**는 뜻이 분명한 어휘로만 좁힌다.
     "asgard-mimir-auga": (
         "코드 리뷰",
@@ -240,8 +240,8 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
 def resolve_mimir_skills(task: str) -> list[tuple[str, str]]:
     """디스패치 task → 매칭된 전용 스킬 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
 
-    네이티브 미미르 자식 세션·DIRECT 턴의 system 에 직접 주입할 본문을 고른다.
-    무매칭 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role 이 이미 그 폴백을 선언한다).
+    네이티브 미미르 자식 세션·DIRECT 턴의 system에 직접 주입할 본문을 고른다.
+    일치 없음 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role이 이미 그 폴백을 선언한다).
     복수 매칭은 전부 주입 — 온보딩용 아키텍처 워크스루처럼 두 표면이 겹치는 과업이 실재한다."""
     t = task.lower()
 
@@ -254,9 +254,9 @@ def resolve_mimir_skills(task: str) -> list[tuple[str, str]]:
 def mimir_note(task: str) -> str:
     """네이티브 DIRECT 턴용 미미르 코어 계약 — 설명 요청 매칭 시에만.
 
-    DIRECT 는 dispatch 툴이 없는 read-only 단일 세션이라(write 에이전트 혼입 금지) 미미르를
-    부를 수 없다 — 코어 역할만 활성화하고 전용 스킬 본문은 load_skill 로 지연 로드한다.
-    무매칭 = 빈 문자열 — 일반 DIRECT 문답은 그대로 둔다."""
+    DIRECT는 dispatch 툴이 없는 read-only 단일 세션이라(write 에이전트 혼입 금지) 미미르를
+    부를 수 없다 — 코어 역할만 활성화하고 전용 스킬 본문은 load_skill로 지연 로드한다.
+    일치 없음 = 빈 문자열 — 일반 DIRECT 문답은 그대로 둔다."""
     hits = resolve_mimir_skills(task)
     if not hits:
         return ""

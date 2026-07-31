@@ -1,9 +1,9 @@
 """completions — shell completion scripts (bash|zsh|fish), subcommand-aware.
 
 아래 명령 표면 테이블 하나에서 3개 셸 스크립트를 생성한다 — cli.py 등록 명령과의 동기는
-tests/test_completions.py 가 Typer 앱 인트로스펙션으로 강제. `--install` 은 스크립트를
-~/.asgard/completions/ 에 쓰고 셸 rc 에 가드된 source 한 줄을 배선한다 (fish 는 네이티브
-completions 디렉터리에 놓여 자동 로드 — rc 편집 불요)."""
+tests/test_completions.py가 Typer 앱 인트로스펙션으로 강제. `--install`은 스크립트를
+~/.asgard/completions/ 에 쓰고 셸 rc에 가드된 source 한 줄을 배선한다 (fish는 네이티브
+completions 디렉터리에 놓여 자동 로드 — rc 편집 불필요)."""
 
 import os
 import subprocess
@@ -53,7 +53,7 @@ _FLAGS = {
     "agent": [],
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
-    "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory 와 동형)
+    "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory와 동형)
     "health": ["--snapshot", "--next", "--steps", "--json", "--quiet"],
     "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
@@ -112,8 +112,8 @@ _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 
     "--kind": ["note", "user", "decision", "insight", "reference", "feedback"],
 }
 _FREE_OPTS = ["--model", "--query", "--effort", "--provider"]  # 값을 갖지만 후보가 없는 옵션
-_SHORT = {"--quiet": "q", "--yes": "y"}  # fish 만 short 를 명시 등록 (bash/zsh 는 long 제안으로 충분)
-_SHELLS = ["bash", "zsh", "fish"]  # completions 의 위치 인자
+_SHORT = {"--quiet": "q", "--yes": "y"}  # fish만 short를 명시 등록 (bash/zsh는 long 제안으로 충분)
+_SHELLS = ["bash", "zsh", "fish"]  # completions의 위치 인자
 _ROLE_SUB = {
     "list": "bridge flags + role placements",
     "model": "list or set role models",
@@ -285,18 +285,18 @@ complete -F _asgard asgard
 
 
 def _zsh_desc(text: str) -> str:
-    """zsh `_describe` 는 `'name:desc'` 를 홑따옴표 안에서 읽는다.
+    """zsh `_describe`는 `'name:desc'`를 홑따옴표 안에서 읽는다.
 
     그래서 설명문의 홑따옴표는 문자열을 **끝내고**, 콜론은 이름과 설명의 **경계**가 된다. 둘 중
     하나만 들어가도 스크립트가 통째로 깨지는데, 증상이 "모든 명령이 사라짐"이라 원인이 안 보인다
-    (실측: 설명에 `verb's` 와 백틱을 넣었더니 zsh 기능 시험 6개가 한 번에 죽었다). 저자가 특수문자를
+    (실측: 설명에 `verb's`와 백틱을 넣었더니 zsh 기능 시험 6개가 한 번에 죽었다). 저자가 특수문자를
     피하기를 기대하는 대신 여기서 막는다.
     """
     return text.replace("'", "'\\''").replace(":", "\\:")
 
 
 def _fish_desc(text: str) -> str:
-    """fish 의 홑따옴표 안에서 이스케이프로 읽히는 것은 `\\'` 와 `\\\\` 둘뿐이다."""
+    """fish의 홑따옴표 안에서 이스케이프로 읽히는 것은 `\\'`와 `\\\\` 둘뿐이다."""
     return text.replace("\\", "\\\\").replace("'", "\\'")
 
 
@@ -779,12 +779,12 @@ def _install(shell: str | None) -> int:
 
 
 def ensure_installed() -> None:
-    """update 후 completion 을 기본 설치·재생성 — 베스트에포트 (설치의 기본 동선).
+    """update 후 completion을 기본 설치·재생성 — 베스트에포트 (설치의 기본 동선).
 
     로그인 셸($SHELL)은 흔적이 없어도 설치하고(구버전에서 올라온 사용자 커버), 설치
     흔적(파일)이 있는 다른 셸은 재생성한다. 구버전 프로세스의 템플릿은 낡았을 수
-    있으므로 직접 쓰지 않고 방금 설치된 `asgard` 를 서브프로세스로 부른다 (--install
-    은 멱등 — rc 는 마커로 1줄 유지). 실패는 조용히 무시."""
+    있으므로 직접 쓰지 않고 방금 설치된 `asgard`를 서브프로세스로 부른다
+    (--install은 멱등 — rc는 마커로 1줄 유지). 실패는 조용히 무시."""
     home = os.path.expanduser("~")
     fish_dir = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"), "fish", "completions")
     targets = {

@@ -9,10 +9,10 @@
 섹션 스키마 (양쪽 동일 — 프로젝트가 글로벌을 키 단위로 이긴다):
   provider / trinity(네이티브 역할 배치) / agent_models(호스트별 역할 모델) / bridge /
   lagom / memory(글로벌 — 개인 메모리) / project_memory(프로젝트 전용 — 공유 backend,
-  구 키 memory 는 폴백으로만 읽는다) / ui / trinity_policy(프로젝트 전용)
+  구 키 memory는 폴백으로만 읽는다) / ui / trinity_policy(프로젝트 전용)
 
-레거시 폴백: 신규 JSON 이 없으면 구 파일을 그대로 읽는다 (기배포 프로젝트·기존 테스트 무파손).
-쓰기는 항상 신규 JSON — `asgard sync` 가 구 파일을 신 포맷으로 이관한다.
+레거시 폴백: 신규 JSON이 없으면 구 파일을 그대로 읽는다 (기배포 프로젝트·기존 테스트 무파손).
+쓰기는 항상 신규 JSON — `asgard sync`가 구 파일을 신 포맷으로 이관한다.
 훅(standalone)은 이 모듈을 임포트하지 못한다 — 같은 "신규 우선+폴백" 규칙을 각 훅이 내장하며
 "동일 유지 (단일 출처 원칙)" 주석으로 이 파일을 가리킨다.
 """
@@ -42,7 +42,7 @@ def global_dir() -> str:
     """활성 에이전트의 홈 — 기본 에이전트면 `~/.asgard` 그대로 (마이그레이션 0).
 
     프로파일 계층이 붙기 전까지 이 함수는 곧 기계 뿌리였다. 지금은 **에이전트의 사유 홈**이고,
-    기계 단위 자산(자격증명·projects.json)은 `machine_dir()` 이 따로 가리킨다. `~/.asgard` 를
+    기계 단위 자산(자격증명·projects.json)은 `machine_dir()`이 따로 가리킨다. `~/.asgard`를
     직접 조립하던 코드는 둘 중 하나를 골라야 한다 — 그 선택이 곧 "이 파일이 누구 것인가"다."""
     from .profiles import home
 
@@ -67,8 +67,8 @@ def workspace_home() -> str:
 def machine_dir() -> str:
     """기계 단위 뿌리 `~/.asgard` — 에이전트가 몇이든 하나 (자격증명·레지스트리·캐시).
 
-    os.path.expanduser("~") 는 Windows 에서 HOME 을 보지 않고 USERPROFILE/HOMEDRIVE+HOMEPATH
-    만 본다(posix 는 HOME 우선) — HOME 을 명시 우선해 플랫폼 간 일관성 + 테스트 모킹 가능성 확보."""
+    os.path.expanduser("~")는 Windows에서 HOME을 보지 않고
+    USERPROFILE/HOMEDRIVE+HOMEPATH만 본다(posix는 HOME 우선) — HOME을 명시 우선해 플랫폼 간 일관성 + 테스트 모킹 가능성 확보."""
     from .profiles import root
 
     return root()
@@ -111,7 +111,7 @@ def load_global() -> dict:
     """활성 에이전트의 글로벌 설정 — 기계 뿌리 위에 에이전트 것을 **키 단위로** 덮는다.
 
     왜 통째 교체가 아닌가: 사용자가 한 번 맞춘 ui·lagom·언어를 에이전트마다 다시 맞추게 하면
-    "에이전트 추가"가 "설정 반복"이 된다. 반대로 provider·model·memory 는 에이전트마다 달라야
+    "에이전트 추가"가 "설정 반복"이 된다. 반대로 provider·model·memory는 에이전트마다 달라야
     쓸모가 있다. 그래서 기본은 물려받고, 적어 넣은 키만 갈린다 (프로젝트>글로벌과 같은 규율)."""
     own_dir = global_dir()
     machine = machine_dir()
@@ -139,7 +139,7 @@ def _load_legacy_project(root: str) -> dict:
         merged.setdefault("trinity_policy", pol)
     mem = _read_json(os.path.join(asg, LEGACY_MEMORY))
     if mem is not None:
-        # 구 memory-server.json 은 [memory] 와 별개 파일이었다 — server/bank 키만 흡수
+        # 구 memory-server.json은 [memory]와 별개 파일이었다 — server/bank 키만 흡수
         m = dict(merged.get("memory") or {})
         m.update({k: v for k, v in mem.items() if k in ("server", "bank", "timeout")})
         merged["memory"] = m
@@ -157,7 +157,7 @@ def load_project(root: str) -> dict:
 def own_global(name: str) -> dict:
     """활성 에이전트가 **자기 파일에 직접 적은** 섹션만 (상속분 제외).
 
-    경로처럼 "물려받으면 안 되는 값"을 위한 창구다. 예: 뿌리에 `memory.directory` 가 있으면
+    경로처럼 "물려받으면 안 되는 값"을 위한 창구다. 예: 뿌리에 `memory.directory`가 있으면
     load_global 병합으로 모든 에이전트가 그 한 디렉터리를 가리키게 되고 격리가 조용히 무너진다.
     그런 키는 이 함수로 자기 선언만 본다."""
     return dict(_own_global(global_dir()).get(name) or {})
@@ -173,13 +173,13 @@ def section(name: str, root: str | None = None) -> dict:
 
 # 설정을 쓰는 쪽은 한 줄로 선다. 스튜디오 서버는 요청마다 스레드를 띄우므로, 사용자가 설정을
 # 연달아 바꾸면 읽기-고치기-쓰기가 겹친다. 겹치면 둘 다 잃는다 — 늦은 쪽이 이른 쪽의 섹션을
-# 안 읽은 상태로 덮고, 임시 파일 이름이 같으면 두 벌의 JSON 이 한 파일에 섞여 파일이 깨진다.
+# 안 읽은 상태로 덮고, 임시 파일 이름이 같으면 두 벌의 JSON이 한 파일에 섞여 파일이 깨진다.
 _WRITE_LOCK = threading.RLock()
 
 
 def _atomic_json(path: str, data: dict) -> None:
     """임시 파일은 쓰는 이마다 달라야 한다 — 이름이 pid 하나면 같은 프로세스의 두 스레드가
-    같은 임시 파일에 겹쳐 쓴다(그 결과가 `}}` 로 끝나는 설정 파일이었다)."""
+    같은 임시 파일에 겹쳐 쓴다(그 결과가 `}}`로 끝나는 설정 파일이었다)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
     fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=f"{os.path.basename(path)}.", suffix=".tmp")
     try:
@@ -206,7 +206,7 @@ def save_global(section_name: str, kv: dict) -> str:
 
 
 def save_project(root: str, section_name: str, kv: dict, *, drop: tuple[str, ...] = ()) -> str:
-    """프로젝트 섹션 저장 — save_global 과 동일 계약 (섹션 교체). 최초 저장 시 구 3파일 자동 승계.
+    """프로젝트 섹션 저장 — save_global과 동일 계약 (섹션 교체). 최초 저장 시 구 3파일 자동 승계.
     drop = 함께 제거할 구 섹션 키 (섹션 개명 이관용 — 구 키를 남기면 정본이 이원화된다)."""
     with _WRITE_LOCK:
         data = load_project(root)
@@ -241,7 +241,7 @@ def ensure_state_dir(root: str) -> str:
 
 
 def migrate_project(root: str) -> list[str]:
-    """구 설정 3파일을 asgard-setting-project.json 으로, 런타임 잔재를 state/ 로 이관.
+    """구 설정 3파일을 asgard-setting-project.json으로, 런타임 잔재를 state/ 로 이관.
     반환 = 수행한 이관 설명 (없으면 빈 리스트). 구 파일은 이관 후 제거 (정본 이원화 방지)."""
     done: list[str] = []
     asg = os.path.join(root, ".asgard")
@@ -284,7 +284,7 @@ def migrate_project(root: str) -> list[str]:
 def migrate_global() -> list[str]:
     """구 ~/.asgard/config.toml → asgard-setting-global.json (구 파일은 보존 — 타 버전 공존 안전).
 
-    이관 대상은 언제나 **기계 뿌리**다. 구 config.toml 은 프로파일 계층이 생기기 전 유물이라
+    이관 대상은 언제나 **기계 뿌리**다. 구 config.toml은 프로파일 계층이 생기기 전 유물이라
     프로파일 홈에는 존재할 수 없고, 활성 에이전트를 따라가면 뿌리의 유산이 영영 안 옮겨진다."""
     machine = machine_dir()
     target = os.path.join(machine, GLOBAL_FILE)

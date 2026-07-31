@@ -1,6 +1,6 @@
 """Worker wave 실행 — 배정 단위의 티켓 lease·격리 workspace·병렬 fan-out/fan-in.
 
-WaveRunner 는 planning 이 정렬한 wave 를 물리 실행하는 협력자다: 티켓 claim/heartbeat/finish
+WaveRunner는 planning이 정렬한 wave를 물리 실행하는 협력자다: 티켓 claim/heartbeat/finish
 수명주기, UnitWorkspace 격리·scope 검증·패치 병합, 부분 실패의 증거 보존(CUS-247)을 진다.
 세션 생성·모델 선택·재시도는 오케스트레이터(hd) 표면을 쓴다.
 """
@@ -22,12 +22,12 @@ from .ticket_lease import TicketLease
 from .todo import TodoBoard, files_note
 from .toolspec import DISPATCH_TOOL
 
-if TYPE_CHECKING:  # core 가 이 모듈을 임포트하므로 런타임 임포트는 순환이다
+if TYPE_CHECKING:  # core가 이 모듈을 임포트하므로 런타임 임포트는 순환이다
     from .core import Heimdall
 
 
 def _execute_pending(run_claimed, pending: list[dict], writes_by_id: dict, tickets: TicketLease, cwd_by_id: dict):
-    """대기 단위를 실행하고 (완료, 실패) 로 가른다. 한 개면 직렬, 여럿이면 최대 3 병렬.
+    """대기 단위를 실행하고 (완료, 실패)로 가른다. 한 개면 직렬, 여럿이면 최대 3 병렬.
 
     실패를 던지지 않고 **모아서 돌려주는** 것이 이 함수의 계약이다 — 한 단위가 죽어도 형제 단위의
     쓰기·이벤트는 정산되어야 하고(CUS-247), 그러려면 여기서 예외가 새어 나가면 안 된다.
@@ -71,7 +71,7 @@ class _Ledger:
     정산은 두 갈래(성공 단위·실패 단위)로 갈리는데 둘이 만지는 것이 같다. 갈래마다 열두 개를
     인자로 나르면 어느 갈래가 무엇을 빠뜨렸는지 읽어서 알 수 없게 되므로, 한 덩어리로 든다.
 
-    `writes` 와 `_seen` 이 한 자리에 있는 것이 이 타입의 요점이다. 순서는 증거 재현성 때문에
+    `writes`와 `_seen`이 한 자리에 있는 것이 이 타입의 요점이다. 순서는 증거 재현성 때문에
     목록이어야 하고 중복 판정은 집합이어야 하는데, 둘을 따로 두면 반드시 어긋난다.
     """
 
@@ -88,7 +88,7 @@ class _Ledger:
         """순서는 유지하고 중복만 거른다.
 
         목록을 매번 처음부터 훑으면 단위 수가 열 배일 때 시간은 백 배다 — 이 저장소의 자기
-        게이트(`craft` 의 quadratic-scan)가 바로 이 자리를 두 번 짚었다.
+        게이트(`craft`의 quadratic-scan)가 바로 이 자리를 두 번 짚었다.
         """
         for path in new:
             if path not in self._seen:
@@ -97,7 +97,7 @@ class _Ledger:
 
     def persist(self) -> None:
         """센티넬을 디스크에 확정한다. 실패할 수 있는 티켓 호출보다 **먼저** 불러야 한다 —
-        유실되면 디스크의 쓰기가 게이트에 orphan 으로 남는다 (CUS-247)."""
+        유실되면 디스크의 쓰기가 게이트에 orphan으로 남는다 (CUS-247)."""
         _record_writes(self.hd.root, self.sid, self.writes)
 
 
@@ -118,7 +118,7 @@ class WaveRunner:
         for u, r, writes in outs:
             unit_writes = actual_writes.get(u["id"], writes + [w for w in r.writes if w not in writes])
             led.merge(unit_writes)
-            led.persist()  # 실패할 수 있는 티켓 호출보다 먼저 — 유실되면 쓰기가 orphan 이 된다
+            led.persist()  # 실패할 수 있는 티켓 호출보다 먼저 — 유실되면 쓰기가 orphan이 된다
             led.results[u["id"]] = r.text[-2000:]
             led.board.mark(u["id"], "done", files_note(len(unit_writes)))
             try:
@@ -155,8 +155,8 @@ class WaveRunner:
 
         if not failures:
             return ([], [])
-        # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace 의 실패
-        # delta 는 폐기됐으므로 canonical write sentinel 에 거짓 기록하지 않는다.
+        # 공유 root 경로에서는 실패 단위의 부분 쓰기도 증거로 남긴다. 격리 workspace의 실패
+        # delta는 폐기됐으므로 canonical write sentinel에 거짓 기록하지 않는다.
         if not isolation:
             for u, _ in failures:
                 led.merge(writes_by_id[u["id"]])
@@ -197,11 +197,11 @@ class WaveRunner:
         """배정 단위 wave 병렬 실행 — access list 격리 + 파일 겹침 직렬화.
 
         격리 원칙 (Fugu §3.2.2 orchestration collapse 방지): 각 단위는 자기 subtask +
-        access 에 명시된 선행 단위 결과만 본다 — 같은 wave 의 다른 단위 궤적은 안 보인다.
+        access에 명시된 선행 단위 결과만 본다 — 같은 wave의 다른 단위 궤적은 안 보인다.
         work 이벤트는 단위별 기록 (unit 필드), 병렬 출력은 quiet — wave 요약만 표시.
 
-        부분 실패 (CUS-247): 한 단위가 fatal 로 죽어도 성공 단위의 ql append·writes 기록을
-        먼저 확정한 뒤 예외를 전파한다 — 유실되면 디스크의 쓰기가 게이트에 orphan 으로 남는다."""
+        부분 실패 (CUS-247): 한 단위가 fatal로 죽어도 성공 단위의 ql append·writes 기록을
+        먼저 확정한 뒤 예외를 전파한다 — 유실되면 디스크의 쓰기가 게이트에 orphan으로 남는다."""
         from ... import ui
         from ...i18n import t
 
@@ -222,12 +222,12 @@ class WaveRunner:
             tickets.record(unit, "todo")
 
         def run_unit(u: dict, writes: list[str], cwd: str | None = None):
-            # writes 는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
+            # writes는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
             # 매칭 기준은 퀘스트 전체가 아니라 **이 단위의 과업 문장** — 단위마다 걸리는 규율이
             # 다르다 (한 단위는 회귀 테스트, 다른 단위는 계층 경계).
             unit_task = f"{u.get('subtask') or ''} {' '.join(map(str, u.get('criteria') or []))}".strip()
             skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=unit_task)
-            # 배정 단위의 target files 는 계획 시점에 이미 알려진 사실이다 — 지시 문구가 구조를
+            # 배정 단위의 target files는 계획 시점에 이미 알려진 사실이다 — 지시 문구가 구조를
             # 언급하지 않아도 손댈 형상(경계 교차·이미 큰 파일)으로 구조 규율이 켜진다.
             shape_note = work_shape_note(
                 hd.root,
@@ -262,8 +262,8 @@ class WaveRunner:
             return u, hd._run_turn(mk, prompt, fallback), writes
 
         def run_claimed(u: dict, writes: list[str], token: str, cwd: str | None = None):
-            # 빠른 sibling 이 먼저 끝나도 느린 sibling 의 fan-in·patch merge 까지 lease 가 살아 있어야
-            # 한다. merge finally 가 모든 heartbeat 를 join 한 직후 ticket-finish 를 수행한다.
+            # 빠른 sibling이 먼저 끝나도 느린 sibling의 fan-in·patch merge까지 lease가 살아 있어야
+            # 한다. merge finally가 모든 heartbeat를 join 한 직후 ticket-finish를 수행한다.
             heartbeat_errors = tickets.start_heartbeat(u, token)
             result = run_unit(u, writes, cwd)
             if heartbeat_errors:
@@ -296,7 +296,7 @@ class WaveRunner:
                 failures: list[tuple[dict, Exception]] = []
                 outs = []
                 actual_writes: dict[object, list[str]] = {}
-                cancelled_cleanup = False  # 취소 전파 중 표식 — finally 의 close 실패가 failed 정산을 피하게
+                cancelled_cleanup = False  # 취소 전파 중 표식 — finally의 close 실패가 failed 정산을 피하게
 
                 try:
                     outs, failures = _execute_pending(run_claimed, pending, writes_by_id, tickets, cwd_by_id)
@@ -306,7 +306,7 @@ class WaveRunner:
                         failures.extend(merge_failures)
                 except TurnCancelled:
                     cancelled_cleanup = True
-                    # 하트비트를 먼저 멈춘다 — lease 를 줄인 뒤 멈추면 그 사이 갱신이 되살린다 (경합)
+                    # 하트비트를 먼저 멈춘다 — lease를 줄인 뒤 멈추면 그 사이 갱신이 되살린다 (경합)
                     for unit in pending:
                         tickets.stop_heartbeat(unit)
                     cleanup_errors = tickets.release_unfinished(pending)

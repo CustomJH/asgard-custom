@@ -1,10 +1,10 @@
 """memory 커맨드 — 개인 위키(LLM Wiki) 운영면. 로직은 asgard.memory, 여기는 표면만.
 
-승인 게이트: ingest 는 계획(create/merge 대상)을 먼저 보여주고 확인받은 뒤, **그 동일
+승인 게이트: ingest는 계획(create/merge 대상)을 먼저 보여주고 확인받은 뒤, **그 동일
 계획을 그대로** 실행에 넘긴다 (TOCTOU 차단 — 승인 대상과 실행 대상이 갈라지지 않음).
 비대화형(파이프·CI)에서는 --yes 없이는 저장하지 않는다.
 
-모든 run_* 는 예외를 안정적인 종료 코드(사용자 메시지 + 1)로 변환한다 — traceback 노출 금지.
+모든 run_*는 예외를 안정적인 종료 코드(사용자 메시지 + 1)로 변환한다 — traceback 노출 금지.
 """
 
 import contextlib
@@ -135,7 +135,7 @@ def _finish_plan(plan_id: str, token: str, *, success: bool) -> None:
 
 
 def _guard(fn: Callable[[], int]) -> int:
-    """공통 예외 변환 — ValueError 는 처방 메시지, 그 외는 짧은 오류 한 줄 (traceback 금지)."""
+    """공통 예외 변환 — ValueError는 처방 메시지, 그 외는 짧은 오류 한 줄 (traceback 금지)."""
     try:
         return fn()
     except ValueError as e:
@@ -172,7 +172,7 @@ def run_sync_turn(mode: str) -> int:
             record_correction(
                 os.getcwd(), str(payload.get("user_text") or ""), str(payload.get("assistant_text") or "")
             )
-        # 개인 에피소드 레인 적재 — 네이티브 루프의 `_persist_turn` 이 하는 일을 외부
+        # 개인 에피소드 레인 적재 — 네이티브 루프의 `_persist_turn`이 하는 일을 외부
         # 클라이언트는 여기서 한다. 프로젝트 메모리 연결 **앞**에 두는 것이 핵심이다:
         # 개인 대화 원문은 팀 뱅크와 무관하고, 아래 early-return 뒤에 두면 프로젝트가
         # 안 붙은 저장소에서는 에피소드가 영영 안 쌓인다 (26-07-28 실측 결함).
@@ -431,7 +431,7 @@ def run_autosave(state: str | None, tier: str, json_out: bool = False) -> int:
 
     def _do() -> int:
         if tier not in _AUTOSAVE_TIERS:
-            ui.fail(f"tier 는 {' | '.join(_AUTOSAVE_TIERS)} 중 하나여야 합니다")
+            ui.fail(f"tier는 {' | '.join(_AUTOSAVE_TIERS)} 중 하나여야 합니다")
             return 1
         if state is not None and state not in ("on", "off"):
             ui.fail("상태는 on 또는 off 여야 합니다")
@@ -582,7 +582,7 @@ def run_merge(src: str, dst: str) -> int:
 
 
 def run_snapshot(provider: str | None = None) -> int:
-    """주입 스냅샷 출력 — CC memory-activate 훅이 subprocess 로 소비 (단일 출처: 훅 재구현 금지).
+    """주입 스냅샷 출력 — CC memory-activate 훅이 subprocess로 소비 (단일 출처: 훅 재구현 금지).
     킬스위치 off·페이지 0 = 빈 출력 + exit 0 (훅이 무주입으로 통과)."""
     if memory.inject_allowed(provider):
         print(memory.snapshot_note(), end="")
@@ -625,7 +625,7 @@ def run_path(directory: str | None = None, reset: bool = False) -> int:
 
 
 def run_obsidian(refresh_only: bool = False, json_out: bool = False) -> int:
-    """개인 위키를 Obsidian vault 로 준비하고 연다 — 설정 스캐폴드 + 목차 재생성 + URI 열기."""
+    """개인 위키를 Obsidian vault로 준비하고 연다 — 설정 스캐폴드 + 목차 재생성 + URI 열기."""
 
     def _do() -> int:
         from ..memory import vault as vault_mod
@@ -641,8 +641,8 @@ def run_obsidian(refresh_only: bool = False, json_out: bool = False) -> int:
         if refresh_only:
             ui.ok(f"vault 준비됨 → {vault}")
             return 0
-        # Obsidian URI 는 이미 등록된 vault 만 연다. 설정만 심어서는 등록되지 않으므로,
-        # 한 번은 사람이 "Open folder as vault" 를 해야 한다 — 그 한 번을 정확히 안내한다.
+        # Obsidian URI는 이미 등록된 vault만 연다. 설정만 심어서는 등록되지 않으므로,
+        # 한 번은 사람이 "Open folder as vault"를 해야 한다 — 그 한 번을 정확히 안내한다.
         uri = f"obsidian://open?path={quote(os.path.join(vault, memory.INDEX), safe='')}"
         try:
             if sys.platform == "darwin":
@@ -652,10 +652,10 @@ def run_obsidian(refresh_only: bool = False, json_out: bool = False) -> int:
             elif not webbrowser.open(uri):  # pragma: no cover - Linux desktop 환경 의존
                 raise OSError("could not open the Obsidian URI")
         except Exception as exc:
-            ui.warn(f"Obsidian URI 열기 실패 ({type(exc).__name__}) — 폴더를 직접 vault 로 연다: {vault}")
+            ui.warn(f"Obsidian URI 열기 실패 ({type(exc).__name__}) — 폴더를 직접 vault로 연다: {vault}")
             return 1
         ui.ok(f"opened personal memory in Obsidian → {vault}")
-        ui.step(f"열리지 않으면 Obsidian 에서 이 폴더를 vault 로 한 번 연다: {vault}")
+        ui.step(f"열리지 않으면 Obsidian에서 이 폴더를 vault로 한 번 연다: {vault}")
         return 0
 
     return _guard(_do)
@@ -697,10 +697,10 @@ def run_connect(
         root = os.getcwd()
         previous = dict(memory_bridge.project_memory_section(load_project(root)) or {})
         # 소유권 신원은 설정 파일이 아니라 사이드카(.asgard/memory/binding.json)에 산다 — 설정 섹션만
-        # 읽으면 재연결이 매번 새 project_uid 를 발급하고, 서버의 기존 마커와 어긋나 자기 뱅크를
-        # "foreign" 으로 거절한다. 그러면 timeout·endpoint 조정도, 설정 변경으로 무효화된 신뢰의
+        # 읽으면 재연결이 매번 새 project_uid를 발급하고, 서버의 기존 마커와 어긋나 자기 뱅크를
+        # "foreign"으로 거절한다. 그러면 timeout·endpoint 조정도, 설정 변경으로 무효화된 신뢰의
         # 재승인도 불가능해진다 — 그 무효화가 안내하는 수리 명령이 바로 이 connect 다 (26-07-26 실측).
-        # find_config 는 이미 같은 사이드카를 병합한다 (단일 신원 출처).
+        # find_config는 이미 같은 사이드카를 병합한다 (단일 신원 출처).
         sidecar = memory_bridge.read_binding_sidecar(root)
         previous_uid = str(previous.get("project_uid") or sidecar.get("project_uid") or "").strip()
         project_uid = previous_uid or str(uuid.uuid4())
@@ -728,8 +728,8 @@ def run_connect(
             "binding_id": binding_id,
         }
         if timeout is not None:
-            # 동기 retain 이 backend LLM 추출을 기다린다 — 느린 게이트웨이는 기본 15s 를 넘긴다
-            # (실측 26-07-24: qwen3:8b 로컬 추출 ~16s → binding write 가 기본값에서 항상 timeout)
+            # 동기 retain이 backend LLM 추출을 기다린다 — 느린 게이트웨이는 기본 15s를 넘긴다
+            # (실측 26-07-24: qwen3:8b 로컬 추출 ~16s → binding write가 기본값에서 항상 timeout)
             config["timeout"] = int(timeout)
         backend = get_backend(config)
         try:
@@ -756,7 +756,7 @@ def run_connect(
                         f"unbound namespace already contains {count} document(s); use a new bank or --adopt-existing explicitly"
                     )
                 if count == 0 and explicit_project_id and not claim and not adopt_existing:
-                    # 빈 뱅크의 명시 이름은 곧 새 뱅크 개설 의사 — 별도 --claim 을 요구하던 마찰 제거
+                    # 빈 뱅크의 명시 이름은 곧 새 뱅크 개설 의사 — 별도 --claim을 요구하던 마찰 제거
                     # (오딘 결정 26-07-23: connect 한 줄이면 아스가르드가 알아서). 데이터가 있는 뱅크의
                     # 입양(--adopt-existing)만 명시 동의로 남긴다.
                     ui.step(f"빈 네임스페이스 '{pid}' — 새 뱅크로 클레임")
@@ -1008,8 +1008,8 @@ def run_norn(
 ) -> int:
     """노른 패스 — LLM 제안 델타를 결정적 검증으로 거른 뒤, --apply 시에만 커밋한다.
 
-    자율 계층 (오딘 결정 26-07-24): --wake(훅)는 due 시 모드에 따라 백그라운드 --auto 를
-    분리 스폰하거나(safe/full) 넛지만 남긴다(off). --auto 는 자격 op 만 즉시 자동 적용."""
+    자율 계층 (오딘 결정 26-07-24): --wake(훅)는 due 시 모드에 따라 백그라운드 --auto를
+    분리 스폰하거나(safe/full) 넛지만 남긴다(off). --auto는 자격 op만 즉시 자동 적용."""
 
     def _do() -> int:
         from ..memory import norn as norn_mod
@@ -1035,7 +1035,7 @@ def run_norn(
                     ui.ok(f"{op['op']} · {op.get('slug') or op.get('src', '')}")
             for op in result["proposed"]:
                 flag = f" ⚠ 극성 충돌 [{op['polarity_conflict']}]" if op.get("polarity_conflict") else ""
-                ui.step(f"제안 잔류 · {op['op']}{flag} — asgard memory norn 으로 검토")
+                ui.step(f"제안 잔류 · {op['op']}{flag} — asgard memory norn으로 검토")
             if result["report"]:
                 ui.step(f"리포트 · {os.path.relpath(result['report'], d)}")
             if not result["applied"] and not result["proposed"]:
@@ -1127,7 +1127,7 @@ def run_project_reflect(question: str, budget: str = "low", json_out: bool = Fal
             output = reflect(root, backend, question, budget=budget, cfg=cfg)
         except ReflectUnavailable as exc:
             ui.fail(str(exc))
-            ui.step('서버 LLM 없이 답하려면 provider 를 연결하거나 [project_memory].reflect 를 "local" 로 둔다')
+            ui.step('서버 LLM 없이 답하려면 provider를 연결하거나 [project_memory].reflect를 "local"로 둔다')
             return 1
         finally:
             backend.close()
@@ -1148,7 +1148,7 @@ def run_project_reflect(question: str, budget: str = "low", json_out: bool = Fal
         if isinstance(memories, list) and memories:
             print(ui.dim(f"근거 memories {len(memories)}건 — 자문일 뿐 완료 증거가 아니다"))
         if output.get("source") == "local":
-            print(ui.dim(f"backend LLM 없이 이쪽 provider 가 합성 · {output.get('detail', '')}"))
+            print(ui.dim(f"backend LLM 없이 이쪽 provider가 합성 · {output.get('detail', '')}"))
         return 0
 
     return _guard(_do)
@@ -1177,7 +1177,7 @@ def run_backup(
             for row in rows:
                 ui.step(f"{row['name']} · {row['bytes'] / 1024:.1f} KiB")
             if not rows:
-                ui.warn("백업 없음 — `asgard memory backup` 으로 첫 스냅샷을 만든다")
+                ui.warn("백업 없음 — `asgard memory backup`으로 첫 스냅샷을 만든다")
             return 0
         if action == "verify":
             summary = mb.verify(mb.resolve(d, name or "latest"))
@@ -1193,7 +1193,7 @@ def run_backup(
             else:
                 ui.ok(
                     f"복원됨: {summary['restored']} · {summary['pages']} page(s) 재색인 · "
-                    f"직전 상태는 {summary['safety_backup']} 로 보관"
+                    f"직전 상태는 {summary['safety_backup']}로 보관"
                 )
             return 0
         if action == "prune":
@@ -1293,7 +1293,7 @@ def run_sync(
             ui.warn(f"원격본 보존: {len(result['conflict_copies'])}건 → conflicts/ (로컬 정본은 유지)")
         moved = sum(len(result.get(k, [])) for k in ("push", "pull", "delete_local", "delete_remote", "merge"))
         if dry_run:
-            ui.ok(f"계획 {moved}건 · 충돌 {len(result.get('conflict', []))}건 — 적용하려면 --dry-run 을 뺀다")
+            ui.ok(f"계획 {moved}건 · 충돌 {len(result.get('conflict', []))}건 — 적용하려면 --dry-run을 뺀다")
         else:
             ui.ok(f"동기화 완료: {moved}건 반영 · 충돌 {len(result.get('conflict', []))}건")
         return 1 if result.get("conflict") else 0
@@ -1302,14 +1302,14 @@ def run_sync(
 
 
 def run_provider(set_spec: str = "", clear: bool = False, json_out: bool = False) -> int:
-    """개인 메모리를 손질하는 provider 를 보이거나 바꾼다 (기본 = 메인 provider)."""
+    """개인 메모리를 손질하는 provider를 보이거나 바꾼다 (기본 = 메인 provider)."""
 
     def _do() -> int:
         from ..memory import manager
 
         if clear:
             manager.save_manager("")
-            ui.ok("개인 메모리 관리자 해제 — 메인 provider 가 손질한다")
+            ui.ok("개인 메모리 관리자 해제 — 메인 provider가 손질한다")
         elif set_spec:
             saved = manager.save_manager(set_spec)
             ui.ok(f"개인 메모리 관리자: {saved['provider']}" + (f" · {saved['model']}" if saved["model"] else ""))
@@ -1330,8 +1330,8 @@ def run_provider(set_spec: str = "", clear: bool = False, json_out: bool = False
             ui.step("손질(norn·pattern)만 멈춘다 — 저장·검색·회상은 LLM 없이 그대로 돈다")
             return 1
         if row["inject_enabled"] and not row.get("inject_allowed", True):
-            ui.warn(f"주입 차단 — {row.get('provider')} 는 개인 메모리를 읽지 못한다 (관리는 가능)")
-            ui.step(f'허용하려면 ~/.asgard 전역 설정 "memory".providers 에 "{row.get("provider")}" 추가')
+            ui.warn(f"주입 차단 — {row.get('provider')}는 개인 메모리를 읽지 못한다 (관리는 가능)")
+            ui.step(f'허용하려면 ~/.asgard 전역 설정 "memory".providers에 "{row.get("provider")}" 추가')
         return 0
 
     return _guard(_do)
@@ -1360,7 +1360,7 @@ def run_pattern(apply: bool = False, json_out: bool = False, due_only: bool = Fa
             # 관리자가 없든 호출이 실패했든 패턴 학습만 멈춘다 — 저장·검색·회상은 무LLM 경로다
             reason = str(exc) if isinstance(exc, ManagerUnavailable) else f"{type(exc).__name__}: {exc}"
             ui.warn(f"패턴 학습을 돌리지 못했다 — {reason}")
-            ui.step("`asgard memory provider --set <provider>` 로 관리자를 지정하거나 메인 provider 를 고친다")
+            ui.step("`asgard memory provider --set <provider>`로 관리자를 지정하거나 메인 provider를 고친다")
             return 1
         if not apply:
             if json_out:
@@ -1406,7 +1406,7 @@ def run_ask(question: str, k: int = 5, json_out: bool = False) -> int:
         try:
             result = pattern.ask(question, root, d, k=k)
         except Exception as exc:
-            # provider 가 없든(ManagerUnavailable) 있는데 실패했든(호출 중 오류) 결과는 같다:
+            # provider가 없든(ManagerUnavailable) 있는데 실패했든(호출 중 오류) 결과는 같다:
             # 합성은 못 하지만 근거는 이미 손에 있다. 회수까지 같이 죽일 이유가 없다.
             reason = str(exc) if isinstance(exc, ManagerUnavailable) else f"{type(exc).__name__}: {exc}"
             ui.warn(f"답을 합성하지 못했다 — {reason}")
@@ -1417,7 +1417,7 @@ def run_ask(question: str, k: int = 5, json_out: bool = False) -> int:
             for rows in evidence.values():
                 for row in rows:
                     ui.step(f"[{row['id']}] {row['text'][:160]}")
-            ui.step("근거만 보여준다 — 합성은 provider 를 고친 뒤 다시")
+            ui.step("근거만 보여준다 — 합성은 provider를 고친 뒤 다시")
             return 1
         if json_out:
             print(_json.dumps(result, ensure_ascii=False, indent=2))
@@ -1434,7 +1434,7 @@ def run_ask(question: str, k: int = 5, json_out: bool = False) -> int:
 
 
 def run_project_evolve(apply: bool = False, json_out: bool = False) -> int:
-    """프로젝트 메모리 진화 패스 — 낡은 record 를 찾아 승인 대기로 올린다 (기본 dry-run)."""
+    """프로젝트 메모리 진화 패스 — 낡은 record를 찾아 승인 대기로 올린다 (기본 dry-run)."""
 
     def _do() -> int:
         from ..project_memory import evolve as evolve_mod
@@ -1449,7 +1449,7 @@ def run_project_evolve(apply: bool = False, json_out: bool = False) -> int:
             plan = evolve_mod.plan_evolve(root)
         except RuntimeError as exc:  # provider 미충족 — 신호만 보여주고 물러난다
             sig = evolve_mod.signals(root)
-            ui.warn(f"제안을 만들 provider 가 없다 — {exc}")
+            ui.warn(f"제안을 만들 provider가 없다 — {exc}")
             ui.step(
                 f"결정론 신호만: 사라진 출처 {len(sig['missing_sources'])}건 · 근사 중복 {len(sig['near_duplicates'])}건"
             )
@@ -1515,7 +1515,7 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
             verify_backend_binding(cfg, backend=backend)
             output = learning.apply(backend) if apply_changes else learning.plan(backend)
             # 종합층 로컬 사본을 갱신한다 — 회수는 이 파일만 읽는다 (턴마다 두 번째 왕복 금지).
-            # apply 직후에는 아직 refresh 가 도는 중일 수 있다: 그때는 준비된 것만 내려가고,
+            # apply 직후에는 아직 refresh가 도는 중일 수 있다: 그때는 준비된 것만 내려가고,
             # 다음 실행이 나머지를 집는다.
             output["synthesis_models"] = learning.snapshot(
                 backend,
@@ -1555,14 +1555,14 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
 
 
 SEMANTIC_NUDGE_FLAG = "semantic-warmup-nudged"
-# 색인 드리프트는 되풀이될 수 있는 고장이라 표시를 따로 둔다 — reindex 가 지운다.
+# 색인 드리프트는 되풀이될 수 있는 고장이라 표시를 따로 둔다 — reindex가 지운다.
 COVERAGE_NUDGE_FLAG = "semantic-coverage-nudged"
 
 
 def _semantic_nudge_line(d: str) -> str:
     """시맨틱이 켜져 있는데 모델이 아직 없을 때만 한 줄. 한 번 말하면 다시 말하지 않는다.
 
-    왜 훅이 아니라 여기인가: 훅은 자식의 stderr 를 삼키므로 "준비 중" 메시지가 사용자에게
+    왜 훅이 아니라 여기인가: 훅은 자식의 stderr를 삼키므로 "준비 중" 메시지가 사용자에게
     닿지 않는다. 그리고 훅은 시간 상한 안에서 도느라 내려받기를 아예 시작하지 않는다
     (memory_semantic.deadline_bound). 그래서 **사람에게 보이는 통로**로 한 번 알려야
     신규 설치가 시맨틱 없이 조용히 계속 도는 일이 없다."""
@@ -1587,7 +1587,7 @@ def _semantic_nudge_line(d: str) -> str:
             )
     if not message:
         return ""
-    # latch 는 사유별로 나눈다: "준비 안 됨"을 한 번 말했다고 그 뒤에 생긴 색인 드리프트까지
+    # latch는 사유별로 나눈다: "준비 안 됨"을 한 번 말했다고 그 뒤에 생긴 색인 드리프트까지
     # 침묵하면, 고쳐야 할 두 번째 고장이 첫 번째 고장의 표시에 먹힌다.
     flag = os.path.join(d, SEMANTIC_NUDGE_FLAG if not sem.model_cached() else COVERAGE_NUDGE_FLAG)
     if os.path.exists(flag):
@@ -1606,7 +1606,7 @@ def run_semantic(action: str = "status", json_out: bool = False) -> int:
     def _do() -> int:
         from .. import memory_semantic as sem
 
-        if action == "nudge":  # 훅 전용 — 준비 안 됐을 때만 한 줄, latch 는 여기가 소유한다
+        if action == "nudge":  # 훅 전용 — 준비 안 됐을 때만 한 줄, latch는 여기가 소유한다
             line = _semantic_nudge_line(memory.ensure_home())
             if line:
                 print(line)
@@ -1630,7 +1630,7 @@ def run_semantic(action: str = "status", json_out: bool = False) -> int:
                 return 0 if state["active"] else 1
             if not state["active"]:
                 ui.fail("임베더를 불러오지 못했다 — lexical 2경로로 계속 돈다")
-                ui.step("uv tool install --force asgard (model2vec 이 빠졌을 수 있다)")
+                ui.step("uv tool install --force asgard (model2vec이 빠졌을 수 있다)")
                 return 1
             ui.ok(f"준비됨: {state['model']} · {state['dim']}d · {state['seconds']}s")
             return 0
@@ -1641,7 +1641,7 @@ def run_semantic(action: str = "status", json_out: bool = False) -> int:
 
 def _emit_semantic_status(json_out: bool) -> int:
     """시맨틱 **상태 표시**. 켜고 끄기·워밍업과 갈라 두는 이유는 부수효과다 — 앞의 셋은 설정을
-    바꾸거나 1GB 를 내려받고, 이쪽은 아무것도 안 바꾼다. 한 함수에 있으면 "상태를 봤더니
+    바꾸거나 1GB를 내려받고, 이쪽은 아무것도 안 바꾼다. 한 함수에 있으면 "상태를 봤더니
     켜졌다"가 가능한 모양이 되고, 조회가 안전하지 않은 명령은 사람이 안 쓴다."""
     from .. import memory_semantic as sem
 
@@ -1661,7 +1661,7 @@ def _emit_semantic_status(json_out: bool) -> int:
     if status["active"]:
         ui.ok(f"임베더 · {status['model']} · {status['dim']}d")
     elif status["mode"] == "off":
-        ui.step("꺼짐 — `asgard memory semantic on` 으로 검색을 켠다")
+        ui.step("꺼짐 — `asgard memory semantic on`으로 검색을 켠다")
         return 0
     else:
         ui.warn("켜져 있지만 임베더를 못 불렀다 — lexical 2경로로 폴백 중")
@@ -1732,14 +1732,14 @@ def run_project_ingest(
                 )
                 if row["lane"] == ingest.LANE_LOCAL:
                     ui.warn(
-                        f"  {row['name']} 은 그래프 수용 상한을 넘는다 "
+                        f"  {row['name']}은 그래프 수용 상한을 넘는다 "
                         f"(예측 unit {row['graph_units']} > {ingest.GRAPH_UNIT_CEILING}) — "
                         "저장소 정본 + 로컬 인덱스로 간다 (검색은 되고, 뱅크는 지킨다)"
                     )
             for row in failed:
                 ui.warn(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
             if ready:
-                ui.warn("아직 저장하지 않음 — 검토 후 --yes 를 붙인다")
+                ui.warn("아직 저장하지 않음 — 검토 후 --yes를 붙인다")
             return 0 if ready or not failed else 1
         if any(d.lane == ingest.LANE_GRAPH for d in ready):
             ingest.ensure_strategies(cfg)

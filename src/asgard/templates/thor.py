@@ -6,7 +6,7 @@ CC(.claude/skills/)와 Cursor·Codex 공용(.agents/skills/) 양 스코프에 �
 
 리졸버는 프레이야식 순수 부분 일치가 아니라 단어 경계 + 동반어 조건을 쓴다 — 26-07-16 Codex
 교차검증에서 오발 반례(RESTORE→rest, capital→api, alternative→alter, healthcare→health,
-drag-and-drop→drop) 가 실증됐다. 짧은 ASCII 용어는 \\b, 중의어(index·cache·schema·drop)는
+drag-and-drop→drop)가 실증됐다. 짧은 ASCII 용어는 \\b, 중의어(index·cache·schema·drop)는
 도메인 동반어가 있을 때만 발화한다."""
 
 import re
@@ -459,7 +459,7 @@ THOR_SKILLS: list[tuple[str, str]] = [
 ]
 
 # 네이티브 디스패치 task → 전용 스킬 매칭 (파일 스킬 로더가 없는 asgard start 세션용 통로 —
-# 모드 A/B 는 파일 스킬이 담당). 부분 일치 키워드 + 단어 경계 정규식 + 동반어 조건 3층.
+# 모드 A/B는 파일 스킬이 담당). 부분 일치 키워드 + 단어 경계 정규식 + 동반어 조건 3층.
 _SUBSTR: dict[str, tuple[str, ...]] = {
     "asgard-thor-thjalfi": (
         "c 언어",
@@ -586,9 +586,9 @@ _SUBSTR: dict[str, tuple[str, ...]] = {
         "롤백",
         "rollback",
         "백업",
-        # ddl/dml/스키마/인덱스/drop 은 아래 정규식·동반어 조건이 담당 (오발 방지)
+        # ddl/dml/스키마/인덱스/drop은 아래 정규식·동반어 조건이 담당 (오발 방지)
     ),
-    # 진단 오버레이 — 토르 디스패치 표면 한정이라 도메인 동반어 불요 (백엔드 문맥이 전제)
+    # 진단 오버레이 — 토르 디스패치 표면 한정이라 도메인 동반어 불필요 (백엔드 문맥이 전제)
     "asgard-thor-gridarvol": (
         "디버깅",
         "디버그",
@@ -632,7 +632,7 @@ _SUBSTR: dict[str, tuple[str, ...]] = {
         "tournament",
     ),
 }
-# 단어 경계 필수 — 부분 일치면 capital→api, batches 는 잡되 debatch 는 제외하는 식의 통제 불가.
+# 단어 경계 필수 — 부분 일치면 capital→api, batches는 잡되 debatch는 제외하는 식의 통제 불가.
 _WORD_RE: dict[str, tuple[str, ...]] = {
     "asgard-thor-mjollnir": (r"\bbatch", r"\bqueue", r"\brace\b"),
     "asgard-thor-lightning": (r"\bapi\b", r"\bsse\b", r"\bauth\b", r"\bp99\b"),
@@ -644,7 +644,7 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
     # 평범한 구현 요청에서 일어난다. 그래서 역할 파일이 반사(게이트 실행)를 항상 켜 두고, 여기서는
     # 형상·수명·비용을 **논제로 삼은** 요청만 잡아 깊은 본문을 싣는다.
     "asgard-thor-thjalfi": (
-        # 짧은 언어 이름은 단독으로 못 쓴다 — `\bc\b` 하나면 "c 드라이브"·"plan c" 까지 걸린다.
+        # 짧은 언어 이름은 단독으로 못 쓴다 — `\bc\b` 하나면 "c 드라이브"·"plan c"까지 걸린다.
         r"\bc\+\+",
         r"\bc(?:89|90|99|11|17|23)\b",
         r"c\s*(?:언어|코드|파일|헤더)",
@@ -716,7 +716,7 @@ def _drop_hit(t: str) -> bool:
 
 
 def _c_lang_hit(t: str) -> bool:
-    """`C 로 …` 는 언어 지목일 수도, "plan c 로 가자" 일 수도 있다 — 만드는 동사가 있을 때만."""
+    """`C로 …`는 언어 지목일 수도, "plan c로 가자" 일 수도 있다 — 만드는 동사가 있을 때만."""
     return bool(_any(t, r"\bc\s*로\b")) and bool(_any(t, r"구현|작성|만들|짜|포팅|포트|이식|고쳐|리팩터"))
 
 
@@ -730,8 +730,8 @@ _COMPANION: dict[str, tuple] = {
 def resolve_thor_skills(task: str) -> list[tuple[str, str]]:
     """디스패치 task → 매칭된 전용 스킬 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
 
-    네이티브 토르 자식 세션의 system 에 직접 주입할 본문을 고른다 (파일 스킬 로더 부재 보완).
-    무매칭 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role 이 이미 그 폴백을 선언한다).
+    네이티브 토르 자식 세션의 system에 직접 주입할 본문을 고른다 (파일 스킬 로더 부재 보완).
+    일치 없음 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role이 이미 그 폴백을 선언한다).
     복수 매칭은 전부 주입 — role 합성 규칙(야른그레이프르 = 오버레이)이 그것을 전제한다."""
     t = task.lower()
 

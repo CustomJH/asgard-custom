@@ -1,6 +1,6 @@
 """Asgard 디자인 토큰 — 브랜드 색 단일 소스 (신성한 황금 · 왕실 네이비).
 
-hex 는 Rich·prompt-toolkit 용. 터미널 raw ANSI 는 ansi() 로 변환해 ui.paint 에
+hex는 Rich·prompt-toolkit 용. 터미널 raw ANSI는 ansi()로 변환해 ui.paint에
 넣는다 (truecolor 터미널은 24bit, 아니면 xterm-256 근사).
 """
 
@@ -27,8 +27,8 @@ LOGO_GRAD_LIGHT = ["#8A6D1E", "#8A6D1E", "#6F5716", "#6F5716", "#6F5716", "#6F57
 
 
 def _truecolor() -> bool:
-    """24bit 색 가능 여부. COLORTERM 이 정본이지만 Windows 는 그 변수를 안 쓴다 — VT 를 켤 수
-    있는 콘솔이면(Windows Terminal·Win10 1703+ conhost) 24bit 를 이해하므로 로고 그라디언트를
+    """24bit 색 가능 여부. COLORTERM이 정본이지만 Windows는 그 변수를 안 쓴다 — VT를 켤 수
+    있는 콘솔이면(Windows Terminal·Win10 1703+ conhost) 24bit를 이해하므로 로고 그라디언트를
     256색 근사로 뭉개지 않는다."""
     colorterm = os.environ.get("COLORTERM", "")
     if "truecolor" in colorterm or "24bit" in colorterm:
@@ -44,7 +44,7 @@ _TRUECOLOR = _truecolor()
 def _x256(r: int, g: int, b: int) -> int:
     """xterm-256 근사 — 6×6×6 색 큐브와 그레이 램프 중 오차 작은 쪽."""
 
-    def q(v: int) -> int:  # 큐브 레벨 0,95,135,175,215,255 로 양자화
+    def q(v: int) -> int:  # 큐브 레벨 0,95,135,175,215,255로 양자화
         return 0 if v < 48 else 1 if v < 115 else min(5, (v - 35) // 40)
 
     def lvl(i: int) -> int:

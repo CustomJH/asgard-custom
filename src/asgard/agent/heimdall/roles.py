@@ -23,7 +23,7 @@ _ROLE_KEY = {
 }
 
 # ── 모델 티어 — 정책 tier → 모델. 상황별 호출: 역할 기본 + full-verify/재계획 승급.
-# 표 자체는 model_tiers 가 provider(모드)별로 해석한다 (claude CLI = 계열 별칭, API = 카탈로그
+# 표 자체는 model_tiers가 provider(모드)별로 해석한다 (claude CLI = 계열 별칭, API = 카탈로그
 # 캐시, 그 외 = 커레이션 하한) — 세대 교체에 이 파일은 개입하지 않는다. 명시 placement
 # ([trinity.<role>])와 알려지지 않은 커스텀 모델은 그대로 존중.
 
@@ -31,7 +31,7 @@ _ROLE_KEY = {
 # 탐색 발견 증류 넛지 문턱 — DIRECT 턴 커맨드 수가 이 이상이면 "탐색이 컸다"로 본다
 _EXPLORE_NUDGE_MIN = 3
 # 딜리버리 전문가 기본 티어 — role frontmatter `delivery:` 선언에서 파생 (CUS-251 선언화).
-# 새 페르소나 = roles/ 에 .md 드롭 (delivery 키 포함) — 이 파일 수정 불요. 정책 "delivery" 가 덮는다.
+# 새 페르소나 = roles/ 에 .md 드롭 (delivery 키 포함) — 이 파일 수정 불필요. 정책 "delivery"가 덮는다.
 _DELIVERY_TIERS = delivery_agents()
 
 # 역할 심볼 — 단폭 BMP 기하 글리프 (프레이야 26-07-16). 이모지(🧠🔨⚖️)는 VS16 더블폭이라 정렬을
@@ -69,9 +69,9 @@ environment at install time).
 Do not use emoji pictograms in user-visible text — when a marker is needed, use text glyphs
 (✓ ⚠ ✗ ▸ · ⠶) only."""
 
-# Canon 8 — 무인 세션은 모델이 스스로 알 수 없다. 모드 B 는 unattended-context 훅이 훅 stdin 의
-# permission_mode 로 감지해 이 계약을 주입한다; 네이티브는 headless 진입에서 ASGARD_UNATTENDED 를
-# 켜므로 여기서 같은 문장을 싣는다 (hooks/unattended_context.py 와 동일 유지 — 단일 문구).
+# Canon 8 — 무인 세션은 모델이 스스로 알 수 없다. 모드 B는 unattended-context 훅이 훅 stdin의
+# permission_mode로 감지해 이 계약을 주입한다; 네이티브는 headless 진입에서 ASGARD_UNATTENDED를
+# 켜므로 여기서 같은 문장을 싣는다 (hooks/unattended_context.py와 동일 유지 — 단일 문구).
 UNATTENDED_NOTE = """
 
 [asgard] Unattended session detected — Canon 8 auto-proceed is in effect: do not end the session
@@ -103,7 +103,7 @@ def _role_body(fname: str) -> str:
 
 
 # 딜리버리 계층 — roles/*.md frontmatter `delivery:` 선언이 단일 소스 (CC 스캐폴드와 공유).
-# readonly = frontmatter tools 에 Write 부재 (loki: 반례 탐색은 도구로 강제) — 하드코딩 아님.
+# readonly = frontmatter tools에 Write 부재 (loki: 반례 탐색은 도구로 강제) — 하드코딩 아님.
 _DELIVERY = {g: _role_body(f"asgard-{g}.md") for g in _DELIVERY_TIERS}
 _DELIVERY_READONLY = frozenset(g for g in _DELIVERY_TIERS if not role_writable(f"asgard-{g}.md"))
 
@@ -132,8 +132,8 @@ MEMORY_SAVE_TOOL: dict = {
         "Persist one self-contained fact the user explicitly asked to remember into personal memory "
         "(Yggdrasil). Call once per fact. Never claim a fact was remembered without calling this."
     ),
-    # 개인 메모리는 워크스페이스 밖(~/.asgard/memory) — repo readonly 강제와 무관하게 DIRECT 에서
-    # 실행 가능해야 한다. mutate 로 태그하면 direct 역할({inspect, execute})이 차단한다.
+    # 개인 메모리는 워크스페이스 밖(~/.asgard/memory) — repo readonly 강제와 무관하게 DIRECT에서
+    # 실행 가능해야 한다. mutate로 태그하면 direct 역할({inspect, execute})이 차단한다.
     "x-asgard-capability": "execute",
     "input_schema": {
         "type": "object",
@@ -155,10 +155,10 @@ MEMORY_SAVE_TOOL: dict = {
 
 
 def _memory_save_support(saved: list[tuple[str, str]]) -> tuple[str, list[dict], dict]:
-    """기억 지시 턴 전용 저장 도구 — 사용자의 명시 지시가 곧 승인이라 ask-before-save 를 우회한다.
+    """기억 지시 턴 전용 저장 도구 — 사용자의 명시 지시가 곧 승인이라 ask-before-save를 우회한다.
 
-    ingest 는 위협·시크릿 스캔과 근사 중복 병합을 그대로 수행하고, 성공은 saved 에 기록된다 —
-    core._direct 가 이 목록으로 실행 증거를 판정한다 (허위 "기억했다" 차단, 26-07-21 실측)."""
+    ingest는 위협·시크릿 스캔과 근사 중복 병합을 그대로 수행하고, 성공은 saved에 기록된다 —
+    core._direct가 이 목록으로 실행 증거를 판정한다 (허위 "기억했다" 차단, 26-07-21 실측)."""
 
     def save(inp: dict) -> str:
         from ...memory import ingest
@@ -233,7 +233,7 @@ def _skill_support(
 def _delivery_matches(root: str, task: str) -> dict[str, list[tuple[str, str]]]:
     """과업 텍스트에 결정론 매칭된 딜리버리 정본 스킬 (agent → [(name, description)]).
 
-    실패는 조용히 빈 결과 (fail-open) — 무매칭 과업은 어느 노트도 만들지 않는다."""
+    실패는 조용히 빈 결과 (fail-open) — 일치하는 정본이 없는 과업은 어느 노트도 만들지 않는다."""
     from ...skill_registry import available_skills, resolve_skills
 
     matches: dict[str, list[tuple[str, str]]] = {}
@@ -253,9 +253,9 @@ def delivery_canon_note(root: str, task: str) -> str:
     """Thinker 계획 컨텍스트 — 과업에 매칭된 딜리버리 정본 스킬의 존재를 알린다.
 
     외부 모드(CC/Codex/Cursor)는 코디네이터가 스킬 카탈로그를 보고 위임 브리프에 정본 로드를
-    명시하지만, 네이티브 Thinker 는 딜리버리 스킬 표면이 없어 저장소 문서 검색만으로 "정본
+    명시하지만, 네이티브 Thinker는 딜리버리 스킬 표면이 없어 저장소 문서 검색만으로 "정본
     부재"를 확정하고 형태(응답 구조·계층 배치)를 발명해 verify 계약으로 고정할 수 있다.
-    결정론 리졸버로 이 과업에 매칭된 정본만 이름+설명으로 주입한다 — 무매칭 과업은 빈 문자열
+    결정론 리졸버로 이 과업에 매칭된 정본만 이름+설명으로 주입한다 — 일치하는 정본이 없는 과업은 빈 문자열
     (토큰 회귀 없음)."""
     lines = [
         f"  - {agent} · {name}: {desc[:220]}"
@@ -279,7 +279,7 @@ def delivery_canon_note(root: str, task: str) -> str:
 
 
 def worker_canon_hint(root: str, task: str) -> str:
-    """Worker 착수 힌트 — 정본이 전문가 소유일 때 관찰-정지 대신 dispatch 를 지시한다.
+    """Worker 착수 힌트 — 정본이 전문가 소유일 때 관찰-정지 대신 dispatch를 지시한다.
 
     실증 근거(26-07-21): 정본 스킬이 thor 전용이라 worker 직접 로드가 거부되자 "형태 미결정"으로
     관찰만 하다 no-op 종료 (3/3 재현) — 턴 예산의 절반을 태우는 착수 정지."""
@@ -307,10 +307,10 @@ def work_shape_note(
 ) -> str:
     """범위 형상 노트 — 결정론 사이징 + 결속 규율 스킬 지목 (fail-open: 실패는 빈 문자열).
 
-    read-only 요청이나 무매칭은 빈 문자열이라 토큰 회귀가 없다. 형상 판정은 순수 함수라
+    read-only 요청이나 일치가 없으면 빈 문자열이라 토큰 회귀가 없다. 형상 판정은 순수 함수라
     같은 지시에 같은 노트가 나온다 — 모델 자율 선택은 그대로 두고 발견 실패만 걷어내는 층이다.
 
-    `changed` 는 관측된 변경 파일 목록이다. 넘기면 요청 문구가 아니라 **손댄 형상**으로도
+    `changed`는 관측된 변경 파일 목록이다. 넘기면 요청 문구가 아니라 **손댄 형상**으로도
     구조 규율이 켜진다 (계획 대상 파일은 계획 시점에, 변경 파일은 판정 시점에 사실이 된다)."""
     try:
         from ...skill_scope import scope_note
@@ -323,9 +323,9 @@ def work_shape_note(
 def _mimir_note(request: str) -> str:
     """미미르 안내 계약 주입 — 코드 이해·설명 요청의 DIRECT 턴 한정.
 
-    DIRECT 는 dispatch 툴이 없는 read-only 단일 세션이다 (write 에이전트 혼입 금지) —
-    설명 과업의 미미르 계약(실행 흐름 서사 + 인지부채 방어)을 모드 A 처럼 인라인 주입한다.
-    무매칭·실패는 조용히 빈 문자열 (fail-open — 일반 DIRECT 문답은 그대로)."""
+    DIRECT는 dispatch 툴이 없는 read-only 단일 세션이다 (write 에이전트 혼입 금지) —
+    설명 과업의 미미르 계약(실행 흐름 서사 + 인지부채 방어)을 모드 A처럼 인라인 주입한다.
+    일치 없음과 실패는 조용히 빈 문자열 (fail-open — 일반 DIRECT 문답은 그대로)."""
     try:
         from ...templates.mimir import mimir_note
 
@@ -338,7 +338,7 @@ def _identity(root: str) -> str:
     """세션 정체성 — 캐논(AGENTS.md) + 네이티브 규칙 + 이 세션이 무인인지.
 
     무인 여부는 "이 세션이 네이티브 루프다"와 같은 등급의 세션 사실이라 정체성에 붙는다
-    (모드 B 에서 unattended-context 훅이 메인 스레드에 주입하는 것과 같은 자리)."""
+    (모드 B에서 unattended-context 훅이 메인 스레드에 주입하는 것과 같은 자리)."""
     p = os.path.join(root, "AGENTS.md")
     if os.path.exists(p):
         try:
@@ -346,7 +346,7 @@ def _identity(root: str) -> str:
                 return handle.read() + NATIVE_NOTE + unattended_note()
         except Exception:
             pass
-    return agents_md(os.path.basename(root)) + NATIVE_NOTE + unattended_note()  # 내장 정체성 (스캐폴드 불요)
+    return agents_md(os.path.basename(root)) + NATIVE_NOTE + unattended_note()  # 내장 정체성 (스캐폴드 불필요)
 
 
 def _role_prompt(fname: str) -> str:

@@ -15,11 +15,11 @@ from . import theme, winterm
 def color_capable() -> bool:
     """ANSI 지원 여부 — 이 한 판정에 UI 전체가 달려 있다 (색·픽커 패널·하단 독·pt 입력 프레임).
 
-    POSIX 는 TERM 이 정본이다: 미설정·dumb 이면 docker exec 같은 자리에서 raw 코드가 뜨므로 끈다.
-    **Windows 는 TERM 을 아예 쓰지 않는다.** 같은 규칙을 태우면 Windows Terminal 이 dumb 으로
-    판정돼 위 넷이 한꺼번에 꺼지고, 사용자에겐 "터미널 UI 가 적용 안 된 asgard" 로 보인다
-    (26-07-27 실측). Windows 의 정본은 환경변수가 아니라 콘솔 핸들 — VT 처리를 켤 수 있으면
-    ANSI 를 이해하는 콘솔이고, 파이프·파일로 물렸으면 그 호출이 실패해 저절로 색이 꺼진다.
+    POSIX는 TERM이 정본이다: 미설정·dumb 이면 docker exec 같은 자리에서 raw 코드가 뜨므로 끈다.
+    **Windows는 TERM을 아예 쓰지 않는다.** 같은 규칙을 태우면 Windows Terminal이 dumb으로
+    판정돼 위 넷이 한꺼번에 꺼지고, 사용자에겐 "터미널 UI가 적용 안 된 asgard"로 보인다
+    (26-07-27 실측). Windows의 정본은 환경변수가 아니라 콘솔 핸들 — VT 처리를 켤 수 있으면
+    ANSI를 이해하는 콘솔이고, 파이프·파일로 물렸으면 그 호출이 실패해 저절로 색이 꺼진다.
     """
     if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
         return False
@@ -87,7 +87,7 @@ def disp_width(s: str) -> int:
 def fit(s: str, cols: int) -> str:
     """단일 논리 행 + **표시 폭** 기준 절단 (넘치면 … 로 닫는다).
 
-    oneline 과 갈리는 지점은 한 가지다: 글자 수가 아니라 칸 수를 센다. 한국어 한 글자는 두 칸이라
+    oneline과 갈리는 지점은 한 가지다: 글자 수가 아니라 칸 수를 센다. 한국어 한 글자는 두 칸이라
     글자 수로 자르면 절반 폭에서 터미널이 줄을 접고, 접힌 자리에서 보드·독의 열 계산이 무너진다.
     """
     one = " ".join(str(s).split())
@@ -141,7 +141,7 @@ def head(action: str, steps: int = 0) -> None:
 
 
 def steps(n: int) -> None:
-    """phase 분모를 늦게 확정 — head 시점에 총 단계 수를 모를 때 (update 의 check 분기 등)."""
+    """phase 분모를 늦게 확정 — head 시점에 총 단계 수를 모를 때 (update의 check 분기 등)."""
     global _STEPS
     _STEPS = n
 
@@ -180,7 +180,7 @@ def done(msg: str = "") -> None:
 
 class bar:
     """Determinate 진행률 바 — `with ui.bar('label', total_bytes) as b: b.advance(n)`.
-    골드 채움 + 흐린 잔여 + % + MB. non-tty/--quiet 은 no-op. total 불명(0)은 누적 MB 만."""
+    골드 채움 + 흐린 잔여 + % + MB. non-tty/--quiet은 no-op. total 불명(0)은 누적 MB만."""
 
     _CELLS = 24
 

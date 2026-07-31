@@ -32,7 +32,7 @@ ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = {
     "worker": frozenset({"inspect", "mutate", "execute", "coordinate"}),
     "verifier": frozenset({"inspect", "execute", "verify"}),
     "freyja": frozenset({"inspect", "mutate", "execute"}),
-    # 시각 편대장 — coordinate 를 가진 유일한 딜리버리 (서브 프레이야 편성, 깊이 1)
+    # 시각 편대장 — coordinate를 가진 유일한 딜리버리 (서브 프레이야 편성, 깊이 1)
     "thor": frozenset({"inspect", "mutate", "execute"}),
     # 백엔드 편대장 — 서브 토르 편성의 유일한 예외 계층 (깊이 1)
     "thor-lead": frozenset({"inspect", "mutate", "execute", "coordinate"}),
@@ -265,10 +265,10 @@ _TICKET_READS = frozenset({"list", "get", "projects"})
 def _ticket_capability(args: dict) -> str:
     """읽기는 inspect, 쓰기는 execute.
 
-    mutate 가 아닌 이유는 memory_propose 와 같다: 티켓은 사용자의 소스가 아니라 워크스페이스
+    mutate가 아닌 이유는 memory_propose와 같다: 티켓은 사용자의 소스가 아니라 워크스페이스
     (`<에이전트 홈>/studio/`)에 사는 에이전트 소유 상태다 — 리포 안에는 아무것도 안 남는다.
-    그래서 이 툴은 작업 트리를 안 건드린다. mutate 로 잠그면
-    **결함을 찾은 Verifier 가 그 결함을 적어 둘 수 없다** — 읽기 전용 역할이야말로 티켓을
+    그래서 이 툴은 작업 트리를 안 건드린다. mutate로 잠그면
+    **결함을 찾은 Verifier가 그 결함을 적어 둘 수 없다** — 읽기 전용 역할이야말로 티켓을
     가장 많이 끊어야 하는 자리다."""
     return "inspect" if args.get("action") in _TICKET_READS else "execute"
 
@@ -313,15 +313,15 @@ def _process_capability(args: dict) -> str:
 def _register_agent_state_tools(registry: "ToolRegistry") -> None:
     """에이전트가 소유한 상태를 만지는 툴들 — 워크스페이스의 소스가 아니라 그 옆에 사는 것들.
 
-    셋 다 `mutate` 가 아닌 이유가 같다: 개인 메모리는 워크스페이스 밖이고, 프로젝트 메모리와
-    티켓은 `.asgard/` 안의 에이전트 소유 자리다. 여기를 mutate 로 잠그면 **읽기 전용 역할이
+    셋 다 `mutate`가 아닌 이유가 같다: 개인 메모리는 워크스페이스 밖이고, 프로젝트 메모리와
+    티켓은 `.asgard/` 안의 에이전트 소유 자리다. 여기를 mutate로 잠그면 **읽기 전용 역할이
     자기가 찾은 것을 아무 데도 못 적는다**."""
     # 사람은 명령어를 치지 않는다 — 문서를 던지고 "이거 프로젝트에 넣어줘"라고 말한다.
-    # 그 말이 닿을 자리가 여기다. 쓰기가 아니라 승인 대기 제안이라 inspect 로 충분하다.
+    # 그 말이 닿을 자리가 여기다. 쓰기가 아니라 승인 대기 제안이라 inspect로 충분하다.
     registry.register(ToolSpec("ingest_document", "inspect", T.INGEST_DOCUMENT_TOOL, _ingest_document))
-    # 자동저장이 켜지면 이 툴은 제안이 아니라 저장이다 — 그래서 inspect 가 아니라 execute 다
-    # (roles.MEMORY_SAVE_TOOL 과 같은 판정: 개인 메모리는 워크스페이스 밖이라 repo readonly 와
-    # 무관하고, 그래서 mutate 도 아니다). execute 는 모든 역할이 갖고 있어 노출은 안 좁아진다.
+    # 자동저장이 켜지면 이 툴은 제안이 아니라 저장이다 — 그래서 inspect가 아니라 execute 다
+    # (roles.MEMORY_SAVE_TOOL과 같은 판정: 개인 메모리는 워크스페이스 밖이라 repo readonly와
+    # 무관하고, 그래서 mutate도 아니다). execute는 모든 역할이 갖고 있어 노출은 안 좁아진다.
     registry.register(ToolSpec("memory_propose", "execute", T.MEMORY_PROPOSE_TOOL, _memory_propose))
     # 일감을 스스로 끊는 자리. 못 한 일·미룬 일·쪼갠 일이 마지막 보고문 한 줄로만 남으면
     # 다음 세션이 그것을 못 읽는다 — 번호가 붙어야 다음 턴에도 그 일을 부를 수 있다.

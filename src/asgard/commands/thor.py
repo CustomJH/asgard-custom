@@ -2,7 +2,7 @@
 
 계약 세 줄: ① 무인자 호출은 정적 메뉴가 아니라 **작업 트리를 읽고** 다음 두어 개를 고른다 —
 "무엇부터"에 답하지 못하는 라우터는 라우터가 아니다, ② 동사는 플레이북 원문을 그대로 싣는다
-(요약하면 절차가 아니라 인상이 된다), ③ `gate` 는 판정과 처방을 같은 화면에 싣고, 못 잰 것을
+(요약하면 절차가 아니라 인상이 된다), ③ `gate`는 판정과 처방을 같은 화면에 싣고, 못 잰 것을
 숨기지 않는다.
 """
 
@@ -130,7 +130,7 @@ def _provenance(note: thor_survey.Note, moved: tuple[str, ...] | None) -> str:
     if not note.sourced:
         return "출처 미상 — 언제 적혔는지 기록에 없다"
     when = note.at.split("T")[0]
-    return f"{when}" + (f" · 그 뒤 {'·'.join(moved)} 가 움직였다" if moved else " · 적힌 뒤 움직인 것 없음")
+    return f"{when}" + (f" · 그 뒤 {'·'.join(moved)}가 움직였다" if moved else " · 적힌 뒤 움직인 것 없음")
 
 
 def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
@@ -180,10 +180,10 @@ def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
             ui.step(ui.dim(f"                {_provenance(note, drift.get(key))}"))
         if drift:
             ui.warn(f"적힌 뒤 세계가 움직인 판단 {len(drift)} — {', '.join(sorted(drift))}")
-            ui.step(ui.dim("    다시 확인하고 --note 로 덮어써라 — 낡은 판단은 틀린 판단보다 조용해서 더 위험하다"))
+            ui.step(ui.dim("    다시 확인하고 --note로 덮어써라 — 낡은 판단은 틀린 판단보다 조용해서 더 위험하다"))
         if survey.unsourced:
             ui.warn(f"출처를 모르는 판단 {len(survey.unsourced)} — {', '.join(survey.unsourced)}")
-            ui.step(ui.dim("    언제 적혔는지 모르면 낡았는지도 모른다 — 확인 후 --note 로 다시 적어라"))
+            ui.step(ui.dim("    언제 적혔는지 모르면 낡았는지도 모른다 — 확인 후 --note로 다시 적어라"))
         if blind := thor_survey.unmeasured(survey):
             ui.step(ui.dim(f"구조 낡음을 못 잰 판단 {len(blind)} — {', '.join(blind)} (지문 자가 바뀌었다)"))
             ui.step(ui.dim("    침묵은 '안 움직였다'가 아니라 '못 쟀다'다 — 다시 적으면 이 줄이 사라진다"))
@@ -365,7 +365,7 @@ def run_thor(
     _mark(root, name)
     if name == "survey":
         # 정찰만 결정론 절반을 갖는다 — 매니페스트는 기계가 읽는 편이 사람보다 낫고 빠짐없다.
-        # `--note` 로 부른 것은 "배운다"가 아니라 "적는다"이므로 플레이북을 다시 싣지 않는다.
+        # `--note`로 부른 것은 "배운다"가 아니라 "적는다"이므로 플레이북을 다시 싣지 않는다.
         if not notes and not json_out:
             _show(name)
         return _run_survey(root, notes, json_out)

@@ -1,17 +1,17 @@
 """AgentSession — 단일 컨텍스트 tool use 루프.
 
 세션 = (system, tools, messages) 하나. 서브에이전트(역할·딜리버리)는 새 AgentSession —
-child context 라 프로세스 스폰 없이 중첩된다 (중첩 디스패치의 구조적 기반).
+child context라 프로세스 스폰 없이 중첩된다 (중첩 디스패치의 구조적 기반).
 
 트랜스포트 5종 (루프·툴 실행은 공유, API 호출·파싱만 분기):
   anthropic     — Messages API (스키마리스 bash/editor, content 블록)
   openai_compat — chat.completions (function 툴, reasoning_content 스트리밍 — nvidia NIM 등)
   openai_responses — 공식 OpenAI Responses API (function tool loop).
-  claude_cli    — 로컬 claude CLI(Claude Code) 를 Agent SDK 로 구동 (claude_native.py).
-                  예외적으로 내부 루프는 Claude Code 소유 — 커스텀 툴은 in-process MCP 로
+  claude_cli    — 로컬 claude CLI(Claude Code)를 Agent SDK로 구동 (claude_native.py).
+                  예외적으로 내부 루프는 Claude Code 소유 — 커스텀 툴은 in-process MCP로
                   이쪽 핸들러 실행, 커맨드/쓰기/토큰은 이벤트 관찰로 집계 (계약 유지).
   codex_responses — Asgard-owned ChatGPT OAuth로 Codex Responses API를 직접 호출.
-루프를 Asgard 가 소유하는 게 핵심 — strands/langchain 은 루프를 가져가서 Trinity 강제화를 없앤다.
+루프를 Asgard가 소유하는 게 핵심 — strands/langchain은 루프를 가져가서 Trinity 강제화를 없앤다.
 """
 
 from __future__ import annotations
@@ -38,8 +38,8 @@ class TurnCancelled(Exception):
     """사용자 취소 — 세션 결과가 아니라 턴 전체의 일급 결과.
 
     재시도·placement 폴백·역할 전이·디스패치 편입·wave 진행·메모리 보존을 전부 멈춘다.
-    취소를 이 예외로 승격하지 않으면 stop_reason="cancelled" 가 평범한 결과로 흘러
-    Trinity 가 계속 진행하거나 취소된 산출이 편입된다. (세션 계층 정의 — heimdall
+    취소를 이 예외로 승격하지 않으면 stop_reason="cancelled"가 평범한 결과로 흘러
+    Trinity가 계속 진행하거나 취소된 산출이 편입된다. (세션 계층 정의 — heimdall
     하위 협력자(dispatch/waves)가 core 순환 임포트 없이 공유한다.)"""
 
 
@@ -58,15 +58,15 @@ class SessionResult:
     tool_calls: list[dict] = field(default_factory=list)
     tokens: int = 0  # 이 세션 누적 토큰 (매 iteration input+output 합산 = 지출량) — status line 사용량
     context_tokens: int = 0  # 마지막 API 호출의 전체 프롬프트+출력 = 현재 컨텍스트 크기 — 창 % 는 이걸로
-    # (tokens 는 iteration 마다 전체 프롬프트를 재합산하므로 컨텍스트 창 대비 % 가 100 을 넘는다)
-    # 프롬프트 캐시 계측 (anthropic 트랜스포트) — read 는 ~0.1×, write 는 ~1.25× 과금
+    # (tokens는 iteration 마다 전체 프롬프트를 재합산하므로 컨텍스트 창 대비 % 가 100을 넘는다)
+    # 프롬프트 캐시 계측 (anthropic 트랜스포트) — read는 ~0.1×, write는 ~1.25× 과금
     cache_read_tokens: int = 0  # 캐시에서 읽은 누적 입력 토큰
     cache_write_tokens: int = 0  # 캐시에 쓴 누적 입력 토큰
     uncached_input_tokens: int = 0  # 정가로 처리된 누적 입력 토큰 — 적중률 분모용
 
 
 def make_client(rp: ResolvedProvider):
-    """provider → SDK 클라이언트. 키는 resolve() 가 env 또는 credentials.json 에서 찾아둔 값(rp.api_key)."""
+    """provider → SDK 클라이언트. 키는 resolve()가 env 또는 credentials.json에서 찾아둔 값(rp.api_key)."""
     if rp.profile.api_mode == "anthropic":
         import anthropic
 
@@ -85,7 +85,7 @@ def make_client(rp: ResolvedProvider):
     if rp.profile.api_mode == "claude_cli":
         from .claude_native import make_native_client
 
-        return make_native_client()  # 마커 — 실제 스폰·인증은 Agent SDK/CLI 가 해석
+        return make_native_client()  # 마커 — 실제 스폰·인증은 Agent SDK/CLI가 해석
 
     raise NotImplementedError(f"api_mode '{rp.profile.api_mode}' 미지원")
 
@@ -145,7 +145,7 @@ def _invalid_encrypted_content(error: Exception) -> bool:
 
 
 # 창 미상 프로바이더의 프룬 폴백 상한 — 주류 창(≥128k) 기준 보수값. 더 작은 모델은
-# config [provider] context_window 로 실제 창을 알려야 정확히 보호된다.
+# config [provider] context_window로 실제 창을 알려야 정확히 보호된다.
 _FALLBACK_CONTEXT_WINDOW = 128_000
 
 
@@ -180,7 +180,7 @@ class AgentSession:
     ):
         self.client, self.rp, self.root, self.system = client, rp, root, system
         # 이 세션을 도는 에이전트 (에인헤랴르 id). None = 활성 에이전트 그대로.
-        # 스웜에서 역할마다 다른 에이전트를 세우면 여기 이름이 박히고, run() 이 그 홈으로
+        # 스웜에서 역할마다 다른 에이전트를 세우면 여기 이름이 박히고, run()이 그 홈으로
         # 스코프를 열어 **턴 안의 메모리 도구까지** 그 에이전트의 1차 기억을 쓴다.
         # 생성자에서 스코프를 열어봐야 소용없다 — 툴 호출은 run() 안에서 일어난다.
         self.agent = agent or None
@@ -192,12 +192,12 @@ class AgentSession:
         self._readonly_unisolated = False
         self.readonly_paths = tuple(str(path) for path in readonly_paths)
         # readonly = 역할→도구 구조 강제 (thinker/verifier/loki) — editor write 거부.
-        # lagom: bash 리다이렉션 write 는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
+        # lagom: bash 리다이렉션 write는 못 막는다 — 남는 흔적은 게이트(diff/orphan-write)가 잡는다.
         self.readonly = readonly
         self.role = role or ("readonly" if readonly else "legacy")
         self.handlers = tool_handlers or {}
         self.registry = build_session_registry(extra_tools, self.handlers)
-        # 세션 중 schema 를 동결해 prompt cache key 와 실제 호출 가능 표면을 일치시킨다.
+        # 세션 중 schema를 동결해 prompt cache key와 실제 호출 가능 표면을 일치시킨다.
         self.tools = self.registry.schemas(ToolContext(root=self.cwd, role=self.role, readonly=self.readonly))
         self.on_text = on_text or (lambda s: None)
         # 모델이 되뱉은 메모리 펜스를 표면에 닿기 전에 걷어낸다. 델타를 가로질러 쪼개진
@@ -216,8 +216,8 @@ class AgentSession:
         self.messages: list[dict] = []
         self._codex_session_id = uuid.uuid4().hex
         self._codex_reasoning_replay_enabled = True
-        # 딜리버리 디스패치 자식 마커 — claude_cli 에서 부모가 spawn permit 을 쥔 채 기다리므로
-        # 자식은 permit 을 재요구하지 않는다 (재진입 데드락, CUS-246). _dispatch_handler 가 켠다.
+        # 딜리버리 디스패치 자식 마커 — claude_cli에서 부모가 spawn permit을 쥔 채 기다리므로
+        # 자식은 permit을 재요구하지 않는다 (재진입 데드락, CUS-246). _dispatch_handler가 켠다.
         self._nested_dispatch = False
         # 프롬프트 캐싱 (anthropic 전용, 상시 기본) — config [cache] enabled/ttl, 세션 생성 시 1회 해석
         from .prompt_cache import cache_settings
@@ -295,7 +295,7 @@ class AgentSession:
 
     def _throttle(self) -> None:
         """RPM 상한 provider(NVIDIA NIM 무료 40rpm 등) — API 호출 직전 슬롯 대기.
-        무상한 provider 는 no-op. 대기가 길어지면 흐린 한 줄로 정직하게 알린다."""
+        무상한 provider는 no-op. 대기가 길어지면 흐린 한 줄로 정직하게 알린다."""
         from .rate_limit import limiter_for
 
         lim = limiter_for(self.rp)
@@ -369,7 +369,7 @@ class AgentSession:
         """턴 실행 — 이 세션에 에이전트가 박혀 있으면 그 에이전트의 홈으로 스코프를 열고 돈다.
 
         스코프를 **여기서** 여는 이유: 메모리 회수·저장은 턴 안의 툴 호출이라 생성자 시점의
-        스코프는 이미 닫혀 있다. contextvar 라 스레드/태스크마다 독립적이므로, 역할 셋을
+        스코프는 이미 닫혀 있다. contextvar라 스레드/태스크마다 독립적이므로, 역할 셋을
         병렬로 돌려도 서로의 홈을 덮어쓰지 않는다 (환경변수였다면 덮어쓴다)."""
         if not self.agent:
             return self._run(user_content)
@@ -412,7 +412,7 @@ class AgentSession:
             if self.rp.profile.api_mode == "claude_cli":
                 from . import claude_native
 
-                # claude_cli 는 내부 루프를 Claude Code 가 소유 — 저널은 run 전체를 한 호출로 기록
+                # claude_cli는 내부 루프를 Claude Code가 소유 — 저널은 run 전체를 한 호출로 기록
                 jid, j0 = self._journal_started("claude_cli")
                 try:
                     r = claude_native.run(self, user_content)
@@ -449,7 +449,7 @@ class AgentSession:
     def _window(self) -> int:
         # 창 미상(profile=0, openai_compat/nvidia)이어도 압축은 걸려야 한다 — 폴백 없이는
         # 컨텍스트가 무한 성장해 API 한도 초과(400 fatal)로만 터진다 (CUS-248).
-        # 정밀값은 config [provider] context_window 로 지정.
+        # 정밀값은 config [provider] context_window로 지정.
         return self.rp.context_window or self.rp.profile.context_window or _FALLBACK_CONTEXT_WINDOW
 
     @property
@@ -503,12 +503,12 @@ class AgentSession:
             self.messages = messages
             self._report_compaction(event)
             if event.get("archived"):
-                self._tool_line("⌫", f"방출 구간 {event['archived']}건 보관 — context_recall 로 회수 가능")
+                self._tool_line("⌫", f"방출 구간 {event['archived']}건 보관 — context_recall로 회수 가능")
         except Exception:
             return  # 압축은 편의 층이다 — 여기서 죽으면 세션이 죽는다
 
     def _note_server_compaction(self, content: object) -> None:
-        """T3 — provider 가 서버측에서 압축했으면 계측하고 표면에 알린다."""
+        """T3 — provider가 서버측에서 압축했으면 계측하고 표면에 알린다."""
         try:
             if self.huginn.note_server_compaction(content):
                 self._tool_line("⌫", "컨텍스트 압축 — provider 서버측 요약(compaction 블록)")
@@ -538,12 +538,12 @@ class AgentSession:
     def _anthropic_stream(self, **kwargs):
         """Messages 스트림 — T3(서버측 압축)가 켜져 있으면 beta 표면으로 올린다.
 
-        opt-in 인 이유: 서버측 압축은 provider 가 히스토리 절단을 소유하므로 우리 사다리·보관소·
+        opt-in 인 이유: 서버측 압축은 provider가 히스토리 절단을 소유하므로 우리 사다리·보관소·
         교훈 루프가 그 구간을 못 본다. 켜는 순간 관측 가능성을 절감과 맞바꾸는 거래라 기본값은 off.
 
         SDK 미지원·베타 미승인은 예외가 아니라 폴백이다. 스트림 생성은 네트워크를 타지 않으므로
-        (요청은 __enter__ 에서 난다) 여기서 잡히는 건 시그니처 불일치뿐이고, 400/403 은 호출부의
-        _server_compaction_retry() 가 받는다. 한 번 실패하면 세션 내내 클라이언트측만 쓴다."""
+        (요청은 __enter__에서 난다) 여기서 잡히는 건 시그니처 불일치뿐이고, 400/403은 호출부의
+        _server_compaction_retry()가 받는다. 한 번 실패하면 세션 내내 클라이언트측만 쓴다."""
         self._server_compaction_active = False
         extra = {} if getattr(self, "_server_compaction_failed", False) else self.huginn.server_kwargs()
         if not extra:
@@ -562,10 +562,10 @@ class AgentSession:
             self._tool_line("⚠", "서버측 압축 미지원 — 클라이언트측 압축으로 폴백")
 
     def _server_compaction_retry(self) -> bool:
-        """서버측 압축이 붙은 요청이 터졌는가 — True 면 호출부가 같은 iteration 을 재시도한다.
+        """서버측 압축이 붙은 요청이 터졌는가 — True 면 호출부가 같은 iteration을 재시도한다.
 
-        beta 헤더·context_management 미승인은 400/403 으로 오는데, 이건 세션을 죽일 이유가 아니라
-        기능을 끄고 다시 보낼 이유다. 재시도 1회의 대가로 opt-in 이 세션을 못 깨게 만든다."""
+        beta 헤더·context_management 미승인은 400/403으로 오는데, 이건 세션을 죽일 이유가 아니라
+        기능을 끄고 다시 보낼 이유다. 재시도 1회의 대가로 opt-in이 세션을 못 깨게 만든다."""
         if not getattr(self, "_server_compaction_active", False):
             return False
         self._server_compaction_active = False
@@ -623,7 +623,7 @@ class AgentSession:
                 if self._server_compaction_retry():
                     continue  # opt-in 기능이 세션을 깨지 않는다 — 끄고 같은 iteration 재시도
                 raise
-            if resp is None:  # 취소 중단 — 부분 텍스트를 assistant 로 닫아 히스토리 API-유효 유지
+            if resp is None:  # 취소 중단 — 부분 텍스트를 assistant로 닫아 히스토리 API-유효 유지
                 call_returned(self.root, jid, duration_ms=(time.monotonic() - j0) * 1000, error="cancelled")
                 self.messages.append({"role": "assistant", "content": "".join(parts) or "[사용자 취소]"})
                 self._fence_tail()
@@ -631,13 +631,13 @@ class AgentSession:
                 result.stop_reason = "cancelled"
                 return result
             self.messages.append({"role": "assistant", "content": resp.content})
-            self._note_server_compaction(resp.content)  # T3 — provider 가 압축했으면 계측
+            self._note_server_compaction(resp.content)  # T3 — provider가 압축했으면 계측
             result.text = _fence_scrub("".join(b.text for b in resp.content if b.type == "text"))
             result.stop_reason = resp.stop_reason or ""
             u = getattr(resp, "usage", None)
             counts: dict[str, int] = {}
             if u:
-                # 캐시 적중분은 input_tokens 에서 빠진다 — 셋을 합쳐야 실제 컨텍스트 크기.
+                # 캐시 적중분은 input_tokens에서 빠진다 — 셋을 합쳐야 실제 컨텍스트 크기.
                 # 이걸 빼먹으면 캐싱 도입 후 창 80% 프룬 트리거가 과소계상으로 안 터진다.
                 inp = getattr(u, "input_tokens", 0) or 0
                 cr = getattr(u, "cache_read_input_tokens", 0) or 0
@@ -692,8 +692,8 @@ class AgentSession:
         result = SessionResult(text="", stop_reason="")
         extra = self.rp.profile.request_extra_body(self.rp.model)  # 선택 모델에 유효한 provider 고유 필드만
         sys_msg = [{"role": "system", "content": self.system}]
-        # 마커 주입은 실측 검증 조합만 (화이트리스트 — 미검증 provider 에 비표준 필드는 400 위험).
-        # OpenAI 자체는 자동 프리픽스 캐시라 마커 불요 — 계측(cached_tokens)은 아래 usage 에서 공통.
+        # 마커 주입은 실측 검증 조합만 (화이트리스트 — 미검증 provider에 비표준 필드는 400 위험).
+        # OpenAI 자체는 자동 프리픽스 캐시라 마커 불필요 — 계측(cached_tokens)은 아래 usage에서 공통.
         from .prompt_cache import openai_cache_markers_supported
 
         inject = self.cache_enabled and openai_cache_markers_supported(self.rp.base_url, self.rp.model)
@@ -720,7 +720,7 @@ class AgentSession:
             jid, j0 = self._journal_started("openai_compat")
             jcounts: dict[str, int] = {}
             try:
-                # 429 만 여기서 흡수 (Retry-After 존중) — NIM 무료 티어는 스로틀에도 전역 트래픽으로
+                # 429만 여기서 흡수 (Retry-After 존중) — NIM 무료 티어는 스로틀에도 전역 트래픽으로
                 # 초과가 날 수 있다. 그 외 오류는 기존 경로 (재시도는 Heimdall _run_turn 몫).
                 from .rate_limit import retry_after_seconds
 
@@ -756,7 +756,7 @@ class AgentSession:
                         except Exception:
                             pass
                         break
-                    u = getattr(chunk, "usage", None)  # usage 는 보통 choices 빈 마지막 chunk 에 온다
+                    u = getattr(chunk, "usage", None)  # usage는 보통 choices 빈 마지막 chunk에 온다
                     if u:
                         result.context_tokens = getattr(u, "total_tokens", 0) or 0
                         result.tokens += result.context_tokens
@@ -802,7 +802,7 @@ class AgentSession:
                 self._thought_line(time.monotonic() - think_t0)
             self._fence_tail()
             result.text = _fence_scrub("".join(text_buf))
-            if self._cancelled():  # 스트림 중단 — 부분 텍스트를 assistant 로 닫아 히스토리 유효 유지
+            if self._cancelled():  # 스트림 중단 — 부분 텍스트를 assistant로 닫아 히스토리 유효 유지
                 self.messages.append({"role": "assistant", "content": result.text or "[사용자 취소]"})
                 result.stop_reason = "cancelled"
                 return result
@@ -886,7 +886,7 @@ class AgentSession:
 
         for _ in range(self.max_iterations):
             if self._cancelled():
-                # Responses 는 논스트리밍 — 취소 경계는 iteration/툴 배치. 미제출 툴 출력은 버려지고
+                # Responses는 논스트리밍 — 취소 경계는 iteration/툴 배치. 미제출 툴 출력은 버려지고
                 # codex 히스토리는 마지막 완결 상태(_codex_history_items)로 남는다.
                 result.stop_reason = "cancelled"
                 return result
@@ -895,7 +895,7 @@ class AgentSession:
                 result.stop_reason = "cancelled"
                 return result
             if codex_backend and isinstance(pending_input, list):
-                # store=false 라 매 iteration 히스토리 전체를 재전송한다 — 프룬이 없으면
+                # store=false라 매 iteration 히스토리 전체를 재전송한다 — 프룬이 없으면
                 # 툴 출력이 무한 누적돼 한도 초과 400 으로만 터진다.
                 pending_input = self._maybe_compress_codex(pending_input, result)
                 self._codex_history_items = list(pending_input)
@@ -973,8 +973,8 @@ class AgentSession:
             )
             self.on_status(None)
             if self._cancelled():
-                # 블로킹 호출 중 취소 도착 — 응답을 히스토리·codex replay 에 편입하지 않고 버린다.
-                # (iteration 경계 취소와 동일 의미 — end_turn 으로 흘러 영속·보존되는 구멍 봉쇄)
+                # 블로킹 호출 중 취소 도착 — 응답을 히스토리·codex replay에 편입하지 않고 버린다.
+                # (iteration 경계 취소와 동일 의미 — end_turn으로 흘러 영속·보존되는 구멍 봉쇄)
                 result.stop_reason = "cancelled"
                 return result
             response_status = str(getattr(response, "status", "completed") or "")
@@ -1077,7 +1077,7 @@ def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subpr
         encoding="utf-8",
         errors="replace",
         cwd=root,
-        timeout=300,  # append(PASS) 가 하네스 베이스라인 체크를 직접 돌린다 (체크당 기본 120s)
+        timeout=300,  # append(PASS)가 하네스 베이스라인 체크를 직접 돌린다 (체크당 기본 120s)
     )
 
 

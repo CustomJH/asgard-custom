@@ -90,7 +90,7 @@ def _plan_waves(units: list[dict], root: str | None = None) -> list[list[dict]]:
         for u in ready:
             fs = {path_key(path) for path in (u.get("files") or [])}
             if overlaps(fs, files_used):
-                continue  # 파일 겹침 — 다음 wave 로 직렬화
+                continue  # 파일 겹침 — 다음 wave로 직렬화
             wave.append(u)
             files_used |= fs
         if not wave:
@@ -137,7 +137,7 @@ def _resume_snapshot(root: str, qid: str) -> dict:
     }
 
 
-# Thinker 에게 요구하는 배정 단위 출력 계약 (네이티브) — 독립 단위는 wave 병렬로 실행된다
+# Thinker에게 요구하는 배정 단위 출력 계약 (네이티브) — 독립 단위는 wave 병렬로 실행된다
 _UNITS_NOTE = (
     "\n\nAt the end of the plan, emit the Worker assignment units as a JSON block "
     "(independent units run in parallel):\n"

@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
 # Asgard agent-activate — 에인헤랴르 정체성 주입 (모드 B: Claude Code/Codex/Cursor).
 #
-# 네이티브 Heimdall 은 profiles.note() 를 역할 세션 프롬프트에 직접 얹는다. 모드 B 는 호스트
-# 도구가 자기 세션을 소유하므로 닿지 않는다 — manual-activate 와 동일하게 훅으로 보상한다.
-# 한 모드에만 서는 계층은 기능이 아니라 드리프트다 (tests/test_mode_parity.py 의 전제).
+# 네이티브 Heimdall은 profiles.note()를 역할 세션 프롬프트에 직접 얹는다. 모드 B는 호스트
+# 도구가 자기 세션을 소유하므로 닿지 않는다 — manual-activate와 동일하게 훅으로 보상한다.
+# 한 모드에만 서는 계층은 기능이 아니라 드리프트다 (tests/test_mode_parity.py의 전제).
 #
-# 배치 해석 (좁은 선언이 넓은 선언을 이긴다 — swarm.resolve() 와 동일 유지):
-#   역할 배치  .asgard 의 [agents].roles.<role>   ← agent_type(asgard-worker 등)에서 역할을 얻는다
+# 배치 해석 (좁은 선언이 넓은 선언을 이긴다 — swarm.resolve()와 동일 유지):
+#   역할 배치  .asgard의 [agents].roles.<role>   ← agent_type(asgard-worker 등)에서 역할을 얻는다
 #   모드 고정  [agents].modes.<client>
 #   프로젝트 대표  [agents].default
-#   루트 활성  ~/.asgard/active_profile  (ASGARD_PROFILE/ASGARD_HOME 이 있으면 그쪽이 먼저)
+#   루트 활성  ~/.asgard/active_profile  (ASGARD_PROFILE/ASGARD_HOME이 있으면 그쪽이 먼저)
 #
-# 렌더 문구는 asgard/profiles.py render_identity() 와 **동일 유지 (단일 출처 원칙)** — 훅은
-# 무임포트라 재구현하고, tests/test_profiles.py 가 두 렌더의 바이트 동일성을 대조한다.
+# 렌더 문구는 asgard/profiles.py render_identity()와 **동일 유지 (단일 출처 원칙)** — 훅은
+# 임포트를 못 하므로 재구현하고, tests/test_profiles.py가 두 렌더의 바이트 동일성을 대조한다.
 # fail-open: 에이전트 부재·정체성 공백(주석뿐)·훅 오류는 전부 무개입 통과 (exit 0).
 import json
 import os
@@ -20,10 +20,10 @@ import re
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다. UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다. UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -69,16 +69,16 @@ def root_dir():
 
 
 def env_home():
-    """ASGARD_HOME 원문 → 절대경로. 미설정이면 빈 문자열 (profiles._env_home 과 동일 유지)."""
+    """ASGARD_HOME 원문 → 절대경로. 미설정이면 빈 문자열 (profiles._env_home과 동일 유지)."""
     raw = str(os.environ.get("ASGARD_HOME") or "").strip()
     return os.path.abspath(os.path.expanduser(raw)) if raw else ""
 
 
 def profile_dir(name):
-    """profiles.profile_dir() 과 동일 유지 — `custom` 은 이름이 아니라 지금 그 홈이다.
+    """profiles.profile_dir()과 동일 유지 — `custom`은 이름이 아니라 지금 그 홈이다.
 
-    도커처럼 `ASGARD_HOME=/opt/agent-data` 를 통째로 준 홈은 `profiles/` 아래 있지 않아
-    이름으로 되짚을 수 없다. 이 분기가 없으면 훅이 컨테이너 대신 **호스트의 `~/.asgard`** 를
+    도커처럼 `ASGARD_HOME=/opt/agent-data`를 통째로 준 홈은 `profiles/` 아래 있지 않아
+    이름으로 되짚을 수 없다. 이 분기가 없으면 훅이 컨테이너 대신 **호스트의 `~/.asgard`**를
     읽어, 컨테이너 에이전트의 정체성이 통째로 사라진다 (실측 26-07-29)."""
     if name == DEFAULT:
         return root_dir()
@@ -88,9 +88,9 @@ def profile_dir(name):
 
 
 def _norm(value):
-    """미선언·형식 불량은 빈 문자열 — swarm._name() 과 동일 유지.
+    """미선언·형식 불량은 빈 문자열 — swarm._name()과 동일 유지.
 
-    빈 값을 default 로 접으면 배치 없는 프로젝트가 루트의 활성 에이전트를 덮는다."""
+    빈 값을 default로 접으면 배치 없는 프로젝트가 루트의 활성 에이전트를 덮는다."""
     text = str(value or "").strip()
     if not text:
         return ""
@@ -103,10 +103,10 @@ def _exists(name):
 
 
 def sticky():
-    """루트의 끈끈한 활성 — env 가 있으면 env 가 먼저 (profiles.active() 와 동일 유지).
+    """루트의 끈끈한 활성 — env가 있으면 env가 먼저 (profiles.active()와 동일 유지).
 
-    모르는 ASGARD_HOME 은 DEFAULT 가 아니라 `custom` 이다. DEFAULT 로 접으면 훅이 호스트의
-    `~/.asgard` 를 읽어, 컨테이너로 띄운 에이전트가 자기 정체성 대신 남의 것을 받는다."""
+    모르는 ASGARD_HOME은 DEFAULT가 아니라 `custom` 이다. DEFAULT로 접으면 훅이 호스트의
+    `~/.asgard`를 읽어, 컨테이너로 띄운 에이전트가 자기 정체성 대신 남의 것을 받는다."""
     home = env_home()
     if home:
         resolved = os.path.realpath(home)
@@ -129,7 +129,7 @@ def role_of(agent_type):
 
 
 def resolve(root, client, role):
-    """이 자리에서 일할 에이전트 id — swarm.resolve() 와 동일 유지 (좁은 선언이 이긴다)."""
+    """이 자리에서 일할 에이전트 id — swarm.resolve()와 동일 유지 (좁은 선언이 이긴다)."""
     section = _read_json(os.path.join(root, ".asgard", "asgard-setting-project.json")).get("agents") or {}
     if not isinstance(section, dict):
         section = {}
@@ -158,7 +158,7 @@ _TRUNCATED = "[agent identity truncated at the size limit — the rest was not l
 
 
 def render(display, body, truncated=False):
-    """profiles.render_identity() 와 동일 유지 (단일 출처 원칙)."""
+    """profiles.render_identity()와 동일 유지 (단일 출처 원칙)."""
     parts = [_HEADER % display, _AUTHORITY, body]
     if truncated:
         parts.append(_TRUNCATED)
@@ -166,7 +166,7 @@ def render(display, body, truncated=False):
 
 
 def note(name):
-    """profiles.note() 와 동일 유지 — 정체성이 비면 빈 문자열 (토큰 회귀 0)."""
+    """profiles.note()와 동일 유지 — 정체성이 비면 빈 문자열 (토큰 회귀 0)."""
     body = _meaningful(_read(os.path.join(profile_dir(name), IDENTITY)))
     if not body:
         return ""
@@ -179,7 +179,7 @@ def note(name):
 
 
 def label_for(name):
-    """profiles.label_for() 와 동일 유지 — 이름 없는 홈은 홈 디렉터리 이름으로 부른다."""
+    """profiles.label_for()와 동일 유지 — 이름 없는 홈은 홈 디렉터리 이름으로 부른다."""
     meta_name = str((_read_json(os.path.join(profile_dir(name), MANIFEST)) or {}).get("name") or "")
     if name == CUSTOM:
         if meta_name and meta_name != CUSTOM:
@@ -198,7 +198,7 @@ def client():
 
 
 def emit(current_client, agent, text):
-    """주입 스키마는 클라이언트마다 다르다 — manual/charter/map-activate 와 동일 유지 (단일 규약)."""
+    """주입 스키마는 클라이언트마다 다르다 — manual/charter/map-activate와 동일 유지 (단일 규약)."""
     if current_client == "cursor":
         sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
     elif agent:  # SubagentStart — JSON additionalContext

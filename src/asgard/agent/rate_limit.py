@@ -5,7 +5,7 @@ NVIDIA NIM 무료 티어(API 키 기준 전역 ~40 RPM, 모델 합산) 같은 �
 나눠 쓰므로 (provider, base_url) 단위 하나의 슬라이딩 윈도가 모든 호출을 계수한다.
 
 상한 해석은 providers.resolve() 몫 (config [provider] rpm > 프로파일 default_rpm),
-여기는 대기·계수만 소유한다. 429 는 서버가 판정한 초과 — retry_after_seconds() 가
+여기는 대기·계수만 소유한다. 429는 서버가 판정한 초과 — retry_after_seconds()가
 Retry-After 헤더를 존중해 재시도 간격을 정한다.
 """
 
@@ -28,7 +28,7 @@ class RpmLimiter:
 
     def acquire(self, cancel: threading.Event | None = None) -> float:
         """슬롯이 빌 때까지 대기 후 계수한다. 반환 = 실제 대기 초.
-        cancel 이 서면 계수 없이 즉시 반환 — 호출측이 취소 경로로 빠진다."""
+        cancel이 서면 계수 없이 즉시 반환 — 호출측이 취소 경로로 빠진다."""
         waited = 0.0
         while True:
             if cancel is not None and cancel.is_set():
@@ -72,14 +72,14 @@ def limiter_for(rp) -> RpmLimiter | None:
 
 
 def throttle(rp, cancel: threading.Event | None = None) -> float:
-    """API 호출 직전 훅 — 상한 provider 만 대기, 나머지는 no-op. 반환 = 대기 초."""
+    """API 호출 직전 훅 — 상한 provider만 대기, 나머지는 no-op. 반환 = 대기 초."""
     lim = limiter_for(rp)
     return lim.acquire(cancel) if lim is not None else 0.0
 
 
 def retry_after_seconds(e: Exception, attempt: int = 0) -> float | None:
     """429 판정 + 대기 초 — Retry-After 헤더 존중(0~120s 클램프), 없으면 지수 백오프(≤60s).
-    429 가 아니면 None — 호출측은 기존 오류 경로를 유지한다."""
+    429가 아니면 None — 호출측은 기존 오류 경로를 유지한다."""
     if getattr(e, "status_code", None) != 429:
         return None
     headers = getattr(getattr(e, "response", None), "headers", None)

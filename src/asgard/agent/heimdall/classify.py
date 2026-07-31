@@ -41,9 +41,9 @@ _DESTRUCTIVE_PAT = re.compile(
     re.IGNORECASE,
 )
 # 재구성 계열 동사(정리·통합·분리·개선)는 실측으로 뒤늦게 들어왔다: "모듈 경계를 정리해서 공통
-# 로직을 한 곳으로 모아줘" 가 어느 항목에도 안 걸려 LLM 폴백으로 넘어갔고, 거기서 read-only 로
+# 로직을 한 곳으로 모아줘"가 어느 항목에도 안 걸려 LLM 폴백으로 넘어갔고, 거기서 read-only로
 # 오분류돼 Write 도구 없는 DIRECT 세션이 붙었다 (26-07-26 helios 실측). 오분류의 두 방향은
-# 대칭이 아니다 — write 를 read 로 읽으면 게이트를 통째로 우회하고, 반대는 불필요한 Trinity
+# 대칭이 아니다 — write를 read로 읽으면 게이트를 통째로 우회하고, 반대는 불필요한 Trinity
 # 세금에 그친다. 그래서 이 표는 넓게 잡는 쪽으로 기운다.
 _WRITE_VERBS = (
     "만들", "생성해", "제작해", "수정해", "고쳐", "추가해", "구현해", "작성해", "바꿔", "변경해", "리팩터", "빼줘",
@@ -67,7 +67,7 @@ _PARALLEL_WORK_PAT = re.compile(
     re.IGNORECASE,
 )
 # 인사·감사·수긍·작별 — 요청 전체가 이 토큰들로만 이루어질 때만 매치 (한 단어라도 벗어나면 불발).
-# "안녕" 이 LLM 분류로 넘어가면 분류기가 JSON 대신 인사로 응답 → 파싱 실패 폴백이 Trinity 를
+# "안녕"이 LLM 분류로 넘어가면 분류기가 JSON 대신 인사로 응답 → 파싱 실패 폴백이 Trinity를
 # 태우는 최악 경로가 된다 (26-07-21 실측: 인사 하나가 deep 예산 소진) — 결정론으로 선차단.
 _SMALLTALK_TOKEN = (
     r"(?:안녕(?:하세요|하십니까)?|하이|헬로+|ㅎㅇ|방가|반갑(?:다|네요|습니다)|반가워요?"
@@ -83,9 +83,9 @@ _SMALLTALK_PAT = re.compile(
     re.IGNORECASE,
 )
 # 기억 지시 — 사용자가 명시적으로 개인 메모리 저장을 요구하는 명령형만 (질문 "기억해?"/"기억하고
-# 있어?" 는 회상 요청이라 제외). 26-07-21 실측: "기억해줘" 가 어느 동사 표에도 없어 LLM 폴백
-# trivial DIRECT 로 흘렀고, 모델이 저장 없이 "기억했다" 허위 확답 — 이 의도는 결정론으로 잡아
-# DIRECT 의 memory_save 계약(core._direct)으로 배선한다.
+# 있어?"는 회상 요청이라 제외). 26-07-21 실측: "기억해줘"가 어느 동사 표에도 없어 LLM 폴백
+# trivial DIRECT로 흘렀고, 모델이 저장 없이 "기억했다" 허위 확답 — 이 의도는 결정론으로 잡아
+# DIRECT의 memory_save 계약(core._direct)으로 배선한다.
 _MEMORY_WRITE_PAT = re.compile(
     r"기억해\s*(?:줘|둬|두|놔|다오|주세요|주라|라)"  # 명령형 보조 어미 ("기억해두고" 포함)
     r"|기억해[\s.!~]*$"  # 문말 명령형 "…기억해" — 물음표는 불매치 (회상 질문)
@@ -96,12 +96,12 @@ _MEMORY_WRITE_PAT = re.compile(
     re.IGNORECASE,
 )
 # 지속형 사용자 사실 — "기억해" 라는 말 없이도 다음 세션까지 살아야 하는 선언. 26-07-26 실측:
-# "이제부터 썬더오브갓이라 불러라" 가 위 표 어디에도 없어 memory_save 도구가 열리지 않았고,
+# "이제부터 썬더오브갓이라 불러라"가 위 표 어디에도 없어 memory_save 도구가 열리지 않았고,
 # 모델이 셸아웃(asgard memory ingest)으로 우회하려다 read-only 레인에 막혀 "세션에서만 기억"
 # 으로 끝났다. 명시 명령만 잡는 축으로는 이 부류를 영원히 놓친다 — 축을 하나 더 세운다.
 #
 # 정밀도 장치 둘: ① 의문문은 전부 제외 (선언이 아니라 회상 질문이다), ② 지속 부사(이제부터·
-# 항상)만으로는 안 잡고 지시·선호 표지가 같이 있어야 한다 ("이제부터 시작하자" 는 사실이 아니다).
+# 항상)만으로는 안 잡고 지시·선호 표지가 같이 있어야 한다 ("이제부터 시작하자"는 사실이 아니다).
 _IDENTITY_DECL_PAT = re.compile(
     r"(?:내|제|나의|저의|사용자|유저)\s*(?:의)?\s*(?:[^\s,.]{1,12}\s+)?"
     r"(?:이름|성함|닉네임|별명|호칭)(?:\s*[/·,]\s*(?:이름|성함|닉네임|별명|호칭))*\s*(?:은|는|이|가)"
@@ -123,7 +123,7 @@ _STANDING_PAT = re.compile(
     r"|\bi\s+(?:prefer|always\s+use)\b",
     re.IGNORECASE,
 )
-# 회상 질문 배제 — "내 이름이 뭐야?" 는 _IDENTITY_DECL_PAT 의 주어부를 그대로 만족한다.
+# 회상 질문 배제 — "내 이름이 뭐야?"는 _IDENTITY_DECL_PAT의 주어부를 그대로 만족한다.
 _RECALL_QUESTION_PAT = re.compile(
     r"\?\s*$|뭐(?:야|지|니|예요|에요|였)|뭔(?:가|지|데)|무엇|어떻게\s*(?:되|돼)|맞(?:아|나|지)|인가요|일까",
 )
@@ -136,8 +136,8 @@ def memory_write_intent(request: str) -> bool:
     선언(호칭·정체성·지속 지시). ②가 없으면 사용자는 매번 "기억해"를 붙여야 하고, 붙이지
     않은 지시는 조용히 세션과 함께 사라진다 (26-07-26 실측).
 
-    이 판정이 곧 저장 동의다: ingest 의 ask-before-save 게이트는 모델 자의 저장을 막는 장치이고,
-    사용자가 발화로 직접 지시한 저장은 그 발화가 승인이다 (core 의 memory_save 계약이 소비)."""
+    이 판정이 곧 저장 동의다: ingest의 ask-before-save 게이트는 모델 자의 저장을 막는 장치이고,
+    사용자가 발화로 직접 지시한 저장은 그 발화가 승인이다 (core의 memory_save 계약이 소비)."""
     scan = " ".join(request.split())
     if _MEMORY_WRITE_PAT.search(scan):
         return True
@@ -155,7 +155,7 @@ def has_write_verbs(request: str) -> bool:
 def classify_heuristic(request: str) -> dict | None:
     """순수 함수 1차 분류 — LLM 토큰 0. 확실할 때만 판정하고 나머지는 None (안전 우선).
 
-    read-only 판정은 write 동사가 전혀 없을 때만 — 오판 시 write 가 게이트를 우회하므로
+    read-only 판정은 write 동사가 전혀 없을 때만 — 오판 시 write가 게이트를 우회하므로
     (DIRECT), write 쪽 오판(불필요한 trinity 세금)보다 훨씬 보수적으로 잡는다."""
     low = " ".join(request.split()).lower()
     base = {
@@ -172,9 +172,9 @@ def classify_heuristic(request: str) -> dict | None:
         return {**base, "write_expected": True, "destructive": True, "task_class": "deep"}
     if _SMALLTALK_PAT.match(low):
         return base  # 인사·잡담 전체 매치 — DIRECT 무세금 (단순한 것은 단순하게)
-    # 순수 기억 지시(repo write 동사 없음)는 결정론 DIRECT — LLM 폴백이 trivial 로 뭉개는 것을
-    # 차단한다. 저장 자체는 라우팅이 아니라 core._direct 의 memory_save 계약이 집행한다.
-    # 혼합 요청("기억해두고 파일 수정해줘")은 write 분기로 계속 흘러 Trinity 를 탄다.
+    # 순수 기억 지시(repo write 동사 없음)는 결정론 DIRECT — LLM 폴백이 trivial로 뭉개는 것을
+    # 차단한다. 저장 자체는 라우팅이 아니라 core._direct의 memory_save 계약이 집행한다.
+    # 혼합 요청("기억해두고 파일 수정해줘")은 write 분기로 계속 흘러 Trinity를 탄다.
     if memory_write_intent(request) and not has_write_verbs(request):
         return base
     # "파일을 수정하지 마"의 부정된 동사를 write 의도로 세면 read-only 질의가 Trinity로
@@ -190,7 +190,7 @@ def classify_heuristic(request: str) -> dict | None:
     if has_r and not has_w:
         return base  # 명백 read-only — DIRECT 무세금
     if has_w and not has_r:
-        # 명백 write — criteria 는 못 뽑는다 (기본 criterion 사용). task_class 는 LLM 없이 보수적 standard.
+        # 명백 write — criteria는 못 뽑는다 (기본 criterion 사용). task_class는 LLM 없이 보수적 standard.
         return {**base, "write_expected": True}
     return None  # 모호 — LLM 폴백
 

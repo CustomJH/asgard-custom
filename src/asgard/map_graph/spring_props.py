@@ -1,6 +1,6 @@
-"""Spring 설정 해석기 — `${placeholder}` 를 체크인된 base 설정값으로만 해석한다.
+"""Spring 설정 해석기 — `${placeholder}`를 체크인된 base 설정값으로만 해석한다.
 
-계약: 해석은 이름 승격이지 추측이 아니다. base `application.{yml,yaml,properties}` 가
+계약: 해석은 이름 승격이지 추측이 아니다. base `application.{yml,yaml,properties}`가
 유일하게 증명하는 스칼라 값만 쓴다. 프로파일 파일(`application-*.yml`)은 환경 의존이라
 제외하고, 같은 스코프에서 키가 서로 다른 값으로 중복 정의되면 해석을 포기한다 —
 모호성은 미해결 증거로 보존한다.
@@ -24,7 +24,7 @@ _AMBIGUOUS = ("", "")  # 충돌 마커 — 값이 아니라 "해석 금지" 신�
 
 
 def _literal(value: object) -> str | None:
-    """설정 값 → 증명 가능한 리터럴. `${ENV:default}` 는 default, 미해결 잔여 `${` 는 포기."""
+    """설정 값 → 증명 가능한 리터럴. `${ENV:default}`는 default, 미해결 잔여 `${`는 포기."""
     if isinstance(value, bool):
         return "true" if value else "false"
     if not isinstance(value, (str, int, float)):
@@ -53,7 +53,7 @@ class SpringProps:
     """스코프(모노레포 최상위 디렉터리) 단위 base 설정 테이블."""
 
     def __init__(self) -> None:
-        # scope → key → (value, source) — 충돌 시 _AMBIGUOUS 로 강등되어 해석이 막힌다.
+        # scope → key → (value, source) — 충돌 시 _AMBIGUOUS로 강등되어 해석이 막힌다.
         self._scoped: dict[str, dict[str, tuple[str, str]]] = {}
 
     @staticmethod
@@ -107,7 +107,7 @@ class SpringProps:
     def _resolve_embedded(self, text: str, scope: str) -> tuple[str, list[str]] | None:
         """텍스트에 박힌 `${key[:default]}` 전부를 설정값으로 치환한다. 하나라도 못 풀면 None.
 
-        라우트 클래스 프리픽스(`${api.prefix}orders`)나 Feign url 처럼 플레이스홀더가
+        라우트 클래스 프리픽스(`${api.prefix}orders`)나 Feign url처럼 플레이스홀더가
         리터럴과 섞인 이름을 실제 경로로 복원한다 — 부분 해석은 정체가 아니라서 안 한다.
         """
         trails: list[str] = []
@@ -131,7 +131,7 @@ class SpringProps:
         return None if failed or not trails else (resolved, trails)
 
     def promote(self, collected: list[Evidence]) -> list[Evidence]:
-        """설정이 증명하는 이름 승격 — 이벤트는 전체-문자열, 라우트/api_call 은 임베디드 치환.
+        """설정이 증명하는 이름 승격 — 이벤트는 전체-문자열, 라우트/api_call은 임베디드 치환.
 
         해석 실패는 원문 보존(candidate 유지·브리지의 접두 벗김 폴백이 이어받는다).
         """
@@ -163,7 +163,7 @@ class SpringProps:
                 name, trails = resolved
                 confidence = item.confidence
                 if item.kind == "route":
-                    # 프리픽스 값의 앞뒤 `/` 로 생긴 중복 슬래시를 경로 표기로 정돈한다
+                    # 프리픽스 값의 앞뒤 `/`로 생긴 중복 슬래시를 경로 표기로 정돈한다
                     method, _, raw = name.partition(" ")
                     name = f"{method} " + re.sub(r"/{2,}", "/", raw)
                 else:

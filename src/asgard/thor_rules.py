@@ -1,16 +1,16 @@
-"""토르 게이트 규칙 카탈로그 (Python) — 트리 하나를 받아 판정 목록을 낸다. git 도 래칫도 모른다.
+"""토르 게이트 규칙 카탈로그 (Python) — 트리 하나를 받아 판정 목록을 낸다. git도 래칫도 모른다.
 
-`craft_rules` 가 **형상**을 잰다면 이쪽은 **정확성**을 잰다. 역할 파일의 NEVER 표는 지금까지
+`craft_rules`가 **형상**을 잰다면 이쪽은 **정확성**을 잰다. 역할 파일의 NEVER 표는 지금까지
 문장으로만 있었고, 문장은 턴이 쌓이면 흐려진다(제약 붕괴, 2605.06445). 그래서 그 표에서
 **정적으로 증명 가능한 항만** 여기로 옮겨 기계가 지게 한다. 증명 불가한 항(외부 입력인가,
 멱등한가)은 옮기지 않는다 — 스킬이 판단으로 계속 진다.
 
 판정의 갈래는 하나다: **막는 것은 반례가 없는 것뿐이다.** 값 자리에 들어간 보간은 파라미터
 바인딩이 존재하므로 예외가 없고, 식별자 자리는 바인딩 자체가 불가능하므로 알림에 그친다.
-같은 이유로 좁은 예외 타입의 침묵은 알림이고, `except Exception: pass` 는 막는다.
+같은 이유로 좁은 예외 타입의 침묵은 알림이고, `except Exception: pass`는 막는다.
 
 오탐은 이 파일에서 가장 비싼 결함이다 — 판정기가 오탐을 내면 다음에 일어나는 일은 판정기를
-끄는 것이다(craft_rules 와 같은 계약). 애매하면 미검출로 남긴다.
+끄는 것이다(craft_rules와 같은 계약). 애매하면 미검출로 남긴다.
 """
 
 from __future__ import annotations
@@ -23,12 +23,12 @@ from .craft_rules import Finding, Unit, _owner
 # ── SQL ────────────────────────────────────────────────────────────
 # 두 무리를 **함께** 요구한다 — "select" 한 단어만으로는 문서 문자열·UI 라벨까지 걸린다.
 # 그런데 함께 있는 것만으로는 모자랐다. 산문은 두 낱말을 다 갖는다 (실측: 자사 트리에서 이 규칙의
-# 판정 4건 중 2건이 SQL 이 아니었다 — `f"plan: merge into '{title}' ({slug}, {why})"` 는 UI 한 줄이고,
-# 스킬 라우터 본문은 "select and load ..." 와 "directly from PATH" 가 각각 동사·절로 읽혔다).
+# 판정 4건 중 2건이 SQL이 아니었다 — `f"plan: merge into '{title}' ({slug}, {why})"`는 UI 한 줄이고,
+# 스킬 라우터 본문은 "select and load ..."와 "directly from PATH"가 각각 동사·절로 읽혔다).
 # 그래서 셋을 더 요구한다: ① 동사가 **문장을 연다** ② 절이 동사 **뒤에** 온다 ③ 동사와 절의 **짝이
 # 맞는다**. 질의문에서 동사는 언제나 문장의 첫 낱말이고, 산문에서는 거의 언제나 아니다.
 _SQL_VERB = re.compile(r"\b(SELECT|INSERT|UPDATE|DELETE|MERGE)\b", re.I)
-# 동사마다 뒤에 설 수 있는 절. 짝을 안 보면 `merge ... where` 처럼 존재하지 않는 조합도 질의가 된다.
+# 동사마다 뒤에 설 수 있는 절. 짝을 안 보면 `merge ... where`처럼 존재하지 않는 조합도 질의가 된다.
 _CLAUSE_FOR = {
     "SELECT": re.compile(r"\b(FROM|JOIN|WHERE)\b", re.I),
     "INSERT": re.compile(r"\b(INTO|VALUES|SELECT)\b", re.I),
@@ -47,16 +47,16 @@ _TAIL_WORD = re.compile(r"[A-Za-z_]\w*$")
 # 값 자리 = **비교 연산자 바로 뒤**. 여기 들어갈 수 있는 것은 값 하나뿐이라 바인딩으로 전부
 # 대체되고, 그래서 반례가 없다.
 #
-# `VALUES (` 와 `IN (` 은 일부러 뺐다. 둘은 물음표 목록을 **프로그램으로 조립하는** 자리이기도
+# `VALUES (`와 `IN (`은 일부러 뺐다. 둘은 물음표 목록을 **프로그램으로 조립하는** 자리이기도
 # 해서(`VALUES (" + placeholders + ")"`), 값 자리로 읽으면 올바르게 바인딩한 코드를 막는다 —
 # 실측(JVM 1,373파일)에서 값 자리 판정 3건이 전부 이 형상이었다. 알림으로는 계속 뜬다.
 _VALUE_SLOT = re.compile(r"(?:[=<>!]=|[=<>]|<>|\bLIKE\b|\bBETWEEN\b)\s*$", re.I)
 _PRINTF = re.compile(r"%(?:\(\w+\))?[sdifr]")
 _HOLE = "\x00"
-# CLI 플래그는 질의어가 아니다. `--from`·`--merge` 는 도움말 문자열의 낱말이고, SQL 에서 `--` 는
+# CLI 플래그는 질의어가 아니다. `--from`·`--merge`는 도움말 문자열의 낱말이고, SQL에서 `--`는
 # 주석의 시작이라 그 뒤도 질의 본문이 아니다 — 어느 쪽으로 읽어도 지우는 것이 맞다.
-# (실측: helios 1,999파일에서 막는 SQL 판정 2건이 전부 이 형상 — DB 를 안 만지는 빌드 스크립트의
-#  사용법 문자열이었다. `--merge` 가 동사로, `--from` 이 절로 읽혔다.)
+# (실측: helios 1,999파일에서 막는 SQL 판정 2건이 전부 이 형상 — DB를 안 만지는 빌드 스크립트의
+#  사용법 문자열이었다. `--merge`가 동사로, `--from`이 절로 읽혔다.)
 _CLI_FLAG = re.compile(r"(?<!\w)-{1,2}[A-Za-z][\w-]*")
 
 
@@ -92,7 +92,7 @@ def sql_shaped(text: str) -> bool:
 _SECRET_NAME = re.compile(
     r"(?:^|_)(?:password|passwd|pwd|secret|token|apikey|api_key|access_key|private_key|client_secret)(?:_|$)"
 )
-# camelCase 를 snake 로 편 뒤에 잰다 — `clientSecret`·`authToken` 을 못 보면 JVM/TS 에서 규칙이
+# camelCase를 snake로 편 뒤에 잰다 — `clientSecret`·`authToken`을 못 보면 JVM/TS에서 규칙이
 # 사실상 발화하지 않는다(그쪽 관용구가 camelCase 다).
 _CAMEL = (re.compile(r"(?<=[a-z0-9])(?=[A-Z])"), re.compile(r"(?<=[A-Z])(?=[A-Z][a-z])"))
 # 자리표시자는 시크릿이 아니다 — 값이 비밀이 아니라는 것이 문자열 자체로 드러나는 것들.
@@ -108,7 +108,7 @@ _TX_DECOR = frozenset({"atomic", "transactional", "transaction"})
 _PUBLISH = frozenset({"publish", "send_message", "sendmail", "send_mail", "enqueue", "produce", "notify"})
 
 # ── 금액 ────────────────────────────────────────────────────────────
-# 좁게 유지한다. `total`·`cost`·`rate` 는 개수·알고리즘 비용·비율에 훨씬 많이 쓰인다 — 넣는 순간
+# 좁게 유지한다. `total`·`cost`·`rate`는 개수·알고리즘 비용·비율에 훨씬 많이 쓰인다 — 넣는 순간
 # 오탐이 진양성을 넘는다. 화폐로만 읽히는 낱말만 넣는다.
 _MONEY = re.compile(
     r"(?i)(?:^|_)(?:amount|price|balance|salary|payroll|invoice|subtotal|refund|krw|usd|금액|가격|잔액)(?:_|$)"
@@ -124,7 +124,7 @@ def _at(spans: list[Unit], line: int) -> str:
 
 
 def _snake(name: str) -> str:
-    """camelCase → snake. JVM·TS 관용구가 camelCase 라, 밑줄 경계로만 재면 그쪽에서 규칙이 죽는다."""
+    """camelCase → snake. JVM·TS 관용구가 camelCase라, 밑줄 경계로만 재면 그쪽에서 규칙이 죽는다."""
     for pattern in _CAMEL:
         name = pattern.sub("_", name)
     return name.lower()
@@ -136,9 +136,9 @@ def secret_name(name: str) -> bool:
 
 
 def money_name(name: str) -> bool:
-    """이름이 화폐 **금액**을 담는 자리인가 — `totalPrice` 처럼 붙여 쓴 것까지 (단일 출처).
+    """이름이 화폐 **금액**을 담는 자리인가 — `totalPrice`처럼 붙여 쓴 것까지 (단일 출처).
 
-    비율은 뺀다: `USD_TO_VND_RATE` 는 통화 토큰을 갖지만 환율이고, 환율에 부동소수는 옳은 선택이다.
+    비율은 뺀다: `USD_TO_VND_RATE`는 통화 토큰을 갖지만 환율이고, 환율에 부동소수는 옳은 선택이다.
     """
     snake = _snake(name)
     return bool(_MONEY.search(snake)) and not _RATE.search(snake)
@@ -148,7 +148,7 @@ def money_name(name: str) -> bool:
 
 
 def _template(node: ast.AST) -> tuple[str, list[str]] | None:
-    """보간식을 (구멍 뚫린 템플릿, 구멍 앞 문맥들) 로 편다. SQL 이 아닌 것은 None."""
+    """보간식을 (구멍 뚫린 템플릿, 구멍 앞 문맥들)로 편다. SQL이 아닌 것은 None."""
     if isinstance(node, ast.JoinedStr):
         parts: list[str] = []
         for value in node.values:
@@ -165,9 +165,9 @@ def _template(node: ast.AST) -> tuple[str, list[str]] | None:
             return None  # 리터럴끼리의 결합은 보간이 아니다
         if isinstance(node.op, ast.Add):
             return _split(left.value + _HOLE)
-        # `%` 는 자리표시자가 있는 곳에서 값을 갈아끼운다 — 구멍은 끝이 아니라 그 자리에 있다.
-        # (같은 `%s` 라도 `cursor.execute(q, params)` 는 보간이 아니라 바인딩이고, 그쪽은
-        #  BinOp 이 아니라서 애초에 여기 오지 않는다.)
+        # `%`는 자리표시자가 있는 곳에서 값을 갈아끼운다 — 구멍은 끝이 아니라 그 자리에 있다.
+        # (같은 `%s` 라도 `cursor.execute(q, params)`는 보간이 아니라 바인딩이고, 그쪽은
+        #  BinOp이 아니라서 애초에 여기 오지 않는다.)
         return _split(_PRINTF.sub(_HOLE, left.value))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute) and node.func.attr == "format":
         target = node.func.value
@@ -216,7 +216,7 @@ def _sql_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
 
 
 def _silent(body: list[ast.stmt]) -> bool:
-    """본문이 침묵뿐인가 — pass / ... / continue 만."""
+    """본문이 침묵뿐인가 — pass / ... / continue만."""
     for stmt in body:
         if isinstance(stmt, (ast.Pass, ast.Continue)):
             continue
@@ -235,7 +235,7 @@ def _broad(handler: ast.ExceptHandler) -> bool:
 def _justified(body: list[ast.stmt], lines: list[str]) -> bool:
     """침묵의 근거가 코드에 남아 있는가 — 정당한 폴백과 삼킨 예외를 가르는 자(탄그리스니르 캐논).
 
-    본문이 pass/.../continue 뿐이므로 그 줄의 `#` 는 문자열일 수 없다 — 주석으로 읽어도 안전하다.
+    본문이 pass/.../continue 뿐이므로 그 줄의 `#`는 문자열일 수 없다 — 주석으로 읽어도 안전하다.
     """
     for stmt in body:
         start, end = stmt.lineno, getattr(stmt, "end_lineno", stmt.lineno) or stmt.lineno
@@ -287,7 +287,7 @@ def _timeout_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Findin
         label = _http_call(node)
         if label is None:
             continue
-        # `**kwargs` 가 있으면 타임아웃의 부재를 증명할 수 없다 — 미검출로 남긴다.
+        # `**kwargs`가 있으면 타임아웃의 부재를 증명할 수 없다 — 미검출로 남긴다.
         if any(kw.arg is None for kw in node.keywords) or any(kw.arg == "timeout" for kw in node.keywords):
             continue
         out.append(
@@ -296,7 +296,7 @@ def _timeout_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Findin
                 rel,
                 node.lineno,
                 _at(spans, node.lineno),
-                f"{label}() 에 타임아웃이 없다 — 기본값은 무한 대기다",
+                f"{label}()에 타임아웃이 없다 — 기본값은 무한 대기다",
                 "timeout= 을 명시해라. 바깥 계층보다 짧아야 한다 (계층 타임아웃)",
             )
         )
@@ -337,7 +337,7 @@ def _secret_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding
                     rel,
                     node.lineno,
                     _at(spans, node.lineno),
-                    f"{name} 에 비밀처럼 생긴 문자열이 박혀 있다",
+                    f"{name}에 비밀처럼 생긴 문자열이 박혀 있다",
                     "환경변수·시크릿 저장소로 옮기고, 이미 커밋됐으면 그 값을 폐기해라",
                 )
             )
@@ -390,7 +390,7 @@ def _tx_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
                     line,
                     _at(spans, line),
                     f"트랜잭션 안에서 {label}() — 커밋 전 부수효과는 롤백이 되돌리지 못한다",
-                    "트랜잭션 밖으로 빼거나 outbox 로 옮겨라",
+                    "트랜잭션 밖으로 빼거나 outbox로 옮겨라",
                 )
             )
             break
@@ -410,8 +410,8 @@ def _money_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
                 rel,
                 line,
                 _at(spans, line),
-                f"{name} 을 부동소수로 다룬다 — 0.1 + 0.2 는 0.3 이 아니다",
-                "정수 최소단위(원·센트)나 Decimal 로 바꿔라",
+                f"{name}을 부동소수로 다룬다 — 0.1 + 0.2는 0.3이 아니다",
+                "정수 최소단위(원·센트)나 Decimal로 바꿔라",
             )
         )
 
@@ -447,7 +447,7 @@ def _now_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
                     rel,
                     node.lineno,
                     _at(spans, node.lineno),
-                    f"{attr}() 가 시간대 없는 값을 낸다",
+                    f"{attr}()가 시간대 없는 값을 낸다",
                     "저장은 UTC(aware)로, 변환은 표시 경계에서 — 막지는 않는다",
                     blocking=False,
                 )
@@ -456,7 +456,7 @@ def _now_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
 
 
 def findings(text: str, rel: str, spans: list[Unit]) -> list[Finding] | None:
-    """파싱 실패는 None (0 이 아니다 — 못 잰 것과 없는 것은 다르다)."""
+    """파싱 실패는 None (0이 아니다 — 못 잰 것과 없는 것은 다르다)."""
     try:
         tree = ast.parse(text)
     except SyntaxError, ValueError, RecursionError:

@@ -4,20 +4,20 @@
 같은 사실은 하나로 모으고(merge), 낱개 관측 뒤의 패턴을 승격하고(insight), 낡은 가지는
 접어 보관하고(archive), 서로 어긋난 기록은 사람에게 알린다(contradiction).
 
-계약 — LLM 은 델타만 제안하고, 커밋은 결정론 코드가 한다:
+계약 — LLM은 델타만 제안하고, 커밋은 결정론 코드가 한다:
 - 전면 재작성 금지. 델타 단위 제안만 받아야 반복 손질이 기억을 뭉개지 않는다.
-- 각 op 는 기계 검증을 통과한 것만 남는다 — LLM 의 주장은 검증 입력일 뿐이다:
-  merge 는 결정적 유사도 플로어 미달이면 기각, archive 는 lint decay-candidate 만 자격,
-  insight 는 실존 소스 2개 이상 + 인젝션/시크릿 스캔 + **근거 접지** + **극성** 통과
+- 각 op는 기계 검증을 통과한 것만 남는다 — LLM의 주장은 검증 입력일 뿐이다:
+  merge는 결정적 유사도 플로어 미달이면 기각, archive는 lint decay-candidate만 자격,
+  insight는 실존 소스 2개 이상 + 인젝션/시크릿 스캔 + **근거 접지** + **극성** 통과
   (세 물음이 다 다르다: 소스가 있는가 · 통찰이 그 소스에서 나왔는가 · 나왔는데 뒤집지는
   않았는가. 어휘를 그대로 쓰면서 부정만 떼어 낸 문장은 접지가 오히려 높다),
-  confidence 는 근거 수로 코드가 계산한다 (자기 신고 불신).
+  confidence는 근거 수로 코드가 계산한다 (자기 신고 불신).
 - 그래도 결정론이 답할 수 없는 물음이 남는다 — "출처에서 왔고 뒤집지도 않았는데 틀린
   추론". 그래서 통찰은 기본적으로 자동 승격되지 않는다 (norn_insight_auto 옵트인).
 - 환경 의존 실패·도구 부정 주장은 기억으로 굳히지 않는다 — 그날의 사정이 원칙으로
   박제되면 미래의 자신을 거부하는 근거가 된다.
 - 기존 페이지를 고치거나 없애는 op(merge·archive·link) 앞에 pages/ 전체 백업
-  (norn-backups/, 최근 5개 유지), 삭제 없음 — archive 는 archive/ 로 이동해 언제든
+  (norn-backups/, 최근 5개 유지), 삭제 없음 — archive는 archive/ 로 이동해 언제든
   복원 가능하다 (norn-restore).
 - 게이트는 노른 산출물도 신뢰하지 않는다 — insight 페이지 역시 힌트일 뿐 완료 증거가 아니다.
 """
@@ -67,10 +67,10 @@ MAX_MERGES, MAX_ARCHIVES, MAX_INSIGHTS, MAX_CONTRADICTIONS = 3, 3, 2, 3
 # 전부를 전부에 잇는 그래프는 아무것도 안 잇는 그래프와 회수 성능이 같다.
 MAX_LINKS = 6
 # 링크 접지 대역 — 아래는 남남, 위는 링크가 아니라 병합이다
-# (LLM 이 link 로 merge 를 피해가는 길을 막는 상한).
+# (LLM이 link로 merge를 피해가는 길을 막는 상한).
 #
 # 대역이 척도마다 다른 게 핵심이다. 어휘 유사도와 코사인은 같은 자로 잴 수 없다:
-# MERGE_FLOOR 0.25 는 어휘 척도에서 뽑은 값인데, 같은 0.25 를 코사인에 대면 의미가 통하는
+# MERGE_FLOOR 0.25는 어휘 척도에서 뽑은 값인데, 같은 0.25를 코사인에 대면 의미가 통하는
 # 거의 모든 쌍이 병합 대상으로 잘못 분류된다 — 이 저장소 실측이 이미 말해 준다
 # (recall.SEM_FLOOR 주석: 교차언어 정답조차 절대 코사인 0.18–0.29). 한 상수를 두 척도에
 # 돌려쓰면 대역이 사라진다.
@@ -81,15 +81,15 @@ INSIGHT_MIN_SOURCES, INSIGHT_MAX_SOURCES = 2, 6
 
 # 통찰 접지 대역 — 소스의 **실존**이 아니라 **내용**을 보는 자.
 #
-# 검증기가 파일 존재·개수·스캔만 보면 LLM 은 무관한 페이지 두 장을 근거로 달아 허구를
-# 정본으로 만들 수 있다. 실측(26-07-28): "금요일 배포 회피" + "점심에는 국수" 를 근거로
-# 제안된 "오딘은 매주 화성으로 이주한다" 가 기각 사유 하나 없이 통과해 기본 safe 에서
+# 검증기가 파일 존재·개수·스캔만 보면 LLM은 무관한 페이지 두 장을 근거로 달아 허구를
+# 정본으로 만들 수 있다. 실측(26-07-28): "금요일 배포 회피" + "점심에는 국수"를 근거로
+# 제안된 "오딘은 매주 화성으로 이주한다"가 기각 사유 하나 없이 통과해 기본 safe에서
 # 자동 적용됐다. 패턴 계층이 explicit 관측에 이미 거는 접지를, 통찰에도 건다.
 #
 # 값은 실측에서 왔다 (진짜 통찰 7건 · 허구 4건, 한국어·영어 혼합):
-#   허구            0.000 – 0.167  (주제어만 빌린 반쪽 허구가 0.167 로 최고)
+#   허구            0.000 – 0.167  (주제어만 빌린 반쪽 허구가 0.167로 최고)
 #   진짜(정직한 출처) 0.375 – 0.636
-# 0.25 는 그 사이에 있되 허구 쪽에 붙여 둔 값이다 — 통찰은 귀납이라 출처에 없던 추상어
+# 0.25는 그 사이에 있되 허구 쪽에 붙여 둔 값이다 — 통찰은 귀납이라 출처에 없던 추상어
 # ("경향", "습관")를 정당하게 데려오므로 관측용 플로어(pattern.GROUNDING_FLOOR 0.34)를
 # 그대로 쓰면 진짜를 벤다. 대신 접지가 옅은 구간은 버리지 않고 사람에게 넘긴다:
 # 자율 적용은 0.40 이상만, 그 아래는 접수하되 제안으로 남는다. 코퍼스가 11건짜리
@@ -101,8 +101,8 @@ INSIGHT_AUTO_FLOOR = 0.40
 #
 # 접지는 "어디서 왔는가"를 묻지 "참인가"를 묻지 않는다. 두 물음은 다르고, 앞의 것만 물으면
 # 어휘 재조합 거짓말이 통과한다. 실측 반례(26-07-28): 출처 "금요일에는 배포하지 않는다" ·
-# "배포 전에 테스트를 전부 돌린다" 에서 뽑은 "금요일마다 테스트 없이 배포한다" 가 접지
-# 0.714 로 통과했다 — 낱말은 전부 출처에서 왔는데 주장은 정반대다.
+# "배포 전에 테스트를 전부 돌린다"에서 뽑은 "금요일마다 테스트 없이 배포한다"가 접지
+# 0.714로 통과했다 — 낱말은 전부 출처에서 왔는데 주장은 정반대다.
 #
 # 그 자리를 닫는 결정적 신호가 극성이다. 다만 부정의 **작용역**이 언어마다 다르다:
 #
@@ -111,20 +111,20 @@ INSIGHT_AUTO_FLOOR = 0.40
 #            (부정어와 대상 낱말 사이가 멀다 — 인접 창으로는 영영 못 본다)
 #
 # 그래서 뒤는 짧은 창으로, 앞은 **절 단위**로 읽는다. 절 경계에 등위접속사를 넣는 것이
-# 핵심이다: "avoids Friday deploys **and** always tests first" 에서 avoids 는 and 를 넘지
+# 핵심이다: "avoids Friday deploys **and** always tests first"에서 avoids는 and를 넘지
 # 못한다. 이 경계가 없으면 정직한 통찰이 자기 문장의 앞 절 때문에 부정으로 물든다 (실측).
 POLARITY_PRE, POLARITY_POST, POLARITY_CLAUSE = 14, 12, 80
-# 영어는 뒤쪽도 절 단위다. 수동태가 그 증거다 — "checks are bypassed" 는 부정 동사가 주어
+# 영어는 뒤쪽도 절 단위다. 수동태가 그 증거다 — "checks are bypassed"는 부정 동사가 주어
 # 뒤에 서고, 한국어용 인접 창(12자)으로는 영영 닿지 않는다. 그래서 ASCII 앵커만 뒤도
 # 절 경계까지 본다. 경계를 두는 것이 핵심이다: 창만 넓히면 "tests are run, deploys are
-# skipped" 에서 앞 절의 tests 가 뒤 절의 부정에 물든다.
+# skipped"에서 앞 절의 tests가 뒤 절의 부정에 물든다.
 POLARITY_POST_CLAUSE = 40
 
 # 낱말 뒤에 붙어 그 낱말을 부정하는 것들 (한국어 어미·보조용언 + 영어 후치 전치사).
 #
 # "안 한다" 만이 부정이 아니다. 한국어는 **하지 않음을 뜻하는 본동사**로도 똑같이 부정한다 —
 # "테스트를 생략한다", "점검을 건너뛴다", "리뷰를 제외하고". 실측(26-07-30): 이 갈래가 사전에
-# 없어 `_polarity("테스트", "배포 시 테스트를 생략한다")` 가 **+1** 을 돌려줬다. 출처가 부정하는
+# 없어 `_polarity("테스트", "배포 시 테스트를 생략한다")`가 **+1**을 돌려줬다. 출처가 부정하는
 # 것을 긍정으로 읽으면 극성 게이트는 그 출처에 대해 영영 눈이 먼다.
 _NEG_AFTER = re.compile(
     # 어간이 모음으로 끝나는 것들은 활용에서 음절이 통째로 갈린다 — "피하"로는 "피한다"를,
@@ -135,14 +135,14 @@ _NEG_AFTER = re.compile(
     # 안전하다: "건너"까지 줄이면 "건너편"·"건너서"가 부정으로 읽힌다.
     r"생략|누락|건너뛰|건너뛴|건너뜁|건너뜀|제외|빼고|빼는|빼먹|무시하|미실행|미적용|"
     r"(?:^|\s)안\s|\bwithout\b|\bnever\b|\bnot\b|\bno\b|\brather than\b|\binstead of\b|"
-    # 영어 수동태 — "checks are bypassed" 처럼 부정 동사가 주어 **뒤에** 온다. 능동태
-    # ("omit the review")는 절 작용역인 _NEG_BEFORE 가 잡는다.
+    # 영어 수동태 — "checks are bypassed"처럼 부정 동사가 주어 **뒤에** 온다. 능동태
+    # ("omit the review")는 절 작용역인 _NEG_BEFORE가 잡는다.
     r"\b(?:are|is|was|were|get|gets|got)\s+(?:being\s+)?"
     r"(?:skipped|omitted|excluded|bypassed|ignored|dropped)\b",
     re.IGNORECASE,
 )
 # 낱말 앞 — 절 작용역. 영어 부정어만 본다: 한국어의 앞선 부정("결코")은 뒤의 "않"과 짝을
-# 이루므로 _NEG_AFTER 가 이미 잡고, 절까지 넓히면 옆 낱말까지 부정으로 물든다.
+# 이루므로 _NEG_AFTER가 이미 잡고, 절까지 넓히면 옆 낱말까지 부정으로 물든다.
 _NEG_BEFORE = re.compile(
     r"\b(?:not|never|no|without|avoids?|avoiding|refrains?|skips?|skipping|cannot|can'?t|don'?t|"
     # 하지 않음을 뜻하는 본동사 — 영어는 이것도 목적어 **앞**에 서서 절을 덮는다
@@ -238,7 +238,7 @@ def _save_state(d: str, state: dict) -> None:
 
 
 def _log_lines(d: str) -> int:
-    """log.md 누적 연산 행 수 — 노른 트리거의 결정적 활동 신호 (LLM·중요도 점수 불요)."""
+    """log.md 누적 연산 행 수 — 노른 트리거의 결정적 활동 신호 (LLM·중요도 점수 불필요)."""
     try:
         with open(os.path.join(d, LOG), encoding="utf-8") as handle:
             return sum(1 for line in handle if line.startswith("- "))
@@ -270,7 +270,7 @@ def norn_due(d: str | None = None) -> tuple[bool, str]:
 
 
 def signals(d: str | None = None) -> dict:
-    """LLM 에게 보여줄 증거 카드 — 페이지 카탈로그·usage·lint 판정. 쓰기 없음."""
+    """LLM에게 보여줄 증거 카드 — 페이지 카탈로그·usage·lint 판정. 쓰기 없음."""
     d = d or memory_dir()
     uses: dict[str, int] = {}
     with contextlib.suppress(Exception):
@@ -281,7 +281,7 @@ def signals(d: str | None = None) -> dict:
     for slug in _pages(d):
         pg = _read(d, slug)
         if not pg or poisoned(*pg):
-            continue  # 오염 페이지는 노른 대상도 아니다 — lint 가 threat 로 보고한다
+            continue  # 오염 페이지는 노른 대상도 아니다 — lint가 threat로 보고한다
         meta, body = pg
         first = next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
         pages.append(
@@ -308,14 +308,14 @@ def signals(d: str | None = None) -> dict:
 
 
 def _confidence(n_sources: int) -> str:
-    """근거 수가 confidence 를 결정한다 — 2=low, 3~4=medium, 5+=high (LLM 자기 신고 불신)."""
+    """근거 수가 confidence를 결정한다 — 2=low, 3~4=medium, 5+=high (LLM 자기 신고 불신)."""
     return "high" if n_sources >= 5 else "medium" if n_sources >= 3 else "low"
 
 
 def _insight_grounding(title: str, text: str, sources: list[tuple[dict, str]]) -> tuple[float, list[float]]:
     """통찰의 내용어가 출처에 실제로 남아 있는 비율과, **출처별** 기여도.
 
-    두 값이 다른 일을 한다. 총량은 "이 문장이 어디서 왔는가"를 묻고 (허구는 0 에 붙는다),
+    두 값이 다른 일을 한다. 총량은 "이 문장이 어디서 왔는가"를 묻고 (허구는 0에 붙는다),
     출처별 기여도는 "이 근거가 정말 근거인가"를 묻는다 — 통찰은 2장 이상에 걸쳐야만 보이는
     것이라는 계약(_NORN_SYS)이라, 아무것도 기여하지 않는 소스가 끼어 있으면 그 계약은
     거짓이다. 총량만 보면 진짜 소스 하나에 장식 소스를 달아 문턱을 넘길 수 있다."""
@@ -329,7 +329,7 @@ def _insight_grounding(title: str, text: str, sources: list[tuple[dict, str]]) -
 
 
 def _spans(word: str, haystack: str) -> list[tuple[int, int]]:
-    """낱말이 건초더미에 나타난 자리들 — `_stem_hit` 과 **같은 어간 규칙**으로 찾는다.
+    """낱말이 건초더미에 나타난 자리들 — `_stem_hit`과 **같은 어간 규칙**으로 찾는다.
 
     접지가 "있다/없다"로 답하는 자리를 극성은 "어디에 있나"로 물어야 해서 위치가 필요하다.
     두 함수가 다른 어간 규칙을 쓰면 접지는 통과했는데 극성은 낱말을 못 찾는 일이 생긴다."""
@@ -381,13 +381,13 @@ def _polarity(word: str, haystack: str, *, assertion: bool = False) -> int | Non
       주장(통찰) — 하나의 단언. 제목은 본문에 붙은 **딱지**이지 따로 선 주장이 아니다.
         그래서 낱말에 부정이 한 번이라도 걸리면 그 단언은 부정을 말한 것이다 → -1.
 
-    이 구분이 없을 때 무슨 일이 났는지 (실측 26-07-30). 검증기는 `title + text` 를 한 덩어리로
-    보는데, 제목은 본문의 핵심 명사를 되풀이하는 것이 정상이고 `_NORN_SYS` 가 title+text 쌍을
-    요구한다. 그 되풀이가 **비부정 위치의 +1** 을 하나 만들어 본문의 -1 과 상쇄되고, 혼재는
-    None 이 되어 게이트가 통째로 침묵했다 — 같은 거짓말이 제목만 갈아입으면 표식을 잃었다:
+    이 구분이 없을 때 무슨 일이 났는지 (실측 26-07-30). 검증기는 `title + text`를 한 덩어리로
+    보는데, 제목은 본문의 핵심 명사를 되풀이하는 것이 정상이고 `_NORN_SYS`가 title+text 쌍을
+    요구한다. 그 되풀이가 **비부정 위치의 +1**을 하나 만들어 본문의 -1과 상쇄되고, 혼재는
+    None이 되어 게이트가 통째로 침묵했다 — 같은 거짓말이 제목만 갈아입으면 표식을 잃었다:
 
         제목 "배포 습관"          → 표식 있음   (앵커를 안 건드림)
-        제목 "금요일 무테스트 배포"  → 표식 없음 ← 접지 0.714 로 자동 승격까지 갔다
+        제목 "금요일 무테스트 배포"  → 표식 없음 ← 접지 0.714로 자동 승격까지 갔다
         제목 "테스트 관련 습관"     → 표식 없음 ←
 
     부정 쪽으로 읽는 것이 안전한 쪽인 이유는 이 신호가 **기각이 아니라 표식**이기 때문이다
@@ -417,7 +417,7 @@ def _polarity_conflict(title: str, text: str, sources: list[tuple[dict, str]]) -
 
     표식은 만장일치일 때만 단다 — 그 낱말을 언급한 모든 출처가 통찰과 반대 극성일 때.
     한 출처라도 통찰 편이면 그건 모순이 아니라 출처들 사이의 이견이고, 이견의 해소는
-    contradiction op 가 사람에게 넘길 일이다.
+    contradiction op가 사람에게 넘길 일이다.
 
     **왜 기각이 아니라 표식인가** (26-07-28 측정으로 정해졌다). 이 신호는 어휘만 보므로
     진짜 뒤집기와 우연한 극성 반전을 못 가른다. 둘은 형상이 같다:
@@ -435,7 +435,7 @@ def _polarity_conflict(title: str, text: str, sources: list[tuple[dict, str]]) -
     claim = f"{title} {text}".lower()
     haystacks = [f"{meta.get('title', '')} {body}".lower() for meta, body in sources]
     # 긴 낱말부터 본다 — 기각 사유에 실리는 것은 처음 걸린 낱말이고, 사람이 판단하려면
-    # 그 낱말이 "on" 이 아니라 "fridays" 여야 한다.
+    # 그 낱말이 "on"이 아니라 "fridays" 여야 한다.
     for word in sorted(_anchors(claim), key=lambda w: (-len(w), w)):
         # 통찰은 단언이고 출처는 문서다 — 혼재를 같은 자로 읽으면 제목의 되풀이가 게이트를
         # 침묵시킨다 (`_polarity` 독스트링의 실측).
@@ -491,7 +491,7 @@ def _relatedness(d: str, a: str, b: str, pa: tuple[dict, str], pb: tuple[dict, s
 
 
 def _add_link(d: str, a: str, b: str) -> None:
-    """양쪽 frontmatter 에 서로를 적는다. 회수(PPR)는 어차피 무향이지만 사람이 페이지를 열었을 때
+    """양쪽 frontmatter에 서로를 적는다. 회수(PPR)는 어차피 무향이지만 사람이 페이지를 열었을 때
     한쪽에서만 보이면 관계가 반쪽으로 읽힌다."""
     for source, target in ((a, b), (b, a)):
         pg = _read(d, source)
@@ -506,7 +506,7 @@ def _add_link(d: str, a: str, b: str) -> None:
 
 
 def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
-    """결정적 검증 — 통과한 op 와 (op, 기각 사유). LLM 주장은 검증 입력일 뿐이다."""
+    """결정적 검증 — 통과한 op와 (op, 기각 사유). LLM 주장은 검증 입력일 뿐이다."""
     floor = _merge_floor()
     lint_findings = lint(d)
     decay_ok = {f["slug"] for f in lint_findings if f["code"] == "decay-candidate"}
@@ -649,7 +649,7 @@ def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
 def _complete(root: str, system: str, user: str) -> str:
     """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다.
 
-    개인 메모리를 손질하는 provider 는 memory.manager 가 정한다 (기본 = 메인 provider)."""
+    개인 메모리를 손질하는 provider는 memory.manager가 정한다 (기본 = 메인 provider)."""
     from .manager import complete
 
     return complete(root, system, user, max_tokens=3000)
@@ -740,14 +740,14 @@ def restore_page(slug: str, d: str | None = None) -> bool:
 
 
 def apply_norn(d: str | None, plan: dict) -> dict:
-    """검증 통과 op 만 결정론 커밋. 반환 = {"applied", "failed", "backup", "report"}."""
+    """검증 통과 op만 결정론 커밋. 반환 = {"applied", "failed", "backup", "report"}."""
     d = ensure_home(d)
     ops = list(plan.get("ops") or [])
     applied: list[dict] = []
     failed: list[dict] = []
-    # 기존 페이지를 **고치거나 없애는** op 앞에서만 스냅샷을 뜬다. link 가 여기 드는 것이
-    # 요점이다 — 파괴적이지 않다는 말이 무변경이라는 뜻은 아니고, `_add_link` 는 양쪽
-    # frontmatter 를 실제로 다시 쓴다. insight·contradiction 은 순수 추가라 뺀다
+    # 기존 페이지를 **고치거나 없애는** op 앞에서만 스냅샷을 뜬다. link가 여기 드는 것이
+    # 요점이다 — 파괴적이지 않다는 말이 무변경이라는 뜻은 아니고, `_add_link`는 양쪽
+    # frontmatter를 실제로 다시 쓴다. insight·contradiction은 순수 추가라 뺀다
     # (아무것도 안 고치는 런에서 pages/ 전체를 복사하는 것은 값만 치르는 일이다).
     backup = _backup(d) if any(op["op"] in ("merge", "archive", "link") for op in ops) else ""
     for op in ops:
@@ -787,7 +787,7 @@ def apply_norn(d: str | None, plan: dict) -> dict:
 
 
 def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict], backup: str) -> str:
-    """노른 리포트 — reports/ 는 pages/ 밖 (인덱스 예산 무관). Obsidian vault 에서 바로 읽힌다."""
+    """노른 리포트 — reports/ 는 pages/ 밖 (인덱스 예산 무관). Obsidian vault에서 바로 읽힌다."""
     rdir = os.path.join(d, REPORTS_DIR)
     os.makedirs(rdir, exist_ok=True)
     ts = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d-%H%M")
@@ -827,14 +827,14 @@ def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict], b
 # ── 자율 계층 (오딘 결정 26-07-24: "추가는 자율, 파괴는 동의") ─────────────────────
 #
 # 스스로 기록하며 성장하되, 되돌릴 수 없는 것은 손대지 않는다:
-# 완전 가역·순수 추가인 op 는 자율로 기록하고, 위키의 형태를 바꾸는
+# 완전 가역·순수 추가인 op는 자율로 기록하고, 위키의 형태를 바꾸는
 # op(병합·보관)는 제안으로 남긴다. 스킬 승인 게이트(CUS-251)는 이 계층과 무관하게 불변 —
 # 여기서 자율화되는 것은 advisory 지식(개인 위키)뿐이고, 그마저 스캔·플로어·캡을 통과한
 # 것만이다. 게이트는 여전히 어떤 메모리도 완료 증거로 신뢰하지 않는다.
 #
 #   off  — 자율 없음: 전부 제안 (넛지만)
 #   safe — contradiction(보고 전용)만 자동, 기본값
-#   full — merge·archive 까지 자동 (백업+복원 가능하지만 형태 변경 — 명시 선택)
+#   full — merge·archive까지 자동 (백업+복원 가능하지만 형태 변경 — 명시 선택)
 #
 # 통찰(insight)은 어느 모드에도 기본으로 들어가지 않는다. 26-07-28 판정:
 #
@@ -843,7 +843,7 @@ def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict], b
 # 뒤집었는가"(극성)까지다. "출처에서 왔고, 뒤집지도 않았는데, 그래도 틀린 추론"은 결정론이
 # 잡을 수 있는 모양이 아니다 — 귀납의 비약은 형상이 없다.
 #
-# 가역성은 이 자리에서 자격이 되지 못한다. remove 로 지울 수 있다는 사실은, 허구가 정본
+# 가역성은 이 자리에서 자격이 되지 못한다. remove로 지울 수 있다는 사실은, 허구가 정본
 # 자리에 앉아 회수에 섞여 나가고 다른 통찰의 출처가 되던 시간을 되돌려 주지 않는다.
 # 그래서 기본은 "접수하되 사람이 연다"이고, 자동은 그 비용을 아는 사람이 켜는 것이다:
 #
@@ -882,10 +882,10 @@ def insight_auto() -> bool:
 
 
 def partition_ops(ops: list[dict], mode: str, *, allow_insight: bool | None = None) -> tuple[list[dict], list[dict]]:
-    """검증 통과 op 를 (자동 적용분, 제안 잔류분) 으로 가른다 — 모드가 자격을 정하되,
+    """검증 통과 op를 (자동 적용분, 제안 잔류분)으로 가른다 — 모드가 자격을 정하되,
     통찰은 모드만으로 자격을 얻지 못한다: 옵트인 + 접지가 짙어야 자동이다.
 
-    allow_insight 를 명시하면 설정을 덮는다 (테스트·호출측 정책용)."""
+    allow_insight를 명시하면 설정을 덮는다 (테스트·호출측 정책용)."""
     allowed = _AUTO_OPS.get(mode, frozenset())
     opted_in = insight_auto() if allow_insight is None else allow_insight
 
@@ -908,8 +908,8 @@ def partition_ops(ops: list[dict], mode: str, *, allow_insight: bool | None = No
 def run_auto(root: str, d: str | None = None) -> dict:
     """자율 노른 1회 — due 판정 → 계획 → 모드 자격분만 적용, 잔류분은 제안으로 보고.
 
-    비-due 여도 강제하지 않는다 (호출측이 due 를 확인하고 부르는 것이 정상 경로지만,
-    수동 `norn --auto` 는 즉시 실행을 원하므로 due 를 다시 막지 않는다)."""
+    비-due 여도 강제하지 않는다 (호출측이 due를 확인하고 부르는 것이 정상 경로지만,
+    수동 `norn --auto`는 즉시 실행을 원하므로 due를 다시 막지 않는다)."""
     d = ensure_home(d)
     mode = auto_mode()
     plan = plan_norn(root, d)
@@ -937,17 +937,17 @@ def run_auto(root: str, d: str | None = None) -> dict:
 def wake(root: str, d: str | None = None) -> str | None:
     """턴·퀘스트가 끝난 자리에서 부르는 손질 신호 — 사람에게 보일 한 줄 또는 None(침묵).
 
-    **왜 함수인가.** 이 판정은 호출면마다 다시 쓰면 안 된다. 개인 메모리는 소유자의 기억이라
+    **왜 함수인가.**이 판정은 호출면마다 다시 쓰면 안 된다. 개인 메모리는 소유자의 기억이라
     어느 호스트에서 일하든 같은 속도로 손질돼야 하는데(policy.CLIENT_MODES 주석), 등급 분기와
-    latch 를 표면마다 따로 구현하면 호스트에 따라 위키가 다르게 자란다. 훅(`memory norn --wake`)
-    과 네이티브 루프가 여기 하나를 본다.
+    latch를 표면마다 따로 구현하면 호스트에 따라 위키가 다르게 자란다. 훅(`memory norn
+    --wake`)과 네이티브 루프가 여기 하나를 본다.
 
-    **비싼 일은 여기서 안 한다.** due 판정은 log.md 행 수와 state 파일만 읽는다 — LLM 도
-    임베더도 안 뜬다. 실제 손질(plan_norn 의 LLM 왕복)은 분리 스폰한 자식이 맡는다:
+    **비싼 일은 여기서 안 한다.** due 판정은 log.md 행 수와 state 파일만 읽는다 — LLM도
+    임베더도 안 뜬다. 실제 손질(plan_norn의 LLM 왕복)은 분리 스폰한 자식이 맡는다:
     호출자의 턴은 그 사이 그냥 끝난다.
 
-    동의 경계는 `norn_auto` 등급이 쥐고 있지 이 함수가 쥐고 있지 않다 — off 는 넛지만,
-    기본 safe 는 보고 전용(contradiction)까지, full 이라야 병합·보관이 자동이다."""
+    동의 경계는 `norn_auto` 등급이 쥐고 있지 이 함수가 쥐고 있지 않다 — off는 넛지만,
+    기본 safe는 보고 전용(contradiction)까지, full 이라야 병합·보관이 자동이다."""
     d = ensure_home(d)
     due, reason = norn_due(d)
     if not due:
@@ -967,7 +967,7 @@ def wake(root: str, d: str | None = None) -> str | None:
 
 
 def _spawn_auto(root: str) -> bool:
-    """`memory norn --auto` 를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관)."""
+    """`memory norn --auto`를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관)."""
     import shutil as _shutil
     import subprocess
     import sys
@@ -1002,4 +1002,4 @@ def nudge_line(d: str | None = None) -> str | None:
         return None
     state["nudge_digest"] = digest
     _save_state(d, state)
-    return f"위그드라실 노른 제안 — {reason}. asgard memory norn 으로 통합 검토 (--apply 전엔 무변경)"
+    return f"위그드라실 노른 제안 — {reason}. asgard memory norn으로 통합 검토 (--apply 전엔 무변경)"

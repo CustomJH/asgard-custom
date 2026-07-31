@@ -3,11 +3,11 @@
 경로는 두 갈래뿐이다. **읽기**는 문서와 진척을 한 왕복에 실어 주고(`GET /api/plans/<id>`),
 **쓰기**는 셋 중 하나다:
 
-  · `/edit`      손으로 고치기 — 연산 이름은 `plan.edits.OPS` 가 전량이다
+  · `/edit`      손으로 고치기 — 연산 이름은 `plan.edits.OPS`가 전량이다
   · `/ask · /prd · /spec · /flow · /chat`   모델을 불러 문서를 짓기
-  · `/refine`    고칠 글을 **돌려주기만** 한다 (반영은 사람이 `/edit` 으로 누른다)
+  · `/refine`    고칠 글을 **돌려주기만** 한다 (반영은 사람이 `/edit`으로 누른다)
 
-모델을 부르는 경로는 오래 걸리고 실패할 수 있다. 그래서 실패를 502 로 내보내되 **무엇이
+모델을 부르는 경로는 오래 걸리고 실패할 수 있다. 그래서 실패를 502로 내보내되 **무엇이
 왜 실패했는지**를 같이 준다 — 화면이 "잠시 후 다시"라고만 말하면 사용자는 provider 설정이
 비어 있다는 것을 영원히 모른다.
 """
@@ -43,10 +43,10 @@ def plan_view(plan_id: str) -> dict:
 
 
 def dispatch(method: str, path: str, body: bytes = b"", root: str | None = None) -> tuple[int, str, bytes]:
-    """`root` 는 이제 **경계가 아니다.**
+    """`root`는 이제 **경계가 아니다.**
 
-    기획은 워크스페이스 하나에 산다. 그래서 창이 어느 폴더를 보고 있든 목록은 같고, root 가
-    하는 일은 둘뿐이다 — 새 기획에 폴더 링크를 걸어 주는 것(`?root=` 로 끌 수 있다), 그리고
+    기획은 워크스페이스 하나에 산다. 그래서 창이 어느 폴더를 보고 있든 목록은 같고, root가
+    하는 일은 둘뿐이다 — 새 기획에 폴더 링크를 걸어 주는 것(`?root=`로 끌 수 있다), 그리고
     모델을 부를 때 설정을 어디서 읽을지 정하는 것."""
     root = os.path.abspath(root or os.getcwd())
     if path == "/api/plans":
@@ -75,7 +75,7 @@ def dispatch(method: str, path: str, body: bytes = b"", root: str | None = None)
             imported = store.import_root(target)
         except ValueError as exc:
             return _api_error(400, "invalid_plan", str(exc))
-        # `imported` 와 목록을 통째로 겹치면 `plans` 가 **건수에서 목록으로** 바뀐다(둘 다 그
+        # `imported`와 목록을 통째로 겹치면 `plans`가 **건수에서 목록으로** 바뀐다(둘 다 그
         # 이름을 쓴다). 화면이 "기획 [object]건"을 말하게 되는 자리라 결과는 따로 싣는다.
         return _json(200, {"imported": imported, **store.list_plans(), "pending": _pending_roots(root)})
 
@@ -244,9 +244,9 @@ def run_dashboard(
     open_browser: bool = True,
     root: str | None = None,
 ) -> int:
-    """`asgard plan` — Studio 의 기획 화면을 연다. 종료는 Ctrl-C.
+    """`asgard plan` — Studio의 기획 화면을 연다. 종료는 Ctrl-C.
 
-    기획 표면은 하나다. API 계약(`plan` 도메인 + 이 dispatch)은 창과 CLI 가 같이 쓴다."""
+    기획 표면은 하나다. API 계약(`plan` 도메인 + 이 dispatch)은 창과 CLI가 같이 쓴다."""
     from ..desktop import run_desktop
 
     return run_desktop(
@@ -273,8 +273,8 @@ def _payload(body: bytes) -> dict:
 
 
 def _json(status: int, value: object) -> tuple[int, str, bytes]:
-    # `allow_nan=False` 가 이 표면의 추가 조건이다 — 기획 문서에 NaN 이 실리면 화면의
-    # JSON.parse 가 통째로 죽는다. 나머지 모양은 공용 계약과 같다.
+    # `allow_nan=False`가 이 표면의 추가 조건이다 — 기획 문서에 NaN이 실리면 화면의
+    # JSON.parse가 통째로 죽는다. 나머지 모양은 공용 계약과 같다.
     return status, loopback.JSON_TYPE, json.dumps(value, ensure_ascii=False, allow_nan=False).encode("utf-8")
 
 

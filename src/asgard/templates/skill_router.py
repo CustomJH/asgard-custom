@@ -47,7 +47,7 @@ def direct_skill(skill_md: str, *, implicit: bool = True) -> str:
     hint = _field(skill_md, "argument-hint")
     hint_line = f"argument-hint: {hint}\n" if hint else ""
     # 쉼표로 잇는다 — 공백으로 이으면 상류 목록의 마지막 항목이 `WebSearch Bash(asgard skills *)`
-    # 한 덩어리가 돼 그 도구와 우리 통로가 함께 사라진다 (allowed-tools 는 쉼표 구분 목록).
+    # 한 덩어리가 돼 그 도구와 우리 통로가 함께 사라진다 (allowed-tools는 쉼표 구분 목록).
     tools = ", ".join(part for part in (allowed, "Bash(asgard skills *)") if part)
     return f"""---
 name: {name}

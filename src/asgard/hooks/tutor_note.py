@@ -12,12 +12,12 @@
 # 없던 턴은 화면에서 똑같이 생겼다. 그래서 세는 일은 기계가 하고, 모델의 주의력은 "왜 그렇게
 # 했는가"에만 남긴다 — 그 칸은 기계가 못 채운다.
 #
-# 왜 **안 막는가**: 튜터는 규율이지 관문이 아니다. health 와 같은 등급이다. 되짚기를 강제로
+# 왜 **안 막는가**: 튜터는 규율이지 관문이 아니다. health와 같은 등급이다. 되짚기를 강제로
 # 통과시키면 사람은 되짚기를 끄는 법을 먼저 배운다. 여기서 하는 일은 사용자에게 한 화면을
 # 건네는 것뿐이고, 답할지 말지는 사용자가 정한다.
 #
-# 판정 대상은 **이 세션이 실제로 쓴 경로**다 (write_sentinel 이 남긴 목록) — craft-gate 와 같은
-# 계약. 사용자가 원래 갖고 있던 dirt 를 이 턴의 물음으로 돌려주면 그건 남의 빚을 묻는 것이다.
+# 판정 대상은 **이 세션이 실제로 쓴 경로**다 (write_sentinel이 남긴 목록) — craft-gate와 같은
+# 계약. 사용자가 원래 갖고 있던 dirt를 이 턴의 물음으로 돌려주면 그건 남의 빚을 묻는 것이다.
 from __future__ import annotations
 
 import hashlib
@@ -29,10 +29,10 @@ import subprocess
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 산출이 통째로 증발한다. UTF-8 강제.
+# fail-open에 삼켜지면 훅 산출이 통째로 증발한다. UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -61,12 +61,12 @@ def _writes(root: str, sid: str) -> list[str]:
 
 
 def _lesson(exe: str, root: str, paths: list[str]) -> dict:
-    """`asgard tutor --json` 이 유일한 판정 경로 — 훅은 규칙을 자기가 알지 않는다.
+    """`asgard tutor --json`이 유일한 판정 경로 — 훅은 규칙을 자기가 알지 않는다.
 
     훅은 사용자 저장소 안에서 도는 stdlib 전용 스크립트다(hooks 패키지 계약). 규칙을 복사해
     넣으면 판정이 두 벌이 되고, 두 벌은 반드시 어긋난다.
     """
-    # `--record` 가 이 호출을 성장 기록에 센다 — 훅이 놓은 물음도 사람 앞에 놓인 물음이다.
+    # `--record`가 이 호출을 성장 기록에 센다 — 훅이 놓은 물음도 사람 앞에 놓인 물음이다.
     # 안 세면 조절(fading)·재방문이 외부 클라이언트에서만 영원히 1회차에 머문다.
     cmd = [exe, "tutor", "--json", "--record", "--report"]
     for path in paths[:200]:
@@ -112,7 +112,7 @@ def _latched(root: str, sid: str, sig: str, slot: str = "") -> bool:
 
 
 def _card(lesson: dict, points: list[dict], back: list[dict]) -> str:
-    """네이티브 루프의 `tutor._card` 와 같은 화면을 낸다 — 형식이 갈리면 같은 판정이 클라이언트마다
+    """네이티브 루프의 `tutor._card`와 같은 화면을 낸다 — 형식이 갈리면 같은 판정이 클라이언트마다
     다르게 보이고, 그러면 사용자는 어느 쪽이 진짜인지부터 물어야 한다."""
     added, removed = int(lesson.get("added") or 0), int(lesson.get("removed") or 0)
     files = len(lesson.get("files") or [])
@@ -163,7 +163,7 @@ def _folded(counts: dict) -> str:
 
 
 def _brief(exe: str, root: str, prompt: str) -> str:
-    """`asgard tutor --brief` 를 그대로 옮긴다 — 훅은 자기 규칙을 안 갖는다(판정기 단일)."""
+    """`asgard tutor --brief`를 그대로 옮긴다 — 훅은 자기 규칙을 안 갖는다(판정기 단일)."""
     if not prompt:
         return ""
     try:
@@ -189,7 +189,7 @@ def _prompt_of(data: dict) -> str:
 
 
 def _run_brief(protocol: str, root: str, sid: str, data: dict) -> None:
-    """일을 **시작하기 전에** 이 자리에 남은 답 없는 물음을 사용자 앞에 놓는다 (UserPromptSubmit).
+    """일을 **시작하기 전에**이 자리에 남은 답 없는 물음을 사용자 앞에 놓는다 (UserPromptSubmit).
 
     사용자에게만 보낸다. 모델에 넣지 않는 이유가 이 층의 핵심이다 — 모델이 열린 물음을 보면
     그 물음에 **대신 답해** 버리고, 그러면 되짚기가 막으려던 바로 그 일이 일어난다(미미르 auga

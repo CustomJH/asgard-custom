@@ -5,14 +5,14 @@
 확장=priors/map)은 이미 evidence-first 관용구로 존재한다 — 이 모듈이 채우는 **진짜 갭은 하나**:
 과업을 넘어 지속되는 프로젝트 관통 원칙(설계①)과 그것을 판단 렌즈로 쓰는 것(판단③).
 
-적합성 경계 (검증됨): Trinity 의 핵심 계약은 "게이트는 증거만 신뢰"다. Charter 는 그 계약을
-**대체하지 않는다** — Thinker 에겐 계획 앵커(coherence 를 concrete criteria 로 환원하라),
-Verifier 에겐 반례 렌즈(명백 위반은 고확신 반례로만)로 주입될 뿐, 게이트가 강제하는 criteria 를
+적합성 경계 (검증됨): Trinity의 핵심 계약은 "게이트는 증거만 신뢰"다. Charter는 그 계약을
+**대체하지 않는다** — Thinker 에겐 계획 앵커(coherence를 concrete criteria로 환원하라),
+Verifier 에겐 반례 렌즈(명백 위반은 고확신 반례로만)로 주입될 뿐, 게이트가 강제하는 criteria를
 자동 생성하지 않는다. `lagom:` 마커가 "검증 면제가 아니다"인 것과 같은 프레이밍.
 
-저장: `.asgard/asgard-setting-project.json` 의 `charter` 섹션 (git 추적 → 크로스툴로 따라감).
+저장: `.asgard/asgard-setting-project.json`의 `charter` 섹션 (git 추적 → 크로스툴로 따라감).
   {"charter": {"through_line": "한 줄", "coherence": ["체크 가능한 일관성 기준", ...]}}
-문자열 단독("한 줄")도 허용 — through_line 만 있는 축약형.
+문자열 단독("한 줄")도 허용 — through_line만 있는 축약형.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ def _coherence_block(items: list[str]) -> str:
 def note(root: str | None = None, section: str = "identity") -> str:
     """역할별 charter 주입분 — charter 미설정이면 빈 문자열 (프롬프트 무변화).
 
-    identity : through-line 만 — DIRECT·모든 역할에 관통 원칙 제공 (설계①, 캐시 안정 상수).
+    identity : through-line만 — DIRECT·모든 역할에 관통 원칙 제공 (설계①, 캐시 안정 상수).
     thinker  : through-line + coherence → 계획 앵커 + criteria 환원 지시 (협업②).
     verifier : through-line + coherence → 반례 렌즈, 게이트 대체 금지 명시 (판단③, evidence-first 보존)."""
     ch = load_charter(root)

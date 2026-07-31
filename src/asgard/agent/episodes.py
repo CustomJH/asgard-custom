@@ -4,7 +4,7 @@
    └ 퀘스트 귀속(quest 필드)              └ 승격은 기존 ingest 승인 게이트로만
 
 권위는 여기 없다 — Git·퀘스트 로그·게이트 증거가 소유하고, 주입 블록은 힌트로만 표기된다.
-인덱스는 파생물: 지워도·손상돼도 turns.jsonl 에서 재생성된다. 원문이 줄었으면(보존 정리)
+인덱스는 파생물: 지워도·손상돼도 turns.jsonl에서 재생성된다. 원문이 줄었으면(보존 정리)
 증분 오프셋을 신뢰하지 않고 전체 재구축한다. 모든 실패는 fail-open — 검색·주입 불능이
 세션을 막지 않는다.
 """
@@ -20,10 +20,10 @@ import sqlite3
 from .turn_store import _dir, store_path
 
 _DB = "episodes.db"
-RRF_K = 60  # memory.recall 과 동일 — 순위 융합 표준 상수
-EPISODE_BUDGET = 700  # chars — 턴마다 붙을 수 있는 주입 블록 상한 (개인 recall 900 보다 작게)
+RRF_K = 60  # memory.recall과 동일 — 순위 융합 표준 상수
+EPISODE_BUDGET = 700  # chars — 턴마다 붙을 수 있는 주입 블록 상한 (개인 recall 900보다 작게)
 _EXCERPT_WIDTH = 160
-_EXCLUDE_TAIL = 3  # 최근 턴은 라이브 history 가 이미 나른다 — 재주입 중복 차단
+_EXCLUDE_TAIL = 3  # 최근 턴은 라이브 history가 이미 나른다 — 재주입 중복 차단
 
 
 def _db_path(root: str) -> str:
@@ -46,7 +46,7 @@ def _connect(path: str) -> sqlite3.Connection:
 
 
 def _db(root: str) -> sqlite3.Connection:
-    """파생 인덱스 연결 — 손상 파일은 격리 후 재생성 (memory.index 와 동일 계약)."""
+    """파생 인덱스 연결 — 손상 파일은 격리 후 재생성 (memory.index와 동일 계약)."""
     path = _db_path(root)
     os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     try:
@@ -80,7 +80,7 @@ def _meta_set(conn: sqlite3.Connection, key: str, value: int) -> None:
 def sync(root: str) -> int:
     """turns.jsonl → episodes.db 증분 동기화. 반환 = 신규 인덱스 턴 수.
 
-    오프셋은 '완결 라인'까지만 전진한다 — 꼬리의 절단 라인은 다음 sync 가 다시 본다.
+    오프셋은 '완결 라인'까지만 전진한다 — 꼬리의 절단 라인은 다음 sync가 다시 본다.
     원문이 오프셋보다 작아졌으면(prune·수동 삭제) 전체 재구축한다."""
     try:
         src = store_path(root)
@@ -115,7 +115,7 @@ def sync(root: str) -> int:
                         d = json.loads(line)
                         q, a = str(d["request"]), str(d["response"])
                     except ValueError, KeyError, TypeError:
-                        continue  # 손상 라인 — seq 는 전진 (라인 위치 = 안정 좌표)
+                        continue  # 손상 라인 — seq는 전진 (라인 위치 = 안정 좌표)
                     conn.execute(
                         "INSERT INTO ep(seq, ts, quest, sid, request, response) VALUES(?,?,?,?,?,?)",
                         (seq, float(d.get("ts") or 0.0), str(d.get("quest") or ""), str(d.get("sid") or ""), q, a),
@@ -147,8 +147,8 @@ def _excerpt(text: str, phrase: str, words: list[str], width: int = _EXCERPT_WID
 def search(root: str, text: str, k: int = 5, quest: str | None = None) -> list[dict]:
     """세션 원문 전문 검색 (0-LLM) — FTS trigram + lexical 스캔 2-스트림 RRF.
 
-    반환 hit = {seq, ts, quest, sid, request, excerpt, score}. excerpt 는 응답(우선)
-    또는 요청에서 고른 관련 구간이다. quest 를 주면 해당 퀘스트 귀속 턴만 남긴다."""
+    반환 hit = {seq, ts, quest, sid, request, excerpt, score}. excerpt는 응답(우선)
+    또는 요청에서 고른 관련 구간이다. quest를 주면 해당 퀘스트 귀속 턴만 남긴다."""
     try:
         sync(root)
         k = max(1, min(int(k), 200))
@@ -156,7 +156,7 @@ def search(root: str, text: str, k: int = 5, quest: str | None = None) -> list[d
         try:
             where, args = ("WHERE quest = ?", [quest]) if quest else ("", [])
             rows = conn.execute(
-                f"SELECT seq, ts, quest, sid, request, response FROM ep {where}",  # noqa: S608 — where 는 상수 2형
+                f"SELECT seq, ts, quest, sid, request, response FROM ep {where}",  # noqa: S608 — where는 상수 2형
                 args,
             ).fetchall()
             fts_order: list[tuple[int, float]] = []
@@ -211,7 +211,7 @@ def search(root: str, text: str, k: int = 5, quest: str | None = None) -> list[d
         r = by_seq[seq]
         req, resp = str(r[4]), str(r[5])
         # 발췌는 항상 응답에서 — 질의가 요청문과 겹치는 건 당연하고, 주입 가치는 그때의 답이다.
-        # 응답 내 매칭이 없으면 응답 머리 구간 (_excerpt 가 i=0 폴백).
+        # 응답 내 매칭이 없으면 응답 머리 구간 (_excerpt가 i=0 폴백).
         src = resp
         hits.append(
             {
@@ -307,7 +307,7 @@ def episode_note(request: str, root: str, k: int = 3) -> str:
     """요청 관련 과거 세션 구간의 비권위 주입 블록 (0-LLM 결정론).
 
     개인 recall(승격 메모리)과 달리 저장 게이트가 없는 원문이므로 주입 시점에
-    scan_threats 로 오염 구간을 걸러낸다. 최근 _EXCLUDE_TAIL 턴은 라이브 history 가
+    scan_threats로 오염 구간을 걸러낸다. 최근 _EXCLUDE_TAIL 턴은 라이브 history가
     이미 싣고 있어 제외. 무적중·킬스위치 off·실패 = 빈 문자열 (무변화).
 
     이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 싣는 자리는 조립기로 간다."""

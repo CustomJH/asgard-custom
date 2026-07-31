@@ -60,8 +60,8 @@ def cursor_hooks_json() -> str:
             {
                 "version": 1,
                 "hooks": {
-                    # 주입 계층(lagom·charter·무인 계약)은 sessionStart 에 모인다 — Cursor 의
-                    # beforeSubmitPrompt 는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks,
+                    # 주입 계층(lagom·charter·무인 계약)은 sessionStart에 모인다 — Cursor의
+                    # beforeSubmitPrompt는 컨텍스트 주입 통로가 없다 (cursor.com/docs/hooks,
                     # 26-07-27 확인: 출력이 continue/user_message 뿐).
                     "sessionStart": [
                         {"command": f"{py} .cursor/hooks/lagom-activate.py cursor"},
@@ -78,7 +78,7 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/lagom-tracker.py cursor"},
                         {"command": f"{py} .cursor/hooks/memory-activate.py cursor"},
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
-                        # 되짚기의 앞쪽 절반 — 주입 통로가 없어도 `user_message` 로 **사용자에게**는
+                        # 되짚기의 앞쪽 절반 — 주입 통로가 없어도 `user_message`로 **사용자에게**는
                         # 닿는다. 원래 모델에 넣지 않을 층이라 이 제약이 여기서는 제약이 아니다.
                         {"command": f"{py} .cursor/hooks/tutor-note.py cursor brief"},
                     ],
@@ -107,8 +107,8 @@ def cursor_hooks_json() -> str:
                             "command": f"{py} .cursor/hooks/map-activate.py cursor",
                         },
                         # Canon 4 + 통제 표면 보호 — 판정에 역할 신원이 필요 없는 규율만 여기서 돈다
-                        # (preToolUse 페이로드엔 agent_type 이 없다; 읽기전용 역할은 에이전트
-                        # 프론트매터 `readonly: true` 가 네이티브로 막는다).
+                        # (preToolUse 페이로드엔 agent_type이 없다; 읽기전용 역할은 에이전트
+                        # 프론트매터 `readonly: true`가 네이티브로 막는다).
                         {
                             "matcher": "Write|Edit|Delete",
                             "command": f"{py} .cursor/hooks/readonly-guard.py cursor",

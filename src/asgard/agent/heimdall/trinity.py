@@ -1,6 +1,6 @@
 """Trinity 순환 — 퀘스트 단위 상태기계 (WORKER → 검증, 실패/병렬만 THINKER).
 
-TrinityRun 은 한 퀘스트의 실행 상태(계획 컨텍스트·실패 이력·게이트 시그니처·턴 예산)를 들고,
+TrinityRun은 한 퀘스트의 실행 상태(계획 컨텍스트·실패 이력·게이트 시그니처·턴 예산)를 들고,
 전이 함수(quest-log next)가 배정한 역할 턴을 메서드 단위로 수행한다. 각 턴 메서드의 반환이
 제어 흐름이다: None = 다음 턴 계속, str = 최종 보고로 즉시 종료.
 
@@ -38,7 +38,7 @@ from .roles import (
 from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
-_CRAFT_MAX_BLOCKS = 2  # hooks/craft_gate.py MAX_BLOCKS 와 동일 유지 (모드 간 같은 상한)
+_CRAFT_MAX_BLOCKS = 2  # hooks/craft_gate.py MAX_BLOCKS와 동일 유지 (모드 간 같은 상한)
 _CRAFT_MAX_PATHS = 200  # 판정 인자 폭주 방지 — craft_gate 훅과 같은 상한
 
 
@@ -67,8 +67,8 @@ _PYTHONISH = re.compile(r"^python[0-9.]*$")
 
 def _runner_identity(cmd: str) -> str:
     """러너 래퍼를 벗긴 검증 명령 신원 — `uv run pytest X` 실패 뒤 `python -m pytest X` 성공이
-    같은 검증의 해소로 인정되게 한다 (26-07-22 실측: 격리 워크스페이스에 .venv 가 없어 uv 레인이
-    환경 실패 → 동등 러너로 통과했는데 PASS 가 무효화돼 재시도 턴 전체를 태웠다).
+    같은 검증의 해소로 인정되게 한다 (26-07-22 실측: 격리 워크스페이스에 .venv가 없어 uv 레인이
+    환경 실패 → 동등 러너로 통과했는데 PASS가 무효화돼 재시도 턴 전체를 태웠다).
     파싱 불가·정규화 불일치는 원문 신원 그대로 — 종전 엄격 경로와 동일 (fail-safe)."""
     try:
         tokens = shlex.split(cmd, posix=True)
@@ -171,12 +171,12 @@ class TrinityRun:
         # 단일 Worker가 기본 계획자다. 별도 Thinker가 필요한 병렬/재계획 경로는 이 값을 덮어쓴다.
         self.plan_ctx = "Success criteria: " + "; ".join(map(str, cls["criteria"]))
         self.explored: list[str] = []  # Thinker 관찰 명령 — Worker 재탐색 세금 절감 (힌트 전용)
-        self.structural = False  # 직전 FAIL 이 구조적 — 다음 next 에 --structural 전달
-        self.last_fail: dict | None = None  # 직전 FAIL 상세 — WORKER_RETRY 에 주입
-        self.fail_history: list[str] = []  # 턴별 실패 이력 — THINKER_REPLAN 에 주입
+        self.structural = False  # 직전 FAIL이 구조적 — 다음 next에 --structural 전달
+        self.last_fail: dict | None = None  # 직전 FAIL 상세 — WORKER_RETRY에 주입
+        self.fail_history: list[str] = []  # 턴별 실패 이력 — THINKER_REPLAN에 주입
         self.gate_sigs: dict[str, int] = {}  # 게이트 차단 사유별 카운트
         self.gate_blocks = 0
-        self.craft_blocks = 0  # 형상 래칫 차단 횟수 — 상한은 hooks/craft_gate.py 와 같다
+        self.craft_blocks = 0  # 형상 래칫 차단 횟수 — 상한은 hooks/craft_gate.py와 같다
         self.saw_red = False  # 이 퀘스트에서 하네스 베이스라인 red 관측 — prior 집계 축
         self.replans = 0  # 재계획 횟수 — 2회+ 는 clean-slate: thinker_alt placement 또는 티어 승급
         self.wave_plan_pending = False  # 새 Thinker 계획의 units는 WORKER_RETRY 전이여도 한 번 실행
@@ -184,7 +184,7 @@ class TrinityRun:
         self.had_wave_plan = False  # wave FAIL을 범위 없는 단일 Worker로 강등하지 않는 latch
         self.pending: tuple[str, str] | None = None  # 게이트 수리 강제 턴 — next 우회
 
-        # ── 턴 스코프 상태 (매 턴 run() 이 재설정) ──
+        # ── 턴 스코프 상태 (매 턴 run()이 재설정) ──
         self.t = 0
         self.role = ""
         self.why = ""
@@ -213,7 +213,7 @@ class TrinityRun:
         return None
 
     def _record_pre_work(self) -> None:
-        # DIRECT 오분류 소급 편입 — 이미 실행된 write 를 work 로 기록
+        # DIRECT 오분류 소급 편입 — 이미 실행된 write를 work로 기록
         pre_work = self.pre_work
         if pre_work is None:  # run() 가드와 동일 — 타입 내로잉
             return
@@ -271,7 +271,7 @@ class TrinityRun:
         flag_args += ["--task-class", self.tc]  # prior 승격 문턱 축
 
         if self.resume_units:
-            # i18n.t 를 모듈 경유로 부른다 — 이 메서드의 `t` 는 턴 번호다 (from-import 는 그 위를 덮는다)
+            # i18n.t를 모듈 경유로 부른다 — 이 메서드의 `t`는 턴 번호다 (from-import는 그 위를 덮는다)
             hd.on_text(f"  {ui.dim('│ ↻ ' + i18n.t('todo_resume', qid=self.qid, n=len(self.resume_units)))}\n")
             hd._run_worker_waves(self.sid, self.request, self.resume_units, "\n(resumed after process restart)")
             self.had_wave_plan = True
@@ -290,8 +290,8 @@ class TrinityRun:
                 if self.role == "WORKER_RETRY" and ("baseline" in self.why.lower() or "베이스라인" in self.why):
                     self.last_fail = {"sig": "baseline-red", "why": self.why[:500]}
             if t > budget and self.role not in ("VERIFIER", "BASELINE_VERIFY", "DONE", "ESCALATE_ODIN", "DIRECT_DONE"):
-                # 예산 소진 — grace 는 판정·종료 전용, 새 작업 턴 금지. 침묵 break 는 "판정 실패"로
-                # 오독된다 (26-07-22 실측: grace PASS 후 타 세션 소유 베이스라인 red 로 수리 전이가
+                # 예산 소진 — grace는 판정·종료 전용, 새 작업 턴 금지. 침묵 break는 "판정 실패"로
+                # 오독된다 (26-07-22 실측: grace PASS 후 타 세션 소유 베이스라인 red로 수리 전이가
                 # 막혀 "grace 판정까지 완료 실패" 보고 — 실제 판정은 PASS 완료): 미실행 전이와
                 # 사유를 들고 나가 Odin 보고를 정직하게 만든다.
                 self.exhausted_next = (self.role, self.why)
@@ -302,7 +302,7 @@ class TrinityRun:
                 if t >= max(2, int(budget * 0.8))
                 else ")"
             )
-            # 상황별 (역할, 모델) 배정 — Trinity per-turn assignment 의 하니스 판
+            # 상황별 (역할, 모델) 배정 — Trinity per-turn assignment의 하니스 판
             if self.role == "THINKER_REPLAN":
                 self.replans += 1
             role_key = _ROLE_KEY.get(self.role, "")
@@ -398,7 +398,7 @@ class TrinityRun:
             # 답변 소스 배지 — primary 경로 주입만 집계 (폴백 한정 주입은 provider 오류 희귀 경로)
             hd._record_recall(thinker_recall)
         charter = hd._charter_note(hd.root, "thinker")
-        manual = hd._manual_note(hd.root, "thinker")  # 오딘이 쓴 프로젝트 규칙 → criteria 로 환원하라
+        manual = hd._manual_note(hd.root, "thinker")  # 오딘이 쓴 프로젝트 규칙 → criteria로 환원하라
 
         def make(rp=None, role=sess_role, selected=model):
             placed = rp or rrp
@@ -414,7 +414,7 @@ class TrinityRun:
             )
 
         canon = delivery_canon_note(hd.root, self.request)
-        # 범위 형상 — Thinker 는 load_skill 표면이 없다 (read-only 계획 세션): 규율 이름을 배정
+        # 범위 형상 — Thinker는 load_skill 표면이 없다 (read-only 계획 세션): 규율 이름을 배정
         # 단위 브리프에 싣게 하는 loader="none" 판을 준다.
         shape = work_shape_note(hd.root, self.request, self.cls, loader="none")
         primary_prompt = (
@@ -501,7 +501,7 @@ class TrinityRun:
     def _craft_blocked(self) -> bool:
         """미시 형상(craft) + 백엔드 정확성(thor gate) 래칫 — 수리 턴이 필요하면 True.
 
-        모드 B 는 craft-gate 훅이 SubagentStop 에서 같은 두 판정기를 부른다. 네이티브엔 그
+        모드 B는 craft-gate 훅이 SubagentStop에서 같은 두 판정기를 부른다. 네이티브엔 그
         이벤트가 없어 완료 후보 턴이 같은 자리를 맡는다 — 같은 규율, 다른 배선. 판정 대상은
         퀘스트에 귀속된 변경뿐이고, 물려받은 부채는 판정기가 자체 래칫으로 통과시킨다.
 
@@ -541,7 +541,7 @@ class TrinityRun:
         return [str(path) for path in (state.get("changed_files") or []) if str(path)]
 
     def _fail_and_repair(self, sig: str, why: str, cmd: str, role: str, retry: str) -> bool:
-        """하네스 판정 FAIL 을 로그에 남기고 수리 턴을 예약한다 — 완료 불변식들의 공통 자리."""
+        """하네스 판정 FAIL을 로그에 남기고 수리 턴을 예약한다 — 완료 불변식들의 공통 자리."""
         commands = [{"cmd": cmd, "exit_code": 1}]
         self.saw_red = True
         self.last_fail = {"sig": sig, "why": why, "criteria": self.cls["criteria"], "commands": commands}
@@ -603,7 +603,7 @@ class TrinityRun:
     def _done_turn(self) -> str | None:
         """완료 후보 턴 — 문체·형상 불변식 → 게이트 → close → 최종 보고."""
         hd = self._hd
-        # 두 불변식 모두 수리 턴을 예약하고 이번 턴을 끝낸다 (모드 B 의 Stop·SubagentStop 게이트와
+        # 두 불변식 모두 수리 턴을 예약하고 이번 턴을 끝낸다 (모드 B의 Stop·SubagentStop 게이트와
         # 같은 규율 — 네이티브엔 그 이벤트가 없어 완료 후보 턴이 그 자리를 맡는다).
         if self._style_blocked() or self._craft_blocked():
             return None
@@ -639,7 +639,7 @@ class TrinityRun:
             # 채굴은 하니스가, 활성화는 사람이 (consent-first). 채굴은 pending 인박스까지라
             # 능력을 바꾸지 않고 되돌릴 수 있다 — 자율의 경계가 거기다 (evolution.autoscan_enabled).
             # 종전에는 여기서 "채굴할 수 있다"고 말만 했다: 놓친 넛지 하나가 교훈 하나의 영구
-            # 소실이었다 (퀘스트 로그는 keep-last-N 으로 지워진다).
+            # 소실이었다 (퀘스트 로그는 keep-last-N으로 지워진다).
             from ...evolution import autoscan, unmined_signals
 
             mined = autoscan(hd.root)
@@ -650,7 +650,7 @@ class TrinityRun:
                     f"  {ui.dim('│   검토·승인: asgard evolve list (미승인 = 미적용)')}\n"
                 )
             elif unmined_signals(hd.root, self.qid):
-                hd.on_text(f"  {ui.dim('│ ⠶ hard-won 교훈 감지 — asgard evolve scan 으로 스킬 후보 증류 가능')}\n")
+                hd.on_text(f"  {ui.dim('│ ⠶ hard-won 교훈 감지 — asgard evolve scan으로 스킬 후보 증류 가능')}\n")
         except Exception:
             pass
         self._tend_memory()
@@ -667,7 +667,7 @@ class TrinityRun:
         사람 손이고, 이쪽은 advisory 지식의 손질이라 동의 경계를 `norn_auto` 등급이 쥔다
         (기본 safe = 보고 전용). 판정도 스폰도 norn.wake 단일 출처가 한다.
 
-        훅과 달리 subprocess 를 거치지 않는다 — 여기는 이미 파이썬 프로세스이고, due 판정은
+        훅과 달리 subprocess를 거치지 않는다 — 여기는 이미 파이썬 프로세스이고, due 판정은
         파일 두 개를 읽을 뿐이라 인터프리터를 새로 세울 값이 아니다. 침묵이 정상이다."""
         hd = self._hd
         for line in (self._norn_line(), self._pattern_line()):
@@ -787,7 +787,7 @@ class TrinityRun:
         return None
 
     def _worker_turn(self) -> str | None:
-        """구현 턴 — 새 계획의 units 는 wave 병렬, 경미한 재시도는 단일 경로 + 실패 컨텍스트."""
+        """구현 턴 — 새 계획의 units는 wave 병렬, 경미한 재시도는 단일 경로 + 실패 컨텍스트."""
         hd = self._hd
         state = json.loads(ql(hd.root, "state", session=self.sid).stdout or "{}")
         if self.role == "WORKER" and self.cls.get("external_research") and not state.get("research_completed"):
@@ -846,12 +846,12 @@ class TrinityRun:
             return None
         writes: list[str] = []
 
-        # task 를 넘겨야 카탈로그가 `[task-match]` 로 선표시된다 — 안 넘기면 설명 목록만 보고
+        # task를 넘겨야 카탈로그가 `[task-match]`로 선표시된다 — 안 넘기면 설명 목록만 보고
         # 모델이 전적으로 알아서 고르는 상태가 되고, 결정론 매칭분이 통째로 버려진다.
         skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=self.request)
 
         def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None):
-            # verifier 는 무주입 (mk_verifier) — 게이트 기준이 lagom 으로 흔들리면 안 된다
+            # verifier는 무주입 (mk_verifier) — 게이트 기준이 lagom으로 흔들리면 안 된다
             return hd._session(
                 _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
                 extra_tools=[DISPATCH_TOOL, *skill_tools],
@@ -875,7 +875,7 @@ class TrinityRun:
             retry_note = "(retry — fix the reason for the previous FAIL)"
         if self.role == "WORKER_RETRY":
             # 수리 범위 = 퀘스트 귀속 변경만. 워킹트리엔 타 세션의 미커밋 작업이 섞일 수 있다 —
-            # FAIL 사유가 "범위 밖 변경"이어도 남의 작업을 checkout/revert 로 지우면 안 된다
+            # FAIL 사유가 "범위 밖 변경"이어도 남의 작업을 checkout/revert로 지우면 안 된다
             # (26-07-21 실측: 병렬 세션 독 작업이 재시도 턴에 소실).
             quest_files = ", ".join(map(str, (state.get("changed_files") or [])[:20])) or "(none)"
             retry_note += (
@@ -921,7 +921,7 @@ class TrinityRun:
             worker_recall = _project_recall(self.request, start=hd.root)
         if primary_memory_allowed:
             worker_prompt += worker_recall
-            hd._record_recall(worker_recall)  # 답변 소스 배지 — primary 주입만 집계 (Thinker 와 동일 기준)
+            hd._record_recall(worker_recall)  # 답변 소스 배지 — primary 주입만 집계 (Thinker와 동일 기준)
         if fallback_memory_allowed:
             fallback_worker_prompt += worker_recall
         r = hd._run_turn(
@@ -951,8 +951,8 @@ class TrinityRun:
     def _intent_block(self) -> str:
         """사전 등록된 의도 — 무엇이 **의도된 선택**인지 판정자에게 알린다.
 
-        판정자가 diff 만 보면 사용자가 일부러 고른 것과 실수를 구별할 방법이 없어, 의도된 결정을
-        결함으로 올리는 헛FAIL 이 난다. 의도는 Worker 의 자기서사가 아니다 — 사용자의 요청 원문과
+        판정자가 diff만 보면 사용자가 일부러 고른 것과 실수를 구별할 방법이 없어, 의도된 결정을
+        결함으로 올리는 헛FAIL이 난다. 의도는 Worker의 자기서사가 아니다 — 사용자의 요청 원문과
         착수 전에 고정된 criteria(`가정:` 포함)만 담는다. 증거를 대체하지 않는다는 문장을 함께
         실어야 이 블록이 검증 면제로 오독되지 않는다."""
         assumptions = [c for c in map(str, self.cls.get("criteria") or []) if c.strip().startswith("가정:")]
@@ -987,12 +987,12 @@ class TrinityRun:
         manual_v = hd._manual_note(hd.root, "verifier")  # 명시 규칙 위반 = 반례, 역시 criteria 대체 아님
         verifier_paths = tuple(str(path) for path in (st.get("changed_files") or []) if str(path))
         # 판정 시점이 변경 형상을 아는 유일한 자리다 — 요청이 아키텍처를 말하지 않아도 관측된
-        # 형상이 구조적이면 아키텍처 검증 팩을 배정한다 (verifier.md 의 "assigned" 조건 충족).
+        # 형상이 구조적이면 아키텍처 검증 팩을 배정한다 (verifier.md의 "assigned" 조건 충족).
         shape_note_v = work_shape_note(
             hd.root, self.request, self.cls, agent="verifier", loader="cli", changed=verifier_paths or None
         )
-        # 공개 표면 대조 — verifier.md 는 "바뀐 공개 심볼의 호출부를 전수 대조"하라고 요구하지만
-        # 그 목록 만들기가 모델의 손 grep 에 맡겨져 있었다 (심볼 하나 빠뜨리면 그대로 통과).
+        # 공개 표면 대조 — verifier.md는 "바뀐 공개 심볼의 호출부를 전수 대조"하라고 요구하지만
+        # 그 목록 만들기가 모델의 손 grep에 맡겨져 있었다 (심볼 하나 빠뜨리면 그대로 통과).
         # 퀘스트 기준 커밋 대비 시그니처 변화와 호출부 후보를 기계가 먼저 낸다 — grep 면제가
         # 아니라 하한이다. fail-open: 기준이 없거나 계산이 실패하면 빈 문자열 (종전 동작).
         surface_note = ""
@@ -1066,10 +1066,10 @@ class TrinityRun:
         )
         # 마지막 verdict 호출이 최종 판정 (다중 호출 시 정정 인정)
         v = next((c["input"] for c in reversed(r.tool_calls) if c["name"] == "verdict"), None)
-        submitted = (v or {}).get("verdict")  # Verifier 가 실제 제출한 판정 — 하네스 무효화 표시용
+        submitted = (v or {}).get("verdict")  # Verifier가 실제 제출한 판정 — 하네스 무효화 표시용
         observed = [c for c in r.commands if isinstance(c, dict)]  # 하니스 관측 — 위조 불가
         # 하네스 관측 무변경 퀘스트 — '변경 없음' 주장에는 트리 관측(git status/diff)이 곧 검증.
-        # state 로드 실패(st={}) 는 미상이므로 종전 엄격 경로 유지 (fail-closed).
+        # state 로드 실패(st={})는 미상이므로 종전 엄격 경로 유지 (fail-closed).
         no_change = st.get("diff_hash") == _EMPTY_DIFF
         final_exit_by_command: dict[str, object] = {}
         for command in observed:
@@ -1083,8 +1083,8 @@ class TrinityRun:
 
         def _absence_probe(identity: str, exit_code) -> bool:
             # grep/rg 매치 0건은 exit 1 — '패턴 부재' 확인의 성공이지 검증 실패가 아니다.
-            # 이걸 미해소 실패로 세면 정당한 PASS 가 뒤집혀 Worker 재시도+재검증 2턴이 공짜로
-            # 낭비된다 (26-07-23 감사). 부재 확인 외의 exit 1 (파일 없음 grep 등)도 exit 1 이라
+            # 이걸 미해소 실패로 세면 정당한 PASS가 뒤집혀 Worker 재시도+재검증 2턴이 공짜로
+            # 낭비된다 (26-07-23 감사). 부재 확인 외의 exit 1 (파일 없음 grep 등)도 exit 1이라
             # 구분 불가 — 관측 명령이므로 실패로 물어야 할 근거도 없다 (fail-open).
             head = identity.split(" ", 1)[0] if identity else ""
             if head in {"grep", "egrep", "fgrep", "rg"} or identity.startswith("git grep"):
@@ -1118,13 +1118,13 @@ class TrinityRun:
                 no_change and any(c.get("exit_code") == 0 and _inspection_evidence(c.get("cmd", "")) for c in observed)
             )
         ):
-            # 증거 없는 PASS 무효 — verifier 가 명령을 실제 실행하지 않았거나 true/echo 류
+            # 증거 없는 PASS 무효 — verifier가 명령을 실제 실행하지 않았거나 true/echo 류
             # 무조건-성공 명령뿐이다 (Goodhart). 단 무변경 퀘스트의 관측 명령은 증거로 인정 —
-            # 아니면 no-op 이 영구 FAIL 교착 (26-07-21 "안녕" 실측: PASS 5연속 무효화 → 예산 소진).
+            # 아니면 no-op이 영구 FAIL 교착 (26-07-21 "안녕" 실측: PASS 5연속 무효화 → 예산 소진).
             # checks_available 이면 무효화하지 않는다 — PASS 기록 시 하네스가 베이스라인을 직접
-            # 실행해 결정론 증거를 붙인다 (pass_evidence 의 baseline-green 경로): Verifier 에게
+            # 실행해 결정론 증거를 붙인다 (pass_evidence의 baseline-green 경로): Verifier에게
             # 같은 스위트 재실행을 강요하면 사이클당 동일 테스트 2~3중 실행이 된다 (26-07-23 감사).
-            # red 면 완료 퍼널이 baseline-red 로 거부하므로 게이트 무결성은 유지된다.
+            # red 면 완료 퍼널이 baseline-red로 거부하므로 게이트 무결성은 유지된다.
             v = {
                 "verdict": "FAIL",
                 "criteria": v.get("criteria") or self.cls["criteria"],
@@ -1144,13 +1144,13 @@ class TrinityRun:
             # FAIL(경미) 재시도"라는 모순된 화면을 본다 (판정층 정직성).
             hd.on_text(f"  {ui.dim('│ ⚠ 하네스가 Verifier PASS 무효화 — ' + str(v.get('why') or '')[:140])}\n")
         if v.get("failure_sig"):
-            # 자유 기술 sig 의 표기 흔들림을 슬러그로 정규화 — 3-strike 동종 판정 키 안정화
+            # 자유 기술 sig의 표기 흔들림을 슬러그로 정규화 — 3-strike 동종 판정 키 안정화
             from ...failures import normalize_sig
 
             v["failure_sig"] = normalize_sig(str(v["failure_sig"]))
         findings = _classified_findings(v)
         ask_user = [f for f in findings if f["action"] == "ask-user"]
-        # 증거는 하니스 관측 명령만 기록 — 모델 자가보고 commands 는 버린다
+        # 증거는 하니스 관측 명령만 기록 — 모델 자가보고 commands는 버린다
         ev = {
             "role": "verifier",
             "event": "verify",
@@ -1193,17 +1193,17 @@ class TrinityRun:
         if ask_user:
             lines = "\n".join(f"  · [{f['id']}] {f.get('file') or '—'} — {f['description'][:220]}" for f in ask_user)
             if v["verdict"] == "FAIL":
-                # 판단이 사람 몫인 결함을 재시도에 맡기면 Worker 가 Odin 의 명시 지시를 추측으로
+                # 판단이 사람 몫인 결함을 재시도에 맡기면 Worker가 Odin의 명시 지시를 추측으로
                 # 뒤집는다 — 기계 수리와 판단을 가르는 것이 이 분류의 전부다. 판정은 이미 기록됐다.
                 hd._escalate(self.sid)
                 hd._record_outcome(self.tc, "findings-escalate", self.saw_red)
                 return (
-                    f"⚠ Odin 결정 필요 — 판정이 Odin 의 지시를 다투는 결함 {len(ask_user)}건에 걸렸습니다 "
+                    f"⚠ Odin 결정 필요 — 판정이 Odin의 지시를 다투는 결함 {len(ask_user)}건에 걸렸습니다 "
                     f"(재시도로 대신 정할 수 없음).\n{lines}\n"
                     f"퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
                 )
-            # PASS 는 criteria↔증거 매핑이 계약이므로 뒤집지 않는다 — 다만 판단이 사람 몫인 관측을
-            # 조용히 닫으면 "자동 해소"가 된다: 판정은 그대로 두고 화면에 올려 Odin 이 보게 한다.
+            # PASS는 criteria↔증거 매핑이 계약이므로 뒤집지 않는다 — 다만 판단이 사람 몫인 관측을
+            # 조용히 닫으면 "자동 해소"가 된다: 판정은 그대로 두고 화면에 올려 Odin이 보게 한다.
             hd.on_text(
                 f"  {ui.paint(ui._WARN, '!')} {ui.dim('Odin 판단 대기 관측 ' + str(len(ask_user)) + '건')}\n{lines}\n"
             )

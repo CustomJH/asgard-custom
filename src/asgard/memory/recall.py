@@ -76,7 +76,7 @@ def _stem_hit(word: str, haystack: str) -> bool:
 
     집합 교집합으로는 한국어 접지를 못 잰다 — 조사·어미가 낱말 **뒤**에 붙어서 "금요일"과
     "금요일에는"이 서로 남남이 된다. 그래서 앞에서부터 잘라 보며 어간을 찾는다 (영어의
-    굴절 deploy/deploying 도 같은 자로 걸린다). 절반 미만으로는 안 자른다: 두 글자만
+    굴절 deploy/deploying도 같은 자로 걸린다). 절반 미만으로는 안 자른다: 두 글자만
     남기고 맞히기 시작하면 우연 일치가 접지로 둔갑한다."""
     floor = max(2, (len(word) + 1) // 2)
     return any(word[:cut] in haystack for cut in range(len(word), floor - 1, -1))
@@ -90,7 +90,7 @@ def _stopword(word: str) -> bool:
     """주어·기능어인가 — 조사·어미가 붙어도 같은 낱말이다 ("오딘은" = 오딘).
 
     꼬리 길이를 제한하는 이유: 앞을 우연히 공유하는 남의 낱말까지 삼키면 안 된다
-    ("withdraw" 는 "with" 가 아니다)."""
+    ("withdraw"는 "with"가 아니다)."""
     return any(word.startswith(stop) and len(word) - len(stop) <= 3 for stop in _GROUNDING_STOP)
 
 
@@ -101,13 +101,13 @@ TEMPORAL_DAYS = 365
 TEMPORAL_ALPHA = 0.20  # 최신성은 관련도를 대체하지 않고 최대 약 ±10%만 보정한다.
 PPR_DAMPING = 0.85
 PPR_STEPS = 20
-# 0.20 은 경량 정적 임베더(model2vec) 기준 실측 튜닝(26-07-18): 교차언어 정답이 랭크1이어도
-# 절대 코사인이 0.18–0.29 로 낮아 0.30 은 이득을 죽였다. 강한 torch 모델(all-MiniLM 등)은
-# 0.5–0.7 로 분리가 뚜렷해 이 문턱이 넉넉하다. config [memory].semantic_floor 로 조정 가능.
+# 0.20은 경량 정적 임베더(model2vec) 기준 실측 튜닝(26-07-18): 교차언어 정답이 랭크1이어도
+# 절대 코사인이 0.18–0.29로 낮아 0.30은 이득을 죽였다. 강한 torch 모델(all-MiniLM 등)은
+# 0.5–0.7로 분리가 뚜렷해 이 문턱이 넉넉하다. config [memory].semantic_floor로 조정 가능.
 
 
 def _sem_floor() -> float:
-    """시맨틱 후보 진입 문턱 — 설정 오버라이드 > SEM_FLOOR 기본. 모델 tier 에 맞춰 조정."""
+    """시맨틱 후보 진입 문턱 — 설정 오버라이드 > SEM_FLOOR 기본. 모델 tier에 맞춰 조정."""
     try:
         v = _memory_settings().get("semantic_floor")
         return float(v) if v is not None else SEM_FLOOR
@@ -135,12 +135,12 @@ RERANK_MAX_PASSAGES = 40  # 페이지 하나에서 볼 구절 상한 (~24,000자
 # 이만큼 구절이 안 나오는 페이지는 리랭크 대상이 아니다 — 희석이 없으면 되돌릴 것도 없다.
 RERANK_MIN_PASSAGES = 3
 RERANK_TOP_PASSAGES = 3  # 평균에 쓸 상위 구절 수
-RERANK_MAX_WEIGHT = 0.5  # max 와 상위평균의 배합 — 1.0 이면 순수 max (선호 유형에서 −13pp)
+RERANK_MAX_WEIGHT = 0.5  # max와 상위평균의 배합 — 1.0 이면 순수 max (선호 유형에서 −13pp)
 # 융합에서 기존 4스트림 순위에 주는 가중 (리랭크는 항상 1.0). 1.0 = 대등.
 # 리랭크가 이기는 자리와 지는 자리가 갈리기 때문에 둔 손잡이다: 사실 질문은 리랭크가 맞고,
 # 간접 질문("내가 좋아할 만한 걸 추천해줘")은 어휘가 맞다. 어느 쪽도 항상 옳지 않다.
 RERANK_BASE_WEIGHT = 1.0
-# 2단계를 끄는 세션 오버라이드 — 시맨틱 스트림의 ASGARD_MEMORY_SEMANTIC 과 같은 모양이다.
+# 2단계를 끄는 세션 오버라이드 — 시맨틱 스트림의 ASGARD_MEMORY_SEMANTIC과 같은 모양이다.
 # 어블레이션(리랭크 ON/OFF A/B)을 몽키패치 없이 재현할 수 있어야 남이 그 수치를 검증한다.
 # held-out 실측(26-07-28)에서 이 단계가 대화형 코퍼스 밖에서는 이득을 못 낸다는 반례가
 # 나왔으므로, 끄는 길은 벤치 전용 장치가 아니라 정식 스위치여야 한다.
@@ -159,10 +159,10 @@ _RERANK_ENV = "ASGARD_MEMORY_RERANK"
 # 그 자는 정보검색에 이미 있다: **Query Performance Prediction (QPP)**. 그중 NQC
 # (Normalized Query Commitment, Shtok et al.)는 상위 문서 점수의 **표준편차**를 쓰고,
 # 낮은 분산을 query drift — 질의와 무관한 문서가 상위를 점령한 상태 — 의 증거로 읽는다.
-# 여기 옮기면 정확히 V2 의 실패 모양이다: 모든 구절이 비슷해 보이면 순위를 바꿀 근거가 없다.
+# 여기 옮기면 정확히 V2의 실패 모양이다: 모든 구절이 비슷해 보이면 순위를 바꿀 근거가 없다.
 #
-# NQC 는 코퍼스 점수로 정규화하지만 우리에겐 그 상수가 없다. 코사인은 척도가 고정
-# ([-1,1]) 이고 후보 집합이 작으므로 **변동계수**(σ/μ)를 쓴다 — 척도 무관이고 stdlib 로 끝난다.
+# NQC는 코퍼스 점수로 정규화하지만 우리에겐 그 상수가 없다. 코사인은 척도가 고정
+# ([-1,1]) 이고 후보 집합이 작으므로 **변동계수**(σ/μ)를 쓴다 — 척도 무관이고 stdlib로 끝난다.
 RERANK_DISPERSION_ENV = "ASGARD_MEMORY_RERANK_DISPERSION"
 # 게이트의 **모양** — 기권(hard)인가 감쇠(soft)인가.
 #
@@ -170,22 +170,22 @@ RERANK_DISPERSION_ENV = "ASGARD_MEMORY_RERANK_DISPERSION"
 # 그 대가를 정확히 보여 줬다 (26-07-29):
 #   V2(새 도메인) 퇴행 9건 → 2건  ← 얻은 것
 #   M(건초더미 9배) R@5 동일하나 NDCG −0.9pp · MRR −1.4pp  ← 치른 것
-# M 에서 리랭크는 순증(27:14)이었으므로, 낮은 분산 질의에서도 **순위를 다듬는 몫**이 있었는데
+# M에서 리랭크는 순증(27:14)이었으므로, 낮은 분산 질의에서도 **순위를 다듬는 몫**이 있었는데
 # 기권이 그걸 통째로 버린 것이다. 신호가 약하다는 것과 신호가 없다는 것은 다른 말이다.
 #
-# soft 는 그 사이를 열어 본 시도다: 분산을 **확신도**로 읽어 융합 가중을 낮춘다.
+# soft는 그 사이를 열어 본 시도다: 분산을 **확신도**로 읽어 융합 가중을 낮춘다.
 #   w(σ/μ) = min(1, 분산 / 문턱)
-# 문턱 이상이면 1.0 이라 S 의 이득은 정의상 보존되고, 문턱 미만에서만 비례해 줄어든다.
+# 문턱 이상이면 1.0이라 S의 이득은 정의상 보존되고, 문턱 미만에서만 비례해 줄어든다.
 #
-# **재 봤고, 안 됐다 (26-07-29 3벌 실측).** 감쇠가 너무 완만하다 — V2 에서 해를 끼치던 질의의
+# **재 봤고, 안 됐다 (26-07-29 3벌 실측).** 감쇠가 너무 완만하다 — V2에서 해를 끼치던 질의의
 # 분산이 문턱 **바로 아래**(0.82~0.95 × 문턱)에 몰려 있어서 가중이 0.8 이상으로 거의 안 깎인다.
 #
 #   V2 R@5:  OFF 0.800 · 게이트없음 0.750(4:9) · **hard 0.780(0:2)** · soft 0.760(4:8)
 #   S  R@5:  게이트없음 0.956 · **hard 0.960** · soft 0.956 (게이트없음과 동률)
 #
-# 즉 soft 는 게이트 없음과 거의 같다 — 지키려던 것을 못 지킨다. 그래서 기본은 **hard** 다.
-# soft 를 남겨 두는 이유는 이 판정이 취향이 아니라 계측이었음을 남이 재현할 수 있어야 하기
-# 때문이다 (`--gate soft`). hard 가 M 에서 치르는 MRR −1.4pp 는 여전히 열린 값이고, 그걸
+# 즉 soft는 게이트 없음과 거의 같다 — 지키려던 것을 못 지킨다. 그래서 기본은 **hard** 다.
+# soft를 남겨 두는 이유는 이 판정이 취향이 아니라 계측이었음을 남이 재현할 수 있어야 하기
+# 때문이다 (`--gate soft`). hard가 M에서 치르는 MRR −1.4pp는 여전히 열린 값이고, 그걸
 # 되찾으려면 지금 신호가 못 주는 구분이 필요하다 — 다음 라운드의 held-out 몫이다.
 RERANK_GATE_ENV = "ASGARD_MEMORY_RERANK_GATE"
 RERANK_GATE_MODE = "hard"
@@ -193,14 +193,14 @@ RERANK_GATE_MODE = "hard"
 # 그 자리에서 사라진다 — 보고서가 스스로 경계한 그 행동이다.
 #
 # 보정 규칙(`benchmarks/longmemeval/calibrate_dispersion.py`, 산출물 calibration-dispersion.json):
-#   floor = 0.99 × min{ 분산(q) : q ∈ S, 리랭크가 그 질의를 0→1 로 이긴 경우 }
+#   floor = 0.99 × min{ 분산(q) : q ∈ S, 리랭크가 그 질의를 0→1로 이긴 경우 }
 # 즉 "리랭크가 실제로 값을 한 질의는 하나도 안 막는다"를 **구성으로** 보장하는 가장 큰 문턱이다.
 # S 점수를 최대화하는 값을 찾지 않는다 — 그건 30문항 위 2문항을 좇는 과적합이다.
 #
 # S 500문항 실측 (26-07-29): 리랭크 발동 500 · 이김 13 · 짐 4 · 무변화 483.
 #   이긴 질의의 분산 [0.1518 … 0.3548]  ·  진 질의의 분산 [0.1237, 0.1275, 0.1548, 0.3643]
-#   → floor 0.1503 에서 **이긴 13건 전부 통과, 진 4건 중 2건 차단**, 전체 기권률 6.2%.
-# 진 사례가 분포 하단에 몰린 것이 NQC 의 주장(낮은 분산 = query drift)과 방향이 같다.
+#   → floor 0.1503에서 **이긴 13건 전부 통과, 진 4건 중 2건 차단**, 전체 기권률 6.2%.
+# 진 사례가 분포 하단에 몰린 것이 NQC의 주장(낮은 분산 = query drift)과 방향이 같다.
 RERANK_DISPERSION_FLOOR = 0.1503
 
 
@@ -219,7 +219,7 @@ def _dispersion_floor() -> float:
     """리랭크 표를 던지기 위해 필요한 최소 변동계수 — env > 설정 > 기본.
 
     0 이면 게이트 없음(도입 전 거동과 바이트 동일). 어블레이션이 몽키패치 없이 되어야
-    남이 그 수치를 검증한다 — `ASGARD_MEMORY_RERANK` 와 같은 모양의 손잡이다."""
+    남이 그 수치를 검증한다 — `ASGARD_MEMORY_RERANK`와 같은 모양의 손잡이다."""
     env = (os.environ.get(RERANK_DISPERSION_ENV) or "").strip()
     if env:
         try:
@@ -234,7 +234,7 @@ def _dispersion_floor() -> float:
 
 
 def _gate_mode() -> str:
-    """게이트 모양 — env > 설정 > 기본 soft. `hard` 는 기권(도입 당시 거동, 보고서 재현용)."""
+    """게이트 모양 — env > 설정 > 기본 soft. `hard`는 기권(도입 당시 거동, 보고서 재현용)."""
     env = (os.environ.get(RERANK_GATE_ENV) or "").strip().lower()
     if env in ("hard", "soft"):
         return env
@@ -248,7 +248,7 @@ def _gate_mode() -> str:
 def _gate_weight(dispersion: float, floor: float) -> float:
     """리랭크 스트림에 줄 융합 가중 — 1.0 이면 기존과 동일, 0.0 이면 표를 안 던진다.
 
-    문턱이 0(게이트 없음)이면 항상 1.0 이라 도입 전과 바이트 동일하게 돈다."""
+    문턱이 0(게이트 없음)이면 항상 1.0이라 도입 전과 바이트 동일하게 돈다."""
     if floor <= 0.0:
         return 1.0
     if dispersion >= floor:
@@ -293,10 +293,10 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[
 
     페이지 벡터 하나는 문서 전체의 평균이라, 긴 페이지에서는 정작 답이 든 한 문장이 나머지
     수천 자에 희석된다 (LongMemEval-S 실측: 세션 중앙값 1만 자). 구절로 쪼개 최댓값을 쓰면
-    같은 임베더로도 순위가 날카로워진다 — 새 모델도, torch 도 필요 없다.
+    같은 임베더로도 순위가 날카로워진다 — 새 모델도, torch도 필요 없다.
 
     **다섯 번째 스트림일 뿐 대체가 아니다.** 실측(500문항)에서 이 점수로 순위를 통째로
-    갈아치우면 어휘·그래프 신호를 버려 이득이 반으로 줄었다. RRF 에 한 표로 넣는 게 낫다.
+    갈아치우면 어휘·그래프 신호를 버려 이득이 반으로 줄었다. RRF에 한 표로 넣는 게 낫다.
 
     **비용은 이득이 있는 곳에서만 낸다.** 짧은 페이지는 아래 길이 게이트에서 통째로 빠지므로
     정상적인 개인 메모리(사실 한 건 = 수백 자)에서는 이 함수가 사실상 아무 일도 안 한다.
@@ -321,7 +321,7 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[
         chunks = _passages(entry[1])
         # 짧은 페이지는 건너뛴다. 리랭크는 **희석을 되돌리는** 연산인데, 페이지 전체가 한 구절이면
         # 되돌릴 희석이 없다 — 그런데도 순위에 한 표를 더 주면 같은 시맨틱 신호를 두 번 세는 셈이라
-        # 어휘 신호가 묻힌다. 실측(100페이지 실코퍼스)에서 직접질의 hit@1 이 1.00 → 0.60 으로 무너졌다.
+        # 어휘 신호가 묻힌다. 실측(100페이지 실코퍼스)에서 직접질의 hit@1이 1.00 → 0.60으로 무너졌다.
         # 개인 메모리의 정상 페이지는 사실 한 건이라 여기서 대부분 걸러지고, 대화 로그처럼
         # 길게 자란 페이지만 리랭크를 받는다.
         if len(chunks) < RERANK_MIN_PASSAGES:
@@ -329,8 +329,8 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[
         sims = [sem.cosine(query_vec, vec) for passage in chunks if (vec := sem.embed(passage))]
         if not sims:
             continue
-        # 최댓값만 쓰면 너무 뾰족하다. 사실 질문은 한 문장이 답이라 max 가 맞지만, 간접 질문
-        # ("내가 좋아할 만한 걸 추천해줘")은 문서 전체의 주제 일치가 답이라 max 가 엉뚱한 한 줄을
+        # 최댓값만 쓰면 너무 뾰족하다. 사실 질문은 한 문장이 답이라 max가 맞지만, 간접 질문
+        # ("내가 좋아할 만한 걸 추천해줘")은 문서 전체의 주제 일치가 답이라 max가 엉뚱한 한 줄을
         # 집는다 — 실측에서 선호 유형만 −13pp 였다. 상위 몇 구절의 평균을 섞어 둘 다 살린다.
         top_sims = sorted(sims, reverse=True)[:RERANK_TOP_PASSAGES]
         scored.append(
@@ -340,7 +340,7 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[
     if len(scored) < 2:
         return [], 0.0
     # QPP 게이트 — 후보들이 안 갈리면 리랭크의 발언권을 줄인다 (위 RERANK_GATE_ENV 참조).
-    # 회수 범위도 기존 순위도 안 건드린다: 가중 0 은 "4스트림 결과 그대로"라는 뜻이다.
+    # 회수 범위도 기존 순위도 안 건드린다: 가중 0은 "4스트림 결과 그대로"라는 뜻이다.
     #
     # 분산은 문턱과 **무관하게** 항상 계산한다. 실수 스무 개의 평균과 제곱합이라 비용이 없고,
     # 단락 평가로 건너뛰면 게이트를 끈 상태에서 이 값을 관측할 수 없다 — 보정(문턱을 뽑는 일)은
@@ -395,18 +395,18 @@ def query(
     explain: bool = False,
     expand_links: bool = True,
 ) -> list[dict]:
-    """FTS5 trigram 검색 (한국어 substring 대응). hit 는 usage 를 남긴다 — lint 부패 판정 원료.
+    """FTS5 trigram 검색 (한국어 substring 대응). hit는 usage를 남긴다 — lint 부패 판정 원료.
 
     랭킹 = RRF(rank fusion). BM25 값과 스캔 매칭 카운트는 척도가 달라 점수 혼합이 무의미하므로
     각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 reference 최신성 → usage 회수
     빈도 → slug 순으로 가른다 — 보조 신호는 관련도 순위를 넘지 못한다.
     오염 페이지는 결과에서 제외한다 (2차 리뷰 ② — query 출력은 에이전트 컨텍스트로 흘러간다).
-    제외 수는 결과에 실리지 않고 lint 가 threat 로 보고한다.
+    제외 수는 결과에 실리지 않고 lint가 threat로 보고한다.
 
     명시적 links/[[wiki-link]]가 있으면 lexical·semantic seed에서 PPR로 연관 페이지를 확장해
     네 번째 RRF 스트림으로 합친다. expand_links=False는 A/B 평가용 기존 3-스트림 경로다.
 
-    explain=True 면 각 hit 에 `streams`(fts/scan/semantic/graph 경로별 적중 여부)를 덧붙인다 —
+    explain=True 면 각 hit에 `streams`(fts/scan/semantic/graph 경로별 적중 여부)를 덧붙인다 —
     랭킹·반환 순서는 불변, 대시보드의 스트림 출처 표시(읽기 전용)용 파생 정보일 뿐이다."""
     d = d or memory_dir()
     k = max(1, min(int(k), 1000))  # 음수·0·과대 방지 (P2)
@@ -470,7 +470,7 @@ def query(
 
     # 후보 수집: slug → (meta, body, matched, scan_score). FTS 순위는 별도 리스트로 보존.
     cand: dict[str, tuple[dict, str, list[str], int]] = {}
-    fts_order: list[tuple[str, float]] = []  # (slug, bm25) — bm25 는 작을수록 좋음
+    fts_order: list[tuple[str, float]] = []  # (slug, bm25) — bm25는 작을수록 좋음
     try:
         conn = _db(d)
         words = [w for w in re.split(r"\s+", text.strip()) if len(w) >= 3]
@@ -504,7 +504,7 @@ def query(
         if s:
             cand[slug] = (meta, body, matched, s)
 
-    # 시맨틱 스트림 (옵트인 3번째 경로) — 활성 시에만. lexical 이 놓친 패러프레이즈/동의어를
+    # 시맨틱 스트림 (옵트인 3번째 경로) — 활성 시에만. lexical이 놓친 패러프레이즈/동의어를
     # 회수한다. 벡터는 state.db 파생물이고, 비활성이면 이 블록 전체가 건너뛰어져 기존 2경로와
     # 완전히 동일하게 동작한다 (무회귀 계약). 문턱 미만 코사인은 후보로도 넣지 않는다.
     sem_order: list[tuple[str, float]] = []
@@ -574,9 +574,9 @@ def query(
     _add_ranks(rrf, sem_order)  # 비활성이면 빈 리스트 → 무영향
     _add_ranks(rrf, graph_order)  # 링크가 없거나 A/B off면 빈 리스트 → 무영향
 
-    # 2단계 — 4스트림이 정한 상위권만 구절 단위로 다시 보고, 그 순위와 **1:1 로** 융합한다.
+    # 2단계 — 4스트림이 정한 상위권만 구절 단위로 다시 보고, 그 순위와 **1:1로** 융합한다.
     # 회수 범위는 안 넓히고 순위만 고친다. 왜 다섯 번째 스트림이 아니라 2단계인가:
-    # 스트림 하나로 넣으면 가중이 1/5 로 희석돼 실측 이득이 +2.4pp → +0.4pp 로 죽었다
+    # 스트림 하나로 넣으면 가중이 1/5로 희석돼 실측 이득이 +2.4pp → +0.4pp로 죽었다
     # (LongMemEval-S 500문항). 이 신호는 그만큼 강하다 — 대등하게 세워야 값을 한다.
     base_order = sorted(cand, key=lambda slug: (-rrf[slug], slug))
     if rerank_enabled():
@@ -593,7 +593,7 @@ def query(
     # user/decision/insight는 강등하지 않고, last_used도 자기강화 편향 때문에 쓰지 않는다.
     temporal_scores = {slug: rrf[slug] * _temporal_multiplier(cand[slug][0]) for slug in cand}
 
-    # usage 는 RRF·시간 보정 동률 타이브레이크 전용 prior (힌트, 증거 아님)
+    # usage는 RRF·시간 보정 동률 타이브레이크 전용 prior (힌트, 증거 아님)
     uses: dict[str, int] = {}
     try:
         conn = _db(d)
@@ -634,7 +634,7 @@ def query(
 
 
 def _track(d: str, hits: list[dict]) -> list[dict]:
-    """hit 의 사용 흔적 기록 — lint 부패 판정 원료. 경로(FTS/스캔) 무관 공통, 실패는 무해."""
+    """hit의 사용 흔적 기록 — lint 부패 판정 원료. 경로(FTS/스캔) 무관 공통, 실패는 무해."""
     try:
         conn = _db(d)
         ts = _today()
@@ -657,7 +657,7 @@ def _track(d: str, hits: list[dict]) -> list[dict]:
 def _neutralize(s: str) -> str:
     """주입면 경계 무력화 (P0) — 각괄호를 유사문자로 치환해 태그/펜스 탈출 차단.
 
-    비가시 문자는 여기서도 벗긴다. poisoned() 가 이미 막지만 그건 '페이지째 제외'라
+    비가시 문자는 여기서도 벗긴다. poisoned()가 이미 막지만 그건 '페이지째 제외'라
     저장 이전에 심어진 것·판정을 비껴간 것이 남는다. 주입면에서 한 번 더 벗기는 값이
     제외보다 크다 — 마지막 관문은 조용히 무해하게 만드는 쪽이 낫다."""
     stripped = "".join(c for c in s if c not in _INVISIBLE and not 0xE0000 <= ord(c) <= 0xE007F)
@@ -667,7 +667,7 @@ def _neutralize(s: str) -> str:
 def _row(title: str, desc: str) -> str:
     """카탈로그 행 — 제목과 설명이 같은 말이면 한 번만 적는다.
 
-    한 문장짜리 페이지에서는 title 이 곧 본문 첫 줄이고 _desc 도 본문 첫 줄이라, 그대로 두면
+    한 문장짜리 페이지에서는 title이 곧 본문 첫 줄이고 _desc도 본문 첫 줄이라, 그대로 두면
     주입면의 절반이 같은 문장의 반복이 된다. 자르는 길이가 달라(제목 80·설명 90) 한쪽이 다른
     쪽의 접두사가 되므로 긴 쪽을 남긴다 — 잘림이 덜한 쪽이다."""
     if desc.startswith(title) or title.startswith(desc):
@@ -677,9 +677,9 @@ def _row(title: str, desc: str) -> str:
 
 def _snapshot_rows(d: str) -> list[tuple[str, str]]:
     """주입용 카탈로그 행 — (kind, row). 페이지 재검증(오염 제외) + 경계 무력화 + kind 화이트리스트.
-    index.md 와 별도(주입 안전용)이다.
+    index.md와 별도(주입 안전용)이다.
 
-    행에 kind 를 적지 않는다 — 칸 머리글이 이미 말하므로 행마다 반복하면 그만큼 예산만 먹는다.
+    행에 kind를 적지 않는다 — 칸 머리글이 이미 말하므로 행마다 반복하면 그만큼 예산만 먹는다.
     정렬은 칸 안에서 updated 내림차순: 예산이 모자랄 때 알파벳순으로 자르면 무엇이 살아남는지가
     임의가 된다(슬러그 첫 글자가 운을 가른다). 최신이 먼저 살아야 잘림이 뜻을 갖는다."""
     rows: list[tuple[str, str, str]] = []
@@ -697,9 +697,9 @@ def _snapshot_rows(d: str) -> list[tuple[str, str]]:
 
 
 def _section(kind: str, label: str, rows: list[str], budget: int) -> str:
-    """칸 하나 렌더 — 머리글에 사용률을 적는다. 빈 칸·예산 0 은 빈 문자열.
+    """칸 하나 렌더 — 머리글에 사용률을 적는다. 빈 칸·예산 0은 빈 문자열.
 
-    사용률을 100% 로 깎지 않는다: 저장은 무제한이라 칸은 실제로 넘칠 수 있고, `143%` 라고
+    사용률을 100% 로 깎지 않는다: 저장은 무제한이라 칸은 실제로 넘칠 수 있고, `143%`라고
     적혀 있어야 모델이 그 칸을 통합하자고 먼저 말한다. 계기가 거짓말하면 계기가 아니다.
     예산은 행에만 건다 — 머리글은 계기판이라 예산 밖이다."""
     if budget <= 0 or not rows:
@@ -743,7 +743,7 @@ def section_usage(d: str | None = None) -> list[tuple[str, int, int]]:
 def _fit_total(prefix: str, body: str, suffix: str, budget: int) -> str:
     """총량 상한 — 조립된 블록을 뒤에서부터 잘라 예산 안에 넣는다 (구 index_budget_chars).
 
-    뒤가 먼저 죽는 건 의도다: _SECTIONS 가 값비싼 칸을 앞에 세워 뒀다."""
+    뒤가 먼저 죽는 건 의도다: _SECTIONS가 값비싼 칸을 앞에 세워 뒀다."""
     lines = body.split("\n")
     truncated = False
     while lines:
@@ -769,7 +769,7 @@ def snapshot_note(d: str | None = None) -> str:
     값비싼 칸(user·feedback)을 밀어내는데, 사람이 같은 말을 반복하지 않게 만드는 건 뒤쪽이다.
     칸마다 상한을 주면 어느 칸도 굶지 않는다.
 
-    "동결" 계약 = Heimdall 인스턴스 수명. self.identity 에 1회 결합 후 세션 중 불변
+    "동결" 계약 = Heimdall 인스턴스 수명. self.identity에 1회 결합 후 세션 중 불변
     (KV 캐시 보존). /lagom 등 Heimdall 재생성 경로에서만 재렌더된다."""
     try:
         if not inject_enabled():  # 킬스위치 (2차 리뷰 ⑦) — off 면 어느 provider 로도 전송 없음
@@ -807,7 +807,7 @@ def _diversify(hits: list[dict], k: int) -> list[dict]:
     """한 종류가 회수 블록을 독식하지 못하게 자른다 — 순위는 건드리지 않는다.
 
     같은 공간에 섞여 있는 서로 다른 성격의 기억은 서로를 대체할 수 있는 근거처럼 회수된다
-    (MemGuard, arXiv 2605.28009 — "heterogeneous memory contamination"). asgard 는 kind 로
+    (MemGuard, arXiv 2605.28009 — "heterogeneous memory contamination"). asgard는 kind로
     성격을 이미 구분해 두었는데 회수는 그걸 안 봤다: reference 세 장이 상위를 차지하면
     바로 아래의 feedback("이렇게 하지 말라던 그것")이 블록에 못 들어온다. 값이 다른 게 아니라
     종류가 다른 것이라 순위로만 자르면 안 되는 자리다.
@@ -858,7 +858,7 @@ def _hit_row(hit: dict) -> str:
     """회수 한 줄 — 제목과 발췌가 같은 말이면 한 번만 적는다.
 
     스냅샷 쪽은 이미 이 규율을 갖고 있었는데(`_row`) 회수 쪽에는 없었다. 한 문장짜리 페이지는
-    title 이 곧 본문이고 snippet 도 그 본문에서 잘라 오므로, 그대로 두면 **같은 문장이 한 줄에
+    title이 곧 본문이고 snippet도 그 본문에서 잘라 오므로, 그대로 두면 **같은 문장이 한 줄에
     두 번** 실린다 (실측 26-07-29: 182자 중 절반이 반복). 레인 간 중복을 걷어내면서 한 줄
     안의 중복을 남겨 두는 것은 앞뒤가 안 맞는다."""
     title = _neutralize(str(hit["title"]))[:120]
@@ -874,11 +874,11 @@ def _hit_row(hit: dict) -> str:
 
 def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
     """요청 기반 zero-LLM 회수 블록 — DIRECT/Thinker 턴 시작 시 결정론 주입 (감사 권고:
-    "모델이 자발적으로 CLI 를 부르는" 순응 의존을 없앤다). query 가 오염 페이지를 이미
+    "모델이 자발적으로 CLI를 부르는" 순응 의존을 없앤다). query가 오염 페이지를 이미
     제외하므로 여기선 경계 무력화 + 예산만. 무적중·킬스위치 off = 빈 문자열 (무변화).
 
     이 레인 **혼자** 쓰는 표면(`asgard memory recall`·개인 메모리만 보는 호출)용이다. 여섯
-    레인을 같이 싣는 자리는 `memory_context.recall_note` 가 조립기로 간다."""
+    레인을 같이 싣는 자리는 `memory_context.recall_note`가 조립기로 간다."""
     try:
         rows = recall_rows(text, k=k, d=d)
         if not rows:
@@ -907,7 +907,7 @@ def distill_nudge(request: str, response: str, root: str) -> str:
     숏컷 벤치(26-07-16) 근거 — 위치 지식이 recall 이득(토큰 -67%)의 최대 원천."""
     try:
         # 킬스위치는 여기서 라이브로 본다 — 호출측 플래그는 세션 생성 시점 캐시라
-        # 세션 도중 ASGARD_MEMORY_INJECT=off 를 반영하지 못한다.
+        # 세션 도중 ASGARD_MEMORY_INJECT=off를 반영하지 못한다.
         if not inject_enabled():
             return ""
         req = re.sub(r"\s+", " ", (request or "")).strip().replace('"', "'")

@@ -200,7 +200,7 @@ def anchor_skill(root: str, plugin: dict, name: str) -> str:
     try:
         # 판본만 보면 손으로 지운 파일을 영원히 못 본다 — 이 트리를 가리켜 놓고 그 안이 비어 있으면
         # 스킬은 파이썬 역추적으로 죽는다. 배송한 파일이 전부 제자리인지까지 확인하고 통과시킨다
-        # (실행 부산물 같은 여분은 눈감는다 — 엔진이 자기 자리에 .pyc 를 남긴다).
+        # (실행 부산물 같은 여분은 눈감는다 — 엔진이 자기 자리에 .pyc를 남긴다).
         if json.loads(_read_text(os.path.join(target, _ANCHOR_STAMP))) == marker and not _tree_files(source).difference(
             _tree_files(target)
         ):
@@ -210,7 +210,7 @@ def anchor_skill(root: str, plugin: dict, name: str) -> str:
     home = os.path.dirname(target)
     try:
         os.makedirs(home, mode=0o700, exist_ok=True)
-        # 이 트리는 파생물이다 — 셋업 전이라 `.asgard/.gitignore` 가 아직 없어도 커밋에 안 섞이게.
+        # 이 트리는 파생물이다 — 셋업 전이라 `.asgard/.gitignore`가 아직 없어도 커밋에 안 섞이게.
         Path(os.path.join(home, ".gitignore")).write_text("*\n", encoding="utf-8")
         temp = tempfile.mkdtemp(prefix=f".{name}.", dir=home)
         try:

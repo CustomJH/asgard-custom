@@ -7,7 +7,7 @@ mtime 서명 캐시로 변경만 감지 — 프로세스 재시작 없이 새 �
 자가발전 헌법 (CUS-251):
 - 이 층은 advisory 지식 주입만 — 게이트·판정 표면(Verifier/loki)에는 절대 주입하지 않는다.
 - 설치 경로는 evolution 인박스 승인(asgard evolve approve)뿐 — 이 모듈엔 쓰기 API가 없다.
-- 주입 시 usage 를 기록해 큐레이션(노화 판정)의 원료로 남긴다 (SkillOps: 라이브러리는 자산).
+- 주입 시 usage를 기록해 큐레이션(노화 판정)의 원료로 남긴다 (SkillOps: 라이브러리는 자산).
 """
 
 from __future__ import annotations
@@ -185,8 +185,8 @@ def learned_skills(root: str) -> dict[str, dict]:
 def resolve_learned(root: str, task: str, agent: str) -> list[tuple[str, str]]:
     """디스패치 task → 매칭 learned 스킬 (이름, 본문) — 번들 리졸버와 동일한 0-LLM 부분 일치.
 
-    agent 필터: 스킬 frontmatter 의 agent 가 현재 표면과 같거나 "any". Verifier/loki 는
-    호출측이 아예 이 함수를 부르지 않는다 (게이트 무결성 — 헌법). 무매칭 = 빈 리스트."""
+    agent 필터: 스킬 frontmatter의 agent가 현재 표면과 같거나 "any". Verifier/loki는
+    호출측이 아예 이 함수를 부르지 않는다 (게이트 무결성 — 헌법). 일치 없음 = 빈 리스트."""
     t = task.lower()
     # A/B 개입 스위치 (CUS-251 C4) — 벤치 하니스가 baseline 런에서 스킬을 끈다 ("*" = 전부)
     disabled = {n.strip() for n in os.environ.get("ASGARD_LEARNED_DISABLE", "").split(",") if n.strip()}

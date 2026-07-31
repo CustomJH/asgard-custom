@@ -1,17 +1,17 @@
 """TS/JS(+prisma, Vue/Svelte SFC) 증거 추출기 — 정규식 기반 보조 추출기.
 
 정규식은 구문 증명이 아니다: 관용구가 강한 패턴(Express 라우트, Nest 데코레이터, prisma
-model)만 confirmed 로 표시하고 나머지는 전부 candidate 로 남긴다. tree-sitter 승격 여지를
-위해 인터페이스는 extract_python 과 동일하게 유지한다.
+model)만 confirmed로 표시하고 나머지는 전부 candidate로 남긴다. tree-sitter 승격 여지를
+위해 인터페이스는 extract_python과 동일하게 유지한다.
 
 프론트 레인: 파일 기반 라우팅(page)·전역 상태(store)·관례 디렉터리 컴포저블(composable)·
-HTTP 래퍼 호출(api_call). 파일 경로에서 결정론적으로 유도되는 page 만 confirmed 이고,
-래퍼 호출은 베이스 URL 을 증명할 수 없어 candidate 로 남는다.
+HTTP 래퍼 호출(api_call). 파일 경로에서 결정론적으로 유도되는 page만 confirmed 이고,
+래퍼 호출은 베이스 URL을 증명할 수 없어 candidate로 남는다.
 
 컴포저블·서비스·스토어는 컴포넌트와 같이 선언과 소비 양쪽을 뽑아 이름으로 수렴시킨다 —
 그래야 page/component 스팬 안의 호출이 화면→로직→상태→API 플로우 엣지가 된다. 소비는
 잠정 증거로 나가고, 리포 안 선언(또는 스토어 접근자 별칭)으로 정체가 증명된 것만
-`resolve_fe_usage` 를 통과한다 — 이름만 보고 노드를 세우지 않는다. 소비의 근거는 종류마다
+`resolve_fe_usage`를 통과한다 — 이름만 보고 노드를 세우지 않는다. 소비의 근거는 종류마다
 다르다: 컴포저블·스토어는 `useXxx()` 관례, 서비스는 `services/` 임포트가 증명한 심볼의 호출.
 """
 
@@ -31,7 +31,7 @@ _ROUTE_BINDING = re.compile(
     re.I,
 )
 _NEST_ROUTE = re.compile(r"@(Get|Post|Put|Delete|Patch)\s*\(\s*(?:['\"`]([^'\"`)]*)['\"`])?\s*\)")
-# `$fetch` 는 프론트 래퍼 패스가 소유한다 — lookbehind 로 이중 계상을 막는다.
+# `$fetch`는 프론트 래퍼 패스가 소유한다 — lookbehind로 이중 계상을 막는다.
 _API_CALL = re.compile(
     r"(?<![\w$])(?:fetch|axios(?:\s*\.\s*(?:get|post|put|delete|patch|request))?)\s*\(\s*['\"`]([^'\"`]+)"
 )
@@ -46,7 +46,7 @@ _WRAPPER_CALL = re.compile(
     r"(?<![\w$.])(api[A-Z]\w*|apiClient\s*\.\s*(?:get|post|put|delete|patch)|\$fetch(?:\s*\.\s*raw)?|useFetch|ofetch)"
     r"\s*(?:<[^<>()]{0,200}>)?\s*\(\s*(['\"`])((?:/|https?://)[^'\"`\n]*)\2"
 )
-# 템플릿 보간 → `{}` 정규화 — 노드 id 를 값이 아니라 경로 모양으로 수렴시킨다.
+# 템플릿 보간 → `{}` 정규화 — 노드 id를 값이 아니라 경로 모양으로 수렴시킨다.
 _TEMPLATE_EXPR = re.compile(r"\$\{[^{}]*\}")
 _PINIA_STORE = re.compile(r"\bdefineStore\s*\(\s*['\"`]([\w./-]+)['\"`]")
 _REDUX_SLICE = re.compile(r"\bcreateSlice\s*\(\s*\{[^{}]{0,200}?\bname\s*:\s*['\"`]([\w./-]+)['\"`]", re.S)
@@ -55,13 +55,13 @@ _COMPOSABLE = re.compile(
 )
 _COMPOSABLE_DIRS = {"composables", "hooks"}
 # 컴포저블·스토어 소비 — `useXxx()` 호출 지점. 수신자 메서드(`x.useY()`)는 합성이 아니라 제외한다.
-# 정체 확정은 `resolve_fe_usage` 의 수렴이 맡는다 — 부정 목록을 두지 않는 이유는 프레임워크
+# 정체 확정은 `resolve_fe_usage`의 수렴이 맡는다 — 부정 목록을 두지 않는 이유는 프레임워크
 # 원시 훅(useState/useRouter/useFetch…)이 리포에 선언이 없어 자동으로 탈락하기 때문이다.
 _HOOK_USE = re.compile(r"(?<![\w.$])(use[A-Z]\w*)\s*\(")
 _USE_DETAIL = "use"
 # 서비스 모듈 — 선언은 관례 디렉터리의 네임스페이스 객체(`export const alarmService = {`)와
 # 자유 함수. 소비는 이름 접미사 관례가 아니라 **임포트 경로가 증명하는 심볼**의 호출 지점이다:
-# `import { alarmService } from '@/services/...'` 가 있어야 그 심볼의 호출을 서비스로 읽는다.
+# `import { alarmService } from '@/services/...'`가 있어야 그 심볼의 호출을 서비스로 읽는다.
 _SERVICE_DIRS = {"services"}
 _SERVICE_OBJECT = re.compile(r"^\s*export\s+const\s+(\w+)\s*=\s*\{", re.M)
 _SERVICE_FUNCTION = re.compile(r"^\s*export\s+(?:default\s+)?(?:async\s+)?function\s+(\w+)\s*\(", re.M)
@@ -70,9 +70,9 @@ _NAMED_IMPORT = re.compile(r"\bimport\s+(type\s+)?\{([^}]*)\}\s*from\s*['\"]([^'
 # 메서드 축약(`list(p): Promise<X> {`)·화살표·function 값을 다 담으려면 TS 타입 표기까지
 # 쫓아야 해서, 시그니처 모양을 정밀하게 그리는 대신 "본문에 호출 형태가 있다"로 넓게 잡는다.
 _CALLABLE_MEMBER = re.compile(r"\b\w+\s*\(|=>")
-# Pinia 접근자 별칭 — 소비는 `useAuthStore()` 로 나타나지만 노드 이름은 `defineStore` 의 id 다.
+# Pinia 접근자 별칭 — 소비는 `useAuthStore()`로 나타나지만 노드 이름은 `defineStore`의 id 다.
 _STORE_ALIAS = re.compile(r"\bconst\s+(use[A-Z]\w*)\s*=\s*defineStore\s*\(\s*['\"`]([\w./-]+)['\"`]")
-# 파일 기반 라우팅 관례 — 라우트 그룹 `(group)` 은 URL 에서 사라지고, `[param]`/`_param` 은
+# 파일 기반 라우팅 관례 — 라우트 그룹 `(group)`은 URL에서 사라지고, `[param]`/`_param`은
 # 경로 변수다. 확장자별 프레임워크 표기는 detail 로만 남긴다 (관례 추정이지 증명이 아니다).
 _SFC_SUFFIXES = (".vue", ".svelte")
 _PAGE_SUFFIXES = {".vue": "nuxt", ".svelte": "sveltekit", ".tsx": "next", ".jsx": "next", ".ts": "next", ".js": "next"}
@@ -90,9 +90,9 @@ _BUILTIN_TAGS = {
     "RouterLink", "RouterView", "Head", "Html", "Body", "Title", "Meta", "Link", "Script", "Style", "NoScript",
 }  # fmt: skip
 # API 베이스 접두 — base 성격의 이름에 묶인 체크인 리터럴만 증거다 (계산식·환경변수 제외).
-# `?? '/api'` / `|| '/api'` 폴백 리터럴은 체크인된 기본값이라 Spring 의 annotation default 와
+# `?? '/api'` / `|| '/api'` 폴백 리터럴은 체크인된 기본값이라 Spring의 annotation default와
 # 같은 지위로 인정한다. 값은 `/경로` 또는 절대 URL(경로부만 취함)이어야 한다.
-# 폴백 청크는 식별자·점·공백만 허용한다 — `x = create({ baseURL: … ??` 처럼 호출식 너머의
+# 폴백 청크는 식별자·점·공백만 허용한다 — `x = create({ baseURL: … ??`처럼 호출식 너머의
 # 리터럴을 앞쪽 식별자가 가로채지 못하게 막고, 가장 가까운 이름에 귀속시킨다.
 _API_BASE_DECL = re.compile(
     r"\b([A-Za-z_$][\w$]*)\s*[:=]\s*(?:[\w$.\s]{0,80}?(?:\?\?|\|\|)\s*)?(['\"`])((?:/|https?://)[^'\"`\n]{0,200})\2"
@@ -128,10 +128,10 @@ def _span_end_line(source: str, start: int, open_char: str, close_char: str, *, 
 
 
 def _span_end_offset(source: str, start: int, open_char: str, close_char: str, *, limit: int = 120_000) -> int:
-    """`start` 의 짝이 닫히는 오프셋 — 실패 시 -1.
+    """`start`의 짝이 닫히는 오프셋 — 실패 시 -1.
 
     문자열('  "  `)·주석(// , /* */)을 건너뛰며 깊이를 센다. 템플릿 중첩 표현식까지는
-    쫓지 않으므로(백틱 짝만 인식) 정규식 보조 추출기 수준의 근사다 — 빌더가 candidate 로 캡한다.
+    쫓지 않으므로(백틱 짝만 인식) 정규식 보조 추출기 수준의 근사다 — 빌더가 candidate로 캡한다.
     """
     if start < 0:
         return -1
@@ -170,13 +170,13 @@ def _call_end_line(source: str, open_paren: int, *, limit: int = 120_000) -> int
 
 
 def _body_end_line(source: str, search_from: int, *, window: int = 400) -> int:
-    """`search_from` 뒤 첫 `{` 부터 중괄호 짝이 닫히는 끝 줄 — 함수 본문 스팬 근사. 실패 시 0."""
+    """`search_from` 뒤 첫 `{`부터 중괄호 짝이 닫히는 끝 줄 — 함수 본문 스팬 근사. 실패 시 0."""
     brace = source.find("{", search_from, search_from + window)
     return _span_end_line(source, brace, "{", "}") if brace >= 0 else 0
 
 
 def _mask_sfc(source: str) -> str:
-    """SFC 의 `<script>` 블록 밖을 빈 줄로 치환한다 — 줄 번호 보존이 계약이다.
+    """SFC의 `<script>` 블록 밖을 빈 줄로 치환한다 — 줄 번호 보존이 계약이다.
 
     template/style 마크업이 TS 정규식에 걸리는 오염을 막고, 스크립트 증거의 소스 위치는
     원본 파일 줄과 정확히 일치시킨다.
@@ -194,7 +194,7 @@ def _mask_sfc(source: str) -> str:
 def _mask_comments(source: str) -> str:
     """주석 본문을 공백으로 지운다 — 줄 번호·오프셋 보존이 계약이다.
 
-    주석은 증거가 아니다(extract_java 와 같은 원칙): 산문에 적힌 `useFoo()` 나 주석 처리된
+    주석은 증거가 아니다(extract_java와 같은 원칙): 산문에 적힌 `useFoo()` 나 주석 처리된
     죽은 호출이 소비 증거로 오인되는 것을 막는다. 문자열·템플릿 리터럴 안의 `//`(URL 등)는
     주석이 아니므로 리터럴을 인식하며 지나간다.
     """
@@ -257,7 +257,7 @@ def _component_decl(path: str) -> tuple[str, str] | None:
 
 
 def _template_region(source: str) -> str:
-    """SFC 의 script/style 블록을 빈 줄로 치환한다 — 템플릿 마크업만 남긴 줄 보존 뷰."""
+    """SFC의 script/style 블록을 빈 줄로 치환한다 — 템플릿 마크업만 남긴 줄 보존 뷰."""
     drop = [False] * (source.count("\n") + 1)
     for pattern in (_SCRIPT_BLOCK, _STYLE_BLOCK):
         for match in pattern.finditer(source):
@@ -272,10 +272,10 @@ def _template_region(source: str) -> str:
 def _clean_segment(segment: str, framework: str) -> str | None:
     """라우트 세그먼트 정규화 — 그룹/슬롯 제거, 경로 변수 `{name}` 표기. 제거 시 None."""
     if segment.startswith("(") and segment.endswith(")"):
-        return None  # 라우트 그룹 — URL 에 나타나지 않는다
+        return None  # 라우트 그룹 — URL에 나타나지 않는다
     if framework == "next" and segment.startswith("@"):
         return None  # 병렬 슬롯
-    # 경로 변수는 Vue Router 식 `:name` 으로 통일한다 — 노드 id 슬러그에서도 살아남는 표기다.
+    # 경로 변수는 Vue Router 식 `:name`으로 통일한다 — 노드 id 슬러그에서도 살아남는 표기다.
     catch_all = re.fullmatch(r"\[\.\.\.(\w+)\]", segment)
     if catch_all:
         return ":" + catch_all.group(1)
@@ -324,12 +324,12 @@ def _page_route(path: str) -> tuple[str, str] | None:
 
 
 def extract_api_bases(source: str) -> list[str]:
-    """FE 소스의 API 베이스 접두 수집 — axios/ofetch `baseURL:` 과 `API_BASE_URL` 류 상수.
+    """FE 소스의 API 베이스 접두 수집 — axios/ofetch `baseURL:`과 `API_BASE_URL` 류 상수.
 
-    브리지가 상대 경로 api_call 의 후보 접두로 시도한다 (노드 이름은 원문 보존).
+    브리지가 상대 경로 api_call의 후보 접두로 시도한다 (노드 이름은 원문 보존).
     """
     bases: list[str] = []
-    taken: set[str] = set()  # 순서는 bases 가, 중복 판정은 이쪽이 진다 — 선언이 많은 파일에서 제곱 방지
+    taken: set[str] = set()  # 순서는 bases가, 중복 판정은 이쪽이 진다 — 선언이 많은 파일에서 제곱 방지
     for match in _API_BASE_DECL.finditer(source):
         name = re.sub(r"[_$]", "", match.group(1)).casefold()
         if name not in _API_BASE_NAMES:
@@ -405,7 +405,7 @@ def extract_store_aliases(source: str) -> list[tuple[str, str]]:
     """Pinia 접근자 별칭 — `const useAuthStore = defineStore('auth')` → `(useAuthStore, auth)`.
 
     스토어 소비 지점에는 접근자 이름만 나타나므로, 선언이 증명하는 이 짝이 없으면 소비는
-    스토어 노드로 수렴하지 못한다. 같은 접근자가 리포 안에서 서로 다른 id 로 갈리면
+    스토어 노드로 수렴하지 못한다. 같은 접근자가 리포 안에서 서로 다른 id로 갈리면
     호출자가 해석을 포기한다 — 모호성은 지어내지 않는다.
     """
     return [(match.group(1), match.group(2)) for match in _STORE_ALIAS.finditer(_mask_comments(source))]
@@ -452,7 +452,7 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
     total_lines = source.count("\n") + 1
     page = _page_route(path)
     if page is not None:
-        # 페이지는 파일 본문 전체를 소유한다 — 같은 파일의 api_call 이 페이지 플로우로 귀속된다.
+        # 페이지는 파일 본문 전체를 소유한다 — 같은 파일의 api_call이 페이지 플로우로 귀속된다.
         evidence.append(Evidence("page", page[0], path, 1, "confirmed", page[1], scope_end=total_lines))
     decl = _component_decl(path)
     if decl is not None:
@@ -530,7 +530,7 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
     decl_lines: set[int] = set()
     in_convention = bool(_COMPOSABLE_DIRS & set(path.split("/")[:-1]))
     for match in _COMPOSABLE.finditer(code):
-        # `^\s*` 는 앞선 빈 줄의 개행까지 삼킨다 — 정체의 줄은 이름 토큰이 있는 줄이다.
+        # `^\s*`는 앞선 빈 줄의 개행까지 삼킨다 — 정체의 줄은 이름 토큰이 있는 줄이다.
         name_start = match.start(1) if match.group(1) else match.start(2)
         line = _line_of(code, name_start)
         decl_lines.add(line)
@@ -547,7 +547,7 @@ def extract_tsjs(path: str, source: str) -> list[Evidence]:
                 scope_end=max(span, line) if span else 0,
             )
         )
-    # 소비 증거는 잠정이다 — 리포 안 선언으로 수렴하지 못하면 `resolve_fe_usage` 가 버린다.
+    # 소비 증거는 잠정이다 — 리포 안 선언으로 수렴하지 못하면 `resolve_fe_usage`가 버린다.
     # 호출 지점을 줄 단위로 남긴다: 한 파일의 선언자가 여럿이면 각자의 본문 스팬이 자기 몫의
     # 호출을 가져가야 플로우 귀속이 맞는다 (이름으로 접으면 첫 선언자만 엣지를 얻는다).
     seen_hooks: set[tuple[str, int]] = set()

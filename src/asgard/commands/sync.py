@@ -1,5 +1,5 @@
 """sync — 레지스트리(~/.asgard/projects.json)에 등록된 모든 asgard 프로젝트의 코어 스캐폴드를
-현재 엔진 버전으로 갱신한다. `asgard update` 가 엔진 설치 후 자동 호출; 단독 실행도 가능.
+현재 엔진 버전으로 갱신한다. `asgard update`가 엔진 설치 후 자동 호출; 단독 실행도 가능.
 
 파일별 갱신 정책 (사용자 편집 보존이 원칙 — force 덮어쓰기가 아니다):
   overwrite   asgard 소유 파일 (훅·역할 에이전트·스킬·캐논·브릿지·README 시드) — 항상 최신으로.
@@ -43,18 +43,18 @@ def merge_agents_md(existing: str | None, new: str) -> str | None:
         last = None
         for last in _BLOCK_RE.finditer(merged):  # noqa: B007 — 마지막 매치만 필요
             pass
-        assert last is not None  # found 가 비어있지 않으므로 반드시 존재
+        assert last is not None  # found가 비어있지 않으므로 반드시 존재
         at = last.end()
         merged = merged[:at] + "\n\n" + "\n\n".join(missing) + merged[at:]
     return merged
 
 
-# settings.json 에서 asgard 가 소유(재계산)하는 최상위 키 — 나머지는 사용자 몫으로 보존
+# settings.json에서 asgard가 소유(재계산)하는 최상위 키 — 나머지는 사용자 몫으로 보존
 _SETTINGS_OWNED = ("hooks", "statusLine")
 
 
 def merge_cc_settings(existing: str | None, new: str) -> str:
-    """.claude/settings.json 병합 — 훅 배선·statusLine 은 항상 최신 템플릿, permissions 는
+    """.claude/settings.json 병합 — 훅 배선·statusLine은 항상 최신 템플릿, permissions는
     템플릿(바닥) + 사용자 추가분 합집합, 그 외 사용자 키는 그대로. 기존이 JSON 파손이면 템플릿."""
     if existing is None:
         return new
@@ -220,7 +220,7 @@ def _detect_flags(root: str) -> tuple[bool, bool, bool]:
 
 
 def _autoregister_cwd() -> None:
-    """레지스트리 도입 전에 셋업된 프로젝트 흡수 — cwd 가 asgard 배선(AGENTS.md 마커)인데
+    """레지스트리 도입 전에 셋업된 프로젝트 흡수 — cwd가 asgard 배선(AGENTS.md 마커)인데
     미등록이면 디렉토리 존재로 프로필을 추정해 등록한다."""
     root = os.path.realpath(os.getcwd())
     if any(os.path.realpath(str(p["root"])) == root for p in registry.load()):
@@ -243,7 +243,7 @@ def run_sync(dry_run: bool = False, list_only: bool = False) -> int:
     projects = registry.load()
     ui.head(f"sync · {len(projects)} project(s)" + (" · dry-run" if dry_run else ""))
     if not projects:
-        ui.warn("등록된 프로젝트 없음 — `asgard init` 을 실행한 프로젝트가 여기 기록됩니다.")
+        ui.warn("등록된 프로젝트 없음 — `asgard init`을 실행한 프로젝트가 여기 기록됩니다.")
         return 0
     if list_only:
         ui.phase("registered projects")

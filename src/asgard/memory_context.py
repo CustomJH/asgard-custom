@@ -11,10 +11,10 @@ from .memory_bridge import find_config, is_backend_trusted, server_recall
 
 PROJECT_RECALL_BUDGET = 3000
 # 회수 질의 상한 — 턴 원문을 통째로 보내면 backend 임베딩이 요청의 잡음까지 닮은 것을 찾는다.
-# 값의 근거는 취향이 아니라 대조군이다: 같은 backend(Hindsight)를 쓰는 hermes 의
+# 값의 근거는 취향이 아니라 대조군이다: 같은 backend(Hindsight)를 쓰는 hermes의
 # recall_max_input_chars 기본값이 800 이다. 자르는 쪽은 앞부분 — 사용자의 요청은 앞에 온다.
 RECALL_QUERY_MAX_CHARS = 800
-# 한 줄에 실을 본문 상한. record 는 자립 문장이라 대개 통째로 들어간다(정본 3건 실측 356~401자).
+# 한 줄에 실을 본문 상한. record는 자립 문장이라 대개 통째로 들어간다(정본 3건 실측 356~401자).
 RECALL_BODY_CAP = 700
 MAX_METADATA_FIELDS = 128
 MAX_METADATA_CHARS = 8192
@@ -36,7 +36,7 @@ _QUERY_STOPWORDS = frozenset(
         "대해서",
         "대한",
         # 영어 — 같은 값의 낱말. 이게 없으면 영어 질의의 도메인어 판정이 무너진다:
-        # "what", "the", "is" 는 거의 모든 영어 본문에 있으므로 하나만 걸려도 통과가 되고,
+        # "what", "the", "is"는 거의 모든 영어 본문에 있으므로 하나만 걸려도 통과가 되고,
         # 그러면 게이트가 켜져 있어도 아무것도 안 거른다 (계기만 있고 이빨이 없는 상태).
         "the",
         "this",
@@ -134,7 +134,7 @@ def _dominant_script(text: str) -> str:
     """이 글의 주된 문자체계 — "hangul" | "latin" | "" (판정 불가).
 
     글자 수로 정한다. 섞임을 이렇게 다루는 이유는 한국어 질의가 기술 용어를 라틴 문자로
-    품는 일이 흔하기 때문이다 ("uv 로 테스트 돌려"). '라틴 글자가 있는가'로 판정하면 그런
+    품는 일이 흔하기 때문이다 ("uv로 테스트 돌려"). '라틴 글자가 있는가'로 판정하면 그런
     질의가 영어 본문과 같은 언어로 오인돼 교차언어 회수가 막힌다."""
     hangul = len(re.findall(r"[가-힣]", text))
     latin = len(re.findall(r"[A-Za-z]", text))
@@ -280,9 +280,9 @@ def _canonical_record_items(root: str, cfg: dict) -> dict[str, dict]:
 def _matches_canonical_record(text: str, metadata: dict, canonical_items: dict[str, dict]) -> dict | None:
     """정본과 바이트 단위로 같은 backend 응답이면 그 **정본 원자료**를 돌려준다 (아니면 None).
 
-    게이트 자체는 그대로다 — 대조는 여전히 backend 가 보낸 전문(`content`) 전체로 한다.
+    게이트 자체는 그대로다 — 대조는 여전히 backend가 보낸 전문(`content`) 전체로 한다.
     달라진 것은 통과 후에 무엇을 손에 쥐느냐다: 통과했다는 사실만 남기면 주입할 때 쓸 수
-    있는 건 backend blob 뿐이고, 그건 backend 가 검색하라고 만든 온톨로지 머리글이 본문을
+    있는 건 backend blob 뿐이고, 그건 backend가 검색하라고 만든 온톨로지 머리글이 본문을
     밀어낸 형태다. 통과한 순간 우리는 같은 내용을 **로컬 정본**으로도 갖고 있으므로,
     사람이 쓴 본문(title·content)을 그대로 꺼내 주입한다. 검증은 전문 대조, 표시는 정본 —
     신뢰 경계는 한 치도 넓어지지 않는다."""
@@ -332,7 +332,7 @@ def filter_project_hits(
 
 
 # backend 검색용으로만 붙은 머리글 줄 — 주입면에서 모델이 이걸로 할 수 있는 판단이 없다.
-# Revision·Content-SHA256 은 한 줄에 128·64 자의 16진수다. 실측(정본 3건, 26-07-29):
+# Revision·Content-SHA256은 한 줄에 128·64 자의 16진수다. 실측(정본 3건, 26-07-29):
 # 주입 1398자 중 476자(34%)가 이 해시였고 정작 본문은 78자에서 문장 중간에 잘렸다.
 _NOISE_PREFIXES = ("Revision:", "Content-SHA256:", "Status:", "Importance:", "Confidence:")
 
@@ -340,7 +340,7 @@ _NOISE_PREFIXES = ("Revision:", "Content-SHA256:", "Status:", "Importance:", "Co
 def _artifact_body(text: str) -> str:
     """deterministic artifact 본문 — 해시 줄과 빈 온톨로지 줄만 걷어낸다.
 
-    artifact 는 record 와 달리 머리글이 곧 신호다(Path·Symbols·Imports 는 digest 계층의
+    artifact는 record와 달리 머리글이 곧 신호다(Path·Symbols·Imports는 digest 계층의
     본문 그 자체다). 그래서 머리글을 통째로 버리지 않고, 모델이 쓸 수 없는 줄만 뺀다."""
     kept = [
         line for line in text.splitlines() if not line.startswith(_NOISE_PREFIXES) and not line.endswith(": (none)")
@@ -355,8 +355,8 @@ def hit_body(hit: dict, *, cap: int = RECALL_BODY_CAP) -> str:
     쓴다. 두 표면이 각자 자르던 시절, MCP 쪽 상한 300자는 머리글(약 321자)에 전부 먹혀
     본문을 **한 글자도** 못 실었다.
 
-    줄바꿈은 접는다. 밀도 때문만이 아니다 — 주입 블록은 `- ` 로 시작하는 줄의 목록이라,
-    본문에 든 줄바꿈은 없는 항목을 하나 만들어낸다 (`_neutralize` 는 꺾쇠만 무력화한다)."""
+    줄바꿈은 접는다. 밀도 때문만이 아니다 — 주입 블록은 `- `로 시작하는 줄의 목록이라,
+    본문에 든 줄바꿈은 없는 항목을 하나 만들어낸다 (`_neutralize`는 꺾쇠만 무력화한다)."""
     canonical = hit.get("canonical")
     if isinstance(canonical, dict) and canonical.get("content"):
         title = _neutralize(str(canonical.get("title") or "").strip())
@@ -368,9 +368,9 @@ def hit_body(hit: dict, *, cap: int = RECALL_BODY_CAP) -> str:
 
 
 def hit_provenance(metadata: dict) -> str:
-    """출처 표기 — 한 번만, 짧게. record_id 와 파일 경로면 사람도 에이전트도 원본에 닿는다.
+    """출처 표기 — 한 번만, 짧게. record_id와 파일 경로면 사람도 에이전트도 원본에 닿는다.
 
-    source_revision 은 뺐다: 주입면에 실린 그 128자 16진수로 할 수 있는 판단이 없다
+    source_revision은 뺐다: 주입면에 실린 그 128자 16진수로 할 수 있는 판단이 없다
     (모델은 비교 대상 해시를 갖고 있지 않다). 신선도 판정은 이미 게이트가 한다 —
     정본과 바이트 단위로 같아야 통과하고, 전체 문자열은 .asgard/memory/records/ 에 있다."""
     parts = []
@@ -385,15 +385,15 @@ RELATION_EXPANSION_CAP = 3  # 관계로 딸려오는 record 상한 — 이웃이
 
 
 def _relation_neighbors(root: str, seed_ids: set[str], cap: int = RELATION_EXPANSION_CAP) -> list[tuple[str, str, str]]:
-    """적중 record 의 1홉 이웃 — [(record_id, 관계 표기, 본문)]. 없으면 빈 리스트.
+    """적중 record의 1홉 이웃 — [(record_id, 관계 표기, 본문)]. 없으면 빈 리스트.
 
     왜 필요한가: backend 검색은 **말이 닮은 것**을 찾는다. 그런데 프로젝트 지식에서 정작
     필요한 이웃은 말이 안 닮았다 — "이 정책이 무엇에 의존하는가"는 어휘가 아니라 관계다
     (리서치 정합: 임베딩·희소검색은 자연어 발견을 늘리지만 정확한 의존이 걸린 과업에는
-    그래프 제약이 따로 필요하다). record 는 이미 타입 있는 관계를 갖고 있었는데
+    그래프 제약이 따로 필요하다). record는 이미 타입 있는 관계를 갖고 있었는데
     (records.RELATIONS 8종) 회수가 한 번도 그걸 안 봤다.
 
-    양방향으로 걷는다: a 가 b 를 가리키면 b 도 a 의 이웃이다. 관계 방향은 표기에 남긴다 —
+    양방향으로 걷는다: a가 b를 가리키면 b도 a의 이웃이다. 관계 방향은 표기에 남긴다 —
     `dependsOn`(나감)과 `dependsOn⁻`(들어옴)은 읽는 사람에게 전혀 다른 사실이다.
 
     정본(`.asgard/memory/records/`)에서 직접 읽으므로 신뢰 게이트를 우회하지 않는다.
@@ -441,7 +441,7 @@ def project_recall_rows(query: str, *, start: str | None = None, max_results: in
     """프로젝트 backend 회수 본문 목록 + project_id — 렌더도 예산도 없다 (조립기가 건다).
 
     관계 확장(1홉 이웃)까지 여기서 붙인다: 이웃은 질의에 답한 것이 아니라 답한 것이 의존하는
-    것이라 본체 뒤에 와야 하고, 그 순서는 후보의 rank 로 표현된다."""
+    것이라 본체 뒤에 와야 하고, 그 순서는 후보의 rank로 표현된다."""
     found = find_config(start or os.getcwd())
     if not found:
         return [], ""
@@ -527,28 +527,28 @@ def _synthesis_sections(content: str) -> list[str]:
 
 
 def project_synthesis_rows(query: str, *, start: str | None = None) -> list[str]:
-    """승인 record 에서 파생된 종합층(mental model)의 질의 관련 구획 — 비권위, fail-open.
+    """승인 record에서 파생된 종합층(mental model)의 질의 관련 구획 — 비권위, fail-open.
 
-    왜 별도 레인인가: 이 글은 사람이 쓴 정본이 아니라 backend LLM 이 **승인된 record 만**
+    왜 별도 레인인가: 이 글은 사람이 쓴 정본이 아니라 backend LLM이 **승인된 record만**
     보고 쓴 요약이다. 정본과 같은 칸에 섞으면 근거와 요약의 구분이 사라진다 (Canon: 회수는
-    힌트지 증거가 아니다). 그래서 scope 를 갈라 붙이고 예산도 따로 준다.
+    힌트지 증거가 아니다). 그래서 scope를 갈라 붙이고 예산도 따로 준다.
 
     왜 굳이 붙이는가: 이 층은 이미 만들어지고 있었고 (`asgard memory project-learn`),
-    `doctor` 가 개수만 세고, 어떤 프롬프트에도 한 글자도 안 실렸다. 대조군(hermes)이
-    같은 backend 로 "알아서 아는" 느낌을 내는 자리가 정확히 이 통합 계층이다.
+    `doctor`가 개수만 세고, 어떤 프롬프트에도 한 글자도 안 실렸다. 대조군(hermes)이
+    같은 backend로 "알아서 아는" 느낌을 내는 자리가 정확히 이 통합 계층이다.
 
     lexical 문턱을 둔다: 질의 도메인어가 하나도 안 걸리면 기권한다. 종합문은 프로젝트
     전체를 요약하므로 무조건 주입하면 매 턴 같은 글이 실려 잡음이 된다.
 
     게이트 셋은 형제 레인과 같은 것을 쓴다. 이 레인만 빠뜨렸던 자리라 근거를 적어 둔다:
     ① 킬스위치(`inject_enabled`) — 로컬 레인(documents·episodes)이 자기 안에서 한 번 더 보는
-      이유와 같다. 호출부가 이미 `inject_allowed` 로 막지만, 게이트를 호출부에만 두면 새 호출부가
+      이유와 같다. 호출부가 이미 `inject_allowed`로 막지만, 게이트를 호출부에만 두면 새 호출부가
       생길 때 조용히 새는 자리가 된다.
     ② 신뢰(`is_backend_trusted`) — 이 파일의 내용은 로컬에 있지만 **출처는 backend** 다
-      (`snapshot()` 이 `list_mental_models()` 를 받아 적는다). 사용자가 명시적으로 connect 하지
-      않은 backend 의 글이 clone 만으로 주입되면 안 된다. 신뢰 저장소는 리포 밖(`~/.asgard`)이라
+      (`snapshot()`이 `list_mental_models()`를 받아 적는다). 사용자가 명시적으로 connect 하지
+      않은 backend의 글이 clone 만으로 주입되면 안 된다. 신뢰 저장소는 리포 밖(`~/.asgard`)이라
       저장소가 자기 자신을 신뢰하게 만들 수 없다 — 소유권 필드 대조와 달리 이건 못 위조한다.
-    ③ 오염 검사(`scan_threats`) — 종합문은 backend LLM 이 쓴 글이고 사람이 문장까지 승인한 것이
+    ③ 오염 검사(`scan_threats`) — 종합문은 backend LLM이 쓴 글이고 사람이 문장까지 승인한 것이
       아니다. 형제 레인이 원문에 거는 검사를 여기라고 뺄 근거가 없다."""
     try:
         from .project_memory.learning import load_synthesis
@@ -592,7 +592,7 @@ def project_synthesis_rows(query: str, *, start: str | None = None) -> list[str]
 
 SYNTHESIS_PREFIX = (
     '\n\n<memory-recall scope="synthesis">\n'
-    "승인 record 에서 파생된 프로젝트 종합 (요약이다 — 정본도 완료 증거도 아니다):\n"
+    "승인 record에서 파생된 프로젝트 종합 (요약이다 — 정본도 완료 증거도 아니다):\n"
 )
 SYNTHESIS_SUFFIX = "\n</memory-recall>"
 
@@ -659,7 +659,7 @@ def learned_skills_note(query: str, *, start: str | None = None, cap: int = LEAR
 
     CC 모드에는 네이티브 루프의 디스패치 주입(heimdall resolve_learned)이 닿지 않으므로,
     승인된 스킬을 UserPromptSubmit 회수에 포인터(이름·설명·경로)로 흘린다. 본문 전체는
-    주입하지 않는다 — CC 에이전트는 경로를 Read 로 열 수 있고, 네이티브 루프와의 이중
+    주입하지 않는다 — CC 에이전트는 경로를 Read로 열 수 있고, 네이티브 루프와의 이중
     주입도 피한다(recall_note 기본값이 스킬 제외인 이유). Verifier/loki 차단은 호출측
     (memory-activate 감사 매트릭스)이 지킨다 — 스킬 뱅크 헌법과 같은 결."""
     try:
@@ -707,7 +707,7 @@ def project_document_note(query: str, *, start: str | None = None) -> str:
 def episode_recall_note(query: str, *, start: str | None = None) -> str:
     """과거 세션 원문의 관련 구간 — 승격 메모리가 못 덮는 층 (비권위, fail-open).
 
-    네이티브 루프는 heimdall 이 직접 붙이므로 여기서는 외부 클라이언트 표면만 쓴다."""
+    네이티브 루프는 heimdall이 직접 붙이므로 여기서는 외부 클라이언트 표면만 쓴다."""
     try:
         from .agent.episodes import episode_note
 
@@ -726,8 +726,8 @@ def _lanes(project_id: str) -> tuple:
     """레인 명세 — **순서가 곧 읽는 순서이자 바닥 배분 순서**다.
 
     개인·프로젝트가 앞이고 요약·에피소드가 뒤인 것은 값의 순서다: 앞의 둘은 사람이 승인한
-    정본이고, 뒤의 둘은 파생·비권위다. 종합(요약)이 정본 뒤에 오는 이유는 `project_synthesis_rows`
-    가 적어 둔 그대로 — 요약은 근거가 먼저 놓인 다음에 읽혀야 한다."""
+    정본이고, 뒤의 둘은 파생·비권위다. 종합(요약)이 정본 뒤에 오는 이유는
+    `project_synthesis_rows`가 적어 둔 그대로 — 요약은 근거가 먼저 놓인 다음에 읽혀야 한다."""
     from .agent import episodes as _episodes
     from .memory.assemble import Lane
     from .project_memory import documents as _documents
@@ -758,7 +758,7 @@ def recall_candidates(
 ) -> tuple[list, str]:
     """여섯 레인의 후보 전량 + project_id. 레인 하나의 고장이 나머지를 막지 않는다.
 
-    레인마다 try 로 감싸는 것이 의도다: 이 자리의 fail-open 은 "메모리가 없어도 대화는
+    레인마다 try로 감싸는 것이 의도다: 이 자리의 fail-open은 "메모리가 없어도 대화는
     계속된다"인데, 한 레인의 예외가 통째로 올라오면 나머지 다섯도 같이 죽는다."""
     from .memory.assemble import Candidate
 
@@ -815,13 +815,13 @@ def recall_note(
 
     **여섯 레인이 하나의 예산 위에서 겨룬다** (26-07-29). 이전에는 문자열 여섯 개를 그냥
     이어 붙였고, 그래서 (a) 같은 사실이 여러 레인으로 여러 번 실렸고 (b) 한 레인이 자기
-    예산을 안 써도 다른 레인은 자기 상한에서 잘렸다. 조립은 `memory.assemble` 이 한다 —
+    예산을 안 써도 다른 레인은 자기 상한에서 잘렸다. 조립은 `memory.assemble`이 한다 —
     레인 바닥으로 굶주림을 막고, 남은 자리는 순위(RRF)로 전역 경쟁시키고, 레인 **간**
     중복은 포함계수로 걷어낸다. 왜 레인 안은 안 걷는지는 `assemble._redundant` 참조.
 
-    include_skills 는 CC 훅 표면(run_recall)만 켠다 — 네이티브 루프는 디스패치 라우팅이
+    include_skills는 CC 훅 표면(run_recall)만 켠다 — 네이티브 루프는 디스패치 라우팅이
     스킬 본문을 직접 주입하므로 여기서 또 흘리면 이중 주입이 된다.
-    include_episodes 도 같은 이유로 훅 표면만 켠다 — 네이티브는 heimdall 이 직접 붙인다."""
+    include_episodes도 같은 이유로 훅 표면만 켠다 — 네이티브는 heimdall이 직접 붙인다."""
     try:
         from .memory.assemble import assemble
 

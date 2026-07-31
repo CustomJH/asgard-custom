@@ -19,7 +19,7 @@ from ..hooks import budget_guard as bg
 
 
 def _project_key(root: str) -> str:
-    """Claude Code 의 프로젝트 트랜스크립트 디렉터리 이름 — 경로 구분자를 `-` 로 치환한 형태."""
+    """Claude Code의 프로젝트 트랜스크립트 디렉터리 이름 — 경로 구분자를 `-`로 치환한 형태."""
     return os.path.abspath(root).replace(os.sep, "-").replace("_", "-")
 
 

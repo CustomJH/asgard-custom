@@ -9,7 +9,7 @@
 이해를 돕는 게 아니라 방해한다(2508.06583, 인지 상태를 못 읽는 튜터의 대표 실패형이 "모두에게
 같은 말"이다). ② 되짚기의 효과는 **인출**에서 나오고 인출은 간격을 둘 때 남는다 — 한 번 놓고
 끝난 물음은 놓지 않은 것과 측정상 같다. ③ 답을 안 받으면 아무것도 못 잰다 — 설명 관문 실험에서
-"코드는 받았지만 못 고치는" 격차 38%p 는 사람이 **말로 옮겨 봤는가**에서 갈렸다(2602.20206).
+"코드는 받았지만 못 고치는" 격차 38%p는 사람이 **말로 옮겨 봤는가**에서 갈렸다(2602.20206).
 그 실험은 막아서 받아냈고 우리는 안 막는다(계약 ②) — 대신 안 답한 것을 없던 일로 치지 않는다.
 
 계약 다섯 줄:
@@ -26,7 +26,7 @@
 
 스코프는 **프로젝트**다(`.asgard/tutor/growth.json`). 물음의 좌표가 이 저장소의 경로·단위라서
 그렇다 — 다른 저장소로 들고 가면 좌표가 전부 죽는다. 종류별 통계만 개인 층으로 올릴 여지는 있고,
-그건 여기 스키마를 안 바꾸고도 나중에 얹을 수 있다(topics 는 좌표를 안 쓴다).
+그건 여기 스키마를 안 바꾸고도 나중에 얹을 수 있다(topics는 좌표를 안 쓴다).
 """
 
 from __future__ import annotations
@@ -63,8 +63,8 @@ _FILLER = re.compile(
 class Revisit:
     """돌아온 물음 하나 — 처음 놓았을 때의 좌표와 문장을 그대로 들고 온다.
 
-    `unit` 은 화면에 찍는 자리고 `key` 는 이름을 만드는 자리다. 둘이 갈리는 물음이 있다(의존·표식은
-    `unit` 이 비어 있다) — 다시 실을 때 `key` 를 안 들고 가면 같은 물음이 새 이름으로 다시 열린다.
+    `unit`은 화면에 찍는 자리고 `key`는 이름을 만드는 자리다. 둘이 갈리는 물음이 있다(의존·표식은
+    `unit`이 비어 있다) — 다시 실을 때 `key`를 안 들고 가면 같은 물음이 새 이름으로 다시 열린다.
     """
 
     cid: str
@@ -140,8 +140,8 @@ def _topic(data: dict, kind: str) -> dict:
 def note_asked(root: str, points: object, now: float | None = None) -> dict[str, str]:
     """놓은 물음을 기록한다. 반환 = cid → "new" | "again" | "waiting".
 
-    **같은 호출을 두 번 해도 두 번 세지 않는다.** 이미 열려 있고 아직 때가 안 된 물음은 "waiting"
-    으로 지나간다 — 훅과 네이티브 루프가 같은 턴에 각자 판정을 돌려도 숫자가 부풀지 않아야 한다.
+    **같은 호출을 두 번 해도 두 번 세지 않는다.** 이미 열려 있고 아직 때가 안 된 물음은
+    "waiting"으로 지나간다 — 훅과 네이티브 루프가 같은 턴에 각자 판정을 돌려도 숫자가 부풀지 않아야 한다.
     다시 셀 자격은 **때가 됐을 때**뿐이고, 그때 비로소 직전 회차가 "건너뛴 것"으로 확정된다.
     """
     stamp = time.time() if now is None else now
@@ -193,9 +193,9 @@ def note_asked(root: str, points: object, now: float | None = None) -> dict[str,
 
 
 def _iter_points(points: object):
-    """Checkpoint 든 dict 든 같은 다섯 칸으로 읽는다 — 훅은 JSON 을, 네이티브는 객체를 넘긴다.
+    """Checkpoint 든 dict 든 같은 다섯 칸으로 읽는다 — 훅은 JSON을, 네이티브는 객체를 넘긴다.
 
-    네 번째 칸이 이름을 만드는 구분자다. 없으면 `unit` 이 그 일을 한다 — 대부분의 물음은 단위
+    네 번째 칸이 이름을 만드는 구분자다. 없으면 `unit`이 그 일을 한다 — 대부분의 물음은 단위
     이름만으로 유일하고, 안 그런 두 종류(의존·표식)만 자기 구분자를 들고 온다.
     """
     if not isinstance(points, (list, tuple)):
@@ -252,7 +252,7 @@ def answer(root: str, key: str, text: str, now: float | None = None) -> tuple[bo
     data = load(root)
     found = _resolve(data, key)
     if found is None:
-        return (False, f"열린 물음 중에 `{key}` 로 시작하는 것이 없다")
+        return (False, f"열린 물음 중에 `{key}`로 시작하는 것이 없다")
     full, entry = found
     depth = _depth(text)
     topic = _topic(data, entry.get("kind", ""))
@@ -274,7 +274,7 @@ def dismiss(root: str, key: str, reason: str = "", now: float | None = None) -> 
     data = load(root)
     found = _resolve(data, key)
     if found is None:
-        return (False, f"열린 물음 중에 `{key}` 로 시작하는 것이 없다")
+        return (False, f"열린 물음 중에 `{key}`로 시작하는 것이 없다")
     full, entry = found
     _topic(data, entry.get("kind", ""))["dismissed"] += 1
     _close(data, full, entry, "dismissed", stamp, "", reason)
@@ -303,10 +303,10 @@ def _depth(text: str) -> str:
 
 
 def level(data: dict, kind: str) -> int:
-    """0 처음 · 1 봤다 · 2 답해 봤다 · 3 이 종류는 당신 것이다.
+    """0 처음 · 1 봤다 · 2 답해 봤다 · 3이 종류는 당신 것이다.
 
     올라가는 근거는 **깊은 답**뿐이다(`deep`). 짧은 답도 답으로 세지만 조절의 근거로는 안 쓴다 —
-    그러지 않으면 `ok` 를 세 번 쳐서 안내를 끌 수 있고, 그건 사용자가 자기를 속이는 통로다.
+    그러지 않으면 `ok`를 세 번 쳐서 안내를 끌 수 있고, 그건 사용자가 자기를 속이는 통로다.
     """
     row = data["topics"].get(kind)
     if not isinstance(row, dict):
@@ -357,7 +357,7 @@ def angle(kind: str, asks: int) -> int:
     """같은 물음을 다시 놓을 때 몇 번째 각도로 놓을 것인가.
 
     같은 문장을 네 번째로 놓는 것은 재방문이 아니라 반복이다. 인출이 실패한 자리에서 같은 설명을
-    되풀이하지 말고 각도를 바꾼다 — 물음의 문장은 `tutor.ANGLES` 가 갖고, 여기서는 몇 번째인지만
+    되풀이하지 말고 각도를 바꾼다 — 물음의 문장은 `tutor.ANGLES`가 갖고, 여기서는 몇 번째인지만
     센다(문장과 셈을 한 자리에 두면 문장을 고칠 때마다 셈이 바뀐다).
     """
     return max(0, int(asks) - 1)
@@ -370,7 +370,7 @@ def due(root: str, now: float | None = None, cap: int = 3) -> list[Revisit]:
     """때가 된 물음 — 오래 기다린 것부터. **코드가 아직 있는지는 여기서 안 본다.**
 
     좌표가 살아 있는지는 나무를 봐야 아는 사실이고 이 모듈은 기록만 본다. 확인은 호출부
-    (`tutor.revisits`)의 몫이고, 죽은 좌표는 거기서 `expire` 로 닫힌다.
+    (`tutor.revisits`)의 몫이고, 죽은 좌표는 거기서 `expire`로 닫힌다.
     """
     stamp = time.time() if now is None else now
     data = load(root)
@@ -417,7 +417,7 @@ def expire(root: str, keys: object, reason: str = "gone", now: float | None = No
 
 
 def summary(root: str, now: float | None = None) -> dict:
-    """`asgard tutor --progress` 가 그릴 재료. 화면 문장은 여기서 안 만든다.
+    """`asgard tutor --progress`가 그릴 재료. 화면 문장은 여기서 안 만든다.
 
     이 화면 하나가 이 층의 산출물이다 — 튜터가 사람에게 남긴 것이 무엇인지 볼 수 있는 유일한
     자리이므로, 좋아 보이는 숫자만 싣지 않는다. 건너뛴 수와 스스로 낮춘 탐침을 같은 화면에

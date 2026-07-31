@@ -6,16 +6,16 @@
 # 그 저장소에만 걸린다. 순서는 공통 먼저·프로젝트 나중이고, 충돌하면 나중 것이 이긴다 — 그 규칙을
 # 렌더 헤더가 모델에게 문장으로 말한다. 별칭은 어느 자리에서나 CUSTOM_MANUAL.md·CUSTOM.md·RULES.md.
 #
-# 네이티브 Heimdall 은 manual.py note() 를 프롬프트에 직접 주입하지만, 모드 B 는 서브에이전트가
-# AGENTS.md 를 읽는 구조라 닿지 않는다 — charter 와 동일하게 훅으로 보상한다. 동작:
+# 네이티브 Heimdall은 manual.py note()를 프롬프트에 직접 주입하지만, 모드 B는 서브에이전트가
+# AGENTS.md를 읽는 구조라 닿지 않는다 — charter와 동일하게 훅으로 보상한다. 동작:
 #   agent_type 없음 (SessionStart/UserPromptSubmit) → identity 절 stdout 주입 (메인 스레드)
 #   agent_type 있음 (SubagentStart) → 역할별 JSON additionalContext:
 #     asgard-thinker  → criteria 환원 지시
-#     asgard-worker   → "네가 쓰는 코드에 적용된다" (charter 와 갈리는 유일한 자리 — 아래 주석)
+#     asgard-worker   → "네가 쓰는 코드에 적용된다" (charter와 갈리는 유일한 자리 — 아래 주석)
 #     asgard-verifier → 명시 규칙 위반 = 반례 FAIL, 단 criteria 대체 아님
 #     그 외(딜리버리 freyja/thor/eitri/loki) → identity 절
-# 렌더 문구는 asgard/manual.py render() 와 **동일 유지 (단일 출처 원칙)** — 훅은 무임포트라 재구현
-# 하고, tests/test_manual_hook.py 가 두 렌더의 바이트 동일성을 대조한다.
+# 렌더 문구는 asgard/manual.py render()와 **동일 유지 (단일 출처 원칙)** — 훅은 임포트를 못 하므로 재구현
+# 하고, tests/test_manual_hook.py가 두 렌더의 바이트 동일성을 대조한다.
 # fail-open: 매뉴얼 부재·파손·훅 오류는 전부 무개입 통과 (exit 0) — 세션을 막지 않는다.
 import json
 import os
@@ -23,10 +23,10 @@ import re
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다. UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다. UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -39,7 +39,7 @@ MARKER = "asgard:manual"
 MAX_CHARS = 16000
 MIN_CHARS, CEIL_CHARS = 500, 60000
 FRAGMENT_CAP = 32
-# 에인헤랴르 홈 해석 — profiles.py / agent_activate.py 와 동일 유지
+# 에인헤랴르 홈 해석 — profiles.py / agent_activate.py와 동일 유지
 PROFILES_DIR = "profiles"
 ACTIVE_FILE = "active_profile"
 DEFAULT_PROFILE = "default"
@@ -47,12 +47,12 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
-# 숫자 파싱 실패 두 종. 이름으로 묶는 이유는 취향이 아니다: 훅은 asgard 의 venv 가 아니라
-# 사용자 PATH 의 python3 로 돈다(`platform.hook_python`). 괄호 없는 다중 except 는 3.14+
-# 문법(PEP 758)이라 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError 가 되고, 훅 계약이
-# fail-open 이라 그 죽음이 **조용하다** — 사용자는 계층이 켜진 줄 안다. 그렇다고 괄호로 쓰면
+# 숫자 파싱 실패 두 종. 이름으로 묶는 이유는 취향이 아니다: 훅은 asgard의 venv가 아니라
+# 사용자 PATH의 python3로 돈다(`platform.hook_python`). 괄호 없는 다중 except는 3.14+
+# 문법(PEP 758)이라 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError가 되고, 훅 계약이
+# fail-open이라 그 죽음이 **조용하다** — 사용자는 계층이 켜진 줄 안다. 그렇다고 괄호로 쓰면
 # 이 리포의 포매터(target-version=py314)가 도로 벗긴다. 이름은 포매터가 못 건드린다.
-# tests/test_architecture.py 의 문법 바닥 검사가 이 불변식을 지킨다.
+# tests/test_architecture.py의 문법 바닥 검사가 이 불변식을 지킨다.
 _BAD_NUMBER = (TypeError, ValueError)
 _BAD_PATH = (OSError, ValueError)  # 끊어진 링크 · 순환 · 다른 드라이브(Windows) — 같은 이유로 이름
 
@@ -79,8 +79,8 @@ def _read_json(path):
 
 
 def user_home():
-    """HOME 우선 — Windows 에서 expanduser 는 HOME 을 안 보고 USERPROFILE 만 본다
-    (settings.machine_dir / profiles.root 와 동일 유지)."""
+    """HOME 우선 — Windows에서 expanduser는 HOME을 안 보고 USERPROFILE만 본다
+    (settings.machine_dir / profiles.root와 동일 유지)."""
     return os.environ.get("HOME") or os.path.expanduser("~")
 
 
@@ -97,7 +97,7 @@ def _norm(value):
 
 
 def home():
-    """활성 에이전트의 홈 — 공통 매뉴얼과 전역 설정이 사는 곳 (profiles.home() 과 동일 유지).
+    """활성 에이전트의 홈 — 공통 매뉴얼과 전역 설정이 사는 곳 (profiles.home()과 동일 유지).
 
     사다리: ASGARD_HOME → ASGARD_PROFILE → 루트의 active_profile → 기계 뿌리."""
     env_home = str(os.environ.get("ASGARD_HOME") or "").strip()
@@ -110,7 +110,7 @@ def home():
 
 
 def _configs(root):
-    """프로젝트 > 글로벌 순 — settings.section() 의 병합 사다리와 동일 유지 (단일 출처 원칙)."""
+    """프로젝트 > 글로벌 순 — settings.section()의 병합 사다리와 동일 유지 (단일 출처 원칙)."""
     return (
         _read_json(os.path.join(root, ASGARD_DIR, "asgard-setting-project.json")),
         _read_json(os.path.join(home(), "asgard-setting-global.json")),
@@ -141,9 +141,9 @@ def max_chars(root):
 
 
 def _inside(path, fence):
-    """manual.py _inside() 와 동일 유지 — 링크 대상이 울타리 안인가 (fence=None 이면 참).
+    """manual.py _inside()와 동일 유지 — 링크 대상이 울타리 안인가 (fence=None 이면 참).
 
-    울타리 없이 두면 저장소가 커밋한 `MANUAL.md -> ../../.ssh/id_rsa` 가 그대로 매뉴얼이 되어
+    울타리 없이 두면 저장소가 커밋한 `MANUAL.md -> ../../.ssh/id_rsa`가 그대로 매뉴얼이 되어
     프롬프트로 나간다. 훅은 PreToolUse 판독 게이트가 보는 자리가 아니라 여기서 막아야 한다."""
     if fence is None:
         return True
@@ -181,7 +181,7 @@ def _fragments_in(base, fence=None):
 
 
 def discover(root):
-    """manual.py discover() 와 동일 유지 — {files[], shadowed[], dropped[], escaped[]}."""
+    """manual.py discover()와 동일 유지 — {files[], shadowed[], dropped[], escaped[]}."""
     root = os.path.abspath(root)
     files, shadowed, dropped, escaped = [], [], [], []
 
@@ -197,7 +197,7 @@ def discover(root):
             dropped.extend(drop)
             escaped.extend(frag_out)
 
-    # 울타리: 프로젝트 층은 리포 안, 공통 층(홈)은 없음 — manual.py 와 동일 판정.
+    # 울타리: 프로젝트 층은 리포 안, 공통 층(홈)은 없음 — manual.py와 동일 판정.
     take(home(), True, None)  # ① 공통 — 이 기계의 모든 프로젝트
     take(root, False, root)  # ② 이 프로젝트 — 리포 루트
     take(os.path.join(root, ASGARD_DIR), True, root)  # ③ 이 프로젝트 — 보조 자리 + 조각
@@ -219,7 +219,7 @@ def is_common(path):
 
 
 def label(root, path):
-    """manual.py label() 과 동일 유지 — 프로젝트 안이면 상대경로, 홈 안이면 `~/…`."""
+    """manual.py label()과 동일 유지 — 프로젝트 안이면 상대경로, 홈 안이면 `~/…`."""
     root, path = os.path.abspath(root), os.path.abspath(path)
     if path.startswith(root + os.sep):
         return os.path.relpath(path, root).replace(os.sep, "/")
@@ -230,7 +230,7 @@ def label(root, path):
 
 
 def has_marker(path):
-    """`asgard init` 이 깐 자리인가 — 표식은 주석 안이라 주입엔 안 실린다 (manual.py 와 동일 유지)."""
+    """`asgard init`이 깐 자리인가 — 표식은 주석 안이라 주입엔 안 실린다 (manual.py와 동일 유지)."""
     return MARKER in _read(path)
 
 
@@ -241,7 +241,7 @@ def _cut(body, cap):
 
 
 def load_manual(root):
-    """manual.py load_manual() 과 동일 유지 — 정규화 dict 또는 None."""
+    """manual.py load_manual()과 동일 유지 — 정규화 dict 또는 None."""
     if not enabled(root):
         return None
     root = os.path.abspath(root)
@@ -312,7 +312,7 @@ _SUFFIX = {
 
 
 def render(manual, section):
-    """manual.py render() 와 동일 유지 (단일 출처 원칙)."""
+    """manual.py render()와 동일 유지 (단일 출처 원칙)."""
     parts = [_HEADER % ", ".join(manual["sources"]), _AUTHORITY]
     if manual.get("common") and manual.get("project"):
         parts.append(_LAYERS)
@@ -330,7 +330,7 @@ def section_for(agent):
         return "thinker"
     if agent == "asgard-verifier":
         return "verifier"
-    # charter 는 여기서 Worker 를 무주입으로 뺀다 (Fugu 격리 — 북극성은 계획층 것이다). 매뉴얼은
+    # charter는 여기서 Worker를 무주입으로 뺀다 (Fugu 격리 — 북극성은 계획층 것이다). 매뉴얼은
     # 반대다: "이 프로젝트에서 코드를 이렇게 써라"가 본문이므로, 코드를 쓰는 역할에 안 닿으면
     # 이 계층은 존재 의의가 없다. 네이티브 worker 프롬프트도 같은 절을 받는다 (모드 패리티).
     if agent == "asgard-worker":
@@ -347,7 +347,7 @@ def client():
 
 
 def emit(current_client, agent, text):
-    """주입 스키마는 클라이언트마다 다르다 — charter/map/memory-activate 와 동일 유지 (단일 규약)."""
+    """주입 스키마는 클라이언트마다 다르다 — charter/map/memory-activate와 동일 유지 (단일 규약)."""
     if current_client == "cursor":
         sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
     elif agent:  # SubagentStart — JSON additionalContext (lagom-subagent 스키마)

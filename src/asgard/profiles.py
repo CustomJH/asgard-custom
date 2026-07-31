@@ -15,31 +15,31 @@
                                             memory(1차 기억)·sessions·state·history·
                                             skills·asgard-setting-global.json·AGENT.md·profile.json
 
-왜 credential 을 안 가르는가: 에이전트마다 다시 로그인시키면 스웜을 못 쓴다. 자격은 기계의
+왜 credential을 안 가르는가: 에이전트마다 다시 로그인시키면 스웜을 못 쓴다. 자격은 기계의
 것이고 기억은 에이전트의 것이다 — 이 경계가 흔들리면 "에이전트 추가"가 "설치 반복"이 된다.
-대신 프로파일이 자기 `credentials.json` 을 갖고 있으면 그게 이긴다 (별도 키를 쓰는 에이전트).
+대신 프로파일이 자기 `credentials.json`을 갖고 있으면 그게 이긴다 (별도 키를 쓰는 에이전트).
 
 해석 사다리 (위가 이긴다):
     1. 컨텍스트 오버라이드   scoped() — 한 프로세스가 여러 에이전트를 돌릴 때 (스웜의 전제)
     2. ASGARD_HOME           경로 직접 지정 (docker·테스트·서브프로세스 전파)
-    3. ASGARD_PROFILE        이름 지정 (CLI `--agent` 가 이걸 세운다)
+    3. ASGARD_PROFILE        이름 지정 (CLI `--agent`가 이걸 세운다)
     4. ~/.asgard/active_profile   끈끈한 기본값 (`asgard agent use`)
     5. default               ~/.asgard 그대로
 
-**서브프로세스는 반드시 ASGARD_HOME 을 물려받아야 한다.** hermes 가 같은 자리에서 크게 데였다
-(이슈 18594: 활성 프로파일이 있는데 env 를 안 넘겨 기본 프로파일에 남의 데이터를 썼다). 그래서
-`subprocess_env()` 를 제공하고, env 없이 기본으로 떨어지는 순간을 `fallback_warning()` 이
+**서브프로세스는 반드시 ASGARD_HOME을 물려받아야 한다.** hermes가 같은 자리에서 크게 데였다
+(이슈 18594: 활성 프로파일이 있는데 env를 안 넘겨 기본 프로파일에 남의 데이터를 썼다). 그래서
+`subprocess_env()`를 제공하고, env 없이 기본으로 떨어지는 순간을 `fallback_warning()`이
 말한다 — 조용한 교차 오염보다 시끄러운 경고가 낫다.
 
 공유 지대: 메모리 서베이(arXiv 2603.07670)는 "전부 공유(사생활 유출) 아니면 완전 격리(지식
 전이 불가) 둘뿐이고 그 사이가 비어 있다"고 지적한다. 여기서 고른 것은 **격리**이며,
 **공유 통로는 이 패치에 없다** — 지금 상태는 그 서베이가 말한 두 극단 중
-"완전 격리"쪽이고, 그건 의도된 선택이다: 에이전트 A 가 올린 글을 B 가 프롬프트로 읽는 통로는
+"완전 격리"쪽이고, 그건 의도된 선택이다: 에이전트 A가 올린 글을 B가 프롬프트로 읽는 통로는
 곧 교차 프롬프트 인젝션 면이라(MAGPIE, arXiv 2510.15186) 예산·중복제거·출처 표기·오염 게이트를
 같이 짓지 않으면 순손실이다. 검증 없이 반쯤 얹느니 없는 게 낫다. 다음 걸음은 "증류한 통찰만
 명시 publish, 읽기는 전원" 형태의 공유 은행이며, 그때 필요한 것은 저장소가 아니라 **게이트**다.
 
-fail-open: 이 모듈의 모든 읽기는 실패해도 예외를 안 던지고 default 로 떨어진다. 프로파일
+fail-open: 이 모듈의 모든 읽기는 실패해도 예외를 안 던지고 default로 떨어진다. 프로파일
 시스템의 버그가 아스가르드 시동을 막으면 안 된다.
 """
 
@@ -63,7 +63,7 @@ ACTIVE_FILE = "active_profile"
 MANIFEST = "profile.json"
 IDENTITY = "AGENT.md"
 
-# 프로파일 홈 안에 만드는 사유 디렉터리. memory 가 이 목록의 이유다 — 나머지는 그 곁이다.
+# 프로파일 홈 안에 만드는 사유 디렉터리. memory가 이 목록의 이유다 — 나머지는 그 곁이다.
 HOME_DIRS = ("memory", "sessions", "state", "skills")
 
 # 예약어 — CLI 하위 명령과 겹치면 `asgard agent use memory` 같은 문장이 어느 쪽인지 모호해진다.
@@ -78,7 +78,7 @@ RESERVED = frozenset(
         "commons",
         "asgard",
         "auth",
-        # `custom` 은 active() 가 "모르는 ASGARD_HOME" 을 뜻할 때 쓰는 표지다. 같은 이름의
+        # `custom`은 active()가 "모르는 ASGARD_HOME"을 뜻할 때 쓰는 표지다. 같은 이름의
         # 에이전트를 만들면 둘을 구분할 수 없어 진짜 프로파일이 표지로 오인된다.
         "custom",
         "budget",
@@ -120,8 +120,8 @@ _SCOPE: ContextVar[object] = ContextVar("asgard_profile_scope", default=_UNSET)
 def root() -> str:
     """기계 단위 아스가르드 뿌리 — 프로파일이 몇이든 하나.
 
-    HOME 을 명시 우선한다 (settings.global_dir 과 **동일 유지** — Windows 에서
-    expanduser 는 HOME 을 안 보고 USERPROFILE 만 본다)."""
+    HOME을 명시 우선한다 (settings.global_dir과 **동일 유지** — Windows에서
+    expanduser는 HOME을 안 보고 USERPROFILE만 본다)."""
     home = os.environ.get("HOME") or os.path.expanduser("~")
     return os.path.join(home, ".asgard")
 
@@ -134,17 +134,17 @@ CUSTOM = "custom"  # 이름 붙지 않은 홈 (컨테이너 볼륨 등) — 이�
 
 
 def profile_dir(name: str) -> str:
-    """이름 → 홈 경로. `default` 는 뿌리 자신이다 (마이그레이션 0).
+    """이름 → 홈 경로. `default`는 뿌리 자신이다 (마이그레이션 0).
 
-    `custom` 은 이름이 아니라 **지금 이 프로세스의 홈**을 가리키는 표지다. 도커처럼
-    `ASGARD_HOME=/opt/agent-data` 를 통째로 준 경우가 여기다 — 그 홈은 `profiles/` 아래 있지
+    `custom`은 이름이 아니라 **지금 이 프로세스의 홈**을 가리키는 표지다. 도커처럼
+    `ASGARD_HOME=/opt/agent-data`를 통째로 준 경우가 여기다 — 그 홈은 `profiles/` 아래 있지
     않으므로 이름으로 되짚을 수 없고, 되짚으려 들면 `profiles/custom` 이라는 없는 자리를
     가리켜 정체성도 명세도 조용히 사라진다 (실측 26-07-29)."""
     canon = normalize(name)
     if canon == DEFAULT:
         return root()
     if canon == CUSTOM:
-        # `home()` 을 부르지 않는다 — scoped("custom") 이면 서로를 되불러 무한 재귀가 된다.
+        # `home()`을 부르지 않는다 — scoped("custom") 이면 서로를 되불러 무한 재귀가 된다.
         return _env_home() or root()
     return os.path.join(profiles_root(), canon)
 
@@ -159,7 +159,7 @@ def _env_home() -> str:
 
 
 def normalize(name: str) -> str:
-    """표시용 라벨을 온디스크 id 로. 대시보드·CLI 가 대문자를 넘겨도 같은 곳을 가리킨다."""
+    """표시용 라벨을 온디스크 id로. 대시보드·CLI가 대문자를 넘겨도 같은 곳을 가리킨다."""
     text = str(name or "").strip()
     if not text:
         return DEFAULT
@@ -172,9 +172,9 @@ def validate(name: str) -> str:
     if canon == DEFAULT:
         return canon
     if not ID_RE.match(canon):
-        raise ValueError(f"이름 {name!r} 은 쓸 수 없다 — [a-z0-9][a-z0-9_-]{{0,47}} 규약")
+        raise ValueError(f"이름 {name!r}은 쓸 수 없다 — [a-z0-9][a-z0-9_-]{{0,47}} 규약")
     if canon in RESERVED:
-        raise ValueError(f"이름 {canon!r} 은 예약어다 (CLI 하위 명령과 충돌) — 다른 이름을 골라라")
+        raise ValueError(f"이름 {canon!r}은 예약어다 (CLI 하위 명령과 충돌) — 다른 이름을 골라라")
     return canon
 
 
@@ -186,7 +186,7 @@ def exists(name: str) -> bool:
 
 
 def sticky() -> str:
-    """`asgard agent use` 로 고정된 이름 (env·스코프 무시 — 파일만 본다)."""
+    """`asgard agent use`로 고정된 이름 (env·스코프 무시 — 파일만 본다)."""
     try:
         with open(os.path.join(root(), ACTIVE_FILE), encoding="utf-8") as handle:
             return normalize(handle.read())
@@ -197,7 +197,7 @@ def sticky() -> str:
 def active() -> str:
     """지금 이 프로세스가 어느 에이전트인가 — 해석 사다리 그대로.
 
-    ASGARD_HOME 이 프로파일 디렉터리를 안 가리키면 `custom` 을 돌려준다 (거짓 이름을 지어내
+    ASGARD_HOME이 프로파일 디렉터리를 안 가리키면 `custom`을 돌려준다 (거짓 이름을 지어내
     설정이 그 이름으로 저장되는 사고를 막는다)."""
     scoped_name = _SCOPE.get()
     if scoped_name is not _UNSET:
@@ -232,7 +232,7 @@ def _name_of(path: str) -> str:
 def home() -> str:
     """활성 에이전트의 사유 홈 — 1차 기억·세션·설정이 사는 곳.
 
-    이 함수가 이 파일의 유일한 공개 계약이다. `~/.asgard` 를 직접 조립하는 코드는 전부
+    이 함수가 이 파일의 유일한 공개 계약이다. `~/.asgard`를 직접 조립하는 코드는 전부
     여기(사유) 아니면 `root()`(기계) 중 하나로 가야 한다."""
     scoped_name = _SCOPE.get()
     if scoped_name is not _UNSET:
@@ -255,8 +255,8 @@ def home() -> str:
 
 
 def push(name: str | None) -> Token:
-    """컨텍스트 로컬 오버라이드. os.environ 을 안 건드린다 — 그건 전 스레드 공유라
-    스웜에서 서로의 홈을 덮어쓴다 (hermes 가 같은 이유로 contextvar 를 쓴다)."""
+    """컨텍스트 로컬 오버라이드. os.environ을 안 건드린다 — 그건 전 스레드 공유라
+    스웜에서 서로의 홈을 덮어쓴다 (hermes가 같은 이유로 contextvar를 쓴다)."""
     return _SCOPE.set(_UNSET if name is None else normalize(name))
 
 
@@ -283,8 +283,8 @@ class scoped:
 def env_overlay(name: str | None = None) -> dict[str, str]:
     """활성 에이전트를 가리키는 환경변수 **오버레이** (전체 환경이 아니라 덧입힐 두 키).
 
-    SDK 처럼 "os.environ 상속 + 오버레이" 형태로 자식을 띄우는 자리에서 쓴다.
-    `custom`(모르는 ASGARD_HOME)일 때 ASGARD_PROFILE 을 빈 문자열로 덮는 이유: 오버레이는
+    SDK처럼 "os.environ 상속 + 오버레이" 형태로 자식을 띄우는 자리에서 쓴다.
+    `custom`(모르는 ASGARD_HOME)일 때 ASGARD_PROFILE을 빈 문자열로 덮는 이유: 오버레이는
     상속된 값을 못 지운다 — 남겨 두면 자식이 낡은 이름으로 다른 홈을 고른다."""
     target = normalize(name) if name else active()
     if target == "custom":
@@ -295,7 +295,7 @@ def env_overlay(name: str | None = None) -> dict[str, str]:
 def subprocess_env(env: dict[str, str] | None = None, name: str | None = None) -> dict[str, str]:
     """서브프로세스에 활성 에이전트를 **명시 전파**한 환경.
 
-    hermes 이슈 18594 의 교훈: 활성 프로파일이 있는데 env 를 안 넘기면 자식은 기본 프로파일에
+    hermes 이슈 18594의 교훈: 활성 프로파일이 있는데 env를 안 넘기면 자식은 기본 프로파일에
     쓴다. 조용한 교차 오염이라 며칠 뒤에야 발견된다. 자식을 띄우는 모든 자리는 이걸 쓴다."""
     out = dict(os.environ if env is None else env)
     overlay = env_overlay(name)
@@ -306,7 +306,7 @@ def subprocess_env(env: dict[str, str] | None = None, name: str | None = None) -
 
 
 def fallback_warning() -> str:
-    """끈끈한 활성 프로파일이 있는데 env 가 비어 기본으로 떨어졌으면 그 사실을 문장으로.
+    """끈끈한 활성 프로파일이 있는데 env가 비어 기본으로 떨어졌으면 그 사실을 문장으로.
 
     빈 문자열 = 정상. 호출측(doctor·훅)이 이 문장을 그대로 보여준다."""
     if os.environ.get("ASGARD_HOME") or os.environ.get("ASGARD_PROFILE"):
@@ -317,17 +317,17 @@ def fallback_warning() -> str:
     if name == DEFAULT:
         return ""
     return (
-        f"활성 에이전트는 {name!r} 인데 ASGARD_HOME/ASGARD_PROFILE 이 비어 있다 — "
-        f"이 프로세스는 기본 에이전트({root()})에 쓴다. 부모가 profiles.subprocess_env() 로 "
+        f"활성 에이전트는 {name!r} 인데 ASGARD_HOME/ASGARD_PROFILE이 비어 있다 — "
+        f"이 프로세스는 기본 에이전트({root()})에 쓴다. 부모가 profiles.subprocess_env()로 "
         f"환경을 넘겨야 한다."
     )
 
 
 def set_active(name: str) -> str:
-    """끈끈한 기본 에이전트 고정. default 는 파일 삭제로 표현한다 (없음 = 기본)."""
+    """끈끈한 기본 에이전트 고정. default는 파일 삭제로 표현한다 (없음 = 기본)."""
     canon = validate(name)
     if canon != DEFAULT and not exists(canon):
-        raise FileNotFoundError(f"에이전트 {canon!r} 없음 — `asgard agent create {canon}` 로 먼저 만들어라")
+        raise FileNotFoundError(f"에이전트 {canon!r} 없음 — `asgard agent create {canon}`로 먼저 만들어라")
     path = os.path.join(root(), ACTIVE_FILE)
     os.makedirs(root(), exist_ok=True)
     if canon == DEFAULT:
@@ -349,8 +349,8 @@ def set_active(name: str) -> str:
 def manifest(name: str) -> dict:
     """에이전트 명세 — 없으면 이름만 든 최소 뷰 (fail-open).
 
-    `description` 은 장식이 아니다: 스웜이 일을 어디로 보낼지 고를 때 읽는 유일한 문장이다
-    (hermes 가 kanban 분해기에 같은 값을 물린다). 그래서 create 가 비워두지 않는다."""
+    `description`은 장식이 아니다: 스웜이 일을 어디로 보낼지 고를 때 읽는 유일한 문장이다
+    (hermes가 kanban 분해기에 같은 값을 물린다). 그래서 create가 비워두지 않는다."""
     canon = normalize(name)
     path = os.path.join(profile_dir(canon), MANIFEST)
     data: dict = {}
@@ -373,7 +373,7 @@ def write_manifest(profile_id: str, /, **fields: object) -> str:
     """명세 갱신 — 준 키만 덮어쓴다 (부분 수정이 나머지를 지우면 안 된다).
 
     첫 인자는 위치 전용이다: 명세에 `name`(표시 이름) 키가 있어서, 키워드로 받으면
-    `write_manifest(id, name="로키")` 가 "인자 중복"으로 터진다."""
+    `write_manifest(id, name="로키")`가 "인자 중복"으로 터진다."""
     canon = normalize(profile_id)
     d = profile_dir(canon)
     os.makedirs(d, exist_ok=True)
@@ -402,8 +402,8 @@ def identity(name: str) -> str:
 
 # ── 정체성 주입 ──────────────────────────────────────────────────────────────────
 #
-# 렌더 문구는 hooks/agent_activate.py 와 **동일 유지 (단일 출처 원칙)** — 훅은 무임포트라
-# 재구현하고, tests/test_profiles.py 가 두 렌더가 같은 문자열을 내는지 대조한다.
+# 렌더 문구는 hooks/agent_activate.py와 **동일 유지 (단일 출처 원칙)** — 훅은 임포트를 못 하므로
+# 재구현하고, tests/test_profiles.py가 두 렌더가 같은 문자열을 내는지 대조한다.
 
 IDENTITY_MAX = 8000  # 상한 (~2k 토큰). 정체성은 캐시 프리픽스라 1회 비용이지만 무한은 아니다.
 
@@ -420,7 +420,7 @@ _TRUNCATED = "[agent identity truncated at the size limit — the rest was not l
 
 
 def render_identity(display: str, body: str, truncated: bool = False) -> str:
-    """주입 본문 — hooks/agent_activate.py `render()` 와 바이트 동일해야 한다."""
+    """주입 본문 — hooks/agent_activate.py `render()`와 바이트 동일해야 한다."""
     parts = [_HEADER % display, _AUTHORITY, body]
     if truncated:
         parts.append(_TRUNCATED)
@@ -431,7 +431,7 @@ def note(name: str | None = None) -> str:
     """프롬프트 주입분 — 정체성이 비었거나(주석뿐) 기본 에이전트면 **빈 문자열**.
 
     기본 에이전트에서 빈 문자열인 이유: 프로파일을 안 쓰는 설치의 프롬프트가 이 계층 도입 전과
-    바이트 단위로 같아야 한다 (토큰 회귀 0). 기본 에이전트도 AGENT.md 를 적으면 실린다 —
+    바이트 단위로 같아야 한다 (토큰 회귀 0). 기본 에이전트도 AGENT.md를 적으면 실린다 —
     "안 적었으면 침묵"이 규칙이지 "기본은 침묵"이 규칙이 아니다."""
     canon = normalize(name) if name else active()
     body = _meaningful(identity(canon))
@@ -446,15 +446,15 @@ def note(name: str | None = None) -> str:
 
 
 def label_for(name: str) -> str:
-    """헤더에 쓸 이름 — hooks/agent_activate.py `label_for()` 와 **동일 유지 (단일 출처 원칙)**.
+    """헤더에 쓸 이름 — hooks/agent_activate.py `label_for()`와 **동일 유지 (단일 출처 원칙)**.
 
-    `custom`(이름 없는 홈 — 컨테이너 볼륨 등)은 id 가 없으므로 명세의 표시 이름을 쓰고,
+    `custom`(이름 없는 홈 — 컨테이너 볼륨 등)은 id가 없으므로 명세의 표시 이름을 쓰고,
     그것도 없으면 홈 디렉터리 이름을 쓴다. "custom" 이라고만 적으면 컨테이너 여럿을 띄웠을 때
     로그에서 누가 누군지 구분이 안 된다."""
     canon = normalize(name)
     meta_name = str(manifest(canon).get("name") or "")
     if canon == CUSTOM:
-        # manifest() 는 이름이 없으면 id 를 채워 넣는다 — 그 기본값은 이름이 아니다.
+        # manifest()는 이름이 없으면 id를 채워 넣는다 — 그 기본값은 이름이 아니다.
         if meta_name and meta_name != CUSTOM:
             return meta_name
         return os.path.basename(profile_dir(canon).rstrip(os.sep)) or CUSTOM
@@ -466,10 +466,10 @@ def label_for(name: str) -> str:
 
 
 def builtin_roster() -> dict[str, dict]:
-    """`templates/roles/*.md` 가 곧 내장 명부다 — 등록부가 따로 없다.
+    """`templates/roles/*.md`가 곧 내장 명부다 — 등록부가 따로 없다.
 
-    반환 = {id: {name, description, delivery, source}}. id 는 `asgard-` 접두를 뗀 짧은 이름
-    (freyja·thor·mimir·loki·…). 사용자가 이 중 하나를 대표 에이전트로 고르면 create 가
+    반환 = {id: {name, description, delivery, source}}. id는 `asgard-` 접두를 뗀 짧은 이름
+    (freyja·thor·mimir·loki·…). 사용자가 이 중 하나를 대표 에이전트로 고르면 create가
     그 정체성을 씨앗으로 프로파일을 짓는다."""
     out: dict[str, dict] = {}
     try:
@@ -540,7 +540,7 @@ def create(
     물려받은 에이전트는 자기 일지의 주어가 누구인지 모른다)."""
     canon = validate(name)
     if canon == DEFAULT:
-        raise ValueError("default 는 내장 에이전트다 (~/.asgard) — 새로 만들 수 없다")
+        raise ValueError("default는 내장 에이전트다 (~/.asgard) — 새로 만들 수 없다")
     d = profile_dir(canon)
     if os.path.exists(d):
         raise FileExistsError(f"에이전트 {canon!r} 이미 있음: {d}")
@@ -590,14 +590,14 @@ def create(
     return d
 
 
-# 안내 템플릿은 **주석뿐**이어야 한다. 제목 한 줄이라도 주석 밖에 있으면 `_meaningful` 이 그걸
-# 알맹이로 읽어, 아무것도 안 쓴 에이전트의 프롬프트에 빈 헤더가 실린다 (manual.py 와 같은 규율 —
+# 안내 템플릿은 **주석뿐**이어야 한다. 제목 한 줄이라도 주석 밖에 있으면 `_meaningful`이 그걸
+# 알맹이로 읽어, 아무것도 안 쓴 에이전트의 프롬프트에 빈 헤더가 실린다 (manual.py와 같은 규율 —
 # 안내문을 배송해도 토큰 회귀 0 이라는 약속이 여기서 깨진다). 제목도 주석 안에 둔다.
 _BLANK_IDENTITY = """<!--
 %s — 이 에이전트의 정체성 문서
 
 이 파일이 이 에이전트의 정체성이다. 세션이 시작될 때 아스가르드 정체성 **위에** 얹힌다
-(.asgard/MANUAL.md 와 같은 층위이되, 이쪽은 프로젝트가 아니라 에이전트에 붙는다).
+(.asgard/MANUAL.md와 같은 층위이되, 이쪽은 프로젝트가 아니라 에이전트에 붙는다).
 
 아래 세 가지만 적어도 충분하다:
   · 무엇을 하는 에이전트인가 (한 문장)
@@ -610,8 +610,8 @@ _BLANK_IDENTITY = """<!--
 
 
 def delete(name: str) -> str:
-    """에이전트 삭제. 활성이었으면 끈끈한 포인터를 default 로 되돌린다 (죽은 이름을 가리키는
-    active_profile 은 모든 후속 프로세스를 custom 으로 떨어뜨린다)."""
+    """에이전트 삭제. 활성이었으면 끈끈한 포인터를 default로 되돌린다 (죽은 이름을 가리키는
+    active_profile은 모든 후속 프로세스를 custom으로 떨어뜨린다)."""
     canon = validate(name)
     if canon == DEFAULT:
         raise ValueError("기본 에이전트는 지울 수 없다 (~/.asgard 자체다)")
@@ -625,7 +625,7 @@ def delete(name: str) -> str:
 
 
 def listing() -> list[dict]:
-    """전 에이전트 요약 — default 가 항상 맨 앞. 이름 붙은 것은 사전순.
+    """전 에이전트 요약 — default가 항상 맨 앞. 이름 붙은 것은 사전순.
 
     각 항목: {id, name, description, based_on, path, active, memory_pages, has_identity}."""
     now_active = active()
@@ -663,7 +663,7 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 def _meaningful(text: str) -> str:
-    """주석을 걷어낸 알맹이 — manual.py `_meaningful` 과 같은 규율 (주석뿐이면 없는 것)."""
+    """주석을 걷어낸 알맹이 — manual.py `_meaningful`과 같은 규율 (주석뿐이면 없는 것)."""
     return _COMMENT.sub("", text or "").strip()
 
 
@@ -677,7 +677,7 @@ def _page_count(d: str) -> int:
 def ensure(name: str) -> str:
     """홈이 없으면 짓고 경로를 돌려준다 — 내장 명부의 이름이면 그 정체성으로 씨를 뿌린다.
 
-    `asgard agent use freyja` 가 이걸 부른다: 내장 에이전트를 고르는 행위가 곧 그 에이전트의
+    `asgard agent use freyja`가 이걸 부른다: 내장 에이전트를 고르는 행위가 곧 그 에이전트의
     1차 기억을 여는 행위다 (미리 만들어 둘 필요 없음)."""
     canon = validate(name)
     if canon == DEFAULT:

@@ -8,7 +8,7 @@
        프로젝트 ── 마일스톤 여럿       끝이 있는 일 (리드·목표일·건강도)
             └─ 티켓 (팀을 가로질러)    티켓은 프로젝트 **하나**에만 속한다
 
-**티켓은 프로젝트 하나에만 속한다.** Linear 와 같은 제약이고, 이유는 진척률이다: 한 티켓이
+**티켓은 프로젝트 하나에만 속한다.** Linear와 같은 제약이고, 이유는 진척률이다: 한 티켓이
 두 프로젝트에 걸리면 "80% 왔다"가 어느 쪽 80%인지 아무도 모른다.
 
 **건강도는 사람이 적는다.** 진척률에서 자동으로 뽑으면 '늦고 있지만 괜찮은'과 '빠르지만
@@ -111,7 +111,7 @@ def _progress(conn: sqlite3.Connection, project_id: str) -> dict[str, Any]:
 
     추정치(estimate)가 있으면 그쪽이 더 정확하지만, 팀마다 눈금이 다르고 안 쓰는 팀도 있다.
     두 수를 다 실어 보내고 **어느 쪽을 볼지는 표면이 고른다** — 여기서 하나로 접으면
-    추정을 안 쓰는 팀의 진척이 0 으로 보인다."""
+    추정을 안 쓰는 팀의 진척이 0으로 보인다."""
     row = conn.execute(
         "SELECT COUNT(*) AS total, "
         "SUM(CASE WHEN status = 'done' THEN 1 ELSE 0 END) AS done, "
@@ -195,7 +195,7 @@ def _project_row(conn: sqlite3.Connection, row: sqlite3.Row, *, deep: bool = Fal
 def _breakdown(conn: sqlite3.Connection, project_id: str) -> dict[str, list[dict[str, Any]]]:
     """진척을 세 갈래로 쪼갠다 — 담당·라벨·사이클.
 
-    Linear 의 Progress 판이 이 셋을 탭으로 든다. 총계 하나만 보면 "80% 왔다"까지는 알아도
+    Linear의 Progress 판이 이 셋을 탭으로 든다. 총계 하나만 보면 "80% 왔다"까지는 알아도
     **누가 남은 20%를 들고 있는지**를 모르는데, 프로젝트가 늦는 이유는 대개 거기 있다.
     담당 없는 몫은 지우지 않고 그대로 센다 — 주인 없는 일이 몇인지가 가장 쓸모 있는 수다."""
 
@@ -264,7 +264,7 @@ _URL_OK = ("http://", "https://", "file://")
 
 
 def add_resource(ref: Any, title: str, url: str = "", kind: str = "link") -> dict[str, Any]:
-    """자료 한 줄. 주소는 **열 수 있는 것만** 받는다 — `javascript:` 를 목록에 담아 두면
+    """자료 한 줄. 주소는 **열 수 있는 것만** 받는다 — `javascript:`를 목록에 담아 두면
     그 목록이 언젠가 클릭되는 실행 경로가 된다."""
     title = _text(title, "resource title", _MAX_NAME, required=True)
     url = _text(url, "resource url", 2000)

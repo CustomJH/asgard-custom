@@ -2,11 +2,11 @@
 
 같은 워크스페이스를 스튜디오 창·에이전트 툴·이 명령이 함께 본다
 (`<에이전트 홈>/studio/workspace.db`). 그래서 여기서 옮긴 칸은 창을 새로 고치면 그 자리에
-있고, 에이전트가 스스로 끊은 번호는 `asgard ticket list` 에 그대로 뜬다.
+있고, 에이전트가 스스로 끊은 번호는 `asgard ticket list`에 그대로 뜬다.
 
 **어디서 부르든 워크스페이스 전체를 본다.** 일감은 폴더의 것이 아니라 사람의 것이라, 같은
-명령이 선 자리에 따라 다른 답을 내면 안 된다. 좁히고 싶으면 `--team <키>` 로 고르고,
-`--team .` 은 이 폴더에 결속된 팀만 본다.
+명령이 선 자리에 따라 다른 답을 내면 안 된다. 좁히고 싶으면 `--team <키>`로 고르고,
+`--team .`은 이 폴더에 결속된 팀만 본다.
 
 터미널이라 우선순위는 색이 아니라 **기호**로 말한다(`!!! !! ! ·`): 파이프로 넘기거나 로그에
 붙여도 뜻이 남아야 한다.
@@ -59,14 +59,14 @@ def _mark(ticket: dict) -> str:
 
 
 def _pad(text: str, cols: int) -> str:
-    """터미널 칸 수로 맞춘다. `str.ljust` 는 **글자 수**로 세니 한글이 섞이면 줄이 어긋난다."""
+    """터미널 칸 수로 맞춘다. `str.ljust`는 **글자 수**로 세니 한글이 섞이면 줄이 어긋난다."""
     return text + " " * max(0, cols - ui.disp_width(text))
 
 
 def _line(ticket: dict, width: int = 0) -> str:
     key = ticket["key"].ljust(width or len(ticket["key"]))
     # 팀이 지은 상태 이름이 있으면 그것을 든다 — 기본 여섯 칸의 이름표로만 읽으면
-    # 팀이 만든 '배포 대기' 가 화면에서 KeyError 로 죽는다.
+    # 팀이 만든 '배포 대기'가 화면에서 KeyError로 죽는다.
     name = ticket.get("status_label") or T.STATUS_LABEL.get(ticket["status"], ticket["status"])
     status = _pad(ui.fit(name, _STATUS_WIDTH), _STATUS_WIDTH)
     tail = []
@@ -164,13 +164,13 @@ def run_board(json_out: bool, team: str = "", project: str = "") -> int:
     if not view["total"]:
         # 처음 오는 사람에게는 "없다"보다 **어떻게 생겼는지**가 먼저다 — 번호가 어디서 나오고
         # 어디에 사는지를 모르면, 첫 티켓을 만들고도 그것을 자기 것으로 안 읽는다.
-        ui.step(ui.dim('아직 티켓이 없습니다 — `asgard ticket new "할 일"` 로 첫 건을 남기세요.'))
+        ui.step(ui.dim('아직 티켓이 없습니다 — `asgard ticket new "할 일"`로 첫 건을 남기세요.'))
         if not summary.get("team"):
-            ui.step(ui.dim(f"  첫 티켓은 {summary['prefix']}-1 이 되고, 그때 팀이 하나 섭니다."))
+            ui.step(ui.dim(f"  첫 티켓은 {summary['prefix']}-1이 되고, 그때 팀이 하나 섭니다."))
         ui.step(ui.dim("  일감은 워크스페이스에 삽니다 — 팀이 번호의 주인이고, 프로젝트는 팀을 가로지릅니다."))
-        ui.step(ui.dim("  보이는 것은 늘 전체입니다 — `--team <키>` 로 좁히고, `--team .` 은 이 폴더의 팀입니다."))
+        ui.step(ui.dim("  보이는 것은 늘 전체입니다 — `--team <키>`로 좁히고, `--team .`은 이 폴더의 팀입니다."))
         if L.pending_roots([root]):
-            ui.warn("이 폴더에 예전 방식의 보드가 남아 있습니다 — `asgard ticket import` 로 그대로 들여옵니다.")
+            ui.warn("이 폴더에 예전 방식의 보드가 남아 있습니다 — `asgard ticket import`로 그대로 들여옵니다.")
     return 0
 
 
@@ -406,7 +406,7 @@ def _day(value: float | str | None) -> str:
 
 
 def run_teams(new: str, key: str, triage: str, cycle_weeks: int, json_out: bool) -> int:
-    """팀 목록 — 또는 `--new` 로 하나 세우기."""
+    """팀 목록 — 또는 `--new`로 하나 세우기."""
     ui.set_quiet(json_out)
     try:
         if new:
@@ -416,7 +416,7 @@ def run_teams(new: str, key: str, triage: str, cycle_weeks: int, json_out: bool)
             if cycle_weeks:
                 fields["cycle_weeks"] = cycle_weeks
             team = TM.create_team(new, key, **fields)
-            ui.ok(f"팀 {team['key']} · {team['name']} — 첫 티켓은 {team['key']}-1 이 됩니다")
+            ui.ok(f"팀 {team['key']} · {team['name']} — 첫 티켓은 {team['key']}-1이 됩니다")
             return 0
         rows = TM.list_teams()
     except _ERRORS as exc:
@@ -578,8 +578,8 @@ def run_import(json_out: bool) -> int:
     if not out["imported"]:
         ui.step(ui.dim(f"들여올 것이 없습니다 — {out['reason']}"))
         return 0
-    ui.ok(f"팀 {out['team']} 으로 {out['tickets']}건 반입 (댓글 {out['comments']} · 라벨 {out['labels']})")
+    ui.ok(f"팀 {out['team']}으로 {out['tickets']}건 반입 (댓글 {out['comments']} · 라벨 {out['labels']})")
     if out.get("renamed"):
-        ui.warn(f"접두어 {out['was']} 가 이미 쓰이고 있어 {out['team']} 로 비켰습니다")
+        ui.warn(f"접두어 {out['was']}가 이미 쓰이고 있어 {out['team']}로 비켰습니다")
     ui.step(ui.dim(f"원본은 그대로 있습니다 — {out['source']}"))
     return 0

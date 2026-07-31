@@ -1,9 +1,9 @@
 """role — Trinity 역할 브릿지 CLI (claude-code / codex / cursor → 배치 provider 위임).
 
-호스트 도구가 자기 내부 모델 대신 `[trinity.<role>]` 배치 provider 로 역할 턴을 실행할 때
-부른다 (asgard-provider 스킬이 안내). 퀘스트 로그 기록은 CLI 가 수행 — 프로토콜 준수가 모델 순응이
+호스트 도구가 자기 내부 모델 대신 `[trinity.<role>]` 배치 provider로 역할 턴을 실행할 때
+부른다 (asgard-provider 스킬이 안내). 퀘스트 로그 기록은 CLI가 수행 — 프로토콜 준수가 모델 순응이
 아니라 코드 경로다 (네이티브 루프와 같은 원칙, heimdall.py 참조). 게이트 판정은 그대로
-verifier-gate 몫. `[bridge]` 게이트 판단은 호스트 몫 — 이 CLI 는 사실(list)과 실행(run)만.
+verifier-gate 몫. `[bridge]` 게이트 판단은 호스트 몫 — 이 CLI는 사실(list)과 실행(run)만.
 """
 
 import json
@@ -83,27 +83,27 @@ def configure_role_model(
     from ..templates.agent_models import AGENT_MODEL_DEFAULTS
 
     if host not in MODEL_HOSTS:
-        raise ValueError(f"host 은 {'/'.join(MODEL_HOSTS)} 중 하나")
+        raise ValueError(f"host은 {'/'.join(MODEL_HOSTS)} 중 하나")
     valid_roles = _native_roles() if host == "native" else tuple(AGENT_MODEL_DEFAULTS[host])
     if role not in valid_roles:
-        raise ValueError(f"{host} role 은 {'/'.join(valid_roles)} 중 하나")
+        raise ValueError(f"{host} role은 {'/'.join(valid_roles)} 중 하나")
     if model:
         model = normalize_model_id(model)
         if not model:
             raise ValueError("유효한 model ID 필요")
     if provider and provider not in PROVIDERS:
-        raise ValueError(f"provider 은 {'/'.join(PROVIDERS)} 중 하나")
+        raise ValueError(f"provider은 {'/'.join(PROVIDERS)} 중 하나")
 
     section = f"trinity.{role}" if host == "native" else f"agent_models.{host}.{role}"
     if reset:
         if model or effort or provider:
-            raise ValueError("--reset 은 model/--effort/--provider 와 함께 사용할 수 없음")
+            raise ValueError("--reset은 model/--effort/--provider와 함께 사용할 수 없음")
         path = save_config_section(root, section, None)
     else:
         values = project_section(root, section)
         if host == "native":
             if effort:
-                raise ValueError("native 는 --effort 대신 provider/model 배치를 사용")
+                raise ValueError("native는 --effort 대신 provider/model 배치를 사용")
             if not (model or provider):
                 raise ValueError("native 설정에는 model 또는 --provider 필요")
             if model:
@@ -112,9 +112,9 @@ def configure_role_model(
                 values["provider"] = provider
         else:
             if provider:
-                raise ValueError("--provider 는 native 에서만 사용 가능")
+                raise ValueError("--provider는 native 에서만 사용 가능")
             if host == "cursor" and effort:
-                raise ValueError("Cursor effort 는 model slug에 포함해 설정")
+                raise ValueError("Cursor effort는 model slug에 포함해 설정")
             if not (model or effort):
                 raise ValueError("hosted 설정에는 model 또는 --effort 필요")
             if model:
@@ -148,7 +148,7 @@ def run_role_model(
         print(json.dumps(role_model_state(root), ensure_ascii=False, indent=2))
         return 0
     if not host or not role:
-        print(json.dumps({"error": "host 와 role 이 필요"}, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({"error": "host와 role이 필요"}, ensure_ascii=False), file=sys.stderr)
         return 2
     try:
         out = configure_role_model(
@@ -189,7 +189,7 @@ def run_role_run(role: str, task: str) -> int:
 
     root = os.getcwd()
     if role not in TRINITY_ROLES:
-        print(json.dumps({"error": f"role 은 {'/'.join(TRINITY_ROLES)} 중 하나"}), file=sys.stderr)
+        print(json.dumps({"error": f"role은 {'/'.join(TRINITY_ROLES)} 중 하나"}), file=sys.stderr)
         return 2
     sid = os.environ.get("CLAUDE_SESSION_ID") or "bridge"
     try:
@@ -197,7 +197,7 @@ def run_role_run(role: str, task: str) -> int:
     except Exception:
         state = {}
     if not state.get("quest_id"):
-        print(json.dumps({"error": "활성 quest 없음 — 호스트가 먼저 quest-log open 을 실행해야 한다"}), file=sys.stderr)
+        print(json.dumps({"error": "활성 quest 없음 — 호스트가 먼저 quest-log open을 실행해야 한다"}), file=sys.stderr)
         return 1
 
     default = resolve(root)
@@ -207,7 +207,7 @@ def run_role_run(role: str, task: str) -> int:
         return 1
 
     criteria = state.get("criteria") or []
-    level = "full" if state.get("full_required") else "micro"  # gate 와 동일 기준 (결정론 도출)
+    level = "full" if state.get("full_required") else "micro"  # gate와 동일 기준 (결정론 도출)
     extra: list[dict] | None = None
     handlers: dict[str, Callable[[dict], str]] | None = None
     if role == "verifier":
@@ -216,7 +216,7 @@ def run_role_run(role: str, task: str) -> int:
             f"검증하라. 요청: {task}\ncriteria: {criteria}\nrequired level: {level}\n"
             f"하니스 관측 변경 파일: {changed} (diff_lines={state.get('diff_lines', '?')}) — "
             "`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
-            "Worker 해설은 입력이 아니다 — diff 와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출."
+            "Worker 해설은 입력이 아니다 — diff와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출."
         )
 
         def _ack(_i: dict) -> str:
@@ -232,7 +232,7 @@ def run_role_run(role: str, task: str) -> int:
         sys.stdout.flush()
 
     # 역할 배치(스웜)는 브릿지에도 선다 — 모드가 갈린다고 규율이 갈리면 그건 드리프트다.
-    # 호스트(CC·Cursor·Codex)가 이 CLI 로 역할 턴을 넘기면 그 턴은 배치된 에이전트의 홈에서
+    # 호스트(CC·Cursor·Codex)가 이 CLI로 역할 턴을 넘기면 그 턴은 배치된 에이전트의 홈에서
     # 돈다: 자기 1차 기억·자기 스킬·자기 설정.
     from ..swarm import resolve as _agent_for_role
 
@@ -267,7 +267,7 @@ def run_role_run(role: str, task: str) -> int:
         ql(root, "append", session=sid, stdin=json.dumps({"role": "thinker", "event": "plan", "criteria": criteria}))
         result["appended"] = "plan"
     elif role == "worker":
-        _record_writes(root, sid, r.writes)  # write-sentinel 미러 — sid 가 호스트 세션과 일치할 때 증거가 된다
+        _record_writes(root, sid, r.writes)  # write-sentinel 미러 — sid가 호스트 세션과 일치할 때 증거가 된다
         ql(
             root,
             "append",

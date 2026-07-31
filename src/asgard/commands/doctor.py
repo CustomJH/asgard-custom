@@ -16,9 +16,9 @@ from ..templates.roles import ROLE_AGENTS
 def _stale_role_agents(root: str) -> list[str]:
     """구세대 역할 계약을 들고 있는 스캐폴드 파일 이름.
 
-    존재 확인만 하던 검사는 드리프트를 못 봤다 — 26-07-26 실측: helios 의 역할 문서 10개 중 7개가
-    이전 세대였고(판정자 문서에 JS/TS 실행 레인 문단이 없었다) doctor 는 `10/10 present` 로 녹색을
-    보고했다. 계약은 파일 존재가 아니라 내용이다. 렌더러는 setup/sync 와 같은 것을 쓴다."""
+    존재 확인만 하던 검사는 드리프트를 못 봤다 — 26-07-26 실측: helios의 역할 문서 10개 중 7개가
+    이전 세대였고(판정자 문서에 JS/TS 실행 레인 문단이 없었다) doctor는 `10/10 present`로 녹색을
+    보고했다. 계약은 파일 존재가 아니라 내용이다. 렌더러는 setup/sync와 같은 것을 쓴다."""
     from ..skill_registry import skill_catalog
     from ..templates.roles import claude_agent
 
@@ -27,7 +27,7 @@ def _stale_role_agents(root: str) -> list[str]:
         path = os.path.join(root, ".claude", "agents", fname)
         agent = fname.removeprefix("asgard-").removesuffix(".md")
         try:
-            expected = claude_agent(body, root) + skill_catalog(root, agent, loader="cli")  # setup 과 동일 조립
+            expected = claude_agent(body, root) + skill_catalog(root, agent, loader="cli")  # setup과 동일 조립
             with open(path, encoding="utf-8") as handle:
                 if handle.read() != expected:
                     stale.append(fname)
@@ -52,7 +52,7 @@ def _shared_memory_check(root: str) -> dict | None:
 
         found = find_config(root, strict=True)
         if not found:
-            # enabled=false 는 미연결과 다른 의도적 비활성 — 무음이면 "왜 안 쌓이지" 조회가 불가능하다.
+            # enabled=false는 미연결과 다른 의도적 비활성 — 무음이면 "왜 안 쌓이지" 조회가 불가능하다.
             try:
                 from ..memory_bridge import project_memory_disabled, project_memory_section
                 from ..settings import load_project
@@ -118,7 +118,7 @@ def _shared_memory_check(root: str) -> dict | None:
                         learning_detail = " · learning surface unavailable"
             finally:
                 backend.close()
-            # auto_retain off 는 유효한 선택이지만 무음이면 "2차 메모리에 안 쌓이는" 증상의
+            # auto_retain off는 유효한 선택이지만 무음이면 "2차 메모리에 안 쌓이는" 증상의
             # 원인 조회가 불가능하다 (1차 inject 게이트와 같은 계열의 무음 비활성) — 상태만 명시.
             detail = (
                 f"engine={engine} · project_id={project_id} · {readiness.status}"
@@ -157,7 +157,7 @@ def _model_tier_check(root: str) -> dict | None:
 
     26-07-26 실측: 티어 표가 이전 세대에 박혀 있어 opus 세션이 역할 턴마다 조용히 내려갔는데
     어느 표면에도 드러나지 않았다. 해석 결과를 보여 주고, API 모드면 카탈로그로 캐시를 갱신한다
-    (claude CLI 모드는 계열 별칭이라 갱신 대상이 아니다 — CLI 가 최신 세대로 해석한다)."""
+    (claude CLI 모드는 계열 별칭이라 갱신 대상이 아니다 — CLI가 최신 세대로 해석한다)."""
     try:
         from ..model_tiers import TIERS, refresh
         from ..providers import resolve
@@ -168,7 +168,7 @@ def _model_tier_check(root: str) -> dict | None:
             return {
                 "name": "model tiers",
                 "ok": True,
-                "detail": f"n/a · {rp.profile.name} 은 티어 매핑 없음 (설정 모델 그대로 사용)",
+                "detail": f"n/a · {rp.profile.name}은 티어 매핑 없음 (설정 모델 그대로 사용)",
                 "fix": "",
             }
         shown = " · ".join(f"{tier}={table[tier]}" for tier in TIERS)
@@ -180,7 +180,7 @@ def _model_tier_check(root: str) -> dict | None:
 def _personal_memory_check(root: str) -> dict | None:
     """1차(개인) 메모리 주입 게이트 진단 — 무음 차단을 표면화한다.
 
-    26-07-21 실측: 프로젝트 설정이 provider 를 선택하면 inject_allowed 가 개인 메모리 주입을
+    26-07-21 실측: 프로젝트 설정이 provider를 선택하면 inject_allowed가 개인 메모리 주입을
     전 세션에서 조용히 끈다 (개인정보 방화벽 — 의도된 기본값). 방화벽 자체는 유지하되,
     "저장은 되는데 어떤 세션도 회상하지 못하는" 상태를 사용자가 볼 수 있어야 한다."""
     try:
@@ -209,16 +209,16 @@ def _personal_memory_check(root: str) -> dict | None:
             "name": "personal memory inject",
             "ok": False,
             "detail": f"blocked · 프로젝트 선택 provider({rp.profile.name})는 개인 메모리 주입이 기본 거부" + save,
-            "fix": f'~/.asgard/asgard-setting-global.json 의 "memory".providers 에 "{rp.profile.name}" 추가 (명시 허용)',
+            "fix": f'~/.asgard/asgard-setting-global.json의 "memory".providers에 "{rp.profile.name}" 추가 (명시 허용)',
         }
     except Exception:
-        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
+        return None  # 진단 실패는 doctor를 막지 않는다 (fail-open)
 
 
 def _memory_semantic_check() -> dict | None:
     """개인 메모리 시맨틱 스트림 상태 — 켜져 있다는 것과 실제로 도는 것을 구분해 보고한다.
 
-    memory_semantic 계약이 "active() 로 활성/비활성을 대시보드·doctor 에 그대로 노출한다
+    memory_semantic 계약이 "active()로 활성/비활성을 대시보드·doctor에 그대로 노출한다
     (숨기지 않는다)"고 적어 놓고 배선이 없던 자리다. 기본이 켜진 뒤로는 더 중요해졌다 —
     켠 줄 알았는데 임베더를 못 불러 2경로로 도는 상태가 가장 조용한 실패다.
 
@@ -239,7 +239,7 @@ def _memory_semantic_check() -> dict | None:
         status = memory_semantic.status()
         if active:
             # 임베더가 선다는 것으로 끝내면 안 된다. 파생 벡터가 정본을 안 덮으면 이 스트림은
-            # 매 질의 빈 리스트를 내는데 상태 표면은 전부 "on" 이라고 말한다 — 이 기계에서
+            # 매 질의 빈 리스트를 내는데 상태 표면은 전부 "on"이라고 말한다 — 이 기계에서
             # 실제로 그랬다 (26-07-29: 페이지 2장·vec 0행·active True). 남에게 지적한 것과
             # 같은 형태의 거짓 상태라, 커버리지를 같은 칸에서 본다.
             from .. import memory
@@ -275,10 +275,10 @@ def _memory_semantic_check() -> dict | None:
                 f"mode={mode} 인데 임베더를 못 불렀다 — 2경로로 폴백 중"
                 + ("" if cached else " (모델을 아직 안 받았다)")
             ),
-            "fix": "asgard memory semantic warmup (실패하면 asgard memory semantic off 로 명시적으로 끈다)",
+            "fix": "asgard memory semantic warmup (실패하면 asgard memory semantic off로 명시적으로 끈다)",
         }
     except Exception:
-        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
+        return None  # 진단 실패는 doctor를 막지 않는다 (fail-open)
 
 
 def _memory_curator_check(root: str) -> dict | None:
@@ -307,15 +307,15 @@ def _memory_curator_check(root: str) -> dict | None:
             "fix": "asgard memory provider --set <provider>[:<model>] (또는 메인 provider 연결)",
         }
     except Exception:
-        return None  # 진단 실패는 doctor 를 막지 않는다 (fail-open)
+        return None  # 진단 실패는 doctor를 막지 않는다 (fail-open)
 
 
 def _dead_local_remote(remote: str) -> bool:
-    """설정된 원격이 **로컬 경로인데 사라진** 경우. 원격 URL 은 여기서 판정하지 않는다.
+    """설정된 원격이 **로컬 경로인데 사라진** 경우. 원격 URL은 여기서 판정하지 않는다.
 
-    doctor 가 물어야 할 것은 "적어 두었는가"가 아니라 "정본이 살아남는가"다. 로컬 경로 원격은
+    doctor가 물어야 할 것은 "적어 두었는가"가 아니라 "정본이 살아남는가"다. 로컬 경로 원격은
     지워지면 그대로 무효인데 설정 파일에는 그대로 남는다 — 26-07-31 실측: 과거 E2E 세션이 남긴
-    `…/.tmp-mem-test/bare` 를 가리킨 채 doctor 가 내구성 ✔ 를 주고 있었다 (백업 0 · 원격 사망)."""
+    `…/.tmp-mem-test/bare`를 가리킨 채 doctor가 내구성 ✔ 를 주고 있었다 (백업 0 · 원격 사망)."""
     path = remote.strip()
     if not path or "://" in path or path.startswith("git@"):
         return False  # URL 형태 — 도달성은 네트워크 없이 못 묻는다 (fail-open)
@@ -354,9 +354,9 @@ def _memory_durability_check() -> dict | None:
 def _manual_area_issues(root: str, mdir: str) -> tuple[list[str], list[str], int, list[str]]:
     """수동 영역 파일의 (유령, 위험, 항목 수, 영역 목록).
 
-    관리 파일 3종은 수동 영역 문법의 대상이 아니다 — map_context.validate_area_maps 와 같은 제외
-    목록을 써야 한다. GRAPH.md 가 빠져 있어 그래프의 API 라우트 노드가 절대경로 파일 참조로
-    읽혔고, 생성 파일에 대해 영원히 지워지지 않는 unsafe 가 떴다.
+    관리 파일 3종은 수동 영역 문법의 대상이 아니다 — map_context.validate_area_maps와 같은 제외
+    목록을 써야 한다. GRAPH.md가 빠져 있어 그래프의 API 라우트 노드가 절대경로 파일 참조로
+    읽혔고, 생성 파일에 대해 영원히 지워지지 않는 unsafe가 떴다.
     """
     import re as _re
 
@@ -442,7 +442,7 @@ def _codebase_map_check(root: str) -> list[dict]:
         detail = f"unsafe managed map path: symlink/junction: {unsafe_component}"
         return [_map_row(False, detail, "symlink/junction 제거 후 asgard map update 실행")]
     if not os.path.isdir(mdir):
-        return [_map_row(False, "missing .asgard/map/", "asgard sync (또는 setup --force) 로 지도 시드 생성")]
+        return [_map_row(False, "missing .asgard/map/", "asgard sync (또는 setup --force)로 지도 시드 생성")]
     ghosts, unsafe, entries, areas = _manual_area_issues(root, mdir)
     try:
         managed = check_map(root)
@@ -463,7 +463,7 @@ def _map_row(ok: bool, detail: str, fix: str) -> dict:
 
 
 def _classify_misroute_check(root: str) -> list[dict]:
-    """DIRECT 로 분류했는데 write 가 일어난 비율. 기록이 없으면 아무 말도 하지 않는다."""
+    """DIRECT로 분류했는데 write가 일어난 비율. 기록이 없으면 아무 말도 하지 않는다."""
     try:
         with open(os.path.join(root, ".asgard", "classify.jsonl"), encoding="utf-8") as handle:
             events = [_json.loads(ln) for ln in handle if ln.strip()]
@@ -484,7 +484,7 @@ def _classify_misroute_check(root: str) -> list[dict]:
 
 
 def _route_prior_check(root: str) -> list[dict]:
-    """task-class 별 게이트-red 이력 (Bayesian-lite). 과반 red 클래스는 승격 문턱이 1 로 내려간다."""
+    """task-class 별 게이트-red 이력 (Bayesian-lite). 과반 red 클래스는 승격 문턱이 1로 내려간다."""
     try:
         with open(os.path.join(root, ".asgard", "route-priors.json"), encoding="utf-8") as handle:
             classes = (_json.load(handle) or {}).get("classes") or {}
@@ -541,7 +541,7 @@ def _quest_verdicts(root: str) -> tuple[dict[str, int], int]:
 
 
 def _gate_event_check(root: str) -> list[dict]:
-    """차단 자체는 게이트가 일한 증거라 결함이 아니다 — 사람이 수동 우회한 forced close 만 경고다."""
+    """차단 자체는 게이트가 일한 증거라 결함이 아니다 — 사람이 수동 우회한 forced close만 경고다."""
     try:
         blocks, escalations = _gate_blocks(root)
         verdicts, forced = _quest_verdicts(root)
@@ -564,14 +564,14 @@ def _gate_event_check(root: str) -> list[dict]:
             "name": "trinity gate events",
             "ok": forced == 0,
             "detail": " · ".join(parts),
-            "fix": "forced close 는 게이트 수동 우회 — 사유를 quest 로그에 남기고 재검증 권장 "
+            "fix": "forced close는 게이트 수동 우회 — 사유를 quest 로그에 남기고 재검증 권장 "
             "(.asgard/state/gate-events.jsonl · quest/*.jsonl 감사)",
         }
     ]
 
 
 def _skill_bank_check(root: str) -> list[dict]:
-    """라이브러리는 성장이 아니라 큐레이션이 자산이다 — stale 은 삭제가 아니라 보관 처방."""
+    """라이브러리는 성장이 아니라 큐레이션이 자산이다 — stale은 삭제가 아니라 보관 처방."""
     try:
         import time as _time
 
@@ -608,7 +608,7 @@ def _stale_skills(skills: dict, use: dict, cutoff: float) -> list[str]:
 
 
 def _last_seen(name: str, skills: dict, use: dict) -> float:
-    """미사용 스킬은 생성일 기준 — 방금 승인된 스킬을 stale 로 오판하지 않는다."""
+    """미사용 스킬은 생성일 기준 — 방금 승인된 스킬을 stale로 오판하지 않는다."""
     import calendar as _cal
     import time as _time
 
@@ -624,8 +624,8 @@ def _last_seen(name: str, skills: dict, use: dict) -> float:
 def _baseline_checks_check(root: str) -> dict | None:
     """게이트의 독립 증거 레인 — 적어 둔 체크가 실제로 도는가.
 
-    `baseline_checks` 는 안전 표를 넘은 것만 실행된다. 표를 못 넘은 항목은 조용히 사라지는데,
-    그러면 설정한 사람은 체크가 도는 줄 알고, 게이트는 독립 증거 없이 모델이 신고한 exit code 를
+    `baseline_checks`는 안전 표를 넘은 것만 실행된다. 표를 못 넘은 항목은 조용히 사라지는데,
+    그러면 설정한 사람은 체크가 도는 줄 알고, 게이트는 독립 증거 없이 모델이 신고한 exit code를
     그대로 받는다 (26-07-31 실측: 절대경로 인터프리터 하나로 레인 전체가 침묵했다)."""
     try:
         from ..hooks import quest_log as quest_log_mod
@@ -654,12 +654,12 @@ def _baseline_checks_check(root: str) -> dict | None:
 
 
 def _trinity_checks(root: str) -> list[dict]:
-    """Trinity 에셋 진단 — AGENTS.md 가 있는 프로젝트에서만. 각 항목의 fix 는 전부 동일한 처방
+    """Trinity 에셋 진단 — AGENTS.md가 있는 프로젝트에서만. 각 항목의 fix는 전부 동일한 처방
     (setup --force 재실행)이라 개별 복구 절차를 안내하지 않는다."""
     memory_check = _shared_memory_check(root)
     if not os.path.exists(os.path.join(root, "AGENTS.md")):
         return [memory_check] if memory_check else []
-    fix = "asgard setup --force 로 Trinity 에셋 재설치"
+    fix = "asgard setup --force로 Trinity 에셋 재설치"
     checks = []
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8") as handle:
@@ -769,14 +769,14 @@ def _trinity_checks(root: str) -> list[dict]:
             problems.append(f"상한 절단 {loaded['chars']}자 — 뒷부분 미주입")
         if found["dropped"]:
             problems.append(f"조각 상한 초과 {len(found['dropped'])}개 제외")
-        # `MANUAL.md` 는 흔한 이름이다 — 이미 그 이름의 제품 문서를 가진 리포에 설치되면 그 문서가
+        # `MANUAL.md`는 흔한 이름이다 — 이미 그 이름의 제품 문서를 가진 리포에 설치되면 그 문서가
         # 통째로 프롬프트에 실린다. 손으로 쓴 진짜 매뉴얼과 구분할 방법이 없어 막지는 않고, **큰**
         # 표식 없는 파일만 짚는다 (작은 파일은 사용자가 직접 쓴 규칙일 가능성이 압도적이다).
         if loaded and loaded["chars"] >= MAX_CHARS // 2:
             stranger = [_rel(root, p) for p in found["files"] if os.path.dirname(p) == root and not has_marker(p)]
             if stranger:
                 problems.append(
-                    f"{', '.join(stranger)} 가 통째로 실리는 중 ({loaded['chars']}자) — 의도한 매뉴얼이 맞는지 확인"
+                    f"{', '.join(stranger)}가 통째로 실리는 중 ({loaded['chars']}자) — 의도한 매뉴얼이 맞는지 확인"
                 )
         if not enabled(root):
             detail = "off (manual.mode) — 어떤 모드에도 안 실린다"
@@ -786,7 +786,7 @@ def _trinity_checks(root: str) -> list[dict]:
         elif found["files"]:
             detail = "파일은 있으나 주입 없음 — 주석뿐 (규칙은 주석 밖에)"
         else:
-            detail = f"없음 — 루트 {MANUAL_NAMES[0]} 에 쓰면 4모드에 실린다"
+            detail = f"없음 — 루트 {MANUAL_NAMES[0]}에 쓰면 4모드에 실린다"
         checks.append(
             {
                 "name": "custom manual",
@@ -798,7 +798,7 @@ def _trinity_checks(root: str) -> list[dict]:
     except Exception:
         pass  # 진단이 진단 대상을 막지 않는다 (fail-open)
     # 에인헤랴르 — 이 프로젝트에서 누가 일하는가. 이 계층도 조용히 빗나간다: 없는 이름을 배치하면
-    # 그 자리는 말없이 기본으로 돌고, 서브프로세스에 env 를 안 넘기면 자식이 남의 홈에 쓴다.
+    # 그 자리는 말없이 기본으로 돌고, 서브프로세스에 env를 안 넘기면 자식이 남의 홈에 쓴다.
     # 배치 없음은 결함이 아니다 (ok) — 조용히 빗나가는 두 경우만 ⚠ 로 세운다.
     try:
         from ..profiles import active, fallback_warning, listing
@@ -809,7 +809,7 @@ def _trinity_checks(root: str) -> list[dict]:
         problems = []
         for miss in d["missing"]:
             scope = miss["scope"] + (f" {miss['key']}" if miss["key"] else "")
-            problems.append(f"{scope} 에 배치된 {miss['agent']!r} 이 이 기계에 없다 — 기본으로 돈다")
+            problems.append(f"{scope}에 배치된 {miss['agent']!r}이 이 기계에 없다 — 기본으로 돈다")
         if warning := fallback_warning():
             problems.append(warning)
         placed = d["binding"]
@@ -820,7 +820,7 @@ def _trinity_checks(root: str) -> list[dict]:
         elif len(agents) > 1:
             detail = f"에이전트 {len(agents)} · 활성 {active()} · 이 프로젝트에 배치 선언 없음"
         else:
-            detail = "기본 에이전트 하나 — `asgard agent create <이름>` 으로 늘린다"
+            detail = "기본 에이전트 하나 — `asgard agent create <이름>`으로 늘린다"
         checks.append(
             {
                 "name": "agents (Einherjar)",
@@ -831,7 +831,7 @@ def _trinity_checks(root: str) -> list[dict]:
         )
     except Exception:
         pass  # fail-open
-    # Lagom — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off 도 유효한 선택).
+    # Lagom — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off도 유효한 선택).
     try:
         from ..lagom import default_mode, read_state
 
@@ -944,7 +944,7 @@ def _trinity_checks(root: str) -> list[dict]:
 
 
 # 세 클라이언트가 공유하는 규율 — 한쪽에만 깔린 게이트는 기능이 아니라 드리프트다.
-# lagom-statusline.sh 는 CC 에만 있는 표면(statusLine)이라 이 표에 없다.
+# lagom-statusline.sh는 CC 에만 있는 표면(statusLine)이라 이 표에 없다.
 _PARITY_HOOKS = (
     "git-guard.py",
     "release-guard.py",
@@ -978,7 +978,7 @@ _PARITY_WIRED = tuple(
 def _mode_parity_check(root: str) -> list[dict]:
     """모드 간 규율 대조 — 설치된 클라이언트마다 같은 훅이 깔리고 배선돼 있는가.
 
-    `asgard init` 은 한 표에서 세 클라이언트를 깔지만, 옛 스캐폴드가 남은 프로젝트는 한 모드에만
+    `asgard init`은 한 표에서 세 클라이언트를 깔지만, 옛 스캐폴드가 남은 프로젝트는 한 모드에만
     게이트가 있는 상태로 굳는다. 그 차이는 사용자가 모드를 바꿔 보기 전에는 안 보인다."""
     checks: list[dict] = []
     for client, folder, config_name in (
@@ -997,9 +997,9 @@ def _mode_parity_check(root: str) -> list[dict]:
             config_text = ""
         unwired = [name for name in _PARITY_WIRED if name not in config_text]
         # 폴더가 있다고 아스가르드가 깔린 것은 아니다 — 클라이언트가 스스로 만드는 자리이기도 하다
-        # (CC 는 `.claude/settings.local.json` 만으로도 폴더를 만든다). 훅 디렉터리도 없고 배선도
+        # (CC는 `.claude/settings.local.json` 만으로도 폴더를 만든다). 훅 디렉터리도 없고 배선도
         # 한 줄 없으면 **설치된 적 없는 모드**이므로 드리프트라고 말할 것이 없다 — 그 자리에 경고를
-        # 세우면 `asgard sync` 를 시켜도 사라지지 않는 영구 경고가 된다 (26-07-31 실측).
+        # 세우면 `asgard sync`를 시켜도 사라지지 않는 영구 경고가 된다 (26-07-31 실측).
         if not os.path.isdir(hooks_dir) and len(unwired) == len(_PARITY_WIRED):
             continue
         detail = "동일 규율 배선"
@@ -1022,7 +1022,7 @@ def _mode_parity_check(root: str) -> list[dict]:
 
 
 def _freyja_engine_dir() -> Path:
-    """Freyja 2 엔진 루트 — 훅 매니페스트의 `${FREYJA2_ENGINE}` 가 가리키는 그 경로.
+    """Freyja 2 엔진 루트 — 훅 매니페스트의 `${FREYJA2_ENGINE}`가 가리키는 그 경로.
 
     번들 플러그인은 설치본에서 그 자리 그대로 실행되므로(복사 설치가 아니다) 경로는
     레지스트리가 아는 자산 루트에서 유도한다 — 두 곳이 갈라지지 않게.
@@ -1035,7 +1035,7 @@ def _freyja_engine_dir() -> Path:
 def _design_engine_checks() -> list[dict]:
     """디자인 엔진이 *실제로 완전체로* 실려 왔는지.
 
-    엔진2의 정적 HTML 검출기는 htmlparser2·css-select·css-tree·domutils 를 bare import
+    엔진2의 정적 HTML 검출기는 htmlparser2·css-select·css-tree·domutils를 bare import
     하고, 실패하면 경고 없이 정규식 경로로 되돌아간다. 원본 대조에서 그 폴백 상태의
     검출력이 규칙 40종→15종이었다 — 조용하기 때문에 쓰는 쪽은 깨끗한 페이지와 구별할 수
     없다. 그래서 번들을 휠에 실었고, 여기서 그 존재와 node 런타임을 확인한다.
@@ -1091,7 +1091,7 @@ def _design_engine_checks() -> list[dict]:
 
 def _node_check() -> dict:
     """엔진 스크립트 런타임. 번들 존재 확인과 갈라 두는 이유: 실려 왔는가와 **돌릴 수 있는가**는
-    다른 실패다. 파일은 다 있는데 node 가 없으면 처방이 `asgard update` 가 아니라 node 설치다."""
+    다른 실패다. 파일은 다 있는데 node가 없으면 처방이 `asgard update`가 아니라 node 설치다."""
     node = on_path("node")
     version = ""
     if node:
@@ -1107,8 +1107,8 @@ def _node_check() -> dict:
     major = int(head) if head.isdigit() else 0
     return {
         "name": "node (design engines)",
-        # 엔진 스크립트는 node >= 22 를 요구한다. 없으면 프레이야 자체는 돌지만
-        # 검출기·훅·live 가 전부 죽으므로 침묵보다 경고가 낫다.
+        # 엔진 스크립트는 node >= 22를 요구한다. 없으면 프레이야 자체는 돌지만
+        # 검출기·훅·live가 전부 죽으므로 침묵보다 경고가 낫다.
         "ok": bool(node) and major >= 22,
         "detail": (f"{version} · {node}" if node else "not found") + ("" if major >= 22 else " — need >= 22"),
         "fix": "install node >= 22 — https://nodejs.org (프레이야 엔진1·2·3D 스크립트 런타임)",
@@ -1164,7 +1164,7 @@ def _office_checks() -> list[dict]:
 
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
-    py_cmd = hook_python()  # Windows 는 python3 가 PATH 에 없는 게 정상 (python/py 런처)
+    py_cmd = hook_python()  # Windows는 python3가 PATH에 없는 게 정상 (python/py 런처)
     py = on_path(py_cmd.split()[0])  # uv 폴백이면 "uv run --no-project python" — 첫 토큰만 PATH 조회
     uv = on_path("uv")
     path_fix = (
@@ -1217,8 +1217,8 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
 
 def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, quiet: bool) -> int:
     """판정 결과를 표면으로. **판정과 갈라 두는 이유**는 종료코드가 하나라는 것이다 —
-    두 표면이 같은 `ok` 를 쓰는지 한자리에서 보이지 않으면, 한쪽만 고쳐 두 표면이 다른 답을
-    내는 일이 조용히 생긴다 (`--json` 이 통과인데 화면은 실패인 doctor 는 doctor 가 아니다)."""
+    두 표면이 같은 `ok`를 쓰는지 한자리에서 보이지 않으면, 한쪽만 고쳐 두 표면이 다른 답을
+    내는 일이 조용히 생긴다 (`--json`이 통과인데 화면은 실패인 doctor는 doctor가 아니다)."""
     if json_out:
         sys.stdout.write(
             _json.dumps(
@@ -1226,7 +1226,7 @@ def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, 
                     "version": __version__,
                     "runtime": runtime,
                     "ok": ok,
-                    # 훅 매니페스트(engine/hooks/)가 `${FREYJA2_ENGINE}` 로 참조하는 경로.
+                    # 훅 매니페스트(engine/hooks/)가 `${FREYJA2_ENGINE}`로 참조하는 경로.
                     # 설치 위치는 버전마다 달라지므로 하드코딩 대신 여기서 읽어 간다.
                     "freyja2_engine": str(_freyja_engine_dir()),
                     "checks": checks,

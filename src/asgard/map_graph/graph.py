@@ -1,7 +1,7 @@
 """관계 그래프 빌드·저장·프로젝션·탐색.
 
 소유권: 그래프 상태는 `.asgard/state/map-graph.json`(미추적), 카탈로그 프로젝션은
-`.asgard/map/GRAPH.md`(추적·팀 공유)만 소유한다. 프로젝션은 PROJECT.md 와 같은
+`.asgard/map/GRAPH.md`(추적·팀 공유)만 소유한다. 프로젝션은 PROJECT.md와 같은
 `- `path` — role` 엔트리 문법을 지켜 맵 컨텍스트에 그대로 융합된다.
 """
 
@@ -46,7 +46,7 @@ _EDGE_KIND = {
     "store": "declares",
     "composable": "declares",
     "service": "declares",
-    "component": "declares",  # 소비(스팬 없음)는 빌드 시 "uses" 로 강등된다
+    "component": "declares",  # 소비(스팬 없음)는 빌드 시 "uses"로 강등된다
     "command": "declares",
     "model": "declares",
     "job": "declares",
@@ -68,7 +68,7 @@ _FLOW_KIND = {
     "store": "uses",
 }
 EDGE_KINDS = ("declares", "calls", "touches", "uses", "emits")
-# 선언과 소비가 같은 종류로 수렴하는 개념 — 소비 쪽은 파일 엣지가 declares 가 아니다.
+# 선언과 소비가 같은 종류로 수렴하는 개념 — 소비 쪽은 파일 엣지가 declares가 아니다.
 _CONSUMABLE_KINDS = frozenset({"component", "composable", "service", "store"})
 # API↔라우트 브리지 — api_call 경로와 route 경로의 정규화 일치만 근거로 삼는 candidate 엣지.
 # 경로 변수 표기(`:id`/`{id}`/`{}`)는 와일드카드 세그먼트 하나로 수렴한다.
@@ -84,7 +84,7 @@ _API_BASE_CAP = 4
 _SEED_KINDS = ("route", "page", "command", "store", "event", "job")
 _MAX_SEEDS_PER_KIND = 40
 # 스팬 신뢰 확장자 — AST(.py)·주석 제거 후 중괄호 균형(.java)은 포함 관계가 결정론적이다.
-# 나머지(원문 정규식 근사 스팬)는 플로우 엣지를 candidate 로 캡한다.
+# 나머지(원문 정규식 근사 스팬)는 플로우 엣지를 candidate로 캡한다.
 _STRUCTURAL_SPAN_SUFFIXES = (".py", ".java")
 _KIND_LABEL = {
     "route": "routes",
@@ -145,7 +145,7 @@ def _is_test_path(path: Path) -> bool:
 
 
 def _scope_of(rel_posix: str) -> str:
-    """모노레포 최상위 디렉터리 스코프 — SpringProps 와 동일한 경계."""
+    """모노레포 최상위 디렉터리 스코프 — SpringProps와 동일한 경계."""
     parts = rel_posix.split("/")
     return parts[0] if len(parts) > 1 else ""
 
@@ -153,7 +153,7 @@ def _scope_of(rel_posix: str) -> str:
 def _stat_revision(root: Path) -> str:
     """(경로·크기·mtime_ns) 스탯 다이제스트 — 파일 내용을 읽지 않는 값싼 신선도 표식.
 
-    `_collect` 와 동일한 파일 선별 규칙을 지켜야 비교가 성립한다. mtime 오탐(내용 동일한
+    `_collect`와 동일한 파일 선별 규칙을 지켜야 비교가 성립한다. mtime 오탐(내용 동일한
     touch)은 stale 방향으로만 틀린다 — 재스캔을 한 번 더 시킬 뿐 낡은 지도를 사실처럼
     보여주지 않는다.
     """
@@ -198,7 +198,7 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str,
             continue
         if stat.st_size > _MAX_SOURCE_BYTES:
             continue
-        # 스탯 다이제스트는 read/decode 성패와 무관하게 여기서 찍는다 — `_stat_revision` 과 동일 집합.
+        # 스탯 다이제스트는 read/decode 성패와 무관하게 여기서 찍는다 — `_stat_revision`과 동일 집합.
         stat_digest.update(f"{rel.as_posix()}\0{stat.st_size}\0{stat.st_mtime_ns}".encode("utf-8", "surrogateescape"))
         stat_digest.update(b"\0")
         try:
@@ -226,7 +226,7 @@ def _collect(root: Path) -> tuple[int, list[Evidence], str, dict[str, tuple[str,
             for accessor, store_id in extract_store_aliases(source):
                 alias_table[accessor].add(store_id)
         elif suffix == ".java":
-            # 주석 제거본으로 색인한다 — extract_java 와 같은 기준이라 줄 번호가 일치한다.
+            # 주석 제거본으로 색인한다 — extract_java와 같은 기준이라 줄 번호가 일치한다.
             jvm_modules.append(index_java(rel.as_posix(), strip_java_comments(source)))
         collected.extend(_EXTRACTORS[suffix](rel.as_posix(), source))
     # 스코프당 베이스가 상한을 넘으면 잡음이다 — 그 스코프는 통째로 버린다 (모호성 보존).
@@ -275,9 +275,9 @@ def _flow_edges(collected: list[Evidence]) -> dict[tuple[str, str, str], str]:
 
 
 def _normal_segment(part: str) -> str:
-    """세그먼트 정규화 — 경로 변수는 `{}` 로, 세그먼트에 박힌 `${...}`/`{...}` 는 벗겨낸다.
+    """세그먼트 정규화 — 경로 변수는 `{}`로, 세그먼트에 박힌 `${...}`/`{...}`는 벗겨낸다.
 
-    Spring 클래스 프리픽스의 `${api.prefix}string-monitoring` 처럼 설정 플레이스홀더가
+    Spring 클래스 프리픽스의 `${api.prefix}string-monitoring`처럼 설정 플레이스홀더가
     리터럴에 붙은 세그먼트는 남은 리터럴이 정체다. 벗기고 나면 빈 세그먼트만 와일드카드다.
     """
     if _PLACEHOLDER_SEGMENT.fullmatch(part):
@@ -306,7 +306,7 @@ def _segments_match(api: tuple[str, ...], route: tuple[str, ...], *, exact_lengt
     """세그먼트 일치 — 접미 일치는 접두(베이스 URL/프록시/게이트웨이) 차이만 인정한다.
 
     와일드카드(`{}`)는 와일드카드끼리만 일치한다: 한쪽만 변수인 자리는 경로 모양이 다른
-    것이지 같다는 증거가 아니다 (`/users/me` ↔ `/users/{id}` 를 잇지 않는다). 리터럴 일치가
+    것이지 같다는 증거가 아니다 (`/users/me` ↔ `/users/{id}`를 잇지 않는다). 리터럴 일치가
     하나도 없으면(순수 와일드카드) 일치로 치지 않는다.
     """
     if exact_length:
@@ -355,7 +355,7 @@ def _api_route_links(
         segments = _api_call_segments(node["name"])
         if segments is None:
             continue
-        # 베이스 접두는 상대 경로 호출에만 후보다 — 절대 URL 은 이미 오리진을 스스로 증명한다.
+        # 베이스 접두는 상대 경로 호출에만 후보다 — 절대 URL은 이미 오리진을 스스로 증명한다.
         based_segments: list[tuple[str, tuple[str, ...]]] = []
         if node["name"].startswith("/"):
             scopes = {_scope_of(location["file"]) for location in node["files"]}
@@ -399,13 +399,13 @@ def _api_route_links(
 def _jvm_route_links(collected: list[Evidence], modules: list[JavaModule] | None) -> dict[tuple[str, str, str], str]:
     """라우트 → 도달 가능한 SQL 구문 — 계층을 건너뛴 크로스파일 엣지.
 
-    중간 계층(로직/스토어/매퍼)은 노드로 세우지 않는다. 대신 `detail` 에 해석 근거를 남겨
-    "왜 이 라우트가 이 구문에 닿는지"를 되짚을 수 있게 한다. 구문→테이블은 매퍼 XML 이
+    중간 계층(로직/스토어/매퍼)은 노드로 세우지 않는다. 대신 `detail`에 해석 근거를 남겨
+    "왜 이 라우트가 이 구문에 닿는지"를 되짚을 수 있게 한다. 구문→테이블은 매퍼 XML이
     이미 소유하므로 라우트→구문→테이블 체인이 그래프에서 그대로 읽힌다.
     """
     if not modules:
         return {}
-    # 매퍼 XML 이 증명한 `FQN#구문id` → db_access 노드 id
+    # 매퍼 XML이 증명한 `FQN#구문id` → db_access 노드 id
     statements: dict[str, str] = {}
     for item in collected:
         if item.kind != "db_access" or not item.detail.startswith("mybatis-xml "):
@@ -462,7 +462,7 @@ def _build_state(
         nodes.setdefault(
             file_id, {"id": file_id, "kind": "file", "name": item.file, "confidence": "confirmed", "files": []}
         )
-        # 소비 증거(스팬 없는 `use` 표식)는 선언이 아니다 — 파일 엣지도 uses 로 표기한다.
+        # 소비 증거(스팬 없는 `use` 표식)는 선언이 아니다 — 파일 엣지도 uses로 표기한다.
         consumed = item.detail == "use" and not item.scope_end and item.kind in _CONSUMABLE_KINDS
         file_edge = "uses" if consumed else _EDGE_KIND[item.kind]
         edges[(file_id, item.node_id, file_edge)] = "confirmed"
@@ -503,7 +503,7 @@ def _build_state(
 
 
 def _render_graph_md(state: dict) -> str:
-    """결정론 카탈로그 — 타임스탬프·리비전 없이 구조만 담아 팀 diff 를 조용하게 유지한다."""
+    """결정론 카탈로그 — 타임스탬프·리비전 없이 구조만 담아 팀 diff를 조용하게 유지한다."""
     per_file: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     kind_totals: dict[str, int] = defaultdict(int)
     for node in state["nodes"]:
@@ -705,7 +705,7 @@ def concept_candidates(state: dict, word: str, *, limit: int = 8) -> list[dict]:
     """개념어 → 종류 라운드로빈 후보(id + 대표 앵커) — 한 번의 호출로 진입 지점을 준다.
 
     알파벳 선두 종류(api_call)가 독점하지 않게 종류당 하나씩 돌고, 종류 안에서는 짧은 id
-    우선이다 — `db_access:ORGANIZATION` 이 긴 구문 id 보다 정규형에 가깝다.
+    우선이다 — `db_access:ORGANIZATION`이 긴 구문 id보다 정규형에 가깝다.
     """
     lowered = word.casefold()
     by_kind: dict[str, list[dict]] = defaultdict(list)
@@ -745,11 +745,11 @@ def trace(
     kinds: set[str] | None = None,
     state: dict | None = None,
 ) -> list[dict]:
-    """BFS 로 확인된 엣지만 따라간다 — 전수 블라스트 레디우스가 아니라 인접 지도다.
+    """BFS로 확인된 엣지만 따라간다 — 전수 블라스트 레디우스가 아니라 인접 지도다.
 
-    `kinds` 는 따라갈 엣지 종류의 화이트리스트다 — 예: DB 앵커 업스트림에 {"touches", "calls"}
-    를 주면 한 번의 호출로 DB→핸들러→호출 화면까지 조인해 회수한다. `state` 를 주면 신선도
-    검사를 이미 통과한 상태를 재사용한다 (impact 처럼 한 번 검사로 여러 번 걸을 때).
+    `kinds`는 따라갈 엣지 종류의 화이트리스트다 — 예: DB 앵커 업스트림에 {"touches", "calls"}
+    를 주면 한 번의 호출로 DB→핸들러→호출 화면까지 조인해 회수한다. `state`를 주면 신선도
+    검사를 이미 통과한 상태를 재사용한다 (impact처럼 한 번 검사로 여러 번 걸을 때).
     """
     if not 0 <= depth <= 8:
         raise GraphError("trace depth must be between 0 and 8")

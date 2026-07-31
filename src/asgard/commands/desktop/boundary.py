@@ -17,8 +17,8 @@ from . import state
 def current_root(default: str | None = None) -> str:
     """지금 보고 있는 작업 공간.
 
-    호출자가 경계를 명시하면 그것이 정본이다 — 요청 핸들러는 늘 서버의 root 를 넘기고,
-    프로젝트 전환은 **그 서버의 root 를 바꾼다**. 모듈 전역은 서버 없이 호출되는 경로
+    호출자가 경계를 명시하면 그것이 정본이다 — 요청 핸들러는 늘 서버의 root를 넘기고,
+    프로젝트 전환은 **그 서버의 root를 바꾼다**. 모듈 전역은 서버 없이 호출되는 경로
     (직접 dispatch, 테스트)를 위한 뒷받침일 뿐, 명시된 경계를 덮지 않는다."""
     if default:
         return os.path.abspath(default)
@@ -31,7 +31,7 @@ def current_root(default: str | None = None) -> str:
 def resolve_start_root(explicit: str | None = None) -> str:
     """창이 처음 설 자리 — **언제나 개인 작업 공간**, 부른 쪽이 다른 자리를 지목하지 않는 한.
 
-    여태는 cwd 가 곧 프로젝트였고, 그다음은 최근에 열었던 프로젝트였다. 그래서 같은 앱이
+    여태는 cwd가 곧 프로젝트였고, 그다음은 최근에 열었던 프로젝트였다. 그래서 같은 앱이
     어디서 켜느냐에 따라 다른 자리에서 열렸다 — 저장소 안에서 켜면 그 저장소, 밖에서 켜면
     지난번 저장소. 창이 사람의 것이라면 그럴 수 없다: 클로드 코드도 챗지피티도 코덱스도,
     켜면 **자기 자리**에서 열리고 프로젝트는 그 안에서 고르는 값이다.
@@ -42,7 +42,7 @@ def resolve_start_root(explicit: str | None = None) -> str:
       3. 개인 작업 공간                 나머지 전부 — 이게 스튜디오의 메인 루트다
 
     프로젝트를 잃는 것은 아니다. 등록부는 그대로고 창 안에서 고르면 그 자리로 옮겨 간다.
-    다만 **고르는 것은 사람이지 cwd 가 아니다.** 일감(`studio`)과 기획(`plan`)은 애초에
+    다만 **고르는 것은 사람이지 cwd가 아니다.** 일감(`studio`)과 기획(`plan`)은 애초에
     이 경계 밖(워크스페이스)에 살아서, 어느 자리에서 열든 같은 목록이 뜬다."""
     from .. import desktop_store
 
@@ -79,7 +79,7 @@ def _known_root(params: dict[str, list[str]], fallback: str) -> tuple[str, str]:
 
     읽기 경로가 임의 경로를 받으면 그 순간 이 창은 파일 탐색기가 된다. 그래서 열 수 있는
     자리는 등록부 + 개인 작업 공간 + 지금 보는 곳으로 묶는다(경로 자체의 경계 검사는
-    `_confine` 이 그대로 한다 — 이건 그 위에 얹는 두 번째 문이다)."""
+    `_confine`이 그대로 한다 — 이건 그 위에 얹는 두 번째 문이다)."""
     from .. import desktop_store
 
     wanted = (params.get("root") or [""])[0].strip()
@@ -112,7 +112,7 @@ def resolve_workspace(candidate: object, fallback: str) -> tuple[str, str]:
 def _confine(root: str, rel: str) -> str | None:
     """프로젝트 경계 안의 실제 경로만 돌려준다.
 
-    realpath 로 비교하는 이유: `..` 도, 밖을 가리키는 심링크도 문자열 검사로는 안 잡힌다.
+    realpath로 비교하는 이유: `..`도, 밖을 가리키는 심링크도 문자열 검사로는 안 잡힌다.
     경계 밖이면 None — 창은 프로젝트를 보는 창이지 파일 시스템 탐색기가 아니다."""
     rel = str(rel or "").strip()
     if not rel or os.path.isabs(rel) or "\x00" in rel:

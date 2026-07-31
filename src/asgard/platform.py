@@ -10,9 +10,9 @@ def on_path(binary: str) -> str | None:
 
 
 def hook_python() -> str:
-    """훅 배선용 파이썬 명령 — POSIX 는 python3, Windows 는 python3 실행 파일이 없는 게
+    """훅 배선용 파이썬 명령 — POSIX는 python3, Windows는 python3 실행 파일이 없는 게
     보통이라 python → py 런처 순으로 탐지 (스캐폴드는 타깃 머신에서 실행되므로 생성 시점 감지).
-    어느 것도 PATH 에 없으면 uv 관리 파이썬으로 폴백 — asgard 설치 자체가 uv 를 전제하므로
+    어느 것도 PATH에 없으면 uv 관리 파이썬으로 폴백 — asgard 설치 자체가 uv를 전제하므로
     파이썬 없는 머신에서도 훅이 돈다 (--no-project: 훅은 stdlib-only, 프로젝트 동기화 불필요)."""
     names = ("python3",) if sys.platform != "win32" else ("python", "py")
     found = next((c for c in names if shutil.which(c)), None)

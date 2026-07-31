@@ -1,7 +1,7 @@
-"""asgard-provider 브릿지 스킬 — Trinity 역할을 배치 provider 로 위임하는 표면별 안내.
+"""asgard-provider 브릿지 스킬 — Trinity 역할을 배치 provider로 위임하는 표면별 안내.
 
-스킬은 항상 스캐폴드되고 게이트는 런타임(`asgard role list`)이다 — `.agents/skills/` 가
-Cursor·Codex 공용 스코프라 파일 존재만으론 도구별 on/off 를 못 가르고, config 변경이
+스킬은 항상 스캐폴드되고 게이트는 런타임(`asgard role list`)이다 — `.agents/skills/`가
+Cursor·Codex 공용 스코프라 파일 존재만으론 도구별 on/off를 못 가르고, config 변경이
 재스캐폴드 없이 즉시 반영돼야 하기 때문. 기본은 전부 꺼짐 (내부 모델로만 동작).
 """
 

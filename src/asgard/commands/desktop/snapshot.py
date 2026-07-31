@@ -1,6 +1,6 @@
 """화면이 한 왕복에 받는 것 — 이 자리의 상태 전량.
 
-나눠 주면 왕복마다 어긋난다: 프로바이더는 A 를, 카탈로그는 B 를 말하는 화면이 된다.
+나눠 주면 왕복마다 어긋난다: 프로바이더는 A를, 카탈로그는 B를 말하는 화면이 된다.
 그래서 창이 열릴 때·자리를 옮길 때 한 번에 싣는다.
 """
 
@@ -18,7 +18,7 @@ folder_dialog_available = dialog.folder_dialog_available
 
 def _ticket_summary(root: str) -> dict:
     """메뉴가 드는 티켓 현황. 저장소가 아직 없거나 못 열려도 화면은 뜬다 — 다만 조용히
-    '0건'이라고 말하지 않고 `available: False` 로 모른다고 말한다."""
+    '0건'이라고 말하지 않고 `available: False`로 모른다고 말한다."""
     from ...studio import tickets as T
 
     try:

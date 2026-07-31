@@ -6,15 +6,15 @@
                       역할 세션(child context) → 퀘스트 로그 기록(하니스가 결정론 수행) →
                       Verifier verdict 툴 → 게이트(verifier-gate, 루프 종료 지점) → close
 
-Claude Code 모드 B 와의 차이: 거기선 모델이 quest-log CLI 를 스스로 실행하지만, 네이티브에선
+Claude Code 모드 B 와의 차이: 거기선 모델이 quest-log CLI를 스스로 실행하지만, 네이티브에선
 **하니스가 퀘스트 로그을 기록**한다 — 프로토콜 준수가 모델 순응이 아니라 코드 경로다. 훅 자체는
 subprocess 배포 형태로 재사용 (36/36 테스트된 계약, 재구현 금지). 상태는 같은 .asgard/ —
 Claude Code/Codex/Cursor 세션과 퀘스트 로그을 이어 쓴다 (크로스툴 연속성).
 
-중첩 디스패치: Worker 에 dispatch 툴 — 딜리버리 전문가(child context, depth 1)에
+중첩 디스패치: Worker에 dispatch 툴 — 딜리버리 전문가(child context, depth 1)에
 위임하고 배정 근거를 delegate 이벤트로 퀘스트 로그에 남긴다. 딜리버리는 재위임 불가 (툴 미제공).
 
-모듈 구성 (구 단일 모듈 heimdall.py 의 분해 — 공개 표면은 여기서 그대로 재수출):
+모듈 구성 (구 단일 모듈 heimdall.py의 분해 — 공개 표면은 여기서 그대로 재수출):
   roles    — 역할 프롬프트 본문·모델 티어·스킬 리졸버·노트 주입
   classify — 요청 분류·API 오류·게이트 시그니처 (순수 판정)
   planning — 배정 단위 파싱·wave 위상 정렬·재개 스냅샷

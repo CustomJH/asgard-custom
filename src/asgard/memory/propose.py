@@ -4,9 +4,9 @@
 
 에이전트가 개인 기억을 못 쓰고 있었다. 어느 모드에서도:
 
-  · 네이티브 `tool_kernel` — 메모리 쓰기 툴이 없다 (`ingest_document` 는 프로젝트 문서용)
-  · MCP 서버 — `memory_retain`/`memory_retain_commit` 은 **프로젝트 전용**
-  · 개인 경로 — 넛지 문자열을 뿌리고 **사람이 `asgard memory ingest "…"` 를 타이핑**
+  · 네이티브 `tool_kernel` — 메모리 쓰기 툴이 없다 (`ingest_document`는 프로젝트 문서용)
+  · MCP 서버 — `memory_retain`/`memory_retain_commit`은 **프로젝트 전용**
+  · 개인 경로 — 넛지 문자열을 뿌리고 **사람이 `asgard memory ingest "…"`를 타이핑**
 
 결과가 숫자로 나왔다: 몇 달을 쓴 기계의 1차 메모리가 **페이지 2장**이었다. 사실이 없어서가
 아니라 통로에 마찰이 있어서다. 대조군(hermes)은 같은 자리에서 모델이 직접 쓰는 툴을 주고
@@ -14,13 +14,13 @@
 
 ## 무엇을 바꾸고 무엇을 안 바꾸는가
 
-**ask-before-save 는 그대로다.** 바뀌는 것은 "사람이 승인한다"와 "사람이 타이핑한다"를
+**ask-before-save는 그대로다.** 바뀌는 것은 "사람이 승인한다"와 "사람이 타이핑한다"를
 같은 것으로 묶어 두던 구현이다. 프로젝트 레인은 이미 정답을 갖고 있었다 — 스테이징 +
 미리보기 + 승인 id (`memory_bridge.config.stage_retain`). 여기는 그 모양을 개인 레인에
 옮긴 것이고, **신뢰 경계는 한 치도 안 넓어진다**:
 
-  · 제안은 디스크의 대기열에만 들어간다. 승인 전에는 `pages/` 에 한 글자도 안 쓴다.
-  · 주입면에도 안 실린다 — 회수는 `pages/` 만 본다.
+  · 제안은 디스크의 대기열에만 들어간다. 승인 전에는 `pages/`에 한 글자도 안 쓴다.
+  · 주입면에도 안 실린다 — 회수는 `pages/`만 본다.
   · 인젝션·credential 스캔을 **제안 시점과 승인 시점 두 번** 한다 (사이에 파일이 바뀔 수 있다).
 
 ## 자동저장 (26-07-30 — 사용자 선택)
@@ -29,16 +29,16 @@
 대화가 끊기고 터미널 명령 한 줄을 치라는 안내가 나간다. 안 치면 그 사실은 영영 안 남고,
 다음 세션이 같은 것을 또 묻는다 — 게이트가 기억을 지키는 게 아니라 기억을 막는다.
 
-그래서 게이트를 없애는 대신 **사용자 손에** 뒀다: `memory.autosave` 가 켜져 있으면 제안이
+그래서 게이트를 없애는 대신 **사용자 손에** 뒀다: `memory.autosave`가 켜져 있으면 제안이
 아니라 저장이다 (`submit`). 켜져도 안 바뀌는 것 — 인젝션·credential 스캔, 근사 중복 병합,
-프로파일 격리. 이 설정은 **글로벌에서만** 읽는다 (`policy.autosave_enabled` 의 이유 참조).
+프로파일 격리. 이 설정은 **글로벌에서만** 읽는다 (`policy.autosave_enabled`의 이유 참조).
 
 ## 에이전트 격리 (프로파일)
 
 대기열은 `memory_dir()` 안에 산다. 그 경로가 이미 프로파일별로 갈리므로(`profiles.home()`)
-에이전트 A 의 제안은 B 의 대기열에 아예 나타나지 않는다 — 격리는 이 파일이 새로 만드는
-것이 아니라 물려받는 것이다. 그 위에 제안마다 `agent` 를 적어 두는 이유는 **관측**이다:
-`ASGARD_HOME` 을 안 물려받은 자식이 기본 에이전트에 제안을 쌓는 사고(hermes 이슈 18594 와
+에이전트 A의 제안은 B의 대기열에 아예 나타나지 않는다 — 격리는 이 파일이 새로 만드는
+것이 아니라 물려받는 것이다. 그 위에 제안마다 `agent`를 적어 두는 이유는 **관측**이다:
+`ASGARD_HOME`을 안 물려받은 자식이 기본 에이전트에 제안을 쌓는 사고(hermes 이슈 18594와
 같은 모양)가 나면, 승인 화면에 남의 이름이 찍혀 사람이 그 자리에서 알아챈다.
 """
 
@@ -127,7 +127,7 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
     now = time.time()
     rows = _live(_load(d), now)
     # 같은 사실을 두 번 제안하면 대기열이 아니라 잡음이 된다. 이미 대기 중인 같은 본문은
-    # 새 id 를 만들지 않고 기존 것을 돌려준다 (에이전트의 재시도가 대기열을 안 부풀린다).
+    # 새 id를 만들지 않고 기존 것을 돌려준다 (에이전트의 재시도가 대기열을 안 부풀린다).
     for row in rows:
         if row.get("text") == body and row.get("kind") == kind:
             return dict(row)
@@ -237,7 +237,7 @@ def commit(proposal_id: str, d: str | None = None) -> tuple[str, str]:
     staged_by = str(record.get("agent") or "")
     if staged_by and agent and staged_by != agent:
         # 대기열이 프로파일별로 갈려 있어 정상 경로에서는 일어날 수 없다. 일어났다면 환경
-        # 전파가 깨진 것이므로(부모가 ASGARD_HOME 을 안 넘겼다) 조용히 쓰지 않고 말한다.
+        # 전파가 깨진 것이므로(부모가 ASGARD_HOME을 안 넘겼다) 조용히 쓰지 않고 말한다.
         raise ValueError(f"제안을 올린 에이전트({staged_by})와 지금 에이전트({agent})가 다르다 — 승인 거부")
     body = str(record.get("text") or "")
     if threat := scan_threats(body):
@@ -248,7 +248,7 @@ def commit(proposal_id: str, d: str | None = None) -> tuple[str, str]:
         raise ValueError(f"{secret} — 승인 취소, 제안 폐기")
     kind = str(record.get("kind") or DEFAULT_KIND)
     # 계획을 지금 다시 세운다: 제안 시점의 계획은 표시용이었고, 그 사이 정본이 바뀌었으면
-    # 병합 대상도 바뀐다 (승인한 것과 실제가 갈라지지 않게 — pages.ingest 의 TOCTOU 규율).
+    # 병합 대상도 바뀐다 (승인한 것과 실제가 갈라지지 않게 — pages.ingest의 TOCTOU 규율).
     action, slug = ingest(body, kind=kind, d=d, plan=plan_ingest(body, d))
     discard(proposal_id, d)
     log_op(d, "propose-commit", slug, f"{proposal_id} -> {action}")

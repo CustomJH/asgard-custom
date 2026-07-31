@@ -1,10 +1,10 @@
 """start — Asgard 네이티브 터미널 세션 진입점.
 
-Asgard 자체에서 돈다 — 모델은 provider 설정으로 연결하고, Claude Code 에 얹지 않는다
+Asgard 자체에서 돈다 — 모델은 provider 설정으로 연결하고, Claude Code에 얹지 않는다
 (.claude/ 스캐폴드는 Claude Code 사용자용 별개 표면 — 2026-07-03 오딘 정정).
 
-이 모듈의 몫은 프리플라이트: 세션을 열 수 없는 환경이면 처방과 함께 명확한 exit code 로
-멈춘다 (doctor 는 advisory, start 는 게이트). 세션 루프 자체는 agent 패키지 몫.
+이 모듈의 몫은 프리플라이트: 세션을 열 수 없는 환경이면 처방과 함께 명확한 exit code로
+멈춘다 (doctor는 advisory, start는 게이트). 세션 루프 자체는 agent 패키지 몫.
 """
 
 import importlib.util
@@ -18,7 +18,7 @@ from ..providers import ResolvedProvider, resolve
 def preflight(
     root: str, provider: str | None = None, model: str | None = None
 ) -> tuple[list[dict], "ResolvedProvider"]:
-    """세션 진입 체크리스트. (checks, resolved) — resolved 는 에이전트 루프로 핸드오프."""
+    """세션 진입 체크리스트. (checks, resolved) — resolved는 에이전트 루프로 핸드오프."""
     rp = resolve(root, provider=provider, model=model)
     checks: list[dict] = [
         {
@@ -66,7 +66,7 @@ def preflight(
                     "name": "base_url",
                     "ok": False,
                     "detail": rp.base_url,
-                    "fix": "claude-native 는 base_url 미지원 — 프록시+구독 조합은 차단 리스크, config 에서 제거",
+                    "fix": "claude-native는 base_url 미지원 — 프록시+구독 조합은 차단 리스크, config에서 제거",
                 }
             )
         sdk_mod = "claude_agent_sdk"
@@ -127,7 +127,7 @@ def run_start(
 ) -> int:
     root = os.getcwd()
 
-    # --check 는 CI/스모크용 게이트 — 프리플라이트만 돌고 종료 (기존 계약 유지).
+    # --check는 CI/스모크용 게이트 — 프리플라이트만 돌고 종료 (기존 계약 유지).
     if check_only:
         ui.head("start · preflight")
         checks, _ = preflight(root, provider=provider, model=model)
@@ -176,7 +176,7 @@ def run_prompt(
 ) -> int:
     """headless 단발 실행 — 벤치·CI 표면. Heimdall.handle 1회 후 종료.
 
-    모드 B 는 라우팅 논리레이어 주입 불가(벤치 실측) — 게이트-우선의 측정·강제 표면은
+    모드 B는 라우팅 논리레이어 주입 불가(벤치 실측) — 게이트-우선의 측정·강제 표면은
     이 네이티브 경로다 (하네스가 전이 산출을 코드로 수행, 채택률 100%).
     exit code: 0 정상 / 1 ⚠ 보고(에스컬레이션·중단·예산 소진) / 2 프리플라이트 실패."""
     import json as _json
@@ -191,10 +191,10 @@ def run_prompt(
         _render(checks)
         ui.warn("headless 실행 불가 — 위 처방을 적용하세요.")
         return 2
-    os.environ.setdefault("ASGARD_UNATTENDED", "1")  # Canon 8 — headless 는 무인, 게이트도 이 신호를 본다
+    os.environ.setdefault("ASGARD_UNATTENDED", "1")  # Canon 8 — headless는 무인, 게이트도 이 신호를 본다
     from ..agent.heimdall import Heimdall
 
-    sink = sys.stderr if json_out else sys.stdout  # --json: stdout 은 최종 JSON 전용
+    sink = sys.stderr if json_out else sys.stdout  # --json: stdout은 최종 JSON 전용
 
     def stream(s: str) -> None:
         sink.write(s)
@@ -205,7 +205,7 @@ def run_prompt(
     if resume:
         result = h.resume(quest_id)
     elif prompt:
-        result = h.handle(prompt)  # handle 이 자체적으로 오류를 ⚠ 보고로 감싼다
+        result = h.handle(prompt)  # handle이 자체적으로 오류를 ⚠ 보고로 감싼다
     else:
         result = "⚠ 새 실행에는 prompt가 필요합니다. 기존 Quest는 --resume을 사용하세요."
     wall = round(_time.time() - t0, 1)

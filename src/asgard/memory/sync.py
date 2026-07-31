@@ -1,12 +1,12 @@
-"""개인 메모리 서버 연동 — 정본 md 를 원격과 양방향으로 맞춘다.
+"""개인 메모리 서버 연동 — 정본 md를 원격과 양방향으로 맞춘다.
 
 두 전송을 지원한다. 둘 다 "파일이 정본"이라는 같은 규칙 위에서 돈다.
   dir  — 마운트된 폴더(클라우드 동기화 폴더·NAS·공유 볼륨). 기준선(baseline) 대조 3-way.
-  git  — 임의의 git 원격(자체 호스팅 포함). 이력·충돌 판정을 git 에 위임한다.
+  git  — 임의의 git 원격(자체 호스팅 포함). 이력·충돌 판정을 git에 위임한다.
 
 기준선이 핵심이다. 양쪽 다이제스트만 비교하면 "저쪽이 새로 쓴 것"과 "이쪽이 지운 것"을
 구분할 수 없어서, 삭제가 부활하거나 새 글이 조용히 사라진다. 마지막으로 양쪽이 같았던
-시점의 다이제스트를 sync-state.json 에 남기고 셋을 비교한다.
+시점의 다이제스트를 sync-state.json에 남기고 셋을 비교한다.
 
 충돌은 자동으로 풀지 않는다. 양쪽이 같은 파일을 서로 다르게 고쳤으면 로컬을 그대로 두고
 원격본을 conflicts/<stamp>/ 에 떨궈 사람이 판정하게 한다 — 기억은 조용히 덮어써질 수 없다.
@@ -36,8 +36,8 @@ TRANSPORTS = ("dir", "git")
 GIT_TIMEOUT = 120
 
 # 파생물은 원격에 올리지 않는다 — pages/ 에서 재생성되고, 기계마다 달라 충돌만 만든다.
-# log.md 는 append-only 운영 로그다. 두 기계가 각자 append 하면 3-way 로는 매번 충돌인데,
-# 정답은 언제나 "둘 다"다. git 은 내장 union 드라이버로, dir 전송은 _merge_log 로 같은 판정을 한다.
+# log.md는 append-only 운영 로그다. 두 기계가 각자 append 하면 3-way 로는 매번 충돌인데,
+# 정답은 언제나 "둘 다"다. git은 내장 union 드라이버로, dir 전송은 _merge_log로 같은 판정을 한다.
 GIT_ATTRIBUTES = f"{LOG} merge=union\n"
 
 GIT_IGNORE = """# Asgard personal memory — derived artifacts are rebuilt from pages/
@@ -176,7 +176,7 @@ def _ensure_remote_dir(remote: str, *, adopt: bool) -> dict:
     """원격 폴더의 정체를 확인하거나 새로 표식한다.
 
     표식 없는 비어 있지 않은 폴더에 그냥 쓰면 남의 폴더를 메모리로 오염시킬 수 있다.
-    프로젝트 메모리의 binding 과 같은 규율 — 빈 폴더는 자동 개설, 남의 내용물은 명시 동의."""
+    프로젝트 메모리의 binding과 같은 규율 — 빈 폴더는 자동 개설, 남의 내용물은 명시 동의."""
     if os.path.islink(remote):
         raise SyncError("sync remote must not be a symlink")
     if not os.path.isdir(remote):
@@ -269,7 +269,7 @@ def merge_log(local_text: str, remote_text: str) -> str:
             if stripped not in seen:
                 seen.add(stripped)
                 entries.append(stripped)
-    entries.sort(key=lambda line: (line[2:20], line))  # "- <ISO stamp> [op] …" 의 시각 구간
+    entries.sort(key=lambda line: (line[2:20], line))  # "- <ISO stamp> [op] …"의 시각 구간
     return "\n".join([header or "# Memory Log", *entries]) + "\n"
 
 

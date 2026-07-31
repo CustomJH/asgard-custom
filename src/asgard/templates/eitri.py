@@ -108,7 +108,7 @@ EITRI_SKILLS: list[tuple[str, str]] = [
 ]
 
 # 네이티브 디스패치 task → 전용 스킬 매칭 (파일 스킬 로더가 없는 asgard start 세션용 통로 —
-# 모드 A/B 는 파일 스킬이 담당). 배포(deploy)·런타임 거동은 토르 소관 — 트리거에 넣지 않는다.
+# 모드 A/B는 파일 스킬이 담당). 배포(deploy)·런타임 거동은 토르 소관 — 트리거에 넣지 않는다.
 _SUBSTR: dict[str, tuple[str, ...]] = {
     "asgard-eitri-draupnir": (
         "파이프라인",
@@ -170,8 +170,8 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
 def resolve_eitri_skills(task: str) -> list[tuple[str, str]]:
     """디스패치 task → 매칭된 전용 스킬 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
 
-    네이티브 에이트리 자식 세션의 system 에 직접 주입할 본문을 고른다 (파일 스킬 로더 부재 보완).
-    무매칭 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role 이 이미 그 폴백을 선언한다).
+    네이티브 에이트리 자식 세션의 system에 직접 주입할 본문을 고른다 (파일 스킬 로더 부재 보완).
+    일치 없음 = 빈 리스트 (fail-open — role 본문 기준으로 진행, role이 이미 그 폴백을 선언한다).
     복수 매칭은 전부 주입 — 릴리스용 파이프라인처럼 두 표면이 겹치는 과업이 실재한다."""
     t = task.lower()
 

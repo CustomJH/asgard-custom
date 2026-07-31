@@ -18,7 +18,7 @@ _COMMAND = re.compile(r"^- Command: `([^`]+)` — (.+)$")
 _TOKEN = re.compile(r"[\w./-]{2,}", re.UNICODE)
 _SEED_ID = re.compile(r"`([a-z_]+:[^`\s]+)`")
 _MAX_CONTEXT_SEEDS = 3
-# 동점 시드의 종류 우선순위 — route 는 교차 레인 허브라 impact 회수 가치가 가장 크다.
+# 동점 시드의 종류 우선순위 — route는 교차 레인 허브라 impact 회수 가치가 가장 크다.
 _SEED_KIND_PRIORITY = ("route", "event", "job", "store", "page", "command")
 
 
@@ -145,10 +145,10 @@ def _managed_entries(
 
 
 def _trace_seeds(graph_text: str, terms: set[str]) -> list[str]:
-    """GRAPH.md `## Trace seeds` 에서 쿼리 연관 노드 id 를 고른다 — 명령 라우팅의 시드.
+    """GRAPH.md `## Trace seeds`에서 쿼리 연관 노드 id를 고른다 — 명령 라우팅의 시드.
 
-    경로만 주면 에이전트는 Read/grep 최소 저항 경로를 탄다(실측). 시드 id 를 명령과 함께
-    주입해야 trace/impact 로 간다. 쿼리와 무관한 시드는 예산만 축내므로 매치 0 이면 비운다.
+    경로만 주면 에이전트는 Read/grep 최소 저항 경로를 탄다(실측). 시드 id를 명령과 함께
+    주입해야 trace/impact로 간다. 쿼리와 무관한 시드는 예산만 축내므로 매치 0 이면 비운다.
     """
     if not terms:
         return []

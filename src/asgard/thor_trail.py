@@ -1,7 +1,7 @@
 """토르 절차의 자취 — 어떤 동사가 언제 불렸나. 절차가 지켜지는지 **재기 위한** 최소 기록.
 
 왜 필요한가: 절차 엔진이 열한 개 동사와 그 호(弧)를 정의하는데, 그 호가 실제로 지켜지는지 아무도
-몰랐다. 플레이북은 stdout 으로 나가고 그걸로 끝이었다. 지켜지는지 모르는 절차는 절차가 아니라
+몰랐다. 플레이북은 stdout으로 나가고 그걸로 끝이었다. 지켜지는지 모르는 절차는 절차가 아니라
 권고문이고, 권고문은 턴이 쌓이면 흐려진다 — 이 저장소가 규칙을 프롬프트에서 기계로 옮긴 것과
 같은 이유로, 이행률도 사람의 인상이 아니라 기록에서 나와야 한다.
 
@@ -23,10 +23,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 REL = os.path.join(".asgard", "thor", "trail.jsonl")
-# 절차의 호. `commands.thor.VERBS` 의 순서가 정본이고 여기는 그 순서를 **읽기만** 한다 —
+# 절차의 호. `commands.thor.VERBS`의 순서가 정본이고 여기는 그 순서를 **읽기만** 한다 —
 # 두 벌로 적으면 동사를 하나 더할 때 한쪽만 고쳐지고, 그 순간 이행률이 조용히 틀려진다.
 TERMINAL = ("sweep", "evidence")
-KEEP = 500  # 자취도 자라기만 하면 자원이다 (craft 의 unbounded-accumulator 와 같은 자를 자신에게)
+KEEP = 500  # 자취도 자라기만 하면 자원이다 (craft의 unbounded-accumulator와 같은 자를 자신에게)
 
 
 @dataclass(frozen=True)
@@ -34,7 +34,7 @@ class Step:
     at: str
     verb: str
     changed: int  # 그때 판정 가능한 변경분 수 — 동사가 작업의 어디쯤에서 불렸는지
-    blocking: int | None = None  # gate 만. None = 게이트가 아니거나 판정을 못 냈다
+    blocking: int | None = None  # gate만. None = 게이트가 아니거나 판정을 못 냈다
 
 
 def _order() -> tuple[str, ...]:
@@ -63,7 +63,7 @@ def record(root: str, verb: str, changed: int, blocking: int | None = None) -> N
 
 
 def _prune(path: str) -> None:
-    """마지막 KEEP 줄만 남긴다. temp+rename 이라 중간에 죽어도 반쪽 자취가 남지 않는다."""
+    """마지막 KEEP 줄만 남긴다. temp+rename이라 중간에 죽어도 반쪽 자취가 남지 않는다."""
     try:
         with open(path, encoding="utf-8") as handle:
             lines = handle.readlines()
@@ -111,17 +111,17 @@ class Adherence:
     steps: tuple[Step, ...]
     called: tuple[str, ...]  # 부른 동사 (처음 부른 순서)
     skipped: tuple[str, ...]  # 한 번도 안 부른 동사
-    reached_terminal: bool  # sweep 이나 evidence 로 갔는가 — 캐논이 명시한 유일한 순서 계약
+    reached_terminal: bool  # sweep이나 evidence로 갔는가 — 캐논이 명시한 유일한 순서 계약
     gates: tuple[Step, ...]  # gate 판정들
     blocked_runs: int  # 막는 판정이 있었던 gate 실행 수
 
 
 # 여기 **없는** 것: "호를 거슬렀는가". 한 번 넣었다가 걷어냈다.
 #
-# `VERBS` 의 순서를 선형 호로 읽고 역행을 세면, `diagnose → shape → implement → sweep` 이
+# `VERBS`의 순서를 선형 호로 읽고 역행을 세면, `diagnose → shape → implement → sweep`이
 # 역행 2회로 찍힌다. 그 순서는 버그 수리에서 완벽히 옳다 — 고칠 자격을 먼저 얻고(diagnose),
 # 그 다음에 형상을 정한다(shape). 신규 기능이면 반대가 옳다. 즉 선형 호는 애초에 없고,
-# `VERBS` 의 순서는 메뉴 순서지 강제 순서가 아니다.
+# `VERBS`의 순서는 메뉴 순서지 강제 순서가 아니다.
 #
 # 없는 계약을 지표로 만들면 그것은 사실이 아니라 **판단이 사실인 척하는 것**이고, 이 모듈이
 # 하지 않기로 한 바로 그 일이다. 지표를 손보는 대신 지웠다.
@@ -148,7 +148,7 @@ def escapes(root: str) -> list[Escape]:
     게이트가 없는 검증은 아예 담지 않는다 — 게이트를 안 돌린 검증은 이 질문의 표본이 아니다.
 
     **이 수치를 읽는 법.** 여기 잡히는 것은 "게이트가 버그를 놓쳤다"가 아니다. 두 판정기가 재는
-    것이 다르다 — 게이트는 형상과 정적으로 증명되는 오류를 재고, Verifier 는 요구한 일이
+    것이 다르다 — 게이트는 형상과 정적으로 증명되는 오류를 재고, Verifier는 요구한 일이
     되었는지를 잰다. 그러므로 이 비율이 뜻하는 것은 정확히 **"게이트 통과가 검증 통과를
     함의하지 않는다"** 이고, 그 이상으로 읽으면 두 층의 역할이 섞인다. 비율이 0 이어도 게이트가
     완전하다는 뜻이 아니고, 높아도 게이트가 틀렸다는 뜻이 아니다.
@@ -196,7 +196,7 @@ def _verify_events(root: str):
 def adherence(steps: list[Step]) -> Adherence:
     order = frozenset(_order())
     called: list[str] = []
-    seen: set[str] = set()  # `called` 를 매번 훑으면 자취가 길어질수록 제곱이 된다 (자기 게이트가 잡았다)
+    seen: set[str] = set()  # `called`를 매번 훑으면 자취가 길어질수록 제곱이 된다 (자기 게이트가 잡았다)
     for step in steps:
         if step.verb in order and step.verb not in seen:
             seen.add(step.verb)

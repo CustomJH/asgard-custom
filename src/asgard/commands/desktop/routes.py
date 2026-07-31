@@ -1,7 +1,7 @@
 """경로표 — 어떤 요청이 어느 함수로 가는가. 이 모듈에는 규칙이 없다.
 
 읽기(GET)와 쓰기(POST/PUT)를 나눠 둔 이유는 문지기가 다르기 때문이다: 쓰기는
-`loopback` 의 Origin 검사를 한 겹 더 지난다.
+`loopback`의 Origin 검사를 한 겹 더 지난다.
 """
 
 from __future__ import annotations
@@ -60,7 +60,7 @@ def dispatch(
     if path == "/asset/logo":
         return 200, "image/png", (_files("asgard") / "assets" / "gold-brand-logo.png").read_bytes()
     if path == "/asset/mark":
-        # 위그드라실 마크 — asgard map · memory 가 드는 것과 같은 파일이라 세 창이 같은 마크를 든다
+        # 위그드라실 마크 — asgard map · memory가 드는 것과 같은 파일이라 세 창이 같은 마크를 든다
         return 200, "image/png", (_files("asgard") / "assets" / "yggdrasil-mark.png").read_bytes()
     if path in ("/asset/app-icon", "/favicon.ico"):
         # 네이티브 창의 앱 아이콘과 같은 그림 — 브라우저로 열어도 탭에 같은 얼굴이 뜬다

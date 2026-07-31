@@ -28,11 +28,11 @@ import time
 
 _MAX = 8  # 프롬프트에 붙일 지침 상한 — 이 목록이 요약 예산을 먹으면 안 된다
 # 지침 1줄 상한 — 안전망일 뿐 상시 절단선이 아니다. 문장 중간에서 잘린 지침은 없는 것보다
-# 나쁘므로(_LESSONS 는 이 모듈이 직접 쓴다) 가장 긴 항목보다 넉넉해야 한다. 테스트가 지킨다.
+# 나쁘므로(_LESSONS는 이 모듈이 직접 쓴다) 가장 긴 항목보다 넉넉해야 한다. 테스트가 지킨다.
 _MAX_CHARS = 400
 _STORE = "compress-lessons.json"
 
-# 요약 산출물이 반드시 갖춰야 할 머리글 — build_prompt 의 _SCHEMA 와 짝을 이룬다.
+# 요약 산출물이 반드시 갖춰야 할 머리글 — build_prompt의 _SCHEMA와 짝을 이룬다.
 REQUIRED_SECTIONS = (
     "## Active Task",
     "## Goal",
@@ -42,7 +42,7 @@ REQUIRED_SECTIONS = (
 )
 
 # 없던 사용자 발화를 지어내는 실패 — 사용자 턴이 없는 세션(서브에이전트·자동 실행)에서
-# "User asked:" 가 나오면 요약기가 도구 출력을 사람 발화로 승격시킨 것이다.
+# "User asked:"가 나오면 요약기가 도구 출력을 사람 발화로 승격시킨 것이다.
 _USER_ATTRIBUTION = re.compile(r"\bUser\s+(?:asked|requested|said)\s*:", re.IGNORECASE)
 
 _LESSONS: dict[str, str] = {

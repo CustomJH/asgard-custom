@@ -28,7 +28,7 @@ from .records import MAX_ARTIFACT_BYTES
 # hindsight 뱅크 설정에 심는 전략 표. 이름은 우리가 정하고, 값은 서버의 hierarchical 필드다.
 #
 # 26-07-28 **1차 판정은 틀렸다.** 그때는 326KB 문서가 링크 3,511개를 만들고 서버가 죽는 것을
-# 보고 "링크 폭발"로 읽어 청크를 3000→8000 으로 키웠다. 버려도 되는 뱅크를 새로 파서 변수를
+# 보고 "링크 폭발"로 읽어 청크를 3000→8000으로 키웠다. 버려도 되는 뱅크를 새로 파서 변수를
 # 하나씩 갈라 재 보니(3차, tests/load/README.md) 링크는 용의자가 아니었다. 서버 로그의
 # 단계별 시간이 그대로 말해 준다:
 #
@@ -68,7 +68,7 @@ DEFAULT_STRATEGY = "document"
 
 # 뱅크 기본값으로만 걸리는 설정. 전략(strategy)에 넣어도 소용이 없다 — 26-07-28 소스 확인:
 # 통합 제출 판정(`memory_engine._submit_post_retain_tasks`)은 `resolve_full_config` 결과를 보고,
-# `apply_strategy` 는 그보다 **나중에** 적용된다. 즉 전략은 추출·청킹은 바꾸지만 "통합을 걸까"는
+# `apply_strategy`는 그보다 **나중에** 적용된다. 즉 전략은 추출·청킹은 바꾸지만 "통합을 걸까"는
 # 이미 지난 뒤다. 그래서 이건 뱅크 설정에 둔다.
 #
 # 프로젝트 뱅크에는 정적 문서와 관계형 기록이 함께 있으므로 자동 통합은 끈다. 대신 observation
@@ -80,13 +80,13 @@ BANK_DEFAULTS = {
     "enable_auto_consolidation": False,
 }
 
-MAX_DOCUMENT_BYTES = 64 * 1024 * 1024  # 추출 입력 상한 (agent.tools 와 같은 자리)
+MAX_DOCUMENT_BYTES = 64 * 1024 * 1024  # 추출 입력 상한 (agent.tools와 같은 자리)
 MAX_ENTITIES = 40
 
 # 그래프 수용 상한 — 이 문서를 뱅크에 넣어도 그 뱅크가 계속 쓸 수 있는가.
 #
-# 문턱은 임의값이 아니라 **제품이 이미 정한 값**이다: memory_context.project_recall_note 는
-# 턴 시작 주입을 `operation_timeout = min(cfg timeout, 5)` 로 자른다. 5초를 넘는 회수는
+# 문턱은 임의값이 아니라 **제품이 이미 정한 값**이다: memory_context.project_recall_note는
+# 턴 시작 주입을 `operation_timeout = min(cfg timeout, 5)`로 자른다. 5초를 넘는 회수는
 # 느린 게 아니라 주입면에서 **존재하지 않는다**. 그러니 상한은 "5초 안에 돌아오는 크기"다.
 #
 # 실측 (26-07-28 3차, 청크 1000 · 한국어 실물 산문 · 질의 3개 · tests/load/README.md):
@@ -118,13 +118,13 @@ GRAPH_UNIT_CEILING = 13
 #     48,000       77         1.60
 #
 # 상한으로 나누면(=1.0/1000자) 큰 문서를 **1.5배 과소평가**해 게이트가 그만큼 헐거워진다.
-# 실제로 asgard 클라이언트 왕복 검증에서 "예측 12 units" 문서가 16 units·6.0s 로 나와
-# 주입 예산을 넘겼다. 620 은 위 표에서 가장 빡빡한 점(48,000/77 = 623)보다도 작은 값이다 —
+# 실제로 asgard 클라이언트 왕복 검증에서 "예측 12 units" 문서가 16 units·6.0s로 나와
+# 주입 예산을 넘겼다. 620은 위 표에서 가장 빡빡한 점(48,000/77 = 623)보다도 작은 값이다 —
 # 모든 실측점에서 예측이 실제를 **밑돌지 않는** 쪽으로 고른다 (테스트가 이 성질을 지킨다).
 EFFECTIVE_UNIT_CHARS = 620
 GRAPH_CHAR_CEILING = GRAPH_UNIT_CEILING * EFFECTIVE_UNIT_CHARS  # 8,060자
-# 전략에 청크 크기가 없을 때(record) 쓰는 값. record 는 어차피 짧아서 이 값이 판정을 가르는
-# 일이 없지만, 예측이 0 으로 무너지는 자리를 남기지 않는다.
+# 전략에 청크 크기가 없을 때(record) 쓰는 값. record는 어차피 짧아서 이 값이 판정을 가르는
+# 일이 없지만, 예측이 0으로 무너지는 자리를 남기지 않는다.
 CHUNK_FALLBACK = 3000
 LANE_GRAPH, LANE_LOCAL = "graph", "local"
 SUPPORTED = (".pdf", ".docx", ".hwp", ".hwpx", ".md", ".markdown", ".txt", ".rst")
@@ -132,15 +132,15 @@ SUPPORTED = (".pdf", ".docx", ".hwp", ".hwpx", ".md", ".markdown", ".txt", ".rst
 # 요구사항 ID — 실제 문서에서 쓰이는 모양. "METER-001", "REQ-12", "SRS-3.2.1"
 _REQ_ID = re.compile(r"\b([A-Z][A-Z0-9]{1,9}-\d{1,4}(?:\.\d{1,3})*)\b")
 # 같은 모양이지만 요구사항이 아닌 것들 — 규격·표준 이름. 26-07-28 실측: DLMS 문서에서
-# RS-485·CRC-16 이 REQUIREMENT 로 잡혔다. 형상이 같으니 형상으로는 못 가른다 — 근거를 더 본다.
+# RS-485·CRC-16이 REQUIREMENT로 잡혔다. 형상이 같으니 형상으로는 못 가른다 — 근거를 더 본다.
 _REQ_ID_LABEL = re.compile(
-    # 실제 문서는 "**요구사항 ID**: METER-001" 처럼 굵게 표시가 라벨과 콜론 사이에 낀다.
+    # 실제 문서는 "**요구사항 ID**: METER-001"처럼 굵게 표시가 라벨과 콜론 사이에 낀다.
     # 콜론 앞뒤 양쪽에서 마크다운 강조를 흘려보낸다.
     r"(?:요구사항\s*ID|요구\s*번호|Requirement\s*ID|REQ\s*ID)\s*\**\s*[:：]?\s*\**\s*"
     r"([A-Z][A-Z0-9]{1,9}-\d{1,4}(?:\.\d{1,3})*)",
     re.IGNORECASE,
 )
-_REQ_ID_MIN_OCCURRENCES = 3  # 표제 + 상호참조 — 진짜 요구사항 ID 는 문서 안에서 반복된다
+_REQ_ID_MIN_OCCURRENCES = 3  # 표제 + 상호참조 — 진짜 요구사항 ID는 문서 안에서 반복된다
 # 절 번호 — "## 3.2 제목" / "3.2.1 제목"
 _SECTION = re.compile(r"^#{0,6}\s*(\d+(?:\.\d+){0,3})\s+\S", re.MULTILINE)
 _TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$", re.MULTILINE)
@@ -180,7 +180,7 @@ class IngestedDocument:
 
     @property
     def document_id(self) -> str:
-        """같은 파일을 다시 던지면 같은 id — update_mode=replace 가 갈아끼운다."""
+        """같은 파일을 다시 던지면 같은 id — update_mode=replace가 갈아끼운다."""
         return f"asgard:doc:{hashlib.sha256(self.name.encode()).hexdigest()[:24]}"
 
     @property
@@ -211,7 +211,7 @@ def assign_lane(chars: int, strategy: str = DEFAULT_STRATEGY) -> str:
 
 
 def extract_text(path: str) -> str:
-    """문서 → 평문. 형식별 추출기는 agent.tools 의 것을 재사용한다 (단일 출처).
+    """문서 → 평문. 형식별 추출기는 agent.tools의 것을 재사용한다 (단일 출처).
 
     던져지는 문서는 저장소 밖에 있을 수 있으므로 경로를 프로젝트 안으로 가두지 않는다 —
     대신 크기 상한과 아카이브 안전 검사는 그대로 통과시킨다."""
@@ -240,8 +240,8 @@ def extract_text(path: str) -> str:
 def classify(text: str, name: str = "") -> tuple[str, str, dict]:
     """(strategy, kind, signals) — 형상만 본다. LLM 없음.
 
-    가르는 축은 "크고 정적인가" 대 "짧고 관계적인가"다. 요구사항 ID 가 여럿이거나 절 번호·표가
-    빽빽하면 앞쪽, 결정·사고 어휘가 짙고 짧으면 뒤쪽. 애매하면 document 로 둔다 — 잘못 넣어
+    가르는 축은 "크고 정적인가" 대 "짧고 관계적인가"다. 요구사항 ID가 여럿이거나 절 번호·표가
+    빽빽하면 앞쪽, 결정·사고 어휘가 짙고 짧으면 뒤쪽. 애매하면 document로 둔다 — 잘못 넣어
     LLM 추출비를 무는 것보다, 원문을 그대로 두고 사람이 나중에 승격하는 편이 되돌리기 쉽다."""
     body = text or ""
     req_ids = set(_REQ_ID.findall(body))
@@ -275,16 +275,16 @@ def classify(text: str, name: str = "") -> tuple[str, str, dict]:
 
 
 def extract_entities(text: str) -> tuple[tuple[str, str], ...]:
-    """문서에서 확정 엔티티를 뽑는다 — 요구사항 ID 만. 추측하지 않는다.
+    """문서에서 확정 엔티티를 뽑는다 — 요구사항 ID만. 추측하지 않는다.
 
-    hindsight 의 chunks 모드에서는 서버가 엔티티를 추출하지 않으므로 여기서 준 것이 **유일한**
+    hindsight의 chunks 모드에서는 서버가 엔티티를 추출하지 않으므로 여기서 준 것이 **유일한**
     엔티티 출처다 (fact_extraction._extract_facts_chunks 독스트링). 그래서 정규식으로 확실한
     것만 올린다 — 문서 제목이나 사람 이름처럼 형상으로 못 가르는 것은 넣지 않는다."""
     body = text or ""
     # ① 명시 라벨이 붙은 것은 확실하다
     labelled = {match.upper() for match in _REQ_ID_LABEL.findall(body)}
     # ② 라벨이 없으면 반복 횟수로 가른다. 규격 이름(RS-485)은 한두 번 스치고 지나가지만
-    #    요구사항 ID 는 자기 절 표제와 다른 절의 상호참조에 거듭 나온다.
+    #    요구사항 ID는 자기 절 표제와 다른 절의 상호참조에 거듭 나온다.
     counts: dict[str, int] = {}
     for match in _REQ_ID.findall(body):
         counts[match] = counts.get(match, 0) + 1
@@ -307,11 +307,11 @@ def extract_entities(text: str) -> tuple[tuple[str, str], ...]:
 def prepare(path: str, *, strategy: str | None = None, lane: str | None = None) -> IngestedDocument:
     """문서 하나를 등록 직전 상태까지 만든다. 쓰기 없음.
 
-    strategy 를 명시하면 자동 판정을 덮는다 — 자동은 기본값이지 구속이 아니다.
-    lane 도 같다: 그래프를 강제하는 선택은 남겨 두되, 기본은 뱅크를 지키는 쪽이다."""
+    strategy를 명시하면 자동 판정을 덮는다 — 자동은 기본값이지 구속이 아니다.
+    lane도 같다: 그래프를 강제하는 선택은 남겨 두되, 기본은 뱅크를 지키는 쪽이다."""
     text = extract_text(path)
     if not text.strip():
-        raise IngestError("추출된 텍스트가 없다 (스캔 PDF 라면 OCR 이 필요하다)")
+        raise IngestError("추출된 텍스트가 없다 (스캔 PDF 라면 OCR이 필요하다)")
     name = os.path.basename(path)
     auto_strategy, kind, signals = classify(text, name)
     chosen = (strategy or auto_strategy).strip().lower()
@@ -359,7 +359,7 @@ def plan(
 
 
 def document_item(document: IngestedDocument, project_id: str, *, project_uid: str = "", binding_id: str = "") -> dict:
-    """hindsight 가 받는 아이템 한 벌. 전략과 확정 엔티티를 실어 보낸다.
+    """hindsight가 받는 아이템 한 벌. 전략과 확정 엔티티를 실어 보낸다.
 
     본문은 **원문 그대로**다 — 요약하지 않는다. 요약은 되돌릴 수 없고, 무엇이 빠졌는지
     나중에 알 방법이 없다. 크기 상한은 서버 청킹이 감당한다."""
@@ -436,8 +436,8 @@ def ensure_strategies(cfg: dict) -> dict:
 
     backend = get_backend(cfg)
     try:
-        # 뱅크 설정 표면은 backend 선택 사항이다 — 공용 Protocol 이 요구하지 않는다.
-        # 없는 backend 에서 그냥 부르면 AttributeError 로 ingest 전체가 죽으므로, 없으면
+        # 뱅크 설정 표면은 backend 선택 사항이다 — 공용 Protocol이 요구하지 않는다.
+        # 없는 backend에서 그냥 부르면 AttributeError로 ingest 전체가 죽으므로, 없으면
         # 전략을 안 심고 그 사실을 정직하게 돌려준다 (문서는 기본 전략으로 처리된다).
         read = getattr(backend, "bank_config", None)
         write = getattr(backend, "update_bank_config", None)
@@ -464,7 +464,7 @@ def stage_documents(root: str, cfg: dict, documents: list[IngestedDocument]) -> 
     graph — 승인 대기로 올린다. 여기서 등록하지 않는다: 뱅크는 팀 공유 스코프다.
     local — 저장소 정본으로 바로 적고 로컬 인덱스에 태운다. 승인 게이트를 건너뛰는 것이
             아니라 **게이트가 다른 것**이다: 공유의 순간이 등록이 아니라 커밋이고, 그
-            커밋은 사람이 한다. 파일은 git status 에 그대로 보이고, 지우면 사라진다."""
+            커밋은 사람이 한다. 파일은 git status에 그대로 보이고, 지우면 사라진다."""
     from ..memory_bridge import backend_target, stage_retain
     from . import documents as local_lane
 

@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 # Asgard memory-activate — 개인 스냅샷 + 개인/프로젝트 관련 회수 (클라이언트 공용 배선).
 #
-# 배선 매처: SessionStart startup|resume|clear|compact (lagom-activate 와 동일 —
-# compact/clear 는 컨텍스트 소실 지점이라 재주입 필수) + UserPromptSubmit 관련 회수 +
+# 배선 매처: SessionStart startup|resume|clear|compact (lagom-activate와 동일 —
+# compact/clear는 컨텍스트 소실 지점이라 재주입 필수) + UserPromptSubmit 관련 회수 +
 # SubagentStart ^asgard-thinker$
 # (감사 매트릭스: Thinker 한정. Worker/딜리버리 기본 무주입, Verifier/Loki 영구 무주입 —
-# lagom 처럼 전 서브에이전트 보상 주입하는 패턴은 메모리에 적용 금지).
+# lagom처럼 전 서브에이전트 보상 주입하는 패턴은 메모리에 적용 금지).
 #
-# 동작: SessionStart/SubagentStart 는 `asgard memory snapshot`, UserPromptSubmit 은
-# `asgard memory recall`을 subprocess 로 소비한다. 스캔·오염 제외·예산·provider gate는
+# 동작: SessionStart/SubagentStart는 `asgard memory snapshot`, UserPromptSubmit은
+# `asgard memory recall`을 subprocess로 소비한다. 스캔·오염 제외·예산·provider gate는
 # 전부 CLI(단일 출처)가 수행하고, 이 훅은 출력 전달만 한다 (로직 재구현 금지).
 # asgard 미설치·빈 출력·타임아웃·어떤 오류든 무주입 통과 (fail-open, 항상 exit 0).
 import hashlib
@@ -20,10 +20,10 @@ import subprocess
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -73,9 +73,9 @@ def _message_text(value) -> str:
 
 
 def _read_text(path: str) -> str:
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -84,7 +84,7 @@ def _read_text(path: str) -> str:
 def _transcript_turn(path: str, user: str, assistant: str) -> tuple[str, str]:
     """대화 기록에서 마지막 (사용자, 어시스턴트) 짝. 못 읽으면 받은 값을 그대로 돌려준다.
 
-    `_latest_turn` 에서 갈라 나온 이유는 깊이다 — 조건·try·with·루프·try 가 한 함수에 겹치면
+    `_latest_turn`에서 갈라 나온 이유는 깊이다 — 조건·try·with·루프·try가 한 함수에 겹치면
     읽는 사람이 어느 실패가 어디로 가는지 못 따라간다."""
     latest_user = ""
     try:
@@ -207,7 +207,7 @@ def main():
         # 이 훅의 자식들은 전부 10초 상한 안에서 돈다. 신규 설치의 첫 회수가 그 안에서 임베딩
         # 모델(수십 초)을 받기 시작하면 상한에 잘려 죽고, 다음 프롬프트도 같은 자리에서 다시
         # 죽는다 — 진전이 없는 채로 시맨틱이 영영 안 켜진다. 그래서 자식에게 "받지 마라"를
-        # 알린다: 시맨틱만 빠지고 어휘·그래프 회수는 그대로 돈다. 준비는 warmup 이 맡는다.
+        # 알린다: 시맨틱만 빠지고 어휘·그래프 회수는 그대로 돈다. 준비는 warmup이 맡는다.
         os.environ["ASGARD_MEMORY_NO_DOWNLOAD"] = "1"
         if event == "Stop":
             user, assistant = _latest_turn(data)
@@ -245,7 +245,7 @@ def main():
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
                 messages.append("⠶ Project memory approval proposal\n" + preview)
-            # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch 는 CLI 가 관리).
+            # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch는 CLI가 관리).
             # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 외부 클라이언트 훅 전용이다.
             try:
                 n = subprocess.run(
@@ -261,9 +261,9 @@ def main():
                 if n.returncode == 0 and nudge:
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
-                pass  # 넛지 불능이 Stop 을 막지 않는다
+                pass  # 넛지 불능이 Stop을 막지 않는다
             # 위그드라실 노른 wake — due 시 자율 모드(safe/full)는 백그라운드 자동 통합을 분리
-            # 스폰하고, off 는 넛지 한 줄만 (latch·모드 분기 전부 CLI 단일 출처)
+            # 스폰하고, off는 넛지 한 줄만 (latch·모드 분기 전부 CLI 단일 출처)
             try:
                 n = subprocess.run(
                     [exe, "memory", "norn", "--wake"],
@@ -278,7 +278,7 @@ def main():
                 if n.returncode == 0 and nudge:
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
-                pass  # 노른 넛지 불능도 Stop 을 막지 않는다
+                pass  # 노른 넛지 불능도 Stop을 막지 않는다
             # 패턴 학습 넛지 — 마지막 패스 이후 턴이 문턱만큼 쌓였을 때만 한 줄. 노른이 위키를
             # 손질한다면 이쪽은 대화에서 오딘에 대한 관측을 길어 올린다 (승격은 언제나 사람 검토).
             try:
@@ -295,9 +295,9 @@ def main():
                 if n.returncode == 0 and nudge:
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
-                pass  # 패턴 넛지 불능도 Stop 을 막지 않는다
-            # 시맨틱 준비 넛지 — 이 훅은 자식의 stderr 를 삼키므로 "준비 중" 알림이 사용자에게
-            # 닿지 않는다. 여기가 사람에게 보이는 유일한 통로다 (한 번만 — latch 는 CLI 소유).
+                pass  # 패턴 넛지 불능도 Stop을 막지 않는다
+            # 시맨틱 준비 넛지 — 이 훅은 자식의 stderr를 삼키므로 "준비 중" 알림이 사용자에게
+            # 닿지 않는다. 여기가 사람에게 보이는 유일한 통로다 (한 번만 — latch는 CLI 소유).
             try:
                 n = subprocess.run(
                     [exe, "memory", "semantic", "nudge"],
@@ -312,7 +312,7 @@ def main():
                 if n.returncode == 0 and nudge:
                     messages.append("⠶ " + nudge.splitlines()[0])
             except Exception:
-                pass  # 준비 넛지 불능도 Stop 을 막지 않는다
+                pass  # 준비 넛지 불능도 Stop을 막지 않는다
             if messages:
                 key = "followup_message" if mode == "cursor" else "systemMessage"
                 sys.stdout.write(json.dumps({key: "\n\n".join(messages)}, ensure_ascii=False) + "\n")

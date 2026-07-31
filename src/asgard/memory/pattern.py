@@ -1,16 +1,16 @@
 """패턴 학습 — 대화 원문에서 오딘에 대한 관측(observation)을 뽑아 개인 위키로 승격한다.
 
-상류 개념은 Honcho 의 deriver 다: peer 의 메시지에서 **explicit**(직접 진술에서 바로
+상류 개념은 Honcho의 deriver 다: peer의 메시지에서 **explicit**(직접 진술에서 바로
 따라나오는 원자 사실)과 **deductive**(그 위의 추론)를 나눠 뽑고, 각 관측은 홀로 읽어도
-말이 되게 자립시킨다. Asgard 로 옮기면서 바꾼 것은 신뢰의 위치다 — 상류는 LLM 산출을
-그대로 저장하지만, 여기서는 노른과 같은 규율을 쓴다: **LLM 은 제안하고, 코드가 판정한다**.
+말이 되게 자립시킨다. Asgard로 옮기면서 바꾼 것은 신뢰의 위치다 — 상류는 LLM 산출을
+그대로 저장하지만, 여기서는 노른과 같은 규율을 쓴다: **LLM은 제안하고, 코드가 판정한다**.
 
 판정의 핵심은 근거 접지(grounding)다. explicit 주장은 인용한 턴 안에 실제로 그 낱말이
-있어야 한다 — 모델이 "오딘은 Rust 를 좋아한다"고 말해도 그 턴에 Rust 가 없으면 기각한다.
-이 검사 하나가 개인 기억에 허구가 눌러앉는 경로를 막는다. deductive 는 접지 대신 근거 턴
-2개 이상을 요구하고 confidence 를 낮춰 잡는다 (근거 수가 confidence 를 정한다 — 노른과 동일).
+있어야 한다 — 모델이 "오딘은 Rust를 좋아한다"고 말해도 그 턴에 Rust가 없으면 기각한다.
+이 검사 하나가 개인 기억에 허구가 눌러앉는 경로를 막는다. deductive는 접지 대신 근거 턴
+2개 이상을 요구하고 confidence를 낮춰 잡는다 (근거 수가 confidence를 정한다 — 노른과 동일).
 
-peer card 는 상류의 같은 이름 개념이다: 확신 높은 explicit 관측만 모은 짧은 정체성 요약
+peer card는 상류의 같은 이름 개념이다: 확신 높은 explicit 관측만 모은 짧은 정체성 요약
 페이지 하나. 주입면이 좁으므로 이게 실제로 매 세션 오딘을 설명하는 문장이 된다.
 """
 
@@ -49,9 +49,9 @@ TURN_EVIDENCE_CHARS = 200  # 턴 근거는 요청/응답 두 쪽이라 절반씩
 # 노른의 금지 캡처를 그대로 쓴다 — 같은 자기중독을 막는 같은 규칙이다.
 _FORBIDDEN_OBSERVATION = _FORBIDDEN_INSIGHT
 
-# 주어가 오딘(사용자)이어야 관측이다. "이 저장소는 uv 를 쓴다"는 프로젝트 사실이지 사람 사실이
+# 주어가 오딘(사용자)이어야 관측이다. "이 저장소는 uv를 쓴다"는 프로젝트 사실이지 사람 사실이
 # 아니다 — 그건 2차 메모리 몫이고, 여기 들어오면 개인 위키가 프로젝트 노트로 변질된다.
-# 한국어는 조사가 주어에 붙는다 ("오딘은"). \b 는 한글끼리 붙은 자리에서 경계를 못 잡으므로
+# 한국어는 조사가 주어에 붙는다 ("오딘은"). \b는 한글끼리 붙은 자리에서 경계를 못 잡으므로
 # 조사 자리를 명시적으로 열어두고, 그 뒤가 공백·구두점일 때만 주어로 인정한다.
 _SUBJECT = re.compile(
     r"^\s*(?:(?:오딘|사용자|유저)[가-힣]{0,3}(?=[\s,.:]|$)|(?:the\s+user|user|odin)\b)",
@@ -134,7 +134,7 @@ def pattern_due(root: str, d: str | None = None) -> tuple[bool, str]:
 def nudge_line(root: str, d: str | None = None) -> str | None:
     """패턴 패스가 due 이고 같은 누적 상태로 아직 말하지 않았을 때만 한 줄. 그 외 None.
 
-    latch 가 없으면 문턱을 넘긴 뒤 매 턴 같은 말을 반복한다 — 넛지는 한 번이어야 신호다."""
+    latch가 없으면 문턱을 넘긴 뒤 매 턴 같은 말을 반복한다 — 넛지는 한 번이어야 신호다."""
     d = ensure_home(d)
     due, reason = pattern_due(root, d)
     if not due:
@@ -145,7 +145,7 @@ def nudge_line(root: str, d: str | None = None) -> str | None:
         return None
     state["nudge_digest"] = digest
     _save_state(d, state)
-    return f"패턴 학습 대기 — {reason}. asgard memory pattern 으로 관측 검토 (--apply 전엔 무변경)"
+    return f"패턴 학습 대기 — {reason}. asgard memory pattern으로 관측 검토 (--apply 전엔 무변경)"
 
 
 # ── 신호 수집 (결정론) ─────────────────────────────────────────────────────────
@@ -176,7 +176,7 @@ def recent_turns(root: str, limit: int = MAX_TURNS) -> list[dict]:
         try:
             payload = json.loads(line)
         except ValueError:
-            continue  # 손상 라인 — seq 는 라인 위치라 계속 전진한다
+            continue  # 손상 라인 — seq는 라인 위치라 계속 전진한다
         request = str(payload.get("request") or "").strip()
         if not request:
             continue
@@ -193,7 +193,7 @@ def recent_turns(root: str, limit: int = MAX_TURNS) -> list[dict]:
 
 
 def signals(root: str, d: str | None = None) -> dict:
-    """LLM 에게 보여줄 증거 카드 — 최근 턴과 이미 아는 것. 쓰기 없음."""
+    """LLM에게 보여줄 증거 카드 — 최근 턴과 이미 아는 것. 쓰기 없음."""
     d = ensure_home(d)
     known: list[str] = []
     for slug in _pages(d):
@@ -211,14 +211,14 @@ def signals(root: str, d: str | None = None) -> dict:
 
 
 def _grounded(text: str, turns: list[dict]) -> float:
-    """주장의 내용어 중 인용 턴에 실제로 있는 비율. 접지 없는 explicit 은 허구다.
+    """주장의 내용어 중 인용 턴에 실제로 있는 비율. 접지 없는 explicit은 허구다.
 
     낱말 대조는 집합 교집합이 아니라 어간 일치다 (`_stem_hit`). 한국어는 조사·어미가 뒤에
-    붙어서 교집합으로 재면 **완벽히 접지된 관측이 0.000 이 나온다** — "금요일에 배포하지
+    붙어서 교집합으로 재면 **완벽히 접지된 관측이 0.000이 나온다** — "금요일에 배포하지
     않는다"와 "금요일에는 배포를 안 하는 게"가 한 낱말도 안 겹친다. 실측(26-07-28,
     한국어 4·영어 1): 접지된 관측 5건 중 3건이 플로어 미달로 오탈락했고, 어간 일치로
-    바꾸니 5/5 통과했다. 허구 5건은 두 방식 모두 통과 0 (교집합 0.000, 어간 최대 0.167)
-    이라 판별력은 오히려 벌어진다 — 플로어를 낮춘 게 아니라 자를 고친 것이다."""
+    바꾸니 5/5 통과했다. 허구 5건은 두 방식 모두 통과 0 (교집합 0.000, 어간 최대
+    0.167)이라 판별력은 오히려 벌어진다 — 플로어를 낮춘 게 아니라 자를 고친 것이다."""
     claim = {word for word in _content_words(text) if not _stopword(word)}
     if not claim:
         return 0.0
@@ -323,7 +323,7 @@ def validate_observations(rows: list[dict], turns: list[dict], d: str) -> tuple[
                 "text": text,
                 "evidence": evidence,
                 "grounding": round(score, 3),
-                # confidence 는 LLM 자기 신고가 아니라 근거 수가 정한다. deductive 는 한 단계 낮춘다.
+                # confidence는 LLM 자기 신고가 아니라 근거 수가 정한다. deductive는 한 단계 낮춘다.
                 "confidence": _confidence(len(evidence) + (0 if kind == "deductive" else 1)),
                 "why": str(row.get("why", ""))[:200],
             }
@@ -361,7 +361,7 @@ def plan_pattern(root: str, d: str | None = None) -> dict:
 
 
 def _title_for(text: str) -> str:
-    """관측 제목 — 첫 절을 짧게. 슬러그 충돌은 _fresh_slug 가 푼다."""
+    """관측 제목 — 첫 절을 짧게. 슬러그 충돌은 _fresh_slug가 푼다."""
     head = re.split(r"[.·—–]|(?:다|요)\s*$", text.strip())[0].strip()
     return (head or text)[:60]
 
@@ -415,7 +415,7 @@ def write_peer_card(d: str | None = None) -> str:
     """오딘 요약 카드 한 장 — kind=user 관측을 모아 재생성한다 (파생물, 언제든 다시 만든다).
 
     reports/ 가 아니라 pages/ 에 산다: 회상·주입 경로가 이 문장들을 실제로 써야 하기 때문이다.
-    대신 예산을 위해 짧게 유지하고, 근거는 [[slug]] 로 가리킨다."""
+    대신 예산을 위해 짧게 유지하고, 근거는 [[slug]]로 가리킨다."""
     d = ensure_home(d)
     rows = peer_card_rows(d)
     if not rows:
@@ -427,7 +427,7 @@ def write_peer_card(d: str | None = None) -> str:
         "kind": "user",
         "created": _today(),
         "updated": _today(),
-        "description": "패턴 학습이 모은 오딘 요약 (파생 — pages/ 의 kind=user 에서 재생성)",
+        "description": "패턴 학습이 모은 오딘 요약 (파생 — pages/ 의 kind=user에서 재생성)",
     }
     from .index import reindex
     from .store import _lock, _page_path
@@ -443,7 +443,7 @@ def write_peer_card(d: str | None = None) -> str:
 
 
 def _write_report(d: str, plan: dict, applied: list[dict], failed: list[dict]) -> str:
-    """패턴 리포트 — reports/ 는 pages/ 밖 (인덱스 예산 무관). vault 에서 바로 읽힌다."""
+    """패턴 리포트 — reports/ 는 pages/ 밖 (인덱스 예산 무관). vault에서 바로 읽힌다."""
     rdir = os.path.join(d, REPORTS_DIR)
     os.makedirs(rdir, exist_ok=True)
     stamp = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d-%H%M")
@@ -533,7 +533,7 @@ def ask(question: str, root: str, d: str | None = None, k: int = 5) -> dict:
 
 
 def lint_note(d: str | None = None) -> list[dict]:
-    """패턴이 만든 페이지에 대한 위생 판정 — 기존 lint 를 그대로 쓴다 (별도 규칙 없음)."""
+    """패턴이 만든 페이지에 대한 위생 판정 — 기존 lint를 그대로 쓴다 (별도 규칙 없음)."""
     return lint(ensure_home(d))
 
 

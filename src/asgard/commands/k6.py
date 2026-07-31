@@ -42,7 +42,7 @@ def _mark(ok: bool) -> Text:
 
 
 def _root() -> str:
-    """이 명령이 볼 프로젝트 — 볼륨의 집. 선 자리가 아니라 `.asgard/` 가 있는 자리다."""
+    """이 명령이 볼 프로젝트 — 볼륨의 집. 선 자리가 아니라 `.asgard/`가 있는 자리다."""
     return str(k6.project_root())
 
 
@@ -59,10 +59,10 @@ def _parse_env(pairs: list[str]) -> dict[str, str]:
     env: dict[str, str] = {}
     for item in pairs or []:
         if "=" not in item:
-            raise ValueError(f"--env 는 KEY=VALUE 형식이다: {item!r}")
+            raise ValueError(f"--env는 KEY=VALUE 형식이다: {item!r}")
         key, value = item.split("=", 1)
         key = key.strip()
-        # 짧은 이름은 시나리오 계약 접두사로 승격 — `--env BANK=x` 가 ASGARD_K6_BANK 로 간다.
+        # 짧은 이름은 시나리오 계약 접두사로 승격 — `--env BANK=x`가 ASGARD_K6_BANK로 간다.
         if key.isupper() and not key.startswith("ASGARD_K6_"):
             env[f"ASGARD_K6_{key}"] = value
         else:
@@ -118,7 +118,7 @@ def run_k6_doctor(json_: bool = False) -> int:
             Text("image", style=theme.SUBTEXT),
             Text(f"{image}  {'(asgard 소유)' if owned else '(공개 이미지 — 태그가 움직인다)'}"),
         )
-    table.add_row(Text("k6", style=theme.SUBTEXT), Text(version or "판을 읽지 못했다 (이미지 pull 이 필요할 수 있다)"))
+    table.add_row(Text("k6", style=theme.SUBTEXT), Text(version or "판을 읽지 못했다 (이미지 pull이 필요할 수 있다)"))
     # 볼륨의 집이 어디인가는 수치의 일부다 — 마운트되는 것은 배송 경로가 아니라 이 프로젝트의 사본이다.
     table.add_row(Text("project", style=theme.SUBTEXT), Text(root))
     table.add_row(Text("kit", style=theme.SUBTEXT), Text(f"{kit}  (배송 정본)"))
@@ -135,7 +135,7 @@ def run_k6_doctor(json_: bool = False) -> int:
     table.add_row(Text("ready", style=theme.SUBTEXT), _mark(bool(state["ready"])))
     _panel("asgard-k6", table, k6.PROJECT)
     if not state["ready"]:
-        print("  docker(또는 podman)를 켜거나 k6 를 설치한 뒤 다시 보라.", file=sys.stderr)
+        print("  docker(또는 podman)를 켜거나 k6를 설치한 뒤 다시 보라.", file=sys.stderr)
         return 1
     if home and runner and runner.containerized and not owned:
         print(f"  이미지를 고정하려면: docker build -f docker/{k6.PROJECT}/Dockerfile -t {k6.OWNED_IMAGE}:local .")
@@ -147,9 +147,9 @@ def run_k6_doctor(json_: bool = False) -> int:
 
 
 def run_k6_sync(force: bool = False, json_: bool = False) -> int:
-    """배송된 키트를 이 프로젝트의 `.asgard/k6/` 에 실체화한다 — 볼륨의 원본을 세우는 자리.
+    """배송된 키트를 이 프로젝트의 `.asgard/k6/`에 실체화한다 — 볼륨의 원본을 세우는 자리.
 
-    `asgard k6 run` 은 매 실행 자동으로 부른다. 이 명령이 따로 있는 이유는 수동 compose
+    `asgard k6 run`은 매 실행 자동으로 부른다. 이 명령이 따로 있는 이유는 수동 compose
     경로 때문이다: 사람이 스택을 붙들고 있으려면 마운트 원본이 먼저 있어야 한다."""
     root = _root()
     try:
@@ -217,7 +217,7 @@ def run_k6_list(json_: bool = False) -> int:
             Text(_headline(scenario.path), style=theme.SUBTEXT),
         )
     _panel("load scenarios", table, f"{len(found)}")
-    print("  프로젝트 시나리오는 .asgard/k6/scenarios/*.js 에 두면 같은 이름으로 잡힌다.")
+    print("  프로젝트 시나리오는 .asgard/k6/scenarios/*.js에 두면 같은 이름으로 잡힌다.")
     return 0
 
 
@@ -259,7 +259,7 @@ def run_k6_run(
         return 2
     runner = k6.resolve_runner(runner_kind)
     if runner is None:
-        print("러너가 없다 — docker/podman 또는 k6 가 필요하다.", file=sys.stderr)
+        print("러너가 없다 — docker/podman 또는 k6가 필요하다.", file=sys.stderr)
         return 2
     kit = _prepare(root)
     if kit is None:
@@ -326,9 +326,9 @@ def _render_report(report: k6.Report, out_dir: str = "") -> None:
     table.add_column(ratio=1, overflow="fold")
     lat = report.latency_ms
     table.add_row(Text("verdict", style=theme.SUBTEXT), _mark(report.ok))
-    # vus 는 초 단위로 표집된다 — 1초 안에 끝난 실행은 표본이 없어 0 이다. 그 자리에 0 을
+    # vus는 초 단위로 표집된다 — 1초 안에 끝난 실행은 표본이 없어 0 이다. 그 자리에 0을
     # 찍으면 "동시 사용자 0명"이라는 없는 사실이 표에 남는다.
-    # `vus_max` 는 k6 가 **할당한** VU 총합이다 — 계단형 시나리오에서는 단계들의 합이라
+    # `vus_max`는 k6가 **할당한** VU 총합이다 — 계단형 시나리오에서는 단계들의 합이라
     # 동시 접속자 수가 아니다. 이름을 그대로 두어 그 차이가 표면에서 안 뭉개지게 한다.
     vus = f"vus_max {report.vus_max}" if report.vus_max else "vus_max 미표집(실행이 1s 미만)"
     table.add_row(
@@ -372,7 +372,7 @@ def _render_report(report: k6.Report, out_dir: str = "") -> None:
 def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: int = 40, vus: int = 4) -> int:
     runner = k6.resolve_runner()
     if runner is None:
-        print("러너가 없다 — docker/podman 또는 k6 가 필요하다.", file=sys.stderr)
+        print("러너가 없다 — docker/podman 또는 k6가 필요하다.", file=sys.stderr)
         return 2
     root = _root()
     kit = _prepare(root)

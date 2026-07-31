@@ -1,20 +1,20 @@
 """정책 티어 → 모델 해석 — 세대가 올라가도 표를 손으로 고치지 않는다.
 
 티어(fast/standard/high/max)는 **모델 계열**의 이름이다: haiku·sonnet·opus·fable. 고정해야 할
-사실은 그 대응뿐이고, 어떤 세대가 최신인지는 provider 가 이미 안다. 이 모듈은 그 사실을 그대로
+사실은 그 대응뿐이고, 어떤 세대가 최신인지는 provider가 이미 안다. 이 모듈은 그 사실을 그대로
 읽어 쓴다 — 정본 우선순위:
 
-  ① claude_cli(모드 = 로컬 claude CLI) → **계열 별칭 그대로**. CLI 가 최신 세대로 해석한다
+  ① claude_cli(모드 = 로컬 claude CLI) → **계열 별칭 그대로**. CLI가 최신 세대로 해석한다
      (26-07-26 확인: opus→claude-opus-5, sonnet→claude-sonnet-5, haiku→claude-haiku-4-5,
      fable→claude-fable-5). 별칭을 쓰면 세대 교체에 이 파일이 개입할 일이 없다.
-  ② anthropic(모드 = API 키) → `asgard doctor`/`sync` 가 갱신해 둔 캐시(모델 카탈로그의 계열별
+  ② anthropic(모드 = API 키) → `asgard doctor`/`sync`가 갱신해 둔 캐시(모델 카탈로그의 계열별
      최신판). 런타임은 네트워크를 타지 않는다 — 매 턴 카탈로그를 묻는 것은 지연·실패 표면이다.
   ③ 그 외 → 커레이션 하한(CURATED). 카탈로그도 캐시도 없을 때만 쓰인다.
 
 티어 매핑이 없는 provider(openai·nvidia·ollama…)는 빈 표를 돌려준다 — 모델 스왑을 하지 않는
 종전 동작 그대로다 (커스텀 ID 존중).
 
-26-07-26 실측 동기: 표가 `high → claude-opus-4-8` 로 박혀 있어 opus-5 세션이 역할 턴마다 조용히
+26-07-26 실측 동기: 표가 `high → claude-opus-4-8`로 박혀 있어 opus-5 세션이 역할 턴마다 조용히
 이전 세대로 내려갔다. 계열 이름만 남기면 그 종류의 드리프트가 구조적으로 생기지 않는다.
 """
 
@@ -49,14 +49,14 @@ def cache_path() -> str:
 def family_tier(model: str) -> str | None:
     """모델 ID/별칭 → 티어. 알려지지 않은 계열은 None (스왑 대상 아님)."""
     name = (model or "").lower()
-    for tier in reversed(TIERS):  # max→fast 순 — 'fable' 이 'sonnet' 보다 먼저 걸리게
+    for tier in reversed(TIERS):  # max→fast 순 — 'fable'이 'sonnet'보다 먼저 걸리게
         if FAMILY[tier] in name:
             return tier
     return None
 
 
 def generation(model: str) -> tuple[int, ...]:
-    """모델 ID 의 세대 키 — 뒤에 붙은 숫자 묶음을 그대로 비교한다.
+    """모델 ID의 세대 키 — 뒤에 붙은 숫자 묶음을 그대로 비교한다.
     `claude-opus-5` (5,) > `claude-opus-4-8` (4,8) > `claude-opus-4` (4,)."""
     return tuple(int(part) for part in re.findall(r"\d+", model or ""))
 
@@ -103,7 +103,7 @@ def _save_cache(provider: str, table: dict) -> None:
 def tiers_for(profile_name: str, api_mode: str) -> dict[str, str]:
     """provider(모드)별 티어 표. 티어 개념이 없는 모드는 빈 표."""
     if api_mode == "claude_cli":
-        return dict(FAMILY)  # 별칭 = 계열의 최신 세대 (CLI 가 해석)
+        return dict(FAMILY)  # 별칭 = 계열의 최신 세대 (CLI가 해석)
     if api_mode != "anthropic":
         return {}
     return _load_cache(profile_name) or dict(CURATED)

@@ -1,19 +1,19 @@
 """토르 게이트 규칙 (중괄호 계열) — Java·Kotlin·C#·TS/JS·Go·Swift·Rust.
 
-Python 만 판정하는 백엔드 게이트는 거의 아무 백엔드도 판정하지 못한다. 그래서 어휘 수준에서
+Python만 판정하는 백엔드 게이트는 거의 아무 백엔드도 판정하지 못한다. 그래서 어휘 수준에서
 증명되는 것을 여기로 옮긴다. 전 언어 공통 셋: **삼킨 예외 · 하드코딩된 시크릿 · SQL 문자열 보간**.
 JVM 에는 둘을 더 옮겼다 — **부동소수 금액**과 **@Transactional 안의 외부 I/O**.
 
-JVM 에서 그 둘이 되는 이유는 어휘가 더 똑똑해서가 아니라 언어가 더 많이 말해 주기 때문이다.
-`double amount` 는 선언에 타입이 붙어 있어 추론이 필요 없고(파이썬보다 오히려 쉽다),
-`@Transactional` 은 경계를 애너테이션으로 못 박아 준다(`with` 를 따라가는 것보다 쉽다).
+JVM에서 그 둘이 되는 이유는 어휘가 더 똑똑해서가 아니라 언어가 더 많이 말해 주기 때문이다.
+`double amount`는 선언에 타입이 붙어 있어 추론이 필요 없고(파이썬보다 오히려 쉽다),
+`@Transactional`은 경계를 애너테이션으로 못 박아 준다(`with`를 따라가는 것보다 쉽다).
 
 타임아웃은 여전히 안 옮겼다 — 클라이언트마다 이름이 다르고, 설정이 호출부가 아니라 빈 정의나
 설정 파일에 있어서 한 문장 안에서 부재를 증명할 수 없다. 못 옮긴 규칙은 미측정으로 정직하게
 보고한다(`thor_gate.unmeasured`).
 
-`craft_lex.scrub` 을 쓰는 곳과 원문을 쓰는 곳이 갈린다. 구조(빈 catch 본문)는 문자열·주석이
-지워진 사본에서 봐야 문자열 안의 `catch {}` 에 속지 않고, 내용(SQL·시크릿)은 원문에서만 보인다.
+`craft_lex.scrub`을 쓰는 곳과 원문을 쓰는 곳이 갈린다. 구조(빈 catch 본문)는 문자열·주석이
+지워진 사본에서 봐야 문자열 안의 `catch {}`에 속지 않고, 내용(SQL·시크릿)은 원문에서만 보인다.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from .craft_lex import language, scrub
 from .craft_rules import Finding, Unit, _owner
 from .thor_rules import _VALUE_SLOT, _secretish, money_name, secret_name, sql_shaped
 
-# 이 파일이 판정하는 언어. Rust 는 catch 가 없고 Go 도 없다 — 시크릿·SQL 만 걸린다.
+# 이 파일이 판정하는 언어. Rust는 catch가 없고 Go도 없다 — 시크릿·SQL만 걸린다.
 JUDGED = frozenset({"java", "kotlin", "csharp", "ts", "go", "swift", "rust"})
 _NO_CATCH = frozenset({"go", "rust"})  # catch 문법 자체가 없다 — 규칙을 발화시키지 않는다
 
@@ -72,7 +72,7 @@ def _catch_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: l
         header = match.group(1)
         # 본문에 주석이 있으면 "의도된 침묵"의 근거가 코드에 남아 있는 것 — 알림으로 낮춘다.
         body = raw[match.start(2) : match.end(2)]
-        # TS/JS 의 catch 는 타입을 못 붙인다 — 전부 넓다. 타입 없는 catch 를 좁다고 읽으면 이 언어
+        # TS/JS의 catch는 타입을 못 붙인다 — 전부 넓다. 타입 없는 catch를 좁다고 읽으면 이 언어
         # 에서는 규칙이 통째로 발화하지 않는다.
         broad = lang == "ts" or bool(_BROAD_TYPE.search(header)) or not header.strip().strip("()")
         blocking = broad and "//" not in body and "/*" not in body
@@ -106,7 +106,7 @@ def _secret_findings(raw: str, rel: str, spans: list[Unit], starts: list[int]) -
                 rel,
                 line,
                 _owner(spans, line),
-                f"{name} 에 비밀처럼 생긴 문자열이 박혀 있다",
+                f"{name}에 비밀처럼 생긴 문자열이 박혀 있다",
                 "환경변수·시크릿 저장소로 옮기고, 이미 커밋됐으면 그 값을 폐기해라",
             )
         )
@@ -136,8 +136,8 @@ def _sql_holes(region: str) -> list[str] | None:
     if not literals:
         return None
     # 구멍을 **지운 뒤**에 질의인지 묻는다. 백틱 문자열은 `${...}` 안의 식까지 통째로 잡히므로,
-    # 원문 그대로 재면 보간식 안의 메서드 이름이 질의어가 된다(실측: `LOCALES.join('|')` 의
-    # `join` 이 절로 읽혀 빌드 스크립트가 막혔다). 질의 본문이 아닌 것은 판정에 넣지 않는다.
+    # 원문 그대로 재면 보간식 안의 메서드 이름이 질의어가 된다(실측: `LOCALES.join('|')`의
+    # `join`이 절로 읽혀 빌드 스크립트가 막혔다). 질의 본문이 아닌 것은 판정에 넣지 않는다.
     # 줄바꿈으로 잇는다 — 리터럴 하나하나가 질의를 열 수 있다. 공백으로 이으면 앞 리터럴의
     # 마지막 낱말이 동사 앞에 서서, 질의를 여는 리터럴이 산문 한가운데로 읽힌다(sql_shaped 계약).
     if not sql_shaped("\n".join(_HOLE_IN_STRING.sub(" ", literal) for literal in literals)):
@@ -179,8 +179,8 @@ def _sql_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: lis
 
 
 # ── ④ 부동소수 금액 (JVM 한정) ───────────────────────────────────────
-# 정적 타입 언어에서는 이게 Python 보다 **더** 잘 보인다 — 선언에 타입이 붙어 있어서 추론이 필요
-# 없다. `double amount` 는 그 자리에서 끝나는 사실이다.
+# 정적 타입 언어에서는 이게 Python보다 **더** 잘 보인다 — 선언에 타입이 붙어 있어서 추론이 필요
+# 없다. `double amount`는 그 자리에서 끝나는 사실이다.
 _JVM_MONEY_DECL = re.compile(
     r"\b(?:double|float|Double|Float|BigDecimal)\s+([A-Za-z_]\w*)\s*[=;,)]"  # Java: double amount
     r"|\b(?:val|var)\s+([A-Za-z_]\w*)\s*:\s*(?:Double|Float)\b"  # Kotlin: val amount: Double
@@ -191,7 +191,7 @@ def _money_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: l
     out: list[Finding] = []
     for match in _JVM_MONEY_DECL.finditer(clean):
         name = match.group(1) or match.group(2) or ""
-        # BigDecimal 은 금액에 **옳은** 타입이다 — 이름만 보고 걸면 정답을 결함으로 만든다.
+        # BigDecimal은 금액에 **옳은** 타입이다 — 이름만 보고 걸면 정답을 결함으로 만든다.
         if "BigDecimal" in match.group(0) or not money_name(name):
             continue
         line = _line_of(starts, match.start())
@@ -201,15 +201,15 @@ def _money_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: l
                 rel,
                 line,
                 _owner(spans, line),
-                f"{name} 을 부동소수로 다룬다 — 0.1 + 0.2 는 0.3 이 아니다",
-                "정수 최소단위(원·센트)나 BigDecimal 로 바꿔라",
+                f"{name}을 부동소수로 다룬다 — 0.1 + 0.2는 0.3이 아니다",
+                "정수 최소단위(원·센트)나 BigDecimal로 바꿔라",
             )
         )
     return out
 
 
 # ── ⑤ 트랜잭션 안의 외부 I/O (JVM 한정) ──────────────────────────────
-# `@Transactional` 은 경계를 **선언**으로 못 박아 준다 — 파이썬의 `with` 보다 찾기 쉽다.
+# `@Transactional`은 경계를 **선언**으로 못 박아 준다 — 파이썬의 `with`보다 찾기 쉽다.
 _TX_ANNOTATION = re.compile(r"@Transactional\b")
 # 커밋 전에 되돌릴 수 없는 부수효과를 내는 호출들. 이름이 곧 의미인 것만 넣는다.
 _JVM_EXTERNAL = re.compile(
@@ -220,9 +220,9 @@ _JVM_EXTERNAL = re.compile(
 
 
 def _match_brace(clean: str, open_at: int) -> int | None:
-    """`open_at` 의 여는 중괄호와 짝인 닫는 중괄호 위치. 안 닫히면 None.
+    """`open_at`의 여는 중괄호와 짝인 닫는 중괄호 위치. 안 닫히면 None.
 
-    `_body_after` 에서 들어냈다 — 본문 **시작**을 찾는 일과 그 본문의 **끝**을 맞추는 일은
+    `_body_after`에서 들어냈다 — 본문 **시작**을 찾는 일과 그 본문의 **끝**을 맞추는 일은
     서로 다른 문제이고, 한 함수에 두면 괄호 깊이 변수가 둘(`depth`·`level`) 살아 있는 자리가
     생긴다. 이름이 없으면 그 둘을 헷갈리는 순간을 아무도 못 잡는다.
     """
@@ -240,8 +240,8 @@ def _match_brace(clean: str, open_at: int) -> int | None:
 def _body_after(clean: str, start: int) -> tuple[int, int] | None:
     """애너테이션 뒤에 오는 메서드 본문의 (여는 중괄호, 닫는 중괄호). 못 맞추면 None.
 
-    `craft_lex` 의 단위 추출에 기대지 않고 직접 맞춘다. 그쪽은 `record` 를 자바 record 타입 키워드로
-    읽어서 `void record(...)` 를 단위로 잡지 못하는데(실전 검증에서 발견), 단위를 못 잡았다는 이유로
+    `craft_lex`의 단위 추출에 기대지 않고 직접 맞춘다. 그쪽은 `record`를 자바 record 타입 키워드로
+    읽어서 `void record(...)`를 단위로 잡지 못하는데(실전 검증에서 발견), 단위를 못 잡았다는 이유로
     **정확성 규칙이 조용히 꺼지면** 안 된다. 침묵이 곧 통과가 되는 구조는 게이트가 아니다.
     """
     depth = 0
@@ -277,7 +277,7 @@ def _tx_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: list
                 line,
                 _owner(spans, line),
                 "@Transactional 안에서 외부 호출 — 커밋 전 부수효과는 롤백이 되돌리지 못한다",
-                "트랜잭션 밖으로 빼거나 outbox 로 옮겨라",
+                "트랜잭션 밖으로 빼거나 outbox로 옮겨라",
             )
         )
     return out

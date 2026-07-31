@@ -1,7 +1,7 @@
-"""Asgard 공통 법규 (Canon) 13개조. 본문은 이 파일에만 있다 — agents_md 가 AGENTS.md 로
-렌더하고, .claude/CLAUDE.md 와 .cursor rules 는 그 브릿지다.
+"""Asgard 공통 법규 (Canon) 13개조. 본문은 이 파일에만 있다 — agents_md가 AGENTS.md로
+렌더하고, .claude/CLAUDE.md와 .cursor rules는 그 브릿지다.
 
-훅과 역할 md 는 조항을 번호로 참조한다 (git-guard=3·6, secret-guard=4, unattended-context=8,
+훅과 역할 md는 조항을 번호로 참조한다 (git-guard=3·6, secret-guard=4, unattended-context=8,
 failure-tracker=9, verifier-gate=10). 번호를 다시 매기면 그 참조가 전부 어긋나므로, 조항을
 빼면 번호는 결번으로 두고 새 조항은 끝에 붙인다."""
 

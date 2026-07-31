@@ -35,16 +35,16 @@ from .store import (
 from .temporal import ground_event_date
 
 STALE_DAYS = 90  # lint 부패 후보 기준 — 90일 무갱신 + 사용 0회
-# ingest 병합 문턱 — containment(포함 계수)로 판정: Jaccard 는 길이 차에 취약해 "같은 사실의
+# ingest 병합 문턱 — containment(포함 계수)로 판정: Jaccard는 길이 차에 취약해 "같은 사실의
 # 패러프레이즈+추가 상세"를 놓친다 (실측 26-07-15: 병합쌍 cont 0.56/0.61 vs 생성쌍 0.00/0.02).
 MERGE_CONTAINMENT = 0.45
-DUP_JACCARD = 0.60  # lint 중복 의심 문턱 — 대칭 비교라 Jaccard 가 맞다
+DUP_JACCARD = 0.60  # lint 중복 의심 문턱 — 대칭 비교라 Jaccard가 맞다
 
 # ── 쓰기 (add / ingest) — 승인은 CLI 계층, 여기는 기계 검증 + 락 ───────────────────
 
 
 def _fresh_slug(d: str, base: str, seed: str) -> str:
-    """충돌 없는 slug — 이미 있으면 seed 로 접미사를 붙이며 빈 자리까지 반복 (P2, 3번째 충돌 방지)."""
+    """충돌 없는 slug — 이미 있으면 seed로 접미사를 붙이며 빈 자리까지 반복 (P2, 3번째 충돌 방지)."""
     slug, i = base, 0
     while os.path.exists(_page_path(d, slug)):
         i += 1
@@ -59,10 +59,10 @@ def add(
     links: str = "",
     d: str | None = None,
 ) -> tuple[str, str]:
-    """페이지 생성. 반환 = (slug, path). 스캔 위반·잘못된 kind 는 ValueError.
+    """페이지 생성. 반환 = (slug, path). 스캔 위반·잘못된 kind는 ValueError.
 
     예산은 저장을 막지 않는다 — 주입면 상한은 "프롬프트에 몇 자 실을지"의 문제고, 지식은
-    pages/ 에 남는다. 카탈로그가 꽉 찬 건 lint 가 칸별로 일러준다."""
+    pages/ 에 남는다. 카탈로그가 꽉 찬 건 lint가 칸별로 일러준다."""
     d = ensure_home(d)
     if not text.strip():
         raise ValueError("empty memory text")
@@ -252,7 +252,7 @@ def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
     """계획이 지목한 같은-슬롯 중복 페이지를 접는다 (호출자가 _lock 보유). 반환 = 접힌 slug.
 
     승인 시점 리비전이 어긋난 페이지는 지우지 않고 남긴다 — 승인 범위 밖의 변경을 삭제로
-    덮는 것보다 모순 하나를 lint 로 넘기는 편이 낫다."""
+    덮는 것보다 모순 하나를 lint로 넘기는 편이 낫다."""
     absorbed: list[str] = []
     for entry in plan.get("absorb") or []:
         slug, rev = (list(entry) + [""])[:2] if isinstance(entry, (list, tuple)) else (entry, "")
@@ -276,7 +276,7 @@ def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
 def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict | None = None) -> tuple[str, str]:
     """자가 학습 쓰기 — plan 대로 생성·병합·선호 갱신·동일 사실 no-op. 반환 = (action, slug).
 
-    plan 을 넘기면(CLI 승인 게이트가 이미 계산·표시한 계획) 재계산하지 않는다 (TOCTOU 차단, P1):
+    plan을 넘기면(CLI 승인 게이트가 이미 계산·표시한 계획) 재계산하지 않는다 (TOCTOU 차단, P1):
     "승인한 merge 대상"과 "실제 merge 대상"이 갈라지지 않는다."""
     d = ensure_home(d)
     if not text.strip():
@@ -304,7 +304,7 @@ def ingest(text: str, kind: str = DEFAULT_KIND, d: str | None = None, plan: dict
             meta, body = _read(d, slug) or ({}, "")
             # crash가 정본 쓰기 후 approval finish 전에 발생했다면 stale rev보다 idempotence가 우선이다.
             known = _fact_present(body, text)
-            # 승인된 plan 은 리비전까지 대조 (2차 리뷰 ⑤) — 승인과 실행 사이 대상이 바뀌었으면 중단
+            # 승인된 plan은 리비전까지 대조 (2차 리뷰 ⑤) — 승인과 실행 사이 대상이 바뀌었으면 중단
             if not known and approved and plan.get("rev") and plan["rev"] != _rev(d, slug):
                 raise ValueError(f"stale plan: page '{slug}' changed since approval — re-run ingest")
             # 같은 슬롯 중복 접기는 정본 본문과 독립이다: 사실이 이미 있어도 모순 페이지는 남아 있다
@@ -375,7 +375,7 @@ def remove(slug: str, d: str | None = None) -> bool:
 
 
 def merge(src: str, dst: str, d: str | None = None) -> str:
-    """src 를 dst 에 흡수하고 src 삭제 (P2, 예산 초과 수동 통합). 반환 = dst slug."""
+    """src를 dst에 흡수하고 src 삭제 (P2, 예산 초과 수동 통합). 반환 = dst slug."""
     d = d or memory_dir()
     if not (valid_slug(src) and valid_slug(dst)):
         raise ValueError("invalid slug")
@@ -520,10 +520,10 @@ def lint(d: str | None = None) -> list[dict]:
             )
     except Exception:
         findings.append({"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"})
-    # 시맨틱 파생 인덱스가 정본을 덮는가. index.md 의 낡음은 이미 보는데 벡터의 낡음은 안 봤다 —
-    # 그런데 이쪽이 더 조용하다: index.md 가 낡으면 목차가 틀리지만, 벡터가 없으면 검색 경로
-    # 하나가 통째로 사라지면서 상태 표면은 계속 "on" 이라고 말한다 (실측 26-07-29).
-    # 임베더를 로드하지 않는 판정이라 lint 가 무거워지지 않는다.
+    # 시맨틱 파생 인덱스가 정본을 덮는가. index.md의 낡음은 이미 보는데 벡터의 낡음은 안 봤다 —
+    # 그런데 이쪽이 더 조용하다: index.md가 낡으면 목차가 틀리지만, 벡터가 없으면 검색 경로
+    # 하나가 통째로 사라지면서 상태 표면은 계속 "on"이라고 말한다 (실측 26-07-29).
+    # 임베더를 로드하지 않는 판정이라 lint가 무거워지지 않는다.
     with contextlib.suppress(Exception):
         from .. import memory_semantic as sem
 

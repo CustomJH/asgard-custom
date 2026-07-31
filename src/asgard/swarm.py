@@ -10,17 +10,17 @@
         "roles":   {"worker": "freyja-ui", "verifier": "loki-qa"}   역할별 배치 = 스웜
     }}
 
-`roles` 가 스웜을 만든다. Trinity 의 thinker·worker·verifier 가 서로 다른 에이전트로 돌면
-셋은 각자의 1차 기억을 갖는다 — Verifier 가 Worker 의 일지를 못 보므로 "내가 방금 그렇게
+`roles`가 스웜을 만든다. Trinity의 thinker·worker·verifier가 서로 다른 에이전트로 돌면
+셋은 각자의 1차 기억을 갖는다 — Verifier가 Worker의 일지를 못 보므로 "내가 방금 그렇게
 했으니 맞다"는 자기 확증이 구조적으로 불가능해진다. 역할 분리가 프롬프트 문구가 아니라
 파일시스템 경계가 되는 자리다.
 
-`[trinity.<role>]`(providers.py) 와 축이 다르다 — 저쪽은 **어느 모델이** 그 역할을 도느냐,
+`[trinity.<role>]`(providers.py)와 축이 다르다 — 저쪽은 **어느 모델이** 그 역할을 도느냐,
 이쪽은 **어느 에이전트가** 그 역할을 도느냐(정체성·기억·스킬)다. 둘은 곱해진다: 에이전트가
-자기 홈의 `[provider]`/`[trinity]` 를 갖고 있으면 그게 그 역할 턴의 모델을 정한다.
+자기 홈의 `[provider]`/`[trinity]`를 갖고 있으면 그게 그 역할 턴의 모델을 정한다.
 
 fail-open: 프로젝트 설정은 리포에 실려 다른 기계로 간다. 거기 없는 에이전트 이름이 적혀 있어도
-**세션을 막지 않는다** — 기본으로 떨어지고, 무엇이 없어서 떨어졌는지는 `missing()` 과 doctor 가
+**세션을 막지 않는다** — 기본으로 떨어지고, 무엇이 없어서 떨어졌는지는 `missing()`과 doctor가
 말한다. 협업자의 기계에 내 에이전트가 없다고 그 사람 작업이 멈추면 이 계층은 순손실이다.
 """
 
@@ -49,10 +49,10 @@ def _project(root: str) -> dict:
 def _name(value: object) -> str:
     """설정에서 읽은 에이전트 이름 정규화 — 미선언·형식 불량은 빈 문자열.
 
-    빈 값을 `normalize` 에 그냥 넘기면 안 된다: 거기서는 빈 입력이 DEFAULT 로 접히므로
+    빈 값을 `normalize`에 그냥 넘기면 안 된다: 거기서는 빈 입력이 DEFAULT로 접히므로
     "선언 안 함"과 "명시적으로 기본 에이전트를 지정"이 구분되지 않는다. 그러면 배치가 하나도
-    없는 프로젝트가 `default` 를 강제 선언한 것처럼 읽혀 루트의 활성 에이전트를 덮어쓴다
-    (`asgard agent use loki-qa` 를 해도 프로젝트 안에서만 기본으로 돌아가는 유령 결함)."""
+    없는 프로젝트가 `default`를 강제 선언한 것처럼 읽혀 루트의 활성 에이전트를 덮어쓴다
+    (`asgard agent use loki-qa`를 해도 프로젝트 안에서만 기본으로 돌아가는 유령 결함)."""
     text = str(value or "").strip()
     if not text:
         return ""
@@ -79,7 +79,7 @@ def resolve(root: str, *, mode: str | None = None, role: str | None = None) -> s
     """이 자리에서 일할 에이전트 id — 좁은 선언이 넓은 선언을 이긴다.
 
     사다리: 역할 배치 > 모드 고정 > 프로젝트 대표 > 루트 활성(끈끈한 기본) > default.
-    명시 env/`--agent` 는 이 함수 위에 있다 (profiles.active() 가 이미 반영)."""
+    명시 env/`--agent`는 이 함수 위에 있다 (profiles.active()가 이미 반영)."""
     b = binding(root)
     if role:
         picked = b["roles"].get(role)
@@ -99,7 +99,7 @@ def resolve(root: str, *, mode: str | None = None, role: str | None = None) -> s
 
 
 def missing(root: str) -> list[dict]:
-    """선언됐지만 이 기계에 없는 에이전트 — [{scope, key, agent}]. doctor 가 읽는다.
+    """선언됐지만 이 기계에 없는 에이전트 — [{scope, key, agent}]. doctor가 읽는다.
 
     빈 목록 = 선언이 전부 살아 있다. 항목이 있으면 그 자리는 조용히 기본으로 떨어지고 있다."""
     b = binding(root)
@@ -138,11 +138,11 @@ def bind(
     사람이 보고 있으므로 오타를 그때 잡는 편이 낫다 (조용히 기본으로 도는 걸 나중에 발견하느니)."""
     canon = validate(agent)
     if canon != DEFAULT and not exists(canon):
-        raise FileNotFoundError(f"에이전트 {canon!r} 없음 — `asgard agent create {canon}` 로 먼저 만들어라")
+        raise FileNotFoundError(f"에이전트 {canon!r} 없음 — `asgard agent create {canon}`로 먼저 만들어라")
     if mode and role:
-        raise ValueError("--mode 와 --role 은 함께 쓸 수 없다 (역할이 모드보다 좁다 — 하나만 골라라)")
+        raise ValueError("--mode와 --role은 함께 쓸 수 없다 (역할이 모드보다 좁다 — 하나만 골라라)")
     if mode and mode not in MODES:
-        raise ValueError(f"mode 는 {'/'.join(MODES)} 중 하나")
+        raise ValueError(f"mode는 {'/'.join(MODES)} 중 하나")
 
     raw = _project(root)
     if role:
@@ -184,7 +184,7 @@ def _save(root: str, raw: dict) -> str:
 def scoped_for(root: str, *, mode: str | None = None, role: str | None = None):
     """`with scoped_for(root, role="worker"): ...` — 그 턴 동안만 그 에이전트의 홈.
 
-    os.environ 이 아니라 contextvar 를 쓴다 (profiles.scoped) — 한 프로세스가 역할별로 다른
+    os.environ이 아니라 contextvar를 쓴다 (profiles.scoped) — 한 프로세스가 역할별로 다른
     에이전트를 병렬로 돌릴 때 환경변수는 서로를 덮어쓴다."""
     from .profiles import scoped
 
@@ -192,7 +192,7 @@ def scoped_for(root: str, *, mode: str | None = None, role: str | None = None):
 
 
 def describe(root: str) -> dict:
-    """사람·doctor·CLI 가 함께 읽는 요약 — 선언 + 실효 + 결손 한 판."""
+    """사람·doctor·CLI가 함께 읽는 요약 — 선언 + 실효 + 결손 한 판."""
     b = binding(root)
     return {
         "binding": b,

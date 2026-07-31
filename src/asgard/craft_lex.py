@@ -1,12 +1,12 @@
 """중괄호 계열 언어의 단위 추출 — 어휘 수준. C·C++·Java·Kotlin·Go·Rust·TS/JS·C#·Swift.
 
-파서를 붙이지 않은 이유: 이 저장소는 언어별 손수 추출기로 지도를 만들어 왔고(map_graph 의
+파서를 붙이지 않은 이유: 이 저장소는 언어별 손수 추출기로 지도를 만들어 왔고(map_graph의
 extract_tsjs·extract_java·resolve_jvm), 언어마다 문법 의존을 하나씩 더하면 설치 무게가 언어 수만큼
 늘어난다. 여기서 필요한 것은 완전한 구문 트리가 아니라 **함수의 경계·길이·중첩** 셋뿐이고, 그건
 중괄호와 키워드만으로 충분히 잰다.
 
 대신 정직해야 할 한계가 있다. 어휘 분석은 매크로로 만든 제어 구조, 중괄호 없는 한 줄 분기,
-템플릿 안의 부등호, 언어별 특수 문법(Go 의 함수 리터럴, Rust 의 매크로 본문)을 정확히 못 읽는다.
+템플릿 안의 부등호, 언어별 특수 문법(Go의 함수 리터럴, Rust의 매크로 본문)을 정확히 못 읽는다.
 그래서 이 모듈의 계약은 **못 읽은 것을 읽은 척하지 않는다** 하나다 — 신뢰할 수 없는 파일은 단위
 없음(미판정)으로 돌려보내고, 애매한 것은 세지 않는다. 판정을 부풀리면 게이트가 꺼진다.
 
@@ -45,14 +45,14 @@ C_FAMILY = frozenset({"c", "cpp"})
 PAREN_HEADER_LANGS = frozenset({"c", "cpp", "java", "csharp", "ts"})
 
 # 블록을 여는 제어 키워드 — 중첩 깊이는 이것으로 센다. 중괄호 깊이를 그대로 쓰면 배열 초기화와
-# 구조체 리터럴이 중첩으로 잡혀 Python 쪽(_depth 는 분기 구문만 센다)과 자가 달라진다.
+# 구조체 리터럴이 중첩으로 잡혀 Python 쪽(_depth는 분기 구문만 센다)과 자가 달라진다.
 _CONTROL = frozenset(
     {
         "if", "else", "for", "while", "do", "switch", "try", "catch", "finally",
         "foreach", "loop", "match", "when", "unless", "guard", "defer", "select",
     }
 )  # fmt: skip
-# 함수처럼 보이지만 아닌 것 — `if (x) {` 를 함수로 읽으면 파일 하나가 통째로 어긋난다.
+# 함수처럼 보이지만 아닌 것 — `if (x) {`를 함수로 읽으면 파일 하나가 통째로 어긋난다.
 _NOT_A_NAME = _CONTROL | frozenset({"return", "sizeof", "new", "delete", "throw", "await", "yield", "typeof"})
 # 여는 중괄호 앞에 오면 함수 본문이 아니라 타입 본문인 것.
 _TYPE_KEYWORDS = frozenset(
@@ -178,12 +178,12 @@ def _blank_string(chars: list[str], start: int, quote: str) -> int:
     return i
 
 
-# 정규식 리터럴 뒤에 값이 올 수 없는 토큰들 — 이것들 다음의 `/` 는 나눗셈이다.
+# 정규식 리터럴 뒤에 값이 올 수 없는 토큰들 — 이것들 다음의 `/`는 나눗셈이다.
 _VALUE_END = frozenset(")]}")
 
 
 def _regex_position(chars: list[str], i: int) -> bool:
-    """이 `/` 가 정규식의 시작인가. 앞의 유효 문자가 값의 끝이면 나눗셈이다."""
+    """이 `/`가 정규식의 시작인가. 앞의 유효 문자가 값의 끝이면 나눗셈이다."""
     j = i - 1
     while j >= 0 and chars[j].isspace():
         j -= 1
@@ -194,7 +194,7 @@ def _regex_position(chars: list[str], i: int) -> bool:
 
 
 def _blank_regex(chars: list[str], start: int) -> int:
-    """정규식 본문을 공백으로. 문자 클래스 안의 `/` 는 종료가 아니다.
+    """정규식 본문을 공백으로. 문자 클래스 안의 `/`는 종료가 아니다.
 
     이걸 안 하면 `/[",\\n]/` 안의 따옴표가 문자열 시작으로 읽혀 뒤따르는 중괄호를 통째로
     삼킨다 (실측: 실코퍼스에서 남은 미판정 45건 대부분의 원인).
@@ -236,7 +236,7 @@ def _signature_name(text: str, brace: int) -> tuple[str, int] | None:
     """여는 중괄호가 함수 본문이면 (이름, 서명 시작 위치). 아니면 None.
 
     판정은 하나뿐이다 — 중괄호 앞에 닫는 괄호가 있고, 그 괄호쌍 앞의 식별자가 제어 키워드가
-    아닐 것. Go 의 `func f() error {`, Rust 의 `fn f() -> T {`, C++ 의 `T f() const {` 처럼
+    아닐 것. Go의 `func f() error {`, Rust의 `fn f() -> T {`, C++ 의 `T f() const {`처럼
     괄호와 중괄호 사이에 붙는 것들은 세지 않고 지나간다.
     """
     i = brace - 1
@@ -259,7 +259,7 @@ def _signature_name(text: str, brace: int) -> tuple[str, int] | None:
     if not name or name in _NOT_A_NAME or name in _TYPE_KEYWORDS:
         return None
     if start > 0 and text[start - 1] == "@":
-        return None  # `@SuppressWarnings("x")` 는 호출처럼 생겼지만 애너테이션이다
+        return None  # `@SuppressWarnings("x")`는 호출처럼 생겼지만 애너테이션이다
     if _opens_type(text, brace):
         # 타입 선언 앞에 붙은 애너테이션의 괄호가 이 중괄호의 서명으로 읽힌다. 그대로 두면
         # 클래스 본문 전체가 함수 하나로 잡혀 2,487행짜리 가짜 단위가 생긴다(실측 결함).
@@ -290,7 +290,7 @@ def _functions(body: str):
     타입 본문(class·struct·namespace·impl) 안쪽도 판정 대상이다. 최상단만 보면 Java·C#·
     TS·Kotlin·C++ 의 메서드가 통째로 안 잡힌다 — 그 언어들에서 함수는 대부분 타입 안에 산다.
     """
-    frames: list[str] = []  # "type" 만 쌓여 있는 동안에만 함수 서명을 찾는다
+    frames: list[str] = []  # "type"만 쌓여 있는 동안에만 함수 서명을 찾는다
     i = 0
     while i < len(body):
         ch = body[i]
@@ -351,9 +351,9 @@ def _depth(body: str, open_at: int, close_at: int, lang: str) -> int:
             if stack:
                 stack.pop()
         elif token == ";" and parens == 0 and lang in PAREN_HEADER_LANGS:
-            # 괄호 **밖의** 세미콜론만 절을 끝낸다. `for (i = 0; i < n; i++)` 의 헤더 세미콜론이
-            # 여기서 걸리면 for 가 연 블록이 중첩으로 안 세어져 깊이가 하나씩 낮아진다. 헤더에
-            # 괄호를 안 쓰는 언어(Go 의 3절 for)는 이 규칙 자체가 반대로 작동하므로 제외한다.
+            # 괄호 **밖의** 세미콜론만 절을 끝낸다. `for (i = 0; i < n; i++)`의 헤더 세미콜론이
+            # 여기서 걸리면 for가 연 블록이 중첩으로 안 세어져 깊이가 하나씩 낮아진다. 헤더에
+            # 괄호를 안 쓰는 언어(Go의 3절 for)는 이 규칙 자체가 반대로 작동하므로 제외한다.
             pending = False
     return best
 

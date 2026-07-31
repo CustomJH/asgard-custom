@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Asgard lagom-activate — SessionStart 모드 초기화 + 룰 주입.
 #
-# 배선 매처: startup|resume|clear|compact — compact/clear 는 컨텍스트 소실 지점이라 재주입이
+# 배선 매처: startup|resume|clear|compact — compact/clear는 컨텍스트 소실 지점이라 재주입이
 # 필수다. 동작: 세션 런타임 상태(.asgard/lagom-mode.json)가 있으면 그 값(세션 중 전환 보존),
 # 없으면 영속 기본값(LAGOM_MODE env > 프로젝트 [lagom].mode > 글로벌 > full)을 기록한다.
-# off = 무주입 즉시 종료. 활성 = 훅 옆 lagom-canon.md 를 모드 필터해 stdout 으로 주입
-# (SessionStart stdout + exit 0 = 컨텍스트 주입, unattended-context 와 동일 스키마).
+# off = 무주입 즉시 종료. 활성 = 훅 옆 lagom-canon.md를 모드 필터해 stdout으로 주입
+# (SessionStart stdout + exit 0 = 컨텍스트 주입, unattended-context와 동일 스키마).
 # fail-open: 페이로드 파싱 실패는 cwd 폴백으로 주입을 계속하고(룰 누락이 더 큰 실패),
 # 캐논 부재 등 그 밖의 오류는 무주입 통과 — 어느 쪽도 세션을 막지 않는다 (항상 exit 0).
 import json
@@ -14,25 +14,25 @@ import re
 import sys
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
 
 MODES = ("off", "lite", "full")
 
-# 모드 마커 필터 — templates/lagom.py render_lagom 과 동일 유지 (단일 출처 원칙)
+# 모드 마커 필터 — templates/lagom.py render_lagom과 동일 유지 (단일 출처 원칙)
 _ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
 _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
 
 def _read_text(path):
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -71,8 +71,8 @@ def write_state(root, mode):
 
 
 def config_mode(root):
-    """영속 기본값 — env > 프로젝트 > 글로벌 > full. asgard/lagom.py default_mode 와 동일 유지.
-    tomllib 은 3.11+ 라 정규식 파싱 (config 는 save_config_section 이 쓰는 단순 TOML)."""
+    """영속 기본값 — env > 프로젝트 > 글로벌 > full. asgard/lagom.py default_mode와 동일 유지.
+    tomllib은 3.11+ 라 정규식 파싱 (config는 save_config_section이 쓰는 단순 TOML)."""
     m = norm(os.environ.get("LAGOM_MODE"))
     if m:
         return m
@@ -81,7 +81,7 @@ def config_mode(root):
         (os.path.join(root, ".asgard", "asgard-setting-project.json"), os.path.join(root, ".asgard", "config.toml")),
         (os.path.join(home, ".asgard", "asgard-setting-global.json"), os.path.join(home, ".asgard", "config.toml")),
     ):
-        # 신규 JSON 설정이 그 스코프의 정본 — 있으면 구 TOML 미참조 (settings.py 와 동일 유지)
+        # 신규 JSON 설정이 그 스코프의 정본 — 있으면 구 TOML 미참조 (settings.py와 동일 유지)
         cfg = None
         try:
             with open(scope_json, encoding="utf-8") as f:
@@ -107,7 +107,7 @@ def config_mode(root):
 
 
 def render(canon, mode):
-    """모드 필터 — 마커 행은 해당 모드만 생존. render_lagom 과 동일 유지 (단일 출처 원칙)."""
+    """모드 필터 — 마커 행은 해당 모드만 생존. render_lagom과 동일 유지 (단일 출처 원칙)."""
     out = []
     for line in canon.splitlines():
         m = _ROW.match(line) or _EXAMPLE.match(line)
@@ -126,7 +126,7 @@ def client():
 
 
 def emit(current_client, text):
-    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate 와 동일 유지 (단일 규약).
+    """주입 스키마는 클라이언트마다 다르다 — map-activate·memory-activate와 동일 유지 (단일 규약).
     Cursor=additional_context, Claude Code/Codex=SessionStart 평문 stdout."""
     if current_client == "cursor":
         sys.stdout.write(json.dumps({"additional_context": text}, ensure_ascii=False) + "\n")
@@ -154,7 +154,7 @@ def main():
             except Exception:
                 pass
         if mode == "off":
-            sys.exit(0)  # 무주입 — off 는 흔적도 없어야 한다 (토큰 회귀 없음)
+            sys.exit(0)  # 무주입 — off는 흔적도 없어야 한다 (토큰 회귀 없음)
         canon = _read_text(os.path.join(os.path.dirname(os.path.abspath(__file__)), "lagom-canon.md"))
         emit(
             client(),

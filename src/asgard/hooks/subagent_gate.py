@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 # Asgard subagent-gate — Trinity 역할 서브에이전트의 로그 규율 강제 (Claude Code SubagentStop).
 #
-# 모드 B 의 유일한 프롬프트-의존 축은 "역할이 자기 이벤트를 quest 로그에 기록한다"는 계약이다
+# 모드 B의 유일한 프롬프트-의존 축은 "역할이 자기 이벤트를 quest 로그에 기록한다"는 계약이다
 # (프롬프트 준수는 가정이 아니라 측정 대상). 이 훅은 그 계약을 코드로 바꾼다 —
-# asgard-thinker/worker/verifier 서브에이전트가 활성 quest 에 자기 역할 이벤트를 기록하지 않고
+# asgard-thinker/worker/verifier 서브에이전트가 활성 quest에 자기 역할 이벤트를 기록하지 않고
 # 종료하면 1회 차단하고 정확한 append 명령을 지시한다 (증거-영수증 게이트).
 #
-# 차단 알고리즘 (deterministic 만 block, 그 외 전부 allow — fail-open 유지):
+# 차단 알고리즘 (deterministic만 block, 그 외 전부 allow — fail-open 유지):
 #   활성 quest 없음 / 파싱 실패 / 미지의 agent_type → allow (DIRECT·비-Trinity 디스패치 존중)
 #   thinker  종료: 마지막 verify 이후 plan 이벤트 없음   → block (재계획 포함)
 #   worker   종료: 마지막 verify 이후 work 이벤트 없음   → block
@@ -14,7 +14,7 @@
 #   verifier PASS 인데 성공 명령 증거 없음               → block (조기 피드백 — Stop 게이트 전에)
 #
 # 왜 역할당 2회 상한인가: SubagentStop block 루프는 서브에이전트를 인질로 잡는다. 같은 세션에서
-# 같은 역할을 2회 차단하면 3번째는 경고와 함께 통과 — 최종 담보는 어차피 Stop 의 verifier-gate
+# 같은 역할을 2회 차단하면 3번째는 경고와 함께 통과 — 최종 담보는 어차피 Stop의 verifier-gate
 # (diff-hash 물리 대조)다. 이 훅은 조기 교정 장치지 최후 방벽이 아니다.
 from __future__ import annotations
 
@@ -25,10 +25,10 @@ import sys
 import time
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -46,9 +46,9 @@ ANCHOR = {"plan": "verify", "work": "verify", "verify": "work"}
 
 
 def _read_text(path: str) -> str:
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py 와 동일 유지.
+    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
-    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()` 는 CPython 의 참조 계수에 기대
+    핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
     with open(path, encoding="utf-8") as handle:
         return handle.read()
@@ -60,13 +60,13 @@ def _load_json(path: str):
 
 
 def trivial_evidence(cmd):
-    """quest_log.py 의 trivial_evidence 와 동일 유지 (단일 출처 원칙)."""
+    """quest_log.py의 trivial_evidence와 동일 유지 (단일 출처 원칙)."""
     c = " ".join(str(cmd).split())
     return c in ("true", ":", "exit 0", "echo") or c.startswith("echo ")
 
 
 def pass_evidence(rec):
-    """verifier_gate.py 의 pass_evidence 와 동일 유지 (단일 출처 원칙)."""
+    """verifier_gate.py의 pass_evidence와 동일 유지 (단일 출처 원칙)."""
     if (rec.get("baseline") or {}).get("state") == "green":
         return True
     return any(
@@ -265,7 +265,7 @@ def record_worker_dispatch(root: str, qid: str, sid: str, tool_use_id: str, tool
 
 def read_quest_events(root: str, qid: str) -> tuple[list[dict], bool]:
     """(이벤트, 읽기 성공 여부). 둘째 값을 버리면 안 된다 — **읽기 실패와 빈 로그는 다른 사실**이고,
-    섞는 순간 fail-open 게이트가 fail-closed 로 뒤집힌다(로그를 못 읽었을 뿐인데 차단)."""
+    섞는 순간 fail-open 게이트가 fail-closed로 뒤집힌다(로그를 못 읽었을 뿐인데 차단)."""
     events: list[dict] = []
     try:
         with open(os.path.join(root, ".asgard", "quest", qid + ".jsonl"), encoding="utf-8") as handle:
@@ -305,7 +305,7 @@ def _norm_path(path) -> str:
 
 
 def verifiable_units(tickets: list[dict]) -> list[str]:
-    """quest_log.py 의 verifiable_units 와 동일 유지 (단일 출처 원칙, TestPolicyMirror 로 정합 확인)."""
+    """quest_log.py의 verifiable_units와 동일 유지 (단일 출처 원칙, TestPolicyMirror로 정합 확인)."""
     open_files: set[str] = set()
     for ticket in tickets:
         if ticket.get("status") in ("todo", "in_progress"):
@@ -321,8 +321,8 @@ def verifiable_units(tickets: list[dict]) -> list[str]:
 
 
 def unit_marker(tool_input: dict) -> str | None:
-    """Verifier 조기(파이프라인) 디스패치의 [ASGARD_UNIT:<id>] 마커 — record_worker_dispatch 와
-    동일한 파싱 규칙(같은 unit 이 같은 문자열 키로 귀결)을 독립적으로 미러링한다."""
+    """Verifier 조기(파이프라인) 디스패치의 [ASGARD_UNIT:<id>] 마커 — record_worker_dispatch와
+    동일한 파싱 규칙(같은 unit이 같은 문자열 키로 귀결)을 독립적으로 미러링한다."""
     prompt = str(
         tool_input.get("prompt")
         or tool_input.get("task")
@@ -467,7 +467,7 @@ def main():
                 unit = unit_marker(tool_input)
                 if unit is not None:
                     # 유닛 단위 조기(파이프라인) 검증 — 전 티켓 done 배리어와 동시성 감사
-                    # (physical_worker_problem) 는 웨이브 전체용이라 여기선 전제가 아니다.
+                    # (physical_worker_problem)는 웨이브 전체용이라 여기선 전제가 아니다.
                     if unit not in verifiable_units(list(tickets.values())):
                         deny_pretool(protocol, "Asgard Mode B: " + pipeline_denial_reason(tickets, unit))
                 else:

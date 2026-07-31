@@ -1,10 +1,10 @@
 """개인 메모리 백업 — 정본만 담은 이식 가능한 아카이브와 검증된 복원.
 
-정본은 md 파일이고 index.md·state.db 는 파생물이다 (memory/__init__ 원칙). 그래서
+정본은 md 파일이고 index.md·state.db는 파생물이다 (memory/__init__ 원칙). 그래서
 백업은 파생물을 담지 않는다 — 담으면 복원본이 원본과 다른 시점의 인덱스를 들고
 살아나고, 그 불일치는 조용하다. 복원은 pages/ 를 통째 갈아끼운 뒤 파생을 재생성한다.
 
-무결성: 아카이브 안에 MANIFEST.json(멤버별 sha256)을 같이 넣고, restore/verify 가
+무결성: 아카이브 안에 MANIFEST.json(멤버별 sha256)을 같이 넣고, restore/verify가
 추출 전에 대조한다. 손상된 아카이브로 멀쩡한 위키를 덮어쓰는 경로를 만들지 않는다.
 복원은 되돌릴 수 있어야 하므로 항상 직전 상태를 먼저 백업한다.
 """
@@ -58,7 +58,7 @@ def _sha256(data: bytes) -> str:
 
 
 def canonical_members(d: str) -> list[str]:
-    """백업 대상 상대경로 — 정렬된 결정적 목록. 심볼릭 링크·비 md 는 제외한다."""
+    """백업 대상 상대경로 — 정렬된 결정적 목록. 심볼릭 링크·비 md는 제외한다."""
     members: list[str] = []
     for name in CANONICAL_FILES:
         path = os.path.join(d, name)
@@ -84,7 +84,7 @@ def _read_bytes(path: str) -> bytes:
 
 
 def create(d: str | None = None, *, label: str = "", keep: int = KEEP_DEFAULT) -> dict:
-    """정본 스냅샷 하나를 backups/<stamp>.tar.gz 로 만든다. 반환 = 요약 dict."""
+    """정본 스냅샷 하나를 backups/<stamp>.tar.gz로 만든다. 반환 = 요약 dict."""
     d = ensure_home(d)
     safe_label = "".join(ch for ch in label if ch.isalnum() or ch in "-_")[:32]
     with _lock(d):
@@ -157,7 +157,7 @@ def _safe_member(name: str) -> str:
 
 
 def read_archive(path: str) -> tuple[dict, dict[str, bytes]]:
-    """아카이브를 메모리로 읽고 manifest 와 대조한다. 반환 = (manifest, {relpath: bytes})."""
+    """아카이브를 메모리로 읽고 manifest와 대조한다. 반환 = (manifest, {relpath: bytes})."""
     if not os.path.isfile(path):
         raise BackupError(f"backup not found: {path}")
     payload: dict[str, bytes] = {}
@@ -239,7 +239,7 @@ def prune(d: str, *, keep: int = KEEP_DEFAULT) -> list[str]:
 
 
 def resolve(d: str, name: str) -> str:
-    """이름/경로를 backups/ 안의 실제 파일로 해석한다. 'latest' 는 최신 백업."""
+    """이름/경로를 backups/ 안의 실제 파일로 해석한다. 'latest'는 최신 백업."""
     if name in ("latest", ""):
         rows = _entries(d)
         if not rows:

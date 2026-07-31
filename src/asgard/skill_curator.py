@@ -2,10 +2,10 @@
 
 learned 스킬 뱅크(.asgard/skills/)의 노화를 결정론으로 판정한다: active → stale(30일 무사용)
 → archive 후보(90일 무사용). LLM 없음 — 판정 원료는 usage 기록(skill_bank.record_use)과
-SKILL.md 의 created 뿐이다.
+SKILL.md의 created 뿐이다.
 
 안전 계약:
-- 출처 게이팅: frontmatter origin 이 학습 계열(retrospective/learned/norn)인 스킬만 손댄다.
+- 출처 게이팅: frontmatter origin이 학습 계열(retrospective/learned/norn)인 스킬만 손댄다.
   수동 설치·허브 스킬은 읽기 전용 — 큐레이터의 관할이 아니다.
 - pinned: true 스킬은 모든 전이에서 면제된다 (사용자 고정).
 - 유예 플로어: 한 번도 안 쓰인 스킬의 기준 시점은 created — "사용 증거의 부재"는
@@ -40,7 +40,7 @@ def curate(root: str, apply: bool = False) -> dict:
 
     finding = {name, state, origin, pinned, last_activity, idle_days, reason}.
     state ∈ active | stale | archive-candidate | exempt-pinned | skipped-origin | unreadable.
-    apply=True 면 archive-candidate 를 실제 보관 전이한다 (아카이브 = 복원 가능)."""
+    apply=True 면 archive-candidate를 실제 보관 전이한다 (아카이브 = 복원 가능)."""
     skills_dir = os.path.join(root, ".asgard", "skills")
     today = _dt.date.today()
     uses = _usage(root)

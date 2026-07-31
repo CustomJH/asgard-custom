@@ -3,7 +3,7 @@
 이 명령이 있는 이유는 하나다: 주입 계층은 **조용히 실패한다**. 파일 이름을 틀리거나, 주석 밖으로
 안 꺼냈거나, 별칭 둘을 만들어 하나가 가려졌거나, 상한에 잘렸을 때 — 어느 경우든 에이전트는 그냥
 평소처럼 동작하고 사용자는 규칙이 먹은 줄 안다. 그래서 "무엇이 어디서 실려서 몇 자로 들어가는가"를
-한 화면에 세운다. `--show` 는 모델이 실제로 받는 텍스트 그대로를 낸다 (요약 아님).
+한 화면에 세운다. `--show`는 모델이 실제로 받는 텍스트 그대로를 낸다 (요약 아님).
 """
 
 from __future__ import annotations
@@ -77,9 +77,7 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
     if not st["files"]:
         ui.step("매뉴얼 없음 — 규칙을 얹으려면 다음 파일을 만든다:")
         ui.step(ui.dim(f"    {_tilde(st['home'])}/MANUAL.md   공통 — 이 기계의 모든 프로젝트"))
-        ui.step(
-            ui.dim("    MANUAL.md              이 프로젝트만 (별칭: " + " · ".join(manual_mod.MANUAL_NAMES[1:]) + ")")
-        )
+        ui.step(ui.dim("    MANUAL.md이 프로젝트만 (별칭: " + " · ".join(manual_mod.MANUAL_NAMES[1:]) + ")"))
         ui.step(ui.dim("    .asgard/manual/*.md    주제별 분할 (파일명 정렬 순)"))
         ui.done()
         return 0
@@ -92,14 +90,14 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
                 ui.step(ui.dim(f"    [{label}] {src}"))
         if st["common"] and st["project"]:
             ui.step(ui.dim("    충돌하면 프로젝트 규칙이 이긴다 (공통 먼저, 프로젝트 나중)"))
-        ui.step("4모드 전부에 주입된다 — 네이티브는 프롬프트 인라인, CC·Cursor·Codex 는 manual-activate 훅")
+        ui.step("4모드 전부에 주입된다 — 네이티브는 프롬프트 인라인, CC·Cursor·Codex는 manual-activate 훅")
     else:
         ui.warn("파일은 있는데 실리는 내용이 없다 — 주석 밖에 규칙을 써야 켜진다")
 
     if st["inert"]:
         ui.step(ui.dim("    주석뿐(무주입): " + ", ".join(st["inert"])))
     if st["unmarked"]:
-        # `MANUAL.md` 는 흔한 이름이다 — 아스가르드가 깐 자리가 아닌 문서가 실리고 있으면 말해 준다.
+        # `MANUAL.md`는 흔한 이름이다 — 아스가르드가 깐 자리가 아닌 문서가 실리고 있으면 말해 준다.
         ui.step(ui.dim("    asgard 스캐폴드 아님(직접 만든 파일이면 정상): " + ", ".join(st["unmarked"])))
     if st["shadowed"]:
         # 별칭을 여럿 만들면 디렉터리마다 하나만 이긴다 — 진 파일을 편집하는 사고가 여기서 잡힌다.
@@ -107,7 +105,7 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
     if st["truncated"]:
         ui.warn(
             f"상한 {st['max_chars']}자에서 잘렸다 — 뒷부분은 안 실린다. "
-            "`.asgard/manual/*.md` 로 나누거나 설정 `manual.max_chars` 를 올린다"
+            "`.asgard/manual/*.md`로 나누거나 설정 `manual.max_chars`를 올린다"
         )
     if st["dropped"]:
         ui.warn(f"조각 상한({manual_mod.FRAGMENT_CAP}개) 초과로 제외: " + ", ".join(st["dropped"]))
@@ -116,6 +114,6 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
         # 실었다면 그 파일이 통째로 프롬프트에 나갔다. 뺀 사실을 반드시 눈에 보이게 둔다.
         ui.warn("저장소 밖을 가리키는 링크 — 안 싣는다: " + ", ".join(st["escaped"]))
     if not st["common"]:
-        ui.step(ui.dim(f"    모든 프로젝트 공통 규칙은 {_tilde(st['home'])}/MANUAL.md 에"))
+        ui.step(ui.dim(f"    모든 프로젝트 공통 규칙은 {_tilde(st['home'])}/MANUAL.md에"))
     ui.done()
     return 0

@@ -1,6 +1,6 @@
 """HTTP 계층과 창 띄우기 — 소켓·핸들러·네이티브 셸.
 
-라우팅은 `routes` 가, 문지기와 헤더는 `commands.loopback` 이 진다. 여기 남은 것은
+라우팅은 `routes`가, 문지기와 헤더는 `commands.loopback`이 진다. 여기 남은 것은
 "어디에 묶고, 무엇으로 여는가" 뿐이다.
 """
 
@@ -94,12 +94,12 @@ def _bind(host: str, port: int, root: str | None = None) -> _RootServer:
     except OSError:
         httpd = _RootServer((host, 0), _Handler)
     httpd.root = resolve_start_root(root)
-    # 자리와 서버 핸들은 `state` 가 소유한다 — 여기서 `global` 로 잡으면 이 모듈의 전역이
-    # 하나 더 생길 뿐이고, 되돌아 읽는 쪽은 영영 None 을 본다.
+    # 자리와 서버 핸들은 `state`가 소유한다 — 여기서 `global`로 잡으면 이 모듈의 전역이
+    # 하나 더 생길 뿐이고, 되돌아 읽는 쪽은 영영 None을 본다.
     state._SERVER = httpd
     with state._ROOT_LOCK:
         state._CURRENT_ROOT = httpd.root
-    # 등록부에는 **사용자가 프로젝트로 여는 자리**만 들어간다. cwd 를 말없이 등록하면
+    # 등록부에는 **사용자가 프로젝트로 여는 자리**만 들어간다. cwd를 말없이 등록하면
     # 독에서 앱을 누른 것만으로 홈이 목록에 오른다 — 그건 기록이 아니라 오염이다.
     if desktop_store.looks_like_project(httpd.root):
         desktop_store.touch_project(httpd.root)
@@ -110,8 +110,8 @@ def _bind(host: str, port: int, root: str | None = None) -> _RootServer:
 def _native_candidates() -> list[str]:
     """네이티브 셸을 어디서 찾을지 — 순서가 곧 정체성이다.
 
-    macOS 에서 맨 실행 파일을 그냥 띄우면 그 프로세스는 번들이 없는 것이 되어, 독에 이름도
-    아이콘도 못 붙인다(회색 기본 아이콘이 뜨던 이유). `.app/Contents/MacOS/…` 를 직접 실행하면
+    macOS에서 맨 실행 파일을 그냥 띄우면 그 프로세스는 번들이 없는 것이 되어, 독에 이름도
+    아이콘도 못 붙인다(회색 기본 아이콘이 뜨던 이유). `.app/Contents/MacOS/…`를 직접 실행하면
     시스템이 위로 올라가 그 번들의 Info.plist·아이콘을 읽는다 — 그래서 번들부터 본다."""
     repo = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
     configured = os.environ.get("ASGARD_DESKTOP_APP")
@@ -181,7 +181,7 @@ def run_desktop(
         host = "127.0.0.1"
     httpd = _bind(host, port, root)
     actual = httpd.server_address[1]
-    # 모드 딥링크 — `asgard plan` 은 같은 창의 기획 화면으로 바로 들어온다
+    # 모드 딥링크 — `asgard plan`은 같은 창의 기획 화면으로 바로 들어온다
     suffix = f"?view={quote(view)}" if view else ""
     url = f"http://{host}:{actual}/{suffix}"
     ui.ok(f"{label} → {url}")

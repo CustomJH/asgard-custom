@@ -1,8 +1,8 @@
 """Obsidian vault 계층 — 개인 위키를 사람과 에이전트가 둘 다 스스로 돌아다닐 수 있게 만든다.
 
-정본은 이미 Obsidian 이 읽는 형식이다 (md + frontmatter + [[wikilink]]). 모자란 건 두 가지였다.
+정본은 이미 Obsidian이 읽는 형식이다 (md + frontmatter + [[wikilink]]). 모자란 건 두 가지였다.
 
-① 첫 열기의 마찰. `.obsidian/` 이 없으면 폴더는 vault 가 아니고, URI 로 열 수도 없다.
+① 첫 열기의 마찰. `.obsidian/`이 없으면 폴더는 vault가 아니고, URI로 열 수도 없다.
    그래서 최소 설정을 심는다 — 이미 있는 파일은 절대 덮지 않는다 (사용자 설정이 정본).
 
 ② 길잡이. 주입 카탈로그는 kind 별 칸 예산에 묶여 있어 전부를 실을 수 없다 (칸이 차면 최신부터
@@ -10,7 +10,7 @@
    pages/ 에서 다시 만들어지고, 백업·동기화 대상이 아니며, 지워도 지식은 죽지 않는다.
    예산이 걸린 주입면과 역할이 갈린다.
 
-maps/ 안의 링크는 전부 [[slug]] 다. Obsidian 의 그래프·백링크·아웃라인이 그대로 살아나고,
+maps/ 안의 링크는 전부 [[slug]] 다. Obsidian의 그래프·백링크·아웃라인이 그대로 살아나고,
 파일을 직접 읽는 에이전트에게도 같은 문서가 목차로 동작한다 — 두 독자에게 형식이 하나다.
 """
 
@@ -31,7 +31,7 @@ OBSIDIAN_DIR = ".obsidian"
 MAP_FILES = ("index.md", "by-kind.md", "recent.md", "loose-ends.md")
 RECENT_LIMIT = 60
 
-# 최소 vault 설정. Obsidian 은 나머지를 스스로 만든다 — 여기서는 "폴더가 vault 다"라고
+# 최소 vault 설정. Obsidian은 나머지를 스스로 만든다 — 여기서는 "폴더가 vault 다"라고
 # 말하는 데 필요한 것과, 위키 링크가 이 저장소 규약대로 동작하게 하는 것만 심는다.
 _APP_JSON = {
     "alwaysUpdateLinks": True,
@@ -141,7 +141,7 @@ def build_maps(d: str) -> dict[str, str]:
     for row in rows:
         by_kind.setdefault(row["kind"], []).append(row)
 
-    home = _map_header("메모리 지도", "이 vault 를 돌아다니는 출발점.")
+    home = _map_header("메모리 지도", "이 vault를 돌아다니는 출발점.")
     home += [
         f"- [[{MAPS_DIR}/by-kind|종류별]] — 무엇에 대한 기억인지로 묶은 목록",
         f"- [[{MAPS_DIR}/recent|최근순]] — 최근에 고친 것부터",

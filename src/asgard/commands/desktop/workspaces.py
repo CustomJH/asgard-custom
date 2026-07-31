@@ -35,11 +35,11 @@ def use_project(payload: dict) -> tuple[int, str, bytes]:
     target, failed = resolve_workspace(wanted, "")
     if failed or not target:
         return _json_body(400, {"error": failed or "존재하는 디렉터리 경로가 필요합니다"})
-    # 되돌아 읽는 쪽(`boundary.current_root`)이 보는 것은 `state` 의 값이다. 여기서 `global`
+    # 되돌아 읽는 쪽(`boundary.current_root`)이 보는 것은 `state`의 값이다. 여기서 `global`
     # 로 선언하면 이 모듈에 같은 이름의 전역이 하나 더 생길 뿐 아무도 그걸 안 본다.
     with state._ROOT_LOCK:
         state._CURRENT_ROOT = target
-    if state._SERVER is not None:  # 이후 요청은 핸들러가 서버의 root 를 넘긴다 — 거기를 바꿔야 실제로 옮겨진다
+    if state._SERVER is not None:  # 이후 요청은 핸들러가 서버의 root를 넘긴다 — 거기를 바꿔야 실제로 옮겨진다
         state._SERVER.root = target
     desktop_store.touch_project(target)
     load_project_tasks(target)
@@ -75,13 +75,13 @@ def browse_projects(payload: dict, root: str | None = None) -> tuple[int, str, b
 
 
 # 시스템 폴더 고르기 — 창 안의 목록보다 손에 익은 길이다. 없는 기계도 있으므로 있을 때만
-# 문을 연다: 화면은 `snapshot.capabilities.folder_dialog` 를 보고 단추를 세운다.
+# 문을 연다: 화면은 `snapshot.capabilities.folder_dialog`를 보고 단추를 세운다.
 
 
 def pick_folder(payload: dict) -> tuple[int, str, bytes]:
     """`POST /api/projects/pick` — 운영체제의 폴더 고르기를 연다.
 
-    취소는 실패가 아니다 — 아무것도 안 고른 것이라 `{"path": ""}` 로 조용히 돌아간다.
+    취소는 실패가 아니다 — 아무것도 안 고른 것이라 `{"path": ""}`로 조용히 돌아간다.
     화면이 이것을 오류로 띄우면 사용자는 취소할 때마다 빨간 말을 본다."""
     command = _folder_dialog_command()
     if not command:

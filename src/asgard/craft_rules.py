@@ -1,4 +1,4 @@
-"""craft 규칙 카탈로그 — AST 하나를 받아 판정 목록을 낸다. git 도 래칫도 여기서는 모른다.
+"""craft 규칙 카탈로그 — AST 하나를 받아 판정 목록을 낸다. git도 래칫도 여기서는 모른다.
 
 경계를 이렇게 그은 이유: 규칙은 시간이 지나며 늘어나고, 래칫(무엇이 이번 변경의 책임인가)은
 늘어나지 않는다. 둘을 한 파일에 두면 규칙을 하나 더할 때마다 판정 계층을 다시 읽어야 한다.
@@ -16,22 +16,22 @@ from dataclasses import dataclass
 
 from .health import DEPTH_WARN, UNIT_LINES_WARN, _depth
 
-UNIT_LINES_BUDGET = UNIT_LINES_WARN  # health 와 같은 자 — 게이트와 계측이 어긋나면 둘 다 못 믿는다
+UNIT_LINES_BUDGET = UNIT_LINES_WARN  # health와 같은 자 — 게이트와 계측이 어긋나면 둘 다 못 믿는다
 DEPTH_BUDGET = DEPTH_WARN
 # 길이 예산은 "한 자리에서 너무 많은 일이 벌어진다"의 대리 지표다. 설정 리터럴 하나를 돌려주는
 # 함수는 250행이어도 벌어지는 일이 하나뿐이라 그 대리가 틀린다(실측: cc_settings 257행·문장 3·
 # 분기 0). 문장이 이보다 적으면 길이는 로직이 아니라 데이터로 읽는다.
 DATA_STMT_MAX = 10
 
-# 획득 즉시 수명이 생기는 호출. 이름이 곧 의미인 것만 넣는다 — `connect`/`socket` 은 Qt 시그널·
+# 획득 즉시 수명이 생기는 호출. 이름이 곧 의미인 것만 넣는다 — `connect`/`socket`은 Qt 시그널·
 # 기존 소켓의 메서드와 이름이 겹쳐 오탐을 만든다(미검출로 남기는 편이 낫다).
 _ACQUIRE = frozenset(
     {"open", "Popen", "NamedTemporaryFile", "TemporaryFile", "ThreadPoolExecutor", "ProcessPoolExecutor"}
 )
 _RELEASE = frozenset({"close", "shutdown", "terminate", "kill", "wait", "communicate", "__exit__"})
-# 이름만 `open` 이고 자원이 아닌 것들. `os.open` 은 파일 객체가 아니라 int fd 라서 해제가
-# `os.close(fd)`·`os.fdopen(fd)` 로 일어나고, `webbrowser.open(url)` 은 아예 bool 을 돌려준다.
-# 같은 자로 재면 둘 다 오탐이 된다(실측: 전수에서 os 가 오탐의 절반, webbrowser 가 잔여의 절반).
+# 이름만 `open` 이고 자원이 아닌 것들. `os.open`은 파일 객체가 아니라 int fd 라서 해제가
+# `os.close(fd)`·`os.fdopen(fd)`로 일어나고, `webbrowser.open(url)`은 아예 bool을 돌려준다.
+# 같은 자로 재면 둘 다 오탐이 된다(실측: 전수에서 os가 오탐의 절반, webbrowser가 잔여의 절반).
 _ACQUIRE_EXCLUDE_BASE = frozenset({"os", "webbrowser"})
 _CACHE_DECORATORS = frozenset({"lru_cache", "cache"})
 _GROW = frozenset({"append", "add", "extend", "update", "setdefault", "insert", "appendleft"})
@@ -41,7 +41,7 @@ _CONTAINER_CALLS = frozenset({"list", "dict", "set", "defaultdict", "OrderedDict
 
 @dataclass(frozen=True)
 class Finding:
-    """판정 1건. `fix` 는 무엇을 하면 풀리는지 — 증상만 말하는 게이트는 재작업을 안내하지 못한다."""
+    """판정 1건. `fix`는 무엇을 하면 풀리는지 — 증상만 말하는 게이트는 재작업을 안내하지 못한다."""
 
     rule: str
     path: str
@@ -66,7 +66,7 @@ class Unit:
 
 
 def units(text: str) -> dict[str, Unit] | None:
-    """qualname → 단위 사실. 파싱 실패는 None (0 이 아니다 — 측정 못 한 것과 없는 것은 다르다)."""
+    """qualname → 단위 사실. 파싱 실패는 None (0이 아니다 — 측정 못 한 것과 없는 것은 다르다)."""
     try:
         tree = ast.parse(text)
     except SyntaxError, ValueError, RecursionError:
@@ -154,7 +154,7 @@ def shape_findings(rel: str, current: dict[str, Unit], base: dict[str, Unit] | N
 
 
 def pattern_findings(text: str, rel: str, spans: list[Unit]) -> list[Finding]:
-    """자원 수명 + 시간복잡도 판정. 파싱 실패는 빈 목록 — 호출부가 ast 를 알 필요는 없다."""
+    """자원 수명 + 시간복잡도 판정. 파싱 실패는 빈 목록 — 호출부가 ast를 알 필요는 없다."""
     try:
         tree: ast.AST = ast.parse(text)
     except SyntaxError, ValueError, RecursionError:
@@ -180,7 +180,7 @@ def _decorators(node: ast.AST) -> list[tuple[str, ast.Call | None]]:
 
 
 def _unbounded_cache(name: str, call: ast.Call | None) -> bool:
-    """`@cache` 는 무경계. `@lru_cache` 는 기본 maxsize=128 이라 경계가 있고, None 이면 없다."""
+    """`@cache`는 무경계. `@lru_cache`는 기본 maxsize=128이라 경계가 있고, None 이면 없다."""
     if name == "cache":
         return True
     if call is None:
@@ -210,7 +210,7 @@ def _cache_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
                         rel,
                         child.lineno,
                         f"{node.name}.{child.name}",
-                        f"@{name} 가 메서드에 걸려 self 가 캐시 키로 남는다",
+                        f"@{name}가 메서드에 걸려 self가 캐시 키로 남는다",
                         "인스턴스 수명 안에서 캐시하라 — @cached_property 나 인스턴스 소유 dict",
                     )
                 )
@@ -228,15 +228,15 @@ def _cache_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
                         rel,
                         node.lineno,
                         _owner(spans, node.lineno) or node.name,
-                        f"@{name} 에 경계가 없어 키 종류만큼 무한히 자란다",
-                        "maxsize 를 정하라 — 키 공간이 유한하다는 근거가 있으면 그 근거를 주석으로 남겨라",
+                        f"@{name}에 경계가 없어 키 종류만큼 무한히 자란다",
+                        "maxsize를 정하라 — 키 공간이 유한하다는 근거가 있으면 그 근거를 주석으로 남겨라",
                     )
                 )
     return out
 
 
 def _managed(tree: ast.AST) -> set[int]:
-    """`with` 가 수명을 쥔 표현식 안의 모든 호출 — contextlib.closing(open(x)) 같은 감싸기도 포함."""
+    """`with`가 수명을 쥔 표현식 안의 모든 호출 — contextlib.closing(open(x)) 같은 감싸기도 포함."""
     safe: set[int] = set()
     for node in ast.walk(tree):
         if not isinstance(node, (ast.With, ast.AsyncWith)):
@@ -267,7 +267,7 @@ def _released(scope: ast.AST, target: str) -> bool:
         if isinstance(node, (ast.With, ast.AsyncWith)) and any(
             isinstance(item.context_expr, ast.Name) and item.context_expr.id == target for item in node.items
         ):
-            # `h = open(p)` 뒤의 `with h:` — `_managed` 는 획득이 `with` **식 안**에 있을 때만 아는데,
+            # `h = open(p)` 뒤의 `with h:` — `_managed`는 획득이 `with` **식 안**에 있을 때만 아는데,
             # 여는 실패와 읽는 실패를 따로 다뤄야 하면 획득을 밖으로 뺄 수밖에 없다(hooks/budget_guard
             # 의 원장 읽기가 그것이다). 그 정답 형상을 누수로 읽으면 게이트가 자기 처방을 막는다.
             return True
@@ -287,12 +287,12 @@ def _released(scope: ast.AST, target: str) -> bool:
             and node.value.id == target
             and any(isinstance(t, (ast.Attribute, ast.Subscript)) for t in node.targets)
         ):
-            # `self.x = f` 와 `table["k"] = f` 는 같은 인계다 — `_handed_off` 와 같은 자를 쓴다.
-            # 한쪽만 아는 형태가 있으면 같은 코드가 경로에 따라 다르게 읽힌다(실측: holder 가
-            # 있으면 여기로, 없으면 `_handed_off` 로 갈려서 subscript 인계가 누수로 찍혔다).
+            # `self.x = f`와 `table["k"] = f`는 같은 인계다 — `_handed_off`와 같은 자를 쓴다.
+            # 한쪽만 아는 형태가 있으면 같은 코드가 경로에 따라 다르게 읽힌다(실측: holder가
+            # 있으면 여기로, 없으면 `_handed_off`로 갈려서 subscript 인계가 누수로 찍혔다).
             #
             # 판정을 여기서 끝내지 않는 것도 같은 이유다. 앞선 `q = f` 같은 단순 별칭에서
-            # 곧장 False 를 돌려주면 **그 뒤의 진짜 인계를 못 본다** — 스캔은 계속되어야 한다.
+            # 곧장 False를 돌려주면 **그 뒤의 진짜 인계를 못 본다** — 스캔은 계속되어야 한다.
             return True
         if isinstance(node, (ast.Dict, ast.List, ast.Tuple, ast.Set)) and _holds(node, target):
             return True  # 컨테이너에 담긴 순간 수명은 그 컨테이너 주인의 것이다
@@ -300,7 +300,7 @@ def _released(scope: ast.AST, target: str) -> bool:
 
 
 def _holds(container: ast.AST, target: str) -> bool:
-    """자료구조 리터럴이 그 이름을 담고 있는가 — `{"process": p, …}` 는 소유를 표에 넘긴 것이다."""
+    """자료구조 리터럴이 그 이름을 담고 있는가 — `{"process": p, …}`는 소유를 표에 넘긴 것이다."""
     values = container.values if isinstance(container, ast.Dict) else getattr(container, "elts", [])
     return any(isinstance(v, ast.Name) and v.id == target for v in values)
 
@@ -327,9 +327,9 @@ def _acquire_findings(tree: ast.AST, rel: str, spans: list[Unit], parents: dict[
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"{name}() 의 수명을 아무도 안 쥔다"
-                + (f" — {holder} 가 닫히지 않는다" if holder else " — 결과를 붙잡지도 닫지도 않는다"),
-                "with 로 감싸라 — 예외가 나도 닫히는 경로는 그것뿐이다",
+                f"{name}()의 수명을 아무도 안 쥔다"
+                + (f" — {holder}가 닫히지 않는다" if holder else " — 결과를 붙잡지도 닫지도 않는다"),
+                "with로 감싸라 — 예외가 나도 닫히는 경로는 그것뿐이다",
             )
         )
     return out
@@ -381,7 +381,7 @@ def _scope_of(node: ast.AST, parents: dict[int, ast.AST], tree: ast.AST) -> ast.
 
 
 def _module_containers(tree: ast.AST) -> dict[str, int]:
-    """모듈 스코프의 가변 컨테이너 이름 → 정의 줄. maxlen 이 달린 deque 는 이미 경계가 있다."""
+    """모듈 스코프의 가변 컨테이너 이름 → 정의 줄. maxlen이 달린 deque는 이미 경계가 있다."""
     found: dict[str, int] = {}
     for node in getattr(tree, "body", ()):
         target = _single_target(node)
@@ -426,7 +426,7 @@ def _accumulator_findings(tree: ast.AST, rel: str, parents: dict[int, ast.AST]) 
                     rel,
                     grows[name],
                     "",
-                    f"모듈 스코프 {name} 이 실행 중에 자라기만 한다 (줄이는 자리 없음)",
+                    f"모듈 스코프 {name}이 실행 중에 자라기만 한다 (줄이는 자리 없음)",
                     "경계를 정하라 — maxlen·축출·주기적 비움 중 하나, 아니면 호출자가 소유하게 넘겨라",
                     # 막지 않고 묻는다: 키 공간이 유한하다는 것(플러그인 레지스트리 같은)을 정적으로
                     # 증명할 수 없다. 증명 못 하는 것을 결함이라 부르면 그게 오탐이다.
@@ -448,7 +448,7 @@ def _mutations(tree: ast.AST, names: set[str], parents: dict[int, ast.AST]) -> t
         name, kind = _mutation_of(node, names)
         if name is None:
             continue
-        # 모듈 스코프에서 일어나는 일은 정의다 — 최상단의 `X = {}` 은 비움이 아니고, 그 옆의
+        # 모듈 스코프에서 일어나는 일은 정의다 — 최상단의 `X = {}`은 비움이 아니고, 그 옆의
         # 채우기는 성장이 아니라 상수 표를 짓는 것이다. 런타임 성장·비움만 수명 신호가 된다.
         scope = _scope_of(node, parents, tree)
         in_function = not isinstance(scope, ast.Module)
@@ -467,7 +467,7 @@ def _import_time_builders(tree: ast.AST) -> set[str]:
     오인하지 않기 위한 것. import 때 한 번 채워지는 표는 수명이 아니라 정의다."""
     called: set[str] = set()
     for node in getattr(tree, "body", ()):
-        # def/class 는 정의일 뿐 실행이 아니다 — 본문까지 훑으면 모듈 안 모든 호출이 여기 들어와
+        # def/class는 정의일 뿐 실행이 아니다 — 본문까지 훑으면 모듈 안 모든 호출이 여기 들어와
         # 규칙이 통째로 죽는다 (실측: 억제 후 9건 → 3건이 아니라 규칙 자체가 침묵했다).
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             continue
@@ -532,7 +532,7 @@ def _scopes(tree: ast.AST) -> list[ast.AST]:
 def _walk_local(scope: ast.AST):
     """그 스코프에 **속한** 노드만 — 중첩 함수·클래스 본문으로는 내려가지 않는다.
 
-    ast.walk 를 그대로 쓰면 바깥 스코프가 안쪽 함수의 노드까지 같이 세서 같은 판정이 두 번
+    ast.walk를 그대로 쓰면 바깥 스코프가 안쪽 함수의 노드까지 같이 세서 같은 판정이 두 번
     나오고, 안쪽 지역 변수가 바깥의 이름 표에 섞인다.
     """
     stack = [scope]
@@ -576,7 +576,7 @@ def _dynamic_sequences(scope: ast.AST) -> dict[str, int]:
             if name in _DYNAMIC_SEQ_CALLS:
                 found[target] = node.lineno
         elif isinstance(value, ast.List) and not value.elts:
-            found[target] = node.lineno  # `out = []` 뒤에 append 로 자라는 것도 크기가 입력을 탄다
+            found[target] = node.lineno  # `out = []` 뒤에 append로 자라는 것도 크기가 입력을 탄다
     return found
 
 
@@ -598,8 +598,8 @@ def _scan_findings(
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"루프 안에서 목록 {right.id} 를 매번 처음부터 훑는다 (O(n·m))",
-                f"{right.id} 를 set 으로 한 번 만들어 두고 조회하라 — 원소 수가 열 배면 시간은 백 배다",
+                f"루프 안에서 목록 {right.id}를 매번 처음부터 훑는다 (O(n·m))",
+                f"{right.id}를 set으로 한 번 만들어 두고 조회하라 — 원소 수가 열 배면 시간은 백 배다",
             )
         )
     return out
@@ -623,15 +623,15 @@ def _shift_findings(scope: ast.AST, rel: str, spans: list[Unit], looped: set[int
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"{func.value.id}.{func.attr}(0…) 이 루프 안에 있다 — 한 번에 뒤 전체가 밀린다",
-                "collections.deque 를 써라 — 양끝 삽입·삭제가 상수 시간이다",
+                f"{func.value.id}.{func.attr}(0…)이 루프 안에 있다 — 한 번에 뒤 전체가 밀린다",
+                "collections.deque를 써라 — 양끝 삽입·삭제가 상수 시간이다",
             )
         )
     return out
 
 
 def _concat_findings(scope: ast.AST, rel: str, spans: list[Unit], looped: set[int]) -> list[Finding]:
-    """`s = s + x` 는 루프마다 새 객체를 통째로 만든다. `+=` 와 달리 확장이 아니라 복사다."""
+    """`s = s + x`는 루프마다 새 객체를 통째로 만든다. `+=`와 달리 확장이 아니라 복사다."""
     out: list[Finding] = []
     for node in _walk_local(scope):
         if not isinstance(node, ast.Assign) or id(node) not in looped:

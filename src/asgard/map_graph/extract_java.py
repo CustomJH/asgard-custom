@@ -1,8 +1,8 @@
 """JVM/DB 레인 증거 추출기 — Java 소스·MyBatis 매퍼 XML·SQL DDL (정규식 기반 보조 추출기).
 
-정규식은 구문 증명이 아니다: 해당 프레임워크 임포트가 뒷받침하는 어노테이션, 매퍼 XML 의
-선언, DDL 처럼 관용구가 강한 패턴만 confirmed 로 표시하고, 수신자 타입·런타임 값·SQL 본문
-테이블 참조처럼 정적으로 못 묶는 것은 candidate 로 남긴다. 전체-문자열 `${...}` 이벤트
+정규식은 구문 증명이 아니다: 해당 프레임워크 임포트가 뒷받침하는 어노테이션, 매퍼 XML의
+선언, DDL처럼 관용구가 강한 패턴만 confirmed로 표시하고, 수신자 타입·런타임 값·SQL 본문
+테이블 참조처럼 정적으로 못 묶는 것은 candidate로 남긴다. 전체-문자열 `${...}` 이벤트
 토픽은 graph 스캔이 base 설정(spring_props)으로 해석 승격한다 — 여기서는 원문을 보존한다.
 """
 
@@ -14,7 +14,7 @@ from .evidence import Evidence, safe_url
 
 # ── Java ──────────────────────────────────────────────────────────────────────
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
-_LINE_COMMENT = re.compile(r"(?<!:)//[^\n]*")  # `://` 는 URL — 주석으로 오인하지 않는다
+_LINE_COMMENT = re.compile(r"(?<!:)//[^\n]*")  # `://`는 URL — 주석으로 오인하지 않는다
 _IMPORT = re.compile(r"^\s*import\s+(?:static\s+)?([\w.]+)", re.M)
 _TYPE_DECL = re.compile(r"\b(?:class|interface|record|enum)\s+([A-Za-z_$][\w$]*)")
 # 어노테이션 경로 값은 리터럴 연쇄(`"${api.prefix}" + "orbit/home"`)일 수 있다 — 전부 리터럴인
@@ -94,7 +94,7 @@ _LISTENER_IMPORT = {
 
 # ── MyBatis XML / SQL ────────────────────────────────────────────────────────
 # 주석은 증거가 아니다 — XML 주석의 산문("from a page")·주석 처리된 구문·SQL 주석의
-# 죽은 DDL 이 테이블/구문 증거로 오인되는 것을 막는다. 줄 번호 보존을 위해 개행만 남긴다.
+# 죽은 DDL이 테이블/구문 증거로 오인되는 것을 막는다. 줄 번호 보존을 위해 개행만 남긴다.
 _XML_COMMENT = re.compile(r"<!--.*?-->", re.S)
 _SQL_LINE_COMMENT = re.compile(r"--[^\n]*")
 _MAPPER_NS = re.compile(r"<(?:mapper|sqlMap)\s+namespace\s*=\s*[\"']([^\"']+)[\"']")
@@ -190,10 +190,10 @@ def _method_after(text: str, offset: int) -> str:
 
 
 def _body_end_line(text: str, offset: int, *, limit: int = 120_000) -> int:
-    """`offset`(어노테이션 뒤) 이후 메서드 본문 `{…}` 의 끝 줄 — 없으면 0.
+    """`offset`(어노테이션 뒤) 이후 메서드 본문 `{…}`의 끝 줄 — 없으면 0.
 
-    주석은 이미 제거된 텍스트를 전제한다. 어노테이션 인자 속 `{}` 는 괄호 깊이>0 이라
-    건너뛰고, 깊이 0 에서 `{` 보다 `;` 를 먼저 만나면 본문 없는 선언(인터페이스 메서드)이다.
+    주석은 이미 제거된 텍스트를 전제한다. 어노테이션 인자 속 `{}`는 괄호 깊이>0이라
+    건너뛰고, 깊이 0에서 `{`보다 `;`를 먼저 만나면 본문 없는 선언(인터페이스 메서드)이다.
     """
     index, paren, in_string, in_char = offset, 0, False, False
     end = min(len(text), offset + limit)
@@ -304,7 +304,7 @@ def extract_java(path: str, source: str) -> list[Evidence]:
         mechanism = imported(_LISTENER_IMPORT[match.group(1)])
         span = _body_end_line(text, (block_end or match.end()) + 1)
         for topic, is_literal in _listener_topics(args):
-            # `${...}` 는 리터럴 문자열이어도 토픽 정체가 미해석 상태다 — 설정 해석 승격 전까지 candidate.
+            # `${...}`는 리터럴 문자열이어도 토픽 정체가 미해석 상태다 — 설정 해석 승격 전까지 candidate.
             confidence = "confirmed" if mechanism and is_literal and "${" not in topic else "candidate"
             detail = "subscribe" + (f" · {handler}" if handler else "")
             evidence.append(
@@ -411,7 +411,7 @@ def extract_java(path: str, source: str) -> list[Evidence]:
 
 
 def extract_mapper_xml(path: str, source: str) -> list[Evidence]:
-    """MyBatis(3)/iBATIS(2) 매퍼 XML — 네임스페이스·구문 id 는 선언(confirmed), 테이블 참조는 candidate."""
+    """MyBatis(3)/iBATIS(2) 매퍼 XML — 네임스페이스·구문 id는 선언(confirmed), 테이블 참조는 candidate."""
     source = _XML_COMMENT.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     ns_match = _MAPPER_NS.search(source)
     if ns_match is None:
@@ -490,7 +490,7 @@ def extract_proc(path: str, source: str) -> list[Evidence]:
 
 
 def extract_sql(path: str, source: str) -> list[Evidence]:
-    """SQL DDL — `CREATE TABLE` 은 스키마가 직접 증명하는 테이블 선언이다."""
+    """SQL DDL — `CREATE TABLE`은 스키마가 직접 증명하는 테이블 선언이다."""
     source = _BLOCK_COMMENT.sub(lambda match: "\n" * match.group(0).count("\n"), source)
     source = _SQL_LINE_COMMENT.sub("", source)
     evidence: list[Evidence] = []

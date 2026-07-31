@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Asgard budget-guard — 세션 소비의 상한. 낭비를 사후에 감사하지 않고 **쓰기 전에** 막는다.
 #
-# 왜 필요한가: v0.6.21 에서 Trinity Verifier 과잉으로 3.3M 토큰을 태웠고, 그걸 찾은 것은
+# 왜 필요한가: v0.6.21에서 Trinity Verifier 과잉으로 3.3M 토큰을 태웠고, 그걸 찾은 것은
 # 사후 감사였다. 같은 일이 다시 나면 또 사후에 찾는다 — 구조적으로 막는 층이 없었다.
 #
 # ── 선행 연구와 그 실패 (ref/asgard-helios/hooks/asgard-budget-guard.mjs) ──────────────
@@ -9,21 +9,21 @@
 # 6시간 윈도우 누적, hardCeiling 300k, opus 호출 8회 상한까지 설계는 옳았다. 그런데 계측원이
 # SubagentStop 페이로드의 `usage.total_tokens` 였고, 그 필드는 오지 않는다. 운영 DB 실측:
 #
-#     post 이벤트 89건 — total_tokens 가 non-null 인 건 0건, 87건은 agent_type 조차 빈 문자열
+#     post 이벤트 89건 — total_tokens가 non-null 인 건 0건, 87건은 agent_type조차 빈 문자열
 #     pre 이벤트에 찍힌 session_tokens 값: 0
 #
-# 즉 토큰 기반 hard ceiling 은 **한 번도 발화한 적 없는 죽은 코드**였다. 살아 있던 것은 호출
+# 즉 토큰 기반 hard ceiling은 **한 번도 발화한 적 없는 죽은 코드**였다. 살아 있던 것은 호출
 # 횟수 카운터뿐이다. 그래서 이 훅의 첫 번째 계약은 계측원을 바꾸는 것이다.
 #
 # ── 계측원: 트랜스크립트 (26-07-27 실측 확정) ────────────────────────────────────────
-# Claude Code 는 세션 JSONL 에 메시지별 usage 를 그대로 적는다. 두 레인이 모두 잡힌다:
+# Claude Code는 세션 JSONL에 메시지별 usage를 그대로 적는다. 두 레인이 모두 잡힌다:
 #
 #   메인 레인   assistant 행의 message.usage
 #                 → input_tokens · output_tokens · cache_creation_input_tokens · cache_read_input_tokens
 #   에이전트   Task 도구의 toolUseResult
 #                 → agentType · resolvedModel · totalTokens · usage (같은 4필드)
 #
-# 헬리오스가 못 찾던 agent_type 이 여기 있다. 훅 페이로드가 아니라 디스크가 정본이다.
+# 헬리오스가 못 찾던 agent_type이 여기 있다. 훅 페이로드가 아니라 디스크가 정본이다.
 #
 # ── 왜 두 지점을 다 막는가 ──────────────────────────────────────────────────────────
 # 트랜스크립트 381세션 실측에서 상위 소비 세션(29.3M·28.8M·24.5M cost unit)은 **서브에이전트
@@ -31,15 +31,15 @@
 # 놓친다. 그래서 UserPromptSubmit(턴 시작 전)과 PreToolUse(Task)(스폰 전) 둘 다에 건다.
 #
 # ── 왜 원시 토큰이 아니라 가중 비용 단위인가 ──────────────────────────────────────────
-# 같은 실측에서 한 세션의 cache_read 가 14.4M, output 이 106k 였다. 원시 합으로 상한을 걸면
+# 같은 실측에서 한 세션의 cache_read가 14.4M, output이 106k 였다. 원시 합으로 상한을 걸면
 # 캐시 읽기가 지표를 통째로 지배해 "비싼 세션"과 "긴 세션"을 구별하지 못한다. 캐시 읽기는 입력
 # 대비 1/10 가격이라 그 구별이 바로 돈이다. 가중치는 표준 비율(입력 1 · 출력 5 · 캐시쓰기 1.25 ·
-# 캐시읽기 0.1)을 기본값으로 두되 설정에서 바꿀 수 있다 — 전부 1 로 두면 원시 합이 된다.
+# 캐시읽기 0.1)을 기본값으로 두되 설정에서 바꿀 수 있다 — 전부 1로 두면 원시 합이 된다.
 # 네 성분은 언제나 따로 기록한다. 가중치는 가정이고, 가정이 바뀌어도 관측은 남아야 한다.
 #
 # ── 기본 한도의 근거 ────────────────────────────────────────────────────────────────
 # 381세션 분포: p50 220,933 · p75 1,325,794 · p90 6,271,519 · p95 13,680,984 · p99 24,504,250.
-# 경고 6,000,000(p90 바로 아래) · 차단 15,000,000(p95 와 p99 사이). 임의의 숫자를 박으면 게이트가
+# 경고 6,000,000(p90 바로 아래) · 차단 15,000,000(p95와 p99 사이). 임의의 숫자를 박으면 게이트가
 # 오탐으로 죽는다 — 이 문턱이면 정상 작업의 95% 이상이 차단을 느끼지 못하고, 걸리는 것은 실측
 # 분포의 꼬리뿐이다. 경고는 상위 10% 대역에서 먼저 울려 차단이 예고 없이 오지 않게 한다.
 #
@@ -52,10 +52,10 @@ import sys
 from dataclasses import dataclass, field
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
-# fail-open 에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
+# fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
-        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except 로
+        _stream.reconfigure(encoding="utf-8")  # ty: ignore[unresolved-attribute] — TextIOWrapper 전용, 대체 스트림은 except로
     except Exception:
         pass
 
@@ -63,7 +63,7 @@ for _stream in (sys.stdout, sys.stderr):
 CLIENTS = {"claude-code", "codex", "cursor"}
 ACTIONS = {"prompt", "task"}
 
-# 표준 상대 단가 — 입력 1 기준. 설정 budget.weights 로 덮어쓴다.
+# 표준 상대 단가 — 입력 1 기준. 설정 budget.weights로 덮어쓴다.
 WEIGHTS = {"input": 1.0, "output": 5.0, "cache_write": 1.25, "cache_read": 0.1}
 
 # 트랜스크립트 usage 필드 → 내부 성분 이름 (Claude Code JSONL 스키마, 26-07-27 확인)
@@ -83,7 +83,7 @@ DEFAULTS = {
 }
 
 # 차단 사유 — 전송 표면 계약은 메시지 서두의 `[gate:<code>]` 태그 (failures.py 규약과 동일 어휘).
-# verifier_gate 의 GATE_MESSAGES 와는 별개 표다 (다른 게이트, 다른 코드 공간).
+# verifier_gate의 GATE_MESSAGES 와는 별개 표다 (다른 게이트, 다른 코드 공간).
 GATE_MESSAGES = {
     "budget-ceiling": (
         "Session spend {spent} cost units has reached the ceiling ({limit}). "
@@ -174,10 +174,10 @@ def _usage_from(raw) -> Usage | None:
 
 
 def read_ledger(path: str) -> Ledger:
-    """트랜스크립트 JSONL 을 두 레인으로 집계한다. 못 읽으면 빈 원장 + read_error.
+    """트랜스크립트 JSONL을 두 레인으로 집계한다. 못 읽으면 빈 원장 + read_error.
 
     메인 레인은 assistant 행의 message.usage, 에이전트 레인은 Task 결과의 toolUseResult 다.
-    한 행이 깨져도 나머지는 센다 — 부분 관측이 무관측보다 낫고, 부분이라는 사실은 read_error 가 진다."""
+    한 행이 깨져도 나머지는 센다 — 부분 관측이 무관측보다 낫고, 부분이라는 사실은 read_error가 진다."""
     ledger = Ledger()
     if not path:
         ledger.read_error = "no transcript path"
@@ -242,7 +242,7 @@ def _num(value, fallback):
 def verdict(ledger: Ledger, limits: dict, role: str = "") -> Verdict:
     """세션 상한 → 역할 누적 상한 → 역할 호출 상한 순으로 본다. 판정은 순수 — IO 없음.
 
-    role 은 이번에 스폰하려는 서브에이전트다. 빈 문자열이면 세션 상한만 본다 (메인 레인 지점).
+    role은 이번에 스폰하려는 서브에이전트다. 빈 문자열이면 세션 상한만 본다 (메인 레인 지점).
     역할 상한은 **이미 쓴 것**으로 판정한다 — 앞으로 얼마나 쓸지는 알 수 없고, 알 수 없는 것으로
     막으면 게이트가 추측을 시작한다."""
     weights = limits.get("weights") if isinstance(limits.get("weights"), dict) else None
@@ -308,7 +308,7 @@ def warn_text(ledger: Ledger, spent: float, ceiling: float) -> str:
 
 # ── 설정 ────────────────────────────────────────────────────────────────────────
 def load_limits(root: str) -> dict:
-    """env > 프로젝트 > 글로벌 > 기본값. settings.py 의 스코프 규칙과 동일 유지 (단일 출처 원칙)."""
+    """env > 프로젝트 > 글로벌 > 기본값. settings.py의 스코프 규칙과 동일 유지 (단일 출처 원칙)."""
     limits = dict(DEFAULTS)
     home = os.environ.get("HOME") or os.path.expanduser("~")
     for path in (
@@ -343,9 +343,9 @@ def action() -> str:
 
 
 def emit(current_client: str, text: str, event: str, current_action: str = "prompt") -> None:
-    """주입 스키마는 클라이언트마다 다르다 — unattended-context·map-activate 와 동일 유지 (단일 규약).
+    """주입 스키마는 클라이언트마다 다르다 — unattended-context·map-activate와 동일 유지 (단일 규약).
 
-    Cursor 의 beforeSubmitPrompt 는 컨텍스트 주입 통로가 없다 (출력이 continue/user_message 뿐,
+    Cursor의 beforeSubmitPrompt는 컨텍스트 주입 통로가 없다 (출력이 continue/user_message 뿐,
     cursor.com/docs/hooks 26-07-27 확인) — 경고는 조용히 버린다. 틀린 스키마를 내면 훅 전체가
     파싱 실패로 죽어서 **차단까지 같이 사라진다**. 경고 하나를 잃는 편이 게이트를 잃는 것보다 낫다."""
     if current_client == "cursor":
@@ -365,9 +365,9 @@ def emit(current_client: str, text: str, event: str, current_action: str = "prom
 
 
 def deny(current_client: str, message: str, current_action: str = "prompt") -> None:
-    """차단 — Claude Code/Codex 는 exit 2 + stderr (git-guard 와 동일 규약).
+    """차단 — Claude Code/Codex는 exit 2 + stderr (git-guard와 동일 규약).
 
-    Cursor 는 이벤트마다 차단 스키마가 다르다: preToolUse 는 permission JSON, beforeSubmitPrompt 는
+    Cursor는 이벤트마다 차단 스키마가 다르다: preToolUse는 permission JSON, beforeSubmitPrompt는
     continue/user_message. 한 스키마로 밀면 한쪽이 조용히 통과한다."""
     if current_client == "cursor":
         payload = (
@@ -382,7 +382,7 @@ def deny(current_client: str, message: str, current_action: str = "prompt") -> N
 
 
 def spawn_role(data: dict) -> str:
-    """PreToolUse(Task) 페이로드에서 스폰 대상 역할 — memory_activate 의 추출 순서와 동일 유지."""
+    """PreToolUse(Task) 페이로드에서 스폰 대상 역할 — memory_activate의 추출 순서와 동일 유지."""
     raw_input = data.get("tool_input")
     tool_input: dict = raw_input if isinstance(raw_input, dict) else {}
     for value in (
@@ -426,7 +426,7 @@ def main() -> None:
         emit(current_client, result.message, _EVENT[current_action], current_action)
         sys.exit(0)
     if current_client == "cursor" and current_action == "task":
-        # Cursor 는 침묵을 허용으로 안 본다 — 명시적 allow 가 프로토콜 요구사항 (secret-guard 와 동일).
+        # Cursor는 침묵을 허용으로 안 본다 — 명시적 allow가 프로토콜 요구사항 (secret-guard와 동일).
         sys.stdout.write(json.dumps({"permission": "allow"}, separators=(",", ":")))
     sys.exit(0)
 

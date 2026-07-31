@@ -1,16 +1,16 @@
 """파일 읽고 쓰기 — 인코딩·수명·원자성을 한 자리에 가둔다.
 
-왜 만들었나: 저장소 전역에 `json.load(open(p, encoding="utf-8"))` 와 `open(tmp, "w").write(x)`
-와 tmp+os.replace 세 줄이 144곳에 흩어져 있었다. 흩어져 있으면 세 가지가 동시에 샌다 — 핸들
+왜 만들었나: 저장소 전역에 `json.load(open(p, encoding="utf-8"))`와 `open(tmp,
+"w").write(x)`와 tmp+os.replace 세 줄이 144곳에 흩어져 있었다. 흩어져 있으면 세 가지가 동시에 샌다 — 핸들
 수명(예외가 나면 안 닫힌다), 인코딩(빠뜨린 자리가 Windows 에서만 깨진다), 원자성(중간에 죽으면
 반쪽 파일이 남는다). 셋 다 호출부가 매번 기억해야 하는 것이었고, 그래서 매번은 아니었다.
 
 인터페이스는 일부러 좁다. 경로와 값만 받고 나머지는 여기서 결정한다 — 호출부가 알아야 할 것이
-줄어든 만큼만 이 모듈이 깊다. 파일 모드·버퍼링·개행 제어가 필요한 자리는 그냥 `open` 을 쓰면
+줄어든 만큼만 이 모듈이 깊다. 파일 모드·버퍼링·개행 제어가 필요한 자리는 그냥 `open`을 쓰면
 된다. 여기 있는 것은 "설정 하나를 읽고 쓴다"는 압도적 다수 경우다.
 
-읽기는 전부 **없으면 기본값**이다. 없는 파일과 깨진 파일을 예외로 올리면 호출부가 매번 try 를
-쓰게 되고, 그 try 가 결국 다른 실패까지 삼킨다. 쓰기는 반대로 실패를 올린다 — 못 쓴 것을
+읽기는 전부 **없으면 기본값**이다. 없는 파일과 깨진 파일을 예외로 올리면 호출부가 매번 try를
+쓰게 되고, 그 try가 결국 다른 실패까지 삼킨다. 쓰기는 반대로 실패를 올린다 — 못 쓴 것을
 썼다고 믿으면 그 다음이 전부 거짓이 된다.
 """
 
@@ -33,7 +33,7 @@ def read_text(path: str, default: str = "") -> str:
 
 
 def read_json(path: str, default: Any = None) -> Any:
-    """깨진 JSON 도 없는 것으로 친다 — 절단된 파일은 크래시의 흔적이지 호출부의 잘못이 아니다."""
+    """깨진 JSON도 없는 것으로 친다 — 절단된 파일은 크래시의 흔적이지 호출부의 잘못이 아니다."""
     try:
         with open(path, encoding=_ENCODING) as handle:
             return json.load(handle)
@@ -77,7 +77,7 @@ def write_json(path: str, data: Any, *, indent: int | None = 1, sort_keys: bool 
 
 
 def append_line(path: str, text: str) -> None:
-    """추가는 원자적으로 못 만든다 — 대신 한 번의 write 로 끝내 부분 기록 창을 최소화한다."""
+    """추가는 원자적으로 못 만든다 — 대신 한 번의 write로 끝내 부분 기록 창을 최소화한다."""
     _ensure_parent(path)
     with open(path, "a", encoding=_ENCODING) as handle:
         handle.write(text if text.endswith("\n") else text + "\n")

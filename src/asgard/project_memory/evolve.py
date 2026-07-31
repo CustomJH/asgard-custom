@@ -1,8 +1,8 @@
 """프로젝트 메모리 진화 패스 — 2차 메모리도 스스로 낡은 곳을 찾아 고쳐 나간다.
 
-개인 위키에는 노른이 있다: 신호를 모으고, LLM 이 델타를 제안하고, 코드가 판정해서 커밋한다.
+개인 위키에는 노른이 있다: 신호를 모으고, LLM이 델타를 제안하고, 코드가 판정해서 커밋한다.
 프로젝트 메모리에는 그게 없었다 — 등록은 되는데 낡지 않는 기억은 없으므로, 시간이 지나면
-지워진 파일을 가리키는 record 와 서로 어긋나는 record 가 조용히 쌓인다.
+지워진 파일을 가리키는 record와 서로 어긋나는 record가 조용히 쌓인다.
 
 같은 규율을 여기로 옮기되, **승인 게이트를 우회하지 않는다**. 프로젝트 메모리는 팀 공유
 스코프라 쓰기가 언제나 사람 승인을 지난다 (stage_retain → project-approve). 그래서 이
@@ -12,7 +12,7 @@
 신호가 코드 몫과 LLM 몫으로 갈린다.
   결정론 — 사라진 source 파일, 근사 중복 쌍, revision 드리프트. 파일시스템이 답한다.
   제안   — 무엇이 낡았고 무엇이 새 통찰인지. 판정은 다시 코드가 한다 (사라짐은 재확인,
-           통찰의 근거 record 는 실존 확인, 스캔은 등록 기준 그대로).
+           통찰의 근거 record는 실존 확인, 스캔은 등록 기준 그대로).
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from .canonical import load_canonical_records
 from .records import RELATIONS, ProjectRecord, record_item, render_record, validate_record
 from .scan import source_revision
 
-MERGE_FLOOR = 0.55  # 근사 중복 판정 — LLM 주장과 무관하게 코드가 본다 (노른 MERGE_FLOOR 와 같은 취지)
+MERGE_FLOOR = 0.55  # 근사 중복 판정 — LLM 주장과 무관하게 코드가 본다 (노른 MERGE_FLOOR와 같은 취지)
 MAX_RETIRE, MAX_INSIGHTS, MAX_CONTRADICTIONS = 5, 2, 3
 # 관계는 레코드를 안 지우고 안 고쳐 쓴다 — 덧붙이기만 하므로 캡이 넉넉하다.
 # 그래도 상한은 둔다: 전부를 전부에 잇는 그래프는 아무것도 안 잇는 것과 회수 성능이 같다.
@@ -37,7 +37,7 @@ INSIGHT_MIN_SOURCES, INSIGHT_MAX_SOURCES = 2, 6
 INSIGHT_MAX_CHARS = 1500
 MAX_RECORDS_IN_PROMPT = 80
 
-# source 가 파일 경로일 때만 "사라졌다"를 판정할 수 있다. quest:·url:·commit: 계열은
+# source가 파일 경로일 때만 "사라졌다"를 판정할 수 있다. quest:·url:·commit: 계열은
 # 저장소 파일이 아니므로 존재 판정 대상이 아니다 — 못 보는 것을 봤다고 하지 않는다.
 _PATH_SOURCE = re.compile(r"^(?!(?:quest|url|https?|commit|test|adr):)[\w./-]+$")
 
@@ -85,7 +85,7 @@ def _is_path_source(source: str) -> bool:
 
 
 def _missing_source(root: str, source: str) -> bool:
-    """source 가 저장소 파일 경로인데 지금 없으면 True. 경로가 아니면 판정하지 않는다."""
+    """source가 저장소 파일 경로인데 지금 없으면 True. 경로가 아니면 판정하지 않는다."""
     if not _is_path_source(source):
         return False
     candidate = os.path.normpath(os.path.join(root, source.strip()))
@@ -98,7 +98,7 @@ def _missing_source(root: str, source: str) -> bool:
 
 
 def signals(root: str) -> dict:
-    """LLM 에게 보여줄 증거 카드 — record 카탈로그와 코드가 이미 확인한 판정. 쓰기 없음."""
+    """LLM에게 보여줄 증거 카드 — record 카탈로그와 코드가 이미 확인한 판정. 쓰기 없음."""
     try:
         loaded = load_canonical_records(root)
     except Exception as exc:
@@ -151,7 +151,7 @@ def _parse_ops(raw: str) -> list[dict]:
 
 
 def validate_ops(ops: list[dict], root: str, sig: dict) -> tuple[list[dict], list[dict]]:
-    """결정적 검증 — 통과한 op 와 (op, 기각 사유). LLM 주장은 검증 입력일 뿐이다."""
+    """결정적 검증 — 통과한 op와 (op, 기각 사유). LLM 주장은 검증 입력일 뿐이다."""
     known = {row["record_id"]: row for row in sig.get("records") or []}
     active = {rid for rid, row in known.items() if row["status"] == "active"}
     accepted: list[dict] = []
@@ -184,7 +184,7 @@ def validate_ops(ops: list[dict], root: str, sig: dict) -> tuple[list[dict], lis
             if record_id in seen_retire:
                 _drop(op, "duplicate retire in this pass")
                 continue
-            # 코드가 다시 본다. LLM 이 "낡았다"고 말해도, 파일이 살아 있으면 낡지 않았다.
+            # 코드가 다시 본다. LLM이 "낡았다"고 말해도, 파일이 살아 있으면 낡지 않았다.
             if not _missing_source(root, known[record_id]["source"]):
                 _drop(op, f"source still exists in the repository: {known[record_id]['source']}")
                 continue
@@ -230,7 +230,7 @@ def validate_ops(ops: list[dict], root: str, sig: dict) -> tuple[list[dict], lis
             )
         elif kind == "relate":
             # 관계 어휘는 이미 정본에 있다 (records.RELATIONS). 코드가 그 목록으로 다시 본다 —
-            # LLM 이 그럴듯한 새 관계명을 지어내면(과거 실측: `derived_from`) 조용히 통과해선 안 된다.
+            # LLM이 그럴듯한 새 관계명을 지어내면(과거 실측: `derived_from`) 조용히 통과해선 안 된다.
             a, b = str(op.get("a") or "").strip(), str(op.get("b") or "").strip()
             relation = str(op.get("relation") or "").strip()
             if a not in active or b not in active or a == b:
@@ -267,22 +267,22 @@ def _insight_record(root: str, title: str, text: str, sources: list[str]) -> Pro
         source=f"evolve:{','.join(sources[:3])}",
         source_revision=source_revision(root),
         importance="normal",
-        # 합성물은 관측이지 검증이 아니다 — confidence 를 사람이 올려주기 전까지 observed 다
+        # 합성물은 관측이지 검증이 아니다 — confidence를 사람이 올려주기 전까지 observed 다
         confidence="observed",
         relations=tuple({"type": "supportedBy", "target": value} for value in sources),
     )
 
 
 def _retire_record(root: str, existing: dict) -> ProjectRecord:
-    """같은 record_id 를 superseded 상태로 다시 쓴다 — 삭제가 아니라 상태 전이다."""
+    """같은 record_id를 superseded 상태로 다시 쓴다 — 삭제가 아니라 상태 전이다."""
     return ProjectRecord(
         record_id=existing["record_id"],
         kind=existing["kind"],
         title=existing["title"],
         content=(
             f"{existing['excerpt']}\n\n"
-            f"이 record 의 출처 `{existing['source']}` 는 저장소에서 사라졌다 — "
-            f"진화 패스가 superseded 로 전이시켰다 (내용은 이력으로 남는다)."
+            f"이 record의 출처 `{existing['source']}`는 저장소에서 사라졌다 — "
+            f"진화 패스가 superseded로 전이시켰다 (내용은 이력으로 남는다)."
         ),
         source=existing["source"],
         source_revision=source_revision(root),
@@ -309,7 +309,7 @@ def _relate_record(root: str, record_id: str, relation: str, target: str) -> Pro
 
 
 def _complete(root: str, system: str, user: str) -> str:
-    """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다. 메인 provider 를 쓴다."""
+    """LLM 단발 호출 간접점 — 테스트가 이 지점만 대체한다. 메인 provider를 쓴다."""
     from ..agent.oneshot import complete_once
 
     return complete_once(root, system, user, max_tokens=3000)
@@ -337,7 +337,7 @@ def plan_evolve(root: str) -> dict:
 
 
 def apply_evolve(root: str, cfg: dict, plan: dict) -> dict:
-    """검증 통과 op 를 승인 대기로 올린다. 팀 공유 스코프라 여기서 커밋하지 않는다."""
+    """검증 통과 op를 승인 대기로 올린다. 팀 공유 스코프라 여기서 커밋하지 않는다."""
     from ..memory_bridge import backend_target, stage_retain
 
     target = backend_target(cfg)
@@ -393,7 +393,7 @@ def evolve_note(root: str) -> str:
         if missing or duplicates:
             return (
                 f"프로젝트 메모리 진화 신호 — 사라진 출처 {missing}건, 근사 중복 {duplicates}건. "
-                "asgard memory project-evolve 로 검토"
+                "asgard memory project-evolve로 검토"
             )
     return ""
 

@@ -1,13 +1,13 @@
 """팀 — 번호의 주인이자 워크플로·사이클·트리아지의 단위.
 
-Linear 의 계약을 그대로 든다: **티켓은 팀 하나에만 속한다.** 그래서 `NOR-12` 의 앞자리는
+Linear의 계약을 그대로 든다: **티켓은 팀 하나에만 속한다.** 그래서 `NOR-12`의 앞자리는
 팀이고, 번호는 그 팀 안에서만 단조 증가한다. 프로젝트는 팀을 가로지르지만 번호는 안 준다 —
 한 티켓에 이름이 둘이면 대화가 깨지기 때문이다.
 
 **폴더는 팀의 출신이지 팀 자체가 아니다.** 저장소에서 처음 티켓을 끊으면 그 폴더 이름에서
 팀이 하나 선다(`nordic/` → `NOR`). 그 뒤로 폴더를 옮기든 지우든 팀은 워크스페이스에 남고,
 폴더가 없는 팀도 설 수 있다(기획은 코드가 생기기 전에 시작한다). 결속은 양쪽에 적는다 —
-워크스페이스의 `team_roots` 와 저장소 안의 `.asgard/studio/team.json`.
+워크스페이스의 `team_roots`와 저장소 안의 `.asgard/studio/team.json`.
 
 **상태는 팀이 짓고 범주는 다섯으로 고정이다.** 이름을 열어 두는 이유는 팀마다 일하는 결이
 달라서고, 범주를 닫아 두는 이유는 그래야 "열린 건수"를 셀 수 있어서다([[vocab]]).
@@ -186,7 +186,7 @@ def create_team(name: str, key: str = "", **fields: Any) -> dict[str, Any]:
 
 
 def find_team(conn: sqlite3.Connection, ref: Any) -> sqlite3.Row | None:
-    """id 든 키든 이름이든 같은 문으로 받는다 — 사람은 키로 부르고 기계는 id 로 부른다."""
+    """id 든 키든 이름이든 같은 문으로 받는다 — 사람은 키로 부르고 기계는 id로 부른다."""
     if not isinstance(ref, str):
         return None
     ref = ref.strip()
@@ -309,10 +309,10 @@ def ensure_team(conn: sqlite3.Connection, root: str | None, *, create: bool = Tr
 
     여태는 결속이 없는 폴더에서 적으면 폴더 이름으로 팀을 하나 세웠다. 그게 "폴더 = 프로젝트"를
     조용히 되살리고 있었다: 저장소 다섯 곳을 오가며 일한 사람은 팀 다섯 개와 번호 다섯 갈래를
-    갖게 되고, 그중 어느 것도 고른 적이 없다. 팀은 사람이 짓는 것이다 — `create_team` 과
-    `bind_root` 가 그 문이고, 여기서는 만들지 않는다.
+    갖게 되고, 그중 어느 것도 고른 적이 없다. 팀은 사람이 짓는 것이다 — `create_team`과
+    `bind_root`가 그 문이고, 여기서는 만들지 않는다.
 
-    (폴더를 팀으로 갖고 싶은 사람은 `asgard ticket team add <이름> --bind` 로 그렇게 한다.)"""
+    (폴더를 팀으로 갖고 싶은 사람은 `asgard ticket team add <이름> --bind`로 그렇게 한다.)"""
     found = team_for_root(conn, root)
     if found is not None:
         return found
@@ -323,7 +323,7 @@ _DEFAULT_TEAM_NAME = "일감"
 
 
 def default_team(conn: sqlite3.Connection, *, create: bool = True) -> sqlite3.Row | None:
-    """폴더 없이 적는 일감이 서는 자리. meta 에 굳어 있어 이름을 바꿔도 안 흔들린다."""
+    """폴더 없이 적는 일감이 서는 자리. meta에 굳어 있어 이름을 바꿔도 안 흔들린다."""
     stored = meta_get(conn, "default_team")
     if stored:
         found = conn.execute("SELECT * FROM teams WHERE id = ?", (stored,)).fetchone()
@@ -563,7 +563,7 @@ def active_cycle(team_ref: Any) -> dict[str, Any] | None:
 def close_cycle(team_ref: Any, ref: Any, roll: bool = True) -> dict[str, Any]:
     """사이클을 닫는다. 안 끝난 티켓은 기본으로 **다음 사이클로 넘긴다**.
 
-    Linear 와 같은 계약이다: 안 끝난 일을 닫힌 사이클에 남겨 두면 그 일은 어느 보드에도 안
+    Linear와 같은 계약이다: 안 끝난 일을 닫힌 사이클에 남겨 두면 그 일은 어느 보드에도 안
     뜨면서 열린 채로 남는다 — 사이클이 일을 삼키는 셈이다."""
     with writing() as conn:
         team = resolve_team(conn, team_ref)

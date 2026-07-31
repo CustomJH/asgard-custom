@@ -1,8 +1,8 @@
-"""토르 정찰 사이드카 — `survey` 가 알아낸 것을 세션 너머로 들고 간다.
+"""토르 정찰 사이드카 — `survey`가 알아낸 것을 세션 너머로 들고 간다.
 
 왜 필요한가: 절차의 첫 동사가 "여기서 무엇이 지배하는가"인데, 그 답이 세션이 끝나면 증발했다.
 같은 저장소를 매번 다시 훑는 것은 낭비가 아니라 **위험**이다 — 매번 다시 훑으면 매번 조금씩 다르게
-읽고, 그 차이가 파일마다 다른 관례로 굳는다. 프레이야가 PRODUCT.md/DESIGN.md 를 들고 다니는 것과
+읽고, 그 차이가 파일마다 다른 관례로 굳는다. 프레이야가 PRODUCT.md/DESIGN.md를 들고 다니는 것과
 같은 이유다.
 
 경계는 이 저장소의 원칙 그대로다: **기계가 잴 수 있는 것만 기계가 적는다.** 매니페스트에서 읽히는
@@ -35,7 +35,7 @@ from datetime import datetime, timezone
 REL = os.path.join(".asgard", "thor", "stack.json")
 
 # 매니페스트 → (생태계, 흔한 검증 명령). 파일이 곧 증거인 것만 넣는다 — 디렉터리 이름으로 추측하지
-# 않는다(`src/` 가 있다고 무엇도 알 수 없다).
+# 않는다(`src/`가 있다고 무엇도 알 수 없다).
 MANIFESTS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
     ("pom.xml", "JVM (Maven)", ("mvn -q test",)),
     ("build.gradle.kts", "JVM (Gradle)", ("./gradlew test",)),
@@ -132,7 +132,7 @@ def detect(root: str) -> Survey:
 
 
 def fingerprint(root: str, manifests: list[str]) -> str:
-    """매니페스트 내용의 지문. 내용을 쓰는 이유는 mtime 이 체크아웃마다 바뀌기 때문이다."""
+    """매니페스트 내용의 지문. 내용을 쓰는 이유는 mtime이 체크아웃마다 바뀌기 때문이다."""
     digest = hashlib.sha256()
     for rel in sorted(manifests):
         digest.update(rel.encode("utf-8"))
@@ -173,7 +173,7 @@ def drifted(root: str, survey: Survey) -> dict[str, tuple[str, ...]]:
     """판단마다, 적힌 뒤 무엇이 움직였는가. 빈 사전 = 넷 다 적힌 그대로의 세계다.
 
     출처를 모르는 판단(`unsourced`)은 여기 안 담는다 — 움직였는지 **모르는** 것이지 안 움직인
-    것이 아니고, 둘을 같은 칸에 넣으면 화면이 거짓말한다. 그쪽은 `Survey.unsourced` 가 따로 낸다.
+    것이 아니고, 둘을 같은 칸에 넣으면 화면이 거짓말한다. 그쪽은 `Survey.unsourced`가 따로 낸다.
     """
     now_manifest = fingerprint(root, survey.manifests)
     now_shape = shape(root)
@@ -199,7 +199,7 @@ def _same_ruler(before: str, now: str) -> bool:
 def unmeasured(survey: Survey) -> list[str]:
     """적혀 있으나 **지금 자로는 구조 낡음을 못 재는** 판단 — 자가 바뀐 뒤의 옛 기록.
 
-    `drifted` 가 침묵하는 것과 "안 움직였다"는 다르다. 침묵이 곧 통과가 되면 게이트가 아니라
+    `drifted`가 침묵하는 것과 "안 움직였다"는 다르다. 침묵이 곧 통과가 되면 게이트가 아니라
     알리바이가 된다는 이 저장소의 계약을 사이드카에도 그대로 건다.
     """
     return [

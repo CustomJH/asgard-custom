@@ -5,8 +5,8 @@
 입력 프레임은 턴 진행 중에도 하단에 상주한다(_Dock) — 출력이 독 위로 흘러들고,
 턴이 끝나면 pt 프롬프트가 같은 자리를 이어받는다 (프레이야 명세 26-07-20).
 
-ANSI 직접 (ui.py 스타일 일관 — rich Markdown 은 스트리밍과 안 맞아 버퍼가 필요). 로고는
-install.sh 의 Yggdrasil braille lockup 재사용 — 어느 터미널·배경에서나 렌더된다.
+ANSI 직접 (ui.py 스타일 일관 — rich Markdown은 스트리밍과 안 맞아 버퍼가 필요). 로고는
+install.sh의 Yggdrasil braille lockup 재사용 — 어느 터미널·배경에서나 렌더된다.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from .. import theme, ui, winterm
 from ..i18n import t
 from .session import ql
 
-# install.sh _logo_art 원본 그대로 — Yggdrasil 마크 + ASGARD braille wordmark. install 에서
+# install.sh _logo_art 원본 그대로 — Yggdrasil 마크 + ASGARD braille wordmark. install에서
 # 나오는 그 로고. 축약하면 정렬이 깨지므로 원본 유지. 이미지 터미널은 _image_logo() PNG(동일 lockup).
 _LOGO = (
     "⠀⠀⠀⠀⢀⡤⣶⣶⣶⣲⠤⣀⠀⠀⠀⠀  ⠀⠀⠀⢰⡄⠀⠀⠀⠀⠀⢀⣤⣦⣄⡀⠀⠀⠀⠀⣠⣦⣀⠀⠀⠀⠀⠀⠀⣦⠀⠀⠀⠀⠰⣶⣶⣶⣦⡀⠀⠀⠐⣶⣦⣄⠀⠀⠀\n"
@@ -31,8 +31,8 @@ _LOGO_SLIM = "◇ ASGARD"  # 폭 좁은 터미널용 축약
 
 
 def is_light_bg() -> bool:
-    """터미널 배경이 밝은지 — COLORFGBG='fg;bg' 의 bg 가 7~15 면 라이트. 모르면 다크 가정.
-    라이트 배경엔 흰 로고가 안 보이고 골드 asset 은 검정 박스가 보이므로, 이미지를 스킵하고
+    """터미널 배경이 밝은지 — COLORFGBG='fg;bg'의 bg가 7~15 면 라이트. 모르면 다크 가정.
+    라이트 배경엔 흰 로고가 안 보이고 골드 asset은 검정 박스가 보이므로, 이미지를 스킵하고
     진한 텍스트 로고로 폴백한다."""
     import os
 
@@ -46,12 +46,12 @@ def is_light_bg() -> bool:
 
 
 def _image_logo() -> bool:
-    """지원 터미널(kitty/iterm/ghostty/wezterm) + 다크 배경이면 PNG lockup 을 인라인 표시.
-    라이트 배경은 흰 로고가 안 보여 스킵(→ 텍스트 폴백). install.sh _logo 의 파이썬 포팅."""
+    """지원 터미널(kitty/iterm/ghostty/wezterm) + 다크 배경이면 PNG lockup을 인라인 표시.
+    라이트 배경은 흰 로고가 안 보여 스킵(→ 텍스트 폴백). install.sh _logo의 파이썬 포팅."""
     import base64
     import os
 
-    if is_light_bg():  # 흰 lockup 은 라이트 배경서 안 보인다 — 텍스트 폴백에 맡긴다
+    if is_light_bg():  # 흰 lockup은 라이트 배경서 안 보인다 — 텍스트 폴백에 맡긴다
         return False
     proto = ""
     tp = os.environ.get("TERM_PROGRAM", "")
@@ -106,7 +106,7 @@ def banner(rp) -> None:
     width = size.columns
     roomy = width >= 100 and size.lines >= 36
 
-    # 큰 lockup 은 세로 공간이 충분할 때만. 120×30 같은 일반 터미널은 대화 공간을 우선한다.
+    # 큰 lockup은 세로 공간이 충분할 때만. 120×30 같은 일반 터미널은 대화 공간을 우선한다.
     if not (roomy and ui._COLOR and _image_logo()):
         grad = _LOGO_GRAD_LIGHT if is_light_bg() else _LOGO_GRAD
         if roomy:
@@ -117,8 +117,8 @@ def banner(rp) -> None:
         else:
             sys.stdout.write("\n  " + ui.paint(_O, _LOGO_SLIM) + "\n")
 
-    # welcome + tip + 구분선 rule (모델·경로·git 은 하단 status line 으로)
-    # rule 은 HAIRLINE — 금은 로고·✦·입력 캐럿(좌측 스파인)에만, 프레임 선은 전부 한 하드라인 색
+    # welcome + tip + 구분선 rule (모델·경로·git은 하단 status line으로)
+    # rule은 HAIRLINE — 금은 로고·✦·입력 캐럿(좌측 스파인)에만, 프레임 선은 전부 한 하드라인 색
     rule = ui.paint(theme.ansi(theme.HAIRLINE), "─" * min(width - 4, 60))
     sys.stdout.write(
         f"\n  {ui.bold(t('welcome'))} {ui.dim(t('welcome_hint'))}\n  {ui.paint(_O, '✦')} {ui.dim(t('tip'))}\n  {rule}\n"
@@ -156,21 +156,21 @@ def _git_status(root: str) -> str:
 
 # 상태줄 — 세그먼트 모델. 오딘 선택(26-07-16): 좌측 골드 브랜드칩 + 세그먼트별
 # 아이콘·고유색(모델◆금·경로⌂청·git 녹/호박·lagom❄시안·메트릭 흐림). 색이 분절을 담당하므로
-# 구분자는 여백만. 폭 주의: statusline 은 단일 좌측 플로우라 폭 변동이 정렬을 깨지 않으며, 이모지
+# 구분자는 여백만. 폭 주의: statusline은 단일 좌측 플로우라 폭 변동이 정렬을 깨지 않으며, 이모지
 # 프리젠테이션 가능 글리프(❄)만 VS15(U+FE0E)로 텍스트 렌더 강제(색 ANSI 유지·너비 안정).
-_BRAND_CHIP = "⠶ ASGARD"  # 좌측 골드 브랜드칩 — readline 폴백 statusline 의 Asgard 시그니처
+_BRAND_CHIP = "⠶ ASGARD"  # 좌측 골드 브랜드칩 — readline 폴백 statusline의 Asgard 시그니처
 _STATUS_SEP = "   "  # 세그먼트 간 여백 — 색이 분절을 담당 (구분자 글리프 없음)
 _ICON_LAGOM = "❄︎"  # ❄ + VS15 = 텍스트 프리젠테이션 강제 (색 이모지 렌더 방지)
 
 # 입력 박스 프레임 (프레이야 명세 26-07-16) — 라운드 코너 U+2500(폭 안정). 라운드=라이브 입력,
 # 향후 출력 블록은 샤프 ┌┐└┘ 로 시각 문법 분리. 상·하단 코너는 정적 라인이라 완전 폐합 안전,
-# 입력 줄 좌측 │ 스파인만 두고 우측은 개방(라이브 편집·wrap 로 깨지는 유일한 면 — rprompt 힌트가 채움).
+# 입력 줄 좌측 │ 스파인만 두고 우측은 개방(라이브 편집·wrap로 깨지는 유일한 면 — rprompt 힌트가 채움).
 _BOX = {"tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "h": "─", "v": "│"}
 _BOX_CAP = "⠶ asgard"  # 상단 프레임 골드 브랜드 캡 — pt 경로 시그니처 (top-border 라벨)
 
 
 def _abbrev_path(cwd: str, limit: int = 28) -> str:
-    """긴 경로는 leaf 디렉토리만 남기고 축약 — ⠶·모델·git 을 밀어내지 않게 (프레이야 절단 우선순위).
+    """긴 경로는 leaf 디렉토리만 남기고 축약 — ⠶·모델·git을 밀어내지 않게 (프레이야 절단 우선순위).
     `~/a/b/c/repo` → `~/…/repo`. leaf 자체가 길면 뒤에서 자른다."""
     if len(cwd) <= limit:
         return cwd
@@ -199,9 +199,9 @@ def _status_segments(root: str, rp, usage: dict | None = None) -> list[tuple[str
         role = usage.get("active_role") or "agent"
         segs.append((f"◇ {role}" + (f" +{count - 1}" if count > 1 else ""), theme.ACCENT_CYAN, False))
     br = _git_status(root)
-    if br:  # git 라이브 색 — clean 룬 녹색, dirty 호박(접미 `*` 로 색맹에도 구분)
+    if br:  # git 라이브 색 — clean 룬 녹색, dirty 호박(접미 `*`로 색맹에도 구분)
         segs.append((br, theme.SUCCESS if not br.endswith("*") else theme.WARNING, False))
-    try:  # Lagom 모드 — off 는 흔적 없음 (bifrost 시안 ❄)
+    try:  # Lagom 모드 — off는 흔적 없음 (bifrost 시안 ❄)
         from ..lagom import current_mode
 
         lm = current_mode(root)
@@ -237,7 +237,7 @@ def _paint_seg(txt: str, hx: str, bold: bool) -> str:
 
 
 def statusline(root: str, rp, usage: dict | None = None) -> str:
-    """상태줄 (readline 폴백 경로 — pt 는 bottom_toolbar 로 표시). 골드 브랜드칩 + 컬러 아이콘 세그먼트."""
+    """상태줄 (readline 폴백 경로 — pt는 bottom_toolbar로 표시). 골드 브랜드칩 + 컬러 아이콘 세그먼트."""
     segs = _status_segments(root, rp, usage)
     if not ui._COLOR:  # 무색 터미널 — 텍스트만
         return "  " + _STATUS_SEP.join([_BRAND_CHIP, *[txt for txt, _, _ in segs]])
@@ -303,7 +303,7 @@ def _completer(text: str, state: int):
 
 
 _PT = None  # prompt_toolkit 세션 캐시 — False 면 생성 실패(readline 폴백)
-_PT_CTX: dict = {}  # bottom_toolbar 용 세션 상태 — run() 이 매 루프 갱신 {root, rp, heimdall}
+_PT_CTX: dict = {}  # bottom_toolbar 용 세션 상태 — run()이 매 루프 갱신 {root, rp, heimdall}
 
 
 def _term_width() -> int:
@@ -324,7 +324,7 @@ def _disp_w(s: str) -> int:
 
 
 def _decode_keys(raw: bytes) -> tuple[str, bytes]:
-    """원시 stdin 바이트 → 독 초안에 반영할 텍스트. 미완성 UTF-8/이스케이프 꼬리는 carry 로
+    """원시 stdin 바이트 → 독 초안에 반영할 텍스트. 미완성 UTF-8/이스케이프 꼬리는 carry로
     보류하고, 완성된 이스케이프 시퀀스(CPR 응답·화살표 등)는 폐기한다 — 커널 버퍼의 원시
     바이트가 다음 pt 프롬프트를 오염시키는 경로를 여기서 끊는다."""
     import re
@@ -337,7 +337,7 @@ def _decode_keys(raw: bytes) -> tuple[str, bytes]:
         except UnicodeDecodeError:
             continue
     else:
-        return "", b""  # UTF-8 로 못 푸는 잡음 — 폐기
+        return "", b""  # UTF-8로 못 푸는 잡음 — 폐기
     text = re.sub(r"\x1b(?:\[[0-9;?]*[A-Za-z~]|O.)", "", text)  # 완성 시퀀스 폐기
     m = re.search(r"\x1b(?:\[[0-9;?]*|O)?\Z", text)  # 끝의 미완성 시퀀스 접두 — 다음 청크와 합류
     if m and m.group(0):
@@ -366,7 +366,7 @@ def _box_top(width: int) -> list[tuple[str, str]]:
 
 
 def _box_top_str(width: int) -> str:
-    """_box_top 의 ANSI 문자열판 — 독(비활성 프레임)용. pt 프래그와 같은 기하·색."""
+    """_box_top의 ANSI 문자열판 — 독(비활성 프레임)용. pt 프래그와 같은 기하·색."""
     rule = theme.ansi(theme.HAIRLINE)
     fill = _box_fill(width)
     if fill < 4:
@@ -417,7 +417,7 @@ def _pt_toolbar():
     w = ui.stream_width()  # 상단 보더와 같은 폭 캡 — 코너 정렬
     bottom = "  " + _BOX["bl"] + _BOX["h"] * max(0, w - 6) + _BOX["br"] + "\n"  # 하단 보더 ╰───╯
     frags: list[tuple[str, str]] = [("class:rule", bottom), ("", "  ")]  # 상태줄은 박스 밖(아래), 들여쓰기 2
-    # 브랜드칩은 상단 캡(⠶ asgard)이 담당 — pt 경로 시그니처 1개. 상태줄은 model 부터 (상태 전용)
+    # 브랜드칩은 상단 캡(⠶ asgard)이 담당 — pt 경로 시그니처 1개. 상태줄은 model부터 (상태 전용)
     for i, (txt, hx, bold) in enumerate(_status_segments(ctx["root"], ctx["rp"], usage)):
         if i:
             frags.append(("", _STATUS_SEP))  # 여백 구분자 (색이 분절)
@@ -430,13 +430,13 @@ def _history_path() -> str:
 
     from ..profiles import home
 
-    hp = os.path.join(home(), "history")  # 입력 이력도 에이전트의 것 (turn_store 와 같은 규율)
+    hp = os.path.join(home(), "history")  # 입력 이력도 에이전트의 것 (turn_store와 같은 규율)
     os.makedirs(os.path.dirname(hp), exist_ok=True)
     return hp
 
 
 def _kb_enter(event) -> None:
-    """Enter = 제출. 단 커서 앞이 '\\' 로 끝나면 백슬래시를 지우고 줄 내림 (연속 입력)."""
+    """Enter = 제출. 단 커서 앞이 '\\'로 끝나면 백슬래시를 지우고 줄 내림 (연속 입력)."""
     buf = event.current_buffer
     if buf.document.current_line_before_cursor.endswith("\\"):
         buf.delete_before_cursor(1)
@@ -469,8 +469,8 @@ def _pt_session():
     from prompt_toolkit.keys import Keys
     from prompt_toolkit.styles import Style
 
-    # Shift+Enter 를 Ctrl+J 로 별칭 — CSI-u(\x1b[13;2u)는 미매핑, modifyOtherKeys(\x1b[27;2;13~)는
-    # pt 기본이 일반 Enter 라 줄내림으로 재매핑한다. 미지원 터미널은 \r 그대로 → '\'+Enter 가 대안.
+    # Shift+Enter를 Ctrl+J로 별칭 — CSI-u(\x1b[13;2u)는 미매핑, modifyOtherKeys(\x1b[27;2;13~)는
+    # pt 기본이 일반 Enter라 줄내림으로 재매핑한다. 미지원 터미널은 \r 그대로 → '\'+Enter가 대안.
     for seq in ("\x1b[13;2u", "\x1b[27;2;13~"):
         _esc.ANSI_SEQUENCES[seq] = Keys.ControlJ
 
@@ -480,7 +480,7 @@ def _pt_session():
 
     class _BottomAnchored(PromptSession):
         """하단 고정용 세션 — 메뉴 예약을 동적으로: '/' 커맨드 입력 중일 때만 8행.
-        pt 는 이 값을 렌더마다 읽으므로(_get_default_buffer_control_height) 프로퍼티가 통한다.
+        pt는 이 값을 렌더마다 읽으므로(_get_default_buffer_control_height) 프로퍼티가 통한다.
         상시 예약은 입력행과 toolbar(하단 보더·상태줄)를 항상 8행 찢어 놓아 하단 고정과 상극 —
         필요한 순간에만 열어 평소엔 프레임이 밀착된다 (pyte 실측 검증)."""
 
@@ -495,7 +495,7 @@ def _pt_session():
 
         @reserve_space_for_menu.setter
         def reserve_space_for_menu(self, value: int) -> None:
-            pass  # __init__ 의 정적 대입 무시 — 동적 계산이 단일 소스
+            pass  # __init__의 정적 대입 무시 — 동적 계산이 단일 소스
 
     class _Slash(Completer):
         def get_completions(self, document, complete_event):
@@ -509,7 +509,7 @@ def _pt_session():
         {
             "arrow": f"{theme.PRIMARY} bold",
             "cap": f"{theme.PRIMARY} bold",  # 상단 박스 프레임 골드 브랜드 캡 (⠶ asgard)
-            "rule": theme.HAIRLINE,  # 입력·박스 프레임 룰 — 배너 rule 과 한 하드라인 색
+            "rule": theme.HAIRLINE,  # 입력·박스 프레임 룰 — 배너 rule과 한 하드라인 색
             "placeholder": theme.SUBTEXT,
             "hint": theme.SUBTEXT,
             "bottom-toolbar": "noreverse",
@@ -526,11 +526,11 @@ def _pt_session():
         auto_suggest=AutoSuggestFromHistory(),
         history=FileHistory(_history_path()),
         style=style,
-        multiline=True,  # 줄 내림 허용 — Enter 제출은 _kb_enter 가 유지 (기본 멀티라인 Enter 를 대체)
+        multiline=True,  # 줄 내림 허용 — Enter 제출은 _kb_enter가 유지 (기본 멀티라인 Enter를 대체)
         key_bindings=kb,
         prompt_continuation=_pt_continuation,
         # 제출 시 입력 프레임 전체 소거 — 라이브 에디터는 편집 중에만 존재하고, 스크롤백엔
-        # run() 의 _echo_submitted 한 줄이 사용자 메시지를 대표한다 (pi·hermes·opencode 공통:
+        # run()의 _echo_submitted 한 줄이 사용자 메시지를 대표한다 (pi·hermes·opencode 공통:
         # 에디터는 transient, 내역엔 별도 표현. 열린 박스·rprompt 힌트 잔존 문제의 근본 해소).
         erase_when_done=True,
     )
@@ -539,7 +539,7 @@ def _pt_session():
     # `화면 잔여 행(rows − rows_above_layout, CPR 기반) − 본체 필요 행` 만큼 정확히 채우면
     # 박스가 바닥에 붙고, 성장(줄 추가·메뉴 오픈)은 필러를 소모할 뿐 화면을 스크롤하지 않으며
     # 축소는 필러가 되살아나 위 내용(배너·직전 출력)이 전혀 움직이지 않는다. 잔여 공간을
-    # 넘는 성장만 pt 가 자연 스크롤. accept(is_done) 시 필러가 접혀 제출 박스는 본문 흐름
+    # 넘는 성장만 pt가 자연 스크롤. accept(is_done) 시 필러가 접혀 제출 박스는 본문 흐름
     # 위치로 붙고 스크롤백에 빈 행이 남지 않는다. CPR 미지원/미도착이면 0 (원점 폴백).
     from prompt_toolkit.filters import is_done
     from prompt_toolkit.layout.containers import ConditionalContainer, HSplit, Window
@@ -576,8 +576,8 @@ def _setup_readline() -> None:
         return
     readline.set_completer(_completer)
     readline.set_completer_delims("")  # 전체 라인을 completion 대상으로 (/ 포함)
-    # uv 파이썬(macOS)은 GNU readline 이 아니라 libedit — 바인딩 문법이 다르다.
-    # GNU 문법("tab: complete")을 libedit 에 주면 조용히 무시돼 Tab 이 탭 문자로 들어간다.
+    # uv 파이썬(macOS)은 GNU readline이 아니라 libedit — 바인딩 문법이 다르다.
+    # GNU 문법("tab: complete")을 libedit에 주면 조용히 무시돼 Tab이 탭 문자로 들어간다.
     if getattr(readline, "backend", "") == "editline":
         readline.parse_and_bind("bind ^I rl_complete")
     else:
@@ -609,9 +609,9 @@ def _input_continued(first: str, cont: str) -> str:
 
 
 def _echo_submitted(req: str) -> str:
-    """제출된 입력의 스크롤백 표기 — pt 가 accept 시 입력 프레임을 통째로 지우므로
+    """제출된 입력의 스크롤백 표기 — pt가 accept 시 입력 프레임을 통째로 지우므로
     (erase_when_done) 내역엔 이 표기가 사용자 메시지를 대표한다. 일반 요청은 골드 캐럿 `›`
-    + 본문(hermes 의 ❯ 거터 상응), 커맨드(`/`·`!`)는 전체 흐림(hermes 의 muted slash 라인
+    + 본문(hermes의 ❯ 거터 상응), 커맨드(`/`·`!`)는 전체 흐림(hermes의 muted slash 라인
     상응 — 대화가 아니라 조작이므로 조용히). 멀티라인은 본문 열('  › ' 4칸)에 정렬."""
     lines = req.split("\n")
     if req.startswith(("/", "!")):
@@ -634,9 +634,9 @@ def prompt(default_text: str = "", auto_submit: bool = False) -> str:
             default=default_text,
             accept_default=auto_submit and bool(default_text),
         )
-    # readline 폴백 — 비출력(ANSI) 문자는 \x01..\x02 로 감싸야 커서 폭을 정확히 계산한다.
+    # readline 폴백 — 비출력(ANSI) 문자는 \x01..\x02로 감싸야 커서 폭을 정확히 계산한다.
     arrow = f"\x01\x1b[{_O}m\x02›\x01\x1b[0m\x02"
-    cont = "  \x01\x1b[2m\x02…\x01\x1b[0m\x02 "  # readline 프롬프트 ANSI 는 \x01..\x02 가드 필수
+    cont = "  \x01\x1b[2m\x02…\x01\x1b[0m\x02 "  # readline 프롬프트 ANSI는 \x01..\x02 가드 필수
     return _input_continued(f"  {arrow} ", cont)
 
 
@@ -645,21 +645,21 @@ class _Dock:
 
     턴 진행 중에도 입력 프레임이 화면 하단에 상주하고 스트리밍 출력은 그 위로 삽입된다.
     pt 프롬프트와 같은 프레임(골드 캡·라운드 박스·상태줄)을 그려 턴 사이 시각 연속성을 만들고,
-    실제 편집은 턴 종료 후 pt 가 같은 자리에서 이어받는다.
+    실제 편집은 턴 종료 후 pt가 같은 자리에서 이어받는다.
 
-    하단 고정: mount 가 CPR 로 커서 행을 얻어 프레임을 처음부터 화면 마지막 HEIGHT 행에 놓는다
+    하단 고정: mount가 CPR로 커서 행을 얻어 프레임을 처음부터 화면 마지막 HEIGHT 행에 놓는다
     (흐름이 위면 무스크롤 절대 배치, 겹치면 부족분만 스크롤, CPR 미응답이면 최하단 점프 폴백) —
     제출 직후 프레임이 본문 흐름 위치로 붙었다가 밀려 내려오는 점프를 없앤다.
 
     라이브 입력: 턴 중 리더 스레드가 stdin(cbreak)을 소유해 타이핑을 독 입력행에 즉시 표시한다
     (이스케이프·CPR 잔여는 스크럽 — 커널 버퍼 방치로 다음 프롬프트가 오염되는 것을 차단).
-    턴 종료 시 run() 이 take_pending() 으로 초안을 회수해 pt 프롬프트에 프리필하고,
+    턴 종료 시 run()이 take_pending()으로 초안을 회수해 pt 프롬프트에 프리필하고,
     트레일링 ⏎ 는 제출 의사로 보고 자동 제출한다.
 
     커서 계약: 유휴 시 입력행 캐럿 뒤 파킹 — 사용자가 보는 깜빡임이 곧 타이핑 지점이다.
-    내부 소거 원점은 여전히 스페이서 행(_IN 행 위): write() 는 스페이서로 올라가 아래를 지우고
+    내부 소거 원점은 여전히 스페이서 행(_IN 행 위): write()는 스페이서로 올라가 아래를 지우고
     출력을 삽입한 뒤 독을 다시 그린다 — 자연 스크롤이라 스크롤백이 보존된다 (DECSTBM 기각).
-    리사이즈·CJK 랩으로 파킹이 틀어져도 다음 redraw 의 전체 소거가 복원한다.
+    리사이즈·CJK 랩으로 파킹이 틀어져도 다음 redraw의 전체 소거가 복원한다.
     화면 쓰기는 전부 _lock 직렬화 (틱 스레드 vs 리더 스레드 vs 메인)."""
 
     HEIGHT = 6  # 스페이서 · 스피너 상태 · 박스 상단 · 입력행 · 박스 하단 · 상태줄
@@ -676,14 +676,14 @@ class _Dock:
         self._label: str | None = None
         self._t0 = 0.0
         self._frame = 0
-        self._pending = ""  # 턴 중 타이핑 초안 — take_pending() 으로 회수
+        self._pending = ""  # 턴 중 타이핑 초안 — take_pending()으로 회수
         self.mounted = False
 
     def mount(self) -> None:
         import threading
 
         with self._lock:
-            # 제출된 입력 박스는 pt 가 통째로 지운다(erase_when_done) — 여기선 독 프레임만 그린다.
+            # 제출된 입력 박스는 pt가 통째로 지운다(erase_when_done) — 여기선 독 프레임만 그린다.
             self.mounted = True
             rows = _term_rows()
             top = max(1, rows - self.HEIGHT + 1)
@@ -698,7 +698,7 @@ class _Dock:
         self._t = threading.Thread(target=self._tick, daemon=True)
         self._t.start()
         self._stop_reader = threading.Event()
-        if sys.stdin.isatty():  # 라이브 입력 리더 — mount 의 CPR 소비가 끝난 뒤에만 stdin 소유
+        if sys.stdin.isatty():  # 라이브 입력 리더 — mount의 CPR 소비가 끝난 뒤에만 stdin 소유
             self._rt = threading.Thread(target=self._read_keys, daemon=True)
             self._rt.start()
 
@@ -728,7 +728,7 @@ class _Dock:
                 sys.stdout.write(s)
                 sys.stdout.flush()
                 return
-            # 소거→삽입→재드로우를 단일 write 로 원자화 — 라인버퍼 중간 flush 로 소거 상태가
+            # 소거→삽입→재드로우를 단일 write로 원자화 — 라인버퍼 중간 flush로 소거 상태가
             # 노출되는 플리커 창을 없앤다
             body = s if s.endswith("\n") else s + "\n"
             sys.stdout.write(self._unpark() + "\x1b[0J" + body + self._frame_str() + self._park())
@@ -755,7 +755,7 @@ class _Dock:
     # — 라이브 입력 리더 (자체 스레드) —
 
     def _read_keys(self) -> None:
-        if winterm.IS_WINDOWS:  # select 는 Windows 에서 소켓 전용 — fd 를 주면 첫 턴에 스레드가 죽는다
+        if winterm.IS_WINDOWS:  # select는 Windows에서 소켓 전용 — fd를 주면 첫 턴에 스레드가 죽는다
             return self._read_keys_win()
         import os
         import select
@@ -777,8 +777,8 @@ class _Dock:
                 self._apply_keys(text)
 
     def _read_keys_win(self) -> None:
-        """Windows 키 리더 — 콘솔을 한 글자씩 폴링해 POSIX 와 같은 _decode_keys 에 얹는다.
-        VT 입력이 켜져 있으면 화살표가 ESC 시퀀스로 쪼개져 오는데, carry 가 미완성 접두를
+        """Windows 키 리더 — 콘솔을 한 글자씩 폴링해 POSIX와 같은 _decode_keys에 얹는다.
+        VT 입력이 켜져 있으면 화살표가 ESC 시퀀스로 쪼개져 오는데, carry가 미완성 접두를
         들고 있다가 완성되는 순간 폐기하므로 초안에 쓰레기가 섞이지 않는다."""
         carry = b""
         while not self._stop_reader.is_set():
@@ -841,7 +841,7 @@ class _Dock:
             return ""
         secs = time.monotonic() - self._t0
         tail = f" · {secs:.0f}s" if secs >= 1 else ""
-        budget = max(10, ui.term_cols() - 8 - len(tail))  # 랩 방지 절단 (ui.spin 과 동일 규칙)
+        budget = max(10, ui.term_cols() - 8 - len(tail))  # 랩 방지 절단 (ui.spin과 동일 규칙)
         # 단일 물리 행 불변식 — 상태 행 페인트는 고정 커서 산술(_paint_status)이라 개행이
         # 살아 나가면 박스 보더를 덮어쓴다. 호출측 클램프와 별개로 여기서 최종 방어.
         label = ui.oneline(self._label, budget)
@@ -891,7 +891,7 @@ class _Dock:
 
 def _cursor_row() -> int | None:
     """CPR(ESC[6n)로 현재 커서 행 조회 — 독 하단 배치·제출 블록 앵커의 기준점. 미응답·비 tty·
-    termios 없는 플랫폼은 None (호출부가 폴백). ECHO·ICANON 을 잠깐 내려 응답만 소비한다 —
+    termios 없는 플랫폼은 None (호출부가 폴백). ECHO·ICANON을 잠깐 내려 응답만 소비한다 —
     Enter 직후 ~100ms 창이라 선타이핑 유실 위험은 실질 0."""
     if not (sys.stdin.isatty() and sys.stdout.isatty()):
         return None
@@ -934,7 +934,7 @@ def _cursor_row() -> int | None:
 def _echo_off():
     """턴 진행 중 stdin cbreak 컨텍스트 — 에코 차단 + 즉시 읽기(ICANON 해제). 눌린 키는 독의
     라이브 입력 리더가 소비해 입력행에 표시하고, 턴 종료 시 pt 프롬프트에 프리필된다.
-    ISIG 는 유지 — Ctrl-C 턴 중단 계약 불변. termios 없는 플랫폼·non-tty 는 no-op."""
+    ISIG는 유지 — Ctrl-C 턴 중단 계약 불변. termios 없는 플랫폼·non-tty는 no-op."""
     from contextlib import contextmanager
 
     if winterm.IS_WINDOWS:  # 같은 계약을 콘솔 모드로 (ENABLE_PROCESSED_INPUT 유지 = ISIG 유지)
@@ -1025,9 +1025,9 @@ def _trinity_model(args: list[str], root: str, rp) -> None:
 
 
 def _prompt_role_model(root: str, rp) -> list[str] | None:
-    """인자 없는 /trinity model — 대화형으로 (host, role, model) 을 고른다.
+    """인자 없는 /trinity model — 대화형으로 (host, role, model)을 고른다.
 
-    None 은 "고르지 못했다"이고 이유는 셋이다 — 프롬프트 불가·사용자 취소·native 위임.
+    None은 "고르지 못했다"이고 이유는 셋이다 — 프롬프트 불가·사용자 취소·native 위임.
     셋 다 호출부가 할 일이 없다는 점에서 같아서 한 값으로 합쳤다."""
     from ..commands.role import MODEL_HOSTS, role_model_state
     from ..templates.agent_models import AGENT_MODEL_DEFAULTS
@@ -1297,9 +1297,9 @@ def _cmd_bridge(cmd: str, root: str) -> None:
 
 
 def _cmd_manual(cmd: str, root: str) -> None:
-    """/manual — 내가 쓴 프로젝트 규칙이 뭐가 실렸는지. '/manual show' 는 모델이 받는 원문.
+    """/manual — 내가 쓴 프로젝트 규칙이 뭐가 실렸는지. '/manual show'는 모델이 받는 원문.
 
-    네이티브는 세션 생성 시 1회 렌더라(KV 캐시·재현성) 이 화면은 **디스크 현재값**을 읽는다 —
+    네이티브는 세션 생성 시 1회 렌더라(KV 캐시·재현성)이 화면은 **디스크 현재값**을 읽는다 —
     편집 직후 여기서 보이는 것과 이번 세션 프롬프트가 다를 수 있어서, 그 사실을 같이 말한다."""
     import os
 
@@ -1332,7 +1332,7 @@ def _cmd_manual(cmd: str, root: str) -> None:
 
 def _cmd_lagom(cmd: str, root: str, rp) -> None:
     """/lagom — 모드 표시. '/lagom <mode>' 세션 전환, '/lagom default <mode>' 영속.
-    전환은 _Reconfigure 로 Heimdall 을 재생성한다 — 역할 프롬프트의 lagom 렌더가 새 모드로 갱신."""
+    전환은 _Reconfigure로 Heimdall을 재생성한다 — 역할 프롬프트의 lagom 렌더가 새 모드로 갱신."""
     from ..lagom import MODES, clear_state, current_mode, normalize, read_state, write_state
 
     args = cmd.split()[1:]
@@ -1416,7 +1416,7 @@ def slash(cmd: str, root: str, rp) -> bool:
             if can_prompt():
                 new = onboard(root)
                 if new is not None:
-                    raise _Reconfigure(new)  # repl.run 이 세션 재생성
+                    raise _Reconfigure(new)  # repl.run이 세션 재생성
             return True
         if rp.missing:  # 미연결 — 기본 프로파일(Claude)을 연결된 것처럼 보여주지 않는다
             sys.stdout.write(
@@ -1504,7 +1504,7 @@ class _Spinner:
         self._label = label
 
 
-_MD_BOLD = None  # re 모듈 lazy — 아래 _Render 에서 컴파일
+_MD_BOLD = None  # re 모듈 lazy — 아래 _Render에서 컴파일
 
 
 class _Render:
@@ -1512,7 +1512,7 @@ class _Render:
 
     완성 라인: **볼드**·`코드`(시안)·헤더(골드)·불릿(•) 적용. 오래 안 끝나는 라인(긴 문단)은
     스타일 포기하고 즉시 플러시 — 라이브함이 스타일보다 우선. 세션 메타 라인('  │ …' 활동 스레드 등,
-    이미 들여쓰기됨)은 그대로 통과하고, 미종결 산문에 접착되지 않게 write() 가 먼저 닫는다."""
+    이미 들여쓰기됨)은 그대로 통과하고, 미종결 산문에 접착되지 않게 write()가 먼저 닫는다."""
 
     FLUSH_AT = 160
 
@@ -1521,12 +1521,12 @@ class _Render:
 
         self._re = re
         self.buf = ""
-        self.dirty = False  # 현재 라인을 이미 raw 로 흘려보냄 — 완성 시 스타일 생략
+        self.dirty = False  # 현재 라인을 이미 raw로 흘려보냄 — 완성 시 스타일 생략
         self._sink = None  # 독 모드 싱크(dock.write) — 완성 라인만 전달. None=stdout 직행
 
     def attach(self, sink) -> None:
         """독 모드 전환 — 잔여 버퍼를 현 싱크로 먼저 방출하고 교체. 독 모드는 완성 라인 단위로만
-        흘려보낸다(부분 라인 raw 스트림은 독 redraw 와 충돌). 긴 문단은 폭 경계 소프트랩으로
+        흘려보낸다(부분 라인 raw 스트림은 독 redraw와 충돌). 긴 문단은 폭 경계 소프트랩으로
         라인을 확정 — 터미널 자연 랩과 같은 자리라 시각 동일, 라이브함 유지."""
         self.finish()
         self._sink = sink
@@ -1554,7 +1554,7 @@ class _Render:
             sink("\n".join(lines) + "\n")
 
     def _line(self, line: str) -> str:
-        """싱크 모드 라인 스타일 — _emit_line 과 같은 규칙, 문자열 반환."""
+        """싱크 모드 라인 스타일 — _emit_line과 같은 규칙, 문자열 반환."""
         if line.startswith("  ") or not line.strip():
             return line
         return "  " + self._style(line)
@@ -1566,7 +1566,7 @@ class _Render:
         # 활동 라인(완성된 메타 라인 — 앞 2칸 들여쓰기)이 미종결 산문에 접착되는 것을 막는다:
         # 두 생산자(모델 산문 · 툴/전이 라인)가 한 싱크를 공유하므로, 메타 라인이 오면 대기 산문을 먼저 닫는다.
         if "\n" in s and s.lstrip("\n").startswith("  "):
-            if self.dirty:  # 산문이 이미 raw 로 흘러나간 상태 — 개행으로 닫는다
+            if self.dirty:  # 산문이 이미 raw로 흘러나간 상태 — 개행으로 닫는다
                 sys.stdout.write("\n")
                 sys.stdout.flush()
                 self.dirty = False
@@ -1594,7 +1594,7 @@ class _Render:
             self.buf = ""
 
     def _emit_line(self, line: str) -> None:
-        if self.dirty:  # 이미 raw 로 나간 라인의 잔여
+        if self.dirty:  # 이미 raw로 나간 라인의 잔여
             sys.stdout.write(line + "\n")
             self.dirty = False
         elif line.startswith("  ") or not line.strip():  # 메타 라인·공백 — 무가공
@@ -1719,7 +1719,7 @@ def run(root: str, rp, cont: bool = False) -> int:
         render.write(s)
 
     # '/' 라이브 완성 메뉴 (prompt_toolkit). 실패 시 readline 폴백 — 히스토리 파일 충돌 방지 위해
-    # 한쪽만 배선한다 (readline atexit 가 pt 포맷 히스토리를 덮어쓰는 것 방지).
+    # 한쪽만 배선한다 (readline atexit가 pt 포맷 히스토리를 덮어쓰는 것 방지).
     global _PT
     if _PT is None and ui._COLOR:
         try:
@@ -1729,7 +1729,7 @@ def run(root: str, rp, cont: bool = False) -> int:
     if not _PT:
         _setup_readline()  # Tab 자동완성 + 화살표 히스토리
     if _PT and ui._COLOR and sys.stdout.isatty():
-        dock = _Dock()  # 하단 상주 입력 독 — pt 경로 전용 (폴백·비 tty 는 기존 스피너 흐름)
+        dock = _Dock()  # 하단 상주 입력 독 — pt 경로 전용 (폴백·비 tty는 기존 스피너 흐름)
         sys.stdout.write("\033[2J\033[H")  # 클린 스타트 — 이전 셸 화면 위가 아니라 아스가드만
     banner(rp)
     heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
@@ -1742,7 +1742,7 @@ def run(root: str, rp, cont: bool = False) -> int:
     while True:
         _PT_CTX.update(root=root, rp=rp, heimdall=heimdall)  # toolbar + /lagom stats 공용 세션 상태
         if _PT:  # 상태줄은 bottom_toolbar(입력창 아래)가 표시 — cursor-agent 식
-            # 하단 고정은 _pt_session 의 바닥 정렬 필러가 담당 (커서 점프 불요 — CPR 기반)
+            # 하단 고정은 _pt_session의 바닥 정렬 필러가 담당 (커서 점프 불필요 — CPR 기반)
             sys.stdout.write("\n")
         else:
             sys.stdout.write("\n" + statusline(root, rp, _usage_of(heimdall)) + "\n")
@@ -1764,7 +1764,7 @@ def run(root: str, rp, cont: bool = False) -> int:
                 if cur is not None and cur < anchor:
                     sys.stdout.write(f"\x1b[{anchor};1H\x1b[0J")
             sys.stdout.write(_echo_submitted(req) + "\n")
-        if req == "/new":  # 컨텍스트·화면 리셋 (rp/heimdall 재생성 필요 — slash 는 rp 만 받음)
+        if req == "/new":  # 컨텍스트·화면 리셋 (rp/heimdall 재생성 필요 — slash는 rp만 받음)
             sys.stdout.write("\033[2J\033[H")
             heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
             banner(rp)
@@ -1784,12 +1784,12 @@ def run(root: str, rp, cont: bool = False) -> int:
                 except _Reconfigure as r:  # /provider set · /trinity set — 세션 재생성
                     rp = r.rp
                     heimdall = None if rp.missing else _new_heimdall(root, rp, emit, status)
-                    msg = r.msg or f"{rp.profile.display} · {rp.model} 로 전환"
+                    msg = r.msg or f"{rp.profile.display} · {rp.model}로 전환"
                     sys.stdout.write(f"  {ui.paint(ui._OK, '✔')} {msg}\n")
                 continue
             req = invoked
 
-        # 키 미설정 — 온보딩을 강제로 열지 않고 안내만 (연결은 /provider set 으로 명시적으로)
+        # 키 미설정 — 온보딩을 강제로 열지 않고 안내만 (연결은 /provider set으로 명시적으로)
         if heimdall is None:
             sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} {t('connect_needed')}\n")
             continue
@@ -1798,7 +1798,7 @@ def run(root: str, rp, cont: bool = False) -> int:
             import time as _time
             from contextlib import ExitStack
 
-            ev = getattr(heimdall, "cancel_event", None)  # 제출측 clear — handle() 은 clear 하지 않는다
+            ev = getattr(heimdall, "cancel_event", None)  # 제출측 clear — handle()은 clear 하지 않는다
             if ev is not None:
                 ev.clear()
             sys.stdout.write("\n")  # 제출 에코 ↔ 응답 블록 시각 분리 — 스트리밍 첫 줄이 에코에 접착되지 않게

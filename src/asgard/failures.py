@@ -4,11 +4,11 @@
 문장을 파싱하지 않고 코드를 직독한다. 전송 표면 계약은 메시지 서두의 `[gate:<code>]` 태그 하나 —
 프로토콜(claude/codex/cursor)이 페이로드 필드를 뭘 지원하든 태그는 살아남는다.
 
-hooks 는 자기완결 단일 파일로 배포되어 이 모듈을 임포트하지 못한다 — verifier_gate.GATE_MESSAGES
-가 같은 표의 사본을 품고, tests/test_failures.py 패리티 테스트가 두 표를 동일하게 봉인한다.
+hooks는 자기완결 단일 파일로 배포되어 이 모듈을 임포트하지 못한다 —
+verifier_gate.GATE_MESSAGES가 같은 표의 사본을 품고, tests/test_failures.py 패리티 테스트가 두 표를 동일하게 봉인한다.
 
 코드 표기는 kebab-case 단일 정본 (구 no_verdict/stale_pass 언더스코어 표기 폐지). failure_sig
-(퀘스트 로그 동종 실패 키)도 같은 어휘를 쓴다 — 모델 자유 기술은 normalize_sig 로 슬러그화해
+(퀘스트 로그 동종 실패 키)도 같은 어휘를 쓴다 — 모델 자유 기술은 normalize_sig로 슬러그화해
 3-strike 동종 판정이 표기 흔들림에 무뎌지지 않게 한다.
 """
 
@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import re
 
-# ── 게이트 차단 메시지 — verifier_gate.py 의 사본과 패리티 테스트로 봉인 ──
+# ── 게이트 차단 메시지 — verifier_gate.py의 사본과 패리티 테스트로 봉인 ──
 GATE_MESSAGES: dict[str, str] = {
     "orphan-write": (
         "This session wrote files ({files}) but there is no quest log. Write quests require "
@@ -78,7 +78,7 @@ KNOWN_CODES: frozenset[str] = frozenset(GATE_MESSAGES) | HARNESS_SIGS
 _GATE_TAG = re.compile(r"\[gate:([a-z0-9][a-z0-9-]*)\]")
 
 # 코드별 수리 전이 — 게이트 차단의 응답은 무수리 재시도가 아니라 사유에 맞는 턴이다.
-# criteria 부재만 계획 보강, baseline red·미완료 ticket 은 코드/단위 수리(Worker),
+# criteria 부재만 계획 보강, baseline red·미완료 ticket은 코드/단위 수리(Worker),
 # 무인 ESCALATE 넛지는 기본안 재계획, 나머지는 전부 신선 증거 재검증.
 _REPAIRS: dict[str, tuple[str, str]] = {
     "no-criteria": ("THINKER_REPLAN", "gate: missing criteria — plan needs reinforcement"),

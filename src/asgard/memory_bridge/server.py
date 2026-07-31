@@ -18,8 +18,8 @@ from .trust import is_backend_trusted, verify_backend_binding
 
 # ── MCP 툴 정의 — 최소 표면 (파괴 툴 비노출) ─────────────────────────────────────────
 
-# 개인 기억 툴 — **프로젝트 binding 과 무관하게** 노출된다. 이 메모리는 프로젝트가 아니라
-# 에이전트에 붙으므로(profiles.home()), 프로젝트 backend 가 없거나 신뢰되지 않은 저장소에서도
+# 개인 기억 툴 — **프로젝트 binding과 무관하게** 노출된다. 이 메모리는 프로젝트가 아니라
+# 에이전트에 붙으므로(profiles.home()), 프로젝트 backend가 없거나 신뢰되지 않은 저장소에서도
 # 에이전트는 자기 기억을 제안할 수 있어야 한다. 아래 _TOOLS(프로젝트 전용)와 게이트가 다르다.
 _PERSONAL_TOOLS = [
     {
@@ -75,8 +75,8 @@ _TOOLS = [
     {
         "name": "memory_retain",
         "description": (
-            "프로젝트 공유 메모리 저장. 기본은 2단계다 — 미리보기와 approval_id 를 반환하니 "
-            "내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit 을 호출하라. "
+            "프로젝트 공유 메모리 저장. 기본은 2단계다 — 미리보기와 approval_id를 반환하니 "
+            "내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit을 호출하라. "
             "사용자가 자동저장(project_memory.autosave)을 켜 뒀으면 이 호출로 커밋까지 끝난다 — "
             "어느 쪽인지는 응답이 말하니 그것을 읽고 사용자에게 전하라. "
             "넘기기 전에 반드시: 자립적인 사실 한 건으로 정제하고, 개인 약어·세계관 용어는 "
@@ -132,7 +132,7 @@ _TOOLS = [
         "name": "memory_retain_commit",
         "description": (
             "저장 2단계 — 사용자가 승인한 approval_id 로만 실행. 프로젝트 Git 정본을 먼저 기록한 뒤 "
-            "backend에 반영한다. id 는 1회 소비·1시간 만료."
+            "backend에 반영한다. id는 1회 소비·1시간 만료."
         ),
         "inputSchema": {
             "type": "object",
@@ -155,7 +155,7 @@ def _text_result(rid, text: str, is_error: bool = False) -> dict:
 
 
 def _call_personal_tool(name: str, args: dict) -> tuple[str, bool]:
-    """개인 기억 툴 — 프로젝트 설정·binding 을 안 본다 (이 기억은 에이전트의 것이다)."""
+    """개인 기억 툴 — 프로젝트 설정·binding을 안 본다 (이 기억은 에이전트의 것이다)."""
     if name != "memory_propose":
         return f"unknown tool: {name}", True
     from ..memory import propose
@@ -208,7 +208,7 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
         if name == "memory_retain":
             content = str(args.get("content", "")).strip()
             if not content:
-                return "content 가 비어 있다", True
+                return "content가 비어 있다", True
             required = ("record_id", "kind", "title", "source", "source_revision", "importance", "confidence", "status")
             missing = [field for field in required if not str(args.get(field) or "").strip()]
             if missing:
@@ -244,9 +244,9 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
             )
             aid = stage_retain(root, item, target=backend_target(cfg))
             if autosave_enabled(cfg):
-                # 스테이징은 건너뛰지 않는다 — 커밋 경로가 approval_id 를 요구하고, 그 경로가
+                # 스테이징은 건너뛰지 않는다 — 커밋 경로가 approval_id를 요구하고, 그 경로가
                 # Git 정본 선기록·digest 대조를 들고 있다. 자동저장이 없애는 것은 **왕복**이지
-                # 검증이 아니다. 커밋이 실패하면 id 는 그대로 살아 있으니 사람이 이어받으면 된다.
+                # 검증이 아니다. 커밋이 실패하면 id는 그대로 살아 있으니 사람이 이어받으면 된다.
                 try:
                     from ..project_memory import commit_approved_record
 
@@ -255,19 +255,19 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
                     return (
                         f"자동저장 실패 ({type(exc).__name__}: {exc})\n"
                         f"승인 대기로 남겨 뒀다 — approval_id: {aid}\n---\n{item['content']}\n---\n"
-                        "사용자에게 사정을 알리고, 승인받은 뒤 memory_retain_commit 을 호출하라.",
+                        "사용자에게 사정을 알리고, 승인받은 뒤 memory_retain_commit을 호출하라.",
                         False,
                     )
                 canonical = f" · canonical={out['canonical_path']}" if out.get("canonical_path") else ""
                 return (
                     f"저장 완료 (project_memory.autosave=on, engine={cfg['engine']}, "
                     f"project_id={cfg['project_id']}){canonical}\n---\n{item['content']}\n---\n"
-                    "사용자에게 저장했다고 알려라. memory_retain_commit 을 부르지 마라 — 이미 커밋됐다.",
+                    "사용자에게 저장했다고 알려라. memory_retain_commit을 부르지 마라 — 이미 커밋됐다.",
                     False,
                 )
             return (
                 f"승인 대기 (즉시 저장 안 됨) — approval_id: {aid}\n---\n{item['content']}\n---\n"
-                "이 내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit 을 호출하라.",
+                "이 내용을 사용자에게 보여주고 승인받은 뒤 memory_retain_commit을 호출하라.",
                 False,
             )
         if name == "memory_retain_commit":
@@ -325,7 +325,7 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
             binding_error = str(exc) or type(exc).__name__
     if method == "tools/list":
         # 프로젝트 툴은 설정·trust·binding 셋을 다 통과해야 노출된다. 개인 기억 툴은 그
-        # 게이트 **밖**이다 — 이 기억은 프로젝트가 아니라 에이전트에 붙으므로, 공유 backend 가
+        # 게이트 **밖**이다 — 이 기억은 프로젝트가 아니라 에이전트에 붙으므로, 공유 backend가
         # 없는 저장소에서도 에이전트는 자기 기억을 제안할 수 있어야 한다.
         return {
             "jsonrpc": "2.0",
@@ -340,13 +340,13 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
         if not found:
             return _text_result(
                 rid,
-                "이 프로젝트에는 공유 메모리 설정(.asgard/memory-server.json)이 없다 — asgard memory connect 로 연결",
+                "이 프로젝트에는 공유 메모리 설정(.asgard/memory-server.json)이 없다 — asgard memory connect로 연결",
                 True,
             )
         if not trusted:
             return _text_result(
                 rid,
-                "이 프로젝트의 공유 메모리 backend가 이 machine에서 trusted 상태가 아니다 — asgard memory connect 로 명시 승인",
+                "이 프로젝트의 공유 메모리 backend가 이 machine에서 trusted 상태가 아니다 — asgard memory connect로 명시 승인",
                 True,
             )
         if not bound:
@@ -364,7 +364,7 @@ def handle(msg: dict, start_dir: str | None = None) -> dict | None:
 
 
 def serve(start_dir: str | None = None) -> int:
-    """stdio 루프 — 개행 구분 JSON-RPC. EOF 로 종료. 파싱 불능 행은 무시 (fail-safe)."""
+    """stdio 루프 — 개행 구분 JSON-RPC. EOF로 종료. 파싱 불능 행은 무시 (fail-safe)."""
     for line in sys.stdin:
         line = line.strip()
         if not line:

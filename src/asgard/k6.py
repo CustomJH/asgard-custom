@@ -1,6 +1,6 @@
 """asgard-k6 — 부하 시험 레인. 도커 k6 부트스트랩을 아스가르드가 소유한다.
 
-지금까지 부하 시험은 떠돌이였다: `docker run --rm -i -v ...` 를 손으로 치고, 스크립트마다
+지금까지 부하 시험은 떠돌이였다: `docker run --rm -i -v ...`를 손으로 치고, 스크립트마다
 메트릭 이름이 다르고, 결과는 사람이 표로 옮겨 적었다. 그 상태의 문제는 느린 것이 아니라
 **감사할 수 없다**는 것이다 — 어떤 이미지로 어떤 부하 형상을 걸어 나온 수치인지 기록이 없다.
 
@@ -48,7 +48,7 @@ LANE_DIR = "k6"
 OWNED_IMAGE = PROJECT
 DEFAULT_IMAGE = "grafana/k6:latest"
 
-# k6 는 임계값이 깨지면 이 코드로 끝난다. 실패(비정상 종료)와 판정(임계값 미달)은 다른 사건이다.
+# k6는 임계값이 깨지면 이 코드로 끝난다. 실패(비정상 종료)와 판정(임계값 미달)은 다른 사건이다.
 THRESHOLD_EXIT = 99
 
 _NAME_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{0,63}$")
@@ -61,11 +61,11 @@ _ENV_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 def project_root(start: str | os.PathLike[str] | None = None) -> Path:
     """이 명령이 선 자리에서 **프로젝트**를 찾는다 — 볼륨의 집이 여기서 갈린다.
 
-    현재 디렉터리를 그대로 프로젝트로 쓰면 `src/` 안에서 부른 실행이 거기에 `.asgard/` 를
+    현재 디렉터리를 그대로 프로젝트로 쓰면 `src/` 안에서 부른 실행이 거기에 `.asgard/`를
     새로 파고, 같은 프로젝트의 키트와 기록이 두 곳으로 갈라진다. 그래서 위로 걸어 표식을
     찾되 **가장 가까운 표식이 이긴다** — 표식 종류로 우선순위를 매기면 안 된다. 아스가르드는
-    자격 증명을 `~/.asgard/` 에 두므로, `.asgard` 를 먼저 다 훑으면 홈 아래의 저장소가
-    자기 `.git` 을 지나쳐 홈을 프로젝트로 잡는다. 둘 다 없으면 선 자리가 프로젝트다."""
+    자격 증명을 `~/.asgard/`에 두므로, `.asgard`를 먼저 다 훑으면 홈 아래의 저장소가
+    자기 `.git`을 지나쳐 홈을 프로젝트로 잡는다. 둘 다 없으면 선 자리가 프로젝트다."""
     here = Path(start or os.getcwd()).resolve()
     for candidate in (here, *here.parents):
         if (candidate / ".asgard").is_dir() or (candidate / ".git").exists():
@@ -79,7 +79,7 @@ def lane_dir(root: str | os.PathLike[str]) -> Path:
 
 
 def mounted_kit_dir(root: str | os.PathLike[str]) -> Path:
-    """도커에 `/asgard` 로 넘어가는 **호스트 경로**. 설치 위치가 아니라 프로젝트 안이다."""
+    """도커에 `/asgard`로 넘어가는 **호스트 경로**. 설치 위치가 아니라 프로젝트 안이다."""
     return lane_dir(root) / "kit"
 
 
@@ -100,11 +100,11 @@ def kit_dir() -> Path:
 
     다만 이 경로를 도커에 그대로 넘기지는 않는다. 여기는 설치 접두사(휠이 풀린 자리)라
     기계마다 다르고 프로젝트마다 같다 — 볼륨의 집이 될 수 없다. 실제로 마운트되는 것은
-    이 정본을 프로젝트 안으로 실체화한 `sync_kit()` 의 산물이다.
+    이 정본을 프로젝트 안으로 실체화한 `sync_kit()`의 산물이다.
 
-    도커 산출물(Dockerfile·compose)은 `docker/asgard-k6/` 에 따로 산다. 굽는 것과 실려 가는
+    도커 산출물(Dockerfile·compose)은 `docker/asgard-k6/`에 따로 산다. 굽는 것과 실려 가는
     것을 갈라 둔 이유: 이미지는 저장소에서 만들고 관리하지만, 시나리오는 `uv tool install`
-    한 사람의 기계에도 있어야 `asgard k6 run` 이 선다."""
+    한 사람의 기계에도 있어야 `asgard k6 run`이 선다."""
     return Path(str(files("asgard").joinpath("assets", "k6_kit")))
 
 
@@ -113,7 +113,7 @@ def pacer_script() -> Path:
 
 
 def docker_dir() -> Path | None:
-    """`docker/asgard-k6/` — 이미지와 compose 의 집. 저장소 체크아웃에서만 존재한다."""
+    """`docker/asgard-k6/` — 이미지와 compose의 집. 저장소 체크아웃에서만 존재한다."""
     root = Path(__file__).resolve().parents[2]  # src/asgard/k6.py → 저장소 루트
     candidate = root / "docker" / PROJECT
     return candidate if (candidate / "Dockerfile").is_file() else None
@@ -122,7 +122,7 @@ def docker_dir() -> Path | None:
 def _kit_signature(source: Path) -> str:
     """키트 내용의 지문 — 판 번호가 아니라 **내용**으로 재동기화를 판단한다.
 
-    버전으로 재면 개발 중 편집한 시나리오가 프로젝트에 안 내려가고, mtime 으로 재면
+    버전으로 재면 개발 중 편집한 시나리오가 프로젝트에 안 내려가고, mtime으로 재면
     재설치 때마다 이유 없이 다시 복사한다."""
     digest = hashlib.sha256()
     for path in sorted(p for p in source.rglob("*") if p.is_file() and "__pycache__" not in p.parts):
@@ -138,7 +138,7 @@ def kit_is_synced(root: str | os.PathLike[str]) -> bool:
 
     기록해 둔 지문과 배송본만 대조하면 실린 쪽이 바뀐 것을 못 본다. 그러면 누군가
     `.asgard/k6/kit/` 안을 고쳐도 레인은 "배송본과 같다"고 말하고, 컨테이너는 고쳐진
-    키트를 돈다 — `/asgard` 를 읽기 전용으로 거는 이유(시나리오가 자기 정의를 못 고친다)가
+    키트를 돈다 — `/asgard`를 읽기 전용으로 거는 이유(시나리오가 자기 정의를 못 고친다)가
     호스트 쪽에서 새는 것이다. 그래서 양쪽을 다 잰다."""
     target = mounted_kit_dir(root)
     if not target.is_dir():
@@ -150,7 +150,7 @@ def kit_is_synced(root: str | os.PathLike[str]) -> bool:
 
 
 def sync_kit(root: str | os.PathLike[str], *, force: bool = False) -> Path:
-    """배송된 키트를 **이 프로젝트의 `.asgard/k6/kit/`** 에 실체화하고 그 경로를 준다.
+    """배송된 키트를 **이 프로젝트의 `.asgard/k6/kit/`**에 실체화하고 그 경로를 준다.
 
     왜 설치 위치를 바로 마운트하지 않나: 그 경로는 프로젝트의 것이 아니다. `uv tool install`
     한 기계에서는 도구 venv 안(공유 접두사)이고, 체크아웃에서는 `src/` 아래이며, 도커 데스크톱이
@@ -206,7 +206,7 @@ def project_scenarios(root: str | os.PathLike[str]) -> dict[str, Scenario]:
     """프로젝트가 직접 쓴 시나리오. 같은 이름이면 프로젝트가 이긴다.
 
     자리는 `.asgard/k6/scenarios/*.js` 다. 레인 바로 밑(`.asgard/k6/*.js`)도 계속 잡히지만
-    — 이전에 거기 둔 것을 깨지 않는다 — 새로 쓰는 것은 `scenarios/` 로 간다: 레인 밑은
+    — 이전에 거기 둔 것을 깨지 않는다 — 새로 쓰는 것은 `scenarios/`로 간다: 레인 밑은
     이제 키트·기록·산출이 함께 사는 자리라, 시나리오 하나를 컨테이너에 넣으려고 그 전부를
     읽기 전용으로 끌고 들어가게 된다."""
     out: dict[str, Scenario] = {}
@@ -251,7 +251,7 @@ class Runner:
 
 
 def owned_image_tags() -> list[str]:
-    """우리가 굽는 이미지의 후보 태그 — 버전 태그가 먼저, 개발용 `:local` 이 다음."""
+    """우리가 굽는 이미지의 후보 태그 — 버전 태그가 먼저, 개발용 `:local`이 다음."""
     from . import __version__
 
     return [f"{OWNED_IMAGE}:{__version__}", f"{OWNED_IMAGE}:local"]
@@ -266,7 +266,7 @@ def resolve_image(engine_binary: str = "") -> str:
     """실제로 쓸 이미지. `ASGARD_K6_IMAGE` → 로컬에 구워진 `asgard-k6:*` → 공개 k6.
 
     우리 이미지를 자동으로 빌드하지는 않는다. 설치본에는 빌드 컨텍스트가 없고, 부하를 재려던
-    명령이 몇 분짜리 이미지 빌드로 바뀌는 것은 그 자체가 측정 방해다 — `asgard k6 doctor` 가
+    명령이 몇 분짜리 이미지 빌드로 바뀌는 것은 그 자체가 측정 방해다 — `asgard k6 doctor`가
     지금 어느 이미지인지와 굽는 한 줄을 말해 준다."""
     pinned = os.environ.get("ASGARD_K6_IMAGE")
     if pinned:
@@ -287,10 +287,10 @@ def resolve_image(engine_binary: str = "") -> str:
 
 
 def resolve_runner(prefer: str = "") -> Runner | None:
-    """컨테이너 우선, 없으면 네이티브 k6. `ASGARD_K6_RUNNER` 로 고정할 수 있다.
+    """컨테이너 우선, 없으면 네이티브 k6. `ASGARD_K6_RUNNER`로 고정할 수 있다.
 
     도커를 먼저 보는 이유는 취향이 아니다 — 이미지가 고정되면 같은 부하 형상이 다른
-    기계에서도 같은 도구로 돌아간다. 네이티브 k6 는 판이 사람마다 다르다."""
+    기계에서도 같은 도구로 돌아간다. 네이티브 k6는 판이 사람마다 다르다."""
     prefer = (prefer or os.environ.get("ASGARD_K6_RUNNER") or "").strip().lower()
     if prefer == "native":
         binary = shutil.which("k6")
@@ -351,10 +351,10 @@ def build_argv(
     컨테이너 마운트 배치:
       키트   `/asgard`      읽기 전용 (시나리오가 자기 정의를 못 고친다)
       요약   `/asgard/out`  쓰기 가능 (여기 하나만)
-      프로젝트 시나리오는 `/asgard/project` 로 따로 들어온다 — 그래야 `../lib/asgard.js`
+      프로젝트 시나리오는 `/asgard/project`로 따로 들어온다 — 그래야 `../lib/asgard.js`
       상대 임포트가 키트 라이브러리로 정확히 떨어진다.
 
-    `kit` 은 `/asgard` 로 들어갈 **호스트 경로**다. 부르는 쪽이 `sync_kit()` 으로 프로젝트
+    `kit`은 `/asgard`로 들어갈 **호스트 경로**다. 부르는 쪽이 `sync_kit()`으로 프로젝트
     안에 세운 자리를 넘긴다 — 안 넘기면 설치 접두사를 마운트하게 되고, 그것은 프로젝트의
     것이 아니다. 기본값을 배송 경로로 둔 것은 러너 없이 조립만 보는 자리(테스트) 때문이다.
     """
@@ -415,7 +415,7 @@ def container_target(runner: Runner, port: int) -> str:
 
 
 def bind_host(runner: Runner) -> str:
-    """pacer 가 열어야 하는 주소. 컨테이너에서 부르려면 루프백만으로는 안 닿는다 —
+    """pacer가 열어야 하는 주소. 컨테이너에서 부르려면 루프백만으로는 안 닿는다 —
     필요할 때만 넓히고, 네이티브 러너면 루프백에 묶어 둔다."""
     return "0.0.0.0" if runner.containerized else "127.0.0.1"  # noqa: S104 - 컨테이너 러너 전용
 
@@ -465,7 +465,7 @@ class Report:
     def exit_agrees(self) -> bool:
         """종료 코드와 임계값 판정이 같은 이야기를 하는가.
 
-        어긋나면 둘 중 하나가 거짓말이다 — 임계값이 깨졌는데 0 으로 끝나면 CI 가 빨간 것을
+        어긋나면 둘 중 하나가 거짓말이다 — 임계값이 깨졌는데 0으로 끝나면 CI가 빨간 것을
         초록으로 통과시키고, 반대면 멀쩡한 실행이 파이프라인을 세운다."""
         breached = not self.thresholds_ok
         return breached == (self.exit_code == THRESHOLD_EXIT) if self.exit_code in (0, THRESHOLD_EXIT) else True
@@ -500,7 +500,7 @@ class SummaryError(ValueError):
 
 
 def parse_summary(payload: dict, *, exit_code: int = 0, runner: str = "", k6_version: str = "") -> Report:
-    """`asgard-k6-summary-v1` → Report. 모양이 다르면 조용히 0 을 채우지 않고 거절한다."""
+    """`asgard-k6-summary-v1` → Report. 모양이 다르면 조용히 0을 채우지 않고 거절한다."""
     if not isinstance(payload, dict):
         raise SummaryError("요약이 JSON 객체가 아니다")
     schema = payload.get("schema")
@@ -549,11 +549,11 @@ def run_scenario(
     stream: bool = False,
     k6_version: str = "",
 ) -> Report:
-    """시나리오 하나를 돌리고 요약을 회수한다. `kit` 은 `/asgard` 로 갈 호스트 경로다."""
+    """시나리오 하나를 돌리고 요약을 회수한다. `kit`은 `/asgard`로 갈 호스트 경로다."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     if runner.containerized:
-        # 컨테이너 안의 k6 는 비루트로 돌고 그 uid 는 호스트에서 모른다 — 요약을 못 쓰면
+        # 컨테이너 안의 k6는 비루트로 돌고 그 uid는 호스트에서 모른다 — 요약을 못 쓰면
         # 실행 전체가 버려진다. 넓히는 자리는 이 실행의 산출 디렉터리 하나뿐이고,
         # 네이티브 러너는 호스트 사용자 그대로라 여기 오지 않는다.
         try:
@@ -583,7 +583,7 @@ def run_scenario(
     if not summary_path.is_file():
         tail = ((done.stderr or "") + (done.stdout or ""))[-2000:] if not stream else ""
         raise SummaryError(
-            "요약 파일이 나오지 않았다 — 시나리오가 handleSummary 를 export 하지 않았거나 "
+            "요약 파일이 나오지 않았다 — 시나리오가 handleSummary를 export 하지 않았거나 "
             f"실행이 시작 전에 죽었다 (exit {done.returncode}).\n{tail}"
         )
     try:
@@ -651,7 +651,7 @@ class Pacer:
         while time.time() < deadline:
             if self.proc.poll() is not None:
                 err = (self.proc.stderr.read() if self.proc.stderr else "") or ""
-                raise SummaryError(f"pacer 가 뜨지 못했다: {err.strip()[:400]}")
+                raise SummaryError(f"pacer가 뜨지 못했다: {err.strip()[:400]}")
             try:
                 with urllib.request.urlopen(f"{self.url}/health", timeout=1) as resp:
                     if resp.status == 200:
@@ -659,7 +659,7 @@ class Pacer:
             except urllib.error.URLError, OSError:
                 time.sleep(0.1)
         self.stop()
-        raise SummaryError("pacer 가 15s 안에 응답하지 않았다")
+        raise SummaryError("pacer가 15s 안에 응답하지 않았다")
 
     def __exit__(self, *exc: object) -> None:
         self.stop()
@@ -743,7 +743,7 @@ def selftest(
     runner = runner or resolve_runner()
     result = Selftest()
     if runner is None:
-        result.error = "러너가 없다 — docker/podman 또는 k6 가 필요하다"
+        result.error = "러너가 없다 — docker/podman 또는 k6가 필요하다"
         return result
     result.runner = runner.label()
     result.k6_version = runner_version(runner)
@@ -804,7 +804,7 @@ def selftest(
                 lower <= med <= upper,
                 f"{lower:.0f}~{upper:.0f}ms",
                 f"med {med:.1f}ms",
-                f"표적이 정확히 {latency_ms:.0f}ms 를 잔다 — 보고된 중앙값이 그 값이어야 한다",
+                f"표적이 정확히 {latency_ms:.0f}ms를 잔다 — 보고된 중앙값이 그 값이어야 한다",
             )
         )
         peak = int(stats.get("peak_in_flight") or 0)
@@ -876,7 +876,7 @@ def selftest(
                 report.exit_code == THRESHOLD_EXIT,
                 f"exit {THRESHOLD_EXIT}",
                 f"exit {report.exit_code}",
-                "임계값 미달은 종료 코드로도 나와야 CI 가 잡는다",
+                "임계값 미달은 종료 코드로도 나와야 CI가 잡는다",
             )
         )
         expected_failures = int(iterations * error_rate)
@@ -896,7 +896,7 @@ def selftest(
                 served_errors == report.failed,
                 f"server {report.failed}",
                 f"server {served_errors}",
-                "표적이 낸 5xx 와 하네스가 센 실패가 같아야 한다",
+                "표적이 낸 5xx와 하네스가 센 실패가 같아야 한다",
             )
         )
     except (SummaryError, OSError) as exc:

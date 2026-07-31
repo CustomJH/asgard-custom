@@ -4,7 +4,7 @@
 딜리버리 전문가의 도메인 스킬과 달리 이 층은 Worker와 그 백엔드 딜리버리인 Thor 계열에 공통이다 —
 버그 원인 규명과 테스트 설계의 문법은 하나다.
 
-CC(.claude/skills/)와 Cursor·Codex 공용(.agents/skills/) 양 스코프에 스캐폴드되어 모드 A/B 에서
+CC(.claude/skills/)와 Cursor·Codex 공용(.agents/skills/) 양 스코프에 스캐폴드되어 모드 A/B에서
 파일 스킬로 로드되고, 네이티브(asgard start)는 Worker·Thor 카탈로그에서 필요할 때 로드한다.
 Verifier/loki 무주입 — 게이트·판정 표면에는 advisory 지식을 넣지 않는다 (skill_bank 헌법과 동일 규율)."""
 
@@ -106,8 +106,8 @@ WORKER_SKILLS: list[tuple[str, str]] = [
     ("asgard-worker-testing", _TESTING),
 ]
 
-# Worker·Thor task → 공통 스킬 매칭 (네이티브 카탈로그 task-match 통로 — 모드 A/B 는 파일 스킬이 담당).
-# Worker 는 모든 과업이 지나는 표면이라 과주입이 곧 노이즈다 — 트리거는 보수적으로 유지한다.
+# Worker·Thor task → 공통 스킬 매칭 (네이티브 카탈로그 task-match 통로 — 모드 A/B는 파일 스킬이 담당).
+# Worker는 모든 과업이 지나는 표면이라 과주입이 곧 노이즈다 — 트리거는 보수적으로 유지한다.
 _SUBSTR: dict[str, tuple[str, ...]] = {
     "asgard-worker-debugging": (
         "디버깅",
@@ -141,8 +141,8 @@ _SUBSTR: dict[str, tuple[str, ...]] = {
         "regression",
     ),
 }
-# 짧은 ASCII 용어는 단어 경계 필수 — 부분 일치면 latest→test, majestic→jest, debugger 는 잡되
-# ladybug 는 제외하는 식의 통제가 불가능하다.
+# 짧은 ASCII 용어는 단어 경계 필수 — 부분 일치면 latest→test, majestic→jest, debugger는 잡되
+# ladybug는 제외하는 식의 통제가 불가능하다.
 _WORD_RE: dict[str, tuple[str, ...]] = {
     "asgard-worker-debugging": (r"\bdebug", r"\bbugs?\b", r"\bcrash", r"\bbisect\b"),
     "asgard-worker-testing": (r"\btests?\b", r"\btesting\b", r"\btdd\b", r"\bjest\b", r"\bmock"),
@@ -152,9 +152,9 @@ _WORD_RE: dict[str, tuple[str, ...]] = {
 def resolve_worker_skills(task: str) -> list[tuple[str, str]]:
     """Worker·Thor task → 매칭된 공통 스킬 (이름, frontmatter 제거 본문) — 0-LLM 휴리스틱.
 
-    무매칭 = 빈 리스트 (fail-open — role 계약 기준으로 진행). 복수 매칭은 전부 주입 —
-    "회귀 버그 수정 + 회귀 테스트 고정" 처럼 두 표면이 한 과업인 경우가 실재한다.
-    호출측은 Worker·Thor 계열 한정 — Verifier/loki 는 부르지 않는다 (게이트 무결성)."""
+    일치 없음 = 빈 리스트 (fail-open — role 계약 기준으로 진행). 복수 매칭은 전부 주입 —
+    "회귀 버그 수정 + 회귀 테스트 고정"처럼 두 표면이 한 과업인 경우가 실재한다.
+    호출측은 Worker·Thor 계열 한정 — Verifier/loki는 부르지 않는다 (게이트 무결성)."""
     t = task.lower()
 
     def hit(name: str) -> bool:

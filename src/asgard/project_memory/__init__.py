@@ -4,7 +4,7 @@ Asgard 메모리는 개인(로컬)과 프로젝트(선택 backend) 두 종류뿐
 메모리를 만들지 않는다. 승인 record 정본은 프로젝트 `.asgard/memory/records/`에 두고,
 활성 backend 하나는 재생 가능한 팀 공유 검색 인덱스다. 코드·문서는 원래 Git 파일이 정본이다.
 
-모듈 구성 (구 단일 모듈 project_memory.py 의 분해 — 공개 표면은 여기서 그대로 재수출):
+모듈 구성 (구 단일 모듈 project_memory.py의 분해 — 공개 표면은 여기서 그대로 재수출):
   canonical  — 승인 record Git 정본·target-bound backend 재생
   records    — 상수·record dataclass·검증·직렬화 (순수 계층)
   scan       — 아티팩트 채굴: Git/worktree 스캔·구조 fingerprint·중요도 평가
@@ -13,7 +13,7 @@ Asgard 메모리는 개인(로컬)과 프로젝트(선택 backend) 두 종류뿐
   ingest     — 던져진 문서의 추출·판정·레인 배정 (`project_memory.ingest`)
   documents  — 그래프가 감당 못 하는 큰 문서의 로컬 레인 (`project_memory.documents`)
 
-레인이 둘인 것은 backend 가 둘이라는 뜻이 아니다 — 정본은 여전히 Git 하나이고, 갈리는
+레인이 둘인 것은 backend가 둘이라는 뜻이 아니다 — 정본은 여전히 Git 하나이고, 갈리는
 것은 회수 경로다 (documents 독스트링의 실측 근거 참고).
 """
 
@@ -72,8 +72,8 @@ from .records import (
     validate_record,
 )
 
-# reflect 는 서브모듈 이름이다 — 같은 이름의 함수를 여기서 재수출하면 `project_memory.reflect`
-# 가 모듈이 아니라 함수로 가려진다. 회고 함수는 `from .reflect import reflect` 로 쓴다.
+# reflect는 서브모듈 이름이다 — 같은 이름의 함수를 여기서 재수출하면 `project_memory.reflect`
+# 가 모듈이 아니라 함수로 가려진다. 회고 함수는 `from .reflect import reflect`로 쓴다.
 from .reflect import ReflectUnavailable, reflect_mode
 from .retain import _completion_kind, propose_completion, retain_turn
 from .scan import (

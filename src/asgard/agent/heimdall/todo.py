@@ -1,6 +1,6 @@
 """배정 단위 진행 보드 — 계획을 열어 보이고, 하나씩 닫히는 것을 보여준다.
 
-Thinker 가 쪼갠 배정 단위는 지금까지 실행 중에만 흘러갔다: `wave [1, 2]` 한 줄과 완료 줄.
+Thinker가 쪼갠 배정 단위는 지금까지 실행 중에만 흘러갔다: `wave [1, 2]` 한 줄과 완료 줄.
 오딘 쪽에서 보면 **무엇을 몇 개로 쪼갰는지**와 **지금 몇 번째인지**가 안 보인다 — 진행이
 아니라 소음으로 읽힌다. 보드는 그 둘을 표면으로 올린다.
 
@@ -10,7 +10,7 @@ Thinker 가 쪼갠 배정 단위는 지금까지 실행 중에만 흘러갔다: 
 생략한다 (대부분의 퀘스트가 단일 단위 — 여기서 두 번 찍으면 보드가 소음이 된다).
 
 호출 순서는 plan → start/mark* → close 이고, 전부 호출부의 단일 스레드에서 일어난다:
-wave 는 병렬로 뛰지만 상태 전이는 fan-in 지점(as_completed 수거 루프)에서만 기록한다.
+wave는 병렬로 뛰지만 상태 전이는 fan-in 지점(as_completed 수거 루프)에서만 기록한다.
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ class TodoBoard:
             self._board()
 
     def start(self, idents: Iterable[object]) -> None:
-        """이 wave 에 들어간 단위 — 진행 중 표식. 무엇이 지금 도는지가 id 목록만으로는 안 읽힌다."""
+        """이 wave에 들어간 단위 — 진행 중 표식. 무엇이 지금 도는지가 id 목록만으로는 안 읽힌다."""
         for ident in idents:
             self._set(ident, "run")
 
@@ -111,7 +111,7 @@ class TodoBoard:
         note = f" · {item['note']}" if item["note"] else ""
         count = f"  [{self.resolved()}/{len(self._order)}]" if counter else ""
         # 앞머리 = 들여쓰기 4 + 글리프 1 + 공백 1 + id + 공백 2. 넘치면 터미널이 접어 버려 보드
-        # 정렬이 무너진다 — ANSI 를 입히기 전, 실제로 찍힐 원문의 표시 폭으로 잰다.
+        # 정렬이 무너진다 — ANSI를 입히기 전, 실제로 찍힐 원문의 표시 폭으로 잰다.
         # 마지막 한 칸은 비워 둔다: 폭에 정확히 들어맞는 줄에서 커서를 다음 행으로 넘기는 터미널이 있다.
         spent = 9 + ui.disp_width(key) + ui.disp_width(note) + ui.disp_width(count)
         text = ui.fit(item["text"], max(20, ui.stream_width() - spent))

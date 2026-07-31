@@ -37,7 +37,7 @@ def cc_settings() -> str:
     return (
         json.dumps(
             {
-                # Lagom 모드 가시성 — 상태파일/config 를 읽는 셸 전용 스크립트
+                # Lagom 모드 가시성 — 상태파일/config를 읽는 셸 전용 스크립트
                 "statusLine": {
                     "type": "command",
                     "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
@@ -64,7 +64,7 @@ def cc_settings() -> str:
                         "Bash(git push --force*)",
                         "Bash(git push -f*)",
                         "Bash(git reset --hard*)",
-                        # 헬리오스 교훈 — 실제 자산을 날린 건 아래 두 계열이었다: bare stash 는
+                        # 헬리오스 교훈 — 실제 자산을 날린 건 아래 두 계열이었다: bare stash는
                         # 전체 트리를 걷어가고(병렬 세션 미커밋분 포함), checkout -- 는 경로를
                         # 조용히 소실시킨다. 정밀 판정은 git-guard 훅(단일 출처)이 맡고, 여기는
                         # 훅이 죽었을 때(fail-open)를 위한 최소 안전망만 중복한다.
@@ -161,7 +161,7 @@ def cc_settings() -> str:
                             ]
                         },
                     ],
-                    # Lagom — SessionStart 컨텍스트 미전파 보상. verifier 는 스크립트가 자체 제외.
+                    # Lagom — SessionStart 컨텍스트 미전파 보상. verifier는 스크립트가 자체 제외.
                     # Memory v3 — Thinker 한정 주입 (감사 매트릭스: Worker/딜리버리 무주입,
                     # Verifier/Loki 영구 무주입 — 보상 주입 패턴을 메모리에 쓰지 않는다).
                     "SubagentStart": [
@@ -211,7 +211,7 @@ def cc_settings() -> str:
                     ],
                     "PreToolUse": [
                         # Trinity mode B — Worker/Verifier 디스패치 게이트 (unit 마커·ticket 물리 대조)
-                        # budget-guard — 스폰 **전** 판정. SubagentStop 은 돈이 이미 나간 뒤라 무의미하다
+                        # budget-guard — 스폰 **전** 판정. SubagentStop은 돈이 이미 나간 뒤라 무의미하다
                         # (헬리오스 선행 연구의 실패 지점 — budget_guard.py 모듈 주석 참조).
                         {
                             "matcher": "Agent",
@@ -229,7 +229,7 @@ def cc_settings() -> str:
                         {
                             "matcher": "Bash",
                             "hooks": [
-                                # Canon 4 읽기 절반 — shell 로 우회한 credential 덤프(cat .env·env·
+                                # Canon 4 읽기 절반 — shell로 우회한 credential 덤프(cat .env·env·
                                 # keychain)를 막는다. 읽힌 값은 매 턴 프로바이더로 재전송된다.
                                 {
                                     "type": "command",

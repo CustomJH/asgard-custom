@@ -1,4 +1,4 @@
-"""개인 메모리 시맨틱 스트림 (기본 켜짐) — Tier0 검색을 lexical → hybrid 로.
+"""개인 메모리 시맨틱 스트림 (기본 켜짐) — Tier0 검색을 lexical → hybrid로.
 
 배경 (26-07-18): agentmemory 실사 결론 — 1차 메모리로 그대로 채택은 부적합(iii 상주
 데몬·KV 필터 격리·기본 벡터 OFF)하나, 검색 파이프라인(3-스트림 RRF + 로컬 임베딩)은
@@ -6,26 +6,26 @@
 알고리즘만 취한다.
 
 계약 (memory.py 정본 원칙 상속):
-  · **정본 불변** — 벡터는 state.db 의 파생물이다. 지워도(또는 손상돼도) reindex 로 복원되고,
-    파일 md 가 여전히 지식의 정본이다. 벡터는 pages/ 를 절대 대체하지 않는다.
-  · **fail-open** — 임베더 미설치 또는 설정 off 면 embedder()=None → query() 가 기존 2경로
-    (FTS5 BM25 + 정본 스캔) 로 완전히 동일하게 동작한다. 어떤 예외도 검색을 막지 않는다.
+  · **정본 불변** — 벡터는 state.db의 파생물이다. 지워도(또는 손상돼도) reindex로 복원되고,
+    파일 md가 여전히 지식의 정본이다. 벡터는 pages/ 를 절대 대체하지 않는다.
+  · **fail-open** — 임베더 미설치 또는 설정 off 면 embedder()=None → query()가 기존 2경로
+    (FTS5 BM25 + 정본 스캔)로 완전히 동일하게 동작한다. 어떤 예외도 검색을 막지 않는다.
   · **stdlib 수학** — 벡터 수학(pack/cosine)은 stdlib(array·math)만 쓴다. 임베딩 모델
-    라이브러리(model2vec)는 26-07-27 부터 기본 의존성이지만, 없거나 못 불러도 2경로가 돈다.
-  · **정직한 상태** — agentmemory 는 "로컬 임베딩 기본"이라 광고하고 실제론 OFF 였다. 우리는
-    active() 로 활성/비활성을 대시보드·doctor 에 그대로 노출한다 (숨기지 않는다).
+    라이브러리(model2vec)는 26-07-27부터 기본 의존성이지만, 없거나 못 불러도 2경로가 돈다.
+  · **정직한 상태** — agentmemory는 "로컬 임베딩 기본"이라 광고하고 실제론 OFF 였다. 우리는
+    active()로 활성/비활성을 대시보드·doctor에 그대로 노출한다 (숨기지 않는다).
 
 설정:  [memory].semantic = "local" | "off"  (**기본 "local"** — 26-07-27 오딘 결정)
-      env  ASGARD_MEMORY_SEMANTIC 로 세션 오버라이드 (off|local).
+      env  ASGARD_MEMORY_SEMANTIC로 세션 오버라이드 (off|local).
 
 모델 바꾸기 — 기본값은 아래 실측으로 고른 potion-multilingual-128M 이고, **언제든 갈 수 있다**:
       [memory].semantic_model = "<hf 모델 이름>"     설정 파일 (영구)
       ASGARD_MEMORY_SEMANTIC_MODEL=<hf 모델 이름>    환경 변수 (세션)
-  model2vec 정적 모델을 먼저 시도하고, 못 읽으면 sentence-transformers 로 넘어간다.
+  model2vec 정적 모델을 먼저 시도하고, 못 읽으면 sentence-transformers로 넘어간다.
   그래서 두 계열 모델 이름을 다 쓸 수 있다.
 
-  ⚠ 바꾼 뒤에는 **asgard memory reindex** 를 돌려야 한다. 저장된 벡터는 옛 모델의 차원이고,
-  cosine 은 길이가 다르면 0 을 돌려주므로(차원 오염 방지) 재색인 전까지 의미 검색은 조용히
+  ⚠ 바꾼 뒤에는 **asgard memory reindex**를 돌려야 한다. 저장된 벡터는 옛 모델의 차원이고,
+  cosine은 길이가 다르면 0을 돌려주므로(차원 오염 방지) 재색인 전까지 의미 검색은 조용히
   아무것도 못 찾는다. 대시보드 '의미 검색 준비' 칸이 벡터가 섞였음을 표시한다.
 
 기본을 켜기로 한 근거 (실측 26-07-27, 40페이지·80질의 벤치):
@@ -42,8 +42,8 @@
   무관한 문장을 관련 문장보다 가깝다고 본다. 속도로 바꿀 수 있는 품질이 아니라서 큰 쪽을 쓴다.
 
 ollama 임베딩 경로를 붙이지 않은 이유 (같은 벤치에서 실측):
-  nomic-embed-text(768d) 는 hit@1 0.812 로 model2vec potion-multilingual-128M(0.850) 보다
-  낮았고, 한국어는 0.766 vs 0.894 로 크게 뒤졌으며, 질의 지연은 19.4ms vs 3.8ms 로 5배였다.
+  nomic-embed-text(768d)는 hit@1 0.812로 model2vec potion-multilingual-128M(0.850)보다
+  낮았고, 한국어는 0.766 vs 0.894로 크게 뒤졌으며, 질의 지연은 19.4ms vs 3.8ms로 5배였다.
   HTTP 왕복을 검색 경로에 넣을 값이 없다. 로컬 정적 임베더가 이 과업에서 더 낫다.
 """
 
@@ -57,14 +57,14 @@ from collections.abc import Callable
 from typing import Any
 
 # 테스트·운영 주입 시임 — 실제 무거운 모델 없이 3-스트림 융합 로직을 검증한다.
-# None 이 아니면 embedder() 가 이 콜러블을 그대로 반환한다 (모드·로드 우회).
+# None이 아니면 embedder()가 이 콜러블을 그대로 반환한다 (모드·로드 우회).
 _OVERRIDE: Callable[[str], list[float]] | None = None
 _CACHE: dict[str, Any] = {"loaded": False, "fn": None, "dim": 0, "model": ""}
 
 # 기본 모델 — 26-07-27 벤치가 고르고 26-07-29 오딘이 재확인했다. 한국어 판별력이 유일하게
 # 성립한 모델이라 바꿀 때는 한국어부터 확인할 것 (독스트링의 코사인 차 표 참조).
 # 내려받기가 길다는 점은 고려했으나, 어차피 설치 시점에 한 번 치르는 값이라 기준이 아니다
-# (install.sh 가 `asgard memory semantic warmup` 으로 미리 받는다).
+# (install.sh가 `asgard memory semantic warmup`으로 미리 받는다).
 # 바꾸는 길은 두 개다 — [memory].semantic_model 또는 ASGARD_MEMORY_SEMANTIC_MODEL.
 DEFAULT_MODEL = "minishlab/potion-multilingual-128M"
 # 구 이름 — 한때 "정적 폴백 전용 모델"이었다. 지금은 그게 곧 기본값이라 같은 값을 가리킨다.
@@ -86,8 +86,8 @@ def _settings() -> dict:
 def mode() -> str:
     """시맨틱 모드 — env 우선, 설정 폴백, 기본 'local'. 'off' 이외는 로컬 임베딩 시도.
 
-    기본이 'local' 이어도 임베더가 없으면 _load_local 이 None 을 돌려 2경로로 폴백한다 —
-    켜져 있다는 것과 도는 것은 다르고, 그 차이는 doctor 가 말한다."""
+    기본이 'local' 이어도 임베더가 없으면 _load_local이 None을 돌려 2경로로 폴백한다 —
+    켜져 있다는 것과 도는 것은 다르고, 그 차이는 doctor가 말한다."""
     env = (os.environ.get(_ENV) or "").strip().lower()
     if env:
         return env
@@ -123,9 +123,9 @@ def reset() -> None:
 def _quiet_hub(quiet: bool = True, offline: bool | None = None):
     """모델 허브의 진행 막대를 잠재운다.
 
-    기본으로 켜진 뒤로는 `memory query` 한 번마다 남의 라이브러리 진행 막대가 stderr 로
+    기본으로 켜진 뒤로는 `memory query` 한 번마다 남의 라이브러리 진행 막대가 stderr로
     새어 나온다 — 사용자 표면은 우리 것이어야 한다. 막대를 보여 주는 자리는 **처음 받을 때**
-    하나뿐이다 (거기서는 1GB 를 받는 중이라는 사실이 곧 필요한 정보다)."""
+    하나뿐이다 (거기서는 1GB를 받는 중이라는 사실이 곧 필요한 정보다)."""
     import logging
 
     keys = ["HF_HUB_DISABLE_PROGRESS_BARS", "HF_HUB_DISABLE_TELEMETRY"]
@@ -160,11 +160,11 @@ def _load_local(model_name: str) -> tuple[Callable[[str], list[float]], int, str
     """로컬 임베더 로드 — **model2vec(정적) 우선**, sentence-transformers 폴백.
     미설치면 None (fail-open). 반환 = (embed_fn, dim, 실제 모델명).
 
-    순서가 반대였다. sentence-transformers 를 먼저 시도하면, 그게 설치된 환경에서는 기본
+    순서가 반대였다. sentence-transformers를 먼저 시도하면, 그게 설치된 환경에서는 기본
     모델 이름이 ST 쪽으로 해석돼 **한국어 검증을 받은 적 없는 모델이 조용히 이겼다** —
     벤치가 고른 값이 실제로 쓰이지 않으면 그건 기본값이 아니다. 고른 모델을 먼저 연다.
 
-    ST 경로는 남겨 둔다: 사용자가 semantic_model 로 ST 계열 이름을 지정하면 model2vec 이
+    ST 경로는 남겨 둔다: 사용자가 semantic_model로 ST 계열 이름을 지정하면 model2vec이
     그 이름을 못 읽고, 그때 여기로 넘어온다. 즉 두 계열을 다 쓸 수 있다.
 
     어떤 import·로드 실패도 삼켜 None — 검색은 계속돼야 한다."""
@@ -214,7 +214,7 @@ def embedder() -> Callable[[str], list[float]] | None:
     if _CACHE["loaded"]:
         return _CACHE["fn"]
     if deadline_bound() and not model_cached():
-        # 시간 상한 안에서는 35초짜리 첫 내려받기를 열지 않는다. 준비는 warmup 이 한다.
+        # 시간 상한 안에서는 35초짜리 첫 내려받기를 열지 않는다. 준비는 warmup이 한다.
         _CACHE["loaded"], _CACHE["fn"], _CACHE["dim"] = True, None, 0
         return None
     _CACHE["loaded"] = True
@@ -240,19 +240,19 @@ def active() -> bool:
 
     **주의 — 이것은 "회수에 기여하는가"가 아니다.** 임베더가 서 있어도 파생 벡터가 정본을
     안 덮으면 시맨틱 스트림은 빈 리스트를 낸다 (실측 26-07-29: 페이지 2장·vec 0행에서
-    active() 는 True). 사람에게 보여 줄 상태는 이 값 하나가 아니라 `memory.vec_coverage()`
-    와 **같이** 읽어야 한다."""
+    active()는 True). 사람에게 보여 줄 상태는 이 값 하나가 아니라
+    `memory.vec_coverage()`와 **같이** 읽어야 한다."""
     return embedder() is not None
 
 
 def loaded_model() -> str:
     """이미 로드된 임베더의 모델명 — **로드를 유발하지 않는다** (없으면 빈 문자열).
 
-    파생 인덱스에 "어떤 임베더로 만든 벡터인가"를 적기 위한 접근자다. `status()` 는
-    embedder() 를 부르므로 이 자리에 쓸 수 없다 — 색인 경로가 상태 조회 때문에 35초짜리
+    파생 인덱스에 "어떤 임베더로 만든 벡터인가"를 적기 위한 접근자다. `status()`는
+    embedder()를 부르므로 이 자리에 쓸 수 없다 — 색인 경로가 상태 조회 때문에 35초짜리
     첫 내려받기를 여는 일은 없어야 한다.
 
-    주입 임베더(테스트·커스텀)는 `injected` 로 보고한다. 빈 문자열로 두면 주입 임베더로 만든
+    주입 임베더(테스트·커스텀)는 `injected`로 보고한다. 빈 문자열로 두면 주입 임베더로 만든
     벡터와 진짜 모델로 만든 벡터가 파생 인덱스에서 구분되지 않아, 둘을 오가면 낡은 공간의
     벡터가 조용히 살아남는다."""
     if _OVERRIDE is not None:
@@ -261,7 +261,7 @@ def loaded_model() -> str:
 
 
 def status() -> dict:
-    """상태 스냅샷 — 정직한 노출용. 로드를 강제하지 않으려면 active() 를 먼저 부른 뒤 읽는다."""
+    """상태 스냅샷 — 정직한 노출용. 로드를 강제하지 않으려면 active()를 먼저 부른 뒤 읽는다."""
     fn = embedder()
     if _OVERRIDE is not None:
         return {"mode": mode(), "active": True, "model": "injected", "dim": len(_OVERRIDE("x"))}
@@ -294,7 +294,7 @@ def warmup() -> dict:
 
     평시 경로와 달리 여기서는 네트워크를 막지 않는다 — 워밍업은 **복구 경로**이기도 하다.
     캐시가 깨진 상태에서 오프라인으로 열면 고칠 방법이 없어지고, 그때 사용자가 부르는 명령이
-    바로 이것이다. 진행 막대도 그대로 보여 준다 (1GB 를 받는 중이라는 사실이 곧 필요한 정보다).
+    바로 이것이다. 진행 막대도 그대로 보여 준다 (1GB를 받는 중이라는 사실이 곧 필요한 정보다).
 
     반환 = {"active", "model", "dim", "downloaded", "seconds"}. 실패해도 예외를 올리지 않는다:
     워밍업 실패는 검색을 막지 않고, 그저 시맨틱 없이 도는 것뿐이다 (fail-open 계약)."""
@@ -341,7 +341,7 @@ def _normalize(vec: list[float]) -> list[float]:
 
 
 def pack(vec: list[float]) -> bytes:
-    """float32 직렬화 — state.db BLOB 저장용 (파생물, reindex 로 복원 가능)."""
+    """float32 직렬화 — state.db BLOB 저장용 (파생물, reindex로 복원 가능)."""
     return array.array("f", vec).tobytes()
 
 

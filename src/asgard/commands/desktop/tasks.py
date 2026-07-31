@@ -1,6 +1,6 @@
 """작업의 수명 — 만들고, 돌리고, 이어 가고, 승인하고, 멈춘다.
 
-`asgard run` 을 자식 프로세스로 띄우는 것이 실제 실행이다. 이 모듈이 지는 것은 그 둘레다:
+`asgard run`을 자식 프로세스로 띄우는 것이 실제 실행이다. 이 모듈이 지는 것은 그 둘레다:
 어느 자리에서 돌지, 무엇을 바꿨는지, 기록에 어떻게 남는지, 그리고 티켓에서 시작한 일이면
 그 티켓을 어떻게 되돌려 놓을지.
 """
@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 
-from ... import ui  # noqa: F401  (하위 호환 — 이 모듈은 ui 를 직접 쓰지 않는다)
+from ... import ui  # noqa: F401  (하위 호환 — 이 모듈은 ui를 직접 쓰지 않는다)
 from .. import loopback
 from . import state
 from .boundary import resolve_workspace, task_root, workspace_label
@@ -37,8 +37,8 @@ def _public_task(task: dict) -> dict:
 
 
 def _task_snapshot(root: str | None = None) -> list[dict]:
-    """작업은 작업 공간에 속한다 — root 를 주면 그 경계 안의 것만 돌려준다.
-    (기록이 없던 시절의 작업은 root 가 없다. 그건 어느 경계에도 안 걸리게 두지 않고
+    """작업은 작업 공간에 속한다 — root를 주면 그 경계 안의 것만 돌려준다.
+    (기록이 없던 시절의 작업은 root가 없다. 그건 어느 경계에도 안 걸리게 두지 않고
     현재 작업 공간 것으로 본다 — 안 그러면 옛 작업이 화면에서 통째로 사라진다.)"""
     with _TASK_LOCK:
         rows = [_public_task(task) for task in _TASKS.values()]
@@ -52,7 +52,7 @@ def _feed_snapshot(root: str, limit: int = 200) -> list[dict]:
     """프로젝트를 건너 보는 하나의 대화 목록 — 이 창의 사이드바가 드는 것.
 
     두 곳을 겹친다: 지금 살아 있는 메모리의 작업(가장 최신)과 디스크의 기계 색인(어제까지의
-    것, 남의 프로젝트 것까지). 같은 id 는 메모리 쪽이 이긴다 — 돌고 있는 작업의 상태를
+    것, 남의 프로젝트 것까지). 같은 id는 메모리 쪽이 이긴다 — 돌고 있는 작업의 상태를
     디스크의 옛 줄이 덮으면 화면이 뒤로 간다."""
     from .. import desktop_store
 
@@ -135,7 +135,7 @@ def _git_branch(root: str) -> str:
     if result.returncode != 0:
         return ""
     name = result.stdout.strip()
-    # 분리된 HEAD 는 가지 이름이 없다 — 'HEAD' 라고 적으면 그게 가지 이름인 줄 안다
+    # 분리된 HEAD는 가지 이름이 없다 — 'HEAD'라고 적으면 그게 가지 이름인 줄 안다
     return "" if name in ("", "HEAD") else name[:80]
 
 
@@ -163,8 +163,8 @@ def _workspace_files(root: str) -> list[dict]:
 def _changed_by_task(root: str, before: list[dict]) -> list[dict]:
     """이 작업이 실제로 바꾼 것만 남긴다.
 
-    여태는 끝난 뒤의 `git status` 를 통째로 실었다. 그래서 README 한 줄만 읽고 끝난 작업이
-    '변경 파일 14개' 를 달고 산출물 목록에 올라왔다 — 사용자가 이미 들고 있던 더러운 트리였다.
+    여태는 끝난 뒤의 `git status`를 통째로 실었다. 그래서 README 한 줄만 읽고 끝난 작업이
+    '변경 파일 14개'를 달고 산출물 목록에 올라왔다 — 사용자가 이미 들고 있던 더러운 트리였다.
     작업 시작 시점의 상태와 견주어 새로 생겼거나 상태가 달라진 줄만 그 작업의 몫이다."""
     baseline = {row["path"]: row["status"] for row in before}
     return [row for row in _workspace_files(root) if baseline.get(row["path"]) != row["status"]]
@@ -376,7 +376,7 @@ def run_ticket(payload: dict, root: str) -> tuple[int, str, bytes]:
     """`POST /api/tickets/run` — 보드의 티켓 한 건을 그 자리에서 실행한다.
 
     티켓과 실행을 잇는 자리가 여기다. 티켓만 있으면 목록이고 실행만 있으면 이력이지만,
-    둘이 이어지면 **일감이 스스로 움직인 기록**이 된다: 티켓은 진행 중으로 가고 `task_id` 를
+    둘이 이어지면 **일감이 스스로 움직인 기록**이 된다: 티켓은 진행 중으로 가고 `task_id`를
     들며, 작업은 어느 티켓의 것인지를 라벨로 든다. 실행이 거절되면 티켓은 건드리지 않는다 —
     안 돈 일을 '진행 중'이라고 적는 보드는 계기가 아니다.
 
@@ -435,7 +435,7 @@ _THREAD_TAIL = "위 맥락을 이어서 아래 지시를 수행하라."
 def _compose(turns: list[dict], prompt: str) -> str:
     """앞 턴들을 지시문에 실어 준다.
 
-    `asgard run` 은 단발 헤드리스라 프로세스 사이에 기억이 없다. 그래서 '이어 가기'는
+    `asgard run`은 단발 헤드리스라 프로세스 사이에 기억이 없다. 그래서 '이어 가기'는
     맥락을 **말로** 넘기는 것이다 — 없는 세션을 있는 척하지 않는다."""
     if not turns:
         return prompt
@@ -538,7 +538,7 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
         _kill_group(process)
         task.update({"status": "blocked", "updated": time.time(), "result": "작업이 중지되었습니다.", "stopped": True})
         stopped = _public_task(task)
-    # 경계를 모르는 작업은 어디에도 안 적는다 — cwd 로 떨어뜨리면 남의 프로젝트에 남의 이력이 쌓인다
+    # 경계를 모르는 작업은 어디에도 안 적는다 — cwd로 떨어뜨리면 남의 프로젝트에 남의 이력이 쌓인다
     if stopped.get("root"):
         _remember(str(stopped["root"]), stopped)
     return _json_body(200, stopped)

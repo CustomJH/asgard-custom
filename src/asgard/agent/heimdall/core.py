@@ -7,7 +7,7 @@ Odin 요청 → [분류] → DIRECT (write 없음, 무세금)
                     게이트(verifier-gate, 루프 종료 지점) → close
 
 협력자 구성: DeliveryDispatch(딜리버리 위임·편대), WaveRunner(배정 단위 wave 실행),
-TrinityRun(퀘스트 순환). Heimdall 은 provider/세션/모델/메모리 표면과 라우팅만 진다 —
+TrinityRun(퀘스트 순환). Heimdall은 provider/세션/모델/메모리 표면과 라우팅만 진다 —
 기존 테스트·호출자가 쓰는 `_dispatch_handler` 류 메서드는 협력자 위임 파사드로 유지한다.
 """
 
@@ -51,7 +51,7 @@ from .waves import WaveRunner
 
 
 class SessionLike(Protocol):
-    """_run_turn 이 요구하는 표면 — run() 하나. 테스트 대역(FakeSession)이 AgentSession 상속 없이 만족."""
+    """_run_turn이 요구하는 표면 — run() 하나. 테스트 대역(FakeSession)이 AgentSession 상속 없이 만족."""
 
     def run(self, user_content: str) -> SessionResult: ...
 
@@ -85,11 +85,11 @@ class Heimdall:
         self._state_lock = threading.Lock()  # wave 병렬 스레드의 _clients/total_tokens 변이 보호
         self._session_seq = 0
         self._sessions: dict[str, dict] = {}
-        # 턴 단위 협조 취소 — 모든 자식 AgentSession 이 이 이벤트를 공유 (handle() 진입 시 clear)
+        # 턴 단위 협조 취소 — 모든 자식 AgentSession이 이 이벤트를 공유 (handle() 진입 시 clear)
         self.cancel_event = threading.Event()
         self._clients: dict[tuple, object] = {}  # (provider, base_url, key_source) → SDK 클라이언트
         self.client = self._client_for(rp)
-        # 역할별 provider 배치 ([trinity.<role>]) — 미충족은 기본 provider 로 fail-open + 경고 1회
+        # 역할별 provider 배치 ([trinity.<role>]) — 미충족은 기본 provider로 fail-open + 경고 1회
         from ...providers import TRINITY_EXTRA_ROLES, TRINITY_ROLES
 
         self.role_rp: dict[str, ResolvedProvider] = {}
@@ -104,25 +104,25 @@ class Heimdall:
 
         self.policy = load_policy(root)
         # Lagom — 세션 생성 시점 모드로 렌더 (off = 빈 문자열, 프롬프트 무변화).
-        # REPL /lagom 전환은 _Reconfigure 로 Heimdall 을 재생성해 여기로 다시 온다.
+        # REPL /lagom 전환은 _Reconfigure로 Heimdall을 재생성해 여기로 다시 온다.
         from ...lagom import note as _lagom_note
 
         self.lagom = _lagom_note(root)
-        # Bragi (사람 문체) — lagom 과 독립 축이라 별도 해석. `/lagom off` 는 압축을 끄는 것이지
+        # Bragi (사람 문체) — lagom과 독립 축이라 별도 해석. `/lagom off`는 압축을 끄는 것이지
         # 사람처럼 쓰기를 끄는 게 아니다. 기본 on, 끄기는 설정 bragi.mode 또는 ASGARD_BRAGI=off.
         from ...bragi import note as _bragi_note
 
         self.bragi = _bragi_note(root)
-        # Charter (프로젝트 북극성) — through-line 은 identity 로(설계①, 모든 역할·DIRECT 관통),
-        # coherence 는 Thinker/Verifier 프롬프트에 역할별로(협업②/판단③). 미설정이면 전부 빈 문자열.
+        # Charter (프로젝트 북극성) — through-line은 identity로(설계①, 모든 역할·DIRECT 관통),
+        # coherence는 Thinker/Verifier 프롬프트에 역할별로(협업②/판단③). 미설정이면 전부 빈 문자열.
         from ...charter import note as _charter_note
 
         self._charter_note = _charter_note
         self.charter_identity = _charter_note(root, "identity")
         # 커스텀 매뉴얼 — 오딘이 루트 `MANUAL.md`(+`.asgard/`)에 쓴 프로젝트 규칙. identity 절은
-        # 메인·딜리버리가, 역할 절(thinker/worker/verifier)은 각 프롬프트가 가져간다. charter 와
-        # 달리 Worker 도 받는다 — "이 프로젝트에선 코드를 이렇게 써라"가 본문이라 코드를 쓰는
-        # 역할에 안 닿으면 계층 자체가 무의미하다 (hooks/manual_activate.section_for 와 같은 판정).
+        # 메인·딜리버리가, 역할 절(thinker/worker/verifier)은 각 프롬프트가 가져간다. charter와
+        # 달리 Worker도 받는다 — "이 프로젝트에선 코드를 이렇게 써라"가 본문이라 코드를 쓰는
+        # 역할에 안 닿으면 계층 자체가 무의미하다 (hooks/manual_activate.section_for와 같은 판정).
         # 세션 생성 시 1회 렌더 = 세션 중 파일이 바뀌어도 프롬프트 불변 (KV 캐시·재현성 보존).
         from ...manual import note as _manual_note
 
@@ -140,7 +140,7 @@ class Heimdall:
 
         self._memory_snap = _memory_note()  # 동결 원본 — 역할별 게이트는 아래에서
         self._mem_allowed = _mem_allowed
-        # 스웜 — 이 프로젝트가 역할마다 다른 에이전트를 세워 뒀는가 (.asgard 의 [agents].roles).
+        # 스웜 — 이 프로젝트가 역할마다 다른 에이전트를 세워 뒀는가 (.asgard의 [agents].roles).
         # 세워 뒀으면 그 역할의 세션은 **그 에이전트의 홈**에서 돌고, 1차 기억 스냅샷도 거기서
         # 뜬다. 배치가 없으면 이 딕셔너리가 비어 있고 아래 경로는 전부 종전과 바이트 동일하다.
         from ...swarm import resolve as _swarm_resolve
@@ -157,7 +157,7 @@ class Heimdall:
         self._memory_provider_allowed = _mem_allowed(rp.profile.name, rp.source)
         self.memory_note = self._memory_snap if self._memory_provider_allowed else ""
         # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/eitri/loki)은 코디네이터가 아니다.
-        # 특히 loki 는 Verifier 의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
+        # 특히 loki는 Verifier의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
         self.delivery_identity = (
             _identity(root) + self.lagom + self.bragi + self.charter_identity + self.manual_identity
         )
@@ -371,7 +371,7 @@ class Heimdall:
         # 프로파일을 안 쓰는 설치의 프롬프트는 바이트 단위로 종전과 같다.
         system = system + self._agent_note_for(role)
         rp = rp_override or self.role_rp.get(role or "", self.rp)
-        if model and model != rp.model:  # 상황별 모델 스왑 — provider 는 유지, 모델만
+        if model and model != rp.model:  # 상황별 모델 스왑 — provider는 유지, 모델만
             from dataclasses import replace
 
             rp = replace(rp, model=model)
@@ -397,15 +397,15 @@ class Heimdall:
     def _model_for(self, role_key: str, bump: bool = False) -> str | None:
         """정책 tier → 상황별 모델. None = 스왑 없음 (해당 세션 rp.model 그대로).
 
-        존중 규칙: ① 역할에 명시 placement 가 있으면 그 모델 ② 기본 provider 가 anthropic 이
+        존중 규칙: ① 역할에 명시 placement가 있으면 그 모델 ② 기본 provider가 anthropic이
         아니면 티어 매핑 불가 ③ 알려지지 않은 커스텀 모델은 그 선택 유지.
         티어 하한 = 코디네이터: 정책 티어가 세션 모델 티어보다 낮으면 세션 티어로 올린다 —
-        더 싼 손이 필요하면 ① placement 로 명시한다.
+        더 싼 손이 필요하면 ① placement로 명시한다.
         bump = 상황 승급 (full-verify·재계획 2회+) — 티어 사다리 한 칸 위 (high→max=fable)."""
         rp = self.role_rp.get(role_key, self.rp)
         if rp is not self.rp:
             return None  # 명시 placement 존중
-        # claude_cli 도 티어 매핑 가능 — CLI 가 full 모델 ID 를 그대로 해석한다
+        # claude_cli도 티어 매핑 가능 — CLI가 full 모델 ID를 그대로 해석한다
         if rp.profile.api_mode not in ("anthropic", "claude_cli"):
             return None
         tier = str((self.policy.get("roles", {}).get(role_key) or {}).get("tier", "standard"))
@@ -456,8 +456,8 @@ class Heimdall:
         if d is not None:
             _log_classify(self.root, {"event": "classify", "source": "heuristic", **_pred_fields(d)})
             return d
-        # structured-output 강제 대신 "JSON 만 출력" + 관대한 파싱 — 두 트랜스포트(및 nemotron 류
-        # JSON-mode 불확실 모델) 공통. 파싱 실패는 안전 기본값(write 로 간주 → 게이트가 잡는다).
+        # structured-output 강제 대신 "JSON만 출력" + 관대한 파싱 — 두 트랜스포트(및 nemotron 류
+        # JSON-mode 불확실 모델) 공통. 파싱 실패는 안전 기본값(write로 간주 → 게이트가 잡는다).
         sysmsg = (
             "Task classifier. Read the request and output only the JSON below (no explanation, no surrounding text). "
             "write_expected = true if the task requires creating or modifying files. "
@@ -477,12 +477,12 @@ class Heimdall:
             d["criteria"] = [str(c) for c in (d.get("criteria") or [])]
             if not d["write_expected"] and has_write_verbs(request):
                 # 결정론 write 신호의 거부권 — 한 방향으로만 작동한다. 분류기가 write 요청을
-                # read-only 로 읽으면 Write 도구 없는 DIRECT 세션이 붙어 과업 자체가 불가능해지고,
+                # read-only로 읽으면 Write 도구 없는 DIRECT 세션이 붙어 과업 자체가 불가능해지고,
                 # 반대 오판은 불필요한 Trinity 세금에 그친다 (비대칭). 이 경로에 오는 요청은
                 # 휴리스틱이 read/write 신호를 둘 다 본 것들이라, 사용자가 write 동사를 쓴 것은
-                # 사실이다 (26-07-26 helios 실측: "모듈 경계를 정리해서 …모아줘" 가 read-only 로
-                # 분류돼 리팩터링이 제안문으로 끝났다 — 부정구는 has_write_verbs 가 이미 제거한다).
-                # ambiguous 는 건드리지 않는다 — True 로 올리면 게이트-우선(BASELINE_VERIFY)
+                # 사실이다 (26-07-26 helios 실측: "모듈 경계를 정리해서 …모아줘"가 read-only로
+                # 분류돼 리팩터링이 제안문으로 끝났다 — 부정구는 has_write_verbs가 이미 제거한다).
+                # ambiguous는 건드리지 않는다 — True로 올리면 게이트-우선(BASELINE_VERIFY)
                 # 자격이 사라져 소형 수정이 최중량 검증으로 승격된다 (26-07-23 감사).
                 d["write_expected"] = True
             d["parallel_requested"] = bool(d["write_expected"] and _PARALLEL_WORK_PAT.search(request.lower()))
@@ -492,18 +492,18 @@ class Heimdall:
             return d
         except Exception:
             # 파싱 실패의 라우팅은 '요청의 write 동사 유무'로 결정론 판정한다. write 신호가 없으면
-            # DIRECT fail-open — DIRECT 세션은 read-only 이고 bash 우회 write 는 Canon 10 소급
-            # 검증(워킹트리 fingerprint)이 Trinity 로 편입하므로 게이트는 우회되지 않는다.
+            # DIRECT fail-open — DIRECT 세션은 read-only 이고 bash 우회 write는 Canon 10 소급
+            # 검증(워킹트리 fingerprint)이 Trinity로 편입하므로 게이트는 우회되지 않는다.
             # 구 기본값(무조건 write+deep)은 분류기가 인사에 JSON 대신 인사로 응답하는 순간
             # "안녕" 하나가 deep 턴 예산을 전부 태우는 최악 비용 경로였다 (26-07-21 실측).
             wr = has_write_verbs(request)
             d = {
                 "write_expected": wr,
                 # ambiguous 금지 — 분류기 파싱 실패는 요청이 모호하다는 신호가 아니라 분류기
-                # 장애다. ambiguous=True 는 게이트-우선(BASELINE_VERIFY) 자격을 박탈해 모든
-                # 검증을 LLM Verifier 로 밀었다 (26-07-23 감사: flaky classify 1회가 소형 수정을
+                # 장애다. ambiguous=True는 게이트-우선(BASELINE_VERIFY) 자격을 박탈해 모든
+                # 검증을 LLM Verifier로 밀었다 (26-07-23 감사: flaky classify 1회가 소형 수정을
                 # 최중량 파이프라인으로 승격). 물리 가드(민감 경로·big diff·sig_risk·테스트
-                # 삭제)는 ambiguous 와 무관하게 그대로 작동한다.
+                # 삭제)는 ambiguous와 무관하게 그대로 작동한다.
                 "ambiguous": False,
                 "destructive": bool(_DESTRUCTIVE_PAT.search(request.lower())),
                 "external_research": False,
@@ -512,7 +512,7 @@ class Heimdall:
                 "criteria": [],
                 # deep(12턴) 폴백 폐기 — 실측(state/classify.jsonl)에서 fallback 승격 2건 모두
                 # 소형 요청이었고 그중 1건은 40초 뒤 trivial 재분류. standard(6턴)면 충분하고,
-                # 진짜 deep 은 FAIL/재계획 경로가 자연 승격한다.
+                # 진짜 deep은 FAIL/재계획 경로가 자연 승격한다.
                 "task_class": "standard",
             }
             _log_classify(self.root, {"event": "classify", "source": "fallback", **_pred_fields(d)})
@@ -520,7 +520,7 @@ class Heimdall:
 
     def _complete_text(self, system: str, user: str, max_tokens: int = 2000) -> str:
         """비스트리밍 단발 completion — 트랜스포트 무관 (classify 등 내부 판단용).
-        [trinity.classify] placement 가 있으면 그 provider/모델 사용 (저비용 분류)."""
+        [trinity.classify] placement가 있으면 그 provider/모델 사용 (저비용 분류)."""
         rp = self.role_rp.get("classify", self.rp)
         client = self._client_for(rp)
         from ..rate_limit import throttle
@@ -564,8 +564,8 @@ class Heimdall:
         fallback: Callable[[], SessionLike] | None = None,
         fallback_prompt: str | None = None,
     ):
-        """역할 턴 실행 + 오류 회복 — retryable 은 jittered backoff ≤2회 재시도,
-        소진 시 placement 폴백 1회 (기본 provider), fatal 은 즉시 표면화."""
+        """역할 턴 실행 + 오류 회복 — retryable은 jittered backoff ≤2회 재시도,
+        소진 시 placement 폴백 1회 (기본 provider), fatal은 즉시 표면화."""
         delay = 2.0
         for attempt in range(3):
             try:
@@ -614,7 +614,7 @@ class Heimdall:
             return ""
 
     def _track_cache(self, r) -> None:
-        """프롬프트 캐시 계측 집계 — 세션 결과의 read/write/uncached 를 누적 (스레드 안전, wave 병렬)."""
+        """프롬프트 캐시 계측 집계 — 세션 결과의 read/write/uncached를 누적 (스레드 안전, wave 병렬)."""
         cr = getattr(r, "cache_read_tokens", 0) or 0
         total = cr + (getattr(r, "cache_write_tokens", 0) or 0) + (getattr(r, "uncached_input_tokens", 0) or 0)
         if total:
@@ -671,7 +671,7 @@ class Heimdall:
     def _tutor_brief(self, request: str) -> None:
         """되짚기의 앞쪽 절반 — 같은 자리를 다시 건드리기 **전에** 남은 물음을 사용자 앞에 놓는다.
 
-        `on_text` 로만 나간다. 모델 컨텍스트(map_note 처럼)에 넣지 않는 것이 이 층의 요점이다 —
+        `on_text` 로만 나간다. 모델 컨텍스트(map_note처럼)에 넣지 않는 것이 이 층의 요점이다 —
         모델이 열린 물음을 보면 그 물음에 대신 답해 버리고, 그러면 되짚기가 막으려던 일이 바로
         그 자리에서 일어난다(미미르 auga 계약: 물음은 대신 닫아 주는 체크리스트가 아니다).
         """
@@ -685,7 +685,7 @@ class Heimdall:
             pass  # 브리핑 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
 
     def _escalate(self, sid: str) -> None:
-        """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log 가 거부, 조용히 유실)."""
+        """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log가 거부, 조용히 유실)."""
         ql(
             self.root,
             "append",
@@ -745,7 +745,7 @@ class Heimdall:
             resume_qid=resume_qid,
             resume_units=resume_units,
         )
-        self._last_quest_id = run.qid  # 퀘스트 귀속 — 종료 후 persist 시점엔 ACTIVE 가 이미 해제된다
+        self._last_quest_id = run.qid  # 퀘스트 귀속 — 종료 후 persist 시점엔 ACTIVE가 이미 해제된다
         return run.run()
 
     def _final_report(self, qid: str, sid: str, gate_blocks: int) -> str:
@@ -766,8 +766,8 @@ class Heimdall:
         from ...i18n import t
 
         roles = [e.get("role", "?") for e in events if e.get("event") in ("plan", "work", "verify")]
-        # 가정 접두는 두 표기를 다 받는다 — 한국어 세션의 `가정:` 은 계약 토큰이고(보존),
-        # 다른 언어로 답하는 세션은 `Assumption:` 을 쓴다. 둘 다 Canon 8 표면화 대상이다.
+        # 가정 접두는 두 표기를 다 받는다 — 한국어 세션의 `가정:`은 계약 토큰이고(보존),
+        # 다른 언어로 답하는 세션은 `Assumption:`을 쓴다. 둘 다 Canon 8 표면화 대상이다.
         assumptions = sorted(
             {
                 c
@@ -805,7 +805,7 @@ class Heimdall:
         return report
 
     def _worktree_dirty(self) -> str:
-        """git status --porcelain 스냅샷 — DIRECT 전후 비교로 bash 우회 write 까지 감지."""
+        """git status --porcelain 스냅샷 — DIRECT 전후 비교로 bash 우회 write까지 감지."""
         import subprocess
 
         try:
@@ -823,7 +823,7 @@ class Heimdall:
 
     @staticmethod
     def _porcelain_paths(snapshot: str) -> set[str]:
-        """porcelain 스냅샷 → 경로 집합 — 소급 승격의 귀속 대조용 (rename 은 목적지 경로)."""
+        """porcelain 스냅샷 → 경로 집합 — 소급 승격의 귀속 대조용 (rename은 목적지 경로)."""
         return {ln[3:].split(" -> ")[-1].strip() for ln in snapshot.splitlines() if len(ln) > 3}
 
     def _rewrite_lagom_text(self, request: str, draft: str, violations: list[str]) -> str:
@@ -845,8 +845,8 @@ class Heimdall:
         """활성 축의 자연어 응답을 검사하고 한 번 재작성한다. 위반 없음(대부분)이면 스트리밍된
         초안이 곧 정본. 재작성 채택 시 호출부(_direct)가 교정 표식과 함께 정본을 표시한다.
 
-        두 축은 독립이다 — Lagom(근거·압축)은 `/lagom off` 로 꺼지고, Bragi(사람 문체)는
-        설정 bragi.mode 로 꺼진다. 재작성은 강제 항목(advisory 제외)이 있을 때만 돌고,
+        두 축은 독립이다 — Lagom(근거·압축)은 `/lagom off`로 꺼지고, Bragi(사람 문체)는
+        설정 bragi.mode로 꺼진다. 재작성은 강제 항목(advisory 제외)이 있을 때만 돌고,
         채택 기준은 하나다: 강제 항목이 실제로 줄었고 근거 위반을 새로 만들지 않았으면
         그것이 정본, 아니면 스트리밍된 초안이 정본이다.
 
@@ -902,12 +902,12 @@ class Heimdall:
         return revised if adopted else draft
 
     def _direct(self, request: str, memory_intent: bool = False) -> str:
-        """DIRECT 응답 — 본문은 on_text 로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
+        """DIRECT 응답 — 본문은 on_text로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
         예외: refusal 안내는 스트림에 안 실린 합성 텍스트 — 그것만 반환.
 
         가드: classify 오판으로 DIRECT 세션이 파일을 쓰면 — editor writes 또는
         워킹트리 fingerprint 변화 — 소급 퀘스트를 열어 Verifier 판정 + 게이트를 강제한다.
-        mode B 의 orphan-write 봉인의 네이티브 등가물 (native 엔 Stop 훅이 없다).
+        mode B의 orphan-write 봉인의 네이티브 등가물 (native 엔 Stop 훅이 없다).
 
         memory_intent: 사용자의 명시적 기억 지시 턴 — memory_save 도구를 열고, 턴 종료 시
         실행 증거(도구 호출 성공)를 판정한다. 미저장이면 원문 결정론 폴백으로 봉합 —
@@ -916,7 +916,7 @@ class Heimdall:
 
         before = self._worktree_dirty()
         before_ref = snapshot_ref(self.root)
-        # REPL 턴 간 대화 맥락 — 직전 문답 요약을 앞에 붙인다 (후속 질문 "그건 왜?" 가 성립하게).
+        # REPL 턴 간 대화 맥락 — 직전 문답 요약을 앞에 붙인다 (후속 질문 "그건 왜?"가 성립하게).
         # Trinity 경로엔 안 붙인다 — write 과업은 요청+계획이 맥락의 전부여야 한다 (Canon 7 범위 존중).
         ctx = "".join(f"[Previous exchange]\nOdin: {q}\nResponse: {a}\n\n" for q, a in self.history[-3:])
         # 요청 기반 zero-LLM 회수 (감사 권고) — 카탈로그(identity)와 별개로 관련 페이지를 결정론 주입.
@@ -939,7 +939,7 @@ class Heimdall:
             _skill_support("mimir", self.root, include_learned=False) if mimir else ("", [], {})
         )
         # 기억 지시 턴 — 저장은 provider 주입 게이트와 무관하다: 사실은 사용자 발화에서 왔으므로
-        # 메모리가 원격 모델로 새는 표면이 아니다 (inject_allowed 는 읽기 주입만 다룬다).
+        # 메모리가 원격 모델로 새는 표면이 아니다 (inject_allowed는 읽기 주입만 다룬다).
         mem_saved: list[tuple[str, str]] = []
         mem_note, mem_tools, mem_handlers = _memory_save_support(mem_saved) if memory_intent else ("", [], {})
         r = self._session(
@@ -954,7 +954,7 @@ class Heimdall:
         self.last_context_tokens = r.context_tokens or self.last_context_tokens
         self._track_cache(r)
         # 소급 승격 판정 — 전 트리 지문 비교(≠)는 병렬 세션·빌드 아티팩트의 무관 드리프트로도
-        # 순수 질문을 Trinity+Verifier 로 승격시켰다 (26-07-23 감사). 이 세션의 write 로 귀속
+        # 순수 질문을 Trinity+Verifier로 승격시켰다 (26-07-23 감사). 이 세션의 write로 귀속
         # 가능한 변화만 승격한다: 도구 관측 write(r.writes), 또는 드리프트 경로가 이 세션의
         # 실행 명령 텍스트에 등장 (bash 우회 write 백스톱 — read-only 가드가 1차 방어).
         after = self._worktree_dirty()
@@ -991,7 +991,7 @@ class Heimdall:
         if corrected:
             from ...i18n import t
 
-            # 본문은 이미 라이브 스트리밍됨 (검사 전 버퍼링은 REPL 을 먹통으로 보이게 했다 —
+            # 본문은 이미 라이브 스트리밍됨 (검사 전 버퍼링은 REPL을 먹통으로 보이게 했다 —
             # 26-07-23). 위반 시에만 정본을 교정 표식과 함께 뒤에 붙인다. 정본은 위에서 확정됨.
             self.on_text("\n\n" + t("lagom_corrected") + "\n" + final + "\n")
         if mem_notice:
@@ -1002,7 +1002,7 @@ class Heimdall:
         """기억 지시 턴의 실행 증거 봉합 — 저장 여부를 결정론으로 확정해 사용자에게 보인다.
 
         도구 미호출이면 요청 원문을 폴백 ingest 한다 (사용자 지시 = 승인; 위협·시크릿 스캔은
-        ingest 가 그대로 수행). 폴백까지 실패하면 실패를 숨기지 않는다 — 모델의 "기억했다"
+        ingest가 그대로 수행). 폴백까지 실패하면 실패를 숨기지 않는다 — 모델의 "기억했다"
         서술과 무관하게 이 노티스가 디스크 진실이다."""
         from ...i18n import t
 
@@ -1021,7 +1021,7 @@ class Heimdall:
             _log_classify(self.root, {"event": "memory_write", "source": "failed"})
             return (
                 f"⚠ 위그드라실에 새기지 못했어요 ({e.__class__.__name__}: {str(e)[:120]}) — "
-                '`asgard memory ingest "<사실>" --kind user` 로 직접 저장하세요.'
+                '`asgard memory ingest "<사실>" --kind user`로 직접 저장하세요.'
             )
 
     # ── 진입점 ───────────────────────────────────────────────────────────
@@ -1089,7 +1089,7 @@ class Heimdall:
         self.cancel_event.set()
 
     def _persist_turn(self, request: str, response: str) -> None:
-        """완결 턴을 turn_store 에 append — 취소·오류 턴은 호출부가 걸러 여기 오지 않는다.
+        """완결 턴을 turn_store에 append — 취소·오류 턴은 호출부가 걸러 여기 오지 않는다.
         퀘스트·세션 귀속을 함께 남긴다 — 에피소드 계층의 검색 좌표."""
         try:
             from ..turn_store import append_turn
@@ -1105,7 +1105,7 @@ class Heimdall:
             pass
 
     def restore_history(self) -> int:
-        """직전 대화 복원 — turn_store 의 최근 턴을 history 로 되살린다 (대화 맥락만, 권위 없음).
+        """직전 대화 복원 — turn_store의 최근 턴을 history로 되살린다 (대화 맥락만, 권위 없음).
         반환 = 복원 턴 수. 퀘스트·게이트·메모리 상태는 건드리지 않는다."""
         try:
             from ..episodes import compact_text
@@ -1134,11 +1134,11 @@ class Heimdall:
         self._last_quest_id = None  # 턴 단위 리셋 — DIRECT 턴이 직전 퀘스트 귀속을 승계하지 않게
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
         with self._state_lock:
-            self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL 이 턴 종료 후 회수
+            self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL이 턴 종료 후 회수
         self._prepare_map(request)
         self._tutor_brief(request)
-        # cancel_event 는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
-        # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c 가 유실된다 (경합).
+        # cancel_event는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
+        # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c가 유실된다 (경합).
         self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (문지기가 길을 살피는 문구)
         try:
             cls = self._classify(request)
@@ -1154,30 +1154,30 @@ class Heimdall:
         if not cls["write_expected"]:
             _log_classify(self.root, {"event": "route", "route": "direct"})
             try:
-                # 기억 지시는 분류 소스와 무관한 결정론 재판정 — LLM 분류가 trivial 로 뭉개도 계약이 열린다.
+                # 기억 지시는 분류 소스와 무관한 결정론 재판정 — LLM 분류가 trivial로 뭉개도 계약이 열린다.
                 return self._finalize_memory(
                     request, self._direct(request, memory_intent=memory_write_intent(request))
                 )  # DIRECT — 무세금
             except TurnCancelled:
                 return self._cancel_notice()  # 취소 턴은 메모리 보존도 하지 않는다
-        # 모든 비파괴 write 는 Worker가 먼저 자율 계획·실행한다. standard 는 기계 baseline 적격과
+        # 모든 비파괴 write는 Worker가 먼저 자율 계획·실행한다. standard는 기계 baseline 적격과
         # 개인 메모리 최소 회수만 표시하고, deep/ambiguous/shared도 선행 Thinker 없이 시작한다.
         # 별도 Thinker는 명시적 병렬 분해 또는 관측된 실패의 재계획에만 사용한다.
         standard = cls.get("task_class") in ("trivial", "standard") and not (cls["ambiguous"] or cls["shared"])
         _log_classify(self.root, {"event": "route", "route": "standard" if standard else "trinity"})
         try:
             out = self._trinity(request, cls, standard=standard)
-            self.history = (self.history + [(request, out[:500])])[-6:]  # 후속 질문 맥락 (DIRECT 가 소비)
+            self.history = (self.history + [(request, out[:500])])[-6:]  # 후속 질문 맥락 (DIRECT가 소비)
             self.last_response_text = out
             self._persist_turn(request, out)
             return self._finalize_memory(request, out)
         except TurnCancelled:
             self.last_response_text = ""
             return self._cancel_notice()
-        except Exception as e:  # dangling 방지 — 퀘스트는 ACTIVE 로 남고 정직하게 보고
+        except Exception as e:  # dangling 방지 — 퀘스트는 ACTIVE로 남고 정직하게 보고
             out = (
                 f"⚠ 세션 오류로 Trinity 중단 ({e.__class__.__name__}: {str(e)[:200]}) — "
-                "퀘스트가 ACTIVE 로 남아 있음. 재요청 시 이어서 검증하거나 quest-log close 하세요."
+                "퀘스트가 ACTIVE로 남아 있음. 재요청 시 이어서 검증하거나 quest-log close 하세요."
             )
             self.last_response_text = out
             return self._finalize_memory(request, out)

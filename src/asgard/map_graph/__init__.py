@@ -1,9 +1,9 @@
 """관계 그래프 — 코드에서 추출한 증거 기반 프로젝트 지식 계층 (맵 Tier 1).
 
-`asgard map` 의 심화 계층이다. 결정론 추출기(LLM 0토큰)가 라우트·모델·DB 접근·API 호출·
+`asgard map`의 심화 계층이다. 결정론 추출기(LLM 0토큰)가 라우트·모델·DB 접근·API 호출·
 이벤트·잡·외부 서비스 증거를 소스 위치와 함께 수집해 관계 그래프를 만든다. 증명 못 하는
-연결은 만들지 않는다 — 모든 증거는 confirmed/candidate 신뢰도를 갖고, candidate 는 절대
-confirmed 로 승격 서술하지 않는다.
+연결은 만들지 않는다 — 모든 증거는 confirmed/candidate 신뢰도를 갖고, candidate는 절대
+confirmed로 승격 서술하지 않는다.
 
 산출물 소유권:
 - `.asgard/state/map-graph.json` — 그래프 상태 (런타임, git 미추적)
