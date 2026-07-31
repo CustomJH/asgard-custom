@@ -254,23 +254,105 @@ drift plus stale, malformed, oversized, or unsafe entries in manual area maps.
 ## Desktop
 
 ```bash
-asgard desktop            # native app when installed, browser fallback otherwise
-asgard desktop --browser  # skip the native shell
+asgard desktop                 # native app when installed, browser fallback otherwise
+asgard desktop --browser       # skip the native shell
+asgard desktop --root ~/work/x # open standing in a specific workspace
 ```
 
 A loopback workspace over the same ownership the CLI uses: `asgard run` executes the work,
 `settings.py` persists configuration, and the central registry stays the catalog source of truth.
-Tasks are **kept on disk** under `<project>/.asgard/desktop/tasks.jsonl`, so recent work and its
-artifacts survive closing the window; a task that was still running when the process died is
-re-read as `interrupted` rather than reported as live. Tasks belong to the project they ran in —
-switching the open project swaps the history with it, and the machine-level list of projects lives
-in `~/.asgard/desktop/projects.json` (`ASGARD_DESKTOP_HOME` relocates it).
+
+**The window belongs to the machine, not to a folder.** Wherever you launch it from — a repo, your
+home, the dock — it opens standing in the same place: a personal workspace at
+`~/.asgard/desktop/workspace`. Only an explicit `--root` or `ASGARD_DESKTOP_ROOT` puts it somewhere
+else. The cwd never decides, and a plain directory is never registered as a project by being the
+cwd, so launching from the dock leaves no `.asgard/` in your home.
+
+Projects are not lost by this — they are **chosen**, in the window, per task. And the two surfaces
+that are not about code do not move at all: **planning and the work board live in the workspace**
+(`~/.asgard/studio/`, relocated together by `ASGARD_STUDIO_HOME`), so the same plans and the same
+tickets are there from every repo and from none. A plan can *point at* a folder, but it never lives
+inside one — an idea usually arrives before the repo does.
+
+Which folder a task runs in is a property of **that task**, not of the window — the dock has a
+workspace picker, so you can dispatch work into another project without swapping the screen you are
+on, and following up on a task always re-enters the workspace it started in. Task bodies stay in
+`<workspace>/.asgard/desktop/tasks.jsonl`, so recent work and its artifacts survive closing the
+window; a task that was still running when the process died is re-read as `interrupted` rather than
+reported as live. Task **headers** are additionally indexed machine-wide in
+`~/.asgard/desktop/index.jsonl`, which is what lets the sidebar, the home screen, and `⌘K` answer
+"what was I working on" across every project at once. That index is convenience, not canon — delete
+it and it rebuilds from the per-workspace records. The list of projects lives in
+`~/.asgard/desktop/projects.json` (`ASGARD_DESKTOP_HOME` relocates all three).
 
 Changed files open in place: the inspector reads the file or its `git diff` through endpoints that
-resolve every path with `realpath` and refuse anything outside the project root, including symlinks
-that point out. `⌘K` searches tasks, projects, skills, and screens. The surface shares one
-night-and-gold token set with `asgard map` and the memory dashboard, so the three windows read as
-one product.
+resolve every path with `realpath` and refuse anything outside the workspace root, including symlinks
+that point out. `⌘K` searches tasks across projects, plus tickets, workspaces, skills, and screens.
+The surface shares one night-and-gold token set with `asgard map` and the memory dashboard, so the
+three windows read as one product.
+
+### Work board
+
+The studio's **업무** screen is a work tracker in the shape the industry already agreed on — the
+one Linear settled: a **workspace** holds teams, and teams hold tickets.
+
+```
+workspace ── team ── ticket          the team owns the numbering (NOR-12)
+     │        └─ workflow states · cycles · triage inbox · labels
+     ├─ project ── milestones        dated work that cuts across teams
+     └─ initiative ── projects       the goal several projects serve
+```
+
+A **ticket belongs to exactly one team** (that is what makes its number unique) and to **at most
+one project** (that is what makes progress countable). Teams are yours to create; a folder never
+becomes one on its own. Bind one when you want a repo to own its numbering
+(`asgard ticket team --new "Nordic" --key NOR` then `--bind`), and everything filed elsewhere lands
+in the workspace's default team. A team can stand with no folder at all, because planning starts
+before code exists. Status *names* are the team's to choose; the five *categories*
+(backlog · unstarted · started · completed · canceled) are fixed, because that is what lets anyone
+count "how many are open". Priority sinks *none* to the bottom. Numbers are issued once and never
+reissued — `NOR-12` stays that ticket even after it is deleted, because it is the name people use
+in conversation.
+
+```bash
+asgard ticket                                  # the whole workspace, folded into status columns
+asgard ticket board --team NOR                 # narrowed to one team (`--team .` = this folder's)
+asgard ticket new "..." -p 2 --project "결제 개편"
+asgard ticket move NOR-12 in_review            # status changes carry their timestamps
+asgard ticket team --new "디자인" --key DES      # a team with no repo behind it
+asgard ticket project --new "결제 개편" --teams NOR,DES --target 2026-09-30
+asgard ticket milestone "결제 개편" --new "베타"
+asgard ticket cycle --new "7월 5주"             # closing one rolls unfinished work forward
+asgard ticket triage                           # the inbox: accept, decline, or snooze
+asgard ticket import                           # bring an old per-folder board in, losslessly
+```
+
+**The board is not tied to the folder you are standing in.** Every read covers the whole workspace,
+so "what should I work on" has one answer no matter where the command was typed or where the window
+was opened — the same board, from any repo and from none. Narrowing is explicit: `--team NOR` for
+one team, `--team .` for the team bound to this folder.
+
+**The agent tracks its own work.** The `ticket` tool is in front of every role on every turn, and
+the bundled `asgard-tickets` skill carries the procedure: open a ticket before work that is more
+than a one-liner, `start` it when you begin, `finish` it when the change is ready for review —
+plus file (without starting) anything you found and are *not* doing now. The tool is reachable from
+read-only roles too, because the role that finds a defect is the one that should be able to record
+it. When a team turns **triage** on, agent-filed tickets land in an inbox instead of the human's
+backlog — a backlog that fills itself is a backlog nobody reads.
+
+Tickets and runs are linked in both directions: 이 티켓 실행 starts an `asgard run` task from the
+ticket and stamps `task_id` on it, and when that task exits 0 the ticket moves to *in review* —
+not *done*, since a zero exit code is not a human accepting the work.
+
+The store is a dedicated SQLite at `<agent home>/studio/workspace.db` (`ASGARD_STUDIO_HOME`
+relocates it), separate from `tasks.jsonl` (a 200-row rolling history) and `plans.json` (replaced
+whole per revision) because tickets must not age out, must be queried by status and assignee, and
+are written concurrently by three writers. Inside a repo the only thing left behind is
+`.asgard/studio/team.json` — the binding that survives renaming or moving the folder. Unlike the
+derived indexes, the store is canonical: a corrupt file is **reported, never recreated**. Reading
+an untouched workspace creates nothing at all. Boards written by the older per-folder layout are
+imported on request, keeping their numbers, relations, and comments, and leaving the original file
+untouched.
 
 ### Surface gate
 
