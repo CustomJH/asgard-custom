@@ -1,7 +1,7 @@
 {
   "name": "asgard-desktop-shell",
   "private": true,
-  "version": "0.6.20",
+  "version": "0.9.1",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
