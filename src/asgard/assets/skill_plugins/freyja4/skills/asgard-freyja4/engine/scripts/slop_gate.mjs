@@ -464,7 +464,13 @@ function judge(bundle, genre) {
      colour, and a `:hover` override inherits the base rule's overflow-wrap.
      Reading them as separate elements is the single largest false-positive
      source in a source-only judge, so normalise before comparing. */
-  const STATE_BITS = /:{1,2}(hover|active|focus|focus-visible|focus-within|visited|disabled|checked|target|user-invalid|user-valid|valid|invalid|placeholder|first-child|last-child|nth-child\([^)]*\)|not\([^)]*\)|is\([^)]*\)|where\([^)]*\)|has\([^)]*\)|before|after|details-content|marker|selection|backdrop|-webkit-[\w-]+)/g;
+  // Longest alternative first. JS alternation is first-match-wins, so listing
+  // `focus` before `focus-visible` made `:focus-within` normalize to `-within`
+  // instead of dropping — and a selector that never equals its base means
+  // `sameElement` said no. Every `:focus-visible` / `:focus-within` state rule
+  // was invisible to the judge, so A1 called any transition they drive "dead
+  // motion". The ruler was wrong, not the surface.
+  const STATE_BITS = /:{1,2}(hover|active|focus-visible|focus-within|focus|visited|disabled|checked|target|user-invalid|user-valid|invalid|valid|placeholder|first-child|last-child|nth-child\([^)]*\)|not\([^)]*\)|is\([^)]*\)|where\([^)]*\)|has\([^)]*\)|before|after|details-content|marker|selection|backdrop|-webkit-[\w-]+)/g;
   const normSelector = (s) =>
     s
       .replace(STATE_BITS, "")
