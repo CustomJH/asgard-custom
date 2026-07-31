@@ -789,20 +789,88 @@ def quest_pointer(root, sid, kind="active"):
     return None
 
 
-def orphan_writes(root, sid):
+def session_candidates(data, protocol):
+    """이 Stop 이 가리킬 수 있는 세션 신원 후보 — 앞선 것이 우선.
+
+    호스트마다 Stop 페이로드가 세션을 싣는 방식이 다르다. Cursor 는 아예 싣지 않아 게이트가
+    `"cursor"` 를 고정으로 봤는데, 정작 모델은 `quest-log.py open` 을 **--session 없이** 부른다
+    (AGENTS.md 의 지시가 그렇다) — 그 기본값은 `$CLAUDE_SESSION_ID` 또는 `"-"` 다. 두 이름이
+    영영 안 맞으니 포인터가 안 풀리고, 활성 quest 가 둘 이상이면 "정확히 1개만 승계" 규칙마저
+    비켜서 Stop 게이트가 조용히 통과했다 (26-07-31 실측: 활성 6개가 남은 저장소에서 무장해제).
+
+    후보를 늘려도 판정은 약해지지 않는다 — 각 후보는 여전히 **자기 포인터 파일로만** 풀리고,
+    목록은 고정이라 모델이 고를 수 있는 자리가 아니다 (session_id 변주 벡터는 그대로 막힌다)."""
+    seen, out = set(), []
+    for raw in (
+        data.get("session_id"),
+        os.environ.get("CLAUDE_SESSION_ID"),
+        "cursor" if protocol == "cursor" else None,
+        "-",  # quest-log.py 의 --session 기본값
+        "default",  # 종전 게이트 기본값 (구 로그 호환)
+    ):
+        name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw or ""))[:64]
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out or ["default"]
+
+
+def session_settled(root, name):
+    """이 세션은 자기 quest 를 닫았다 — 확정된 답이지 '모름'이 아니다.
+
+    답 없음과 닫힘을 가르지 않으면, 방금 정상 종료한 세션이 **남의 남은 활성 포인터**를 물려받아
+    오차단된다. 후보 사슬은 이 표식에서 멈춘다."""
+    sessions = os.path.join(root, ".asgard", "quest", "sessions")
+    return os.path.exists(os.path.join(sessions, name + ".known")) and not os.path.exists(
+        os.path.join(sessions, name + ".active")
+    )
+
+
+def _pointer_file(root, name, kind="active"):
+    """세션 포인터 파일만 읽는다 — 승계 휴리스틱 없이."""
+    sessions = os.path.join(root, ".asgard", "quest", "sessions")
+    try:
+        return _read_text(os.path.join(sessions, name + "." + kind)).strip() or None
+    except Exception:
+        return None
+
+
+def resolve_session(root, candidates):
+    """(quest id, 그 quest 를 소유한 세션 이름).
+
+    **엄격 조회를 먼저** 한 바퀴 돈다. `quest_pointer` 의 "활성이 정확히 1개면 승계" 규칙을 후보마다
+    적용하면, 포인터 파일이 애초에 없는 합성 이름(Cursor 의 `"cursor"`)이 1순위에 서는 순간 곧장
+    남의 quest 를 물려받아 오차단한다 (26-07-31 실측). 승계는 **모든 후보가 답을 못 냈을 때만**
+    쓰는 마지막 수단이다 — 종전 동작은 그 자리에 그대로 남는다."""
+    for name in candidates:
+        qid = _pointer_file(root, name)
+        if qid:
+            return qid, name
+        if session_settled(root, name):
+            return None, name  # 이 세션은 자기 quest 를 닫았다 — 남의 활성을 승계하지 않는다
+    return quest_pointer(root, candidates[0]), candidates[0]
+
+
+def orphan_writes(root, sid, candidates=None):
     """quest 로그 없이 끝나려는 세션의 write 흔적 검사 (write-sentinel 기록 대조).
     기록된 경로가 지금도 HEAD 와 다르면 = 검증 안 된 write 가 남아 있다 → 차단.
     되돌린 write(경로 clean)·사용자 기존 dirt(기록에 없음)는 차단하지 않는다.
     예외: 직전 close 된 quest(LAST)의 PASS 가 현재 워킹트리 hash 와 일치하면 이미 검증된 상태 —
     close 직후 Stop 이 방금 검증한 write 를 오차단하지 않게 한다."""
     writes = None
-    for rel in (os.path.join("state", "writes-" + sid + ".json"), "writes-" + sid + ".json"):  # 신규 state/ 우선
-        try:
-            with open(os.path.join(root, ".asgard", rel), encoding="utf-8") as handle:
-                writes = json.load(handle)
+    # 센티널도 세션 이름으로 갈린다 — 게이트가 신원 사슬을 따라갔다면 백스톱도 같은 사슬을 봐야
+    # 한다. 안 그러면 quest 포인터가 안 풀린 바로 그 경우에 백스톱까지 같이 눈이 먼다.
+    names = list(dict.fromkeys([sid, *(candidates or [])]))
+    for name in names:
+        for rel in (os.path.join("state", "writes-" + name + ".json"), "writes-" + name + ".json"):  # 신규 state/ 우선
+            try:
+                with open(os.path.join(root, ".asgard", rel), encoding="utf-8") as handle:
+                    writes = json.load(handle)
+                break
+            except Exception:
+                continue
+        if writes is not None:
             break
-        except Exception:
-            continue
     if writes is None:
         return  # 이 세션의 write 기록 없음 → 게이트 대상 아님
     dirty = []
@@ -863,11 +931,11 @@ def main():
     try:
         _HOST_PROTOCOL = sys.argv[1] if len(sys.argv) > 1 else "claude"
         root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
-        raw_sid = "cursor" if _HOST_PROTOCOL == "cursor" else data.get("session_id") or "default"
-        sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
-        qid = quest_pointer(root, sid)
+        candidates = session_candidates(data, _HOST_PROTOCOL)
+        qid, sid = resolve_session(root, candidates)
         if not qid:
-            orphan_writes(root, sid)  # quest 미개설 우회 봉합 — write 흔적이 dirty 면 여기서 block
+            # quest 미개설 우회 봉합 — write 흔적이 dirty 면 여기서 block
+            orphan_writes(root, sid, candidates)
             sys.exit(0)  # write 흔적 없음 → 게이트 대상 아님
         events: list[dict] = []
         try:

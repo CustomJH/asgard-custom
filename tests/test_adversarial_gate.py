@@ -231,6 +231,71 @@ class TestEncodingDisarm(AdversarialBase):
         self.assertIn('"decision": "block"', p.stdout, f"stdout={p.stdout!r} stderr={p.stderr!r}")
 
 
+class TestSessionIdentityDisarm(AdversarialBase):
+    """세션 신원이 안 맞을 때 게이트가 조용히 사라지던 자리.
+
+    모델은 `quest-log.py open` 을 **--session 없이** 부른다 (AGENTS.md 의 지시) — 그 기본값은
+    `$CLAUDE_SESSION_ID` 또는 `"-"` 다. 그런데 Stop 게이트는 Cursor 에서 `"cursor"` 를 고정으로
+    봤다. 이름이 영영 안 맞으니 "활성이 정확히 1개면 승계" 규칙에 기대게 되고, 버려진 quest 가
+    하나만 더 쌓이면 그 규칙마저 비켜서 **write 가 판정 없이 통과**했다 (26-07-31 실측: 실제
+    저장소에 활성 포인터 6개가 남아 있었다)."""
+
+    def gate_raw(self, payload, argv=None):
+        return run(
+            GATE,
+            args=argv or [],
+            stdin=json.dumps({**payload, "cwd": self.root, "hook_event_name": "Stop"}),
+            cwd=self.root,
+            env_extra={"CLAUDE_PROJECT_DIR": self.root},
+        )
+
+    def blocked(self, payload, argv=None):
+        out = self.gate_raw(payload, argv).stdout
+        return "[gate:" in out
+
+    def abandon(self, qid, session):
+        """크래시·중단으로 활성인 채 남은 quest — 실사용에서 쌓이는 그 상태."""
+        p = self.qlog("open", qid, "--criteria", "c", "--session", session)
+        self.assertEqual(p.returncode, 0, p.stderr)
+
+    def test_default_session_write_is_gated_in_every_client(self):
+        self.qlog("open", "q", "--criteria", "c")  # --session 없이 (기본값 "-")
+        self.write("app.py", "print('changed')\n")
+        for argv in ([], ["cursor"], ["codex"]):
+            self.assertTrue(self.blocked({}, argv), argv)
+
+    def test_an_abandoned_quest_does_not_disarm_the_gate(self):
+        self.qlog("open", "q", "--criteria", "c")
+        self.write("app.py", "print('changed')\n")
+        for index, argv in enumerate(([], ["cursor"], ["codex"]), 1):
+            self.abandon(f"stale{index}", f"abandoned{index}")  # 활성이 2개, 3개, 4개로 늘어난다
+            self.assertTrue(self.blocked({}, argv), argv)
+
+    def test_a_closed_session_does_not_inherit_someone_elses_quest(self):
+        """인질극 방지 — 자기 quest 를 정상으로 닫은 세션은 남의 활성에 걸리지 않는다."""
+        self.qlog("open", "q", "--criteria", "c")
+        self.write("app.py", "print('changed')\n")
+        self.qlog(
+            "append",
+            "--verdict",
+            "PASS",
+            "--level",
+            "full",
+            stdin=json.dumps(
+                {
+                    "role": "verifier",
+                    "event": "verify",
+                    "criteria": ["c"],
+                    "commands": [{"cmd": "python -m compileall -q app.py", "exit_code": 0}],
+                }
+            ),
+        )
+        self.assertEqual(self.qlog("close").returncode, 0)
+        self.abandon("theirs", "someone-else")
+        for argv in ([], ["cursor"], ["codex"]):
+            self.assertFalse(self.blocked({}, argv), argv)
+
+
 class TestGateEventMetrics(AdversarialBase):
     """게이트 운영 지표 — 차단·에스컬레이션이 durable 하게 남고(doctor 집계 원천) 코드가 붙는다.
 

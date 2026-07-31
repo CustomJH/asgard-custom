@@ -337,11 +337,17 @@ def snapshot_ref(root: str) -> str | None:
     try:
         if run("read-tree", head.strip()).returncode:
             return None
-        if run("add", "-A", "--", ".", ":(exclude).asgard").returncode:
+        # `add -- . :(exclude).asgard` 는 .asgard 를 무시하는 리포에서 rc=1 로 죽는다("paths are ignored"):
+        # exclude 가 붙는 순간 git 이 `.` 을 명시 경로로 보고 무시된 항목을 오류로 보고한다. 그러면
+        # 시작 트리를 못 떠서 **모든 write 퀘스트가 거부**됐다. 그래서 먼저 통째로 담고(무시 파일은
+        # git 이 알아서 건너뛴다) 색인에서 .asgard 만 도로 뺀다 — 결과 트리는 이전과 같다.
+        if run("add", "-A", "--", ".").returncode:
             return None
         if os.path.isdir(os.path.join(root, ".asgard", "map")):
             if run("add", "-A", "-f", "--", ".asgard/map").returncode:
                 return None
+        if run("rm", "--cached", "-r", "-q", "--ignore-unmatch", "--", ".asgard", ":(exclude).asgard/map").returncode:
+            return None
         tree = run("write-tree")
         if tree.returncode or not tree.stdout.strip():
             return None
@@ -578,53 +584,125 @@ def diff_state(
 # stdin 으로 들어온 baseline 은 normalize 가 버린다 — 이 코드만이 유일한 기록 경로 (위조 차단).
 
 
+# Repository policy is untrusted input. A trivial command can erase the LLM Verifier,
+# and shell composition can mutate/exfiltrate from the deterministic harness.
+SAFE_CHECK_PREFIXES = (
+    "pytest ",
+    "python -m pytest ",
+    "python3 -m pytest ",
+    "python -m compileall ",
+    "python3 -m compileall ",
+    "python -m unittest ",
+    "python3 -m unittest ",
+    "uv run pytest ",
+    "uv run ruff check ",
+    "uv run ruff format --check ",
+    "uv run ty check",
+    "poetry run pytest ",
+    "pdm run pytest ",
+    "ruff check ",
+    "ruff format --check ",
+    "mypy ",
+    "pyright ",
+    "ty check",
+    "npm test",
+    "npm run test",
+    "pnpm test",
+    "yarn test",
+    "cargo test",
+    "cargo check",
+    "go test",
+    "make test",
+    "make check",
+    "make verify",
+    "test ",
+    "false",
+)
+_PY_EXE = re.compile(r"^python[0-9.]*$")
+_SAFE_MODULES = {"pytest", "compileall", "py_compile", "unittest"}
+
+
+def _strip_env_prefix(tokens: list[str]) -> list[str]:
+    """선행 `VAR=…` 대입과 `env` 래퍼를 벗긴 나머지 — 신원은 그 뒤부터다."""
+
+    def drop_assignments(rest: list[str]) -> list[str]:
+        while rest and "=" in rest[0] and not rest[0].startswith(("=", "-")):
+            rest = rest[1:]
+        return rest
+
+    tokens = drop_assignments(tokens)
+    if tokens and os.path.basename(tokens[0]) == "env":
+        tokens = drop_assignments(tokens[1:])
+    return tokens
+
+
+def runner_shape(cmd: str) -> str:
+    """안전 프리픽스와 대조할 정규형 — **판정 전용**이다 (실행은 언제나 원문으로 한다).
+
+    같은 검증을 부르는 정당한 표기가 표를 못 넘어 **조용히 버려지던** 것을 막는다: 절대경로
+    인터프리터(`/…/.venv/bin/python -m pytest`)·버전 붙은 인터프리터(`python3.13 -m pytest`)가
+    그 예다 (26-07-31 실측: 명시 설정 하나가 통째로 사라져 `checks_available` 이 false 가 됐고,
+    게이트의 유일한 독립 증거 레인이 아무 말 없이 침묵했다).
+
+    넓히되 열지는 않는다 — 경로가 붙은 실행자는 **`.venv/bin/` 아래이거나, `-m <안전 모듈>` 을
+    부르는 인터프리터**일 때만 이름으로 접는다. `./pytest` 같은 저장소 안 파일을 이름으로 접어
+    주면, clone 으로 딸려 오는 정책 파일(`.asgard/trinity-policy.json`)이 곧 임의 실행 통로가 된다."""
+    try:
+        tokens = _strip_env_prefix(shlex.split(cmd, posix=True))
+    except ValueError:
+        return cmd
+    if not tokens:
+        return cmd
+    head = tokens[0]
+    base = os.path.basename(head)
+    interpreter = bool(_PY_EXE.match(base))
+    safe_module = interpreter and len(tokens) >= 3 and tokens[1] == "-m" and tokens[2] in _SAFE_MODULES
+    if "/" in head:
+        if not (head.startswith(".venv/") or "/.venv/bin/" in head or safe_module):
+            return cmd  # 저장소 안 실행 파일일 수 있다 — 이름으로 접지 않는다
+        head = base
+    if interpreter:
+        if not safe_module and head != "python":
+            return cmd  # 버전 붙은 인터프리터로 **스크립트**를 부르는 형태는 접지 않는다
+        head = "python"
+    return shlex.join([head, *tokens[1:]])
+
+
+def configured_checks(policy: dict) -> tuple[list[str], list[str]]:
+    """명시 `baseline_checks` 를 (받아들인 것, 거부한 것) 으로 가른다.
+
+    거부를 **돌려주는** 것이 요점이다. 조용히 버리면 게이트가 무장해제된 줄 아무도 모른다 —
+    설정한 사람은 체크가 도는 줄 알고, 게이트는 독립 증거 없이 모델 신고를 그대로 받는다."""
+    accepted: list[str] = []
+    rejected: list[str] = []
+    for raw in policy.get("baseline_checks") or []:
+        cmd = str(raw).strip()
+        if not cmd:
+            continue
+        shape = runner_shape(cmd)
+        ok = (
+            not trivial_evidence(cmd)
+            and "\n" not in cmd
+            and not any(token in cmd for token in (";", "&&", "||", "`", "$(", ">", "<"))
+            and any(shape == prefix.rstrip() or shape.startswith(prefix) for prefix in SAFE_CHECK_PREFIXES)
+        )
+        (accepted if ok else rejected).append(cmd)
+    return accepted, rejected
+
+
+def rejected_checks(policy: dict) -> list[str]:
+    """정책에 적혔지만 안전 표를 못 넘어 **실행되지 않는** 체크 — doctor·state 가 이걸 말한다."""
+    return configured_checks(policy)[1]
+
+
 def detect_checks(root: str, policy: dict) -> list[str]:
     """정책 baseline_checks 우선. 없으면 보수적 자동 감지 — pytest 만.
     lagom: lint 류 자동 감지 안함 — 기존 위반 false-red 가 게이트 인질이 된다. 명시 설정으로만.
     uv 프로젝트(uv.lock)는 `uv run pytest` 로 — PATH pytest 는 venv 밖이라 수집 실패(2/3/4→skip)로
     게이트가 조용히 무력화되고, pytest 가 .venv 안에만 있으면 아예 미감지된다. uv 의 spawn 실패는
     exit 2 라 pytest 미의존 프로젝트도 skip 분류로 fail-open 이 유지된다."""
-    cfg = policy.get("baseline_checks")
-    if cfg:
-        checks = [str(c).strip() for c in cfg if str(c).strip()]
-        # Repository policy is untrusted input. A trivial command can erase the LLM Verifier,
-        # and shell composition can mutate/exfiltrate from the deterministic harness.
-        safe_prefixes = (
-            "pytest ",
-            "python -m pytest ",
-            "python3 -m pytest ",
-            "python -m compileall ",
-            "python3 -m compileall ",
-            "uv run pytest ",
-            "uv run ruff check ",
-            "uv run ruff format --check ",
-            "uv run ty check",
-            "ruff check ",
-            "ruff format --check ",
-            "mypy ",
-            "pyright ",
-            "ty check",
-            "npm test",
-            "npm run test",
-            "pnpm test",
-            "yarn test",
-            "cargo test",
-            "cargo check",
-            "go test",
-            "make test",
-            "make check",
-            "make verify",
-            "test ",
-            "false",
-        )
-        return [
-            cmd
-            for cmd in checks
-            if not trivial_evidence(cmd)
-            and "\n" not in cmd
-            and not any(token in cmd for token in (";", "&&", "||", "`", "$(", ">", "<"))
-            and any(cmd == prefix.rstrip() or cmd.startswith(prefix) for prefix in safe_prefixes)
-        ]
+    if policy.get("baseline_checks"):
+        return configured_checks(policy)[0]
     import shutil
 
     if any(os.path.exists(os.path.join(root, p)) for p in ("tests", "test", "pytest.ini", "pyproject.toml")):
@@ -1658,6 +1736,9 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         "escalate_nudged": bool(_esc_i and _plan_i and _plan_i[-1] > _esc_i[0]),
         # 게이트-우선 라우팅 신호
         "checks_available": gate_first_checks_available(root, policy),
+        # 적어 두었는데 실행되지 않는 체크 — 비어 있지 않으면 사용자가 켠 줄 아는 증거 레인이
+        # 실제로는 꺼져 있다. 조용히 버리지 않고 상태에 실어 doctor·판정 표면이 말하게 한다.
+        "baseline_checks_rejected": rejected_checks(policy),
         "sig_risk": signature_risk(root, base_ref),
         "tickets": list(tickets.values()),
         "ticket_counts": {status: count for status, count in ticket_counts.items() if count},

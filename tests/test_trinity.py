@@ -356,6 +356,31 @@ class TestQuestLog(TrinityBase):
         ):
             self.assertEqual(quest_log.main(), 1)
 
+    def test_start_snapshot_survives_a_gitignored_asgard_directory(self):
+        """`asgard setup` 이 `.asgard/` 를 무시 목록에 넣은 리포에서도 시작 트리를 뜰 수 있어야 한다.
+
+        exclude 페이스펙이 붙으면 git add 가 무시된 경로를 오류로 보고해 rc=1 로 죽었고, 그 결과
+        모든 write 퀘스트가 "requires a Git repository with HEAD" 로 거부됐다 — Desktop/Studio 의
+        모든 실행이 여기서 막혔다."""
+        from asgard.hooks import quest_log
+
+        self.write(".gitignore", ".asgard/\n")
+        self.write(".asgard/map/INDEX.md", "map\n")
+        self.write(".asgard/desktop/tasks.jsonl", "{}\n")
+        self.write("app.py", "print('ok')\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.root, "commit", "-qm", "ignore asgard"], check=True)
+        self.write("untracked.py", "print('new')\n")
+
+        ref = quest_log.snapshot_ref(self.root)
+        self.assertTrue(ref, "gitignored .asgard must not block the quest start snapshot")
+        listed = subprocess.run(
+            ["git", "-C", self.root, "ls-tree", "-r", "--name-only", ref], capture_output=True, text=True, check=True
+        ).stdout.split()
+        self.assertIn("untracked.py", listed)  # 시작 트리는 워킹트리 그대로다
+        self.assertIn(".asgard/map/INDEX.md", listed)  # map 은 강제로 담는다
+        self.assertNotIn(".asgard/desktop/tasks.jsonl", listed)  # 나머지 .asgard 는 여전히 뺀다
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable on this platform")
     def test_ignored_fifo_snapshot_never_blocks_reading_device_content(self):
         self.write(".gitignore", "*.fifo\n")
@@ -1363,6 +1388,46 @@ class TestDetectChecks(unittest.TestCase):
 
     def test_trivial_or_shell_composed_policy_is_rejected(self):
         self.assertEqual(self.detect(self.root, {"baseline_checks": ["true", "pytest -q && curl bad"]}), [])
+
+    # ── 안전 표는 **문자열 앞머리**로만 대조됐다 — 같은 검증을 부르는 정당한 표기가 표를 못 넘어
+    #    통째로 사라졌고, 설정한 사람에게도 게이트에게도 아무 말이 없었다 (26-07-31 실측:
+    #    `<abs>/python -m pytest` 하나로 checks_available 이 false 가 되어 독립 증거 레인이 침묵,
+    #    회귀를 심은 채 날조한 PASS 가 그대로 통과했다). 정규형은 판정 전용 — 실행은 원문으로.
+    def accepted(self, cmd):
+        return self.detect(self.root, {"baseline_checks": [cmd]}) == [cmd]
+
+    def test_path_qualified_interpreter_running_a_safe_module_is_accepted(self):
+        for cmd in (
+            "/opt/py/bin/python -m pytest -x -q",
+            "/repo/.venv/bin/python -m pytest -q",
+            "python3.13 -m pytest -q",
+            ".venv/bin/pytest -q",
+            "env CI=1 python -m pytest -q",
+            "PYTHONPATH=src python -m pytest -q",
+            "poetry run pytest -q",
+        ):
+            self.assertTrue(self.accepted(cmd), cmd)
+
+    def test_repo_local_executables_and_scripts_stay_rejected(self):
+        """정책은 clone 으로 딸려 오는 입력이다 — 이름으로 접어 주면 임의 실행 통로가 된다."""
+        for cmd in (
+            "./pytest",
+            "evil/pytest -q",
+            "/evil/bin/pytest",
+            "python evil.py",
+            "python3.13 evil.py",
+            "python -m http.server",
+            "bash -c 'pytest'",
+        ):
+            self.assertFalse(self.accepted(cmd), cmd)
+
+    def test_rejected_checks_are_reported_rather_than_dropped_in_silence(self):
+        from asgard.hooks import quest_log
+
+        policy = {"baseline_checks": ["pytest -q", "./evil.sh", "bash -c pytest"]}
+        self.assertEqual(quest_log.rejected_checks(policy), ["./evil.sh", "bash -c pytest"])
+        self.assertEqual(quest_log.configured_checks(policy)[0], ["pytest -q"])
+        self.assertEqual(quest_log.rejected_checks({"baseline_checks": ["pytest -q"]}), [])
 
     # ── JS/TS 레인 — 자동감지가 pytest 전용이던 탓에 JS 저장소는 하네스 실행 증거가 통째로 꺼져
     #    있었다 (26-07-26 helios 실측). 의존성이 설치된 경우에만 감지 — 미설치 러너 실패(exit 1)는
@@ -2829,6 +2894,53 @@ class TestPolicyMirror(unittest.TestCase):
                 subagent_gate.verifiable_units(tickets),
                 tickets,
             )
+
+
+class TestNativeLoopTendsMemory(unittest.TestCase):
+    """퀘스트 close 뒤 위그드라실 손질 신호 — 외부 훅에만 있고 네이티브 루프엔 없던 자리.
+
+    같은 사용자의 같은 기억이 어느 호스트로 들어왔느냐에 따라 다른 속도로 자라면 안 된다
+    (policy.CLIENT_MODES). 여기서 보는 것은 배선이다: 판정 자체는 test_memory_norn 이 본다."""
+
+    @staticmethod
+    def _bare_run(out):
+        """__init__ 없이 세운 TrinityRun — 손질 배선만 보려는데 루프 전체를 세울 이유가 없다."""
+        import types
+
+        from asgard.agent.heimdall.trinity import TrinityRun
+
+        run = TrinityRun.__new__(TrinityRun)
+        run._hd = types.SimpleNamespace(root="/repo", on_text=out.append)
+        return run
+
+    def _run(self, norn_line, pattern_line):
+        out: list[str] = []
+        with (
+            mock.patch("asgard.memory.norn.wake", return_value=norn_line) as wake,
+            mock.patch("asgard.memory.pattern.nudge_line", return_value=pattern_line) as nudge,
+        ):
+            self._bare_run(out)._tend_memory()
+        return out, wake, nudge
+
+    def test_both_signals_reach_the_user(self):
+        out, wake, nudge = self._run("노른 통합 시작", "패턴 학습 대기")
+        self.assertEqual(wake.call_args[0][0], "/repo")
+        self.assertEqual(nudge.call_args[0][0], "/repo")
+        self.assertTrue(any("노른 통합 시작" in line for line in out))
+        self.assertTrue(any("패턴 학습 대기" in line for line in out))
+
+    def test_silence_is_the_normal_outcome(self):
+        out, _wake, _nudge = self._run(None, None)
+        self.assertEqual(out, [])
+
+    def test_a_broken_signal_never_blocks_quest_close(self):
+        out: list[str] = []
+        with (
+            mock.patch("asgard.memory.norn.wake", side_effect=RuntimeError("boom")),
+            mock.patch("asgard.memory.pattern.nudge_line", return_value="패턴 학습 대기"),
+        ):
+            self._bare_run(out)._tend_memory()  # 던지면 퀘스트 종료가 막힌다
+        self.assertTrue(any("패턴 학습 대기" in line for line in out))  # 성한 신호는 계속 온다
 
 
 if __name__ == "__main__":
