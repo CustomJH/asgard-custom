@@ -1,15 +1,15 @@
 """Bragi — 다국어 휴먼체 엔진. 보고문이 사람이 쓴 글로 읽히는지 결정론으로 판정한다.
 
 브라기는 시가(詩歌)와 언변의 신 — 아스가르드가 결과를 보고할 때 쓰는 문장을 맡는다.
-Lagom 이 "얼마나 적게 쓰는가"(압축·근거)를 보는 축이라면, 브라기는 "사람처럼 읽히는가"를 본다.
-두 축은 겹치지 않는다: Lagom 은 근거 없는 효용 주장을 잡고, 브라기는 LLM 특유의 문장 습관을 잡는다.
+Lagom이 "얼마나 적게 쓰는가"(압축·근거)를 보는 축이라면, 브라기는 "사람처럼 읽히는가"를 본다.
+두 축은 겹치지 않는다: Lagom은 근거 없는 효용 주장을 잡고, 브라기는 LLM 특유의 문장 습관을 잡는다.
 
-계층: domain (settings 만 lazy 임포트). 프롬프트 계약은 templates/bragi.py.
+계층: domain (settings만 lazy 임포트). 프롬프트 계약은 templates/bragi.py.
 
 판정 구조
   탐지기(tells)   언어별 패턴 + 언어 무관 패턴을 원문의 검사 사본에 적용
   심각도          S1 = 1회로 결정적 · S2 = 3회 이상이거나 다른 흔적과 동반될 때 · S3 = 군집일 때만
-  등급(grade)     A/B/C/D — 상류 korean-skills 의 자연도 등급 경계를 그대로 계승
+  등급(grade)     A/B/C/D — 상류 korean-skills의 자연도 등급 경계를 그대로 계승
 
 임계는 취향이 아니라 실측으로 정했다. benchmarks/bragi-humanvoice/ 가 상류 라벨 코퍼스(Part A),
 이 저장소가 쌓아 온 사람 글 677건(Part B), 로컬 모델 A/B(Part C)로 채점한다. 쉼표 밀도 0.70,
@@ -32,10 +32,10 @@ import os
 import re
 from typing import NamedTuple
 
-# ── 지원 언어. "generic" 은 미등록 언어의 폴백 신원 — 언어 무관 패턴만 돈다.
+# ── 지원 언어. "generic"은 미등록 언어의 폴백 신원 — 언어 무관 패턴만 돈다.
 LANGS = ("en", "ko", "ja", "zh", "vi", "es", "fr", "ru", "generic")
 # 라틴 문자권 — 엠대시·타이틀 케이스처럼 라틴 조판에서만 성립하는 규칙의 적용 대상.
-# 한국어·일본어·중국어 조판에서 줄표는 AI 신호가 아니다 (KatFishNet 의 한국어 신호는 쉼표다).
+# 한국어·일본어·중국어 조판에서 줄표는 AI 신호가 아니다 (KatFishNet의 한국어 신호는 쉼표다).
 LATIN_LANGS = frozenset({"en", "es", "fr", "vi"})
 
 SEVERITIES = ("S1", "S2", "S3")
@@ -44,7 +44,7 @@ _GRADES = ("A", "B", "C", "D")
 
 
 class Tell(NamedTuple):
-    """AI 작문 흔적 하나. rx 는 검사 사본에 적용되는 컴파일된 패턴."""
+    """AI 작문 흔적 하나. rx는 검사 사본에 적용되는 컴파일된 패턴."""
 
     id: str
     category: str
@@ -71,8 +71,8 @@ def _t(tid: str, category: str, severity: str, pattern: str, hint: str, flags: i
 # ── 언어 무관 패턴 — 문자 체계와 무관하게 성립하는 서식·대화 잔재 흔적.
 _UNIVERSAL: list[Tell] = [
     _t(
-        # blader §16 은 이걸 강한 신호로 보지만, 명세·체크리스트에서는 정당한 서식이다
-        # (26-07-26 실측: 저장소 자체 .md 에서 최다 오탐 원인). S3 = 군집일 때만 보고.
+        # blader §16은 이걸 강한 신호로 보지만, 명세·체크리스트에서는 정당한 서식이다
+        # (26-07-26 실측: 저장소 자체 .md에서 최다 오탐 원인). S3 = 군집일 때만 보고.
         "U-bold-header-list",
         "structure",
         "S3",
@@ -297,9 +297,9 @@ _EN: list[Tell] = [
         re.I,
     ),
     _t(
-        # blader §14 는 하드 금지지만, 이 저장소의 사람 글이 엠대시를 상시 쓴다 (26-07-26 실측
+        # blader §14는 하드 금지지만, 이 저장소의 사람 글이 엠대시를 상시 쓴다 (26-07-26 실측
         # held-out 코퍼스). 상류 자신의 오탐 지침도 "엠대시 단독은 증거가 아니다"라고 못박는다
-        # → S3 로 둔다: 다른 흔적과 함께일 때만 보고되고, 혼자서는 절대 게이트를 울리지 않는다.
+        # → S3로 둔다: 다른 흔적과 함께일 때만 보고되고, 혼자서는 절대 게이트를 울리지 않는다.
         "EN-em-dash",
         "punctuation",
         "S3",
@@ -378,6 +378,8 @@ _KO: list[Tell] = [
         "grammar",
         "S2",
         r"[가-힣]{2,}의\s+[가-힣]{2,}의\s+[가-힣]{2,}",
+        # 이 문장에서 의는 조사로 쓰인 것이 아니라 언급된 것이다 — 영어 문장의 목적어 자리에
+        # 선 인용 토큰이라 앞말에 붙이면 오히려 안 읽힌다. 규칙이 자기 힌트를 잡아먹지 않게 둔다.
         "Noun phrase built from stacked 의. Unpack it into verbs.",
     ),
     _t(
@@ -415,6 +417,35 @@ _KO: list[Tell] = [
         "S1",
         r"(?:무엇이든 물어보세요|언제든 말씀해\s?주세요|도와드리겠습니다|기꺼이 도와)",
         "Conversational sign-off. Delete it from a report.",
+    ),
+    _t(
+        # 한글 맞춤법 제41항 — 조사는 앞말에 붙여 쓴다. 앞말이 라틴 낱말·숫자·코드 조각이어도
+        # 앞말은 앞말이다. 앞말을 라틴·숫자·닫는 기호로 한정해 (마침표는 뺀다 — "1. 이 값은"
+        # 같은 번호 목록이 걸린다) 한국어 낱말 뒤 띄어쓰기가 정상인 의존명사와 갈라 둔다.
+        "KO-josa-spacing",
+        "grammar",
+        "S1",
+        # 앞머리 [^\s]{0,20}은 판정이 아니라 표본용이다 — 보고에 조사 한 글자만 실리는 대신
+        # 앞말째로 실려 고칠 자리가 보인다. 앞말의 마지막 글자에서 마침표를 빼는 조건은 그대로다.
+        # 사이 공백은 줄바꿈을 뺀 [ \t]다 — 줄이 바뀐 뒤의 "이"는 조사가 아니라 관형사인 쪽이
+        # 흔하고("...lru_cache\n이 값은"), S1을 그런 자리에 물리면 게이트가 사람 글을 막는다.
+        r"[^\s]{0,20}[0-9A-Za-z_`\)\]\*\"'][ \t]"
+        r"(?:은|는|이|가|을|를|의|에서|에게|에|으로|로|와|과|도|만|부터|까지|보다|처럼"
+        r"|밖에|조차|마저|이나|이라고|라고|이라|라)"
+        r"(?![0-9A-Za-z가-힣])",
+        "Detached Korean particle. Attach it to the word before it, even when that word is Latin, "
+        "a number, or a code span (`config.py를`, not `config.py 를`).",
+    ),
+    _t(
+        # 긴 낱말에서 음절을 잘라 만든 조어 — 한 글자를 아끼고 사전에 없는 낱말을 남긴다.
+        # 표준 파생어는 넣지 않는다: 무관·불변·미지정·비활성은 사전에 있고, 무응답·무결성처럼
+        # 무(無)+한자어 합성도 정상 조어다. 여기 남긴 것은 표준어를 밀어내고 들어선 자리다 —
+        # 불요는 한국어로 불필요고, 나머지는 라틴 낱말에 무/비를 붙여 만든 임시어다.
+        "KO-coined-clipping",
+        "vocabulary",
+        "S2",
+        r"(?:불요(?!불급)|무임포트|무매칭|비의존|무보정|무검증)",
+        "Clipped coinage. Write the standard word (불필요, 일치 없음, 의존하지 않는다).",
     ),
 ]
 
@@ -590,7 +621,7 @@ _ZH: list[Tell] = [
     ),
 ]
 
-# ── 슬림 코퍼스 — 하이프·대화 잔재만. 확장은 register() 로.
+# ── 슬림 코퍼스 — 하이프·대화 잔재만. 확장은 register()로.
 _ES: list[Tell] = [
     _t(
         "ES-hype",
@@ -721,7 +752,7 @@ _DATA_LINE = re.compile(r"""^\s*(?:[{}\[\]]\s*,?\s*$|["'][^"']+["']\s*:|[\w.-]+\
 def lintable(text: str) -> str:
     """코드 블록·인용·인라인 코드·URL·링크 대상·파일 경로·구조화 데이터 행을 지운 검사 사본.
 
-    데이터 행을 남기면 JSON 의 쉼표가 산문의 쉼표로 계산된다 (26-07-26 실측: 독스트링 안의
+    데이터 행을 남기면 JSON의 쉼표가 산문의 쉼표로 계산된다 (26-07-26 실측: 독스트링 안의
     예시 JSON 하나가 쉼표 밀도 자질을 통째로 오탐시켰다)."""
     out: list[str] = []
     fenced = False
@@ -741,6 +772,31 @@ def lintable(text: str) -> str:
     return "\n".join(out)
 
 
+def lintable_spans(text: str) -> str:
+    """맞춤법 검사용 사본 — 블록만 걷어내고 인라인 코드·경로·URL은 원문대로 둔다.
+
+    lintable()은 보존 계약 대상을 지운다. 조사 띄어쓰기는 앞말과 조사가 맞닿은 자리를 보는
+    규칙이라, 앞말을 지우면 검사할 경계가 함께 사라진다 (`config.py를`가 `를`로 남는다).
+    여기서 코드를 남겨도 산문 흔적이 오탐되지 않는다 — 이 사본을 쓰는 규칙은 라틴 낱말 뒤에
+    떨어져 선 한국어 조사만 보고, 한국어 조사는 코드 안에 나오지 않는다. 남겨 두면 보고되는
+    표본도 자리표가 아니라 사람이 고칠 수 있는 원문이 된다."""
+    out: list[str] = []
+    fenced = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            fenced = not fenced
+            continue
+        if fenced or line.lstrip().startswith(">"):
+            continue
+        if _DATA_LINE.match(line):
+            continue
+        out.append(line)
+    return "\n".join(out)
+
+
+# 자리표 사본에서 돌아야 하는 흔적 — 보존 계약 대상과 산문이 맞닿은 경계를 보는 규칙.
+_SPAN_SENSITIVE = frozenset({"KO-josa-spacing"})
+
 _SENT_SPLIT = re.compile(r"[.!?。！？\n]+")
 
 
@@ -754,7 +810,7 @@ def _comma_density(body: str) -> tuple[float, int]:
     논문 실측: LLM 한국어 61% vs 사람 26%. 임계는 0.70 — 논문의 LLM 평균보다 위다.
     논문 표본은 뉴스·에세이인데 이 게이트가 보는 글은 기술 산문이라, 쉼표로 열거하는
     사람 글이 정상적으로 더 많다 (26-07-26 실측: 이 저장소 커밋 본문 326건에서 0.55 임계는
-    3.7% 를 오탐, 0.70 은 그 대부분을 걷어낸다). 분포 자질은 보수적으로 두고 군집에 맡긴다."""
+    3.7%를 오탐, 0.70은 그 대부분을 걷어낸다). 분포 자질은 보수적으로 두고 군집에 맡긴다."""
     sents = _sentences(body)
     if not sents:
         return 0.0, 0
@@ -836,15 +892,15 @@ def _statistical(body: str, lang: str) -> list[Finding]:
 def tells(text: str, lang: str | None = None, source: str = "") -> list[Finding]:
     """AI 작문 흔적 목록 — 심각도 순(S1→S2→S3).
 
-    source 에 이미 나온 표현은 새 추론이 아니라 인용이므로 잡지 않는다 (lagom 과 같은 규칙).
+    source에 이미 나온 표현은 새 추론이 아니라 인용이므로 잡지 않는다 (lagom과 같은 규칙).
 
-    판정 규칙은 Wikipedia:Signs of AI writing 의 **군집 원칙**을 그대로 옮긴 것이다 —
-    "엠대시 하나는 아무것도 아니지만, 엠대시 + 3박자 + vibrant tapestry 는 자백이다".
+    판정 규칙은 Wikipedia:Signs of AI writing의 **군집 원칙**을 그대로 옮긴 것이다 —
+    "엠대시 하나는 아무것도 아니지만, 엠대시 + 3박자 + vibrant tapestry는 자백이다".
 
       S1  단독으로 결정적 — 즉시 보고.
       S2  ① 같은 패턴이 _S2_MIN_HITS 회 이상(밀도 신호) 또는 ② 서로 다른 흔적이 둘 이상
           함께 나타남(군집 신호)일 때 보고. 한 종류가 한 번 나온 것만으로는 보고하지 않는다.
-      S3  S1·S2 가 하나라도 보고된 뒤에만 보고 — 단독 판정은 구조적으로 불가능하다.
+      S3  S1·S2가 하나라도 보고된 뒤에만 보고 — 단독 판정은 구조적으로 불가능하다.
 
     ②가 없으면 짧은 글은 전부 빠져나간다: 세 문장짜리 문단에서 같은 흔적이 세 번 나올 수
     없기 때문이다 (26-07-26 실측 — 상류 라벨 코퍼스 재현율 19% → 군집 규칙 도입 후 회복)."""
@@ -857,11 +913,18 @@ def tells(text: str, lang: str | None = None, source: str = "") -> list[Finding]
     if lang not in LATIN_LANGS:  # 엠대시·타이틀 케이스는 라틴 조판 전용 규칙
         pool = [t for t in pool if not t.id.startswith("EN-em-dash") and not t.id.endswith("title-case-heading")]
     matched: list[Finding] = []
+    spans: tuple[str, str] | None = None
     for tell in pool:
-        hits = tell.rx.findall(body)
-        if not hits or tell.rx.search(evidence):  # 사용자가 먼저 쓴 표현 = 인용
+        if tell.id in _SPAN_SENSITIVE:
+            if spans is None:
+                spans = (lintable_spans(text), lintable_spans(source))
+            subject, quote = spans
+        else:
+            subject, quote = body, evidence
+        hits = tell.rx.findall(subject)
+        if not hits or tell.rx.search(quote):  # 사용자가 먼저 쓴 표현 = 인용
             continue
-        m = tell.rx.search(body)
+        m = tell.rx.search(subject)
         matched.append(
             Finding(tell.id, tell.severity, tell.category, tell.hint, (m.group(0) if m else "").strip()[:60], len(hits))
         )
@@ -878,12 +941,12 @@ def tells(text: str, lang: str | None = None, source: str = "") -> list[Finding]
 
 
 def grade(findings: list[Finding]) -> str:
-    """자연도 등급 A/B/C/D — 상류 korean-skills 의 경계를 그대로 계승한다.
+    """자연도 등급 A/B/C/D — 상류 korean-skills의 경계를 그대로 계승한다.
 
     A = S1 0 + S2 ≤2 · B = S1 1~2 또는 S2 3~5 · C = S1 3+ 또는 S2 6+ · D = S1 5+ 이고 S2 8+.
 
-    경계는 패턴 종류가 아니라 **출현 횟수**로 센다. S2 는 정의상 빈도 신호라, 한 패턴이
-    아홉 번 나온 글과 한 번 나온 글을 같은 등급에 둘 수 없다 (종류로 세면 전자가 A 가 된다)."""
+    경계는 패턴 종류가 아니라 **출현 횟수**로 센다. S2는 정의상 빈도 신호라, 한 패턴이
+    아홉 번 나온 글과 한 번 나온 글을 같은 등급에 둘 수 없다 (종류로 세면 전자가 A가 된다)."""
     s1 = sum(f.hits for f in findings if f.severity == "S1")
     s2 = sum(f.hits for f in findings if f.severity == "S2")
     if s1 >= 5 and s2 >= 8:
@@ -896,14 +959,14 @@ def grade(findings: list[Finding]) -> str:
 
 
 def violations(text: str, source: str = "", lang: str | None = None) -> list[str]:
-    """게이트가 소비하는 문자열 형태 — lagom.style_violations 와 같은 계약."""
+    """게이트가 소비하는 문자열 형태 — lagom.style_violations와 같은 계약."""
     return [
         f"{f.severity} {f.id}: {f.hint}" + (f' (e.g. "{f.sample}")' if f.sample else "")
         for f in tells(text, lang, source)
     ]
 
 
-# ── 모드 — 기본 on. lagom 과 독립: `/lagom off` 는 압축을 끄는 것이지 사람 문체를 끄는 게 아니다.
+# ── 모드 — 기본 on. lagom과 독립: `/lagom off`는 압축을 끄는 것이지 사람 문체를 끄는 게 아니다.
 MODES = ("on", "off")
 DEFAULT_MODE = "on"
 

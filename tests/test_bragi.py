@@ -56,7 +56,7 @@ class TestLanguageDetection(unittest.TestCase):
 
     def test_korean_report_with_english_code_terms_stays_korean(self):
         """보고문에 코드·식별자가 섞이는 건 정상이다 — 라틴 다수결이면 한국어 규칙이 통째로 꺼진다."""
-        text = "resolve_jvm.py 를 새로 만들고 CodeMap.build() 에 붙였다. route→table 경로가 94건 나왔다."
+        text = "resolve_jvm.py를 새로 만들고 CodeMap.build()에 붙였다. route→table 경로가 94건 나왔다."
         self.assertEqual(bragi.detect_lang(text), "ko")
 
     def test_unregistered_script_falls_back_to_generic_not_silence(self):
@@ -72,7 +72,7 @@ class TestLanguageDetection(unittest.TestCase):
 
 class TestDetection(unittest.TestCase):
     def test_every_language_separates_slop_from_human_writing(self):
-        """언어별 최소 계약 — slop 은 잡고 사람 글은 통과시킨다. 둘 다여야 게이트로 쓸 수 있다."""
+        """언어별 최소 계약 — slop은 잡고 사람 글은 통과시킨다. 둘 다여야 게이트로 쓸 수 있다."""
         for lang in SLOP:
             self.assertTrue(bragi.tells(SLOP[lang]), f"{lang} slop went undetected")
             self.assertEqual(bragi.tells(HUMAN[lang]), [], f"{lang} human text was flagged")
@@ -108,10 +108,43 @@ class TestDetection(unittest.TestCase):
         ):
             self.assertIn("U-chat-artifact", [f.id for f in bragi.tells(text)], text)
 
+    def test_detached_korean_particle_is_caught_after_latin_number_and_code(self):
+        """한글 맞춤법 제41항 — 앞말이 라틴 낱말·숫자·코드 조각이어도 조사는 붙여 쓴다."""
+        for text in (
+            "`plugin.json` 의 anchored 에 선언된 스킬은 트리를 푼다.",
+            "quest_log.py 를 새로 만들고 CodeMap.build() 에 붙였다.",
+            "윈도우 콘솔은 TERM 이 아니라 핸들이 정한다. 파이프도 UTF-8 로 읽는다.",
+        ):
+            self.assertIn("KO-josa-spacing", [f.id for f in bragi.tells(text)], text)
+
+    def test_detached_particle_sample_quotes_the_word_not_a_placeholder(self):
+        """표본이 '를'이면 고칠 자리를 못 찾는다 — 앞말째로 실어야 지시가 된다."""
+        found = [f for f in bragi.tells("quest_log.py 를 고쳤다.") if f.id == "KO-josa-spacing"]
+        self.assertEqual(found[0].sample, "quest_log.py 를")
+
+    def test_attached_particle_and_bound_noun_spacing_are_not_findings(self):
+        """붙여 쓴 조사는 정상이고, 띄어 쓰는 의존명사(수·만·것)까지 잡으면 게이트가 한국어를 막는다."""
+        for text in (
+            "`plugin.json`의 anchored에 선언된 스킬은 트리를 푼다. 클라이언트는 원본을 읽는다.",
+            "1. 이 값은 캐시된다. 2. 그 수는 늘지 않는다. 세션 조회 한 곳뿐이다.",
+            "10초 만에 끝났다. 할 수 있는 일은 다 했다. 그 뒤로 재시도는 없었다.",
+            # 줄이 바뀐 뒤의 '이'는 조사가 아니라 관형사다 — 여기에 S1을 물리면 사람 글이 막힌다
+            "캐시는 lru_cache\n이 값은 세션당 하나다. 남은 문제는 만료 처리다.",
+        ):
+            self.assertEqual([f for f in bragi.tells(text) if f.id == "KO-josa-spacing"], [], text)
+
+    def test_clipped_coinages_are_flagged_but_standard_derivations_are_not(self):
+        """불요는 한국어로 불필요고 무매칭·비의존은 라틴 낱말에 무/비를 붙인 임시어다.
+        경계 반대편: 미지정·비활성·불변은 사전에 있고, 무변경·무주입은 정상적인 한자어 합성이다."""
+        found = bragi.tells("재시작 불요. 무매칭이면 비의존으로 둔다.")
+        self.assertIn("KO-coined-clipping", [f.id for f in found])
+        standard = "값이 미지정이면 비활성으로 둔다. 순서와 무관하고 본문은 무변경이라 결과는 불변이다."
+        self.assertEqual([f for f in bragi.tells(standard) if f.id == "KO-coined-clipping"], [])
+
 
 class TestFalsePositiveGuards(unittest.TestCase):
     def test_s2_below_threshold_is_not_reported(self):
-        """1~2회는 사람 글에서도 흔하다 — S2 는 빈도 신호이지 단어 금지 목록이 아니다."""
+        """1~2회는 사람 글에서도 흔하다 — S2는 빈도 신호이지 단어 금지 목록이 아니다."""
         self.assertEqual(bragi.tells("혁신적인 시도였다."), [])
         self.assertEqual(bragi.tells("The interplay was nuanced."), [])
 
@@ -132,9 +165,9 @@ class TestFalsePositiveGuards(unittest.TestCase):
             "다음 명령을 실행했다.\n"
             "```python\nprint('혁신적 강력한 획기적')\n```\n"
             "> 인용문의 혁신적 강력한 획기적 표현은 원문이다.\n"
-            "`혁신적 강력한 획기적` 은 인라인 코드다.\n"
-            "https://example.com/delve-into-the-intricate-tapestry 는 링크다.\n"
-            "src/asgard/showcase_pivotal_testament.py 를 고쳤다.\n"
+            "`혁신적 강력한 획기적`은 인라인 코드다.\n"
+            "https://example.com/delve-into-the-intricate-tapestry는 링크다.\n"
+            "src/asgard/showcase_pivotal_testament.py를 고쳤다.\n"
         )
         self.assertEqual(bragi.tells(text), [])
 
@@ -145,7 +178,7 @@ class TestFalsePositiveGuards(unittest.TestCase):
         self.assertTrue(bragi.tells(draft))  # source 없이는 잡힌다 — 면제의 출처는 사용자다
 
     def test_em_dash_is_a_latin_script_rule_only(self):
-        """한국어·일본어 조판에서 줄표는 AI 신호가 아니다 — KatFishNet 의 한국어 신호는 쉼표다."""
+        """한국어·일본어 조판에서 줄표는 AI 신호가 아니다 — KatFishNet의 한국어 신호는 쉼표다."""
         ko = "맵 소비 추출을 붙였다 — 라우트에서 테이블까지 94건이 이어졌다 — 오탐은 없었다."
         self.assertEqual([f.id for f in bragi.tells(ko) if "em-dash" in f.id], [])
         en = "We added consumption extraction — routes now reach tables — and found no false positives. "
@@ -195,7 +228,7 @@ class TestGrading(unittest.TestCase):
         self.assertEqual(bragi.grade([f("S1", 5), f("S2", 8)]), "D")
 
     def test_grade_counts_occurrences_not_pattern_kinds(self):
-        """한 패턴이 아홉 번 나온 글을 A 로 부르면 등급이 거짓말을 한다."""
+        """한 패턴이 아홉 번 나온 글을 A로 부르면 등급이 거짓말을 한다."""
         nine = bragi.Finding("KO-hype", "S2", "vocabulary", "h", "혁신적", 9)
         self.assertEqual(bragi.grade([nine]), "C")
 
@@ -267,7 +300,7 @@ class TestWiring(unittest.TestCase):
 
     def test_the_contract_does_not_trip_its_own_gate(self):
         """캐논은 금지 표현을 예시로 인용한다 — 인용을 산문으로 읽으면 스캐폴드가 자기 게이트에 걸린다.
-        (26-07-26 실측: `asgard init` 이 낳은 AGENTS.md 가 베트남어 흔적 3건으로 잡혔다.)"""
+        (26-07-26 실측: `asgard init`이 낳은 AGENTS.md가 베트남어 흔적 3건으로 잡혔다.)"""
         from asgard.templates import agents_md
         from asgard.templates.bragi import BRAGI_AGENTS_SECTION, BRAGI_CANON
 
@@ -287,7 +320,7 @@ class TestWiring(unittest.TestCase):
         self.assertIn("not a licence to invent", BRAGI_CANON)
 
     def test_changed_prose_gate_accepts_both_axes_in_one_pass(self):
-        """파일 순회·diff 추출은 한 번만 돈다 — 검사기를 늘려도 git 을 다시 돌리지 않는다."""
+        """파일 순회·diff 추출은 한 번만 돈다 — 검사기를 늘려도 git을 다시 돌리지 않는다."""
         with tempfile.TemporaryDirectory() as root:
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
