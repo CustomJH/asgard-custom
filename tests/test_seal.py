@@ -66,6 +66,19 @@ class TestSkillBody(unittest.TestCase):
         self.assertIn("Target 50 chars, hard cap 72", SEAL_SKILL_MD)
         self.assertIn("Wrap at 72 chars", SEAL_SKILL_MD)
 
+    def test_subject_convention_is_per_language_not_translated_english(self):
+        """한국어에는 커밋 명령형이 없다 — 영어 규칙만 주면 모델이 평서형 경구로 메운다."""
+        self.assertIn("개조식 명사형", SEAL_SKILL_MD)
+        self.assertIn("Korean has no commit imperative", SEAL_SKILL_MD)
+        self.assertIn("aphorism", SEAL_SKILL_MD)  # 경구는 제목이 아니라 본문 첫 줄이다
+
+    def test_grammar_is_not_traded_for_the_line_budget(self):
+        """50/72는 줄 예산이지 조사를 떼거나 낱말을 자를 근거가 아니다."""
+        self.assertIn("quest_log.py를", SEAL_SKILL_MD)  # 붙여 쓴 본보기
+        self.assertIn("never `quest_log.py 를`", SEAL_SKILL_MD)
+        self.assertIn("불요", SEAL_SKILL_MD)  # 조어 금지 본보기
+        self.assertIn("never a licence to drop a particle", SEAL_SKILL_MD)
+
     def test_atomic_commit_rules(self):
         self.assertIn("1 commit = 1 logical change", SEAL_SKILL_MD)
         self.assertIn("Independent-revert", SEAL_SKILL_MD)

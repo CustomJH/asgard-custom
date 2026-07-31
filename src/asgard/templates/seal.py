@@ -5,17 +5,17 @@
 
 품질 규칙의 출처 (26-07-14 자료조사):
   • gitmoji 규격 + semver 매핑(💥=major, ✨=minor, 🐛=patch): gitmoji.dev /
-    carloscuesta/gitmoji gitmojis.json 의 semver 필드.
+    carloscuesta/gitmoji gitmojis.json의 semver 필드.
   • Conventional Commits 1.0.0: type(scope)!: subject + BREAKING CHANGE footer 규약.
   • cbeams "How to Write a Git Commit Message" 7규칙 + Tim Pope 50/72: 명령형 판별
-    테스트 "If applied, this commit will ___", body 는 what/why (how 는 diff).
+    테스트 "If applied, this commit will ___", body는 what/why (how는 diff).
   • Linux kernel submitting-patches: 동기(문제) 선행 서술, 성능 주장엔 수치,
     "separate each logical change into a separate patch".
   • 에이전트 커밋 스킬 실물(rburmorrison/agent-skills, vekzz-dev/opencode-skills):
     inspect-first, 명시 경로 staging + staged 재검증 게이트, secrets 스캔,
     빈 repo 🎉 단독 예외, fail-closed 엣지 케이스.
 
-lagom·selftest 와 같은 패턴으로 단일 본문을 .claude/skills/ 와 .agents/skills/ (Cursor·Codex
+lagom·selftest와 같은 패턴으로 단일 본문을 .claude/skills/ 와 .agents/skills/ (Cursor·Codex
 공용 스코프) 두 곳에 배포한다 — 툴별 렌더링 없음."""
 
 SEAL_SKILL_MD = """\
@@ -34,7 +34,8 @@ commit is one **case file** — the smallest unit that can be independently trac
 > Language mirroring: reports and tables in Odin's language. Commit subject/body follow the
 > dominant language of `git log --oneline -15`; if mixed, use Odin's language. Within one commit,
 > subject and body language must match.
-> Priority: Odin's instruction > this skill's rules > gitmoji spec > repo log style (tone reference only).
+> Priority: Odin's instruction > this skill's rules > gitmoji spec > repo log style (a reference for
+> tone and vocabulary only — never copy its grammar or spacing, which the rules below decide).
 
 ## Sealing Rules (Absolutely Forbidden)
 
@@ -80,8 +81,14 @@ Disambiguating confusable pairs — when ambiguous, pick a single **dominant int
 <body>
 ```
 
-- **subject** — one line, **imperative mood**. Test: it should read naturally as "If this seal is
-  applied → <subject>" (e.g. "add chart component" ✓ / "added" ✗).
+- **subject** — one line that **names what changed**. Test: it reads naturally as "If this seal is
+  applied → <subject>". Use each language's own convention for that, not a translation of
+  English's:
+  - English — imperative mood ("add chart component" ✓ / "added" ✗ / "adds" ✗).
+  - Korean — 개조식 명사형, or a plain declarative that names the change
+    ("대시보드 차트 컴포넌트 추가" ✓ / "만료 토큰을 거부한다" ✓). Korean has no commit imperative;
+    do not invent one, and do not replace the subject with an aphorism or a metaphor
+    ("일감은 폴더에 살지 않는다" ✗ — that is a body opening, not a subject).
   **Target 50 chars, hard cap 72** (emoji excluded), no trailing period, capitalize the first
   letter if in English. scope is the module/package/area name (required in a monorepo).
 - **body** — **what and why**: the motivating problem → the approach taken (including rejected
@@ -89,6 +96,12 @@ Disambiguating confusable pairs — when ambiguous, pick a single **dominant int
   performance/improvement claims with numbers. **Wrap at 72 chars**.
   The body may be omitted only for one-line changes (typos etc.) where the diff alone makes the
   why obvious — otherwise it is required.
+- **grammar** — subject and body follow the Bragi grammar contract. In Korean a particle attaches
+  to the word before it, and a Latin word, number, or code span is still that word
+  (`quest_log.py를`, `UTF-8로`, `HEAD와` — never `quest_log.py 를`); do not coin clipped words
+  (불필요, not 불요; 일치 없음, not 무매칭). In English keep the articles, the subject, and a finite
+  verb. The 50/72 limits are a line budget, never a licence to drop a particle or a word — if the
+  subject does not fit, the case is too big, so split it.
 - **breaking change** — the 💥 code + `!` after the type (`💥 feat(api)!: ...`) + at the end of the
   body, `BREAKING CHANGE: <migration path>` (this token is always uppercase — release tooling
   reads it).
@@ -148,7 +161,9 @@ That said, over-splitting is also a defect: each commit must be **self-contained
 | Body that only lists how ("changed A to B") | Write the why — problem, reason, trade-offs |
 | Multiple cases in one seal ("fix login and refactor and docs") | Split per the classification rules |
 | subject doesn't match the diff | The diff is the truth — fit the subject to the diff |
-| Past-tense or third-person subject ("added", "fixes") | Unify to imperative mood (the "If applied..." test) |
+| Past-tense or third-person English subject ("added", "fixes") | Unify to imperative mood (the "If applied..." test) |
+| A subject that is an aphorism or metaphor instead of the change ("일감은 폴더에 살지 않는다") | Name the change in the subject; move the line into the body if it earns its place |
+| Broken grammar in either language — a detached Korean particle (`config.py 를`), a coined clipping (불요), a verbless English fragment | Rewrite per the grammar rule; the 50/72 budget never justifies it |
 | Unsubstantiated "performance improvement" claim in the body | Back it with numbers, or drop the claim |
 
 ## Report Format
