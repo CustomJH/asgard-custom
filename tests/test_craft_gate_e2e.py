@@ -2,20 +2,20 @@
 
 실행: uv run pytest tests/test_craft_gate_e2e.py
 
-`test_craft_gate_hook.py` 와 역할이 다르다. 저쪽은 훅 모듈을 import 하고 `subprocess.run` 을 목킹해서
+`test_craft_gate_hook.py`와 역할이 다르다. 저쪽은 훅 모듈을 import 하고 `subprocess.run`을 목킹해서
 합쳐진 판정의 **모양**을 고정한다. 그 방식으로는 절대 못 잡는 것이 넷 있고, 이 파일은 그 넷만 잡는다:
 
-① **배포본이 실제로 도는가.** 훅은 사용자 저장소로 복사되어 stdlib 만으로 돌아야 한다. import 로
-   부르는 시험은 엔진이 이미 `sys.path` 에 있는 프로세스에서 돌기 때문에, 훅이 실수로 엔진을
+① **배포본이 실제로 도는가.** 훅은 사용자 저장소로 복사되어 stdlib 만으로 돌아야 한다. import로
+   부르는 시험은 엔진이 이미 `sys.path`에 있는 프로세스에서 돌기 때문에, 훅이 실수로 엔진을
    import 해도 초록으로 통과한다 — 정작 사용자 저장소에서만 죽는다.
-② **stdin/stdout 규약.** 호스트는 JSON 을 stdin 으로 먹이고 stdout 을 JSON 으로 읽는다. 목킹은
+② **stdin/stdout 규약.** 호스트는 JSON을 stdin으로 먹이고 stdout을 JSON으로 읽는다. 목킹은
    이 경로를 통째로 건너뛴다.
-③ **호스트별 차단 payload 모양.** cursor 는 `followup_message`, codex 는 `continue`/`stopReason`,
-   claude 는 `decision`/`reason`. 셋이 다르고, 틀리면 차단이 조용히 무시된다.
+③ **호스트별 차단 payload 모양.** cursor는 `followup_message`, codex는 `continue`/`stopReason`,
+   claude는 `decision`/`reason`. 셋이 다르고, 틀리면 차단이 조용히 무시된다.
 ④ **스캐폴드가 훅을 실제로 놓는가.** 판정기가 완벽해도 파일이 안 놓이면 게이트는 없는 것이다.
 
-엔진을 가리는 방법은 `python -S` 다. site-packages 를 안 붙이므로 `import asgard` 가 실패하고,
-stdlib 은 그대로 산다 — 사용자 저장소에서 훅이 처하는 상황과 같고, 인터프리터 경로를 찾아다니지
+엔진을 가리는 방법은 `python -S` 다. site-packages를 안 붙이므로 `import asgard`가 실패하고,
+stdlib은 그대로 산다 — 사용자 저장소에서 훅이 처하는 상황과 같고, 인터프리터 경로를 찾아다니지
 않아도 되어 어느 플랫폼에서나 같게 돈다.
 """
 
@@ -33,7 +33,7 @@ import unittest
 DEFECT = "def load(path):\n    try:\n        return open(path).read()\n    except Exception:\n        pass\n"
 CLEAN = "def load(path):\n    with open(path) as handle:\n        return handle.read()\n"
 
-# (스캐폴드 플래그, 훅 경로, argv, 세션 id, 차단 payload 에서 사유가 들어가는 칸)
+# (스캐폴드 플래그, 훅 경로, argv, 세션 id, 차단 payload에서 사유가 들어가는 칸)
 HOSTS = (
     ("--cursor", os.path.join(".cursor", "hooks", "craft-gate.py"), ["cursor"], "cursor", "followup_message"),
     ("--codex", os.path.join(".codex", "hooks", "craft-gate.py"), ["codex"], "default", "stopReason"),
@@ -42,7 +42,7 @@ HOSTS = (
 
 
 def _asgard_bin() -> str | None:
-    """이 시험이 쓰는 CLI. 훅은 `shutil.which("asgard")` 로 찾으므로 PATH 에 얹어 준다."""
+    """이 시험이 쓰는 CLI. 훅은 `shutil.which("asgard")`로 찾으므로 PATH에 얹어 준다."""
     candidate = os.path.join(os.path.dirname(sys.executable), "asgard")
     return candidate if os.path.exists(candidate) else shutil.which("asgard")
 
@@ -51,7 +51,7 @@ def _asgard_bin() -> str | None:
 class ShippedHookRuns(unittest.TestCase):
     """스캐폴드 → 결함 작성 → 배포본 훅 실행 → 호스트 규약대로 차단. 한 줄도 목킹하지 않는다."""
 
-    bin: str  # skipIf 가 None 을 걸러내지만 타입은 그 사실을 모른다 — 여기서 고정한다
+    bin: str  # skipIf가 None을 걸러내지만 타입은 그 사실을 모른다 — 여기서 고정한다
 
     def setUp(self):
         found = _asgard_bin()
@@ -79,13 +79,13 @@ class ShippedHookRuns(unittest.TestCase):
             handle.write(body)
 
     def _sentinel(self, sid: str, rels: list[str]) -> None:
-        """훅이 판정하는 것은 **이 세션이 쓴 경로**다 — 그 목록을 write_sentinel 과 같은 자리에 둔다."""
+        """훅이 판정하는 것은 **이 세션이 쓴 경로**다 — 그 목록을 write_sentinel과 같은 자리에 둔다."""
         self._write(os.path.join(".asgard", "state", f"writes-{sid}.json"), json.dumps(rels))
 
     def _run_hook(self, hook: str, argv: list[str], payload: dict) -> subprocess.CompletedProcess:
         env = dict(os.environ)
         env["PATH"] = os.path.dirname(self.bin) + os.pathsep + env.get("PATH", "")
-        env.pop("CLAUDE_PROJECT_DIR", None)  # payload 의 cwd 로만 뿌리를 정하게 한다
+        env.pop("CLAUDE_PROJECT_DIR", None)  # payload의 cwd 로만 뿌리를 정하게 한다
         return subprocess.run(
             # `-S` = site-packages 없이. 엔진을 import 하면 여기서 죽는다 (배포본의 계약).
             [sys.executable, "-S", os.path.join(self.root, hook), *argv],
@@ -107,7 +107,7 @@ class ShippedHookRuns(unittest.TestCase):
                 self._sentinel(sid, ["src/leak.py"])
                 done = self._run_hook(hook, argv, {"cwd": self.root, "session_id": sid})
 
-                self.assertEqual(0, done.returncode, done.stderr)  # 훅은 언제나 0 — 차단은 payload 로 말한다
+                self.assertEqual(0, done.returncode, done.stderr)  # 훅은 언제나 0 — 차단은 payload로 말한다
                 self.assertNotIn("ModuleNotFoundError", done.stderr)  # stdlib 전용 계약
                 payload = json.loads(done.stdout)
                 self.assertIn(field, payload, f"{flag} 의 차단 칸이 없다 — 호스트가 차단을 무시한다")
@@ -137,9 +137,9 @@ class ShippedHookRuns(unittest.TestCase):
         self.assertEqual("", done.stdout.strip())
 
     def test_the_shipped_hook_never_imports_the_engine(self):
-        """`-S` 로 도는 것을 봤더라도 형상으로 한 번 더 못박는다.
+        """`-S`로 도는 것을 봤더라도 형상으로 한 번 더 못박는다.
 
-        다음 사람이 무심코 `from ..craft import judge` 를 넣으면 이 저장소 안에서는 계속 초록이고,
+        다음 사람이 무심코 `from ..craft import judge`를 넣으면 이 저장소 안에서는 계속 초록이고,
         사용자 저장소에서만 죽는다 — 그 종류의 결함은 실행 시험만으로 못 막는다.
         """
         from asgard.hooks import craft_gate
@@ -153,7 +153,7 @@ class ShippedHookRuns(unittest.TestCase):
     def test_the_scaffolded_copy_is_the_engine_source_byte_for_byte(self):
         """복사 배포본이 원본과 어긋나면 판정이 두 벌이 되고, 두 벌은 곧 다르게 판정한다.
 
-        훅 표가 세 호스트에 다 있는지는 `test_mode_parity` 가 본다. 여기서만 볼 수 있는 것은
+        훅 표가 세 호스트에 다 있는지는 `test_mode_parity`가 본다. 여기서만 볼 수 있는 것은
         **디스크에 실제로 놓인 바이트**다 — 절단·인코딩 변환·개행 변환은 표를 봐서는 안 보인다.
         """
         from asgard.hooks import craft_gate

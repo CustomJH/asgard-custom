@@ -1,16 +1,16 @@
 """엔진2 정적 HTML 검출기가 배포 형태에서 실제로 돈다 — 무음 폴백 회귀 가드.
 
-원본(impeccable) 대조 검증(2026-07-25)에서 잡은 격차다. `detect-html.mjs` 는
-htmlparser2·css-select·css-tree·domutils 를 bare import 하고, 하나라도 실패하면
-`catch` 에서 조용히 정규식 경로로 되돌아간다. 상류는 그 넷을 npm 패키지 의존성으로
-받지만 Asgard 는 엔진을 파이썬 패키지 자산으로 실어 옆에 node_modules 가 없다.
+원본(impeccable) 대조 검증(2026-07-25)에서 잡은 격차다. `detect-html.mjs`는
+htmlparser2·css-select·css-tree·domutils를 bare import 하고, 하나라도 실패하면
+`catch`에서 조용히 정규식 경로로 되돌아간다. 상류는 그 넷을 npm 패키지 의존성으로
+받지만 Asgard는 엔진을 파이썬 패키지 자산으로 실어 옆에 node_modules가 없다.
 결과는 경고 한 줄 없는 반쪽 검출기였다 — 상류 픽스처 55개 기준 findings 291→135,
 구별 규칙 40→15. low-contrast·cramped-padding·tiny-text·oversized-h1 등 26종이
 한 번도 발화하지 않았다.
 
 봉합은 `vendor/static-parser.mjs`(그 넷의 번들)이고, 이 파일은 그것이 살아 있는지를
-소스 존재가 아니라 *실측 발견*으로 확인한다. 번들이 사라지거나 깨지면 아래 probe 의
-low-contrast 가 사라진다 — 캐스케이드를 실제로 풀어야만 나오는 발견이기 때문이다.
+소스 존재가 아니라 *실측 발견*으로 확인한다. 번들이 사라지거나 깨지면 아래 probe의
+low-contrast가 사라진다 — 캐스케이드를 실제로 풀어야만 나오는 발견이기 때문이다.
 """
 
 from __future__ import annotations
@@ -53,7 +53,7 @@ def _detect(html: str) -> list[str]:
             text=True,
             timeout=120,
         )
-        # detect 는 발견이 있으면 2, 없으면 0 으로 끝난다. 그 밖은 진짜 실패다.
+        # detect는 발견이 있으면 2, 없으면 0으로 끝난다. 그 밖은 진짜 실패다.
         if proc.returncode not in (0, 2):
             raise AssertionError(f"detect 실패 rc={proc.returncode}: {proc.stderr[:400]}")
         return [f.get("antipattern") for f in json.loads(proc.stdout or "[]")]
@@ -94,7 +94,7 @@ class TestStaticEngineRunsAsShipped(unittest.TestCase):
             "missing: need.filter(k => !m[k]),"
             "parseDocument: typeof m.htmlparser2?.parseDocument,"
             "selectAll: typeof m.cssSelect?.selectAll,"
-            # css-tree 는 데이터(mdn-data·patch.json)가 인라인돼야 lexer 가 선다.
+            # css-tree는 데이터(mdn-data·patch.json)가 인라인돼야 lexer가 선다.
             "csstreeParse: typeof m.csstree?.parse,"
             "csstreeLexer: typeof m.csstree?.lexer}));"
         )

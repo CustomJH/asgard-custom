@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """asgard sync — 레지스트리·병합 정책·프로젝트 코어 갱신 (전부 결정론, 네트워크 없음).
 
-계약: init 이 레지스트리에 기록하고, sync 는 asgard 소유 파일만 최신화하며 사용자 편집
+계약: init이 레지스트리에 기록하고, sync는 asgard 소유 파일만 최신화하며 사용자 편집
 (AGENTS.md Conventions·settings.json permissions·trinity-policy 튜닝)은 보존한다.
 
 실행: uv run pytest tests/test_sync.py
@@ -37,7 +37,7 @@ class Base(unittest.TestCase):
 class TestRegistry(Base):
     def test_record_load_dedupe_forget(self):
         registry.record(self.root, cc=True, cursor=False, codex=False)
-        registry.record(self.root, cc=True, cursor=True, codex=False)  # upsert — 같은 root 는 교체
+        registry.record(self.root, cc=True, cursor=True, codex=False)  # upsert — 같은 root는 교체
         entries = registry.load()
         self.assertEqual(len(entries), 1)
         self.assertEqual((entries[0]["cc"], entries[0]["cursor"], entries[0]["codex"]), (True, True, False))
@@ -69,9 +69,9 @@ class TestRegistry(Base):
         self.assertIsNotNone(memory._read(memory.memory_dir(), memory.DEFAULT_SKILL_PREFERENCE_SLUG))
 
     def test_setup_tolerates_preexisting_map_seed(self):
-        # `asgard map`·훅이 init 전에 .asgard/.gitignore + map/INDEX.md 를 lazy 생성해도 init 은
-        # 차단(rc 2)하지 않는다 — .gitignore 는 사용자 내용 보존하되 asgard 관리 공유 예외(`!`)
-        # 누락분만 병합(binding.json 등 신규 공유 자산 전파), INDEX.md 는 asgard 소유라 재동기화.
+        # `asgard map`·훅이 init 전에 .asgard/.gitignore + map/INDEX.md를 lazy 생성해도 init은
+        # 차단(rc 2)하지 않는다 — .gitignore는 사용자 내용 보존하되 asgard 관리 공유 예외(`!`)
+        # 누락분만 병합(binding.json 등 신규 공유 자산 전파), INDEX.md는 asgard 소유라 재동기화.
         from asgard.commands.setup import run_setup
 
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
@@ -99,7 +99,7 @@ class TestRegistry(Base):
 
     def test_setup_force_reowns_divergent_map(self):
         # 기존 맵이 현재 디렉토리 스캔과 다르고 마커조차 없어도(사람 소유·타 프로젝트 유래)
-        # init 은 현재 디렉토리를 정본으로 삼아 경고 후 엎어쓴다 — 차단(rc 2)하지 않는다.
+        # init은 현재 디렉토리를 정본으로 삼아 경고 후 엎어쓴다 — 차단(rc 2)하지 않는다.
         from asgard.commands.setup import run_setup
 
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
@@ -154,7 +154,7 @@ class TestAgentsMerge(Base):
         new = agents_md("proj")
         old = new.replace("Odin first", "옛날 문구")  # 구버전 블록 시뮬레이션
         # 마커 **밖**의 사용자 자리 = 마지막 asgard 블록 뒤 (Conventions 이하). 문구를 리터럴로 박으면
-        # 템플릿이 한 글자 바뀔 때 replace 가 조용히 no-op 이 되고, 테스트는 "보존됐다"가 아니라
+        # 템플릿이 한 글자 바뀔 때 replace가 조용히 no-op이 되고, 테스트는 "보존됐다"가 아니라
         # "애초에 안 넣었다"를 통과시킨다 — 자리를 마커로 찾아서 그 함정을 없앤다.
         tail = "<!-- <<< asgard:manual <<< -->"
         self.assertIn(tail, old)
@@ -193,7 +193,7 @@ class TestAgentsMerge(Base):
 
 
 class TestInitOverwrite(Base):
-    """init 재실행 계약 — TTY 는 "다시 덮어쓰시겠습니까?" 확인, 승인/--force 덮어쓰기는 asgard
+    """init 재실행 계약 — TTY는 "다시 덮어쓰시겠습니까?" 확인, 승인/--force 덮어쓰기는 asgard
     소유 스캐폴드만 갱신하고 프로젝트 데이터(설정값·로그·상태)는 보존한다."""
 
     def _init(self, **kw):
@@ -337,7 +337,7 @@ class TestSyncProject(Base):
 
     def test_doctor_sees_an_older_role_contract_not_just_a_missing_file(self):
         # 26-07-26 실측: 프로젝트가 구세대 역할 문서(판정자 문서에 JS/TS 실행 레인 없음)로 도는데
-        # doctor 는 `10/10 present` 로 녹색이었다 — 계약은 존재가 아니라 내용이다.
+        # doctor는 `10/10 present`로 녹색이었다 — 계약은 존재가 아니라 내용이다.
         from asgard.commands.doctor import _trinity_checks
 
         sync_project(self.root, cc=True, cursor=False, codex=False)

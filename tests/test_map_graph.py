@@ -359,7 +359,7 @@ class TestFrontendLane(Base):
         self.assertEqual(
             [(e.name, e.confidence, e.detail) for e in calls], [("/api/alarms/{}/detail", "candidate", "$fetch")]
         )
-        # 템플릿 줄의 axios 는 마스킹되고, 스크립트 증거는 원본 줄 번호를 유지한다
+        # 템플릿 줄의 axios는 마스킹되고, 스크립트 증거는 원본 줄 번호를 유지한다
         self.assertEqual(calls[0].line, 6)
         page = found["page"][0]
         self.assertEqual(page.scope_end, _VUE_PAGE_FIXTURE.count("\n") + 1)
@@ -383,7 +383,7 @@ class TestFrontendLane(Base):
         self.assertEqual(
             {(s.detail, s.confidence) for s in stores.values()}, {("pinia", "confirmed"), ("redux", "confirmed")}
         )
-        # 스토어 본문 스팬이 액션의 api_call 을 포함한다
+        # 스토어 본문 스팬이 액션의 api_call을 포함한다
         auth = stores["auth"]
         call = found["api_call"][0]
         self.assertTrue(auth.line <= call.line <= auth.scope_end)
@@ -402,14 +402,14 @@ class TestFrontendLane(Base):
     def test_comments_are_not_consumption_evidence(self):
         source = "// wired via useGhost()\n/* usePhantom() */\nconst u = 'https://x/y' + useReal()\n"
         uses = {e.name for e in self.kinds("app/lib/a.ts", source).get("composable", [])}
-        # 주석 속 산문·죽은 호출은 증거가 아니고, 문자열의 `//` 는 주석이 아니다
+        # 주석 속 산문·죽은 호출은 증거가 아니고, 문자열의 `//`는 주석이 아니다
         self.assertEqual(uses, {"useReal"})
 
     def test_declaration_line_is_not_self_consumption(self):
         found = self.kinds("app/composables/useAlarms.ts", _COMPOSABLE_FIXTURE)
         composables = {(e.name, e.detail) for e in found["composable"]}
         self.assertEqual(composables, {("useAlarms", ""), ("useAck", "")})
-        # `^\s*` 가 앞 개행을 삼켜도 선언 줄은 이름 토큰이 있는 줄이다
+        # `^\s*`가 앞 개행을 삼켜도 선언 줄은 이름 토큰이 있는 줄이다
         decl = {e.name: e.line for e in found["composable"]}
         self.assertEqual(
             _COMPOSABLE_FIXTURE.splitlines()[decl["useAlarms"] - 1].strip().split("(")[0], "export function useAlarms"
@@ -425,7 +425,7 @@ class TestFrontendLane(Base):
         found = self.kinds("app/services/alarm/alarmService.ts", _SERVICE_FIXTURE)
         services = {e.name: e for e in found["service"]}
         self.assertEqual(set(services), {"alarmService", "fetchOne"})
-        # 네임스페이스 객체 스팬이 자기 메서드의 api_call 을 포함한다
+        # 네임스페이스 객체 스팬이 자기 메서드의 api_call을 포함한다
         obj, call = services["alarmService"], found["api_call"][0]
         self.assertTrue(obj.line <= call.line <= obj.scope_end)
         # 관례 밖 같은 소스는 서비스를 주장하지 않는다
@@ -446,7 +446,7 @@ class TestFrontendLane(Base):
         uses = {e.name for e in found["service"]}
         # 임포트 경로가 `services/` 인 런타임 심볼의 *호출*만 소비로 읽는다 —
         # 타입 전용 임포트(AlarmRow)와 비-서비스 임포트(helper)는 제외된다.
-        # ghostService 는 여기서 잠정 통과하고, 선언이 없으므로 그래프 빌드에서 탈락한다.
+        # ghostService는 여기서 잠정 통과하고, 선언이 없으므로 그래프 빌드에서 탈락한다.
         self.assertEqual(uses, {"alarmService", "fetchOne", "ghostService"})
         self.assertEqual({e.detail for e in found["service"]}, {"use"})
 
@@ -483,8 +483,8 @@ class TestFrontendLane(Base):
         state = graph_state(self.root)
         assert state is not None
         edges = {(e["source"], e["target"], e["kind"]): e["confidence"] for e in state["edges"]}
-        # 페이지가 파일 본문을 소유한다 — 인라인 $fetch 가 페이지 플로우로 귀속 (근사 스팬 → candidate)
-        # (api_call 의 `{}` 는 id 슬러그에서 `_` 로 정규화된다)
+        # 페이지가 파일 본문을 소유한다 — 인라인 $fetch가 페이지 플로우로 귀속 (근사 스팬 → candidate)
+        # (api_call의 `{}`는 id 슬러그에서 `_`로 정규화된다)
         self.assertEqual(edges.get(("page:/alarms/:id", "api_call:/api/alarms/_/detail", "calls")), "candidate")
 
     def test_fe_logic_chain_edges_and_convergence_gate_in_scan(self):
@@ -500,7 +500,7 @@ class TestFrontendLane(Base):
         edges = {(e["source"], e["target"], e["kind"]) for e in state["edges"]}
         # 화면 → 로직 → 상태 체인이 선다 (TS 스팬은 근사라 candidate)
         self.assertIn(("page:/alarms", "composable:useAlarms", "uses"), edges)
-        # 접근자 `useAuthStore` 는 별칭표로 `defineStore` id 노드에 수렴한다
+        # 접근자 `useAuthStore`는 별칭표로 `defineStore` id 노드에 수렴한다
         self.assertIn(("page:/alarms", "store:auth", "uses"), edges)
         kinds = {n["id"]: n["kind"] for n in state["nodes"]}
         # 리포에 선언이 없는 프레임워크 원시 훅과 수신자 메서드 호출은 노드를 세우지 않는다
@@ -696,7 +696,7 @@ class TestJvmCrossFileResolution(Base):
             "svc/src/main/java/com/acme/store/MeterStore.java",
             "package com.acme.store;\n\npublic interface MeterStore {\n    Object findMeter(Long id);\n}\n",
         )
-        # MyBatis 매퍼 인터페이스가 Store 를 상속하고, XML namespace 가 그 FQN 이다
+        # MyBatis 매퍼 인터페이스가 Store를 상속하고, XML namespace가 그 FQN 이다
         self.write(
             "store/src/main/java/com/acme/store/MeterMapper.java",
             "package com.acme.store;\n\npublic interface MeterMapper extends MeterStore {\n"
@@ -714,9 +714,9 @@ class TestJvmCrossFileResolution(Base):
         state = graph_state(self.root)
         assert state is not None
         edges = {(e["source"], e["target"], e["kind"]) for e in state["edges"]}
-        # 컨트롤러 → 스펙 인터페이스 → 구현 → 스토어 → 매퍼 XML 을 건너 라우트가 구문에 닿는다
+        # 컨트롤러 → 스펙 인터페이스 → 구현 → 스토어 → 매퍼 XML을 건너 라우트가 구문에 닿는다
         self.assertIn(("route:GET_/api/meters/_id_", "db_access:MeterMapper.findMeter", "touches"), edges)
-        # 구문 → 테이블은 매퍼 XML 이 소유한다 — 둘이 이어져 라우트→테이블 체인이 읽힌다
+        # 구문 → 테이블은 매퍼 XML이 소유한다 — 둘이 이어져 라우트→테이블 체인이 읽힌다
         self.assertIn(("db_access:MeterMapper.findMeter", "db_access:TCFG_METER", "touches"), edges)
         detail = next(
             e.get("detail", "")
@@ -802,7 +802,7 @@ class TestJvmDbExtractors(Base):
         self.assertNotIn("A", names)
         self.assertNotIn("GHOST_TBL", names)
         self.assertNotIn("KbTagMapper.deadQuery", names)
-        # SQL 주석 속 죽은 DDL 도 선언이 아니다 (줄 번호는 보존)
+        # SQL 주석 속 죽은 DDL도 선언이 아니다 (줄 번호는 보존)
         sql = "-- CREATE TABLE ghost (id int);\n/*\nCREATE TABLE ghost2 (id int);\n*/\nCREATE TABLE live (id int);\n"
         live = extract_sql("schema/x.sql", sql)
         self.assertEqual([(e.name, e.line) for e in live], [("LIVE", 5)])
@@ -815,7 +815,7 @@ class TestJvmDbExtractors(Base):
         proc = extract_proc("aimir/lib/db/REGUL2.pc", _PROC_FIXTURE)
         self.assertEqual({e.name for e in proc}, {"TCFG_METER", "REGUL2_TBL_RS"})
         self.assertTrue(all(e.confidence == "candidate" and e.detail == "exec sql" for e in proc))
-        # C 본문 주석의 "from memory" 는 EXEC SQL 구간이 아니다
+        # C 본문 주석의 "from memory"는 EXEC SQL 구간이 아니다
         self.assertNotIn("MEMORY", {e.name for e in proc})
 
 
@@ -891,7 +891,7 @@ class TestSpringProps(Base):
         # 설정이 URL 정체를 증명한다 — 추출기의 리터럴 URL 기준과 동일하게 confirmed
         self.assertEqual(promoted.name, "https://pay.example.com/charges")
         self.assertEqual(promoted.confidence, "confirmed")
-        # 경로만 남는 해석(비 URL)은 베이스 URL 미증명 — confidence 를 올리지 않는다
+        # 경로만 남는 해석(비 URL)은 베이스 URL 미증명 — confidence를 올리지 않는다
         props.ingest("svc/src/main/resources/application.properties", "svc.base=/internal\n")
         relative = Evidence("api_call", "${svc.base}/health", "svc/src/main/java/Pay.java", 5, "candidate")
         kept = props.promote([relative])[0]
@@ -918,7 +918,7 @@ class TestScanGraph(Base):
         self.assertNotIn("tests/test_api.py", graph_body)
         state = json.loads(state_body)
         self.assertGreater(state["counts"]["edges"], 0)
-        # 후보 증거는 카탈로그에서 `?` 로 표시된다
+        # 후보 증거는 카탈로그에서 `?`로 표시된다
         self.assertIn("?", graph_body)
 
     def test_catalog_projects_every_relation_without_a_byte_cutoff(self):
@@ -1005,7 +1005,7 @@ class TestScanGraph(Base):
             scan_graph(self.root)
 
     def test_force_reowns_human_owned_graph_md(self):
-        # init 경로 — force 는 소유권 거부만 우회해 현재 디렉토리 스캔 결과로 엎어쓴다.
+        # init 경로 — force는 소유권 거부만 우회해 현재 디렉토리 스캔 결과로 엎어쓴다.
         from asgard.map_graph import GraphOwnershipError, scan_graph
 
         self.seed()
@@ -1014,7 +1014,7 @@ class TestScanGraph(Base):
         body = open(result.graph_md_path, encoding="utf-8").read()
         self.assertNotIn("# my own notes", body)
         scan_graph(self.root)  # 재귀속 후엔 asgard 소유 — 비강제 스캔이 다시 통과한다
-        # force 는 예약 파일명 충돌(안전 검사)은 우회하지 않는다
+        # force는 예약 파일명 충돌(안전 검사)은 우회하지 않는다
         os.remove(os.path.join(self.root, ".asgard", "map", "GRAPH.md"))
         self.write(".asgard/map/graph.md", "# imposter\n")
         with self.assertRaises(GraphOwnershipError):
@@ -1060,7 +1060,7 @@ class TestFlows(Base):
         self.assertEqual(
             edges.get(("route:GET_/users", "api_call:https://api.stripe.com/v1/charges", "calls")), "confirmed"
         )
-        # POST /users 핸들러의 커서 실행 — db 증거가 candidate 라 플로우도 candidate
+        # POST /users 핸들러의 커서 실행 — db 증거가 candidate라 플로우도 candidate
         self.assertEqual(edges.get(("route:POST_/users", "db_access:connection.execute", "touches")), "candidate")
         # 모듈 상단 import(외부 서비스, line 1)는 어느 스팬에도 안 들어간다 — 지어내지 않는다
         self.assertNotIn(("route:GET_/users", "external_service:stripe", "uses"), edges)
@@ -1107,7 +1107,7 @@ public class MeterController {
         # 리스너 본문의 send — 구독 핸들러 → 이벤트 emits
         emit_edges = [key for key in edges if key[2] == "emits" and key[0].startswith("event:")]
         self.assertTrue(emit_edges)
-        # 어노테이션 없는 emit() 메서드의 send 는 선언자가 아니다 — 플로우 소스가 되지 않는다
+        # 어노테이션 없는 emit() 메서드의 send는 선언자가 아니다 — 플로우 소스가 되지 않는다
         self.assertNotIn("event:billing.raw", {key[0] for key in edges})
 
     def test_tsjs_inline_handler_flow_capped_candidate(self):
@@ -1127,7 +1127,7 @@ app.get('/inline', async (req, res) => {
         )
         scan_graph(self.root)
         edges, _state = self.edges_of()
-        # 정규식 근사 스팬(.ts) — 양측 confirmed 여도 candidate 로 캡한다
+        # 정규식 근사 스팬(.ts) — 양측 confirmed 여도 candidate로 캡한다
         self.assertEqual(
             edges.get(("route:GET_/inline", "api_call:https://api.example.com/v1/data", "calls")), "candidate"
         )
@@ -1154,7 +1154,7 @@ app.get('/inline', async (req, res) => {
         route_hop = next(hop for hop in hops if hop["id"] == "route:POST_/users")
         self.assertEqual(route_hop["via"], "touches")
         self.assertEqual(route_hop["via_confidence"], "candidate")
-        # declares 만 따라가면 플로우는 배제된다
+        # declares만 따라가면 플로우는 배제된다
         hops = trace(self.root, "db_access:connection.execute", direction="upstream", kinds={"declares"})
         self.assertNotIn("route:POST_/users", {hop["id"] for hop in hops})
         with self.assertRaises(GraphError):
@@ -1183,7 +1183,7 @@ class TestTrace(Base):
 
         self.seed()
         scan_graph(self.root)
-        # "users" 개념어 — api_call 이 알파벳 선두여도 route 후보가 함께 나와야 회복이 된다
+        # "users" 개념어 — api_call이 알파벳 선두여도 route 후보가 함께 나와야 회복이 된다
         with self.assertRaises(GraphError) as caught:
             trace(self.root, "users")
         message = str(caught.exception)
@@ -1201,7 +1201,7 @@ class TestTrace(Base):
         state = fresh_state(self.root)
         # 스탯 검사 경로 — 표식이 있으면 내용 재독취 없이 통과한다
         self.assertTrue(state.get("stat_revision", "").startswith("source-stat-sha256:"))
-        # 내용 동일 touch(mtime 변경)도 stale 로 본다 — 오탐은 재스캔 방향으로만 틀린다
+        # 내용 동일 touch(mtime 변경)도 stale로 본다 — 오탐은 재스캔 방향으로만 틀린다
         target = os.path.join(self.root, "src/app/api.py")
         stamp = time_module.time() + 5
         os.utime(target, (stamp, stamp))
@@ -1288,7 +1288,7 @@ class TestView(Base):
         self.assertIn("@media (max-width:720px)", html)
 
     def test_view_redesign_contract(self):
-        """재설계 표면의 등가 가드 — 반응형·줌 컨트롤·캔버스 비의존 접근성·증거 카피."""
+        """재설계 표면의 등가 가드 — 반응형·줌 컨트롤·캔버스에 의존하지 않는 접근성·증거 카피."""
         from asgard.map_graph import build_view, scan_graph
 
         self.seed()
@@ -1310,7 +1310,7 @@ class TestView(Base):
         """종류 필터·선택이 실제 구성(파일 경유 연계)을 보존한다.
 
         엣지는 전부 file→개념 별 모양이라, 파일을 필터로 끄면 연계가 통째로
-        사라지고 선택 이웃도 파일 1-hop 에 갇힌다 — 그 회귀를 막는 가드.
+        사라지고 선택 이웃도 파일 1-hop에 갇힌다 — 그 회귀를 막는 가드.
         """
         from asgard.map_graph import build_view, scan_graph
 
@@ -1369,7 +1369,7 @@ class TestView(Base):
         """성좌 = 3차원 시냅스 공간, 레인 = 평면. 둘의 경계가 이 계약이다.
 
         투영은 월드 좌표 단계에서 끝나야 한다 — 그래야 기존 팬·줌·fit(ctx 변환)이
-        그대로 살고, 레인 모드는 z=0·k=1 로 접혀 결정론 배치가 흔들리지 않는다.
+        그대로 살고, 레인 모드는 z=0·k=1로 접혀 결정론 배치가 흔들리지 않는다.
         """
         from asgard.map_graph import build_view, scan_graph
 
@@ -1427,7 +1427,7 @@ class TestContextFusion(Base):
         # 그래프 카탈로그가 바뀌면 revision 해시도 바뀐다
         without_graph = build_map_context(self.root, "stripe", managed_only=True)
         self.assertEqual(context.managed_hash, without_graph.managed_hash)  # 같은 파일 상태 → 같은 해시
-        self.assertEqual(context.issues, ())  # 생성 GRAPH.md 를 수동 area map 으로 재검사하지 않는다
+        self.assertEqual(context.issues, ())  # 생성 GRAPH.md를 수동 area map으로 재검사하지 않는다
 
     def test_generated_graph_threat_label_is_not_injected(self):
         from asgard.code_map import refresh_map
@@ -1489,7 +1489,7 @@ class TestApiRouteBridge(Base):
     """API↔라우트 브리지 — 프론트/원격 호출과 백엔드 표면의 경로 수렴 (전부 candidate).
 
     베이스 URL·프록시 접두는 정적으로 증명할 수 없다: 완전 일치는 "path match", 접두 차이만
-    나는 일치는 "path suffix match" 로 이유를 보존하고, 수렴 실패(과다 일치)는 통째로 버린다.
+    나는 일치는 "path suffix match"로 이유를 보존하고, 수렴 실패(과다 일치)는 통째로 버린다.
     """
 
     def edges_of(self):
@@ -1514,7 +1514,7 @@ class TestApiRouteBridge(Base):
         self.assertIsNotNone(exact)
         self.assertEqual(exact["confidence"], "candidate")
         self.assertEqual(exact["detail"], "path match")
-        # `${id}` 보간(`{}`)과 Spring `{id}` 는 같은 와일드카드 세그먼트로 수렴한다 (id 는 슬러그 표기)
+        # `${id}` 보간(`{}`)과 Spring `{id}`는 같은 와일드카드 세그먼트로 수렴한다 (id는 슬러그 표기)
         self.assertIn(("api_call:/api/users/_", "route:GET_/api/users/_id_", "calls"), edges)
         self.assertEqual(result.api_links, state["counts"]["api_links"])
         self.assertGreaterEqual(result.api_links, 2)
@@ -1531,7 +1531,7 @@ class TestApiRouteBridge(Base):
         api_hop = next(hop for hop in shallow if hop["id"] == "api_call:/api/users")
         self.assertEqual(api_hop["file"], "web/pages/users/index.vue")
         self.assertGreater(api_hop["line"], 0)
-        # 페이지 → 래퍼 호출 → 라우트 → DB 를 한 번의 trace 로 조인한다 (platty 대등 교차 레인)
+        # 페이지 → 래퍼 호출 → 라우트 → DB를 한 번의 trace로 조인한다 (platty 대등 교차 레인)
         deep = trace(self.root, "page:/users", depth=4, direction="downstream", kinds={"calls", "touches"})
         ids = {hop["id"] for hop in deep}
         self.assertIn("route:GET_/api/users", ids)
@@ -1717,7 +1717,7 @@ await $fetch('/users/me')
         )
         self.assertIsNotNone(exact)
         self.assertEqual(exact["detail"], "path match")
-        # 한쪽만 변수인 자리는 잇지 않는다 — `/users/me` 는 `/users/{id}` 의 증거가 아니다
+        # 한쪽만 변수인 자리는 잇지 않는다 — `/users/me`는 `/users/{id}`의 증거가 아니다
         me_links = [key for key in edges if key[0] == "api_call:/users/me" and key[1].startswith("route:")]
         self.assertEqual(me_links, [])
 

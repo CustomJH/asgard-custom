@@ -100,7 +100,7 @@ class FreyjaThreeDContract(unittest.TestCase):
         self.assertIn("배달 게이트", body)
         for phrase in ("형상이 맞는가", "만들 수 있는가", "움직임이 살아 있는가"):
             self.assertIn(phrase, body)
-        # 금고는 자체 ignore 를 만들지 않는다 — 엔진 1·2 와 같은 규약.
+        # 금고는 자체 ignore를 만들지 않는다 — 엔진 1·2와 같은 규약.
         self.assertIn("별도 ignore 항목을 만들지 않고", body)
 
     def test_every_referenced_document_exists(self):
@@ -137,7 +137,7 @@ class FreyjaThreeDContract(unittest.TestCase):
             self.assertTrue((_SCRIPTS / script).is_file(), f"{script} 스크립트가 없다")
 
     def test_cad_command_is_project_isolated(self):
-        """uv run 은 --no-project 필수 — 상위 프로젝트의 requires-python 에 붙잡히면 CAD 레인이 죽는다."""
+        """uv run은 --no-project 필수 — 상위 프로젝트의 requires-python에 붙잡히면 CAD 레인이 죽는다."""
         for name in ("SKILL.md", "engine/reference/lane-cad.md", "engine/scripts/preflight.mjs"):
             body = (_SKILL / name).read_text(encoding="utf-8")
             for line in body.splitlines():
@@ -154,7 +154,7 @@ class FreyjaThreeDContract(unittest.TestCase):
         self.assertIsNone(data["processes"]["sls"]["overhangDeg"])
 
     def test_look_floor_and_critique_are_wired(self):
-        """엔진 2 반슬롭 장치의 이식이 배선까지 됐는지 — 문서가 존재하고 SKILL 이 이름으로 가리킨다."""
+        """엔진 2 반슬롭 장치의 이식이 배선까지 됐는지 — 문서가 존재하고 SKILL이 이름으로 가리킨다."""
         body = (_SKILL / "SKILL.md").read_text(encoding="utf-8")
         for anchor in ("look-floor.md", "lookdev.md", "critique3d.md", "critique_store.mjs", "초보 티가 없는가"):
             self.assertIn(anchor, body)
@@ -163,7 +163,7 @@ class FreyjaThreeDContract(unittest.TestCase):
             self.assertIn(phrase, look)
         critique = (_SKILL / "engine" / "reference" / "critique3d.md").read_text(encoding="utf-8")
         self.assertIn("critique_store.mjs", critique)
-        self.assertIn("강등", critique)  # 조용한 강등 금지 — 엔진 2 와 같은 배너 계약
+        self.assertIn("강등", critique)  # 조용한 강등 금지 — 엔진 2와 같은 배너 계약
         self.assertTrue((_SKILL / "engine" / "reference" / "lookdev.md").is_file())
 
     @staticmethod
@@ -268,7 +268,7 @@ class FreyjaThreeDContract(unittest.TestCase):
         self.assertEqual(data["cameras"]["product_packshot"]["focal_mm_equiv"], [85, 100])
 
     def test_asset_catalog_carries_licenses_and_https(self):
-        """수렵 카탈로그 계약: 전 소스에 라이선스, 전 URL 은 https, 비상업 모델은 표시된 채로."""
+        """수렵 카탈로그 계약: 전 소스에 라이선스, 전 URL은 https, 비상업 모델은 표시된 채로."""
         data = json.loads((_SKILL / "engine" / "data" / "asset_catalog.json").read_text(encoding="utf-8"))
         sources = data["sources"]
         for name in ("polyhaven", "ambientcg", "kenney", "quaternius", "khronos_gltf_samples"):
@@ -489,7 +489,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertEqual(inert, [], "정상 코드에서 inert-controls 오탐")
 
     def test_meshopt_glb_is_reported_not_garbled(self):
-        """meshopt 는 bufferView 레벨 확장 — 무경고로 압축 바이트를 생 float 로 읽으면 안 된다."""
+        """meshopt는 bufferView 레벨 확장 — 무경고로 압축 바이트를 생 float로 읽으면 안 된다."""
 
         def mark_meshopt(gltf):
             gltf["extensionsUsed"] = ["EXT_meshopt_compression"]
@@ -504,7 +504,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertIn("압축 지오메트리", proc.stderr)
 
     def test_sceneless_gltf_does_not_double_count(self):
-        """scenes 가 없으면 루트만 순회한다 — 자식 노드 이중 방문은 삼각형을 복제한다."""
+        """scenes가 없으면 루트만 순회한다 — 자식 노드 이중 방문은 삼각형을 복제한다."""
 
         def drop_scenes(gltf):
             del gltf["scenes"]
@@ -518,7 +518,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertEqual(payload["triangles"], 5)
 
     def test_overhang_waiver_message_matches_process(self):
-        """분말 배출홀 안내는 분말 공정에만 — CNC 에 나가면 오정보다."""
+        """분말 배출홀 안내는 분말 공정에만 — CNC에 나가면 오정보다."""
         box = self.project / "block.stl"
         _write_box_stl(box, (20.0, 20.0, 10.0))
         for process, expect_powder in (("sls", True), ("cnc", False)):
@@ -527,14 +527,14 @@ class FreyjaThreeDRuntime(unittest.TestCase):
             self.assertEqual("분말" in message, expect_powder, f"{process}: {message}")
 
     def test_up_axis_flag_matches_shoot_semantics(self):
-        """--up y 는 형식과 무관하게 Y-up→Z-up 변환한다 — shoot 와 같은 의미."""
+        """--up y는 형식과 무관하게 Y-up→Z-up 변환한다 — shoot와 같은 의미."""
         box = self.project / "block.stl"
         _write_box_stl(box, (20.0, 12.0, 6.0))
         report = self._audit(box, "--up", "y")
         self.assertEqual(report["bbox"]["size"], [20, 6, 12])
 
     def test_threemf_roundtrip_with_units_and_transform(self):
-        """3MF 는 ZIP+XML — 선언 단위 환산과 build item 변환까지 읽어야 제조 왕복이 닫힌다."""
+        """3MF는 ZIP+XML — 선언 단위 환산과 build item 변환까지 읽어야 제조 왕복이 닫힌다."""
         verts = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)]
         quads = [(0, 3, 2, 1), (4, 5, 6, 7), (0, 1, 5, 4), (2, 3, 7, 6), (1, 2, 6, 5), (3, 0, 4, 7)]
         triangles = [tri for a, b, c, d in quads for tri in ((a, b, c), (a, c, d))]
@@ -557,7 +557,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertAlmostEqual(report["bbox"]["min"][0], 50.8, delta=0.01)
 
     def test_quantized_and_sparse_accessors_decode(self):
-        """KHR_mesh_quantization(normalized int16)과 sparse accessor 는 조용히 틀린 좌표의 단골이다."""
+        """KHR_mesh_quantization(normalized int16)과 sparse accessor는 조용히 틀린 좌표의 단골이다."""
         # 양자화: 노드 scale 10, 정점 (0,0,0)(1,0,0)(0,1,0) 정규화 int16
         full = 32767
         binary = b"".join(struct.pack("<3h2x", *v) for v in [(0, 0, 0), (full, 0, 0), (0, full, 0)])
@@ -610,7 +610,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertEqual(payload["bbox"]["size"], [2, 0, 2])
 
     def test_injection_flags_thick_solid(self):
-        """사출은 두꺼운 살이 싱크 마크를 만든다 — min 만 보면 솔리드 블록이 통과해 버린다."""
+        """사출은 두꺼운 살이 싱크 마크를 만든다 — min만 보면 솔리드 블록이 통과해 버린다."""
         box = self.project / "block.stl"
         _write_box_stl(box, (20.0, 20.0, 10.0))
         report = self._audit(box, "--process", "injection")
@@ -713,7 +713,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertLess(payload["vertices"], corners * 0.5, "곡면 정점이 용접되지 않았다")
 
     def test_bake_writes_masks_and_darkens_occluded(self):
-        """베이크의 최소 계약: COLOR_0 이 실리고, 차폐가 만든 AO 차이가 남는다."""
+        """베이크의 최소 계약: COLOR_0이 실리고, 차폐가 만든 AO 차이가 남는다."""
         open_box = self.project / "open.stl"
         _write_box_stl(open_box, (20.0, 20.0, 4.0))
         shroom = self.project / "shroom.stl"
@@ -873,10 +873,10 @@ class FreyjaThreeDRuntime(unittest.TestCase):
         self.assertEqual(rows[-1]["total_score"], 26)
         self.assertEqual(rows[-1]["max_score"], 32)
 
-        # 보존 5 — CLI 타임스탬프는 초 단위라 API 로 초를 벌려 7개를 쓴다.
+        # 보존 5 — CLI 타임스탬프는 초 단위라 API로 초를 벌려 7개를 쓴다.
         script = (
             "import { pathToFileURL } from 'node:url';\n"
-            # argv[1] 에 스토어 경로를 두면 isMainModule 판별이 참이 되어 CLI 가 실행된다 — argv[2] 로 민다.
+            # argv[1]에 스토어 경로를 두면 isMainModule 판별이 참이 되어 CLI가 실행된다 — argv[2]로 민다.
             "const { writeSnapshot } = await import(pathToFileURL(process.argv[2]).href);\n"
             "for (let i = 0; i < 7; i += 1) {\n"
             "  writeSnapshot({ slug: 'retention-target', meta: { total_score: i }, body: `run ${i}`,\n"
@@ -891,7 +891,7 @@ class FreyjaThreeDRuntime(unittest.TestCase):
 
 
 def _write_raw_glb(path: Path, gltf: dict, binary: bytes) -> None:
-    """임의 glTF JSON + BIN 청크를 GLB 로 포장한다 — 양자화·sparse 픽스처용."""
+    """임의 glTF JSON + BIN 청크를 GLB로 포장한다 — 양자화·sparse 픽스처용."""
     json_chunk = json.dumps(gltf).encode("utf-8")
     json_chunk += b" " * ((4 - len(json_chunk) % 4) % 4)
     binary += b"\0" * ((4 - len(binary) % 4) % 4)
@@ -902,7 +902,7 @@ def _write_raw_glb(path: Path, gltf: dict, binary: bytes) -> None:
 
 
 def _write_minimal_glb(path: Path, triangles: int, mutate=None) -> None:
-    """POSITION 만 가진 최소 GLB — 예산 감사가 삼각형·드로우콜을 세는지 확인용."""
+    """POSITION만 가진 최소 GLB — 예산 감사가 삼각형·드로우콜을 세는지 확인용."""
     count = triangles * 3
     vertices = bytearray()
     for index in range(count):

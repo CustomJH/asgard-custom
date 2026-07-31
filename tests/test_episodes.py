@@ -75,7 +75,7 @@ class TestIndexAndSearch(Base):
             f.write("{깨진 라인\n")
         turn_store.append_turn(self.root, "정상 둘", "응답 둘")
         hits = episodes.search(self.root, "정상 둘")
-        self.assertEqual(hits[0]["seq"], 3)  # 손상 라인도 seq 를 소비 — 라인 위치가 좌표
+        self.assertEqual(hits[0]["seq"], 3)  # 손상 라인도 seq를 소비 — 라인 위치가 좌표
 
     def test_prune_shrink_triggers_full_rebuild(self):
         for i in range(6):
@@ -168,7 +168,7 @@ class TestEpisodeNote(Base):
 class TestExternalClientLane(Base):
     """외부 클라이언트(Claude/Codex/Cursor)도 에피소드를 쌓고 되찾는다 — 26-07-28 결함 수리.
 
-    이전에는 Stop 훅이 프로젝트 sync-turn 만 불러서, 네이티브 Heimdall 만 개인 원문을
+    이전에는 Stop 훅이 프로젝트 sync-turn만 불러서, 네이티브 Heimdall만 개인 원문을
     적재했다. 쓰기(run_sync_turn)와 읽기(recall_note include_episodes)가 짝을 이뤄야
     "어떤 클라이언트에서도 사용자를 배운다"가 성립한다."""
 
@@ -222,7 +222,7 @@ class TestExternalClientLane(Base):
     def test_hook_recall_surface_carries_the_episode_block(self):
         from asgard import memory_context
 
-        for i in range(6):  # _EXCLUDE_TAIL 을 넘겨야 과거로 인정된다
+        for i in range(6):  # _EXCLUDE_TAIL을 넘겨야 과거로 인정된다
             turn_store.append_turn(self.root, f"질문 {i} 인덱스 캐시", f"답 {i} 캐시 무효화 규칙")
         note = memory_context.recall_note("인덱스 캐시", start=self.root, include_episodes=True)
         self.assertIn("<episode-recall", note)

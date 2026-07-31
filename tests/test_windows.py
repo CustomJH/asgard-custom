@@ -20,12 +20,12 @@ from asgard.templates import cc_settings, codex_config, cursor_hooks_json
 
 
 def _win(module):
-    """모듈이 참조하는 sys.platform 을 win32 로 — sys 는 단일 모듈이라 어디서 갈아도 동일."""
+    """모듈이 참조하는 sys.platform을 win32로 — sys는 단일 모듈이라 어디서 갈아도 동일."""
     return mock.patch.object(module.sys, "platform", "win32")
 
 
 class TestHookPython(unittest.TestCase):
-    """hook_python — POSIX 는 python3 고정, Windows 는 python → py 런처 탐지."""
+    """hook_python — POSIX는 python3 고정, Windows는 python → py 런처 탐지."""
 
     def test_posix_is_python3(self):
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
@@ -66,7 +66,7 @@ class TestHookPython(unittest.TestCase):
 
 
 class TestDetectAuthWindows(unittest.TestCase):
-    """detect_auth 가 Windows 에서 os.uname AttributeError 없이 폴백해야 한다."""
+    """detect_auth가 Windows에서 os.uname AttributeError 없이 폴백해야 한다."""
 
     def test_no_crash_and_falls_to_unknown(self):
         env = {k: v for k, v in os.environ.items() if k not in ("ANTHROPIC_API_KEY", "CLAUDE_CODE_OAUTH_TOKEN")}
@@ -99,7 +99,7 @@ class TestTemplatesWindowsWiring(unittest.TestCase):
             s = json.loads(cc_settings())
         cmds = self._hook_cmds(s)
         self.assertTrue(cmds and all(c.startswith('py "$CLAUDE_PROJECT_DIR') for c in cmds))
-        # statusline 은 bash 유지 — Claude Code Windows 는 Git Bash 필수라 셸 계약이 성립한다
+        # statusline은 bash 유지 — Claude Code Windows는 Git Bash 필수라 셸 계약이 성립한다
         self.assertTrue(s["statusLine"]["command"].startswith("bash "))
 
     def test_cc_settings_posix_stays_python3(self):
@@ -130,7 +130,7 @@ class TestTemplatesWindowsWiring(unittest.TestCase):
 
 
 class TestCredentialLockdown(unittest.TestCase):
-    """키 파일 잠금: POSIX 는 chmod 600, Windows 는 icacls 소유자 단독 ACL."""
+    """키 파일 잠금: POSIX는 chmod 600, Windows는 icacls 소유자 단독 ACL."""
 
     def test_windows_uses_icacls(self):
         with tempfile.TemporaryDirectory() as td:
@@ -164,7 +164,7 @@ class TestCredentialLockdown(unittest.TestCase):
 
 
 class TestDoctorWindows(unittest.TestCase):
-    """doctor 의 인터프리터 체크·fix 안내가 플랫폼을 따른다."""
+    """doctor의 인터프리터 체크·fix 안내가 플랫폼을 따른다."""
 
     def test_python_check_uses_hook_python(self):
         from asgard.commands import doctor
@@ -189,16 +189,16 @@ class TestTextIOCarriesItsEncoding(unittest.TestCase):
     """텍스트 입출력은 인코딩을 스스로 들고 다녀야 한다 — 안 주면 로케일 기본값으로 열린다.
 
     문이 둘이다. 파일(`open`/`read_text`/`write_text`)과 **자식 프로세스 파이프**
-    (`subprocess.run(..., text=True)`). 처음엔 파일만 봤다가 `asgard update` 가 같은 로케일에서
-    `UnicodeDecodeError: 'cp949' codec can't decode byte 0xec` 로 죽었다 — uv 가 UTF-8 로 낸
-    출력을 cp949 로 디코딩한 것이다. 한쪽만 막은 가드는 막았다는 착각만 준다.
+    (`subprocess.run(..., text=True)`). 처음엔 파일만 봤다가 `asgard update`가 같은 로케일에서
+    `UnicodeDecodeError: 'cp949' codec can't decode byte 0xec`로 죽었다 — uv가 UTF-8로 낸
+    출력을 cp949로 디코딩한 것이다. 한쪽만 막은 가드는 막았다는 착각만 준다.
 
-    왜 형상으로 재는가: POSIX 호스트의 기본값은 utf-8 이라 인코딩을 빠뜨린 코드가 여기서는
+    왜 형상으로 재는가: POSIX 호스트의 기본값은 utf-8이라 인코딩을 빠뜨린 코드가 여기서는
     언제나 통과한다. 목킹으로도 못 잡는다 — 바꿔야 하는 것이 인터프리터가 시작할 때 정해지는
     로케일이기 때문이다. 그래서 실행이 아니라 호출 형상을 본다.
 
-    26-07-27 실기(한국어 Windows, 로케일 cp949): `asgard init --cc` 가 93파일 중 앞쪽에서
-    UnicodeEncodeError 로 죽었다. 원인은 스캐폴드 본문의 엠대시 한 글자였고, 죽은 자리는
+    26-07-27 실기(한국어 Windows, 로케일 cp949): `asgard init --cc`가 93파일 중 앞쪽에서
+    UnicodeEncodeError로 죽었다. 원인은 스캐폴드 본문의 엠대시 한 글자였고, 죽은 자리는
     인코딩을 안 준 `Path.write_text` 였다. 게다가 그 시점엔 파일이 이미 열려 잘려 있어
     사용자 프로젝트에 반쪽 파일이 남았다.
 
@@ -240,7 +240,7 @@ class TestTextIOCarriesItsEncoding(unittest.TestCase):
             mode = node.args[1].value if len(node.args) > 1 and isinstance(node.args[1], ast.Constant) else "r"
             return "" if "b" in str(mode) else "open()"
         if isinstance(func, ast.Attribute) and func.attr == "open":
-            # os.open 은 fd 라 인코딩이 없고, urlopen 계열의 `.open(req)` 은 첫 인자가 모드가 아니다.
+            # os.open은 fd라 인코딩이 없고, urlopen 계열의 `.open(req)`은 첫 인자가 모드가 아니다.
             if isinstance(func.value, ast.Name) and func.value.id in ("os", "webbrowser", "sys"):
                 return ""
             if first is not None and not (isinstance(first, ast.Constant) and isinstance(first.value, str)):
@@ -248,19 +248,19 @@ class TestTextIOCarriesItsEncoding(unittest.TestCase):
             mode = first.value if isinstance(first, ast.Constant) else "r"
             return "" if "b" in str(mode) else "Path.open()"
         if isinstance(func, ast.Attribute) and func.attr in ("read_text", "write_text"):
-            # io_files 의 동명 함수는 인코딩을 자기 안에서 준다 (그게 그 모듈의 존재 이유다).
+            # io_files의 동명 함수는 인코딩을 자기 안에서 준다 (그게 그 모듈의 존재 이유다).
             if isinstance(func.value, ast.Name) and func.value.id == "io_files":
                 return ""
             return f"Path.{func.attr}()"
-        # 두 번째 문 — 자식 프로세스의 stdout/stderr 도 텍스트 모드면 로케일로 디코딩된다.
+        # 두 번째 문 — 자식 프로세스의 stdout/stderr도 텍스트 모드면 로케일로 디코딩된다.
         name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
         if name in ("run", "Popen", "check_output", "check_call", "call"):
             module = getattr(getattr(func, "value", None), "id", "") if isinstance(func, ast.Attribute) else ""
             if module not in ("subprocess", "sp", ""):
                 return ""
             keywords = {kw.arg for kw in node.keywords}
-            # `encoding=` 을 같이 준 텍스트 모드는 로케일을 안 탄다 — 그게 바로 이 검사가 요구하는 형태다.
-            # 이걸 안 보면 정답을 오답으로 잡는다 (실측: commands/office.py 는 이미 utf-8 로 고정돼 있다).
+            # `encoding=`을 같이 준 텍스트 모드는 로케일을 안 탄다 — 그게 바로 이 검사가 요구하는 형태다.
+            # 이걸 안 보면 정답을 오답으로 잡는다 (실측: commands/office.py는 이미 utf-8로 고정돼 있다).
             if keywords & {"text", "universal_newlines"} and "encoding" not in keywords:
                 return f"subprocess.{name}(text=True)"
         return ""

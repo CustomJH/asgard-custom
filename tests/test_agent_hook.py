@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """에이전트 정체성 모드 B 훅 (agent-activate) — standalone subprocess 검증 (배포 형태 그대로).
 
-네이티브 Heimdall 은 profiles.note() 를 역할 세션 프롬프트에 직접 얹는다. 모드 B(Claude Code/
-Codex/Cursor)는 호스트가 세션을 소유하므로 훅으로 보상한다. 훅은 asgard 를 임포트하지 못하므로
+네이티브 Heimdall은 profiles.note()를 역할 세션 프롬프트에 직접 얹는다. 모드 B(Claude Code/
+Codex/Cursor)는 호스트가 세션을 소유하므로 훅으로 보상한다. 훅은 asgard를 임포트하지 못하므로
 (사용자 리포에 복사되는 단일 파일) 배치 해석과 렌더를 재구현한다 — 그 재구현이 정본과 갈라지면
 "도구를 바꾸면 다른 에이전트가 답한다"가 되고, 그게 이 레인이 막으려는 바로 그 드리프트다.
 
 그래서 중심은 둘이다:
   ① 렌더 단일 출처 — 훅 본문 == profiles.note() 본문 (바이트)
-  ② 배치 해석 단일 출처 — 훅이 고른 에이전트 == swarm.resolve() 가 고른 에이전트
+  ② 배치 해석 단일 출처 — 훅이 고른 에이전트 == swarm.resolve()가 고른 에이전트
      (역할 > 모드 > 프로젝트 대표 > 루트 활성, 그리고 없는 이름은 fail-open)
 
 실행: uv run pytest tests/test_agent_hook.py
@@ -40,7 +40,7 @@ class AgentHookBase(unittest.TestCase):
         self.hooks = os.path.join(self.root, ".claude", "hooks")
         os.makedirs(self.hooks)
         shutil.copy(HOOK_SRC, os.path.join(self.hooks, "agent-activate.py"))
-        # 훅과 정본이 같은 뿌리를 보도록 HOME 을 빈 임시 디렉터리로 고정 (양쪽 동일 조건).
+        # 훅과 정본이 같은 뿌리를 보도록 HOME을 빈 임시 디렉터리로 고정 (양쪽 동일 조건).
         self.home = tempfile.TemporaryDirectory()
         self.addCleanup(self.home.cleanup)
 
@@ -104,7 +104,7 @@ class AgentHookBase(unittest.TestCase):
         )
 
     def body(self, out: str) -> str:
-        """`[agent]\\n\\n` prefix (및 클라이언트별 JSON 봉투) 를 벗겨 본문만."""
+        """`[agent]\\n\\n` prefix (및 클라이언트별 JSON 봉투)를 벗겨 본문만."""
         out = out.strip()
         if not out:
             return ""
@@ -200,10 +200,10 @@ class TestPlacementIsSingleSource(AgentHookBase):
 
 
 class TestContainerHome(AgentHookBase):
-    """컨테이너 안에서 CC/Codex 를 돌리는 경우 — 훅이 호스트가 아니라 그 볼륨을 읽어야 한다.
+    """컨테이너 안에서 CC/Codex를 돌리는 경우 — 훅이 호스트가 아니라 그 볼륨을 읽어야 한다.
 
-    실측 26-07-29: 훅의 `sticky()` 가 모르는 `ASGARD_HOME` 을 DEFAULT 로 접어, 컨테이너
-    에이전트가 **호스트의 `~/.asgard`** 를 자기 정체성으로 받고 있었다. 기억은 맞는 곳에
+    실측 26-07-29: 훅의 `sticky()`가 모르는 `ASGARD_HOME`을 DEFAULT로 접어, 컨테이너
+    에이전트가 **호스트의 `~/.asgard`**를 자기 정체성으로 받고 있었다. 기억은 맞는 곳에
     쓰면서 정체성만 남의 것이 되는, 제일 알아채기 어려운 형태의 어긋남이다."""
 
     def setUp(self):
@@ -279,7 +279,7 @@ class TestSilenceAndFailOpen(AgentHookBase):
         self.assertEqual(result.stdout, "")
 
     def test_comment_only_identity_stays_silent(self):
-        """`agent create` 가 배송하는 안내 템플릿 그대로면 무주입 (토큰 회귀 0)."""
+        """`agent create`가 배송하는 안내 템플릿 그대로면 무주입 (토큰 회귀 0)."""
         from asgard import profiles
 
         self._with_home(lambda: profiles.create("plain"))

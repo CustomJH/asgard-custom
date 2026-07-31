@@ -2,8 +2,8 @@
 
 이 층이 지키는 계약:
   · 제안은 **저장이 아니다** — 승인 전에는 pages/ 에도 주입면에도 한 글자도 안 간다.
-  · 인젝션·credential 은 제안 시점과 승인 시점 **두 번** 막는다.
-  · 대기열은 에이전트(프로파일)별로 갈린다 — A 의 제안이 B 에게 보이지 않는다.
+  · 인젝션·credential은 제안 시점과 승인 시점 **두 번** 막는다.
+  · 대기열은 에이전트(프로파일)별로 갈린다 — A의 제안이 B에게 보이지 않는다.
 """
 
 from __future__ import annotations
@@ -196,9 +196,9 @@ class TestAutosave(ProposeCase):
         super().setUp()
         self._prev_auto = os.environ.get("ASGARD_MEMORY_AUTOSAVE")
         os.environ.pop("ASGARD_MEMORY_AUTOSAVE", None)
-        # env 를 되돌리는 것만으로는 밀폐가 아니다: 이 값의 폴백은 **이 기계에 사는 사람의**
-        # 글로벌 설정이라(`autosave_enabled`), `memory.autosave: true` 를 켠 개발자 기계에서는
-        # "기본값 off" 판정이 깨진다 — CI 는 초록, 손에서는 적색 (26-07-31 실측). 기본값을
+        # env를 되돌리는 것만으로는 밀폐가 아니다: 이 값의 폴백은 **이 기계에 사는 사람의**
+        # 글로벌 설정이라(`autosave_enabled`), `memory.autosave: true`를 켠 개발자 기계에서는
+        # "기본값 off" 판정이 깨진다 — CI는 초록, 손에서는 적색 (26-07-31 실측). 기본값을
         # 주장하려면 기본값이 서는 자리를 만들어야 한다: 빈 기계 홈을 하나 준다.
         self._prev_home = os.environ.get("HOME")
         os.environ["HOME"] = os.path.join(self.tmp.name, "machine")
@@ -251,7 +251,7 @@ class TestAutosave(ProposeCase):
         self.assertEqual(propose.pending(), [])
 
     def test_the_setting_cannot_be_turned_on_by_a_project_file(self):
-        """이 값은 "모델이 승인 없이 **내** 기억에 쓸 수 있는가"다 — clone 이 답하면 안 된다."""
+        """이 값은 "모델이 승인 없이 **내** 기억에 쓸 수 있는가"다 — clone이 답하면 안 된다."""
         os.environ.pop("ASGARD_MEMORY_AUTOSAVE", None)
         prev_home, prev_cwd = os.environ.get("HOME"), os.getcwd()
         machine, project = os.path.join(self.tmp.name, "home"), os.path.join(self.tmp.name, "repo")

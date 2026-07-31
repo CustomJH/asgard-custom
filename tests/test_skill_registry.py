@@ -440,7 +440,7 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("cdn.21st.dev", recipes)
 
     def test_cc_settings_preapprove_skill_loads(self):
-        """헤드리스 CC 에서 스킬 로드 경로·quest-log 루프가 자동 거부되지 않도록 사전 승인."""
+        """헤드리스 CC에서 스킬 로드 경로·quest-log 루프가 자동 거부되지 않도록 사전 승인."""
         from asgard.templates.claude import cc_settings
 
         allow = json.loads(cc_settings())["permissions"]["allow"]

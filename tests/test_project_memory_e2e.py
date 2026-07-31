@@ -1,14 +1,14 @@
 """프로젝트 메모리 E2E — 실 HTTP 서버를 세워 기록·회수·회고·진화를 전 구간 검증한다.
 
-목킹이 아니라 진짜 소켓이다. HindsightBackend 의 urllib 경로·URL 조립·바운디드 읽기·
+목킹이 아니라 진짜 소켓이다. HindsightBackend의 urllib 경로·URL 조립·바운디드 읽기·
 바인딩 왕복이 전부 실행된다. 서버는 두 모습으로 세운다.
 
-  LLM 있는 서버  — reflect 가 서버에서 합성된다 (평시)
-  LLM 없는 서버  — reflect 가 실패한다. 그때 이쪽 provider 가 Git 정본을 근거로 답해야 한다
+  LLM 있는 서버  — reflect가 서버에서 합성된다 (평시)
+  LLM 없는 서버  — reflect가 실패한다. 그때 이쪽 provider가 Git 정본을 근거로 답해야 한다
                    (서버 사정이 지식의 사정이 되지 않는다는 계약)
 
-진화 패스는 "출처 파일이 사라진 record" 를 코드가 재확인한 뒤에만 승인 대기로 올린다 —
-LLM 이 뭐라 하든 파일이 살아 있으면 기각된다.
+진화 패스는 "출처 파일이 사라진 record"를 코드가 재확인한 뒤에만 승인 대기로 올린다 —
+LLM이 뭐라 하든 파일이 살아 있으면 기각된다.
 """
 
 import json
@@ -38,7 +38,7 @@ def hindsight_backend(cfg: dict) -> HindsightBackend:
 
 
 class FakeServer(ThreadingHTTPServer):
-    """가짜 Hindsight 의 상태를 들고 있는 서버 — 핸들러는 요청마다 새로 만들어지므로
+    """가짜 Hindsight의 상태를 들고 있는 서버 — 핸들러는 요청마다 새로 만들어지므로
     뱅크·호출 기록은 서버가 소유해야 한다. 그 소유 관계를 타입으로도 적어 둔다."""
 
     documents: dict[str, dict]
@@ -127,7 +127,7 @@ class ProjectMemoryE2EBase(unittest.TestCase):
         self.server.documents = {}
         self.server.llm_enabled = True
         self.server.retain_calls = []
-        # 기본 스키마 — timestamp 를 받는 서버
+        # 기본 스키마 — timestamp를 받는 서버
         self.server.openapi = {
             "openapi": "3.1.0",
             "components": {
@@ -380,7 +380,7 @@ class EvolveTest(ProjectMemoryE2EBase):
             result = evolve_mod.apply_evolve(self.root, self.cfg, plan)
         self.assertEqual(len(result["staged"]), 1, result["failed"])
         self.assertTrue(result["staged"][0]["approval_id"])
-        # 승인 전에는 backend 도 정본도 건드리지 않는다
+        # 승인 전에는 backend도 정본도 건드리지 않는다
         self.assertEqual(self.server.documents, {})
         from asgard.project_memory.canonical import load_canonical_records
 
@@ -407,7 +407,7 @@ class EvolveTest(ProjectMemoryE2EBase):
 
 
 class InventoryCoverageTest(ProjectMemoryE2EBase):
-    """전수 등록 — 점수 미달 파일도 backend 에서 찾을 수 있어야 한다.
+    """전수 등록 — 점수 미달 파일도 backend에서 찾을 수 있어야 한다.
 
     26-07-28 실측 배경: 이 저장소에서 등록 대상이 4994 중 217개(4.3%) 뿐이었고 repl.py·
     session.py 같은 핵심 소스가 통째로 빠져 있었다. digest 계층은 본문 대신 머리글만 보내
@@ -480,7 +480,7 @@ class InventoryCoverageTest(ProjectMemoryE2EBase):
         ):
             sync_artifacts(self.root, self.cfg, candidates, force=True, expected_plan_id=None)
         by_path = {c.path: c for c in candidates}
-        # sync 가 만드는 것과 같은 item 이어야 한다 — 소유권 신원이 빠지면 게이트가 (정당하게) 막는다
+        # sync가 만드는 것과 같은 item 이어야 한다 — 소유권 신원이 빠지면 게이트가 (정당하게) 막는다
         item = artifact_item(
             by_path["src/widget_helper.py"],
             "e2e-bank",
@@ -498,9 +498,9 @@ class InventoryCoverageTest(ProjectMemoryE2EBase):
 
 
 class RetainCapabilityTest(ProjectMemoryE2EBase):
-    """서버 스키마가 정본 — 문서가 아니라 /openapi.json 이 무엇을 보낼지 정한다.
+    """서버 스키마가 정본 — 문서가 아니라 /openapi.json이 무엇을 보낼지 정한다.
 
-    26-07-28 조사: Hindsight 문서 두 곳이 어긋난다(SDK 쪽은 entities·observation_scopes 를
+    26-07-28 조사: Hindsight 문서 두 곳이 어긋난다(SDK 쪽은 entities·observation_scopes를
     retain 인자로 적고 HTTP 레퍼런스는 없다고 한다). 버전을 추측하는 대신 스키마를 읽는다."""
 
     def _payload(self, *, timeless: bool):
@@ -574,7 +574,7 @@ class RetainCapabilityTest(ProjectMemoryE2EBase):
         self.assertEqual(sent["entities"], [{"text": "Hindsight", "type": "SYSTEM"}])
 
     def test_unknown_field_is_not_sent_to_an_older_server(self):
-        # timestamp 를 모르는 서버 — 스키마에 없으면 보내지 않는다 (400 을 만들지 않는다)
+        # timestamp를 모르는 서버 — 스키마에 없으면 보내지 않는다 (400을 만들지 않는다)
         self.server.openapi["components"]["schemas"]["RetainItem"]["properties"].pop("timestamp")
         backend = hindsight_backend(self.cfg)
         try:
@@ -651,7 +651,7 @@ class EvolveRelateTest(EvolveTest):
 
 
 class RelationExpansionTest(ProjectMemoryE2EBase):
-    """2차 회수의 관계 확장 — backend 는 말이 닮은 것을 찾고, 관계는 말이 안 닮은 이웃을 데려온다."""
+    """2차 회수의 관계 확장 — backend는 말이 닮은 것을 찾고, 관계는 말이 안 닮은 이웃을 데려온다."""
 
     def setUp(self):
         super().setUp()

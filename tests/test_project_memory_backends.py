@@ -687,7 +687,7 @@ class TestHindsightBackend(unittest.TestCase):
             }
         )
         document = {"original_text": binding.to_json(), "id": "asgard:project-binding:v1", "bank_id": "demo"}
-        # retain 은 첫 호출에서 /openapi.json 을 읽어 서버가 받는 필드를 확인한다 (인스턴스당 1회).
+        # retain은 첫 호출에서 /openapi.json을 읽어 서버가 받는 필드를 확인한다 (인스턴스당 1회).
         # 그래서 호출 순서는 [openapi GET, memories POST, documents GET] 이다.
         with mock.patch(
             "urllib.request.urlopen",
@@ -937,7 +937,7 @@ class TestHindsightBackend(unittest.TestCase):
 
         backend = get_backend({"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "demo"})
         # 학습층 표면은 공용 프로토콜이 아니라 Hindsight 고유다 — 그래서 여기서 좁힌다.
-        # learning.py 와 doctor.py 가 getattr 로 있는지 물어 보고 쓰는 것도 같은 이유다.
+        # learning.py와 doctor.py가 getattr로 있는지 물어 보고 쓰는 것도 같은 이유다.
         assert isinstance(backend, HindsightBackend)
         spec = {"id": "asgard-architecture", "name": "Architecture", "source_query": "architecture"}
         with mock.patch("urllib.request.urlopen", side_effect=respond):
@@ -960,10 +960,10 @@ class TestHindsightBackend(unittest.TestCase):
 class TestConnectIdempotence(unittest.TestCase):
     """재연결은 자기 뱅크를 자기 것으로 알아봐야 한다.
 
-    소유권 신원(project_uid/binding_id)은 설정 파일이 아니라 사이드카에 산다. connect 가 설정
-    섹션만 읽던 시절에는 재연결이 매번 새 uid 를 발급해 서버 마커와 어긋났고, 자기 뱅크를
-    "foreign" 으로 거절했다 — timeout 조정도, 설정 변경으로 무효화된 신뢰의 재승인도 불가능했다.
-    무효화 메시지가 안내하는 수리 명령이 바로 이 connect 라 막다른 길이었다 (26-07-26 실측)."""
+    소유권 신원(project_uid/binding_id)은 설정 파일이 아니라 사이드카에 산다. connect가 설정
+    섹션만 읽던 시절에는 재연결이 매번 새 uid를 발급해 서버 마커와 어긋났고, 자기 뱅크를
+    "foreign"으로 거절했다 — timeout 조정도, 설정 변경으로 무효화된 신뢰의 재승인도 불가능했다.
+    무효화 메시지가 안내하는 수리 명령이 바로 이 connect라 막다른 길이었다 (26-07-26 실측)."""
 
     def setUp(self):
         FakeBackend.bindings = {}
@@ -999,7 +999,7 @@ class TestConnectIdempotence(unittest.TestCase):
         with open(os.path.join(self.root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as source:
             saved = json.load(source)
         self.assertEqual(saved["project_memory"]["timeout"], 300)
-        # 신뢰 지문은 timeout 을 포함한다 — 재연결이 곧 재승인이어야 게이트가 막다른 길이 아니다.
+        # 신뢰 지문은 timeout을 포함한다 — 재연결이 곧 재승인이어야 게이트가 막다른 길이 아니다.
         self.assertTrue(is_backend_trusted({**saved["project_memory"], **second}))
 
 

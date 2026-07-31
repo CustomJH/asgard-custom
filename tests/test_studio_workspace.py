@@ -67,16 +67,16 @@ class TestTeams(WorkspaceCase):
         self.assertEqual(sorted(t["key"] for t in T.list_tickets(self.root)), ["HEL-1", "NOR-1"])
         self.assertEqual(sorted(t["key"] for t in T.list_tickets(other)), ["HEL-1", "NOR-1"])
         self.assertEqual(sorted(t["key"] for t in T.list_tickets(None)), ["HEL-1", "NOR-1"])
-        # 좁히고 싶으면 고른다 — `.` 은 이 폴더에 결속된 팀
+        # 좁히고 싶으면 고른다 — `.`은 이 폴더에 결속된 팀
         self.assertEqual([t["key"] for t in T.list_tickets(self.root, team=".")], ["NOR-1"])
         self.assertEqual([t["key"] for t in T.list_tickets(other, team=".")], ["HEL-1"])
         self.assertEqual([t["key"] for t in T.list_tickets(self.root, team="HEL")], ["HEL-1"])
         self.assertEqual(sorted(t["key"] for t in TM.list_teams()), sorted(["HEL", "NOR"]))
 
     def test_a_clashing_prefix_is_refused_instead_of_sharing_numbers(self):
-        """키가 같으면 번호가 겹친다 — 겹치면 `NOR-1` 이 둘이 되고 대화가 깨진다.
+        """키가 같으면 번호가 겹친다 — 겹치면 `NOR-1`이 둘이 되고 대화가 깨진다.
 
-        팀은 이제 사람이 짓는다. 그래서 조용히 `NOR2` 로 비켜 주는 대신 **거절**하고 이름을
+        팀은 이제 사람이 짓는다. 그래서 조용히 `NOR2`로 비켜 주는 대신 **거절**하고 이름을
         묻는다 — 폴더가 자동으로 팀이 되던 시절엔 물을 사람이 없어서 비켜 줬던 것이다."""
         with self.assertRaisesRegex(TM.TeamError, "already in use"):
             TM.create_team("nordic-two")  # 같은 세 글자 NOR
@@ -203,7 +203,7 @@ class TestCycles(WorkspaceCase):
 
     def test_a_cycle_closes_from_the_folder_that_owns_it(self):
         """사이클은 팀의 것이라 하나를 골라야 닫힌다 — 읽기의 기본(전체)을 그대로 쓰면
-        결속된 폴더에서조차 늘 '팀이 없다'가 된다(CLI `asgard ticket cycle --close` 의 길)."""
+        결속된 폴더에서조차 늘 '팀이 없다'가 된다(CLI `asgard ticket cycle --close`의 길)."""
         T.create_ticket(self.root, "seed")
         cycle = TM.create_cycle(TM.get_team("NOR")["id"], name="1주차")
         closed = T.close_cycle(self.root, cycle["number"])
@@ -419,7 +419,7 @@ class TestWorkspaceApi(WorkspaceCase):
         for key in ("board", "summary", "teams", "projects", "initiatives", "triage", "cycles", "legacy"):
             self.assertIn(key, snap, key)
         self.assertEqual([t["key"] for t in snap["teams"]], ["NOR"])
-        # 어휘도 서버가 싣는다 — 화면이 같은 enum 을 한 벌 더 들면 언젠가 한 곳만 고친다
+        # 어휘도 서버가 싣는다 — 화면이 같은 enum을 한 벌 더 들면 언젠가 한 곳만 고친다
         self.assertTrue(snap["project_statuses"] and snap["healths"] and snap["status_types"])
 
     def test_a_project_can_be_built_and_read_over_http(self):
@@ -525,7 +525,7 @@ class TestAgentWorkflow(WorkspaceCase):
 class TestProjectSurface(WorkspaceCase):
     """프로젝트 화면이 드는 것 — 자료·라벨·멤버·진척 분해.
 
-    Linear 의 프로젝트 페이지가 오른쪽 판에 이 넷을 세우는 이유는 같다: "무엇으로 정해졌고,
+    Linear의 프로젝트 페이지가 오른쪽 판에 이 넷을 세우는 이유는 같다: "무엇으로 정해졌고,
     무엇에 기대고 있고, 누가 남은 몫을 들고 있나"가 프로젝트를 볼 때의 세 물음이다."""
 
     def setUp(self):
@@ -534,7 +534,7 @@ class TestProjectSurface(WorkspaceCase):
         self.project = P.create_project("결제 개편", teams=["NOR"], lead="윤")
 
     def test_resources_only_take_addresses_that_can_be_opened(self):
-        """`javascript:` 를 목록에 담아 두면 그 목록이 언젠가 클릭되는 실행 경로가 된다."""
+        """`javascript:`를 목록에 담아 두면 그 목록이 언젠가 클릭되는 실행 경로가 된다."""
         P.add_resource(self.project["id"], "설계 문서", "https://example.com/doc")
         self.assertEqual([r["title"] for r in P.list_resources(self.project["id"])], ["설계 문서"])
         for bad in ("javascript:alert(1)", "data:text/html,<script>", "vbscript:x"):

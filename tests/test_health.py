@@ -24,7 +24,7 @@ def _write(root: str, rel: str, body: str) -> None:
         fh.write(body)
 
 
-# 6행 창을 채우고 CLONE_MIN_CHARS(120) 를 넘기는 본문 — 클론 앵커의 재료
+# 6행 창을 채우고 CLONE_MIN_CHARS(120)를 넘기는 본문 — 클론 앵커의 재료
 _CLONE_BODY = "\n".join(
     f"    value_{i} = compute_something_with_a_long_name({i}, extra_keyword_argument=True)" for i in range(8)
 )
@@ -46,7 +46,7 @@ class TestScan(unittest.TestCase):
         self.assertEqual(snap.big_units, 1, "문턱 초과 함수는 1개뿐이어야 한다")
         self.assertEqual(snap.files, 3)
         self.assertEqual(snap.severe_files, 0)
-        # big.py 는 74행 — FILE_LINES_WARN(400) 아래라 큰 파일이 아니다
+        # big.py는 74행 — FILE_LINES_WARN(400) 아래라 큰 파일이 아니다
         self.assertEqual(snap.big_files, 0)
 
     def test_nesting_depth_counts_branches_only(self) -> None:
@@ -64,10 +64,10 @@ class TestScan(unittest.TestCase):
         self.assertEqual(health.scan(self.root).deep_units, 1)
 
     def test_an_elif_chain_is_one_level_not_six(self) -> None:
-        """ast 는 elif 를 orelse 안의 If 로 표현한다 — 그대로 세면 평평한 분기 사슬이 깊이가 된다.
+        """ast는 elif를 orelse 안의 If로 표현한다 — 그대로 세면 평평한 분기 사슬이 깊이가 된다.
 
         읽는 사람에게 elif 여섯은 한 단이고, 그걸 중첩으로 세면 계측이 부채를 과대 계상한다
-        (실측: 이 보정 하나로 저장소의 깊은 함수가 35 → 22 로 내려갔다).
+        (실측: 이 보정 하나로 저장소의 깊은 함수가 35 → 22로 내려갔다).
         """
         chain = "def pick(v):\n    if v == 0:\n        return 0\n"
         chain += "".join(f"    elif v == {i}:\n        return {i}\n" for i in range(1, 7))
@@ -115,7 +115,7 @@ class TestScan(unittest.TestCase):
         self.assertGreater(snap.test_code_lines, 0)
 
     def test_non_python_is_unmeasured_not_zero(self) -> None:
-        """다른 언어는 크기만 재고 미측정으로 센다 — 0 으로 채워 깨끗한 척하지 않는다."""
+        """다른 언어는 크기만 재고 미측정으로 센다 — 0으로 채워 깨끗한 척하지 않는다."""
         _write(self.root, "web/app.ts", "export function f() {\n  return 1;\n}\n")
         snap = health.scan(self.root)
         self.assertEqual(snap.files, 1)
@@ -125,7 +125,7 @@ class TestScan(unittest.TestCase):
         self.assertEqual(snap.langs, {"TypeScript": 1})
 
     def test_excludes_are_honored_and_counted(self) -> None:
-        """설정 exclude 는 빠진 수를 함께 보고한다 (조용한 절단 금지)."""
+        """설정 exclude는 빠진 수를 함께 보고한다 (조용한 절단 금지)."""
         _write(self.root, "pkg/__init__.py", "")
         _write(self.root, "pkg/a.py", "def a():\n    return 1\n")
         _write(self.root, "vendored_bundle/dep.py", "def d():\n    return 1\n")
@@ -148,7 +148,7 @@ class TestScan(unittest.TestCase):
         self.assertEqual(snap.excluded_files, 0, "기본 무시는 exclude 계상 대상이 아니다")
 
     def test_vendored_skill_bundles_are_ignored_without_configuration(self) -> None:
-        """`skill_plugins` 는 코드 기본값으로 빠져야 한다 — 설정에 의존하면 그 설정이 `.asgard/`
+        """`skill_plugins`는 코드 기본값으로 빠져야 한다 — 설정에 의존하면 그 설정이 `.asgard/`
         째로 gitignore 되는 리포에서 규칙이 따라가지 않아 남의 코드가 우리 추세로 섞인다."""
         _write(self.root, "pkg/__init__.py", "")
         _write(self.root, "src/app/assets/skill_plugins/upstream/big.py", "\n".join(f"y{i} = {i}" for i in range(900)))
@@ -170,7 +170,7 @@ class TestCoupling(unittest.TestCase):
         self.assertEqual(health.scan(self.root).cycles, 1)
 
     def test_lazy_import_inside_function_is_not_an_edge(self) -> None:
-        """함수 내부 lazy import 는 의도된 탈출구 — 상시 결합으로 세지 않는다."""
+        """함수 내부 lazy import는 의도된 탈출구 — 상시 결합으로 세지 않는다."""
         _write(self.root, "pkg/__init__.py", "")
         _write(self.root, "pkg/a.py", "def go():\n    from pkg import b\n    return b\n")
         _write(self.root, "pkg/b.py", "VALUE = 1\n")
@@ -178,19 +178,19 @@ class TestCoupling(unittest.TestCase):
         self.assertEqual(health.scan(self.root).max_fan_out, 0)
 
     def test_relative_sibling_import_is_not_a_package_init_edge(self) -> None:
-        """`from . import sibling` 은 패키지 __init__ 의존이 아니다 — fan-in 오계상 회귀 앵커."""
+        """`from . import sibling`은 패키지 __init__ 의존이 아니다 — fan-in 오계상 회귀 앵커."""
         _write(self.root, "pkg/__init__.py", "")
         _write(self.root, "pkg/a.py", "from . import b\n")
         _write(self.root, "pkg/b.py", "VALUE = 1\n")
         snap = health.scan(self.root)
         by_path = {f["path"]: f for f in snap.coupling_top}
-        # coupling_top 은 결합이 0 인 파일을 아예 싣지 않는다 — 부재 자체가 fan_in 0 의 증거다
+        # coupling_top은 결합이 0 인 파일을 아예 싣지 않는다 — 부재 자체가 fan_in 0의 증거다
         self.assertEqual(by_path.get("pkg/__init__.py", {"fan_in": 0})["fan_in"], 0)
         self.assertEqual(by_path["pkg/b.py"]["fan_in"], 1)
         self.assertEqual(by_path["pkg/a.py"]["fan_out"], 1, "형제 1개만 의존")
 
     def test_submodule_import_credits_both_package_and_module(self) -> None:
-        """`from a.b import c` 는 a.b 에 대한 의존이다 (module 이 명시된 경우)."""
+        """`from a.b import c`는 a.b에 대한 의존이다 (module이 명시된 경우)."""
         _write(self.root, "pkg/__init__.py", "")
         _write(self.root, "pkg/sub/__init__.py", "")
         _write(self.root, "pkg/sub/deep.py", "VALUE = 1\n")

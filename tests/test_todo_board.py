@@ -111,7 +111,7 @@ def test_unplanned_unit_is_appended_rather_than_dropped() -> None:
 
 @pytest.mark.parametrize("subtask", ["x" * 400, "퀘스트 로그 티켓 장부와 같은 목록을 표면에 세운다" * 8])
 def test_long_subtask_is_cut_to_the_stream_width(subtask: str) -> None:
-    """넘치면 터미널이 접어 버려 보드 정렬이 무너진다 — ANSI 를 입히기 전 원문에서 자른다.
+    """넘치면 터미널이 접어 버려 보드 정렬이 무너진다 — ANSI를 입히기 전 원문에서 자른다.
     한국어 한 글자는 두 칸이라 글자 수로 자르면 절반 폭에서 접힌다 — 기준은 표시 폭이다."""
     from asgard import ui
 

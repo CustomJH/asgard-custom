@@ -73,7 +73,7 @@ class TestNormalizeSig(unittest.TestCase):
         self.assertEqual(failures.normalize_sig("  Missing Null Check! "), "missing-null-check")
 
     def test_korean_preserved_distinct(self):
-        # 비ASCII 를 지우면 서로 다른 원인이 한 슬러그로 뭉개진다 — 보존 확인
+        # 비ASCII를 지우면 서로 다른 원인이 한 슬러그로 뭉개진다 — 보존 확인
         self.assertEqual(failures.normalize_sig("테스트 실패"), "테스트-실패")
         self.assertNotEqual(failures.normalize_sig("테스트 실패"), failures.normalize_sig("빌드 실패"))
 

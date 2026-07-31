@@ -2,11 +2,11 @@
 
 실측 계기(2026-07-25): 같은 브리프로 엔진1·2 랜딩을 만들고 나서 셋을 뒤늦게 발견했다.
 
-- 엔진2 페이지의 "저작된 모션 하나"가 한 번도 발화하지 않았다. `--pos` 를 인라인으로 한 번
-  박고 `<script>` 가 없으니 `transition: left 900ms` 는 죽은 선언이었다. 소스만 보면
+- 엔진2 페이지의 "저작된 모션 하나"가 한 번도 발화하지 않았다. `--pos`를 인라인으로 한 번
+  박고 `<script>`가 없으니 `transition: left 900ms`는 죽은 선언이었다. 소스만 보면
   애니메이션이 있는 페이지로 읽힌다.
-- 양쪽 다 링크가 전부 `href="#"` 였다. craft floor 의 "working controls" 위반.
-- loading·error·empty 상태가 0건이었다. craft floor 는 다섯 상태를 전부 요구한다.
+- 양쪽 다 링크가 전부 `href="#"` 였다. craft floor의 "working controls" 위반.
+- loading·error·empty 상태가 0건이었다. craft floor는 다섯 상태를 전부 요구한다.
 
 앞의 둘은 기계로 판정 가능하므로 detector 규칙으로 내렸다(모델의 기억에 맡기지 않는다).
 셋째는 결정론적으로 판정할 수 없어 두 엔진의 계약 문서에 "이름을 대라"는 절차로 넣었다.
@@ -88,7 +88,7 @@ def _registry() -> dict[str, dict]:
 
 
 def _detect(html: str) -> list[str]:
-    """detect CLI 를 실제로 돌려 규칙 id 목록을 돌려준다."""
+    """detect CLI를 실제로 돌려 규칙 id 목록을 돌려준다."""
     with tempfile.TemporaryDirectory() as tmp:
         page = Path(tmp) / "index.html"
         page.write_text(html, encoding="utf-8")
@@ -98,7 +98,7 @@ def _detect(html: str) -> list[str]:
             text=True,
             timeout=90,
         )
-        # detect 는 발견이 있으면 2, 없으면 0 으로 끝난다. 그 밖은 진짜 실패다.
+        # detect는 발견이 있으면 2, 없으면 0으로 끝난다. 그 밖은 진짜 실패다.
         if proc.returncode not in (0, 2):
             raise AssertionError(f"detect 실패 rc={proc.returncode}: {proc.stderr[:400]}")
         return [f.get("antipattern") for f in json.loads(proc.stdout or "[]")]
@@ -106,7 +106,7 @@ def _detect(html: str) -> list[str]:
 
 @unittest.skipIf(_NODE is None, "node 부재 — detector 검사 생략")
 class TestEngine2DetectorGates(unittest.TestCase):
-    """기계로 판정 가능한 둘은 detector 가 잡는다 — 모델이 기억하든 말든."""
+    """기계로 판정 가능한 둘은 detector가 잡는다 — 모델이 기억하든 말든."""
 
     def test_inert_transition_is_reported(self):
         self.assertIn("inert-transition", _detect(_INERT_MOTION))
@@ -119,13 +119,13 @@ class TestEngine2DetectorGates(unittest.TestCase):
         self.assertIn("placeholder-link", _detect(_DEAD_LINKS))
 
     def test_real_destinations_are_not_reported(self):
-        """`#log` 는 페이지 안의 진짜 목적지다. 빈 `#` 만 센다."""
+        """`#log`는 페이지 안의 진짜 목적지다. 빈 `#`만 센다."""
         self.assertNotIn("placeholder-link", _detect(_REAL_ANCHORS))
 
     def test_rules_reach_html_without_the_static_parser(self):
-        """htmlparser2 류가 없으면 detectHtml 은 detectText 로 폴백한다.
+        """htmlparser2 류가 없으면 detectHtml은 detectText로 폴백한다.
 
-        규칙을 파서 경로에만 배선했다가 정작 .html 에서 한 번도 안 도는 것을 실측으로
+        규칙을 파서 경로에만 배선했다가 정작 .html에서 한 번도 안 도는 것을 실측으로
         발견했다. 두 경로 모두에 배선돼 있어야 한다.
         """
         source = (_E2_SCRIPTS / "detector/engines/regex/detect-text.mjs").read_text(encoding="utf-8")

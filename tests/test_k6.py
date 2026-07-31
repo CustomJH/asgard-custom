@@ -1,13 +1,13 @@
 """asgard-k6 — 부하 시험 레인의 계약 봉인 (k6.py + assets/k6_kit).
 
 부하 하네스의 결함은 조용하다. 요약을 잘못 읽어도 숫자는 그럴듯하게 나오고, 임계값이
-깨졌는데 통과로 보고해도 CI 는 초록이다. 그래서 여기서 잠그는 것은 "돌아가는가"가 아니라
+깨졌는데 통과로 보고해도 CI는 초록이다. 그래서 여기서 잠그는 것은 "돌아가는가"가 아니라
 **어긋나면 드러나는가**다:
 
   요약 계약   JS 쪽 스키마 문자열·출력 경로와 파이썬 파서가 같은 값을 본다 (드리프트 봉인).
-  명령 조립   마운트·이미지·환경이 실제로 나가는 argv 에 있다 (순수 함수라 도커 없이 본다).
-  판정        임계값 결과와 종료 코드가 어긋나는 실행을 `exit_agrees` 가 사건으로 본다.
-  표적        pacer 의 오류 주입이 확률이 아니라 **주기**다 — 기대 실패 건수가 계산된다.
+  명령 조립   마운트·이미지·환경이 실제로 나가는 argv에 있다 (순수 함수라 도커 없이 본다).
+  판정        임계값 결과와 종료 코드가 어긋나는 실행을 `exit_agrees`가 사건으로 본다.
+  표적        pacer의 오류 주입이 확률이 아니라 **주기**다 — 기대 실패 건수가 계산된다.
 
 도커가 필요한 실검증(`selftest`)은 `ASGARD_K6_DOCKER=1` 일 때만 돈다 — 기본 스위트는
 네트워크·엔진 없이 밀폐돼야 하기 때문이다.
@@ -61,7 +61,7 @@ class TestKitIntegrity(unittest.TestCase):
             self.assertTrue((kit / relative).is_file(), f"키트에 {relative} 가 없다")
 
     def test_docker_artifacts_do_not_live_in_the_kit(self):
-        """이미지·compose 의 집은 `docker/asgard-k6/` 다 — 키트는 실려 가는 것만 담는다.
+        """이미지·compose의 집은 `docker/asgard-k6/` 다 — 키트는 실려 가는 것만 담는다.
 
         두 벌이 생기면 어느 쪽으로 잰 값인지 물을 수 없게 된다."""
         kit = k6.kit_dir()
@@ -69,9 +69,9 @@ class TestKitIntegrity(unittest.TestCase):
             self.assertFalse((kit / stray).exists(), f"{stray} 는 docker/{k6.PROJECT}/ 에 있어야 한다")
 
     def test_mount_points_exist_because_the_kit_is_read_only(self):
-        """`/asgard` 가 읽기 전용으로 마운트되므로 그 안의 마운트 자리는 미리 있어야 한다.
+        """`/asgard`가 읽기 전용으로 마운트되므로 그 안의 마운트 자리는 미리 있어야 한다.
 
-        디렉터리가 없으면 도커가 마운트 지점을 만들려다 read-only 로 실패한다 — 실행이
+        디렉터리가 없으면 도커가 마운트 지점을 만들려다 read-only로 실패한다 — 실행이
         시작조차 못 하고, 증상은 시나리오 오류처럼 보인다."""
         kit = k6.kit_dir()
         self.assertTrue((kit / "out").is_dir())
@@ -93,7 +93,7 @@ class TestKitIntegrity(unittest.TestCase):
 
 
 class TestSchemaDrift(unittest.TestCase):
-    """JS 와 파이썬이 같은 계약을 본다 — 한쪽만 바뀌면 여기서 걸린다."""
+    """JS와 파이썬이 같은 계약을 본다 — 한쪽만 바뀌면 여기서 걸린다."""
 
     def _lib(self) -> str:
         return (k6.kit_dir() / "lib" / "asgard.js").read_text(encoding="utf-8")
@@ -116,14 +116,14 @@ class TestSchemaDrift(unittest.TestCase):
 class TestLaneIsTheProject(unittest.TestCase):
     """도커에 넘어가는 호스트 경로는 **잴 프로젝트의 `.asgard/k6/`** 아래여야 한다.
 
-    여기가 흔들리면 증상이 조용하다: 체크아웃에서는 잘 돌고 설치본에서만 죽거나(`src/` 가
+    여기가 흔들리면 증상이 조용하다: 체크아웃에서는 잘 돌고 설치본에서만 죽거나(`src/`가
     없다), 여러 프로젝트가 한 설치본의 키트를 함께 마운트해 "이 실행이 어떤 시나리오를
     돌았나"가 프로젝트 밖에서 정해진다."""
 
     docker = k6.Runner("docker", "/usr/bin/docker", "grafana/k6:test")
 
     def test_the_project_is_found_by_walking_up_not_by_standing_still(self):
-        """`src/` 안에서 부른 실행이 거기에 `.asgard/` 를 새로 파면 기록이 두 곳으로 갈린다."""
+        """`src/` 안에서 부른 실행이 거기에 `.asgard/`를 새로 파면 기록이 두 곳으로 갈린다."""
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp, "proj").resolve()
             (root / ".asgard").mkdir(parents=True)
@@ -141,8 +141,8 @@ class TestLaneIsTheProject(unittest.TestCase):
             self.assertEqual(k6.project_root(nested), root)
 
     def test_the_home_asgard_dir_does_not_swallow_a_repo_beneath_it(self):
-        """아스가르드는 자격 증명을 `~/.asgard/` 에 둔다 — 표식 종류로 우선순위를 매기면
-        홈 아래의 저장소가 자기 `.git` 을 지나쳐 홈을 프로젝트로 잡는다."""
+        """아스가르드는 자격 증명을 `~/.asgard/`에 둔다 — 표식 종류로 우선순위를 매기면
+        홈 아래의 저장소가 자기 `.git`을 지나쳐 홈을 프로젝트로 잡는다."""
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp, "home").resolve()
             (home / ".asgard").mkdir(parents=True)  # 사용자 홈의 아스가르드 (프로젝트 아님)
@@ -214,7 +214,7 @@ class TestLaneIsTheProject(unittest.TestCase):
                         )
 
     def test_the_run_command_hands_the_runner_the_lane_kit(self):
-        """`build_argv` 는 안 넘기면 배송 경로로 내려간다 — 표면이 실제로 넘기는지는 여기서 본다.
+        """`build_argv`는 안 넘기면 배송 경로로 내려간다 — 표면이 실제로 넘기는지는 여기서 본다.
 
         `kit=` 한 줄이 조용히 빠지면 되돌아간 것이고, 증상은 실검증 전까지 안 보인다."""
         from unittest import mock
@@ -281,7 +281,7 @@ class TestLaneIsTheProject(unittest.TestCase):
 
 
 class TestDockerHome(unittest.TestCase):
-    """`docker/asgard-k6/` — 이미지와 스택의 집 (docker/asgard-project-memory 와 나란히)."""
+    """`docker/asgard-k6/` — 이미지와 스택의 집 (docker/asgard-project-memory와 나란히)."""
 
     def setUp(self):
         home = k6.docker_dir()
@@ -298,7 +298,7 @@ class TestDockerHome(unittest.TestCase):
         self.assertIn(f"COPY src/asgard/assets/k6_kit {k6.CONTAINER_MOUNT}", dockerfile)
 
     def test_the_image_is_a_k6_entrypoint(self):
-        """러너는 이미지 뒤에 `run <script>` 만 붙인다 — 진입점이 k6 여야 그 조립이 맞는다."""
+        """러너는 이미지 뒤에 `run <script>`만 붙인다 — 진입점이 k6 여야 그 조립이 맞는다."""
         dockerfile = (self.home / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn('ENTRYPOINT ["k6"]', dockerfile)
 
@@ -316,7 +316,7 @@ class TestDockerHome(unittest.TestCase):
         previous = os.environ.get("ASGARD_K6_IMAGE")
         os.environ["ASGARD_K6_IMAGE"] = "example/k6:pinned"
         try:
-            # engine_binary 를 줘도 환경 고정이 이긴다 — 엔진을 부르지 않는다는 뜻이기도 하다.
+            # engine_binary를 줘도 환경 고정이 이긴다 — 엔진을 부르지 않는다는 뜻이기도 하다.
             self.assertEqual(k6.resolve_image("/nonexistent/docker"), "example/k6:pinned")
         finally:
             if previous is None:
@@ -385,7 +385,7 @@ class TestCommandAssembly(unittest.TestCase):
         self.scenario = k6.Scenario("selftest", k6.kit_dir() / "scenarios" / "selftest.js", "builtin")
 
     def test_container_mounts_the_given_kit_read_only(self):
-        """`/asgard` 의 원본은 부르는 쪽이 정한다 — 설치 위치가 아니라 프로젝트 안의 사본이다."""
+        """`/asgard`의 원본은 부르는 쪽이 정한다 — 설치 위치가 아니라 프로젝트 안의 사본이다."""
         argv = k6.build_argv(self.docker, self.scenario, "/tmp/run", kit="/proj/.asgard/k6/kit")
         self.assertIn(f"/proj/.asgard/k6/kit:{k6.CONTAINER_MOUNT}:ro", argv)
         self.assertIn(f"/tmp/run:{k6.CONTAINER_MOUNT}/out", argv)
@@ -405,7 +405,7 @@ class TestCommandAssembly(unittest.TestCase):
         self.assertIn(f"ASGARD_K6_OUT={os.path.join('/tmp/run', k6.SUMMARY_NAME)}", native)
 
     def test_project_scenario_mounts_beside_the_library(self):
-        """프로젝트 시나리오는 `/asgard/project` 로 들어와야 `../lib/asgard.js` 가 맞는다."""
+        """프로젝트 시나리오는 `/asgard/project`로 들어와야 `../lib/asgard.js`가 맞는다."""
         with tempfile.TemporaryDirectory() as root:
             lane = Path(root, ".asgard", "k6", "scenarios")
             lane.mkdir(parents=True)
@@ -447,7 +447,7 @@ class TestSummaryParsing(unittest.TestCase):
         self.assertTrue(report.ok)
 
     def test_a_foreign_shape_is_refused_not_zero_filled(self):
-        """모르는 모양을 0 으로 채우면 '요청 0건, 지연 0ms' 라는 완벽한 보고서가 나온다."""
+        """모르는 모양을 0으로 채우면 '요청 0건, 지연 0ms' 라는 완벽한 보고서가 나온다."""
         for payload in ({}, {"schema": "something-else"}, {"schema": None}):
             with self.subTest(payload=payload), self.assertRaises(k6.SummaryError):
                 k6.parse_summary(payload)
@@ -466,7 +466,7 @@ class TestSummaryParsing(unittest.TestCase):
         self.assertFalse(crashed.ok, "임계값을 지켰어도 비정상 종료는 통과가 아니다")
 
     def test_disagreement_between_exit_code_and_verdict_is_visible(self):
-        """임계값이 깨졌는데 0 으로 끝나면 CI 가 빨간 것을 초록으로 통과시킨다."""
+        """임계값이 깨졌는데 0으로 끝나면 CI가 빨간 것을 초록으로 통과시킨다."""
         lying = k6.parse_summary(
             _summary(thresholds=[{"metric": "http_req_duration", "expression": "p(95)<5", "ok": False}]),
             exit_code=0,
@@ -573,7 +573,7 @@ class TestRunnerResolution(unittest.TestCase):
 
 
 class TestEnvPromotion(unittest.TestCase):
-    """`--env BANK=x` 는 시나리오가 읽는 이름(ASGARD_K6_BANK)으로 올라가야 쓸모가 있다."""
+    """`--env BANK=x`는 시나리오가 읽는 이름(ASGARD_K6_BANK)으로 올라가야 쓸모가 있다."""
 
     def _parse(self, pairs):
         from asgard.commands.k6 import _parse_env
@@ -600,7 +600,7 @@ class TestHarnessIntegrityLive(unittest.TestCase):
     """레인이 자기 자신에게 거는 검사 — 엔진이 있을 때만 돈다."""
 
     def test_selftest_is_green(self):
-        """실행도 CLI 와 같은 자리에서 — 마운트되는 것은 전부 프로젝트 레인 아래다."""
+        """실행도 CLI와 같은 자리에서 — 마운트되는 것은 전부 프로젝트 레인 아래다."""
         root = k6.project_root()
         kit = k6.prepare_lane(root)
         out = k6.lane_dir(root) / "selftest-pytest"

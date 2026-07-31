@@ -49,7 +49,7 @@ class ExtractTest(unittest.TestCase):
         self.assertEqual(got["f"].returns, "int")
 
     def test_unparsable_is_none_not_empty(self):
-        """파싱 실패와 "공개 심볼 0개"는 다른 사실이다 — 뭉개면 미측정이 PASS 로 읽힌다."""
+        """파싱 실패와 "공개 심볼 0개"는 다른 사실이다 — 뭉개면 미측정이 PASS로 읽힌다."""
         self.assertIsNone(surface.extract("def f(:\n"))
         self.assertEqual(surface.extract("x = 1\n"), {})
 
@@ -104,7 +104,7 @@ class CompareTest(unittest.TestCase):
         self.assertTrue(got["kwonly_removed"].breaking)
 
     def test_return_change_is_reported_as_non_breaking(self):
-        """호출은 그대로 성공하지만 값의 소비처가 깨질 수 있다 — 보고하되 breaking 은 아니다."""
+        """호출은 그대로 성공하지만 값의 소비처가 깨질 수 있다 — 보고하되 breaking은 아니다."""
         got = self._diff("def f() -> int:\n    pass\n", "def f() -> str:\n    pass\n")
         self.assertIn("return_changed", got)
         self.assertFalse(got["return_changed"].breaking)
@@ -167,7 +167,7 @@ class GitDiffTest(unittest.TestCase):
         self._write("lib.py", "def f():\n    pass\n")
         self._commit()
         self._write("new.py", "def brand_new():\n    pass\n")
-        self._git("add", "-A")  # untracked 는 git diff 에 안 나오므로 스테이징한다
+        self._git("add", "-A")  # untracked는 git diff에 안 나오므로 스테이징한다
         result = surface.diff(self.root, "HEAD")
         self.assertEqual([c.kind for c in result.changes], ["added"])
         self.assertFalse(result.breaking)

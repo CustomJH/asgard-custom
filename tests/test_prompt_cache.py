@@ -54,7 +54,7 @@ class TestCachedRequest(unittest.TestCase):
         self.assertEqual(out[0]["content"][0], {"type": "text", "text": "질문", "cache_control": {"type": "ephemeral"}})
 
     def test_assistant_and_sdk_objects_untouched(self):
-        # assistant 는 SDK 객체(ThinkingBlock 포함 — cache_control 거부 대상) — 마킹 금지, 참조 그대로
+        # assistant는 SDK 객체(ThinkingBlock 포함 — cache_control 거부 대상) — 마킹 금지, 참조 그대로
         sdk_obj = SimpleNamespace(type="text", text="a")
         msgs = [_msg("user", "q"), _msg("assistant", [sdk_obj])]
         _, out = cached_request("s", msgs)

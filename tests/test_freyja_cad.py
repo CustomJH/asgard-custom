@@ -3,16 +3,16 @@
 이 파일이 지키는 것은 넷이다.
 
 1. **런타임이 이 엔진 것으로 남는다.** 이전 판은 상류 스킬 라이브러리를 통째로 벤더링해
-   그 CLI 를 격리 실행했다. 지금은 `engine/scripts/cadlib/` 이 정본이고, 상류 흔적(벤더 트리·
+   그 CLI를 격리 실행했다. 지금은 `engine/scripts/cadlib/`이 정본이고, 상류 흔적(벤더 트리·
    라이선스 파일·상류 경로 문자열)이 되살아나면 여기서 죽는다.
-2. **커널 없이 되는 것이 실제로 커널 없이 된다.** 이 엔진의 핵심 설계는 "판독·검증은 공짜,
+2. **커널 없이 되는 것이 실제로 커널 없이 된다.**이 엔진의 핵심 설계는 "판독·검증은 공짜,
    생성만 비싸다"이고, 그 약속이 깨지면 검증을 안 하게 된다. 그래서 무커널 경로를 실행으로 잰다.
-3. **못 잰 것을 통과로 세지 않는다.** `Report` 의 세 등급(pass/warn=미확인/fail)이 자료구조로
+3. **못 잰 것을 통과로 세지 않는다.** `Report`의 세 등급(pass/warn=미확인/fail)이 자료구조로
    지켜지는지 본다.
 4. **배달 게이트가 실제로 막는다.** 통과만 시키는 게이트는 게이트가 아니라 장식이다.
 
-여기서 커널(build123d/OCP)을 요구하지 않는다 — 500MB 휠을 받는 테스트는 CI 에서 살지 못한다.
-커널이 실제로 도는지는 실주행으로 확인했고, 여기서는 **형상(shape)** 과 무커널 능력을 지킨다.
+여기서 커널(build123d/OCP)을 요구하지 않는다 — 500MB 휠을 받는 테스트는 CI에서 살지 못한다.
+커널이 실제로 도는지는 실주행으로 확인했고, 여기서는 **형상(shape)**과 무커널 능력을 지킨다.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ _CADLIB = _SCRIPTS / "cadlib"
 # 임포트들은 정적으로 해석되지 않고, 한 줄씩 unresolved-import 억제 주석을 단다.
 sys.path.insert(0, str(_SCRIPTS))
 
-# 실제 STEP 물리 파일의 첫 줄. 게이트가 가짜 STEP 을 가르는 기준이라 테스트도 같은 토큰을 쓴다.
+# 실제 STEP 물리 파일의 첫 줄. 게이트가 가짜 STEP을 가르는 기준이라 테스트도 같은 토큰을 쓴다.
 _STEP_HEAD = "ISO-10303-21;\nHEADER;\nENDSEC;\nDATA;\nENDSEC;\nEND-ISO-10303-21;\n"
 
 
@@ -83,7 +83,7 @@ class LaneRouting(unittest.TestCase):
             "cad-repair",
         ):
             self.assertTrue((_REFERENCE / f"{name}.md").is_file(), f"{name}.md 가 없다")
-        # SKILL.md 는 레인 문서를 직접 가리키고, 세부 문서는 lane-cad 가 이어받는다.
+        # SKILL.md는 레인 문서를 직접 가리키고, 세부 문서는 lane-cad가 이어받는다.
         for name in ("lane-fabricate", "lane-robot", "lane-implicit", "lane-viewer", "cad-refs", "cad-snapshot"):
             self.assertIn(f"{name}.md", body, f"SKILL.md 가 {name}.md 로 라우팅하지 않는다")
         lane_cad = (_REFERENCE / "lane-cad.md").read_text(encoding="utf-8")
@@ -126,7 +126,7 @@ class WindowsConsoleEncoding(unittest.TestCase):
     """한국어 Windows(cp949) 콘솔에서 죽지 않는가.
 
     이 저장소가 두 번 고친 결함이다(v0.6.31·32). 스킬 플러그인 스크립트는 그 청소에서
-    빠져 있었고, `cad.py --help` 는 엠대시 한 글자 때문에 UnicodeEncodeError 로 죽었다.
+    빠져 있었고, `cad.py --help`는 엠대시 한 글자 때문에 UnicodeEncodeError로 죽었다.
     개발기(POSIX·utf-8)에서는 영원히 초록이라 실행으로만 잡힌다 — 그래서 자식 프로세스에
     인코딩을 실제로 주입해서 돌린다.
     """
@@ -156,7 +156,7 @@ class WindowsConsoleEncoding(unittest.TestCase):
     def test_engine_python_scripts_force_utf8_output(self):
         """실행 없이도 지킨다 — 새 스크립트가 가드 없이 들어오는 것을 막는 형상 검사.
 
-        직접 `reconfigure` 하거나 공유 헬퍼 `utf8_console()` 을 부르거나 둘 중 하나면 된다.
+        직접 `reconfigure` 하거나 공유 헬퍼 `utf8_console()`을 부르거나 둘 중 하나면 된다.
         헬퍼 쪽 경로는 바로 위 테스트가 속이 빈 것이 아님을 따로 지킨다.
         """
         for script in sorted(_SCRIPTS.glob("*.py")):
@@ -173,7 +173,7 @@ class WindowsConsoleEncoding(unittest.TestCase):
 class PartCollection(unittest.TestCase):
     """소스 규약(`gen_step()` → PARTS → 단일 전역)이 그대로 지켜지는가.
 
-    커널 없이 판정한다 — `is_shape` 가 `isinstance(value, bd.Shape)` 하나만 보므로
+    커널 없이 판정한다 — `is_shape`가 `isinstance(value, bd.Shape)` 하나만 보므로
     가짜 build123d 모듈로 규약을 그대로 재현할 수 있다.
     """
 
@@ -204,7 +204,7 @@ class PartCollection(unittest.TestCase):
         self.assertEqual({"base": base, "lid": lid}, collected)
 
     def test_an_unlabelled_compound_stays_whole(self):
-        """이름 없는 조각을 part_0/part_1 로 불러봐야 간섭 보고를 읽을 수 없다."""
+        """이름 없는 조각을 part_0/part_1로 불러봐야 간섭 보고를 읽을 수 없다."""
         module, bd, Shape = self._harness()
         whole = Shape("thing", [Shape(""), Shape("")])
         self.assertEqual({"thing": whole}, module.collect_parts(bd, {"gen_step": lambda: whole}))
@@ -247,7 +247,7 @@ class NoUpstreamResidue(unittest.TestCase):
             if not path.is_file() or path.suffix not in (".md", ".py", ".mjs", ".json"):
                 continue
             body = path.read_text(encoding="utf-8", errors="replace")
-            # `벤더링` 이라는 낱말 자체는 막지 않는다 — cadlib 의 설계 이유가 그 역사이고,
+            # `벤더링` 이라는 낱말 자체는 막지 않는다 — cadlib의 설계 이유가 그 역사이고,
             # dfm 문서의 "벤더 데이터시트"는 하드웨어 제조사를 뜻한다. 막는 것은 **경로와 파일명**,
             # 즉 "그 트리가 아직 있다"고 다음 사람에게 말하는 문자열뿐이다.
             for token in ("text-to-cad", "engine/vendor", "vendor/text-to-cad", "cad_build.py", "UPSTREAM.md"):
@@ -257,7 +257,7 @@ class NoUpstreamResidue(unittest.TestCase):
 
 
 class KernelFreeStepReader(unittest.TestCase):
-    """커널 없이 STEP 에서 사실을 읽는가 — 이 엔진이 상류보다 늘린 몫."""
+    """커널 없이 STEP에서 사실을 읽는가 — 이 엔진이 상류보다 늘린 몫."""
 
     @staticmethod
     def _step(**overrides) -> str:
@@ -305,7 +305,7 @@ class KernelFreeStepReader(unittest.TestCase):
         self.assertEqual(["bracket"], facts.products)
 
     def test_the_coordinate_hull_never_reaches_the_reported_size(self):
-        """실측 사고: 구멍 하나 뚫린 40×20×9.3 조립체의 z 상한이 45.12 로 나왔다.
+        """실측 사고: 구멍 하나 뚫린 40×20×9.3 조립체의 z 상한이 45.12로 나왔다.
 
         범인은 원통면 축 배치(AXIS2_PLACEMENT_3D)가 쓰는 좌표였다 — 자유곡면 유무와 무관하고,
         "곡면이 없으면 헐이 정확하다"는 전제 자체가 틀렸다. 헐은 이제 상한으로만 쓰고, 보고 치수는
@@ -319,7 +319,7 @@ class KernelFreeStepReader(unittest.TestCase):
         self.assertEqual(45.12, facts.hull_max[2], "헐이 배치 좌표를 포함해야 상한 노릇을 한다")
         size, note = facts.best_size_mm()
         self.assertEqual(6.0, size[2], "보고 치수가 배치 좌표에 오염됐다")
-        self.assertIn("실제 bbox 와 같다", note, "곡면이 없으면 버텍스 경계가 곧 실제 bbox 다")
+        self.assertIn("실제 bbox와 같다", note, "곡면이 없으면 버텍스 경계가 곧 실제 bbox다")
 
     def test_a_curved_solid_reports_its_bound_as_a_lower_one(self):
         """버텍스는 형상 위에 있으므로 곡면 실루엣은 그 밖으로 나간다 — 하한이라고 적는다."""
@@ -328,7 +328,7 @@ class KernelFreeStepReader(unittest.TestCase):
         self.assertIn("하한", note)
 
     def test_unknown_units_are_not_silently_assumed_to_be_millimetres(self):
-        """모르는 배율을 1 로 놓는 것이 스케일 사고의 출발이다."""
+        """모르는 배율을 1로 놓는 것이 스케일 사고의 출발이다."""
         facts = self._read(self._step().replace("#3=(LENGTH_UNIT()NAMED_UNIT(*)SI_UNIT(.MILLI.,.METRE.));", ""))
         self.assertIsNone(facts.length_scale_mm)
         self.assertIsNone(facts.hull_size_mm())
@@ -421,7 +421,7 @@ class TopologyArtifact(unittest.TestCase):
 
 
 class RobotCrossValidation(unittest.TestCase):
-    """SRDF 는 URDF 위의 계층이다. 둘을 같이 보지 않으면 '그럴듯한데 틀린' 파일이 통과한다."""
+    """SRDF는 URDF 위의 계층이다. 둘을 같이 보지 않으면 '그럴듯한데 틀린' 파일이 통과한다."""
 
     _URDF = """<robot name="arm">
       <link name="base"><inertial><mass value="2"/><inertia ixx="0.01" iyy="0.01" izz="0.01"/></inertial></link>
@@ -450,8 +450,8 @@ class RobotCrossValidation(unittest.TestCase):
         self.assertEqual("pass", report.verdict, report.render())
 
     def test_element_with_no_children_is_not_treated_as_absent(self):
-        """ElementTree 의 Element 는 자식이 없으면 falsy 다. `find() or 기본값` 은 실재하는
-        <parent link="..."/> 를 삼키고, 그러면 멀쩡한 URDF 가 통째로 FAIL 이 된다. 실제로 겪었다."""
+        """ElementTree의 Element는 자식이 없으면 falsy 다. `find() or 기본값`은 실재하는
+        <parent link="..."/> 를 삼키고, 그러면 멀쩡한 URDF가 통째로 FAIL이 된다. 실제로 겪었다."""
         report = self._check("urdf", self._URDF)
         self.assertNotIn("urdf-joint-link", self._ids(report))
         self.assertNotIn("urdf-forest", self._ids(report))
@@ -535,7 +535,7 @@ class GcodeStaticValidation(unittest.TestCase):
         self.assertIn("gcode-no-heat", self._ids(self._validate(cold + "\n"), "fail"))
 
     def test_a_foreign_dialect_is_reported_as_unverified(self):
-        """모르는 명령을 통과로 세면 다른 기종용 G-code 가 조용히 나간다."""
+        """모르는 명령을 통과로 세면 다른 기종용 G-code가 조용히 나간다."""
         self.assertIn("gcode-unknown", self._ids(self._validate(self._GOOD + "Q42 fancy\n"), "warn"))
 
     def test_relative_moves_are_accumulated_not_read_as_absolute(self):
@@ -552,7 +552,7 @@ class GcodeStaticValidation(unittest.TestCase):
 
 
 class DxfAudit(unittest.TestCase):
-    """DXF 는 평문 그룹코드다. 검사에 라이브러리가 필요 없고, 필요 없어야 실제로 검사한다."""
+    """DXF는 평문 그룹코드다. 검사에 라이브러리가 필요 없고, 필요 없어야 실제로 검사한다."""
 
     @staticmethod
     def _dxf(*, units="4", closed=True, layers=("cut", "bend")) -> str:
@@ -715,7 +715,7 @@ class DeliveryGate(unittest.TestCase):
         """오탐이 하나라도 있으면 게이트는 즉시 무시당한다 — 통과 경로를 먼저 지킨다."""
         with tempfile.TemporaryDirectory() as tmp:
             root = self._delivery(Path(tmp))
-            # 위상 산출물이 있어야 STEP 이 검증 가능한 상태다.
+            # 위상 산출물이 있어야 STEP이 검증 가능한 상태다.
             (root / ".part.step.glb").write_bytes(b"not-a-glb")
             result = _gate(root)
             self.assertEqual(0, result.returncode, result.stdout)
@@ -747,7 +747,7 @@ class DeliveryGate(unittest.TestCase):
     def test_mesh_verified_delivery_warns_instead_of_blocking(self):
         """막아야 하는 것은 '다르게 검증된' 배달이 아니라 '검증되지 않은' 배달이다.
 
-        메시 경로(mesh_audit + 렌더)로 검증한 STEP 은 셀렉터 측정을 못 할 뿐 정당한
+        메시 경로(mesh_audit + 렌더)로 검증한 STEP은 셀렉터 측정을 못 할 뿐 정당한
         배달이다. 이 엔진이 들고 다니는 기준 표본 둘이 실제로 그 경로로 만들어졌고,
         여기서 막으면 게이트는 첫날부터 무시당한다.
         """

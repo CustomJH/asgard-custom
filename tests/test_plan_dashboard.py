@@ -160,7 +160,7 @@ class TestGrounding(unittest.TestCase):
             P.require_ready(plan, "flow")
 
     def test_the_cursor_cannot_move_to_a_document_with_no_input(self):
-        """`phase` 는 커서지 진척이 아니다 — 그래도 재료 없는 자리에는 못 선다."""
+        """`phase`는 커서지 진척이 아니다 — 그래도 재료 없는 자리에는 못 선다."""
         plan = _seeded()
         with self.assertRaises(P.PlanNotReady):
             P.set_phase(plan, "spec")
@@ -259,7 +259,7 @@ class TestEdits(unittest.TestCase):
 
 
 class TestPlannerMaterialization(unittest.TestCase):
-    """모델의 임시 key 를 저장소 id 로 옮기는 자리 — 여기서 새면 저장소가 통째로 거부한다."""
+    """모델의 임시 key를 저장소 id로 옮기는 자리 — 여기서 새면 저장소가 통째로 거부한다."""
 
     def test_items_are_linked_by_key_even_when_the_parent_comes_later(self):
         rows = [

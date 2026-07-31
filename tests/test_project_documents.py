@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """문서 로컬 레인 계약 — 그래프 수용 상한·정본 저장·파생 인덱스·회수·주입.
 
-이 레인이 존재하는 이유는 tests/load/README.md 의 실측이다: 326KB 문서 두 개가 만든
+이 레인이 존재하는 이유는 tests/load/README.md의 실측이다: 326KB 문서 두 개가 만든
 44 units · 1,340 links 뱅크는 VU 1 에서도 45s 타임아웃과 8GiB 고착으로 무응답이었다.
 여기서 검증하는 것은 "큰 문서를 넣어도 뱅크가 죽지 않고, 그래도 찾을 수 있다"는 계약이다.
 
@@ -63,7 +63,7 @@ class TestCapacityGate(Base):
     def test_prediction_never_undercounts_the_measured_unit_counts(self):
         """예측이 실제보다 작으면 게이트가 그만큼 헐거워진다 — 실측 왕복에서 실제로 뚫렸다.
 
-        (chars, 서버가 만든 실제 units) 은 26-07-28 실서버 계측값이다."""
+        (chars, 서버가 만든 실제 units)은 26-07-28 실서버 계측값이다."""
         for chars, actual in [(2_000, 3), (8_000, 11), (12_000, 16), (16_000, 25), (48_000, 77)]:
             self.assertGreaterEqual(
                 ingest.predict_units(chars), actual, f"{chars}자에서 예측이 실제 {actual} units 를 밑돈다"
@@ -78,7 +78,7 @@ class TestCapacityGate(Base):
         self.assertEqual(ingest.assign_lane(326_000), ingest.LANE_LOCAL)
 
     def test_the_size_that_broke_the_budget_in_a_real_round_trip_is_local(self):
-        """12,000자는 asgard 클라이언트 왕복에서 16 units·6.0s 로 5초 예산을 넘겼다."""
+        """12,000자는 asgard 클라이언트 왕복에서 16 units·6.0s로 5초 예산을 넘겼다."""
         self.assertEqual(ingest.assign_lane(12_000), ingest.LANE_LOCAL)
 
     def test_the_first_size_measured_over_the_inject_budget_is_local(self):
@@ -236,14 +236,14 @@ class TestStaging(Base):
         lanes = {row["name"]: row["lane"] for row in staged}
         self.assertEqual(lanes["계량기-요구사항.md"], ingest.LANE_LOCAL)
         self.assertEqual(lanes["배포-결정.md"], ingest.LANE_GRAPH)
-        self.assertEqual(stage.call_count, 1)  # 큰 문서는 backend 를 보지도 않는다
+        self.assertEqual(stage.call_count, 1)  # 큰 문서는 backend를 보지도 않는다
         local_row = next(row for row in staged if row["lane"] == ingest.LANE_LOCAL)
         self.assertTrue(os.path.isfile(local_row["canonical_path"]))
         self.assertEqual(local_row["approval_id"], "")
         self.assertGreater(local_row["chunks"], 1)
 
     def test_an_all_local_batch_does_not_need_a_backend_target(self):
-        """로컬 레인만 있으면 backend 를 아예 안 부른다 — 서버가 죽어 있어도 문서는 들어간다."""
+        """로컬 레인만 있으면 backend를 아예 안 부른다 — 서버가 죽어 있어도 문서는 들어간다."""
         big = self._write("계량기-요구사항.md", _spec_text())
         ready, _failed = ingest.plan([big])
         with mock.patch("asgard.memory_bridge.backend_target", side_effect=AssertionError("불러선 안 된다")):

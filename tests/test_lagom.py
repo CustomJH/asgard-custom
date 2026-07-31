@@ -42,7 +42,7 @@ class LagomBase(unittest.TestCase):
         self.tmp.cleanup()
 
     def hook(self, name, payload, env_extra=None):
-        """훅 subprocess 실행 — CLAUDE_PROJECT_DIR·LAGOM_MODE 는 테스트가 명시할 때만."""
+        """훅 subprocess 실행 — CLAUDE_PROJECT_DIR·LAGOM_MODE는 테스트가 명시할 때만."""
         env = {k: v for k, v in os.environ.items() if k not in ("CLAUDE_PROJECT_DIR", "LAGOM_MODE")}
         env.update(env_extra or {})
         if isinstance(payload, dict):
@@ -90,7 +90,7 @@ class TestRender(unittest.TestCase):
                 self.assertNotIn("- %s:" % other, body)  # 타 모드 예시 제거
 
     def test_common_body_survives_every_mode(self):
-        """안전 예외·원문 불변·persistence 는 마커 없는 공통 본문 — 전 모드 생존 (적대 방어의 근거)."""
+        """안전 예외·원문 불변·persistence는 마커 없는 공통 본문 — 전 모드 생존 (적대 방어의 근거)."""
         for mode in ("lite", "full"):
             body = render_lagom(mode)
             self.assertIn("Safety Exceptions", body)
@@ -207,7 +207,7 @@ class TestRender(unittest.TestCase):
 
     def test_harness_generated_docs_are_not_prose(self):
         """`.asgard/` 산출물은 코드가 만든 카탈로그다 — 문체 위반으로 잡으면 수리 지시를 받는
-        Worker 가 손댈 수 없는 제어 경로를 고치라는 요구가 된다 (26-07-26 helios 실측)."""
+        Worker가 손댈 수 없는 제어 경로를 고치라는 요구가 된다 (26-07-26 helios 실측)."""
         with tempfile.TemporaryDirectory() as root:
             subprocess.run(["git", "init", "-q"], cwd=root, check=True)
             subprocess.run(["git", "config", "user.email", "t@t"], cwd=root, check=True)
@@ -368,7 +368,7 @@ class TestTrackerMatrix(LagomBase):
         self.assertEqual(self.state(), "lite")
         conf = json.load(open(os.path.join(self.root, ".asgard", "asgard-setting-project.json")))
         self.assertEqual(conf["lagom"]["mode"], "lite")  # 통합 설정 (26-07-15)
-        # 새 세션 재현 — 상태 클리어 후 activate 가 영속값을 집는다
+        # 새 세션 재현 — 상태 클리어 후 activate가 영속값을 집는다
         lagom.clear_state(self.root)
         p = self.hook("lagom_activate.py", {"source": "startup"})
         self.assertIn("mode=lite", p.stdout)
@@ -521,7 +521,7 @@ class TestAdversarialContract(LagomBase):
     프롬프트 재료 자체에 안전 예외·원문 불변·off 존중이 모드 불문 존재해야 방어가 성립한다."""
 
     def test_full_keeps_safety_exceptions(self):
-        """full(가장 공격적 잔존 모드 — ultra 는 벤치 근거로 제거됨)에서도 안전 예외가 주입된다."""
+        """full(가장 공격적 잔존 모드 — ultra는 벤치 근거로 제거됨)에서도 안전 예외가 주입된다."""
         self.set_config("full")
         p = self.hook("lagom_activate.py", {"source": "startup"})
         for needle in ("Safety Exceptions", "Input validation", "data loss", "runnable check", "without re-arguing"):
@@ -596,7 +596,7 @@ class TestNativeIntegration(LagomBase):
 
 
 class TestStatusline(LagomBase):
-    """CC statusLine 셸 스크립트: 상태파일 > config > full, off 는 숨김."""
+    """CC statusLine 셸 스크립트: 상태파일 > config > full, off는 숨김."""
 
     def setUp(self):
         super().setUp()

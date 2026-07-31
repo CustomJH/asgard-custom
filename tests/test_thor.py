@@ -19,7 +19,7 @@ from asgard.templates.thor import (  # noqa: E402
     thor_core_skill,
 )
 
-# role 본문의 합성 규칙에 열거되는 도메인 스킬 — 편대 프로토콜(einherjar)은 lead role 이 참조한다
+# role 본문의 합성 규칙에 열거되는 도메인 스킬 — 편대 프로토콜(einherjar)은 lead role이 참조한다
 _DOMAIN_SKILLS = (
     "asgard-thor-mjollnir",
     "asgard-thor-lightning",
@@ -43,7 +43,7 @@ class TestScaffold(unittest.TestCase):
         paths = [p for p, _ in files]
         for sname in _SKILL_NAMES:
             self.assertTrue(any(p.endswith(os.path.join(sname, "SKILL.md")) for p in paths), sname)
-        # CC 는 서브에이전트(role)가 실체 — 코어 스킬은 .agents 스코프 전용 (중복 배치 금지)
+        # CC는 서브에이전트(role)가 실체 — 코어 스킬은 .agents 스코프 전용 (중복 배치 금지)
         for core in ("asgard-thor", "asgard-eitri"):
             self.assertFalse(any(p.endswith(os.path.join(core, "SKILL.md")) for p in paths), core)
 
@@ -53,7 +53,7 @@ class TestScaffold(unittest.TestCase):
         for flags in ({"cc": False, "cursor": True, "codex": False}, {"cc": False, "cursor": False, "codex": True}):
             files, _ = plan_files(root="/tmp/x", **flags)
             agents_paths = [p for p, _ in files if f"{os.sep}.agents{os.sep}" in p]
-            # 모드 A 는 코어 계약 스킬(thor·eitri) 포함
+            # 모드 A는 코어 계약 스킬(thor·eitri) 포함
             for sname in (*_SKILL_NAMES, "asgard-thor", "asgard-eitri"):
                 self.assertTrue(any(sname in p for p in agents_paths), (sname, flags))
 
@@ -88,7 +88,7 @@ class TestRoleBodies(unittest.TestCase):
 
     def test_thor_is_backend_not_build(self):
         self.assertIn("Backend specialist", self.thor)
-        self.assertIn("belong to asgard-eitri", self.thor)  # 빌드·CI 는 에이트리로 경계 명시
+        self.assertIn("belong to asgard-eitri", self.thor)  # 빌드·CI는 에이트리로 경계 명시
         self.assertNotIn("build/infra specialist", self.thor)  # 구 정체 잔존 금지
 
     def test_thor_diagnosis_gate_scoped_to_defects(self):
@@ -245,7 +245,7 @@ class TestSkillResolver(unittest.TestCase):
         self.assertEqual(_names("scalar 값 처리 로직"), [])
 
     def test_companion_conditions(self):
-        # index → DB 문맥 동반 시만, schema → graphql 이면 lightning 만, cache → 서버 응답 문맥만
+        # index → DB 문맥 동반 시만, schema → graphql 이면 lightning만, cache → 서버 응답 문맥만
         self.assertEqual(_names("목차 index 페이지 갱신"), [])
         self.assertEqual(_names("테이블 인덱스 추가로 조회 개선"), ["asgard-thor-jarngreipr"])
         self.assertEqual(_names("GraphQL schema 를 프론트에 연결"), ["asgard-thor-lightning"])

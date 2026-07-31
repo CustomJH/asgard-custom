@@ -108,26 +108,26 @@ class ResourceLifetimeTest(unittest.TestCase):
             self.assertEqual(_patterns(src), set(), src)
 
     def test_webbrowser_open_is_not_a_resource(self):
-        """이름만 open 이고 bool 을 돌려준다 — 자원으로 재면 브라우저 여는 자리마다 오탐이 난다."""
+        """이름만 open 이고 bool을 돌려준다 — 자원으로 재면 브라우저 여는 자리마다 오탐이 난다."""
         src = "import webbrowser\n\ndef f(url):\n    if not webbrowser.open(url):\n        raise OSError\n"
         self.assertEqual(_patterns(src), set())
 
     def test_a_handle_stored_in_a_container_has_an_owner(self):
-        """`{"process": p}` 로 표에 담기면 수명은 그 표 주인의 것이다 — 지역에서 닫을 일이 아니다."""
+        """`{"process": p}`로 표에 담기면 수명은 그 표 주인의 것이다 — 지역에서 닫을 일이 아니다."""
         src = 'import subprocess\n\ndef f(self, cmd):\n    p = subprocess.Popen(cmd)\n    job = {"process": p}\n    self.jobs["x"] = job\n'
         self.assertEqual(_patterns(src), set())
 
     def test_a_handle_stored_by_subscript_has_an_owner(self):
-        """`table["k"] = p` 는 `self.p = p` 와 같은 인계다 — 한쪽만 알면 같은 코드가 경로마다 다르게 읽힌다.
+        """`table["k"] = p`는 `self.p = p`와 같은 인계다 — 한쪽만 알면 같은 코드가 경로마다 다르게 읽힌다.
 
-        holder 가 있으면 `_released` 가, 없으면 `_handed_off` 가 판정하는데 후자만 Subscript 를
+        holder가 있으면 `_released`가, 없으면 `_handed_off`가 판정하는데 후자만 Subscript를
         알아서, 이 형태가 막는 오탐으로 나왔다 (실측: 실트리 10,769파일에서 8건).
         """
         src = 'import subprocess\n\ndef f(cmd, table):\n    p = subprocess.Popen(cmd)\n    table["proc"] = p\n'
         self.assertEqual(_patterns(src), set())
 
     def test_an_alias_before_the_handoff_does_not_end_the_search(self):
-        """`q = p` 에서 판정을 끝내면 그 **뒤**의 진짜 인계를 못 본다 — 스캔은 계속되어야 한다."""
+        """`q = p`에서 판정을 끝내면 그 **뒤**의 진짜 인계를 못 본다 — 스캔은 계속되어야 한다."""
         src = "import subprocess\n\nclass S:\n    def f(self, cmd):\n        p = subprocess.Popen(cmd)\n        q = p\n        self.p = p\n"
         self.assertEqual(_patterns(src), set())
 
@@ -154,7 +154,7 @@ class ResourceLifetimeTest(unittest.TestCase):
         self.assertIn("unclosed-acquire", _patterns(piped))
 
     def test_os_open_is_not_judged_by_the_file_object_rule(self):
-        """int fd 는 해제 규약이 다르다 — 같은 자로 재면 전부 오탐이 된다 (미검출로 남긴 영역)."""
+        """int fd는 해제 규약이 다르다 — 같은 자로 재면 전부 오탐이 된다 (미검출로 남긴 영역)."""
         src = "import os\n\ndef f(p):\n    fd = os.open(p, os.O_RDONLY)\n    os.close(fd)\n"
         self.assertEqual(_patterns(src), set())
 

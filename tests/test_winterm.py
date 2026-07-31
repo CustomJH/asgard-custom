@@ -1,9 +1,9 @@
-"""Windows 콘솔 판정 — 개발기에서 영원히 안 보이는 부류라 가짜 kernel32 로 실제로 돌린다.
+"""Windows 콘솔 판정 — 개발기에서 영원히 안 보이는 부류라 가짜 kernel32로 실제로 돌린다.
 
-이 결함의 성질이 시험 방식을 정한다: macOS/Linux 에서는 winterm 의 어느 줄도 실행되지 않으므로
-"POSIX 에서 통과했다"가 아무것도 보증하지 않는다. 그래서 판단(어떤 모드를 어떻게 바꾸는가)은
+이 결함의 성질이 시험 방식을 정한다: macOS/Linux 에서는 winterm의 어느 줄도 실행되지 않으므로
+"POSIX에서 통과했다"가 아무것도 보증하지 않는다. 그래서 판단(어떤 모드를 어떻게 바꾸는가)은
 전부 seam 위로 올려 두고, 여기서 Windows 인 척하며 그 판단을 그대로 밟는다. seam 아래 ctypes
-마샬링도 한 번은 가짜 kernel32 로 태워 본다 — restype 누락처럼 조용히 전부 실패하는 부류가
+마샬링도 한 번은 가짜 kernel32로 태워 본다 — restype 누락처럼 조용히 전부 실패하는 부류가
 거기 살기 때문이다.
 """
 
@@ -28,7 +28,7 @@ def _reset_caches(monkeypatch):
 
 
 def _fake_console(monkeypatch, modes: dict[int, int], *, settable: bool = True) -> list[tuple[int, int]]:
-    """핸들→모드 표로 콘솔을 흉내 낸다. modes 에 없는 핸들 = 리다이렉트(콘솔 아님).
+    """핸들→모드 표로 콘솔을 흉내 낸다. modes에 없는 핸들 = 리다이렉트(콘솔 아님).
     반환 리스트에 SetConsoleMode 호출이 기록된다."""
     calls: list[tuple[int, int]] = []
     monkeypatch.setattr(winterm, "IS_WINDOWS", True)
@@ -55,7 +55,7 @@ _IN = 100 - winterm.STD_INPUT
 
 
 def test_enable_vt_is_false_off_windows(monkeypatch) -> None:
-    """POSIX 에서는 kernel32 를 건드리지도 않는다 — TERM 규칙이 계속 정본."""
+    """POSIX 에서는 kernel32를 건드리지도 않는다 — TERM 규칙이 계속 정본."""
     monkeypatch.setattr(winterm, "IS_WINDOWS", False)
     monkeypatch.setattr(winterm, "_std_handle", lambda which: pytest.fail("POSIX 에서 콘솔 핸들을 요구했다"))
     assert winterm.enable_vt() is False
@@ -64,12 +64,12 @@ def test_enable_vt_is_false_off_windows(monkeypatch) -> None:
 def test_enable_vt_turns_the_flag_on_when_missing(monkeypatch) -> None:
     calls = _fake_console(monkeypatch, {_OUT: 0x0003, _ERR: 0x0003})
     assert winterm.enable_vt() is True
-    assert (_OUT, 0x0003 | VT) in calls  # 기존 모드를 보존한 채 VT 만 얹는다
-    assert (_ERR, 0x0003 | VT) in calls  # stderr 도 곁다리로 함께
+    assert (_OUT, 0x0003 | VT) in calls  # 기존 모드를 보존한 채 VT만 얹는다
+    assert (_ERR, 0x0003 | VT) in calls  # stderr도 곁다리로 함께
 
 
 def test_enable_vt_accepts_a_console_that_already_has_it(monkeypatch) -> None:
-    """Windows Terminal 은 켜진 채로 준다 — 다시 쓰지 않는다."""
+    """Windows Terminal은 켜진 채로 준다 — 다시 쓰지 않는다."""
     calls = _fake_console(monkeypatch, {_OUT: 0x0003 | VT, _ERR: 0x0003 | VT})
     assert winterm.enable_vt() is True
     assert calls == []
@@ -77,18 +77,18 @@ def test_enable_vt_accepts_a_console_that_already_has_it(monkeypatch) -> None:
 
 def test_enable_vt_is_false_when_stdout_is_redirected(monkeypatch) -> None:
     """GetConsoleMode 실패 = 콘솔이 아니다(파이프·파일) — 색이 저절로 꺼진다."""
-    _fake_console(monkeypatch, {_ERR: 0x0003})  # stdout 만 리다이렉트
+    _fake_console(monkeypatch, {_ERR: 0x0003})  # stdout만 리다이렉트
     assert winterm.enable_vt() is False
 
 
 def test_enable_vt_is_false_when_the_console_refuses(monkeypatch) -> None:
-    """VT 를 모르는 옛 conhost — 쓰기가 실패하면 ANSI 를 뿌리지 않는다."""
+    """VT를 모르는 옛 conhost — 쓰기가 실패하면 ANSI를 뿌리지 않는다."""
     _fake_console(monkeypatch, {_OUT: 0x0003}, settable=False)
     assert winterm.enable_vt() is False
 
 
 def test_redirected_stderr_does_not_veto_the_stdout_verdict(monkeypatch) -> None:
-    """`asgard start 2> log` 하나로 화면 UI 를 통째로 끄면 손해가 훨씬 크다."""
+    """`asgard start 2> log` 하나로 화면 UI를 통째로 끄면 손해가 훨씬 크다."""
     _fake_console(monkeypatch, {_OUT: 0x0003})  # stderr 없음
     assert winterm.enable_vt() is True
 
@@ -114,7 +114,7 @@ def test_cbreak_drops_echo_and_line_editing(monkeypatch) -> None:
 
 
 def test_cbreak_keeps_processed_input_so_ctrl_c_stays_a_signal(monkeypatch) -> None:
-    """ENABLE_PROCESSED_INPUT 이 빠지면 Ctrl-C 가 그냥 한 글자가 되고 턴 중단이 조용히 깨진다."""
+    """ENABLE_PROCESSED_INPUT이 빠지면 Ctrl-C가 그냥 한 글자가 되고 턴 중단이 조용히 깨진다."""
     calls = _fake_console(monkeypatch, {_IN: winterm.ENABLE_LINE_INPUT})  # 원래 모드에 없어도
     with winterm.cbreak():
         pass
@@ -130,7 +130,7 @@ def test_cbreak_restores_the_original_mode(monkeypatch) -> None:
 
 
 def test_cbreak_restores_even_when_the_turn_raises(monkeypatch) -> None:
-    """Ctrl-C 로 턴을 끊은 뒤 에코 없는 콘솔에 사람을 남겨 두면 셸이 먹통으로 보인다."""
+    """Ctrl-C로 턴을 끊은 뒤 에코 없는 콘솔에 사람을 남겨 두면 셸이 먹통으로 보인다."""
     original = winterm.ENABLE_PROCESSED_INPUT | winterm.ENABLE_ECHO_INPUT
     calls = _fake_console(monkeypatch, {_IN: original})
     with pytest.raises(KeyboardInterrupt):
@@ -150,7 +150,7 @@ def test_cbreak_is_a_noop_when_stdin_is_redirected(monkeypatch) -> None:
 
 
 def test_cursor_row_is_measured_from_the_visible_window(monkeypatch) -> None:
-    """버퍼 Y 를 그대로 쓰면 스크롤백이 쌓인 콘솔에서 독이 화면 밖에 그려진다."""
+    """버퍼 Y를 그대로 쓰면 스크롤백이 쌓인 콘솔에서 독이 화면 밖에 그려진다."""
     _fake_console(monkeypatch, {_OUT: VT})
     monkeypatch.setattr(winterm, "_screen_buffer_info", lambda h: (1_200, 1_150))
     assert winterm.cursor_row() == 51
@@ -159,7 +159,7 @@ def test_cursor_row_is_measured_from_the_visible_window(monkeypatch) -> None:
 def test_cursor_row_at_the_top_of_an_unscrolled_console(monkeypatch) -> None:
     _fake_console(monkeypatch, {_OUT: VT})
     monkeypatch.setattr(winterm, "_screen_buffer_info", lambda h: (0, 0))
-    assert winterm.cursor_row() == 1  # CPR 은 1-based
+    assert winterm.cursor_row() == 1  # CPR은 1-based
 
 
 def test_cursor_row_is_none_when_unavailable(monkeypatch) -> None:
@@ -220,11 +220,11 @@ def test_poll_key_returns_none_when_nothing_is_typed(monkeypatch, _no_sleep) -> 
 
 
 class _FakeKernel32:
-    """kernel32 흉내 — byref 로 받은 out 파라미터에 실제로 써 넣는다."""
+    """kernel32 흉내 — byref로 받은 out 파라미터에 실제로 써 넣는다."""
 
     def __init__(self, mode: int = 0x0003, ok: bool = True) -> None:
         self.mode, self.ok, self.set_to = mode, ok, None
-        self.GetStdHandle = _FakeFn(lambda which: 0xFFFF_FFFF_0000_0007)  # 32bit 로 자르면 0x7 이 된다
+        self.GetStdHandle = _FakeFn(lambda which: 0xFFFF_FFFF_0000_0007)  # 32bit로 자르면 0x7이 된다
 
     def GetConsoleMode(self, handle, ref) -> int:
         ref._obj.value = self.mode
@@ -241,7 +241,7 @@ class _FakeKernel32:
 
 
 class _FakeFn:
-    """restype/argtypes 를 받아 두는 ctypes 함수 포인터 흉내."""
+    """restype/argtypes를 받아 두는 ctypes 함수 포인터 흉내."""
 
     def __init__(self, impl) -> None:
         self.impl, self.restype, self.argtypes = impl, None, None
@@ -252,14 +252,14 @@ class _FakeFn:
 
 
 def test_std_handle_survives_a_64bit_handle(monkeypatch) -> None:
-    """restype 를 c_void_p 로 못 박지 않으면 상위 32비트가 잘려 뒤 호출이 전부 조용히 실패한다."""
+    """restype를 c_void_p로 못 박지 않으면 상위 32비트가 잘려 뒤 호출이 전부 조용히 실패한다."""
     monkeypatch.setattr(winterm, "IS_WINDOWS", True)
     monkeypatch.setattr(winterm, "_K32", _configure(_FakeKernel32()))
     assert winterm._std_handle(winterm.STD_OUTPUT) == 0xFFFF_FFFF_0000_0007
 
 
 def test_an_unconfigured_kernel32_would_truncate_the_handle() -> None:
-    """위 테스트가 무엇을 증명하는지 고정한다 — _configure 를 빼면 실제로 잘린다."""
+    """위 테스트가 무엇을 증명하는지 고정한다 — _configure를 빼면 실제로 잘린다."""
     assert _FakeKernel32().GetStdHandle(winterm.STD_OUTPUT) == 0x7  # 상위 절반 소실
 
 
@@ -286,7 +286,7 @@ def test_screen_buffer_info_unpacks_cursor_and_window(monkeypatch) -> None:
 
 
 def test_marshalling_failures_degrade_to_none_check(monkeypatch) -> None:
-    """kernel32 가 없거나 시그니처가 어긋나도 REPL 은 폴백으로 계속 뜬다 — 죽지 않는다."""
+    """kernel32가 없거나 시그니처가 어긋나도 REPL은 폴백으로 계속 뜬다 — 죽지 않는다."""
     monkeypatch.setattr(winterm, "IS_WINDOWS", False)
     monkeypatch.setattr(winterm, "_K32", None)
     assert winterm._std_handle(winterm.STD_OUTPUT) is None
@@ -297,7 +297,7 @@ def test_marshalling_failures_degrade_to_none_check(monkeypatch) -> None:
 
 # — REPL 배선 —
 #
-# winterm 이 옳아도 repl 이 안 부르면 화면은 그대로다. 세 갈래(커서 조회·입력 모드·키 리더)가
+# winterm이 옳아도 repl이 안 부르면 화면은 그대로다. 세 갈래(커서 조회·입력 모드·키 리더)가
 # 실제로 Windows 경로를 타는지 여기서 확인한다. POSIX 경로로 새면 가짜 스트림에서 죽으므로
 # 분기 누락이 통과로 보이지 않는다.
 
@@ -317,7 +317,7 @@ class _TtyStream:
 
 
 def test_repl_cursor_row_asks_the_console_on_windows(monkeypatch) -> None:
-    """POSIX 는 CPR 왕복 + 100ms 타임아웃이지만 Windows 는 그냥 물어보면 된다."""
+    """POSIX는 CPR 왕복 + 100ms 타임아웃이지만 Windows는 그냥 물어보면 된다."""
     from asgard.agent import repl
 
     monkeypatch.setattr("sys.stdin", _TtyStream())
@@ -364,7 +364,7 @@ def test_dock_collects_windows_keystrokes_during_a_turn(monkeypatch) -> None:
 
 
 def test_dock_discards_arrow_keys_split_across_polls(monkeypatch) -> None:
-    """한 글자씩 오는 ESC[A 를 carry 가 붙들지 못하면 '[A' 가 초안에 글자로 박힌다."""
+    """한 글자씩 오는 ESC[A를 carry가 붙들지 못하면 '[A'가 초안에 글자로 박힌다."""
     dock = _windows_dock(monkeypatch, [b"a", b"\x1b", b"[", b"A", b"b"])
     dock._read_keys()
     assert dock.take_pending() == ("ab", False)
@@ -380,7 +380,7 @@ def test_dock_reader_stops_when_asked(monkeypatch) -> None:
 # — 형상 래칫 —
 #
 # 이 결함의 성질상 회귀는 개발기에서 절대 안 보인다. 그래서 "윈도우가 POSIX 코드에 닿지
-# 않는다"와 "독이 쓰는 ANSI 를 윈도우 콘솔이 안다"를 형상으로 못 박는다. 둘 다 깨지면
+# 않는다"와 "독이 쓰는 ANSI를 윈도우 콘솔이 안다"를 형상으로 못 박는다. 둘 다 깨지면
 # 증상이 크래시가 아니라 침묵이라 테스트 말고는 잡을 방법이 없다.
 
 _POSIX_ONLY = {"termios", "select", "fcntl"}
@@ -409,8 +409,8 @@ def _function(tree, name):
 def test_windows_branch_comes_before_any_posix_call(name: str) -> None:
     """윈도우 분기는 POSIX 코드보다 **먼저** 와야 한다.
 
-    순서가 뒤집히면 윈도우에서 termios/select 가 먼저 닿는다. select 는 소켓 전용이라 리더
-    스레드가 조용히 죽고, termios 는 아예 없어 예외로 빠진다 — 둘 다 화면엔 흔적이 없다.
+    순서가 뒤집히면 윈도우에서 termios/select가 먼저 닿는다. select는 소켓 전용이라 리더
+    스레드가 조용히 죽고, termios는 아예 없어 예외로 빠진다 — 둘 다 화면엔 흔적이 없다.
     """
     ast, tree = _repl_ast()
     body = _function(tree, name).body
@@ -437,7 +437,7 @@ def test_windows_branch_comes_before_any_posix_call(name: str) -> None:
 
 
 def test_the_dock_only_speaks_ansi_that_windows_understands() -> None:
-    """독의 커서 산술은 전부 ANSI 로 나간다 — 윈도우 콘솔이 모르는 시퀀스가 하나라도 섞이면
+    """독의 커서 산술은 전부 ANSI로 나간다 — 윈도우 콘솔이 모르는 시퀀스가 하나라도 섞이면
     프레임이 깨지는데, 깨진 화면은 예외를 내지 않는다. 최종 바이트를 Microsoft 문서 집합에 가둔다."""
     import inspect
     import re

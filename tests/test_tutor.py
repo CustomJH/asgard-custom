@@ -6,7 +6,7 @@
 게이트를 끄지만, 튜터가 오탐을 내면 사람은 **끄지 않고 그냥 안 읽는다**. 끈 것은 눈에 보이고 안
 읽는 것은 안 보이므로, 이쪽이 더 조용히 죽는다. 그래서 음성 대조군이 여기서는 더 중요하다.
 
-같이 고정하는 계약 둘: ① 래칫 — base 에 이미 있던 물음은 다시 묻지 않는다. ② 종료 코드는
+같이 고정하는 계약 둘: ① 래칫 — base에 이미 있던 물음은 다시 묻지 않는다. ② 종료 코드는
 언제나 0 — 되짚기가 통과/실패를 만들기 시작하면 그 순간 관문이 된다.
 """
 
@@ -30,7 +30,7 @@ _ENV = {
 
 
 class SwallowProbeTest(unittest.TestCase):
-    """설명 없는 삼킴만 묻는다 — 이 저장소는 fail-open 을 의도적으로 쓴다."""
+    """설명 없는 삼킴만 묻는다 — 이 저장소는 fail-open을 의도적으로 쓴다."""
 
     def test_an_unexplained_swallow_is_asked_about(self):
         src = "def f():\n    try:\n        g()\n    except OSError:\n        pass\n"
@@ -83,7 +83,7 @@ class TestPathProbeTest(unittest.TestCase):
         self.assertTrue(tutor_probes.is_test_path("src/pkg/__tests__/thing.js"))
 
     def test_a_source_path_that_merely_mentions_testing_is_not_a_test(self):
-        """`pandas.testing` 처럼 진짜 패키지 이름이 있다 — 남의 표면을 테스트로 세면 물음이 사라진다."""
+        """`pandas.testing`처럼 진짜 패키지 이름이 있다 — 남의 표면을 테스트로 세면 물음이 사라진다."""
         self.assertFalse(tutor_probes.is_test_path("src/asgard/testing_utils.py"))
         self.assertFalse(tutor_probes.is_test_path("src/latest/thing.py"))
 
@@ -133,7 +133,7 @@ class ReviewTest(unittest.TestCase):
             self.assertEqual(lesson.files[0].units_removed, ("drop",))
 
     def test_a_removed_test_asks_a_different_question_than_removed_code(self):
-        """판정이 사라진 것과 기능이 사라진 것은 diff 에서 똑같이 보인다 — 물음이 달라야 한다."""
+        """판정이 사라진 것과 기능이 사라진 것은 diff에서 똑같이 보인다 — 물음이 달라야 한다."""
         with contextlib.ExitStack() as stack:
             root = self._repo(stack)
             self._write(root, "tests/test_m.py", "def test_a():\n    assert 1\n\n\ndef test_b():\n    assert 2\n")
@@ -163,7 +163,7 @@ class ReviewTest(unittest.TestCase):
             self.assertFalse(lesson.files[0].code)
 
     def test_a_brand_new_file_reports_its_real_size(self):
-        """추적 안 되는 새 파일은 numstat 에 없다 — 0 으로 두면 가장 큰 변경이 가장 작아 보인다."""
+        """추적 안 되는 새 파일은 numstat에 없다 — 0으로 두면 가장 큰 변경이 가장 작아 보인다."""
         with contextlib.ExitStack() as stack:
             root = self._repo(stack)
             self._write(root, "seed.py", "x = 1\n")

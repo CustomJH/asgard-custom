@@ -243,7 +243,7 @@ def test_render_sink_mode_emits_complete_softwrapped_lines(monkeypatch) -> None:
 
 
 def test_submitted_echo_stands_in_for_erased_input_frame(monkeypatch) -> None:
-    # pt 는 accept 시 입력 프레임을 지운다(erase_when_done) — 스크롤백엔 이 에코가 사용자
+    # pt는 accept 시 입력 프레임을 지운다(erase_when_done) — 스크롤백엔 이 에코가 사용자
     # 메시지를 대표한다. 일반 요청=캐럿+본문, 커맨드(/·!)=흐림, 멀티라인=본문 열 정렬.
     monkeypatch.setattr(ui, "_COLOR", False)
 
@@ -272,8 +272,8 @@ def test_pt_prompt_accepts_prefilled_draft_immediately(monkeypatch, tmp_path) ->
     from prompt_toolkit.output import DummyOutput
 
     monkeypatch.setattr(repl, "_history_path", lambda: str(tmp_path / "history"))
-    # TERM 미설정이면 prompt_toolkit 이 dumb-prompt 폴백으로 빠져 accept_default 콜백을
-    # 사용하지 않고 stdin 을 기다린다. 이 테스트는 전체 화면 앱 경로의 자동 제출 계약이다.
+    # TERM 미설정이면 prompt_toolkit이 dumb-prompt 폴백으로 빠져 accept_default 콜백을
+    # 사용하지 않고 stdin을 기다린다. 이 테스트는 전체 화면 앱 경로의 자동 제출 계약이다.
     monkeypatch.setenv("TERM", "xterm-256color")
 
     with create_pipe_input() as pipe, create_app_session(input=pipe, output=DummyOutput()):
@@ -327,7 +327,7 @@ def test_dock_status_and_stream_lines_stay_single_line(monkeypatch, capsys) -> N
     from asgard.agent.session import AgentSession
 
     emitted: list[str] = []
-    sess = cast(AgentSession, SimpleNamespace(on_text=emitted.append))  # on_text 만 쓰는 최소 대역
+    sess = cast(AgentSession, SimpleNamespace(on_text=emitted.append))  # on_text만 쓰는 최소 대역
     AgentSession._tool_line(sess, "$", "python3 - <<'EOF'\nimport ast\nEOF", 2.0)
     assert emitted and "\n" not in emitted[0].rstrip("\n")  # 완료 라인도 행당 1줄 — 히어독 본문 스필 금지
 
@@ -405,7 +405,7 @@ def test_dock_apply_keys_edits_draft_backspace_and_clear() -> None:
 def test_decode_keys_scrubs_escapes_and_holds_partial_sequences() -> None:
     # 화살표·CPR 응답 등 완성 시퀀스는 폐기 — 다음 프롬프트 오염 경로 차단
     assert repl._decode_keys(b"ab\x1b[A\x1b[24;1Rcd") == ("abcd", b"")
-    # 청크 경계의 미완성 시퀀스는 carry 로 보류 → 다음 청크와 합류해 통째로 폐기
+    # 청크 경계의 미완성 시퀀스는 carry로 보류 → 다음 청크와 합류해 통째로 폐기
     text, carry = repl._decode_keys(b"ok\x1b[24;")
     assert (text, carry) == ("ok", b"\x1b[24;")
     assert repl._decode_keys(carry + b"1R!") == ("!", b"")
@@ -440,7 +440,7 @@ def test_enter_submits_but_trailing_backslash_continues() -> None:
 def test_multiline_continuation_prefix_matches_prompt_width() -> None:
     frags = repl._pt_continuation(6, 1, False)
     visible = "".join(text for _, text in frags)
-    assert len(visible) == 6  # 첫 행 '  │ › ' 와 동일 폭 — 본문 열 정렬
+    assert len(visible) == 6  # 첫 행 '  │ › '와 동일 폭 — 본문 열 정렬
     assert "│" in visible
 
 

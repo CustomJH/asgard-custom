@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """Charter 모드 B 훅 (charter-activate) — standalone subprocess 검증 (배포 형태 그대로).
 
-네이티브 Heimdall 은 charter.py note() 를 직접 주입하지만, 모드 B(Claude Code/Codex/Cursor)는
-서브에이전트가 AGENTS.md 를 읽는 구조라 훅으로 보상한다. 이 스위트는 훅을 진짜 subprocess 로
-JSON stdin 을 물려 돌리고(모드 B 가 호출하는 형태 그대로) 다음을 검증한다:
+네이티브 Heimdall은 charter.py note()를 직접 주입하지만, 모드 B(Claude Code/Codex/Cursor)는
+서브에이전트가 AGENTS.md를 읽는 구조라 훅으로 보상한다. 이 스위트는 훅을 진짜 subprocess로
+JSON stdin을 물려 돌리고(모드 B가 호출하는 형태 그대로) 다음을 검증한다:
 
-  · SessionStart(agent_type 없음) → through_line 만 (설계①)
+  · SessionStart(agent_type 없음) → through_line만 (설계①)
   · SubagentStart asgard-thinker → coherence + criteria 환원 (협업②)
   · SubagentStart asgard-verifier → 반례 렌즈 + "criteria 대체 아님" (판단③, evidence-first 보존)
-  · SubagentStart asgard-worker → through_line 만, coherence 미주입 (게이트 무결성)
+  · SubagentStart asgard-worker → through_line만, coherence 미주입 (게이트 무결성)
   · charter 부재/파손 → 무출력 (fail-open, 토큰 회귀 없음)
   · **단일 출처 정합성**: 훅 render() 본문 == 네이티브 charter.note() 본문 (재구현 동기화 보증)
 
@@ -63,7 +63,7 @@ class CharterHookBase(unittest.TestCase):
         )
 
     def body(self, out):
-        """[charter]\\n\\n prefix (또는 SubagentStart JSON additionalContext) 를 벗겨 본문만."""
+        """[charter]\\n\\n prefix (또는 SubagentStart JSON additionalContext)를 벗겨 본문만."""
         out = out.strip()
         if not out:
             return ""
@@ -95,12 +95,12 @@ class TestCharterHook(CharterHookBase):
         self.assertIn("does not replace criteria", ctx["additionalContext"])  # evidence-first 보존
 
     def test_worker_gets_no_charter(self):
-        # 네이티브 패리티 — Worker 세션은 worker.md+lagom 만, charter 무주입 (Fugu 격리)
+        # 네이티브 패리티 — Worker 세션은 worker.md+lagom만, charter 무주입 (Fugu 격리)
         self.set_charter({"through_line": "TL관통", "coherence": ["C1일관성"]})
         self.assertEqual(self.hook({"agent_type": "asgard-worker"}).stdout.strip(), "")
 
     def test_delivery_gets_through_line_only(self):
-        # 딜리버리(freyja/thor/loki) — 네이티브 delivery_identity 대응: through_line 만
+        # 딜리버리(freyja/thor/loki) — 네이티브 delivery_identity 대응: through_line만
         self.set_charter({"through_line": "TL딜리버리", "coherence": ["C1일관성"]})
         for agent in ("asgard-freyja", "asgard-thor", "asgard-loki"):
             ctx = json.loads(self.hook({"agent_type": agent}).stdout)["hookSpecificOutput"]

@@ -59,7 +59,7 @@ class TestMapContext(Base):
             "- pages: `page:/admin/announcements`\n",
         )
         matched = build_map_context(self.root, "announcement pinned 필드 추가")
-        # 시드가 명령 라우팅과 함께 주입된다 — 경로 grep 대신 trace/impact 로 가는 어포던스
+        # 시드가 명령 라우팅과 함께 주입된다 — 경로 grep 대신 trace/impact로 가는 어포던스
         self.assertIn("asgard map impact", matched.text)
         self.assertIn("`route:GET_/api/v1/admin/announcements`", matched.text)
         self.assertIn("`page:/admin/announcements`", matched.text)

@@ -67,7 +67,7 @@ class ExtractTest(unittest.TestCase):
         self.assertEqual(list(_units(src, "c")), ["f"])
 
     def test_a_java_annotation_is_not_a_function(self):
-        """`@SuppressWarnings("x")` 를 서명으로 읽으면 클래스 본문 전체가 함수 하나가 된다."""
+        """`@SuppressWarnings("x")`를 서명으로 읽으면 클래스 본문 전체가 함수 하나가 된다."""
         src = '@SuppressWarnings("unchecked")\npublic class A {\n    void run() {\n        int x = 1;\n    }\n}\n'
         self.assertEqual(list(_units(src, "java")), ["run"])
 
@@ -82,12 +82,12 @@ class ExtractTest(unittest.TestCase):
 
 class DepthTest(unittest.TestCase):
     def test_a_parenthesised_for_header_counts_as_one_level(self):
-        """`for (i = 0; i < n; i++)` 의 헤더 세미콜론이 절을 끝내면 for 가 중첩에서 빠진다."""
+        """`for (i = 0; i < n; i++)`의 헤더 세미콜론이 절을 끝내면 for가 중첩에서 빠진다."""
         src = "void f(int n) {\n    for (int i = 0; i < n; i++) {\n        if (i) {\n            n--;\n        }\n    }\n}\n"
         self.assertEqual(_units(src, "c")["f"].depth, 2)
 
     def test_an_unparenthesised_for_header_counts_too(self):
-        """Go 의 3절 for 는 괄호가 없어 세미콜론 규칙을 그대로 쓰면 반대로 작동한다."""
+        """Go의 3절 for는 괄호가 없어 세미콜론 규칙을 그대로 쓰면 반대로 작동한다."""
         src = "func F(n int) {\n\tfor i := 0; i < n; i++ {\n\t\tif i > 0 {\n\t\t\tn--\n\t\t}\n\t}\n}\n"
         self.assertEqual(_units(src, "go")["F"].depth, 2)
 
@@ -110,10 +110,10 @@ class CMemoryTest(unittest.TestCase):
             self.assertNotIn("c-alloc-unfreed", _rules(src), src)
 
     def test_using_a_resource_inside_a_return_is_not_handing_it_off(self):
-        """`return fgetc(f)` 는 자원을 **읽은 결과**를 돌려줄 뿐이고 자원은 이 함수에 남는다.
+        """`return fgetc(f)`는 자원을 **읽은 결과**를 돌려줄 뿐이고 자원은 이 함수에 남는다.
 
-        "반환문 안에 이름이 보인다"로 읽으면 C 에서 가장 흔한 형상에서 규칙이 조용히 꺼진다 —
-        같은 누수가 `int c = fgetc(f); return c;` 로 쓰면 잡히고 한 줄로 합치면 안 잡혔다.
+        "반환문 안에 이름이 보인다"로 읽으면 C에서 가장 흔한 형상에서 규칙이 조용히 꺼진다 —
+        같은 누수가 `int c = fgetc(f); return c;`로 쓰면 잡히고 한 줄로 합치면 안 잡혔다.
         """
         used = 'int f(const char *p) {\n    FILE *h = fopen(p, "r");\n    if (!h) return -1;\n    return fgetc(h);\n}\n'
         indexed = "int f(int n) {\n    char *b = malloc(n);\n    if (!b) return -1;\n    return b[0];\n}\n"

@@ -82,7 +82,7 @@ class TestSetPoint(_Base):
             ".asgard/asgard-setting-project.json",
             json.dumps({"health": {"targets": {"big_units": 1}}}),
         )
-        # 오차가 있어야 목표가 실린다 — 설정 1 에 위반 2 개를 둔다
+        # 오차가 있어야 목표가 실린다 — 설정 1에 위반 2 개를 둔다
         _write(self.root, "a.py", _long_fn("f", 90) + "\n\n" + _long_fn("g", 95))
         picked = {t.metric: t for t in loop.targets(self.root, health.scan(self.root))}
         self.assertEqual(picked["big_units"].target, 1)
@@ -98,7 +98,7 @@ class TestSetPoint(_Base):
 
 class TestPromise(_Base):
     def test_file_counted_metric_costs_every_violator_in_the_file(self) -> None:
-        """`deep_units` 는 파일을 센다 — 한 파일에 깊은 함수가 둘이면 **둘 다** 읽을 값에 든다.
+        """`deep_units`는 파일을 센다 — 한 파일에 깊은 함수가 둘이면 **둘 다** 읽을 값에 든다.
 
         이걸 어기면 컨트롤러가 "22행이면 지표가 준다"고 말하고 실제로는 안 준다 (약속 ①).
         """
@@ -117,7 +117,7 @@ class TestPromise(_Base):
         self.assertIn("전부 내려야", deep[0].why)
 
     def test_unit_counted_metric_costs_only_that_unit(self) -> None:
-        """`big_units` 는 단위를 센다 — 하나 내리면 하나 준다. 값은 그 함수만이다."""
+        """`big_units`는 단위를 센다 — 하나 내리면 하나 준다. 값은 그 함수만이다."""
         _write(self.root, "big.py", _long_fn("f", 90) + "\n\n" + _long_fn("g", 95))
         _history(self.root, [{"commit": "a", "big_units": 0}])
         signal = loop.next_signal(self.root, limit=5)
@@ -143,7 +143,7 @@ class TestRanking(_Base):
         """같은 지표·같은 변경빈도면 **읽을 줄이 적은 쪽**이 이긴다 (약속 ②).
 
         이 순서가 뒤집히면 컨트롤러가 리뷰 불가능한 걸음을 루프에 넣는다 — blind 루프가 4만 줄
-        PR 을 만드는 바로 그 경로다.
+        PR을 만드는 바로 그 경로다.
         """
         _write(self.root, "small.py", _long_fn("s", 75))
         _write(self.root, "huge.py", _long_fn("h", 400))
@@ -165,7 +165,7 @@ class TestRanking(_Base):
 class TestHonesty(_Base):
     def test_metric_without_candidates_is_carried_not_dropped(self) -> None:
         """후보를 못 내는 지표는 사유와 함께 실린다 — 조용히 빠지면 "깨끗하다"로 읽힌다 (약속 ④)."""
-        # health 의 import 그래프는 패키지 뿌리를 기준으로 모듈을 푼다 — 평평한 파일 둘로는
+        # health의 import 그래프는 패키지 뿌리를 기준으로 모듈을 푼다 — 평평한 파일 둘로는
         # 순환이 안 잡힌다(실측). 순환을 만들려면 패키지 안이어야 한다.
         _write(self.root, "pkg/__init__.py", "")
         _write(self.root, "pkg/a.py", "from pkg import b\n")

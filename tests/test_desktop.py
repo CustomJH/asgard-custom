@@ -48,7 +48,7 @@ class TestDispatch(DesktopCase):
         # 기획 화면의 문은 하나다 — 묻는 문장 한 줄. 고르기 판이 되살아나면 여기서 걸린다.
         self.assertIn("어떤 기획을 할까요?", page)
         self.assertNotIn("plan-picks", page)
-        # 증거 판은 기본으로 닫혀 있다 — 재설계로 클래스는 .evidence 가 됐고 계약은 그대로다
+        # 증거 판은 기본으로 닫혀 있다 — 재설계로 클래스는 .evidence가 됐고 계약은 그대로다
         self.assertIn(".evidence[hidden]{display:none}", page)
         # 이 표면의 이름은 이제 Asgard Studio 다(사용자 결정). 그러니 이 검사가 지킬 것은
         # 이름이 아니라 **폐기된 세스룸니르 표면이 되살아나지 않는 것**이다.
@@ -71,7 +71,7 @@ class TestDispatch(DesktopCase):
         self.assertIn('id="permission"', dock)
 
     def test_the_dock_says_why_it_cannot_send(self):
-        """이유 없는 disabled 는 금지다 — 힌트 한 칸이 그 이유를 진다.
+        """이유 없는 disabled는 금지다 — 힌트 한 칸이 그 이유를 진다.
 
         여태 그 자리엔 "Enter 보내기 · Shift+Enter 줄바꿈"이 상시로 앉아 있었다. 배울 수 있는
         사실이라 몇 세션이면 가구가 되고, 그동안 **왜 못 보내는지**는 아무 데서도 안 말했다.
@@ -136,7 +136,7 @@ class TestDispatch(DesktopCase):
             self.assertTrue(json.loads(body)["readiness"]["spec"]["ready"])
 
     def test_a_new_plan_needs_only_one_line(self):
-        """Studio 의 기획은 "어떤 기획을 할까요?" 한 칸에서 시작한다 — 고를 것이 없다."""
+        """Studio의 기획은 "어떤 기획을 할까요?" 한 칸에서 시작한다 — 고를 것이 없다."""
         with tempfile.TemporaryDirectory() as root:
             status, _, body = desktop.dispatch_post("/api/plans", {"idea": "검색 명세를 정리하고 싶다"}, root)
             self.assertEqual(status, 201)
@@ -288,7 +288,7 @@ class TestSettings(DesktopCase):
 
     def test_engine_change_answers_with_the_re_resolved_engine(self):
         """엔진을 바꾸면 그 응답만으로 창이 지금 상태를 말할 수 있어야 한다 —
-        settings 만 돌려주면 상태 표시줄·연결 상자는 옛 엔진에 머문다."""
+        settings만 돌려주면 상태 표시줄·연결 상자는 옛 엔진에 머문다."""
         with tempfile.TemporaryDirectory() as root:
             status, _, body = desktop.save_settings(
                 {"scope": "project", "section": "provider", "values": {"name": "ollama", "model": ""}}, root
@@ -303,7 +303,7 @@ class TestSettings(DesktopCase):
 
     def test_model_change_keeps_provider_keys_the_window_never_shows(self):
         """창은 엔진 이름과 모델만 보여 준다 — 모델 하나 바꾸는 동작이 손으로 적어 둔
-        base_url·rpm 을 지우면 안 된다. 다만 엔진이 바뀌면 그 키들은 옛 엔진의 것이다."""
+        base_url·rpm을 지우면 안 된다. 다만 엔진이 바뀌면 그 키들은 옛 엔진의 것이다."""
         from asgard import settings
 
         with tempfile.TemporaryDirectory() as root:
@@ -386,7 +386,7 @@ class TestTaskEvidence(DesktopCase):
     def test_changed_files_are_the_task_delta_not_the_whole_dirty_tree(self):
         """작업이 손대지 않은 더러운 트리는 그 작업의 산출물이 아니다.
 
-        실측: README 한 줄만 읽고 끝난 작업이 '변경 파일 14개' 를 달고 산출물에 올라왔다."""
+        실측: README 한 줄만 읽고 끝난 작업이 '변경 파일 14개'를 달고 산출물에 올라왔다."""
         with tempfile.TemporaryDirectory() as root:
             before = [{"status": "M", "path": "already-dirty.py"}]
             after = [
@@ -460,8 +460,8 @@ class TestAppFirstLaunch(DesktopCase):
     def test_a_plain_folder_does_not_become_a_project(self):
         """표식 없는 자리에서 띄우면 개인 작업 공간에 선다 — 그리고 등록부는 그대로다.
 
-        여태는 cwd 가 곧 프로젝트였다. 독에서 아이콘을 누르면 홈이 프로젝트가 되고, 사용자의
-        집에 `.asgard/desktop/` 이 생기고, 열어 본 적 없는 자리가 목록에 쌓였다."""
+        여태는 cwd가 곧 프로젝트였다. 독에서 아이콘을 누르면 홈이 프로젝트가 되고, 사용자의
+        집에 `.asgard/desktop/`이 생기고, 열어 본 적 없는 자리가 목록에 쌓였다."""
         with tempfile.TemporaryDirectory() as plain:
             with mock.patch.object(desktop.boundary.os, "getcwd", return_value=plain):
                 start = desktop.resolve_start_root()
@@ -470,14 +470,14 @@ class TestAppFirstLaunch(DesktopCase):
             self.assertFalse(os.path.isdir(os.path.join(plain, ".asgard")))
 
     def test_home_is_never_a_project_even_with_marks_in_it(self):
-        """집에 `.git` 이 있어도 집은 프로젝트가 아니다 — 경계가 사용자의 삶 전체가 된다."""
+        """집에 `.git`이 있어도 집은 프로젝트가 아니다 — 경계가 사용자의 삶 전체가 된다."""
         self.assertFalse(desktop_store.looks_like_project(os.path.expanduser("~")))
         self.assertFalse(desktop_store.looks_like_project(os.sep))
 
     def test_even_a_marked_folder_does_not_pull_the_window_into_itself(self):
         """저장소 안에서 켜도 창은 **메인 루트**에서 선다 — 프로젝트는 창 안에서 고른다.
 
-        여태는 표식 있는 cwd 가 창의 자리를 정했다. 그래서 같은 앱이 어디서 켜느냐에 따라
+        여태는 표식 있는 cwd가 창의 자리를 정했다. 그래서 같은 앱이 어디서 켜느냐에 따라
         다른 곳에서 열렸다: 터미널에서 켜면 그 저장소, 독에서 누르면 다른 데. 창이 사람의
         것이라면 그럴 수 없다."""
         with tempfile.TemporaryDirectory() as repo:
@@ -533,7 +533,7 @@ class TestWorkspacePerTask(DesktopCase):
             task = json.loads(desktop.create_task({"prompt": "시작", "permission": "manual"}, origin)[1:][1])
             started: list[str] = []
             with mock.patch.object(desktop.tasks, "_start", side_effect=lambda _id, root: started.append(root)):
-                # 창은 이제 moved 를 본다. 그래도 승인은 origin 을 연다.
+                # 창은 이제 moved를 본다. 그래도 승인은 origin을 연다.
                 status, _, _ = desktop.approve_task({"id": task["id"], "decision": "allow_once"}, moved)
                 self.assertEqual(status, 202)
                 self.assertEqual(started, [os.path.abspath(origin)])

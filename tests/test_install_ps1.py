@@ -2,15 +2,15 @@
 
 실행: uv run pytest tests/test_install_ps1.py
 
-이 파일은 `irm … | iex` 로 **텍스트째 내려받아 실행**되는 유일한 진입점이다. 그래서 보통
+이 파일은 `irm … | iex`로 **텍스트째 내려받아 실행**되는 유일한 진입점이다. 그래서 보통
 스크립트라면 사소한 것이 여기서는 치명적이다:
 
-  · `exit` 는 이 세션이 아니라 **호스트 셸**을 끝낸다. 파이프로 먹인 스크립트 안의 `exit 1` 은
+  · `exit`는 이 세션이 아니라 **호스트 셸**을 끝낸다. 파이프로 먹인 스크립트 안의 `exit 1`은
     사용자의 PowerShell 창을 통째로 닫아버려서, 실패 이유가 화면에 남을 시간이 없다.
     (실측 증상: "파이썬 없으면 그냥 픽하고 꺼짐" — 창이 닫힌 것이지 설치가 조용히 끝난 게 아니다.)
   · 파스 에러는 어떤 핸들러보다 먼저 일어난다. PS7 전용 연산자 하나, 잘못 디코드된 바이트 하나면
     스크립트 전체가 실행되기 전에 죽고, 그때는 안에 적어둔 어떤 안내도 출력되지 않는다.
-  · 남의 부트스트랩 스크립트(astral.sh/uv/install.ps1)를 이 세션에서 `iex` 하면 그쪽의 `exit` 가
+  · 남의 부트스트랩 스크립트(astral.sh/uv/install.ps1)를 이 세션에서 `iex` 하면 그쪽의 `exit`가
     똑같이 우리 창을 닫는다. 자식 프로세스에 격리해야 한다.
 
 그래서 여기서 막는 것은 "스타일"이 아니라 **창이 닫히는 경로**다. 각 검사는 실제로 관측된
@@ -67,8 +67,8 @@ def _sh() -> str:
 def _statements() -> list[tuple[int, str]]:
     """코드 줄을 **문장** 단위로 접은 것 — 인자 목록이 다음 줄로 넘어간 호출도 한 덩어리로 본다.
 
-    (`Invoke-Native 'winget' @('install', …,\\n  '--accept-…') -Spin …` 처럼 꼬리에 붙은
-    `-Spin` 이 둘째 줄에 있으면, 줄 단위 검사는 그 호출을 "스피너 없음"으로 오독한다.)
+    (`Invoke-Native 'winget' @('install', …,\\n  '--accept-…') -Spin …`처럼 꼬리에 붙은
+    `-Spin`이 둘째 줄에 있으면, 줄 단위 검사는 그 호출을 "스피너 없음"으로 오독한다.)
     """
     out: list[tuple[int, str]] = []
     buf, start, prev = "", 0, -2
@@ -76,7 +76,7 @@ def _statements() -> list[tuple[int, str]]:
         stripped = line.strip()
         # 줄이 붙어 있지 않으면(주석·문자열 페이로드가 사이에 걸러졌으면) 잇지 않는다 —
         # 이으면 남남인 두 문장이 한 덩어리가 되어 검사가 엉뚱한 것을 읽는다 (실측: winget 호출의
-        # 둘째 줄이 걸러져 다음 문장과 붙었고, 그 바람에 -Spin 이 "없는" 것으로 보였다).
+        # 둘째 줄이 걸러져 다음 문장과 붙었고, 그 바람에 -Spin이 "없는" 것으로 보였다).
         if buf and num != prev + 1:
             out.append((start, buf))
             buf = ""
@@ -94,7 +94,7 @@ def _statements() -> list[tuple[int, str]]:
 
 
 def _bare(line: str) -> str:
-    """문자열 리터럴 안쪽을 비운 줄 — 사람에게 보여줄 메시지에 들어간 `exit`·`||` 는 문법이 아니다.
+    """문자열 리터럴 안쪽을 비운 줄 — 사람에게 보여줄 메시지에 들어간 `exit`·`||`는 문법이 아니다.
 
     (실측: `"present but exit " + $code` 라는 안내 문구가 `exit` 금지 규칙에 걸렸다.)
     """
@@ -105,9 +105,9 @@ class InstallPs1Encoding(unittest.TestCase):
     def test_ascii_only(self) -> None:
         """비ASCII 한 바이트가 파스 에러가 된다.
 
-        `Invoke-RestMethod` 는 응답 charset 을 보고 디코드한다. 헤더가 없거나 프록시가 갈아끼우면
-        UTF-8 한글 주석이 cp949 로 읽히고, 그 깨진 바이트 중 하나가 따옴표나 백틱으로 해석되는
-        순간 스크립트는 실행되기 전에 죽는다. install.sh 는 파일로 저장돼 bash 가 읽으므로
+        `Invoke-RestMethod`는 응답 charset을 보고 디코드한다. 헤더가 없거나 프록시가 갈아끼우면
+        UTF-8 한글 주석이 cp949로 읽히고, 그 깨진 바이트 중 하나가 따옴표나 백틱으로 해석되는
+        순간 스크립트는 실행되기 전에 죽는다. install.sh는 파일로 저장돼 bash가 읽으므로
         같은 위험이 없다 — 이 제약은 ps1 에만 건다.
         """
         raw = open(INSTALL_PS1, "rb").read()
@@ -140,7 +140,7 @@ class InstallPs1Syntax(unittest.TestCase):
                     self.fail(f"install.ps1:{num} uses {label}, which PowerShell 5.1 cannot parse:\n  {line.strip()}")
 
     def test_parses_when_powershell_available(self) -> None:
-        """pwsh 이 있으면 진짜 파서로 확인한다 (정적 검사의 상한을 올린다)."""
+        """pwsh이 있으면 진짜 파서로 확인한다 (정적 검사의 상한을 올린다)."""
         pwsh = shutil.which("pwsh") or shutil.which("powershell")
         if not pwsh:
             self.skipTest("no pwsh/powershell on this host")
@@ -157,7 +157,7 @@ class InstallPs1Syntax(unittest.TestCase):
 class InstallPs1Behaviour(unittest.TestCase):
     """정적 검사는 형상만 본다 — 실패 경로가 실제로 무엇을 남기는지는 돌려봐야 안다.
 
-    tests/install_ps1_smoke.ps1 이 진입 블록을 가짜 Main 과 함께 자식 셸에서 구동한다
+    tests/install_ps1_smoke.ps1이 진입 블록을 가짜 Main과 함께 자식 셸에서 구동한다
     (설치는 하지 않는다). pwsh 없는 호스트에서는 건너뛴다.
     """
 
@@ -179,7 +179,7 @@ class InstallPs1WindowSurvival(unittest.TestCase):
     """창이 닫히는 세 경로 — 각각이 실제로 사용자 터미널을 죽였던 자리다."""
 
     def test_exit_only_after_the_hold(self) -> None:
-        """`exit` 는 창을 붙잡아 둔 뒤에만. 그 위에서는 전부 throw 로 올려보낸다."""
+        """`exit`는 창을 붙잡아 둔 뒤에만. 그 위에서는 전부 throw로 올려보낸다."""
         text = _text()
         self.assertIn(ENTRY_MARK, text, "entry marker missing — the guarded tail must be identifiable")
         entry_line = next(i for i, line in enumerate(_lines(), start=1) if line.startswith(ENTRY_MARK))
@@ -224,7 +224,7 @@ class InstallPs1WindowSurvival(unittest.TestCase):
     def test_foreign_bootstrap_runs_in_a_child_shell(self) -> None:
         """astral.sh 설치 스크립트 꼬리는 `catch { Write-Information $_; exit 1 }` 다 (26-07-27 확인).
 
-        이 세션에서 iex 하면 이유를 찍은 **직후** 그 `exit` 가 사용자 창을 닫는다 — 글자가 한 번
+        이 세션에서 iex 하면 이유를 찍은 **직후** 그 `exit`가 사용자 창을 닫는다 — 글자가 한 번
         번쩍이고 사라지는 게 그거다. 자식 셸이면 자식만 끝난다.
         """
         text = _text()
@@ -240,9 +240,9 @@ class InstallPs1WindowSurvival(unittest.TestCase):
     def test_no_redirected_native_stderr(self) -> None:
         """`native.exe 2>$null` + $ErrorActionPreference='Stop' = NativeCommandError.
 
-        Windows PowerShell 은 리다이렉트된 네이티브 stderr 를 ErrorRecord 로 바꾼다. 'Stop' 이면
-        그게 종료 오류가 되어, **성공한 단계에서도** 스크립트를 끊는다. uv 는 진행 상황을 stderr
-        에 쓴다 — 즉 정상 동작이 곧 중단 사유였다.
+        Windows PowerShell은 리다이렉트된 네이티브 stderr를 ErrorRecord로 바꾼다. 'Stop' 이면
+        그게 종료 오류가 되어, **성공한 단계에서도** 스크립트를 끊는다. uv는 진행 상황을
+        stderr에 쓴다 — 즉 정상 동작이 곧 중단 사유였다.
         """
         for num, line in _code_lines():
             if re.search(r"2>\s*\$null|2>&1\s*\|\s*Out-Null", _bare(line)):
@@ -254,7 +254,7 @@ class InstallPs1WindowSurvival(unittest.TestCase):
 
 class InstallPs1Diagnostics(unittest.TestCase):
     def test_web_calls_use_basic_parsing(self) -> None:
-        """-UseBasicParsing 없으면 IE 엔진에 의존한다 — 초기 설정 전 Windows 에서 통째로 실패."""
+        """-UseBasicParsing 없으면 IE 엔진에 의존한다 — 초기 설정 전 Windows에서 통째로 실패."""
         for num, line in _code_lines():
             if re.search(r"\bInvoke-(WebRequest|RestMethod)\b", line):
                 self.assertIn(
@@ -279,7 +279,7 @@ class InstallPs1Diagnostics(unittest.TestCase):
         )
 
     def test_node_absence_is_a_warning_only(self) -> None:
-        """node 는 프레이야 엔진용이지 설치 전제가 아니다 — 경고 한 줄로 끝나야 한다."""
+        """node는 프레이야 엔진용이지 설치 전제가 아니다 — 경고 한 줄로 끝나야 한다."""
         hits = [line.strip() for _, line in _code_lines() if "node not found" in line]
         self.assertEqual(len(hits), 1, f"expected exactly one 'node not found' surface, got {hits}")
         self.assertTrue(hits[0].startswith("Write-Warn2"), f"node absence must be a warning, not a Fail:\n  {hits[0]}")
@@ -287,10 +287,10 @@ class InstallPs1Diagnostics(unittest.TestCase):
 
 
 class InstallPs1SurfaceParity(unittest.TestCase):
-    """윈도우 설치 화면은 install.sh 와 **같은 화면**이어야 한다.
+    """윈도우 설치 화면은 install.sh와 **같은 화면**이어야 한다.
 
-    사용자 요구가 그것이다 — "리눅스나 맥에서 설치하는 것처럼 똑같이". 그런데 ps1 은 ASCII 만
-    담을 수 있어(위 Encoding 참조) 같은 글리프를 코드포인트와 base64 로 우회해 싣는다. 우회한
+    사용자 요구가 그것이다 — "리눅스나 맥에서 설치하는 것처럼 똑같이". 그런데 ps1은 ASCII만
+    담을 수 있어(위 Encoding 참조) 같은 글리프를 코드포인트와 base64로 우회해 싣는다. 우회한
     사본은 원본이 바뀌어도 안 따라간다 — **그 드리프트가 여기서 잡히지 않으면 아무 데서도 안
     잡힌다.** 아래 검사는 전부 "두 파일이 같은 것을 그리는가"만 묻는다.
     """
@@ -302,7 +302,7 @@ class InstallPs1SurfaceParity(unittest.TestCase):
         return m.group(1)
 
     def _ps_glyphs(self) -> dict[str, str]:
-        """install.ps1 의 **리치** 글리프 표 (두 번째 AsgardGlyph 할당) → {이름: 실제 글자}."""
+        """install.ps1의 **리치** 글리프 표 (두 번째 AsgardGlyph 할당) → {이름: 실제 글자}."""
         blocks = re.findall(r"\$script:AsgardGlyph = @\{(.*?)^\s*\}", _text(), re.S | re.M)
         self.assertGreaterEqual(len(blocks), 2, "install.ps1 lost its ASCII/Unicode glyph pair")
         rich = blocks[1]
@@ -314,14 +314,14 @@ class InstallPs1SurfaceParity(unittest.TestCase):
         return out
 
     def _sh_mark(self, fn: str) -> str:
-        """install.sh 의 ok/warn/info/die 가 찍는 글리프 — printf 서식의 첫 %s…%s 사이 한 글자."""
+        """install.sh의 ok/warn/info/die가 찍는 글리프 — printf 서식의 첫 %s…%s 사이 한 글자."""
         m = re.search(rf"^{fn}\(\)\s+\{{ printf '[^']*?%s(.)%s", _sh(), re.M)
         self.assertIsNotNone(m, f"install.sh:{fn}() no longer looks like a mark printer")
         assert m is not None
         return m.group(1)
 
     def test_logo_is_byte_identical_to_install_sh(self) -> None:
-        """브랜드 락업은 base64 로 실려 있다 — 디코드하면 install.sh 의 ART 와 **바이트가 같아야** 한다.
+        """브랜드 락업은 base64로 실려 있다 — 디코드하면 install.sh의 ART와 **바이트가 같아야** 한다.
 
         같은 그림을 두 파일에 손으로 두 번 적으면 한쪽만 고쳐진다. 여기서는 한쪽을 고치면 이
         검사가 즉시 빨개진다.
@@ -353,7 +353,7 @@ class InstallPs1SurfaceParity(unittest.TestCase):
         self.assertEqual({int(m.group(1))}, widths, "the version line is aligned to the wrong column")
 
     def test_spinner_frames_match_install_sh(self) -> None:
-        """스피너는 같은 점자 바퀴여야 한다 (ps1 은 코드포인트로 싣는다)."""
+        """스피너는 같은 점자 바퀴여야 한다 (ps1은 코드포인트로 싣는다)."""
         m = re.search(r"local fr=\(([^)]*)\)", _sh())
         self.assertIsNotNone(m, "install.sh no longer has a spinner frame list")
         assert m is not None
@@ -375,7 +375,7 @@ class InstallPs1SurfaceParity(unittest.TestCase):
             )
 
     def test_phases_match_install_sh(self) -> None:
-        """단계 수와 제목이 같아야 한다 — [n/3] 의 분모가 갈리면 진행 감각부터 달라진다."""
+        """단계 수와 제목이 같아야 한다 — [n/3]의 분모가 갈리면 진행 감각부터 달라진다."""
         titles = re.findall(r'^\s*phase "([^"]+)"', _sh(), re.M)
         self.assertEqual(len(titles), 3, f"install.sh no longer has three phases: {titles}")
         steps = re.search(r"^STEP=0; STEPS=(\d+)", _sh(), re.M)
@@ -419,9 +419,9 @@ class InstallPs1SurfaceParity(unittest.TestCase):
                     )
 
     def test_terminal_state_is_handed_back(self) -> None:
-        """콘솔 출력 인코딩은 프로세스 전역이고, `irm | iex` 에서 그 프로세스는 **사용자 셸**이다.
+        """콘솔 출력 인코딩은 프로세스 전역이고, `irm | iex`에서 그 프로세스는 **사용자 셸**이다.
 
-        ErrorActionPreference 와 같은 이유로 반드시 되돌려야 하고, 되돌리는 자리는 창을 붙잡기
+        ErrorActionPreference와 같은 이유로 반드시 되돌려야 하고, 되돌리는 자리는 창을 붙잡기
         전이어야 한다 (붙잡는 동안 사용자 콘솔이 우리 코드페이지로 남아 있으면 안 된다).
         """
         text = _text()
@@ -458,7 +458,7 @@ class InstallPs1SurfaceParity(unittest.TestCase):
     def test_tls_is_raised_before_the_first_request(self) -> None:
         """배너의 버전 조회가 이 스크립트의 **첫 https 요청**이다.
 
-        Windows PowerShell 5.1 은 TLS 1.0 으로 나가고 github 는 그걸 거절한다 — 순서가 뒤집히면
+        Windows PowerShell 5.1은 TLS 1.0으로 나가고 github는 그걸 거절한다 — 순서가 뒤집히면
         버전 줄이 조용히 사라진다(실패가 try 안에서 삼켜지므로 아무도 이유를 못 본다).
         """
         body = _text().split("function Main {", 1)[1]
@@ -472,9 +472,9 @@ class InstallPs1SurfaceParity(unittest.TestCase):
         """리치 글리프의 진짜 전제는 **폰트**인데, 폰트는 물어볼 수가 없다.
 
         그래서 "터미널이 자기 이름을 대는가"로 대신 묻는다 — Windows Terminal·ConEmu·VS Code·
-        서드파티 에뮬레이터는 전부 자기를 밝히고, 글리프를 박스로 그리는 레거시 conhost 만
-        아무 이름도 대지 않는다. 이 목록이 사라지면 그 conhost 에 점자 박스가 뜬다.
-        (행동 스모크로는 못 잡는 자리다: 스모크는 FORCE_UI 로 이 관문을 항상 통과시킨다.)
+        서드파티 에뮬레이터는 전부 자기를 밝히고, 글리프를 박스로 그리는 레거시 conhost만
+        아무 이름도 대지 않는다. 이 목록이 사라지면 그 conhost에 점자 박스가 뜬다.
+        (행동 스모크로는 못 잡는 자리다: 스모크는 FORCE_UI로 이 관문을 항상 통과시킨다.)
         """
         m = re.search(r"foreach \(\$v in @\(([^)]*)\)\) \{\s*\n\s*if \(\$v\) \{ \$named = \$true \}", _text())
         self.assertIsNotNone(m, "install.ps1 no longer asks the terminal to identify itself")

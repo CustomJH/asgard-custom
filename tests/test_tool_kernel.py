@@ -37,7 +37,7 @@ class TestRegistry(unittest.TestCase):
         )
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py ticket-recover"))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py verify-baseline"))
-        # close --force 는 관리적 해제(Odin 동의) — read-only 역할 권한이 아니다
+        # close --force는 관리적 해제(Odin 동의) — read-only 역할 권한이 아니다
         self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close --force"))
         self.assertFalse(is_readonly_bash_safe("python3 .claude/hooks/quest-log.py close q1 --force"))
         self.assertTrue(is_readonly_bash_safe("python3 .claude/hooks/verifier-gate.py"))
@@ -82,7 +82,7 @@ class TestRegistry(unittest.TestCase):
         self.assertFalse(is_readonly_bash_safe("ls && cat /etc/passwd"))
 
     def test_quest_bookkeeping_survives_host_path_and_trailing_line(self):
-        # 26-07-26 실측: Worker 가 quest 를 열지 못해 같은 명령을 형태만 바꿔 5회 재시도했다 —
+        # 26-07-26 실측: Worker가 quest를 열지 못해 같은 명령을 형태만 바꿔 5회 재시도했다 —
         # ① 호스트가 넘긴 절대경로 형태 ② 관측 뒤에 붙은 `\necho "EXIT:$?"` 한 줄.
         with tempfile.TemporaryDirectory() as root:
             os.makedirs(os.path.join(root, ".claude", "hooks"))
@@ -99,7 +99,7 @@ class TestRegistry(unittest.TestCase):
             self.assertFalse(is_readonly_bash_safe("python3 -c \"import os\nos.remove('x')\"", root))
 
     def test_readonly_stream_editors(self):
-        # sed/awk 는 -i 없이는 stdout 전용 관측이다. 스크립트 인자를 경로로 오독해 `/` 로 시작하는
+        # sed/awk는 -i 없이는 stdout 전용 관측이다. 스크립트 인자를 경로로 오독해 `/`로 시작하는
         # 정규식이 차단됐던 것도 함께 봉합 (26-07-26 실측).
         self.assertTrue(is_readonly_bash_safe("sed -n '1,5p' README.md"))
         self.assertTrue(is_readonly_bash_safe("sed -n '/error/p' README.md"))
@@ -132,8 +132,8 @@ class TestRegistry(unittest.TestCase):
             self.assertFalse(is_readonly_bash_safe(f"node --test {other}", root))
 
     def test_readonly_python_smoke_lane(self):
-        # Verifier 계약("대표 함수 호출 스모크")의 실행 통로 — 쓰기 없는 python -c 는 허용,
-        # 쓰기·프로세스·네트워크 API 는 fail-closed (26-07-21: 차단 변형 재시도로 턴 소진 봉합)
+        # Verifier 계약("대표 함수 호출 스모크")의 실행 통로 — 쓰기 없는 python -c는 허용,
+        # 쓰기·프로세스·네트워크 API는 fail-closed (26-07-21: 차단 변형 재시도로 턴 소진 봉합)
         self.assertTrue(is_readonly_bash_safe("python3 -c \"import ast; ast.parse(open('x.py').read())\""))
         self.assertTrue(is_readonly_bash_safe('python3 -c "from asgard import ui; print(ui.stream_width())"'))
         self.assertTrue(is_readonly_bash_safe("python3 --version"))
@@ -166,7 +166,7 @@ class TestRegistry(unittest.TestCase):
 
         개인 메모리 계약 명령(query·ingest)만 메인 스레드에 뚫어 주던 예외(26-07-23)는 이 규칙에
         흡수돼 사라졌다 — 예외가 필요했던 이유가 "신원 없음 = 읽기전용"이라는 전제였고, 그 전제가
-        모드 B 의 단일 변경을 교착시켰다 (subagent-gate 가 유닛 마커 없는 Worker 디스패치를 거부해
+        모드 B의 단일 변경을 교착시켰다 (subagent-gate가 유닛 마커 없는 Worker 디스패치를 거부해
         우회로도 없다). 퀘스트 귀속은 write-sentinel + Stop 게이트 소관이다."""
         import io
         import json as j
@@ -334,7 +334,7 @@ class TestCapabilityPolicy(unittest.TestCase):
         """JS/TS 저장소에서 판정자가 아무것도 실행하지 못하면 배달물은 늘 "실행 증거 없음"이다.
 
         실측(26-07-26 helios): node·npm·python -c subprocess 전 레인이 막혀 판정이 정적 읽기로
-        후퇴했다. Python 쪽 `python tests/x.py` 와 대칭인 통로만 연다 — 인라인 실행(-e/--eval)은
+        후퇴했다. Python 쪽 `python tests/x.py`와 대칭인 통로만 연다 — 인라인 실행(-e/--eval)은
         쓰기 휴리스틱이 없어 계속 막힌다."""
         from asgard.hooks.readonly_guard import is_readonly_bash_safe
 

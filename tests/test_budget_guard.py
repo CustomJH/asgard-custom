@@ -1,7 +1,7 @@
 """소비 상한 게이트 — 계측원·판정·프로토콜.
 
 이 게이트의 존재 이유가 선행 연구의 실패라서(ref/asgard-helios: SubagentStop 페이로드의
-usage 를 읽어 89건 전부 null → 상한이 죽은 코드), 테스트의 첫 번째 의무도 계측이다:
+usage를 읽어 89건 전부 null → 상한이 죽은 코드), 테스트의 첫 번째 의무도 계측이다:
 **트랜스크립트의 두 레인이 실제로 집계되는가.** 판정만 맞고 계측이 0이면 게이트는 다시 죽는다.
 """
 
@@ -79,7 +79,7 @@ class TestLedger(unittest.TestCase):
         self.assertEqual(bg.read_ledger(path).total().output, 100)
 
     def test_agent_call_without_usage_still_counts_the_call(self):
-        # 호출은 났는데 usage 가 없으면 비용은 모르지만 **호출 횟수 상한**은 여전히 살아야 한다.
+        # 호출은 났는데 usage가 없으면 비용은 모르지만 **호출 횟수 상한**은 여전히 살아야 한다.
         path = _transcript(_line(type="user", toolUseResult={"agentType": "asgard-worker", "content": "x"}))
         self.addCleanup(os.unlink, path)
         ledger = bg.read_ledger(path)
@@ -184,7 +184,7 @@ class TestVerdict(unittest.TestCase):
         self.assertEqual(bg.verdict(ledger, self.LIMITS, role="asgard-worker").code, "budget-ceiling")
 
     def test_zero_and_junk_limits_fall_back_to_defaults(self):
-        # 0 이나 문자열을 상한으로 받으면 "모든 것이 초과"가 되어 게이트가 세션을 인질로 잡는다.
+        # 0이나 문자열을 상한으로 받으면 "모든 것이 초과"가 되어 게이트가 세션을 인질로 잡는다.
         for junk in ({"session_cost_units": 0}, {"session_cost_units": "many"}, {}):
             self.assertEqual(bg.verdict(self._ledger(main_out=10), junk).action, "allow")
 
@@ -240,7 +240,7 @@ class TestHookProtocol(unittest.TestCase):
         self.assertIn("budget-ceiling", err)
 
     def test_cursor_prompt_block_uses_continue_false(self):
-        # beforeSubmitPrompt 는 permission 스키마가 아니다 — 한 스키마로 밀면 한쪽이 조용히 통과한다.
+        # beforeSubmitPrompt는 permission 스키마가 아니다 — 한 스키마로 밀면 한쪽이 조용히 통과한다.
         code, out, _ = _run(self._payload(self.over), ["cursor", "prompt"])
         self.assertEqual(code, 0)
         self.assertIs(json.loads(out)["continue"], False)
@@ -347,7 +347,7 @@ class TestLimitsConfig(unittest.TestCase):
         경고는 p90 아래에서 먼저 울리고, 차단은 p95 이상 p99 이하 — 정상 작업의 95% 이상은
         차단을 느끼지 못하고 걸리는 것은 꼬리뿐이다. 숫자를 흔들면 이 테스트가 먼저 깨진다."""
         p90, p95, p99 = 6_271_519, 13_680_984, 24_504_250
-        # DEFAULTS 는 enforce("block") 때문에 str|int 표다 — 숫자로 좁혀야 비교가 성립한다.
+        # DEFAULTS는 enforce("block") 때문에 str|int 표다 — 숫자로 좁혀야 비교가 성립한다.
         warn, ceiling = int(bg.DEFAULTS["warn_cost_units"]), int(bg.DEFAULTS["session_cost_units"])
         self.assertLessEqual(warn, p90)
         self.assertGreaterEqual(ceiling, p95)

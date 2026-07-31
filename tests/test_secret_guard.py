@@ -1,6 +1,6 @@
 """Canon 4 양쪽 절반 — 쓰기(내용이 근거)와 읽기(이름이 근거).
 
-읽기 측이 왜 게이트여야 하고 마스킹이 아닌가: 네이티브 루프는 도구 출력을 그대로 messages 에
+읽기 측이 왜 게이트여야 하고 마스킹이 아닌가: 네이티브 루프는 도구 출력을 그대로 messages에
 넣고 매 턴 프로바이더로 재전송한다. 읽고 나서 가리는 것은 이미 나간 뒤다. 그래서 이 파일의
 테스트는 두 축을 본다 — **막아야 할 것을 막는가**, 그리고 **정상 작업을 막지 않는가**.
 뒤쪽이 더 중요하다: 오탐이 쌓인 게이트는 꺼지고, 꺼진 게이트는 없는 것과 같다.
@@ -143,17 +143,17 @@ class TestSecretCommand(unittest.TestCase):
         """실코퍼스에서 히트 23건 중 다수가 이 형상이었다 — 규칙이 아니라 계측이 틀렸던 자리."""
         self.assertEqual(sg.secret_command("env | grep -i linear"), "")
         self.assertTrue(sg.secret_command("env | grep -i password"))
-        # grep 이 아닌 하류는 전량이 흐른다 — 필터가 아니다
+        # grep이 아닌 하류는 전량이 흐른다 — 필터가 아니다
         self.assertTrue(sg.secret_command("env | sort"))
         self.assertTrue(sg.secret_command("env | head"))
 
     def test_alternatives_are_separate_entries_not_one_and_group(self):
-        """한 튜플에 대안을 섞으면 AND 가 걸려 아무것도 안 잡힌다 (탐침이 잡은 결함)."""
+        """한 튜플에 대안을 섞으면 AND가 걸려 아무것도 안 잡힌다 (탐침이 잡은 결함)."""
         self.assertTrue(sg.secret_command("security find-generic-password -s a"))
         self.assertTrue(sg.secret_command("security find-internet-password -s a"))
 
     def test_unlexable_command_is_allowed(self):
-        # 판정 불능은 허용 — 렉싱 실패로 모든 shell 이 막히면 가드가 세션을 인질로 잡는다
+        # 판정 불능은 허용 — 렉싱 실패로 모든 shell이 막히면 가드가 세션을 인질로 잡는다
         self.assertEqual(sg.secret_command("cat 'unterminated"), "")
 
     def test_empty_command_is_allowed(self):
@@ -208,7 +208,7 @@ class TestHookWriteSideUnchanged(unittest.TestCase):
         self.assertEqual(_run(payload, [])[0], 0)
 
     def test_payload_without_tool_name_keeps_legacy_behaviour(self):
-        """구 스캐폴드는 tool_name 을 안 싣는다 — 그 페이로드도 그대로 판정돼야 한다."""
+        """구 스캐폴드는 tool_name을 안 싣는다 — 그 페이로드도 그대로 판정돼야 한다."""
         self.assertEqual(_run({"tool_input": {"file_path": "a.py", "content": "x = 1"}}, [])[0], 0)
         self.assertEqual(_run({"tool_input": {"file_path": "a.py", "content": "ghp_" + "a" * 36}}, [])[0], 2)
         self.assertEqual(_run({"tool_input": {"file_path": ".env", "content": "X=1"}}, [])[0], 2)

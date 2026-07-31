@@ -1,7 +1,7 @@
 """문서 인제스트 테스트 — 사람이 던진 문서가 규칙대로 들어가는가.
 
 검증 축: 추출(형식별·미지원 거절·빈 문서) / 판정(요구사항 문서 → document, 결정문 → record,
-사람 지정이 자동을 덮음) / 엔티티(요구사항 ID 만·규격 이름 오탐 없음·상한) /
+사람 지정이 자동을 덮음) / 엔티티(요구사항 ID만·규격 이름 오탐 없음·상한) /
 아이템 조립(원문 보존·전략 동반·같은 파일 = 같은 document_id) / 도구 표면(승인 없이는 안 씀).
 """
 
@@ -113,7 +113,7 @@ class EntityTest(unittest.TestCase):
         self.assertIn("METER-002", names)
 
     def test_standard_names_are_not_requirements(self):
-        # 26-07-28 실측 결함: RS-485·CRC-16 이 REQUIREMENT 로 잡혔다. 형상이 같으니
+        # 26-07-28 실측 결함: RS-485·CRC-16이 REQUIREMENT로 잡혔다. 형상이 같으니
         # 라벨이나 반복 횟수로 가른다 — 규격 이름은 스치고 지나간다.
         names = [name for name, _kind in ingest.extract_entities(REQUIREMENTS)]
         self.assertNotIn("RS-485", names)
@@ -152,7 +152,7 @@ class PrepareTest(unittest.TestCase):
             ingest.prepare(self.path, strategy="whatever")
 
     def test_same_file_keeps_one_document_id(self):
-        # 같은 문서를 다시 던지면 갈아끼워야 한다 (교정 경로) — 새 id 가 생기면 둘이 공존한다
+        # 같은 문서를 다시 던지면 갈아끼워야 한다 (교정 경로) — 새 id가 생기면 둘이 공존한다
         self.assertEqual(ingest.prepare(self.path).document_id, ingest.prepare(self.path).document_id)
 
     def test_plan_separates_readable_from_unreadable(self):
@@ -298,7 +298,7 @@ class ToolSurfaceTest(unittest.TestCase):
         self.assertNotIn("승인 대기", out)
 
     def test_autosave_failure_hands_the_approval_id_back(self):
-        """한 건이 막혀도 나머지는 들어가고, 막힌 건은 사람이 그 id 로 이어받는다."""
+        """한 건이 막혀도 나머지는 들어가고, 막힌 건은 사람이 그 id로 이어받는다."""
         out = self._run_with_autosave(mock.Mock(side_effect=RuntimeError("backend down")))
         self.assertIn("자동저장 실패", out)
         self.assertIn("project-approve abc123", out)

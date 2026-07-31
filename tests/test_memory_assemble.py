@@ -2,7 +2,7 @@
 
 이 층이 지키는 계약은 세 문장이다:
   · 같은 사실이 여러 레인으로 들어오면 **한 번만** 실린다 (레인 간 중복 제거).
-  · 레인 안의 중복은 **안 건드린다** — 그건 저장의 결함이고 lint 가 지목한다.
+  · 레인 안의 중복은 **안 건드린다** — 그건 저장의 결함이고 lint가 지목한다.
   · 어느 레인도 굶지 않는다 (바닥) — 그러면서 남은 자리는 순위로 겨룬다.
 """
 
@@ -68,7 +68,7 @@ class TestCrossLaneDedup(unittest.TestCase):
         self.assertEqual(len(chosen), 2)
 
     def test_duplicates_inside_one_lane_are_left_alone(self):
-        """레인 안 중복은 저장의 결함이라 주입에서 가리지 않는다 (lint 가 지목한다)."""
+        """레인 안 중복은 저장의 결함이라 주입에서 가리지 않는다 (lint가 지목한다)."""
         fact = "릴리스는 태그를 먼저 찍고 배포한다"
         chosen = select([Candidate("a", fact, rank=0), Candidate("a", fact + " 반드시", rank=1)], LANES, budget=4000)
         self.assertEqual(len(chosen), 2)
@@ -163,7 +163,7 @@ class TestStats(unittest.TestCase):
 
 class TestThreshold(unittest.TestCase):
     def test_the_calibrated_threshold_is_the_measured_one(self):
-        """0.55 는 이 저장소의 실측에서 왔다 (병합쌍 0.56/0.61 vs 무관쌍 0.00/0.02)."""
+        """0.55는 이 저장소의 실측에서 왔다 (병합쌍 0.56/0.61 vs 무관쌍 0.00/0.02)."""
         self.assertEqual(DEDUP_CONTAINMENT, 0.55)
 
 

@@ -4,7 +4,7 @@
 툴 계약(text_editor/bash)·경로 격리·git-guard 배선·퀘스트 로그 래퍼(ql/gate)·delegate 이벤트·
 write-sentinel 미러. 라이브 루프(실 모델)는 여기서 다루지 않는다 — 별도 벤치/수동 스모크 몫.
 
-실행: uv run pytest tests/test_agent.py  (asgard 패키지 임포트 필요 — subprocess 가 -m 으로 훅 실행)
+실행: uv run pytest tests/test_agent.py  (asgard 패키지 임포트 필요 — subprocess가 -m으로 훅 실행)
 """
 
 import json
@@ -104,7 +104,7 @@ class TestBash(Base):
                 T.run_bash(self.root, {"command": command})
 
     def test_git_guard_blocks_stash_sweep(self):
-        # 헬리오스 교훈 — bare stash 는 전체 트리를 걷어가 병렬 세션 미커밋분까지 소실.
+        # 헬리오스 교훈 — bare stash는 전체 트리를 걷어가 병렬 세션 미커밋분까지 소실.
         for command in (
             "git stash",
             "git stash push -m wip",
@@ -246,7 +246,7 @@ class TestBashDestructiveGuard(Base):
 
 
 class TestSecretGuardWiring(Base):
-    """secret-guard 훅 배선 (Canon Law 4) — 네이티브 editor write 도 mode B 와 같은 차단 지점."""
+    """secret-guard 훅 배선 (Canon Law 4) — 네이티브 editor write도 mode B와 같은 차단 지점."""
 
     def test_env_file_write_blocked(self):
         with self.assertRaises(T.ToolError):
@@ -267,7 +267,7 @@ class TestSecretGuardWiring(Base):
 
 
 class TestReadonlySession(Base):
-    """역할→도구 구조 강제 — readonly 세션은 editor write 를 거부한다 (thinker/verifier/loki)."""
+    """역할→도구 구조 강제 — readonly 세션은 editor write를 거부한다 (thinker/verifier/loki)."""
 
     def _session(self, readonly):
         from asgard.agent.session import AgentSession
@@ -364,7 +364,7 @@ class TestContextPrune(Base):
         self.assertEqual(rp.profile.context_window, 0)  # 전제 — 창 미상
         s = self._session(rp)
         self.assertEqual(s._window(), _FALLBACK_CONTEXT_WINDOW)
-        # 프룬(80%)과 요약(90%) 사이 — 이 단계에서 요약 LLM 은 호출되지 않아야 한다
+        # 프룬(80%)과 요약(90%) 사이 — 이 단계에서 요약 LLM은 호출되지 않아야 한다
         s._maybe_compress(SessionResult(text="", stop_reason="", context_tokens=int(_FALLBACK_CONTEXT_WINDOW * 0.85)))
         self.assertIn("회수됨", s.messages[0]["content"])
         self.assertNotIn("회수됨", s.messages[-1]["content"])  # 최근 보존
@@ -564,7 +564,7 @@ class TestRoleProviders(Base):
         self.assertIs(m["thinker"], default)
         self.assertEqual(m["worker"].profile.name, "ollama")
         self.assertEqual(m["worker"].model, "m1")
-        self.assertEqual(m["worker"].missing, [])  # ollama 는 keyless — 배치 즉시 유효
+        self.assertEqual(m["worker"].missing, [])  # ollama는 keyless — 배치 즉시 유효
 
     def test_heimdall_session_routes_by_role(self):
         from asgard.agent.heimdall import Heimdall
@@ -578,7 +578,7 @@ class TestRoleProviders(Base):
     def test_heimdall_missing_role_falls_back(self):
         from asgard.agent.heimdall import Heimdall
 
-        # openai_compat 는 base_url·키 필수 — 미충족이면 경고 + 기본 provider 폴백
+        # openai_compat는 base_url·키 필수 — 미충족이면 경고 + 기본 provider 폴백
         self._write_config('[trinity.verifier]\nprovider = "openai_compat"\nmodel = "m2"\n')
         warns = []
         h = Heimdall(self._default(), self.root, on_text=warns.append)
@@ -728,7 +728,7 @@ class TestRoleProviders(Base):
         h = Heimdall(self._default(), self.root, on_text=lambda s: None)
         h._escalate(sid)
         log = open(os.path.join(self.root, ".asgard", "quest", "q-esc.jsonl")).read()
-        self.assertIn('"ESCALATE"', log)  # verdict 없던 기존 append 는 조용히 거부되던 경로
+        self.assertIn('"ESCALATE"', log)  # verdict 없던 기존 append는 조용히 거부되던 경로
         # ESCALATE 후 close 허용 (quest_log 계약)
         self.assertEqual(ql(self.root, "close", session=sid).returncode, 0)
 
@@ -780,7 +780,7 @@ class TestDeliveryAgents(unittest.TestCase):
         self.assertNotIn("effort:", ullr)
 
     def test_caller_sweep_contract(self):
-        # 숨은 caller 파손 방어 — worker 는 편집 전 전수 나열, verifier 는 diff 밖 증거 없는 PASS 무효.
+        # 숨은 caller 파손 방어 — worker는 편집 전 전수 나열, verifier는 diff 밖 증거 없는 PASS 무효.
         self.assertIn("Exhaustive usage sweep", self._tpl("asgard-worker.md"))
         v = self._tpl("asgard-verifier.md")
         self.assertIn("A PASS trapped in the diff is void", v)
@@ -797,8 +797,8 @@ class TestDeliveryAgents(unittest.TestCase):
             self.assertNotIn("Agent", fm.split("tools:")[1].splitlines()[0])
 
     def test_trinity_agents_can_nest(self):
-        # 모든 역할은 canonical least-privilege allowlist 를 명시한다. Worker 는 mutation + Agent,
-        # verifier/thinker 는 read/execute + Agent 만 (CC 모드 B).
+        # 모든 역할은 canonical least-privilege allowlist를 명시한다. Worker는 mutation + Agent,
+        # verifier/thinker는 read/execute + Agent만 (CC 모드 B).
         self.assertIn("tools: Read, Grep, Glob, Bash, Write, Edit, NotebookEdit, Agent", self._tpl("asgard-worker.md"))
         self.assertIn("Agent", self._tpl("asgard-verifier.md").split("---")[1])
         thinker_fm = self._tpl("asgard-thinker.md").split("---")[1]
@@ -930,7 +930,7 @@ class TestDeliveryAgents(unittest.TestCase):
 
 
 class TestHeadlessProceed(unittest.TestCase):
-    """무인 승인 해소 계약 — headless 에서 승인 대기 무작업 종료 금지."""
+    """무인 승인 해소 계약 — headless에서 승인 대기 무작업 종료 금지."""
 
     def _tpl(self, name):
         from asgard.templates.roles import ROLE_AGENTS
@@ -972,7 +972,7 @@ class TestHeadlessProceed(unittest.TestCase):
         self.assertIn("Smells aid judgment", verifier)
 
     def test_verifier_carries_architecture_lens(self):
-        # 아키텍처 검사 상시 항목 (26-07-21) — 경계 넘는 import 의 의존 방향 대조 + 정본 포인터
+        # 아키텍처 검사 상시 항목 (26-07-21) — 경계 넘는 import의 의존 방향 대조 + 정본 포인터
         verifier = self._tpl("asgard-verifier.md")
         self.assertIn("Architecture check (always-on Standards axis item)", verifier)
         self.assertIn("a new circular dependency", verifier)
@@ -980,7 +980,7 @@ class TestHeadlessProceed(unittest.TestCase):
 
 
 class TestRunPrompt(unittest.TestCase):
-    """asgard run — headless 단발 실행. Heimdall/preflight 을 대역으로 결정론 검증."""
+    """asgard run — headless 단발 실행. Heimdall/preflight을 대역으로 결정론 검증."""
 
     def setUp(self):
         import io

@@ -2,7 +2,7 @@
 
 검증 축: 수집(최근 턴·손상 라인 관용) / 판정(접지 플로어·주어 게이트·금지 캡처·근거 실존·
 deductive 최소 근거·중복·캡·스캔) / 적용(kind 배정·근거 표기·peer card 재생성·리포트) /
-되묻기(3원 근거 수집·근거 없음 정직 보고) / 트리거(턴 누적 문턱). LLM 은 _complete 목킹.
+되묻기(3원 근거 수집·근거 없음 정직 보고) / 트리거(턴 누적 문턱). LLM은 _complete 목킹.
 """
 
 import json
@@ -279,14 +279,14 @@ class NudgeTest(PatternBase):
 
 
 class DegradationTest(PatternBase):
-    """provider 가 없거나 호출이 깨져도 회수는 살아 있어야 한다 — LLM 은 부가 계층이다."""
+    """provider가 없거나 호출이 깨져도 회수는 살아 있어야 한다 — LLM은 부가 계층이다."""
 
     def _invoke(self, args: list[str]):
         from typer.testing import CliRunner
 
         from asgard.cli import app
 
-        # CLI 는 cwd 를 프로젝트 루트로 본다 — 턴 원문이 그 루트에 귀속돼야 같은 것을 본다
+        # CLI는 cwd를 프로젝트 루트로 본다 — 턴 원문이 그 루트에 귀속돼야 같은 것을 본다
         previous = os.getcwd()
         os.chdir(self.root)
         try:

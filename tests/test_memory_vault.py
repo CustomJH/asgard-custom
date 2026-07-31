@@ -86,7 +86,7 @@ class MapsTest(VaultBase):
 
     def test_maps_refresh_when_the_canonical_changes(self):
         memory.add("첫 페이지", title="first", d=self.d)
-        self.assertIn("first", self._map("recent.md"))  # add 가 파생 갱신을 데려온다
+        self.assertIn("first", self._map("recent.md"))  # add가 파생 갱신을 데려온다
         memory.remove("first", d=self.d)
         memory.add("두번째 페이지", title="second", d=self.d)
         recent = self._map("recent.md")

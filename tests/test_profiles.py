@@ -23,7 +23,7 @@ from asgard import profiles, settings, swarm
 def _clean_env(home: str) -> dict[str, str]:
     env = {k: v for k, v in os.environ.items() if not k.startswith("ASGARD_")}
     env["HOME"] = home
-    env["ASGARD_MEMORY_SEMANTIC"] = "off"  # 임베딩 모델 다운로드 밀폐 (conftest 와 같은 규율)
+    env["ASGARD_MEMORY_SEMANTIC"] = "off"  # 임베딩 모델 다운로드 밀폐 (conftest와 같은 규율)
     return env
 
 
@@ -67,12 +67,12 @@ class TestHomeLadder(ProfileBase):
         self.assertEqual(profiles.active(), "alpha")  # 블록을 나가면 원복
 
     def test_unknown_home_is_custom_not_a_made_up_name(self):
-        """모르는 경로에 이름을 지어내면 그 이름으로 설정이 저장된다 — custom 으로 못 박는다."""
+        """모르는 경로에 이름을 지어내면 그 이름으로 설정이 저장된다 — custom으로 못 박는다."""
         os.environ["ASGARD_HOME"] = os.path.join(self.home, "somewhere-else")
         self.assertEqual(profiles.active(), "custom")
 
     def test_scope_is_context_local_not_environ(self):
-        """스코프가 os.environ 을 건드리면 스웜(한 프로세스 여러 에이전트)에서 서로를 덮는다."""
+        """스코프가 os.environ을 건드리면 스웜(한 프로세스 여러 에이전트)에서 서로를 덮는다."""
         profiles.create("alpha")
         with profiles.scoped("alpha"):
             self.assertNotIn("ASGARD_PROFILE", os.environ)
@@ -206,14 +206,14 @@ class TestSettingsMerge(ProfileBase):
 
 class TestCrud(ProfileBase):
     def test_reserved_and_malformed_names_are_refused(self):
-        # `custom` 은 active() 가 "모르는 ASGARD_HOME" 에 쓰는 표지 — 같은 이름의 에이전트가
+        # `custom`은 active()가 "모르는 ASGARD_HOME"에 쓰는 표지 — 같은 이름의 에이전트가
         # 생기면 진짜 프로파일과 표지를 구분할 수 없다.
         for bad in ("memory", "agent", "einherjar", "custom", "Ábc", "-lead", "a" * 64, "a b"):
             with self.assertRaises(ValueError, msg=f"{bad!r} 이 통과했다"):
                 profiles.validate(bad)
 
     def test_default_validates_but_cannot_be_created(self):
-        """`default` 는 유효한 **참조**다 (`agent use default`) — 다만 새로 지을 수는 없다.
+        """`default`는 유효한 **참조**다 (`agent use default`) — 다만 새로 지을 수는 없다.
         뿌리 자신이므로 만드는 순간 `~/.asgard/profiles/default` 라는 유령이 생긴다."""
         self.assertEqual(profiles.validate("default"), "default")
         with self.assertRaises(ValueError):
@@ -236,8 +236,8 @@ class TestCrud(ProfileBase):
         self.assertEqual(profiles.manifest("planner")["based_on"], "planner")
 
     def test_blank_identity_is_comments_only_so_it_stays_silent(self):
-        """씨앗 없이 만든 에이전트의 AGENT.md 는 안내 주석뿐 — 주석뿐이면 없는 것으로 친다
-        (manual.py 와 같은 규율). 안내문을 배송해도 프롬프트가 안 늘어나는 근거."""
+        """씨앗 없이 만든 에이전트의 AGENT.md는 안내 주석뿐 — 주석뿐이면 없는 것으로 친다
+        (manual.py와 같은 규율). 안내문을 배송해도 프롬프트가 안 늘어나는 근거."""
         profiles.create("plain")
         self.assertEqual(profiles._meaningful(profiles.identity("plain")), "")
 
@@ -260,7 +260,7 @@ class TestCrud(ProfileBase):
             self.assertEqual(_pages(memory_dir()), [])
 
     def test_delete_resets_a_dangling_sticky_pointer(self):
-        """죽은 이름을 가리키는 active_profile 은 이후 모든 프로세스를 custom 으로 떨어뜨린다."""
+        """죽은 이름을 가리키는 active_profile은 이후 모든 프로세스를 custom으로 떨어뜨린다."""
         profiles.create("alpha")
         profiles.set_active("alpha")
         profiles.delete("alpha")
@@ -307,7 +307,7 @@ class TestSubprocessPropagation(ProfileBase):
 
 
 class TestContainerHome(ProfileBase):
-    """이름 없는 홈 — 도커처럼 볼륨 하나를 통째로 `ASGARD_HOME` 으로 주는 경우.
+    """이름 없는 홈 — 도커처럼 볼륨 하나를 통째로 `ASGARD_HOME`으로 주는 경우.
 
     그 홈은 `~/.asgard/profiles/` 아래 있지 않아 **이름으로 되짚을 수 없다**. 그걸 `custom`
     이라는 표지로만 다루고 경로를 안 이어주면, 그 프로세스는 기억은 제대로 쓰면서 정체성만
@@ -342,7 +342,7 @@ class TestContainerHome(ProfileBase):
         self.assertIn("로그 분석만 한다", note)
 
     def test_the_header_names_the_volume_not_the_word_custom(self):
-        """컨테이너를 여럿 띄우면 전부 'custom' 이라 로그에서 누가 누군지 구분이 안 된다."""
+        """컨테이너를 여럿 띄우면 전부 'custom'이라 로그에서 누가 누군지 구분이 안 된다."""
         with open(os.path.join(self.container, profiles.IDENTITY), "w", encoding="utf-8") as handle:
             handle.write("body")
         self.assertIn("agent-data", profiles.note())
@@ -355,7 +355,7 @@ class TestContainerHome(ProfileBase):
         self.assertIn("로그 분석가", profiles.note())
 
     def test_scoping_to_custom_does_not_recurse(self):
-        """`profile_dir('custom')` 이 `home()` 을 부르면 스코프 안에서 서로를 되불러 죽는다."""
+        """`profile_dir('custom')`이 `home()`을 부르면 스코프 안에서 서로를 되불러 죽는다."""
         with profiles.scoped(profiles.CUSTOM):
             self.assertEqual(profiles.home(), self.container)
 
@@ -382,9 +382,9 @@ class TestSwarmBinding(ProfileBase):
         self.assertEqual(swarm.resolve(self.root), "worker-agent")
 
     def test_unset_default_does_not_masquerade_as_the_default_agent(self):
-        """빈 값이 `default` 로 접히면 배치 없는 프로젝트가 루트의 활성 에이전트를 덮는다."""
+        """빈 값이 `default`로 접히면 배치 없는 프로젝트가 루트의 활성 에이전트를 덮는다."""
         profiles.set_active("worker-agent")
-        swarm.bind(self.root, "thinker-agent", role="thinker")  # role 만 선언
+        swarm.bind(self.root, "thinker-agent", role="thinker")  # role만 선언
         self.assertEqual(swarm.binding(self.root)["default"], "")
         self.assertEqual(swarm.resolve(self.root), "worker-agent", "루트의 활성 에이전트가 이겨야 한다")
 
@@ -417,7 +417,7 @@ class TestSwarmBinding(ProfileBase):
         self.assertTrue(swarm.is_swarm(self.root))
 
     def test_roles_run_on_their_own_memory(self):
-        """스웜의 값어치 — Verifier 가 Worker 의 일지를 못 본다 (자기 확증의 구조적 차단)."""
+        """스웜의 값어치 — Verifier가 Worker의 일지를 못 본다 (자기 확증의 구조적 차단)."""
         from asgard.memory import _pages, add, ensure_home, memory_dir
 
         swarm.bind(self.root, "worker-agent", role="worker")
@@ -434,7 +434,7 @@ class TestSwarmBinding(ProfileBase):
 class TestNativeCompositionEndToEnd(ProfileBase):
     """네이티브 루프의 **실제** `_session` 조립 — 역할마다 맞는 정체성·기억·홈이 붙는가.
 
-    기존 Heimdall 테스트는 `_session` 을 통째로 대역으로 갈아끼우므로 이 조립을 안 지나간다.
+    기존 Heimdall 테스트는 `_session`을 통째로 대역으로 갈아끼우므로 이 조립을 안 지나간다.
     여기서는 진짜 메서드를 태우고 `AgentSession` 생성 인자만 가로챈다 — 조립이 빠지면
     "배치는 했는데 프롬프트엔 아무것도 안 실리는" 무증상 결함이 되기 때문이다."""
 
@@ -447,7 +447,7 @@ class TestNativeCompositionEndToEnd(ProfileBase):
 
         class _Stub:
             def __init__(self, *args, **kwargs):
-                # _session 은 (client, rp, root, system) 을 위치로 넘긴다
+                # _session은 (client, rp, root, system)을 위치로 넘긴다
                 captured.append({**kwargs, "system": args[3] if len(args) > 3 else kwargs.get("system", "")})
 
         self.addCleanup(mock.patch.stopall)
@@ -485,7 +485,7 @@ class TestNativeCompositionEndToEnd(ProfileBase):
         self.assertEqual(captured[-1]["system"], "BASE-PROMPT")
 
     def test_role_memory_snapshot_follows_the_placed_agent(self):
-        """Verifier 가 Worker 의 일지를 못 보는 것이 이 레인의 값어치 — 스냅샷 단계에서 갈린다."""
+        """Verifier가 Worker의 일지를 못 보는 것이 이 레인의 값어치 — 스냅샷 단계에서 갈린다."""
         from asgard.memory import add, ensure_home
 
         root = self.project()
@@ -506,7 +506,7 @@ class TestNativeCompositionEndToEnd(ProfileBase):
 
 class TestSessionCarriesTheAgent(ProfileBase):
     def test_run_opens_the_agents_home_for_the_whole_turn(self):
-        """생성자가 아니라 run() 에서 열어야 한다 — 메모리 툴은 턴 **안**에서 돈다."""
+        """생성자가 아니라 run()에서 열어야 한다 — 메모리 툴은 턴 **안**에서 돈다."""
         from asgard.agent.session import AgentSession
 
         profiles.create("alpha")

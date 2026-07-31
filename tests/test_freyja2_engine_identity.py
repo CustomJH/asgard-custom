@@ -2,12 +2,12 @@
 
 원본(impeccable) 대조 검증(2026-07-25)에서 셋이 같이 나왔다.
 
-- 엔진이 상류 제품명을 1,349곳에 그대로 달고 있어, 훅이 발견을 보고할 때마다 Asgard 에
-  없는 `/impeccable audit`·`/impeccable hooks ignore-value` 를 실행하라고 지시했다.
+- 엔진이 상류 제품명을 1,349곳에 그대로 달고 있어, 훅이 발견을 보고할 때마다 Asgard에
+  없는 `/impeccable audit`·`/impeccable hooks ignore-value`를 실행하라고 지시했다.
   억제 워크플로가 통째로 끊긴 상태였다.
-- `context.mjs` 가 세션마다 상류 호스트로 버전을 물으러 나갔고, 새 버전이면 `npx` 로
+- `context.mjs`가 세션마다 상류 호스트로 버전을 물으러 나갔고, 새 버전이면 `npx`로
   업데이트하라고 안내했다. 엔진은 Asgard 휠에 실려 오므로 둘 다 성립하지 않는다.
-- `engine/hooks/*.json` 이 상류 설치 경로를 가리켜, 배선해도 맞지 않았다.
+- `engine/hooks/*.json`이 상류 설치 경로를 가리켜, 배선해도 맞지 않았다.
 
 셋 다 봉합했고 이 파일이 되돌아가지 못하게 잡는다. 개명에서 **의도적으로 제외**한 것은
 은퇴한 금고 루트 `.impeccable` 하나뿐이다 — 그걸 아직 들고 있는 프로젝트를 읽어야 한다.
@@ -28,8 +28,8 @@ _VENDOR_DIR = _SCRIPTS / "detector/vendor"
 # 은퇴 금고 루트는 남는다. `.impeccable-overlay` 같은 클래스명은 개명 대상이었다.
 _LEGACY_VAULT_RE = re.compile(r"\.impeccable(?![-\w])")
 
-# 두 번째 면제: 파일 안에 박혀 이동하는 waiver 는 옛 철자로 쓰여 있어도 계속 먹혀야 한다.
-# 그 호환은 이 파일 하나에만 산다 (TestUpstreamSpellingStillHonored 가 존재를 강제한다).
+# 두 번째 면제: 파일 안에 박혀 이동하는 waiver는 옛 철자로 쓰여 있어도 계속 먹혀야 한다.
+# 그 호환은 이 파일 하나에만 산다 (TestUpstreamSpellingStillHonored가 존재를 강제한다).
 _SPELLING_COMPAT = "scripts/detector/shared/inline-ignores.mjs"
 
 
@@ -110,7 +110,7 @@ class TestHookManifestsPointAtTheRealEngine(unittest.TestCase):
         self.assertTrue((hooks_dir / "README.md").is_file(), "매니페스트 사용법 문서가 없다")
 
     def test_doctor_resolves_that_variable(self):
-        """README 가 안내하는 경로 해석이 실제로 그 엔진을 가리킨다."""
+        """README가 안내하는 경로 해석이 실제로 그 엔진을 가리킨다."""
         from asgard.commands.doctor import _freyja_engine_dir
 
         self.assertEqual(_freyja_engine_dir().resolve(), _ENGINE.resolve())

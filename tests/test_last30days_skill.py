@@ -4,17 +4,17 @@
 이 스킬은 앞선 벤더링 팩들과 두 가지가 다르다.
 
 ① 본문이 222KB 다. 카탈로그로 흘려보내면 어느 호스트에서든 명령 출력 상한에 잘려
-   **조용히 반쪽짜리 지시**가 모델에 들어간다. ② 본문의 모든 경로가 자기 SKILL.md 가
+   **조용히 반쪽짜리 지시**가 모델에 들어간다. ② 본문의 모든 경로가 자기 SKILL.md가
    놓인 디렉터리(`SKILL_DIR`)를 기준으로 풀린다 — 텍스트만 건네면 그 기준점이 없다.
 
-그래서 앵커 배달을 쓴다: 트리를 `<root>/.asgard/skills/<name>/` 에 풀고 **본문 대신
-위치**를 넘긴다. 상류 SKILL.md 는 한 바이트도 고치지 않는다("원본 그대로") — 대신 그
+그래서 앵커 배달을 쓴다: 트리를 `<root>/.asgard/skills/<name>/`에 풀고 **본문 대신
+위치**를 넘긴다. 상류 SKILL.md는 한 바이트도 고치지 않는다("원본 그대로") — 대신 그
 파일이 자기 규약대로 동작할 수 있는 자리를 만들어 준다.
 
 가드가 지는 불변식:
 - 실린 트리가 상류 스냅샷 그대로다(지문 고정) + 부분 벤더링이 아니다(import 해석).
 - 배달은 위치이지 본문이 아니다 — 본문이 다시 파이프로 새면 잘림이 돌아온다.
-- 푼 트리는 실린 트리와 같고, 손상되면 스스로 복구되며, 파생물이라 git 에 안 섞인다.
+- 푼 트리는 실린 트리와 같고, 손상되면 스스로 복구되며, 파생물이라 git에 안 섞인다.
 - 네 모드(Claude Code · Cursor · Codex · 네이티브) 전부에서 닿는다.
 """
 
@@ -41,7 +41,7 @@ _TREE_DIGEST = "2d7846b965799b36dd5ca9227fe3611819710b97970187e934a83ce1cbef6db8
 _SKILL_MD_DIGEST = "1884e255fad7ec9b99f0eb39badc53adada430e389c0bff376a224b1a73b3803"
 _SKILL_MD_BYTES = 222241
 
-# `from lib import a, b, c` (엔진) 와 `from .x import ...` (lib 내부) 두 형태만 정적 해석한다.
+# `from lib import a, b, c` (엔진)와 `from .x import ...` (lib 내부) 두 형태만 정적 해석한다.
 _LIB_IMPORT = re.compile(r"^from lib import (.+)$", re.M)
 _REL_IMPORT = re.compile(r"^from \.(\w+) import ", re.M)
 
@@ -85,11 +85,11 @@ class VendoredSnapshotTest(unittest.TestCase):
         self.assertIn("MIT License", Path(plugin["root"], "LICENSE").read_text(encoding="utf-8"))
 
     def test_runtime_the_body_names_is_actually_present(self):
-        """SKILL.md 가 부르는 것들이 디스크에 있어야 한다 — 없으면 실행 즉사, 그런데 조용하다."""
+        """SKILL.md가 부르는 것들이 디스크에 있어야 한다 — 없으면 실행 즉사, 그런데 조용하다."""
         root = _shipped_root()
         for relative in ("scripts/last30days.py", "references/save-html-brief.md"):
             self.assertTrue((root / relative).is_file(), relative)
-        # 예제 미디어 14MB 는 뺐다(본문이 한 번도 안 부른다). 뺀 것이 되살아나면 휠이 여섯 배가 된다.
+        # 예제 미디어 14MB는 뺐다(본문이 한 번도 안 부른다). 뺀 것이 되살아나면 휠이 여섯 배가 된다.
         self.assertFalse((root / "assets").exists())
         self.assertIn("scripts/last30days.py", (root / "SKILL.md").read_text(encoding="utf-8"))
 
@@ -119,7 +119,7 @@ class VendoredSnapshotTest(unittest.TestCase):
             capture_output=True,
             text=True,
             timeout=120,
-            # 설치 트리에 .pyc 를 남기지 않는다 — `run_skill` 과 같은 규율이고, 남기면 휠 소스가
+            # 설치 트리에 .pyc를 남기지 않는다 — `run_skill`과 같은 규율이고, 남기면 휠 소스가
             # 오염되는 데다 그 파일이 스냅샷 지문을 조용히 흔든다.
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
         )
@@ -149,7 +149,7 @@ class AnchoredDeliveryTest(unittest.TestCase):
         # 프론트매터는 상류 것 그대로여야 설명·모델 노출 판정이 안 바뀐다.
         self.assertIn("name: last30days", text)
         self.assertIn("Research what people actually say", text)
-        # 그런데 본문은 안 실려 온다 — 222KB 가 파이프로 다시 새면 이 값이 폭발한다.
+        # 그런데 본문은 안 실려 온다 — 222KB가 파이프로 다시 새면 이 값이 폭발한다.
         self.assertLess(len(body), 2_000)
         self.assertNotIn("STEP 0: STALE-CLONE SELF-CHECK", body)
         self.assertIn(f"SKILL_DIR={self._anchor()}", body)
@@ -159,7 +159,7 @@ class AnchoredDeliveryTest(unittest.TestCase):
         self.assertIn(f"all {expected} lines", body)
         self.assertEqual(expected, 2255)
 
-        # 그리고 그 자리엔 상류가 기대하는 것이 실재한다 (SKILL.md 와 그 직계 자식 엔진).
+        # 그리고 그 자리엔 상류가 기대하는 것이 실재한다 (SKILL.md와 그 직계 자식 엔진).
         self.assertTrue((self._anchor() / "SKILL.md").is_file())
         self.assertTrue((self._anchor() / "scripts" / "last30days.py").is_file())
 
@@ -193,7 +193,7 @@ class AnchoredDeliveryTest(unittest.TestCase):
         self.assertEqual(_digest(self._anchor()), _digest(_shipped_root()))
 
     def test_derived_tree_never_reaches_a_commit(self):
-        """`.asgard/.gitignore` 는 셋업이 심는다 — 셋업 전에 스킬이 먼저 불려도 안 새야 한다."""
+        """`.asgard/.gitignore`는 셋업이 심는다 — 셋업 전에 스킬이 먼저 불려도 안 새야 한다."""
         skill_registry.show_skill(self.root, _SKILL)
         self.assertEqual(Path(self.root, ".asgard", "skills", ".gitignore").read_text(encoding="utf-8"), "*\n")
 
@@ -267,7 +267,7 @@ class AllModesTest(unittest.TestCase):
         self.assertIn("Arguments: nvidia earnings reaction", prompt)
 
     def test_router_resolves_the_skill_in_both_languages(self):
-        """Codex·Cursor 는 `asgard skills resolve` 가 유일한 통로다 — 한쪽 언어만 서면 절반이 못 쓴다."""
+        """Codex·Cursor는 `asgard skills resolve`가 유일한 통로다 — 한쪽 언어만 서면 절반이 못 쓴다."""
         for task in (
             "what are people on reddit saying about nvidia",
             "지난 30일 동안 이 제품에 대한 여론 좀 조사해줘",
@@ -307,7 +307,7 @@ class AdapterFrontmatterTest(unittest.TestCase):
         self.assertEqual(entries, ["Bash", "Read", "Write", "WebSearch", "Bash(asgard skills *)"])
 
     def test_quoted_description_stays_quoted_in_yaml_but_not_in_prose(self):
-        # 프론트매터로 되돌아가는 자리 — 콜론이 든 설명은 인용부호를 잃으면 YAML 이 깨진다.
+        # 프론트매터로 되돌아가는 자리 — 콜론이 든 설명은 인용부호를 잃으면 YAML이 깨진다.
         self.assertIn('description: "Quoted: with a colon"', direct_skill(self._UPSTREAM))
         # 사람이 읽는 자리 — 따옴표가 문장 첫 글자로 새면 안 된다.
         policy = openai_skill_metadata(direct_skill(self._UPSTREAM, implicit=False))
@@ -319,7 +319,7 @@ class AnchorManifestTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        # 플러그인 설치는 `~/.asgard/plugins` 로 간다 — 밀폐 안 하면 테스트가 사용자 홈에 쓴다.
+        # 플러그인 설치는 `~/.asgard/plugins`로 간다 — 밀폐 안 하면 테스트가 사용자 홈에 쓴다.
         self.old_home = os.environ.get("HOME")
         os.environ["HOME"] = os.path.join(self.root, "home")
 

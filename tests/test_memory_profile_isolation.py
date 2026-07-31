@@ -1,6 +1,6 @@
 """에이전트별 기억 격리 — **주입면**에서 증명한다.
 
-`tests/test_profiles.py` 는 저장 격리를 잰다 (pages/·sessions/·skills/ 가 프로파일마다
+`tests/test_profiles.py`는 저장 격리를 잰다 (pages/·sessions/·skills/ 가 프로파일마다
 따로인가). 여기서 재는 것은 그 뒤의 층이다: **여섯 레인이 합쳐져 프롬프트가 되는 자리**에서
 남의 기억이 한 글자도 안 새는가.
 
@@ -92,7 +92,7 @@ class TestInjectionSurfaceIsolation(ProfileMemoryBase):
         self.assertNotIn("스테이징", note_b)
 
     def test_the_default_agent_is_isolated_too(self):
-        """`default` 는 뿌리 자신이라 경로가 특별하다 — 그래서 따로 잰다."""
+        """`default`는 뿌리 자신이라 경로가 특별하다 — 그래서 따로 잰다."""
         profiles.create("alpha")
         self.remember("default", "기본 에이전트는 릴리스 태그를 수동으로 찍는다", kind="feedback")
         self.remember("alpha", "알파는 릴리스 태그를 자동으로 찍는다", kind="feedback")
@@ -128,7 +128,7 @@ class TestEpisodeIsolation(ProfileMemoryBase):
         root = self.project()
         for agent, mark in (("default", "기본이 만진 인덱스 캐시"), ("alpha", "알파가 만진 인덱스 캐시")):
             with profiles.scoped(agent):
-                for index in range(6):  # _EXCLUDE_TAIL 을 넘겨야 과거로 인정된다
+                for index in range(6):  # _EXCLUDE_TAIL을 넘겨야 과거로 인정된다
                     turn_store.append_turn(root, f"질문 {index} 인덱스 캐시", f"{mark} {index}")
 
         note_default = self.recall("default", "인덱스 캐시", include_episodes=True)

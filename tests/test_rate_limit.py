@@ -2,7 +2,7 @@
 """RPM 스로틀 결정론 슬라이스 — 슬라이딩 윈도·전역 공유 레지스트리·429 Retry-After 해석.
 
 NVIDIA NIM 무료 티어(API 키 기준 전역 ~40 RPM) 준수가 동기 — 리미터는 API 무호출로
-가짜 시계·잠으로 검증한다. resolve() 의 config [provider] rpm 해석도 여기서 다룬다.
+가짜 시계·잠으로 검증한다. resolve()의 config [provider] rpm 해석도 여기서 다룬다.
 
 실행: uv run pytest tests/test_rate_limit.py
 """
@@ -22,7 +22,7 @@ from asgard.providers import PROVIDERS, ResolvedProvider
 
 
 class FakeClock:
-    """단조 가짜 시계 — sleep 이 시간을 전진시켜 실제 대기 없이 윈도를 검증한다."""
+    """단조 가짜 시계 — sleep이 시간을 전진시켜 실제 대기 없이 윈도를 검증한다."""
 
     def __init__(self):
         self.now = 1000.0
@@ -89,7 +89,7 @@ class TestRegistry(unittest.TestCase):
 
     def test_limiter_shared_across_sessions_for_same_key(self):
         a, b = limiter_for(_nvidia_rp()), limiter_for(_nvidia_rp())
-        self.assertIs(a, b)  # Trinity 역할·편대가 같은 API 키 40 RPM 을 나눠 쓴다
+        self.assertIs(a, b)  # Trinity 역할·편대가 같은 API 키 40 RPM을 나눠 쓴다
 
     def test_unlimited_provider_has_no_limiter(self):
         p = PROVIDERS["anthropic"]
@@ -149,7 +149,7 @@ class _Completions:
 
 
 class _FlakyClient:
-    """create 가 fails 회 429 를 던진 뒤 단일 텍스트 chunk 스트림을 반환한다."""
+    """create가 fails 회 429를 던진 뒤 단일 텍스트 chunk 스트림을 반환한다."""
 
     def __init__(self, fails: int):
         from types import SimpleNamespace

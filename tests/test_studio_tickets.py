@@ -44,7 +44,7 @@ class TestUntouched(unittest.TestCase):
         """읽기는 자리를 만들지 않는다 — 창을 열어 본 것만으로 파일이 생기면 안 된다.
 
         두 자리를 지킨다: 남의 리포 안(`.asgard/studio/`)과 기계의 워크스페이스. 그래도
-        접두어는 진짜여야 한다: 화면이 '첫 티켓은 WRK-1 이 됩니다'를 말할 수 있어야 한다."""
+        접두어는 진짜여야 한다: 화면이 '첫 티켓은 WRK-1이 됩니다'를 말할 수 있어야 한다."""
         self.assertEqual(T.summary(self.root)["prefix"], "WRK")
         self.assertEqual(T.summary(self.root)["open"], 0)
         self.assertEqual(T.list_tickets(self.root), [])
@@ -148,7 +148,7 @@ class TestStore(TicketCase):
         self.assertEqual({row["name"] for row in T.list_labels(self.root)}, {"버그", "결제", "문서"})
 
     def test_activity_records_names_not_ids(self):
-        """활동 줄은 나중에 읽는 사람을 위한 것이다 — id 는 아무에게도 아무 말이 아니다."""
+        """활동 줄은 나중에 읽는 사람을 위한 것이다 — id는 아무에게도 아무 말이 아니다."""
         ticket = T.create_ticket(self.root, "주기에 넣을 일감")
         cycle = T.create_cycle(self.root, "7월 5주")
         T.update_ticket(self.root, ticket["key"], {"cycle": str(cycle["number"])}, actor="odin")
@@ -218,7 +218,7 @@ class TestApi(TicketCase):
         status, snapshot = self.call("GET", "/api/tickets")
         self.assertEqual(status, 200)
         self.assertEqual([column["status"] for column in snapshot["board"]["columns"]], list(T.STATUSES))
-        # 어휘는 서버가 싣는다 — 화면이 같은 enum 을 한 벌 더 들지 않게
+        # 어휘는 서버가 싣는다 — 화면이 같은 enum을 한 벌 더 들지 않게
         self.assertEqual([row["id"] for row in snapshot["statuses"]], list(T.STATUSES))
         self.assertEqual([row["value"] for row in snapshot["priorities"]], [1, 2, 3, 4, 0])
         status, moved = self.call("POST", "/api/tickets/move", payload={"ref": "NOR-1", "status": "in_review"})
@@ -300,7 +300,7 @@ class TestDesktopBridge(TicketCase):
         ticket = T.create_ticket("", "폴더 없이 적은 일감", team="NOR")
         status, _, body = desktop.run_ticket({"ref": ticket["key"], "permission": "manual"}, here)
         self.assertEqual(status, 202)
-        # 팀에 결속된 폴더가 있으면 그쪽이 이긴다 — 이 팀은 self.root 에 매여 있다
+        # 팀에 결속된 폴더가 있으면 그쪽이 이긴다 — 이 팀은 self.root에 매여 있다
         self.assertEqual(json.loads(body)["task"]["root"], os.path.abspath(self.root))
 
     def test_a_blocked_ticket_refuses_to_run_and_stays_where_it_was(self):
@@ -314,7 +314,7 @@ class TestDesktopBridge(TicketCase):
         self.assertEqual(T.get_ticket(self.root, blocked["key"])["status"], "todo")
 
     def test_a_finished_task_hands_its_result_back_to_the_ticket(self):
-        """성공은 완료가 아니라 검토 중이다 — 종료 코드 0 은 사람이 받아들였다는 뜻이 아니다."""
+        """성공은 완료가 아니라 검토 중이다 — 종료 코드 0은 사람이 받아들였다는 뜻이 아니다."""
         from asgard.commands import desktop
 
         ticket = T.create_ticket(self.root, "되먹임 받을 일감", status="in_progress")
@@ -348,7 +348,7 @@ class TestAgentTool(TicketCase):
         self.assertEqual(T.get_ticket(self.root, "NOR-1")["source"], "agent")
 
     def test_read_only_roles_may_still_file_what_they_found(self):
-        """결함을 찾은 자리가 그것을 적을 자리다 — 여기서 막으면 Verifier 의 발견이 증발한다."""
+        """결함을 찾은 자리가 그것을 적을 자리다 — 여기서 막으면 Verifier의 발견이 증발한다."""
         for role in ("verifier", "thinker", "readonly"):
             with self.subTest(role=role):
                 self.assertEqual(self.run_tool({"action": "create", "title": f"{role}가 본 것"}, role).status, "ok")

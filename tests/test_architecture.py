@@ -9,11 +9,11 @@
   application  agent — 오케스트레이션 (Heimdall/Trinity/세션)
   interface    cli·commands — 진입점·표면
 
-규칙은 **모듈 top-level 임포트**에만 적용한다 — 함수 내부 lazy import 는 의도된 탈출구다
-(예: repl → commands.update 의 /update 실행, evolution → agent.session 의 LLM 클라이언트).
+규칙은 **모듈 top-level 임포트**에만 적용한다 — 함수 내부 lazy import는 의도된 탈출구다
+(예: repl → commands.update의 /update 실행, evolution → agent.session의 LLM 클라이언트).
 새 상시 결합이 상향으로 생기면 이 테스트가 막는다.
 
-hooks/ 는 별도 불변식: `.claude/hooks/` 로 단일 파일 복사 배포되는 계약이므로 상대 임포트는
+hooks/ 는 별도 불변식: `.claude/hooks/`로 단일 파일 복사 배포되는 계약이므로 상대 임포트는
 금지, asgard 절대 임포트는 try 안 lazy(미설치 시 fail-open 되는 선택적 강화)만 허용된다.
 """
 
@@ -38,8 +38,8 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "io_journal",
                 "io_files",
                 "registry",
-                # profiles — 에인헤랴르 홈 해석. settings 가 이걸 부르므로 settings 보다 아래여야
-                # 하고, 실제로 무의존이다 (내장 명부만 templates 를 lazy 로 본다).
+                # profiles — 에인헤랴르 홈 해석. settings가 이걸 부르므로 settings보다 아래여야
+                # 하고, 실제로 무의존이다 (내장 명부만 templates를 lazy로 본다).
                 "profiles",
                 "sandbox",
                 "failures",
@@ -66,7 +66,7 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "lagom",
                 "bragi",
                 "charter",
-                "manual",  # 커스텀 매뉴얼 — charter 와 같은 자리(설정 해석 + 프롬프트 렌더)
+                "manual",  # 커스텀 매뉴얼 — charter와 같은 자리(설정 해석 + 프롬프트 렌더)
                 "code_map",
                 "health",
                 # loop — 컨트롤러. health(센서)·craft_rules(단위) 위에 서고, 고르기만 한다.
@@ -95,13 +95,13 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "skill_curator",
                 "templates",
                 # swarm — 프로젝트가 루트의 에이전트를 배치하는 규칙. 설정 해석 + 배치 판정이라
-                # charter/manual 과 같은 자리이고, agent(application)·commands 가 이걸 쓴다.
+                # charter/manual과 같은 자리이고, agent(application)·commands가 이걸 쓴다.
                 "swarm",
                 # studio — 일감(티켓)의 어휘와 규칙, 그리고 그것을 담는 프로젝트 로컬 저장소.
                 # memory 군과 같은 자리다: 자기 저장소를 소유하고 규칙만 진다(표면 없음). 위층
                 # 셋이 이걸 쓴다 — 창(commands.desktop)·CLI(commands.ticket)·툴(agent.tools).
                 "studio",
-                # plan — 기획 문서 셋(PRD·기능 명세서·유저 플로우)의 형상·검사·저장소. studio 와
+                # plan — 기획 문서 셋(PRD·기능 명세서·유저 플로우)의 형상·검사·저장소. studio와
                 # 같은 자리다. 모델 호출(agent.oneshot)은 상향이라 함수 안 lazy 로만 부른다.
                 "plan",
                 "hooks",
@@ -115,7 +115,7 @@ _RANK = {name: i for i, (layer, names) in enumerate(LAYERS) for name in names}
 
 
 def _module_dotted(path: str) -> list[str]:
-    """src/asgard 기준 상대 경로 → 패키지 경로 성분 (파일명 제외 규칙: __init__ 은 패키지 자신)."""
+    """src/asgard 기준 상대 경로 → 패키지 경로 성분 (파일명 제외 규칙: __init__은 패키지 자신)."""
     rel = os.path.relpath(path, SRC)
     parts = rel.replace(os.sep, "/").removesuffix(".py").split("/")
     if parts[-1] == "__init__":
@@ -145,7 +145,7 @@ def _top_targets(node: ast.stmt, parts: list[str]) -> set[str]:
             if bits and bits[0] == "asgard" and len(bits) > 1:
                 out.add(bits[1])
         else:
-            # 상대 임포트 해석 — parts 는 파일의 패키지 경로 성분 (파일이 모듈이면 모듈명 포함)
+            # 상대 임포트 해석 — parts는 파일의 패키지 경로 성분 (파일이 모듈이면 모듈명 포함)
             pkg = parts[:-1] if parts else []  # 담는 패키지 (모듈 파일 기준)
             base = pkg[: len(pkg) - (node.level - 1)] if node.level - 1 <= len(pkg) else []
             if node.module:
@@ -185,7 +185,7 @@ class TestLayeredArchitecture(unittest.TestCase):
                 continue
             tree = ast.parse(open(path, encoding="utf-8").read())
             file_parts = _module_dotted(path)
-            # __init__.py 는 패키지 자신이 담는 패키지 — 상대 해석용 성분에 sentinel 추가
+            # __init__.py는 패키지 자신이 담는 패키지 — 상대 해석용 성분에 sentinel 추가
             rel = os.path.relpath(path, SRC)
             if rel.endswith("__init__.py"):
                 file_parts = file_parts + ["__init__"]
@@ -202,10 +202,10 @@ class TestLayeredArchitecture(unittest.TestCase):
         self.assertFalse(violations, "상향 계층 임포트 발견:\n" + "\n".join(violations))
 
     def test_hooks_are_self_contained(self):
-        """훅 배포 계약 — hooks/*.py 는 단일 파일로 `.claude/hooks/` 에 복사 배포된다.
+        """훅 배포 계약 — hooks/*.py는 단일 파일로 `.claude/hooks/`에 복사 배포된다.
 
         따라서 asgard 임포트는 ① 상대 임포트 금지(복사본에서 즉사) ② 절대 `asgard.*` 임포트는
-        try 블록 안 lazy 만 허용(미설치 환경에서 fail-open 되는 선택적 강화 — 예: code_map 갱신,
+        try 블록 안 lazy만 허용(미설치 환경에서 fail-open 되는 선택적 강화 — 예: code_map 갱신,
         quest 요약). 무방비 임포트가 하나라도 생기면 복사 배포본이 죽는다."""
         violations: list[str] = []
         hooks_dir = os.path.join(SRC, "hooks")
@@ -233,18 +233,18 @@ class TestLayeredArchitecture(unittest.TestCase):
         self.assertFalse(violations, "훅 자립 계약 위반:\n" + "\n".join(violations))
 
     def test_hooks_parse_on_old_python(self):
-        """훅 문법 바닥 — hooks/*.py 는 사용자 PATH 의 `python3` 로 돈다, asgard 의 venv 가 아니라.
+        """훅 문법 바닥 — hooks/*.py는 사용자 PATH의 `python3`로 돈다, asgard의 venv가 아니라.
 
-        `platform.hook_python()` 은 `shutil.which("python3")` 이 찾은 것을 그대로 쓴다. 그래서
-        asgard 자신의 `requires-python` 은 훅에 대한 보장이 못 된다 — 훅이 최신 문법을 쓰면
-        조금 낡은 기계에서 임포트 시점 SyntaxError 가 되고, 훅 계약은 fail-open 이라 그 죽음이
+        `platform.hook_python()`은 `shutil.which("python3")`이 찾은 것을 그대로 쓴다. 그래서
+        asgard 자신의 `requires-python`은 훅에 대한 보장이 못 된다 — 훅이 최신 문법을 쓰면
+        조금 낡은 기계에서 임포트 시점 SyntaxError가 되고, 훅 계약은 fail-open이라 그 죽음이
         **조용하다**: 사용자는 계층이 켜진 줄 알고 아무 일도 안 일어난다.
 
-        실제로 그 자리가 있었다: 괄호 없는 다중 except (PEP 758, 3.14+) 가 세 군데 있었고,
+        실제로 그 자리가 있었다: 괄호 없는 다중 except (PEP 758, 3.14+)가 세 군데 있었고,
         3.13 기계에서는 매뉴얼 계층과 퀘스트 로그가 통째로 증발하는 상태였다.
 
-        바닥을 3.9 로 잡는다 — "python3 라고 불리는 것"의 현실적 하한이다. 문법만 본다
-        (`ast` 는 실행하지 않는다). 새 문법이 정말 필요하면 이 상수를 올리되, 그건 훅이 도는
+        바닥을 3.9로 잡는다 — "python3라고 불리는 것"의 현실적 하한이다. 문법만 본다
+        (`ast`는 실행하지 않는다). 새 문법이 정말 필요하면 이 상수를 올리되, 그건 훅이 도는
         기계의 최소 사양을 올리겠다는 **명시적 결정**이어야 한다."""
         floor = (3, 9)
         hooks_dir = os.path.join(SRC, "hooks")
@@ -314,8 +314,8 @@ class TestStudioPackage(unittest.TestCase):
     def test_the_loopback_guard_is_written_once(self):
         """로컬 창 셋이 같은 것을 막는다 — 세 벌로 적으면 셋이 갈린다.
 
-        실측(합치기 전): `Referrer-Policy` 는 두 창에만, `frame-src`·`base-uri`·`form-action`
-        은 한 창에만 걸려 있었다. 보안 경계가 갈렸다는 사실 자체가 아무도 안 보고 있었다는
+        실측(합치기 전): `Referrer-Policy`는 두 창에만,
+        `frame-src`·`base-uri`·`form-action`은 한 창에만 걸려 있었다. 보안 경계가 갈렸다는 사실 자체가 아무도 안 보고 있었다는
         증거라, 다시 갈라지지 않게 여기서 잡는다."""
         owner = os.path.join(SRC, "commands", "loopback.py")
         offenders: list[str] = []

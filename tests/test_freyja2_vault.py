@@ -1,16 +1,16 @@
 """엔진2(freyja2) 산출물 금고 — Fólkvangr 앵커.
 
-엔진2 는 프로젝트 루트에 점 디렉터리 `.impeccable/` 를 만들어 디자인 사이드카·크리티크
-스냅샷·live 저널·훅 캐시를 쌓아 뒀다. git 에 그대로 보였고, 판별이 끝나도 남았다.
+엔진2는 프로젝트 루트에 점 디렉터리 `.impeccable/`를 만들어 디자인 사이드카·크리티크
+스냅샷·live 저널·훅 캐시를 쌓아 뒀다. git에 그대로 보였고, 판별이 끝나도 남았다.
 
 포팅 계약 3항:
-- 위치: 산출물은 `.asgard/.vanadis/engine2/` 아래에만 쓴다. `.asgard` 는 `asgard init` 이 만드는
+- 위치: 산출물은 `.asgard/.vanadis/engine2/` 아래에만 쓴다. `.asgard`는 `asgard init`이 만드는
   아스가르드 런타임 디렉터리다.
-- 불가시: 이미 무시되는 `.asgard/` 를 상속한다. 엔진은 어떤 ignore 파일도 쓰거나 고치지
+- 불가시: 이미 무시되는 `.asgard/`를 상속한다. 엔진은 어떤 ignore 파일도 쓰거나 고치지
   않는다 — 금고 몫의 gitignore 항목은 존재하지 않는다.
-- 정리: 판별이 끝나면 `vault.mjs sweep`(런 한정) / `purge`(전부) 로 비운다.
+- 정리: 판별이 끝나면 `vault.mjs sweep`(런 한정) / `purge`(전부)로 비운다.
 
-레거시 `.impeccable/` 는 읽기 폴백으로만 살아 있다(기존 프로젝트 무손실). 쓰기는 절대 그리
+레거시 `.impeccable/`는 읽기 폴백으로만 살아 있다(기존 프로젝트 무손실). 쓰기는 절대 그리
 가지 않는다 — 이 파일이 그 비대칭을 고정한다.
 """
 
@@ -46,7 +46,7 @@ def _node(*args: str, cwd: Path) -> subprocess.CompletedProcess[str]:
 
 @unittest.skipIf(_NODE is None, "node 부재 — 엔진2 금고 검사 생략")
 class TestVaultRuntime(unittest.TestCase):
-    """실제 프로젝트를 만들어 금고가 어디에 생기고 git 이 뭘 보는지 확인한다."""
+    """실제 프로젝트를 만들어 금고가 어디에 생기고 git이 뭘 보는지 확인한다."""
 
     def setUp(self) -> None:
         import tempfile
@@ -55,7 +55,7 @@ class TestVaultRuntime(unittest.TestCase):
         self.project = Path(self._tmp.name)
         subprocess.run(["git", "init", "-q", "."], cwd=self.project, check=True)
         (self.project / "package.json").write_text("{}\n", encoding="utf-8")
-        # `asgard init` 이 하는 일: .asgard/ 와 그 자기무시 .gitignore. 엔진2 는 이걸
+        # `asgard init`이 하는 일: .asgard/ 와 그 자기무시 .gitignore. 엔진2는 이걸
         # 전제로만 동작하고 스스로 만들지 않는다.
         asgard = self.project / ".asgard"
         asgard.mkdir()
@@ -87,7 +87,7 @@ class TestVaultRuntime(unittest.TestCase):
         self.assertFalse((self.project / ".impeccable").exists(), "레거시 루트가 새로 생겼다")
 
     def test_vault_inherits_asgard_invisibility(self):
-        """금고는 이미 무시되는 `.asgard/` 안에 있다 — git 이 아무것도 보지 못한다."""
+        """금고는 이미 무시되는 `.asgard/` 안에 있다 — git이 아무것도 보지 못한다."""
         self._write_snapshot()
         status = subprocess.run(
             ["git", "status", "--porcelain"],
@@ -158,7 +158,7 @@ class TestVaultRuntime(unittest.TestCase):
         self.assertFalse((self.project / ".impeccable").exists())
 
     def test_legacy_root_is_read_but_never_written(self):
-        """기존 프로젝트의 `.impeccable/config.json` 은 계속 읽힌다 — 쓰기는 금고로 간다."""
+        """기존 프로젝트의 `.impeccable/config.json`은 계속 읽힌다 — 쓰기는 금고로 간다."""
         legacy = self.project / ".impeccable"
         legacy.mkdir()
         (legacy / "config.json").write_text(
@@ -178,7 +178,7 @@ class TestVaultRuntime(unittest.TestCase):
         )
 
     def test_doctor_fix_retires_the_legacy_root(self):
-        """`doctor --fix` 가 포팅의 나머지 절반이다 — 기존 프로젝트를 금고로 옮기고 옛 루트를 없앤다."""
+        """`doctor --fix`가 포팅의 나머지 절반이다 — 기존 프로젝트를 금고로 옮기고 옛 루트를 없앤다."""
         legacy = self.project / ".impeccable"
         (legacy / "critique").mkdir(parents=True)
         (legacy / "critique" / "old.md").write_text("old\n", encoding="utf-8")
@@ -213,7 +213,7 @@ class TestVaultRuntime(unittest.TestCase):
 
         파일명 타임스탬프는 초 단위라, 한 루프에서 연속으로 쓰면 같은 이름끼리 덮어써
         6개에 닿지도 못한다(샌드박스 실측). 그래서 과거 스냅샷을 직접 심어 초를 벌린 뒤
-        한 번 더 쓴다 — 그래야 prune 이 실제로 돈다.
+        한 번 더 쓴다 — 그래야 prune이 실제로 돈다.
         """
         critique = self.project / ".asgard" / ".vanadis" / "engine2" / "critique"
         critique.mkdir(parents=True)
@@ -227,7 +227,7 @@ class TestVaultRuntime(unittest.TestCase):
 
         kept = sorted(critique.glob("*__home.md"))
         self.assertEqual(len(kept), 5, f"최근 5개로 정리되지 않았다: {[p.name for p in kept]}")
-        # 지워진 것은 가장 오래된 쪽이어야 한다 — 최신을 지우면 trend 와 polish 가 깨진다.
+        # 지워진 것은 가장 오래된 쪽이어야 한다 — 최신을 지우면 trend와 polish가 깨진다.
         self.assertEqual([p.name for p in kept[:4]], [p.name for p in seeded[4:]])
         self.assertNotIn(seeded[0].name, [p.name for p in kept])
 
@@ -275,7 +275,7 @@ class TestVaultSourceContract(unittest.TestCase):
             for lineno, line in enumerate(text.splitlines(), 1):
                 # 파일시스템 경로 형태만 본다. CSS 클래스(`.impeccable-overlay`)와
                 # DOM dataset(`dataset.impeccableLive…`)은 산출물 경로가 아니고,
-                # `.impeccable-live` 는 별개의 은퇴 경로라 이 검사 대상이 아니다.
+                # `.impeccable-live`는 별개의 은퇴 경로라 이 검사 대상이 아니다.
                 if _RETIRED_PATH.search(line):
                     offenders.append(f"{rel}:{lineno}: {line.strip()}")
         self.assertEqual(
@@ -300,7 +300,7 @@ class TestVaultSourceContract(unittest.TestCase):
         self.assertIn("vault.mjs purge", skill)
 
     def test_repo_gitignore_needs_no_entry_for_the_vault(self):
-        """리포 .gitignore 는 금고 때문에 한 줄도 늘지 않는다 — `**/.asgard/` 가 이미 덮는다."""
+        """리포 .gitignore는 금고 때문에 한 줄도 늘지 않는다 — `**/.asgard/`가 이미 덮는다."""
         lines = [line.strip() for line in (_REPO / ".gitignore").read_text(encoding="utf-8").splitlines()]
         self.assertIn("**/.asgard/", lines)
         rules = [line for line in lines if line and not line.startswith("#")]
@@ -314,7 +314,7 @@ class TestVaultSourceContract(unittest.TestCase):
 
         live 모드가 사용자 소스 트리 *안에* 심는 스크래치 파일(`.freyja2-live/` 등)은
         예외다 — 금고 밖이라 다른 무엇도 가려 주지 않는다. 금지 대상은 어디까지나
-        `.asgard/` 아래 금고이고, Asgard 가 이미 git 밖에 두므로 항목이 필요 없다.
+        `.asgard/` 아래 금고이고, Asgard가 이미 git밖에 두므로 항목이 필요 없다.
         엔진 개명 전에는 브랜드 토큰이 그 둘을 우연히 갈라 줬지만(`.impeccable-live`),
         지금은 아니다. 그래서 금고 경로 자체로 검사한다.
         """

@@ -1,11 +1,11 @@
 """Freyja 4 엔진(마르될) — 계약과 결정론 게이트 런타임.
 
 이 엔진의 값어치는 "화면을 소스에서 판정한다"에 있으므로, 테스트도 문서 문자열이 아니라
-실제 HTML/CSS 를 검사기에 물려 판정이 맞는지 본다. 특히 네 가지를 고정한다.
+실제 HTML/CSS를 검사기에 물려 판정이 맞는지 본다. 특히 네 가지를 고정한다.
 ① 활자 화살표(→ ↳)를 이모지로 세지 않는다.
-② CSS 가 font-style: normal 로 되돌린 <em> 을 기울임 헤딩으로 세지 않는다.
+② CSS가 font-style: normal로 되돌린 <em> 을 기울임 헤딩으로 세지 않는다.
 ③ oklch() 값은 공백을 품으므로 색 추출이 조용히 실패해선 안 된다 — 대비 게이트가 실제로 돈다.
-④ 기계가 판정 못 한 게이트는 절대 pass 로 세지 않는다.
+④ 기계가 판정 못 한 게이트는 절대 pass로 세지 않는다.
 """
 
 from __future__ import annotations
@@ -160,9 +160,9 @@ class Freyja4Contract(unittest.TestCase):
             self.assertIn(f'[data-theme="{theme}"]', tokens, f"테마 블록 누락: {theme}")
 
     def test_internal_links_resolve(self) -> None:
-        """SKILL.md 와 참조가 가리키는 상대 경로가 실제로 존재하는가.
+        """SKILL.md와 참조가 가리키는 상대 경로가 실제로 존재하는가.
 
-        예외 1건은 상류에도 똑같이 깨져 있다(`site/_tests/verbs/refine/` 은 원본에 없다).
+        예외 1건은 상류에도 똑같이 깨져 있다(`site/_tests/verbs/refine/`은 원본에 없다).
         이식본은 원본과 같게 동작하는 것이 목적이므로 고치지 않고 여기 이름으로 남긴다 —
         새로 생기는 파손은 그대로 잡힌다.
         """
@@ -249,7 +249,7 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertEqual(code, 1)
 
     def test_oklch_contrast_actually_computes(self) -> None:
-        """oklch() 는 공백을 품는다. 색 추출이 조용히 실패하면 대비 게이트는 아무 일도 안 하고 pass 한다."""
+        """oklch()는 공백을 품는다. 색 추출이 조용히 실패하면 대비 게이트는 아무 일도 안 하고 pass 한다."""
         css = CLEAN_CSS.replace(
             "--color-muted: oklch(52% 0.014 250);",
             "--color-muted: oklch(90% 0.014 250);",  # 종이 위 90% — 본문 대비 미달
@@ -261,7 +261,7 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertTrue(any(":1 (needs 4.5:1" in f for f in gate["findings"]), gate["findings"])
 
     def test_contrast_threshold_follows_the_text_size(self) -> None:
-        """oklch(60% 0.09 250) 은 이 종이 위에서 3.49:1 — 큰 활자엔 되고 본문엔 안 된다.
+        """oklch(60% 0.09 250)은 이 종이 위에서 3.49:1 — 큰 활자엔 되고 본문엔 안 된다.
 
         임계값을 하나로 뭉개면 둘 중 하나는 반드시 틀린다. 같은 색을 두 크기에 물려
         경계가 실제로 갈리는지 본다.
@@ -289,22 +289,22 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertTrue(any("needs 4.5:1" in f for f in gate_body["findings"]), gate_body["findings"])
 
     def test_state_variants_are_the_same_element(self) -> None:
-        """`:hover` / `:active` / `[open]` 은 같은 원소의 다른 상태다.
+        """`:hover` / `:active` / `[open]`은 같은 원소의 다른 상태다.
 
         이걸 별개 규칙으로 읽으면 소스 전용 판정기의 오탐이 폭증한다. 실측된 네 갈래를
         한 번에 물린다 — 상속 색, 상속 wrap, 축약형 프로퍼티, 상태 선택자 경유 구동.
         """
         css = CLEAN_CSS.replace(
             ".btn:disabled { opacity: 0.55; cursor: not-allowed; }",
-            # 1. :active 는 background 만 바꾸고 color 는 기본 규칙에서 상속한다.
+            # 1. :active는 background만 바꾸고 color는 기본 규칙에서 상속한다.
             ".btn:active { background: var(--color-accent); }\n"
-            # 2. :disabled 의 색을 :active 가 물려받은 것으로 착각하면 안 된다.
+            # 2. :disabled의 색을 :active가 물려받은 것으로 착각하면 안 된다.
             ".btn:disabled { opacity: 0.55; cursor: not-allowed; color: var(--color-muted); }\n"
-            # 3. border-bottom-color 는 border-color 트랜지션을 구동한다.
+            # 3. border-bottom-color는 border-color 트랜지션을 구동한다.
             ".tab { border-bottom: 1px solid var(--color-rule); "
             "transition: border-color 120ms var(--ease-out); }\n"
             ".tab:hover { border-bottom-color: var(--color-accent); }\n"
-            # 4. 미디어쿼리 안의 크기 재선언은 기본 규칙의 wrap 을 물려받는다.
+            # 4. 미디어쿼리 안의 크기 재선언은 기본 규칙의 wrap을 물려받는다.
             "@media (max-width: 30rem) { .hero__title { font-size: 2rem; } }\n",
         )
         html = CLEAN_HTML.replace("</main>", '  <a class="tab" href="/x">Tab</a>\n    </main>')
@@ -319,7 +319,7 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_ua_driven_discrete_property_is_not_dead_motion(self) -> None:
-        """content-visibility 는 저자 선언이 아니라 UA 가 뒤집는다 — allow-discrete 가 그 증거다."""
+        """content-visibility는 저자 선언이 아니라 UA가 뒤집는다 — allow-discrete가 그 증거다."""
         css = CLEAN_CSS + (
             "\ndetails::details-content { block-size: 0; overflow: hidden;"
             " transition: block-size 200ms var(--ease-out), content-visibility 200ms allow-discrete; }\n"
@@ -346,7 +346,7 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertEqual(_by_id(payload, 30)["status"], "fail")
 
     def test_em_reset_to_roman_is_not_an_italic_header(self) -> None:
-        """CSS 가 기울임을 끄고 강조를 색으로 옮긴 것은 규칙이 권하는 처방이지 결함이 아니다."""
+        """CSS가 기울임을 끄고 강조를 색으로 옮긴 것은 규칙이 권하는 처방이지 결함이 아니다."""
         css = CLEAN_CSS + "\n.hero__title em { font-style: normal; color: var(--color-accent); }\n"
         html = CLEAN_HTML.replace(
             "A switch you can measure",
@@ -424,7 +424,7 @@ class SlopGateRuntime(unittest.TestCase):
 
         아스가르드 맵 화면에서 실측된 오탐이다. 주어 컴파운드를 문자열로 비교하면
         클래스 하나가 붙었다는 이유로 다른 원소가 되고, 죽은 모션이 아닌 것이 죽었다고 잡힌다.
-        같은 규칙이 `.zoombar button` 과 `.modebar button` 을 뭉개서도 안 된다.
+        같은 규칙이 `.zoombar button`과 `.modebar button`을 뭉개서도 안 된다.
         """
         css = CLEAN_CSS + (
             "\n.chip { color: var(--color-muted); transition: color var(--dur-short) var(--ease-out); }\n"
@@ -441,7 +441,7 @@ class SlopGateRuntime(unittest.TestCase):
         self.assertIn(".zoombar button", joined, gate["findings"])
 
     def test_reduced_motion_kill_switch_is_not_dead_motion(self) -> None:
-        """`transition: none!important` 는 모션이 아니라 모션을 끄는 스위치다."""
+        """`transition: none!important`는 모션이 아니라 모션을 끄는 스위치다."""
         css = CLEAN_CSS.replace(
             "  .btn { transition: none; }",
             "  *, *::before, *::after { transition: none!important; animation: none!important; }",

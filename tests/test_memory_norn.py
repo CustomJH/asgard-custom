@@ -45,7 +45,7 @@ class NornBase(unittest.TestCase):
         return page
 
     def _age_page(self, slug: str, days: int) -> None:
-        """updated 를 과거로 되돌린다 — decay-candidate 자격 부여용."""
+        """updated를 과거로 되돌린다 — decay-candidate 자격 부여용."""
         meta, body = self._page(slug)
         past = (_dt.date.today() - _dt.timedelta(days=days)).isoformat()
         meta["updated"] = meta["created"] = past
@@ -222,7 +222,7 @@ class TestValidation(NornBase):
     def test_an_insight_that_inverts_its_sources_is_flagged(self):
         """접지가 높다는 것은 출처의 어휘를 썼다는 뜻이지 동의한다는 뜻이 아니다 — 실측 반례(26-07-28).
 
-        낱말은 전부 출처에서 왔고 접지 0.714 로 통과했지만 주장은 정반대다. 표식이지 기각이
+        낱말은 전부 출처에서 왔고 접지 0.714로 통과했지만 주장은 정반대다. 표식이지 기각이
         아닌 이유는 `_polarity_conflict` 독스트링에 있다 — 이 자로는 진짜 뒤집기와 우연한
         극성 반전이 안 갈린다. 대신 자동 승격은 확실히 막힌다 (아래 partition 테스트)."""
         a, b = self._deploy_sources()
@@ -248,7 +248,7 @@ class TestValidation(NornBase):
         self.assertTrue(accepted[0].get("polarity_conflict"))
 
     def test_an_honest_english_generalisation_is_not_flagged(self):
-        """같은 절 경계가 정직한 통찰도 지킨다 — 'avoids ... and always tests' 의 and 를 넘지 않는다."""
+        """같은 절 경계가 정직한 통찰도 지킨다 — 'avoids ... and always tests'의 and를 넘지 않는다."""
         a = self._add("Odin never deploys on Fridays.", "friday freeze")
         b = self._add("Odin runs the full test suite before every deploy.", "pre deploy tests")
         accepted, dropped = self._insight(
@@ -285,10 +285,10 @@ class TestValidation(NornBase):
     def test_a_title_that_restates_the_anchor_does_not_silence_the_flag(self):
         """제목은 본문에 붙은 딱지이지 따로 선 주장이 아니다 (실측 26-07-30).
 
-        검증기는 `title + text` 를 한 덩어리로 보는데 제목이 본문의 핵심 명사를 되풀이하는 것은
-        정상이고 `_NORN_SYS` 가 title+text 쌍을 요구한다. 그 되풀이가 만든 비부정 +1 이 본문의
-        -1 과 상쇄되면 극성이 '혼재'가 되어 게이트가 통째로 침묵했다 — 같은 거짓말이 제목만
-        갈아입으면 표식을 잃었고, 옵트인 상태에서는 접지 0.714 로 자동 승격까지 갔다."""
+        검증기는 `title + text`를 한 덩어리로 보는데 제목이 본문의 핵심 명사를 되풀이하는 것은
+        정상이고 `_NORN_SYS`가 title+text 쌍을 요구한다. 그 되풀이가 만든 비부정 +1이 본문의
+        -1과 상쇄되면 극성이 '혼재'가 되어 게이트가 통째로 침묵했다 — 같은 거짓말이 제목만
+        갈아입으면 표식을 잃었고, 옵트인 상태에서는 접지 0.714로 자동 승격까지 갔다."""
         a, b = self._deploy_sources()
         lie = "오딘은 금요일마다 테스트 없이 배포한다"
         for title in ("배포 습관", "금요일 무테스트 배포", "테스트 생략 배포", "테스트 관련 습관"):
@@ -555,7 +555,7 @@ class TestAutonomyTiers(NornBase):
         self.assertEqual(norn.auto_mode(), "safe")
 
     def test_partition_safe_reports_but_never_writes(self):
-        """safe 는 '보고'까지다 — 페이지를 새로 만드는 통찰은 기본적으로 사람을 지난다."""
+        """safe는 '보고'까지다 — 페이지를 새로 만드는 통찰은 기본적으로 사람을 지난다."""
         ops = [
             {"op": "merge", "src": "a", "dst": "b"},
             {"op": "archive", "slug": "c"},
@@ -586,7 +586,7 @@ class TestAutonomyTiers(NornBase):
             auto, _ = norn.partition_ops([strong], mode, allow_insight=True)
             self.assertEqual(auto, [strong], f"mode={mode} 옵트인이 무시됐다")
         auto_off, _ = norn.partition_ops([strong], "off", allow_insight=True)
-        self.assertEqual(auto_off, [])  # off 는 옵트인보다 세다 — 자율 없음이 자율 없음이다
+        self.assertEqual(auto_off, [])  # off는 옵트인보다 세다 — 자율 없음이 자율 없음이다
 
     def test_a_polarity_flagged_insight_never_auto_applies_even_opted_in(self):
         """표식의 값은 여기서 치러진다 — 자를 만큼 정밀하진 않아도, 자동 정본화는 확실히 막는다."""
@@ -770,9 +770,9 @@ class TestNornLinkOp(NornBase):
         self.assertIn(a, self._page(b)[0]["links"])  # 한쪽만 적으면 관계가 반쪽으로 읽힌다
 
     def test_a_link_only_run_still_takes_a_backup_first(self):
-        """link 는 파괴적이지 않지만 무변경도 아니다 — `_add_link` 는 양쪽 frontmatter 를 다시 쓴다.
+        """link는 파괴적이지 않지만 무변경도 아니다 — `_add_link`는 양쪽 frontmatter를 다시 쓴다.
 
-        백업 조건이 merge·archive 만 보던 동안, 기존 페이지를 고치는 런 하나가 사본 없이 지나갔다."""
+        백업 조건이 merge·archive만 보던 동안, 기존 페이지를 고치는 런 하나가 사본 없이 지나갔다."""
         a, b, _ = self._pages()
         accepted, _ = norn.validate_ops([{"op": "link", "a": a, "b": b, "why": "릴리스 절차의 앞뒤"}], self.d)
 
@@ -785,7 +785,7 @@ class TestNornLinkOp(NornBase):
         self.assertIn(b, self._page(a)[0]["links"])
 
     def test_a_purely_additive_run_does_not_pay_for_a_backup(self):
-        """insight·contradiction 은 기존 페이지를 안 건드린다 — 거기서 pages/ 전체 복사는 값만 치른다."""
+        """insight·contradiction은 기존 페이지를 안 건드린다 — 거기서 pages/ 전체 복사는 값만 치른다."""
         a, b, _ = self._pages()
 
         result = norn.apply_norn(self.d, {"ops": [{"op": "contradiction", "a": a, "b": b, "why": "x"}]})

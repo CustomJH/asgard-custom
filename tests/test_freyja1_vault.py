@@ -1,18 +1,18 @@
 """엔진1(freyja-design) 산출물 금고 앵커.
 
-엔진1 은 벤더링된 Vanadis 스킬·롤을 "gates, artifacts, handoffs 를 보존"하며 그대로
+엔진1은 벤더링된 Vanadis 스킬·롤을 "gates, artifacts, handoffs를 보존"하며 그대로
 수행한다. 그 산출물이 프로젝트 루트의 `.vanadis/` 였다 — preferences·state·timeline·
-context JSON 이 git 에 그대로 보였고, 상류가 자체로 심던 `.vanadis/.gitignore` 는
-`runs/`·`cache/` 만 가려서 나머지는 커밋 대상으로 남았다.
+context JSON이 git에 그대로 보였고, 상류가 자체로 심던 `.vanadis/.gitignore`는
+`runs/`·`cache/`만 가려서 나머지는 커밋 대상으로 남았다.
 
 포팅 계약:
-- 위치: `.asgard/.vanadis/engine1/`. 엔진2 는 같은 지붕 아래 `engine2/` 를 쓰므로 두
+- 위치: `.asgard/.vanadis/engine1/`. 엔진2는 같은 지붕 아래 `engine2/`를 쓰므로 두
   엔진이 한 프로젝트에서 돌아도 `config.json` 류가 서로를 덮지 않는다.
-- 불가시: 이미 무시되는 `.asgard/` 를 상속한다. 어떤 ignore 파일도 만들지 않는다.
-- 영구 기록은 금고가 아니다: `preferences.md` 는 `vanadis:learn` 이 `DESIGN.md` 로
+- 불가시: 이미 무시되는 `.asgard/`를 상속한다. 어떤 ignore 파일도 만들지 않는다.
+- 영구 기록은 금고가 아니다: `preferences.md`는 `vanadis:learn`이 `DESIGN.md`로
   승격시키는 버퍼이고, 팀이 보관하는 것은 `DESIGN.md` 다.
 
-엔진1 의 쓰기 주체는 코드가 아니라 프롬프트 텍스트라, 결정론적으로 고정할 수 있는 것은
+엔진1의 쓰기 주체는 코드가 아니라 프롬프트 텍스트라, 결정론적으로 고정할 수 있는 것은
 지시문 자체다. 이 파일은 그 지시문을 앵커한다.
 """
 
@@ -29,14 +29,14 @@ _VANADIS = _SKILL_ROOT / "references/vanadis"
 _VAULT_REL = ".asgard/.vanadis/engine1"
 
 # 정본 형태 두 가지. 위반을 찾기 전에 이것부터 지운다 — 안 그러면 세그먼트로 쪼갠
-# `join(root, '.asgard', '.vanadis', 'engine1')` 의 가운데 조각이 위반으로 잡힌다.
+# `join(root, '.asgard', '.vanadis', 'engine1')`의 가운데 조각이 위반으로 잡힌다.
 _CANONICAL = (
     ".asgard/.vanadis/engine1",
     "'.asgard', '.vanadis', 'engine1'",
     '".asgard", ".vanadis", "engine1"',
 )
 
-# 남은 것 중 은퇴한 루트를 *경로로* 쓰는 형태만 잡는다. `.vanadis-managed.json` 처럼
+# 남은 것 중 은퇴한 루트를 *경로로* 쓰는 형태만 잡는다. `.vanadis-managed.json`처럼
 # 하이픈이 이어지는 이름은 산출물 디렉터리가 아니다.
 _ROOT_VANADIS = re.compile(r"(?<![A-Za-z0-9_./-])\.vanadis(?![A-Za-z0-9_-])")
 
@@ -47,9 +47,9 @@ def _strip_canonical(line: str) -> str:
     return line
 
 
-# 기록물은 검사 대상이 아니다: lab-02 의 runs/ 는 과거 실행 전사(轉寫)이고,
-# architecture-proposals 는 당시 결정을 남긴 문서다. 둘 다 지시문이 아니므로 그때의
-# 경로를 보존한다. node_modules 는 벤더링 대상이 아니다.
+# 기록물은 검사 대상이 아니다: lab-02의 runs/ 는 과거 실행 전사(轉寫)이고,
+# architecture-proposals는 당시 결정을 남긴 문서다. 둘 다 지시문이 아니므로 그때의
+# 경로를 보존한다. node_modules는 벤더링 대상이 아니다.
 _RECORDS = (
     "vanadis-lab-02-design-harness/runs/",
     "data/architecture-proposals/",
@@ -60,7 +60,7 @@ _RECORDS = (
 def _scanned_files() -> list[Path]:
     """벤더링 트리 전체. 프롬프트 미러(.claude/·.codex/)와 훅 코드까지 포함한다.
 
-    처음엔 `skills/`·`agents/` 만 훑었는데, 그 사이 `.claude/skills`·`.claude/agents`·
+    처음엔 `skills/`·`agents/`만 훑었는데, 그 사이 `.claude/skills`·`.claude/agents`·
     `.codex/agents` 미러 26개와 실제로 경로를 만드는 `.claude/hooks/*.cjs` 5개가
     옛 루트를 그대로 들고 살아남았다(실측으로 발각). 좁은 스캔이 통과시킨 결함이라
     스캔 범위를 트리 전체로 넓혀 고정한다.
@@ -96,7 +96,7 @@ class TestEngine1VaultContract(unittest.TestCase):
             self.assertIn(must, scanned, f"스캔이 {must} 를 놓친다 — 미러가 다시 새어나간다")
 
     def test_nothing_writes_to_the_project_root(self):
-        """스킬·롤·미러·훅 코드 어디도 루트 `.vanadis/` 를 지시하거나 만들지 않는다."""
+        """스킬·롤·미러·훅 코드 어디도 루트 `.vanadis/`를 지시하거나 만들지 않는다."""
         offenders: list[str] = []
         for path in _scanned_files():
             try:
@@ -140,7 +140,7 @@ class TestEngine1VaultContract(unittest.TestCase):
             )
 
     def test_no_prompt_plants_an_ignore_file(self):
-        """상류의 `.vanadis/.gitignore` 자가 설치는 제거됐다 — `.asgard/` 로 충분하다."""
+        """상류의 `.vanadis/.gitignore` 자가 설치는 제거됐다 — `.asgard/`로 충분하다."""
         offenders: list[str] = []
         for path in _prompt_files():
             for lineno, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
@@ -157,20 +157,20 @@ class TestEngine1VaultContract(unittest.TestCase):
         )
 
     def test_cli_points_at_the_vault(self):
-        """설치 CLI 가 사용자에게 안내하는 preferences 경로도 금고여야 한다."""
+        """설치 CLI가 사용자에게 안내하는 preferences 경로도 금고여야 한다."""
         source = (_VANADIS / "src/cli/install-skills.ts").read_text(encoding="utf-8")
         self.assertIn(f"@{_VAULT_REL}/preferences.md", source)
         self.assertNotIn("@.vanadis/preferences.md", source)
 
     def test_skill_contract_states_the_vault(self):
-        """엔진1 의 아스가르드측 계약이 위치·불가시·비영구성을 명시한다."""
+        """엔진1의 아스가르드측 계약이 위치·불가시·비영구성을 명시한다."""
         skill = (_SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn(f"{_VAULT_REL}/", skill)
         self.assertIn("never create or edit a `.gitignore`", skill)
         self.assertIn("DESIGN.md", skill)
 
     def test_both_engines_share_the_roof_without_colliding(self):
-        """엔진1·2 는 `.asgard/.vanadis/` 아래 서로 다른 칸을 쓴다."""
+        """엔진1·2는 `.asgard/.vanadis/` 아래 서로 다른 칸을 쓴다."""
         engine2_vault = (
             _REPO / "src/asgard/assets/skill_plugins/freyja2/skills/asgard-freyja2" / "engine/scripts/lib/vault.mjs"
         ).read_text(encoding="utf-8")

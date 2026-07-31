@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """completions 자가 검증 — (1) cli.py 명령 표면과 completion 테이블의 동기 강제(인트로스펙션),
-(2) 생성 스크립트의 셸별 기능 검증(bash 는 COMPREPLY 직접, zsh/fish 는 있으면 실행), (3) --install 배선 멱등성.
+(2) 생성 스크립트의 셸별 기능 검증(bash는 COMPREPLY 직접, zsh/fish는 있으면 실행), (3) --install 배선 멱등성.
 
 실행: uv run pytest tests/test_completions.py
 """
@@ -20,7 +20,7 @@ from asgard.commands import completions as comp
 
 
 def _visible_commands():
-    # TyperGroup 은 이 환경에서 click.Group 의 서브클래스가 아니다 — isinstance 대신 duck-typing.
+    # TyperGroup은 이 환경에서 click.Group의 서브클래스가 아니다 — isinstance 대신 duck-typing.
     commands = getattr(get_command(cli.app), "commands")
     return {n: c for n, c in commands.items() if not c.hidden}
 
@@ -32,7 +32,7 @@ def _script(shell: str) -> str:
 
 
 class TestSurfaceSync(unittest.TestCase):
-    """cli.py 에 명령/플래그가 늘거나 줄면 여기가 깨진다 — completion 테이블을 같이 고치라는 신호."""
+    """cli.py에 명령/플래그가 늘거나 줄면 여기가 깨진다 — completion 테이블을 같이 고치라는 신호."""
 
     def test_commands_match(self):
         self.assertEqual(set(_visible_commands()), set(comp._SUMMARY))
@@ -86,7 +86,7 @@ class TestRenderAnchors(unittest.TestCase):
 
 
 class TestBashFunctional(unittest.TestCase):
-    """bash 함수를 직접 구동 — COMP_WORDS/COMP_CWORD 를 세팅하고 COMPREPLY 를 검사한다."""
+    """bash 함수를 직접 구동 — COMP_WORDS/COMP_CWORD를 세팅하고 COMPREPLY를 검사한다."""
 
     @classmethod
     def setUpClass(cls):
@@ -154,7 +154,7 @@ class TestBashFunctional(unittest.TestCase):
 
 @unittest.skipUnless(shutil.which("zsh"), "zsh not on PATH")
 class TestZshFunctional(unittest.TestCase):
-    """zsh 는 compadd/_describe 스텁으로 분기 로직을 검증 + compinit 환경에서 compdef 등록 확인."""
+    """zsh는 compadd/_describe 스텁으로 분기 로직을 검증 + compinit 환경에서 compdef 등록 확인."""
 
     @classmethod
     def setUpClass(cls):
@@ -255,7 +255,7 @@ class TestInstall(unittest.TestCase):
     def test_zsh_install_idempotent(self):
         with tempfile.TemporaryDirectory(prefix="asgard-home-") as home:
             with mock.patch.dict(os.environ, {"HOME": home, "SHELL": "/bin/zsh"}):
-                os.environ.pop("ZDOTDIR", None)  # patch.dict 가 원복
+                os.environ.pop("ZDOTDIR", None)  # patch.dict가 원복
                 self.assertEqual(comp.run_completions("zsh", install=True), 0)
                 dest = os.path.join(home, ".asgard", "completions", "_asgard")
                 rc = os.path.join(home, ".zshrc")
@@ -296,7 +296,7 @@ class TestInstall(unittest.TestCase):
                 mock.patch.dict(os.environ, {"HOME": home, "SHELL": "/bin/zsh"}),
                 mock.patch.object(comp.subprocess, "run") as run,
             ):
-                os.environ.pop("XDG_CONFIG_HOME", None)  # patch.dict 가 원복
+                os.environ.pop("XDG_CONFIG_HOME", None)  # patch.dict가 원복
                 comp.ensure_installed()
             shells = sorted(c.args[0][2] for c in run.call_args_list)
             self.assertEqual(shells, ["bash", "zsh"])  # zsh=로그인 셸(흔적 무), bash=흔적, fish=호출 안 됨

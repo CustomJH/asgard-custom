@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Heimdall _trinity/_classify 오케스트레이션 하네스 — mocked AgentSession, API 호출 0.
 
-FakeSession 이 스크립트된 응답·verdict 툴콜·관측 커맨드를 돌려주고, effect 로 워킹트리를 실제로
-바꾼다 (diff-hash 물리 검증은 진짜 quest-log/gate subprocess 가 수행 — 배포 형태 그대로).
+FakeSession이 스크립트된 응답·verdict 툴콜·관측 커맨드를 돌려주고, effect로 워킹트리를 실제로
+바꾼다 (diff-hash 물리 검증은 진짜 quest-log/gate subprocess가 수행 — 배포 형태 그대로).
 
 커버 경로: 해피패스 / verifier ESCALATE 전이 / structural FAIL→재계획 /
 재시도 실패 컨텍스트 / no-verdict·무증거 PASS 합성 FAIL /
@@ -77,7 +77,7 @@ class FakeSession:
 
 
 class FakeHeimdall(Heimdall):
-    """_session 을 스크립트 큐로 대체 — 소비 순서·프롬프트를 검증 표면으로 노출."""
+    """_session을 스크립트 큐로 대체 — 소비 순서·프롬프트를 검증 표면으로 노출."""
 
     def __init__(self, root: str, sessions: list[FakeSession], cls: dict | None = None, model: str = "claude-x"):
         import threading
@@ -172,7 +172,7 @@ def thinker(plan="계획: w1.txt 를 만든다", commands=None):
 
 
 def seed_learned_skill(root: str, name: str, *, triggers: str, agent: str) -> None:
-    """승인 receipt 포함 learned 스킬 시드 — HOME 이 테스트 root 라 키도 격리 생성된다."""
+    """승인 receipt 포함 learned 스킬 시드 — HOME이 테스트 root라 키도 격리 생성된다."""
     from asgard import skill_bank
 
     d = os.path.join(root, ".asgard", "skills", name)
@@ -232,8 +232,8 @@ class TestTrinityLoop(Base):
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier"])
 
     def test_noop_quest_observational_verifier_pass_closes(self):
-        # 무변경 과업(오분류된 인사 등) — verifier 의 트리 관측(git status/diff)만으로 PASS 성립.
-        # 종전엔 관측 명령이 전부 trivial 로 걸러져 PASS 가 영구 무효화되는 교착이었다 (26-07-21 실측).
+        # 무변경 과업(오분류된 인사 등) — verifier의 트리 관측(git status/diff)만으로 PASS 성립.
+        # 종전엔 관측 명령이 전부 trivial로 걸러져 PASS가 영구 무효화되는 교착이었다 (26-07-21 실측).
         h = FakeHeimdall(
             self.root,
             [
@@ -247,7 +247,7 @@ class TestTrinityLoop(Base):
         self.assertNotIn("PASS 무효화", "".join(h.texts))
 
     def test_pass_invalidation_is_visible_and_recoverable(self):
-        # diff 가 있는 퀘스트의 관측-only PASS 는 여전히 무효 (Goodhart 유지) — 단 무효화 사실이
+        # diff가 있는 퀘스트의 관측-only PASS는 여전히 무효 (Goodhart 유지) — 단 무효화 사실이
         # 화면에 표시된다 (사용자가 "PASS 직후 FAIL 재시도"라는 모순 화면을 보지 않게, 판정층 정직성)
         h = FakeHeimdall(
             self.root,
@@ -523,7 +523,7 @@ class TestTrinityLoop(Base):
         self.assertIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_grep_no_match_is_absence_evidence_not_unresolved_failure(self):
-        # grep/rg 매치 0건(exit 1)은 '패턴 부재' 확인의 성공 — 미해소 실패로 세면 정당한 PASS 가
+        # grep/rg 매치 0건(exit 1)은 '패턴 부재' 확인의 성공 — 미해소 실패로 세면 정당한 PASS가
         # 뒤집혀 Worker 재시도+재검증 2턴이 공짜로 낭비된다 (26-07-23 감사).
         absence = verifier("PASS")
         absence.result.commands = [
@@ -547,8 +547,8 @@ class TestTrinityLoop(Base):
         self.assertNotIn("unresolved-verification-failure", self.quest_log_text())
 
     def test_failed_runner_is_resolved_by_equivalent_runner_success(self):
-        # 26-07-22 실측: 격리 클론에 .venv 가 없어 `uv run pytest` 환경 실패 → 같은 대상을
-        # `python -m pytest` 로 통과시켰는데 신원 불일치로 PASS 무효화 → 헛 재시도 턴 전체 소모.
+        # 26-07-22 실측: 격리 클론에 .venv가 없어 `uv run pytest` 환경 실패 → 같은 대상을
+        # `python -m pytest`로 통과시켰는데 신원 불일치로 PASS 무효화 → 헛 재시도 턴 전체 소모.
         resolved = verifier("PASS")
         resolved.result.commands = [
             {"cmd": "uv run pytest tests/test_memory.py -q", "exit_code": 1},
@@ -625,7 +625,7 @@ class TestTrinityLoop(Base):
 
 
 class TestCharterInjection(Base):
-    """Charter (프로젝트 북극성) — through-line/coherence 가 라이브 Trinity 순환에서 올바른
+    """Charter (프로젝트 북극성) — through-line/coherence가 라이브 Trinity 순환에서 올바른
     역할 프롬프트에만 도달하고, evidence-first 게이트를 훼손하지 않음을 검증."""
 
     def _set_charter(self, charter):
@@ -646,17 +646,17 @@ class TestCharterInjection(Base):
         ]
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         out = h.handle("w1.txt 만들어")
-        self.assertIn(DONE, out)  # 게이트 정상 통과 — charter 가 순환을 막지 않음
+        self.assertIn(DONE, out)  # 게이트 정상 통과 — charter가 순환을 막지 않음
         by = {}
         for s in h.consumed:
             by.setdefault(s.label, s)
-        # Thinker: 관통 원칙 + coherence 를 criteria 로 환원 지시 (설계①/협업②)
+        # Thinker: 관통 원칙 + coherence를 criteria로 환원 지시 (설계①/협업②)
         self.assertIn("TL관통원칙", by["thinker"].system)
         self.assertIn("C1일관성", by["thinker"].system)
         # Verifier: 렌즈로 주입되되 criteria 대체 아님 명시 (판단③, evidence-first 보존)
         self.assertIn("TL관통원칙", by["verifier"].system)
         self.assertIn("does not replace criteria", by["verifier"].system)
-        # Worker: charter 전혀 무주입 — worker.md+lagom 만 (Fugu 격리, CC 훅과 패리티)
+        # Worker: charter 전혀 무주입 — worker.md+lagom만 (Fugu 격리, CC 훅과 패리티)
         self.assertNotIn("C1일관성", by["worker"].system)
         self.assertNotIn("Project North Star", by["worker"].system)
 
@@ -671,7 +671,7 @@ class TestCharterInjection(Base):
 class TestDeliveryCanonInjection(Base):
     """딜리버리 정본 카탈로그 — 도메인 매칭 과업의 Thinker 프롬프트에만 정본 존재를 알린다.
 
-    실증 근거(26-07-21 bilskirnir 4모드 실증): Thinker 가 저장소 문서 검색만으로 "정본 부재"를
+    실증 근거(26-07-21 bilskirnir 4모드 실증): Thinker가 저장소 문서 검색만으로 "정본 부재"를
     확정하고 응답 봉투를 발명해 verify 계약으로 고정 → thor 미디스패치·정책 우회 (2/2 재현)."""
 
     def _consumed_by_label(self, h):
@@ -709,11 +709,11 @@ class TestDeliveryCanonInjection(Base):
 
 
 class TestBlockedEvidenceParity(Base):
-    """가드 차단 호출은 실행된 적 없는 명령이다 — 미해소 실패로 PASS 를 강등시키지 않는다.
+    """가드 차단 호출은 실행된 적 없는 명령이다 — 미해소 실패로 PASS를 강등시키지 않는다.
 
-    실증 근거(26-07-21): claude_cli 트랜스포트에서 readonly 가드가 거부한 `git -C "$(pwd)" …` 가
-    is_error→exit 1 로 증거에 승격, 동등 명령으로 이미 해소했어도 unresolved-verification-failure 로
-    PASS 가 강등돼 턴 예산을 태웠다. 커널 경로(blocked 미기록)와 패리티."""
+    실증 근거(26-07-21): claude_cli 트랜스포트에서 readonly 가드가 거부한 `git -C "$(pwd)" …`가
+    is_error→exit 1로 증거에 승격, 동등 명령으로 이미 해소했어도 unresolved-verification-failure로
+    PASS가 강등돼 턴 예산을 태웠다. 커널 경로(blocked 미기록)와 패리티."""
 
     def _verifier_with(self, commands):
         return FakeSession(
@@ -797,7 +797,7 @@ class TestRunnerIdentity(unittest.TestCase):
 
 
 class TestRoutePriorsE2E(Base):
-    """Bayesian-lite — 종결 outcome 기록 + prior 가 승격 문턱을 실제로 낮추는 e2e."""
+    """Bayesian-lite — 종결 outcome 기록 + prior가 승격 문턱을 실제로 낮추는 e2e."""
 
     def read_priors(self):
         return json.load(open(os.path.join(self.root, ".asgard", "state", "route-priors.json")))
@@ -814,7 +814,7 @@ class TestRoutePriorsE2E(Base):
         (out,) = self.outcomes()
         self.assertEqual((out["task_class"], out["result"], out["baseline_red"]), ("deep", "pass", False))
         first = json.loads(self.quest_log_text().splitlines()[0])
-        self.assertEqual(first["risk"].get("task_class"), "deep")  # open 이 클래스를 기록
+        self.assertEqual(first["risk"].get("task_class"), "deep")  # open이 클래스를 기록
 
     def test_escalate_records_outcome(self):
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("ESCALATE")], cls=CLS_WRITE)
@@ -824,7 +824,7 @@ class TestRoutePriorsE2E(Base):
         self.assertEqual(self.read_priors()["classes"]["deep"]["n"], 1)
 
     def test_red_majority_prior_promotes_on_first_red(self):
-        # standard 클래스 과반-red 이력 → 첫 Verifier red 에 THINKER_REPLAN
+        # standard 클래스 과반-red 이력 → 첫 Verifier red에 THINKER_REPLAN
         os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
         with open(os.path.join(self.root, ".asgard", "state", "route-priors.json"), "w") as f:
             json.dump({"schema": 1, "classes": {"standard": {"n": 3, "red": 2}}}, f)
@@ -847,12 +847,12 @@ class TestRoutePriorsE2E(Base):
 
 
 OPUS_DEFAULT = PROVIDERS["anthropic"].default_model
-# 티어 앵커 — 해석된 표에서 읽는다 (리터럴 모델 ID 는 세대 교체마다 낡는 앵커다)
+# 티어 앵커 — 해석된 표에서 읽는다 (리터럴 모델 ID는 세대 교체마다 낡는 앵커다)
 TIER = tiers_for("anthropic", "anthropic")
 
 
 class TestModelTiers(Base):
-    """상황별 모델 티어 — opus/fable/sonnet/haiku 를 역할·상황이 결정."""
+    """상황별 모델 티어 — opus/fable/sonnet/haiku를 역할·상황이 결정."""
 
     def _h(self, sessions=None, model=OPUS_DEFAULT):
         return FakeHeimdall(self.root, sessions or [], cls=CLS_WRITE, model=model)
@@ -869,24 +869,24 @@ class TestModelTiers(Base):
 
     def test_tier_table_tracks_the_current_generation(self):
         # 26-07-26 실측 회귀: 표가 이전 세대(opus-4-8)에 박혀 opus-5 세션이 역할 턴마다 조용히
-        # 내려갔다. high 티어는 코디네이터 별칭 `opus` 가 해석되는 세대와 같은 계열·최신이어야 한다.
+        # 내려갔다. high 티어는 코디네이터 별칭 `opus`가 해석되는 세대와 같은 계열·최신이어야 한다.
         from asgard.model_tiers import FAMILY, generation
 
         table = tiers_for("anthropic", "anthropic")
         for tier, marker in FAMILY.items():
             self.assertIn(marker, table[tier])
         self.assertGreater(generation(table["high"]), generation("claude-opus-4-8"))
-        # claude CLI 모드는 별칭 그대로 — CLI 가 최신 세대로 해석하므로 표 유지보수가 없다
+        # claude CLI 모드는 별칭 그대로 — CLI가 최신 세대로 해석하므로 표 유지보수가 없다
         self.assertEqual(tiers_for("claude-native", "claude_cli"), dict(FAMILY))
-        # 티어 개념이 없는 provider 는 스왑하지 않는다 (커스텀 ID 존중)
+        # 티어 개념이 없는 provider는 스왑하지 않는다 (커스텀 ID 존중)
         self.assertEqual(tiers_for("openai", "openai_responses"), {})
 
     def _set_coordinator(self, h, model):
-        # role_rp 가 동일 rp 객체를 공유하므로 in-place 변이 (placement 오인 방지)
+        # role_rp가 동일 rp 객체를 공유하므로 in-place 변이 (placement 오인 방지)
         h.rp.model = model
 
     def test_coordinator_tier_floor(self):
-        # 프론티어 코디네이터(max) — 전 역할이 fable 로 승급, bump 는 이미 천장
+        # 프론티어 코디네이터(max) — 전 역할이 fable로 승급, bump는 이미 천장
         h = self._h()
         self._set_coordinator(h, TIER["max"])
         self.assertEqual(h._model_for("worker"), TIER["max"])
@@ -950,7 +950,7 @@ class TestModelTiers(Base):
 
     def test_session_model_override_swaps_model_only(self):
         h = self._h()
-        # FakeHeimdall 은 _session 을 대체하므로 실제 구현을 직접 호출
+        # FakeHeimdall은 _session을 대체하므로 실제 구현을 직접 호출
         s = Heimdall._session(h, "sys", role="worker", model=TIER["standard"])
         self.assertEqual(s.rp.model, TIER["standard"])
         self.assertEqual(s.rp.profile.name, "anthropic")
@@ -960,11 +960,11 @@ class TestModelTiers(Base):
         h = self._h([worker({"w1.txt": "x\n"}, self.root), verifier("PASS")])
         out = h.handle("w1.txt 만들어")
         self.assertIn(DONE, out)
-        self.assertEqual(h.consumed[0].model, TIER["high"])  # worker=standard 이나 코디네이터(high) 하한
+        self.assertEqual(h.consumed[0].model, TIER["high"])  # worker=standard이나 코디네이터(high) 하한
         self.assertEqual(h.consumed[1].model, TIER["high"])  # verifier micro=high
 
     def test_quest_events_record_used_model(self):
-        # 모델 티어 → route-priors 데이터 축: 실사용 provider:model 이 로그에 남는다
+        # 모델 티어 → route-priors 데이터 축: 실사용 provider:model이 로그에 남는다
         h = self._h([worker({"w1.txt": "x\n"}, self.root), verifier("PASS")])
         h.handle("w1.txt 만들어")
         d = os.path.join(self.root, ".asgard", "quest")
@@ -1048,14 +1048,14 @@ class TestClassify(Base):
         self.addCleanup(mock.patch.stopall)
         d = Heimdall._classify(h, "버그 설명해주고 고쳐줘")  # read+write 혼재 → 휴리스틱 불확정 → 파싱 실패
         self.assertTrue(d["write_expected"])  # write 신호 존재 → 게이트 경로
-        # 파싱 실패는 분류기 장애지 요청의 모호함이 아니다 — ambiguous 로 게이트-우선을 박탈하거나
+        # 파싱 실패는 분류기 장애지 요청의 모호함이 아니다 — ambiguous로 게이트-우선을 박탈하거나
         # deep(12턴)으로 최대 예산을 태우지 않는다 (26-07-23 감사). 물리 가드가 승격을 판정한다.
         self.assertFalse(d["ambiguous"])
         self.assertEqual(d["task_class"], "standard")
 
     def test_parse_failure_without_write_verb_fails_open_to_direct(self):
         # 분류기가 JSON 대신 대화체로 응답(인사 등) → 파싱 실패. write 동사가 없으면 DIRECT
-        # fail-open — DIRECT 는 read-only + Canon 10 소급 검증이 실제 write 를 잡는다.
+        # fail-open — DIRECT는 read-only + Canon 10 소급 검증이 실제 write를 잡는다.
         # 구 기본값(무조건 write+deep)은 인사 하나가 deep 예산을 태우는 경로였다 (26-07-21 실측).
         h = FakeHeimdall(self.root, [], cls=None)
         mock.patch.object(h, "_complete_text", lambda *a, **k: "안녕하세요! 무엇을 도와드릴까요?").start()
@@ -1065,10 +1065,10 @@ class TestClassify(Base):
         self.assertEqual(d["task_class"], "standard")
 
     def test_llm_read_only_verdict_cannot_override_a_deterministic_write_verb(self):
-        """분류기가 write 요청을 read-only 로 읽으면 Write 도구 없는 DIRECT 가 붙어 과업이 불가능해진다.
+        """분류기가 write 요청을 read-only로 읽으면 Write 도구 없는 DIRECT가 붙어 과업이 불가능해진다.
 
-        실측(26-07-26 helios): "모듈 경계를 정리해서 공통 로직을 한 곳으로 모아줘" 가 read-only 로
-        분류돼, 리팩터링이 파일 변경 없는 제안문으로 끝났다. 거부권은 한 방향 — read 를 write 로
+        실측(26-07-26 helios): "모듈 경계를 정리해서 공통 로직을 한 곳으로 모아줘"가 read-only로
+        분류돼, 리팩터링이 파일 변경 없는 제안문으로 끝났다. 거부권은 한 방향 — read를 write로
         승격만 하고, 그 반대는 없다 (오판 비용의 비대칭)."""
         h = FakeHeimdall(self.root, [], cls=None)
         payload = '{"write_expected":false,"ambiguous":false,"destructive":false,'
@@ -1120,13 +1120,13 @@ class TestClassifyHeuristic(Base):
             "implement the parser in parser.py",
             "이 모듈 리팩터해줘",
             "로고 시스템을 실제 산출물로 제작해줘",
-            # 벤치 실측 — "완성해줘" 가 동사 리스트 밖이라 LLM 폴백으로 새던 케이스
+            # 벤치 실측 — "완성해줘"가 동사 리스트 밖이라 LLM 폴백으로 새던 케이스
             "우리 API 서비스에 요청 rate limit 기능을 완성해줘. limiter.py에 골격만 있고 아직 동작하지 않아.",
         ]
         destructive = ["rm -rf ./build 실행해", "git push --force 해", "임시 파일 다 지워"]
         for q in read_only:
             d = ch(q)
-            assert d is not None, q  # ty 내로잉 — assertIsNotNone 은 타입을 못 좁힌다
+            assert d is not None, q  # ty 내로잉 — assertIsNotNone은 타입을 못 좁힌다
             self.assertFalse(d["write_expected"], q)
         for q in writes:
             d = ch(q)
@@ -1146,7 +1146,7 @@ class TestClassifyHeuristic(Base):
 
     def test_smalltalk_routes_direct_no_llm(self):
         # 인사·감사·수긍은 결정론으로 DIRECT — LLM 분류기가 인사에 인사로 답해(JSON 파싱 실패)
-        # Trinity 를 태우던 경로 차단 (26-07-21 "안녕" 실측: deep 예산 소진)
+        # Trinity를 태우던 경로 차단 (26-07-21 "안녕" 실측: deep 예산 소진)
         from asgard.agent.heimdall import classify_heuristic as ch
 
         smalltalk = [
@@ -1173,7 +1173,7 @@ class TestClassifyHeuristic(Base):
         self.assertTrue(mixed["write_expected"])
 
     def test_memory_instruction_routes_direct_no_llm(self):
-        # 기억 지시가 어느 동사 표에도 없어 LLM 폴백 trivial 로 흐르고, 모델이 저장 없이
+        # 기억 지시가 어느 동사 표에도 없어 LLM 폴백 trivial로 흐르고, 모델이 저장 없이
         # "기억했다" 허위 확답하던 경로 (26-07-21 실측) — 결정론 DIRECT + memory_save 계약으로 봉인.
         from asgard.agent.heimdall import classify_heuristic as ch
         from asgard.agent.heimdall import memory_write_intent
@@ -1189,7 +1189,7 @@ class TestClassifyHeuristic(Base):
             "please remember my timezone is KST",
         ):
             self.assertTrue(memory_write_intent(q), q)
-        # 회상 질문·과거형은 저장 지시가 아니다 — 오탐이면 폴백 ingest 가 잡담을 영구 저장한다
+        # 회상 질문·과거형은 저장 지시가 아니다 — 오탐이면 폴백 ingest가 잡담을 영구 저장한다
         for q in (
             "내 이름 기억해?",
             "우리 지난주에 뭐 했는지 기억하고 있어?",
@@ -1202,7 +1202,7 @@ class TestClassifyHeuristic(Base):
         self.assertTrue(mixed["write_expected"])
 
     def test_durable_user_fact_without_explicit_memory_command(self):
-        """실측 회귀 (26-07-26): "이제부터 썬더오브갓이라 불러라" 가 명시적 기억 명령 표에
+        """실측 회귀 (26-07-26): "이제부터 썬더오브갓이라 불러라"가 명시적 기억 명령 표에
         없어 memory_save 도구가 안 열렸고, 모델이 셸아웃으로 우회하려다 read-only 레인에
         막혀 "세션에서만 기억"으로 끝났다. 호칭·정체성·지속 지시는 명령 없이도 사실이다."""
         from asgard.agent.heimdall import classify_heuristic as ch
@@ -1234,7 +1234,7 @@ class TestClassifyHeuristic(Base):
             "테스트 좀 돌려줘",
         ):
             self.assertFalse(memory_write_intent(q), q)
-        # 지속 지시라도 repo write 가 섞이면 write 분기 — 게이트 우선은 그대로
+        # 지속 지시라도 repo write가 섞이면 write 분기 — 게이트 우선은 그대로
         mixed = ch("앞으로 이 규칙 지켜서 config.py 수정해줘")
         assert mixed is not None
         self.assertTrue(mixed["write_expected"])
@@ -1388,7 +1388,7 @@ class TestBudget(Base):
     """budget priors 배선 — task-class 턴 예산 + 80% 자기규제 + grace 판정."""
 
     def _cls(self):
-        return dict(CLS_WRITE, task_class="trivial")  # trivial=1 → 최소 순환 3 으로 클램프
+        return dict(CLS_WRITE, task_class="trivial")  # trivial=1 → 최소 순환 3으로 클램프
 
     def test_grace_verifier_completes_after_budget(self):
         seq = [
@@ -1664,7 +1664,7 @@ class TestWaveParallel(Base):
         for p in wave1:
             self.assertNotIn("prior unit", p)
             self.assertNotIn("unit-result", p)
-        # 단위 3 (wave 2) — access [1] 의 결과만 주입
+        # 단위 3 (wave 2) — access [1]의 결과만 주입
         p3 = next(p for p in prompts if "Assigned unit 3" in p)
         self.assertIn("[prior unit 1 result]", p3)
         self.assertNotIn("[prior unit 2 result]", p3)
@@ -1676,8 +1676,8 @@ class TestWaveParallel(Base):
             unit: [e.get("ticket_status") for e in events if e.get("event") == "ticket" and e.get("unit") == unit]
             for unit in (1, 2, 3)
         }
-        # 하트비트가 `in_progress` 를 한 줄 더 남기므로 정확한 목록을 단언하면 부하에서 깨진다
-        # (실측: 다른 pytest 와 CPU 를 나눠 쓰는 동안 `todo, in_progress, in_progress, done`).
+        # 하트비트가 `in_progress`를 한 줄 더 남기므로 정확한 목록을 단언하면 부하에서 깨진다
+        # (실측: 다른 pytest와 CPU를 나눠 쓰는 동안 `todo, in_progress, in_progress, done`).
         # 고정할 것은 개수가 아니라 **수명주기의 모양**이다 — 열고, 진행하고, 닫는다.
         for unit in (1, 2, 3):
             with self.subTest(unit=unit):
@@ -1751,7 +1751,7 @@ class TestWaveParallel(Base):
 
     def test_wave_partial_failure_records_success_units_before_raise(self):
         """CUS-247 — 한 단위 fatal 이어도 성공 단위의 완료 처리·writes 기록을 확정한 뒤 전파.
-        기존 ex.map 은 lazy 예외 재발생으로 성공 단위의 ql append·_record_writes 까지 끊었다."""
+        기존 ex.map은 lazy 예외 재발생으로 성공 단위의 ql append·_record_writes까지 끊었다."""
         units = [
             {"id": 1, "subtask": "a", "files": ["ok.txt"], "criteria": [], "access": []},
             {"id": 2, "subtask": "b", "files": ["bad.txt"], "criteria": [], "access": []},
@@ -2052,8 +2052,8 @@ class TestDirectGuard(Base):
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
     def test_active_lagom_streams_live_and_appends_rewrite_as_canonical(self):
-        # 26-07-23: 검사 전 전량 버퍼링은 REPL 을 '먹통 → 한번에 팍' 으로 보이게 했다.
-        # 새 계약: DIRECT 는 라곰 활성에도 라이브 스트리밍, 위반 시에만 교정 표식+정본을 덧붙인다.
+        # 26-07-23: 검사 전 전량 버퍼링은 REPL을 '먹통 → 한번에 팍'으로 보이게 했다.
+        # 새 계약: DIRECT는 라곰 활성에도 라이브 스트리밍, 위반 시에만 교정 표식+정본을 덧붙인다.
         direct = FakeSession(
             SessionResult(text="혁신적 RAGX는 즉시 배포 가능하다.", stop_reason="end_turn"), label="direct"
         )
@@ -2063,7 +2063,7 @@ class TestDirectGuard(Base):
         ) as rewrite:
             h.handle("RAGX 소개를 답해. 사실: 13줄, JSON 키 정렬")
         rewrite.assert_called_once()
-        self.assertFalse(direct.quiet)  # 스트리밍 계약 — DIRECT 세션의 on_text 는 살아 있다
+        self.assertFalse(direct.quiet)  # 스트리밍 계약 — DIRECT 세션의 on_text는 살아 있다
         self.assertEqual(h.last_response_text, "RAGX는 JSON 키를 정렬하는 13줄짜리 도구다.")
         joined = "".join(h.texts)
         self.assertIn("⠶", joined)  # 교정 표식(언어 중립 글리프) — 초안과 정본이 갈렸음을 알린다
@@ -2105,7 +2105,7 @@ class TestDirectGuard(Base):
         self.assertIn("Bragi — Human Voice Contract", h.delivery_identity)
 
     def test_bragi_axis_survives_lagom_off(self):
-        """`/lagom off` 는 압축을 끄는 것이지 사람처럼 쓰기를 끄는 게 아니다 — 축이 독립이다."""
+        """`/lagom off`는 압축을 끄는 것이지 사람처럼 쓰기를 끄는 게 아니다 — 축이 독립이다."""
         old = os.environ.get("LAGOM_MODE")
         os.environ["LAGOM_MODE"] = "off"
         try:
@@ -2194,7 +2194,7 @@ class TestMemoryWriteTurn(Base):
 
 
 class TestExplorationHint(Base):
-    """탐색 캐시 최소판 — Thinker 관찰 명령을 Worker 에 힌트로 전달 (게이트 증거 아님)."""
+    """탐색 캐시 최소판 — Thinker 관찰 명령을 Worker에 힌트로 전달 (게이트 증거 아님)."""
 
     def test_worker_gets_thinker_observations(self):
         seq = [
@@ -2266,8 +2266,8 @@ class TestHookParity(Base):
         self.assertEqual(ql("close").returncode, 0)
 
     def test_gate_orphan_last_exemption_requires_evidence(self):
-        # 강제 close 는 LAST 미기록 — 그리고 구버전 quest-log 가 남긴 LAST 라도
-        # 무증거 PASS 면 게이트가 orphan write 를 차단해야 한다 (심층 방어)
+        # 강제 close는 LAST 미기록 — 그리고 구버전 quest-log가 남긴 LAST 라도
+        # 무증거 PASS 면 게이트가 orphan write를 차단해야 한다 (심층 방어)
         import subprocess
         import sys as _sys
 
@@ -2286,7 +2286,7 @@ class TestHookParity(Base):
         self.assertEqual(forced.returncode, 0)
         self.assertFalse(json.loads(forced.stdout).get("gate_exempt", True))
         last = os.path.join(self.root, ".asgard", "quest", "LAST")
-        self.assertFalse(os.path.exists(last))  # forced close 는 게이트 면제(LAST)를 만들지 않는다
+        self.assertFalse(os.path.exists(last))  # forced close는 게이트 면제(LAST)를 만들지 않는다
         os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
         json.dump(["f.txt"], open(os.path.join(self.root, ".asgard", "state", "writes-ev2.json"), "w"))
 
@@ -2298,8 +2298,8 @@ class TestHookParity(Base):
             )  # fmt: skip
 
         self.assertIn('"block"', gate().stdout)  # LAST 없음 → orphan write 차단
-        open(last, "w").write("q-ev2\n")  # 구버전 quest-log 가 남긴 LAST 시뮬레이션
-        self.assertIn('"block"', gate().stdout)  # 무증거 LAST 는 면제 불가
+        open(last, "w").write("q-ev2\n")  # 구버전 quest-log가 남긴 LAST 시뮬레이션
+        self.assertIn('"block"', gate().stdout)  # 무증거 LAST는 면제 불가
 
     def test_diff_state_parity(self):
         import subprocess
@@ -2423,8 +2423,8 @@ class TestDirectHistory(Base):
 
 class TestDeliveryMemoryIsolation(Base):
     """개인 메모리 스냅샷은 코디네이터(DIRECT) 전용 (memory v3 P1 — heimdall 주석 계약).
-    26-07-15 리뷰: identity 에 memory_note 가 합쳐지며 딜리버리 자식(freyja/thor/loki)까지
-    누출 — 특히 loki 는 Verifier 반례 탐색자라 게이트 무결성 훼손."""
+    26-07-15 리뷰: identity에 memory_note가 합쳐지며 딜리버리 자식(freyja/thor/loki)까지
+    누출 — 특히 loki는 Verifier 반례 탐색자라 게이트 무결성 훼손."""
 
     def setUp(self):
         super().setUp()
@@ -2779,7 +2779,7 @@ class TestMemoryRoleMatrix(Base):
         h.handle("pytest 검증 선호가 뭐였지?")
         self.assertIn("<memory-recall", s.prompt)
         self.assertIn("pytest-pref", s.prompt)
-        # 답변 소스 배지 원천 — 주입된 회상량이 턴 recap 에 집계된다
+        # 답변 소스 배지 원천 — 주입된 회상량이 턴 recap에 집계된다
         self.assertGreater(h.turn_recap.get("recall_chars", 0), 0)
 
     def test_provider_allowlist_blocks_identity(self):
@@ -2880,7 +2880,7 @@ class TestTurnRecapCollector(unittest.TestCase):
 
         from asgard.agent.heimdall import core
 
-        # _state_lock/turn_recap/root 만 쓰는 최소 대역 — ty invalid-argument-type 내로잉 (45297ac 처방)
+        # _state_lock/turn_recap/root만 쓰는 최소 대역 — ty invalid-argument-type 내로잉 (45297ac 처방)
         hd = cast(
             core.Heimdall, SimpleNamespace(_state_lock=threading.Lock(), turn_recap=core._new_recap(), root="/repo")
         )
@@ -2921,7 +2921,7 @@ class TestTurnRecapCollector(unittest.TestCase):
         from asgard.agent.heimdall import core
 
         with tempfile.TemporaryDirectory() as root:
-            # _state_lock/turn_recap/root 만 쓰는 최소 대역 — cast 는 소비 직전 1회 (ty 내로잉, 45297ac 처방)
+            # _state_lock/turn_recap/root만 쓰는 최소 대역 — cast는 소비 직전 1회 (ty 내로잉, 45297ac 처방)
             ns = SimpleNamespace(_state_lock=threading.Lock(), turn_recap=core._new_recap(), root=root)
             ns._recap_event = lambda text: core.Heimdall._recap_event(cast(core.Heimdall, ns), text)
             hd = cast(core.Heimdall, ns)

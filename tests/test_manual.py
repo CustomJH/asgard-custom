@@ -7,9 +7,9 @@
 
 핵심 계약:
   · 미설정 = 빈 문자열 (프롬프트 무변화, 토큰 회귀 없음)
-  · 집은 메인 루트, `.asgard/` 는 보조 — 두 자리는 서로 안 가리고 루트가 먼저 실린다
+  · 집은 메인 루트, `.asgard/`는 보조 — 두 자리는 서로 안 가리고 루트가 먼저 실린다
   · 주석뿐인 시작 템플릿 = 없는 것과 동일 (배송해도 주입 0)
-  · 별칭 우선순위는 MANUAL_NAMES 나열 순서 하나로 고정, 진 파일은 shadowed 로 관측된다
+  · 별칭 우선순위는 MANUAL_NAMES 나열 순서 하나로 고정, 진 파일은 shadowed로 관측된다
   · 매뉴얼은 캐논을 못 이긴다 — 권위 문단에 그 경계가 반드시 실린다
   · verifier 절은 "criteria 대체 아님"을 반드시 포함 (evidence-first 보존)
 
@@ -35,7 +35,7 @@ class ManualBase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         os.makedirs(os.path.join(self.root, ".asgard"))
-        # 글로벌 설정이 테스트 판정에 새지 않도록 HOME 을 빈 임시 디렉터리로 격리한다.
+        # 글로벌 설정이 테스트 판정에 새지 않도록 HOME을 빈 임시 디렉터리로 격리한다.
         self._home = tempfile.TemporaryDirectory()
         self._env = mock.patch.dict(os.environ, {"HOME": self._home.name}, clear=False)
         self._env.start()
@@ -47,7 +47,7 @@ class ManualBase(unittest.TestCase):
         self._tmp.cleanup()
 
     def write(self, rel: str, text: str) -> None:
-        """rel 은 **리포 루트 기준** 상대경로 — 로더가 쓰는 좌표와 같게 둔다."""
+        """rel은 **리포 루트 기준** 상대경로 — 로더가 쓰는 좌표와 같게 둔다."""
         path = os.path.join(self.root, rel)
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
@@ -113,7 +113,7 @@ class TestDiscovery(ManualBase):
                     self.assertEqual(loaded["sources"], [rel])
 
     def test_alias_precedence_follows_declaration_order(self):
-        """한 디렉터리에 넷을 다 만들면 MANUAL.md 만 이기고 나머지는 shadowed 로 관측된다."""
+        """한 디렉터리에 넷을 다 만들면 MANUAL.md만 이기고 나머지는 shadowed로 관측된다."""
         for i, name in enumerate(M.MANUAL_NAMES):
             self.write(name, f"- rule {i}")
         loaded = M.load_manual(self.root)
@@ -207,7 +207,7 @@ class TestCommonLayer(ManualBase):
             self.assertIsNone(M.load_manual(self.root))
 
     def test_same_file_is_not_loaded_twice(self):
-        """홈 안에서 asgard 를 돌리면 두 층이 같은 파일을 가리킨다 — 한 번만 실려야 한다."""
+        """홈 안에서 asgard를 돌리면 두 층이 같은 파일을 가리킨다 — 한 번만 실려야 한다."""
         home = M.home()
         os.makedirs(home, exist_ok=True)
         with open(os.path.join(home, "MANUAL.md"), "w", encoding="utf-8") as handle:
@@ -235,7 +235,7 @@ class TestFragments(ManualBase):
         self.assertEqual(loaded["sources"], [".asgard/manual/10-api.md"])
 
     def test_root_manual_dir_is_not_read(self):
-        """루트 `manual/` 은 남의 문서 폴더와 부딪힐 자리다 — 아예 안 본다."""
+        """루트 `manual/`은 남의 문서 폴더와 부딪힐 자리다 — 아예 안 본다."""
         self.write("manual/10-docs.md", "- 남의 문서")
         self.assertIsNone(M.load_manual(self.root))
 
@@ -252,7 +252,7 @@ class TestFragments(ManualBase):
         loaded = M.load_manual(self.root)
         assert loaded is not None
         self.assertEqual(len(loaded["sources"]), M.FRAGMENT_CAP)
-        self.assertEqual(len(loaded["dropped"]), 3)  # 조용히 자르지 않는다 — doctor·CLI 가 말한다
+        self.assertEqual(len(loaded["dropped"]), 3)  # 조용히 자르지 않는다 — doctor·CLI가 말한다
 
     def test_empty_fragment_not_listed_as_source(self):
         self.write("MANUAL.md", "- base")
@@ -266,8 +266,8 @@ class TestFragments(ManualBase):
 class TestSymlinkFence(ManualBase):
     """저장소 밖을 가리키는 링크는 안 싣는다.
 
-    왜 이 검사가 있는가: `os.path.isfile` 도 `os.listdir` 도 링크를 따라가고 `.md` 판정은
-    **링크 이름**에 걸린다. git 은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 울타리가
+    왜 이 검사가 있는가: `os.path.isfile`도 `os.listdir`도 링크를 따라가고 `.md` 판정은
+    **링크 이름**에 걸린다. git은 트리 밖을 가리키는 링크도 그대로 커밋하므로, 울타리가
     없으면 저장소가 `MANUAL.md -> ~/.ssh/id_rsa` 하나만 담아도 그 내용이 매 세션 프롬프트로
     나간다. 매뉴얼 로더는 도구 호출이 아니라서 판독 게이트(`hooks/secret_guard.py`)가 보는
     자리가 아니다 — 여기서 안 막으면 아무도 안 막는다.
@@ -354,7 +354,7 @@ class TestInertness(ManualBase):
 
 
 class TestMarker(ManualBase):
-    """루트 `MANUAL.md` 는 흔한 이름이다 — 아스가르드가 깐 자리인지 구분할 수단이 있어야 한다."""
+    """루트 `MANUAL.md`는 흔한 이름이다 — 아스가르드가 깐 자리인지 구분할 수단이 있어야 한다."""
 
     def test_starter_carries_the_marker(self):
         self.write("MANUAL.md", MANUAL_STARTER_MD)
@@ -545,7 +545,7 @@ class TestScaffold(unittest.TestCase):
         self.assertIn("that repository's root", COMMON_MANUAL_STARTER_MD)
 
     def test_agents_md_points_at_the_manual(self):
-        """4모드 전부가 AGENTS.md 를 (직접이든 브릿지로든) 읽는다 — 발견성의 공통 자리."""
+        """4모드 전부가 AGENTS.md를 (직접이든 브릿지로든) 읽는다 — 발견성의 공통 자리."""
         from asgard.templates import agents_md
 
         text = agents_md("proj")
@@ -570,7 +570,7 @@ class TestNativeWiring(unittest.TestCase):
         return Heimdall(rp, root, on_text=lambda *_: None)
 
     def test_live_session_prompts_carry_the_manual(self):
-        """소스 grep 이 아니라 실제로 조립된 프롬프트 문자열을 본다 — 배선의 최종 증거."""
+        """소스 grep이 아니라 실제로 조립된 프롬프트 문자열을 본다 — 배선의 최종 증거."""
         with tempfile.TemporaryDirectory() as root:
             with open(os.path.join(root, "MANUAL.md"), "w", encoding="utf-8") as handle:
                 handle.write("## API\n- v1 프리픽스 규칙.\n")
@@ -608,7 +608,7 @@ def _asgard_bin() -> str | None:
 
 @unittest.skipIf(_asgard_bin() is None, "asgard CLI 가 PATH 에 없다 — 스캐폴드를 실물로 못 돌린다")
 class TestScaffoldE2E(unittest.TestCase):
-    """진짜 `asgard init` 을 두 번 돌린다 — 사용자가 쓴 규칙을 재스캐폴드가 덮으면 Canon 3 급 사고다."""
+    """진짜 `asgard init`을 두 번 돌린다 — 사용자가 쓴 규칙을 재스캐폴드가 덮으면 Canon 3 급 사고다."""
 
     bin: str
 
@@ -664,7 +664,7 @@ class TestScaffoldE2E(unittest.TestCase):
         self.assertIn("v1 프리픽스", loaded["body"])
 
     def test_a_pre_existing_root_manual_is_never_overwritten(self):
-        """이미 MANUAL.md 를 가진 리포에 설치해도 그 문서는 그대로 남는다 (실리는 건 doctor 가 짚는다)."""
+        """이미 MANUAL.md를 가진 리포에 설치해도 그 문서는 그대로 남는다 (실리는 건 doctor가 짚는다)."""
         with open(self.path, "w", encoding="utf-8") as handle:
             handle.write("# 제품 사용 설명서\n\n전원을 켜세요.\n")
         self.init()
@@ -700,7 +700,7 @@ class TestScaffoldE2E(unittest.TestCase):
         self.assertIn("4-mode injected", row["detail"])
 
     def test_init_seeds_the_common_manual_once(self):
-        """공통 자리는 리포 밖이라 스캐폴드 목록에 못 넣는다 — init 이 없을 때만 따로 깐다."""
+        """공통 자리는 리포 밖이라 스캐폴드 목록에 못 넣는다 — init이 없을 때만 따로 깐다."""
         with tempfile.TemporaryDirectory() as fake_home:
             env: dict[str, str] = {**os.environ, "HOME": fake_home}
             env.pop("ASGARD_HOME", None)
@@ -726,7 +726,7 @@ class TestScaffoldE2E(unittest.TestCase):
                 env=env,
             )
             with open(common, encoding="utf-8") as handle:
-                self.assertEqual(handle.read(), "- 내가 쓴 공통 규칙\n")  # 두 번째 init 이 안 덮는다
+                self.assertEqual(handle.read(), "- 내가 쓴 공통 규칙\n")  # 두 번째 init이 안 덮는다
 
     def test_hook_is_scaffolded_and_wired(self):
         self.init()

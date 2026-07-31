@@ -134,7 +134,7 @@ class WiringTest(ManagerBase):
 
 
 class SemanticDoctorTest(ManagerBase):
-    """켜져 있다는 것과 실제로 도는 것을 doctor 가 구분하는가 (기본값이 on 이라 더 중요하다)."""
+    """켜져 있다는 것과 실제로 도는 것을 doctor가 구분하는가 (기본값이 on이라 더 중요하다)."""
 
     def _check(self) -> dict:
         from asgard.commands.doctor import _memory_semantic_check

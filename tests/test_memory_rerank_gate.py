@@ -1,17 +1,17 @@
 """리랭크 QPP 게이트 — 분산을 이분 판정이 아니라 **확신도**로 읽는다.
 
-배경 (26-07-29). 게이트는 hard 로 냈다: 분산이 문턱 미만이면 리랭크 표를 아예 안 던진다.
+배경 (26-07-29). 게이트는 hard로 냈다: 분산이 문턱 미만이면 리랭크 표를 아예 안 던진다.
 held-out 계측이 그 대가를 보여 줬다 — V2(새 도메인) 퇴행 9건→2건을 얻고, M(건초더미 9배)에서
-NDCG −0.9pp·MRR −1.4pp 를 치렀다. M 에서 리랭크는 순증이었으므로 낮은 분산 질의에도
+NDCG −0.9pp·MRR −1.4pp를 치렀다. M에서 리랭크는 순증이었으므로 낮은 분산 질의에도
 **순위를 다듬는 몫**이 있었는데 기권이 그걸 통째로 버린 것이다.
 
-그래서 soft 를 시도했다 (`w = min(1, 분산/문턱)`) — 그리고 **재 보니 안 됐다**: V2 에서 해를
+그래서 soft를 시도했다 (`w = min(1, 분산/문턱)`) — 그리고 **재 보니 안 됐다**: V2에서 해를
 끼치던 질의의 분산이 문턱 바로 아래에 몰려 있어 가중이 거의 안 깎이고, 결과가 게이트 없음과
 같아진다 (V2 R@5 soft 0.760 / 4:8  vs  hard 0.780 / 0:2). 기본이 hard 인 것은 그 계측이다.
 
 이 파일이 지키는 계약:
   · 문턱 이상 → 가중 1.0 (어느 모드에서도)
-  · 문턱 미만 → hard 는 0(기본), soft 는 비례 감쇠
+  · 문턱 미만 → hard는 0(기본), soft는 비례 감쇠
   · 문턱 0 (게이트 없음) → 항상 1.0, 즉 게이트 도입 전과 **바이트 동일**
   · 두 모드 다 제품 스위치로 켜고 끌 수 있다 (보고서 재현성)
 """
@@ -78,7 +78,7 @@ class TestGateWeight(GateCase):
 
 class TestGateModeSwitch(GateCase):
     def test_the_default_is_hard(self):
-        """기본이 hard 인 것은 계측 결과다 — soft 는 V2 에서 보호를 못 지켰다 (4:8 vs 0:2)."""
+        """기본이 hard 인 것은 계측 결과다 — soft는 V2에서 보호를 못 지켰다 (4:8 vs 0:2)."""
         self.assertEqual(recall._gate_mode(), "hard")
 
     def test_the_mode_is_switchable_without_monkeypatching(self):
@@ -92,8 +92,8 @@ class TestGateModeSwitch(GateCase):
 
 class TestDispersion(GateCase):
     def test_identical_scores_have_no_dispersion(self):
-        # 정확히 0 을 요구하지 않는다: 부동소수 제곱합이 1e-16 급 잔차를 남긴다. 문턱이
-        # 0.1503 이라 그 잔차는 판정에 닿지 않으므로 코드로 걷어낼 값이 아니다.
+        # 정확히 0을 요구하지 않는다: 부동소수 제곱합이 1e-16 급 잔차를 남긴다. 문턱이
+        # 0.1503이라 그 잔차는 판정에 닿지 않으므로 코드로 걷어낼 값이 아니다.
         self.assertAlmostEqual(recall._dispersion([0.4, 0.4, 0.4]), 0.0, places=9)
 
     def test_spread_scores_have_dispersion(self):
@@ -124,7 +124,7 @@ class TestFloorOverride(GateCase):
         self.assertEqual(recall._dispersion_floor(), recall.RERANK_DISPERSION_FLOOR)
 
     def test_the_calibrated_floor_is_the_measured_one(self):
-        """S 500문항 보정 산출 — 바꾸려면 calibrate_dispersion.py 를 다시 돌려야 한다."""
+        """S 500문항 보정 산출 — 바꾸려면 calibrate_dispersion.py를 다시 돌려야 한다."""
         self.assertEqual(recall.RERANK_DISPERSION_FLOOR, 0.1503)
 
 

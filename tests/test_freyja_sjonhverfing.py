@@ -2,13 +2,13 @@
 
 이 스킬의 값어치는 두 곳에 있고, 테스트도 그 둘을 고정한다.
 
-① **깊이가 죽었는지 소스에서 판정한다.** 그래서 문서 문자열이 아니라 실제 CSS/HTML/JS 를
+① **깊이가 죽었는지 소스에서 판정한다.** 그래서 문서 문자열이 아니라 실제 CSS/HTML/JS를
    게이트에 물려 판정이 맞는지 본다. 특히 오탐 앵커를 규칙마다 둔다 — 판정기가 짖기만 하면
    사람은 곧 게이트를 끈다.
 ② **엔진의 독립을 깨지 않는다.** 기법 계층이 엔진을 참조하거나 엔진이 기법 계층을 참조하면
    그것은 계층이 아니라 결합이다. 파일 수준에서 양방향으로 확인한다.
 
-조합 검증은 실물로 한다. 표본을 엔진 2·3·4 의 **각자의 런타임**에 물려, 깊이 기법이
+조합 검증은 실물로 한다. 표본을 엔진 2·3·4의 **각자의 런타임**에 물려, 깊이 기법이
 남의 게이트를 건드리지 않는다는 것을 판정으로 보인다.
 """
 
@@ -100,7 +100,7 @@ class SjonhverfingContract(unittest.TestCase):
     def test_depth_task_routes_here_without_stealing_the_3d_engine(self) -> None:
         depth = [name for name, _ in skill_registry.resolve_skills(".", "카드 틸트를 anime.js 로", "freyja")]
         self.assertIn("asgard-freyja-sjonhverfing", depth)
-        # 조형 요청은 엔진 3 의 것이다. 트리거가 겹쳐 형상 작업을 가로채면 안 된다.
+        # 조형 요청은 엔진 3의 것이다. 트리거가 겹쳐 형상 작업을 가로채면 안 된다.
         shape = [name for name, _ in skill_registry.resolve_skills(".", "3d 프린팅용 외함 설계", "freyja")]
         self.assertIn("asgard-freyja-3d", shape)
         self.assertNotIn("asgard-freyja-sjonhverfing", shape)
@@ -247,12 +247,12 @@ class DepthGateRuntime(unittest.TestCase):
 
     # ── 오탐 앵커 ───────────────────────────────────────────────────
     def test_layer_promotion_idiom_is_not_depth(self) -> None:
-        """translateZ(0) 은 합성 레이어 관용구다. 이것을 깊이로 세면 모든 페이지가 D1 에 걸린다."""
+        """translateZ(0)은 합성 레이어 관용구다. 이것을 깊이로 세면 모든 페이지가 D1에 걸린다."""
         payload = _judge(".p { transform: translateZ(0) } .q { transform: rotateX(0deg) translate3d(0, 12px, 0) }")
         self.assertEqual(_by_id(payload, "D1")["status"], "n/a")
 
     def test_a_variable_named_perspective_is_not_a_perspective(self) -> None:
-        """`--depth-perspective: 900px` 는 선언이 아니라 이름이다. 이름을 선언으로 세면 D1 이 조용히 통과한다."""
+        """`--depth-perspective: 900px`는 선언이 아니라 이름이다. 이름을 선언으로 세면 D1이 조용히 통과한다."""
         payload = _judge(
             ":root { --depth-perspective: 900px }\n"
             ".c { transform: rotateY(10deg); transition: transform 200ms }\n"
@@ -290,7 +290,7 @@ class DepthGateRuntime(unittest.TestCase):
         self.assertEqual(_by_id(payload, "D3")["status"], "n/a")
 
     def test_a_url_on_the_declaration_line_does_not_blank_the_rule(self) -> None:
-        """`url(https://…)` 의 `//` 를 주석으로 지우면 같은 줄의 perspective 가 함께 사라진다."""
+        """`url(https://…)`의 `//`를 주석으로 지우면 같은 줄의 perspective가 함께 사라진다."""
         payload = _judge(
             "<style>\n.hero { background: url(https://example.com/a.png) center; perspective: 900px }\n"
             ".c { transform: rotateY(9deg); transition: transform 200ms }\n"
@@ -312,7 +312,7 @@ class DepthGateRuntime(unittest.TestCase):
         self.assertEqual(_by_id(payload, "D8")["status"], "pass")
 
     def test_a_three_js_file_is_not_judged_for_a_css_perspective(self) -> None:
-        """실시간 3D 는 카메라가 원근을 쥔다. CSS perspective 를 요구하면 L5 코드가 전부 걸린다."""
+        """실시간 3D는 카메라가 원근을 쥔다. CSS perspective를 요구하면 L5 코드가 전부 걸린다."""
         payload, code = _gate(_HANDOFF)
         gate = _by_id(payload, "D1")
         self.assertEqual(gate["status"], "n/a")
@@ -320,21 +320,21 @@ class DepthGateRuntime(unittest.TestCase):
         self.assertEqual(code, 0)
 
     def test_large_json_survives_a_pipe(self) -> None:
-        """`process.exit()` 은 파이프의 비동기 stdout 버퍼를 버린다 — 64KB 에서 잘린다.
+        """`process.exit()`은 파이프의 비동기 stdout 버퍼를 버린다 — 64KB에서 잘린다.
 
-        조용히 잘린 JSON 은 빈 결과보다 나쁘다. 판정이 사라진 자리를 통과로 읽게 된다.
+        조용히 잘린 JSON은 빈 결과보다 나쁘다. 판정이 사라진 자리를 통과로 읽게 된다.
         """
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw) / "corpus"
             root.mkdir()
             # 목록 항목은 절대 경로다 — tmpdir 접두사가 짧은 리눅스에서는 같은 개수로도
-            # 64KB 를 못 넘겨 전제가 무너진다. 고정 개수 대신 경로 길이에서 되짚는다.
+            # 64KB를 못 넘겨 전제가 무너진다. 고정 개수 대신 경로 길이에서 되짚는다.
             stem = "surface-{:04d}-with-a-long-enough-name.css"
             per_file = len(str(root / stem.format(0))) + 3  # 따옴표 둘 + 쉼표
             count = max(900, 65536 * 3 // (per_file * 2))
             for index in range(count):
                 (root / stem.format(index)).write_text(_SOUND, encoding="utf-8")
-            payload, code = _gate(root)  # capture_output 이 파이프라 조건이 그대로 재현된다
+            payload, code = _gate(root)  # capture_output이 파이프라 조건이 그대로 재현된다
             self.assertEqual(len(payload["files"]), count, "파일 목록이 잘렸다")
             self.assertGreater(len(json.dumps(payload)), 65536, "64KB 를 넘지 않아 시험이 성립하지 않는다")
             self.assertEqual(code, 0)
@@ -391,7 +391,7 @@ class EngineCombination(unittest.TestCase):
     def test_engine4_objects_only_to_its_own_provenance_stamp(self) -> None:
         """마르될은 자기가 배달한 페이지에 자기 도장을 요구한다. 표본은 마르될의 산출물이 아니다.
 
-        그러므로 게이트 20 은 **걸리는 것이 맞다** — 기법 계층이 남의 엔진 도장을 위조하지
+        그러므로 게이트 20은 **걸리는 것이 맞다** — 기법 계층이 남의 엔진 도장을 위조하지
         않는다는 뜻이다. 중요한 것은 그 하나 말고는 걸리는 것이 없다는 사실이다: 깊이 기법
         자체는 58항 슬롭 테스트의 어느 항목도 건드리지 않는다.
         """

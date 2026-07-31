@@ -71,7 +71,7 @@ class WorkShapeTest(unittest.TestCase):
 
     def test_bug_lens_reads_symptoms_not_only_vocabulary(self):
         # 버그는 대개 "버그" 라는 말 없이 증상으로 온다. 어휘만 잡던 판정은 실측 배터리에서
-        # 5/15 만 걸렸다 (26-07-26) — 가장 흔한 신고 형태를 통째로 놓치던 것.
+        # 5/15만 걸렸다 (26-07-26) — 가장 흔한 신고 형태를 통째로 놓치던 것.
         symptoms = (
             "다크 모드가 깨졌다. 원인을 찾아 고쳐줘",
             "목록이 안 나온다 수정해줘",
@@ -121,7 +121,7 @@ class ScopeNoteTest(unittest.TestCase):
             task = "이 버그 재현해서 고쳐줘"
             self.assertIn("`load_skill` tool", scope_note(root, task, _WRITE))
             self.assertIn("asgard skills show", scope_note(root, task, _WRITE, loader="cli"))
-            # Thinker 는 load_skill 표면이 없다 — 배정 단위에 이름을 싣는 판.
+            # Thinker는 load_skill 표면이 없다 — 배정 단위에 이름을 싣는 판.
             self.assertIn("assignment unit", scope_note(root, task, _WRITE, loader="none"))
 
     def test_every_shape_carries_its_discipline(self):
@@ -186,7 +186,7 @@ class VerdictFindingsTest(unittest.TestCase):
 
 
 class ExternalHostSurfaceTest(unittest.TestCase):
-    """Codex·Cursor 는 `asgard skills resolve` 출력이 유일한 스킬 통로다 — 사이징도 여기로 나가야 한다."""
+    """Codex·Cursor는 `asgard skills resolve` 출력이 유일한 스킬 통로다 — 사이징도 여기로 나가야 한다."""
 
     def _resolve(self, agent: str, task: str, json_out: bool = False) -> str:
         import contextlib
@@ -219,7 +219,7 @@ class ExternalHostSurfaceTest(unittest.TestCase):
         self.assertIsInstance(payload["skills"], list)
 
     def test_gate_surfaces_get_no_advisory_sizing(self):
-        # 판정 표면에 advisory 를 주입하지 않는다는 기존 규율 — 형상 노트도 예외가 아니다.
+        # 판정 표면에 advisory를 주입하지 않는다는 기존 규율 — 형상 노트도 예외가 아니다.
         for agent in ("verifier", "loki"):
             with self.subTest(agent=agent):
                 self.assertNotIn("Work shape", self._resolve(agent, "머지 충돌 해결해줘"))
@@ -232,7 +232,7 @@ class ExternalHostSurfaceTest(unittest.TestCase):
 
 
 class RoleContractTest(unittest.TestCase):
-    """모드 A/B(CC·Codex·Cursor)는 역할 .md 만 읽는다 — 규율이 여기 없으면 네이티브 전용이 된다."""
+    """모드 A/B(CC·Codex·Cursor)는 역할 .md만 읽는다 — 규율이 여기 없으면 네이티브 전용이 된다."""
 
     def _role(self, name: str) -> str:
         return dict(ROLE_AGENTS)[name]
@@ -329,7 +329,7 @@ class ChangeFactsTest(unittest.TestCase):
         self.assertIn("Canon 7", note, "범위 확대 면허가 아니라는 것을 같이 실어야 한다")
 
     def test_every_bundled_manifest_only_names_assignable_agents(self):
-        """플러그인 `agents` 에 배정 불가 역할이 섞이면 매니페스트 검증 실패로 그 플러그인이
+        """플러그인 `agents`에 배정 불가 역할이 섞이면 매니페스트 검증 실패로 그 플러그인이
         **조용히 사라진다** (fail-open continue). 전 번들을 훑어 그 함정을 봉인한다."""
         import json
         from pathlib import Path
@@ -351,8 +351,8 @@ class ChangeFactsTest(unittest.TestCase):
     def test_verifier_reaches_the_pack_without_a_skill_assignment(self):
         """판정자는 스킬 배정 대상이 아니다 (검증 독립성) — 그래도 절차 정본에는 닿아야 한다.
 
-        `skill_registry._ASSIGNABLE_AGENTS` 에 verifier 가 없으므로 결속 목록으로는 줄 수 없다.
-        플러그인 `agents` 에 verifier 를 넣으면 매니페스트 검증이 통째로 실패해 그 플러그인이
+        `skill_registry._ASSIGNABLE_AGENTS`에 verifier가 없으므로 결속 목록으로는 줄 수 없다.
+        플러그인 `agents`에 verifier를 넣으면 매니페스트 검증이 통째로 실패해 그 플러그인이
         조용히 사라진다 (26-07-26 실측). 그래서 CLI 읽기 경로로 지목하는 것이 유일한 정답이다."""
         changed = [self._write(f"area{i}/mod.py", 5) for i in range(3)]
         note = scope_note(self.root, "엔드포인트 추가", _WRITE, agent="verifier", loader="cli", changed=changed)

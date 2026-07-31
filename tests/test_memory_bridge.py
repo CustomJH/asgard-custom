@@ -307,7 +307,7 @@ class TestConfigDiscovery(BridgeBase):
         self.assertEqual(found[1]["binding_id"], "inline-bind")
 
     def test_enabled_false_toggles_off(self):
-        """enabled=false 는 미연결과 동일한 무노출 — 삭제 없이 껐다 켤 수 있다."""
+        """enabled=false는 미연결과 동일한 무노출 — 삭제 없이 껐다 켤 수 있다."""
         mb.write_config(self.root, "http://memory:8888", "demo-bank", project_uid="u", binding_id="b")
         settings_path = os.path.join(self.root, ".asgard", "asgard-setting-project.json")
         data = json.load(open(settings_path))
@@ -344,7 +344,7 @@ class TestConfigDiscovery(BridgeBase):
         self.assertIsNone(mb.find_config(self.root))
 
     def test_legacy_memory_section_key_still_read(self):
-        """구 섹션 키 memory 로 저장된 프로젝트 — project_memory 개명 후에도 폴백으로 인식."""
+        """구 섹션 키 memory로 저장된 프로젝트 — project_memory 개명 후에도 폴백으로 인식."""
         from asgard.settings import PROJECT_FILE
 
         open(os.path.join(self.root, ".asgard", PROJECT_FILE), "w").write(
@@ -356,7 +356,7 @@ class TestConfigDiscovery(BridgeBase):
 
     def test_scaffold_seed_with_comment_keys_is_unconnected(self):
         """init 시드(project_memory = _comment·_example 주석 키만) = 미연결 — strict(doctor)에서도
-        malformed 가 아니라 None. 과거 빈 {"memory": {}} 시드가 strict 에서 빨갛게 뜨던 회귀 방어."""
+        malformed가 아니라 None. 과거 빈 {"memory": {}} 시드가 strict에서 빨갛게 뜨던 회귀 방어."""
         from asgard.settings import PROJECT_FILE
         from asgard.templates.trinity import project_settings
 
@@ -365,7 +365,7 @@ class TestConfigDiscovery(BridgeBase):
         self.assertIsNone(mb.find_config(self.root, strict=True))
 
     def test_scaffold_example_bank_matches_backend_contract(self):
-        """시드의 _example 은 그대로 실 키로 승격했을 때 파싱되는 형태여야 한다 — 예제가 계약과
+        """시드의 _example은 그대로 실 키로 승격했을 때 파싱되는 형태여야 한다 — 예제가 계약과
         어긋나면 사용자를 잘못 안내한다."""
         from asgard.project_memory_backends import parse_settings
         from asgard.templates.trinity import project_settings
@@ -379,7 +379,7 @@ class TestConfigDiscovery(BridgeBase):
         self.assertEqual(parsed.endpoint, example["endpoint"])
 
     def test_example_keys_promoted_in_place_connects(self):
-        """사용자가 _example 의 키들을 섹션에 직접 기입하면 (주석 키가 남아 있어도) 연결된다."""
+        """사용자가 _example의 키들을 섹션에 직접 기입하면 (주석 키가 남아 있어도) 연결된다."""
         from asgard.settings import PROJECT_FILE
         from asgard.templates.trinity import project_settings
 
@@ -392,7 +392,7 @@ class TestConfigDiscovery(BridgeBase):
         self.assertNotIn("_comment", found[1])  # 주석 키는 설정으로 새지 않는다
 
     def test_legacy_memory_server_json_still_read(self):
-        """구 memory-server.json 만 있는 프로젝트 — settings 폴백으로 계속 인식 (마이그레이션 전 호환)."""
+        """구 memory-server.json만 있는 프로젝트 — settings 폴백으로 계속 인식 (마이그레이션 전 호환)."""
         from asgard.settings import PROJECT_FILE
 
         os.remove(os.path.join(self.root, ".asgard", PROJECT_FILE))
@@ -409,7 +409,7 @@ class TestProtocol(BridgeBase):
         mb.write_config(self.root, f"http://127.0.0.1:{self.port}", "proj-test", timeout=16)
 
         # 프로젝트 툴은 전부 사라진다. 개인 기억 툴은 이 게이트 밖이다 — 그 기억은 프로젝트가
-        # 아니라 에이전트에 붙으므로 공유 backend 의 신뢰 상태와 무관하다.
+        # 아니라 에이전트에 붙으므로 공유 backend의 신뢰 상태와 무관하다.
         self.assertEqual(self.project_tools(), [])
         text, error = self.call("memory_recall", {"query": "private prompt"})
         self.assertTrue(error)
@@ -441,7 +441,7 @@ class TestProtocol(BridgeBase):
             self.assertNotIn(banned, names)
         bare = os.path.join(self.tmp, "bare2")
         os.makedirs(bare)
-        # 미설정 프로젝트에서 **프로젝트** 툴은 무소음. 개인 기억 툴은 남는다 — 공유 backend 가
+        # 미설정 프로젝트에서 **프로젝트** 툴은 무소음. 개인 기억 툴은 남는다 — 공유 backend가
         # 없는 저장소에서도 에이전트는 자기 기억을 제안할 수 있어야 한다.
         self.assertEqual(self.project_tools(start=bare), [])
         self.assertEqual(self.personal_tools(start=bare), ["memory_propose"])

@@ -37,7 +37,7 @@ class TestScaffold(unittest.TestCase):
         for flags in ({"cc": False, "cursor": True, "codex": False}, {"cc": False, "cursor": False, "codex": True}):
             files, _ = plan_files(root="/tmp/x", **flags)
             agents_paths = [p for p, _ in files if f"{os.sep}.agents{os.sep}" in p]
-            for sname in (*_SKILL_NAMES, "asgard-mimir"):  # 모드 A 는 코어 계약 스킬 포함
+            for sname in (*_SKILL_NAMES, "asgard-mimir"):  # 모드 A는 코어 계약 스킬 포함
                 self.assertTrue(any(sname in p for p in agents_paths), (sname, flags))
 
 
@@ -76,7 +76,7 @@ class TestSkillBodies(unittest.TestCase):
 
         role = dict(ROLE_AGENTS)["asgard-mimir.md"]
         for sname in _SKILL_NAMES:
-            self.assertIn(sname, role)  # 모드 B 로드 경로 — role 이 스킬을 가리켜야 로드된다
+            self.assertIn(sname, role)  # 모드 B 로드 경로 — role이 스킬을 가리켜야 로드된다
 
 
 class TestSkillResolver(unittest.TestCase):
@@ -142,7 +142,7 @@ class TestWiring(unittest.TestCase):
         self.assertIn('"mimir"', registry_src)
 
     def test_heimdall_direct_injects_mimir_note(self):
-        # DIRECT 설명 턴도 코어만 인라인, 전용 스킬은 읽기 전용 loader 로 지연 로드한다.
+        # DIRECT 설명 턴도 코어만 인라인, 전용 스킬은 읽기 전용 loader로 지연 로드한다.
         import inspect
 
         from asgard.agent import heimdall
@@ -179,7 +179,7 @@ class TestWiring(unittest.TestCase):
         self.assertEqual(cc_tools_for_role("mimir"), ("Read", "Grep", "Glob", "Bash"))
 
     def test_readonly_guard_covers_mimir(self):
-        # read-only 3층의 2층 — CC 훅이 asgard-mimir 의 write 를 차단
+        # read-only 3층의 2층 — CC 훅이 asgard-mimir의 write를 차단
         from asgard.hooks.readonly_guard import _READONLY_AGENTS
 
         self.assertIn("asgard-mimir", _READONLY_AGENTS)

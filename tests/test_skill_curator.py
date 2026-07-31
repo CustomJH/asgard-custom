@@ -1,7 +1,7 @@
 """skill_curator — learned 스킬 수명주기 결정론 전이 테스트.
 
-검증 축: 출처 게이팅(학습 계열 origin 만) / pinned 면제 / 유예 플로어(미사용 = created 앵커)
-/ stale 30d·archive 90d 판정 / --apply 보관 전이(복원 가능) / usage 가 앵커를 갱신.
+검증 축: 출처 게이팅(학습 계열 origin만) / pinned 면제 / 유예 플로어(미사용 = created 앵커)
+/ stale 30d·archive 90d 판정 / --apply 보관 전이(복원 가능) / usage가 앵커를 갱신.
 """
 
 import datetime as _dt

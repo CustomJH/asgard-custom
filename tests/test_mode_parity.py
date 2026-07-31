@@ -44,7 +44,7 @@ DISCIPLINES = (
 
 
 def _hook_payload(script: str, payload: dict, argv: list[str]) -> tuple[int, str]:
-    """훅을 in-process 로 돌린 (exit code, stdout) — 스캐폴드 없이 소스 자체를 판정한다."""
+    """훅을 in-process로 돌린 (exit code, stdout) — 스캐폴드 없이 소스 자체를 판정한다."""
     import importlib
 
     module = importlib.import_module("asgard.hooks." + script)
@@ -63,7 +63,7 @@ def _hook_payload(script: str, payload: dict, argv: list[str]) -> tuple[int, str
 
 class TestScaffoldParity(unittest.TestCase):
     def test_hook_table_is_one_table(self):
-        """훅 표는 클라이언트별로 갈라지지 않는다 — CC statusLine 만 예외."""
+        """훅 표는 클라이언트별로 갈라지지 않는다 — CC statusLine만 예외."""
         cc = {os.path.basename(p) for p, _ in hook_files("/h", "claude-code")}
         cursor = {os.path.basename(p) for p, _ in hook_files("/h", "cursor")}
         codex = {os.path.basename(p) for p, _ in hook_files("/h", "codex")}
@@ -100,7 +100,7 @@ class TestScaffoldParity(unittest.TestCase):
         self.assertIn("secret-guard", json.dumps(events["PreToolUse"]))
 
     def test_cursor_injection_rides_session_start(self):
-        """Cursor 의 beforeSubmitPrompt 는 컨텍스트 주입 통로가 없다 — 주입은 sessionStart 에 선다."""
+        """Cursor의 beforeSubmitPrompt는 컨텍스트 주입 통로가 없다 — 주입은 sessionStart에 선다."""
         hooks = json.loads(cursor_hooks_json())["hooks"]
         session = json.dumps(hooks["sessionStart"])
         for name in ("lagom-activate", "charter-activate", "unattended-context", "memory-activate"):
@@ -118,7 +118,7 @@ class TestHookProtocolParity(unittest.TestCase):
         code, out = _hook_payload("secret_guard", self.SECRET, ["codex"])
         self.assertEqual(code, 2)
         code, out = _hook_payload("secret_guard", self.SECRET, ["cursor"])
-        self.assertEqual(code, 0)  # Cursor 는 exit 이 아니라 permission JSON 이 차단 신호
+        self.assertEqual(code, 0)  # Cursor는 exit이 아니라 permission JSON이 차단 신호
         self.assertEqual(json.loads(out)["permission"], "deny")
         self.assertIn("user_message", out)  # snake_case — cursor.com/docs/hooks
 
@@ -157,8 +157,8 @@ class TestHookProtocolParity(unittest.TestCase):
     def test_main_session_write_is_allowed_identically_in_every_mode(self):
         """MAIN_WORKER — 메인 세션이 배정된 역할을 직접 수행하는 자리. 세 모드 판정이 같아야 한다.
 
-        Cursor·Codex 의 도구 훅엔 역할 신원 자체가 없다(agent_type 부재). 신원 부재를 읽기전용으로
-        읽으면 그 두 모드에선 Worker 의 쓰기까지 전부 막히고, CC 에선 subagent-gate 가 유닛 마커
+        Cursor·Codex의 도구 훅엔 역할 신원 자체가 없다(agent_type 부재). 신원 부재를 읽기전용으로
+        읽으면 그 두 모드에선 Worker의 쓰기까지 전부 막히고, CC 에선 subagent-gate가 유닛 마커
         없는 Worker 디스패치를 거부해 우회로도 없다 — 양쪽 차단은 교착이다."""
         with tempfile.TemporaryDirectory() as root:
             payload = {"tool_name": "Write", "tool_input": {"file_path": "src/x.py"}, "cwd": root}

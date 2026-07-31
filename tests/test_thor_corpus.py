@@ -2,7 +2,7 @@
 
 실행: uv run pytest tests/test_thor_corpus.py
 
-`test_craft.py`·`test_thor_gate.py` 가 규칙마다 앵커 한둘을 두는 것과 역할이 다르다. 저쪽은
+`test_craft.py`·`test_thor_gate.py`가 규칙마다 앵커 한둘을 두는 것과 역할이 다르다. 저쪽은
 "이 규칙이 이렇게 동작한다"를 고정하고, 이쪽은 **전체 판정기를 하나의 수치로** 잰다. 규칙이
 스무 개가 되면 개별 앵커만으로는 "그래서 지금 얼마나 잡고 얼마나 틀리나"에 답할 수 없다.
 
@@ -15,7 +15,7 @@
 ② **막는 오탐은 0 이어야 한다.** 알림 오탐은 허용치가 있지만(설계상 알림으로 낮춘 것들이 있다)
    막는 판정은 반례가 없어야 한다는 것이 게이트의 정의다. 여기서 1건이라도 나면 실패다.
 
-③ **규칙을 더할 때 음성 대조군을 같이 넣지 않으면 테스트가 깨진다.** `test_rule_coverage` 가
+③ **규칙을 더할 때 음성 대조군을 같이 넣지 않으면 테스트가 깨진다.** `test_rule_coverage`가
    막는 규칙마다 진양성 1건과 음성 3건을 요구한다. 이것이 이 파일의 진짜 값어치다 — 재현율
    숫자는 코퍼스를 쓴 사람이 규칙을 알고 썼으므로 위로 편향되지만, 커버리지 강제는 편향되지
    않는다.
@@ -117,7 +117,7 @@ good("sql-ts-not-sql", "ts", "const s = `deleted ${n} entries from cache`;")
 good("sql-go-param", "go", 'func f(u string) { db.Query("SELECT id FROM t WHERE id = $1", u) }')
 good("sql-kt-const", "kotlin", 'class R { val q = "SELECT id FROM users WHERE active = 1" }')
 # 실코퍼스에서 손검사로 건져 온 산문 — 동사와 절을 **함께** 가졌지만 질의문이 아닌 것들.
-# (자사 트리 2건 · helios 2건 · pi 3건 · platty 1건. pi 의 `tool-stats.ts` 는 HTML 대시보드
+# (자사 트리 2건 · helios 2건 · pi 3건 · platty 1건. pi의 `tool-stats.ts`는 HTML 대시보드
 #  템플릿인데 **막는** 판정이 떴다 — 산문 하나가 작업을 세울 수 있었다는 뜻이다.)
 good("sql-py-ui-merge-into", "python", "ui.step(f\"plan: merge into '{title}' ({slug}, {why})\")")
 good("sql-py-prose-mid-select", "python", 'body = f"Before work, select and load {name} — run it directly from PATH"')
@@ -614,7 +614,7 @@ good(
 
 
 def judge(source: str, lang: str) -> list[Finding]:
-    """게이트 두 개가 이 원문에 대해 내는 판정 전체. git 도 파일시스템도 안 탄다 (순수 함수만)."""
+    """게이트 두 개가 이 원문에 대해 내는 판정 전체. git도 파일시스템도 안 탄다 (순수 함수만)."""
     if lang == "python":
         units = craft_rules.units(source)
         if units is None:
@@ -777,7 +777,7 @@ class FalsePositives(unittest.TestCase):
 class BorrowedCode(unittest.TestCase):
     """남의 코드는 이 변경의 책임이 아니다 — 그러나 **안 봤다**고 말해야 한다.
 
-    래칫이 여기서 안 통하는 이유: 래칫은 base 와 비교하는데 추적되지 않은 파일에는 base 가 없다.
+    래칫이 여기서 안 통하는 이유: 래칫은 base와 비교하는데 추적되지 않은 파일에는 base가 없다.
     벤더링 한 벌을 새로 떨구면 그 전부가 이번 변경의 책임이 된다 (실측 52건).
     """
 
@@ -798,7 +798,7 @@ class BorrowedCode(unittest.TestCase):
             "src/asgard/craft_rules.py",
             "src/asgard/assets/skill_plugins/hwpx-skill/skills/hwpx/asgard_hwpx.py",
             "tests/test_craft.py",
-            "app/distribution/main.py",  # `dist` 로 시작할 뿐 `dist/` 가 아니다
+            "app/distribution/main.py",  # `dist`로 시작할 뿐 `dist/`가 아니다
         ):
             with self.subTest(rel=rel):
                 self.assertIsNone(health.borrowed(rel))

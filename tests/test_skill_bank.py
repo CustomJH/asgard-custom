@@ -146,7 +146,7 @@ class TestUsage(unittest.TestCase):
 
 class TestBundledCollisionGuard(unittest.TestCase):
     def test_learned_cannot_shadow_bundled_names(self):
-        # evolution.approve 가 이 레지스트리로 충돌을 거부한다 — 번들 전 종목이 등록돼 있어야 한다
+        # evolution.approve가 이 레지스트리로 충돌을 거부한다 — 번들 전 종목이 등록돼 있어야 한다
         from asgard.evolution import _bundled_names
 
         names = _bundled_names()

@@ -99,7 +99,7 @@ class TestTaskMemory(WorkspaceCase):
         self.assertEqual([row["id"] for row in rows], ["good"])
 
     def test_tasks_stay_inside_their_project(self):
-        """다른 프로젝트의 작업이 이 창에 섞이면 경계가 UI 에서 무너진다."""
+        """다른 프로젝트의 작업이 이 창에 섞이면 경계가 UI에서 무너진다."""
         other = tempfile.mkdtemp(prefix="asgard-other-")
         desktop_store.save_task(self.root, self._task("mine"))
         desktop_store.save_task(other, {**self._task("theirs"), "root": other})
@@ -129,7 +129,7 @@ class TestTaskMemory(WorkspaceCase):
         self.assertEqual(rows[0]["status"], "blocked")
 
     def test_a_task_without_a_boundary_is_written_nowhere(self):
-        """경계를 모르는 작업을 cwd 에 떨어뜨리면 남의 프로젝트에 남의 이력이 쌓인다."""
+        """경계를 모르는 작업을 cwd에 떨어뜨리면 남의 프로젝트에 남의 이력이 쌓인다."""
         with desktop.state._TASK_LOCK:
             desktop.state._TASKS["ghost"] = {
                 "id": "ghost",
@@ -141,7 +141,7 @@ class TestTaskMemory(WorkspaceCase):
         with mock.patch("asgard.agent.tools._kill_group"):
             desktop.stop_task({"id": "ghost"})
 
-        # cwd 에 이미 이력이 있을 수 있으니 파일 유무가 아니라 **이 작업이 거기 없음**을 본다
+        # cwd에 이미 이력이 있을 수 있으니 파일 유무가 아니라 **이 작업이 거기 없음**을 본다
         self.assertNotIn("ghost", [row["id"] for row in desktop_store.load_tasks(os.getcwd())])
         self.assertNotIn("ghost", [row["id"] for row in desktop_store.load_tasks(self.root)])
 
@@ -215,7 +215,7 @@ class TestArtifactBoundary(WorkspaceCase):
             self.assertEqual(status, 404, candidate)
 
     def test_a_symlink_pointing_outside_is_refused(self):
-        """문자열 검사로는 안 잡힌다 — 경계는 realpath 로 판정해야 한다."""
+        """문자열 검사로는 안 잡힌다 — 경계는 realpath로 판정해야 한다."""
         outside = tempfile.mkdtemp(prefix="asgard-outside-")
         secret = os.path.join(outside, "secret.txt")
         with open(secret, "w", encoding="utf-8") as handle:
@@ -254,7 +254,7 @@ class TestArtifactBoundary(WorkspaceCase):
         self.assertEqual(status, 404)
 
     def test_untracked_file_is_not_reported_as_unchanged(self):
-        """`git diff` 는 추적 밖 파일에 조용하다 — '변경 없음'이라 말하면 새 파일이 없는 파일이 된다."""
+        """`git diff`는 추적 밖 파일에 조용하다 — '변경 없음'이라 말하면 새 파일이 없는 파일이 된다."""
         with mock.patch("subprocess.run") as run:
             run.side_effect = [
                 mock.Mock(stdout="", stderr="", returncode=0),
@@ -330,7 +330,7 @@ class TestRoutes(WorkspaceCase):
         self.assertEqual(status, 200)
 
     def test_an_explicit_boundary_beats_the_module_default(self):
-        """핸들러는 늘 서버의 root 를 넘긴다 — 전역이 그걸 덮으면 전환이 거짓말이 된다."""
+        """핸들러는 늘 서버의 root를 넘긴다 — 전역이 그걸 덮으면 전환이 거짓말이 된다."""
         desktop.state._CURRENT_ROOT = "/tmp/somewhere-else"
         self.assertEqual(desktop.current_root(self.root), self.root)
 

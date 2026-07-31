@@ -1,7 +1,7 @@
 """자가발전 (CUS-251) — skill_bank 레지스트리 + evolution 증류기/인박스 테스트.
 
-검증 축: SKILL.md 파싱 / 디스크 스캔 라우팅 + mtime hot-reload(재시작 불요) / agent 필터·주입 상한 /
-usage 기록 / quest 채굴(hard-won 만, 금지 시그니처 제외, latch) / 승인 dry-run(placeholder·충돌 거부) /
+검증 축: SKILL.md 파싱 / 디스크 스캔 라우팅 + mtime hot-reload(재시작 불필요) / agent 필터·주입 상한 /
+usage 기록 / quest 채굴(hard-won만, 금지 시그니처 제외, latch) / 승인 dry-run(placeholder·충돌 거부) /
 거부 latch / 보관 전이 / Heimdall _learned_note 주입 계약.
 전부 temp root + temp HOME 격리 — 실사용 ~/.asgard 무접촉.
 """
@@ -153,7 +153,7 @@ class TestSkillBankResolve(EvoBase):
         self.assertEqual(hits[0][0], "learned-c")  # 매칭 수 내림차순
 
     def test_hot_reload_without_restart(self):
-        """수락 기준 (CUS-252) — 프로세스 재시작 없이 새 SKILL.md 가 다음 resolve 에 라우팅."""
+        """수락 기준 (CUS-252) — 프로세스 재시작 없이 새 SKILL.md가 다음 resolve에 라우팅."""
         self.assertEqual(skill_bank.resolve_learned(self.root, "마이그레이션", "worker"), [])
         _write_skill(self.proj_skills(), "learned-mig", "마이그레이션")
         hits = skill_bank.resolve_learned(self.root, "마이그레이션 정리", "worker")
@@ -220,7 +220,7 @@ class TestMine(EvoBase):
         self.assertEqual(evolution.mine(self.root), [])
 
     def test_fail_whys_leak_filtered(self):
-        """마지막 sig 만 걸러도 앞선 환경 노이즈가 함정 섹션에 박제되던 누수 (비교검증 즉시 권고 1)."""
+        """마지막 sig만 걸러도 앞선 환경 노이즈가 함정 섹션에 박제되던 누수 (비교검증 즉시 권고 1)."""
         qid = "q-mixed"
         _write_quest(
             self.root,
@@ -232,7 +232,7 @@ class TestMine(EvoBase):
             ],
         )
         created = evolution.mine(self.root)
-        self.assertEqual(len(created), 1)  # 마지막 sig 는 실결함 — 채굴은 유효
+        self.assertEqual(len(created), 1)  # 마지막 sig는 실결함 — 채굴은 유효
         text = evolution.show(self.root, created[0]["id"])
         assert text is not None
         self.assertIn("진짜 결함", text)
@@ -337,14 +337,14 @@ class TestInbox(EvoBase):
 
 
 class TestHeimdallNote(EvoBase):
-    """_learned_note 주입 계약 — Heimdall 전체 기동 없이 unbound 호출 (root/on_text 만 사용)."""
+    """_learned_note 주입 계약 — Heimdall 전체 기동 없이 unbound 호출 (root/on_text만 사용)."""
 
     def _note(self, task: str, agent: str, quiet: bool = False):
         from asgard.agent.heimdall import Heimdall
 
         texts: list[str] = []
         fake = SimpleNamespace(root=self.root, on_text=texts.append)
-        # unbound 호출 — self 는 root/on_text 만 쓰므로 SimpleNamespace 로 충분 (ty 는 모른다)
+        # unbound 호출 — self는 root/on_text만 쓰므로 SimpleNamespace로 충분 (ty는 모른다)
         return Heimdall._learned_note(fake, task, agent, quiet), texts  # ty: ignore[invalid-argument-type]
 
     def test_injects_matched_skill_and_records_use(self):
@@ -385,7 +385,7 @@ class TestDeliveryDeclarative(EvoBase):
                 "thor-lead": "standard",
             },
         )
-        self.assertNotIn("ullr", da)  # delivery 키 없는 role 은 디스패치 비대상 (현행 의미 보존)
+        self.assertNotIn("ullr", da)  # delivery 키 없는 role은 디스패치 비대상 (현행 의미 보존)
         self.assertNotIn("worker", da)  # Trinity 역할은 딜리버리가 아니다
 
     def test_readonly_derived_from_tools(self):
@@ -402,7 +402,7 @@ class TestDeliveryDeclarative(EvoBase):
 
 
 class TestEnvDisable(EvoBase):
-    """A/B 개입 스위치 — ASGARD_LEARNED_DISABLE 이 라우팅을 끈다 (벤치 하니스 계약)."""
+    """A/B 개입 스위치 — ASGARD_LEARNED_DISABLE이 라우팅을 끈다 (벤치 하니스 계약)."""
 
     def test_disable_by_name_and_star(self):
         _write_skill(self.proj_skills(), "learned-cache", "캐시")
@@ -432,7 +432,7 @@ class TestBench(EvoBase):
 
         seq = {"learned-x": iter([10.0, 11.0, 12.0, 10.5, 11.5]), "": iter([5.0, 5.5, 6.0, 5.2, 5.8])}
         r = run_ab(self.root, "learned-x", "true", "wall", runs=5, direction="min", runner=lambda d: next(seq[d]))
-        self.assertEqual(r["verdict"], "keep")  # ON(variant) 이 유의미하게 낮다 (min)
+        self.assertEqual(r["verdict"], "keep")  # ON(variant)이 유의미하게 낮다 (min)
         ledger = os.path.join(self.root, ".asgard", "evolution", "bench.jsonl")
         rec = json.loads(open(ledger, encoding="utf-8").read().strip())
         self.assertEqual(rec["skill"], "learned-x")
@@ -605,8 +605,8 @@ class TestNoInjectionInvariants(EvoBase):
 class TestNudge(EvoBase):
     """넛지 표면 — 집합 latch (같은 집합으론 두 번 말하지 않는다).
 
-    네 모드가 전부 이 한 지점을 지난다: 클라이언트는 Stop 훅이 `asgard evolve nudge` 로,
-    네이티브 루프는 quest close 에서 직접 부른다.
+    네 모드가 전부 이 한 지점을 지난다: 클라이언트는 Stop 훅이 `asgard evolve nudge`로,
+    네이티브 루프는 quest close에서 직접 부른다.
     """
 
     def test_latches_per_signal_set(self):
@@ -627,8 +627,8 @@ class TestNudge(EvoBase):
 class TestAutoscan(EvoBase):
     """교훈은 스스로 채굴되고, 활성화만 사람이 한다.
 
-    종전에는 채굴까지 사람 손이었다 — 넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch 라 놓치면
-    영영 조용했고, 퀘스트 로그는 keep-last-N 으로 지워진다. 즉 **교훈이 조용히 사라지는 쪽**이
+    종전에는 채굴까지 사람 손이었다 — 넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch라 놓치면
+    영영 조용했고, 퀘스트 로그는 keep-last-N으로 지워진다. 즉 **교훈이 조용히 사라지는 쪽**이
     기본값이었다 (26-07-31 실측: 저장소에 hard-won 신호 2건이 닷새째 미채굴, 인박스는 부재).
     """
 
@@ -658,7 +658,7 @@ class TestAutoscan(EvoBase):
             self.assertEqual(evolution.pending_list(self.root), [])
 
     def test_a_smooth_pass_teaches_nothing(self):
-        """순탄한 PASS 는 교훈이 아니다 — 자동이라고 아무거나 담지 않는다."""
+        """순탄한 PASS는 교훈이 아니다 — 자동이라고 아무거나 담지 않는다."""
         _write_quest(
             self.root,
             "q-smooth",
@@ -681,7 +681,7 @@ class TestRecallSkillsNote(EvoBase):
         note = learned_skills_note("부가세 rounding 로직 수정", start=self.root)
         self.assertIn('scope="skills"', note)
         self.assertIn("learned-vat", note)
-        self.assertIn("SKILL.md", note)  # 포인터 주입 — CC 에이전트가 Read 로 연다
+        self.assertIn("SKILL.md", note)  # 포인터 주입 — CC 에이전트가 Read로 연다
         self.assertNotIn("본문 절차", note)  # 본문 전체 주입 금지 (네이티브 라우팅과 역할 분리)
         self.assertEqual(skill_bank.usage(self.root)["learned-vat"]["uses"], 1)  # 주입도 사용 — 큐레이션 원료
 

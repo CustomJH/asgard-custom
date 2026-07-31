@@ -120,7 +120,7 @@ class TestProjectMap(CodeMapBase):
         self.write(".gitignore", "ref/\n")
         self.write("ref/proj/pyproject.toml", '[project]\nname = "nested"\n')
         self.write("ref/proj/src/app.py", "X = 1\n")
-        # 상위 저장소가 ignore 한 사본에서 ls-files 는 빈 성공을 낸다 — 경계 부재로 보고
+        # 상위 저장소가 ignore 한 사본에서 ls-files는 빈 성공을 낸다 — 경계 부재로 보고
         # walk 폴백해야 사용자가 가리킨 루트가 조용한 빈 지도가 되지 않는다.
         listed = [p.as_posix() for p in _files(Path(self.root) / "ref" / "proj")]
         self.assertIn("pyproject.toml", listed)
@@ -195,7 +195,7 @@ class TestProjectMap(CodeMapBase):
             refresh_map(self.root)
 
     def test_refresh_force_reowns_unowned_project_map(self):
-        # init 경로 — force 는 소유권 거부만 우회해 현재 디렉토리 스캔 결과로 엎어쓴다.
+        # init 경로 — force는 소유권 거부만 우회해 현재 디렉토리 스캔 결과로 엎어쓴다.
         from asgard.code_map import MapOwnershipError, refresh_map
 
         self.seed_python_project()
@@ -205,7 +205,7 @@ class TestProjectMap(CodeMapBase):
         body = open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
         self.assertNotIn("# human project map", body)
         refresh_map(self.root)  # 재귀속 후엔 asgard 소유 — 비강제 갱신이 다시 통과한다
-        # force 는 예약 파일명 충돌(안전 검사)은 우회하지 않는다
+        # force는 예약 파일명 충돌(안전 검사)은 우회하지 않는다
         os.remove(os.path.join(self.root, ".asgard", "map", "PROJECT.md"))
         self.write(".asgard/map/project.md", "# imposter\n")
         with self.assertRaises(MapOwnershipError):
@@ -326,10 +326,10 @@ class TestMapCLI(CodeMapBase):
         self.assertIn("managed drift", drift["detail"])
 
     def test_doctor_does_not_read_the_generated_graph_as_a_manual_area(self):
-        """GRAPH.md 는 관리 산출물이다 — 수동 영역 문법으로 읽으면 라우트 노드가 유령 경로가 된다.
+        """GRAPH.md는 관리 산출물이다 — 수동 영역 문법으로 읽으면 라우트 노드가 유령 경로가 된다.
 
-        실측(26-07-26 helios): 그래프의 API 라우트 항목 ``- `/alarms/active` `` 이 절대경로 파일
-        참조로 읽혀 `asgard map update` 로도 지워지지 않는 unsafe 가 떴고, doctor 의 수리 안내는
+        실측(26-07-26 helios): 그래프의 API 라우트 항목 ``- `/alarms/active` ``이 절대경로 파일
+        참조로 읽혀 `asgard map update` 로도 지워지지 않는 unsafe가 떴고, doctor의 수리 안내는
         생성 파일을 손으로 고치라는 잘못된 지시가 됐다."""
         from asgard.code_map import refresh_map
         from asgard.commands.doctor import _trinity_checks

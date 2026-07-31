@@ -3,7 +3,7 @@
 
 핵심 계약 검증:
   · 미설정/파손 = 빈 문자열 (프롬프트 무변화, 토큰 회귀 없음)
-  · 문자열 축약형 = through_line 으로 승격
+  · 문자열 축약형 = through_line으로 승격
   · verifier 주입은 "criteria 대체 아님" 문구를 반드시 포함 (evidence-first 보존)
 
 실행: uv run pytest tests/test_charter.py
@@ -76,7 +76,7 @@ class TestNote(unittest.TestCase):
         _write_project(self.root, {"through_line": "TL", "coherence": ["C1"]})
         out = note(self.root, "identity")
         self.assertIn("TL", out)
-        self.assertNotIn("C1", out)  # identity 는 coherence 미주입 (관통 원칙만)
+        self.assertNotIn("C1", out)  # identity는 coherence 미주입 (관통 원칙만)
 
     def test_thinker_folds_coherence_into_criteria(self):
         _write_project(self.root, {"through_line": "TL", "coherence": ["C1"]})
@@ -89,7 +89,7 @@ class TestNote(unittest.TestCase):
         _write_project(self.root, {"through_line": "TL", "coherence": ["C1"]})
         out = note(self.root, "verifier")
         self.assertIn("C1", out)
-        # 판단③ evidence-first 보존 — charter 가 criteria 를 대체하지 않는다는 명시가 반드시 있어야
+        # 판단③ evidence-first 보존 — charter가 criteria를 대체하지 않는다는 명시가 반드시 있어야
         self.assertIn("does not replace criteria", out)
 
     def test_unknown_section_empty(self):

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""협조적 취소 계약 — cancel_event 가 청크/툴/iteration 경계에서 턴을 멈추고,
-bash 는 프로세스 그룹째(손자 포함) 종료되며, 히스토리는 항상 API-유효 상태로 닫힌다.
+"""협조적 취소 계약 — cancel_event가 청크/툴/iteration 경계에서 턴을 멈추고,
+bash는 프로세스 그룹째(손자 포함) 종료되며, 히스토리는 항상 API-유효 상태로 닫힌다.
 
 실행: uv run pytest tests/test_cancellation.py
 """
@@ -78,7 +78,7 @@ class _FakeStream:
 
 
 class _FakeClient:
-    """messages.stream 대역 — 준비된 (chunks, resp) 를 순서대로 서빙. 소진 후 호출은 실패."""
+    """messages.stream 대역 — 준비된 (chunks, resp)를 순서대로 서빙. 소진 후 호출은 실패."""
 
     def __init__(self, scripted):
         self.calls = 0
@@ -181,7 +181,7 @@ class TestSessionCancel(_TmpHome):
         holder["s"] = s
         r = s.run("질문")
         self.assertEqual(r.stop_reason, "cancelled")
-        self.assertEqual(executed, ["a"])  # b 는 실행되지 않음
+        self.assertEqual(executed, ["a"])  # b는 실행되지 않음
         trs = s.messages[-1]["content"]  # 마지막 user 메시지 = tool_result 쌍
         self.assertEqual({tr["tool_use_id"] for tr in trs}, {"t0", "t1"})
         cancelled_tr = next(tr for tr in trs if tr["tool_use_id"] == "t1")

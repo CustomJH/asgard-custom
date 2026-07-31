@@ -54,7 +54,7 @@ class SqlInterpolation(unittest.TestCase):
         self.assertEqual(set(), _rules(found, blocking=True))
 
     def test_placeholder_assembly_is_not_a_value(self):
-        """`VALUES (` 는 물음표 목록을 조립하는 자리이기도 하다 — 실측 오탐 3건의 형상."""
+        """`VALUES (`는 물음표 목록을 조립하는 자리이기도 하다 — 실측 오탐 3건의 형상."""
         java = 'String sql = "INSERT INTO " + s.t() + " (" + cols + ") VALUES (" + placeholders + ")";'
         self.assertEqual(set(), _rules(_lex(java, "java"), blocking=True))
 
@@ -83,14 +83,14 @@ class SqlInterpolation(unittest.TestCase):
     def test_a_cli_usage_string_is_not_a_query(self):
         """도움말 문자열이 막는 판정을 받았다 — 실측 오탐 2건이 전부 이 형상이었다.
 
-        우연 셋이 겹친다: `--merge` 가 동사로, `--from` 이 절로, 자리표시자 `<` 가 값 자리
-        연산자로 읽혔다. SQL 에서 `--` 는 주석의 시작이므로 어느 쪽으로 읽어도 지우는 것이 맞다.
+        우연 셋이 겹친다: `--merge`가 동사로, `--from`이 절로, 자리표시자 `<`가 값 자리
+        연산자로 읽혔다. SQL에서 `--`는 주석의 시작이므로 어느 쪽으로 읽어도 지우는 것이 맞다.
         """
         usage = "const s = `Usage: cli --from <file> --merge --locale <${LOCALES.join('|')}>`;"
         self.assertEqual(set(), _rules(_lex(usage, "ts")))
 
     def test_an_interpolated_expression_is_not_query_text(self):
-        """백틱 문자열은 `${...}` 안의 식까지 통째로 잡힌다 — 그 안의 `join` 이 절로 읽혔다.
+        """백틱 문자열은 `${...}` 안의 식까지 통째로 잡힌다 — 그 안의 `join`이 절로 읽혔다.
 
         파이썬 판정기는 애초에 구멍 안을 보지 않는다. 구멍을 지우고 재는 것은 중괄호 계열을
         파이썬과 같은 자로 맞추는 일이다.
@@ -122,7 +122,7 @@ class SwallowedException(unittest.TestCase):
         self.assertEqual(set(), _rules(_py("try:\n    x()\nexcept Exception as e:\n    log(e)")))
 
     def test_untyped_catch_is_broad(self):
-        """TS 의 catch 는 타입을 못 붙인다 — 좁다고 읽으면 이 언어에서 규칙이 통째로 죽는다."""
+        """TS의 catch는 타입을 못 붙인다 — 좁다고 읽으면 이 언어에서 규칙이 통째로 죽는다."""
         self.assertIn("swallowed-exception", _rules(_lex("try { f(); } catch (e) { }", "ts"), blocking=True))
 
     def test_brace_comment_downgrades(self):
@@ -138,7 +138,7 @@ class ExternalCall(unittest.TestCase):
         self.assertEqual(set(), _rules(_py("requests.get(url, timeout=3)")))
 
     def test_kwargs_cannot_be_proven_absent(self):
-        """`**opts` 안에 timeout 이 있을 수 있다 — 증명 못 하는 것은 미검출로 남긴다."""
+        """`**opts` 안에 timeout이 있을 수 있다 — 증명 못 하는 것은 미검출로 남긴다."""
         self.assertEqual(set(), _rules(_py("requests.get(url, **opts)")))
 
 
@@ -175,7 +175,7 @@ class TransactionAndMoney(unittest.TestCase):
                 self.assertIn("money-float", _rules(_py(source), blocking=True))
 
     def test_non_money_float_is_silent(self):
-        """`ratio`·`total`·`cost` 는 비율·개수·알고리즘 비용이 훨씬 많다 — 넣으면 오탐이 이긴다."""
+        """`ratio`·`total`·`cost`는 비율·개수·알고리즘 비용이 훨씬 많다 — 넣으면 오탐이 이긴다."""
         for source in ("ratio: float = 0.0", "cost: float = 0.0", "total: float = 0.0"):
             with self.subTest(source=source):
                 self.assertEqual(set(), _rules(_py(source)))
@@ -260,8 +260,8 @@ class Honesty(unittest.TestCase):
 class VerbSurface(unittest.TestCase):
     """동사 표면. **개발자의 저장소에 자취를 남기지 않는다** — 시험이 계측을 오염시키면 계측이 거짓말한다.
 
-    `run_thor` 는 부른 동사를 `.asgard/thor/trail.jsonl` 에 적는다. 시험이 이 저장소 안에서 돌면
-    아무도 부른 적 없는 `migrate`·`scale`·`squad` 가 자취에 쌓이고, 그 자취로 이행률을 재면
+    `run_thor`는 부른 동사를 `.asgard/thor/trail.jsonl`에 적는다. 시험이 이 저장소 안에서 돌면
+    아무도 부른 적 없는 `migrate`·`scale`·`squad`가 자취에 쌓이고, 그 자취로 이행률을 재면
     측정 대상이 측정 도구를 오염시킨 값이 나온다 (실측: 한 세션에서 243회가 그렇게 쌓였다).
     """
 
@@ -342,8 +342,8 @@ class JvmRules(unittest.TestCase):
         self.assertEqual(set(), _rules(self._java(source)))
 
     def test_method_name_colliding_with_a_type_keyword_is_still_judged(self):
-        """`record` 는 자바 record 타입 키워드라 craft_lex 가 단위로 못 잡는다. 단위를 못 잡았다는
-        이유로 정확성 규칙이 조용히 꺼지면 안 된다 — 실전 검증이 잡은 결함이고, `record` 는 결제·
+        """`record`는 자바 record 타입 키워드라 craft_lex가 단위로 못 잡는다. 단위를 못 잡았다는
+        이유로 정확성 규칙이 조용히 꺼지면 안 된다 — 실전 검증이 잡은 결함이고, `record`는 결제·
         감사 코드에서 아주 흔한 메서드 이름이다."""
         source = (
             "class A {\n  @Transactional\n  public void record(Long id, double amt) {\n"
@@ -368,7 +368,7 @@ class JvmRules(unittest.TestCase):
         self.assertEqual(set(), _rules(self._java(source)))
 
     def test_annotation_does_not_leak_across_methods(self):
-        """파일 어딘가의 @Transactional 을 끌어오면 안 된다 — 시그니처 바로 위만 본다."""
+        """파일 어딘가의 @Transactional을 끌어오면 안 된다 — 시그니처 바로 위만 본다."""
         source = (
             "class A {\n  @Transactional\n  public void a() { repo.save(o); }\n\n\n\n\n\n"
             "  public void b() {\n    restTemplate.postForObject(u, b, String.class);\n  }\n}"
@@ -386,8 +386,8 @@ class LanguageCoverage(unittest.TestCase):
                 with open(os.path.join(root, name), "w", encoding="utf-8") as handle:
                     handle.write(body)
             missing = dict(thor_gate.judge(root, ["a.java", "b.ts"]).unmeasured)
-            self.assertNotIn("money-float", missing["a.java"])  # JVM 은 잰다
-            self.assertIn("money-float", missing["b.ts"])  # TS 는 못 잰다
+            self.assertNotIn("money-float", missing["a.java"])  # JVM은 잰다
+            self.assertIn("money-float", missing["b.ts"])  # TS는 못 잰다
             self.assertIn("call-no-timeout", missing["a.java"])  # 타임아웃은 어디서도 못 잰다
 
 
@@ -582,18 +582,18 @@ class VerbTrail(unittest.TestCase):
         self.assertIn("survey", seen.skipped)
 
     def test_never_reaching_the_terminal_verb_is_visible(self):
-        """모든 길은 sweep → evidence 로 끝난다는 계약이 지켜졌는지가 한 칸으로 보여야 한다."""
+        """모든 길은 sweep → evidence로 끝난다는 계약이 지켜졌는지가 한 칸으로 보여야 한다."""
         seen = thor_trail.adherence(self._steps(("shape", 1), ("implement", 1)))
         self.assertFalse(seen.reached_terminal)
 
     def test_the_gate_is_not_a_procedure_verb(self):
-        """`gate` 는 절차 동사가 아니라 판정이다 — 부른 동사 목록에 섞이면 안 부른 동사가 거짓이 된다."""
+        """`gate`는 절차 동사가 아니라 판정이다 — 부른 동사 목록에 섞이면 안 부른 동사가 거짓이 된다."""
         seen = thor_trail.adherence(self._steps(("implement", 1), ("gate", 1), ("sweep", 1)))
         self.assertNotIn("gate", seen.called)
         self.assertNotIn("gate", seen.skipped)
 
     def test_no_verb_order_is_enforced_because_no_single_arc_exists(self):
-        """`diagnose → shape` 는 버그 수리에서 옳고 `shape → diagnose` 는 신규 기능에서 옳다.
+        """`diagnose → shape`는 버그 수리에서 옳고 `shape → diagnose`는 신규 기능에서 옳다.
 
         선형 호를 가정하고 역행을 세면 전자가 결함으로 찍힌다 — 없는 계약을 지표로 만드는 것은
         사실이 아니라 판단이 사실인 척하는 것이라, 그 지표는 넣었다가 걷어냈다.
@@ -616,7 +616,7 @@ class VerbTrail(unittest.TestCase):
         self.assertEqual(["shape", "sweep"], [s.verb for s in thor_trail.load(self.root)])
 
     def test_the_trail_is_bounded(self):
-        """자취도 자라기만 하면 자원이다 — 자기 게이트의 unbounded-accumulator 와 같은 자를 자신에게."""
+        """자취도 자라기만 하면 자원이다 — 자기 게이트의 unbounded-accumulator와 같은 자를 자신에게."""
         for _ in range(thor_trail.KEEP + 20):
             thor_trail.record(self.root, "shape", 0)
         self.assertEqual(thor_trail.KEEP, len(thor_trail.load(self.root)))

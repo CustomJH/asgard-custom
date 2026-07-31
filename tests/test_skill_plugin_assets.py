@@ -1,12 +1,12 @@
 """벤더링 스킬 팩 자산 무결성 — 두 번 겪은 자산 소실 사고의 회귀 가드.
 
-사고 계보: ① vanadis `web/**/lib`·`.claude` 가 블랭킷 gitignore(`lib/`, `.claude`)에
+사고 계보: ① vanadis `web/**/lib`·`.claude`가 블랭킷 gitignore(`lib/`, `.claude`)에
 먹혀 sdist 빌드가 깨졌다. ② freyja2 `engine/scripts/lib` 15모듈이 같은 `lib/` 규칙에
 걸려 봉인(285a181)에서 통째 소실됐고, context.mjs 등 lib 의존 스크립트가 실행 즉사였다.
 
 가드 2종:
 - ESM 상대 import 해석 — 벤더링 스크립트가 가리키는 이웃 모듈은 디스크에 실재해야
-  한다(부분 벤더링을 즉시 적발; CI 는 커밋 트리에서 돌므로 git 소실도 여기서 걸린다).
+  한다(부분 벤더링을 즉시 적발; CI는 커밋 트리에서 돌므로 git 소실도 여기서 걸린다).
 - git 가시성 — assets 아래 파일은 아티팩트(캐시류) 예외를 빼고 git-ignore 되면
   안 된다(워킹트리엔 있는데 커밋에서 빠질 상태를 seal 전에 적발).
 """
@@ -34,7 +34,7 @@ _IMPORT_PATTERNS = [
 # git 가시성 검사에서 눈감아 주는 아티팩트 — .gitignore 자산 스코프 재제외와 동일 목록.
 _IGNORABLE = ("__pycache__", "node_modules")
 
-# 블록 주석 안의 지정자는 import 가 아니다. JSDoc 의 타입 참조가 대표적으로
+# 블록 주석 안의 지정자는 import가 아니다. JSDoc의 타입 참조가 대표적으로
 #   @param {import('../../types/client.js').Client.Options} options
 # 처럼 생겨서 동적 import 패턴에 그대로 걸린다. 실제로 번들된 서드파티(undici)에서
 # 나왔고, 런타임에는 아무것도 로드하지 않는다. 주석을 먼저 걷어내고 판정한다.

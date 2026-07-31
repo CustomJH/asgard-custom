@@ -54,8 +54,8 @@ class TestUnitWorkspace(unittest.TestCase):
 
     def test_execution_caches_are_not_captured(self):
         # 26-07-17 편대 라이브 실측 — .gitignore 없는 프로젝트에서 단위 검증(pytest)이 만든
-        # __pycache__/.pytest_cache 가 패치에 편입되면 scope 검증·병합이 캐시 때문에 실패한다.
-        # 캡처는 quest_log._junk 와 같은 기준으로 실행 캐시를 산출물에서 제외한다.
+        # __pycache__/.pytest_cache가 패치에 편입되면 scope 검증·병합이 캐시 때문에 실패한다.
+        # 캡처는 quest_log._junk와 같은 기준으로 실행 캐시를 산출물에서 제외한다.
         with UnitWorkspace(self.root, "junk") as workspace:
 
             def w(rel: str, data: bytes) -> None:

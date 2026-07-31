@@ -93,7 +93,7 @@ class Base(unittest.TestCase):
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
-        # 보관소는 ~/.asgard/sessions/<sha> 아래 — HOME 을 격리해 실사용 트리를 건드리지 않는다
+        # 보관소는 ~/.asgard/sessions/<sha> 아래 — HOME을 격리해 실사용 트리를 건드리지 않는다
         self._home = mock.patch.dict(os.environ, {"HOME": self.root})
         self._home.start()
 
@@ -372,7 +372,7 @@ class TestServerSide(Base):
         edit = kwargs["context_management"]["edits"][0]
         self.assertEqual(edit["type"], "compact_20260112")
         self.assertEqual(edit["trigger"], {"type": "input_tokens", "value": 180_000})
-        # instructions 는 기본 프롬프트를 '대체'한다 — 비우면 우리 규율이 사라진다
+        # instructions는 기본 프롬프트를 '대체'한다 — 비우면 우리 규율이 사라진다
         self.assertIn("## Active Task", edit["instructions"])
 
     def test_trigger_respects_api_minimum(self):
@@ -441,7 +441,7 @@ class TestServerSideWiring(Base):
         session, client = self._session(server_side=True)
         client.beta.messages.stream.side_effect = TypeError("unexpected keyword 'context_management'")
         self.assertEqual(session._anthropic_stream(messages=[]), "plain")
-        # 두 번째부터는 beta 를 다시 두드리지 않는다
+        # 두 번째부터는 beta를 다시 두드리지 않는다
         client.beta.messages.stream.reset_mock()
         self.assertEqual(session._anthropic_stream(messages=[]), "plain")
         client.beta.messages.stream.assert_not_called()

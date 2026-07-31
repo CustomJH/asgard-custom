@@ -84,7 +84,7 @@ class TestAllowed(unittest.TestCase):
             "docker build -t x .",
             "docker compose up -d",
             "docker pull nginx",
-            "git push origin main",  # 브랜치 push 는 일상 흐름
+            "git push origin main",  # 브랜치 push는 일상 흐름
             "git push -u origin feature/x",
             "terraform plan",
             "kubectl get pods",

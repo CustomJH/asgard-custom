@@ -49,7 +49,7 @@ def _tool_result(cid, body):
 
 
 def _loop(n, body_chars=8000, start=0):
-    """tool_use/tool_result 쌍 n 회 — 툴 출력에 질량이 몰린 세션 (T1 이 걷어낼 수 있는 형태)."""
+    """tool_use/tool_result 쌍 n 회 — 툴 출력에 질량이 몰린 세션 (T1이 걷어낼 수 있는 형태)."""
     out = []
     for i in range(start, start + n):
         out.append(_tool_use(f"t{i}", inp={"file_path": f"src/f{i}.py"}))
@@ -58,7 +58,7 @@ def _loop(n, body_chars=8000, start=0):
 
 
 def _chat(n, chars=8000, start=0):
-    """user/assistant 대화 n 쌍 — 질량이 대화 자체에 있는 세션. T1 이 손댈 수 없으므로
+    """user/assistant 대화 n 쌍 — 질량이 대화 자체에 있는 세션. T1이 손댈 수 없으므로
     T2(요약)까지 사다리를 내려가는 경로를 만든다."""
     out = []
     for i in range(start, start + n):
@@ -267,7 +267,7 @@ class TestLadder(unittest.TestCase):
         self.assertIs(out, msgs)
 
     def test_prune_only_when_it_clears_summary_threshold(self):
-        """프룬으로 임계 아래로 내려가면 요약 LLM 은 호출되지 않는다 — 사다리의 요점."""
+        """프룬으로 임계 아래로 내려가면 요약 LLM은 호출되지 않는다 — 사다리의 요점."""
         calls = []
         engine = _engine(call=lambda p, m: calls.append(p) or "요약", window=200_000)
         msgs = [_user("q")] + _loop(40, body_chars=8000)
@@ -374,7 +374,7 @@ class TestGuards(unittest.TestCase):
         self.assertEqual(engine.effective_tail_tokens(), 10_000)
 
     def test_classify_failure(self):
-        # 실제로 오는 예외는 SDK 가 status_code 를 달아 보낸다 — 표준 예외엔 없는 속성이라 흉내낸다
+        # 실제로 오는 예외는 SDK가 status_code를 달아 보낸다 — 표준 예외엔 없는 속성이라 흉내낸다
         class _HttpError(RuntimeError):
             status_code = 401
 

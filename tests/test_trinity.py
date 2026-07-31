@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Trinity 멀티 검증 로컬 슬라이스 — 로그·전이 함수·게이트·에스컬레이션 E2E 시나리오.
 
-실제 훅 스크립트를 subprocess 로 실행한다 (임포트가 아니라 배포 형태 그대로) — 사용자 repo 에서
-python3 <file> 로 도는 것과 동일 경로. 임시 git repo 를 만들어 시나리오별 워킹트리 상태를 재현한다.
+실제 훅 스크립트를 subprocess로 실행한다 (임포트가 아니라 배포 형태 그대로) — 사용자 repo에서
+python3 <file> 로 도는 것과 동일 경로. 임시 git repo를 만들어 시나리오별 워킹트리 상태를 재현한다.
 
 실행: uv run pytest tests/test_trinity.py
 """
@@ -48,7 +48,7 @@ class TrinityBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        # HOME 격리 — 훅 subprocess 가 호스트의 글로벌 git 설정(excludesfile 등)·~/.asgard 상태를
+        # HOME 격리 — 훅 subprocess가 호스트의 글로벌 git 설정(excludesfile 등)·~/.asgard 상태를
         # 보지 않게 한다. map_current 판정이 호스트 상태에 따라 흔들린 flake 방어 (test_heimdall 관행).
         self._home = os.environ.get("HOME")
         os.environ["HOME"] = self.root
@@ -357,10 +357,10 @@ class TestQuestLog(TrinityBase):
             self.assertEqual(quest_log.main(), 1)
 
     def test_start_snapshot_survives_a_gitignored_asgard_directory(self):
-        """`asgard setup` 이 `.asgard/` 를 무시 목록에 넣은 리포에서도 시작 트리를 뜰 수 있어야 한다.
+        """`asgard setup`이 `.asgard/`를 무시 목록에 넣은 리포에서도 시작 트리를 뜰 수 있어야 한다.
 
-        exclude 페이스펙이 붙으면 git add 가 무시된 경로를 오류로 보고해 rc=1 로 죽었고, 그 결과
-        모든 write 퀘스트가 "requires a Git repository with HEAD" 로 거부됐다 — Desktop/Studio 의
+        exclude 페이스펙이 붙으면 git add가 무시된 경로를 오류로 보고해 rc=1로 죽었고, 그 결과
+        모든 write 퀘스트가 "requires a Git repository with HEAD"로 거부됐다 — Desktop/Studio의
         모든 실행이 여기서 막혔다."""
         from asgard.hooks import quest_log
 
@@ -381,8 +381,8 @@ class TestQuestLog(TrinityBase):
             check=True,
         ).stdout.split()
         self.assertIn("untracked.py", listed)  # 시작 트리는 워킹트리 그대로다
-        self.assertIn(".asgard/map/INDEX.md", listed)  # map 은 강제로 담는다
-        self.assertNotIn(".asgard/desktop/tasks.jsonl", listed)  # 나머지 .asgard 는 여전히 뺀다
+        self.assertIn(".asgard/map/INDEX.md", listed)  # map은 강제로 담는다
+        self.assertNotIn(".asgard/desktop/tasks.jsonl", listed)  # 나머지 .asgard는 여전히 뺀다
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable on this platform")
     def test_ignored_fifo_snapshot_never_blocks_reading_device_content(self):
@@ -448,7 +448,7 @@ class TestQuestLog(TrinityBase):
         self.open_quest()
         self.write("src/new_module.py", "x = 1\n")
         self.write(".claude/hooks/dummy.py", "y = 1\n")  # 닷디렉토리 — 제외돼야 함
-        self.verify(level="full")  # hooks 는 민감 경로 — full-verify 없이는 close 가 거부된다
+        self.verify(level="full")  # hooks는 민감 경로 — full-verify 없이는 close가 거부된다
         project_map = open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
         self.assertIn("src/", project_map)
         self.assertNotIn(".claude", project_map)
@@ -571,7 +571,7 @@ class TestQuestLog(TrinityBase):
         out = jout(self.qlog("close"))
         self.assertNotIn("map_update", out)
         # 지도 도입 + 내용 수정(M)만 → 구조 변경 아님, 침묵
-        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)  # 신규 파일 흡수 — base 를 깨끗하게
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)  # 신규 파일 흡수 — base를 깨끗하게
         subprocess.run(["git", "-C", self.root, "commit", "-qm", "absorb"], check=True)
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
         self.qlog("open", "q2", "--criteria", "edit only")
@@ -598,7 +598,7 @@ class TestTransition(TrinityBase):
         self.assertEqual(self.next()["next_role"], "THINKER_REPLAN")
 
     def test_fail_then_work_reverifies_not_retry(self):
-        """FAIL 후 재작업(work)이 오면 재검증 차례 — sticky FAIL 이 WORKER_RETRY 를 무한 재발화하면 안 된다."""
+        """FAIL 후 재작업(work)이 오면 재검증 차례 — sticky FAIL이 WORKER_RETRY를 무한 재발화하면 안 된다."""
         self.open_quest()
         self.write("app.py", "print('bad')\n")
         self.verify(verdict="FAIL")
@@ -626,7 +626,7 @@ class TestTransition(TrinityBase):
         self.assertNotEqual(self.next()["next_role"], "THINKER_REPLAN")
 
     def test_heterogeneous_sig_fail_streak_backstop(self):
-        """sig 가 매번 달라도 연속 FAIL threshold+1 이면 REPLAN — 자유 텍스트 sig 도돌이표 탈출."""
+        """sig가 매번 달라도 연속 FAIL threshold+1 이면 REPLAN — 자유 텍스트 sig 도돌이표 탈출."""
         import json as _json
 
         self.open_quest()
@@ -895,12 +895,12 @@ class TestTransition(TrinityBase):
         self.assertEqual((out["next_role"], out["verify_level"]), ("WORKER", "full"))
 
     def test_micro_pass_on_sensitive_is_not_done(self):
-        """전이·close 는 gate 와 같은 판정을 내야 한다 — micro PASS 로 DONE 이면 Stop 에서 차단당한다."""
+        """전이·close는 gate와 같은 판정을 내야 한다 — micro PASS로 DONE 이면 Stop에서 차단당한다."""
         self.open_quest()
         self.write("hooks/deploy.py", "x = 1\n")
         self.verify(level="micro")
         self.assertEqual(self.next()["next_role"], "VERIFIER")
-        self.assertEqual(self.qlog("close").returncode, 1)  # gate 가 막을 상태 → close 거부
+        self.assertEqual(self.qlog("close").returncode, 1)  # gate가 막을 상태 → close 거부
         self.verify(level="full")
         self.assertEqual(self.next()["next_role"], "DONE")
         self.assertEqual(self.qlog("close").returncode, 0)
@@ -941,8 +941,8 @@ class TestGate(TrinityBase):
         self.assertFalse(b)
 
     def test_escalate_allows_stop(self):
-        # Canon 9 — verify:ESCALATE 는 정규 종료: 오딘 보고 세션을 게이트가 인질로 잡지 않는다
-        # (E2E S4: ESCALATE 기록에도 3회 헛차단 후 fail-open 에 기대던 마찰의 회귀 방지).
+        # Canon 9 — verify:ESCALATE는 정규 종료: 오딘 보고 세션을 게이트가 인질로 잡지 않는다
+        # (E2E S4: ESCALATE 기록에도 3회 헛차단 후 fail-open에 기대던 마찰의 회귀 방지).
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify(verdict="ESCALATE")
@@ -959,8 +959,8 @@ class TestGate(TrinityBase):
         self.assertIn("stale", reason)
 
     def test_verify_artifacts_do_not_stale_pass(self):
-        # s1 라이브 실측 — .gitignore 없는 프로젝트에서 검증 명령이 만든 __pycache__ 가
-        # hash 를 바꿔 PASS 를 stale 로 만들던 자기파괴 회귀 방지 (_junk 제외, 양 훅 동일).
+        # s1 라이브 실측 — .gitignore 없는 프로젝트에서 검증 명령이 만든 __pycache__가
+        # hash를 바꿔 PASS를 stale로 만들던 자기파괴 회귀 방지 (_junk 제외, 양 훅 동일).
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify()
@@ -1037,7 +1037,7 @@ class TestGate(TrinityBase):
             self.assertEqual(p.returncode, 0)
 
     def test_ledger_writes_do_not_perturb_hash(self):
-        """.asgard/** 제외 — 로그 append 자체가 diff_hash 를 바꾸면 자기참조로 영원히 불일치."""
+        """.asgard/** 제외 — 로그 append 자체가 diff_hash를 바꾸면 자기참조로 영원히 불일치."""
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.verify()
@@ -1111,7 +1111,7 @@ class TestQuestEnforcement(TrinityBase):
         self.assertFalse(b)
 
     def test_failed_write_not_recorded(self):
-        self.write("app.py", "print('ok')\n")  # 파일은 dirty 지만 write 는 '실패'로 보고됨
+        self.write("app.py", "print('ok')\n")  # 파일은 dirty 지만 write는 '실패'로 보고됨
         self.sentinel("app.py", error=True)
         b, _ = self.blocked(self.gate())
         self.assertFalse(b)  # 기록 없음 → orphan 검사 대상 아님
@@ -1123,7 +1123,7 @@ class TestQuestEnforcement(TrinityBase):
         self.assertFalse(b)
 
     def test_closed_quest_pass_exempts_orphan_check(self):
-        """close 직후 Stop — 방금 Verifier 가 검증한 write 를 orphan 으로 오차단하면 안 된다."""
+        """close 직후 Stop — 방금 Verifier가 검증한 write를 orphan으로 오차단하면 안 된다."""
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.sentinel("app.py")
@@ -1260,7 +1260,7 @@ class TestBaseline(TrinityBase):
         self.policy(baseline_checks=["false"])
         self.open_quest()
         self.write("app.py", "print('ok')\n")
-        self.verify()  # verifier 는 PASS + echo 급 증거 — 하네스 체크가 red 를 기록한다
+        self.verify()  # verifier는 PASS + echo 급 증거 — 하네스 체크가 red를 기록한다
         st = jout(self.qlog("state"))
         self.assertEqual(st["baseline_state"], "red")
         self.assertEqual(jout(self.qlog("next"))["next_role"], "WORKER_RETRY")
@@ -1310,13 +1310,13 @@ class TestBaseline(TrinityBase):
             "role": "verifier",
             "event": "verify",
             "commands": [{"cmd": "python3 app.py", "exit_code": 0}],
-            "baseline": {"state": "green"},  # 위조 시도 — normalize 가 버리고 하네스가 red 재계산
+            "baseline": {"state": "green"},  # 위조 시도 — normalize가 버리고 하네스가 red 재계산
         }
         self.qlog("append", "--verdict", "PASS", stdin=json.dumps(body))
         self.assertEqual(self.last_event()["baseline"]["state"], "red")
 
     def test_uv_project_autodetect_uses_uv_run(self):
-        # uv.lock 이 있으면 자동 감지가 PATH pytest 대신 uv run 을 기록한다 — venv 밖 pytest 는
+        # uv.lock이 있으면 자동 감지가 PATH pytest 대신 uv run을 기록한다 — venv 밖 pytest는
         # 수집 실패(skip)로 게이트가 조용히 무력화되던 구멍 (베이스라인 uv-우선)
         self.write("uv.lock", "")
         self.write("tests/test_ok.py", "def test_ok():\n    assert True\n")
@@ -1334,7 +1334,7 @@ class TestBaseline(TrinityBase):
         self.open_quest()
         os.remove(os.path.join(self.root, "tests", "test_app.py"))
         self.write("app.py", "print('ok')\n")
-        self.verify()  # micro PASS — 테스트 삭제 diff 는 full 을 요구한다 (anti-Goodhart)
+        self.verify()  # micro PASS — 테스트 삭제 diff는 full을 요구한다 (anti-Goodhart)
         st = jout(self.qlog("state"))
         self.assertIn("tests/test_app.py", st["deleted_tests"])
         self.assertTrue(st["full_required"])
@@ -1394,8 +1394,8 @@ class TestDetectChecks(unittest.TestCase):
 
     # ── 안전 표는 **문자열 앞머리**로만 대조됐다 — 같은 검증을 부르는 정당한 표기가 표를 못 넘어
     #    통째로 사라졌고, 설정한 사람에게도 게이트에게도 아무 말이 없었다 (26-07-31 실측:
-    #    `<abs>/python -m pytest` 하나로 checks_available 이 false 가 되어 독립 증거 레인이 침묵,
-    #    회귀를 심은 채 날조한 PASS 가 그대로 통과했다). 정규형은 판정 전용 — 실행은 원문으로.
+    #    `<abs>/python -m pytest` 하나로 checks_available이 false가 되어 독립 증거 레인이 침묵,
+    #    회귀를 심은 채 날조한 PASS가 그대로 통과했다). 정규형은 판정 전용 — 실행은 원문으로.
     def accepted(self, cmd):
         return self.detect(self.root, {"baseline_checks": [cmd]}) == [cmd]
 
@@ -1412,7 +1412,7 @@ class TestDetectChecks(unittest.TestCase):
             self.assertTrue(self.accepted(cmd), cmd)
 
     def test_repo_local_executables_and_scripts_stay_rejected(self):
-        """정책은 clone 으로 딸려 오는 입력이다 — 이름으로 접어 주면 임의 실행 통로가 된다."""
+        """정책은 clone으로 딸려 오는 입력이다 — 이름으로 접어 주면 임의 실행 통로가 된다."""
         for cmd in (
             "./pytest",
             "evil/pytest -q",
@@ -1434,7 +1434,7 @@ class TestDetectChecks(unittest.TestCase):
 
     # ── JS/TS 레인 — 자동감지가 pytest 전용이던 탓에 JS 저장소는 하네스 실행 증거가 통째로 꺼져
     #    있었다 (26-07-26 helios 실측). 의존성이 설치된 경우에만 감지 — 미설치 러너 실패(exit 1)는
-    #    테스트 실패와 구분되지 않아 false-red 가 된다.
+    #    테스트 실패와 구분되지 않아 false-red가 된다.
     def package(self, scripts, lockfile=None):
         with open(os.path.join(self.root, "package.json"), "w") as handle:
             json.dump({"name": "x", "scripts": scripts}, handle)
@@ -1595,7 +1595,7 @@ class TestStandardTransition(TrinityBase):
         self.open_quest()
         self.write("app.py", "print('ok')\n")
         self.write("test_a.py", "def test_a(): assert True\n")
-        self.write("test_b.py", "def test_b(): assert True\n")  # changed 3파일 — non-test 는 1파일
+        self.write("test_b.py", "def test_b(): assert True\n")  # changed 3파일 — non-test는 1파일
         self.work()
         self.assertEqual(self.nxt()["next_role"], "BASELINE_VERIFY")
         self.assertEqual(jout(self.qlog("verify-baseline"))["verdict"], "PASS")
@@ -1604,7 +1604,7 @@ class TestStandardTransition(TrinityBase):
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")
 
     def test_large_rewrite_escalates_even_without_sig_change(self):
-        # 벤치에서 발견된 결함 — def 무변경 리라이트(+52/-11)가 caller 를 깨고도 소형 판정돼 close 됨
+        # 벤치에서 발견된 결함 — def 무변경 리라이트(+52/-11)가 caller를 깨고도 소형 판정돼 close 됨
         self.policy(baseline_checks=["true"])
         self.open_quest()
         self.write("app.py", "\n".join(f"x{i} = {i}" for i in range(30)) + "\n")  # 30 라인 > 상한 25
@@ -1637,7 +1637,7 @@ class TestStandardTransition(TrinityBase):
 
 
 class TestRoutePriors(TrinityBase):
-    """Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1 로 하향."""
+    """Bayesian-lite — task-class 게이트-red 이력(과반)이 승격 문턱을 2→1로 하향."""
 
     def priors(self, **classes):
         os.makedirs(os.path.join(self.root, ".asgard", "state"), exist_ok=True)
@@ -1710,7 +1710,7 @@ class TestRoutePriors(TrinityBase):
 
 
 class TestUnattendedTransition(TrinityBase):
-    """Canon 8 무인 nudge 의 전이측 (네이티브 등가) — ESCALATE → 재계획 1회 → 재-ESCALATE 인정."""
+    """Canon 8 무인 nudge의 전이측 (네이티브 등가) — ESCALATE → 재계획 1회 → 재-ESCALATE 인정."""
 
     def nxt(self, *flags):
         return jout(self.qlog("next", "--write-expected", *flags))
@@ -1720,7 +1720,7 @@ class TestUnattendedTransition(TrinityBase):
         self.write("app.py", "x\n")
         self.qlog("append", "--role", "worker", "--event", "work")
         self.verify("ESCALATE")
-        self.assertEqual(self.nxt()["next_role"], "ESCALATE_ODIN")  # attended 는 즉시 에스컬레이션
+        self.assertEqual(self.nxt()["next_role"], "ESCALATE_ODIN")  # attended는 즉시 에스컬레이션
         self.assertEqual(self.nxt("--unattended")["next_role"], "THINKER_REPLAN")  # 무인 1회 nudge
         self.qlog("append", "--role", "thinker", "--event", "plan")  # nudge 소비 (재계획 기록)
         self.assertEqual(self.nxt("--unattended")["next_role"], "WORKER")  # 실행 재개 (재-에스컬레이션 아님)
@@ -1772,8 +1772,8 @@ class TestNoChangeEvidence(TrinityBase):
     """무변경(diff EMPTY) 퀘스트 — 트리 관측(git status/diff)이 곧 PASS 증거.
 
     trivial 필터가 관측 명령을 전부 걸러내면 무변경 퀘스트는 영원히 PASS 불가 교착이 된다
-    (26-07-21 "안녕" 실측: Verifier PASS 5연속 무효화 → 예산 소진). diff 가 있는 퀘스트는
-    종전대로 관측-only PASS 를 거부한다 (TestGoodhartEvidence 가 회귀 쐐기)."""
+    (26-07-21 "안녕" 실측: Verifier PASS 5연속 무효화 → 예산 소진). diff가 있는 퀘스트는
+    종전대로 관측-only PASS를 거부한다 (TestGoodhartEvidence가 회귀 쐐기)."""
 
     def test_inspection_evidence_classifier(self):
         from asgard.hooks.quest_log import inspection_evidence
@@ -1792,7 +1792,7 @@ class TestNoChangeEvidence(TrinityBase):
             "ls -la",
             "git push",
             "git commit -m x",
-            "git -C add",  # -C 인자 스킵 — add 를 sub 로 오인하지 않되 잘린 명령도 증거 아님
+            "git -C add",  # -C 인자 스킵 — add를 sub로 오인하지 않되 잘린 명령도 증거 아님
         ]
         for cmd in inspecting:
             self.assertTrue(inspection_evidence(cmd), cmd)
@@ -1814,7 +1814,7 @@ class TestNoChangeEvidence(TrinityBase):
         self.assertEqual(closed.returncode, 0, closed.stderr)
 
     def test_noop_quest_trivial_only_pass_still_rejected(self):
-        # 무변경이어도 관측 명령이 없으면 무증거 — true/echo 는 여전히 증거가 아니다 (Goodhart 유지)
+        # 무변경이어도 관측 명령이 없으면 무증거 — true/echo는 여전히 증거가 아니다 (Goodhart 유지)
         self.open_quest()
         self.qlog("append", "--role", "worker", "--event", "work")
         self.verify("PASS", commands=[{"cmd": "true", "exit_code": 0}, {"cmd": "echo ok", "exit_code": 0}])
@@ -1822,8 +1822,8 @@ class TestNoChangeEvidence(TrinityBase):
 
 
 class TestNoChangeBaselineVerify(TrinityBase):
-    """무변경(diff EMPTY) work 의 0-LLM 하네스 판정 출구 — 전이가 BASELINE_VERIFY 를 배정하고
-    verify-baseline 이 트리 관측(git status)으로 판정을 기록한다. LLM Verifier 가 반증 불가능한
+    """무변경(diff EMPTY) work의 0-LLM 하네스 판정 출구 — 전이가 BASELINE_VERIFY를 배정하고
+    verify-baseline이 트리 관측(git status)으로 판정을 기록한다. LLM Verifier가 반증 불가능한
     합성 기준을 재량 검증하던 잔여 낭비 경로 봉합 (26-07-23 감사)."""
 
     def events(self):
@@ -1880,8 +1880,8 @@ class TestNoChangeBaselineVerify(TrinityBase):
 
 
 class TestQuestScopedStale(TrinityBase):
-    """stale-pass 의 귀속 범위 판정 — PASS 후 드리프트가 퀘스트 귀속 파일(work 관측 ∪ 세션
-    write 저널) 밖(병렬 세션·아티팩트)이면 PASS 는 신선하다. 귀속 파일·구 로그(tree_ref 부재)·
+    """stale-pass의 귀속 범위 판정 — PASS 후 드리프트가 퀘스트 귀속 파일(work 관측 ∪ 세션
+    write 저널) 밖(병렬 세션·아티팩트)이면 PASS는 신선하다. 귀속 파일·구 로그(tree_ref 부재)·
     귀속 공집합은 종전 엄격 판정 유지 (26-07-23 감사: 타 세션 드리프트 full 재검증 폭주 봉합)."""
 
     def work(self, *files):
@@ -1963,7 +1963,7 @@ class TestQuestScopedStale(TrinityBase):
 
 
 class TestCompletionFunnel(TrinityBase):
-    """완료 판정 단일 퍼널 — REJECTED 는 어떤 경로(transition·close·--force)로도 승인 승격 금지."""
+    """완료 판정 단일 퍼널 — REJECTED는 어떤 경로(transition·close·--force)로도 승인 승격 금지."""
 
     def sentinel(self, *paths, session="s1"):
         d = os.path.join(self.root, ".asgard", "state")
@@ -1985,7 +1985,7 @@ class TestCompletionFunnel(TrinityBase):
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
         self.sentinel("app.py")
         out = jout(self.gate())
-        self.assertEqual(out.get("decision"), "block")  # forced close 는 게이트 면제가 아니다
+        self.assertEqual(out.get("decision"), "block")  # forced close는 게이트 면제가 아니다
 
     def test_verified_close_writes_last_and_exempts(self):
         self.open_quest()
@@ -1997,10 +1997,10 @@ class TestCompletionFunnel(TrinityBase):
         self.assertNotIn("gate_exempt", closed)
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
         self.sentinel("app.py")
-        self.assertNotEqual(jout(self.gate()).get("decision"), "block")  # 검증된 close 만 면제
+        self.assertNotEqual(jout(self.gate()).get("decision"), "block")  # 검증된 close만 면제
 
     def test_close_requires_criteria_like_gate(self):
-        # criteria 없는 PASS — 게이트는 차단하는데 close 가 통과시키던 판정 분열 봉합
+        # criteria 없는 PASS — 게이트는 차단하는데 close가 통과시키던 판정 분열 봉합
         self.assertEqual(self.qlog("open", "q1").returncode, 0)  # criteria 미지정
         self.write("app.py", "print('ok')\n")
         self.qlog("append", "--role", "worker", "--event", "work")
@@ -2062,7 +2062,7 @@ class TestCriteriaContracts(TrinityBase):
     def test_contract_binds_when_verifier_reports_criteria_as_objects(self):
         # 26-07-26 실측 교착: 판정자가 기준별 판정을 객체로 실으면(역할 계약이 요구하는 형태)
         # 계약이 0건으로 보여 하네스가 계약 명령을 실행하지 않는데 게이트는 퀘스트 선언에서
-        # 계약을 계속 읽어 `criteria-unverified` 로 Stop 을 영구 차단했다.
+        # 계약을 계속 읽어 `criteria-unverified`로 Stop을 영구 차단했다.
         self.open_with("app.py 정상 실행 | verify: python3 app.py")
         self.write("app.py", "print('ok')\n")
         self.qlog("append", "--role", "worker", "--event", "work")
@@ -2103,7 +2103,7 @@ class TestCriteriaContracts(TrinityBase):
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")  # out.txt 없음
         self.assertEqual(self.qlog("close").returncode, 1)
         self.write("out.txt", "built\n")
-        self.verify("PASS")  # 산출물 생성 후 재검증 (out.txt 가 diff 에 포함 — 새 hash 로 PASS)
+        self.verify("PASS")  # 산출물 생성 후 재검증 (out.txt가 diff에 포함 — 새 hash로 PASS)
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
         self.assertEqual(self.qlog("close").returncode, 0)
 
@@ -2548,7 +2548,7 @@ class TestSubagentGate(TrinityBase):
         self.assertFalse(b)
 
     def test_worker_stale_work_before_verify_blocks(self):
-        # 앵커 신선도 — 직전 판정(verify) 이후의 work 만 이번 턴 기록으로 인정
+        # 앵커 신선도 — 직전 판정(verify) 이후의 work만 이번 턴 기록으로 인정
         self.open_quest()
         self.work()
         self.verify("FAIL")
@@ -2559,7 +2559,7 @@ class TestSubagentGate(TrinityBase):
         self.assertFalse(b)
 
     def test_thinker_replan_freshness(self):
-        # open 의 plan 기록으로 첫 thinker 는 통과, verify 이후 재계획 미기록은 block
+        # open의 plan 기록으로 첫 thinker는 통과, verify 이후 재계획 미기록은 block
         self.open_quest()
         b, _ = self.blocked(self.sg("asgard-thinker"))
         self.assertFalse(b)
@@ -2602,8 +2602,8 @@ class TestSubagentGate(TrinityBase):
 class TestMemoryGateIsolation(TrinityBase):
     """감사 공백 ②: 악성·낡은 메모리가 실제 게이트 PASS/DONE 판정에 영향을 주지 못한다 — 종단 적대.
 
-    게이트·close 는 물리 증거(diff-hash·명령 exit)만 본다. '검증 완료' 를 주장하는 메모리를
-    $HOME 아래에 실제로 심고, 배포 형태 그대로의 훅 subprocess 가 그래도 차단하는지 대조한다."""
+    게이트·close는 물리 증거(diff-hash·명령 exit)만 본다. '검증 완료'를 주장하는 메모리를
+    $HOME 아래에 실제로 심고, 배포 형태 그대로의 훅 subprocess가 그래도 차단하는지 대조한다."""
 
     def blocked(self, p):
         out = jout(p)
@@ -2653,13 +2653,13 @@ class TestMemoryGateIsolation(TrinityBase):
 @unittest.skipUnless(os.name == "posix", "bash 하네스 — Windows 는 test_adversarial_gate.py 포트가 동일 벡터를 돈다")
 class TestAdversarialSuite(unittest.TestCase):
     """게이트 적대 벡터 통합 — 우회 벡터 10종 전수 차단/허용 대조 (실 LLM 불필요, 훅 직접 구동).
-    정본 fixture 는 git 추적되는 tests/fixtures/bench-cc — 깨끗한 clone 에서도 skip 없이 돈다.
+    정본 fixture는 git 추적되는 tests/fixtures/bench-cc — 깨끗한 clone 에서도 skip 없이 돈다.
     (workspace/ 사본은 devbox 공유용 레거시 폴백. 크로스 플랫폼 포트: tests/test_adversarial_gate.py)"""
 
     def test_adversarial_vectors_all_blocked(self):
         base = os.path.dirname(__file__)
         script = os.path.abspath(os.path.join(base, "fixtures", "bench-cc", "adversarial.sh"))
-        if not os.path.exists(script):  # 정본 fixture 부재는 skip 이 아니라 실패 — 조용한 skip 회귀 방지
+        if not os.path.exists(script):  # 정본 fixture 부재는 skip이 아니라 실패 — 조용한 skip 회귀 방지
             legacy = os.path.abspath(os.path.join(base, "..", "workspace", "bench-cc", "adversarial.sh"))
             self.assertTrue(os.path.exists(legacy), "adversarial.sh fixture 소실 (tests/fixtures/bench-cc)")
             script = legacy
@@ -2690,7 +2690,7 @@ class TestQuestPrune(TrinityBase):
         qdir = os.path.join(self.root, ".asgard", "quest")
         names = os.listdir(qdir)
         self.assertEqual(sorted(n for n in names if n.endswith(".jsonl")), ["q3.jsonl", "q4.jsonl"])
-        self.assertNotIn("q1.lock", names)  # 로그와 lock 은 함께 치운다
+        self.assertNotIn("q1.lock", names)  # 로그와 lock은 함께 치운다
         self.assertNotIn("q2.lock", names)
 
     def test_prune_protects_pointer_targets_and_unclosed_logs(self):
@@ -2854,7 +2854,7 @@ class TestPipelineVerification(TrinityBase):
 
 class TestPolicyMirror(unittest.TestCase):
     """정책 3중 미러 정합 — 템플릿 시드가 훅 정본을 그대로 실어야 4모드(네이티브·CC·Codex·Cursor)가
-    같은 기준으로 판정한다. load_policy 는 파일 키가 내장값을 통째로 덮으므로(update) 시드 드리프트는
+    같은 기준으로 판정한다. load_policy는 파일 키가 내장값을 통째로 덮으므로(update) 시드 드리프트는
     패치 무효화와 같다 (26-07-23 sensitive_paths 14→22 드리프트 회귀 방어)."""
 
     def test_template_seed_equals_quest_log_default(self):
@@ -2903,7 +2903,7 @@ class TestNativeLoopTendsMemory(unittest.TestCase):
     """퀘스트 close 뒤 위그드라실 손질 신호 — 외부 훅에만 있고 네이티브 루프엔 없던 자리.
 
     같은 사용자의 같은 기억이 어느 호스트로 들어왔느냐에 따라 다른 속도로 자라면 안 된다
-    (policy.CLIENT_MODES). 여기서 보는 것은 배선이다: 판정 자체는 test_memory_norn 이 본다."""
+    (policy.CLIENT_MODES). 여기서 보는 것은 배선이다: 판정 자체는 test_memory_norn이 본다."""
 
     @staticmethod
     def _bare_run(out):

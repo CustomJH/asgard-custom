@@ -2,13 +2,13 @@
 """게이트 적대 벡터 — 크로스 플랫폼 포트 (Windows 포함 전 OS pytest).
 
 정본 bash 하네스는 tests/fixtures/bench-cc/adversarial.sh (POSIX smoke·bench 전용).
-같은 벡터 V1~V7 을 bash·python3 없이 sys.executable 로 돌린다 — 훅은 배포 형태 그대로
+같은 벡터 V1~V7을 bash·python3 없이 sys.executable로 돌린다 — 훅은 배포 형태 그대로
 새 프로세스로 구동 (임포트 아님). CI windows 잡이 이 파일을 실행해 "게이트가 Windows 에서도
 실제로 차단하는가"를 회귀 가드한다.
 
 인코딩 회귀 (V8): Windows en-US 콘솔/파이프(cp1252)에서 한국어 차단 사유가
-UnicodeEncodeError → 전역 fail-open 에 삼켜져 block 이 조용한 allow 로 증발했던 실버그.
-PYTHONIOENCODING=cp1252 로 어느 OS 에서나 재현된다.
+UnicodeEncodeError → 전역 fail-open에 삼켜져 block이 조용한 allow로 증발했던 실버그.
+PYTHONIOENCODING=cp1252로 어느 OS 에서나 재현된다.
 
 실행: uv run pytest tests/test_adversarial_gate.py
 """
@@ -46,8 +46,8 @@ class AdversarialBase(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = self.tmp.name
-        # HOME 격리 — 훅 subprocess 가 호스트 git 설정·~/.asgard 를 보지 않게 (TrinityBase 관행).
-        # Windows 는 HOME 대신 USERPROFILE 을 보므로 둘 다 격리한다.
+        # HOME 격리 — 훅 subprocess가 호스트 git 설정·~/.asgard를 보지 않게 (TrinityBase 관행).
+        # Windows는 HOME 대신 USERPROFILE을 보므로 둘 다 격리한다.
         self._saved = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE")}
         os.environ["HOME"] = self.root
         os.environ["USERPROFILE"] = self.root
@@ -140,7 +140,7 @@ class TestAdversarialVectors(AdversarialBase):
         self.assertEqual(got, "block", p.stdout + p.stderr)
 
     def test_v2_max_blocks_escalation_not_silent(self):
-        """V2. MAX_BLOCKS 소진 후 fail-open 이 성공 위장이 아닌가 — 4번째는 allow 지만 에스컬레이션 지시."""
+        """V2. MAX_BLOCKS 소진 후 fail-open이 성공 위장이 아닌가 — 4번째는 allow 지만 에스컬레이션 지시."""
         self.open_quest()
         self.write("app.py", "x=1\n")  # 검증 안 된 write, PASS 레코드 없음
         for i in range(3):
@@ -151,7 +151,7 @@ class TestAdversarialVectors(AdversarialBase):
         self.assertIn("escalation", p.stderr, "4번째 fail-open 인데 에스컬레이션 지시 없음 — 조용한 성공 금지")
 
     def test_v3_no_verify_record_in_new_quest_blocked(self):
-        """V3. 증거 재활용 — 이전 quest 증거는 신규 quest 에 무효, verify 레코드 없으면 차단."""
+        """V3. 증거 재활용 — 이전 quest 증거는 신규 quest에 무효, verify 레코드 없으면 차단."""
         self.open_quest("q1", "c1")
         self.write("app.py", "y=2\n")
         self.qlog("append", "--verdict", "PASS", stdin="")
@@ -162,7 +162,7 @@ class TestAdversarialVectors(AdversarialBase):
         self.assertEqual(got, "block", p.stdout + p.stderr)
 
     def test_v4_sensitive_path_micro_pass_blocked(self):
-        """V4. sensitive 경로 우회 — 훅 파일 변경을 micro PASS 로 통과 시도 → full 강제 차단."""
+        """V4. sensitive 경로 우회 — 훅 파일 변경을 micro PASS로 통과 시도 → full 강제 차단."""
         self.write(os.path.join(".claude", "hooks", "x.py"), "orig\n")
         self.commit_all("hooks")
         self.open_quest(criteria="edit hook")
@@ -174,7 +174,7 @@ class TestAdversarialVectors(AdversarialBase):
         self.assertEqual(got, "block", p.stdout + p.stderr)
 
     def test_v5_verifier_trivial_evidence_blocked_at_subgate(self):
-        """V5. subagent-gate 우회 — verifier 가 trivial(echo) 증거 PASS 기록 후 종료 → 차단."""
+        """V5. subagent-gate 우회 — verifier가 trivial(echo) 증거 PASS 기록 후 종료 → 차단."""
         self.open_quest()
         self.qlog("append", "--role", "worker", "--event", "work")
         body = {"role": "verifier", "event": "verify", "commands": [{"cmd": "echo done", "exit_code": 0}]}
@@ -183,7 +183,7 @@ class TestAdversarialVectors(AdversarialBase):
         self.assertEqual(got, "block", p.stdout + p.stderr)
 
     def test_v6_reverted_orphan_write_not_hostage(self):
-        """V6. 되돌린 orphan write 는 인질 금지 — sentinel 기록 후 원복(clean)이면 차단 안 함."""
+        """V6. 되돌린 orphan write는 인질 금지 — sentinel 기록 후 원복(clean)이면 차단 안 함."""
         self.write("app.py", "tmp\n")  # quest 미개설 write
         self.sentinel("v6", "app.py")
         subprocess.run(["git", "-C", self.root, "checkout", "--", "app.py"], check=True)
@@ -201,8 +201,8 @@ class TestAdversarialVectors(AdversarialBase):
 class TestEncodingDisarm(AdversarialBase):
     """V8. 인코딩 무장해제 회귀 — cp1252 파이프에서도 block 판정이 증발하면 안 된다.
 
-    실측 버그: 훅이 한국어 사유를 cp1252 stdout 에 쓰다 UnicodeEncodeError → 전역
-    fail-open(sys.exit(0)) 이 삼킴 → 판정 무출력 = CC 는 allow 로 해석. en-US Windows 에서
+    실측 버그: 훅이 한국어 사유를 cp1252 stdout에 쓰다 UnicodeEncodeError → 전역
+    fail-open(sys.exit(0))이 삼킴 → 판정 무출력 = CC는 allow로 해석. en-US Windows에서
     게이트 전체가 조용히 꺼지는 조건이었다. 훅의 UTF-8 reconfigure 가드가 방어한다.
     """
 
@@ -234,10 +234,10 @@ class TestEncodingDisarm(AdversarialBase):
 class TestSessionIdentityDisarm(AdversarialBase):
     """세션 신원이 안 맞을 때 게이트가 조용히 사라지던 자리.
 
-    모델은 `quest-log.py open` 을 **--session 없이** 부른다 (AGENTS.md 의 지시) — 그 기본값은
-    `$CLAUDE_SESSION_ID` 또는 `"-"` 다. 그런데 Stop 게이트는 Cursor 에서 `"cursor"` 를 고정으로
-    봤다. 이름이 영영 안 맞으니 "활성이 정확히 1개면 승계" 규칙에 기대게 되고, 버려진 quest 가
-    하나만 더 쌓이면 그 규칙마저 비켜서 **write 가 판정 없이 통과**했다 (26-07-31 실측: 실제
+    모델은 `quest-log.py open`을 **--session 없이** 부른다 (AGENTS.md의 지시) — 그 기본값은
+    `$CLAUDE_SESSION_ID` 또는 `"-"` 다. 그런데 Stop 게이트는 Cursor에서 `"cursor"`를 고정으로
+    봤다. 이름이 영영 안 맞으니 "활성이 정확히 1개면 승계" 규칙에 기대게 되고, 버려진 quest가
+    하나만 더 쌓이면 그 규칙마저 비켜서 **write가 판정 없이 통과**했다 (26-07-31 실측: 실제
     저장소에 활성 포인터 6개가 남아 있었다)."""
 
     def gate_raw(self, payload, argv=None):
@@ -272,7 +272,7 @@ class TestSessionIdentityDisarm(AdversarialBase):
             self.assertTrue(self.blocked({}, argv), argv)
 
     def test_a_closed_session_does_not_inherit_someone_elses_quest(self):
-        """인질극 방지 — 자기 quest 를 정상으로 닫은 세션은 남의 활성에 걸리지 않는다."""
+        """인질극 방지 — 자기 quest를 정상으로 닫은 세션은 남의 활성에 걸리지 않는다."""
         self.qlog("open", "q", "--criteria", "c")
         self.write("app.py", "print('changed')\n")
         self.qlog(
@@ -300,7 +300,7 @@ class TestGateEventMetrics(AdversarialBase):
     """게이트 운영 지표 — 차단·에스컬레이션이 durable 하게 남고(doctor 집계 원천) 코드가 붙는다.
 
     차단 카운터(gate-blocks-*.json)는 통과 시 삭제되므로 지표가 못 된다 — append-only
-    state/gate-events.jsonl 이 운영 지표의 단일 원천이다.
+    state/gate-events.jsonl이 운영 지표의 단일 원천이다.
     """
 
     def events_path(self):

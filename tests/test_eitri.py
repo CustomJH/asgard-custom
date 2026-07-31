@@ -34,7 +34,7 @@ class TestScaffold(unittest.TestCase):
         for flags in ({"cc": False, "cursor": True, "codex": False}, {"cc": False, "cursor": False, "codex": True}):
             files, _ = plan_files(root="/tmp/x", **flags)
             agents_paths = [p for p, _ in files if f"{os.sep}.agents{os.sep}" in p]
-            for sname in (*_SKILL_NAMES, "asgard-eitri"):  # 모드 A 는 코어 계약 스킬 포함
+            for sname in (*_SKILL_NAMES, "asgard-eitri"):  # 모드 A는 코어 계약 스킬 포함
                 self.assertTrue(any(sname in p for p in agents_paths), (sname, flags))
 
 
@@ -78,7 +78,7 @@ class TestSkillBodies(unittest.TestCase):
 
         role = dict(ROLE_AGENTS)["asgard-eitri.md"]
         for sname in _SKILL_NAMES:
-            self.assertIn(sname, role)  # 모드 B 로드 경로 — role 이 스킬을 가리켜야 로드된다
+            self.assertIn(sname, role)  # 모드 B 로드 경로 — role이 스킬을 가리켜야 로드된다
 
 
 class TestSkillResolver(unittest.TestCase):

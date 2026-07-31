@@ -1,7 +1,7 @@
 """prompt-toolkit 세션 구성 스모크 — CI 헤드리스 러너용.
 
-Windows 러너엔 콘솔이 없어 Win32Output 이 NoConsoleScreenBufferError 로 죽는다.
-파이프 입력 + DummyOutput app session 으로 감싸 구성 경로만 검증한다.
+Windows 러너엔 콘솔이 없어 Win32Output이 NoConsoleScreenBufferError로 죽는다.
+파이프 입력 + DummyOutput app session으로 감싸 구성 경로만 검증한다.
 실행: uv run python tests/smoke_pt_session.py
 """
 

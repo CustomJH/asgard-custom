@@ -52,19 +52,19 @@ class IdentityTest(unittest.TestCase):
         )
 
     def test_the_mark_survives_lines_moving(self):
-        """줄이 밀려도 같은 이름이어야 한다 — Checkpoint 는 line 을 이름에 안 넣는다."""
+        """줄이 밀려도 같은 이름이어야 한다 — Checkpoint는 line을 이름에 안 넣는다."""
         early = tutor.Checkpoint("todo-left", "a.py", 3, "", "w", "y", "q", "TODO:같은 표식")
         late = tutor.Checkpoint("todo-left", "a.py", 900, "", "w", "y", "q", "TODO:같은 표식")
         self.assertEqual(early.cid, late.cid)
 
     def test_two_dependencies_in_one_file_are_two_questions(self):
-        """실측 결함: `unit` 이 빈 물음은 좌표가 같아 한 이름으로 뭉쳤다 — 답 하나가 둘을 닫았다."""
+        """실측 결함: `unit`이 빈 물음은 좌표가 같아 한 이름으로 뭉쳤다 — 답 하나가 둘을 닫았다."""
         first = tutor.Checkpoint("new-dependency", "a.py", 1, "", "w", "y", "q", "requests")
         second = tutor.Checkpoint("new-dependency", "a.py", 2, "", "w", "y", "q", "yaml")
         self.assertNotEqual(first.cid, second.cid)
 
     def test_two_swallows_in_one_function_are_two_questions(self):
-        """같은 함수 안의 삼킴 둘은 `unit` 이 같다 — 예외 종류까지 이름에 들어가야 갈린다."""
+        """같은 함수 안의 삼킴 둘은 `unit`이 같다 — 예외 종류까지 이름에 들어가야 갈린다."""
         first = tutor.Checkpoint("silent-failure", "a.py", 8, "go", "w", "y", "q", "OSError@go")
         second = tutor.Checkpoint("silent-failure", "a.py", 12, "go", "w", "y", "q", "ValueError@go")
         self.assertNotEqual(first.cid, second.cid)
@@ -103,7 +103,7 @@ class CountingTest(unittest.TestCase):
         self.assertEqual((row["asked"], row["skipped"]), (2, 1))
 
     def test_the_ladder_widens_instead_of_repeating_daily(self):
-        """1→3→7 로 벌어져야 한다. 같은 간격이면 재방문이 아니라 잔소리다."""
+        """1→3→7로 벌어져야 한다. 같은 간격이면 재방문이 아니라 잔소리다."""
         now = 1000.0
         tutor_growth.note_asked(self.root, [_point()], now=now)
         tutor_growth.note_asked(self.root, [_point()], now=now + DAY + 1)
@@ -113,7 +113,7 @@ class CountingTest(unittest.TestCase):
     def test_the_ladder_ends_in_expiry_not_in_forever(self):
         """네 번 물어 네 번 다 답이 없으면 다섯 번째는 없다 — 안 닿는 물음을 영구히 놓지 않는다."""
         now = 1000.0
-        for rung in (0.0, 1.0, 4.0, 11.0, 32.0):  # 사다리 1·3·7·21 을 그대로 밟는다
+        for rung in (0.0, 1.0, 4.0, 11.0, 32.0):  # 사다리 1·3·7·21을 그대로 밟는다
             tutor_growth.note_asked(self.root, [_point()], now=now + rung * DAY + 1)
         data = tutor_growth.load(self.root)
         self.assertEqual(data["open"], {})
@@ -297,7 +297,7 @@ class BriefTest(unittest.TestCase):
     def test_the_hook_path_stays_completely_silent_when_there_is_nothing(self):
         """훅에게 "없다"는 말은 사용자 화면에 실릴 빈 카드가 된다 — 빈 카드는 다음 카드의 신뢰를 깎는다.
 
-        `ui.ok` 는 판정 줄이라 quiet 을 무시한다(ui 계약). 실측: 이 한 줄이 훅 출력으로 새어
+        `ui.ok`는 판정 줄이라 quiet을 무시한다(ui 계약). 실측: 이 한 줄이 훅 출력으로 새어
         무관한 요청마다 "없다" 카드가 떴다.
         """
         buffer = io.StringIO()

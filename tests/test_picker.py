@@ -1,7 +1,7 @@
 """picker — 인터랙티브 선택 패널 계약.
 
-pt pipe input 으로 키 시퀀스를 실주입해 화살표 이동·타이핑 필터·수동 행·취소를 검증한다.
-available() 폴백 게이트는 비-tty 에서 False — 기존 번호 입력 경로 무회귀의 단일 조건.
+pt pipe input으로 키 시퀀스를 실주입해 화살표 이동·타이핑 필터·수동 행·취소를 검증한다.
+available() 폴백 게이트는 비-tty에서 False — 기존 번호 입력 경로 무회귀의 단일 조건.
 """
 
 from __future__ import annotations
@@ -66,7 +66,7 @@ def test_manual_hint_row_returns_raw_query() -> None:
 
 
 def test_no_match_without_manual_ignores_enter_then_cancels() -> None:
-    # 매치 0 + 수동 행 없음 — enter 는 no-op, esc 로만 나간다
+    # 매치 0 + 수동 행 없음 — enter는 no-op, esc 로만 나간다
     assert _run("zzzzz\r\x1b") is None
 
 
@@ -80,7 +80,7 @@ def test_empty_options_short_circuits_none() -> None:
 
 
 def test_available_is_false_without_tty(monkeypatch) -> None:
-    assert picker.available() is False  # pytest 캡처 하 stdin/stdout 은 tty 가 아니다
+    assert picker.available() is False  # pytest 캡처 하 stdin/stdout은 tty가 아니다
 
 
 def test_available_env_killswitch(monkeypatch) -> None:

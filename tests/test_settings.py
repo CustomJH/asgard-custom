@@ -175,7 +175,7 @@ class TestMigration(SettingsBase):
         self.assertEqual(settings.migrate_project(self.root), [])  # 멱등
 
     def test_fill_path_new_file_preexists(self):
-        """실측 회귀 (26-07-15): init --force 가 신파일을 먼저 만든 뒤 sync — 레거시 섹션이
+        """실측 회귀 (26-07-15): init --force가 신파일을 먼저 만든 뒤 sync — 레거시 섹션이
         유실되던 결함. 누락 섹션만 채우고(신파일 우선) 레거시를 제거해야 한다."""
         self.seed_legacy()
         settings._atomic_json(settings.project_path(self.root), {"trinity_policy": {"schema": 1}})
