@@ -585,7 +585,7 @@
   .dayflt button:hover{background:var(--gold-hover)}
   .dayflt button:focus-visible{outline:2px solid var(--rune-gold);outline-offset:1px}
 
-  /* ── 성좌 · 뜻 검색 안내 ── */
+  /* ── 성좌 · 의미 검색 안내 ── */
   .semhint{display:flex;gap:var(--space-xs);align-items:flex-start;border:1px dashed var(--gem-line);
     border-radius:8px;padding:var(--space-sm);font-size:12px;color:var(--ink-dim);line-height:1.55;margin:0}
   .semhint svg{flex:none;color:var(--gem);transform:translateY(2px)}
@@ -705,7 +705,7 @@
     <div class="grid stats5" id="ovStats" aria-label="서고 통계" data-t-aria><div class="skel" style="display:contents" aria-hidden="true"><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div><div class="skel-stat"><div class="sk"></div><div class="sk"></div></div></div></div>
     <div id="ovOnboard"></div>
     <!-- 12열 위의 서로 다른 span — 같은 크기 카드 3단은 쓰지 않는다. 폭이 늘면 열이 늘고,
-         글이 실리는 종류은 measure 상한을 따로 갖는다(줄이 길어지지 않는다). -->
+         글이 실리는 종류는 measure 상한을 따로 갖는다(줄이 길어지지 않는다). -->
     <div class="ovgrid">
       <!-- 윗줄 = 계기(분량·전달·뜻검색), 아랫줄 = 목록(건강·연대기·회수).
            높이가 비슷한 것끼리 묶어야 밑이 크게 비지 않는다. span 합은 줄마다 정확히 12. -->
@@ -717,11 +717,11 @@
         </figcaption>
       </figure>
       <section class="panel ov-inject" aria-label="전달 요약" data-t-aria>
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v7" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5.2 6.4L8 9.2l2.8-2.8" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2.6 11.4v1.2a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg><span data-t>AI 에게 가는 분량</span></h2>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v7" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M5.2 6.4L8 9.2l2.8-2.8" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M2.6 11.4v1.2a1 1 0 0 0 1 1h8.8a1 1 0 0 0 1-1v-1.2" stroke="currentColor" stroke-width="1.3" fill="none"/></svg><span data-t>AI에게 가는 분량</span></h2>
         <div id="ovInject"></div>
       </section>
-      <section class="panel ov-sem" aria-label="뜻 검색 준비" data-t-aria>
-        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="10.5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.2 6.4l3.2 2.8" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.5 2"/></svg><span data-t>뜻 검색 준비</span></h2>
+      <section class="panel ov-sem" aria-label="의미 검색 준비" data-t-aria>
+        <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="4.5" cy="5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><circle cx="11" cy="10.5" r="2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.2 6.4l3.2 2.8" stroke="currentColor" stroke-width="1.2" stroke-dasharray="2.5 2"/></svg><span data-t>의미 검색 준비</span></h2>
         <div id="ovSem"></div>
       </section>
       <section class="panel ov-health" aria-label="건강 진단" data-t-aria>
@@ -738,9 +738,9 @@
         <ul class="uselist" id="topUse"></ul>
       </section>
     </div>
-    <section class="panel" aria-label="원본과 다시 만드는 파일" data-t-aria>
-      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11v8a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 4.5l1.4-2h8.2l1.4 2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 7.6h3.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>원본과 다시 만드는 파일</span></h2>
-      <p class="dimnote" style="margin:0 0 14px;max-width:var(--measure)" data-t>pages/ 만 원본입니다. 나머지는 다시 만들어지는 것이거나 정리가 남긴 기록이라, 지워도 지식은 죽지 않습니다.</p>
+    <section class="panel" aria-label="원본과 다시 만들어지는 파일" data-t-aria>
+      <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11v8a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 4.5l1.4-2h8.2l1.4 2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 7.6h3.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>원본과 다시 만들어지는 파일</span></h2>
+      <p class="dimnote" style="margin:0 0 14px;max-width:var(--measure)" data-t>pages/ 만 원본입니다. 나머지는 다시 만들어지거나 정리가 남긴 기록이라, 지워도 내용은 사라지지 않습니다.</p>
       <ul class="drv" id="ovDerived"></ul>
     </section>
   </section>
@@ -752,7 +752,7 @@
       <div class="gbody">
         <div class="gwrap">
           <canvas id="gcanvas" tabindex="0" role="application" aria-describedby="gHelp" data-t-aria
-            aria-label="기억 성좌 — 페이지가 별, 직접 링크와 뜻이 비슷한 관계가 별자리 선입니다. 화살표 키로 이동, 대괄호 키로 페이지 순회."></canvas>
+            aria-label="기억 성좌 — 페이지가 별, 직접 링크와 의미가 비슷한 관계가 별자리 선입니다. 화살표 키로 이동, 대괄호 키로 페이지 순회."></canvas>
           <div class="gctrl" role="group" aria-label="성좌 보기 조절" data-t-aria>
             <button type="button" data-action="g-zoom-in" aria-label="확대" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M7.5 2.5v10M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
             <button type="button" data-action="g-zoom-out" aria-label="축소" data-t-aria><svg width="15" height="15" viewBox="0 0 15 15" aria-hidden="true"><path d="M2.5 7.5h10" stroke="currentColor" stroke-width="1.6"/></svg></button>
@@ -773,10 +773,10 @@
             <div id="gFilters" class="gfilters"></div>
           </div>
           <div>
-            <p class="sectitle" data-t>선이 뜻하는 것</p>
+            <p class="sectitle" data-t>선의 의미</p>
             <ul class="glegend">
               <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#C6A45E" stroke-width="2"/></svg><span data-t>직접 링크 — 금색 실선</span></li>
-              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#5E8A6E" stroke-width="2" stroke-dasharray="4 3"/></svg><span data-t>뜻이 비슷함 — 초록 점선</span></li>
+              <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h24" stroke="#5E8A6E" stroke-width="2" stroke-dasharray="4 3"/></svg><span data-t>의미가 비슷함 — 초록 점선</span></li>
               <li><svg width="28" height="10" aria-hidden="true"><path d="M2 5h16" stroke="#C25B46" stroke-width="1.6" stroke-dasharray="3 3"/><path d="M20 2l6 6M26 2l-6 6" stroke="#C25B46" stroke-width="1.4"/></svg><span data-t>끊어진 링크 — 붉은 절단선</span></li>
             </ul>
           </div>
@@ -797,14 +797,14 @@
       <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 6.5h11M6.5 6.5v7" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>서고</span> <span id="catCount" class="num dimnote"></span></h2>
       <form class="search" id="searchForm" role="search">
         <label for="q" class="vh" data-t>서고 검색어</label>
-        <input id="q" name="q" type="search" placeholder="검색 — 제목·본문·뜻까지 한 번에 (읽기 전용)" data-t-ph autocomplete="off">
+        <input id="q" name="q" type="search" placeholder="검색 — 제목·본문·의미까지 한 번에 (읽기 전용)" data-t-ph autocomplete="off">
         <button type="submit" data-t>검색</button>
       </form>
       <div class="legend" id="legend">
         <span class="sectitle" style="margin:0" data-t>검색 경로</span>
-        <span><i style="background:var(--rune-gold)"></i><span data-t>글자 검색</span></span>
+        <span><i style="background:var(--rune-gold)"></i><span data-t>전문 검색</span></span>
         <span><i style="background:var(--info)"></i><span data-t>본문 훑기</span></span>
-        <span><i style="background:var(--gem)"></i><span data-t>뜻 검색</span></span>
+        <span><i style="background:var(--gem)"></i><span data-t>의미 검색</span></span>
         <span id="semNote"></span>
       </div>
       <div id="kindChips" class="chips" role="group" aria-label="종류 필터" data-t-aria></div>
@@ -820,12 +820,12 @@
       <div id="injState"></div>
       <div class="injgrid">
         <div>
-          <p class="sectitle" data-t>AI 에게 그대로 전달되는 내용</p>
+          <p class="sectitle" data-t>AI에게 그대로 전달되는 내용</p>
           <pre class="injblock" id="injBlock" tabindex="0" aria-label="전달 내용 원문" data-t-aria>—</pre>
-          <p class="dimnote" style="margin:12px 0 0;max-width:var(--measure)" data-t>앞뒤 빈 줄만 접었을 뿐, 나머지는 실제로 전달되는 글자 그대로입니다. 여기 없는 것은 AI 도 못 봅니다.</p>
+          <p class="dimnote" style="margin:12px 0 0;max-width:var(--measure)" data-t>앞뒤 빈 줄만 접었고, 나머지는 실제로 전달되는 글자 그대로입니다. 여기 없는 내용은 AI도 볼 수 없습니다.</p>
         </div>
         <div>
-          <p class="sectitle" data-t>종류별 한도 — 어디가 모자라고 어디가 넘치는가</p>
+          <p class="sectitle" data-t>종류별 한도 — 모자란 곳과 넘치는 곳</p>
           <ul class="injmeter" id="injMeter"></ul>
           <div id="injExcluded" style="margin-top:20px"></div>
         </div>
@@ -841,17 +841,17 @@
       <div class="nrngrid">
         <section aria-label="insight 계보" data-t-aria>
           <h3 data-t>통찰 계보</h3>
-          <p class="dimnote" style="margin:0 0 12px" data-t>출처 페이지에서 벼려낸 통찰과, 코드가 계산한 확신도입니다.</p>
+          <p class="dimnote" style="margin:0 0 12px" data-t>출처 페이지에서 뽑아낸 통찰과 코드가 계산한 확신도입니다.</p>
           <ul class="lineage" id="nornInsights"></ul>
         </section>
         <section aria-label="모순" data-t-aria>
-          <h3 data-t>모순 — 사람이 풀 일</h3>
+          <h3 data-t>모순 — 사람이 판단할 항목</h3>
           <p class="dimnote" style="margin:0 0 12px" data-t>노른은 어긋난 기록을 고치지 않고 알리기만 합니다.</p>
           <ul class="contra" id="nornContra"></ul>
         </section>
         <section aria-label="정리 리포트" data-t-aria>
           <h3 data-t>정리 리포트</h3>
-          <p class="dimnote" style="margin:0 0 12px" data-t>매 정리가 남긴 기록 — reports/ 는 예산 밖입니다.</p>
+          <p class="dimnote" style="margin:0 0 12px" data-t>정리할 때마다 남는 기록 — reports/ 는 한도 밖입니다.</p>
           <ul class="log" id="nornReports"></ul>
         </section>
       </div>
@@ -859,12 +859,12 @@
     <div class="grid two" style="margin-top:20px">
       <section class="panel" aria-label="보관함" data-t-aria>
         <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><rect x="1.8" y="3" width="12.4" height="3" rx=".8" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3.2 6v6.4a.8.8 0 0 0 .8.8h8a.8.8 0 0 0 .8-.8V6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 9h3.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>보관함</span> <span id="arcMeta" class="num dimnote"></span></h2>
-        <p class="dimnote" style="margin:0 0 12px;max-width:var(--measure)" data-t>접어 둔 페이지입니다. 지운 것이 아니라 옮긴 것이라 언제든 되살릴 수 있습니다.</p>
+        <p class="dimnote" style="margin:0 0 12px;max-width:var(--measure)" data-t>보관함으로 옮긴 페이지입니다. 지운 것이 아니라서 언제든 되살릴 수 있습니다.</p>
         <ul class="arcs" id="nornArchive"></ul>
       </section>
       <section class="panel" aria-label="오딘 피어 카드" data-t-aria>
         <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5.4" r="2.6" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M3 13.4a5 5 0 0 1 10 0" fill="none" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>피어 카드</span> <span id="peerMeta" class="num dimnote"></span></h2>
-        <p class="dimnote" style="margin:0 0 12px;max-width:var(--measure)" data-t>사용자에 대해 관찰한 것을 모아 만든 요약입니다 — 근거 페이지에서 다시 만들어집니다.</p>
+        <p class="dimnote" style="margin:0 0 12px;max-width:var(--measure)" data-t>사용자를 관찰한 내용을 모아 만든 요약입니다. 근거 페이지에서 다시 만들어집니다.</p>
         <ul class="arcs" id="peerCard"></ul>
       </section>
     </div>
@@ -903,7 +903,7 @@
     </div>
   </section>
 
-  <footer data-t>위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI 에서</footer>
+  <footer data-t>위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI에서</footer>
 </main>
 
 <!-- 빠른 이동 — ⌘K 명령 팔레트: 탭·별을 이름으로 항해한다 (읽기 전용, 스냅샷 데이터만) -->
@@ -951,7 +951,7 @@ const EN = {
   "자주 꺼내 쓴 기억": "Frequently recalled",
   "기억 성좌 그래프": "Memory constellation graph",
   "기억 성좌": "Memory constellation",
-  "기억 성좌 — 페이지가 별, 직접 링크와 뜻이 비슷한 관계가 별자리 선입니다. 화살표 키로 이동, 대괄호 키로 페이지 순회.":
+  "기억 성좌 — 페이지가 별, 직접 링크와 의미가 비슷한 관계가 별자리 선입니다. 화살표 키로 이동, 대괄호 키로 페이지 순회.":
     "Memory constellation — pages are stars; direct links and meaning-similarity draw the lines. Arrow keys pan, bracket keys cycle pages.",
   "성좌 보기 조절": "Constellation view controls",
   "확대": "Zoom in", "축소": "Zoom out", "처음 위치로": "Reset view",
@@ -962,16 +962,16 @@ const EN = {
   "성좌에서 페이지 찾기": "Find a page in the constellation",
   "페이지 검색 — 제목·이름": "Search pages — title or name",
   "종류 필터 — 색과 모양으로 구분": "Kind filter — color + shape dual encoding",
-  "선이 뜻하는 것": "Edge language",
+  "선의 의미": "Edge language",
   "직접 링크 — 금색 실선": "Explicit link — solid gold",
-  "뜻이 비슷함 — 초록 점선": "Semantic similarity — dashed jade (cosine-weighted)",
+  "의미가 비슷함 — 초록 점선": "Semantic similarity — dashed jade (cosine-weighted)",
   "끊어진 링크 — 붉은 절단선": "Dead link — red cut line",
   "서고 카탈로그": "Library catalog",
   "서고 검색어": "Library search query",
-  "검색 — 제목·본문·뜻까지 한 번에 (읽기 전용)": "Search the library — title, body and meaning at once (read-only)",
+  "검색 — 제목·본문·의미까지 한 번에 (읽기 전용)": "Search the library — title, body and meaning at once (read-only)",
   "검색": "Search",
   "검색 경로": "Search paths",
-  "글자 검색": "Full-text FTS",
+  "전문 검색": "Full-text FTS",
   "본문 훑기": "Body scan",
   "종류 필터": "Kind filter",
   "정렬 기준": "Sort by",
@@ -980,12 +980,12 @@ const EN = {
   "활동 열지도": "Activity heatmap",
   "작업 분포": "Operation distribution",
   "최근 피드": "Recent feed",
-  "위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI 에서":
+  "위그드라실 · Asgard 개인 메모리 · 읽기 전용 관측 창 · 로컬 전용(127.0.0.1) · 수정은 CLI에서":
     "Yggdrasil · Asgard personal memory · read-only observatory · local only (127.0.0.1) · edits happen in the CLI",
   "빠른 이동 — 탭과 페이지로 이동": "Gate Call — jump to tabs and pages",
   /* ── 폭 스위치 · 브랜드 ── */
   "화면 폭": "Shell width",
-  "벡터 차원이 섞였습니다 — 모델을 바꾼 뒤 재색인을 안 한 상태입니다. asgard memory reindex":
+  "벡터 차원이 섞였습니다. 모델을 바꾼 뒤 재색인을 하지 않은 상태입니다. asgard memory reindex":
     "Vector dimensions are mixed — the model changed and nothing was reindexed. asgard memory reindex",
 
   "위험이 감지돼 본문을 숨겼습니다. 확인하려면:":
@@ -1003,46 +1003,46 @@ const EN = {
   "설정 — Obsidian 으로 열기 위한 최소 설정": "config — the minimum needed to open it in Obsidian",
 
   "언어 전환": "Switch language",
-  "꺼 두셨습니다 — 지금은 제목·본문 글자 검색만 씁니다.":
+  "꺼져 있습니다. 지금은 제목과 본문 검색만 씁니다.":
     "You switched it off — only title and body text search are in use.",
-  "켜져 있지만 못 돕니다": "on, but cannot run",
-  "뜻 검색에 쓰는 부품이 설치에 빠져 있습니다. 기본으로 함께 깔리는 것이라, 설치가 오래된 경우입니다.":
+  "켜져 있지만 동작하지 않습니다": "on, but cannot run",
+  "의미 검색에 필요한 구성 요소가 설치되어 있지 않습니다. 기본으로 함께 설치되는 항목이라, 설치본이 오래된 경우입니다.":
     "The part meaning-search needs is missing from this install. It ships by default, so the install is an old one.",
-  "모델을 아직 안 받았습니다. 한 번만 받아 두면 그다음부터는 바로 씁니다.":
+  "모델을 아직 내려받지 않았습니다. 한 번만 받아 두면 이후에는 바로 사용합니다.":
     "The model has not been downloaded yet. Fetch it once and it is ready from then on.",
   "설정은 켜짐인데 준비가 안 됐습니다.": "The setting is on but it is not ready.",
   "개 종류": " sections",
 
-  "모델이 올라와 있습니다": "the model is loaded",
-  "저장된 벡터가 실제로 돌았음을 증명합니다": "stored vectors prove it actually ran",
-  "부품과 모델은 준비됐고, 아직 벡터는 없습니다": "parts and model are ready; no vectors yet",
+  "모델이 메모리에 올라와 있습니다": "the model is loaded",
+  "저장된 벡터가 실제로 실행됐음을 보여 줍니다": "stored vectors prove it actually ran",
+  "구성 요소와 모델은 준비됐고, 벡터는 아직 없습니다": "parts and model are ready; no vectors yet",
   "페이지가 ": "Past ",
-  "장을 넘어 뜻 연결선 계산을 접었습니다 — 직접 링크만 그립니다.":
+  "장을 넘어 의미 연결선 계산을 생략했습니다. 직접 링크만 그립니다.":
     " pages, meaning-link computation is folded — only direct links are drawn.",
 
   "좁게": "Snug", "기본": "Cozy", "넓게": "Wide", "최대": "Max",
   /* ── 전달 ── */
   "전달": "Injection", "정리": "Tending",
-  "AI 에게 가는 분량": "What leaves for the prompt",
+  "AI에게 가는 분량": "What leaves for the prompt",
   "전달 요약": "Injection summary",
   "전달 켜짐": "injection on", "전달 꺼짐": "injection off",
-  "대화가 시작될 때 목록이 한 번 고정되어 AI 에게 함께 전달됩니다.":
+  "대화가 시작될 때 목록이 한 번 고정되어 AI에게 함께 전달됩니다.":
     "The catalog freezes once at session start and rides into the prompt.",
-  "전달이 꺼져 있어 어떤 AI 에게도 나가지 않습니다.":
+  "전달이 꺼져 있어 어떤 AI에게도 나가지 않습니다.":
     "The kill switch is down — nothing leaves for any provider.",
   "전달 분량": "Section total", "한도를 넘은 종류": "Over-budget sections",
   "전달 전체 보기 →": "See everything that leaves →",
-  "AI 에게 그대로 전달되는 내용": "The block that rides into the session prompt",
+  "AI에게 그대로 전달되는 내용": "The block that rides into the session prompt",
   "전달 내용 원문": "Injection block, verbatim",
-  "앞뒤 빈 줄만 접었을 뿐, 나머지는 실제로 전달되는 글자 그대로입니다. 여기 없는 것은 AI 도 못 봅니다.":
+  "앞뒤 빈 줄만 접었고, 나머지는 실제로 전달되는 글자 그대로입니다. 여기 없는 내용은 AI도 볼 수 없습니다.":
     "Only the leading and trailing seam newlines are folded; the rest is exactly what snapshot_note() returns. What is missing here, the model never sees.",
-  "종류별 한도 — 어디가 모자라고 어디가 넘치는가": "Section budgets — who starves, who overflows",
+  "종류별 한도 — 모자란 곳과 넘치는 곳": "Section budgets — who starves, who overflows",
   "대화가 시작될 때 한 번 고정되고, 그 대화 동안 바뀌지 않습니다.":
     "Frozen once at session start and unchanged for that session (KV cache stays warm).",
-  "전달이 꺼져 있습니다 — 아래 내용은 비어 있고, 어떤 AI 도 이 기억을 못 봅니다.":
+  "전달이 꺼져 있습니다. 아래 내용은 비어 있고, 어떤 AI도 이 기억을 볼 수 없습니다.":
     "The kill switch is down — the block below is empty and no model sees this memory.",
   "전체 한도 ": "total cap ", "검색 결과 한도 ": "recall cap ", "잘림": "truncated",
-  "전달되는 내용이 없습니다 — 저장된 페이지가 없거나 전달이 꺼져 있습니다.":
+  "전달되는 내용이 없습니다. 저장된 페이지가 없거나 전달이 꺼져 있습니다.":
     "No block is injected — either there are no pages, or the kill switch is down.",
   "한도 0 — 저장은 되지만 전달되지 않습니다": "budget 0 — stored, never injected",
   "행이 밀려났습니다: ": " row(s) pushed out: ",
@@ -1050,14 +1050,14 @@ const EN = {
   "전달할 내용이 없습니다": "No sections to inject",
   "전달에서 빠진 것": "Excluded from injection",
   "위험 감지": "flagged", "외 ": "and ", "장": " more",
-  "없음 — 위험 감지로 빠진 페이지가 없습니다.": "None — no page was excluded as poisoned.",
-  /* ── 뜻 검색 준비 · 원본과 파생 ── */
-  "뜻 검색 준비": "Semantic coverage", "뜻 검색 준비": "Semantic coverage",
-  "뜻으로 찾을 수 있는 페이지": "Pages searchable by meaning",
-  "장은 아직 뜻으로 못 찾습니다 — asgard memory reindex 를 돌리면 채워집니다":
+  "없음. 위험 감지로 빠진 페이지가 없습니다.": "None — no page was excluded as poisoned.",
+  /* ── 의미 검색 준비 · 원본과 파생 ── */
+  "의미 검색 준비": "Semantic coverage",
+  "의미로 찾을 수 있는 페이지": "Pages searchable by meaning",
+  "장은 아직 의미로 찾을 수 없습니다. asgard memory reindex 를 돌리면 채워집니다":
     " page(s) carry no vector, so semantic search and semantic edges cannot see them — asgard memory reindex",
-  "원본과 다시 만드는 파일": "Canon and derivatives",
-  "pages/ 만 원본입니다. 나머지는 다시 만들어지는 것이거나 정리가 남긴 기록이라, 지워도 지식은 죽지 않습니다.":
+  "원본과 다시 만들어지는 파일": "Canon and derivatives",
+  "pages/ 만 원본입니다. 나머지는 다시 만들어지거나 정리가 남긴 기록이라, 지워도 내용은 사라지지 않습니다.":
     "Only pages/ is canon. The rest is regenerated or left behind by tending — deleting it does not kill the knowledge.",
   "원본": "canon", "자동생성": "derived", "없음": "absent", "개": "",
   /* ── 정리 (노른) ── */
@@ -1066,33 +1066,33 @@ const EN = {
   "자동 없음 — 전부 사람이 실행합니다": "Nothing automatic — a human runs every pass",
   "병합·보관·모순까지 자동입니다": "merge, archive and contradiction all run automatically",
   "모순 보고만 자동입니다": "only contradiction reporting runs automatically",
-  "통찰은 제안까지만 — 사람이 엽니다": "insights stop at proposal — a human opens them",
+  "통찰은 제안까지만 — 승격은 사람이 합니다": "insights stop at proposal — a human opens them",
   "insight 계보": "Insight lineage", "통찰 계보": "Insight lineage",
-  "출처 페이지에서 벼려낸 통찰과, 코드가 계산한 확신도입니다.":
+  "출처 페이지에서 뽑아낸 통찰과 코드가 계산한 확신도입니다.":
     "Insights forged from source pages, with the confidence the code computed.",
   "출처 링크 없음": "no source links",
-  "아직 통찰이 없습니다 — 노른이 패턴을 승격하면 계보가 남습니다.":
+  "아직 통찰이 없습니다. 노른이 패턴을 승격하면 계보가 남습니다.":
     "No insight yet — a lineage appears once Norn promotes a pattern.",
-  "모순": "Contradictions", "모순 — 사람이 풀 일": "Contradictions — a human's job",
+  "모순": "Contradictions", "모순 — 사람이 판단할 항목": "Contradictions — a human's job",
   "노른은 어긋난 기록을 고치지 않고 알리기만 합니다.": "Norn reports conflicting records; it never resolves them.",
   "어긋난 기록이 보고된 적 없습니다.": "No conflicting record has ever been reported.",
   "정리 리포트": "Tending reports",
-  "매 정리가 남긴 기록 — reports/ 는 예산 밖입니다.": "What each pass left behind — reports/ sits outside the budget.",
-  "리포트 없음 — asgard memory norn 으로 첫 정리를 실행하세요.":
+  "정리할 때마다 남는 기록 — reports/ 는 한도 밖입니다.": "What each pass left behind — reports/ sits outside the budget.",
+  "리포트 없음. asgard memory norn 으로 첫 정리를 실행하세요.":
     "No report yet — run asgard memory norn for a first pass.",
   "변경 없음": "no change", "승격 ": "promoted ", "기각 ": "dropped ",
   "통찰": " insights", "리포트": " reports",
   "보관함": "Archive",
-  "접어 둔 페이지입니다. 지운 것이 아니라 옮긴 것이라 언제든 되살릴 수 있습니다.":
+  "보관함으로 옮긴 페이지입니다. 지운 것이 아니라서 언제든 되살릴 수 있습니다.":
     "Pages folded away. They were moved, not deleted, so any of them can come back.",
-  "접어 둔 페이지가 없습니다.": "Nothing has been folded away.",
+  "보관함으로 옮긴 페이지가 없습니다.": "Nothing has been folded away.",
   "정리 직전 백업": "Pre-tending backups", "백업": "Backups",
-  "백업 없음 — 병합·보관을 실행한 적이 없습니다.": "No backup — no merge or archive has run.",
+  "백업 없음. 병합·보관을 실행한 적이 없습니다.": "No backup — no merge or archive has run.",
   "오딘 피어 카드": "Owner peer card", "피어 카드": "Peer card",
-  "사용자에 대해 관찰한 것을 모아 만든 요약입니다 — 근거 페이지에서 다시 만들어집니다.":
+  "사용자를 관찰한 내용을 모아 만든 요약입니다. 근거 페이지에서 다시 만들어집니다.":
     "A summary of owner observations gathered by pattern learning — a derivative, rebuilt from its source pages.",
-  "카드 있음 · ": "card · ", "재료 ": "sources ",
-  "재료는 있는데 카드가 아직 없습니다 — asgard memory pattern 이 만듭니다.":
+  "카드 있음 · ": "card · ", "출처 ": "sources ",
+  "출처는 있는데 카드가 아직 없습니다. asgard memory pattern 이 만듭니다.":
     "The sources exist but the card does not yet — asgard memory pattern writes it.",
   "소유자 관측(kind=user)이 아직 없습니다.": "No owner observation (kind=user) yet.",
   "이동할 탭 또는 페이지 검색": "Search tabs or pages to jump to",
@@ -1101,9 +1101,8 @@ const EN = {
   "↑↓ 이동": "↑↓ move", "Enter 실행": "Enter run", "Esc 닫기": "Esc close",
   "갱신 30s": "refresh 30s",
   "갱신 실패 — 재시도 대기": "Refresh failed — retrying soon",
-  "페이지": "Pages",
-  "뜻 검색": "Semantic search",
-  "켜짐": "on", "꺼둠": "off", "준비 안 됨": "not ready",
+  "의미 검색": "Semantic search",
+  "켜짐": "on", "꺼짐": "off", "준비 안 됨": "not ready",
   "오늘": "today",
   "서고에 쌓인 기록": "entries in the library",
   "종류": "Kinds",
@@ -1116,13 +1115,13 @@ const EN = {
   "연결 없는 페이지": "Orphan pages",
   "어떤 페이지와도 이어지지 않음": "connected to nothing",
   "모두 연결됨": "all connected",
-  "한도 초과 — 넘친 종류의 뒷줄이 전달에서 잘립니다. 페이지를 합쳐 주세요":
+  "한도 초과 — 넘친 종류는 뒷부분이 전달에서 잘립니다. 페이지를 합쳐 주세요":
     "Over budget — the tail rows of the overflowing section are cut from the injection; consolidate pages",
-  "예산 임박": "Near budget",
+  "한도 임박": "Near budget",
   "여유": "Healthy",
   "건강함 — 발견된 문제 없음": "Healthy — no findings",
   "로그 없음": "No log entries",
-  "아직 회수 기록 없음": "No recalls yet",
+  "아직 꺼내 쓴 기록 없음": "No recalls yet",
   "서고가 비어 있습니다 — 첫 페이지를 기록하면 개요·성좌·연대기가 함께 깨어납니다.":
     "The library is empty — record your first page and the overview, constellation and chronicle wake together.",
   "서고가 비어 있습니다 — 아래 한 줄이면 첫 페이지가 만들어집니다.":
@@ -1132,7 +1131,7 @@ const EN = {
   "아직 활동 기록이 없습니다 — 첫 기록이 이 열지도를 밝힙니다.":
     "No activity yet — the first record lights the first cell.",
   "전체": "All",
-  "(뜻 검색은 아직 안 씁니다)": "(semantic search not in use yet)",
+  "(의미 검색은 아직 안 씁니다)": "(semantic search not in use yet)",
   "정렬": "Sort", "갱신순": "Updated", "회수순": "Recalls", "제목순": "Title",
   "제목을 누르면 상세가 펼쳐집니다": "Click a title to expand its detail",
   "갱신": "Updated", "회수": "Recalls",
@@ -1147,7 +1146,7 @@ const EN = {
   "상세를 불러오지 못했습니다": "Couldn't load detail",
   "선택 해제": "Selection cleared",
   "고아": "orphan", "위험 감지 격리": "quarantined",
-  "페이지": "Pages", "직접 링크": "Direct links", "뜻 연결선": "Meaning links",
+  "페이지": "Pages", "직접 링크": "Direct links", "의미 연결선": "Meaning links",
   "아직 별이 없습니다 — asgard memory add 로 첫 기억을 남기세요": "No stars yet — asgard memory add records your first memory",
   "모두 어딘가와 이어져 있습니다": "No orphans — all connected",
   "아직 페이지가 없습니다.": "No pages yet.",
@@ -1908,7 +1907,7 @@ function renderGraphStats(g){
   $("gStats").innerHTML =
       '<div class="cell"><div class="v">' + g.nodes.length + '</div><div class="l">' + T("페이지") + '</div></div>'
     + '<div class="cell"><div class="v">' + linkCount + '</div><div class="l">' + T("직접 링크") + '</div></div>'
-    + '<div class="cell"><div class="v">' + semCount + '</div><div class="l">' + T("뜻 연결선") + '</div></div>'
+    + '<div class="cell"><div class="v">' + semCount + '</div><div class="l">' + T("의미 연결선") + '</div></div>'
     + '<div class="cell' + (g.dead ? " bad" : "") + '"><div class="v">' + g.dead + '</div><div class="l">' + T("끊어진 링크") + '</div></div>';
   $("gCount").textContent = LANG === "en"
     ? "· stars " + g.nodes.length + " · lines " + g.edges.length
@@ -2118,8 +2117,8 @@ function renderMeta(s){
   $("metaLine").innerHTML =
     '<span>' + T("서고") + ' <b class="dir" title="' + esc(m.dir) + '">' + esc(m.dir) + '</b></span>'
     + '<span>' + T("페이지") + ' <b class="num">' + m.pages + '</b></span>'
-    + '<span>' + T("뜻 검색") + ' <b class="' + (m.semantic ? "on" : "off") + '">'
-      + (m.semantic ? T("켜짐") : m.semantic_mode === "off" ? T("꺼둠") : T("준비 안 됨")) + '</b></span>'
+    + '<span>' + T("의미 검색") + ' <b class="' + (m.semantic ? "on" : "off") + '">'
+      + (m.semantic ? T("켜짐") : m.semantic_mode === "off" ? T("꺼짐") : T("준비 안 됨")) + '</b></span>'
     + '<span>' + esc(m.generated) + '</span>';
 }
 // 성좌 데이터 서명 — 폴링 갱신 때 이 값이 같으면 재시드하지 않는다 (드래그 배치 보존)
@@ -2135,7 +2134,7 @@ function renderOrphans(s){
     capEl.innerHTML = '<p class="semhint"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">'
       + '<path d="M7 1.8l5.4 9.4H1.6z" fill="none" stroke="currentColor" stroke-width="1.2"/>'
       + '<path d="M7 5.6v2.4" stroke="currentColor" stroke-width="1.2"/></svg><span>'
-      + T("페이지가 ") + s.graph.sem_cap + T("장을 넘어 뜻 연결선 계산을 접었습니다 — 직접 링크만 그립니다.")
+      + T("페이지가 ") + s.graph.sem_cap + T("장을 넘어 의미 연결선 계산을 생략했습니다. 직접 링크만 그립니다.")
       + '</span></p>';
   }
   $("orphanCount").textContent = "· " + s.graph.orphans.length;
@@ -2261,7 +2260,7 @@ function renderOverview(s){
   renderSpark(s.activity);
   $("budgetText").innerHTML = '<b class="num" style="color:var(--gold-lit)">' + b.size + '</b> / ' + b.budget + (LANG === "en" ? " chars" : "자")
     + '<br><span style="color:' + (b.state === "crit" ? "var(--crit)" : b.state === "warn" ? "var(--warn)" : "var(--ink-dim)") + '">'
-    + (b.state === "crit" ? T("한도 초과 — 넘친 종류의 뒷줄이 전달에서 잘립니다. 페이지를 합쳐 주세요") : b.state === "warn" ? T("예산 임박") : T("여유")) + '</span>';
+    + (b.state === "crit" ? T("한도 초과 — 넘친 종류는 뒷부분이 전달에서 잘립니다. 페이지를 합쳐 주세요") : b.state === "warn" ? T("한도 임박") : T("여유")) + '</span>';
 
   const fl = $("findList");
   if(!s.health.findings.length){ fl.innerHTML = '<li style="grid-template-columns:1fr;color:var(--heal)">' + T("건강함 — 발견된 문제 없음") + '</li>'; }
@@ -2273,14 +2272,14 @@ function renderOverview(s){
   const top = s.usage.filter((u) => u.uses > 0).slice(0, 8);
   $("topUse").innerHTML = top.length ? top.map((u) =>
     '<li><span class="ti"><button type="button" class="linklike mono" style="font-size:12.5px" data-slug="' + esc(u.slug) + '">' + esc(u.slug) + '</button></span><span class="u">' + u.uses + '×</span><span class="du">' + daysAgo(u.last_used) + '</span></li>').join("")
-    : '<li class="empty">' + T("아직 회수 기록 없음") + '</li>';
+    : '<li class="empty">' + T("아직 꺼내 쓴 기록 없음") + '</li>';
 
   renderOvInject(s);
   renderOvSemantic(s);
   renderDerived(s);
 }
 
-/* ── 개요 · AI 에게 가는 분량 — 저장량이 아니라 전송량을 말한다 ── */
+/* ── 개요 · AI에게 가는 분량 — 저장량이 아니라 전송량을 말한다 ── */
 function renderOvInject(s){
   const el = $("ovInject");
   if(!el) return;
@@ -2290,14 +2289,14 @@ function renderOvInject(s){
     '<div class="injstate" style="margin-bottom:14px">'
     + '<span class="sw ' + (on ? "on" : "off") + '">' + (on ? T("전달 켜짐") : T("전달 꺼짐")) + '</span>'
     + '<span class="note">' + (on
-        ? T("대화가 시작될 때 목록이 한 번 고정되어 AI 에게 함께 전달됩니다.")
-        : T("전달이 꺼져 있어 어떤 AI 에게도 나가지 않습니다.")) + '</span></div>'
+        ? T("대화가 시작될 때 목록이 한 번 고정되어 AI에게 함께 전달됩니다.")
+        : T("전달이 꺼져 있어 어떤 AI에게도 나가지 않습니다.")) + '</span></div>'
     + '<ul class="uselist"><li><span class="ti">' + T("전달 분량") + '</span><span class="u num">' + b.size + '</span><span class="du">/ ' + b.budget + '</span></li>'
     + '<li><span class="ti">' + T("한도를 넘은 종류") + '</span><span class="u num" style="color:' + (over ? "var(--crit-ink)" : "var(--heal)") + '">' + over + '</span><span class="du">' + (b.sections || []).length + T("개 종류") + '</span></li></ul>'
     + '<p style="margin:12px 0 0"><button type="button" class="linklike" data-action="open-tab" data-tab="전달">' + T("전달 전체 보기 →") + '</button></p>';
 }
 
-/* ── 개요 · 뜻 검색 준비 — "켜짐"과 "이 서고에 벡터가 있음"은 다른 말이다 ── */
+/* ── 개요 · 의미 검색 준비 — "켜짐"과 "이 서고에 벡터가 있음"은 다른 말이다 ── */
 function renderOvSemantic(s){
   const el = $("ovSem");
   if(!el) return;
@@ -2306,12 +2305,12 @@ function renderOvSemantic(s){
   // 적으면 사용자는 원인을 못 찾는다(기본값은 켜짐이라 대개 두 번째다).
   if(sem.state !== "ready"){
     el.innerHTML = sem.mode === "off"
-      ? '<p class="empty" style="margin:0">' + T("꺼 두셨습니다 — 지금은 제목·본문 글자 검색만 씁니다.") + '</p>'
-      : '<div class="injstate" style="margin:0"><span class="sw off">' + T("켜져 있지만 못 돕니다") + '</span>'
+      ? '<p class="empty" style="margin:0">' + T("꺼져 있습니다. 지금은 제목과 본문 검색만 씁니다.") + '</p>'
+      : '<div class="injstate" style="margin:0"><span class="sw off">' + T("켜져 있지만 동작하지 않습니다") + '</span>'
         + '<span class="note">' + (sem.blocked === "library"
-            ? T("뜻 검색에 쓰는 부품이 설치에 빠져 있습니다. 기본으로 함께 깔리는 것이라, 설치가 오래된 경우입니다.")
+            ? T("의미 검색에 필요한 구성 요소가 설치되어 있지 않습니다. 기본으로 함께 설치되는 항목이라, 설치본이 오래된 경우입니다.")
             : sem.blocked === "model"
-            ? T("모델을 아직 안 받았습니다. 한 번만 받아 두면 그다음부터는 바로 씁니다.")
+            ? T("모델을 아직 내려받지 않았습니다. 한 번만 받아 두면 이후에는 바로 사용합니다.")
             : T("설정은 켜짐인데 준비가 안 됐습니다.")) + '</span></div>'
         + (sem.fix ? '<code class="cmd" style="margin-top:12px">' + esc(sem.fix) + '</code>' : "");
     return;
@@ -2319,16 +2318,16 @@ function renderOvSemantic(s){
   const gap = Math.max(0, (sem.pages || 0) - (sem.vectors || 0));
   el.innerHTML =
     '<ul class="injmeter"><li class="' + (sem.pct >= 100 ? "" : sem.pct >= 60 ? "warn" : "crit") + '">'
-    + '<div class="row"><span class="nm">' + T("뜻으로 찾을 수 있는 페이지") + '</span>'
+    + '<div class="row"><span class="nm">' + T("의미로 찾을 수 있는 페이지") + '</span>'
     + '<span class="pc num">' + sem.vectors + ' / ' + sem.pages + ' · ' + sem.pct + '%</span></div>'
     + '<span class="track"><i class="fill" style="width:' + Math.min(100, sem.pct) + '%"></i></span>'
-    + (gap ? '<p class="drop">' + gap + T("장은 아직 뜻으로 못 찾습니다 — asgard memory reindex 를 돌리면 채워집니다") + '</p>' : "")
-    + (sem.dim_mixed ? '<p class="drop">' + T("벡터 차원이 섞였습니다 — 모델을 바꾼 뒤 재색인을 안 한 상태입니다. asgard memory reindex") + '</p>' : "")
+    + (gap ? '<p class="drop">' + gap + T("장은 아직 의미로 찾을 수 없습니다. asgard memory reindex 를 돌리면 채워집니다") + '</p>' : "")
+    + (sem.dim_mixed ? '<p class="drop">' + T("벡터 차원이 섞였습니다. 모델을 바꾼 뒤 재색인을 하지 않은 상태입니다. asgard memory reindex") + '</p>' : "")
     + '</li></ul>'
     + '<p class="dimnote" style="margin:12px 0 0">'
-      + (sem.evidence === "loaded" ? T("모델이 올라와 있습니다") + " · " + esc(sem.model || "—")
-         : sem.evidence === "vectors" ? T("저장된 벡터가 실제로 돌았음을 증명합니다")
-         : T("부품과 모델은 준비됐고, 아직 벡터는 없습니다"))
+      + (sem.evidence === "loaded" ? T("모델이 메모리에 올라와 있습니다") + " · " + esc(sem.model || "—")
+         : sem.evidence === "vectors" ? T("저장된 벡터가 실제로 실행됐음을 보여 줍니다")
+         : T("구성 요소와 모델은 준비됐고, 벡터는 아직 없습니다"))
       + ' · ' + esc(sem.mode) + '</p>';
 }
 
@@ -2353,7 +2352,7 @@ function fmtBytes(n){
   return (n / 1024 / 1024).toFixed(1) + " MB";
 }
 
-/* ══ 전달 — AI 에게 가는 내용 원문 + 종류별 한도 + 제외분 ══ */
+/* ══ 전달 — AI에게 가는 내용 원문 + 종류별 한도 + 제외분 ══ */
 function renderInjection(j){
   j = j || { enabled: false, text: "", chars: 0, sections: [], excluded: [], excluded_total: 0 };
   const meta = $("injMeta");
@@ -2364,7 +2363,7 @@ function renderInjection(j){
       + '<span class="sw ' + (j.enabled ? "on" : "off") + '">' + (j.enabled ? T("전달 켜짐") : T("전달 꺼짐")) + '</span>'
       + '<span class="note">' + (j.enabled
           ? T("대화가 시작될 때 한 번 고정되고, 그 대화 동안 바뀌지 않습니다.")
-          : T("전달이 꺼져 있습니다 — 아래 내용은 비어 있고, 어떤 AI 도 이 기억을 못 봅니다.")) + '</span>'
+          : T("전달이 꺼져 있습니다. 아래 내용은 비어 있고, 어떤 AI도 이 기억을 볼 수 없습니다.")) + '</span>'
       + (j.total_budget != null ? '<span class="sw" style="color:var(--ink-dim);border-color:var(--line-strong)">'
           + T("전체 한도 ") + j.total_budget + '</span>' : "")
       + '<span class="sw" style="color:var(--ink-dim);border-color:var(--line-strong)">' + T("검색 결과 한도 ") + (j.recall_budget || 0) + '</span>'
@@ -2373,7 +2372,7 @@ function renderInjection(j){
   const blk = $("injBlock");
   if(blk){
     blk.innerHTML = j.text ? highlightInjection(j.text)
-      : '<span class="dimnote">' + T("전달되는 내용이 없습니다 — 저장된 페이지가 없거나 전달이 꺼져 있습니다.") + '</span>';
+      : '<span class="dimnote">' + T("전달되는 내용이 없습니다. 저장된 페이지가 없거나 전달이 꺼져 있습니다.") + '</span>';
   }
   const mt = $("injMeter");
   if(mt){
@@ -2399,7 +2398,7 @@ function renderInjection(j){
             + esc(p.slug) + '">' + esc(p.title || p.slug) + '</button></li>').join("") + '</ul>'
           + (j.excluded_total > j.excluded.length
               ? '<p class="dimnote" style="margin-top:8px">' + T("외 ") + (j.excluded_total - j.excluded.length) + T("장") + '</p>' : "")
-        : '<p class="empty" style="margin:0">' + T("없음 — 위험 감지로 빠진 페이지가 없습니다.") + '</p>');
+        : '<p class="empty" style="margin:0">' + T("없음. 위험 감지로 빠진 페이지가 없습니다.") + '</p>');
   }
 }
 // 블록 원문 강조 — 펜스·종류 머리글·잘림 경고만 물들인다 (내용은 원문 그대로)
@@ -2444,7 +2443,7 @@ function renderKindChips(s){
     + kinds.map((k) => chip(k, shapeSwatch(k) + esc(kindName(k)) + ' <span class="cnt">' + counts[k] + '</span>')).join("");
   renderSortChips();
   $("catCount").textContent = s.catalog.length ? "· " + s.catalog.length : "";
-  $("semNote").innerHTML = s.meta.semantic ? "" : '<span style="color:var(--ink-ghost)">' + T("(뜻 검색은 아직 안 씁니다)") + '</span>';
+  $("semNote").innerHTML = s.meta.semantic ? "" : '<span style="color:var(--ink-ghost)">' + T("(의미 검색은 아직 안 씁니다)") + '</span>';
 }
 // 정렬 토글 — updated(기본)/회수/제목, aria-pressed 칩
 const SORTS = [["updated", "갱신순"], ["uses", "회수순"], ["title", "제목순"]];
@@ -2608,7 +2607,7 @@ function renderNorn(s){
       + '<span class="mode ' + (dr.insight_auto ? "on" : "off") + '"><b>' + T("통찰 자동 승격") + '</b> '
       + (dr.insight_auto ? "on" : "off") + '</span>'
       + '<span class="mode off">' + esc(autoNote) + '</span>'
-      + (dr.insight_auto ? "" : '<span class="mode off">' + T("통찰은 제안까지만 — 사람이 엽니다") + '</span>');
+      + (dr.insight_auto ? "" : '<span class="mode off">' + T("통찰은 제안까지만 — 승격은 사람이 합니다") + '</span>');
   }
 
   const insEl = $("nornInsights");
@@ -2626,7 +2625,7 @@ function renderNorn(s){
                 : '<div class="src dimnote">' + T("출처 링크 없음") + '</div>')
             + '</li>';
         }).join("")
-      : '<li class="empty">' + T("아직 통찰이 없습니다 — 노른이 패턴을 승격하면 계보가 남습니다.") + '</li>';
+      : '<li class="empty">' + T("아직 통찰이 없습니다. 노른이 패턴을 승격하면 계보가 남습니다.") + '</li>';
   }
 
   const conEl = $("nornContra");
@@ -2651,7 +2650,7 @@ function renderNorn(s){
         + '<span class="sl">' + T("승격 ") + r.applied + ' · ' + T("기각 ") + r.dropped + '</span></li>'));
     repEl.innerHTML = rows.join("")
       || '<li><span class="ts"></span><span class="op"></span><span class="sl dimnote">'
-        + T("리포트 없음 — asgard memory norn 으로 첫 정리를 실행하세요.") + '</span></li>';
+        + T("리포트 없음. asgard memory norn 으로 첫 정리를 실행하세요.") + '</span></li>';
   }
 
   const arcEl = $("nornArchive");
@@ -2662,7 +2661,7 @@ function renderNorn(s){
       ? dr.archive.map((a) =>
           '<li><span class="sl">' + esc(a.slug) + '</span><span class="dt">' + esc(a.ts) + '</span>'
           + '<code class="cmd" style="grid-column:1/-1">' + esc(a.restore) + '</code></li>').join("")
-      : '<li class="empty">' + T("접어 둔 페이지가 없습니다.") + '</li>';
+      : '<li class="empty">' + T("보관함으로 옮긴 페이지가 없습니다.") + '</li>';
   }
 
   const bkEl = $("nornBackups");
@@ -2672,19 +2671,19 @@ function renderNorn(s){
     bkEl.innerHTML = (dr.backups || []).length
       ? dr.backups.map((b) =>
           '<li><span class="sl">' + esc(b.name) + '</span><span class="dt">' + b.pages + T("장") + '</span></li>').join("")
-      : '<li class="empty">' + T("백업 없음 — 병합·보관을 실행한 적이 없습니다.") + '</li>';
+      : '<li class="empty">' + T("백업 없음. 병합·보관을 실행한 적이 없습니다.") + '</li>';
   }
 
   const peer = (s && s.peer) || { exists: false, rows: [], slug: "" };
   const peerEl = $("peerCard");
   if(peerEl){
     const pm = $("peerMeta");
-    if(pm) pm.textContent = peer.exists ? T("카드 있음 · ") + peer.rows.length : peer.rows.length ? T("재료 ") + peer.rows.length : "";
+    if(pm) pm.textContent = peer.exists ? T("카드 있음 · ") + peer.rows.length : peer.rows.length ? T("출처 ") + peer.rows.length : "";
     peerEl.innerHTML = peer.rows.length
       ? peer.rows.map((r) =>
           '<li><span class="sl" style="white-space:normal">' + esc(r.text) + '</span>'
           + '<button type="button" class="linklike mono dt" data-slug="' + esc(r.slug) + '">' + esc(r.slug) + '</button></li>').join("")
-        + (peer.exists ? "" : '<li class="empty">' + T("재료는 있는데 카드가 아직 없습니다 — asgard memory pattern 이 만듭니다.") + '</li>')
+        + (peer.exists ? "" : '<li class="empty">' + T("출처는 있는데 카드가 아직 없습니다. asgard memory pattern 이 만듭니다.") + '</li>')
       : '<li class="empty">' + T("소유자 관측(kind=user)이 아직 없습니다.") + '</li>';
   }
 }
