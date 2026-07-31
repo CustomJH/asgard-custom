@@ -603,7 +603,11 @@ class TestNoInjectionInvariants(EvoBase):
 
 
 class TestNudge(EvoBase):
-    """CC 모드 넛지 표면 — 신호 집합 latch (같은 집합으론 두 번 말하지 않는다)."""
+    """넛지 표면 — 집합 latch (같은 집합으론 두 번 말하지 않는다).
+
+    네 모드가 전부 이 한 지점을 지난다: 클라이언트는 Stop 훅이 `asgard evolve nudge` 로,
+    네이티브 루프는 quest close 에서 직접 부른다.
+    """
 
     def test_latches_per_signal_set(self):
         _hard_won(self.root, "q1", sig="alpha 게이트 판정 누락")
@@ -614,13 +618,57 @@ class TestNudge(EvoBase):
         _hard_won(self.root, "q2", sig="beta 경계 반올림 오판")
         line2 = evolution.nudge_line(self.root)
         assert line2 is not None
-        self.assertIn("2건", line2)  # 새 신호 = 집합 변경 → 다시 한 번만
+        self.assertIn("2건", line2)  # 새 집합 → 다시 한 번만
 
-    def test_silent_without_quests_and_after_mine(self):
+    def test_silent_without_quests(self):
         self.assertIsNone(evolution.nudge_line(self.root))  # quest 디렉토리 없음 = 침묵
+
+
+class TestAutoscan(EvoBase):
+    """교훈은 스스로 채굴되고, 활성화만 사람이 한다.
+
+    종전에는 채굴까지 사람 손이었다 — 넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch 라 놓치면
+    영영 조용했고, 퀘스트 로그는 keep-last-N 으로 지워진다. 즉 **교훈이 조용히 사라지는 쪽**이
+    기본값이었다 (26-07-31 실측: 저장소에 hard-won 신호 2건이 닷새째 미채굴, 인박스는 부재).
+    """
+
+    def test_a_closed_hard_won_quest_becomes_a_draft_without_being_asked(self):
         _hard_won(self.root)
-        evolution.mine(self.root)  # 채굴됨 → seen latch → 넛지 대상 아님
+        self.assertEqual(evolution.pending_list(self.root), [])
+        line = evolution.nudge_line(self.root)
+        assert line is not None
+        self.assertIn("승인", line)  # 사람에게 남은 일은 승인이다
+        self.assertEqual(len(evolution.pending_list(self.root)), 1)
+
+    def test_mining_alone_installs_nothing(self):
+        """자율의 경계 — 채굴은 가역·비활성이고, 라우팅에 서는 것은 승인뿐이다."""
+        _hard_won(self.root)
+        evolution.nudge_line(self.root)
+        self.assertFalse(os.path.isdir(self.proj_skills()))
+        self.assertEqual(skill_bank.learned_skills(self.root), {})
+        self.assertEqual(skill_bank.resolve_learned(self.root, "verifier gate 판정 레코드", "worker"), [])
+
+    def test_it_can_be_turned_off(self):
+        _hard_won(self.root)
+        with mock.patch.dict(os.environ, {evolution.AUTOSCAN_ENV: "off"}):
+            self.assertFalse(evolution.autoscan_enabled())
+            line = evolution.nudge_line(self.root)
+            assert line is not None
+            self.assertIn("evolve scan", line)  # 종전 문장 그대로 — 채굴은 사람이 친다
+            self.assertEqual(evolution.pending_list(self.root), [])
+
+    def test_a_smooth_pass_teaches_nothing(self):
+        """순탄한 PASS 는 교훈이 아니다 — 자동이라고 아무거나 담지 않는다."""
+        _write_quest(
+            self.root,
+            "q-smooth",
+            [
+                _quest_line("q-smooth", role="thinker", event="plan"),
+                _quest_line("q-smooth", verdict="PASS", criteria=["c"], commands=[{"cmd": "pytest", "exit_code": 0}]),
+            ],
+        )
         self.assertIsNone(evolution.nudge_line(self.root))
+        self.assertEqual(evolution.pending_list(self.root), [])
 
 
 class TestRecallSkillsNote(EvoBase):

@@ -572,19 +572,22 @@ class TrinityRun:
 
         문체는 프롬프트 권고가 아니라 완료 불변식이다. Verifier 자체에는 문체 프롬프트를
         주입하지 않되, 하네스가 변경 문서의 추가행을 결정론 검사한다. 두 축을 함께 건다:
-        Lagom = 근거 없는 효용 주장, Bragi = 언어 불문 기계 문체 흔적."""
+        Lagom = 근거 없는 효용 주장, Bragi = 언어 불문 기계 문체 흔적.
+
+        조언(advisory) 항목만 남은 문서는 막지 않는다 — 검사기가 판정할 수 없는 신호로
+        수리 턴을 강제하면 지울 수 없는 것을 지우라는 지시가 되어 퀘스트만 태운다."""
         hd = self._hd
         if not (hd.lagom or hd.bragi):
             return False
         try:
-            from ...lagom import changed_prose_violations, style_violations
+            from ...lagom import blocking, changed_prose_violations, style_violations
 
             checks = [style_violations] if hd.lagom else []
             if hd.bragi:
                 from ...bragi import violations as voice_violations
 
                 checks.append(voice_violations)
-            style_failures = changed_prose_violations(hd.root, self._quest_paths(), self.request, checks)
+            style_failures = blocking(changed_prose_violations(hd.root, self._quest_paths(), self.request, checks))
         except Exception:
             return False  # 검사기 장애는 기존 Verifier+게이트 경로를 막지 않는다
         if not style_failures:
@@ -632,15 +635,60 @@ class TrinityRun:
                 f"{detail} 퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
             )
         hd._record_outcome(self.tc, "pass", self.saw_red)
-        try:  # 자가발전 넛지 (CUS-253) — 방금 닫힌 퀘스트가 hard-won(FAIL→PASS)이면 채굴 제안.
-            # 제안만 한다 — 채굴·승인은 항상 사용자 손 (consent-first, 자동 활성화 없음).
-            from ...evolution import unmined_signals
+        try:  # 자가발전 (CUS-253) — 방금 닫힌 퀘스트가 hard-won(FAIL→PASS)이면 초안으로 증류한다.
+            # 채굴은 하니스가, 활성화는 사람이 (consent-first). 채굴은 pending 인박스까지라
+            # 능력을 바꾸지 않고 되돌릴 수 있다 — 자율의 경계가 거기다 (evolution.autoscan_enabled).
+            # 종전에는 여기서 "채굴할 수 있다"고 말만 했다: 놓친 넛지 하나가 교훈 하나의 영구
+            # 소실이었다 (퀘스트 로그는 keep-last-N 으로 지워진다).
+            from ...evolution import autoscan, unmined_signals
 
-            if unmined_signals(hd.root, self.qid):
+            mined = autoscan(hd.root)
+            if mined:
+                names = ", ".join(str(row.get("name") or row.get("id") or "?") for row in mined[:3])
+                hd.on_text(
+                    f"  {ui.dim('│ ⠶ hard-won 교훈 ' + str(len(mined)) + '건 증류 — ' + names)}\n"
+                    f"  {ui.dim('│   검토·승인: asgard evolve list (미승인 = 미적용)')}\n"
+                )
+            elif unmined_signals(hd.root, self.qid):
                 hd.on_text(f"  {ui.dim('│ ⠶ hard-won 교훈 감지 — asgard evolve scan 으로 스킬 후보 증류 가능')}\n")
         except Exception:
             pass
+        self._tend_memory()
         return hd._final_report(self.qid, self.sid, self.gate_blocks)
+
+    def _tend_memory(self) -> None:
+        """위그드라실 손질 신호 — 노른(위키 통합)과 패턴(대화에서 오딘 관측 채굴).
+
+        외부 클라이언트는 Stop 훅(memory-activate)이 같은 두 신호를 띄운다. 네이티브 루프에만
+        없으면 같은 사용자의 같은 기억이 **어느 호스트로 들어왔느냐에 따라 다른 속도로 자란다** —
+        개인 메모리가 호스트에 무관해야 한다는 원칙(policy.CLIENT_MODES)과 어긋나는 자리였다.
+
+        위 자가발전 넛지와 결이 다른 이유: 저쪽은 에이전트의 **능력**을 바꾸는 일이라 언제나
+        사람 손이고, 이쪽은 advisory 지식의 손질이라 동의 경계를 `norn_auto` 등급이 쥔다
+        (기본 safe = 보고 전용). 판정도 스폰도 norn.wake 단일 출처가 한다.
+
+        훅과 달리 subprocess 를 거치지 않는다 — 여기는 이미 파이썬 프로세스이고, due 판정은
+        파일 두 개를 읽을 뿐이라 인터프리터를 새로 세울 값이 아니다. 침묵이 정상이다."""
+        hd = self._hd
+        for line in (self._norn_line(), self._pattern_line()):
+            if line:
+                hd.on_text(f"  {ui.dim('│ ⠶ ' + line)}\n")
+
+    def _norn_line(self) -> str | None:
+        try:
+            from ...memory.norn import wake
+
+            return wake(self._hd.root)
+        except Exception:
+            return None  # 손질 신호 불능이 퀘스트 종료를 막지 않는다 (fail-open)
+
+    def _pattern_line(self) -> str | None:
+        try:
+            from ...memory.pattern import nudge_line
+
+            return nudge_line(self._hd.root)
+        except Exception:
+            return None
 
     def _research_turn(self) -> None:
         """Run evidence collection outside the project, then persist bounded findings for Thinker."""

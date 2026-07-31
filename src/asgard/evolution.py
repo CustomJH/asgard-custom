@@ -403,12 +403,79 @@ def unmined_signals(root: str, qid: str | None = None) -> int:
     return n
 
 
-def nudge_line(root: str) -> str | None:
-    """미채굴 신호 넛지 한 줄 — 신호 집합이 변했을 때만 (latch, 제안 피로 방지).
+AUTOSCAN_ENV = "ASGARD_EVOLVE_AUTOSCAN"
 
-    CC 모드 Stop 훅(memory-activate)이 소비한다 — 네이티브 루프는 quest close 시점에
-    unmined_signals 를 직접 넛지하므로(heimdall/trinity) 이 latch 를 쓰지 않는다.
-    같은 신호 집합으로는 두 번 말하지 않는다 — 매 턴 반복 넛지는 거부 피로를 만든다."""
+
+def autoscan_enabled() -> bool:
+    """퀘스트가 닫힐 때 스스로 채굴하는가 — env > 글로벌 `evolution.autoscan`, 기본 on.
+
+    채굴은 **능력을 바꾸지 않는다**: 결과는 pending 인박스의 초안 파일이고, 라우팅에 서려면
+    여전히 사람의 `approve` 가 필요하다. 그래서 여기는 norn 과 같은 경계에 선다 — 순수 추가·완전
+    가역은 자율, 형태를 바꾸는 것은 동의 (norn.partition_ops 와 같은 규율).
+
+    왜 기본을 켜는가. 넛지만 두었더니 신호가 **실제로 채굴되지 않았다** (26-07-31 실측: 이
+    저장소에 hard-won 신호 2건이 닷새째 남아 있었고 인박스는 한 번도 만들어진 적이 없다).
+    넛지는 신호 집합이 바뀔 때 한 번만 말하는 latch 라 놓치면 영영 조용하고, 퀘스트 로그는
+    keep-last-N 으로 지워진다 — 교훈이 조용히 사라지는 쪽이 기본값이었다."""
+    value = str(os.environ.get(AUTOSCAN_ENV) or "").strip().lower()
+    if value:
+        return value in ("on", "1", "true", "yes")
+    try:
+        from .settings import load_global
+
+        setting = (load_global().get("evolution") or {}).get("autoscan", True)
+    except Exception:
+        return True
+    return str(setting).strip().lower() not in ("off", "0", "false", "no")
+
+
+def autoscan(root: str) -> list[dict]:
+    """퀘스트 종료 시 자동 채굴 — 실패는 삼킨다 (성장은 부가 기능이지 종료 조건이 아니다)."""
+    if not autoscan_enabled():
+        return []
+    try:
+        return mine(root)
+    except Exception:
+        return []
+
+
+def _latched(root: str, digest: str, count: int) -> bool:
+    """같은 집합으로 두 번 말하지 않기 — 반복 넛지는 거부 피로를 만든다."""
+    state_path = os.path.join(root, ".asgard", "state", "evolve-nudge.json")
+    try:
+        if (io_files.read_json(state_path) or {}).get("digest") == digest:
+            return True
+    except AttributeError:
+        pass
+    try:
+        io_files.write_json(
+            state_path,
+            {"digest": digest, "count": count, "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
+            indent=None,
+        )
+    except OSError:
+        return True  # latch 를 기록할 수 없으면 침묵 — 반복 넛지가 침묵보다 나쁘다
+    return False
+
+
+def nudge_line(root: str) -> str | None:
+    """채굴하고, **승인 대기 초안**을 한 줄로 — 대기 집합이 변했을 때만 (latch).
+
+    네 모드가 전부 이 한 지점을 지난다: 외부 클라이언트는 Stop 훅(memory-activate)이
+    `asgard evolve nudge` 로, 네이티브 루프는 quest close 에서 직접 부른다.
+
+    종전에는 "미채굴 신호가 있다"고 알리고 채굴은 사람이 치게 했다 — 그래서 놓친 넛지 하나가
+    교훈 하나의 영구 소실이었다. 이제 채굴까지는 하니스가 하고(가역·비활성), 사람에게는
+    **승인할 것이 있다**고 말한다. 채굴을 끈 사람에게는 종전 문장 그대로다."""
+    mined = autoscan(root)
+    items = pending_list(root)
+    if items:
+        ids = sorted(str(item.get("id") or "") for item in items)
+        digest = hashlib.sha1("\0".join(ids).encode()).hexdigest()
+        if _latched(root, digest, len(items)):
+            return None
+        fresh = f" (방금 {len(mined)}건 채굴)" if mined else ""
+        return f"학습 후보 {len(items)}건 대기{fresh} — asgard evolve list 로 검토·승인 (미승인 = 미적용)"
     qdir = os.path.join(root, ".asgard", "quest")
     seen = _load_seen(root)
     signals = sorted(
@@ -424,21 +491,8 @@ def nudge_line(root: str) -> str | None:
     if not signals:
         return None
     digest = hashlib.sha1("\0".join(signals).encode()).hexdigest()
-    state_dir = os.path.join(root, ".asgard", "state")
-    state_path = os.path.join(state_dir, "evolve-nudge.json")
-    try:
-        if (io_files.read_json(state_path) or {}).get("digest") == digest:
-            return None
-    except AttributeError:
-        pass
-    try:
-        io_files.write_json(
-            state_path,
-            {"digest": digest, "count": len(signals), "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())},
-            indent=None,
-        )
-    except OSError:
-        return None  # latch 를 기록할 수 없으면 침묵 — 반복 넛지가 침묵보다 나쁘다
+    if _latched(root, digest, len(signals)):
+        return None
     return f"진화 후보 신호 {len(signals)}건 — asgard evolve scan 으로 채굴 후 검토·승인 (hard-won 교훈)"
 
 
