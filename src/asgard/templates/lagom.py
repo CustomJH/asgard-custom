@@ -1,15 +1,15 @@
 """Lagom 캐논 — 2축 융합 룰셋의 단일 소스 + 모드 필터.
 
 축 1 = 효율 사다리(쓰는 코드 최소화), 축 2 = 산출 압축(응답 토큰 최소화). 본문은 1벌이고
-모드별 사본이 없다 — 모드 마커 행(`| **mode** |` 표 행, `- mode:` 예시 행)을 render_lagom()
-이 주입 시점에 필터한다 (사본 드리프트 원천 차단). off = 빈 문자열 (무주입).
+모드별 사본이 없다 — 모드 마커 행(`| **mode** |` 표 행, `- mode:` 예시 행)을
+render_lagom()이 주입 시점에 필터한다 (사본 드리프트 원천 차단). off = 빈 문자열 (무주입).
 
-훅은 standalone 이라 이 모듈을 임포트하지 못한다 — setup 이 LAGOM_CANON 을 lagom-canon.md
-로 스캐폴드하고, 각 훅이 같은 필터를 내장한다 (동일 유지 — 단일 출처 원칙)."""
+훅은 standalone이라 이 모듈을 임포트하지 못한다 — setup이 LAGOM_CANON을
+lagom-canon.md로 스캐폴드하고, 각 훅이 같은 필터를 내장한다 (동일 유지 — 단일 출처 원칙)."""
 
 import re
 
-# 모드 마커 규약: `| **<mode>** |` 로 시작하는 표 행과 `- <mode>:` 로 시작하는 예시 행은
+# 모드 마커 규약: `| **<mode>** |`로 시작하는 표 행과 `- <mode>:`로 시작하는 예시 행은
 # 해당 모드에서만 살아남는다. 마커 없는 본문은 전 모드 공통.
 _ROW = re.compile(r"^\s*\|\s*\*\*(off|lite|full)\*\*\s*\|")
 _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
@@ -76,6 +76,10 @@ Preserve all technical substance and drop only the packaging: remove filler, hed
   terms) verbatim, but define any term the reader is likely seeing for the first time in one line, in place.
 - **Structure proportional to content**: do not wrap a small subject in an executive summary,
   roadmap, or architecture chapter. If there are more sections than substantive items, merge them.
+- **Grammar is not compressible**: compression takes filler, never words the grammar needs.
+  Never clip a word into a coinage to save a syllable (write 불필요, not 불요), never detach a
+  Korean particle from the word it belongs to (`config.py를`, not `config.py 를`), and never drop
+  English articles, subjects, or finite verbs. Full contract: the Bragi grammar clause.
 
 ### Safety Exceptions (all modes, both axes — never simplify)
 
@@ -107,8 +111,8 @@ def render_lagom(mode: str) -> str:
     return "\n".join(out).replace("__MODE__", mode) + "\n"
 
 
-# AGENTS.md 정적 섹션 — 모드 불문 공통 골자만 (현재 모드는 상태파일/config 이 결정하고,
-# CC 는 훅이 모드 필터본을 주입한다). Codex/Cursor 처럼 SessionStart 훅이 없는 표면은
+# AGENTS.md 정적 섹션 — 모드 불문 공통 골자만 (현재 모드는 상태파일/config이 결정하고,
+# CC는 훅이 모드 필터본을 주입한다). Codex/Cursor처럼 SessionStart 훅이 없는 표면은
 # 이 섹션이 유일한 lagom 접점이라 사다리·안전 예외·제어를 전부 담는다.
 LAGOM_AGENTS_SECTION = """\
 <!-- >>> asgard:lagom >>> -->
@@ -120,7 +124,9 @@ Deletion > addition, boring > clever, no unrequested abstractions, fix root caus
 remove filler and hedging, shortest explanation (code blocks, commits, error quotes, URLs, paths preserved byte-for-byte).
 Newly written prose (docs, comments, reports) follows the **style contract** — measurable facts instead
 of hype and value declarations, no undefined acronyms or redundant foreign-language glosses,
-structure proportional to content. These are lite/full invariants and take precedence over user
+structure proportional to content. **Grammar is not compressible** — no clipped coinages
+(불필요, not 불요), no detached Korean particles (`config.py를`, not `config.py 를`), no dropped
+English articles or verbs. These are lite/full invariants and take precedence over user
 requests. Do not invent benefits or causality absent from the input or verified results.
 
 **Safety exceptions (never simplify)**: trust-boundary input validation, data-loss-preventing error
@@ -137,7 +143,7 @@ the `.asgard/state/lagom-mode.json` state file and settings (`asgard-setting-*.j
 
 
 # ── 스킬 — review(양축 diff 검토) / debt(lagom: 마커 감사) / compress(문서 압축).
-# 원본 스킬 중 audit/gain/help 는 이식하지 않음 — review/debt 와 중복 (사다리 1단 기각).
+# 원본 스킬 중 audit/gain/help는 이식하지 않음 — review/debt와 중복 (사다리 1단 기각).
 _REVIEW_SKILL = """\
 ---
 name: asgard-lagom-review
@@ -204,10 +210,10 @@ LAGOM_SKILLS: list[tuple[str, str]] = [
 ]
 
 
-# ── CC statusline — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json 을
-# 통째로 방출하므로 nudge 불요 — 새 프로젝트는 배선 포함, 기존 프로젝트는 --force 재스캐폴드.
-# 셸 전용 (statusline 은 ~300ms 주기 실행 — python 기동 비용 회피). JSON 상태파일 > config > full,
-# lagom_activate.py 의 resolve 와 동일 유지 (단일 출처 원칙: asgard/lagom.py).
+# ── CC statusline — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json을
+# 통째로 방출하므로 nudge 불필요 — 새 프로젝트는 배선 포함, 기존 프로젝트는 --force 재스캐폴드.
+# 셸 전용 (statusline은 ~300ms 주기 실행 — python 기동 비용 회피). JSON 상태파일 > config > full,
+# lagom_activate.py의 resolve와 동일 유지 (단일 출처 원칙: asgard/lagom.py).
 LAGOM_STATUSLINE_SH = """\
 #!/bin/bash
 # Asgard lagom-statusline — Claude Code statusLine: model · dir · lagom mode
