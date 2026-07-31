@@ -22,6 +22,8 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import tempfile
+import threading
 import tomllib
 
 GLOBAL_FILE = "asgard-setting-global.json"
@@ -31,6 +33,9 @@ STATE_DIR = "state"
 LEGACY_TOML = "config.toml"
 LEGACY_POLICY = "trinity-policy.json"
 LEGACY_MEMORY = "memory-server.json"
+
+WORKSPACE_DIR = "studio"
+WORKSPACE_HOME_ENV = "ASGARD_STUDIO_HOME"
 
 
 def global_dir() -> str:
@@ -42,6 +47,21 @@ def global_dir() -> str:
     from .profiles import home
 
     return home()
+
+
+def workspace_home() -> str:
+    """스튜디오 워크스페이스가 사는 곳 — **일감과 기획이 같이 든다**.
+
+    스튜디오는 폴더에 딸린 도구가 아니라 사람이 켜는 앱이다. 그래서 티켓도 기획도 저장소
+    안(`<프로젝트>/.asgard/…`)에 살 수 없다: 폴더를 옮기면 갈리고, 폴더를 안 열면 안 보이고,
+    코드가 아직 없는 기획은 애초에 설 자리가 없다. 자리는 **에이전트 홈** 하나다.
+
+    두 소비자(`studio.db`·`plan.store`)가 같은 함수를 보는 것이 요점이다 — 워크스페이스가
+    하나라는 말은, 그 자리를 옮겼을 때 **둘이 같이 옮겨진다**는 뜻이어야 한다."""
+    override = os.environ.get(WORKSPACE_HOME_ENV)
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    return os.path.join(global_dir(), WORKSPACE_DIR)
 
 
 def machine_dir() -> str:
@@ -151,12 +171,25 @@ def section(name: str, root: str | None = None) -> dict:
     return out
 
 
+# 설정을 쓰는 쪽은 한 줄로 선다. 스튜디오 서버는 요청마다 스레드를 띄우므로, 사용자가 설정을
+# 연달아 바꾸면 읽기-고치기-쓰기가 겹친다. 겹치면 둘 다 잃는다 — 늦은 쪽이 이른 쪽의 섹션을
+# 안 읽은 상태로 덮고, 임시 파일 이름이 같으면 두 벌의 JSON 이 한 파일에 섞여 파일이 깨진다.
+_WRITE_LOCK = threading.RLock()
+
+
 def _atomic_json(path: str, data: dict) -> None:
+    """임시 파일은 쓰는 이마다 달라야 한다 — 이름이 pid 하나면 같은 프로세스의 두 스레드가
+    같은 임시 파일에 겹쳐 쓴다(그 결과가 `}}` 로 끝나는 설정 파일이었다)."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = f"{path}.{os.getpid()}.tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(data, handle, ensure_ascii=False, indent=2)
-    os.replace(tmp, path)
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=f"{os.path.basename(path)}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=2)
+        os.replace(tmp, path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            os.unlink(tmp)
+        raise
 
 
 def save_global(section_name: str, kv: dict) -> str:
@@ -165,20 +198,22 @@ def save_global(section_name: str, kv: dict) -> str:
 
     쓰기는 **활성 에이전트의 파일에만** 한다 — 병합 뷰를 저장하면 뿌리의 값이 프로파일로
     복제돼, 뿌리를 고쳐도 안 따라오는 유령 사본이 된다."""
-    data = _own_global(global_dir())
-    data[section_name] = {k: v for k, v in kv.items() if v is not None}
-    _atomic_json(global_path(), data)
+    with _WRITE_LOCK:  # 읽기-고치기-쓰기 한 벌 — 겹치면 나중 쓰기가 앞 섹션을 못 본 채 덮는다
+        data = _own_global(global_dir())
+        data[section_name] = {k: v for k, v in kv.items() if v is not None}
+        _atomic_json(global_path(), data)
     return global_path()
 
 
 def save_project(root: str, section_name: str, kv: dict, *, drop: tuple[str, ...] = ()) -> str:
     """프로젝트 섹션 저장 — save_global 과 동일 계약 (섹션 교체). 최초 저장 시 구 3파일 자동 승계.
     drop = 함께 제거할 구 섹션 키 (섹션 개명 이관용 — 구 키를 남기면 정본이 이원화된다)."""
-    data = load_project(root)
-    data[section_name] = {k: v for k, v in kv.items() if v is not None}
-    for name in drop:
-        data.pop(name, None)
-    _atomic_json(project_path(root), data)
+    with _WRITE_LOCK:
+        data = load_project(root)
+        data[section_name] = {k: v for k, v in kv.items() if v is not None}
+        for name in drop:
+            data.pop(name, None)
+        _atomic_json(project_path(root), data)
     return project_path(root)
 
 

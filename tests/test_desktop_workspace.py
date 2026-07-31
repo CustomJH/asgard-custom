@@ -18,15 +18,15 @@ from asgard.commands import desktop, desktop_store
 
 class WorkspaceCase(unittest.TestCase):
     def setUp(self):
-        with desktop._TASK_LOCK:
-            desktop._TASKS.clear()
+        with desktop.state._TASK_LOCK:
+            desktop.state._TASKS.clear()
         home = tempfile.mkdtemp(prefix="asgard-desktop-home-")
         patcher = mock.patch.dict(os.environ, {desktop_store.DESKTOP_HOME_ENV: home})
         patcher.start()
         self.addCleanup(patcher.stop)
-        desktop._LOADED_ROOTS.clear()
-        desktop._CURRENT_ROOT = None
-        desktop._SERVER = None
+        desktop.state._LOADED_ROOTS.clear()
+        desktop.state._CURRENT_ROOT = None
+        desktop.state._SERVER = None
         self.root = tempfile.mkdtemp(prefix="asgard-project-")
 
     def _task(self, task_id="t1", status="ready", **extra):
@@ -48,13 +48,13 @@ class TestTaskMemory(WorkspaceCase):
     def test_task_survives_a_restart(self):
         """창을 닫았다 열어도 작업이 남는다 — 이 계층이 생긴 이유 그 자체."""
         desktop_store.save_task(self.root, self._task("keep", result="끝났습니다"))
-        with desktop._TASK_LOCK:
-            desktop._TASKS.clear()  # 프로세스가 죽은 상황
-        desktop._LOADED_ROOTS.clear()
+        with desktop.state._TASK_LOCK:
+            desktop.state._TASKS.clear()  # 프로세스가 죽은 상황
+        desktop.state._LOADED_ROOTS.clear()
 
         desktop.load_project_tasks(self.root)
 
-        rows = desktop._task_snapshot(self.root)
+        rows = desktop.tasks._task_snapshot(self.root)
         self.assertEqual([r["id"] for r in rows], ["keep"])
         self.assertEqual(rows[0]["result"], "끝났습니다")
 
@@ -106,8 +106,8 @@ class TestTaskMemory(WorkspaceCase):
         desktop.load_project_tasks(self.root)
         desktop.load_project_tasks(other)
 
-        self.assertEqual([r["id"] for r in desktop._task_snapshot(self.root)], ["mine"])
-        self.assertEqual([r["id"] for r in desktop._task_snapshot(other)], ["theirs"])
+        self.assertEqual([r["id"] for r in desktop.tasks._task_snapshot(self.root)], ["mine"])
+        self.assertEqual([r["id"] for r in desktop.tasks._task_snapshot(other)], ["theirs"])
 
     def test_created_task_is_written_through(self):
         status, _, body = desktop.create_task({"prompt": "적어 두기", "permission": "important"}, self.root)
@@ -130,8 +130,8 @@ class TestTaskMemory(WorkspaceCase):
 
     def test_a_task_without_a_boundary_is_written_nowhere(self):
         """경계를 모르는 작업을 cwd 에 떨어뜨리면 남의 프로젝트에 남의 이력이 쌓인다."""
-        with desktop._TASK_LOCK:
-            desktop._TASKS["ghost"] = {
+        with desktop.state._TASK_LOCK:
+            desktop.state._TASKS["ghost"] = {
                 "id": "ghost",
                 "status": "running",
                 "created": 1,
@@ -147,10 +147,17 @@ class TestTaskMemory(WorkspaceCase):
 
 
 class TestProjectRegistry(WorkspaceCase):
+    def registered(self, current=None):
+        """등록부에서 온 줄만. 개인 작업 공간은 등록의 결과가 아니라 앱의 성질이라 늘 끝에 붙는다
+        — 프로젝트를 하나도 안 연 사람에게도 설 자리가 있어야 창이 열리기 때문이다."""
+        rows = desktop_store.list_projects(current)
+        self.assertTrue(rows[-1]["scratch"])
+        return [row for row in rows if not row["scratch"]]
+
     def test_add_list_and_forget(self):
         desktop_store.add_project(self.root)
 
-        rows = desktop_store.list_projects(self.root)
+        rows = self.registered(self.root)
         self.assertEqual([row["root"] for row in rows], [self.root])
         self.assertTrue(rows[0]["current"])
         self.assertTrue(rows[0]["exists"])
@@ -163,8 +170,7 @@ class TestProjectRegistry(WorkspaceCase):
             desktop_store.add_project(os.path.join(self.root, "nope"))
 
     def test_current_project_is_listed_even_when_unregistered(self):
-        rows = desktop_store.list_projects(self.root)
-        self.assertEqual([row["root"] for row in rows], [self.root])
+        self.assertEqual([row["root"] for row in self.registered(self.root)], [self.root])
 
     def test_switching_moves_the_window_and_loads_that_history(self):
         other = tempfile.mkdtemp(prefix="asgard-other-")
@@ -235,13 +241,13 @@ class TestArtifactBoundary(WorkspaceCase):
     def test_oversized_files_are_marked_truncated(self):
         big = os.path.join(self.root, "big.txt")
         with open(big, "w", encoding="utf-8") as handle:
-            handle.write("x" * (desktop._ARTIFACT_CAP + 10))
+            handle.write("x" * (desktop.state._ARTIFACT_CAP + 10))
 
         _, _, body = desktop.read_artifact(self.root, {"path": ["big.txt"]})
 
         payload = json.loads(body)
         self.assertTrue(payload["truncated"])
-        self.assertEqual(len(payload["text"]), desktop._ARTIFACT_CAP)
+        self.assertEqual(len(payload["text"]), desktop.state._ARTIFACT_CAP)
 
     def test_diff_outside_the_boundary_is_refused(self):
         status, _, _ = desktop.read_diff(self.root, {"path": ["../escape"]})
@@ -251,12 +257,24 @@ class TestArtifactBoundary(WorkspaceCase):
         """`git diff` 는 추적 밖 파일에 조용하다 — '변경 없음'이라 말하면 새 파일이 없는 파일이 된다."""
         with mock.patch("subprocess.run") as run:
             run.side_effect = [
-                mock.Mock(stdout="", stderr=""),
-                mock.Mock(stdout="?? note.txt\n", stderr=""),
+                mock.Mock(stdout="", stderr="", returncode=0),
+                mock.Mock(stdout="?? note.txt\n", stderr="", returncode=0),
             ]
             _, _, body = desktop.read_diff(self.root, {"path": ["note.txt"]})
 
         self.assertIn("새 파일", json.loads(body)["note"])
+
+    def test_a_workspace_without_git_says_so_instead_of_claiming_no_changes(self):
+        """개인 작업 공간은 저장소가 아니다 — 비교할 것이 없는 것을 '비교했더니 같더라'로
+        말하면, 사용자는 자기 파일이 이미 커밋된 줄 안다."""
+        with mock.patch("subprocess.run") as run:
+            run.side_effect = [
+                mock.Mock(stdout="", stderr="", returncode=128),
+                mock.Mock(stdout="", stderr="not a git repository", returncode=128),
+            ]
+            _, _, body = desktop.read_diff(self.root, {"path": ["note.txt"]})
+
+        self.assertIn("Git 저장소가 아닙니다", json.loads(body)["note"])
 
     def test_reveal_stays_inside_the_boundary(self):
         with mock.patch("subprocess.Popen") as popen:
@@ -268,6 +286,24 @@ class TestArtifactBoundary(WorkspaceCase):
             status, _, _ = desktop.reveal_path(self.root, {"path": "note.txt"})
         self.assertEqual(status, 200)
         popen.assert_called_once()
+
+    def test_reveal_opens_the_card_that_was_clicked_not_the_open_one(self):
+        """목록의 '폴더 열기'는 그 카드의 자리를 연다 — 창이 보던 곳이 아니라.
+
+        작업 공간이 여럿이 되면서 실제 물음이 됐다. 다만 열 수 있는 자리는 아는 자리로 묶는다:
+        임의 경로를 받아 여는 창은 파일 탐색기가 되고, 그건 이 표면의 일이 아니다."""
+        other = tempfile.mkdtemp(prefix="asgard-other-")
+        desktop_store.add_project(other)
+
+        with mock.patch("subprocess.Popen") as popen:
+            status, _, _ = desktop.reveal_path(self.root, {"root": other})
+        self.assertEqual(status, 200)
+        self.assertIn(os.path.realpath(other), " ".join(popen.call_args.args[0]))
+
+        with mock.patch("subprocess.Popen") as popen:
+            status, _, _ = desktop.reveal_path(self.root, {"root": tempfile.mkdtemp(prefix="asgard-stranger-")})
+        self.assertEqual(status, 403)
+        popen.assert_not_called()
 
 
 class TestRoutes(WorkspaceCase):
@@ -295,7 +331,7 @@ class TestRoutes(WorkspaceCase):
 
     def test_an_explicit_boundary_beats_the_module_default(self):
         """핸들러는 늘 서버의 root 를 넘긴다 — 전역이 그걸 덮으면 전환이 거짓말이 된다."""
-        desktop._CURRENT_ROOT = "/tmp/somewhere-else"
+        desktop.state._CURRENT_ROOT = "/tmp/somewhere-else"
         self.assertEqual(desktop.current_root(self.root), self.root)
 
 

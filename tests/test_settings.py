@@ -33,6 +33,35 @@ class SettingsBase(unittest.TestCase):
         open(os.path.join(d, settings.LEGACY_TOML), "w").write(body)
 
 
+class TestWorkspaceHome(SettingsBase):
+    """일감과 기획이 사는 자리 — **하나**여야 하고, 프로젝트 밖이어야 한다."""
+
+    def test_the_workspace_sits_in_the_agent_home_never_in_a_project(self):
+        # 스위트는 이 변수를 테스트마다 옮겨 둔다(conftest) — 기본값을 보려면 걷어내야 한다
+        override = os.environ.pop(settings.WORKSPACE_HOME_ENV, None)
+        try:
+            home = settings.workspace_home()
+        finally:
+            if override is not None:
+                os.environ[settings.WORKSPACE_HOME_ENV] = override
+        self.assertEqual(home, os.path.join(settings.global_dir(), settings.WORKSPACE_DIR))
+        self.assertFalse(home.startswith(os.path.abspath(self.root) + os.sep))
+
+    def test_one_env_moves_both_tickets_and_plans(self):
+        """자리를 옮기면 **둘이 같이** 옮겨져야 워크스페이스가 하나라는 말이 참이 된다."""
+        from asgard.plan import store as plan_store
+        from asgard.studio import db as studio_db
+
+        moved = os.path.join(self.tmp, "elsewhere")
+        os.environ[settings.WORKSPACE_HOME_ENV] = moved
+        try:
+            self.assertEqual(settings.workspace_home(), moved)
+            self.assertEqual(studio_db.workspace_path(), os.path.join(moved, "workspace.db"))
+            self.assertEqual(plan_store.store_path(), os.path.join(moved, "plans.json"))
+        finally:
+            os.environ.pop(settings.WORKSPACE_HOME_ENV, None)
+
+
 class TestLoadSave(SettingsBase):
     def test_save_and_load_roundtrip_project_and_global(self):
         settings.save_project(self.root, "provider", {"name": "ollama", "model": "m1"})
@@ -54,6 +83,38 @@ class TestLoadSave(SettingsBase):
         merged = settings.section("lagom", self.root)
         self.assertEqual(merged["mode"], "full")  # 프로젝트 승
         self.assertEqual(merged["subagent_matcher"], "x")  # 글로벌 키 유지
+
+    def test_concurrent_saves_neither_corrupt_the_file_nor_lose_a_section(self):
+        """스튜디오는 요청마다 스레드다 — 설정을 연달아 바꾸면 저장이 겹친다.
+        겹친 자리에서 파일이 깨지거나(두 벌의 JSON) 앞서 저장한 섹션이 사라지면 안 된다."""
+        import threading
+
+        sections = {
+            "provider": {"name": "ollama"},
+            "lagom": {"mode": "lite"},
+            "ui": {"lang": "ko"},
+            "bridge": {"cursor": True},
+        }
+        errors: list[BaseException] = []
+
+        def write(name, values):
+            try:
+                for _ in range(12):
+                    settings.save_project(self.root, name, values)
+            except BaseException as exc:  # noqa: BLE001 — 스레드의 실패는 여기서만 보인다
+                errors.append(exc)
+
+        threads = [threading.Thread(target=write, args=item) for item in sections.items()]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        self.assertEqual(errors, [])
+        with open(settings.project_path(self.root), encoding="utf-8") as handle:
+            data = json.load(handle)  # 깨졌으면 여기서 JSONDecodeError
+        for name, values in sections.items():
+            self.assertEqual(data.get(name), values, name)
 
     def test_agent_model_override_merges_global_then_project_per_field(self):
         from asgard.templates.agent_models import agent_model

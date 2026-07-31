@@ -130,13 +130,15 @@ fn start_server() -> Result<(String, Child), String> {
         .stderr(Stdio::null());
     #[cfg(windows)]
     command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    let root = env::var_os("ASGARD_DESKTOP_ROOT")
-        .or_else(|| env::var_os("HOME"))
-        .or_else(|| env::var_os("USERPROFILE"))
-        .map(PathBuf::from)
-        .or_else(|| env::current_dir().ok());
-    if let Some(root) = root {
-        command.current_dir(root);
+    // 작업 공간은 서버가 정한다(resolve_start_root). 여기서 HOME 을 cwd 로 밀어 넣으면
+    // 사용자의 집이 곧 프로젝트가 되어 `.asgard/desktop/` 이 거기에 생겼다 — 독에서 아이콘을
+    // 누른 것만으로. 프로젝트 안에서 띄운 창은 ASGARD_DESKTOP_ROOT 로 자기 자리를 물려주고,
+    // 그 값이 없으면 서버는 **늘 개인 작업 공간**에서 선다(cwd 는 창의 자리를 안 정한다).
+    if let Some(root) = env::var_os("ASGARD_DESKTOP_ROOT").map(PathBuf::from) {
+        if root.is_dir() {
+            command.current_dir(&root);
+            command.env("ASGARD_DESKTOP_ROOT", &root);
+        }
     }
     let mut child = command.spawn().map_err(|error| error.to_string())?;
     if !wait_for_server(port, Duration::from_secs(12)) {

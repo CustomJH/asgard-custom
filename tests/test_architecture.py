@@ -97,6 +97,13 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # swarm — 프로젝트가 루트의 에이전트를 배치하는 규칙. 설정 해석 + 배치 판정이라
                 # charter/manual 과 같은 자리이고, agent(application)·commands 가 이걸 쓴다.
                 "swarm",
+                # studio — 일감(티켓)의 어휘와 규칙, 그리고 그것을 담는 프로젝트 로컬 저장소.
+                # memory 군과 같은 자리다: 자기 저장소를 소유하고 규칙만 진다(표면 없음). 위층
+                # 셋이 이걸 쓴다 — 창(commands.desktop)·CLI(commands.ticket)·툴(agent.tools).
+                "studio",
+                # plan — 기획 문서 셋(PRD·기능 명세서·유저 플로우)의 형상·검사·저장소. studio 와
+                # 같은 자리다. 모델 호출(agent.oneshot)은 상향이라 함수 안 lazy 로만 부른다.
+                "plan",
                 "hooks",
             }
         ),
@@ -254,6 +261,77 @@ class TestLayeredArchitecture(unittest.TestCase):
             broken,
             f"훅이 python {floor[0]}.{floor[1]} 에서 파싱되지 않는다 (조용히 죽는다):\n" + "\n".join(broken),
         )
+
+
+# Studio 안쪽의 사슬 — `commands.desktop` 패키지는 아래로만 기댄다. 이 순서가 곧 계약이다:
+# 왼쪽이 오른쪽을 부를 수 없다. 하나라도 뒤집히면 순환이 생기고, 순환이 생기면 "이 모듈만
+# 읽으면 된다"가 다시 거짓이 된다 (1,586줄 한 파일로 돌아가는 첫걸음이 그것이었다).
+DESKTOP_CHAIN = (
+    "state",
+    "dialog",
+    "boundary",
+    "tasks",
+    "snapshot",
+    "workspaces",
+    "artifacts",
+    "config",
+    "routes",
+    "server",
+)
+
+
+class TestStudioPackage(unittest.TestCase):
+    """스튜디오 창의 안쪽 — 한 파일이던 것을 책임별로 가른 뒤의 불변식."""
+
+    def _desktop_modules(self) -> dict[str, ast.Module]:
+        base = os.path.join(SRC, "commands", "desktop")
+        out = {}
+        for entry in sorted(os.listdir(base)):
+            if entry.endswith(".py") and entry != "__init__.py":
+                with open(os.path.join(base, entry), encoding="utf-8") as handle:
+                    out[entry.removesuffix(".py")] = ast.parse(handle.read())
+        return out
+
+    def test_every_module_is_placed_on_the_chain(self):
+        """새 모듈은 자리를 얻고 들어온다 — 미배치는 '어디에 기대는지 아무도 안 정했다'는 뜻."""
+        unplaced = set(self._desktop_modules()) - set(DESKTOP_CHAIN)
+        self.assertFalse(unplaced, f"사슬에 자리 없는 모듈: {sorted(unplaced)} — DESKTOP_CHAIN 에 배치하라")
+
+    def test_the_package_leans_only_downward(self):
+        """위 모듈은 아래를 부르고, 아래는 위를 모른다."""
+        rank = {name: index for index, name in enumerate(DESKTOP_CHAIN)}
+        violations: list[str] = []
+        for name, tree in self._desktop_modules().items():
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.ImportFrom) or node.level != 1 or node.col_offset != 0:
+                    continue  # 함수 안 lazy 임포트는 의도된 탈출구다 (계층 규칙과 같은 관용)
+                targets = {node.module} if node.module else {alias.name for alias in node.names}
+                for target in targets:
+                    if target in rank and rank[target] >= rank[name]:
+                        violations.append(f"{name} → {target} (사슬을 거슬러 오른다)")
+        self.assertFalse(violations, "스튜디오 패키지에 순환 위험:\n" + "\n".join(violations))
+
+    def test_the_loopback_guard_is_written_once(self):
+        """로컬 창 셋이 같은 것을 막는다 — 세 벌로 적으면 셋이 갈린다.
+
+        실측(합치기 전): `Referrer-Policy` 는 두 창에만, `frame-src`·`base-uri`·`form-action`
+        은 한 창에만 걸려 있었다. 보안 경계가 갈렸다는 사실 자체가 아무도 안 보고 있었다는
+        증거라, 다시 갈라지지 않게 여기서 잡는다."""
+        owner = os.path.join(SRC, "commands", "loopback.py")
+        offenders: list[str] = []
+        for path in _iter_py_files():
+            if os.path.abspath(path) == os.path.abspath(owner):
+                continue
+            with open(path, encoding="utf-8") as handle:
+                source = handle.read()
+            rel = os.path.relpath(path, SRC)
+            if "def host_allowed(" in source:
+                offenders.append(f"{rel} — host_allowed 를 다시 적었다")
+            if 'frozenset({"127.0.0.1"' in source:
+                offenders.append(f"{rel} — 루프백 명부를 다시 적었다")
+            if "Content-Security-Policy" in source:
+                offenders.append(f"{rel} — CSP 를 다시 적었다")
+        self.assertFalse(offenders, "루프백 경계는 commands/loopback.py 한 벌이다:\n" + "\n".join(offenders))
 
 
 def _layer(top: str) -> str:
