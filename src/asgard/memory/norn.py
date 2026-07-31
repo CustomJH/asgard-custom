@@ -16,8 +16,9 @@
   추론". 그래서 통찰은 기본적으로 자동 승격되지 않는다 (norn_insight_auto 옵트인).
 - 환경 의존 실패·도구 부정 주장은 기억으로 굳히지 않는다 — 그날의 사정이 원칙으로
   박제되면 미래의 자신을 거부하는 근거가 된다.
-- 적용 전 pages/ 전체 백업 (norn-backups/, 최근 5개 유지), 삭제 없음 — archive 는
-  archive/ 로 이동해 언제든 복원 가능하다 (norn-restore).
+- 기존 페이지를 고치거나 없애는 op(merge·archive·link) 앞에 pages/ 전체 백업
+  (norn-backups/, 최근 5개 유지), 삭제 없음 — archive 는 archive/ 로 이동해 언제든
+  복원 가능하다 (norn-restore).
 - 게이트는 노른 산출물도 신뢰하지 않는다 — insight 페이지 역시 힌트일 뿐 완료 증거가 아니다.
 """
 
@@ -113,17 +114,40 @@ INSIGHT_AUTO_FLOOR = 0.40
 # 핵심이다: "avoids Friday deploys **and** always tests first" 에서 avoids 는 and 를 넘지
 # 못한다. 이 경계가 없으면 정직한 통찰이 자기 문장의 앞 절 때문에 부정으로 물든다 (실측).
 POLARITY_PRE, POLARITY_POST, POLARITY_CLAUSE = 14, 12, 80
+# 영어는 뒤쪽도 절 단위다. 수동태가 그 증거다 — "checks are bypassed" 는 부정 동사가 주어
+# 뒤에 서고, 한국어용 인접 창(12자)으로는 영영 닿지 않는다. 그래서 ASCII 앵커만 뒤도
+# 절 경계까지 본다. 경계를 두는 것이 핵심이다: 창만 넓히면 "tests are run, deploys are
+# skipped" 에서 앞 절의 tests 가 뒤 절의 부정에 물든다.
+POLARITY_POST_CLAUSE = 40
 
 # 낱말 뒤에 붙어 그 낱말을 부정하는 것들 (한국어 어미·보조용언 + 영어 후치 전치사).
+#
+# "안 한다" 만이 부정이 아니다. 한국어는 **하지 않음을 뜻하는 본동사**로도 똑같이 부정한다 —
+# "테스트를 생략한다", "점검을 건너뛴다", "리뷰를 제외하고". 실측(26-07-30): 이 갈래가 사전에
+# 없어 `_polarity("테스트", "배포 시 테스트를 생략한다")` 가 **+1** 을 돌려줬다. 출처가 부정하는
+# 것을 긍정으로 읽으면 극성 게이트는 그 출처에 대해 영영 눈이 먼다.
 _NEG_AFTER = re.compile(
-    r"않|못하|못한|못\s|없|말라|마라|금지|피하|피해|지양|삼가|회피|자제|거부|중단|아니|"
-    r"(?:^|\s)안\s|\bwithout\b|\bnever\b|\bnot\b|\bno\b|\brather than\b|\binstead of\b",
+    # 어간이 모음으로 끝나는 것들은 활용에서 음절이 통째로 갈린다 — "피하"로는 "피한다"를,
+    # "삼가"로는 "삼간다"를 못 잡는다 (한자어 어간 지양·중단·거부 등은 활용해도 어간이 그대로다).
+    r"않|못하|못한|못\s|없|말라|마라|금지|피하|피한|피함|피해|지양|삼가|삼간|삼감|회피|자제|거부|중단|아니|"
+    # 한국어 활용은 어간의 **음절이 통째로 바뀐다** — "건너뛰"로는 "건너뛴다"를 못 잡는다
+    # (뛰≠뛴, 자모가 아니라 음절이 코드포인트다). 갈래를 적어 두는 편이 어간을 줄이는 것보다
+    # 안전하다: "건너"까지 줄이면 "건너편"·"건너서"가 부정으로 읽힌다.
+    r"생략|누락|건너뛰|건너뛴|건너뜁|건너뜀|제외|빼고|빼는|빼먹|무시하|미실행|미적용|"
+    r"(?:^|\s)안\s|\bwithout\b|\bnever\b|\bnot\b|\bno\b|\brather than\b|\binstead of\b|"
+    # 영어 수동태 — "checks are bypassed" 처럼 부정 동사가 주어 **뒤에** 온다. 능동태
+    # ("omit the review")는 절 작용역인 _NEG_BEFORE 가 잡는다.
+    r"\b(?:are|is|was|were|get|gets|got)\s+(?:being\s+)?"
+    r"(?:skipped|omitted|excluded|bypassed|ignored|dropped)\b",
     re.IGNORECASE,
 )
 # 낱말 앞 — 절 작용역. 영어 부정어만 본다: 한국어의 앞선 부정("결코")은 뒤의 "않"과 짝을
 # 이루므로 _NEG_AFTER 가 이미 잡고, 절까지 넓히면 옆 낱말까지 부정으로 물든다.
 _NEG_BEFORE = re.compile(
-    r"\b(?:not|never|no|without|avoids?|avoiding|refrains?|skips?|cannot|can'?t|don'?t|"
+    r"\b(?:not|never|no|without|avoids?|avoiding|refrains?|skips?|skipping|cannot|can'?t|don'?t|"
+    # 하지 않음을 뜻하는 본동사 — 영어는 이것도 목적어 **앞**에 서서 절을 덮는다
+    # ("deploys omit the review step"). 한국어 대응분은 _NEG_AFTER 쪽에 있다.
+    r"omits?|omitting|exclud(?:e|es|ing)|bypass(?:es|ing)?|ignor(?:e|es|ing)|"
     r"doesn'?t|didn'?t|won'?t|rarely|seldom)\b",
     re.IGNORECASE,
 )
@@ -338,21 +362,51 @@ def _clause_before(haystack: str, start: int) -> str:
     return window[edges[-1] :] if edges else window
 
 
-def _polarity(word: str, haystack: str) -> int | None:
-    """낱말에 붙은 극성 — +1 긍정, -1 부정, None = 언급 없음 **또는 혼재**.
+def _clause_after(haystack: str, end: int) -> str:
+    """낱말 뒤부터 그 절이 끝나는 데까지 — 영어 수동태 부정("are bypassed")의 작용역."""
+    window = haystack[end : end + POLARITY_POST_CLAUSE]
+    edge = _CLAUSE_EDGE.search(window)
+    return window[: edge.start()] if edge else window
 
-    혼재를 판정하지 않는 것이 이 함수의 안전장치다. 한 문서가 같은 낱말을 긍정으로도
-    부정으로도 쓰면("배포에 신중하며 … 금요일 배포를 피하고") 그 문서는 이 낱말에 대해
-    아무 편도 들지 않는다 — 모르는 것을 모른다고 말해야 진짜 통찰이 극성으로 잘리지 않는다."""
+
+def _polarity(word: str, haystack: str, *, assertion: bool = False) -> int | None:
+    """낱말에 붙은 극성 — +1 긍정, -1 부정, None = 언급 없음 (또는 문서에서의 혼재).
+
+    **혼재를 읽는 법이 문서와 주장에서 다르다.** 두 쪽이 다른 것이라서다:
+
+      문서(출처) — 여러 문장의 모음. 같은 낱말을 긍정으로도 부정으로도 쓰면("배포에
+        신중하며 … 금요일 배포를 피하고") 그 문서는 이 낱말에 **아무 편도 안 든다**.
+        모르는 것을 모른다고 말해야 진짜 통찰이 극성으로 잘리지 않는다 → None.
+
+      주장(통찰) — 하나의 단언. 제목은 본문에 붙은 **딱지**이지 따로 선 주장이 아니다.
+        그래서 낱말에 부정이 한 번이라도 걸리면 그 단언은 부정을 말한 것이다 → -1.
+
+    이 구분이 없을 때 무슨 일이 났는지 (실측 26-07-30). 검증기는 `title + text` 를 한 덩어리로
+    보는데, 제목은 본문의 핵심 명사를 되풀이하는 것이 정상이고 `_NORN_SYS` 가 title+text 쌍을
+    요구한다. 그 되풀이가 **비부정 위치의 +1** 을 하나 만들어 본문의 -1 과 상쇄되고, 혼재는
+    None 이 되어 게이트가 통째로 침묵했다 — 같은 거짓말이 제목만 갈아입으면 표식을 잃었다:
+
+        제목 "배포 습관"          → 표식 있음   (앵커를 안 건드림)
+        제목 "금요일 무테스트 배포"  → 표식 없음 ← 접지 0.714 로 자동 승격까지 갔다
+        제목 "테스트 관련 습관"     → 표식 없음 ←
+
+    부정 쪽으로 읽는 것이 안전한 쪽인 이유는 이 신호가 **기각이 아니라 표식**이기 때문이다
+    (`_polarity_conflict` 독스트링). 과하게 달린 표식은 사람이 출처와 대조하고 넘기면 그만이고,
+    안 달린 표식은 허구를 정본에 앉힌다 — 두 오류의 비용이 다르다."""
     signs = set()
     for start, end in _spans(word, haystack):
+        # 뒤쪽 작용역이 문자 체계마다 다르다 — 한국어는 낱말에 붙어 인접에서 끝나고,
+        # 영어는 수동태로 절 오른쪽까지 간다 (POLARITY_POST_CLAUSE 주석).
+        after = _clause_after(haystack, end) if word.isascii() else haystack[end : end + POLARITY_POST]
         negated = (
-            bool(_NEG_AFTER.search(haystack[end : end + POLARITY_POST]))
+            bool(_NEG_AFTER.search(after))
             or bool(_NEG_BEFORE_ADJACENT.search(haystack[max(0, start - POLARITY_PRE) : start]))
             or bool(_NEG_BEFORE.search(_clause_before(haystack, start)))
         )
         signs.add(-1 if negated else 1)
-    return signs.pop() if len(signs) == 1 else None
+    if len(signs) == 1:
+        return signs.pop()
+    return -1 if (signs and assertion) else None
 
 
 def _polarity_conflict(title: str, text: str, sources: list[tuple[dict, str]]) -> tuple[str, str] | None:
@@ -383,7 +437,9 @@ def _polarity_conflict(title: str, text: str, sources: list[tuple[dict, str]]) -
     # 긴 낱말부터 본다 — 기각 사유에 실리는 것은 처음 걸린 낱말이고, 사람이 판단하려면
     # 그 낱말이 "on" 이 아니라 "fridays" 여야 한다.
     for word in sorted(_anchors(claim), key=lambda w: (-len(w), w)):
-        mine = _polarity(word, claim)
+        # 통찰은 단언이고 출처는 문서다 — 혼재를 같은 자로 읽으면 제목의 되풀이가 게이트를
+        # 침묵시킨다 (`_polarity` 독스트링의 실측).
+        mine = _polarity(word, claim, assertion=True)
         if mine is None:
             continue
         theirs = [p for p in (_polarity(word, hay) for hay in haystacks) if p is not None]
@@ -689,7 +745,11 @@ def apply_norn(d: str | None, plan: dict) -> dict:
     ops = list(plan.get("ops") or [])
     applied: list[dict] = []
     failed: list[dict] = []
-    backup = _backup(d) if any(op["op"] in ("merge", "archive") for op in ops) else ""
+    # 기존 페이지를 **고치거나 없애는** op 앞에서만 스냅샷을 뜬다. link 가 여기 드는 것이
+    # 요점이다 — 파괴적이지 않다는 말이 무변경이라는 뜻은 아니고, `_add_link` 는 양쪽
+    # frontmatter 를 실제로 다시 쓴다. insight·contradiction 은 순수 추가라 뺀다
+    # (아무것도 안 고치는 런에서 pages/ 전체를 복사하는 것은 값만 치르는 일이다).
+    backup = _backup(d) if any(op["op"] in ("merge", "archive", "link") for op in ops) else ""
     for op in ops:
         try:
             if op["op"] == "merge":
@@ -869,6 +929,62 @@ def run_auto(root: str, d: str | None = None) -> dict:
         "proposed": proposed,
         "report": result["report"],
     }
+
+
+# ── wake (호출면 단일 출처 — 훅·네이티브 루프가 같은 판정을 쓴다) ─────────────────
+
+
+def wake(root: str, d: str | None = None) -> str | None:
+    """턴·퀘스트가 끝난 자리에서 부르는 손질 신호 — 사람에게 보일 한 줄 또는 None(침묵).
+
+    **왜 함수인가.** 이 판정은 호출면마다 다시 쓰면 안 된다. 개인 메모리는 소유자의 기억이라
+    어느 호스트에서 일하든 같은 속도로 손질돼야 하는데(policy.CLIENT_MODES 주석), 등급 분기와
+    latch 를 표면마다 따로 구현하면 호스트에 따라 위키가 다르게 자란다. 훅(`memory norn --wake`)
+    과 네이티브 루프가 여기 하나를 본다.
+
+    **비싼 일은 여기서 안 한다.** due 판정은 log.md 행 수와 state 파일만 읽는다 — LLM 도
+    임베더도 안 뜬다. 실제 손질(plan_norn 의 LLM 왕복)은 분리 스폰한 자식이 맡는다:
+    호출자의 턴은 그 사이 그냥 끝난다.
+
+    동의 경계는 `norn_auto` 등급이 쥐고 있지 이 함수가 쥐고 있지 않다 — off 는 넛지만,
+    기본 safe 는 보고 전용(contradiction)까지, full 이라야 병합·보관이 자동이다."""
+    d = ensure_home(d)
+    due, reason = norn_due(d)
+    if not due:
+        return None
+    mode = auto_mode()
+    if mode == "off":
+        return nudge_line(d)
+    state = _load_state(d)
+    digest = str(_log_lines(d))
+    if state.get("auto_spawn_digest") == digest:
+        return None  # 같은 누적 상태로 이미 스폰 — 중복 백그라운드 방지
+    state["auto_spawn_digest"] = digest
+    _save_state(d, state)
+    if not _spawn_auto(root):
+        return None  # 스폰 못 했으면 말도 안 한다 — 시작하지 않은 일을 시작했다고 하지 않는다
+    return f"위그드라실 노른 자동 통합 시작 — {reason} (모드 {mode}: 추가는 자율, 병합·보관은 제안)"
+
+
+def _spawn_auto(root: str) -> bool:
+    """`memory norn --auto` 를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관)."""
+    import shutil as _shutil
+    import subprocess
+    import sys
+
+    exe = _shutil.which("asgard") or sys.argv[0]
+    try:
+        subprocess.Popen(
+            [exe, "memory", "norn", "--auto"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+            cwd=root or None,
+        )
+    except Exception:
+        return False
+    return True
 
 
 # ── 넛지 (latch — 제안 피로 방지) ──────────────────────────────────────────────

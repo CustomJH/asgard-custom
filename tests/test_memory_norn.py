@@ -282,6 +282,90 @@ class TestValidation(NornBase):
         report = norn._write_report(self.d, {"proposed": accepted}, [], [], "")
         self.assertIn("극성 충돌", open(report, encoding="utf-8").read())
 
+    def test_a_title_that_restates_the_anchor_does_not_silence_the_flag(self):
+        """제목은 본문에 붙은 딱지이지 따로 선 주장이 아니다 (실측 26-07-30).
+
+        검증기는 `title + text` 를 한 덩어리로 보는데 제목이 본문의 핵심 명사를 되풀이하는 것은
+        정상이고 `_NORN_SYS` 가 title+text 쌍을 요구한다. 그 되풀이가 만든 비부정 +1 이 본문의
+        -1 과 상쇄되면 극성이 '혼재'가 되어 게이트가 통째로 침묵했다 — 같은 거짓말이 제목만
+        갈아입으면 표식을 잃었고, 옵트인 상태에서는 접지 0.714 로 자동 승격까지 갔다."""
+        a, b = self._deploy_sources()
+        lie = "오딘은 금요일마다 테스트 없이 배포한다"
+        for title in ("배포 습관", "금요일 무테스트 배포", "테스트 생략 배포", "테스트 관련 습관"):
+            with self.subTest(title=title):
+                accepted, dropped = self._insight(title, lie, [a, b])
+                self.assertEqual(dropped, [])
+                self.assertIn("테스트", accepted[0].get("polarity_conflict") or "")
+
+    def test_a_flagged_lie_stays_out_of_auto_however_the_title_reads(self):
+        """표식이 붙는지보다 중요한 것 — 되돌리기 어려운 쪽(정본화)에 못 들어가는가."""
+        a, b = self._deploy_sources()
+        lie = "오딘은 금요일마다 테스트 없이 배포한다"
+        for title in ("금요일 무테스트 배포", "테스트 생략 배포", "테스트 관련 습관"):
+            with self.subTest(title=title):
+                accepted, _dropped = self._insight(title, lie, [a, b])
+                auto, proposed = norn.partition_ops(accepted, "safe", allow_insight=True)
+                self.assertEqual(auto, [])
+                self.assertEqual(len(proposed), 1)
+
+    def test_an_honest_insight_is_still_unflagged_whatever_the_title(self):
+        """수리가 정직한 통찰까지 베지 않는다 — 부정 쪽으로 읽는 것은 단언에만 적용된다."""
+        a, b = self._deploy_sources()
+        honest = "오딘은 배포에 신중하며 금요일 배포를 피하고 사전 테스트를 중시한다"
+        for title in ("배포 습관", "테스트 중시 습관", "금요일 배포 회피 경향"):
+            with self.subTest(title=title):
+                accepted, dropped = self._insight(title, honest, [a, b])
+                self.assertEqual(dropped, [])
+                self.assertNotIn("polarity_conflict", accepted[0])
+
+
+class TestPolarityLexicon(NornBase):
+    """부정 어휘 — "안 한다" 만이 부정이 아니다. 하지 않음을 뜻하는 본동사도 부정이다."""
+
+    NEGATED = (
+        ("배포 시 테스트를 생략한다", "테스트"),
+        ("배포 전 점검을 건너뛴다", "점검"),
+        ("배포 전 점검을 건너뜁니다", "점검"),
+        ("리뷰를 제외하고 머지한다", "리뷰"),
+        ("리뷰를 빼먹고 머지했다", "리뷰"),
+        ("검증이 누락됐다", "검증"),
+        ("경고를 무시하고 진행한다", "경고"),
+        ("금요일 배포를 피한다", "배포"),  # 어간 "피하"는 "피한다"를 못 잡는다 — 활용형을 적어 둔다
+        ("주말 작업은 삼간다", "작업"),
+        ("the user skips the test suite", "test"),
+        ("deploys omit the review step", "review"),
+        ("checks are bypassed entirely", "checks"),
+    )
+    AFFIRMED = (
+        ("배포 전 테스트를 전부 돌린다", "테스트"),
+        ("강 건너편 사무실에서 배포한다", "사무실"),  # 어간을 "건너"까지 줄이면 여기서 샌다
+        ("리뷰를 반드시 거친다", "리뷰"),
+        ("the user runs the full test suite", "test"),
+        ("checks are always enforced", "checks"),
+    )
+
+    def test_verbs_that_mean_not_doing_it_read_as_negation(self):
+        for phrase, word in self.NEGATED:
+            with self.subTest(phrase=phrase):
+                self.assertEqual(norn._polarity(word, phrase), -1)
+
+    def test_ordinary_affirmations_are_not_dragged_into_negation(self):
+        for phrase, word in self.AFFIRMED:
+            with self.subTest(phrase=phrase):
+                self.assertEqual(norn._polarity(word, phrase), 1)
+
+    def test_negation_does_not_bleed_across_an_english_clause_edge(self):
+        """뒤쪽 창을 절 경계로 끊지 않으면 앞 절의 낱말이 뒤 절의 부정에 물든다."""
+        self.assertEqual(norn._polarity("tests", "tests are run, deploys are skipped"), 1)
+        self.assertEqual(norn._polarity("reviews", "reviews happen and deploys are omitted"), 1)
+        self.assertEqual(norn._polarity("deploys", "deploys are skipped but tests are run"), -1)
+
+    def test_a_document_abstains_on_mixed_polarity_but_an_assertion_does_not(self):
+        """문서와 단언은 혼재를 다르게 읽는다 — 이 구분이 이 층의 뼈대다."""
+        mixed = "배포에 신중하며 금요일 배포를 피한다"
+        self.assertIsNone(norn._polarity("배포", mixed))
+        self.assertEqual(norn._polarity("배포", mixed, assertion=True), -1)
+
     def test_insight_injection_scan_blocks(self):
         a = self._add("정상 관측 하나", "관측a")
         b = self._add("정상 관측 둘", "관측b")
@@ -400,6 +484,68 @@ class TestNudge(NornBase):
 
     def test_nudge_silent_when_not_due(self):
         self.assertIsNone(norn.nudge_line(self.d))
+
+
+class TestWake(NornBase):
+    """wake — 훅과 네이티브 루프가 같이 보는 판정. 등급 분기·latch·스폰이 여기 하나에 있다."""
+
+    def _bump(self, n: int = 40) -> None:
+        with open(os.path.join(self.d, memory.LOG), "a", encoding="utf-8") as handle:
+            for i in range(n):
+                handle.write(f"- 2026-07-30T00:00Z [add:note] filler-{i}\n")
+
+    def _due(self) -> None:
+        self._bump()
+        norn._save_state(self.d, {})
+
+    def test_not_due_is_silent_and_spawns_nothing(self):
+        with mock.patch.object(norn, "_spawn_auto", return_value=True) as spawn:
+            self.assertIsNone(norn.wake(self.tmp, self.d))
+        self.assertEqual(spawn.call_count, 0)
+
+    def test_off_tier_nudges_without_spawning(self):
+        self._due()
+        with (
+            mock.patch.object(norn, "_spawn_auto", return_value=True) as spawn,
+            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "off"}),
+        ):
+            line = norn.wake(self.tmp, self.d)
+        self.assertIn("노른 제안", line or "")
+        self.assertEqual(spawn.call_count, 0)
+
+    def test_autonomous_tier_spawns_detached_and_latches(self):
+        self._due()
+        with (
+            mock.patch.object(norn, "_spawn_auto", return_value=True) as spawn,
+            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "safe"}),
+        ):
+            first = norn.wake(self.tmp, self.d)
+            second = norn.wake(self.tmp, self.d)  # 같은 누적 — 두 번 스폰하면 백그라운드가 겹친다
+            self._bump()
+            third = norn.wake(self.tmp, self.d)
+        self.assertIn("모드 safe", first or "")
+        self.assertIsNone(second)
+        self.assertTrue(third)
+        self.assertEqual(spawn.call_count, 2)
+
+    def test_a_failed_spawn_is_not_reported_as_started(self):
+        """시작하지 않은 일을 시작했다고 말하면 사용자는 오지 않을 결과를 기다린다."""
+        self._due()
+        with (
+            mock.patch.object(norn, "_spawn_auto", return_value=False),
+            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "full"}),
+        ):
+            self.assertIsNone(norn.wake(self.tmp, self.d))
+
+    def test_wake_never_pays_for_the_llm_itself(self):
+        """due 판정은 파일 두 개다 — 비싼 손질은 분리 스폰한 자식 몫이라야 턴이 안 늘어진다."""
+        self._due()
+        with (
+            mock.patch.object(norn, "plan_norn", side_effect=AssertionError("wake 가 LLM 을 불렀다")),
+            mock.patch.object(norn, "_spawn_auto", return_value=True),
+            mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "safe"}),
+        ):
+            self.assertTrue(norn.wake(self.tmp, self.d))
 
 
 class TestAutonomyTiers(NornBase):
@@ -622,6 +768,29 @@ class TestNornLinkOp(NornBase):
         self.assertEqual(accepted[0]["scale"], "semantic")
         self.assertIn(b, self._page(a)[0]["links"])
         self.assertIn(a, self._page(b)[0]["links"])  # 한쪽만 적으면 관계가 반쪽으로 읽힌다
+
+    def test_a_link_only_run_still_takes_a_backup_first(self):
+        """link 는 파괴적이지 않지만 무변경도 아니다 — `_add_link` 는 양쪽 frontmatter 를 다시 쓴다.
+
+        백업 조건이 merge·archive 만 보던 동안, 기존 페이지를 고치는 런 하나가 사본 없이 지나갔다."""
+        a, b, _ = self._pages()
+        accepted, _ = norn.validate_ops([{"op": "link", "a": a, "b": b, "why": "릴리스 절차의 앞뒤"}], self.d)
+
+        result = norn.apply_norn(self.d, {"ops": accepted})
+
+        self.assertTrue(result["backup"], "link 런에 백업이 없다")
+        snapshot = os.path.join(result["backup"], f"{a}.md")
+        before = memory.parse_page(open(snapshot, encoding="utf-8").read())[0]
+        self.assertFalse(before.get("links"), "백업본이 이미 링크 이후 상태다")
+        self.assertIn(b, self._page(a)[0]["links"])
+
+    def test_a_purely_additive_run_does_not_pay_for_a_backup(self):
+        """insight·contradiction 은 기존 페이지를 안 건드린다 — 거기서 pages/ 전체 복사는 값만 치른다."""
+        a, b, _ = self._pages()
+
+        result = norn.apply_norn(self.d, {"ops": [{"op": "contradiction", "a": a, "b": b, "why": "x"}]})
+
+        self.assertEqual(result["backup"], "")
 
     def test_an_unrelated_pair_is_refused_however_confident_the_why(self):
         a, _, c = self._pages()
