@@ -74,7 +74,9 @@ class TestCoverageReportsReality(CoverageCase):
         self.embedder()
         memory.add("오딘은 uv 로 테스트를 돌린다", kind="feedback", d=self.d)
         slug = memory._pages(self.d)[0]
-        meta, _body = memory._read(self.d, slug)
+        page = memory._read(self.d, slug)
+        assert page is not None
+        meta, _body = page
         memory._atomic_write(memory._page_path(self.d, slug), memory.render_page(meta, "완전히 다른 본문이다 이것은"))
         report = memory.vec_coverage(self.d)
         self.assertEqual(report["stale"], 1)
@@ -117,7 +119,7 @@ class TestCoverageReportsReality(CoverageCase):
         memory.add("오딘은 uv 로 테스트를 돌린다", kind="feedback", d=self.d)
         calls: list[str] = []
         original = sem._load_local
-        sem._load_local = lambda name: calls.append(name) or None  # type: ignore[assignment]
+        sem._load_local = lambda name: calls.append(name) or None  # ty: ignore[invalid-assignment]
         try:
             memory.vec_coverage(self.d)
         finally:
@@ -151,7 +153,9 @@ class TestFastPathNeverLies(CoverageCase):
         memory.add("오딘은 uv 로 테스트를 돌린다", kind="feedback", d=self.d)
         self.assertTrue(memory.vec_coverage(self.d)["ok"])
         slug = memory._pages(self.d)[0]
-        meta, _body = memory._read(self.d, slug)
+        page = memory._read(self.d, slug)
+        assert page is not None
+        meta, _body = page
         memory._atomic_write(
             memory._page_path(self.d, slug),
             memory.render_page(meta, "완전히 다른 본문이다 이것은 그리고 훨씬 더 길다 " * 4),
@@ -192,7 +196,7 @@ class TestFastPathNeverLies(CoverageCase):
         memory.vec_coverage(self.d)  # 메모를 심는다
         reads: list[str] = []
         original = memory.index._read
-        memory.index._read = lambda directory, slug: reads.append(slug) or original(directory, slug)  # type: ignore[assignment]
+        memory.index._read = lambda directory, slug: reads.append(slug) or original(directory, slug)  # ty: ignore[invalid-assignment]
         try:
             self.assertTrue(memory.vec_coverage(self.d)["ok"])
         finally:

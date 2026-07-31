@@ -1110,7 +1110,7 @@ class TestSemanticModelChoice(DashboardBase):
             else:
                 os.environ["ASGARD_MEMORY_SEMANTIC_MODEL"] = prev
         original = sem._settings
-        sem._settings = lambda: {"semantic_model": "cfg-org/cfg-model"}
+        sem._settings = lambda: {"semantic_model": "cfg-org/cfg-model"}  # ty: ignore[invalid-assignment]
         try:
             self.assertEqual(sem._model_name(), "cfg-org/cfg-model")
         finally:

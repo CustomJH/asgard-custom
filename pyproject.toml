@@ -74,6 +74,10 @@ extra-paths = ["src/asgard/assets/skill_plugins/asgard-office/skills/asgard-offi
 exclude = [
     "src/asgard/assets/skill_plugins/**",  # vendored resource snapshots retain upstream bytes
     "archive/**",  # 보존용 원문 스냅샷 — 타입체크 대상 아님
+    # Tauri 셸(Rust)의 자리. 여기 있는 하나뿐인 파이썬은 아이콘을 굽는 일회성 도구이고,
+    # `uv run --no-project --with pillow` 로 **프로젝트 환경 밖에서** 돈다. 그 의존은 프로젝트
+    # 의존이 아니므로 이 환경 기준으로 재면 있지도 않은 결함이 나온다.
+    "desktop/**",
 ]
 
 [build-system]

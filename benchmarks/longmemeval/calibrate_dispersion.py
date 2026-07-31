@@ -83,7 +83,7 @@ def _probe_one(entry: dict, workdir: str) -> dict | None:
                 out.append(sid)
         return out
 
-    _recall._dispersion = _spy
+    _recall._dispersion = _spy  # ty: ignore[invalid-assignment]
     os.environ["ASGARD_MEMORY_RERANK_DISPERSION"] = "0"
     try:
         os.environ["ASGARD_MEMORY_RERANK"] = "on"

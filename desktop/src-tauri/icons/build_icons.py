@@ -67,7 +67,7 @@ def superellipse(box: float, n: float = 5.0, steps: int = 720) -> list[tuple[flo
 def body_mask(size: int) -> Image.Image:
     big = Image.new("L", (size * SS, size * SS), 0)
     ImageDraw.Draw(big).polygon(superellipse(size * SS), fill=255)
-    return big.resize((size, size), Image.LANCZOS)
+    return big.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def night(size: int) -> Image.Image:
@@ -76,7 +76,7 @@ def night(size: int) -> Image.Image:
     for y in range(size):
         t = y / max(size - 1, 1)
         gradient.putpixel((0, y), tuple(round(a + (b - a) * t) for a, b in zip(NIGHT_TOP, NIGHT_BOTTOM)))
-    return gradient.resize((size, size), Image.BICUBIC)
+    return gradient.resize((size, size), Image.Resampling.BICUBIC)
 
 
 def master() -> Image.Image:
@@ -88,11 +88,12 @@ def master() -> Image.Image:
     # 어두운 바탕 위에서 아이콘의 경계가 서게 — 금빛 실선 한 겹
     edge = Image.new("RGBA", (BODY * SS, BODY * SS), (0, 0, 0, 0))
     ImageDraw.Draw(edge).polygon(superellipse(BODY * SS), outline=(*GOLD_EDGE, 70), width=3 * SS)
-    body.alpha_composite(edge.resize((BODY, BODY), Image.LANCZOS))
+    body.alpha_composite(edge.resize((BODY, BODY), Image.Resampling.LANCZOS))
 
     inner = round(BODY * 0.78)  # 선각은 굵지 않다 — 본체에 꽉 채우지 않는다
     scale = inner / max(mark.size)
-    mark = mark.resize((max(round(mark.width * scale), 1), max(round(mark.height * scale), 1)), Image.LANCZOS)
+    box = (max(round(mark.width * scale), 1), max(round(mark.height * scale), 1))
+    mark = mark.resize(box, Image.Resampling.LANCZOS)
     body.alpha_composite(mark, ((BODY - mark.width) // 2, (BODY - mark.height) // 2))
 
     canvas = Image.new("RGBA", (CANVAS, CANVAS), (0, 0, 0, 0))
@@ -107,16 +108,16 @@ def main() -> int:
     art = master()
     art.save(OUT.parents[1] / "app-icon.png")  # 1024 마스터 — `tauri icon` 이 보는 자리
     for name, size in SQUARE_SIZES.items():
-        art.resize((size, size), Image.LANCZOS).save(OUT / name)
+        art.resize((size, size), Image.Resampling.LANCZOS).save(OUT / name)
 
     iconset = OUT / "icon.iconset"
     for stale in iconset.glob("*.png") if iconset.is_dir() else []:
         stale.unlink()
     iconset.mkdir(exist_ok=True)
     for size in ICNS_SIZES:
-        art.resize((size, size), Image.LANCZOS).save(iconset / f"icon_{size}x{size}.png")
+        art.resize((size, size), Image.Resampling.LANCZOS).save(iconset / f"icon_{size}x{size}.png")
         if size > 16:
-            art.resize((size, size), Image.LANCZOS).save(iconset / f"icon_{size // 2}x{size // 2}@2x.png")
+            art.resize((size, size), Image.Resampling.LANCZOS).save(iconset / f"icon_{size // 2}x{size // 2}@2x.png")
     if subprocess.run(["iconutil", "-c", "icns", str(iconset), "-o", str(OUT / "icon.icns")]).returncode == 0:
         for stale in iconset.glob("*.png"):
             stale.unlink()

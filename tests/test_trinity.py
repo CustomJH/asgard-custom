@@ -375,7 +375,10 @@ class TestQuestLog(TrinityBase):
         ref = quest_log.snapshot_ref(self.root)
         self.assertTrue(ref, "gitignored .asgard must not block the quest start snapshot")
         listed = subprocess.run(
-            ["git", "-C", self.root, "ls-tree", "-r", "--name-only", ref], capture_output=True, text=True, check=True
+            ["git", "-C", self.root, "ls-tree", "-r", "--name-only", str(ref)],
+            capture_output=True,
+            text=True,
+            check=True,
         ).stdout.split()
         self.assertIn("untracked.py", listed)  # 시작 트리는 워킹트리 그대로다
         self.assertIn(".asgard/map/INDEX.md", listed)  # map 은 강제로 담는다

@@ -702,7 +702,7 @@ class TestScaffoldE2E(unittest.TestCase):
     def test_init_seeds_the_common_manual_once(self):
         """공통 자리는 리포 밖이라 스캐폴드 목록에 못 넣는다 — init 이 없을 때만 따로 깐다."""
         with tempfile.TemporaryDirectory() as fake_home:
-            env = {**os.environ, "HOME": fake_home}
+            env: dict[str, str] = {**os.environ, "HOME": fake_home}
             env.pop("ASGARD_HOME", None)
             env.pop("ASGARD_PROFILE", None)
             subprocess.run(

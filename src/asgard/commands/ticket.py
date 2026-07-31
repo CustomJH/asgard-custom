@@ -401,7 +401,7 @@ def _fail(exc: Exception) -> int:
     return 2
 
 
-def _day(value: object) -> str:
+def _day(value: float | str | None) -> str:
     return time.strftime("%Y-%m-%d", time.localtime(float(value))) if value else "—"
 
 
