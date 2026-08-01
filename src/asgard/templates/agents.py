@@ -4,6 +4,7 @@ Canon 13개조 본문은 canon.py에 있다 — 여기서는 __CANON__ 자리에
 
 from .bragi import BRAGI_AGENTS_SECTION
 from .canon import CANON_SECTION
+from .comments import COMMENT_AGENTS_SECTION
 from .lagom import LAGOM_AGENTS_SECTION
 
 _AGENTS_MD = """\
@@ -69,6 +70,7 @@ per-area `<area>.md` files are the deep maps agents draw as they explore.
 
 __LAGOM__
 __BRAGI__
+__COMMENTS__
 <!-- >>> asgard:memory >>> -->
 ## Asgard — Personal/Project Memory (two kinds, hint layer)
 
@@ -123,4 +125,5 @@ def agents_md(name: str | None) -> str:
         .replace("__CANON__", CANON_SECTION)
         .replace("__LAGOM__", LAGOM_AGENTS_SECTION)
         .replace("__BRAGI__", BRAGI_AGENTS_SECTION)
+        .replace("__COMMENTS__", COMMENT_AGENTS_SECTION)
     )

@@ -25,7 +25,7 @@ import shutil
 import subprocess
 import sys
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -105,7 +105,7 @@ def _blocking(exe: str, root: str, paths: list[str]) -> list[dict]:
     out: list[dict] = []
     for label, verb in GATES:
         cmd = [exe, *verb, "--json"]
-        for path in paths[:200]:  # 인자 폭주 방지 — 상한 초과분은 아래에서 잘린 사실로 싣는다
+        for path in paths[:200]:  # 인자 폭주 방지 — 상한 초과분은 아래에서 잘린 사실로 넣는다
             cmd += ["--path", path]
         try:
             result = subprocess.run(

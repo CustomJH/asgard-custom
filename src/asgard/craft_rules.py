@@ -16,7 +16,7 @@ from dataclasses import dataclass
 
 from .health import DEPTH_WARN, UNIT_LINES_WARN, _depth
 
-UNIT_LINES_BUDGET = UNIT_LINES_WARN  # health와 같은 자 — 게이트와 계측이 어긋나면 둘 다 못 믿는다
+UNIT_LINES_BUDGET = UNIT_LINES_WARN  # health와 같은 기준 — 게이트와 계측이 어긋나면 둘 다 못 믿는다
 DEPTH_BUDGET = DEPTH_WARN
 # 길이 예산은 "한 자리에서 너무 많은 일이 벌어진다"의 대리 지표다. 설정 리터럴 하나를 돌려주는
 # 함수는 250행이어도 벌어지는 일이 하나뿐이라 그 대리가 틀린다(실측: cc_settings 257행·문장 3·
@@ -31,7 +31,7 @@ _ACQUIRE = frozenset(
 _RELEASE = frozenset({"close", "shutdown", "terminate", "kill", "wait", "communicate", "__exit__"})
 # 이름만 `open` 이고 자원이 아닌 것들. `os.open`은 파일 객체가 아니라 int fd 라서 해제가
 # `os.close(fd)`·`os.fdopen(fd)`로 일어나고, `webbrowser.open(url)`은 아예 bool을 돌려준다.
-# 같은 자로 재면 둘 다 오탐이 된다(실측: 전수에서 os가 오탐의 절반, webbrowser가 잔여의 절반).
+# 같은 기준으로 재면 둘 다 오탐이 된다(실측: 전수에서 os가 오탐의 절반, webbrowser가 잔여의 절반).
 _ACQUIRE_EXCLUDE_BASE = frozenset({"os", "webbrowser"})
 _CACHE_DECORATORS = frozenset({"lru_cache", "cache"})
 _GROW = frozenset({"append", "add", "extend", "update", "setdefault", "insert", "appendleft"})
@@ -287,7 +287,7 @@ def _released(scope: ast.AST, target: str) -> bool:
             and node.value.id == target
             and any(isinstance(t, (ast.Attribute, ast.Subscript)) for t in node.targets)
         ):
-            # `self.x = f`와 `table["k"] = f`는 같은 인계다 — `_handed_off`와 같은 자를 쓴다.
+            # `self.x = f`와 `table["k"] = f`는 같은 인계다 — `_handed_off`와 같은 기준을 쓴다.
             # 한쪽만 아는 형태가 있으면 같은 코드가 경로에 따라 다르게 읽힌다(실측: holder가
             # 있으면 여기로, 없으면 `_handed_off`로 갈려서 subscript 인계가 누수로 찍혔다).
             #

@@ -9,6 +9,7 @@ from .bragi import BRAGI_CANON, BRAGI_SKILLS
 from .bridge import BRIDGE_SKILL_MD
 from .claude import CC_FOLDERS, cc_settings
 from .codex import codex_agent, codex_config, codex_rules
+from .comments import COMMENT_AGENTS_SECTION, COMMENT_CANON
 from .cursor import CURSOR_FOLDERS, cursor_agent, cursor_hooks_json, cursor_rule
 from .eitri import EITRI_SKILLS
 from .freyja import FREYJA_SKILLS, freyja_core_skill
@@ -33,6 +34,8 @@ __all__ = [
     "codex_config",
     "codex_agent",
     "codex_rules",
+    "COMMENT_CANON",
+    "COMMENT_AGENTS_SECTION",
     "cursor_rule",
     "cursor_hooks_json",
     "cursor_agent",

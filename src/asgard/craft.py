@@ -17,7 +17,7 @@ import os
 import subprocess
 from dataclasses import dataclass
 
-from . import craft_c, craft_lex, craft_rules
+from . import craft_c, craft_lex, craft_note, craft_rules
 from .craft_rules import Finding, Unit, shape_findings
 from .health import FILE_LINES_WARN, _code_lines, _read, borrowed
 
@@ -100,6 +100,11 @@ def _patterns(text: str, rel: str, spans: list[Unit], lang: str) -> list[Finding
     return []
 
 
+def _ratcheted(text: str, rel: str, spans: list[Unit], lang: str) -> list[Finding]:
+    """래칫이 거르는 판정 — 파일 전체를 보는 규칙들. 이미 base에 있던 것은 뒤에서 빠진다."""
+    return [*_patterns(text, rel, spans, lang), *craft_note.note_findings(text, rel, spans, lang)]
+
+
 def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str | None]:
     """(판정, 물려받아 넘긴 건수, 미판정 사유)."""
     if why := borrowed(rel):
@@ -117,7 +122,7 @@ def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str
     prior_units = _units(before, lang) if before is not None else None
     spans = list(current.values())
     found = shape_findings(rel, current, prior_units)
-    leaks = _patterns(text, rel, spans, lang)
+    leaks = _ratcheted(text, rel, spans, lang)
     inherited_keys = _inherited(before, lang)
     fresh = [f for f in leaks if (f.rule, f.unit, f.detail) not in inherited_keys]
     found.extend(fresh)
@@ -126,13 +131,18 @@ def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str
 
 
 def _inherited(before: str | None, lang: str) -> set[tuple[str, str, str]]:
-    """base에 이미 있던 형상 — 물려받은 부채는 이번 변경의 책임이 아니다."""
+    """base에 이미 있던 형상 — 물려받은 부채는 이번 변경의 책임이 아니다.
+
+    base의 구문을 못 읽어도 주석 판정은 낸다. 못 읽었다고 빈 집합을 돌려주면 그 파일의 옛 주석이
+    전부 이번 변경이 새로 넣은 것으로 잡힌다."""
     if before is None:
         return set()
     prior = _units(before, lang)
-    if prior is None:
-        return set()
-    return {(f.rule, f.unit, f.detail) for f in _patterns(before, "", list(prior.values()), lang)}
+    spans = list(prior.values()) if prior else []
+    findings = craft_note.note_findings(before, "", spans, lang)
+    if prior is not None:
+        findings += _patterns(before, "", spans, lang)
+    return {(f.rule, f.unit, f.detail) for f in findings}
 
 
 def judge(root: str, paths: object, base: str = "HEAD") -> Report:
