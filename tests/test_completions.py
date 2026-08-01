@@ -73,6 +73,42 @@ class TestSurfaceSync(unittest.TestCase):
                 self.assertIn(v, helps[opt] or "", f"{opt} value '{v}' not in cli help")
 
 
+class TestOneDoorForWindows(unittest.TestCase):
+    """창을 여는 문은 `asgard open` 하나다.
+
+    여태는 넷이었다: `asgard desktop`, 그리고 `map`·`memory`·`plan`을 서브커맨드 없이 치는 것.
+    앞의 셋은 **운영 커맨드 그룹이기도** 해서, 같은 단어가 문맥에 따라 창을 열거나 도움말을
+    냈다 — 치기 전에는 무엇이 일어날지 알 수 없었다. 동사를 문 앞에 세워 그걸 끝냈다.
+
+    이 검사가 지키는 것은 문의 **개수**다. 편의를 이유로 옛 문을 하나만 되살려도, 같은 창을
+    부르는 이름이 다시 둘이 된다.
+    """
+
+    def test_open_carries_exactly_the_three_surfaces(self):
+        surfaces = _visible_commands()["open"].commands
+        self.assertEqual(set(surfaces), {"studio", "map", "memory"})
+
+    def test_no_other_command_opens_a_window(self):
+        """`invoke_without_command`로 창을 열던 그룹들이 되살아나면 여기서 걸린다."""
+        for name in ("map", "memory"):
+            group = _visible_commands()[name]
+            self.assertFalse(
+                group.invoke_without_command,
+                f"`asgard {name}` 이 다시 창을 연다 — 창은 `asgard open {name}` 하나여야 한다",
+            )
+        self.assertNotIn("view", _visible_commands()["map"].commands)
+        self.assertNotIn("dashboard", _visible_commands()["memory"].commands)
+
+    def test_planning_has_no_door_of_its_own(self):
+        """기획은 스튜디오 안에서만 쓴다 — 딥링크는 `open studio --view plan`이다."""
+        self.assertNotIn("plan", _visible_commands())
+        view = next(p for p in _visible_commands()["open"].commands["studio"].params if "--view" in p.opts)
+        self.assertIn("plan", view.help or "")
+
+    def test_the_old_name_is_gone(self):
+        self.assertNotIn("desktop", _visible_commands())
+
+
 class TestRenderAnchors(unittest.TestCase):
     def test_smoke_anchors(self):
         self.assertIn("complete -F _asgard asgard", _script("bash"))

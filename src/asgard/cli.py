@@ -51,7 +51,15 @@ def _main(
         help="run this command as a specific agent (its own tier-1 memory, settings, sessions)",
     ),
 ) -> None:
-    """Root callback — hosts the global --version / --agent flags."""
+    """Root callback — hosts the global --version / --agent flags.
+
+    여기서 PATH부터 되찾는다. 독에서 띄운 창은 셸을 안 거쳐 사용자 bin 자리를 통째로 잃은 채
+    서고, 그러면 `claude`도 `codex`도 없는 기계처럼 보여 **모든 작업이 엔진 없음으로 막힌다**.
+    `main()`이 아니라 이 자리인 이유는 문이 하나가 아니기 때문이다 — 콘솔 스크립트가 `app()`을
+    직접 부르는 설치본도 있다. 명령이 무엇이든 반드시 지나는 곳은 여기다."""
+    from .platform import ensure_user_path
+
+    ensure_user_path()  # 멱등 — 창이 띄우는 자식(`asgard run`)도 이 PATH를 물려받는다
 
 
 @app.command(help="check the install — runtime, PATH, and project wiring")
@@ -287,24 +295,10 @@ def init(
     )
 
 
-map_app = typer.Typer(
-    help="project map — orientation, relation graph, and bounded context", invoke_without_command=True
-)
+# 창은 `asgard open map`이 연다 — 여기는 지도를 **만지는** 손이다(scan·trace·impact·context).
+# 한 단어가 문맥에 따라 창을 열거나 도움말을 내던 시절의 `invoke_without_command`는 뺐다.
+map_app = typer.Typer(help="project map — orientation, relation graph, and bounded context", no_args_is_help=True)
 app.add_typer(map_app, name="map")
-
-
-@map_app.callback()
-def map_default(
-    ctx: typer.Context,
-    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
-) -> None:
-    """서브커맨드 없이 `asgard map`만 치면 관계 그래프 뷰가 열린다 (`asgard memory`와 동일 UX).
-    운영 서브커맨드(generate/update/scan/…)와 --help는 그대로다."""
-    if ctx.invoked_subcommand is not None:
-        return
-    from .commands.map import run_map_view
-
-    raise typer.Exit(run_map_view(open_browser=not no_open))
 
 
 @map_app.command("scan", help="rebuild the relation graph (deterministic evidence, no LLM)")
@@ -343,6 +337,17 @@ def map_list(
     raise typer.Exit(run_map_list(kind=kind, json_out=json_))
 
 
+@map_app.command("why", help="왜 이렇게 돼 있나 — 근거를 단 주석·독스트링을 질의로 찾는다 (why is the code like this)")
+def map_why(
+    query: str = typer.Argument(..., metavar="QUERY", help="무엇의 근거를 찾나, 예: '주입 예산 이유'"),
+    limit: int = typer.Option(5, "--limit", help="최대 근거 수"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.map import run_map_why
+
+    raise typer.Exit(run_map_why(query, limit=limit, json_out=json_))
+
+
 @map_app.command("impact", help="both-direction impact map with coverage limits (adjacency, not proof)")
 def map_impact(
     node_id: str = typer.Argument(..., metavar="NODE_ID", help="node id, e.g. db_access:USERS or route:GET_/users"),
@@ -354,14 +359,7 @@ def map_impact(
     raise typer.Exit(run_map_impact(node_id, depth=depth, json_out=json_))
 
 
-@map_app.command("view", help="build and open the standalone relation-graph view")
-def map_view(
-    no_open: bool = typer.Option(False, "--no-open"),
-    json_: bool = typer.Option(False, "--json"),
-) -> None:
-    from .commands.map import run_map_view
-
-    raise typer.Exit(run_map_view(open_browser=not no_open, json_out=json_))
+# `map view`는 뺐다 — 창을 여는 문은 `asgard open map` 하나다.
 
 
 @map_app.command("generate", help="create the deterministic project map")
@@ -483,7 +481,7 @@ def tutor(
     from .commands.tutor import run_tutor
 
     # 답은 따옴표 없이 그냥 쓰는 것이 사람이 실제로 치는 방식이다 — `--note`를 기억해야만
-    # 답할 수 있으면 답은 안 온다. 명시 옵션이 있으면 그쪽이 이긴다(스크립트 경로 보존).
+    # 답할 수 있으면 답은 안 온다. 명시 옵션이 있으면 그쪽이 우선한다(스크립트 경로 보존).
     loose = " ".join(words or ()).strip()
     raise typer.Exit(
         run_tutor(
@@ -786,24 +784,10 @@ def plugins_install(source: str = typer.Argument(..., metavar="<path>")) -> None
 
 # 위그드라실 (Yggdrasil) — 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki (v3 P1).
 # 정본 = ~/.asgard/memory의 md, index/state.db는 파생. 커맨드는 기능명 memory 유지 + 세계관 별칭.
-memory_app = typer.Typer(help="Yggdrasil — personal memory · LLM wiki (ingest/query/lint)", invoke_without_command=True)
+# 창은 `asgard open memory`가 연다 — 여기는 기억을 **만지는** 손이다(add·query·lint·…).
+memory_app = typer.Typer(help="Yggdrasil — personal memory · LLM wiki (ingest/query/lint)", no_args_is_help=True)
 app.add_typer(memory_app, name="memory")
 app.add_typer(memory_app, name="yggdrasil", hidden=True)  # 세계관 별칭 — 같은 앱, 도움말 중복 없음
-
-
-@memory_app.callback()
-def memory_default(
-    ctx: typer.Context,
-    port: int = typer.Option(8765, "--port", "-p", help="dashboard port (bare `asgard memory` only)"),
-    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
-) -> None:
-    """서브커맨드 없이 `asgard memory`만 치면 위그드라실 대시보드가 열린다 (agentmemory 식
-    원커맨드 UX). 운영 서브커맨드(add/query/…)와 --help는 그대로다."""
-    if ctx.invoked_subcommand is not None:
-        return
-    from .commands.memory_dashboard import run_dashboard
-
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
 @memory_app.command("add", help="add a page (rejects on injection scan)")
@@ -855,11 +839,37 @@ def memory_episodes(
     raise typer.Exit(run_episodes(text, k, quest, json_))
 
 
-@memory_app.command("lint", help="wiki health — dead links, decay candidates, duplicates, budget")
+@memory_app.command("lint", help="wiki health — dead links, decay candidates, duplicates, budget, open contradictions")
 def memory_lint(json_: bool = typer.Option(False, "--json")) -> None:
     from .commands.memory import run_lint
 
     raise typer.Exit(run_lint(json_))
+
+
+# 모순은 노른이 고치지 않고 사람에게 넘기는 유일한 op 다. 넘길 자리를 두 개 둔다 —
+# 목록(무엇끼리 어긋났나)과 표시(봤다). 표시는 해소가 아니라서 이름도 `seen` 이다:
+# `resolve`·`fix`로 부르면 사람이 페이지가 고쳐졌다고 읽는데, 페이지는 한 글자도 안 바뀐다.
+@memory_app.command("contradictions", help="pages that contradict each other — a human decides, nothing is auto-fixed")
+def memory_contradictions(
+    json_: bool = typer.Option(False, "--json"),
+    all_: bool = typer.Option(False, "--all", help="include pairs already marked as seen"),
+) -> None:
+    from .commands.memory import run_contradictions
+
+    raise typer.Exit(run_contradictions(json_, all_))
+
+
+@memory_app.command(
+    "contradiction-seen", help="mark a contradiction as seen — this does NOT resolve it; both pages stay unchanged"
+)
+def memory_contradiction_seen(
+    a: str = typer.Argument(..., help="one page slug from `asgard memory contradictions`"),
+    b: str = typer.Argument(..., help="the other page slug (order does not matter)"),
+    note: str = typer.Option("", "--note", help="why you are setting it aside (kept for your next read)"),
+) -> None:
+    from .commands.memory import run_contradiction_seen
+
+    raise typer.Exit(run_contradiction_seen(a, b, note))
 
 
 @memory_app.command("proposals", help="pending memory proposals the agent staged for your approval")
@@ -871,13 +881,18 @@ def memory_proposals(json_: bool = typer.Option(False, "--json")) -> None:
 
 @memory_app.command("autosave", help="save memories without the approval round-trip (tier-1 and/or tier-2)")
 def memory_autosave(
-    state: str = typer.Argument(None, metavar="[on|off]", help="omit to show the current state"),
+    state: str = typer.Argument(
+        None,
+        metavar="[on|off|approve|revoke]",
+        help="on/off writes the setting; approve/revoke grants this machine's tier-2 permission",
+    ),
     tier: str = typer.Option("both", "--tier", help="personal (tier-1) | project (tier-2) | both"),
     json_: bool = typer.Option(False, "--json"),
+    yes: bool = typer.Option(False, "--yes", "-y", help="skip the approve confirmation prompt"),
 ) -> None:
     from .commands.memory import run_autosave
 
-    raise typer.Exit(run_autosave(state, tier, json_))
+    raise typer.Exit(run_autosave(state, tier, json_, yes))
 
 
 @memory_app.command("approve", help="approve a staged memory proposal (writes it to the wiki)")
@@ -1099,14 +1114,7 @@ def memory_obsidian(
     raise typer.Exit(run_obsidian(refresh, json_))
 
 
-@memory_app.command("dashboard", help="open a read-only local dashboard for the personal memory wiki")
-def memory_dashboard(
-    port: int = typer.Option(8765, "--port", "-p", help="local port (falls back to a free port if taken)"),
-    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
-) -> None:
-    from .commands.memory_dashboard import run_dashboard
-
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
+# `memory dashboard`는 뺐다 — 창을 여는 문은 `asgard open memory` 하나다.
 
 
 @memory_app.command("connect", help="select and configure this project's shared-memory backend")
@@ -1234,35 +1242,14 @@ def memory_mcp() -> None:
     raise typer.Exit(run_mcp())
 
 
-# Asgard Plan — 생각을 PRD·기능 구조·유저 플로우로 정리하는 로컬 표면.
-# 폴더에 안 매인다: 문서는 워크스페이스(`<에이전트 홈>/studio/plans.json`)에 살고, 어디서
-# 열든 같은 목록이 뜬다. 기획은 코드가 아직 없는 데서 시작하기 때문이다.
-plan_app = typer.Typer(help="Asgard Plan — local product planning workspace", invoke_without_command=True)
-app.add_typer(plan_app, name="plan")
-
-
-@plan_app.callback()
-def plan_default(
-    ctx: typer.Context,
-    port: int = typer.Option(8767, "--port", "-p", help="dashboard port (bare `asgard plan` only)"),
-    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
-) -> None:
-    """서브커맨드 없이 `asgard plan`을 실행하면 로컬 기획 워크스페이스를 연다."""
-    if ctx.invoked_subcommand is not None:
-        return
-    from .commands.plan_dashboard import run_dashboard
-
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
-
-
-@plan_app.command("dashboard", help="open the local Asgard Plan workspace")
-def plan_dashboard(
-    port: int = typer.Option(8767, "--port", "-p", help="local port (falls back to a free port if taken)"),
-    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
-) -> None:
-    from .commands.plan_dashboard import run_dashboard
-
-    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
+# 기획에는 CLI 문이 없다 — **스튜디오 안에서만** 쓴다.
+#
+# 여태 `asgard plan`은 스튜디오를 `?view=plan`으로 열어 주는 별도 명령이었다. 같은 창을 두
+# 이름으로 부르는 셈이라, 기획이 어디에 사는지가 흐려졌다: 창 안의 목적지인가, 독립 도구인가.
+# 기획은 앞뒤 문서가 서로를 물고(PRD → 기능명세 → 유저플로우) 티켓·작업과 같은 워크스페이스를
+# 쓴다 — 그 맥락은 스튜디오 안에 있을 때만 온전하다. 그래서 문을 하나로 줄였다:
+#   `asgard open studio` 의 **기획** 목적지 (딥링크가 필요하면 `--view plan`)
+# API(`commands.plan_api`)는 남는다. 그건 창이 쓰는 계약이지 사람이 치는 명령이 아니다.
 
 
 # 업무 — Studio 보드와 같은 저장소를 창 없이 만지는 손 (<에이전트 홈>/studio/workspace.db).
@@ -1486,19 +1473,53 @@ def ticket_import(json_out: bool = typer.Option(False, "--json", help="기계가
     raise typer.Exit(run_import(json_out))
 
 
-@app.command(help="open Asgard Studio — tasks, planning, artifacts, skills, and settings")
-def desktop(
+# ── 창 — 문은 하나다 ────────────────────────────────────────────────────────────
+# 여태 창을 여는 길이 넷이었다: `asgard desktop`, 그리고 `map`·`memory`·`plan`을 서브커맨드
+# 없이 치는 것. 앞의 셋은 **운영 커맨드 그룹이기도** 해서, 같은 단어가 문맥에 따라 창을 열거나
+# 도움말을 냈다 — `asgard map`이 무엇을 하는지 치기 전에는 알 수 없었다.
+#
+# 이제 창은 `asgard open <표면>` 하나로만 연다. `asgard map`/`asgard memory`는 도움말을 내고,
+# 운영 서브커맨드(scan·trace·add·query…)는 그대로다. 동사가 문 앞에 서면 헷갈릴 것이 없다.
+open_app = typer.Typer(help="open a local Asgard window — studio · map · memory", no_args_is_help=True)
+app.add_typer(open_app, name="open")
+
+
+@open_app.command("studio", help="Asgard Studio — 작업·업무·기획·산출물·스킬·설정")
+def open_studio(
     port: int = typer.Option(8766, "--port", "-p", help="local port (falls back to a free port if taken)"),
     no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
     browser: bool = typer.Option(False, "--browser", help="use a browser instead of the native Tauri app"),
+    view: str = typer.Option("", "--view", help="바로 들어갈 화면 (tickets|plan|projects|artifacts|plugins|settings)"),
     root: str = typer.Option(
         "", "--root", help="작업 공간을 정해서 연다 (기본: 여기가 프로젝트면 여기, 아니면 최근 프로젝트)"
     ),
 ) -> None:
     """Open Asgard Studio. 프로젝트 안이 아니어도 열린다 — 작업 공간은 창에서 고른다."""
-    from .commands.desktop import run_desktop
+    from .commands.studio import run_studio
 
-    raise typer.Exit(run_desktop(port=port, open_browser=not no_open, prefer_native=not browser, root=root or None))
+    raise typer.Exit(
+        run_studio(port=port, open_browser=not no_open, prefer_native=not browser, view=view, root=root or None)
+    )
+
+
+@open_app.command("map", help="관계 그래프 뷰 — 코드가 무엇에 닿는지")
+def open_map(
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+    json_: bool = typer.Option(False, "--json", help="기계가 읽을 형태로"),
+) -> None:
+    from .commands.map import run_map_view
+
+    raise typer.Exit(run_map_view(open_browser=not no_open, json_out=json_))
+
+
+@open_app.command("memory", help="위그드라실 대시보드 — 개인 메모리 위키 (읽기 전용)")
+def open_memory(
+    port: int = typer.Option(8765, "--port", "-p", help="local port (falls back to a free port if taken)"),
+    no_open: bool = typer.Option(False, "--no-open", help="do not open the browser automatically"),
+) -> None:
+    from .commands.memory_dashboard import run_dashboard
+
+    raise typer.Exit(run_dashboard(port=port, open_browser=not no_open))
 
 
 # 자가발전 인박스 (CUS-251) — 퀘스트 로그 채굴 → 스킬 후보 → 승인만이 활성화 경로.
@@ -1795,5 +1816,31 @@ def k6_report(
     raise typer.Exit(run_k6_report(path, json_))
 
 
+def main() -> None:
+    """터미널의 마지막 방어선 — 아스가르드가 아는 실패는 트레이스백으로 새지 않는다.
+
+    Typer는 명령이 던진 예외를 그대로 위로 올린다. 그래서 여태 `StoreError` 하나가
+    사용자 터미널에 40줄짜리 파이썬 스택으로 떨어졌다 — 사용자가 고칠 수 있는 잘못이었는데도
+    화면은 "우리가 깨졌다"고 말한 셈이다. 여기서 아는 실패만 골라 사유 한 줄과 처방 한 줄로
+    닫고, 그 예외가 정한 종료 코드로 끝낸다.
+
+    **모르는 예외는 그대로 둔다.** 전부 삼키면 진짜 버그의 스택이 사라지고, 그건 진단을
+    없애는 것이지 오류 처리가 아니다."""
+    import sys
+
+    from . import errors
+
+    # PATH 되찾기는 `_main` 콜백이 진다 — 이 문으로 안 들어오는 설치본도 있어서다.
+    try:
+        app()
+    except errors.AsgardError as exc:
+        errors.render_cli(exc)
+        sys.exit(exc.exit_code)
+    except KeyboardInterrupt:
+        # Ctrl-C는 사고가 아니다 — 스택을 뱉지 않고 관례대로 130으로 닫는다.
+        sys.stderr.write("\n")
+        sys.exit(130)
+
+
 if __name__ == "__main__":
-    app()
+    main()

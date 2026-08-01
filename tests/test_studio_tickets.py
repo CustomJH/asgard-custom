@@ -246,31 +246,31 @@ class TestApi(TicketCase):
         self.assertFalse(ticket_api.owns("/api/tickets/run"))  # 실행은 작업 계층이 소유한다
 
 
-class TestDesktopBridge(TicketCase):
+class TestStudioBridge(TicketCase):
     def test_the_studio_snapshot_carries_the_ticket_tally(self):
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         T.create_ticket(self.root, "메뉴에 셀 것", priority=1)
-        tally = desktop.snapshot_data(self.root)["tickets"]
+        tally = studio.snapshot_data(self.root)["tickets"]
         self.assertTrue(tally["available"])
         self.assertEqual(tally["open"], 1)
 
     def test_a_broken_store_does_not_take_the_window_down_with_it(self):
         """기록이 실행을 막으면 기록이 아니라 관문이다 — 창은 뜨되 모른다고 말한다."""
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         T.create_ticket(self.root, "있던 것")
         with open(studio_db.db_path(self.root), "wb") as handle:
             handle.write(b"corrupt" * 500)
-        tally = desktop.snapshot_data(self.root)["tickets"]
+        tally = studio.snapshot_data(self.root)["tickets"]
         self.assertFalse(tally["available"])
         self.assertEqual(tally["open"], 0)
 
     def test_running_a_ticket_links_the_task_and_starts_the_ticket(self):
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         ticket = T.create_ticket(self.root, "실행할 일감")
-        status, _, body = desktop.run_ticket({"ref": ticket["key"], "permission": "manual"}, self.root)
+        status, _, body = studio.run_ticket({"ref": ticket["key"], "permission": "manual"}, self.root)
         payload = json.loads(body)
         self.assertEqual(status, 202)
         self.assertEqual(payload["ticket"]["status"], "in_progress")
@@ -282,54 +282,54 @@ class TestDesktopBridge(TicketCase):
 
         창은 이제 개인 작업 공간에서 열린다. 그 자리에서 티켓을 돌리면 저장소 얘기인 일감이
         코드 없는 데서 돈다 — 티켓이 적어 둔 자리가 아직 있으면 거기서 돌아야 한다."""
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         elsewhere = os.path.join(self._tmp.name, "somewhere-else")
         os.makedirs(elsewhere)
         ticket = T.create_ticket(self.root, "이 저장소의 일")
-        status, _, body = desktop.run_ticket({"ref": ticket["key"], "permission": "manual"}, elsewhere)
+        status, _, body = studio.run_ticket({"ref": ticket["key"], "permission": "manual"}, elsewhere)
         self.assertEqual(status, 202)
         self.assertEqual(json.loads(body)["task"]["root"], os.path.abspath(self.root))
 
     def test_a_ticket_with_no_folder_behind_it_runs_where_the_window_stands(self):
         """폴더 없이 적힌 일감(기획에서 나온 것이 그렇다)은 갈 자리가 없다 — 창의 자리가 답이다."""
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         here = os.path.join(self._tmp.name, "window-here")
         os.makedirs(here)
         ticket = T.create_ticket("", "폴더 없이 적은 일감", team="NOR")
-        status, _, body = desktop.run_ticket({"ref": ticket["key"], "permission": "manual"}, here)
+        status, _, body = studio.run_ticket({"ref": ticket["key"], "permission": "manual"}, here)
         self.assertEqual(status, 202)
         # 팀에 결속된 폴더가 있으면 그쪽이 이긴다 — 이 팀은 self.root에 매여 있다
         self.assertEqual(json.loads(body)["task"]["root"], os.path.abspath(self.root))
 
     def test_a_blocked_ticket_refuses_to_run_and_stays_where_it_was(self):
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         blocker = T.create_ticket(self.root, "선행")
         blocked = T.create_ticket(self.root, "막힌 것")
         T.link_tickets(self.root, blocker["key"], "blocks", blocked["key"])
-        status, _, _ = desktop.run_ticket({"ref": blocked["key"]}, self.root)
+        status, _, _ = studio.run_ticket({"ref": blocked["key"]}, self.root)
         self.assertEqual(status, 409)
         self.assertEqual(T.get_ticket(self.root, blocked["key"])["status"], "todo")
 
     def test_a_finished_task_hands_its_result_back_to_the_ticket(self):
         """성공은 완료가 아니라 검토 중이다 — 종료 코드 0은 사람이 받아들였다는 뜻이 아니다."""
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         ticket = T.create_ticket(self.root, "되먹임 받을 일감", status="in_progress")
         T.update_ticket(self.root, ticket["key"], {"task_id": "task-abc"})
-        desktop.tasks._settle_ticket(self.root, {"id": "task-abc", "status": "ready", "result": "테스트를 고쳤습니다"})
+        studio.tasks._settle_ticket(self.root, {"id": "task-abc", "status": "ready", "result": "테스트를 고쳤습니다"})
         after = T.get_ticket(self.root, ticket["key"])
         self.assertEqual(after["status"], "in_review")
         self.assertEqual(after["comments_list"][-1]["body"], "테스트를 고쳤습니다")
 
     def test_a_blocked_task_comments_but_does_not_move_the_ticket(self):
-        from asgard.commands import desktop
+        from asgard.commands import studio
 
         ticket = T.create_ticket(self.root, "막힌 실행", status="in_progress")
         T.update_ticket(self.root, ticket["key"], {"task_id": "task-xyz"})
-        desktop.tasks._settle_ticket(self.root, {"id": "task-xyz", "status": "blocked", "result": "엔진 설정 없음"})
+        studio.tasks._settle_ticket(self.root, {"id": "task-xyz", "status": "blocked", "result": "엔진 설정 없음"})
         after = T.get_ticket(self.root, ticket["key"])
         self.assertEqual(after["status"], "in_progress")
         self.assertIn("엔진 설정 없음", after["comments_list"][-1]["body"])

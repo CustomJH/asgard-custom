@@ -1,4 +1,4 @@
-"""로컬 창들의 공통 문지기 — 루프백 경계와 응답 헤더를 **한 벌만** 둔다.
+"""로컬 창들의 공통 접근 검사 — 루프백 경계와 응답 헤더를 **한 곳에만** 둔다.
 
 이 저장소는 로컬 HTTP 표면을 셋 배송한다(Studio · 기획 · 메모리). 셋 다 같은 것을 막아야
 한다: 루프백이 아닌 Host, 남의 출처, 스니핑, 리퍼러 누수. 그런데 여태 셋이 각자 적고
@@ -46,7 +46,7 @@ HTML_TYPE = "text/html; charset=utf-8"
 def host_allowed(host_header: str | None) -> bool:
     """DNS 리바인딩 방어 — Host의 호스트명이 루프백이어야 한다.
 
-    읽기 전용 표면이라도 막는다: 목록·스니펫·경로에 사적인 것이 실린다. 외부 도메인이
+    읽기 전용 표면이라도 막는다: 목록·스니펫·경로에 사적인 것이 들어간다. 외부 도메인이
     사용자의 브라우저를 통해 127.0.0.1을 읽는 길을 여기서 끊는다."""
     if not host_header:
         return False
@@ -78,9 +78,37 @@ def json_body(status: int, payload: object) -> tuple[int, str, bytes]:
     return status, JSON_TYPE, json.dumps(payload, ensure_ascii=False).encode("utf-8")
 
 
-def api_error(status: int, code: str, message: str) -> tuple[int, str, bytes]:
-    """오류에도 **코드**를 실어 준다 — 화면이 문구가 아니라 코드로 분기할 수 있어야 한다."""
-    return json_body(status, {"error": {"code": code, "message": message}})
+def api_error(
+    status: int, code: str, message: str, remedy: str = "", detail: dict | None = None
+) -> tuple[int, str, bytes]:
+    """오류에도 **코드**를 넣어 준다 — 화면이 문구가 아니라 코드로 분기할 수 있어야 한다.
+
+    `remedy`는 뒤에 붙은 칸이다: 코드는 화면이 분기하는 데 쓰지만, 사용자에게 보여 줄
+    "그래서 뭘 하면 되는가"는 여태 어디에도 없었다. 빈 값이면 넣지 않는다."""
+    payload: dict = {"code": code, "message": message}
+    if remedy:
+        payload["remedy"] = remedy
+    if detail:
+        payload["detail"] = detail
+    return json_body(status, {"error": payload})
+
+
+def error_result(exc: BaseException, *, surface: str = "", root: str = "", where: str = "") -> tuple[int, str, bytes]:
+    """예외 하나 → HTTP 응답 하나. **경계마다 매핑을 다시 적지 않는다.**
+
+    여태 도메인 오류를 상태 코드로 옮기는 표가 표면마다 한 묶음씩 있었다(`except TicketError →
+    400`, `except StoreError → 503` …). 표가 여러 벌이면 새 오류가 생겼을 때 어느 표를 빠뜨렸는지
+    아무도 모르고, 빠뜨린 표면은 그 오류를 500으로 낸다 — 사용자가 고칠 수 있는 잘못이 서버
+    잘못으로 둔갑한다. 이제 상태 코드는 **예외 자신이** 안다(`AsgardError.http_status`).
+
+    모르는 예외는 500으로 내되 **흔적을 남긴다**. 여기가 여태 사고가 사라지던 자리다:
+    `error: KeyError` 한 줄만 나가고 트레이스백은 버려져서, 어느 줄이었는지 알 길이 없었다."""
+    from .. import errors
+
+    err = errors.coerce(exc)
+    if err.http_status >= 500 and root:
+        errors.record(root, err, surface=surface or "http", where=where)
+    return api_error(err.http_status, err.code, err.message, err.remedy, err.detail or None)
 
 
 def not_found() -> tuple[int, str, bytes]:

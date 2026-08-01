@@ -41,7 +41,7 @@ Installs `asgard` to `~/.local/bin`. Then:
 ```bash
 asgard doctor    # verify
 asgard --help
-asgard desktop   # native app when installed, browser fallback otherwise
+asgard open studio  # native app when installed, browser fallback otherwise
 ```
 
 The installer manages a standalone CPython 3.14. Running from source or importing Asgard as a library
@@ -251,12 +251,19 @@ Maps are navigation hints, not completion evidence. Thinker/Worker must still re
 definitions and usages that a plan depends on, while `asgard doctor` checks managed-map
 drift plus stale, malformed, oversized, or unsafe entries in manual area maps.
 
-## Desktop
+## Studio
+
+Every local window opens through one verb — `asgard open`. The command groups (`asgard map`,
+`asgard memory`) stay what they are: hands that operate the data, not doors.
 
 ```bash
-asgard desktop                 # native app when installed, browser fallback otherwise
-asgard desktop --browser       # skip the native shell
-asgard desktop --root ~/work/x # open standing in a specific workspace
+asgard open studio                 # native app when installed, browser fallback otherwise
+asgard open studio --browser       # skip the native shell
+asgard open studio --root ~/work/x # open standing in a specific workspace
+asgard open studio --view tickets  # deep-link a screen (tickets|plan|projects|artifacts|…)
+
+asgard open map                    # relation-graph view
+asgard open memory                 # Yggdrasil dashboard (read-only)
 ```
 
 A loopback workspace over the same ownership the CLI uses: `asgard run` executes the work,
@@ -264,7 +271,7 @@ A loopback workspace over the same ownership the CLI uses: `asgard run` executes
 
 **The window belongs to the machine, not to a folder.** Wherever you launch it from — a repo, your
 home, the dock — it opens standing in the same place: a personal workspace at
-`~/.asgard/desktop/workspace`. Only an explicit `--root` or `ASGARD_DESKTOP_ROOT` puts it somewhere
+`~/.asgard/studio/workspace`. Only an explicit `--root` or `ASGARD_STUDIO_ROOT` puts it somewhere
 else. The cwd never decides, and a plain directory is never registered as a project by being the
 cwd, so launching from the dock leaves no `.asgard/` in your home.
 
@@ -277,18 +284,18 @@ inside one — an idea usually arrives before the repo does.
 Which folder a task runs in is a property of **that task**, not of the window — the dock has a
 workspace picker, so you can dispatch work into another project without swapping the screen you are
 on, and following up on a task always re-enters the workspace it started in. Task bodies stay in
-`<workspace>/.asgard/desktop/tasks.jsonl`, so recent work and its artifacts survive closing the
+`<workspace>/.asgard/studio/tasks.jsonl`, so recent work and its artifacts survive closing the
 window; a task that was still running when the process died is re-read as `interrupted` rather than
 reported as live. Task **headers** are additionally indexed machine-wide in
-`~/.asgard/desktop/index.jsonl`, which is what lets the sidebar, the home screen, and `⌘K` answer
+`~/.asgard/studio/index.jsonl`, which is what lets the sidebar, the home screen, and `⌘K` answer
 "what was I working on" across every project at once. That index is convenience, not canon — delete
 it and it rebuilds from the per-workspace records. The list of projects lives in
-`~/.asgard/desktop/projects.json` (`ASGARD_DESKTOP_HOME` relocates all three).
+`~/.asgard/studio/projects.json` (`ASGARD_STUDIO_STATE` relocates all three).
 
 Changed files open in place: the inspector reads the file or its `git diff` through endpoints that
 resolve every path with `realpath` and refuse anything outside the workspace root, including symlinks
 that point out. `⌘K` searches tasks across projects, plus tickets, workspaces, skills, and screens.
-The surface shares one night-and-gold token set with `asgard map` and the memory dashboard, so the
+The surface shares one night-and-gold token set with the map view and the memory dashboard, so the
 three windows read as one product.
 
 ### Work board

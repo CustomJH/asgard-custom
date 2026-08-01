@@ -15,7 +15,7 @@ import tempfile
 import pytest
 
 _ENV = "ASGARD_MEMORY_SEMANTIC"
-_DESKTOP_HOME = "ASGARD_DESKTOP_HOME"
+_STUDIO_STATE = "ASGARD_STUDIO_STATE"
 _STUDIO_HOME = "ASGARD_STUDIO_HOME"
 
 
@@ -55,19 +55,19 @@ def _hermetic_studio_home(tmp_path_factory):
 
 
 @pytest.fixture(autouse=True, scope="session")
-def _hermetic_desktop_home():
-    """Desktop 등록부를 스위트 밖으로 뺀다.
+def _hermetic_studio_state():
+    """Studio 등록부를 스위트 밖으로 뺀다.
 
-    이 변수가 안 서 있으면 desktop_store는 `~/.asgard/desktop/`을 쓴다 — 즉 테스트가
+    이 변수가 안 서 있으면 studio_store는 `~/.asgard/studio/`을 쓴다 — 즉 테스트가
     만든 임시 디렉터리들이 **사용자의 실제 프로젝트 목록에 그대로 쌓인다**. 실측: 등록
     29개 중 27개가 이미 사라진 `/var/folders/.../T/tmpXXXX` 였다."""
-    previous = os.environ.get(_DESKTOP_HOME)
-    with tempfile.TemporaryDirectory(prefix="asgard-desktop-home-") as home:
-        os.environ[_DESKTOP_HOME] = home
+    previous = os.environ.get(_STUDIO_STATE)
+    with tempfile.TemporaryDirectory(prefix="asgard-studio-home-") as home:
+        os.environ[_STUDIO_STATE] = home
         try:
             yield home
         finally:
             if previous is None:
-                os.environ.pop(_DESKTOP_HOME, None)
+                os.environ.pop(_STUDIO_STATE, None)
             else:
-                os.environ[_DESKTOP_HOME] = previous
+                os.environ[_STUDIO_STATE] = previous

@@ -38,8 +38,7 @@ _SUMMARY = {
     "skills": "central Asgard skill catalog and router",
     "plugins": "Asgard plugin catalog",
     "memory": "Yggdrasil — personal memory · LLM wiki",
-    "plan": "Asgard Plan — local product planning workspace",
-    "desktop": "Asgard Studio — tasks, artifacts, and settings (프로젝트 밖에서도 열린다)",
+    "open": "open a local Asgard window — studio · map · memory",
     "ticket": "Asgard 업무 — workspace, teams, projects, and the tickets the agent shares",
     "evolve": "self-evolution inbox — skill drafts",
     "humanize": "Bragi — grade text for machine-writing tells, any language",
@@ -53,7 +52,7 @@ _FLAGS = {
     "agent": [],
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
-    "map": ["--no-open"],  # bare `asgard map` = 관계 그래프 뷰 오픈 (memory와 동형)
+    "map": [],  # 창은 `asgard open map`이 연다 — 여기는 지도를 만지는 손이다
     "health": ["--snapshot", "--next", "--steps", "--json", "--quiet"],
     "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--json", "--quiet"],
@@ -87,9 +86,8 @@ _FLAGS = {
     "tools": [],
     "skills": [],
     "plugins": [],
-    "memory": ["--port", "--no-open"],  # bare `asgard memory` = 대시보드 오픈 (원커맨드 UX)
-    "plan": ["--port", "--no-open"],  # bare `asgard plan` = 기획 워크스페이스 오픈
-    "desktop": ["--browser", "--no-open", "--port", "--root"],
+    "memory": [],  # 창은 `asgard open memory`가 연다
+    "open": [],  # 플래그는 표면마다 다르다 — 서브커맨드가 든다
     "ticket": [],  # bare `asgard ticket` = 보드 (플래그는 서브커맨드가 든다)
     "evolve": [],
     "office": [],
@@ -184,7 +182,6 @@ _MAP_SUB = {
     "context": "show bounded task context",
     "scan": "rebuild the relation graph (no LLM)",
     "trace": "walk relation edges from a node",
-    "view": "open the relation-graph view",
 }
 _SETUP_SUB = {"map": "draw or refresh the project code map"}
 _EVOLVE_SUB = {
@@ -204,8 +201,9 @@ _MEM_SUB = {
     "ingest": "absorb knowledge (dedup-merge)",
     "query": "search the wiki (zero-LLM)",
     "episodes": "search raw session transcript segments",
-    "dashboard": "open a read-only local memory dashboard",
     "lint": "wiki health check",
+    "contradictions": "pages that contradict each other (a human decides)",
+    "contradiction-seen": "mark a contradiction as seen — not resolved",
     "proposals": "pending memory proposals awaiting your approval",
     "autosave": "save memories without the approval round-trip",
     "approve": "approve a staged memory proposal",
@@ -238,7 +236,17 @@ _MEM_SUB = {
     "project-ingest": "parse thrown documents into project memory",
     "mcp": "stdio MCP bridge (shared memory)",
 }
-_PLAN_SUB = {"dashboard": "open the local Asgard Plan workspace"}
+# 창을 여는 문은 하나다 — 기획은 스튜디오 안에서만 쓴다(별도 `plan` 그룹 없음).
+_OPEN_SUB = {
+    "studio": "Asgard Studio — 작업·업무·기획·산출물·스킬·설정",
+    "map": "관계 그래프 뷰",
+    "memory": "위그드라실 대시보드 (읽기 전용)",
+}
+_OPEN_FLAGS = {
+    "studio": "--port --browser --no-open --view --root",
+    "map": "--no-open --json",
+    "memory": "--port --no-open",
+}
 _TICKET_SUB = {
     "board": "the board, folded into status columns",
     "list": "tickets in priority order",
@@ -409,11 +417,17 @@ def _bash() -> str:
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_MEM_SUB)} --help" -- "$cur") )\n'
                 "      fi ;;"
             )
-        elif name == "plan":
+        elif name == "open":
+            surfaces = "\n".join(
+                f'      elif [ "${{COMP_WORDS[2]}}" = "{surface}" ]; then\n'
+                f'        COMPREPLY=( $(compgen -W "{flags} --help" -- "$cur") )'
+                for surface, flags in _OPEN_FLAGS.items()
+            )
             cases.append(
-                "    plan)\n"
+                "    open)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
-                f'        COMPREPLY=( $(compgen -W "{" ".join(_PLAN_SUB)} --help" -- "$cur") )\n'
+                f'        COMPREPLY=( $(compgen -W "{" ".join(_OPEN_SUB)} --help" -- "$cur") )\n'
+                f"{surfaces}\n"
                 "      fi ;;"
             )
         elif name == "ticket":
@@ -575,11 +589,16 @@ def _zsh() -> str:
                 f"        compadd -- {' '.join(_MEM_SUB)} --help\n"
                 "      fi ;;"
             )
-        elif name == "plan":
+        elif name == "open":
+            surfaces = "\n".join(
+                f"      elif [[ $words[3] == {surface} ]]; then\n        compadd -- {flags} --help"
+                for surface, flags in _OPEN_FLAGS.items()
+            )
             cases.append(
-                "    plan)\n"
+                "    open)\n"
                 "      if (( CURRENT == 3 )); then\n"
-                f"        compadd -- {' '.join(_PLAN_SUB)} --help\n"
+                f"        compadd -- {' '.join(_OPEN_SUB)} --help\n"
+                f"{surfaces}\n"
                 "      fi ;;"
             )
         elif name == "ticket":
@@ -697,9 +716,15 @@ def _fish() -> str:
     mem_top = "__fish_seen_subcommand_from memory; and not __fish_seen_subcommand_from " + " ".join(_MEM_SUB)
     for sub, desc in _MEM_SUB.items():
         lines.append(f"complete -c asgard -n \"{mem_top}\" -a {sub} -d '{desc}'")
-    plan_top = "__fish_seen_subcommand_from plan; and not __fish_seen_subcommand_from " + " ".join(_PLAN_SUB)
-    for sub, desc in _PLAN_SUB.items():
-        lines.append(f"complete -c asgard -n \"{plan_top}\" -a {sub} -d '{desc}'")
+    open_top = "__fish_seen_subcommand_from open; and not __fish_seen_subcommand_from " + " ".join(_OPEN_SUB)
+    for sub, desc in _OPEN_SUB.items():
+        lines.append(f"complete -c asgard -n \"{open_top}\" -a {sub} -d '{desc}'")
+    for surface, flags in _OPEN_FLAGS.items():
+        for flag in flags.split():
+            lines.append(
+                'complete -c asgard -n "__fish_seen_subcommand_from open; and '
+                f'__fish_seen_subcommand_from {surface}" -l {flag[2:]}'
+            )
     ticket_top = "__fish_seen_subcommand_from ticket; and not __fish_seen_subcommand_from " + " ".join(_TICKET_SUB)
     for sub, desc in _TICKET_SUB.items():
         lines.append(f"complete -c asgard -n \"{ticket_top}\" -a {sub} -d '{desc}'")

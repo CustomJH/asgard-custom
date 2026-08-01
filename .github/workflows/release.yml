@@ -66,7 +66,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
 
-  desktop-windows:
+  studio-shell-windows:
     needs: release
     runs-on: windows-latest
     steps:
@@ -76,20 +76,20 @@ jobs:
         with:
           node-version: "22"
           cache: npm
-          cache-dependency-path: desktop/package-lock.json
+          cache-dependency-path: studio-shell/package-lock.json
 
       - uses: dtolnay/rust-toolchain@stable
 
       - run: npm ci
-        working-directory: desktop
+        working-directory: studio-shell
 
       - run: cargo test
-        working-directory: desktop/src-tauri
+        working-directory: studio-shell/src-tauri
 
       - run: npm run bundle:windows
-        working-directory: desktop
+        working-directory: studio-shell
 
       - name: Attach Windows installer
         uses: softprops/action-gh-release@v2
         with:
-          files: desktop/src-tauri/target/release/bundle/nsis/*-setup.exe
+          files: studio-shell/src-tauri/target/release/bundle/nsis/*-setup.exe
