@@ -89,9 +89,7 @@ class TestIngestPreviewShowsWhatWasBlocked(SurfaceBase):
     """막힌 문서를 조용히 건너뛰면 사람은 그것이 저장된 줄 안다."""
 
     def connect(self) -> dict:
-        mb.write_config(
-            self.root, "http://127.0.0.1:9/api", "surface-proj", project_uid="uid-x", binding_id="bind-x"
-        )
+        mb.write_config(self.root, "http://127.0.0.1:9/api", "surface-proj", project_uid="uid-x", binding_id="bind-x")
         found = mb.find_config(self.root)
         assert found is not None
         return found[1]
@@ -153,9 +151,7 @@ class TestAutosaveTellsTheThreeStatesApart(SurfaceBase):
     """리포의 요청과 이 기계의 승인은 다른 것이다 — 한 칸에 뭉치면 미승인이 off로 보인다."""
 
     def connect(self) -> dict:
-        mb.write_config(
-            self.root, "http://127.0.0.1:9/api", "surface-proj", project_uid="uid-a", binding_id="bind-a"
-        )
+        mb.write_config(self.root, "http://127.0.0.1:9/api", "surface-proj", project_uid="uid-a", binding_id="bind-a")
         found = mb.find_config(self.root)
         assert found is not None
         cfg = found[1]

@@ -90,6 +90,7 @@ class DocstringTest(unittest.TestCase):
         """판정에 함수 이름이 붙어야 사람이 어디를 고칠지 안다."""
         source = "def outer():\n    # 그쪽이 이긴다\n    return 1\n"
         units = py_units(source)
+        assert units is not None
         found = craft_note.note_findings(source, "probe.py", list(units.values()), "python")
         self.assertEqual([f.unit for f in found], ["outer"])
 

@@ -180,6 +180,7 @@ class TestPreflightBecomesOneFact(unittest.TestCase):
             {"name": "SDK", "ok": False, "detail": "missing", "fix": "asgard update"},
         ]
         err = self.start.preflight_error(checks)
+        assert err is not None
         self.assertEqual(err.code, "preflight_failed")
         self.assertEqual(err.remedy, "설치하세요")
         self.assertIn("claude CLI", err.message)
@@ -189,6 +190,7 @@ class TestPreflightBecomesOneFact(unittest.TestCase):
 
     def test_it_exits_two_because_the_environment_is_the_problem(self):
         err = self.start.preflight_error([{"name": "k", "ok": False, "detail": "", "fix": ""}])
+        assert err is not None
         self.assertEqual(err.exit_code, 2)
 
 

@@ -957,6 +957,7 @@ class TestFailureReachesTheWindowIntact(StudioCase):
             }
         }
         failure = studio.tasks._failure_of(envelope, 2, json.dumps(envelope), "")
+        assert failure is not None
         self.assertEqual(failure["code"], "preflight_failed")
         self.assertIn("claude CLI", failure["message"])
         self.assertIn("claude.com/claude-code", failure["remedy"])
@@ -966,6 +967,7 @@ class TestFailureReachesTheWindowIntact(StudioCase):
         """자식이 JSON을 안 냈어도 결과 칸에 원문을 붓지 않는다 — 표제 한 줄과 접힌 원문이다."""
         noisy = "  ✔ provider   Claude Code\n  ✘ claude CLI  not found\n! headless 실행 불가"
         failure = studio.tasks._failure_of({}, 2, noisy, "")
+        assert failure is not None
         self.assertEqual(failure["code"], "task_failed")
         self.assertEqual(failure["message"], "! headless 실행 불가")
         self.assertEqual(failure["detail"]["exit_code"], 2)

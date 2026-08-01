@@ -345,7 +345,9 @@ def main() -> int:
         json.dump(report, handle, ensure_ascii=False, indent=1)
     # 화면에는 스윕 표를 빼고 찍는다 — 40줄짜리 표는 파일에서 읽을 것이지 흘려 볼 것이 아니다.
     shown = {k: v for k, v in report.items() if k != "rows"}
-    shown["abstention"] = {k: v for k, v in shown["abstention"].items() if k != "sweep_top_score"}
+    abstention = shown.get("abstention")
+    if isinstance(abstention, dict):
+        shown["abstention"] = {k: v for k, v in abstention.items() if k != "sweep_top_score"}
     print(json.dumps(shown, ensure_ascii=False, indent=1))
     return 0
 

@@ -125,7 +125,7 @@ _LEGACY_KEYS = {"ui": {"desktop_permission": "studio_permission"}}
 
 def _pick(name: str, raw: object) -> dict:
     keys = _SETTING_KEYS[name]
-    data = dict(raw or {})
+    data = dict(raw) if isinstance(raw, dict) else {}
     out = {key: value for key, value in data.items() if key in keys}
     # 옛 이름은 **빈 자리만** 메운다 — 둘 다 적혀 있으면 새 이름이 정본이다
     for old, new in _LEGACY_KEYS.get(name, {}).items():

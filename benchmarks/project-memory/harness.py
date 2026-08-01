@@ -155,9 +155,7 @@ def lane_relations(root: str, queries: list[tuple[str, list[str], str, str]], *,
         seeds = _lexical_seeds(records, query, max_results)
         base_rows = [f"{records[rid].content} [record: {rid}]" for rid in seeds]
         neighbors = _relation_neighbors(root, set(seeds))
-        neighbor_rows = [
-            f"{content[:300]} [via {edge}; record: {rid}]" for rid, edge, content in neighbors
-        ]
+        neighbor_rows = [f"{content[:300]} [via {edge}; record: {rid}]" for rid, edge, content in neighbors]
         # 게이트 확인 — 이웃 후보 중 자격 없는 record 가 실제로 나타났다가 막혔는가.
         for rid in _neighbor_candidates(root, set(seeds)):
             if rid in all_ids and rid not in records and rid not in blocked_neighbors:
@@ -363,21 +361,25 @@ def main() -> int:
     print(f"[레인 1] 문서 레인 n={doc['n']}  " + "  ".join(f"{m}={v}" for m, v in doc["overall"].items()))
     for lang, sub in doc["by_lang"].items():
         print(f"          {lang} n={sub['count']} hit@1={sub['hit_at_1']} hit@3={sub['hit_at_3']} mrr={sub['mrr']}")
-    print(f"\n[레인 2] 관계 1홉 n={rel['n']}  off={rel['overall']['recall_off']} on={rel['overall']['recall_on']} Δ={rel['overall']['delta']}")
+    print(
+        f"\n[레인 2] 관계 1홉 n={rel['n']}  off={rel['overall']['recall_off']} on={rel['overall']['recall_on']} Δ={rel['overall']['delta']}"
+    )
     for qtype, sub in rel["by_type"].items():
         print(
             f"          {qtype} n={sub['count']} off={sub['recall_off']} on={sub['recall_on']} "
             f"Δ={sub['delta']} (개선 {sub['improved']} · 퇴행 {sub['regressed']})"
         )
-    print(f"          주입 문자 off={rel['chars_off']} on={rel['chars_on']} · 게이트가 막은 이웃 {rel['gate_blocked_neighbors']}")
+    print(
+        f"          주입 문자 off={rel['chars_off']} on={rel['chars_on']} · 게이트가 막은 이웃 {rel['gate_blocked_neighbors']}"
+    )
     print("          예산 스윕 (fact / relation):")
     for budget, arms in rel["budget_sweep"].items():
-        cells = " ".join(
-            f"{qtype}: off={arms['off'][qtype]} on={arms['on'][qtype]}" for qtype in sorted(arms["off"])
-        )
+        cells = " ".join(f"{qtype}: off={arms['off'][qtype]} on={arms['on'][qtype]}" for qtype in sorted(arms["off"]))
         print(f"            budget={budget:>5}  {cells}")
     o = adm["overall"]
-    print(f"\n[레인 3] 동언어 기권 n={o['count']} 정확도={o['accuracy']} 기권정밀도={o['abstention_precision']} 기권재현율={o['abstention_recall']} 오기권률={o['false_abstention_rate']}")
+    print(
+        f"\n[레인 3] 동언어 기권 n={o['count']} 정확도={o['accuracy']} 기권정밀도={o['abstention_precision']} 기권재현율={o['abstention_recall']} 오기권률={o['false_abstention_rate']}"
+    )
     for lang, sub in adm["by_lang"].items():
         print(
             f"          {lang} n={sub['count']} 정확도={sub['accuracy']} "

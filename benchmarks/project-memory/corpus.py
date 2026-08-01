@@ -199,7 +199,11 @@ been reproduced, so it does not gate any decision yet.
 DOCUMENT_QUERIES: list[tuple[str, list[tuple[str, str]], str]] = [
     ("금요일에 배포해도 되나", [("운영-정책.md", "1 배포 창")], "ko"),
     ("접근 키는 얼마나 자주 갈아 끼우나", [("운영-정책.md", "2 비밀 회전")], "ko"),
-    ("스키마 이행이 낀 배포를 어떻게 되돌리나", [("운영-정책.md", "3 롤백 절차"), ("스키마-이행.md", "2 되감기")], "ko"),
+    (
+        "스키마 이행이 낀 배포를 어떻게 되돌리나",
+        [("운영-정책.md", "3 롤백 절차"), ("스키마-이행.md", "2 되감기")],
+        "ko",
+    ),
     ("주입 지연 예산은 몇 초인가", [("지연-예산.md", "1 총 예산")], "ko"),
     ("레인이 자기 몫을 넘기면 어떻게 되나", [("지연-예산.md", "2 레인별 배분")], "ko"),
     ("스키마 v3 이행 순서", [("스키마-이행.md", "1 이행 순서")], "ko"),
@@ -330,10 +334,25 @@ RECORDS: list[dict] = [
 #   relation — 정답 중 하나가 **어휘로는 안 닿고** 관계로만 닿는다 (확장이 값을 해야 하는 자리)
 #   fact     — 정답이 어휘로 바로 닿는다 (확장이 **안 깎아야** 하는 자리, HippoRAG 2 의 경고)
 RECORD_QUERIES: list[tuple[str, list[str], str, str]] = [
-    ("리랭커를 CPU 로 돌리는 결정이 무엇에 매여 있나", ["decision.rerank-cpu", "contract.latency-budget"], "relation", "ko"),
+    (
+        "리랭커를 CPU 로 돌리는 결정이 무엇에 매여 있나",
+        ["decision.rerank-cpu", "contract.latency-budget"],
+        "relation",
+        "ko",
+    ),
     ("스키마 v3 이행이 무엇에 매여 있나", ["migration.schema-v3", "contract.latency-budget"], "relation", "ko"),
-    ("what does the gateway authentication component require", ["component.gateway-auth", "policy.secret-rotation"], "relation", "en"),
-    ("what supports the permission audit contract", ["contract.audit-trail", "policy.secret-rotation"], "relation", "en"),
+    (
+        "what does the gateway authentication component require",
+        ["component.gateway-auth", "policy.secret-rotation"],
+        "relation",
+        "en",
+    ),
+    (
+        "what supports the permission audit contract",
+        ["contract.audit-trail", "policy.secret-rotation"],
+        "relation",
+        "en",
+    ),
     ("금요일 저녁 장애는 무엇 때문이었나", ["incident.friday-outage", "component.gateway-auth"], "relation", "ko"),
     ("롤백 절차가 어느 사건에서 나왔나", ["runbook.rollback", "incident.friday-outage"], "relation", "ko"),
     ("배포 창은 언제인가", ["policy.deploy-window"], "fact", "ko"),
@@ -353,31 +372,106 @@ RECORD_QUERIES: list[tuple[str, list[str], str, str]] = [
 
 ADMISSION_CASES: list[dict] = [
     # 동언어 · 관련 있음 → 통과해야 한다
-    {"query": "배포 창은 언제인가", "text": "배포 창은 화요일·수요일·목요일 오전이다.", "relevant": True, "lang": "ko-ko"},
+    {
+        "query": "배포 창은 언제인가",
+        "text": "배포 창은 화요일·수요일·목요일 오전이다.",
+        "relevant": True,
+        "lang": "ko-ko",
+    },
     {"query": "주입 예산은 몇 초인가", "text": "턴 시작 주입의 총 예산은 5초다.", "relevant": True, "lang": "ko-ko"},
     {"query": "롤백은 어떻게 하나", "text": "롤백은 배포 역순으로 되돌린다.", "relevant": True, "lang": "ko-ko"},
     {"query": "감사 로그 보관 기간", "text": "감사 로그는 2년 보관한다.", "relevant": True, "lang": "ko-ko"},
-    {"query": "how often do keys rotate", "text": "Access keys rotate every ninety days.", "relevant": True, "lang": "en-en"},
-    {"query": "which queue backend", "text": "We run the work queue on Redis streams.", "relevant": True, "lang": "en-en"},
-    {"query": "when is on-call paged", "text": "The on-call engineer is paged for customer-visible failures only.", "relevant": True, "lang": "en-en"},
-    {"query": "where are credentials stored", "text": "Credentials never touch disk on the gateway.", "relevant": True, "lang": "en-en"},
+    {
+        "query": "how often do keys rotate",
+        "text": "Access keys rotate every ninety days.",
+        "relevant": True,
+        "lang": "en-en",
+    },
+    {
+        "query": "which queue backend",
+        "text": "We run the work queue on Redis streams.",
+        "relevant": True,
+        "lang": "en-en",
+    },
+    {
+        "query": "when is on-call paged",
+        "text": "The on-call engineer is paged for customer-visible failures only.",
+        "relevant": True,
+        "lang": "en-en",
+    },
+    {
+        "query": "where are credentials stored",
+        "text": "Credentials never touch disk on the gateway.",
+        "relevant": True,
+        "lang": "en-en",
+    },
     # 동언어 · 관련 없음 → 기권해야 한다 (이 게이트가 사는 자리)
-    {"query": "배포 창은 언제인가", "text": "감사 로그는 2년 보관하며 접근도 감사 대상이다.", "relevant": False, "lang": "ko-ko"},
-    {"query": "주입 예산은 몇 초인가", "text": "사용자가 읽는 표면은 한국어로 적는다.", "relevant": False, "lang": "ko-ko"},
+    {
+        "query": "배포 창은 언제인가",
+        "text": "감사 로그는 2년 보관하며 접근도 감사 대상이다.",
+        "relevant": False,
+        "lang": "ko-ko",
+    },
+    {
+        "query": "주입 예산은 몇 초인가",
+        "text": "사용자가 읽는 표면은 한국어로 적는다.",
+        "relevant": False,
+        "lang": "ko-ko",
+    },
     {"query": "롤백은 어떻게 하나", "text": "접근 키는 90일마다 갈아 끼운다.", "relevant": False, "lang": "ko-ko"},
     {"query": "감사 로그 보관 기간", "text": "리랭커를 CPU 에서 돌리기로 한다.", "relevant": False, "lang": "ko-ko"},
-    {"query": "how often do keys rotate", "text": "Consumers acknowledge after the side effect, never before.", "relevant": False, "lang": "en-en"},
+    {
+        "query": "how often do keys rotate",
+        "text": "Consumers acknowledge after the side effect, never before.",
+        "relevant": False,
+        "lang": "en-en",
+    },
     {"query": "which queue backend", "text": "A shift never ends mid-incident.", "relevant": False, "lang": "en-en"},
-    {"query": "when is on-call paged", "text": "The gateway exchanges a bearer token for a session handle.", "relevant": False, "lang": "en-en"},
-    {"query": "where are credentials stored", "text": "Schema v3 rolls out across three separate deploys.", "relevant": False, "lang": "en-en"},
+    {
+        "query": "when is on-call paged",
+        "text": "The gateway exchanges a bearer token for a session handle.",
+        "relevant": False,
+        "lang": "en-en",
+    },
+    {
+        "query": "where are credentials stored",
+        "text": "Schema v3 rolls out across three separate deploys.",
+        "relevant": False,
+        "lang": "en-en",
+    },
     # 동언어 · 관련 없는데 **낱말이 우연히 겹친다** → 게이트가 못 막는 자리 (한계 계측)
     {"query": "배포 창은 언제인가", "text": "배포 뒤 24시간 안에 회고를 연다.", "relevant": False, "lang": "ko-ko"},
-    {"query": "which queue backend", "text": "The queue exists to prevent silent loss of work.", "relevant": False, "lang": "en-en"},
+    {
+        "query": "which queue backend",
+        "text": "The queue exists to prevent silent loss of work.",
+        "relevant": False,
+        "lang": "en-en",
+    },
     # 교차언어 → 어휘가 안 겹치는 것이 정상이라 게이트가 손대면 안 된다 (양쪽 다 통과가 정답)
-    {"query": "접근 키는 얼마나 자주 가나", "text": "Access keys rotate every ninety days.", "relevant": True, "lang": "ko-en"},
-    {"query": "온콜은 언제 호출되나", "text": "The on-call engineer is paged for customer-visible failures.", "relevant": True, "lang": "ko-en"},
-    {"query": "how often is the deploy window open", "text": "배포 창은 화요일·수요일·목요일 오전이다.", "relevant": True, "lang": "en-ko"},
-    {"query": "what is the injection budget", "text": "턴 시작 주입의 총 예산은 5초다.", "relevant": True, "lang": "en-ko"},
+    {
+        "query": "접근 키는 얼마나 자주 가나",
+        "text": "Access keys rotate every ninety days.",
+        "relevant": True,
+        "lang": "ko-en",
+    },
+    {
+        "query": "온콜은 언제 호출되나",
+        "text": "The on-call engineer is paged for customer-visible failures.",
+        "relevant": True,
+        "lang": "ko-en",
+    },
+    {
+        "query": "how often is the deploy window open",
+        "text": "배포 창은 화요일·수요일·목요일 오전이다.",
+        "relevant": True,
+        "lang": "en-ko",
+    },
+    {
+        "query": "what is the injection budget",
+        "text": "턴 시작 주입의 총 예산은 5초다.",
+        "relevant": True,
+        "lang": "en-ko",
+    },
 ]
 
 

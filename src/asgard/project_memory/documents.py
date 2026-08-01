@@ -328,8 +328,6 @@ def _words(text: str) -> list[str]:
     return list(dict.fromkeys(w.lower() for w in re.split(r"[^\w가-힣%-]+", text) if len(w) >= 2))
 
 
-
-
 def _excerpt(text: str, phrase: str, words: list[str], width: int = _EXCERPT_WIDTH) -> str:
     low = text.lower()
     needle = phrase if phrase and phrase in low else next((w for w in words if w in low), "")

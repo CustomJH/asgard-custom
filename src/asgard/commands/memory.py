@@ -547,6 +547,7 @@ def run_proposals(json_out: bool = False) -> int:
 _AUTOSAVE_TIERS = ("personal", "project", "both")
 _AUTOSAVE_STATES = ("on", "off", "approve", "revoke")
 
+
 def _project_gates() -> tuple[tuple[str, str, str, Callable[[dict], str]], ...]:
     """2차에서 이 기계의 승인을 요구하는 손잡이들 — (이름, grant, 설명, 게이트 판정기).
 
@@ -719,8 +720,7 @@ def run_autosave(state: str | None, tier: str, json_out: bool = False, yes: bool
         ui.head("memory autosave")
         ui.step(f"1차 개인 기억 (memory.autosave)          · {'on' if personal else 'off'}")
         ui.step(
-            "2차 프로젝트 기억 (project_memory.autosave) · "
-            + ("미연결" if project is None else _gate_label(save_gate))
+            "2차 프로젝트 기억 (project_memory.autosave) · " + ("미연결" if project is None else _gate_label(save_gate))
         )
         if turns_gate != GATE_OFF:
             # 같은 허가 축에 있는데 이 화면에만 없으면, 켜진 줄 모르는 손잡이가 하나 남는다.

@@ -242,9 +242,7 @@ def _claim(task_id: str, process: subprocess.Popen) -> bool:
         return True
 
 
-def _finish(
-    task_id: str, root: str, process: subprocess.Popen, stdout: str, stderr: str, before: list[dict]
-) -> None:
+def _finish(task_id: str, root: str, process: subprocess.Popen, stdout: str, stderr: str, before: list[dict]) -> None:
     """끝난 프로세스를 작업에 적어 넣고 티켓까지 되돌려 놓는다."""
     payload: dict = {}
     for line in reversed(stdout.splitlines()):

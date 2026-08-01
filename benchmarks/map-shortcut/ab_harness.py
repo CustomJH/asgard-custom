@@ -284,10 +284,7 @@ def main() -> int:
         row = run_one(fid, task, judge, arm, rep)
         rows.append(row)
         mark = "OK " if row["success"] else "MISS"
-        print(
-            f"  [{index:2}/{len(plan)}] {mark} {fid:7} {arm:3} rep{rep}"
-            f"  tok={row['tokens']}  {row['wall_s']}s"
-        )
+        print(f"  [{index:2}/{len(plan)}] {mark} {fid:7} {arm:3} rep{rep}  tok={row['tokens']}  {row['wall_s']}s")
     report(rows)
     return 0
 
