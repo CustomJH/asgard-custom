@@ -402,7 +402,7 @@ class TrinityRun:
 
         def make(rp=None, role=sess_role, selected=model):
             placed = rp or rrp
-            # 역할에 다른 에이전트가 배치돼 있으면 **그 에이전트의** 1차 기억이 실린다 (스웜).
+            # 역할에 다른 에이전트가 배치돼 있으면 **그 에이전트의** 1차 기억이 들어간다 (스웜).
             memory = hd._memory_snap_for(role) if hd._mem_allowed(placed.profile.name, placed.source) else ""
             return hd._session(
                 _role_prompt("asgard-thinker.md") + hd.lagom + charter + manual + memory + hd.map_note,
@@ -700,7 +700,12 @@ class TrinityRun:
 
             def make(rp=None):
                 return hd._session(
-                    _role_prompt("asgard-worker.md") + hd.lagom + hd.manual_worker + skill_note + hd.map_note,
+                    _role_prompt("asgard-worker.md")
+                    + hd.lagom
+                    + hd.comments
+                    + hd.manual_worker
+                    + skill_note
+                    + hd.map_note,
                     extra_tools=skill_tools,
                     handlers=skill_handlers,
                     role="worker",
