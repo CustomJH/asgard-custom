@@ -43,7 +43,7 @@ def direct_skill(skill_md: str, *, implicit: bool = True) -> str:
     allowed = _field(skill_md, "allowed-tools")
     explicit = not implicit or _field(skill_md, "disable-model-invocation").lower() in ("true", "yes", "1", "on")
     explicit_line = "disable-model-invocation: true\n" if explicit else ""
-    # 인자 힌트는 사용자 표면이다 — 상류가 적어 뒀으면 어댑터에서도 살려야 `/name <args>` 안내가 산다.
+    # 인자 힌트는 사용자 표면이다 — 상류가 적어 뒀으면 어댑터에서도 살려야 `/name <args>` 안내가 제대로 나온다.
     hint = _field(skill_md, "argument-hint")
     hint_line = f"argument-hint: {hint}\n" if hint else ""
     # 쉼표로 잇는다 — 공백으로 이으면 상류 목록의 마지막 항목이 `WebSearch Bash(asgard skills *)`

@@ -15,7 +15,7 @@ import shlex
 import sys
 import tempfile
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -85,7 +85,7 @@ _SED_WRITE = re.compile(r"(?<![A-Za-z])[wWrR](?![A-Za-z])")
 _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\|")
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
-# 통제 표면은 클라이언트마다 다른 디렉토리에 산다 — 한 클라이언트만 보호하면 같은 규율이
+# 통제 표면은 클라이언트마다 다른 디렉토리에 있다 — 한 클라이언트만 보호하면 같은 규율이
 # 모드에 따라 있고 없다. 스캐폴드(훅·에이전트·설정)는 어느 모드에서도 작업 대상이 아니다.
 _CONTROL_PATHS = (".claude", ".cursor", ".codex", ".agents", ".asgard")
 _HOOK_DIRS = (".claude/hooks/", ".cursor/hooks/", ".codex/hooks/")

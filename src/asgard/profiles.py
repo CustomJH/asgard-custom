@@ -17,9 +17,9 @@
 
 왜 credential을 안 가르는가: 에이전트마다 다시 로그인시키면 스웜을 못 쓴다. 자격은 기계의
 것이고 기억은 에이전트의 것이다 — 이 경계가 흔들리면 "에이전트 추가"가 "설치 반복"이 된다.
-대신 프로파일이 자기 `credentials.json`을 갖고 있으면 그게 이긴다 (별도 키를 쓰는 에이전트).
+대신 프로파일이 자기 `credentials.json`을 갖고 있으면 그게 우선한다 (별도 키를 쓰는 에이전트).
 
-해석 사다리 (위가 이긴다):
+해석 사다리 (위가 우선한다):
     1. 컨텍스트 오버라이드   scoped() — 한 프로세스가 여러 에이전트를 돌릴 때 (스웜의 전제)
     2. ASGARD_HOME           경로 직접 지정 (docker·테스트·서브프로세스 전파)
     3. ASGARD_PROFILE        이름 지정 (CLI `--agent`가 이걸 세운다)
@@ -83,7 +83,6 @@ RESERVED = frozenset(
         "custom",
         "budget",
         "craft",
-        "desktop",
         "doctor",
         "evolve",
         "health",
@@ -93,12 +92,13 @@ RESERVED = frozenset(
         "map",
         "memory",
         "office",
-        "plan",
+        "open",
         "plugins",
         "role",
         "setup",
         "skills",
         "start",
+        "studio",
         "surface",
         "sync",
         "thor",
@@ -431,7 +431,7 @@ def note(name: str | None = None) -> str:
     """프롬프트 주입분 — 정체성이 비었거나(주석뿐) 기본 에이전트면 **빈 문자열**.
 
     기본 에이전트에서 빈 문자열인 이유: 프로파일을 안 쓰는 설치의 프롬프트가 이 계층 도입 전과
-    바이트 단위로 같아야 한다 (토큰 회귀 0). 기본 에이전트도 AGENT.md를 적으면 실린다 —
+    바이트 단위로 같아야 한다 (토큰 회귀 0). 기본 에이전트도 AGENT.md를 적으면 들어간다 —
     "안 적었으면 침묵"이 규칙이지 "기본은 침묵"이 규칙이 아니다."""
     canon = normalize(name) if name else active()
     body = _meaningful(identity(canon))
@@ -591,7 +591,7 @@ def create(
 
 
 # 안내 템플릿은 **주석뿐**이어야 한다. 제목 한 줄이라도 주석 밖에 있으면 `_meaningful`이 그걸
-# 알맹이로 읽어, 아무것도 안 쓴 에이전트의 프롬프트에 빈 헤더가 실린다 (manual.py와 같은 규율 —
+# 알맹이로 읽어, 아무것도 안 쓴 에이전트의 프롬프트에 빈 헤더가 들어간다 (manual.py와 같은 규율 —
 # 안내문을 배송해도 토큰 회귀 0 이라는 약속이 여기서 깨진다). 제목도 주석 안에 둔다.
 _BLANK_IDENTITY = """<!--
 %s — 이 에이전트의 정체성 문서
@@ -663,7 +663,7 @@ _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
 
 def _meaningful(text: str) -> str:
-    """주석을 걷어낸 알맹이 — manual.py `_meaningful`과 같은 규율 (주석뿐이면 없는 것)."""
+    """주석을 제거한 알맹이 — manual.py `_meaningful`과 같은 규율 (주석뿐이면 없는 것)."""
     return _COMMENT.sub("", text or "").strip()
 
 

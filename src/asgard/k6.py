@@ -63,7 +63,7 @@ def project_root(start: str | os.PathLike[str] | None = None) -> Path:
 
     현재 디렉터리를 그대로 프로젝트로 쓰면 `src/` 안에서 부른 실행이 거기에 `.asgard/`를
     새로 파고, 같은 프로젝트의 키트와 기록이 두 곳으로 갈라진다. 그래서 위로 걸어 표식을
-    찾되 **가장 가까운 표식이 이긴다** — 표식 종류로 우선순위를 매기면 안 된다. 아스가르드는
+    찾되 **가장 가까운 표식이 우선한다** — 표식 종류로 우선순위를 매기면 안 된다. 아스가르드는
     자격 증명을 `~/.asgard/`에 두므로, `.asgard`를 먼저 다 훑으면 홈 아래의 저장소가
     자기 `.git`을 지나쳐 홈을 프로젝트로 잡는다. 둘 다 없으면 선 자리가 프로젝트다."""
     here = Path(start or os.getcwd()).resolve()
@@ -104,7 +104,7 @@ def kit_dir() -> Path:
 
     도커 산출물(Dockerfile·compose)은 `docker/asgard-k6/`에 따로 산다. 굽는 것과 실려 가는
     것을 갈라 둔 이유: 이미지는 저장소에서 만들고 관리하지만, 시나리오는 `uv tool install`
-    한 사람의 기계에도 있어야 `asgard k6 run`이 선다."""
+    한 사람의 기계에도 있어야 `asgard k6 run`이 동작한다."""
     return Path(str(files("asgard").joinpath("assets", "k6_kit")))
 
 
@@ -203,15 +203,15 @@ def builtin_scenarios() -> dict[str, Scenario]:
 
 
 def project_scenarios(root: str | os.PathLike[str]) -> dict[str, Scenario]:
-    """프로젝트가 직접 쓴 시나리오. 같은 이름이면 프로젝트가 이긴다.
+    """프로젝트가 직접 쓴 시나리오. 같은 이름이면 프로젝트가 우선한다.
 
     자리는 `.asgard/k6/scenarios/*.js` 다. 레인 바로 밑(`.asgard/k6/*.js`)도 계속 잡히지만
     — 이전에 거기 둔 것을 깨지 않는다 — 새로 쓰는 것은 `scenarios/`로 간다: 레인 밑은
-    이제 키트·기록·산출이 함께 사는 자리라, 시나리오 하나를 컨테이너에 넣으려고 그 전부를
+    이제 키트·기록·산출이 함께 있는 자리라, 시나리오 하나를 컨테이너에 넣으려고 그 전부를
     읽기 전용으로 끌고 들어가게 된다."""
     out: dict[str, Scenario] = {}
     lane = lane_dir(root)
-    for base in (lane, lane / "scenarios"):  # 뒤가 이긴다 — 명시적인 자리가 정본
+    for base in (lane, lane / "scenarios"):  # 뒤가 우선한다 — 명시적인 자리가 정본
         if base.is_dir():
             for path in sorted(base.glob("*.js")):
                 out[path.stem] = Scenario(path.stem, path, "project")
@@ -385,7 +385,7 @@ def build_argv(
         name,
         "--label",
         f"com.asgard.lane={PROJECT}",
-        # 호스트에서 도는 표적을 컨테이너 안에서 부를 수 있게 — 리눅스에서도 같은 이름이 선다.
+        # 호스트에서 도는 표적을 컨테이너 안에서 부를 수 있게 — 리눅스에서도 같은 이름이 통한다.
         "--add-host=host.docker.internal:host-gateway",
         "-v",
         f"{kit_source}:{CONTAINER_MOUNT}:ro",

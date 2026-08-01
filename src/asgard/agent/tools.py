@@ -617,7 +617,7 @@ def run_memory_propose(root: str, tool_input: dict) -> str:
 def _ticket_line(ticket: dict) -> str:
     from ..studio import tickets as T
 
-    # 팀이 지은 상태 이름이 있으면 그것을 든다 — 기본 여섯 칸만 아는 표로 읽으면
+    # 팀이 지은 상태 이름이 있으면 그것을 쓴다 — 기본 여섯 칸만 아는 표로 읽으면
     # 팀이 만든 '배포 대기'에서 KeyError로 죽는다.
     label = ticket.get("status_label") or T.STATUS_LABEL.get(ticket["status"], ticket["status"])
     bits = [f"{ticket['key']} [{label}]", ticket["title"]]

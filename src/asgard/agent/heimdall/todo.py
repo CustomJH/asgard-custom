@@ -99,7 +99,7 @@ class TodoBoard:
     def _set(self, ident: object, state: str, note: str = "") -> None:
         key = str(ident)
         item = self._items.get(key)
-        if item is None:  # 계획에 없던 단위 — 재개 스냅샷·재배정이 늦게 실어 올 수 있다
+        if item is None:  # 계획에 없던 단위 — 재개 스냅샷·재배정이 늦게 가져올 수 있다
             self._order.append(key)
             item = {"text": key, "state": "todo", "note": ""}
             self._items[key] = item

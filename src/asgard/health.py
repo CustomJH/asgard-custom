@@ -25,7 +25,7 @@
 lint 규칙)이다 — `asgard-hlidskjalf`의 봉인 제안이 그 길이다.
 
 **측정 불능은 미측정으로 남긴다** (fail-closed 표기). 함수 단위·결합 지표는 Python만
-정밀하다. 다른 언어 파일은 크기·중복·변경 빈도만 실어 보내고 `unmeasured`에 센다 —
+정밀하다. 다른 언어 파일은 크기·중복·변경 빈도만 넣어 보내고 `unmeasured`에 센다 —
 0으로 채워 "깨끗하다"로 읽히게 하지 않는다.
 """
 
@@ -271,7 +271,7 @@ def borrowed(rel: str) -> str | None:
     """남의 코드인가 — 맞으면 그 사유를, 아니면 None. 두 게이트가 이 자를 같이 쓴다.
 
     `health`는 추세를 낼 때 이 디렉터리들을 이미 뺐지만 `craft`·`thor gate` 에는 같은 자가 없어서,
-    벤더링 번들을 떨구면 그 순간 게이트가 남의 코드로 빨개졌다 (실측: 추적되지 않은 vendor 한 벌에
+    벤더링 번들을 떨구면 그 순간 게이트가 남의 코드로 빨개졌다 (실측: 추적되지 않은 vendor 한 묶음에
     막는 판정 52건, 그중 20건이 minified `dist/assets/*.js` — 처방을 읽을 사람도 고칠 사람도 없다).
 
     래칫이 못 막는 이유가 여기 있다. 래칫은 base와 비교하는데 **추적되지 않은 파일에는 base가
@@ -328,8 +328,8 @@ _BRANCHING = (ast.If, ast.For, ast.AsyncFor, ast.While, ast.With, ast.AsyncWith,
 
 
 def _elif(parent: ast.AST, child: ast.AST) -> bool:
-    """`elif` 인가. ast는 elif를 orelse 안의 If로 표현해서 평평한 분기 사슬이 중첩으로 잡힌다 —
-    분기 여섯 개짜리 elif 사슬이 깊이 7로 나온다. 읽는 사람에게 그것은 한 단이다."""
+    """`elif` 인가. ast는 elif를 orelse 안의 If로 표현해서 평평한 분기 연쇄가 중첩으로 잡힌다 —
+    분기 여섯 개짜리 elif 연쇄가 깊이 7로 나온다. 읽는 사람에게 그것은 한 단이다."""
     if not (isinstance(parent, ast.If) and isinstance(child, ast.If)):
         return False  # 자식이 If 일 때만 elif 다 — 안 그러면 문장 하나짜리 else 블록도 전부 면제된다
     return len(parent.orelse) == 1 and parent.orelse[0] is child

@@ -1297,7 +1297,7 @@ def _cmd_bridge(cmd: str, root: str) -> None:
 
 
 def _cmd_manual(cmd: str, root: str) -> None:
-    """/manual — 내가 쓴 프로젝트 규칙이 뭐가 실렸는지. '/manual show'는 모델이 받는 원문.
+    """/manual — 내가 쓴 프로젝트 규칙이 뭐가 들어갔는지. '/manual show'는 모델이 받는 원문.
 
     네이티브는 세션 생성 시 1회 렌더라(KV 캐시·재현성)이 화면은 **디스크 현재값**을 읽는다 —
     편집 직후 여기서 보이는 것과 이번 세션 프롬프트가 다를 수 있어서, 그 사실을 같이 말한다."""

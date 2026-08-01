@@ -27,7 +27,7 @@ import sys
 import tempfile
 from typing import Any
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -157,7 +157,7 @@ def unattended(data):
 
 
 def _read_text(path):
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
+    """파일을 통째로 읽는다. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
     핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
@@ -792,7 +792,7 @@ def quest_pointer(root, sid, kind="active"):
 def session_candidates(data, protocol):
     """이 Stop이 가리킬 수 있는 세션 신원 후보 — 앞선 것이 우선.
 
-    호스트마다 Stop 페이로드가 세션을 싣는 방식이 다르다. Cursor는 아예 싣지 않아 게이트가
+    호스트마다 Stop 페이로드가 세션을 넣는 방식이 다르다. Cursor는 아예 넣지 않아 게이트가
     `"cursor"`를 고정으로 봤는데, 정작 모델은 `quest-log.py open`을 **--session 없이** 부른다
     (AGENTS.md의 지시가 그렇다) — 그 기본값은 `$CLAUDE_SESSION_ID` 또는 `"-"` 다. 두 이름이
     영영 안 맞으니 포인터가 안 풀리고, 활성 quest가 둘 이상이면 "정확히 1개만 승계" 규칙마저
@@ -819,7 +819,7 @@ def session_settled(root, name):
     """이 세션은 자기 quest를 닫았다 — 확정된 답이지 '모름'이 아니다.
 
     답 없음과 닫힘을 가르지 않으면, 방금 정상 종료한 세션이 **남의 남은 활성 포인터**를 물려받아
-    오차단된다. 후보 사슬은 이 표식에서 멈춘다."""
+    오차단된다. 후보 탐색은 이 표식에서 멈춘다."""
     sessions = os.path.join(root, ".asgard", "quest", "sessions")
     return os.path.exists(os.path.join(sessions, name + ".known")) and not os.path.exists(
         os.path.join(sessions, name + ".active")
@@ -858,7 +858,7 @@ def orphan_writes(root, sid, candidates=None):
     예외: 직전 close 된 quest(LAST)의 PASS가 현재 워킹트리 hash와 일치하면 이미 검증된 상태 —
     close 직후 Stop이 방금 검증한 write를 오차단하지 않게 한다."""
     writes = None
-    # 센티널도 세션 이름으로 갈린다 — 게이트가 신원 사슬을 따라갔다면 백스톱도 같은 사슬을 봐야
+    # 센티널도 세션 이름으로 갈린다 — 게이트가 신원 연결을 따라갔다면 백스톱도 같은 연결을 봐야
     # 한다. 안 그러면 quest 포인터가 안 풀린 바로 그 경우에 백스톱까지 같이 눈이 먼다.
     names = list(dict.fromkeys([sid, *(candidates or [])]))
     for name in names:

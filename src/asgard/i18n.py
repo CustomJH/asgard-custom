@@ -148,7 +148,7 @@ _M: dict[str, tuple[str, str]] = {
     "needs_base_url": ("base_url required", "base_url이 필요해요"),
     "thought": ("Runes read", "룬 해독"),
     "thinking": ("reading the runes…", "룬을 읽는 중…"),
-    # 분류 침묵 구간 — 문지기가 요청의 길을 살피는 상황극 (thinking() 풀과 별개의 고정 문구)
+    # 분류 침묵 구간 — 하임달이 요청의 길을 살피는 상황극 (thinking() 풀과 별개의 고정 문구)
     "classifying": ("Heimdall surveys the roads from the gate…", "헤임달이 관문에서 길을 살피는 중…"),
     "ph_input": (
         "Ask anything — / commands · ! bash · \\⏎ newline",

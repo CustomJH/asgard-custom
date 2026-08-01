@@ -51,7 +51,7 @@ def _msvcrt() -> Any:
 
 
 def _configure(k: Any) -> Any:
-    """호출 시그니처 못 박기 — 기본 restype은 c_int라 64bit 핸들의 상위 절반이 잘린다.
+    """호출 시그니처 고정 — 기본 restype은 c_int라 64bit 핸들의 상위 절반이 잘린다.
     잘린 핸들은 예외를 내지 않고 그냥 무효라, 뒤따르는 GetConsoleMode/SetConsoleMode가 전부
     조용히 실패한다: 색도 독도 안 뜨는데 오류는 한 줄도 없는 상태가 그 결과다."""
     import ctypes

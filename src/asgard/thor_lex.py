@@ -6,7 +6,7 @@ JVM 에는 둘을 더 옮겼다 — **부동소수 금액**과 **@Transactional 
 
 JVM에서 그 둘이 되는 이유는 어휘가 더 똑똑해서가 아니라 언어가 더 많이 말해 주기 때문이다.
 `double amount`는 선언에 타입이 붙어 있어 추론이 필요 없고(파이썬보다 오히려 쉽다),
-`@Transactional`은 경계를 애너테이션으로 못 박아 준다(`with`를 따라가는 것보다 쉽다).
+`@Transactional`은 경계를 애너테이션으로 명시해 준다(`with`를 따라가는 것보다 쉽다).
 
 타임아웃은 여전히 안 옮겼다 — 클라이언트마다 이름이 다르고, 설정이 호출부가 아니라 빈 정의나
 설정 파일에 있어서 한 문장 안에서 부재를 증명할 수 없다. 못 옮긴 규칙은 미측정으로 정직하게
@@ -209,7 +209,7 @@ def _money_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: l
 
 
 # ── ⑤ 트랜잭션 안의 외부 I/O (JVM 한정) ──────────────────────────────
-# `@Transactional`은 경계를 **선언**으로 못 박아 준다 — 파이썬의 `with`보다 찾기 쉽다.
+# `@Transactional`은 경계를 **선언**으로 명시해 준다 — 파이썬의 `with`보다 찾기 쉽다.
 _TX_ANNOTATION = re.compile(r"@Transactional\b")
 # 커밋 전에 되돌릴 수 없는 부수효과를 내는 호출들. 이름이 곧 의미인 것만 넣는다.
 _JVM_EXTERNAL = re.compile(

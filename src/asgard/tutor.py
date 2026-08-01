@@ -39,7 +39,7 @@ from .craft_rules import Unit
 from .health import _read
 from .io_files import read_json, write_json
 
-MAX_PATHS = 400  # 한 번에 읽을 파일 상한 — 초과분은 잘린 사실로 싣는다(조용한 절단 금지)
+MAX_PATHS = 400  # 한 번에 읽을 파일 상한 — 초과분은 잘린 사실로 넣는다(조용한 절단 금지)
 # (인벤토리, 확인할 자리, 미판정 사유, 단위→줄). 마지막 칸은 표면 판정에 좌표를 주기 위한 것이다 —
 # surface는 심볼 이름만 알고 줄을 모르는데, `file:1`은 사람이 열어 볼 수 없는 좌표다.
 _Judged = tuple["FileChange", list["Checkpoint"], str | None, dict[str, int]]
@@ -467,7 +467,7 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
         contract = [point for point in contract if point.path in scope]
         gaps = [gap for gap in gaps if gap[0] in scope]
     points.extend(_anchored(point, anchors) for point in contract)
-    # 컨트롤러 근거는 **손댄 경로에 대해서만** 싣는다 — 안 건드린 자리의 지시를 이번 되짚기에
+    # 컨트롤러 근거는 **손댄 경로에 대해서만** 넣는다 — 안 건드린 자리의 지시를 이번 되짚기에
     # 붙이면 craft 래칫이 막는 것과 같은 종류의 오귀속이 된다.
     mandate = loop.mandate_for(root, targets)
     return Lesson(base, tuple(files), tuple(points), tuple(unknown + gaps), mandate)
@@ -501,7 +501,7 @@ def shaped(root: str, points: tuple[Checkpoint, ...]) -> list[tuple[Checkpoint, 
     """(물음, 크기) 목록 — 크기는 `full` · `ask` · `fold` · `quiet`.
 
     이 저장소에서 이미 세 번 답한 종류를 네 번째에도 같은 분량으로 설명하면, 그건 배려가 아니라
-    사용자 시간을 쓰는 일이다(안내는 줄어드는 것이 목표다). 반대로 접는다고 지우지는 않는다 —
+    사용자 시간을 쓰는 일이다(안내는 줄어쓰는 것이 목표다). 반대로 접는다고 지우지는 않는다 —
     접힌 줄은 화면에 남아서 "이 종류도 이번에 있었다"는 사실을 계속 말한다.
 
     문장의 각도도 여기서 정해진다: 같은 물음을 두 번째로 놓는 자리면 두 번째 각도로 갈아 끼운다.
@@ -523,7 +523,7 @@ def revisits(root: str, now: float | None = None, cap: int = 2, skip: object = (
     기록만으로 결정하지 않고 매번 나무를 한 번 본다 — 되짚기가 유일하게 파일을 다시 읽는 자리다.
     죽은 좌표는 여기서 만료로 닫힌다(조용히 지우지 않는다).
 
-    `skip`은 이번 턴이 방금 물은 자리다. 같은 물음이 위(이번 변경)와 아래(재방문)에 두 번 실리면
+    `skip`은 이번 턴이 방금 물은 자리다. 같은 물음이 위(이번 변경)와 아래(재방문)에 두 번 들어가면
     읽는 쪽은 그걸 두 건으로 세고, 두 번 실린 화면은 한 번도 안 읽힌다.
     """
     seen = {str(s) for s in skip} if isinstance(skip, (list, tuple, set, frozenset)) else set()
@@ -569,7 +569,7 @@ def hand_back(
     count: bool = True,
     now: float | None = None,
 ) -> tuple[list[tuple[Checkpoint, str]], list[tutor_growth.Revisit]]:
-    """화면에 실릴 모양 + 되돌아온 물음. 두 도달 경로(훅·네이티브)가 같은 함수를 쓴다.
+    """화면에 들어갈 모양 + 되돌아온 물음. 두 도달 경로(훅·네이티브)가 같은 함수를 쓴다.
 
     **화면에 실린 것만 센다.** 판정이 119건을 찾아도 카드에 셋이 올라갔으면 물은 것은 셋이다 —
     나머지를 세면 사용자가 본 적 없는 물음이 "건너뛴 것"으로 기록되고, 그러면 조절이 사람이 아닌

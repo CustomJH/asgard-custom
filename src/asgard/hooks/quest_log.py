@@ -35,7 +35,7 @@ import sys
 import tempfile
 import time
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -244,7 +244,7 @@ def ledger_integrity(events: list[dict]) -> tuple[bool, str]:
 
 
 def _read_text(path: str) -> str:
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다(없음/깨짐/권한).
+    """파일을 통째로 읽는다. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다(없음/깨짐/권한).
 
     핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
@@ -970,7 +970,7 @@ def contract_criteria(*sources) -> list:
     """계약 추출 원본 — 문자열 항목을 실은 첫 후보. verifier_gate.py와 동일 유지.
 
     계약은 `"<설명> | verify: <명령>"` 문자열에만 담긴다. 그런데 판정자는 기준별 판정을
-    `[{"id":..,"status":"met","evidence":..}]` 객체로 실어 보낸다 — 역할 계약이 그것을 요구한다.
+    `[{"id":..,"status":"met","evidence":..}]` 객체로 함께 보낸다 — 역할 계약이 그것을 요구한다.
     그 객체를 계약 원본으로 쓰면 계약이 0건으로 보여 하네스가 계약 명령을 실행하지 않는데,
     게이트는 퀘스트 선언(문자열)에서 계약을 계속 읽으므로 영구 미충족이 된다 (26-07-26 실측:
     CC 모드에서 `criteria-unverified`로 Stop이 막혀 세션이 49분간 종료하지 못했다).
@@ -1642,7 +1642,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     last_verify_i = max((i for i, e in enumerate(events) if e.get("event") == "verify"), default=-1)
     work_after_verify = any(e.get("event") == "work" for e in events[last_verify_i + 1 :]) if verifies else False
     # 동종 실패 스트릭 — 같은 failure_sig의 연속 FAIL을 결정론 계산 (3-strike, Canon 9).
-    # 네이티브 루프는 failure_count를 이벤트에 안 싣는다 — 퀘스트 로그에서 직접 센다.
+    # 네이티브 루프는 failure_count를 이벤트에 안 넣는다 — 퀘스트 로그에서 직접 센다.
     # 마지막 plan(재계획) "이후"의 FAIL만 센다 — 재계획이 3-strike의 응답이므로 스트릭 리셋.
     # 안 리셋하면 REPLAN → 여전히 count≥3 → REPLAN 무한 루프 (라이브 재현됨).
     last_plan_i = max((i for i, e in enumerate(events) if e.get("event") == "plan"), default=-1)
@@ -1737,7 +1737,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         # 게이트-우선 라우팅 신호
         "checks_available": gate_first_checks_available(root, policy),
         # 적어 두었는데 실행되지 않는 체크 — 비어 있지 않으면 사용자가 켠 줄 아는 증거 레인이
-        # 실제로는 꺼져 있다. 조용히 버리지 않고 상태에 실어 doctor·판정 표면이 말하게 한다.
+        # 실제로는 꺼져 있다. 조용히 버리지 않고 상태에 넣어 doctor·판정 표면이 말하게 한다.
         "baseline_checks_rejected": rejected_checks(policy),
         "sig_risk": signature_risk(root, base_ref),
         "tickets": list(tickets.values()),

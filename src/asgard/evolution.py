@@ -159,7 +159,7 @@ def record_correction(root: str, user_text: str, assistant_text: str = "") -> bo
         from .memory import scan_secrets, scan_threats
 
         if scan_threats(user_text) or scan_secrets(user_text):
-            return False  # 오염 발화는 증거로도 싣지 않는다
+            return False  # 오염 발화는 증거로도 넣지 않는다
         signal = "correction:" + hashlib.sha1(user_text.strip().encode()).hexdigest()[:12]
         os.makedirs(_evo_dir(root), exist_ok=True)
         path = _evo_dir(root, CORRECTIONS_FILE)

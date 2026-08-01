@@ -200,7 +200,7 @@ class AgentSession:
         # 세션 중 schema를 동결해 prompt cache key와 실제 호출 가능 표면을 일치시킨다.
         self.tools = self.registry.schemas(ToolContext(root=self.cwd, role=self.role, readonly=self.readonly))
         self.on_text = on_text or (lambda s: None)
-        # 모델이 되뱉은 메모리 펜스를 표면에 닿기 전에 걷어낸다. 델타를 가로질러 쪼개진
+        # 모델이 되뱉은 메모리 펜스를 표면에 닿기 전에 제거한다. 델타를 가로질러 쪼개진
         # 태그는 정규식으로 못 잡으므로 상태기계를 턴 내내 들고 간다 (memory.fence).
         self._fence = FenceScrubber()
         # 라이브 상태 신호 — 침묵 구간(thinking·툴 실행)에 스피너 등을 띄울 훅. None = 해제.
@@ -353,7 +353,7 @@ class AgentSession:
         call_returned(self.root, jid, duration_ms=(time.monotonic() - t0) * 1000, error=f"{type(e).__name__}: {e}")
 
     def emit_text(self, text: str) -> None:
-        """모델 본문 델타 전용 출구 — 펜스를 걷어낸 부분만 표면으로 보낸다.
+        """모델 본문 델타 전용 출구 — 펜스를 제거한 부분만 표면으로 보낸다.
 
         상태선(_tool_line 등)은 여기를 안 탄다: 우리가 만든 문자열이라 걸러낼 것이 없고,
         같은 상태기계를 공유하면 모델 델타의 미완 태그 판정이 엉킨다."""

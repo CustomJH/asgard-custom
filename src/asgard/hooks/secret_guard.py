@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # Asgard secret-guard — Canon Law 4 (시크릿 보호). 법조문은 "never read, print, log, or commit" 인데
-# 오래도록 기계가 진 것은 **commit 절반뿐**이었다 (Write/Edit PreToolUse). 나머지 절반 — read·print —
+# 오래도록 기계가 맡은 것은 **commit 절반뿐**이었다 (Write/Edit PreToolUse). 나머지 절반 — read·print —
 # 이 이 파일의 두 번째 계층이다.
 #
 # 왜 읽기가 더 급한가 (26-07-27 실측): 네이티브 루프의 `session.py`는 도구 출력을 그대로
 # `messages`에 넣고, 그 messages는 **매 턴 프로바이더로 재전송된다**. 즉 `cat .env` 한 번이면
-# 시크릿이 (1) 제3자에게 나가고 (2) 세션이 끝날 때까지 매 요청에 다시 실린다. 쓰기는 로컬에
+# 시크릿이 (1) 제3자에게 나가고 (2) 세션이 끝날 때까지 매 요청에 다시 들어간다. 쓰기는 로컬에
 # 남지만 읽기는 밖으로 나간다 — 구멍의 크기가 반대였다.
 # (구 주석이 "알려진 구멍: shell 우회는 안 잡는다"로 남겨 둔 자리가 여기다.)
 #
@@ -26,7 +26,7 @@ import re
 import shlex
 import sys
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -68,7 +68,7 @@ SECRET_READ_PATHS = [
     (re.compile(r"(^|/)\.pgpass$", re.I), ".pgpass"),
     (re.compile(r"(^|/)\.git-credentials$", re.I), "git credential store"),
     (re.compile(r"(^|/)\.aws/credentials$", re.I), "AWS credentials"),
-    # ssh 개인키 — `.pub`은 공개키라 앞선 면제가 먼저 걷어낸다 (핑거프린트 확인은 정상 작업).
+    # ssh 개인키 — `.pub`은 공개키라 앞선 면제가 먼저 제거한다 (핑거프린트 확인은 정상 작업).
     # 키가 `~/.ssh/` 안에만 있다고 가정하면 안 된다: 실코퍼스에 `ssh_key/rnd1.key`처럼 배포용
     # 디렉터리에 둔 개인키가 있었다. 확장자 없는 `*_ed25519`·`*_rsa`는 위치와 무관하게 키다
     # (`foo_rsa.py`는 확장자가 있어 걸리지 않는다).
@@ -97,7 +97,7 @@ _READERS = frozenset(
 # 환경 전체를 쏟는 이름. 피연산자 없이 부르면 덤프다.
 _ENV_DUMPERS = frozenset({"env", "printenv"})
 # 환경변수·grep 패턴이 자격 증명을 겨냥하는지. `key`·`auth`는 단독으로도 인정한다 — 여기서
-# 넓게 잡는 비용은 "더 좁은 패턴으로 다시 grep" 뿐이고, 좁게 잡는 비용은 키가 전사에 실리는 것이다.
+# 넓게 잡는 비용은 "더 좁은 패턴으로 다시 grep" 뿐이고, 좁게 잡는 비용은 키가 전사에 들어가는 것이다.
 _SECRET_ENV_NAME = re.compile(r"(?i)(secret|token|password|passwd|key|auth|credential)")
 
 
@@ -130,7 +130,7 @@ def _segments(command: str) -> list[tuple[list[str], bool]]:
     """쉘 명령을 구분자로 쪼갠 (토큰, 이_세그먼트가_파이프로_이어지는가) 목록.
 
     파이프 여부를 버리면 `env`와 `env | grep -i asgard`를 구별하지 못한다 — 앞은 전체 환경이
-    전사에 실리고 뒤는 grep이 거른 몇 줄만 실린다 (26-07-27 실코퍼스: 히트 23건 중 다수가
+    전사에 들어가고 뒤는 grep이 거른 몇 줄만 들어간다 (26-07-27 실코퍼스: 히트 23건 중 다수가
     후자였다). 렉싱 실패는 빈 목록 — 판정 불능은 허용이다(fail-open)."""
     try:
         lexer = shlex.shlex(command, posix=True, punctuation_chars="|&;<>")
@@ -167,7 +167,7 @@ def _filtered_to_safety(following: list[str]) -> bool:
 
 
 def _program(tokens: list[str]) -> tuple[str, list[str]]:
-    """선행 `VAR=x` 대입과 sudo를 걷어낸 (프로그램, 인자). `env FOO=1 cmd`의 cmd를 본다."""
+    """선행 `VAR=x` 대입과 sudo를 제거한 (프로그램, 인자). `env FOO=1 cmd`의 cmd를 본다."""
     index = 0
     while index < len(tokens):
         token = tokens[index]
@@ -232,7 +232,7 @@ def main() -> None:
         sys.exit(0)
     tool = str(data.get("tool_name") or data.get("tool") or "").lower()
     path = str(ti.get("file_path") or ti.get("path") or "")
-    # Write는 content, Edit은 new_string에 본문이 실린다 — 합쳐서 한 번에 검사.
+    # Write는 content, Edit은 new_string에 본문이 들어간다 — 합쳐서 한 번에 검사.
     # Codex의 apply_patch는 패치 텍스트 한 덩어리라 patch/command도 같은 본문으로 본다.
     text = " ".join(str(x) for x in (ti.get("content"), ti.get("new_string"), ti.get("patch")) if x)
     command = str(ti.get("command") or "")

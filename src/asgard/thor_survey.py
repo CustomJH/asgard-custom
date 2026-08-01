@@ -192,7 +192,7 @@ def drifted(root: str, survey: Survey) -> dict[str, tuple[str, ...]]:
 
 
 def _same_ruler(before: str, now: str) -> bool:
-    """두 지문이 같은 자로 만들어졌는가. 아니면 비교하지 않는다 — 못 재는 것을 움직였다고 하지 않는다."""
+    """두 지문이 같은 기준으로 만들어졌는가. 아니면 비교하지 않는다 — 못 재는 것을 움직였다고 하지 않는다."""
     return bool(before) and before.split(":", 1)[0] == now.split(":", 1)[0]
 
 

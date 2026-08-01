@@ -1,6 +1,6 @@
 """surface — 공개 표면(심볼·시그니처)의 추출과 기준 대조. 결정론 계층: LLM·네트워크 없음.
 
-**왜 이 모듈이 있는가.** 계획 사슬에 한 층이 비어 있었다: 정의 → 스펙/형상 → 배정 단위(파일+
+**왜 이 모듈이 있는가.** 계획 단계에 한 층이 비어 있었다: 정의 → 스펙/형상 → 배정 단위(파일+
 기준) → 구현. 스펙과 코드 사이, **어떤 타입·시그니처·경계를 새로 만들 것인지 미리 고정하는
 단계**가 없었다. 업계가 이 층에 수렴한 근거는 두 갈래다:
 
@@ -185,7 +185,7 @@ def _compare(path: str, before: dict[str, Sig], after: dict[str, Sig]) -> list[C
         gone_kwonly = [p for p in old.kwonly if p not in new.kwonly]
         if gone_kwonly:
             changes.append(Change(path, name, "kwonly_removed", True, f"dropped keyword: {', '.join(gone_kwonly)}"))
-        # 새 **선택** 키워드는 깨뜨리지 않지만 표면 변화다 — 안 실으면 시그니처의 절반이 조용히 빠진다
+        # 새 **선택** 키워드는 깨뜨리지 않지만 표면 변화다 — 안 넣으면 시그니처의 절반이 조용히 빠진다
         fresh_kwonly = [p for p in new.kwonly if p not in old.kwonly and p not in new.kwonly_required]
         if fresh_kwonly:
             changes.append(

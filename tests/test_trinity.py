@@ -360,13 +360,13 @@ class TestQuestLog(TrinityBase):
         """`asgard setup`이 `.asgard/`를 무시 목록에 넣은 리포에서도 시작 트리를 뜰 수 있어야 한다.
 
         exclude 페이스펙이 붙으면 git add가 무시된 경로를 오류로 보고해 rc=1로 죽었고, 그 결과
-        모든 write 퀘스트가 "requires a Git repository with HEAD"로 거부됐다 — Desktop/Studio의
+        모든 write 퀘스트가 "requires a Git repository with HEAD"로 거부됐다 — Studio/Studio의
         모든 실행이 여기서 막혔다."""
         from asgard.hooks import quest_log
 
         self.write(".gitignore", ".asgard/\n")
         self.write(".asgard/map/INDEX.md", "map\n")
-        self.write(".asgard/desktop/tasks.jsonl", "{}\n")
+        self.write(".asgard/studio/tasks.jsonl", "{}\n")
         self.write("app.py", "print('ok')\n")
         subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
         subprocess.run(["git", "-C", self.root, "commit", "-qm", "ignore asgard"], check=True)
@@ -382,7 +382,7 @@ class TestQuestLog(TrinityBase):
         ).stdout.split()
         self.assertIn("untracked.py", listed)  # 시작 트리는 워킹트리 그대로다
         self.assertIn(".asgard/map/INDEX.md", listed)  # map은 강제로 담는다
-        self.assertNotIn(".asgard/desktop/tasks.jsonl", listed)  # 나머지 .asgard는 여전히 뺀다
+        self.assertNotIn(".asgard/studio/tasks.jsonl", listed)  # 나머지 .asgard는 여전히 뺀다
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO is unavailable on this platform")
     def test_ignored_fifo_snapshot_never_blocks_reading_device_content(self):

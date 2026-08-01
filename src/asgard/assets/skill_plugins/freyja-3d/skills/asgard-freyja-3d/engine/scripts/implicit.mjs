@@ -34,7 +34,7 @@
 //
 // 마칭 큐브가 아니라 서피스 넷을 쓴다. 부호가 바뀌는 셀마다 정점을 하나 두고 이웃과 잇는
 // 방식이라 표가 거의 없고, 출력이 수밀 매니폴드로 나온다. **정확도는 격자 해상도가 전부다** —
-// 얇은 벽과 날카로운 모서리는 뭉갠다. 이 사실은 보고에 그대로 실린다.
+// 얇은 벽과 날카로운 모서리는 뭉갠다. 이 사실은 보고에 그대로 적는다.
 
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, extname, join, resolve } from "node:path";

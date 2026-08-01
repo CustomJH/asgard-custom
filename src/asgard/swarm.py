@@ -76,7 +76,7 @@ def binding(root: str) -> dict:
 
 
 def resolve(root: str, *, mode: str | None = None, role: str | None = None) -> str:
-    """이 자리에서 일할 에이전트 id — 좁은 선언이 넓은 선언을 이긴다.
+    """이 자리에서 일할 에이전트 id — 좁은 선언이 넓은 선언을 우선한다.
 
     사다리: 역할 배치 > 모드 고정 > 프로젝트 대표 > 루트 활성(끈끈한 기본) > default.
     명시 env/`--agent`는 이 함수 위에 있다 (profiles.active()가 이미 반영)."""

@@ -1,6 +1,6 @@
 """Memory v3 — Claude Code 저장 계약 스킬 (감사 권고: "파일 직접 편집 금지, ingest 승인 경유").
 
-스킬 하나가 읽기(query)와 쓰기(ingest 승인 게이트) 계약을 모두 싣는다. 훅(memory-activate)이
+스킬 하나가 읽기(query)와 쓰기(ingest 승인 게이트) 계약을 모두 넣는다. 훅(memory-activate)이
 스냅샷을 주입하고, 상세 회수·저장은 이 계약대로 CLI를 경유한다 — 로직 재구현 금지."""
 
 MEMORY_SKILL_MD = """---

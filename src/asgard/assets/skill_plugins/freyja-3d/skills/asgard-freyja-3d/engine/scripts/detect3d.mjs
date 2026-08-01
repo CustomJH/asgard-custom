@@ -32,7 +32,7 @@ function isComment(line) {
   return trimmed.startsWith("//") || trimmed.startsWith("*") || trimmed.startsWith("/*");
 }
 
-/** 문자열 밖의 주석을 걷어낸다 — 주석 속 단어("controls.update() 를 안 불렀다")가 판정을 뒤집지 못하게. */
+/** 문자열 밖의 주석을 제거한다 — 주석 속 단어("controls.update() 를 안 불렀다")가 판정을 뒤집지 못하게. */
 function stripComments(source) {
   let out = "";
   let quote = null; // ', ", ` 안에서는 주석 문법을 무시한다.

@@ -71,7 +71,7 @@ Do not use emoji pictograms in user-visible text — when a marker is needed, us
 
 # Canon 8 — 무인 세션은 모델이 스스로 알 수 없다. 모드 B는 unattended-context 훅이 훅 stdin의
 # permission_mode로 감지해 이 계약을 주입한다; 네이티브는 headless 진입에서 ASGARD_UNATTENDED를
-# 켜므로 여기서 같은 문장을 싣는다 (hooks/unattended_context.py와 동일 유지 — 단일 문구).
+# 켜므로 여기서 같은 문장을 넣는다 (hooks/unattended_context.py와 동일 유지 — 단일 문구).
 UNATTENDED_NOTE = """
 
 [asgard] Unattended session detected — Canon 8 auto-proceed is in effect: do not end the session
@@ -308,7 +308,7 @@ def work_shape_note(
     """범위 형상 노트 — 결정론 사이징 + 결속 규율 스킬 지목 (fail-open: 실패는 빈 문자열).
 
     read-only 요청이나 일치가 없으면 빈 문자열이라 토큰 회귀가 없다. 형상 판정은 순수 함수라
-    같은 지시에 같은 노트가 나온다 — 모델 자율 선택은 그대로 두고 발견 실패만 걷어내는 층이다.
+    같은 지시에 같은 노트가 나온다 — 모델 자율 선택은 그대로 두고 발견 실패만 제거하는 층이다.
 
     `changed`는 관측된 변경 파일 목록이다. 넘기면 요청 문구가 아니라 **손댄 형상**으로도
     구조 규율이 켜진다 (계획 대상 파일은 계획 시점에, 변경 파일은 판정 시점에 사실이 된다)."""

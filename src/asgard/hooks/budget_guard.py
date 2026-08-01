@@ -51,7 +51,7 @@ import os
 import sys
 from dataclasses import dataclass, field
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -144,7 +144,7 @@ class Ledger:
     agents: dict = field(default_factory=dict)  # role -> Usage
     agent_calls: dict = field(default_factory=dict)  # role -> int
     models: dict = field(default_factory=dict)  # model -> call count
-    read_error: str = ""  # 조용한 절단 금지 — 못 읽었으면 그 사실을 싣는다
+    read_error: str = ""  # 조용한 절단 금지 — 못 읽었으면 그 사실을 넣는다
 
     def total(self) -> Usage:
         out = Usage()

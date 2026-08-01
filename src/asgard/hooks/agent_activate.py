@@ -5,7 +5,7 @@
 # 도구가 자기 세션을 소유하므로 닿지 않는다 — manual-activate와 동일하게 훅으로 보상한다.
 # 한 모드에만 서는 계층은 기능이 아니라 드리프트다 (tests/test_mode_parity.py의 전제).
 #
-# 배치 해석 (좁은 선언이 넓은 선언을 이긴다 — swarm.resolve()와 동일 유지):
+# 배치 해석 (좁은 선언이 넓은 선언을 우선한다 — swarm.resolve()와 동일 유지):
 #   역할 배치  .asgard의 [agents].roles.<role>   ← agent_type(asgard-worker 등)에서 역할을 얻는다
 #   모드 고정  [agents].modes.<client>
 #   프로젝트 대표  [agents].default
@@ -19,7 +19,7 @@ import os
 import re
 import sys
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다. UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -129,7 +129,7 @@ def role_of(agent_type):
 
 
 def resolve(root, client, role):
-    """이 자리에서 일할 에이전트 id — swarm.resolve()와 동일 유지 (좁은 선언이 이긴다)."""
+    """이 자리에서 일할 에이전트 id — swarm.resolve()와 동일 유지 (좁은 선언이 우선한다)."""
     section = _read_json(os.path.join(root, ".asgard", "asgard-setting-project.json")).get("agents") or {}
     if not isinstance(section, dict):
         section = {}

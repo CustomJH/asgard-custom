@@ -23,7 +23,7 @@ _DB = "episodes.db"
 RRF_K = 60  # memory.recall과 동일 — 순위 융합 표준 상수
 EPISODE_BUDGET = 700  # chars — 턴마다 붙을 수 있는 주입 블록 상한 (개인 recall 900보다 작게)
 _EXCERPT_WIDTH = 160
-_EXCLUDE_TAIL = 3  # 최근 턴은 라이브 history가 이미 나른다 — 재주입 중복 차단
+_EXCLUDE_TAIL = 3  # 최근 턴은 라이브 history가 이미 전달한다 — 재주입 중복 차단
 
 
 def _db_path(root: str) -> str:
@@ -310,7 +310,7 @@ def episode_note(request: str, root: str, k: int = 3) -> str:
     scan_threats로 오염 구간을 걸러낸다. 최근 _EXCLUDE_TAIL 턴은 라이브 history가
     이미 싣고 있어 제외. 무적중·킬스위치 off·실패 = 빈 문자열 (무변화).
 
-    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 싣는 자리는 조립기로 간다."""
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 조립기로 간다."""
     try:
         from ..memory.assemble import Candidate, Lane, assemble
 

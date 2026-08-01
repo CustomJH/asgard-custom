@@ -3,7 +3,7 @@
 #
 # 자리는 두 층이다. 공통(활성 에이전트 홈 `~/.asgard/MANUAL.md` + `manual/*.md`)은 이 기계의 모든
 # 프로젝트에 걸리고, 프로젝트(리포 루트 `MANUAL.md`, `.asgard/MANUAL.md`, `.asgard/manual/*.md`)는
-# 그 저장소에만 걸린다. 순서는 공통 먼저·프로젝트 나중이고, 충돌하면 나중 것이 이긴다 — 그 규칙을
+# 그 저장소에만 걸린다. 순서는 공통 먼저·프로젝트 나중이고, 충돌하면 나중 것이 우선한다 — 그 규칙을
 # 렌더 헤더가 모델에게 문장으로 말한다. 별칭은 어느 자리에서나 CUSTOM_MANUAL.md·CUSTOM.md·RULES.md.
 #
 # 네이티브 Heimdall은 manual.py note()를 프롬프트에 직접 주입하지만, 모드 B는 서브에이전트가
@@ -22,7 +22,7 @@ import os
 import re
 import sys
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다. UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -230,7 +230,7 @@ def label(root, path):
 
 
 def has_marker(path):
-    """`asgard init`이 깐 자리인가 — 표식은 주석 안이라 주입엔 안 실린다 (manual.py와 동일 유지)."""
+    """`asgard init`이 깐 자리인가 — 표식은 주석 안이라 주입엔 안 들어간다 (manual.py와 동일 유지)."""
     return MARKER in _read(path)
 
 

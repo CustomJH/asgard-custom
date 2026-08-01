@@ -26,7 +26,7 @@ def project_settings() -> str:
     무시하고, 실 설정 키가 없으면 미연결로 해석돼 도구가 노출되지 않는다. 과거의 빈
     {"memory": {}} 시드는 무엇을 채워야 하는지 보이지 않았고 strict 탐색(doctor)에서
     malformed로 오판됐다 — 예제 시드가 그 공란을 대체한다. `asgard memory connect`가
-    _example과 같은 형태로 실 키를 채우며 주석 키를 걷어낸다. 나머지 섹션(provider …)은
+    _example과 같은 형태로 실 키를 채우며 주석 키를 제거한다. 나머지 섹션(provider …)은
     명령이 필요할 때 병합 기록한다 (사다리 1단). agent_models는 빈 override 맵이다 —
     내장 역할별 기본값은 템플릿이 소유하고, 여기에 기록한 호스트/역할만 글로벌·기본값을 덮는다."""
     from ..lagom import DEFAULT_MODE

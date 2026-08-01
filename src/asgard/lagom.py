@@ -277,7 +277,7 @@ def default_mode(root: str | None = None, flag: str | None = None) -> str:
         from .settings import load_global, load_project
 
         root = root or os.getcwd()
-        for cfg in (load_project(root), load_global()):  # 프로젝트가 글로벌을 이긴다
+        for cfg in (load_project(root), load_global()):  # 프로젝트가 글로벌을 우선한다
             m = normalize((cfg.get("lagom") or {}).get("mode"))
             if m:
                 return m
@@ -345,7 +345,7 @@ def clear_state(root: str | None = None) -> None:
 
 
 def current_mode(root: str | None = None, flag: str | None = None) -> str:
-    """유효 모드 — 세션 전환(상태파일)이 영속 기본값을 이긴다."""
+    """유효 모드 — 세션 전환(상태파일)이 영속 기본값을 우선한다."""
     return read_state(root) or default_mode(root, flag)
 
 

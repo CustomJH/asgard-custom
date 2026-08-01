@@ -117,7 +117,7 @@ export function pruneSnapshots(slug, cwd = process.cwd()) {
   return removed;
 }
 
-/** 스냅샷을 쓰고 절대 경로를 돌려준다. timestamp·slug 는 내부 계산값이 항상 이긴다. */
+/** 스냅샷을 쓰고 절대 경로를 돌려준다. timestamp·slug 는 내부 계산값이 항상 우선한다. */
 export function writeSnapshot({ slug, meta = {}, body, cwd = process.cwd(), now = new Date() }) {
   if (!slug) throw new Error("writeSnapshot 은 슬러그가 필요하다");
   const dir = critiqueDir(cwd);

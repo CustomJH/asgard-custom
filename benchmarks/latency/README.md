@@ -4,7 +4,7 @@
 못했다**. 같은 결과가 416s 로도 149.2s 로도 적혀 있었고, "p50 9.5ms" 는 어느 코퍼스에서
 어떤 부하로 잰 값인지 기록이 없었다. 여기가 그 자리를 메운다.
 
-측정 대상은 `asgard memory dashboard` 가 실제로 내보내는 `/api/search` 핸들러다 —
+측정 대상은 `asgard open memory` 가 실제로 내보내는 `/api/search` 핸들러다 —
 벤치 전용 shim 이 아니다. shim 의 지연은 shim 의 성질이지 제품의 성질이 아니다.
 
 ## 실행

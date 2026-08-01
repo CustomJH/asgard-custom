@@ -13,7 +13,7 @@ import os
 import re
 import sys
 
-# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 싣지 못한다 — 인코딩 오류가
+# Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 판정이 통째로 증발한다 (게이트 block → 조용한 allow). UTF-8 강제.
 for _stream in (sys.stdout, sys.stderr):
     try:
@@ -30,7 +30,7 @@ _EXAMPLE = re.compile(r"^\s*-\s*(off|lite|full):")
 
 
 def _read_text(path):
-    """텍스트 한 벌. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
+    """파일을 통째로 읽는다. 오류는 그대로 올린다 — 호출부마다 삼킬 범위가 다르다. quest_log.py와 동일 유지.
 
     핸들 수명을 여기서 끝내는 것이 요점이다. `open(p).read()`는 CPython의 참조 계수에 기대
     곧장 닫히는 것이고, 그 기댐은 코드에 안 적혀 있어서 다른 런타임에서 조용히 깨진다."""
@@ -146,7 +146,7 @@ def main():
             or data.get("cwd")
             or os.getcwd()
         )
-        mode = read_state(root)  # 세션 전환값이 기본값을 이긴다
+        mode = read_state(root)  # 세션 전환값이 기본값을 우선한다
         if mode is None:
             mode = config_mode(root)
             try:  # best-effort — 기록 실패해도 주입은 진행

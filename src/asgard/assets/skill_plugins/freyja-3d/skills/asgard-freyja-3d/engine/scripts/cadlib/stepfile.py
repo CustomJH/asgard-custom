@@ -66,7 +66,7 @@ _SI_PREFIX = {
 
 _INSTANCE = re.compile(r"#(\d+)\s*=\s*([A-Z_0-9]+)\s*\(", re.I)
 _SI_UNIT = re.compile(r"SI_UNIT\s*\(\s*(?:\.([A-Z]+)\.|\$)\s*,\s*\.([A-Z]+)\.\s*\)", re.I)
-# 문자열은 이미 자리표시자로 걷힌 뒤라 따옴표가 아니라 \x00N\x00을 찾는다.
+# 문자열은 이미 자리표시자로 바뀐 뒤라 따옴표가 아니라 \x00N\x00을 찾는다.
 _CONVERSION = re.compile(r"CONVERSION_BASED_UNIT\s*\(\s*\x00(\d+)\x00", re.I)
 _MEASURE_WITH_UNIT = re.compile(r"LENGTH_MEASURE\s*\(\s*([-+0-9.eE]+)\s*\)", re.I)
 
@@ -221,10 +221,10 @@ def looks_like_step(path: str | Path) -> bool:
 
 
 def _strip_strings(text: str) -> tuple[str, list[str]]:
-    """작은따옴표 문자열을 걷어내고 자리표시자로 바꾼다.
+    """작은따옴표 문자열을 제거하고 자리표시자로 바꾼다.
 
     STEP 문자열 안에는 괄호·쉼표·엔티티처럼 생긴 바이트가 얼마든지 들어갈 수 있다(부품 이름이
-    대표적이다). 걷어내지 않고 정규식을 돌리면 이름 안의 괄호가 구조로 읽힌다. `''`는 규격상
+    대표적이다). 제거하지 않고 정규식을 돌리면 이름 안의 괄호가 구조로 읽힌다. `''`는 규격상
     escape 된 따옴표 한 글자다.
     """
     out: list[str] = []
@@ -366,8 +366,8 @@ def _length_unit(data: str, literals: list[str]) -> tuple[str, float | None]:
 def _assembly(data: str, literals: list[str]) -> list[tuple[str, str]]:
     """NEXT_ASSEMBLY_USAGE_OCCURRENCE로 부모→자식 관계를 읽는다.
 
-    참조가 `#N`이라 이름을 바로 주지 않는다. PRODUCT_DEFINITION 사슬을 전부 되짚는 대신,
-    같은 엔티티가 통상 실어주는 id/이름 문자열을 쓴다. 이름이 비면 그 간선은 버린다 —
+    참조가 `#N`이라 이름을 바로 주지 않는다. PRODUCT_DEFINITION 체인을 전부 되짚는 대신,
+    같은 엔티티가 통상 함께 주는 id/이름 문자열을 쓴다. 이름이 비면 그 간선은 버린다 —
     `('', '')` 짝은 트리를 그리는 데 아무 도움이 안 되면서 있는 것처럼 보인다.
     """
     edges: list[tuple[str, str]] = []

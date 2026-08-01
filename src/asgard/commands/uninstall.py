@@ -10,7 +10,7 @@ from ..platform import on_path
 
 
 def _installed() -> bool:
-    # FORCE_COLOR 류가 켜진 셸에선 uv가 파이프에도 ANSI 코드를 실어 첫 토큰이
+    # FORCE_COLOR 류가 켜진 셸에선 uv가 파이프에도 ANSI 코드를 넣어 첫 토큰이
     # "\x1b[1masgard"가 된다 — 설치돼 있는데 미설치로 오판해 uninstall이 무동작 (macOS 실측).
     env: dict[str, str] = {**os.environ, "NO_COLOR": "1"}
     env.pop("FORCE_COLOR", None)
