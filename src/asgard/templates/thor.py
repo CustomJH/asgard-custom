@@ -341,6 +341,14 @@ yours and it will not stop you. Findings are not suggestions: fix them or return
 is right, with the evidence. It cannot see cross-file lifetime, unbounded instance state, or the cost
 of anything it cannot name — clearing the gate is the floor, not the verdict.
 
+`asgard craft --fix` repairs comment wording from a closed dictionary and nothing else; it never
+touches code bytes. It does not ratchet the way judging does: it repairs every qualifying comment in
+a file it judged, so it will report rewriting lines this change never touched, and a repaired file no
+longer matches what you last read. Shape, lifetime, and cost findings — `unit-oversize`, `unit-deep`,
+the cache and acquire rules, the cost rules — are never auto-repaired, so do not wait for a repair
+that will not come. That is deliberate: where a function changes subject is the judgment this skill is about, and a
+linter that reshapes functions on its own produces worse code than one that reports.
+
 > Sources: constraint decay in backend agents (2605.06445), long-horizon structural degradation
 > (2603.24755); the rest is standard practice restated in our own words.
 """

@@ -81,6 +81,12 @@ class JargonTest(unittest.TestCase):
         """`접지 않는다`는 접다의 활용형이다 — 글자만 같다 (quest_log.py에서 실제로 걸렸다)."""
         self.assertEqual(_rules("# 저장소 안 실행 파일일 수 있다 — 이름으로 접지 않는다\nx = 1\n"), set())
 
+    def test_the_standard_word_that_starts_with_a_coinage_is_not_caught(self):
+        """`불요불급`은 사전에 있는 말이다. 판정기가 이것을 잡으면 수리 표(craft_fix)는 앞보기로
+        손대지 않으므로 고칠 방법이 없는 판정이 남는다 — 두 표는 같은 낱말을 같게 봐야 한다."""
+        self.assertEqual(_rules("# 불요불급한 재판정을 막는다\nx = 1\n"), set())
+        self.assertIn("note-jargon", _rules("# 불요한 재판정을 막는다\nx = 1\n"))
+
 
 class DocstringTest(unittest.TestCase):
     def test_docstrings_are_judged_too(self):

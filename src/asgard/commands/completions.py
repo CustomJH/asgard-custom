@@ -55,7 +55,7 @@ _FLAGS = {
     "map": [],  # 창은 `asgard open map`이 연다 — 여기는 지도를 만지는 손이다
     "health": ["--snapshot", "--next", "--steps", "--json", "--quiet"],
     "budget": ["--transcript", "--json", "--quiet"],
-    "craft": ["--base", "--path", "--json", "--quiet"],
+    "craft": ["--base", "--path", "--fix", "--dry-run", "--json", "--quiet"],
     "freyja-gate": ["--base", "--path", "--json"],
     "thor": ["--base", "--json", "--note", "--path", "--quiet"],
     "tutor": [

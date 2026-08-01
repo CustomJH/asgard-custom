@@ -68,7 +68,8 @@ This is where correct-but-unreadable comments come from, and it is the rule most
 ### When you rewrite a comment
 
 Register is the only thing that changes. **Every fact survives verbatim** — measurements, dates,
-issue ids, incident references, file paths, thresholds, the reason a value is what it is. Rewriting
+issue ids, incident references, file paths, thresholds, the reason a value is what it is. A rewrite
+that loses one of those is a defect, not a style choice: rewriting
 `# 실측(26-07-29): 페이지 2장·vec 0행` into `# 실측 결과 인덱스가 비어 있었다` destroys the comment.
 
 | Riddle (✗) | Record (✓) |
@@ -80,6 +81,10 @@ issue ids, incident references, file paths, thresholds, the reason a value is wh
 | `# 사용자는 규칙이 먹은 줄 안다` | `# 사용자는 규칙이 적용된 것으로 오해한다` |
 | `# 텍스트 한 벌` | `# 파일을 통째로 읽는다` |
 | `# 명시 옵션이 있으면 그쪽이 이긴다` | `# 명시 옵션이 있으면 그쪽이 우선한다` |
+| `# 두 레인은 서로 비의존` | `# 두 레인은 서로 의존하지 않는다` |
+| `# 무매칭이면 원문을 그대로 둔다` | `# 일치가 없으면 원문을 그대로 둔다` |
+| `# 불요한 재판정을 막는다` | `# 불필요한 재판정을 막는다` |
+| `# 무임포트로 판정한다` | `# 임포트하지 않고 판정한다` |
 
 ### Docstrings
 
@@ -94,6 +99,34 @@ function. Say what a `None` return means; that is the single most-omitted fact i
 `asgard craft` judges the comments this change added (`note-metaphor`, `note-jargon`) against a
 closed dictionary and reports the plain wording for each hit. It is a ratchet — comments that were
 already there are not your debt, and the check never fires on English comments.
+
+`asgard craft --fix` repairs what it can prove and re-verifies; the rest is yours. The test is not
+which rule fired but whether the standard wording is **already settled** — a rewrite this repository
+has made the same way every time it made it. There the machine is reusing a decision, not taking
+one, so it applies it. Where the dictionary offers candidates the decision is still open, and taking
+it is a reading of what the sentence meant: `접지` is either `근거 대조` or `근거 확인`, and checking
+one thing against another is not confirming that a thing is so. Both rules have settled entries and
+open ones — `note-jargon` firing does not mean a repair is coming, and `note-metaphor` firing does
+not mean one is not.
+
+Position counts as much as the word. Some coined words sit where their standard form cannot: `비의존`
+reads as a noun but `의존하지 않는다` is a clause, so `# 두 레인은 서로 비의존이다` is repaired and
+`# 두 레인은 서로 비의존` is refused. The refusal says the sentence has to be rebuilt, because
+rebuilding it is a rewrite, not a substitution.
+
+So the refusal is the product. For every hit it will not repair, `--fix` names the standard
+candidates or says what has to be rebuilt, and you choose in one step instead of rediscovering the
+table. It refuses any repair that would drop a fact — the rule above is a guard in the engine, not
+only advice — and it rewrites comment and docstring text only, never code bytes. Code shape (unit
+length, nesting depth, resource lifetime, cost) is never repaired at all: where to cut a function is
+a judgment, and a linter that reshapes functions on its own produces worse code than one that
+reports.
+
+Repair does not ratchet. Judging blocks only on what this change made worse, but `--fix` repairs
+every qualifying comment in a file it judged, including lines this change never touched — so it will
+report rewriting files you did not write in. A repaired file has already changed on disk, so re-read
+it before you edit it — an edit written against your stale copy puts the repaired wording back. The
+machine narrows, you choose, and `asgard craft` re-verifies.
 """
 
 
@@ -117,9 +150,17 @@ close, no rhetorical question, no second person. In Korean, drop the subject onl
 candidate exists. Grammar follows the Bragi contract.
 
 **When you rewrite a comment, only the register changes** — every measurement, date, issue id, path,
-and threshold survives verbatim. Docstrings start with the contract (what it does or returns, one
-sentence), then only what a caller needs; design rationale goes in the module docstring.
+and threshold survives verbatim, and a rewrite that loses one is a defect, not a style choice.
+Docstrings start with the contract (what it does or returns, one sentence), then only what a caller
+needs; design rationale goes in the module docstring.
 
 `asgard craft` checks the comments a change added and names the plain wording for each hit.
+`asgard craft --fix` repairs only what is already settled — a rewrite this repository has made the
+same way every time — and refuses every hit whose standard wording is still a choice, naming the
+candidates so you decide in one step. Position counts: `비의존이다` is repaired, bare `비의존` is
+refused, because `의존하지 않는다` is a clause and that sentence has to be rebuilt. Code shape is never
+repaired. Repair does not ratchet — it also rewrites comments this change did not add — and it
+rewrites files on disk, so re-read a repaired file before editing it or your stale copy puts the old
+wording back.
 <!-- <<< asgard:comments <<< -->
 """

@@ -17,6 +17,11 @@
 엔진을 가리는 방법은 `python -S` 다. site-packages를 안 붙이므로 `import asgard`가 실패하고,
 stdlib은 그대로 산다 — 사용자 저장소에서 훅이 처하는 상황과 같고, 인터프리터 경로를 찾아다니지
 않아도 되어 어느 플랫폼에서나 같게 돈다.
+
+수리 레인(`RepairLane`)은 진짜 CLI 대신 **스텁 asgard**를 PATH 에 얹고 배포본 훅을 그대로 돌린다.
+`asgard craft --fix`가 무엇을 돌려주든 훅이 어떻게 처신하는지가 판정 대상이라, 판정기 구현이
+아니라 payload 모양만 있으면 된다. 구 CLI(모르는 옵션으로 종료)와 죽은 수리는 진짜 CLI 로는
+재현할 수 없다.
 """
 
 from __future__ import annotations
@@ -39,6 +44,47 @@ HOSTS = (
     ("--codex", os.path.join(".codex", "hooks", "craft-gate.py"), ["codex"], "default", "stopReason"),
     ("--cc", os.path.join(".claude", "hooks", "craft-gate.py"), [], "s1", "reason"),
 )
+
+
+# 스텁 CLI. 세 게이트 · 두 레인을 argv 로 갈라 `CRAFTGATE_STUB` 이 가리키는 표에서 payload 를 꺼낸다.
+# 표에 없는 레인은 종료 코드 2 + 빈 stdout — argparse 가 모르는 옵션에 하는 것과 같고, 그것이
+# `--fix` 를 모르는 구 CLI 다.
+STUB = """\
+import json, os, sys
+
+argv = sys.argv[1:]
+with open(os.environ["CRAFTGATE_CALLS"], "a", encoding="utf-8") as handle:
+    handle.write(json.dumps(argv) + "\\n")
+if "thor" in argv:
+    lane = "thor gate"
+elif "freyja-gate" in argv:
+    lane = "freyja gate"
+else:
+    lane = "craft --fix" if "--fix" in argv else "craft"
+with open(os.environ["CRAFTGATE_STUB"], encoding="utf-8") as handle:
+    spec = json.load(handle).get(lane)
+if spec is None:
+    sys.stderr.write("asgard: error: unrecognized arguments: --fix\\n")
+    raise SystemExit(2)
+if spec.get("crash"):
+    sys.stderr.write("Traceback (most recent call last):\\nRuntimeError: repair blew up\\n")
+    raise SystemExit(1)
+sys.stdout.write(json.dumps(spec, ensure_ascii=False))
+raise SystemExit(1 if spec.get("blocking") else 0)
+"""
+
+# 수리 두 건과 남은 판정 하나 — "고친 것"과 "남은 것"이 차단문에서 안 섞이는지를 이 한 묶음으로 본다.
+FIX = {
+    "applied": [
+        {"path": "src/a.py", "line": 12, "rule": "note-jargon", "before": "# 무매칭", "after": "# 일치 없음"},
+        {"path": "src/b.py", "line": 4, "rule": "note-jargon", "before": "# 불요", "after": "# 불필요"},
+    ],
+    "refused": [],
+    "files": ["src/a.py", "src/b.py"],
+    "remaining_blocking": 1,
+}
+REMAINDER = {"rule": "unit-oversize", "path": "src/a.py", "line": 40, "detail": "본문 92줄", "fix": "쪼갠다"}
+CLEAN_GATES = {"thor gate": {"blocking": []}, "freyja gate": {"blocking": []}}
 
 
 def _asgard_bin() -> str | None:
@@ -166,6 +212,139 @@ class ShippedHookRuns(unittest.TestCase):
                 self._scaffold(flag)
                 with open(os.path.join(self.root, hook), "rb") as handle:
                     self.assertEqual(origin, handle.read())
+
+
+class RepairLane(unittest.TestCase):
+    """craft 수리 레인 — 스텁 CLI 위에서 배포본 훅을 그대로 실행한다.
+
+    잰다: ① 고친 사실을 남은 판정보다 먼저 말하는가, ② 다 고쳐 막을 것이 없으면 통과하되 증거를
+    남기는가, ③ 수리만 한 실행이 차단 카운터를 쓰는가, ④ 구 CLI 와 죽은 수리에서 예전처럼 막는가.
+    """
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp(prefix="craftgate-fix-")
+        self.addCleanup(shutil.rmtree, self.root, True)
+        self.bin = os.path.join(self.root, "bin")
+        self.table = os.path.join(self.root, "stub.json")
+        self.calls = os.path.join(self.root, "calls.jsonl")
+        os.makedirs(self.bin)
+        self._install_stub()
+        self._write("src/a.py", CLEAN)
+        self._write(os.path.join(".asgard", "state", "writes-s1.json"), json.dumps(["src/a.py"]))
+
+    def _write(self, rel: str, body: str) -> None:
+        path = os.path.join(self.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+
+    def _install_stub(self) -> None:
+        """`shutil.which("asgard")`가 찾을 이름으로 스텁을 얹는다 — 훅이 CLI 를 찾는 방법 그대로다."""
+        script = os.path.join(self.bin, "stub.py")
+        with open(script, "w", encoding="utf-8") as handle:
+            handle.write(STUB)
+        if os.name == "nt":
+            with open(os.path.join(self.bin, "asgard.bat"), "w", encoding="utf-8") as handle:
+                handle.write('@echo off\r\n"%s" "%s" %%*\r\n' % (sys.executable, script))
+            return
+        launcher = os.path.join(self.bin, "asgard")
+        with open(launcher, "w", encoding="utf-8") as handle:
+            handle.write('#!/bin/sh\nexec "%s" "%s" "$@"\n' % (sys.executable, script))
+        os.chmod(launcher, 0o755)
+
+    def _hook(self) -> str:
+        from asgard.hooks import craft_gate
+
+        return craft_gate.__file__
+
+    def _run(self, table: dict) -> subprocess.CompletedProcess:
+        with open(self.table, "w", encoding="utf-8") as handle:
+            json.dump(table, handle)
+        env = dict(os.environ)
+        env["PATH"] = self.bin + os.pathsep + env.get("PATH", "")
+        env["CRAFTGATE_STUB"] = self.table
+        env["CRAFTGATE_CALLS"] = self.calls
+        env.pop("CLAUDE_PROJECT_DIR", None)
+        return subprocess.run(
+            # `-S` = site-packages 없이. 배포본이 엔진을 import 하면 여기서 죽는다.
+            [sys.executable, "-S", self._hook()],
+            input=json.dumps({"cwd": self.root, "session_id": "s1"}),
+            cwd=self.root,
+            capture_output=True,
+            text=True,
+            timeout=180,
+            env=env,
+        )
+
+    def _lanes(self) -> list[list[str]]:
+        with open(self.calls, encoding="utf-8") as handle:
+            return [json.loads(line) for line in handle if line.strip()]
+
+    def _counter(self) -> dict | None:
+        path = os.path.join(self.root, ".asgard", "state", "craftgate-s1.json")
+        if not os.path.exists(path):
+            return None
+        with open(path, encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def test_the_repair_is_stated_first_and_only_the_remainder_blocks(self):
+        done = self._run({"craft --fix": {"blocking": [REMAINDER], "fix": FIX}, **CLEAN_GATES})
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertNotIn("ModuleNotFoundError", done.stderr)  # stdlib 전용 계약
+        reason = str(json.loads(done.stdout)["reason"])
+        self.assertIn("repaired 2 finding(s)", reason)
+        self.assertIn("src/a.py, src/b.py", reason)
+        self.assertIn("[craft/unit-oversize]", reason)
+        self.assertNotIn("note-jargon", reason)  # 고쳐진 것을 다시 고치라고 말하면 안 된다
+        self.assertLess(reason.index("repaired 2 finding(s)"), reason.index("[craft/unit-oversize]"))
+
+    def test_only_craft_is_given_the_fix_flag(self):
+        """thor gate 와 freyja gate 는 수리 레인이 없다 — 고칠 수 없는 것을 재기 때문이다."""
+        self._run({"craft --fix": {"blocking": [REMAINDER], "fix": FIX}, **CLEAN_GATES})
+        lanes = self._lanes()
+        self.assertIn("--fix", lanes[0])
+        self.assertIn("craft", lanes[0])
+        for argv in lanes[1:]:
+            with self.subTest(argv=argv):
+                self.assertNotIn("--fix", argv)
+
+    def test_everything_repaired_passes_but_leaves_a_receipt(self):
+        """막을 것이 없어졌다고 조용히 통과하면 디스크가 바뀐 것을 아무도 못 본 채 지나간다."""
+        done = self._run({"craft --fix": {"blocking": [], "fix": FIX}, **CLEAN_GATES})
+        self.assertEqual(0, done.returncode, done.stderr)
+        self.assertEqual("", done.stdout.strip())
+        self.assertIn("repaired 2 finding(s)", done.stderr)
+        self.assertIn("src/a.py, src/b.py", done.stderr)
+
+    def test_a_repair_only_run_does_not_consume_the_block_counter(self):
+        """상한 2회는 차단의 래칫이다 — 수리는 차단이 아니므로 남은 기회를 깎지 않는다."""
+        self._run({"craft --fix": {"blocking": [], "fix": FIX}, **CLEAN_GATES})
+        self.assertIsNone(self._counter())
+        self._run({"craft --fix": {"blocking": [REMAINDER], "fix": FIX}, **CLEAN_GATES})
+        self.assertEqual({"session": 1}, self._counter())
+
+    def test_a_cli_without_the_repair_lane_blocks_exactly_as_before(self):
+        """표에 `craft --fix`가 없으면 스텁은 종료 코드 2 로 죽는다 — `--fix` 를 모르는 구 CLI 다."""
+        done = self._run({"craft": {"blocking": [REMAINDER]}, **CLEAN_GATES})
+        reason = str(json.loads(done.stdout)["reason"])
+        self.assertIn("[craft/unit-oversize]", reason)
+        self.assertNotIn("repaired", reason)
+        self.assertEqual(
+            ["craft --fix", "craft"], ["craft --fix" if "--fix" in a else "craft" for a in self._lanes()][:2]
+        )
+
+    def test_a_crashed_repair_degrades_to_read_only_judging_not_to_allowing(self):
+        done = self._run({"craft --fix": {"crash": True}, "craft": {"blocking": [REMAINDER]}, **CLEAN_GATES})
+        reason = str(json.loads(done.stdout)["reason"])
+        self.assertIn("[craft/unit-oversize]", reason)
+        self.assertNotIn("repaired", reason)
+
+    def test_a_clean_repair_lane_with_nothing_to_do_is_silent(self):
+        """수리 0건 · 판정 0건 — 통과이고, 아무 말도 남기지 않는다 (증거는 수리가 있을 때만)."""
+        empty = {"applied": [], "refused": [], "files": [], "remaining_blocking": 0}
+        done = self._run({"craft --fix": {"blocking": [], "fix": empty}, **CLEAN_GATES})
+        self.assertEqual("", done.stdout.strip())
+        self.assertEqual("", done.stderr.strip())
 
 
 if __name__ == "__main__":

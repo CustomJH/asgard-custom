@@ -432,12 +432,21 @@ def budget(
 def craft(
     base: str = typer.Option("HEAD", "--base", help="git ref to compare against (default HEAD)"),
     path: list[str] = typer.Option(None, "--path", help="judge these paths instead of the diff (repeatable)"),
+    fix: bool = typer.Option(
+        False,
+        "--fix",
+        help="rewrite the comments whose right wording is already settled, then judge again. this reaches "
+        "comments your change never touched, so the files it judges are rewritten on disk",
+    ),
+    dry_run: bool = typer.Option(False, "--dry-run", help="with --fix: work out every repair and write nothing"),
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
     from .commands.craft import run_craft
 
-    raise typer.Exit(run_craft(base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet))
+    raise typer.Exit(
+        run_craft(base=base, paths=tuple(path or ()), json_out=json_, quiet=quiet, fix=fix, dry_run=dry_run)
+    )
 
 
 @app.command(

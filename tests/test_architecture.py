@@ -83,6 +83,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # craft_note — 주석 문체 판정. craft_rules(코드 형상)와 같은 층이고 같은 계약을
                 # 진다: 순수 함수, 파일 시스템 안 만짐, 래칫은 craft가 건다.
                 "craft_note",
+                # craft_fix — 판정을 되돌리는 수리 레인. craft_note 옆이다: 규칙을 스스로 갖지
+                # 않고 판정기의 사전을 읽어 고칠 수 있는 것만 고친다. 파일을 쓰는 것은 apply()
+                # 하나뿐이고 repair()는 순수하다.
+                "craft_fix",
                 "thor_gate",
                 # freyja_gate — 시각 표면의 래칫. craft(형상)·thor_gate(정확성)와 같은 층이고
                 # 같은 계약을 진다. 규칙을 스스로 갖지 않고 각 엔진이 배송한 판정기를 부른다.
