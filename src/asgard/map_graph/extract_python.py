@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import ast
 
-from .evidence import Evidence, safe_url
+from .evidence import Evidence, safe_summary, safe_url
 
 _HTTP_METHODS = {"get", "post", "put", "delete", "patch", "head", "options", "websocket"}
 _ROUTE_ATTRS = _HTTP_METHODS | {"route", "api_route"}
@@ -90,6 +90,67 @@ def _decorator_call(decorator: ast.expr) -> tuple[str, ast.Call | None]:
     return "", None
 
 
+def _kwarg_str(call: ast.Call | None, keyword: str) -> str:
+    if call is None:
+        return ""
+    for entry in call.keywords:
+        if entry.arg == keyword and isinstance(entry.value, ast.Constant) and isinstance(entry.value.value, str):
+            return entry.value.value
+    return ""
+
+
+def _declared_summary(call: ast.Call | None, node: ast.FunctionDef | ast.AsyncFunctionDef, *keywords: str) -> str:
+    """선언이 스스로 밝힌 한 줄 역할 — 명시 인자가 먼저, 없으면 독스트링 첫 줄.
+
+    둘 다 없으면 빈 값이다. 함수 이름을 문장처럼 풀어 역할을 지어내지 않는다 — 이 값은
+    "이 명령이 무엇을 하나"의 근거로 주입면까지 가므로, 근거가 없으면 없는 채로 둔다.
+    """
+    for keyword in keywords:
+        declared = _kwarg_str(call, keyword)
+        if declared:
+            return safe_summary(declared)
+    doc = (ast.get_docstring(node) or "").strip()
+    return safe_summary(doc.splitlines()[0]) if doc else ""
+
+
+def _typer_groups(tree: ast.Module) -> tuple[dict[str, str], dict[str, str]]:
+    """`app.add_typer(ticket_app, name="ticket")` 결속 — 명령을 실제로 칠 수 있게 하는 것.
+
+    이름만으로는 숏컷이 못 된다: 이 저장소만 해도 `list`가 여덟 그룹에 있어 한 노드로 접혔다.
+    부모 그룹을 거슬러 이어 `ticket board`처럼 호출 경로를 이름으로 삼으면 접힘과 모호함이 함께 풀린다.
+    """
+    parent: dict[str, str] = {}
+    label: dict[str, str] = {}
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr != "add_typer":
+            continue
+        owner = _dotted_root(node.func)
+        child = node.args[0].id if node.args and isinstance(node.args[0], ast.Name) else ""
+        if not owner or not child:
+            continue
+        parent[child] = owner
+        name = _kwarg_str(node, "name")
+        if name:
+            label[child] = name
+    return parent, label
+
+
+def _command_path(receiver: str, parent: dict[str, str], label: dict[str, str], name: str) -> str:
+    """수신자에서 뿌리까지 거슬러 그룹 이름을 잇는다. 뿌리 app은 이름이 없어 아무것도 안 보탠다."""
+    chain: list[str] = []
+    seen: set[str] = set()
+    current = receiver
+    # 사이클은 소스가 이상한 경우다 — 도는 대신 거기서 멈춘다.
+    while current and current not in seen:
+        seen.add(current)
+        if current in label:
+            chain.append(label[current])
+        current = parent.get(current, "")
+    return " ".join([*reversed(chain), name])
+
+
 def _base_name(base: ast.expr) -> str:
     if isinstance(base, ast.Name):
         return base.id
@@ -131,6 +192,7 @@ def extract_python(path: str, source: str) -> list[Evidence]:
             for alias in node.names:
                 symbols[alias.asname or alias.name] = f"{node.module}.{alias.name}"
 
+    group_parent, group_label = _typer_groups(tree)
     receivers: dict[str, str] = {}
     for node in ast.walk(tree):
         if not isinstance(node, (ast.Assign, ast.AnnAssign)) or not isinstance(node.value, ast.Call):
@@ -175,6 +237,7 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                                 confidence,
                                 node.name,
                                 scope_end=span_end,
+                                summary=_declared_summary(call, node, "summary", "description"),
                             )
                         )
                 elif attr == "command":
@@ -188,12 +251,13 @@ def extract_python(path: str, source: str) -> list[Evidence]:
                     evidence.append(
                         Evidence(
                             "command",
-                            name or node.name,
+                            _command_path(receiver, group_parent, group_label, name or node.name),
                             path,
                             decorator.lineno,
                             confidence,
                             node.name,
                             scope_end=span_end,
+                            summary=_declared_summary(call, node, "help"),
                         )
                     )
                 elif attr in _JOB_ATTRS:

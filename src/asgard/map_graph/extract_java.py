@@ -422,7 +422,7 @@ def extract_mapper_xml(path: str, source: str) -> list[Evidence]:
         Evidence("db_access", simple, path, _line_of(source, ns_match.start()), "confirmed", f"mybatis-xml {namespace}")
     ]
     # 구문 본문 스팬 — 닫는 태그까지. 스팬 안의 테이블 참조가 그 구문의 소비로 귀속되어
-    # `구문 → 테이블` 플로우가 선다 (파일 단위 테이블 나열보다 정확한 귀속이다).
+    # `구문 → 테이블` 플로우가 만들어진다 (파일 단위 테이블 나열보다 정확한 귀속이다).
     statements: list[tuple[int, int, str, str]] = []  # (시작 오프셋, 끝 오프셋, 태그, id)
     for match in _STATEMENT.finditer(source):
         closing = source.find(f"</{match.group(1)}>", match.end())

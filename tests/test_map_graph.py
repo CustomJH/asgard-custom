@@ -921,6 +921,44 @@ class TestScanGraph(Base):
         # 후보 증거는 카탈로그에서 `?`로 표시된다
         self.assertIn("?", graph_body)
 
+    def hub_state(self, spread: dict[str, int]) -> dict:
+        """{개념 이름: 인접 파일 수} → 상태. 파일 노드가 개념을 하나씩 만진다."""
+        nodes: list[dict] = []
+        edges: list[dict] = []
+        for name, count in spread.items():
+            nodes.append(
+                {"id": f"db_access:{name}", "kind": "db_access", "name": name, "confidence": "confirmed", "files": []}
+            )
+            for index in range(count):
+                edges.append({"source": f"file:m{index}.py", "target": f"db_access:{name}", "kind": "touches"})
+        return {"nodes": nodes, "edges": edges}
+
+    def test_hubs_appear_only_where_the_graph_actually_has_hubs(self):
+        """별 모양에서는 허브 절이 없어야 한다 — 하나뿐인 싱크는 방향이 아니다."""
+        from asgard.map_graph.graph import _render_graph_md
+
+        flat = self.hub_state({f"T{index}": 1 for index in range(20)})
+        one_sink = self.hub_state({**{f"T{index}": 1 for index in range(20)}, "CONN": 10})
+        peaked = self.hub_state({**{f"T{index}": 1 for index in range(20)}, "A": 40, "B": 30, "C": 12})
+
+        self.assertNotIn("## Hubs", _render_graph_md(flat))
+        self.assertNotIn("## Hubs", _render_graph_md(one_sink))
+        body = _render_graph_md(peaked)
+        self.assertIn("## Hubs", body)
+        self.assertIn("`db_access:A` — db_access, 인접 40", body)
+        # 꼬리는 허브가 아니다
+        self.assertNotIn("`db_access:T0`", body.split("## Hubs", 1)[1].split("\n## ", 1)[0])
+
+    def test_file_nodes_never_count_as_hubs(self):
+        """파일 차수는 선언 개수를 그대로 베낀 값이라 '가장 큰 파일'을 다시 말할 뿐이다."""
+        from asgard.map_graph.graph import _render_graph_md
+
+        state = self.hub_state({**{f"T{index}": 1 for index in range(20)}, "A": 40, "B": 30, "C": 12})
+        body = _render_graph_md(state)
+
+        hubs = body.split("## Hubs", 1)[1].split("\n## ", 1)[0]
+        self.assertNotIn("file:", hubs)
+
     def test_catalog_projects_every_relation_without_a_byte_cutoff(self):
         from asgard.map_graph.graph import _render_graph_md
 

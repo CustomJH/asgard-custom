@@ -12,12 +12,13 @@ import json
 import os
 import re
 import tempfile
-from collections import defaultdict
+import tomllib
+from collections import Counter, defaultdict
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
-from ..code_map import MapError, _atomic_write, _files, _map_dir, _safe_component
+from ..code_map import MapError, _atomic_write, _files, _map_dir, _safe_component, _safe_label
 from .evidence import Evidence
 from .extract_java import extract_java, extract_mapper_xml, extract_proc, extract_sql, strip_java_comments
 from .extract_python import extract_python
@@ -83,6 +84,14 @@ _API_BASE_CAP = 4
 # GRAPH.md Trace seeds — 진입 표면 종류만, 종류당 상한 (전체 열람은 `asgard map list`).
 _SEED_KINDS = ("route", "page", "command", "store", "event", "job")
 _MAX_SEEDS_PER_KIND = 40
+# `## Commands` 절의 상한. 다른 절보다 후한 이유는 이것이 GRAPH.md 에서 유일하게 **라우팅**
+# 되는 재고이기 때문이다 — 잘린 명령은 주입면에서 후보로도 못 선다. 통째 열람은 어차피 금지고
+# (Navigation contract) `map context` 가 질의별로 셋만 뽑아 간다.
+_MAX_COMMAND_ROWS = 200
+# 허브 절 — 개념 노드가 이만큼은 있어야 "상위"라는 말이 뜻을 갖는다.
+_MIN_HUB_POPULATION = 12
+_MIN_HUB_ROWS = 3
+_MAX_HUB_ROWS = 12
 # 스팬 신뢰 확장자 — AST(.py)·주석 제거 후 중괄호 균형(.java)은 포함 관계가 결정론적이다.
 # 나머지(원문 정규식 근사 스팬)는 플로우 엣지를 candidate로 캡한다.
 _STRUCTURAL_SPAN_SUFFIXES = (".py", ".java")
@@ -451,10 +460,21 @@ def _build_state(
     for item in collected:
         node = nodes.setdefault(
             item.node_id,
-            {"id": item.node_id, "kind": item.kind, "name": item.name, "confidence": item.confidence, "files": []},
+            {
+                "id": item.node_id,
+                "kind": item.kind,
+                "name": item.name,
+                "confidence": item.confidence,
+                "summary": "",
+                "files": [],
+            },
         )
         if item.confidence == "confirmed":
             node["confidence"] = "confirmed"
+        # 같은 개념이 여러 파일에서 증거를 내면 역할은 처음 밝힌 것을 지킨다 — 파일 순회가
+        # 정렬돼 있어 결정론이고, 뒤엣것으로 덮으면 스캔마다 카탈로그가 흔들린다.
+        if item.summary and not node["summary"]:
+            node["summary"] = item.summary
         location = {"file": item.file, "line": item.line, "confidence": item.confidence, "detail": item.detail}
         if location not in node["files"]:
             node["files"].append(location)
@@ -502,7 +522,104 @@ def _build_state(
     }
 
 
-def _render_graph_md(state: dict) -> str:
+def _fold(names: list[str]) -> str:
+    """같은 증거는 이름 하나에 횟수로 접는다 — 한 파일에서 `conn.execute?`를 72번 반복해 적으면
+    행 하나가 주입 예산을 통째로 먹는데, 전달하려는 뜻은 "이 파일은 DB를 많이 만진다" 하나다.
+    횟수는 살린다 (72와 2는 다른 신호다).
+
+    서로 **다른** 이름이 많은 경우는 여기서 자르지 않는다. 카탈로그는 완전해야 하고(`map list`가
+    이걸 읽는다), 긴 행이 아픈 곳은 4,000B 예산이 걸린 주입면이다 — 자르는 자리는 거기다
+    (`map_context._clip_role`).
+    """
+    counted = Counter(names)
+    return ", ".join(name if total == 1 else f"{name}×{total}" for name, total in sorted(counted.items()))
+
+
+def _console_script(root: Path) -> str:
+    """`[project.scripts]`가 선언한 실행 이름 — 명령 행을 그대로 칠 수 있게 하는 접두.
+
+    선언이 없으면 빈 값이다. 실행 이름을 패키지 이름에서 추측하지 않는다.
+    """
+    try:
+        with (root / "pyproject.toml").open("rb") as stream:
+            data = tomllib.load(stream)
+    except OSError, tomllib.TOMLDecodeError, ValueError:
+        return ""
+    scripts = (data.get("project") or {}).get("scripts") if isinstance(data, dict) else {}
+    if not isinstance(scripts, dict):
+        return ""
+    names = sorted(name for name in scripts if isinstance(name, str) and name.strip())
+    return _safe_label(names[0]) if names else ""
+
+
+def _command_rows(state: dict, script: str) -> list[str]:
+    """`## Commands` 절 — 이 저장소가 이미 답을 내는 표면의 목록.
+
+    역할을 밝힌 명령만 적는다. 이름만 있는 명령은 `## Trace seeds`가 이미 세고 있고, 역할 없는
+    이름을 여기 또 늘어놓으면 앞서 고친 그 병(예산만 먹고 라우팅은 못 하는 행)으로 되돌아간다.
+    """
+    prefix = f"{script} " if script else ""
+    rows = [
+        f"- `{prefix}{node['name']}` — {node['summary']}"
+        for node in state["nodes"]
+        if node["kind"] == "command" and node.get("summary")
+    ]
+    if not rows:
+        return []
+    listed = sorted(rows)[:_MAX_COMMAND_ROWS]
+    lines = [
+        "",
+        "## Commands",
+        "",
+        "> 이 저장소가 이미 답을 내는 표면이다 — 핸들러를 grep 하기 전에 여기서 고른다.",
+        "",
+        *listed,
+    ]
+    if len(rows) > len(listed):
+        lines.append(f"- (+{len(rows) - len(listed)} more — `asgard map list --kind command`)")
+    return lines
+
+
+def _hub_rows(state: dict) -> list[str]:
+    """`## Hubs` 절 — 무엇을 중심으로 도는가.
+
+    파일 노드는 세지 않는다. 파일은 자기가 선언한 것 전부와 이어져 있어 차수가 선언 개수를 그대로
+    베낀 값이고, 그러면 이 절은 "가장 큰 파일"을 다시 말하는 자리가 된다 (이 저장소에서 `cli.py`가
+    차수 132, 나머지는 전부 10 이하다 — 재보고 뺐다).
+
+    별 모양 그래프에서는 이 절이 아무것도 안 알려 준다. 그래서 상위가 중앙값보다 확실히 높을
+    때만 낸다 — 993파일 JVM 모노리포에서는 `TDEVICE` 72·`TCFG_METER` 58에 중앙값 3이라
+    "이 시스템은 이 표들을 중심으로 돈다"가 사실이고, 여기서는 그 조건이 성립하지 않는다.
+    """
+    degree: Counter[str] = Counter()
+    for edge in state.get("edges", []):
+        degree[edge["source"]] += 1
+        degree[edge["target"]] += 1
+    concepts = {node["id"]: node for node in state["nodes"] if node["kind"] != "file" and "id" in node}
+    scored = sorted(
+        ((degree[node_id], node_id) for node_id in concepts if degree[node_id]),
+        key=lambda row: (-row[0], row[1]),
+    )
+    if len(scored) < _MIN_HUB_POPULATION:
+        return []
+    middle = sorted(count for count, _ in scored)[len(scored) // 2]
+    listed = [(count, node_id) for count, node_id in scored[:_MAX_HUB_ROWS] if count >= max(middle * 3, 4)]
+    # 하나뿐인 허브는 허브 목록이 아니라 싱크 하나다. 이 저장소가 그 경우인데(`conn.execute` 10,
+    # 수신자 타입을 못 묶어 candidate로 남은 일반 노드), "이 시스템은 conn.execute를 중심으로
+    # 돈다"는 아무에게도 방향을 못 준다.
+    if len(listed) < _MIN_HUB_ROWS:
+        return []
+    return [
+        "",
+        "## Hubs",
+        "",
+        "> 인접 차수 상위 개념 — 여기를 건드리면 멀리 간다. 정확한 범위는 `asgard map impact <id>`.",
+        "",
+        *[f"- `{node_id}` — {concepts[node_id]['kind']}, 인접 {count}" for count, node_id in listed],
+    ]
+
+
+def _render_graph_md(state: dict, script: str = "") -> str:
     """결정론 카탈로그 — 타임스탬프·리비전 없이 구조만 담아 팀 diff를 조용하게 유지한다."""
     per_file: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     kind_totals: dict[str, int] = defaultdict(int)
@@ -529,6 +646,10 @@ def _render_graph_md(state: dict) -> str:
         "> `?` marks candidate evidence — verify at the cited source before asserting.",
         "",
         f"- Evidence summary: {summary or 'none'}",
+    ]
+    lines += _hub_rows(state)
+    lines += _command_rows(state, script)
+    lines += [
         "",
         "## Relations by file",
         "",
@@ -538,7 +659,7 @@ def _render_graph_md(state: dict) -> str:
         parts = []
         for kind in _KIND_LABEL:
             if kinds.get(kind):
-                parts.append(f"{_KIND_LABEL[kind]}: {', '.join(sorted(kinds[kind]))}")
+                parts.append(f"{_KIND_LABEL[kind]}: {_fold(kinds[kind])}")
         lines.append(f"- `{path}` — " + " · ".join(parts))
     if flows:
         # 개념→개념 플로우 — 어느 핸들러가 어떤 DB/API/이벤트/서비스를 만지는지
@@ -622,7 +743,7 @@ def scan_graph(root: str | os.PathLike[str], *, dry_run: bool = False, force: bo
     state = _build_state(scanned, collected, revision, api_bases, stat_revision, jvm_modules)
     state_path = _state_file(base, _STATE_RELATIVE.name, create=False)
     state_json = json.dumps(state, ensure_ascii=False, indent=1, sort_keys=True)
-    graph_md = _render_graph_md(state)
+    graph_md = _render_graph_md(state, _console_script(base))
     map_dir = _map_dir(base, create=not dry_run)
     collision = (
         next((child for child in map_dir.iterdir() if child.name.casefold() == GRAPH_FILE.casefold()), None)

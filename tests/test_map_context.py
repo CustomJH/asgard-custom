@@ -69,19 +69,120 @@ class TestMapContext(Base):
         unmatched = build_map_context(self.root, "totally unrelated billing task")
         self.assertNotIn("asgard map impact", unmatched.text)
 
-    def test_schema_two_contains_verified_commands_and_public_surfaces(self):
+    def test_schema_three_contains_verified_commands_surfaces_and_documents(self):
         from asgard.code_map import refresh_map
 
         self.seed()
+        self.write("docs/runbook.md", "# Deploy runbook\n\n## Rollback\n\ntext\n\n## Paging\n\ntext\n")
         refresh_map(self.root)
         body = open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
-        self.assertTrue(body.startswith("<!-- asgard:project-map schema=2 -->"))
+        self.assertTrue(body.startswith("<!-- asgard:project-map schema=3 -->"))
         self.assertIn("Command: `python -m pytest`", body)
         self.assertIn("Command: `ruff check .`", body)
         self.assertIn("Command: `ty check`", body)
         self.assertIn("class PublicAPI", body)
         self.assertIn("def route(request, config)", body)
+        # 문서 레인은 제목과 절 이름까지만 싣는다 — 본문은 지도의 것이 아니다.
+        self.assertIn("`docs/runbook.md` — doc: Deploy runbook · sections: Rollback; Paging", body)
+        self.assertNotIn("\ntext\n", body)
         self.assertLessEqual(len(body.encode("utf-8")), 32 * 1024)
+
+    def test_documents_without_a_title_or_section_are_not_called_documents(self):
+        from asgard.code_map import refresh_map
+
+        self.seed()
+        self.write("NOTES.md", "just a loose paragraph with no heading at all\n")
+        self.write("docs/api.md", "## Endpoints\n\n- GET /x\n")
+        refresh_map(self.root)
+        body = open(os.path.join(self.root, ".asgard", "map", "PROJECT.md"), encoding="utf-8").read()
+        self.assertNotIn("NOTES.md", body)
+        # 제목이 없어도 절이 있으면 문서다 — 파일명을 제목 자리에 세운다.
+        self.assertIn("`docs/api.md` — doc: api · sections: Endpoints", body)
+
+    def graph_with_commands(self) -> None:
+        self.write(
+            ".asgard/map/GRAPH.md",
+            "<!-- asgard:map-graph schema=1 -->\n# Relation Graph\n\n"
+            "## Commands\n\n"
+            "- `asgard ticket move` — 티켓의 상태를 옮긴다\n"
+            "- `asgard ticket board` — 상태 칸으로 접은 지금의 보드\n"
+            "- `asgard auth status` — check a subscription login\n"
+            "- `asgard map trace` — follow edges out of one node\n"
+            "- (+12 more — `asgard map list --kind command`)\n\n"
+            "## Trace seeds\n\n"
+            "- commands: `command:ticket_move` · `command:auth_status`\n",
+        )
+
+    def test_korean_query_routes_to_a_command_without_naming_it(self):
+        """숏컷은 명령 이름을 이미 아는 사람에게만 뜨면 안 된다.
+
+        고치기 전에는 시드가 노드 id 부분문자열 매칭이라, 질의 12개 중 5개에서만 떴고 그 5개는
+        전부 질문에 이미 명령 이름이 들어 있던 경우였다 (26-08-01 실측).
+        """
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+
+        self.seed()
+        refresh_map(self.root)
+        self.graph_with_commands()
+
+        context = build_map_context(self.root, "티켓 상태를 바꾸는 곳")
+
+        self.assertIn("`asgard ticket move`", context.text)
+        self.assertIn("핸들러를 grep 하기 전에", context.text)
+
+    def test_a_command_covering_two_concepts_beats_a_rarer_single_hit(self):
+        """개념 수가 먼저다 — `상태` 하나에 세게 걸린 명령이 `티켓`+`상태`를 이기면 안 된다.
+
+        `auth status` 는 카탈로그에서 `status` 를 가진 유일한 행이라 IDF 만 보면 항상 이긴다.
+        """
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+
+        self.seed()
+        refresh_map(self.root)
+        self.graph_with_commands()
+
+        text = build_map_context(self.root, "스튜디오 티켓 상태").text
+        routed = [line for line in text.splitlines() if line.startswith("- `asgard ")]
+
+        self.assertTrue(routed[0].startswith("- `asgard ticket "), routed)
+
+    def test_unrelated_query_routes_to_no_command(self):
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+
+        self.seed()
+        refresh_map(self.root)
+        self.graph_with_commands()
+
+        context = build_map_context(self.root, "quarterly revenue forecast")
+
+        self.assertNotIn("핸들러를 grep 하기 전에", context.text)
+
+    def test_one_sprawling_entry_cannot_eat_the_injection_budget(self):
+        """`cli.py` 한 행이 명령 109개를 늘어놓아 예산 4,000B 중 1,036B(26%)를 먹은 적이 있다.
+
+        카탈로그는 완전해야 하므로 자르는 자리는 주입면이다 — 잘렸다는 사실을 남기고 자른다.
+        """
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+
+        self.seed()
+        refresh_map(self.root)
+        sprawl = ", ".join(f"command-{index:03}" for index in range(200))
+        self.write(
+            ".asgard/map/GRAPH.md",
+            f"<!-- asgard:map-graph schema=1 -->\n# Relation Graph\n\n## Relations by file\n\n"
+            f"- `src/demo/api.py` — commands: {sprawl}\n",
+        )
+
+        context = build_map_context(self.root, "command-042 api")
+        row = next(line for line in context.text.splitlines() if "commands: command-000" in line)
+
+        self.assertIn("잘림", row)
+        self.assertLess(len(row.encode("utf-8")), 400)
+        self.assertLessEqual(len(context.text.encode("utf-8")), 4_000)
 
     def test_refresh_before_context_repairs_drift(self):
         from asgard.code_map import check_map, refresh_map
@@ -113,6 +214,30 @@ class TestMapContext(Base):
         self.assertEqual(first.entries[0].path, "src/demo/api.py")
         self.assertEqual(second.entries[0].path, "src/demo/service.py")
         self.assertNotEqual(first.text, second.text)
+
+    def test_unmatched_query_leads_with_the_directional_map(self):
+        """무매치 질의에 남는 건 오리엔테이션이다 — 관계 카탈로그가 방위 지도를 밀어내면 안 된다."""
+        from asgard.code_map import refresh_map
+        from asgard.map_context import build_map_context
+
+        self.seed()
+        refresh_map(self.root)
+        self.write(
+            ".asgard/map/GRAPH.md",
+            "<!-- asgard:map-graph schema=1 -->\n# Relation Graph\n\n"
+            "## Relations by file\n\n"
+            "- `src/demo/api.py` — db: conn.execute?×11\n",
+        )
+
+        context = build_map_context(self.root, "totally unrelated billing task")
+
+        self.assertTrue(context.entries)
+        # 동점(무매치)에서는 PROJECT.md 층이 GRAPH.md 층보다 앞선다 — 예전엔 source 문자열이
+        # 타이브레이크라 `GRAPH.md`가 알파벳순으로 이겼다.
+        self.assertTrue(context.entries[0].source.endswith("PROJECT.md"))
+        # 질의가 맞으면 관계 카탈로그가 정상적으로 1위를 되찾는다.
+        matched = build_map_context(self.root, "conn.execute db")
+        self.assertTrue(matched.entries[0].source.endswith("GRAPH.md"))
 
     def test_stale_injected_and_oversized_area_maps_are_excluded(self):
         from asgard.code_map import refresh_map
@@ -185,6 +310,40 @@ class TestMapContext(Base):
         self.assertEqual(context.text.count("</asgard-map>"), 1)
 
 
+class TestMapLexicon(unittest.TestCase):
+    """닫힌 사전의 불변식 — 손으로 적는 표라 손이 미끄러진다."""
+
+    def test_every_headword_is_hangul_or_latin_with_a_nonempty_expansion(self):
+        import unicodedata
+
+        from asgard.map_lex import _KO, _NAMES
+
+        for table in (_KO, _NAMES):
+            for headword, expansion in table.items():
+                scripts = {unicodedata.name(char, "?").split()[0] for char in headword}
+                with self.subTest(headword=headword):
+                    # 다른 문자 체계가 섞이면 표제어가 아니라 오타다 — 조용히 아무것도 안 편다.
+                    self.assertLessEqual(scripts, {"HANGUL", "LATIN", "DIGIT"})
+                    self.assertTrue(expansion, "표기를 못 펴는 표제어는 사전에 있을 이유가 없다")
+
+    def test_a_concept_counts_once_however_many_spellings_it_has(self):
+        from asgard.map_lex import query_groups
+
+        groups = query_groups("티켓 상태")
+
+        self.assertEqual(len(groups), 2, groups)
+        self.assertIn("ticket", dict.fromkeys(term for group in groups for term in group))
+        # 한국어 표제어는 자기 자신도 표기로 남는다 — help 문자열 절반이 한국어라서다.
+        self.assertTrue(any("티켓" in group for group in groups))
+
+    def test_particles_do_not_hide_the_noun(self):
+        from asgard.map_lex import group_terms, query_groups
+
+        for query in ("티켓을 옮긴다", "티켓의 상태", "티켓은 어디", "티켓 보드"):
+            with self.subTest(query=query):
+                self.assertIn("ticket", group_terms(query_groups(query)))
+
+
 class TestMapCommands(Base):
     def test_generate_check_context_and_update_share_one_projection(self):
         from asgard.cli import app
@@ -250,7 +409,7 @@ class TestMapActivateHook(Base):
         self.assertEqual(result, 0)
         self.assertEqual(stderr, "")
         self.assertIn("canary", payload["hookSpecificOutput"]["additionalContext"])
-        maintain.assert_called_once_with("/bin/asgard", "/tmp", force=False)
+        maintain.assert_called_once_with("/bin/asgard", "/tmp", stop=False)
         self.assertEqual(run.call_args.args[0][-2:], ["--query", "routing task"])
 
     def test_cursor_uses_cursor_context_schema(self):
@@ -267,14 +426,14 @@ class TestMapActivateHook(Base):
         )
         payload = json.loads(stdout)
         self.assertIn("canary", payload["hookSpecificOutput"]["additionalContext"])
-        maintain.assert_called_once_with("/bin/asgard", self.root, force=False)
+        maintain.assert_called_once_with("/bin/asgard", self.root, stop=False)
 
-    def test_stop_forces_refresh_without_injecting_context(self):
+    def test_stop_signals_maintenance_without_injecting_context(self):
         for mode, event in (("claude-code", "Stop"), ("codex", "Stop"), ("cursor", "stop")):
             with self.subTest(mode=mode):
                 _, stdout, stderr, run, maintain = self.invoke({"hook_event_name": event, "cwd": self.root}, mode)
                 self.assertEqual((stdout, stderr), ("", ""))
-                maintain.assert_called_once_with("/bin/asgard", self.root, force=True)
+                maintain.assert_called_once_with("/bin/asgard", self.root, stop=True)
                 run.assert_not_called()
 
     def test_verifier_and_loki_never_receive_map(self):
@@ -303,12 +462,26 @@ class TestMapActivateHook(Base):
         run.assert_not_called()
 
         completed = subprocess.CompletedProcess(["asgard"], 0, stdout="", stderr="")
+        # Stop 인데 이 세션이 아무것도 안 썼으면 재생성하지 않는다 — 지도는 그대로고 턴만 비싸진다.
         with (
-            mock.patch.object(map_activate.time, "time", return_value=100_000),
-            mock.patch.object(map_activate.os.path, "getmtime", return_value=100_000),
+            mock.patch.object(map_activate.time, "time", return_value=10_000),
+            mock.patch.object(map_activate.os.path, "getmtime", return_value=10_000),
+            mock.patch.object(map_activate.subprocess, "run") as run,
+        ):
+            map_activate.maintain("/bin/asgard", self.root, stop=True)
+        run.assert_not_called()
+
+        # write-sentinel 이 남긴 기록이 지도보다 새로우면 Stop 은 주기와 무관하게 최신화한다
+        # (지도 변경분이 Verifier 해시에 실려야 한다).
+        os.utime(graph, (10_000, 10_000))
+        writes = os.path.join(state, "writes-abc.json")
+        open(writes, "w", encoding="utf-8").write('["src/x.py"]')
+        os.utime(writes, (20_000, 20_000))
+        with (
+            mock.patch.object(map_activate.time, "time", return_value=10_100),
             mock.patch.object(map_activate.subprocess, "run", return_value=completed) as run,
         ):
-            map_activate.maintain("/bin/asgard", self.root, force=True)
+            map_activate.maintain("/bin/asgard", self.root, stop=True)
         self.assertEqual(
             [call.args[0][1:3] for call in run.call_args_list],
             [["map", "update"], ["map", "scan"]],

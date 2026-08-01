@@ -197,7 +197,7 @@ def run_map_check(*, json_out: bool = False, quiet: bool = False) -> int:
             ui.step("gitignore: .gitignore is missing the Asgard map rules")
         if internal_changed:
             ui.step("gitignore: .asgard/.gitignore seed is missing")
-        # 추적 불가는 `map update`로 못 고친다 — 무시 규칙을 걷어내야 풀린다. 이유를 안 실으면
+        # 추적 불가는 `map update`로 못 고친다 — 무시 규칙을 제거해야 풀린다. 이유를 안 넣으면
         # 아래 한 줄만 남아 "업데이트하라 → 여전히 빨강"을 무한 반복하게 된다.
         if not result.trackable:
             ui.step("managed map is git-ignored — not shareable; drop the ignore rule or keep the map local by choice")
@@ -341,6 +341,39 @@ def run_map_list(*, kind: str = "", json_out: bool = False) -> int:
         mark = "" if row["confidence"] == "confirmed" else " ?"
         anchor = f" @ {row['file']}" + (f":{row['line']}" if row["line"] else "") if row["file"] else ""
         ui.step(f"- {row['id']}{mark}{anchor}")
+    return 0
+
+
+def run_map_why(query: str, *, limit: int = 5, json_out: bool = False) -> int:
+    """왜 이렇게 돼 있는지 — 근거를 단 주석·독스트링을 질의로 찾는다.
+
+    이 질문은 grep으로 못 찾는다. 답이 어느 낱말로 적혀 있는지 모르기 때문이다. 상태 파일을 두지
+    않고 그때그때 훑는다 — 이 저장소 기준 1.4초라 낡을 위험을 살 이유가 없다.
+    """
+    root = _project_root(os.getcwd())
+    ui.set_quiet(json_out)
+    from ..map_notes import collect_notes, rank_notes
+
+    try:
+        notes = collect_notes(root)
+    except OSError as exc:
+        if json_out:
+            print(json.dumps({"error": str(exc)}, ensure_ascii=False))
+        else:
+            ui.fail(str(exc))
+        return 2
+    found = rank_notes(notes, query, limit=limit)
+    if json_out:
+        payload = [{"file": n.path, "line": n.line, "unit": n.unit, "text": n.text} for n in found]
+        print(json.dumps({"query": query, "scanned": len(notes), "notes": payload}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head(f"map · why · {query}")
+    if not found:
+        ui.step(f"근거 {len(notes)}건 중 질의에 걸리는 것이 없다 — 낱말을 바꾸거나 `asgard map context`로 넓혀라")
+        return 0
+    for note in found:
+        ui.step(f"- {note.path}:{note.line}" + (f" ({note.unit})" if note.unit else ""))
+        ui.step(f"  {note.text}")
     return 0
 
 

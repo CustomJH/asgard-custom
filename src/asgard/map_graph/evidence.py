@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import re
+import unicodedata
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -26,6 +27,17 @@ EVIDENCE_KINDS = (
 )
 CONFIDENCE = ("confirmed", "candidate")
 _ID_SAFE = re.compile(r"[^\w./:@-]+")
+_MAX_SUMMARY = 120
+
+
+def safe_summary(value: str) -> str:
+    """한 줄 역할 표기 — 제어문자 제거, 한 줄로 접기, 길이 상한.
+
+    이 값은 소스에서 와서 주입면까지 간다. 여러 줄이면 카탈로그의 `- x — y` 문법이 깨지고,
+    제어문자는 경계 표식을 흉내낼 수 있다. 백틱은 홑따옴표로 낮춘다.
+    """
+    folded = "".join(" " if unicodedata.category(ch).startswith("C") else ch for ch in value)
+    return " ".join(folded.replace("`", "'").split())[:_MAX_SUMMARY].strip()
 
 
 def safe_url(value: str) -> str:
@@ -52,6 +64,9 @@ class Evidence:
     # 선언자 본문 끝 줄 — 라우트/커맨드/잡/리스너처럼 본문을 소유하는 증거만 0 초과.
     # 그래프 빌더가 [line, scope_end] 포함 관계로 개념→개념 플로우 엣지를 만든다.
     scope_end: int = 0
+    # 선언이 스스로 밝힌 한 줄 역할 — `help=`/`summary=`/독스트링 첫 줄만이다.
+    # 이름을 풀어써 지어내지 않는다. 없으면 빈 값으로 남기고, 카탈로그는 빈 값을 건너뛴다.
+    summary: str = ""
 
     def __post_init__(self) -> None:
         if self.kind not in EVIDENCE_KINDS:
@@ -60,6 +75,8 @@ class Evidence:
             raise ValueError(f"unknown confidence: {self.confidence}")
         if self.scope_end and self.scope_end < self.line:
             raise ValueError(f"scope_end precedes line: {self.scope_end} < {self.line}")
+        if self.summary != safe_summary(self.summary):
+            raise ValueError(f"summary is not a safe one-liner: {self.summary!r}")
 
     @property
     def node_id(self) -> str:

@@ -22,7 +22,7 @@ from pathlib import Path
 from .templates.map import MAP_INDEX_MD
 
 _PROJECT_FILE = "PROJECT.md"
-_GENERATED_MARKER = "<!-- asgard:project-map schema=2 -->"
+_GENERATED_MARKER = "<!-- asgard:project-map schema=3 -->"
 _GENERATED_MARKER_RE = re.compile(r"^<!-- asgard:project-map schema=\d+ -->$")
 _LEGACY_MARKER = "> Asgard managed orientation map."
 _ENTRY_RE = re.compile(r"^- `([^`]+)` — ", re.M)
@@ -31,6 +31,17 @@ _MAX_LANDMARKS = 200
 _MAX_SURFACE_FILES = 48
 _MAX_SYMBOLS_PER_FILE = 5
 _MAX_SOURCE_BYTES = 512 * 1024
+_MAX_DOC_FILES = 40
+_MAX_DOC_SECTIONS = 6
+# 문서 레인은 마크다운만 본다. reStructuredText 는 제목을 밑줄로 다는 별개 문법이라, 같은
+# 정규식으로 읽으면 제목 아닌 줄을 제목이라 우기게 된다 — 못 읽는 형식은 안 읽는다.
+_DOC_SUFFIXES = {".md", ".mdx"}
+_DOC_TITLE = re.compile(r"^#[ \t]+(.+?)[ \t]*$", re.M)
+_DOC_SECTION = re.compile(r"^##[ \t]+(.+?)[ \t]*$", re.M)
+# 오리엔테이션 맵의 범위 — 지도는 **지금 고칠 나무**를 가리켜야 한다. health.IGNORED_DIRS와
+# 목적이 달라 공유하지 않지만(그쪽 주석 참조), "남의 나무·죽은 나무는 방향이 아니다"는 같다.
+# `archive`와 `skill_plugins`가 빠져 있어 이 저장소 지도 284엔트리 중 198개(70%)가 아카이브와
+# 이식해 온 스킬 번들을 가리켰고, 질의 랭킹 1위까지 그쪽이 먹었다 (26-08-01 실측).
 _IGNORED_DIRS = {
     ".asgard",
     ".git",
@@ -38,13 +49,21 @@ _IGNORED_DIRS = {
     ".svn",
     ".venv",
     "__pycache__",
+    "archive",
     "build",
     "coverage",
     "dist",
+    "htmlcov",
     "node_modules",
     "ref",
+    "site-packages",
+    "skill_plugins",
     "target",
+    "third_party",
+    "thirdparty",
     "vendor",
+    "vendored",
+    "venv",
 }
 _MANIFESTS = {
     "pyproject.toml": "Python project manifest",
@@ -581,6 +600,41 @@ def _surface_entries(root: Path, files: list[Path]) -> list[tuple[str, str]]:
     return rendered
 
 
+def _document_entries(root: Path, files: list[Path]) -> list[tuple[str, str]]:
+    """추적된 문서의 제목과 절 이름 — 본문은 적지 않는다.
+
+    "이미 답이 적힌 문서가 어디 있나"는 홉 절감이 가장 큰 질문 부류인데 지도에는 그 레인이
+    없었다: 이 저장소의 추적 문서 23개 중 지도가 가리키던 건 `README.md` 하나였고, 역할 정본인
+    `templates/roles/*.md` 는 통째로 밖에 있었다 (26-08-01 실측). 제목과 H2 만으로 "여기 열어라"
+    는 충분하다 — 본문까지 적으면 지도가 문서의 사본이 되고, 사본은 곧 낡는다.
+
+    얕은 경로를 먼저 둔다. 뿌리의 README 가 `benchmarks/*/REPORT.md` 보다 방위에 가깝다.
+    """
+    rendered: list[tuple[str, str]] = []
+    candidates = sorted(
+        (path for path in files if path.suffix.lower() in _DOC_SUFFIXES),
+        key=lambda path: (len(path.parts), path.as_posix()),
+    )
+    for path in candidates[:_MAX_DOC_FILES]:
+        try:
+            full = root / path
+            if full.stat().st_size > _MAX_SOURCE_BYTES:
+                continue
+            text = full.read_text(encoding="utf-8")
+        except OSError, UnicodeError:
+            continue
+        title = _DOC_TITLE.search(text)
+        sections = [_safe_label(name) for name in _DOC_SECTION.findall(text)[:_MAX_DOC_SECTIONS]]
+        # 제목도 절도 없으면 문서라 부를 근거가 없다 — 조각글·라이선스 본문 따위다.
+        if not title and not sections:
+            continue
+        role = "doc: " + (_safe_label(title.group(1)) if title else path.stem)
+        if sections:
+            role += " · sections: " + "; ".join(name for name in sections if name)
+        rendered.append((path.as_posix(), role))
+    return rendered
+
+
 def _render(root: Path) -> tuple[str, int, int, str]:
     files = _files(root)
     entries = _landmarks(root, files)
@@ -614,6 +668,13 @@ def _render(root: Path) -> tuple[str, int, int, str]:
     lines.extend(f"- Command: `{command}` — {role}" for command, role in commands)
     if not commands:
         lines.append("- No verification command inferred from checked-in manifests.")
+    # 문서가 공개 표면보다 앞에 오는 이유는 값이 아니라 예산이다: 표면 행이 예산을 먼저 다 쓰면
+    # 문서 레인은 큰 리포에서 한 줄도 못 나온다. 둘 다 자기 상한이 있어 서로를 밀어내지는 않는다.
+    lines += ["", "## Documents", ""]
+    document_rows = _document_entries(root, files)
+    if not document_rows:
+        lines.append("- No tracked markdown document with a title or sections.")
+    lines.extend(f"- `{path}` — {role}" for path, role in document_rows)
     lines += ["", "## Public surfaces", ""]
     surface_rows = _surface_entries(root, files)
     footer = [
@@ -621,6 +682,7 @@ def _render(root: Path) -> tuple[str, int, int, str]:
         "## Navigation contract",
         "",
         "- Read `PROJECT.md` first, then the matching human-authored area map if present.",
+        "- A `## Documents` row lists a document's own title and sections — open it before re-deriving what it already records.",
         "- Verify target definitions and usages from source before planning or editing.",
         "- Structural changes refresh this managed map before Verifier hashing; use `asgard map check` in CI.",
         "",

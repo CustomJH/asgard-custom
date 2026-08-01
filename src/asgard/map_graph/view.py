@@ -1,6 +1,6 @@
 """자립형 그래프 뷰 — 외부 리소스 0의 단일 HTML로 관계 그래프를 그린다.
 
-`asgard map`(bare) / `asgard map view`가 연다. 산출물은 런타임 상태
+`asgard open map`이 연다. 산출물은 런타임 상태
 (`.asgard/state/map-view.html`)로, git에 추적되지 않는다.
 """
 

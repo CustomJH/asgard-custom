@@ -70,7 +70,28 @@ def emit(current_mode, current_event, text):
         sys.stdout.write(text + "\n")
 
 
-def maintain(exe, root, force=False):
+def wrote_since(state_dir, newest):
+    """이 세션이 도구 계층으로 판 파일이 지도보다 새로운가.
+
+    write-sentinel(PostToolUse)이 남기는 `writes-<sid>.json`의 mtime이 유일한 신호다. Bash
+    리다이렉션 write는 그쪽도 못 보므로(write_sentinel 모듈 주석의 lagom 항목) 그 경로는
+    주기 새로고침이 받는다 — 지도가 조금 늦는 것이 턴마다 2초를 태우는 것보다 싸다.
+    """
+    try:
+        names = os.listdir(state_dir)
+    except OSError:
+        return False
+    for name in names:
+        if name.startswith("writes-") and name.endswith(".json"):
+            try:
+                if os.path.getmtime(os.path.join(state_dir, name)) > newest:
+                    return True
+            except OSError:
+                pass
+    return False
+
+
+def maintain(exe, root, stop=False):
     """Refresh both map tiers at most once per interval; failures stay fail-open."""
     # ponytail: concurrent hooks may duplicate one scan; add a lock only if scans become costly.
     state_dir = os.path.join(root, ".asgard", "state")
@@ -82,7 +103,9 @@ def maintain(exe, root, force=False):
             newest = max(newest, os.path.getmtime(path))
         except OSError:
             pass
-    if not force and time.time() - newest < REFRESH_SECONDS:
+    # 지도는 Verifier 해시의 일부라(AGENTS.md map 절) **쓴 턴**은 반드시 최신화한다. 읽기만 한
+    # 턴까지 재생성하면 턴마다 통째로 헛돈다 — 이 저장소 실측 4.7s, 지도 정리 뒤에도 2.2s.
+    if not (stop and wrote_since(state_dir, newest)) and time.time() - newest < REFRESH_SECONDS:
         return
     for command in ([exe, "map", "update", "--quiet"], [exe, "map", "scan", "--quiet"]):
         result = subprocess.run(
@@ -117,7 +140,7 @@ def main():
             or os.environ.get("CURSOR_PROJECT_DIR")
             or str(data.get("cwd") or os.getcwd())
         )
-        maintain(exe, root, force=current_event == "Stop")
+        maintain(exe, root, stop=current_event == "Stop")
         if current_event == "Stop":
             return 0
         cmd = [exe, "map", "context", "--query", query(data)]

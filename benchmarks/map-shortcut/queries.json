@@ -1,0 +1,77 @@
+[
+  {
+    "query": "티켓 상태를 바꾸는 곳",
+    "expect": "asgard ticket",
+    "why": "한국어만으로 된 질의 — 명령 이름을 한 글자도 안 댔다"
+  },
+  {
+    "query": "스튜디오 티켓 보드",
+    "expect": "asgard ticket board",
+    "why": "두 개념(티켓·보드)을 걸친 명령이 한 개념에 세게 걸린 명령을 이겨야 한다"
+  },
+  {
+    "query": "메모리 회수 스코어가 어떻게 나오나",
+    "expect": "asgard yggdrasil recall",
+    "why": "기억·회수 둘 다 recall 로 편다"
+  },
+  {
+    "query": "이 세션이 얼마나 썼나",
+    "expect": "asgard budget",
+    "why": "명령 이름도 사전 표제어도 안 쓴 질의 — help 문장으로만 걸린다"
+  },
+  {
+    "query": "설치가 제대로 됐는지 점검",
+    "expect": "asgard doctor",
+    "why": "점검 → check/doctor 확장"
+  },
+  {
+    "query": "지도 갱신하고 드리프트 확인",
+    "expect": "asgard map",
+    "why": "지도 → map"
+  },
+  {
+    "query": "관계 그래프 다시 훑기",
+    "expect": "asgard map scan",
+    "why": "그래프·스캔 두 개념"
+  },
+  {
+    "query": "무엇이 무엇을 부르는지 따라가고 싶다",
+    "expect": "asgard map trace",
+    "why": "추적 어휘 없이 서술만으로 — help 문장 매칭"
+  },
+  {
+    "query": "에이전트를 이 프로젝트에 붙이기",
+    "expect": "asgard einherjar",
+    "why": "에이전트 → agent/einherjar"
+  },
+  {
+    "query": "학습된 스킬 초안 승인",
+    "expect": "asgard evolve approve",
+    "why": "스킬·승인 두 개념"
+  },
+  {
+    "query": "구독 로그인 상태",
+    "expect": "asgard auth status",
+    "why": "인증 레인 — status 가 여기서는 맞는 답이다"
+  },
+  {
+    "query": "문서를 docx 로 뽑기",
+    "expect": "asgard office",
+    "why": "문서 레인"
+  },
+  {
+    "query": "부하 시험 돌리기",
+    "expect": "asgard k",
+    "why": "k6 레인 — 한국어 서술만"
+  },
+  {
+    "query": "quarterly revenue forecast",
+    "expect": null,
+    "why": "이 저장소의 명령이 아니다 — 아무거나 들이밀면 안 된다"
+  },
+  {
+    "query": "점심 메뉴 추천해줘",
+    "expect": null,
+    "why": "잡담 — 주입면이 조용해야 한다"
+  }
+]
