@@ -7,6 +7,7 @@ import datetime as _dt
 import hashlib
 import os
 import re
+import shutil
 
 from .index import _db, _fts_upsert, build_index, vec_coverage, write_index
 from .policy import memory_dir, scan_secrets, scan_threats
@@ -250,11 +251,28 @@ def _supersede_slot(body: str, text: str, slot: str) -> tuple[str, str]:
     return (body, "unchanged") if updated.strip() == body.strip() else (updated, "updated")
 
 
+def _archive_unlocked(d: str, slug: str) -> None:
+    """페이지 하나를 pages/ 밖 archive/ 로 옮긴다 (호출자가 _lock 보유).
+
+    `norn.archive_page` 와 같은 디렉터리·같은 이름 규칙(`<slug>-<UTC 14자리>.md`)을 쓴다.
+    복원 손잡이는 `norn.restore_page` 하나여야 하고, 이름이 갈리면 이 경로로 접힌 페이지만
+    복원이 안 듣는다. `archive_page` 를 그대로 부르지 못하는 이유는 그쪽이 `_lock` 을 다시
+    잡는데 flock 은 재진입이 안 되기 때문이다 — 같은 스레드가 자기 락에 걸린다."""
+    from .norn import ARCHIVE_DIR
+
+    adir = os.path.join(d, ARCHIVE_DIR)
+    os.makedirs(adir, exist_ok=True)
+    stamp = _dt.datetime.now(_dt.UTC).strftime("%Y%m%d%H%M%S")
+    shutil.move(_page_path(d, slug), os.path.join(adir, f"{slug}-{stamp}.md"))
+
+
 def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
     """계획이 지목한 같은-슬롯 중복 페이지를 접는다 (호출자가 _lock 보유). 반환 = 접힌 slug.
 
-    승인 시점 리비전이 어긋난 페이지는 지우지 않고 남긴다 — 승인 범위 밖의 변경을 삭제로
-    덮는 것보다 모순 하나를 lint로 넘기는 편이 낫다."""
+    접기는 삭제가 아니라 아카이브다. 무엇을 접을지는 계획이 정하고 계획은 틀릴 수 있는데,
+    틀린 자리에서 사라지는 것이 사용자가 직접 적은 사실이다 — `norn.restore_page` 로 되돌릴
+    수 있어야 한다. 승인 시점 리비전이 어긋난 페이지는 아예 건드리지 않는다: 승인 범위 밖의
+    변경을 접기로 덮는 것보다 모순 하나를 lint로 넘기는 편이 낫다."""
     absorbed: list[str] = []
     for entry in plan.get("absorb") or []:
         slug, rev = (list(entry) + [""])[:2] if isinstance(entry, (list, tuple)) else (entry, "")
@@ -263,14 +281,15 @@ def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
         if rev and rev != _rev(d, slug):
             log_op(d, "ingest:absorb-skipped", str(slug), "changed since approval")
             continue
-        os.remove(_page_path(d, slug))
+        _archive_unlocked(d, str(slug))
         with contextlib.suppress(Exception):
             conn = _db(d)
             with conn:
                 for table in ("fts", "vec"):
                     conn.execute(f"DELETE FROM {table} WHERE slug = ?", (slug,))  # noqa: S608 — 테이블명은 리터럴
             conn.close()
-        _usage_forget(d, str(slug))  # 회수 기록은 정본에도 있다 — 한 자리에서 같이 지운다
+        # 회수 통계는 pages/ 를 떠난 페이지를 안 가리킨다. 복원하면 0부터 다시 쌓인다.
+        _usage_forget(d, str(slug))
         log_op(d, "ingest:absorbed", str(slug), f"slot={plan.get('slot')}")
         absorbed.append(str(slug))
     return absorbed

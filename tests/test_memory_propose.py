@@ -4,6 +4,7 @@
   · 제안은 **저장이 아니다** — 승인 전에는 pages/ 에도 주입면에도 한 글자도 안 간다.
   · 인젝션·credential은 제안 시점과 승인 시점 **두 번** 막는다.
   · 대기열은 에이전트(프로파일)별로 갈린다 — A의 제안이 B에게 보이지 않는다.
+  · 승인은 **특정 계획 하나**에 대한 승인이다 — 계획이 바뀌면 그 승인은 없던 것이 된다.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import time
 import unittest
 
 from asgard import memory
-from asgard.memory import propose
+from asgard.memory import norn, propose
 
 
 class ProposeCase(unittest.TestCase):
@@ -168,7 +169,7 @@ class TestAgentAttribution(ProposeCase):
         self.assertEqual(memory._pages(self.d), [])
 
     def test_two_agents_do_not_see_each_others_queues(self):
-        """대기열은 memory_dir 안에 산다 — 그 경로가 프로파일별로 갈리므로 격리는 물려받는다."""
+        """대기열은 memory_dir 안에 있다 — 그 경로가 프로파일별로 갈리므로 격리는 물려받는다."""
         propose.stage("기본 에이전트의 사실이다 이것은", kind="note")
         other = os.path.join(self.tmp.name, "loki-mem")
         memory.ensure_home(other)
@@ -187,11 +188,11 @@ class TestMerge(ProposeCase):
 
 
 class TestAbsorbIsVisibleBeforeApproval(ProposeCase):
-    """흡수는 아카이브가 아니라 `os.remove` 다 (`pages._absorb_slot_dups`).
+    """흡수는 페이지가 정본에서 빠지는 일이다 (`pages._absorb_slot_dups`).
 
-    같은 계획에 대해 CLI 레인은 이미 삭제 대상을 한 줄씩 낸다(`commands/memory.py`의
-    "absorb (delete) contradicting page"). 사람 승인 전용 통로가 "병합"이라고만 말하면,
-    승인한 사람은 자기가 지운 페이지를 나중에 발견한다 — 그건 승인이 아니다."""
+    같은 계획에 대해 CLI 레인은 이미 대상을 한 줄씩 낸다(`commands/memory.py`의
+    "absorb (archive) contradicting page"). 사람 승인 전용 통로가 "병합"이라고만 말하면,
+    승인한 사람은 자기가 접은 페이지를 나중에 발견한다 — 그건 승인이 아니다."""
 
     def _two_name_pages(self) -> None:
         memory.add("사용자의 이름은 썬더오브갓 이다", kind="user")
@@ -208,7 +209,7 @@ class TestAbsorbIsVisibleBeforeApproval(ProposeCase):
         self._two_name_pages()
         record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
         text = propose.outcome_text({"saved": False, **record})
-        self.assertIn("absorb (delete) contradicting page", text)
+        self.assertIn("absorb (archive) contradicting page", text)
         for slug in record["plan_absorb"]:
             self.assertIn(slug, text)
 
@@ -217,7 +218,7 @@ class TestAbsorbIsVisibleBeforeApproval(ProposeCase):
         record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
         self.assertEqual(record["plan_action"], "merge")  # 병합은 하지만 지울 것은 없다
         self.assertEqual(record["plan_absorb"], [])
-        self.assertNotIn("absorb (delete)", propose.outcome_text({"saved": False, **record}))
+        self.assertNotIn("absorb (archive)", propose.outcome_text({"saved": False, **record}))
 
     def test_the_named_pages_are_the_ones_approval_actually_removes(self):
         """안내가 사실이어야 안내다 — 적힌 slug 와 사라진 slug 가 같은지 끝까지 본다."""
@@ -226,6 +227,108 @@ class TestAbsorbIsVisibleBeforeApproval(ProposeCase):
         before = set(memory._pages(self.d))
         propose.commit(record["id"])
         self.assertEqual(before - set(memory._pages(self.d)), set(record["plan_absorb"]))
+
+
+class TestApprovalExecutesTheApprovedPlan(ProposeCase):
+    """승인한 계획과 실행한 계획이 같아야 한다.
+
+    커밋 경로가 계획을 **다시 세워** 넘기던 시절에는, 제안과 승인 사이에 같은 슬롯 페이지가
+    하나 끼어들면 그 페이지가 승인 화면에 한 번도 안 뜬 채로 정본에서 사라졌다. `pages.ingest`
+    는 넘겨받은 plan 을 "사람이 승인한 계획"으로 믿으므로, 넘기는 쪽이 봉인본을 넘기지 않으면
+    ingest 의 리비전 대조는 자기 자신과의 비교가 되어 언제나 통과한다."""
+
+    def _stage_over(self, first_title: str) -> dict:
+        memory.add("사용자의 이름은 썬더오브갓 이다", title=first_title, kind="user")
+        return propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
+
+    def test_the_whole_plan_is_sealed_at_staging(self):
+        record = self._stage_over("이름 A")
+        self.assertEqual(record["plan"]["action"], "merge")
+        self.assertEqual(record["plan"]["slug"], "이름-a")
+        self.assertTrue(record["plan"]["rev"], "대상 리비전이 없으면 봉인이 아무것도 안 지킨다")
+
+    def test_a_page_that_appeared_after_staging_is_not_folded_away(self):
+        """감사 PoC 그대로 — 승인 화면이 말하지 않은 페이지는 승인으로 사라지지 않는다."""
+        record = self._stage_over("이름 A")
+        self.assertEqual(record["plan_absorb"], [])  # 사람이 본 계획: 접을 것 없음
+        memory.add("사용자의 이름은 번개썬더왕 이다", title="이름 B", kind="user")
+
+        with self.assertRaises(ValueError) as caught:
+            propose.commit(record["id"])
+
+        self.assertIn("stale plan", str(caught.exception))
+        self.assertIn("이름-b", str(caught.exception))  # 바뀐 계획을 그 자리에서 보여준다
+        self.assertIn("이름-b", memory._pages(self.d))  # 끼어든 페이지는 살아 있다
+
+    def test_a_refused_approval_writes_nothing_at_all(self):
+        record = self._stage_over("이름 A")
+        before = {slug: memory._read(self.d, slug) for slug in memory._pages(self.d)}
+        memory.add("사용자의 이름은 번개썬더왕 이다", title="이름 B", kind="user")
+        after_intrusion = {slug: memory._read(self.d, slug) for slug in memory._pages(self.d)}
+        with self.assertRaises(ValueError):
+            propose.commit(record["id"])
+        self.assertEqual({slug: memory._read(self.d, slug) for slug in memory._pages(self.d)}, after_intrusion)
+        self.assertIn("이름-a", before)
+
+    def test_a_refused_approval_keeps_the_id_and_shows_the_new_plan(self):
+        """제안 id 는 소비되지 않는다 — 사람이 바뀐 계획을 보고 같은 id 로 다시 누른다."""
+        record = self._stage_over("이름 A")
+        memory.add("사용자의 이름은 번개썬더왕 이다", title="이름 B", kind="user")
+        with self.assertRaises(ValueError):
+            propose.commit(record["id"])
+
+        resealed = propose.get(record["id"])
+        self.assertIsNotNone(resealed)
+        assert resealed is not None
+        self.assertEqual(resealed["plan_absorb"], ["이름-b"])
+        self.assertIn("plan: absorb (archive) contradicting page — 이름-b", propose.outcome_text({**resealed}))
+
+        action, slug = propose.commit(record["id"])  # 새 계획을 보고 다시 승인
+        self.assertEqual((action, slug), ("updated", "이름-a"))
+        self.assertEqual(memory._pages(self.d), ["이름-a"])
+
+    def test_a_target_edited_after_staging_refuses_the_approval(self):
+        """병합 대상 자체가 바뀐 경우 — 승인한 것은 그 시점의 그 페이지에 대한 병합이었다."""
+        record = self._stage_over("이름 A")
+        page = memory._read(self.d, "이름-a")
+        assert page is not None
+        memory._atomic_write(
+            memory._page_path(self.d, "이름-a"), memory.render_page(page[0], "사용자의 이름은 로키 다")
+        )
+        with self.assertRaises(ValueError) as caught:
+            propose.commit(record["id"])
+        self.assertIn("stale plan", str(caught.exception))
+        body = memory._read(self.d, "이름-a")
+        assert body is not None
+        self.assertIn("로키", body[1])
+        self.assertNotIn("미드가르드왕", body[1])
+
+    def test_an_unchanged_corpus_still_approves(self):
+        """대조가 지나치게 빡빡하면 승인이 영영 안 된다 — 아무것도 안 바뀌면 그대로 통과한다."""
+        record = self._stage_over("이름 A")
+        action, slug = propose.commit(record["id"])
+        self.assertEqual((action, slug), ("updated", "이름-a"))
+        self.assertEqual(propose.pending(), [])
+
+
+class TestAbsorbedPagesAreRecoverable(ProposeCase):
+    """접기는 오판일 수 있다 — 계획이 세운 판단이고, 사라지는 것은 사용자가 적은 사실이다."""
+
+    def test_an_absorbed_page_lands_in_the_archive_and_comes_back(self):
+        memory.add("사용자의 이름은 썬더오브갓 이다", title="이름 A", kind="user")
+        memory.add("사용자의 이름은 번개썬더왕 이다", title="이름 B", kind="user")
+        record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
+        self.assertEqual(record["plan_absorb"], ["이름-b"])
+
+        propose.commit(record["id"])
+        self.assertNotIn("이름-b", memory._pages(self.d))
+        self.assertEqual(memory.recall_note("번개썬더왕"), "")  # 주입면에서도 사라진다
+
+        self.assertTrue(norn.restore_page("이름-b", self.d))
+        self.assertIn("이름-b", memory._pages(self.d))
+        page = memory._read(self.d, "이름-b")
+        assert page is not None
+        self.assertIn("번개썬더왕", page[1])
 
 
 class TestAutosave(ProposeCase):
@@ -307,7 +410,7 @@ class TestAutosave(ProposeCase):
             self.assertFalse(memory.autosave_enabled())
             with open(os.path.join(machine, ".asgard", "asgard-setting-global.json"), "w", encoding="utf-8") as handle:
                 json.dump({"memory": {"autosave": True}}, handle)
-            self.assertTrue(memory.autosave_enabled())  # 글로벌은 이긴다 (사용자가 자기 기계에 적은 것)
+            self.assertTrue(memory.autosave_enabled())  # 글로벌은 우선한다 (사용자가 자기 기계에 적은 것)
         finally:
             os.chdir(prev_cwd)
             if prev_home is None:

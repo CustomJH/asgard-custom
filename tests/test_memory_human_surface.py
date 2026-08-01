@@ -73,7 +73,7 @@ class TestProposalScreenNamesTheDeletion(SurfaceBase):
         for slug in staged["plan_absorb"]:
             # 툴 레인(`propose.outcome_text`)·CLI 인제스트(`run_ingest`)와 **같은 줄**이다.
             # 세 화면이 같은 일을 다르게 말하면 한 화면만 본 사람은 나머지를 모른다.
-            self.assertIn(f"plan: absorb (delete) contradicting page — {slug}", text)
+            self.assertIn(f"plan: absorb (archive) contradicting page — {slug}", text)
 
     def test_a_plain_new_page_says_nothing_about_deletion(self):
         """없는 위험을 말하면 다음번 진짜 경고가 안 읽힌다."""
@@ -241,7 +241,7 @@ class TestAutosaveTellsTheThreeStatesApart(SurfaceBase):
         self.connect()
         text = self.screen(lambda: run_autosave("approve", "project", False, True))
         self.assertEqual(self.rc, 0)
-        self.assertIn("승인할 것이 없습니다", text)
+        self.assertIn("승인할 게 없네요", text)
 
     def test_machine_approval_is_refused_without_a_connected_project(self):
         from asgard.commands.memory import run_autosave
@@ -307,7 +307,7 @@ class TestContradictionsReachAHuman(SurfaceBase):
         self.assertEqual(self.rc, 0)
         for word in ("a-page", "b-page", "A page", "B page", "1번 감지"):
             self.assertIn(word, text)
-        self.assertIn("자동으로 고치거나 지우지 않았다", text)
+        self.assertIn("자동으로 고치거나 지우지 않았어요", text)
 
     def test_marking_it_seen_is_not_calling_it_resolved(self):
         from asgard.commands.memory import run_contradiction_seen, run_contradictions
@@ -316,12 +316,12 @@ class TestContradictionsReachAHuman(SurfaceBase):
         before = [memory._read(d, slug) for slug in ("a-page", "b-page")]
         text = self.screen(lambda: run_contradiction_seen("b-page", "a-page", "둘 다 맞다 — 시기가 다르다"))
         self.assertEqual(self.rc, 0)  # 순서는 상관없다 — 신원은 순서 없는 쌍이다
-        self.assertIn("해소가 아니다", text)  # 문구가 그 차이를 말해야 이 작업이 뜻을 갖는다
+        self.assertIn("해소된 건 아니에요", text)  # 문구가 그 차이를 말해야 이 작업이 뜻을 갖는다
         # 페이지는 한 글자도 안 바뀐다 — 흡수는 삭제이고, 이 명령에는 그 길이 없다
         self.assertEqual([memory._read(d, slug) for slug in ("a-page", "b-page")], before)
         # 확인 뒤에는 기본 목록에서 빠진다
         self.assertNotIn("a-page", self.screen(lambda: run_contradictions(False, False)))
-        self.assertIn("미해결 모순 없음", self.screen(lambda: run_contradictions(False, False)))
+        self.assertIn("아직 안 풀린 모순은 없어요", self.screen(lambda: run_contradictions(False, False)))
         # 사라진 것이 아니라 접힌 것이다 — --all 은 표시와 사유를 같이 보여 준다
         shown = self.screen(lambda: run_contradictions(False, True))
         self.assertIn("확인함", shown)

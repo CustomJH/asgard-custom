@@ -101,16 +101,44 @@ def _agent() -> str:
         return ""
 
 
-def _absorb_slugs(plan: dict) -> list[str]:
-    """계획이 **지울** 페이지 slug — 흡수는 아카이브가 아니라 `os.remove` 다 (`pages._absorb_slot_dups`).
+def _absorb_pairs(plan: dict) -> list[tuple[str, str]]:
+    """계획의 `absorb` 를 (slug, rev) 쌍으로 정규화한다.
 
-    계획의 `absorb` 는 `[slug, rev]` 쌍의 목록이다. 사람에게 보일 것은 slug 뿐이라 여기서 벗긴다."""
-    slugs: list[str] = []
+    계획은 JSON 대기열을 왕복하므로 tuple 이 list 로 돌아온다. slug 문자열만 든 옛 형식도
+    읽는다 — 형식이 갈리는 자리에서 조용히 빈 목록을 돌려주면 "아무것도 안 접는 계획"으로
+    보이고, `_plan_key` 대조가 그대로 통과해 버린다."""
+    pairs: list[tuple[str, str]] = []
     for entry in plan.get("absorb") or []:
-        slug = entry[0] if isinstance(entry, (list, tuple)) and entry else entry
+        if isinstance(entry, (list, tuple)):
+            slug = entry[0] if entry else ""
+            rev = entry[1] if len(entry) > 1 else ""
+        else:
+            slug, rev = entry, ""
         if isinstance(slug, str) and slug:
-            slugs.append(slug)
-    return slugs
+            pairs.append((slug, str(rev or "")))
+    return pairs
+
+
+def _absorb_slugs(plan: dict) -> list[str]:
+    """계획이 **접을** 페이지 slug — 사람에게 보일 것은 slug 뿐이라 여기서 rev 를 벗긴다.
+
+    접기는 pages/ 밖 archive/ 로의 이동이다 (`pages._absorb_slot_dups`). 검색·주입에서는
+    사라지고 `norn.restore_page` 로 되돌아온다."""
+    return [slug for slug, _rev in _absorb_pairs(plan)]
+
+
+def _plan_key(plan: dict) -> tuple:
+    """계획에서 **정본을 바꾸는 것**만 뽑는다 — 봉인본과 실행 직전 계획을 대조할 때 쓰는 값.
+
+    비교하는 것은 넷이다: 무슨 동작인가(action), 어느 페이지에 쓰는가(slug), 그 페이지가 승인
+    당시 그대로인가(rev), 어느 페이지를 접는가(absorb 의 slug+rev). `sim`·`title` 은 사람에게
+    보여 줄 설명이라 뺀다 — 설명이 흔들렸다고 승인을 무르면 승인이 통과할 자리가 없어진다."""
+    return (
+        str(plan.get("action") or ""),
+        str(plan.get("slug") or ""),
+        str(plan.get("rev") or ""),
+        tuple(sorted(_absorb_pairs(plan))),
+    )
 
 
 def _prepare(text: str, kind: str) -> str:
@@ -153,8 +181,12 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
         "expires": now + TTL_SECONDS,
         # 승인 화면이 "무엇이 일어날지"를 보여줄 수 있어야 한다 — 새 페이지인가 기존 병합인가.
         "plan_action": str(plan.get("action") or "create"),
-        # 병합에는 삭제가 딸려 올 수 있다. 승인하는 사람이 그 사실을 모르면 그건 승인이 아니다.
+        # 병합에는 페이지 접기가 딸려 올 수 있다. 승인하는 사람이 그 사실을 모르면 그건 승인이 아니다.
         "plan_absorb": _absorb_slugs(plan),
+        # 계획 **전체**(대상 slug·rev·접을 쌍)를 봉인한다. 표시용 두 칸만 남기고 실행할 때
+        # 계획을 다시 세우면 사람이 본 계획과 실행되는 계획이 갈라지고, 갈라진 것을 아무도
+        # 못 본다 — `commit` 이 이 봉인본을 실행 직전 계획과 대조한다.
+        "plan": plan,
     }
     rows.append(record)
     _save(d, rows[-MAX_PENDING:])
@@ -203,11 +235,12 @@ def outcome_text(outcome: dict) -> str:
             "사용자에게 저장했다고 알려라. 승인 명령을 안내하지 마라 — 이미 정본에 들어갔다."
         )
     verb = "기존 페이지에 병합" if outcome.get("plan_action") == "merge" else "새 페이지 생성"
-    # 흡수는 페이지 삭제다 — 승인 전에 반드시 눈에 보여야 한다. CLI 레인(`commands/memory.py`)이
-    # 같은 계획에 대해 이미 이 줄을 내고 있었다. 한 레인만 지키는 불변식은 불변식이 아니다:
-    # 사람 승인 전용 통로가 "병합"이라고만 말하면, 승인한 사람은 사라진 페이지를 나중에 발견한다.
+    # 흡수는 페이지가 정본에서 빠지는 일이다 — 승인 전에 반드시 눈에 보여야 한다. CLI
+    # 레인(`commands/memory.py`)이 같은 계획에 대해 이미 이 줄을 내고 있었다. 한 레인만 지키는
+    # 불변식은 불변식이 아니다: 사람 승인 전용 통로가 "병합"이라고만 말하면, 승인한 사람은
+    # 사라진 페이지를 나중에 발견한다. 문구를 세 화면이 글자 그대로 공유한다.
     absorb = "".join(
-        f"\nplan: absorb (delete) contradicting page — {slug}" for slug in outcome.get("plan_absorb") or []
+        f"\nplan: absorb (archive) contradicting page — {slug}" for slug in outcome.get("plan_absorb") or []
     )
     return (
         f"제안 대기 (아직 저장 안 됨) — proposal_id: {outcome['id']}\n"
@@ -244,12 +277,57 @@ def discard(proposal_id: str, d: str | None = None) -> bool:
     return True
 
 
+def _reseal(proposal_id: str, plan: dict, d: str) -> None:
+    """제안 하나의 봉인 계획을 새 계획으로 갈아 끼운다 — 표시용 두 칸도 같이 맞춘다.
+
+    거절만 하고 옛 계획을 남겨 두면 사람이 목록에서 보는 것은 이미 틀린 계획이고, 그것을
+    보고 다시 승인해도 같은 자리에서 또 거절당한다."""
+    rows = pending(d)
+    for row in rows:
+        if row.get("id") == proposal_id:
+            row["plan"] = plan
+            row["plan_action"] = str(plan.get("action") or "create")
+            row["plan_absorb"] = _absorb_slugs(plan)
+    _save(d, rows)
+    log_op(d, "propose-replan", proposal_id, f"action={plan.get('action')} absorb={len(_absorb_slugs(plan))}")
+
+
+def _approved_plan(proposal_id: str, record: dict, body: str, d: str) -> dict:
+    """승인받은 계획을 돌려준다 — 지금 다시 세운 계획과 다르면 아무것도 쓰지 않고 ValueError.
+
+    `pages.ingest` 는 plan 을 받으면 그것을 "사람이 승인한 계획"으로 믿고 그 목록대로 페이지를
+    접는다. 그러니 넘길 것은 승인 화면이 보여 준 그 계획이어야 한다. 실행 시점에 계획을 다시
+    세워 넘기면 리비전 대조가 자기 자신과의 비교가 되어 언제나 통과하고, 승인 화면에 없던
+    페이지가 접힌다 — 방어가 켜져 있는 것처럼 보이면서 꺼져 있다.
+
+    그렇다고 봉인본을 그대로 실행할 수도 없다. 제안과 승인 사이에 정본이 바뀌었으면 그 계획은
+    이미 다른 저장소의 계획이다. 그래서 대조만 한다: 같으면 봉인본으로 실행하고, 다르면 새
+    계획을 제안에 다시 봉인한 뒤 거절한다. 제안 id 는 이때 소비되지 않으므로 사람은 바뀐
+    계획을 보고 같은 id 로 다시 승인하면 된다. 프로젝트 레인의 approval_id 와 같은 규율이다 —
+    승인은 **특정 계획 하나**에 대한 승인이고, 계획이 바뀌면 그 승인은 없던 것이 된다."""
+    sealed = record.get("plan")
+    fresh = plan_ingest(body, d) or {}
+    if isinstance(sealed, dict) and _plan_key(sealed) == _plan_key(fresh):
+        return dict(sealed)
+    _reseal(proposal_id, fresh, d)
+    verb = "기존 페이지에 병합" if fresh.get("action") == "merge" else "새 페이지 생성"
+    absorb = "".join(f"\nplan: absorb (archive) contradicting page — {slug}" for slug in _absorb_slugs(fresh))
+    raise ValueError(
+        "stale plan: 승인 화면이 보여 준 계획과 지금 계획이 다르다 — 아무것도 안 썼다\n"
+        f"바뀐 계획: {verb}{absorb}\n"
+        f"확인하고 다시 승인하라: asgard memory approve {proposal_id}"
+    )
+
+
 def commit(proposal_id: str, d: str | None = None) -> tuple[str, str]:
     """승인된 제안을 정본에 쓴다. 반환 = (action, slug). 1회 소비.
 
     스캔을 **여기서 다시** 한다. 제안 시점에 이미 통과했지만 그건 다른 시점이고, 그 사이에
     대기열 파일이 바뀔 수 있다 (사람이 편집기로 열 수도, 다른 프로세스가 쓸 수도 있다).
-    주입면으로 들어가는 관문은 마지막 순간에 한 번 더 보는 것이 싸다."""
+    주입면으로 들어가는 관문은 마지막 순간에 한 번 더 보는 것이 싸다.
+
+    계획도 같은 이유로 다시 본다. 다만 계획은 다시 **세워서 넘기는** 것이 아니라 봉인본과
+    **대조**만 한다 (`_approved_plan`)."""
     d = ensure_home(d)
     record = get(proposal_id, d)
     if record is None:
@@ -268,9 +346,7 @@ def commit(proposal_id: str, d: str | None = None) -> tuple[str, str]:
         discard(proposal_id, d)
         raise ValueError(f"{secret} — 승인 취소, 제안 폐기")
     kind = str(record.get("kind") or DEFAULT_KIND)
-    # 계획을 지금 다시 세운다: 제안 시점의 계획은 표시용이었고, 그 사이 정본이 바뀌었으면
-    # 병합 대상도 바뀐다 (승인한 것과 실제가 갈라지지 않게 — pages.ingest의 TOCTOU 규율).
-    action, slug = ingest(body, kind=kind, d=d, plan=plan_ingest(body, d))
+    action, slug = ingest(body, kind=kind, d=d, plan=_approved_plan(proposal_id, record, body, d))
     discard(proposal_id, d)
     log_op(d, "propose-commit", slug, f"{proposal_id} -> {action}")
     return action, slug
