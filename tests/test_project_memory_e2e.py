@@ -331,6 +331,20 @@ class EvolveTest(ProjectMemoryE2EBase):
         self.assertEqual(sig["missing_sources"], ["component.legacy"])
         self.assertEqual(sig["active"], 2)
 
+    def test_an_adjacent_prefix_path_is_outside_the_repository(self):
+        """`/repo` 가 `/repo-notes` 를 자기 안이라고 말하면 안 된다 — 봉쇄는 글자가 아니라 성분이다.
+
+        접두사로 세면 `../project-notes/…` 가 저장소를 벗어나 놓고 존재 판정을 받는다. 그리고
+        저장소 밖 파일은 대개 없으므로 그 record 는 "source 가 사라졌다"로 읽혀 폐기 후보로
+        올라간다 — 못 보는 자리를 봤다고 말하는 셈이다."""
+        neighbour = os.path.join(os.path.dirname(self.root), os.path.basename(self.root) + "-notes")
+        os.makedirs(neighbour, exist_ok=True)
+        self.assertFalse(evolve_mod._missing_source(self.root, "../project-notes/absent.md"))
+        self.assertFalse(evolve_mod._missing_source(self.root, "../project-notes/"))
+        # 저장소 안쪽 판정은 그대로다
+        self.assertFalse(evolve_mod._missing_source(self.root, "src/router.py"))
+        self.assertTrue(evolve_mod._missing_source(self.root, "src/legacy.py"))
+
     def test_retire_is_rechecked_against_the_repository(self):
         sig = evolve_mod.signals(self.root)
         accepted, dropped = evolve_mod.validate_ops(

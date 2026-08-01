@@ -47,7 +47,14 @@ def _map_drift_detail(managed) -> str:
 def _shared_memory_check(root: str) -> dict | None:
     """설정된 프로젝트 메모리의 trust·exact binding·readiness를 Trinity와 독립 진단한다."""
     try:
-        from ..memory_bridge import autosave_enabled, find_config, is_backend_trusted, verify_backend_binding
+        from ..memory_bridge import (
+            GATE_UNAPPROVED,
+            auto_retain_turns_state,
+            autosave_state,
+            find_config,
+            is_backend_trusted,
+            verify_backend_binding,
+        )
         from ..project_memory_backends import get_backend
 
         found = find_config(root, strict=True)
@@ -93,7 +100,7 @@ def _shared_memory_check(root: str) -> dict | None:
                         expected = {str(spec["id"]) for spec in MODEL_SPECS}
                         ready_models = sum(model_ready(models.get(model_id, {})) for model_id in expected)
                         # 종합층이 만들어졌다고 주입되는 것이 아니다 — 회수는 로컬 사본만 읽는다.
-                        # 모델은 준비됐는데 사본이 없으면 그 층은 어떤 프롬프트에도 안 실린다.
+                        # 모델은 준비됐는데 사본이 없으면 그 층은 어떤 프롬프트에도 안 들어간다.
                         synthesis = len(
                             load_synthesis(
                                 mroot,
@@ -120,16 +127,28 @@ def _shared_memory_check(root: str) -> dict | None:
                 backend.close()
             # auto_retain off는 유효한 선택이지만 무음이면 "2차 메모리에 안 쌓이는" 증상의
             # 원인 조회가 불가능하다 (1차 inject 게이트와 같은 계열의 무음 비활성) — 상태만 명시.
+            #
+            # 두 손잡이 다 참/거짓이 아니라 세 상태다: 리포 설정을 그대로 읽으면 "리포가
+            # 요청했는데 이 기계가 미승인"이 off와 한 칸에 뭉치고, 진단이 그렇게 답하면 이 검사가
+            # 있는 이유가 사라진다 (사람은 커밋된 설정을 보고 켜졌다고 믿는 쪽이다).
+            gates = {"auto_retain": auto_retain_turns_state(mcfg), "autosave": autosave_state(mcfg)}
             detail = (
                 f"engine={engine} · project_id={project_id} · {readiness.status}"
                 + f" · binding={binding.binding_id[:8]} · project_uid={binding.project_uid[:8]}"
-                + f" · auto_retain={'on' if mcfg.get('auto_retain_turns') else 'off'}"
+                + f" · auto_retain={gates['auto_retain']}"
                 # 자동저장은 무음이면 안 된다 — 켜져 있으면 "승인한 적 없는 기록"이 쌓이고,
                 # 꺼져 있으면 "승인 안 해서 안 쌓인" 것이다. 둘 다 여기서 보여야 구분된다.
-                + f" · autosave={'on' if autosave_enabled(mcfg) else 'off'}"
+                + f" · autosave={gates['autosave']}"
                 + (f" · capabilities={','.join(enabled)}" if enabled else "")
                 + learning_detail
                 + (f" · {readiness.detail}" if readiness.detail else "")
+                # unapproved는 결함이 아니라 안전한 기본값이라 ok를 뒤집지 않는다. 그래도 다음
+                # 손짓은 여기서 말해야 한다 — 이 사람은 "왜 안 쌓이지"를 물으러 온 사람이다.
+                + (
+                    " · 미승인 손잡이는 `asgard memory autosave approve --tier project`로 켠다"
+                    if GATE_UNAPPROVED in gates.values()
+                    else ""
+                )
             )
             ok = readiness.status == "ready" and learning_ok
         except Exception as exc:
@@ -187,7 +206,7 @@ def _personal_memory_check(root: str) -> dict | None:
         from ..memory import autosave_enabled, inject_allowed, inject_enabled
         from ..providers import resolve
 
-        # 쓰기 쪽 상태도 같은 줄에 싣는다 — 이 검사는 "내 기억이 어떻게 드나드는가"의 창이고,
+        # 쓰기 쪽 상태도 같은 줄에 넣는다 — 이 검사는 "내 기억이 어떻게 드나드는가"의 창이고,
         # 자동저장은 그 문의 한쪽 짝이다 (읽기=inject, 쓰기=autosave).
         save = f" · autosave={'on' if autosave_enabled() else 'off (승인 필요)'}"
         if not inject_enabled():
@@ -238,7 +257,7 @@ def _memory_semantic_check() -> dict | None:
         active = memory_semantic.active()
         status = memory_semantic.status()
         if active:
-            # 임베더가 선다는 것으로 끝내면 안 된다. 파생 벡터가 정본을 안 덮으면 이 스트림은
+            # 임베더가 준비된 것으로 끝내면 안 된다. 파생 벡터가 정본을 안 덮으면 이 스트림은
             # 매 질의 빈 리스트를 내는데 상태 표면은 전부 "on"이라고 말한다 — 이 기계에서
             # 실제로 그랬다 (26-07-29: 페이지 2장·vec 0행·active True). 남에게 지적한 것과
             # 같은 형태의 거짓 상태라, 커버리지를 같은 칸에서 본다.
@@ -748,8 +767,8 @@ def _trinity_checks(root: str) -> list[dict]:
         }
     )
     # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 이 계층은 조용히 실패한다(이름 오타·주석 안·별칭
-    # 중복·상한 절단) — 어느 쪽이든 에이전트는 평소처럼 돌고 사용자는 규칙이 먹은 줄 안다.
-    # 그래서 "안 실리는 이유"만 ⚠ 로 세운다. 매뉴얼 미작성은 결함이 아니다 (ok).
+    # 중복·상한 절단) — 어느 쪽이든 에이전트는 평소처럼 돌고 사용자는 규칙이 적용된 줄 안다.
+    # 그래서 "안 들어가는 이유"만 ⚠ 로 세운다. 매뉴얼 미작성은 결함이 아니다 (ok).
     try:
         from ..manual import MANUAL_NAMES, MAX_CHARS, discover, enabled, has_marker, load_manual
         from ..manual import label as _rel  # 지역 `label` 루프 변수와 이름이 겹친다 — 검사기가 잡은 자리
@@ -770,7 +789,7 @@ def _trinity_checks(root: str) -> list[dict]:
         if found["dropped"]:
             problems.append(f"조각 상한 초과 {len(found['dropped'])}개 제외")
         # `MANUAL.md`는 흔한 이름이다 — 이미 그 이름의 제품 문서를 가진 리포에 설치되면 그 문서가
-        # 통째로 프롬프트에 실린다. 손으로 쓴 진짜 매뉴얼과 구분할 방법이 없어 막지는 않고, **큰**
+        # 통째로 프롬프트에 들어간다. 손으로 쓴 진짜 매뉴얼과 구분할 방법이 없어 막지는 않고, **큰**
         # 표식 없는 파일만 짚는다 (작은 파일은 사용자가 직접 쓴 규칙일 가능성이 압도적이다).
         if loaded and loaded["chars"] >= MAX_CHARS // 2:
             stranger = [_rel(root, p) for p in found["files"] if os.path.dirname(p) == root and not has_marker(p)]
@@ -1162,6 +1181,56 @@ def _office_checks() -> list[dict]:
     return checks
 
 
+def _engine_reachable_check(root: str) -> list[dict]:
+    """이 자리에 설정된 엔진이 **지금 이 프로세스에서** 실제로 닿는가.
+
+    여태 doctor는 아스가르드 자신은 PATH에서 찾으면서 정작 일을 시킬 엔진은 안 봤다.
+    그래서 창이 독에서 서면(셸을 안 거쳐 PATH가 넉 줄로 줄어든다) `claude`가 안 보이는데도
+    점검은 전부 초록이었고, 사용자에게 남는 것은 "왜 아무것도 안 되지"뿐이었다.
+
+    PATH를 되찾은 뒤에도 못 찾으면 그건 진짜로 없는 것이다 — 그때만 처방을 말한다."""
+    from ..platform import ensure_user_path
+    from ..providers import resolve
+
+    ensure_user_path()
+    try:
+        rp = resolve(root)
+    except Exception as exc:
+        return [{"name": "engine", "ok": False, "detail": f"{type(exc).__name__}: {exc}", "fix": "asgard start"}]
+    rows = [
+        {
+            "name": "engine",
+            "ok": not rp.missing,
+            "detail": f"{rp.profile.display} · {rp.model or '—'} ({rp.source})"
+            + ("" if not rp.missing else " — " + "; ".join(rp.missing)),
+            "fix": "asgard start에서 엔진을 연결하거나 창의 설정 → 기본 모델",
+        }
+    ]
+    if rp.profile.api_mode == "claude_cli":
+        cli = on_path("claude")
+        rows.append(
+            {
+                "name": "claude CLI",
+                "ok": bool(cli),
+                "detail": cli or "not found",
+                "fix": "https://claude.com/claude-code 설치 후 claude /login (구독) 또는 CLAUDE_CODE_OAUTH_TOKEN export",
+            }
+        )
+    elif rp.profile.api_mode == "codex_responses":
+        from ..openai_codex import login_status
+
+        ok, detail = login_status()
+        rows.append(
+            {
+                "name": "ChatGPT OAuth",
+                "ok": ok,
+                "detail": detail,
+                "fix": "asgard auth login openai-native (스톡 Codex CLI 로그인과 별개다 — 아스가르드가 자기 세션을 든다)",
+            }
+        )
+    return rows
+
+
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
     py_cmd = hook_python()  # Windows는 python3가 PATH에 없는 게 정상 (python/py 런처)
@@ -1192,6 +1261,7 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
             "fix": "install uv — https://astral.sh/uv (asgard update · 훅 인터프리터 폴백 · uv 프로젝트 베이스라인에 필요)",
         },
     ]
+    checks += _engine_reachable_check(os.getcwd())
     checks += _design_engine_checks()
     checks += _office_checks()
     if personal := _personal_memory_check(os.getcwd()):

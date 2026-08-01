@@ -236,7 +236,7 @@ workspace/
 .claude
 
 # >>> asgard >>>
-# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json 은 커밋 — 팀 공유)
+# Asgard 런타임 상태·로컬 설정 (스캐폴드 훅·에이전트·settings.json은 커밋 — 팀 공유)
 !.asgard/
 .asgard/*
 !.asgard/map/
@@ -245,17 +245,40 @@ workspace/
 .asgard/memory/*
 !.asgard/memory/records/
 !.asgard/memory/records/**
+!.asgard/memory/documents/
+!.asgard/memory/documents/**
 !.asgard/memory/binding.json
 !.asgard/.gitignore
 !.asgard/asgard-setting-project.json
+!.asgard/MANUAL.md
+!.asgard/CUSTOM_MANUAL.md
+!.asgard/CUSTOM.md
+!.asgard/RULES.md
+!.asgard/manual/
+!.asgard/manual/**
 .claude/settings.local.json
 .claude/**/*.local.*
 # <<< asgard <<<
 
-# 이 리포 한정: .asgard 전체를 무시한다 — 개발 중, 팀 공유 자산 아님.
-# (구 결정 ".asgard 는 무시하되 map/·memory/records/만 커밋" 을 대체.)
+# 이 리포 한정: .asgard 는 기본적으로 무시한다 — map/·state/·개인 작업 공간은 이 기계의
+# 런타임 상태지 팀 공유 자산이 아니다.
 # 블록 밖 + `**/` 접두: asgard setup 의 블록 교체·광역 규칙 이관(정확히 `.asgard/` 만 삭제)에서 생존.
 **/.asgard/
+
+# ── 예외 하나: 이 저장소의 2차 메모리 정본 (26-08-01 결정) ──
+# 2차 메모리는 "정본은 Git" 위에 서 있는데, 위 한 줄이 승인된 record 를 통째로 추적 밖으로
+# 밀어내 이 저장소에서만 그 서사가 성립하지 않았다 (`git ls-files .asgard` 가 빈 출력이었다).
+# 무시를 걷지 않고 records/ 한 갈래만 뚫는다.
+#
+# gitignore 규칙상 **부모가 제외된 자식은 되살릴 수 없다** — 그래서 위에서 아래로 한 층씩
+# 열고 형제는 다시 닫는다. 선두 `/` 로 저장소 루트에 못 박는 것도 의도다: 앵커가 없으면
+# `!.asgard/` 가 어느 깊이의 `.asgard` 든 되살려 위 `**/` 한 줄을 통째로 무효로 만든다.
+!/.asgard/
+/.asgard/*
+!/.asgard/memory/
+/.asgard/memory/*
+!/.asgard/memory/records/
+!/.asgard/memory/records/**
 design-qa.md
 
 output/

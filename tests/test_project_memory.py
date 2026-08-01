@@ -89,6 +89,23 @@ class TestRegistrationPolicy(ProjectMemoryBase):
             with self.subTest(text=text):
                 self.assertEqual(project_memory.scan_secrets(text), "credential-like content")
 
+    def test_scan_secrets_catches_prefixed_key_names(self):
+        # `_`는 `\w`라 `\b`가 서지 않는다 — 앞의 `\b`만 두면 환경변수 이름 형태가 통째로 샜다.
+        # 그리고 그 형태가 실제로 가장 흔한 형태다 (26-08-01 실측).
+        leaks = (
+            "db_password = s3cr3tValue123",
+            "DB_PASSWORD=s3cr3tValue123",
+            "openai_api_key: abcdef1234567890",
+            "MY_API_KEY = abcdef1234567890",
+            "client_secret = abcdef1234567890",
+            "aws_secret_access_key = wJalrXUtnFEMIK7MDENGbPxRfiCYzQ8vT2mNpL",
+            "service_auth_token=abcdefgh12345678",
+            "X-API-KEY: abcd12345678",
+        )
+        for text in leaks:
+            with self.subTest(text=text):
+                self.assertEqual(project_memory.scan_secrets(text), "credential-like content")
+
     def test_scan_secrets_ignores_references_and_placeholders(self):
         # 환경변수/템플릿 참조와 문서 예시는 값이 아니다 — 위양성 가드
         safe = (
@@ -98,6 +115,11 @@ class TestRegistrationPolicy(ProjectMemoryBase):
             "postgres://user:$DB_PASSWORD@db:5432/app",
             "docs: --password your_password_here 로 지정",
             "config: api_key = example-placeholder-key",
+            # 값 자리의 참조·자리표는 값이 아니다 — 접두 마디를 먹기 시작하면 이쪽이 넓어진다.
+            "api_key = ${API_KEY}",
+            "db_password = $DB_PASSWORD",
+            "client_secret = <your-client-secret>",
+            "my_password_policy = 최소 12자",
         )
         for text in safe:
             with self.subTest(text=text):
@@ -196,6 +218,59 @@ class TestCanonicalProjectRecords(ProjectMemoryBase):
         self.assertEqual(result["canonical_path"].split(os.sep)[:3], [".asgard", "memory", "records"])
         self.assertEqual(result["learning"]["operation_id"], "learn-1")
         consolidate.assert_called_once_with(cfg, [["record"]])
+
+    def test_cleanup_failure_does_not_turn_a_finished_write_into_a_failure(self):
+        """사후 정리 실패는 경고다 — 이미 적힌 쓰기를 실패로 되돌리면 승인이 1시간 잠긴다.
+
+        `finish_retain`이 던지면 예전에는 그 예외가 그대로 올라가 사람이 "실패"를 들었다.
+        그런데 claim은 그대로 남아 있어 같은 approval id 로 하는 재시도가 PENDING_TTL 만큼
+        전부 거절된다 — 정본도 backend 도 이미 찼는데 아무도 그 사실을 모르는 상태다."""
+        cfg = self.config()
+        item = project_memory.record_item(
+            self.record(),
+            cfg["project_id"],
+            project_uid=cfg["project_uid"],
+            binding_id=cfg["binding_id"],
+        )
+        aid = project_memory.stage_retain(self.root, item, target=project_memory.backend_target(cfg))
+
+        with (
+            mock.patch(
+                "asgard.project_memory.canonical.server_retain_items",
+                return_value={"success": True, "items_count": 1},
+            ),
+            mock.patch("asgard.project_memory.canonical.server_consolidate", return_value={"operation_id": "learn-1"}),
+            mock.patch("asgard.project_memory.canonical.finish_retain", side_effect=OSError("pending file is locked")),
+        ):
+            result = project_memory.commit_approved_record(self.root, cfg, aid)
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["canonical_path"].split(os.sep)[:3], [".asgard", "memory", "records"])
+        self.assertEqual(result["approval_cleanup"]["status"], "pending")
+        self.assertIn("OSError", result["approval_cleanup"]["error"])
+        self.assertEqual(len(project_memory.load_canonical_records(self.root)), 1)
+
+    def test_a_clean_commit_reports_no_pending_cleanup(self):
+        cfg = self.config()
+        item = project_memory.record_item(
+            self.record(),
+            cfg["project_id"],
+            project_uid=cfg["project_uid"],
+            binding_id=cfg["binding_id"],
+        )
+        aid = project_memory.stage_retain(self.root, item, target=project_memory.backend_target(cfg))
+        with (
+            mock.patch(
+                "asgard.project_memory.canonical.server_retain_items",
+                return_value={"success": True, "items_count": 1},
+            ),
+            mock.patch("asgard.project_memory.canonical.server_consolidate", return_value={"operation_id": "learn-1"}),
+        ):
+            result = project_memory.commit_approved_record(self.root, cfg, aid)
+        self.assertEqual(result["approval_cleanup"], {})
+        # 승인은 실제로 소비됐다 — 같은 id 는 두 번 쓰이지 않는다
+        with self.assertRaisesRegex(ValueError, "already consumed"):
+            project_memory.commit_approved_record(self.root, cfg, aid)
 
     def test_rehydrate_plan_is_bound_to_current_target(self):
         project_memory.save_canonical_record(self.root, self.record())
@@ -871,9 +946,41 @@ class TestCompletionProposal(ProjectMemoryBase):
 
 
 class TestSyncTurnCLI(ProjectMemoryBase):
+    """턴 원문을 팀 뱅크로 내보내는 문 — 리포 설정 한 줄로는 안 열린다.
+
+    `auto_retain_turns`는 사람이 쓴 대화 원문을 통째로 보내는 손잡이라, 게이트가 참/거짓이
+    아니라 세 상태다: 리포가 요청 안 함 · 요청했으나 이 기계가 미승인 · 승인됨. 그래서 이
+    시험들은 cfg에 `True` 하나를 적어 두는 것으로 문이 열리지 않는지까지 같이 못 박는다."""
+
+    #: 게이트가 신원 네 값으로 fingerprint를 잡으므로 cfg에 그 값들이 실제로 있어야 한다.
+    CFG = {
+        "server": "http://memory",
+        "bank": "demo",
+        "project_uid": "uid-sync-turn",
+        "binding_id": "binding-sync-turn",
+        "auto_retain_turns": True,
+    }
+
+    def grant(self, cfg: dict, grant: str) -> None:
+        """이 기계가 그 손잡이를 승인했다고 적는다 — trust store에 직접 앉힌다.
+
+        `trust_backend`를 부르지 않는 이유는 그쪽이 살아 있는 backend에 binding을 물어보기
+        때문이다. 여기서 시험하려는 것은 승인의 **유무**가 판정을 어떻게 가르는가지 연결
+        절차가 아니다. HOME은 setUp이 tmp로 돌려놨으므로 이 저장은 이 시험 안에만 산다."""
+        from asgard import memory_bridge as mb
+
+        target = mb.backend_target(cfg)
+        path = mb._trust_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        entry = {key: target[key] for key in ("engine", "project_id", "project_uid", "binding_id")}
+        with open(path, "w", encoding="utf-8") as sink:
+            json.dump({target["fingerprint"]: entry}, sink)
+        mb.grant_machine_approval(cfg, grant)
+
     def test_sync_turn_stdin_retains_turn_and_returns_proposal_json(self):
         from typer.testing import CliRunner
 
+        from asgard import memory_bridge as mb
         from asgard.cli import app
 
         payload = {
@@ -885,11 +992,10 @@ class TestSyncTurnCLI(ProjectMemoryBase):
             "changed_files": ["src/demo.py"],
             "evidence": [{"cmd": "pytest", "exit_code": 0}],
         }
+        cfg = dict(self.CFG)
+        self.grant(cfg, mb.GRANT_AUTO_RETAIN_TURNS)
         with (
-            mock.patch(
-                "asgard.commands.memory.find_config",
-                return_value=(self.root, {"server": "http://memory", "bank": "demo", "auto_retain_turns": True}),
-            ),
+            mock.patch("asgard.commands.memory.find_config", return_value=(self.root, cfg)),
             mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
             mock.patch(
                 "asgard.commands.memory.retain_turn",
@@ -955,6 +1061,33 @@ class TestSyncTurnCLI(ProjectMemoryBase):
         output = json.loads(result.stdout)
         self.assertEqual(output["status"], "skipped")
         self.assertIn("not trusted", output["reason"])
+        retain.assert_not_called()
+
+    def test_a_repo_asking_for_raw_turns_does_not_get_them_until_this_machine_says_yes(self):
+        """리포 설정 한 줄은 제안이다 — 이 상태를 "꺼짐"이라 부르면 다음 손짓을 말할 자리가 없다.
+
+        신뢰된 backend인데도 안 보낸다는 것이 요점이다: 신뢰는 `asgard memory connect`가 준
+        것이고, 원문을 통째로 내보내는 것은 그 위에 얹는 두 번째 사람 손짓을 따로 받는다."""
+        from typer.testing import CliRunner
+
+        from asgard.cli import app
+
+        payload = {"user_text": "민감한 요청", "assistant_text": "응답", "verified": False}
+        cfg = dict(self.CFG)
+        with (
+            mock.patch("asgard.commands.memory.find_config", return_value=(self.root, cfg)),
+            mock.patch("asgard.commands.memory.is_backend_trusted", return_value=True),
+            mock.patch("asgard.commands.memory.retain_turn") as retain,
+        ):
+            result = CliRunner().invoke(
+                app, ["memory", "sync-turn", "--mode", "claude-code"], input=json.dumps(payload)
+            )
+
+        self.assertEqual(result.exit_code, 0, result.stdout or str(result.exception))
+        output = json.loads(result.stdout)
+        self.assertEqual(output["status"], "skipped")
+        self.assertIn("not approved on this machine", output["reason"])
+        self.assertIn("asgard memory autosave approve", output["reason"])  # 다음 손짓을 말한다
         retain.assert_not_called()
 
     def test_project_approve_commits_the_exact_staged_item(self):
@@ -1554,6 +1687,26 @@ class TestProjectSynthesisLane(ProjectMemoryBase):
             mock.patch("asgard.memory_context.is_backend_trusted", return_value=trusted),
         ):
             yield
+
+    def test_a_squatted_temp_name_cannot_redirect_the_snapshot(self):
+        """임시 이름은 남이 미리 알 수 있으면 안 된다 — 정본 record 와 같은 규율이다.
+
+        고정 `<파일>.tmp` 는 이름을 미리 알 수 있어 심볼릭 링크를 먼저 심어 둘 수 있고, 텍스트
+        모드 `open`은 그 링크를 따라가 **저장소 밖 파일**에 종합문을 쏟는다. 무작위 이름과
+        O_EXCL·O_NOFOLLOW 는 그 둘을 한꺼번에 닫는다."""
+        path = os.path.join(self.root, learning.SYNTHESIS_FILENAME)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        outside = os.path.join(self.tmp, "남의-파일.txt")
+        with open(outside, "w", encoding="utf-8") as handle:
+            handle.write("건드리면 안 된다")
+        os.symlink(outside, path + ".tmp")
+
+        self.assertEqual(self.write_synthesis([self.model()]), 1)
+
+        with open(outside, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), "건드리면 안 된다")
+        rows = learning.load_synthesis(self.root, project_uid=self.PROJECT_UID, binding_id=self.BINDING_ID)
+        self.assertEqual([row["id"] for row in rows], ["asgard-architecture"])
 
     def test_snapshot_keeps_only_ready_current_asgard_models(self):
         saved = self.write_synthesis(

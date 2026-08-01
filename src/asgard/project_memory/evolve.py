@@ -85,12 +85,21 @@ def _is_path_source(source: str) -> bool:
 
 
 def _missing_source(root: str, source: str) -> bool:
-    """source가 저장소 파일 경로인데 지금 없으면 True. 경로가 아니면 판정하지 않는다."""
+    """source가 저장소 파일 경로인데 지금 없으면 True. 경로가 아니면 판정하지 않는다.
+
+    봉쇄는 글자 접두사가 아니라 **경로 성분**으로 센다 (scan._canonical_repo_path와 같은 규율).
+    `startswith`는 `/repo`가 `/repo-notes`를 자기 안이라고 말한다 — `../repo-notes/x.md`가
+    저장소를 벗어나 놓고 존재 판정을 받고, 없으면 그 record는 폐기 후보로 올라간다. 저장소
+    밖은 우리가 볼 수 있는 자리가 아니므로 "없다"가 아니라 "판정하지 않는다"가 맞다."""
     if not _is_path_source(source):
         return False
-    candidate = os.path.normpath(os.path.join(root, source.strip()))
-    if not candidate.startswith(os.path.normpath(root)):
-        return False  # 경로 탈출 표기 — 존재 판정 대상 아님
+    base = os.path.realpath(root)
+    candidate = os.path.realpath(os.path.join(base, source.strip()))
+    try:
+        if os.path.commonpath((base, candidate)) != base:
+            return False  # 경로 탈출 표기 — 존재 판정 대상 아님
+    except ValueError:
+        return False  # 드라이브가 다르다 — 비교 자체가 성립하지 않는다
     return not os.path.exists(candidate)
 
 
@@ -115,7 +124,7 @@ def signals(root: str) -> dict:
                 "excerpt": record.content[:200],
                 "path": path,
                 "content": record.content,
-                # 관계는 검증(중복 relate 차단)이 봐야 하므로 카탈로그에 싣는다
+                # 관계는 검증(중복 relate 차단)이 봐야 하므로 카탈로그에 넣는다
                 "relations": [dict(rel) for rel in record.relations],
             }
         )

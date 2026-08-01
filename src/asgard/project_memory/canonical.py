@@ -242,7 +242,19 @@ def commit_approved_record(root: str, cfg: dict, approval_id: str) -> dict:
                 f"canonical saved → {relative}; backend pending: {exc}; 같은 approval id로 재시도 가능"
             ) from exc
         raise
-    finish_retain(root, approval_id, token, success=True)
+    # 여기부터는 **이미 적힌 뒤**다 — 정본도 backend도 끝났고 남은 것은 승인 파일의 뒷정리뿐이다.
+    # 그 뒷정리가 던지는 것을 그대로 올리면 성공한 쓰기가 실패로 보고되고, 더 나쁘게는 승인이
+    # claim에 묶인 채 PENDING_TTL(1시간)만큼 잠긴다: 사람은 "실패했다"는 말을 듣고 재시도하는데
+    # 그 재시도마다 같은 id가 거절된다. 그래서 정리 실패는 경고로 내린다.
+    #
+    # 되돌려 받는 위험은 중복 커밋 하나인데, record는 update_mode=replace에 document_id가
+    # 안정적이고 정본 파일명은 record_id에서 나온다 — 같은 승인을 두 번 태워도 같은 자리에
+    # 같은 것이 다시 적힌다. 잠긴 승인과 값이 다르다.
+    cleanup: dict = {}
+    try:
+        finish_retain(root, approval_id, token, success=True)
+    except Exception as exc:
+        cleanup = {"status": "pending", "error": f"{type(exc).__name__}: {exc}"}
     learning: dict = {}
     if raw_record is not None:
         # 정본·backend 저장 성공이 먼저다. observation 예약은 파생 학습층이라 실패해도 승인된
@@ -255,6 +267,8 @@ def commit_approved_record(root: str, cfg: dict, approval_id: str) -> dict:
         **result,
         "canonical_path": os.path.relpath(canonical_path, os.path.realpath(root)) if canonical_path else "",
         "learning": learning,
+        # 빈 dict가 "정리까지 끝났다"이다. 차 있으면 쓰기는 성공했고 승인 파일만 남았다는 뜻이다.
+        "approval_cleanup": cleanup,
     }
 
 

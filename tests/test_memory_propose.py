@@ -186,6 +186,48 @@ class TestMerge(ProposeCase):
         self.assertEqual(len(memory._pages(self.d)), 1)
 
 
+class TestAbsorbIsVisibleBeforeApproval(ProposeCase):
+    """흡수는 아카이브가 아니라 `os.remove` 다 (`pages._absorb_slot_dups`).
+
+    같은 계획에 대해 CLI 레인은 이미 삭제 대상을 한 줄씩 낸다(`commands/memory.py`의
+    "absorb (delete) contradicting page"). 사람 승인 전용 통로가 "병합"이라고만 말하면,
+    승인한 사람은 자기가 지운 페이지를 나중에 발견한다 — 그건 승인이 아니다."""
+
+    def _two_name_pages(self) -> None:
+        memory.add("사용자의 이름은 썬더오브갓 이다", kind="user")
+        memory.add("사용자의 이름은 번개썬더왕 이다", kind="user")
+
+    def test_the_plan_carries_the_slugs_it_will_delete(self):
+        self._two_name_pages()
+        record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
+        self.assertEqual(record["plan_action"], "merge")
+        self.assertTrue(record["plan_absorb"])
+        self.assertTrue(set(record["plan_absorb"]) <= set(memory._pages(self.d)))
+
+    def test_the_approval_notice_names_every_page_that_disappears(self):
+        self._two_name_pages()
+        record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
+        text = propose.outcome_text({"saved": False, **record})
+        self.assertIn("absorb (delete) contradicting page", text)
+        for slug in record["plan_absorb"]:
+            self.assertIn(slug, text)
+
+    def test_the_notice_stays_quiet_when_nothing_is_deleted(self):
+        memory.add("사용자의 이름은 썬더오브갓 이다", kind="user")
+        record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
+        self.assertEqual(record["plan_action"], "merge")  # 병합은 하지만 지울 것은 없다
+        self.assertEqual(record["plan_absorb"], [])
+        self.assertNotIn("absorb (delete)", propose.outcome_text({"saved": False, **record}))
+
+    def test_the_named_pages_are_the_ones_approval_actually_removes(self):
+        """안내가 사실이어야 안내다 — 적힌 slug 와 사라진 slug 가 같은지 끝까지 본다."""
+        self._two_name_pages()
+        record = propose.stage("사용자의 이름은 미드가르드왕 이다", kind="user")
+        before = set(memory._pages(self.d))
+        propose.commit(record["id"])
+        self.assertEqual(before - set(memory._pages(self.d)), set(record["plan_absorb"]))
+
+
 class TestAutosave(ProposeCase):
     """자동저장 — 게이트를 없애는 것이 아니라 사용자 손에 두는 것.
 

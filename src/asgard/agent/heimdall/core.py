@@ -113,6 +113,11 @@ class Heimdall:
         from ...bragi import note as _bragi_note
 
         self.bragi = _bragi_note(root)
+        # 주석 계약 — 코드를 쓰는 역할만 받는다. Verifier는 남의 주석을 판정할 뿐이고 DIRECT는
+        # 코드를 안 쓰므로, identity가 아니라 worker 프롬프트에만 붙인다 (trinity.py·waves.py).
+        from ...templates.comments import COMMENT_CANON
+
+        self.comments = "\n\n" + COMMENT_CANON
         # Charter (프로젝트 북극성) — through-line은 identity로(설계①, 모든 역할·DIRECT 관통),
         # coherence는 Thinker/Verifier 프롬프트에 역할별로(협업②/판단③). 미설정이면 전부 빈 문자열.
         from ...charter import note as _charter_note
@@ -903,7 +908,7 @@ class Heimdall:
 
     def _direct(self, request: str, memory_intent: bool = False) -> str:
         """DIRECT 응답 — 본문은 on_text로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
-        예외: refusal 안내는 스트림에 안 실린 합성 텍스트 — 그것만 반환.
+        예외: refusal 안내는 스트림에 안 들어간 합성 텍스트 — 그것만 반환.
 
         가드: classify 오판으로 DIRECT 세션이 파일을 쓰면 — editor writes 또는
         워킹트리 fingerprint 변화 — 소급 퀘스트를 열어 Verifier 판정 + 게이트를 강제한다.
@@ -987,7 +992,7 @@ class Heimdall:
         self.history = (self.history + [(request, record[:500])])[-6:]
         self._persist_turn(request, record)
         if r.stop_reason == "refusal":
-            return record  # refusal 안내는 스트림에 안 실린 합성 텍스트 — 반환으로 표시
+            return record  # refusal 안내는 스트림에 안 들어간 합성 텍스트 — 반환으로 표시
         if corrected:
             from ...i18n import t
 
@@ -1033,14 +1038,16 @@ class Heimdall:
         out = visible_response
         response = visible_response or self.last_response_text
         try:
-            from ...memory_bridge import find_config, is_backend_trusted
+            from ...memory_bridge import auto_retain_turns_enabled, find_config, is_backend_trusted
             from ...project_memory import propose_completion, retain_turn
 
             found = find_config(self.root)
             if found:
                 root, cfg = found
                 self._memory_turn_seq += 1
-                if cfg.get("auto_retain_turns", False) and is_backend_trusted(cfg):
+                # 리포 설정은 제안이다 — 사람이 쓴 턴 원문을 공유 backend로 보내는 손잡이라
+                # 이 기계의 허가까지 있어야 켜진다 (memory_bridge.auto_retain_turns_state).
+                if auto_retain_turns_enabled(cfg) and is_backend_trusted(cfg):
                     retain_turn(
                         root,
                         cfg,
@@ -1139,7 +1146,7 @@ class Heimdall:
         self._tutor_brief(request)
         # cancel_event는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c가 유실된다 (경합).
-        self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (문지기가 길을 살피는 문구)
+        self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (하임달이 길을 살피는 문구)
         try:
             cls = self._classify(request)
         finally:

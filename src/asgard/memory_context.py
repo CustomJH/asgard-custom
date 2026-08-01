@@ -155,7 +155,7 @@ def _same_language_lexical_admission(query: str, text: str) -> bool:
     아예 없어서 backend 순위를 무조건 믿었다. 근거(점수 부재)는 언어와 무관한데 결과만
     비대칭이었고, 그 대가는 영어 프로젝트가 잡음 통제를 못 받는 것이다 — 세계에 배포하는
     도구에서 그쪽이 오히려 다수 경로다. 판정을 '한글인가'에서 '주된 문자체계가 같은가'로
-    바꾸면 기존 한국어 거동은 그대로면서 영어에도 같은 자가 선다."""
+    바꾸면 기존 한국어 거동은 그대로면서 영어에도 같은 기준이 생긴다."""
     body = text.split("\n\n", 1)[-1]
     if not query.strip():
         return True
@@ -223,20 +223,44 @@ def _deterministic_projection_is_current(root: str, metadata: dict) -> bool:
         return False
 
 
-def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None = None) -> bool:
-    """자동 주입은 active·verified 지식과 source artifact만 허용한다.
+# drop 사유 — 사람에게 그대로 말해야 하므로 한 칸에 뭉치지 않는다. "오염 의심 N건"이라는
+# 한 마디는 사용자가 보안 사고로 읽는데, 실제 drop의 대부분은 정본과 바이트가 안 맞은 것이다.
+DROP_TAINTED = "tainted"  # 오염 의심 — 인젝션 스캔 적중·신뢰 못 할 출처·metadata 안전 한계 초과
+DROP_MISMATCH = "mismatch"  # 정본 불일치 — 저장소 정본으로 확인되지 않았다 (소유권·바이트·신선도)
+DROP_OTHER = "other"  # 그 밖 — 통제 문서·빈 본문·자격 미달(status/confidence)·질의 무관
+DROP_REASONS = (DROP_TAINTED, DROP_MISMATCH, DROP_OTHER)
+
+_DROP_LABELS = ((DROP_TAINTED, "오염 의심"), (DROP_MISMATCH, "정본 불일치"), (DROP_OTHER, "기타"))
+
+
+def drop_note(tally: dict[str, int]) -> str:
+    """제외 안내 한 줄 — 사유별로 갈라 센다. 아무것도 안 빠졌으면 빈 문자열."""
+    parts = [f"{label} {tally[key]}건" for key, label in _DROP_LABELS if tally.get(key)]
+    return f"\n({' · '.join(parts)} 제외)" if parts else ""
+
+
+def _injectable_knowledge(scope: object, status: object, confidence: object) -> bool:
+    """자동 주입 자격 — 프로젝트 스코프의 active·verified 지식만.
+
+    직접 주입(`_automatic_context_drop_reason`)과 관계 1홉 확장(`_relation_neighbors`)이
+    **같은 술어**를 쓴다. 두 자리가 각자 판정하던 시절 이웃 경로는 status만 보고 confidence를
+    안 봤고, evolve가 의도적으로 `observed`로 남겨 둔 LLM 추론(통찰)이 역엣지를 타고
+    프롬프트에 들어왔다. 자동 승격을 막아 둔 게이트가 옆문으로 새면 막아 둔 것이 아니다."""
+    return scope == "project" and status == "active" and confidence == "verified"
+
+
+def _automatic_context_drop_reason(root: str, metadata: dict, cfg: dict | None = None) -> str:
+    """주입에서 뺄 사유 — 통과하면 빈 문자열, 아니면 DROP_REASONS 중 하나.
 
     provenance를 증명하지 못하는 legacy item은 ambient 및 explicit MCP context에 넣지 않는다.
     두 경로가 공유하는 trust boundary는 fail-closed다.
     """
-    if metadata.get("scope") != "project" or metadata.get("status") != "active":
-        return False
-    if metadata.get("confidence") != "verified":
-        return False
+    if not _injectable_knowledge(metadata.get("scope"), metadata.get("status"), metadata.get("confidence")):
+        return DROP_OTHER
     if metadata.get("trust") == "untrusted-conversation" or metadata.get("kind") == "turn":
-        return False
-    if metadata.get("kind") == "binding" or metadata.get("scope") == "control":
-        return False
+        return DROP_TAINTED
+    if metadata.get("kind") == "binding":
+        return DROP_OTHER
     if cfg is not None:
         if (
             not cfg.get("project_uid")
@@ -244,16 +268,23 @@ def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None 
             or metadata.get("project_uid") != cfg.get("project_uid")
             or metadata.get("binding_id") != cfg.get("binding_id")
         ):
-            return False
+            return DROP_MISMATCH  # 이 저장소의 정본이 아니다 — 남의 프로젝트 것이거나 표류했다
     try:
         metadata_texts = _metadata_texts(metadata)
     except ValueError:
-        return False
+        return DROP_TAINTED
     if metadata.get("origin") == "deterministic":
-        return _deterministic_projection_is_current(root, metadata) and not memory.scan_threats(*metadata_texts)
+        if not _deterministic_projection_is_current(root, metadata):
+            return DROP_MISMATCH
+        return DROP_TAINTED if memory.scan_threats(*metadata_texts) else ""
     if not metadata.get("record_id") or not metadata.get("source") or not metadata.get("source_revision"):
-        return False
-    return not memory.scan_threats(*metadata_texts)
+        return DROP_OTHER
+    return DROP_TAINTED if memory.scan_threats(*metadata_texts) else ""
+
+
+def _eligible_for_automatic_context(root: str, metadata: dict, cfg: dict | None = None) -> bool:
+    """자동 주입은 active·verified 지식과 source artifact만 허용한다 (사유는 안 묻는 표면)."""
+    return not _automatic_context_drop_reason(root, metadata, cfg)
 
 
 def _canonical_record_items(root: str, cfg: dict) -> dict[str, dict]:
@@ -300,10 +331,14 @@ def _matches_canonical_record(text: str, metadata: dict, canonical_items: dict[s
 
 def filter_project_hits(
     root: str, cfg: dict, hits: list[dict], *, max_results: int | None = None, query: str = ""
-) -> tuple[list[dict], int]:
-    """Ambient와 explicit MCP가 공유하는 최소 ownership/provenance 정책."""
+) -> tuple[list[dict], dict[str, int]]:
+    """Ambient와 explicit MCP가 공유하는 최소 ownership/provenance 정책.
+
+    둘째 반환값은 **사유별 건수**다(DROP_REASONS를 키로). 건수 하나만 세던 시절 호출부는 그
+    수를 통째로 "오염 의심"이라 불렀는데, 실제 drop의 대부분은 정본과 바이트가 안 맞은 것이라
+    사용자가 없는 보안 사고를 읽었다."""
     clean: list[dict] = []
-    dropped = 0
+    tally = dict.fromkeys(DROP_REASONS, 0)
     canonical_items = _canonical_record_items(root, cfg)
     for hit in hits:
         text = str(hit.get("text") or "").strip()
@@ -311,24 +346,31 @@ def filter_project_hits(
         metadata = raw_metadata if isinstance(raw_metadata, dict) else {}
         document_id = str(hit.get("document_id") or "")
         if document_id.startswith("asgard:project-binding:"):
-            dropped += 1
+            tally[DROP_OTHER] += 1
             continue
-        if not text or memory.scan_threats(text) or not _eligible_for_automatic_context(root, metadata, cfg):
-            dropped += 1
+        if not text:
+            tally[DROP_OTHER] += 1
+            continue
+        if memory.scan_threats(text):
+            tally[DROP_TAINTED] += 1
+            continue
+        reason = _automatic_context_drop_reason(root, metadata, cfg)
+        if reason:
+            tally[reason] += 1
             continue
         canonical: dict | None = None
         if metadata.get("origin") != "deterministic":
             canonical = _matches_canonical_record(text, metadata, canonical_items)
             if canonical is None:
-                dropped += 1
+                tally[DROP_MISMATCH] += 1
                 continue
         if query and not _same_language_lexical_admission(query, text):
-            dropped += 1
+            tally[DROP_OTHER] += 1  # 질의와 어휘가 안 겹친다 — 보안이 아니라 적합성 판정이다
             continue
         clean.append({**hit, "text": text, "metadata": metadata, "canonical": canonical})
         if max_results is not None and len(clean) >= max_results:
             break
-    return clean, dropped
+    return clean, tally
 
 
 # backend 검색용으로만 붙은 머리글 줄 — 주입면에서 모델이 이걸로 할 수 있는 판단이 없다.
@@ -338,7 +380,7 @@ _NOISE_PREFIXES = ("Revision:", "Content-SHA256:", "Status:", "Importance:", "Co
 
 
 def _artifact_body(text: str) -> str:
-    """deterministic artifact 본문 — 해시 줄과 빈 온톨로지 줄만 걷어낸다.
+    """deterministic artifact 본문 — 해시 줄과 빈 온톨로지 줄만 제거한다.
 
     artifact는 record와 달리 머리글이 곧 신호다(Path·Symbols·Imports는 digest 계층의
     본문 그 자체다). 그래서 머리글을 통째로 버리지 않고, 모델이 쓸 수 없는 줄만 뺀다."""
@@ -397,7 +439,8 @@ def _relation_neighbors(root: str, seed_ids: set[str], cap: int = RELATION_EXPAN
     `dependsOn`(나감)과 `dependsOn⁻`(들어옴)은 읽는 사람에게 전혀 다른 사실이다.
 
     정본(`.asgard/memory/records/`)에서 직접 읽으므로 신뢰 게이트를 우회하지 않는다.
-    게이트가 backend 응답을 대조하는 그 원본이 여기 입력이다."""
+    게이트가 backend 응답을 대조하는 그 원본이 여기 입력이다. 다만 **원본이라는 것이 자격은
+    아니다**: 이웃도 직접 주입과 같은 술어(`_injectable_knowledge`)를 통과해야 한다."""
     try:
         from .project_memory import load_canonical_records
 
@@ -421,7 +464,9 @@ def _relation_neighbors(root: str, seed_ids: set[str], cap: int = RELATION_EXPAN
         ]
         for target, relation in edges:
             neighbor = records.get(target)
-            if not target or target in seen or neighbor is None or neighbor.status != "active":
+            if not target or target in seen or neighbor is None:
+                continue
+            if not _injectable_knowledge(neighbor.scope, neighbor.status, neighbor.confidence):
                 continue
             seen.add(target)
             found.append((target, f"{seed_id} {relation}", neighbor.content))
@@ -477,7 +522,7 @@ def project_recall_rows(query: str, *, start: str | None = None, max_results: in
 def project_recall_note(query: str, *, start: str | None = None, max_results: int = 5) -> str:
     """현재 프로젝트 backend를 검색한다. 불능·미신뢰·무적중은 빈 문자열로 fail-open.
 
-    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 싣는 자리는 조립기로 간다."""
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 조립기로 간다."""
     try:
         from .memory.assemble import Candidate, Lane, assemble
 
@@ -506,7 +551,7 @@ SYNTHESIS_SECTION_CAP = 420
 
 
 def _synthesis_sections(content: str) -> list[str]:
-    """markdown 종합문을 제목 단위 구획으로 쪼갠다 — 통째로 싣지 않기 위해서다.
+    """markdown 종합문을 제목 단위 구획으로 쪼갠다 — 통째로 넣지 않기 위해서다.
 
     제목만 있고 본문이 없는 구획은 버린다: 질의어는 제목에서도 걸리므로, 걸러내지 않으면
     한 줄을 통째로 목차에 내주고 정작 답은 예산 밖으로 밀린다 (실측 26-07-29)."""
@@ -534,7 +579,7 @@ def project_synthesis_rows(query: str, *, start: str | None = None) -> list[str]
     힌트지 증거가 아니다). 그래서 scope를 갈라 붙이고 예산도 따로 준다.
 
     왜 굳이 붙이는가: 이 층은 이미 만들어지고 있었고 (`asgard memory project-learn`),
-    `doctor`가 개수만 세고, 어떤 프롬프트에도 한 글자도 안 실렸다. 대조군(hermes)이
+    `doctor`가 개수만 세고, 어떤 프롬프트에도 한 글자도 안 들어갔다. 대조군(hermes)이
     같은 backend로 "알아서 아는" 느낌을 내는 자리가 정확히 이 통합 계층이다.
 
     lexical 문턱을 둔다: 질의 도메인어가 하나도 안 걸리면 기권한다. 종합문은 프로젝트
@@ -598,7 +643,7 @@ SYNTHESIS_SUFFIX = "\n</memory-recall>"
 
 
 def project_synthesis_note(query: str, *, start: str | None = None) -> str:
-    """종합층 주입 블록 — 이 레인 혼자 쓰는 표면용 (조립기가 여섯을 같이 싣는다)."""
+    """종합층 주입 블록 — 이 레인 혼자 쓰는 표면용 (조립기가 여섯을 같이 넣는다)."""
     try:
         from .memory.assemble import Candidate, Lane, assemble
 
@@ -814,10 +859,10 @@ def recall_note(
     """한 질의로 모든 메모리를 조회하되 결과 scope를 절대 섞지 않는다.
 
     **여섯 레인이 하나의 예산 위에서 겨룬다** (26-07-29). 이전에는 문자열 여섯 개를 그냥
-    이어 붙였고, 그래서 (a) 같은 사실이 여러 레인으로 여러 번 실렸고 (b) 한 레인이 자기
+    이어 붙였고, 그래서 (a) 같은 사실이 여러 레인으로 여러 번 들어갔고 (b) 한 레인이 자기
     예산을 안 써도 다른 레인은 자기 상한에서 잘렸다. 조립은 `memory.assemble`이 한다 —
     레인 바닥으로 굶주림을 막고, 남은 자리는 순위(RRF)로 전역 경쟁시키고, 레인 **간**
-    중복은 포함계수로 걷어낸다. 왜 레인 안은 안 걷는지는 `assemble._redundant` 참조.
+    중복은 포함계수로 제거한다. 왜 레인 안에서는 안 지우는지는 `assemble._redundant` 참조.
 
     include_skills는 CC 훅 표면(run_recall)만 켠다 — 네이티브 루프는 디스패치 라우팅이
     스킬 본문을 직접 주입하므로 여기서 또 흘리면 이중 주입이 된다.

@@ -20,7 +20,7 @@
 옮긴 것이고, **신뢰 경계는 한 치도 안 넓어진다**:
 
   · 제안은 디스크의 대기열에만 들어간다. 승인 전에는 `pages/`에 한 글자도 안 쓴다.
-  · 주입면에도 안 실린다 — 회수는 `pages/`만 본다.
+  · 주입면에도 안 들어간다 — 회수는 `pages/`만 본다.
   · 인젝션·credential 스캔을 **제안 시점과 승인 시점 두 번** 한다 (사이에 파일이 바뀔 수 있다).
 
 ## 자동저장 (26-07-30 — 사용자 선택)
@@ -35,7 +35,7 @@
 
 ## 에이전트 격리 (프로파일)
 
-대기열은 `memory_dir()` 안에 산다. 그 경로가 이미 프로파일별로 갈리므로(`profiles.home()`)
+대기열은 `memory_dir()` 안에 있다. 그 경로가 이미 프로파일별로 갈리므로(`profiles.home()`)
 에이전트 A의 제안은 B의 대기열에 아예 나타나지 않는다 — 격리는 이 파일이 새로 만드는
 것이 아니라 물려받는 것이다. 그 위에 제안마다 `agent`를 적어 두는 이유는 **관측**이다:
 `ASGARD_HOME`을 안 물려받은 자식이 기본 에이전트에 제안을 쌓는 사고(hermes 이슈 18594와
@@ -101,6 +101,18 @@ def _agent() -> str:
         return ""
 
 
+def _absorb_slugs(plan: dict) -> list[str]:
+    """계획이 **지울** 페이지 slug — 흡수는 아카이브가 아니라 `os.remove` 다 (`pages._absorb_slot_dups`).
+
+    계획의 `absorb` 는 `[slug, rev]` 쌍의 목록이다. 사람에게 보일 것은 slug 뿐이라 여기서 벗긴다."""
+    slugs: list[str] = []
+    for entry in plan.get("absorb") or []:
+        slug = entry[0] if isinstance(entry, (list, tuple)) and entry else entry
+        if isinstance(slug, str) and slug:
+            slugs.append(slug)
+    return slugs
+
+
 def _prepare(text: str, kind: str) -> str:
     """저장 후보 한 건을 정규화하고 문턱을 태운다 — 제안이든 자동저장이든 **같은 문턱**이다.
 
@@ -131,6 +143,7 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
     for row in rows:
         if row.get("text") == body and row.get("kind") == kind:
             return dict(row)
+    plan = plan_ingest(body, d) or {}
     record = {
         "id": secrets.token_hex(8),
         "text": body,
@@ -139,7 +152,9 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
         "created": now,
         "expires": now + TTL_SECONDS,
         # 승인 화면이 "무엇이 일어날지"를 보여줄 수 있어야 한다 — 새 페이지인가 기존 병합인가.
-        "plan_action": str((plan_ingest(body, d) or {}).get("action") or "create"),
+        "plan_action": str(plan.get("action") or "create"),
+        # 병합에는 삭제가 딸려 올 수 있다. 승인하는 사람이 그 사실을 모르면 그건 승인이 아니다.
+        "plan_absorb": _absorb_slugs(plan),
     }
     rows.append(record)
     _save(d, rows[-MAX_PENDING:])
@@ -188,9 +203,15 @@ def outcome_text(outcome: dict) -> str:
             "사용자에게 저장했다고 알려라. 승인 명령을 안내하지 마라 — 이미 정본에 들어갔다."
         )
     verb = "기존 페이지에 병합" if outcome.get("plan_action") == "merge" else "새 페이지 생성"
+    # 흡수는 페이지 삭제다 — 승인 전에 반드시 눈에 보여야 한다. CLI 레인(`commands/memory.py`)이
+    # 같은 계획에 대해 이미 이 줄을 내고 있었다. 한 레인만 지키는 불변식은 불변식이 아니다:
+    # 사람 승인 전용 통로가 "병합"이라고만 말하면, 승인한 사람은 사라진 페이지를 나중에 발견한다.
+    absorb = "".join(
+        f"\nplan: absorb (delete) contradicting page — {slug}" for slug in outcome.get("plan_absorb") or []
+    )
     return (
         f"제안 대기 (아직 저장 안 됨) — proposal_id: {outcome['id']}\n"
-        f"kind={outcome['kind']} · 승인하면 {verb}\n---\n{outcome['text']}\n---\n"
+        f"kind={outcome['kind']} · 승인하면 {verb}{absorb}\n---\n{outcome['text']}\n---\n"
         f"사용자에게 이 내용을 보여주고 승인을 받아라. 승인 명령: asgard memory approve {outcome['id']}\n"
         "매번 묻는 것이 번거롭다고 하면 자동저장을 안내하라: asgard memory autosave on --tier personal"
     )

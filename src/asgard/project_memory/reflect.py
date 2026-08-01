@@ -12,7 +12,7 @@ Hindsight의 reflect는 **서버의 LLM**이 뱅크 전체를 근거로 답을 �
 
 local 경로가 근거로 삼는 것은 Git 정본이다. backend는 재생 가능한 검색 인덱스일 뿐이고
 정본은 `.asgard/memory/records/`에 있다 — 서버가 아무것도 못 해도 근거는 여기 남아 있다.
-어느 경로로 답했는지는 언제나 산출에 실어 보낸다. 자문의 출처를 숨기면 자문이 아니다.
+어느 경로로 답했는지는 언제나 산출에 함께 보낸다. 자문의 출처를 숨기면 자문이 아니다.
 """
 
 from __future__ import annotations
@@ -46,7 +46,15 @@ def reflect_mode(cfg: Mapping[str, object] | None) -> str:
 
 
 def _words(text: str) -> set[str]:
-    return {word.lower() for word in re.split(r"[^\w가-힣]+", text) if len(word) >= 2}
+    """대조용 낱말 — 원형에 조사를 뗀 어간 후보를 얹는다 (기준은 `terms` 하나뿐이다).
+
+    집합 교집합만으로는 한국어 근거를 못 잰다. 조사가 낱말 **뒤**에 붙어서 질문의 `금요일에`와
+    정본의 `금요일을`이 서로 안 맞고, 그러면 답이 정본에 그대로 적혀 있는데도 근거가 0건이라
+    회고가 "모르겠다"고 답한다. 질문과 본문 **양쪽**을 같은 기준으로 깎는 이유가 여기다 —
+    한쪽만 깎으면 깎인 쪽이 안 깎인 쪽의 조사 붙은 형태와 여전히 안 맞는다."""
+    from .terms import expand
+
+    return {word.lower() for word in expand(re.split(r"[^\w가-힣]+", text), text) if len(word) >= 2}
 
 
 def _score(question_words: set[str], text: str) -> int:
@@ -157,7 +165,7 @@ def local_reflect(root: str, backend, question: str, budget: str = "low", max_to
 
 
 def reflect(root: str, backend, question: str, budget: str = "low", cfg: Mapping[str, object] | None = None) -> dict:
-    """설정된 모드로 회고한다. 반환에는 언제나 어느 경로가 답했는지(source)가 실린다."""
+    """설정된 모드로 회고한다. 반환에는 언제나 어느 경로가 답했는지(source)가 들어간다."""
     if budget not in BUDGET_K:
         raise ValueError("reflect budget must be low|mid|high")
     mode = reflect_mode(cfg)

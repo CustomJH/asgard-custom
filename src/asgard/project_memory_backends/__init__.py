@@ -75,6 +75,59 @@ class BackendWriteResult:
         return len(self.accepted_ids)
 
 
+# 서버 응답이 **수용을 이름으로** 말하는 자리들. 실서버 0.8.3은 `{"success": true, "items_count": N}`
+# 만 돌려주고 항목별 id를 대지 않는다 — 지금 이 키들은 하나도 오지 않는다.
+#
+# 그래도 두는 이유와, 그 이상 넓히지 않는 이유가 같다. 여기 적힌 셋은 "받아들인 것"말고 다른
+# 뜻으로 읽힐 수 없다. `items`·`results` 같은 이름은 **요청을 되비친 것**일 수 있고, 그것을
+# 수용 목록으로 읽으면 보낸 목록으로 만들던 옛 코드와 정확히 같아진다 — 고치려던 자리로 돌아간다.
+_ACCEPTED_ID_KEYS = ("accepted_ids", "accepted", "document_ids")
+
+
+def _named_ids(output: Mapping[str, object]) -> tuple[str, ...] | None:
+    """응답이 항목별로 이름 댄 id — 없으면 None (빈 목록과 다르다)."""
+    for key in _ACCEPTED_ID_KEYS:
+        rows = output.get(key)
+        if not isinstance(rows, list) or not rows:
+            continue
+        found: list[str] = []
+        for row in rows:
+            if isinstance(row, str) and row:
+                found.append(row)
+            elif isinstance(row, Mapping):
+                value = row.get("document_id") or row.get("id") or row.get("record_id")
+                if isinstance(value, str) and value:
+                    found.append(value)
+        if found:
+            return tuple(found)
+    return None
+
+
+def _accepted_ids(output: Mapping[str, object], records: Sequence[ProjectMemoryRecord]) -> tuple[str, ...]:
+    """서버가 실제로 받아들인 id — **우리가 보낸 목록이 아니라 응답**에서 만든다.
+
+    보낸 목록으로 만들면 상위의 정합성 검사(memory_bridge.client)가 자기 입력을 자기와 대조하는
+    셈이라 구조적으로 절대 발화하지 못한다. 그러면 서버가 3건 중 2건만 삼킨 응답도 성공으로
+    지나가고, 빠진 하나는 아무도 다시 보내지 않는다 — 조용히 사라지는 기록이 가장 나쁘다.
+
+    증거의 세기 순서로 읽는다:
+      ① 항목별 id를 이름 댄 응답  → 그대로 쓴다 (가장 강하다)
+      ② 셈만 있는 응답            → 셈이 보낸 수와 같을 때만 전부 수용으로 읽는다. 모자라면
+                                    **어느 것이 빠졌는지 알 수 없으므로** 하나도 대지 않는다:
+                                    빈 목록이 정합성 검사를 깨워 재전송으로 보낸다. 여기서
+                                    아무 id나 채우는 것은 추측이고, 추측은 누락을 지운다.
+      ③ 셈도 없는 응답            → 요청 단위 승인이 가진 증거의 전부다. 이때만 보낸 목록으로
+                                    읽고, 그 사실을 여기 적어 둔다."""
+    if (named := _named_ids(output)) is not None:
+        return named
+    count = output.get("items_count")
+    if isinstance(count, bool) or not isinstance(count, int):
+        return tuple(record.record_id for record in records)
+    if count == len(records):
+        return tuple(record.record_id for record in records)
+    return ()
+
+
 @dataclasses.dataclass(frozen=True)
 class ProjectMemoryBinding:
     """A deterministic project-to-namespace ownership assertion.
@@ -391,7 +444,7 @@ class HindsightBackend:
             items.append(item)
         output = self._post("/memories", {"items": items, "async": False})
         success = output.get("success") is True
-        accepted = tuple(record.record_id for record in records) if success else ()
+        accepted = _accepted_ids(output, records) if success else ()
         error = str(output.get("error") or "")
         return BackendWriteResult(
             success=success,

@@ -23,7 +23,8 @@ import hashlib
 import os
 import re
 
-from .records import MAX_ARTIFACT_BYTES
+from ..memory import scan_secrets, scan_threats
+from .records import _PLACEHOLDERS, _SECRET_PATTERNS, MAX_ARTIFACT_BYTES
 
 # hindsight 뱅크 설정에 심는 전략 표. 이름은 우리가 정하고, 값은 서버의 hierarchical 필드다.
 #
@@ -158,8 +159,23 @@ _SPEC = re.compile(
 )
 
 
+MAX_FINDINGS = 20  # 미리보기에 싣는 자리 수 상한. 한 문서가 화면을 통째로 먹지 않게 한다
+_EXCERPT_PAD = 60  # 걸린 자리 앞뒤로 보여 줄 글자 수 — 사람이 "이건 예시다"를 판단할 만큼만
+
+
 class IngestError(ValueError):
     """인제스트 계약 위반 — 미지원 형식·빈 문서·과대 파일."""
+
+
+class IngestBlocked(IngestError):
+    """비밀·인젝션 검사에 걸려 저장을 막았다.
+
+    IngestError를 물려받는 것은 의도다 — `plan`이 이미 그 하나만 잡고 있고, 호출측은 "못
+    들어간 문서"를 한 갈래로 다루면 된다. 갈리는 것은 `findings`가 붙어 있다는 것뿐이다."""
+
+    def __init__(self, message: str, findings: list[dict]):
+        super().__init__(message)
+        self.findings: list[dict] = list(findings)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -232,6 +248,124 @@ def extract_text(path: str) -> str:
         return extractors[suffix](path)
     except Exception as exc:  # ToolError 포함 — 호출측은 IngestError 하나만 알면 된다
         raise IngestError(f"{suffix[1:].upper()} 추출 실패: {exc}") from exc
+
+
+# ── ①' 비밀·인젝션 검사 ───────────────────────────────────────────────────────
+#
+# record 경로는 `records.validate_record`가 지키고 개인 메모리는 `memory.policy`의 저장 관문을
+# 지나는데, **던져진 문서만 무검사로** 정본과 팀 공유 뱅크에 앉고 있었다. 문서는 남이 쓴 것이고
+# 두 레인 모두 공유물이 된다 — 뱅크는 팀 전원이 회수하고, 로컬 정본은 커밋과 함께 저장소로
+# 나간다. 그러니 검사는 레인이 갈리기 **전**에 있어야 한다.
+#
+# 판정은 공용 관문(scan_secrets·scan_threats)이 한다. 여기 있는 코드가 하는 일은 그 판정이
+# 참일 때 **어디인지**를 짚어 주는 것뿐이다: 승인 미리보기가 "무엇이 걸렸는지"를 못 보여 주면
+# 사람은 통째 거절과 통째 승인 중 하나만 고를 수 있고, 그것은 고르는 게 아니다.
+
+
+def _where(text: str, offset: int) -> tuple[int, int]:
+    """문자 오프셋 → (행, 열). 둘 다 1부터 센다 — 편집기가 세는 방식과 같아야 쓸모가 있다."""
+    line = text.count("\n", 0, offset) + 1
+    start = text.rfind("\n", 0, offset) + 1
+    return line, offset - start + 1
+
+
+def _excerpt(text: str, start: int, end: int, *, mask: bool) -> str:
+    """걸린 자리의 발췌. 비밀은 걸린 스팬만 가리고 **주변은 남긴다**.
+
+    통째로 가리면 사람이 판단할 근거가 사라지고, 그대로 두면 미리보기가 유출면이 된다.
+    `<`·`>`를 바꿔 두는 것은 발췌가 표면에서 태그로 읽히지 않게 하기 위해서다 (documents 레인의
+    주입 경로와 같은 규율)."""
+    head = text[max(start - _EXCERPT_PAD, 0) : start]
+    body = "[redacted-credential]" if mask else text[start:end]
+    tail = text[end : end + _EXCERPT_PAD]
+    joined = " ".join(f"{head}{body}{tail}".split())
+    return joined.replace("<", "‹").replace(">", "›")
+
+
+def _secret_spans(text: str) -> list[tuple[int, int]]:
+    """credential 패턴이 걸린 스팬 — `scan_secrets`와 **같은 패턴·같은 예외**로 훑는다.
+
+    placeholder 예외를 여기서 다시 적는 것은 중복이 아니라 계약이다: 관문이 통과시킨 자리를
+    미리보기가 "걸렸다"고 그리면 두 화면이 갈린다."""
+    low = text.lower()
+    spans: list[tuple[int, int]] = []
+    for pattern in _SECRET_PATTERNS:
+        for match in pattern.finditer(text):
+            nearby = low[max(0, match.start() - 30) : match.end() + 30]
+            if any(marker in match.group(0).lower() or marker in nearby for marker in _PLACEHOLDERS):
+                continue
+            spans.append((match.start(), match.end()))
+            if len(spans) >= MAX_FINDINGS:
+                return sorted(spans)
+    return sorted(spans)
+
+
+def screen(text: str) -> list[dict]:
+    """문서 원문 검사 — 반환 = 걸린 자리 목록. 빈 목록이 통과다.
+
+    자리 찾기는 관문이 "걸렸다"고 말했을 때만 돈다 (문서는 64MiB까지 오므로 통과 경로에 전수
+    순회를 달지 않는다). 찾기가 실패해도 막는 결정은 그대로다 — 자리를 못 짚은 것이 무해하다는
+    뜻은 아니므로 행 0으로 한 건을 남긴다."""
+    body = text or ""
+    findings: list[dict] = []
+    if secret := scan_secrets(body):
+        spans = _secret_spans(body)
+        for start, end in spans:
+            line, column = _where(body, start)
+            findings.append(
+                {
+                    "kind": "secret",
+                    "reason": secret,
+                    "line": line,
+                    "column": column,
+                    "excerpt": _excerpt(body, start, end, mask=True),
+                }
+            )
+        if not spans:  # 관문은 걸었는데 자리를 못 짚었다 — 판정을 낮추지 않는다
+            findings.append({"kind": "secret", "reason": secret, "line": 0, "column": 0, "excerpt": ""})
+    if threat := scan_threats(body):
+        located = 0
+        offset = 0
+        for line_number, line in enumerate(body.splitlines(keepends=True), start=1):
+            if located >= MAX_FINDINGS:
+                break
+            if reason := scan_threats(line):
+                findings.append(
+                    {
+                        "kind": "injection",
+                        "reason": reason,
+                        "line": line_number,
+                        "column": 1,
+                        "excerpt": _excerpt(body, offset, offset + len(line.rstrip("\n")), mask=False),
+                    }
+                )
+                located += 1
+            offset += len(line)
+        if not located:  # 줄을 넘겨 걸린 패턴 — 한 줄씩 보면 안 보인다
+            findings.append({"kind": "injection", "reason": threat, "line": 0, "column": 0, "excerpt": ""})
+    return findings[:MAX_FINDINGS]
+
+
+def _blocked_reason(findings: list[dict]) -> str:
+    """사람이 읽는 한 줄 사유. 발췌는 `findings`가 들고, 여기서는 셈과 첫 자리만 말한다."""
+    secrets_found = sum(1 for row in findings if row["kind"] == "secret")
+    threats_found = len(findings) - secrets_found
+    parts = (
+        f"비밀 {secrets_found}건" if secrets_found else "",
+        f"인젝션 {threats_found}건" if threats_found else "",
+    )
+    counted = "·".join(part for part in parts if part)
+    head = findings[0]
+    where = f"{head['line']}행" if head["line"] else "위치 미상"
+    return f"검사에 걸려 저장하지 않는다 ({counted}) — 첫 자리 {where}: {head['reason']}"
+
+
+def guard(text: str, name: str = "") -> None:
+    """걸리면 `IngestBlocked`, 깨끗하면 조용히 돌아온다. 조용히 지우지도 통과시키지도 않는다."""
+    findings = screen(text)
+    if findings:
+        prefix = f"{name}: " if name else ""
+        raise IngestBlocked(prefix + _blocked_reason(findings), findings)
 
 
 # ── ② 종류 판정 (결정론) ──────────────────────────────────────────────────────
@@ -313,6 +447,8 @@ def prepare(path: str, *, strategy: str | None = None, lane: str | None = None) 
     if not text.strip():
         raise IngestError("추출된 텍스트가 없다 (스캔 PDF 라면 OCR이 필요하다)")
     name = os.path.basename(path)
+    # 판정·엔티티·레인보다 **앞**이다. 뒤에 두면 걸린 문서도 승인 대기 줄에는 한 번 선다.
+    guard(text, name)
     auto_strategy, kind, signals = classify(text, name)
     chosen = (strategy or auto_strategy).strip().lower()
     if chosen not in STRATEGIES:
@@ -347,19 +483,22 @@ def prepare(path: str, *, strategy: str | None = None, lane: str | None = None) 
 def plan(
     paths: list[str], *, strategy: str | None = None, lane: str | None = None
 ) -> tuple[list[IngestedDocument], list[dict]]:
-    """여러 문서를 한 번에 준비한다. 반환 = (준비된 것, 못 읽은 것). 쓰기 없음."""
+    """여러 문서를 한 번에 준비한다. 반환 = (준비된 것, 못 들어간 것). 쓰기 없음.
+
+    못 들어간 줄에는 `findings`가 늘 있다 — 검사에 걸린 것만 내용이 차고 나머지는 빈 목록이다.
+    키를 조건부로 두면 미리보기가 매번 존재를 물어야 하고, 그 물음을 빠뜨리면 사유가 사라진다."""
     ready: list[IngestedDocument] = []
     failed: list[dict] = []
     for path in paths:
         try:
             ready.append(prepare(path, strategy=strategy, lane=lane))
         except IngestError as exc:
-            failed.append({"path": path, "error": str(exc)})
+            failed.append({"path": path, "error": str(exc), "findings": list(getattr(exc, "findings", ()))})
     return ready, failed
 
 
 def document_item(document: IngestedDocument, project_id: str, *, project_uid: str = "", binding_id: str = "") -> dict:
-    """hindsight가 받는 아이템 한 벌. 전략과 확정 엔티티를 실어 보낸다.
+    """hindsight가 받는 아이템 한 묶음. 전략과 확정 엔티티를 함께 보낸다.
 
     본문은 **원문 그대로**다 — 요약하지 않는다. 요약은 되돌릴 수 없고, 무엇이 빠졌는지
     나중에 알 방법이 없다. 크기 상한은 서버 청킹이 감당한다."""
@@ -408,8 +547,10 @@ __all__ = [
     "GRAPH_UNIT_CEILING",
     "LANE_GRAPH",
     "LANE_LOCAL",
+    "MAX_FINDINGS",
     "STRATEGIES",
     "SUPPORTED",
+    "IngestBlocked",
     "IngestError",
     "IngestedDocument",
     "assign_lane",
@@ -417,10 +558,12 @@ __all__ = [
     "document_item",
     "extract_entities",
     "extract_text",
+    "guard",
     "oversized",
     "plan",
     "predict_units",
     "prepare",
+    "screen",
 ]
 
 
@@ -468,6 +611,11 @@ def stage_documents(root: str, cfg: dict, documents: list[IngestedDocument]) -> 
     from ..memory_bridge import backend_target, stage_retain
     from . import documents as local_lane
 
+    # 쓰기 앞에 한 번 더 센다. `prepare`를 지난 문서는 이미 깨끗하지만 이 함수는 직접 조립한
+    # IngestedDocument도 받는다 — 검사를 지나는 문이 하나뿐이면 그 문을 안 지나는 길이 생긴다.
+    # 전수 선검사인 것도 의도다: 한 건이 걸릴 때 그 앞 문서만 저장돼 있으면 배치가 반쪽으로 남는다.
+    for document in documents:
+        guard(document.text, document.name)
     graph = [d for d in documents if d.lane == LANE_GRAPH]
     target = backend_target(cfg) if graph else {}
     staged: list[dict] = []

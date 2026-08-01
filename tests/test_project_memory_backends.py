@@ -903,6 +903,86 @@ class TestHindsightBackend(unittest.TestCase):
             },
         )
 
+    def _retain_against(self, payload: bytes, records):
+        class Response:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return None
+
+            def read(self, size=-1):
+                return payload
+
+        backend = get_backend({"engine": "hindsight", "endpoint": "http://memory:8888", "project_id": "demo"})
+        with mock.patch("urllib.request.urlopen", return_value=Response()):
+            return backend.retain(records)
+
+    def test_a_partial_acknowledgement_names_nothing_so_the_integrity_check_fires(self):
+        """수용 목록을 **응답**에서 만든다 — 보낸 목록으로 만들면 상위 검사가 자기 입력을 자기와 댄다.
+
+        서버가 셋 중 둘만 삼켰다고 말하면 어느 것이 빠졌는지는 알 수 없다. 그때 아무 id 나
+        채우는 것은 추측이고, 추측은 누락을 지운다 — 빠진 하나는 아무도 다시 보내지 않는다."""
+        records = [ProjectMemoryRecord(f"decision-{i}", f"결정 {i}") for i in (1, 2, 3)]
+        result = self._retain_against(b'{"success": true, "items_count": 2}', records)
+
+        self.assertTrue(result.success)
+        self.assertEqual(result.accepted_ids, ())
+        with self.assertRaisesRegex(ValueError, "inconsistent write result"):
+            self._publish(result, records)
+
+    def test_a_full_acknowledgement_is_read_as_every_item(self):
+        records = [ProjectMemoryRecord(f"decision-{i}", f"결정 {i}") for i in (1, 2)]
+        result = self._retain_against(b'{"success": true, "items_count": 2}', records)
+        self.assertEqual(sorted(result.accepted_ids), ["decision-1", "decision-2"])
+
+    def test_ids_named_by_the_server_win_over_the_count(self):
+        # 항목별로 이름을 대는 배포가 있으면 그쪽이 더 강한 증거다 — 셈은 어느 것인지 말하지 않는다
+        records = [ProjectMemoryRecord(f"decision-{i}", f"결정 {i}") for i in (1, 2)]
+        result = self._retain_against(b'{"success": true, "items_count": 2, "accepted_ids": ["decision-1"]}', records)
+        self.assertEqual(result.accepted_ids, ("decision-1",))
+
+    def test_an_echoed_request_list_is_not_read_as_an_acceptance_list(self):
+        """`items`는 요청을 되비친 것일 수 있다 — 그걸 수용으로 읽으면 고치려던 자리로 돌아간다."""
+        records = [ProjectMemoryRecord(f"decision-{i}", f"결정 {i}") for i in (1, 2, 3)]
+        echoed = b'{"success": true, "items_count": 2, "items": [{"document_id": "decision-1"}, '
+        echoed += b'{"document_id": "decision-2"}, {"document_id": "decision-3"}]}'
+        result = self._retain_against(echoed, records)
+        self.assertEqual(result.accepted_ids, ())
+
+    def _publish(self, result, records):
+        """`server_retain_items`의 정합성 검사를 이 결과에 그대로 태운다."""
+        from asgard.memory_bridge import server_retain_items
+
+        envelope = {
+            "project_uid": "11111111-1111-4111-8111-111111111111",
+            "binding_id": "22222222-2222-4222-8222-222222222222",
+        }
+        items = [
+            {
+                "content": record.text,
+                "context": record.context,
+                "document_id": record.record_id,
+                "metadata": dict(envelope),
+            }
+            for record in records
+        ]
+        backend = mock.Mock()
+        backend.retain.return_value = result
+        with (
+            mock.patch("asgard.memory_bridge.client.get_backend", return_value=backend),
+            mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
+            mock.patch("asgard.memory_bridge.verify_backend_binding", return_value=None),
+        ):
+            cfg = {
+                "engine": "hindsight",
+                "endpoint": "http://memory:8888",
+                "project_id": "demo",
+                "project_uid": "11111111-1111-4111-8111-111111111111",
+                "binding_id": "22222222-2222-4222-8222-222222222222",
+            }
+            return server_retain_items(cfg, items)
+
     def test_hindsight_learning_surface_uses_native_endpoints(self):
         class Response:
             def __init__(self, payload):

@@ -381,6 +381,10 @@ class TestTrinityLoop(Base):
             mock.patch(
                 "asgard.project_memory.retain_turn", return_value=TurnRetentionResult("retained", "asgard:turn:1")
             ) as retain,
+            # 리포 설정 한 줄로는 안 켜진다 — 이 기계의 허가가 따로 있다. 여기서 보는 것은 그
+            # 게이트가 아니라 켜졌을 때 턴이 어떻게 흐르는가이므로 판정을 세워 두고 들어간다
+            # (게이트 자체는 test_memory_bridge의 TestMachineApprovalGate가 잡는다).
+            mock.patch("asgard.memory_bridge.auto_retain_turns_enabled", return_value=True),
             mock.patch("asgard.memory_bridge.is_backend_trusted", return_value=True),
             mock.patch(
                 "asgard.project_memory.propose_completion",

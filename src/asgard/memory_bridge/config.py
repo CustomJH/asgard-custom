@@ -8,8 +8,10 @@ import hmac
 import json
 import os
 import secrets
+import shutil
 import stat
 import subprocess
+import sys
 import time
 from collections.abc import Mapping
 
@@ -60,11 +62,26 @@ def _write_binding_sidecar(root: str, project_id: str, project_uid: str, binding
         "project_uid": project_uid,
         "binding_id": binding_id,
     }
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as sink:
-        json.dump(payload, sink, ensure_ascii=False, indent=1)
-        sink.write("\n")
-    os.replace(tmp, path)
+    # 고정 이름은 남이 미리 만들어 둘 수 있는 자리다 (심볼릭 링크를 걸어 두면 우리가 그리로
+    # 쓴다). 정본 record 쓰기와 같은 규율로 맞춘다: 이름은 랜덤, 만들기는 O_EXCL, 자리 바꾸기는
+    # os.replace. 이 파일은 git으로 공유되는 소유권 마커라 권한만 0600이 아니다.
+    tmp = f"{path}.{os.getpid()}.{secrets.token_hex(4)}.tmp"
+    flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+    fd = os.open(tmp, flags, 0o644)
+    try:
+        sink = os.fdopen(fd, "w", encoding="utf-8")
+        fd = -1
+        with sink:
+            json.dump(payload, sink, ensure_ascii=False, indent=1)
+            sink.write("\n")
+            sink.flush()
+            os.fsync(sink.fileno())
+        os.replace(tmp, path)
+    finally:
+        if fd >= 0:
+            os.close(fd)
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
 
 
 def project_memory_disabled(section: Mapping[str, object] | None) -> bool:
@@ -77,19 +94,88 @@ def project_memory_disabled(section: Mapping[str, object] | None) -> bool:
     return str(value).strip().lower() in ("false", "off", "0")
 
 
+# ── 두 층의 승인·신뢰 규율 · 2차 쪽 짝 ────────────────────────────────────────────
+#
+# 대조표는 여기 없다. 정본은 `memory/policy.py`의 `autosave_enabled` 바로 위 한자리이고,
+# 여기는 그 표의 2차 열을 실제로 구현하는 자리다 — 표를 베껴 오지 않는 것이 요점이다.
+# 두 벌을 두면 한쪽만 고쳤을 때 갈리고, 갈린 것을 알려 줄 사람이 없다 (그 조용한 분기를
+# 막으려고 표를 하나로 모은 것이다).
+#
+# 이 파일이 그 표에 지고 있는 약속 셋 — 여기를 고칠 때 하나라도 어긋나면 표부터 고쳐라:
+#   · 리포 값은 **제안**이다. 실행이 되려면 이 기계의 trust store에 사람이 준 허가가 있어야
+#     한다 (`_machine_gated_state`). 1차가 리포 설정을 아예 안 보는 것과 같은 근거에서
+#     나온 규율이고, 다른 것은 "끄지 않고 한 번 더 묻는다"뿐이다.
+#   · 상태는 세 값이다. 참/거짓으로 뭉개면 "리포는 요청했는데 이 기계가 미승인"이 사라지고,
+#     사람은 자기가 승인해야 한다는 사실을 볼 자리를 잃는다.
+#   · 켜져도 지나는 길은 안 바뀐다 — 검증·Git 정본 선기록·backend 반영은 승인했을 때와
+#     같은 경로다. 사라지는 것은 왕복뿐이다.
+#
+# 사람 승인 게이트의 세 상태 — 사람에게 보여줄 수 있어야 하므로 참/거짓으로 뭉개지 않는다.
+GATE_OFF = "off"  # 리포가 요청하지 않았다
+GATE_UNAPPROVED = "unapproved"  # 리포가 요청했으나 이 기계가 아직 승인하지 않았다
+GATE_ON = "on"  # 이 기계가 승인했다 — 켜진 것은 이 상태뿐이다
+_TRUE = ("on", "1", "true", "yes")
+
+
+def _requested(cfg: Mapping[str, object] | None, key: str) -> bool:
+    """리포 설정이 그 손잡이를 켜 달라고 **제안**하는가 — 켜졌는가가 아니다."""
+    if not cfg:
+        return False
+    return str(cfg.get(key, "off")).strip().lower() in _TRUE
+
+
+def _machine_gated_state(cfg: Mapping[str, object] | None, key: str, grant: str) -> str:
+    """리포의 제안 + 이 기계의 허가 = 세 상태 중 하나.
+
+    왜 리포 값 하나로는 안 되는가: `.asgard/asgard-setting-project.json`은 git으로 공유되는
+    파일이라 커밋 한 줄이 팀 전원의 사람 승인 게이트를 끄게 된다. 1차 메모리가 같은 이유로
+    프로젝트 설정을 아예 안 보는 것과 같은 규율이다 (`memory/policy.py`의 autosave_enabled:
+    "clone으로 딸려 오는 파일에서 이 값을 켤 수 있으면 설정이 아니라 구멍이다").
+
+    1차와 다른 점은 **끄지 않고 한 번 더 묻는다**는 것뿐이다: 이 기억의 스코프는 프로젝트라
+    리포가 요청하는 것 자체는 정상이다. 그래서 리포 값은 제안으로만 받고, 실제로 켜지려면 이
+    기계의 trust store에 사람이 준 허가가 있어야 한다. 허가가 없으면 리포가 `on`이라도 꺼진
+    것으로 판정한다 (fail-closed)."""
+    if not _requested(cfg, key):
+        return GATE_OFF
+    from .trust import has_machine_grant
+
+    return GATE_ON if has_machine_grant(dict(cfg or {}), grant) else GATE_UNAPPROVED
+
+
+def autosave_state(cfg: Mapping[str, object] | None) -> str:
+    """2차(프로젝트) 메모리 자동저장의 게이트 상태 — GATE_OFF·GATE_UNAPPROVED·GATE_ON."""
+    from .trust import GRANT_AUTOSAVE
+
+    return _machine_gated_state(cfg, "autosave", GRANT_AUTOSAVE)
+
+
 def autosave_enabled(cfg: Mapping[str, object] | None) -> bool:
-    """2차(프로젝트) 메모리 자동저장 — `project_memory.autosave`, 기본 off.
+    """2차(프로젝트) 메모리 자동저장 — 리포 제안(`project_memory.autosave`) + 이 기계의 허가.
 
     켜면 `memory_retain`이 approval_id를 돌려주고 기다리는 대신 그 자리에서 커밋한다.
     지나는 길은 **한 글자도 안 바뀐다**: 검증(validate_record)·Git 정본 선기록·backend 반영은
     사람이 승인했을 때와 똑같은 `commit_approved_record`를 그대로 탄다. 사라지는 것은 왕복뿐이다.
 
-    1차와 달리 이 값은 프로젝트 설정에서 읽는다 — 이 기억의 스코프가 프로젝트이기 때문이다.
-    그래도 남의 저장소 설정 하나로 쓰기가 열리지는 않는다: 커밋은 여전히 **이 기계에서 신뢰된
-    backend**(is_backend_trusted)에서만 일어나고, 그 신뢰는 사람이 `asgard memory connect`로 준다."""
-    if not cfg:
-        return False
-    return str(cfg.get("autosave", "off")).strip().lower() in ("on", "1", "true", "yes")
+    허가가 왜 따로 필요한지는 `_machine_gated_state` 참조. 사람에게 "리포는 요청했는데 이
+    기계가 미승인"을 보여주려면 참/거짓이 아니라 `autosave_state`를 읽어야 한다."""
+    return autosave_state(cfg) == GATE_ON
+
+
+def auto_retain_turns_state(cfg: Mapping[str, object] | None) -> str:
+    """턴 원문 자동 적재의 게이트 상태 — GATE_OFF·GATE_UNAPPROVED·GATE_ON."""
+    from .trust import GRANT_AUTO_RETAIN_TURNS
+
+    return _machine_gated_state(cfg, "auto_retain_turns", GRANT_AUTO_RETAIN_TURNS)
+
+
+def auto_retain_turns_enabled(cfg: Mapping[str, object] | None) -> bool:
+    """대화 턴 원문을 공유 backend에 자동으로 적재하는가 — autosave와 같은 성질, 같은 허가 축.
+
+    이쪽은 승인 단계가 아예 없어서 리포 설정 한 줄이 곧 실행이었다. 자동저장보다 넓게 새는
+    손잡이다: 자동저장은 에이전트가 정제한 record 한 건이지만 이것은 사람이 쓴 턴 원문을
+    통째로 보낸다. 게이트가 더 헐거울 근거가 없으므로 같은 grant를 요구한다."""
+    return auto_retain_turns_state(cfg) == GATE_ON
 
 
 def project_memory_section(project: dict) -> dict | None:
@@ -303,33 +389,84 @@ def _pending_guard(root: str):
             os.remove(path)
 
 
-def _load_pending_unlocked(root: str) -> dict:
+def _warn(message: str) -> None:
+    """사람에게 남기는 경고 — stderr로 간다 (stdout은 MCP 프로토콜 전용이다)."""
+    with contextlib.suppress(Exception):
+        print(f"[asgard:memory] {message}", file=sys.stderr, flush=True)
+
+
+def _quarantine_pending(path: str, reason: str, *, move: bool) -> None:
+    """승인 대기 파일을 옆으로 비켜 둔다 — 지우지 않는다.
+
+    승인 대기는 사람이 이미 한 번 손을 댄 것이라, 못 읽는다고 조용히 버리면 사라진 것이
+    무엇이었는지 물어볼 자리조차 없어진다. `move`는 파일 전체가 못 읽히는 경우다(다음
+    저장이 새 파일을 만든다). 살아 있는 항목이 섞여 있으면 원본은 두고 사본만 남긴다.
+
+    이름은 내용 해시로 짓는다. 사본을 남기는 쪽은 원본이 그대로 있어서 **읽을 때마다** 다시
+    불리는데, 이름이 매번 다르면 격리본이 쌓여 그것대로 잃는 것이 된다. 같은 내용은 한 자리다."""
     try:
-        _apply_private_acl(_pending_path(root))
-        fd = os.open(_pending_path(root), os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        with open(path, "rb") as source:
+            digest = hashlib.sha256(source.read()).hexdigest()[:12]
+    except OSError as exc:
+        _warn(f"승인 대기 파일을 읽지 못해 격리도 못 했다 ({path}): {type(exc).__name__}: {exc}")
+        return
+    target = f"{path}.quarantine-{digest}"
+    if not move and os.path.exists(target):
+        return  # 이미 비켜 둔 내용이다 — 사본도 경고도 한 번이면 된다
+    try:
+        if move:
+            os.replace(path, target)
+        else:
+            shutil.copy2(path, target)
+        with contextlib.suppress(OSError):
+            os.chmod(target, 0o600)
+    except OSError as exc:
+        _warn(f"승인 대기 파일을 격리하지 못했다 ({path}): {type(exc).__name__}: {exc}")
+        return
+    _warn(f"승인 대기 파일을 {target} 로 격리했다 — 버린 것이 아니라 비켜 뒀다 ({reason})")
+
+
+def _load_pending_unlocked(root: str) -> dict:
+    path = _pending_path(root)
+    if not os.path.exists(path):
+        return {}  # 아직 아무도 승인 대기를 만들지 않았다 — 정상이고 경고할 것이 없다
+    try:
+        _apply_private_acl(path)
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
         try:
-            _validate_private_state_file(fd, "project-memory pending approval state", _pending_path(root))
+            _validate_private_state_file(fd, "project-memory pending approval state", path)
         except Exception:
             os.close(fd)
             raise
         with os.fdopen(fd, encoding="utf-8") as source:
             d = json.load(source)
         if not isinstance(d, dict):
-            return {}
-        now = time.time()
-        live: dict[str, dict] = {}
-        for approval_id, entry in d.items():
-            if not isinstance(approval_id, str) or not isinstance(entry, dict):
-                continue
-            try:
-                issued_at = float(entry.get("issued_at") or entry.get("ts") or 0)
-            except TypeError, ValueError:
-                continue
-            if issued_at > 0 and now - issued_at < PENDING_TTL:
-                live[approval_id] = entry
-        return live
-    except Exception:
+            raise ValueError("pending approval state must be a JSON object")
+    except Exception as exc:
+        _quarantine_pending(path, f"{type(exc).__name__}: {exc}", move=True)
         return {}
+    now = time.time()
+    live: dict[str, dict] = {}
+    malformed = 0
+    for approval_id, entry in d.items():
+        if not isinstance(approval_id, str) or not isinstance(entry, dict):
+            malformed += 1
+            continue
+        try:
+            issued_at = float(entry.get("issued_at") or entry.get("ts") or 0)
+        except TypeError, ValueError:
+            malformed += 1
+            continue
+        if issued_at <= 0:
+            malformed += 1
+            continue
+        if now - issued_at < PENDING_TTL:
+            live[approval_id] = entry
+    if malformed:
+        # 만료(TTL)로 빠지는 것은 설계다 — 경고하지 않는다. 형태가 깨진 것만 비켜 둔다:
+        # 다음 저장이 파일을 통째로 다시 쓰므로 여기서 안 남기면 그때 사라진다.
+        _quarantine_pending(path, f"형태가 깨진 항목 {malformed}건", move=False)
+    return live
 
 
 def _load_pending(root: str) -> dict:
@@ -486,6 +623,26 @@ def _save_consumed_unlocked(root: str, entries: dict[str, float]) -> None:
             os.remove(tmp)
 
 
+APPROVAL_ID_BYTES = 16  # 128비트. 32비트(4바이트)는 사람이 눈으로 셀 만한 건수에서 생일 충돌에 닿는다
+
+
+def _new_approval_id(root: str, pending: Mapping[str, object]) -> str:
+    """아직 아무도 안 쓴 approval id를 발급한다 — 엔트로피 128비트 + 발급 시 충돌 검사.
+
+    검사가 왜 따로 필요한가: 충돌한 id는 남의 승인을 덮어쓰거나(대기 중인 것을 잃는다) 이미
+    소비된 id로 태어난다(발급 즉시 죽은 승인). 128비트면 사실상 안 만나지만, 만났을 때
+    조용히 나쁜 쪽으로 지나가는 코드는 두지 않는다. consumed 저장소를 못 읽어도 발급은
+    막지 않는다 — 그 확인은 `claim_retain`이 소비 시점에 다시 한다."""
+    consumed: dict[str, float] = {}
+    with contextlib.suppress(OSError):
+        consumed = _load_consumed_unlocked(root)
+    for _ in range(8):
+        aid = secrets.token_hex(APPROVAL_ID_BYTES)
+        if aid not in pending and _approval_scope(root, aid) not in consumed:
+            return aid
+    raise OSError("failed to mint an unused project-memory approval id")
+
+
 def stage_retain(root: str, item: str | dict, *, target: dict | None = None) -> str:
     """승인 대기 등록 — 반환 = approval id (1회 소비)."""
     with _pending_guard(root):
@@ -514,7 +671,7 @@ def stage_retain(root: str, item: str | dict, *, target: dict | None = None) -> 
                     and secrets.compare_digest(expected_mac, actual_mac)
                 ):
                     return existing_id
-        aid = secrets.token_hex(4)
+        aid = _new_approval_id(root, pend)
         pend[aid] = {
             "item": item,
             "item_hash": item_hash,

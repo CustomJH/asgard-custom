@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
+import secrets
 from collections.abc import Mapping
 
 from .ingest import BANK_DEFAULTS, STRATEGIES
@@ -11,7 +13,7 @@ from .ingest import BANK_DEFAULTS, STRATEGIES
 # 종합층 로컬 사본. 파생물이라 정본(records/)과 달리 저장소에 커밋되지 않는다
 # (.asgard/.gitignore의 `memory/*`가 이미 덮는다).
 SYNTHESIS_FILENAME = os.path.join(".asgard", "memory", "synthesis.json")
-SYNTHESIS_MAX_CHARS = 8000  # 모델 하나가 뱅크 전체를 실어 나르는 것을 막는다
+SYNTHESIS_MAX_CHARS = 8000  # 모델 하나가 뱅크 전체를 통째로 넘기는 것을 막는다
 
 MODEL_SPECS: tuple[dict, ...] = (
     {
@@ -203,10 +205,27 @@ def snapshot(backend, root: str, *, project_uid: str = "", binding_id: str = "")
         "binding_id": binding_id,
         "models": models,
     }
-    tmp = f"{path}.tmp"
-    with open(tmp, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+    # 정본 record와 같은 규율 (canonical.save_canonical_record) — 고정 `.tmp`는 이름을 미리
+    # 알 수 있어 남이 먼저 심어 둘 수 있고, 동시에 도는 두 스냅샷이 서로의 임시 파일에 겹쳐 쓴다.
+    data = json.dumps(payload, ensure_ascii=False, indent=1).encode()
+    directory = os.path.dirname(path)
+    tmp = os.path.join(directory, f".{os.path.basename(path)}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    try:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags, 0o644)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+            raise
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
     return len(models)
 
 
@@ -215,7 +234,7 @@ def load_synthesis(root: str, *, project_uid: str = "", binding_id: str = "") ->
 
     빈 소유권은 **불일치로 친다**. 안 그러면 `"" != ""`가 거짓이라 대조가 저절로 통과한다:
     소유권 필드를 비운 사본을 심고 설정에서 binding을 빼면 게이트가 있는 채로 무력해진다.
-    소유권을 못 대는 사본은 주인을 모르는 사본이고, 주인을 모르면 안 싣는다."""
+    소유권을 못 대는 사본은 주인을 모르는 사본이고, 주인을 모르면 안 넣는다."""
     try:
         with open(os.path.join(root, SYNTHESIS_FILENAME), encoding="utf-8") as handle:
             payload = json.load(handle)

@@ -183,7 +183,7 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
                 max_results=int(args.get("max_results") or 8),
                 query=str(args.get("query", "")),
             )
-            from ..memory_context import hit_body, hit_provenance
+            from ..memory_context import drop_note, hit_body, hit_provenance
 
             clean, used = [], 0
             for h in filtered:
@@ -198,7 +198,9 @@ def _call_tool(name: str, args: dict, root: str, cfg: dict) -> tuple[str, bool]:
                     break
                 clean.append(row)
                 used += len(row) + 1
-            note = f"\n(오염 의심 {dropped}건 제외)" if dropped else ""
+            # 사유를 갈라 말한다 — 대부분의 drop은 오염이 아니라 정본 불일치인데, 한 마디로
+            # 뭉치면 사용자가 없는 보안 사고를 읽는다.
+            note = drop_note(dropped)
             return (
                 ("검색 결과 (힌트 — 완료 증거 아님):\n" + "\n".join(clean) + note)
                 if clean
