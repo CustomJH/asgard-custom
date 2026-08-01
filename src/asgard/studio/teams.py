@@ -22,6 +22,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from .. import errors
 from .db import StoreError, exists, meta_get, meta_set, read_bind, reading, write_bind, writing
 from .vocab import DEFAULT_STATES, ESTIMATE_SCALES, STATUS_TYPES
 
@@ -55,8 +56,10 @@ _ID = re.compile(r"^[0-9a-f]{32}$")
 _FALLBACK_KEY = "WRK"
 
 
-class TeamError(ValueError):
+class TeamError(errors.InvalidInput, ValueError):
     """팀 어휘를 어겼다 — 호출자가 고칠 수 있는 잘못이다."""
+
+    code = "invalid_team"
 
 
 def _now() -> float:

@@ -11,7 +11,7 @@
   planner  모델과의 계약(짓기만 한다, 저장하지 않는다)
   build    지은 것을 문서에 앉히는 규칙 — 초안은 앉히고 수정은 제안한다
 
-표면(창·CLI)은 `commands.plan_dashboard`가 진다. 이 패키지는 표면을 모른다.
+표면(창·CLI)은 `commands.plan_api`가 진다. 이 패키지는 표면을 모른다.
 """
 
 from .build import ask, converse, draft_flow, draft_prd, draft_spec, propose_section

@@ -28,6 +28,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from .. import errors
 from ..io_files import read_json, write_json
 
 SCHEMA_VERSION = 2
@@ -77,12 +78,16 @@ _MAX_TITLE = 200
 _LOCK = threading.Lock()
 
 
-class RevisionConflict(ValueError):
+class RevisionConflict(errors.Conflict, ValueError):
     """읽은 뒤에 남이 고쳤다 — 덮어쓰지 않고 되돌려 준다."""
 
+    code = "plan_conflict"
 
-class PlanNotReady(ValueError):
+
+class PlanNotReady(errors.Conflict, ValueError):
     """앞 문서가 비어 있어 뒤 문서를 만들 재료가 없다."""
+
+    code = "not_ready"
 
 
 def store_path() -> str:
@@ -114,7 +119,7 @@ def _home() -> str:
 def new_plan(idea: str, title: str = "", root: str = "") -> dict[str, Any]:
     """한 줄에서 시작한다 — 고를 것은 없다. 제목은 안 주면 그 한 줄에서 깎는다.
 
-    `root`는 이 기획이 **가리키는** 폴더지 사는 자리가 아니다. 비워도 된다 — 코드가 아직
+    `root`는 이 기획이 **가리키는** 폴더지 있는 자리가 아니다. 비워도 된다 — 코드가 아직
     없는 기획이 그렇고, 그게 기본이다."""
     idea = " ".join(str(idea or "").split())
     if not idea or len(idea) > _MAX_TEXT:
@@ -349,7 +354,7 @@ def _checked_items(spec: Any) -> list[dict[str, Any]]:
 
 
 def _reject_cycles(items: list[dict[str, Any]]) -> None:
-    """부모 사슬은 반드시 위로 끝나야 한다 — 고리가 있으면 트리를 그리는 쪽이 영원히 돈다."""
+    """부모 체인은 반드시 위로 끝나야 한다 — 고리가 있으면 트리를 그리는 쪽이 영원히 돈다."""
     parent = {row["id"]: row["parent"] for row in items}
     for start in parent:
         seen, cursor = {start}, parent[start]
@@ -626,7 +631,7 @@ def spec_tree(value: Any) -> list[dict[str, Any]]:
 
 
 def next_step(value: Any) -> dict[str, str]:
-    """지금 이어서 할 일 한 가지. 화면의 큰 버튼 하나가 이 값을 든다."""
+    """지금 이어서 할 일 한 가지. 화면의 큰 버튼 하나가 이 값을 쓴다."""
     plan = validate_plan(value)
     ready = readiness(plan)
     if not plan["prd"]["sections"]["overview"]["body"].strip():
@@ -713,7 +718,7 @@ def import_root(root: str, *, force: bool = False) -> dict[str, Any]:
 
     **원본은 안 지운다.** 반입이 뭔가 잘못됐을 때 돌아갈 곳이 있어야 하고, 그 폴더를 아직
     옛 버전으로 여는 사람이 있을 수 있다. 두 번 불러도 두 번 안 들어온다 — 표식 파일이
-    '이미 왔다'를 든다. 들어온 기획은 그 폴더를 `root`로 가리킨다(사는 자리가 아니라 링크)."""
+    '이미 왔다'를 쓴다. 들어온 기획은 그 폴더를 `root`로 가리킨다(있는 자리가 아니라 링크)."""
     root = os.path.abspath(root)
     source = project_store_path(root)
     out: dict[str, Any] = {"root": root, "imported": False, "plans": 0, "reason": ""}

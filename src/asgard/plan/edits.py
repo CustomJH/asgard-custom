@@ -13,11 +13,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from .. import errors
 from . import store
 
 
-class UnknownOp(ValueError):
-    pass
+class UnknownOp(errors.InvalidInput, ValueError):
+    """모르는 편집 연산 — 화면과 서버가 아는 연산 목록이 갈렸다는 뜻이다."""
+
+    code = "unknown_edit"
 
 
 def apply(plan_id: str, op: str, payload: dict[str, Any]) -> dict[str, Any]:

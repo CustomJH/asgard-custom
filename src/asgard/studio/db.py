@@ -2,7 +2,7 @@
 
 왜 파일을 하나 더 두는가 (다른 저장소 점검 결과):
 
-  · `.asgard/desktop/tasks.jsonl`은 실행 **이력**이다. 최근 200건만 남기고 매번 통째로 다시
+  · `.asgard/studio/tasks.jsonl`은 실행 **이력**이다. 최근 200건만 남기고 매번 통째로 다시
     쓴다 — 오래된 줄은 스스로 사라지는 것이 계약이다. 티켓은 반대다: 3개월 전 백로그가
     조용히 없어지면 그건 저장소가 아니라 유실이다.
   · 기획(`plans.json`)은 계획 한 덩어리를 revision으로 **통째 교체**한다. 티켓은
@@ -16,11 +16,11 @@
 
 여태 이 저장소는 `<프로젝트>/.asgard/studio/studio.db` — 폴더마다 하나였다. 그래서 폴더를
 옮기면 보드가 통째로 갈렸고, "지금 뭘 해야 하지"에 답하려면 **먼저 어느 폴더를 열지 알아야**
-했다. 일감은 그렇게 살지 않는다: 리팩터링 하나가 저장소 셋을 건드리고, 기획은 코드가 아직
+했다. 일감은 그렇게 있지 않다: 리팩터링 하나가 저장소 셋을 건드리고, 기획은 코드가 아직
 없는 데서 시작한다. Linear가 워크스페이스 아래 팀을 두는 이유가 그거다.
 
 그래서 자리를 하나로 모은다 — `<에이전트 홈>/studio/workspace.db` (`ASGARD_STUDIO_HOME`으로
-옮길 수 있다. 기획도 같은 자리에 산다 — `settings.workspace_home()`). 폴더는 사라지지 않고
+옮길 수 있다. 기획도 같은 자리에 있다 — `settings.workspace_home()`). 폴더는 사라지지 않고
 **팀으로 들어올 수 있다**: 번호(`NOR-12`)는 그 팀의 것이고, 팀은 폴더 없이도 서며, 프로젝트는
 팀을 가로지른다.
 
@@ -57,6 +57,8 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 
+from .. import errors
+
 SCHEMA_VERSION = 2
 # 자리를 옮기는 환경변수. 정본은 `settings.WORKSPACE_HOME_ENV` 다 — 기획도 같은 문을 본다.
 STUDIO_HOME_ENV = "ASGARD_STUDIO_HOME"
@@ -71,8 +73,10 @@ _WRITE_LOCK = threading.Lock()
 _BUSY_TIMEOUT_MS = 10_000
 
 
-class StoreError(RuntimeError):
+class StoreError(errors.Unavailable, RuntimeError):
     """저장소를 열 수 없다 — 정본이라 조용히 새로 만들지 않는다."""
+
+    code = "store_unavailable"
 
 
 # ── 자리 ───────────────────────────────────────────────────────────────────────

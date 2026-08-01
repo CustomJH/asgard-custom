@@ -83,7 +83,7 @@ def _valid_project_approval(root: str, name: str, text: str, receipt: dict) -> b
 
 
 def skill_dirs(root: str) -> list[str]:
-    """스캔 대상 — 프로젝트가 글로벌을 이긴다 (settings 병합 규칙과 동일 방향).
+    """스캔 대상 — 프로젝트가 글로벌을 우선한다 (settings 병합 규칙과 동일 방향).
 
     글로벌 쪽은 **활성 에이전트의** skills/ 다: 스킬은 그 에이전트가 무엇을 할 줄 아는가이므로
     에이전트를 가르면 같이 갈려야 한다 (기본 에이전트는 예전 경로 ~/.asgard/skills 그대로)."""

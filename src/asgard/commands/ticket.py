@@ -65,7 +65,7 @@ def _pad(text: str, cols: int) -> str:
 
 def _line(ticket: dict, width: int = 0) -> str:
     key = ticket["key"].ljust(width or len(ticket["key"]))
-    # 팀이 지은 상태 이름이 있으면 그것을 든다 — 기본 여섯 칸의 이름표로만 읽으면
+    # 팀이 지은 상태 이름이 있으면 그것을 쓴다 — 기본 여섯 칸의 이름표로만 읽으면
     # 팀이 만든 '배포 대기'가 화면에서 KeyError로 죽는다.
     name = ticket.get("status_label") or T.STATUS_LABEL.get(ticket["status"], ticket["status"])
     status = _pad(ui.fit(name, _STATUS_WIDTH), _STATUS_WIDTH)

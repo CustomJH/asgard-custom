@@ -30,6 +30,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from .. import errors
 from .db import StoreError, exists, reading, writing
 from .teams import ensure_team, find_cycle, find_team, next_key, states_of, team_for_root
 from .vocab import (
@@ -119,8 +120,14 @@ _MUTABLE = (
 )
 
 
-class TicketError(ValueError):
-    """티켓 어휘를 어겼다 — 호출자가 고칠 수 있는 잘못이다."""
+class TicketError(errors.InvalidInput, ValueError):
+    """티켓 어휘를 어겼다 — 호출자가 고칠 수 있는 잘못이다.
+
+    `ValueError`를 함께 상속하는 것은 하위 호환이다: 이 예외를 `except ValueError`로 받는
+    자리가 아직 남아 있고, 그 자리들을 한꺼번에 고치는 것과 이 계층을 들이는 것은 다른 일이다.
+    """
+
+    code = "invalid_ticket"
 
 
 def _now() -> float:
@@ -246,7 +253,7 @@ def _read_scope(conn: sqlite3.Connection, root: str | None, team: Any = None) ->
     자리에 따라 다른 답을 냈고, 저장소 밖에서 켠 창은 자기 일감을 못 찾았다. 일감은 폴더의
     것이 아니라 사람의 것이다 — 폴더는 이제 **거르는 값**이지 경계가 아니다.
 
-    규칙 셋: 명시한 팀이 이긴다 · `.`은 이 폴더에 매인 팀 · 나머지는 전부 워크스페이스 전체."""
+    규칙 셋: 명시한 팀이 우선한다 · `.`은 이 폴더에 매인 팀 · 나머지는 전부 워크스페이스 전체."""
     if not team:
         return None
     if isinstance(team, str):
@@ -982,7 +989,7 @@ def _base(row: sqlite3.Row) -> dict[str, Any]:
 
 
 def _decorate(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
-    """목록에 붙는 부속(팀·프로젝트·라벨·하위·차단·댓글 수)을 **한 벌씩** 읽는다.
+    """목록에 붙는 부속(팀·프로젝트·라벨·하위·차단·댓글 수)을 **한 묶음씩** 읽는다.
 
     티켓마다 여섯 번 물어보면 40건짜리 보드가 240개 질의가 된다 — 화면이 목록 길이에 비례해
     느려지는 것은 저장소를 바꾼 이유를 스스로 무르는 일이다."""
@@ -1012,7 +1019,7 @@ def _decorate(conn: sqlite3.Connection, rows: list[sqlite3.Row]) -> list[dict[st
         for row in conn.execute("SELECT id, name, color, icon FROM projects")
     }
     stones = {str(row["id"]): str(row["name"]) for row in conn.execute("SELECT id, name FROM milestones")}
-    # 상위 티켓 — 목록의 한 줄도 "이게 무엇의 조각인가"를 말해야 한다. 상세에만 실으면
+    # 상위 티켓 — 목록의 한 줄도 "이게 무엇의 조각인가"를 말해야 한다. 상세에만 넣으면
     # 하위 티켓이 목록에서 고아처럼 보이고, 사람은 그것만 보고 우선순위를 매긴다.
     parents = {
         str(row["id"]): {"key": str(row["key"]), "title": str(row["title"])}

@@ -23,6 +23,7 @@ import time
 from typing import Any
 from uuid import uuid4
 
+from .. import errors
 from .db import StoreError, exists, reading, writing
 from .teams import resolve_team
 from .vocab import (
@@ -68,8 +69,10 @@ _MAX_UPDATE = 10_000
 _ID = re.compile(r"^[0-9a-f]{32}$")
 
 
-class ProjectError(ValueError):
+class ProjectError(errors.InvalidInput, ValueError):
     """프로젝트 어휘를 어겼다 — 호출자가 고칠 수 있는 잘못이다."""
+
+    code = "invalid_project"
 
 
 def _now() -> float:
@@ -110,7 +113,7 @@ def _progress(conn: sqlite3.Connection, project_id: str) -> dict[str, Any]:
     """이 프로젝트의 진척 — 티켓 수로 센다.
 
     추정치(estimate)가 있으면 그쪽이 더 정확하지만, 팀마다 눈금이 다르고 안 쓰는 팀도 있다.
-    두 수를 다 실어 보내고 **어느 쪽을 볼지는 표면이 고른다** — 여기서 하나로 접으면
+    두 수를 다 넣어 보내고 **어느 쪽을 볼지는 표면이 고른다** — 여기서 하나로 접으면
     추정을 안 쓰는 팀의 진척이 0으로 보인다."""
     row = conn.execute(
         "SELECT COUNT(*) AS total, "

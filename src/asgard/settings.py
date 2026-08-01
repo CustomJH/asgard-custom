@@ -6,7 +6,7 @@
   런타임   <root>/.asgard/state/                     (lagom-mode·route-priors·classify·
                                                        writes-*·memory-pending — 설정 아님)
 
-섹션 스키마 (양쪽 동일 — 프로젝트가 글로벌을 키 단위로 이긴다):
+섹션 스키마 (양쪽 동일 — 프로젝트가 글로벌을 키 단위로 우선한다):
   provider / trinity(네이티브 역할 배치) / agent_models(호스트별 역할 모델) / bridge /
   lagom / memory(글로벌 — 개인 메모리) / project_memory(프로젝트 전용 — 공유 backend,
   구 키 memory는 폴백으로만 읽는다) / ui / trinity_policy(프로젝트 전용)
@@ -198,7 +198,7 @@ def save_global(section_name: str, kv: dict) -> str:
 
     쓰기는 **활성 에이전트의 파일에만** 한다 — 병합 뷰를 저장하면 뿌리의 값이 프로파일로
     복제돼, 뿌리를 고쳐도 안 따라오는 유령 사본이 된다."""
-    with _WRITE_LOCK:  # 읽기-고치기-쓰기 한 벌 — 겹치면 나중 쓰기가 앞 섹션을 못 본 채 덮는다
+    with _WRITE_LOCK:  # 읽기-고치기-쓰기 한 곳 — 겹치면 나중 쓰기가 앞 섹션을 못 본 채 덮는다
         data = _own_global(global_dir())
         data[section_name] = {k: v for k, v in kv.items() if v is not None}
         _atomic_json(global_path(), data)

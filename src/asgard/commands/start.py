@@ -11,7 +11,7 @@ import importlib.util
 import os
 import sys
 
-from .. import sandbox, ui
+from .. import errors, sandbox, ui
 from ..providers import ResolvedProvider, resolve
 
 
@@ -117,6 +117,43 @@ def _render(checks: list) -> None:
             sys.stdout.write(f"      {ui.paint(ui._INFO, '→')} {c['fix']}\n")
 
 
+def preflight_error(checks: list[dict]) -> errors.PreflightFailed | None:
+    """못 넘은 점검을 **하나의 사실**로 묶는다 — 통과했으면 None.
+
+    여태 이 사실은 터미널에 그려진 픽셀로만 존재했다. 그래서 같은 실패를 창이 받으면 쓸 것이
+    없었다: 스튜디오는 `asgard run --json`을 자식 프로세스로 띄우는데, 프리플라이트가 막히면
+    JSON 대신 색칠된 체크리스트가 stdout에 실려 왔고, 창은 그것을 파싱하지 못한 채 결과 칸에
+    통째로 부었다. 그게 사용자가 본 난잡함이다.
+
+    처방은 **첫 번째 못 넘은 항목**의 것을 쓴다. 전부 나열하면 처방이 다시 목록이 되고, 목록은
+    사람이 무엇부터 할지 못 고른다 — 나머지는 `detail.checks`에 그대로 있으니 잃지 않는다."""
+    failed = [c for c in checks if not c.get("ok")]
+    if not failed:
+        return None
+    names = ", ".join(str(c.get("name") or "?") for c in failed)
+    remedy = next((str(c.get("fix")) for c in failed if c.get("fix")), "")
+    return errors.PreflightFailed(
+        f"세션을 열 수 없습니다 — 점검 {len(failed)}건이 막혔습니다 ({names})",
+        remedy=remedy,
+        detail={"checks": checks},
+    )
+
+
+def _render_failure(checks: list[dict], failure: errors.PreflightFailed) -> None:
+    """사람이 보는 얼굴 — 점검표를 먼저, 판정을 마지막에.
+
+    처방을 여기서 또 적지 않는다. 못 넘은 줄 바로 아래에 이미 `→`로 붙어 있고, 같은 문장을
+    끝에 한 번 더 쓰면 두 줄 중 어느 쪽이 그 항목의 것인지 사람이 다시 짚어야 한다.
+    (JSON 쪽은 반대로 `remedy` 필드가 필요하다 — 거기엔 점검표를 그릴 화면이 없다.)
+
+    판정 전에 stdout을 비우는 이유는 두 흐름이기 때문이다: 점검표는 stdout, 판정은 stderr.
+    파이프로 물리면 stdout이 블록 버퍼가 되어, 안 비우면 **판정이 점검표보다 먼저** 찍힌다."""
+    _render(checks)
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    ui.fail(failure.message)
+
+
 def run_start(
     check_only: bool = False,
     provider: str | None = None,
@@ -131,12 +168,13 @@ def run_start(
     if check_only:
         ui.head("start · preflight")
         checks, _ = preflight(root, provider=provider, model=model)
-        _render(checks)
-        if all(c["ok"] for c in checks):
+        failure = preflight_error(checks)
+        if failure is None:
+            _render(checks)
             ui.done("preflight clean — 세션 진입 가능")
             return 0
-        ui.warn("세션을 열 수 없습니다 — 위 처방을 적용한 뒤 다시 실행하세요.")
-        return 2
+        _render_failure(checks, failure)
+        return failure.exit_code
 
     try:
         execution = sandbox.choose_mode(execution)
@@ -187,10 +225,17 @@ def run_prompt(
 
     i18n.load_lang(root)
     checks, rp = preflight(root, provider=provider, model=model)
-    if not all(c["ok"] for c in checks):
-        _render(checks)
-        ui.warn("headless 실행 불가 — 위 처방을 적용하세요.")
-        return 2
+    failure = preflight_error(checks)
+    if failure is not None:
+        # `--json`은 **실패에도 JSON**이다. 여기가 여태 계약이 깨지던 자리다: 성공하면 JSON,
+        # 막히면 색칠된 체크리스트 — 그래서 이 명령을 자식 프로세스로 띄우는 스튜디오는
+        # 실패할 때만 파싱할 것이 없었고, 원문을 그대로 화면에 부었다. 기계가 읽는 표면에서
+        # 실패 경로만 사람 말로 새면, 그 표면은 실패를 다룰 수 없는 표면이다.
+        if json_out:
+            sys.stdout.write(_json.dumps(errors.json_error(failure), ensure_ascii=False) + "\n")
+        else:
+            _render_failure(checks, failure)
+        return failure.exit_code
     os.environ.setdefault("ASGARD_UNATTENDED", "1")  # Canon 8 — headless는 무인, 게이트도 이 신호를 본다
     from ..agent.heimdall import Heimdall
 

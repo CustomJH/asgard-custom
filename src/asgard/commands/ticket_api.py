@@ -1,7 +1,7 @@
 """스튜디오 창이 일감을 읽고 고치는 문 — `/api/tickets*` · `/api/teams*` · `/api/projects*`.
 
 라우팅만 진다. 어휘와 규칙은 전부 `asgard.studio`가 소유하고, 여기서는 그것을 JSON으로
-옮기기만 한다. 상태·우선순위 목록도 **서버가 실어 보낸다**: 화면이 같은 enum을 한 벌 더
+옮기기만 한다. 상태·우선순위 목록도 **서버가 함께 보낸다**: 화면이 같은 enum을 하나 더
 들고 있으면, 칸 하나를 늘릴 때 두 곳을 고쳐야 하고 언젠가 한 곳만 고친다.
 
 경계는 폴더가 아니라 워크스페이스다. 그래서 모든 읽기는 `team`을 받되, **안 주면 전체**다 —
@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from .. import errors
 from ..studio import legacy
 from ..studio import projects as P
 from ..studio import teams as TM
@@ -76,7 +77,10 @@ def _json(status: int, value: object) -> tuple[int, str, bytes]:
 
 
 def _error(status: int, code: str, message: str) -> tuple[int, str, bytes]:
-    return _json(status, {"error": {"code": code, "message": message}})
+    """오류 한 겹은 `loopback`이 소유한다 — 이 파일이 네 번째 사본이 되지 않게."""
+    from . import loopback
+
+    return loopback.api_error(status, code, message)
 
 
 def _one(params: dict[str, list[str]], key: str, default: str = "") -> str:
@@ -156,10 +160,10 @@ def _legacy_roots(root: str) -> list[str]:
 
     창은 이제 개인 작업 공간에서 열린다. 그 자리만 보면 옛 보드는 영영 안 보이고, 사용자는
     자기 티켓이 사라졌다고 읽는다. 반입은 폴더를 열어야 알 수 있는 일이 아니다."""
-    from . import desktop_store
+    from . import studio_store
 
     try:
-        roots = desktop_store.known_roots(root or None)
+        roots = studio_store.known_roots(root or None)
     except Exception:
         roots = [root] if root else []
     return legacy.pending_roots(roots)
@@ -176,11 +180,13 @@ def dispatch(
     payload = payload or {}
     try:
         return _route(method, path, params, payload, root)
-    except (T.TicketError, TM.TeamError, P.ProjectError) as exc:
-        return _error(400, "invalid_ticket", str(exc))
-    except T.StoreError as exc:
-        # 정본을 못 열었다 — 빈 보드로 가장하지 않는다. 사용자가 "티켓이 없다"고 읽으면 안 된다.
-        return _error(503, "store_unavailable", str(exc))
+    except errors.AsgardError as exc:
+        # 상태 코드는 **예외가 안다**. 여기에 표를 하나 더 두면, 새 도메인 오류가 생겼을 때
+        # 이 표에 줄을 안 더한 것만으로 "사용자가 고칠 수 있는 잘못"이 500으로 나간다.
+        # (정본을 못 연 경우가 503으로 가는 것도 그 규칙의 결과다 — 빈 보드로 가장하지 않는다.)
+        from . import loopback
+
+        return loopback.error_result(exc, surface="tickets", root=root, where=path)
 
 
 def _route(method: str, path: str, params: dict[str, list[str]], payload: dict, root: str) -> tuple[int, str, bytes]:

@@ -70,8 +70,8 @@ _GITIGNORE_BLOCK = (
     ".asgard/memory/*\n"
     "!.asgard/memory/records/\n"
     "!.asgard/memory/records/**\n"
-    # 로컬 레인 문서 정본 — 팀에는 뱅크가 아니라 저장소가 나른다 (project_memory.documents).
-    # 파생 인덱스(documents.db)는 `.asgard/memory/*`가 그대로 무시한다 — 되살릴 수 있는 것은 안 나른다.
+    # 로컬 레인 문서 정본 — 팀에는 뱅크가 아니라 저장소가 전달한다 (project_memory.documents).
+    # 파생 인덱스(documents.db)는 `.asgard/memory/*`가 그대로 무시한다 — 되살릴 수 있는 것은 안 전달한다.
     "!.asgard/memory/documents/\n"
     "!.asgard/memory/documents/**\n"
     "!.asgard/memory/binding.json\n"
@@ -279,7 +279,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
 
 
 def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, str]]:
-    """한 클라이언트의 `hooks/`에 깔 훅 표 — 본문이 아니라 데이터라서 함수 밖에 산다.
+    """한 클라이언트의 `hooks/`에 깔 훅 표 — 본문이 아니라 데이터라서 함수 밖에 있다.
 
     plan_files 안에 두면 훅을 하나 더할 때마다 이미 200행인 함수가 길어진다 (craft 게이트가
     잡은 자리). 표를 이름 있는 자리로 옮기면 추가는 표에 한 줄이고 함수는 안 자란다.

@@ -43,6 +43,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "profiles",
                 "sandbox",
                 "failures",
+                # errors — 예외의 정본(코드·처방·상태). failures 와 같은 자리에 둔다: 둘 다
+                # 어휘층이고 무의존이다(ui 는 render_cli 안에서만 늦게 본다). 모든 계층이
+                # 예외를 던지므로 이보다 위에 두면 아래 계층이 자기 오류를 못 만든다.
+                "errors",
                 "picker",
                 "winterm",
             }
@@ -76,6 +80,9 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "craft_rules",
                 "craft_lex",
                 "craft_c",
+                # craft_note — 주석 문체 판정. craft_rules(코드 형상)와 같은 층이고 같은 계약을
+                # 진다: 순수 함수, 파일 시스템 안 만짐, 래칫은 craft가 건다.
+                "craft_note",
                 "thor_gate",
                 # freyja_gate — 시각 표면의 래칫. craft(형상)·thor_gate(정확성)와 같은 층이고
                 # 같은 계약을 진다. 규칙을 스스로 갖지 않고 각 엔진이 배송한 판정기를 부른다.
@@ -89,6 +96,12 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "tutor_growth",
                 "map_context",
                 "map_graph",
+                # map_lex — 질의 어휘 사전. craft_lex·thor_lex와 같은 자리다: 순수 표이고, 그것을
+                # 쓰는 판정(map_context 랭킹)은 위가 아니라 옆에 있다.
+                "map_lex",
+                # map_notes — 근거 주석 레인. map_graph(관계)와 같은 층의 다른 레인이다:
+                # 소스에서 증거를 뽑고, 그것을 어디에 쓸지는 위층이 정한다.
+                "map_notes",
                 "k6",
                 "evolution",
                 "evolution_bench",
@@ -99,7 +112,7 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "swarm",
                 # studio — 일감(티켓)의 어휘와 규칙, 그리고 그것을 담는 프로젝트 로컬 저장소.
                 # memory 군과 같은 자리다: 자기 저장소를 소유하고 규칙만 진다(표면 없음). 위층
-                # 셋이 이걸 쓴다 — 창(commands.desktop)·CLI(commands.ticket)·툴(agent.tools).
+                # 셋이 이걸 쓴다 — 창(commands.studio)·CLI(commands.ticket)·툴(agent.tools).
                 "studio",
                 # plan — 기획 문서 셋(PRD·기능 명세서·유저 플로우)의 형상·검사·저장소. studio와
                 # 같은 자리다. 모델 호출(agent.oneshot)은 상향이라 함수 안 lazy 로만 부른다.
@@ -263,10 +276,10 @@ class TestLayeredArchitecture(unittest.TestCase):
         )
 
 
-# Studio 안쪽의 사슬 — `commands.desktop` 패키지는 아래로만 기댄다. 이 순서가 곧 계약이다:
+# Studio 안쪽의 사슬 — `commands.studio` 패키지는 아래로만 기댄다. 이 순서가 곧 계약이다:
 # 왼쪽이 오른쪽을 부를 수 없다. 하나라도 뒤집히면 순환이 생기고, 순환이 생기면 "이 모듈만
 # 읽으면 된다"가 다시 거짓이 된다 (1,586줄 한 파일로 돌아가는 첫걸음이 그것이었다).
-DESKTOP_CHAIN = (
+STUDIO_CHAIN = (
     "state",
     "dialog",
     "boundary",
@@ -283,8 +296,8 @@ DESKTOP_CHAIN = (
 class TestStudioPackage(unittest.TestCase):
     """스튜디오 창의 안쪽 — 한 파일이던 것을 책임별로 가른 뒤의 불변식."""
 
-    def _desktop_modules(self) -> dict[str, ast.Module]:
-        base = os.path.join(SRC, "commands", "desktop")
+    def _studio_modules(self) -> dict[str, ast.Module]:
+        base = os.path.join(SRC, "commands", "studio")
         out = {}
         for entry in sorted(os.listdir(base)):
             if entry.endswith(".py") and entry != "__init__.py":
@@ -294,14 +307,14 @@ class TestStudioPackage(unittest.TestCase):
 
     def test_every_module_is_placed_on_the_chain(self):
         """새 모듈은 자리를 얻고 들어온다 — 미배치는 '어디에 기대는지 아무도 안 정했다'는 뜻."""
-        unplaced = set(self._desktop_modules()) - set(DESKTOP_CHAIN)
-        self.assertFalse(unplaced, f"사슬에 자리 없는 모듈: {sorted(unplaced)} — DESKTOP_CHAIN 에 배치하라")
+        unplaced = set(self._studio_modules()) - set(STUDIO_CHAIN)
+        self.assertFalse(unplaced, f"사슬에 자리 없는 모듈: {sorted(unplaced)} — STUDIO_CHAIN 에 배치하라")
 
     def test_the_package_leans_only_downward(self):
         """위 모듈은 아래를 부르고, 아래는 위를 모른다."""
-        rank = {name: index for index, name in enumerate(DESKTOP_CHAIN)}
+        rank = {name: index for index, name in enumerate(STUDIO_CHAIN)}
         violations: list[str] = []
-        for name, tree in self._desktop_modules().items():
+        for name, tree in self._studio_modules().items():
             for node in ast.walk(tree):
                 if not isinstance(node, ast.ImportFrom) or node.level != 1 or node.col_offset != 0:
                     continue  # 함수 안 lazy 임포트는 의도된 탈출구다 (계층 규칙과 같은 관용)

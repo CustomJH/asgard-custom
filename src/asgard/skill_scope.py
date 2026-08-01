@@ -8,7 +8,7 @@
 왜 결정론인가 — 스킬 카탈로그는 이미 설명만 노출하고 모델이 `load_skill`로 고르는 구조인데,
 파일 플러그인의 트리거 매칭이 `trigger in task` 부분 문자열이라 한국어 지시에는 사실상 불발한다
 ("소셜 로그인 버튼 추가해줘"는 어느 영어 트리거에도 안 걸린다). 범위를 코드가 먼저 재고 결속
-스킬을 **이름으로** 지목해 주면, 모델의 자율 선택은 그대로 두면서 발견 실패만 걷어낸다.
+스킬을 **이름으로** 지목해 주면, 모델의 자율 선택은 그대로 두면서 발견 실패만 제거한다.
 
 `work_shape`는 순수 함수 (LLM·IO 없음). `scope_note`만 레지스트리를 조회해 실제로 그 역할에
 열려 있는 스킬로 이름을 걸러 낸다 — 없는 스킬을 지목하는 노트는 거짓말이므로.
@@ -232,7 +232,7 @@ def scope_note(
         _SHAPE_CONTRACT[shape],
     ]
     if facts and facts.get("structural"):
-        # 근거를 함께 싣는다 — "구조 규율을 켰다"만 있으면 모델이 왜인지 되짚느라 턴을 쓴다
+        # 근거를 함께 넣는다 — "구조 규율을 켰다"만 있으면 모델이 왜인지 되짚느라 턴을 쓴다
         lines.append(
             f"Observed change shape is structural ({facts['why']}), so the architecture discipline is in scope"
             " regardless of how the request was worded. This is an observation about the change, not a"
