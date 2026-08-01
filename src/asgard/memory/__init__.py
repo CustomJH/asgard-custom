@@ -17,7 +17,13 @@
   기계적으로 재생성되는 파생물 — 지워도(또는 손상돼도) 지식은 죽지 않는다.
 
 구조:  SCHEMA.md(규약) · index.md(카탈로그) · log.md(append-only 운영 로그)
-       · pages/<slug>.md(frontmatter+본문) · state.db(FTS5 파생 인덱스+usage)
+       · pages/<slug>.md(frontmatter+본문) · state.db(FTS5·vec 파생 인덱스+회수 계수)
+       · usage.json(회수 기록) · contradictions.json(미해결 모순 장부)
+
+정본과 파생을 가르는 자는 "pages/ 에서 다시 만들 수 있는가" 하나다. 뒤의 두 JSON 이 정본
+쪽에 있는 이유가 여기 있다 — 사람이 무엇을 찾았는지와 무엇을 보고 넘겼는지는 페이지에서
+재생되지 않는다. 예전에 회수 기록이 state.db 에만 있었고, 그래서 파생물을 지우는 정상
+경로가 원본 데이터를 같이 지웠다 (memory.usage · memory.contradiction).
 
 보안 (P0, 감사 26-07-15 반영): 메모리는 시스템 프롬프트에 주입되므로 오염이 세션
 전체·세션 간 지속된다. 방어 — ① 쓰기 시 본문+메타데이터(title/links) 전부 인젝션
@@ -34,11 +40,17 @@
 패키지 구성 (파사드 — 공개 표면은 이 모듈에서 전부 재수출):
   policy(설정·게이트·인젝션 스캔) · store(파일시스템 원시·페이지 직렬화) ·
   index(index.md·state.db 파생) · recall(hybrid RRF+명시-link PPR·스냅샷·회수·증류 넛지) ·
-  pages(add/ingest/remove/merge·lint) · okf(단방향 export)
+  pages(add/ingest/remove/merge·lint) · usage(노출/사용 구분·회수 기록 정본) ·
+  contradiction(미해결 모순 장부) · okf(단방향 export)
 """
 
 from __future__ import annotations
 
+from .contradiction import (
+    acknowledge_contradiction,
+    contradiction_key,
+    open_contradictions,
+)
 from .index import (
     _connect,
     _db,
@@ -117,6 +129,7 @@ from .recall import (
 )
 from .store import (
     _SCHEMA_MD,
+    CONTRADICTIONS,
     DB,
     DEFAULT_KIND,
     DEFAULT_SKILL_PREFERENCE_SLUG,
@@ -125,6 +138,7 @@ from .store import (
     LOG,
     PAGES,
     SCHEMA,
+    USAGE,
     _atomic_write,
     _chmod,
     _desc,
@@ -134,6 +148,7 @@ from .store import (
     _page_path,
     _pages,
     _read,
+    _read_all,
     _today,
     ensure_home,
     log_op,
@@ -145,9 +160,15 @@ from .store import (
     valid_slug,
 )
 from .temporal import event_date, ground_event_date
+from .usage import counters as usage_counters
+from .usage import flush as usage_flush
+from .usage import forget as usage_forget
+from .usage import hydrate as usage_hydrate
+from .usage import usage_of
 
 __all__ = [
     "AUTOSAVE_ENV",
+    "CONTRADICTIONS",
     "DB",
     "DEFAULT_KIND",
     "DEFAULT_SKILL_PREFERENCE_SLUG",
@@ -169,6 +190,7 @@ __all__ = [
     "SCHEMA",
     "SEM_FLOOR",
     "STALE_DAYS",
+    "USAGE",
     "_IMPERATIVE_PATTERNS",
     "_PREFERENCE_PATTERNS",
     "_SCHEMA_MD",
@@ -198,6 +220,7 @@ __all__ = [
     "_pages",
     "_preference_parts",
     "_read",
+    "_read_all",
     "_rev",
     "_sem_floor",
     "_snapshot_rows",
@@ -207,9 +230,11 @@ __all__ = [
     "_vec_prune",
     "_vec_text",
     "_vec_upsert",
+    "acknowledge_contradiction",
     "add",
     "autosave_enabled",
     "build_index",
+    "contradiction_key",
     "distill_nudge",
     "ensure_home",
     "export_okf",
@@ -222,6 +247,7 @@ __all__ = [
     "log_op",
     "memory_dir",
     "merge",
+    "open_contradictions",
     "parse_page",
     "plan_ingest",
     "poisoned",
@@ -240,6 +266,11 @@ __all__ = [
     "ground_event_date",
     "section_usage",
     "snapshot_note",
+    "usage_counters",
+    "usage_flush",
+    "usage_forget",
+    "usage_hydrate",
+    "usage_of",
     "usage_stats",
     "valid_slug",
     "vec_coverage",

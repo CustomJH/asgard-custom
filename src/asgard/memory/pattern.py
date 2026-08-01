@@ -5,9 +5,9 @@
 말이 되게 자립시킨다. Asgard로 옮기면서 바꾼 것은 신뢰의 위치다 — 상류는 LLM 산출을
 그대로 저장하지만, 여기서는 노른과 같은 규율을 쓴다: **LLM은 제안하고, 코드가 판정한다**.
 
-판정의 핵심은 근거 접지(grounding)다. explicit 주장은 인용한 턴 안에 실제로 그 낱말이
+판정의 핵심은 근거 대조(grounding)다. explicit 주장은 인용한 턴 안에 실제로 그 낱말이
 있어야 한다 — 모델이 "오딘은 Rust를 좋아한다"고 말해도 그 턴에 Rust가 없으면 기각한다.
-이 검사 하나가 개인 기억에 허구가 눌러앉는 경로를 막는다. deductive는 접지 대신 근거 턴
+이 검사 하나가 개인 기억에 허구가 눌러앉는 경로를 막는다. deductive는 근거 대조 대신 근거 턴
 2개 이상을 요구하고 confidence를 낮춰 잡는다 (근거 수가 confidence를 정한다 — 노른과 동일).
 
 peer card는 상류의 같은 이름 개념이다: 확신 높은 explicit 관측만 모은 짧은 정체성 요약
@@ -33,7 +33,7 @@ STATE_FILE = "pattern-state.json"
 REPORTS_DIR = "reports"
 PEER_CARD_SLUG = "odin-peer-card"
 
-MAX_TURNS = 40  # 한 패스가 보는 최근 턴 상한 — 프롬프트 예산과 접지 검사 비용의 균형
+MAX_TURNS = 40  # 한 패스가 보는 최근 턴 상한 — 프롬프트 예산과 근거 검사 비용의 균형
 MAX_TURN_CHARS = 700  # 턴 하나당 발췌 상한
 MIN_TURNS = 3  # 이보다 적으면 패턴이라 부를 수 없다
 MAX_EXPLICIT, MAX_DEDUCTIVE = 5, 3  # 한 패스 승격 상한 (노른 캡과 같은 취지)
@@ -211,14 +211,19 @@ def signals(root: str, d: str | None = None) -> dict:
 
 
 def _grounded(text: str, turns: list[dict]) -> float:
-    """주장의 내용어 중 인용 턴에 실제로 있는 비율. 접지 없는 explicit은 허구다.
+    """주장의 내용어 중 인용 턴에 실제로 있는 비율. 근거 없는 explicit은 허구다.
 
     낱말 대조는 집합 교집합이 아니라 어간 일치다 (`_stem_hit`). 한국어는 조사·어미가 뒤에
-    붙어서 교집합으로 재면 **완벽히 접지된 관측이 0.000이 나온다** — "금요일에 배포하지
+    붙어서 교집합으로 재면 **근거가 완벽한 관측이 0.000이 나온다** — "금요일에 배포하지
     않는다"와 "금요일에는 배포를 안 하는 게"가 한 낱말도 안 겹친다. 실측(26-07-28,
-    한국어 4·영어 1): 접지된 관측 5건 중 3건이 플로어 미달로 오탈락했고, 어간 일치로
+    한국어 4·영어 1): 근거가 확인된 관측 5건 중 3건이 플로어 미달로 오탈락했고, 어간 일치로
     바꾸니 5/5 통과했다. 허구 5건은 두 방식 모두 통과 0 (교집합 0.000, 어간 최대
-    0.167)이라 판별력은 오히려 벌어진다 — 플로어를 낮춘 게 아니라 자를 고친 것이다."""
+    0.167)이라 판별력은 오히려 벌어진다 — 플로어를 낮춘 게 아니라 자를 고친 것이다.
+
+    자는 26-08-01 에 한 번 더 갈렸다. 위 실측이 쓰던 어간 규칙은 낱말 길이의 절반이었는데,
+    그 자는 `저장소`를 `저장`으로 깎아 없는 근거를 셌다. 지금은 조사·어미 **목록**으로 깎는다
+    (`recall._stem_floor`). 이 함수의 식은 그대로고 낱말 판정만 정확해졌다 — 관측 게이트에서
+    허구 오탐이 7건 중 2건으로 줄고 진짜 5건은 전부 남는다 (`benchmarks/grounding/REPORT.md`)."""
     claim = {word for word in _content_words(text) if not _stopword(word)}
     if not claim:
         return 0.0
@@ -414,7 +419,7 @@ def peer_card_rows(d: str) -> list[tuple[str, str]]:
 def write_peer_card(d: str | None = None) -> str:
     """오딘 요약 카드 한 장 — kind=user 관측을 모아 재생성한다 (파생물, 언제든 다시 만든다).
 
-    reports/ 가 아니라 pages/ 에 산다: 회상·주입 경로가 이 문장들을 실제로 써야 하기 때문이다.
+    reports/ 가 아니라 pages/ 에 있다: 회상·주입 경로가 이 문장들을 실제로 써야 하기 때문이다.
     대신 예산을 위해 짧게 유지하고, 근거는 [[slug]]로 가리킨다."""
     d = ensure_home(d)
     rows = peer_card_rows(d)
@@ -480,7 +485,7 @@ what would settle it — never fill the gap with a plausible guess."""
 def gather_evidence(question: str, root: str, d: str | None = None, k: int = 5) -> dict:
     """되묻기 근거 수집 — 개인 관측 + 에피소드 + 프로젝트 메모리. 전부 fail-open.
 
-    근거는 **본문**이어야 한다. 제목만 실어 보내면 모델은 답을 못 짓고, 못 지었다는 사실도
+    근거는 **본문**이어야 한다. 제목만 넣어 보내면 모델은 답을 못 짓고, 못 지었다는 사실도
     드러나지 않는다 — 근거 칸이 비어 있지 않으니 모든 계기가 초록으로 보인다. 그리고 본문을
     싣는 순간 여기는 주입면이 되므로, 회수 블록과 같은 위생을 건다 (오염 페이지 제외 ·
     각괄호 무력화 · 한 줄로 접기)."""
@@ -488,7 +493,7 @@ def gather_evidence(question: str, root: str, d: str | None = None, k: int = 5) 
     evidence: dict[str, list[dict]] = {"observations": [], "episodes": [], "project": []}
 
     def _clean(*parts: str) -> str:
-        """근거 한 조각 — 경계 문자를 무력화하고 한 줄로 접는다. 줄바꿈을 그대로 실으면
+        """근거 한 조각 — 경계 문자를 무력화하고 한 줄로 접는다. 줄바꿈을 그대로 넣으면
         예산만 축내고, 근거 목록을 한 줄씩 읽는 CLI 표면에서는 행이 서로 섞인다."""
         return re.sub(r"\s+", " ", _neutralize(" ".join(parts))).strip()
 
@@ -508,7 +513,7 @@ def gather_evidence(question: str, root: str, d: str | None = None, k: int = 5) 
         for hit in search(root, question, k=k):
             request, excerpt = str(hit.get("request", "")), str(hit.get("excerpt", ""))
             if scan_threats(request, excerpt):
-                continue  # 원문 유래 오염 구간 — 근거로도 안 싣는다
+                continue  # 원문 유래 오염 구간 — 근거로도 안 넣는다
             head, tail = _clean(request)[:TURN_EVIDENCE_CHARS], _clean(excerpt)[:TURN_EVIDENCE_CHARS]
             evidence["episodes"].append({"id": f"turn:{hit['seq']}", "text": f"{head} → {tail}"})
     with contextlib.suppress(Exception):

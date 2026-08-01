@@ -22,7 +22,8 @@ import tarfile
 
 from .index import reindex
 from .norn import ARCHIVE_DIR
-from .store import LOG, PAGES, SCHEMA, _atomic_write, _chmod, _lock, ensure_home, log_op
+from .store import CONTRADICTIONS, LOG, PAGES, SCHEMA, USAGE, _atomic_write, _chmod, _lock, ensure_home, log_op
+from .usage import flush as _usage_flush
 
 BACKUPS_DIR = "backups"
 MANIFEST_NAME = "MANIFEST.json"
@@ -32,9 +33,15 @@ NO_PRUNE = 1_000_000  # 정리를 건너뛰는 보존 한도 (복원 시 안전 
 MAX_MEMBER_BYTES = 4 * 1024 * 1024  # 페이지 하나가 이보다 크면 정본이 아니라 사고다
 MAX_TOTAL_BYTES = 256 * 1024 * 1024
 
-# 정본 = 지식 + 되돌릴 수 있는 이력. 나머지(index.md·state.db·락·리포트·백업 자신)는
-# pages/ 에서 재생성되거나 그 기계에만 의미가 있다.
-CANONICAL_FILES = (SCHEMA, LOG)
+# 정본 = 지식 + 되돌릴 수 있는 이력 + **사람의 손이 남긴 것**. 나머지(index.md·state.db·락·
+# 리포트·백업 자신)는 pages/ 에서 재생성되거나 그 기계에만 의미가 있다.
+#
+# 회수 기록(usage.json)과 모순 처리 상태(contradictions.json)가 여기 있는 이유: 둘 다
+# pages/ 에서 다시 만들 수 없다. 예전엔 회수 기록이 state.db 에만 살아서, 파생물을 지우는
+# 정상 경로 하나가 원본 데이터를 같이 지웠다 — 그리고 그 순간 90일 넘은 전 페이지가 일제히
+# 부패 후보로 떴다 (`memory.usage`). state.db 자체를 담지 않는 규율은 그대로다: 파생물을
+# 백업에 넣으면 복원본이 다른 시점의 색인을 들고 살아나고 그 불일치는 조용하다.
+CANONICAL_FILES = (SCHEMA, LOG, USAGE, CONTRADICTIONS)
 CANONICAL_DIRS = (PAGES, ARCHIVE_DIR)
 
 
@@ -87,6 +94,9 @@ def create(d: str | None = None, *, label: str = "", keep: int = KEEP_DEFAULT) -
     """정본 스냅샷 하나를 backups/<stamp>.tar.gz로 만든다. 반환 = 요약 dict."""
     d = ensure_home(d)
     safe_label = "".join(ch for ch in label if ch.isalnum() or ch in "-_")[:32]
+    # 노출 계수는 DB 에만 쌓이다 큰 계기에 접힌다 — 백업이 그 계기다. 여기서 안 접으면
+    # 아카이브가 담는 회수 기록이 마지막 검색 시점에 멈춰 있다 (`memory.usage`).
+    _usage_flush(d)
     with _lock(d):
         members = canonical_members(d)
         payload: dict[str, bytes] = {}

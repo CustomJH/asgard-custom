@@ -723,27 +723,57 @@ class TestTendingSurface(DashboardBase):
         with open(os.path.join(rdir, name), "w", encoding="utf-8") as handle:
             handle.write("# Norn\n\n" + "\n".join(lines) + "\n")
 
-    def test_contradictions_are_lifted_out_of_the_reports(self):
-        self._report(
-            "norn-20260728-1200.md",
-            [
-                "- ⚠ contradiction: [[a-page]] ↔ [[b-page]] — 서로 반대되는 판정 (사람이 해소)",
-                "- merge: [[x]] → [[y]] (sim 0.9) — 중복",
-            ],
-        )
-        norn = dash.norn_data(self.d)
-        self.assertEqual(len(norn["contradictions"]), 1)
-        c = norn["contradictions"][0]
-        self.assertEqual((c["a"], c["b"]), ("a-page", "b-page"))
-        self.assertEqual(c["why"], "서로 반대되는 판정")
+    def _pair(self, why: str = "서로 반대되는 판정") -> None:
+        """모순 한 쌍을 장부에 접수한다 — 두 페이지가 실제로 살아 있어야 접수된다."""
+        from asgard.memory import contradiction
 
-    def test_same_pair_reported_twice_is_shown_once(self):
-        # 손질을 돌 때마다 같은 모순이 다시 적힌다 — 화면은 쌍마다 한 줄이어야 한다
-        self._report("norn-20260728-1200.md", ["- ⚠ contradiction: [[a]] ↔ [[b]] — 옛 설명 (사람이 해소)"])
-        self._report("norn-20260729-1200.md", ["- ⚠ contradiction: [[b]] ↔ [[a]] — 새 설명 (사람이 해소)"])
-        norn = dash.norn_data(self.d)
-        self.assertEqual(len(norn["contradictions"]), 1)
-        self.assertEqual(norn["contradictions"][0]["why"], "새 설명")  # 최신 리포트가 이긴다
+        memory.add("금요일에는 배포하지 않는다", title="A page", kind="decision", d=self.d)
+        memory.add("금요일 저녁 배포가 가장 안전하다", title="B page", kind="decision", d=self.d)
+        contradiction.record([{"a": "a-page", "b": "b-page", "why": why}], self.d)
+
+    def test_contradictions_come_from_the_ledger_not_the_reports(self):
+        """창이 읽는 것은 장부다 — 리포트는 런마다 새로 생기는 파생물이라 신원을 못 쥔다."""
+        self._pair()
+        # 리포트에만 있고 장부에 없는 쌍은 안 뜬다: 그 줄이 지금도 유효한지 리포트는 모른다
+        self._report("norn-20260728-1200.md", ["- ⚠ contradiction: [[ghost-x]] ↔ [[ghost-y]] — 옛 런의 흔적"])
+        rows = dash.norn_data(self.d)["contradictions"]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual((row["a"], row["b"]), ("a-page", "b-page"))
+        self.assertEqual(row["why"], "서로 반대되는 판정")
+        # 장부만 아는 것들 — 몇 번째인지, 언제부터인지, 그 뒤 페이지가 바뀌었는지
+        self.assertEqual(row["count"], 1)
+        self.assertEqual(row["status"], "open")
+        self.assertTrue(row["detected"])
+        self.assertFalse(row["changed_since"])
+        self.assertEqual((row["a_title"], row["b_title"]), ("A page", "B page"))
+
+    def test_same_pair_detected_twice_is_one_row_that_counts_up(self):
+        """같은 어긋남을 다시 만나도 새 줄이 아니다 — 매번 새것처럼 뜨면 아무도 안 읽는다."""
+        from asgard.memory import contradiction
+
+        self._pair("옛 설명")
+        contradiction.record([{"a": "b-page", "b": "a-page", "why": "새 설명"}], self.d)  # 순서 무관
+        rows = dash.norn_data(self.d)["contradictions"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["count"], 2)
+        self.assertEqual(rows[0]["why"], "새 설명")  # 신원은 쌍이 지고, 사유는 최신이 이긴다
+
+    def test_a_pair_marked_as_seen_leaves_the_window_and_the_pages_stay(self):
+        """확인은 해소가 아니다 — 목록에서만 빠지고 두 페이지는 글자 그대로 남는다.
+
+        창과 CLI(`asgard memory contradictions`)가 같은 기본값을 써야 한다. 한쪽만 감추면
+        사람이 두 표면에서 다른 건수를 보고 어느 쪽을 믿을지 정해야 한다."""
+        self._pair()
+        before = [memory._read(self.d, slug) for slug in ("a-page", "b-page")]
+        key = memory.contradiction_key("a-page", "b-page")
+        self.assertIsNotNone(memory.acknowledge_contradiction(key, note="둘 다 맞다 — 시기가 다르다", d=self.d))
+        self.assertEqual(dash.norn_data(self.d)["contradictions"], [])
+        self.assertEqual([memory._read(self.d, slug) for slug in ("a-page", "b-page")], before)
+        # 표시는 장부에 남아 있다 — 사라진 것이 아니라 기본 목록에서만 빠졌다
+        seen = memory.open_contradictions(self.d, include_acknowledged=True)
+        self.assertEqual([row["status"] for row in seen], ["acknowledged"])
+        self.assertEqual(seen[0]["note"], "둘 다 맞다 — 시기가 다르다")
 
     def test_archive_lists_latest_snapshot_per_slug_with_restore_command(self):
         adir = os.path.join(self.d, "archive")
@@ -824,6 +854,44 @@ class TestSemanticAndDerived(DashboardBase):
         self.assertFalse(rows[memory.DB]["canon"])
         self.assertTrue(rows[memory.PAGES]["exists"])
         self.assertFalse(rows["norn-backups"]["exists"])  # 손질 전엔 없다 — 없음을 없음으로 말한다
+        # 사람의 손이 남긴 것 둘도 정본 쪽이다 — pages/ 에서 다시 만들 원본이 없다
+        self.assertTrue(rows[memory.USAGE]["canon"])
+        self.assertTrue(rows[memory.CONTRADICTIONS]["canon"])
+
+    def test_the_state_db_note_says_exactly_what_survives_a_wipe(self):
+        """이 줄은 두 번 틀렸다 — 한 번은 낙관해서, 한 번은 비관이 낡아서.
+
+        처음엔 "손상 시 자동 복구"라고 적혀 있었는데 손상 분기는 파일을 지우고 pages/ 에서
+        다시 만들 뿐이라 사실이 아니었다. 고쳐 적은 "사용기록은 영영 사라진다"도 지금은 사실이
+        아니다: 회수 기록이 정본(`usage.json`)으로 나왔고 백업 대상이며 reindex 가 되살린다.
+
+        그래서 문구를 믿지 않고 **실제로 지워 보고** 무엇이 돌아오는지로 못 박는다."""
+        self._seed()
+        from asgard.memory import backup, usage
+
+        usage.bump(self.d, ["thor-squad"], exposure=False)  # 사람이 부른 검색
+        usage.bump(self.d, ["thor-squad"], exposure=True)  # 자동 주입
+        for name in (memory.DB, memory.DB + "-wal", memory.DB + "-shm"):
+            path = os.path.join(self.d, name)
+            if os.path.exists(path):
+                os.remove(path)
+        memory.reindex(self.d)
+        row = usage.merged(self.d)["thor-squad"]
+        self.assertEqual(row["uses"], 1)  # 사용은 셀 때마다 정본에 접힌다 — 통째로 살아 돌아온다
+        self.assertTrue(row["last_used"])
+        self.assertEqual(row["exposures"], 0)  # 노출은 마지막으로 접힌 뒤의 것만 잃는다
+        # 부패 판정이 읽는 값이 사용이라, DB 를 잃어도 판정은 일제히 열리지 않는다
+        self.assertEqual([f for f in memory.lint(self.d) if f["code"] == "decay-candidate"], [])
+        note = {r["name"]: r for r in dash.derived_data(self.d)["rows"]}[memory.DB]["note"]
+        self.assertNotIn("자동 복구", note)  # 안 하는 복구를 약속하지 않는다
+        self.assertNotIn("영영", note)  # 일어나지 않는 소실도 말하지 않는다
+        self.assertIn(memory.USAGE, note)  # 어디서 돌아오는지 이름으로 적는다
+        self.assertIn("pages/", note)
+        # 표기만 고치고 근거가 바뀌면 다음 사람은 또 반대로 고친다 — 근거를 여기 같이 못 박는다.
+        self.assertIn(memory.USAGE, backup.CANONICAL_FILES)
+        self.assertIn(memory.CONTRADICTIONS, backup.CANONICAL_FILES)
+        self.assertNotIn(memory.DB, backup.CANONICAL_FILES)
+        self.assertNotIn(memory.DB, backup.CANONICAL_DIRS)
 
     def test_snapshot_carries_the_new_sections(self):
         self._seed()

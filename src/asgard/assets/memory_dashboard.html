@@ -183,7 +183,7 @@
   /* 벤또 격자 — 크기가 다른 타일이 사각형 하나를 빈틈없이 채운다. 리듬은 카드를 똑같이
      맞춰서가 아니라 **스팬을 달리해서** 나온다(1x1 · 2x1 · 1x2 · 2x2). 열 스팬만 주고
      행 스팬을 안 주면 밑변이 들쭉날쭉해지고, 그건 벤또가 아니라 안 맞은 격자다.
-     자리 배정은 template-areas 로 못 박는다 — 자동 배치는 데이터 양에 따라 구멍을 만든다. */
+     자리 배정은 template-areas 로 고정한다 — 자동 배치는 데이터 양에 따라 구멍을 만든다. */
   .ovgrid{display:grid;gap:var(--space-lg);grid-template-columns:minmax(0,1fr);margin-bottom:var(--space-lg)}
   @container shell (min-width:54rem){
     /* 영역 배정은 영역이 **정의된 단계 안에서만** 한다. 밖에 두면 좁은 폭에서 이름 있는 줄이
@@ -740,7 +740,7 @@
     </div>
     <section class="panel" aria-label="원본과 다시 만들어지는 파일" data-t-aria>
       <h2><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h11v8a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1z" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M2.5 4.5l1.4-2h8.2l1.4 2" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6.4 7.6h3.2" stroke="currentColor" stroke-width="1.2"/></svg><span data-t>원본과 다시 만들어지는 파일</span></h2>
-      <p class="dimnote" style="margin:0 0 14px;max-width:var(--measure)" data-t>pages/ 만 원본입니다. 나머지는 다시 만들어지거나 정리가 남긴 기록이라, 지워도 내용은 사라지지 않습니다.</p>
+      <p class="dimnote" style="margin:0 0 14px;max-width:var(--measure)" data-t>원본은 pages/ 와 당신의 손이 남긴 기록입니다. 나머지는 다시 만들어지거나 정리가 남긴 것이라, 지워도 내용은 사라지지 않습니다.</p>
       <ul class="drv" id="ovDerived"></ul>
     </section>
   </section>
@@ -994,8 +994,10 @@ const EN = {
   "원본 — 사람이 읽고 고치는 md 파일": "canon — the md files you read and edit",
   "원본 — 덧붙이기만 하는 작업 기록": "canon — append-only operations log",
   "원본 — 저장 규칙": "canon — the storage schema",
+  "원본 — 사람이 무엇을 실제로 찾았는가 (부패 판정의 근거)": "canon — what you actually searched for (what the decay judgement reads)",
+  "원본 — 어떤 어긋남을 사람이 보고 넘겼는가": "canon — which contradictions you have already looked at",
   "자동생성 — asgard memory reindex로 다시 만듦": "rebuilt — asgard memory reindex",
-  "자동생성 — 검색·사용기록·벡터 (손상 시 자동 복구)": "rebuilt — search, usage and vectors (self-heals)",
+  "자동생성 — 검색 색인·벡터는 pages/ 에서, 회수 기록은 usage.json 에서 되살린다 · 마지막으로 접힌 뒤의 노출 계수만 잃는다 (부패 판정은 사용만 보므로 안 흔들린다)": "rebuilt — the search index and vectors come back from pages/, the usage record from usage.json · only exposure counts since the last fold are lost (the decay judgement reads searches, so it does not shift)",
   "자동생성 — Obsidian 목차": "rebuilt — Obsidian index",
   "기록 — 정리·패턴 보고서": "record — tending and pattern reports",
   "보관 — 되살릴 수 있음": "archived — can be brought back",
@@ -1057,8 +1059,8 @@ const EN = {
   "장은 아직 의미로 찾을 수 없습니다. asgard memory reindex 를 돌리면 채워집니다":
     " page(s) carry no vector, so semantic search and semantic edges cannot see them — asgard memory reindex",
   "원본과 다시 만들어지는 파일": "Canon and derivatives",
-  "pages/ 만 원본입니다. 나머지는 다시 만들어지거나 정리가 남긴 기록이라, 지워도 내용은 사라지지 않습니다.":
-    "Only pages/ is canon. The rest is regenerated or left behind by tending — deleting it does not kill the knowledge.",
+  "원본은 pages/ 와 당신의 손이 남긴 기록입니다. 나머지는 다시 만들어지거나 정리가 남긴 것이라, 지워도 내용은 사라지지 않습니다.":
+    "Canon is pages/ plus what your own hand left behind. The rest is regenerated or left behind by tending — deleting it does not kill the knowledge.",
   "원본": "canon", "자동생성": "derived", "없음": "absent", "개": "",
   /* ── 정리 (노른) ── */
   "노른 정리": "Norn tending",
@@ -1075,7 +1077,8 @@ const EN = {
     "No insight yet — a lineage appears once Norn promotes a pattern.",
   "모순": "Contradictions", "모순 — 사람이 판단할 항목": "Contradictions — a human's job",
   "노른은 어긋난 기록을 고치지 않고 알리기만 합니다.": "Norn reports conflicting records; it never resolves them.",
-  "어긋난 기록이 보고된 적 없습니다.": "No conflicting record has ever been reported.",
+  "아직 넘어온 어긋남이 없습니다.": "Nothing has been handed over yet.",
+  "그 뒤 페이지가 바뀜": "changed since",
   "정리 리포트": "Tending reports",
   "정리할 때마다 남는 기록 — reports/ 는 한도 밖입니다.": "What each pass left behind — reports/ sits outside the budget.",
   "리포트 없음. asgard memory norn 으로 첫 정리를 실행하세요.":
@@ -2630,12 +2633,22 @@ function renderNorn(s){
 
   const conEl = $("nornContra");
   if(conEl){
+    // 장부(contradictions.json)가 준 것만 그린다 — 몇 번 감지됐는지, 마지막이 언제인지,
+    // 그 뒤 두 페이지가 바뀌었는지. 사람이 "봤다"고 표시한 쌍은 여기 아예 안 온다:
+    // `asgard memory contradictions` 의 기본 목록과 같은 판단이라 두 표면의 건수가 같다.
+    // 표시는 봤다는 뜻이지 고쳤다는 뜻이 아니고, 두 페이지는 그대로 남아 있다.
     conEl.innerHTML = (dr.contradictions || []).length
-      ? dr.contradictions.map((c) =>
-          '<li><div class="pair"><button type="button" class="linklike mono" data-slug="' + esc(c.a) + '">' + esc(c.a) + '</button>'
-          + '<span>↔</span><button type="button" class="linklike mono" data-slug="' + esc(c.b) + '">' + esc(c.b) + '</button></div>'
-          + '<p class="why">' + esc(c.why || "") + '</p></li>').join("")
-      : '<li class="empty" style="border:0;background:none;padding:0">' + T("어긋난 기록이 보고된 적 없습니다.") + '</li>';
+      ? dr.contradictions.map((c) => {
+          const marks = [];
+          if(c.count > 1) marks.push(c.count + "×");
+          if(c.last_seen) marks.push(esc(String(c.last_seen).slice(0, 10)));  // 장부는 분까지 적지만 목록엔 날짜면 된다
+          if(c.changed_since) marks.push(T("그 뒤 페이지가 바뀜"));
+          return '<li><div class="pair"><button type="button" class="linklike mono" data-slug="' + esc(c.a) + '">' + esc(c.a) + '</button>'
+          + '<span>↔</span><button type="button" class="linklike mono" data-slug="' + esc(c.b) + '">' + esc(c.b) + '</button>'
+          + (marks.length ? '<span class="dimnote" style="margin-left:auto">' + marks.join(" · ") + '</span>' : "")
+          + '</div><p class="why">' + esc(c.why || "") + '</p></li>';
+        }).join("")
+      : '<li class="empty" style="border:0;background:none;padding:0">' + T("아직 넘어온 어긋남이 없습니다.") + '</li>';
   }
 
   const repEl = $("nornReports");

@@ -10,7 +10,7 @@ import re
 
 from .index import _db, _fts_upsert, build_index, vec_coverage, write_index
 from .policy import memory_dir, scan_secrets, scan_threats
-from .recall import _containment, _jaccard, query, section_usage
+from .recall import _containment, _Grams, query, section_usage
 from .store import (
     DB,
     DEFAULT_KIND,
@@ -33,6 +33,8 @@ from .store import (
     valid_slug,
 )
 from .temporal import ground_event_date
+from .usage import forget as _usage_forget
+from .usage import merged as _usage_counters
 
 STALE_DAYS = 90  # lint 부패 후보 기준 — 90일 무갱신 + 사용 0회
 # ingest 병합 문턱 — containment(포함 계수)로 판정: Jaccard는 길이 차에 취약해 "같은 사실의
@@ -136,7 +138,7 @@ def _plan_identity_slot(text: str, d: str) -> dict | None:
     """같은 슬롯을 이미 가진 user 페이지로의 merge 계획 — 없으면 None.
 
     슬롯 보유 페이지가 여럿이면(과거 create 누수로 이미 쌓인 모순) 가장 오래된 쪽을 정본으로
-    삼고 나머지는 absorb 목록에 실어 같은 승인으로 접는다. 정본 선택은 created→slug 정렬이라
+    삼고 나머지는 absorb 목록에 넣어 같은 승인으로 접는다. 정본 선택은 created→slug 정렬이라
     결정론이다 — 계획을 두 번 세워도 같은 대상이 나온다."""
     slot = _identity_slot(text)
     if not slot:
@@ -265,9 +267,10 @@ def _absorb_slot_dups(d: str, plan: dict) -> list[str]:
         with contextlib.suppress(Exception):
             conn = _db(d)
             with conn:
-                for table in ("fts", "usage", "vec"):
+                for table in ("fts", "vec"):
                     conn.execute(f"DELETE FROM {table} WHERE slug = ?", (slug,))  # noqa: S608 — 테이블명은 리터럴
             conn.close()
+        _usage_forget(d, str(slug))  # 회수 기록은 정본에도 있다 — 한 자리에서 같이 지운다
         log_op(d, "ingest:absorbed", str(slug), f"slot={plan.get('slot')}")
         absorbed.append(str(slug))
     return absorbed
@@ -366,9 +369,9 @@ def remove(slug: str, d: str | None = None) -> bool:
             conn = _db(d)
             with conn:
                 conn.execute("DELETE FROM fts WHERE slug = ?", (slug,))
-                conn.execute("DELETE FROM usage WHERE slug = ?", (slug,))
                 conn.execute("DELETE FROM vec WHERE slug = ?", (slug,))
             conn.close()
+        _usage_forget(d, slug)
         write_index(d)
         log_op(d, "remove", slug)
     return True
@@ -394,10 +397,10 @@ def merge(src: str, dst: str, d: str | None = None) -> str:
             conn = _db(d)
             with conn:
                 conn.execute("DELETE FROM fts WHERE slug = ?", (src,))
-                conn.execute("DELETE FROM usage WHERE slug = ?", (src,))
                 conn.execute("DELETE FROM vec WHERE slug = ?", (src,))
                 _fts_upsert(conn, d, dst)
             conn.close()
+        _usage_forget(d, src)
         write_index(d)
         log_op(d, "merge", dst, f"← {src}")
     return dst
@@ -441,13 +444,9 @@ def lint(d: str | None = None) -> list[dict]:
                     {"level": "info", "code": "index-stale", "slug": INDEX, "msg": "run: asgard memory reindex"}
                 )
         return findings
-    usage: dict[str, tuple[int, str]] = {}
-    try:
-        conn = _db(d)
-        usage = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT slug, uses, last_used FROM usage")}
-        conn.close()
-    except Exception:
-        pass
+    # 판정이 읽는 것은 **사용**(사람이 부른 검색)이다. 자동 주입 횟수(exposures)는 같이 읽되
+    # 자격을 흔들지 않고 사유에만 붙는다 — 왜 갈랐는지는 `memory.usage` 참조.
+    usage = _usage_counters(d)
     today = _dt.date.today()
     docs: dict[str, str] = {}
     for slug in sorted(slugs):
@@ -481,28 +480,38 @@ def lint(d: str | None = None) -> list[dict]:
                 )
         try:
             updated = _dt.date.fromisoformat(meta.get("updated", meta.get("created", "")))
-            uses = usage.get(slug, (0, None))[0]
-            if (today - updated).days >= STALE_DAYS and uses == 0:
+            counts = usage.get(slug) or {}
+            if (today - updated).days >= STALE_DAYS and not counts.get("uses"):
+                # 노출만 쌓인 페이지는 사유에 그 수를 적는다: "매 턴 실리는데 아무도 안 찾는다"는
+                # 지우라는 말이 아니라 사람이 봐야 할 사실이다 (자동 주입은 회수기의 선택이다).
+                exposures = int(counts.get("exposures") or 0)
                 findings.append(
                     {
                         "level": "info",
                         "code": "decay-candidate",
                         "slug": slug,
-                        "msg": f"{(today - updated).days}d untouched, never recalled",
+                        "msg": f"{(today - updated).days}d untouched, never searched"
+                        + (f" ({exposures} auto-exposure(s))" if exposures else ""),
                     }
                 )
         except Exception:
             findings.append({"level": "warn", "code": "no-date", "slug": slug, "msg": "missing/invalid updated:"})
     items = sorted(docs.items())
+    # 쌍 비교는 O(N²)다 — 페이지 N개면 그램 생성이 N²번인데 본문은 N개뿐이다. 캐시를 이 호출의
+    # 수명으로 들고 돌면 판정은 글자 그대로 같고 그램 생성만 N번으로 떨어진다 (`recall._Grams`).
+    grams = _Grams()
     for i, (s1, t1) in enumerate(items):
         for s2, t2 in items[i + 1 :]:
-            if _jaccard(t1, t2) >= DUP_JACCARD:
+            if grams.jaccard(t1, t2) >= DUP_JACCARD:
                 findings.append({"level": "warn", "code": "near-duplicate", "slug": s1, "msg": f"≈ {s2}"})
     # 칸별 초과 — 넘친 칸만 지목한다. "인덱스가 크다"는 어디를 통합할지 안 알려준다.
     # 재는 대상은 실제 주입 행이다: index.md 행은 pages/<slug>.md 링크를 달고 있는데
-    # 그 링크는 프롬프트에 한 글자도 안 실린다 — 안 실리는 문자로 경고하면 계기가 거짓말한다.
+    # 그 링크는 프롬프트에 한 글자도 안 들어간다 — 안 들어가는 문자로 경고하면 계기가 거짓말한다.
+    # 예산 0은 "이 칸은 주입하지 않는다"는 사용자의 선언이다 (`policy.kind_budgets` · `recall._section`이
+    # 그 칸을 통째로 뺀다). 그걸 초과로 읽으면 lint 는 사용자가 끈 칸을 두고 영영 켜진 경고를 내고,
+    # 통합할 것이 없는 경고는 나머지 경고까지 같이 안 읽히게 만든다.
     for kind, used, budget in section_usage(d):
-        if used > budget:
+        if budget > 0 and used > budget:
             findings.append(
                 {
                     "level": "warn",

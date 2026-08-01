@@ -1,4 +1,4 @@
-"""문서 로컬 레인 — 그래프가 감당하지 못하는 큰 문서를 정본과 파생 인덱스로 나눠 나른다.
+"""문서 로컬 레인 — 그래프가 감당하지 못하는 큰 문서를 정본과 파생 인덱스로 나눠 전달한다.
 
 왜 이 레인이 생겼는가 (26-07-28 3차 실서버 계측, tests/load/README.md).
 
@@ -17,7 +17,7 @@
 그 위는 그래프에 넣지 않는다:
 
   정본 = `.asgard/memory/documents/`의 텍스트 파일 — 팀에는 **뱅크가 아니라 저장소가**
-         나른다 (Git). 승인 게이트가 지키려던 것("공유 스코프의 쓰기는 사람을 지난다")은
+         전달한다 (Git). 승인 게이트가 지키려던 것("공유 스코프의 쓰기는 사람을 지난다")은
          여기서도 지켜진다: 파일은 커밋 전까지 공유되지 않고, git status에 그대로 보인다.
   검색 = 그 정본에서 만든 로컬 FTS5 인덱스 — 파생물이라 지워도·손상돼도 재생성된다.
 
@@ -31,9 +31,12 @@ import contextlib
 import hashlib
 import os
 import re
+import secrets
 import sqlite3
 
 import yaml
+
+from . import terms as terms_lane
 
 DOCUMENT_SCHEMA = "asgard-project-document-v1"
 DOCUMENTS_RELATIVE_DIR = os.path.join(".asgard", "memory", "documents")
@@ -44,6 +47,10 @@ DOCUMENT_BUDGET = 900  # chars — 주입 블록 상한 (프로젝트 recall 160
 _EXCERPT_WIDTH = 220
 CHUNK_CHARS = 1200  # 회수 단위. 절 제목을 앞에 달아 두므로 조각만 읽어도 어디인지 안다
 CHUNK_MIN = 120  # 이보다 짧은 꼬리는 앞 조각에 붙인다 — 한 줄짜리 조각은 검색 잡음이다
+# `chunk()` 가 자르는 모양이 바뀔 때 올린다. 인덱스 재구축은 정본 파일의 크기·시각으로만
+# 판정하므로(`_manifest`), 정본이 그대로인데 코드만 바뀌면 옛 조각이 그대로 남는다 —
+# 사람이 고칠 수 없는 낡음이라 지문에 이 값을 같이 넣어 조용히 다시 짓게 한다.
+CHUNK_REVISION = 2
 MAX_INDEX_BYTES = 8 * 1024 * 1024  # 한 문서에서 인덱스로 받는 상한 (읽기 폭주 방지)
 # 어휘 스캔 스트림 상한. 이 경로는 **매 턴** 도는데 문서는 대화 턴과 달리 수천 조각이 될 수
 # 있다 — 전 조각을 파이썬에서 훑는 비용이 사용자에게 지연으로 간다. 넘으면 FTS 만으로 간다:
@@ -112,10 +119,29 @@ def save_document(root: str, document) -> str:
         "lane": "local",
     }
     path = os.path.join(directory, document_filename(document.name, document.content_hash))
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8", newline="\n") as handle:
-        handle.write(render_document(meta, document.text))
-    os.replace(tmp, path)
+    if os.path.lexists(path) and _unsafe_path(path):
+        raise ValueError("project document path must not be a symlink or junction")
+    # 임시 이름은 record 정본과 같은 규율로 짓는다 (canonical.save_canonical_record).
+    # 고정 `.tmp`는 이름을 미리 알 수 있어 남이 먼저 심어 둘 수 있고, 같은 문서를 동시에 적는
+    # 두 프로세스가 서로의 임시 파일에 겹쳐 쓴다 — O_EXCL이 그 둘을 한꺼번에 닫는다.
+    data = render_document(meta, document.text).encode()
+    tmp = os.path.join(directory, f".{os.path.basename(path)}.{os.getpid()}.{secrets.token_hex(4)}.tmp")
+    try:
+        flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(tmp, flags, 0o644)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(data)
+                handle.flush()
+                os.fsync(handle.fileno())
+        except Exception:
+            with contextlib.suppress(OSError):
+                os.close(fd)
+            raise
+        os.replace(tmp, path)
+    finally:
+        with contextlib.suppress(OSError):
+            os.remove(tmp)
     return path
 
 
@@ -160,10 +186,22 @@ def chunk(text: str) -> list[tuple[str, str]]:
         end = marks[index + 1][0] if index + 1 < len(marks) else len(text)
         sections.append((title, text[start:end]))
     out: list[tuple[str, str]] = []
+    carry = ""  # 제목뿐이라 홀로 세우지 않은 절 — 다음 조각의 머리로 넘긴다
     for title, body in sections:
         body = body.strip()
         if not body:
             continue
+        if title and not body.partition("\n")[2].strip():
+            # 제목 줄 말고는 아무것도 없는 절. 문서가 `# 제목` 바로 아래 `## 1 …`로 시작하는
+            # 흔한 모양에서 매번 생기고, 답을 담을 수 없는데도 상위로 올라온다 — 본문이 한 줄
+            # 뿐이라 bm25가 짧은 문서에 주는 가산을 다 받고, 문서 이름과 겹치는 질의어에는
+            # 스캔에도 걸리기 때문이다 (실측 26-08-01: hit@1 오답 5건 중 3건이 이 조각이었고
+            # 한국어·영어에서 같이 났다). 제목을 버리지 않고 넘기는 이유는 그 말이 아래 절들이
+            # 무엇에 대한 것인지를 정하는 유일한 자리여서다.
+            carry = f"{carry}\n{body}" if carry else body
+            continue
+        if carry:
+            body, carry = carry + "\n\n" + body, ""
         while len(body) > CHUNK_CHARS:
             cut = body.rfind("\n", CHUNK_CHARS // 2, CHUNK_CHARS)
             if cut <= 0:
@@ -176,6 +214,11 @@ def chunk(text: str) -> list[tuple[str, str]]:
                 out[-1] = (title, out[-1][1] + "\n" + body)
             else:
                 out.append((title, body))
+    if carry:  # 넘길 뒤가 없다 — 마지막 조각에 붙이고, 그것도 없으면 문서가 제목뿐인 것이다
+        if out:
+            out[-1] = (out[-1][0], out[-1][1] + "\n" + carry)
+        else:
+            out.append((marks[0][1] if marks else "", carry))
     return out
 
 
@@ -216,12 +259,12 @@ def _db(root: str) -> sqlite3.Connection:
 
 
 def _manifest(root: str) -> str:
-    """정본 디렉터리의 형상 지문 — 파일이 늘고 줄고 바뀐 것을 한 문자열로 본다."""
+    """정본 디렉터리의 형상 지문 — 파일이 늘고 줄고 바뀐 것과 조각내는 모양을 한 문자열로 본다."""
     try:
         directory = documents_dir(root)
     except ValueError:
         return ""
-    rows = []
+    rows = [f"chunk-revision:{CHUNK_REVISION}"]
     for entry in sorted(os.listdir(directory) if os.path.isdir(directory) else []):
         with contextlib.suppress(OSError):
             stat = os.stat(os.path.join(directory, entry))
@@ -285,6 +328,8 @@ def _words(text: str) -> list[str]:
     return list(dict.fromkeys(w.lower() for w in re.split(r"[^\w가-힣%-]+", text) if len(w) >= 2))
 
 
+
+
 def _excerpt(text: str, phrase: str, words: list[str], width: int = _EXCERPT_WIDTH) -> str:
     low = text.lower()
     needle = phrase if phrase and phrase in low else next((w for w in words if w in low), "")
@@ -307,7 +352,11 @@ def search(root: str, text: str, k: int = 3) -> list[dict]:
         try:
             rows = conn.execute("SELECT seq, name, heading, body FROM doc").fetchall()
             fts_order: list[tuple[int, float]] = []
-            terms = [w for w in re.split(r"\s+", text.strip()) if len(w) >= 3]
+            # 두 스트림이 같은 어휘를 봐야 한다. FTS 쪽만 넓히면 스캔이 못 뽑은 후보가 RRF에서
+            # 한 표만 받고, 스캔 쪽만 넓히면 그 반대가 된다 — 어긋난 후보 집합은 융합이 아니다.
+            # 3자 미만을 거르는 것은 취향이 아니라 trigram 토크나이저의 하한이다.
+            split = [w for w in re.split(r"\s+", text.strip()) if len(w) >= 3]
+            terms = [w for w in terms_lane.expand(split, text) if len(w) >= 3]
             if terms:
                 match = " OR ".join('"' + w.replace('"', '""') + '"' for w in terms)
                 with contextlib.suppress(Exception):  # MATCH 문법 오류 — 스캔 스트림만으로 진행
@@ -326,7 +375,7 @@ def search(root: str, text: str, k: int = 3) -> list[dict]:
         return []
     by_seq = {int(r[0]): r for r in rows}
     phrase = text.strip().lower()
-    words = _words(text)
+    words = terms_lane.expand(_words(text), text)
 
     def _scan_score(row: tuple) -> int:
         hay = (str(row[2]) + "\n" + str(row[3])).lower()
@@ -398,7 +447,7 @@ def note(query: str, root: str, k: int = 2) -> str:
     문서 원문은 승인 게이트를 지나 정본이 됐지만 **완료 증거는 아니다** — 규격서에 적혀
     있다는 것과 그렇게 구현됐다는 것은 다른 말이고, 그 구분이 무너지면 게이트가 무의미해진다.
 
-    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 싣는 자리는 조립기로 간다."""
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 조립기로 간다."""
     try:
         from ..memory.assemble import Candidate, Lane, assemble
 

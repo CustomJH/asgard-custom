@@ -362,6 +362,28 @@ def _git_available() -> bool:
     return shutil.which("git") is not None
 
 
+def _ensure_lines(path: str, template: str) -> None:
+    """템플릿의 줄이 파일에 다 있게 만든다 — 없으면 만들고, 있으면 **모자란 줄만** 덧붙인다.
+
+    사용자 파일을 통째로 갈아 끼우지 않는다. 메모리 홈의 `.gitignore`·`.gitattributes` 는
+    이 디렉토리를 직접 손보는 사람이 자기 줄을 적어 두는 자리다 — 원격에 안 올릴 사적 파일,
+    자기 merge 드라이버. 그걸 교체하면 사용자가 적은 규칙이 다음 동기화 한 번에 사라지고,
+    사라진 줄이 `.gitignore` 라면 안 올리려던 파일이 조용히 원격으로 나간다.
+
+    같은 저장소의 `vault.scaffold_obsidian` 이 이미 이 규율을 쓴다 ("사용자 설정이 정본 —
+    우리 기본값으로 되돌리지 않는다"). 스캐폴드가 자리마다 다른 규율을 쓰면 사용자는 어느
+    파일을 자기 것이라 여겨도 되는지를 매번 외워야 한다.
+
+    판정은 줄 단위 정확 일치다(트림 후). 주석 줄도 같이 세므로 두 번 불러도 안 늘어난다."""
+    current = _read_text(path)
+    have = {line.strip() for line in current.splitlines()}
+    missing = [line for line in template.splitlines() if line.strip() and line.strip() not in have]
+    if not missing:
+        return
+    head = current if not current or current.endswith("\n") else current + "\n"
+    _atomic_write(path, head + "\n".join(missing) + "\n")
+
+
 def ensure_git_repo(d: str, remote: str, branch: str = "main") -> bool:
     """메모리 홈을 git 저장소로 준비한다. 반환 = 새로 만들었으면 True."""
     created = not os.path.isdir(os.path.join(d, ".git"))
@@ -369,12 +391,8 @@ def ensure_git_repo(d: str, remote: str, branch: str = "main") -> bool:
         if _git(d, "init", "-q", "-b", branch, check=False).returncode != 0:  # git < 2.28
             _git(d, "init", "-q")
             _git(d, "checkout", "-q", "-b", branch, check=False)
-    ignore = os.path.join(d, ".gitignore")
-    if GIT_IGNORE not in _read_text(ignore):
-        _atomic_write(ignore, GIT_IGNORE)
-    attributes = os.path.join(d, ".gitattributes")
-    if GIT_ATTRIBUTES not in _read_text(attributes):
-        _atomic_write(attributes, GIT_ATTRIBUTES)
+    _ensure_lines(os.path.join(d, ".gitignore"), GIT_IGNORE)
+    _ensure_lines(os.path.join(d, ".gitattributes"), GIT_ATTRIBUTES)
     if _git(d, "config", "user.email", check=False).returncode != 0:
         _git(d, "config", "user.email", "memory@asgard.local")
         _git(d, "config", "user.name", "Asgard Memory")

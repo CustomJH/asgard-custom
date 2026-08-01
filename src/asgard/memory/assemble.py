@@ -1,4 +1,4 @@
-"""회수 조립 — 여러 레인의 후보를 **하나의 예산** 안에서 겨루게 하고 중복을 걷어낸다.
+"""회수 조립 — 여러 레인의 후보를 **하나의 예산** 안에서 겨루게 하고 중복을 제거한다.
 
 ## 왜 이 층이 생겼는가 (26-07-29 감사)
 
@@ -11,7 +11,7 @@
 이 구조의 결함은 크기가 아니라 **아무도 전체를 안 본다**는 것이다:
 
   · **중복이 안 걸러진다.** 같은 사실이 개인 페이지로·프로젝트 record로·문서 발췌로·
-    종합 구획으로·에피소드 구간으로 동시에 실릴 수 있고 그걸 막는 것이 없었다. 검색 문헌은
+    종합 구획으로·에피소드 구간으로 동시에 들어갈 수 있고 그걸 막는 것이 없었다. 검색 문헌은
     이걸 lateral redundancy라 부르고, 고정 예산에서 중복은 곧 **다른 증거의 자리를 뺏는
     일**이다 (AdaGReS, arXiv 2512.25052 — 집합 수준 목적함수 = 관련도 − 집합 내 중복).
   · **레인끼리 못 겨룬다.** 각 레인은 "나한테 뭔가 있나"만 묻고 "이 7천 자가 최선인가"는
@@ -33,7 +33,7 @@
   4. **남은 예산은 전역 경쟁** — 바닥을 채우고 남은 자리는 레인 무관하게 값 순으로 준다.
 
 **총 상한은 기존 레인 예산의 합 그대로다.** 줄이는 것은 별개의 결정이고 계측 없이 하면
-회수 품질을 조용히 깎는다. 여기서 바뀌는 것은 천장이 아니라 **같은 천장 아래 무엇이 실리는가**다.
+회수 품질을 조용히 깎는다. 여기서 바뀌는 것은 천장이 아니라 **같은 천장 아래 무엇이 들어가는가**다.
 
 ## 계약
 
@@ -46,7 +46,7 @@ from __future__ import annotations
 
 import dataclasses
 
-from .recall import RRF_K, _grams
+from .recall import RRF_K, _Grams
 
 # 레인 간 중복 판정 문턱 — 포함계수. Jaccard가 아니라 containment 인 이유는 길이가 크게
 # 다른 두 표현(정본 전문 vs 200자 발췌)이 같은 사실일 때 Jaccard는 그걸 못 잡기 때문이다.
@@ -93,33 +93,6 @@ def _value(candidate: Candidate) -> float:
     return 1.0 / (RRF_K + candidate.rank + 1)
 
 
-class _Grams:
-    """후보별 trigram 집합 캐시 — 같은 본문의 그램을 두 번 만들지 않는다.
-
-    왜 필요한가: 중복 판정은 (고른 것 × 후보) 쌍마다 도는데 `_containment`는 호출마다 양쪽
-    그램을 새로 만든다. 후보가 30개면 그램 생성이 수백 번이고 본문은 수백 자다 — 이건 **매 턴**
-    도는 경로라 그대로 두면 조립기가 자기가 아끼는 것보다 비싸진다 (실측 26-07-29: 후보 60에서
-    3.72ms). 그램은 본문에만 의존하므로 한 번 만들어 재사용하면 결과는 **바이트 동일**하고
-    비용만 선형으로 떨어진다."""
-
-    __slots__ = ("_cache",)
-
-    def __init__(self) -> None:
-        self._cache: dict[str, set[str]] = {}
-
-    def of(self, text: str) -> set[str]:
-        grams = self._cache.get(text)
-        if grams is None:
-            grams = _grams(text)
-            self._cache[text] = grams
-        return grams
-
-    def containment(self, a: str, b: str) -> float:
-        """포함 계수 |A∩B|/min(|A|,|B|) — `recall._containment`와 같은 정의, 캐시만 다르다."""
-        ga, gb = self.of(a), self.of(b)
-        return len(ga & gb) / (min(len(ga), len(gb)) or 1)
-
-
 def _redundant(candidate: Candidate, chosen: list[Candidate], floor: float, grams: _Grams) -> bool:
     """이미 고른 **다른 레인의** 것 중 하나라도 이 후보를 품으면 중복이다.
 
@@ -153,7 +126,7 @@ def select(
     if budget <= 0 or not candidates:
         return []
     order = {lane.key: index for index, lane in enumerate(lanes)}
-    # 레인이 실제로 쓰이면 머리글·꼬리도 프롬프트에 실린다. 예산은 **최종 문자열**에 걸려야
+    # 레인이 실제로 쓰이면 머리글·꼬리도 프롬프트에 들어간다. 예산은 **최종 문자열**에 걸려야
     # 하므로 그 몫을 같이 청구한다 — 행만 세면 블록마다 수십~수백 자가 상한 밖으로 샌다
     # (구 동작은 `len(prefix + rows + suffix)`로 재고 있었고, 그 계약을 지켜야 한다).
     overhead = {lane.key: len(lane.prefix) + len(lane.suffix) for lane in lanes}

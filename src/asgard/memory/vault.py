@@ -22,7 +22,7 @@ import json
 import os
 import re
 
-from .store import _atomic_write, _chmod, _desc, _kind, _pages, _read, ensure_home, poisoned
+from .store import _atomic_write, _chmod, _desc, _kind, _pages, _read_all, ensure_home, poisoned
 
 _WIKILINK = re.compile(r"\[\[([^\]|#]+)")
 
@@ -100,17 +100,16 @@ def scaffold_obsidian(d: str | None = None) -> list[str]:
 # ── 목차 (파생) ───────────────────────────────────────────────────────────────
 
 
-def _rows(d: str) -> list[dict]:
-    """살아 있는 페이지의 표시용 사실. 오염 페이지는 목차에도 싣지 않는다.
+def _rows(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> list[dict]:
+    """살아 있는 페이지의 표시용 사실. 오염 페이지는 목차에도 넣지 않는다.
 
     목차는 페이지를 저장할 때마다 다시 만들어지므로 파일은 한 번만 읽는다 — 나가는 링크까지
-    여기서 같이 뽑아 둔다 (본문을 두 번 읽으면 쓰기 한 번이 읽기 2N 번이 된다)."""
+    여기서 같이 뽑아 둔다 (본문을 두 번 읽으면 쓰기 한 번이 읽기 2N 번이 된다). loaded 를 주면
+    그 한 번도 아낀다: 카탈로그(`index.write_index`)가 이미 읽어 둔 것을 그대로 받는다."""
     rows: list[dict] = []
-    for slug in _pages(d):
-        page = _read(d, slug)
-        if not page or poisoned(*page):
+    for slug, meta, body in _read_all(d) if loaded is None else loaded:
+        if poisoned(meta, body):
             continue
-        meta, body = page
         links = [part.strip() for part in str(meta.get("links", "")).split(",") if part.strip()]
         targets = {target.strip() for target in [*links, *_WIKILINK.findall(body)] if target.strip()}
         rows.append(
@@ -132,9 +131,9 @@ def _map_header(title: str, note: str) -> list[str]:
     return [f"# {title}", "", f"> {note}", f"> 파생 목차 — pages/ 에서 재생성된다 ({stamp}).", ""]
 
 
-def build_maps(d: str) -> dict[str, str]:
+def build_maps(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> dict[str, str]:
     """maps/ 파일 내용 전체를 만든다 (쓰기 없음). 반환 = {파일명: 본문}."""
-    rows = _rows(d)
+    rows = _rows(d, loaded)
     outgoing = {row["slug"]: row["outgoing"] for row in rows}
     pointed = set().union(*outgoing.values()) if outgoing else set()
     by_kind: dict[str, list[dict]] = {}
@@ -191,12 +190,16 @@ def _by_title(row: dict) -> tuple:
     return (str(row["title"]).lower(), row["slug"])
 
 
-def write_maps(d: str | None = None) -> list[str]:
-    """maps/ 재생성. 반환 = 쓴 상대경로들. 실패는 조용히 넘어간다 (파생물이 지식을 막지 않는다)."""
-    d = ensure_home(d)
+def write_maps(d: str | None = None, *, loaded: list[tuple[str, dict, str]] | None = None) -> list[str]:
+    """maps/ 재생성. 반환 = 쓴 상대경로들. 실패는 조용히 넘어간다 (파생물이 지식을 막지 않는다).
+
+    loaded 를 주면 페이지를 다시 읽지 않고, 스캐폴드 점검도 건너뛴다 — 그 값을 들고 온 쪽이
+    이미 홈을 세우고 페이지를 훑은 것이라, 여기서 또 훑으면 쓰기 한 번에 chmod 가 N 번 더 붙는다."""
+    if loaded is None or not d:
+        d = ensure_home(d)
     written: list[str] = []
     try:
-        contents = build_maps(d)
+        contents = build_maps(d, loaded)
         root = maps_dir(d)
         for name, text in contents.items():
             _atomic_write(os.path.join(root, name), text)

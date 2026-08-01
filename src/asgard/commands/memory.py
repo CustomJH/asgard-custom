@@ -25,6 +25,11 @@ from urllib.parse import quote
 
 from .. import memory, ui
 from ..memory_bridge import (
+    GATE_OFF,
+    GATE_ON,
+    GATE_UNAPPROVED,
+    auto_retain_turns_state,
+    autosave_state,
     backend_target,
     find_config,
     is_backend_trusted,
@@ -155,6 +160,22 @@ def run_add(text: str, title: str | None, kind: str, links: str) -> int:
     return _guard(_do)
 
 
+def _auto_retain_skip_reason(gate: str, cfg: dict) -> str:
+    """턴 원문을 안 보낸 이유 — 이 문자열이 사람이 받는 유일한 설명이다.
+
+    "미승인"과 "미신뢰"를 가르는 이유는 다음 손짓이 다르기 때문이다: 앞쪽은 이 기계에서 승인
+    한 번이면 되고, 뒤쪽은 backend 연결부터 다시 봐야 한다. 게이트는 둘 다 GATE_UNAPPROVED로
+    묶으므로(허가는 신뢰된 target에만 붙는다) 여기서 한 번 더 갈라 준다."""
+    if gate == GATE_OFF:
+        return "automatic raw-turn retain is disabled"
+    if not is_backend_trusted(cfg):
+        return "project memory backend is not trusted on this machine"
+    return (
+        "automatic raw-turn retain is requested by this repository but not approved on this machine; "
+        "run: asgard memory autosave approve --tier project"
+    )
+
+
 def run_sync_turn(mode: str) -> int:
     """hook 전용 JSON stdin 표면 — 자동 turn retain과 완료 proposal을 한 lifecycle 호출로 처리."""
     try:
@@ -193,9 +214,11 @@ def run_sync_turn(mode: str) -> int:
             return 0
         root, cfg = found
         output: dict[str, object]
-        auto_retain = bool(cfg.get("auto_retain_turns", False))
-        backend_trusted = is_backend_trusted(cfg) if auto_retain else False
-        if auto_retain and backend_trusted:
+        # 참/거짓으로 읽으면 세 상태 중 둘이 한 칸에 뭉친다: 리포가 요청하지 않은 것과 리포가
+        # 요청했는데 이 기계가 승인하지 않은 것이 똑같이 "꺼짐"으로 보이고, 뒤쪽 사람은 자기가
+        # 무엇을 해야 하는지 어디서도 못 듣는다. 판정은 게이트 함수 하나가 한다.
+        gate = auto_retain_turns_state(cfg)
+        if gate == GATE_ON:
             result = retain_turn(
                 root,
                 cfg,
@@ -214,11 +237,7 @@ def run_sync_turn(mode: str) -> int:
             output = {
                 "status": "skipped",
                 "document_id": "",
-                "reason": (
-                    "automatic raw-turn retain is disabled"
-                    if not auto_retain
-                    else "project memory backend is not trusted on this machine"
-                ),
+                "reason": _auto_retain_skip_reason(gate, cfg),
             }
         if cfg.get("auto_propose_completion", True) and payload.get("verified"):
             proposal = propose_completion(
@@ -280,11 +299,15 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
         if plan["action"] == "merge":
             why = f"slot={plan['slot']}" if plan.get("slot") else f"sim={plan['sim']}"
             ui.step(f"plan: merge into '{plan['title']}' ({plan['slug']}, {why})")
-            # 흡수는 페이지 삭제다 — 승인 전에 반드시 눈에 보여야 한다
-            for slug, _rev in plan.get("absorb") or []:
-                ui.warn(f"plan: absorb (delete) contradicting page — {slug}")
         else:
             ui.step("plan: create new page")
+        # 흡수는 페이지 삭제다 — 승인 전에 반드시 눈에 보여야 한다. 갈래 **밖**에 두는 것이
+        # 요점이다: 오늘은 흡수가 merge 계획에만 실리지만(`pages._plan_identity_slot`), 그
+        # 사실에 기대면 계획이 넓어지는 날 삭제 고지만 조용히 빠진다. 툴 레인
+        # (`propose.outcome_text`)도 action을 안 보고 목록만 본다 — 판정을 맞춰 둔다.
+        for entry in plan.get("absorb") or []:
+            slug = entry[0] if isinstance(entry, list | tuple) and entry else entry
+            ui.warn(f"plan: absorb (delete) contradicting page — {slug}")
         # 자동저장은 이 표면에도 같은 답을 해야 한다 — 툴에서는 바로 저장되는데 CLI 에서만
         # 되묻는다면, 사용자가 켠 설정이 어디서 듣는지를 매번 기억해야 한다.
         auto = memory.autosave_enabled()
@@ -369,9 +392,41 @@ def run_episodes(text: str, k: int, quest: str, json_out: bool) -> int:
     return _guard(_do)
 
 
+def _open_contradiction_findings(d: str) -> list[dict]:
+    """미해결 모순을 lint 판정 줄 모양으로 — 없으면 빈 리스트. 읽기만 한다.
+
+    lint 에 얹는 이유: 이 물음("이 위키에 지금 사람이 볼 것이 있는가")에 답하는 표면이 이미
+    있는데 모순만 거기 없었다. 죽은 링크·부패 후보·중복은 다 여기서 말하면서 서로 어긋나는
+    두 페이지는 리포트 파일 안에만 적혀 있었고, 리포트는 런마다 새로 생기는 파생물이라
+    아무도 안 읽는다. 새 표면을 만들면 볼 자리가 하나 더 느는 것이고, 지금 고장이 정확히
+    "볼 자리가 흩어져 있다"는 것이다.
+
+    level 이 warn 인 것에 뜻이 있다 — 종료 코드를 흔들지 않는다. 모순은 이 위키의 결함이
+    아니라 사람이 판단할 물음이고, CI 를 빨갛게 만들 일이 아니다 (`memory.contradiction`).
+    슬러그 두 개가 한 줄에 다 나와야 사람이 무엇끼리 어긋났는지 목록을 안 열고도 안다."""
+    rows = memory.open_contradictions(d)
+    out: list[dict] = []
+    for row in rows:
+        seen = f" · {row['count']}번째 감지" if int(row.get("count") or 0) > 1 else ""
+        stale = " · 그 뒤 페이지가 바뀜" if row.get("changed_since") else ""
+        out.append(
+            {
+                "level": "warn",
+                "code": "open-contradiction",
+                "slug": row["a"],
+                "msg": f"↔ {row['b']} · {row['why'] or '사유 없음'}{seen}{stale}",
+            }
+        )
+    return out
+
+
 def run_lint(json_out: bool) -> int:
     def _do() -> int:
-        findings = memory.lint()
+        # ensure_home 이 아니라 memory_dir 이다 — lint 는 읽기다. 건강을 물었을 뿐인데
+        # 없던 홈이 생기면, 아무것도 안 고쳤다는 이 명령의 약속이 첫 줄에서 깨진다.
+        d = memory.memory_dir()
+        contradictions = _open_contradiction_findings(d)
+        findings = memory.lint(d) + contradictions  # 두 판정에 같은 디렉터리를 준다 — 각자 고르면 갈린다
         if json_out:
             print(_json.dumps(findings, ensure_ascii=False, indent=1))
         elif not findings:
@@ -380,7 +435,78 @@ def run_lint(json_out: bool) -> int:
             for f in findings:
                 line = f"[{f['level']}] {f['code']}: {f['slug']} — {f['msg']}"
                 (ui.fail if f["level"] == "error" else ui.warn if f["level"] == "warn" else ui.step)(line)
+        # 0건이면 한 글자도 안 낸다 — 조용한 것이 기본이고, 없는 모순을 "없다"고 말하는 줄은
+        # 매번 읽히다가 안 읽히게 되고 그때 있는 모순도 같이 안 읽힌다.
+        if contradictions and not json_out:
+            ui.step(f"미해결 모순 {len(contradictions)}건 — 자세히: asgard memory contradictions")
         return 1 if any(f["level"] == "error" for f in findings) else 0
+
+    return _guard(_do)
+
+
+def run_contradictions(json_out: bool = False, include_seen: bool = False) -> int:
+    """미해결 모순 장부 — 노른이 찾아 사람에게 넘긴 어긋남. 읽기 전용.
+
+    노른은 모순을 만나면 아무것도 안 고치고 보고만 한다. 정체성 슬롯 다섯 밖에서는 두 기록이
+    어긋나 보여도 대개 둘 다 참이라(다른 시기·다른 맥락·다른 대상) 자동 해소가 곧 데이터
+    소실이기 때문이다 — 흡수는 삭제다. 그래서 이 명령은 보여 주기만 한다."""
+
+    def _do() -> int:
+        from ..memory.contradiction import ACKNOWLEDGED  # 상태 이름은 장부가 정한다 — 여기서 베끼면 갈린다
+
+        d = memory.memory_dir()  # 읽기 전용 — 목록을 보는 것이 홈을 만드는 일이 되면 안 된다
+        rows = memory.open_contradictions(d, include_acknowledged=include_seen)
+        if json_out:
+            print(_json.dumps(rows, ensure_ascii=False, indent=2))
+            return 0
+        if not rows:
+            ui.step("확인한 것까지 통틀어 장부가 비어 있다" if include_seen else "미해결 모순 없음")
+            return 0
+        # --all 은 확인한 것까지 담는다 — 그걸 "미해결"이라고 부르면 머리글이 거짓말한다.
+        ui.head(
+            f"위그드라실 · 모순 {len(rows)}건 (확인한 것 포함)"
+            if include_seen
+            else f"위그드라실 · 미해결 모순 {len(rows)}건"
+        )
+        ui.step("노른이 찾아 넘긴 어긋남이다 — 어느 쪽도 자동으로 고치거나 지우지 않았다.")
+        for row in rows:
+            ui.warn(f"{row['a']} ↔ {row['b']}")
+            ui.step(f"  {row['a_title']}  ↔  {row['b_title']}")
+            ui.step(f"  {row['why'] or '사유 없음'}")
+            marks = [f"처음 {row['detected']}", f"마지막 {row['last_seen']}", f"{row['count']}번 감지"]
+            if row["status"] == ACKNOWLEDGED:
+                marks.append(f"확인함 {row['acknowledged']}" + (f" · {row['note']}" if row["note"] else ""))
+            if row["changed_since"]:
+                # 장부가 본 판본 이후로 페이지가 바뀌었다 — 위의 사유가 지금 본문을 안 가리킬 수 있다.
+                marks.append("그 뒤 페이지가 바뀜 — 사유가 낡았을 수 있다")
+            ui.step(ui.dim("  " + " · ".join(marks)))
+        ui.step("본문 대조: asgard memory show <slug>")
+        # "봤다"와 "고쳤다"를 여기서 갈라 두지 않으면 사람은 확인 명령을 해소로 읽는다.
+        ui.step("봤다고 표시(해소 아님): asgard memory contradiction-seen <a> <b> [--note ...]")
+        return 0
+
+    return _guard(_do)
+
+
+def run_contradiction_seen(a: str, b: str, note: str = "") -> int:
+    """모순 하나에 "봤다"를 표시한다 — **해소가 아니다.**
+
+    표시가 하는 일은 하나뿐이다: 다음 손질에서 이 쌍을 다시 안 보여 준다. 페이지는 한 글자도
+    안 바뀌고 어느 쪽이 참인지도 안 적힌다 — 해소는 사람이 정본을 고쳐서 한다. 두 페이지 중
+    하나가 나중에 바뀌면 표시는 저절로 풀린다 (넘긴 판단은 그때의 두 문장에 대한 것이다)."""
+
+    def _do() -> int:
+        d = memory.memory_dir()
+        row = memory.acknowledge_contradiction(memory.contradiction_key(a, b), note=note, d=d)
+        if row is None:
+            ui.fail(f"장부에 없는 쌍 · {a} ↔ {b}")
+            ui.step("목록에 있는 슬러그 그대로 적어야 한다: asgard memory contradictions")
+            return 1
+        ui.ok(f"봤다고 표시함 · {row['a']} ↔ {row['b']}")
+        ui.warn("해소가 아니다 — 두 페이지는 그대로고, 어느 쪽이 참인지도 안 적혔다.")
+        ui.step("고치려면 정본을 직접 고쳐라 (asgard memory show <slug> 로 본문 확인).")
+        ui.step("두 페이지 중 하나가 바뀌면 이 표시는 자동으로 풀리고 다시 목록에 뜬다.")
+        return 0
 
     return _guard(_do)
 
@@ -404,6 +530,13 @@ def run_proposals(json_out: bool = False) -> int:
             age = max(0, int((time.time() - float(row.get("created") or 0)) / 60))
             ui.step(f"{row['id']}  `{row['kind']}` · {verb} · {age}분 전 · agent={row.get('agent') or '?'}")
             ui.step(f"  {row['text'][:220]}")
+            # 흡수는 페이지 삭제다 — 승인 전에 반드시 눈에 보여야 한다. `run_ingest`가 즉석
+            # 계획에 대해 내는 것과 **같은 줄**이다: 같은 일을 두 화면이 다르게 말하면 한쪽을
+            # 본 사람은 다른 쪽에서 무슨 일이 일어나는지 모른다. 제안 대기줄은 계획을 이미
+            # 세워 두고(`propose.stage`의 plan_absorb) 며칠 뒤에 승인받는 자리라, 여기서
+            # 침묵하면 사라진 페이지를 나중에 발견하게 된다.
+            for slug in row.get("plan_absorb") or []:
+                ui.warn(f"  plan: absorb (delete) contradicting page — {slug}")
         ui.step("승인: asgard memory approve <id>   ·   버림: asgard memory discard <id>")
         ui.step("매번 승인이 번거로우면: asgard memory autosave on --tier personal")
         return 0
@@ -412,30 +545,143 @@ def run_proposals(json_out: bool = False) -> int:
 
 
 _AUTOSAVE_TIERS = ("personal", "project", "both")
+_AUTOSAVE_STATES = ("on", "off", "approve", "revoke")
+
+def _project_gates() -> tuple[tuple[str, str, str, Callable[[dict], str]], ...]:
+    """2차에서 이 기계의 승인을 요구하는 손잡이들 — (이름, grant, 설명, 게이트 판정기).
+
+    표로 두는 이유는 승인 화면이 "리포가 무엇을 요청했는가"를 **빠짐없이** 말해야 하기
+    때문이다: 손잡이가 늘면 여기 한 줄만 붙어도 상태 표시·승인·철회가 함께 따라온다.
+    grant 이름을 늦게 부르는 것은 정본이 memory_bridge라서다 — 여기서 베끼지 않는다."""
+    from ..memory_bridge import GRANT_AUTO_RETAIN_TURNS, GRANT_AUTOSAVE
+
+    return (
+        (
+            "autosave",
+            GRANT_AUTOSAVE,
+            "에이전트가 정제한 record 한 건을 승인 없이 정본·팀 뱅크에 쓴다",
+            autosave_state,
+        ),
+        (
+            "auto_retain_turns",
+            GRANT_AUTO_RETAIN_TURNS,
+            "사람이 쓴 대화 턴 원문을 통째로 팀 뱅크에 보낸다",
+            auto_retain_turns_state,
+        ),
+    )
 
 
-def _autosave_state() -> tuple[bool, bool | None]:
-    """(1차, 2차) 현재 상태 — 2차는 프로젝트 메모리 미연결이면 None (끈 것과 다르다)."""
+def _autosave_state() -> tuple[bool, dict[str, str] | None]:
+    """(1차 켜짐, 2차 게이트 상태들) — 2차는 프로젝트 메모리 미연결이면 None (끈 것과 다르다).
+
+    2차를 참/거짓이 아니라 상태 이름으로 돌려주는 이유: "리포가 요청했는데 이 기계가 미승인"이
+    참/거짓 한 칸에서는 그냥 off로 보인다. 그 사람은 커밋된 설정을 보고 켜졌다고 믿는다."""
     from ..memory import autosave_enabled as personal_on
-    from ..memory_bridge import autosave_enabled as project_on
 
     found = find_config(os.getcwd())
-    return personal_on(), (project_on(found[1]) if found else None)
+    if not found:
+        return personal_on(), None
+    cfg = found[1]
+    return personal_on(), {name: judge(cfg) for name, _grant, _why, judge in _project_gates()}
 
 
-def run_autosave(state: str | None, tier: str, json_out: bool = False) -> int:
+def _gate_label(state: str) -> str:
+    """게이트 상태의 사람 표기 — 미승인은 다음 손짓까지 같이 말해야 쓸모가 있다."""
+    if state == GATE_ON:
+        return "on"
+    if state == GATE_UNAPPROVED:
+        return "리포가 요청함 · 이 기계 미승인 (asgard memory autosave approve --tier project)"
+    return "off"
+
+
+def _run_machine_approval(state: str, tier: str, yes: bool, json_out: bool) -> int:
+    """이 기계의 2차 승인/철회 — 리포 설정은 한 글자도 안 건드린다.
+
+    리포와 기계를 갈라 두는 것이 요점이다. `.asgard/asgard-setting-project.json`은 git으로
+    공유되는 파일이라 거기 쓰는 순간 팀 전원의 설정을 고치게 되고, 남의 기계에서 승인하려던
+    사람이 남의 저장소를 더럽힌다. 승인은 `~/.asgard`의 trust store에만 저장된다."""
+    from ..memory_bridge import grant_machine_approval, revoke_machine_approval
+
+    if tier == "personal":
+        ui.fail("이 기계 승인은 2차(프로젝트) 기억에만 있습니다 — 1차는 `on|off`로 바로 켭니다")
+        return 1
+    found = find_config(os.getcwd())
+    if not found:
+        ui.fail("프로젝트 메모리가 연결돼 있지 않습니다 — asgard memory connect <endpoint>")
+        return 1
+    cfg = found[1]
+    if not is_backend_trusted(cfg):
+        # 허가는 신뢰된 target에만 저장된다 (`trust.machine_grants`) — 여기서 안 세우면 memory_bridge가
+        # PermissionError를 던지고, 사람은 "권한 없음"만 듣고 무엇을 해야 하는지는 못 듣는다.
+        ui.fail("이 기계가 이 backend를 신뢰하지 않습니다 — 먼저 asgard memory connect <endpoint>")
+        return 1
+    gates = [(name, grant, why, judge(cfg)) for name, grant, why, judge in _project_gates()]
+    if state == "revoke":
+        # 철회는 조이는 쪽이라 되묻지 않는다. 전부 거두는 것도 의도다: "무엇을 철회할까요"를
+        # 고르게 하면 하나를 놓친 사람이 켜진 줄 모르는 손잡이를 남긴다.
+        revoked = [name for name, grant, _why, _gate in gates if revoke_machine_approval(cfg, grant)["changed"]]
+        if json_out:
+            print(_json.dumps({"revoked": revoked}, ensure_ascii=False))
+            return 0
+        ui.head("memory autosave · 이 기계의 승인 철회")
+        for name in revoked:
+            ui.ok(f"철회 · {name}")
+        if not revoked:
+            ui.step("이 기계가 승인한 것이 없습니다")
+        ui.step("리포 설정은 그대로입니다 — 이 기계에서만 껐습니다")
+        return 0
+    wanted = [row for row in gates if row[3] != GATE_OFF]
+    if not wanted:
+        ui.step("이 저장소는 자동 손잡이를 요청하지 않습니다 — 승인할 것이 없습니다")
+        ui.step("리포에 요청을 적으려면: asgard memory autosave on --tier project")
+        return 0
+    pending = [row for row in wanted if row[3] != GATE_ON]
+    ui.head("memory autosave · 이 저장소가 요청하는 것")
+    for name, _grant, why, gate in wanted:
+        line = f"{name} · {why}"
+        (ui.ok if gate == GATE_ON else ui.warn)(f"{line} — {'이미 승인함' if gate == GATE_ON else '미승인'}")
+    if not pending:
+        ui.ok("이미 이 기계에서 승인돼 있습니다")
+        return 0
+    target = backend_target(cfg)
+    ui.step(f"대상 · engine={target['engine']} · project_id={target['project_id']}")
+    ui.step("승인하면 이 기계에서만 켜집니다 — 팀의 다른 기계는 각자 승인해야 합니다")
+    if not yes:
+        if not sys.stdin.isatty():
+            ui.warn("비대화형에서는 --yes 없이 승인하지 않습니다")
+            return 1
+        if input("이 기계에서 승인할까요? [y/N] ").strip().lower() not in ("y", "yes"):
+            ui.step("승인하지 않았습니다")
+            return 0
+    granted = [name for name, grant, _why, _gate in pending if grant_machine_approval(cfg, grant)["granted"]]
+    if json_out:
+        print(_json.dumps({"granted": granted}, ensure_ascii=False))
+        return 0
+    for name in granted:
+        ui.ok(f"승인 · {name}")
+    return 0
+
+
+def run_autosave(state: str | None, tier: str, json_out: bool = False, yes: bool = False) -> int:
     """기억 자동저장 토글 — 승인 왕복을 켜고 끄는 하나뿐인 표면 (1차·2차 각각).
 
     상태만 묻는 호출(state=None)이 기본이다: 설정은 조용히 바뀌면 안 되고, 조용히 켜져 있어도
-    안 된다. 켜 놓고 잊은 자동저장은 "왜 이게 저장돼 있지"의 답을 아무 데서도 못 찾게 만든다."""
+    안 된다. 켜 놓고 잊은 자동저장은 "왜 이게 저장돼 있지"의 답을 아무 데서도 못 찾게 만든다.
+
+    `on|off`는 **어디에 적히는가**가 계층마다 다르다: 1차는 이 기계의 글로벌 설정이고, 2차는
+    git으로 공유되는 리포 설정이라 켰다고 켜지지 않는다 — 그 위에 `approve|revoke`가 이 기계의
+    허가를 얹는다. 명령을 새로 만들지 않고 여기에 얹는 이유는 사람이 찾을 자리가 하나여야
+    하기 때문이다: "자동저장이 왜 안 되지"의 답은 언제나 `asgard memory autosave`에 있다."""
 
     def _do() -> int:
         if tier not in _AUTOSAVE_TIERS:
             ui.fail(f"tier는 {' | '.join(_AUTOSAVE_TIERS)} 중 하나여야 합니다")
             return 1
-        if state is not None and state not in ("on", "off"):
-            ui.fail("상태는 on 또는 off 여야 합니다")
+        if state is not None and state not in _AUTOSAVE_STATES:
+            ui.fail(f"상태는 {' | '.join(_AUTOSAVE_STATES)} 중 하나여야 합니다")
             return 1
+        if state in ("approve", "revoke"):
+            return _run_machine_approval(state, tier, yes, json_out)
         want = state == "on"
         if state is not None and tier in ("personal", "both"):
             from ..settings import own_global, save_global
@@ -452,17 +698,37 @@ def run_autosave(state: str | None, tier: str, json_out: bool = False) -> int:
                 section = dict(load_project(root).get("project_memory") or {})
                 save_project(root, "project_memory", {**section, "autosave": want})
         personal, project = _autosave_state()
+        save_gate = project.get("autosave", GATE_OFF) if project else GATE_OFF
+        turns_gate = project.get("auto_retain_turns", GATE_OFF) if project else GATE_OFF
         if json_out:
-            print(_json.dumps({"personal": personal, "project": project}, ensure_ascii=False))
+            # `project`는 옛 뜻(실제로 켜졌는가)을 그대로 지킨다 — 상태 이름으로 바꾸면 "off"가
+            # 참인 문자열이 되어 이 값을 참/거짓으로 읽던 쪽이 조용히 반대로 판정한다.
+            # 세 상태는 `_state` 키에 따로 넣는다.
+            print(
+                _json.dumps(
+                    {
+                        "personal": personal,
+                        "project": None if project is None else save_gate == GATE_ON,
+                        "project_state": None if project is None else save_gate,
+                        "project_auto_retain_turns": None if project is None else turns_gate,
+                    },
+                    ensure_ascii=False,
+                )
+            )
             return 0
         ui.head("memory autosave")
         ui.step(f"1차 개인 기억 (memory.autosave)          · {'on' if personal else 'off'}")
         ui.step(
             "2차 프로젝트 기억 (project_memory.autosave) · "
-            + ("미연결" if project is None else ("on" if project else "off"))
+            + ("미연결" if project is None else _gate_label(save_gate))
         )
-        if personal or project:
+        if turns_gate != GATE_OFF:
+            # 같은 허가 축에 있는데 이 화면에만 없으면, 켜진 줄 모르는 손잡이가 하나 남는다.
+            ui.step("2차 턴 원문 자동 적재 (auto_retain_turns) · " + _gate_label(turns_gate))
+        if personal or save_gate == GATE_ON:
             ui.step("자동저장이 켜져도 인젝션·credential 스캔과 중복 병합은 그대로 지납니다")
+        elif save_gate == GATE_UNAPPROVED:
+            ui.step("이 저장소는 요청했습니다 — 이 기계에서 켜기: asgard memory autosave approve --tier project")
         else:
             ui.step("켜기: asgard memory autosave on [--tier personal|project|both]")
         return 0
@@ -696,7 +962,7 @@ def run_connect(
 
         root = os.getcwd()
         previous = dict(memory_bridge.project_memory_section(load_project(root)) or {})
-        # 소유권 신원은 설정 파일이 아니라 사이드카(.asgard/memory/binding.json)에 산다 — 설정 섹션만
+        # 소유권 신원은 설정 파일이 아니라 사이드카(.asgard/memory/binding.json)에 있다 — 설정 섹션만
         # 읽으면 재연결이 매번 새 project_uid를 발급하고, 서버의 기존 마커와 어긋나 자기 뱅크를
         # "foreign"으로 거절한다. 그러면 timeout·endpoint 조정도, 설정 변경으로 무효화된 신뢰의
         # 재승인도 불가능해진다 — 그 무효화가 안내하는 수리 명령이 바로 이 connect 다 (26-07-26 실측).
@@ -1588,7 +1854,7 @@ def _semantic_nudge_line(d: str) -> str:
     if not message:
         return ""
     # latch는 사유별로 나눈다: "준비 안 됨"을 한 번 말했다고 그 뒤에 생긴 색인 드리프트까지
-    # 침묵하면, 고쳐야 할 두 번째 고장이 첫 번째 고장의 표시에 먹힌다.
+    # 침묵하면, 고쳐야 할 두 번째 고장이 첫 번째 고장의 표시에 가려진다.
     flag = os.path.join(d, SEMANTIC_NUDGE_FLAG if not sem.model_cached() else COVERAGE_NUDGE_FLAG)
     if os.path.exists(flag):
         return ""
@@ -1601,7 +1867,7 @@ def _semantic_nudge_line(d: str) -> str:
 
 
 def run_semantic(action: str = "status", json_out: bool = False) -> int:
-    """시맨틱 검색 상태·워밍업·켜고 끄기. 첫 실행의 긴 내려받기를 여기서 미리 치른다."""
+    """시맨틱 검색 상태·워밍업·켜고 끄기. 첫 실행의 긴 내려받기를 여기서 미리 부담한다."""
 
     def _do() -> int:
         from .. import memory_semantic as sem
@@ -1666,7 +1932,7 @@ def _emit_semantic_status(json_out: bool) -> int:
     else:
         ui.warn("켜져 있지만 임베더를 못 불렀다 — lexical 2경로로 폴백 중")
         return 1
-    # 임베더가 선다는 것과 시맨틱이 회수에 기여한다는 것은 다른 말이다. 덮지 못한 페이지는
+    # 임베더가 준비된다는 것과 시맨틱이 회수에 기여한다는 것은 다른 말이다. 덮지 못한 페이지는
     # 어휘 경로로만 찾히는데, 그 사실이 여기 안 적히면 사용자는 켰다고 믿은 채로 못 받는다.
     if coverage["ok"]:
         ui.ok(f"색인 · {coverage['fresh']}/{coverage['pages']} 페이지 (100%)")
@@ -1680,6 +1946,41 @@ def _emit_semantic_status(json_out: bool) -> int:
     ui.warn(f"색인 · {detail}{suffix} — 덮이지 않은 페이지는 시맨틱으로 안 찾힌다")
     ui.step("asgard memory reindex")
     return 1
+
+
+_FINDING_KINDS = {"secret": "비밀", "injection": "인젝션"}
+_MAX_SHOWN_FINDINGS = 5  # 한 문서가 화면을 통째로 먹지 않게 — 나머지는 셈으로만 말한다
+_EXCERPT_COLS = 120
+
+
+def _quote(text: str) -> str:
+    """문서 원문 조각을 **무력하게** 그린다 — 이 문자열은 남이 쓴 것이고 우리 말이 아니다.
+
+    발췌와 사유는 검사에 걸린 문서에서 나온다. 걸린 문서는 정의상 인젝션 문구를 담고 있을 수
+    있으므로, 화면에 우리 안내와 같은 모양으로 앉으면 그 자체가 두 번째 주입면이 된다. 그래서
+    한 줄로 눕히고 인용부호로 가둔 뒤 폭을 자른다 (B가 이미 `<`·`>`를 바꿔 두었고, 비밀 값은
+    걸린 스팬이 [redacted-credential]로 가려진 채로 온다 — 여기서 다시 가리지 않는다)."""
+    flat = " ".join(str(text).split())
+    return "「" + ui.fit(flat, _EXCERPT_COLS) + "」" if flat else "「」"
+
+
+def _show_failed_document(row: dict, level: Callable[[str], None] = ui.warn) -> None:
+    """못 들어간 문서 한 건 — 사유와 **걸린 자리**를 보여준다.
+
+    조용히 건너뛰면 사람은 문서가 저장된 줄 안다. 사유 한 줄만 내면 "무엇이 어디서 걸렸는지"를
+    못 물어보고 통째 거절과 통째 승인 중 하나만 고르게 되는데, 그건 고르는 게 아니다."""
+    findings = row.get("findings") or []
+    head = "검사에 걸려 막힘" if findings else "읽지 못함"
+    level(f"{head} · {os.path.basename(str(row.get('path') or ''))} — {row.get('error') or ''}")
+    for finding in findings[:_MAX_SHOWN_FINDINGS]:
+        kind = _FINDING_KINDS.get(str(finding.get("kind")), str(finding.get("kind") or "?"))
+        line, column = int(finding.get("line") or 0), int(finding.get("column") or 0)
+        where = f"{line}행 {column}열" if line else "위치 미상"
+        ui.step(f"  {kind} · {where} · {finding.get('reason') or ''}")
+        if finding.get("excerpt"):
+            ui.step(f"    {_quote(finding['excerpt'])}")
+    if len(findings) > _MAX_SHOWN_FINDINGS:
+        ui.step(f"  … 외 {len(findings) - _MAX_SHOWN_FINDINGS}건")
 
 
 def run_project_ingest(
@@ -1723,7 +2024,11 @@ def run_project_ingest(
             if json_out:
                 print(_json.dumps(payload, ensure_ascii=False, indent=2))
                 return 0
-            ui.head(f"project memory ingest · {len(ready)} document(s)")
+            # 준비된 것만 세면 막힌 문서가 머리글에서 사라진다 — 던진 개수와 안 맞는 순간
+            # 사람은 나머지가 통과한 줄 안다.
+            blocked = sum(1 for row in failed if row.get("findings"))
+            counted = f"{len(ready)} document(s)" + (f" · 막힘 {blocked}건" if blocked else "")
+            ui.head(f"project memory ingest · {counted}")
             for row in rows:
                 mark = " (지정)" if row["overridden"] else ""
                 ui.step(
@@ -1737,7 +2042,7 @@ def run_project_ingest(
                         "저장소 정본 + 로컬 인덱스로 간다 (검색은 되고, 뱅크는 지킨다)"
                     )
             for row in failed:
-                ui.warn(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
+                _show_failed_document(row)
             if ready:
                 ui.warn("아직 저장하지 않음 — 검토 후 --yes를 붙인다")
             return 0 if ready or not failed else 1
@@ -1753,7 +2058,7 @@ def run_project_ingest(
             else:
                 ui.ok(f"{row['name']} · 승인 대기 — asgard memory project-approve {row['approval_id']}")
         for row in failed:
-            ui.fail(f"읽지 못함 · {os.path.basename(row['path'])} — {row['error']}")
+            _show_failed_document(row, level=ui.fail)
         return 0 if not failed else 1
 
     return _guard(_do)

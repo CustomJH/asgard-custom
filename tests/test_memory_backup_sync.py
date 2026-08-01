@@ -226,6 +226,66 @@ class GitSyncTest(MemoryHomeBase):
         self.assertNotIn("sync-state.json", listed)
 
 
+class GitScaffoldTest(MemoryHomeBase):
+    """`.gitignore`·`.gitattributes` 는 사용자도 적는 자리다 — 스캐폴드는 덧붙이지 갈아 끼우지 않는다.
+
+    같은 저장소의 `vault.scaffold_obsidian` 이 이미 이 규율을 쓴다 ("사용자 설정이 정본").
+    교체하면 사용자가 적은 규칙이 동기화 한 번에 사라지고, 사라진 줄이 `.gitignore` 라면
+    안 올리려던 파일이 조용히 원격으로 나간다."""
+
+    def setUp(self):
+        super().setUp()
+        if shutil.which("git") is None:  # pragma: no cover - git 없는 환경
+            self.skipTest("git is not installed")
+        self.remote = os.path.join(self.tmp, "bare.git")
+
+    def _write(self, name: str, body: str) -> str:
+        path = os.path.join(self.d, name)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        return path
+
+    def _read(self, name: str) -> str:
+        with open(os.path.join(self.d, name), encoding="utf-8") as handle:
+            return handle.read()
+
+    def test_an_empty_home_gets_the_whole_template(self):
+        ms.ensure_git_repo(self.d, self.remote)
+        self.assertEqual(self._read(".gitignore").splitlines(), ms.GIT_IGNORE.splitlines())
+        self.assertEqual(self._read(".gitattributes").splitlines(), ms.GIT_ATTRIBUTES.splitlines())
+
+    def test_user_lines_survive_and_the_missing_ones_are_appended(self):
+        self._write(".gitignore", "# 내 규칙\nsecrets.md\n")
+        self._write(".gitattributes", "*.md diff=markdown\n")
+
+        ms.ensure_git_repo(self.d, self.remote)
+
+        ignore = self._read(".gitignore").splitlines()
+        self.assertIn("# 내 규칙", ignore)
+        self.assertIn("secrets.md", ignore)
+        for line in ms.GIT_IGNORE.splitlines():
+            self.assertIn(line, ignore)
+        attributes = self._read(".gitattributes").splitlines()
+        self.assertIn("*.md diff=markdown", attributes)
+        self.assertIn(ms.GIT_ATTRIBUTES.strip(), attributes)
+
+    def test_a_file_without_a_trailing_newline_does_not_glue_two_rules_together(self):
+        self._write(".gitignore", "secrets.md")
+
+        ms.ensure_git_repo(self.d, self.remote)
+
+        self.assertIn("secrets.md", self._read(".gitignore").splitlines())
+
+    def test_running_twice_does_not_stack_the_template(self):
+        self._write(".gitignore", "secrets.md\n")
+        ms.ensure_git_repo(self.d, self.remote)
+        once = self._read(".gitignore")
+
+        ms.ensure_git_repo(self.d, self.remote)
+
+        self.assertEqual(self._read(".gitignore"), once)
+
+
 class SettingsTest(MemoryHomeBase):
     def test_transport_is_validated_and_round_trips(self):
         with self.assertRaises(ms.SyncError):

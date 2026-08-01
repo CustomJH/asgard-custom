@@ -6,6 +6,7 @@
 """
 
 import datetime as _dt
+import inspect
 import json
 import os
 import shutil
@@ -14,7 +15,7 @@ import unittest
 from unittest import mock
 
 from asgard import memory
-from asgard.memory import norn
+from asgard.memory import norn, recall
 from asgard.project_memory_backends import BackendSettings, HindsightBackend
 
 
@@ -319,6 +320,215 @@ class TestValidation(NornBase):
                 self.assertNotIn("polarity_conflict", accepted[0])
 
 
+class TestStemFloor(unittest.TestCase):
+    """어간 하한(`recall._stem_floor`)이 무엇을 사는지·무엇을 치르는지 못 박는다.
+
+    이 자는 접지(`pattern._grounded`·`norn._insight_grounding`)와 극성(`norn._spans`)이 같이
+    쓴다. 아래 절들은 **전부** 현재 거동이고, 산 것과 치른 값이 섞여 있다 — 나란히 세워 둬야
+    규칙을 옮기려는 사람이 자기가 무엇을 깨고 무엇을 고치는지 한자리에서 본다.
+
+    26-08-01 개정: 옛 자는 낱말 길이의 절반이었고, 이 절은 그때 짧은 낱말이 남의 근거를
+    빌려 오는 것을 **오탐인 채로** 못 박아 두고 "재는 자가 없어 못 고친다"고 적어 두었다.
+    그 자가 `benchmarks/grounding/` 으로 섰고 답한 것은 "하한을 올려라"가 아니라 "길이를
+    버려라"였다 (한국어는 `배포를`과 `저장소`가 둘 다 3자→2자라 길이로 원리적으로 못 가른다).
+    그래서 그 assert 들은 이제 뒤집혀 있다."""
+
+    def test_the_floor_is_what_makes_korean_particles_and_english_inflection_land(self):
+        """이 자가 사는 것 — 조사·어미가 붙어도 같은 낱말로 센다 (실측 26-07-28: 3/5 오탈락 해소)."""
+        self.assertTrue(recall._stem_hit("금요일", "오딘은 금요일에는 배포를 안 한다"))
+        self.assertTrue(recall._stem_hit("배포를", "배포 전에 테스트를 돌린다"))
+        self.assertTrue(recall._stem_hit("배포한다", "배포 절차를 다시 적었다"))
+        self.assertTrue(recall._stem_hit("deploy", "deploying on friday"))
+        self.assertTrue(recall._stem_hit("deploys", "we deploy on friday"))
+
+    def test_a_word_no_longer_collapses_to_a_prefix_that_borrows_someone_elses_evidence(self):
+        """옛 자가 치르던 값 — 절반 규칙이 짧은 낱말을 두세 글자로 깎아 남의 근거를 빌렸다.
+
+        아래는 전부 **오탐**이었다: 주장이 든 낱말이 출처에 없는데도 근거로 셈에 들었다.
+        목록으로 깎으면 목록에 없는 꼬리는 안 떨어지므로 완전 일치를 요구하고, 그래서 안 걸린다."""
+        self.assertFalse(recall._stem_hit("저장소", "저장 예산에는 상한이 없다"))  # `소`는 조사가 아니다
+        self.assertFalse(recall._stem_hit("인증서", "인증 없이 접근했다"))  # `서`도 아니다
+        self.assertFalse(recall._stem_hit("deploy", "dependency injection"))  # `loy`는 접미가 아니다
+        self.assertFalse(recall._stem_hit("release", "relevant notes"))  # `ase`도 아니다
+
+    def test_the_list_cannot_tell_a_one_letter_particle_from_a_noun_ending(self):
+        """새 자가 치르는 값 — 한 글자 조사(`도`)는 진짜 명사의 끝 글자이기도 하다.
+
+        이 둘은 목록 방식이 원리적으로 못 푸는 나머지다(형태소 분석기 없이는). 옛 자가 틀리던
+        28건이 6건으로 줄었고 그 6건 중 둘이 여기다 — 줄었다고 없어진 척하지 않는다."""
+        self.assertTrue(recall._stem_hit("가속도", "가속 페달을 밟았다"))  # 가속도 ≠ 가속
+        self.assertTrue(recall._stem_hit("자유도", "자유 시간을 늘렸다"))  # 자유도 ≠ 자유
+
+    def test_a_derivation_is_stripped_to_its_stem_but_not_to_its_root(self):
+        """`ization`이 목록에 없는 이유 — 넣으면 어근까지 벗겨져 남의 낱말을 삼킨다.
+
+        `ation`만 두면 같은 파생을 `authoriz`로 잡아 `authorize`에는 붙고 `author`에는 안 붙는다.
+        근거 벤치 수치는 두 방식이 같아서(코퍼스에 `-ization` 양성 한 건뿐) 이 절이 그 차이를 든다."""
+        self.assertTrue(recall._stem_hit("authorization", "authorize the caller"))  # 파생은 잡고
+        self.assertFalse(recall._stem_hit("authorization", "the author of the commit"))  # 어근은 안 잡는다
+        self.assertFalse(recall._stem_hit("organization", "an organ transplant"))
+        self.assertFalse(recall._stem_hit("authentication", "author of the commit"))
+
+    def test_the_minimum_stem_is_measured_per_script(self):
+        """남는 어간의 하한도 문자 체계마다 다르다 — 한국어 2음절은 낱말이고 영어 2글자는 조각이다.
+
+        이 축은 근거 벤치가 못 잰다(합성 코퍼스에 짧은 영어 낱말이 없어 en 2·3·4 가 같은 수치다).
+        영어 사전 235,616낱말로 따로 쟀고 2자 이하 어간이 en=2 에서 320건, en=3 에서 0건이었다."""
+        self.assertEqual((recall.KO_STEM_MIN, recall.EN_STEM_MIN), (2, 3))
+        self.assertTrue(recall._stem_hit("배포를", "배포 전에 테스트를 돌린다"))  # 한국어는 2음절까지 깎는다
+        self.assertFalse(recall._stem_hit("action", "ac dc plays tonight"))  # 영어는 `ac` 로 안 깎인다
+        self.assertFalse(recall._stem_hit("add", "ad hoc decision"))
+        for word in ("tested", "deploys", "logs", "used"):  # 3자 어간은 그대로 산다
+            with self.subTest(word):
+                self.assertGreaterEqual(recall._stem_floor(word), 3)
+
+    def test_grounding_no_longer_counts_a_word_the_sources_never_carry(self):
+        """오탐이 낱말 하나로 끝나지 않았다는 것 — 접지 점수가 실제로 부풀었다.
+
+        같은 주장·같은 출처로 옛 자는 **만점 1.0** 을 냈다. 만점은 문턱을 아무리 올려도 못 막는다."""
+        claim = "저장소 인증서"
+        sources = [({"title": "예산"}, "저장 예산에는 상한이 없다. 인증 없이 접근했다.")]
+        total, _per_source = norn._insight_grounding("", claim, sources)
+        self.assertEqual(total, 0.0)  # 두 낱말 중 어느 것도 출처에 없다 — 이제 그렇게 센다
+
+    def test_the_floor_has_exactly_one_home(self):
+        """`_spans`가 하한을 따로 적으면 근거는 통과했는데 극성이 낱말을 못 찾는다 (그 독스트링)."""
+        for word in ("저장소", "deploy", "release", "금요일", "배포한다", "aa"):
+            self.assertEqual(len(norn._spans(word, word)), 1, word)
+            haystack = word[: recall._stem_floor(word)] + " 뒤에 다른 말"
+            self.assertEqual(bool(norn._spans(word, haystack)), recall._stem_hit(word, haystack), word)
+
+    def test_the_grounding_list_is_the_same_one_retrieval_uses(self):
+        """목록이 한 자리에 있다는 것 — `query()`가 자기 사본을 다시 들면 그 갈라짐이 되돌아온다.
+
+        옛 저장소는 한국어를 두 가지 자로 쟀다: 회수는 조사 목록으로 형태를 보고, 근거 대조는
+        길이의 절반으로 잘랐다. 그 비대칭이 이 절이 고친 것이라, 표가 다시 둘이 되면 안 된다."""
+        source = inspect.getsource(recall.query)
+        self.assertIn("_KO_PARTICLES", source)
+        self.assertIn("_KO_ENDINGS", source)
+        self.assertNotIn("particles = (", source)  # 사본을 다시 만들지 않는다
+        # 판정용 표는 두 목록의 합집합이고 긴 것부터 본다 — `에서는`을 `는`으로 먼저 떼면 어간이 달라진다
+        self.assertEqual(set(recall._KO_STEM_SUFFIXES), {*recall._KO_PARTICLES, *recall._KO_ENDINGS})
+        lengths = [len(s) for s in recall._KO_STEM_SUFFIXES]
+        self.assertEqual(lengths, sorted(lengths, reverse=True))
+
+
+class TestInsightAutoPromotionGate(NornBase):
+    """자동 승격 게이트가 **실제로 막는가** — 옵트인은 그대로 두고 문만 고친다.
+
+    자동 승격은 `norn_insight_auto` 옵트인이고 기본은 꺼짐이다 (그 판단의 근거는 `norn.py`의
+    `AUTO_MODES` 위 주석에 있다). 이 절은 그 기본을 안 건드린다. 켜기로 한 사람이 쓰는 문이
+    실제로 닫히는가만 묻는다 — 옛 자에서는 아래 허구가 **7건 다 통과**했다 (접지 점수가 부풀어
+    `INSIGHT_AUTO_FLOOR` 0.40을 넘겼다). 씨앗은 `benchmarks/grounding/corpus.json`의 허구 7건이다.
+
+    다섯만 막힌다고 적는 이유: 나머지 둘(`ko-fabricated-cert` 0.50 · `ko-fabricated-repo` 0.60)은
+    목록으로도 안 막힌다. 벤치가 잰 자동승격 정밀도 0.714(=5/7)가 이 숫자다. 못 막는 것을
+    막히는 척 적으면 이 절이 지키려던 것을 이 절이 깬다."""
+
+    # (id, 제목, 통찰 본문, 출처) — expect=false, 즉 출처가 그 말을 한 적 없는 허구
+    FABRICATED = (
+        ("seed-storage-cert", "", "저장소 인증서", [("예산", "저장 예산에는 상한이 없다. 인증 없이 접근했다.")]),
+        (
+            "ko-mixed-noise",
+            "전기차 충전",
+            "전기차 충전 비용을 회사가 낸다",
+            [("요금", "전기 요금이 올라 충전기 설치를 미뤘다")],
+        ),
+        (
+            "en-fabricated-release",
+            "release cadence",
+            "release restore is automated",
+            [("docs", "relevant notes live in the rest api design page")],
+        ),
+        (
+            "en-fabricated-prod",
+            "production policy",
+            "production deploy needs a container review",
+            [("notes", "the product owner said dependency updates contain a bug")],
+        ),
+        (
+            "en-fabricated-secret",
+            "secret handling",
+            "secret backup is validated",
+            [("page", "the section header says: go back to valid json only")],
+        ),
+    )
+    # 목록으로도 못 막는 둘 — 출처가 어간을 정말로 들고 있어서 접지가 문턱을 넘는다
+    STILL_PASSING = (
+        (
+            "ko-fabricated-cert",
+            "인증서 만료",
+            "인증서 만료를 감시한다",
+            [("접근 로그", "인증 없이 접근한 흔적이 있다. 만료 예산을 다시 잡았다.")],
+        ),
+        (
+            "ko-fabricated-repo",
+            "저장소 정리",
+            "저장소 정리를 분기마다 한다",
+            [("예산 회의", "저장 예산을 분기마다 다시 잡는다. 정리 해고는 없다.")],
+        ),
+    )
+    GENUINE = (
+        (
+            "ko-deploy-friday",
+            "배포 습관",
+            "오딘은 금요일에 배포하지 않는다",
+            [("금요일 이야기", "금요일에는 배포를 안 하는 게 마음이 편하다")],
+        ),
+        (
+            "en-deploy-friday",
+            "deploy habit",
+            "the user avoids deploying on friday",
+            [("friday", "we do not deploy on friday, it never ends well")],
+        ),
+        (
+            "ko-two-source-insight",
+            "롤백 습관",
+            "롤백 절차를 문서에 적어 둔다",
+            [("절차", "롤백 절차가 문서에 없어서 헤맸다"), ("회고", "문서화 규칙을 그때 정했다")],
+        ),
+    )
+
+    @staticmethod
+    def _auto(title, text, sources):
+        """옵트인을 켠 채로 이 통찰이 자동 적용분에 드는가 — 게이트가 보는 그대로."""
+        total, _per = norn._insight_grounding(title, text, [({"title": t}, b) for t, b in sources])
+        op = {"op": "insight", "title": title, "text": text, "grounding": total}
+        auto, _proposed = norn.partition_ops([op], "full", allow_insight=True)
+        return bool(auto), total
+
+    def test_fabricated_insights_are_stopped_at_the_auto_gate(self):
+        """허구가 사람 승인을 건너뛰지 못한다 — 옛 자에서는 다섯 다 통과했다."""
+        for case_id, title, text, sources in self.FABRICATED:
+            with self.subTest(case_id):
+                promoted, total = self._auto(title, text, sources)
+                self.assertFalse(promoted, f"{case_id}: 접지 {total:.2f} 로 자동 승격됐다")
+
+    def test_the_two_the_list_still_cannot_stop_are_written_down(self):
+        """못 막는 둘을 명시한다 — 이 절이 "다 막는다"로 읽히면 다음 사람이 속는다."""
+        for case_id, title, text, sources in self.STILL_PASSING:
+            with self.subTest(case_id):
+                promoted, total = self._auto(title, text, sources)
+                self.assertTrue(promoted, f"{case_id}: 막히기 시작했다면 이 절과 벤치 수치를 같이 고쳐라")
+                self.assertGreaterEqual(total, norn.INSIGHT_AUTO_FLOOR)
+
+    def test_genuine_insights_still_pass(self):
+        """정밀도를 산 값이 재현율이 아니어야 한다 — 진짜 근거는 전부 살아남는다 (벤치 재현율 1.000)."""
+        for case_id, title, text, sources in self.GENUINE:
+            with self.subTest(case_id):
+                promoted, total = self._auto(title, text, sources)
+                self.assertTrue(promoted, f"{case_id}: 진짜 근거인데 접지 {total:.2f} 로 막혔다")
+
+    def test_the_default_is_still_opt_out(self):
+        """정밀도가 올라도 기본은 안 켠다 — 이 스위치는 "검증기를 믿는다"가 아니다 (`insight_auto` 독스트링)."""
+        genuine = self.GENUINE[0]
+        total, _per = norn._insight_grounding(genuine[1], genuine[2], [({"title": t}, b) for t, b in genuine[3]])
+        op = {"op": "insight", "title": genuine[1], "text": genuine[2], "grounding": total}
+        auto, proposed = norn.partition_ops([op], "full", allow_insight=None)  # 설정 그대로 = 기본 꺼짐
+        self.assertEqual(auto, [])
+        self.assertEqual(len(proposed), 1)
+
+
 class TestPolarityLexicon(NornBase):
     """부정 어휘 — "안 한다" 만이 부정이 아니다. 하지 않음을 뜻하는 본동사도 부정이다."""
 
@@ -401,6 +611,102 @@ class TestPolarityLexicon(NornBase):
         accepted, dropped = norn.validate_ops([{"op": "delete", "slug": "x"}], self.d)
         self.assertEqual(accepted, [])
         self.assertIn("unknown", dropped[0]["reason"])
+
+
+class TestContradictionLedger(NornBase):
+    """모순은 사람에게 넘긴다 — 그러려면 넘기는 통로가 있어야 한다.
+
+    고치기 전에는 `contradiction` op 이 그 런의 리포트 파일에만 적혔다. 리포트는 런마다
+    새로 생기므로 같은 어긋남이 열 번 감지되면 열 곳에 흩어지고, 사람이 이미 판단한 것도
+    다음 런에서 똑같이 다시 떴다."""
+
+    def _pair(self) -> tuple[str, str]:
+        a = self._add("사용자는 탭 들여쓰기를 선호한다", "탭 선호")
+        b = self._add("사용자는 스페이스 들여쓰기를 선호한다", "스페이스 선호")
+        return a, b
+
+    def _run(self, a: str, b: str) -> dict:
+        return norn.apply_norn(self.d, {"ops": [{"op": "contradiction", "a": a, "b": b, "why": "들여쓰기 충돌"}]})
+
+    def test_a_detected_contradiction_becomes_something_a_human_can_query(self):
+        a, b = self._pair()
+        self._run(a, b)
+
+        rows = memory.open_contradictions(self.d)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual({rows[0]["a"], rows[0]["b"]}, {a, b})
+        self.assertEqual(rows[0]["status"], "open")
+        self.assertIn("들여쓰기", rows[0]["why"])
+        self.assertTrue(rows[0]["detected"])
+        self.assertEqual({rows[0]["a_title"], rows[0]["b_title"]}, {"탭 선호", "스페이스 선호"})
+
+    def test_two_sweeps_without_a_resolution_do_not_pile_up(self):
+        a, b = self._pair()
+        self._run(a, b)
+        self._run(b, a)  # 같은 쌍, 순서만 뒤집어서
+
+        rows = memory.open_contradictions(self.d)
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["count"], 2)  # 줄은 하나, 감지 횟수만 오른다
+
+    def test_nothing_is_resolved_automatically(self):
+        a, b = self._pair()
+        before = {slug: memory._read(self.d, slug) for slug in (a, b)}
+
+        self._run(a, b)
+        for _ in range(3):
+            self._run(a, b)
+
+        self.assertEqual({slug: memory._read(self.d, slug) for slug in (a, b)}, before)
+        self.assertEqual(sorted(memory._pages(self.d)), sorted([a, b]))
+        self.assertEqual(memory.open_contradictions(self.d)[0]["status"], "open")
+
+    def test_what_the_human_has_seen_stops_coming_back(self):
+        a, b = self._pair()
+        self._run(a, b)
+        key = memory.contradiction_key(a, b)
+
+        memory.acknowledge_contradiction(key, note="둘 다 맞다 — 상황이 다르다", d=self.d)
+
+        self.assertEqual(memory.open_contradictions(self.d), [])
+        seen = memory.open_contradictions(self.d, include_acknowledged=True)
+        self.assertEqual(seen[0]["status"], "acknowledged")
+        self.assertIn("상황이 다르다", seen[0]["note"])
+        # 다음 손질이 같은 쌍을 또 물어와도 사람 앞에 다시 서지 않는다
+        self._run(a, b)
+        self.assertEqual(memory.open_contradictions(self.d), [])
+        # 그리고 증거 카드가 그 사실을 LLM 에게 먼저 알려 준다
+        self.assertEqual(len(norn.signals(self.d)["acknowledged_contradictions"]), 1)
+
+    def test_but_it_comes_back_when_the_ground_moves(self):
+        """넘긴 판단은 그때의 두 문장에 대한 것이지 앞으로 올 모든 문장에 대한 것이 아니다."""
+        a, b = self._pair()
+        self._run(a, b)
+        memory.acknowledge_contradiction(memory.contradiction_key(a, b), d=self.d)
+        meta, body = self._page(a)
+        memory._atomic_write(memory._page_path(self.d, a), memory.render_page(meta, body + "\n\n생각이 바뀌었다."))
+
+        self._run(a, b)
+
+        self.assertEqual(memory.open_contradictions(self.d)[0]["status"], "open")
+
+    def test_a_vanished_page_leaves_no_open_question(self):
+        a, b = self._pair()
+        self._run(a, b)
+        memory.remove(b, self.d)
+
+        self.assertEqual(memory.open_contradictions(self.d), [])  # 어긋날 상대가 없다
+
+    def test_the_report_marks_a_repeat_instead_of_repeating_itself(self):
+        a, b = self._pair()
+        self._run(a, b)
+        result = self._run(a, b)
+
+        report = open(result["report"], encoding="utf-8").read()
+
+        self.assertIn("2번째 감지", report)
 
 
 class TestPlanAndApply(NornBase):

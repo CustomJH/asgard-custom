@@ -19,6 +19,7 @@ from .store import (
     _lock,
     _pages,
     _read,
+    _read_all,
     ensure_home,
 )
 
@@ -29,24 +30,28 @@ def _index_row(slug: str, meta: dict, body: str) -> str:
     return f"- [{meta.get('title', slug)}](pages/{slug}.md) `{_kind(meta)}` — {_desc(meta, body)}"
 
 
-def build_index(d: str) -> str:
+def build_index(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> str:
+    """카탈로그 본문. loaded 를 주면 그 읽기를 재사용한다 (`store._read_all` 참조)."""
     lines = ["# Memory Index", ""]
-    for slug in _pages(d):
-        pg = _read(d, slug)
-        if pg:
-            lines.append(_index_row(slug, *pg))
+    for slug, meta, body in _read_all(d) if loaded is None else loaded:
+        lines.append(_index_row(slug, meta, body))
     return "\n".join(lines) + "\n"
 
 
 def write_index(d: str) -> str:
-    text = build_index(d)
+    # 페이지는 여기서 **한 번** 읽는다. 아래 두 파생 목차가 같은 (meta, body)를 각자 다시
+    # 열던 자리다 — 페이지를 저장할 때마다 도는 경로라 쓰기 한 번이 읽기 2N 번이었다.
+    # 실측(26-08-01): 200 페이지 26.5ms → 14.8ms, 1,000 페이지 137.1ms → 72.6ms (−47%).
+    # 읽기 절반과 함께 chmod 도 절반이 준다 (`vault.write_maps` 의 loaded 갈래).
+    loaded = _read_all(d)
+    text = build_index(d, loaded)
     _atomic_write(os.path.join(d, INDEX), text)
     # index.md는 주입면이라 예산에 묶여 있다. 예산 밖 전체 목차는 maps/ 가 진다 —
     # 같은 파생 시점에 같이 갱신돼야 vault를 열었을 때 목차가 거짓말하지 않는다.
     with contextlib.suppress(Exception):  # 파생 목차 실패가 지식 쓰기를 막지 않는다
         from .vault import write_maps
 
-        write_maps(d)
+        write_maps(d, loaded=loaded)
     return text
 
 
@@ -60,8 +65,19 @@ def _connect(path: str) -> sqlite3.Connection:
             "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5"
             "(slug UNINDEXED, title, kind UNINDEXED, body, tokenize='trigram')"
         )
-        # usage는 운영 메타 (지식 아님) — 페이지 파일을 더럽히지 않고 여기서만 추적
-        conn.execute("CREATE TABLE IF NOT EXISTS usage(slug TEXT PRIMARY KEY, uses INT DEFAULT 0, last_used TEXT)")
+        # 회수 계수 — 사람이 부른 검색(uses)과 자동 주입(exposures)을 **갈라서** 센다.
+        # 둘을 한 칸에 세면 매 턴 주입되는 페이지가 영영 부패 후보가 못 된다 (memory.usage ①).
+        # 이 칸은 파생이 아니다: 재생 원본이 pages/ 에 없어 정본 `usage.json` 이 짝으로 산다.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS usage(slug TEXT PRIMARY KEY, uses INT DEFAULT 0, last_used TEXT, "
+            "exposures INT DEFAULT 0, last_exposed TEXT)"
+        )
+        # 옛 스키마(uses/last_used 둘뿐)를 만나면 조용히 늘린다 — 사람이 DB를 지우게 만들지 않는다.
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(usage)")}
+        if "exposures" not in columns:
+            conn.execute("ALTER TABLE usage ADD COLUMN exposures INT DEFAULT 0")
+        if "last_exposed" not in columns:
+            conn.execute("ALTER TABLE usage ADD COLUMN last_exposed TEXT")
         # vec = 시맨틱 스트림 파생물 (옵트인). sha로 본문 변경만 재임베딩, data는 float32 BLOB.
         # 지워도·모델 바뀌어도 정본(pages/)에서 reindex로 복원 — 파일이 여전히 정본이다.
         conn.execute("CREATE TABLE IF NOT EXISTS vec(slug TEXT PRIMARY KEY, sha TEXT, dim INT, data BLOB)")
@@ -293,7 +309,12 @@ def vec_coverage(d: str | None = None) -> dict:
 
 
 def reindex(d: str | None = None) -> int:
-    """pages/ → state.db + index.md 전체 재생성. usage 보존, 손상 시 nuke-rebuild. 반환 = 페이지 수."""
+    """pages/ → state.db + index.md 전체 재생성. 손상 시 nuke-rebuild. 반환 = 페이지 수.
+
+    회수 기록은 재생 대상이 아니라 **복원** 대상이다: DB 를 지우고 다시 만드는 길에서 색인은
+    pages/ 에서 나오지만 사용 기록은 나올 데가 없다. 그래서 정본 `usage.json` 에서 되살린다
+    (`memory.usage.hydrate`) — 그러지 않으면 손상 한 번에 90일 넘은 전 페이지가 일제히
+    부패 후보로 뜬다."""
     d = ensure_home(d)
     with _lock(d):
         conn = None
@@ -321,6 +342,11 @@ def reindex(d: str | None = None) -> int:
                     _fts_upsert(conn, d, slug)
                 _vec_prune(conn, pages)
             conn.close()
+        from .usage import flush as _usage_flush
+        from .usage import hydrate as _usage_hydrate
+
+        _usage_hydrate(d)  # 정본에 접어 둔 회수 기록을 되살린다 (파생 소실 복구)
+        _usage_flush(d)  # 그 뒤 정본을 현재 계수로 맞춘다 — 지워진 페이지의 행이 여기서 빠진다
         write_index(d)
         return len(_pages(d))
 
@@ -335,13 +361,13 @@ def _vec_prune(conn: sqlite3.Connection, pages: list[str]) -> None:
 
 
 def usage_stats(d: str | None = None) -> list[dict]:
-    """usage 테이블 읽기 전용 스냅샷 — slug·uses·last_used, 회수 빈도 내림차순.
-    파생물(state.db)이라 없으면 빈 리스트 (fail-open). 대시보드·분석용 순수 읽기."""
+    """usage 테이블 읽기 전용 스냅샷 — 회수 빈도 내림차순. 대시보드·분석용 순수 읽기.
+
+    행마다 네 값을 준다: `uses`/`last_used` 는 사람이 부른 검색, `exposures`/`last_exposed` 는
+    자동 주입이다 (`memory.usage`). 옛 표면이 보던 `uses`는 이름도 자리도 그대로고, 뜻만
+    좁아졌다 — 자동 주입이 더는 섞이지 않는다."""
+    from .usage import merged
+
     d = d or memory_dir()
-    try:
-        conn = _db(d)
-        rows = conn.execute("SELECT slug, uses, last_used FROM usage ORDER BY uses DESC, slug").fetchall()
-        conn.close()
-    except Exception:
-        return []
-    return [{"slug": r[0], "uses": int(r[1] or 0), "last_used": r[2]} for r in rows]
+    rows = merged(d)  # 파일과 DB 중 큰 쪽 — 표면이 판정과 다른 수를 말하지 않게
+    return [{"slug": slug, **rows[slug]} for slug in sorted(rows, key=lambda s: (-int(rows[s]["uses"] or 0), s))]

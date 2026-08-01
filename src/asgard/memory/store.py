@@ -21,6 +21,10 @@ with contextlib.suppress(ImportError):  # pragma: no cover — Windows 전용
     msvcrt = _msvcrt
 
 PAGES, INDEX, LOG, SCHEMA, DB = "pages", "index.md", "log.md", "SCHEMA.md", "state.db"
+# 사람의 손이 남긴 것은 파생이 아니다 — 회수 기록(누가 실제로 이 페이지를 찾았는가)과
+# 모순 처리 상태(사람이 이미 보고 넘긴 것인가)는 pages/ 에서 다시 만들 원본이 없다.
+# 그래서 state.db 가 아니라 정본 옆에 텍스트로 산다 (memory.usage·memory.contradiction).
+USAGE, CONTRADICTIONS = "usage.json", "contradictions.json"
 KINDS = ("note", "user", "decision", "insight", "reference", "feedback")
 DEFAULT_KIND = "note"
 DEFAULT_SKILL_PREFERENCE_SLUG = "freyja-전체-스킬-조합-선호"
@@ -36,7 +40,11 @@ _DEFAULT_SKILL_PREFERENCE = """사용자는 프론트엔드·UI·모션·영상�
 _SCHEMA_MD = """# Memory Schema — 개인 위키 규약
 
 이 디렉토리는 asgard 개인 메모리의 **정본**이다 (LLM Wiki 패턴).
-`pages/*.md`가 지식이고, `index.md`·`state.db`는 재생성 가능한 파생물이다.
+`pages/*.md`가 지식이고, `index.md`·`state.db`·`maps/`는 재생성 가능한 파생물이다.
+
+정본이 하나 더 있다 — **사람의 손이 남긴 것**. `usage.json`(무엇을 실제로 찾았는가)과
+`contradictions.json`(어떤 어긋남을 보고 넘겼는가)은 `pages/`에서 다시 만들 수 없어서
+파생물이 아니다. 지우면 부패 판정과 모순 알림이 처음 상태로 돌아간다.
 
 ## 페이지 규약
 - 파일 = 사실/개체/개념 1개. frontmatter: `title` / `kind` / `created` / `updated` / `links`
@@ -83,7 +91,7 @@ def ensure_home(d: str | None = None) -> str:
             _atomic_write(p, content)
         elif not os.path.islink(p):
             _chmod(p, 0o600)
-    for name in (DB, f"{DB}-wal", f"{DB}-shm", ".lock"):
+    for name in (DB, f"{DB}-wal", f"{DB}-shm", ".lock", USAGE, CONTRADICTIONS):
         p = os.path.join(d, name)
         if os.path.exists(p) and not os.path.islink(p):
             _chmod(p, 0o600)
@@ -208,18 +216,34 @@ def _identity_slot(text: str) -> str | None:
     return "name" if _CALL_ME_PAT.search(statement) else None
 
 
+# 질의어 판정용 슬롯 낱말 — 슬롯 표는 정규식이라 메타문자 없는 순수 낱말만 골라 쓴다.
+# 낱말 하나를 찾는 규칙: 앞은 낱말 경계로 닫고, 뒤는 한글 꼬리 세 글자까지만 연다.
+#   · 앞을 안 닫으면 "filename"이 name 슬롯을 깨워 정체성 동의어 일곱 개가 질의에 붙는다.
+#     그 낱말들은 파일 이름과 아무 상관이 없고, 회수 어휘만 오염시킨다 (실측 26-08-01).
+#   · 뒤를 딱 닫으면 정작 한국어 질의가 죽는다 — 조사·어미가 낱말 **뒤**에 붙어서 "이름은",
+#     "이름이"가 서로 남남이 된다. 꼬리 상한 3은 `recall._stopword`가 쓰는 것과 같은 값이다.
+_SLOT_QUERY_WORDS = tuple(
+    (
+        [w for w in words.split("|") if re.fullmatch(r"\w+", w)],
+        [
+            re.compile(rf"(?<!\w){re.escape(w)}[가-힣]{{0,3}}(?!\w)", re.IGNORECASE)
+            for w in words.split("|")
+            if re.fullmatch(r"\w+", w)
+        ],
+    )
+    for _slot, words in _IDENTITY_SLOTS
+)
+
+
 def slot_query_aliases(text: str) -> list[str]:
-    """질의어에 슬롯 낱말이 있으면 그 슬롯의 동의어 전부 — 없으면 빈 리스트.
+    """질의어에 슬롯 낱말이 **낱말로** 있으면 그 슬롯의 동의어 전부 — 없으면 빈 리스트.
 
     승계는 정본의 어휘를 바꾼다("이름은 X" → "호칭은 X"). lexical 경로는 동의어를 모르므로
     그 순간 "내 이름이 뭐야"가 회수에 실패한다. 색인이 아니라 질의를 넓히는 이유: FTS 행은
     파생물이라 회수 경로가 정본으로 재검증하고(recall.query), 정본에 없는 낱말은 거기서 탈락한다."""
-    lowered = text.lower()
-    for _slot, words in _IDENTITY_SLOTS:
-        # 슬롯 표는 정규식이다 — 메타문자 없는 순수 낱말만 질의어로 쓴다
-        plain: list[str] = [w for w in words.split("|") if re.fullmatch(r"\w+", w)]
-        if any(w in lowered for w in plain):
-            return plain
+    for plain, patterns in _SLOT_QUERY_WORDS:
+        if any(pattern.search(text) for pattern in patterns):
+            return list(plain)
     return []
 
 
@@ -284,6 +308,21 @@ def _read(d: str, slug: str) -> tuple[dict, str] | None:
             return parse_page(handle.read())
     except Exception:  # 없음·파싱 실패·경로 순회 시도 전부 None (fail-safe)
         return None
+
+
+def _read_all(d: str) -> list[tuple[str, dict, str]]:
+    """살아 있는 페이지를 한 번에 읽는다 — (slug, meta, body) 목록.
+
+    파생 목차 둘(`index.md` 카탈로그와 `maps/`)이 같은 파일을 각자 다시 열고 있었다. 둘 다
+    페이지를 저장할 때마다 도는 경로라, 쓰기 한 번이 읽기 2N 번이었다. 읽는 자리를 여기 하나로
+    모으고 결과를 나눠 쓴다 — 두 목차의 내용은 글자 그대로 같고 여는 횟수만 절반이 된다.
+    못 읽는 페이지는 빠진다 (호출자 둘 다 원래 그렇게 다뤘다)."""
+    rows: list[tuple[str, dict, str]] = []
+    for slug in _pages(d):
+        page = _read(d, slug)
+        if page:
+            rows.append((slug, *page))
+    return rows
 
 
 def _desc(meta: dict, body: str) -> str:

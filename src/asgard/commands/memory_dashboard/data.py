@@ -217,7 +217,7 @@ SEM_EDGE_FLOOR = 0.35  # 의미 엣지 문턱 — 검색 floor(0.20)보다 높�
 SEM_EDGE_TOP = 3  # 노드당 의미 엣지 상한 — 완전그래프化 방지
 # 쌍 비교 상한 — 이 계산은 O(n²)이고 30초 폴링마다 스냅샷 안에서 돈다. 실측(26-07-29, M-series):
 #   150p 88ms · 400p 582ms · 800p 2,195ms.  800페이지에서 창이 2초씩 멈추면 관측 창이 아니다.
-# 넘으면 의미 연결선을 접고 그 사실을 그래프에 실어 보낸다 — 조용히 비면 "연결이 없다"로 읽힌다.
+# 넘으면 의미 연결선을 접고 그 사실을 그래프에 함께 보낸다 — 조용히 비면 "연결이 없다"로 읽힌다.
 SEM_EDGE_MAX_NODES: int = 500  # 상한이지 상수가 아니다 — 검사가 낮춰 끼우고 접힘을 확인한다
 _SEM_EDGE_CACHE: dict[str, tuple[str, list[dict]]] = {}  # dir → (벡터 지문, 엣지)
 
@@ -375,6 +375,7 @@ def norn_data(d: str) -> dict:
     리포트는 reports/norn-*.md 파생물(원문 그대로 요약), insight 계보는 kind=insight
     페이지의 sources 링크·confidence를 카탈로그에서 재구성한다. 모순은 사람이 풀 일이라
     리포트 안에 묻어두지 않고 따로 세워 올린다(노른은 보고만 하고 고치지 않는다)."""
+    contradictions = _contradictions(d)
     reports: list[dict] = []
     rdir = os.path.join(d, "reports")
     try:
@@ -423,37 +424,47 @@ def norn_data(d: str) -> dict:
         "insights": insights[:20],
         "auto_mode": _norn_auto_mode(),
         "insight_auto": _norn_insight_auto(),
-        "contradictions": _contradictions(reports),
+        "contradictions": contradictions,
         "archive": archive_data(d),
         "backups": backup_data(d),
         "patterns": pattern_reports(d),
     }
 
 
-_CONTRADICTION = re.compile(r"^⚠\s*contradiction:\s*\[\[([^\]]+)\]\]\s*↔\s*\[\[([^\]]+)\]\]\s*—\s*(.*)$")
+def _contradictions(d: str) -> list[dict]:
+    """미해결 모순 — 노른이 고치지 않고 사람에게 넘긴 것들. 출처는 장부다 (`memory.contradiction`).
 
+    예전에는 이 목록을 reports/norn-*.md 본문에서 정규식으로 긁었다. 리포트는 런마다 새로
+    생기는 파일이라 거기서는 알 수 있는 것이 "이 런에서 이런 줄이 보였다"뿐이었다: 같은
+    어긋남을 몇 번째 보는지도, 사람이 이미 보고 넘긴 것인지도 리포트에는 안 적혀 있다.
+    그래서 창은 열 번 감지된 모순도 매번 처음 보는 것처럼 그렸고, 사람이 "둘 다 맞다"고
+    판단한 것도 다음 런에서 똑같은 얼굴로 다시 떴다.
 
-def _contradictions(reports: list[dict]) -> list[dict]:
-    """리포트에 적힌 모순만 따로 뽑는다 — 노른이 고치지 않고 사람에게 넘긴 것들.
+    장부는 그 셋을 다 안다. 여기서는 그대로 옮기기만 한다 — 판정도 쓰기도 없다
+    (`open_contradictions`는 읽기 전용이다). 기본 목록에서 확인된 것을 빼는 것도 장부의
+    기본값 그대로다: **창과 CLI(`asgard memory contradictions`)가 같은 수를 말해야 한다.**
+    한쪽만 감추면 사람이 두 표면에서 다른 건수를 보고 어느 쪽을 믿을지 정해야 한다.
 
-    같은 쌍이 손질을 돌 때마다 다시 적히므로 (a,b)로 dedupe 하고 가장 최근 리포트만 남긴다.
-    reports는 최신순이므로 처음 만난 쌍이 최신이다."""
-    out: list[dict] = []
-    seen: set[tuple[str, str]] = set()
-    for report in reports:
-        for op in report.get("ops") or []:
-            m = _CONTRADICTION.match(op.strip())
-            if not m:
-                continue
-            a, b = m.group(1), m.group(2)
-            key = (min(a, b), max(a, b))
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(
-                {"a": a, "b": b, "why": m.group(3).replace("(사람이 해소)", "").strip(), "report": report["name"]}
-            )
-    return out[:20]
+    `report` 키는 더 안 준다 — 창이 링크할 리포트 하나를 고를 수 없다. 같은 모순은 여러
+    리포트에 걸쳐 있고, 장부가 세는 것은 파일이 아니라 어긋남 하나다."""
+    rows = memory.open_contradictions(d)
+    return [
+        {
+            "key": row["key"],
+            "a": row["a"],
+            "b": row["b"],
+            "a_title": row["a_title"],
+            "b_title": row["b_title"],
+            "why": row["why"],
+            "detected": row["detected"],
+            "last_seen": row["last_seen"],
+            "count": row["count"],
+            "status": row["status"],
+            # 장부가 본 판본 이후로 두 페이지 중 하나가 바뀌었다 — 사유가 낡았을 수 있다는 뜻.
+            "changed_since": row["changed_since"],
+        }
+        for row in rows[:20]
+    ]
 
 
 _ARCHIVE_SNAP = re.compile(r"^(?P<slug>.+)-(?P<ts>\d{14})\.md$")
@@ -654,9 +665,19 @@ def _embedder_installed() -> bool:
 def derived_data(d: str) -> dict:
     """정본과 파생물의 경계 — 무엇을 잃으면 지식이 죽고, 무엇은 다시 만들어지는가.
 
-    pages/ 만 정본이다. index.md·state.db·maps/ 는 pages/ 에서 재생성되고, reports/·
-    archive/·norn-backups/ 는 손질이 남긴 기록이다. 이 표가 없으면 사용자는 백업할 것과
-    지워도 되는 것을 구분할 방법이 없다 — 대시보드가 답할 수 있는데 안 답하던 물음이었다."""
+    index.md·state.db·maps/ 는 pages/ 에서 재생성되고, reports/·archive/·norn-backups/ 는
+    손질이 남긴 기록이다. 이 표가 없으면 사용자는 백업할 것과 지워도 되는 것을 구분할 방법이
+    없다 — 대시보드가 답할 수 있는데 안 답하던 물음이었다.
+
+    정본은 pages/ 만이 아니다. **사람의 손이 남긴 것** 둘이 같은 쪽에 있다: 무엇을 실제로
+    찾았는가(`usage.json`)와 어떤 어긋남을 보고 넘겼는가(`contradictions.json`). 둘 다
+    pages/ 에서 다시 만들 원본이 없어서 파생이 아니고, 그래서 백업 대상이다
+    (`backup.CANONICAL_FILES` · `memory.usage` · `memory.contradiction`).
+
+    이 표가 그동안 두 번 틀렸던 자리가 사용기록이다. 처음엔 "손상 시 자동 복구"라고 적혀
+    있었는데 사실이 아니었고, 고쳐 적은 "손상되면 영영 사라진다"도 지금은 사실이 아니다 —
+    회수 기록이 정본으로 나온 뒤로는 state.db 를 잃어도 `reindex` 가 되살린다. 표는 코드가
+    실제로 하는 것만 말한다."""
 
     def _stat(rel: str, kind: str, canon: bool, note: str) -> dict:
         path = os.path.join(d, rel)
@@ -681,8 +702,32 @@ def derived_data(d: str) -> dict:
             _stat(memory.PAGES, "dir", True, "원본 — 사람이 읽고 고치는 md 파일"),
             _stat(memory.LOG, "file", True, "원본 — 덧붙이기만 하는 작업 기록"),
             _stat(memory.SCHEMA, "file", True, "원본 — 저장 규칙"),
+            # 회수 기록과 모순 장부는 pages/ 에서 나오지 않는다 — 사람이 무엇을 찾았고 무엇을
+            # 보고 넘겼는지는 페이지에 안 적혀 있다. 그래서 파생이 아니라 정본 쪽에 선다.
+            _stat(memory.USAGE, "file", True, "원본 — 사람이 무엇을 실제로 찾았는가 (부패 판정의 근거)"),
+            _stat(memory.CONTRADICTIONS, "file", True, "원본 — 어떤 어긋남을 사람이 보고 넘겼는가"),
             _stat(memory.INDEX, "file", False, "자동생성 — asgard memory reindex로 다시 만듦"),
-            _stat(memory.DB, "file", False, "자동생성 — 검색·사용기록·벡터 (손상 시 자동 복구)"),
+            # 이 줄은 두 번 틀렸다. 처음엔 "손상 시 자동 복구"라고 적혀 있었는데 손상 분기
+            # (`index.reindex`)는 파일을 **지우고** pages/ 에서 다시 만들 뿐이라 사실이 아니었고,
+            # 고쳐 적은 "사용기록은 영영 사라진다"도 지금은 사실이 아니다.
+            #
+            # 코드가 실제로 하는 것 (`index.reindex` · `memory.usage`): 재생성 뒤에 정본
+            # `usage.json` 을 DB 로 되살리고(`usage.hydrate`) 다시 접는다(`usage.flush`). 사람이
+            # 부른 검색은 셀 때마다 곧바로 정본에 접히므로(`usage.bump` — exposure=False) DB 를
+            # 통째로 잃어도 uses·last_used 는 돌아온다. 부패 판정이 읽는 값이 그것이라
+            # (`pages.lint`의 decay-candidate = 오래됨 + **사용** 0) 판정도 초기화되지 않는다.
+            #
+            # 안 돌아오는 것은 하나다: 마지막으로 접힌 뒤에 쌓인 **노출** 계수. 노출은 매 턴
+            # 일어나 파일 쓰기를 달 수 없어 DB 에만 적고 큰 계기(검색·reindex·백업)에 접힌다.
+            # 판정에도 랭킹에도 안 쓰이는 값이라 잃어도 판단이 흔들리지 않는다. 벡터는 시맨틱이
+            # 켜져 있을 때만 다시 임베딩된다.
+            _stat(
+                memory.DB,
+                "file",
+                False,
+                "자동생성 — 검색 색인·벡터는 pages/ 에서, 회수 기록은 usage.json 에서 되살린다 · "
+                "마지막으로 접힌 뒤의 노출 계수만 잃는다 (부패 판정은 사용만 보므로 안 흔들린다)",
+            ),
             _stat("maps", "dir", False, "자동생성 — Obsidian 목차"),
             _stat("reports", "dir", False, "기록 — 정리·패턴 보고서"),
             _stat("archive", "dir", False, "보관 — 되살릴 수 있음"),
@@ -699,7 +744,7 @@ def _row_title(row: str) -> str:
 
 
 def injection_data(d: str | None = None) -> dict:
-    """주입면 — 이 기억이 세션 프롬프트에 **실제로** 어떻게 실리는가 (읽기 전용).
+    """주입면 — 이 기억이 세션 프롬프트에 **실제로** 어떻게 들어가는가 (읽기 전용).
 
     다른 패널은 "무엇이 저장돼 있나"를 말한다. 여기는 "무엇이 모델에게 가나"를 말한다 —
     킬스위치·오염 제외·칸 예산·총량 상한 때문에 둘은 같지 않고, 지금까지 대시보드는

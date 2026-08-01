@@ -1,4 +1,4 @@
-"""검색·주입면 — RRF 3-스트림 query, usage 추적, 동결 스냅샷·회수 블록·증류 넛지."""
+"""검색·주입면 — RRF 3-스트림 query, 노출/사용 추적, 동결 스냅샷·회수 블록·증류 넛지."""
 
 from __future__ import annotations
 
@@ -24,7 +24,6 @@ from .store import (
     _kind,
     _pages,
     _read,
-    _today,
     poisoned,
     slot_query_aliases,
     slugify,
@@ -63,26 +62,154 @@ def _containment(a: str, b: str) -> float:
     return len(ga & gb) / (min(len(ga), len(gb)) or 1)
 
 
-# ── 근거 접지 원시함수 — 패턴(관측)과 노른(통찰)이 같은 자를 쓴다 ─────────────────
+class _Grams:
+    """본문별 trigram 집합 캐시 — 같은 본문의 그램을 두 번 만들지 않는다.
+
+    왜 필요한가: 쌍 비교는 O(N²)로 도는데 `_jaccard`·`_containment`는 호출마다 양쪽 그램을
+    새로 만든다. N개 본문이면 그램 생성이 N² 번인데 실제로 필요한 것은 N 번이다 (실측
+    26-07-29: 조립기 후보 60에서 3.72ms).
+
+    **왜 저 두 함수를 안 고치고 옆에 두는가.** 캐시는 수명이 있는 물건이다: 전역 memoize를
+    걸면 본문이 큰 위키에서 캐시가 프로세스 수명 내내 안 죽고, 무효화 시점이 없어 외부 편집
+    뒤에도 옛 그램을 돌려줄 수 있다. 여기 쓰임(한 번의 lint·한 번의 조립)은 **호출 하나의
+    수명**이면 충분하다. 그래서 캐시는 호출자가 만들고 호출자와 함께 죽는다 — 함수 두 개는
+    캐시 없는 단발 비교의 정본으로 그대로 남는다 (계산식은 아래에서 글자 그대로 같다).
+
+    자리를 `recall`로 잡은 이유: `pages`·`assemble` 둘 다 그램 정의를 여기서 가져다 쓴다
+    (`from .recall import _containment, _jaccard`). 캐시가 소비자 쪽에 살면 정의와 캐시가
+    갈라져, 한쪽 계산식을 고쳤을 때 다른 쪽이 조용히 옛 답을 낸다."""
+
+    __slots__ = ("_cache",)
+
+    def __init__(self) -> None:
+        self._cache: dict[str, set[str]] = {}
+
+    def of(self, text: str) -> set[str]:
+        grams = self._cache.get(text)
+        if grams is None:
+            grams = _grams(text)
+            self._cache[text] = grams
+        return grams
+
+    def containment(self, a: str, b: str) -> float:
+        """포함 계수 — `_containment`와 같은 정의, 캐시만 다르다."""
+        ga, gb = self.of(a), self.of(b)
+        return len(ga & gb) / (min(len(ga), len(gb)) or 1)
+
+    def jaccard(self, a: str, b: str) -> float:
+        """Jaccard — `_jaccard`와 같은 정의, 캐시만 다르다."""
+        ga, gb = self.of(a), self.of(b)
+        return len(ga & gb) / (len(ga | gb) or 1)
+
+
+# ── 근거 대조 원시함수 — 패턴(관측)과 노른(통찰)이 같은 기준을 쓴다 ─────────────────
 
 
 def _content_words(text: str) -> set[str]:
-    """접지 비교용 내용어 — 2자 이상 토큰. 조사·기호는 분리자로 흘려보낸다."""
+    """근거 대조용 내용어 — 2자 이상 토큰. 조사·기호는 분리자로 흘려보낸다."""
     return {word.lower() for word in re.split(r"[^\w가-힣]+", text) if len(word) >= 2}
+
+
+# ── 형태소 목록 — 어간을 깎는 **단 하나의** 자 ────────────────────────────────────
+#
+# **늘리는 사람은 여기 세 표만 보면 된다.** 조사를 더하려면 `_KO_PARTICLES`, 용언 어미는
+# `_KO_ENDINGS`, 영어 굴절·파생 접미는 `_EN_SUFFIXES`. 다른 자리에 목록을 새로 적지 마라 —
+# 이 저장소는 한동안 한국어를 두 가지 자로 쟀다: 회수(`query`)는 조사 목록으로 형태를 보고,
+# 근거 대조(`_stem_floor`)는 낱말 길이의 절반으로 잘랐다. 그 비대칭이 근거 정밀도를 0.544 에
+# 묶어 두었다 — 같은 코퍼스를 목록으로 재면 0.882 다 (`benchmarks/grounding/REPORT.md`).
+#
+# 표를 문자 체계로 가르는 이유: 한국어는 조사·어미가 낱말 **뒤에 붙어** 자라고(`배포`+`를`),
+# 영어는 굴절·파생 접미가 어간을 **바꾸며** 붙는다(`deploy`+`ing`). 붙는 물건이 다르니 목록도
+# 다르다. 한 표에 섞으면 영어 낱말이 한글 조사로 끝날 리 없어 헛돌기만 하고, 표를 늘리는
+# 사람이 자기가 어느 언어를 건드리는지 못 본다.
+
+_KO_PARTICLES: tuple[str, ...] = (
+    "에서는", "으로는", "에게는", "한테는",
+    "으로", "에서", "에게", "한테", "처럼", "까지", "부터", "에는", "에도", "로는",
+    "이나", "라도", "마다", "밖에", "조차", "께서",
+    "은", "는", "이", "가", "을", "를", "에", "의", "로", "과", "와", "도", "만",
+)  # fmt: skip
+_KO_ENDINGS: tuple[str, ...] = (
+    "한다", "했다", "하고", "하는", "하며", "하지", "하기", "하게", "해서",
+    "된다", "됐다", "되고", "되는", "되며",
+    "이라", "라고", "이며",
+)  # fmt: skip
+# 영어 접미는 길이가 어간 길이에 **안 비례한다** — `deploys`는 1자만, `authorization`은 5자를
+# 떼야 한다. 옛 절반 규칙이 둘 다 절반으로 깎아 `dep`가 `dependency`를 삼켰다.
+#
+# `ization`이 목록에 **없는** 것은 일부러다. 넣으면 `authorization`→`author`,
+# `organization`→`organ`처럼 어근까지 벗겨져 남의 낱말을 삼킨다. `ation`만 두면 같은 파생을
+# `authoriz`·`organiz`로 잡아 `authorize`·`organized`에는 붙고 어근에는 안 붙는다 —
+# 벤치 수치는 그대로고(P 0.882·R 0.938, 실측 26-08-01) 과잉 절단만 사라진다.
+_EN_SUFFIXES: tuple[str, ...] = (
+    "ation", "ments", "tion", "ment", "ing", "ers", "ized", "ize", "ed", "er", "es", "s", "d",
+)  # fmt: skip
+
+# 판정용으로는 셋을 문자 체계별로 합쳐 **긴 것부터** 본다 — `에서는`을 `는`으로 먼저 떼면
+# 남는 어간이 달라진다. 길이가 같은 두 접미는 한 낱말의 같은 끝에 동시에 붙을 수 없으므로
+# 길이 내림차순 하나로 순서가 결정된다.
+_KO_STEM_SUFFIXES: tuple[str, ...] = tuple(sorted({*_KO_PARTICLES, *_KO_ENDINGS}, key=len, reverse=True))
+_EN_STEM_SUFFIXES: tuple[str, ...] = tuple(sorted(set(_EN_SUFFIXES), key=len, reverse=True))
+
+# 접미를 떼고 이만큼은 남아야 뗀다 — 안 남으면 안 뗀다(= 완전 일치). 이 값도 문자 체계마다
+# 다르다: 한국어 내용어는 2음절이 흔하고 그 2음절이 **온전한 낱말**이지만(`배포`·`검증`),
+# 영어 2글자는 대개 낱말이 아니라 조각이다(`action`→`ac`, `add`→`ad`). 조각에서 맞히기
+# 시작하면 우연 일치가 근거로 둔갑한다.
+#
+# 이 축은 근거 벤치가 못 잰다 — 합성 코퍼스에 짧은 영어 낱말 사례가 없어 en 2·3·4 가 전부
+# 같은 수치를 낸다. 그래서 **영어 사전 235,616낱말**로 따로 쟀다 (실측 26-08-01): 2자 이하로
+# 깎이는 낱말이 옛 절반 규칙에서 6,712건(2.8%), 목록+en=2 에서 320건(0.14%), en=3 에서
+# **0건**이다. 4 로 더 올려도 0건이라 이득이 없고 `use`·`log`·`add` 같은 3자 어간만 죽는다.
+KO_STEM_MIN = 2
+EN_STEM_MIN = 3
+
+
+def _stem_floor(word: str) -> int:
+    """어간을 여기까지만 깎는다 — 근거 대조 판정의 **단 하나의** 하한.
+
+    `_stem_hit`과 `norn._spans`가 같은 낱말을 같은 자리에서 찾아야 한다 (근거 검사는 통과했는데
+    극성이 낱말을 못 찾는 일을 막는다 — `_spans` 독스트링). 두 곳이 각자 식을 적고 있으면 한쪽만
+    고쳤을 때 그 계약이 조용히 깨진다. 규칙을 바꾸려는 사람은 여기 한 자리만 보면 된다.
+
+    **무엇의 하한인가** (26-08-01 개정): 낱말 길이의 절반이 아니라 **형태소를 뗀 길이**다.
+    위 세 표에 있는 조사·어미·접미로만 깎고, 없으면 완전 일치를 요구한다. 그래서 `_stem_hit`이
+    시도하는 절단은 사실상 둘뿐이다 — 낱말 전체와 어간. 사이의 임의 절단은 어간의 접두사를
+    다시 담을 뿐이라 판정을 못 바꾼다.
+
+    **왜 길이를 버렸나.** 한국어는 길이로 원리적으로 못 가른다: `배포를`(진짜 근거)과
+    `저장소`(가짜)가 **둘 다 3자→2자**로 깎인다. 하한을 3으로 올리면 한국어 재현율이
+    1.000 → 0.588 → 0.059로 무너진다. 값의 문제가 아니라 자의 문제였다
+    (`benchmarks/grounding/REPORT.md`, 합성 코퍼스 61낱말·12주장 실측 26-08-01):
+
+        낱말 정밀도 0.544 → 0.882 · 재현율 0.969 → 0.938 · F0.5 0.596 → 0.893
+        통찰 자동승격 정밀도 0.417 → 0.714 (허구 7건 중 0건 차단 → 5건 차단)
+
+    코퍼스가 합성이라 절대 수치는 제품 품질이 아니다 — 두 자를 나란히 놓은 상대 비교로만 읽는다.
+
+    **남는 대가**: 한 글자 조사(`도`·`로`)는 진짜 명사의 끝 글자이기도 해서 `가속도`→`가속`을
+    만들고, 영어 자음 중복(`committed`→`commit`)과 어간 교체(`verification`→`verify`)는 목록이
+    못 푼다. 실측 6건이 여기 걸린다 — 옛 자가 틀리던 28건의 5분의 1이다."""
+    ascii_ = word.isascii()
+    suffixes = _EN_STEM_SUFFIXES if ascii_ else _KO_STEM_SUFFIXES
+    minimum = EN_STEM_MIN if ascii_ else KO_STEM_MIN
+    for suffix in suffixes:
+        if word.endswith(suffix) and len(word) - len(suffix) >= minimum:
+            return len(word) - len(suffix)
+    return len(word)
 
 
 def _stem_hit(word: str, haystack: str) -> bool:
     """낱말이 건초더미에 어간으로 남아 있는가.
 
-    집합 교집합으로는 한국어 접지를 못 잰다 — 조사·어미가 낱말 **뒤**에 붙어서 "금요일"과
+    집합 교집합으로는 한국어의 근거 일치를 못 잰다 — 조사·어미가 낱말 **뒤**에 붙어서 "금요일"과
     "금요일에는"이 서로 남남이 된다. 그래서 앞에서부터 잘라 보며 어간을 찾는다 (영어의
-    굴절 deploy/deploying도 같은 자로 걸린다). 절반 미만으로는 안 자른다: 두 글자만
-    남기고 맞히기 시작하면 우연 일치가 접지로 둔갑한다."""
-    floor = max(2, (len(word) + 1) // 2)
+    굴절 deploy/deploying도 같은 기준으로 걸린다). 붙은 형태소를 뗀 자리까지만 자른다: 아무
+    데서나 자르기 시작하면 우연 일치가 근거로 둔갑한다 (어디까지 자르는가는 `_stem_floor`)."""
+    floor = _stem_floor(word)
     return any(word[:cut] in haystack for cut in range(len(word), floor - 1, -1))
 
 
-# 접지 판정에서 빼는 주어·기능어 — 누구에 대한 기록인지는 접지의 증거가 아니다.
+# 근거 판정에서 빼는 주어·기능어 — 누구에 대한 기록인지는 근거의 증거가 아니다.
 _GROUNDING_STOP = frozenset("오딘 사용자 유저 user odin the is are was were and or for with that this it its".split())
 
 
@@ -137,7 +264,7 @@ RERANK_MIN_PASSAGES = 3
 RERANK_TOP_PASSAGES = 3  # 평균에 쓸 상위 구절 수
 RERANK_MAX_WEIGHT = 0.5  # max와 상위평균의 배합 — 1.0 이면 순수 max (선호 유형에서 −13pp)
 # 융합에서 기존 4스트림 순위에 주는 가중 (리랭크는 항상 1.0). 1.0 = 대등.
-# 리랭크가 이기는 자리와 지는 자리가 갈리기 때문에 둔 손잡이다: 사실 질문은 리랭크가 맞고,
+# 리랭크가 우선하는 자리와 지는 자리가 갈리기 때문에 둔 손잡이다: 사실 질문은 리랭크가 맞고,
 # 간접 질문("내가 좋아할 만한 걸 추천해줘")은 어휘가 맞다. 어느 쪽도 항상 옳지 않다.
 RERANK_BASE_WEIGHT = 1.0
 # 2단계를 끄는 세션 오버라이드 — 시맨틱 스트림의 ASGARD_MEMORY_SEMANTIC과 같은 모양이다.
@@ -234,7 +361,10 @@ def _dispersion_floor() -> float:
 
 
 def _gate_mode() -> str:
-    """게이트 모양 — env > 설정 > 기본 soft. `hard`는 기권(도입 당시 거동, 보고서 재현용)."""
+    """게이트 모양 — env > 설정 > 기본 `hard`(기권). `soft`(감쇠)는 보고서 재현용으로만 남아 있다.
+
+    기본값은 위 `RERANK_GATE_MODE` 절의 실측이 고른 것이다 — 두 이름의 뜻이 여기서 갈리면
+    설정을 읽는 사람이 반대쪽을 켠다."""
     env = (os.environ.get(RERANK_GATE_ENV) or "").strip().lower()
     if env in ("hard", "soft"):
         return env
@@ -395,7 +525,11 @@ def query(
     explain: bool = False,
     expand_links: bool = True,
 ) -> list[dict]:
-    """FTS5 trigram 검색 (한국어 substring 대응). hit는 usage를 남긴다 — lint 부패 판정 원료.
+    """FTS5 trigram 검색 (한국어 substring 대응). hit는 **사용** 흔적을 남긴다 — lint 부패 판정 원료.
+
+    track=True 가 "사람이 부른 검색"을 뜻한다. 자동 주입 레인은 track=False 로 부르고 프롬프트에
+    실제로 실린 것만 따로 **노출**로 센다 (`recall_rows`·`memory.usage`) — 두 사건을 한 칸에
+    세면 한 번 실린 페이지가 영영 부패 후보가 못 된다.
 
     랭킹 = RRF(rank fusion). BM25 값과 스캔 매칭 카운트는 척도가 달라 점수 혼합이 무의미하므로
     각 경로의 '순위'만 합산한다 (동점 = 동순위). RRF 동률은 reference 최신성 → usage 회수
@@ -424,38 +558,21 @@ def query(
     phrase = text.strip().lower()
     raw_words = [w.lower() for w in re.split(r"[^\w가-힣%-]+", text) if len(w) >= 2]
     scan_words: list[str] = []
-    particles = (
-        "으로",
-        "에서",
-        "에게",
-        "한테",
-        "처럼",
-        "까지",
-        "부터",
-        "은",
-        "는",
-        "이",
-        "가",
-        "을",
-        "를",
-        "에",
-        "의",
-        "로",
-        "과",
-        "와",
-        "도",
-        "만",
-    )
     # 조사는 물론 흔한 용언 활용도 어간 후보를 하나만 더 만든다. 한국어 FTS trigram은
     # `선호하는` 질의와 정본의 `선호한다`처럼 의미가 같아도 표면형이 달라지면 놓치므로,
     # 형태소 분석기 의존성 없이 길고 명확한 어미만 보수적으로 제거한다.
-    endings = ("하는", "한다", "했다", "된다", "되는", "되며", "하며", "해서", "하기", "하게")
+    #
+    # 목록은 근거 대조(`_stem_floor`)와 **같은 표**를 쓴다. 여기 따로 적어 두었더니 회수는
+    # 한국어를 형태로 보고 근거 대조는 길이로 보는 갈라짐이 생겼고, 그 비대칭이 근거 정밀도를
+    # 반토막 냈다 (`benchmarks/grounding/REPORT.md`). 조사와 어미를 따로 한 번씩 떼는 것은
+    # 여기만의 거동이라 그대로 둔다 — 회수는 후보를 넓게 잡아도 랭킹이 거르지만, 판정에는
+    # 그 여유가 없다.
     for word in raw_words:
         scan_words.append(word)
-        suffix = next((p for p in particles if word.endswith(p) and len(word) > len(p) + 1), None)
+        suffix = next((p for p in _KO_PARTICLES if word.endswith(p) and len(word) > len(p) + 1), None)
         if suffix:
             scan_words.append(word[: -len(suffix)])
-        ending = next((e for e in endings if word.endswith(e) and len(word) > len(e) + 1), None)
+        ending = next((e for e in _KO_ENDINGS if word.endswith(e) and len(word) > len(e) + 1), None)
         if ending:
             scan_words.append(word[: -len(ending)])
     # 정체성 슬롯 동의어 — "내 이름이 뭐야"가 "사용자의 호칭은 …" 페이지를 찾게 한다.
@@ -593,7 +710,13 @@ def query(
     # user/decision/insight는 강등하지 않고, last_used도 자기강화 편향 때문에 쓰지 않는다.
     temporal_scores = {slug: rrf[slug] * _temporal_multiplier(cand[slug][0]) for slug in cand}
 
-    # usage는 RRF·시간 보정 동률 타이브레이크 전용 prior (힌트, 증거 아님)
+    # usage는 RRF·시간 보정 동률 타이브레이크 전용 prior (힌트, 증거 아님).
+    #
+    # 노출과 사용이 갈린 뒤 **사용 쪽을 쓴다**. 노출은 회수기가 스스로 고른 기록이라 prior 로
+    # 쓰는 순간 자기 순위를 자기 근거로 삼는다 — 한 번 상위에 든 페이지가 매 턴 실리고, 실렸다는
+    # 이유로 다음 동률에서 또 우선한다 (바로 위 last_used 를 안 쓰는 것과 같은 이유). 사용은
+    # 회수기 밖에서 온 신호다: 사람이 검색을 쳤고 이 페이지가 걸렸다. 갈라 놓은 덕에 이 칸이
+    # 전보다 깨끗해졌다 — 예전엔 자동 주입이 같은 칸에 섞여 들어와 prior 를 균질하게 부풀렸다.
     uses: dict[str, int] = {}
     try:
         conn = _db(d)
@@ -633,21 +756,17 @@ def query(
     return _track(d, hits) if track else hits
 
 
-def _track(d: str, hits: list[dict]) -> list[dict]:
-    """hit의 사용 흔적 기록 — lint 부패 판정 원료. 경로(FTS/스캔) 무관 공통, 실패는 무해."""
-    try:
-        conn = _db(d)
-        ts = _today()
-        with conn:
-            for h in hits:
-                conn.execute(
-                    "INSERT INTO usage(slug, uses, last_used) VALUES(?,1,?) "
-                    "ON CONFLICT(slug) DO UPDATE SET uses = uses + 1, last_used = ?",
-                    (h["slug"], ts, ts),
-                )
-        conn.close()
-    except Exception:
-        pass
+def _track(d: str, hits: list[dict], *, exposure: bool = False) -> list[dict]:
+    """hit의 회수 흔적 기록. 경로(FTS/스캔) 무관 공통, 실패는 무해.
+
+    exposure=False 가 **사용**이다 — 사람이 부른 검색에 걸렸다는 뜻이고, 부패 판정이 읽는
+    값이 이것이다. exposure=True 는 자동 주입으로 프롬프트에 실린 **노출**이라 판정에 안 쓴다:
+    회수기가 고른 것을 사람이 찾은 것으로 세면 한 번 실린 페이지가 영영 안 늙는다
+    (`memory.usage` 참조 — 기본값이 사용인 이유는 자동 주입 경로가 이 저장소 안에 하나뿐이고,
+    밖에서 부르는 표면은 전부 사람이 시킨 검색이기 때문이다)."""
+    from .usage import bump
+
+    bump(d, [str(h["slug"]) for h in hits], exposure=exposure)
     return hits
 
 
@@ -728,7 +847,7 @@ def section_usage(d: str | None = None) -> list[tuple[str, int, int]]:
     """칸별 (kind, 실제 주입 문자수, 예산). 페이지가 없는 칸은 빼고 _SECTIONS 순서로.
 
     lint·대시보드가 "어느 칸이 꽉 찼나"를 묻는 유일한 통로다. 세는 대상은 주입 행이라
-    잘림 여부와 무관하게 '원래 얼마인지'를 돌려준다 — 넘친 양을 알아야 통합 판단이 선다."""
+    잘림 여부와 무관하게 '원래 얼마인지'를 돌려준다 — 넘친 양을 알아야 통합 여부를 판단할 수 있다."""
     d = d or memory_dir()
     rows = _snapshot_rows(d)
     budgets = kind_budgets()
@@ -843,15 +962,20 @@ def recall_rows(text: str, k: int = 3, d: str | None = None) -> list[str]:
     """회수 본문 목록 — **렌더도 예산도 여기서 안 한다**.
 
     레인을 후보 생산자로 갈라 둔 이유는 조립기(`memory.assemble`)가 여섯 레인을 하나의
-    예산 위에서 겨루게 하고 레인 간 중복을 걷어내야 하기 때문이다. 각 레인이 자기 예산을
-    자기가 자르던 시절에는 같은 사실이 다섯 레인으로 다섯 번 실릴 수 있었다."""
+    예산 위에서 겨루게 하고 레인 간 중복을 제거해야 하기 때문이다. 각 레인이 자기 예산을
+    자기가 자르던 시절에는 같은 사실이 다섯 레인으로 다섯 번 들어갈 수 있었다."""
     if not inject_enabled():
         return []
     # 넉넉히 뽑아 종류를 섞은 뒤 k 개로 줄인다 — 왜인지는 _diversify 참조.
-    hits = query(text, k=max(k, k * 2), d=d)  # track=True — 회수 흔적이 lint 부패 판정 원료
+    # track=False 로 부른다: 이 레인은 사람이 친 검색이 아니라 매 턴 도는 자동 주입이다.
+    hits = query(text, k=max(k, k * 2), d=d, track=False)
     if not hits:
         return []
-    return [_hit_row(h) for h in _diversify(hits, k)]
+    picked = _diversify(hits, k)
+    # 노출은 **실제로 실린 것**만 센다 — 자르기 전에 세면 프롬프트에 못 들어간 후보까지
+    # "보여 준 것"이 되고, 그 수를 근거로 삼는 다음 판정이 같이 틀린다.
+    _track(d or memory_dir(), picked, exposure=True)
+    return [_hit_row(h) for h in picked]
 
 
 def _hit_row(hit: dict) -> str:
@@ -859,7 +983,7 @@ def _hit_row(hit: dict) -> str:
 
     스냅샷 쪽은 이미 이 규율을 갖고 있었는데(`_row`) 회수 쪽에는 없었다. 한 문장짜리 페이지는
     title이 곧 본문이고 snippet도 그 본문에서 잘라 오므로, 그대로 두면 **같은 문장이 한 줄에
-    두 번** 실린다 (실측 26-07-29: 182자 중 절반이 반복). 레인 간 중복을 걷어내면서 한 줄
+    두 번** 들어간다 (실측 26-07-29: 182자 중 절반이 반복). 레인 간 중복을 제거하면서 한 줄
     안의 중복을 남겨 두는 것은 앞뒤가 안 맞는다."""
     title = _neutralize(str(hit["title"]))[:120]
     snippet = _neutralize(str(hit["snippet"]))[:160]
@@ -878,7 +1002,7 @@ def recall_note(text: str, k: int = 3, d: str | None = None) -> str:
     제외하므로 여기선 경계 무력화 + 예산만. 무적중·킬스위치 off = 빈 문자열 (무변화).
 
     이 레인 **혼자** 쓰는 표면(`asgard memory recall`·개인 메모리만 보는 호출)용이다. 여섯
-    레인을 같이 싣는 자리는 `memory_context.recall_note`가 조립기로 간다."""
+    레인을 같이 넣는 자리는 `memory_context.recall_note`가 조립기로 간다."""
     try:
         rows = recall_rows(text, k=k, d=d)
         if not rows:
@@ -902,7 +1026,7 @@ def distill_nudge(request: str, response: str, root: str) -> str:
     """탐색 발견 저장 넛지 (0-LLM) — 응답에 인용된 '실존 파일 경로'만 증류해 기존 ingest
     승인 게이트로 안내한다. 저장은 ask-before-save 그대로 — 여기는 안내문뿐이다.
 
-    응답 유래 자유 텍스트는 명령에 싣지 않는다: 디스크 실존 + root 격리 검증을 통과한
+    응답 유래 자유 텍스트는 명령에 넣지 않는다: 디스크 실존 + root 격리 검증을 통과한
     경로 토큰만 후보가 된다 (모델 응답을 명령 제안으로 렌더링하는 표면의 인젝션 차단).
     숏컷 벤치(26-07-16) 근거 — 위치 지식이 recall 이득(토큰 -67%)의 최대 원천."""
     try:

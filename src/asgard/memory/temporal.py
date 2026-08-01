@@ -1,7 +1,7 @@
-"""사건 시각 접지 — 사실 안의 상대 시간 표현을 절대 날짜로 푼다.
+"""사건 시각 확정 — 사실 안의 상대 시간 표현을 절대 날짜로 푼다.
 
 "어제 정한 규칙"은 적힐 때는 참이지만 한 달 뒤에 읽으면 거짓이다. 개인 메모리는 오래 남는
-게 목적이라 이 미끄러짐이 그대로 부채가 된다. 그래서 저장 시점에 한 번 접지한다.
+게 목적이라 이 미끄러짐이 그대로 부채가 된다. 그래서 저장 시점에 한 번 절대 날짜로 확정한다.
 
 **본문은 안 고친다.** 오딘이 쓴 문장은 그대로 두고 `event:` 메타에 절대 날짜만 적는다 —
 사람의 말을 기계가 고쳐 쓰기 시작하면 정본이 정본이 아니게 된다. 랭킹·표시는 메타를 보고,
@@ -44,7 +44,7 @@ _LOOSE: tuple[tuple[str, int], ...] = (
 # 이미 절대 날짜가 적혀 있으면 그게 정답이다 — 추론보다 명시가 세다.
 _ABSOLUTE = re.compile(r"\b(\d{4})[-./](\d{1,2})[-./](\d{1,2})\b")
 
-MAX_AGE_DAYS = 365 * 20  # 접지 결과 온전성 상한 — 오탐(전화번호·버전 문자열)을 날짜로 삼지 않는다
+MAX_AGE_DAYS = 365 * 20  # 확정 결과 온전성 상한 — 오탐(전화번호·버전 문자열)을 날짜로 삼지 않는다
 
 
 def ground_event_date(text: str, today: _dt.date | None = None) -> str | None:
@@ -82,7 +82,7 @@ def ground_event_date(text: str, today: _dt.date | None = None) -> str | None:
         return None
     earliest = min(found)
     if abs((base - earliest).days) > MAX_AGE_DAYS:
-        return None  # 접지 결과가 상식 밖이면 접지 안 한 것으로 친다
+        return None  # 확정 결과가 상식 밖이면 확정 안 한 것으로 친다
     return earliest.isoformat()
 
 

@@ -16,7 +16,7 @@ from .data import _LOGO_URI, _MARK_URI, injection_data, log_query, page_data, se
 # ── 라우팅 (소켓 없이 단위 테스트 가능한 순수 디스패치) ──────────────────────────────
 
 
-# 루프백 경계와 응답 헤더는 세 창이 한 벌을 나눠 쓴다 (`commands.loopback`). 여기 다시
+# 루프백 경계와 응답 헤더는 세 창이 한 곳을 같이 쓴다 (`commands.loopback`). 여기 다시
 # 적으면 언젠가 셋이 갈라지고, 실제로 갈라져 있었다 — 이 창만 Referrer-Policy가 없었다.
 _LOOPBACK_HOSTS = loopback.LOOPBACK_HOSTS
 host_allowed = loopback.host_allowed
@@ -31,7 +31,7 @@ def dispatch(method: str, path: str, params: dict[str, list[str]], d: str | None
         body = _json.dumps(snapshot_data(d), ensure_ascii=False).encode("utf-8")
         return 200, "application/json; charset=utf-8", body
     if path == "/api/injection":
-        # 주입면은 스냅샷 블록 원문을 통째로 싣는다 — 페이로드가 커서 탭이 열릴 때만 부른다.
+        # 주입면은 스냅샷 블록 원문을 통째로 넣는다 — 페이로드가 커서 탭이 열릴 때만 부른다.
         body = _json.dumps(injection_data(d), ensure_ascii=False).encode("utf-8")
         return 200, "application/json; charset=utf-8", body
     if path == "/api/search":
@@ -78,7 +78,8 @@ class _Handler(loopback.LoopbackHandler):
         try:
             status, ctype, body = dispatch(self.command, parts.path, parse_qs(parts.query))
         except Exception as exc:  # 어떤 실패도 서버를 죽이지 않는다 (fail-open)
-            status, ctype, body = 500, "text/plain; charset=utf-8", f"error: {type(exc).__name__}".encode()
+            # fail-open 이 "사유 없음"을 뜻하지는 않는다 — 창은 JSON을 읽고, 트레이스백은 남는다.
+            status, ctype, body = loopback.error_result(exc, surface="memory", where=parts.path)
         self._send(status, ctype, body, head_only=head_only)
 
     def do_GET(self) -> None:
