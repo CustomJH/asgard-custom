@@ -667,6 +667,71 @@ def role_run(
     raise typer.Exit(run_role_run(role, task))
 
 
+# 배차 장부 — 퀘스트가 어떤 모양으로 돌았고, 어느 시도가 몇 번 만에 붙었고, 무엇이 답을
+# 기다리는가. 퀘스트 로그(무엇이 검증됐는가)와 다른 축이다.
+# 이름은 asgard-helios 의 어휘를 따른다: `orchestration` 은 기제(도메인 패키지)이고
+# `siege` 는 사람이 부르는 모드다.
+siege_app = typer.Typer(
+    help="look inside a siege — what ran, how the tasks hung together, and what the workers asked",
+    invoke_without_command=True,
+)
+app.add_typer(siege_app, name="siege")
+
+
+@siege_app.callback()
+def siege_default(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.siege import run_runs
+
+        raise typer.Exit(run_runs(json_out=json_))
+
+
+@siege_app.command("show", help="one run in full — its tasks, what each waited on, and every attempt")
+def siege_show(
+    run_id: str = typer.Argument(..., metavar="<run_id>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.siege import run_show
+
+    raise typer.Exit(run_show(run_id, json_out=json_))
+
+
+@siege_app.command("inbox", help="the messages one run sent and received — reading them leaves the mail unread")
+def siege_inbox(
+    run_id: str = typer.Argument(..., metavar="<run_id>"),
+    limit: int = typer.Option(50, "--limit"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.siege import run_inbox
+
+    raise typer.Exit(run_inbox(run_id, json_out=json_, limit=limit))
+
+
+@siege_app.command("blocked", help="the worker questions nobody has answered yet")
+def siege_blocked(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.siege import run_blocked
+
+    raise typer.Exit(run_blocked(json_out=json_))
+
+
+@siege_app.command("answer", help="answer a waiting worker question yourself, and let it carry on")
+def siege_answer(
+    message_id: str = typer.Argument(..., metavar="<message_id>"),
+    answer: str = typer.Argument(..., metavar="<answer>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.siege import run_answer
+
+    raise typer.Exit(run_answer(message_id, answer, json_out=json_))
+
+
+@siege_app.command("reset", help="wipe the siege record — it is all rebuilt from elsewhere, and the quest log stays")
+def siege_reset(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.siege import run_reset
+
+    raise typer.Exit(run_reset(json_out=json_))
+
+
 # Canonical Tool Kernel — inspect the actual role-scoped surfaces used by the
 # native loop and generated Claude Code agents.
 tools_app = typer.Typer(help="inspect Asgard's role-scoped tool catalog", no_args_is_help=True)

@@ -345,7 +345,7 @@ class TestTrinityLoop(Base):
         with mock.patch("asgard.agent.heimdall.trinity.ql", side_effect=reject_close):
             out = h.handle("w1.txt 만들어")
 
-        self.assertIn("close 거부", out)
+        self.assertIn("close를 거부했어요", out)
         self.assertNotIn(DONE, out)
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
         self.assertIsNone(h._last_completion)
@@ -449,7 +449,7 @@ class TestTrinityLoop(Base):
         # ESCALATE 데드스테이트 회귀 방지 — 이전엔 WORKER 폴스루로 12턴 공회전
         h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("ESCALATE")], cls=CLS_WRITE)
         out = h.handle("w1.txt 만들어")
-        self.assertIn("Odin 결정 필요", out)
+        self.assertIn("오딘이 정해 주셔야 해요", out)
         self.assertEqual(len(h.consumed), 2)  # ESCALATE 후 추가 역할 턴 없음
 
     def test_structural_fail_goes_straight_to_replan(self):
@@ -611,7 +611,7 @@ class TestTrinityLoop(Base):
         h = FakeHeimdall(self.root, seq, cls=CLS_WRITE)
         with mock.patch("asgard.agent.heimdall.trinity.gate", return_value=(True, "stale PASS — 물리 대조 불일치")):
             out = h.handle("w1.txt 만들어")
-        self.assertIn("Odin 결정 필요", out)
+        self.assertIn("오딘이 정해 주셔야 해요", out)
         self.assertIn("stale-pass", out)
         self.assertNotIn(DONE, out)
         self.assertEqual([s.label for s in h.consumed], ["worker", "verifier", "verifier"])

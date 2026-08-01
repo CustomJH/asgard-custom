@@ -22,6 +22,7 @@ from ...hooks.quest_log import EMPTY as _EMPTY_DIFF
 from ...hooks.quest_log import inspection_evidence as _inspection_evidence
 from ...hooks.quest_log import trivial_evidence as _trivial_evidence
 from ..session import gate, ql
+from .bifrost import NULL_LEDGER, BifrostLedger, CoordinatorLoop
 from .classify import _gate_repair, _gate_sig
 from .journal import _record_writes
 from .planning import _UNITS_NOTE, _parse_units, _plan_waves
@@ -35,7 +36,7 @@ from .roles import (
     work_shape_note,
     worker_canon_hint,
 )
-from .toolspec import DISPATCH_TOOL, VERDICT_TOOL
+from .toolspec import ASK_TOOL, DISPATCH_TOOL, VERDICT_TOOL
 
 MAX_TRINITY_TURNS = 12  # budget_priors.deep — 이 위는 폭주로 간주, Odin 보고
 _CRAFT_MAX_BLOCKS = 2  # hooks/craft_gate.py MAX_BLOCKS와 동일 유지 (모드 간 같은 상한)
@@ -194,6 +195,16 @@ class TrinityRun:
         self.rrp = hd.rp
         self.used_model = ""
 
+        # 배차 장부 — 역할 턴과 배정 단위를 Run·Task·Dispatch 로 비춘다 (fail-open).
+        # 실행을 이쪽으로 옮기는 것이 아니라 **기록**만 한다: 무엇을 돌릴지는 여전히 전이
+        # 함수(quest-log next)가 정한다.
+        self.bifrost = BifrostLedger(hd, self.qid, request)
+        hd.bifrost = self.bifrost  # WaveRunner 가 같은 장부를 본다
+        self.coordinator_answers: list[tuple[str, str]] = []  # (질문, 답) — 최종 보고에 표시된다
+        # 형상은 계획 전에 한 번 고르고, Thinker 가 배정 단위를 내면 다시 고른다. 첫 판정은
+        # 분류 신호만 보므로 대개 single 이나 squad 이고, units 가 나오면 graph 로 바뀐다.
+        self.bifrost.choose_shape(self.cls)
+
     # ── 준비 ────────────────────────────────────────────────────────────
     def _open_quest(self) -> str | None:
         args = ["open", self.qid, "--task-class", self.tc, "--request-stdin"] + [
@@ -209,7 +220,7 @@ class TrinityRun:
         )
         if opened.returncode != 0:
             detail = (opened.stderr or opened.stdout or "quest open rejected").strip()[:300]
-            return f"⚠ Trinity 시작 거부 — {detail}"
+            return f"⚠ Trinity를 시작하지 못했어요 — {detail}"
         return None
 
     def _record_pre_work(self) -> None:
@@ -234,17 +245,42 @@ class TrinityRun:
 
     # ── 순환 본체 ────────────────────────────────────────────────────────
     def run(self) -> str:
+        """순환을 돌고 최종 보고를 돌려준다. 종결하는 모든 갈래에서 Run 을 닫는다.
+
+        보고를 들고 나가는 것은 **종결**이다 — 예산 소진도, DIRECT_DONE 도, 미지의 전이 상태도
+        그 자리에서 퀘스트가 끝난다. 그때 Run 을 안 닫으면 `run_bind` 가 열린 Run 만 재사용하므로
+        그 Run 이 `siege runs` 에 영원히 남고, 열린 질문을 훑는 명령이 매번 그것을 지난다.
+
+        예외로 나가는 갈래(진짜 중단)만 Run 을 열어 둔다. 중단된 퀘스트는 이어서 검증할 자리가
+        남아 있어야 하고, 열린 Run 이 곧 그 표시다.
+        """
+        try:
+            out = self._cycle()
+        finally:
+            # 장부는 이 퀘스트의 것이다. Heimdall 은 REPL 에서 장수하므로 되돌리지 않으면
+            # 다음 요청이 끝난 퀘스트의 장부를 가리킨 채 돈다.
+            if self._hd.bifrost is self.bifrost:
+                self._hd.bifrost = NULL_LEDGER
+        self.bifrost.close()
+        return out
+
+    def _preflight(self) -> str | None:
+        """순환에 들어가기 전에 해 둘 것 — 배치 검사, 퀘스트 열기, 사전 작업 편입.
+
+        Returns:
+            문자열이면 순환을 시작하지 않고 그것을 최종 보고로 낸다.
+        """
         hd = self._hd
         dual_active = self.dual and not self.resume_qid and self.pre_work is None
         if dual_active:
             a, b = hd.dual_thinker_labels()
             if a == b:
                 return (
-                    f"⚠ Dual mode는 서로 다른 Thinker 모델이 필요합니다 ({a}). "
-                    "`/trinity set`에서 thinker_alt를 다른 모델로 배치하세요."
+                    f"⚠ Dual mode는 서로 다른 Thinker 모델이 있어야 해요 ({a}). "
+                    "`/trinity set`에서 thinker_alt를 다른 모델로 배치해 주세요."
                 )
             if self.cls.get("parallel_requested"):
-                return "⚠ Dual mode와 Worker 병렬 wave의 동시 사용은 아직 지원하지 않습니다."
+                return "⚠ Dual mode와 Worker 병렬 wave는 아직 같이 못 써요."
         if not self.resume_qid:
             rejected = self._open_quest()
             if rejected:
@@ -253,6 +289,53 @@ class TrinityRun:
             self._record_pre_work()
         elif dual_active:
             self._dual_thinker_turn()
+        return None
+
+    def _assign_turn(self) -> None:
+        """이번 턴의 (역할, 모델)을 정한다 — Trinity per-turn assignment의 하니스 판."""
+        hd = self._hd
+        if self.role == "THINKER_REPLAN":
+            self.replans += 1
+        role_key = _ROLE_KEY.get(self.role, "")
+        alt = (
+            self.role == "THINKER_REPLAN" and self.replans >= 2 and hd.role_rp.get("thinker_alt", hd.rp) is not hd.rp
+        )  # clean-slate: 같은 모델의 재계획이 반복 실패 — 다른 시선 투입 (Fugu §4.4)
+        sess_role = "thinker_alt" if alt else role_key
+        bump = (self.role == "VERIFIER" and self.level == "full") or (
+            role_key == "thinker" and self.replans >= 2 and not alt
+        )
+        self.sess_role = sess_role
+        self.model = hd._model_for(sess_role, bump=bump) if role_key else None
+        self.rrp = hd.role_rp.get(sess_role, hd.rp)
+        self.used_model = f"{self.rrp.profile.name}:{self.model or self.rrp.model}"  # 퀘스트 로그 기록용
+        if self.rrp is not hd.rp:  # 역할별 배치가 있으면 어떤 모델이 뛰는지 표시
+            self.why += f" · {self.rrp.profile.name}:{self.rrp.model}"
+        elif self.model and self.model != hd.rp.model:
+            self.why += f" · {self.model}"
+
+    def _exhausted_report(self, budget: int) -> str:
+        """예산 소진 Odin 보고 — 무엇을 못 돌렸는지와 그 이유를 함께 적는다.
+
+        침묵 break는 "판정 실패"로 오독된다 (26-07-22 실측: grace PASS 후 타 세션 소유
+        베이스라인 red로 수리 전이가 막혀 "grace 판정까지 완료 실패" 보고 — 실제 판정은 PASS
+        완료). 미실행 전이와 사유를 들고 나가야 보고가 정직해진다.
+        """
+        self._hd._record_outcome(self.tc, "budget-exhausted", self.saw_red)
+        pending_next = getattr(self, "exhausted_next", None)
+        if pending_next:
+            role, why = pending_next
+            detail = f"미실행 전이 {role} — {why}"
+            for fail_line in self._baseline_red_fails()[:2]:
+                detail += f"\n  붉은 체크: {fail_line[:160]}"
+        else:
+            detail = "grace 판정까지 완료 실패"
+        return f"⚠ 턴 예산({budget})을 다 썼어요 — 여기까지 보고드려요 ({detail}). 퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
+
+    def _cycle(self) -> str:
+        hd = self._hd
+        rejected = self._preflight()
+        if rejected:
+            return rejected
         # 턴 예산 = budget_priors[task_class] — T→W→V 최소 순환 아래로는 안 내려간다
         priors = hd.policy.get("budget_priors") or {}
         budget = int((priors.get(self.cls.get("task_class") or "deep") or {}).get("turns", MAX_TRINITY_TURNS))
@@ -290,10 +373,7 @@ class TrinityRun:
                 if self.role == "WORKER_RETRY" and ("baseline" in self.why.lower() or "베이스라인" in self.why):
                     self.last_fail = {"sig": "baseline-red", "why": self.why[:500]}
             if t > budget and self.role not in ("VERIFIER", "BASELINE_VERIFY", "DONE", "ESCALATE_ODIN", "DIRECT_DONE"):
-                # 예산 소진 — grace는 판정·종료 전용, 새 작업 턴 금지. 침묵 break는 "판정 실패"로
-                # 오독된다 (26-07-22 실측: grace PASS 후 타 세션 소유 베이스라인 red로 수리 전이가
-                # 막혀 "grace 판정까지 완료 실패" 보고 — 실제 판정은 PASS 완료): 미실행 전이와
-                # 사유를 들고 나가 Odin 보고를 정직하게 만든다.
+                # 예산 소진 — grace는 판정·종료 전용, 새 작업 턴 금지.
                 self.exhausted_next = (self.role, self.why)
                 break
             # 잔량 자기규제 (budget-guard) — 80% 도달 시 범위 축소 지시
@@ -302,60 +382,14 @@ class TrinityRun:
                 if t >= max(2, int(budget * 0.8))
                 else ")"
             )
-            # 상황별 (역할, 모델) 배정 — Trinity per-turn assignment의 하니스 판
-            if self.role == "THINKER_REPLAN":
-                self.replans += 1
-            role_key = _ROLE_KEY.get(self.role, "")
-            alt = (
-                self.role == "THINKER_REPLAN"
-                and self.replans >= 2
-                and hd.role_rp.get("thinker_alt", hd.rp) is not hd.rp
-            )  # clean-slate: 같은 모델의 재계획이 반복 실패 — 다른 시선 투입 (Fugu §4.4)
-            sess_role = "thinker_alt" if alt else role_key
-            bump = (self.role == "VERIFIER" and self.level == "full") or (
-                role_key == "thinker" and self.replans >= 2 and not alt
-            )
-            self.sess_role = sess_role
-            self.model = hd._model_for(sess_role, bump=bump) if role_key else None
-            self.rrp = hd.role_rp.get(sess_role, hd.rp)
-            self.used_model = f"{self.rrp.profile.name}:{self.model or self.rrp.model}"  # 퀘스트 로그 기록용
-            if self.rrp is not hd.rp:  # 역할별 배치가 있으면 어떤 모델이 뛰는지 표시
-                self.why += f" · {self.rrp.profile.name}:{self.rrp.model}"
-            elif self.model and self.model != hd.rp.model:
-                self.why += f" · {self.model}"
+            self._assign_turn()
             hd.on_text(_transition_line(self.role, self.why))
 
-            if self.role == "BASELINE_VERIFY":
-                out = self._baseline_turn()
-            elif self.role == "DONE":
-                out = self._done_turn()
-            elif self.role == "ESCALATE_ODIN":
-                hd._escalate(self.sid)
-                hd._record_outcome(self.tc, "escalate", self.saw_red)
-                out = f"⚠ Odin 결정 필요 — {self.why}"
-            elif self.role == "DIRECT_DONE":
-                out = hd._direct(self.request)
-            elif self.role in ("THINKER", "THINKER_REPLAN"):
-                out = self._thinker_turn()
-            elif self.role in ("WORKER", "WORKER_RETRY"):
-                out = self._worker_turn()
-            elif self.role == "VERIFIER":
-                out = self._verifier_turn()
-            else:
-                return f"⚠ 미지의 전이 상태 '{self.role}' — Odin 보고 (퀘스트 로그: .asgard/quest/{self.qid}.jsonl)"
+            out = self._role_turn()
             if out is not None:
                 return out
 
-        hd._record_outcome(self.tc, "budget-exhausted", self.saw_red)
-        pending_next = getattr(self, "exhausted_next", None)
-        if pending_next:
-            role, why = pending_next
-            detail = f"미실행 전이 {role} — {why}"
-            for fail_line in self._baseline_red_fails()[:2]:
-                detail += f"\n  붉은 체크: {fail_line[:160]}"
-        else:
-            detail = "grace 판정까지 완료 실패"
-        return f"⚠ 턴 예산({budget}) 소진 — Odin 보고 ({detail}). 퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
+        return self._exhausted_report(budget)
 
     def _baseline_red_fails(self) -> list[str]:
         """마지막 verify 이벤트의 베이스라인 red 실패 줄 — 예산 소진 Odin 보고에 원인을 실어
@@ -374,6 +408,59 @@ class TrinityRun:
         return fails
 
     # ── 역할 턴 ──────────────────────────────────────────────────────────
+
+    def _role_turn(self) -> str | None:
+        """이번 턴의 역할을 수행하고, 그 시도를 배차 장부에 남긴다.
+
+        장부는 기록이지 통제가 아니다 — 어떤 역할을 돌릴지는 이미 전이 함수가 정했고 여기서는
+        시작과 끝을 적을 뿐이다. 종료 상태(DONE·ESCALATE_ODIN·DIRECT_DONE)는 워커 턴이 아니라
+        순환의 끝이라 Dispatch 를 열지 않는다.
+
+        Returns:
+            None 이면 다음 턴을 계속하고, 문자열이면 그것이 최종 보고다.
+        """
+        hd = self._hd
+        if self.role == "DONE":
+            return self._done_turn()
+        if self.role == "ESCALATE_ODIN":
+            hd._escalate(self.sid)
+            hd._record_outcome(self.tc, "escalate", self.saw_red)
+            self.bifrost.escalate(self.why)
+            return f"⚠ 오딘이 정해 주셔야 해요 — {self.why}"
+        if self.role == "DIRECT_DONE":
+            return hd._direct(self.request)
+
+        runner = {
+            "BASELINE_VERIFY": self._baseline_turn,
+            "THINKER": self._thinker_turn,
+            "THINKER_REPLAN": self._thinker_turn,
+            "WORKER": self._worker_turn,
+            "WORKER_RETRY": self._worker_turn,
+            "VERIFIER": self._verifier_turn,
+        }.get(self.role)
+        if runner is None:
+            return f"⚠ 모르는 전이 상태 '{self.role}'를 만났어요 — 여기까지 보고드려요 (퀘스트 로그: .asgard/quest/{self.qid}.jsonl)"
+
+        dispatch = self.bifrost.open_turn(
+            self.role,
+            self.why,
+            model=self.used_model,
+            agent=hd._agent_for(getattr(self, "sess_role", "")) or "",
+        )
+        # 코디네이터 고리는 이 턴이 도는 내내 별도 스레드에서 우편함을 본다. 워커가 묻는 쪽과
+        # 답하는 쪽이 다른 스레드여야 교착이 아니다 — 단일 Worker 턴에서도 같은 이유로 필요하다.
+        try:
+            with CoordinatorLoop(hd, self.bifrost, self.request) as loop:
+                out = runner()
+        except BaseException as exc:
+            # 취소도 실패로 적는다 — 이 시도가 결과 없이 끝났다는 사실은 같다. Verifier 의
+            # FAIL 판정은 여기 오지 않는다: 판정을 냈으면 그 턴은 자기 몫을 한 것이다.
+            self.bifrost.settle_turn(dispatch, "failed", summary=f"{exc.__class__.__name__}: {exc}")
+            raise
+        if loop.answered:
+            self.coordinator_answers.extend(loop.answered)
+        self.bifrost.settle_turn(dispatch, "succeeded", summary=str(out or "")[:2000])
+        return out
 
     def _run_thinker(
         self,
@@ -619,7 +706,7 @@ class TrinityRun:
                 hd._escalate(self.sid)
                 hd._record_outcome(self.tc, "gate-escalate", self.saw_red)
                 return (
-                    f"⚠ Odin 결정 필요 — 게이트 동일 사유({sig}) {self.gate_sigs[sig]}회 차단, 수리 실패. "
+                    f"⚠ 오딘이 정해 주셔야 해요 — 게이트가 같은 사유({sig})로 {self.gate_sigs[sig]}번 막았고, 수리도 안 됐어요. "
                     f"퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
                 )
             self.pending = _gate_repair(sig)
@@ -631,7 +718,7 @@ class TrinityRun:
             hd._record_outcome(self.tc, "close-rejected", self.saw_red)
             detail = (closed.stderr or closed.stdout or "close rejected").strip()[:300]
             return (
-                "⚠ 완료 게이트 close 거부 — 승인 상태를 기록하지 않았습니다. "
+                "⚠ 완료 게이트가 close를 거부했어요 — 승인 상태를 기록하지 못했어요. "
                 f"{detail} 퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
             )
         hd._record_outcome(self.tc, "pass", self.saw_red)
@@ -654,7 +741,33 @@ class TrinityRun:
         except Exception:
             pass
         self._tend_memory()
-        return hd._final_report(self.qid, self.sid, self.gate_blocks)
+        return hd._final_report(self.qid, self.sid, self.gate_blocks) + self._orchestration_note()
+
+    def _orchestration_note(self) -> str:
+        """최종 보고에 붙는 오케스트레이션 줄 — 어떤 모양으로 돌았고 무엇이 오갔는가.
+
+        아무 일도 없었으면 빈 문자열이다. 형상이 single 이고 질문도 없었던 퀘스트에 "오케스트
+        레이션: single" 한 줄을 붙이면 그 줄은 매번 나오는 소음이 된다.
+
+        Returns:
+            앞에 줄바꿈이 붙은 보고 조각, 또는 실을 것이 없으면 빈 문자열.
+        """
+        lines = []
+        shape = getattr(self.bifrost, "shape", "")
+        if shape in ("graph", "squad"):
+            reports = [m for m in self.bifrost.drain(None) if m.get("type") == "worker_done"]
+            tally = ""
+            if reports:
+                ok = sum(1 for m in reports if m.get("outcome") == "succeeded")
+                tally = f" · 단위 보고 {len(reports)}건(성공 {ok})"
+            lines.append(f"  {ui.dim('│ ⠶ 오케스트레이션: ' + shape + tally)}")
+        for question, answer in self.coordinator_answers[:4]:
+            lines.append(f"  {ui.dim('│ ⠶ 워커 질문: ' + question.splitlines()[0][:90])}")
+            lines.append(f"  {ui.dim('│   답: ' + answer.splitlines()[0][:90])}")
+        unanswered = self.bifrost.blocked_on()
+        if unanswered:
+            lines.append(f"  {ui.dim('│ ⠶ 답 못 한 워커 질문 ' + str(len(unanswered)) + '건')}")
+        return ("\n" + "\n".join(lines)) if lines else ""
 
     def _tend_memory(self) -> None:
         """위그드라실 손질 신호 — 노른(위키 통합)과 패턴(대화에서 오딘 관측 채굴).
@@ -791,6 +904,52 @@ class TrinityRun:
         )
         return None
 
+    def _reject_invalid_parallel_plan(self, units: list[dict] | None) -> bool:
+        """병렬을 명시적으로 요청했는데 독립 wave가 안 나오는 계획인가 — 맞으면 재계획으로 돌린다.
+
+        하네스가 직접 FAIL을 적는다. 이 판정은 모델이 아니라 계획의 형상에서 나오므로 Verifier를
+        기다릴 이유가 없고, 기다리면 범위 없는 단일 Worker로 강등된 채 한 턴이 통째로 흘러간다.
+
+        Returns:
+            True면 이 턴은 여기서 끝난다 (다음 전이는 THINKER_REPLAN).
+        """
+        waves = _plan_waves(units, self._hd.root) if units else []
+        if units and any(len(wave) > 1 for wave in waves):
+            return False
+        reason = (
+            "Explicit parallel request but no valid independent Worker wave exists — "
+            "replan with 2+ non-overlapping units and a correct access graph"
+        )
+        commands = [{"cmd": "unit-plan-validation", "exit_code": 1}]
+        self.last_fail = {
+            "sig": "invalid-parallel-plan",
+            "why": reason,
+            "criteria": self.cls["criteria"],
+            "commands": commands,
+        }
+        self.fail_history.append(f"invalid-parallel-plan: {reason}")
+        self.structural = True
+        ql(
+            self._hd.root,
+            "append",
+            "--verdict",
+            "FAIL",
+            "--level",
+            "full",
+            session=self.sid,
+            stdin=json.dumps(
+                {
+                    "role": "harness",
+                    "event": "verify",
+                    "criteria": self.cls["criteria"],
+                    "commands": commands,
+                    "failure_sig": "invalid-parallel-plan",
+                }
+            ),
+        )
+        self.pending = ("THINKER_REPLAN", reason)
+        return True
+
     def _worker_turn(self) -> str | None:
         """구현 턴 — 새 계획의 units는 wave 병렬, 경미한 재시도는 단일 경로 + 실패 컨텍스트."""
         hd = self._hd
@@ -810,43 +969,11 @@ class TrinityRun:
         self.dual_plan_pending = False
         units = None if dual_plan else (_parse_units(self.plan_ctx) if self.role == "WORKER" or new_plan else None)
         self.wave_plan_pending = False
-        if new_plan and self.cls.get("parallel_requested"):
-            waves = _plan_waves(units, hd.root) if units else []
-            if not units or not any(len(wave) > 1 for wave in waves):
-                reason = (
-                    "Explicit parallel request but no valid independent Worker wave exists — "
-                    "replan with 2+ non-overlapping units and a correct access graph"
-                )
-                self.last_fail = {
-                    "sig": "invalid-parallel-plan",
-                    "why": reason,
-                    "criteria": self.cls["criteria"],
-                    "commands": [{"cmd": "unit-plan-validation", "exit_code": 1}],
-                }
-                self.fail_history.append(f"invalid-parallel-plan: {reason}")
-                self.structural = True
-                ql(
-                    hd.root,
-                    "append",
-                    "--verdict",
-                    "FAIL",
-                    "--level",
-                    "full",
-                    session=self.sid,
-                    stdin=json.dumps(
-                        {
-                            "role": "harness",
-                            "event": "verify",
-                            "criteria": self.cls["criteria"],
-                            "commands": [{"cmd": "unit-plan-validation", "exit_code": 1}],
-                            "failure_sig": "invalid-parallel-plan",
-                        }
-                    ),
-                )
-                self.pending = ("THINKER_REPLAN", reason)
-                return None
+        if new_plan and self.cls.get("parallel_requested") and self._reject_invalid_parallel_plan(units):
+            return None
         if units:  # 새 Thinker 계획은 wave, 같은 계획의 경미한 재시도는 단일 경로
             self.had_wave_plan = True
+            self.bifrost.choose_shape(self.cls, unit_count=len(units))
             hd._run_worker_waves(self.sid, self.request, units, self.budget_note)
             return None
         writes: list[str] = []
@@ -855,12 +982,18 @@ class TrinityRun:
         # 모델이 전적으로 알아서 고르는 상태가 되고, 결정론 매칭분이 통째로 버려진다.
         skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=self.request)
 
+        ask_handler = self.bifrost.ask_handler()
+
         def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None):
             # verifier는 무주입 (mk_verifier) — 게이트 기준이 lagom으로 흔들리면 안 된다
             return hd._session(
                 _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
-                extra_tools=[DISPATCH_TOOL, *skill_tools],
-                handlers={"dispatch": hd._dispatch_handler(s_id, w), **skill_handlers},
+                extra_tools=[DISPATCH_TOOL, ASK_TOOL, *skill_tools],
+                handlers={
+                    "dispatch": hd._dispatch_handler(s_id, w),
+                    "ask_coordinator": ask_handler,
+                    **skill_handlers,
+                },
                 role=rl,
                 model=m,
                 rp_override=rp,
@@ -1194,7 +1327,7 @@ class TrinityRun:
         if appended.returncode != 0:
             hd._record_outcome(self.tc, "verify-append-rejected", self.saw_red)
             detail = (appended.stderr or appended.stdout or "verifier append rejected").strip()[:300]
-            return f"⚠ Verifier 판정 기록 거부 — {detail} 퀘스트는 ACTIVE로 유지됩니다."
+            return f"⚠ Verifier 판정을 기록하지 못했어요 — {detail} 퀘스트는 ACTIVE로 둘게요."
         if ask_user:
             lines = "\n".join(f"  · [{f['id']}] {f.get('file') or '—'} — {f['description'][:220]}" for f in ask_user)
             if v["verdict"] == "FAIL":
@@ -1203,8 +1336,8 @@ class TrinityRun:
                 hd._escalate(self.sid)
                 hd._record_outcome(self.tc, "findings-escalate", self.saw_red)
                 return (
-                    f"⚠ Odin 결정 필요 — 판정이 Odin의 지시를 다투는 결함 {len(ask_user)}건에 걸렸습니다 "
-                    f"(재시도로 대신 정할 수 없음).\n{lines}\n"
+                    f"⚠ 오딘이 정해 주셔야 해요 — 판정이 오딘의 지시와 부딪히는 결함 {len(ask_user)}건에 걸렸어요 "
+                    f"(재시도로 대신 정할 수 없어요).\n{lines}\n"
                     f"퀘스트 로그: .asgard/quest/{self.qid}.jsonl"
                 )
             # PASS는 criteria↔증거 매핑이 계약이므로 뒤집지 않는다 — 다만 판단이 사람 몫인 관측을

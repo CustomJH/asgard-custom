@@ -20,7 +20,7 @@ from .planning import _plan_waves
 from .roles import _role_prompt, _skill_support, work_shape_note
 from .ticket_lease import TicketLease
 from .todo import TodoBoard, files_note
-from .toolspec import DISPATCH_TOOL
+from .toolspec import ASK_TOOL, DISPATCH_TOOL
 
 if TYPE_CHECKING:  # core가 이 모듈을 임포트하므로 런타임 임포트는 순환이다
     from .core import Heimdall
@@ -121,6 +121,7 @@ class WaveRunner:
             led.persist()  # 실패할 수 있는 티켓 호출보다 먼저 — 유실되면 쓰기가 orphan이 된다
             led.results[u["id"]] = r.text[-2000:]
             led.board.mark(u["id"], "done", files_note(len(unit_writes)))
+            self._hd.bifrost.settle_unit(u, "succeeded", summary=r.text[-2000:], files=unit_writes[:50])
             try:
                 led.tickets.settle(u, "done")
             except Exception as e:
@@ -171,6 +172,7 @@ class WaveRunner:
                 continue
             finally:
                 led.tickets.stop_heartbeat(u)
+            self._hd.bifrost.settle_unit(u, "failed", summary=f"{e.__class__.__name__}: {str(e)[:400]}")
             if final == "failed":
                 retry.append(u)
                 led.board.mark(u["id"], "failed", t("todo_unit_retry", e=e.__class__.__name__))
@@ -178,6 +180,82 @@ class WaveRunner:
                 terminal.append((u, e))
                 led.board.mark(u["id"], "blocked", t("todo_unit_exhausted"))
         return (retry, terminal)
+
+    def _open_round(self, pending: list[dict], tickets: TicketLease, isolation: bool):
+        """이 라운드의 격리 workspace를 열고 티켓을 claim한다. (스택, workspace, cwd 표).
+
+        여는 도중 실패하면 이미 연 workspace를 닫고 예외를 그대로 올린다 — 안 닫으면 임시
+        디렉터리가 남고, 그 다음 라운드가 같은 이름으로 열려다 또 실패한다.
+        """
+        workspace_stack = ExitStack()
+        workspaces: dict = {}
+        try:
+            if isolation:
+                from ..unit_workspace import UnitWorkspace
+
+                for unit in pending:
+                    workspaces[unit["id"]] = workspace_stack.enter_context(UnitWorkspace(self._hd.root, unit["id"]))
+            cwd_by_id = {unit["id"]: workspaces[unit["id"]].path if isolation else None for unit in pending}
+            tickets.begin_wave()
+            tickets.claim_all(pending)
+        except Exception:
+            workspace_stack.close()
+            raise
+        return workspace_stack, workspaces, cwd_by_id
+
+    def _unit_turn(self, led: _Ledger, u: dict, writes: list[str], cwd: str | None, request: str, budget_note: str):
+        """배정 단위 하나의 워커 세션을 세우고 돌린다. (단위, 결과, 쓰기)를 돌려준다.
+
+        writes는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다.
+        """
+        hd = self._hd
+        wrp = hd.role_rp.get("worker", hd.rp)
+        # 매칭 기준은 퀘스트 전체가 아니라 **이 단위의 과업 문장** — 단위마다 걸리는 규율이
+        # 다르다 (한 단위는 회귀 테스트, 다른 단위는 계층 경계).
+        unit_task = f"{u.get('subtask') or ''} {' '.join(map(str, u.get('criteria') or []))}".strip()
+        skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=unit_task)
+        # 배정 단위의 target files는 계획 시점에 이미 알려진 사실이다 — 지시 문구가 구조를
+        # 언급하지 않아도 손댈 형상(경계 교차·이미 큰 파일)으로 구조 규율이 켜진다.
+        shape_note = work_shape_note(
+            hd.root,
+            unit_task,
+            {"write_expected": True, "task_class": "standard"},
+            changed=u.get("files") or None,
+        )
+        # 병렬 단위는 서로의 궤적을 못 본다(access 격리). 그래서 범위 경계에서 막히면 스스로
+        # 풀 방법이 없고, 여태 그 자리의 선택지는 추측 아니면 실패뿐이었다. ask_coordinator 가
+        # 세 번째를 준다 — 코디네이터 고리가 다른 스레드에서 답한다.
+        ask_handler = hd.bifrost.ask_handler(u)
+
+        def mk(rp=None):
+            return hd._session(
+                _role_prompt("asgard-worker.md") + hd.lagom + hd.comments + hd.manual_worker + skill_note + hd.map_note,
+                extra_tools=[DISPATCH_TOOL, ASK_TOOL, *skill_tools],
+                handlers={
+                    "dispatch": hd._dispatch_handler(led.sid, writes, cwd),
+                    "ask_coordinator": ask_handler,
+                    **skill_handlers,
+                },
+                role="worker",
+                model=hd._model_for("worker"),
+                quiet=True,
+                rp_override=rp,
+                cwd=cwd,
+            )
+
+        results = led.results
+        access_ctx = "".join(
+            f"\n[prior unit {a} result]\n{results[a][:1500]}\n" for a in (u.get("access") or []) if a in results
+        )
+        prompt = (
+            f"Quest: {request}\n\nAssigned unit {u['id']}: {u['subtask']}\n"
+            f"Target files: {', '.join(u['files']) or '(unspecified)'}\n"
+            f"criteria: {u['criteria']}\n{access_ctx}\n"
+            f"Implement only your assigned unit's scope (Canon 7) — "
+            f"do not touch other units' files.{shape_note}{budget_note}"
+        )
+        fallback = (lambda: mk(rp=hd.rp)) if wrp is not hd.rp else None
+        return u, hd._run_turn(mk, prompt, fallback), writes
 
     def run(self, sid: str, request: str, units: list[dict], budget_note: str) -> None:
         """진행 보드를 열고 wave 실행에 넘긴다 — 보드는 어떤 경로로 끝나든 닫는다.
@@ -216,61 +294,19 @@ class WaveRunner:
             max_attempts=int(ticket_policy.get("max_attempts") or 3),
         )
         led = _Ledger(hd, sid, board, tickets, f"{wrp.profile.name}:{hd._model_for('worker') or wrp.model}")
-        results = led.results  # access 컨텍스트 소스 — 장부와 같은 객체를 본다
 
         for unit in units:
             tickets.record(unit, "todo")
-
-        def run_unit(u: dict, writes: list[str], cwd: str | None = None):
-            # writes는 호출측 소유 — 단위가 실패해도 디스패치 경유 부분 쓰기를 회수한다
-            # 매칭 기준은 퀘스트 전체가 아니라 **이 단위의 과업 문장** — 단위마다 걸리는 규율이
-            # 다르다 (한 단위는 회귀 테스트, 다른 단위는 계층 경계).
-            unit_task = f"{u.get('subtask') or ''} {' '.join(map(str, u.get('criteria') or []))}".strip()
-            skill_note, skill_tools, skill_handlers = _skill_support("worker", hd.root, task=unit_task)
-            # 배정 단위의 target files는 계획 시점에 이미 알려진 사실이다 — 지시 문구가 구조를
-            # 언급하지 않아도 손댈 형상(경계 교차·이미 큰 파일)으로 구조 규율이 켜진다.
-            shape_note = work_shape_note(
-                hd.root,
-                unit_task,
-                {"write_expected": True, "task_class": "standard"},
-                changed=u.get("files") or None,
-            )
-
-            def mk(rp=None):
-                return hd._session(
-                    _role_prompt("asgard-worker.md")
-                    + hd.lagom
-                    + hd.comments
-                    + hd.manual_worker
-                    + skill_note
-                    + hd.map_note,
-                    extra_tools=[DISPATCH_TOOL, *skill_tools],
-                    handlers={"dispatch": hd._dispatch_handler(sid, writes, cwd), **skill_handlers},
-                    role="worker",
-                    model=hd._model_for("worker"),
-                    quiet=True,
-                    rp_override=rp,
-                    cwd=cwd,
-                )
-
-            access_ctx = "".join(
-                f"\n[prior unit {a} result]\n{results[a][:1500]}\n" for a in (u.get("access") or []) if a in results
-            )
-            prompt = (
-                f"Quest: {request}\n\nAssigned unit {u['id']}: {u['subtask']}\n"
-                f"Target files: {', '.join(u['files']) or '(unspecified)'}\n"
-                f"criteria: {u['criteria']}\n{access_ctx}\n"
-                f"Implement only your assigned unit's scope (Canon 7) — "
-                f"do not touch other units' files.{shape_note}{budget_note}"
-            )
-            fallback = (lambda: mk(rp=hd.rp)) if wrp is not hd.rp else None
-            return u, hd._run_turn(mk, prompt, fallback), writes
+        # 계획이 선언한 `access` 를 의존으로 세운다 — 여태 문맥 주입에만 쓰이던 값이 여기서
+        # 처음 배차 의존이 된다. 티켓 장부와 별개의 표면이라 실패해도 wave 는 그대로 돈다.
+        hd.bifrost.register_units(units)
 
         def run_claimed(u: dict, writes: list[str], token: str, cwd: str | None = None):
             # 빠른 sibling이 먼저 끝나도 느린 sibling의 fan-in·patch merge까지 lease가 살아 있어야
             # 한다. merge finally가 모든 heartbeat를 join 한 직후 ticket-finish를 수행한다.
+            hd.bifrost.open_unit(u, model=led.used_model, agent=hd._agent_for("worker") or "")
             heartbeat_errors = tickets.start_heartbeat(u, token)
-            result = run_unit(u, writes, cwd)
+            result = self._unit_turn(led, u, writes, cwd, request, budget_note)
             if heartbeat_errors:
                 raise RuntimeError(f"ticket lease heartbeat failed: {heartbeat_errors[0]}")
             return result
@@ -284,20 +320,7 @@ class WaveRunner:
             while pending:
                 board.start(u["id"] for u in pending)
                 writes_by_id: dict = {u["id"]: [] for u in pending}
-                workspace_stack = ExitStack()
-                workspaces = {}
-                try:
-                    if isolation:
-                        from ..unit_workspace import UnitWorkspace
-
-                        for unit in pending:
-                            workspaces[unit["id"]] = workspace_stack.enter_context(UnitWorkspace(hd.root, unit["id"]))
-                    cwd_by_id = {unit["id"]: workspaces[unit["id"]].path if isolation else None for unit in pending}
-                    tickets.begin_wave()
-                    tickets.claim_all(pending)
-                except Exception:
-                    workspace_stack.close()
-                    raise
+                workspace_stack, workspaces, cwd_by_id = self._open_round(pending, tickets, isolation)
                 failures: list[tuple[dict, Exception]] = []
                 outs = []
                 actual_writes: dict[object, list[str]] = {}
@@ -314,6 +337,9 @@ class WaveRunner:
                     # 하트비트를 먼저 멈춘다 — lease를 줄인 뒤 멈추면 그 사이 갱신이 되살린다 (경합)
                     for unit in pending:
                         tickets.stop_heartbeat(unit)
+                        # 배차 장부에도 이 시도가 끝났다고 적는다. 안 적으면 Dispatch가 ready로
+                        # 남아 그 Task는 다시 배차되지 않는다 — 취소된 wave를 못 이어받게 된다.
+                        hd.bifrost.stop_unit(unit)
                     cleanup_errors = tickets.release_unfinished(pending)
                     if cleanup_errors:
                         hd.on_text(f"  ⚠ wave claim cleanup 실패 · {len(cleanup_errors)}건\n")

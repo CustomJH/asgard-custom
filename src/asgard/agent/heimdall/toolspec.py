@@ -66,6 +66,31 @@ VERDICT_TOOL: dict[str, Any] = {
     },
 }
 
+ASK_TOOL: dict = {
+    "name": "ask_coordinator",
+    "description": "Ask the coordinator a blocking question when you cannot proceed without a decision that "
+    "is not yours to make: a scope boundary, a conflict with another unit's files, or an ambiguity in the "
+    "assignment that the repository cannot settle. Do not use it for anything you can answer by reading the "
+    "code — read first. You always get a reply: either an answer or an explicit instruction to proceed under "
+    "a stated assumption.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "question": {"type": "string", "description": "The decision you need, in one sentence."},
+            "options": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "The candidate answers you see, when the choice is closed.",
+            },
+            "tried": {
+                "type": "string",
+                "description": "What you already read or ran, and why it did not settle the question.",
+            },
+        },
+        "required": ["question", "tried"],
+    },
+}
+
 # dict 주석: 이질형 중첩 스키마 리터럴 — 좁은 추론이 소비처 서브스크립트를 오탐한다 (ty).
 DISPATCH_TOOL: dict = {
     "name": "dispatch",

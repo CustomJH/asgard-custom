@@ -121,6 +121,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # plan — 기획 문서 셋(PRD·기능 명세서·유저 플로우)의 형상·검사·저장소. studio와
                 # 같은 자리다. 모델 호출(agent.oneshot)은 상향이라 함수 안 lazy 로만 부른다.
                 "plan",
+                # orchestration — 배차 장부(Run·Task·Dispatch·우편·게이트). studio와 같은 자리다:
+                # 자기 SQLite 를 소유하고 규칙만 진다. 실행은 위층(agent.heimdall)이 하고, 이
+                # 계층은 무엇이 배차됐고 무엇이 답을 기다리는지만 안다.
+                "orchestration",
                 "hooks",
             }
         ),

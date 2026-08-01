@@ -26,6 +26,7 @@ from ...model_tiers import family_tier as _model_tier
 from ...model_tiers import tiers_for as _tiers_for
 from ...providers import ResolvedProvider, resolve_trinity
 from ..session import AgentSession, SessionResult, TurnCancelled, make_client, ql
+from .bifrost import NULL_LEDGER
 from .classify import (
     _DESTRUCTIVE_PAT,
     _PARALLEL_WORK_PAT,
@@ -96,71 +97,15 @@ class Heimdall:
         roles = TRINITY_ROLES + TRINITY_EXTRA_ROLES + tuple(_DELIVERY_TIERS)
         for role, rrp in resolve_trinity(root, rp, roles).items():
             if rrp is not rp and rrp.missing:
-                on_text(f"⚠ [trinity.{role}] 미충족({'; '.join(rrp.missing)}) — 기본 provider 사용\n")
+                on_text(f"⚠ [trinity.{role}] 조건이 안 맞아서({'; '.join(rrp.missing)}) 기본 provider로 갈게요\n")
                 rrp = rp
             self.role_rp[role] = rrp
         # trinity-policy.json — roles tier/effort·budget_priors·delivery 티어 소비
         from ...hooks.quest_log import active_quest, load_policy
 
         self.policy = load_policy(root)
-        # Lagom — 세션 생성 시점 모드로 렌더 (off = 빈 문자열, 프롬프트 무변화).
-        # REPL /lagom 전환은 _Reconfigure로 Heimdall을 재생성해 여기로 다시 온다.
-        from ...lagom import note as _lagom_note
-
-        self.lagom = _lagom_note(root)
-        # Bragi (사람 문체) — lagom과 독립 축이라 별도 해석. `/lagom off`는 압축을 끄는 것이지
-        # 사람처럼 쓰기를 끄는 게 아니다. 기본 on, 끄기는 설정 bragi.mode 또는 ASGARD_BRAGI=off.
-        from ...bragi import note as _bragi_note
-
-        self.bragi = _bragi_note(root)
-        # 주석 계약 — 코드를 쓰는 역할만 받는다. Verifier는 남의 주석을 판정할 뿐이고 DIRECT는
-        # 코드를 안 쓰므로, identity가 아니라 worker 프롬프트에만 붙인다 (trinity.py·waves.py).
-        from ...templates.comments import COMMENT_CANON
-
-        self.comments = "\n\n" + COMMENT_CANON
-        # Charter (프로젝트 북극성) — through-line은 identity로(설계①, 모든 역할·DIRECT 관통),
-        # coherence는 Thinker/Verifier 프롬프트에 역할별로(협업②/판단③). 미설정이면 전부 빈 문자열.
-        from ...charter import note as _charter_note
-
-        self._charter_note = _charter_note
-        self.charter_identity = _charter_note(root, "identity")
-        # 커스텀 매뉴얼 — 오딘이 루트 `MANUAL.md`(+`.asgard/`)에 쓴 프로젝트 규칙. identity 절은
-        # 메인·딜리버리가, 역할 절(thinker/worker/verifier)은 각 프롬프트가 가져간다. charter와
-        # 달리 Worker도 받는다 — "이 프로젝트에선 코드를 이렇게 써라"가 본문이라 코드를 쓰는
-        # 역할에 안 닿으면 계층 자체가 무의미하다 (hooks/manual_activate.section_for와 같은 판정).
-        # 세션 생성 시 1회 렌더 = 세션 중 파일이 바뀌어도 프롬프트 불변 (KV 캐시·재현성 보존).
-        from ...manual import note as _manual_note
-
-        self._manual_note = _manual_note
-        self.manual_identity = _manual_note(root, "identity")
-        self.manual_worker = _manual_note(root, "worker")
-        # 개인 메모리 동결 스냅샷 (memory v3 P1) — 세션 생성 시 1회 렌더
-        # (세션 중 메모리가 바뀌어도 프롬프트 불변 = KV 캐시·재현성 보존).
-        # 주입 매트릭스: DIRECT(identity)·호출된 Thinker = 스냅샷+회수. standard Worker는
-        # 요청 관련 개인 회수만 받고, deep Worker는 개인 메모리를 받지 않는다.
-        # Verifier/딜리버리(loki 포함)는 영구 무주입.
-        # provider 게이트: inject_allowed — 킬스위치 + [memory].providers allowlist.
-        from ...memory import inject_allowed as _mem_allowed
-        from ...memory import snapshot_note as _memory_note
-
-        self._memory_snap = _memory_note()  # 동결 원본 — 역할별 게이트는 아래에서
-        self._mem_allowed = _mem_allowed
-        # 스웜 — 이 프로젝트가 역할마다 다른 에이전트를 세워 뒀는가 (.asgard의 [agents].roles).
-        # 세워 뒀으면 그 역할의 세션은 **그 에이전트의 홈**에서 돌고, 1차 기억 스냅샷도 거기서
-        # 뜬다. 배치가 없으면 이 딕셔너리가 비어 있고 아래 경로는 전부 종전과 바이트 동일하다.
-        from ...swarm import resolve as _swarm_resolve
-        from ...swarm import swarm as _swarm_roles
-
-        try:
-            self._role_agent: dict[str, str] = _swarm_roles(root)
-            self._session_agent: str = _swarm_resolve(root, mode="native")
-        except Exception:  # 배치 해석 실패가 세션 시동을 막으면 안 된다 (fail-open)
-            self._role_agent, self._session_agent = {}, ""
-        self._role_memory_snap: dict[str, str] = {}
-        self._agent_note_cache: dict[str, str] = {}
-        self._memory_note_fn = _memory_note
-        self._memory_provider_allowed = _mem_allowed(rp.profile.name, rp.source)
-        self.memory_note = self._memory_snap if self._memory_provider_allowed else ""
+        self._load_prompt_layers(root)
+        self._load_memory_layers(rp, root)
         # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/eitri/loki)은 코디네이터가 아니다.
         # 특히 loki는 Verifier의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
         self.delivery_identity = (
@@ -189,9 +134,78 @@ class Heimdall:
         # 협력자 — 딜리버리 위임·편대(dispatch), 배정 단위 wave 실행(waves)
         self._dispatchers = DeliveryDispatch(self)
         self._waves = WaveRunner(self)
+        # 배차 장부는 퀘스트가 열릴 때 TrinityRun 이 세운다. 그 전(그리고 퀘스트 없이 도는
+        # 경로)에는 아무 일도 안 하는 대역이 서 있어 호출부에 분기가 생기지 않는다.
+        self.bifrost = NULL_LEDGER
         dangling = active_quest(root)
         if dangling:  # 이전 세션 중단으로 남은 ACTIVE 퀘스트 — 조용히 덮지 않는다
             on_text(f"⚠ 미완 퀘스트 발견({dangling}) — 이전 세션 중단 흔적. 이어서 검증하거나 quest-log close 필요.\n")
+
+    def _load_prompt_layers(self, root: str) -> None:
+        """프롬프트에 얹히는 문서 계층을 세션 생성 시 1회 렌더한다.
+
+        전부 여기서 한 번만 읽는 이유는 KV 캐시와 재현성이다 — 세션 도중 파일이 바뀌어도
+        프롬프트는 안 변한다. 설정 전환(REPL `/lagom`)은 _Reconfigure가 Heimdall을 다시 세워
+        이 자리로 돌아온다.
+        """
+        # Lagom — off면 빈 문자열이라 프롬프트가 종전과 바이트 동일하다.
+        from ...lagom import note as _lagom_note
+
+        self.lagom = _lagom_note(root)
+        # Bragi (사람 문체) — lagom과 독립 축이라 별도 해석. `/lagom off`는 압축을 끄는 것이지
+        # 사람처럼 쓰기를 끄는 게 아니다. 기본 on, 끄기는 설정 bragi.mode 또는 ASGARD_BRAGI=off.
+        from ...bragi import note as _bragi_note
+
+        self.bragi = _bragi_note(root)
+        # 주석 계약 — 코드를 쓰는 역할만 받는다. Verifier는 남의 주석을 판정할 뿐이고 DIRECT는
+        # 코드를 안 쓰므로, identity가 아니라 worker 프롬프트에만 붙인다 (trinity.py·waves.py).
+        from ...templates.comments import COMMENT_CANON
+
+        self.comments = "\n\n" + COMMENT_CANON
+        # Charter (프로젝트 북극성) — through-line은 identity로(설계①, 모든 역할·DIRECT 관통),
+        # coherence는 Thinker/Verifier 프롬프트에 역할별로(협업②/판단③). 미설정이면 전부 빈 문자열.
+        from ...charter import note as _charter_note
+
+        self._charter_note = _charter_note
+        self.charter_identity = _charter_note(root, "identity")
+        # 커스텀 매뉴얼 — 오딘이 루트 `MANUAL.md`(+`.asgard/`)에 쓴 프로젝트 규칙. identity 절은
+        # 메인·딜리버리가, 역할 절(thinker/worker/verifier)은 각 프롬프트가 가져간다. charter와
+        # 달리 Worker도 받는다 — "이 프로젝트에선 코드를 이렇게 써라"가 본문이라 코드를 쓰는
+        # 역할에 안 닿으면 계층 자체가 무의미하다 (hooks/manual_activate.section_for와 같은 판정).
+        from ...manual import note as _manual_note
+
+        self._manual_note = _manual_note
+        self.manual_identity = _manual_note(root, "identity")
+        self.manual_worker = _manual_note(root, "worker")
+
+    def _load_memory_layers(self, rp: ResolvedProvider, root: str) -> None:
+        """개인 메모리 동결 스냅샷(memory v3 P1)과 역할별 에이전트 배치를 해석한다.
+
+        주입 매트릭스: DIRECT(identity)·호출된 Thinker = 스냅샷+회수. standard Worker는 요청
+        관련 개인 회수만 받고, deep Worker는 개인 메모리를 받지 않는다. Verifier/딜리버리(loki
+        포함)는 영구 무주입. provider 게이트는 inject_allowed — 킬스위치 + allowlist.
+        """
+        from ...memory import inject_allowed as _mem_allowed
+        from ...memory import snapshot_note as _memory_note
+
+        self._memory_snap = _memory_note()  # 동결 원본 — 역할별 게이트는 아래에서
+        self._mem_allowed = _mem_allowed
+        # 스웜 — 이 프로젝트가 역할마다 다른 에이전트를 세워 뒀는가 (.asgard의 [agents].roles).
+        # 세워 뒀으면 그 역할의 세션은 **그 에이전트의 홈**에서 돌고, 1차 기억 스냅샷도 거기서
+        # 뜬다. 배치가 없으면 이 딕셔너리가 비어 있고 아래 경로는 전부 종전과 바이트 동일하다.
+        from ...swarm import resolve as _swarm_resolve
+        from ...swarm import swarm as _swarm_roles
+
+        try:
+            self._role_agent: dict[str, str] = _swarm_roles(root)
+            self._session_agent: str = _swarm_resolve(root, mode="native")
+        except Exception:  # 배치 해석 실패가 세션 시동을 막으면 안 된다 (fail-open)
+            self._role_agent, self._session_agent = {}, ""
+        self._role_memory_snap: dict[str, str] = {}
+        self._agent_note_cache: dict[str, str] = {}
+        self._memory_note_fn = _memory_note
+        self._memory_provider_allowed = _mem_allowed(rp.profile.name, rp.source)
+        self.memory_note = self._memory_snap if self._memory_provider_allowed else ""
 
     def _client_for(self, rp: ResolvedProvider):
         key = (rp.profile.name, rp.base_url, rp.key_source)
@@ -610,14 +624,18 @@ class Heimdall:
             except Exception as e:
                 if classify_api_error(e) != "retryable" or attempt == 2:
                     if fallback is not None:
-                        self.on_text(f"⚠ provider 오류({e.__class__.__name__}) — 기본 provider 폴백 1회\n")
+                        self.on_text(
+                            f"⚠ provider에 문제가 생겨서({e.__class__.__name__}) 기본 provider로 한 번 돌려볼게요\n"
+                        )
                         r = fallback().run(prompt if fallback_prompt is None else fallback_prompt)
                         if getattr(r, "stop_reason", "") == "cancelled":
                             raise TurnCancelled()
                         self._track_cache(r)
                         return r
                     raise
-                self.on_text(f"⚠ provider 일시 오류({e.__class__.__name__}) — {delay:.0f}s 후 재시도\n")
+                self.on_text(
+                    f"⚠ provider가 잠깐 말썽이에요({e.__class__.__name__}) — {delay:.0f}초 뒤에 다시 해볼게요\n"
+                )
                 self._sleep(delay + random.uniform(0, delay / 2))
                 delay = min(delay * 2, 30.0)
         raise RuntimeError("unreachable")
@@ -688,14 +706,14 @@ class Heimdall:
                 warning = f"{issue.source}: {issue.reason}"
                 if warning not in self._map_warnings:
                     self._map_warnings.add(warning)
-                    self.on_text(f"⚠ 프로젝트 맵 항목 제외 — {warning}\n")
+                    self.on_text(f"⚠ 프로젝트 맵에서 뺀 항목이 있어요 — {warning}\n")
             self.map_note = ("\n\n" + context.text) if context.text else ""
         except Exception as exc:
             self.map_note = ""
             warning = f"{exc.__class__.__name__}: {str(exc)[:180]}"
             if warning not in self._map_warnings:
                 self._map_warnings.add(warning)
-                self.on_text(f"⚠ 프로젝트 맵 시작 갱신 실패 — 맵 없이 진행 ({warning})\n")
+                self.on_text(f"⚠ 프로젝트 맵을 새로 못 그렸어요 — 맵 없이 갈게요 ({warning})\n")
         return self.map_note
 
     def _tutor_brief(self, request: str) -> None:
@@ -731,16 +749,16 @@ class Heimdall:
 
         qid = qid or active_quest(self.root)
         if not qid:
-            return "⚠ 재개할 ACTIVE Quest가 없습니다."
+            return "⚠ 이어서 할 ACTIVE Quest가 없어요."
         recovered = ql(self.root, "ticket-recover", session=qid)
         if recovered.returncode != 0:
             detail = (recovered.stderr or recovered.stdout or "ticket recovery failed").strip()[:300]
-            return f"⚠ Quest {qid} 복구 실패 — {detail}"
+            return f"⚠ Quest {qid}를 되살리지 못했어요 — {detail}"
         snapshot = _resume_snapshot(self.root, qid)
         if snapshot["blocked"]:
-            return f"⚠ Quest {qid} retry budget 소진 ticket: {snapshot['blocked']}"
+            return f"⚠ Quest {qid}는 재시도 예산을 다 썼어요 — ticket: {snapshot['blocked']}"
         if snapshot["active"]:
-            return f"⚠ Quest {qid}에 유효 lease의 active ticket이 있어 중복 실행하지 않습니다: {snapshot['active']}"
+            return f"⚠ Quest {qid}에 아직 살아 있는 active ticket이 있어서 겹쳐 돌리지 않을게요: {snapshot['active']}"
         request = snapshot["request"] or ("Resumed Quest %s — %s" % (qid, "; ".join(snapshot["criteria"])))
         self._prepare_map(request)
         cls = {
