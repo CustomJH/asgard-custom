@@ -1,0 +1,173 @@
+{
+  "about": {
+    "왜": "근거 대조 판정(`memory/recall.py:_stem_hit`)의 어간 하한 `_stem_floor` 를 재는 자. 회수 하니스(`benchmarks/longmemeval/`)는 `query()` 만 지나가느라 이 함수를 한 번도 안 부른다.",
+    "출처": "낱말 층 12건과 주장 층 1건은 `tests/test_memory_norn.py::TestStemFloor` 의 사례를 씨앗으로 옮겼다. 나머지는 같은 실패 형상(어간이 남의 낱말 접두사가 되는 것)을 따라 손으로 지은 **합성** 사례다.",
+    "합성 밝힘": "이 코퍼스는 실제 사용자 기억에서 뽑은 것이 아니다. 절대 수치를 제품 품질로 읽으면 안 되고, **하한을 옮길 때 어느 쪽이 얼마나 움직이는가**의 상대 비교로만 읽어야 한다.",
+    "라벨 규칙": "expect=true 는 주장의 낱말이 출처에 **정말로** 있는 경우다 (조사·어미·굴절만 다르다). expect=false 는 어간이 겹쳐 보이지만 **다른 낱말**인 경우다 — 근거로 세면 오탐이다."
+  },
+  "words": [
+    {"word": "금요일", "haystack": "오딘은 금요일에는 배포를 안 한다", "expect": true, "lang": "ko", "note": "조사 `에는` — 씨앗(TestStemFloor)"},
+    {"word": "배포를", "haystack": "배포 전에 테스트를 돌린다", "expect": true, "lang": "ko", "note": "목적격 조사 `를` — 씨앗(TestStemFloor)"},
+    {"word": "테스트를", "haystack": "테스트 없이 머지한다", "expect": true, "lang": "ko", "note": "조사 1자"},
+    {"word": "저장소에", "haystack": "저장소 정리가 필요하다", "expect": true, "lang": "ko", "note": "조사 1자, 4→3"},
+    {"word": "배포한다", "haystack": "배포 절차를 다시 적었다", "expect": true, "lang": "ko", "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"},
+    {"word": "인증서가", "haystack": "인증서 만료를 못 봤다", "expect": true, "lang": "ko", "note": "조사 1자"},
+    {"word": "컨테이너를", "haystack": "컨테이너 재시작으로 풀었다", "expect": true, "lang": "ko", "note": "조사 1자, 5→4"},
+    {"word": "리뷰어는", "haystack": "리뷰어 지정이 비어 있다", "expect": true, "lang": "ko", "note": "조사 1자"},
+    {"word": "롤백했다", "haystack": "롤백 절차가 문서에 없다", "expect": true, "lang": "ko", "note": "용언 활용 2자 — 4→2"},
+    {"word": "캐시를", "haystack": "캐시 무효화가 안 걸렸다", "expect": true, "lang": "ko", "note": "조사 1자, 3→2"},
+    {"word": "스테이징에", "haystack": "스테이징 환경이 죽어 있었다", "expect": true, "lang": "ko", "note": "조사 1자, 5→4"},
+    {"word": "문서화가", "haystack": "문서화 규칙을 정했다", "expect": true, "lang": "ko", "note": "조사 1자"},
+    {"word": "마이그레이션은", "haystack": "마이그레이션 순서를 지킨다", "expect": true, "lang": "ko", "note": "조사 1자, 7→6"},
+    {"word": "금요일에는", "haystack": "금요일 배포 금지", "expect": true, "lang": "ko", "note": "조사 2자, 5→3"},
+    {"word": "검증을", "haystack": "검증 단계를 늘렸다", "expect": true, "lang": "ko", "note": "조사 1자, 3→2"},
+    {"word": "머지하고", "haystack": "머지 전에 리뷰를 받는다", "expect": true, "lang": "ko", "note": "용언 활용 2자 — 4→2"},
+    {"word": "빌드가", "haystack": "빌드 깨짐을 먼저 본다", "expect": true, "lang": "ko", "note": "조사 1자, 3→2"},
+
+    {"word": "저장소", "haystack": "저장 예산에는 상한이 없다", "expect": false, "lang": "ko", "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"},
+    {"word": "인증서", "haystack": "인증 없이 접근했다", "expect": false, "lang": "ko", "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"},
+    {"word": "사과문", "haystack": "사과 한 알을 먹었다", "expect": false, "lang": "ko", "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"},
+    {"word": "대변인", "haystack": "대변 검사 결과가 나왔다", "expect": false, "lang": "ko", "note": "대변인 ≠ 대변"},
+    {"word": "지구력", "haystack": "지구 온난화 대응", "expect": false, "lang": "ko", "note": "지구력 ≠ 지구"},
+    {"word": "정보원", "haystack": "정보 보호 규정을 따른다", "expect": false, "lang": "ko", "note": "정보원 ≠ 정보"},
+    {"word": "전기차", "haystack": "전기 요금이 올랐다", "expect": false, "lang": "ko", "note": "전기차 ≠ 전기"},
+    {"word": "기지국", "haystack": "기지 건설이 끝났다", "expect": false, "lang": "ko", "note": "기지국 ≠ 기지"},
+    {"word": "화장실", "haystack": "화장 지우는 법", "expect": false, "lang": "ko", "note": "화장실 ≠ 화장"},
+    {"word": "수신자", "haystack": "수신 대기 상태다", "expect": false, "lang": "ko", "note": "수신자 ≠ 수신"},
+    {"word": "발신함", "haystack": "발신 번호를 감춘다", "expect": false, "lang": "ko", "note": "발신함 ≠ 발신"},
+    {"word": "관리자", "haystack": "관리 비용이 크다", "expect": false, "lang": "ko", "note": "관리자(사람) ≠ 관리(행위)"},
+    {"word": "가속도", "haystack": "가속 페달을 밟았다", "expect": false, "lang": "ko", "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"},
+    {"word": "자유도", "haystack": "자유 시간을 늘렸다", "expect": false, "lang": "ko", "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"},
+
+    {"word": "deploy", "haystack": "deploying on friday", "expect": true, "lang": "en", "note": "굴절 — 씨앗(TestStemFloor)"},
+    {"word": "deploys", "haystack": "we deploy on friday", "expect": true, "lang": "en", "note": "-s 1자"},
+    {"word": "released", "haystack": "release notes are written", "expect": true, "lang": "en", "note": "-d 1자"},
+    {"word": "reviews", "haystack": "review the diff first", "expect": true, "lang": "en", "note": "-s 1자"},
+    {"word": "checks", "haystack": "check the logs", "expect": true, "lang": "en", "note": "-s 1자"},
+    {"word": "migrations", "haystack": "migration order matters", "expect": true, "lang": "en", "note": "-s 1자"},
+    {"word": "caching", "haystack": "cache invalidation failed", "expect": true, "lang": "en", "note": "-ing 접미 3자 (cach- 어간)"},
+    {"word": "rollbacks", "haystack": "rollback is documented", "expect": true, "lang": "en", "note": "-s 1자"},
+    {"word": "staging", "haystack": "staging environment died", "expect": true, "lang": "en", "note": "완전 일치"},
+    {"word": "tested", "haystack": "the test suite is green", "expect": true, "lang": "en", "note": "-ed 2자"},
+    {"word": "runner", "haystack": "runners are idle", "expect": true, "lang": "en", "note": "완전 일치(건초더미 쪽이 굴절)"},
+    {"word": "committed", "haystack": "commit message is empty", "expect": true, "lang": "en", "note": "-ted 3자"},
+    {"word": "monitoring", "haystack": "monitor the queue depth", "expect": true, "lang": "en", "note": "-ing 3자"},
+    {"word": "verification", "haystack": "verify before merge", "expect": true, "lang": "en", "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"},
+    {"word": "authorization", "haystack": "authorize the caller", "expect": true, "lang": "en", "note": "파생 4자 (13→9)"},
+
+    {"word": "deploy", "haystack": "dependency injection", "expect": false, "lang": "en", "note": "deploy ≠ dep… — 씨앗(TestStemFloor)"},
+    {"word": "release", "haystack": "relevant notes", "expect": false, "lang": "en", "note": "release ≠ rele… — 씨앗(TestStemFloor)"},
+    {"word": "restore", "haystack": "rest api design", "expect": false, "lang": "en", "note": "restore ≠ rest"},
+    {"word": "container", "haystack": "this contains a bug", "expect": false, "lang": "en", "note": "container ≠ conta…"},
+    {"word": "production", "haystack": "the product owner decided", "expect": false, "lang": "en", "note": "production ≠ produ…"},
+    {"word": "validate", "haystack": "valid json only", "expect": false, "lang": "en", "note": "validate(동사) ≠ valid(형용사)"},
+    {"word": "interface", "haystack": "internal api only", "expect": false, "lang": "en", "note": "interface ≠ inter…"},
+    {"word": "reset", "haystack": "research notes", "expect": false, "lang": "en", "note": "reset ≠ res…"},
+    {"word": "secret", "haystack": "section header", "expect": false, "lang": "en", "note": "secret ≠ sec…"},
+    {"word": "backup", "haystack": "back to the queue", "expect": false, "lang": "en", "note": "backup ≠ bac…"},
+    {"word": "pipeline", "haystack": "pipe the output", "expect": false, "lang": "en", "note": "pipeline ≠ pipe"},
+    {"word": "statement", "haystack": "static analysis pass", "expect": false, "lang": "en", "note": "statement ≠ stat…"},
+    {"word": "authentication", "haystack": "author of the commit", "expect": false, "lang": "en", "note": "authentication ≠ author"},
+    {"word": "cluster", "haystack": "clue about the crash", "expect": false, "lang": "en", "note": "cluster ≠ clu…"},
+    {"word": "session", "haystack": "sessile organisms", "expect": false, "lang": "en", "note": "session ≠ sess…"}
+  ],
+
+  "claims": [
+    {
+      "id": "seed-storage-cert",
+      "title": "",
+      "text": "저장소 인증서",
+      "sources": [["예산", "저장 예산에는 상한이 없다. 인증 없이 접근했다."]],
+      "expect": false,
+      "note": "씨앗(TestStemFloor::test_grounding_counts_a_word_the_sources_never_carry) — 두 낱말 중 어느 것도 출처에 없는데 현행 접지는 만점이다"
+    },
+    {
+      "id": "ko-deploy-friday",
+      "title": "배포 습관",
+      "text": "오딘은 금요일에 배포하지 않는다",
+      "sources": [["금요일 이야기", "금요일에는 배포를 안 하는 게 마음이 편하다"]],
+      "expect": true,
+      "note": "진짜 근거 — 조사·어미만 다르다"
+    },
+    {
+      "id": "ko-review-before-merge",
+      "title": "머지 규칙",
+      "text": "리뷰어 지정 없이 머지하지 않는다",
+      "sources": [["머지 절차", "리뷰어 지정이 비면 머지 버튼을 안 누른다"]],
+      "expect": true,
+      "note": "진짜 근거"
+    },
+    {
+      "id": "ko-fabricated-cert",
+      "title": "인증서 만료",
+      "text": "인증서 만료를 감시한다",
+      "sources": [["접근 로그", "인증 없이 접근한 흔적이 있다. 만료 예산을 다시 잡았다."]],
+      "expect": false,
+      "note": "허구 — 출처는 인증서도 만료 감시도 말한 적 없다 (인증·만료가 어간으로 새어 든다)"
+    },
+    {
+      "id": "ko-fabricated-repo",
+      "title": "저장소 정리",
+      "text": "저장소 정리를 분기마다 한다",
+      "sources": [["예산 회의", "저장 예산을 분기마다 다시 잡는다. 정리 해고는 없다."]],
+      "expect": false,
+      "note": "허구 — 저장소도 저장소 정리도 출처에 없다"
+    },
+    {
+      "id": "ko-mixed-noise",
+      "title": "전기차 충전",
+      "text": "전기차 충전 비용을 회사가 낸다",
+      "sources": [["요금", "전기 요금이 올라 충전기 설치를 미뤘다"]],
+      "expect": false,
+      "note": "허구 — 전기차도 비용 부담도 출처에 없다"
+    },
+    {
+      "id": "en-deploy-friday",
+      "title": "deploy habit",
+      "text": "the user avoids deploying on friday",
+      "sources": [["friday", "we do not deploy on friday, it never ends well"]],
+      "expect": true,
+      "note": "진짜 근거 — 굴절만 다르다"
+    },
+    {
+      "id": "en-release-notes",
+      "title": "release notes",
+      "text": "released changes always carry notes",
+      "sources": [["process", "every release ships with notes written by the author"]],
+      "expect": true,
+      "note": "진짜 근거"
+    },
+    {
+      "id": "en-fabricated-release",
+      "title": "release cadence",
+      "text": "release restore is automated",
+      "sources": [["docs", "relevant notes live in the rest api design page"]],
+      "expect": false,
+      "note": "허구 — release 도 restore 도 출처에 없다 (rele…·rest 로 새어 든다)"
+    },
+    {
+      "id": "en-fabricated-prod",
+      "title": "production policy",
+      "text": "production deploy needs a container review",
+      "sources": [["notes", "the product owner said dependency updates contain a bug"]],
+      "expect": false,
+      "note": "허구 — 셋 다 출처에 없다 (produ…·dep…·conta… 로 새어 든다)"
+    },
+    {
+      "id": "en-fabricated-secret",
+      "title": "secret handling",
+      "text": "secret backup is validated",
+      "sources": [["page", "the section header says: go back to valid json only"]],
+      "expect": false,
+      "note": "허구 — 셋 다 출처에 없다"
+    },
+    {
+      "id": "ko-two-source-insight",
+      "title": "롤백 습관",
+      "text": "롤백 절차를 문서에 적어 둔다",
+      "sources": [["절차", "롤백 절차가 문서에 없어서 헤맸다"], ["회고", "문서화 규칙을 그때 정했다"]],
+      "expect": true,
+      "note": "진짜 근거 — 통찰은 두 출처에 걸친다"
+    }
+  ]
+}

@@ -1,0 +1,1373 @@
+{
+ "corpus": "합성 (benchmarks/project-memory/corpus.py) — 절대 수치를 제품 품질로 읽지 마라",
+ "corpus_built": {
+  "documents": 8,
+  "records": 14
+ },
+ "backend": {
+  "state": "skipped",
+  "why": "이 root 에 프로젝트 메모리 config 가 없다 (합성 코퍼스는 정본 파일만 만든다)",
+  "substitute": "레인 2 의 base 후보는 결정론 어휘 대역(_lexical_seeds)으로 뽑았다"
+ },
+ "max_results": 5,
+ "documents": {
+  "n": 17,
+  "overall": {
+   "hit_at_1": 0.8824,
+   "hit_at_3": 1.0,
+   "hit_at_5": 1.0,
+   "mrr": 0.9314
+  },
+  "by_lang": {
+   "en": {
+    "count": 8,
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   "ko": {
+    "count": 9,
+    "hit_at_1": 0.7778,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 0.8704
+   }
+  },
+  "rows": [
+   {
+    "query": "금요일에 배포해도 되나",
+    "lang": "ko",
+    "gold": [
+     [
+      "운영-정책.md",
+      "1 배포 창"
+     ]
+    ],
+    "returned": [
+     [
+      "운영-정책.md",
+      "1 배포 창"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "접근 키는 얼마나 자주 갈아 끼우나",
+    "lang": "ko",
+    "gold": [
+     [
+      "운영-정책.md",
+      "2 비밀 회전"
+     ]
+    ],
+    "returned": [
+     [
+      "운영-정책.md",
+      "2 비밀 회전"
+     ],
+     [
+      "감사-로그.md",
+      "3 접근"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "스키마 이행이 낀 배포를 어떻게 되돌리나",
+    "lang": "ko",
+    "gold": [
+     [
+      "운영-정책.md",
+      "3 롤백 절차"
+     ],
+     [
+      "스키마-이행.md",
+      "2 되감기"
+     ]
+    ],
+    "returned": [
+     [
+      "운영-정책.md",
+      "3 롤백 절차"
+     ],
+     [
+      "스키마-이행.md",
+      "1 이행 순서"
+     ],
+     [
+      "스키마-이행.md",
+      "3 계측"
+     ],
+     [
+      "운영-정책.md",
+      "1 배포 창"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "주입 지연 예산은 몇 초인가",
+    "lang": "ko",
+    "gold": [
+     [
+      "지연-예산.md",
+      "1 총 예산"
+     ]
+    ],
+    "returned": [
+     [
+      "지연-예산.md",
+      "2 레인별 배분"
+     ],
+     [
+      "지연-예산.md",
+      "1 총 예산"
+     ],
+     [
+      "지연-예산.md",
+      "3 초과 시 거동"
+     ]
+    ],
+    "hit_at_1": 0.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 0.5
+   },
+   {
+    "query": "레인이 자기 몫을 넘기면 어떻게 되나",
+    "lang": "ko",
+    "gold": [
+     [
+      "지연-예산.md",
+      "2 레인별 배분"
+     ]
+    ],
+    "returned": [
+     [
+      "지연-예산.md",
+      "2 레인별 배분"
+     ],
+     [
+      "지연-예산.md",
+      "1 총 예산"
+     ],
+     [
+      "지연-예산.md",
+      "3 초과 시 거동"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "스키마 v3 이행 순서",
+    "lang": "ko",
+    "gold": [
+     [
+      "스키마-이행.md",
+      "1 이행 순서"
+     ]
+    ],
+    "returned": [
+     [
+      "스키마-이행.md",
+      "1 이행 순서"
+     ],
+     [
+      "스키마-이행.md",
+      "3 계측"
+     ],
+     [
+      "운영-정책.md",
+      "3 롤백 절차"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "이행 중에 무엇을 계측하나",
+    "lang": "ko",
+    "gold": [
+     [
+      "스키마-이행.md",
+      "3 계측"
+     ]
+    ],
+    "returned": [
+     [
+      "감사-로그.md",
+      "1 남기는 것"
+     ],
+     [
+      "지연-예산.md",
+      "1 총 예산"
+     ],
+     [
+      "스키마-이행.md",
+      "3 계측"
+     ],
+     [
+      "스키마-이행.md",
+      "1 이행 순서"
+     ],
+     [
+      "운영-정책.md",
+      "3 롤백 절차"
+     ]
+    ],
+    "hit_at_1": 0.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 0.3333
+   },
+   {
+    "query": "감사 로그는 얼마나 보관하나",
+    "lang": "ko",
+    "gold": [
+     [
+      "감사-로그.md",
+      "2 보관 기간"
+     ]
+    ],
+    "returned": [
+     [
+      "감사-로그.md",
+      "2 보관 기간"
+     ],
+     [
+      "감사-로그.md",
+      "1 남기는 것"
+     ],
+     [
+      "감사-로그.md",
+      "3 접근"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "읽기도 감사 로그에 남기나",
+    "lang": "ko",
+    "gold": [
+     [
+      "감사-로그.md",
+      "1 남기는 것"
+     ]
+    ],
+    "returned": [
+     [
+      "감사-로그.md",
+      "1 남기는 것"
+     ],
+     [
+      "감사-로그.md",
+      "2 보관 기간"
+     ],
+     [
+      "감사-로그.md",
+      "3 접근"
+     ],
+     [
+      "스키마-이행.md",
+      "1 이행 순서"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "what happens when the session store is unreachable",
+    "lang": "en",
+    "gold": [
+     [
+      "gateway-auth.md",
+      "3 Failure modes"
+     ]
+    ],
+    "returned": [
+     [
+      "gateway-auth.md",
+      "3 Failure modes"
+     ],
+     [
+      "gateway-auth.md",
+      "1 Token exchange"
+     ],
+     [
+      "oncall-runbook.md",
+      "2 First fifteen minutes"
+     ],
+     [
+      "oncall-runbook.md",
+      "3 Handover"
+     ],
+     [
+      "gateway-auth.md",
+      "2 Credential storage"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "where are gateway credentials stored",
+    "lang": "en",
+    "gold": [
+     [
+      "gateway-auth.md",
+      "2 Credential storage"
+     ]
+    ],
+    "returned": [
+     [
+      "gateway-auth.md",
+      "2 Credential storage"
+     ],
+     [
+      "gateway-auth.md",
+      "1 Token exchange"
+     ],
+     [
+      "gateway-auth.md",
+      "3 Failure modes"
+     ],
+     [
+      "queue-backend.md",
+      "1 Chosen backend"
+     ],
+     [
+      "oncall-runbook.md",
+      "2 First fifteen minutes"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "which queue backend did we choose",
+    "lang": "en",
+    "gold": [
+     [
+      "queue-backend.md",
+      "1 Chosen backend"
+     ]
+    ],
+    "returned": [
+     [
+      "queue-backend.md",
+      "1 Chosen backend"
+     ],
+     [
+      "queue-backend.md",
+      "3 Consumer contract"
+     ],
+     [
+      "embedding-tier.md",
+      "2 Method"
+     ],
+     [
+      "oncall-runbook.md",
+      "1 Paging policy"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "why was rabbitmq replaced",
+    "lang": "en",
+    "gold": [
+     [
+      "queue-backend.md",
+      "2 Rejected alternative"
+     ]
+    ],
+    "returned": [
+     [
+      "queue-backend.md",
+      "2 Rejected alternative"
+     ],
+     [
+      "queue-backend.md",
+      "1 Chosen backend"
+     ],
+     [
+      "gateway-auth.md",
+      "3 Failure modes"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "when do consumers acknowledge",
+    "lang": "en",
+    "gold": [
+     [
+      "queue-backend.md",
+      "3 Consumer contract"
+     ]
+    ],
+    "returned": [
+     [
+      "queue-backend.md",
+      "3 Consumer contract"
+     ],
+     [
+      "gateway-auth.md",
+      "3 Failure modes"
+     ],
+     [
+      "oncall-runbook.md",
+      "2 First fifteen minutes"
+     ],
+     [
+      "embedding-tier.md",
+      "1 Question"
+     ],
+     [
+      "embedding-tier.md",
+      "3 Status"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "when is the on-call engineer paged",
+    "lang": "en",
+    "gold": [
+     [
+      "oncall-runbook.md",
+      "1 Paging policy"
+     ]
+    ],
+    "returned": [
+     [
+      "oncall-runbook.md",
+      "1 Paging policy"
+     ],
+     [
+      "gateway-auth.md",
+      "3 Failure modes"
+     ],
+     [
+      "oncall-runbook.md",
+      "3 Handover"
+     ],
+     [
+      "gateway-auth.md",
+      "2 Credential storage"
+     ],
+     [
+      "oncall-runbook.md",
+      "2 First fifteen minutes"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "what happens at a shift handover",
+    "lang": "en",
+    "gold": [
+     [
+      "oncall-runbook.md",
+      "3 Handover"
+     ]
+    ],
+    "returned": [
+     [
+      "oncall-runbook.md",
+      "3 Handover"
+     ],
+     [
+      "oncall-runbook.md",
+      "2 First fifteen minutes"
+     ],
+     [
+      "embedding-tier.md",
+      "1 Question"
+     ],
+     [
+      "embedding-tier.md",
+      "2 Method"
+     ],
+     [
+      "embedding-tier.md",
+      "3 Status"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   },
+   {
+    "query": "does a heavier embedding model justify torch",
+    "lang": "en",
+    "gold": [
+     [
+      "embedding-tier.md",
+      "1 Question"
+     ]
+    ],
+    "returned": [
+     [
+      "embedding-tier.md",
+      "1 Question"
+     ],
+     [
+      "embedding-tier.md",
+      "3 Status"
+     ]
+    ],
+    "hit_at_1": 1.0,
+    "hit_at_3": 1.0,
+    "hit_at_5": 1.0,
+    "mrr": 1.0
+   }
+  ]
+ },
+ "relations": {
+  "n": 12,
+  "overall": {
+   "recall_off": 0.75,
+   "recall_on": 1.0,
+   "delta": 0.25
+  },
+  "by_type": {
+   "fact": {
+    "count": 6,
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "delta": 0.0,
+    "regressed": 0,
+    "improved": 0
+   },
+   "relation": {
+    "count": 6,
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "delta": 0.5,
+    "regressed": 0,
+    "improved": 6
+   }
+  },
+  "chars_off": 392.25,
+  "chars_on": 676.5,
+  "budget_sweep": {
+   "3000": {
+    "off": {
+     "fact": 1.0,
+     "relation": 0.5
+    },
+    "on": {
+     "fact": 1.0,
+     "relation": 1.0
+    }
+   },
+   "900": {
+    "off": {
+     "fact": 1.0,
+     "relation": 0.5
+    },
+    "on": {
+     "fact": 1.0,
+     "relation": 0.9167
+    }
+   },
+   "700": {
+    "off": {
+     "fact": 1.0,
+     "relation": 0.5
+    },
+    "on": {
+     "fact": 1.0,
+     "relation": 0.9167
+    }
+   },
+   "550": {
+    "off": {
+     "fact": 1.0,
+     "relation": 0.5
+    },
+    "on": {
+     "fact": 1.0,
+     "relation": 0.8333
+    }
+   },
+   "450": {
+    "off": {
+     "fact": 1.0,
+     "relation": 0.5
+    },
+    "on": {
+     "fact": 1.0,
+     "relation": 0.6667
+    }
+   }
+  },
+  "gate_blocked_neighbors": [
+   "experiment.embed-tier",
+   "decision.queue-rabbitmq"
+  ],
+  "rows": [
+   {
+    "query": "리랭커를 CPU 로 돌리는 결정이 무엇에 매여 있나",
+    "type": "relation",
+    "lang": "ko",
+    "gold": [
+     "decision.rerank-cpu",
+     "contract.latency-budget"
+    ],
+    "seeds": [
+     "decision.rerank-cpu"
+    ],
+    "neighbors": [
+     "contract.latency-budget"
+    ],
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 0.5,
+      "injected": 1,
+      "chars": 213,
+      "missing": [
+       "contract.latency-budget"
+      ]
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 2,
+      "chars": 355,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "900": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "700": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "550": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "450": {
+      "off": 0.5,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "스키마 v3 이행이 무엇에 매여 있나",
+    "type": "relation",
+    "lang": "ko",
+    "gold": [
+     "migration.schema-v3",
+     "contract.latency-budget"
+    ],
+    "seeds": [
+     "runbook.rollback",
+     "migration.schema-v3"
+    ],
+    "neighbors": [
+     "contract.latency-budget",
+     "incident.friday-outage"
+    ],
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 0.5,
+      "injected": 2,
+      "chars": 312,
+      "missing": [
+       "contract.latency-budget"
+      ]
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 4,
+      "chars": 585,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "900": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "700": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "550": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "450": {
+      "off": 0.5,
+      "on": 0.5
+     }
+    }
+   },
+   {
+    "query": "what does the gateway authentication component require",
+    "type": "relation",
+    "lang": "en",
+    "gold": [
+     "component.gateway-auth",
+     "policy.secret-rotation"
+    ],
+    "seeds": [
+     "component.gateway-auth",
+     "incident.friday-outage",
+     "runbook.oncall",
+     "runbook.rollback"
+    ],
+    "neighbors": [
+     "policy.secret-rotation"
+    ],
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 0.5,
+      "injected": 4,
+      "chars": 681,
+      "missing": [
+       "policy.secret-rotation"
+      ]
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 5,
+      "chars": 976,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "900": {
+      "off": 0.5,
+      "on": 0.5
+     },
+     "700": {
+      "off": 0.5,
+      "on": 0.5
+     },
+     "550": {
+      "off": 0.5,
+      "on": 0.5
+     },
+     "450": {
+      "off": 0.5,
+      "on": 0.5
+     }
+    }
+   },
+   {
+    "query": "what supports the permission audit contract",
+    "type": "relation",
+    "lang": "en",
+    "gold": [
+     "contract.audit-trail",
+     "policy.secret-rotation"
+    ],
+    "seeds": [
+     "contract.audit-trail"
+    ],
+    "neighbors": [
+     "policy.secret-rotation"
+    ],
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 0.5,
+      "injected": 1,
+      "chars": 301,
+      "missing": [
+       "policy.secret-rotation"
+      ]
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 2,
+      "chars": 596,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "900": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "700": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "550": {
+      "off": 0.5,
+      "on": 0.5
+     },
+     "450": {
+      "off": 0.5,
+      "on": 0.5
+     }
+    }
+   },
+   {
+    "query": "금요일 저녁 장애는 무엇 때문이었나",
+    "type": "relation",
+    "lang": "ko",
+    "gold": [
+     "incident.friday-outage",
+     "component.gateway-auth"
+    ],
+    "seeds": [
+     "incident.friday-outage",
+     "policy.deploy-window"
+    ],
+    "neighbors": [
+     "component.gateway-auth",
+     "runbook.rollback"
+    ],
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 0.5,
+      "injected": 2,
+      "chars": 319,
+      "missing": [
+       "component.gateway-auth"
+      ]
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 4,
+      "chars": 680,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "900": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "700": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "550": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "450": {
+      "off": 0.5,
+      "on": 0.5
+     }
+    }
+   },
+   {
+    "query": "롤백 절차가 어느 사건에서 나왔나",
+    "type": "relation",
+    "lang": "ko",
+    "gold": [
+     "runbook.rollback",
+     "incident.friday-outage"
+    ],
+    "seeds": [
+     "runbook.rollback"
+    ],
+    "neighbors": [
+     "incident.friday-outage"
+    ],
+    "recall_off": 0.5,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 0.5,
+      "injected": 1,
+      "chars": 211,
+      "missing": [
+       "incident.friday-outage"
+      ]
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 2,
+      "chars": 342,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "900": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "700": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "550": {
+      "off": 0.5,
+      "on": 1.0
+     },
+     "450": {
+      "off": 0.5,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "배포 창은 언제인가",
+    "type": "fact",
+    "lang": "ko",
+    "gold": [
+     "policy.deploy-window"
+    ],
+    "seeds": [
+     "policy.deploy-window",
+     "incident.friday-outage",
+     "migration.schema-v3",
+     "runbook.rollback"
+    ],
+    "neighbors": [
+     "component.gateway-auth",
+     "contract.latency-budget"
+    ],
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 1.0,
+      "injected": 4,
+      "chars": 525,
+      "missing": []
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 6,
+      "chars": 883,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "900": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "700": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "550": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "450": {
+      "off": 1.0,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "주입 예산은 몇 초인가",
+    "type": "fact",
+    "lang": "ko",
+    "gold": [
+     "contract.latency-budget"
+    ],
+    "seeds": [
+     "contract.latency-budget"
+    ],
+    "neighbors": [
+     "decision.rerank-cpu",
+     "migration.schema-v3"
+    ],
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 1.0,
+      "injected": 1,
+      "chars": 213,
+      "missing": []
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 3,
+      "chars": 501,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "900": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "700": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "550": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "450": {
+      "off": 1.0,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "사용자 표면은 어느 언어로 적나",
+    "type": "fact",
+    "lang": "ko",
+    "gold": [
+     "policy.korean-surface"
+    ],
+    "seeds": [
+     "policy.korean-surface"
+    ],
+    "neighbors": [],
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 1.0,
+      "injected": 1,
+      "chars": 195,
+      "missing": []
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 1,
+      "chars": 195,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "900": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "700": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "550": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "450": {
+      "off": 1.0,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "how often do access keys rotate",
+    "type": "fact",
+    "lang": "en",
+    "gold": [
+     "policy.secret-rotation"
+    ],
+    "seeds": [
+     "policy.secret-rotation",
+     "contract.audit-trail"
+    ],
+    "neighbors": [
+     "component.gateway-auth"
+    ],
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 1.0,
+      "injected": 2,
+      "chars": 558,
+      "missing": []
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 3,
+      "chars": 776,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "900": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "700": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "550": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "450": {
+      "off": 1.0,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "which queue backend do we run",
+    "type": "fact",
+    "lang": "en",
+    "gold": [
+     "decision.queue-redis"
+    ],
+    "seeds": [
+     "decision.queue-redis",
+     "decision.rerank-cpu",
+     "policy.secret-rotation"
+    ],
+    "neighbors": [
+     "contract.latency-budget",
+     "component.gateway-auth",
+     "contract.audit-trail"
+    ],
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 1.0,
+      "injected": 3,
+      "chars": 623,
+      "missing": []
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 6,
+      "chars": 1219,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "900": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "700": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "550": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "450": {
+      "off": 1.0,
+      "on": 1.0
+     }
+    }
+   },
+   {
+    "query": "when is the on-call engineer paged",
+    "type": "fact",
+    "lang": "en",
+    "gold": [
+     "runbook.oncall"
+    ],
+    "seeds": [
+     "runbook.oncall",
+     "policy.secret-rotation"
+    ],
+    "neighbors": [
+     "component.gateway-auth",
+     "contract.audit-trail"
+    ],
+    "recall_off": 1.0,
+    "recall_on": 1.0,
+    "arms": {
+     "off": {
+      "recall": 1.0,
+      "injected": 2,
+      "chars": 556,
+      "missing": []
+     },
+     "on": {
+      "recall": 1.0,
+      "injected": 4,
+      "chars": 1010,
+      "missing": []
+     }
+    },
+    "budget_sweep": {
+     "3000": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "900": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "700": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "550": {
+      "off": 1.0,
+      "on": 1.0
+     },
+     "450": {
+      "off": 1.0,
+      "on": 1.0
+     }
+    }
+   }
+  ]
+ },
+ "admission": {
+  "overall": {
+   "count": 22,
+   "accuracy": 0.9091,
+   "abstention_precision": 1.0,
+   "abstention_recall": 0.8,
+   "false_abstention_rate": 0.0,
+   "admitted": 14,
+   "abstained": 8
+  },
+  "by_lang": {
+   "en-en": {
+    "count": 9,
+    "accuracy": 0.8889,
+    "abstention_precision": 1.0,
+    "abstention_recall": 0.8,
+    "false_abstention_rate": 0.0,
+    "admitted": 5,
+    "abstained": 4
+   },
+   "en-ko": {
+    "count": 2,
+    "accuracy": 1.0,
+    "abstention_precision": 0.0,
+    "abstention_recall": 0.0,
+    "false_abstention_rate": 0.0,
+    "admitted": 2,
+    "abstained": 0
+   },
+   "ko-en": {
+    "count": 2,
+    "accuracy": 1.0,
+    "abstention_precision": 0.0,
+    "abstention_recall": 0.0,
+    "false_abstention_rate": 0.0,
+    "admitted": 2,
+    "abstained": 0
+   },
+   "ko-ko": {
+    "count": 9,
+    "accuracy": 0.8889,
+    "abstention_precision": 1.0,
+    "abstention_recall": 0.8,
+    "false_abstention_rate": 0.0,
+    "admitted": 5,
+    "abstained": 4
+   }
+  },
+  "misses": [
+   {
+    "query": "배포 창은 언제인가",
+    "text": "배포 뒤 24시간 안에 회고를 연다.",
+    "relevant": false,
+    "admitted": true
+   },
+   {
+    "query": "which queue backend",
+    "text": "The queue exists to prevent silent loss of work.",
+    "relevant": false,
+    "admitted": true
+   }
+  ]
+ },
+ "seconds": 0.12
+}

@@ -1,0 +1,4247 @@
+{
+ "corpus": "corpus.json",
+ "corpus_note": "합성 — 절대 수치가 아니라 arm 간 상대 비교로 읽는다 (corpus.json 의 about 절)",
+ "n_words": 61,
+ "n_words_positive": 32,
+ "n_words_negative": 29,
+ "n_claims": 12,
+ "n_claims_positive": 5,
+ "n_claims_negative": 7,
+ "arms": [
+  {
+   "arm": "default(min2)",
+   "words": {
+    "overall": {
+     "tp": 31,
+     "fp": 26,
+     "fn": 1,
+     "tn": 3,
+     "precision": 0.5439,
+     "recall": 0.9688,
+     "f1": 0.6966,
+     "f0.5": 0.5962,
+     "accuracy": 0.5574
+    },
+    "by_lang": {
+     "en": {
+      "tp": 14,
+      "fp": 12,
+      "fn": 1,
+      "tn": 3,
+      "precision": 0.5385,
+      "recall": 0.9333,
+      "f1": 0.6829,
+      "f0.5": 0.5882,
+      "accuracy": 0.5667
+     },
+     "ko": {
+      "tp": 17,
+      "fp": 14,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.5484,
+      "recall": 1.0,
+      "f1": 0.7083,
+      "f0.5": 0.6028,
+      "accuracy": 0.5484
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "저장소",
+      "haystack": "저장 예산에는 상한이 없다",
+      "expect": false,
+      "got": true,
+      "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "인증서",
+      "haystack": "인증 없이 접근했다",
+      "expect": false,
+      "got": true,
+      "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "사과문",
+      "haystack": "사과 한 알을 먹었다",
+      "expect": false,
+      "got": true,
+      "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"
+     },
+     {
+      "word": "대변인",
+      "haystack": "대변 검사 결과가 나왔다",
+      "expect": false,
+      "got": true,
+      "note": "대변인 ≠ 대변"
+     },
+     {
+      "word": "지구력",
+      "haystack": "지구 온난화 대응",
+      "expect": false,
+      "got": true,
+      "note": "지구력 ≠ 지구"
+     },
+     {
+      "word": "정보원",
+      "haystack": "정보 보호 규정을 따른다",
+      "expect": false,
+      "got": true,
+      "note": "정보원 ≠ 정보"
+     },
+     {
+      "word": "전기차",
+      "haystack": "전기 요금이 올랐다",
+      "expect": false,
+      "got": true,
+      "note": "전기차 ≠ 전기"
+     },
+     {
+      "word": "기지국",
+      "haystack": "기지 건설이 끝났다",
+      "expect": false,
+      "got": true,
+      "note": "기지국 ≠ 기지"
+     },
+     {
+      "word": "화장실",
+      "haystack": "화장 지우는 법",
+      "expect": false,
+      "got": true,
+      "note": "화장실 ≠ 화장"
+     },
+     {
+      "word": "수신자",
+      "haystack": "수신 대기 상태다",
+      "expect": false,
+      "got": true,
+      "note": "수신자 ≠ 수신"
+     },
+     {
+      "word": "발신함",
+      "haystack": "발신 번호를 감춘다",
+      "expect": false,
+      "got": true,
+      "note": "발신함 ≠ 발신"
+     },
+     {
+      "word": "관리자",
+      "haystack": "관리 비용이 크다",
+      "expect": false,
+      "got": true,
+      "note": "관리자(사람) ≠ 관리(행위)"
+     },
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "deploy",
+      "haystack": "dependency injection",
+      "expect": false,
+      "got": true,
+      "note": "deploy ≠ dep… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "release",
+      "haystack": "relevant notes",
+      "expect": false,
+      "got": true,
+      "note": "release ≠ rele… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "restore",
+      "haystack": "rest api design",
+      "expect": false,
+      "got": true,
+      "note": "restore ≠ rest"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "interface",
+      "haystack": "internal api only",
+      "expect": false,
+      "got": true,
+      "note": "interface ≠ inter…"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "secret",
+      "haystack": "section header",
+      "expect": false,
+      "got": true,
+      "note": "secret ≠ sec…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "pipeline",
+      "haystack": "pipe the output",
+      "expect": false,
+      "got": true,
+      "note": "pipeline ≠ pipe"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     },
+     "observation": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 1.0,
+      "observation_grounding": 1.0,
+      "per_source": [
+       1.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.5714,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5714
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.8,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.8
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 1.0,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "min3",
+   "words": {
+    "overall": {
+     "tp": 24,
+     "fp": 12,
+     "fn": 8,
+     "tn": 17,
+     "precision": 0.6667,
+     "recall": 0.75,
+     "f1": 0.7059,
+     "f0.5": 0.6818,
+     "accuracy": 0.6721
+    },
+    "by_lang": {
+     "en": {
+      "tp": 14,
+      "fp": 12,
+      "fn": 1,
+      "tn": 3,
+      "precision": 0.5385,
+      "recall": 0.9333,
+      "f1": 0.6829,
+      "f0.5": 0.5882,
+      "accuracy": 0.5667
+     },
+     "ko": {
+      "tp": 10,
+      "fp": 0,
+      "fn": 7,
+      "tn": 14,
+      "precision": 1.0,
+      "recall": 0.5882,
+      "f1": 0.7407,
+      "f0.5": 0.8772,
+      "accuracy": 0.7742
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "배포를",
+      "haystack": "배포 전에 테스트를 돌린다",
+      "expect": true,
+      "got": false,
+      "note": "목적격 조사 `를` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "배포한다",
+      "haystack": "배포 절차를 다시 적었다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"
+     },
+     {
+      "word": "롤백했다",
+      "haystack": "롤백 절차가 문서에 없다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "캐시를",
+      "haystack": "캐시 무효화가 안 걸렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "검증을",
+      "haystack": "검증 단계를 늘렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "머지하고",
+      "haystack": "머지 전에 리뷰를 받는다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "빌드가",
+      "haystack": "빌드 깨짐을 먼저 본다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "deploy",
+      "haystack": "dependency injection",
+      "expect": false,
+      "got": true,
+      "note": "deploy ≠ dep… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "release",
+      "haystack": "relevant notes",
+      "expect": false,
+      "got": true,
+      "note": "release ≠ rele… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "restore",
+      "haystack": "rest api design",
+      "expect": false,
+      "got": true,
+      "note": "restore ≠ rest"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "interface",
+      "haystack": "internal api only",
+      "expect": false,
+      "got": true,
+      "note": "interface ≠ inter…"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "secret",
+      "haystack": "section header",
+      "expect": false,
+      "got": true,
+      "note": "secret ≠ sec…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "pipeline",
+      "haystack": "pipe the output",
+      "expect": false,
+      "got": true,
+      "note": "pipeline ≠ pipe"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 2,
+      "fp": 3,
+      "fn": 3,
+      "tn": 4,
+      "precision": 0.4,
+      "recall": 0.4,
+      "f1": 0.4,
+      "f0.5": 0.4,
+      "accuracy": 0.5
+     },
+     "insight_auto": {
+      "tp": 2,
+      "fp": 3,
+      "fn": 3,
+      "tn": 4,
+      "precision": 0.4,
+      "recall": 0.4,
+      "f1": 0.4,
+      "f0.5": 0.4,
+      "accuracy": 0.5
+     },
+     "observation": {
+      "tp": 2,
+      "fp": 3,
+      "fn": 3,
+      "tn": 4,
+      "precision": 0.4,
+      "recall": 0.4,
+      "f1": 0.4,
+      "f0.5": 0.4,
+      "accuracy": 0.5
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.1429,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.1429
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.25,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 1.0,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.1667,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.1667,
+       0.0
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "min4",
+   "words": {
+    "overall": {
+     "tp": 17,
+     "fp": 10,
+     "fn": 15,
+     "tn": 19,
+     "precision": 0.6296,
+     "recall": 0.5312,
+     "f1": 0.5763,
+     "f0.5": 0.6071,
+     "accuracy": 0.5902
+    },
+    "by_lang": {
+     "en": {
+      "tp": 14,
+      "fp": 10,
+      "fn": 1,
+      "tn": 5,
+      "precision": 0.5833,
+      "recall": 0.9333,
+      "f1": 0.7179,
+      "f0.5": 0.6306,
+      "accuracy": 0.6333
+     },
+     "ko": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 14,
+      "tn": 14,
+      "precision": 1.0,
+      "recall": 0.1765,
+      "f1": 0.3,
+      "f0.5": 0.5172,
+      "accuracy": 0.5484
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "금요일",
+      "haystack": "오딘은 금요일에는 배포를 안 한다",
+      "expect": true,
+      "got": false,
+      "note": "조사 `에는` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "배포를",
+      "haystack": "배포 전에 테스트를 돌린다",
+      "expect": true,
+      "got": false,
+      "note": "목적격 조사 `를` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "테스트를",
+      "haystack": "테스트 없이 머지한다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "저장소에",
+      "haystack": "저장소 정리가 필요하다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 4→3"
+     },
+     {
+      "word": "배포한다",
+      "haystack": "배포 절차를 다시 적었다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"
+     },
+     {
+      "word": "인증서가",
+      "haystack": "인증서 만료를 못 봤다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "리뷰어는",
+      "haystack": "리뷰어 지정이 비어 있다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "롤백했다",
+      "haystack": "롤백 절차가 문서에 없다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "캐시를",
+      "haystack": "캐시 무효화가 안 걸렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "문서화가",
+      "haystack": "문서화 규칙을 정했다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "금요일에는",
+      "haystack": "금요일 배포 금지",
+      "expect": true,
+      "got": false,
+      "note": "조사 2자, 5→3"
+     },
+     {
+      "word": "검증을",
+      "haystack": "검증 단계를 늘렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "머지하고",
+      "haystack": "머지 전에 리뷰를 받는다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "빌드가",
+      "haystack": "빌드 깨짐을 먼저 본다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "release",
+      "haystack": "relevant notes",
+      "expect": false,
+      "got": true,
+      "note": "release ≠ rele… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "restore",
+      "haystack": "rest api design",
+      "expect": false,
+      "got": true,
+      "note": "restore ≠ rest"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "interface",
+      "haystack": "internal api only",
+      "expect": false,
+      "got": true,
+      "note": "interface ≠ inter…"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "pipeline",
+      "haystack": "pipe the output",
+      "expect": false,
+      "got": true,
+      "note": "pipeline ≠ pipe"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 2,
+      "fp": 3,
+      "fn": 3,
+      "tn": 4,
+      "precision": 0.4,
+      "recall": 0.4,
+      "f1": 0.4,
+      "f0.5": 0.4,
+      "accuracy": 0.5
+     },
+     "insight_auto": {
+      "tp": 2,
+      "fp": 2,
+      "fn": 3,
+      "tn": 5,
+      "precision": 0.5,
+      "recall": 0.4,
+      "f1": 0.4444,
+      "f0.5": 0.4762,
+      "accuracy": 0.5833
+     },
+     "observation": {
+      "tp": 2,
+      "fp": 3,
+      "fn": 3,
+      "tn": 4,
+      "precision": 0.4,
+      "recall": 0.4,
+      "f1": 0.4,
+      "f0.5": 0.4,
+      "accuracy": 0.5
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.25,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.3333
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0,
+       0.0
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "min5",
+   "words": {
+    "overall": {
+     "tp": 13,
+     "fp": 5,
+     "fn": 19,
+     "tn": 24,
+     "precision": 0.7222,
+     "recall": 0.4062,
+     "f1": 0.52,
+     "f0.5": 0.625,
+     "accuracy": 0.6066
+    },
+    "by_lang": {
+     "en": {
+      "tp": 12,
+      "fp": 5,
+      "fn": 3,
+      "tn": 10,
+      "precision": 0.7059,
+      "recall": 0.8,
+      "f1": 0.75,
+      "f0.5": 0.7229,
+      "accuracy": 0.7333
+     },
+     "ko": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 16,
+      "tn": 14,
+      "precision": 1.0,
+      "recall": 0.0588,
+      "f1": 0.1111,
+      "f0.5": 0.2381,
+      "accuracy": 0.4839
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "금요일",
+      "haystack": "오딘은 금요일에는 배포를 안 한다",
+      "expect": true,
+      "got": false,
+      "note": "조사 `에는` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "배포를",
+      "haystack": "배포 전에 테스트를 돌린다",
+      "expect": true,
+      "got": false,
+      "note": "목적격 조사 `를` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "테스트를",
+      "haystack": "테스트 없이 머지한다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "저장소에",
+      "haystack": "저장소 정리가 필요하다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 4→3"
+     },
+     {
+      "word": "배포한다",
+      "haystack": "배포 절차를 다시 적었다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"
+     },
+     {
+      "word": "인증서가",
+      "haystack": "인증서 만료를 못 봤다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "컨테이너를",
+      "haystack": "컨테이너 재시작으로 풀었다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 5→4"
+     },
+     {
+      "word": "리뷰어는",
+      "haystack": "리뷰어 지정이 비어 있다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "롤백했다",
+      "haystack": "롤백 절차가 문서에 없다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "캐시를",
+      "haystack": "캐시 무효화가 안 걸렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "스테이징에",
+      "haystack": "스테이징 환경이 죽어 있었다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 5→4"
+     },
+     {
+      "word": "문서화가",
+      "haystack": "문서화 규칙을 정했다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "금요일에는",
+      "haystack": "금요일 배포 금지",
+      "expect": true,
+      "got": false,
+      "note": "조사 2자, 5→3"
+     },
+     {
+      "word": "검증을",
+      "haystack": "검증 단계를 늘렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "머지하고",
+      "haystack": "머지 전에 리뷰를 받는다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "빌드가",
+      "haystack": "빌드 깨짐을 먼저 본다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "caching",
+      "haystack": "cache invalidation failed",
+      "expect": true,
+      "got": false,
+      "note": "-ing 접미 3자 (cach- 어간)"
+     },
+     {
+      "word": "tested",
+      "haystack": "the test suite is green",
+      "expect": true,
+      "got": false,
+      "note": "-ed 2자"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "interface",
+      "haystack": "internal api only",
+      "expect": false,
+      "got": true,
+      "note": "interface ≠ inter…"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 2,
+      "fp": 2,
+      "fn": 3,
+      "tn": 5,
+      "precision": 0.5,
+      "recall": 0.4,
+      "f1": 0.4444,
+      "f0.5": 0.4762,
+      "accuracy": 0.5833
+     },
+     "insight_auto": {
+      "tp": 2,
+      "fp": 0,
+      "fn": 3,
+      "tn": 7,
+      "precision": 1.0,
+      "recall": 0.4,
+      "f1": 0.5714,
+      "f0.5": 0.7692,
+      "accuracy": 0.75
+     },
+     "observation": {
+      "tp": 2,
+      "fp": 1,
+      "fn": 3,
+      "tn": 6,
+      "precision": 0.6667,
+      "recall": 0.4,
+      "f1": 0.5,
+      "f0.5": 0.5882,
+      "accuracy": 0.6667
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.3333
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.25,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.25
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0,
+       0.0
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "ratio0.60",
+   "words": {
+    "overall": {
+     "tp": 27,
+     "fp": 20,
+     "fn": 5,
+     "tn": 9,
+     "precision": 0.5745,
+     "recall": 0.8438,
+     "f1": 0.6835,
+     "f0.5": 0.6136,
+     "accuracy": 0.5902
+    },
+    "by_lang": {
+     "en": {
+      "tp": 13,
+      "fp": 6,
+      "fn": 2,
+      "tn": 9,
+      "precision": 0.6842,
+      "recall": 0.8667,
+      "f1": 0.7647,
+      "f0.5": 0.7143,
+      "accuracy": 0.7333
+     },
+     "ko": {
+      "tp": 14,
+      "fp": 14,
+      "fn": 3,
+      "tn": 0,
+      "precision": 0.5,
+      "recall": 0.8235,
+      "f1": 0.6222,
+      "f0.5": 0.5426,
+      "accuracy": 0.4516
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "배포한다",
+      "haystack": "배포 절차를 다시 적었다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"
+     },
+     {
+      "word": "롤백했다",
+      "haystack": "롤백 절차가 문서에 없다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "머지하고",
+      "haystack": "머지 전에 리뷰를 받는다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "저장소",
+      "haystack": "저장 예산에는 상한이 없다",
+      "expect": false,
+      "got": true,
+      "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "인증서",
+      "haystack": "인증 없이 접근했다",
+      "expect": false,
+      "got": true,
+      "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "사과문",
+      "haystack": "사과 한 알을 먹었다",
+      "expect": false,
+      "got": true,
+      "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"
+     },
+     {
+      "word": "대변인",
+      "haystack": "대변 검사 결과가 나왔다",
+      "expect": false,
+      "got": true,
+      "note": "대변인 ≠ 대변"
+     },
+     {
+      "word": "지구력",
+      "haystack": "지구 온난화 대응",
+      "expect": false,
+      "got": true,
+      "note": "지구력 ≠ 지구"
+     },
+     {
+      "word": "정보원",
+      "haystack": "정보 보호 규정을 따른다",
+      "expect": false,
+      "got": true,
+      "note": "정보원 ≠ 정보"
+     },
+     {
+      "word": "전기차",
+      "haystack": "전기 요금이 올랐다",
+      "expect": false,
+      "got": true,
+      "note": "전기차 ≠ 전기"
+     },
+     {
+      "word": "기지국",
+      "haystack": "기지 건설이 끝났다",
+      "expect": false,
+      "got": true,
+      "note": "기지국 ≠ 기지"
+     },
+     {
+      "word": "화장실",
+      "haystack": "화장 지우는 법",
+      "expect": false,
+      "got": true,
+      "note": "화장실 ≠ 화장"
+     },
+     {
+      "word": "수신자",
+      "haystack": "수신 대기 상태다",
+      "expect": false,
+      "got": true,
+      "note": "수신자 ≠ 수신"
+     },
+     {
+      "word": "발신함",
+      "haystack": "발신 번호를 감춘다",
+      "expect": false,
+      "got": true,
+      "note": "발신함 ≠ 발신"
+     },
+     {
+      "word": "관리자",
+      "haystack": "관리 비용이 크다",
+      "expect": false,
+      "got": true,
+      "note": "관리자(사람) ≠ 관리(행위)"
+     },
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "caching",
+      "haystack": "cache invalidation failed",
+      "expect": true,
+      "got": false,
+      "note": "-ing 접미 3자 (cach- 어간)"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 6,
+      "fn": 0,
+      "tn": 1,
+      "precision": 0.4545,
+      "recall": 1.0,
+      "f1": 0.625,
+      "f0.5": 0.5102,
+      "accuracy": 0.5
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 4,
+      "fn": 0,
+      "tn": 3,
+      "precision": 0.5556,
+      "recall": 1.0,
+      "f1": 0.7143,
+      "f0.5": 0.6098,
+      "accuracy": 0.6667
+     },
+     "observation": {
+      "tp": 4,
+      "fp": 5,
+      "fn": 1,
+      "tn": 2,
+      "precision": 0.4444,
+      "recall": 0.8,
+      "f1": 0.5714,
+      "f0.5": 0.4878,
+      "accuracy": 0.5
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 1.0,
+      "observation_grounding": 1.0,
+      "per_source": [
+       1.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.4286,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4286
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.8,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.8
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.3333
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.25,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.25
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "ratio0.75",
+   "words": {
+    "overall": {
+     "tp": 18,
+     "fp": 2,
+     "fn": 14,
+     "tn": 27,
+     "precision": 0.9,
+     "recall": 0.5625,
+     "f1": 0.6923,
+     "f0.5": 0.8036,
+     "accuracy": 0.7377
+    },
+    "by_lang": {
+     "en": {
+      "tp": 9,
+      "fp": 2,
+      "fn": 6,
+      "tn": 13,
+      "precision": 0.8182,
+      "recall": 0.6,
+      "f1": 0.6923,
+      "f0.5": 0.7627,
+      "accuracy": 0.7333
+     },
+     "ko": {
+      "tp": 9,
+      "fp": 0,
+      "fn": 8,
+      "tn": 14,
+      "precision": 1.0,
+      "recall": 0.5294,
+      "f1": 0.6923,
+      "f0.5": 0.8491,
+      "accuracy": 0.7419
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "배포를",
+      "haystack": "배포 전에 테스트를 돌린다",
+      "expect": true,
+      "got": false,
+      "note": "목적격 조사 `를` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "배포한다",
+      "haystack": "배포 절차를 다시 적었다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"
+     },
+     {
+      "word": "롤백했다",
+      "haystack": "롤백 절차가 문서에 없다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "캐시를",
+      "haystack": "캐시 무효화가 안 걸렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "금요일에는",
+      "haystack": "금요일 배포 금지",
+      "expect": true,
+      "got": false,
+      "note": "조사 2자, 5→3"
+     },
+     {
+      "word": "검증을",
+      "haystack": "검증 단계를 늘렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "머지하고",
+      "haystack": "머지 전에 리뷰를 받는다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "빌드가",
+      "haystack": "빌드 깨짐을 먼저 본다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "caching",
+      "haystack": "cache invalidation failed",
+      "expect": true,
+      "got": false,
+      "note": "-ing 접미 3자 (cach- 어간)"
+     },
+     {
+      "word": "tested",
+      "haystack": "the test suite is green",
+      "expect": true,
+      "got": false,
+      "note": "-ed 2자"
+     },
+     {
+      "word": "committed",
+      "haystack": "commit message is empty",
+      "expect": true,
+      "got": false,
+      "note": "-ted 3자"
+     },
+     {
+      "word": "monitoring",
+      "haystack": "monitor the queue depth",
+      "expect": true,
+      "got": false,
+      "note": "-ing 3자"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "authorization",
+      "haystack": "authorize the caller",
+      "expect": true,
+      "got": false,
+      "note": "파생 4자 (13→9)"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 2,
+      "fn": 0,
+      "tn": 5,
+      "precision": 0.7143,
+      "recall": 1.0,
+      "f1": 0.8333,
+      "f0.5": 0.7576,
+      "accuracy": 0.8333
+     },
+     "insight_auto": {
+      "tp": 4,
+      "fp": 1,
+      "fn": 1,
+      "tn": 6,
+      "precision": 0.8,
+      "recall": 0.8,
+      "f1": 0.8,
+      "f0.5": 0.8,
+      "accuracy": 0.8333
+     },
+     "observation": {
+      "tp": 4,
+      "fp": 0,
+      "fn": 1,
+      "tn": 7,
+      "precision": 1.0,
+      "recall": 0.8,
+      "f1": 0.8889,
+      "f0.5": 0.9524,
+      "accuracy": 0.9167
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.4286,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4286
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.25,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.25
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.25,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.1667,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.1667
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.3333,
+       0.0
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "suffix3",
+   "words": {
+    "overall": {
+     "tp": 30,
+     "fp": 24,
+     "fn": 2,
+     "tn": 5,
+     "precision": 0.5556,
+     "recall": 0.9375,
+     "f1": 0.6977,
+     "f0.5": 0.6048,
+     "accuracy": 0.5738
+    },
+    "by_lang": {
+     "en": {
+      "tp": 13,
+      "fp": 10,
+      "fn": 2,
+      "tn": 5,
+      "precision": 0.5652,
+      "recall": 0.8667,
+      "f1": 0.6842,
+      "f0.5": 0.6075,
+      "accuracy": 0.6
+     },
+     "ko": {
+      "tp": 17,
+      "fp": 14,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.5484,
+      "recall": 1.0,
+      "f1": 0.7083,
+      "f0.5": 0.6028,
+      "accuracy": 0.5484
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "저장소",
+      "haystack": "저장 예산에는 상한이 없다",
+      "expect": false,
+      "got": true,
+      "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "인증서",
+      "haystack": "인증 없이 접근했다",
+      "expect": false,
+      "got": true,
+      "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "사과문",
+      "haystack": "사과 한 알을 먹었다",
+      "expect": false,
+      "got": true,
+      "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"
+     },
+     {
+      "word": "대변인",
+      "haystack": "대변 검사 결과가 나왔다",
+      "expect": false,
+      "got": true,
+      "note": "대변인 ≠ 대변"
+     },
+     {
+      "word": "지구력",
+      "haystack": "지구 온난화 대응",
+      "expect": false,
+      "got": true,
+      "note": "지구력 ≠ 지구"
+     },
+     {
+      "word": "정보원",
+      "haystack": "정보 보호 규정을 따른다",
+      "expect": false,
+      "got": true,
+      "note": "정보원 ≠ 정보"
+     },
+     {
+      "word": "전기차",
+      "haystack": "전기 요금이 올랐다",
+      "expect": false,
+      "got": true,
+      "note": "전기차 ≠ 전기"
+     },
+     {
+      "word": "기지국",
+      "haystack": "기지 건설이 끝났다",
+      "expect": false,
+      "got": true,
+      "note": "기지국 ≠ 기지"
+     },
+     {
+      "word": "화장실",
+      "haystack": "화장 지우는 법",
+      "expect": false,
+      "got": true,
+      "note": "화장실 ≠ 화장"
+     },
+     {
+      "word": "수신자",
+      "haystack": "수신 대기 상태다",
+      "expect": false,
+      "got": true,
+      "note": "수신자 ≠ 수신"
+     },
+     {
+      "word": "발신함",
+      "haystack": "발신 번호를 감춘다",
+      "expect": false,
+      "got": true,
+      "note": "발신함 ≠ 발신"
+     },
+     {
+      "word": "관리자",
+      "haystack": "관리 비용이 크다",
+      "expect": false,
+      "got": true,
+      "note": "관리자(사람) ≠ 관리(행위)"
+     },
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "authorization",
+      "haystack": "authorize the caller",
+      "expect": true,
+      "got": false,
+      "note": "파생 4자 (13→9)"
+     },
+     {
+      "word": "deploy",
+      "haystack": "dependency injection",
+      "expect": false,
+      "got": true,
+      "note": "deploy ≠ dep… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "release",
+      "haystack": "relevant notes",
+      "expect": false,
+      "got": true,
+      "note": "release ≠ rele… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "restore",
+      "haystack": "rest api design",
+      "expect": false,
+      "got": true,
+      "note": "restore ≠ rest"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "secret",
+      "haystack": "section header",
+      "expect": false,
+      "got": true,
+      "note": "secret ≠ sec…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     },
+     "observation": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 1.0,
+      "observation_grounding": 1.0,
+      "per_source": [
+       1.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.5714,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5714
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.8,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.8
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.8,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "suffix2",
+   "words": {
+    "overall": {
+     "tp": 27,
+     "fp": 18,
+     "fn": 5,
+     "tn": 11,
+     "precision": 0.6,
+     "recall": 0.8438,
+     "f1": 0.7013,
+     "f0.5": 0.6368,
+     "accuracy": 0.623
+    },
+    "by_lang": {
+     "en": {
+      "tp": 10,
+      "fp": 4,
+      "fn": 5,
+      "tn": 11,
+      "precision": 0.7143,
+      "recall": 0.6667,
+      "f1": 0.6897,
+      "f0.5": 0.7042,
+      "accuracy": 0.7
+     },
+     "ko": {
+      "tp": 17,
+      "fp": 14,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.5484,
+      "recall": 1.0,
+      "f1": 0.7083,
+      "f0.5": 0.6028,
+      "accuracy": 0.5484
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "저장소",
+      "haystack": "저장 예산에는 상한이 없다",
+      "expect": false,
+      "got": true,
+      "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "인증서",
+      "haystack": "인증 없이 접근했다",
+      "expect": false,
+      "got": true,
+      "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "사과문",
+      "haystack": "사과 한 알을 먹었다",
+      "expect": false,
+      "got": true,
+      "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"
+     },
+     {
+      "word": "대변인",
+      "haystack": "대변 검사 결과가 나왔다",
+      "expect": false,
+      "got": true,
+      "note": "대변인 ≠ 대변"
+     },
+     {
+      "word": "지구력",
+      "haystack": "지구 온난화 대응",
+      "expect": false,
+      "got": true,
+      "note": "지구력 ≠ 지구"
+     },
+     {
+      "word": "정보원",
+      "haystack": "정보 보호 규정을 따른다",
+      "expect": false,
+      "got": true,
+      "note": "정보원 ≠ 정보"
+     },
+     {
+      "word": "전기차",
+      "haystack": "전기 요금이 올랐다",
+      "expect": false,
+      "got": true,
+      "note": "전기차 ≠ 전기"
+     },
+     {
+      "word": "기지국",
+      "haystack": "기지 건설이 끝났다",
+      "expect": false,
+      "got": true,
+      "note": "기지국 ≠ 기지"
+     },
+     {
+      "word": "화장실",
+      "haystack": "화장 지우는 법",
+      "expect": false,
+      "got": true,
+      "note": "화장실 ≠ 화장"
+     },
+     {
+      "word": "수신자",
+      "haystack": "수신 대기 상태다",
+      "expect": false,
+      "got": true,
+      "note": "수신자 ≠ 수신"
+     },
+     {
+      "word": "발신함",
+      "haystack": "발신 번호를 감춘다",
+      "expect": false,
+      "got": true,
+      "note": "발신함 ≠ 발신"
+     },
+     {
+      "word": "관리자",
+      "haystack": "관리 비용이 크다",
+      "expect": false,
+      "got": true,
+      "note": "관리자(사람) ≠ 관리(행위)"
+     },
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "caching",
+      "haystack": "cache invalidation failed",
+      "expect": true,
+      "got": false,
+      "note": "-ing 접미 3자 (cach- 어간)"
+     },
+     {
+      "word": "committed",
+      "haystack": "commit message is empty",
+      "expect": true,
+      "got": false,
+      "note": "-ted 3자"
+     },
+     {
+      "word": "monitoring",
+      "haystack": "monitor the queue depth",
+      "expect": true,
+      "got": false,
+      "note": "-ing 3자"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "authorization",
+      "haystack": "authorize the caller",
+      "expect": true,
+      "got": false,
+      "note": "파생 4자 (13→9)"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 5,
+      "fn": 0,
+      "tn": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "f0.5": 0.5556,
+      "accuracy": 0.5833
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 4,
+      "fn": 0,
+      "tn": 3,
+      "precision": 0.5556,
+      "recall": 1.0,
+      "f1": 0.7143,
+      "f0.5": 0.6098,
+      "accuracy": 0.6667
+     },
+     "observation": {
+      "tp": 5,
+      "fp": 4,
+      "fn": 0,
+      "tn": 3,
+      "precision": 0.5556,
+      "recall": 1.0,
+      "f1": 0.7143,
+      "f0.5": 0.6098,
+      "accuracy": 0.6667
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 1.0,
+      "observation_grounding": 1.0,
+      "per_source": [
+       1.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.5714,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5714
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.8,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.8
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.1667,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.1667
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.25,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.25
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "script(latin-suffix3)",
+   "words": {
+    "overall": {
+     "tp": 30,
+     "fp": 24,
+     "fn": 2,
+     "tn": 5,
+     "precision": 0.5556,
+     "recall": 0.9375,
+     "f1": 0.6977,
+     "f0.5": 0.6048,
+     "accuracy": 0.5738
+    },
+    "by_lang": {
+     "en": {
+      "tp": 13,
+      "fp": 10,
+      "fn": 2,
+      "tn": 5,
+      "precision": 0.5652,
+      "recall": 0.8667,
+      "f1": 0.6842,
+      "f0.5": 0.6075,
+      "accuracy": 0.6
+     },
+     "ko": {
+      "tp": 17,
+      "fp": 14,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.5484,
+      "recall": 1.0,
+      "f1": 0.7083,
+      "f0.5": 0.6028,
+      "accuracy": 0.5484
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "저장소",
+      "haystack": "저장 예산에는 상한이 없다",
+      "expect": false,
+      "got": true,
+      "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "인증서",
+      "haystack": "인증 없이 접근했다",
+      "expect": false,
+      "got": true,
+      "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "사과문",
+      "haystack": "사과 한 알을 먹었다",
+      "expect": false,
+      "got": true,
+      "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"
+     },
+     {
+      "word": "대변인",
+      "haystack": "대변 검사 결과가 나왔다",
+      "expect": false,
+      "got": true,
+      "note": "대변인 ≠ 대변"
+     },
+     {
+      "word": "지구력",
+      "haystack": "지구 온난화 대응",
+      "expect": false,
+      "got": true,
+      "note": "지구력 ≠ 지구"
+     },
+     {
+      "word": "정보원",
+      "haystack": "정보 보호 규정을 따른다",
+      "expect": false,
+      "got": true,
+      "note": "정보원 ≠ 정보"
+     },
+     {
+      "word": "전기차",
+      "haystack": "전기 요금이 올랐다",
+      "expect": false,
+      "got": true,
+      "note": "전기차 ≠ 전기"
+     },
+     {
+      "word": "기지국",
+      "haystack": "기지 건설이 끝났다",
+      "expect": false,
+      "got": true,
+      "note": "기지국 ≠ 기지"
+     },
+     {
+      "word": "화장실",
+      "haystack": "화장 지우는 법",
+      "expect": false,
+      "got": true,
+      "note": "화장실 ≠ 화장"
+     },
+     {
+      "word": "수신자",
+      "haystack": "수신 대기 상태다",
+      "expect": false,
+      "got": true,
+      "note": "수신자 ≠ 수신"
+     },
+     {
+      "word": "발신함",
+      "haystack": "발신 번호를 감춘다",
+      "expect": false,
+      "got": true,
+      "note": "발신함 ≠ 발신"
+     },
+     {
+      "word": "관리자",
+      "haystack": "관리 비용이 크다",
+      "expect": false,
+      "got": true,
+      "note": "관리자(사람) ≠ 관리(행위)"
+     },
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "authorization",
+      "haystack": "authorize the caller",
+      "expect": true,
+      "got": false,
+      "note": "파생 4자 (13→9)"
+     },
+     {
+      "word": "deploy",
+      "haystack": "dependency injection",
+      "expect": false,
+      "got": true,
+      "note": "deploy ≠ dep… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "release",
+      "haystack": "relevant notes",
+      "expect": false,
+      "got": true,
+      "note": "release ≠ rele… — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "restore",
+      "haystack": "rest api design",
+      "expect": false,
+      "got": true,
+      "note": "restore ≠ rest"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     },
+     {
+      "word": "validate",
+      "haystack": "valid json only",
+      "expect": false,
+      "got": true,
+      "note": "validate(동사) ≠ valid(형용사)"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "secret",
+      "haystack": "section header",
+      "expect": false,
+      "got": true,
+      "note": "secret ≠ sec…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     },
+     "observation": {
+      "tp": 5,
+      "fp": 7,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.4167,
+      "recall": 1.0,
+      "f1": 0.5882,
+      "f0.5": 0.4717,
+      "accuracy": 0.4167
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 1.0,
+      "observation_grounding": 1.0,
+      "per_source": [
+       1.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.5714,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5714
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.8,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.8
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.8,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "script(latin-suffix2)",
+   "words": {
+    "overall": {
+     "tp": 27,
+     "fp": 18,
+     "fn": 5,
+     "tn": 11,
+     "precision": 0.6,
+     "recall": 0.8438,
+     "f1": 0.7013,
+     "f0.5": 0.6368,
+     "accuracy": 0.623
+    },
+    "by_lang": {
+     "en": {
+      "tp": 10,
+      "fp": 4,
+      "fn": 5,
+      "tn": 11,
+      "precision": 0.7143,
+      "recall": 0.6667,
+      "f1": 0.6897,
+      "f0.5": 0.7042,
+      "accuracy": 0.7
+     },
+     "ko": {
+      "tp": 17,
+      "fp": 14,
+      "fn": 0,
+      "tn": 0,
+      "precision": 0.5484,
+      "recall": 1.0,
+      "f1": 0.7083,
+      "f0.5": 0.6028,
+      "accuracy": 0.5484
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "저장소",
+      "haystack": "저장 예산에는 상한이 없다",
+      "expect": false,
+      "got": true,
+      "note": "저장소 ≠ 저장 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "인증서",
+      "haystack": "인증 없이 접근했다",
+      "expect": false,
+      "got": true,
+      "note": "인증서 ≠ 인증 — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "사과문",
+      "haystack": "사과 한 알을 먹었다",
+      "expect": false,
+      "got": true,
+      "note": "사과문(문서) ≠ 사과(과일) — 뜻이 완전히 갈린다"
+     },
+     {
+      "word": "대변인",
+      "haystack": "대변 검사 결과가 나왔다",
+      "expect": false,
+      "got": true,
+      "note": "대변인 ≠ 대변"
+     },
+     {
+      "word": "지구력",
+      "haystack": "지구 온난화 대응",
+      "expect": false,
+      "got": true,
+      "note": "지구력 ≠ 지구"
+     },
+     {
+      "word": "정보원",
+      "haystack": "정보 보호 규정을 따른다",
+      "expect": false,
+      "got": true,
+      "note": "정보원 ≠ 정보"
+     },
+     {
+      "word": "전기차",
+      "haystack": "전기 요금이 올랐다",
+      "expect": false,
+      "got": true,
+      "note": "전기차 ≠ 전기"
+     },
+     {
+      "word": "기지국",
+      "haystack": "기지 건설이 끝났다",
+      "expect": false,
+      "got": true,
+      "note": "기지국 ≠ 기지"
+     },
+     {
+      "word": "화장실",
+      "haystack": "화장 지우는 법",
+      "expect": false,
+      "got": true,
+      "note": "화장실 ≠ 화장"
+     },
+     {
+      "word": "수신자",
+      "haystack": "수신 대기 상태다",
+      "expect": false,
+      "got": true,
+      "note": "수신자 ≠ 수신"
+     },
+     {
+      "word": "발신함",
+      "haystack": "발신 번호를 감춘다",
+      "expect": false,
+      "got": true,
+      "note": "발신함 ≠ 발신"
+     },
+     {
+      "word": "관리자",
+      "haystack": "관리 비용이 크다",
+      "expect": false,
+      "got": true,
+      "note": "관리자(사람) ≠ 관리(행위)"
+     },
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "caching",
+      "haystack": "cache invalidation failed",
+      "expect": true,
+      "got": false,
+      "note": "-ing 접미 3자 (cach- 어간)"
+     },
+     {
+      "word": "committed",
+      "haystack": "commit message is empty",
+      "expect": true,
+      "got": false,
+      "note": "-ted 3자"
+     },
+     {
+      "word": "monitoring",
+      "haystack": "monitor the queue depth",
+      "expect": true,
+      "got": false,
+      "note": "-ing 3자"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "authorization",
+      "haystack": "authorize the caller",
+      "expect": true,
+      "got": false,
+      "note": "파생 4자 (13→9)"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "reset",
+      "haystack": "research notes",
+      "expect": false,
+      "got": true,
+      "note": "reset ≠ res…"
+     },
+     {
+      "word": "backup",
+      "haystack": "back to the queue",
+      "expect": false,
+      "got": true,
+      "note": "backup ≠ bac…"
+     },
+     {
+      "word": "session",
+      "haystack": "sessile organisms",
+      "expect": false,
+      "got": true,
+      "note": "session ≠ sess…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 5,
+      "fn": 0,
+      "tn": 2,
+      "precision": 0.5,
+      "recall": 1.0,
+      "f1": 0.6667,
+      "f0.5": 0.5556,
+      "accuracy": 0.5833
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 4,
+      "fn": 0,
+      "tn": 3,
+      "precision": 0.5556,
+      "recall": 1.0,
+      "f1": 0.7143,
+      "f0.5": 0.6098,
+      "accuracy": 0.6667
+     },
+     "observation": {
+      "tp": 5,
+      "fp": 4,
+      "fn": 0,
+      "tn": 3,
+      "precision": 0.5556,
+      "recall": 1.0,
+      "f1": 0.7143,
+      "f0.5": 0.6098,
+      "accuracy": 0.6667
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 1.0,
+      "observation_grounding": 1.0,
+      "per_source": [
+       1.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.5714,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5714
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.75,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.75
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.8,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.8
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.1667,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.1667
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.25,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.25
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "exact",
+   "words": {
+    "overall": {
+     "tp": 4,
+     "fp": 0,
+     "fn": 28,
+     "tn": 29,
+     "precision": 1.0,
+     "recall": 0.125,
+     "f1": 0.2222,
+     "f0.5": 0.4167,
+     "accuracy": 0.541
+    },
+    "by_lang": {
+     "en": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 12,
+      "tn": 15,
+      "precision": 1.0,
+      "recall": 0.2,
+      "f1": 0.3333,
+      "f0.5": 0.5556,
+      "accuracy": 0.6
+     },
+     "ko": {
+      "tp": 1,
+      "fp": 0,
+      "fn": 16,
+      "tn": 14,
+      "precision": 1.0,
+      "recall": 0.0588,
+      "f1": 0.1111,
+      "f0.5": 0.2381,
+      "accuracy": 0.4839
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "배포를",
+      "haystack": "배포 전에 테스트를 돌린다",
+      "expect": true,
+      "got": false,
+      "note": "목적격 조사 `를` — 씨앗(TestStemFloor)"
+     },
+     {
+      "word": "테스트를",
+      "haystack": "테스트 없이 머지한다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "저장소에",
+      "haystack": "저장소 정리가 필요하다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 4→3"
+     },
+     {
+      "word": "배포한다",
+      "haystack": "배포 절차를 다시 적었다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2 라 하한 2 가 아니면 못 잡는다"
+     },
+     {
+      "word": "인증서가",
+      "haystack": "인증서 만료를 못 봤다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "컨테이너를",
+      "haystack": "컨테이너 재시작으로 풀었다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 5→4"
+     },
+     {
+      "word": "리뷰어는",
+      "haystack": "리뷰어 지정이 비어 있다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "롤백했다",
+      "haystack": "롤백 절차가 문서에 없다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "캐시를",
+      "haystack": "캐시 무효화가 안 걸렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "스테이징에",
+      "haystack": "스테이징 환경이 죽어 있었다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 5→4"
+     },
+     {
+      "word": "문서화가",
+      "haystack": "문서화 규칙을 정했다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자"
+     },
+     {
+      "word": "마이그레이션은",
+      "haystack": "마이그레이션 순서를 지킨다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 7→6"
+     },
+     {
+      "word": "금요일에는",
+      "haystack": "금요일 배포 금지",
+      "expect": true,
+      "got": false,
+      "note": "조사 2자, 5→3"
+     },
+     {
+      "word": "검증을",
+      "haystack": "검증 단계를 늘렸다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "머지하고",
+      "haystack": "머지 전에 리뷰를 받는다",
+      "expect": true,
+      "got": false,
+      "note": "용언 활용 2자 — 4→2"
+     },
+     {
+      "word": "빌드가",
+      "haystack": "빌드 깨짐을 먼저 본다",
+      "expect": true,
+      "got": false,
+      "note": "조사 1자, 3→2"
+     },
+     {
+      "word": "deploys",
+      "haystack": "we deploy on friday",
+      "expect": true,
+      "got": false,
+      "note": "-s 1자"
+     },
+     {
+      "word": "released",
+      "haystack": "release notes are written",
+      "expect": true,
+      "got": false,
+      "note": "-d 1자"
+     },
+     {
+      "word": "reviews",
+      "haystack": "review the diff first",
+      "expect": true,
+      "got": false,
+      "note": "-s 1자"
+     },
+     {
+      "word": "checks",
+      "haystack": "check the logs",
+      "expect": true,
+      "got": false,
+      "note": "-s 1자"
+     },
+     {
+      "word": "migrations",
+      "haystack": "migration order matters",
+      "expect": true,
+      "got": false,
+      "note": "-s 1자"
+     },
+     {
+      "word": "caching",
+      "haystack": "cache invalidation failed",
+      "expect": true,
+      "got": false,
+      "note": "-ing 접미 3자 (cach- 어간)"
+     },
+     {
+      "word": "rollbacks",
+      "haystack": "rollback is documented",
+      "expect": true,
+      "got": false,
+      "note": "-s 1자"
+     },
+     {
+      "word": "tested",
+      "haystack": "the test suite is green",
+      "expect": true,
+      "got": false,
+      "note": "-ed 2자"
+     },
+     {
+      "word": "committed",
+      "haystack": "commit message is empty",
+      "expect": true,
+      "got": false,
+      "note": "-ted 3자"
+     },
+     {
+      "word": "monitoring",
+      "haystack": "monitor the queue depth",
+      "expect": true,
+      "got": false,
+      "note": "-ing 3자"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "authorization",
+      "haystack": "authorize the caller",
+      "expect": true,
+      "got": false,
+      "note": "파생 4자 (13→9)"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 2,
+      "fn": 0,
+      "tn": 5,
+      "precision": 0.7143,
+      "recall": 1.0,
+      "f1": 0.8333,
+      "f0.5": 0.7576,
+      "accuracy": 0.8333
+     },
+     "insight_auto": {
+      "tp": 3,
+      "fp": 1,
+      "fn": 2,
+      "tn": 6,
+      "precision": 0.75,
+      "recall": 0.6,
+      "f1": 0.6667,
+      "f0.5": 0.7143,
+      "accuracy": 0.75
+     },
+     "observation": {
+      "tp": 3,
+      "fp": 0,
+      "fn": 2,
+      "tn": 7,
+      "precision": 1.0,
+      "recall": 0.6,
+      "f1": 0.75,
+      "f0.5": 0.8824,
+      "accuracy": 0.8333
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.4286,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.4286
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.25,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.25
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.4,
+      "observation_grounding": 0.25,
+      "per_source": [
+       0.4
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.3333
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.3333,
+       0.0
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "arm": "morphology(목록)",
+   "words": {
+    "overall": {
+     "tp": 30,
+     "fp": 4,
+     "fn": 2,
+     "tn": 25,
+     "precision": 0.8824,
+     "recall": 0.9375,
+     "f1": 0.9091,
+     "f0.5": 0.8929,
+     "accuracy": 0.9016
+    },
+    "by_lang": {
+     "en": {
+      "tp": 13,
+      "fp": 2,
+      "fn": 2,
+      "tn": 13,
+      "precision": 0.8667,
+      "recall": 0.8667,
+      "f1": 0.8667,
+      "f0.5": 0.8667,
+      "accuracy": 0.8667
+     },
+     "ko": {
+      "tp": 17,
+      "fp": 2,
+      "fn": 0,
+      "tn": 12,
+      "precision": 0.8947,
+      "recall": 1.0,
+      "f1": 0.9444,
+      "f0.5": 0.914,
+      "accuracy": 0.9355
+     }
+    },
+    "span_contract_broken": [],
+    "misses": [
+     {
+      "word": "가속도",
+      "haystack": "가속 페달을 밟았다",
+      "expect": false,
+      "got": true,
+      "note": "가속도 ≠ 가속. 끝 글자 `도` 가 보조사와 같은 글자라 **형태 목록 방식도 여기서 틀린다** — 목록 방식의 대가를 재는 자리"
+     },
+     {
+      "word": "자유도",
+      "haystack": "자유 시간을 늘렸다",
+      "expect": false,
+      "got": true,
+      "note": "자유도 ≠ 자유. 위와 같은 함정 (끝 글자 `도`)"
+     },
+     {
+      "word": "committed",
+      "haystack": "commit message is empty",
+      "expect": true,
+      "got": false,
+      "note": "-ted 3자"
+     },
+     {
+      "word": "verification",
+      "haystack": "verify before merge",
+      "expect": true,
+      "got": false,
+      "note": "파생 6자 — 절반 하한이 딱 맞는 유일한 무리(12→6)"
+     },
+     {
+      "word": "container",
+      "haystack": "this contains a bug",
+      "expect": false,
+      "got": true,
+      "note": "container ≠ conta…"
+     },
+     {
+      "word": "production",
+      "haystack": "the product owner decided",
+      "expect": false,
+      "got": true,
+      "note": "production ≠ produ…"
+     }
+    ]
+   },
+   "claims": {
+    "floors": {
+     "insight_admit": 0.25,
+     "insight_auto": 0.4,
+     "observation": 0.34
+    },
+    "gates": {
+     "insight_admit": {
+      "tp": 5,
+      "fp": 3,
+      "fn": 0,
+      "tn": 4,
+      "precision": 0.625,
+      "recall": 1.0,
+      "f1": 0.7692,
+      "f0.5": 0.6757,
+      "accuracy": 0.75
+     },
+     "insight_auto": {
+      "tp": 5,
+      "fp": 2,
+      "fn": 0,
+      "tn": 5,
+      "precision": 0.7143,
+      "recall": 1.0,
+      "f1": 0.8333,
+      "f0.5": 0.7576,
+      "accuracy": 0.8333
+     },
+     "observation": {
+      "tp": 5,
+      "fp": 2,
+      "fn": 0,
+      "tn": 5,
+      "precision": 0.7143,
+      "recall": 1.0,
+      "f1": 0.8333,
+      "f0.5": 0.7576,
+      "accuracy": 0.8333
+     }
+    },
+    "detail": [
+     {
+      "id": "seed-storage-cert",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.6667,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-review-before-merge",
+      "expect": true,
+      "insight_grounding": 0.5714,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5714
+      ]
+     },
+     {
+      "id": "ko-fabricated-cert",
+      "expect": false,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.3333,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "ko-fabricated-repo",
+      "expect": false,
+      "insight_grounding": 0.6,
+      "observation_grounding": 0.5,
+      "per_source": [
+       0.6
+      ]
+     },
+     {
+      "id": "ko-mixed-noise",
+      "expect": false,
+      "insight_grounding": 0.2,
+      "observation_grounding": 0.2,
+      "per_source": [
+       0.2
+      ]
+     },
+     {
+      "id": "en-deploy-friday",
+      "expect": true,
+      "insight_grounding": 0.6667,
+      "observation_grounding": 0.75,
+      "per_source": [
+       0.6667
+      ]
+     },
+     {
+      "id": "en-release-notes",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.5
+      ]
+     },
+     {
+      "id": "en-fabricated-release",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "en-fabricated-prod",
+      "expect": false,
+      "insight_grounding": 0.3333,
+      "observation_grounding": 0.4,
+      "per_source": [
+       0.3333
+      ]
+     },
+     {
+      "id": "en-fabricated-secret",
+      "expect": false,
+      "insight_grounding": 0.0,
+      "observation_grounding": 0.0,
+      "per_source": [
+       0.0
+      ]
+     },
+     {
+      "id": "ko-two-source-insight",
+      "expect": true,
+      "insight_grounding": 0.5,
+      "observation_grounding": 0.6,
+      "per_source": [
+       0.5,
+       0.1667
+      ]
+     }
+    ]
+   }
+  }
+ ]
+}

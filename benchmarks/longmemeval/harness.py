@@ -11,11 +11,18 @@ LongMemEval-S 는 500문항·문항당 ~48세션이고, **LLM 을 루프에 안 
   · recall_any@K = gold 세션 중 **하나라도** 상위 K 에 있으면 1
   · NDCG@10, MRR 동일 정의
 
+26-08-01 추가 — **기권 축**. 위 지표 넷은 전부 "찾았는가"만 묻는다. 논문의 다섯 능력 축 중
+하나인 기권(답이 코퍼스에 없을 때 없다고 말하기)은 아무도 안 재고 있었고, 게다가 그 문항
+30건이 옛 지표에서 **거꾸로 채점되고** 있었다 (아래 `is_abstention` 절). 새 산출 칸은
+`answerable`·`abstention` 둘이고 기존 `overall`·`by_type` 은 정의도 값도 그대로다.
+
 주의 — 임베더가 다르다. agentmemory 는 all-MiniLM-L6-v2(384d, torch), asgard 는
 model2vec potion-multilingual-128M(256d, torch 무의존)이다. 수치를 나란히 놓을 때
 이 차이를 빼고 말하면 안 된다.
 
 실행: .venv/bin/python benchmarks/longmemeval/harness.py --data <path> [--limit N]
+기권 축만: 위에 `--split mixed` (기권 30건 + 답 있는 문항 앞 120건 — 분리도를 재려면 두 무리가
+같이 있어야 한다). `--split abs` 는 기권 30건만.
 """
 
 from __future__ import annotations
@@ -33,6 +40,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "src"))
 
 K_VALUES = (5, 10, 20)
 RETRIEVE_K = 20  # 상위 K 까지만 지표에 쓴다 — R@20 이 최대 K
+SWEEP_POINTS = 40  # 기권 문턱 스윕의 표본 문턱 수 — 사람이 읽을 표 크기
 
 
 def session_text(turns: list[dict]) -> str:
@@ -54,6 +62,93 @@ def ndcg(retrieved: list[str], gold: set[str], k: int) -> float:
 
 def mrr(retrieved: list[str], gold: set[str]) -> float:
     return next((1.0 / (i + 1) for i, rid in enumerate(retrieved) if rid in gold), 0.0)
+
+
+# ── 기권(abstention) 축 ────────────────────────────────────────────────────────
+#
+# 위 지표 넷은 전부 "찾았는가"만 묻는다. LongMemEval 의 다섯 능력 축 중 하나인 **기권**은
+# 반대를 묻는다 — 답이 코퍼스에 없을 때 없다고 말하는가. 데이터셋은 그 문항을 따로 싣는다
+# (question_id 에 `_abs` 접미, S 500문항 중 30건 — 실측 26-08-01).
+#
+# 이 문항들은 지금 이 하니스에서 **거꾸로 채점되고 있었다**. `_abs` 문항의
+# `answer_session_ids` 는 답이 든 세션이 아니라 **답이 없는 유인(誘引) 세션**을 가리키는데
+# (예: "내 햄스터 이름이 뭐지?" → 고양이 Luna 이야기가 든 세션), 그 58개 세션이 전부
+# haystack 안에 들어 있다. recall_any 는 그걸 찾아오면 1점을 준다. 실측: 저장된
+# `results-s-rerank-soft.json` 에서 `_abs` 30건의 R@5 는 **1.0000** 이고, 그 만점이
+# 전체 평균을 0.9532(답 있는 470건) → 0.9560 으로 밀어 올렸다.
+#
+# 그래서 이 절은 두 가지를 한다: `_abs` 를 갈라내 **기권 지표로** 다시 재고, 답 있는 문항만의
+# 지표(`answerable`)를 따로 낸다. 기존 `overall`·`by_type` 은 손대지 않는다 — 옛 산출물과
+# 비교 가능해야 하고, 그 값이 무엇을 섞고 있었는지는 여기 새 칸이 말한다.
+
+
+def is_abstention(entry_or_row: dict) -> bool:
+    """답이 코퍼스에 없는 문항인가 — question_id 의 `_abs` 접미가 유일한 표식이다.
+
+    데이터에 별도 플래그 칼럼이 없어 관례를 그대로 쓴다 (`answer` 필드가 "You did not
+    mention this information…" 로 시작하지만 그건 문자열 관례라 접미보다 약하다)."""
+    return str(entry_or_row.get("question_id") or "").endswith("_abs")
+
+
+def abstention_row(hits: list[dict]) -> dict:
+    """한 문항의 기권 판정 원료 — 빈손이었는가, 그리고 얼마나 자신 있었는가.
+
+    `empty_hand` 만으로는 고칠 방향이 안 나온다. 지금 `query()` 에는 회수 기권 장치가
+    아예 없어서 이 값은 답 있는 문항에서도 없는 문항에서도 똑같이 0 이다 — "못 한다"는
+    말만 남고 "할 수 있는가"는 안 남는다. 그래서 점수도 같이 적는다: 1위 RRF 점수와
+    1·2위 격차가 두 무리를 가른다면 문턱 하나로 기권을 만들 수 있고, 안 가른다면
+    이 신호로는 못 만든다는 뜻이다 (그 판정이 AUC 다)."""
+    scores = [float(h.get("score") or 0.0) for h in hits]
+    return {
+        "hits": len(hits),
+        "empty_hand": 1.0 if not hits else 0.0,
+        "top_score": round(scores[0], 6) if scores else 0.0,
+        "margin": round(scores[0] - scores[1], 6) if len(scores) >= 2 else 0.0,
+    }
+
+
+def auc(positive: list[float], negative: list[float]) -> float:
+    """양성 점수가 음성 점수보다 높을 확률 (동점 0.5) — 문턱을 안 고르고 재는 분리도.
+
+    답 있는 문항(양성)의 점수가 답 없는 문항(음성)보다 일관되게 높아야 문턱 기권이 선다.
+    0.5 는 동전 던지기 = 이 신호로는 기권을 못 만든다는 뜻이다."""
+    if not positive or not negative:
+        return 0.0
+    wins = sum(sum(1.0 if p > n else 0.5 if p == n else 0.0 for n in negative) for p in positive)
+    return round(wins / (len(positive) * len(negative)), 4)
+
+
+def threshold_sweep(rows: list[dict], key: str = "top_score") -> list[dict]:
+    """점수가 문턱 미만이면 기권한다 — 그 정책을 문턱마다 채점한 표.
+
+    두 값을 나란히 놓는 것이 요점이다. 기권 정확도는 문턱을 올릴수록 오르는데, 그 대가로
+    답 있는 문항까지 버린다(`오기권률`). 대가를 같이 안 적으면 "문턱 무한대 → 기권 100%"
+    라는 무의미한 최적해가 이긴다."""
+    ab = [r for r in rows if r.get("abstention")]
+    an = [r for r in rows if not r.get("abstention")]
+    if not ab or not an:
+        return []
+    candidates = sorted({round(float(r.get(key) or 0.0), 6) for r in rows})
+    if len(candidates) > SWEEP_POINTS:  # 문턱 하나마다 한 줄이면 산출물이 표가 아니라 원자료가 된다
+        step = len(candidates) / SWEEP_POINTS
+        candidates = [candidates[min(int(i * step), len(candidates) - 1)] for i in range(SWEEP_POINTS)]
+    out: list[dict] = []
+    for t in candidates:
+        # 문턱 미만이면 기권. 답 없는 문항에서 기권 = 정답, 답 있는 문항에서 기권 = 손실.
+        abstained_abs = sum(1 for r in ab if float(r.get(key) or 0.0) < t)
+        abstained_ans = sum(1 for r in an if float(r.get(key) or 0.0) < t)
+        kept = [r for r in an if float(r.get(key) or 0.0) >= t]
+        out.append(
+            {
+                "threshold": t,
+                "abstention_accuracy": round(abstained_abs / len(ab), 4),
+                "false_claim_rate": round(1 - abstained_abs / len(ab), 4),
+                "false_abstention_rate": round(abstained_ans / len(an), 4),
+                # 기권은 공짜가 아니다 — 버린 문항은 회수 기회를 잃는다(0점 처리).
+                "answerable_recall_at_5": round(sum(r["recall_any_at_5"] for r in kept) / len(an), 4),
+            }
+        )
+    return out
 
 
 def run_one(entry: dict, workdir: str, *, kind: str = "note", event_dates: bool = False) -> dict:
@@ -105,6 +200,9 @@ def run_one(entry: dict, workdir: str, *, kind: str = "note", event_dates: bool 
         **{f"recall_any_at_{k}": recall_any(retrieved, gold, k) for k in K_VALUES},
         "ndcg_at_10": ndcg(retrieved, gold, 10),
         "mrr": mrr(retrieved, gold),
+        # 기권 축 — `_abs` 문항에서 위 네 지표는 유인 세션을 맞힌 점수라 뜻이 뒤집혀 있다.
+        "abstention": is_abstention(entry),
+        **abstention_row(hits),
     }
 
 
@@ -116,12 +214,32 @@ def summarize(rows: list[dict]) -> dict:
     by_type: dict[str, list[dict]] = {}
     for row in rows:
         by_type.setdefault(str(row["question_type"]), []).append(row)
+    ab = [r for r in rows if r.get("abstention")]
+    an = [r for r in rows if not r.get("abstention")]
     return {
         "n": len(rows),
+        # `overall` 은 옛 산출물과 형상·정의가 같다 — 답 없는 문항을 섞은 채로 둔다.
+        # 무엇을 섞고 있었는지는 `answerable`·`abstention` 두 칸이 말한다.
         "overall": {m: avg(m, rows) for m in metrics},
         "by_type": {
             qtype: {"count": len(subset), **{m: avg(m, subset) for m in metrics}}
             for qtype, subset in sorted(by_type.items())
+        },
+        "answerable": {"count": len(an), **{m: avg(m, an) for m in metrics}},
+        "abstention": {
+            "count": len(ab),
+            # 안 줘야 할 때 안 주는 비율 / 없는데 준 비율. 둘은 합이 1 이지만 둘 다 적는다 —
+            # 보고서에서 어느 쪽을 인용하든 계산을 다시 하지 않게.
+            "abstention_accuracy": avg("empty_hand", ab),
+            "false_claim_rate": round(1 - avg("empty_hand", ab), 4) if ab else 0.0,
+            # 답 있는 문항에서의 빈손 — 회수가 아예 실패한 비율. 위 값과 대조군이다.
+            "answerable_empty_hand": avg("empty_hand", an),
+            # `_abs` 문항이 옛 지표에서 받던 점수. 1.0 에 가까울수록 유인 세션을 정확히
+            # 물어 온다는 뜻이고, 그건 회수가 잘된 게 아니라 **틀리게 확신한다**는 뜻이다.
+            "distractor_recall_at_5": avg("recall_any_at_5", ab),
+            "auc_top_score": auc([float(r["top_score"]) for r in an], [float(r["top_score"]) for r in ab]),
+            "auc_margin": auc([float(r["margin"]) for r in an], [float(r["margin"]) for r in ab]),
+            "sweep_top_score": threshold_sweep(rows, "top_score"),
         },
     }
 
@@ -145,6 +263,10 @@ def main() -> int:
     parser.add_argument("--kind", default="note")  # reference 로 두면 최신성 보정(TEMPORAL_KINDS)이 켜진다
     parser.add_argument("--event-dates", action="store_true")  # 세션 날짜를 event 메타로 심는다
     parser.add_argument("--only-type", default="")  # 한 유형만 (예: temporal-reasoning)
+    # 기권 축 표본 — abs 는 30건뿐이라 전량이 싸다. mixed 는 그 30건 + 답 있는 문항 앞머리로,
+    # 분리도(AUC)·문턱 스윕을 재려면 두 무리가 다 있어야 하기 때문에 둔다.
+    parser.add_argument("--split", default="all", choices=["all", "abs", "answerable", "mixed"])
+    parser.add_argument("--mixed-answerable", type=int, default=120)  # mixed 에서 쓸 답 있는 문항 수
     args = parser.parse_args()
 
     os.environ["ASGARD_MEMORY_SEMANTIC"] = args.semantic
@@ -168,6 +290,15 @@ def main() -> int:
         entries = json.load(handle)
     if args.only_type:
         entries = [e for e in entries if e.get("question_type") == args.only_type]
+    if args.split == "abs":
+        entries = [e for e in entries if is_abstention(e)]
+    elif args.split == "answerable":
+        entries = [e for e in entries if not is_abstention(e)]
+    elif args.split == "mixed":
+        # 데이터 순서를 그대로 쓴다 — 무작위 표본은 seed 를 산출물에 적어야 재현되는데,
+        # 앞머리 잘라 쓰기는 인자만으로 재현된다 (표본 크기는 아래 report 에 남는다).
+        answerable = [e for e in entries if not is_abstention(e)][: max(0, args.mixed_answerable)]
+        entries = [e for e in entries if is_abstention(e)] + answerable
     entries = entries[args.offset :]
     if args.limit:
         entries = entries[: args.limit]
@@ -202,6 +333,7 @@ def main() -> int:
         "kind": args.kind,
         "event_dates": args.event_dates,
         "only_type": args.only_type,
+        "split": args.split,
         "offset": args.offset,
         "limit": args.limit,
         "argv": sys.argv[1:],
@@ -211,7 +343,10 @@ def main() -> int:
     }
     with open(args.out, "w", encoding="utf-8") as handle:
         json.dump(report, handle, ensure_ascii=False, indent=1)
-    print(json.dumps({k: v for k, v in report.items() if k != "rows"}, ensure_ascii=False, indent=1))
+    # 화면에는 스윕 표를 빼고 찍는다 — 40줄짜리 표는 파일에서 읽을 것이지 흘려 볼 것이 아니다.
+    shown = {k: v for k, v in report.items() if k != "rows"}
+    shown["abstention"] = {k: v for k, v in shown["abstention"].items() if k != "sweep_top_score"}
+    print(json.dumps(shown, ensure_ascii=False, indent=1))
     return 0
 
 
