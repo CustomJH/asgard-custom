@@ -139,7 +139,9 @@ class Heimdall:
         self.bifrost = NULL_LEDGER
         dangling = active_quest(root)
         if dangling:  # 이전 세션 중단으로 남은 ACTIVE 퀘스트 — 조용히 덮지 않는다
-            on_text(f"⚠ 미완 퀘스트 발견({dangling}) — 이전 세션 중단 흔적. 이어서 검증하거나 quest-log close 필요.\n")
+            on_text(
+                f"⚠ 안 끝난 퀘스트가 있어요({dangling}) — 이전 세션이 중간에 멈춘 자국이에요. 이어서 검증하거나 quest-log close 해 주세요.\n"
+            )
 
     def _load_prompt_layers(self, root: str) -> None:
         """프롬프트에 얹히는 문서 계층을 세션 생성 시 1회 렌더한다.
@@ -1199,7 +1201,7 @@ class Heimdall:
         if cls["destructive"]:
             _log_classify(self.root, {"event": "route", "route": "refused-destructive"})
             return self._finalize_memory(
-                request, "⚠ 파괴 작업 감지 — Odin 명시 동의 필요 (Canon 3). 대상과 함께 재요청하세요."
+                request, "⚠ 되돌릴 수 없는 작업이라 오딘의 확인이 필요해요 (Canon 3). 대상을 적어서 다시 말씀해 주세요."
             )
         if not cls["write_expected"]:
             _log_classify(self.root, {"event": "route", "route": "direct"})
@@ -1226,7 +1228,7 @@ class Heimdall:
             return self._cancel_notice()
         except Exception as e:  # dangling 방지 — 퀘스트는 ACTIVE로 남고 정직하게 보고
             out = (
-                f"⚠ 세션 오류로 Trinity 중단 ({e.__class__.__name__}: {str(e)[:200]}) — "
+                f"⚠ 세션에 문제가 생겨 Trinity를 멈췄어요 ({e.__class__.__name__}: {str(e)[:200]}) — "
                 "퀘스트가 ACTIVE로 남아 있음. 재요청 시 이어서 검증하거나 quest-log close 하세요."
             )
             self.last_response_text = out

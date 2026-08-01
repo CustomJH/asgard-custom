@@ -1097,7 +1097,7 @@ class TestClassify(Base):
         cls = dict(CLS_WRITE, destructive=True)
         h = FakeHeimdall(self.root, [], cls=cls)
         out = h.handle("전부 지워")
-        self.assertIn("파괴 작업 감지", out)
+        self.assertIn("되돌릴 수 없는 작업이라", out)
         self.assertEqual(h.consumed, [])
 
 
@@ -1378,14 +1378,14 @@ class TestErrorRecovery(Base):
     def test_trinity_exception_reports_dangling_quest(self):
         h = FakeHeimdall(self.root, [], cls=CLS_WRITE)  # 세션 스크립트 없음 → 첫 역할 턴에서 예외
         out = h.handle("w1.txt 만들어")
-        self.assertIn("Trinity 중단", out)
+        self.assertIn("Trinity를 멈췄어요", out)
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
 
     def test_dangling_active_warned_on_init(self):
         os.makedirs(os.path.join(self.root, ".asgard", "quest"), exist_ok=True)
         open(os.path.join(self.root, ".asgard", "quest", "ACTIVE"), "w").write("old-quest\n")
         h = FakeHeimdall(self.root, [], cls=CLS_WRITE)
-        self.assertTrue(any("미완 퀘스트" in t for t in h.texts))
+        self.assertTrue(any("안 끝난 퀘스트가 있어요" in t for t in h.texts))
 
 
 class TestBudget(Base):

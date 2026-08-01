@@ -70,12 +70,12 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
 
     ui.head("manual · 커스텀 매뉴얼")
     if not st["enabled"]:
-        ui.warn("꺼져 있음 — `manual.mode=off` (설정 또는 ASGARD_MANUAL=off). 어떤 모드에도 안 실린다")
+        ui.warn("꺼져 있어요 — `manual.mode=off` (설정 또는 ASGARD_MANUAL=off). 어떤 모드에도 안 실려요")
         ui.done()
         return 0
 
     if not st["files"]:
-        ui.step("매뉴얼 없음 — 규칙을 얹으려면 다음 파일을 만든다:")
+        ui.step("아직 매뉴얼이 없어요 — 규칙을 얹으려면 이 중 하나를 만들어 주세요:")
         ui.step(ui.dim(f"    {_tilde(st['home'])}/MANUAL.md   공통 — 이 기계의 모든 프로젝트"))
         ui.step(ui.dim("    MANUAL.md이 프로젝트만 (별칭: " + " · ".join(manual_mod.MANUAL_NAMES[1:]) + ")"))
         ui.step(ui.dim("    .asgard/manual/*.md    주제별 분할 (파일명 정렬 순)"))
@@ -83,37 +83,37 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
         return 0
 
     if st["active"]:
-        ui.ok(f"실림 — {len(st['sources'])}개 파일 · {st['chars']}자 / 상한 {st['max_chars']}자")
+        ui.ok(f"실렸어요 — 파일 {len(st['sources'])}개 · {st['chars']}자 / 상한 {st['max_chars']}자")
         # 층을 갈라 보여 준다 — "이 규칙이 왜 여기서도 도나"의 답이 이 두 줄에 있다.
         for scope, label, rows in (("common", "공통", st["common"]), ("project", "프로젝트", st["project"])):
             for src in rows:
                 ui.step(ui.dim(f"    [{label}] {src}"))
         if st["common"] and st["project"]:
-            ui.step(ui.dim("    충돌하면 프로젝트 규칙이 이긴다 (공통 먼저, 프로젝트 나중)"))
-        ui.step("4모드 전부에 주입된다 — 네이티브는 프롬프트 인라인, CC·Cursor·Codex는 manual-activate 훅")
+            ui.step(ui.dim("    부딪히면 프로젝트 규칙이 이겨요 (공통 먼저, 프로젝트 나중)"))
+        ui.step("네 모드 모두에 실려요 — 네이티브는 프롬프트에 바로, CC·Cursor·Codex는 manual-activate 훅으로")
     else:
-        ui.warn("파일은 있는데 실리는 내용이 없다 — 주석 밖에 규칙을 써야 켜진다")
+        ui.warn("파일은 있는데 실리는 내용이 없어요 — 규칙은 주석 바깥에 써야 켜져요")
 
     if st["inert"]:
-        ui.step(ui.dim("    주석뿐(무주입): " + ", ".join(st["inert"])))
+        ui.step(ui.dim("    주석뿐이라 안 실려요: " + ", ".join(st["inert"])))
     if st["unmarked"]:
         # `MANUAL.md`는 흔한 이름이다 — 아스가르드가 깐 자리가 아닌 문서가 실리고 있으면 말해 준다.
-        ui.step(ui.dim("    asgard 스캐폴드 아님(직접 만든 파일이면 정상): " + ", ".join(st["unmarked"])))
+        ui.step(ui.dim("    asgard가 만든 파일이 아니에요 (직접 만드신 거면 정상이에요): " + ", ".join(st["unmarked"])))
     if st["shadowed"]:
         # 별칭을 여럿 만들면 디렉터리마다 하나만 우선한다 — 가려진 파일을 편집하는 사고가 여기서 잡힌다.
-        ui.warn("별칭 중복 — 무시된다: " + ", ".join(st["shadowed"]))
+        ui.warn("이름이 겹쳐서 안 읽어요: " + ", ".join(st["shadowed"]))
     if st["truncated"]:
         ui.warn(
-            f"상한 {st['max_chars']}자에서 잘렸다 — 뒷부분은 안 실린다. "
-            "`.asgard/manual/*.md`로 나누거나 설정 `manual.max_chars`를 올린다"
+            f"상한 {st['max_chars']}자에서 잘렸어요 — 뒷부분은 안 실려요. "
+            "`.asgard/manual/*.md`로 나누거나 설정에서 `manual.max_chars`를 올려 주세요"
         )
     if st["dropped"]:
-        ui.warn(f"조각 상한({manual_mod.FRAGMENT_CAP}개) 초과로 제외: " + ", ".join(st["dropped"]))
+        ui.warn(f"조각이 상한({manual_mod.FRAGMENT_CAP}개)을 넘어서 뺐어요: " + ", ".join(st["dropped"]))
     if st["escaped"]:
         # 링크 대상이 저장소 밖이다. 매뉴얼은 도구 호출이 아니라 판독 게이트가 안 보는 자리라,
         # 실었다면 그 파일이 통째로 프롬프트에 나갔다. 뺀 사실을 반드시 눈에 보이게 둔다.
-        ui.warn("저장소 밖을 가리키는 링크 — 안 싣는다: " + ", ".join(st["escaped"]))
+        ui.warn("저장소 밖을 가리키는 링크라 안 실어요: " + ", ".join(st["escaped"]))
     if not st["common"]:
-        ui.step(ui.dim(f"    모든 프로젝트 공통 규칙은 {_tilde(st['home'])}/MANUAL.md에"))
+        ui.step(ui.dim(f"    모든 프로젝트에 걸릴 규칙은 {_tilde(st['home'])}/MANUAL.md에 쓰면 돼요"))
     ui.done()
     return 0

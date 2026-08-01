@@ -277,9 +277,11 @@ def run_map_trace(
         return 0
     ui.head(f"map · trace {node_id}")
     if resolved_from:
-        ui.step(f"resolved: {resolved_from} → {node_id} (유일 매치 — 다르면 `asgard map list`로 확인)")
+        ui.step(
+            f"resolved: {resolved_from} → {node_id} (하나만 걸렸어요 — 아니다 싶으면 `asgard map list`로 확인해 주세요)"
+        )
     if not hops:
-        ui.step("no adjacent edges — 인접 지도가 비어 있다 (전수 부재의 증거가 아님)")
+        ui.step("인접한 게 없어요 — 지도가 비었다는 뜻이지, 정말 아무것도 없다는 증거는 아니에요")
     for hop in hops:
         mark = (
             "" if hop["confidence"] == "confirmed" and hop.get("via_confidence", "confirmed") == "confirmed" else " ?"
@@ -332,7 +334,7 @@ def run_map_list(*, kind: str = "", json_out: bool = False) -> int:
         return 0
     ui.head("map · list" + (f" · {kind}" if kind else ""))
     if not rows:
-        ui.step("no nodes — `asgard map scan` 이후에도 비면 해당 종류의 증거가 없는 것이다")
+        ui.step("노드가 없어요 — `asgard map scan` 뒤에도 비어 있으면 그런 종류의 증거가 없는 거예요")
     current_kind = ""
     for row in rows:
         if not kind and row["kind"] != current_kind:
@@ -369,7 +371,7 @@ def run_map_why(query: str, *, limit: int = 5, json_out: bool = False) -> int:
         return 0
     ui.head(f"map · why · {query}")
     if not found:
-        ui.step(f"근거 {len(notes)}건 중 질의에 걸리는 것이 없다 — 낱말을 바꾸거나 `asgard map context`로 넓혀라")
+        ui.step(f"근거 {len(notes)}건 중에 걸리는 게 없어요 — 낱말을 바꾸거나 `asgard map context`로 넓혀 보세요")
         return 0
     for note in found:
         ui.step(f"- {note.path}:{note.line}" + (f" ({note.unit})" if note.unit else ""))
@@ -424,11 +426,13 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
         return 0
     ui.head(f"map · impact {node_id}")
     if resolved_from:
-        ui.step(f"resolved: {resolved_from} → {node_id} (유일 매치 — 다르면 `asgard map list`로 확인)")
+        ui.step(
+            f"resolved: {resolved_from} → {node_id} (하나만 걸렸어요 — 아니다 싶으면 `asgard map list`로 확인해 주세요)"
+        )
     for label, hops in (("upstream — 이 노드에 닿는 것", upstream), ("downstream — 이 노드가 만지는 것", downstream)):
         ui.step(f"[{label}]")
         if not hops:
-            ui.step("  no adjacent edges — 부재의 증거가 아니다")
+            ui.step("  인접한 게 없어요 — 없다는 증거는 아니에요")
         for hop in sorted(hops, key=lambda h: (h["depth"], h["kind"], h["id"])):
             mark = (
                 ""
@@ -442,7 +446,9 @@ def run_map_impact(node_id: str, *, depth: int = 4, json_out: bool = False) -> i
     ui.step(f"coverage: depth {depth} · all edge kinds · candidates {candidates}")
     if truncated:
         ui.step(f"{truncated} nodes at depth limit still have unexplored edges — raise --depth to continue")
-    ui.step("no-edge ≠ no-dependency — 정적 레인 인접 지도다; `?` candidate는 원문 확인 전 단정 금지")
+    ui.step(
+        "선이 없다고 의존이 없는 건 아니에요 — 정적으로 그린 인접 지도라, `?` 후보는 원문을 보기 전엔 단정하지 마세요"
+    )
     for record in records:
         ui.step(f"관련 기록: {record['title']} [{record['match']}]")
     return 0
@@ -474,7 +480,7 @@ def run_map_view(*, open_browser: bool = True, json_out: bool = False) -> int:
 
         uri = Path(path).as_uri()
         if not webbrowser.open(uri):  # pragma: no cover - 데스크톱 환경 의존
-            ui.step(f"브라우저를 못 열었다 — 직접 열기: {uri}")
+            ui.step(f"브라우저를 못 열었어요 — 직접 열어 주세요: {uri}")
     return 0
 
 

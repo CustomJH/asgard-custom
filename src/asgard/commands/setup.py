@@ -516,7 +516,7 @@ def run_setup(
         except (MapOwnershipError, GraphOwnershipError) as exc:
             # init은 현재 디렉토리를 정본으로 삼는 명시 재설정 — 마커 없는(사람 소유·타 프로젝트 유래)
             # 지도는 경고 후 재귀속해 엎어쓴다. force는 소유권만 우회하므로 안전 검사는 재검사에서 잡힌다.
-            ui.warn(f"{exc} — init이 현재 디렉토리 기준으로 재생성(재귀속)")
+            ui.warn(f"{exc} — init을 지금 폴더 기준으로 다시 잡을게요")
             refresh_map(os.getcwd(), dry_run=True, force=True)
             scan_graph(os.getcwd(), dry_run=True, force=True)
     except (GraphError, MapError) as exc:
@@ -559,7 +559,7 @@ def seed_common_manual() -> str | None:
         ui.ok(ui.dim(path) + ui.dim(" (공통 매뉴얼 자리 — 모든 프로젝트)"))
         return path
     except Exception as exc:  # 홈 쓰기 실패가 프로젝트 셋업을 막지 않는다 (fail-open)
-        ui.warn(f"공통 매뉴얼 자리 생략: {exc}")
+        ui.warn(f"공통 매뉴얼 자리는 건너뛸게요: {exc}")
         return None
 
 
@@ -614,7 +614,7 @@ def _apply_lagom(lagom: str | None, dry_run: bool, rc: int) -> int:
 
     mode = normalize(lagom)
     if mode is None:
-        ui.warn(f"--lagom {lagom}: 유효 모드 아님 (off|lite|full) — 기본 full 유지")
+        ui.warn(f"--lagom {lagom}은 없는 모드예요 (off|lite|full) — 기본값 full로 둘게요")
         return rc
     save_config_section(None, "lagom", {"mode": mode})
     ui.step(f"lagom mode   {ui.dim('— lagom.mode = ' + mode + ' (asgard-setting-project.json)')}")

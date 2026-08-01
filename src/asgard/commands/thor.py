@@ -117,7 +117,7 @@ def _menu(root: str) -> int:
         gate = _GATED.get(verb)
         tail = f"  [{canon}]" + (f" · {gate}" if gate else "")
         ui.step(f"  {verb:<10} {summary}{ui.dim(tail)}")
-    ui.step(ui.dim("추천은 제안이다 — 무엇을 부를지는 사람이 정한다"))
+    ui.step(ui.dim("추천은 제안일 뿐이에요 — 무엇을 부를지는 직접 정하세요"))
     ui.done()
     return 0
 
@@ -169,9 +169,9 @@ def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
         return 0
 
     ui.head("thor survey · 여기서 무엇이 지배하는가")
-    ui.step(f"생태계 — {' · '.join(survey.ecosystems) or '매니페스트를 찾지 못했다'}")
-    ui.step(f"언어 — {', '.join(survey.languages) or '판정기가 아는 언어 없음'}")
-    ui.step(f"검증 명령 후보 — {', '.join(survey.verifiers) or '없음 (직접 찾아라)'}")
+    ui.step(f"생태계 — {' · '.join(survey.ecosystems) or '매니페스트를 못 찾았어요'}")
+    ui.step(f"언어 — {', '.join(survey.languages) or '판정기가 아는 언어가 없어요'}")
+    ui.step(f"검증 명령 후보 — {', '.join(survey.verifiers) or '없어요 (직접 찾아 주세요)'}")
     if survey.judgement:
         drift = thor_survey.drifted(root, survey)
         ui.phase("적어 둔 판단")
@@ -179,22 +179,26 @@ def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
             ui.step(f"  {key:<13} {note.text}")
             ui.step(ui.dim(f"                {_provenance(note, drift.get(key))}"))
         if drift:
-            ui.warn(f"적힌 뒤 세계가 움직인 판단 {len(drift)} — {', '.join(sorted(drift))}")
-            ui.step(ui.dim("    다시 확인하고 --note로 덮어써라 — 낡은 판단은 틀린 판단보다 조용해서 더 위험하다"))
+            ui.warn(f"적어 둔 뒤에 세상이 움직인 판단이 {len(drift)}건 있어요 — {', '.join(sorted(drift))}")
+            ui.step(ui.dim("    다시 확인하고 --note로 덮어써 주세요 — 낡은 판단은 틀린 판단보다 조용해서 더 위험해요"))
         if survey.unsourced:
-            ui.warn(f"출처를 모르는 판단 {len(survey.unsourced)} — {', '.join(survey.unsourced)}")
-            ui.step(ui.dim("    언제 적혔는지 모르면 낡았는지도 모른다 — 확인 후 --note로 다시 적어라"))
+            ui.warn(f"출처를 모르는 판단이 {len(survey.unsourced)}건 있어요 — {', '.join(survey.unsourced)}")
+            ui.step(ui.dim("    언제 적힌 건지 모르면 낡았는지도 몰라요 — 확인하고 --note로 다시 적어 주세요"))
         if blind := thor_survey.unmeasured(survey):
-            ui.step(ui.dim(f"구조 낡음을 못 잰 판단 {len(blind)} — {', '.join(blind)} (지문 자가 바뀌었다)"))
-            ui.step(ui.dim("    침묵은 '안 움직였다'가 아니라 '못 쟀다'다 — 다시 적으면 이 줄이 사라진다"))
+            ui.step(
+                ui.dim(
+                    f"얼마나 낡았는지 못 잰 판단이 {len(blind)}건 있어요 — {', '.join(blind)} (지문 자가 바뀌었어요)"
+                )
+            )
+            ui.step(ui.dim("    조용한 건 안 움직였다는 게 아니라 못 쟀다는 뜻이에요 — 다시 적으면 이 줄이 사라져요"))
     if survey.blanks:
-        ui.phase(f"빈칸 {len(survey.blanks)} — 코드를 읽어야 아는 것")
+        ui.phase(f"빈칸이 {len(survey.blanks)}건 있어요 — 코드를 읽어야 아는 것들이에요")
         for key in survey.blanks:
             ui.step(f"  {key:<13} {_BLANK_HINT[key]}")
         ui.step(ui.dim("    채우려면 — asgard thor survey --note 'layering=<한 줄>'"))
-        ui.step(ui.dim("    추측으로 채우지 마라 — 거짓말하는 기록은 없느니만 못하다"))
+        ui.step(ui.dim("    추측으로 채우지는 말아 주세요 — 거짓말하는 기록은 없느니만 못해요"))
     else:
-        ui.ok("빈칸 없음 — 다음 세션은 이 기록을 그대로 쓴다")
+        ui.ok("빈칸이 없어요 — 다음 세션은 이 기록을 그대로 써요")
     ui.done()
     return 0
 
@@ -261,7 +265,7 @@ def _run_trail(root: str, json_out: bool) -> int:
         return 0
     ui.head("thor trail · 절차가 실제로 어떻게 불렸나")
     if not seen.steps:
-        ui.step("자취 없음 — 아직 동사를 부른 적이 없다")
+        ui.step("자취가 없어요 — 아직 동사를 부른 적이 없네요")
         ui.done()
         return 0
     ui.step(f"기록된 호출 {len(seen.steps)}회")
@@ -269,7 +273,7 @@ def _run_trail(root: str, json_out: bool) -> int:
     ui.step("  " + " → ".join(seen.called) if seen.called else "  (절차 동사 호출 없음)")
     if seen.skipped:
         ui.step(ui.dim(f"  안 부른 동사 — {', '.join(seen.skipped)}"))
-        ui.step(ui.dim("    건너뛰는 것은 자주 옳다. 여기 있는 것은 판정이 아니라 사실이다"))
+        ui.step(ui.dim("    건너뛰는 게 옳을 때도 많아요. 여기 적힌 건 판정이 아니라 사실이에요"))
     ui.step(f"  sweep·evidence 도달 — {'예' if seen.reached_terminal else '아니오'}")
     if seen.gates:
         ui.phase("게이트 실행")
@@ -283,9 +287,9 @@ def _run_trail(root: str, json_out: bool) -> int:
         ui.step(f"  앞선 게이트가 있는 검증 {len(found)}건 중 게이트가 통과시킨 뒤 검증이 잡은 것 {len(escaped)}건")
         for item in escaped[-5:]:
             ui.step(ui.dim(f"    {item.quest} · 게이트 {item.gate_at} 통과 → 검증 {item.verdict}"))
-        ui.step(ui.dim("    두 판정기는 다른 것을 잰다 — 이 수는 '게이트가 버그를 놓쳤다'가 아니라"))
-        ui.step(ui.dim("    '게이트 통과가 검증 통과를 함의하지 않는다'만 뜻한다"))
-    ui.step(ui.dim("이 화면은 사실만 싣는다 — 절차를 잘 따랐는지는 이 사실을 본 사람이 정한다"))
+        ui.step(ui.dim("    두 판정기는 서로 다른 걸 재요 — 이 수는 게이트가 버그를 놓쳤다는 뜻이 아니라"))
+        ui.step(ui.dim("    게이트를 지났다고 검증까지 지난 건 아니라는 뜻이에요"))
+    ui.step(ui.dim("이 화면엔 사실만 실어요 — 절차를 잘 따랐는지는 보시고 판단해 주세요"))
     ui.done()
     return 0
 
@@ -300,7 +304,7 @@ def _run_gate(root: str, base: str, paths: tuple[str, ...], json_out: bool) -> i
 
     ui.head(f"thor gate · 변경분 백엔드 정확성 ({report.base})")
     if not targets:
-        ui.ok(f"{report.base} 대비 변경 없음 — 판정할 것이 없다")
+        ui.ok(f"{report.base} 대비 달라진 게 없어요 — 판정할 게 없네요")
         ui.done()
         return 0
     ui.step(f"판정한 파일 {len(report.judged)}개")
@@ -322,11 +326,11 @@ def _run_gate(root: str, base: str, paths: tuple[str, ...], json_out: bool) -> i
     if report.unmeasured:
         missing = sorted({rule for _, rules in report.unmeasured for rule in rules})
         ui.step(ui.dim(f"이 언어에서 못 잰 규칙 {len(missing)}종 — {', '.join(missing)}"))
-        ui.step(ui.dim("    침묵은 '안 봤다'는 뜻이지 '깨끗하다'가 아니다"))
+        ui.step(ui.dim("    조용한 건 안 봤다는 뜻이지, 깨끗하다는 뜻이 아니에요"))
     if report.inherited:
-        ui.step(ui.dim(f"기존 부채 {report.inherited}건은 이번 변경의 책임이 아니라 넘겼다 (래칫)"))
+        ui.step(ui.dim(f"원래 있던 {report.inherited}건은 이번 변경 책임이 아니라 넘겼어요 (래칫)"))
     if not blocking:
-        ui.ok("막는 판정 없음 — 손댄 자리가 이전보다 나빠지지 않았다")
+        ui.ok("막는 판정이 없어요 — 손댄 자리가 이전보다 나빠지진 않았어요")
     ui.done()
     return 1 if blocking else 0
 

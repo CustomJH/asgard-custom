@@ -39,23 +39,25 @@ def run_surface(*, base: str = "HEAD", json_out: bool = False, quiet: bool = Fal
     ui.head(f"surface · 공개 표면 대조 ({result.base})")
     ui.step(f"대조한 파일 {result.files_compared}개")
     if result.unparsed:
-        ui.warn(f"파싱 실패 — 미판정 {len(result.unparsed)}: {', '.join(result.unparsed[:5])}")
+        ui.warn(f"못 읽은 파일이 있어 판정에서 빠졌어요 {len(result.unparsed)}건: {', '.join(result.unparsed[:5])}")
     if not result.changes:
-        ui.ok("공개 표면 변화 없음 — 호출부 의무가 생기지 않았다")
+        ui.ok("공개 표면은 그대로예요 — 호출부에서 고칠 게 생기지 않았어요")
         ui.done()
         return 0
 
     breaking = result.breaking
     if breaking:
-        ui.phase(f"호출부가 깨진다 — {len(breaking)}건")
+        ui.phase(f"호출부가 깨져요 — {len(breaking)}건")
         for change in breaking:
             ui.warn(f"{change.qualname} ({change.path}) — {change.kind}: {change.detail}")
             sites = result.obligations.get(change.qualname.rsplit(".", 1)[-1], ())
             if sites:
                 ui.step(ui.dim(f"    호출부 후보 {len(sites)}: {', '.join(sites[:6])}"))
             else:
-                ui.step(ui.dim("    diff 밖 이름 일치 없음 (0건도 기록할 증거다)"))
-        ui.step(ui.dim("후보는 이름 기반이다 — 동적 디스패치·getattr·문자열 참조는 못 잡고, 동명이인이 섞일 수 있다"))
+                ui.step(ui.dim("    diff 밖에서 같은 이름을 못 찾았어요 (0건도 남겨 둘 만한 증거예요)"))
+        ui.step(
+            ui.dim("후보는 이름으로 찾은 거예요 — 동적 디스패치·getattr·문자열 참조는 못 잡고, 이름만 같은 것도 섞여요")
+        )
 
     others = [c for c in result.changes if not c.breaking]
     if others:

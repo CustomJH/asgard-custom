@@ -1,12 +1,21 @@
 """uninstall — remove asgard (it's a uv tool). `uv tool uninstall asgard` removes the
-managed env + the `asgard` shim. Preview unless --yes."""
+managed env + the `asgard` shim. Preview unless --yes.
+
+여기서 지우는 것은 설치물뿐이다. `~/.asgard` 아래의 memory/·credentials.json·profiles/ 는
+사용자 데이터라 건드리지 않는다 — 승인 없이 개인 기억을 지울 수 있는 경로를 두지 않는다.
+그래서 CLI 도움말과 아래 preview 는 둘 다 "데이터는 남는다"를 말해야 한다."""
 
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 from .. import ui
 from ..platform import on_path
+
+# uninstall 이 지우지 않는 경로. 화면에 경로를 그대로 찍어야 사용자가 기억이 지워졌는지
+# 따로 확인하러 가지 않는다.
+DATA_HOME = Path.home() / ".asgard"
 
 
 def _installed() -> bool:
@@ -32,6 +41,7 @@ def run_uninstall(yes: bool = False, dry_run: bool = False) -> int:
     if dry_run or not yes:
         ui.phase("preview")
         ui.step("would run: uv tool uninstall asgard")
+        ui.step(f"kept: {DATA_HOME} (memory, credentials, profiles)")
         sys.stdout.write("\n  " + ui.dim("run 'asgard uninstall --yes' to remove.") + "\n")
         return 0
 
@@ -42,6 +52,7 @@ def run_uninstall(yes: bool = False, dry_run: bool = False) -> int:
         )
     if result.returncode == 0:
         ui.done("asgard removed")
+        sys.stdout.write("  " + ui.dim(f"{DATA_HOME} kept — remove it by hand if you want it gone.") + "\n")
         return 0
     ui.warn("uninstall incomplete.")
     return 1

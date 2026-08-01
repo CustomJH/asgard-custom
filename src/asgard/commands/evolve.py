@@ -37,7 +37,9 @@ def run_scan(quiet: bool = False) -> int:
     if not created:
         left = evo.unmined_signals(root)
         print(
-            f"신규 신호 없음 (미채굴 {left}건)" if left else "신규 신호 없음 — 퀘스트 로그에 hard-won 교훈이 아직 없다"
+            f"새 신호가 없어요 (아직 안 캔 게 {left}건)"
+            if left
+            else "새 신호가 없어요 — 퀘스트 로그에 아직 배울 만한 게 없네요"
         )
         return 0
     for m in created:
@@ -46,7 +48,7 @@ def run_scan(quiet: bool = False) -> int:
             if m.get("quest_id")
             else "사용자 정정 신호"  # origin: correction — 제2 채굴원 (26-07-24)
         )
-        ui.ok(f"후보 생성 {m['id']} — {m['name']} ({detail})")
+        ui.ok(f"후보를 만들었어요 {m['id']} — {m['name']} ({detail})")
     print(ui.dim("검토: asgard evolve list · 승인: asgard evolve approve <id>"))
     return 0
 
@@ -64,9 +66,9 @@ def run_list() -> int:
     root = _root()
     items = evo.pending_list(root)
     if not items:
-        print("인박스 비어 있음 — asgard evolve scan으로 퀘스트 로그를 채굴")
+        print("인박스가 비어 있어요 — asgard evolve scan으로 퀘스트 로그를 캐 보세요")
         return 0
-    print(ui.bold(f"pending {len(items)}건") + ui.dim(" — 초안은 승인 전에 파일을 직접 다듬어도 된다"))
+    print(ui.bold(f"pending {len(items)}건") + ui.dim(" — 승인 전에 초안 파일을 직접 다듬어도 돼요"))
     for m in items:
         print(
             f"  {ui.bold(m['id'])}  {m.get('name', '?')}  "
@@ -79,7 +81,7 @@ def run_list() -> int:
 def run_show(cid: str) -> int:
     text = evo.show(_root(), cid)
     if text is None:
-        ui.fail(f"후보 없음: {cid}")
+        ui.fail(f"그런 후보가 없어요: {cid}")
         return 1
     print(text)
     return 0
@@ -125,7 +127,7 @@ def run_curate(apply: bool = False) -> int:
     result = curate(root, apply=apply)
     findings = result["findings"]
     if not findings:
-        print("learned 스킬 없음 — 큐레이션 대상이 없다")
+        print("익힌 스킬이 없어요 — 정리할 게 없네요")
         return 0
     marks = {"active": ui.ok, "stale": ui.warn, "archive-candidate": ui.warn, "unreadable": ui.fail}
     for f in findings:
@@ -138,7 +140,7 @@ def run_curate(apply: bool = False) -> int:
             f"보관 전이 {len(result['archived'])}건: {', '.join(result['archived'])} (복원: asgard evolve restore <name>)"
         )
     elif candidates:
-        ui.warn(f"보관 후보 {len(candidates)}건 — 검토 후 asgard evolve curate --apply")
+        ui.warn(f"보관할 만한 게 {len(candidates)}건 있어요 — 보시고 asgard evolve curate --apply")
     return 0
 
 

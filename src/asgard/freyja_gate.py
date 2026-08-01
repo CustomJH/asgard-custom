@@ -269,15 +269,15 @@ def run_gate(
 
     ui.head("freyja · gate")
     if not report.surfaces:
-        ui.ok("이번 변경에 시각 표면이 없습니다 — 잴 것이 없습니다")
+        ui.ok("이번 변경엔 시각 표면이 없어요 — 잴 게 없네요")
         return 0
     ui.step(f"표면 {len(report.surfaces)}건: " + ", ".join(report.surfaces[:6]))
     for note in report.unjudged:
         ui.step(f"못 잰 것 — {note}")
     if not report.findings:
-        ui.ok(f"이번 변경이 더 나쁘게 만든 것 없음 (판정: {', '.join(report.engines) or '없음'})")
+        ui.ok(f"이번 변경이 더 나쁘게 만든 건 없어요 (판정: {', '.join(report.engines) or '없음'})")
         return 0
     for finding in report.findings:
         ui.fail(finding.line())
-    ui.step("래칫입니다 — 이미 있던 지적은 안 막습니다. 위 목록은 이번 변경이 새로 만든 것입니다.")
+    ui.step("래칫이라 이미 있던 지적은 안 막아요. 위 목록은 이번 변경이 새로 만든 것들이에요.")
     return 1

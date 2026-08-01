@@ -84,12 +84,12 @@ def run_budget(*, transcript: str = "", json_out: bool = False, quiet: bool = Fa
 
     ui.head("budget · 이 세션이 쓴 것")
     if not path:
-        ui.warn("이 프로젝트의 트랜스크립트를 못 찾았다 — 계측할 세션이 없다")
+        ui.warn("이 프로젝트의 트랜스크립트를 못 찾았어요 — 잴 세션이 없네요")
         ui.done()
         return 0
     ui.step(ui.dim(f"트랜스크립트 {os.path.basename(path)}"))
     if ledger.read_error:
-        ui.warn(f"부분 관측 — {ledger.read_error}")
+        ui.warn(f"일부만 읽었어요 — {ledger.read_error}")
 
     ceiling = float(limits.get("session_cost_units") or bg.DEFAULTS["session_cost_units"])
     warn_at = float(limits.get("warn_cost_units") or bg.DEFAULTS["warn_cost_units"])

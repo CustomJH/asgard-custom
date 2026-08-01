@@ -219,7 +219,9 @@ def run_role_run(role: str, task: str) -> int:
     except Exception:
         state = {}
     if not state.get("quest_id"):
-        print(json.dumps({"error": "활성 quest 없음 — 호스트가 먼저 quest-log open을 실행해야 한다"}), file=sys.stderr)
+        print(
+            json.dumps({"error": "열린 quest가 없어요 — 호스트가 먼저 quest-log open을 돌려야 해요"}), file=sys.stderr
+        )
         return 1
 
     default = resolve(root)

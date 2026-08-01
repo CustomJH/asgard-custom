@@ -1627,9 +1627,7 @@ def _run_bang(root: str, cmd: str) -> None:
     from . import tools as T
 
     if not is_readonly_bash_safe(cmd, root):
-        sys.stdout.write(
-            f"  {ui.paint(ui._WARN, '⚠')} ! 명령은 읽기 전용만 허용됩니다. 변경 작업은 일반 요청으로 실행하세요.\n"
-        )
+        sys.stdout.write(f"  {ui.paint(ui._WARN, '⚠')} ! 명령은 읽기만 해요. 뭔가 바꾸려면 그냥 말씀해 주세요.\n")
         return
 
     try:

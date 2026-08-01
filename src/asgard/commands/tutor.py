@@ -63,13 +63,13 @@ def _emit_inventory(lesson: tutor.Lesson) -> None:
         ui.step(f"{change.path}{flag} +{change.added}/-{change.removed}")
         ui.step(ui.dim(f"    {_units_line(change)}"))
     if len(lesson.files) > 20:
-        ui.step(ui.dim(f"    …외 {len(lesson.files) - 20}개 (`--json`이 전부를 싣는다)"))
+        ui.step(ui.dim(f"    …외 {len(lesson.files) - 20}개 (`--json`을 붙이면 전부 나와요)"))
 
 
 def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
     """펼침·접힘·넘침을 한 화면에. 접은 것을 안 적으면 "0건"과 "접었다"가 같은 화면이 된다."""
     if not rows:
-        ui.ok("기계가 짚을 자리는 없다 — 그래도 '왜 이렇게 했는가'는 사람만 답할 수 있다")
+        ui.ok("기계가 짚을 자리는 없어요 — 그래도 왜 이렇게 했는지는 직접 답하셔야 해요")
         return
     open_rows = [r for r in rows if r[1] not in ("fold", "quiet")]
     ui.phase(f"당신이 직접 확인할 것 — {len(rows)}건 (막지 않는다)")
@@ -80,7 +80,7 @@ def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
             ui.step(ui.dim(f"    {point.why}"))
         ui.step(f"    ▸ {point.ask}")
     if len(open_rows) > limit:
-        ui.step(ui.dim(f"    …외 {len(open_rows) - limit}건 (`asgard tutor --report`가 전부를 싣는다)"))
+        ui.step(ui.dim(f"    …외 {len(open_rows) - limit}건 (`asgard tutor --report`를 붙이면 전부 나와요)"))
     _emit_folded(rows)
 
 
@@ -108,7 +108,7 @@ def _count_line(counts: dict[str, int]) -> str:
 def _emit_back(back: list[tutor_growth.Revisit]) -> None:
     if not back:
         return
-    ui.phase(f"다시 묻는다 — {len(back)}건 (답이 아직 없다)")
+    ui.phase(f"다시 여쭤요 — {len(back)}건, 아직 답이 없어요")
     for row in back:
         ui.warn(f"{_KIND.get(row.kind, row.kind)} — {row.where}  [{row.cid}]")
         ui.step(f"    ▸ {row.ask}")
@@ -298,9 +298,9 @@ def _run_collect(root: str, path: str) -> int:
 
     full = path if os.path.isabs(path) else os.path.join(root, path)
     answers = collect(read_text(full))
-    ui.head("tutor · 보고서에 적힌 답을 걷는다")
+    ui.head("tutor · 보고서에 적어 두신 답을 걷을게요")
     if not answers:
-        ui.ok(f"{os.path.relpath(full, root)}에 채워진 `답:` 칸이 없다 — 걷을 것이 없다")
+        ui.ok(f"{os.path.relpath(full, root)}에 채워 둔 `답:` 칸이 없어요 — 걷을 게 없네요")
         ui.done()
         return 0
     taken, missed = 0, 0
@@ -313,8 +313,8 @@ def _run_collect(root: str, path: str) -> int:
         else:
             missed += 1
     if missed:
-        ui.step(ui.dim(f"    {missed}건은 이미 닫혔거나 열린 물음이 아니다 — 건너뛰었다"))
-    ui.done(f"{taken}건을 성장 기록에 넣었다")
+        ui.step(ui.dim(f"    {missed}건은 이미 닫혔거나 열린 물음이 아니라서 건너뛰었어요"))
+    ui.done(f"{taken}건을 성장 기록에 넣었어요")
     return 0
 
 
@@ -328,7 +328,7 @@ def _run_progress(root: str, json_out: bool) -> int:
         return 0
     ui.head("tutor · 같이 자란 기록")
     if not data["topics"]:
-        ui.ok("아직 기록이 없다 — 되짚기 카드가 한 번도 안 나왔거나, 이 저장소가 처음이다")
+        ui.ok("아직 기록이 없어요 — 되짚기 카드가 한 번도 안 나왔거나, 이 저장소가 처음이거나요")
         ui.done()
         return 0
     ui.phase(f"가져간 것 — 답한 물음 {data['answered']}건 (그중 옮겨 적은 답 {data['deep']}건)")
@@ -339,13 +339,13 @@ def _run_progress(root: str, json_out: bool) -> int:
         ui.step(ui.dim(f"      물음 {row['asked']} · 답 {row['answered']} · 건너뜀 {row['skipped']}{tail}"))
     ui.phase(f"열린 물음 {data['open']}건 (그중 지금 때가 된 것 {data['due']}건)")
     if data["due"]:
-        ui.step(ui.dim("    다음 되짚기 카드에 각도를 바꿔 다시 실린다"))
+        ui.step(ui.dim("    다음 되짚기 카드에 각도를 바꿔 다시 실어 드려요"))
     if data["quiet"]:
-        ui.phase(f"튜터가 스스로 낮춘 탐침 — {len(data['quiet'])}건")
+        ui.phase(f"튜터가 스스로 낮춘 탐침 — {len(data['quiet'])}건이에요")
         for kind, why in sorted(data["quiet"].items()):
             ui.warn(f"{_KIND.get(kind, kind)}")
             ui.step(ui.dim(f"    {why}"))
-        ui.step(ui.dim("    낮춘 것은 안 묻는 게 아니라 한 줄로 접는 것이다 — 사실은 계속 화면에 남는다"))
+        ui.step(ui.dim("    낮췄다고 안 묻는 게 아니라 한 줄로 접은 거예요 — 사실은 화면에 계속 남아요"))
     if data["expired"]:
         ui.step(ui.dim(f"    만료 {data['expired']}건 — 코드가 사라졌거나 끝까지 답이 없던 물음"))
     _emit_said(data)
@@ -367,7 +367,7 @@ def _emit_said(data: dict) -> None:
         where = str(row.get("path") or "")
         ui.step(f"{tag} — {where}{' ' + str(row.get('unit')) if row.get('unit') else ''}")
         ui.step(ui.dim(f"    “{ui.oneline(str(row.get('said')), 90)}”"))
-    ui.step(ui.dim("    같은 자리를 다시 열면 `asgard tutor --brief`가 이 문장을 되돌려 준다"))
+    ui.step(ui.dim("    같은 자리를 다시 열면 `asgard tutor --brief`가 이 문장을 되돌려 줘요"))
 
 
 # ── 진입점 ─────────────────────────────────────────────────────────
@@ -416,7 +416,7 @@ def run_tutor(
 
     ui.head(f"tutor · 이번 변경 되짚기 ({lesson.base})")
     if not lesson.files and not lesson.checkpoints:
-        ui.ok(f"{lesson.base} 대비 변경 없음 — 되짚을 것이 없다")
+        ui.ok(f"{lesson.base} 대비 달라진 게 없어요 — 되짚을 게 없네요")
         ui.done()
         return 0
     _emit_mandate(lesson)
@@ -445,7 +445,7 @@ def _run_close(root: str, answer: str, dismiss: str, note: str) -> int:
         ok, message = tutor_growth.dismiss(root, dismiss, note)
     (ui.ok if ok else ui.warn)(message)
     if not ok:
-        ui.step(ui.dim("    열린 물음은 `asgard tutor --progress`로 볼 수 있다"))
+        ui.step(ui.dim("    열린 물음은 `asgard tutor --progress`에 모여 있어요"))
     ui.done()
     return 0
 
@@ -463,6 +463,6 @@ def _run_brief(root: str, text: str, paths: tuple[str, ...], quiet: bool) -> int
         return 0
     if not quiet:
         ui.head("tutor · 들어가기 전")
-        ui.ok("이 자리에 남은 답 없는 물음이 없다")
+        ui.ok("이 자리엔 답 안 한 물음이 없어요")
         ui.done()
     return 0

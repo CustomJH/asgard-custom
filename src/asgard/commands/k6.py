@@ -51,7 +51,7 @@ def _prepare(root: str) -> str | None:
     try:
         return str(k6.prepare_lane(root))
     except OSError as exc:
-        print(f"레인 자리를 세우지 못했다 ({k6.lane_dir(root)}): {exc}", file=sys.stderr)
+        print(f"레인 자리를 못 세웠어요 ({k6.lane_dir(root)}): {exc}", file=sys.stderr)
         return None
 
 
@@ -155,7 +155,7 @@ def run_k6_sync(force: bool = False, json_: bool = False) -> int:
     try:
         kit = k6.prepare_lane(root, force=force)
     except OSError as exc:
-        print(f"레인 자리를 세우지 못했다 ({k6.lane_dir(root)}): {exc}", file=sys.stderr)
+        print(f"레인 자리를 못 세웠어요 ({k6.lane_dir(root)}): {exc}", file=sys.stderr)
         return 1
     lane = k6.lane_dir(root)
     if json_:
@@ -204,7 +204,7 @@ def run_k6_list(json_: bool = False) -> int:
         )
         return 0
     if not found:
-        print("시나리오가 없다 — 키트가 손상됐다.", file=sys.stderr)
+        print("시나리오가 없어요 — 키트가 깨진 것 같아요.", file=sys.stderr)
         return 1
     table = Table.grid(padding=(0, 2))
     table.add_column(min_width=14, overflow="fold")
@@ -217,7 +217,7 @@ def run_k6_list(json_: bool = False) -> int:
             Text(_headline(scenario.path), style=theme.SUBTEXT),
         )
     _panel("load scenarios", table, f"{len(found)}")
-    print("  프로젝트 시나리오는 .asgard/k6/scenarios/*.js에 두면 같은 이름으로 잡힌다.")
+    print("  프로젝트 시나리오는 .asgard/k6/scenarios/*.js에 두면 같은 이름으로 잡혀요.")
     return 0
 
 
@@ -259,7 +259,7 @@ def run_k6_run(
         return 2
     runner = k6.resolve_runner(runner_kind)
     if runner is None:
-        print("러너가 없다 — docker/podman 또는 k6가 필요하다.", file=sys.stderr)
+        print("러너가 없어요 — docker나 podman, 아니면 k6가 있어야 해요.", file=sys.stderr)
         return 2
     kit = _prepare(root)
     if kit is None:
@@ -313,7 +313,7 @@ def run_k6_run(
         _render_report(report, str(out_dir) if record else "")
     if not report.exit_agrees:
         print(
-            "  경고: 종료 코드와 임계값 판정이 어긋난다 — 이 실행의 판정은 믿을 수 없다 (asgard k6 selftest).",
+            "  경고: 종료 코드와 임계값 판정이 어긋나요 — 이번 판정은 믿기 어려워요 (asgard k6 selftest).",
             file=sys.stderr,
         )
         return 1
@@ -372,7 +372,7 @@ def _render_report(report: k6.Report, out_dir: str = "") -> None:
 def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: int = 40, vus: int = 4) -> int:
     runner = k6.resolve_runner()
     if runner is None:
-        print("러너가 없다 — docker/podman 또는 k6가 필요하다.", file=sys.stderr)
+        print("러너가 없어요 — docker나 podman, 아니면 k6가 있어야 해요.", file=sys.stderr)
         return 2
     root = _root()
     kit = _prepare(root)
@@ -380,7 +380,7 @@ def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: i
         return 1
     if not json_:
         print(f"  하네스 정합성 검사 · {runner.label()}")
-        print("  거동을 아는 표적(pacer)에 걸어 세 판을 돈다 — truth · gate · saturate")
+        print("  거동을 아는 표적(pacer)에 걸어 세 판 돌려요 — truth · gate · saturate")
 
     # 시스템 임시 디렉터리가 아니라 레인 안에서 돈다: 세 판의 산출도 컨테이너에 마운트되는
     # 볼륨이고, 마운트되는 것은 전부 프로젝트 아래라는 규칙에 예외를 두지 않는다. 임시
@@ -417,9 +417,9 @@ def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: i
         print(f"  {result.error}", file=sys.stderr)
         return 1
     if not result.ok:
-        print("  하네스가 참을 말하지 못한다 — 이 상태에서 잰 부하 수치는 근거가 아니다.", file=sys.stderr)
+        print("  하네스가 참을 말하지 못해요 — 이 상태로 잰 수치는 근거로 못 써요.", file=sys.stderr)
         return 1
-    print("  하네스 정합성 확인 — 이 레인의 수치는 근거로 쓸 수 있다.")
+    print("  하네스가 멀쩡해요 — 이 레인의 수치는 근거로 쓰셔도 돼요.")
     return 0
 
 
@@ -432,7 +432,7 @@ def run_k6_report(path: str = "", json_: bool = False) -> int:
         runs = k6.runs_dir(root)
         candidates = sorted(runs.glob("*/report.json")) if runs.is_dir() else []
         if not candidates:
-            print("기록된 실행이 없다 — asgard k6 run <시나리오>", file=sys.stderr)
+            print("기록된 실행이 없어요 — asgard k6 run <시나리오>", file=sys.stderr)
             return 1
         target = candidates[-1]
     else:

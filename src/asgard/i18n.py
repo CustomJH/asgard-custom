@@ -323,6 +323,181 @@ _M: dict[str, tuple[str, str]] = {
         "사용법: /bridge <claude-code|codex|cursor> on|off — 해당 도구가 배치된 역할을 `asgard role`로 위임해요",
     ),
     "bridge_set": ("bridge.{tool} = {v}", "bridge.{tool} = {v}"),
+    # ── CLI 도움말 (hc_ = help, cli) ────────────────────────────────────────────
+    # 여기 있는 문자열은 Typer 데코레이터가 import 시점에 t()로 읽는다. cli.py 맨 위에서
+    # load_lang()을 먼저 돌리는 이유가 이것 — 그 호출이 없으면 언어와 무관하게 영어가 굳는다.
+    # 업무·창·근거 검색만 표에 있고 나머지 명령은 아직 영어 리터럴이다. ko 표면을 마저 채우려면
+    # 남은 help=를 같은 규약으로 옮기면 된다.
+    "hc_json": ("machine-readable output", "기계가 읽을 형태로 내보내요"),
+    "hc_port": (
+        "local port (falls back to a free port if it is taken)",
+        "로컬 포트 (이미 쓰고 있으면 빈 포트로 넘어가요)",
+    ),
+    "hc_no_browser": ("do not open the browser automatically", "브라우저를 자동으로 열지 않아요"),
+    # 업무 보드
+    "hc_ticket": (
+        "your work board — file tickets, move them, link them (the same store the Studio window uses)",
+        "업무 보드 — 티켓을 발급하고 옮기고 이어요 (Studio 창과 같은 저장소예요)",
+    ),
+    "hc_tk_board": ("the board as it stands, in status columns", "지금 보드를 상태 칸으로 접어서 보여드려요"),
+    "hc_tk_team": (
+        "narrow to one team key — `.` means this folder's team (default: the whole workspace)",
+        "팀 키로 좁혀요 — `.`은 이 폴더의 팀이에요 (기본값은 워크스페이스 전체)",
+    ),
+    "hc_tk_project": ("project name or id", "프로젝트 이름 또는 id"),
+    "hc_tk_list": (
+        "every ticket, most urgent first ('none' sinks to the bottom)",
+        "티켓 목록 — 급한 것부터 보여드리고 '없음'은 맨 뒤로 가요",
+    ),
+    "hc_tk_f_status": ("keep only these statuses (comma-separated)", "이 상태인 것만 남겨요 (쉼표로 여럿)"),
+    "hc_tk_f_assignee": ("keep only this assignee", "이 담당자 것만 남겨요"),
+    "hc_tk_f_label": ("keep only this label", "이 라벨이 붙은 것만 남겨요"),
+    "hc_tk_f_cycle": ("cycle number or name", "주기 번호 또는 이름"),
+    "hc_tk_f_query": ("match part of a title, body, or number", "제목·설명·번호에 부분 일치"),
+    "hc_tk_f_open": ("drop whatever is already done or cancelled", "완료·취소된 건 빼요"),
+    "hc_tk_new": (
+        "file a ticket — its number is handed out once and never reused",
+        "티켓 발급 — 번호는 한 번만 나가고 다시 쓰이지 않아요",
+    ),
+    "hc_tk_title": (
+        "what counts as finished — the outcome, not the topic",
+        "무엇을 끝내면 되는지 — 주제가 아니라 결과로 적어요",
+    ),
+    "hc_tk_body": ("context, how to reproduce it, what makes it done", "맥락·재현 방법·수용 기준"),
+    "hc_tk_priority": ("1 urgent · 2 high · 3 normal · 4 low · 0 none", "1 긴급 · 2 높음 · 3 보통 · 4 낮음 · 0 없음"),
+    "hc_tk_assignee": ("who owns it", "담당자"),
+    "hc_tk_labels": ("labels (comma-separated)", "라벨 (쉼표로 여럿)"),
+    "hc_tk_parent": ("parent ticket — one level only", "상위 티켓 — 한 겹까지만 돼요"),
+    "hc_tk_estimate": ("estimate, in points", "추정 포인트"),
+    "hc_tk_new_team": (
+        "file it against this team (default: the team bound to this folder, else the default team)",
+        "이 팀 앞으로 발급해요 (기본값: 이 폴더에 묶인 팀, 없으면 기본 팀)",
+    ),
+    "hc_tk_new_project": (
+        "attach it to a project — projects run across teams",
+        "프로젝트에 붙여요 — 프로젝트는 팀을 가로질러요",
+    ),
+    "hc_tk_ms_opt": ("a milestone inside that project", "그 프로젝트 안의 마일스톤"),
+    "hc_tk_show": (
+        "one ticket in full — body, children, links, comments, activity",
+        "티켓 한 건 — 본문·하위·관계·댓글·활동",
+    ),
+    "hc_tk_ref_full": ("number (PRJ-12), bare digits (12), or id", "번호(PRJ-12), 숫자(12), 또는 id"),
+    "hc_tk_ref": ("number or id", "번호 또는 id"),
+    "hc_tk_move": (
+        "move it to another status — the start and finish times are recorded with it",
+        "상태를 옮겨요 — 시작·완료 시각도 같이 남아요",
+    ),
+    "hc_tk_set": (
+        "change only the fields you pass — the rest are left alone",
+        "준 칸만 바꿔요 — 안 준 칸은 그대로 둬요",
+    ),
+    "hc_tk_set_assignee": ("an empty string unassigns it", "빈 문자열이면 담당을 떼요"),
+    "hc_tk_set_labels": ("comma-separated — replaces the whole list", "쉼표로 여럿 — 통째로 갈아 끼워요"),
+    "hc_tk_set_parent": ("an empty string detaches it from its parent", "빈 문자열이면 상위에서 떼요"),
+    "hc_tk_set_cycle": ("an empty string takes it out of the cycle", "빈 문자열이면 주기에서 빼요"),
+    "hc_tk_comment": ("leave a line on a ticket", "티켓에 한 줄 남겨요"),
+    "hc_tk_comment_text": ("what you want to say", "남길 말"),
+    "hc_tk_comment_author": ("who is writing (default cli)", "글쓴이 (기본값 cli)"),
+    "hc_tk_link": (
+        "link two tickets — blocks has a direction (ref blocks other)",
+        "티켓끼리 이어요 — blocks는 방향이 있어요 (ref가 other를 막아요)",
+    ),
+    "hc_tk_link_ref": ("the one doing the blocking", "막는 쪽"),
+    "hc_tk_link_other": ("the one being blocked", "막히는 쪽"),
+    "hc_tk_link_remove": ("cut the link instead of making one", "잇지 말고 끊어요"),
+    "hc_tk_delete": (
+        "delete a ticket — its number is never handed out again",
+        "티켓을 지워요 — 그 번호는 다시 발급되지 않아요",
+    ),
+    "hc_tk_cycle": (
+        "cycles — list, open, close. closing one carries the unfinished work into the next",
+        "주기(사이클) — 목록·신설·마감. 닫으면 안 끝난 일감이 다음 주기로 넘어가요",
+    ),
+    "hc_tk_cycle_new": ("open a new cycle under this name", "이 이름으로 새 주기를 열어요"),
+    "hc_tk_cycle_close": ("close the cycle with this number or name", "이 번호·이름의 주기를 닫아요"),
+    "hc_tk_cycle_team": (
+        "whose cycle (default: the team bound to this folder, else the default team)",
+        "어느 팀의 주기인지 (기본값: 이 폴더에 묶인 팀, 없으면 기본 팀)",
+    ),
+    "hc_tk_team_cmd": (
+        "teams — they own the numbers, and workflow, cycles and triage all run per team",
+        "팀 — 번호의 주인이고, 워크플로·사이클·트리아지가 도는 단위예요",
+    ),
+    "hc_tk_team_new": ("stand up a team under this name", "이 이름으로 팀을 세워요"),
+    "hc_tk_team_key": (
+        "the prefix on its numbers (default: taken from the name)",
+        "번호 앞자리 (기본값: 이름에서 뽑아요)",
+    ),
+    "hc_tk_team_triage": (
+        "on|off — work arriving from outside queues in the inbox first",
+        "on|off — 밖에서 들어온 일감을 인박스에 세워요",
+    ),
+    "hc_tk_team_weeks": ("cycle length, in weeks", "사이클 길이 (주)"),
+    "hc_tk_project_cmd": (
+        "projects — work that has an end. they run across teams",
+        "프로젝트 — 끝이 있는 일이에요. 팀을 가로질러요",
+    ),
+    "hc_tk_pj_new": ("open a project under this name", "이 이름으로 프로젝트를 열어요"),
+    "hc_tk_pj_show": (
+        "one project in detail — milestones, progress, updates",
+        "이 프로젝트의 상세 — 마일스톤·진척·보고",
+    ),
+    "hc_tk_pj_lead": ("a single lead — so responsibility does not split", "리드 한 사람 — 책임이 갈리지 않게요"),
+    "hc_tk_pj_target": ("target date, YYYY-MM-DD", "목표일 YYYY-MM-DD"),
+    "hc_tk_pj_teams": ("team keys taking part (comma-separated)", "참여 팀 키 (쉼표로 여럿)"),
+    "hc_tk_milestone": ("milestones inside a project — list, add, finish", "프로젝트 안의 마일스톤 — 목록·신설·완료"),
+    "hc_tk_ms_new": ("create a milestone under this name", "이 이름으로 마일스톤을 만들어요"),
+    "hc_tk_ms_done": ("mark this milestone finished", "이 마일스톤을 완료로 표시해요"),
+    "hc_tk_update": (
+        "post project progress — you write the health yourself",
+        "프로젝트 진행 보고 — 건강도는 사람이 적어요",
+    ),
+    "hc_tk_update_body": ("what landed this time, and what is left", "이번에 무엇이 됐고 무엇이 남았는지"),
+    "hc_tk_triage": ("a team's inbox — work nobody has accepted yet", "팀의 인박스 — 아직 받아들이지 않은 일감이에요"),
+    "hc_tk_triage_accept": ("accept this number onto the board", "이 번호를 받아들여 보드로 넣어요"),
+    "hc_tk_triage_decline": (
+        "decline this number (closes it as cancelled, with your reason)",
+        "이 번호를 거절해요 (취소로 닫고 이유를 남겨요)",
+    ),
+    "hc_tk_triage_note": ("a line to leave as you accept or decline", "받거나 거절하며 남길 한 줄"),
+    "hc_tk_import": (
+        "pull in a board from back when every folder kept its own",
+        "폴더마다 보드가 하나이던 시절의 저장소를 워크스페이스로 들여와요",
+    ),
+    # 창
+    "hc_open_studio": (
+        "Asgard Studio — work, tickets, planning, artifacts, skills, settings",
+        "Asgard Studio — 작업·업무·기획·산출물·스킬·설정",
+    ),
+    "hc_open_web": ("use a browser instead of the native app", "네이티브 앱 대신 브라우저로 열어요"),
+    "hc_open_view": (
+        "land on this screen (tickets|plan|projects|artifacts|plugins|settings)",
+        "바로 들어갈 화면 (tickets|plan|projects|artifacts|plugins|settings)",
+    ),
+    "hc_open_workspace": (
+        "open a particular workspace (default: this folder if it is a project, else the one you used last)",
+        "작업 공간을 정해서 열어요 (기본값: 여기가 프로젝트면 여기, 아니면 최근 프로젝트)",
+    ),
+    "hc_open": (
+        "open a local Asgard window — studio · map · memory",
+        "여기 있는 Asgard 창을 열어요 — studio · map · memory",
+    ),
+    "hc_open_map": ("the relation graph — what your code touches", "관계 그래프 뷰 — 코드가 무엇에 닿는지 보여드려요"),
+    "hc_open_memory": (
+        "the Yggdrasil dashboard — your personal memory wiki (read-only)",
+        "위그드라실 대시보드 — 개인 메모리 위키예요 (읽기 전용)",
+    ),
+    # 근거 검색
+    "hc_map_why": (
+        "why the code is like this — search the comments and docstrings that recorded a reason",
+        "왜 이렇게 돼 있는지 — 근거를 적어 둔 주석·독스트링에서 찾아드려요",
+    ),
+    "hc_map_why_q": (
+        "what you want the reason for, e.g. 'why the injection budget is what it is'",
+        "무엇의 근거를 찾는지, 예: '주입 예산 이유'",
+    ),
+    "hc_map_why_limit": ("how many reasons to show", "보여줄 근거 수"),
 }
 
 

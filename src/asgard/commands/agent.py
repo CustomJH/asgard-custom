@@ -53,8 +53,8 @@ def run_agent_list(*, json_out: bool = False, quiet: bool = False) -> int:
         print(_fmt_row(row, width))
     if available:
         ui.step("")
-        ui.step(f"내장 에이전트 — 아직 안 세움 ({len(available)}): " + ui.dim(" · ".join(sorted(available))))
-        ui.step(ui.dim("    `asgard agent use <이름>` 이면 그 자리에서 세워진다 (자기 1차 기억이 열린다)"))
+        ui.step(f"내장 에이전트 — 아직 안 세웠어요 ({len(available)}): " + ui.dim(" · ".join(sorted(available))))
+        ui.step(ui.dim("    `asgard agent use <이름>`을 치면 그 자리에서 서요 (자기 기억도 같이 열려요)"))
     warning = profiles.fallback_warning()
     if warning:
         ui.warn(warning)
@@ -72,12 +72,12 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
             if json_out:
                 print(json.dumps(payload, ensure_ascii=False, indent=2))
                 return 0
-            ui.head(f"agent · {canon} (내장 — 아직 안 세움)")
+            ui.head(f"agent · {canon} (내장 — 아직 안 세웠어요)")
             ui.step(str(roster[canon]["description"]))
-            ui.step(ui.dim(f"    `asgard agent use {canon}`로 세운다"))
+            ui.step(ui.dim(f"    `asgard agent use {canon}`로 세우세요"))
             ui.done()
             return 0
-        print(json.dumps({"error": f"에이전트 {canon!r} 없음"}, ensure_ascii=False))
+        print(json.dumps({"error": f"에이전트 {canon!r}를 못 찾았어요"}, ensure_ascii=False))
         return 1
 
     row = next((r for r in profiles.listing() if r["id"] == canon), None) or {}
@@ -103,7 +103,7 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
     if body:
         ui.ok(f"정체성 {len(body)}자 — {payload['identity_path']}")
     else:
-        ui.warn(f"정체성 비어 있음 (주석뿐) — {payload['identity_path']}에 쓰면 세션에 실린다")
+        ui.warn(f"정체성이 비어 있어요 (주석뿐이에요) — {payload['identity_path']}에 쓰면 세션에 실려요")
     ui.done()
     return 0
 
@@ -146,13 +146,13 @@ def run_agent_create(
         )
         return 0
 
-    ui.head(f"agent · {canon} 세움")
+    ui.head(f"agent · {canon} 세웠어요")
     ui.ok(f"홈 {path}")
-    ui.step(ui.dim(f"    1차 기억  {os.path.join(path, 'memory')} — 비어 있음, 이 에이전트만 읽고 쓴다"))
+    ui.step(ui.dim(f"    기억      {os.path.join(path, 'memory')} — 아직 비었고, 이 에이전트만 읽고 써요"))
     ui.step(ui.dim(f"    정체성    {os.path.join(path, profiles.IDENTITY)}"))
     if not description and not based_on:
         ui.warn(
-            "설명이 없다 — 스웜이 일을 어디로 보낼지 고를 때 읽는 유일한 문장이다. `asgard agent describe`로 채워라"
+            "설명이 없어요 — 스웜이 일을 어디로 보낼지 고를 때 읽는 유일한 문장이에요. `asgard agent describe`로 채워 주세요"
         )
     ui.step("")
     ui.step(f"이 에이전트로 일하려면:  {ui.bold(f'asgard agent use {canon}')}")
@@ -173,7 +173,7 @@ def run_agent_use(name: str, *, json_out: bool = False, quiet: bool = False) -> 
         print(json.dumps({"active": canon, "path": path}, ensure_ascii=False, indent=2))
         return 0
     ui.head(f"agent · {canon}")
-    ui.ok(f"이제 이 기계의 기본 에이전트다 — {path}")
+    ui.ok(f"이제 이 기계의 기본 에이전트예요 — {path}")
     ui.step(ui.dim(f"    1차 기억  {os.path.join(path, 'memory')}"))
     ui.step(ui.dim("    되돌리려면  asgard agent use default"))
     ui.done()
@@ -189,7 +189,7 @@ def run_agent_delete(name: str, *, yes: bool = False, json_out: bool = False, qu
     row = next((r for r in profiles.listing() if r["id"] == canon), {})
     if not yes:
         ui.head(f"agent · {canon} 삭제")
-        ui.warn(f"1차 기억 {row.get('memory_pages', 0)} 페이지가 함께 사라진다 — 되돌릴 수 없다")
+        ui.warn(f"이 에이전트가 기억하던 {row.get('memory_pages', 0)}페이지도 같이 사라져요 — 되돌릴 수 없어요")
         ui.step(ui.dim(f"    {row.get('path')}"))
         ui.step(f"확인하려면: {ui.bold(f'asgard agent delete {canon} --yes')}")
         return 1
@@ -220,7 +220,7 @@ def run_agent_describe(
     ui.set_quiet(json_out or quiet)
     canon = profiles.normalize(name)
     if not profiles.exists(canon):
-        print(json.dumps({"error": f"에이전트 {canon!r} 없음"}, ensure_ascii=False), file=sys.stderr)
+        print(json.dumps({"error": f"에이전트 {canon!r}를 못 찾았어요"}, ensure_ascii=False), file=sys.stderr)
         return 2
     profiles.write_manifest(
         canon,
@@ -268,10 +268,10 @@ def run_agent_bind(
     if swarm.is_swarm(root):
         placed = swarm.swarm(root)
         ui.step(
-            f"스웜 — 역할 {len(placed)}개가 서로 다른 에이전트로 돈다: "
+            f"스웜 — 역할 {len(placed)}개가 서로 다른 에이전트로 돌아요: "
             + " · ".join(f"{k}={v}" for k, v in placed.items())
         )
-        ui.step(ui.dim("    각자 자기 1차 기억을 쓴다 — Verifier가 Worker의 일지를 못 본다"))
+        ui.step(ui.dim("    각자 자기 기억을 써요 — Verifier는 Worker의 일지를 못 봐요"))
     ui.done()
     return 0
 
@@ -316,14 +316,14 @@ def run_agent_where(*, json_out: bool = False, quiet: bool = False) -> int:
     for r, agent in sorted(b["roles"].items()):
         ui.step(f"역할 {r.ljust(12)} {agent}")
     if not (b["default"] or b["modes"] or b["roles"]):
-        ui.step(ui.dim("이 프로젝트에는 배치 선언이 없다 — 루트의 활성 에이전트가 그대로 일한다"))
-        ui.step(ui.dim("    `asgard agent bind <이름>`으로 이 프로젝트만의 대표를 정할 수 있다"))
+        ui.step(ui.dim("이 프로젝트엔 따로 배치한 게 없어요 — 기본 에이전트가 그대로 일해요"))
+        ui.step(ui.dim("    `asgard agent bind <이름>`으로 이 프로젝트만의 대표를 정하세요"))
     if d["swarm"]:
         ui.step("")
-        ui.ok("스웜 — 역할마다 다른 에이전트, 각자 자기 1차 기억")
+        ui.ok("스웜 — 역할마다 다른 에이전트가 각자 자기 기억으로 일해요")
     for miss in d["missing"]:
         scope = miss["scope"] + (f" {miss['key']}" if miss["key"] else "")
-        ui.warn(f"{scope}에 배치된 {miss['agent']!r}이 이 기계에 없다 — 그 자리는 기본으로 돈다")
+        ui.warn(f"{scope}에 배치한 {miss['agent']!r}이 이 기계엔 없어요 — 그 자리는 기본값으로 돌아가요")
     warning = profiles.fallback_warning()
     if warning:
         ui.warn(warning)

@@ -177,7 +177,7 @@ def sync_project(root: str, cc: bool, cursor: bool, codex: bool, dry_run: bool =
         if policy == "markers":
             merged = merge_agents_md(prev, content)
             if merged is None:  # 사용자 소유 AGENTS.md — 관리 마커 없음
-                ui.warn(f"skip {os.path.relpath(path, root)} — asgard 마커 없음 (사용자 소유로 보존)")
+                ui.warn(f"건너뜀 {os.path.relpath(path, root)} — asgard 마커가 없어서 사용자 파일로 두고 갈게요")
                 counts["skipped"] += 1
                 continue
             content = merged
@@ -243,7 +243,7 @@ def run_sync(dry_run: bool = False, list_only: bool = False) -> int:
     projects = registry.load()
     ui.head(f"sync · {len(projects)} project(s)" + (" · dry-run" if dry_run else ""))
     if not projects:
-        ui.warn("등록된 프로젝트 없음 — `asgard init`을 실행한 프로젝트가 여기 기록됩니다.")
+        ui.warn("등록된 프로젝트가 없어요 — `asgard init`을 돌린 프로젝트가 여기 쌓여요.")
         return 0
     if list_only:
         ui.phase("registered projects")
@@ -256,7 +256,7 @@ def run_sync(dry_run: bool = False, list_only: bool = False) -> int:
     for p in projects:
         root = str(p["root"])
         if not os.path.isdir(root):
-            ui.warn(f"{root} — 디렉토리 없음, 레지스트리에서 제거")
+            ui.warn(f"{root} — 폴더가 없어져서 목록에서 뺄게요")
             registry.forget(root)
             continue
         try:

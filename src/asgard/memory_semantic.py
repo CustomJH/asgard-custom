@@ -225,7 +225,9 @@ def embedder() -> Callable[[str], list[float]] | None:
         with contextlib.suppress(Exception):
             import sys
 
-            print("⠶ 메모리 시맨틱 검색 준비 중 — 임베딩 모델을 처음 받는다 (한 번만)", file=sys.stderr)
+            print(
+                "⠶ 메모리 시맨틱 검색을 준비하고 있어요 — 임베딩 모델을 처음 받는 중이에요 (한 번만)", file=sys.stderr
+            )
     with _quiet_hub(quiet=not warming or model_cached(), offline=False if warming else None):
         loaded = _load_local(_model_name())
     if loaded is None:

@@ -309,7 +309,7 @@ class BriefTest(unittest.TestCase):
         buffer = io.StringIO()
         with contextlib.redirect_stdout(buffer):
             tutor_cmd._run_brief(self.root, "릴리스 노트", (), quiet=False)
-        self.assertIn("없다", buffer.getvalue())
+        self.assertIn("없어요", buffer.getvalue())
 
 
 class RecallTest(unittest.TestCase):

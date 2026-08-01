@@ -60,14 +60,21 @@ def _uv_install(spec: str, label: str) -> int:
     return r.returncode
 
 
-def _sync_projects() -> None:
+def _sync_projects() -> int:
     """엔진 설치 성공 후 세팅된 프로젝트 코어 동기화 — 반드시 **새 바이너리**로 실행한다
-    (현 프로세스의 템플릿은 아직 구버전). PATH에 없으면 안내만 (베스트에포트)."""
+    (현 프로세스의 템플릿은 아직 구버전).
+
+    Returns:
+        자식 프로세스의 반환 코드. PATH 에 새 바이너리가 없으면 0 — 그것만은 안내 후 성공으로
+        둔다(설치 자체는 됐고 동기화는 사람이 나중에 할 수 있다). 반면 `asgard sync` 가 실제로
+        실패한 것은 0 으로 접지 않는다: 설치 스크립트와 CI 가 프로젝트 코어가 안 갱신됐는데
+        업데이트 전체를 성공으로 기록하게 된다.
+    """
     exe = shutil.which("asgard")
     if not exe:
         ui.warn("asgard not on PATH — run `asgard sync` to refresh set-up projects")
-        return
-    subprocess.run([exe, "sync"])
+        return 0
+    return subprocess.run([exe, "sync"]).returncode
 
 
 def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = False, sync: bool = True) -> int:
@@ -101,9 +108,7 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
             return 1
         ui.done("updated (override spec)")
         ensure_installed()  # 셸 completion 기본 설치·재생성 — 새 바이너리로 (베스트에포트)
-        if sync:
-            _sync_projects()
-        return 0
+        return _sync_projects() if sync else 0
 
     # check — 핀이면 즉시, 아니면 최신 릴리스 조회 (스피너)
     if version:
@@ -119,7 +124,7 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
         if sync:  # 엔진은 최신이어도 프로젝트 코어가 뒤처졌을 수 있다 — 현 프로세스 템플릿이 곧 최신
             from .sync import run_sync
 
-            run_sync()
+            return run_sync() or 0
         return 0
     ui.step(f"update available: v{__version__} → v{target}")
 
@@ -143,10 +148,9 @@ def run_update(rest: list[str], dry_run: bool = False, restart_hint: bool = Fals
         return 1
     ui.done(f"v{__version__} → v{target}")
     ensure_installed()  # 셸 completion 기본 설치·재생성 — 새 바이너리로 (베스트에포트)
-    if sync:  # 세팅된 프로젝트 코어 갱신 — 새 바이너리 서브프로세스 (현 프로세스 템플릿은 구버전)
-        _sync_projects()
+    synced = _sync_projects() if sync else 0
     if restart_hint:  # REPL 안에서 실행 — 프로세스는 아직 구버전
         from ..i18n import t
 
         ui.warn(t("update_restart"))
-    return 0
+    return synced

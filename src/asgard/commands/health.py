@@ -84,7 +84,7 @@ def run_next(*, steps: int = 1, json_out: bool = False, quiet: bool = False) -> 
             ui.step(ui.dim(f"  {c.why}"))
     else:
         ui.phase("고른 걸음")
-        ui.step(ui.dim("오차는 있으나 지목할 후보가 없다"))
+        ui.step(ui.dim("오차는 있는데 짚을 곳이 안 보여요"))
 
     if signal.runners_up:
         ui.phase("밀린 후보 — 왜 이게 아니었나")
@@ -96,7 +96,7 @@ def run_next(*, steps: int = 1, json_out: bool = False, quiet: bool = False) -> 
         for metric, why in signal.undetermined:
             ui.warn(f"{metric} — {why}")
 
-    ui.ok(f"기록됨 — {path}")
+    ui.ok(f"기록해 뒀어요 — {path}")
     ui.done()
     return 0
 
@@ -158,14 +158,18 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
         worse = tr.regressed
         better = [d for d in tr.deltas if d.direction == "improved"]
         if not worse and not better:
-            ui.step("변동 없음")
+            ui.step("달라진 게 없어요")
         for d in worse:
             ui.warn(f"{_LABEL.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}")
         for d in better:
             ui.step(ui.dim(f"{_LABEL.get(d.metric, d.metric)} {_num(d.before)} → {_num(d.after)}"))
     else:
         ui.phase("추세")
-        ui.step(ui.dim("기록이 없다 — `asgard health --snapshot`으로 첫 점을 찍으면 다음 실행부터 델타가 나온다"))
+        ui.step(
+            ui.dim(
+                "기록이 없어요 — `asgard health --snapshot`으로 첫 점을 찍으면 다음부터 얼마나 움직였는지 보여드려요"
+            )
+        )
 
     if snap.hotspots:
         ui.phase(f"핫스팟 — 변경빈도 × 크기 (최근 {snap.churn_window}커밋)")
@@ -181,6 +185,6 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
             ui.step(f"{group['copies']}회  {', '.join(group['paths'])}")
 
     if snapshot:
-        ui.ok(f"기록됨 — {health.history_path(root)}")
+        ui.ok(f"기록해 뒀어요 — {health.history_path(root)}")
     ui.done()
     return 0
