@@ -667,6 +667,62 @@ def role_run(
     raise typer.Exit(run_role_run(role, task))
 
 
+mode_app = typer.Typer(
+    help="see which model, effort, provider and agent each role runs on — and change any of them",
+    invoke_without_command=True,
+)
+app.add_typer(mode_app, name="mode")
+
+
+@mode_app.callback()
+def mode_default(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.mode import run_mode
+
+        raise typer.Exit(run_mode(json_out=json_))
+
+
+@mode_app.command("show", help="what each role in one mode actually ends up with, after everything is layered")
+def mode_show(
+    mode: str = typer.Argument(..., metavar="<native|claude-code|cursor|codex>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.mode import run_mode_show
+
+    raise typer.Exit(run_mode_show(mode, json_out=json_))
+
+
+@mode_app.command("set", help="pin the agent or model for a whole mode, or for one role inside it")
+def mode_set(
+    mode: str = typer.Argument(..., metavar="<native|claude-code|cursor|codex>"),
+    role: str = typer.Argument(None, metavar="[role]"),
+    agent: str = typer.Option(None, "--agent", help="which agent works here"),
+    model: str = typer.Option(None, "--model", help="which model the role uses"),
+    effort: str = typer.Option(None, "--effort", help="how hard Claude Code or Codex should think"),
+    provider: str = typer.Option(None, "--provider", help="which native provider this role runs on"),
+) -> None:
+    from .commands.mode import run_mode_set
+
+    raise typer.Exit(run_mode_set(mode, role, agent=agent, model=model, effort=effort, provider=provider))
+
+
+@mode_app.command("reset", help="drop what this project pinned for one mode, or for one role inside it")
+def mode_reset(
+    mode: str = typer.Argument(..., metavar="<native|claude-code|cursor|codex>"),
+    role: str = typer.Argument(None, metavar="[role]"),
+) -> None:
+    from .commands.mode import run_mode_reset
+
+    raise typer.Exit(run_mode_reset(mode, role))
+
+
+@mode_app.command("pick", help="change one setting by picking from a list instead of typing it out")
+def mode_pick() -> None:
+    from .commands.mode import run_mode_pick
+
+    raise typer.Exit(run_mode_pick())
+
+
 # 배차 장부 — 퀘스트가 어떤 모양으로 돌았고, 어느 시도가 몇 번 만에 붙었고, 무엇이 답을
 # 기다리는가. 퀘스트 로그(무엇이 검증됐는가)와 다른 축이다.
 # 이름은 asgard-helios 의 어휘를 따른다: `orchestration` 은 기제(도메인 패키지)이고

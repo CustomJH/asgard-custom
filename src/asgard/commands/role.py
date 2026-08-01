@@ -134,6 +134,28 @@ def configure_role_model(
     }
 
 
+def reset_role_models(root: str, host: str) -> dict:
+    """Remove every project role-model override for one runtime host."""
+    if host not in MODEL_HOSTS:
+        raise ValueError(f"host은 {'/'.join(MODEL_HOSTS)} 중 하나")
+    if host == "native":
+        values = project_section(root, "trinity")
+        for role in _native_roles():
+            values.pop(role, None)
+        path = save_config_section(root, "trinity", values)
+        synced = None
+    else:
+        path = save_config_section(root, f"agent_models.{host}", None)
+        synced = _sync_host(root, host)
+    return {
+        "host": host,
+        "reset": True,
+        "effective": role_model_state(root)[host],
+        "settings": path,
+        "synced": synced,
+    }
+
+
 def run_role_model(
     host: str | None = None,
     role: str | None = None,
