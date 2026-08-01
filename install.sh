@@ -5,6 +5,7 @@
 # Bootstraps uv → a standalone CPython 3.14 → installs the `asgard` CLI as a uv tool. No system
 # Python/Node/git-to-run needed (uv fetches everything). `asgard` lands on PATH via uv's tool bin.
 # Env: ASGARD_VERSION (pin vX.Y.Z) · ASGARD_INSTALL_SPEC (override source) · NO_COLOR · ASGARD_NO_IMAGE
+#      ASGARD_INSTALL_LOCAL (1 = install the checkout you are standing in; or a path to one)
 set -euo pipefail
 
 # ── palette — disabled when stdout is not a tty or NO_COLOR is set ─────────────
@@ -194,15 +195,41 @@ latest_version() {
     | sed -n 's#.*/tag/v\([0-9][0-9.]*\).*#\1#p'
 }
 
+# script_dir — the directory this script file sits in, or empty when there is no file. Under
+# `curl … | bash` the script arrives on stdin: BASH_SOURCE is empty and $0 is "bash", so the old
+# `dirname "${BASH_SOURCE[0]:-$0}"` resolved to "." — whatever directory the user happened to be in.
+# Returning empty instead makes every "do we have a checkout?" test below answer no, which is the
+# truth: a streamed script has no checkout next to it.
+script_dir() {
+  local src="${BASH_SOURCE[0]:-}"
+  [ -n "$src" ] && [ -f "$src" ] || return 0
+  (cd "$(dirname "$src")" 2>/dev/null && pwd) || true
+}
+
+# is_asgard_checkout <dir> — true only if <dir> is an asgard source tree. The pyproject must name
+# asgard; a bare "there is a pyproject.toml here" test would install whatever project the user was
+# standing in. Matches `name = "asgard"` in the [project] table.
+is_asgard_checkout() {
+  [ -n "${1:-}" ] && [ -f "$1/pyproject.toml" ] || return 1
+  grep -Eq '^[[:space:]]*name[[:space:]]*=[[:space:]]*["'"'"']asgard["'"'"'][[:space:]]*$' "$1/pyproject.toml"
+}
+
 # resolve_install_source — decide where `uv tool install` pulls asgard from; sets globals FROM and
 # INSTALL_SRC_DESC (must not run in a subshell — command substitution would lose the assignments).
 # Priority:
-#   1) local checkout (dev / sandbox) — pyproject.toml next to this script
-#   2) ASGARD_INSTALL_SPEC override (any uv-installable spec)
-#   3) release wheel by version — pure-python, needs NO git or compiler on the host (the default)
+#   1) ASGARD_INSTALL_LOCAL — explicit "install this checkout" (1 = SRC_DIR or cwd, or a path)
+#   2) local checkout (dev / sandbox) — an asgard pyproject.toml next to this script file
+#   3) ASGARD_INSTALL_SPEC override (any uv-installable spec)
+#   4) release wheel by version — pure-python, needs NO git or compiler on the host (the default)
 FROM=""; INSTALL_SRC_DESC=""
 resolve_install_source() {
-  if [ -n "${SRC_DIR:-}" ] && [ -f "$SRC_DIR/pyproject.toml" ]; then
+  if [ -n "${ASGARD_INSTALL_LOCAL:-}" ]; then
+    local dir="$ASGARD_INSTALL_LOCAL"
+    case "$ASGARD_INSTALL_LOCAL" in 1|true|yes) dir="${SRC_DIR:-$PWD}" ;; esac
+    [ -f "$dir/pyproject.toml" ] || die "ASGARD_INSTALL_LOCAL=$ASGARD_INSTALL_LOCAL but no pyproject.toml in $dir"
+    FROM="$dir"; INSTALL_SRC_DESC="local checkout"; return 0
+  fi
+  if is_asgard_checkout "${SRC_DIR:-}"; then
     FROM="$SRC_DIR"; INSTALL_SRC_DESC="local checkout"; return 0
   fi
   if [ -n "${ASGARD_INSTALL_SPEC:-}" ]; then
@@ -216,7 +243,7 @@ resolve_install_source() {
 }
 
 main() {
-  SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || true)"
+  SRC_DIR="$(script_dir)"
   banner
 
   # ── [1/3] preflight — confirm (and, where possible, provision) prerequisites before we touch anything. ──
@@ -279,7 +306,23 @@ main() {
 
   # ── [3/3] verify — prove the CLI runs, then point the user at next steps. ──
   phase "verify · check install"
-  VERSION="$(asgard --version 2>/dev/null || echo '?')"
+  # PATH was just extended, but the shim can still be missing from it — fall back to uv's tool bin
+  # by path before calling this a failure. "installed fine, shell not reloaded" is not a broken
+  # install. install.ps1 does the same thing at the same place.
+  local exe="asgard" vout="" vrc=0
+  if ! command -v asgard >/dev/null 2>&1 && [ -x "$HOME/.local/bin/asgard" ]; then
+    exe="$HOME/.local/bin/asgard"
+  fi
+  # The exit code decides. A failing `asgard --version` used to be swallowed into `v?` and still
+  # printed a green check, so a broken install was reported as a finished one.
+  vout="$("$exe" --version 2>&1)" || vrc=$?
+  if [ "$vrc" -ne 0 ]; then
+    [ -z "$vout" ] || printf '  %s%s%s\n' "$D" "$vout" "$X" >&2
+    warn "open a NEW terminal and run: asgard --version"
+    warn "still missing? run: uv tool update-shell"
+    die "asgard was installed but does not run yet (exit $vrc)"
+  fi
+  VERSION="$(printf '%s' "$vout" | tail -n 1 | tr -d '\r')"
   ok "asgard ${B}v${VERSION}${X}"
   if command -v asgard >/dev/null 2>&1; then
     ok "on PATH ${D}$(command -v asgard)${X}"
@@ -287,7 +330,9 @@ main() {
     warn "not on PATH yet — restart shell (or run: uv tool update-shell)"
   fi
   # shell completions — 로그인 셸($SHELL) 기준으로 배선. 실패해도 설치는 유효 (수동 안내만).
-  if asgard completions --install >/dev/null 2>&1; then
+  # 아래 두 호출은 이름이 아니라 "$exe" 로 부른다 — PATH 를 아직 못 읽은 셸에선 이름이 안 잡혀,
+  # 시도조차 못 한 것을 "건너뜀"으로 보고하게 된다.
+  if "$exe" completions --install >/dev/null 2>&1; then
     ok "completions ${D}wired ($(basename "${SHELL:-bash}") — restart shell to activate)${X}"
   else
     info "completions ${D}skipped — run: asgard completions --install${X}"
@@ -295,7 +340,7 @@ main() {
   # 메모리 시맨틱 검색 모델 — 여기서 받아 둔다. 안 받으면 사용자가 처음 메모리를 쓰는 순간
   # 작업 중에 46초를 만난다. 기다림은 예상되는 자리(설치)에 두는 게 맞다.
   # 실패는 경고로 끝낸다 — 모델이 없어도 검색은 lexical 2경로로 그대로 돈다 (fail-open).
-  if spin "fetching memory search model (~1GB, once)…" asgard memory semantic warmup; then
+  if spin "fetching memory search model (~1GB, once)…" "$exe" memory semantic warmup; then
     ok "memory search ${D}semantic model ready${X}"
   else
     warn "memory search model skipped — lexical search works; retry: asgard memory semantic warmup"
