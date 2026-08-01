@@ -329,6 +329,35 @@ def make_client(*, force_refresh: bool = False):
     )
 
 
+_TERMINAL_STREAM_EVENTS = frozenset({"response.completed", "response.incomplete", "response.failed"})
+
+
+def create_response(client: Any, **kwargs: Any):
+    """Codex Responses 호출 1회. 이 엔드포인트는 스트리밍만 받는다.
+
+    ``stream`` 없이 부르면 백엔드가 본문 검사 단계에서 HTTP 400
+    ``{"detail": "Stream must be set to true"}`` 로 끊는다. SSE 를 받아 종료 이벤트가
+    싣고 온 Response 를 그대로 돌려주므로, 호출측은 논스트리밍과 같은 응답 형상을 쓴다.
+    """
+    stream = client.responses.create(**kwargs, stream=True)
+    final = None
+    try:
+        for event in stream:
+            kind = str(getattr(event, "type", "") or "")
+            if kind in _TERMINAL_STREAM_EVENTS:
+                final = getattr(event, "response", None)
+            elif kind == "error":
+                message = str(getattr(event, "message", "") or "unknown error")
+                raise RuntimeError(f"Codex Responses stream error: {message}")
+    finally:
+        close = getattr(stream, "close", None)
+        if callable(close):
+            close()
+    if final is None:
+        raise RuntimeError("Codex Responses stream ended without a terminal response event")
+    return final
+
+
 def model_catalog() -> list[str]:
     """Fetch the visible model catalog for the currently authenticated ChatGPT account."""
     from .providers import is_agent_model_id, normalize_model_id

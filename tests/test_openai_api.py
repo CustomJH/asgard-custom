@@ -131,15 +131,21 @@ class TestOpenAIAPIProvider(unittest.TestCase):
             api_key="test-key",
         )
         responses = mock.Mock()
-        responses.create.return_value = SimpleNamespace(output_text="classified")
+        responses.create.return_value = SimpleNamespace(
+            output_text="classified", usage=SimpleNamespace(total_tokens=42)
+        )
+        counted: list[object] = []
         fake = SimpleNamespace(
             role_rp={},
             rp=rp,
             root="/tmp",
             _client_for=lambda _rp: SimpleNamespace(responses=responses),
+            _count_usage=counted.append,
         )
         result = Heimdall._complete_text(fake, "system", "user", max_tokens=100)  # ty: ignore[invalid-argument-type]
         self.assertEqual(result, "classified")
+        # 이 단발 호출도 세션 누계에 들어가야 한다 — 빠지면 상태줄과 budget-guard 가 실제 지출보다 적게 본다
+        self.assertEqual(len(counted), 1)
         self.assertEqual(responses.create.call_args.kwargs["timeout"], 120.0)
         self.assertEqual(responses.create.call_args.kwargs["max_output_tokens"], 4096)
         self.assertEqual(responses.create.call_args.kwargs["reasoning"], {"effort": "low"})

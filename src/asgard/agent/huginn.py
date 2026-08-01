@@ -982,7 +982,10 @@ def make_caller(session) -> object | None:
                 )
                 text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
             elif mode == "codex_responses":
-                resp = session.client.responses.create(
+                from ..openai_codex import create_response  # Codex 엔드포인트는 스트리밍만 받는다
+
+                resp = create_response(
+                    session.client,
                     model=session.rp.model,
                     input=prompt,
                     store=False,

@@ -523,6 +523,23 @@ class Heimdall:
             _log_classify(self.root, {"event": "classify", "source": "fallback", **_pred_fields(d)})
             return d
 
+    def _count_usage(self, resp: object) -> None:
+        """단발 completion의 토큰을 세션 누계에 더한다.
+
+        이 경로가 계측 밖에 있으면 상태줄과 budget-guard가 실제 지출보다 적게 본다 — 분류
+        한 번은 작지만 코디네이터 답변은 퀘스트마다 여러 번이다. usage 형식이 provider마다
+        달라(total_tokens가 있는 곳도, input/output만 있는 곳도 있다) 해석 실패는 0으로 센다:
+        계측이 세션을 죽이면 안 된다."""
+        usage = getattr(resp, "usage", None)
+        if usage is None:
+            return
+        total = getattr(usage, "total_tokens", None)
+        if not isinstance(total, int):
+            parts = [getattr(usage, name, None) for name in ("input_tokens", "output_tokens")]
+            total = sum(n for n in parts if isinstance(n, int))
+        if total:
+            self._add_tokens(total)
+
     def _complete_text(self, system: str, user: str, max_tokens: int = 2000) -> str:
         """비스트리밍 단발 completion — 트랜스포트 무관 (classify 등 내부 판단용).
         [trinity.classify] placement가 있으면 그 provider/모델 사용 (저비용 분류)."""
@@ -539,6 +556,7 @@ class Heimdall:
             resp = client.messages.create(
                 model=rp.model, max_tokens=max_tokens, system=system, messages=[{"role": "user", "content": user}]
             )
+            self._count_usage(resp)
             return "".join(b.text for b in resp.content if b.type == "text")
         if rp.profile.api_mode in {"openai_responses", "codex_responses"}:
             kwargs: dict[str, object] = dict(
@@ -553,13 +571,20 @@ class Heimdall:
                 kwargs["max_output_tokens"] = max(4096, max_tokens)
             if rp.model.startswith(("gpt-5", "o1", "o3", "o4")):
                 kwargs["reasoning"] = {"effort": "low"}
-            resp = client.responses.create(**kwargs)
+            if rp.profile.api_mode == "codex_responses":
+                from ...openai_codex import create_response  # Codex 엔드포인트는 스트리밍만 받는다
+
+                resp = create_response(client, **kwargs)
+            else:
+                resp = client.responses.create(**kwargs)
+            self._count_usage(resp)
             return resp.output_text or ""
         resp = client.chat.completions.create(
             model=rp.model,
             max_tokens=max_tokens,
             messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
         )
+        self._count_usage(resp)
         return resp.choices[0].message.content or ""
 
     def _run_turn(

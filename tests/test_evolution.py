@@ -509,7 +509,9 @@ class TestPolish(EvoBase):
         original = evolution.show(self.root, m["id"])
         assert original is not None
         rewritten = original.replace("## 전략", "## 전략(Codex)")
-        create = mock.Mock(return_value=SimpleNamespace(output_text=rewritten))
+        # Codex 엔드포인트는 스트리밍만 받는다 — 종료 이벤트가 최종 Response 를 싣고 온다.
+        terminal = SimpleNamespace(type="response.completed", response=SimpleNamespace(output_text=rewritten))
+        create = mock.Mock(return_value=iter([terminal]))
         rp = SimpleNamespace(missing=[], model="m", profile=SimpleNamespace(api_mode="codex_responses"))
         with (
             mock.patch("asgard.providers.resolve", return_value=rp),
@@ -521,6 +523,7 @@ class TestPolish(EvoBase):
             ok, msg = evolution.polish(self.root, m["id"])
         self.assertTrue(ok, msg)
         self.assertFalse(create.call_args.kwargs["store"])
+        self.assertTrue(create.call_args.kwargs["stream"])
         self.assertIn("Codex", evolution.show(self.root, m["id"]) or "")
 
     def test_polish_backstop_rejects_name_change(self):

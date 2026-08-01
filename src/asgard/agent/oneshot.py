@@ -50,7 +50,12 @@ def complete_with(rp: ResolvedProvider, root: str, system: str, user: str, max_t
             kwargs["max_output_tokens"] = max(max_tokens, 4096)
         if rp.model.startswith(("gpt-5", "o")):
             kwargs["reasoning"] = {"effort": "low"}
-        resp = cast(Any, client).responses.create(**kwargs)
+        if rp.profile.api_mode == "codex_responses":
+            from ..openai_codex import create_response  # Codex 엔드포인트는 스트리밍만 받는다
+
+            resp = create_response(cast(Any, client), **kwargs)
+        else:
+            resp = cast(Any, client).responses.create(**kwargs)
         return resp.output_text or ""
     resp = client.chat.completions.create(
         model=rp.model,

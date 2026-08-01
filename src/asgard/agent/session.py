@@ -90,6 +90,18 @@ def make_client(rp: ResolvedProvider):
     raise NotImplementedError(f"api_mode '{rp.profile.api_mode}' 미지원")
 
 
+def _responses_create(client, kwargs: dict, *, codex_backend: bool):
+    """Responses 호출 1회 — codex 백엔드만 스트리밍 전송으로 보낸다.
+
+    ChatGPT Codex 엔드포인트는 ``stream=true`` 가 아니면 요청을 400 으로 거절한다.
+    api.openai.com 은 논스트리밍을 그대로 받으므로 전송만 갈라두고 응답 형상은 같다."""
+    if not codex_backend:
+        return client.responses.create(**kwargs)
+    from ..openai_codex import create_response
+
+    return create_response(client, **kwargs)
+
+
 def _to_openai_tool(t: dict) -> dict:
     return to_openai_tool(t)
 
@@ -929,7 +941,7 @@ class AgentSession:
             if previous_response_id:
                 kwargs["previous_response_id"] = previous_response_id
             try:
-                response = self.client.responses.create(**kwargs)
+                response = _responses_create(self.client, kwargs, codex_backend=codex_backend)
             except Exception as e:
                 if codex_backend and self._codex_reasoning_replay_enabled and _invalid_encrypted_content(e):
                     self._codex_reasoning_replay_enabled = False
@@ -939,7 +951,7 @@ class AgentSession:
                         kwargs["input"] = pending_input
                     kwargs.pop("include", None)
                     try:
-                        response = self.client.responses.create(**kwargs)
+                        response = _responses_create(self.client, kwargs, codex_backend=codex_backend)
                     except Exception as retry_error:
                         self._journal_error(jid, j0, retry_error)
                         raise
@@ -948,7 +960,7 @@ class AgentSession:
                         from ..openai_codex import make_client as make_codex_client
 
                         self.client = make_codex_client(force_refresh=True)
-                        response = self.client.responses.create(**kwargs)
+                        response = _responses_create(self.client, kwargs, codex_backend=codex_backend)
                     except Exception as retry_error:
                         self._journal_error(jid, j0, retry_error)
                         raise

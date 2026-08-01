@@ -17,7 +17,37 @@ def _jwt(payload: dict) -> str:
     return f"header.{encoded}.signature"
 
 
-class _Responses:
+class _StreamRequired(RuntimeError):
+    """논스트리밍 요청에 대한 Codex 백엔드의 실제 거절을 재현한다."""
+
+    status_code = 400
+
+    def __init__(self):
+        super().__init__("Error code: 400 - {'detail': 'Stream must be set to true'}")
+
+
+class _Stream:
+    def __init__(self, events):
+        self._events = events
+        self.closed = False
+
+    def __iter__(self):
+        return iter(self._events)
+
+    def close(self):
+        self.closed = True
+
+
+def _codex_stream(response) -> _Stream:
+    """Codex SSE 흉내 — 종료 이벤트가 최종 Response 를 싣는다."""
+    terminal = {"completed": "response.completed", "incomplete": "response.incomplete"}
+    kind = terminal.get(str(getattr(response, "status", "completed") or ""), "response.failed")
+    return _Stream([SimpleNamespace(type=kind, response=response)])
+
+
+class _PlainResponses:
+    """api.openai.com 흉내 — 논스트리밍 요청을 그대로 받는다."""
+
     def __init__(self, responses):
         self._responses = iter(responses)
         self.calls = []
@@ -25,6 +55,23 @@ class _Responses:
     def create(self, **kwargs):
         self.calls.append(kwargs)
         return next(self._responses)
+
+
+class _Responses:
+    """Codex responses 엔드포인트 흉내 — 스트리밍 요청만 받는다."""
+
+    def __init__(self, responses):
+        self._responses = iter(responses)
+        self.calls = []
+        self.streams: list[_Stream] = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if not kwargs.get("stream"):
+            raise _StreamRequired()
+        stream = _codex_stream(next(self._responses))
+        self.streams.append(stream)
+        return stream
 
 
 class TestOpenAINativeOAuth(unittest.TestCase):
@@ -352,6 +399,53 @@ class TestOpenAINativeOAuth(unittest.TestCase):
         self.assertEqual(rp.context_window, 258_400)
         self.assertEqual(get.call_args.kwargs["headers"]["Authorization"], "Bearer oauth-token")
 
+    def test_codex_requests_are_streamed_because_the_endpoint_rejects_non_streaming(self):
+        from asgard.openai_codex import create_response
+
+        final = SimpleNamespace(id="resp", status="completed", output=[], output_text="hi", usage=None)
+        responses = _Responses([final])
+        got = create_response(SimpleNamespace(responses=responses), model="gpt-5.6-sol", input="hello")
+
+        self.assertIs(got, final)
+        self.assertTrue(responses.calls[0]["stream"])
+        self.assertTrue(responses.streams[0].closed)  # 소비 후 SSE 연결을 놓는다
+
+    def test_codex_stream_without_terminal_event_is_an_error_not_an_empty_answer(self):
+        from asgard.openai_codex import create_response
+
+        class _Partial:
+            def create(self, **_kwargs):
+                return _Stream([SimpleNamespace(type="response.output_text.delta", delta="hi")])
+
+        with self.assertRaisesRegex(RuntimeError, "terminal response event"):
+            create_response(SimpleNamespace(responses=_Partial()), model="gpt-5.6-sol", input="hello")
+
+    def test_codex_stream_error_event_is_surfaced_instead_of_being_swallowed(self):
+        from asgard.openai_codex import create_response
+
+        class _Failing:
+            def create(self, **_kwargs):
+                return _Stream([SimpleNamespace(type="error", message="upstream exploded")])
+
+        with self.assertRaisesRegex(RuntimeError, "upstream exploded"):
+            create_response(SimpleNamespace(responses=_Failing()), model="gpt-5.6-sol", input="hello")
+
+    def test_oneshot_completion_streams_on_codex_and_stays_non_streaming_on_openai_api(self):
+        from asgard.agent.oneshot import complete_with
+
+        for provider, streamed in (("openai-native", True), ("openai", False)):
+            with self.subTest(provider=provider):
+                final = SimpleNamespace(output_text="ok")
+                responses = _Responses([final]) if streamed else _PlainResponses([final])
+                rp = ResolvedProvider(profile=PROVIDERS[provider], model="gpt-5.6-sol", api_key="k")
+                with mock.patch(
+                    "asgard.agent.session.make_client",
+                    return_value=SimpleNamespace(responses=responses),
+                ):
+                    text = complete_with(rp, "/tmp", "system", "user")
+                self.assertEqual(text, "ok")
+                self.assertEqual(responses.calls[0].get("stream", False), streamed)
+
     def test_subscription_responses_use_canonical_asgard_function_loop(self):
         call = SimpleNamespace(
             type="function_call",
@@ -503,7 +597,7 @@ class TestOpenAINativeOAuth(unittest.TestCase):
             responses.calls.append(kwargs)
             if isinstance(value, Exception):
                 raise value
-            return value
+            return _codex_stream(value)
 
         responses.create = create  # ty: ignore[invalid-assignment] — 인스턴스 몽키패치
         rp = ResolvedProvider(
