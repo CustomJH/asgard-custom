@@ -1074,6 +1074,64 @@ class TestRunPrompt(unittest.TestCase):
         ).start()
         self.assertEqual(self.S.run_prompt("작업해줘"), 2)
 
+    def _blocked_preflight(self):
+        """claude CLI가 없어 막힌 프리플라이트 — 사용자가 실제로 본 그 형상."""
+        checks = [
+            {"name": "provider", "ok": True, "detail": "Claude Code · haiku", "fix": ""},
+            {
+                "name": "claude CLI",
+                "ok": False,
+                "detail": "not found",
+                "fix": "https://claude.com/claude-code 설치 후 claude /login",
+            },
+            {"name": "claude_agent_sdk SDK", "ok": True, "detail": "importable", "fix": ""},
+        ]
+        mock.patch.object(self.S, "preflight", lambda root, provider=None, model=None: (checks, None)).start()
+        return checks
+
+    def test_json_run_answers_json_even_when_preflight_blocks(self):
+        """`--json`은 실패에도 JSON이다.
+
+        여태 이 자리가 스튜디오 화면을 망가뜨렸다: 성공하면 JSON, 막히면 색칠된 체크리스트가
+        stdout으로 나갔다. 창은 `asgard run --json`을 자식 프로세스로 띄우므로 실패할 때만
+        파싱할 것이 없었고, 그래서 터미널용 원문을 결과 칸에 통째로 부었다."""
+        self._blocked_preflight()
+        self.assertEqual(self.S.run_prompt("작업해줘", json_out=True), 2)
+        payload = json.loads(self.out.getvalue())
+        self.assertEqual(payload["error"]["code"], "preflight_failed")
+        self.assertIn("claude CLI", payload["error"]["message"])
+        # 처방이 필드로 온다 — 창이 "그래서 뭘 하면 되나"를 말할 수 있는 근거
+        self.assertIn("claude.com/claude-code", payload["error"]["remedy"])
+        # 점검표 전량이 실린다 — 통과분까지 있어야 화면이 무엇을 감췄는지 고를 수 있다
+        self.assertEqual(
+            [c["name"] for c in payload["error"]["detail"]["checks"]],
+            ["provider", "claude CLI", "claude_agent_sdk SDK"],
+        )
+
+    def test_blocked_preflight_prints_no_ansi_checklist_under_json(self):
+        """JSON 표면에는 사람 말이 섞이지 않는다 — 한 줄이 곧 전부여야 파싱이 선다."""
+        self._blocked_preflight()
+        self.S.run_prompt("작업해줘", json_out=True)
+        printed = self.out.getvalue()
+        self.assertNotIn("✘", printed)
+        self.assertNotIn("\x1b[", printed)
+        self.assertEqual(len([line for line in printed.splitlines() if line.strip()]), 1)
+
+    def test_human_run_still_gets_the_checklist_and_the_remedy(self):
+        """터미널은 반대다 — 사람에게는 점검표가 가장 빠른 진단이라 그대로 그린다."""
+        self._blocked_preflight()
+        self.assertEqual(self.S.run_prompt("작업해줘", json_out=False), 2)
+        printed = self.out.getvalue()
+        self.assertIn("claude CLI", printed)
+        self.assertIn("claude.com/claude-code", printed)
+        self.assertNotIn('"error"', printed)
+
+    def test_the_remedy_is_printed_once_beside_the_check_that_needs_it(self):
+        """같은 처방을 끝에 한 번 더 적으면, 두 줄 중 어느 쪽이 그 항목의 것인지 다시 짚어야 한다."""
+        self._blocked_preflight()
+        self.S.run_prompt("작업해줘", json_out=False)
+        self.assertEqual(self.out.getvalue().count("claude.com/claude-code"), 1)
+
     def test_resume_calls_durable_quest_path_without_new_prompt(self):
         calls = self._patch(result_text="resumed")
         self.assertEqual(self.S.run_prompt(None, json_out=True, resume=True, quest_id="native-old"), 0)

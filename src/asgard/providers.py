@@ -11,6 +11,7 @@ API 키는 env var *이름*만 다룬다 — 설정 파일에 평문 저장 금�
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
 import urllib.parse as urllib_parse
 import urllib.request as urllib_request
@@ -476,6 +477,12 @@ def resolve(root: str | None = None, provider: str | None = None, model: str | N
         rp.missing.append("model 미지정 — 온보딩에서 입력하거나 --model")
     if profile.api_mode in {"openai_compat", "openai_responses"} and not rp.base_url:
         rp.missing.append("base_url 미지정 — openai_compat은 온보딩에서 입력하거나 [provider] base_url")
+    # claude_cli는 키가 아니라 **실행 파일**이 있어야 도는 엔진이다 — SDK가 그 CLI를 스폰한다.
+    # 키 갈래 안에 두면 안 된다: 토큰을 export 한 사람도 CLI 없이는 한 줄도 못 돈다.
+    # 여기서 안 세면 창은 초록으로 "지금 이 엔진을 쓰고 있습니다"라고 말해 놓고, 보내는 작업마다
+    # 자식 프로세스가 죽어서 돌아온다 — 계기가 거짓을 말하는 자리가 정확히 여기였다.
+    if profile.api_mode == "claude_cli" and not shutil.which("claude"):
+        rp.missing.append("claude CLI 없음 — https://claude.com/claude-code 설치 후 claude /login (구독)")
     return rp
 
 
