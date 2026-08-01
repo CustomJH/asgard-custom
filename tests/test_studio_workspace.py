@@ -11,6 +11,7 @@
   ⑤ 옛 보드는 무손실로 들어온다 — 번호도, 관계도, 원본도 잃지 않는다
 """
 
+import json
 import os
 import sqlite3
 import tempfile
@@ -588,7 +589,7 @@ class TestProjectSurface(WorkspaceCase):
         self.assertEqual([t["title"] for t in page["tickets"]], ["이 프로젝트의 일"])
 
     def test_list_rows_carry_their_parent_so_a_sub_issue_is_not_an_orphan(self):
-        """목록의 한 줄도 '이게 무엇의 조각인가'를 말해야 한다 — 상세에만 실으면
+        """목록의 한 줄도 '이게 무엇의 조각인가'를 말해야 한다 — 상세에만 넣으면
         하위 티켓이 목록에서 고아처럼 보이고, 사람은 그것만 보고 우선순위를 매긴다."""
         parent = T.create_ticket(self.root, "큰 일", project=self.project["id"])
         T.create_ticket(self.root, "조각", parent=parent["key"], project=self.project["id"])
@@ -597,3 +598,54 @@ class TestProjectSurface(WorkspaceCase):
         child = next(row for row in rows.values() if row["title"] == "조각")
         self.assertEqual(child["parent"]["key"], parent["key"])
         self.assertEqual(child["parent"]["title"], "큰 일")
+
+
+class TestTicketJsonContract(WorkspaceCase):
+    """`--json` 은 변경 명령에서도 기계가 읽을 것을 낸다 (감사 발견 5).
+
+    목록·조회는 처음부터 JSON 을 냈지만 팀·주기·프로젝트·마일스톤·보고·트리아지의 **변경**
+    분기는 `ui.ok` 로 바로 끝나 사람 문장을 stdout 에 적었다. `ui.ok` 는 quiet 을 안 보므로
+    `--json` 을 줘도 그 문장이 그대로 나가고, 호출자는 exit 0 을 받고도 파싱에 실패한다.
+    """
+
+    def _json_of(self, run, *args, **kwargs):
+        import contextlib
+        import io
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            code = run(*args, **kwargs)
+        self.assertEqual(code, 0)
+        return json.loads(buffer.getvalue())
+
+    def test_team_creation_emits_json(self):
+        from asgard.commands import ticket as tk
+
+        payload = self._json_of(tk.run_teams, "감사팀", "AUD", "", 0, True)
+        self.assertEqual(payload["key"], "AUD")
+
+    def test_cycle_creation_emits_json(self):
+        from asgard.commands import ticket as tk
+
+        payload = self._json_of(tk.run_cycle, "1주차", "", True, team="nordic")
+        self.assertIn("number", payload)
+
+    def test_project_creation_emits_json(self):
+        from asgard.commands import ticket as tk
+
+        payload = self._json_of(tk.run_projects, "새 프로젝트", "", "", "", "", "", True)
+        self.assertEqual(payload["name"], "새 프로젝트")
+
+    def test_human_path_still_prints_a_sentence(self):
+        """JSON 이 아닐 때는 종전대로 사람 문장이 나와야 한다 — 이 고침은 표면을 안 바꾼다."""
+        import contextlib
+        import io
+
+        from asgard.commands import ticket as tk
+
+        buffer = io.StringIO()
+        with contextlib.redirect_stdout(buffer):
+            tk.run_teams("사람팀", "HUM", "", 0, False)
+        self.assertIn("HUM", buffer.getvalue())
+        with self.assertRaises(ValueError):
+            json.loads(buffer.getvalue())

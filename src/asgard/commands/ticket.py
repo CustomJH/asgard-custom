@@ -84,12 +84,30 @@ def _line(ticket: dict, width: int = 0) -> str:
     return f"{_mark(ticket)} {ui.bold(key)}  {ui.dim(status)}  {ticket['title']}{suffix}"
 
 
+def _emitted(payload: object, message: str, json_out: bool) -> int:
+    """변경 결과 하나를 낸다 — `--json` 이면 객체, 아니면 사람이 읽는 줄.
+
+    `ui.ok` 는 quiet 을 안 본다(경고·성공은 조용해지면 안 되는 표면이라 의도된 것이다). 그래서
+    변경 분기가 `ui.ok` 로 바로 끝나면 `--json` 을 줘도 사람 문장이 stdout 으로 나가고, 그 출력을
+    파싱하는 호출자는 exit 0 을 받고도 JSON 을 못 읽는다. 목록·조회는 이미 `_emit` 한 곳을
+    지나므로 변경 쪽에도 같은 경유점을 둔다.
+
+    Returns:
+        항상 0 — 호출자가 `return _emitted(...)` 로 끝낼 수 있게.
+    """
+    if json_out:
+        print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
+    else:
+        ui.ok(message)
+    return 0
+
+
 def _emit(rows: list[dict], json_out: bool) -> None:
     if json_out:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return
     if not rows:
-        ui.step(ui.dim("조건에 맞는 티켓이 없습니다."))
+        ui.step(ui.dim("조건에 맞는 티켓이 없어요."))
         return
     width = max(len(row["key"]) for row in rows)
     for row in rows:
@@ -164,13 +182,13 @@ def run_board(json_out: bool, team: str = "", project: str = "") -> int:
     if not view["total"]:
         # 처음 오는 사람에게는 "없다"보다 **어떻게 생겼는지**가 먼저다 — 번호가 어디서 나오고
         # 어디에 사는지를 모르면, 첫 티켓을 만들고도 그것을 자기 것으로 안 읽는다.
-        ui.step(ui.dim('아직 티켓이 없습니다 — `asgard ticket new "할 일"`로 첫 건을 남기세요.'))
+        ui.step(ui.dim('아직 티켓이 없어요 — `asgard ticket new "할 일"`로 첫 건을 남겨 보세요.'))
         if not summary.get("team"):
-            ui.step(ui.dim(f"  첫 티켓은 {summary['prefix']}-1이 되고, 그때 팀이 하나 섭니다."))
-        ui.step(ui.dim("  일감은 워크스페이스에 삽니다 — 팀이 번호의 주인이고, 프로젝트는 팀을 가로지릅니다."))
-        ui.step(ui.dim("  보이는 것은 늘 전체입니다 — `--team <키>`로 좁히고, `--team .`은 이 폴더의 팀입니다."))
+            ui.step(ui.dim(f"  첫 티켓은 {summary['prefix']}-1이 되고, 그때 팀도 하나 서요."))
+        ui.step(ui.dim("  일감은 워크스페이스에 있어요 — 번호는 팀의 것이고, 프로젝트는 팀을 가로질러요."))
+        ui.step(ui.dim("  기본은 늘 전체예요 — `--team <키>`로 좁힐 수 있고, `--team .`은 이 폴더의 팀이에요."))
         if L.pending_roots([root]):
-            ui.warn("이 폴더에 예전 방식의 보드가 남아 있습니다 — `asgard ticket import`로 그대로 들여옵니다.")
+            ui.warn("이 폴더에 예전 방식의 보드가 남아 있어요 — `asgard ticket import`로 그대로 들여오세요.")
     return 0
 
 
@@ -331,7 +349,7 @@ def run_comment(ref: str, text: str, author: str) -> int:
     except (T.TicketError, T.StoreError) as exc:
         ui.fail(str(exc))
         return 2
-    ui.ok(f"{note['ticket']}에 댓글을 남겼습니다")
+    ui.ok(f"{note['ticket']}에 댓글을 남겼어요")
     return 0
 
 
@@ -339,7 +357,7 @@ def run_link(ref: str, other: str, kind: str, remove: bool) -> int:
     try:
         if remove:
             if not T.unlink_tickets(_root(), ref, kind, other):
-                ui.fail("그런 관계가 없습니다")
+                ui.fail("그런 관계가 없어요")
                 return 2
             ui.ok(f"{ref} ⇸ {other} ({kind}) 해제")
             return 0
@@ -353,9 +371,9 @@ def run_link(ref: str, other: str, kind: str, remove: bool) -> int:
 
 def run_delete(ref: str) -> int:
     if not T.delete_ticket(_root(), ref):
-        ui.fail(f"티켓을 찾을 수 없습니다: {ref}")
+        ui.fail(f"그런 티켓을 못 찾았어요: {ref}")
         return 2
-    ui.ok(f"{ref} 삭제 — 번호는 다시 발급되지 않습니다")
+    ui.ok(f"{ref} 삭제 — 그 번호는 다시 발급되지 않아요")
     return 0
 
 
@@ -366,11 +384,11 @@ def run_cycle(name: str, close: str, json_out: bool, team: str = "") -> int:
     try:
         if close:
             cycle = T.close_cycle(root, close, team=team or None)
-            ui.ok(f"주기 {cycle['number']} 닫음")
+            return _emitted(cycle, f"주기 {cycle['number']} 닫음", json_out)
             return 0
         if name:
             cycle = T.create_cycle(root, name, team=team or None)
-            ui.ok(f"주기 {cycle['number']} · {cycle['name']}")
+            return _emitted(cycle, f"주기 {cycle['number']} · {cycle['name']}", json_out)
             return 0
         rows = T.list_cycles(root, team=team or None)
     except (T.TicketError, T.StoreError) as exc:
@@ -380,7 +398,7 @@ def run_cycle(name: str, close: str, json_out: bool, team: str = "") -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        ui.step(ui.dim('주기가 없습니다 — `asgard ticket cycle --new "7월 5주"`'))
+        ui.step(ui.dim('아직 주기가 없어요 — `asgard ticket cycle --new "7월 5주"`'))
         return 0
     for cycle in rows:
         state = "닫힘" if cycle["closed_at"] else "열림"
@@ -416,7 +434,7 @@ def run_teams(new: str, key: str, triage: str, cycle_weeks: int, json_out: bool)
             if cycle_weeks:
                 fields["cycle_weeks"] = cycle_weeks
             team = TM.create_team(new, key, **fields)
-            ui.ok(f"팀 {team['key']} · {team['name']} — 첫 티켓은 {team['key']}-1이 됩니다")
+            return _emitted(team, f"팀 {team['key']} · {team['name']} — 첫 티켓은 {team['key']}-1이 됩니다", json_out)
             return 0
         rows = TM.list_teams()
     except _ERRORS as exc:
@@ -425,7 +443,7 @@ def run_teams(new: str, key: str, triage: str, cycle_weeks: int, json_out: bool)
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        ui.step(ui.dim("팀이 없습니다 — 첫 티켓을 끊으면 이 폴더 이름으로 하나 섭니다."))
+        ui.step(ui.dim("아직 팀이 없어요 — 첫 티켓을 발급하면 이 폴더 이름으로 하나 서요."))
         return 0
     for row in rows:
         marks = []
@@ -451,7 +469,11 @@ def run_projects(new: str, show: str, status: str, lead: str, target: str, teams
             if target:
                 fields["target_at"] = time.mktime(time.strptime(target, "%Y-%m-%d"))
             project = P.create_project(new, **fields)
-            ui.ok(f"프로젝트 · {project['name']} — 팀 {', '.join(t['key'] for t in project['teams']) or '없음'}")
+            return _emitted(
+                project,
+                f"프로젝트 · {project['name']} — 팀 {', '.join(t['key'] for t in project['teams']) or '없음'}",
+                json_out,
+            )
             return 0
         if show:
             return _show_project(P.get_project(show), json_out)
@@ -462,7 +484,7 @@ def run_projects(new: str, show: str, status: str, lead: str, target: str, teams
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        ui.step(ui.dim('프로젝트가 없습니다 — `asgard ticket project --new "결제 개편"`'))
+        ui.step(ui.dim('아직 프로젝트가 없어요 — `asgard ticket project --new "결제 개편"`'))
         return 0
     for row in rows:
         bar = f"{row['done']}/{row['total']}"
@@ -498,12 +520,12 @@ def run_milestone(project: str, name: str, target: str, done: str, json_out: boo
     try:
         if done:
             stone = P.complete_milestone(project, done)
-            ui.ok(f"마일스톤 완료 — {stone['name']}")
+            return _emitted(stone, f"마일스톤 완료 — {stone['name']}", json_out)
             return 0
         if name:
             when = time.mktime(time.strptime(target, "%Y-%m-%d")) if target else None
             stone = P.add_milestone(project, name, when)
-            ui.ok(f"마일스톤 · {stone['name']}")
+            return _emitted(stone, f"마일스톤 · {stone['name']}", json_out)
             return 0
         rows = P.list_milestones(project)
     except _ERRORS as exc:
@@ -522,7 +544,7 @@ def run_update(project: str, body: str, health: str, json_out: bool) -> int:
     try:
         if body:
             note = P.add_update(project, body, health, author="cli")
-            ui.ok(f"보고 남김 — [{note['health'] or '—'}] {note['body'][:60]}")
+            return _emitted(note, f"보고 남김 — [{note['health'] or '—'}] {note['body'][:60]}", json_out)
             return 0
         rows = P.list_updates(project)
     except _ERRORS as exc:
@@ -542,11 +564,11 @@ def run_triage(accept: str, decline: str, note: str, json_out: bool) -> int:
     try:
         if accept:
             ticket = T.triage_accept(root, accept, actor="cli", note=note)
-            ui.ok(f"{ticket['key']} 받음 — {ticket['status_label']}")
+            return _emitted(ticket, f"{ticket['key']} 받음 — {ticket['status_label']}", json_out)
             return 0
         if decline:
             ticket = T.triage_decline(root, decline, actor="cli", note=note)
-            ui.ok(f"{ticket['key']} 거절 — 취소로 닫았습니다")
+            return _emitted(ticket, f"{ticket['key']} 거절 — 취소로 닫았어요", json_out)
             return 0
         rows = T.triage_queue(root)
     except _ERRORS as exc:
@@ -555,9 +577,9 @@ def run_triage(accept: str, decline: str, note: str, json_out: bool) -> int:
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        ui.step(ui.dim("인박스가 비었습니다."))
+        ui.step(ui.dim("인박스가 비어 있어요."))
         return 0
-    ui.head(f"트리아지 {len(rows)}건 — 받거나(`--accept KEY`) 거절합니다(`--decline KEY`)")
+    ui.head(f"트리아지 {len(rows)}건 — `--accept KEY`로 받고, `--decline KEY`로 거절해요")
     width = max(len(t["key"]) for t in rows)
     for ticket in rows:
         ui.step(_line(ticket, width))
@@ -576,10 +598,10 @@ def run_import(json_out: bool) -> int:
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return 0
     if not out["imported"]:
-        ui.step(ui.dim(f"들여올 것이 없습니다 — {out['reason']}"))
+        ui.step(ui.dim(f"들여올 게 없어요 — {out['reason']}"))
         return 0
     ui.ok(f"팀 {out['team']}으로 {out['tickets']}건 반입 (댓글 {out['comments']} · 라벨 {out['labels']})")
     if out.get("renamed"):
-        ui.warn(f"접두어 {out['was']}가 이미 쓰이고 있어 {out['team']}로 비켰습니다")
-    ui.step(ui.dim(f"원본은 그대로 있습니다 — {out['source']}"))
+        ui.warn(f"접두어 {out['was']}는 이미 쓰이고 있어서 {out['team']}로 비켰어요")
+    ui.step(ui.dim(f"원본은 그대로 있어요 — {out['source']}"))
     return 0
