@@ -47,6 +47,8 @@ from .roles import (
     _mimir_note,
     _skill_support,
 )
+from .roles import delivery_identity as _delivery_identity
+from .roles import direct_identity as _direct_identity
 from .trinity import TrinityRun
 from .waves import WaveRunner
 
@@ -108,9 +110,12 @@ class Heimdall:
         self._load_memory_layers(rp, root)
         # delivery_identity = 메모리 무주입 — 딜리버리 자식(freyja/thor/eitri/loki)은 코디네이터가 아니다.
         # 특히 loki는 Verifier의 반례 탐색자라 메모리 유입 = 게이트 무결성 훼손.
-        self.delivery_identity = (
-            _identity(root) + self.lagom + self.bragi + self.charter_identity + self.manual_identity
-        )
+        # 정체성은 두 벌이다 — 자르는 자리가 소비자마다 다르기 때문이다. 공통으로 빠지는 것은
+        # 하네스가 코드로 도는 절차(trinity)와 아래 tail이 전문으로 다시 싣는 계약(lagom·bragi),
+        # 그리고 이 프로젝트가 안 켠 기능의 설명(map·manual·agents)이다. 조립은 roles.py가 갖는다.
+        tail = self.lagom + self.bragi + self.charter_identity + self.manual_identity
+        self.delivery_identity = _delivery_identity(root) + tail
+        self.direct_identity = _direct_identity(root) + tail
         self.identity = self.delivery_identity + self.memory_note
         self.map_note = ""  # 요청마다 최신화되는 bounded volatile context; cached identity와 분리.
         self._map_warnings: set[str] = set()
@@ -970,20 +975,16 @@ class Heimdall:
         # Trinity 경로엔 안 붙인다 — write 과업은 요청+계획이 맥락의 전부여야 한다 (Canon 7 범위 존중).
         ctx = "".join(f"[Previous exchange]\nOdin: {q}\nResponse: {a}\n\n" for q, a in self.history[-3:])
         # 요청 기반 zero-LLM 회수 (감사 권고) — 카탈로그(identity)와 별개로 관련 페이지를 결정론 주입.
+        # 에피소드 레인(과거 세션 원문의 관련 구간)도 같은 호출로 받는다: 블록을 따로 이어 붙이면
+        # 이 경로만 천장이 에피소드 예산만큼 높아지고, 그 구간이 개인·프로젝트·문서 레인과 중복
+        # 판정을 한 번도 안 거친다 — 조립기가 하는 일이 여기서만 무효가 된다.
         recall = ""
         if self._memory_provider_allowed:
             from ...memory_context import recall_note as _recall
 
-            recall = _recall(request, start=self.root)
-            try:
-                # 승격 메모리가 못 덮는 층 — 과거 세션 원문의 관련 구간 (비권위, fail-open)
-                from ..episodes import episode_note
-
-                recall += episode_note(request, self.root)
-            except Exception:
-                pass
+            recall = _recall(request, start=self.root, include_episodes=True)
         self._record_recall(recall)  # 답변 소스 배지 — 이 턴에 실제 주입될 회상량 (빈 회상은 무기록)
-        live_identity = self.delivery_identity + (self._memory_snap if self._memory_provider_allowed else "")
+        live_identity = self.direct_identity + (self._memory_snap if self._memory_provider_allowed else "")
         mimir = _mimir_note(request)
         skill_note, skill_tools, skill_handlers = (
             _skill_support("mimir", self.root, include_learned=False) if mimir else ("", [], {})

@@ -40,6 +40,7 @@ O(n²) scan, simple heuristic), leave a `lagom:` comment noting the limit and th
 Non-obvious logic gets one runnable check (assert demo or minimal test; no framework required).
 
 | Mode | Code-axis behavior |
+| --- | --- |
 | **lite** | Implement as requested, but append **one sentence** noting the lazier alternative. |
 | **full** | Ladder enforced — stdlib first, shortest diff, shortest explanation. |
 
@@ -49,9 +50,10 @@ Example — "add API response caching":
 
 ### Axis 2 — Output Compression (responses)
 
-Preserve all technical substance and drop only the packaging: remove filler, hedging, and pleasantries; use shorter synonyms and short sentences.
+Preserve all technical substance and drop only the packaging: remove filler, hedging, and pleasantries; use shorter synonyms and cut what a sentence survives without. Brevity caps the total, not every sentence — sentence rhythm follows the Bragi contract, which asks for a mix of lengths.
 
 | Mode | Output-axis behavior |
+| --- | --- |
 | **lite** | Selective trimming — keep complete sentences, cut only the fluff. |
 | **full** | Fragment compression — `[target] [action] [reason]. [next step].` pattern, shortest explanation. |
 

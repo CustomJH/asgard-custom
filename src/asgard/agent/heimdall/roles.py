@@ -58,10 +58,13 @@ def _transition_line(role: str, why: str) -> str:
 NATIVE_NOTE = """
 
 ## Native session rules (harness automation)
-This session is the Asgard native loop. Quest log recording, the transition function, and the
-verifier-gate are **performed automatically by the harness** — do not run quest-log commands
-yourself (double recording). Verifier verdicts are submitted only via the verdict tool.
-Declaring completion is still forbidden — the verdict belongs to the Verifier + gate (Canon 10).
+This session is the Asgard native loop. Quest log recording, the transition function, role
+assignment, parallel unit tickets, and the verifier-gate are **performed automatically by the
+harness** — do not run quest-log commands yourself (double recording), and do not plan around the
+mode-B ticket protocol. Verifier verdicts are submitted only via the verdict tool. Skills are
+discovered through the load_skill tool, not by reading skill bodies up front.
+Reporting a gate's verdict is allowed; declaring completion on your own is not — the verdict
+belongs to the Verifier + gate (Canon 10).
 Run Python with the project interpreter — in a uv project (`uv.lock` present) use `uv run pytest`,
 `uv run python -m …`, `uv run python -c '…'`; otherwise `python -m …`. Calling the system
 `python3` directly is forbidden — it cannot see project dependencies (uv already set up the
@@ -334,19 +337,83 @@ def _mimir_note(request: str) -> str:
         return ""
 
 
-def _identity(root: str) -> str:
+_SECTION_RE = "<!-- >>> asgard:%s >>> -->.*?<!-- <<< asgard:%s <<< -->\n?"
+
+# 네이티브 루프가 정체성에서 제외하는 절. AGENTS.md 파일은 수정하지 않는다 — 이 목록은 **주입
+# 시점**의 필터다. 파일은 `asgard sync`가 마커로 병합하는 정본이고 모드 B(CC·Cursor·Codex)의 유일한
+# 계약 접점이라, 삭제하면 그 표면이 계약을 잃는다.
+#   trinity  — 절차는 하네스가 코드로 실행한다. NATIVE_NOTE가 quest-log 직접 실행을 금지하는데 같은
+#              프롬프트가 그 CLI 사용법을 설명하면 모델은 둘 중 하나를 어겨야 한다.
+#   lagom·bragi — `_load_prompt_layers`가 전문을 따로 주입한다. 요약 절은 SessionStart 훅이 없는
+#              표면(Codex·Cursor)을 위한 것이라 네이티브에선 순수 중복이고, 이미 문구가 달라졌다.
+_NATIVE_DROP = ("trinity", "lagom", "bragi")
+
+
+def _strip_sections(text: str, names) -> str:
+    """마커 블록 단위로 절을 제거한다 — `asgard sync`의 병합 문법과 같은 자리를 판정한다."""
+    for name in names:
+        text = re.sub(_SECTION_RE % (name, name), "", text, flags=re.S)
+    return text
+
+
+def _conditional_drop(root: str) -> tuple:
+    """켜져 있지 않은 기능의 설명 절 — 없는 것을 설명하는 문단은 읽을 이유가 없다."""
+    drop = []
+    if not os.path.isdir(os.path.join(root, ".asgard", "map")):
+        drop.append("map")
+    try:
+        from ...manual import note as _manual
+
+        if not (_manual(root, "identity") or _manual(root, "worker")):
+            drop.append("manual")
+    except Exception:  # 판정 실패는 유지 쪽으로 — 계약을 조용히 잃지 않는다
+        pass
+    try:
+        from ...swarm import swarm as _swarm
+
+        if not _swarm(root):
+            drop.append("agents")
+    except Exception:
+        pass
+    return tuple(drop)
+
+
+def _identity(root: str, drop: tuple = ()) -> str:
     """세션 정체성 — 캐논(AGENTS.md) + 네이티브 규칙 + 이 세션이 무인인지.
 
     무인 여부는 "이 세션이 네이티브 루프다"와 같은 등급의 세션 사실이라 정체성에 붙는다
-    (모드 B에서 unattended-context 훅이 메인 스레드에 주입하는 것과 같은 자리)."""
+    (모드 B에서 unattended-context 훅이 메인 스레드에 주입하는 것과 같은 자리).
+
+    `drop`은 이 주입에서 뺄 마커 절 이름이다. `ASGARD_PROMPT_LEAN=0`이면 전부 무시하고 종전과
+    바이트 동일하게 돌아간다 — A/B의 대조 arm이자 되돌림 손잡이."""
+    if os.environ.get("ASGARD_PROMPT_LEAN") == "0":
+        drop = ()
     p = os.path.join(root, "AGENTS.md")
+    body = ""
     if os.path.exists(p):
         try:
             with open(p, encoding="utf-8") as handle:
-                return handle.read() + NATIVE_NOTE + unattended_note()
+                body = handle.read()
         except Exception:
-            pass
-    return agents_md(os.path.basename(root)) + NATIVE_NOTE + unattended_note()  # 내장 정체성 (스캐폴드 불필요)
+            body = ""
+    if not body:
+        body = agents_md(os.path.basename(root))  # 내장 정체성 (스캐폴드 불필요)
+    return _strip_sections(body, drop) + NATIVE_NOTE + unattended_note()
+
+
+def delivery_identity(root: str) -> str:
+    """딜리버리 자식(thor/freyja/eitri/loki)이 받는 정체성 — 주석 계약은 남는다.
+
+    이들은 코드를 쓰는데 COMMENT_CANON을 따로 안 받으므로(dispatch.py) 이 절이 유일한 통로다."""
+    return _identity(root, drop=_NATIVE_DROP + _conditional_drop(root))
+
+
+def direct_identity(root: str) -> str:
+    """DIRECT 턴이 받는 정체성 — readonly라 주석 계약까지 뺀다.
+
+    조립을 여기 한 자리에 둔 이유는 drop 집합이 두 군데서 계산되면 조용히 갈리기 때문이다.
+    호출부(core.py)와 시험(tests/test_prompt_surface.py)이 같은 함수를 본다."""
+    return _identity(root, drop=_NATIVE_DROP + _conditional_drop(root) + ("comments",))
 
 
 def _role_prompt(fname: str) -> str:
