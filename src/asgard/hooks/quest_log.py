@@ -19,6 +19,16 @@
 # 재계산해 물리 대조한다. 로그에 뭘 쓰든 워킹트리는 위조할 수 없다 (Goodhart 방어).
 # diff_hash를 여기(append)서도 계산하는 이유: verifier가 손으로 만든 해시는 gate 재계산과 어긋날
 # 수 있다 — 같은 알고리즘(아래 diff_state, verifier-gate.py와 동일 유지)이 유일한 출처여야 한다.
+#
+# 왜 이 큰 상태기계가 hooks/ 안에 있는가 (재검토한 뒤 남기는 기록):
+# 이 파일은 두 얼굴이다. ① setup이 `.claude/hooks/quest-log.py`로 **원문 그대로 복사**해 배포하는
+# 단일 파일 CLI (에이전트가 subprocess로 부른다) ② Trinity가 임포트하는 라이브러리
+# (agent/heimdall/*, templates/trinity.py, commands/doctor.py, hooks/memory_activate.py).
+# 코어를 asgard 패키지로 옮기고 여기를 껍데기로 만들면 ①이 죽는다: 배포 사본은 asgard를 임포트할
+# 수 없고(그게 test_hooks_are_self_contained의 계약), 그렇다고 폴백 구현을 두면 상태기계 정본이
+# 둘이 된다. 실측으로도 갈라지지 않는다 — 최상위 정의 79개 중 이 파일 자신이 안 쓰는 것은
+# update_priors 하나뿐이라, "라이브러리 면"과 "CLI 면"이 같은 코드다. 그래서 분해는 파일 밖이
+# 아니라 파일 안에서 한다: 갈래마다 한 함수, 한 함수는 한 추상 수준.
 from __future__ import annotations
 
 import argparse
@@ -1806,7 +1816,20 @@ def completion_decision(s: dict) -> tuple[str, str, str]:
 
 
 # ── 전이 함수 — 결정 테이블은 코드가 유일한 출처, 임계값만 정책에서 온다 ──
-def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict:
+# 물음 셋을 순서대로 묻는다: ① 진행이 막혔는가 ② 마지막 판정에 무엇으로 답하는가 ③ 다음
+# 걸음은 무엇인가. 앞의 물음이 답을 내면 뒤는 보지 않는다 — 그 우선순위가 곧 계약이다.
+
+
+def _transition_axes(s: dict, policy: dict, flags) -> dict:
+    """전이 입력 축 — risk_features 11종(결정론 계산 7 + 모델 신고 4)과 그것으로 정해지는 등급.
+
+    `standard_ok`는 게이트-우선(STANDARD) 적격이다. 플래그 없는 기본값이고 물리 가드가 전부
+    판정한다 — v1은 `--standard` 옵트인이었으나 스모크 3회에서 모델이 플래그를 안 넘겼다
+    (프롬프트 계약 한계). 조건 하나라도 깨지면 아래 트리니티 행으로 자연 폴스루 = 승격이다:
+    민감 경로·큰 non-test diff·시그니처 변경·테스트 삭제·모호는 LLM Verifier가 필요하다.
+    게이트-우선 전용 라인 상한이 따로 있는 이유는 sig_risk가 간접 값 흐름 변경을 못 보기
+    때문이다 — 큰 리라이트(+52/-11)는 diff 질량으로 LLM Verifier에 올린다. 가시 테스트
+    (baseline)는 near-oracle이 아니므로(2606.24453 regime) 소형 diff에서만 신뢰한다."""
     small = policy["small_write"]
     # big은 non-test 질량 기준 (summarize.full_required와 동일) — 테스트 추가로 full/승격을 트리거하지 않는다
     big = (
@@ -1814,149 +1837,160 @@ def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict
         or s.get("nontest_lines", s["diff_lines"]) > small["max_lines"]
     )
     sensitive = bool(s["sensitive_files"]) or flags.shared
-    full_required = s["full_required"] or flags.shared
     has_write = s["diff_hash"] != EMPTY or s["risk_write"] or flags.write_expected
-    # risk_features 11종 — 결정론 계산 7 + 모델 신고 4 (--flags)
-    features = {
-        "has_write": has_write,
-        "sensitive_path": bool(s["sensitive_files"]),
-        "shared_surface": flags.shared,
-        "diff_files": len(s["changed_files"]),
-        "diff_lines": s["diff_lines"],
-        "tests_available": s.get("tests_available", False),
-        "verification_possible": bool(s["criteria"]),
-        "failure_count": s["failure_count"],
-        "ambiguous_scope": flags.ambiguous,
-        "destructive_intent": flags.destructive,
-        "external_research": flags.external_research,
-    }
-    level = "full" if (sensitive or big) else "micro"
-    # 게이트-우선(STANDARD) 적격 — 플래그 없는 기본값: 물리 가드가 전부 판정한다.
-    # v1은 --standard 옵트인이었으나 스모크 3회에서 모델이 플래그를 안 넘김 (프롬프트 계약
-    # 한계) — 의존성을 삭제하고 전이 함수 기본으로 흡수. 조건 하나라도 깨지면 아래 트리니티 행으로
-    # 자연 폴스루 = 승격. 민감/큰 non-test diff/시그니처 변경/테스트 삭제/모호는 LLM Verifier가 필요.
-    # 게이트-우선 전용 라인 상한 (벤치 결함 대응): sig_risk가 못 보는 간접 값 흐름 변경도
-    # 큰 리라이트(+52/-11)는 diff 질량으로 LLM Verifier에 올린다.
-    # 가시 테스트(baseline)는 near-oracle이 아니므로 (2606.24453 regime) 소형 diff 에서만 신뢰.
     gf_small = s.get("nontest_lines", s["diff_lines"]) <= int(policy.get("gate_first_max_lines") or 25)
-    standard_ok = (
-        not sensitive
-        and not big
-        and gf_small
-        and not s.get("deleted_tests")
-        and not s.get("sig_risk")
-        and not flags.ambiguous
-        and not flags.external_research
-    )
-    # Bayesian-lite 승격 문턱 — 이 task-class의 게이트-red 이력이 과반이면 red 1회로
-    # 선제 승격. Beta(1,1) posterior mean (red+1)/(n+2) > 0.5 ⟺ red > n−red (과반 판정) —
-    # 카운트뿐, 학습 없음 (arXiv 2606.24453: 검증 싸고 critic 불완전한 구간의 적응 제어).
-    pc = ((priors or {}).get("classes") or {}).get(getattr(flags, "task_class", None) or "", {})
-    red_hist = int(pc.get("red") or 0)
-    promote_at = 1 if red_hist > int(pc.get("n") or 0) - red_hist else 2
+    return {
+        "features": {
+            "has_write": has_write,
+            "sensitive_path": bool(s["sensitive_files"]),
+            "shared_surface": flags.shared,
+            "diff_files": len(s["changed_files"]),
+            "diff_lines": s["diff_lines"],
+            "tests_available": s.get("tests_available", False),
+            "verification_possible": bool(s["criteria"]),
+            "failure_count": s["failure_count"],
+            "ambiguous_scope": flags.ambiguous,
+            "destructive_intent": flags.destructive,
+            "external_research": flags.external_research,
+        },
+        "has_write": has_write,
+        "full_required": s["full_required"] or flags.shared,
+        "level": "full" if (sensitive or big) else "micro",
+        "standard_ok": (
+            not sensitive
+            and not big
+            and gf_small
+            and not s.get("deleted_tests")
+            and not s.get("sig_risk")
+            and not flags.ambiguous
+            and not flags.external_research
+        ),
+    }
 
-    def out(role, why):
-        return {"next_role": role, "verify_level": level, "why": why, "features": features}
 
+def _blocked_step(s: dict, policy: dict, flags) -> tuple[str, str] | None:
+    """① 진행이 막혔는가 — 파괴적 의도·반복 실패·ESCALATE. 여기서 답이 나오면 판정은 안 본다."""
     if flags.destructive:
-        return out("ESCALATE_ODIN", "destructive_intent — Canon 3, requires Odin's explicit consent")
+        return "ESCALATE_ODIN", "destructive_intent — Canon 3, requires Odin's explicit consent"
     if s["failure_count"] >= policy["failure_threshold"]:
-        return out(
-            "THINKER_REPLAN", "%d same-signature failures — Worker retry forbidden (Canon 9)" % s["failure_count"]
-        )
+        return "THINKER_REPLAN", "%d same-signature failures — Worker retry forbidden (Canon 9)" % s["failure_count"]
     if s.get("fail_streak_any", 0) > policy["failure_threshold"]:
         # 이종-sig 백스톱 — 자유 텍스트 sig가 매번 달라 동종 판정이 안 잡혀도, 재계획 없이
         # FAIL이 threshold+1 연속이면 접근 자체가 틀렸다고 본다 (턴 예산 소진 전 탈출).
-        return out(
+        return (
             "THINKER_REPLAN",
             "%d consecutive failures (including mixed signatures) — redesign the approach" % s["fail_streak_any"],
         )
-    if s["last_verdict"] == "ESCALATE" and not s.get("replan_after_escalate"):
-        # ESCALATE 이후 재계획(plan)이 남았으면 이 분기를 건너뛴다 — 재계획이 에스컬레이션을 소비하고
+    if s["last_verdict"] != "ESCALATE" or s.get("replan_after_escalate"):
+        # ESCALATE 이후 재계획(plan)이 남았으면 이 갈래를 건너뛴다 — 재계획이 에스컬레이션을 소비하고
         # 아래 WORKER 폴스루로 실행이 이어진다 (오딘 답변 후 재개 경로와 무인 nudge 경로 공통).
-        if getattr(flags, "unattended", False) and not s.get("escalate_nudged"):
-            # 무인 세션 1회 nudge (Canon 8) — 오딘의 답은 오지 않는다. 방어 가능한 기본안으로 재계획을
-            # 강제하고, nudge 소진 후의 재-ESCALATE는 진짜 블로커로 인정 (verifier_gate의 마커 파일과
-            # 같은 의미론 — 여기선 로그 구조(ESCALATE↔plan 순서)가 상한을 센다).
-            return out(
-                "THINKER_REPLAN",
-                "Unattended-session ESCALATE (Canon 8) — pick a defensible default, record it as a "
-                "`가정:` criteria entry, and proceed. If no default is defensible (a genuine blocker), "
-                "record the reason and re-ESCALATE",
-            )
-        # Verifier ESCALATE = 진행 불가 블로커 신고 (Canon 8: 승인 요청 용도 아님) — WORKER 폴스루로
-        # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close의 ESCALATE 수용과 대칭.
-        return out("ESCALATE_ODIN", "Verifier ESCALATE — blocking issue, Odin's decision required")
-    if s["last_verdict"] == "FAIL":
-        if standard_ok and s.get("fail_streak_any", 0) >= promote_at:
-            # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격.
-            # prior 과반-red 클래스는 red 1회로 하향.
-            why = "gate-first red %d times — promoting to Trinity, redesign the approach" % s["fail_streak_any"]
-            return out(
-                "THINKER_REPLAN", why + (" (prior: task-class red history is majority)" if promote_at == 1 else "")
-            )
+        return None
+    if getattr(flags, "unattended", False) and not s.get("escalate_nudged"):
+        # 무인 세션 1회 nudge (Canon 8) — 오딘의 답은 오지 않는다. 방어 가능한 기본안으로 재계획을
+        # 강제하고, nudge 소진 후의 재-ESCALATE는 진짜 블로커로 인정 (verifier_gate의 마커 파일과
+        # 같은 의미론 — 여기선 로그 구조(ESCALATE↔plan 순서)가 상한을 센다).
         return (
-            out("THINKER_REPLAN", "Verifier FAIL (structural) — redesign the approach")
-            if flags.structural
-            else out("WORKER_RETRY", "Verifier FAIL (minor) — fix under the same plan")
+            "THINKER_REPLAN",
+            "Unattended-session ESCALATE (Canon 8) — pick a defensible default, record it as a "
+            "`가정:` criteria entry, and proceed. If no default is defensible (a genuine blocker), "
+            "record the reason and re-ESCALATE",
         )
-    if s["last_verdict"] == "PASS":
-        # 완료 판정은 단일 퍼널(completion_decision)만 신뢰한다 — close·게이트와 판정 불일치 금지.
-        # flags.shared는 전이 시점 모델 신고라 요약에 없다 — 퍼널 입력에 병합.
-        decision, code, why = completion_decision({**s, "full_required": full_required})
-        if decision == "APPROVED":
-            return out("DONE", why)
-        if code == "baseline-red":
-            # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다
-            return out("WORKER_RETRY", "harness baseline check is red — repair the failing check first (Canon 10)")
-        if code == "no-evidence":
-            # 증거 없는 PASS는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
-            # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (깊이 테스트 발견).
-            return out(
-                "VERIFIER",
-                "PASS has no successful verification-command evidence — run the command directly and "
-                "re-judge (Canon 10)",
-            )
-        if code == "no-criteria":
-            return out("VERIFIER", "no success criteria in the log — record criteria then re-judge (Canon 10)")
-        if code == "tickets-incomplete":
-            return out("WORKER_RETRY", why + " — reassign only the unfinished units")
-        if code == "criteria-unverified":
-            # 계약 명령이 실패했거나 산출물이 없다 — 재검증 append가 하네스 재실행을 트리거한다
-            return out("VERIFIER", why + " — repair/re-run the contract command and re-judge (Canon 10)")
-        if code == "stale-pass":
-            return out("VERIFIER", "working tree changed after PASS (stale PASS) — re-verification required")
-        if code == "verification-identity":
-            return out("VERIFIER", "PASS identity is not bound to this execution and diff — re-verification required")
-        # micro-pass — gate와 동일 판정: micro PASS로 DONE을 내면 Stop에서 차단당한다 (판정 불일치 금지)
-        return out("VERIFIER", "PASS is micro — sensitive path/large diff requires full-verify")
-    if flags.external_research and has_write and not s.get("research_completed"):
-        return out(
-            "WORKER", "external research first — an isolated Research Worker gathers evidence; implementation waits"
+    # Verifier ESCALATE = 진행 불가 블로커 신고 (Canon 8: 승인 요청 용도 아님) — WORKER 폴스루로
+    # 예산을 태우지 않고 즉시 Odin 에스컬레이션. 게이트/close의 ESCALATE 수용과 대칭.
+    return "ESCALATE_ODIN", "Verifier ESCALATE — blocking issue, Odin's decision required"
+
+
+def _fail_step(s: dict, flags, priors: dict | None, axes: dict) -> tuple[str, str]:
+    """FAIL 뒤의 갈래 — 게이트-우선 red 누적은 threshold 전에 트리니티로 올린다.
+
+    승격 문턱은 Bayesian-lite다: 이 task-class의 게이트-red 이력이 과반이면 red 1회로 선제
+    승격한다. Beta(1,1) posterior mean (red+1)/(n+2) > 0.5 ⟺ red > n−red (과반 판정) —
+    카운트뿐이고 학습은 없다 (arXiv 2606.24453: 검증이 싸고 critic이 불완전한 구간의 적응 제어)."""
+    pc = ((priors or {}).get("classes") or {}).get(getattr(flags, "task_class", None) or "", {})
+    red_hist = int(pc.get("red") or 0)
+    promote_at = 1 if red_hist > int(pc.get("n") or 0) - red_hist else 2
+    if axes["standard_ok"] and s.get("fail_streak_any", 0) >= promote_at:
+        # 게이트-우선에서 red 2회 = 싼 게이트로 못 넘는 벽 — threshold(3) 전에 선제 승격.
+        # prior 과반-red 클래스는 red 1회로 하향.
+        why = "gate-first red %d times — promoting to Trinity, redesign the approach" % s["fail_streak_any"]
+        return "THINKER_REPLAN", why + (" (prior: task-class red history is majority)" if promote_at == 1 else "")
+    if flags.structural:
+        return "THINKER_REPLAN", "Verifier FAIL (structural) — redesign the approach"
+    return "WORKER_RETRY", "Verifier FAIL (minor) — fix under the same plan"
+
+
+def _verdict_step(s: dict, flags, priors: dict | None, axes: dict) -> tuple[str, str] | None:
+    """② 마지막 판정에 무엇으로 답하는가 — PASS의 완료 판정은 completion_decision 하나만 믿는다.
+
+    close·게이트와 판정이 갈리면 안 되므로 이 함수는 자기 기준을 따로 갖지 않는다. 퍼널이 낸
+    거부 코드마다 누구를 부를지만 정한다. flags.shared는 전이 시점 모델 신고라 요약에 없어서
+    퍼널 입력에 병합한다."""
+    if s["last_verdict"] == "FAIL":
+        return _fail_step(s, flags, priors, axes)
+    if s["last_verdict"] != "PASS":
+        return None
+    decision, code, why = completion_decision({**s, "full_required": axes["full_required"]})
+    if decision == "APPROVED":
+        return "DONE", why
+    if code == "baseline-red":
+        # 하네스가 직접 돌린 프로젝트 체크가 실패 — 판정이 아니라 코드가 깨져 있다
+        return "WORKER_RETRY", "harness baseline check is red — repair the failing check first (Canon 10)"
+    if code == "no-evidence":
+        # 증거 없는 PASS는 판정이 아니다 — 게이트가 어차피 차단하므로 전이가 먼저 재검증을 보낸다
+        # (판정 불일치 금지). close 우회 구멍의 전이측 봉합 (깊이 테스트 발견).
+        return (
+            "VERIFIER",
+            "PASS has no successful verification-command evidence — run the command directly and re-judge (Canon 10)",
         )
+    if code == "no-criteria":
+        return "VERIFIER", "no success criteria in the log — record criteria then re-judge (Canon 10)"
+    if code == "tickets-incomplete":
+        return "WORKER_RETRY", why + " — reassign only the unfinished units"
+    if code == "criteria-unverified":
+        # 계약 명령이 실패했거나 산출물이 없다 — 재검증 append가 하네스 재실행을 트리거한다
+        return "VERIFIER", why + " — repair/re-run the contract command and re-judge (Canon 10)"
+    if code == "stale-pass":
+        return "VERIFIER", "working tree changed after PASS (stale PASS) — re-verification required"
+    if code == "verification-identity":
+        return "VERIFIER", "PASS identity is not bound to this execution and diff — re-verification required"
+    # micro-pass — gate와 동일 판정: micro PASS로 DONE을 내면 Stop에서 차단당한다 (판정 불일치 금지)
+    return "VERIFIER", "PASS is micro — sensitive path/large diff requires full-verify"
+
+
+def _next_step(s: dict, flags, axes: dict) -> tuple[str, str]:
+    """③ 다음 걸음 — 막히지도 않았고 답할 판정도 없을 때. 마지막 줄이 기본값이라 항상 답이 난다."""
+    if flags.external_research and axes["has_write"] and not s.get("research_completed"):
+        return "WORKER", "external research first — an isolated Research Worker gathers evidence; implementation waits"
     if flags.external_research and s.get("research_pending_plan"):
-        return out("THINKER", "external research complete — review the gathered evidence and replan units and criteria")
+        return "THINKER", "external research complete — review the gathered evidence and replan units and criteria"
     if flags.parallel_requested and s["plan_turns"] < 2:
         # 병렬 fan-out만 별도 Thinker가 access/file-overlap 그래프를 만든다. 모호함·외부 조사·큰
         # 변경은 단일 Worker가 같은 도구 문맥에서 계획하고 실행한다 — 순차 역할 handoff 비용과
         # 맥락 손실을 피하고, 실제 FAIL/구조적 red가 관측될 때만 THINKER_REPLAN으로 승격한다.
-        return out("THINKER", "explicit parallel task — plan independent units and the access graph first")
-    if not has_write:
-        return out("DIRECT_DONE", "no write — gate-exempt path")
-    if s["last_event"] == "work":
-        if s["diff_hash"] == EMPTY:
-            # 무변경 관측 — Worker가 돌았는데 물리 diff 0 (risk_write는 분류 시점 기대치라
-            # 판정 축이 아니다 — 물리 관측이 정본). '변경 없음' 주장의 올바른 검증은 트리 관측
-            # 그 자체다 (pass_evidence의 no_change=inspection 원칙) — LLM Verifier를 소환해
-            # 반증 불가능한 기준을 재량 검증시키지 않고, 하네스가 관측을 기록해 판정한다
-            # (0-LLM). 오분류로 Trinity에 들어온 무변경 요청의 결정론 출구 (26-07-21 "안녕"
-            # 계열 — 잔여 낭비 경로 봉합). 한계(수용): 변경이 필요했는데 Worker가 안 한 경우도
-            # 통과한다 — 최종 보고의 변경 0 관측이 그 사실을 드러낸다.
-            return out("BASELINE_VERIFY", "no-change observed — harness tree-observation verdict (0-LLM)")
-        if standard_ok and s.get("checks_available"):
-            return out("BASELINE_VERIFY", "small, non-sensitive change — harness baseline takes priority")
-        return out("VERIFIER", "Worker complete — %s-verify verdict is next" % level)
-    return out("WORKER", "single Worker autonomous plan/execute — Thinker replans on failure")
+        return "THINKER", "explicit parallel task — plan independent units and the access graph first"
+    if not axes["has_write"]:
+        return "DIRECT_DONE", "no write — gate-exempt path"
+    if s["last_event"] != "work":
+        return "WORKER", "single Worker autonomous plan/execute — Thinker replans on failure"
+    if s["diff_hash"] == EMPTY:
+        # 무변경 관측 — Worker가 돌았는데 물리 diff 0 (risk_write는 분류 시점 기대치라
+        # 판정 축이 아니다 — 물리 관측이 정본). '변경 없음' 주장의 올바른 검증은 트리 관측
+        # 그 자체다 (pass_evidence의 no_change=inspection 원칙) — LLM Verifier를 소환해
+        # 반증 불가능한 기준을 재량 검증시키지 않고, 하네스가 관측을 기록해 판정한다
+        # (0-LLM). 오분류로 Trinity에 들어온 무변경 요청의 결정론 출구 (26-07-21 "안녕"
+        # 계열 — 잔여 낭비 경로 봉합). 한계(수용): 변경이 필요했는데 Worker가 안 한 경우도
+        # 통과한다 — 최종 보고의 변경 0 관측이 그 사실을 드러낸다.
+        return "BASELINE_VERIFY", "no-change observed — harness tree-observation verdict (0-LLM)"
+    if axes["standard_ok"] and s.get("checks_available"):
+        return "BASELINE_VERIFY", "small, non-sensitive change — harness baseline takes priority"
+    return "VERIFIER", "Worker complete — %s-verify verdict is next" % axes["level"]
+
+
+def transition(s: dict, policy: dict, flags, priors: dict | None = None) -> dict:
+    """다음에 누가 도는가 — 결정 테이블. 물음 셋을 순서대로 묻고 첫 답을 그대로 쓴다."""
+    axes = _transition_axes(s, policy, flags)
+    role, why = _blocked_step(s, policy, flags) or _verdict_step(s, flags, priors, axes) or _next_step(s, flags, axes)
+    return {"next_role": role, "verify_level": axes["level"], "why": why, "features": axes["features"]}
 
 
 def map_nudge(root: str, base_ref: str | None) -> list[str]:
@@ -2026,6 +2060,145 @@ def sanitize(qid: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", qid)[:80]
 
 
+# ── 티켓 런타임 — 단위 하나의 소유권과 lease 를 상태 전이로 관리한다 ──
+# 갈래마다 한 함수를 둔다. `emit` 은 호출부(ticket_runtime)가 Quest lock 안에서 만든 기록
+# 함수다 — lock 밖에서 이벤트를 쓸 수 없게 갈래는 자기 lock 을 잡지 않는다.
+
+
+def _ticket_recover(emit, tickets: dict, now: float, max_attempts: int) -> tuple[int, dict]:
+    """lease 가 끝난 in_progress 를 회수한다 — 재시도 예산이 남았으면 failed, 없으면 blocked."""
+    recovered = []
+    for ticket in list(tickets.values()):
+        if ticket["status"] != "in_progress" or float(ticket.get("lease_expires_at") or 0) > now:
+            continue
+        exhausted = int(ticket.get("attempt") or 0) >= int(ticket.get("max_attempts") or max_attempts)
+        next_status = "blocked" if exhausted else "failed"
+        emit(
+            {
+                "unit": ticket["id"],
+                "ticket_status": next_status,
+                "ticket_error": "lease expired",
+                "attempt": ticket.get("attempt") or 0,
+                "max_attempts": ticket.get("max_attempts") or max_attempts,
+                "claim_token_hash": ticket.get("claim_token_hash"),
+                "worker_id": ticket.get("worker_id"),
+                "lease_expires_at": ticket.get("lease_expires_at"),
+            }
+        )
+        recovered.append({"unit": ticket["id"], "status": next_status})
+    return 0, {"recovered": recovered}
+
+
+def _ticket_claim(
+    emit, tickets: dict, ticket: dict, now: float, worker, lease_seconds: int, max_attempts: int
+) -> tuple[int, dict]:
+    """단위 하나를 Worker 한 명에게 준다 — 선행 단위가 done 이고 살아 있는 lease 가 없을 때만."""
+    dependencies = [tickets.get(str(dep)) for dep in ticket.get("access") or []]
+    if any(not dep or dep.get("status") != "done" for dep in dependencies):
+        return 1, {"error": "dependencies incomplete", "unit": ticket["id"]}
+    if ticket["status"] == "in_progress" and float(ticket.get("lease_expires_at") or 0) > now:
+        return 1, {"error": "ticket already claimed", "unit": ticket["id"]}
+    if ticket["status"] in ("done", "blocked"):
+        message = "retry budget exhausted" if ticket["status"] == "blocked" else "ticket is terminal"
+        return 1, {"error": message, "unit": ticket["id"], "status": ticket["status"]}
+    previous_max = int(ticket.get("max_attempts") or max_attempts)
+    allowed = min(previous_max, max_attempts) if int(ticket.get("attempt") or 0) else max_attempts
+    attempt = int(ticket.get("attempt") or 0) + 1
+    if attempt > allowed:
+        emit(
+            {
+                "unit": ticket["id"],
+                "ticket_status": "blocked",
+                "ticket_error": "retry budget exhausted",
+                "attempt": ticket.get("attempt") or 0,
+                "max_attempts": allowed,
+            }
+        )
+        return 1, {"error": "retry budget exhausted", "unit": ticket["id"], "status": "blocked"}
+    # Keep the first character non-option-like so argparse callers may safely pass
+    # the opaque token as a separate value (`--claim-token TOKEN`).
+    token = "agt_" + secrets.token_urlsafe(24)
+    expiry = now + lease_seconds
+    emit(
+        {
+            "unit": ticket["id"],
+            "ticket_status": "in_progress",
+            "claim_token_hash": hashlib.sha256(token.encode()).hexdigest(),
+            "worker_id": worker or "worker",
+            "lease_expires_at": expiry,
+            "heartbeat_at": now,
+            "attempt": attempt,
+            "max_attempts": allowed,
+        }
+    )
+    return 0, {
+        "claimed": ticket["id"],
+        "claim_token": token,
+        "worker_id": worker or "worker",
+        "lease_expires_at": expiry,
+        "attempt": attempt,
+        "max_attempts": allowed,
+    }
+
+
+def _ticket_lease_denial(ticket: dict, claim_token, now: float) -> dict | None:
+    """갱신·종료의 자격 검사 — 자기 claim 을 증명해야 한다. None 이면 통과다.
+
+    토큰은 해시로만 대조하고 비교도 상수 시간이다. 토큰 없이 남의 lease 를 밀 수 있으면
+    lease 는 소유권이 아니라 권고가 된다."""
+    supplied_hash = hashlib.sha256((claim_token or "").encode()).hexdigest()
+    stored_hash = str(ticket.get("claim_token_hash") or "")
+    if ticket["status"] != "in_progress" or not claim_token or not secrets.compare_digest(supplied_hash, stored_hash):
+        return {"error": "claim token mismatch", "unit": ticket["id"]}
+    if float(ticket.get("lease_expires_at") or 0) <= now:
+        return {"error": "claim lease expired", "unit": ticket["id"]}
+    return None
+
+
+def _ticket_heartbeat(emit, ticket: dict, now: float, lease_seconds: int, max_attempts: int) -> tuple[int, dict]:
+    """lease 갱신 — 상태 전이가 아니라 `ticket_lease` 로 적는다.
+
+    갱신이 `ticket` 으로 적히면 티켓 이벤트 열이 "todo→in_progress→done" 이 아니라 "얼마나
+    오래 돌았는가"를 적게 되고, 그 열을 읽는 쪽은 벽시계에 따라 다른 역사를 본다."""
+    expiry = now + lease_seconds
+    emit(
+        {
+            "event": "ticket_lease",
+            "unit": ticket["id"],
+            "claim_token_hash": str(ticket.get("claim_token_hash") or ""),
+            "worker_id": ticket.get("worker_id"),
+            "lease_expires_at": expiry,
+            "heartbeat_at": now,
+            "attempt": ticket.get("attempt") or 1,
+            "max_attempts": ticket.get("max_attempts") or max_attempts,
+        }
+    )
+    return 0, {"heartbeat": ticket["id"], "lease_expires_at": expiry}
+
+
+def _ticket_finish(emit, ticket: dict, now: float, max_attempts: int, status, error) -> tuple[int, dict]:
+    """단위 종료 — 재시도 예산을 다 쓴 failed 는 blocked 로 닫는다 (다시 못 잡는다)."""
+    if status not in ("done", "failed"):
+        return 2, {"error": "ticket-finish status must be done or failed"}
+    attempts = int(ticket.get("attempt") or 1)
+    allowed = int(ticket.get("max_attempts") or max_attempts)
+    final_status = "blocked" if status == "failed" and attempts >= allowed else status
+    emit(
+        {
+            "unit": ticket["id"],
+            "ticket_status": final_status,
+            "ticket_error": error,
+            "claim_token_hash": str(ticket.get("claim_token_hash") or ""),
+            "worker_id": ticket.get("worker_id"),
+            "lease_expires_at": ticket.get("lease_expires_at"),
+            "heartbeat_at": now,
+            "attempt": attempts,
+            "max_attempts": allowed,
+        }
+    )
+    return 0, {"finished": ticket["id"], "status": final_status, "attempt": attempts}
+
+
 def ticket_runtime(
     root: str,
     qid: str,
@@ -2055,132 +2228,36 @@ def ticket_runtime(
 
         tickets = fold_tickets(events)
         if cmd == "ticket-recover":
-            recovered = []
-            for ticket in list(tickets.values()):
-                if ticket["status"] != "in_progress" or float(ticket.get("lease_expires_at") or 0) > now:
-                    continue
-                exhausted = int(ticket.get("attempt") or 0) >= int(ticket.get("max_attempts") or max_attempts)
-                next_status = "blocked" if exhausted else "failed"
-                emit(
-                    {
-                        "unit": ticket["id"],
-                        "ticket_status": next_status,
-                        "ticket_error": "lease expired",
-                        "attempt": ticket.get("attempt") or 0,
-                        "max_attempts": ticket.get("max_attempts") or max_attempts,
-                        "claim_token_hash": ticket.get("claim_token_hash"),
-                        "worker_id": ticket.get("worker_id"),
-                        "lease_expires_at": ticket.get("lease_expires_at"),
-                    }
-                )
-                recovered.append({"unit": ticket["id"], "status": next_status})
-            return 0, {"recovered": recovered}
-
-        key = str(unit)
-        ticket = tickets.get(key)
+            return _ticket_recover(emit, tickets, now, max_attempts)
+        ticket = tickets.get(str(unit))
         if not ticket:
             return 1, {"error": "unknown ticket", "unit": unit}
-
         if cmd == "ticket-claim":
-            dependencies = [tickets.get(str(dep)) for dep in ticket.get("access") or []]
-            if any(not dep or dep.get("status") != "done" for dep in dependencies):
-                return 1, {"error": "dependencies incomplete", "unit": ticket["id"]}
-            if ticket["status"] == "in_progress" and float(ticket.get("lease_expires_at") or 0) > now:
-                return 1, {"error": "ticket already claimed", "unit": ticket["id"]}
-            if ticket["status"] in ("done", "blocked"):
-                message = "retry budget exhausted" if ticket["status"] == "blocked" else "ticket is terminal"
-                return 1, {"error": message, "unit": ticket["id"], "status": ticket["status"]}
-            previous_max = int(ticket.get("max_attempts") or max_attempts)
-            allowed = min(previous_max, max_attempts) if int(ticket.get("attempt") or 0) else max_attempts
-            attempt = int(ticket.get("attempt") or 0) + 1
-            if attempt > allowed:
-                emit(
-                    {
-                        "unit": ticket["id"],
-                        "ticket_status": "blocked",
-                        "ticket_error": "retry budget exhausted",
-                        "attempt": ticket.get("attempt") or 0,
-                        "max_attempts": allowed,
-                    }
-                )
-                return 1, {"error": "retry budget exhausted", "unit": ticket["id"], "status": "blocked"}
-            # Keep the first character non-option-like so argparse callers may safely pass
-            # the opaque token as a separate value (`--claim-token TOKEN`).
-            token = "agt_" + secrets.token_urlsafe(24)
-            token_hash = hashlib.sha256(token.encode()).hexdigest()
-            expiry = now + lease_seconds
-            emit(
-                {
-                    "unit": ticket["id"],
-                    "ticket_status": "in_progress",
-                    "claim_token_hash": token_hash,
-                    "worker_id": worker or "worker",
-                    "lease_expires_at": expiry,
-                    "heartbeat_at": now,
-                    "attempt": attempt,
-                    "max_attempts": allowed,
-                }
-            )
-            return 0, {
-                "claimed": ticket["id"],
-                "claim_token": token,
-                "worker_id": worker or "worker",
-                "lease_expires_at": expiry,
-                "attempt": attempt,
-                "max_attempts": allowed,
-            }
-
-        supplied_hash = hashlib.sha256((claim_token or "").encode()).hexdigest()
-        stored_hash = str(ticket.get("claim_token_hash") or "")
-        if (
-            ticket["status"] != "in_progress"
-            or not claim_token
-            or not secrets.compare_digest(supplied_hash, stored_hash)
-        ):
-            return 1, {"error": "claim token mismatch", "unit": ticket["id"]}
-        if float(ticket.get("lease_expires_at") or 0) <= now:
-            return 1, {"error": "claim lease expired", "unit": ticket["id"]}
+            return _ticket_claim(emit, tickets, ticket, now, worker, lease_seconds, max_attempts)
+        denial = _ticket_lease_denial(ticket, claim_token, now)
+        if denial:
+            return 1, denial
         if cmd == "ticket-heartbeat":
-            expiry = now + lease_seconds
-            emit(
-                {
-                    "event": "ticket_lease",
-                    "unit": ticket["id"],
-                    "claim_token_hash": stored_hash,
-                    "worker_id": ticket.get("worker_id"),
-                    "lease_expires_at": expiry,
-                    "heartbeat_at": now,
-                    "attempt": ticket.get("attempt") or 1,
-                    "max_attempts": ticket.get("max_attempts") or max_attempts,
-                }
-            )
-            return 0, {"heartbeat": ticket["id"], "lease_expires_at": expiry}
+            return _ticket_heartbeat(emit, ticket, now, lease_seconds, max_attempts)
         if cmd == "ticket-finish":
-            if status not in ("done", "failed"):
-                return 2, {"error": "ticket-finish status must be done or failed"}
-            final_status = status
-            attempts = int(ticket.get("attempt") or 1)
-            allowed = int(ticket.get("max_attempts") or max_attempts)
-            if status == "failed" and attempts >= allowed:
-                final_status = "blocked"
-            emit(
-                {
-                    "unit": ticket["id"],
-                    "ticket_status": final_status,
-                    "ticket_error": error,
-                    "claim_token_hash": stored_hash,
-                    "worker_id": ticket.get("worker_id"),
-                    "lease_expires_at": ticket.get("lease_expires_at"),
-                    "heartbeat_at": now,
-                    "attempt": attempts,
-                    "max_attempts": allowed,
-                }
-            )
-            return 0, {"finished": ticket["id"], "status": final_status, "attempt": attempts}
+            return _ticket_finish(emit, ticket, now, max_attempts, status, error)
         return 2, {"error": "unknown ticket runtime command"}
 
 
-def main() -> int:
+# ── CLI 갈래 ──────────────────────────────────────────────────────
+# main은 갈래만 고른다. 명령 하나의 계약은 그 명령의 함수 하나가 진다 — 열한 개가 한 함수에
+# 있으면 그중 하나를 읽으려고 나머지 열을 같이 읽어야 하고, 하나를 고칠 때 나머지 열이 같이
+# 흔들린다. 갈래 함수는 int(종료 코드)를 돌려주고, 출력은 자기가 한다.
+
+
+def _error(message: str, **extra) -> int:
+    """오류 한 줄을 stderr JSON으로 내고 1을 돌려준다 — 실패 표기를 갈래마다 다시 적지 않게."""
+    print(json.dumps({"error": message, **extra}), file=sys.stderr)
+    return 1
+
+
+def _parser() -> argparse.ArgumentParser:
+    """CLI 표면의 정본 — 명령 이름과 플래그는 여기서만 정의한다."""
     ap = argparse.ArgumentParser(prog="quest-log", description="Asgard Trinity quest log")
     ap.add_argument(
         "cmd",
@@ -2240,94 +2317,472 @@ def main() -> int:
         action="store_true",
         help="close: force-release without a verdict (requires Odin's consent — LAST not recorded, no gate exemption)",
     )
-    args = ap.parse_args()
+    return ap
+
+
+def _open_request(args) -> tuple[str | None, str]:
+    """open의 요청문 — (요청문, 오류). None은 요청문을 못 얻었다는 뜻이다."""
+    if not args.request_stdin:
+        return args.request, ""
+    raw_request = sys.stdin.buffer.read(65537)
+    if len(raw_request) > 65536:
+        return None, "request payload exceeds 64 KiB limit"
+    try:
+        return str((json.loads(raw_request.decode("utf-8")) or {}).get("request") or ""), ""
+    except Exception:
+        return None, "invalid request stdin payload"
+
+
+def _open_base_ref(root: str, args) -> tuple[str | None, str]:
+    """open의 시작 스냅샷 — (base_ref, 오류). 명시 ref는 커밋인지 확인한 뒤에만 쓴다."""
+    base_ref = args.base_ref or snapshot_ref(root)
+    if args.base_ref:
+        valid_rc, raw_type = git(root, "cat-file", "-t", args.base_ref)
+        valid_type = raw_type.decode("utf-8", "replace") if isinstance(raw_type, bytes) else raw_type
+        if valid_rc != 0 or valid_type.strip() != "commit":
+            return None, "invalid quest start snapshot"
+    if not base_ref and not args.no_write:
+        return None, "write quest requires a Git repository with HEAD and a capturable start tree"
+    return base_ref or "NONE", ""
+
+
+def _open_event(qid: str, args, base_ref: str, request: str, ignored_snapshot: dict) -> dict:
+    """개설 이벤트 — 요청문·기준·시작 트리·위험을 수용 해시 하나로 묶는다."""
+    risk = {"has_write": not args.no_write}
+    if args.task_class:  # prior 집계 축 — 퀘스트가 어느 클래스로 열렸는지 감사 기록
+        risk["task_class"] = args.task_class
+    return normalize(
+        {
+            "role": "thinker",
+            "event": "plan",
+            "base_ref": base_ref,
+            "risk": risk,
+            "criteria": args.criteria,
+            "request": request,
+            "ignored_snapshot": ignored_snapshot,
+            "execution_id": secrets.token_hex(16),
+            "acceptance_hash": acceptance_identity(
+                request=request,
+                criteria=args.criteria,
+                base_ref=base_ref,
+                ignored_snapshot=ignored_snapshot,
+                risk=risk,
+            ),
+        },
+        [],
+        qid,
+        args.session,
+    )
+
+
+def _cmd_open(root: str, args) -> int:
+    """open — 과업 로그를 시작한다.
+
+    One qid represents one immutable execution. Reopening would mix two acceptance contracts."""
+    if not args.quest_id:
+        print("usage: quest-log open <quest-id> [--criteria ...]", file=sys.stderr)
+        return 2
+    qid = sanitize(args.quest_id)
+    request, why = _open_request(args)
+    if request is None:
+        return _error(why)
+    if len(request) > 10000:
+        return _error("request exceeds 10,000-character limit")
+    base_ref, why = _open_base_ref(root, args)
+    if base_ref is None:
+        return _error(why)
+    ignored_snapshot = ignored_state(root)
+    if "<snapshot-unavailable>" in ignored_snapshot:
+        return _error("ignored-file snapshot unavailable")
+    ev = _open_event(qid, args, base_ref, request, ignored_snapshot)
+    with quest_lock(root, qid):
+        if os.path.exists(os.path.join(quest_dir(root), qid + ".jsonl")):
+            return _error("quest id already exists; resume it or choose a new id")
+        _write_event_unlocked(root, qid, ev, [])
+    set_active_quest(root, args.session, qid)
+    print(
+        json.dumps(
+            {
+                "opened": qid,
+                "execution_id": ev["execution_id"],
+                "acceptance_hash": ev["acceptance_hash"],
+                "base_ref": base_ref,
+                "turn": ev["turn"],
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _append_payload(args) -> tuple[dict | None, int]:
+    """append가 받을 이벤트 원문 — stdin JSON 위에 플래그를 덮는다. (원문, 종료 코드)."""
+    raw: dict = {}
+    if not sys.stdin.isatty():
+        try:
+            body = sys.stdin.read().strip()
+            raw = json.loads(body) if body else {}
+        except Exception:
+            print(json.dumps({"error": "stdin is not valid JSON"}), file=sys.stderr)
+            return None, 2
+    for k, v in (("role", args.role), ("event", args.event), ("verdict", args.verdict), ("level", args.level)):
+        if v:
+            raw[k] = v
+    if isinstance(raw.get("role"), str):
+        raw["role"] = raw["role"].lower()  # 전이 함수 출력(WORKER)을 그대로 넣는 세션 실측 — 통계 축 분열 방지
+    if args.criteria:
+        raw["criteria"] = args.criteria
+    return raw, 0
+
+
+def _append_rejection(raw: dict) -> str:
+    """append가 받지 않는 원문의 이유 — 빈 문자열이면 받는다."""
+    if raw.get("event") not in APPEND_EVENTS:  # ticket_lease는 ticket-heartbeat 전용
+        return "event must be one of %s" % sorted(APPEND_EVENTS)
+    if raw.get("event") == "ticket":
+        if raw.get("unit") is None:
+            return "ticket requires unit"
+        if raw.get("ticket_status") not in TICKET_STATUSES:
+            return "ticket_status must be one of %s" % sorted(TICKET_STATUSES)
+        if raw.get("ticket_status") != "todo" or raw.get("role") != "thinker":
+            return (
+                "ticket runtime transitions require ticket-claim/heartbeat/finish/recover; "
+                "raw append only accepts thinker todo definitions"
+            )
+    if raw.get("verdict", "NA") not in VERDICTS:
+        return "verdict must be one of %s" % sorted(VERDICTS)
+    return ""
+
+
+def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> None:
+    """verify 이벤트의 물리 증거를 이 도구가 채운다 — 손 계산 해시는 게이트 재계산과 어긋난다."""
+    # 구조 지도도 판정 대상 diff에 포함 — PASS 뒤 close가 파일을 쓰면 stale hash가 된다.
+    map_ok, map_error = refresh_managed_map(root)
+    ignored_base = next(
+        (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
+        None,
+    )
+    ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
+    unsafe_maps = unsafe_map_links(root)
+    if "<snapshot-unavailable>" in ev["changed_files"] and ev["verdict"] == "PASS":
+        ev["verdict"] = "FAIL"
+        ev["failure_sig"] = "snapshot-unavailable"
+        ev["commands"] = [
+            *ev.get("commands", []),
+            {"cmd": "git write-tree (temporary index)", "exit_code": 1, "error": "snapshot unavailable"},
+        ][-20:]
+    elif not map_ok and ev["verdict"] == "PASS":
+        ev["verdict"] = "FAIL"
+        ev["failure_sig"] = "map-refresh-failed"
+        ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
+        ev["commands"] = [
+            *ev.get("commands", []),
+            {"cmd": "asgard map check", "exit_code": 1, "error": map_error},
+        ][-20:]
+    elif unsafe_maps and ev["verdict"] == "PASS":
+        ev["verdict"] = "FAIL"
+        ev["failure_sig"] = "unsafe-map-link"
+        ev["changed_files"] = sorted(set(ev["changed_files"]) | set(unsafe_maps))
+    ev.setdefault("level", "micro")
+    if ev["verdict"] != "PASS":
+        return
+    # 하네스 소유 베이스라인 — normalize가 stdin baseline을 버린 뒤 여기서만 기록.
+    # 무변경(diff EMPTY) 퀘스트는 red의 원인이 될 수 없다 — 전 트리 체크의 타 세션 잔여물 red가
+    # 무변경 퀘스트를 인질로 잡지 않게 면제 (26-07-23 감사).
+    if ev["diff_hash"] != EMPTY:
+        bl = run_baseline(root, policy, events, ev["diff_hash"])
+        if bl:
+            ev["baseline"] = bl
+    # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize가 버림)
+    crit = contract_criteria(ev.get("criteria"), *(e.get("criteria") for e in events))
+    cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
+    if cc is not None:
+        ev["criteria_checks"] = cc
+    # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope)
+    ev["tree_ref"] = current_tree_ref(root)
+    ev["verification_id"] = verification_identity(ev)
+
+
+def _cmd_append(root: str, qid: str, events: list[dict], policy: dict, args) -> int:
+    """append — 이벤트 1건 기록. verify는 이 도구가 물리 증거를 붙여 쓴다."""
+    raw, code = _append_payload(args)
+    if raw is None:
+        return code
+    rejection = _append_rejection(raw)
+    if rejection:
+        print(json.dumps({"error": rejection}), file=sys.stderr)
+        return 2
+    ev = normalize(raw, events, qid, args.session)
+    if ev["event"] == "verify":
+        if ev["verdict"] == "NA":
+            print(json.dumps({"error": "verify requires --verdict PASS|FAIL|ESCALATE"}), file=sys.stderr)
+            return 2
+        _verify_evidence(root, policy, events, ev)
+    write_event(root, qid, ev)
+    print(
+        json.dumps(
+            {
+                "appended": ev["event"],
+                "turn": ev["turn"],
+                "verdict": ev["verdict"],
+                "diff_hash": ev["diff_hash"],
+                "verification_id": ev.get("verification_id"),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _baseline_observe(root: str, policy: dict, events: list[dict], ev: dict) -> dict:
+    """게이트-우선 판정의 물리 관측 — 이벤트에 diff·실행 결과를 채우고 관측 요약을 돌려준다.
+
+    `undecidable`은 판정을 낼 근거가 없다는 뜻이다(체크 없음/전부 skip). 그 자리는 FAIL이
+    아니라 LLM Verifier로 넘어간다 — 증거 부재를 판정으로 바꾸면 게이트가 거짓말을 한다."""
+    map_ok, map_error = refresh_managed_map(root)
+    ignored_base = next(
+        (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
+    )
+    ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
+    snapshot_ok = "<snapshot-unavailable>" not in ev["changed_files"]
+    ev["level"] = "micro"
+    # 무변경(diff EMPTY) 판정 — '변경 없음' 주장의 올바른 검증은 트리 관측 그 자체다
+    # (pass_evidence의 no_change=inspection 원칙). 베이스라인은 돌리지 않는다: 무변경
+    # 퀘스트는 red의 원인이 될 수 없고, 전 트리 체크의 타 세션 잔여물 red가 인질이 된다.
+    no_change = ev["diff_hash"] == EMPTY and snapshot_ok
+    obs = {"map_ok": map_ok, "map_error": map_error, "snapshot_ok": snapshot_ok, "no_change": no_change}
+    if no_change:
+        rc_obs, _obs = git(root, "status", "--porcelain")
+        ev["commands"] = [{"cmd": "git status --porcelain", "exit_code": rc_obs}]
+        return {**obs, "state": None, "results": ev["commands"], "observed_ok": rc_obs == 0}
+    bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
+    state = bl.get("state")
+    if state not in ("green", "red") and map_ok:
+        return {**obs, "state": state, "results": [], "observed_ok": False, "undecidable": True}
+    results = [c for c in bl.get("results", []) if isinstance(c, dict)]
+    ev["commands"] = results[:20]
+    ev["baseline"] = bl
+    return {**obs, "state": state, "results": results, "observed_ok": state == "green"}
+
+
+def _baseline_failing(root: str, policy: dict, events: list[dict], ev: dict, obs: dict) -> list[str]:
+    """무엇이 실패했는가 — 실패 서명은 이벤트에 적고 실패한 명령 목록을 돌려준다.
+
+    순서가 계약이다: 앞의 이유가 뒤를 가린다(스냅샷 부재 > 지도 갱신 실패 > 베이스라인 red).
+    맨 뒤 criteria 계약은 green이어도 FAIL로 뒤집을 수 있다 — 계약이 선언된 기준은 그 명령이
+    유일한 증거이므로 무관한 exit-0으로 대체되지 않는다."""
+    failing = [str(c.get("cmd")) for c in obs["results"] if c.get("exit_code") not in (0, None)]
+    if not obs["snapshot_ok"]:
+        ev["failure_sig"] = "snapshot-unavailable"
+        return ["git write-tree (temporary index)"]
+    if not obs["map_ok"]:
+        ev["failure_sig"] = "map-refresh-failed"
+        ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
+        return [obs["map_error"] or "managed map refresh failed"]
+    if obs["state"] == "red":
+        ev["failure_sig"] = "baseline-red"
+        return failing
+    if obs["no_change"] and not obs["observed_ok"]:
+        ev["failure_sig"] = "tree-observe-failed"
+        return ["git status --porcelain"]
+    if unsafe_map_links(root):
+        ev["verdict"] = "FAIL"
+        ev["failure_sig"] = "unsafe-map-link"
+        return failing
+    crit = contract_criteria(*(e.get("criteria") for e in events))
+    cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
+    if cc is not None:
+        ev["criteria_checks"] = cc
+    unmet = unmet_contracts(root, crit, ev)
+    if unmet:
+        ev["verdict"] = "FAIL"
+        ev["failure_sig"] = "criteria-contract"
+        return [str(u) for u in unmet]
+    return failing
+
+
+def _cmd_verify_baseline(root: str, qid: str, events: list[dict], policy: dict, args) -> int:
+    """verify-baseline — 하네스가 프로젝트 체크를 직접 실행해 판정을 기록한다 (게이트-우선).
+
+    baseline은 모델이 고르는 축약 경로가 아니다. 현재 물리 diff와 같은 risk flags로 전이를 다시
+    계산해 판정 자격을 확인한다 — sig_risk·큰 diff·민감 경로를 MAIN_WORKER가 micro PASS로
+    자기강등하는 우회도 여기서 한 번에 막는다. commands는 하네스가 직접 실행한 체크이고
+    (pass_evidence 충족), verifier 재량 커맨드가 아니다."""
+    eligible = transition(summarize(root, qid, events, policy), policy, args, load_priors(root))
+    if eligible["next_role"] != "BASELINE_VERIFY":
+        print(
+            json.dumps(
+                {
+                    "error": "not eligible for baseline verification — follow the role assigned by the "
+                    "transition function",
+                    "next_role": eligible["next_role"],
+                    "why": eligible["why"],
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return 1
+    ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
+    obs = _baseline_observe(root, policy, events, ev)
+    if obs.get("undecidable"):
+        return _error("cannot render a baseline verdict (no checks/all skipped) — verify with the LLM Verifier")
+    ev["verdict"] = "PASS" if obs["observed_ok"] and obs["map_ok"] and obs["snapshot_ok"] else "FAIL"
+    failing = _baseline_failing(root, policy, events, ev, obs)
+    if ev["verdict"] == "PASS":
+        # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (append 경로와 동일)
+        ev["tree_ref"] = current_tree_ref(root)
+        ev["verification_id"] = verification_identity(ev)
+    write_event(root, qid, ev)
+    fails = [str(f) for c in obs["results"] for f in (c.get("fails") or [])]  # run_baseline 채집 정형 실패 줄
+    print(
+        json.dumps(
+            {
+                "appended": "verify",
+                "verdict": ev["verdict"],
+                "baseline": obs["state"],
+                "failing": failing[:5],
+                "fails": fails[:5],
+                "turn": ev["turn"],
+                "diff_hash": ev["diff_hash"],
+                "verification_id": ev.get("verification_id"),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
+def _cmd_ticket(root: str, qid: str, args) -> int:
+    """ticket-* — 티켓 런타임 전이. claim token 검증은 ticket_runtime이 진다."""
+    if args.cmd != "ticket-recover" and args.unit is None:
+        print(json.dumps({"error": "%s requires --unit" % args.cmd}), file=sys.stderr)
+        return 2
+    rc, payload = ticket_runtime(
+        root,
+        qid,
+        args.cmd,
+        unit=args.unit,
+        session=args.session,
+        worker=args.worker,
+        claim_token=args.claim_token,
+        lease_seconds=args.lease_seconds,
+        max_attempts=args.max_attempts,
+        status=args.status,
+        error=args.error,
+    )
+    print(json.dumps(payload, ensure_ascii=False), file=sys.stdout if rc == 0 else sys.stderr)
+    return rc
+
+
+def _close_event(events: list[dict], qid: str, args, decision: str, code: str, forced: bool) -> dict:
+    """종료 이벤트 — 어떤 판정으로 닫혔는지와 그 근거가 된 PASS를 같이 적는다."""
+    return normalize(
+        {
+            "role": "odin",
+            "event": "quest_closed",
+            "risk": {"forced": forced, "decision": decision, "code": code},
+            "verification_id": next(
+                (
+                    event.get("verification_id")
+                    for event in reversed(events)
+                    if event.get("event") == "verify" and event.get("verdict") == "PASS"
+                ),
+                None,
+            ),
+        },
+        events,
+        qid,
+        args.session,
+    )
+
+
+def _close_map_state(root: str, base_ref) -> tuple[bool, list[str]]:
+    """지도 최신 여부와 수동 갱신 안내 — 자동 갱신이 실패했을 때만 안내가 붙는다."""
+    try:
+        from asgard.code_map import check_map
+
+        current = check_map(root).ok if os.path.isdir(os.path.join(root, ".asgard", "map")) else False
+        return current, map_nudge(root, base_ref)
+    except Exception:
+        return False, []
+
+
+def _close_verdict(
+    root: str, qid: str, events: list[dict], policy: dict, args
+) -> tuple[dict, str, str, str, bool] | None:
+    """close 직전의 최신 판정 — (요약, decision, code, why, forced). None이면 닫지 않는다.
+
+    lock 안에서 다시 재는 이유: append가 PASS 스냅샷 뒤에 끼어드는 stale-close를 허용하지 않는다."""
+    s = summarize(root, qid, events, policy)
+    s["tests_available"] = tests_available(root)
+    decision, code, why = completion_decision(s)
+    ok = decision in ("APPROVED", "ESCALATED")
+    if not ok and not args.force:
+        print(
+            json.dumps(
+                {
+                    "error": "close rejected (%s: %s) — only after a verified PASS (+hash match) or "
+                    "ESCALATE. Bypass with --force (requires Odin's consent — LAST not recorded, "
+                    "no gate exemption)" % (code, why)
+                },
+                ensure_ascii=False,
+            ),
+            file=sys.stderr,
+        )
+        return None
+    return s, decision, code, why, bool(args.force and not ok)
+
+
+def _cmd_close(root: str, qid: str, policy: dict, args) -> int:
+    """close — 판정·종료 이벤트·ACTIVE 포인터 해제를 같은 Quest lock 안에 묶는다."""
+    with quest_lock(root, qid):
+        events = load_events(root, qid)
+        verdict = _close_verdict(root, qid, events, policy, args)
+        if verdict is None:
+            return 1
+        s, decision, code, why, forced = verdict
+        _write_event_unlocked(root, qid, _close_event(events, qid, args, decision, code, forced), events)
+        # LAST is a verified-state capability, not merely a termination receipt.
+        # ESCALATE may end the active loop, but its writes remain unverified.
+        if decision == "APPROVED" and not forced:
+            try:
+                _write_pointer(_session_pointer(root, args.session, "last"), qid)
+                _write_pointer(os.path.join(quest_dir(root), "LAST"), qid)
+            except Exception as exc:
+                return _error(f"close LAST pointer publication failed: {exc}")
+        clear_active_quest(root, args.session, qid)
+    try:
+        pruned = prune_quests(root, policy)
+    except Exception:
+        pruned = []  # 정리는 부가 기능 — close 성공을 막지 않는다
+    res = {"closed": qid, "forced": forced}
+    if pruned:
+        res["pruned"] = len(pruned)
+    if forced or decision != "APPROVED":
+        res["gate_exempt"] = False
+    if forced:
+        res["rejected"] = "%s: %s" % (code, why)
+    map_current, nudge = _close_map_state(root, s.get("base_ref"))
+    if map_current:
+        res["map_current"] = True
+    elif nudge:
+        res["map_update"] = nudge
+        res["map_hint"] = (
+            "automatic map refresh failed — run asgard map update, then fold only new knowledge into "
+            "the area map incrementally"
+        )
+    print(json.dumps(res, ensure_ascii=False))
+    return 0
+
+
+def main() -> int:
+    args = _parser().parse_args()
     root = repo_root()
     policy = load_policy(root)
 
     if args.cmd == "open":
-        if not args.quest_id:
-            print("usage: quest-log open <quest-id> [--criteria ...]", file=sys.stderr)
-            return 2
-        qid = sanitize(args.quest_id)
-        request = args.request
-        if args.request_stdin:
-            raw_request = sys.stdin.buffer.read(65537)
-            if len(raw_request) > 65536:
-                print(json.dumps({"error": "request payload exceeds 64 KiB limit"}), file=sys.stderr)
-                return 1
-            try:
-                request = str((json.loads(raw_request.decode("utf-8")) or {}).get("request") or "")
-            except Exception:
-                print(json.dumps({"error": "invalid request stdin payload"}), file=sys.stderr)
-                return 1
-        if len(request) > 10000:
-            print(json.dumps({"error": "request exceeds 10,000-character limit"}), file=sys.stderr)
-            return 1
-        base_ref = args.base_ref or snapshot_ref(root)
-        if args.base_ref:
-            valid_rc, raw_type = git(root, "cat-file", "-t", args.base_ref)
-            valid_type = raw_type.decode("utf-8", "replace") if isinstance(raw_type, bytes) else raw_type
-            if valid_rc != 0 or valid_type.strip() != "commit":
-                print(json.dumps({"error": "invalid quest start snapshot"}), file=sys.stderr)
-                return 1
-        if not base_ref and not args.no_write:
-            print(
-                json.dumps({"error": "write quest requires a Git repository with HEAD and a capturable start tree"}),
-                file=sys.stderr,
-            )
-            return 1
-        base_ref = base_ref or "NONE"
-        risk = {"has_write": not args.no_write}
-        if args.task_class:  # prior 집계 축 — 퀘스트가 어느 클래스로 열렸는지 감사 기록
-            risk["task_class"] = args.task_class
-        ignored_snapshot = ignored_state(root)
-        if "<snapshot-unavailable>" in ignored_snapshot:
-            print(json.dumps({"error": "ignored-file snapshot unavailable"}), file=sys.stderr)
-            return 1
-        execution_id = secrets.token_hex(16)
-        ev = normalize(
-            {
-                "role": "thinker",
-                "event": "plan",
-                "base_ref": base_ref,
-                "risk": risk,
-                "criteria": args.criteria,
-                "request": request,
-                "ignored_snapshot": ignored_snapshot,
-                "execution_id": execution_id,
-                "acceptance_hash": acceptance_identity(
-                    request=request,
-                    criteria=args.criteria,
-                    base_ref=base_ref,
-                    ignored_snapshot=ignored_snapshot,
-                    risk=risk,
-                ),
-            },
-            [],
-            qid,
-            args.session,
-        )
-        # One qid represents one immutable execution. Reopening would mix two acceptance contracts.
-        with quest_lock(root, qid):
-            path = os.path.join(quest_dir(root), qid + ".jsonl")
-            if os.path.exists(path):
-                print(json.dumps({"error": "quest id already exists; resume it or choose a new id"}), file=sys.stderr)
-                return 1
-            _write_event_unlocked(root, qid, ev, [])
-        set_active_quest(root, args.session, qid)
-        print(
-            json.dumps(
-                {
-                    "opened": qid,
-                    "execution_id": execution_id,
-                    "acceptance_hash": ev["acceptance_hash"],
-                    "base_ref": base_ref,
-                    "turn": ev["turn"],
-                },
-                ensure_ascii=False,
-            )
-        )
-        return 0
+        return _cmd_open(root, args)
 
     qid = sanitize(args.quest_id) if args.quest_id else active_quest(root, args.session)
     if not qid:
@@ -2335,351 +2790,32 @@ def main() -> int:
         return 1
     events = load_events(root, qid)
     if not events:
-        print(json.dumps({"error": "quest ledger is missing or unreadable"}), file=sys.stderr)
-        return 1
+        return _error("quest ledger is missing or unreadable")
     ledger_ok, ledger_detail = ledger_integrity(events)
     if not ledger_ok:
-        print(json.dumps({"error": "quest ledger integrity failure", "detail": ledger_detail}), file=sys.stderr)
-        return 1
+        return _error("quest ledger integrity failure", detail=ledger_detail)
 
     if args.cmd == "replay":
-        print(
-            json.dumps(
-                {**replay_ledger(events), "ledger": ledger_detail},
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps({**replay_ledger(events), "ledger": ledger_detail}, ensure_ascii=False, indent=2))
         return 0
-
     if args.cmd.startswith("ticket-"):
-        if args.cmd != "ticket-recover" and args.unit is None:
-            print(json.dumps({"error": "%s requires --unit" % args.cmd}), file=sys.stderr)
-            return 2
-        rc, payload = ticket_runtime(
-            root,
-            qid,
-            args.cmd,
-            unit=args.unit,
-            session=args.session,
-            worker=args.worker,
-            claim_token=args.claim_token,
-            lease_seconds=args.lease_seconds,
-            max_attempts=args.max_attempts,
-            status=args.status,
-            error=args.error,
-        )
-        print(json.dumps(payload, ensure_ascii=False), file=sys.stdout if rc == 0 else sys.stderr)
-        return rc
-
+        return _cmd_ticket(root, qid, args)
     if args.cmd == "append":
-        raw = {}
-        if not sys.stdin.isatty():
-            try:
-                body = sys.stdin.read().strip()
-                raw = json.loads(body) if body else {}
-            except Exception:
-                print(json.dumps({"error": "stdin is not valid JSON"}), file=sys.stderr)
-                return 2
-        for k, v in (("role", args.role), ("event", args.event), ("verdict", args.verdict), ("level", args.level)):
-            if v:
-                raw[k] = v
-        if isinstance(raw.get("role"), str):
-            raw["role"] = raw["role"].lower()  # 전이 함수 출력(WORKER)을 그대로 넣는 세션 실측 — 통계 축 분열 방지
-        if args.criteria:
-            raw["criteria"] = args.criteria
-        if raw.get("event") not in APPEND_EVENTS:  # ticket_lease는 ticket-heartbeat 전용
-            print(json.dumps({"error": "event must be one of %s" % sorted(APPEND_EVENTS)}), file=sys.stderr)
-            return 2
-        if raw.get("event") == "ticket":
-            if raw.get("unit") is None:
-                print(json.dumps({"error": "ticket requires unit"}), file=sys.stderr)
-                return 2
-            if raw.get("ticket_status") not in TICKET_STATUSES:
-                print(
-                    json.dumps({"error": "ticket_status must be one of %s" % sorted(TICKET_STATUSES)}), file=sys.stderr
-                )
-                return 2
-            if raw.get("ticket_status") != "todo" or raw.get("role") != "thinker":
-                print(
-                    json.dumps(
-                        {
-                            "error": "ticket runtime transitions require ticket-claim/heartbeat/finish/recover; "
-                            "raw append only accepts thinker todo definitions"
-                        }
-                    ),
-                    file=sys.stderr,
-                )
-                return 2
-        if raw.get("verdict", "NA") not in VERDICTS:
-            print(json.dumps({"error": "verdict must be one of %s" % sorted(VERDICTS)}), file=sys.stderr)
-            return 2
-        ev = normalize(raw, events, qid, args.session)
-        if ev["event"] == "verify":
-            if ev["verdict"] == "NA":
-                print(json.dumps({"error": "verify requires --verdict PASS|FAIL|ESCALATE"}), file=sys.stderr)
-                return 2
-            # 구조 지도도 판정 대상 diff에 포함 — PASS 뒤 close가 파일을 쓰면 stale hash가 된다.
-            map_ok, map_error = refresh_managed_map(root)
-            # 판정 이벤트의 물리 증거는 이 도구가 계산한다 — 손 계산 해시는 gate와 어긋난다.
-            ignored_base = next(
-                (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
-                None,
-            )
-            ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
-            unsafe_maps = unsafe_map_links(root)
-            if "<snapshot-unavailable>" in ev["changed_files"] and ev["verdict"] == "PASS":
-                ev["verdict"] = "FAIL"
-                ev["failure_sig"] = "snapshot-unavailable"
-                ev["commands"] = [
-                    *ev.get("commands", []),
-                    {"cmd": "git write-tree (temporary index)", "exit_code": 1, "error": "snapshot unavailable"},
-                ][-20:]
-            elif not map_ok and ev["verdict"] == "PASS":
-                ev["verdict"] = "FAIL"
-                ev["failure_sig"] = "map-refresh-failed"
-                ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
-                ev["commands"] = [
-                    *ev.get("commands", []),
-                    {"cmd": "asgard map check", "exit_code": 1, "error": map_error},
-                ][-20:]
-            elif unsafe_maps and ev["verdict"] == "PASS":
-                ev["verdict"] = "FAIL"
-                ev["failure_sig"] = "unsafe-map-link"
-                ev["changed_files"] = sorted(set(ev["changed_files"]) | set(unsafe_maps))
-            ev.setdefault("level", "micro")
-            if ev["verdict"] == "PASS":
-                # 하네스 소유 베이스라인 — normalize가 stdin baseline을 버린 뒤 여기서만 기록.
-                # 무변경(diff EMPTY) 퀘스트는 red의 원인이 될 수 없다 — 전 트리 체크의 타 세션
-                # 잔여물 red가 무변경 퀘스트를 인질로 잡지 않게 면제 (26-07-23 감사).
-                if ev["diff_hash"] != EMPTY:
-                    bl = run_baseline(root, policy, events, ev["diff_hash"])
-                    if bl:
-                        ev["baseline"] = bl
-                # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize가 버림)
-                crit = contract_criteria(ev.get("criteria"), *(e.get("criteria") for e in events))
-                cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
-                if cc is not None:
-                    ev["criteria_checks"] = cc
-                # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope)
-                ev["tree_ref"] = current_tree_ref(root)
-                ev["verification_id"] = verification_identity(ev)
-        write_event(root, qid, ev)
-        print(
-            json.dumps(
-                {
-                    "appended": ev["event"],
-                    "turn": ev["turn"],
-                    "verdict": ev["verdict"],
-                    "diff_hash": ev["diff_hash"],
-                    "verification_id": ev.get("verification_id"),
-                },
-                ensure_ascii=False,
-            )
-        )
-        return 0
-
+        return _cmd_append(root, qid, events, policy, args)
     if args.cmd == "verify-baseline":
-        # baseline은 모델이 고르는 축약 경로가 아니다. 현재 물리 diff와 동일 risk flags로
-        # 전이를 다시 계산해 하네스 판정 자격을 확인한다 — sig_risk/큰 diff/민감 경로를
-        # MAIN_WORKER가 micro PASS로 자기강등하는 우회도 여기서 한 번에 막는다.
-        eligible = transition(summarize(root, qid, events, policy), policy, args, load_priors(root))
-        if eligible["next_role"] != "BASELINE_VERIFY":
-            print(
-                json.dumps(
-                    {
-                        "error": "not eligible for baseline verification — follow the role assigned by the "
-                        "transition function",
-                        "next_role": eligible["next_role"],
-                        "why": eligible["why"],
-                    },
-                    ensure_ascii=False,
-                ),
-                file=sys.stderr,
-            )
-            return 1
-        # 게이트-우선 판정 턴 — LLM Verifier 대신 하네스가 프로젝트 체크로 판정을 기록.
-        # commands = 하네스가 직접 실행한 체크 (pass_evidence 충족) — verifier 재량 커맨드 아님.
-        ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
-        map_ok, map_error = refresh_managed_map(root)
-        ignored_base = next(
-            (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
-        )
-        ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
-        snapshot_ok = "<snapshot-unavailable>" not in ev["changed_files"]
-        ev["level"] = "micro"
-        # 무변경(diff EMPTY) 판정 — '변경 없음' 주장의 올바른 검증은 트리 관측 그 자체다
-        # (pass_evidence의 no_change=inspection 원칙). 베이스라인은 돌리지 않는다: 무변경
-        # 퀘스트는 red의 원인이 될 수 없고, 전 트리 체크의 타 세션 잔여물 red가 인질이 된다.
-        no_change = ev["diff_hash"] == EMPTY and snapshot_ok
-        if no_change:
-            rc_obs, _obs = git(root, "status", "--porcelain")
-            bl = {}
-            state = None
-            results = [{"cmd": "git status --porcelain", "exit_code": rc_obs}]
-            ev["commands"] = results
-            observed_ok = rc_obs == 0
-        else:
-            bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
-            state = bl.get("state")
-            if state not in ("green", "red") and map_ok:
-                print(
-                    json.dumps(
-                        {
-                            "error": "cannot render a baseline verdict (no checks/all skipped) — verify with the LLM Verifier"
-                        }
-                    ),
-                    file=sys.stderr,
-                )
-                return 1
-            results = [c for c in bl.get("results", []) if isinstance(c, dict)]
-            ev["commands"] = results[:20]
-            ev["baseline"] = bl
-            observed_ok = state == "green"
-        ev["verdict"] = "PASS" if observed_ok and map_ok and snapshot_ok else "FAIL"
-        failing = [str(c.get("cmd")) for c in results if c.get("exit_code") not in (0, None)]
-        if not snapshot_ok:
-            ev["failure_sig"] = "snapshot-unavailable"
-            failing = ["git write-tree (temporary index)"]
-        elif not map_ok:
-            ev["failure_sig"] = "map-refresh-failed"
-            failing = [map_error or "managed map refresh failed"]
-            ev["changed_files"] = sorted(set(ev["changed_files"]) | {".asgard/map"})
-        elif state == "red":
-            ev["failure_sig"] = "baseline-red"
-        elif no_change and not observed_ok:
-            ev["failure_sig"] = "tree-observe-failed"
-            failing = ["git status --porcelain"]
-        elif unsafe_map_links(root):
-            ev["verdict"] = "FAIL"
-            ev["failure_sig"] = "unsafe-map-link"
-        else:
-            # criteria verify 계약 — 게이트-우선 경로도 계약을 결속한다: 계약 미충족이면 green 이어도 FAIL
-            crit = contract_criteria(*(e.get("criteria") for e in events))
-            cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
-            if cc is not None:
-                ev["criteria_checks"] = cc
-            unmet = unmet_contracts(root, crit, ev)
-            if unmet:
-                ev["verdict"] = "FAIL"
-                ev["failure_sig"] = "criteria-contract"
-                failing = [str(u) for u in unmet]
-        if ev["verdict"] == "PASS":
-            # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (append 경로와 동일)
-            ev["tree_ref"] = current_tree_ref(root)
-            ev["verification_id"] = verification_identity(ev)
-        write_event(root, qid, ev)
-        fails = [str(f) for c in results for f in (c.get("fails") or [])]  # run_baseline 채집 정형 실패 줄
-        print(
-            json.dumps(
-                {
-                    "appended": "verify",
-                    "verdict": ev["verdict"],
-                    "baseline": state,
-                    "failing": failing[:5],
-                    "fails": fails[:5],
-                    "turn": ev["turn"],
-                    "diff_hash": ev["diff_hash"],
-                    "verification_id": ev.get("verification_id"),
-                },
-                ensure_ascii=False,
-            )
-        )
-        return 0
+        return _cmd_verify_baseline(root, qid, events, policy, args)
 
     s = summarize(root, qid, events, policy)
     s["tests_available"] = tests_available(root)
     s["ledger"] = ledger_detail
-
     if args.cmd == "state":
         print(json.dumps(s, ensure_ascii=False, indent=2))
         return 0
-
     if args.cmd == "next":
         print(json.dumps(transition(s, policy, args, load_priors(root)), ensure_ascii=False, indent=2))
         return 0
-
     if args.cmd == "close":
-        # 최신 상태 판정 → durable close event → pointer compare-delete를 같은 Quest lock에 묶는다.
-        # append가 PASS snapshot 뒤에 끼어드는 stale-close race를 허용하지 않는다.
-        with quest_lock(root, qid):
-            events = load_events(root, qid)
-            s = summarize(root, qid, events, policy)
-            s["tests_available"] = tests_available(root)
-            decision, code, why = completion_decision(s)
-            ok = decision in ("APPROVED", "ESCALATED")
-            if not ok and not args.force:
-                print(
-                    json.dumps(
-                        {
-                            "error": "close rejected (%s: %s) — only after a verified PASS (+hash match) or "
-                            "ESCALATE. Bypass with --force (requires Odin's consent — LAST not recorded, "
-                            "no gate exemption)" % (code, why)
-                        },
-                        ensure_ascii=False,
-                    ),
-                    file=sys.stderr,
-                )
-                return 1
-            forced = bool(args.force and not ok)
-            close_event = normalize(
-                {
-                    "role": "odin",
-                    "event": "quest_closed",
-                    "risk": {"forced": forced, "decision": decision, "code": code},
-                    "verification_id": next(
-                        (
-                            event.get("verification_id")
-                            for event in reversed(events)
-                            if event.get("event") == "verify" and event.get("verdict") == "PASS"
-                        ),
-                        None,
-                    ),
-                },
-                events,
-                qid,
-                args.session,
-            )
-            _write_event_unlocked(root, qid, close_event, events)
-            # LAST is a verified-state capability, not merely a termination receipt.
-            # ESCALATE may end the active loop, but its writes remain unverified.
-            if decision == "APPROVED" and not forced:
-                try:
-                    _write_pointer(_session_pointer(root, args.session, "last"), qid)
-                    _write_pointer(os.path.join(quest_dir(root), "LAST"), qid)
-                except Exception as exc:
-                    print(json.dumps({"error": f"close LAST pointer publication failed: {exc}"}), file=sys.stderr)
-                    return 1
-            clear_active_quest(root, args.session, qid)
-        try:
-            pruned = prune_quests(root, policy)
-        except Exception:
-            pruned = []  # 정리는 부가 기능 — close 성공을 막지 않는다
-        res = {"closed": qid, "forced": forced}
-        if pruned:
-            res["pruned"] = len(pruned)
-        if forced or decision != "APPROVED":
-            res["gate_exempt"] = False
-        if forced:
-            res["rejected"] = "%s: %s" % (code, why)
-        try:  # 지도 최신 여부 확인. 자동 갱신 실패 때만 수동 증분 갱신을 리마인드한다.
-            from asgard.code_map import check_map
-
-            map_current = check_map(root).ok if os.path.isdir(os.path.join(root, ".asgard", "map")) else False
-            nudge = map_nudge(root, s.get("base_ref"))
-        except Exception:
-            map_current = False
-            nudge = []
-        if map_current:
-            res["map_current"] = True
-        elif nudge:
-            res["map_update"] = nudge
-            res["map_hint"] = (
-                "automatic map refresh failed — run asgard map update, then fold only new knowledge into "
-                "the area map incrementally"
-            )
-        print(json.dumps(res, ensure_ascii=False))
-        return 0
+        return _cmd_close(root, qid, policy, args)
     return 0
 
 
