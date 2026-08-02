@@ -11,16 +11,18 @@ from .policy import memory_dir
 from .store import (
     DB,
     INDEX,
-    PAGES,
     _atomic_write,
     _chmod,
     _desc,
     _kind,
     _lock,
     _pages,
+    _pages_fingerprint,
     _read,
     _read_all,
+    _read_all_cached,
     ensure_home,
+    poison_ruleset,
 )
 
 # ── index.md — 카탈로그 (파생: pages/ 에서 전체 재생성) ──────────────────────────
@@ -31,9 +33,12 @@ def _index_row(slug: str, meta: dict, body: str) -> str:
 
 
 def build_index(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> str:
-    """카탈로그 본문. loaded 를 주면 그 읽기를 재사용한다 (`store._read_all` 참조)."""
+    """카탈로그 본문. loaded 를 주면 그 읽기를 재사용한다 (`store._read_all` 참조).
+
+    안 주면 공유 읽기 캐시에서 가져온다 — `lint`가 낡음 대조로 이 함수를 부르는데, 그 호출이
+    같은 점검 안에서 전량 읽기를 한 번 더 하던 자리다."""
     lines = ["# Memory Index", ""]
-    for slug, meta, body in _read_all(d) if loaded is None else loaded:
+    for slug, meta, body in _read_all_cached(d) if loaded is None else loaded:
         lines.append(_index_row(slug, meta, body))
     return "\n".join(lines) + "\n"
 
@@ -81,6 +86,16 @@ def _connect(path: str) -> sqlite3.Connection:
         # vec = 시맨틱 스트림 파생물 (옵트인). sha로 본문 변경만 재임베딩, data는 float32 BLOB.
         # 지워도·모델 바뀌어도 정본(pages/)에서 reindex로 복원 — 파일이 여전히 정본이다.
         conn.execute("CREATE TABLE IF NOT EXISTS vec(slug TEXT PRIMARY KEY, sha TEXT, dim INT, data BLOB)")
+        # 구절 벡터 — 페이지 벡터와 같은 sha 규율의 파생물. 리랭크는 페이지 하나를 구절 수십으로
+        # 쪼개 임베딩하는데, 그 결과가 어디에도 안 남아 **글자 그대로 같은 질의**가 같은 계산을
+        # 매번 다시 했다 (실측 26-08-02: 1회차 636 호출 · 2회차 636 호출). 본문이 안 바뀌면
+        # 구절도 안 바뀐다.
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS vec_passage(slug TEXT, sha TEXT, idx INT, data BLOB, PRIMARY KEY(slug, idx))"
+        )
+        # 오염 판정 — 모델이 필요 없는 결정론 판정이라 vec 보다 싸고, 매 턴 도는 회수 경로가
+        # 페이지마다 위협 정규식 전부를 다시 돌리던 자리다 (`store.poison_key`).
+        conn.execute("CREATE TABLE IF NOT EXISTS clean(slug TEXT PRIMARY KEY, sha TEXT, verdict TEXT)")
         # 파생 계층의 운영 메타 — 어떤 임베더로 만든 벡터인가. 이게 없으면 모델을 갈아도
         # sha는 그대로라(본문이 안 바뀌었으므로) 낡은 차원의 벡터가 조용히 남는다.
         conn.execute("CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY, value TEXT)")
@@ -170,24 +185,82 @@ def _vec_upsert(conn: sqlite3.Connection, slug: str, meta: dict, body: str) -> N
         _meta_set(conn, "vec_model", model)
 
 
-def _pages_fingerprint(d: str) -> str:
-    """페이지 디렉터리의 stat 지문 — 이름·크기·mtime만 본다 (파일을 열지 않는다).
+# ── 오염 판정 파생 칸 (clean) — 본문 sha 가 같으면 지난 판정 그대로 ────────────────────
 
-    `documents.py`의 `_manifest`와 같은 규율이다. 읽기가 0 인 이유는 `os.scandir`이 항목마다
-    stat을 사실상 공짜로 주기 때문이고, 그래서 이 지문은 "확인해 둔 결론을 재사용해도 되는가"의
-    싸고 보수적인 답이 된다. 실패하면 빈 문자열 — 지문이 없으면 빠른 길도 없고, 정확한 경로가
-    돈다 (fail-safe: 캐시를 못 믿을 때 캐시를 쓰는 일은 없다)."""
+
+def clean_verdicts(conn: sqlite3.Connection) -> dict[str, tuple[str, str]]:
+    """접어 둔 오염 판정 — slug → (sha, verdict). verdict 빈 문자열이 "깨끗함"이다.
+
+    위협 표가 개정되면 전부 버린다. 낡은 자로 잰 답을 새 자의 답이라고 말하지 않기 위해서다
+    (`store.poison_ruleset`). 못 읽으면 빈 dict — 캐시가 없으면 정확한 경로가 돈다."""
     try:
-        rows = []
-        with os.scandir(os.path.join(d, PAGES)) as entries:
-            for entry in sorted(entries, key=lambda row: row.name):
-                if not entry.name.endswith(".md"):
-                    continue
-                info = entry.stat()
-                rows.append(f"{entry.name}:{info.st_size}:{info.st_mtime_ns}")
-        return hashlib.sha256("|".join(rows).encode()).hexdigest()
-    except OSError:
-        return ""
+        if _meta_get(conn, "clean_rules") != poison_ruleset():
+            with conn:
+                conn.execute("DELETE FROM clean")
+                _meta_set(conn, "clean_rules", poison_ruleset())
+            return {}
+        return {
+            row[0]: (str(row[1] or ""), str(row[2] or ""))
+            for row in conn.execute("SELECT slug, sha, verdict FROM clean")
+        }
+    except Exception:
+        return {}
+
+
+def clean_remember(conn: sqlite3.Connection, rows: list[tuple[str, str, str]]) -> None:
+    """새로 낸 판정을 접어 둔다 — (slug, sha, verdict). 실패는 무해(다음 턴에 다시 잰다)."""
+    with contextlib.suppress(Exception):
+        with conn:
+            conn.executemany(
+                "INSERT INTO clean(slug, sha, verdict) VALUES(?,?,?) "
+                "ON CONFLICT(slug) DO UPDATE SET sha=excluded.sha, verdict=excluded.verdict",
+                rows,
+            )
+            _meta_set(conn, "clean_rules", poison_ruleset())
+
+
+# ── 구절 벡터 파생 칸 (vec_passage) — 본문 sha 가 같으면 재임베딩 없음 ──────────────────
+
+PASSAGE_MODEL_KEY = "vec_passage_model"
+
+
+def passage_vectors(conn: sqlite3.Connection, slug: str, sha: str) -> list[bytes]:
+    """접어 둔 구절 벡터 BLOB — 본문 sha 가 다르면 빈 리스트. idx 순서 그대로."""
+    try:
+        rows = conn.execute(
+            "SELECT data FROM vec_passage WHERE slug = ? AND sha = ? ORDER BY idx", (slug, sha)
+        ).fetchall()
+        return [row[0] for row in rows]
+    except Exception:
+        return []
+
+
+def passage_remember(conn: sqlite3.Connection, entries: list[tuple[str, str, list[bytes]]]) -> None:
+    """구절 벡터를 접어 둔다 — (slug, sha, 벡터들) 목록을 커밋 한 번에. 실패는 무해.
+
+    같은 slug 의 옛 sha 행은 함께 사라진다 (칸이 페이지 개정마다 자라지 않는다)."""
+    with contextlib.suppress(Exception):
+        with conn:
+            for slug, sha, blobs in entries:
+                conn.execute("DELETE FROM vec_passage WHERE slug = ?", (slug,))
+                conn.executemany(
+                    "INSERT INTO vec_passage(slug, sha, idx, data) VALUES(?,?,?,?)",
+                    [(slug, sha, idx, blob) for idx, blob in enumerate(blobs)],
+                )
+
+
+def passage_model(conn: sqlite3.Connection) -> str:
+    """구절 벡터를 만든 임베더 이름. `vec_model`과 **따로** 적는다 — 여기서 같은 칸을 쓰면
+    페이지 벡터의 재임베딩 게이트가 구절 캐시 때문에 통과해 낡은 벡터가 살아남는다."""
+    return _meta_get(conn, PASSAGE_MODEL_KEY)
+
+
+def passage_reset(conn: sqlite3.Connection, model: str) -> None:
+    """임베더가 바뀌었다 — 다른 공간의 구절 벡터를 통째로 버리고 새 이름을 적는다."""
+    with contextlib.suppress(Exception):
+        with conn:
+            conn.execute("DELETE FROM vec_passage")
+            _meta_set(conn, PASSAGE_MODEL_KEY, model)
 
 
 def _coverage_token(fingerprint: str, model: str, pages: int, vectors: int) -> str:
@@ -268,15 +341,15 @@ def vec_coverage(d: str | None = None) -> dict:
             result["fresh"], result["stale"], result["coverage"] = 0, len(pages), 0.0
         return result
 
-    fresh = 0
-    stale = 0
+    fresh = stale = 0
+    loaded = {slug: (meta, body) for slug, meta, body in _read_all_cached(d)}  # 읽기는 공유분에서
     for slug in pages:
         # 이름을 `stored`로 두지 않는다: 위에서 그건 **임베더 모델명**이고, 같은 이름을 쓰면
         # 루프가 그걸 sha로 덮어써서 아래 모델 대조가 항상 불일치가 된다 (26-07-29 실측 결함).
         stored_sha = rows.get(slug)
         if stored_sha is None:
             continue
-        pg = _read(d, slug)
+        pg = loaded.get(slug)
         if pg and hashlib.sha1(_vec_text(*pg).encode()).hexdigest() == stored_sha:
             fresh += 1
         else:
@@ -352,12 +425,20 @@ def reindex(d: str | None = None) -> int:
 
 
 def _vec_prune(conn: sqlite3.Connection, pages: list[str]) -> None:
-    """정본에 없는 slug의 벡터 행 제거 — 파생물 고아 청소 (fail-open)."""
-    with contextlib.suppress(Exception):
-        keep = set(pages)
-        stale = [r[0] for r in conn.execute("SELECT slug FROM vec").fetchall() if r[0] not in keep]
-        for slug in stale:
-            conn.execute("DELETE FROM vec WHERE slug = ?", (slug,))
+    """정본에 없는 slug의 파생 행 제거 — 벡터·구절 벡터·오염 판정 고아 청소 (fail-open).
+
+    셋 다 slug 로 정본에 매달린 파생물이라 청소 시점이 같다. 남겨 둬도 판정을 바꾸지는
+    않지만(전부 sha 로 다시 대조한다) 지운 페이지의 흔적이 파생 칸에 영영 남는다."""
+    keep = set(pages)
+    for select, delete in (
+        ("SELECT slug FROM vec", "DELETE FROM vec WHERE slug = ?"),
+        ("SELECT slug FROM vec_passage", "DELETE FROM vec_passage WHERE slug = ?"),
+        ("SELECT slug FROM clean", "DELETE FROM clean WHERE slug = ?"),
+    ):
+        with contextlib.suppress(Exception):
+            stale = {row[0] for row in conn.execute(select).fetchall() if row[0] not in keep}
+            for slug in stale:
+                conn.execute(delete, (slug,))
 
 
 def usage_stats(d: str | None = None) -> list[dict]:

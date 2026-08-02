@@ -129,12 +129,14 @@ def _lock(d: str):
 
 def _atomic_write(path: str, content: str) -> None:
     """고유 temp + rename 원자 쓰기 (P1) — 부분 파일 노출·동시 temp 충돌 없음. 0600."""
+    global _WRITES
     d = os.path.dirname(path)
     tmp = os.path.join(d, f".{os.path.basename(path)}.{os.getpid()}.{os.urandom(4).hex()}.tmp")
     with open(tmp, "w", encoding="utf-8") as f:
         f.write(content)
     _chmod(tmp, 0o600)
     os.replace(tmp, path)
+    _WRITES += 1  # 이 프로세스의 쓰기는 아래 읽기 캐시를 즉시 무효화한다
 
 
 # ── 페이지 직렬화 ──────────────────────────────────────────────────────────────
@@ -325,6 +327,75 @@ def _read_all(d: str) -> list[tuple[str, dict, str]]:
     return rows
 
 
+# ── 읽은 결과를 소비자들이 나눠 쓴다 (프로세스 수명 캐시) ─────────────────────────────
+#
+# `_read_all`은 **한 호출 안의** 중복 읽기를 없앴는데, 한 턴 안에서 그 호출 자체가 여러 번
+# 일어난다: 회수(`recall.query`)·주입 카탈로그(`recall._snapshot_rows`)·건강 점검
+# (`pages.lint`)이 각자 전량을 연다. 1,000페이지에서 회수 하나가 읽기 1,000번이고, 그 뒤
+# 카탈로그가 같은 파일을 다시 1,000번 연다 (실측 26-08-02).
+#
+# 캐시가 언제 죽는가 — 두 축으로 본다.
+#   ① 이 프로세스의 쓰기: `_atomic_write`가 `_WRITES`를 올린다. 쓰기 뒤 읽기는 무조건 새로 연다.
+#   ② 남의 프로세스·외부 편집: 페이지 디렉터리의 stat 지문(이름·크기·mtime_ns)이 다르면 새로
+#      연다. `index._pages_fingerprint`가 vec 커버리지 메모에 쓰는 것과 같은 자다.
+# 지문을 못 재면(권한·경쟁) 빠른 길이 없다 — 못 믿을 때 캐시를 쓰는 일은 없다 (fail-safe).
+#
+# 반환 리스트는 **공유물**이라 호출자가 고치면 안 된다 (지금 소비자 전부 읽기만 한다).
+_WRITES = 0
+_READ_CACHE: dict[str, tuple[str, list[tuple[str, dict, str]]]] = {}
+# 디렉터리당 하나만 들고 있는다. 이 상한을 넘는 위키는 캐시를 아예 안 만든다 — 회수 한 번
+# 아끼자고 프로세스가 본문 전량을 상주시키면 그건 다른 종류의 비용이다.
+_READ_CACHE_MAX_CHARS = 8_000_000
+
+
+def _pages_fingerprint(d: str) -> str:
+    """페이지 디렉터리의 stat 지문 — 이름·크기·mtime만 본다 (파일을 열지 않는다).
+
+    `documents.py`의 `_manifest`와 같은 규율이다. 읽기가 0 인 이유는 `os.scandir`이 항목마다
+    stat을 사실상 공짜로 주기 때문이고, 그래서 이 지문은 "확인해 둔 결론을 재사용해도 되는가"의
+    싸고 보수적인 답이 된다. 실패하면 빈 문자열 — 지문이 없으면 빠른 길도 없고, 정확한 경로가
+    돈다 (fail-safe: 캐시를 못 믿을 때 캐시를 쓰는 일은 없다)."""
+    try:
+        rows = []
+        with os.scandir(os.path.join(d, PAGES)) as entries:
+            for entry in sorted(entries, key=lambda row: row.name):
+                if not entry.name.endswith(".md"):
+                    continue
+                info = entry.stat()
+                rows.append(f"{entry.name}:{info.st_size}:{info.st_mtime_ns}")
+        return hashlib.sha256("|".join(rows).encode()).hexdigest()
+    except OSError:
+        return ""
+
+
+def _pages_token(d: str) -> str:
+    """이 시점의 페이지 형상 표 — 같으면 지난 읽기를 그대로 쓴다. 못 재면 빈 문자열."""
+    fingerprint = _pages_fingerprint(d)
+    return f"{_WRITES}:{fingerprint}" if fingerprint else ""
+
+
+def _read_all_cached(d: str) -> list[tuple[str, dict, str]]:
+    """`_read_all`과 같은 값 — 형상이 그대로면 지난 읽기를 돌려준다 (위 절의 두 축 참조)."""
+    token = _pages_token(d)
+    if not token:
+        return _read_all(d)
+    key = os.path.realpath(d)
+    hit = _READ_CACHE.get(key)
+    if hit is not None and hit[0] == token:
+        return hit[1]
+    rows = _read_all(d)
+    if sum(len(body) for _slug, _meta, body in rows) <= _READ_CACHE_MAX_CHARS:
+        _READ_CACHE[key] = (token, rows)
+    else:
+        _READ_CACHE.pop(key, None)
+    return rows
+
+
+def _read_cache_clear() -> None:
+    """읽기 캐시 폐기 — 테스트와 장기 프로세스의 명시적 손잡이."""
+    _READ_CACHE.clear()
+
+
 def _desc(meta: dict, body: str) -> str:
     line = meta.get("description") or next((ln.strip() for ln in body.splitlines() if ln.strip()), "")
     return line[:90]
@@ -337,10 +408,62 @@ def _kind(meta: dict) -> str:
     return k if k in KINDS else DEFAULT_KIND
 
 
+def _poison_fields(meta: dict, body: str) -> tuple[str, ...]:
+    """오염 판정이 보는 필드 — 판정과 캐시 키가 **같은 자리**에서 나와야 한다.
+
+    키가 판정보다 좁으면 안 보는 필드를 고쳐도 캐시가 안 깨진다: title 에 심은 위협이 조용히
+    통과한다. 그래서 두 함수가 이 하나를 부른다."""
+    return (
+        body,
+        str(meta.get("title", "")),
+        str(meta.get("links", "")),
+        str(meta.get("description", "")),
+        str(meta.get("kind", "")),
+    )
+
+
 def poisoned(meta: dict, body: str) -> str | None:
     """페이지 오염 판정 — 주입 가능한 모든 필드(본문·title·links·description·kind)."""
-    fields = (body, meta.get("title", ""), meta.get("links", ""), meta.get("description", ""), meta.get("kind", ""))
+    fields = _poison_fields(meta, body)
     return scan_threats(*fields) or scan_secrets(*fields)
+
+
+def poison_key(meta: dict, body: str) -> str:
+    """오염 판정의 캐시 키 — 판정이 보는 필드 전부의 sha1.
+
+    판정은 모델이 필요 없는 결정론이라 같은 입력이면 같은 답이다. 그런데 회수는 매 턴 돌고
+    페이지마다 위협 정규식 스물 몇 개 × 필드 다섯을 다시 돌린다 — 1,000페이지에서 회수 한 번의
+    71%가 이 재계산이었다 (실측 26-08-02). 본문 sha 로 접어 두면 `index._vec_upsert`가 벡터에
+    쓰는 것과 같은 규율이 되고, 파생이므로 지워도 다시 나온다."""
+    digest = hashlib.sha1()
+    for field in _poison_fields(meta, body):
+        digest.update(field.encode())
+        digest.update(b"\x00")  # 필드 경계 — 이어 붙인 두 필드가 다른 조합과 같아지지 않게
+    return digest.hexdigest()
+
+
+_RULESET: str = ""
+
+
+def poison_ruleset() -> str:
+    """위협·credential 표의 지문 — 표가 바뀌면 접어 둔 판정을 전부 버려야 한다.
+
+    `_vec_upsert`가 임베더 이름(`vec_model`)으로 하는 일과 같다: 캐시된 값이 **어느 자로 잰
+    것인가**를 같이 적어 두지 않으면, 자를 갈아도 낡은 답이 조용히 살아남는다. 표를 넓히는
+    개정(26-07-31 처럼)이 실제로 일어나므로 계약으로 둔다."""
+    global _RULESET
+    if not _RULESET:
+        from .policy import _INVISIBLE, _SECRET_PATTERNS, _SECRET_PLACEHOLDERS, _TAG_RANGE, _THREATS
+
+        parts = [
+            *_THREATS,
+            *(pattern.pattern for pattern in _SECRET_PATTERNS),
+            *_SECRET_PLACEHOLDERS,
+            *sorted(_INVISIBLE),
+            str(_TAG_RANGE),
+        ]
+        _RULESET = hashlib.sha1("\x00".join(parts).encode()).hexdigest()[:16]
+    return _RULESET
 
 
 def log_op(d: str, op: str, slug: str, detail: str = "") -> None:

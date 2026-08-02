@@ -5,13 +5,14 @@ from __future__ import annotations
 import contextlib
 import datetime as _dt
 import hashlib
+import math
 import os
 import re
 import shutil
 
 from .index import _db, _fts_upsert, build_index, vec_coverage, write_index
 from .policy import memory_dir, scan_secrets, scan_threats
-from .recall import _containment, _Grams, query, section_usage
+from .recall import _containment, _Grams, page_verdicts, query, section_usage
 from .store import (
     DB,
     DEFAULT_KIND,
@@ -25,6 +26,7 @@ from .store import (
     _page_path,
     _pages,
     _read,
+    _read_all_cached,
     _today,
     ensure_home,
     log_op,
@@ -443,6 +445,107 @@ def _imperative_phrase(body: str) -> str:
     return ""
 
 
+def _duplicate_pairs(texts: list[str], grams: _Grams, threshold: float) -> list[tuple[int, int]]:
+    """Jaccard ≥ threshold 인 쌍 — 앞 색인 오름차순. 전쌍 비교와 답이 같고, 세는 쌍만 적다.
+
+    전쌍 비교는 O(N²)다. 1,000페이지면 50만 쌍이고 쌍마다 그램 집합 교집합이라, `lint` 시간의
+    대부분이 여기서 나왔다 (실측 26-08-02: lint 5.9초). 그런데 쌍의 대부분은 **볼 필요조차
+    없다** — 두 가지 자로 미리 떨어뜨릴 수 있고, 둘 다 답을 바꾸지 않는 정확한 경계다.
+
+    ① 크기 경계. |A| ≤ |B| 이면 Jaccard = |A∩B|/|A∪B| ≤ |A|/|B| 이므로, |A| < t·|B| 인 쌍은
+       계산해 볼 것도 없이 문턱 미만이다.
+
+    ② 접두 필터 (집합 유사도 조인의 표준 기법). 전역 빈도 오름차순으로 정렬한 그램 중 앞
+       |X| − ⌈t·|X|⌉ + 1 개만 색인한다. Jaccard ≥ t 인 두 집합은 반드시 그 접두를 하나 이상
+       공유한다: 공통 원소 수는 ⌈t·max(|A|,|B|)⌉ 이상인데, 가장 앞선 공통 원소가 어느 한쪽의
+       접두 **밖**에 있다면 그 집합에서 그 원소 이후 자리가 ⌈t·|X|⌉ − 1 개뿐이라 공통 원소를
+       다 담을 수 없기 때문이다. 그래서 접두를 안 공유하는 쌍은 문턱 미만이 확정이다.
+
+    희귀한 그램부터 색인하는 것이 요점이다 — 흔한 그램(조사·어미)으로 색인하면 목록이 길어져
+    걸러지는 것이 없다. 코퍼스가 실제로 서로 닮았으면 살아남는 쌍이 많다: 그건 필터가 약한
+    것이 아니라 그만큼이 진짜 후보라는 뜻이고, 그때는 아래 정확 판정이 그만큼 돈다."""
+    sets = [grams.of(text) for text in texts]
+    sizes = [len(gramset) for gramset in sets]
+    frequency: dict[str, int] = {}
+    for gramset in sets:
+        for gram in gramset:
+            frequency[gram] = frequency.get(gram, 0) + 1
+    posting: dict[str, list[int]] = {}
+    pairs: set[tuple[int, int]] = set()
+    for i in sorted(range(len(texts)), key=lambda idx: sizes[idx]):  # 작은 집합부터 색인한다
+        gramset = sets[i]
+        if not gramset:
+            continue
+        cut = len(gramset) - math.ceil(threshold * len(gramset)) + 1
+        prefix = sorted(gramset, key=lambda gram: (frequency[gram], gram))[:cut]
+        floor = threshold * sizes[i]  # 크기 경계 — 작은 쪽이 이 밑이면 문턱을 못 넘는다
+        seen: set[int] = set()
+        for gram in prefix:
+            for j in posting.get(gram, ()):
+                if j in seen:
+                    continue
+                seen.add(j)
+                if sizes[j] >= floor and grams.jaccard_of(gramset, sets[j]) >= threshold:
+                    pairs.add((min(i, j), max(i, j)))
+        for gram in prefix:
+            posting.setdefault(gram, []).append(i)
+    return sorted(pairs)
+
+
+def _page_findings(
+    slug: str,
+    meta: dict,
+    body: str,
+    slugs: set[str],
+    threat: str | None,
+    counts: dict,
+    today: _dt.date,
+) -> list[dict]:
+    """페이지 한 장의 점검 결과 — 죽은 링크·오염·명령문·부패 후보. 순서가 곧 보고 순서다.
+
+    오염 판정(`threat`)은 호출자가 넘긴다: 같은 판정을 회수와 나눠 쓰기 위해서다
+    (`recall.page_verdicts`). 여기서 다시 재면 같은 위협 스캔이 한 점검 안에서 두 번 돈다."""
+    findings: list[dict] = []
+    for ref in re.findall(r"\[\[([^\]]+)\]\]", body) + [
+        s.strip() for s in meta.get("links", "").split(",") if s.strip()
+    ]:
+        if slugify(ref) not in slugs and ref not in slugs:
+            findings.append({"level": "warn", "code": "dead-link", "slug": slug, "msg": f"[[{ref}]]"})
+    # 외부 편집으로 스캔을 우회한 오염 소급 탐지 — 본문 + 주입 메타 전부, kind 포함 (P0)
+    if threat:
+        findings.append({"level": "error", "code": "threat", "slug": slug, "msg": threat})
+    # user 메모리는 선언문이어야 한다 — 명령문은 미래 세션에서 지시로 재해석되어
+    # 사용자의 현재 요청을 덮어쓸 수 있다 ("사용자는 X를 선호한다" ✓ / "항상 X하라" ✗)
+    if _kind(meta) == "user" and (imperative := _imperative_phrase(body)):
+        findings.append(
+            {
+                "level": "warn",
+                "code": "imperative-user-memory",
+                "slug": slug,
+                "msg": f"명령문 감지({imperative}) — 선언문으로 바꾸세요 ('사용자는 …를 선호한다')",
+            }
+        )
+    try:
+        updated = _dt.date.fromisoformat(meta.get("updated", meta.get("created", "")))
+    except Exception:
+        findings.append({"level": "warn", "code": "no-date", "slug": slug, "msg": "missing/invalid updated:"})
+        return findings
+    if (today - updated).days >= STALE_DAYS and not counts.get("uses"):
+        # 노출만 쌓인 페이지는 사유에 그 수를 적는다: "매 턴 실리는데 아무도 안 찾는다"는
+        # 지우라는 말이 아니라 사람이 봐야 할 사실이다 (자동 주입은 회수기의 선택이다).
+        exposures = int(counts.get("exposures") or 0)
+        findings.append(
+            {
+                "level": "info",
+                "code": "decay-candidate",
+                "slug": slug,
+                "msg": f"{(today - updated).days}d untouched, never searched"
+                + (f" ({exposures} auto-exposure(s))" if exposures else ""),
+            }
+        )
+    return findings
+
+
 def lint(d: str | None = None) -> list[dict]:
     """기계 판정만 — 모순 탐지 같은 의미 판단은 LLM 몫(후속). 반환 = findings."""
     d = d or memory_dir()
@@ -468,61 +571,30 @@ def lint(d: str | None = None) -> list[dict]:
     usage = _usage_counters(d)
     today = _dt.date.today()
     docs: dict[str, str] = {}
+    # 페이지는 여기서 한 번만 읽는다. 아래 `section_usage`·`build_index`·`vec_coverage`가 같은 파일을
+    # 다시 열던 자리라, 1,000페이지 점검 한 번이 전량 읽기 서너 벌이었다 (실측 26-08-02).
+    # 못 읽는 페이지는 이 목록에서 빠지므로 아래에서 slug 차집합으로 잡아 그대로 보고한다.
+    loaded = {slug: (meta, body) for slug, meta, body in _read_all_cached(d)}
+    # 오염 판정도 회수와 나눠 쓴다 — 본문 sha 가 그대로면 접어 둔 판정 그대로다
+    # (`recall.page_verdicts`). 여기서 다시 재면 같은 위협 스캔이 한 점검 안에서 두 벌이 된다.
+    verdicts = page_verdicts(d)
     for slug in sorted(slugs):
-        pg = _read(d, slug)
+        pg = loaded.get(slug)
         if not pg:
             findings.append({"level": "error", "code": "unreadable", "slug": slug, "msg": "parse failed"})
             continue
         meta, body = pg
         docs[slug] = meta.get("title", "") + " " + body
-        for ref in re.findall(r"\[\[([^\]]+)\]\]", body) + [
-            s.strip() for s in meta.get("links", "").split(",") if s.strip()
-        ]:
-            if slugify(ref) not in slugs and ref not in slugs:
-                findings.append({"level": "warn", "code": "dead-link", "slug": slug, "msg": f"[[{ref}]]"})
-        # 외부 편집으로 스캔을 우회한 오염 소급 탐지 — 본문 + 주입 메타 전부, kind 포함 (P0)
-        threat = poisoned(meta, body)
-        if threat:
-            findings.append({"level": "error", "code": "threat", "slug": slug, "msg": threat})
-        # user 메모리는 선언문이어야 한다 — 명령문은 미래 세션에서 지시로 재해석되어
-        # 사용자의 현재 요청을 덮어쓸 수 있다 ("사용자는 X를 선호한다" ✓ / "항상 X하라" ✗)
-        if _kind(meta) == "user":
-            imperative = _imperative_phrase(body)
-            if imperative:
-                findings.append(
-                    {
-                        "level": "warn",
-                        "code": "imperative-user-memory",
-                        "slug": slug,
-                        "msg": f"명령문 감지({imperative}) — 선언문으로 바꾸세요 ('사용자는 …를 선호한다')",
-                    }
-                )
-        try:
-            updated = _dt.date.fromisoformat(meta.get("updated", meta.get("created", "")))
-            counts = usage.get(slug) or {}
-            if (today - updated).days >= STALE_DAYS and not counts.get("uses"):
-                # 노출만 쌓인 페이지는 사유에 그 수를 적는다: "매 턴 실리는데 아무도 안 찾는다"는
-                # 지우라는 말이 아니라 사람이 봐야 할 사실이다 (자동 주입은 회수기의 선택이다).
-                exposures = int(counts.get("exposures") or 0)
-                findings.append(
-                    {
-                        "level": "info",
-                        "code": "decay-candidate",
-                        "slug": slug,
-                        "msg": f"{(today - updated).days}d untouched, never searched"
-                        + (f" ({exposures} auto-exposure(s))" if exposures else ""),
-                    }
-                )
-        except Exception:
-            findings.append({"level": "warn", "code": "no-date", "slug": slug, "msg": "missing/invalid updated:"})
+        threat = verdicts[slug] if slug in verdicts else poisoned(meta, body)
+        findings.extend(_page_findings(slug, meta, body, slugs, threat, usage.get(slug) or {}, today))
     items = sorted(docs.items())
-    # 쌍 비교는 O(N²)다 — 페이지 N개면 그램 생성이 N²번인데 본문은 N개뿐이다. 캐시를 이 호출의
-    # 수명으로 들고 돌면 판정은 글자 그대로 같고 그램 생성만 N번으로 떨어진다 (`recall._Grams`).
+    # 그램 생성은 본문마다 한 번이면 된다 — 캐시를 이 호출의 수명으로 들고 돈다 (`recall._Grams`).
+    # 쌍 비교는 그 위에서 사전 필터로 좁힌다: 실제 Jaccard 는 살아남은 쌍에만 매기고, 그 값과
+    # 문턱 판정은 전쌍 비교 시절과 글자 그대로 같다 (`_duplicate_pairs`).
     grams = _Grams()
-    for i, (s1, t1) in enumerate(items):
-        for s2, t2 in items[i + 1 :]:
-            if grams.jaccard(t1, t2) >= DUP_JACCARD:
-                findings.append({"level": "warn", "code": "near-duplicate", "slug": s1, "msg": f"≈ {s2}"})
+    # 보고 순서는 전쌍 비교 시절과 같다 — 앞 페이지 기준 오름차순 (`_duplicate_pairs` 가 정렬해 준다).
+    for i, j in _duplicate_pairs([text for _slug, text in items], grams, DUP_JACCARD):
+        findings.append({"level": "warn", "code": "near-duplicate", "slug": items[i][0], "msg": f"≈ {items[j][0]}"})
     # 칸별 초과 — 넘친 칸만 지목한다. "인덱스가 크다"는 어디를 통합할지 안 알려준다.
     # 재는 대상은 실제 주입 행이다: index.md 행은 pages/<slug>.md 링크를 달고 있는데
     # 그 링크는 프롬프트에 한 글자도 안 들어간다 — 안 들어가는 문자로 경고하면 계기가 거짓말한다.

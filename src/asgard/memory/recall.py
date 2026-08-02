@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import contextlib
 import datetime as _dt
+import hashlib
 import math
 import os
 import re
 
-from .index import _db
+from .index import _db, clean_remember, clean_verdicts
 from .policy import (
     _INVISIBLE,
     _memory_settings,
@@ -22,8 +24,9 @@ from .store import (
     PAGES,
     _desc,
     _kind,
-    _pages,
-    _read,
+    _pages_token,
+    _read_all_cached,
+    poison_key,
     poisoned,
     slot_query_aliases,
     slugify,
@@ -53,7 +56,10 @@ def _grams(text: str, n: int = 3) -> set[str]:
 
 def _jaccard(a: str, b: str) -> float:
     ga, gb = _grams(a), _grams(b)
-    return len(ga & gb) / (len(ga | gb) or 1)
+    # 합집합은 세기만 하면 되므로 만들지 않는다 — |A∪B| = |A|+|B|−|A∩B| 로 값이 같고,
+    # 쌍 비교가 O(N²)로 도는 자리(`pages.lint`)에서 집합 하나를 통째로 덜 만든다.
+    intersection = len(ga & gb)
+    return intersection / ((len(ga) + len(gb) - intersection) or 1)
 
 
 def _containment(a: str, b: str) -> float:
@@ -99,7 +105,15 @@ class _Grams:
     def jaccard(self, a: str, b: str) -> float:
         """Jaccard — `_jaccard`와 같은 정의, 캐시만 다르다."""
         ga, gb = self.of(a), self.of(b)
-        return len(ga & gb) / (len(ga | gb) or 1)
+        intersection = len(ga & gb)
+        return intersection / ((len(ga) + len(gb) - intersection) or 1)
+
+    def jaccard_of(self, ga: set[str], gb: set[str]) -> float:
+        """이미 손에 든 그램 집합끼리의 Jaccard — 본문으로 다시 찾지 않는다.
+
+        쌍 비교 루프는 같은 집합을 수십만 번 되찾는다. 계산식은 위와 글자 그대로 같다."""
+        intersection = len(ga & gb)
+        return intersection / ((len(ga) + len(gb) - intersection) or 1)
 
 
 # ── 근거 대조 원시함수 — 패턴(관측)과 노른(통찰)이 같은 기준을 쓴다 ─────────────────
@@ -418,7 +432,96 @@ def _passages(body: str) -> list[str]:
     return out
 
 
-def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[str, float]], float]:
+class _PassageVectors:
+    """구절 벡터 공급 — `state.db` 의 `vec_passage` 파생 칸을 앞세우고, 없을 때만 임베딩한다.
+
+    페이지 벡터에는 "본문 sha 가 같으면 재임베딩하지 않는다"가 명시적 계약인데
+    (`index._vec_upsert`) 구절 벡터에는 그 계약이 없었다. 그래서 **글자 그대로 같은 질의**를
+    두 번 쳐도 같은 계산을 그대로 다시 했다 (실측 26-08-02: 1회차 636 호출 · 2회차 636 호출).
+    리랭크가 값을 하는 자리는 정의상 긴 페이지라, 그 조건이 성립하는 순간 비용이 매 턴 반복된다.
+
+    임베더가 바뀌면 저장된 벡터는 **다른 공간의 것**이라 통째로 버린다. 이름을 적는 칸은
+    페이지 벡터와 따로 쓴다 (`index.passage_model` 참조).
+
+    `d` 가 없으면(단위 시험처럼 디렉터리 없이 부르는 자리) 질의 수명 메모만 쓴다 — 그때도
+    같은 구절을 두 번 임베딩하지는 않는다."""
+
+    __slots__ = ("_conn", "_d", "_memo", "_pending", "_ready")
+
+    def __init__(self, d: str | None) -> None:
+        self._d = d
+        self._conn = None
+        self._ready = False
+        self._memo: dict[tuple[str, str], list[list[float]]] = {}
+        # 쓰기는 모아서 한 번에 넘긴다 — 후보 스무 장이면 커밋도 스무 번이 되고, 커밋 비용은
+        # 디스크마다 다르다. 회수 경로에서 사람을 기다리게 할 이유가 없는 자리다.
+        self._pending: list[tuple[str, str, list[bytes]]] = []
+
+    def _db_conn(self):
+        """DB 연결 (지연) — 임베더 이름이 다르면 접어 둔 구절을 먼저 버린다. 실패는 None."""
+        if self._ready:
+            return self._conn
+        self._ready = True
+        if not self._d:
+            return None
+        from .. import memory_semantic as sem
+        from .index import passage_model, passage_reset
+
+        with contextlib.suppress(Exception):
+            conn = _db(self._d)
+            model = sem.loaded_model()
+            if not model:  # 이름을 모르면 접어 두지 않는다 — 어느 자로 잰 값인지 못 적는다
+                conn.close()
+                return None
+            if passage_model(conn) != model:
+                passage_reset(conn, model)
+            self._conn = conn
+        return self._conn
+
+    def of(self, slug: str, body: str, chunks: list[str]) -> list[list[float]]:
+        """구절 벡터 목록 — 임베딩에 실패한 구절은 빠진다 (캐시 없을 때의 거동과 같다)."""
+        from .. import memory_semantic as sem
+
+        sha = hashlib.sha1(body.encode()).hexdigest()
+        hit = self._memo.get((slug, sha))
+        if hit is not None:
+            return hit
+        conn = self._db_conn()
+        if conn is not None:
+            from .index import passage_vectors
+
+            blobs = passage_vectors(conn, slug, sha)
+            if blobs:
+                vectors = [sem.unpack(blob) for blob in blobs]
+                self._memo[(slug, sha)] = vectors
+                return vectors
+        vectors = [vec for passage in chunks if (vec := sem.embed(passage))]
+        self._memo[(slug, sha)] = vectors
+        if conn is not None and vectors:
+            self._pending.append((slug, sha, [sem.pack(vec) for vec in vectors]))
+        return vectors
+
+    def close(self) -> None:
+        """모아 둔 구절 벡터를 한 번에 접어 두고 연결을 닫는다. 실패는 무해 — 다음 질의에 다시 잰다."""
+        if self._conn is None:
+            return
+        if self._pending:
+            from .index import passage_remember
+
+            passage_remember(self._conn, self._pending)
+            self._pending.clear()
+        with contextlib.suppress(Exception):
+            self._conn.close()
+        self._conn = None
+
+
+def _rerank_order(
+    text: str,
+    cand: dict,
+    ranked: list[str],
+    d: str | None = None,
+    query_vec: list[float] | None = None,
+) -> tuple[list[tuple[str, float]], float]:
     """구절 최대 유사도 순위 — 페이지가 길수록 통짜 임베딩이 못 보는 것을 되찾는다.
 
     페이지 벡터 하나는 문서 전체의 평균이라, 긴 페이지에서는 정작 답이 든 한 문장이 나머지
@@ -440,32 +543,16 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[
 
     if not sem.active() or not ranked:
         return [], 0.0
-    query_vec = sem.embed(text)
+    # 질의 벡터는 호출자(시맨틱 스트림)가 이미 만들었으면 그것을 쓴다 — 같은 문자열을 한 턴에
+    # 두 번 임베딩할 이유가 없다.
+    query_vec = query_vec if query_vec is not None else sem.embed(text)
     if query_vec is None:
         return [], 0.0
-    scored: list[tuple[str, float]] = []
-    for slug in ranked:
-        entry = cand.get(slug)
-        if not entry:
-            continue
-        chunks = _passages(entry[1])
-        # 짧은 페이지는 건너뛴다. 리랭크는 **희석을 되돌리는** 연산인데, 페이지 전체가 한 구절이면
-        # 되돌릴 희석이 없다 — 그런데도 순위에 한 표를 더 주면 같은 시맨틱 신호를 두 번 세는 셈이라
-        # 어휘 신호가 묻힌다. 실측(100페이지 실코퍼스)에서 직접질의 hit@1이 1.00 → 0.60으로 무너졌다.
-        # 개인 메모리의 정상 페이지는 사실 한 건이라 여기서 대부분 걸러지고, 대화 로그처럼
-        # 길게 자란 페이지만 리랭크를 받는다.
-        if len(chunks) < RERANK_MIN_PASSAGES:
-            continue
-        sims = [sem.cosine(query_vec, vec) for passage in chunks if (vec := sem.embed(passage))]
-        if not sims:
-            continue
-        # 최댓값만 쓰면 너무 뾰족하다. 사실 질문은 한 문장이 답이라 max가 맞지만, 간접 질문
-        # ("내가 좋아할 만한 걸 추천해줘")은 문서 전체의 주제 일치가 답이라 max가 엉뚱한 한 줄을
-        # 집는다 — 실측에서 선호 유형만 −13pp 였다. 상위 몇 구절의 평균을 섞어 둘 다 살린다.
-        top_sims = sorted(sims, reverse=True)[:RERANK_TOP_PASSAGES]
-        scored.append(
-            (slug, RERANK_MAX_WEIGHT * top_sims[0] + (1 - RERANK_MAX_WEIGHT) * (sum(top_sims) / len(top_sims)))
-        )
+    passages = _PassageVectors(d)
+    try:
+        scored = _passage_scores(query_vec, cand, ranked, passages)
+    finally:
+        passages.close()
     # 대상이 둘 미만이면 순위라 부를 것이 없다 — 아무것도 안 한다 (기존 4스트림 그대로).
     if len(scored) < 2:
         return [], 0.0
@@ -480,6 +567,41 @@ def _rerank_order(text: str, cand: dict, ranked: list[str]) -> tuple[list[tuple[
         return [], 0.0
     scored.sort(key=lambda pair: (-pair[1], pair[0]))
     return [pair for pair in scored if pair[1] > 0.0], weight
+
+
+def _passage_scores(
+    query_vec: list[float],
+    cand: dict,
+    ranked: list[str],
+    passages: _PassageVectors,
+) -> list[tuple[str, float]]:
+    """후보별 구절 점수 — max 와 상위평균의 배합. 구절이 모자란 페이지는 빠진다."""
+    from .. import memory_semantic as sem
+
+    scored: list[tuple[str, float]] = []
+    for slug in ranked:
+        entry = cand.get(slug)
+        if not entry:
+            continue
+        chunks = _passages(entry[1])
+        # 짧은 페이지는 건너뛴다. 리랭크는 **희석을 되돌리는** 연산인데, 페이지 전체가 한 구절이면
+        # 되돌릴 희석이 없다 — 그런데도 순위에 한 표를 더 주면 같은 시맨틱 신호를 두 번 세는 셈이라
+        # 어휘 신호가 묻힌다. 실측(100페이지 실코퍼스)에서 직접질의 hit@1이 1.00 → 0.60으로 무너졌다.
+        # 개인 메모리의 정상 페이지는 사실 한 건이라 여기서 대부분 걸러지고, 대화 로그처럼
+        # 길게 자란 페이지만 리랭크를 받는다.
+        if len(chunks) < RERANK_MIN_PASSAGES:
+            continue
+        sims = [sem.cosine(query_vec, vec) for vec in passages.of(slug, entry[1], chunks)]
+        if not sims:
+            continue
+        # 최댓값만 쓰면 너무 뾰족하다. 사실 질문은 한 문장이 답이라 max가 맞지만, 간접 질문
+        # ("내가 좋아할 만한 걸 추천해줘")은 문서 전체의 주제 일치가 답이라 max가 엉뚱한 한 줄을
+        # 집는다 — 실측에서 선호 유형만 −13pp 였다. 상위 몇 구절의 평균을 섞어 둘 다 살린다.
+        top_sims = sorted(sims, reverse=True)[:RERANK_TOP_PASSAGES]
+        scored.append(
+            (slug, RERANK_MAX_WEIGHT * top_sims[0] + (1 - RERANK_MAX_WEIGHT) * (sum(top_sims) / len(top_sims)))
+        )
+    return scored
 
 
 def _graph_order(pages: dict[str, tuple[dict, str]], seeds: dict[str, float]) -> list[tuple[str, float]]:
@@ -517,6 +639,65 @@ def _graph_order(pages: dict[str, tuple[dict, str]], seeds: dict[str, float]) ->
     return sorted(((slug, score) for slug, score in scores.items() if score > 0), key=lambda p: (-p[1], p[0]))
 
 
+# ── 오염되지 않은 페이지 — 회수·카탈로그·점검이 같은 읽기와 같은 판정을 나눠 쓴다 ──────────
+
+_VERDICT_MEMO: dict[str, tuple[str, dict[str, str]]] = {}
+
+
+def page_verdicts(d: str) -> dict[str, str]:
+    """페이지 전량의 오염 판정 — slug → 사유(빈 문자열이 "깨끗함"). 못 읽는 페이지는 빠진다.
+
+    소비자가 셋이다: 회수(`query`)·주입 카탈로그(`_snapshot_rows`)·건강 점검(`pages.lint`).
+    셋 다 매 턴 또는 매 계획마다 돌면서 각자 전량을 열고 페이지마다 판정을 처음부터 다시
+    했다 — 1,000페이지에서 회수 213ms 중 152ms 가 그 재계산이었고, 카탈로그가 곧바로 같은
+    일을 한 번 더 했다 (실측 26-08-02). 여기서 두 가지를 접는다:
+
+      · 읽기 — `store._read_all_cached` (형상이 그대로면 지난 읽기 그대로)
+      · 판정 — `state.db` 의 `clean` 칸 (본문 sha 가 그대로면 지난 판정 그대로)
+
+    판정 결과 자체도 형상 표로 메모한다. 둘 다 파생이라 지워도 답이 안 바뀐다 — 다시 잴 뿐이다.
+
+    DB 를 못 열거나 못 쓰면 그냥 전부 다시 잰다 (fail-open). 이 경로는 회수라 사람을 기다리게
+    하지 않는 것이 캐시를 남기는 것보다 중요하다 — 그래서 `_lock(d)` 도 잡지 않는다."""
+    token = _pages_token(d)
+    key = os.path.realpath(d)
+    memo = _VERDICT_MEMO.get(key)
+    if token and memo is not None and memo[0] == token:
+        return memo[1]
+
+    conn = None
+    cached: dict[str, tuple[str, str]] = {}
+    with contextlib.suppress(Exception):
+        conn = _db(d)
+        cached = clean_verdicts(conn)
+    fresh: list[tuple[str, str, str]] = []
+    verdicts: dict[str, str] = {}
+    for slug, meta, body in _read_all_cached(d):
+        sha = poison_key(meta, body)
+        row = cached.get(slug)
+        if row is not None and row[0] == sha:
+            verdicts[slug] = row[1]
+            continue
+        verdicts[slug] = verdict = poisoned(meta, body) or ""
+        fresh.append((slug, sha, verdict))
+    if conn is not None:
+        if fresh:
+            clean_remember(conn, fresh)
+        with contextlib.suppress(Exception):
+            conn.close()
+    if token:
+        _VERDICT_MEMO[key] = (token, verdicts)
+    else:
+        _VERDICT_MEMO.pop(key, None)
+    return verdicts
+
+
+def clean_pages(d: str) -> dict[str, tuple[dict, str]]:
+    """주입 자격이 있는 페이지 전량 — slug → (meta, body). 오염·파싱 실패는 빠진다."""
+    verdicts = page_verdicts(d)
+    return {slug: (meta, body) for slug, meta, body in _read_all_cached(d) if not verdicts.get(slug, "")}
+
+
 def query(
     text: str,
     k: int = 5,
@@ -547,13 +728,8 @@ def query(
     if not os.path.isdir(os.path.join(d, PAGES)):
         return []
 
-    clean_cache: dict[str, tuple[dict, str] | None] = {}
-
-    def _clean(slug: str) -> tuple[dict, str] | None:
-        if slug not in clean_cache:
-            pg = _read(d, slug)
-            clean_cache[slug] = pg if pg and not poisoned(*pg) else None
-        return clean_cache[slug]
+    # 읽은 결과와 오염 판정을 카탈로그·점검과 나눠 쓴다 (`clean_pages` 참조).
+    clean_pages_map = clean_pages(d)
 
     phrase = text.strip().lower()
     raw_words = [w.lower() for w in re.split(r"[^\w가-힣%-]+", text) if len(w) >= 2]
@@ -598,7 +774,7 @@ def query(
                 (match, k),
             ).fetchall()
             for slug, bm in rows:
-                pg = _clean(slug)
+                pg = clean_pages_map.get(slug)
                 if pg is None:  # 오염·소실 — FTS 행이 낡았어도 정본 기준으로 거른다
                     continue
                 meta, body = pg
@@ -612,8 +788,7 @@ def query(
         pass  # FTS 불능 → 아래 파일 스캔만으로 fail-open
 
     # 정본 스캔으로 FTS 일부 누락·stale 행을 보완한다. 메모리는 예산상 작아 완전성 우선.
-    clean_pages = {slug: pg for slug in _pages(d) if (pg := _clean(slug)) is not None}
-    for slug, pg in clean_pages.items():
+    for slug, pg in clean_pages_map.items():
         if slug in cand:
             continue
         meta, body = pg
@@ -625,6 +800,7 @@ def query(
     # 회수한다. 벡터는 state.db 파생물이고, 비활성이면 이 블록 전체가 건너뛰어져 기존 2경로와
     # 완전히 동일하게 동작한다 (무회귀 계약). 문턱 미만 코사인은 후보로도 넣지 않는다.
     sem_order: list[tuple[str, float]] = []
+    qv: list[float] | None = None
     from .. import memory_semantic as sem
 
     if sem.active():
@@ -648,7 +824,7 @@ def query(
             scored.sort(key=lambda p: -p[1])
             for slug, cos in scored[: max(k, 10)]:
                 if slug not in cand:
-                    pg = _clean(slug)  # 시맨틱 전용 후보도 오염 제외
+                    pg = clean_pages_map.get(slug)  # 시맨틱 전용 후보도 오염 제외
                     if not pg:
                         continue
                     meta, body = pg
@@ -674,11 +850,11 @@ def query(
 
     for ordered in (fts_order, scan_order, sem_order):
         _add_ranks(seed_scores, ordered)
-    graph_order = _graph_order(clean_pages, seed_scores) if expand_links else []
+    graph_order = _graph_order(clean_pages_map, seed_scores) if expand_links else []
     graph_order = graph_order[: max(k, 10)]
     for slug, _score in graph_order:
         if slug not in cand:
-            meta, body = clean_pages[slug]
+            meta, body = clean_pages_map[slug]
             matched, s = _scan_score(meta, body)
             cand[slug] = (meta, body, matched, s)
 
@@ -697,7 +873,7 @@ def query(
     # (LongMemEval-S 500문항). 이 신호는 그만큼 강하다 — 대등하게 세워야 값을 한다.
     base_order = sorted(cand, key=lambda slug: (-rrf[slug], slug))
     if rerank_enabled():
-        rerank_order, rerank_weight = _rerank_order(text, cand, base_order[:RERANK_CANDIDATES])
+        rerank_order, rerank_weight = _rerank_order(text, cand, base_order[:RERANK_CANDIDATES], d, qv)
         if rerank_order and rerank_weight > 0.0:
             fused = dict.fromkeys(cand, 0.0)
             _add_ranks(fused, [(slug, rrf[slug]) for slug in base_order], RERANK_BASE_WEIGHT)
@@ -802,13 +978,10 @@ def _snapshot_rows(d: str) -> list[tuple[str, str]]:
     정렬은 칸 안에서 updated 내림차순: 예산이 모자랄 때 알파벳순으로 자르면 무엇이 살아남는지가
     임의가 된다(슬러그 첫 글자가 운을 가른다). 최신이 먼저 살아야 잘림이 뜻을 갖는다."""
     rows: list[tuple[str, str, str]] = []
-    for slug in _pages(d):
-        pg = _read(d, slug)
-        if not pg:
-            continue
-        meta, body = pg
-        if poisoned(meta, body):
-            continue  # 오염 페이지는 주입 제외 (lint 전이라도)
+    # 오염 제외는 `clean_pages`가 이미 했다 — 회수와 같은 읽기·같은 판정을 나눠 쓴다.
+    # 나눠 쓰기 전에는 이 함수가 `query` 직후에 같은 파일을 처음부터 다시 열고 위협 정규식을
+    # 다시 돌렸다 (실측 26-08-02: 1,000페이지에서 읽기 2,000번·독립 218ms).
+    for slug, (meta, body) in sorted(clean_pages(d).items(), key=lambda item: item[0]):
         title = _neutralize(meta.get("title", slug))
         rows.append((_kind(meta), str(meta.get("updated", "")), _row(title, _neutralize(_desc(meta, body)))))
     rows.sort(key=lambda r: (r[1], r[2]), reverse=True)
