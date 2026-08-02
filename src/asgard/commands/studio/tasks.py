@@ -17,6 +17,7 @@ import time
 import uuid
 
 from ... import (
+    activity,
     errors,
     ui,  # noqa: F401  (하위 호환 — 이 모듈은 ui를 직접 쓰지 않는다)
 )
@@ -109,6 +110,8 @@ def load_project_tasks(root: str) -> int:
                 row.setdefault("files", [])
                 row.setdefault("usage", {})
                 row.setdefault("root", root)
+                row.setdefault("activity", [])  # 활동을 모르던 시절의 기록 — 빈 목록이 정직하다
+                row.setdefault("todos", [])
                 _TASKS[task_id] = row
                 added += 1
     return added
@@ -201,10 +204,18 @@ def _run_task(task_id: str, root: str) -> None:
             return
         task["status"] = "running"
         task["updated"] = time.time()
+        task["activity"] = []
+        task["now"] = None
         command = list(task["command"])
         snapshot = _public_task(task)
     _remember(root, snapshot)
     before = _workspace_files(root)  # 이 작업이 무엇을 바꿨는지는 시작 상태와 견줘야 안다
+    # 활동 파일은 **띄우기 전에** 만든다. 자식이 첫 줄을 적기 전에 읽는 쪽이 붙어 있어야
+    # 시작 직후의 사건을 안 놓친다 (그 몇 초가 사람이 화면을 제일 오래 보는 구간이다).
+    try:
+        events = activity.open_log(root, task_id)
+    except OSError:
+        events = ""  # 활동 파일을 못 만들어도 실행은 돈다 — 관측이 실행을 막지 않는다
     try:
         process = subprocess.Popen(
             command,
@@ -212,7 +223,7 @@ def _run_task(task_id: str, root: str) -> None:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
-            env={**os.environ, "ASGARD_UNATTENDED": "1"},
+            env={**os.environ, "ASGARD_UNATTENDED": "1", **({activity.ENV_PATH: events} if events else {})},
             start_new_session=os.name == "posix",
             creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
             encoding="utf-8",
@@ -223,10 +234,107 @@ def _run_task(task_id: str, root: str) -> None:
 
             _kill_group(process)
             return
+        drain = _watch(task_id, events) if events else None
+        # `communicate()`는 여전히 이 스레드를 붙잡는다 — 그래도 되는 이유는 화면이 이 스레드를
+        # 안 보기 때문이다. 창은 `_TASKS`를 읽고, 그 사전은 아래 감시 스레드가 갱신한다.
         stdout, stderr = process.communicate()
+        # 마무리보다 **먼저** 감시를 닫는다. 둘을 나란히 두면 `_finish`가 '지금'을 비우는 것과
+        # 감시가 마지막 완료를 접어 넣는 것이 겹쳐서, 마지막 도구 한 줄이 짝을 잃고 이름 없이
+        # 기록된다 (실측: 끝나는 순간의 도구만 detail이 빈 문자열이었다).
+        if drain is not None:
+            drain()
         _finish(task_id, root, process, stdout, stderr, before)
     except Exception as exc:
         _blame(task_id, root, exc)
+
+
+_ACTIVITY_CAP = 120  # 화면이 드는 최근 활동 줄 수 — 그 위는 사람이 안 읽고 기록만 무거워진다
+
+
+_DRAIN_GRACE = 5.0  # 마지막 한 바퀴를 기다려 주는 상한 — 이 위로는 작업 마무리가 더 급하다
+
+
+def _watch(task_id: str, events: str):
+    """활동 파일을 따라 읽어 그 작업의 '지금'을 갱신한다. 돌려주는 것은 **닫는 손잡이**다.
+
+    자식이 끝난 뒤에도 한 바퀴를 더 돈다: 마지막 툴의 완료 줄이 프로세스 종료와 같은 순간에
+    적히므로, 신호를 보자마자 그만두면 그 한 줄이 늘 빠진다. 닫는 손잡이가 그 한 바퀴를
+    기다려 주므로, 부르는 쪽은 이 함수가 돌아온 뒤에 마음 놓고 작업을 마무리할 수 있다."""
+    done = threading.Event()
+
+    def loop() -> None:
+        offset = 0
+        while True:
+            finished = done.is_set()
+            rows, offset = activity.read_log(events, offset)
+            if rows:
+                _absorb(task_id, rows)
+            if finished:
+                return
+            done.wait(0.35)
+
+    thread = threading.Thread(target=loop, daemon=True)
+    thread.start()
+
+    def close() -> None:
+        done.set()
+        thread.join(timeout=_DRAIN_GRACE)
+
+    return close
+
+
+def _absorb(task_id: str, rows: list[dict]) -> None:
+    """읽어 온 활동을 그 작업에 접어 넣는다 — 창이 그대로 그릴 수 있는 모양으로.
+
+    창은 스트림이 아니라 **현재 상태**를 그린다. 그래서 여는 사건과 닫는 사건을 여기서 짝지어
+    한 줄로 만든다: 도는 동안은 `now`(기호·한 줄·시작시각)로 서 있다가, 끝나면 소요시간을 달고
+    `activity`의 꼬리로 내려간다. 짝을 못 찾은 완료는 버리지 않고 그대로 남긴다 — 놓친 시작보다
+    잘못 지운 완료가 화면을 더 망친다."""
+    with _TASK_LOCK:
+        task = _TASKS.get(task_id)
+        if task is None:
+            return
+        log: list[dict] = task.setdefault("activity", [])
+        for row in rows:
+            kind = row.get("kind")
+            if kind == "tool.start":
+                task["now"] = {
+                    "id": row.get("id"),
+                    "sym": row.get("sym") or "⚙︎",
+                    "detail": row.get("detail") or "",
+                    "role": row.get("role") or "",
+                    "ts": row.get("ts") or time.time(),
+                }
+            elif kind == "tool.end":
+                now = task.get("now") or {}
+                started = now.get("ts") if now.get("id") == row.get("id") else None
+                log.append(
+                    {
+                        "kind": "tool",
+                        "sym": now.get("sym") or "⚙︎",
+                        "detail": now.get("detail") or "",
+                        "role": row.get("role") or now.get("role") or "",
+                        "ok": bool(row.get("ok")),
+                        "secs": row.get("secs"),
+                        "ts": started or row.get("ts") or time.time(),
+                    }
+                )
+                if now.get("id") == row.get("id"):
+                    task["now"] = None
+            elif kind == "thought":
+                log.append({"kind": "thought", "secs": row.get("secs"), "ts": row.get("ts"), "label": row.get("label")})
+            elif kind == "role":
+                task["step"] = {"role": row.get("role") or "", "why": row.get("why") or ""}
+                log.append(
+                    {"kind": "role", "role": row.get("role") or "", "why": row.get("why") or "", "ts": row.get("ts")}
+                )
+            elif kind == "todo":
+                task["todos"] = row.get("items") or []
+            elif kind == "run.end":
+                task["now"] = None
+        if len(log) > _ACTIVITY_CAP:
+            del log[: len(log) - _ACTIVITY_CAP]
+        task["updated"] = time.time()
 
 
 def _claim(task_id: str, process: subprocess.Popen) -> bool:
@@ -265,6 +373,7 @@ def _finish(task_id: str, root: str, process: subprocess.Popen, stdout: str, std
                 {
                     "status": status,
                     "updated": time.time(),
+                    "now": None,  # 끝난 작업에 '지금 이걸 하는 중'이 남아 있으면 화면이 안 멈춘다
                     "exit_code": process.returncode,
                     "result": _trim(result),
                     # 구조화된 사유는 결과 문자열과 **따로** 든다. 창이 사유를 보여 주려고
@@ -303,6 +412,7 @@ def _blame(task_id: str, root: str, exc: Exception) -> None:
                 {
                     "status": "blocked",
                     "updated": time.time(),
+                    "now": None,
                     "exit_code": 1,
                     "result": wrapped["message"],
                     "error": wrapped,
@@ -415,6 +525,11 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
         "log": "",
         "files": [],
         "usage": {},
+        # 도는 동안 화면이 드는 것 — 지금 쓰는 도구 하나(now)와 지나간 것들(activity),
+        # 그리고 이 퀘스트가 실제로 밟은 단계(step)와 배정 단위(todos).
+        "now": None,
+        "activity": [],
+        "todos": [],
         # 한 작업 = 한 퀘스트. 턴이 쌓여도 원장의 줄은 하나다.
         "turns": [{"role": "user", "text": prompt, "ts": now}],
         "root": root,  # 작업은 작업 공간에 속한다 — 어느 경계에서 돌았는지가 기록의 일부다
@@ -571,6 +686,10 @@ def follow_task(payload: dict, root: str) -> tuple[int, str, bytes]:
                 "updated": time.time(),
                 "result": "",
                 "stopped": False,
+                # 이어가기는 같은 퀘스트의 **다음 턴**이다 — 활동은 턴의 것이라 여기서 비운다.
+                # 안 비우면 앞 턴에 쓴 도구들이 새 턴의 진행처럼 화면에 남는다.
+                "now": None,
+                "activity": [],
             }
         )
         task.pop("exit_code", None)
@@ -628,7 +747,15 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
             return _json_body(409, {"error": "이미 끝난 작업입니다"})
         was_paused = task.get("status") == "paused"
         process = task.get("process")
-        task.update({"status": "blocked", "updated": time.time(), "result": "작업이 중지되었습니다.", "stopped": True})
+        task.update(
+            {
+                "status": "blocked",
+                "updated": time.time(),
+                "now": None,
+                "result": "작업이 중지되었습니다.",
+                "stopped": True,
+            }
+        )
         task.pop("process", None)
         stopped = _public_task(task)
     # 거두는 일은 잠금 **밖**에서 한다 — `_kill_group`은 유예 2초를 기다리는데, 그동안 잠금을

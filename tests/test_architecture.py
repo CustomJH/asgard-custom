@@ -36,6 +36,11 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "ui",
                 "i18n",
                 "io_journal",
+                # activity — 도는 동안의 활동을 한 줄짜리 JSON으로 흘리는 자리. io_journal 과
+                # 같은 성격(무의존 append-only 기록)이라 같은 층에 둔다. 위로 못 올리는 이유가
+                # 있다: 세션·오케스트레이터·명령 계층이 전부 이걸 부르므로, 조금이라도 위에
+                # 있으면 아래 계층이 자기 활동을 못 적는다.
+                "activity",
                 "io_files",
                 "registry",
                 # profiles — 에인헤랴르 홈 해석. settings가 이걸 부르므로 settings보다 아래여야

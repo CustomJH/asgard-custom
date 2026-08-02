@@ -298,11 +298,14 @@ class AgentSession:
 
     def _thought_line(self, secs: float) -> None:
         """thinking 원문 대신 축약 한 줄 — '│ ⋯ 룬 해독 3s' (스레드 아래 사고층)."""
-        from .. import theme, ui
+        from .. import activity, theme, ui
         from ..i18n import t
 
         gutter = ui.paint(theme.ansi(theme.HAIRLINE), "│")
         label = t("thought")
+        # 사고도 활동이다. 이 줄이 없으면 창에서는 모델이 오래 생각하는 구간이 통째로 정적이라,
+        # 멈춘 것과 구분이 안 된다 (레퍼런스들이 8~10초 뒤 '아직 일하는 중' 줄을 넣는 이유).
+        activity.emit("thought", role=self.role, secs=round(secs, 1), label=label)
         self.on_text(f"  {gutter} {ui.dim(f'⋯ {label} {secs:.0f}s')}\n")
 
     def _throttle(self) -> None:
@@ -339,18 +342,32 @@ class AgentSession:
         )
         sym, detail = self._tool_preview(call.name, call.input)
         self._observe_tool(call.name, call.input)
-        from .. import ui
+        from .. import activity, ui
 
         # 표시 폭 절단은 렌더 계층(독 _status_str·ui.spin)이 터미널 폭 기준으로 담당 —
         # 여기서 좁게 자르면 실행 중인 명령 전문 가독이 죽는다. 폭주 방어 상한만 건다.
         self.on_status(ui.oneline(f"{sym} {detail}", 240))
+        # 창은 터미널과 **같은 어휘**로 본다. 여기서 만든 (기호, 한 줄)은 독의 상태 행이 쓰는
+        # 바로 그 값이라, 두 표면이 같은 순간에 같은 문장을 말한다 — 창 전용 문구를 따로
+        # 지으면 둘이 갈리고, 갈린 뒤엔 어느 쪽이 정본인지 아무도 모른다.
+        activity.emit(
+            "tool.start",
+            id=call.id,
+            role=self.role,
+            agent=self.agent,
+            name=call.name,
+            sym=sym,
+            detail=ui.oneline(detail, 240),
+        )
         t0 = time.monotonic()
         out = execute_tool(self.registry, call.name, call.input, ctx)
+        secs = time.monotonic() - t0
         self.on_status(None)
+        activity.emit("tool.end", id=call.id, role=self.role, ok=not out.is_error, secs=round(secs, 1))
         self._tool_line(
             "✕" if out.is_error else sym,
             detail + (" — 실패" if out.is_error else ""),
-            time.monotonic() - t0,
+            secs,
         )
         return out.content, out.is_error
 

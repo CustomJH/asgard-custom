@@ -237,6 +237,7 @@ def run_prompt(
             _render_failure(checks, failure)
         return failure.exit_code
     os.environ.setdefault("ASGARD_UNATTENDED", "1")  # Canon 8 — headless는 무인, 게이트도 이 신호를 본다
+    from .. import activity
     from ..agent.heimdall import Heimdall
 
     sink = sys.stderr if json_out else sys.stdout  # --json: stdout은 최종 JSON 전용
@@ -244,7 +245,11 @@ def run_prompt(
     def stream(s: str) -> None:
         sink.write(s)
 
-    h = Heimdall(rp, root, on_text=stream, on_status=None)
+    # 헤드리스에도 라이브 상태를 켠다. 여태 여기가 `on_status=None`이었고, 그래서 이 프로세스를
+    # 자식으로 띄운 스튜디오는 '지금 무엇을 하는 중'이라는 앎이 **생성되지도** 않은 채 끝날
+    # 때까지 기다렸다. 화면이 없는 것과 신호가 없는 것은 다르다 — 보는 쪽이 터미널이 아닐 뿐이다.
+    activity.emit("run.start", prompt=(prompt or "")[:400], provider=rp.profile.name, model=rp.model, resume=resume)
+    h = Heimdall(rp, root, on_text=stream, on_status=lambda label: activity.emit("status", label=label))
     h.dual_mode = dual
     t0 = _time.time()
     if resume:
@@ -254,23 +259,31 @@ def run_prompt(
     else:
         result = "⚠ 새 실행에는 prompt가 필요합니다. 기존 Quest는 --resume을 사용하세요."
     wall = round(_time.time() - t0, 1)
+    activity.emit("run.end", ok=not result.startswith("⚠"), wall_s=wall, tokens=h.total_tokens)
     if json_out:
-        json_result = result or h.last_response_text  # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel
-        sys.stdout.write(
-            _json.dumps(
-                {
-                    "result": json_result,
-                    "tokens": h.total_tokens,
-                    "cache_read_tokens": h.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
-                    "cache_prompt_tokens": h.cache_prompt_tokens,
-                    "wall_s": wall,
-                    "provider": rp.profile.name,
-                    "model": rp.model,
-                },
-                ensure_ascii=False,
-            )
-            + "\n"
-        )
+        sys.stdout.write(_run_summary(h, rp, result, wall))
     else:
         sys.stdout.write("\n" + result + "\n")
     return 1 if result.startswith("⚠") else 0
+
+
+def _run_summary(h, rp: "ResolvedProvider", result: str, wall: float) -> str:
+    """`--json`이 stdout에 내놓는 한 덩이 — 이 명령의 기계용 계약."""
+    import json as _json
+
+    return (
+        _json.dumps(
+            {
+                # DIRECT의 빈 문자열은 REPL 이중 출력 방지 sentinel — 헤드리스는 실제 응답을 회수한다
+                "result": result or h.last_response_text,
+                "tokens": h.total_tokens,
+                "cache_read_tokens": h.cache_read_tokens,  # 프롬프트 캐시 적중분 (~0.1× 과금) — 벤치 비용 산정용
+                "cache_prompt_tokens": h.cache_prompt_tokens,
+                "wall_s": wall,
+                "provider": rp.profile.name,
+                "model": rp.model,
+            },
+            ensure_ascii=False,
+        )
+        + "\n"
+    )
