@@ -53,8 +53,9 @@ CHUNK_MIN = 120  # 이보다 짧은 꼬리는 앞 조각에 붙인다 — 한 �
 CHUNK_REVISION = 2
 MAX_INDEX_BYTES = 8 * 1024 * 1024  # 한 문서에서 인덱스로 받는 상한 (읽기 폭주 방지)
 # 어휘 스캔 스트림 상한. 이 경로는 **매 턴** 도는데 문서는 대화 턴과 달리 수천 조각이 될 수
-# 있다 — 전 조각을 파이썬에서 훑는 비용이 사용자에게 지연으로 간다. 넘으면 FTS 만으로 간다:
-# 후보가 줄어드는 것은 사실이고, 그걸 조용히 하지 않으려고 상수를 여기 둔다.
+# 있다 — 전 조각을 파이썬으로 끌어올려 훑는 비용이 사용자에게 지연으로 간다. 넘으면 FTS 만으로
+# 간다: 후보가 줄어드는 것은 사실이고, 그걸 조용히 하지 않으려고 상수를 여기 둔다. 판정은
+# 본문을 적재하기 **전에** 한다 (`search` — 뒤에 두면 아끼는 것이 점수 계산뿐이다).
 MAX_SCAN_CHUNKS = 4000
 
 _HEADING = re.compile(r"^(#{1,6})\s+(\S.*)$|^\s*(\d+(?:\.\d+){0,3})\s+(\S.{0,80})$", re.MULTILINE)
@@ -336,6 +337,36 @@ def _excerpt(text: str, phrase: str, words: list[str], width: int = _EXCERPT_WID
     return re.sub(r"\s+", " ", seg)
 
 
+def _candidates(root: str, text: str, k: int) -> tuple[list[tuple], list[tuple[int, float]], bool]:
+    """인덱스에서 손에 드는 것 — (조각 행, FTS 순서, 스캔 스트림 가부).
+
+    조각 수를 **본문을 끌어올리기 전에** 센다. 상한 판정이 SELECT 뒤에 오면 아끼는 것이 점수
+    계산뿐이고 본문 전량 적재는 매 턴 그대로 일어난다 — 상한이 막으려던 바로 그 비용이다."""
+    conn = _db(root)
+    try:
+        total = int(conn.execute("SELECT count(*) FROM doc").fetchone()[0])
+        matched: list[tuple] = []
+        # 두 스트림이 같은 어휘를 봐야 한다. FTS 쪽만 넓히면 스캔이 못 뽑은 후보가 RRF에서
+        # 한 표만 받고, 스캔 쪽만 넓히면 그 반대가 된다 — 어긋난 후보 집합은 융합이 아니다.
+        # 3자 미만을 거르는 것은 취향이 아니라 trigram 토크나이저의 하한이다.
+        split = [w for w in re.split(r"\s+", text.strip()) if len(w) >= 3]
+        terms = [w for w in terms_lane.expand(split, text) if len(w) >= 3]
+        if terms:
+            match = " OR ".join('"' + w.replace('"', '""') + '"' for w in terms)
+            with contextlib.suppress(Exception):  # MATCH 문법 오류 — 스캔 스트림만으로 진행
+                # 본문을 같은 질의로 받는다: 상한을 넘는 코퍼스에서는 이 적중분이 유일한 적재분이다.
+                matched = conn.execute(
+                    "SELECT seq, name, heading, body, bm25(doc) FROM doc WHERE doc MATCH ? ORDER BY bm25(doc) LIMIT ?",
+                    (match, k * 3),
+                ).fetchall()
+        scan = total <= MAX_SCAN_CHUNKS
+        # 상한 이내면 전 조각을 훑는다(스캔 스트림의 값). 넘으면 FTS 적중분만 손에 든다.
+        rows = conn.execute("SELECT seq, name, heading, body FROM doc").fetchall() if scan else [r[:4] for r in matched]
+        return rows, [(int(r[0]), float(r[4])) for r in matched], scan
+    finally:
+        conn.close()
+
+
 def search(root: str, text: str, k: int = 3) -> list[dict]:
     """문서 정본 전문 검색 (0-LLM) — FTS trigram + lexical 스캔 2-스트림 RRF.
 
@@ -346,27 +377,7 @@ def search(root: str, text: str, k: int = 3) -> list[dict]:
             return []  # 파생물은 필요할 때 생긴다 — 빈 인덱스조차 만들지 않는다
         sync(root)
         k = max(1, min(int(k), 50))
-        conn = _db(root)
-        try:
-            rows = conn.execute("SELECT seq, name, heading, body FROM doc").fetchall()
-            fts_order: list[tuple[int, float]] = []
-            # 두 스트림이 같은 어휘를 봐야 한다. FTS 쪽만 넓히면 스캔이 못 뽑은 후보가 RRF에서
-            # 한 표만 받고, 스캔 쪽만 넓히면 그 반대가 된다 — 어긋난 후보 집합은 융합이 아니다.
-            # 3자 미만을 거르는 것은 취향이 아니라 trigram 토크나이저의 하한이다.
-            split = [w for w in re.split(r"\s+", text.strip()) if len(w) >= 3]
-            terms = [w for w in terms_lane.expand(split, text) if len(w) >= 3]
-            if terms:
-                match = " OR ".join('"' + w.replace('"', '""') + '"' for w in terms)
-                with contextlib.suppress(Exception):  # MATCH 문법 오류 — 스캔 스트림만으로 진행
-                    fts_order = [
-                        (int(s), float(b))
-                        for s, b in conn.execute(
-                            "SELECT seq, bm25(doc) FROM doc WHERE doc MATCH ? ORDER BY bm25(doc) LIMIT ?",
-                            (match, k * 3),
-                        ).fetchall()
-                    ]
-        finally:
-            conn.close()
+        rows, fts_order, scan = _candidates(root, text, k)
     except Exception:
         return []
     if not rows:
@@ -379,9 +390,10 @@ def search(root: str, text: str, k: int = 3) -> list[dict]:
         hay = (str(row[2]) + "\n" + str(row[3])).lower()
         return sum(1 for w in words if w in hay) + (3 if phrase and phrase in hay else 0)
 
+    # 상한 초과면 손에 든 것이 FTS 적중분뿐이라 `by_seq` 크기로는 이 판정을 대신할 수 없다.
     scan_order = (
         sorted(((seq, float(s)) for seq, row in by_seq.items() if (s := _scan_score(row)) > 0), key=lambda p: -p[1])
-        if len(by_seq) <= MAX_SCAN_CHUNKS
+        if scan
         else []
     )
     rrf: dict[int, float] = {}

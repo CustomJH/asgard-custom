@@ -670,10 +670,49 @@ SKILLS_SUFFIX = "\n</memory-recall>"
 SKILLS_BUDGET = 460  # 상한 — 포인터 두 줄(이름·설명 160자·경로)이 들어갈 만큼만
 
 
-def learned_skills_rows(query: str, *, start: str | None = None, cap: int = LEARNED_SKILLS_CAP) -> list[str]:
-    """질의 관련 learned 스킬 포인터 목록 — 렌더도 예산도 없다 (조립기가 건다)."""
+_SKILL_ROW_SEP = " — "  # 이름과 설명을 가르는 자리 — `_skill_row`와 `_skill_name`이 같이 쓴다
+
+
+def _skill_row(name: str, skill: dict, root: str) -> str:
+    """스킬 포인터 한 줄 — 이름·설명·경로. 앞의 `- `는 렌더(Candidate.text)가 붙인다."""
+    desc = _neutralize(str(skill.get("description") or "").strip())[:160]
+    path = str(skill.get("path") or "")
+    rel = os.path.relpath(path, root)
+    shown = rel if not rel.startswith("..") else path  # 글로벌(~/.asgard) 스킬은 절대경로 유지
+    return f"{name}{_SKILL_ROW_SEP}{desc} ({shown})"
+
+
+def _skill_name(row: str) -> str:
+    """`_skill_row`가 만든 행에서 이름을 되읽는다 — 두 함수는 짝이라 한쪽만 고치면 깨진다.
+
+    사용 계수를 조립기 **뒤로** 미루려면 실린 행에서 이름을 되찾아야 한다. 후보 목록을
+    따로 들고 다니는 대신 렌더 형식을 한 자리에 묶어 두는 쪽을 골랐다 — 조립기는 문자열만
+    돌려주고, 그 문자열이 이 층에서 유일한 진실이다."""
+    return row.split(_SKILL_ROW_SEP, 1)[0].strip()
+
+
+def _record_rendered_skills(chosen: list, *, start: str | None = None) -> None:
+    """조립기가 **실제로 실은** 스킬만 사용으로 센다.
+
+    후보를 고르자마자 세면 예산·중복으로 밀린 스킬까지 '쓰인 것'이 되고, `skill_curator`의
+    30일/90일 노화 판정은 이 수가 유일한 원료라 보관 전이가 영영 안 열린다. 개인 레인이
+    노출 계수에 이미 같은 규율을 쓴다 (`memory.recall.recall_rows`)."""
     try:
-        from .skill_bank import learned_skills, record_use
+        from .skill_bank import record_use
+
+        names = [_skill_name(c.body) for c in chosen if c.lane == "skills"]
+        if names:
+            record_use(os.path.realpath(start or os.getcwd()), names)
+    except Exception:
+        pass  # 계수 실패가 회수를 막지 않는다 (fail-open)
+
+
+def learned_skills_rows(query: str, *, start: str | None = None, cap: int = LEARNED_SKILLS_CAP) -> list[str]:
+    """질의 관련 learned 스킬 포인터 목록 — 렌더도 예산도 사용 계수도 없다 (조립기가 건다).
+
+    계수를 여기서 안 올리는 이유는 `_record_rendered_skills`에 적혀 있다."""
+    try:
+        from .skill_bank import learned_skills
 
         root = os.path.realpath(start or os.getcwd())
         task = query.lower()
@@ -685,16 +724,7 @@ def learned_skills_rows(query: str, *, start: str | None = None, cap: int = LEAR
         if not hits:
             return []
         hits.sort(key=lambda row: (row[0], row[1]))
-        hits = hits[: max(1, cap)]
-        rows = []
-        for _, name, skill in hits:
-            desc = _neutralize(str(skill.get("description") or "").strip())[:160]
-            path = str(skill.get("path") or "")
-            rel = os.path.relpath(path, root)
-            shown = rel if not rel.startswith("..") else path  # 글로벌(~/.asgard) 스킬은 절대경로 유지
-            rows.append(f"{name} — {desc} ({shown})")
-        record_use(root, [name for _, name, _ in hits])  # 큐레이션 원료 — 주입도 사용이다
-        return rows
+        return [_skill_row(name, skill, root) for _, name, skill in hits[: max(1, cap)]]
     except Exception:
         return []  # 스킬 힌트 불능이 회수를 막지 않는다 (fail-open)
 
@@ -706,30 +736,26 @@ def learned_skills_note(query: str, *, start: str | None = None, cap: int = LEAR
     승인된 스킬을 UserPromptSubmit 회수에 포인터(이름·설명·경로)로 흘린다. 본문 전체는
     주입하지 않는다 — CC 에이전트는 경로를 Read로 열 수 있고, 네이티브 루프와의 이중
     주입도 피한다(recall_note 기본값이 스킬 제외인 이유). Verifier/loki 차단은 호출측
-    (memory-activate 감사 매트릭스)이 지킨다 — 스킬 뱅크 헌법과 같은 결."""
+    (memory-activate 감사 매트릭스)이 지킨다 — 스킬 뱅크 헌법과 같은 결.
+
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 조립기로 간다.
+    `assemble` 대신 `select`+`render`로 푸는 것은 사용 계수가 **실린 것**만 세야 하기
+    때문이다 (형제 레인은 셀 것이 없어 `assemble` 한 줄로 끝난다)."""
     try:
-        from .skill_bank import learned_skills, record_use
+        from .memory.assemble import Candidate, Lane, render, select
 
         root = os.path.realpath(start or os.getcwd())
-        task = query.lower()
-        hits: list[tuple[int, str, dict]] = []
-        for name, skill in learned_skills(root).items():
-            matched = sum(1 for k in skill["triggers"] if k in task)
-            if matched:
-                hits.append((-matched, name, skill))
-        if not hits:
+        rows = learned_skills_rows(query, start=root, cap=cap)
+        if not rows:
             return ""
-        hits.sort(key=lambda row: (row[0], row[1]))
-        hits = hits[: max(1, cap)]
-        rows = []
-        for _, name, skill in hits:
-            desc = _neutralize(str(skill.get("description") or "").strip())[:160]
-            path = str(skill.get("path") or "")
-            rel = os.path.relpath(path, root)
-            shown = rel if not rel.startswith("..") else path  # 글로벌(~/.asgard) 스킬은 절대경로 유지
-            rows.append(f"- {name} — {desc} ({shown})")
-        record_use(root, [name for _, name, _ in hits])  # 큐레이션 원료 — 주입도 사용이다
-        return SKILLS_PREFIX + "\n".join(rows) + SKILLS_SUFFIX
+        lanes = (Lane("skills", SKILLS_PREFIX, SKILLS_SUFFIX, SKILLS_BUDGET),)
+        chosen = select(
+            [Candidate("skills", body, rank=index) for index, body in enumerate(rows)],
+            lanes,
+            budget=SKILLS_BUDGET,
+        )
+        _record_rendered_skills(chosen, start=root)
+        return render(chosen, lanes)
     except Exception:
         return ""  # 스킬 힌트 불능이 회수를 막지 않는다 (fail-open)
 
@@ -752,7 +778,8 @@ def project_document_note(query: str, *, start: str | None = None) -> str:
 def episode_recall_note(query: str, *, start: str | None = None) -> str:
     """과거 세션 원문의 관련 구간 — 승격 메모리가 못 덮는 층 (비권위, fail-open).
 
-    네이티브 루프는 heimdall이 직접 붙이므로 여기서는 외부 클라이언트 표면만 쓴다."""
+    이 레인 혼자 쓰는 표면용이다 — 여섯 레인을 같이 넣는 자리는 `recall_note(include_episodes=True)`로
+    간다 (네이티브 루프도 그쪽을 쓴다)."""
     try:
         from .agent.episodes import episode_note
 
@@ -761,10 +788,17 @@ def episode_recall_note(query: str, *, start: str | None = None) -> str:
         return ""  # 에피소드 불능이 회수를 막지 않는다
 
 
-# 여섯 레인의 총 상한 = 기존 레인 예산의 합. **천장은 안 낮춘다** — 줄이는 것은 별개의
-# 결정이고 계측 없이 하면 회수 품질을 조용히 깎는다. 여기서 바뀌는 것은 천장이 아니라
-# 같은 천장 아래 무엇이 실리느냐다 (중복이 빠진 자리에 다른 증거가 들어온다).
-RECALL_TOTAL_BUDGET = memory.RECALL_BUDGET + PROJECT_RECALL_BUDGET + 900 + SYNTHESIS_BUDGET + SKILLS_BUDGET + 700
+def recall_total_budget() -> int:
+    """여섯 레인의 총 상한 = **레인 명세의 바닥 합**. 이 함수 말고 다른 자리에서 정하지 않는다.
+
+    **천장은 안 낮춘다** — 줄이는 것은 별개의 결정이고 계측 없이 하면 회수 품질을 조용히
+    깎는다. 여기서 바뀌는 것은 천장이 아니라 같은 천장 아래 무엇이 실리느냐다 (중복이 빠진
+    자리에 다른 증거가 들어온다).
+
+    합을 `_lanes`에서 파생시키는 이유: 전에는 여섯 항 중 둘(문서 900·에피소드 700)이 형제
+    상수의 **숫자 복사본**이었다. 그쪽을 고치면 총 예산이 조용히 어긋나고, 어긋난 결과가
+    주입면 크기라 아무도 즉시 못 본다. 레인 하나를 더하거나 빼도 이제 여기가 따라온다."""
+    return sum(max(0, lane.floor) for lane in _lanes(""))
 
 
 def _lanes(project_id: str) -> tuple:
@@ -866,9 +900,15 @@ def recall_note(
 
     include_skills는 CC 훅 표면(run_recall)만 켠다 — 네이티브 루프는 디스패치 라우팅이
     스킬 본문을 직접 주입하므로 여기서 또 흘리면 이중 주입이 된다.
-    include_episodes도 같은 이유로 훅 표면만 켠다 — 네이티브는 heimdall이 직접 붙인다."""
+    include_episodes는 에피소드를 쓰는 표면이 전부 켠다 (CC 훅·네이티브 루프 둘 다). 전에는
+    네이티브가 이 인자를 끄고 `episode_note`를 결과 뒤에 따로 이어 붙였는데, 그러면 그 경로만
+    천장이 에피소드 예산만큼 높아지고 에피소드 구간이 중복 판정을 한 번도 안 거쳤다 — 조립기가
+    생긴 이유가 그 경로에서만 무효였다.
+
+    `assemble` 대신 `select`+`render`로 푸는 것은 스킬 사용 계수가 **실제로 실린 것**만
+    세야 하기 때문이다 (`_record_rendered_skills`)."""
     try:
-        from .memory.assemble import assemble
+        from .memory.assemble import render, select
 
         candidates, project_id = recall_candidates(
             query,
@@ -880,6 +920,10 @@ def recall_note(
         )
         if not candidates:
             return ""
-        return assemble(candidates, _lanes(project_id), budget=RECALL_TOTAL_BUDGET)
+        lanes = _lanes(project_id)
+        chosen = select(candidates, lanes, budget=recall_total_budget())
+        if include_skills:
+            _record_rendered_skills(chosen, start=start)
+        return render(chosen, lanes)
     except Exception:
         return ""  # fail-open — 조립 실패가 대화를 막지 않는다
