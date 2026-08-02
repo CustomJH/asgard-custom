@@ -27,9 +27,16 @@ from cli_boundary import run_cli
 
 from asgard import errors
 
-# 소유 표면(tools·mode·agent·role)의 실패 경로 — (인자, 사유에 반드시 있어야 하는 조각).
+# 소유 표면(tools·mode·agent·role·memory)의 실패 경로 — (인자, 사유에 반드시 있어야 하는 조각).
 # `--json` 없이 부르는 형태다. 새 실패 경로를 만들면 여기에 한 줄을 더한다.
 _FAILURES: tuple[tuple[tuple[str, ...], str], ...] = (
+    (("memory", "show", "no-such-page"), "no page"),
+    (("memory", "remove", "no-such-page"), "no page"),
+    (("memory", "norn-restore", "no-such-page"), "아카이브에 없음"),
+    (("memory", "discard", "no-such-proposal"), "없거나 이미 처리된 제안 id"),
+    (("memory", "contradiction-seen", "no-a", "no-b"), "장부에 없는 쌍"),
+    (("memory", "autosave", "on", "--tier", "everything"), "tier는"),
+    (("memory", "autosave", "maybe"), "상태는"),
     (("tools", "list", "--role", "odin"), "role must be one of"),
     (("mode", "show", "nosuchmode"), "mode는"),
     (("mode", "set", "nosuchmode", "worker", "--model", "x"), "mode는"),
@@ -49,6 +56,12 @@ _FAILURES: tuple[tuple[tuple[str, ...], str], ...] = (
 # 위 중 `--json` 플래그가 실제로 있는 자리. 없는 명령(`mode set`·`role *`)에 플래그를 지어내
 # 재면 통과하는 것은 테스트의 상상이지 사용자 표면이 아니다.
 _JSON_FAILURES: tuple[tuple[str, ...], ...] = (
+    ("memory", "show", "no-such-page", "--json"),
+    ("memory", "remove", "no-such-page", "--json"),
+    ("memory", "norn-restore", "no-such-page", "--json"),
+    ("memory", "discard", "no-such-proposal", "--json"),
+    ("memory", "contradiction-seen", "no-a", "no-b", "--json"),
+    ("memory", "autosave", "maybe", "--json"),
     ("tools", "list", "--role", "odin", "--json"),
     ("mode", "show", "nosuchmode", "--json"),
     ("agent", "show", "does-not-exist", "--json"),
@@ -58,7 +71,15 @@ _JSON_FAILURES: tuple[tuple[str, ...], ...] = (
 )
 
 # 찾는 것이 없다 — 명령이 달라도 같은 사건이므로 코드도 종료 코드도 같아야 한다.
+# memory 계열이 여기 늦게 들어왔다: 이 표면은 종료 코드 1을 손으로 적고 있었고, 그래서 같은
+# "없는 페이지"가 `memory show`에서는 1, `skills show`에서는 2였다.
 _NOT_FOUND: tuple[tuple[str, ...], ...] = (
+    ("memory", "show", "no-such-page"),
+    ("memory", "remove", "no-such-page"),
+    ("memory", "merge", "no-such-a", "no-such-b"),
+    ("memory", "norn-restore", "no-such-page"),
+    ("memory", "discard", "no-such-proposal"),
+    ("memory", "contradiction-seen", "no-a", "no-b"),
     ("agent", "show", "does-not-exist"),
     ("agent", "describe", "does-not-exist", "설명"),
     ("agent", "delete", "does-not-exist"),
@@ -148,9 +169,16 @@ class TestExitCodesFollowTheCanon(Sandboxed):
                 self.assertEqual(run_cli(*argv).exit_code, 2)
 
     def test_not_found_carries_the_same_code_on_every_command(self) -> None:
-        """`mode set`은 여기 없다 — `--json`이 없는 명령에 플래그를 지어내 재면 사용자 표면이 아니다."""
+        """`mode set`은 여기 없다 — `--json`이 없는 명령에 플래그를 지어내 재면 사용자 표면이 아니다.
+
+        `memory merge`도 빠진다. 그 자리의 "src or dst not found"는 `memory/pages.py`가 통짜
+        `ValueError`로 던져서, 표면이 받는 시점에는 없음인지 잘못된 slug인지 갈라볼 근거가 없다.
+        종료 코드는 어느 쪽이든 2라 여기 위 두 판정은 통과하지만, 코드까지 `not_found`로 적으려면
+        `pages.py`가 갈래를 갖고 던져야 한다."""
         codes = {
-            json.loads(run_cli(*argv, "--json").stdout)["error"]["code"] for argv in _NOT_FOUND if argv[0] == "agent"
+            json.loads(run_cli(*argv, "--json").stdout)["error"]["code"]
+            for argv in _NOT_FOUND
+            if argv[0] in {"agent", "memory"} and argv[1] != "merge"
         }
         self.assertEqual(codes, {"not_found"})
 

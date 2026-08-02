@@ -44,7 +44,9 @@ PERSONAL_CLAIM_LEASE_SECONDS = 300
 def _pending_dir() -> str:
     d = os.path.join(memory.ensure_home(), ".pending-plans")
     if os.path.islink(d):
-        raise ValueError("personal approval directory must not be a symlink")
+        # 심링크면 승인 대기 계획이 어디에 적히는지 우리가 모른다 — 환경이 안 된 것이지
+        # 부른 쪽이 틀린 게 아니다 (exit 1).
+        raise errors.Unavailable("personal approval directory must not be a symlink")
     os.makedirs(d, mode=0o700, exist_ok=True)
     memory._chmod(d, 0o700)
     return d
@@ -151,28 +153,46 @@ def _guard(fn: Callable[[], int]) -> int:
         errors.render_cli(e)
         return e.exit_code
     except ValueError as e:
-        errors.render_cli(_error(str(e)))
-        return 1
+        # 이 표면에서 ValueError는 "그대로는 받을 수 없는 요청"이라는 뜻이다 — 잘못된 slug,
+        # 어긋난 계획, 짝이 안 맞는 플래그. 정본의 InvalidInput 자리이므로 2로 나간다.
+        # 환경이 안 된 자리(연결 안 됨·미신뢰)는 그 자리에서 Unavailable을 던져 1로 남는다.
+        err = _error(str(e))
+        errors.render_cli(err)
+        return err.exit_code
     except Exception as e:  # 파일 권한·손상 등 — 사용자용 한 줄로
-        errors.render_cli(errors.coerce(e))
-        return 1
+        err = errors.coerce(e)
+        errors.render_cli(err)
+        return err.exit_code
+
+
+# 이 표면이 쓰는 코드 → 정본 갈래. 종료 코드는 갈래가 정한다 (`errors.py`): 호출자가 고칠 수
+# 있는 잘못은 2, 환경이 안 된 것은 1. 모르는 코드는 `AsgardError`로 떨어져 1이 된다 — 무엇을
+# 고쳐야 하는지 모르는 실패를 "고칠 수 있다"고 선언하지 않는다.
+_CANON: dict[str, type[errors.AsgardError]] = {
+    "invalid_input": errors.InvalidInput,
+    "not_found": errors.NotFound,
+    "conflict": errors.Conflict,
+    "unavailable": errors.Unavailable,
+    "upstream_error": errors.UpstreamError,
+}
 
 
 def _error(
     message: str, *, code: str = "invalid_input", remedy: str = "", detail: dict | None = None
 ) -> errors.AsgardError:
-    """이 표면의 실패 한 건.
+    """이 표면의 실패 한 건 — 종료 코드는 여기서 안 정한다.
 
-    종료 코드를 1로 고정한다. 정본(`errors.py`)은 호출자가 고칠 수 있는 잘못을 2로 정해 뒀지만,
-    이 표면의 not-found·거부는 처음부터 1이었고 그 값을 읽는 테스트가 있다. 코드 통일은 표면
-    전체를 한 번에 옮기는 별건이고, 여기서 혼자 옮기면 memory만 다른 규약을 갖는다."""
-    return errors.AsgardError(message, code=code, remedy=remedy, detail=detail or {}, exit_code=1)
+    여태 이 자리가 1을 손으로 박아서, 같은 "없는 페이지"가 `memory show`에서는 1이고
+    `skills show`에서는 2였다. 종료 코드로 분기하는 쪽(CI·훅·스튜디오)은 그 차이를 명령별로
+    외워야 했다. 이제 갈래만 고르고 숫자는 `_CANON`이 가리키는 정본 클래스가 정한다."""
+    return _CANON.get(code, errors.AsgardError)(message, code=code, remedy=remedy, detail=detail or {})
 
 
 def _fail(message: str, *, code: str = "invalid_input", remedy: str = "", detail: dict | None = None) -> int:
     """실패를 이 실행의 표면으로 내고 종료 코드를 돌려준다 — 사람은 ✘ 한 줄, `--json`은 error 봉투."""
-    errors.render_cli(_error(message, code=code, remedy=remedy, detail=detail))
-    return 1
+    err = _error(message, code=code, remedy=remedy, detail=detail)
+    errors.render_cli(err)
+    return err.exit_code
 
 
 def _emit(payload: dict) -> None:
@@ -304,10 +324,10 @@ def run_project_approve(approval_id: str, json_out: bool = False) -> int:
     def _do() -> int:
         found = find_config(os.getcwd())
         if not found:
-            raise ValueError("project memory is not connected")
+            raise errors.Unavailable("project memory is not connected")
         root, cfg = found
         if not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         target = backend_target(cfg)
         result = commit_approved_record(root, cfg, approval_id)
         if json_out:
@@ -370,15 +390,17 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None, json
             ui.step("autosave on — 이제 승인 없이 저장해요 (끄려면: asgard memory autosave off --tier personal)")
         if not yes and not auto:
             # `--json`은 물을 자리가 아니다 — 프롬프트를 띄우면 산출물 스트림에 질문이 섞이고,
-            # 부른 쪽은 답할 수 없다. 대기 승인으로 남기고 그 id를 값으로 돌려준다.
+            # 부른 쪽은 답할 수 없다. 대기 승인으로 남기고 그 id를 값으로 돌려준다: 다음 호출의
+            # 재료라 오류 봉투로 안 갈아치우고, 종료 코드만 정본을 따른다 (`--yes`로 풀리므로 2).
             if json_out or not sys.stdin.isatty():
                 approval_id = _save_plan(text, kind, plan)
                 if json_out:
                     _emit({"saved": False, "approval_id": approval_id, "plan": plan_view, "reason": "needs --yes"})
-                    return 1
+                    return errors.Conflict.exit_code
                 ui.step(f"approval-id: {approval_id}")
                 ui.warn("non-interactive without --yes — not saved (ask-before-save)")
-                return 1
+                ui.step(f"이어서 저장하려면: asgard memory ingest --plan-id {approval_id} --yes")
+                return errors.Conflict.exit_code
             if input("save? [y/N] ").strip().lower() not in ("y", "yes"):
                 ui.step("skipped")
                 return 0
@@ -666,6 +688,30 @@ def _gate_label(state: str) -> str:
     return "off"
 
 
+def _approval_target(tier: str) -> dict:
+    """이 기계 승인을 얹을 2차 설정 — 못 얹는 세 사유를 여기서 한 번에 거른다.
+
+    셋의 종료 코드가 갈리는 것이 요점이다. 잘못 고른 tier는 부른 쪽이 고치면 풀리니 2고,
+    연결·신뢰는 이 기계의 환경이 안 선 것이라 인자를 고쳐도 안 풀리니 1이다."""
+    if tier == "personal":
+        raise errors.InvalidInput(
+            "이 기계 승인은 프로젝트 기억에만 있어요 — 개인 기억은 `on|off`로 바로 켜요",
+            remedy="asgard memory autosave on --tier personal",
+            detail={"tier": tier},
+        )
+    found = find_config(os.getcwd())
+    if not found:
+        raise errors.Unavailable("프로젝트 메모리가 아직 연결 안 됐어요", remedy="asgard memory connect <endpoint>")
+    cfg = found[1]
+    if not is_backend_trusted(cfg):
+        # 허가는 신뢰된 target에만 저장된다 (`trust.machine_grants`) — 여기서 안 세우면 memory_bridge가
+        # PermissionError를 던지고, 사람은 "권한 없음"만 듣고 무엇을 해야 하는지는 못 듣는다.
+        raise errors.Unavailable(
+            "이 기계는 아직 이 backend를 믿지 않아요", remedy="먼저 asgard memory connect <endpoint>"
+        )
+    return cfg
+
+
 def _run_machine_approval(state: str, tier: str, yes: bool, json_out: bool) -> int:
     """이 기계의 2차 승인/철회 — 리포 설정은 한 글자도 안 건드린다.
 
@@ -674,19 +720,7 @@ def _run_machine_approval(state: str, tier: str, yes: bool, json_out: bool) -> i
     사람이 남의 저장소를 더럽힌다. 승인은 `~/.asgard`의 trust store에만 저장된다."""
     from ..memory_bridge import grant_machine_approval, revoke_machine_approval
 
-    if tier == "personal":
-        ui.fail("이 기계 승인은 프로젝트 기억에만 있어요 — 개인 기억은 `on|off`로 바로 켜요")
-        return 1
-    found = find_config(os.getcwd())
-    if not found:
-        ui.fail("프로젝트 메모리가 아직 연결 안 됐어요 — asgard memory connect <endpoint>")
-        return 1
-    cfg = found[1]
-    if not is_backend_trusted(cfg):
-        # 허가는 신뢰된 target에만 저장된다 (`trust.machine_grants`) — 여기서 안 세우면 memory_bridge가
-        # PermissionError를 던지고, 사람은 "권한 없음"만 듣고 무엇을 해야 하는지는 못 듣는다.
-        ui.fail("이 기계는 아직 이 backend를 믿지 않아요 — 먼저 asgard memory connect <endpoint>")
-        return 1
+    cfg = _approval_target(tier)
     gates = [(name, grant, why, judge(cfg)) for name, grant, why, judge in _project_gates()]
     if state == "revoke":
         # 철회는 조이는 쪽이라 되묻지 않는다. 전부 거두는 것도 의도다: "무엇을 철회할까요"를
@@ -720,8 +754,12 @@ def _run_machine_approval(state: str, tier: str, yes: bool, json_out: bool) -> i
     ui.step("승인하면 이 기계에서만 켜져요 — 팀의 다른 기계는 각자 승인해야 해요")
     if not yes:
         if not sys.stdin.isatty():
-            ui.warn("대화형이 아닐 땐 --yes 없이는 승인하지 않을게요")
-            return 1
+            # 물을 수 없는 자리다 — 순서가 어긋난 것이지 우리가 깨진 것이 아니다 (conflict=2,
+            # `agent delete`가 같은 상황을 같은 값으로 낸다).
+            raise errors.Conflict(
+                "대화형이 아닐 땐 --yes 없이는 승인하지 않을게요",
+                remedy=f"asgard memory autosave {state} --tier {tier} --yes",
+            )
         if input("이 기계에서 승인할까요? [y/N] ").strip().lower() not in ("y", "yes"):
             ui.step("승인하지 않았어요")
             return 0
@@ -734,6 +772,22 @@ def _run_machine_approval(state: str, tier: str, yes: bool, json_out: bool) -> i
     return 0
 
 
+def _check_autosave_args(state: str | None, tier: str) -> None:
+    """받을 수 있는 tier·상태인가 — 철자를 고치면 풀리는 잘못이라 InvalidInput(2)."""
+    if tier not in _AUTOSAVE_TIERS:
+        raise errors.InvalidInput(
+            f"tier는 {' | '.join(_AUTOSAVE_TIERS)} 중 하나여야 해요",
+            remedy=f"--tier {_AUTOSAVE_TIERS[0]}",
+            detail={"tier": tier},
+        )
+    if state is not None and state not in _AUTOSAVE_STATES:
+        raise errors.InvalidInput(
+            f"상태는 {' | '.join(_AUTOSAVE_STATES)} 중 하나여야 해요",
+            remedy=f"asgard memory autosave {' | '.join(_AUTOSAVE_STATES)}",
+            detail={"state": state},
+        )
+
+
 def run_autosave(state: str | None, tier: str, json_out: bool = False, yes: bool = False) -> int:
     """기억 자동저장 토글 — 승인 왕복을 켜고 끄는 하나뿐인 표면 (1차·2차 각각).
 
@@ -744,14 +798,10 @@ def run_autosave(state: str | None, tier: str, json_out: bool = False, yes: bool
     git으로 공유되는 리포 설정이라 켰다고 켜지지 않는다 — 그 위에 `approve|revoke`가 이 기계의
     허가를 얹는다. 명령을 새로 만들지 않고 여기에 얹는 이유는 사람이 찾을 자리가 하나여야
     하기 때문이다: "자동저장이 왜 안 되지"의 답은 언제나 `asgard memory autosave`에 있다."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
-        if tier not in _AUTOSAVE_TIERS:
-            ui.fail(f"tier는 {' | '.join(_AUTOSAVE_TIERS)} 중 하나여야 해요")
-            return 1
-        if state is not None and state not in _AUTOSAVE_STATES:
-            ui.fail(f"상태는 {' | '.join(_AUTOSAVE_STATES)} 중 하나여야 해요")
-            return 1
+        _check_autosave_args(state, tier)
         if state in ("approve", "revoke"):
             return _run_machine_approval(state, tier, yes, json_out)
         want = state == "on"
@@ -808,16 +858,17 @@ def run_autosave(state: str | None, tier: str, json_out: bool = False, yes: bool
 
 
 def run_approve(proposal_id: str, json_out: bool = False) -> int:
-    """제안 하나를 승인해 정본에 쓴다."""
+    """제안 하나를 승인해 정본에 쓴다.
+
+    `propose.commit`의 거절을 여기서 따로 잡지 않는다. 잡아서 `ui.fail`로 내던 동안 `--json`
+    실행의 실패만 사람 문장으로 샜다 — 부른 쪽은 파싱할 것을 못 찾는다. `_guard`가 같은 사유를
+    이 실행의 얼굴로 낸다."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
         from ..memory import propose
 
-        try:
-            action, slug = propose.commit(proposal_id)
-        except ValueError as exc:
-            ui.fail(str(exc))
-            return 1
+        action, slug = propose.commit(proposal_id)
         if json_out:
             print(_json.dumps({"action": action, "slug": slug}, ensure_ascii=False))
             return 0
@@ -1318,10 +1369,10 @@ def run_project_sync(
         root = os.getcwd()
         found = find_config(root)
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         _, cfg = found
         if not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         target = backend_target(cfg)
         engine = str(target["engine"])
         project_id = str(target["project_id"])
@@ -1396,10 +1447,10 @@ def run_project_rehydrate(yes: bool = False, plan_id: str | None = None, json_ou
 
         found = find_config(os.getcwd())
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         root, cfg = found
         if not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         if plan_id and not yes:
             raise ValueError("--plan-id requires --yes")
         plan = project_memory.rehydration_plan(root, cfg)
@@ -1555,7 +1606,12 @@ def run_norn_restore(slug: str, json_out: bool = False) -> int:
             else:
                 ui.ok(f"복원됨: {slug}")
             return 0
-        return _fail(f"아카이브에 없음: {slug}", code="not_found", detail={"slug": slug})
+        return _fail(
+            f"아카이브에 없음: {slug}",
+            code="not_found",
+            remedy="asgard memory norn 으로 어떤 페이지가 치워졌는지 먼저 보세요",
+            detail={"slug": slug},
+        )
 
     return _guard(_do)
 
@@ -1569,10 +1625,10 @@ def run_project_reflect(question: str, budget: str = "low", json_out: bool = Fal
 
         found = find_config(os.getcwd())
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         root, cfg = found
         if not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         backend = get_backend(cfg)
         try:
             output = reflect(root, backend, question, budget=budget, cfg=cfg)
@@ -1894,10 +1950,10 @@ def run_project_evolve(apply: bool = False, json_out: bool = False) -> int:
 
         found = find_config(os.getcwd())
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         root, cfg = found
         if apply and not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         try:
             plan = evolve_mod.plan_evolve(root)
         except RuntimeError as exc:  # provider 미충족 — 신호만 보여주고 물러난다
@@ -1959,10 +2015,10 @@ def run_project_learn(apply_changes: bool = False, json_out: bool = False) -> in
 
         found = find_config(os.getcwd())
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         root, cfg = found
         if not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         backend = get_backend(cfg)
         try:
             verify_backend_binding(cfg, backend=backend)
@@ -2184,10 +2240,10 @@ def run_project_ingest(
 
         found = find_config(os.getcwd())
         if not found:
-            raise ValueError("project memory is not connected — run `asgard memory connect <endpoint>`")
+            raise errors.Unavailable("project memory is not connected — run `asgard memory connect <endpoint>`")
         root, cfg = found
         if yes and not is_backend_trusted(cfg):
-            raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
+            raise errors.Unavailable("project memory backend is not trusted on this machine; run asgard memory connect")
         ready, failed = ingest.plan(list(paths), strategy=strategy or None, lane=lane or None)
         rows: list[dict] = [
             {

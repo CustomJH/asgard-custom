@@ -189,7 +189,8 @@ class TestAutosaveTellsTheThreeStatesApart(SurfaceBase):
 
         with mock.patch("sys.stdin.isatty", return_value=False):
             self.screen(lambda: run_autosave("approve", "project"))
-        self.assertEqual(self.rc, 1, "비대화형에서 --yes 없이 승인되면 게이트가 아니다")
+        # 되묻지 못해 못 끝냈다 — `--yes`로 풀리므로 Conflict(2). 게이트가 열렸는지는 아래 줄이 잰다.
+        self.assertEqual(self.rc, 2, "비대화형에서 --yes 없이 승인되면 게이트가 아니다")
         self.assertEqual(json.loads(self.status(json_out=True))["project_state"], mb.GATE_UNAPPROVED)
 
     def test_approve_names_what_the_repo_asked_for_then_turns_it_on(self):
@@ -247,9 +248,9 @@ class TestAutosaveTellsTheThreeStatesApart(SurfaceBase):
         from asgard.commands.memory import run_autosave
 
         self.screen(lambda: run_autosave("approve", "project", False, True))
-        self.assertEqual(self.rc, 1)
+        self.assertEqual(self.rc, 1)  # 붙일 저장소가 없다 = Unavailable(1) — 인자를 고쳐도 안 풀린다
         self.screen(lambda: run_autosave("approve", "personal", False, True))
-        self.assertEqual(self.rc, 1)  # 1차에는 기계 승인이라는 개념이 없다
+        self.assertEqual(self.rc, 2)  # 1차에는 기계 승인이라는 개념이 없다 = InvalidInput(2)
 
 
 class TestContradictionsReachAHuman(SurfaceBase):
@@ -332,7 +333,7 @@ class TestContradictionsReachAHuman(SurfaceBase):
 
         self.seed()
         text = self.screen(lambda: run_contradiction_seen("a-page", "ghost-page"))
-        self.assertEqual(self.rc, 1)  # 조용히 성공하면 사람은 표시했다고 믿는다
+        self.assertEqual(self.rc, 2)  # 조용히 성공하면 사람은 표시했다고 믿는다 — 없는 쌍 = NotFound(2)
         self.assertIn("장부에 없는 쌍", text)
 
     def test_lint_reads_the_ledger_without_writing_to_it(self):
