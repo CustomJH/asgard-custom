@@ -23,7 +23,7 @@ from urllib.parse import quote
 import yaml
 from typer.testing import CliRunner
 
-from asgard import memory, settings
+from asgard import io_sqlite, memory, settings
 from asgard.cli import app
 from asgard.memory.recall import _containment, _Grams, _jaccard
 from asgard.memory.store import slot_query_aliases
@@ -2031,19 +2031,25 @@ class TestSecondReview(MemoryBase):
         self.assertEqual(os.stat(os.path.join(self.d, memory.DB)).st_mode & 0o777, 0o600)  # (④)
 
     def test_locked_database_is_not_deleted_as_corrupt(self):
+        """경합은 손상이 아니다 — 기다리다 죽더라도 정상 파일은 그 자리에 있어야 한다.
+
+        재는 것은 `_is_corrupt_db_error` 의 분별이다: SQLITE_BUSY 를 손상으로 읽으면 잠깐
+        잠겼을 뿐인 정상 인덱스가 통째로 지워진다.
+
+        잠금을 만드는 방법은 26-08-03 에 바뀌었다. state.db 가 WAL 로 열리면서 읽기는 쓰기에
+        막히지 않으므로(`io_sqlite`), 경합이 성립하려면 양쪽이 다 써야 한다 — 그래서 쥐는
+        쪽은 쓰기 트랜잭션이고 부딪히는 쪽은 `reindex` 다."""
         memory.add("잠금 중인 정상 DB", title="locked-db")
         path = os.path.join(self.d, memory.DB)
         inode = os.stat(path).st_ino
-        holder = sqlite3.connect(path)
-        holder.execute("BEGIN EXCLUSIVE")
-        real_connect = sqlite3.connect
+        holder = io_sqlite.connect(path)
+        holder.execute("BEGIN IMMEDIATE")
+        holder.execute("INSERT INTO usage(slug, uses) VALUES('holder', 1)")
 
         try:
-            with mock.patch.object(
-                memory.index.sqlite3, "connect", side_effect=lambda p: real_connect(p, timeout=0.01)
-            ):
+            with mock.patch.object(io_sqlite, "BUSY_TIMEOUT_MS", 10):
                 with self.assertRaises(sqlite3.OperationalError):
-                    memory._db(self.d)
+                    memory.reindex(self.d)
         finally:
             holder.rollback()
             holder.close()

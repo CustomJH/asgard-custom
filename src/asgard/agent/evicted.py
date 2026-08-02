@@ -24,6 +24,7 @@ import re
 import sqlite3
 import time
 
+from .. import io_sqlite
 from .episodes import RRF_K, _excerpt, _words
 from .turn_store import _dir
 
@@ -38,7 +39,10 @@ def db_path(root: str) -> str:
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # 접속 계약(WAL·busy_timeout)은 `io_sqlite` 가 진다. 이 파일이 그 계약을 필요로 하는 이유:
+    # 보관은 세션마다 도는 압축이 부르는데(`huginn._archive`), 웨이브 워커와 편대 자식은 세션을
+    # 스레드로 여럿 띄우면서 root 가 같다 — 같은 evicted.db 에 쓰기 여럿이 동시에 들어온다.
+    conn = io_sqlite.connect(path)
     try:
         conn.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS ev USING fts5"
@@ -59,8 +63,7 @@ def _db(root: str) -> sqlite3.Connection:
     except sqlite3.DatabaseError as e:
         if getattr(e, "sqlite_errorcode", None) not in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
             raise
-        with contextlib.suppress(OSError):
-            os.remove(path)
+        io_sqlite.remove(path)
         conn = _connect(path)
     with contextlib.suppress(OSError):
         os.chmod(path, 0o600)
@@ -187,9 +190,11 @@ def stats(root: str) -> dict:
 
 
 def clear(root: str) -> None:
-    """세션 경계·수동 초기화용. 파생물이므로 삭제는 언제나 안전하다."""
-    with contextlib.suppress(Exception):
-        os.remove(db_path(root))
+    """세션 경계·수동 초기화용. 파생물이므로 삭제는 언제나 안전하다.
+
+    WAL 곁 파일까지 같이 지우는 것은 `io_sqlite.remove` 가 진다 — 본체만 지우면 아직
+    체크포인트되지 않은 방출 구간이 `-wal` 에 남는다."""
+    io_sqlite.remove(db_path(root))
 
 
 # ── 툴 표면 ─────────────────────────────────────────────────────────────────

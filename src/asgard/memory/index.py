@@ -7,6 +7,7 @@ import hashlib
 import os
 import sqlite3
 
+from .. import io_sqlite
 from .policy import memory_dir
 from .store import (
     DB,
@@ -64,7 +65,10 @@ def write_index(d: str) -> str:
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # 접속 계약(WAL·busy_timeout)은 `io_sqlite` 가 진다. 이 파일이 그 계약을 필요로 하는 이유:
+    # 회수(`recall_rows`)가 매 턴 도는데 Dual Thinker 는 그 턴을 스레드 둘로 돌리고, 회수 경로가
+    # 노출 계수를 쓰기 때문에 같은 state.db 에 읽기와 쓰기가 동시에 닿는다.
+    conn = io_sqlite.connect(path)
     try:
         conn.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS fts USING fts5"
@@ -119,8 +123,7 @@ def _db(d: str) -> sqlite3.Connection:
     except sqlite3.DatabaseError as e:
         if not _is_corrupt_db_error(e):
             raise
-        with contextlib.suppress(OSError):
-            os.remove(path)
+        io_sqlite.remove(path)
         conn = _connect(path)
     _chmod(path, 0o600)  # sqlite는 umask 기본(0644)으로 만든다 — 개인 메모리 파생물도 0600 (2차 리뷰 ④)
     return conn
@@ -406,8 +409,7 @@ def reindex(d: str | None = None) -> int:
                     conn.close()
             if not _is_corrupt_db_error(e):
                 raise
-            with contextlib.suppress(OSError):
-                os.remove(os.path.join(d, DB))
+            io_sqlite.remove(os.path.join(d, DB))
             conn = _db(d)
             with conn:
                 pages = _pages(d)

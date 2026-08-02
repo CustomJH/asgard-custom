@@ -17,6 +17,7 @@ import os
 import re
 import sqlite3
 
+from .. import io_sqlite
 from .turn_store import _dir, store_path
 
 _DB = "episodes.db"
@@ -31,7 +32,10 @@ def _db_path(root: str) -> str:
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # 접속 계약(WAL·busy_timeout)은 `io_sqlite` 가 진다. 이 파일이 그 계약을 필요로 하는 이유:
+    # 조회 넷(`search`·`stats`·`turns_for_quest`·`episode_rows`)이 전부 `sync` 부터 부르므로
+    # 읽으러 온 것이 곧 쓰는 것이고, 회수는 Dual Thinker 의 스레드 둘에서 동시에 들어온다.
+    conn = io_sqlite.connect(path)
     try:
         conn.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS ep USING fts5"
@@ -54,8 +58,7 @@ def _db(root: str) -> sqlite3.Connection:
     except sqlite3.DatabaseError as e:
         if getattr(e, "sqlite_errorcode", None) not in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
             raise
-        with contextlib.suppress(OSError):
-            os.remove(path)
+        io_sqlite.remove(path)
         conn = _connect(path)
     with contextlib.suppress(OSError):
         os.chmod(path, 0o600)  # sqlite umask 기본은 0644 — 세션 파생물도 소유자 전용

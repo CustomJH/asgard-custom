@@ -36,6 +36,7 @@ import sqlite3
 
 import yaml
 
+from .. import io_sqlite
 from . import terms as terms_lane
 
 DOCUMENT_SCHEMA = "asgard-project-document-v1"
@@ -231,7 +232,10 @@ def _index_path(root: str) -> str:
 
 
 def _connect(path: str) -> sqlite3.Connection:
-    conn = sqlite3.connect(path)
+    # 접속 계약(WAL·busy_timeout)은 `io_sqlite` 가 진다. 이 파일이 그 계약을 필요로 하는 이유:
+    # `search` 가 `sync` 부터 부르고 그 재구축은 조각 전량 DELETE + INSERT 다. 회수는 매 턴,
+    # Dual Thinker 에서는 스레드 둘에서 들어오므로 그 긴 쓰기와 읽기가 같은 파일에서 겹친다.
+    conn = io_sqlite.connect(path)
     try:
         conn.execute(
             "CREATE VIRTUAL TABLE IF NOT EXISTS doc USING fts5"
@@ -254,8 +258,7 @@ def _db(root: str) -> sqlite3.Connection:
     except sqlite3.DatabaseError as e:
         if getattr(e, "sqlite_errorcode", None) not in {sqlite3.SQLITE_CORRUPT, sqlite3.SQLITE_NOTADB}:
             raise
-        with contextlib.suppress(OSError):
-            os.remove(path)
+        io_sqlite.remove(path)
         return _connect(path)
 
 
