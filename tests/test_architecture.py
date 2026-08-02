@@ -3,7 +3,7 @@
 실행: uv run pytest tests/test_architecture.py
 
 계층 (아래가 하위 — 상위는 하위만 임포트할 수 있다):
-  foundation   settings·platform·theme·ui·i18n·io_journal·io_files·registry — 무의존 기반
+  foundation   settings·platform·theme·ui·i18n·io_journal·io_files·io_sqlite·registry — 무의존 기반
   providers    providers·openai_codex — 외부 LLM/자격 인프라
   domain       memory군·skill_bank·lagom·charter·manual·code_map·health·surface·craft·thor_gate·tutor·evolution·templates·hooks — 비즈니스 규칙
   application  agent — 오케스트레이션 (Heimdall/Trinity/세션)
@@ -18,8 +18,18 @@
 그래서 계층마다 **등급(SUBTIERS)** 을 둔다. 같은 계층 안에서도 아래 등급만 부를 수 있고,
 **같은 등급끼리도 못 부른다**. 새 결합을 만들려면 등급표를 고치고 왜 올렸는지를 그 자리에
 적어야 한다 — 그 편집이 없으면 새 결합은 못 생긴다. 이 강제로 같은 계층 엣지 71건이 전부
-판정 대상이 되고, 판정 커버리지는 242/527(45.9%)이 된다. 남은 285건은 같은 최상위 이름
-안쪽(패키지 내부)이고, 그 층의 규칙은 STUDIO_CHAIN 이 한 패키지에 대해 먼저 세워 둔 형태다.
+판정 대상이 되고, 커버리지는 242/527(45.9%)이 됐다.
+
+남은 285건(54.1%)은 같은 최상위 이름 안쪽, 즉 패키지 내부였다. 규칙이 최상위 이름만 보고
+같으면 건너뛰었으므로 패키지 안에서는 무엇이 무엇을 불러도 통과했고, 이 저장소에서 가장 큰
+덩어리가 전부 패키지라(memory 18모듈·commands 35자식·templates 23·hooks 21·agent 16) 안 재는
+쪽이 코드의 대부분이었다. 그래서 같은 기계를 한 단 더 안으로 넣는다 — **PACKAGE_TIERS**.
+단위는 직속 자식(모듈·서브패키지·파사드)이고, 부등호는 위와 같이 엄격하다. 깊은 자리는 그
+자리의 층에서 재므로 한 임포트가 두 번 세지지 않는다. 이제 285건이 전부 판정 대상이 되고,
+커버리지는 45.9% → **100%(미판정 0건)** 이다.
+
+100% 는 "모든 상시 임포트가 어떤 규칙의 부등호를 지난다"는 뜻이다. 규칙 밖에 남는 것은
+설계로 남긴 둘뿐이고 이유가 같다 — 함수 안 lazy 임포트와 `if TYPE_CHECKING:` 본문은 안 돈다.
 숫자는 실측 시점의 스냅샷이지 불변식이 아니다 — 비율이 어디서 오는지를 읽으라고 적는다.
 
 규칙은 **임포트할 때 실제로 도는 임포트**에만 적용한다 — 함수 내부 lazy import는 의도된
@@ -57,6 +67,11 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 있으면 아래 계층이 자기 활동을 못 적는다.
                 "activity",
                 "io_files",
+                # io_sqlite — sqlite3 접속 계약(WAL·busy_timeout) 한 자리. io_journal·io_files 와
+                # 같은 성격이고 실제로 무의존이다(os·sqlite3 만 본다). 이걸 부르는 쪽이
+                # memory.index·agent.episodes·studio.db·orchestration.store 처럼 여러 계층에
+                # 흩어져 있으므로, 조금이라도 위에 있으면 아래 계층이 DB를 못 연다.
+                "io_sqlite",
                 "registry",
                 # profiles — 에인헤랴르 홈 해석. settings가 이걸 부르므로 settings보다 아래여야
                 # 하고, 실제로 무의존이다 (내장 명부만 templates를 lazy로 본다).
@@ -118,6 +133,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 "tutor",
                 "tutor_probes",
                 "tutor_growth",
+                # tutor_debt — 인지적 항복의 신호를 세는 계량기. tutor_growth(기록)만 읽고
+                # 판정은 tutor 가 소비한다. 여기 있는 이유는 tutor_probes 와 같다: 재기만 하고
+                # 무엇을 할지는 안 정한다.
+                "tutor_debt",
                 "map_context",
                 "map_graph",
                 # map_lex — 질의 어휘 사전. craft_lex·thor_lex와 같은 자리다: 순수 표이고, 그것을
@@ -162,11 +181,21 @@ _RANK = {name: i for i, (layer, names) in enumerate(LAYERS) for name in names}
 # 아니라 순서**다 — 필요하면 이름과 안 맞아도 등급을 올리되 왜 올렸는지를 그 줄에 적는다.
 SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
     "foundation": [
-        # 아래로 아무것도 안 본다 — 경로·기록·표·프로필.
+        # 아래로 아무것도 안 본다 — 경로·기록·접속·표·프로필.
         (
             "기반",
             frozenset(
-                {"platform", "io_journal", "activity", "io_files", "registry", "failures", "profiles", "winterm"}
+                {
+                    "platform",
+                    "io_journal",
+                    "activity",
+                    "io_files",
+                    "io_sqlite",
+                    "registry",
+                    "failures",
+                    "profiles",
+                    "winterm",
+                }
             ),
         ),
         # 기반을 읽어 "지금 이 기계는 어떤 상태인가"를 만든다. settings→profiles, theme→winterm.
@@ -236,7 +265,10 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
         ),
         # 여러 해석을 합쳐 실제 소스를 잰다 — 언어별 어댑터(craft_c)·어휘(thor_lex)·프로브
         # (tutor_probes)·지도 레인(map_graph·map_context·map_notes).
-        ("계측", frozenset({"craft_c", "thor_lex", "tutor_probes", "map_graph", "map_context", "map_notes"})),
+        (
+            "계측",
+            frozenset({"craft_c", "thor_lex", "tutor_probes", "tutor_debt", "map_graph", "map_context", "map_notes"}),
+        ),
         # 계측을 합쳐 결론을 낸다.
         ("판정", frozenset({"craft"})),
         # 결론을 소비한다 — 막고(thor_gate·freyja_gate) 고치고(craft_fix) 되짚는다(tutor).
@@ -252,6 +284,274 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
 }
 _SUBRANK = {name: index for tiers in SUBTIERS.values() for index, (title, names) in enumerate(tiers) for name in names}
 _SUBTIER_NAME = {name: title for tiers in SUBTIERS.values() for title, names in tiers for name in names}
+
+# 패키지 안쪽의 등급 — 계층·SUBTIERS 와 같은 기계를 한 단 더 안으로 넣는다.
+#
+# 계층 규칙과 SUBTIERS 는 최상위 이름끼리만 비교한다. 그래서 `asgard.memory` 안의 모듈이
+# `asgard.memory` 안의 다른 모듈을 부르면 출발과 도착의 최상위 이름이 같아 그냥 통과했다.
+# 실측(모듈 레벨 임포트 527건 기준) 285건(54.1%)이 그 자리였고, 이 저장소에서 가장 큰 덩어리가
+# 전부 패키지다 — memory 18모듈·commands 35자식·agent 16·hooks 21·templates 23. 즉 안 재는
+# 쪽이 코드의 대부분이었다.
+#
+# 표의 단위는 **직속 자식**이다: 모듈, 서브패키지 하나, 그리고 파사드(`__init__`). 깊은 자리는
+# 그 자리의 층에서 잰다 — `commands/studio/server.py` → `commands/studio/state.py` 는 `commands`
+# 가 아니라 `commands.studio` 의 문제이고, 그쪽은 STUDIO_CHAIN 이 본다.
+#
+# 순서는 실제 임포트 방향의 위상 정렬에서 뽑았다(등급 n = 자기가 부르는 것들의 최고 등급 + 1).
+# 그래서 지금 있는 엣지 전부가 이 표를 엄격히 내려가고, 서로 안 부르는 것끼리는 같은 등급에
+# 남는다 — 그 사이에 새 결합이 생기면 표를 고쳐야 하고, 그 편집이 결정의 흔적이다.
+#
+# 파사드(`__init__`)는 언제나 맨 위다. 계산된 깊이가 아니라 위를 고정한 이유가 있다: 안쪽 모듈이
+# 자기 패키지 파사드를 부르면 그건 순환이고, 파사드를 위에 두면 그 방향이 항상 위반이 된다.
+# 대신 파사드가 무엇을 재수출하든 통과한다 — 파사드는 이 패키지의 가장 바깥 소비자다.
+PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
+    "memory": (
+        # 아무것도 안 부른다 — 설정·게이트(policy), 순수 판정(fence·temporal).
+        ("바닥", frozenset({"policy", "fence", "temporal"})),
+        ("저장", frozenset({"store", "manager"})),
+        # 저장 위의 파생 — 색인·계기·vault·외부 포맷 어댑터. 지워도 정본에서 다시 만든다.
+        ("파생", frozenset({"index", "usage", "vault", "okf"})),
+        ("회수", frozenset({"recall"})),
+        ("조립", frozenset({"assemble", "pages"})),
+        ("쓰기", frozenset({"propose", "contradiction"})),
+        ("손질", frozenset({"norn"})),
+        # 정본을 통째로 옮기거나(backup) 대화에서 새로 올린다(pattern) — 둘 다 norn 위다.
+        ("이식", frozenset({"backup", "pattern"})),
+        ("연동", frozenset({"sync"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "agent": (
+        (
+            "바닥",
+            frozenset(
+                {
+                    "tools",
+                    "turn_store",
+                    "claude_native",
+                    "oneshot",
+                    "huginn",
+                    "onboard",
+                    "prompt_cache",
+                    "rate_limit",
+                    "compact_lessons",
+                    "unit_workspace",
+                }
+            ),
+        ),
+        ("계약", frozenset({"tool_kernel", "episodes"})),
+        ("세션", frozenset({"session", "evicted"})),
+        ("루프", frozenset({"heimdall", "repl"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "agent.heimdall": (
+        # LLM·IO 없이 판정하거나 상태만 적는 자리.
+        ("순수", frozenset({"classify", "journal", "planning", "roles", "todo", "patch_merge", "ticket_lease"})),
+        ("선언", frozenset({"toolspec", "bifrost"})),
+        ("레인", frozenset({"trinity", "waves", "delivery"})),
+        ("코어", frozenset({"core"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "commands": (
+        # 명령 구현 대부분이 여기다 — 서로를 안 부른다. 같은 등급이라 새로 부르면 빨개진다.
+        (
+            "명령",
+            frozenset(
+                {
+                    "auth",
+                    "budget",
+                    "completions",
+                    "doctor",
+                    "evolve",
+                    "health",
+                    "humanize",
+                    "k6",
+                    "loopback",
+                    "map",
+                    "memory",
+                    "mode",
+                    "office",
+                    "role",
+                    "setup",
+                    "skills",
+                    "start",
+                    "studio_store",
+                    "ticket_api",
+                    "tools",
+                    "uninstall",
+                }
+            ),
+        ),
+        # 위 셋 중 하나에 기댄다 — health(진단 표면)·loopback(창 경계)·setup(설치)·completions.
+        (
+            "명령 소비",
+            frozenset(
+                {
+                    "agent",
+                    "craft",
+                    "init_tui",
+                    "manual",
+                    "memory_dashboard",
+                    "plan_api",
+                    "siege",
+                    "studio",
+                    "surface",
+                    "sync",
+                    "thor",
+                    "ticket",
+                    "tutor",
+                    "update",
+                }
+            ),
+        ),
+        # 지금 이 파사드는 형제를 하나도 안 부른다 (cli 가 명령을 함수 안 lazy 로 고르므로).
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "commands.memory_dashboard": (
+        ("데이터", frozenset({"data"})),
+        ("표면", frozenset({"server"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "commands.plan_api": (
+        ("표면", frozenset({"server"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "hooks": (
+        # 등급이 하나다 — 그게 배포 계약이다. 훅은 `.claude/hooks/`로 단일 파일 복사되므로 형제를
+        # 부르면 복사본에서 죽는다. 같은 등급끼리 금지라 임포트 하나만 생겨도 이 표가 잡는다
+        # (상대 임포트는 test_hooks_are_self_contained 가, 절대 임포트는 여기가 본다).
+        (
+            "훅",
+            frozenset(
+                {
+                    "agent_activate",
+                    "budget_guard",
+                    "charter_activate",
+                    "craft_gate",
+                    "failure_tracker",
+                    "git_guard",
+                    "lagom_activate",
+                    "lagom_subagent",
+                    "lagom_tracker",
+                    "manual_activate",
+                    "map_activate",
+                    "memory_activate",
+                    "quest_log",
+                    "readonly_guard",
+                    "release_guard",
+                    "secret_guard",
+                    "subagent_gate",
+                    "tutor_note",
+                    "unattended_context",
+                    "verifier_gate",
+                    "write_sentinel",
+                }
+            ),
+        ),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "map_graph": (
+        # 증거 모델과 그것만 읽는 조회기들.
+        ("증거", frozenset({"evidence", "bridge", "resolve_jvm", "view_legacy"})),
+        ("추출", frozenset({"extract_java", "extract_python", "extract_tsjs", "spring_props"})),
+        ("그래프", frozenset({"graph"})),
+        ("뷰", frozenset({"view"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "memory_bridge": (
+        ("소비", frozenset({"client"})),
+        ("신뢰", frozenset({"trust"})),
+        ("설정", frozenset({"config"})),
+        ("표면", frozenset({"server"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "orchestration": (
+        # 어휘·순수 판정(model)·SQLite 정본(store)·형상 선택(strategy) — 서로를 안 부른다.
+        ("정본", frozenset({"model", "store", "strategy"})),
+        ("장부", frozenset({"board", "mail"})),
+        ("배차", frozenset({"dispatch"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "plan": (
+        ("정본", frozenset({"store"})),
+        ("지능", frozenset({"planner", "edits"})),
+        ("앉히기", frozenset({"build"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "project_memory": (
+        # backend IO 를 모르는 절반 — 정책·토큰화·합성.
+        ("순수", frozenset({"records", "terms", "reflect"})),
+        ("정본", frozenset({"canonical", "scan", "ingest", "documents"})),
+        ("파생", frozenset({"projection", "retain", "evolve", "learning"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "studio": (
+        ("정본", frozenset({"db", "vocab"})),
+        # teams — 번호의 주인. projects·tickets 가 팀을 가로지르므로 그 아래다.
+        ("팀", frozenset({"teams"})),
+        ("축", frozenset({"projects", "tickets", "legacy"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+    "templates": (
+        # 순수 방출기 — 캐논 본문과 스킬 본문. 서로를 안 부른다.
+        (
+            "본문",
+            frozenset(
+                {
+                    "agent_models",
+                    "bragi",
+                    "bridge",
+                    "canon",
+                    "claude",
+                    "comments",
+                    "eitri",
+                    "lagom",
+                    "manual",
+                    "map",
+                    "memory",
+                    "mimir",
+                    "seal",
+                    "selftest",
+                    "skill_router",
+                    "thor",
+                    "trinity",
+                    "worker",
+                }
+            ),
+        ),
+        # 본문을 모아 한 문서로 만든다 — AGENTS.md(agents), 역할 명부(roles).
+        ("조합", frozenset({"agents", "roles"})),
+        # 역할 명부를 클라이언트 형식으로 옮긴다.
+        ("어댑터", frozenset({"codex", "cursor", "freyja"})),
+        ("파사드", frozenset({"__init__"})),
+    ),
+}
+
+# 등급표 대신 다른 규칙이 보는 패키지 — 값은 그 규칙의 이름이다.
+PACKAGES_GOVERNED_ELSEWHERE: dict[str, str] = {
+    # commands.studio 는 STUDIO_CHAIN 이 전순서로 본다. 등급표를 겹쳐 놓지 않는 이유는 둘이
+    # 막는 것이 다르기 때문이다: 사슬은 `snapshot → artifacts` 처럼 손으로 정한 방향까지
+    # 막고, 등급은 같은 등급끼리를 막는다. 한 패키지에 규칙 둘을 두면 어느 쪽이 계약인지
+    # 아무도 못 말한다 — 그래서 먼저 있던 쪽을 남긴다.
+    "commands.studio": "STUDIO_CHAIN",
+}
+
+# 등급을 못 세운 패키지 — 값은 이유다. 조용히 빠뜨리는 자리를 없애려고 비어 있어도 남긴다.
+#
+# 이 표를 둔 이유는 순환이었다: 안쪽에 순환이 있으면 위상 정렬이 안 되고 등급을 못 만든다.
+# 실측 결과 순환은 **한 패키지에도 없었다** (직속 자식 단위 Tarjan, 파사드 포함, 17패키지
+# 전수). 그래서 지금은 비어 있다. 순환이 생기면 여기 이름과 순환 고리를 적고, 그때 규칙 밖에
+# 두는 것은 순환을 고칠 때까지의 임시 상태다.
+PACKAGES_WITHOUT_TIERS: dict[str, str] = {}
+
+_PACKAGE_TIER_RANK = {
+    pkg: {name: index for index, (_title, names) in enumerate(tiers) for name in names}
+    for pkg, tiers in PACKAGE_TIERS.items()
+}
+_PACKAGE_TIER_TITLE = {
+    pkg: {name: title for title, names in tiers for name in names} for pkg, tiers in PACKAGE_TIERS.items()
+}
+
+_FACADE = "__init__"
 
 
 def _module_dotted(path: str) -> list[str]:
@@ -374,6 +674,78 @@ def _toplevel_edges():
                 if target == "assets" or target == src_top:
                     continue
                 yield rel, node.lineno, src_top, target
+
+
+def _iter_packages() -> list[tuple[str, ...]]:
+    """src/asgard 아래 패키지 전수 → dotted 성분. `.py`를 담은 디렉터리면 전부 센다.
+
+    `__init__.py` 존재를 조건으로 걸지 않는다: 그러면 규칙이 재는 범위가 파일 하나의 유무로
+    움직이고, 그 파일을 지우는 것만으로 패키지를 규칙 밖으로 뺄 수 있다. assets 는 코드가
+    아니라 배포 자료라서 제외한다 (계층 규칙도 같은 이유로 assets 를 통과시킨다).
+    """
+    out: list[tuple[str, ...]] = []
+    for dirpath, dirs, files in os.walk(SRC):
+        dirs[:] = [d for d in dirs if d != "__pycache__"]
+        rel = os.path.relpath(dirpath, SRC).replace(os.sep, "/")
+        if rel == ".":
+            continue
+        parts = tuple(rel.split("/"))
+        if parts[0] == "assets" or not any(f.endswith(".py") for f in files):
+            continue
+        out.append(parts)
+    return sorted(out)
+
+
+def _package_children(pkg: tuple[str, ...]) -> set[str]:
+    """패키지의 직속 자식 — 모듈·서브패키지 + 파사드(`__init__`). 등급표가 덮어야 하는 이름이다."""
+    base = os.path.join(SRC, *pkg)
+    out = {_FACADE}
+    for entry in sorted(os.listdir(base)):
+        if entry in ("__pycache__", "__init__.py"):
+            continue
+        full = os.path.join(base, entry)
+        if entry.endswith(".py"):
+            out.add(entry.removesuffix(".py"))
+        elif os.path.isdir(full) and any(f.endswith(".py") for f in os.listdir(full)):
+            out.add(entry)
+    return out
+
+
+def _package_edges(pkg: tuple[str, ...]):
+    """패키지 안쪽 모듈 레벨 임포트 전수 → (파일, 행, 출발 자식, 도착 자식).
+
+    깊은 자리는 직속 자식 하나로 접는다: `commands/studio/server.py` 가 `commands/loopback.py`
+    를 부르면 `commands` 층에서는 studio → loopback 한 건이고, 같은 자식 안쪽
+    (`studio/server.py` → `studio/state.py`)은 `commands.studio` 층에서 잰다. 그래서 한 임포트가
+    두 층에서 두 번 세지지 않는다.
+
+    안에서 패키지 자신을 절대 경로로 부른 자리(`from asgard.memory import Foo` in memory/*)는
+    파사드로 되돌아오는 엣지로 잡는다 — 형제 모듈 이름이 안 나온 경우만이다. 형제가 나오면
+    그건 서브모듈 임포트이고, 그쪽으로 세는 것이 실제 결합을 가리킨다.
+    """
+    depth = len(pkg)
+    children = _package_children(pkg)
+    for path in _iter_py_files():
+        parts = _module_dotted(path)
+        if tuple(parts[:depth]) != pkg:
+            continue
+        src = _FACADE if len(parts) == depth else parts[depth]
+        rel = os.path.relpath(path, SRC)
+        file_parts = (parts + [_FACADE]) if os.path.basename(path) == "__init__.py" else parts
+        with open(path, encoding="utf-8") as handle:
+            tree = ast.parse(handle.read())
+        for node in _module_level_imports(tree):
+            targets = _resolved_targets(node, file_parts)
+            hits = {
+                target[depth]
+                for target in targets
+                if len(target) > depth and tuple(target[:depth]) == pkg and target[depth] in children
+            }
+            if not hits and any(tuple(target) == pkg for target in targets):
+                hits = {_FACADE}
+            for dst in sorted(hits):
+                if dst != src:
+                    yield rel, node.lineno, src, dst
 
 
 class TestLayeredArchitecture(unittest.TestCase):
@@ -512,9 +884,98 @@ class TestLayeredArchitecture(unittest.TestCase):
         )
 
 
+class TestPackageInternals(unittest.TestCase):
+    """최상위 이름 안쪽 — 패키지가 커져도 그 안의 방향이 규칙으로 남는지."""
+
+    def test_every_package_with_internal_edges_has_a_tier_table(self):
+        """안쪽 결합이 있는 패키지는 등급표를 갖는다 — 빠뜨리려면 이유를 적어야 한다.
+
+        문턱을 엣지 1건으로 잡는다. 크기가 아니라 결합의 유무가 기준인 이유는, 지금 자식끼리
+        아무것도 안 부르는 패키지는 잴 것이 없고 첫 결합이 생기는 순간 이 시험이 그 이름을
+        대며 표를 요구하기 때문이다. 그래서 새 패키지가 규칙 없이 자라는 경로가 없다."""
+        problems: list[str] = []
+        packages = {".".join(pkg): pkg for pkg in _iter_packages()}
+        for dotted, pkg in sorted(packages.items()):
+            if dotted in PACKAGE_TIERS or dotted in PACKAGES_GOVERNED_ELSEWHERE:
+                continue
+            edges = list(_package_edges(pkg))
+            if not edges:
+                continue
+            if dotted in PACKAGES_WITHOUT_TIERS:
+                continue  # 이유가 비었는지는 아래에서 따로 본다
+            sample = ", ".join(f"{src}→{dst}" for _rel, _lineno, src, dst in edges[:4])
+            problems.append(f"{dotted} — 안쪽 엣지 {len(edges)}건({sample}) 인데 등급표가 없다")
+        for dotted in sorted(set(PACKAGE_TIERS) | set(PACKAGES_GOVERNED_ELSEWHERE) | set(PACKAGES_WITHOUT_TIERS)):
+            if dotted not in packages:
+                problems.append(f"{dotted} — 없는 패키지를 가리키는 표가 남아 있다")
+        for dotted, reason in sorted(PACKAGES_WITHOUT_TIERS.items()):
+            if not reason.strip():
+                problems.append(f"{dotted} — 규칙 밖에 두는 이유가 비어 있다")
+        self.assertFalse(
+            problems,
+            "패키지 안쪽이 규칙 밖에 있다 — PACKAGE_TIERS 에 등급을 세우거나 "
+            "PACKAGES_WITHOUT_TIERS 에 이유를 적어라:\n" + "\n".join(problems),
+        )
+
+    def test_tier_tables_match_the_package_directory(self):
+        """표와 디렉터리가 어긋나면 안 된다 — 새 모듈은 자리를 얻고 들어온다.
+
+        미배치는 '이게 무엇 위에 서는가'를 아무도 안 정했다는 뜻이고, 남은 이름은 표가 옛
+        디렉터리를 서술한다는 뜻이다. 둘 다 표를 기록으로 전락시킨다."""
+        problems: list[str] = []
+        for dotted, tiers in sorted(PACKAGE_TIERS.items()):
+            pkg = tuple(dotted.split("."))
+            if not os.path.isdir(os.path.join(SRC, *pkg)):
+                continue  # 사라진 패키지를 가리키는 표는 위 시험이 이름을 대며 잡는다
+            actual = _package_children(pkg)
+            placed = [name for _title, names in tiers for name in names]
+            missing = sorted(actual - set(placed))
+            stray = sorted(set(placed) - actual)
+            twice = sorted({name for name in placed if placed.count(name) > 1})
+            if missing:
+                problems.append(f"{dotted} — 등급 미지정: {missing}")
+            if stray:
+                problems.append(f"{dotted} — 패키지에 없는 이름이 등급표에: {stray}")
+            if twice:
+                problems.append(f"{dotted} — 등급이 둘: {twice}")
+            if _PACKAGE_TIER_RANK[dotted].get(_FACADE) != len(tiers) - 1:
+                problems.append(f"{dotted} — 파사드({_FACADE})는 맨 위 등급이어야 한다")
+        self.assertFalse(problems, "등급표가 패키지 디렉터리와 어긋난다:\n" + "\n".join(problems))
+
+    def test_package_internals_go_down_a_tier(self):
+        """패키지 안에서도 아래 등급만 부른다 — 같은 등급끼리도 안 된다.
+
+        계층·SUBTIERS 와 같은 부등호다. 같은 등급을 막는 이유도 같다: 새 결합이 표를 안 고치고
+        생길 수 있으면 표는 계약이 아니라 기록이 된다. 필요한 결합이면 등급을 올리고 왜
+        올렸는지를 그 줄에 적으면 된다."""
+        violations: list[str] = []
+        for dotted in sorted(PACKAGE_TIERS):
+            pkg = tuple(dotted.split("."))
+            if not os.path.isdir(os.path.join(SRC, *pkg)):
+                continue  # 사라진 패키지는 test_every_package_with_internal_edges_has_a_tier_table 몫
+            rank, title = _PACKAGE_TIER_RANK[dotted], _PACKAGE_TIER_TITLE[dotted]
+            for rel, lineno, src, dst in _package_edges(pkg):
+                src_tier, dst_tier = rank.get(src), rank.get(dst)
+                if src_tier is None or dst_tier is None:
+                    continue  # 등급 미지정은 test_tier_tables_match_the_package_directory 가 잡는다
+                if dst_tier < src_tier:
+                    continue
+                why = "같은 등급" if dst_tier == src_tier else "등급을 거슬러 오른다"
+                violations.append(f"{rel}:{lineno} — {src}[{title[src]}] → {dst}[{title[dst]}] ({why})")
+        self.assertFalse(
+            violations,
+            "패키지 안쪽 등급 위반 — PACKAGE_TIERS 를 고치고 왜 올렸는지 그 줄에 적어라:\n" + "\n".join(violations),
+        )
+
+
 # Studio 안쪽의 사슬 — `commands.studio` 패키지는 아래로만 기댄다. 이 순서가 곧 계약이다:
 # 왼쪽이 오른쪽을 부를 수 없다. 하나라도 뒤집히면 순환이 생기고, 순환이 생기면 "이 모듈만
 # 읽으면 된다"가 다시 거짓이 된다 (1,586줄 한 파일로 돌아가는 첫걸음이 그것이었다).
+#
+# 파사드(`__init__`)가 맨 끝에 있다. 예전에는 사슬이 `__init__.py`를 아예 안 봤고, 그래서 밖에
+# 내보내는 이름을 고정하는 그 파일에서 형제를 부르는 임포트 18건이 규칙 밖이었다. 파사드는
+# 이 패키지의 가장 바깥 소비자라 맨 위가 맞고, 위에 두면 안쪽 모듈이 파사드를 부르는 방향
+# (그건 순환이다)이 항상 위반이 된다.
 STUDIO_CHAIN = (
     "state",
     "dialog",
@@ -524,8 +985,12 @@ STUDIO_CHAIN = (
     "workspaces",
     "artifacts",
     "config",
+    # tutor — 되짚기 창의 재료. routes 아래인 이유는 방향이다: 자기는 엔진(asgard.tutor·
+    # tutor_debt)만 읽고, 그것을 어느 주소에 걸지는 routes 가 정한다.
+    "tutor",
     "routes",
     "server",
+    "__init__",
 )
 
 
@@ -542,10 +1007,15 @@ class TestStudioPackage(unittest.TestCase):
     """스튜디오 창의 안쪽 — 한 파일이던 것을 책임별로 가른 뒤의 불변식."""
 
     def _studio_modules(self) -> dict[str, ast.Module]:
+        """패키지 안의 모든 `.py` — 파사드(`__init__`)까지. 키는 STUDIO_CHAIN 의 성분과 같다.
+
+        `__init__` 의 상대 임포트를 풀 때 그 키가 그대로 경로 성분으로 쓰인다
+        (`["commands", "studio", "__init__"]`) — 계층 규칙이 `__init__.py` 를 다루는 방식과 같다.
+        """
         base = os.path.join(SRC, "commands", "studio")
         out = {}
         for entry in sorted(os.listdir(base)):
-            if entry.endswith(".py") and entry != "__init__.py":
+            if entry.endswith(".py"):
                 with open(os.path.join(base, entry), encoding="utf-8") as handle:
                     out[entry.removesuffix(".py")] = ast.parse(handle.read())
         return out
