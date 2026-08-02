@@ -1,4 +1,14 @@
-# Project memory load harness (k6, Docker)
+# Project memory load harness (k6, Docker) — 실측 기록
+
+**실행 자산은 여기 없다.** 이 디렉터리의 내용물은 이 문서 하나다. 아래 표를 만든 시나리오
+둘(`recall` · `saturate`)은 `src/asgard/assets/k6_kit/scenarios/` 가 정본이고, `asgard k6 sync`
+가 그것을 재는 프로젝트의 `.asgard/k6/kit/` 로 내려 `asgard k6 run` 이 `docker/asgard-k6/` 의
+이미지로 돌린다. 문서만 남긴 이유는 표다 — 아래 실측은 `src/asgard/project_memory/` 의
+`documents.py`·`ingest.py` 와 `tests/test_project_documents.py` 가 레인을 가른 근거로 인용한다.
+
+이 경로는 어디서도 자동으로 돌지 않는다. 실엔진 검증(`tests/test_k6.py`)은 `ASGARD_K6_DOCKER=1`
+일 때만 돌고 기본 스위트에서는 건너뛴다. 그래서 아래 날짜는 **그날 그 스택의 값**이지 현재
+상태의 보증이 아니다 — 다시 재려면 `asgard k6 selftest` 가 녹색인지부터 본다.
 
 프로젝트 메모리 backend 는 팀이 공유하는 원격 서비스다. 한 사람의 지연은 doctor 가 보지만,
 **여러 사람이 동시에 회수할 때 무슨 일이 나는지**는 재 보지 않으면 알 수 없다. 그 자리를 여기서 잰다.
@@ -158,6 +168,7 @@ VU 1 에서도 그렇다. 그러니 이 표들을 "동시 사용자 N 명까지 
 
 `scratchpad` 하네스가 아니라 이 표를 다시 만들려면: 버릴 뱅크를 새로 파고(`PUT
 /v1/default/banks/<id>`), `ingest.STRATEGIES` 를 심고, 문서를 넣고, `POST
-/memories/recall` 을 `tests/load/recall.js` 와 **같은 요청 모양**으로 부른다. 서버 로그가
+/memories/recall` 을 `src/asgard/assets/k6_kit/scenarios/recall.js` 와 **같은 요청 모양**으로
+부른다. 서버 로그가
 단계별 시간(`[2] Parallel retrieval` / `[4] Reranking`)을 그대로 찍어 주므로 어느 단계가
 비용인지는 추측할 필요가 없다.

@@ -993,7 +993,9 @@ def _section(kind: str, label: str, rows: list[str], budget: int) -> str:
 
     사용률을 100% 로 깎지 않는다: 저장은 무제한이라 칸은 실제로 넘칠 수 있고, `143%`라고
     적혀 있어야 모델이 그 칸을 통합하자고 먼저 말한다. 계기가 거짓말하면 계기가 아니다.
-    예산은 행에만 건다 — 머리글은 계기판이라 예산 밖이다."""
+
+    `budget` 이 세는 것은 **행뿐**이다 — 머리글은 계기판이라 예산 밖이고, 반환값은 그만큼
+    `budget` 을 넘는다. 이 자리에서 블록 상한을 기대하면 안 된다 (`snapshot_note` 참조)."""
     if budget <= 0 or not rows:
         return ""
     full = sum(len(r) + 1 for r in rows)
@@ -1060,6 +1062,14 @@ def snapshot_note(d: str | None = None) -> str:
     칸을 나누는 이유는 예산이 아니라 굶주림이다. 총량 하나면 수가 많은 칸(reference)이
     값비싼 칸(user·feedback)을 밀어내는데, 사람이 같은 말을 반복하지 않게 만드는 건 뒤쪽이다.
     칸마다 상한을 주면 어느 칸도 굶지 않는다.
+
+    **`INDEX_BUDGET` 은 블록 상한이 아니다.** 이름이 "블록이 이보다 안 커진다"로 읽히지만
+    실제로는 `KIND_BUDGETS` 의 합이고, 그 예산은 칸마다 **행에만** 걸린다. 예산 밖에 남는 것:
+    prefix 90자 + suffix 18자 + 칸 머리글 6줄 282자 + 칸 사이 개행 5자 = **395자**. 그래서 여섯
+    칸이 다 찬 블록은 `INDEX_BUDGET` 을 넘는다 (26-08-03 실측: 611페이지에서 9,201자 vs 예산
+    9,200자). 의도된 설계다 — 계기판을 예산에서 빼야 "737%" 같은 넘침 표시가 자기 자리를
+    잃지 않는다. 진짜 블록 상한은 설정 `index_budget_chars` 를 켰을 때만 생기고, 그때는
+    `_fit_total` 이 prefix·suffix 까지 포함해 자른다.
 
     "동결" 계약 = Heimdall 인스턴스 수명. self.identity에 1회 결합 후 세션 중 불변
     (KV 캐시 보존). /lagom 등 Heimdall 재생성 경로에서만 재렌더된다."""

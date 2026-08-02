@@ -7,6 +7,7 @@ import os
 import sys
 from dataclasses import asdict
 from pathlib import Path
+from typing import NamedTuple
 
 from .. import __version__, ui
 from ..platform import hook_python, on_path
@@ -698,106 +699,158 @@ def _baseline_checks_check(root: str) -> dict | None:
     }
 
 
-def _trinity_checks(root: str) -> list[dict]:
-    """Trinity 에셋 진단 — AGENTS.md가 있는 프로젝트에서만. 각 항목의 fix는 전부 동일한 처방
-    (setup --force 재실행)이라 개별 복구 절차를 안내하지 않는다."""
-    memory_check = _shared_memory_check(root)
-    if not os.path.exists(os.path.join(root, "AGENTS.md")):
-        return [memory_check] if memory_check else []
-    fix = "asgard setup --force로 Trinity 에셋 재설치"
-    checks = []
+# Trinity 에셋은 통째로 설치되고 통째로 갱신되므로 이 계층의 fix는 전부 같은 처방이다.
+# 항목별 손복구 절차를 적으면 그 절차가 설치기와 어긋나는 순간 거짓 안내가 된다.
+_TRINITY_FIX = "asgard setup --force로 Trinity 에셋 재설치"
+
+_TRINITY_HOOKS = (
+    "quest-log.py",
+    "verifier-gate.py",
+    "write-sentinel.py",
+    "unattended-context.py",
+    "subagent-gate.py",
+    "lagom-activate.py",
+    "lagom-tracker.py",
+    "lagom-subagent.py",
+    "lagom-canon.md",
+)
+
+
+class _Client(NamedTuple):
+    """배선을 재는 데 필요한 클라이언트 좌표. 이벤트 이름이 클라이언트마다 달라 표로 든다."""
+
+    name: str
+    folder: str
+    config_name: str
+    snapshot_event: str
+    recall_event: str
+    skill_folder: str
+
+
+_MEMORY_CLIENTS = (
+    _Client("CC", ".claude", "settings.json", "SessionStart", "UserPromptSubmit", ".claude"),
+    _Client("Cursor", ".cursor", "hooks.json", "sessionStart", "beforeSubmitPrompt", ".agents"),
+    _Client("Codex", ".codex", "config.toml", "SessionStart", "UserPromptSubmit", ".agents"),
+)
+
+
+def _client_config(root: str, folder: str, config_name: str) -> dict:
+    """클라이언트 설정 파일. 없거나 못 읽거나 매핑이 아니면 빈 설정 — '배선 없음'으로 판정된다."""
+    try:
+        path = os.path.join(root, folder, config_name)
+        if config_name.endswith(".toml"):
+            import tomllib
+
+            with open(path, "rb") as handle:
+                config = tomllib.load(handle)
+        else:
+            with open(path, encoding="utf-8") as handle:
+                config = _json.load(handle)
+    except Exception:
+        return {}
+    return config if isinstance(config, dict) else {}
+
+
+def _hook_wired(config: dict, event: str, marker: str) -> bool:
+    """그 이벤트에 그 훅이 걸려 있는가. 설정 형상이 어긋나면 '안 걸림'으로 센다."""
+    try:
+        return marker in _json.dumps(config.get("hooks", {}).get(event, []))
+    except Exception:
+        return False
+
+
+def _trinity_block_check(root: str) -> dict:
+    """AGENTS.md에 Trinity 블록 표식이 남아 있는가."""
     try:
         with open(os.path.join(root, "AGENTS.md"), encoding="utf-8") as handle:
             txt = handle.read()
     except Exception:
         txt = ""
-    checks.append(
-        {
-            "name": "trinity block (AGENTS.md)",
-            "ok": "asgard:trinity" in txt,
-            "detail": "marker found" if "asgard:trinity" in txt else "missing",
-            "fix": fix,
-        }
-    )
-    client_adapters = []
-    for folder in (".claude", ".agents"):
-        if os.path.isdir(os.path.join(root, folder)):
-            client_adapters.append(os.path.join(folder, "skills", "asgard-skills", "SKILL.md"))
-    missing_adapters = [path for path in client_adapters if not os.path.isfile(os.path.join(root, path))]
-    checks.append(
-        {
-            "name": "central skill manager adapters",
-            "ok": bool(client_adapters) and not missing_adapters,
-            "detail": (
-                f"{len(client_adapters)}/{len(client_adapters)} clients wired"
-                if client_adapters and not missing_adapters
-                else "missing: " + ", ".join(missing_adapters or ["client skill scope"])
-            ),
-            "fix": fix,
-        }
-    )
-    pol_ok, detail = False, "missing"
-    try:  # 통합 설정(trinity_policy 섹션) 우선, 구 trinity-policy.json 폴백 (settings.load_project)
+    found = "asgard:trinity" in txt
+    return {
+        "name": "trinity block (AGENTS.md)",
+        "ok": found,
+        "detail": "marker found" if found else "missing",
+        "fix": _TRINITY_FIX,
+    }
+
+
+def _skill_adapter_check(root: str) -> dict:
+    """설치된 클라이언트 스코프마다 중앙 스킬 매니저 어댑터가 깔려 있는가."""
+    adapters = [
+        os.path.join(folder, "skills", "asgard-skills", "SKILL.md")
+        for folder in (".claude", ".agents")
+        if os.path.isdir(os.path.join(root, folder))
+    ]
+    missing = [path for path in adapters if not os.path.isfile(os.path.join(root, path))]
+    return {
+        "name": "central skill manager adapters",
+        "ok": bool(adapters) and not missing,
+        "detail": (
+            f"{len(adapters)}/{len(adapters)} clients wired"
+            if adapters and not missing
+            else "missing: " + ", ".join(missing or ["client skill scope"])
+        ),
+        "fix": _TRINITY_FIX,
+    }
+
+
+def _trinity_policy_check(root: str) -> dict:
+    """통합 설정(trinity_policy 섹션)을 본다 — 구 trinity-policy.json 폴백은 load_project가 흡수한다."""
+    ok, detail = False, "missing"
+    try:
         from ..settings import load_project
 
         if isinstance(load_project(root).get("trinity_policy"), dict):
-            pol_ok, detail = True, "asgard-setting-project.json (trinity_policy)"
+            ok, detail = True, "asgard-setting-project.json (trinity_policy)"
     except Exception:
         detail = "unparseable settings"
-    checks.append({"name": "trinity policy", "ok": pol_ok, "detail": detail, "fix": fix})
-    agents = [fname for fname, _ in ROLE_AGENTS]  # 역할 3종 + 딜리버리 계층 — 라이브러리가 소스
+    return {"name": "trinity policy", "ok": ok, "detail": detail, "fix": _TRINITY_FIX}
+
+
+def _role_agents_check(root: str) -> dict:
+    """역할 3종 + 딜리버리 계층 — 라이브러리가 소스다. 존재와 계약 현행성을 같이 본다."""
+    agents = [fname for fname, _ in ROLE_AGENTS]
     missing = [a for a in agents if not os.path.exists(os.path.join(root, ".claude", "agents", a))]
     stale = _stale_role_agents(root) if not missing else []
-    checks.append(
-        {
-            "name": "trinity role agents",
-            "ok": not missing and not stale,
-            "detail": (
-                f"{len(agents)}/{len(agents)} present · current"
-                if not missing and not stale
-                else "missing: " + ", ".join(missing)
-                if missing
-                else f"{len(stale)}/{len(agents)} on an older contract: " + ", ".join(stale[:4])
-            ),
-            "fix": fix if missing else "asgard sync — 스캐폴드를 현행 역할 계약으로 갱신",
-        }
+    return {
+        "name": "trinity role agents",
+        "ok": not missing and not stale,
+        "detail": (
+            f"{len(agents)}/{len(agents)} present · current"
+            if not missing and not stale
+            else "missing: " + ", ".join(missing)
+            if missing
+            else f"{len(stale)}/{len(agents)} on an older contract: " + ", ".join(stale[:4])
+        ),
+        "fix": _TRINITY_FIX if missing else "asgard sync — 스캐폴드를 현행 역할 계약으로 갱신",
+    }
+
+
+def _trinity_hooks_check(root: str) -> dict:
+    """훅 파일 존재 + Stop/SubagentStop 게이트 배선. 깔려만 있고 안 걸린 게이트는 게이트가 아니다."""
+    missing = [h for h in _TRINITY_HOOKS if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
+    settings = _client_config(root, ".claude", "settings.json")
+    gate_wired = _hook_wired(settings, "Stop", "verifier-gate") and _hook_wired(
+        settings, "SubagentStop", "subagent-gate"
     )
-    hooks = [
-        "quest-log.py",
-        "verifier-gate.py",
-        "write-sentinel.py",
-        "unattended-context.py",
-        "subagent-gate.py",
-        "lagom-activate.py",
-        "lagom-tracker.py",
-        "lagom-subagent.py",
-        "lagom-canon.md",
-    ]
-    missing = [h for h in hooks if not os.path.exists(os.path.join(root, ".claude", "hooks", h))]
-    gate_wired = False
-    try:
-        with open(os.path.join(root, ".claude", "settings.json"), encoding="utf-8") as handle:
-            settings = _json.load(handle)
-        gate_wired = "verifier-gate" in _json.dumps(settings.get("hooks", {}).get("Stop", [])) and "subagent-gate" in (
-            _json.dumps(settings.get("hooks", {}).get("SubagentStop", []))
-        )
-    except Exception:
-        pass
     ok = not missing and gate_wired
-    checks.append(
-        {
-            "name": "trinity hooks + Stop gate",
-            "ok": ok,
-            "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop/SubagentStop 미배선"),
-            "fix": fix,
-        }
-    )
-    # 커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 이 계층은 조용히 실패한다(이름 오타·주석 안·별칭
-    # 중복·상한 절단) — 어느 쪽이든 에이전트는 평소처럼 돌고 사용자는 규칙이 적용된 줄 안다.
-    # 그래서 "안 들어가는 이유"만 ⚠ 로 세운다. 매뉴얼 미작성은 결함이 아니다 (ok).
+    return {
+        "name": "trinity hooks + Stop gate",
+        "ok": ok,
+        "detail": "wired" if ok else ("missing: " + ", ".join(missing) if missing else "Stop/SubagentStop 미배선"),
+        "fix": _TRINITY_FIX,
+    }
+
+
+def _custom_manual_check(root: str) -> dict | None:
+    """커스텀 매뉴얼 — 오딘이 쓴 프로젝트 규칙. 이 계층은 조용히 실패한다(이름 오타·주석 안·별칭
+    중복·상한 절단) — 어느 쪽이든 에이전트는 평소처럼 돌고 사용자는 규칙이 적용된 줄 안다.
+    그래서 "안 들어가는 이유"만 ⚠ 로 세운다. 매뉴얼 미작성은 결함이 아니다 (ok).
+    매뉴얼 계층을 못 읽으면 None — 진단이 진단 대상을 막지 않는다 (fail-open)."""
     try:
         from ..manual import MANUAL_NAMES, MAX_CHARS, discover, enabled, has_marker, load_manual
-        from ..manual import label as _rel  # 지역 `label` 루프 변수와 이름이 겹친다 — 검사기가 잡은 자리
+        from ..manual import label as _rel  # 경로를 루트 기준 상대 표기로 줄인다
 
         found = discover(root)
         loaded = load_manual(root)
@@ -832,19 +885,20 @@ def _trinity_checks(root: str) -> list[dict]:
             detail = "파일은 있으나 주입 없음 — 주석뿐 (규칙은 주석 밖에)"
         else:
             detail = f"없음 — 루트 {MANUAL_NAMES[0]}에 쓰면 4모드에 실린다"
-        checks.append(
-            {
-                "name": "custom manual",
-                "ok": not problems,
-                "detail": detail if not problems else " · ".join(problems),
-                "fix": "asgard manual — 무엇이 어디서 실리는지 대조",
-            }
-        )
+        return {
+            "name": "custom manual",
+            "ok": not problems,
+            "detail": detail if not problems else " · ".join(problems),
+            "fix": "asgard manual — 무엇이 어디서 실리는지 대조",
+        }
     except Exception:
-        pass  # 진단이 진단 대상을 막지 않는다 (fail-open)
-    # 에인헤랴르 — 이 프로젝트에서 누가 일하는가. 이 계층도 조용히 빗나간다: 없는 이름을 배치하면
-    # 그 자리는 말없이 기본으로 돌고, 서브프로세스에 env를 안 넘기면 자식이 남의 홈에 쓴다.
-    # 배치 없음은 결함이 아니다 (ok) — 조용히 빗나가는 두 경우만 ⚠ 로 세운다.
+        return None
+
+
+def _einherjar_check(root: str) -> dict | None:
+    """에인헤랴르 — 이 프로젝트에서 누가 일하는가. 이 계층도 조용히 빗나간다: 없는 이름을 배치하면
+    그 자리는 말없이 기본으로 돌고, 서브프로세스에 env를 안 넘기면 자식이 남의 홈에 쓴다.
+    배치 없음은 결함이 아니다 (ok) — 조용히 빗나가는 두 경우만 ⚠ 로 세운다. 못 읽으면 None."""
     try:
         from ..profiles import active, fallback_warning, listing
         from ..swarm import describe
@@ -866,121 +920,129 @@ def _trinity_checks(root: str) -> list[dict]:
             detail = f"에이전트 {len(agents)} · 활성 {active()} · 이 프로젝트에 배치 선언 없음"
         else:
             detail = "기본 에이전트 하나 — `asgard agent create <이름>`으로 늘린다"
-        checks.append(
-            {
-                "name": "agents (Einherjar)",
-                "ok": not problems,
-                "detail": detail if not problems else " · ".join(problems),
-                "fix": "asgard agent where — 누가 일하고 어느 선언이 이겼는지 대조",
-            }
-        )
+        return {
+            "name": "agents (Einherjar)",
+            "ok": not problems,
+            "detail": detail if not problems else " · ".join(problems),
+            "fix": "asgard agent where — 누가 일하고 어느 선언이 이겼는지 대조",
+        }
     except Exception:
-        pass  # fail-open
-    # Lagom — resolve 결과 + 세션 상태 표시. 정보성 (항상 ok — off도 유효한 선택).
+        return None
+
+
+def _lagom_mode_check(root: str) -> dict | None:
+    """Lagom — resolve 결과 + 세션 상태 표시. 정보성이라 항상 ok (off도 유효한 선택)."""
     try:
         from ..lagom import default_mode, read_state
 
         st = read_state(root)
-        checks.append(
-            {
-                "name": "lagom mode",
-                "ok": True,
-                "detail": f"{st or default_mode(root)} ({'session' if st else 'default'})",
-                "fix": "",
-            }
-        )
+        return {
+            "name": "lagom mode",
+            "ok": True,
+            "detail": f"{st or default_mode(root)} ({'session' if st else 'default'})",
+            "fix": "",
+        }
     except Exception:
-        pass
-    # Memory v3 — 설치된 각 클라이언트의 snapshot/recall/turn-sync 배선을 독립 진단한다.
-    for client, folder, config_name, snapshot_event, recall_event, skill_folder in (
-        ("CC", ".claude", "settings.json", "SessionStart", "UserPromptSubmit", ".claude"),
-        ("Cursor", ".cursor", "hooks.json", "sessionStart", "beforeSubmitPrompt", ".agents"),
-        ("Codex", ".codex", "config.toml", "SessionStart", "UserPromptSubmit", ".agents"),
-    ):
-        if not os.path.isdir(os.path.join(root, folder)):
-            continue
-        hook_ok = os.path.exists(os.path.join(root, folder, "hooks", "memory-activate.py"))
-        snapshot_wired = recall_wired = sync_wired = False
-        skill_ok = os.path.exists(os.path.join(root, skill_folder, "skills", "asgard-memory", "SKILL.md"))
-        try:
-            config_path = os.path.join(root, folder, config_name)
-            if config_name.endswith(".toml"):
-                import tomllib
+        return None
 
-                with open(config_path, "rb") as handle:
-                    config = tomllib.load(handle)
-            else:
-                with open(config_path, encoding="utf-8") as handle:
-                    config = _json.load(handle)
-            hooks = config.get("hooks", {})
-            snapshot_wired = "memory-activate" in _json.dumps(hooks.get(snapshot_event, []))
-            recall_wired = "memory-activate" in _json.dumps(hooks.get(recall_event, []))
-            sync_wired = "memory-activate" in _json.dumps(hooks.get("stop" if client == "Cursor" else "Stop", []))
-        except Exception:
-            pass
-        missing = []
+
+def _memory_wiring_row(root: str, client: _Client, config: dict) -> dict:
+    """한 클라이언트의 Memory v3 배선 — 훅 파일·스냅샷·회수·Stop 동기화·스킬을 각각 센다."""
+    stop_event = "stop" if client.name == "Cursor" else "Stop"
+    missing = [
+        label
         for ok, label in (
-            (hook_ok, "hook file"),
-            (snapshot_wired, snapshot_event),
-            (recall_wired, recall_event),
-            (sync_wired, "Stop sync"),
-            (skill_ok, "asgard-memory skill"),
-        ):
-            if not ok:
-                missing.append(label)
-        checks.append(
-            {
-                "name": f"memory wiring ({client})",
-                "ok": not missing,
-                "detail": "wired" if not missing else "missing: " + ", ".join(missing),
-                "fix": fix,
-            }
+            (os.path.exists(os.path.join(root, client.folder, "hooks", "memory-activate.py")), "hook file"),
+            (_hook_wired(config, client.snapshot_event, "memory-activate"), client.snapshot_event),
+            (_hook_wired(config, client.recall_event, "memory-activate"), client.recall_event),
+            (_hook_wired(config, stop_event, "memory-activate"), "Stop sync"),
+            (
+                os.path.exists(os.path.join(root, client.skill_folder, "skills", "asgard-memory", "SKILL.md")),
+                "asgard-memory skill",
+            ),
         )
-        map_hook_ok = os.path.exists(os.path.join(root, folder, "hooks", "map-activate.py"))
-        map_snapshot = map_recall = map_subagent = map_complete = False
-        try:
-            hooks = config.get("hooks", {})
-            map_snapshot = "map-activate" in _json.dumps(hooks.get(snapshot_event, []))
-            map_recall = "map-activate" in _json.dumps(hooks.get(recall_event, []))
-            map_subagent = "map-activate" in _json.dumps(
-                hooks.get("subagentStart" if client == "Cursor" else "SubagentStart", [])
-            )
-            map_complete = "map-activate" in _json.dumps(hooks.get("stop" if client == "Cursor" else "Stop", []))
-            if client == "Cursor":
-                map_subagent = map_subagent or "map-activate" in _json.dumps(hooks.get("preToolUse", []))
-        except Exception:
-            pass
-        map_missing = [
-            label
-            for ok, label in (
-                (map_hook_ok, "hook file"),
-                (map_snapshot, snapshot_event),
-                (map_recall, recall_event),
-                (map_subagent, "SubagentStart"),
-                (map_complete, "Stop refresh"),
-            )
-            if not ok
-        ]
-        checks.append(
-            {
-                "name": f"map wiring ({client})",
-                "ok": not map_missing,
-                "detail": "wired" if not map_missing else "missing: " + ", ".join(map_missing),
-                "fix": fix,
-            }
+        if not ok
+    ]
+    return {
+        "name": f"memory wiring ({client.name})",
+        "ok": not missing,
+        "detail": "wired" if not missing else "missing: " + ", ".join(missing),
+        "fix": _TRINITY_FIX,
+    }
+
+
+def _map_wiring_row(root: str, client: _Client, config: dict) -> dict:
+    """한 클라이언트의 맵 배선. Cursor에는 서브에이전트 시작 이벤트가 없어 preToolUse도 인정한다."""
+    stop_event = "stop" if client.name == "Cursor" else "Stop"
+    subagent_event = "subagentStart" if client.name == "Cursor" else "SubagentStart"
+    subagent = _hook_wired(config, subagent_event, "map-activate") or (
+        client.name == "Cursor" and _hook_wired(config, "preToolUse", "map-activate")
+    )
+    missing = [
+        label
+        for ok, label in (
+            (os.path.exists(os.path.join(root, client.folder, "hooks", "map-activate.py")), "hook file"),
+            (_hook_wired(config, client.snapshot_event, "map-activate"), client.snapshot_event),
+            (_hook_wired(config, client.recall_event, "map-activate"), client.recall_event),
+            (subagent, "SubagentStart"),
+            (_hook_wired(config, stop_event, "map-activate"), "Stop refresh"),
         )
+        if not ok
+    ]
+    return {
+        "name": f"map wiring ({client.name})",
+        "ok": not missing,
+        "detail": "wired" if not missing else "missing: " + ", ".join(missing),
+        "fix": _TRINITY_FIX,
+    }
+
+
+def _client_wiring_checks(root: str) -> list[dict]:
+    """설치된 클라이언트마다 메모리·맵 배선을 독립 진단한다 — 안 깔린 클라이언트는 건너뛴다.
+
+    설정은 클라이언트당 한 번만 읽고 두 행이 나눠 쓴다. 읽기 실패는 그 클라이언트에서만 빈 설정이다."""
+    rows: list[dict] = []
+    for client in _MEMORY_CLIENTS:
+        if not os.path.isdir(os.path.join(root, client.folder)):
+            continue
+        config = _client_config(root, client.folder, client.config_name)
+        rows.append(_memory_wiring_row(root, client, config))
+        rows.append(_map_wiring_row(root, client, config))
+    return rows
+
+
+def _quest_log_writable_check(root: str) -> dict:
+    """퀘스트 로그를 놓을 자리가 쓰기 가능한가 — 못 쓰면 기록이 통째로 사라진다."""
+    writable = os.access(root, os.W_OK)
+    return {
+        "name": ".asgard quest-log writable",
+        "ok": writable,
+        "detail": os.path.join(root, ".asgard") if writable else "not writable",
+        "fix": "프로젝트 루트 쓰기 권한 확인",
+    }
+
+
+def _trinity_checks(root: str) -> list[dict]:
+    """Trinity 에셋 진단 — AGENTS.md가 있는 프로젝트에서만. 여기 나열한 순서가 곧 표면 순서다.
+
+    공유 메모리 검사만 AGENTS.md 유무와 무관하다 — 스캐폴드가 없어도 설정된 프로젝트 메모리는
+    진단 대상이기 때문이다. `dict | None`을 돌려주는 항목은 그 계층을 못 읽었을 때 빠진다."""
+    memory_check = _shared_memory_check(root)
+    if not os.path.exists(os.path.join(root, "AGENTS.md")):
+        return [memory_check] if memory_check else []
+    checks = [
+        _trinity_block_check(root),
+        _skill_adapter_check(root),
+        _trinity_policy_check(root),
+        _role_agents_check(root),
+        _trinity_hooks_check(root),
+    ]
+    checks += [row for row in (_custom_manual_check(root), _einherjar_check(root), _lagom_mode_check(root)) if row]
+    checks += _client_wiring_checks(root)
     if memory_check:
         checks.append(memory_check)
     checks += _codebase_map_check(root)
-    ledger_ok = os.access(root, os.W_OK)
-    checks.append(
-        {
-            "name": ".asgard quest-log writable",
-            "ok": ledger_ok,
-            "detail": os.path.join(root, ".asgard") if ledger_ok else "not writable",
-            "fix": "프로젝트 루트 쓰기 권한 확인",
-        }
-    )
+    checks.append(_quest_log_writable_check(root))
     checks += _classify_misroute_check(root)
     checks += _route_prior_check(root)
     checks += _gate_event_check(root)
