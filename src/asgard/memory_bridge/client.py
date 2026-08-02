@@ -13,6 +13,8 @@ import hashlib
 import json
 import re
 import secrets
+import threading
+import time
 
 from ..project_memory_backends import (
     BINDING_DOCUMENT_ID,
@@ -26,6 +28,99 @@ from ..project_memory_backends import (
 RECALL_OUTPUT_BUDGET = 2000
 PROTOCOL_VERSION = "2025-03-26"
 
+# ── 읽기 경로의 원격 왕복 (M4) ────────────────────────────────────────────────
+#
+# `server_recall` 한 번이 왕복 세 번이었다: binding 검증 → recall → binding 재검증. 이 레인은
+# 턴 시작 자동 주입에서 순차로 돌기 때문에 그 지연이 그대로 사람에게 간다. 신뢰됐는데 접속이
+# 안 되는 backend 에서는 매 턴 타임아웃(최대 5초)만큼 대화가 멈춘다.
+#
+# 완화는 **읽기 경로에만** 건다. 쓰기(`server_retain_items`)와 예약(`server_consolidate`)의
+# 앞뒤 검증은 한 글자도 안 바뀐다 — 드리프트를 성공으로 보고하는 것이 이 층에서 가장 나쁜
+# 실패이고, 쓰기는 턴마다 도는 일도 아니다.
+#
+# 두 손잡이가 각각 다른 문제를 본다:
+#
+#   ① 검증 캐시 — 앞 검증만 짧게 건너뛴다. **뒤 검증은 절대 안 건너뛴다**: 모델 경계로
+#      나가는 결과가 검증받지 않은 binding 에서 온 것이 되면 안 된다. 대신 앞 검증은 직전
+#      호출의 뒤 검증과 같은 문서를 잠깐 사이에 다시 읽는 일이라, 그 시간만큼 미룬다.
+#      대가는 명시적이다 — TTL 안에 드리프트가 일어나면 질의문이 그 저장소까지 갔다가 뒤
+#      검증에서 결과가 거절된다. 나가는 쪽(질의)의 창은 열리고 들어오는 쪽(결과)은 그대로
+#      닫혀 있다는 뜻이고, 둘 중 위험한 쪽은 들어오는 쪽이다. 뒤 검증이 실패하면 캐시를
+#      즉시 버려 다음 호출이 앞 검증부터 다시 한다.
+#      TTL 60초의 뜻은 "읽기 경로는 적어도 1분에 한 번 앞 검증을 다시 한다"이다. 이보다
+#      짧으면 턴 간격이 대개 그보다 길어 캐시가 늘 식어 있고(아끼는 것이 없다), 길면 나가는
+#      쪽 창만 넓어진다.
+#   ② 회로차단기 — 접속 실패가 연달아 나면 이 레인을 잠시 통째로 건너뛴다. 죽은 backend 는
+#      기다려도 줄 것이 없으므로 이쪽은 방어를 하나도 안 깎는다. 세는 것은 **접속 실패**
+#      (OSError — urllib·소켓 계열)뿐이다: 드리프트(PermissionError)나 규약 위반은 판정이지
+#      장애가 아니고, 판정을 기억해 두면 사람이 고친 뒤에도 그 시간만큼 벌을 받는다.
+RECALL_BINDING_TTL = 60.0
+RECALL_BREAKER_FAILURES = 2
+RECALL_BREAKER_COOLDOWN = 60.0
+
+_RECALL_HEALTH: dict[str, dict[str, float]] = {}
+_RECALL_HEALTH_GUARD = threading.Lock()
+
+
+def _recall_health_key(cfg: dict) -> str:
+    """이 backend target 하나의 신원 — 캐시·차단기가 같은 칸을 보게 하는 값.
+
+    fingerprint 는 engine·project_id·project_uid·binding_id 를 다 덮으므로, 설정이 조금이라도
+    바뀌면 캐시도 차단기도 남의 것을 물려받지 않는다. 못 만들면 빈 문자열 — 그때는 완화 없이
+    옛 경로 그대로 돈다 (fail-closed)."""
+    try:
+        return str(backend_target(cfg)["fingerprint"])
+    except Exception:
+        return ""
+
+
+def _binding_fresh(key: str, now: float) -> bool:
+    """이 target 의 binding 을 방금 확인했는가 — 앞 검증을 건너뛸 근거."""
+    if not key:
+        return False
+    with _RECALL_HEALTH_GUARD:
+        return now - _RECALL_HEALTH.get(key, {}).get("verified_at", 0.0) < RECALL_BINDING_TTL
+
+
+def _breaker_open(key: str, now: float) -> bool:
+    if not key:
+        return False
+    with _RECALL_HEALTH_GUARD:
+        return now < _RECALL_HEALTH.get(key, {}).get("open_until", 0.0)
+
+
+def _recall_succeeded(key: str, now: float) -> None:
+    if not key:
+        return
+    with _RECALL_HEALTH_GUARD:
+        _RECALL_HEALTH[key] = {"verified_at": now, "failures": 0.0, "open_until": 0.0}
+
+
+def _recall_failed(key: str, error: BaseException, now: float) -> None:
+    """실패 하나를 기록한다 — 검증 캐시는 버리고, 접속 실패면 차단기 계수를 올린다."""
+    if not key:
+        return
+    # PermissionError 는 OSError 의 하위형이지만 여기서는 판정이다 (드리프트·미신뢰).
+    outage = isinstance(error, OSError) and not isinstance(error, PermissionError)
+    with _RECALL_HEALTH_GUARD:
+        entry = _RECALL_HEALTH.setdefault(key, {"verified_at": 0.0, "failures": 0.0, "open_until": 0.0})
+        entry["verified_at"] = 0.0  # 검증하지 못했으니 "방금 확인함"을 유지할 근거가 없다
+        if not outage:
+            return
+        entry["failures"] += 1
+        if entry["failures"] >= RECALL_BREAKER_FAILURES:
+            entry["open_until"] = now + RECALL_BREAKER_COOLDOWN
+
+
+def reset_recall_health(cfg: dict | None = None) -> None:
+    """검증 캐시와 차단기를 비운다 — cfg 를 주면 그 target 만. 테스트·재연결의 손잡이다."""
+    key = _recall_health_key(cfg) if cfg is not None else ""
+    with _RECALL_HEALTH_GUARD:
+        if key:
+            _RECALL_HEALTH.pop(key, None)
+        elif cfg is None:
+            _RECALL_HEALTH.clear()
+
 
 def _neutralize(s: str) -> str:
     """경계 무력화 — memory._neutralize와 동일 유지 (단일 출처 원칙)."""
@@ -36,22 +131,36 @@ def _neutralize(s: str) -> str:
 
 
 def server_recall(cfg: dict, query: str, max_results: int = 8, *, operation_timeout: int | None = None) -> list[dict]:
-    """Exact binding을 확인한 뒤 backend-neutral hit을 반환한다."""
+    """Exact binding을 확인한 뒤 backend-neutral hit을 반환한다.
+
+    턴마다 도는 유일한 원격 읽기라 왕복 수와 장애 시 지연을 여기서 재단한다 — 손잡이 둘의
+    근거는 모듈 상단 주석에 있다."""
     from . import is_backend_trusted, verify_backend_binding
 
     if not is_backend_trusted(cfg):
         raise PermissionError("project memory backend target is not trusted")
+    key = _recall_health_key(cfg)
+    now = time.monotonic()
+    if _breaker_open(key, now):
+        # 여기서 raise 하는 것이 요점이다 — 호출측(`memory_context.project_recall_rows`)은
+        # 이 레인의 예외를 이미 fail-open 으로 받는다. 원격을 안 건드리고 즉시 돌아간다.
+        raise TimeoutError(
+            f"project memory recall is skipped for {RECALL_BREAKER_COOLDOWN:.0f}s "
+            f"after {RECALL_BREAKER_FAILURES} consecutive connection failures"
+        )
     backend_cfg = {**cfg, "timeout": operation_timeout} if operation_timeout is not None else cfg
     backend = get_backend(backend_cfg)
     try:
-        verify_backend_binding(cfg, backend=backend)
+        if not _binding_fresh(key, now):
+            verify_backend_binding(cfg, backend=backend)
         hits = backend.recall(query, max_results=max_results)
         # Hindsight에는 compare-and-recall transaction/CAS가 없다. 반환 직전 재검증으로
         # 요청 사이 binding drift가 발생한 결과가 모델 경계로 나가는 것은 막는다.
+        # 이 한 번은 캐시가 아무리 신선해도 건너뛰지 않는다.
         verify_backend_binding(cfg, backend=backend)
         if not isinstance(hits, list) or not all(isinstance(hit, ProjectMemoryHit) for hit in hits):
             raise TypeError("project memory backend recall() must return list[ProjectMemoryHit]")
-        return [
+        rows = [
             {
                 "text": hit.text,
                 "metadata": dict(hit.metadata),
@@ -60,6 +169,12 @@ def server_recall(cfg: dict, query: str, max_results: int = 8, *, operation_time
             }
             for hit in hits
         ]
+    except BaseException as error:
+        _recall_failed(key, error, time.monotonic())
+        raise
+    else:
+        _recall_succeeded(key, time.monotonic())
+        return rows
     finally:
         with contextlib.suppress(Exception):
             backend.close()

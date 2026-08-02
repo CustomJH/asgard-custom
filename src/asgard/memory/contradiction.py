@@ -42,7 +42,7 @@ import os
 
 from .pages import _rev
 from .policy import memory_dir
-from .store import CONTRADICTIONS, _atomic_write, _page_path, _read, valid_slug
+from .store import CONTRADICTIONS, _atomic_write, _lock, _page_path, _read, valid_slug
 
 LEDGER_SCHEMA = 1
 OPEN, ACKNOWLEDGED = "open", "acknowledged"
@@ -100,8 +100,19 @@ def record(rows: list[dict], d: str | None = None) -> list[dict]:
     쌍은 넘긴 채로 두되, 두 페이지 중 하나라도 그 뒤 바뀌었으면 다시 연다 (모듈 독스트링 ③).
 
     반환 dict 의 `new` 는 이번 호출에서 처음 생긴 줄인가이고, 장부 파일에는 안 들어간다 —
-    보고문이 "처음 보는 것"과 "또 보는 것"을 가려 쓰기 위한 값이다."""
+    보고문이 "처음 보는 것"과 "또 보는 것"을 가려 쓰기 위한 값이다.
+
+    읽고-고쳐-쓰기라 페이지 쓰기와 같은 락을 지난다. 노른은 분리된 프로세스에서 돌아
+    사람의 접수(`acknowledge_contradiction`)와 겹칠 수 있고, 락이 없으면 나중에 쓴 쪽이
+    그 사이의 접수를 통째로 덮는다 — 잃는 것은 "사람이 이미 봤다"는 사실이고, 그건 감지와
+    달리 다음 런이 다시 만들어 주지 못한다."""
     d = d or memory_dir()
+    with _lock(d):
+        return _record_unlocked(rows, d)
+
+
+def _record_unlocked(rows: list[dict], d: str) -> list[dict]:
+    """`record` 의 본체 — 호출자가 `_lock(d)` 을 쥐고 있다."""
     items = _load(d)
     stamp = _stamp()
     out: list[dict] = []
@@ -191,22 +202,25 @@ def acknowledge_contradiction(key: str, *, note: str = "", d: str | None = None)
 
     **해소가 아니다.** 페이지는 한 글자도 안 바뀌고, 어느 쪽이 참인지도 안 적힌다. 뜻은
     "이 어긋남은 내가 알고 있으니 다음 손질 때 또 보여 주지 마라"뿐이다. 두 페이지 중 하나가
-    나중에 바뀌면 표시는 자동으로 풀린다 (`record` — 넘긴 판단은 그때의 두 문장에 대한 것이다)."""
+    나중에 바뀌면 표시는 자동으로 풀린다 (`record` — 넘긴 판단은 그때의 두 문장에 대한 것이다).
+
+    `record` 와 같은 락을 지난다 — 두 함수가 같은 파일을 읽고 고쳐 쓴다."""
     d = d or memory_dir()
-    items = _load(d)
-    row = items.get(key)
-    if row is None:
-        return None
-    row.update(
-        {
-            "status": ACKNOWLEDGED,
-            "acknowledged": _stamp(),
-            "note": str(note)[:200],
-            "rev_a": _rev(d, str(row.get("a") or "")),
-            "rev_b": _rev(d, str(row.get("b") or "")),
-        }
-    )
-    _save(d, items)
+    with _lock(d):
+        items = _load(d)
+        row = items.get(key)
+        if row is None:
+            return None
+        row.update(
+            {
+                "status": ACKNOWLEDGED,
+                "acknowledged": _stamp(),
+                "note": str(note)[:200],
+                "rev_a": _rev(d, str(row.get("a") or "")),
+                "rev_b": _rev(d, str(row.get("b") or "")),
+            }
+        )
+        _save(d, items)
     return {**row, "key": key}
 
 

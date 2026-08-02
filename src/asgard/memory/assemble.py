@@ -93,6 +93,19 @@ def _value(candidate: Candidate) -> float:
     return 1.0 / (RRF_K + candidate.rank + 1)
 
 
+# 고른 것을 되묻는 두 판정이 이 파일 안에서 갈라져 있다 — 갈라 둔 것이 맞다.
+#
+#   `select`  — **값**으로 본다 (frozen dataclass 의 해시 집합). 묻는 것은 "이 줄을 이미
+#               넣었나"이고, 답이 예면 두 번 넣으면 안 된다. 같은 레인 안의 완전 중복은
+#               `_redundant` 가 잡지 않으므로(같은 레인은 비교에서 뺀다) 이 판정이 유일한
+#               방벽이다. 신원으로 바꾸면 똑같은 줄이 두 번 프롬프트에 들어간다.
+#   `stats`   — **신원**으로 본다 (`id()` 집합). 묻는 것은 "이 후보 객체가 뽑혔나"이고,
+#               값이 같은 별개 후보 둘 중 하나만 뽑혔다면 나머지는 밀린 것으로 세어야 한다.
+#
+# 둘 다 상수 시간이다. 예전에는 `select` 만 목록 선형 탐색(`in chosen`)이었고, 그것이 이
+# 파일에 두 방식이 섞여 보이던 이유다 — 방식이 아니라 자료구조가 달랐던 것이다.
+
+
 def _redundant(candidate: Candidate, chosen: list[Candidate], floor: float, grams: _Grams) -> bool:
     """이미 고른 **다른 레인의** 것 중 하나라도 이 후보를 품으면 중복이다.
 
@@ -118,11 +131,17 @@ def select(
     *,
     budget: int,
     dedup: float = DEDUP_CONTAINMENT,
+    redundant: list[Candidate] | None = None,
 ) -> list[Candidate]:
     """고정 예산 위의 탐욕 선택 — 레인 바닥을 먼저, 남은 자리는 전역 경쟁으로.
 
     반환은 **입력 순서가 아니라 선택 순서**가 아니라, 렌더 순서(레인 순 → 레인 내 순위)로
-    정렬해 돌려준다. 고른 이유와 읽는 순서는 다른 축이다."""
+    정렬해 돌려준다. 고른 이유와 읽는 순서는 다른 축이다.
+
+    `redundant` 에 목록을 주면 중복으로 버린 후보를 거기 담는다 — 밀린 후보의 갈래를 밖에서
+    셀 수 있는 유일한 자리다(`stats`). 예산 판정을 먼저 하므로 예산에 못 든 후보는 중복인지
+    아닌지 **묻지도 않는다**: 여기 담기는 것은 "자리는 있었는데 이미 있는 사실이라 버린 것"
+    뿐이고, 그래서 밖에서 다시 계산해 낼 수 없다."""
     if budget <= 0 or not candidates:
         return []
     order = {lane.key: index for index, lane in enumerate(lanes)}
@@ -131,14 +150,16 @@ def select(
     # (구 동작은 `len(prefix + rows + suffix)`로 재고 있었고, 그 계약을 지켜야 한다).
     overhead = {lane.key: len(lane.prefix) + len(lane.suffix) for lane in lanes}
     chosen: list[Candidate] = []
+    picked: set[Candidate] = set()  # 값 집합 — 왜 여기만 값인지는 위 주석 참조
     used = 0
     opened: set[str] = set()
     grams = _Grams()
+    dropped_redundant: set[Candidate] = set()
 
     def _take(pool: list[Candidate], ceiling: int) -> None:
         nonlocal used
         for candidate in pool:
-            if candidate in chosen:
+            if candidate in picked:
                 continue
             # 그 레인의 첫 후보라면 블록을 여는 값을 같이 낸다.
             entry = 0 if candidate.lane in opened else overhead.get(candidate.lane, 0)
@@ -146,8 +167,12 @@ def select(
                 continue  # 이 후보는 안 들어가도 더 짧은 뒤 후보는 들어갈 수 있다
             # 예산 판정을 **먼저** 한다: 안 들어갈 후보의 그램을 만드는 것은 순수한 낭비다.
             if _redundant(candidate, chosen, dedup, grams):
+                if redundant is not None and candidate not in dropped_redundant:
+                    dropped_redundant.add(candidate)
+                    redundant.append(candidate)
                 continue
             chosen.append(candidate)
+            picked.add(candidate)
             opened.add(candidate.lane)
             used += entry + candidate.cost
 
@@ -161,7 +186,7 @@ def select(
 
     # 2단계 — 남은 예산은 레인 무관 전역 경쟁. 값이 같으면 레인 순서, 그다음 순위.
     surplus = sorted(
-        (c for c in candidates if c not in chosen),
+        (c for c in candidates if c not in picked),
         key=lambda c: (-_value(c), order.get(c.lane, len(order)), c.rank, c.body),
     )
     _take(surplus, budget)
@@ -194,11 +219,22 @@ def assemble(
     return render(select(candidates, lanes, budget=budget, dedup=dedup), lanes)
 
 
-def stats(candidates: list[Candidate], chosen: list[Candidate]) -> dict:
+def stats(
+    candidates: list[Candidate],
+    chosen: list[Candidate],
+    redundant: list[Candidate] | None = None,
+) -> dict:
     """조립 결과 계기 — 무엇이 들어가고 무엇이 밀렸나 (대시보드·테스트·감사용).
 
     `dropped_redundant`를 따로 세는 이유: 예산이 모자라 밀린 것과 중복이라 버린 것은 전혀
-    다른 사건인데 합쳐 놓으면 "예산을 늘려야 하나"라는 잘못된 질문으로 간다."""
+    다른 사건인데 합쳐 놓으면 "예산을 늘려야 하나"라는 잘못된 질문으로 간다.
+
+    갈래는 밖에서 다시 계산할 수 없다 — `select`가 예산 판정을 먼저 하므로 예산에 못 든
+    후보는 중복 판정을 받은 적이 없다. 그래서 `select(..., redundant=목록)`이 담아 준 것을
+    받는다. **안 주면 `dropped_redundant`는 빈 목록이 아니라 `None`이다**: 중복이 없었다는
+    말과 안 세었다는 말은 다르고, 계기가 그 둘을 같은 값으로 말하면 계기가 아니다.
+
+    `id()`로 신원을 보는 이유는 `_value` 위 주석에 있다 (`select`는 값 집합을 쓴다)."""
     picked = set(id(c) for c in chosen)
     lanes_in = sorted({c.lane for c in candidates})
     return {
@@ -208,6 +244,7 @@ def stats(candidates: list[Candidate], chosen: list[Candidate]) -> dict:
         "lanes_offered": lanes_in,
         "lanes_used": sorted({c.lane for c in chosen}),
         "dropped": [c.lane for c in candidates if id(c) not in picked],
+        "dropped_redundant": None if redundant is None else [c.lane for c in redundant],
     }
 
 

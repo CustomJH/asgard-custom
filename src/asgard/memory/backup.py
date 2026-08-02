@@ -93,35 +93,45 @@ def _read_bytes(path: str) -> bytes:
 def create(d: str | None = None, *, label: str = "", keep: int = KEEP_DEFAULT) -> dict:
     """정본 스냅샷 하나를 backups/<stamp>.tar.gz로 만든다. 반환 = 요약 dict."""
     d = ensure_home(d)
+    with _lock(d):
+        return _create_unlocked(d, label=label, keep=keep)
+
+
+def _create_unlocked(d: str, *, label: str, keep: int) -> dict:
+    """`create` 의 본체 — 호출자가 `_lock(d)` 을 쥐고 있다.
+
+    갈라 둔 이유는 `restore` 하나다. 복원의 안전 백업은 **복원 직전 상태**여야 하는데,
+    백업이 자기 락을 잡고 끝난 뒤 복원이 다시 락을 잡으면 그 사이에 남의 쓰기가 들어갈 수
+    있다. 그러면 백업에 남는 것은 되돌아갈 상태가 아닌 어떤 상태이고, 그 어긋남은 조용하다
+    — 사람은 복원을 취소하려고 그 백업을 열었다가 자기가 모르는 저장소를 만난다."""
     safe_label = "".join(ch for ch in label if ch.isalnum() or ch in "-_")[:32]
     # 노출 계수는 DB 에만 쌓이다 큰 계기에 접힌다 — 백업이 그 계기다. 여기서 안 접으면
     # 아카이브가 담는 회수 기록이 마지막 검색 시점에 멈춰 있다 (`memory.usage`).
     _usage_flush(d)
-    with _lock(d):
-        members = canonical_members(d)
-        payload: dict[str, bytes] = {}
-        total = 0
-        for relative in members:
-            data = _read_bytes(os.path.join(d, relative))
-            total += len(data)
-            if total > MAX_TOTAL_BYTES:
-                raise BackupError(f"backup exceeds {MAX_TOTAL_BYTES} bytes")
-            payload[relative] = data
-        stamp = _stamp()
-        manifest = {
-            "schema": BACKUP_SCHEMA,
-            "created": stamp,
-            "label": safe_label,
-            "pages": sum(1 for m in members if m.startswith(f"{PAGES}/")),
-            "archived": sum(1 for m in members if m.startswith(f"{ARCHIVE_DIR}/")),
-            "bytes": total,
-            "files": {relative: _sha256(data) for relative, data in payload.items()},
-        }
-        name = f"{stamp}{'-' + safe_label if safe_label else ''}.tar.gz"
-        path = os.path.join(backups_dir(d), name)
-        _write_archive(path, manifest, payload)
-        log_op(d, "backup:create", name, f"{manifest['pages']} page(s)")
-        pruned = prune(d, keep=keep)
+    members = canonical_members(d)
+    payload: dict[str, bytes] = {}
+    total = 0
+    for relative in members:
+        data = _read_bytes(os.path.join(d, relative))
+        total += len(data)
+        if total > MAX_TOTAL_BYTES:
+            raise BackupError(f"backup exceeds {MAX_TOTAL_BYTES} bytes")
+        payload[relative] = data
+    stamp = _stamp()
+    manifest = {
+        "schema": BACKUP_SCHEMA,
+        "created": stamp,
+        "label": safe_label,
+        "pages": sum(1 for m in members if m.startswith(f"{PAGES}/")),
+        "archived": sum(1 for m in members if m.startswith(f"{ARCHIVE_DIR}/")),
+        "bytes": total,
+        "files": {relative: _sha256(data) for relative, data in payload.items()},
+    }
+    name = f"{stamp}{'-' + safe_label if safe_label else ''}.tar.gz"
+    path = os.path.join(backups_dir(d), name)
+    _write_archive(path, manifest, payload)
+    log_op(d, "backup:create", name, f"{manifest['pages']} page(s)")
+    pruned = prune(d, keep=keep)
     return {"path": path, "name": name, **{k: v for k, v in manifest.items() if k != "files"}, "pruned": pruned}
 
 
@@ -268,10 +278,11 @@ def restore(name: str = "latest", d: str | None = None) -> dict:
     d = ensure_home(d)
     path = resolve(d, name)
     manifest, payload = read_archive(path)
-    # 안전 백업은 정리하지 않는다 — 보존 한도에 걸린 복원이 지금 복원 중인 아카이브를 지울 수 있다.
-    # 정리는 다음 평시 백업의 몫이다.
-    safety = create(d, label="prerestore", keep=NO_PRUNE)
     with _lock(d):
+        # 안전 백업은 정리하지 않는다 — 보존 한도에 걸린 복원이 지금 복원 중인 아카이브를 지울 수 있다.
+        # 정리는 다음 평시 백업의 몫이다. 백업과 복원은 **같은 락 구간**이다: 갈라 놓으면
+        # 그 사이의 쓰기가 "직전 상태"를 직전이 아닌 것으로 만든다.
+        safety = _create_unlocked(d, label="prerestore", keep=NO_PRUNE)
         staging = os.path.join(d, f".restore.{os.getpid()}.{os.urandom(4).hex()}")
         os.makedirs(staging, exist_ok=True)
         _chmod(staging, 0o700)

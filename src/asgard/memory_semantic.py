@@ -115,8 +115,13 @@ def set_embedder(fn: Callable[[str], list[float]] | None) -> None:
 
 
 def reset() -> None:
-    """로드 캐시 초기화 — 설정/모드 변경 후 재평가용."""
+    """로드 캐시 초기화 — 설정/모드 변경 후 재평가용.
+
+    첫 내려받기 실패 래치도 같이 지운다 (`_download_latched`). 뜻이 "처음부터 다시 판정하라"
+    인 손잡이가 판정을 막는 상태 하나를 남겨 두면, 사람은 왜 안 켜지는지 알 길이 없다.
+    `warmup()`이 이 함수로 시작하는 것이 곧 래치의 복구 경로다."""
     _CACHE.update({"loaded": False, "fn": None, "dim": 0, "model": ""})
+    _clear_download_latch()
 
 
 @contextlib.contextmanager
@@ -205,6 +210,68 @@ def deadline_bound() -> bool:
     return bool((os.environ.get(_DEADLINE_ENV) or "").strip())
 
 
+# ── 첫 내려받기 실패 래치 ─────────────────────────────────────────────────────
+#
+# 위 보호는 켜 주는 자리가 외부 클라이언트 훅 하나뿐이다. 네이티브 루프와 모든 `asgard
+# memory *` 호출은 그 밖이라, 모델이 캐시에 없고 네트워크가 막힌 기계에서는 **프로세스마다**
+# 같은 허브 왕복을 다시 시도하고 그 시간만큼 조용히 멈춘다 (`_CACHE`는 프로세스 수명이라
+# 다음 호출이 처음부터 다시 한다). 크래시는 안 나고 어휘 경로로 fail-open 하므로 저하 자체는
+# 우아하다 — 문제는 그 저하가 **매번 값을 낸다**는 것이다. 그래서 실패 하나를 짧게 기억한다.
+#
+# 무엇을 기억하는가 — "**첫 내려받기**가 실패했다"뿐이다. 판정은 예외 종류가 아니라 로드
+# 직전의 캐시 유무로 한다: `_load_local`이 모든 예외를 삼켜 None을 주므로 여기서 원인을 물을
+# 수는 없지만, 캐시에 없던 모델을 못 얻었다는 것은 그 로드가 내려받기를 해야 했고 못 했다는
+# 뜻이다. 캐시가 있는데 실패한 것은 깨진 파일이거나 라이브러리 문제라 다음 실행에서 다시 시도할
+# 값어치가 있고, 그래서 안 적는다.
+#
+# 자리는 기계 전역이다 (`~/.asgard`, trust store와 같은 자리). 실패의 원인이 모델 캐시 부재와
+# 네트워크라 프로젝트 속성이 아니다 — 저장소마다 따로 두면 같은 실패를 저장소 수만큼 겪는다.
+#
+# 왜 10분인가. 아끼는 것은 프로세스당 왕복 한 번이고, 그 왕복을 무는 것은 CLI 한 세션이 짧은
+# 프로세스를 연달아 띄우는 몇 분이다. 반대로 래치가 길면 사람이 네트워크를 고친 뒤에도 그
+# 시간만큼 시맨틱이 꺼진 채로 돈다. 10분은 한 세션의 연쇄는 덮고 사람의 수리는 안 덮는 폭이다.
+# 그리고 복구는 어느 쪽이든 즉시다 — `reset()`(그러므로 `warmup()`)이 래치를 지운다.
+_LATCH_TTL = 600.0
+_LATCH_NAME = "memory-embed-latch"
+
+
+def _latch_path() -> str:
+    return os.path.join(os.path.expanduser("~"), ".asgard", _LATCH_NAME)
+
+
+def _download_latched() -> bool:
+    """최근에 이 모델의 첫 내려받기가 실패했는가.
+
+    읽기 한 번으로 끝나고, 못 읽으면 False다 — 래치 파일 하나가 회수를 막으면 그게 더 나쁘다.
+    모델 이름을 같이 적어 두는 이유: 사람이 `semantic_model`을 바꾼 것은 새로운 시도이고,
+    옛 모델의 실패가 그것을 막으면 안 된다."""
+    try:
+        import time
+
+        with open(_latch_path(), encoding="utf-8") as handle:
+            stamp, _, model = handle.read().strip().partition(" ")
+        return model == _model_name() and time.time() - float(stamp) < _LATCH_TTL
+    except Exception:
+        return False
+
+
+def _latch_download_failure() -> None:
+    """첫 내려받기 실패를 적는다 — 실패해도 조용하다 (래치는 최적화이지 계약이 아니다)."""
+    with contextlib.suppress(Exception):
+        import time
+
+        path = _latch_path()
+        os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(f"{time.time():.0f} {_model_name()}\n")
+        os.chmod(path, 0o600)
+
+
+def _clear_download_latch() -> None:
+    with contextlib.suppress(OSError):
+        os.remove(_latch_path())
+
+
 def embedder() -> Callable[[str], list[float]] | None:
     """활성 임베더 콜러블 또는 None. 결과를 캐시한다 (무거운 모델 재로드 방지)."""
     if _OVERRIDE is not None:
@@ -213,26 +280,34 @@ def embedder() -> Callable[[str], list[float]] | None:
         return None
     if _CACHE["loaded"]:
         return _CACHE["fn"]
-    if deadline_bound() and not model_cached():
+    cached = model_cached()
+    if deadline_bound() and not cached:
         # 시간 상한 안에서는 35초짜리 첫 내려받기를 열지 않는다. 준비는 warmup이 한다.
+        _CACHE["loaded"], _CACHE["fn"], _CACHE["dim"] = True, None, 0
+        return None
+    if not cached and _download_latched():
+        # 최근에 같은 첫 내려받기가 실패했다 — 프로세스마다 같은 값을 다시 치르지 않는다.
         _CACHE["loaded"], _CACHE["fn"], _CACHE["dim"] = True, None, 0
         return None
     _CACHE["loaded"] = True
     # 처음 한 번은 모델을 받느라 수십 초가 걸린다. 그 침묵이 "멈춘 것"으로 보이므로 한 줄 알린다 —
     # 프로세스당 한 번, stderr 로만 (산출을 파이프로 받는 소비자를 오염시키지 않는다).
     warming = bool(_CACHE.get("warmup"))
-    if not warming and not model_cached():
+    if not warming and not cached:
         with contextlib.suppress(Exception):
             import sys
 
             print(
                 "⠶ 메모리 시맨틱 검색을 준비하고 있어요 — 임베딩 모델을 처음 받는 중이에요 (한 번만)", file=sys.stderr
             )
-    with _quiet_hub(quiet=not warming or model_cached(), offline=False if warming else None):
+    with _quiet_hub(quiet=not warming or cached, offline=False if warming else None):
         loaded = _load_local(_model_name())
     if loaded is None:
+        if not cached:
+            _latch_download_failure()  # 캐시에 없던 모델을 못 얻었다 = 첫 내려받기 실패
         _CACHE["fn"], _CACHE["dim"] = None, 0
         return None
+    _clear_download_latch()  # 성공은 래치를 즉시 무른다
     _CACHE["fn"], _CACHE["dim"], _CACHE["model"] = loaded
     return _CACHE["fn"]
 

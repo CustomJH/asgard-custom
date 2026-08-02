@@ -500,19 +500,30 @@ def _relatedness(d: str, a: str, b: str, pa: tuple[dict, str], pb: tuple[dict, s
     return max(_containment(ta, tb), _jaccard(ta, tb)), "lexical"
 
 
-def _add_link(d: str, a: str, b: str) -> None:
-    """양쪽 frontmatter에 서로를 적는다. 회수(PPR)는 어차피 무향이지만 사람이 페이지를 열었을 때
-    한쪽에서만 보이면 관계가 반쪽으로 읽힌다."""
-    for source, target in ((a, b), (b, a)):
-        pg = _read(d, source)
-        if not pg:
-            continue
-        meta, body = pg
-        links = _existing_links(meta)
-        if target in links:
-            continue
-        meta = {**meta, "links": ",".join(sorted(links | {target})), "updated": _today()}
-        _atomic_write(_page_path(d, source), render_page(meta, body))
+def _add_link(d: str, a: str, b: str) -> bool:
+    """양쪽 frontmatter에 서로를 적는다. 반환 = 한 쪽이라도 실제로 바뀌었는가.
+
+    회수(PPR)는 어차피 무향이지만 사람이 페이지를 열었을 때 한쪽에서만 보이면 관계가 반쪽으로
+    읽힌다.
+
+    락을 잡는 이유: 이것은 읽고-고쳐-쓰기이고, 노른은 `_spawn_auto` 로 분리된 프로세스에서
+    돈다 — 사용자의 대화형 ingest 와 진짜로 동시에 실행된다. 락이 없으면 읽은 뒤 남이 쓴
+    본문 위에 옛 본문을 덮어써서 그 쓰기가 통째로 사라진다. 다른 쓰기 경로(add·ingest·
+    remove·merge)가 전부 같은 락을 지나므로, 여기만 안 지나면 직렬화가 성립하지 않는다."""
+    changed = False
+    with _lock(d):
+        for source, target in ((a, b), (b, a)):
+            pg = _read(d, source)
+            if not pg:
+                continue
+            meta, body = pg
+            links = _existing_links(meta)
+            if target in links:
+                continue
+            meta = {**meta, "links": ",".join(sorted(links | {target})), "updated": _today()}
+            _atomic_write(_page_path(d, source), render_page(meta, body))
+            changed = True
+    return changed
 
 
 def validate_ops(ops: list[dict], d: str) -> tuple[list[dict], list[dict]]:
@@ -761,6 +772,7 @@ def apply_norn(d: str | None, plan: dict) -> dict:
     # frontmatter를 실제로 다시 쓴다. insight·contradiction은 순수 추가라 뺀다
     # (아무것도 안 고치는 런에서 pages/ 전체를 복사하는 것은 비용만 드는 일이다).
     backup = _backup(d) if any(op["op"] in ("merge", "archive", "link") for op in ops) else ""
+    linked = False  # link op이 실제로 페이지를 고쳤는가 — 아래 파생 목차 갱신의 조건
     for op in ops:
         try:
             if op["op"] == "merge":
@@ -783,12 +795,19 @@ def apply_norn(d: str | None, plan: dict) -> dict:
                 slug, _ = add(body, title=op["title"], kind="insight", links=",".join(op["sources"]), d=d)
                 applied.append({**op, "slug": slug})
             elif op["op"] == "link":
-                _add_link(d, op["a"], op["b"])
+                linked = _add_link(d, op["a"], op["b"]) or linked
                 applied.append(op)
             else:  # contradiction — 보고 전용 (아무것도 안 고친다), 장부에만 접수한다
                 applied.append(op)
         except ValueError as e:  # 예산 초과·경합 등 — 노른은 부분 실패를 정직하게 남긴다
             failed.append({**op, "error": str(e)})
+    # link만 파생 목차를 안 고치고 있었다. 나머지 페이지 쓰기 경로(merge·archive·insight)는
+    # 자기 안에서 이미 `write_index`를 부르므로 여기서 또 부를 이유가 없다 — link이 실제로
+    # 무엇인가를 고쳤을 때만 한 번 부른다. 갱신 대상은 index.md 뿐이 아니다: maps/ 는 각
+    # 페이지의 links를 그대로 적는 목차라(`vault._rows`) link op 직후 곧바로 낡는다.
+    if linked:
+        with contextlib.suppress(Exception), _lock(d):  # 파생 목차 실패가 손질 결과를 무르지 않는다
+            write_index(d)
     # 모순은 리포트 파일 하나로 끝나면 안 된다 — 런마다 새로 생기는 파일에 흩어지면 같은
     # 어긋남이 열 번 뜨고 사람이 이미 판단한 것도 매번 다시 뜬다 (`memory.contradiction`).
     # 여기서도 해소는 없다: 장부에 접수만 하고 페이지는 손대지 않는다.

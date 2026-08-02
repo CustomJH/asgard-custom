@@ -52,7 +52,7 @@ import time
 
 from .pages import ingest, plan_ingest
 from .policy import autosave_enabled, scan_secrets, scan_threats
-from .store import DEFAULT_KIND, KINDS, _atomic_write, ensure_home, log_op
+from .store import DEFAULT_KIND, KINDS, _atomic_write, _lock, ensure_home, log_op
 
 QUEUE_FILE = "proposals.json"
 SCHEMA = "asgard-memory-proposal-v1"
@@ -89,6 +89,20 @@ def _save(d: str, rows: list[dict]) -> None:
 
 def _live(rows: list[dict], now: float) -> list[dict]:
     return [row for row in rows if float(row.get("expires") or 0) > now]
+
+
+def _pending_unlocked(d: str) -> list[dict]:
+    """만료분을 청소한 대기 목록 (오래된 것 먼저) — 호출자가 `_lock(d)` 을 쥐고 있다.
+
+    대기열은 읽고-고쳐-쓰기라 페이지 쓰기와 같은 락을 지난다. 락이 없으면 두 프로세스가
+    같은 목록을 읽고 각자 쓴 결과가 마지막 쓴 쪽만 남는다 — 잃는 것은 제안 한 건이고,
+    제안은 아직 정본에 없으므로 어디서도 복구되지 않는다."""
+    now = time.time()
+    rows = _load(d)
+    live = _live(rows, now)
+    if len(live) != len(rows):
+        _save(d, live)
+    return sorted(live, key=lambda row: float(row.get("created") or 0))
 
 
 def _agent() -> str:
@@ -165,12 +179,14 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
     body = _prepare(text, kind)
 
     now = time.time()
-    rows = _live(_load(d), now)
     # 같은 사실을 두 번 제안하면 대기열이 아니라 잡음이 된다. 이미 대기 중인 같은 본문은
     # 새 id를 만들지 않고 기존 것을 돌려준다 (에이전트의 재시도가 대기열을 안 부풀린다).
-    for row in rows:
+    # 여기 판정은 빠른 길일 뿐이고, 정본 판정은 아래 락 안에서 한 번 더 한다.
+    for row in _live(_load(d), now):
         if row.get("text") == body and row.get("kind") == kind:
             return dict(row)
+    # 계획 세우기는 락 밖에서 한다 — 읽기뿐이지만 전 페이지 후보 검색이라 오래 걸린다.
+    # 그동안 대기열을 잠가 두면 남의 쓰기가 그 시간만큼 멈춘다.
     plan = plan_ingest(body, d) or {}
     record = {
         "id": secrets.token_hex(8),
@@ -188,8 +204,14 @@ def stage(text: str, *, kind: str = DEFAULT_KIND, d: str | None = None) -> dict:
         # 못 본다 — `commit` 이 이 봉인본을 실행 직전 계획과 대조한다.
         "plan": plan,
     }
-    rows.append(record)
-    _save(d, rows[-MAX_PENDING:])
+    with _lock(d):
+        rows = _live(_load(d), now)
+        # 계획을 세우는 동안 같은 사실이 먼저 올라왔을 수 있다 — 그러면 그것을 쓴다.
+        for row in rows:
+            if row.get("text") == body and row.get("kind") == kind:
+                return dict(row)
+        rows.append(record)
+        _save(d, rows[-MAX_PENDING:])
     log_op(d, "propose", record["id"], f"kind={kind} agent={record['agent'] or '?'}")
     return dict(record)
 
@@ -253,12 +275,8 @@ def outcome_text(outcome: dict) -> str:
 def pending(d: str | None = None) -> list[dict]:
     """살아 있는 제안 목록 (오래된 것 먼저). 만료분은 조회 시점에 청소한다."""
     d = ensure_home(d)
-    now = time.time()
-    rows = _load(d)
-    live = _live(rows, now)
-    if len(live) != len(rows):
-        _save(d, live)
-    return [dict(row) for row in sorted(live, key=lambda row: float(row.get("created") or 0))]
+    with _lock(d):
+        return [dict(row) for row in _pending_unlocked(d)]
 
 
 def get(proposal_id: str, d: str | None = None) -> dict | None:
@@ -268,11 +286,12 @@ def get(proposal_id: str, d: str | None = None) -> dict | None:
 def discard(proposal_id: str, d: str | None = None) -> bool:
     """제안 하나를 버린다 — 거절도 결정이라 흔적을 남긴다."""
     d = ensure_home(d)
-    rows = pending(d)
-    keep = [row for row in rows if row.get("id") != proposal_id]
-    if len(keep) == len(rows):
-        return False
-    _save(d, keep)
+    with _lock(d):
+        rows = _pending_unlocked(d)
+        keep = [row for row in rows if row.get("id") != proposal_id]
+        if len(keep) == len(rows):
+            return False
+        _save(d, keep)
     log_op(d, "propose-discard", proposal_id)
     return True
 
@@ -282,13 +301,14 @@ def _reseal(proposal_id: str, plan: dict, d: str) -> None:
 
     거절만 하고 옛 계획을 남겨 두면 사람이 목록에서 보는 것은 이미 틀린 계획이고, 그것을
     보고 다시 승인해도 같은 자리에서 또 거절당한다."""
-    rows = pending(d)
-    for row in rows:
-        if row.get("id") == proposal_id:
-            row["plan"] = plan
-            row["plan_action"] = str(plan.get("action") or "create")
-            row["plan_absorb"] = _absorb_slugs(plan)
-    _save(d, rows)
+    with _lock(d):
+        rows = _pending_unlocked(d)
+        for row in rows:
+            if row.get("id") == proposal_id:
+                row["plan"] = plan
+                row["plan_action"] = str(plan.get("action") or "create")
+                row["plan_absorb"] = _absorb_slugs(plan)
+        _save(d, rows)
     log_op(d, "propose-replan", proposal_id, f"action={plan.get('action')} absorb={len(_absorb_slugs(plan))}")
 
 
