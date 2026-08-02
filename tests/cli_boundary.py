@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import sys
 from dataclasses import dataclass
 
 
@@ -33,24 +34,62 @@ class Outcome:
         return self.stdout + self.stderr
 
 
-def run_cli(*argv: str) -> Outcome:
+@contextlib.contextmanager
+def _surface_state():
+    """표면 선언과 조용함을 실행 하나의 수명으로 묶는다 — 실행 전에 끄고, 끝나면 되돌린다.
+
+    `errors.set_json_surface`와 `ui.set_quiet`은 모듈 전역이고, 명령은 `--json`을 받으면
+    그것을 켠 채 끝난다. 실측: `--json` 실행 하나가 지나가면 `errors._json_surface`가 True로
+    남고, 그 뒤 `--json` 없이 부른 명령의 실패가 사람 문장 대신 JSON으로 나간다. 한 프로세스에서
+    여러 번 부르는 테스트에서만 생기는 어긋남이라 여기서 닫는다."""
+    from asgard import errors, ui
+
+    before_json, before_quiet = errors._json_surface, ui._QUIET
+    errors.set_json_surface(False)
+    ui.set_quiet(False)
+    try:
+        yield
+    finally:
+        errors.set_json_surface(before_json)
+        ui.set_quiet(before_quiet)
+
+
+@contextlib.contextmanager
+def _stdin(text: str):
+    """실행 동안 표준 입력을 이 문자열로 갈아 끼운다 (`redirect_stdout`의 입력 쪽 짝)."""
+    before = sys.stdin
+    sys.stdin = io.StringIO(text)
+    try:
+        yield
+    finally:
+        sys.stdin = before
+
+
+def run_cli(*argv: str, stdin: str | None = None) -> Outcome:
     """`asgard <argv...>`를 프로세스 안에서 돌리되, 경계는 터미널과 같게.
 
     `cli.main()`을 그대로 부르지 않고 여기서 다시 적는 이유는 `main()`이 `sys.exit`으로 끝나고
     `sys.argv`를 읽기 때문이다 — 테스트가 잡아야 하는 것은 종료 코드지 프로세스 종료가 아니다.
-    잡는 예외와 렌더러는 같은 것을 쓰므로, 갈라질 수 있는 것은 인자를 받는 방식뿐이다."""
-    from asgard import errors, ui
-    from asgard.cli import app
+    잡는 예외와 렌더러는 같은 것을 쓰므로, 갈라질 수 있는 것은 인자를 받는 방식뿐이다.
+    `prog_name`을 박는 것도 같은 이유다: 안 주면 click이 `sys.argv[0]`을 읽어 사용법 줄에
+    러너 이름(`pytest`)을 적고, 그러면 사용자가 보는 문장을 재지 못한다.
 
-    # 새 프로세스에서 시작하는 것과 같은 상태로 — 표면 선언과 조용함은 실행 하나의 수명이다.
-    errors.set_json_surface(False)
-    ui.set_quiet(False)
+    `stdin`을 주면 그 문자열이 그 실행의 표준 입력이 된다 (인자를 생략하면 stdin에서 읽는
+    `skills resolve` 같은 명령용). 안 주면 건드리지 않는다 — 입력을 안 읽는 명령에까지 가짜
+    스트림을 끼우면 `isatty` 판정이 러너마다 달라진다."""
+    from asgard import errors
+    from asgard.cli import app
 
     out, err = io.StringIO(), io.StringIO()
     code = 0
-    with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+    with contextlib.ExitStack() as stack:
+        stack.enter_context(_surface_state())
+        stack.enter_context(contextlib.redirect_stdout(out))
+        stack.enter_context(contextlib.redirect_stderr(err))
+        if stdin is not None:
+            stack.enter_context(_stdin(stdin))
         try:
-            app(list(argv), standalone_mode=True)
+            app(list(argv), prog_name="asgard", standalone_mode=True)
         except SystemExit as exc:  # click이 정상 종료를 이렇게 낸다
             code = exc.code if isinstance(exc.code, int) else 0
         except errors.AsgardError as exc:

@@ -1826,22 +1826,21 @@ class TestGraphMdSeeds(Base):
 
 class TestCli(Base):
     def test_map_scan_and_trace_json(self):
-        from typer.testing import CliRunner
-
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         self.seed()
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            runner = CliRunner()
-            scan = runner.invoke(app, ["map", "scan", "--json"])
-            self.assertEqual(scan.exit_code, 0, scan.output)
-            payload = json.loads(scan.output)
+            scan = run_cli("map", "scan", "--json")
+            self.assertEqual(scan.exit_code, 0, scan.stderr)
+            self.assertEqual(scan.stderr, "")
+            payload = json.loads(scan.stdout)
             self.assertGreater(payload["nodes"], 0)
-            traced = runner.invoke(app, ["map", "trace", "--from", "external_service:stripe", "--json"])
-            self.assertEqual(traced.exit_code, 0, traced.output)
-            hops = json.loads(traced.output)["hops"]
+            traced = run_cli("map", "trace", "--from", "external_service:stripe", "--json")
+            self.assertEqual(traced.exit_code, 0, traced.stderr)
+            self.assertEqual(traced.stderr, "")
+            hops = json.loads(traced.stdout)["hops"]
             self.assertTrue(hops)
             # 홉마다 대표 앵커(file:line)와 절단 표식이 실린다 — 원문 확인 없는 단정을 막는 계약
             self.assertTrue(all({"file", "line", "truncated"} <= set(hop) for hop in hops))
@@ -1849,38 +1848,37 @@ class TestCli(Base):
             os.chdir(cwd)
 
     def test_map_list_and_impact_json(self):
-        from typer.testing import CliRunner
-
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         self.seed()
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            runner = CliRunner()
-            self.assertEqual(runner.invoke(app, ["map", "scan", "--json"]).exit_code, 0)
-            listed = runner.invoke(app, ["map", "list", "--kind", "route", "--json"])
-            self.assertEqual(listed.exit_code, 0, listed.output)
-            payload = json.loads(listed.output)
+            self.assertEqual(run_cli("map", "scan", "--json").exit_code, 0)
+            listed = run_cli("map", "list", "--kind", "route", "--json")
+            self.assertEqual(listed.exit_code, 0, listed.stderr)
+            payload = json.loads(listed.stdout)
             self.assertGreaterEqual(payload["total"], 2)
             self.assertTrue(all(node["kind"] == "route" for node in payload["nodes"]))
             self.assertTrue(all(node["id"].startswith("route:") and node["file"] for node in payload["nodes"]))
-            unknown = runner.invoke(app, ["map", "list", "--kind", "nope", "--json"])
+            unknown = run_cli("map", "list", "--kind", "nope", "--json")
             self.assertEqual(unknown.exit_code, 2)
-            self.assertIn("unknown node kind", json.loads(unknown.output)["error"])
+            self.assertIn("unknown node kind", json.loads(unknown.stdout)["error"])
             # 개념어 원콜 진입 — 유일 매치는 자동 해석되고 출처가 남는다
-            resolved = runner.invoke(app, ["map", "trace", "--from", "orders", "--json"])
-            self.assertEqual(resolved.exit_code, 0, resolved.output)
-            resolved_payload = json.loads(resolved.output)
+            resolved = run_cli("map", "trace", "--from", "orders", "--json")
+            self.assertEqual(resolved.exit_code, 0, resolved.stderr)
+            resolved_payload = json.loads(resolved.stdout)
             self.assertEqual(resolved_payload["from"], "route:POST_/orders")
             self.assertEqual(resolved_payload["resolved_from"], "orders")
             # 복수 매치는 해석하지 않는다 — 앵커 동봉 후보로 거부
-            ambiguous = runner.invoke(app, ["map", "trace", "--from", "users", "--json"])
+            ambiguous = run_cli("map", "trace", "--from", "users", "--json")
             self.assertEqual(ambiguous.exit_code, 2)
-            self.assertIn("@ src/app/api.py", json.loads(ambiguous.output)["error"])
-            impact = runner.invoke(app, ["map", "impact", "external_service:stripe", "--json"])
-            self.assertEqual(impact.exit_code, 0, impact.output)
-            report = json.loads(impact.output)
+            self.assertIn("@ src/app/api.py", json.loads(ambiguous.stdout)["error"])
+            # 거부 둘도 stdout의 봉투 하나로 답한다 — `--json`에서 사람 문장은 어느 흐름에도 없다.
+            self.assertEqual((unknown.stderr, ambiguous.stderr), ("", ""))
+            impact = run_cli("map", "impact", "external_service:stripe", "--json")
+            self.assertEqual(impact.exit_code, 0, impact.stderr)
+            report = json.loads(impact.stdout)
             self.assertEqual(report["from"], "external_service:stripe")
             self.assertLessEqual({"upstream", "downstream", "coverage", "records"}, set(report))
             self.assertEqual(report["coverage"]["depth"], 4)

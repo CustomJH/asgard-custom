@@ -8,8 +8,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-from typer.testing import CliRunner
-
 
 class TestModeConfig(unittest.TestCase):
     def setUp(self) -> None:
@@ -136,32 +134,33 @@ class TestModeConfig(unittest.TestCase):
                     configure_mode(self.root, mode, role, **options)
 
     def test_cli_matrix_show_round_trip_and_non_tty_picker(self) -> None:
-        # 픽커 자리는 사용자 경계로 잰다: 실패가 예외로 나가므로 `CliRunner`는 그것을 삼켜
-        # 1로 적지만, 터미널에서 친 사람은 2를 받는다 (tests/cli_boundary.py).
+        # 종료 코드를 단언하는 자리는 전부 사용자 경계로 잰다: 실패가 예외로 나가면 `CliRunner`는
+        # 그것을 삼켜 1로 적지만, 터미널에서 친 사람은 2를 받는다 (tests/cli_boundary.py).
         from cli_boundary import run_cli
 
-        from asgard.cli import app
-
-        runner = CliRunner()
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            listed = runner.invoke(app, ["mode", "--json"])
-            shown = runner.invoke(app, ["mode", "show", "codex", "--json"])
-            changed = runner.invoke(app, ["mode", "set", "codex", "worker", "--model", "cli-worker"])
-            reset = runner.invoke(app, ["mode", "reset", "codex", "worker"])
+            listed = run_cli("mode", "--json")
+            shown = run_cli("mode", "show", "codex", "--json")
+            changed = run_cli("mode", "set", "codex", "worker", "--model", "cli-worker")
+            reset = run_cli("mode", "reset", "codex", "worker")
             picked = run_cli("mode", "pick")
         finally:
             os.chdir(cwd)
 
-        self.assertEqual(listed.exit_code, 0, listed.output)
-        self.assertEqual(tuple(json.loads(listed.output)["modes"]), ("native", "claude-code", "cursor", "codex"))
-        self.assertEqual(shown.exit_code, 0, shown.output)
-        self.assertEqual(tuple(json.loads(shown.output)["modes"]), ("codex",))
-        self.assertEqual(changed.exit_code, 0, changed.output)
-        self.assertEqual(json.loads(changed.output)["effective"]["roles"]["worker"]["model"], "cli-worker")
-        self.assertEqual(reset.exit_code, 0, reset.output)
+        self.assertEqual(listed.exit_code, 0, listed.stderr)
+        self.assertEqual(tuple(json.loads(listed.stdout)["modes"]), ("native", "claude-code", "cursor", "codex"))
+        self.assertEqual(shown.exit_code, 0, shown.stderr)
+        self.assertEqual(tuple(json.loads(shown.stdout)["modes"]), ("codex",))
+        self.assertEqual(changed.exit_code, 0, changed.stderr)
+        self.assertEqual(json.loads(changed.stdout)["effective"]["roles"]["worker"]["model"], "cli-worker")
+        self.assertEqual(reset.exit_code, 0, reset.stderr)
+        # 성공한 넷은 전부 산출물만 남긴다 — 읽을 것이 stdout 하나라야 파이프가 성립한다.
+        for result in (listed, shown, changed, reset):
+            self.assertEqual(result.stderr, "")
         self.assertEqual(picked.exit_code, 2)
+        self.assertEqual(picked.stdout, "")
         self.assertIn("TTY", picked.stderr)
 
 

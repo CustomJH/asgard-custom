@@ -265,7 +265,7 @@ class TestProjectMap(CodeMapBase):
 
 class TestMapCLI(CodeMapBase):
     def test_setup_map_gitignore_writes_do_not_follow_predictable_temp_symlinks(self):
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         subprocess.run(["git", "init", "-q", self.root], check=True)
         self.write("pyproject.toml", '[project]\nname = "atomic-cli"\n')
@@ -276,21 +276,22 @@ class TestMapCLI(CodeMapBase):
         os.symlink(outside, os.path.join(self.root, ".asgard", f"..gitignore.{os.getpid()}.tmp"))
 
         with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
-            result = CliRunner().invoke(app, ["setup", "map", "--json"])
-        self.assertEqual(result.exit_code, 0, result.stdout)
+            result = run_cli("setup", "map", "--json")
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
         self.assertEqual(open(outside, encoding="utf-8").read(), "unchanged\n")
 
     def test_asgard_setup_map_and_check(self):
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         subprocess.run(["git", "init", "-q", self.root], check=True)
         self.write(".gitignore", ".asgard\n")
         self.write("Cargo.toml", '[package]\nname = "forge"\n')
         self.write("src/main.rs", "fn main() {}\n")
-        runner = CliRunner()
         with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
-            setup = runner.invoke(app, ["setup", "map", "--json"])
-            self.assertEqual(setup.exit_code, 0, setup.stdout)
+            setup = run_cli("setup", "map", "--json")
+            self.assertEqual(setup.exit_code, 0, setup.stderr)
+            self.assertEqual(setup.stderr, "")
             payload = json.loads(setup.stdout)
             self.assertEqual(payload["project"], "forge")
             self.assertTrue(payload["changed"])
@@ -299,14 +300,16 @@ class TestMapCLI(CodeMapBase):
             )
             self.assertNotEqual(ignored.returncode, 0, ignored.stdout)
 
-            check = runner.invoke(app, ["setup", "map", "--check", "--json"])
-            self.assertEqual(check.exit_code, 0, check.stdout)
+            check = run_cli("setup", "map", "--check", "--json")
+            self.assertEqual(check.exit_code, 0, check.stderr)
             self.assertTrue(json.loads(check.stdout)["ok"])
 
         self.write("src/lib.rs", "pub fn ready() -> bool { true }\n")
         with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
-            stale = runner.invoke(app, ["setup", "map", "--check", "--json"])
-        self.assertEqual(stale.exit_code, 1, stale.stdout)
+            stale = run_cli("setup", "map", "--check", "--json")
+        # 드리프트는 `--check` 관례대로 1이다 — 호출자가 고칠 잘못(2)이 아니라 상태가 낡았다는 신호.
+        self.assertEqual(stale.exit_code, 1, stale.stderr)
+        self.assertEqual(stale.stderr, "")
         self.assertIn("src/lib.rs", json.loads(stale.stdout)["added"])
 
     def test_doctor_reports_managed_map_drift(self):
@@ -352,7 +355,7 @@ class TestMapCLI(CodeMapBase):
         self.assertFalse(ghost["ok"], ghost)
 
     def test_setup_map_uses_git_root_from_nested_directory(self):
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         subprocess.run(["git", "init", "-q", self.root], check=True)
         self.write("pyproject.toml", '[project]\nname = "nested"\n')
@@ -361,18 +364,23 @@ class TestMapCLI(CodeMapBase):
         cwd = os.getcwd()
         os.chdir(nested)
         try:
-            result = CliRunner().invoke(app, ["setup", "map", "--json"])
+            result = run_cli("setup", "map", "--json")
         finally:
             os.chdir(cwd)
-        self.assertEqual(result.exit_code, 0, result.stdout)
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
         self.assertTrue(os.path.exists(os.path.join(self.root, ".asgard", "map", "PROJECT.md")))
         self.assertFalse(os.path.exists(os.path.join(nested, ".asgard")))
 
     def test_setup_map_rejects_check_with_dry_run(self):
-        from asgard.cli import app
+        """서로 배타인 두 깃발은 호출자가 고칠 수 있는 잘못이다 — 정본대로 2 (`errors.py`)."""
+        from cli_boundary import run_cli
 
-        result = CliRunner().invoke(app, ["setup", "map", "--check", "--dry-run"])
-        self.assertEqual(result.exit_code, 2, result.stdout)
+        result = run_cli("setup", "map", "--check", "--dry-run")
+        self.assertEqual(result.exit_code, 2, result.stderr)
+        # 사유는 사람 화면(stderr)으로, stdout은 산출물 자리로 비워 둔다.
+        self.assertEqual(result.stdout, "")
+        self.assertIn("--check", result.stderr)
 
     def test_dry_run_reports_index_and_gitignore_changes_without_writing(self):
         from asgard.cli import app

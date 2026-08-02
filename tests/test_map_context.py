@@ -9,8 +9,6 @@ import tempfile
 import unittest
 from unittest import mock
 
-from typer.testing import CliRunner
-
 
 class Base(unittest.TestCase):
     def setUp(self):
@@ -346,39 +344,44 @@ class TestMapLexicon(unittest.TestCase):
 
 class TestMapCommands(Base):
     def test_generate_check_context_and_update_share_one_projection(self):
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         self.seed()
-        runner = CliRunner()
         with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
-            generated = runner.invoke(app, ["map", "generate", "--json"])
-            checked = runner.invoke(app, ["map", "check", "--json"])
-            context = runner.invoke(app, ["map", "context", "--query", "PublicAPI", "--json"])
-        self.assertEqual(generated.exit_code, 0, generated.stdout)
+            generated = run_cli("map", "generate", "--json")
+            checked = run_cli("map", "check", "--json")
+            context = run_cli("map", "context", "--query", "PublicAPI", "--json")
+        self.assertEqual(generated.exit_code, 0, generated.stderr)
         self.assertTrue(json.loads(checked.stdout)["ok"])
         self.assertIn("PublicAPI", json.loads(context.stdout)["text"])
 
         self.write("src/added/__init__.py", "class Added: pass\n")
         with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
-            stale = runner.invoke(app, ["map", "check", "--json"])
-            updated = runner.invoke(app, ["map", "update", "--json"])
-            current = runner.invoke(app, ["setup", "map", "--check", "--json"])
+            stale = run_cli("map", "check", "--json")
+            updated = run_cli("map", "update", "--json")
+            current = run_cli("setup", "map", "--check", "--json")
+        # 드리프트는 호출자가 잘못 쓴 것이 아니라 상태가 낡았다는 신호다 — `--check` 관례대로 1.
         self.assertEqual(stale.exit_code, 1)
-        self.assertEqual(updated.exit_code, 0, updated.stdout)
+        self.assertEqual(updated.exit_code, 0, updated.stderr)
         self.assertTrue(json.loads(current.stdout)["ok"])
+        # `--json`은 성공이든 드리프트든 stdout의 payload 하나로 답한다.
+        for result in (generated, checked, context, stale, updated, current):
+            self.assertEqual(result.stderr, "")
 
     def test_check_names_gitignore_drift_as_the_cause(self):
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         self.seed()
-        runner = CliRunner()
         with mock.patch("asgard.commands.map.os.getcwd", return_value=self.root):
-            generated = runner.invoke(app, ["map", "generate"])
-            self.assertEqual(generated.exit_code, 0, generated.stdout)
+            generated = run_cli("map", "generate")
+            self.assertEqual(generated.exit_code, 0, generated.stderr)
             os.remove(os.path.join(self.root, ".gitignore"))
-            checked = runner.invoke(app, ["map", "check"])
+            checked = run_cli("map", "check")
         self.assertEqual(checked.exit_code, 1)
+        # 드리프트 진단은 `ui.warn`/`ui.step`이라 stdout에 남는다 — `ui.fail`(stderr)을 지나지
+        # 않으므로 render_cli의 stderr 계약과는 다른 자리다.
         self.assertIn("gitignore:", checked.stdout)
+        self.assertEqual(checked.stderr, "")
 
 
 class TestMapActivateHook(Base):

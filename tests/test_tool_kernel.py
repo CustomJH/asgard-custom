@@ -527,12 +527,11 @@ class TestToolCLI(unittest.TestCase):
     def test_tools_list_reports_native_and_cc_surfaces(self):
         import json
 
-        from typer.testing import CliRunner
+        from cli_boundary import run_cli
 
-        from asgard.cli import app
-
-        result = CliRunner().invoke(app, ["tools", "list", "--role", "worker", "--json"])
-        self.assertEqual(result.exit_code, 0, result.stdout)
+        result = run_cli("tools", "list", "--role", "worker", "--json")
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertEqual(result.stderr, "")  # --json은 stdout 하나로 답한다
         data = json.loads(result.stdout)
         self.assertEqual(data["role"], "worker")
         self.assertIn("bash", data["native"])
@@ -542,18 +541,22 @@ class TestToolCLI(unittest.TestCase):
 
     def test_tools_list_rejects_unknown_role(self):
         """`CliRunner`가 아니라 사용자 경계로 잰다 — 전자는 예외를 삼켜 1로 적고, 사용자는 2를 받는다."""
+        import json
+
         from cli_boundary import run_cli
 
         result = run_cli("tools", "list", "--role", "odin", "--json")
         self.assertEqual(result.exit_code, 2)
+        # --json을 받은 실행은 실패도 stdout의 봉투로 답한다 — 사람 문장이 stderr로 새면 파서가 둘을 봐야 한다.
+        self.assertEqual(result.stderr, "")
+        self.assertIn("error", json.loads(result.stdout))
 
     def test_tools_list_supports_installed_ullr_role(self):
-        from typer.testing import CliRunner
+        from cli_boundary import run_cli
 
-        from asgard.cli import app
-
-        result = CliRunner().invoke(app, ["tools", "list", "--role", "ullr", "--json"])
-        self.assertEqual(result.exit_code, 0, result.stdout)
+        result = run_cli("tools", "list", "--role", "ullr", "--json")
+        self.assertEqual(result.exit_code, 0, result.stderr)
+        self.assertEqual(result.stderr, "")
 
 
 if __name__ == "__main__":

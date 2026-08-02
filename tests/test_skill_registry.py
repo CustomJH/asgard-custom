@@ -61,25 +61,52 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("[task-match] asgard-freyja-design", catalog)
 
     def test_bare_catalog_commands_list_current_inventory(self):
-        from typer.testing import CliRunner
+        from cli_boundary import run_cli
 
-        from asgard.cli import app
         from asgard.commands import skills as command
 
         with mock.patch.object(command.ui, "term_cols", return_value=140):
-            skills_result = CliRunner().invoke(app, ["skills"])
-            plugins_result = CliRunner().invoke(app, ["plugins"])
-            json_result = CliRunner().invoke(app, ["plugins", "list", "--json"])
-        self.assertEqual(skills_result.exit_code, 0)
+            skills_result = run_cli("skills")
+            plugins_result = run_cli("plugins")
+            json_result = run_cli("plugins", "list", "--json")
+        self.assertEqual(skills_result.exit_code, 0, skills_result.stderr)
         self.assertIn("╭─ Skills ·", skills_result.stdout)
         self.assertIn("asgard-worker-testing", skills_result.stdout)
-        self.assertEqual(plugins_result.exit_code, 0)
+        self.assertEqual(plugins_result.exit_code, 0, plugins_result.stderr)
         self.assertIn("╭─ Plugins ·", plugins_result.stdout)
         self.assertIn("╰", plugins_result.stdout)
         self.assertIn("playwright-cli", plugins_result.stdout)
         self.assertEqual(json.loads(json_result.stdout), skill_registry.plugins())
+        # 목록은 산출물이다 — 셋 다 stdout 하나로 나가고 stderr는 비어 있어야 한다.
+        for result in (skills_result, plugins_result, json_result):
+            self.assertEqual(result.stderr, "")
+
+    def test_resolve_reads_the_task_from_stdin_and_splits_the_two_streams(self):
+        """인자를 생략하면 과업은 stdin에서 온다 — 파이프로 부르는 호스트가 쓰는 통로다.
+
+        거부 둘(미지의 역할, 빈 과업)은 호출자가 고칠 수 있는 잘못이라 2이고, 사유는 stderr로
+        나간다. stdout이 비어 있어야 `asgard skills resolve < task.txt > out.json`이 실패한
+        실행에서 데이터 스트림에 사람 말을 받지 않는다."""
+        from cli_boundary import run_cli
+
+        resolved = run_cli("skills", "resolve", "--agent", "freyja", "--json", stdin="로그인 폼 접근성 개선")
+        self.assertEqual(resolved.exit_code, 0, resolved.stderr)
+        self.assertEqual(resolved.stderr, "")
+        self.assertIn("asgard-freyja-design", [row["name"] for row in json.loads(resolved.stdout)["skills"]])
+
+        for argv, stdin, reason in (
+            (("skills", "resolve", "--agent", "odin"), "무엇이든", "invalid agent"),
+            (("skills", "resolve", "--agent", "freyja"), "   \n", "task is required"),
+        ):
+            with self.subTest(reason=reason):
+                refused = run_cli(*argv, stdin=stdin)
+                self.assertEqual(refused.exit_code, 2)
+                self.assertEqual(refused.stdout, "")
+                self.assertIn(reason, refused.stderr)
 
     def test_catalog_renderer_is_readable_without_changing_json(self):
+        from cli_boundary import run_cli
+
         from asgard.commands import skills as command
 
         skill_rows = [
@@ -107,13 +134,11 @@ class RegistryTest(unittest.TestCase):
             mock.patch.object(command.ui, "term_cols", return_value=80),
             mock.patch.object(command, "skills", return_value=skill_rows),
         ):
-            from typer.testing import CliRunner
-
-            from asgard.cli import app
-
-            plain = CliRunner().invoke(app, ["skills", "list"])
-            json_result = CliRunner().invoke(app, ["skills", "list", "--json"])
-        self.assertEqual(plain.exit_code, 0)
+            plain = run_cli("skills", "list")
+            json_result = run_cli("skills", "list", "--json")
+        self.assertEqual(plain.exit_code, 0, plain.stderr)
+        self.assertEqual(plain.stderr, "")
+        self.assertEqual(json_result.stderr, "")
         self.assertIn("Skills · 1", plain.stdout)
         self.assertNotIn("\x1b[", plain.stdout)
         self.assertIn("narrow-check", plain.stdout)
@@ -127,8 +152,9 @@ class RegistryTest(unittest.TestCase):
             mock.patch.object(command.ui, "term_cols", return_value=100),
             mock.patch.object(command, "plugins", return_value=plugin_rows),
         ):
-            wide = CliRunner().invoke(app, ["plugins", "list"])
-        self.assertEqual(wide.exit_code, 0)
+            wide = run_cli("plugins", "list")
+        self.assertEqual(wide.exit_code, 0, wide.stderr)
+        self.assertEqual(wide.stderr, "")
         self.assertIn("Plugins · 3", wide.stdout)
         self.assertIn("╭", wide.stdout)
         self.assertIn("╰", wide.stdout)

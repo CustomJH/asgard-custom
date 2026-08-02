@@ -618,37 +618,35 @@ class TestOpenAINativeOAuth(unittest.TestCase):
         self.assertIsNotNone(original_create)
 
     def test_auth_login_cli_runs_asgard_owned_device_flow_without_printing_tokens(self):
-        from typer.testing import CliRunner
-
-        from asgard.cli import app
+        from cli_boundary import run_cli
 
         tokens = {"access_token": "access-secret", "refresh_token": "refresh-secret"}
         with (
             mock.patch("asgard.openai_codex.device_login", return_value=tokens) as login,
             mock.patch("asgard.openai_codex.save_tokens") as save,
         ):
-            result = CliRunner().invoke(app, ["auth", "login", "openai-native"])
-        self.assertEqual(result.exit_code, 0, result.stdout or str(result.exception))
+            result = run_cli("auth", "login", "openai-native")
+        self.assertEqual(result.exit_code, 0, result.stderr)
         login.assert_called_once()
         save.assert_called_once_with(tokens)
-        self.assertNotIn("access-secret", result.stdout)
-        self.assertNotIn("refresh-secret", result.stdout)
+        # 토큰은 어느 흐름으로도 새지 않는다 — 파이프로 받는 쪽과 화면을 보는 쪽 둘 다 본다.
+        self.assertNotIn("access-secret", result.output)
+        self.assertNotIn("refresh-secret", result.output)
 
     def test_auth_status_and_logout_cli_use_asgard_store(self):
-        from typer.testing import CliRunner
+        from cli_boundary import run_cli
 
-        from asgard.cli import app
-
-        runner = CliRunner()
         with mock.patch("asgard.openai_codex.login_status", return_value=(True, "logged in · account selected")):
-            status = runner.invoke(app, ["auth", "status", "openai-native"])
-        self.assertEqual(status.exit_code, 0, status.stdout or str(status.exception))
+            status = run_cli("auth", "status", "openai-native")
+        self.assertEqual(status.exit_code, 0, status.stderr)
+        self.assertEqual(status.stderr, "")
         self.assertIn("logged in", status.stdout.lower())
-        self.assertNotIn("secret-token", status.stdout)
+        self.assertNotIn("secret-token", status.output)
 
         with mock.patch("asgard.openai_codex.logout", return_value=True) as logout:
-            removed = runner.invoke(app, ["auth", "logout", "openai-native"])
-        self.assertEqual(removed.exit_code, 0, removed.stdout or str(removed.exception))
+            removed = run_cli("auth", "logout", "openai-native")
+        self.assertEqual(removed.exit_code, 0, removed.stderr)
+        self.assertEqual(removed.stderr, "")
         logout.assert_called_once_with()
 
     def test_login_status_rejects_stale_credential_when_backend_and_refresh_both_reject_it(self):

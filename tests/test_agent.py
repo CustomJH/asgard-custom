@@ -688,30 +688,27 @@ class TestRoleProviders(Base):
             configure_role_model(self.root, "native", "worker", provider="unknown")
 
     def test_role_model_cli_lists_and_validates_arguments(self):
-        # 잘못 쓴 인자는 예외로 나간다 — 그 자리는 `CliRunner`가 아니라 사용자 경계로 재야
-        # 사용자가 실제로 받는 종료 코드를 본다 (tests/cli_boundary.py).
+        # 종료 코드를 단언하는 자리는 전부 사용자 경계로 잰다 — `CliRunner`는 예외를 삼켜
+        # 1로 적고, 터미널에서 친 사람은 2를 받는다 (tests/cli_boundary.py).
         from cli_boundary import run_cli
-        from typer.testing import CliRunner
-
-        from asgard.cli import app
 
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            runner = CliRunner()
-            listed = runner.invoke(app, ["role", "model"])
-            changed = runner.invoke(app, ["role", "model", "codex", "thinker", "custom-sol", "--effort", "max"])
+            listed = run_cli("role", "model")
+            changed = run_cli("role", "model", "codex", "thinker", "custom-sol", "--effort", "max")
             invalid = run_cli("role", "model", "unknown", "worker", "x")
         finally:
             os.chdir(cwd)
 
-        self.assertEqual(listed.exit_code, 0, listed.output)
-        self.assertIn('"claude-code"', listed.output)
-        self.assertEqual(changed.exit_code, 0, changed.output)
-        self.assertIn('"model": "custom-sol"', changed.output)
-        self.assertIn('"effort": "max"', changed.output)
+        self.assertEqual(listed.exit_code, 0, listed.stderr)
+        self.assertIn('"claude-code"', listed.stdout)
+        self.assertEqual(changed.exit_code, 0, changed.stderr)
+        self.assertIn('"model": "custom-sol"', changed.stdout)
+        self.assertIn('"effort": "max"', changed.stdout)
         self.assertEqual(invalid.exit_code, 2)
         self.assertEqual(invalid.stdout, "")  # 사람 화면에 기계 JSON을 붓지 않는다
+        self.assertNotEqual(invalid.stderr, "")  # 사유는 그 대신 stderr로 나간다
 
     def test_role_run_rejects_bad_role_and_no_quest(self):
         """둘 다 호출자가 고칠 수 있는 잘못이다 — 정본대로 2 (`errors.py`).
