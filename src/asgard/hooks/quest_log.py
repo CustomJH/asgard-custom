@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import copy
 import hashlib
 import json
 import os
@@ -60,8 +61,16 @@ EVENTS = {
     "escalate",
     "delegate",
     "ticket",
+    "ticket_lease",
     "quest_closed",
 }  # delegate: 중첩 디스패치 배정 기록 — Phase 2 통계가 배정 정책 학습
+# ticket_lease: lease 갱신 전용 — 상태 전이가 아니다. 갱신이 `ticket`으로 적히면 티켓 이벤트
+# 열이 "todo→in_progress→done"이 아니라 "얼마나 오래 돌았는가"를 적게 되고(lease의 1/3마다
+# 한 줄), 그 열을 읽는 쪽은 벽시계에 따라 다른 역사를 본다. finish가 실패한 뒤의 lease 단축도
+# 같은 이유로 티켓을 in_progress로 되돌려 놓았다.
+# 갱신은 claim token을 검증하는 ticket-heartbeat만 적을 수 있다 — raw append로 열어 두면
+# 토큰 없이 남의 lease를 미는 문이 된다.
+APPEND_EVENTS = EVENTS - {"ticket_lease"}
 VERDICTS = {"PASS", "FAIL", "ESCALATE", "NA"}
 TICKET_STATUSES = {"todo", "in_progress", "done", "failed", "blocked"}
 # v1의 16필드 + v2 실행/승인/체인 identity. tier/effort/model 등은 부가 관측 필드.
@@ -1118,7 +1127,10 @@ def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_cha
 
 
 def load_policy(root: str) -> dict:
-    p = dict(DEFAULT_POLICY)
+    # 얕은 복사면 중첩 기본값(`ticket_runtime` 등)이 프로세스 전역으로 공유된다 — 한 호출자가
+    # `policy["ticket_runtime"]["lease_seconds"]` 를 만지면 그 프로세스의 다음 로드가 그 값을
+    # 물려받는다. 정책은 호출자마다 자기 사본이어야 한다.
+    p = copy.deepcopy(DEFAULT_POLICY)
     # 신규 통합 설정(asgard-setting-project.json의 trinity_policy) 우선, 구 파일 폴백 (fail-open)
     try:
         with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
@@ -1534,10 +1546,17 @@ def fold_tickets(events: list[dict]) -> dict[str, dict]:
     """Append-only ticket events를 최신 materialized view로 접는다 (구 이벤트는 기본값으로 호환)."""
     tickets: dict[str, dict] = {}
     for event in events:
-        if event.get("event") != "ticket" or event.get("unit") is None:
+        kind = event.get("event")
+        if kind not in ("ticket", "ticket_lease") or event.get("unit") is None:
             continue
         key = str(event["unit"])
         current = tickets.get(key, {})
+        if kind == "ticket_lease":
+            # 갱신은 만료 시각만 민다. claim 이전의 갱신은 접을 상태가 없으니 버린다.
+            for field in ("lease_expires_at", "heartbeat_at"):
+                if current and event.get(field) is not None:
+                    current[field] = event[field]
+            continue
         attempt_value = event.get("attempt") if event.get("attempt") is not None else current.get("attempt")
         max_attempts_value = (
             event.get("max_attempts") if event.get("max_attempts") is not None else current.get("max_attempts")
@@ -2125,8 +2144,8 @@ def ticket_runtime(
             expiry = now + lease_seconds
             emit(
                 {
+                    "event": "ticket_lease",
                     "unit": ticket["id"],
-                    "ticket_status": "in_progress",
                     "claim_token_hash": stored_hash,
                     "worker_id": ticket.get("worker_id"),
                     "lease_expires_at": expiry,
@@ -2369,8 +2388,8 @@ def main() -> int:
             raw["role"] = raw["role"].lower()  # 전이 함수 출력(WORKER)을 그대로 넣는 세션 실측 — 통계 축 분열 방지
         if args.criteria:
             raw["criteria"] = args.criteria
-        if raw.get("event") not in EVENTS:
-            print(json.dumps({"error": "event must be one of %s" % sorted(EVENTS)}), file=sys.stderr)
+        if raw.get("event") not in APPEND_EVENTS:  # ticket_lease는 ticket-heartbeat 전용
+            print(json.dumps({"error": "event must be one of %s" % sorted(APPEND_EVENTS)}), file=sys.stderr)
             return 2
         if raw.get("event") == "ticket":
             if raw.get("unit") is None:
