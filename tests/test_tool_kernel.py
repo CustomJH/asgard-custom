@@ -541,11 +541,10 @@ class TestToolCLI(unittest.TestCase):
         self.assertIn("mutate", data["capabilities"])
 
     def test_tools_list_rejects_unknown_role(self):
-        from typer.testing import CliRunner
+        """`CliRunner`가 아니라 사용자 경계로 잰다 — 전자는 예외를 삼켜 1로 적고, 사용자는 2를 받는다."""
+        from cli_boundary import run_cli
 
-        from asgard.cli import app
-
-        result = CliRunner().invoke(app, ["tools", "list", "--role", "odin", "--json"])
+        result = run_cli("tools", "list", "--role", "odin", "--json")
         self.assertEqual(result.exit_code, 2)
 
     def test_tools_list_supports_installed_ullr_role(self):

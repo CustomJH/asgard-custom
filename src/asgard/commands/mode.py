@@ -10,10 +10,9 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from typing import Any
 
-from .. import i18n, profiles, swarm
+from .. import errors, i18n, profiles, swarm
 from ..providers import PROVIDERS
 
 SOURCE_DEFAULT = "built-in default"
@@ -239,8 +238,19 @@ def _emit(payload: dict, json_out: bool) -> None:
         _print_table(payload)
 
 
+def _invalid(exc: Exception, mode: str, *, remedy: str) -> errors.AsgardError:
+    """설정 소유자(`configure_mode`·`mode_state`)가 던진 것을 경계의 어휘로 옮긴다.
+
+    `ValueError`는 사용자가 적은 값이 틀린 것이고, `FileNotFoundError`는 그 이름의 에이전트가
+    이 기계에 없는 것이다. 종료 코드는 둘 다 2지만 `code`가 갈려야 스튜디오가 "고쳐 쓰세요"와
+    "먼저 만드세요"를 다르게 안내한다."""
+    kind = errors.NotFound if isinstance(exc, FileNotFoundError) else errors.InvalidInput
+    return kind(str(exc), remedy=remedy, detail={"mode": mode})
+
+
 def run_mode(*, json_out: bool = False) -> int:
     root = os.getcwd()
+    errors.set_json_surface(json_out)
     i18n.load_lang(root)
     _emit(mode_state(root), json_out)
     return 0
@@ -248,12 +258,12 @@ def run_mode(*, json_out: bool = False) -> int:
 
 def run_mode_show(mode: str, *, json_out: bool = False) -> int:
     root = os.getcwd()
+    errors.set_json_surface(json_out)
     i18n.load_lang(root)
     try:
         payload = mode_state(root, mode)
     except ValueError as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise _invalid(exc, mode, remedy="`asgard mode`로 네 모드를 한 화면에서 보세요") from exc
     _emit(payload, json_out)
     return 0
 
@@ -278,8 +288,12 @@ def run_mode_set(
             provider=provider,
         )
     except (ValueError, FileNotFoundError) as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        fix = (
+            f"`asgard agent create {agent}`로 먼저 만드세요"
+            if isinstance(exc, FileNotFoundError)
+            else f"`asgard mode show {mode}`로 지금 값을 보세요"
+        )
+        raise _invalid(exc, mode, remedy=fix) from exc
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -288,8 +302,7 @@ def run_mode_reset(mode: str, role: str | None = None) -> int:
     try:
         payload = reset_mode(os.getcwd(), mode, role)
     except ValueError as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise _invalid(exc, mode, remedy="`asgard mode`로 어떤 모드·역할이 있는지 보세요") from exc
     print(json.dumps(payload, ensure_ascii=False, indent=2))
     return 0
 
@@ -300,8 +313,12 @@ def run_mode_pick() -> int:
     from ..picker import Option, available, pick
 
     if not available():
-        print("mode pick requires an interactive TTY", file=sys.stderr)
-        return 2
+        # 취소(아래 `return 1`)와 다른 사건이다: 고를 화면 자체를 못 여는 환경이므로 같은 설정을
+        # 타이핑으로 하는 길을 처방으로 준다.
+        raise errors.PreflightFailed(
+            "mode pick requires an interactive TTY",
+            remedy="run: asgard mode set <mode> <role> --model <model>",
+        )
     state = mode_state(root)
     mode = pick(i18n.t("pick_host"), [Option(value, value) for value in swarm.MODES])
     if mode is None:

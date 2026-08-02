@@ -15,10 +15,32 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 
-from .. import profiles, swarm, ui
+from .. import errors, profiles, swarm, ui
 from .health import _project_root
+
+
+def _surface(json_out: bool, quiet: bool) -> None:
+    """이 실행의 표면을 두 곳에 알린다 — 화면 장식(`quiet`)과 오류의 얼굴(`json`).
+
+    둘은 같은 플래그가 아니다. `--quiet`은 장식을 빼라는 말이고, `--json`은 stdout이 기계의
+    것이라는 말이다. 여태 후자를 아무도 안 알려 줘서, 실패는 플래그와 무관하게 사람 말로
+    나갔다."""
+    ui.set_quiet(json_out or quiet)
+    errors.set_json_surface(json_out)
+
+
+def _boundary(exc: Exception, *, remedy: str) -> errors.AsgardError:
+    """`profiles`·`swarm`이 던진 것을 경계의 어휘로 옮긴다 — 종류마다 `code`가 갈린다.
+
+    셋 다 종료 코드는 2다(호출자가 고칠 수 있는 잘못). 그래도 코드를 갈라 두는 이유는
+    소비자가 분기하기 때문이다: 없는 것(`not_found`)은 만들라고, 이미 있는 것(`conflict`)은
+    다른 이름을 쓰라고 안내해야 한다."""
+    if isinstance(exc, FileExistsError):
+        return errors.Conflict(str(exc), remedy=remedy)
+    if isinstance(exc, FileNotFoundError):
+        return errors.NotFound(str(exc), remedy=remedy)
+    return errors.InvalidInput(str(exc), remedy=remedy)
 
 
 def _fmt_row(row: dict, id_width: int) -> str:
@@ -31,7 +53,7 @@ def _fmt_row(row: dict, id_width: int) -> str:
 
 
 def run_agent_list(*, json_out: bool = False, quiet: bool = False) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     rows = profiles.listing()
     roster = profiles.builtin_roster()
     made = {r["id"] for r in rows}
@@ -63,7 +85,7 @@ def run_agent_list(*, json_out: bool = False, quiet: bool = False) -> int:
 
 
 def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     canon = profiles.normalize(name)
     if not profiles.exists(canon):
         roster = profiles.builtin_roster()
@@ -77,8 +99,11 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
             ui.step(ui.dim(f"    `asgard agent use {canon}`로 세우세요"))
             ui.done()
             return 0
-        print(json.dumps({"error": f"에이전트 {canon!r}를 못 찾았어요"}, ensure_ascii=False))
-        return 1
+        raise errors.NotFound(
+            f"에이전트 {canon!r}를 못 찾았어요",
+            remedy="`asgard agent list`로 세워 둔 이름을 확인하세요",
+            detail={"agent": canon},
+        )
 
     row = next((r for r in profiles.listing() if r["id"] == canon), None) or {}
     body = profiles._meaningful(profiles.identity(canon))
@@ -119,7 +144,7 @@ def run_agent_create(
     json_out: bool = False,
     quiet: bool = False,
 ) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     try:
         path = profiles.create(
             name,
@@ -130,8 +155,7 @@ def run_agent_create(
             display=display,
         )
     except (ValueError, FileExistsError, FileNotFoundError) as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise _boundary(exc, remedy="`asgard agent list`로 이미 있는 이름을 확인하고 다른 이름으로 부르세요") from exc
 
     canon = profiles.normalize(name)
     if json_out:
@@ -162,13 +186,12 @@ def run_agent_create(
 
 
 def run_agent_use(name: str, *, json_out: bool = False, quiet: bool = False) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     try:
         path = profiles.ensure(name)
         canon = profiles.set_active(name)
     except (ValueError, FileNotFoundError, FileExistsError) as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise _boundary(exc, remedy="`asgard agent list`로 쓸 수 있는 이름을 확인하세요") from exc
     if json_out:
         print(json.dumps({"active": canon, "path": path}, ensure_ascii=False, indent=2))
         return 0
@@ -181,23 +204,33 @@ def run_agent_use(name: str, *, json_out: bool = False, quiet: bool = False) -> 
 
 
 def run_agent_delete(name: str, *, yes: bool = False, json_out: bool = False, quiet: bool = False) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     canon = profiles.normalize(name)
-    if not profiles.exists(canon) or canon == profiles.DEFAULT:
-        print(json.dumps({"error": f"지울 수 없는 이름: {canon!r}"}, ensure_ascii=False), file=sys.stderr)
-        return 2
+    if canon == profiles.DEFAULT:
+        raise errors.InvalidInput(
+            "기본 에이전트는 지울 수 없어요",
+            remedy="이 프로젝트의 배치를 걷어내려는 거라면 `asgard agent unbind`를 쓰세요",
+            detail={"agent": canon},
+        )
+    if not profiles.exists(canon):
+        raise errors.NotFound(
+            f"에이전트 {canon!r}를 못 찾았어요",
+            remedy="`asgard agent list`로 세워 둔 이름을 확인하세요",
+            detail={"agent": canon},
+        )
     row = next((r for r in profiles.listing() if r["id"] == canon), {})
     if not yes:
-        ui.head(f"agent · {canon} 삭제")
-        ui.warn(f"이 에이전트가 기억하던 {row.get('memory_pages', 0)}페이지도 같이 사라져요 — 되돌릴 수 없어요")
-        ui.step(ui.dim(f"    {row.get('path')}"))
-        ui.step(f"확인하려면: {ui.bold(f'asgard agent delete {canon} --yes')}")
-        return 1
+        # 확인을 요구하는 것도 실패다 — 요청한 일이 안 일어났고, 그 사실이 종료 코드로 나가야
+        # 스크립트가 "지웠다"고 오해하지 않는다. 잃을 것(기억 페이지)은 사유 안에 적는다.
+        raise errors.Conflict(
+            f"에이전트 {canon!r}를 지우면 기억 {row.get('memory_pages', 0)}페이지도 같이 사라져요 — 되돌릴 수 없어요",
+            remedy=f"확인하려면: asgard agent delete {canon} --yes",
+            detail={"agent": canon, "path": row.get("path"), "memory_pages": row.get("memory_pages", 0)},
+        )
     try:
         path = profiles.delete(canon)
     except (ValueError, FileNotFoundError) as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise _boundary(exc, remedy="`asgard agent list`로 지금 있는 이름을 확인하세요") from exc
     if json_out:
         print(json.dumps({"deleted": canon, "path": path}, ensure_ascii=False))
         return 0
@@ -217,11 +250,14 @@ def run_agent_describe(
     quiet: bool = False,
 ) -> int:
     """설명·능력 갱신 — 스웜 라우팅이 읽는 문장을 채우는 자리."""
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     canon = profiles.normalize(name)
     if not profiles.exists(canon):
-        print(json.dumps({"error": f"에이전트 {canon!r}를 못 찾았어요"}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise errors.NotFound(
+            f"에이전트 {canon!r}를 못 찾았어요",
+            remedy=f"`asgard agent create {canon}`로 먼저 만드세요",
+            detail={"agent": canon},
+        )
     profiles.write_manifest(
         canon,
         description=description,
@@ -251,13 +287,18 @@ def run_agent_bind(
     json_out: bool = False,
     quiet: bool = False,
 ) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     root = _project_root(os.getcwd())
     try:
         out = swarm.bind(root, name, mode=mode, role=role)
     except (ValueError, FileNotFoundError) as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        # 없는 이름과 잘못 쓴 자리는 다음 손이 다르다: 하나는 만들어야 하고, 하나는 고쳐 써야 한다.
+        fix = (
+            f"`asgard agent create {profiles.normalize(name)}`로 먼저 만드세요"
+            if isinstance(exc, FileNotFoundError)
+            else "`asgard agent where`로 지금 배치를 보고 --mode/--role 중 하나만 주세요"
+        )
+        raise _boundary(exc, remedy=fix) from exc
     if json_out:
         print(json.dumps(out, ensure_ascii=False, indent=2))
         return 0
@@ -279,7 +320,7 @@ def run_agent_bind(
 def run_agent_unbind(
     *, mode: str | None = None, role: str | None = None, json_out: bool = False, quiet: bool = False
 ) -> int:
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     root = _project_root(os.getcwd())
     out = swarm.unbind(root, mode=mode, role=role)
     if json_out:
@@ -294,7 +335,7 @@ def run_agent_unbind(
 
 def run_agent_where(*, json_out: bool = False, quiet: bool = False) -> int:
     """지금 여기서 누가 일하는가 — 그리고 **왜** 그 에이전트인가."""
-    ui.set_quiet(json_out or quiet)
+    _surface(json_out, quiet)
     root = _project_root(os.getcwd())
     d = swarm.describe(root)
     now = profiles.active()

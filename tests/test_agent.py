@@ -688,6 +688,9 @@ class TestRoleProviders(Base):
             configure_role_model(self.root, "native", "worker", provider="unknown")
 
     def test_role_model_cli_lists_and_validates_arguments(self):
+        # 잘못 쓴 인자는 예외로 나간다 — 그 자리는 `CliRunner`가 아니라 사용자 경계로 재야
+        # 사용자가 실제로 받는 종료 코드를 본다 (tests/cli_boundary.py).
+        from cli_boundary import run_cli
         from typer.testing import CliRunner
 
         from asgard.cli import app
@@ -698,7 +701,7 @@ class TestRoleProviders(Base):
             runner = CliRunner()
             listed = runner.invoke(app, ["role", "model"])
             changed = runner.invoke(app, ["role", "model", "codex", "thinker", "custom-sol", "--effort", "max"])
-            invalid = runner.invoke(app, ["role", "model", "unknown", "worker", "x"])
+            invalid = run_cli("role", "model", "unknown", "worker", "x")
         finally:
             os.chdir(cwd)
 
@@ -708,15 +711,20 @@ class TestRoleProviders(Base):
         self.assertIn('"model": "custom-sol"', changed.output)
         self.assertIn('"effort": "max"', changed.output)
         self.assertEqual(invalid.exit_code, 2)
+        self.assertEqual(invalid.stdout, "")  # 사람 화면에 기계 JSON을 붓지 않는다
 
     def test_role_run_rejects_bad_role_and_no_quest(self):
-        from asgard.commands.role import run_role_run
+        """둘 다 호출자가 고칠 수 있는 잘못이다 — 정본대로 2 (`errors.py`).
+
+        quest 없음이 여태 1이었다: 같은 "네가 고치면 되는 일"이 명령마다 1과 2로 갈리면
+        스크립트는 "내 잘못"과 "환경 문제"를 구별할 수 없다."""
+        from cli_boundary import run_cli
 
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            self.assertEqual(run_role_run("odin", "t"), 2)  # 미지의 역할
-            self.assertEqual(run_role_run("worker", "t"), 1)  # 활성 quest 없음
+            self.assertEqual(run_cli("role", "run", "odin", "t").exit_code, 2)  # 미지의 역할
+            self.assertEqual(run_cli("role", "run", "worker", "t").exit_code, 2)  # 활성 quest 없음
         finally:
             os.chdir(cwd)
 

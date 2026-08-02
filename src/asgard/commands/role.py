@@ -11,10 +11,12 @@ import os
 import sys
 from typing import Any, Callable
 
+from .. import errors
 from ..providers import (
     PROVIDERS,
     TRINITY_EXTRA_ROLES,
     TRINITY_ROLES,
+    ResolvedProvider,
     bridge_flags,
     normalize_model_id,
     project_section,
@@ -170,8 +172,11 @@ def run_role_model(
         print(json.dumps(role_model_state(root), ensure_ascii=False, indent=2))
         return 0
     if not host or not role:
-        print(json.dumps({"error": "host와 role이 필요"}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(
+            "host와 role이 필요해요",
+            remedy=f"asgard role model <{'|'.join(MODEL_HOSTS)}> <role> [model]",
+            detail={"host": host or "", "role": role or ""},
+        )
     try:
         out = configure_role_model(
             root,
@@ -183,8 +188,11 @@ def run_role_model(
             reset=reset,
         )
     except ValueError as exc:
-        print(json.dumps({"error": str(exc)}, ensure_ascii=False), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(
+            str(exc),
+            remedy="`asgard role list`로 지금 무엇이 어디에 놓여 있는지 보세요",
+            detail={"host": host, "role": role},
+        ) from exc
     print(json.dumps(out, ensure_ascii=False, indent=2))
     return 0
 
@@ -205,30 +213,54 @@ def run_role_list() -> int:
     return 0
 
 
-def run_role_run(role: str, task: str) -> int:
-    from ..agent.heimdall import VERDICT_TOOL, _record_writes, _role_prompt
-    from ..agent.session import AgentSession, make_client, ql
+def _bridge_preconditions(root: str, role: str, sid: str) -> dict:
+    """인자와 퀘스트 상태를 확인하고 그 상태를 돌려준다 — 아니면 왜 못 여는지를 던진다.
 
-    root = os.getcwd()
+    두 실패는 종료 코드가 같지만(2) `code`가 갈린다. 모르는 역할은 인자가 틀린 것이고, quest
+    없음은 순서가 어긋난 것이다. 호스트가 그 둘에 다르게 반응해야 하기 때문이다 — 하나는
+    명령을 고쳐 다시 부르고, 하나는 같은 명령을 quest를 연 뒤 그대로 부른다."""
+    from ..agent.session import ql
+
     if role not in TRINITY_ROLES:
-        print(json.dumps({"error": f"role은 {'/'.join(TRINITY_ROLES)} 중 하나"}), file=sys.stderr)
-        return 2
-    sid = os.environ.get("CLAUDE_SESSION_ID") or "bridge"
+        raise errors.InvalidInput(
+            f"role은 {'/'.join(TRINITY_ROLES)} 중 하나예요",
+            remedy=f'asgard role run <{"|".join(TRINITY_ROLES)}> "<과업>"',
+            detail={"role": role, "valid": list(TRINITY_ROLES)},
+        )
     try:
         state = json.loads(ql(root, "state", session=sid).stdout or "{}")
     except Exception:
         state = {}
     if not state.get("quest_id"):
-        print(
-            json.dumps({"error": "열린 quest가 없어요 — 호스트가 먼저 quest-log open을 돌려야 해요"}), file=sys.stderr
+        raise errors.Conflict(
+            "열린 quest가 없어요",
+            remedy="호스트가 quest-log open을 먼저 돌려야 해요 (asgard-provider 스킬의 순서)",
+            detail={"session": sid, "role": role},
         )
-        return 1
+    return state
 
+
+def _placed_provider(root: str, role: str) -> tuple[ResolvedProvider, ResolvedProvider]:
+    """이 역할이 놓인 자리 — 미충족이면 무엇이 비었는지까지 들고 막는다."""
     default = resolve(root)
     rrp = resolve_trinity(root, default)[role]
     if rrp.missing:
-        print(json.dumps({"error": f"[trinity.{role}] 미충족: " + "; ".join(rrp.missing)}), file=sys.stderr)
-        return 1
+        raise errors.PreflightFailed(
+            f"[trinity.{role}] 미충족: " + "; ".join(rrp.missing),
+            remedy=f"`asgard role model native {role} <model>`로 배치하거나 위에 적힌 항목을 채우세요",
+            detail={"role": role, "missing": list(rrp.missing)},
+        )
+    return default, rrp
+
+
+def run_role_run(role: str, task: str) -> int:
+    from ..agent.heimdall import VERDICT_TOOL, _record_writes, _role_prompt
+    from ..agent.session import AgentSession, make_client, ql
+
+    root = os.getcwd()
+    sid = os.environ.get("CLAUDE_SESSION_ID") or "bridge"
+    state = _bridge_preconditions(root, role, sid)
+    default, rrp = _placed_provider(root, role)
 
     criteria = state.get("criteria") or []
     level = "full" if state.get("full_required") else "micro"  # gate와 동일 기준 (결정론 도출)

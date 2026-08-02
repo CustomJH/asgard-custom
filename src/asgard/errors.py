@@ -71,6 +71,8 @@ class AsgardError(Exception):
         self.detail: dict[str, Any] = dict(detail or {})
         if cause is not None:
             self.__cause__ = cause
+        if self.exit_code == 2 and not self.remedy:
+            _note_remedyless(self)
 
     def __str__(self) -> str:
         return self.message
@@ -154,6 +156,44 @@ class UpstreamError(AsgardError):
     exit_code = 1
 
 
+# ── 처방 없는 exit 2 — 세기만 한다 ────────────────────────────────────────────
+# `exit_code == 2`는 "호출자가 고칠 수 있는 잘못"이라는 선언이다. 고칠 수 있다고 해 놓고
+# 무엇을 하면 되는지는 안 적으면, 사용자가 받는 것은 사유 한 줄뿐이고 `render_cli`는 처방
+# 줄을 아예 안 그린다. 그렇다고 그 자리에서 예외를 던지면 **오류를 내려다 오류가 난다** —
+# 진짜 사유가 그 순간 사라지므로 `_safe_detail`이 피하는 함정과 같은 함정이다.
+# 그래서 여기서는 만들어진 사실만 남기고, 판정은 테스트가 한다.
+
+_REMEDYLESS_CAP = 64
+_remedyless: list[dict[str, str]] = []
+
+
+def _note_remedyless(err: AsgardError) -> None:
+    """처방 없이 만들어진 exit 2 예외 한 건 — 어디서 났는지까지 적는다.
+
+    코드와 메시지만 남기면 테스트가 "어딘가에 처방이 빠졌다"까지만 말하고, 고칠 사람은
+    다시 저장소를 뒤져야 한다. 만든 자리를 같이 적어야 그 실패가 곧 작업 지시가 된다."""
+    import sys
+
+    where = ""
+    try:
+        frame = sys._getframe(2)  # 0=여기 · 1=__init__ · 2=예외를 만든 자리
+        where = f"{os.path.basename(frame.f_code.co_filename)}:{frame.f_lineno}"
+    except ValueError:
+        pass
+    if len(_remedyless) >= _REMEDYLESS_CAP:
+        del _remedyless[0]
+    _remedyless.append({"code": err.code, "message": err.message, "where": where})
+
+
+def remedyless() -> list[dict[str, str]]:
+    """처방 없이 만들어진 exit 2 예외들 — 최근 `_REMEDYLESS_CAP`건까지."""
+    return list(_remedyless)
+
+
+def clear_remedyless() -> None:
+    _remedyless.clear()
+
+
 # ── 아무 예외나 이 어휘로 ─────────────────────────────────────────────────────
 
 
@@ -202,15 +242,52 @@ def _safe_detail(detail: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+# ── 이 실행의 표면 ────────────────────────────────────────────────────────────
+# `--json`은 명령 하나의 취향이 아니라 **이 실행 전체의 성질**이다: 그 플래그를 받은 순간
+# stdout은 기계의 것이 되고, 실패도 성공과 같은 문법으로 나가야 소비자가 한 자리에서 읽는다.
+# 그런데 예외는 자기가 어느 표면으로 나갈지 모른다 — 그게 이 모듈의 규칙이다. 그래서
+# 플래그를 받은 명령이 경계에 한 줄로 알리고, 마지막 방어선(`cli.main`)은 그 선언을 읽는다.
+# 프로세스 하나가 명령 하나를 실행하고 끝나므로 이 상태는 실행 한 번의 수명과 같다.
+
+_json_surface = False
+
+
+def set_json_surface(on: bool) -> None:
+    """이 실행이 `--json` 표면임을 경계에 알린다."""
+    global _json_surface
+    _json_surface = bool(on)
+
+
+def json_surface() -> bool:
+    return _json_surface
+
+
 # ── 표면별 얼굴 ───────────────────────────────────────────────────────────────
 
 
 def render_cli(err: AsgardError) -> None:
     """터미널의 얼굴 — ✘ 한 줄, 처방 한 줄, 그리고 필요하면 점검표.
 
+    `--json`을 받은 실행에서는 그 얼굴이 JSON이다. 실패만 사람 말로 새면 그 표면은 실패를
+    다룰 수 없는 표면이 된다 — 자식 프로세스로 이 명령을 띄운 쪽이 파싱할 것을 못 찾고
+    원문을 그대로 화면에 붓는다 (`run --json`에서 실제로 벌어지던 일).
+
+    사람용 문장은 **전부 stderr로** 나간다. stdout은 그 명령의 산출물 자리다: 처방 한 줄을
+    거기 적으면 `asgard agent show X > out.json`이 데이터 스트림에 사람 말을 받는다. 같은
+    이유로 `--quiet`이 처방을 지우지 않는다 — 조용히 하라는 말은 장식을 빼라는 뜻이지,
+    무엇을 하면 되는지를 감추라는 뜻이 아니다.
+
     `ui`를 여기서 늦게 임포트하는 것은 순환 때문이다: `ui`는 테마·윈터미널을 끌고 오고,
     오류 모듈은 그보다 아래에 있어야 어디서든 임포트된다."""
+    import sys
+
     from . import ui
+
+    if _json_surface:
+        import json
+
+        sys.stdout.write(json.dumps(json_error(err), ensure_ascii=False) + "\n")
+        return
 
     ui.fail(err.message)
     checks = err.detail.get("checks")
@@ -219,7 +296,7 @@ def render_cli(err: AsgardError) -> None:
             if isinstance(check, dict):
                 _render_check(check)
     if err.remedy:
-        ui.step(err.remedy)
+        sys.stderr.write(f"  {ui.paint(ui._INFO, '→')} {err.remedy}\n")
 
 
 def _render_check(check: dict) -> None:
@@ -228,9 +305,9 @@ def _render_check(check: dict) -> None:
     from . import ui
 
     mark = ui.paint("32", "✔") if check.get("ok") else ui.paint("31", "✘")
-    sys.stdout.write(f"  {mark} {str(check.get('name', '')).ljust(22)} {ui.dim(str(check.get('detail', '')))}\n")
+    sys.stderr.write(f"  {mark} {str(check.get('name', '')).ljust(22)} {ui.dim(str(check.get('detail', '')))}\n")
     if not check.get("ok") and check.get("fix"):
-        sys.stdout.write(f"      {ui.paint(ui._INFO, '→')} {check['fix']}\n")
+        sys.stderr.write(f"      {ui.paint(ui._INFO, '→')} {check['fix']}\n")
 
 
 def json_error(err: AsgardError) -> dict[str, Any]:

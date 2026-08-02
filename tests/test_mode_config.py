@@ -136,6 +136,10 @@ class TestModeConfig(unittest.TestCase):
                     configure_mode(self.root, mode, role, **options)
 
     def test_cli_matrix_show_round_trip_and_non_tty_picker(self) -> None:
+        # 픽커 자리는 사용자 경계로 잰다: 실패가 예외로 나가므로 `CliRunner`는 그것을 삼켜
+        # 1로 적지만, 터미널에서 친 사람은 2를 받는다 (tests/cli_boundary.py).
+        from cli_boundary import run_cli
+
         from asgard.cli import app
 
         runner = CliRunner()
@@ -146,7 +150,7 @@ class TestModeConfig(unittest.TestCase):
             shown = runner.invoke(app, ["mode", "show", "codex", "--json"])
             changed = runner.invoke(app, ["mode", "set", "codex", "worker", "--model", "cli-worker"])
             reset = runner.invoke(app, ["mode", "reset", "codex", "worker"])
-            picked = runner.invoke(app, ["mode", "pick"])
+            picked = run_cli("mode", "pick")
         finally:
             os.chdir(cwd)
 
@@ -158,7 +162,7 @@ class TestModeConfig(unittest.TestCase):
         self.assertEqual(json.loads(changed.output)["effective"]["roles"]["worker"]["model"], "cli-worker")
         self.assertEqual(reset.exit_code, 0, reset.output)
         self.assertEqual(picked.exit_code, 2)
-        self.assertIn("TTY", picked.output)
+        self.assertIn("TTY", picked.stderr)
 
 
 if __name__ == "__main__":

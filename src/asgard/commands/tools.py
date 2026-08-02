@@ -1,17 +1,21 @@
 """Tool catalog diagnostics for the canonical Asgard Tool Kernel."""
 
 import json
-import sys
 
+from .. import errors
 from ..agent.tool_kernel import ROLE_CAPABILITIES, ToolContext, build_session_registry, cc_tools_for_role
 
 _CLI_ROLES = ("thinker", "worker", "verifier", "freyja", "thor", "eitri", "loki", "ullr", "mimir")
 
 
 def run_tools_list(role: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
     if role not in _CLI_ROLES:
-        print(json.dumps({"error": f"role must be one of: {', '.join(_CLI_ROLES)}"}), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(
+            f"role must be one of: {', '.join(_CLI_ROLES)}",
+            remedy="run: asgard tools list --role worker",
+            detail={"role": role, "valid": list(_CLI_ROLES)},
+        )
     registry = build_session_registry()
     data = {
         "role": role,
