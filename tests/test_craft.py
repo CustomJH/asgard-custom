@@ -7,10 +7,13 @@
 사라진다. 규칙 하나를 더할 때 음성 대조군을 같이 넣지 않으면 그 규칙은 미완성이다.
 
 래칫 계약도 여기서 고정한다: 물려받은 부채는 막지 않고, 이번 변경이 나쁘게 만든 것만 막는다.
+그 계약은 경로가 아니라 파일에 걸린다 — 개명이 기준선을 지우면 파일을 옮긴 것만으로 물려받은
+위반이 전부 차단으로 뒤집힌다 (MoveTest).
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
 import subprocess
 import tempfile
@@ -208,36 +211,49 @@ class CostTest(unittest.TestCase):
         self.assertEqual(len(found), 1, [f.detail for f in found])
 
 
-class RatchetTest(unittest.TestCase):
-    """실제 git 저장소 위에서 base 대조를 확인한다 — 래칫은 파일 내용이 아니라 이력에 걸린다."""
+def _oversize(branches: int) -> str:
+    """예산을 넘는 함수 하나. 분기를 넣는 이유는 데이터 면제(DATA_STMT_MAX)에 걸리지 않기 위해서다."""
+    return "def wide(a):\n" + "".join(f"    if a == {i}:\n        a = {i}\n" for i in range(branches))
+
+
+LEAK = "import json\n\n\ndef load(path):\n    return json.load(open(path))\n\n\n"
+INHERITED = LEAK + _oversize(40)  # 물려받은 부채 2건 — unclosed-acquire + unit-oversize
+# 위와 겹치는 줄이 없는 파일. 삭제와 신설이 한 변경에 있어도 이건 그 삭제의 도착지가 아니다.
+UNRELATED = "import os\n\n\ndef other(b):\n" + "".join(f"    if b == {i}0:\n        b = os.sep\n" for i in range(45))
+
+_ENV = {
+    **os.environ,
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@t",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@t",
+}
+
+
+class _GitTree:
+    """임시 git 저장소를 세우는 손잡이. TestCase 가 아니라서 상속해도 시험이 두 번 돌지 않는다."""
 
     def _repo(self, stack) -> str:
         root = stack.enter_context(tempfile.TemporaryDirectory())
-        env = {
-            **os.environ,
-            "GIT_AUTHOR_NAME": "t",
-            "GIT_AUTHOR_EMAIL": "t@t",
-            "GIT_COMMITTER_NAME": "t",
-            "GIT_COMMITTER_EMAIL": "t@t",
-        }
         for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
-            subprocess.run(["git", *args], cwd=root, check=True, env=env, capture_output=True)
+            subprocess.run(["git", *args], cwd=root, check=True, env=_ENV, capture_output=True)
         return root
 
     def _commit(self, root: str) -> None:
-        env = {
-            **os.environ,
-            "GIT_AUTHOR_NAME": "t",
-            "GIT_AUTHOR_EMAIL": "t@t",
-            "GIT_COMMITTER_NAME": "t",
-            "GIT_COMMITTER_EMAIL": "t@t",
-        }
-        subprocess.run(["git", "add", "-A"], cwd=root, check=True, env=env, capture_output=True)
-        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True, env=env, capture_output=True)
+        subprocess.run(["git", "add", "-A"], cwd=root, check=True, env=_ENV, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "base"], cwd=root, check=True, env=_ENV, capture_output=True)
+
+    def _write(self, root: str, rel: str, text: str) -> None:
+        path = os.path.join(root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(text)
+
+
+class RatchetTest(_GitTree, unittest.TestCase):
+    """실제 git 저장소 위에서 base 대조를 확인한다 — 래칫은 파일 내용이 아니라 이력에 걸린다."""
 
     def test_inherited_debt_passes_and_a_fresh_defect_blocks(self):
-        import contextlib
-
         leaky = "import json\n\ndef f(p):\n    return json.load(open(p))\n"
         with contextlib.ExitStack() as stack:
             root = self._repo(stack)
@@ -259,6 +275,85 @@ class RatchetTest(unittest.TestCase):
         report = craft.judge(".", ["README.md"])
         self.assertEqual(report.findings, ())
         self.assertEqual(len(report.undetermined), 1, "판정 못 한 것을 통과로 세면 게이트가 거짓말을 한다")
+
+
+class MoveTest(_GitTree, unittest.TestCase):
+    """개명은 기준선을 지우는 사건이 아니다 — 자리를 옮긴 파일도 물려받은 부채를 그대로 물려받는다.
+
+    이 시험이 없으면 다음에 일어나는 일이 정해져 있다: 가족 단위로 파일 수십 개를 패키지로 묶는
+    변경 한 번이 거짓 차단 수십 건으로 돌아오고, 사람은 판정을 고치는 대신 게이트를 끈다.
+
+    반대쪽도 같은 무게로 못박는다 — 옮기면서 나빠진 것과, 이동을 가장한 신규 파일은 여전히 막힌다.
+    개명을 따라가느라 진짜 악화를 놓치면 래칫이 막아야 할 절반을 잃는다.
+    """
+
+    def _base(self, stack) -> str:
+        """`pkg/rules.py` 에 물려받은 부채 2건을 담아 커밋한 저장소."""
+        root = self._repo(stack)
+        self._write(root, "pkg/rules.py", INHERITED)
+        self._commit(root)
+        return root
+
+    def _git_mv(self, root: str, old: str, new: str) -> None:
+        os.makedirs(os.path.dirname(os.path.join(root, new)), exist_ok=True)
+        subprocess.run(["git", "mv", old, new], cwd=root, check=True, env=_ENV, capture_output=True)
+
+    def _plain_mv(self, root: str, old: str, new: str, text: str) -> None:
+        """색인을 거치지 않은 이동 — 새 파일은 추적되지 않아 git diff 에 아예 안 나온다."""
+        self._write(root, new, text)
+        os.unlink(os.path.join(root, old))
+
+    def test_a_staged_rename_keeps_its_baseline(self):
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            self._git_mv(root, "pkg/rules.py", "pkg/craft/rules.py")
+            report = craft.judge(root, ["pkg/craft/rules.py"])
+            self.assertEqual(report.blocking, (), "옮기기만 한 파일이 막히면 게이트가 개명을 벌하는 것이다")
+            self.assertEqual(report.inherited, 1)
+            self.assertEqual(report.moved, (("pkg/craft/rules.py", "pkg/rules.py"),))
+
+    def test_a_move_git_never_saw_keeps_its_baseline(self):
+        """`git mv` 없이 옮긴 자리 — 새 파일이 추적되지 않으면 git 은 개명 짝을 지어 주지 않는다."""
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            self._plain_mv(root, "pkg/rules.py", "pkg/craft/rules.py", INHERITED)
+            report = craft.judge(root, ["pkg/craft/rules.py"])
+            self.assertEqual(report.blocking, ())
+            self.assertEqual(report.moved, (("pkg/craft/rules.py", "pkg/rules.py"),))
+
+    def test_a_move_that_also_grew_a_function_still_blocks(self):
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            self._plain_mv(root, "pkg/rules.py", "pkg/craft/rules.py", LEAK + _oversize(50))
+            report = craft.judge(root, ["pkg/craft/rules.py"])
+            self.assertEqual([f.rule for f in report.blocking], ["unit-oversize"])
+
+    def test_a_move_that_also_added_a_leak_still_blocks(self):
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            extra = INHERITED + "\n\ndef load2(path):\n    return json.load(open(path))\n"
+            self._plain_mv(root, "pkg/rules.py", "pkg/craft/rules.py", extra)
+            report = craft.judge(root, ["pkg/craft/rules.py"])
+            self.assertEqual([f.rule for f in report.blocking], ["unclosed-acquire"])
+
+    def test_a_copy_beside_the_original_inherits_nothing(self):
+        """옛 파일이 그대로 있으면 그건 이동이 아니라 신설이다 — 베껴 온 부채는 이번 변경 책임이다."""
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            self._write(root, "pkg/other.py", INHERITED)
+            report = craft.judge(root, ["pkg/other.py"])
+            self.assertEqual(sorted(f.rule for f in report.blocking), ["unclosed-acquire", "unit-oversize"])
+            self.assertEqual(report.moved, ())
+
+    def test_an_unrelated_new_file_does_not_adopt_a_deleted_baseline(self):
+        """삭제와 신설이 같은 변경에 있어도, 닮지 않았으면 짝이 아니다 (문턱은 git 과 같은 50%)."""
+        with contextlib.ExitStack() as stack:
+            root = self._base(stack)
+            os.unlink(os.path.join(root, "pkg/rules.py"))
+            self._write(root, "pkg/other.py", UNRELATED)
+            report = craft.judge(root, ["pkg/other.py"])
+            self.assertEqual([f.rule for f in report.blocking], ["unit-oversize"])
+            self.assertEqual(report.moved, ())
 
 
 class SelfApplicationTest(unittest.TestCase):

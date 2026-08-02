@@ -70,6 +70,7 @@ def _payload(report: craft.Report, fixed: craft_fix.FixReport | None) -> str:
         "base": report.base,
         "judged": list(report.judged),
         "undetermined": [{"path": p, "why": w} for p, w in report.undetermined],
+        "moved": [{"path": p, "from": o} for p, o in report.moved],
         "inherited": report.inherited,
         "blocking": [asdict(f) for f in report.blocking],
         "findings": [asdict(f) for f in report.findings],
@@ -116,6 +117,9 @@ def _render(report: craft.Report, targets: tuple[str, ...], fixed: craft_fix.Fix
         ui.done()
         return
     ui.step(f"판정한 파일 {len(report.judged)}개")
+    if report.moved:
+        pairs = ", ".join(f"{old} → {new}" for new, old in report.moved[:3])
+        ui.step(ui.dim(f"자리를 옮긴 파일 {len(report.moved)}개는 옛 경로에서 기준선을 이어 봤어요 — {pairs}"))
     if report.undetermined:
         ui.warn(
             f"판정에서 빠진 게 {len(report.undetermined)}건 있어요 — {', '.join(p for p, _ in report.undetermined[:5])}"
