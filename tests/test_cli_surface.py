@@ -256,7 +256,7 @@ class TestOneNamePerBehaviour(unittest.TestCase):
 
     def test_hidden_aliases_are_not_offered_by_completion(self):
         visible = {name for name, sub in self._map_group().commands.items() if not sub.hidden}
-        self.assertEqual(visible, set(comp._MAP_SUB))
+        self.assertEqual(visible, set(comp._surface().subs["map"]))
 
     def test_the_documented_aliases_still_run(self):
         """숨겼다고 지운 것은 아니다 — 옛 이름으로도 여전히 닿아야 한다."""
@@ -293,7 +293,7 @@ class TestPowerShellCompletion(unittest.TestCase):
 
     def test_every_top_level_command_is_offered(self):
         script = self._script()
-        for name in comp._SUMMARY:
+        for name in comp._surface().commands:
             with self.subTest(command=name):
                 self.assertIn(f"'{name}'", script)
 
