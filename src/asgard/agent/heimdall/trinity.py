@@ -24,15 +24,15 @@ from ...hooks.quest_log import trivial_evidence as _trivial_evidence
 from ..session import gate, ql
 from .bifrost import NULL_LEDGER, CoordinatorLoop, open_ledger
 from .classify import _gate_repair, _gate_sig
-from .journal import _record_writes
+from .journal import record_writes
 from .planning import _UNITS_NOTE, _parse_units, _plan_waves
 from .roles import (
     _ROLE_KEY,
     LAGOM_VERIFIER_NOTE,
-    _role_prompt,
     _skill_support,
     _transition_line,
     delivery_canon_note,
+    role_prompt,
     work_shape_note,
     worker_canon_hint,
 )
@@ -232,7 +232,7 @@ class TrinityRun:
         pre_work = self.pre_work
         if pre_work is None:  # run() 가드와 동일 — 타입 내로잉
             return
-        _record_writes(self._hd.root, self.sid, list(pre_work.writes))
+        record_writes(self._hd.root, self.sid, list(pre_work.writes))
         ql(
             self._hd.root,
             "append",
@@ -506,7 +506,7 @@ class TrinityRun:
             # 역할에 다른 에이전트가 배치돼 있으면 **그 에이전트의** 1차 기억이 들어간다 (스웜).
             memory = hd._memory_snap_for(role) if hd._mem_allowed(placed.profile.name, placed.source) else ""
             return hd._session(
-                _role_prompt("asgard-thinker.md") + hd.lagom + charter + manual + memory + hd.map_note,
+                role_prompt("asgard-thinker.md") + hd.lagom + charter + manual + memory + hd.map_note,
                 role=role,
                 model=selected if rp is None else None,
                 readonly=True,
@@ -832,7 +832,7 @@ class TrinityRun:
 
             def make(rp=None):
                 return hd._session(
-                    _role_prompt("asgard-worker.md")
+                    role_prompt("asgard-worker.md")
                     + hd.lagom
                     + hd.comments
                     + hd.manual_worker
@@ -1065,7 +1065,7 @@ class TrinityRun:
         def mk_worker(m=self.model, w=writes, s_id=self.sid, rl="worker", rp=None):
             # verifier는 무주입 (mk_verifier) — 게이트 기준이 lagom으로 흔들리면 안 된다
             return hd._session(
-                _role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
+                role_prompt("asgard-worker.md") + hd.lagom + skill_note + hd.map_note,
                 extra_tools=[DISPATCH_TOOL, ASK_TOOL, *skill_tools],
                 handlers={
                     "dispatch": hd._dispatch_handler(s_id, w),
@@ -1148,7 +1148,7 @@ class TrinityRun:
             fallback_prompt=fallback_worker_prompt,
         )
         writes.extend(r.writes)
-        _record_writes(hd.root, self.sid, writes)
+        record_writes(hd.root, self.sid, writes)
         ql(
             hd.root,
             "append",
@@ -1224,7 +1224,7 @@ class TrinityRun:
 
         def mk_verifier(m=self.model, rl="verifier", ch=charter_v, rp=None, paths=verifier_paths, mn=manual_v):
             session = hd._session(
-                _role_prompt("asgard-verifier.md") + ch + mn + (LAGOM_VERIFIER_NOTE if hd.lagom else ""),
+                role_prompt("asgard-verifier.md") + ch + mn + (LAGOM_VERIFIER_NOTE if hd.lagom else ""),
                 extra_tools=[VERDICT_TOOL],
                 handlers={"verdict": lambda i: "Verdict received"},
                 role=rl,

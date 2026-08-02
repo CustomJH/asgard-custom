@@ -395,7 +395,7 @@ class TestDeliveryDeclarative(EvoBase):
         self.assertTrue(role_writable("asgard-thor.md"))
 
     def test_heimdall_dispatch_surfaces_match(self):
-        from asgard.agent.heimdall import _DELIVERY, _DELIVERY_READONLY, _DELIVERY_TIERS
+        from asgard.agent.heimdall.roles import _DELIVERY, _DELIVERY_READONLY, _DELIVERY_TIERS
 
         self.assertEqual(set(_DELIVERY), set(_DELIVERY_TIERS))
         self.assertEqual(_DELIVERY_READONLY, frozenset({"loki", "mimir"}))
@@ -581,8 +581,8 @@ class TestNoInjectionInvariants(EvoBase):
         learned = mock.Mock(return_value="\n\n# 학습 스킬")
         fake = self._fake_heimdall(learned)
         with (
-            mock.patch("asgard.agent.heimdall.dispatch.ql"),
-            mock.patch("asgard.agent.heimdall.dispatch._skill_support", return_value=("", [], {})) as support,
+            mock.patch("asgard.agent.heimdall.delivery.ql"),
+            mock.patch("asgard.agent.heimdall.delivery._skill_support", return_value=("", [], {})) as support,
         ):
             handler = heimdall.DeliveryDispatch(cast(heimdall.Heimdall, fake)).dispatch_handler("sid", [])
             handler({"agent": "loki", "task": "반례 탐색", "why": ""})

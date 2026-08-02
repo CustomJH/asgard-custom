@@ -1,7 +1,11 @@
-"""딜리버리 디스패치 — 전문가 위임 + thor 편대 fan-out.
+"""딜리버리 위임 — 전문가 child 세션 + thor 편대 fan-out.
 
 DeliveryDispatch는 Heimdall이 소유하는 협력자다: 세션 생성·모델 선택·토큰 계측은
 오케스트레이터(hd)에 위임하고, 여기는 위임 계약(스킬 주입·격리 workspace·scope 검증)만 진다.
+
+`orchestration.dispatch`와 다른 것이다. 저기는 Task 한 번의 시도(수명 권한·회로 차단)를 다루고,
+여기는 전문가에게 일을 넘기는 계약을 다룬다. 모델이 부르는 툴 이름이 `dispatch`라서 핸들러·툴
+스키마는 그 이름을 그대로 쓰지만, 모듈 이름은 클래스 이름(DeliveryDispatch)을 따라간다.
 """
 
 from __future__ import annotations
@@ -64,6 +68,11 @@ def _squad_scopes(mode: str, tasks: list[dict]) -> dict[str, list[str]]:
     return scopes
 
 
+def _in_scope(path: str, allowed: list[str]) -> bool:
+    """편대 단위가 만진 파일이 그 단위에 허용된 범위 안인지."""
+    return any(path == s or path.startswith(s + "/") for s in allowed)
+
+
 def _checked_run(session, prompt: str):
     """child 세션 실행 + 취소 승격 — 취소된 산출이 편입(capture/apply)되기 전에 끊는다.
     child.run 직호출은 core._run_turn의 TurnCancelled 승격을 우회한다 (Codex 교차 리뷰 지적)."""
@@ -82,78 +91,125 @@ class DeliveryDispatch:
     def __init__(self, hd):
         self._hd = hd
 
+    def _squad_unit(self, sid: str, spec: dict, mode: str, allowed: list[str], squad_root: str):
+        """편대 한 기 — 격리 workspace에서 thor child를 돌리고 (결과, 패치)를 돌려준다.
+
+        범위 검증도 여기서 끝낸다. 허용 범위 밖을 건드린 패치는 회수 전에 끊어야 한다 — 한 번
+        회수되면 그 다음은 병합이고, 병합 뒤에는 누가 남의 자리에 썼는지 diff에 안 남는다."""
+        from ..unit_workspace import UnitWorkspace, WorkspaceError
+
+        hd = self._hd
+        task, why = str(spec["task"]), str(spec["why"])
+        ql(
+            hd.root,
+            "append",
+            session=sid,
+            stdin=json.dumps(
+                {
+                    "role": "worker",
+                    "event": "delegate",
+                    "commands": [{"cmd": f"dispatch:thor:{spec['id']} — {mode}: {why[:100]}", "exit_code": 0}],
+                }
+            ),
+        )
+        system = _DELIVERY["thor"] + "\n\n" + hd.delivery_identity + hd.map_note
+        # 서브에 편대 프로토콜 무주입 — 깊이 1 봉인은 도구만이 아니라 지식 표면에서도 유지한다
+        catalog, skill_tools, skill_handlers = _skill_support("thor", hd.root, exclude=("asgard-thor-einherjar",))
+        system += catalog
+        with UnitWorkspace(squad_root, f"thor-{spec['id']}") as workspace:
+            child = hd._session(
+                system,
+                extra_tools=skill_tools,
+                handlers=skill_handlers,
+                model=hd._delivery_model("thor"),
+                role="thor",
+                # 관측 이름에만 단위를 적는다. 편대는 같은 `thor` 넷이 동시에 도는데
+                # 이름이 같으면 독의 상태 행에 `thor ⋮ thor ⋮ thor`가 서고, 그건 넷이
+                # 돈다는 것 말고는 아무 말도 안 한다. `role`은 안 건드린다 — 그건 provider
+                # 배치·도구 가시성·프롬프트 계층이 함께 읽는 키라서, 여기서 바꾸면 라벨
+                # 하나 고치려다 편대의 모델과 권한이 같이 움직인다.
+                label=f"thor:{spec['id']}",
+                cwd=workspace.path,
+                quiet=True,
+            )
+            child._nested_dispatch = True
+            result = _checked_run(
+                child,
+                f"Squad unit {spec['id']} ({mode})\nQuest: {task}\nRationale: {why}\n"
+                f"Allowed file scope: {', '.join(allowed)}\nDo not modify anything outside "
+                "this scope. Run unit-scoped verification only (the global gate belongs to "
+                "the lead). Return = changed files + decision summary + verification "
+                "evidence + blockers.",
+            )
+            hd._track_cache(result)
+            patch = workspace.capture(extra_paths=tuple(result.writes))
+            outside = [path for path in patch.paths if not _in_scope(path, allowed)]
+            if outside:
+                raise WorkspaceError("scope violation: " + ", ".join(sorted(outside)))
+        return result, patch
+
+    def _settle_squad(
+        self,
+        mode: str,
+        completed: list[tuple],
+        squad_root: str,
+        worker_result_writes: list[str],
+        board: TodoBoard,
+        failures: list[dict],
+    ) -> list[dict]:
+        """자식이 끝난 뒤 산출물을 정착시킨다 — split은 본류 적용까지, tournament는 패치 회수까지.
+
+        한 과업이 done이 되는 시점은 자식이 끝난 때가 아니라 여기를 지난 때다. 적용에 실패한
+        단위는 done이 아니라 failed로 적고 나머지는 계속 간다 — 하나 때문에 전부 버리지 않는다."""
+        from ..unit_workspace import UnitWorkspace
+
+        payload: list[dict] = []
+        for spec, result, patch in completed:
+            if mode == "tournament":
+                rel = f"deliverables/thor-tournament/{spec['id']}.patch"
+                dest = os.path.join(squad_root, rel)
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                with open(dest, "wb") as fh:
+                    fh.write(patch.data)
+                if rel not in worker_result_writes:
+                    worker_result_writes.append(rel)
+                payload.append(
+                    {"id": spec["id"], "patch": rel, "paths": list(patch.paths), "summary": result.text[-1200:]}
+                )
+                board.mark(spec["id"], "done", rel)
+                continue
+            try:
+                UnitWorkspace(squad_root, f"thor-{spec['id']}").apply(patch)
+            except Exception as exc:
+                board.mark(spec["id"], "failed", type(exc).__name__)
+                failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
+                continue
+            writes = list(patch.paths)
+            worker_result_writes.extend(w for w in writes if w not in worker_result_writes)
+            payload.append({"id": spec["id"], "writes": writes, "summary": result.text[-1200:]})
+            board.mark(spec["id"], "done", files_note(len(writes)))
+        return payload
+
     def thor_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         """thor-lead → thor N기 병렬 fan-out. 자식에는 coordinate 도구를 주지 않아 깊이 1을 봉인한다.
 
         split = 브리프 scope(파일 범위) 비중첩을 계약으로 검증하고 병합 — 부품 분담의 암묵 충돌 차단.
         tournament = 같은 난제 N-버전을 격리 시도하고 패치만 회수(본류 미적용) — 승자 선정·적용·검증은
-        대장 몫이다 (에인헤랴르: 검증 통과분 중 승자 1개만 본류)."""
+        대장 몫이다 (에인헤랴르: 검증 통과분 중 승자 1개만 본류).
+
+        여기는 fan-out/fan-in 만 진다: 한 기의 실행은 `_squad_unit`, 산출물 정착은 `_settle_squad`."""
         hd = self._hd
 
         def handler(inp: dict) -> str:
             from concurrent.futures import ThreadPoolExecutor, as_completed
-
-            from ..unit_workspace import UnitWorkspace, WorkspaceError
 
             mode = str(inp.get("mode") or "split")
             tasks = list(inp.get("tasks") or [])
             scopes = _squad_scopes(mode, tasks)
             squad_root = cwd or hd.root
 
-            def in_scope(path: str, allowed: list[str]) -> bool:
-                return any(path == s or path.startswith(s + "/") for s in allowed)
-
             def run_one(index: int, spec: dict):
-                task, why = str(spec["task"]), str(spec["why"])
-                allowed = scopes[str(spec["id"])]
-                ql(
-                    hd.root,
-                    "append",
-                    session=sid,
-                    stdin=json.dumps(
-                        {
-                            "role": "worker",
-                            "event": "delegate",
-                            "commands": [{"cmd": f"dispatch:thor:{spec['id']} — {mode}: {why[:100]}", "exit_code": 0}],
-                        }
-                    ),
-                )
-                system = _DELIVERY["thor"] + "\n\n" + hd.delivery_identity + hd.map_note
-                # 서브에 편대 프로토콜 무주입 — 깊이 1 봉인은 도구만이 아니라 지식 표면에서도 유지한다
-                catalog, skill_tools, skill_handlers = _skill_support(
-                    "thor", hd.root, exclude=("asgard-thor-einherjar",)
-                )
-                system += catalog
-                with UnitWorkspace(squad_root, f"thor-{spec['id']}") as workspace:
-                    child = hd._session(
-                        system,
-                        extra_tools=skill_tools,
-                        handlers=skill_handlers,
-                        model=hd._delivery_model("thor"),
-                        role="thor",
-                        # 관측 이름에만 단위를 적는다. 편대는 같은 `thor` 넷이 동시에 도는데
-                        # 이름이 같으면 독의 상태 행에 `thor ⋮ thor ⋮ thor`가 서고, 그건 넷이
-                        # 돈다는 것 말고는 아무 말도 안 한다. `role`은 안 건드린다 — 그건 provider
-                        # 배치·도구 가시성·프롬프트 계층이 함께 읽는 키라서, 여기서 바꾸면 라벨
-                        # 하나 고치려다 편대의 모델과 권한이 같이 움직인다.
-                        label=f"thor:{spec['id']}",
-                        cwd=workspace.path,
-                        quiet=True,
-                    )
-                    child._nested_dispatch = True
-                    result = _checked_run(
-                        child,
-                        f"Squad unit {spec['id']} ({mode})\nQuest: {task}\nRationale: {why}\n"
-                        f"Allowed file scope: {', '.join(allowed)}\nDo not modify anything outside "
-                        "this scope. Run unit-scoped verification only (the global gate belongs to "
-                        "the lead). Return = changed files + decision summary + verification "
-                        "evidence + blockers.",
-                    )
-                    hd._track_cache(result)
-                    patch = workspace.capture(extra_paths=tuple(result.writes))
-                    outside = [path for path in patch.paths if not in_scope(path, allowed)]
-                    if outside:
-                        raise WorkspaceError("scope violation: " + ", ".join(sorted(outside)))
+                result, patch = self._squad_unit(sid, spec, mode, scopes[str(spec["id"])], squad_root)
                 return index, spec, result, patch
 
             # 편대 브리프도 배정 단위와 같은 성격의 목록이다 — 대장이 뭘 몇 개로 나눠 던졌는지를
@@ -162,9 +218,7 @@ class DeliveryDispatch:
             board.plan((spec["id"], str(spec.get("task") or "")) for spec in tasks)
             completed = []
             failures: list[dict] = []
-            payload = []
-            # 한 과업이 done이 되는 시점은 자식이 끝난 때가 아니라 산출물이 정착한 때다 —
-            # split은 패치 적용까지, tournament는 패치 회수까지가 그 과업의 끝이다.
+            payload: list[dict] = []
             try:
                 board.start(spec["id"] for spec in tasks)
                 with ThreadPoolExecutor(max_workers=len(tasks)) as pool:
@@ -179,31 +233,10 @@ class DeliveryDispatch:
                             board.mark(spec["id"], "failed", type(exc).__name__)
                             failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
 
-                completed.sort(key=lambda item: item[0])
-                for _, spec, result, patch in completed:
-                    if mode == "tournament":
-                        rel = f"deliverables/thor-tournament/{spec['id']}.patch"
-                        dest = os.path.join(squad_root, rel)
-                        os.makedirs(os.path.dirname(dest), exist_ok=True)
-                        with open(dest, "wb") as fh:
-                            fh.write(patch.data)
-                        if rel not in worker_result_writes:
-                            worker_result_writes.append(rel)
-                        payload.append(
-                            {"id": spec["id"], "patch": rel, "paths": list(patch.paths), "summary": result.text[-1200:]}
-                        )
-                        board.mark(spec["id"], "done", rel)
-                        continue
-                    try:
-                        UnitWorkspace(squad_root, f"thor-{spec['id']}").apply(patch)
-                    except Exception as exc:
-                        board.mark(spec["id"], "failed", type(exc).__name__)
-                        failures.append({"id": spec["id"], "error": f"{type(exc).__name__}: {exc}"})
-                        continue
-                    writes = list(patch.paths)
-                    worker_result_writes.extend(w for w in writes if w not in worker_result_writes)
-                    payload.append({"id": spec["id"], "writes": writes, "summary": result.text[-1200:]})
-                    board.mark(spec["id"], "done", files_note(len(writes)))
+                completed.sort(key=lambda item: item[0])  # 완료 순서가 아니라 브리프 순서로 정착시킨다
+                payload = self._settle_squad(
+                    mode, [item[1:] for item in completed], squad_root, worker_result_writes, board, failures
+                )
             finally:
                 board.close()
             out: dict = {"mode": mode, "results": payload, "failures": failures}

@@ -404,7 +404,7 @@ def _identity(root: str, drop: tuple = ()) -> str:
 def delivery_identity(root: str) -> str:
     """딜리버리 자식(thor/freyja/eitri/loki)이 받는 정체성 — 주석 계약은 남는다.
 
-    이들은 코드를 쓰는데 COMMENT_CANON을 따로 안 받으므로(dispatch.py) 이 절이 유일한 통로다."""
+    이들은 코드를 쓰는데 COMMENT_CANON을 따로 안 받으므로(delivery.py) 이 절이 유일한 통로다."""
     return _identity(root, drop=_NATIVE_DROP + _conditional_drop(root))
 
 
@@ -416,5 +416,9 @@ def direct_identity(root: str) -> str:
     return _identity(root, drop=_NATIVE_DROP + _conditional_drop(root) + ("comments",))
 
 
-def _role_prompt(fname: str) -> str:
+def role_prompt(fname: str) -> str:
+    """역할 파일 하나를 네이티브 세션이 받을 system 프롬프트로 만든다.
+
+    패키지 공개 표면이다 — 네이티브 순환(trinity·waves)과 호스트 브릿지(`asgard role run`)가
+    같은 프롬프트를 받아야 모드가 갈려도 규율이 안 갈린다."""
     return _role_body(fname) + NATIVE_NOTE

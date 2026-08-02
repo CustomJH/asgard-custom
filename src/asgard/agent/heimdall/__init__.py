@@ -14,37 +14,32 @@ Claude Code/Codex/Cursor 세션과 퀘스트 로그을 이어 쓴다 (크로스�
 중첩 디스패치: Worker에 dispatch 툴 — 딜리버리 전문가(child context, depth 1)에
 위임하고 배정 근거를 delegate 이벤트로 퀘스트 로그에 남긴다. 딜리버리는 재위임 불가 (툴 미제공).
 
-모듈 구성 (구 단일 모듈 heimdall.py의 분해 — 공개 표면은 여기서 그대로 재수출):
+모듈 구성 (구 단일 모듈 heimdall.py의 분해):
   roles    — 역할 프롬프트 본문·모델 티어·스킬 리졸버·노트 주입
   classify — 요청 분류·API 오류·게이트 시그니처 (순수 판정)
   planning — 배정 단위 파싱·wave 위상 정렬·재개 스냅샷
   toolspec — 네이티브 세션 툴 스키마 (순수 데이터)
   journal  — .asgard/state 텔레메트리·write sentinel IO
-  dispatch — 딜리버리 위임·편대 fan-out (DeliveryDispatch 협력자)
+  delivery — 딜리버리 위임·편대 fan-out (DeliveryDispatch 협력자)
   todo     — 배정 단위 진행 보드 (계획 목록 → 단위별 상태 전이 → 최종판)
   waves    — 배정 단위 wave 실행·티켓 lease (WaveRunner 협력자)
   trinity  — 퀘스트 순환 상태기계 (TrinityRun)
   core     — Heimdall 오케스트레이터 (세션·모델·라우팅)
+
+여기 `__all__`에는 밑줄 이름을 넣지 않는다. 밑줄은 "이 모듈 안에서 자유롭게 옮겨도 된다"는
+신호인데 공표되는 순간 그 신호가 죽고, 단일 모듈을 11개로 쪼갠 이 패키지에서 그 비용은 다음
+재분해 때 그대로 돌아온다. 그래서 밖에서 써야 하는 것은 밑줄 없는 정식 이름으로 올리고
+(`role_prompt`·`record_writes`), 하위 모듈끼리는 서로를 직접 임포트한다. 내부를 알아야 하는
+테스트도 파사드가 아니라 하위 모듈(`heimdall.roles`·`heimdall.planning`)을 직접 임포트한다 —
+시험이 내부를 아는 것은 괜찮지만, 그것을 파사드에 넣으면 interface 계층까지 따라 알게 된다.
 """
 
 from ..session import gate, ql
 from .classify import classify_api_error, classify_heuristic, memory_write_intent
 from .core import Heimdall, SessionLike
-from .dispatch import DeliveryDispatch
-from .journal import _log_classify, _record_writes
-from .planning import _parse_units, _plan_waves, _resume_snapshot
-from .roles import (
-    _DELIVERY,
-    _DELIVERY_READONLY,
-    _DELIVERY_TIERS,
-    LAGOM_VERIFIER_NOTE,
-    NATIVE_NOTE,
-    _identity,
-    _mimir_note,
-    _role_body,
-    _role_prompt,
-    _skill_support,
-)
+from .delivery import DeliveryDispatch
+from .journal import record_writes
+from .roles import LAGOM_VERIFIER_NOTE, NATIVE_NOTE, role_prompt
 from .todo import TodoBoard
 from .toolspec import (
     DISPATCH_TOOL,
@@ -69,20 +64,9 @@ __all__ = [
     "WaveRunner",
     "classify_api_error",
     "classify_heuristic",
-    "memory_write_intent",
     "gate",
+    "memory_write_intent",
     "ql",
-    "_DELIVERY",
-    "_DELIVERY_READONLY",
-    "_DELIVERY_TIERS",
-    "_identity",
-    "_log_classify",
-    "_mimir_note",
-    "_parse_units",
-    "_plan_waves",
-    "_record_writes",
-    "_resume_snapshot",
-    "_role_body",
-    "_role_prompt",
-    "_skill_support",
+    "record_writes",
+    "role_prompt",
 ]

@@ -278,7 +278,7 @@ class TestSkillResolver(unittest.TestCase):
 
 class TestWiring(unittest.TestCase):
     def test_heimdall_delivery_includes_eitri(self):
-        from asgard.agent.heimdall import _DELIVERY, _DELIVERY_TIERS
+        from asgard.agent.heimdall.roles import _DELIVERY, _DELIVERY_TIERS
 
         self.assertIn("eitri", _DELIVERY)
         self.assertEqual(_DELIVERY_TIERS["eitri"], "standard")
@@ -383,7 +383,7 @@ class TestThorLead(unittest.TestCase):
 
     def test_heimdall_resolver_covers_lead(self):
         # 편대장 디스패치에도 전용 스킬 주입 — 소스 문자열 대신 리졸버를 실제로 부른다.
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         note, tools, handlers = _skill_support("thor-lead")
         self.assertEqual([t["name"] for t in tools], ["load_skill"])

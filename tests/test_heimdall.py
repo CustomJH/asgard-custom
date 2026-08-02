@@ -1539,7 +1539,7 @@ class TestWaveParallel(Base):
         self.assertEqual(open(os.path.join(self.root, "shared.txt")).read(), "user\n")
 
     def test_parse_units_valid_and_fallbacks(self):
-        from asgard.agent.heimdall import _parse_units
+        from asgard.agent.heimdall.planning import _parse_units
 
         units = _parse_units(PLAN_WITH_UNITS) or []
         self.assertEqual([u["id"] for u in units], [1, 2, 3])
@@ -1559,7 +1559,7 @@ class TestWaveParallel(Base):
         )
 
     def test_plan_waves_topology_and_file_overlap(self):
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         units = [
             {"id": 1, "files": ["a.py"], "access": []},
@@ -1589,7 +1589,7 @@ class TestWaveParallel(Base):
         배차 장부는 topo_waves 로 한 묶음이라 적고 실행은 _plan_waves 로 두 wave 를 돌렸다.
         겹침을 conflicts 로 넘기면 같은 함수가 같은 답을 낸다.
         """
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
         from asgard.orchestration import topo_waves
 
         units = [
@@ -1602,7 +1602,7 @@ class TestWaveParallel(Base):
 
     def test_dependencies_dominate_file_overlap(self):
         """access 가 있으면 겹침 판정보다 순서가 먼저다 — 3 은 1·2 뒤에 한 번만 온다."""
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         units = [
             {"id": 1, "files": ["a.py"], "access": []},
@@ -1613,13 +1613,13 @@ class TestWaveParallel(Base):
 
     def test_a_fully_overlapping_ready_set_yields_single_unit_waves(self):
         """준비된 것이 전부 서로 겹쳐도 wave 하나에 하나씩 나오고 끝난다."""
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         units = [{"id": uid, "files": ["same.py"], "access": []} for uid in (1, 2, 3)]
         self.assertEqual(self.wave_ids(_plan_waves(units, self.root)), [[1], [2], [3]])
 
     def test_path_prefix_overlaps_only_at_a_directory_boundary(self):
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         nested = [{"id": 1, "files": ["a/b"], "access": []}, {"id": 2, "files": ["a/b/c"], "access": []}]
         self.assertEqual(self.wave_ids(_plan_waves(nested, self.root)), [[1], [2]])
@@ -1627,7 +1627,7 @@ class TestWaveParallel(Base):
         self.assertEqual(self.wave_ids(_plan_waves(sibling, self.root)), [[1, 2]])
 
     def test_symlinked_paths_resolve_to_one_key(self):
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         with open(os.path.join(self.root, "real.py"), "w") as handle:
             handle.write("x\n")
@@ -1637,7 +1637,7 @@ class TestWaveParallel(Base):
 
     def test_access_outside_the_unit_list_is_rejected(self):
         """목록에 없는 단위를 가리키는 access — topo_waves 는 무시하지만 여기서는 실행 순서 유실이다."""
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         with self.assertRaisesRegex(ValueError, "dependency graph"):
             _plan_waves([{"id": 1, "files": [], "access": [9]}, {"id": 2, "files": [], "access": []}])
@@ -1663,7 +1663,7 @@ class TestWaveParallel(Base):
         """무작위 그래프 200개 — 어느 wave 도 의존을 앞지르지 않고 같은 wave 안에서 파일이 겹치지 않는다."""
         import random
 
-        from asgard.agent.heimdall import _plan_waves
+        from asgard.agent.heimdall.planning import _plan_waves
 
         def clashes(left: list[str], right: list[str]) -> bool:
             return any(a == b or a.startswith(b + "/") or b.startswith(a + "/") for a in left for b in right)
@@ -1681,7 +1681,8 @@ class TestWaveParallel(Base):
                 done |= {unit["id"] for unit in wave}
 
     def test_resume_snapshot_reuses_done_units_and_returns_only_retryable_work(self):
-        from asgard.agent.heimdall import _resume_snapshot, ql
+        from asgard.agent.heimdall import ql
+        from asgard.agent.heimdall.planning import _resume_snapshot
 
         ql(
             self.root,
@@ -1859,7 +1860,7 @@ class TestWaveParallel(Base):
 
     def test_wave_partial_failure_records_success_units_before_raise(self):
         """CUS-247 — 한 단위 fatal 이어도 성공 단위의 완료 처리·writes 기록을 확정한 뒤 전파.
-        기존 ex.map은 lazy 예외 재발생으로 성공 단위의 ql append·_record_writes까지 끊었다."""
+        기존 ex.map은 lazy 예외 재발생으로 성공 단위의 ql append·record_writes까지 끊었다."""
         units = [
             {"id": 1, "subtask": "a", "files": ["ok.txt"], "criteria": [], "access": []},
             {"id": 2, "subtask": "b", "files": ["bad.txt"], "criteria": [], "access": []},
@@ -1981,7 +1982,7 @@ class TestWaveParallel(Base):
                 ]
                 if scenario == "record-writes":
                     patches.append(
-                        mock.patch("asgard.agent.heimdall.waves._record_writes", side_effect=OSError("writes failed"))
+                        mock.patch("asgard.agent.heimdall.waves.record_writes", side_effect=OSError("writes failed"))
                     )
                 # 인덱스로 조립하면 패치를 하나 더할 때마다 산술이 깨진다 — 전부 적용한다
                 with contextlib.ExitStack() as stack:

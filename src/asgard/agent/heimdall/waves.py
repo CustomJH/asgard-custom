@@ -14,10 +14,10 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 from ..session import TurnCancelled, ql
-from .journal import _record_writes
+from .journal import record_writes
 from .patch_merge import merge_unit_patches
 from .planning import _plan_waves
-from .roles import _role_prompt, _skill_support, work_shape_note
+from .roles import _skill_support, role_prompt, work_shape_note
 from .ticket_lease import TicketLease
 from .todo import TodoBoard, files_note
 from .toolspec import ASK_TOOL, DISPATCH_TOOL
@@ -98,7 +98,7 @@ class _Ledger:
     def persist(self) -> None:
         """센티넬을 디스크에 확정한다. 실패할 수 있는 티켓 호출보다 **먼저** 불러야 한다 —
         유실되면 디스크의 쓰기가 게이트에 orphan으로 남는다 (CUS-247)."""
-        _record_writes(self.hd.root, self.sid, self.writes)
+        record_writes(self.hd.root, self.sid, self.writes)
 
 
 class WaveRunner:
@@ -229,7 +229,7 @@ class WaveRunner:
 
         def mk(rp=None):
             return hd._session(
-                _role_prompt("asgard-worker.md") + hd.lagom + hd.comments + hd.manual_worker + skill_note + hd.map_note,
+                role_prompt("asgard-worker.md") + hd.lagom + hd.comments + hd.manual_worker + skill_note + hd.map_note,
                 extra_tools=[DISPATCH_TOOL, ASK_TOOL, *skill_tools],
                 handlers={
                     "dispatch": hd._dispatch_handler(led.sid, writes, cwd),

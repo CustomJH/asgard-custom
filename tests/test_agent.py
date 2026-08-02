@@ -15,7 +15,7 @@ import unittest
 from unittest import mock
 
 from asgard.agent import tools as T
-from asgard.agent.heimdall import _record_writes
+from asgard.agent.heimdall import record_writes
 from asgard.agent.session import gate, ql
 
 
@@ -459,7 +459,7 @@ class TestLedgerWiring(Base):
         sid = "native-t1"
         self.assertEqual(ql(self.root, "open", "q1", "--criteria", "c", session=sid).returncode, 0)
         open(os.path.join(self.root, "f.txt"), "a").write("more\n")
-        _record_writes(self.root, sid, ["f.txt"])
+        record_writes(self.root, sid, ["f.txt"])
         ql(
             self.root,
             "append",
@@ -494,7 +494,7 @@ class TestLedgerWiring(Base):
         sid = "native-t2"
         ql(self.root, "open", "q2", "--criteria", "c", session=sid)
         open(os.path.join(self.root, "f.txt"), "a").write("tamper\n")
-        _record_writes(self.root, sid, ["f.txt"])
+        record_writes(self.root, sid, ["f.txt"])
         blocked, reason = gate(self.root, sid)
         self.assertTrue(blocked)
         self.assertIn("PASS", reason)
@@ -519,8 +519,8 @@ class TestLedgerWiring(Base):
         self.assertIn('"delegate"', log)
 
     def test_record_writes_merges(self):
-        _record_writes(self.root, "s", ["a.py"])
-        _record_writes(self.root, "s", ["a.py", "b.py"])
+        record_writes(self.root, "s", ["a.py"])
+        record_writes(self.root, "s", ["a.py", "b.py"])
         data = json.load(open(os.path.join(self.root, ".asgard", "state", "writes-s.json")))
         self.assertEqual(data, ["a.py", "b.py"])
 
@@ -836,7 +836,7 @@ class TestDeliveryAgents(unittest.TestCase):
         self.assertNotIn("tools:", thinker_fm.replace("tools: Read", ""))
 
     def test_heimdall_delivery_derives_from_templates(self):
-        from asgard.agent.heimdall import _DELIVERY
+        from asgard.agent.heimdall.roles import _DELIVERY
 
         self.assertEqual(sorted(_DELIVERY), ["eitri", "freyja", "loki", "mimir", "thor", "thor-lead"])
         for g, body in _DELIVERY.items():

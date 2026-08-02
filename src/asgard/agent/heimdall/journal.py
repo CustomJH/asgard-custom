@@ -23,8 +23,11 @@ def _log_classify(root: str, entry: dict) -> None:
         pass
 
 
-def _record_writes(root: str, sid: str, writes: list[str]) -> None:
+def record_writes(root: str, sid: str, writes: list[str]) -> None:
     """write-sentinel 대응 — 네이티브 세션의 write 흔적을 게이트가 보는 파일에 기록.
+
+    패키지 공개 표면이다 — 호스트 브릿지(`asgard role run worker`)도 같은 파일에 미러해야
+    게이트가 네이티브 턴과 브릿지 턴을 구별 없이 읽는다.
     temp+rename 원자 쓰기 — 크래시 절단 파일은 게이트가 못 읽어 fail-open(orphan write 통과)이 된다."""
     if not writes:
         return

@@ -114,7 +114,7 @@ class TestWiring(unittest.TestCase):
     def test_heimdall_resolver_registry_includes_eitri(self):
         # 소스 문자열이 아니라 리졸버를 실제로 부른다 — 허용 목록이 상수로 빠져도, 배선이
         # 다른 메서드로 옮겨가도 "eitri 에게 로더가 열린다"는 판정은 그대로 선다.
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         note, tools, handlers = _skill_support("eitri")
         self.assertEqual([t["name"] for t in tools], ["load_skill"])

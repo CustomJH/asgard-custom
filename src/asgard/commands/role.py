@@ -334,7 +334,7 @@ def _turn_inputs(
 
 
 def run_role_run(role: str, task: str, json_out: bool = False) -> int:
-    from ..agent.heimdall import _record_writes, _role_prompt
+    from ..agent.heimdall import record_writes, role_prompt
     from ..agent.session import AgentSession, make_client, ql
 
     root = os.getcwd()
@@ -368,7 +368,7 @@ def run_role_run(role: str, task: str, json_out: bool = False) -> int:
         make_client(rrp),
         rrp,
         root,
-        _role_prompt(f"asgard-{role}.md"),
+        role_prompt(f"asgard-{role}.md"),
         extra_tools=extra,
         tool_handlers=handlers,
         on_text=_out,
@@ -390,7 +390,7 @@ def run_role_run(role: str, task: str, json_out: bool = False) -> int:
         ql(root, "append", session=sid, stdin=json.dumps({"role": "thinker", "event": "plan", "criteria": criteria}))
         result["appended"] = "plan"
     elif role == "worker":
-        _record_writes(root, sid, r.writes)  # write-sentinel 미러 — sid가 호스트 세션과 일치할 때 증거가 된다
+        record_writes(root, sid, r.writes)  # write-sentinel 미러 — sid가 호스트 세션과 일치할 때 증거가 된다
         ql(
             root,
             "append",

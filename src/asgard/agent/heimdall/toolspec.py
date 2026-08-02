@@ -1,7 +1,7 @@
 """네이티브 세션 툴 스키마 — 순수 데이터 선언.
 
 Verifier verdict, 딜리버리 dispatch, thor 편대 fan-out.
-핸들러 구현은 dispatch/trinity 모듈 몫 — 여기는 계약 표면만.
+핸들러 구현은 delivery/trinity 모듈 몫 — 여기는 계약 표면만.
 """
 
 from __future__ import annotations

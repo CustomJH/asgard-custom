@@ -250,7 +250,7 @@ class AllModesTest(unittest.TestCase):
         self.assertIn('short_description: "Research what people', policy)
 
     def test_native_loop_discovers_and_loads_through_its_own_tool(self):
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         note, tools, handlers = _skill_support("worker", self.root)
         self.assertIn(_SKILL, note)

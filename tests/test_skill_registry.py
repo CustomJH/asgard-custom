@@ -359,7 +359,7 @@ class RegistryTest(unittest.TestCase):
         self.assertIn("import-linter", tooling)
         self.assertIn("ArchUnit", tooling)
 
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         note, tools, handlers = _skill_support("thor", self.root)
         self.assertIn(name, note)
@@ -556,7 +556,7 @@ class RegistryTest(unittest.TestCase):
         hits = skill_registry.resolve_skills(self.root, "database vacuum", "thor")
         self.assertIn(("acme-db", "ACME_DB_POLICY\n"), hits)
         self.assertIn("ACME_DB_POLICY", skill_registry.show_skill(self.root, "acme-db") or "")
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         note, tools, handlers = _skill_support("thor", self.root)
         self.assertIn("acme-db", note)

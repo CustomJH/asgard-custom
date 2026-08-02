@@ -36,7 +36,7 @@ from .classify import (
     has_write_verbs,
     memory_write_intent,
 )
-from .dispatch import DeliveryDispatch
+from .delivery import DeliveryDispatch
 from .journal import _log_classify
 from .planning import _resume_snapshot
 from .roles import (
@@ -711,7 +711,7 @@ class Heimdall:
                 self.cache_read_tokens += cr
                 self.cache_prompt_tokens += total
 
-    # ── 딜리버리 디스패치 파사드 (구현 = dispatch.DeliveryDispatch) ──
+    # ── 딜리버리 디스패치 파사드 (구현 = delivery.DeliveryDispatch) ──
     def _thor_squad_handler(self, sid: str, worker_result_writes: list[str], cwd: str | None = None):
         return self._dispatchers.thor_squad_handler(sid, worker_result_writes, cwd)
 

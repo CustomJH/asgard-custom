@@ -136,7 +136,7 @@ class TestWiring(unittest.TestCase):
         # 소스 문자열이 아니라 리졸버를 실제로 부른다. 아래 test_mimir_note_match_and_fail_open
         # 은 "brunnr 본문이 노트에 없다"를 재는데, 그 전제(요청하면 온다)를 여기서 잠근다 —
         # 로더가 죽어도 노트는 계속 깨끗해서 저쪽만으로는 통과해 버린다.
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         note, tools, handlers = _skill_support("mimir")
         self.assertEqual([t["name"] for t in tools], ["load_skill"])
@@ -160,7 +160,7 @@ class TestWiring(unittest.TestCase):
         self.assertEqual(mimir_note("버튼 색을 파랑으로 바꿔줘"), "")  # 일반 과업은 무주입
 
     def test_heimdall_delivery_includes_mimir_readonly(self):
-        from asgard.agent.heimdall import _DELIVERY, _DELIVERY_READONLY, _DELIVERY_TIERS
+        from asgard.agent.heimdall.roles import _DELIVERY, _DELIVERY_READONLY, _DELIVERY_TIERS
 
         self.assertIn("mimir", _DELIVERY)
         self.assertEqual(_DELIVERY_TIERS["mimir"], "standard")

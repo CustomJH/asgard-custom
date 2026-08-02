@@ -115,7 +115,7 @@ class TestNativeWiring(unittest.TestCase):
     """네이티브 progressive disclosure — 메타데이터 색인 + 선택된 본문만 도구 로드."""
 
     def test_worker_and_thor_support_defer_full_body_until_selected(self):
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
         from asgard.skill_registry import resolve_skills
 
         for agent in _COMMON_AGENTS:
@@ -153,7 +153,7 @@ class TestNativeWiring(unittest.TestCase):
                                  열어도 verifier용 스킬이 레지스트리에 없어 여전히 빈 손이다.
                                  관측되는 유출이 없으니 잡을 것도 없다 — 이 판정은 **문이
                                  열렸는가**가 아니라 **지식이 나갔는가**를 잰다."""
-        from asgard.agent.heimdall import _skill_support
+        from asgard.agent.heimdall.roles import _skill_support
 
         for role in ("verifier", "loki", "thinker", "ullr", "delivery"):
             with self.subTest(role=role):
