@@ -143,8 +143,8 @@ class TestModeConfig(unittest.TestCase):
         try:
             listed = run_cli("mode", "--json")
             shown = run_cli("mode", "show", "codex", "--json")
-            changed = run_cli("mode", "set", "codex", "worker", "--model", "cli-worker")
-            reset = run_cli("mode", "reset", "codex", "worker")
+            changed = run_cli("mode", "set", "codex", "worker", "--model", "cli-worker", "--json")
+            reset = run_cli("mode", "reset", "codex", "worker", "--json")
             picked = run_cli("mode", "pick")
         finally:
             os.chdir(cwd)
@@ -162,6 +162,29 @@ class TestModeConfig(unittest.TestCase):
         self.assertEqual(picked.exit_code, 2)
         self.assertEqual(picked.stdout, "")
         self.assertIn("TTY", picked.stderr)
+
+    def test_changing_a_setting_without_the_flag_is_a_human_surface(self) -> None:
+        """`mode set`·`mode reset`은 플래그 없이 부르면 표를 낸다 — stdout에 기계 JSON을 붓지 않는다.
+
+        여태 이 둘은 플래그와 무관하게 payload를 통째로 JSON으로 냈다. 값을 바꾸고 확인하러 온
+        사람에게 필요한 것은 그 dict가 아니라 지금 이 모드가 무엇으로 도는가다. `--json`이 생기기
+        전에는 기계가 읽을 자리가 그것뿐이라 그렇게 돼 있었고, 이제 그 필요는 플래그가 받는다."""
+        from cli_boundary import run_cli
+
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            changed = run_cli("mode", "set", "codex", "worker", "--model", "cli-worker")
+            reset = run_cli("mode", "reset", "codex", "worker")
+        finally:
+            os.chdir(cwd)
+
+        for result in (changed, reset):
+            self.assertEqual(result.exit_code, 0, result.stderr)
+            with self.assertRaises(json.JSONDecodeError):
+                json.loads(result.stdout)
+            self.assertIn("worker", result.stdout)  # 같은 사실을 사람 쪽으로도 낸다
+        self.assertIn("cli-worker", changed.stdout)
 
 
 if __name__ == "__main__":

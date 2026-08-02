@@ -10,7 +10,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .. import theme, ui
+from .. import errors, theme, ui
 from ..skill_registry import (
     assign_skill,
     install_plugin,
@@ -22,6 +22,11 @@ from ..skill_registry import (
     show_skill_resource,
     skills,
 )
+
+
+def _emit(payload: dict) -> None:
+    """`--json` 산출물 — 사람 표면(rich 패널·본문)이 차지하던 stdout을 그대로 이어받는다."""
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _console() -> Console:
@@ -105,17 +110,21 @@ def run_skills_list(json_out: bool = False) -> int:
     return 0
 
 
-def run_skills_show(name: str, body_only: bool = True, resource: str | None = None) -> int:
+def run_skills_show(name: str, body_only: bool = True, resource: str | None = None, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
     try:
         text = show_skill_resource(os.getcwd(), name, resource) if resource else show_skill(os.getcwd(), name)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(str(exc), remedy=f"asgard skills show {name} 로 스킬 본문을 보세요") from exc
     if text is None:
-        print(f"skill not found: {name}", file=sys.stderr)
-        return 2
+        raise errors.NotFound(
+            f"skill not found: {name}", remedy="asgard skills list 로 있는 스킬을 보세요", detail={"skill": name}
+        )
     if resource is None and body_only and text.startswith("---"):
         text = text.split("---", 2)[2].lstrip()
+    if json_out:
+        _emit({"skill": name, "resource": resource or "", "frontmatter": not body_only, "text": text})
+        return 0
     print(text, end="" if text.endswith("\n") else "\n")
     return 0
 
@@ -160,12 +169,24 @@ def run_plugins_list(json_out: bool = False) -> int:
     return 0
 
 
-def run_plugins_install(source: str) -> int:
+def run_plugins_install(source: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
     try:
         manifest = install_plugin(source)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(
+            str(exc), remedy="플러그인 디렉터리 경로를 확인하세요", detail={"source": source}
+        ) from exc
+    if json_out:
+        _emit(
+            {
+                "plugin": manifest["name"],
+                "version": manifest["version"],
+                "skills": list(manifest["skills"]),
+                "installed": True,
+            }
+        )
+        return 0
     print(f"installed {manifest['name']} {manifest['version']} ({len(manifest['skills'])} skills)")
     return 0
 
@@ -178,21 +199,33 @@ def run_skills_run(name: str, args: list[str]) -> int:
         return 2
 
 
-def run_skills_assign(name: str, agent: str, *, assigned: bool) -> int:
+def run_skills_assign(name: str, agent: str, *, assigned: bool, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
     try:
         assign_skill(os.getcwd(), name, agent, assigned=assigned)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(
+            str(exc),
+            remedy="asgard skills list 로 스킬 이름을, --agent 로 역할을 확인하세요",
+            detail={"skill": name, "role": agent},
+        ) from exc
+    if json_out:
+        _emit({"skill": name, "role": agent, "assigned": assigned})
+        return 0
     print(f"{'assigned' if assigned else 'unassigned'} {name} {'to' if assigned else 'from'} {agent}")
     return 0
 
 
-def run_skills_enable(name: str, *, enabled: bool) -> int:
+def run_skills_enable(name: str, *, enabled: bool, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
     try:
         set_skill_enabled(os.getcwd(), name, enabled=enabled)
     except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 2
+        raise errors.InvalidInput(
+            str(exc), remedy="asgard skills list 로 있는 스킬을 보세요", detail={"skill": name}
+        ) from exc
+    if json_out:
+        _emit({"skill": name, "enabled": enabled})
+        return 0
     print(f"{'enabled' if enabled else 'disabled'} {name}")
     return 0

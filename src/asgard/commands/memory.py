@@ -23,7 +23,7 @@ import webbrowser
 from collections.abc import Callable
 from urllib.parse import quote
 
-from .. import memory, ui
+from .. import errors, memory, ui
 from ..memory_bridge import (
     GATE_OFF,
     GATE_ON,
@@ -140,21 +140,55 @@ def _finish_plan(plan_id: str, token: str, *, success: bool) -> None:
 
 
 def _guard(fn: Callable[[], int]) -> int:
-    """공통 예외 변환 — ValueError는 처방 메시지, 그 외는 짧은 오류 한 줄 (traceback 금지)."""
+    """공통 예외 변환 — ValueError는 처방 메시지, 그 외는 짧은 오류 한 줄 (traceback 금지).
+
+    문장을 여기서 조립하지 않고 `errors.render_cli`에 넘기는 이유는 표면이 둘이기 때문이다:
+    `--json`을 받은 실행에서 실패만 사람 말로 나가면 자식 프로세스로 이 명령을 띄운 쪽이
+    파싱할 것을 못 찾는다. 어느 얼굴로 그릴지는 `errors.set_json_surface`가 이미 정해 뒀다."""
     try:
         return fn()
+    except errors.AsgardError as e:
+        errors.render_cli(e)
+        return e.exit_code
     except ValueError as e:
-        ui.fail(str(e))
+        errors.render_cli(_error(str(e)))
         return 1
     except Exception as e:  # 파일 권한·손상 등 — 사용자용 한 줄로
-        ui.fail(f"{type(e).__name__}: {e}")
+        errors.render_cli(errors.coerce(e))
         return 1
 
 
-def run_add(text: str, title: str | None, kind: str, links: str) -> int:
+def _error(
+    message: str, *, code: str = "invalid_input", remedy: str = "", detail: dict | None = None
+) -> errors.AsgardError:
+    """이 표면의 실패 한 건.
+
+    종료 코드를 1로 고정한다. 정본(`errors.py`)은 호출자가 고칠 수 있는 잘못을 2로 정해 뒀지만,
+    이 표면의 not-found·거부는 처음부터 1이었고 그 값을 읽는 테스트가 있다. 코드 통일은 표면
+    전체를 한 번에 옮기는 별건이고, 여기서 혼자 옮기면 memory만 다른 규약을 갖는다."""
+    return errors.AsgardError(message, code=code, remedy=remedy, detail=detail or {}, exit_code=1)
+
+
+def _fail(message: str, *, code: str = "invalid_input", remedy: str = "", detail: dict | None = None) -> int:
+    """실패를 이 실행의 표면으로 내고 종료 코드를 돌려준다 — 사람은 ✘ 한 줄, `--json`은 error 봉투."""
+    errors.render_cli(_error(message, code=code, remedy=remedy, detail=detail))
+    return 1
+
+
+def _emit(payload: dict) -> None:
+    """`--json` 산출물 — 사람 문장이 차지하던 stdout을 이것 하나가 받는다."""
+    print(_json.dumps(payload, ensure_ascii=False, indent=2))
+
+
+def run_add(text: str, title: str | None, kind: str, links: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         slug, path = memory.add(text, title=title, kind=kind, links=links)
-        ui.ok(f"added {slug} → {path}")
+        if json_out:
+            _emit({"slug": slug, "path": path, "kind": kind, "added": True})
+        else:
+            ui.ok(f"added {slug} → {path}")
         return 0
 
     return _guard(_do)
@@ -263,8 +297,9 @@ def run_sync_turn(mode: str) -> int:
         return 0  # lifecycle 메모리 장애가 host turn을 막으면 안 된다
 
 
-def run_project_approve(approval_id: str) -> int:
+def run_project_approve(approval_id: str, json_out: bool = False) -> int:
     """Native/CLI 사용자 승인을 Git 정본 → backend 순서로 실행한다."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
         found = find_config(os.getcwd())
@@ -275,6 +310,17 @@ def run_project_approve(approval_id: str) -> int:
             raise ValueError("project memory backend is not trusted on this machine; run asgard memory connect")
         target = backend_target(cfg)
         result = commit_approved_record(root, cfg, approval_id)
+        if json_out:
+            _emit(
+                {
+                    "approval_id": approval_id,
+                    "approved": True,
+                    "canonical_path": result.get("canonical_path") or "",
+                    "engine": target["engine"],
+                    "project_id": target["project_id"],
+                }
+            )
+            return 0
         if result.get("canonical_path"):
             ui.ok(f"project memory canonical saved → {result['canonical_path']} (commit this file)")
         ui.ok(f"project memory saved → engine={target['engine']} project_id={target['project_id']}")
@@ -283,12 +329,13 @@ def run_project_approve(approval_id: str) -> int:
     return _guard(_do)
 
 
-def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> int:
+def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         threat = memory.scan_threats(text)
         if threat:
-            ui.fail(f"injection scan: {threat}")
-            return 1
+            return _fail(f"injection scan: {threat}", code="invalid_input", detail={"threat": threat})
         if plan_id and not yes:
             raise ValueError("--plan-id requires --yes")
         claim_token = None
@@ -296,7 +343,15 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
             plan, claim_token = _claim_plan(plan_id, text, kind)
         else:
             plan = memory.plan_ingest(text)
-        if plan["action"] == "merge":
+        absorb = [
+            (entry[0] if isinstance(entry, list | tuple) and entry else entry) for entry in plan.get("absorb") or []
+        ]
+        if json_out:
+            # 계획을 먼저 낸다 — 사람이 화면에서 보고 판단하는 것과 같은 사실이다.
+            plan_view = {"action": plan["action"], "absorb": absorb}
+            if plan["action"] == "merge":
+                plan_view |= {"slug": plan["slug"], "title": plan["title"], "slot": plan.get("slot", "")}
+        elif plan["action"] == "merge":
             why = f"slot={plan['slot']}" if plan.get("slot") else f"sim={plan['sim']}"
             ui.step(f"plan: merge into '{plan['title']}' ({plan['slug']}, {why})")
         else:
@@ -305,17 +360,22 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
         # 요점이다: 오늘은 흡수가 merge 계획에만 실리지만(`pages._plan_identity_slot`), 그
         # 사실에 기대면 계획이 넓어지는 날 삭제 고지만 조용히 빠진다. 툴 레인
         # (`propose.outcome_text`)도 action을 안 보고 목록만 본다 — 판정을 맞춰 둔다.
-        for entry in plan.get("absorb") or []:
-            slug = entry[0] if isinstance(entry, list | tuple) and entry else entry
-            ui.warn(f"plan: absorb (archive) contradicting page — {slug}")
+        if not json_out:
+            for slug in absorb:
+                ui.warn(f"plan: absorb (archive) contradicting page — {slug}")
         # 자동저장은 이 표면에도 같은 답을 해야 한다 — 툴에서는 바로 저장되는데 CLI 에서만
         # 되묻는다면, 사용자가 켠 설정이 어디서 듣는지를 매번 기억해야 한다.
         auto = memory.autosave_enabled()
-        if auto and not yes:
+        if auto and not yes and not json_out:
             ui.step("autosave on — 이제 승인 없이 저장해요 (끄려면: asgard memory autosave off --tier personal)")
         if not yes and not auto:
-            if not sys.stdin.isatty():
+            # `--json`은 물을 자리가 아니다 — 프롬프트를 띄우면 산출물 스트림에 질문이 섞이고,
+            # 부른 쪽은 답할 수 없다. 대기 승인으로 남기고 그 id를 값으로 돌려준다.
+            if json_out or not sys.stdin.isatty():
                 approval_id = _save_plan(text, kind, plan)
+                if json_out:
+                    _emit({"saved": False, "approval_id": approval_id, "plan": plan_view, "reason": "needs --yes"})
+                    return 1
                 ui.step(f"approval-id: {approval_id}")
                 ui.warn("non-interactive without --yes — not saved (ask-before-save)")
                 return 1
@@ -330,7 +390,10 @@ def run_ingest(text: str, kind: str, yes: bool, plan_id: str | None = None) -> i
             raise
         if plan_id and claim_token:
             _finish_plan(plan_id, claim_token, success=True)
-        ui.ok(f"{action}: {slug}")
+        if json_out:
+            _emit({"saved": True, "action": action, "slug": slug, "kind": kind, "plan": plan_view})
+        else:
+            ui.ok(f"{action}: {slug}")
         return 0
 
     return _guard(_do)
@@ -488,20 +551,28 @@ def run_contradictions(json_out: bool = False, include_seen: bool = False) -> in
     return _guard(_do)
 
 
-def run_contradiction_seen(a: str, b: str, note: str = "") -> int:
+def run_contradiction_seen(a: str, b: str, note: str = "", json_out: bool = False) -> int:
     """모순 하나에 "봤다"를 표시한다 — **해소가 아니다.**
 
     표시가 하는 일은 하나뿐이다: 다음 손질에서 이 쌍을 다시 안 보여 준다. 페이지는 한 글자도
     안 바뀌고 어느 쪽이 참인지도 안 적힌다 — 해소는 사람이 정본을 고쳐서 한다. 두 페이지 중
     하나가 나중에 바뀌면 표시는 저절로 풀린다 (넘긴 판단은 그때의 두 문장에 대한 것이다)."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
         d = memory.memory_dir()
         row = memory.acknowledge_contradiction(memory.contradiction_key(a, b), note=note, d=d)
         if row is None:
-            ui.fail(f"장부에 없는 쌍 · {a} ↔ {b}")
-            ui.step("목록에 있는 슬러그를 그대로 적어 주세요: asgard memory contradictions")
-            return 1
+            return _fail(
+                f"장부에 없는 쌍 · {a} ↔ {b}",
+                code="not_found",
+                remedy="목록에 있는 슬러그를 그대로 적어 주세요: asgard memory contradictions",
+                detail={"a": a, "b": b},
+            )
+        if json_out:
+            # 표시는 해소가 아니다 — 그 사실을 기계도 읽을 수 있어야 소비자가 "고쳐졌다"고 안 읽는다.
+            _emit({"a": row["a"], "b": row["b"], "acknowledged": True, "resolved": False, "note": note})
+            return 0
         ui.ok(f"봤다고 표시함 · {row['a']} ↔ {row['b']}")
         ui.warn("해소된 건 아니에요 — 두 페이지는 그대로고, 어느 쪽이 맞는지도 안 적혔어요.")
         ui.step("고치려면 정본을 직접 고쳐라 (asgard memory show <slug> 로 본문 확인).")
@@ -756,33 +827,47 @@ def run_approve(proposal_id: str, json_out: bool = False) -> int:
     return _guard(_do)
 
 
-def run_discard(proposal_id: str) -> int:
+def run_discard(proposal_id: str, json_out: bool = False) -> int:
     """제안 하나를 버린다."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
         from ..memory import propose
 
         if propose.discard(proposal_id):
-            ui.ok(f"버림 · {proposal_id}")
+            if json_out:
+                _emit({"id": proposal_id, "discarded": True})
+            else:
+                ui.ok(f"버림 · {proposal_id}")
             return 0
-        ui.fail(f"없거나 이미 처리된 제안 id · {proposal_id}")
-        return 1
+        return _fail(
+            f"없거나 이미 처리된 제안 id · {proposal_id}",
+            code="not_found",
+            remedy="asgard memory proposals 로 대기 중인 제안을 보세요",
+            detail={"id": proposal_id},
+        )
 
     return _guard(_do)
 
 
-def run_reindex() -> int:
+def run_reindex(json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         d = memory.ensure_home()
         n = memory.reindex(d)
         coverage = memory.vec_coverage(d)
-        ui.ok(f"reindexed {n} pages → index.md + state.db")
         # 고쳤으면 표시를 지운다 — 안 지우면 넛지가 영영 침묵해 다음 드리프트를 못 알린다.
         with contextlib.suppress(OSError):
             os.remove(os.path.join(d, COVERAGE_NUDGE_FLAG))
         from .. import memory_semantic as sem
 
-        if sem.mode() == "off":
+        mode = sem.mode()
+        if json_out:
+            _emit({"directory": d, "pages": n, "semantic": mode, "coverage": coverage})
+            return 0
+        ui.ok(f"reindexed {n} pages → index.md + state.db")
+        if mode == "off":
             ui.step("시맨틱이 꺼져 있어서 벡터는 안 만들었어요 (lexical 2경로)")
         elif coverage["ok"]:
             ui.ok(f"시맨틱 색인 · {coverage['fresh']}/{coverage['pages']} 페이지")
@@ -793,30 +878,48 @@ def run_reindex() -> int:
     return _guard(_do)
 
 
-def run_export_okf(destination: str) -> int:
+def run_export_okf(destination: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         count = memory.export_okf(destination)
-        ui.ok(f"exported {count} personal memory pages → {os.path.abspath(os.path.expanduser(destination))}")
+        path = os.path.abspath(os.path.expanduser(destination))
+        if json_out:
+            _emit({"bundle": path, "pages": count, "format": "okf-0.1"})
+        else:
+            ui.ok(f"exported {count} personal memory pages → {path}")
         return 0
 
     return _guard(_do)
 
 
-def run_show(slug: str, unsafe: bool = False) -> int:
+def run_show(slug: str, unsafe: bool = False, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         if not memory.valid_slug(slug):
-            ui.fail(f"invalid slug: {slug!r}")
-            return 1
+            return _fail(f"invalid slug: {slug!r}", code="invalid_input", detail={"slug": slug})
         pg = memory._read(memory.memory_dir(), slug)
         if not pg:
-            ui.fail(f"no page: {slug}")
-            return 1
+            return _fail(
+                f"no page: {slug}",
+                code="not_found",
+                remedy="asgard memory query <말> 로 찾아보세요",
+                detail={"slug": slug},
+            )
         meta, body = pg
         threat = memory.poisoned(meta, body)
         if threat and not unsafe:
             # 오염 페이지 출력도 컨텍스트 유입 경로다 (2차 리뷰 ②) — 수리용 열람은 --unsafe 로만
-            ui.fail(f"threat detected: {threat} — inspect with --unsafe, then fix the file or `memory remove {slug}`")
-            return 1
+            return _fail(
+                f"threat detected: {threat} — inspect with --unsafe, then fix the file or `memory remove {slug}`",
+                code="conflict",
+                remedy=f"asgard memory show {slug} --unsafe",
+                detail={"slug": slug, "threat": threat},
+            )
+        if json_out:
+            _emit({"slug": slug, "meta": dict(meta), "body": body, "threat": threat or ""})
+            return 0
         if threat:
             ui.warn(f"⚠ poisoned page (quarantined from injection/query): {threat}")
         for k, v in meta.items():
@@ -827,50 +930,81 @@ def run_show(slug: str, unsafe: bool = False) -> int:
     return _guard(_do)
 
 
-def run_remove(slug: str) -> int:
+def run_remove(slug: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         if memory.remove(slug):
-            ui.ok(f"removed {slug}")
+            if json_out:
+                _emit({"slug": slug, "removed": True})
+            else:
+                ui.ok(f"removed {slug}")
             return 0
-        ui.fail(f"no page: {slug}")
-        return 1
+        return _fail(
+            f"no page: {slug}", code="not_found", remedy="asgard memory query <말> 로 찾아보세요", detail={"slug": slug}
+        )
 
     return _guard(_do)
 
 
-def run_merge(src: str, dst: str) -> int:
+def run_merge(src: str, dst: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         memory.merge(src, dst)
-        ui.ok(f"merged {src} → {dst}")
+        if json_out:
+            _emit({"source": src, "target": dst, "merged": True})
+        else:
+            ui.ok(f"merged {src} → {dst}")
         return 0
 
     return _guard(_do)
 
 
-def run_snapshot(provider: str | None = None) -> int:
+def run_snapshot(provider: str | None = None, json_out: bool = False) -> int:
     """주입 스냅샷 출력 — CC memory-activate 훅이 subprocess로 소비 (단일 출처: 훅 재구현 금지).
-    킬스위치 off·페이지 0 = 빈 출력 + exit 0 (훅이 무주입으로 통과)."""
-    if memory.inject_allowed(provider):
-        print(memory.snapshot_note(), end="")
+    킬스위치 off·페이지 0 = 빈 출력 + exit 0 (훅이 무주입으로 통과).
+
+    `--json`이 더하는 것은 **왜 비었는가**다: 훅은 빈 출력만 보면 되지만, 그 밖의 소비자는
+    꺼져서 빈 것과 맞는 페이지가 없어서 빈 것을 갈라야 한다."""
+    errors.set_json_surface(json_out)
+    allowed = memory.inject_allowed(provider)
+    text = memory.snapshot_note() if allowed else ""
+    if json_out:
+        _emit({"allowed": allowed, "text": text})
+    elif allowed:
+        print(text, end="")
     return 0
 
 
-def run_recall(text: str, provider: str | None = None) -> int:
-    """개인+프로젝트 범위 회수 — UserPromptSubmit 훅 전용, provider gate 적용."""
-    if memory.inject_allowed(provider):
+def run_recall(text: str, provider: str | None = None, json_out: bool = False) -> int:
+    """개인+프로젝트 범위 회수 — UserPromptSubmit 훅 전용, provider gate 적용.
+
+    `--json`은 `run_snapshot`과 같은 이유로 있다 — 빈 회수의 사유를 값으로 낸다."""
+    errors.set_json_surface(json_out)
+    allowed = memory.inject_allowed(provider)
+    note = ""
+    if allowed:
         from ..memory_context import recall_note
 
         # include_skills: CC 훅 표면 한정 — learned 스킬 포인터를 회수에 동봉 (자가발전×메모리 결합).
         # include_episodes: 같은 표면 한정 — 네이티브만 갖고 있던 과거 세션 회상을 외부
         # 클라이언트에도 준다 (쓰기는 run_sync_turn, 읽기는 여기 — 두 반쪽이 짝을 이룬다).
-        print(recall_note(text, start=os.getcwd(), include_skills=True, include_episodes=True), end="")
+        note = recall_note(text, start=os.getcwd(), include_skills=True, include_episodes=True)
+    if json_out:
+        _emit({"allowed": allowed, "query": text, "text": note})
+    elif allowed:
+        print(note, end="")
     return 0
 
 
-def run_path(directory: str | None = None, reset: bool = False) -> int:
+def run_path(directory: str | None = None, reset: bool = False, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+
     def _do() -> int:
         if directory and reset:
             raise ValueError("use either --set or --reset")
+        overridden = False
         if directory or reset:
             from ..settings import load_global, save_global
 
@@ -882,9 +1016,14 @@ def run_path(directory: str | None = None, reset: bool = False) -> int:
                 memory.ensure_home(path)
                 configured["directory"] = path
             save_global("memory", configured)
-            if os.environ.get(memory.MEMORY_ENV):
+            overridden = bool(os.environ.get(memory.MEMORY_ENV))
+            if overridden and not json_out:
                 ui.warn(f"{memory.MEMORY_ENV} overrides the saved directory")
-        print(memory.memory_dir())
+        if json_out:
+            # 저장한 값과 실제로 쓰이는 값이 갈릴 수 있다 — 환경변수가 이기는 자리를 같이 낸다.
+            _emit({"directory": memory.memory_dir(), "env_override": overridden, "env": memory.MEMORY_ENV})
+        else:
+            print(memory.memory_dir())
         return 0
 
     return _guard(_do)
@@ -943,6 +1082,63 @@ def _backend_options(values: list[str]) -> dict:
     return options
 
 
+def _bind_namespace(
+    config: dict,
+    pid: str,
+    project_uid: str,
+    binding_id: str,
+    *,
+    explicit_project_id: bool,
+    claim: bool,
+    adopt_existing: bool,
+    json_out: bool,
+) -> str:
+    """backend 네임스페이스에 이 프로젝트의 소유 마커를 세우고 그 binding_id를 돌려준다.
+
+    남의 뱅크에 얹히는 것을 막는 관문이다. 마커가 이미 있으면 신원이 같은지 보고, 없으면 비어
+    있는지 센 뒤에 쓴다 — 데이터가 든 네임스페이스는 `--adopt-existing` 없이는 넘겨받지 않는다.
+    쓴 뒤 다시 읽어 확인하는 것은 write가 성공을 보고하고도 반영되지 않는 게이트웨이 때문이다."""
+    from ..project_memory_backends import ProjectMemoryBinding, get_backend
+
+    backend = get_backend(config)
+    try:
+        readiness = backend.readiness()
+        if readiness.status != "ready":
+            raise ValueError(
+                f"backend is not ready ({readiness.detail or readiness.status}); binding was not trusted or saved"
+            )
+        marker = backend.read_binding()
+        if marker is not None:
+            if marker.project_id != pid or marker.project_uid != project_uid:
+                raise ValueError("selected project-memory namespace is already bound to a foreign project")
+            if binding_id and marker.binding_id != binding_id:
+                raise ValueError("selected project-memory namespace binding has drifted")
+            if not binding_id and not adopt_existing:
+                raise ValueError("existing bound namespace requires --adopt-existing for this project configuration")
+            return marker.binding_id
+        count = backend.namespace_document_count()
+        if count > 0 and not adopt_existing:
+            raise ValueError(
+                f"unbound namespace already contains {count} document(s); use a new bank or --adopt-existing explicitly"
+            )
+        if count == 0 and explicit_project_id and not claim and not adopt_existing:
+            # 빈 뱅크의 명시 이름은 곧 새 뱅크 개설 의사 — 별도 --claim을 요구하던 마찰 제거
+            # (오딘 결정 26-07-23: connect 한 줄이면 아스가르드가 알아서). 데이터가 있는 뱅크의
+            # 입양(--adopt-existing)만 명시 동의로 남긴다.
+            if not json_out:
+                ui.step(f"빈 네임스페이스 '{pid}' — 새 뱅크로 클레임")
+        binding_id = binding_id or str(uuid.uuid4())
+        marker = ProjectMemoryBinding(project_uid=project_uid, binding_id=binding_id, project_id=pid)
+        result = backend.write_binding(marker)
+        if not result.success:
+            raise ValueError(result.error or "project-memory binding write was rejected")
+        if backend.read_binding() != marker:
+            raise ValueError("project-memory binding verification failed after write")
+        return binding_id
+    finally:
+        backend.close()
+
+
 def run_connect(
     endpoint: str,
     project_id: str | None,
@@ -952,12 +1148,13 @@ def run_connect(
     claim: bool = False,
     adopt_existing: bool = False,
     timeout: int | None = None,
+    json_out: bool = False,
 ) -> int:
     """프로젝트를 선택된 shared-memory backend에 연결하고 통합 설정에 기록한다."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
         from .. import memory_bridge
-        from ..project_memory_backends import ProjectMemoryBinding, get_backend
         from ..settings import load_project
 
         root = os.getcwd()
@@ -997,47 +1194,19 @@ def run_connect(
             # 동기 retain이 backend LLM 추출을 기다린다 — 느린 게이트웨이는 기본 15s를 넘긴다
             # (실측 26-07-24: qwen3:8b 로컬 추출 ~16s → binding write가 기본값에서 항상 timeout)
             config["timeout"] = int(timeout)
-        backend = get_backend(config)
-        try:
-            readiness = backend.readiness()
-            if readiness.status != "ready":
-                raise ValueError(
-                    f"backend is not ready ({readiness.detail or readiness.status}); binding was not trusted or saved"
-                )
-            marker = backend.read_binding()
-            if marker is not None:
-                if marker.project_id != pid or marker.project_uid != project_uid:
-                    raise ValueError("selected project-memory namespace is already bound to a foreign project")
-                if binding_id and marker.binding_id != binding_id:
-                    raise ValueError("selected project-memory namespace binding has drifted")
-                if not binding_id and not adopt_existing:
-                    raise ValueError(
-                        "existing bound namespace requires --adopt-existing for this project configuration"
-                    )
-                binding_id = marker.binding_id
-            else:
-                count = backend.namespace_document_count()
-                if count > 0 and not adopt_existing:
-                    raise ValueError(
-                        f"unbound namespace already contains {count} document(s); use a new bank or --adopt-existing explicitly"
-                    )
-                if count == 0 and explicit_project_id and not claim and not adopt_existing:
-                    # 빈 뱅크의 명시 이름은 곧 새 뱅크 개설 의사 — 별도 --claim을 요구하던 마찰 제거
-                    # (오딘 결정 26-07-23: connect 한 줄이면 아스가르드가 알아서). 데이터가 있는 뱅크의
-                    # 입양(--adopt-existing)만 명시 동의로 남긴다.
-                    ui.step(f"빈 네임스페이스 '{pid}' — 새 뱅크로 클레임")
-                if not binding_id:
-                    binding_id = str(uuid.uuid4())
-                marker = ProjectMemoryBinding(project_uid=project_uid, binding_id=binding_id, project_id=pid)
-                result = backend.write_binding(marker)
-                if not result.success:
-                    raise ValueError(result.error or "project-memory binding write was rejected")
-                if backend.read_binding() != marker:
-                    raise ValueError("project-memory binding verification failed after write")
-        finally:
-            backend.close()
+        binding_id = _bind_namespace(
+            config,
+            pid,
+            project_uid,
+            binding_id,
+            explicit_project_id=explicit_project_id,
+            claim=claim,
+            adopt_existing=adopt_existing,
+            json_out=json_out,
+        )
         config["binding_id"] = binding_id
-        ui.ok(f"backend ready and bound: {selected_engine} @ {config['endpoint']}")
+        if not json_out:
+            ui.ok(f"backend ready and bound: {selected_engine} @ {config['endpoint']}")
         p = memory_bridge.write_config(
             root,
             str(config["endpoint"]),
@@ -1049,6 +1218,19 @@ def run_connect(
             timeout=timeout,
         )
         memory_bridge.trust_backend(config)
+        if json_out:
+            _emit(
+                {
+                    "connected": True,
+                    "engine": selected_engine,
+                    "endpoint": config["endpoint"],
+                    "project_id": pid,
+                    "project_uid": project_uid,
+                    "binding_id": binding_id,
+                    "config_path": p,
+                }
+            )
+            return 0
         ui.ok(f"connected: engine={selected_engine} project_id={pid} → {p} (커밋해서 팀과 공유)")
         ui.step("팀원 1회 등록: claude mcp add --scope user asgard-memory -- asgard memory mcp")
         return 0
@@ -1360,17 +1542,20 @@ def run_norn(
     return _guard(_do)
 
 
-def run_norn_restore(slug: str) -> int:
+def run_norn_restore(slug: str, json_out: bool = False) -> int:
     """노른 archive 복원 — 최신 아카이브 스냅샷을 pages/ 로 되돌린다."""
+    errors.set_json_surface(json_out)
 
     def _do() -> int:
         from ..memory.norn import restore_page
 
         if restore_page(slug):
-            ui.ok(f"복원됨: {slug}")
+            if json_out:
+                _emit({"slug": slug, "restored": True})
+            else:
+                ui.ok(f"복원됨: {slug}")
             return 0
-        ui.fail(f"아카이브에 없음: {slug}")
-        return 1
+        return _fail(f"아카이브에 없음: {slug}", code="not_found", detail={"slug": slug})
 
     return _guard(_do)
 

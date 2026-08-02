@@ -11,7 +11,7 @@ import os
 import sys
 from typing import Any, Callable
 
-from .. import errors
+from .. import errors, ui
 from ..providers import (
     PROVIDERS,
     TRINITY_EXTRA_ROLES,
@@ -166,10 +166,16 @@ def run_role_model(
     effort: str | None = None,
     provider: str | None = None,
     reset: bool = False,
+    json_out: bool = False,
 ) -> int:
     root = os.getcwd()
+    errors.set_json_surface(json_out)
     if not any((host, role, model, effort, provider, reset)):
-        print(json.dumps(role_model_state(root), ensure_ascii=False, indent=2))
+        state = role_model_state(root)
+        if json_out:
+            _emit(state)
+        else:
+            _print_models(state)
         return 0
     if not host or not role:
         raise errors.InvalidInput(
@@ -193,12 +199,41 @@ def run_role_model(
             remedy="`asgard role list`로 지금 무엇이 어디에 놓여 있는지 보세요",
             detail={"host": host, "role": role},
         ) from exc
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    if json_out:
+        _emit(out)
+    else:
+        effective = out["effective"] if isinstance(out["effective"], dict) else {}
+        ui.ok(f"{host} · {role} → {effective.get('model') or '?'}")
+        ui.step(f"설정 파일: {out['settings']}")
     return 0
 
 
-def run_role_list() -> int:
+def _print_models(state: dict[str, dict[str, dict[str, Any]]]) -> None:
+    """호스트별 역할 모델 — 사람이 읽는 얼굴."""
+    for host, roles in state.items():
+        print(ui.bold(host))
+        for role, row in roles.items():
+            model = str(row.get("model") or "?")
+            extra = " ".join(
+                part
+                for part in (
+                    str(row.get("provider") or ""),
+                    "placed" if row.get("placed") else "",
+                    "missing" if row.get("missing") else "",
+                )
+                if part
+            )
+            print(f"  {role.ljust(12)} {model}  {ui.dim(extra)}")
+
+
+def run_role_list(json_out: bool = False) -> int:
+    """브릿지·역할 배치·호스트 모델을 한 화면에.
+
+    여태 이 명령은 플래그와 무관하게 JSON만 냈고 도움말이 그 사실을 "(JSON)"으로 광고했다.
+    같은 저장소의 다른 `list`(skills·plugins·ticket)는 전부 사람 표면이 기본이고 JSON은
+    플래그 뒤에 있다 — 도움말을 고치는 대신 이 명령을 그 규칙에 맞췄다."""
     root = os.getcwd()
+    errors.set_json_surface(json_out)
     default = resolve(root)
     models = role_model_state(root)
     out = {
@@ -209,8 +244,27 @@ def run_role_list() -> int:
         },
         "agent_models": {host: roles for host, roles in models.items() if host != "native"},
     }
-    print(json.dumps(out, ensure_ascii=False, indent=2))
+    if json_out:
+        _emit(out)
+        return 0
+    opened = [host for host, on in out["bridge"].items() if on]
+    print(ui.bold("bridge") + "  " + (", ".join(opened) if opened else ui.dim("열린 브릿지 없음")))
+    print(ui.bold("roles"))
+    for role, row in out["roles"].items():
+        flags = " ".join(
+            part for part in ("placed" if row["placed"] else "", "missing" if row["missing"] else "") if part
+        )
+        print(f"  {role.ljust(12)} {row['provider']}  {row['model']}  {ui.dim(flags)}")
+    for host, roles in out["agent_models"].items():
+        print(ui.bold(host))
+        for role, row in roles.items():
+            print(f"  {role.ljust(12)} {row.get('model', '?')}")
     return 0
+
+
+def _emit(payload: dict) -> None:
+    """`--json` 산출물 — stdout은 이 한 덩어리만 받는다."""
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
 
 
 def _bridge_preconditions(root: str, role: str, sid: str) -> dict:
@@ -253,39 +307,52 @@ def _placed_provider(root: str, role: str) -> tuple[ResolvedProvider, ResolvedPr
     return default, rrp
 
 
-def run_role_run(role: str, task: str) -> int:
-    from ..agent.heimdall import VERDICT_TOOL, _record_writes, _role_prompt
+def _turn_inputs(
+    role: str, task: str, state: dict, criteria: list, level: str
+) -> tuple[str, list[dict] | None, dict[str, Callable[[dict], str]] | None]:
+    """이 역할 턴의 프롬프트와 추가 툴 — verifier만 다르다.
+
+    verifier에게 Worker 해설을 입력으로 주지 않는 것이 요점이다: 판정은 diff와 명령 실행으로만
+    선다. 그래서 판정 제출도 자유 서술이 아니라 verdict 툴 한 곳을 지난다."""
+    from ..agent.heimdall import VERDICT_TOOL
+
+    if role != "verifier":
+        return f"과업: {task}", None, None
+
+    changed = ", ".join((state.get("changed_files") or [])[:20]) or "(없음)"
+    prompt = (
+        f"검증하라. 요청: {task}\ncriteria: {criteria}\nrequired level: {level}\n"
+        f"하니스 관측 변경 파일: {changed} (diff_lines={state.get('diff_lines', '?')}) — "
+        "`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
+        "Worker 해설은 입력이 아니다 — diff와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출."
+    )
+
+    def _ack(_i: dict) -> str:
+        return "판정 접수"
+
+    return prompt, [VERDICT_TOOL], {"verdict": _ack}
+
+
+def run_role_run(role: str, task: str, json_out: bool = False) -> int:
+    from ..agent.heimdall import _record_writes, _role_prompt
     from ..agent.session import AgentSession, make_client, ql
 
     root = os.getcwd()
+    errors.set_json_surface(json_out)
     sid = os.environ.get("CLAUDE_SESSION_ID") or "bridge"
     state = _bridge_preconditions(root, role, sid)
     default, rrp = _placed_provider(root, role)
 
     criteria = state.get("criteria") or []
     level = "full" if state.get("full_required") else "micro"  # gate와 동일 기준 (결정론 도출)
-    extra: list[dict] | None = None
-    handlers: dict[str, Callable[[dict], str]] | None = None
-    if role == "verifier":
-        changed = ", ".join((state.get("changed_files") or [])[:20]) or "(없음)"
-        prompt = (
-            f"검증하라. 요청: {task}\ncriteria: {criteria}\nrequired level: {level}\n"
-            f"하니스 관측 변경 파일: {changed} (diff_lines={state.get('diff_lines', '?')}) — "
-            "`git diff` / 파일 열람 / 실행으로 직접 확인하라.\n"
-            "Worker 해설은 입력이 아니다 — diff와 명령 실행으로만 판정. 판정은 반드시 verdict 툴로 제출."
-        )
-
-        def _ack(_i: dict) -> str:
-            return "판정 접수"
-
-        extra = [VERDICT_TOOL]
-        handlers = {"verdict": _ack}
-    else:
-        prompt = f"과업: {task}"
+    prompt, extra, handlers = _turn_inputs(role, task, state, criteria, level)
 
     def _out(s: str) -> None:
-        sys.stdout.write(s)
-        sys.stdout.flush()
+        # `--json`이면 모델이 흘리는 글은 stderr로 간다 — stdout은 마지막 결과 한 덩어리의
+        # 자리다. `asgard run --json`이 이미 같은 계약을 쓴다.
+        stream = sys.stderr if json_out else sys.stdout
+        stream.write(s)
+        stream.flush()
 
     # 역할 배치(스웜)는 브릿지에도 선다 — 모드가 갈린다고 규율이 갈리면 그건 드리프트다.
     # 호스트(CC·Cursor·Codex)가 이 CLI로 역할 턴을 넘기면 그 턴은 배치된 에이전트의 홈에서
@@ -351,5 +418,8 @@ def run_role_run(role: str, task: str) -> int:
         ql(root, "append", "--verdict", str(v["verdict"]), "--level", level, session=sid, stdin=json.dumps(ev))
         result["verdict"] = v
         result["appended"] = "verify"
-    print("\n" + json.dumps(result, ensure_ascii=False))
+    if json_out:
+        _emit(result)
+    else:
+        print("\n" + json.dumps(result, ensure_ascii=False))
     return 0

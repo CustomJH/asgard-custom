@@ -612,26 +612,46 @@ class TestRoleProviders(Base):
         self.assertFalse(flags["codex"])
 
     def test_role_list_reports_placements(self):
-        import contextlib
-        import io
-
-        from asgard.commands.role import run_role_list
+        """`--json`이면 배치가 기계가 읽는 형태로 나온다 — 이 명령의 소비자는 호스트 도구다."""
+        from cli_boundary import run_cli
 
         self._write_config('[trinity.worker]\nprovider = "ollama"\nmodel = "m1"\n[bridge]\ncodex = true\n')
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            buf = io.StringIO()
-            with contextlib.redirect_stdout(buf):
-                self.assertEqual(run_role_list(), 0)
+            listed = run_cli("role", "list", "--json")
         finally:
             os.chdir(cwd)
-        out = json.loads(buf.getvalue())
+
+        self.assertEqual(listed.exit_code, 0, listed.stderr)
+        out = json.loads(listed.stdout)
         self.assertTrue(out["bridge"]["codex"])
         self.assertTrue(out["roles"]["worker"]["placed"])
         self.assertEqual(out["roles"]["worker"]["provider"], "ollama")
         self.assertFalse(out["roles"]["thinker"]["placed"])
         self.assertEqual(out["agent_models"]["cursor"]["worker"]["model"], "gpt-5.6-terra-medium")
+
+    def test_role_list_without_the_flag_is_a_human_surface(self):
+        """플래그 없이 부르면 사람 문장이다 — stdout에 기계 JSON을 붓지 않는다.
+
+        여태 이 명령은 플래그와 무관하게 JSON만 냈고 도움말이 그것을 "(JSON)"으로 적어 두었다.
+        같은 저장소의 `skills list`·`plugins list`·`ticket list`는 전부 사람 표면이 기본이라,
+        하나만 다른 규칙을 갖고 있었던 셈이다. 그 규칙을 되돌리지 못하게 여기서 잠근다."""
+        from cli_boundary import run_cli
+
+        self._write_config('[trinity.worker]\nprovider = "ollama"\nmodel = "m1"\n[bridge]\ncodex = true\n')
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        try:
+            listed = run_cli("role", "list")
+        finally:
+            os.chdir(cwd)
+
+        self.assertEqual(listed.exit_code, 0, listed.stderr)
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(listed.stdout)
+        self.assertIn("worker", listed.stdout)  # 같은 사실을 사람 쪽으로도 낸다
+        self.assertIn("ollama", listed.stdout)
 
     def test_role_model_command_sets_syncs_and_resets_hosted_override(self):
         from asgard.commands.role import configure_role_model
@@ -695,14 +715,19 @@ class TestRoleProviders(Base):
         cwd = os.getcwd()
         os.chdir(self.root)
         try:
-            listed = run_cli("role", "model")
-            changed = run_cli("role", "model", "codex", "thinker", "custom-sol", "--effort", "max")
+            listed = run_cli("role", "model", "--json")
+            human = run_cli("role", "model")
+            changed = run_cli("role", "model", "codex", "thinker", "custom-sol", "--effort", "max", "--json")
             invalid = run_cli("role", "model", "unknown", "worker", "x")
         finally:
             os.chdir(cwd)
 
         self.assertEqual(listed.exit_code, 0, listed.stderr)
         self.assertIn('"claude-code"', listed.stdout)
+        # `role list`와 같은 계약 — 플래그 없이 부르면 사람 표면이고 stdout은 JSON이 아니다.
+        self.assertEqual(human.exit_code, 0, human.stderr)
+        with self.assertRaises(json.JSONDecodeError):
+            json.loads(human.stdout)
         self.assertEqual(changed.exit_code, 0, changed.stderr)
         self.assertIn('"model": "custom-sol"', changed.stdout)
         self.assertIn('"effort": "max"', changed.stdout)

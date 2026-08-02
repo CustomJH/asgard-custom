@@ -219,6 +219,11 @@ def _detect_flags(root: str) -> tuple[bool, bool, bool]:
     )
 
 
+def _emit(payload: dict, code: int) -> int:
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    return code
+
+
 def _autoregister_cwd() -> None:
     """레지스트리 도입 전에 셋업된 프로젝트 흡수 — cwd가 asgard 배선(AGENTS.md 마커)인데
     미등록이면 디렉토리 존재로 프로필을 추정해 등록한다."""
@@ -238,35 +243,59 @@ def _autoregister_cwd() -> None:
         registry.record(root, cc, cursor, codex)
 
 
-def run_sync(dry_run: bool = False, list_only: bool = False) -> int:
+def _profile(project: dict) -> str:
+    return "+".join(k for k in ("cc", "cursor", "codex") if project.get(k)) or "universal"
+
+
+def run_sync(dry_run: bool = False, list_only: bool = False, json_out: bool = False) -> int:
+    """등록된 프로젝트의 코어를 갱신한다.
+
+    `--json`은 프로젝트별 결과를 그대로 낸다 — 설치 스크립트와 CI가 "몇 개가 어떻게 됐나"로
+    분기한다. `ui.ok`·`warn`·`fail`·`done`은 `--quiet`을 안 보므로 그 넷은 따로 막는다."""
+    ui.set_quiet(ui._QUIET or json_out)
     _autoregister_cwd()
     projects = registry.load()
     ui.head(f"sync · {len(projects)} project(s)" + (" · dry-run" if dry_run else ""))
     if not projects:
+        if json_out:
+            return _emit({"projects": [], "failed": 0, "dry_run": dry_run}, 0)
         ui.warn("등록된 프로젝트가 없어요 — `asgard init`을 돌린 프로젝트가 여기 쌓여요.")
         return 0
     if list_only:
+        rows = [{"root": str(p["root"]), "profile": _profile(p)} for p in projects]
+        if json_out:
+            return _emit({"projects": rows, "listed_only": True, "dry_run": dry_run}, 0)
         ui.phase("registered projects")
-        for p in projects:
-            profile = "+".join(k for k in ("cc", "cursor", "codex") if p.get(k)) or "universal"
-            ui.step(f"{p['root']} {ui.dim('(' + profile + ')')}")
+        for row in rows:
+            ui.step(f"{row['root']} {ui.dim('(' + row['profile'] + ')')}")
         return 0
     ui.phase("refresh scaffolds")
     failed = 0
+    rows: list[dict] = []
     for p in projects:
         root = str(p["root"])
         if not os.path.isdir(root):
-            ui.warn(f"{root} — 폴더가 없어져서 목록에서 뺄게요")
+            rows.append({"root": root, "state": "forgotten"})
+            if not json_out:
+                ui.warn(f"{root} — 폴더가 없어져서 목록에서 뺄게요")
             registry.forget(root)
             continue
         try:
             c = sync_project(root, bool(p.get("cc")), bool(p.get("cursor")), bool(p.get("codex")), dry_run=dry_run)
         except Exception as e:
-            ui.fail(f"{root} — {e}")
+            rows.append({"root": root, "state": "failed", "error": f"{type(e).__name__}: {e}"})
+            if not json_out:
+                ui.fail(f"{root} — {e}")
             failed += 1
             continue
-        summary = f"updated {c['updated']} · kept {c['kept']}" + (f" · skipped {c['skipped']}" if c["skipped"] else "")
-        ui.ok(f"{root} {ui.dim('(' + summary + ')')}")
+        rows.append({"root": root, "state": "synced", **{k: c[k] for k in ("updated", "kept", "skipped")}})
+        if not json_out:
+            summary = f"updated {c['updated']} · kept {c['kept']}" + (
+                f" · skipped {c['skipped']}" if c["skipped"] else ""
+            )
+            ui.ok(f"{root} {ui.dim('(' + summary + ')')}")
+    if json_out:
+        return _emit({"projects": rows, "failed": failed, "dry_run": dry_run}, 1 if failed else 0)
     if failed:
         ui.fail(f"{failed} project(s) failed")
         return 1

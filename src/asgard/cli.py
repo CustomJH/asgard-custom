@@ -268,17 +268,23 @@ def auth_login(provider: str = typer.Argument("openai-native")) -> None:
 
 
 @auth_app.command("status", help="is that subscription login still good")
-def auth_status(provider: str = typer.Argument("openai-native")) -> None:
+def auth_status(
+    provider: str = typer.Argument("openai-native"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.auth import run_status
 
-    raise typer.Exit(run_status(provider))
+    raise typer.Exit(run_status(provider, json_out))
 
 
 @auth_app.command("logout", help="drop a subscription login Asgard was holding")
-def auth_logout(provider: str = typer.Argument("openai-native")) -> None:
+def auth_logout(
+    provider: str = typer.Argument("openai-native"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.auth import run_logout
 
-    raise typer.Exit(run_logout(provider))
+    raise typer.Exit(run_logout(provider, json_out))
 
 
 @app.command(help="get a project ready for coding agents (Claude Code / Cursor / Codex)")
@@ -590,11 +596,12 @@ def update(
     dry_run: bool = typer.Option(False, "--dry-run"),
     no_sync: bool = typer.Option(False, "--no-sync", help="skip refreshing set-up projects after the update"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.update import run_update
 
-    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run, sync=not no_sync))
+    raise typer.Exit(run_update([ref] if ref else [], dry_run=dry_run, sync=not no_sync, json_out=json_out))
 
 
 # `upgrade` 별칭 — 구 TS CLI(asgard-cli)의 근육기억 호환. start 안 /update와 동일 플로우.
@@ -606,11 +613,12 @@ def sync(
     dry_run: bool = typer.Option(False, "--dry-run"),
     list_: bool = typer.Option(False, "--list", help="just list the registered projects, then stop"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.sync import run_sync
 
-    raise typer.Exit(run_sync(dry_run=dry_run, list_only=list_))
+    raise typer.Exit(run_sync(dry_run=dry_run, list_only=list_, json_out=json_out))
 
 
 @app.command(help="remove asgard (the uv tool only — your ~/.asgard data is kept)")
@@ -618,11 +626,12 @@ def uninstall(
     yes: bool = typer.Option(False, "--yes", "-y"),
     dry_run: bool = typer.Option(False, "--dry-run"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.uninstall import run_uninstall
 
-    raise typer.Exit(run_uninstall(yes=yes, dry_run=dry_run))
+    raise typer.Exit(run_uninstall(yes=yes, dry_run=dry_run, json_out=json_out))
 
 
 @app.command(help="read text back and say where it sounds like a machine wrote it (exit 1 = it does)")
@@ -655,11 +664,13 @@ role_app = typer.Typer(
 app.add_typer(role_app, name="role")
 
 
-@role_app.command("list", help="which bridges are open, where the native roles sit, and what the hosts run (JSON)")
-def role_list() -> None:
+@role_app.command("list", help="which bridges are open, where the native roles sit, and what the hosts run")
+def role_list(
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.role import run_role_list
 
-    raise typer.Exit(run_role_list())
+    raise typer.Exit(run_role_list(json_out))
 
 
 @role_app.command("model", help="see or change the model one role uses on native, Claude Code, Cursor, or Codex")
@@ -670,20 +681,24 @@ def role_model(
     effort: str = typer.Option(None, "--effort", help="how hard the host should think (Claude Code/Codex)"),
     provider: str = typer.Option(None, "--provider", help="which native provider this role runs on"),
     reset: bool = typer.Option(False, "--reset", help="drop what this project set, and fall back"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.role import run_role_model
 
-    raise typer.Exit(run_role_model(host, role, model, effort=effort, provider=provider, reset=reset))
+    raise typer.Exit(
+        run_role_model(host, role, model, effort=effort, provider=provider, reset=reset, json_out=json_out)
+    )
 
 
 @role_app.command("run", help="run one role's turn where it is placed, and write it into the quest log")
 def role_run(
     role: str = typer.Argument(..., metavar="<thinker|worker|verifier>"),
     task: str = typer.Argument(..., help="the task and its context (e.g. the Thinker plan a Worker turn works from)"),
+    json_out: bool = typer.Option(False, "--json", help="stream to stderr, and print one JSON summary to stdout"),
 ) -> None:
     from .commands.role import run_role_run
 
-    raise typer.Exit(run_role_run(role, task))
+    raise typer.Exit(run_role_run(role, task, json_out))
 
 
 mode_app = typer.Typer(
@@ -719,20 +734,24 @@ def mode_set(
     model: str = typer.Option(None, "--model", help="which model the role uses"),
     effort: str = typer.Option(None, "--effort", help="how hard Claude Code or Codex should think"),
     provider: str = typer.Option(None, "--provider", help="which native provider this role runs on"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.mode import run_mode_set
 
-    raise typer.Exit(run_mode_set(mode, role, agent=agent, model=model, effort=effort, provider=provider))
+    raise typer.Exit(
+        run_mode_set(mode, role, agent=agent, model=model, effort=effort, provider=provider, json_out=json_out)
+    )
 
 
 @mode_app.command("reset", help="drop what this project pinned for one mode, or for one role inside it")
 def mode_reset(
     mode: str = typer.Argument(..., metavar="<native|claude-code|cursor|codex>"),
     role: str = typer.Argument(None, metavar="[role]"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.mode import run_mode_reset
 
-    raise typer.Exit(run_mode_reset(mode, role))
+    raise typer.Exit(run_mode_reset(mode, role, json_out=json_out))
 
 
 @mode_app.command("pick", help="change one setting by picking from a list instead of typing it out")
@@ -852,10 +871,11 @@ def skills_show(
     name: str = typer.Argument(..., metavar="<skill-name>"),
     frontmatter: bool = typer.Option(False, "--frontmatter", help="keep the SKILL.md frontmatter too"),
     resource: str = typer.Option(None, "--resource", help="print a text file bundled alongside the skill"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.skills import run_skills_show
 
-    raise typer.Exit(run_skills_show(name, body_only=not frontmatter, resource=resource))
+    raise typer.Exit(run_skills_show(name, body_only=not frontmatter, resource=resource, json_out=json_out))
 
 
 @skills_app.command("resolve", help="what one role would be told to do, given this task")
@@ -881,31 +901,45 @@ def skills_run(ctx: typer.Context, name: str = typer.Argument(..., metavar="<ski
 
 
 @skills_app.command("assign", help="give one role this skill, in this project")
-def skills_assign(name: str, agent: str = typer.Option(..., "--agent")) -> None:
+def skills_assign(
+    name: str,
+    agent: str = typer.Option(..., "--agent"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.skills import run_skills_assign
 
-    raise typer.Exit(run_skills_assign(name, agent, assigned=True))
+    raise typer.Exit(run_skills_assign(name, agent, assigned=True, json_out=json_out))
 
 
 @skills_app.command("unassign", help="take this skill back off a role, in this project")
-def skills_unassign(name: str, agent: str = typer.Option(..., "--agent")) -> None:
+def skills_unassign(
+    name: str,
+    agent: str = typer.Option(..., "--agent"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.skills import run_skills_assign
 
-    raise typer.Exit(run_skills_assign(name, agent, assigned=False))
+    raise typer.Exit(run_skills_assign(name, agent, assigned=False, json_out=json_out))
 
 
 @skills_app.command("enable", help="let this project use a skill again")
-def skills_enable(name: str) -> None:
+def skills_enable(
+    name: str,
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.skills import run_skills_enable
 
-    raise typer.Exit(run_skills_enable(name, enabled=True))
+    raise typer.Exit(run_skills_enable(name, enabled=True, json_out=json_out))
 
 
 @skills_app.command("disable", help="keep this project from reaching for a skill")
-def skills_disable(name: str) -> None:
+def skills_disable(
+    name: str,
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.skills import run_skills_enable
 
-    raise typer.Exit(run_skills_enable(name, enabled=False))
+    raise typer.Exit(run_skills_enable(name, enabled=False, json_out=json_out))
 
 
 plugins_app = typer.Typer(help="the resource plugins Asgard can draw skills from", invoke_without_command=True)
@@ -928,10 +962,13 @@ def plugins_list(json_: bool = typer.Option(False, "--json")) -> None:
 
 
 @plugins_app.command("install", help="install a local resource plugin directory")
-def plugins_install(source: str = typer.Argument(..., metavar="<path>")) -> None:
+def plugins_install(
+    source: str = typer.Argument(..., metavar="<path>"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.skills import run_plugins_install
 
-    raise typer.Exit(run_plugins_install(source))
+    raise typer.Exit(run_plugins_install(source, json_out))
 
 
 # 위그드라실 (Yggdrasil) — 메모리 시스템의 세계관 이름. 개인 메모리 = LLM Wiki (v3 P1).
@@ -951,10 +988,11 @@ def memory_add(
     title: str = typer.Option(None, "--title", help="the page title (default: its first line)"),
     kind: str = typer.Option("note", "--kind", help="note|user|decision|insight|reference|feedback"),
     links: str = typer.Option("", "--links", help="slugs of related pages, comma-separated"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_add
 
-    raise typer.Exit(run_add(text, title, kind, links))
+    raise typer.Exit(run_add(text, title, kind, links, json_out))
 
 
 @memory_app.command("ingest", help="take something in — if a page already says nearly this, it grows instead")
@@ -963,10 +1001,11 @@ def memory_ingest(
     kind: str = typer.Option("note", "--kind"),
     yes: bool = typer.Option(False, "--yes", "-y", help="save without asking first"),
     plan_id: str = typer.Option(None, "--plan-id", help="carry out the exact plan you already approved"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_ingest
 
-    raise typer.Exit(run_ingest(text, kind, yes, plan_id))
+    raise typer.Exit(run_ingest(text, kind, yes, plan_id, json_out))
 
 
 @memory_app.command("query", help="search the wiki — plain text search, no model, and every hit is counted")
@@ -1026,10 +1065,11 @@ def memory_contradiction_seen(
     a: str = typer.Argument(..., help="one page slug from `asgard memory contradictions`"),
     b: str = typer.Argument(..., help="the other page slug (either order works)"),
     note: str = typer.Option("", "--note", help="why you are setting it aside — you will read this next time"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_contradiction_seen
 
-    raise typer.Exit(run_contradiction_seen(a, b, note))
+    raise typer.Exit(run_contradiction_seen(a, b, note, json_out))
 
 
 @memory_app.command("proposals", help="what the agent wants to remember, waiting on your say-so")
@@ -1066,70 +1106,85 @@ def memory_approve(
 
 
 @memory_app.command("discard", help="throw a waiting proposal away — nothing is written")
-def memory_discard(proposal_id: str = typer.Argument(...)) -> None:
+def memory_discard(
+    proposal_id: str = typer.Argument(...),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.memory import run_discard
 
-    raise typer.Exit(run_discard(proposal_id))
+    raise typer.Exit(run_discard(proposal_id, json_out))
 
 
 @memory_app.command("reindex", help="rebuild index.md and state.db from pages/, which is the real record")
-def memory_reindex() -> None:
+def memory_reindex(
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.memory import run_reindex
 
-    raise typer.Exit(run_reindex())
+    raise typer.Exit(run_reindex(json_out))
 
 
 @memory_app.command("export-okf", help="write your personal memory out as a read-only OKF v0.1 bundle")
-def memory_export_okf(destination: str = typer.Argument(..., help="where to write it — a new or empty folder")) -> None:
+def memory_export_okf(
+    destination: str = typer.Argument(..., help="where to write it — a new or empty folder"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.memory import run_export_okf
 
-    raise typer.Exit(run_export_okf(destination))
+    raise typer.Exit(run_export_okf(destination, json_out))
 
 
 @memory_app.command("show", help="print one page, frontmatter and all")
 def memory_show(
     slug: str = typer.Argument(...),
     unsafe: bool = typer.Option(False, "--unsafe", help="open a page held in quarantine, so you can repair it"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_show
 
-    raise typer.Exit(run_show(slug, unsafe=unsafe))
+    raise typer.Exit(run_show(slug, unsafe=unsafe, json_out=json_out))
 
 
 @memory_app.command("remove", help="delete a page, and rebuild the index around the gap")
-def memory_remove(slug: str = typer.Argument(...)) -> None:
+def memory_remove(
+    slug: str = typer.Argument(...),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.memory import run_remove
 
-    raise typer.Exit(run_remove(slug))
+    raise typer.Exit(run_remove(slug, json_out))
 
 
 @memory_app.command("merge", help="fold one page into another — what to do when the wiki has outgrown its budget")
 def memory_merge(
     src: str = typer.Argument(..., help="the page to fold in (it is deleted afterwards)"),
     dst: str = typer.Argument(..., help="the page that grows"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_merge
 
-    raise typer.Exit(run_merge(src, dst))
+    raise typer.Exit(run_merge(src, dst, json_out))
 
 
 @memory_app.command("snapshot", help="the memory a new session starts with (nothing, if that is switched off)")
 def memory_snapshot(
     provider: str = typer.Option(None, "--provider", help="who is asking — memory is only handed to allowed providers"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_snapshot
 
-    raise typer.Exit(run_snapshot(provider))
+    raise typer.Exit(run_snapshot(provider, json_out))
 
 
 @memory_app.command("recall", help="the memory this question would pull in (nothing, if it is off or nothing matches)")
 def memory_recall(
     text: str = typer.Argument(...),
     provider: str = typer.Option(None, "--provider", help="who is asking — memory is only handed to allowed providers"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_recall
 
-    raise typer.Exit(run_recall(text, provider))
+    raise typer.Exit(run_recall(text, provider, json_out))
 
 
 @memory_app.command("sync-turn", help="for hooks: keep one finished turn, read as JSON from stdin", hidden=True)
@@ -1145,10 +1200,11 @@ def memory_sync_turn(
 def memory_path(
     directory: str = typer.Option(None, "--set", help="keep your personal memory here from now on, everywhere"),
     reset: bool = typer.Option(False, "--reset", help="put it back where it started"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_path
 
-    raise typer.Exit(run_path(directory, reset))
+    raise typer.Exit(run_path(directory, reset, json_out))
 
 
 @memory_app.command("provider", help="which model looks after your personal memory — see it, or change it")
@@ -1243,10 +1299,13 @@ def memory_ask(
 
 
 @memory_app.command("norn-restore", help="bring back a page a norn pass filed away")
-def memory_norn_restore(slug: str = typer.Argument(...)) -> None:
+def memory_norn_restore(
+    slug: str = typer.Argument(...),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.memory import run_norn_restore
 
-    raise typer.Exit(run_norn_restore(slug))
+    raise typer.Exit(run_norn_restore(slug, json_out))
 
 
 @memory_app.command(
@@ -1290,6 +1349,7 @@ def memory_connect(
     timeout: int = typer.Option(
         None, "--timeout", help="how long to wait, in seconds — slow gateways need more than the usual 15"
     ),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_connect
 
@@ -1302,6 +1362,7 @@ def memory_connect(
             claim=claim,
             adopt_existing=adopt_existing,
             timeout=timeout,
+            json_out=json_out,
         )
     )
 
@@ -1380,10 +1441,11 @@ def memory_project_ingest(
 @memory_app.command("project-approve", help="say yes to one waiting project-memory proposal, and write it")
 def memory_project_approve(
     approval_id: str = typer.Argument(..., help="the approval id the proposal printed"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.memory import run_project_approve
 
-    raise typer.Exit(run_project_approve(approval_id))
+    raise typer.Exit(run_project_approve(approval_id, json_out))
 
 
 @memory_app.command("project-rehydrate", help="replay the project records Git holds back into the store")
@@ -1445,9 +1507,11 @@ def ticket_list(
     status: str = typer.Option("", "--status", "-s", help=t("hc_tk_f_status")),
     assignee: str = typer.Option("", "--assignee", "-a", help=t("hc_tk_f_assignee")),
     label: str = typer.Option("", "--label", "-l", help=t("hc_tk_f_label")),
-    cycle: str = typer.Option("", "--cycle", "-c", help=t("hc_tk_f_cycle")),
-    # `-q`는 `--quiet` 전용 — 나머지 필터와 달리 검색어에는 단축을 주지 않는다
-    # (규칙 본체와 예외 목록: tests/test_cli_surface.py).
+    # 단축 없는 필터들 — 한 글자가 CLI 전체에서 한 뜻이어야 근육기억이 맞는다. 티켓의 필드
+    # 플래그는 이 그룹 안에서만 통하는 이름이라, 다른 데서 이미 쓰는 글자와 부딪히면 물러난다:
+    # `-c`는 `start --continue`, `-e`는 `k6 run --env`, `-p`는 `open --port`, `-q`는 `--quiet`.
+    # 긴 이름은 그대로다 (규칙 본체와 예외 목록: tests/test_cli_surface.py).
+    cycle: str = typer.Option("", "--cycle", help=t("hc_tk_f_cycle")),
     query: str = typer.Option("", "--query", help=t("hc_tk_f_query")),
     open_only: bool = typer.Option(False, "--open", help=t("hc_tk_f_open")),
     team: str = typer.Option("", "--team", help=t("hc_tk_team")),
@@ -1464,11 +1528,11 @@ def ticket_new(
     title: str = typer.Argument(..., help=t("hc_tk_title")),
     body: str = typer.Option("", "--body", "-b", help=t("hc_tk_body")),
     status: str = typer.Option("todo", "--status", "-s", help="backlog|todo|in_progress|in_review|done|canceled"),
-    priority: int = typer.Option(0, "--priority", "-p", help=t("hc_tk_priority")),
+    priority: int = typer.Option(0, "--priority", help=t("hc_tk_priority")),
     assignee: str = typer.Option("", "--assignee", "-a", help=t("hc_tk_assignee")),
     labels: str = typer.Option("", "--label", "-l", help=t("hc_tk_labels")),
     parent: str = typer.Option("", "--parent", help=t("hc_tk_parent")),
-    estimate: int = typer.Option(None, "--estimate", "-e", help=t("hc_tk_estimate")),
+    estimate: int = typer.Option(None, "--estimate", help=t("hc_tk_estimate")),
     team: str = typer.Option("", "--team", help=t("hc_tk_new_team")),
     project: str = typer.Option("", "--project", help=t("hc_tk_new_project")),
     milestone: str = typer.Option("", "--milestone", help=t("hc_tk_ms_opt")),
@@ -1507,12 +1571,12 @@ def ticket_set(
     ref: str = typer.Argument(..., help=t("hc_tk_ref")),
     title: str = typer.Option("", "--title", "-t"),
     body: str = typer.Option("", "--body", "-b"),
-    priority: int = typer.Option(None, "--priority", "-p"),
+    priority: int = typer.Option(None, "--priority"),
     assignee: str = typer.Option(None, "--assignee", "-a", help=t("hc_tk_set_assignee")),
     labels: str = typer.Option(None, "--label", "-l", help=t("hc_tk_set_labels")),
-    estimate: int = typer.Option(None, "--estimate", "-e"),
+    estimate: int = typer.Option(None, "--estimate"),
     parent: str = typer.Option(None, "--parent", help=t("hc_tk_set_parent")),
-    cycle: str = typer.Option(None, "--cycle", "-c", help=t("hc_tk_set_cycle")),
+    cycle: str = typer.Option(None, "--cycle", help=t("hc_tk_set_cycle")),
     json_out: bool = typer.Option(False, "--json", help=t("hc_json")),
 ) -> None:
     from .commands.ticket import run_set
@@ -1525,29 +1589,35 @@ def ticket_comment(
     ref: str = typer.Argument(..., help=t("hc_tk_ref")),
     text: str = typer.Argument(..., help=t("hc_tk_comment_text")),
     author: str = typer.Option("", "--author", help=t("hc_tk_comment_author")),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.ticket import run_comment
 
-    raise typer.Exit(run_comment(ref, text, author))
+    raise typer.Exit(run_comment(ref, text, author, json_out))
 
 
 @ticket_app.command("link", help=t("hc_tk_link"))
 def ticket_link(
     ref: str = typer.Argument(..., help=t("hc_tk_link_ref")),
     other: str = typer.Argument(..., help=t("hc_tk_link_other")),
-    kind: str = typer.Option("blocks", "--kind", "-k", help="blocks|relates|duplicates"),
+    # `-k`는 결과 개수(`--limit`)가 가져갔다 — memory 셋이 그 뜻으로 쓴다.
+    kind: str = typer.Option("blocks", "--kind", help="blocks|relates|duplicates"),
     remove: bool = typer.Option(False, "--remove", help=t("hc_tk_link_remove")),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.ticket import run_link
 
-    raise typer.Exit(run_link(ref, other, kind, remove))
+    raise typer.Exit(run_link(ref, other, kind, remove, json_out))
 
 
 @ticket_app.command("delete", help=t("hc_tk_delete"))
-def ticket_delete(ref: str = typer.Argument(..., help=t("hc_tk_ref"))) -> None:
+def ticket_delete(
+    ref: str = typer.Argument(..., help=t("hc_tk_ref")),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.ticket import run_delete
 
-    raise typer.Exit(run_delete(ref))
+    raise typer.Exit(run_delete(ref, json_out))
 
 
 @ticket_app.command("cycle", help=t("hc_tk_cycle"))
@@ -1692,57 +1762,73 @@ app.add_typer(evolve_app, name="evolve")
 @evolve_app.command(
     "scan", help="dig through the quest logs for lessons that cost something — every FAIL that became a PASS"
 )
-def evolve_scan() -> None:
+def evolve_scan(
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_scan
 
-    raise typer.Exit(run_scan())
+    raise typer.Exit(run_scan(json_out))
 
 
 @evolve_app.command("nudge", help="for hooks: mention once that there is something new to dig out, then stay quiet")
-def evolve_nudge() -> None:
+def evolve_nudge(
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_nudge
 
-    raise typer.Exit(run_nudge())
+    raise typer.Exit(run_nudge(json_out))
 
 
 @evolve_app.command("list", help="the skill drafts waiting on you — edit the files first if they need it")
-def evolve_list() -> None:
+def evolve_list(
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_list
 
-    raise typer.Exit(run_list())
+    raise typer.Exit(run_list(json_out))
 
 
 @evolve_app.command("show", help="print one waiting draft, as its SKILL.md stands")
-def evolve_show(cid: str = typer.Argument(..., metavar="<id>")) -> None:
+def evolve_show(
+    cid: str = typer.Argument(..., metavar="<id>"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_show
 
-    raise typer.Exit(run_show(cid))
+    raise typer.Exit(run_show(cid, json_out))
 
 
 @evolve_app.command("approve", help="check a draft over and install it — the next dispatch can reach it, no restart")
-def evolve_approve(cid: str = typer.Argument(..., metavar="<id>")) -> None:
+def evolve_approve(
+    cid: str = typer.Argument(..., metavar="<id>"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_approve
 
-    raise typer.Exit(run_approve(cid))
+    raise typer.Exit(run_approve(cid, json_out))
 
 
 @evolve_app.command("reject", help="turn a draft down — that same lesson is never brought to you again")
 def evolve_reject(
     cid: str = typer.Argument(..., metavar="<id>"),
     reason: str = typer.Option("", "--reason", help="why, if you want to say — it is kept to judge future drafts"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.evolve import run_reject
 
-    raise typer.Exit(run_reject(cid, reason))
+    raise typer.Exit(run_reject(cid, reason, json_out))
 
 
 @evolve_app.command(
     "polish", help="have a model rewrite a draft as principles rather than steps — it still waits on you"
 )
-def evolve_polish(cid: str = typer.Argument(..., metavar="<id>")) -> None:
+def evolve_polish(
+    cid: str = typer.Argument(..., metavar="<id>"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_polish
 
-    raise typer.Exit(run_polish(cid))
+    raise typer.Exit(run_polish(cid, json_out))
 
 
 @evolve_app.command("bench", help="run it with a learned skill off, then on, and say whether the skill earns its place")
@@ -1753,10 +1839,11 @@ def evolve_bench(
     runs: int = typer.Option(5, "--runs", help="how many runs on each side — it needs 3 before it will call it"),
     direction: str = typer.Option("min", "--direction", help="min (lower is better) | max"),
     timeout: int = typer.Option(600, "--timeout", help="how long one run may take, in seconds"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.evolve import run_bench
 
-    raise typer.Exit(run_bench(skill, cmd, metric, runs, direction, timeout))
+    raise typer.Exit(run_bench(skill, cmd, metric, runs, direction, timeout, json_out))
 
 
 @evolve_app.command(
@@ -1764,24 +1851,31 @@ def evolve_bench(
 )
 def evolve_curate(
     apply: bool = typer.Option(False, "--apply", help="actually put away the ones idle 90 days — you can undo it"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     from .commands.evolve import run_curate
 
-    raise typer.Exit(run_curate(apply))
+    raise typer.Exit(run_curate(apply, json_out))
 
 
 @evolve_app.command("archive", help="put a learned skill away without deleting it — you can bring it back")
-def evolve_archive(name: str = typer.Argument(..., metavar="<skill-name>")) -> None:
+def evolve_archive(
+    name: str = typer.Argument(..., metavar="<skill-name>"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_archive
 
-    raise typer.Exit(run_archive(name))
+    raise typer.Exit(run_archive(name, json_out))
 
 
 @evolve_app.command("restore", help="bring a put-away skill back, so it can be reached again")
-def evolve_restore(name: str = typer.Argument(..., metavar="<skill-name>")) -> None:
+def evolve_restore(
+    name: str = typer.Argument(..., metavar="<skill-name>"),
+    json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.evolve import run_restore
 
-    raise typer.Exit(run_restore(name))
+    raise typer.Exit(run_restore(name, json_out))
 
 
 @app.command(help="put one task through the native Trinity loop with nobody watching — for benches and CI")
@@ -1868,13 +1962,16 @@ def office_fill(
 @office_app.command("render", help="turn it into a PDF and page images, or work an .xlsx out — needs LibreOffice")
 def office_render(
     path: str = typer.Argument(None, metavar="<file>"),
-    outdir: str = typer.Option("", "-o", "--outdir"),
+    # `-o`는 같은 그룹의 `--output`(build·fill·outline) 것이다 — 여기만 디렉터리를 받아
+    # 뜻이 다르므로 단축을 내준다. 한 글자가 그룹 안에서 파일과 폴더를 오가면 덮어쓴다.
+    outdir: str = typer.Option("", "--outdir"),
     probe: bool = typer.Option(False, "--probe", help="say which outside tools are actually here"),
     recalc: bool = typer.Option(False, "--recalc", help="work an .xlsx out and keep the answers in the file"),
+    json_: bool = typer.Option(False, "--json", help="print what was produced, and where, as JSON"),
 ) -> None:
     from .commands.office import run_office_render
 
-    raise typer.Exit(run_office_render(path, outdir, probe, recalc))
+    raise typer.Exit(run_office_render(path, outdir, probe, recalc, json_))
 
 
 @office_app.command("outline", help="skeletons to start from — 23 shapes of document and deck")
@@ -1894,10 +1991,13 @@ def office_outline(
     help="the templates on file — list, show, new, adopt, check, render",
     context_settings={"allow_extra_args": True, "ignore_unknown_options": True},
 )
-def office_template(ctx: typer.Context) -> None:
+def office_template(
+    ctx: typer.Context,
+    json_: bool = typer.Option(False, "--json", help="print the result as JSON"),
+) -> None:
     from .commands.office import run_office_template
 
-    raise typer.Exit(run_office_template(list(ctx.args) or ["list"]))
+    raise typer.Exit(run_office_template(list(ctx.args) or ["list"], json_))
 
 
 k6_app = typer.Typer(

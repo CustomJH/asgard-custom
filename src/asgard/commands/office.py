@@ -65,14 +65,18 @@ def run_office_fill(path: str, values: str, output: str, scan: bool, json_: bool
     return _run(["fill", path, "--values", values, "-o", output, *(["--json"] if json_ else [])])
 
 
-def run_office_render(path: str, outdir: str, probe: bool, recalc: bool) -> int:
+def run_office_render(path: str, outdir: str, probe: bool, recalc: bool, json_: bool = False) -> int:
+    """`--json`은 레인 그대로 흘린다 — 만들어진 PDF·페이지 이미지의 경로가 그 안에 있다.
+    파일이 산출물이라도 **어디에 놓였는지**는 값이고, 부른 쪽이 다음에 쓸 것이 그것이다."""
     if probe:
-        return _run(["render", "--probe"])
+        return _run(["render", "--probe", *(["--json"] if json_ else [])])
     args = ["render", path]
     if recalc:
         args.append("--recalc")
     elif outdir:
         args += ["-o", outdir]
+    if json_:
+        args.append("--json")
     return _run(args)
 
 
@@ -85,8 +89,12 @@ def run_office_outline(genre: str, language: str, output: str, json_: bool) -> i
     return _run(args)
 
 
-def run_office_template(args: list[str]) -> int:
-    if args and args[0] == "list" and not any(item == "--json" for item in args):
+def run_office_template(args: list[str], json_: bool = False) -> int:
+    if json_ and "--json" not in args:
+        # 선언된 플래그는 Typer가 먹으므로 레인까지 손으로 다시 넘긴다 — 안 넘기면 `--json`을
+        # 준 사용자가 사람용 카탈로그를 받는다.
+        args = [*args, "--json"]
+    if args and args[0] == "list" and "--json" not in args:
         return _catalog_templates()
     return _run(["template", *args])
 

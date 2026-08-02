@@ -238,6 +238,18 @@ def _emit(payload: dict, json_out: bool) -> None:
         _print_table(payload)
 
 
+def _emit_change(payload: dict, json_out: bool) -> None:
+    """설정을 바꾼 뒤의 얼굴 — 기계는 무엇을 바꿨는지, 사람은 그래서 지금 무엇이 도는지.
+
+    여태 이 자리는 플래그와 무관하게 payload를 통째로 JSON으로 냈다. 바뀐 값을 확인하러 온
+    사람에게 필요한 것은 그 dict가 아니라 지금 이 모드의 표다."""
+    if json_out:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return
+    mode = payload["mode"]
+    _print_table({"modes": {mode: payload["effective"]}})
+
+
 def _invalid(exc: Exception, mode: str, *, remedy: str) -> errors.AsgardError:
     """설정 소유자(`configure_mode`·`mode_state`)가 던진 것을 경계의 어휘로 옮긴다.
 
@@ -276,7 +288,9 @@ def run_mode_set(
     model: str | None = None,
     effort: str | None = None,
     provider: str | None = None,
+    json_out: bool = False,
 ) -> int:
+    errors.set_json_surface(json_out)
     try:
         payload = configure_mode(
             os.getcwd(),
@@ -294,16 +308,17 @@ def run_mode_set(
             else f"`asgard mode show {mode}`로 지금 값을 보세요"
         )
         raise _invalid(exc, mode, remedy=fix) from exc
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    _emit_change(payload, json_out)
     return 0
 
 
-def run_mode_reset(mode: str, role: str | None = None) -> int:
+def run_mode_reset(mode: str, role: str | None = None, *, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
     try:
         payload = reset_mode(os.getcwd(), mode, role)
     except ValueError as exc:
         raise _invalid(exc, mode, remedy="`asgard mode`로 어떤 모드·역할이 있는지 보세요") from exc
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    _emit_change(payload, json_out)
     return 0
 
 
@@ -360,5 +375,7 @@ def run_mode_pick() -> int:
         kind, separator, selected = value.partition(":")
         key = kind if separator and kind in {"agent", "model", "effort", "provider"} else "model"
         payload = configure_mode(root, mode, role, **{key: selected if separator else value})
-    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    # 픽커는 사람이 고르는 자리다 — 고른 결과도 사람 표면으로 낸다. 여기가 JSON을 내던 것은
+    # `mode set`과 같은 흔적이었다: 기계가 읽을 자리가 필요했는데 플래그가 없어서 기본을 내줬다.
+    _emit_change(payload, False)
     return 0

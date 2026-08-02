@@ -1,17 +1,23 @@
 #!/usr/bin/env python3
 """명령 표면 규칙 — 산문이 아니라 실행 가능한 형태로.
 
-리프 명령이 140개를 넘는 표면에서 규칙을 문서로만 적어 두면 다음 커밋이 다시 흩뜨린다. 여기서 셋을 봉인한다.
+리프 명령이 140개를 넘는 표면에서 규칙을 문서로만 적어 두면 다음 커밋이 다시 흩뜨린다. 여기서 넷을 봉인한다.
 
   (a) `-q`는 `--quiet` 전용이다
   (b) 리프 명령은 `--json`을 가진다
   (c) 같은 단축 플래그가 서로 다른 긴 이름에 붙지 않는다
+  (d) 기계 JSON을 내는 명령은 그것을 요청할 플래그를 가진다 — 기본으로 내주지 않는다
 
-셋 다 **오늘의 상태를 기준선**으로 삼고 예외를 명시한다. 한 번에 전부 고치면 표면이 통째로 흔들리고,
-그러면 규칙이 아니라 대공사가 된다. 예외 목록의 크기가 다음 작업의 척도다.
+넷 다 **오늘의 상태를 기준선**으로 삼고 예외를 명시한다. 예외 목록의 크기가 다음 작업의 척도다.
 
-예외 항목마다 왜 예외인지 한 줄이 붙어 있다. 이유를 못 적는 항목은 예외가 아니라 결함이다. 이유 줄에는
-두 종류가 있다 — 규칙 밖이라 영구히 예외인 것과, 아직 안 고쳤을 뿐인 것(줄 끝에 "아직"으로 적는다).
+(d)가 (b)의 반대 방향이다. (b)만 있으면 "JSON을 낼 수 있는가"만 보고, 플래그 없이 **항상** 내주는
+자리는 통과한다 — 실제로 `role list`·`mode set`·`mode reset`·`mode pick` 넷이 그렇게 통과하고 있었다.
+그 상태를 테스트가 다시 굳혀 놓아(항상 JSON을 단언) 사람 표면을 되찾는 쪽이 회귀로 보였다.
+
+예외 항목마다 왜 예외인지 한 줄이 붙어 있다. 이유를 못 적는 항목은 예외가 아니라 결함이다. 남은 아홉은
+전부 성질상 예외다 — 되묻는 자리(start·init·auth login·mode pick), stdout이 이미 다른 것의 채널인 자리
+(completions·memory mcp·skills run), 결과가 값이 아니라 프로세스인 자리(open studio·open memory).
+"아직 안 고쳤을 뿐"인 항목은 남아 있지 않다.
 
 세 검사 모두 **양방향**이다: 새 위반이 생겨도 깨지고, 예외에 적힌 명령이 규칙을 이미 지켜도 깨진다.
 후자가 없으면 목록이 낡은 채로 남아 "예외 56건"이 영원히 56건으로 보인다.
@@ -22,6 +28,7 @@
 실행: uv run pytest tests/test_cli_surface.py
 """
 
+import ast
 import os
 import re
 import shutil
@@ -39,77 +46,25 @@ from asgard.commands import completions as comp
 
 # ── (b) `--json`이 없는 리프 — 명령마다 이유 한 줄 ──────────────────────────────────
 _NO_JSON = {
-    # 산출물이 JSON으로 감쌀 것이 아니거나, 화면 자체가 결과인 자리
     "start": "대화형 터미널 — 세션 화면이 산출물이다",
-    "init": "스캐폴딩 진행 화면 — 결과물은 파일이고 요약은 `doctor --json`이 낸다",
-    "update": "uv tool 출력을 그대로 흘린다 — 감쌀 구조가 없다",
-    "sync": "update와 같은 자리 — 설치 갱신 로그를 흘린다",
-    "uninstall": "확인 프롬프트가 본체다",
+    "init": "온보딩 — 프로파일 선택과 덮어쓰기 확인을 되묻는다. 계획은 `--dry-run`이, 결과는 `doctor --json`이 낸다",
     "completions": "산출물이 셸 스크립트 그 자체다",
     "auth login": "브라우저 OAuth 왕복 — 대화형",
     "mode pick": "선택 패널 — 사람이 고르는 자리다",
+    "skills run": "스킬이 딸려 보낸 헬퍼를 그대로 실행한다 — stdout은 그 헬퍼의 것이다",
     "memory mcp": "stdio MCP 브리지 — stdout이 프로토콜 채널이라 JSON을 더 얹을 수 없다",
-    "memory snapshot": "출력이 이미 주입용 텍스트 블록이다",
-    "memory recall": "memory snapshot과 같은 자리 — 주입용 텍스트",
     "open studio": "창을 여는 명령 — 결과는 프로세스지 값이 아니다",
     "open memory": "open studio와 같은 자리",
-    "office render": "산출물이 PDF·이미지 파일이다",
-    "office template": "템플릿 레지스트리 조작 — 조회는 `office outline --json`이 낸다",
-    # 조회·변경인데 아직 안 붙은 자리 — 여기가 다음 작업의 몫이다
-    "auth status": "조회인데 아직",
-    "auth logout": "변경인데 아직",
-    "role list": "도움말이 (JSON)이라 적혀 있고 항상 JSON을 내는데 플래그가 없다 — 아직",
-    "role model": "조회 겸 변경인데 아직",
-    "role run": "역할 턴 결과가 퀘스트 로그로만 간다 — 아직",
-    "mode set": "변경인데 아직",
-    "mode reset": "변경인데 아직",
-    "skills show": "조회인데 아직",
-    "skills run": "헬퍼 실행 결과가 사람 화면으로만 간다 — 아직",
-    "skills assign": "변경인데 아직",
-    "skills unassign": "변경인데 아직",
-    "skills enable": "변경인데 아직",
-    "skills disable": "변경인데 아직",
-    "plugins install": "변경인데 아직",
-    "memory add": "변경인데 아직",
-    "memory ingest": "변경인데 아직",
-    "memory contradiction-seen": "변경인데 아직",
-    "memory discard": "변경인데 아직",
-    "memory reindex": "변경인데 아직",
-    "memory export-okf": "번들 경로를 값으로 돌려줘야 한다 — 아직",
-    "memory show": "조회인데 아직",
-    "memory remove": "변경인데 아직",
-    "memory merge": "변경인데 아직",
-    "memory path": "조회 겸 변경인데 아직",
-    "memory norn-restore": "변경인데 아직",
-    "memory connect": "변경인데 아직",
-    "memory project-approve": "변경인데 아직",
-    "ticket comment": "변경인데 아직",
-    "ticket link": "변경인데 아직",
-    "ticket delete": "변경인데 아직",
-    "evolve scan": "변경인데 아직",
-    "evolve nudge": "훅용 한 줄 알림 — 아직",
-    "evolve list": "조회인데 아직",
-    "evolve show": "조회인데 아직",
-    "evolve approve": "변경인데 아직",
-    "evolve reject": "변경인데 아직",
-    "evolve polish": "변경인데 아직",
-    "evolve bench": "A/B 수치를 값으로 돌려줘야 한다 — 아직",
-    "evolve curate": "조회인데 아직",
-    "evolve archive": "변경인데 아직",
-    "evolve restore": "변경인데 아직",
 }
 
 # ── (c) 같은 단축이 서로 다른 긴 이름에 붙은 자리 — 단축 글자마다 이유 한 줄 ─────────────
 #
-# `-q`는 여기 없다. 26개 명령이 `--quiet`로 쓰는 글자를 두 명령이 `--query`로 쓰고 있었고, 근육기억이
-# 그대로 오작동했다 — 소수 쪽(`map context`·`ticket list`)에서 단축을 뗐다. 나머지 다섯은 아직이다.
-_SHORT_CONFLICTS = {
-    "-c": "start `--continue` vs ticket `--cycle` — 겹치는 명령이 없어 오작동은 안 나지만 뜻이 둘이다, 아직",
-    "-e": "k6 `--env` vs ticket `--estimate` — 아직",
-    "-k": "memory `--limit` vs ticket link `--kind` — 긴 이름은 갈랐고 단축만 남았다, 아직",
-    "-o": "office `--output` vs office render `--outdir` — 같은 그룹 안에서 갈린다, 아직",
-    "-p": "open `--port` vs ticket `--priority` — 아직",
-}
+# 비어 있다. 여섯 충돌을 다 닫았다: `-q`(quiet vs query)를 먼저, 그다음 `-c`·`-e`·`-k`·`-o`·`-p`.
+# 물러난 쪽은 긴 이름을 그대로 갖는다 — 단축만 옮겼으므로 옛 스크립트는 `--cycle`·`--estimate`·
+# `--priority`·`--kind`·`--outdir`로 계속 닿는다. 판정 기준은 두 개다: 그 뜻을 쓰는 명령이 더 많은
+# 쪽이 글자를 갖고, 수가 비슷하면 CLI 전체에서 통하는 뜻을 한 그룹 안에서만 통하는 필드 이름보다
+# 우선한다 (`-c` 이어가기·`-e` 환경변수·`-p` 포트 vs 티켓의 주기·추정·우선순위).
+_SHORT_CONFLICTS: dict[str, str] = {}
 
 
 def _leaves() -> dict[str, Any]:
@@ -136,6 +91,90 @@ def _long_names(param) -> list[str]:
 
 def _shorts(param) -> list[str]:
     return [opt for opt in param.opts if len(opt) == 2 and opt.startswith("-") and not opt.startswith("--")]
+
+
+# ── (d) 기계 JSON을 내는 자리는 플래그를 가진다 — 이름은 셋 중 하나 ──────────────────
+#
+# `--json`이 없던 시절, 기계가 읽을 자리가 필요한 명령은 플래그를 만드는 대신 **기본 출력을**
+# JSON으로 내줬다. `role list`·`mode set`·`mode reset`·`mode pick` 넷이 전부 그 모양이었고,
+# 그 상태를 테스트가 다시 굳혀 두어(항상 JSON을 단언) 되돌리기 어려워져 있었다. 개별 실수가
+# 아니라 반복되는 형태라, 자리를 고치는 것만으로는 다음 명령에서 또 생긴다.
+_JSON_PARAMS = {"json_out", "json_", "json", "as_json"}
+
+# 기계 채널이 stdout **그 자체**라 플래그로 가를 것이 없는 자리. 훅·프로토콜 표면뿐이다.
+_ALWAYS_MACHINE = {
+    "run_sync_turn": "훅 전용 stdin/stdout 프로토콜 — 사람이 부르는 표면이 아니다 (`memory sync-turn`, hidden)",
+}
+
+
+def _emits_json(function: ast.AST) -> bool:
+    """이 함수가 기계 JSON을 stdout으로 내보내는가 — `json.dumps`를 **출력 자리에서** 쓰는가.
+
+    `dumps` 호출이 있다는 것만으로는 부족하다. `role run`은 퀘스트 로그에 넘길 stdin payload를
+    같은 함수 안에서 만든다 — 그건 출력이 아니다. 그래서 `print(...)`·`sys.stdout.write(...)`의
+    인자이거나, 이 저장소가 `--json` 산출물에 쓰는 `_emit`/`_emitted` 경유점일 때만 센다."""
+
+    def dumps_inside(node: ast.AST) -> bool:
+        return any(
+            isinstance(n, ast.Call)
+            and isinstance(n.func, ast.Attribute)
+            and n.func.attr == "dumps"
+            and isinstance(n.func.value, ast.Name)
+            and n.func.value.id in {"json", "_json"}
+            for n in ast.walk(node)
+        )
+
+    for node in ast.walk(function):
+        if not isinstance(node, ast.Call):
+            continue
+        name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, "attr", "")
+        if name in {"_emit", "_emitted"}:
+            return True
+        if name == "print" and any(dumps_inside(arg) for arg in node.args):
+            return True
+        if (
+            name == "write"
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "stdout"
+            and any(dumps_inside(arg) for arg in node.args)
+        ):
+            return True
+    return False
+
+
+class TestMachineOutputNeedsAFlag(unittest.TestCase):
+    """기계 JSON을 내는 명령 함수는 그것을 켜고 끄는 매개변수를 가진다.
+
+    플래그 없이 항상 JSON을 내면 두 사용자가 한 자리를 두고 다툰다: 사람은 읽을 수 없는 덩어리를
+    받고, 그 덩어리를 파싱하는 쪽은 사람 표면을 고치는 순간 조용히 깨진다. 플래그가 있으면 둘 다
+    자기 얼굴을 갖는다 — 이 저장소의 `skills list`·`plugins list`·`ticket list`가 그 형태다.
+    """
+
+    def test_no_command_prints_json_without_a_way_to_ask_for_it(self):
+        offenders = {}
+        for path in sorted(Path("src/asgard/commands").rglob("*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            for function in tree.body:
+                if not isinstance(function, ast.FunctionDef | ast.AsyncFunctionDef):
+                    continue
+                if not function.name.startswith("run_") or function.name in _ALWAYS_MACHINE:
+                    continue
+                arguments = function.args
+                names = {a.arg for a in [*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs]}
+                if names & _JSON_PARAMS or not _emits_json(function):
+                    continue
+                offenders[f"{path.as_posix()}:{function.lineno}"] = function.name
+        self.assertEqual(
+            offenders,
+            {},
+            "기계 JSON을 내는데 그것을 요청할 매개변수가 없다 — `--json`을 달고 기본은 사람 표면으로",
+        )
+
+    def test_every_always_machine_exception_carries_a_reason(self):
+        for name, reason in _ALWAYS_MACHINE.items():
+            with self.subTest(function=name):
+                self.assertTrue(reason.strip(), f"'{name}'에 이유가 없다 — 이유 없는 예외는 결함이다")
 
 
 class TestQuietOwnsDashQ(unittest.TestCase):
@@ -187,7 +226,7 @@ class TestJsonCoverage(unittest.TestCase):
 
     def test_the_gap_does_not_grow(self):
         """상한을 못박는다 — 예외를 늘리는 커밋은 이유를 적는 것만으로는 통과하지 못한다."""
-        self.assertLessEqual(len(_NO_JSON), 56, "`--json` 예외는 늘릴 수 없다 — 줄이는 방향만 있다")
+        self.assertLessEqual(len(_NO_JSON), 9, "`--json` 예외는 늘릴 수 없다 — 줄이는 방향만 있다")
 
 
 class TestShortFlagMeansOneThing(unittest.TestCase):

@@ -18,7 +18,7 @@ import json
 import os
 import time
 
-from .. import ui
+from .. import errors, ui
 from ..studio import legacy as L
 from ..studio import projects as P
 from ..studio import teams as TM
@@ -343,38 +343,65 @@ def run_set(
     return 0
 
 
-def run_comment(ref: str, text: str, author: str) -> int:
+def _rejected(exc: Exception, ref: str) -> errors.AsgardError:
+    """티켓 하나에 대한 거절을 경계의 어휘로 — 호출자가 고칠 수 있는 잘못이므로 2다.
+
+    `StoreError`는 여기 안 온다: 호출부가 `TicketError`만 넘긴다. 저장소를 못 여는 것은 사용자가
+    적은 값의 문제가 아니라 환경의 문제라 정본대로 `Unavailable` 1로 나가야 한다 — 그것을 2로
+    바꾸면 스크립트가 "내가 틀렸다"와 "저장소가 깨졌다"를 구별하지 못한다."""
+    return errors.InvalidInput(str(exc), remedy="asgard ticket list 로 지금 있는 티켓을 보세요", detail={"ticket": ref})
+
+
+def run_comment(ref: str, text: str, author: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+    ui.set_quiet(json_out)
     try:
         note = T.add_comment(_root(), ref, text, author=author or "cli")
-    except (T.TicketError, T.StoreError) as exc:
-        ui.fail(str(exc))
-        return 2
-    ui.ok(f"{note['ticket']}에 댓글을 남겼어요")
-    return 0
+    except T.TicketError as exc:
+        raise _rejected(exc, ref) from exc
+    return _emitted(note, f"{note['ticket']}에 댓글을 남겼어요", json_out)
 
 
-def run_link(ref: str, other: str, kind: str, remove: bool) -> int:
+def run_link(ref: str, other: str, kind: str, remove: bool, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+    ui.set_quiet(json_out)
     try:
         if remove:
             if not T.unlink_tickets(_root(), ref, kind, other):
-                ui.fail("그런 관계가 없어요")
-                return 2
-            ui.ok(f"{ref} ⇸ {other} ({kind}) 해제")
-            return 0
+                raise errors.NotFound(
+                    "그런 관계가 없어요",
+                    remedy=f"asgard ticket show {ref} 로 지금 걸린 관계를 보세요",
+                    detail={"ticket": ref, "other": other, "kind": kind},
+                )
+            return _emitted(
+                {"ticket": ref, "other": other, "kind": kind, "linked": False},
+                f"{ref} ⇸ {other} ({kind}) 해제",
+                json_out,
+            )
         ticket = T.link_tickets(_root(), ref, kind, other, actor="cli")
-    except (T.TicketError, T.StoreError) as exc:
-        ui.fail(str(exc))
-        return 2
-    ui.ok(f"{ticket['key']} → {other} ({kind})")
-    return 0
+    except T.TicketError as exc:
+        raise _rejected(exc, ref) from exc
+    return _emitted(
+        {"ticket": ticket["key"], "other": other, "kind": kind, "linked": True},
+        f"{ticket['key']} → {other} ({kind})",
+        json_out,
+    )
 
 
-def run_delete(ref: str) -> int:
+def run_delete(ref: str, json_out: bool = False) -> int:
+    errors.set_json_surface(json_out)
+    ui.set_quiet(json_out)
     if not T.delete_ticket(_root(), ref):
-        ui.fail(f"그런 티켓을 못 찾았어요: {ref}")
-        return 2
-    ui.ok(f"{ref} 삭제 — 그 번호는 다시 발급되지 않아요")
-    return 0
+        raise errors.NotFound(
+            f"그런 티켓을 못 찾았어요: {ref}",
+            remedy="asgard ticket list 로 지금 있는 티켓을 보세요",
+            detail={"ticket": ref},
+        )
+    return _emitted(
+        {"ticket": ref, "deleted": True, "key_reused": False},
+        f"{ref} 삭제 — 그 번호는 다시 발급되지 않아요",
+        json_out,
+    )
 
 
 def run_cycle(name: str, close: str, json_out: bool, team: str = "") -> int:
