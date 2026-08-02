@@ -8,11 +8,14 @@
 # Run: pwsh -NoProfile -File tests/install_ps1_smoke.ps1
 $ErrorActionPreference = 'Stop'
 
-# install.ps1's Save-Transcript falls back to the CURRENT DIRECTORY when both TEMP and TMP are
-# unset - which is every non-Windows host, and this smoke drives the failure path half a dozen
-# times per run. Left alone it buries the repository root in asgard-install-*.log (306 of them had
-# accumulated before this line existed). The fallback itself is right for a Windows box with no
-# TEMP; what is wrong is a test that litters the tree it is testing.
+# Save-Transcript used to fall back to the CURRENT DIRECTORY when both TEMP and TMP were unset -
+# which is every non-Windows host - and this smoke drives the failure path half a dozen times per
+# run, so it buried the repository root in asgard-install-*.log (306 of them had accumulated before
+# this line existed; 33 stale ones were still lying around on 26-08-02). install.ps1 now reaches
+# TMPDIR and [IO.Path]::GetTempPath() before the working directory, so the litter is fixed at the
+# source. This line stays as the belt to that braces: it pins the destination for this run
+# regardless of what the installer's fallback chain decides, and the sweep at the bottom of this
+# file is what actually removes the files.
 if (-not $env:TEMP -and -not $env:TMP) { $env:TEMP = [IO.Path]::GetTempPath() }
 
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path

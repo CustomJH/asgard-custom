@@ -41,6 +41,12 @@ asgard = "asgard.cli:main"
 dev = [
     "pytest>=8",
     "pytest-cov>=6",  # 커버리지 가시화 — 게이트 아님, 공백이 파이프라인에 보이게만 (CI --cov)
+    # 스위트 병렬 실행 (`uv run pytest -n auto`). 기본 addopts 로는 안 건다 — 병렬이 기본이면
+    # 실패가 어느 워커에서 났는지부터 찾아야 하고, 그 비용은 한 파일만 돌리는 흔한 경우에 헛돈다.
+    # 실측 근거: 직렬 898초(14분 58초). 커밋 전마다 돌리기에는 긴 길이라 사람이 안 돌리게 된다.
+    # 밀폐 픽스처는 프로세스 단위라 워커 격리가 이미 서 있다 (tests/conftest.py 의 session 스코프
+    # `_hermetic_studio_state` 는 xdist 워커마다 따로 도는 별개 프로세스에서 각자 잡힌다).
+    "pytest-xdist>=3.6",
     "ruff>=0.8",
     "ty>=0.0.56",
     "model2vec>=0.8",  # 시맨틱 스트림 dev 실검증·벤치용 — 배포 기본엔 불포함 (extra: semantic)
@@ -61,6 +67,18 @@ ignore = ["E501"]  # 포매터 병용 시 공식 권장 — 장문 템플릿 문
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+# ── health 게이트 기준선 — `uv run python -m asgard.commands.health --gate` 가 읽는 정본 ──
+# 왜 여덟 지표 중 이 둘만 막는지, 왜 기준선이 커밋·태그가 아니라 이 파일에 있는지는
+# src/asgard/health.py 의 GATE_METRICS·GATE_TABLE 주석에 있다.
+#
+# 실측 기준선: v0.10.1(01064cc) 트리 전수 스캔 — 소스 281파일 기준 severe_files 10 · cycles 0.
+# 이 수는 목표가 아니라 **상한**이다. 내려가는 것은 언제든 환영이고(내려도 게이트는 조용하다),
+# 올리는 커밋은 "왜 1000행을 넘겨야 했는가"를 같이 들고 와야 한다 — 그 대화가 이 파일에
+# 기준선을 둔 이유다.
+[tool.asgard.health-gate]
+severe_files = 10
+cycles = 0
 
 # 타입체크 — ty 베타 채택, 문제 시 mypy 폴백. ref/·workspace/ 는 .gitignore 로 자동 제외.
 [tool.ty.environment]

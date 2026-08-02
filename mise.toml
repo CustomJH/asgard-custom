@@ -1,2 +1,13 @@
+# 이 저장소가 실제로 돌아가는 툴체인. 선언과 실물이 어긋나면 "어느 버전에서 검증됐는가"에
+# 아무도 답할 수 없다 — 프레이야 판정기는 전부 node 로 돌고(engine/scripts/*.mjs), node 가
+# 없으면 게이트 테스트 7개 파일이 통째로 skip 된다. 조용히 안 도는 판정기가 가장 비싸다.
+#
+# node 22: 이전 값 24 는 아무 데서도 쓰이지 않던 수였다 — 실측 `node --version` 은 v22.22.3
+# 이고, studio-shell 을 굽는 워크플로 둘(release.yml · ci.yml.disabled)도 setup-node 에
+# "22" 를 준다. 선언을 실물 쪽으로 내린다. 올릴 거면 저 워크플로 둘을 같이 올려야 한다.
+#
+# python 3.14: pyproject.toml 의 `requires-python = ">=3.14"` 와 CI 의 setup-uv
+# `python-version: "3.14"` 가 이미 그렇게 적혀 있는데 여기에만 핀이 없었다. 실측 3.14.5.
 [tools]
-node = "24"
+node = "22"
+python = "3.14"

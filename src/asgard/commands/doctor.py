@@ -523,22 +523,43 @@ def _route_prior_check(root: str) -> list[dict]:
     ]
 
 
-def _gate_blocks(root: str) -> tuple[dict[str, int], int]:
+def _gate_blocks(root: str) -> tuple[dict[str, int], int, dict[str, int]]:
+    """(차단 사유별 횟수, 상한 초과 에스컬레이션 수, 무판정 사유별 횟수)."""
     blocks: dict[str, int] = {}
+    skipped: dict[str, int] = {}
     escalations = 0
     try:
         with open(os.path.join(root, ".asgard", "state", "gate-events.jsonl"), encoding="utf-8") as handle:
             gate_lines = [ln for ln in handle if ln.strip()]
     except OSError:
-        return (blocks, escalations)
+        return (blocks, escalations, skipped)
     for ln in gate_lines:
         ev = _json.loads(ln)
+        code = str(ev.get("code") or "other")
         if ev.get("event") == "gate_block":
-            code = str(ev.get("code") or "other")
             blocks[code] = blocks.get(code, 0) + 1
         elif ev.get("event") == "gate_escalate":
             escalations += 1
-    return (blocks, escalations)
+        elif ev.get("event") == "gate_skipped":
+            skipped[code] = skipped.get(code, 0) + 1
+    return (blocks, escalations, skipped)
+
+
+# 게이트가 판정 없이 사라진 사유 중 **사람이 손대야 하는** 것과 그 처방. 나머지 사유
+# (no-sentinel·no-judged-writes)는 잴 것이 없던 정상 상황이라 세기만 하고 경고로 올리지
+# 않는다 — 매번 뜨는 경고는 곧 아무도 안 읽고, 그러면 이 계측이 막으려던 자리가 다시 열린다.
+_GATE_SKIP_ACTIONABLE = {
+    "no-asgard": "asgard 가 PATH 에 없어 판정기를 못 불렀어요",
+    "hook-error": "훅이 예외로 끝났어요",
+}
+
+
+def _skipped_note(skipped: dict[str, int]) -> tuple[str, list[str]]:
+    """(화면 한 줄, 조치가 필요한 사유들). 사유를 안 가르면 '무판정 12회'가 무슨 뜻인지 아무도 모른다."""
+    hot = [f"{_GATE_SKIP_ACTIONABLE[c]} {n}회" for c, n in sorted(skipped.items()) if c in _GATE_SKIP_ACTIONABLE]
+    quiet = sum(n for c, n in skipped.items() if c not in _GATE_SKIP_ACTIONABLE)
+    line = f"게이트 무판정 {sum(skipped.values())}회 (잴 대상 없음 {quiet})"
+    return (line + (" · " + " · ".join(hot) if hot else ""), hot)
 
 
 def _quest_verdicts(root: str) -> tuple[dict[str, int], int]:
@@ -560,13 +581,14 @@ def _quest_verdicts(root: str) -> tuple[dict[str, int], int]:
 
 
 def _gate_event_check(root: str) -> list[dict]:
-    """차단 자체는 게이트가 일한 증거라 결함이 아니다 — 사람이 수동 우회한 forced close만 경고다."""
+    """차단 자체는 게이트가 일한 증거라 결함이 아니다 — 사람이 수동 우회한 forced close 와,
+    게이트가 조치 필요한 사유로 판정 없이 사라진 것만 경고다."""
     try:
-        blocks, escalations = _gate_blocks(root)
+        blocks, escalations, skipped = _gate_blocks(root)
         verdicts, forced = _quest_verdicts(root)
     except Exception:
         return []
-    if not (blocks or escalations or forced or any(verdicts.values())):
+    if not (blocks or escalations or skipped or forced or any(verdicts.values())):
         return []
     parts = []
     if blocks:
@@ -574,6 +596,9 @@ def _gate_event_check(root: str) -> list[dict]:
         parts.append(f"gate block {sum(blocks.values())}회 ({top})")
     if escalations:
         parts.append(f"차단 상한 초과 에스컬레이션 {escalations}회")
+    skip_line, skip_hot = _skipped_note(skipped) if skipped else ("", [])
+    if skip_line:
+        parts.append(skip_line)
     if any(verdicts.values()):
         parts.append(f"verdict PASS {verdicts['PASS']}·FAIL {verdicts['FAIL']}·ESCALATE {verdicts['ESCALATE']}")
     if forced:
@@ -581,9 +606,10 @@ def _gate_event_check(root: str) -> list[dict]:
     return [
         {
             "name": "trinity gate events",
-            "ok": forced == 0,
+            "ok": forced == 0 and not skip_hot,
             "detail": " · ".join(parts),
-            "fix": "forced close는 게이트 수동 우회 — 사유를 quest 로그에 남기고 재검증 권장 "
+            "fix": "forced close는 게이트 수동 우회 — 사유를 quest 로그에 남기고 재검증 권장. "
+            "게이트 무판정은 잴 대상이 없던 정상 경우가 대부분이고, PATH·훅 오류로 표시된 것만 조치 대상 "
             "(.asgard/state/gate-events.jsonl · quest/*.jsonl 감사)",
         }
     ]

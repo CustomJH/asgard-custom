@@ -1,5 +1,10 @@
 # 26-07-23 사용자 지시로 비활성화 — push/PR CI 검증 잡음 제거. release.yml 은 별도 파일이라 영향 없음.
-# 되살리려면 아래 주석을 전부 해제.
+#
+# 26-08-02: 아래 `quality` 잡만 ci.yml 로 되살렸다(사유는 그 파일 머리말). 남은 셋 —
+# smoke·windows-terminal·studio-shell-windows — 은 러너 3종과 npm·cargo 툴체인에 물려 있어
+# 껐던 사유("검증 잡음")의 출처였을 가능성이 가장 크므로 여기 그대로 둔다. 되살리려면 그
+# 잡의 주석을 해제해 ci.yml 로 옮겨라. 이 파일에 있는 quality 잡은 ci.yml 과 중복이니
+# 옮길 때 같이 가져가지 마라.
 #
 # name: ci
 #

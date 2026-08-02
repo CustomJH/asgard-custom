@@ -3,7 +3,8 @@
 **왜 이 모듈이 있는가.** 에이전트의 판정 리워드는 "테스트 통과"에 걸려 있고, 나쁜 구조의
 비용은 몇 달 뒤에 청구된다. 그 간극 때문에 퀘스트 단위 게이트(criteria↔증거)는 전부 초록인데
 나무는 조용히 굳어간다 — 판정이 통과시킨 것과 나무가 잃은 것이 다른 축이다. 이 모듈은 그
-두 번째 축을 **측정**한다. 막지는 않는다(뒤 "왜 막지 않는가" 참조).
+두 번째 축을 **측정**한다. 여덟 지표 중 여섯은 측정만 하고, 두 개만 막는다(뒤 "왜 여섯은 안
+막고 둘은 막는가" 참조).
 
 측정 대상은 실증 문헌에서 유지보수 비용·결함률과의 상관이 확인된 지표군으로 제한한다:
 
@@ -17,12 +18,17 @@
 - **핫스팟** — 변경 빈도 × 크기. 복잡하면서 자주 바뀌는 파일이 결함 확률이 가장 높다는
   핫스팟 분석의 산출물. 크기 단독보다 수리 우선순위 신호로 낫다.
 
-**왜 막지 않는가.** 절대 문턱으로 차단하면 두 가지가 깨진다. ① 기존 부채가 전부 새 작업의
-차단 사유가 되어 Canon 7(범위 존중)과 정면 충돌한다 — 손대지도 않은 큰 파일 때문에 한 줄
-수정이 막힌다. ② 침식은 절대값이 아니라 **추세**로 나타나므로, 한 시점의 값은 판정 근거가
-못 된다. 그래서 산출물은 스냅샷과 그 사이의 델타이고, 판정은 사람 몫으로 남긴다. 확정된
-구조 위반을 기계가 막아야 한다면 그 경로는 이 모듈이 아니라 fitness function(계층 테스트·
-lint 규칙)이다 — `asgard-hlidskjalf`의 봉인 제안이 그 길이다.
+**왜 여섯은 안 막고 둘은 막는가.** 절대 문턱으로 차단하면 두 가지가 깨진다. ① 기존 부채가
+전부 새 작업의 차단 사유가 되어 Canon 7(범위 존중)과 정면 충돌한다 — 손대지도 않은 큰 파일
+때문에 한 줄 수정이 막힌다. ② 침식은 절대값이 아니라 **추세**로 나타나므로, 한 시점의 값은
+판정 근거가 못 된다. 그래서 여섯 지표(big_files·big_units·deep_units·dup_share·max_fan_in·
+max_fan_out)의 산출물은 스냅샷과 델타뿐이고, 판정은 사람 몫으로 남긴다.
+
+그러나 관측만 하는 축은 나빠지는 것을 못 막는다. 실측(26-08-02 감사)에서 직전 릴리스 대비
+큰 파일 46→57, 심각 7→9, 큰 함수 90→100, 최대 fan-in 33→35 로 전 축이 나빠진 채 릴리스가
+통과했다. 그래서 `severe_files`·`cycles` 두 축만 기준선 대비 증가를 하드 블록으로 건다 —
+자세한 근거는 아래 `GATE_METRICS` 주석에 있다. 나머지 구조 위반을 기계가 막아야 한다면 그
+경로는 여전히 이 모듈이 아니라 fitness function(계층 테스트·lint 규칙)이다.
 
 **측정 불능은 미측정으로 남긴다** (fail-closed 표기). 함수 단위·결합 지표는 Python만
 정밀하다. 다른 언어 파일은 크기·중복·변경 빈도만 넣어 보내고 `unmeasured`에 센다 —
@@ -37,6 +43,7 @@ import hashlib
 import json
 import os
 import subprocess
+import tomllib
 from dataclasses import asdict, dataclass, field
 
 from . import settings
@@ -698,4 +705,106 @@ def trend(root: str, current: Snapshot | None = None) -> Trend | None:
         deltas.append(Delta(metric=metric, before=old, after=new, direction=direction))
     return Trend(
         from_commit=str(before.get("commit") or "unknown"), to_commit=str(after.get("commit")), deltas=tuple(deltas)
+    )
+
+
+# ── 게이트 — 여덟 지표 중 여기 둘만 막는다 ──
+#
+# 고른 기준은 하나다: **되돌리는 비용이 선형이 아닌 축**. 나머지 여섯은 한 줄 수정으로도
+# 오르내리고 되돌리는 데 몇 분이면 되므로, 막으면 오탐이 쌓이고 오탐이 쌓인 게이트는 꺼진다.
+#
+#   · severe_files (>1000행) — 1000행을 넘긴 파일은 그 시점부터 분해에 사람이 붙어야 하고,
+#     그때는 이미 그 파일을 임포트하는 쪽이 수십 군데다. 실측: 이 저장소의 quest_log.py 는
+#     2,668행이고 훅 단일 파일 배포 계약 때문에 분해가 막혀 있다 (감사 H-3).
+#   · cycles — 순환은 한 파일이 아니라 강결합 성분 **전체**를 같이 풀어야 한다. 0에서 1로
+#     가는 커밋은 한 줄이지만 1에서 0으로 돌아오는 커밋은 그렇지 않다.
+GATE_METRICS = ("severe_files", "cycles")
+
+# ── 기준선을 어디에 두는가: **추적되는 파일**(pyproject.toml)이다 ──
+#
+# 후보 셋을 재 보고 고른 결과다.
+#   · 커밋 기준(직전 커밋 재스캔) — 게이트가 매번 그 커밋의 워크트리를 복원해 전수 스캔해야
+#     한다. CI 체크아웃은 기본 depth 1 이라 비교 대상 커밋이 아예 없다.
+#   · 태그 기준(직전 릴리스 재스캔) — 위와 같은 비용에 더해, 태그 사이에 쌓인 악화가 릴리스
+#     시점에 한꺼번에 터진다. 막는 자리가 고치기 가장 비싼 자리가 된다.
+#   · `.asgard/health/history.jsonl` — 이 저장소의 .gitignore 가 `.asgard/*` 를 통째로
+#     무시해서 CI 는 이 파일을 못 본다. 기계마다 다른 이력이 기준선이 되면 같은 변경이
+#     사람마다 다르게 판정된다.
+#
+# 추적되는 파일은 셋을 다 피한다. 스캔은 현재 트리 1회로 끝나고, 모든 기계·CI 가 같은 수를
+# 읽고, 무엇보다 **기준선을 올리는 행위가 diff 에 남는다** — 게이트를 푸는 일이 리뷰 대상이
+# 된다. 그게 이 축에서 유일하게 중요한 성질이다.
+GATE_TABLE = ("tool", "asgard", "health-gate")
+
+
+@dataclass(frozen=True)
+class GateViolation:
+    """기준선을 넘긴 지표 하나."""
+
+    metric: str
+    baseline: int
+    current: int
+
+
+@dataclass(frozen=True)
+class GateReport:
+    """게이트 판정 1회. `undetermined` 는 기준선이 없어 **재지 못한** 지표다 — 빈 violations
+    가 "깨끗하다"를 뜻하려면 이 칸이 같이 비어 있어야 한다 (thor_gate 와 같은 계약)."""
+
+    commit: str
+    baseline: dict[str, int]
+    violations: tuple[GateViolation, ...]
+    undetermined: tuple[str, ...]
+
+    @property
+    def blocked(self) -> bool:
+        return bool(self.violations)
+
+
+def gate_baseline(root: str) -> dict[str, int]:
+    """`pyproject.toml` 의 `[tool.asgard.health-gate]`. 없거나 못 읽으면 빈 지도.
+
+    빈 지도는 "기준선 0"이 아니라 "기준선 없음"이다 — 호출부는 그 지표를 `undetermined` 로
+    실어야 한다. 0으로 채우면 기준선을 안 세운 저장소가 전부 빨개진다.
+    """
+    try:
+        with open(os.path.join(root, "pyproject.toml"), "rb") as fh:
+            table: object = tomllib.load(fh)
+    except OSError, tomllib.TOMLDecodeError:
+        return {}
+    for key in GATE_TABLE:
+        if not isinstance(table, dict):
+            return {}
+        table = table.get(key, {})
+    if not isinstance(table, dict):
+        return {}
+    out: dict[str, int] = {}
+    for metric in GATE_METRICS:
+        raw = table.get(metric)
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 0:
+            continue  # 문자열·음수·bool 은 기준선이 아니다 — 조용히 통과시키느니 미판정으로 남긴다
+        out[metric] = raw
+    return out
+
+
+def gate(root: str, snapshot: Snapshot | None = None) -> GateReport:
+    """기준선 대비 악화만 판정한다. 절대값은 보지 않는다 — 물려받은 부채는 이 변경의 책임이
+    아니다(craft 래칫과 같은 계약).
+
+    `snapshot` 을 넘기면 그 스냅샷으로 판정한다 — 같은 실행에서 이미 훑었으면 두 번 훑지 않는다.
+    """
+    baseline = gate_baseline(root)
+    snap = snapshot if snapshot is not None else scan(root)
+    violations = []
+    for metric in GATE_METRICS:
+        if metric not in baseline:
+            continue
+        current = int(getattr(snap, metric))
+        if current > baseline[metric]:
+            violations.append(GateViolation(metric=metric, baseline=baseline[metric], current=current))
+    return GateReport(
+        commit=snap.commit,
+        baseline=baseline,
+        violations=tuple(violations),
+        undetermined=tuple(m for m in GATE_METRICS if m not in baseline),
     )

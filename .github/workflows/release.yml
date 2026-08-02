@@ -26,9 +26,11 @@ jobs:
           v="$(sed -n 's/.*__version__ = "\([^"]*\)".*/\1/p' src/asgard/__init__.py)"
           [ "v$v" = "$GITHUB_REF_NAME" ] || { echo "::error::tag $GITHUB_REF_NAME != __version__ $v — src/asgard/__init__.py 를 먼저 올리세요"; exit 1; }
 
-  # push/PR CI 는 꺼져 있다(ci.yml.disabled) — 그래서 태그가 **유일한** 검증 지점이다. 게이트를
-  # 안 걸면 lint·타입·테스트를 한 번도 안 돌린 wheel 이 install.sh 로 나간다. 로컬 베이스라인과
-  # 같은 4단: ruff check · ruff format --check · ty check · pytest.
+  # 26-08-02 부터 push/PR 에도 같은 quality 잡이 돈다(ci.yml) — 태그는 더 이상 유일한 검증
+  # 지점이 아니다. 그래도 여기서 한 번 더 도는 이유는 태그가 **wheel 이 나가는** 자리이기
+  # 때문이다: 브랜치 보호를 우회한 push, 체크 없이 민 태그, ci.yml 자체의 고장 — 어느 쪽이든
+  # 여기서 걸린다. 로컬 베이스라인과 같은 4단 + health 게이트:
+  # ruff check · ruff format --check · ty check · health --gate · pytest.
   quality:
     needs: verify-tag
     runs-on: ubuntu-latest
@@ -47,7 +49,12 @@ jobs:
 
       - run: uv run ty check
 
-      - run: uv run pytest -q
+      # 릴리스마다 나빠지던 축을 여기서 막는다 — 실측(26-08-02 감사)에서 직전 릴리스 대비
+      # 심각(>1000행) 7→9 로 오른 채 릴리스가 통과했다. 기준선은 pyproject.toml 에 있다.
+      - run: uv run asgard health --gate
+
+      # -n auto: 직렬 실측 898초. 태그 파이프라인은 사람이 기다리는 자리라 병렬로 돈다.
+      - run: uv run pytest -q -n auto
 
   release:
     needs: quality

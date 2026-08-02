@@ -144,13 +144,12 @@ def run_setup_map(*, check: bool = False, dry_run: bool = False, json_out: bool 
     return 0
 
 
-def run_map_generate(*, dry_run: bool = False, json_out: bool = False, quiet: bool = False) -> int:
-    """Create the map if missing; repeated generation is deliberately idempotent."""
-    return run_setup_map(dry_run=dry_run, json_out=json_out, quiet=quiet)
-
-
 def run_map_update(*, dry_run: bool = False, json_out: bool = False, quiet: bool = False) -> int:
-    """Refresh the same managed projection used by generate."""
+    """Draw or redraw the managed projection — first run and refresh are the same work, so it is one entry point.
+
+    `map generate`는 이 함수의 hidden 별칭이고 `setup map`은 같은 일을 하는 옛 문이다. 진입점을 셋 두면
+    셋이 갈라질 수 있으니 갈래는 cli.py의 등록에서만 만든다.
+    """
     return run_setup_map(dry_run=dry_run, json_out=json_out, quiet=quiet)
 
 

@@ -533,10 +533,23 @@ function Hold-Window ($prompt) {
     Write-Host ""
 }
 
+# Save-Transcript - the failure log has to land somewhere a person can find, and never in whatever
+# directory they happened to be standing in. TEMP/TMP are Windows-only environment variables; on
+# pwsh for macOS/Linux neither exists, so the old fallback chain always reached (Get-Location) and
+# dropped the log into the caller's working directory. Measured: 33 asgard-install-*.log files
+# strewn through this repository, all written by the test suite's smoke run. A real Windows host
+# with TEMP unset does exactly the same thing to the user.
+#
+# GetTempPath() is the real answer and exists on 5.1 too - it consults TMP/TEMP/USERPROFILE on
+# Windows and TMPDIR on Unix, and falls back to /tmp. TMPDIR is checked before it so a person who
+# exports one gets the directory they asked for. (Get-Location) stays as the last resort: writing
+# the log somewhere odd still beats losing the only record of why the install failed.
 function Save-Transcript {
     try {
         $dir = $env:TEMP
         if (-not $dir) { $dir = $env:TMP }
+        if (-not $dir) { $dir = $env:TMPDIR }
+        if (-not $dir) { try { $dir = [System.IO.Path]::GetTempPath() } catch { } }
         if (-not $dir) { $dir = (Get-Location).Path }
         $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
         $path = Join-Path $dir ("asgard-install-" + $stamp + ".log")

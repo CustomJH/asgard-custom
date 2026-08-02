@@ -21,6 +21,10 @@
 # 판정 대상은 **이 세션이 실제로 쓴 경로**다 (write_sentinel이 남긴 목록). 계약은 래칫 하나 —
 # 이번 변경이 더 나쁘게 만든 것만 막고, 물려받은 부채는 통과시킨다.
 #
+# 판정 없이 사라지는 자리(대상 없음·asgard 부재·훅 예외)는 전부 `.asgard/state/gate-events.jsonl`
+# 에 `gate_skipped` 한 줄을 남긴다 — 막지 않되 세지지도 않으면 게이트가 꺼진 것과 통과한 것이
+# 화면에서 같아진다 (_skipped 참조).
+#
 # 상한 2회: SubagentStop 차단 루프는 서브에이전트를 인질로 잡는다. 같은 세션·같은 역할을 2회
 # 막으면 3번째는 경고와 함께 통과 — 이 훅은 조기 교정 장치지 최후 방벽이 아니다 (subagent_gate
 # 와 같은 규약).
@@ -71,16 +75,45 @@ GATES = (("craft", ["craft"]), ("thor gate", ["thor", "gate"]), ("freyja gate", 
 REPAIR_GATE = "craft"  # `--fix`를 받는 유일한 게이트. 나머지 둘은 고칠 수 없는 것을 잰다
 
 
+def _sentinel(root: str, sid: str) -> str:
+    return os.path.join(root, ".asgard", "state", "writes-" + sid + ".json")
+
+
 def _writes(root: str, sid: str) -> list[str]:
-    path = os.path.join(root, ".asgard", "state", "writes-" + sid + ".json")
     try:
-        with open(path, encoding="utf-8") as handle:
+        with open(_sentinel(root, sid), encoding="utf-8") as handle:
             rows = json.load(handle)
     except Exception:
         return []
     if not isinstance(rows, list):
         return []
     return [str(r) for r in rows if str(r).endswith(JUDGED_SUFFIXES)]
+
+
+def _skipped(root: str, sid: str, code: str) -> None:
+    """게이트가 판정 없이 사라진 사실을 append-only 로 남긴다 (`asgard doctor` 집계 원천).
+
+    이 훅이 조용히 통과하는 자리는 셋이고 셋 다 설계 의도가 타당하다 — 판정기 고장이 작업을
+    막으면 안 된다. 문제는 **비활성화가 관측되지 않는다**는 것이었다: 판정 대상이 빈 경우도,
+    상태 파일이 지워진 경우도, `asgard` 가 PATH 에 없는 경우도 화면에서 "막을 것이 없었다"와
+    똑같이 생겼다. 특히 상태 파일 삭제는 write_sentinel 이 `.asgard` 경로를 기록하지 않으므로
+    삭제 행위 자체도 안 남는다. 그래서 여기서 셈만 남긴다 — 막지는 않는다.
+
+    자리는 verifier_gate 가 이미 쓰는 `.asgard/state/gate-events.jsonl` 이다. 두 게이트가 한
+    파일을 쓰면 doctor 가 한 번만 읽는다. fail-open: 기록 실패가 통과를 막지 않는다.
+    """
+    try:
+        state = os.path.join(str(root), ".asgard", "state")  # root 는 payload 에서 와서 str 이 아닐 수 있다
+        if not os.path.isdir(state):
+            return  # asgard 를 안 쓰는 트리다 — 게이트가 꺼진 게 아니라 애초에 없다
+        row = {"event": "gate_skipped", "gate": "craft", "code": code, "sid": str(sid)}
+        with open(os.path.join(state, "gate-events.jsonl"), "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(row) + "\n")
+    except Exception:
+        # 타입을 좁혀 여러 개로 적을 수는 없다: 포매터가 py314 로 맞춰져 있어 괄호를 지우고
+        # PEP 758 문법으로 바꾸는데, 훅은 3.9 로도 파스돼야 한다(tests/test_architecture.py 의
+        # test_hooks_parse_on_old_python — 이 문법 3건이 실제로 매뉴얼 계층을 증발시킨 적이 있다).
+        pass  # 계측 실패는 계측만 잃는다 — 이 함수는 훅이 예외를 물고 나가는 길에서도 불린다
 
 
 def _bump(root: str, sid: str, agent: str) -> int:
@@ -256,17 +289,26 @@ def main() -> None:
         data = json.load(sys.stdin)
     except Exception:
         sys.exit(0)
+    root = ""
+    sid = "default"
     try:
         protocol_arg = sys.argv[1] if len(sys.argv) > 1 else ""
         protocol = "cursor" if protocol_arg in {"pre", "start", "stop"} else protocol_arg or "claude"
-        root = os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd()
+        # str() 로 감싼다 — `cwd` 는 클라이언트 payload 에서 오므로 문자열이 아닐 수 있고,
+        # 그러면 os.path.join 이 TypeError 를 내 훅이 판정도 기록도 못 하고 사라진다.
+        root = str(os.environ.get("CLAUDE_PROJECT_DIR") or data.get("cwd") or os.getcwd())
         raw_sid = "cursor" if protocol == "cursor" else data.get("session_id") or "default"
         sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
         paths = _writes(root, sid)
         if not paths:
-            sys.exit(0)  # 이 세션이 판정 가능한 언어를 안 썼다 → 대상 없음 (fail-open)
+            # 대상 없음 (fail-open). 두 사유를 갈라 센다 — 목록 자체가 없는 것은 Bash
+            # 리다이렉션만 썼거나 상태 파일이 지워진 경우고, 목록은 있는데 비는 것은 이
+            # 세션이 판정 가능한 언어를 안 쓴 경우다. 앞쪽만이 우회 벡터다.
+            _skipped(root, sid, "no-sentinel" if not os.path.exists(_sentinel(root, sid)) else "no-judged-writes")
+            sys.exit(0)
         exe = shutil.which("asgard")
         if not exe:
+            _skipped(root, sid, "no-asgard")
             sys.exit(0)
         blocking, fix = _blocking(exe, root, paths)
         if not blocking:
@@ -281,7 +323,11 @@ def main() -> None:
             sys.exit(0)
         _block(protocol, _reason(blocking, max(0, len(paths) - MAX_PATHS), fix))
     except Exception:
-        sys.exit(0)  # 판정기 고장이 작업을 막아서는 안 된다 — 게이트는 규율이지 관문이 아니다
+        # 판정기 고장이 작업을 막아서는 안 된다 — 게이트는 규율이지 관문이 아니다. 다만 이
+        # 자리는 위 셋과 달리 **예상하지 못한** 비활성화라, 안 세면 훅이 매 턴 죽고 있어도
+        # 화면이 조용하다.
+        _skipped(root, sid, "hook-error")
+        sys.exit(0)
     sys.exit(0)
 
 

@@ -1,9 +1,9 @@
-"""completions — shell completion scripts (bash|zsh|fish), subcommand-aware.
+"""completions — shell completion scripts (bash|zsh|fish|powershell), subcommand-aware.
 
-아래 명령 표면 테이블 하나에서 3개 셸 스크립트를 생성한다 — cli.py 등록 명령과의 동기는
+아래 명령 표면 테이블 하나에서 4개 셸 스크립트를 생성한다 — cli.py 등록 명령과의 동기는
 tests/test_completions.py가 Typer 앱 인트로스펙션으로 강제. `--install`은 스크립트를
 ~/.asgard/completions/ 에 쓰고 셸 rc에 가드된 source 한 줄을 배선한다 (fish는 네이티브
-completions 디렉터리에 놓여 자동 로드 — rc 편집 불필요)."""
+completions 디렉터리에 놓여 자동 로드 — rc 편집 불필요; powershell은 $PROFILE에 dot-source)."""
 
 import os
 import subprocess
@@ -55,7 +55,7 @@ _FLAGS = {
     "auth": [],
     "init": ["--cc", "--cursor", "--codex", "--profile", "--force", "--dry-run", "--yes", "--lagom", "--quiet"],
     "map": [],  # 창은 `asgard open map`이 연다 — 여기는 지도를 만지는 손이다
-    "health": ["--snapshot", "--next", "--steps", "--json", "--quiet"],
+    "health": ["--snapshot", "--next", "--steps", "--gate", "--json", "--quiet"],
     "budget": ["--transcript", "--json", "--quiet"],
     "craft": ["--base", "--path", "--fix", "--dry-run", "--json", "--quiet"],
     "freyja-gate": ["--base", "--path", "--json"],
@@ -115,7 +115,7 @@ _VALUES = {  # 값을 갖는 열거형 옵션의 후보 — 자유값 옵션은 
 }
 _FREE_OPTS = ["--model", "--query", "--effort", "--provider"]  # 값을 갖지만 후보가 없는 옵션
 _SHORT = {"--quiet": "q", "--yes": "y"}  # fish만 short를 명시 등록 (bash/zsh는 long 제안으로 충분)
-_SHELLS = ["bash", "zsh", "fish"]  # completions의 위치 인자
+_SHELLS = ["bash", "zsh", "fish", "powershell"]  # completions의 위치 인자
 _ROLE_SUB = {
     "list": "bridge flags + role placements",
     "model": "list or set role models",
@@ -180,12 +180,16 @@ _K6_SUB = {
     "report": "render a recorded run",
 }
 _MAP_SUB = {
-    "generate": "create the deterministic project map",
-    "update": "refresh structural facts",
+    # `map generate`는 `map update`의 hidden 별칭이라 여기 없다 — 숨긴 이름은 제안하지 않는다(`upgrade`와 같다).
+    # list·why·impact는 cli.py에 등록돼 있는데 이 표에 없어서 자동완성에 안 나오던 것을 채웠다.
+    "update": "draw or redraw the deterministic project map",
     "check": "report drift without writing",
     "context": "show bounded task context",
     "scan": "rebuild the relation graph (no LLM)",
     "trace": "walk relation edges from a node",
+    "list": "every node in the graph, with the id to trace from",
+    "why": "search the comments and docstrings that recorded a reason",
+    "impact": "what a change here could reach, both directions",
 }
 _SETUP_SUB = {"map": "draw or refresh the project code map"}
 _EVOLVE_SUB = {
@@ -268,6 +272,16 @@ _TICKET_SUB = {
     "update": "a project progress note (health is written by a human)",
     "triage": "the team inbox — accept, decline",
     "import": "bring an old per-folder board into the workspace",
+}
+# 서브커맨드 이름만 제안하면 끝나는 그룹 — 플래그는 서브커맨드가 든다. 위 테이블을 가리키기만 한다(재기입 없음).
+_SUBS_ONLY = {
+    "agent": _AGENT_SUB,
+    "skills": _SKILLS_SUB,
+    "plugins": _PLUGINS_SUB,
+    "memory": _MEM_SUB,
+    "ticket": _TICKET_SUB,
+    "evolve": _EVOLVE_SUB,
+    "k6": _K6_SUB,
 }
 
 # ── bash ──────────────────────────────────────────────────────────────────────
@@ -356,7 +370,7 @@ def _bash() -> str:
                 "    map)\n"
                 '      if [ "$COMP_CWORD" -eq 2 ]; then\n'
                 f'        COMPREPLY=( $(compgen -W "{" ".join(_MAP_SUB)} --help" -- "$cur") )\n'
-                '      elif [ "${COMP_WORDS[2]}" = "generate" ] || [ "${COMP_WORDS[2]}" = "update" ]; then\n'
+                '      elif [ "${COMP_WORDS[2]}" = "update" ]; then\n'
                 '        COMPREPLY=( $(compgen -W "--dry-run --json --quiet --help" -- "$cur") )\n'
                 '      elif [ "${COMP_WORDS[2]}" = "check" ]; then\n'
                 '        COMPREPLY=( $(compgen -W "--json --quiet --help" -- "$cur") )\n'
@@ -528,7 +542,7 @@ def _zsh() -> str:
                 "    map)\n"
                 "      if (( CURRENT == 3 )); then\n"
                 f"        compadd -- {' '.join(_MAP_SUB)} --help\n"
-                "      elif [[ $words[3] == generate || $words[3] == update ]]; then\n"
+                "      elif [[ $words[3] == update ]]; then\n"
                 "        compadd -- --dry-run --json --quiet --help\n"
                 "      elif [[ $words[3] == check ]]; then\n"
                 "        compadd -- --json --quiet --help\n"
@@ -668,11 +682,10 @@ def _fish() -> str:
     map_top = "__fish_seen_subcommand_from map; and not __fish_seen_subcommand_from " + " ".join(_MAP_SUB)
     for sub, desc in _MAP_SUB.items():
         lines.append(f"complete -c asgard -n \"{map_top}\" -a {sub} -d '{desc}'")
-    for sub in ("generate", "update"):
-        for flag in ("dry-run", "json", "quiet"):
-            lines.append(
-                f'complete -c asgard -n "__fish_seen_subcommand_from map; and __fish_seen_subcommand_from {sub}" -l {flag}'
-            )
+    for flag in ("dry-run", "json", "quiet"):
+        lines.append(
+            f'complete -c asgard -n "__fish_seen_subcommand_from map; and __fish_seen_subcommand_from update" -l {flag}'
+        )
     for flag in ("json", "quiet"):
         lines.append(
             f'complete -c asgard -n "__fish_seen_subcommand_from map; and __fish_seen_subcommand_from check" -l {flag}'
@@ -761,21 +774,198 @@ def _fish() -> str:
     return "\n".join(lines) + "\n"
 
 
+# ── powershell — Register-ArgumentCompleter -Native (Windows PowerShell 5.1 / PowerShell 7) ──────
+#
+# 설명문은 넣지 않는다: 생성물이 ASCII로만 남아야 한다. Windows PowerShell 5.1은 BOM 없는 .ps1을
+# 시스템 ANSI 코드페이지로 읽어서, 한글이나 em dash가 한 글자라도 들어가면 한국어 Windows에서
+# 스크립트가 깨진 채 로드된다 (install.ps1이 ASCII-only인 것과 같은 이유).
+_PS_TPL = """\
+# asgard completions for PowerShell 5.1+ / PowerShell 7+
+# generated by `asgard completions powershell` -- do not edit by hand
+
+Register-ArgumentCompleter -Native -CommandName asgard -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    $values = @{
+__VALUE_ENTRIES__
+    }
+    $free = @(__FREE_OPTS__)
+
+    $words = @($commandAst.CommandElements | ForEach-Object { $_.ToString() })
+    # Once a character is typed the word under the cursor is already an AST element. Drop it, so that
+    # $pos means what COMP_CWORD means in the bash script: the slot being filled, not the last word.
+    if ($wordToComplete -and $words.Count -gt 1 -and $words[$words.Count - 1] -eq $wordToComplete) {
+        $words = @($words[0..($words.Count - 2)])
+    }
+    $pos = $words.Count
+    $prev = if ($pos -ge 1) { $words[$pos - 1] } else { '' }
+    $cmd = if ($pos -ge 2) { $words[1] } else { '' }
+    $sub = if ($pos -ge 3) { $words[2] } else { '' }
+
+    $out = @()
+    if ($pos -le 1) {
+        if ("$wordToComplete".StartsWith('-')) { $out = @('--help', '--version', '--agent') }
+        else { $out = @(__CMDS__) }
+    }
+    elseif ($values.ContainsKey($prev)) { $out = $values[$prev] }
+    elseif ($free -contains $prev) { $out = @() }
+    else {
+        switch -CaseSensitive ($cmd) {
+__CMD_CASES__
+        }
+    }
+    $out | Where-Object { $_ -like "$wordToComplete*" } | Sort-Object -Unique
+}
+"""
+
+
+def _ps_list(items) -> str:
+    return ", ".join(f"'{name}'" for name in items)
+
+
+def _ps_group(name: str, subs, *branches: str) -> str:
+    """서브커맨드를 가진 그룹의 switch 갈래 — 세 번째 낱말은 서브커맨드, 그 뒤는 branches가 답한다."""
+    body = "".join(f"\n                {line}" for line in branches)
+    return (
+        f"            '{name}' {{\n"
+        f"                if ($pos -eq 2) {{ $out = @({_ps_list(subs)}, '--help') }}{body}\n"
+        "            }"
+    )
+
+
+def _ps_case(name: str) -> str:
+    """switch 한 갈래 — bash 쪽 같은 이름의 분기와 같은 자리에서 같은 후보를 낸다."""
+    if name == "role":
+        return _ps_group(
+            "role",
+            _ROLE_SUB,
+            f"elseif ($sub -eq 'run' -and $pos -eq 3) {{ $out = @({_ps_list(_ROLES)}) }}",
+            f"elseif ($sub -eq 'model' -and $pos -eq 3) {{ $out = @({_ps_list(_MODEL_HOSTS)}) }}",
+            f"elseif ($sub -eq 'model' -and $pos -eq 4) {{ $out = @({_ps_list(_MODEL_ROLES)}) }}",
+            f"elseif ($sub -eq 'model' -and $pos -ge 5) {{ $out = @({_ps_list(_MODEL_FLAGS)}) }}",
+        )
+    if name == "auth":
+        return _ps_group("auth", _AUTH_SUB, "elseif ($pos -eq 3) { $out = @('openai-native') }")
+    if name == "map":
+        return _ps_group(
+            "map",
+            _MAP_SUB,
+            "elseif ($sub -eq 'update') { $out = @('--dry-run', '--json', '--quiet', '--help') }",
+            "elseif ($sub -eq 'check') { $out = @('--json', '--quiet', '--help') }",
+            "elseif ($sub -eq 'context') { $out = @('--query', '--refresh', '--managed-only', '--json', '--help') }",
+        )
+    if name == "setup":
+        branch = "elseif ($sub -eq 'map') { $out = @('--check', '--dry-run', '--json', '--quiet', '--help') }"
+        return _ps_group("setup", _SETUP_SUB, branch)
+    if name == "tools":
+        return _ps_group(
+            "tools",
+            _TOOLS_SUB,
+            "elseif ($sub -eq 'list' -and $pos -eq 3) { $out = @('--role', '--json', '--help') }",
+            f"elseif ($prev -eq '--role') {{ $out = @({_ps_list(_TOOL_ROLES)}) }}",
+        )
+    if name == "office":
+        branch = "elseif ($sub -eq 'build' -and $pos -eq 3) { $out = @('docx', 'pptx', 'xlsx') }"
+        return _ps_group("office", _OFFICE_SUB, branch)
+    if name == "open":
+        surfaces = (
+            f"elseif ($sub -eq '{surface}') {{ $out = @({_ps_list(flags.split())}, '--help') }}"
+            for surface, flags in _OPEN_FLAGS.items()
+        )
+        return _ps_group("open", _OPEN_SUB, *surfaces)
+    if name in _SUBS_ONLY:
+        return _ps_group(name, _SUBS_ONLY[name])
+    args = _SHELLS if name == "completions" else []
+    return f"            '{name}' {{ $out = @({_ps_list([*args, *_FLAGS[name], '--help'])}) }}"
+
+
+def _powershell() -> str:
+    value_entries = "\n".join(f"        '{opt}' = @({_ps_list(vals)})" for opt, vals in _VALUES.items())
+    return (
+        _PS_TPL.replace("__VALUE_ENTRIES__", value_entries)
+        .replace("__FREE_OPTS__", _ps_list(_FREE_OPTS))
+        .replace("__CMDS__", _ps_list(_SUMMARY))
+        .replace("__CMD_CASES__", "\n".join(_ps_case(name) for name in _SUMMARY))
+    )
+
+
 def _render(shell: str) -> str | None:
-    return {"bash": _bash, "zsh": _zsh, "fish": _fish}.get(shell, lambda: None)()
+    return {"bash": _bash, "zsh": _zsh, "fish": _fish, "powershell": _powershell}.get(shell, lambda: None)()
 
 
 # ── install — 스크립트 파일 + rc 배선 (멱등: 마커 주석으로 중복 방지) ─────────────────
 _RC_MARKER = "# asgard completions"
 
 
+def _login_shell() -> str:
+    """설치 대상 셸 — POSIX는 `$SHELL`, Windows는 PowerShell.
+
+    Windows에서 `$SHELL`은 보통 비어 있다. 그것을 셸 이름으로 읽으면 빈 문자열이 미지원 셸로 떨어져
+    Windows 사용자는 자동완성 없이 명령을 친다 (설치 스크립트가 `--install`을 불러도 마찬가지였다).
+    """
+    name = os.path.basename(os.environ.get("SHELL") or "")
+    if not name and os.name == "nt":
+        return "powershell"
+    return name
+
+
+def _powershell_profile() -> str:
+    """PowerShell 프로파일 경로 — 호스트에게 직접 묻는다.
+
+    `Documents`는 OneDrive 리디렉션으로 자리를 옮겨 있을 수 있어서 경로를 조립하면 엉뚱한 파일에
+    쓴다. 물어볼 수 없을 때만(pwsh/powershell 부재·타임아웃) 표준 배치로 돌아간다.
+    """
+    for exe in ("pwsh", "powershell"):
+        try:
+            proc = subprocess.run(
+                [exe, "-NoProfile", "-NonInteractive", "-Command", "$PROFILE.CurrentUserAllHosts"],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError, subprocess.SubprocessError:
+            continue
+        first = next((line.strip() for line in (proc.stdout or "").splitlines() if line.strip()), "")
+        if proc.returncode == 0 and first:
+            return first
+    return os.path.join(os.path.expanduser("~"), "Documents", "PowerShell", "profile.ps1")
+
+
+def _install_powershell(script: str, home: str) -> int:
+    d = os.path.join(home, ".asgard", "completions")
+    os.makedirs(d, exist_ok=True)
+    dest = os.path.join(d, "asgard.ps1")
+    with open(dest, "w", encoding="utf-8") as f:
+        f.write(script)
+    ui.ok(f"powershell completions → {dest}")
+    profile = _powershell_profile()
+    try:
+        with open(profile, encoding="utf-8") as f:
+            wired = _RC_MARKER in f.read()
+    except OSError:
+        wired = False
+    if wired:
+        ui.step(ui.dim(f"already wired in {profile}"))
+        return 0
+    os.makedirs(os.path.dirname(profile) or ".", exist_ok=True)
+    with open(profile, "a", encoding="utf-8") as f:
+        f.write(f'\n{_RC_MARKER}\nif (Test-Path "{dest}") {{ . "{dest}" }}\n')
+    ui.ok(f"wired {profile} — restart PowerShell (or: . $PROFILE)")
+    return 0
+
+
 def _install(shell: str | None) -> int:
-    shell = shell or os.path.basename(os.environ.get("SHELL") or "")
+    shell = shell or _login_shell()
     script = _render(shell)
     if script is None:
-        sys.stderr.write("usage: asgard completions <bash|zsh|fish> --install\n")
+        sys.stderr.write("usage: asgard completions <bash|zsh|fish|powershell> --install\n")
         return 2
     home = os.path.expanduser("~")
+    if shell == "powershell":
+        return _install_powershell(script, home)
     if shell == "fish":
         d = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(home, ".config"), "fish", "completions")
         os.makedirs(d, exist_ok=True)
@@ -821,7 +1011,9 @@ def ensure_installed() -> None:
         "zsh": os.path.join(home, ".asgard", "completions", "_asgard"),
         "fish": os.path.join(fish_dir, "asgard.fish"),
     }
-    login = os.path.basename(os.environ.get("SHELL") or "")
+    if os.name == "nt":
+        targets["powershell"] = os.path.join(home, ".asgard", "completions", "asgard.ps1")
+    login = _login_shell()
     for shell, path in targets.items():
         if shell == login or os.path.exists(path):
             try:
@@ -835,7 +1027,7 @@ def run_completions(shell: str | None, install: bool = False) -> int:
         return _install(shell)
     script = _render(shell or "")
     if script is None:
-        sys.stderr.write("usage: asgard completions <bash|zsh|fish>\n")
+        sys.stderr.write("usage: asgard completions <bash|zsh|fish|powershell>\n")
         return 2
     sys.stdout.write(script)
     return 0

@@ -1,8 +1,9 @@
-"""asgard health — 나무 침식 신호의 사람 표면. 판정하지 않는다: 세고, 추세를 보여준다.
+"""asgard health — 나무 침식 신호의 사람 표면. 세고, 추세를 보여주고, 두 축만 막는다.
 
-절대값으로 차단하지 않는 이유는 `health` 모듈 docstring에 있다. 이 표면의 계약은 두 줄이다:
-① 측정하지 못한 것을 측정한 것처럼 보이게 하지 않는다(미측정·제외 수를 항상 함께 넣는다),
-② 나빠진 지표를 화면 위쪽에 올린다 — 좋아진 지표를 세는 것은 이 도구의 일이 아니다.
+여섯 지표를 절대값으로 차단하지 않는 이유와 `severe_files`·`cycles` 둘만 막는 이유는 `health`
+모듈 docstring 에 있다. 이 표면의 계약은 두 줄이다: ① 측정하지 못한 것을 측정한 것처럼 보이게
+하지 않는다(미측정·제외 수를 항상 함께 넣는다), ② 나빠진 지표를 화면 위쪽에 올린다 — 좋아진
+지표를 세는 것은 이 도구의 일이 아니다.
 """
 
 from __future__ import annotations
@@ -188,3 +189,66 @@ def run_health(*, snapshot: bool = False, json_out: bool = False, quiet: bool = 
         ui.ok(f"기록해 뒀어요 — {health.history_path(root)}")
     ui.done()
     return 0
+
+
+def run_gate(*, json_out: bool = False, quiet: bool = False) -> int:
+    """기준선 대비 악화를 막는다. 나빠졌으면 1, 아니면 0 — 종료 코드가 판정이다.
+
+    막지 못한 지표는 화면에도 종료 코드에도 조용히 빠지지 않는다. 기준선이 없으면 그 사실을
+    `못 본 것` 으로 올리고 통과시킨다 — 기준선을 안 세운 저장소를 빨갛게 만들면 사람이 가장
+    먼저 배우는 것은 게이트를 끄는 법이다.
+    """
+    import os
+
+    root = _project_root(os.getcwd())
+    ui.set_quiet(json_out or quiet)
+    snap = health.scan(root)
+    report = health.gate(root, snap)
+
+    if json_out:
+        print(
+            json.dumps(
+                {
+                    "commit": report.commit,
+                    "blocked": report.blocked,
+                    "baseline": report.baseline,
+                    "violations": [asdict(v) for v in report.violations],
+                    "undetermined": list(report.undetermined),
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 1 if report.blocked else 0
+
+    ui.head("health --gate · 되돌리기 비싼 두 축")
+    ui.step(f"기준 {report.commit}")
+    for metric in health.GATE_METRICS:
+        label = _LABEL.get(metric, metric)
+        if metric in report.baseline:
+            ui.step(ui.dim(f"{label}  현재 {getattr(snap, metric):,} · 기준선 {report.baseline[metric]:,}"))
+    if report.undetermined:
+        ui.phase("못 본 것")
+        for metric in report.undetermined:
+            ui.warn(f"{_LABEL.get(metric, metric)} — pyproject.toml [tool.asgard.health-gate] 에 기준선이 없어요")
+
+    if not report.blocked:
+        ui.ok("기준선을 넘긴 축이 없어요")
+        ui.done()
+        return 0
+
+    ui.phase("막힌 축")
+    for v in report.violations:
+        ui.warn(f"{_LABEL.get(v.metric, v.metric)} {v.baseline:,} → {v.current:,}")
+    ui.step(
+        "이 둘은 되돌리는 비용이 지수로 커져요 — 늘린 파일을 쪼개거나 순환을 끊어 주세요. "
+        "구조를 바꿀 수 없다면 pyproject.toml 의 기준선을 올리되, 그 커밋이 근거를 들고 있어야 해요."
+    )
+    ui.done()
+    return 1
+
+
+if __name__ == "__main__":  # cli 배선 전 CI 진입점: uv run python -m asgard.commands.health --gate
+    import sys as _sys
+
+    raise SystemExit(run_gate(json_out="--json" in _sys.argv, quiet="--quiet" in _sys.argv))

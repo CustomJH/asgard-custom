@@ -371,18 +371,7 @@ def map_impact(
 # `map view`는 뺐다 — 창을 여는 문은 `asgard open map` 하나다.
 
 
-@map_app.command("generate", help="draw the project map for the first time")
-def map_generate(
-    dry_run: bool = typer.Option(False, "--dry-run"),
-    json_: bool = typer.Option(False, "--json"),
-    quiet: bool = typer.Option(False, "--quiet", "-q"),
-) -> None:
-    from .commands.map import run_map_generate
-
-    raise typer.Exit(run_map_generate(dry_run=dry_run, json_out=json_, quiet=quiet))
-
-
-@map_app.command("update", help="redraw the map after the repository has moved around")
+@map_app.command("update", help="draw the project map, or redraw it after the repository has moved around")
 def map_update(
     dry_run: bool = typer.Option(False, "--dry-run"),
     json_: bool = typer.Option(False, "--json"),
@@ -391,6 +380,11 @@ def map_update(
     from .commands.map import run_map_update
 
     raise typer.Exit(run_map_update(dry_run=dry_run, json_out=json_, quiet=quiet))
+
+
+# `generate` 별칭 — 첫 생성과 갱신은 한 함수다. 이름이 셋이면(`map generate`·`map update`·`setup map`)
+# 사용자는 셋이 서로 다른 일을 한다고 읽는다. 근육기억은 살리고 도움말에서만 뺀다(`upgrade`→`update`와 같은 처리).
+map_app.command("generate", hidden=True, help="alias of `map update`")(map_update)
 
 
 @map_app.command("check", help="how far the map has drifted, and which area maps are broken — writes nothing")
@@ -405,7 +399,9 @@ def map_check(
 
 @map_app.command("context", help="the slice of the map an agent would actually be handed")
 def map_context(
-    query: str = typer.Option("", "--query", "-q"),
+    # `-q`는 `--quiet` 전용이다 — 26개 명령이 그 뜻으로 쓴다. 검색어는 `--query` 긴 이름으로만 받는다
+    # (규칙 본체와 예외 목록: tests/test_cli_surface.py).
+    query: str = typer.Option("", "--query"),
     refresh: bool = typer.Option(False, "--refresh", help="redraw the managed map first"),
     managed_only: bool = typer.Option(False, "--managed-only", help="leave out the area maps people wrote by hand"),
     json_: bool = typer.Option(False, "--json"),
@@ -553,9 +549,14 @@ def health(
     ),
     next_: bool = typer.Option(False, "--next", help="how far off you are, and the next small step to close it"),
     steps: int = typer.Option(1, "--steps", help="how many steps to suggest (--next only)"),
+    gate: bool = typer.Option(False, "--gate", help="fail when the two axes that are expensive to undo got worse"),
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
+    if gate:
+        from .commands.health import run_gate
+
+        raise typer.Exit(run_gate(json_out=json_, quiet=quiet))
     if next_:
         from .commands.health import run_next
 
@@ -635,9 +636,9 @@ def humanize(
     raise typer.Exit(run_humanize(file, lang=lang, as_json=as_json))
 
 
-@app.command(help="print or install shell completion (bash|zsh|fish)")
+@app.command(help="print or install shell completion (bash|zsh|fish|powershell)")
 def completions(
-    shell: str = typer.Argument(None),
+    shell: str = typer.Argument(None, metavar="[bash|zsh|fish|powershell]"),
     install: bool = typer.Option(False, "--install", help="write the script and wire your shell rc"),
 ) -> None:
     from .commands.completions import run_completions
@@ -971,7 +972,8 @@ def memory_ingest(
 @memory_app.command("query", help="search the wiki — plain text search, no model, and every hit is counted")
 def memory_query(
     text: str = typer.Argument(...),
-    k: int = typer.Option(5, "-k", help="how many results to show"),
+    # 같은 개념(결과 개수)이 다른 명령에서는 `--limit`이다 — 긴 이름을 정본으로 두고 `-k`는 단축으로 남긴다.
+    k: int = typer.Option(5, "--limit", "-k", help="how many results to show"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.memory import run_query
@@ -986,7 +988,7 @@ def memory_query(
 )
 def memory_episodes(
     text: str = typer.Argument("", help="what to look for in this project's past turns"),
-    k: int = typer.Option(5, "-k", help="how many results to show"),
+    k: int = typer.Option(5, "--limit", "-k", help="how many results to show"),
     quest: str = typer.Option("", "--quest", help="only this quest (on its own, lists that quest's turns)"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -1232,7 +1234,7 @@ def memory_pattern(
 @memory_app.command("ask", help="ask something about Odin — answered from personal, episodic and project memory")
 def memory_ask(
     question: str = typer.Argument(..., help="ask it the way you would out loud"),
-    k: int = typer.Option(5, "-k", help="how much evidence to pull from each source"),
+    k: int = typer.Option(5, "--limit", "-k", help="how much evidence to pull from each source"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from .commands.memory import run_ask
@@ -1444,7 +1446,9 @@ def ticket_list(
     assignee: str = typer.Option("", "--assignee", "-a", help=t("hc_tk_f_assignee")),
     label: str = typer.Option("", "--label", "-l", help=t("hc_tk_f_label")),
     cycle: str = typer.Option("", "--cycle", "-c", help=t("hc_tk_f_cycle")),
-    query: str = typer.Option("", "--query", "-q", help=t("hc_tk_f_query")),
+    # `-q`는 `--quiet` 전용 — 나머지 필터와 달리 검색어에는 단축을 주지 않는다
+    # (규칙 본체와 예외 목록: tests/test_cli_surface.py).
+    query: str = typer.Option("", "--query", help=t("hc_tk_f_query")),
     open_only: bool = typer.Option(False, "--open", help=t("hc_tk_f_open")),
     team: str = typer.Option("", "--team", help=t("hc_tk_team")),
     project: str = typer.Option("", "--project", help=t("hc_tk_project")),

@@ -12,6 +12,8 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import os
+import tempfile
 import unittest
 from unittest import mock
 
@@ -207,6 +209,96 @@ class Reason(unittest.TestCase):
     def test_truncation_is_stated_not_hidden(self):
         text = craft_gate._reason([{"rule": "r", "path": "a.py", "line": 1, "detail": "d", "fix": "f"}], 7)
         self.assertIn("7 written path(s) were not judged", text)
+
+
+class SilentDisableIsCounted(unittest.TestCase):
+    """게이트가 판정 없이 사라지는 네 자리가 전부 셈으로 남는가 (감사 D-7).
+
+    설계 의도는 옳다 — 판정기 고장이 작업을 막으면 안 된다. 문제는 **비활성화가 관측되지
+    않는다**는 것이었다: 대상이 빈 경우도, 상태 파일이 지워진 경우도, `asgard` 가 PATH 에 없는
+    경우도 화면에서 "막을 것이 없었다"와 똑같이 생겼다. 특히 상태 파일 삭제는 write_sentinel 이
+    `.asgard` 경로를 기록하지 않아 삭제 행위 자체도 안 남는다.
+
+    그래서 여기서 재는 것은 "막았는가"가 아니라 "안 막았다는 사실이 남는가"다. 넷 다 exit 0 이고
+    출력이 없어야 하며(막지 않는다), gate-events.jsonl 에 사유가 서로 다른 코드로 남아야 한다.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = self.tmp.name
+        self.addCleanup(self.tmp.cleanup)
+        os.makedirs(os.path.join(self.root, ".asgard", "state"))
+        patcher = mock.patch.dict(os.environ, {}, clear=False)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        os.environ.pop("CLAUDE_PROJECT_DIR", None)
+
+    def _sentinel(self, sid, paths):
+        path = os.path.join(self.root, ".asgard", "state", "writes-%s.json" % sid)
+        with open(path, "w", encoding="utf-8") as handle:
+            json.dump(paths, handle)
+
+    def _events(self):
+        path = os.path.join(self.root, ".asgard", "state", "gate-events.jsonl")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as handle:
+            return [json.loads(ln) for ln in handle if ln.strip()]
+
+    def _run(self, payload, which="/usr/bin/asgard", blow_up=False):
+        out = io.StringIO()
+        blocking = mock.patch.object(craft_gate, "_blocking", side_effect=RuntimeError("판정기 고장"))
+        with (
+            mock.patch("sys.stdin", io.StringIO(json.dumps(payload))),
+            mock.patch("sys.stdout", out),
+            mock.patch("sys.argv", ["hook"]),
+            mock.patch.object(craft_gate.shutil, "which", return_value=which),
+            blocking if blow_up else contextlib.nullcontext(),
+        ):
+            with self.assertRaises(SystemExit) as caught:
+                craft_gate.main()
+        return int(caught.exception.code or 0), out.getvalue()
+
+    def test_a_missing_sentinel_is_recorded(self):
+        """Bash 리다이렉션만 쓴 세션과 상태 파일이 지워진 세션이 여기로 온다."""
+        self.assertEqual(self._run({"session_id": "s1", "cwd": self.root}), (0, ""))
+        self.assertEqual(
+            self._events(), [{"event": "gate_skipped", "gate": "craft", "code": "no-sentinel", "sid": "s1"}]
+        )
+
+    def test_writes_with_nothing_judgeable_are_recorded_apart(self):
+        """목록은 있는데 판정 가능한 언어가 없는 것은 우회가 아니다 — 사유를 갈라 센다."""
+        self._sentinel("s2", ["notes.md"])
+        self.assertEqual(self._run({"session_id": "s2", "cwd": self.root}), (0, ""))
+        self.assertEqual([e["code"] for e in self._events()], ["no-judged-writes"])
+
+    def test_a_missing_asgard_is_recorded(self):
+        self._sentinel("s3", ["app.py"])
+        self.assertEqual(self._run({"session_id": "s3", "cwd": self.root}, which=None), (0, ""))
+        self.assertEqual([e["code"] for e in self._events()], ["no-asgard"])
+
+    def test_a_hook_exception_is_recorded(self):
+        """예상하지 못한 비활성화라 가장 중요한 자리다 — 안 세면 훅이 매 턴 죽어도 화면이 조용하다."""
+        self._sentinel("s4", ["app.py"])
+        self.assertEqual(self._run({"session_id": "s4", "cwd": self.root}, blow_up=True), (0, ""))
+        self.assertEqual([e["code"] for e in self._events()], ["hook-error"])
+
+    def test_a_tree_without_asgard_state_is_not_a_disabled_gate(self):
+        """`.asgard/state` 가 아예 없는 트리는 게이트가 꺼진 게 아니라 애초에 안 깔린 것이다.
+
+        여기서 세면 asgard 를 안 쓰는 저장소마다 파일을 만들고, 그 잡음이 지표를 못 쓰게 한다.
+        """
+        bare = tempfile.TemporaryDirectory()
+        self.addCleanup(bare.cleanup)
+        self.assertEqual(self._run({"session_id": "s5", "cwd": bare.name}), (0, ""))
+        self.assertFalse(os.path.exists(os.path.join(bare.name, ".asgard")))
+
+    def test_a_judged_run_records_nothing(self):
+        """판정이 실제로 돌면 무판정 셈은 늘지 않는다 — 그러면 모든 실행이 셈에 들어가 신호가 죽는다."""
+        self._sentinel("s6", ["app.py"])
+        with mock.patch.object(craft_gate, "_blocking", return_value=([], {})):
+            self.assertEqual(self._run({"session_id": "s6", "cwd": self.root}), (0, ""))
+        self.assertEqual(self._events(), [])
 
 
 if __name__ == "__main__":
