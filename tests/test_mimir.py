@@ -133,13 +133,15 @@ class TestRoleContract(unittest.TestCase):
 
 class TestWiring(unittest.TestCase):
     def test_heimdall_resolver_registry_includes_mimir(self):
-        import inspect
+        # 소스 문자열이 아니라 리졸버를 실제로 부른다. 아래 test_mimir_note_match_and_fail_open
+        # 은 "brunnr 본문이 노트에 없다"를 재는데, 그 전제(요청하면 온다)를 여기서 잠근다 —
+        # 로더가 죽어도 노트는 계속 깨끗해서 저쪽만으로는 통과해 버린다.
+        from asgard.agent.heimdall import _skill_support
 
-        from asgard.agent import heimdall
-
-        registry_src = inspect.getsource(heimdall._skill_support)
-        self.assertIn("load_skill_for_agent", registry_src)
-        self.assertIn('"mimir"', registry_src)
+        note, tools, handlers = _skill_support("mimir")
+        self.assertEqual([t["name"] for t in tools], ["load_skill"])
+        self.assertIn("asgard-mimir-brunnr", note)
+        self.assertIn("The well is deep", handlers["load_skill"]({"name": "asgard-mimir-brunnr"}))
 
     def test_heimdall_direct_injects_mimir_note(self):
         # DIRECT 설명 턴도 코어만 인라인, 전용 스킬은 읽기 전용 loader로 지연 로드한다.

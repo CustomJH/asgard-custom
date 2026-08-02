@@ -386,10 +386,22 @@ def gate_create(root: str, run_id: str, question: str, *, task_id: str = "", opt
 
     워커의 `ask` 와 다르다 — 저쪽은 막힌 워커가 코디네이터에게 묻는 것이고, 이쪽은 코디네이터가
     다음 갈래를 고르는 것이다. 둘을 한 표에 합치면 "누가 누구를 기다리는가" 가 사라진다.
+    한쪽이 다른 쪽을 끝내지도 않는다: `gate_resolve` 는 질문의 답을 채우지 않고 `mail.reply` 는
+    게이트를 닫지 않는다.
+
+    Raises:
+        OrchestrationError: Run 이 없거나 이미 닫혔을 때. 닫힌 Run 의 게이트는 고를 사람이 없고,
+            없는 Run 에 넣으면 외래키가 raw `sqlite3.IntegrityError` 를 내서 `OrchestrationError`
+            만 잡는 호출자(`siege`)가 이 경우만 못 받는다.
     """
     now = time.time()
     gate_id = _new_id("gate")
     with connect(root, write=True) as conn:
+        run = conn.execute("SELECT status FROM runs WHERE id=?", (run_id,)).fetchone()
+        if run is None:
+            raise OrchestrationError(f"없는 Run: {run_id}")
+        if run["status"] != "open":
+            raise OrchestrationError(f"닫힌 Run 에 게이트 생성: {run_id}")
         conn.execute(
             "INSERT INTO gates(id, run_id, task_id, question, options, status, created_at) VALUES(?,?,?,?,?,'open',?)",
             (gate_id, run_id, task_id or None, question, json.dumps(list(options or []), ensure_ascii=False), now),

@@ -42,7 +42,6 @@ from .planning import _resume_snapshot
 from .roles import (
     _DELIVERY_TIERS,
     _EXPLORE_NUDGE_MIN,
-    _identity,
     _memory_save_support,
     _mimir_note,
     _skill_support,
@@ -73,6 +72,28 @@ def _new_recap() -> dict:
         "agents": Counter(),
         "recall_chars": 0,
     }
+
+
+def _concurrent_label(rows: list[dict]) -> str:
+    """지금 도는 세션들을 독의 한 줄로 접는다.
+
+    여태는 마지막 하나만 적고 나머지는 `+2`라는 숫자로 뭉갰다. 편대(thor 2~4기)와 wave에서는
+    그 뭉갠 쪽이 정보의 대부분이다 — 셋이 도는데 화면은 하나만 말하고, 그 하나가 제일 빨리
+    끝나는 놈이면 남은 둘이 뭘 하는지는 끝까지 안 나온다.
+
+    그래서 전부 적되 **자리를 공평하게 나눈다**: 뒤쪽을 통째로 잘라 내는 대신 각 몫을 좁힌다.
+    한 기만 돌 때는 종전과 같은 문장이라 흔한 경우의 화면은 안 변한다."""
+    from ... import ui
+
+    if len(rows) == 1:
+        row = rows[0]
+        return row["role"] + (f" · {row['status']}" if row["status"] else "")
+    head = f"×{len(rows)}"
+    # 독 상태 행은 단일 물리 행이라 넘치면 랩이 프레임을 깬다. 등불·경과초·여백을 뺀 나머지를
+    # 세션 수로 나눠 각 몫을 정한다 (최소 14 — 그 아래면 역할 이름조차 안 남는다).
+    share = max(14, (ui.term_cols() - len(head) - 12) // len(rows) - 3)
+    parts = [ui.oneline(row["role"] + (f" · {row['status']}" if row["status"] else ""), share) for row in rows]
+    return head + " " + " ⋮ ".join(parts)
 
 
 class Heimdall:
@@ -271,13 +292,21 @@ class Heimdall:
         except Exception:
             pass
 
-    def _session_observer(self, role: str) -> tuple[Callable[[str | None], None], Callable[[str, str], None]]:
+    def _session_observer(
+        self, role: str, label: str = ""
+    ) -> tuple[Callable[[str | None], None], Callable[[str, str], None]]:
+        """이 세션의 관측 창구. `label`은 **화면에 적히는 이름**이고 `role`은 배치 키다.
+
+        둘을 가르는 이유는 편대다: thor 넷이 동시에 도는데 `role`은 넷 다 'thor'여야 한다
+        (provider 배치·도구 가시성·프롬프트 계층이 그 키를 읽는다). 화면에는 넷을 구분해
+        적어야 하므로 이름만 따로 받는다."""
+        shown = label or role
         with self._state_lock:
             self._session_seq += 1
-            sid = f"{role}-{self._session_seq}"
+            sid = f"{shown}-{self._session_seq}"
             self._sessions[sid] = {
                 "id": sid,
-                "role": role,
+                "role": shown,
                 "state": "ready",
                 "status": "",
                 "started": 0.0,
@@ -289,11 +318,7 @@ class Heimdall:
             if not rows:
                 self.on_status(None)
                 return
-            row = rows[-1]
-            label = row["role"] + (f" · {row['status']}" if row["status"] else "")
-            if len(rows) > 1:
-                label += f" · +{len(rows) - 1}"
-            self.on_status(label)
+            self.on_status(_concurrent_label(rows))
 
         def status(label: str | None) -> None:
             with self._state_lock:
@@ -303,7 +328,15 @@ class Heimdall:
             emit()
 
         def lifecycle(event: str, detail: str) -> None:
+            from ... import activity
+
             now = time.monotonic()
+            activity.emit(
+                "session.start" if event == "running" else "session.end",
+                sid=sid,
+                role=shown,  # 창도 편대의 넷을 구분해 봐야 한다 — 배치 키가 아니라 적히는 이름이다
+                state=None if event == "running" else (detail or "done"),
+            )
             with self._state_lock:
                 row = self._sessions[sid]
                 if event == "running":
@@ -390,8 +423,9 @@ class Heimdall:
         readonly: bool = False,
         rp_override: ResolvedProvider | None = None,
         cwd: str | None = None,
+        label: str = "",
     ) -> AgentSession:
-        session_status, lifecycle = self._session_observer(role or ("readonly" if readonly else "legacy"))
+        session_status, lifecycle = self._session_observer(role or ("readonly" if readonly else "legacy"), label)
         # 에이전트 정체성 — 이 한 자리에서 모든 역할 세션에 얹는다. 호출부마다 붙이면 새 역할이
         # 생길 때마다 빠뜨릴 자리가 늘어난다. 정체성이 비었거나(주석뿐) 배치가 없으면 빈 문자열이라
         # 프로파일을 안 쓰는 설치의 프롬프트는 바이트 단위로 종전과 같다.

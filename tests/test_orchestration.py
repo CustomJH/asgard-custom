@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 import sys
 import tempfile
 import threading
@@ -42,9 +43,33 @@ class OrchestrationBase(unittest.TestCase):
         self._tmp = tempfile.TemporaryDirectory()
         self.root = self._tmp.name
         self.addCleanup(self._tmp.cleanup)
+        # 정리는 LIFO 라 스레드 회수가 임시 디렉터리 삭제보다 **먼저** 돈다 — 순서가 뒤집히면
+        # 남은 스레드가 이미 지워진 DB 를 열어 그 자체로 새 실패를 만든다.
+        self._threads_before = set(threading.enumerate())
+        self.addCleanup(self._join_stray_threads)
         # `self.run` 으로 두면 unittest.TestCase.run 메서드를 인스턴스 속성으로 덮는다.
         # 런타임에는 run() 이 이미 진입한 뒤라 통과하지만 타입 검사는 87건을 낸다.
         self.run_row = orc.run_create(self.root, "test objective", quest_id="q-1")
+
+    def _join_stray_threads(self) -> None:
+        """이 테스트가 띄운 스레드를 다음 테스트로 넘기지 않는다.
+
+        여기 있는 테스트 몇은 daemon 스레드를 띄운다(`test_wait_wakes_on_arrival` 등). daemon
+        은 프로세스를 붙잡지 않으므로 회수하지 않으면 다음 테스트가 도는 동안 그대로 산다 —
+        `store._WRITE_LOCK` 은 프로세스 로컬이라 그 스레드는 같은 락을 두고 다음 테스트와
+        경쟁한다. 26-08-02 감사가 관측한 간헐 실패 1건(`test_worker_done_cannot_be_sent_twice`
+        의 첫 정산이 이미 settled 였다)의 성격은 끝내 규명되지 않았고(같은 프로세스 3,600회
+        반복에서 재현 0), 그 상태에서 걸 수 있는 방어가 이것이다: **원인을 모르면 최소한
+        테스트 사이의 상태 누수 경로를 닫는다.**
+
+        살아남은 스레드는 통과시키지 않고 실패로 올린다. 조용히 넘기면 다음 실패가 엉뚱한
+        테스트 이름을 달고 나타난다 — 이 방어가 막으려던 바로 그 형상이다.
+        """
+        for thread in threading.enumerate():
+            if thread in self._threads_before or thread is threading.current_thread():
+                continue
+            thread.join(timeout=5)
+            self.assertFalse(thread.is_alive(), f"테스트가 스레드를 남겼다: {thread.name}")
 
 
 class TestTaskDag(OrchestrationBase):
@@ -369,30 +394,30 @@ class TestDelivery(OrchestrationBase):
         self.assertEqual(batch["count"], model.DELIVERY_CAP)
 
     def test_type_filter_gates_the_wake_not_the_batch(self):
-        """heartbeat 만 있으면 안 깨고, worker_done 이 붙으면 heartbeat 까지 함께 나온다."""
+        """heartbeat 만 있으면 안 깨고, escalation 이 붙으면 heartbeat 까지 함께 나온다."""
         orc.send(self.root, self.run_row["id"], "heartbeat", subject="alive")
-        quiet = orc.check(self.root, self.run_row["id"], types=("worker_done",))
+        quiet = orc.check(self.root, self.run_row["id"], types=("escalation",))
         self.assertEqual(quiet["count"], 0)
 
-        orc.send(self.root, self.run_row["id"], "worker_done", subject="done")
-        woken = orc.check(self.root, self.run_row["id"], types=("worker_done",))
-        self.assertEqual([m["type"] for m in woken["messages"]], ["heartbeat", "worker_done"])
+        orc.escalate(self.root, self.run_row["id"], "막혔다")
+        woken = orc.check(self.root, self.run_row["id"], types=("escalation",))
+        self.assertEqual([m["type"] for m in woken["messages"]], ["heartbeat", "escalation"])
 
     def test_type_filter_wakes_past_the_delivery_cap(self):
-        """상한(50)을 넘긴 자리의 worker_done 도 대기를 깨우는가 (감사 높음-4).
+        """상한(50)을 넘긴 자리의 escalation 도 대기를 깨우는가 (감사 높음-4).
 
         워커가 5분마다 heartbeat 를 보내는 것이 정상 계약이라 긴 wave 에서는 50건이 쉽게 쌓인다.
-        묶음을 먼저 자르고 그 안에서 종류를 찾으면 51번째 완료 보고가 영영 안 보이고, 묶지
-        않으니 ack 도 안 되어 우편함이 스스로 풀리지 않는다.
+        묶음을 먼저 자르고 그 안에서 종류를 찾으면 51번째 보고가 영영 안 보이고, 묶지 않으니
+        ack 도 안 되어 우편함이 스스로 풀리지 않는다.
         """
         for i in range(model.DELIVERY_CAP):
             orc.send(self.root, self.run_row["id"], "heartbeat", subject=f"alive{i}")
-        quiet = orc.check(self.root, self.run_row["id"], types=("worker_done",))
+        quiet = orc.check(self.root, self.run_row["id"], types=("escalation",))
         self.assertEqual(quiet["count"], 0, "heartbeat 만 있는데 깨어났다")
 
-        orc.send(self.root, self.run_row["id"], "worker_done", subject="상한 뒤의 완료")
-        woken = orc.check(self.root, self.run_row["id"], types=("worker_done",), wait=True, timeout_ms=300)
-        self.assertEqual(woken["count"], model.DELIVERY_CAP, "51번째 완료 보고가 대기를 못 깨웠다")
+        orc.escalate(self.root, self.run_row["id"], "상한 뒤의 보고")
+        woken = orc.check(self.root, self.run_row["id"], types=("escalation",), wait=True, timeout_ms=300)
+        self.assertEqual(woken["count"], model.DELIVERY_CAP, "51번째 보고가 대기를 못 깨웠다")
         self.assertIsNotNone(woken["delivery_id"], "묶지 않으면 ack 도 안 되어 우편함이 안 풀린다")
 
     def test_peek_does_not_claim(self):
@@ -412,10 +437,10 @@ class TestDelivery(OrchestrationBase):
     def test_wait_wakes_on_arrival(self):
         def deliver():
             time.sleep(0.1)
-            orc.send(self.root, self.run_row["id"], "worker_done", subject="late")
+            orc.escalate(self.root, self.run_row["id"], "late")
 
         threading.Thread(target=deliver, daemon=True).start()
-        batch = orc.check(self.root, self.run_row["id"], types=("worker_done",), wait=True, timeout_ms=5000)
+        batch = orc.check(self.root, self.run_row["id"], types=("escalation",), wait=True, timeout_ms=5000)
         self.assertEqual(batch["count"], 1)
 
 
@@ -522,6 +547,32 @@ class TestPureJudgement(unittest.TestCase):
     def test_topo_waves_ignores_unknown_deps(self):
         self.assertEqual(model.topo_waves(["a"], {"a": ["ghost"]}), [["a"]])
 
+    def test_conflicting_ids_do_not_share_a_wave(self):
+        """두 배정 단위가 access 없이 같은 파일을 만질 때 planning 이 넘기는 형상 그대로다."""
+        self.assertEqual(model.topo_waves(["a", "b"], {}, {"a": {"b"}, "b": {"a"}}), [["a"], ["b"]])
+
+    def test_conflicts_do_not_reorder_dependencies(self):
+        """충돌은 같은 묶음만 막고 순서는 못 정한다 — c 는 충돌해도 a·b 뒤에 남는다."""
+        waves = model.topo_waves(["a", "b", "c"], {"c": ["a", "b"]}, {"a": {"c"}, "c": {"a"}})
+        self.assertEqual(waves, [["a", "b"], ["c"]])
+
+    def test_a_fully_self_conflicting_ready_set_terminates_one_at_a_time(self):
+        ids = ["a", "b", "c"]
+        conflicts = {tid: {other for other in ids if other != tid} for tid in ids}
+        self.assertEqual(model.topo_waves(ids, {}, conflicts), [["a"], ["b"], ["c"]])
+
+    def test_absent_conflicts_reproduce_the_dependency_only_schedule(self):
+        """conflicts 없는 호출은 인자가 생기기 전과 같은 묶음을 낸다 — bifrost 의 등록 순서."""
+        ids, deps = ["a", "b", "c", "d"], {"c": ["a"], "d": ["b"]}
+        self.assertEqual(model.topo_waves(ids, deps), [["a", "b"], ["c", "d"]])
+        self.assertEqual(model.topo_waves(ids, deps, None), [["a", "b"], ["c", "d"]])
+        self.assertEqual(model.topo_waves(ids, deps, {}), [["a", "b"], ["c", "d"]])
+        self.assertEqual(model.topo_waves(ids, deps, {"a": set()}), [["a", "b"], ["c", "d"]])
+
+    def test_conflicts_still_raise_on_cycles(self):
+        with self.assertRaises(model.OrchestrationError):
+            model.topo_waves(["a", "b"], {"a": ["b"], "b": ["a"]}, {"a": {"b"}, "b": {"a"}})
+
     def test_resolved_tasks_do_not_move(self):
         self.assertEqual(model.task_status_for("completed", ["failed"]), "completed")
         self.assertEqual(model.task_status_for("failed", ["completed"]), "failed")
@@ -583,6 +634,136 @@ class TestShapeRecording(OrchestrationBase):
         orc.run_shape(self.root, self.run_row["id"], "single", "처음 판정")
         orc.run_shape(self.root, self.run_row["id"], "graph", "계획이 단위를 냈다")
         self.assertEqual(found(orc.run_show(self.root, self.run_row["id"]))["shape"], "graph")
+
+
+class TestDeliveryContract(OrchestrationBase):
+    """배달 계약을 Orca 오케스트레이션 규격과 대조한다 — 재생 신원과 종류 필터의 경계."""
+
+    def test_replay_returns_only_the_oldest_open_bundle(self):
+        """열린 묶음이 둘이면 오래된 쪽만 나온다 — 돌려준 delivery_id 가 설명하는 그 묶음.
+
+        이 DB 는 파생 상태라 다른 판이 쓴 장부를 이어 받을 수 있고, 그 파일에는 묶였지만 확인
+        안 된 묶음이 둘 있을 수 있다. 둘을 한 번에 돌려주면 그 id 로 ack 했을 때 절반만 확인
+        처리되고, 나머지는 묶인 채 남아 다음 조회마다 따라 나온다.
+        """
+        orc.send(self.root, self.run_row["id"], "status", subject="첫 묶음")
+        first = orc.check(self.root, self.run_row["id"])
+        later = orc.send(self.root, self.run_row["id"], "status", subject="다른 묶음")
+        with sqlite3.connect(orc.db_path(self.root)) as conn:
+            conn.execute("UPDATE messages SET delivery_id='dlv_other' WHERE id=?", (later["id"],))
+
+        replayed = orc.check(self.root, self.run_row["id"])
+        self.assertEqual(replayed["delivery_id"], first["delivery_id"])
+        self.assertEqual([m["subject"] for m in replayed["messages"]], ["첫 묶음"])
+
+    def test_actionable_filter_returns_and_acks_the_whole_batch(self):
+        """actionable 만 기다려도 묶음에는 status 까지 들어오고, ack 는 둘 다 확인 처리한다.
+
+        필터로 묶음을 거르면 걸러진 status 가 영영 ack 되지 않아 우편함 앞자리에 남고, 그 뒤의
+        모든 배달이 그것을 계속 끌고 다닌다.
+        """
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        orc.send(self.root, self.run_row["id"], "status", subject="절반쯤 했다")
+        orc.worker_done(self.root, self.run_row["id"], task["id"], dispatch["id"], "succeeded", subject="끝")
+
+        batch = orc.check(self.root, self.run_row["id"], types=orc.ACTIONABLE_TYPES, wait=True, timeout_ms=1000)
+        self.assertEqual({m["type"] for m in batch["messages"]}, {"status", "worker_done"})
+
+        emptied = orc.check(self.root, self.run_row["id"], ack=batch["delivery_id"])
+        self.assertEqual(emptied["count"], 0, "필터 밖 메일이 ack 되지 않고 남았다")
+        self.assertTrue(all(m["acked_at"] is not None for m in orc.inbox(self.root, self.run_row["id"])))
+
+
+class TestCompletionAuthority(OrchestrationBase):
+    """완료 보고는 정산과 함께 온다 — 메일만 남는 완료가 없어야 한다."""
+
+    def test_plain_send_cannot_report_completion(self):
+        """`send` 로 넣은 완료는 정산을 안 한다 — 그래서 그 문을 막는다."""
+        with self.assertRaises(orc.OrchestrationError):
+            orc.send(self.root, self.run_row["id"], "worker_done", subject="끝", body="실패했다")
+        self.assertEqual(orc.inbox(self.root, self.run_row["id"]), [])
+
+    def test_failed_outcome_closes_both_dispatch_and_task(self):
+        """실패도 종결 보고다 — Dispatch 와 Task 가 함께 실패로 접히고 outcome 칸에 남는다."""
+        orc.set_meta(self.root, orc.META_MAX_ATTEMPTS, "1")
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        reported = orc.worker_done(self.root, self.run_row["id"], task["id"], dispatch["id"], "failed", body="못 했다")
+        self.assertEqual(reported["dispatch"]["state"], "failed")
+        self.assertEqual(reported["task"]["status"], "failed")
+        self.assertEqual(reported["message"]["outcome"], "failed")
+
+
+class TestRecoveryStates(OrchestrationBase):
+    """`outcome_unknown` 은 실패가 아니다 — 그 시도의 자원은 아직 살아 있을 수 있다."""
+
+    def test_mark_refuses_to_write_failure(self):
+        """복구가 실패를 적으면 outcome 도 settled_at 도 없이 state 만 failed 가 된다."""
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        with self.assertRaises(orc.OrchestrationError):
+            orc.dispatch_mark(self.root, dispatch["id"], "failed")
+        self.assertEqual(found(orc.dispatch_show(self.root, dispatch_id=dispatch["id"]))["state"], "ready")
+
+    def test_mark_refuses_a_finished_dispatch(self):
+        """끝난 시도를 다시 표시하면 기록된 outcome 과 state 가 어긋난다."""
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        orc.dispatch_settle(self.root, dispatch["id"], "succeeded")
+        with self.assertRaises(orc.OrchestrationError):
+            orc.dispatch_mark(self.root, dispatch["id"], "outcome_unknown")
+        shown = found(orc.dispatch_show(self.root, dispatch_id=dispatch["id"]))
+        self.assertEqual((shown["state"], shown["outcome"]), ("settled", "succeeded"))
+
+
+class TestAskIdentity(OrchestrationBase):
+    """질문은 원래 message id 로 이어 받는다 — 시간이 다 되어도 질문 자체는 남는다."""
+
+    def test_timeout_resumes_by_the_original_id(self):
+        question = orc.ask(self.root, self.run_row["id"], "포트를 바꿔도 되나?", timeout_ms=120)
+        self.assertIsNone(question["answered_at"], "시간이 다 됐는데 답이 달렸다")
+        orc.reply(self.root, question["id"], "yes")
+        resumed = orc.wait_answer(self.root, question["id"], timeout_ms=200)
+        self.assertEqual(resumed["id"], question["id"])
+        self.assertEqual(resumed["answer"], "yes")
+
+    def test_asking_again_creates_a_second_question(self):
+        """같은 물음을 다시 만들면 질문이 둘 생긴다 — 이어 받으려면 `wait_answer` 를 쓴다."""
+        first = orc.ask(self.root, self.run_row["id"], "같은 물음")
+        second = orc.ask(self.root, self.run_row["id"], "같은 물음")
+        self.assertNotEqual(first["id"], second["id"])
+        self.assertEqual(len(orc.pending_questions(self.root, self.run_row["id"])), 2)
+
+
+class TestGateAndQuestionAreDistinct(OrchestrationBase):
+    """게이트와 질문은 다른 표면이다 — 어느 쪽도 다른 쪽을 끝내지 않는다."""
+
+    def test_resolving_a_gate_does_not_answer_the_question(self):
+        question = orc.ask(self.root, self.run_row["id"], "워커가 막혔다")
+        gate = orc.gate_create(self.root, self.run_row["id"], "다음 갈래는?", options=["a", "b"])
+        orc.gate_resolve(self.root, gate["id"], "a")
+        self.assertEqual([q["id"] for q in orc.pending_questions(self.root, self.run_row["id"])], [question["id"]])
+
+    def test_answering_a_question_does_not_resolve_the_gate(self):
+        question = orc.ask(self.root, self.run_row["id"], "워커가 막혔다")
+        gate = orc.gate_create(self.root, self.run_row["id"], "다음 갈래는?")
+        orc.reply(self.root, question["id"], "yes")
+        still_open = orc.gate_list(self.root, run_id=self.run_row["id"], status="open")
+        self.assertEqual([g["id"] for g in still_open], [gate["id"]])
+
+    def test_reply_refuses_a_message_that_is_not_a_question(self):
+        note = orc.send(self.root, self.run_row["id"], "status", subject="진행 중")
+        with self.assertRaises(orc.OrchestrationError):
+            orc.reply(self.root, note["id"], "답")
+
+    def test_gate_needs_an_open_run(self):
+        """없는 Run 은 외래키가 raw IntegrityError 를 내고, 닫힌 Run 의 게이트는 고를 사람이 없다."""
+        with self.assertRaises(orc.OrchestrationError):
+            orc.gate_create(self.root, "run_ghost", "없는 Run 의 게이트")
+        orc.run_close(self.root, self.run_row["id"])
+        with self.assertRaises(orc.OrchestrationError):
+            orc.gate_create(self.root, self.run_row["id"], "닫힌 Run 의 게이트")
 
 
 if __name__ == "__main__":

@@ -89,11 +89,21 @@ def circuit_broken(attempts: int, max_attempts: int = MAX_ATTEMPTS) -> bool:
     return attempts >= max(1, max_attempts)
 
 
-def topo_waves(task_ids: list[str], deps: dict[str, list[str]]) -> list[list[str]]:
+def topo_waves(
+    task_ids: list[str],
+    deps: dict[str, list[str]],
+    conflicts: dict[str, set[str]] | None = None,
+) -> list[list[str]]:
     """의존 DAG 를 동시 실행 가능한 묶음의 순열로 편다.
 
     같은 묶음 안의 Task 들은 서로 의존하지 않으므로 병렬로 돌 수 있다. 목록 밖의 의존
     (아직 만들지 않은 Task 를 가리키는 id)은 무시한다 — 부분 DAG 를 펼 때 정상이다.
+
+    Args:
+        conflicts: `conflicts[a]` 는 a 와 같은 묶음에 두면 안 되는 id 들. 대칭은 호출측이
+            보장한다. 의존과 달리 순서를 정하지 않는다 — 준비된 것 중 먼저 담긴 쪽이 이번
+            묶음에 남고 충돌하는 쪽은 다음 묶음으로 밀린다. None 이면 의존만으로 편다.
+            heimdall.planning._plan_waves 가 파일 경로 겹침을 이 인자로 넘긴다.
 
     Raises:
         OrchestrationError: 순환 의존이 있을 때. 순환은 조용히 넘기면 그 Task 들이 영영
@@ -104,9 +114,20 @@ def topo_waves(task_ids: list[str], deps: dict[str, list[str]]) -> list[list[str
     waves: list[list[str]] = []
     done: set[str] = set()
     while pending:
-        wave = sorted(tid for tid, need in pending.items() if not (need - done))
-        if not wave:
+        ready = sorted(tid for tid, need in pending.items() if not (need - done))
+        if not ready:
             raise OrchestrationError(f"순환 의존: {', '.join(sorted(pending))}")
+        wave: list[str] = []
+        taken: set[str] = set()
+        for tid in ready:
+            blocked = conflicts.get(tid) if conflicts else None
+            if blocked and blocked & taken:
+                continue
+            wave.append(tid)
+            taken.add(tid)
+        if not wave:
+            # 준비된 것을 하나도 안 담으면 다음 반복이 같은 집합을 다시 보고 끝나지 않는다.
+            wave = [ready[0]]
         waves.append(wave)
         done.update(wave)
         for tid in wave:

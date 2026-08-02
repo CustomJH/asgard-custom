@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from ... import i18n, theme, ui
+from ... import activity, i18n, theme, ui
 
 # 사용자 표면 글리프는 텍스트 기호만 (이모지 금지 — Canon 표면 규약). 상태 하나에 글리프 하나.
 _GLYPH: dict[str, str] = {"todo": "·", "run": "▸", "done": "✓", "failed": "✗", "blocked": "⚠"}
@@ -61,6 +61,10 @@ class TodoBoard:
             if key not in self._items:
                 self._order.append(key)
             self._items[key] = {"text": str(text or ""), "state": "todo", "note": ""}
+        # 창에는 단위가 하나여도 알린다. 터미널이 단일 단위에서 보드를 접는 것은 그 한 줄이
+        # 바로 아래 전이 줄과 같은 말이라 소음이 되기 때문인데(위 모듈 주석), 창에는 그 전이
+        # 줄이 없다 — 여기서까지 접으면 대부분의 퀘스트가 창에서 계획 없이 돈다.
+        activity.emit("todo", items=self._snap())
         if len(self._order) > 1:
             self._board()
 
@@ -96,6 +100,9 @@ class TodoBoard:
 
     # ── 렌더 ────────────────────────────────────────────────────────
 
+    def _snap(self) -> list[dict]:
+        return [{"id": key, **self._items[key]} for key in self._order]
+
     def _set(self, ident: object, state: str, note: str = "") -> None:
         key = str(ident)
         item = self._items.get(key)
@@ -104,6 +111,10 @@ class TodoBoard:
             item = {"text": key, "state": "todo", "note": ""}
             self._items[key] = item
         item["state"], item["note"] = state, note
+        # 창은 append-only 스트림이 아니라 **현재 상태**를 그린다. 그래서 전이 한 건이 아니라
+        # 보드 전체를 보낸다 — 놓친 줄이 있어도 마지막 한 건이면 화면이 옳게 복원된다.
+        # 터미널이 전이 한 줄만 흘리는 것과 갈리는 지점이고, 그건 매체가 달라서다.
+        activity.emit("todo", items=self._snap())
         self._on_text(self._line(key, counter=state in _RESOLVED))
 
     def _line(self, key: str, counter: bool = False) -> str:

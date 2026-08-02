@@ -297,8 +297,8 @@ class WaveRunner:
 
         for unit in units:
             tickets.record(unit, "todo")
-        # 계획이 선언한 `access` 를 의존으로 세운다 — 여태 문맥 주입에만 쓰이던 값이 여기서
-        # 처음 배차 의존이 된다. 티켓 장부와 별개의 표면이라 실패해도 wave 는 그대로 돈다.
+        # 아래 `_plan_waves` 가 짤 일정을 장부에도 같은 함수로 적는다. 티켓 장부와 별개의
+        # 표면이라 실패해도 wave 는 그대로 돈다.
         hd.bifrost.register_units(units)
 
         def run_claimed(u: dict, writes: list[str], token: str, cwd: str | None = None):

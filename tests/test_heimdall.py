@@ -102,12 +102,15 @@ class FakeHeimdall(Heimdall):
         readonly=False,
         rp_override=None,
         cwd=None,
+        label="",
     ):
         with self._lock:  # wave 병렬 스레드가 동시에 pop — 순서 보호
             if not self._script:
                 raise AssertionError("스크립트된 세션 소진 — 예상보다 많은 역할 턴")
             s = self._script.pop(0)
             s.role = role
+            # `label`(관측에 적히는 이름)은 여기 안 적는다 — 이 대역의 `s.label`은 이미 역할
+            # 이름을 드는 자리라 덮어쓰면 판마다 그 단언이 무너진다.
             s.model = model
             s.readonly = readonly
             s.quiet = quiet
@@ -1576,6 +1579,107 @@ class TestWaveParallel(Base):
         with self.assertRaisesRegex(ValueError, "dependency graph"):
             _plan_waves([{"id": 1, "files": [], "access": [2]}, {"id": 2, "files": [], "access": [1]}])
 
+    @staticmethod
+    def wave_ids(waves: list[list[dict]]) -> list[list[int]]:
+        return [[unit["id"] for unit in wave] for wave in waves]
+
+    def test_file_overlap_without_access_splits_both_schedulers(self):
+        """access 없이 파일이 겹치는 두 단위 — 여기서 두 일정이 갈라져 있었다.
+
+        배차 장부는 topo_waves 로 한 묶음이라 적고 실행은 _plan_waves 로 두 wave 를 돌렸다.
+        겹침을 conflicts 로 넘기면 같은 함수가 같은 답을 낸다.
+        """
+        from asgard.agent.heimdall import _plan_waves
+        from asgard.orchestration import topo_waves
+
+        units = [
+            {"id": 1, "subtask": "a", "files": ["shared.py"], "criteria": [], "access": []},
+            {"id": 2, "subtask": "b", "files": ["shared.py"], "criteria": [], "access": []},
+        ]
+        self.assertEqual(self.wave_ids(_plan_waves(units, self.root)), [[1], [2]])
+        self.assertEqual(topo_waves(["1", "2"], {}), [["1", "2"]])  # 겹침을 모르면 한 묶음이다
+        self.assertEqual(topo_waves(["1", "2"], {}, {"1": {"2"}, "2": {"1"}}), [["1"], ["2"]])
+
+    def test_dependencies_dominate_file_overlap(self):
+        """access 가 있으면 겹침 판정보다 순서가 먼저다 — 3 은 1·2 뒤에 한 번만 온다."""
+        from asgard.agent.heimdall import _plan_waves
+
+        units = [
+            {"id": 1, "files": ["a.py"], "access": []},
+            {"id": 2, "files": ["a.py"], "access": []},
+            {"id": 3, "files": ["a.py"], "access": [1, 2]},
+        ]
+        self.assertEqual(self.wave_ids(_plan_waves(units, self.root)), [[1], [2], [3]])
+
+    def test_a_fully_overlapping_ready_set_yields_single_unit_waves(self):
+        """준비된 것이 전부 서로 겹쳐도 wave 하나에 하나씩 나오고 끝난다."""
+        from asgard.agent.heimdall import _plan_waves
+
+        units = [{"id": uid, "files": ["same.py"], "access": []} for uid in (1, 2, 3)]
+        self.assertEqual(self.wave_ids(_plan_waves(units, self.root)), [[1], [2], [3]])
+
+    def test_path_prefix_overlaps_only_at_a_directory_boundary(self):
+        from asgard.agent.heimdall import _plan_waves
+
+        nested = [{"id": 1, "files": ["a/b"], "access": []}, {"id": 2, "files": ["a/b/c"], "access": []}]
+        self.assertEqual(self.wave_ids(_plan_waves(nested, self.root)), [[1], [2]])
+        sibling = [{"id": 1, "files": ["a/b"], "access": []}, {"id": 2, "files": ["a/bc"], "access": []}]
+        self.assertEqual(self.wave_ids(_plan_waves(sibling, self.root)), [[1, 2]])
+
+    def test_symlinked_paths_resolve_to_one_key(self):
+        from asgard.agent.heimdall import _plan_waves
+
+        with open(os.path.join(self.root, "real.py"), "w") as handle:
+            handle.write("x\n")
+        os.symlink(os.path.join(self.root, "real.py"), os.path.join(self.root, "link.py"))
+        units = [{"id": 1, "files": ["real.py"], "access": []}, {"id": 2, "files": ["link.py"], "access": []}]
+        self.assertEqual(self.wave_ids(_plan_waves(units, self.root)), [[1], [2]])
+
+    def test_access_outside_the_unit_list_is_rejected(self):
+        """목록에 없는 단위를 가리키는 access — topo_waves 는 무시하지만 여기서는 실행 순서 유실이다."""
+        from asgard.agent.heimdall import _plan_waves
+
+        with self.assertRaisesRegex(ValueError, "dependency graph"):
+            _plan_waves([{"id": 1, "files": [], "access": [9]}, {"id": 2, "files": [], "access": []}])
+
+    @staticmethod
+    def random_graph(rng, count: int) -> list[dict]:
+        """앞 번호만 access 로 두어 순환 없는 작은 그래프를 만든다. 목록 순서는 섞는다."""
+        paths = ["a.py", "b.py", "pkg", "pkg/m.py", "pkg/n.py", "pkg2/m.py"]
+        units = []
+        for uid in range(1, count + 1):
+            prior = list(range(1, uid))
+            units.append(
+                {
+                    "id": uid,
+                    "files": rng.sample(paths, rng.randint(0, 2)),
+                    "access": rng.sample(prior, rng.randint(0, len(prior))),
+                }
+            )
+        rng.shuffle(units)
+        return units
+
+    def test_random_graphs_yield_dependency_respecting_conflict_free_waves(self):
+        """무작위 그래프 200개 — 어느 wave 도 의존을 앞지르지 않고 같은 wave 안에서 파일이 겹치지 않는다."""
+        import random
+
+        from asgard.agent.heimdall import _plan_waves
+
+        def clashes(left: list[str], right: list[str]) -> bool:
+            return any(a == b or a.startswith(b + "/") or b.startswith(a + "/") for a in left for b in right)
+
+        rng = random.Random(20260802)
+        for _ in range(200):
+            units = self.random_graph(rng, rng.randint(2, 5))
+            waves = _plan_waves(units, self.root)
+            self.assertEqual(sorted(u["id"] for wave in waves for u in wave), sorted(u["id"] for u in units))
+            done: set = set()
+            for wave in waves:
+                for index, unit in enumerate(wave):
+                    self.assertLessEqual(set(unit["access"]), done)
+                    self.assertFalse(any(clashes(unit["files"], other["files"]) for other in wave[index + 1 :]))
+                done |= {unit["id"] for unit in wave}
+
     def test_resume_snapshot_reuses_done_units_and_returns_only_retryable_work(self):
         from asgard.agent.heimdall import _resume_snapshot, ql
 
@@ -2464,6 +2568,7 @@ class TestDeliveryMemoryIsolation(Base):
                 readonly=False,
                 rp_override=None,
                 cwd=None,
+                label="",
             ):
                 captured["system"] = system
                 return super()._session(system, extra_tools, handlers, quiet, role, model, readonly)
@@ -2495,9 +2600,20 @@ class TestNativeThorSquad(Base):
                 readonly=False,
                 rp_override=None,
                 cwd=None,
+                label="",
             ):
-                calls.append({"role": role, "system": system, "tools": extra_tools or [], "handlers": handlers or {}})
-                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
+                calls.append(
+                    {
+                        "role": role,
+                        "label": label,
+                        "system": system,
+                        "tools": extra_tools or [],
+                        "handlers": handlers or {},
+                    }
+                )
+                return super()._session(
+                    system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd, label
+                )
 
         return Capture(self.root, sessions), calls
 
@@ -2747,9 +2863,12 @@ class TestMemoryRoleMatrix(Base):
                 readonly=False,
                 rp_override=None,
                 cwd=None,
+                label="",
             ):
                 systems.append(system)
-                return super()._session(system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd)
+                return super()._session(
+                    system, extra_tools, handlers, quiet, role, model, readonly, rp_override, cwd, label
+                )
 
         cls = {**CLS_WRITE, "task_class": "deep", "shared": True}
         h = Cap(

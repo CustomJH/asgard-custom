@@ -20,13 +20,18 @@ import time
 import uuid
 
 from .board import _refresh, _task_dict
-from .model import DISPATCH_STATES, DISPATCH_TERMINAL, MAX_ATTEMPTS, OUTCOMES, OrchestrationError, circuit_broken
+from .model import DISPATCH_TERMINAL, MAX_ATTEMPTS, OUTCOMES, OrchestrationError, circuit_broken
 from .store import META_MAX_ATTEMPTS, connect, get_meta
 
 # 배차를 거부하는 Task 상태. `completed`/`failed` 는 끝난 일이고, `blocked` 는 선행 의존이
 # 실패해 돌 수 없는 일이다. 셋 다 배차하면 결과를 아무도 안 읽는다 — 특히 `blocked` 를 열어
 # 두면 Task 가 `dispatched` 로 바뀌면서 "의존이 실패했다" 는 사실이 장부에서 사라진다.
 _UNDISPATCHABLE = ("completed", "failed", "blocked")
+
+# `mark` 가 적을 수 있는 상태. 복구가 쓸 수 있는 표시는 이 둘뿐이고, 성공·실패는 `settle` 만
+# 적는다. 계약의 복구 경로도 셋으로 갈린다 — 중지(stopped), 결과 모름(outcome_unknown),
+# 그리고 새 시도(`open_dispatch(retry_of=...)`). 실패를 적는 복구 동작은 없다.
+RECOVERY_STATES = ("stopped", "outcome_unknown")
 
 
 def _new_id() -> str:
@@ -204,19 +209,30 @@ def mark(root: str, dispatch_id: str, state: str) -> dict:
 
     `stopped` 는 코디네이터가 명시적으로 중지시킨 것, `outcome_unknown` 은 결과를 모르는
     것이다. 둘 다 Task 를 접지 않는다: 무엇이 남았는지는 코디네이터가 보고 정한다.
+
+    적을 수 있는 상태는 이 둘뿐이다. `failed` 를 여기서 적으면 outcome 도 settled_at 도 비고
+    시도 횟수도 안 세어져, 자원이 아직 살아 있을 수 있는 `outcome_unknown` 이 실패로 접힌다.
+    성공·실패는 `settle` 만 적는다.
+
+    Raises:
+        OrchestrationError: state 가 복구 상태 둘 밖일 때, 없는 Dispatch 일 때, 또는 이미 끝난
+            Dispatch 일 때. 끝난 시도를 다시 표시하면 기록된 outcome 과 state 가 어긋난다.
     """
-    if state not in DISPATCH_STATES:
-        raise OrchestrationError(f"state 는 {'/'.join(DISPATCH_STATES)} 중 하나")
+    if state not in RECOVERY_STATES:
+        raise OrchestrationError(f"mark 의 state 는 {'/'.join(RECOVERY_STATES)} 중 하나")
     now = time.time()
     with connect(root, write=True) as conn:
-        cur = conn.execute(
+        row = conn.execute("SELECT state FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
+        if row is None:
+            raise OrchestrationError(f"없는 Dispatch: {dispatch_id}")
+        if row["state"] in DISPATCH_TERMINAL:
+            raise OrchestrationError(f"이미 끝난 Dispatch 를 표시: {dispatch_id} ({row['state']})")
+        conn.execute(
             "UPDATE dispatches SET state=?, updated_at=? WHERE id=?",
             (state, now, dispatch_id),
         )
-        if cur.rowcount == 0:
-            raise OrchestrationError(f"없는 Dispatch: {dispatch_id}")
-        row = conn.execute("SELECT * FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
-    return _dispatch_dict(row)
+        marked = conn.execute("SELECT * FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
+    return _dispatch_dict(marked)
 
 
 def show(root: str, *, dispatch_id: str = "", task_id: str = "") -> dict | None:

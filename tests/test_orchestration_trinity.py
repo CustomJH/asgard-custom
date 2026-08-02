@@ -7,23 +7,32 @@ tests/test_heimdall.py 의 FakeSession/FakeHeimdall 하네스를 그대로 쓴�
 
 지키는 계약:
   · 퀘스트 하나 = 열린 Run 하나. 역할 턴마다 Task + Dispatch 가 생기고 앞 턴이 의존이 된다.
-  · 형상(single/graph/squad)이 Run 에 적히고, 계획이 배정 단위를 내면 graph 로 갱신된다.
+  · **형상이 갈래를 고른다.** direct 는 장부를 안 열고, graph 는 wave, squad 는 영역별 위임,
+    single 은 손 하나다. 신호와 계획이 엇갈리면 계획이 이기고 그 사실이 Run 에 적힌다.
+  · **코디네이터가 준비도를 읽는다.** `task_list(ready=True)` 로 준비된 일감만 배차하고,
+    선행 의존이 안 끝난 일감은 실행자 손에 안 들어간다.
   · 워커의 `ask_coordinator` 는 항상 답을 받는다 — 코디네이터 고리가 답하거나, 못 하면
-    "가정을 명시하고 진행하라" 가 돌아간다. 침묵으로 끝나는 갈래가 없다.
-  · 장부가 죽어도 순환은 돈다 (fail-open).
+    "가정을 명시하고 진행하라" 가 돌아간다. 침묵으로 끝나는 갈래가 없다. 묻는 스레드와
+    답하는 스레드는 다르다.
+  · 장부가 죽어도 순환은 돈다 (fail-open). 다만 삼킨 실패는 stderr 에 한 줄 남는다.
 
 실행: uv run pytest tests/test_orchestration_trinity.py
 """
 
+import contextlib
+import io
 import json
 import os
+import threading
 import unittest
 from unittest import mock
 
 from test_heimdall import CLS_WRITE, Base, FakeHeimdall, FakeSession, verifier, worker
 
 from asgard import orchestration as orc
-from asgard.agent.heimdall.bifrost import BifrostLedger
+from asgard.agent.heimdall import bifrost as bifrost_module
+from asgard.agent.heimdall.bifrost import BifrostLedger, CoordinatorLoop, open_ledger
+from asgard.agent.heimdall.planning import _plan_waves
 from asgard.agent.session import SessionResult
 
 
@@ -178,6 +187,34 @@ class TestWorkerCanAsk(Base):
             h.handle("w1.txt 만들어")
         answer = asking.tool_results[0][1]
         self.assertIn("가정:", answer)
+
+    def test_the_asking_thread_is_not_the_answering_thread(self):
+        """묻는 쪽과 답하는 쪽이 같은 스레드면 `ask_coordinator` 는 자기 답을 기다리다 안 끝난다.
+
+        `ask` 는 답이 달릴 때까지 워커 스레드를 세워 두고, 답은 `CoordinatorLoop` 의 데몬
+        스레드가 단다. 감독 고리(`supervise`)를 부른 쪽 스레드가 답까지 맡게 바꾸면 그 순간
+        교착이 되므로, 두 스레드가 다르다는 사실 자체를 여기서 고정한다.
+        """
+        idents: dict[str, int] = {}
+        original_ask = bifrost_module.ask
+
+        def spy_ask(*args, **kwargs):
+            idents["asked"] = threading.get_ident()
+            return original_ask(*args, **kwargs)
+
+        def answer(self, system, user, max_tokens=400):
+            idents["answered"] = threading.get_ident()
+            return "8080 으로 둬라."
+
+        asking = self._asking_worker("포트 기본값을 8080 으로 둘까 3000 으로 둘까?")
+        h = FakeHeimdall(self.root, [asking, verifier("PASS")], cls=CLS_WRITE)
+        with mock.patch.object(bifrost_module, "ask", spy_ask):
+            with mock.patch.object(FakeHeimdall, "_complete_text", answer):
+                h.handle("w1.txt 만들어")
+        self.assertEqual(asking.tool_results[0][1], "8080 으로 둬라.")
+        self.assertIn("asked", idents)
+        self.assertIn("answered", idents, "코디네이터가 답하지 않았다")
+        self.assertNotEqual(idents["asked"], idents["answered"], "묻는 스레드가 자기 질문에 답했다")
 
     def test_empty_question_is_rejected_without_a_round_trip(self):
         session = worker({"w1.txt": "x\n"}, self.root)
@@ -393,6 +430,393 @@ class TestWaveUnitsBecomeTasks(Base):
         h = FakeHeimdall(self.root, self._script(), cls=self._cls())
         h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
         self.assertEqual(only_run(self.root)["shape"], "graph")
+
+
+class TestLedgerRecordsTheScheduleThatRan(Base):
+    """장부에 적힌 wave 와 실행자가 돌린 wave 가 같은가 — 두 일정이 갈라져 있던 자리.
+
+    갈라짐 사례는 계약이 지목한 그대로다: 단위 1·2 사이에 `access` 가 없고 `files` 가 겹친다.
+    `_plan_waves` 는 2 를 다음 wave 로 미는데, 장부가 `access` 만 의존으로 옮기면 1·2 가 같은
+    묶음에 남아 `task_list(ready=True)` 가 실행자 손에 들어가지도 않을 일감을 준비됐다고 답한다.
+    단위 3 은 어느 쪽과도 안 겹쳐 wave 하나에 단위 둘이 서게 한다 — 그래야 병렬 계획 검사를
+    통과한다.
+    """
+
+    OVERLAP = {
+        "units": [
+            {"id": 1, "subtask": "shared.py 헤더", "files": ["shared.py"], "criteria": ["헤더"], "access": []},
+            {"id": 2, "subtask": "shared.py 본문", "files": ["shared.py"], "criteria": ["본문"], "access": []},
+            {"id": 3, "subtask": "other.py 만들기", "files": ["other.py"], "criteria": ["other"], "access": []},
+        ]
+    }
+
+    def _script(self) -> list[FakeSession]:
+        plan = "계획.\n\n```json\n" + json.dumps(self.OVERLAP, ensure_ascii=False) + "\n```\n"
+        return [
+            FakeSession(SessionResult(text=plan, stop_reason="end_turn", commands=[]), label="thinker"),
+            worker({"shared.py": "# header\n"}, self.root),
+            worker({"other.py": "other\n"}, self.root),
+            worker({"shared.py": "# header\nbody\n"}, self.root),
+            verifier("PASS"),
+        ]
+
+    def _cls(self) -> dict:
+        return {**CLS_WRITE, "parallel_requested": True, "criteria": ["shared.py·other.py 갱신"]}
+
+    def _ledger_waves(self, run_id: str) -> list[list[str]]:
+        """장부가 적은 일정 — 배정 단위 Task 의 의존에서 편 wave. 묶음 안의 순서는 정렬한다."""
+        tasks = [t for t in orc.task_list(self.root, run_id) if str(t["unit_id"]).isdigit()]
+        label = {t["id"]: str(t["unit_id"]) for t in tasks}
+        deps = {t["id"]: [d for d in t["deps"] if d in label] for t in tasks}
+        return [sorted(label[tid] for tid in wave) for wave in orc.topo_waves(list(label), deps)]
+
+    def test_file_overlap_lands_in_the_ledger_as_a_dependency(self):
+        h = FakeHeimdall(self.root, self._script(), cls=self._cls())
+        h.handle("shared.py 를 헤더와 본문으로 나눠 고치고 other.py 도 병렬로 만들어")
+        run_id = only_run(self.root)["id"]
+        executed = [sorted(str(u["id"]) for u in wave) for wave in _plan_waves(self.OVERLAP["units"], self.root)]
+        self.assertEqual(executed, [["1", "3"], ["2"]], "실행 일정 자체가 예상과 다르다")
+        self.assertEqual(self._ledger_waves(run_id), executed, "장부가 적은 wave 가 실행한 wave 와 다르다")
+
+    def test_the_deferred_unit_is_not_ready_before_the_one_it_overlaps(self):
+        """겹침으로 밀린 단위는 준비 묶음에 안 들어온다 — 코디네이터가 읽는 값이 그것이다."""
+        ledger = BifrostLedger(FakeHeimdall(self.root, []), "q-overlap", "겹침 직렬화")
+        ledger.open_turn("WORKER", "구현")
+        ledger.register_units(self.OVERLAP["units"])
+        ready = ledger.ready_tasks() or []
+        self.assertEqual(sorted(str(t["unit_id"]) for t in ready), ["1", "3"], "겹친 단위 2 가 준비됐다고 나온다")
+
+
+UNIT_PLAN = {
+    "units": [
+        {"id": 1, "subtask": "a.txt 만들기", "files": ["a.txt"], "criteria": ["a"], "access": []},
+        {"id": 2, "subtask": "b.txt 만들기", "files": ["b.txt"], "criteria": ["b"], "access": []},
+        {"id": 3, "subtask": "c.txt 만들기", "files": ["c.txt"], "criteria": ["c"], "access": [1, 2]},
+    ]
+}
+
+
+def plan_script(root: str) -> list[FakeSession]:
+    """Thinker 가 배정 단위 셋을 내고 Worker 셋 + Verifier 가 뒤따르는 스크립트."""
+    plan = "계획.\n\n```json\n" + json.dumps(UNIT_PLAN, ensure_ascii=False) + "\n```\n"
+    return [
+        FakeSession(SessionResult(text=plan, stop_reason="end_turn", commands=[]), label="thinker"),
+        worker({"a.txt": "a\n"}, root),
+        worker({"b.txt": "b\n"}, root),
+        worker({"c.txt": "c\n"}, root),
+        verifier("PASS"),
+    ]
+
+
+def plan_cls() -> dict:
+    return {**CLS_WRITE, "parallel_requested": True, "criteria": ["a.txt·b.txt·c.txt 생성"]}
+
+
+class TestShapeRoutes(Base):
+    """형상이 **갈래를 고르는가** — 적히기만 하던 판정이 실행 경로를 정하는지.
+
+    여태 `choose_shape` 는 `_parse_units` 가 이미 갈래를 정한 뒤에 불려서 아무것도 안 바꿨다.
+    여기서 재는 것은 네 형상이 각각 다른 길로 가는가다.
+    """
+
+    # 전문 영역 둘(thor 인증 API · freyja 화면 UI)을 함께 건드리는 요청.
+    CROSS = "로그인 화면 UI 를 다시 그리고 인증 API 엔드포인트도 고쳐줘"
+
+    def test_direct_shape_opens_no_ledger_at_all(self):
+        """쓰기가 없으면 Run 도 DB 도 안 생긴다 — direct 는 무세금 경로다."""
+        ledger = open_ledger(FakeHeimdall(self.root, []), "q-direct", "이 코드 설명해줘", {"write_expected": False})
+        self.assertFalse(ledger.enabled)
+        self.assertEqual(ledger.run_id, "")
+        self.assertFalse(orc.exists(self.root), "direct 인데 배차 장부 DB 가 섰다")
+
+    def test_write_shape_opens_a_ledger(self):
+        ledger = open_ledger(FakeHeimdall(self.root, []), "q-write", "w1.txt 만들어", CLS_WRITE)
+        self.assertTrue(ledger.enabled)
+        self.assertTrue(ledger.run_id)
+
+    def test_single_shape_runs_one_worker_turn(self):
+        h = FakeHeimdall(self.root, [worker({"w1.txt": "x\n"}, self.root), verifier("PASS")], cls=CLS_WRITE)
+        h.handle("w1.txt 만들어")
+        run = only_run(self.root)
+        self.assertEqual(run["shape"], "single")
+        # 배정 단위의 `unit_id` 는 계획이 붙인 정수이고, 역할 턴은 이름이다 — 그것이 둘의 구분이다.
+        units = [t["unit_id"] for t in orc.task_list(self.root, run["id"]) if str(t["unit_id"]).isdigit()]
+        self.assertEqual(units, [], f"single 인데 배정 단위 Task 가 생겼다: {units}")
+
+    def test_graph_shape_runs_the_wave(self):
+        h = FakeHeimdall(self.root, plan_script(self.root), cls=plan_cls())
+        h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
+        self.assertEqual(only_run(self.root)["shape"], "graph")
+        for name in ("a.txt", "b.txt", "c.txt"):
+            self.assertTrue(os.path.exists(os.path.join(self.root, name)), f"{name} 이 안 생겼다")
+
+    def test_squad_shape_tells_the_worker_to_delegate_by_domain(self):
+        """squad 판정이 Worker 지시로 닿는가 — 안 닿으면 워커가 영역 둘을 혼자 구현한다."""
+        implementing = worker({"w1.txt": "x\n"}, self.root)
+        h = FakeHeimdall(self.root, [implementing, verifier("PASS")], cls=CLS_WRITE)
+        h.handle(self.CROSS)
+        self.assertEqual(only_run(self.root)["shape"], "squad")
+        self.assertIn("Orchestration shape: squad", implementing.prompt)
+        self.assertIn("dispatch", implementing.prompt)
+
+    def test_single_shape_carries_no_squad_instruction(self):
+        implementing = worker({"w1.txt": "x\n"}, self.root)
+        h = FakeHeimdall(self.root, [implementing, verifier("PASS")], cls=CLS_WRITE)
+        h.handle("w1.txt 만들어")
+        self.assertNotIn("Orchestration shape: squad", implementing.prompt)
+
+
+class TestPlanWinsOnUnitCount(Base):
+    """신호와 계획이 엇갈릴 때 — 배정 단위 수는 계획이 정하고, 엇갈린 사실은 Run 에 남는다.
+
+    감사할 수 없는 라우터는 이 계층이 없애려던 것이다. 계획이 이기는 것만으로는 부족하고,
+    무엇을 이겼는지 되읽을 자리가 있어야 한다.
+    """
+
+    PARALLEL_DEEP = {**CLS_WRITE, "task_class": "deep", "parallel_requested": True}
+    CROSS = TestShapeRoutes.CROSS
+
+    def _ledger(self, request: str) -> BifrostLedger:
+        return BifrostLedger(FakeHeimdall(self.root, []), "q-disagree", request)
+
+    def test_a_thin_plan_beats_a_parallel_signal(self):
+        """신호는 graph 인데 계획이 단위를 하나만 냈다 — 나눠 돌릴 일감이 없다."""
+        ledger = self._ledger("w1.txt 만들어")
+        pre = ledger.choose_shape(self.PARALLEL_DEEP, specialists=[])
+        self.assertEqual(pre["shape"], "graph")
+        decision = ledger.choose_shape(self.PARALLEL_DEEP, unit_count=1, specialists=[], planned=True)
+        self.assertEqual(decision["shape"], "single")
+        self.assertIn("graph", decision["disagreement"])
+        self.assertIn("이견", only_run(self.root)["shape_why"])
+
+    def test_many_units_beat_a_squad_signal(self):
+        """신호는 squad 인데 계획이 단위를 넷 냈다 — 일감이 여럿이면 그래프다."""
+        ledger = self._ledger(self.CROSS)
+        self.assertEqual(ledger.choose_shape(CLS_WRITE)["shape"], "squad")
+        decision = ledger.choose_shape(CLS_WRITE, unit_count=4, planned=True)
+        self.assertEqual(decision["shape"], "graph")
+        self.assertIn("squad", decision["disagreement"])
+        self.assertIn("4개", decision["disagreement"])
+        self.assertIn("이견", only_run(self.root)["shape_why"])
+
+    def test_agreement_leaves_no_disagreement_line(self):
+        ledger = self._ledger("w1.txt 만들어")
+        decision = ledger.choose_shape(CLS_WRITE, unit_count=0, specialists=[], planned=True)
+        self.assertEqual(decision["shape"], "single")
+        self.assertEqual(decision["disagreement"], "")
+        self.assertNotIn("이견", only_run(self.root)["shape_why"])
+
+
+class TestCoordinatorReadsReady(Base):
+    """코디네이터가 `task_list(ready=True)` 를 읽어 배차하는가 — Orca 의 감독 고리."""
+
+    def _ledger(self) -> BifrostLedger:
+        return BifrostLedger(FakeHeimdall(self.root, []), "q-loop", "감독 고리")
+
+    def _chain(self, ledger: BifrostLedger) -> tuple[dict, dict]:
+        """A → B 로 이어진 일감 둘. B 는 A 가 끝나기 전에는 준비되지 않는다."""
+        first = orc.task_create(self.root, ledger.run_id, "a 만들기", unit_id="A")
+        second = orc.task_create(self.root, ledger.run_id, "b 만들기", deps=[first["id"]], unit_id="B")
+        return first, second
+
+    def _loop(self, ledger: BifrostLedger) -> CoordinatorLoop:
+        return CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "감독 고리")
+
+    def test_the_loop_dispatches_from_ready_and_settles(self):
+        ledger = self._ledger()
+        self._chain(ledger)
+        rounds: list[list[str]] = []
+
+        def dispatch(ready: list[dict]) -> None:
+            rounds.append([str(task["unit_id"]) for task in ready])
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                orc.worker_done(
+                    self.root, ledger.run_id, task["id"], attempt["id"], "succeeded", subject="done", sender="w"
+                )
+
+        with self._loop(ledger) as loop:
+            supervised = loop.supervise(dispatch)
+        self.assertEqual(rounds, [["A"], ["B"]], "준비된 순서대로 배차하지 않았다")
+        self.assertTrue(supervised["supervised"])
+        self.assertEqual(len(supervised["reports"]), 2, "완료 보고를 못 거뒀다")
+        self.assertEqual({t["status"] for t in orc.task_list(self.root, ledger.run_id)}, {"completed"})
+
+    def test_a_task_whose_dependency_is_unsettled_is_never_dispatched(self):
+        """선행이 안 끝났으면 그 일감은 `ready` 가 아니다 — 실행자 손에 아예 안 들어간다."""
+        ledger = self._ledger()
+        self._chain(ledger)
+        rounds: list[list[str]] = []
+
+        def dispatch(ready: list[dict]) -> None:  # 열기만 하고 정산하지 않는다
+            rounds.append([str(task["unit_id"]) for task in ready])
+            for task in ready:
+                orc.open_dispatch(self.root, task["id"], worker="w")
+
+        with self._loop(ledger) as loop:
+            loop.supervise(dispatch)
+        self.assertEqual(rounds, [["A"]], f"의존이 안 끝난 B 가 배차됐다: {rounds}")
+
+    def test_a_blocked_dependent_is_never_dispatched(self):
+        """선행이 실패하면 뒤따르는 일감은 `blocked` 이다 — 돌 수 없는 일을 배차하지 않는다."""
+        ledger = self._ledger()
+        first, second = self._chain(ledger)
+        rounds: list[list[str]] = []
+
+        def dispatch(ready: list[dict]) -> None:
+            rounds.append([str(task["unit_id"]) for task in ready])
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                orc.dispatch_settle(self.root, attempt["id"], "failed")
+            orc.task_update(self.root, first["id"], status="failed")
+
+        with self._loop(ledger) as loop:
+            loop.supervise(dispatch)
+        self.assertEqual(rounds, [["A"]])
+        dependent = next(t for t in orc.task_list(self.root, ledger.run_id) if t["id"] == second["id"])
+        self.assertEqual(dependent["status"], "blocked")
+
+    def test_the_wave_turn_reads_ready_before_it_runs(self):
+        """graph 갈래가 감독 고리를 거치는가 — 첫 묶음은 독립 단위 둘뿐이어야 한다."""
+        original = BifrostLedger.ready_tasks
+        seen: list = []
+
+        def spy(self) -> list[dict] | None:
+            rows = original(self)
+            seen.append(None if rows is None else sorted(str(row["unit_id"]) for row in rows))
+            return rows
+
+        h = FakeHeimdall(self.root, plan_script(self.root), cls=plan_cls())
+        with mock.patch.object(BifrostLedger, "ready_tasks", spy):
+            h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
+        self.assertTrue(seen, "코디네이터가 준비도를 한 번도 안 읽었다")
+        self.assertEqual(seen[0], ["1", "2"], f"준비도가 계획의 독립 단위와 다르다: {seen}")
+
+    def test_the_loop_waits_for_a_settlement_that_lands_late(self):
+        """실행자가 비동기로 끝나는 경우 — 고리가 정산을 기다려야 완료 보고를 거둔다."""
+        ledger = self._ledger()
+        first, _ = self._chain(ledger)
+        finished = threading.Event()
+
+        def settle_later(task_id: str, dispatch_id: str) -> None:
+            finished.wait(2)
+            orc.worker_done(self.root, ledger.run_id, task_id, dispatch_id, "succeeded", subject="늦은 보고")
+
+        workers: list[threading.Thread] = []
+
+        def dispatch(ready: list[dict]) -> None:
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                thread = threading.Thread(target=settle_later, args=(task["id"], attempt["id"]))
+                workers.append(thread)
+                thread.start()
+            finished.set()  # 배차가 돌아온 **뒤에** 정산이 들어온다
+
+        with self._loop(ledger) as loop:
+            supervised = loop.supervise(dispatch, rounds=1, wait_ms=5000)
+        for thread in workers:
+            thread.join(timeout=5)
+        self.assertEqual([m["task_id"] for m in supervised["reports"]], [first["id"]], "늦게 온 정산을 못 거뒀다")
+
+    def test_an_unanswered_question_is_not_acked_away(self):
+        """답 못 한 질문을 확인 처리하면 워커를 세워 둔 그 메일이 '처리됨' 으로 접힌다.
+
+        `check` 의 재생 계약은 확인 전까지 같은 묶음을 다시 준다는 것이다. 그 계약이 가장
+        필요한 종류가 질문인데, 답을 안 하고 확인부터 하면 재생이 그 자리에서 끊긴다.
+        """
+        ledger = self._ledger()
+        orc.ask(self.root, ledger.run_id, "포트를 어떻게 정할까?", sender="w")
+        self.assertEqual(ledger.drain(None), [], "질문은 호출자에게 돌려주지 않는다")
+        replayed = orc.check(self.root, ledger.run_id)
+        self.assertEqual([m["type"] for m in replayed["messages"]], ["question"], "답 없는 질문이 확인 처리됐다")
+
+    def test_an_answered_batch_is_acked(self):
+        ledger = self._ledger()
+        orc.ask(self.root, ledger.run_id, "포트를 어떻게 정할까?", sender="w")
+        ledger.drain(lambda message: "8080 으로 둬라.")
+        self.assertEqual(orc.check(self.root, ledger.run_id)["messages"], [], "답한 묶음이 안 확인됐다")
+
+    def test_a_replayed_report_is_counted_once(self):
+        """답 못 한 질문 때문에 묶음이 다시 와도 완료 보고는 한 번만 센다."""
+        ledger = self._ledger()
+        first, _ = self._chain(ledger)
+        orc.ask(self.root, ledger.run_id, "이 값을 어떻게 정할까?", sender="w")
+
+        def dispatch(ready: list[dict]) -> None:
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                orc.worker_done(self.root, ledger.run_id, task["id"], attempt["id"], "succeeded", subject="done")
+
+        with self._loop(ledger) as loop:
+            loop._stop.set()  # 데몬이 답하지 않게 세운다 — 질문이 미답으로 남아 묶음이 재생된다
+            supervised = loop.supervise(dispatch)
+        self.assertEqual([m["task_id"] for m in supervised["reports"]].count(first["id"]), 1, "보고가 두 번 세어졌다")
+
+    def test_the_loop_stops_on_an_escalation(self):
+        ledger = self._ledger()
+        self._chain(ledger)
+
+        def dispatch(ready: list[dict]) -> None:
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                orc.escalate(self.root, ledger.run_id, "오딘 판단 필요", task_id=task["id"])
+                orc.worker_done(
+                    self.root, ledger.run_id, task["id"], attempt["id"], "succeeded", subject="done", sender="w"
+                )
+
+        with self._loop(ledger) as loop:
+            supervised = loop.supervise(dispatch)
+        self.assertEqual(len(supervised["escalations"]), 1)
+        self.assertEqual(supervised["rounds"], 1, "개입 요청 뒤에도 다음 묶음을 밀어 넣었다")
+        self.assertEqual(supervised["dispatched"], [t["id"] for t in orc.task_list(self.root, ledger.run_id)][:1])
+
+
+class TestSupervisionIsFailOpen(Base):
+    """장부가 죽어도 일은 돈다 — 다만 조용히는 아니다."""
+
+    def test_an_unreadable_ready_view_still_runs_the_wave(self):
+        h = FakeHeimdall(self.root, plan_script(self.root), cls=plan_cls())
+        stderr = io.StringIO()
+        with mock.patch.object(bifrost_module, "task_list", side_effect=RuntimeError("db gone")):
+            with contextlib.redirect_stderr(stderr):
+                h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
+        for name in ("a.txt", "b.txt", "c.txt"):
+            self.assertTrue(os.path.exists(os.path.join(self.root, name)), f"{name} 이 안 생겼다")
+        self.assertIn("⚠ bifrost", stderr.getvalue(), "삼킨 장부 실패가 어디에도 안 남았다")
+
+    def test_a_dead_ledger_dispatches_once_without_supervision(self):
+        ledger = BifrostLedger(FakeHeimdall(self.root, []), "q-dead", "장부가 죽었다")
+        ledger.enabled = False
+        calls: list[list[dict]] = []
+        with CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "장부가 죽었다") as loop:
+            supervised = loop.supervise(calls.append)
+        self.assertEqual(calls, [[]], "장부가 없다고 실행자를 안 불렀다")
+        self.assertFalse(supervised["supervised"])
+
+    def test_a_note_is_left_when_the_ready_view_fails(self):
+        ledger = BifrostLedger(FakeHeimdall(self.root, []), "q-note", "준비도 조회 실패")
+        with mock.patch.object(bifrost_module, "task_list", side_effect=RuntimeError("db locked")):
+            self.assertIsNone(ledger.ready_tasks())
+        self.assertTrue(any("ready_tasks" in note for note in ledger.notes), f"기록이 없다: {ledger.notes}")
+
+    def test_the_circuit_breaker_still_folds_a_unit(self):
+        """설정된 시도 상한에 닿으면 그 단위는 접힌다 — 감독 고리가 그 앞을 안 가린다."""
+        units = [{"id": 1, "subtask": "a 만들기", "files": ["a.txt"], "criteria": ["a"], "access": []}]
+        hd = FakeHeimdall(self.root, [])
+        # 칸을 새 dict 로 갈아 끼운다. `hd.policy["ticket_runtime"]` 은 quest_log.load_policy 의
+        # 얕은 복사가 넘긴 DEFAULT_POLICY 의 그 dict 라, 안을 고치면 같은 프로세스의 뒤 테스트가
+        # 전부 max_attempts=2 를 본다 (test_heimdall 의 wave 재배정 기대가 그렇게 깨졌다).
+        hd.policy["ticket_runtime"] = {**(hd.policy.get("ticket_runtime") or {}), "max_attempts": 2}
+        ledger = BifrostLedger(hd, "q-breaker", "회로 차단")
+        ledger.open_turn("WORKER", "구현")
+        ledger.register_units(units)
+        for _ in range(2):
+            self.assertTrue(ledger.open_unit(units[0]))
+            ledger.settle_unit(units[0], "failed", summary="죽었다")
+        task = next(t for t in orc.task_list(self.root, ledger.run_id) if t["unit_id"] == "1")
+        self.assertEqual(task["status"], "failed", "상한에 닿았는데 안 접혔다")
+        self.assertEqual(ledger.open_unit(units[0]), "", "회로가 끊긴 뒤에도 배차됐다")
+        self.assertTrue(any("open_unit" in note for note in ledger.notes))
 
 
 if __name__ == "__main__":

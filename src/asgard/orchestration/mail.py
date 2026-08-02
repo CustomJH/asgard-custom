@@ -12,6 +12,10 @@
 worker_done 이 왔을 때 깨어나지만, 돌려받는 묶음에는 그 사이 쌓인 heartbeat 도 함께 들어
 있다. 필터로 묶음을 걸러 내면 걸러진 메일이 영영 ack 되지 않고 우편함에 남는다.
 
+**완료 보고는 `worker_done` 한 문으로만 들어온다.** `send(type="worker_done")` 은 거부한다 —
+그 문으로 넣으면 메일만 생기고 배차 정산이 없어서, 코디네이터는 완료를 읽는데 Task 는
+`dispatched` 로 남는다.
+
 `ask` 와 `reply` 가 유일한 왕복이다. 나머지는 단방향이며, 답을 기다리지 않는다.
 """
 
@@ -62,10 +66,15 @@ def send(
     """메시지를 Run 우편함에 넣는다.
 
     Raises:
-        OrchestrationError: 종류가 `MESSAGE_TYPES` 밖이거나 Run 이 없을 때.
+        OrchestrationError: 종류가 `MESSAGE_TYPES` 밖이거나, `worker_done` 이거나, Run 이 없을 때.
     """
     if message_type not in MESSAGE_TYPES:
         raise OrchestrationError(f"type 은 {'/'.join(MESSAGE_TYPES)} 중 하나")
+    # 완료 보고는 이 문으로 못 들어온다. 여기서 넣으면 메일만 생기고 정산은 안 일어나서,
+    # 코디네이터는 완료를 읽는데 Task 는 `dispatched` 로 남는다. 실패 보고면 outcome 칸도
+    # 비어 본문에만 실패가 적힌다 — 계약이 금지하는 "글로만 적은 실패"가 그것이다.
+    if message_type == "worker_done":
+        raise OrchestrationError("worker_done 은 `worker_done()` 으로 보낸다 — 정산과 한 트랜잭션이다")
     now = time.time()
     message_id = _new_id("msg")
     with connect(root, write=True) as conn:
@@ -166,10 +175,14 @@ def _claim(root: str, run_id: str, types: tuple[str, ...] | None) -> dict:
             (run_id,),
         ).fetchall()
         if open_rows:
+            # 열린 묶음이 둘이면 가장 오래된 것만 돌려준다. 전부 돌려주면 반환한 delivery_id 가
+            # 반환한 메시지 목록을 설명하지 못하고, 그 id 로 ack 했을 때 절반만 확인 처리된다.
+            oldest = open_rows[0]["delivery_id"]
+            batch = [row for row in open_rows if row["delivery_id"] == oldest]
             return {
-                "delivery_id": open_rows[0]["delivery_id"],
-                "messages": [_message_dict(row) for row in open_rows],
-                "count": len(open_rows),
+                "delivery_id": oldest,
+                "messages": [_message_dict(row) for row in batch],
+                "count": len(batch),
             }
         # 종류 필터는 깨울지만 정한다. 기다리는 종류가 하나도 없으면 아직 묶지 않고 돌아가서,
         # 다음 조회 때 그 메일들이 여전히 가장 오래된 묶음의 앞자리를 지키게 둔다.
@@ -261,17 +274,23 @@ def wait_answer(root: str, message_id: str, *, timeout_ms: int) -> dict:
 
 
 def reply(root: str, message_id: str, answer: str) -> dict:
-    """코디네이터가 질문에 답한다.
+    """코디네이터가 워커의 질문에 답한다.
+
+    `question` 메시지에만 답한다. 다른 종류에 답이 달리면 그 메일이 `pending_questions` 에는
+    안 잡히면서 answered_at 만 채워져, 무엇이 왕복이었는지가 우편함에서 사라진다. 코디네이터가
+    자기 갈래를 고르는 자리는 여기가 아니라 게이트(`board.gate_create`)다.
 
     Raises:
-        OrchestrationError: 없는 메시지이거나 이미 답이 달렸을 때. 두 번째 답을 조용히
-            덮어쓰면 워커가 어느 답을 읽었는지 알 수 없다.
+        OrchestrationError: 없는 메시지이거나, 질문이 아니거나, 이미 답이 달렸을 때. 두 번째
+            답을 조용히 덮어쓰면 워커가 어느 답을 읽었는지 알 수 없다.
     """
     now = time.time()
     with connect(root, write=True) as conn:
         row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
         if row is None:
             raise OrchestrationError(f"없는 메시지: {message_id}")
+        if row["type"] != "question":
+            raise OrchestrationError(f"질문이 아닌 메시지에는 답할 수 없다: {message_id} ({row['type']})")
         if row["answered_at"] is not None:
             raise OrchestrationError(f"이미 답한 질문: {message_id}")
         conn.execute(

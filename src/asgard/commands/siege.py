@@ -88,6 +88,11 @@ def run_show(run_id: str, json_out: bool = False) -> int:
     ui.phase(f"{run_id} · {run.get('shape') or '-'}")
     if run.get("shape_why"):
         ui.step(ui.dim(run["shape_why"]))
+    if any(str(task.get("unit_id") or "").isdigit() for task in tasks):
+        # 배정 단위의 의존은 계획의 `access` 보다 넓다 — `heimdall.bifrost.register_units` 가
+        # 실행 일정(`planning._plan_waves`)을 그대로 옮기므로 파일 겹침으로 밀린 것도 여기 보인다.
+        # 안 적으면 읽는 사람이 화살표를 전부 계획이 선언한 의존으로 읽는다.
+        ui.step(ui.dim("배정 단위의 ← 는 wave 일정이에요 — 계획의 access 와 파일 겹침을 함께 편 결과예요."))
     label = {task["id"]: (task.get("unit_id") or task["id"][-6:]) for task in tasks}
     for task in detail:
         mark = _TASK_MARK.get(task["status"], "?")

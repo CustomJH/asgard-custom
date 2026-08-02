@@ -10,6 +10,8 @@ import json
 import os
 import re
 
+from ...orchestration import OrchestrationError, topo_waves
+
 _UNITS_RE = re.compile(r"```json\s*(\{.*?\})\s*```", re.S)
 
 
@@ -69,7 +71,17 @@ def _parse_units(plan: str) -> list[dict] | None:
 
 
 def _plan_waves(units: list[dict], root: str | None = None) -> list[list[dict]]:
-    """access 의존 위상 정렬 + 파일 겹침 직렬화 — 같은 wave 안은 병렬 안전 (경로 겹침 게이트)."""
+    """access 의존 위상 정렬 + 파일 겹침 직렬화 — 같은 wave 안은 병렬 안전 (경로 겹침 게이트).
+
+    일정은 orchestration.topo_waves 하나가 짠다. 여기서 하는 일은 경로 정규화뿐이다 — 겹치는
+    단위 쌍을 conflicts 로 넘긴다. 배차 장부(bifrost.register_units)도 같은 함수를 부르므로
+    장부에 적힌 wave 와 실제로 실행한 wave 가 갈라지지 않는다. realpath 를 부르는 절반이 이
+    파일에 남는 이유는 orchestration.model 이 파일을 보지 않기 때문이다.
+
+    Raises:
+        ValueError: access 가 순환하거나 목록에 없는 단위를 가리킬 때. WaveRunner 와 trinity 가
+            이 예외를 그대로 받으므로 topo_waves 의 OrchestrationError 를 여기서 바꿔 던진다.
+    """
 
     def path_key(path: object) -> str:
         raw = os.path.abspath(os.path.join(root or os.getcwd(), str(path)))
@@ -78,28 +90,30 @@ def _plan_waves(units: list[dict], root: str | None = None) -> list[list[dict]]:
     def overlaps(left: set[str], right: set[str]) -> bool:
         return any(a == b or a.startswith(b + "/") or b.startswith(a + "/") for a in left for b in right)
 
-    done: set = set()
-    waves: list[list[dict]] = []
-    remaining = list(units)
-    while remaining:
-        ready = [u for u in remaining if set(u.get("access") or []) <= done]
-        if not ready:
-            raise ValueError("invalid unit dependency graph")  # _parse_units 검증의 방어적 백스톱
-        wave: list[dict] = []
-        files_used: set[str] = set()
-        for u in ready:
-            fs = {path_key(path) for path in (u.get("files") or [])}
-            if overlaps(fs, files_used):
-                continue  # 파일 겹침 — 다음 wave로 직렬화
-            wave.append(u)
-            files_used |= fs
-        if not wave:
-            wave = [ready[0]]
-        waves.append(wave)
-        ids = {u["id"] for u in wave}
-        done |= ids
-        remaining = [u for u in remaining if u["id"] not in ids]
-    return waves
+    ids = {unit["id"] for unit in units}
+    if any(not set(unit.get("access") or []) <= ids for unit in units):
+        # topo_waves 는 목록 밖 의존을 무시하지만 배정 단위에서는 그것이 실행 순서 유실이다.
+        raise ValueError("invalid unit dependency graph")  # _parse_units 검증의 방어적 백스톱
+
+    # 자리 번호를 topo_waves 의 id 로 쓴다. 준비 집합을 정렬 순으로 훑으므로 자릿수를 맞춰야
+    # 그 순서가 units 목록 순서와 같아지고, 겹침으로 미루는 단위가 달라지지 않는다.
+    width = len(str(len(units)))
+    keys = [f"{index:0{width}d}" for index in range(len(units))]
+    key_by_id = {unit["id"]: keys[index] for index, unit in enumerate(units)}
+    files = [{path_key(path) for path in (unit.get("files") or [])} for unit in units]
+    deps = {keys[index]: [key_by_id[dep] for dep in (unit.get("access") or [])] for index, unit in enumerate(units)}
+    conflicts = {
+        keys[left]: {
+            keys[right] for right in range(len(units)) if right != left and overlaps(files[left], files[right])
+        }
+        for left in range(len(units))
+    }
+    try:
+        waves = topo_waves(keys, deps, conflicts)
+    except OrchestrationError as cycle:
+        raise ValueError("invalid unit dependency graph") from cycle
+    unit_by_key = {keys[index]: unit for index, unit in enumerate(units)}
+    return [[unit_by_key[key] for key in wave] for wave in waves]
 
 
 def _resume_snapshot(root: str, qid: str) -> dict:

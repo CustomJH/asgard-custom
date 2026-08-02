@@ -112,13 +112,16 @@ class TestSkillResolver(unittest.TestCase):
 
 class TestWiring(unittest.TestCase):
     def test_heimdall_resolver_registry_includes_eitri(self):
-        import inspect
+        # 소스 문자열이 아니라 리졸버를 실제로 부른다 — 허용 목록이 상수로 빠져도, 배선이
+        # 다른 메서드로 옮겨가도 "eitri 에게 로더가 열린다"는 판정은 그대로 선다.
+        from asgard.agent.heimdall import _skill_support
 
-        from asgard.agent import heimdall
-
-        registry_src = inspect.getsource(heimdall._skill_support)
-        self.assertIn("load_skill_for_agent", registry_src)
-        self.assertIn('"eitri"', registry_src)
+        note, tools, handlers = _skill_support("eitri")
+        self.assertEqual([t["name"] for t in tools], ["load_skill"])
+        self.assertIn("asgard-eitri-draupnir", note)  # 카탈로그엔 이름·설명만
+        body = handlers["load_skill"]({"name": "asgard-eitri-draupnir"})
+        self.assertIn("CI Pipelines & Build Reproducibility", body)  # 본문은 요청해야 온다
+        self.assertNotIn(body[:200], note)  # 지연 로드 — 본문이 카탈로그에 새지 않는다
 
     def test_bundled_names_reserve_eitri_skills(self):
         # learned 스킬이 번들 이름을 가로채지 못한다 — 충돌 방지 레지스트리

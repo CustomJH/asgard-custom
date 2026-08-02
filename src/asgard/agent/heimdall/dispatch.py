@@ -17,6 +17,53 @@ from .todo import TodoBoard, files_note
 from .toolspec import THOR_SQUAD_TOOL
 
 
+def _squad_scopes(mode: str, tasks: list[dict]) -> dict[str, list[str]]:
+    """편대 브리프를 받아들일지 여기서 정하고, 단위별 파일 범위를 정규화해 돌려준다.
+
+    자식을 띄우기 **전에** 전부 거른다: 한 기라도 띄운 뒤에 브리프가 틀렸다고 알면 이미 남의
+    자리에 손댄 워크스페이스를 되돌려야 한다. 거르는 것은 넷이다 — 모드, 인원(2~4), id(빈 값·
+    중복·파일명으로 못 쓰는 글자), 그리고 범위(저장소 밖·`.git`·`.asgard`).
+
+    split은 여기에 하나를 더 건다: 단위끼리 파일이 안 겹쳐야 한다. 겹친 채로 넷을 병렬로
+    띄우면 마지막에 적은 놈이 이기고, 그 손실은 화면 어디에도 안 남는다 (에인헤랴르 분할 계약).
+    """
+    if mode not in ("split", "tournament"):
+        raise ValueError("Thor squad mode must be split | tournament")
+    if not 2 <= len(tasks) <= 4:
+        raise ValueError("A Thor squad batch must have 2-4 members")
+    ids = [str(t.get("id") or "") for t in tasks]
+    if any(not i for i in ids) or len(ids) != len(set(ids)):
+        raise ValueError("Squad task ids must be non-empty and mutually distinct")
+    if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", task_id) for task_id in ids):
+        raise ValueError("Squad task ids must use only safe filename characters")
+    scopes: dict[str, list[str]] = {}
+    for spec in tasks:
+        norm: list[str] = []
+        for raw in list(spec.get("scope") or []):
+            s = os.path.normpath(str(raw)).replace(os.sep, "/").strip("/")
+            unsafe = (
+                not s
+                or s == "."
+                or s.startswith("..")
+                or s in (".git", ".asgard")
+                or s.startswith((".git/", ".asgard/"))
+            )
+            if unsafe:
+                raise ValueError(f"Unsafe squad scope: {raw!r}")
+            norm.append(s)
+        if not norm:
+            raise ValueError(f"Squad unit {spec.get('id')} has no scope")
+        scopes[str(spec["id"])] = norm
+    if mode == "split":
+        # 프리픽스 교차까지 본다 — `src`와 `src/api`는 다른 문자열이지만 같은 파일을 덮는다
+        flat = [(tid, s) for tid, ss in scopes.items() for s in ss]
+        for i, (ta, sa) in enumerate(flat):
+            for tb, sb in flat[i + 1 :]:
+                if ta != tb and (sa == sb or sa.startswith(sb + "/") or sb.startswith(sa + "/")):
+                    raise ValueError(f"Split squad scope overlap: {ta}:{sa} ↔ {tb}:{sb}")
+    return scopes
+
+
 def _checked_run(session, prompt: str):
     """child 세션 실행 + 취소 승격 — 취소된 산출이 편입(capture/apply)되기 전에 끊는다.
     child.run 직호출은 core._run_turn의 TurnCancelled 승격을 우회한다 (Codex 교차 리뷰 지적)."""
@@ -49,41 +96,8 @@ class DeliveryDispatch:
             from ..unit_workspace import UnitWorkspace, WorkspaceError
 
             mode = str(inp.get("mode") or "split")
-            if mode not in ("split", "tournament"):
-                raise ValueError("Thor squad mode must be split | tournament")
             tasks = list(inp.get("tasks") or [])
-            if not 2 <= len(tasks) <= 4:
-                raise ValueError("A Thor squad batch must have 2-4 members")
-            ids = [str(t.get("id") or "") for t in tasks]
-            if any(not i for i in ids) or len(ids) != len(set(ids)):
-                raise ValueError("Squad task ids must be non-empty and mutually distinct")
-            if any(not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,63}", task_id) for task_id in ids):
-                raise ValueError("Squad task ids must use only safe filename characters")
-            scopes: dict[str, list[str]] = {}
-            for spec in tasks:
-                norm: list[str] = []
-                for raw in list(spec.get("scope") or []):
-                    s = os.path.normpath(str(raw)).replace(os.sep, "/").strip("/")
-                    unsafe = (
-                        not s
-                        or s == "."
-                        or s.startswith("..")
-                        or s in (".git", ".asgard")
-                        or s.startswith((".git/", ".asgard/"))
-                    )
-                    if unsafe:
-                        raise ValueError(f"Unsafe squad scope: {raw!r}")
-                    norm.append(s)
-                if not norm:
-                    raise ValueError(f"Squad unit {spec.get('id')} has no scope")
-                scopes[str(spec["id"])] = norm
-            if mode == "split":
-                # 파일 비중첩은 에인헤랴르 분할 계약 — 선언 시점에 프리픽스 교차를 차단한다
-                flat = [(tid, s) for tid, ss in scopes.items() for s in ss]
-                for i, (ta, sa) in enumerate(flat):
-                    for tb, sb in flat[i + 1 :]:
-                        if ta != tb and (sa == sb or sa.startswith(sb + "/") or sb.startswith(sa + "/")):
-                            raise ValueError(f"Split squad scope overlap: {ta}:{sa} ↔ {tb}:{sb}")
+            scopes = _squad_scopes(mode, tasks)
             squad_root = cwd or hd.root
 
             def in_scope(path: str, allowed: list[str]) -> bool:
@@ -117,6 +131,12 @@ class DeliveryDispatch:
                         handlers=skill_handlers,
                         model=hd._delivery_model("thor"),
                         role="thor",
+                        # 관측 이름에만 단위를 적는다. 편대는 같은 `thor` 넷이 동시에 도는데
+                        # 이름이 같으면 독의 상태 행에 `thor ⋮ thor ⋮ thor`가 서고, 그건 넷이
+                        # 돈다는 것 말고는 아무 말도 안 한다. `role`은 안 건드린다 — 그건 provider
+                        # 배치·도구 가시성·프롬프트 계층이 함께 읽는 키라서, 여기서 바꾸면 라벨
+                        # 하나 고치려다 편대의 모델과 권한이 같이 움직인다.
+                        label=f"thor:{spec['id']}",
                         cwd=workspace.path,
                         quiet=True,
                     )

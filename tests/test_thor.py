@@ -382,12 +382,13 @@ class TestThorLead(unittest.TestCase):
         self.assertIn("global builds/full test suites are the lead's job", sub)  # 전역 게이트 단일 실행 계약
 
     def test_heimdall_resolver_covers_lead(self):
-        import inspect
+        # 편대장 디스패치에도 전용 스킬 주입 — 소스 문자열 대신 리졸버를 실제로 부른다.
+        from asgard.agent.heimdall import _skill_support
 
-        from asgard.agent import heimdall
-
-        src = inspect.getsource(heimdall._skill_support)
-        self.assertIn('"thor-lead"', src)  # 편대장 디스패치에도 전용 스킬 주입
+        note, tools, handlers = _skill_support("thor-lead")
+        self.assertEqual([t["name"] for t in tools], ["load_skill"])
+        self.assertIn("asgard-thor-jarngreipr", note)
+        self.assertTrue(handlers["load_skill"]({"name": "asgard-thor-jarngreipr"}).strip())
 
     def test_subagent_gate_targets(self):
         from asgard.hooks.subagent_gate import AGENT_TARGETS

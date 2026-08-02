@@ -142,17 +142,26 @@ class TestNativeWiring(unittest.TestCase):
         self.assertIn("_skill_support", inspect.getsource(TrinityRun._worker_turn))
 
     def test_verifier_and_loki_not_injected(self):
-        # 게이트 무결성 — advisory 지식은 판정 표면(Verifier/loki) 금지 (skill_bank 헌법과 동일)
-        import inspect
+        """게이트 무결성 — advisory 지식은 판정 표면 금지 (skill_bank 헌법과 동일).
 
-        from asgard.agent.heimdall import DeliveryDispatch, TrinityRun
+        호출부를 훑는 대신 **결과**를 잰다. 판정 역할로 부르면 빈 손이 돌아온다는 것 하나라,
+        지금 있는 호출부뿐 아니라 앞으로 생길 호출부까지 같이 덮는다.
 
-        trinity_src = inspect.getsource(TrinityRun)
-        for line in trinity_src.splitlines():
-            if "_skill_support(" in line and "def " not in line:
-                self.assertNotIn("verifier", line.lower())
-        dispatch_src = inspect.getsource(DeliveryDispatch)
-        self.assertNotIn('_skill_support("loki"', dispatch_src)
+        변이로 확인한 경계 (26-08-02):
+          verifier→worker 별칭   새 판정 실패 ✓ / 옛 줄훑기 판정은 통과 — 이것 때문에 바꿨다
+          허용 목록만 개방        양쪽 다 통과. 게이트가 두 겹(목록 + 빈 카탈로그)이라 목록을
+                                 열어도 verifier용 스킬이 레지스트리에 없어 여전히 빈 손이다.
+                                 관측되는 유출이 없으니 잡을 것도 없다 — 이 판정은 **문이
+                                 열렸는가**가 아니라 **지식이 나갔는가**를 잰다."""
+        from asgard.agent.heimdall import _skill_support
+
+        for role in ("verifier", "loki", "thinker", "ullr", "delivery"):
+            with self.subTest(role=role):
+                note, tools, handlers = _skill_support(role)
+                # 튜플 통째로 비교하면 실패 시 5천 자짜리 diff 가 나와 읽히지 않는다
+                self.assertEqual([t["name"] for t in tools], [], f"{role} 에 로더가 열렸다")
+                self.assertEqual(handlers, {}, f"{role} 에 핸들러가 열렸다")
+                self.assertEqual(note, "", f"{role} 에 카탈로그 {len(note)}자가 주입됐다")
 
     def test_bundled_names_reserve_worker_skills(self):
         from asgard.evolution import _bundled_names

@@ -17,12 +17,12 @@ import tempfile
 import time
 import uuid
 
-from ... import i18n, theme, ui
+from ... import activity, i18n, theme, ui
 from ...hooks.quest_log import EMPTY as _EMPTY_DIFF
 from ...hooks.quest_log import inspection_evidence as _inspection_evidence
 from ...hooks.quest_log import trivial_evidence as _trivial_evidence
 from ..session import gate, ql
-from .bifrost import NULL_LEDGER, BifrostLedger, CoordinatorLoop
+from .bifrost import NULL_LEDGER, CoordinatorLoop, open_ledger
 from .classify import _gate_repair, _gate_sig
 from .journal import _record_writes
 from .planning import _UNITS_NOTE, _parse_units, _plan_waves
@@ -136,6 +136,9 @@ def _classified_findings(verdict: dict) -> list[dict]:
 class TrinityRun:
     """한 퀘스트의 Trinity 순환 실행 상태 + 역할 턴 메서드."""
 
+    # 지금 도는 역할 턴의 코디네이터. 턴 밖에서는 None 이다 — `_role_turn` 이 세우고 걷는다.
+    _loop: CoordinatorLoop | None = None
+
     def __init__(
         self,
         hd,
@@ -195,12 +198,13 @@ class TrinityRun:
         self.rrp = hd.rp
         self.used_model = ""
 
-        # 배차 장부 — 역할 턴과 배정 단위를 Run·Task·Dispatch 로 비춘다 (fail-open).
-        # 실행을 이쪽으로 옮기는 것이 아니라 **기록**만 한다: 무엇을 돌릴지는 여전히 전이
-        # 함수(quest-log next)가 정한다.
-        self.bifrost = BifrostLedger(hd, self.qid, request)
+        # 배차 장부 — 역할 턴과 배정 단위를 Run·Task·Dispatch 로 비춘다 (fail-open). 역할 턴의
+        # 순서는 여전히 전이 함수(quest-log next)가 정하고, 배정 단위의 갈래는 형상이 정한다
+        # (`_routed_shape`). `open_ledger` 는 direct 형상이면 장부를 안 연다 — 형상이 먼저다.
+        self.bifrost = open_ledger(hd, self.qid, request, self.cls)
         hd.bifrost = self.bifrost  # WaveRunner 가 같은 장부를 본다
         self.coordinator_answers: list[tuple[str, str]] = []  # (질문, 답) — 최종 보고에 표시된다
+        self.unit_reports: list[dict] = []  # 감독 고리가 거둔 단위 완료 보고 — 최종 보고에 표시된다
         # 형상은 계획 전에 한 번 고르고, Thinker 가 배정 단위를 내면 다시 고른다. 첫 판정은
         # 분류 신호만 보므로 대개 single 이나 squad 이고, units 가 나오면 graph 로 바뀐다.
         self.bifrost.choose_shape(self.cls)
@@ -383,6 +387,10 @@ class TrinityRun:
                 else ")"
             )
             self._assign_turn()
+            # 역할 전이 = 이 퀘스트의 **실제** 단계다. 창의 진행 표시가 여태 거짓말이던 자리를
+            # 여기서 갚는다: 다섯 칸짜리 고정 레일을 상태 하나로 칠하는 대신, 실제로 일어난
+            # 전이를 그때그때 흘린다 (가짜 서수는 병렬로 도는 일을 왜곡한다).
+            activity.emit("role", role=self.role, why=self.why[:200], turn=t, budget=budget)
             hd.on_text(_transition_line(self.role, self.why))
 
             out = self._role_turn()
@@ -449,14 +457,19 @@ class TrinityRun:
         )
         # 코디네이터 고리는 이 턴이 도는 내내 별도 스레드에서 우편함을 본다. 워커가 묻는 쪽과
         # 답하는 쪽이 다른 스레드여야 교착이 아니다 — 단일 Worker 턴에서도 같은 이유로 필요하다.
+        # `self._loop` 에 걸어 두는 것은 wave 갈래가 이 고리로 감독하기 위해서다: 턴마다 고리를
+        # 새로 세우면 데몬 스레드가 둘이 되어 같은 질문에 두 번 답한다.
         try:
             with CoordinatorLoop(hd, self.bifrost, self.request) as loop:
+                self._loop = loop
                 out = runner()
         except BaseException as exc:
             # 취소도 실패로 적는다 — 이 시도가 결과 없이 끝났다는 사실은 같다. Verifier 의
             # FAIL 판정은 여기 오지 않는다: 판정을 냈으면 그 턴은 자기 몫을 한 것이다.
             self.bifrost.settle_turn(dispatch, "failed", summary=f"{exc.__class__.__name__}: {exc}")
             raise
+        finally:
+            self._loop = None  # 고리는 이 턴의 것이다 — 이미 닫힌 고리를 다음 턴이 붙들지 않게
         if loop.answered:
             self.coordinator_answers.extend(loop.answered)
         self.bifrost.settle_turn(dispatch, "succeeded", summary=str(out or "")[:2000])
@@ -480,7 +493,8 @@ class TrinityRun:
         if primary_memory_allowed or fallback_memory_allowed:
             from ...memory_context import recall_note as _recall
 
-            thinker_recall = _recall(self.request, start=hd.root)
+            # 여섯 레인이 하나의 예산에서 겨룬다 — 에피소드도 조립기 안에서 (DIRECT와 같은 천장).
+            thinker_recall = _recall(self.request, start=hd.root, include_episodes=True)
         if primary_memory_allowed:
             # 답변 소스 배지 — primary 경로 주입만 집계 (폴백 한정 주입은 provider 오류 희귀 경로)
             hd._record_recall(thinker_recall)
@@ -755,7 +769,12 @@ class TrinityRun:
         lines = []
         shape = getattr(self.bifrost, "shape", "")
         if shape in ("graph", "squad"):
-            reports = [m for m in self.bifrost.drain(None) if m.get("type") == "worker_done"]
+            # 감독 고리가 이미 거둔 보고와 아직 우편함에 남은 보고를 함께 센다. 한쪽만 보면
+            # 수가 어긋난다 — 확인 처리된 묶음은 `drain` 이 다시 안 주고, 답 못 한 질문이 남은
+            # 묶음은 다시 준다. 그래서 합치되 메시지 id 로 거른다.
+            by_id = {str(m["id"]): m for m in self.unit_reports}
+            by_id.update({str(m["id"]): m for m in self.bifrost.drain(None) if m.get("type") == "worker_done"})
+            reports = list(by_id.values())
             tally = ""
             if reports:
                 ok = sum(1 for m in reports if m.get("outcome") == "succeeded")
@@ -950,8 +969,68 @@ class TrinityRun:
         self.pending = ("THINKER_REPLAN", reason)
         return True
 
+    def _routed_shape(self, units: list[dict] | None) -> dict:
+        """이 턴이 갈 갈래를 정한다 — 형상 판정을 분기보다 **먼저** 두는 자리.
+
+        여태 이 판정은 `if units:` 가 이미 갈래를 정한 뒤에 불려서 아무것도 안 바꿨고, 결과는
+        최종 보고에만 실렸다. 이제 이 값이 갈래를 정한다: graph 면 wave, squad 면 영역별 위임,
+        single 이면 손 하나다.
+
+        신호와 계획이 엇갈리면 배정 단위 수는 계획이 정한다 — 요청 원문과 저장소를 읽고 나온
+        쪽이 계획이다. 엇갈렸다는 사실은 Run 의 `shape_why` 에 `이견:` 으로 남는다.
+
+        Args:
+            units: 이번 턴에 읽은 배정 단위. None 은 계획이 단위 블록을 안 냈다는 뜻이다.
+        """
+        return self.bifrost.choose_shape(self.cls, unit_count=len(units or []), planned=True)
+
+    def _squad_note(self, decision: dict) -> str:
+        """squad 형상이 Worker 프롬프트에 붙이는 위임 지시 — 다른 형상은 빈 문자열.
+
+        squad 는 "일감은 하나인데 전문 영역이 둘 이상 걸린다" 는 판정이다. 그 판정이 어디에도
+        안 닿으면 워커는 영역 전부를 혼자 구현하고 정본을 가진 전문가는 안 불린다 —
+        `roles.worker_canon_hint` 가 정본의 **존재**를 알리는 것과 달리 이 줄은 **나누라**고 한다.
+        """
+        if decision["shape"] != "squad":
+            return ""
+        specialists = self.bifrost.matched_specialists()
+        if not specialists:
+            return ""
+        return (
+            "\n\nOrchestration shape: squad — this single unit crosses the delivery domains "
+            f"{', '.join(specialists)}. Split the work along those domains and delegate each part with the "
+            "dispatch tool to the owning specialist instead of implementing every domain yourself; then merge "
+            "their results and verify the seams between them."
+        )
+
+    def _graph_turn(self, units: list[dict]) -> None:
+        """graph 형상의 구현 턴 — 코디네이터가 준비된 일감을 읽어 wave 실행자에게 넘긴다.
+
+        배정 단위를 **먼저** 등록한다. `WaveRunner` 도 같은 등록을 하지만(중복은 건너뛴다) 그
+        시점은 실행 직전이라, 감독 고리가 그 전에 준비도를 읽으면 아직 아무 Task 도 없다.
+
+        실행자는 준비 묶음이 아니라 계획 전체를 받는다. 한 wave 안의 순서(파일 겹침 직렬화)와
+        선행 단위 결과 주입(`access_ctx`)은 `WaveRunner` 가 한 번의 실행 안에서만 할 수 있는
+        일이라, 묶음을 쪼개 넘기면 단위 3 이 단위 1 의 결과를 못 본다. 고리가 정하는 것은
+        **돌릴 것이 있는가와 그 결과를 어떻게 거두는가** 다.
+        """
+        hd = self._hd
+        self.had_wave_plan = True  # wave FAIL 을 범위 없는 단일 Worker 로 강등하지 않는 latch
+        self.bifrost.register_units(units)
+        loop = self._loop
+        if loop is None:  # 역할 턴 밖에서 불린 경로 — 감독 없이 그대로 돌린다 (fail-open)
+            hd._run_worker_waves(self.sid, self.request, units, self.budget_note)
+            return
+        supervised = loop.supervise(lambda ready: hd._run_worker_waves(self.sid, self.request, units, self.budget_note))
+        self.unit_reports.extend(supervised["reports"])
+        for message in supervised["escalations"]:
+            hd.on_text(
+                f"  {ui.paint(ui._WARN, '!')} "
+                f"{ui.dim('워커가 개입을 요청했어요 — ' + str(message.get('subject') or '')[:120])}\n"
+            )
+
     def _worker_turn(self) -> str | None:
-        """구현 턴 — 새 계획의 units는 wave 병렬, 경미한 재시도는 단일 경로 + 실패 컨텍스트."""
+        """구현 턴 — 형상이 갈래를 정한다: graph 는 wave, squad 는 영역별 위임, single 은 손 하나."""
         hd = self._hd
         state = json.loads(ql(hd.root, "state", session=self.sid).stdout or "{}")
         if self.role == "WORKER" and self.cls.get("external_research") and not state.get("research_completed"):
@@ -971,10 +1050,9 @@ class TrinityRun:
         self.wave_plan_pending = False
         if new_plan and self.cls.get("parallel_requested") and self._reject_invalid_parallel_plan(units):
             return None
-        if units:  # 새 Thinker 계획은 wave, 같은 계획의 경미한 재시도는 단일 경로
-            self.had_wave_plan = True
-            self.bifrost.choose_shape(self.cls, unit_count=len(units))
-            hd._run_worker_waves(self.sid, self.request, units, self.budget_note)
+        decision = self._routed_shape(units)
+        if decision["shape"] == "graph":
+            self._graph_turn(units or [])
             return None
         writes: list[str] = []
 
@@ -1047,7 +1125,7 @@ class TrinityRun:
         shape_note = work_shape_note(hd.root, self.request, self.cls, changed=state.get("changed_files") or None)
         worker_prompt = (
             f"Task: {self.request}\n\nPlan:\n{plan_part}{explore_note}{canon_hint}{shape_note}"
-            f"\n{retry_note}{self.budget_note}"
+            f"{self._squad_note(decision)}\n{retry_note}{self.budget_note}"
         )
         fallback_worker_prompt = worker_prompt
         primary_memory_allowed = self.standard and hd._mem_allowed(self.rrp.profile.name, self.rrp.source)
@@ -1056,7 +1134,8 @@ class TrinityRun:
         if primary_memory_allowed or fallback_memory_allowed:
             from ...memory_context import recall_note as _project_recall
 
-            worker_recall = _project_recall(self.request, start=hd.root)
+            # 여섯 레인이 하나의 예산에서 겨룬다 — 에피소드도 조립기 안에서 (DIRECT와 같은 천장).
+            worker_recall = _project_recall(self.request, start=hd.root, include_episodes=True)
         if primary_memory_allowed:
             worker_prompt += worker_recall
             hd._record_recall(worker_recall)  # 답변 소스 배지 — primary 주입만 집계 (Thinker와 동일 기준)
