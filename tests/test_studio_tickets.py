@@ -334,7 +334,7 @@ class EvidenceCase(TicketCase):
     시험은 계속 초록이고, 그때 이 계층은 없는 칸을 읽는다."""
 
     def record(self, stamp, *, scenario="", thresholds=(), exit_code=0, p95=35.7, failed_rate=0.0, rate=57.8):
-        from asgard import k6
+        from asgard import k6, k6_gate
 
         report = k6.Report(
             scenario=scenario or stamp.split("-", 1)[-1],
@@ -347,7 +347,7 @@ class EvidenceCase(TicketCase):
             rate_per_s=rate,
             thresholds=[k6.Threshold(metric, expression, ok) for metric, expression, ok in thresholds],
         )
-        return k6.record_run(self.root, report, stamp)
+        return k6_gate.record_run(self.root, report, stamp)
 
     def judged_run(self, stamp="20260803T000001-http-smoke", **kw):
         return self.record(stamp, thresholds=(("http_req_duration", "p(95)<5000", True),), **kw)
@@ -453,13 +453,13 @@ class TestEvidence(EvidenceCase):
 
         A에서 방금 잰 사람이 B에 적힌 티켓에 매달면, 붙어야 하는 것은 A의 실행이다. 티켓의
         자리를 먼저 보면 다른 실행이 조용히 근거가 되고 그 사실은 화면에 안 나타난다."""
-        from asgard import k6
+        from asgard import k6, k6_gate
 
         here = os.path.join(self._tmp.name, "other-project")
         os.makedirs(here)
         ticket = T.create_ticket(self.root, "다른 폴더에 적힌 일감")
         self.judged_run("20260803T000001-there")
-        k6.record_run(
+        k6_gate.record_run(
             here,
             k6.Report(
                 scenario="here",

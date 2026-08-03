@@ -16,7 +16,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from .. import k6, theme, ui
+from .. import k6, k6_gate, k6_selftest, theme, ui
 
 
 def _console() -> Console:
@@ -443,7 +443,7 @@ def run_k6_run(
         return 1
 
     if record:
-        k6.record_run(root, report, stamp)
+        k6_gate.record_run(root, report, stamp)
     else:
         shutil.rmtree(out_dir, ignore_errors=True)
 
@@ -575,7 +575,7 @@ def run_k6_selftest(json_: bool = False, latency_ms: float = 80.0, iterations: i
     workdir = k6.lane_dir(root) / "selftest"
     shutil.rmtree(workdir, ignore_errors=True)
     try:
-        result = k6.selftest(
+        result = k6_selftest.selftest(
             runner=runner, out_dir=workdir, kit=kit, latency_ms=latency_ms, iterations=iterations, vus=vus
         )
     finally:
@@ -712,7 +712,7 @@ def _numbers(payload: dict) -> str:
 def run_k6_baseline_set(stamp: str = "", json_: bool = False) -> int:
     """어느 실행을 표적으로 삼을지 정한다. 스탬프를 안 주면 가장 최근 기록이다."""
     root = _root()
-    record = k6.find_recorded_run(root, stamp)
+    record = k6_gate.find_recorded_run(root, stamp)
     if record is None:
         if stamp:
             print(f"그런 기록이 없어요: {stamp} (asgard k6 report로 확인해 주세요)", file=sys.stderr)
@@ -720,13 +720,13 @@ def run_k6_baseline_set(stamp: str = "", json_: bool = False) -> int:
         print("기록된 실행이 없어요 — asgard k6 run <시나리오>로 한 번 돌려 주세요.", file=sys.stderr)
         return 1
 
-    blocker = k6.baseline_blocker(record.payload)
+    blocker = k6_gate.baseline_blocker(record.payload)
     if blocker:
         note, code = _BASELINE_REFUSAL[blocker]
         if json_:
             print(
                 json.dumps(
-                    {"schema": k6.BASELINE_SCHEMA, "ok": False, "stamp": record.stamp, "refused": blocker},
+                    {"schema": k6_gate.BASELINE_SCHEMA, "ok": False, "stamp": record.stamp, "refused": blocker},
                     ensure_ascii=False,
                     indent=2,
                 )
@@ -736,13 +736,13 @@ def run_k6_baseline_set(stamp: str = "", json_: bool = False) -> int:
             print(f"  {note}", file=sys.stderr)
         return code
 
-    baseline = k6.write_baseline(root, record)
+    baseline = k6_gate.write_baseline(root, record)
     if json_:
         print(json.dumps(_baseline_payload(baseline), ensure_ascii=False, indent=2))
         return 0
     _render_baseline(baseline)
     print(f"  baseline  {baseline.path}")
-    _render_tolerance(k6.gate_tolerance(root))
+    _render_tolerance(k6_gate.gate_tolerance(root))
     print("  이 실행보다 나빠지면 asgard k6 gate가 막아요.")
     return 0
 
@@ -750,13 +750,13 @@ def run_k6_baseline_set(stamp: str = "", json_: bool = False) -> int:
 def run_k6_baseline_show(json_: bool = False) -> int:
     root = _root()
     try:
-        baseline = k6.read_baseline(root)
+        baseline = k6_gate.read_baseline(root)
     except k6.SummaryError as exc:
         print(str(exc), file=sys.stderr)
         return 1
     if baseline is None:
         if json_:
-            print(json.dumps({"schema": k6.BASELINE_SCHEMA, "set": False}, ensure_ascii=False, indent=2))
+            print(json.dumps({"schema": k6_gate.BASELINE_SCHEMA, "set": False}, ensure_ascii=False, indent=2))
             return 1
         print("기준선이 없어요 — asgard k6 baseline set으로 세워 주세요.", file=sys.stderr)
         return 1
@@ -765,24 +765,24 @@ def run_k6_baseline_show(json_: bool = False) -> int:
         return 0
     _render_baseline(baseline)
     print(f"  baseline  {baseline.path}")
-    _render_tolerance(k6.gate_tolerance(root))
+    _render_tolerance(k6_gate.gate_tolerance(root))
     return 0
 
 
 def run_k6_baseline_clear(json_: bool = False) -> int:
     """기준선을 치운다. 없던 것을 치우는 것은 실패가 아니다 — 바라던 상태가 이미 참이다."""
     root = _root()
-    removed = k6.clear_baseline(root)
+    removed = k6_gate.clear_baseline(root)
     if json_:
-        print(json.dumps({"schema": k6.BASELINE_SCHEMA, "cleared": removed}, ensure_ascii=False, indent=2))
+        print(json.dumps({"schema": k6_gate.BASELINE_SCHEMA, "cleared": removed}, ensure_ascii=False, indent=2))
         return 0
     print("기준선을 치웠어요." if removed else "치울 기준선이 없었어요.")
     return 0
 
 
-def _baseline_payload(baseline: k6.Baseline) -> dict:
+def _baseline_payload(baseline: k6_gate.Baseline) -> dict:
     return {
-        "schema": k6.BASELINE_SCHEMA,
+        "schema": k6_gate.BASELINE_SCHEMA,
         "set": True,
         "stamp": baseline.stamp,
         "set_at": baseline.set_at,
@@ -791,7 +791,7 @@ def _baseline_payload(baseline: k6.Baseline) -> dict:
     }
 
 
-def _render_baseline(baseline: k6.Baseline) -> None:
+def _render_baseline(baseline: k6_gate.Baseline) -> None:
     run = baseline.run
     table = Table.grid(padding=(0, 2))
     table.add_column(min_width=10, overflow="fold")
@@ -808,7 +808,7 @@ def _render_baseline(baseline: k6.Baseline) -> None:
     _panel("load baseline", table, str(run.get("scenario") or ""))
 
 
-def _render_tolerance(tolerance: k6.Tolerance) -> None:
+def _render_tolerance(tolerance: k6_gate.Tolerance) -> None:
     print(
         f"  허용 오차  p95 +{tolerance.p95_pct:.1f}% · failed +{tolerance.failed_rate_pp:.2f}%p · "
         f"req/s -{tolerance.rate_per_s_pct:.1f}%"
@@ -816,10 +816,10 @@ def _render_tolerance(tolerance: k6.Tolerance) -> None:
     print("  덮어쓰려면 pyproject.toml의 [tool.asgard.k6-gate]에 적어 주세요.")
 
 
-def _gate_verdict_text(verdict: k6.GateVerdict) -> Text:
-    if verdict.verdict == k6.VERDICT_PASS:
+def _gate_verdict_text(verdict: k6_gate.GateVerdict) -> Text:
+    if verdict.verdict == k6_gate.VERDICT_PASS:
         return Text("pass", style="bold green")
-    if verdict.verdict == k6.VERDICT_REGRESSED:
+    if verdict.verdict == k6_gate.VERDICT_REGRESSED:
         return Text("회귀", style="bold red")
     # 못 견줬다는 말은 통과가 아니다. 종료 코드는 둘 다 0 이지만 낱말은 절대 같지 않다.
     return Text("판정 못 함", style="bold yellow")
@@ -828,7 +828,7 @@ def _gate_verdict_text(verdict: k6.GateVerdict) -> Text:
 _DELTA_LABEL = {"p95": "p95", "failed_rate": "failed", "rate_per_s": "req/s"}
 
 
-def _delta_text(delta: k6.Delta) -> Text:
+def _delta_text(delta: k6_gate.Delta) -> Text:
     """한 축의 변화 한 줄 — 기준선, 지금, 변화율, 그리고 **허용 오차까지** 같이 적는다.
 
     허용치를 안 적으면 "+7% 인데 왜 통과인가"를 화면에서 못 답한다. 게이트가 왜 그렇게
@@ -848,7 +848,7 @@ def _delta_text(delta: k6.Delta) -> Text:
     return Text.assemble(*parts)
 
 
-def _render_gate(verdict: k6.GateVerdict) -> None:
+def _render_gate(verdict: k6_gate.GateVerdict) -> None:
     table = Table.grid(padding=(0, 2))
     table.add_column(min_width=10, overflow="fold")
     table.add_column(ratio=1, overflow="fold")
@@ -881,7 +881,7 @@ def _render_gate(verdict: k6.GateVerdict) -> None:
 def _undecidable(reason: str, json_: bool, scenario: str = "") -> int:
     """판정할 수 없을 때. **막지 않는다** — 표적이 없는 프로젝트에서 이 게이트가 도는 것은
     소음이고, 소음을 내는 게이트는 곧 꺼진다. 대신 이유는 반드시 말한다."""
-    verdict = k6.GateVerdict(k6.VERDICT_UNDECIDABLE, reason, scenario=scenario)
+    verdict = k6_gate.GateVerdict(k6_gate.VERDICT_UNDECIDABLE, reason, scenario=scenario)
     if json_:
         print(json.dumps(verdict.as_dict(), ensure_ascii=False, indent=2))
     else:
@@ -893,7 +893,7 @@ def run_k6_gate(json_: bool = False) -> int:
     """마지막 기록과 기준선을 견준다. 부하는 안 돈다 — 파일 둘을 읽고 끝난다."""
     root = _root()
     try:
-        baseline = k6.read_baseline(root)
+        baseline = k6_gate.read_baseline(root)
     except k6.SummaryError as exc:
         print(f"  {exc}", file=sys.stderr)
         return _undecidable("broken-baseline", json_)
@@ -903,18 +903,18 @@ def run_k6_gate(json_: bool = False) -> int:
     # 대조군은 **기준선과 같은 시나리오로 돈 가장 최근 기록**이다. 그냥 마지막 기록을 집으면
     # 여러 시나리오를 돌리는 저장소에서 게이트가 상시 "견줄 수 없음"이 된다 — 시나리오는 어차피
     # 비교 가능성 첫 축이라, 그 축에서 미리 고르는 편이 같은 판정을 더 쓸모 있게 만든다.
-    current = k6.find_recorded_run(root, scenario=baseline.scenario)
+    current = k6_gate.find_recorded_run(root, scenario=baseline.scenario)
     if current is None:
         return _undecidable("no-run", json_, baseline.scenario)
 
-    verdict = k6.compare_to_baseline(baseline, current, k6.gate_tolerance(root))
+    verdict = k6_gate.compare_to_baseline(baseline, current, k6_gate.gate_tolerance(root))
     if json_:
         print(json.dumps(verdict.as_dict(), ensure_ascii=False, indent=2))
     else:
         _render_gate(verdict)
-        if verdict.verdict == k6.VERDICT_REGRESSED:
+        if verdict.verdict == k6_gate.VERDICT_REGRESSED:
             print("  기준선보다 나빠졌어요 — 허용 오차는 asgard k6 baseline show가 보여줘요.", file=sys.stderr)
-        elif verdict.verdict == k6.VERDICT_UNDECIDABLE:
+        elif verdict.verdict == k6_gate.VERDICT_UNDECIDABLE:
             print("  견줄 수 없어 아무것도 막지 않았어요 — 통과가 아니라 미판정이에요.", file=sys.stderr)
     # 미판정 실행을 **대조군으로** 견주는 것은 거절하지 않는다. 기준선은 앞으로를 통과시키는
     # 표준이라 검증을 요구하지만, 대조군은 판정 대상이다 — 임계값이 사라진 시나리오라도

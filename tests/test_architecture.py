@@ -148,10 +148,13 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 소스에서 증거를 뽑고, 그것을 어디에 쓸지는 위층이 정한다.
                 "map_notes",
                 "k6",
-                # k6_live — 부하가 도는 **동안**의 초 단위 계기. k6(러너·요약·판정) 하나만
-                # 보고 도메인의 다른 이름을 모른다. 레인을 둘로 가른 이유는 크기가 아니라
-                # 시점이다: k6 는 끝난 실행을 판정하고, 여기는 끝나기 전을 적는다.
+                # k6_live·k6_gate·k6_selftest — 다 k6(러너·요약·판정) 하나만 보고 도메인의 다른
+                # 이름을 모른다. 레인을 넷으로 가른 이유는 크기가 아니라 묻는 것이다: k6 는 끝난
+                # 한 판을 판정하고, k6_live 는 끝나기 전을 적고, k6_gate 는 지난번과 견주고,
+                # k6_selftest 는 판정기 자신이 참을 말하는지 표적에 걸어 본다.
                 "k6_live",
+                "k6_gate",
+                "k6_selftest",
                 "evolution",
                 "evolution_bench",
                 "skill_curator",
@@ -268,8 +271,9 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
         # 자립층 하나를 얹는다 — 판정 표(craft_rules→health), 색인(skill_registry→skill_bank),
         # 렌더(templates→hooks), 저장 어댑터 다리(memory_bridge→project_memory_backends).
         # evolution·skill_curator 도 skill_bank 하나만 보므로 같은 자리다.
-        # k6_live 가 여기 있는 것은 이름 때문이 아니라 순서 때문이다 — 자립층의 k6 하나를
-        # 얹는다(러너 조립·요약 파싱·판정을 되쓴다). 계약은 이름이 아니라 부등호다.
+        # k6_live·k6_gate·k6_selftest 가 여기 있는 것은 이름 때문이 아니라 순서 때문이다 —
+        # 자립층의 k6 하나를 얹는다(러너 조립·요약 파싱·판정을 되쓴다). 계약은 이름이 아니라
+        # 부등호다.
         (
             "표",
             frozenset(
@@ -281,6 +285,8 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
                     "skill_curator",
                     "evolution",
                     "k6_live",
+                    "k6_gate",
+                    "k6_selftest",
                     "sessions",
                 }
             ),

@@ -28,7 +28,7 @@ import urllib.request
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from ... import k6, k6_live
+from ... import k6, k6_gate, k6_live, k6_selftest
 from .. import loopback
 
 _json_body = loopback.json_body
@@ -274,7 +274,7 @@ def _drive_run(
             should_stop=lambda: run.stop_asked,
             keep_raw=keep_raw,
         )
-        k6.record_run(run.root, report, run.id)
+        k6_gate.record_run(run.root, report, run.id)
         run.report = report.as_dict()
         run.report["exit_agrees"] = report.exit_agrees
         run.report["summary_path"] = report.summary_path
@@ -355,7 +355,7 @@ def live_state(params: dict[str, list[str]], root: str) -> tuple[int, str, bytes
 def start_selftest(payload: dict, root: str) -> tuple[int, str, bytes]:
     """하네스가 참을 말하는지 검사한다 — 세 판이 끝나면 열세 검사가 한꺼번에 나온다.
 
-    진행률을 안 내는 이유는 없어서가 아니라 **없기 때문**이다. `k6.selftest()` 는 세 판을
+    진행률을 안 내는 이유는 없어서가 아니라 **없기 때문**이다. `k6_selftest.selftest()` 는 세 판을
     안에서 돌고 끝에 한 번 답한다. 여기서 초 단위 막대를 그리면 그 막대는 측정이 아니라
     장식이고, 이 레인은 장식을 안 만든다."""
     runner = k6.resolve_runner()
@@ -381,7 +381,7 @@ def _drive_selftest(run: Run, runner: k6.Runner, workdir: Path, kit: str, payloa
 
     shutil.rmtree(workdir, ignore_errors=True)
     try:
-        result = k6.selftest(
+        result = k6_selftest.selftest(
             runner=runner,
             out_dir=workdir,
             kit=kit,

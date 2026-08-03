@@ -937,7 +937,7 @@ def _run_payload(root: str, stamp: str = "", scenario: str = "") -> tuple[str, d
     `k6` 는 같은 계층의 형제라 모듈 최상단에서 부르지 않는다(계층 규칙은 임포트 시점에 도는
     것만 본다). 경로를 직접 조립하지 않고 그쪽에 묻는 이유는 `runs/` 의 배치가 그 모듈의
     계약이어서다 — 여기에 사본을 두면 한쪽만 옮겨졌을 때 이 표가 없는 파일을 가리킨다."""
-    from ..k6 import find_recorded_run
+    from ..k6_gate import find_recorded_run
 
     if stamp:
         stamp = _stamp(stamp)
@@ -960,7 +960,7 @@ def _evidence_root(root: str, filed: str) -> str:
     매달면, **다른 실행**이 조용히 근거로 붙는다. 그건 이 계층이 막으려는 것보다 나쁘다 — 근거가
     없는 것은 화면에 보이지만 틀린 근거는 안 보인다. 그래서 부르는 자리에 기록이 하나도 없어
     헷갈릴 것이 없을 때만 물러난다."""
-    from ..k6 import recorded_runs
+    from ..k6_gate import recorded_runs
 
     if not filed or not os.path.isdir(filed) or recorded_runs(root or "."):
         return root
