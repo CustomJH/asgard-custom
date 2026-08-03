@@ -708,6 +708,27 @@ mode_app = typer.Typer(
 app.add_typer(mode_app, name="mode")
 
 
+@app.command(help="choose how much Asgard orchestrates, and see which engines are actually reachable")
+def orchestrate(
+    set_: str = typer.Option("", "--set", help="auto · solo · graph · squad · off (default: auto)"),
+    global_: bool = typer.Option(False, "--global", help="save for every project instead of just this one"),
+    probe: bool = typer.Option(False, "--probe", help="re-check engine connectivity now instead of reading the cache"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.orchestrate import run_orchestrate
+
+    raise typer.Exit(
+        run_orchestrate(
+            set_policy=set_,
+            scope="global" if global_ else "project",
+            probe=probe,
+            json_out=json_,
+            quiet=quiet,
+        )
+    )
+
+
 @mode_app.callback()
 def mode_default(ctx: typer.Context, json_: bool = typer.Option(False, "--json")) -> None:
     if ctx.invoked_subcommand is None:
