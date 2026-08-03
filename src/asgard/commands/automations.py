@@ -35,7 +35,7 @@ def _emit(payload: Any) -> None:
 def _missing(name: str) -> errors.NotFound:
     return errors.NotFound(
         f"그런 자동화가 없어요: {name}",
-        remedy="asgard automations list로 등록된 이름을 보세요",
+        remedy="`asgard automations list`로 등록해 둔 이름을 보세요",
         detail={"automation": name},
     )
 
@@ -63,7 +63,7 @@ def run_add(name: str, prompt: str, schedule: str, json_out: bool = False) -> in
     except ValueError as exc:
         raise errors.InvalidInput(
             str(exc),
-            remedy="schedule은 hourly/daily/weekdays/weekly 또는 `0 9 * * 1-5`처럼 적어 주세요",
+            remedy="schedule은 hourly·daily·weekdays·weekly 중 하나이거나 `0 9 * * 1-5`처럼 적어 주세요",
         ) from exc
     if json_out:
         _emit(entry)
@@ -103,7 +103,7 @@ def run_due(execute: bool = False, json_out: bool = False) -> int:
         _emit({"now": now.isoformat(), "execute": execute, "due": rows, "results": results})
         return 0 if all(row["status"] == "succeeded" for row in results) else 1
     if not rows:
-        ui.step("지금 due인 자동화가 없어요.")
+        ui.step("지금 돌 차례인 자동화가 없어요.")
         return 0
     if not execute:
         for row in rows:

@@ -74,7 +74,7 @@ def parse_cron(value: str) -> Cron:
     """5-field cron을 stdlib 집합으로 푼다 — 목록·범위·step까지가 지원 계약이다."""
     fields = str(value or "").split()
     if len(fields) != 5:
-        raise ValueError("schedule은 hourly/daily/weekdays/weekly 또는 5-field cron이어야 해요")
+        raise ValueError("schedule은 hourly·daily·weekdays·weekly 중 하나이거나, 칸 다섯 개짜리 cron이어야 해요")
     minute, hour, day, month, weekday = fields
     minutes, _ = _field(minute, 0, 59)
     hours, _ = _field(hour, 0, 23)
@@ -87,13 +87,13 @@ def parse_cron(value: str) -> Cron:
         and not day_wildcard
         and not any(wanted <= _month_days(month_value) for month_value in months for wanted in days)
     ):
-        raise ValueError("그 cron은 달력에 존재하는 날짜를 가리키지 않아요")
+        raise ValueError("그 cron은 달력에 없는 날짜를 가리켜요 — 그런 날은 오지 않아요")
     return cron
 
 
 def _field(value: str, low: int, high: int, *, weekday: bool = False) -> tuple[frozenset[int], bool]:
     if not value:
-        raise ValueError("cron field가 비어 있어요")
+        raise ValueError("cron 칸이 비어 있어요")
     out: set[int] = set()
     for part in value.split(","):
         if not part:
@@ -102,9 +102,9 @@ def _field(value: str, low: int, high: int, *, weekday: bool = False) -> tuple[f
         try:
             step = int(step_text) if slash else 1
         except ValueError as exc:
-            raise ValueError(f"cron step이 숫자가 아니에요: {part}") from exc
+            raise ValueError(f"cron 간격이 숫자가 아니에요: {part}") from exc
         if step < 1:
-            raise ValueError("cron step은 1 이상이어야 해요")
+            raise ValueError("cron 간격은 1 이상이어야 해요")
         if base == "*":
             start, stop = low, high
         elif "-" in base:
@@ -195,9 +195,9 @@ def add(root: str | Path, name: str, prompt: str, schedule: str, now: datetime) 
     clean_name = " ".join(str(name or "").split())
     clean_prompt = str(prompt or "").strip()
     if not clean_name or len(clean_name) > _MAX_NAME:
-        raise ValueError(f"name은 1..{_MAX_NAME}자여야 해요")
+        raise ValueError(f"이름은 1~{_MAX_NAME}자여야 해요")
     if not clean_prompt or len(clean_prompt) > _MAX_PROMPT:
-        raise ValueError(f"prompt는 1..{_MAX_PROMPT}자여야 해요")
+        raise ValueError(f"지시문은 1~{_MAX_PROMPT}자여야 해요")
     normalized = normalize_schedule(schedule)
     with _LOCK:
         state = _load_state(root)
@@ -343,17 +343,21 @@ def _empty_state() -> dict[str, Any]:
     return {"schema": SCHEMA_VERSION, "automations": [], "history": []}
 
 
+# 아래 검사들의 사유가 영어인 것은 **사람에게 안 닿기 때문**이다. 읽기 경로(`_load_state`)가
+# 이 예외를 통째로 삼켜 빈 상태로 떨어지고, 쓰기 경로는 이 모듈이 자기가 만든 상태를 다시
+# 재는 자리라 여기서 깨지면 사용자 입력이 아니라 이 파일의 버그다. `plan/store.py` 의 형상
+# 검사와 같은 등급이다. 사람이 읽는 문장은 `add()` 가 던지는 것들뿐이고 그쪽은 한국어다.
 def _validate_state(raw: Any) -> dict[str, Any]:
     if not isinstance(raw, dict) or raw.get("schema") != SCHEMA_VERSION:
-        raise ValueError("automation state schema가 달라요")
+        raise ValueError("automation state has a different schema")
     automations, history_rows = raw.get("automations"), raw.get("history")
     if not isinstance(automations, list) or not isinstance(history_rows, list):
-        raise ValueError("automation state가 목록을 잃었어요")
+        raise ValueError("automation state lost its lists")
     clean, ids, names = [], set(), set()
     for row in automations:
         entry = _validate_entry(row)
         if entry["id"] in ids or entry["name"].casefold() in names:
-            raise ValueError("automation id 또는 name이 겹쳐요")
+            raise ValueError("duplicate automation id or name")
         ids.add(entry["id"])
         names.add(entry["name"].casefold())
         clean.append(entry)
@@ -363,16 +367,16 @@ def _validate_state(raw: Any) -> dict[str, Any]:
 
 def _validate_entry(row: Any) -> dict[str, Any]:
     if not isinstance(row, dict):
-        raise ValueError("automation entry는 object여야 해요")
+        raise ValueError("automation entry must be an object")
     automation_id, name, prompt = row.get("id"), row.get("name"), row.get("prompt")
     if not isinstance(automation_id, str) or not automation_id or len(automation_id) > 64:
-        raise ValueError("automation id가 잘못됐어요")
+        raise ValueError("invalid automation id")
     if not isinstance(name, str) or not name.strip() or len(name) > _MAX_NAME:
-        raise ValueError("automation name이 잘못됐어요")
+        raise ValueError("invalid automation name")
     if not isinstance(prompt, str) or not prompt.strip() or len(prompt) > _MAX_PROMPT:
-        raise ValueError("automation prompt가 잘못됐어요")
+        raise ValueError("invalid automation prompt")
     if type(row.get("enabled")) is not bool:
-        raise ValueError("automation enabled가 bool이 아니에요")
+        raise ValueError("automation enabled must be a bool")
     created = row.get("created_at")
     _timestamp(created)
     last_run = row.get("last_run")
@@ -382,7 +386,7 @@ def _validate_entry(row: Any) -> dict[str, Any]:
     if outcome is not None:
         outcome = _validate_outcome(outcome)
         if last_run is None:
-            raise ValueError("automation outcome에는 last_run이 있어야 해요")
+            raise ValueError("automation outcome requires last_run")
     return {
         "id": automation_id,
         "name": name.strip(),
@@ -397,16 +401,16 @@ def _validate_entry(row: Any) -> dict[str, Any]:
 
 def _validate_history(row: Any) -> dict[str, Any]:
     if not isinstance(row, dict):
-        raise ValueError("automation history는 object여야 해요")
+        raise ValueError("automation history must be an object")
     required = ("id", "automation_id", "name", "status", "started_at")
     if not all(isinstance(row.get(key), str) and row[key] for key in required):
-        raise ValueError("automation history 필드가 비었어요")
+        raise ValueError("automation history is missing fields")
     if row["status"] not in {"running", "succeeded", "failed", "interrupted"}:
-        raise ValueError("automation history status가 잘못됐어요")
+        raise ValueError("invalid automation history status")
     _timestamp(row["started_at"])
     if row["status"] != "running":
         if type(row.get("exit_code")) is not int:
-            raise ValueError("끝난 automation history에 exit_code가 없어요")
+            raise ValueError("finished automation history needs exit_code")
         _timestamp(row.get("finished_at"))
     return copy.deepcopy(row)
 
@@ -418,11 +422,11 @@ def _validate_outcome(value: Any) -> dict[str, Any]:
         "failed",
         "interrupted",
     }:
-        raise ValueError("automation outcome이 잘못됐어요")
+        raise ValueError("invalid automation outcome")
     _timestamp(value.get("started_at"))
     if value["status"] != "running":
         if type(value.get("exit_code")) is not int:
-            raise ValueError("끝난 automation outcome에 exit_code가 없어요")
+            raise ValueError("finished automation outcome needs exit_code")
         _timestamp(value.get("finished_at"))
     return copy.deepcopy(value)
 
