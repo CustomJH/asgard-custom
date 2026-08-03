@@ -1,7 +1,7 @@
 {
   "name": "asgard-studio-shell",
   "private": true,
-  "version": "0.10.1",
+  "version": "0.10.2",
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
