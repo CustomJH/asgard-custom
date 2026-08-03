@@ -50,7 +50,7 @@ class RepairTest(unittest.TestCase):
         self.assertEqual(out, src)
         self.assertEqual(applied, [])
         self.assertEqual([r.rule for r in refused], ["note-metaphor"])
-        self.assertEqual(refused[0].why, "여러 표준 서술 중 고르는 판단이 필요하다")
+        self.assertEqual(refused[0].why, "표준 서술이 여럿이라 어느 쪽인지는 사람이 골라야 해요")
         self.assertTrue(refused[0].detail, "이유 없는 거부는 침묵과 같다")
 
     def test_the_repaired_text_has_strictly_fewer_note_findings(self):
@@ -79,7 +79,7 @@ class RepairTest(unittest.TestCase):
             out, applied, refused = _repair(src)
         self.assertEqual(out, src, "코드가 함께 바뀌는 수리는 적용되면 안 된다")
         self.assertEqual(applied, [])
-        self.assertEqual([r.why for r in refused], ["고치면 주석 밖 바이트가 함께 바뀐다"])
+        self.assertEqual([r.why for r in refused], ["고치면 주석 밖 바이트까지 함께 바뀌어요"])
 
     def test_a_brace_repair_that_escapes_the_comment_is_refused(self):
         broken = (("note-metaphor", re.compile("이긴다"), "우선한다*/ evil();/*"),)
@@ -88,7 +88,7 @@ class RepairTest(unittest.TestCase):
             out, applied, refused = _repair(src, "ts")
         self.assertEqual(out, src)
         self.assertEqual(applied, [])
-        self.assertEqual([r.why for r in refused], ["고치면 주석 밖 바이트가 함께 바뀐다"])
+        self.assertEqual([r.why for r in refused], ["고치면 주석 밖 바이트까지 함께 바뀌어요"])
 
     def test_a_repair_that_drops_a_fact_is_refused(self):
         """G2 — 문체만 바꾼다. 측정값·날짜·경로가 하나라도 사라지면 그 수리는 주석을 파괴한다."""
@@ -99,7 +99,7 @@ class RepairTest(unittest.TestCase):
                 out, applied, refused = _repair(src)
         self.assertEqual(out, src)
         self.assertEqual(applied, [])
-        self.assertEqual([r.why for r in refused], ["사실이 그대로 남지 않는다 — 다시 쓰기는 문체만 바꾼다"])
+        self.assertEqual([r.why for r in refused], ["사실이 그대로 남지 않아요 — 다시 쓰기는 문체만 바꿔요"])
 
     def test_a_hit_masked_by_an_unrepairable_one_is_refused_not_half_fixed(self):
         """한 주석에 고칠 수 있는 것과 없는 것이 같이 있으면 그 주석은 손대지 않는다."""
@@ -108,7 +108,7 @@ class RepairTest(unittest.TestCase):
         self.assertEqual(out, src)
         self.assertEqual(applied, [])
         self.assertEqual(
-            [r.why for r in refused], ["고쳐도 판정이 줄지 않는다 — 같은 주석에 손댈 수 없는 판정이 함께 있다"]
+            [r.why for r in refused], ["고쳐도 판정이 줄지 않아요 — 같은 주석에 손댈 수 없는 판정이 함께 있어요"]
         )
 
     def test_a_coinage_whose_standard_word_is_a_predicate_is_refused_in_a_noun_slot(self):
@@ -117,7 +117,7 @@ class RepairTest(unittest.TestCase):
         self.assertEqual(out, src)
         self.assertEqual(
             [r.why for r in refused],
-            ["표준어가 서술문이라 명사 자리에 그대로 못 넣는다 — 문장을 다시 세워야 한다"],
+            ["표준어가 서술문이라 명사 자리에 그대로 못 넣어요 — 문장을 다시 세워야 해요"],
         )
 
 
@@ -255,7 +255,7 @@ class ApplyTest(unittest.TestCase):
             os.chmod(os.path.join(root, "m.py"), 0o644)
         self.assertEqual(report.applied, ())
         self.assertEqual(report.files, ())
-        self.assertIn("파일을 다시 쓰지 못했다 — 권한이나 잠금을 확인하라", [r.why for r in report.refused])
+        self.assertIn("파일을 다시 쓰지 못했어요 — 권한이나 잠금을 확인해 주세요", [r.why for r in report.refused])
 
     def test_a_file_the_judge_skips_is_never_rewritten(self):
         with contextlib.ExitStack() as stack:

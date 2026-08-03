@@ -485,7 +485,7 @@ def browse(path: str | None = None, *, show_hidden: bool = False) -> dict:
     """폴더 하나를 열어 그 **아래 폴더들만** 돌려준다 — 작업 공간을 고르는 눈이다.
 
     여태 작업 공간을 더하려면 경로를 손으로 적어야 했다. 경로는 사람이 외우는 것이 아니라
-    **찾아가는 것**이라, 오타 하나면 "존재하는 디렉터리 경로가 필요합니다"만 돌아왔고 어디가
+    **찾아가는 것**이라, 오타 하나면 "실제로 있는 폴더 경로가 필요해요"만 돌아왔고 어디가
     틀렸는지는 아무도 안 알려 줬다.
 
     파일은 내지 않는다. 여기서 필요한 것은 자리를 고르는 일이지 안을 들여다보는 일이 아니고,
@@ -493,7 +493,7 @@ def browse(path: str | None = None, *, show_hidden: bool = False) -> dict:
     start = str(path or "").strip()
     target = os.path.abspath(os.path.expanduser(start)) if start else os.path.abspath(os.path.expanduser("~"))
     if not os.path.isdir(target):
-        raise ValueError(f"{target}은(는) 폴더가 아닙니다")
+        raise ValueError(f"폴더가 아니에요: {target}")
     try:
         with os.scandir(target) as scan:
             rows = [
@@ -506,9 +506,9 @@ def browse(path: str | None = None, *, show_hidden: bool = False) -> dict:
                 if entry.is_dir(follow_symlinks=False) and (show_hidden or not entry.name.startswith("."))
             ]
     except PermissionError as exc:
-        raise ValueError(f"{target}을(를) 열 권한이 없습니다") from exc
+        raise ValueError(f"열 권한이 없어요: {target}") from exc
     except OSError as exc:
-        raise ValueError(f"{target}을(를) 읽지 못했습니다") from exc
+        raise ValueError(f"읽지 못했어요: {target}") from exc
     rows.sort(key=lambda row: row["name"].casefold())
     registered = {os.path.abspath(row["root"]) for row in _read_projects()}
     parent = os.path.dirname(target)
@@ -543,9 +543,9 @@ def add_project(path: str) -> dict:
     """경로를 등록부에 넣는다. 실제 디렉터리가 아니면 거부 — 없는 자리를 목록에 두지 않는다."""
     target = os.path.abspath(os.path.expanduser(str(path or "").strip()))
     if not target or not os.path.isdir(target):
-        raise ValueError("존재하는 디렉터리 경로가 필요합니다")
+        raise ValueError("실제로 있는 폴더 경로가 필요해요")
     if os.path.islink(target):
-        raise ValueError("심링크는 프로젝트 경계로 쓰지 않습니다")
+        raise ValueError("심링크는 프로젝트 경로로 쓰지 않아요 — 실제 폴더를 골라 주세요")
     if is_scratch(target):
         return {"root": target, "name": SCRATCH_NAME}  # 늘 있는 자리 — 등록부에 적지 않는다
     rows = [row for row in _read_projects() if os.path.abspath(row["root"]) != target]

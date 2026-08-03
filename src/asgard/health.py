@@ -289,7 +289,7 @@ def borrowed(rel: str) -> str | None:
     """
     for part in rel.replace(os.sep, "/").split("/")[:-1]:
         if part in GATE_SKIP_DIRS:
-            return f"{part}/ 아래 — 벤더링·산출물 경로라 이 변경의 책임이 아니다"
+            return f"{part}/ 아래라서 건너뛰었어요 — 벤더링·산출물 경로는 이 변경의 책임이 아니에요"
     return None
 
 

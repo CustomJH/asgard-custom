@@ -85,40 +85,40 @@ def configure_role_model(
     from ..templates.agent_models import AGENT_MODEL_DEFAULTS
 
     if host not in MODEL_HOSTS:
-        raise ValueError(f"host은 {'/'.join(MODEL_HOSTS)} 중 하나")
+        raise ValueError(f"host는 {'/'.join(MODEL_HOSTS)} 중 하나예요")
     valid_roles = _native_roles() if host == "native" else tuple(AGENT_MODEL_DEFAULTS[host])
     if role not in valid_roles:
-        raise ValueError(f"{host} role은 {'/'.join(valid_roles)} 중 하나")
+        raise ValueError(f"{host} role은 {'/'.join(valid_roles)} 중 하나예요")
     if model:
         model = normalize_model_id(model)
         if not model:
-            raise ValueError("유효한 model ID 필요")
+            raise ValueError("쓸 수 있는 model ID가 필요해요")
     if provider and provider not in PROVIDERS:
-        raise ValueError(f"provider은 {'/'.join(PROVIDERS)} 중 하나")
+        raise ValueError(f"provider는 {'/'.join(PROVIDERS)} 중 하나예요")
 
     section = f"trinity.{role}" if host == "native" else f"agent_models.{host}.{role}"
     if reset:
         if model or effort or provider:
-            raise ValueError("--reset은 model/--effort/--provider와 함께 사용할 수 없음")
+            raise ValueError("--reset은 model/--effort/--provider와 같이 쓸 수 없어요")
         path = save_config_section(root, section, None)
     else:
         values = project_section(root, section)
         if host == "native":
             if effort:
-                raise ValueError("native는 --effort 대신 provider/model 배치를 사용")
+                raise ValueError("native는 --effort 대신 provider/model 배치를 써요")
             if not (model or provider):
-                raise ValueError("native 설정에는 model 또는 --provider 필요")
+                raise ValueError("native 설정에는 model 또는 --provider가 필요해요")
             if model:
                 values["model"] = model
             if provider:
                 values["provider"] = provider
         else:
             if provider:
-                raise ValueError("--provider는 native 에서만 사용 가능")
+                raise ValueError("--provider는 native에서만 쓸 수 있어요")
             if host == "cursor" and effort:
-                raise ValueError("Cursor effort는 model slug에 포함해 설정")
+                raise ValueError("Cursor effort는 model slug에 넣어서 설정해요")
             if not (model or effort):
-                raise ValueError("hosted 설정에는 model 또는 --effort 필요")
+                raise ValueError("hosted 설정에는 model 또는 --effort가 필요해요")
             if model:
                 values["model"] = model
             if effort:
@@ -139,7 +139,7 @@ def configure_role_model(
 def reset_role_models(root: str, host: str) -> dict:
     """Remove every project role-model override for one runtime host."""
     if host not in MODEL_HOSTS:
-        raise ValueError(f"host은 {'/'.join(MODEL_HOSTS)} 중 하나")
+        raise ValueError(f"host는 {'/'.join(MODEL_HOSTS)} 중 하나예요")
     if host == "native":
         values = project_section(root, "trinity")
         for role in _native_roles():

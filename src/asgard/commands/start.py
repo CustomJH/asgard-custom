@@ -133,7 +133,7 @@ def preflight_error(checks: list[dict]) -> errors.PreflightFailed | None:
     names = ", ".join(str(c.get("name") or "?") for c in failed)
     remedy = next((str(c.get("fix")) for c in failed if c.get("fix")), "")
     return errors.PreflightFailed(
-        f"세션을 열 수 없습니다 — 점검 {len(failed)}건이 막혔습니다 ({names})",
+        f"세션을 열 수 없어요 — 점검 {len(failed)}건이 막고 있어요 ({names})",
         remedy=remedy,
         detail={"checks": checks},
     )
@@ -257,7 +257,7 @@ def run_prompt(
     elif prompt:
         result = h.handle(prompt)  # handle이 자체적으로 오류를 ⚠ 보고로 감싼다
     else:
-        result = "⚠ 새 실행에는 prompt가 필요합니다. 기존 Quest는 --resume을 사용하세요."
+        result = "⚠ 새 실행에는 prompt가 필요해요. 이미 있는 Quest를 이어가려면 --resume을 쓰세요."
     wall = round(_time.time() - t0, 1)
     activity.emit("run.end", ok=not result.startswith("⚠"), wall_s=wall, tokens=h.total_tokens)
     if json_out:

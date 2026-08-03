@@ -997,12 +997,12 @@ const EN = {
   "원본 — 사람이 무엇을 실제로 찾았는가 (부패 판정의 근거)": "canon — what you actually searched for (what the decay judgement reads)",
   "원본 — 어떤 어긋남을 사람이 보고 넘겼는가": "canon — which contradictions you have already looked at",
   "자동생성 — asgard memory reindex로 다시 만듦": "rebuilt — asgard memory reindex",
-  "자동생성 — 검색 색인·벡터는 pages/ 에서, 회수 기록은 usage.json 에서 되살린다 · 마지막으로 접힌 뒤의 노출 계수만 잃는다 (부패 판정은 사용만 보므로 안 흔들린다)": "rebuilt — the search index and vectors come back from pages/, the usage record from usage.json · only exposure counts since the last fold are lost (the decay judgement reads searches, so it does not shift)",
+  "자동생성 — 검색 색인·벡터는 pages/에서, 회수 기록은 usage.json에서 되살림 · 마지막으로 접힌 뒤의 노출 계수만 잃음 (부패 판정은 사용만 보므로 안 흔들림)": "rebuilt — the search index and vectors come back from pages/, the usage record from usage.json · only exposure counts since the last fold are lost (the decay judgement reads searches, so it does not shift)",
   "자동생성 — Obsidian 목차": "rebuilt — Obsidian index",
   "기록 — 정리·패턴 보고서": "record — tending and pattern reports",
   "보관 — 되살릴 수 있음": "archived — can be brought back",
   "백업 — 정리 직전 원본 사본": "backup — a copy taken just before tending",
-  "설정 — Obsidian으로 열기 위한 최소 설정": "config — the minimum needed to open it in Obsidian",
+  "설정 — Obsidian으로 열 때 쓰는 최소 설정": "config — the minimum needed to open it in Obsidian",
 
   "언어 전환": "Switch language",
   "꺼져 있습니다. 지금은 제목과 본문 검색만 씁니다.":
@@ -2540,7 +2540,7 @@ function renderHits(data){
       + lane("FTS", st.fts, "fts") + lane("SCAN", st.scan, "scan") + lane("SEM", st.semantic, "sem") + lane("PPR", st.graph, "fts")
       + '</div></div>';
   }).join("") : '<p class="empty">'
-    + (LANG === "en" ? 'No results for “' + esc(data.q) + '”' : '“' + esc(data.q) + '” 검색 결과 없음')
+    + (LANG === "en" ? 'No results for "' + esc(data.q) + '"' : '"' + esc(data.q) + '" 검색 결과 없음')
     + (APP.kind ? T(" (종류 필터 적용 중)") : "") + '</p>';
   restoreSearchFocus(focus);
 }

@@ -725,14 +725,14 @@ def derived_data(d: str) -> dict:
                 memory.DB,
                 "file",
                 False,
-                "자동생성 — 검색 색인·벡터는 pages/ 에서, 회수 기록은 usage.json 에서 되살린다 · "
-                "마지막으로 접힌 뒤의 노출 계수만 잃는다 (부패 판정은 사용만 보므로 안 흔들린다)",
+                "자동생성 — 검색 색인·벡터는 pages/에서, 회수 기록은 usage.json에서 되살림 · "
+                "마지막으로 접힌 뒤의 노출 계수만 잃음 (부패 판정은 사용만 보므로 안 흔들림)",
             ),
             _stat("maps", "dir", False, "자동생성 — Obsidian 목차"),
             _stat("reports", "dir", False, "기록 — 정리·패턴 보고서"),
             _stat("archive", "dir", False, "보관 — 되살릴 수 있음"),
             _stat("norn-backups", "dir", False, "백업 — 정리 직전 원본 사본"),
-            _stat(".obsidian", "dir", False, "설정 — Obsidian으로 열기 위한 최소 설정"),
+            _stat(".obsidian", "dir", False, "설정 — Obsidian으로 열 때 쓰는 최소 설정"),
         ],
     }
 

@@ -52,11 +52,11 @@ def _why(shape: str, task_class: str, unit_count: int, specialists: list[str]) -
     """이 형상을 고른 이유 한 문장 — 그대로 Run 의 `shape_why` 가 된다."""
     if shape == "graph":
         if unit_count >= _GRAPH_MIN_UNITS:
-            return f"배정 단위 {unit_count}개가 의존으로 묶인다 — wave 그래프 실행"
-        return "요청이 병렬을 명시했고 깊은 과업이다 — Thinker 가 배정 단위를 낸다"
+            return f"배정 단위 {unit_count}개가 의존으로 묶여요 — wave 그래프로 실행해요"
+        return "요청이 병렬을 명시했고 깊은 과업이에요 — Thinker가 배정 단위를 내요"
     if shape == "squad":
-        return "전문 영역 " + "·".join(specialists[:4]) + " 을 걸친다 — 딜리버리 fan-out"
-    return f"단일 손으로 충분하다 ({task_class})"
+        return "전문 영역 " + "·".join(specialists[:4]) + "을 걸쳐요 — 딜리버리 fan-out이에요"
+    return f"단일 손으로 충분해요 ({task_class})"
 
 
 def choose(
@@ -86,7 +86,12 @@ def choose(
     """
     specialists = list(specialists or [])
     if not write_expected:
-        return {"shape": "direct", "why": "쓰기 없음 — 오케스트레이션 미사용", "parallel": False, "disagreement": ""}
+        return {
+            "shape": "direct",
+            "why": "쓰기가 없어서 오케스트레이션을 쓰지 않아요",
+            "parallel": False,
+            "disagreement": "",
+        }
     signal = _by_signals(task_class, parallel_requested, specialists)
     if unit_count >= _GRAPH_MIN_UNITS:
         shape = "graph"
@@ -97,7 +102,9 @@ def choose(
         shape = signal
     disagreement = ""
     if planned and shape != signal:
-        disagreement = f"신호는 {signal} 를 가리켰지만 계획이 낸 배정 단위는 {unit_count}개다 — 단위 수는 계획이 정한다"
+        disagreement = (
+            f"신호는 {signal}를 가리켰지만 계획이 낸 배정 단위는 {unit_count}개예요 — 단위 수는 계획이 정해요"
+        )
     return {
         "shape": shape,
         "why": _why(shape, task_class, unit_count, specialists),

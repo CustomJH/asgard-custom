@@ -563,7 +563,7 @@ def run_contradictions(json_out: bool = False, include_seen: bool = False) -> in
                 marks.append(f"확인함 {row['acknowledged']}" + (f" · {row['note']}" if row["note"] else ""))
             if row["changed_since"]:
                 # 장부가 본 판본 이후로 페이지가 바뀌었다 — 위의 사유가 지금 본문을 안 가리킬 수 있다.
-                marks.append("그 뒤 페이지가 바뀜 — 사유가 낡았을 수 있다")
+                marks.append("그 뒤 페이지가 바뀜 — 사유가 낡았을 수 있어요")
             ui.step(ui.dim("  " + " · ".join(marks)))
         ui.step("본문 대조: asgard memory show <slug>")
         # "봤다"와 "고쳤다"를 여기서 갈라 두지 않으면 사람은 확인 명령을 해소로 읽는다.
@@ -597,8 +597,8 @@ def run_contradiction_seen(a: str, b: str, note: str = "", json_out: bool = Fals
             return 0
         ui.ok(f"봤다고 표시함 · {row['a']} ↔ {row['b']}")
         ui.warn("해소된 건 아니에요 — 두 페이지는 그대로고, 어느 쪽이 맞는지도 안 적혔어요.")
-        ui.step("고치려면 정본을 직접 고쳐라 (asgard memory show <slug> 로 본문 확인).")
-        ui.step("두 페이지 중 하나가 바뀌면 이 표시는 자동으로 풀리고 다시 목록에 뜬다.")
+        ui.step("고치려면 정본을 직접 고쳐 주세요 (asgard memory show <slug>로 본문 확인).")
+        ui.step("두 페이지 중 하나가 바뀌면 이 표시는 자동으로 풀리고 다시 목록에 떠요.")
         return 0
 
     return _guard(_do)
@@ -653,13 +653,13 @@ def _project_gates() -> tuple[tuple[str, str, str, Callable[[dict], str]], ...]:
         (
             "autosave",
             GRANT_AUTOSAVE,
-            "에이전트가 정제한 record 한 건을 승인 없이 정본·팀 뱅크에 쓴다",
+            "에이전트가 정제한 record 한 건을 승인 없이 정본·팀 뱅크에 써요",
             autosave_state,
         ),
         (
             "auto_retain_turns",
             GRANT_AUTO_RETAIN_TURNS,
-            "사람이 쓴 대화 턴 원문을 통째로 팀 뱅크에 보낸다",
+            "사람이 쓴 대화 턴 원문을 통째로 팀 뱅크에 보내요",
             auto_retain_turns_state,
         ),
     )
@@ -894,7 +894,7 @@ def run_discard(proposal_id: str, json_out: bool = False) -> int:
         return _fail(
             f"없거나 이미 처리된 제안 id · {proposal_id}",
             code="not_found",
-            remedy="asgard memory proposals 로 대기 중인 제안을 보세요",
+            remedy="asgard memory proposals로 대기 중인 제안을 보세요",
             detail={"id": proposal_id},
         )
 
@@ -955,7 +955,7 @@ def run_show(slug: str, unsafe: bool = False, json_out: bool = False) -> int:
             return _fail(
                 f"no page: {slug}",
                 code="not_found",
-                remedy="asgard memory query <말> 로 찾아보세요",
+                remedy="asgard memory query <말>로 찾아보세요",
                 detail={"slug": slug},
             )
         meta, body = pg
@@ -992,7 +992,7 @@ def run_remove(slug: str, json_out: bool = False) -> int:
                 ui.ok(f"removed {slug}")
             return 0
         return _fail(
-            f"no page: {slug}", code="not_found", remedy="asgard memory query <말> 로 찾아보세요", detail={"slug": slug}
+            f"no page: {slug}", code="not_found", remedy="asgard memory query <말>로 찾아보세요", detail={"slug": slug}
         )
 
     return _guard(_do)
@@ -1108,10 +1108,10 @@ def run_obsidian(refresh_only: bool = False, json_out: bool = False) -> int:
             elif not webbrowser.open(uri):  # pragma: no cover - Linux desktop 환경 의존
                 raise OSError("could not open the Obsidian URI")
         except Exception as exc:
-            ui.warn(f"Obsidian URI 열기 실패 ({type(exc).__name__}) — 폴더를 직접 vault로 연다: {vault}")
+            ui.warn(f"Obsidian URI를 열지 못했어요 ({type(exc).__name__}) — 폴더를 직접 vault로 열어 주세요: {vault}")
             return 1
         ui.ok(f"opened personal memory in Obsidian → {vault}")
-        ui.step(f"열리지 않으면 Obsidian에서 이 폴더를 vault로 한 번 연다: {vault}")
+        ui.step(f"열리지 않으면 Obsidian에서 이 폴더를 vault로 한 번 열어 주세요: {vault}")
         return 0
 
     return _guard(_do)
@@ -1609,7 +1609,7 @@ def run_norn_restore(slug: str, json_out: bool = False) -> int:
         return _fail(
             f"아카이브에 없음: {slug}",
             code="not_found",
-            remedy="asgard memory norn 으로 어떤 페이지가 치워졌는지 먼저 보세요",
+            remedy="asgard memory norn으로 어떤 페이지가 치워졌는지 먼저 보세요",
             detail={"slug": slug},
         )
 
@@ -1758,7 +1758,7 @@ def run_sync(
             ui.step(f"last sync · {state['last_sync'] or '없음'}")
             ui.step(f"tracked · {state['tracked']} / local {state['local_files']}")
             if state["unresolved_conflicts"]:
-                ui.warn(f"아직 안 풀린 충돌이 {len(state['unresolved_conflicts'])}건 있어요 — conflicts/ 를 봐 주세요")
+                ui.warn(f"아직 안 풀린 충돌이 {len(state['unresolved_conflicts'])}건 있어요 — conflicts/를 봐 주세요")
             return 0
         result = ms.sync(dry_run=dry_run, adopt=adopt)
         if json_out:
@@ -2085,14 +2085,14 @@ def _semantic_nudge_line(d: str) -> str:
     # 페이지 2장·vec 0행). 사용자는 모델 로드 비용만 내고 이득은 0을 받는다.
     message = ""
     if not sem.model_cached():
-        message = "시맨틱 검색이 아직 준비되지 않았다 (어휘 회수로 도는 중) — asgard memory semantic warmup"
+        message = "시맨틱 검색이 아직 준비되지 않았어요 (어휘 회수로 도는 중) — asgard memory semantic warmup"
     else:
         coverage = memory.vec_coverage(d)
         if not coverage["ok"] and coverage["pages"]:
             missing = coverage["pages"] - coverage["fresh"]
             message = (
-                f"시맨틱 색인이 정본을 못 덮는다 — {coverage['fresh']}/{coverage['pages']} 페이지 "
-                f"(미색인·낡음 {missing}건). 임베더는 서 있으니 비용은 내고 이득은 없다 — asgard memory reindex"
+                f"시맨틱 색인이 정본을 못 덮어요 — {coverage['fresh']}/{coverage['pages']} 페이지 "
+                f"(미색인·낡음 {missing}건). 임베더는 돌고 있으니 비용만 내고 이득은 없어요 — asgard memory reindex"
             )
     if not message:
         return ""
@@ -2280,7 +2280,7 @@ def run_project_ingest(
                 )
                 if row["lane"] == ingest.LANE_LOCAL:
                     ui.warn(
-                        f"  {row['name']}은 그래프 수용 상한을 넘는다 "
+                        f"  {row['name']}은 그래프 수용 상한을 넘어요 "
                         f"(예측 unit {row['graph_units']} > {ingest.GRAPH_UNIT_CEILING}) — "
                         "저장소 정본 + 로컬 인덱스로 갈게요 (검색은 되고, 뱅크도 지켜요)"
                     )

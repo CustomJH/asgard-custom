@@ -82,8 +82,8 @@ def _catch_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: l
                 rel,
                 line,
                 _owner(spans, line),
-                "catch 본문이 비어 있다" + ("" if broad else " (좁은 타입)"),
-                "처리할 수 없으면 문맥을 붙여 전파해라 — 삼킬 근거가 있으면 그 근거를 코드에 남겨라",
+                "catch 본문이 비어 있어요" + ("" if broad else " (좁은 타입)"),
+                "처리할 수 없으면 문맥을 붙여 전파하면 돼요 — 삼킬 근거가 있으면 그 근거를 코드에 남겨 주세요",
                 blocking=blocking,
             )
         )
@@ -106,8 +106,8 @@ def _secret_findings(raw: str, rel: str, spans: list[Unit], starts: list[int]) -
                 rel,
                 line,
                 _owner(spans, line),
-                f"{name}에 비밀처럼 생긴 문자열이 박혀 있다",
-                "환경변수·시크릿 저장소로 옮기고, 이미 커밋됐으면 그 값을 폐기해라",
+                f"{name}에 비밀처럼 생긴 문자열이 박혀 있어요",
+                "환경변수나 시크릿 저장소로 옮기면 돼요 — 이미 커밋됐으면 그 값은 폐기해 주세요",
             )
         )
     return out
@@ -169,9 +169,9 @@ def _sql_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: lis
                 line,
                 _owner(spans, line),
                 "값 자리에 문자열 보간" if value_slot else "SQL 문자열을 보간으로 조립 (식별자 자리)",
-                "파라미터 바인딩으로 옮겨라 — 값 자리는 바인딩으로 전부 대체된다"
+                "파라미터 바인딩으로 옮기면 돼요 — 값 자리는 바인딩으로 전부 대체돼요"
                 if value_slot
-                else "식별자는 바인딩이 안 된다 — 허용 목록으로 좁히고 그 근거를 남겨라",
+                else "식별자는 바인딩이 안 돼요 — 허용 목록으로 좁히고 그 근거를 남겨 주세요",
                 blocking=value_slot,
             )
         )
@@ -201,8 +201,8 @@ def _money_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: l
                 rel,
                 line,
                 _owner(spans, line),
-                f"{name}을 부동소수로 다룬다 — 0.1 + 0.2는 0.3이 아니다",
-                "정수 최소단위(원·센트)나 BigDecimal로 바꿔라",
+                f"{name}을 부동소수로 다뤄요 — 0.1 + 0.2는 0.3이 아니에요",
+                "정수 최소단위(원·센트)나 BigDecimal로 바꾸면 돼요",
             )
         )
     return out
@@ -276,8 +276,8 @@ def _tx_findings(raw: str, clean: str, rel: str, spans: list[Unit], starts: list
                 rel,
                 line,
                 _owner(spans, line),
-                "@Transactional 안에서 외부 호출 — 커밋 전 부수효과는 롤백이 되돌리지 못한다",
-                "트랜잭션 밖으로 빼거나 outbox로 옮겨라",
+                "@Transactional 안에서 외부 호출 — 커밋 전 부수효과는 롤백이 되돌리지 못해요",
+                "트랜잭션 밖으로 빼거나 outbox로 옮기면 돼요",
             )
         )
     return out

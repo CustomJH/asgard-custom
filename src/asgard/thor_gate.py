@@ -88,13 +88,13 @@ def _judge_file(root: str, rel: str, base: str) -> tuple[list[Finding], int, str
         return ([], 0, why, ())
     text = _read(root, rel)
     if text is None:
-        return ([], 0, "읽지 못했다", ())
+        return ([], 0, "읽지 못했어요", ())
     lang = _language(rel)
     if lang is None:
-        return ([], 0, "판정기가 모르는 언어 — 백엔드 정확성 미측정", ())
+        return ([], 0, "판정기가 모르는 언어예요 — 백엔드 정확성은 못 쟀어요", ())
     found = _findings(text, rel, lang)
     if found is None:
-        return ([], 0, "구문을 읽지 못했다 — 미판정", ())
+        return ([], 0, "구문을 읽지 못해서 판정에서 빠졌어요", ())
     before = _base_text(root, rel, base)
     inherited_keys: set[tuple[str, str, str]] = set()
     if before is not None:

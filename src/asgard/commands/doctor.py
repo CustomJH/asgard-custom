@@ -270,11 +270,11 @@ def _memory_semantic_check() -> dict | None:
                     "name": "personal memory semantic",
                     "ok": False,
                     "detail": (
-                        f"임베더는 서는데 색인이 정본을 못 덮는다 — "
+                        f"임베더는 도는데 색인이 정본을 못 덮어요 — "
                         f"{coverage['fresh']}/{coverage['pages']} 페이지"
                         + (f" · 낡음 {coverage['stale']}" if coverage["stale"] else "")
                         + (f" · 고아 {coverage['orphan']}" if coverage["orphan"] else "")
-                        + " (덮이지 않은 페이지는 시맨틱으로 안 찾힌다)"
+                        + " (덮이지 않은 페이지는 시맨틱 검색에 안 잡혀요)"
                     ),
                     "fix": "asgard memory reindex",
                 }
@@ -293,9 +293,9 @@ def _memory_semantic_check() -> dict | None:
             "ok": False,
             "detail": (
                 f"mode={mode} 인데 임베더를 못 불렀다 — 2경로로 폴백 중"
-                + ("" if cached else " (모델을 아직 안 받았다)")
+                + ("" if cached else " (모델을 아직 안 받았어요)")
             ),
-            "fix": "asgard memory semantic warmup (실패하면 asgard memory semantic off로 명시적으로 끈다)",
+            "fix": "asgard memory semantic warmup (실패하면 asgard memory semantic off로 명시적으로 꺼 주세요)",
         }
     except Exception:
         return None  # 진단 실패는 doctor를 막지 않는다 (fail-open)
@@ -323,7 +323,7 @@ def _memory_curator_check(root: str) -> dict | None:
         return {
             "name": "personal memory curator",
             "ok": False,
-            "detail": "없음 — 노른·패턴 학습이 멈춘다 (저장·검색·회상은 정상)",
+            "detail": "없음 — 노른·패턴 학습이 멈춰요 (저장·검색·회상은 정상)",
             "fix": "asgard memory provider --set <provider>[:<model>] (또는 메인 provider 연결)",
         }
     except Exception:
@@ -550,7 +550,7 @@ def _gate_blocks(root: str) -> tuple[dict[str, int], int, dict[str, int]]:
 # (no-sentinel·no-judged-writes)는 잴 것이 없던 정상 상황이라 세기만 하고 경고로 올리지
 # 않는다 — 매번 뜨는 경고는 곧 아무도 안 읽고, 그러면 이 계측이 막으려던 자리가 다시 열린다.
 _GATE_SKIP_ACTIONABLE = {
-    "no-asgard": "asgard 가 PATH 에 없어 판정기를 못 불렀어요",
+    "no-asgard": "asgard가 PATH에 없어 판정기를 못 불렀어요",
     "hook-error": "훅이 예외로 끝났어요",
 }
 
@@ -644,7 +644,7 @@ def _skill_bank_check(root: str) -> list[dict]:
             "name": "skill bank (self-evolution)",
             "ok": not stale,
             "detail": " · ".join(parts),
-            "fix": "stale 스킬은 asgard evolve archive <name> 로 보관 (삭제 아님, 복원 가능)",
+            "fix": "stale 스킬은 asgard evolve archive <name>으로 보관해요 (삭제 아님, 복원 가능)",
         }
     ]
 
@@ -692,10 +692,10 @@ def _baseline_checks_check(root: str) -> dict | None:
     return {
         "name": "baseline checks",
         "ok": False,
-        "detail": f"{len(accepted)}개 실행 · 안전 표 밖이라 **실행되지 않음** {len(rejected)}개: "
+        "detail": f"{len(accepted)}개 실행 · 안전 표 밖이라 실행하지 않은 것 {len(rejected)}개: "
         + ", ".join(cmd[:60] for cmd in rejected[:3]),
-        "fix": "체크는 테스트 러너 형상만 실행된다 — `pytest …` / `python -m pytest …` / "
-        "`uv run pytest …` 형태로 적어라 (셸 합성·스크립트 직접 실행은 거부된다)",
+        "fix": "체크는 테스트 러너 형상만 실행돼요 — `pytest …` / `python -m pytest …` / "
+        "`uv run pytest …` 형태로 적어 주세요 (셸 합성·스크립트 직접 실행은 거부해요)",
     }
 
 
@@ -856,12 +856,12 @@ def _custom_manual_check(root: str) -> dict | None:
         loaded = load_manual(root)
         problems = []
         if found["shadowed"]:
-            problems.append("별칭 중복 — 무시된다: " + ", ".join(_rel(root, p) for p in found["shadowed"]))
+            problems.append("별칭 중복 — 무시해요: " + ", ".join(_rel(root, p) for p in found["shadowed"]))
         # 링크가 저장소 밖을 가리켜 뺀 것. 다른 항목과 달리 이건 사고일 수도, 심어진 것일 수도
         # 있다 — 어느 쪽이든 사용자가 알아야 한다 (조용히 빼면 심은 쪽만 이득이다).
         if found["escaped"]:
             problems.append(
-                "저장소 밖을 가리키는 링크 — 안 싣는다: " + ", ".join(_rel(root, p) for p in found["escaped"])
+                "저장소 밖을 가리키는 링크 — 안 실어요: " + ", ".join(_rel(root, p) for p in found["escaped"])
             )
         if loaded and loaded["truncated"]:
             problems.append(f"상한 절단 {loaded['chars']}자 — 뒷부분 미주입")
@@ -877,14 +877,14 @@ def _custom_manual_check(root: str) -> dict | None:
                     f"{', '.join(stranger)}가 통째로 실리는 중 ({loaded['chars']}자) — 의도한 매뉴얼이 맞는지 확인"
                 )
         if not enabled(root):
-            detail = "off (manual.mode) — 어떤 모드에도 안 실린다"
+            detail = "off (manual.mode) — 어떤 모드에도 안 실려요"
         elif loaded:
             layers = f"공통 {len(loaded['common'])} + 프로젝트 {len(loaded['project'])}"
             detail = f"{layers} · {loaded['chars']} chars · 4-mode injected"
         elif found["files"]:
             detail = "파일은 있으나 주입 없음 — 주석뿐 (규칙은 주석 밖에)"
         else:
-            detail = f"없음 — 루트 {MANUAL_NAMES[0]}에 쓰면 4모드에 실린다"
+            detail = f"없음 — 루트 {MANUAL_NAMES[0]}에 쓰면 4모드에 실려요"
         return {
             "name": "custom manual",
             "ok": not problems,
@@ -908,7 +908,7 @@ def _einherjar_check(root: str) -> dict | None:
         problems = []
         for miss in d["missing"]:
             scope = miss["scope"] + (f" {miss['key']}" if miss["key"] else "")
-            problems.append(f"{scope}에 배치된 {miss['agent']!r}이 이 기계에 없다 — 기본으로 돈다")
+            problems.append(f"{scope}에 배치된 {miss['agent']!r}이 이 기계에 없어요 — 그 자리는 기본 에이전트로 돌아요")
         if warning := fallback_warning():
             problems.append(warning)
         placed = d["binding"]
@@ -919,7 +919,7 @@ def _einherjar_check(root: str) -> dict | None:
         elif len(agents) > 1:
             detail = f"에이전트 {len(agents)} · 활성 {active()} · 이 프로젝트에 배치 선언 없음"
         else:
-            detail = "기본 에이전트 하나 — `asgard agent create <이름>`으로 늘린다"
+            detail = "기본 에이전트 하나 — `asgard agent create <이름>`으로 늘릴 수 있어요"
         return {
             "name": "agents (Einherjar)",
             "ok": not problems,
@@ -1157,7 +1157,7 @@ def _design_engine_checks() -> list[dict]:
             "detail": f"vendored ({bundle.stat().st_size // 1024}KB)"
             if bundle.is_file()
             else "missing — detector runs regex-only",
-            "fix": "재설치로 복구된다: asgard update (휠에 동봉돼 있어 별도 설치 없음)",
+            "fix": "재설치하면 돌아와요: asgard update (휠에 동봉돼 있어 별도 설치 없음)",
         }
     )
     # 3D 엔진(브리싱아멘)의 값어치는 검증 런타임에 있다 — 스크립트가 빠지면 형상을 측정하지
@@ -1172,7 +1172,7 @@ def _design_engine_checks() -> list[dict]:
             "name": "freyja 3d runtime",
             "ok": not missing,
             "detail": f"{len(required)} scripts bundled" if not missing else f"missing: {', '.join(missing)}",
-            "fix": "재설치로 복구된다: asgard update (휠에 동봉 — 렌더·측정·검출이 전부 이 스크립트에 있다)",
+            "fix": "재설치하면 돌아와요: asgard update (휠에 동봉 — 렌더·측정·검출이 전부 이 스크립트에 있어요)",
         }
     )
 
@@ -1188,7 +1188,7 @@ def _design_engine_checks() -> list[dict]:
             "name": "freyja4 gate runtime",
             "ok": not gate_missing,
             "detail": "gate + 20-theme tokens bundled" if not gate_missing else f"missing: {', '.join(gate_missing)}",
-            "fix": "재설치로 복구된다: asgard update (게이트가 없으면 슬롭 판정이 자기보고로 되돌아간다)",
+            "fix": "재설치하면 돌아와요: asgard update (게이트가 없으면 슬롭 판정이 자기보고로 되돌아가요)",
         }
     )
 
@@ -1238,7 +1238,7 @@ def _office_checks() -> list[dict]:
             "name": "office engines",
             "ok": not missing,
             "detail": "docx · pptx · xlsx bundled" if not missing else f"missing: {', '.join(missing)}",
-            "fix": "재설치로 복구된다: asgard update (기본 의존성 — 빠지면 문서 생성 자체가 죽는다)",
+            "fix": "재설치하면 돌아와요: asgard update (기본 의존성 — 빠지면 문서 생성 자체가 죽어요)",
         }
     )
 
@@ -1250,7 +1250,7 @@ def _office_checks() -> list[dict]:
             "name": "office lanes",
             "ok": not absent,
             "detail": f"{len(required)} lane scripts bundled" if not absent else f"missing: {', '.join(absent)}",
-            "fix": "재설치로 복구된다: asgard update (휠에 동봉 — 생성·읽기·검증이 전부 이 스크립트에 있다)",
+            "fix": "재설치하면 돌아와요: asgard update (휠에 동봉 — 생성·읽기·검증이 전부 이 스크립트에 있어요)",
         }
     )
 
@@ -1313,7 +1313,7 @@ def _engine_reachable_check(root: str) -> list[dict]:
                 "name": "ChatGPT OAuth",
                 "ok": ok,
                 "detail": detail,
-                "fix": "asgard auth login openai-native (스톡 Codex CLI 로그인과 별개다 — 아스가르드가 자기 세션을 든다)",
+                "fix": "asgard auth login openai-native (스톡 Codex CLI 로그인과 별개예요 — 아스가르드가 자기 세션을 들어요)",
             }
         )
     return rows

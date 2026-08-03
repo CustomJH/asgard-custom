@@ -51,15 +51,15 @@ def import_root(root: str, *, force: bool = False) -> dict[str, Any]:
     path = legacy_db_path(root)
     out: dict[str, Any] = {"root": root, "imported": False, "tickets": 0, "reason": ""}
     if not os.path.isfile(path):
-        out["reason"] = "옛 보드가 없습니다"
+        out["reason"] = "이 폴더에는 옛 보드가 없어요"
         return out
     if was_imported(root) and not force:
-        out["reason"] = "이미 들여왔습니다"
+        out["reason"] = "이미 들여온 보드예요"
         return out
 
     old = open_legacy(root)
     if old is None:
-        out["reason"] = "옛 보드를 열 수 없습니다"
+        out["reason"] = "옛 보드를 열지 못했어요"
         return out
     try:
         tickets = _rows(old, "tickets")

@@ -274,7 +274,7 @@ class TestArtifactBoundary(WorkspaceCase):
             ]
             _, _, body = studio.read_diff(self.root, {"path": ["note.txt"]})
 
-        self.assertIn("Git 저장소가 아닙니다", json.loads(body)["note"])
+        self.assertIn("Git 저장소가 아니에요", json.loads(body)["note"])
 
     def test_reveal_stays_inside_the_boundary(self):
         with mock.patch("subprocess.Popen") as popen:

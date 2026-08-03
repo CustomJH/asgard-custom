@@ -203,9 +203,9 @@ def _sql_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
                 line,
                 _at(spans, line),
                 "값 자리에 문자열 보간" if value_slot else "SQL 문자열을 보간으로 조립 (식별자 자리)",
-                "파라미터 바인딩으로 옮겨라 — 값 자리는 바인딩으로 전부 대체된다"
+                "파라미터 바인딩으로 옮기면 돼요 — 값 자리는 바인딩으로 전부 대체돼요"
                 if value_slot
-                else "식별자는 바인딩이 안 된다 — 허용 목록으로 좁히고 그 근거를 남겨라",
+                else "식별자는 바인딩이 안 돼요 — 허용 목록으로 좁히고 그 근거를 남겨 주세요",
                 blocking=value_slot,
             )
         )
@@ -251,7 +251,7 @@ def _except_findings(tree: ast.AST, rel: str, spans: list[Unit], lines: list[str
             continue
         broad = _broad(node)
         justified = _justified(node.body, lines)
-        detail = "모든 예외를 삼킨다" if broad else "예외를 삼킨다 (좁은 타입)"
+        detail = "모든 예외를 삼켜요" if broad else "예외를 삼켜요 (좁은 타입)"
         out.append(
             Finding(
                 "swallowed-exception",
@@ -259,7 +259,7 @@ def _except_findings(tree: ast.AST, rel: str, spans: list[Unit], lines: list[str
                 node.lineno,
                 _at(spans, node.lineno),
                 detail + (" (근거 주석 있음)" if justified else ""),
-                "처리할 수 없으면 문맥을 붙여 전파해라 — 삼킬 근거가 있으면 그 근거를 코드에 남겨라",
+                "처리할 수 없으면 문맥을 붙여 전파하면 돼요 — 삼킬 근거가 있으면 그 근거를 코드에 남겨 주세요",
                 blocking=broad and not justified,
             )
         )
@@ -296,8 +296,8 @@ def _timeout_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Findin
                 rel,
                 node.lineno,
                 _at(spans, node.lineno),
-                f"{label}()에 타임아웃이 없다 — 기본값은 무한 대기다",
-                "timeout= 을 명시해라. 바깥 계층보다 짧아야 한다 (계층 타임아웃)",
+                f"{label}()에 타임아웃이 없어요 — 기본값은 무한 대기예요",
+                "timeout=을 명시하면 돼요 — 바깥 계층보다 짧아야 해요 (계층 타임아웃)",
             )
         )
     return out
@@ -337,8 +337,8 @@ def _secret_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding
                     rel,
                     node.lineno,
                     _at(spans, node.lineno),
-                    f"{name}에 비밀처럼 생긴 문자열이 박혀 있다",
-                    "환경변수·시크릿 저장소로 옮기고, 이미 커밋됐으면 그 값을 폐기해라",
+                    f"{name}에 비밀처럼 생긴 문자열이 박혀 있어요",
+                    "환경변수나 시크릿 저장소로 옮기면 돼요 — 이미 커밋됐으면 그 값은 폐기해 주세요",
                 )
             )
     return out
@@ -389,8 +389,8 @@ def _tx_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
                     rel,
                     line,
                     _at(spans, line),
-                    f"트랜잭션 안에서 {label}() — 커밋 전 부수효과는 롤백이 되돌리지 못한다",
-                    "트랜잭션 밖으로 빼거나 outbox로 옮겨라",
+                    f"트랜잭션 안에서 {label}() — 커밋 전 부수효과는 롤백이 되돌리지 못해요",
+                    "트랜잭션 밖으로 빼거나 outbox로 옮기면 돼요",
                 )
             )
             break
@@ -410,8 +410,8 @@ def _money_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
                 rel,
                 line,
                 _at(spans, line),
-                f"{name}을 부동소수로 다룬다 — 0.1 + 0.2는 0.3이 아니다",
-                "정수 최소단위(원·센트)나 Decimal로 바꿔라",
+                f"{name}을 부동소수로 다뤄요 — 0.1 + 0.2는 0.3이 아니에요",
+                "정수 최소단위(원·센트)나 Decimal로 바꾸면 돼요",
             )
         )
 
@@ -447,8 +447,8 @@ def _now_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]:
                     rel,
                     node.lineno,
                     _at(spans, node.lineno),
-                    f"{attr}()가 시간대 없는 값을 낸다",
-                    "저장은 UTC(aware)로, 변환은 표시 경계에서 — 막지는 않는다",
+                    f"{attr}()가 시간대 없는 값을 내요",
+                    "저장은 UTC(aware)로, 변환은 표시 경계에서 하면 돼요 — 막지는 않아요",
                     blocking=False,
                 )
             )

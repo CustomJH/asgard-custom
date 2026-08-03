@@ -85,7 +85,7 @@ def mode_state(root: str, mode: str | None = None) -> dict[str, Any]:
     from .role import role_model_state
 
     if mode is not None and mode not in swarm.MODES:
-        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나")
+        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나예요")
     models = role_model_state(root)
     selected_modes = (mode,) if mode else swarm.MODES
     resolved: dict[str, dict] = {}
@@ -120,16 +120,16 @@ def _validate_role(root: str, mode: str, role: str) -> None:
     from .role import role_model_state
 
     if mode not in swarm.MODES:
-        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나")
+        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나예요")
     roles = role_model_state(root)[mode]
     if role not in roles:
-        raise ValueError(f"{mode} role은 {'/'.join(roles)} 중 하나")
+        raise ValueError(f"{mode} role은 {'/'.join(roles)} 중 하나예요")
 
 
 def _validate_agent(agent: str) -> None:
     canon = profiles.validate(agent)
     if canon != profiles.DEFAULT and not profiles.exists(canon):
-        raise FileNotFoundError(f"에이전트 {canon!r} 없음 — `asgard agent create {canon}`로 먼저 만들어라")
+        raise FileNotFoundError(f"에이전트 {canon!r}를 못 찾았어요 — `asgard agent create {canon}`로 먼저 세우세요")
 
 
 def configure_mode(
@@ -146,17 +146,17 @@ def configure_mode(
     from .role import configure_role_model
 
     if mode not in swarm.MODES:
-        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나")
+        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나예요")
     model_change = any(value is not None for value in (model, effort, provider))
     if role is None:
         if model_change or not agent:
-            raise ValueError("role이 없으면 --agent만 설정할 수 있음")
+            raise ValueError("role이 없으면 --agent만 설정할 수 있어요")
         _validate_agent(agent)
         changed = {"agent": swarm.bind(root, agent, mode=mode)}
     else:
         _validate_role(root, mode, role)
         if not (agent or model_change):
-            raise ValueError("--agent/--model/--effort/--provider 중 하나 필요")
+            raise ValueError("--agent/--model/--effort/--provider 중 하나는 있어야 해요")
         if agent:
             _validate_agent(agent)
         changed = {}
@@ -184,7 +184,7 @@ def reset_mode(root: str, mode: str, role: str | None = None) -> dict:
     from .role import configure_role_model, reset_role_models
 
     if mode not in swarm.MODES:
-        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나")
+        raise ValueError(f"mode는 {'/'.join(swarm.MODES)} 중 하나예요")
     if role is None:
         models = reset_role_models(root, mode)
         agent = swarm.unbind(root, mode=mode)
@@ -303,7 +303,7 @@ def run_mode_set(
         )
     except (ValueError, FileNotFoundError) as exc:
         fix = (
-            f"`asgard agent create {agent}`로 먼저 만드세요"
+            f"`asgard agent create {agent}`로 먼저 세우세요"
             if isinstance(exc, FileNotFoundError)
             else f"`asgard mode show {mode}`로 지금 값을 보세요"
         )

@@ -29,7 +29,7 @@ _M: dict[str, tuple[str, str]] = {
         "/help · /new · !bash · Tab 자동완성 · ↑↓ 히스토리",
     ),
     "bye": ("Bifrost sealed. Farewell, Odin.", "비프로스트를 봉인했어요. 다음에 또 만나요, 오딘."),
-    "ready": ("Heimdall is ready. Ask anything.", "Heimdall이 준비됐어요. 무엇이든 물어보세요."),
+    "ready": ("Heimdall is ready. Ask anything.", "헤임달이 준비됐어요. 무엇이든 물어보세요."),
     # provider·온보딩
     "provider_unset": (
         "no provider — connect with /provider set",
@@ -48,10 +48,10 @@ _M: dict[str, tuple[str, str]] = {
     "pick_provider": ("select a provider", "사용할 provider를 선택해 주세요"),
     "pick_model": ("select a model", "사용할 모델을 선택해 주세요"),
     # 인터랙티브 선택 패널 (picker)
-    "picker_filter_ph": ("type to filter", "입력하면 바로 걸러져요"),
+    "picker_filter_ph": ("type to filter", "입력해서 걸러 보세요"),
     "picker_hint": (
         "↑↓ move · type to filter · enter select · esc cancel",
-        "↑↓ 이동 · 입력해 필터 · enter 선택 · esc 취소",
+        "↑↓ 이동 · 입력해서 거르기 · enter 선택 · esc 취소",
     ),
     "picker_more": ("… {n} more", "… {n}개 더"),
     "picker_no_match": ("no match", "일치하는 항목이 없어요"),
@@ -172,11 +172,11 @@ _M: dict[str, tuple[str, str]] = {
     ),
     "h_manual": (
         "your own project rules (MANUAL.md) — what is loaded · '/manual show' for the text",
-        "내가 쓴 프로젝트 규칙 (MANUAL.md) — 뭐가 실렸는지 · '/manual show'로 원문",
+        "내가 쓴 프로젝트 규칙 (MANUAL.md) — 무엇이 실렸는지 · '/manual show'로 원문",
     ),
     "manual_none": (
         "no manual — write rules in MANUAL.md and every role in every mode reads them",
-        "MANUAL.md에 규칙을 쓰면 모든 모드·모든 역할이 읽어요",
+        "아직 매뉴얼이 없어요 — MANUAL.md에 규칙을 쓰면 모든 모드·모든 역할이 읽어요",
     ),
     "manual_inert": (
         "the file is there but nothing is loaded — rules go outside the comment markers",
@@ -253,7 +253,7 @@ _M: dict[str, tuple[str, str]] = {
     "report_evidence": ("Evidence", "증거"),
     "report_assumptions": (
         "Assumptions (Canon 8 — Odin's review needed):",
-        "가정 (Canon 8 — Odin 검토 필요):",
+        "가정 (Canon 8 — 오딘 검토 필요):",
     ),
     "report_gate_blocks": (
         "⚠ passed after {blocks} — the repair history is in the quest log",
@@ -339,7 +339,7 @@ _M: dict[str, tuple[str, str]] = {
         "your work board — file tickets, move them, link them (the same store the Studio window uses)",
         "업무 보드 — 티켓을 발급하고 옮기고 이어요 (Studio 창과 같은 저장소예요)",
     ),
-    "hc_tk_board": ("the board as it stands, in status columns", "지금 보드를 상태 칸으로 접어서 보여드려요"),
+    "hc_tk_board": ("the board as it stands, in status columns", "지금 보드를 상태 칸으로 나눠서 보여드려요"),
     "hc_tk_team": (
         "narrow to one team key — `.` means this folder's team (default: the whole workspace)",
         "팀 키로 좁혀요 — `.`은 이 폴더의 팀이에요 (기본값은 워크스페이스 전체)",
@@ -422,7 +422,7 @@ _M: dict[str, tuple[str, str]] = {
     ),
     "hc_tk_team_cmd": (
         "teams — they own the numbers, and workflow, cycles and triage all run per team",
-        "팀 — 번호의 주인이고, 워크플로·사이클·트리아지가 도는 단위예요",
+        "팀 — 번호의 주인이고, 워크플로·주기·트리아지가 도는 단위예요",
     ),
     "hc_tk_team_new": ("stand up a team under this name", "이 이름으로 팀을 세워요"),
     "hc_tk_team_key": (
@@ -433,7 +433,7 @@ _M: dict[str, tuple[str, str]] = {
         "on|off — work arriving from outside queues in the inbox first",
         "on|off — 밖에서 들어온 일감을 인박스에 세워요",
     ),
-    "hc_tk_team_weeks": ("cycle length, in weeks", "사이클 길이 (주)"),
+    "hc_tk_team_weeks": ("cycle length, in weeks", "주기 길이 (주)"),
     "hc_tk_project_cmd": (
         "projects — work that has an end. they run across teams",
         "프로젝트 — 끝이 있는 일이에요. 팀을 가로질러요",
@@ -443,7 +443,7 @@ _M: dict[str, tuple[str, str]] = {
         "one project in detail — milestones, progress, updates",
         "이 프로젝트의 상세 — 마일스톤·진척·보고",
     ),
-    "hc_tk_pj_lead": ("a single lead — so responsibility does not split", "리드 한 사람 — 책임이 갈리지 않게요"),
+    "hc_tk_pj_lead": ("a single lead — so responsibility does not split", "리드 한 사람 — 책임이 갈리지 않게 해요"),
     "hc_tk_pj_target": ("target date, YYYY-MM-DD", "목표일 YYYY-MM-DD"),
     "hc_tk_pj_teams": ("team keys taking part (comma-separated)", "참여 팀 키 (쉼표로 여럿)"),
     "hc_tk_milestone": ("milestones inside a project — list, add, finish", "프로젝트 안의 마일스톤 — 목록·신설·완료"),
@@ -483,7 +483,7 @@ _M: dict[str, tuple[str, str]] = {
         "open a local Asgard window — studio · map · memory",
         "여기 있는 Asgard 창을 열어요 — studio · map · memory",
     ),
-    "hc_open_map": ("the relation graph — what your code touches", "관계 그래프 뷰 — 코드가 무엇에 닿는지 보여드려요"),
+    "hc_open_map": ("the relation graph — what your code touches", "관계 그래프 — 코드가 무엇에 닿는지 보여드려요"),
     "hc_open_memory": (
         "the Yggdrasil dashboard — your personal memory wiki (read-only)",
         "위그드라실 대시보드 — 개인 메모리 위키예요 (읽기 전용)",

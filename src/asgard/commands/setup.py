@@ -191,7 +191,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             from rich.prompt import Confirm
 
             force = Confirm.ask(
-                f"  {len(existing)}개 파일이 이미 존재합니다 — 다시 덮어쓰시겠습니까? "
+                f"  {len(existing)}개 파일이 이미 있어요 — 다시 덮어쓸까요? "
                 "[dim](asgard 스캐폴드만 갱신 · 설정값·로그·퀘스트/맵 데이터는 유지)[/dim]",
                 default=False,
             )

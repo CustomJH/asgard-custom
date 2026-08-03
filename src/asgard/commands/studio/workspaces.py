@@ -31,10 +31,10 @@ def use_project(payload: dict) -> tuple[int, str, bytes]:
 
     wanted = str(payload.get("root") or "").strip()
     if not wanted:
-        return _json_body(400, {"error": "존재하는 디렉터리 경로가 필요합니다"})
+        return _json_body(400, {"error": "실제로 있는 폴더 경로가 필요해요"})
     target, failed = resolve_workspace(wanted, "")
     if failed or not target:
-        return _json_body(400, {"error": failed or "존재하는 디렉터리 경로가 필요합니다"})
+        return _json_body(400, {"error": failed or "실제로 있는 폴더 경로가 필요해요"})
     # 되돌아 읽는 쪽(`boundary.current_root`)이 보는 것은 `state`의 값이다. 여기서 `global`
     # 로 선언하면 이 모듈에 같은 이름의 전역이 하나 더 생길 뿐 아무도 그걸 안 본다.
     with state._ROOT_LOCK:
@@ -85,7 +85,7 @@ def pick_folder(payload: dict) -> tuple[int, str, bytes]:
     화면이 이것을 오류로 띄우면 사용자는 취소할 때마다 빨간 말을 본다."""
     command = _folder_dialog_command()
     if not command:
-        return _json_body(501, {"error": "이 기계에는 폴더 고르기 대화상자가 없습니다"})
+        return _json_body(501, {"error": "이 기계에는 폴더 고르기 대화상자가 없어요 — 경로를 붙여넣어 주세요"})
     try:
         # 인코딩을 안 주면 호스트 로케일이 정한다 — 한국어 Windows(cp949)에서 폴더 이름이
         # 깨져 돌아오고, 그 경로는 존재하지 않는 폴더가 된다. 이 저장소의 텍스트 IO 규약대로 못박는다.
@@ -99,9 +99,9 @@ def pick_folder(payload: dict) -> tuple[int, str, bytes]:
             errors="replace",
         )
     except subprocess.TimeoutExpired:
-        return _json_body(504, {"error": "폴더 고르기가 너무 오래 열려 있었습니다"})
+        return _json_body(504, {"error": "폴더 고르기가 너무 오래 열려 있어서 닫았어요 — 다시 눌러 주세요"})
     except OSError as exc:
-        return _json_body(500, {"error": f"폴더 고르기를 열지 못했습니다: {exc}"})
+        return _json_body(500, {"error": f"폴더 고르기를 열지 못했어요: {exc}"})
     path = result.stdout.strip()
     if result.returncode != 0 or not path:
         return _json_body(200, {"path": ""})  # 취소
@@ -114,7 +114,9 @@ def forget_project(payload: dict) -> tuple[int, str, bytes]:
 
     target = os.path.abspath(os.path.expanduser(str(payload.get("root") or "").strip()))
     if target == current_root():
-        return _json_body(409, {"error": "현재 열려 있는 프로젝트는 목록에서 뺄 수 없습니다"})
+        return _json_body(
+            409, {"error": "지금 열려 있는 프로젝트는 목록에서 뺄 수 없어요 — 다른 자리로 옮긴 뒤에 빼 주세요"}
+        )
     removed = studio_store.remove_project(target)
     return _json_body(200, {"removed": removed, "projects": studio_store.list_projects(current_root())})
 

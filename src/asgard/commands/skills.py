@@ -115,10 +115,10 @@ def run_skills_show(name: str, body_only: bool = True, resource: str | None = No
     try:
         text = show_skill_resource(os.getcwd(), name, resource) if resource else show_skill(os.getcwd(), name)
     except ValueError as exc:
-        raise errors.InvalidInput(str(exc), remedy=f"asgard skills show {name} 로 스킬 본문을 보세요") from exc
+        raise errors.InvalidInput(str(exc), remedy=f"asgard skills show {name} 명령으로 스킬 본문을 보세요") from exc
     if text is None:
         raise errors.NotFound(
-            f"skill not found: {name}", remedy="asgard skills list 로 있는 스킬을 보세요", detail={"skill": name}
+            f"skill not found: {name}", remedy="asgard skills list로 있는 스킬을 보세요", detail={"skill": name}
         )
     if resource is None and body_only and text.startswith("---"):
         text = text.split("---", 2)[2].lstrip()
@@ -206,7 +206,7 @@ def run_skills_assign(name: str, agent: str, *, assigned: bool, json_out: bool =
     except ValueError as exc:
         raise errors.InvalidInput(
             str(exc),
-            remedy="asgard skills list 로 스킬 이름을, --agent 로 역할을 확인하세요",
+            remedy="asgard skills list로 스킬 이름을, --agent로 역할을 확인하세요",
             detail={"skill": name, "role": agent},
         ) from exc
     if json_out:
@@ -222,7 +222,7 @@ def run_skills_enable(name: str, *, enabled: bool, json_out: bool = False) -> in
         set_skill_enabled(os.getcwd(), name, enabled=enabled)
     except ValueError as exc:
         raise errors.InvalidInput(
-            str(exc), remedy="asgard skills list 로 있는 스킬을 보세요", detail={"skill": name}
+            str(exc), remedy="asgard skills list로 있는 스킬을 보세요", detail={"skill": name}
         ) from exc
     if json_out:
         _emit({"skill": name, "enabled": enabled})

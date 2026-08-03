@@ -137,8 +137,8 @@ def _alloc_findings(region: str, rel: str, unit: Unit) -> list[Finding]:
                     rel,
                     line,
                     unit.qualname,
-                    f"{name}이 할당만 되고 이 함수 안에서 주인을 못 찾는다 (free도 반환도 인계도 없음)",
-                    "할당한 자리에서 해제 경로를 함께 써라 — 실패 분기까지 포함해서, goto cleanup 이든 단일 출구든",
+                    f"{name}이 할당만 되고 이 함수 안에서 주인을 못 찾아요 (free도 반환도 인계도 없어요)",
+                    "할당한 자리에서 해제 경로를 함께 쓰면 돼요 — 실패 분기까지요. goto cleanup이든 단일 출구든 좋아요",
                 )
             )
         if not _checked(region, name):
@@ -148,8 +148,8 @@ def _alloc_findings(region: str, rel: str, unit: Unit) -> list[Finding]:
                     rel,
                     line,
                     unit.qualname,
-                    f"{name}의 할당 실패를 이 함수 어디에서도 검사하지 않는다",
-                    "할당 직후에 NULL을 검사하라 — 실패한 포인터를 역참조하면 그 자리가 아니라 나중에 터진다",
+                    f"{name}의 할당 실패를 이 함수 어디에서도 검사하지 않아요",
+                    "할당 직후에 NULL을 검사하면 돼요 — 실패한 포인터를 역참조하면 그 자리가 아니라 나중에 터져요",
                 )
             )
     return out
@@ -174,8 +174,8 @@ def _realloc_findings(region: str, rel: str, unit: Unit) -> list[Finding]:
                 rel,
                 _line_at(region, match.start(), unit),
                 unit.qualname,
-                f"{name} = realloc({name}, …) — 실패하면 NULL이 덮어써서 원래 블록으로 가는 길이 사라진다",
-                "임시 포인터로 받아 성공을 확인한 뒤에 옮겨 담아라 — 실패해도 원본은 살아 있어야 한다",
+                f"{name} = realloc({name}, …) — 실패하면 NULL이 덮어써서 원래 블록으로 가는 길이 사라져요",
+                "임시 포인터로 받아 성공을 확인한 뒤에 옮겨 담으면 돼요 — 실패해도 원본은 살아 있어야 해요",
             )
         )
     return out
@@ -200,8 +200,8 @@ def _handle_findings(region: str, rel: str, unit: Unit) -> list[Finding]:
                 rel,
                 _line_at(region, match.start(), unit),
                 unit.qualname,
-                f"{call}()로 연 {name}을 이 함수 안에서 닫지 않는다",
-                f"{closer}()를 모든 출구에 두어라 — 이른 return 하나가 핸들을 영원히 잡는다",
+                f"{call}()로 연 {name}을 이 함수 안에서 닫지 않아요",
+                f"{closer}()를 모든 출구에 두면 돼요 — 이른 return 하나가 핸들을 영영 잡고 있어요",
             )
         )
     return out
@@ -217,8 +217,8 @@ def _bounds_findings(region: str, rel: str, unit: Unit) -> list[Finding]:
                 rel,
                 _line_at(region, match.start(), unit),
                 unit.qualname,
-                f"{call}()는 대상 크기를 모른다 — 입력 길이가 곧 쓰기 길이가 된다",
-                "크기를 받는 형태로 바꿔라 (snprintf·strncat·경계를 명시한 memcpy), 그리고 잘림도 처리하라",
+                f"{call}()는 대상 크기를 몰라요 — 입력 길이가 곧 쓰기 길이가 돼요",
+                "크기를 받는 형태로 바꾸면 돼요 (snprintf·strncat·경계를 명시한 memcpy). 잘림도 함께 처리해 주세요",
             )
         )
     return out
@@ -234,8 +234,8 @@ def _cost_findings(region: str, rel: str, unit: Unit) -> list[Finding]:
                 rel,
                 _line_at(region, match.start(), unit),
                 unit.qualname,
-                f"루프 조건에서 매 회전마다 {call}()을 다시 센다 — 문자열 길이의 제곱이 된다",
-                "길이를 루프 밖에서 한 번 재서 변수에 담아라",
+                f"루프 조건에서 매 회전마다 {call}()을 다시 세고 있어요 — 문자열 길이의 제곱이 돼요",
+                "길이를 루프 밖에서 한 번 재서 변수에 담으면 돼요",
             )
         )
     return out

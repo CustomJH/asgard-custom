@@ -200,7 +200,7 @@ def _file_note(rel: str, text: str, before: str | None, lang: str) -> list[Findi
             1,
             "",
             f"{size:,}행 (문턱 {FILE_LINES_WARN:,}행" + (f", 이전 {prior:,}행" if before else ", 신규") + ")",
-            "이번 변경을 막지는 않는다 — 다음 기능을 여기 얹기 전에 경계를 하나 그어라",
+            "이번 변경을 막지는 않아요 — 다음 기능을 여기 얹기 전에 경계를 하나 그어 주세요",
             blocking=False,
         )
     ]
@@ -235,13 +235,13 @@ def _judge_file(root: str, rel: str, origin: _Origin) -> tuple[list[Finding], in
         return ([], 0, why)
     text = _read(root, rel)
     if text is None:
-        return ([], 0, "읽지 못했다")
+        return ([], 0, "읽지 못했어요")
     lang = _language(rel)
     if lang is None:
-        return ([], 0, "판정기가 모르는 언어 — 함수 단위·자원 수명 미측정")
+        return ([], 0, "판정기가 모르는 언어예요 — 함수 단위와 자원 수명은 못 쟀어요")
     current = _units(text, lang)
     if current is None:
-        return ([], 0, "구문을 읽지 못했다 — 미판정")
+        return ([], 0, "구문을 읽지 못해서 판정에서 빠졌어요")
     before = origin.text(rel, text)
     prior_units = _units(before, lang) if before is not None else None
     spans = list(current.values())

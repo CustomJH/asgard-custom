@@ -109,7 +109,7 @@ def gate_message(code: str, **params) -> str:
     return f"[gate:{code}] " + template.format(**params)
 
 
-# ── 원장 ────────────────────────────────────────────────────────────────────────
+# ── 소비 집계 ────────────────────────────────────────────────────────────────────────
 @dataclass
 class Usage:
     input: int = 0
@@ -174,7 +174,7 @@ def _usage_from(raw) -> Usage | None:
 
 
 def read_ledger(path: str) -> Ledger:
-    """트랜스크립트 JSONL을 두 레인으로 집계한다. 못 읽으면 빈 원장 + read_error.
+    """트랜스크립트 JSONL을 두 레인으로 집계한다. 못 읽으면 빈 집계 + read_error.
 
     메인 레인은 assistant 행의 message.usage, 에이전트 레인은 Task 결과의 toolUseResult 다.
     한 행이 깨져도 나머지는 센다 — 부분 관측이 무관측보다 낫고, 부분이라는 사실은 read_error가 진다."""

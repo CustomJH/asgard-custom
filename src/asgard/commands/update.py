@@ -200,7 +200,7 @@ def run_update(
             return 1
         raise errors.UpstreamError(
             "could not resolve the latest version",
-            remedy="네트워크를 확인하거나 버전을 못박으세요: asgard update vX.Y.Z",
+            remedy="네트워크를 확인하거나 버전을 고정하세요: asgard update vX.Y.Z",
         )
     if target == __version__:
         if not json_out:

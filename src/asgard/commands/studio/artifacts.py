@@ -29,13 +29,13 @@ def read_artifact(root: str, params: dict[str, list[str]]) -> tuple[int, str, by
     """변경 파일 한 장을 읽어 준다. 이진 파일은 내용 대신 그렇다고 말한다."""
     target = _confine(root, (params.get("path") or [""])[0])
     if target is None:
-        return _json_body(404, {"error": "프로젝트 경계 안의 파일이 아닙니다"})
+        return _json_body(404, {"error": "작업 공간 경계 안의 파일이 아니에요 — 이 안의 파일만 볼 수 있어요"})
     try:
         size = os.path.getsize(target)
         with open(target, "rb") as handle:
             raw = handle.read(_ARTIFACT_CAP)
     except OSError as exc:
-        return _json_body(400, {"error": f"읽을 수 없습니다: {type(exc).__name__}"})
+        return _json_body(400, {"error": f"파일을 읽지 못했어요: {type(exc).__name__}"})
     binary = any(byte == 0 or (byte < 0x20 and byte not in _TEXT_HINT) for byte in raw[:2048])
     return _json_body(
         200,
@@ -54,7 +54,7 @@ def read_diff(root: str, params: dict[str, list[str]]) -> tuple[int, str, bytes]
     rel = (params.get("path") or [""])[0]
     target = _confine(root, rel)
     if target is None:
-        return _json_body(404, {"error": "프로젝트 경계 안의 파일이 아닙니다"})
+        return _json_body(404, {"error": "작업 공간 경계 안의 파일이 아니에요 — 이 안의 파일만 볼 수 있어요"})
     rel_path = os.path.relpath(target, os.path.realpath(root))
     try:
         result = subprocess.run(
@@ -68,12 +68,14 @@ def read_diff(root: str, params: dict[str, list[str]]) -> tuple[int, str, bytes]
             errors="replace",
         )
     except Exception as exc:
-        return _json_body(200, {"path": rel_path, "diff": "", "note": f"git diff 실패: {type(exc).__name__}"})
+        return _json_body(
+            200, {"path": rel_path, "diff": "", "note": f"git diff를 돌리지 못했어요: {type(exc).__name__}"}
+        )
     diff = _trim(result.stdout)
     note = ""
     if not diff:
         # 추적 밖 파일은 `git diff`가 조용하다 — "변경 없음"이라고 말하면 새 파일을 없는 파일로 만든다
-        note = "이 파일에는 커밋되지 않은 변경이 없습니다"
+        note = "이 파일에는 아직 커밋하지 않은 변경이 없어요"
         try:
             status = subprocess.run(
                 ["git", "status", "--porcelain", "--", rel_path],
@@ -88,9 +90,9 @@ def read_diff(root: str, params: dict[str, list[str]]) -> tuple[int, str, bytes]
             if status.returncode != 0:
                 # Git 저장소가 아닌 자리(개인 작업 공간이 그렇다). "변경 없음"이라고 말하면
                 # 비교할 것이 없다는 사실을 '비교했더니 같더라'로 바꿔 말하는 것이 된다.
-                note = "이 작업 공간은 Git 저장소가 아닙니다 — 원본으로 보세요"
+                note = "이 작업 공간은 Git 저장소가 아니에요 — 원본으로 보세요"
             elif status.stdout.startswith("??"):
-                note = "아직 추적되지 않는 새 파일입니다 — 원본으로 보세요"
+                note = "Git이 아직 추적하지 않는 새 파일이에요 — 원본으로 보세요"
         except Exception:
             pass
     return _json_body(200, {"path": rel_path, "diff": diff, "note": note})
@@ -109,12 +111,12 @@ def reveal_path(root: str, payload: dict) -> tuple[int, str, bytes]:
     if wanted:
         target_root = os.path.abspath(os.path.expanduser(wanted))
         if target_root not in studio_store.known_roots(root):
-            return _json_body(403, {"error": "목록에 없는 폴더는 열지 않습니다"})
+            return _json_body(403, {"error": "목록에 없는 폴더는 열지 않아요 — 먼저 작업 공간으로 더해 주세요"})
         root = target_root
     rel = str(payload.get("path") or "")
     target = _confine(root, rel) if rel else os.path.realpath(root)
     if target is None:
-        return _json_body(404, {"error": "작업 공간 경계 안의 파일이 아닙니다"})
+        return _json_body(404, {"error": "작업 공간 경계 안의 파일이 아니에요 — 이 안의 파일만 열 수 있어요"})
     try:
         if sys.platform == "darwin":
             command = ["open", "-R", target] if os.path.isfile(target) else ["open", target]
@@ -124,5 +126,5 @@ def reveal_path(root: str, payload: dict) -> tuple[int, str, bytes]:
             command = ["xdg-open", target if os.path.isdir(target) else os.path.dirname(target)]
         subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)  # noqa: S603
     except OSError as exc:
-        return _json_body(400, {"error": f"열 수 없습니다: {type(exc).__name__}"})
+        return _json_body(400, {"error": f"폴더를 열지 못했어요: {type(exc).__name__}"})
     return _json_body(200, {"revealed": os.path.relpath(target, os.path.realpath(root))})

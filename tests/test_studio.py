@@ -119,7 +119,7 @@ class TestDispatch(StudioCase):
         page = studio.dispatch("GET", "/")[1:][1].decode()
         script = page.split("<script>", 1)[1]
         self.assertIn("function renderDockHint()", script)
-        for reason in ("보낼 내용을 적으세요", "상한입니다", "이 턴이 끝나면 보냅니다", "보내는 중"):
+        for reason in ("보낼 내용이 비어 있어요", "상한이에요", "이 턴이 끝나면 보내요", "보내는 중"):
             self.assertIn(reason, script, reason)
         # 키 안내는 손이 상자 안에 있을 때만 — 상시 노출로 되돌아가면 여기서 걸린다
         self.assertIn("$('#dock-input').onfocus=renderDockHint", script)

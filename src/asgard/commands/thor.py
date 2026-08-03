@@ -37,14 +37,14 @@ _ENGINE = os.path.join(
 # 동사 → (한 줄 설명, 싣는 캐논). 순서가 곧 절차의 호(弧)다 — 메뉴도 이 순서로 낸다.
 VERBS: dict[str, tuple[str, str]] = {
     "survey": ("여기서 무엇이 지배하는지부터", "—"),
-    "shape": ("쓰기 전에 경계·계약·실패 형상을 정한다", "bilskirnir"),
-    "diagnose": ("고칠 자격을 먼저 얻는다 — 재현 없이 편집 금지", "gridarvol"),
-    "implement": ("읽힐 형상으로 쓴다", "magni · thjalfi"),
-    "migrate": ("되돌릴 수 없는 것 — 승인 게이트가 붙는다", "jarngreipr"),
+    "shape": ("쓰기 전에 경계·계약·실패 형상을 정해요", "bilskirnir"),
+    "diagnose": ("고칠 자격을 먼저 얻어요 — 재현 없이 편집 금지", "gridarvol"),
+    "implement": ("읽힐 형상으로 써요", "magni · thjalfi"),
+    "migrate": ("되돌릴 수 없는 것 — 승인 게이트가 붙어요", "jarngreipr"),
     "integrate": ("내가 통제하지 못하는 경계 너머", "lightning · vimur"),
     "harden": ("실패 경로를 말이 아니라 실행으로", "mjollnir · lightning"),
     "scale": ("배포된 뒤의 거동", "megingjord"),
-    "sweep": ("반환 직전 — 모든 경로가 여기로 모인다", "tanngrisnir"),
+    "sweep": ("반환 직전 — 모든 경로가 여기로 모여요", "tanngrisnir"),
     "evidence": ("보고를 보고답게 만드는 것", "tanngrisnir"),
     "squad": ("한 머리보다 큰 변경", "einherjar"),
 }
@@ -52,13 +52,13 @@ _GATED = {"implement": "asgard craft", "migrate": "asgard thor gate", "integrate
           "harden": "asgard thor gate", "sweep": "asgard craft + asgard thor gate"}  # fmt: skip
 
 _RULE_LABEL = {
-    "sql-interpolated": "질의 문자열을 보간으로 조립한다",
-    "swallowed-exception": "예외를 삼킨다",
-    "call-no-timeout": "외부 호출에 타임아웃이 없다",
-    "secret-literal": "시크릿이 코드에 박혀 있다",
-    "tx-external-io": "트랜잭션 안에서 외부 I/O",
-    "money-float": "금액을 부동소수로 다룬다",
-    "naive-now": "시간대 없는 현재 시각",
+    "sql-interpolated": "질의 문자열을 보간으로 조립해요",
+    "swallowed-exception": "예외를 삼켜요",
+    "call-no-timeout": "외부 호출에 타임아웃이 없어요",
+    "secret-literal": "시크릿이 코드에 박혀 있어요",
+    "tx-external-io": "트랜잭션 안에서 외부 I/O를 해요",
+    "money-float": "금액을 부동소수로 다뤄요",
+    "naive-now": "현재 시각에 시간대가 없어요",
 }
 
 
@@ -82,25 +82,25 @@ def _menu(root: str) -> int:
     picks: list[tuple[str, str]] = []
     recorded = thor_survey.load(root)
     if recorded is None:
-        picks.append(("survey", "이 저장소를 아직 정찰하지 않았다 — 무엇이 지배하는지부터"))
+        picks.append(("survey", "이 저장소를 아직 정찰하지 않았어요 — 무엇이 지배하는지부터"))
     elif thor_survey.stale(root, recorded):
-        picks.append(("survey", "매니페스트가 바뀌었다 — 정찰 기록이 낡았다"))
+        picks.append(("survey", "매니페스트가 바뀌었어요 — 정찰 기록이 낡았어요"))
     elif drift := thor_survey.drifted(root, recorded):
         picks.append(("survey", f"적힌 뒤 세계가 움직인 판단 — {', '.join(sorted(drift))}"))
     elif recorded.unsourced:
         picks.append(("survey", f"출처를 모르는 판단 — {', '.join(recorded.unsourced)}"))
     elif recorded.blanks:
-        picks.append(("survey", f"정찰에 빈칸이 남았다 — {', '.join(recorded.blanks)}"))
+        picks.append(("survey", f"정찰에 빈칸이 남았어요 — {', '.join(recorded.blanks)}"))
     if not changed:
-        picks.append(("shape", "변경이 없다 — 쓸 것이 정해졌으면 경계부터 정한다"))
+        picks.append(("shape", "변경이 없어요 — 쓸 것이 정해졌으면 경계부터 정해요"))
     else:
         report = thor_gate.judge(root, judged) if judged else None
         if report and report.blocking:
-            picks.append(("sweep", f"게이트가 {len(report.blocking)}건 막고 있다 — 그것부터"))
+            picks.append(("sweep", f"게이트가 {len(report.blocking)}건 막고 있어요 — 그것부터"))
         picks.append(("implement", f"변경 {len(changed)}개 — 쓰는 중이면 여기"))
         if any(p.endswith((".sql",)) or "migration" in p.lower() for p in changed):
-            picks.append(("migrate", "마이그레이션 파일이 변경분에 있다"))
-        picks.append(("sweep", "반환 전이면 여기 — 모든 경로가 여기로 모인다"))
+            picks.append(("migrate", "마이그레이션 파일이 변경분에 있어요"))
+        picks.append(("sweep", "반환 전이면 여기 — 모든 경로가 여기로 모여요"))
     ui.phase("다음으로 부를 것")
     seen: set[str] = set()
     for verb, why in picks:
@@ -128,9 +128,9 @@ def _menu(root: str) -> int:
 def _provenance(note: thor_survey.Note, moved: tuple[str, ...] | None) -> str:
     """판단 한 줄 아래 붙는 출처. 모르는 것은 모른다고 쓴다 — 빈칸을 안 채우는 것과 같은 규율이다."""
     if not note.sourced:
-        return "출처 미상 — 언제 적혔는지 기록에 없다"
+        return "출처 미상 — 언제 적혔는지 기록에 없어요"
     when = note.at.split("T")[0]
-    return f"{when}" + (f" · 그 뒤 {'·'.join(moved)}가 움직였다" if moved else " · 적힌 뒤 움직인 것 없음")
+    return f"{when}" + (f" · 그 뒤 {'·'.join(moved)}가 움직였어요" if moved else " · 적힌 뒤 움직인 것 없어요")
 
 
 def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
@@ -187,7 +187,7 @@ def _run_survey(root: str, notes: tuple[str, ...], json_out: bool) -> int:
         if blind := thor_survey.unmeasured(survey):
             ui.step(
                 ui.dim(
-                    f"얼마나 낡았는지 못 잰 판단이 {len(blind)}건 있어요 — {', '.join(blind)} (지문 자가 바뀌었어요)"
+                    f"얼마나 낡았는지 못 잰 판단이 {len(blind)}건 있어요 — {', '.join(blind)} (지문을 만든 기준이 바뀌었어요)"
                 )
             )
             ui.step(ui.dim("    조용한 건 안 움직였다는 게 아니라 못 쟀다는 뜻이에요 — 다시 적으면 이 줄이 사라져요"))
@@ -309,7 +309,9 @@ def _run_gate(root: str, base: str, paths: tuple[str, ...], json_out: bool) -> i
         return 0
     ui.step(f"판정한 파일 {len(report.judged)}개")
     if report.undetermined:
-        ui.warn(f"미판정 {len(report.undetermined)} — {', '.join(p for p, _ in report.undetermined[:5])}")
+        ui.warn(
+            f"판정에서 빠진 게 {len(report.undetermined)}건 있어요 — {', '.join(p for p, _ in report.undetermined[:5])}"
+        )
         ui.step(ui.dim(f"    {report.undetermined[0][1]}"))
 
     blocking = report.blocking
@@ -319,7 +321,7 @@ def _run_gate(root: str, base: str, paths: tuple[str, ...], json_out: bool) -> i
             _emit(finding, warn=True)
     notes = [f for f in report.findings if not f.blocking]
     if notes:
-        ui.phase(f"알림 — {len(notes)}건 (막지 않는다)")
+        ui.phase(f"알림 — {len(notes)}건, 막지는 않아요")
         for finding in notes:
             _emit(finding, warn=False)
 
@@ -338,7 +340,7 @@ def _run_gate(root: str, base: str, paths: tuple[str, ...], json_out: bool) -> i
 def _show(verb: str) -> int:
     body = _playbook(verb)
     if body is None:
-        ui.warn(f"플레이북을 찾지 못했다: {verb}")
+        ui.warn(f"플레이북을 찾지 못했어요: {verb}")
         return 1
     print(body)
     return 0

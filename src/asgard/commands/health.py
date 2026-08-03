@@ -230,7 +230,7 @@ def run_gate(*, json_out: bool = False, quiet: bool = False) -> int:
     if report.undetermined:
         ui.phase("못 본 것")
         for metric in report.undetermined:
-            ui.warn(f"{_LABEL.get(metric, metric)} — pyproject.toml [tool.asgard.health-gate] 에 기준선이 없어요")
+            ui.warn(f"{_LABEL.get(metric, metric)} — pyproject.toml [tool.asgard.health-gate]에 기준선이 없어요")
 
     if not report.blocked:
         ui.ok("기준선을 넘긴 축이 없어요")
@@ -242,7 +242,7 @@ def run_gate(*, json_out: bool = False, quiet: bool = False) -> int:
         ui.warn(f"{_LABEL.get(v.metric, v.metric)} {v.baseline:,} → {v.current:,}")
     ui.step(
         "이 둘은 되돌리는 비용이 지수로 커져요 — 늘린 파일을 쪼개거나 순환을 끊어 주세요. "
-        "구조를 바꿀 수 없다면 pyproject.toml 의 기준선을 올리되, 그 커밋이 근거를 들고 있어야 해요."
+        "구조를 바꿀 수 없다면 pyproject.toml의 기준선을 올리되, 그 커밋이 근거를 들고 있어야 해요."
     )
     ui.done()
     return 1

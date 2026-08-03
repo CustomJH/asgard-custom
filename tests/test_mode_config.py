@@ -126,7 +126,7 @@ class TestModeConfig(unittest.TestCase):
             ("codex", None, {"model": "x"}, "role"),
             ("unknown", "worker", {"model": "x"}, "mode"),
             ("codex", "unknown", {"model": "x"}, "role"),
-            ("codex", "worker", {"agent": "missing-agent"}, "없음"),
+            ("codex", "worker", {"agent": "missing-agent"}, "못 찾았어요"),
         )
         for mode, role, options, message in invalid:
             with self.subTest(mode=mode, role=role, options=options):

@@ -77,7 +77,9 @@ def run_manual(*, show: bool = False, section: str = "identity", json_out: bool 
     if not st["files"]:
         ui.step("아직 매뉴얼이 없어요 — 규칙을 얹으려면 이 중 하나를 만들어 주세요:")
         ui.step(ui.dim(f"    {_tilde(st['home'])}/MANUAL.md   공통 — 이 기계의 모든 프로젝트"))
-        ui.step(ui.dim("    MANUAL.md이 프로젝트만 (별칭: " + " · ".join(manual_mod.MANUAL_NAMES[1:]) + ")"))
+        ui.step(
+            ui.dim("    MANUAL.md              이 프로젝트만 (별칭: " + " · ".join(manual_mod.MANUAL_NAMES[1:]) + ")")
+        )
         ui.step(ui.dim("    .asgard/manual/*.md    주제별 분할 (파일명 정렬 순)"))
         ui.done()
         return 0

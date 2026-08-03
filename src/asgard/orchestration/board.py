@@ -61,7 +61,7 @@ def run_create(root: str, objective: str, *, quest_id: str = "", coordinator: st
                 (run_id, objective, quest_id, coordinator, now, now),
             )
         except sqlite3.IntegrityError as exc:
-            raise OrchestrationError(f"이 퀘스트에 이미 열린 Run 이 있다: {quest_id}") from exc
+            raise OrchestrationError(f"이 퀘스트엔 이미 열린 Run이 있어요: {quest_id}") from exc
     return {
         "id": run_id,
         "objective": objective,
@@ -239,7 +239,7 @@ def task_create(
         if run is None:
             raise OrchestrationError(f"없는 Run: {run_id}")
         if run["status"] != "open":
-            raise OrchestrationError(f"닫힌 Run 에 일감 생성: {run_id}")
+            raise OrchestrationError(f"닫힌 Run에는 일감을 만들 수 없어요: {run_id}")
         if deps:
             known = {
                 row["id"]
@@ -250,7 +250,7 @@ def task_create(
             }
             missing = [d for d in deps if d not in known]
             if missing:
-                raise OrchestrationError(f"이 Run 에 없는 의존: {', '.join(missing)}")
+                raise OrchestrationError(f"이 Run에 없는 의존이에요: {', '.join(missing)}")
         status = "ready" if not deps else "pending"
         try:
             conn.execute(
@@ -259,7 +259,7 @@ def task_create(
                 (task_id, run_id, parent or None, unit_id, spec, json.dumps(deps), status, now, now),
             )
         except sqlite3.IntegrityError as exc:
-            raise OrchestrationError(f"이 Run 에 이미 있는 배정 단위: {unit_id}") from exc
+            raise OrchestrationError(f"이 Run에 이미 있는 배정 단위예요: {unit_id}") from exc
         _refresh(conn, run_id)
         row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     return _task_dict(row)
@@ -315,14 +315,14 @@ def task_update(root: str, task_id: str, *, status: str = "", result: dict | Non
             안 남는다. 잘못 접힌 장부를 되돌려야 하면 이 DB 를 지운다 — 파생 상태다.
     """
     if status and status not in TASK_STATUSES:
-        raise OrchestrationError(f"status 는 {'/'.join(TASK_STATUSES)} 중 하나")
+        raise OrchestrationError(f"status는 {'/'.join(TASK_STATUSES)} 중 하나여야 해요")
     now = time.time()
     with connect(root, write=True) as conn:
         row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         if row is None:
-            raise OrchestrationError(f"없는 Task: {task_id}")
+            raise OrchestrationError(f"없는 Task예요: {task_id}")
         if status and not valid_transition(row["status"], status):
-            raise OrchestrationError(f"허용되지 않는 전이: {task_id} {row['status']} → {status}")
+            raise OrchestrationError(f"허용되지 않는 전이예요: {task_id} {row['status']} → {status}")
         sets = ["updated_at=?"]
         args: list = [now]  # 시각·상태·JSON 이 섞인다 — 첫 원소로 타입이 굳지 않게 열어 둔다
         if status:
@@ -401,7 +401,7 @@ def gate_create(root: str, run_id: str, question: str, *, task_id: str = "", opt
         if run is None:
             raise OrchestrationError(f"없는 Run: {run_id}")
         if run["status"] != "open":
-            raise OrchestrationError(f"닫힌 Run 에 게이트 생성: {run_id}")
+            raise OrchestrationError(f"닫힌 Run에는 게이트를 만들 수 없어요: {run_id}")
         conn.execute(
             "INSERT INTO gates(id, run_id, task_id, question, options, status, created_at) VALUES(?,?,?,?,?,'open',?)",
             (gate_id, run_id, task_id or None, question, json.dumps(list(options or []), ensure_ascii=False), now),
@@ -425,7 +425,7 @@ def gate_resolve(root: str, gate_id: str, resolution: str) -> dict:
             (resolution, now, gate_id),
         )
         if cur.rowcount == 0:
-            raise OrchestrationError(f"열린 게이트가 아님: {gate_id}")
+            raise OrchestrationError(f"열린 게이트가 아니에요: {gate_id}")
         row = conn.execute("SELECT * FROM gates WHERE id=?", (gate_id,)).fetchone()
     gate = dict(row)
     gate["options"] = json.loads(gate.get("options") or "[]")

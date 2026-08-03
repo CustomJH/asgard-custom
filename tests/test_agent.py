@@ -700,7 +700,7 @@ class TestRoleProviders(Base):
 
         with self.assertRaisesRegex(ValueError, "model slug"):
             configure_role_model(self.root, "cursor", "worker", effort="high")
-        with self.assertRaisesRegex(ValueError, "함께"):
+        with self.assertRaisesRegex(ValueError, "같이 쓸 수 없어요"):
             configure_role_model(self.root, "codex", "worker", model="x", reset=True)
         with self.assertRaisesRegex(ValueError, "model ID"):
             configure_role_model(self.root, "codex", "worker", model="bad\x1b[31m")

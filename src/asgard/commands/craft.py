@@ -24,24 +24,24 @@ from .. import craft, craft_fix, ui
 from .health import _project_root
 
 _RULE_LABEL = {
-    "unit-oversize": "함수가 예산을 넘었다",
-    "unit-deep": "중첩이 예산을 넘었다",
-    "cache-on-method": "메서드 캐시가 인스턴스를 붙잡는다",
-    "cache-unbounded": "캐시에 경계가 없다",
-    "unclosed-acquire": "획득한 자원을 아무도 안 닫는다",
-    "unbounded-accumulator": "모듈 스코프가 자라기만 한다",
-    "quadratic-scan": "입력이 열 배면 시간이 백 배다",
-    "file-growth": "파일이 문턱을 넘었다",
+    "unit-oversize": "함수가 예산을 넘었어요",
+    "unit-deep": "중첩이 예산을 넘었어요",
+    "cache-on-method": "메서드 캐시가 인스턴스를 붙잡고 있어요",
+    "cache-unbounded": "캐시에 경계가 없어요",
+    "unclosed-acquire": "획득한 자원을 아무도 안 닫아요",
+    "unbounded-accumulator": "모듈 스코프가 자라기만 해요",
+    "quadratic-scan": "입력이 열 배면 시간이 백 배예요",
+    "file-growth": "파일이 문턱을 넘었어요",
     # 주석 — 읽는 사람이 비유를 먼저 풀어야 하는 문장
-    "note-metaphor": "주석이 비유로 설명한다",
-    "note-jargon": "주석에 지어낸 말이 있다",
+    "note-metaphor": "주석이 비유로 설명해요",
+    "note-jargon": "주석에 지어낸 말이 있어요",
     # C 계열 — 회수해 주는 런타임이 없으니 이름도 더 분명해야 한다
-    "c-alloc-unfreed": "할당에 주인이 없다",
-    "c-alloc-unchecked": "할당 실패를 안 본다",
-    "c-realloc-self-assign": "realloc 자기대입 — 실패하면 원본을 잃는다",
-    "c-handle-unclosed": "연 것을 안 닫는다",
-    "c-unbounded-copy": "대상 크기를 모르는 복사",
-    "c-quadratic-scan": "입력이 열 배면 시간이 백 배다",
+    "c-alloc-unfreed": "할당에 주인이 없어요",
+    "c-alloc-unchecked": "할당 실패를 안 봐요",
+    "c-realloc-self-assign": "realloc 자기대입 — 실패하면 원본을 잃어요",
+    "c-handle-unclosed": "연 것을 안 닫아요",
+    "c-unbounded-copy": "대상 크기를 모르고 복사해요",
+    "c-quadratic-scan": "입력이 열 배면 시간이 백 배예요",
 }
 
 
@@ -86,7 +86,7 @@ def _emit_fix(fixed: craft_fix.FixReport, dry_run: bool) -> None:
     다시 쓴 파일은 이름으로 부른다. 수리에는 래칫이 없어서 이번 변경이 넣지 않은 줄도 고쳐지므로,
     개수만 적으면 어느 파일이 손 밖에서 바뀌었는지 화면에서 알 수 없다."""
     title = "고칠 수 있는 것" if dry_run else "고친 것"
-    tail = " · 쓰지 않았다" if dry_run else ""
+    tail = " · 아무것도 안 썼어요" if dry_run else ""
     ui.phase(f"{title} — {len(fixed.applied)}건 / 파일 {len(fixed.files)}개{tail}")
     if not fixed.applied:
         ui.step(ui.dim("    표준 표현이 하나로 정해지는 자리가 없었어요"))

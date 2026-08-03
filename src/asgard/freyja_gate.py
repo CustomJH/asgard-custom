@@ -69,7 +69,9 @@ ENGINES: tuple[Engine, ...] = (
         "sjonhverfing",
         "의사 3D 깊이 판정",
     ),
-    Engine("thor", "토르 · 절차", "asgard-thor-bilskirnir", None, "thor", "`asgard thor gate` 소관 — 여기서 안 잰다"),
+    Engine(
+        "thor", "토르 · 절차", "asgard-thor-bilskirnir", None, "thor", "`asgard thor gate` 소관이라 여기서는 안 재요"
+    ),
 )
 
 _BY_KEY = {engine.key: engine for engine in ENGINES}
@@ -215,13 +217,13 @@ def judge(root: str, paths: "tuple[str, ...] | list[str] | None" = None, base: s
     for engine in ENGINES:
         runtime = runtime_path(engine)
         if runtime is None:
-            reason = "판정기를 배송하지 않는다" if not engine.runtime else "플러그인이 설치돼 있지 않다"
+            reason = "판정기를 배송하지 않아요" if not engine.runtime else "플러그인이 설치돼 있지 않아요"
             report.unjudged.append(f"{engine.name} — {reason} ({engine.judges})")
             continue
         if engine.key != "freyja4":
             # 다른 엔진의 판정기는 입력 계약이 다르다(3D는 모델, 숀헤르빙은 장면). 표면 파일을
             # 그대로 물리면 거짓 판정이 난다 — 안 재는 편이 정직하다.
-            report.unjudged.append(f"{engine.name} — 이 게이트가 물릴 입력이 아니다 ({engine.judges})")
+            report.unjudged.append(f"{engine.name} — 이 게이트가 물릴 입력이 아니에요 ({engine.judges})")
             continue
         report.engines.append(engine.name)
         judged_any = False
@@ -230,7 +232,7 @@ def judge(root: str, paths: "tuple[str, ...] | list[str] | None" = None, base: s
             judged_any = judged_any or judged
             report.findings.extend(fresh)
         if not judged_any:
-            report.unjudged.append(f"{engine.name} — node를 못 찾아 판정기를 못 돌렸다")
+            report.unjudged.append(f"{engine.name} — node를 못 찾아서 판정기를 못 돌렸어요")
             report.engines.remove(engine.name)
     return report
 

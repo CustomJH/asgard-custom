@@ -211,8 +211,8 @@ def _judge(note: Note, rel: str, spans: list[Unit]) -> list[Finding]:
                     rel,
                     note.line,
                     unit,
-                    f"코드를 빗댄 서술 “{hit.group(0)}” ({name})",
-                    f"무슨 일이 일어나는지 그대로 적어라 — {plain}",
+                    f'코드를 빗댄 서술 "{hit.group(0)}" ({name})',
+                    f"무슨 일이 일어나는지 그대로 적으면 돼요 — {plain}",
                 )
             )
             break
@@ -224,8 +224,8 @@ def _judge(note: Note, rel: str, spans: list[Unit]) -> list[Finding]:
                     rel,
                     note.line,
                     unit,
-                    f"사전에 없는 말 “{hit.group(0)}”",
-                    f"표준어로 적어라 — {plain}",
+                    f'사전에 없는 말 "{hit.group(0)}"',
+                    f"표준어로 적으면 돼요 — {plain}",
                 )
             )
             break

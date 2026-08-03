@@ -131,7 +131,7 @@ def shape_findings(rel: str, current: dict[str, Unit], base: dict[str, Unit] | N
                     f"{unit.lines}행 (예산 {UNIT_LINES_BUDGET}행"
                     + (f", 이전 {prior.lines}행" if prior else ", 이번에 신설")
                     + ")",
-                    "한 함수는 한 추상 수준만 진술한다 — 다른 수준의 덩어리를 이름 있는 함수로 빼라",
+                    "한 함수는 한 추상 수준만 말해요 — 다른 수준의 덩어리는 이름 있는 함수로 빼면 돼요",
                 )
             )
         if unit.depth > DEPTH_BUDGET and (prior is None or unit.depth > prior.depth):
@@ -144,7 +144,7 @@ def shape_findings(rel: str, current: dict[str, Unit], base: dict[str, Unit] | N
                     f"중첩 {unit.depth} (예산 {DEPTH_BUDGET}"
                     + (f", 이전 {prior.depth}" if prior else ", 이번에 신설")
                     + ")",
-                    "가드 절로 먼저 빠져나가라 — 실패 조건을 앞에서 return 하면 본문이 한 단 내려온다",
+                    "가드 절로 먼저 빠져나가면 돼요 — 실패 조건을 앞에서 return 하면 본문이 한 단 내려와요",
                 )
             )
     return out
@@ -210,8 +210,8 @@ def _cache_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
                         rel,
                         child.lineno,
                         f"{node.name}.{child.name}",
-                        f"@{name}가 메서드에 걸려 self가 캐시 키로 남는다",
-                        "인스턴스 수명 안에서 캐시하라 — @cached_property 나 인스턴스 소유 dict",
+                        f"@{name}가 메서드에 걸려 self가 캐시 키로 남아요",
+                        "인스턴스 수명 안에서 캐시하면 돼요 — @cached_property나 인스턴스가 가진 dict으로요",
                     )
                 )
     for node in ast.walk(tree):
@@ -228,8 +228,8 @@ def _cache_findings(tree: ast.AST, rel: str, spans: list[Unit]) -> list[Finding]
                         rel,
                         node.lineno,
                         _owner(spans, node.lineno) or node.name,
-                        f"@{name}에 경계가 없어 키 종류만큼 무한히 자란다",
-                        "maxsize를 정하라 — 키 공간이 유한하다는 근거가 있으면 그 근거를 주석으로 남겨라",
+                        f"@{name}에 경계가 없어서 키 종류만큼 끝없이 자라요",
+                        "maxsize를 정하면 돼요 — 키 공간이 유한하다는 근거가 있으면 그 근거를 주석으로 남겨 주세요",
                     )
                 )
     return out
@@ -269,7 +269,7 @@ def _released(scope: ast.AST, target: str) -> bool:
         ):
             # `h = open(p)` 뒤의 `with h:` — `_managed`는 획득이 `with` **식 안**에 있을 때만 아는데,
             # 여는 실패와 읽는 실패를 따로 다뤄야 하면 획득을 밖으로 뺄 수밖에 없다(hooks/budget_guard
-            # 의 원장 읽기가 그것이다). 그 정답 형상을 누수로 읽으면 게이트가 자기 처방을 막는다.
+            # 의 소비 집계 읽기가 그것이다). 그 정답 형상을 누수로 읽으면 게이트가 자기 처방을 막는다.
             return True
         if isinstance(node, ast.Call):
             func = node.func
@@ -327,9 +327,9 @@ def _acquire_findings(tree: ast.AST, rel: str, spans: list[Unit], parents: dict[
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"{name}()의 수명을 아무도 안 쥔다"
-                + (f" — {holder}가 닫히지 않는다" if holder else " — 결과를 붙잡지도 닫지도 않는다"),
-                "with로 감싸라 — 예외가 나도 닫히는 경로는 그것뿐이다",
+                f"{name}()의 수명을 아무도 안 쥐고 있어요"
+                + (f" — {holder}가 닫히지 않아요" if holder else " — 결과를 붙잡지도 닫지도 않아요"),
+                "with로 감싸면 돼요 — 예외가 나도 닫히는 경로는 그것뿐이에요",
             )
         )
     return out
@@ -426,8 +426,8 @@ def _accumulator_findings(tree: ast.AST, rel: str, parents: dict[int, ast.AST]) 
                     rel,
                     grows[name],
                     "",
-                    f"모듈 스코프 {name}이 실행 중에 자라기만 한다 (줄이는 자리 없음)",
-                    "경계를 정하라 — maxlen·축출·주기적 비움 중 하나, 아니면 호출자가 소유하게 넘겨라",
+                    f"모듈 스코프 {name}이 실행 중에 자라기만 해요 (줄이는 자리가 없어요)",
+                    "경계를 정하면 돼요 — maxlen·축출·주기적 비움 중 하나로요. 아니면 호출자가 갖게 넘겨 주세요",
                     # 막지 않고 묻는다: 키 공간이 유한하다는 것(플러그인 레지스트리 같은)을 정적으로
                     # 증명할 수 없다. 증명 못 하는 것을 결함이라 부르면 그게 오탐이다.
                     blocking=False,
@@ -598,8 +598,8 @@ def _scan_findings(
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"루프 안에서 목록 {right.id}를 매번 처음부터 훑는다 (O(n·m))",
-                f"{right.id}를 set으로 한 번 만들어 두고 조회하라 — 원소 수가 열 배면 시간은 백 배다",
+                f"루프 안에서 목록 {right.id}를 매번 처음부터 훑어요 (O(n·m))",
+                f"{right.id}를 set으로 한 번 만들어 두고 조회하면 돼요 — 원소 수가 열 배면 시간은 백 배예요",
             )
         )
     return out
@@ -623,8 +623,8 @@ def _shift_findings(scope: ast.AST, rel: str, spans: list[Unit], looped: set[int
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"{func.value.id}.{func.attr}(0…)이 루프 안에 있다 — 한 번에 뒤 전체가 밀린다",
-                "collections.deque를 써라 — 양끝 삽입·삭제가 상수 시간이다",
+                f"{func.value.id}.{func.attr}(0…)이 루프 안에 있어요 — 한 번에 뒤 전체가 밀려요",
+                "collections.deque를 쓰면 돼요 — 양끝 삽입·삭제가 상수 시간이에요",
             )
         )
     return out
@@ -648,8 +648,8 @@ def _concat_findings(scope: ast.AST, rel: str, spans: list[Unit], looped: set[in
                 rel,
                 node.lineno,
                 _owner(spans, node.lineno),
-                f"루프 안에서 {target} = {target} + … 로 매번 통째로 다시 만든다",
-                "조각을 목록에 모아 마지막에 한 번 합쳐라 (str 이면 join, list 면 extend)",
+                f"루프 안에서 {target} = {target} + … 로 매번 통째로 다시 만들어요",
+                "조각을 목록에 모아 마지막에 한 번 합치면 돼요 (str이면 join, list면 extend)",
             )
         )
     return out

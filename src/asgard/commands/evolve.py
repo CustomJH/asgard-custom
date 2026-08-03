@@ -57,7 +57,7 @@ def _draft(root: str, cid: str) -> str:
     if text is None:
         raise errors.NotFound(
             f"그런 후보가 없어요: {cid}",
-            remedy="asgard evolve list 로 대기 중인 후보를 보세요",
+            remedy="asgard evolve list로 대기 중인 후보를 보세요",
             detail={"candidate": cid},
         )
     return text
@@ -159,7 +159,7 @@ def run_reject(cid: str, reason: str = "", json_out: bool = False) -> int:
     _draft(root, cid)
     ok, msg = evo.reject(root, cid, reason)
     if not ok:
-        raise errors.NotFound(msg, remedy="asgard evolve list 로 대기 중인 후보를 보세요", detail={"candidate": cid})
+        raise errors.NotFound(msg, remedy="asgard evolve list로 대기 중인 후보를 보세요", detail={"candidate": cid})
     if json_out:
         _emit({"id": cid, "rejected": True, "reason": reason, "message": msg})
     else:
@@ -174,7 +174,9 @@ def run_polish(cid: str, json_out: bool = False) -> int:
     if not ok:
         # 후보는 이미 있다고 확인했으므로 남은 실패는 전부 바깥(모델·형식)이다 — 우리 잘못도
         # 사용자 잘못도 아니고, 초안은 결정론 원본 그대로 남는다.
-        raise errors.UpstreamError(msg, remedy=f"초안은 그대로예요 — 그대로 승인: asgard evolve approve {cid}")
+        raise errors.UpstreamError(
+            msg, remedy=f"초안은 그대로예요 — 고치지 않고 승인하려면: asgard evolve approve {cid}"
+        )
     if json_out:
         _emit({"id": cid, "polished": True, "message": msg})
     else:
@@ -198,7 +200,10 @@ def run_bench(
     conf = f"{r['confidence']:.2f}×MAD" if r["confidence"] is not None else "판정 불가 (run<3 또는 MAD=0)"
     print(f"  baseline(OFF) median={r['baseline_median']}  variant(ON) median={r['variant_median']}  conf={conf}")
     mark = {"keep": ui.ok, "discard": ui.warn}.get(r["verdict"], ui.step)
-    mark(f"verdict: {r['verdict']}" + (" — asgard evolve archive로 보관 권장" if r["verdict"] == "discard" else ""))
+    mark(
+        f"verdict: {r['verdict']}"
+        + (" — asgard evolve archive로 보관하는 게 좋아요" if r["verdict"] == "discard" else "")
+    )
     print(ui.dim("계보: .asgard/evolution/bench.jsonl (판정은 기록 — 처분은 사용자 몫)"))
     return 0 if r["verdict"] != "discard" else 1
 
@@ -224,17 +229,17 @@ def run_curate(apply: bool = False, json_out: bool = False) -> int:
         mark(f"{f['name']} · {f['state']}" + (f" — {detail}" if detail else ""))
     if result["archived"]:
         ui.ok(
-            f"보관 전이 {len(result['archived'])}건: {', '.join(result['archived'])} (복원: asgard evolve restore <name>)"
+            f"{len(result['archived'])}건을 보관으로 옮겼어요: {', '.join(result['archived'])} (복원: asgard evolve restore <name>)"
         )
     elif candidates:
-        ui.warn(f"보관할 만한 게 {len(candidates)}건 있어요 — 보시고 asgard evolve curate --apply")
+        ui.warn(f"보관할 만한 게 {len(candidates)}건 있어요 — 확인한 뒤 asgard evolve curate --apply로 옮길 수 있어요")
     return 0
 
 
 def run_archive(name: str, json_out: bool = False) -> int:
     ok, msg = evo.archive_skill(_surface(json_out), name)
     if not ok:
-        raise errors.NotFound(msg, remedy="asgard skills list 로 익힌 스킬을 보세요", detail={"skill": name})
+        raise errors.NotFound(msg, remedy="asgard skills list로 익힌 스킬을 보세요", detail={"skill": name})
     if json_out:
         _emit({"skill": name, "archived": True, "message": msg})
     else:
@@ -246,7 +251,7 @@ def run_restore(name: str, json_out: bool = False) -> int:
     ok, msg = evo.restore_skill(_surface(json_out), name)
     if not ok:
         # 실패는 둘이다 — 아카이브에 없거나, 같은 이름이 이미 활성이다. 둘 다 사용자가 고친다.
-        raise errors.InvalidInput(msg, remedy="asgard skills list 로 지금 있는 스킬을 보세요", detail={"skill": name})
+        raise errors.InvalidInput(msg, remedy="asgard skills list로 지금 있는 스킬을 보세요", detail={"skill": name})
     if json_out:
         _emit({"skill": name, "restored": True, "message": msg})
     else:

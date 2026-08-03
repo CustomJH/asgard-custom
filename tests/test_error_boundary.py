@@ -49,7 +49,7 @@ _FAILURES: tuple[tuple[tuple[str, ...], str], ...] = (
     (("agent", "delete", "default"), "기본 에이전트는 지울 수 없어요"),
     (("agent", "bind", "no-such-agent"), "no-such-agent"),
     (("role", "model", "native"), "host와 role이 필요해요"),
-    (("role", "model", "unknown", "worker", "x"), "host은"),
+    (("role", "model", "unknown", "worker", "x"), "host는"),
     (("role", "run", "odin", "과업"), "role은"),
 )
 

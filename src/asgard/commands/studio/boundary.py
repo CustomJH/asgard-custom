@@ -87,7 +87,7 @@ def _known_root(params: dict[str, list[str]], fallback: str) -> tuple[str, str]:
         return os.path.abspath(fallback), ""
     target = os.path.abspath(os.path.expanduser(wanted))
     if target not in studio_store.known_roots(fallback):
-        return "", "목록에 없는 작업 공간입니다"
+        return "", "목록에 없는 작업 공간이에요 — 목록에 있는 자리만 열어요"
     return target, ""
 
 
@@ -105,7 +105,7 @@ def resolve_workspace(candidate: object, fallback: str) -> tuple[str, str]:
     if studio_store.is_scratch(target):
         return studio_store.ensure_scratch(), ""
     if not os.path.isdir(target):
-        return "", f"작업 공간을 찾을 수 없습니다: {raw}"
+        return "", f"그 자리에 작업 공간이 없어요: {raw}"
     return target, ""
 
 
