@@ -12,8 +12,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..project_memory.canonical import _read_record_file, records_dir
-
 _MAX_RECORD_FILES = 400
 _MAX_RECORD_BYTES = 1_000_000
 
@@ -26,7 +24,13 @@ class RelatedRecord:
 
 
 def related_records(root: str | os.PathLike[str], node: dict) -> list[RelatedRecord]:
-    """노드를 언급하는 승인 레코드를 찾는다 (후보 연관, 최대 근거는 레코드 본문)."""
+    """노드를 언급하는 승인 레코드를 찾는다 (후보 연관, 최대 근거는 레코드 본문).
+
+    메모리 정본 로더는 실제 조회 경계에서만 불러온다. 관계 그래프 스캔은 이 함수를 쓰지 않으므로
+    메모리 계층의 의존성 때문에 자동 지도 갱신까지 실패하면 안 된다.
+    """
+    from ..project_memory.canonical import _read_record_file, records_dir
+
     base = Path(root).resolve()
     try:
         directory = Path(records_dir(str(base)))
