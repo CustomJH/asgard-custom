@@ -16,8 +16,20 @@ from __future__ import annotations
 
 import contextlib
 import io
+import re
 import sys
 from dataclasses import dataclass
+
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def strip_ansi(text: str) -> str:
+    """색 코드를 걷어낸 화면 — Rich 가 칠하는 출력(도움말 표)에 문자열 단언을 걸 때 쓴다.
+
+    로컬에서 파이프로 받으면 색이 꺼지지만 GitHub Actions 러너에서는 Rich 가 CI 를 알아보고
+    켠다. 그러면 `--agent` 가 `-`+`-agent` 두 조각으로 칠해져 리터럴 검색이 로컬에서만 통과하는
+    테스트가 된다 — 실측(26-08-03): v0.10.2 릴리스 파이프라인이 이것 하나로 멈췄다."""
+    return _ANSI.sub("", text)
 
 
 @dataclass(frozen=True)
@@ -32,6 +44,11 @@ class Outcome:
     def output(self) -> str:
         """사람이 화면에서 보는 것 — 두 흐름이 섞여 보이는 그대로."""
         return self.stdout + self.stderr
+
+    @property
+    def plain_stdout(self) -> str:
+        """색을 걷어낸 stdout — 칠해진 출력에 문자열 단언을 걸 자리."""
+        return strip_ansi(self.stdout)
 
 
 @contextlib.contextmanager

@@ -38,10 +38,12 @@ class AgentOpenCliTest(unittest.TestCase):
     def test_open_studio_has_first_class_agent_and_isolated_options(self) -> None:
         result = run_cli("open", "studio", "--help")
         self.assertEqual(result.exit_code, 0, result.output)
-        self.assertIn("--agent", result.stdout)
-        self.assertIn("overrides the", result.stdout)
-        self.assertIn("global --agent option", result.stdout)
-        self.assertIn("--isolated", result.stdout)
+        # 색을 걷어내고 본다 — 러너가 색을 켜면 Rich 가 `--agent` 를 두 조각으로 칠한다.
+        screen = result.plain_stdout
+        self.assertIn("--agent", screen)
+        self.assertIn("overrides the", screen)
+        self.assertIn("global --agent option", screen)
+        self.assertIn("--isolated", screen)
 
     def test_subcommand_agent_overrides_global_agent(self) -> None:
         with mock.patch.object(studio, "run_studio", return_value=0) as start:
