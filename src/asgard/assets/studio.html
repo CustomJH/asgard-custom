@@ -3797,8 +3797,11 @@
        PRD 를 통째로 갈면 사람이 치던 자리에서 커서가 글 끝으로 튄다. 응답의 view 는 들고만
        있다가 다음 렌더에서 선다.
 
-       값이 안 바뀌었으면 안 보낸다 — 같은 글을 다시 쓰면 개정 번호만 오르고, 저장소가 든 직전
-       본문(`previous`)이 지금 본문으로 덮여 되돌리기가 죽는다. */
+       값이 안 바뀌었으면 안 보낸다 — 같은 글을 다시 쓰면 개정 번호만 오르고 왕복만 는다.
+
+       이 길은 `snapshot` 을 **안 보낸다.** 직전 본문(`previous`)은 칸마다 한 벌뿐이고, 타이핑까지
+       그 자리를 쓰면 제안을 반영한 뒤 한 번만 더 쳐도 반영 직전의 글이 밀려난다. 타이핑을
+       되돌리는 일은 textarea 에서 브라우저가 이미 한다(Ctrl+Z). */
     const PLAN_SAVE_DELAY=800;
     const planSaveTimer={};
     function planQueueSave(id,body){
@@ -4345,15 +4348,20 @@
         /* 되돌릴 것이 있는가는 저장소가 든다(`sections[sid].previous`). 그 칸이 없는 서버에서는
            숨은 채로 둔다 — 눌러도 400 이 돌아올 손잡이를 세우면 사람은 기능이 죽었다고 읽는다.
            손잡이는 늘 자리에 있고 숨어만 있다: 본문 저장은 화면을 다시 안 그리므로 첫 저장 뒤에
-           손잡이가 서려면 `planSyncUndo` 가 제자리에서 켤 자리가 있어야 한다. */
+           손잡이가 서려면 `planSyncUndo` 가 제자리에서 켤 자리가 있어야 한다.
+           `previous` 를 채우는 것은 제안 반영뿐이다(`snapshot`) — 그래서 이 손잡이는 타이핑만
+           한 칸에는 안 선다. 타이핑을 되돌리는 일은 브라우저가 이미 한다. */
         const undoable=!!String(plan.prd.sections[id].previous||'').trim();
         return '<section class="prd-sec'+(open||proposal?' on':'')+'">'
           +'<div class="prd-head"><span class="prd-dot'+(body.trim()?' on':'')+'"></span>'
           +'<b>'+esc(label)+'</b>'+renderPlanMark(id)+'<span class="hint">'+esc(hint)+'</span>'
           +'<span class="prd-save" data-save-mark="'+id+'"></span>'
-          /* 맞바꾸는 연산이라 손잡이는 하나다 — 다시 누르면 방금 되돌린 글로 돌아온다 */
+          /* 맞바꾸는 연산이라 손잡이는 하나다 — 다시 누르면 방금 되돌린 글로 돌아온다.
+             문구는 "직전 본문"이 아니다: 자동 저장은 `previous` 를 안 밀므로 이 손잡이가 되돌리는
+             것은 마지막 타이핑이 아니라 **제안을 반영하기 전의 글**이다. */
           +'<button type="button" class="md-toggle" data-undo="'+id+'"'+(undoable?'':' hidden')
-          +' title="직전 본문으로 맞바꿔요. 다시 누르면 지금 본문으로 돌아와요">되돌리기</button>'
+          +' title="제안을 반영하기 전 글로 맞바꿔요. 다시 누르면 반영한 글로 돌아와요'
+          +' — 직접 친 글은 ⌘/Ctrl+Z 로 되돌려요">되돌리기</button>'
           +'<button type="button" class="md-toggle" data-preview="'+id+'">'
           +(seeing?'편집':'미리보기')+'</button>'
           /* 고른 구간 손잡이는 늘 자리에 있고 숨어만 있다 — 드래그가 끝난 자리에서 화면을 다시
@@ -4737,12 +4745,13 @@
         }
         renderPlan()});
       /* 되돌리기 — `body` 와 `previous` 를 맞바꾸는 한 연산이라 다시하기도 같은 손잡이다.
-         대기 중인 편집을 먼저 흘려야 그 편집이 직전 본문이 되어 방금 친 글이 안 버려진다. */
+         대기 중인 편집을 먼저 흘려야 방금 친 글이 저장소의 본문에 들어간다. 그래야 맞바꾼 뒤
+         그 글이 `previous` 에 남아 다시 눌렀을 때 돌아온다 — 안 흘리면 그대로 없어진다. */
       on('[data-undo]','click',async e=>{
         const id=e.currentTarget.dataset.undo;
         await planFlushSave(id);
         planForget(id);
-        planEdit('section.undo',{section:id},'직전 본문으로 되돌렸어요')});
+        planEdit('section.undo',{section:id},'제안을 반영하기 전 글로 되돌렸어요')});
       /* 선택 툴바 — 눌러도 본문의 초점과 브라우저 선택 표시를 안 뺏는다(`mousedown` 을 막는다).
          뺏으면 무엇을 고쳤는지가 누르는 순간 화면에서 사라진다. */
       on('[data-tools]','mousedown',e=>e.preventDefault());
@@ -4772,7 +4781,8 @@
         /* 반영되는 칸의 미저장 본문은 여기서 버린다 — 안 버리면 옛 초안이 반영된 글을 계속 가리고,
            뒤늦게 흘러간 저장이 방금 반영한 제안을 덮는다 */
         rows.forEach(r=>planForget(r.section));
-        /* 한 개정에 다 쓴다 — 칸마다 보내면 중간에 하나가 막혔을 때 절반만 반영된 문서가 남는다 */
+        /* 한 개정에 다 쓴다 — 칸마다 보내면 중간에 하나가 막혔을 때 절반만 반영된 문서가 남는다.
+           `sections` 는 제안 반영 전용이라 `snapshot` 을 안 받는다 — 저장소가 늘 민다. */
         if(await planEdit('sections',{sections},'제안 '+rows.length+'칸을 반영했어요'))state.plan.docProposal=null;
         renderPlan()});
       on('[data-docprop-take]','click',async e=>{
@@ -4780,7 +4790,9 @@
         const row=(state.plan.docProposal?.sections||[]).find(r=>r.section===id);
         if(!row)return;
         planForget(id);
-        if(await planEdit('section',{section:id,body:row.body},(PLAN_SECTION_LABEL[id]||'')+' 칸에 반영했어요'))
+        /* 제안을 반영하는 자리라 `snapshot:true` 다 — 되돌리기가 반영 직전의 글을 들어야 한다 */
+        if(await planEdit('section',{section:id,body:row.body,snapshot:true},
+          (PLAN_SECTION_LABEL[id]||'')+' 칸에 반영했어요'))
           planDropDocProposal(id);
         renderPlan()});
       on('[data-docprop-drop]','click',e=>{
@@ -4812,10 +4824,15 @@
         const box=$('#refine-'+e.currentTarget.dataset.quickFor);
         if(box){box.value=e.currentTarget.dataset.quick;box.focus()}});
       on('[data-refine-go]','click',e=>refineSection(e.currentTarget.dataset.refineGo));
+      /* 제안 반영 — `snapshot:true` 를 얹는 세 자리 중 하나다(칸 전체 다듬기와 고른 구간 수정이
+         같은 카드를 쓴다). 이 값이 있어야 저장소가 지금 본문을 `previous` 로 밀어 되돌리기가
+         **반영 직전의 글**을 든다. 자동 저장은 이 값을 안 보낸다 — 타이핑까지 밀면 한 벌뿐인
+         `previous` 가 마지막 타이핑으로 채워져, 정작 반영을 못 되돌린다. */
       $('#proposal-take')?.addEventListener('click',async()=>{
         const p=state.plan.proposal;if(!p)return;
         planForget(p.section);
-        if(await planEdit('section',{section:p.section,body:p.body},'제안을 반영했어요'))state.plan.proposal=null;
+        if(await planEdit('section',{section:p.section,body:p.body,snapshot:true},'제안을 반영했어요'))
+          state.plan.proposal=null;
         renderPlan()});
       $('#proposal-drop')?.addEventListener('click',()=>{state.plan.proposal=null;renderPlan()});
 

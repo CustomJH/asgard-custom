@@ -54,8 +54,13 @@ def _phase(plan: dict[str, Any], payload: dict[str, Any]) -> None:
 
 
 def _section(plan: dict[str, Any], payload: dict[str, Any]) -> None:
+    """PRD 칸 하나에 본문을 쓴다 — `snapshot`이 참일 때만 직전 본문을 남긴다. 기본은 거짓이다.
+
+    타이핑을 받는 자동 저장과 제안 반영이 같은 이 연산을 쓴다. 둘을 가르는 값이 `snapshot`
+    하나다(왜 갈랐는지는 `_write_body`)."""
     section = _known_section(plan, str(payload.get("section") or ""))
-    _write_body(plan["prd"]["sections"][section], str(payload.get("body") or ""))
+    row = plan["prd"]["sections"][section]
+    _write_body(row, str(payload.get("body") or ""), snapshot=bool(payload.get("snapshot")))
 
 
 def _known_section(plan: dict[str, Any], section: str) -> str:
@@ -65,15 +70,24 @@ def _known_section(plan: dict[str, Any], section: str) -> str:
     return section
 
 
-def _write_body(row: dict[str, Any], body: str) -> None:
-    """PRD 칸 하나에 본문을 쓴다 — 쓰기 전에 지금 본문을 `previous`로 민다.
+def _write_body(row: dict[str, Any], body: str, *, snapshot: bool) -> None:
+    """PRD 칸 하나에 본문을 쓴다 — `snapshot`이 참일 때만 쓰기 전에 지금 본문을 `previous`로 민다.
 
-    값이 같으면 아무것도 안 한다. 화면의 자동 저장은 입력이 멈출 때마다 보내므로 안 바뀐
-    본문도 다시 온다. 직전 본문은 칸마다 하나뿐이라, 그때도 밀면 그 값이 지금 본문과 같아져
+    여태는 본문을 쓰는 모든 연산이 밀었다. 직전 본문은 칸마다 한 벌뿐인데 화면의 자동 저장은
+    입력이 멈추고 `PLAN_SAVE_DELAY`(800ms) 뒤에 보내므로, 타이핑까지 밀면 제안을 반영한 뒤
+    한 번만 더 쳐도 사람이 쓴 원래 글이 `previous`에서 빠지고 되돌리기가 800ms 전 글로 간다.
+    되돌리기가 필요한 이유가 그 반영인데 그것만 못 되돌리는 상태였다.
+
+    타이핑을 되돌리는 일은 `textarea`에서 브라우저가 이미 한다(Ctrl+Z). 그래서 `previous`가
+    맡는 것은 브라우저가 못 되돌리는 것 하나 — 본문을 통째로 갈아 끼우는 프로그램적 대체다.
+    제안을 반영하는 자리만 `snapshot`을 참으로 보낸다.
+
+    값이 같으면 아무것도 안 한다. 안 바뀐 본문을 밀면 `previous`가 지금 본문과 같아져
     되돌리기를 눌러도 글이 안 바뀐다."""
     if row["body"] == body:
         return
-    row["previous"] = row["body"]
+    if snapshot:
+        row["previous"] = row["body"]
     row["body"] = body
 
 
@@ -97,7 +111,8 @@ def _sections(plan: dict[str, Any], payload: dict[str, Any]) -> None:
     문서가 남는다. 모르는 sid 가 하나라도 있으면 한 칸도 안 쓴다.
 
     직전 본문은 칸마다 따로 밀린다 — 되돌리기도 칸 단위라, 여러 칸을 한 번에 받은 뒤에도
-    각 칸이 자기 직전 글로 돌아간다."""
+    각 칸이 자기 직전 글로 돌아간다. 이 연산은 제안을 반영하는 자리 전용이라 `section`과 달리
+    `snapshot`을 안 받는다 — 늘 민다."""
     incoming = payload.get("sections")
     if not isinstance(incoming, dict) or not incoming:
         raise ValueError("sections is required")
@@ -105,7 +120,7 @@ def _sections(plan: dict[str, Any], payload: dict[str, Any]) -> None:
     if unknown:
         raise ValueError(f"unknown PRD section: {', '.join(unknown)}")
     for sid, body in incoming.items():
-        _write_body(plan["prd"]["sections"][sid], str(body or ""))
+        _write_body(plan["prd"]["sections"][sid], str(body or ""), snapshot=True)
 
 
 def _attributes(plan: dict[str, Any], payload: dict[str, Any]) -> None:
