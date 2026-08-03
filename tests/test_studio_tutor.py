@@ -90,6 +90,7 @@ class TestPanelState(PanelCase):
 
     def test_a_broken_gauge_fails_open(self):
         """계기 하나가 죽어도 나머지 세 갈래는 나간다 — 이 갈래는 관문이 아니라 계기다."""
+
         def boom(root, sid="", now=None):
             raise RuntimeError("죽은 엔진")
 
@@ -143,7 +144,9 @@ class TestAnswerRoundTrip(PanelCase):
 
     def test_an_unknown_cid_is_a_404_not_a_silent_success(self):
         """없는 물음을 닫았다고 말하면 기록이 거짓이 된다."""
-        status, _, body = studio.dispatch_post("/api/tutor/answer", {"cid": "ffffffff", "text": "충분히 긴 답 본문"}, self.root)
+        status, _, body = studio.dispatch_post(
+            "/api/tutor/answer", {"cid": "ffffffff", "text": "충분히 긴 답 본문"}, self.root
+        )
         self.assertEqual(status, 404)
         self.assertIn("error", json.loads(body))
 

@@ -807,18 +807,17 @@ def run_doctor(recover: bool, json_out: bool) -> int:
         ui.step(ui.dim("옛 폴더 보드가 남아 있으면 `asgard ticket import`로 번호째 들여올 수 있어요."))
         return 0
     if found["ok"]:
-        where = found["path"]
         ui.ok(
             "워크스페이스가 정상이에요"
             if found["exists"]
             else "아직 워크스페이스가 없어요 — 첫 티켓을 발급하면 그때 생겨요"
         )
-        ui.step(ui.dim(where))
+        ui.step(ui.dim(str(found["path"])))
         if found.get("reason"):
-            ui.step(ui.dim(found["reason"]))
+            ui.step(ui.dim(str(found["reason"])))
         return 0
     ui.warn(f"워크스페이스를 못 열어요 — {found['message']}")
-    ui.step(ui.dim(found["path"]))
+    ui.step(ui.dim(str(found["path"])))
     if found["recoverable"]:
         ui.step("치우고 새로 시작하려면 `asgard ticket doctor --recover` — 지우지 않고 옆에 둬요.")
     else:

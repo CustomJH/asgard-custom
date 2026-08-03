@@ -32,14 +32,19 @@ def _cache_path(root: str) -> str:
 def _decode(row: object) -> Engine:
     if not isinstance(row, dict):
         raise ValueError("invalid engine cache row")
+    name = row.get("name")
+    display = row.get("display")
+    configured = row.get("configured")
+    reachable = row.get("reachable")
+    detail = row.get("detail")
     models = row.get("models")
     checked = row.get("checked")
     if (
-        not isinstance(row.get("name"), str)
-        or not isinstance(row.get("display"), str)
-        or type(row.get("configured")) is not bool
-        or type(row.get("reachable")) is not bool
-        or not isinstance(row.get("detail"), str)
+        not isinstance(name, str)
+        or not isinstance(display, str)
+        or not isinstance(configured, bool)
+        or not isinstance(reachable, bool)
+        or not isinstance(detail, str)
         or not isinstance(models, list)
         or not all(isinstance(model, str) for model in models)
         or isinstance(checked, bool)
@@ -47,12 +52,12 @@ def _decode(row: object) -> Engine:
     ):
         raise ValueError("invalid engine cache row")
     return Engine(
-        name=row["name"],
-        display=row["display"],
-        configured=row["configured"],
-        reachable=row["reachable"],
-        detail=row["detail"],
-        models=tuple(models),
+        name=name,
+        display=display,
+        configured=configured,
+        reachable=reachable,
+        detail=detail,
+        models=tuple(str(model) for model in models),
         checked=float(checked),
     )
 

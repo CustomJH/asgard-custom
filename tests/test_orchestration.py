@@ -694,7 +694,9 @@ class TestScopedReset(OrchestrationBase):
 
         self.assertEqual(removed, 2, "지운 메시지 행 수가 실제와 다르다")
         self.assertEqual(orc.inbox(self.root, self.run_row["id"]), [])
-        self.assertEqual(found(orc.task_show(self.root, task["id"]))["id"], task["id"], "메일 범위가 Task DAG까지 지웠다")
+        self.assertEqual(
+            found(orc.task_show(self.root, task["id"]))["id"], task["id"], "메일 범위가 Task DAG까지 지웠다"
+        )
         self.assertIsNotNone(orc.run_show(self.root, self.run_row["id"]), "메일 범위가 Run까지 지웠다")
 
     def test_whole_reset_still_removes_everything(self):

@@ -47,8 +47,8 @@ class AgentSurfaceCase(unittest.TestCase):
         self.root = os.path.join(self.home, "proj")
         os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
 
-    def get(self, path: str, **params: str) -> tuple[int, dict]:
-        status, _, body = studio.dispatch("GET", path, {k: [v] for k, v in params.items()}, self.root)
+    def get(self, path: str, **params: object) -> tuple[int, dict]:
+        status, _, body = studio.dispatch("GET", path, {k: [str(v)] for k, v in params.items()}, self.root)
         return status, json.loads(body)
 
     def post(self, path: str, payload: dict) -> tuple[int, dict]:
@@ -287,7 +287,8 @@ class TestManifestAndBinding(AgentSurfaceCase):
         self.make("loki-qa")
 
         status, data = self.post(
-            "/api/agents/describe", {"name": "loki-qa", "description": "검증만 한다", "capabilities": ["review", "test"]}
+            "/api/agents/describe",
+            {"name": "loki-qa", "description": "검증만 한다", "capabilities": ["review", "test"]},
         )
 
         self.assertEqual(status, 200, data)

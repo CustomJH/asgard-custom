@@ -59,9 +59,7 @@ class TestSnapshotIdentity(AgentIdentityCase):
         try:
             request = urllib.request.Request(
                 f"http://127.0.0.1:{httpd.server_address[1]}/api/settings?agent=loki-check",
-                data=json.dumps(
-                    {"scope": "global", "section": "ui", "values": {"density": "compact"}}
-                ).encode(),
+                data=json.dumps({"scope": "global", "section": "ui", "values": {"density": "compact"}}).encode(),
                 headers={"Content-Type": "application/json", "X-Asgard-Studio": "1"},
             )
             with urllib.request.urlopen(request, timeout=5) as response:
@@ -105,8 +103,9 @@ class TestRunsRoute(AgentIdentityCase):
         }
         server = SimpleNamespace(run_id="run-self")
 
-        with mock.patch("asgard.runs.listing", return_value=[record]), mock.patch.object(
-            studio.state, "_SERVER", server
+        with (
+            mock.patch("asgard.runs.listing", return_value=[record]),
+            mock.patch.object(studio.state, "_SERVER", server),
         ):
             status, data = self.get("/api/runs")
 

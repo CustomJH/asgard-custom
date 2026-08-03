@@ -15,6 +15,7 @@ from cli_boundary import run_cli
 from asgard import errors, profiles, runs
 from asgard.commands import agent as agent_command
 from asgard.commands import studio
+from asgard.commands.studio import agents as studio_agents
 
 
 class AgentOpenCliTest(unittest.TestCase):
@@ -123,6 +124,13 @@ class AgentOpenCliTest(unittest.TestCase):
             thread.join(timeout=5)
         self.assertFalse(any(item["id"] == run_id for item in runs.listing(prune=False)))
 
+    def _scope(self, root: str, explicit: str) -> dict:
+        """요청 하나의 범위. 거절되면 그 자리에서 실패시킨다 — 뒤 단언이 볼 것이 없다."""
+        scoped, refused = studio_agents.request_scope(root, explicit)
+        if scoped is None:
+            self.fail(f"범위를 못 잡았어요: {refused}")
+        return scoped
+
     def test_startup_url_carries_the_agent_only_when_it_was_named(self) -> None:
         """배지가 왜 그 에이전트인지를 거짓으로 말하지 않는가 — 회귀 방지.
 
@@ -158,10 +166,10 @@ class AgentOpenCliTest(unittest.TestCase):
         profiles.set_active("beta")
         httpd = studio.server._bind("127.0.0.1", 0, self._tmp.name, agent="alpha", isolated=True)
         try:
-            scoped, _ = studio.agents.request_scope(httpd.root, "")
+            scoped = self._scope(httpd.root, "")
             self.assertEqual(scoped["agent"], "alpha")  # 끈끈한 활성(beta)이 아니다
             self.assertEqual(scoped["source"], "explicit")
-            other, _ = studio.agents.request_scope(httpd.root, "beta")
+            other = self._scope(httpd.root, "beta")
             self.assertEqual(other["agent"], "beta")  # 쿼리는 그 요청만 갈아끼운다
         finally:
             httpd.server_close()

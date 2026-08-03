@@ -90,6 +90,8 @@ class _Handler(loopback.LoopbackHandler):
 class _RootServer(ThreadingHTTPServer):
     root: str
     agent: str
+    agent_explicit: str  # 사용자가 이름을 대고 연 경우에만 찬다 — 해석값(agent)과 다른 축이다
+    agent_source: str
     run_id: str
     run_token: str
 

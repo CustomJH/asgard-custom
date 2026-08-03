@@ -327,8 +327,12 @@ def _resolve_expect(data: dict, key: str) -> tuple[str, dict] | None:
 
 
 def _int(raw: object) -> int:
+    if not raw:
+        return 0
+    if not isinstance(raw, int | float | str):  # 저장 스키마가 깨져 수가 아닌 값이 온 자리
+        return 0
     try:
-        return int(raw or 0)
+        return int(raw)
     except TypeError, ValueError:
         return 0
 
@@ -345,7 +349,11 @@ def _float_list(raw: object) -> list[float]:
 
 
 def _float(raw: object, default: float | None = 0.0) -> float | None:
+    if not raw:
+        return 0.0
+    if not isinstance(raw, int | float | str):
+        return default
     try:
-        return float(raw or 0.0)
+        return float(raw)
     except TypeError, ValueError:
         return default

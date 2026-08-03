@@ -159,7 +159,7 @@ def _agent_state(root: str, explicit: str = "") -> dict:
         from ... import sessions
 
         described = sessions.describe(root, explicit=explicit or None)
-    except (ImportError, AttributeError):
+    except ImportError, AttributeError:
         described = {"agent": explicit or profiles.sticky(), "source": "explicit" if explicit else "sticky", "key": ""}
     agent = profiles.normalize(described.get("agent") or explicit or profiles.sticky())
     row = next((item for item in profiles.listing() if item["id"] == agent), {})

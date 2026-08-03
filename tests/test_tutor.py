@@ -50,7 +50,7 @@ def _debt_module(ledger=None, error: Exception | None = None):
             raise error
         return ledger
 
-    module.ledger = run
+    setattr(module, "ledger", run)  # ModuleType 에 동적으로 다는 자리라 대입 대신 setattr
     return mock.patch.dict(sys.modules, {"asgard.tutor_debt": module})
 
 

@@ -102,49 +102,49 @@ class TestScopedReset(SiegeBase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.run = orc.run_create(self.root, "장부", quest_id="q-reset")
+        self.run_row = orc.run_create(self.root, "장부", quest_id="q-reset")
         os.chdir(self.root)
 
     def test_tasks_scope_keeps_the_run_and_mail(self):
-        orc.task_create(self.root, self.run["id"], "unit")
-        orc.send(self.root, self.run["id"], "status", subject="살아있다")
+        orc.task_create(self.root, self.run_row["id"], "unit")
+        orc.send(self.root, self.run_row["id"], "status", subject="살아있다")
 
         result = siege.run_reset(json_out=True, tasks=True)
 
         self.assertEqual(result, 0)
-        self.assertEqual(orc.task_list(self.root, self.run["id"]), [])
-        self.assertIsNotNone(orc.run_show(self.root, self.run["id"]))
-        self.assertEqual(len(orc.inbox(self.root, self.run["id"])), 1)
+        self.assertEqual(orc.task_list(self.root, self.run_row["id"]), [])
+        self.assertIsNotNone(orc.run_show(self.root, self.run_row["id"]))
+        self.assertEqual(len(orc.inbox(self.root, self.run_row["id"])), 1)
 
     def test_messages_scope_keeps_the_task_dag(self):
-        task = orc.task_create(self.root, self.run["id"], "unit")
-        orc.send(self.root, self.run["id"], "status", subject="살아있다")
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        orc.send(self.root, self.run_row["id"], "status", subject="살아있다")
 
         result = siege.run_reset(json_out=True, messages=True)
 
         self.assertEqual(result, 0)
-        self.assertEqual(orc.inbox(self.root, self.run["id"]), [])
-        self.assertEqual(orc.task_list(self.root, self.run["id"]), [task])
+        self.assertEqual(orc.inbox(self.root, self.run_row["id"]), [])
+        self.assertEqual(orc.task_list(self.root, self.run_row["id"]), [task])
 
     def test_no_scope_wipes_the_whole_ledger(self):
-        orc.task_create(self.root, self.run["id"], "unit")
+        orc.task_create(self.root, self.run_row["id"], "unit")
         result = siege.run_reset(json_out=True)
         self.assertEqual(result, 0)
         self.assertFalse(orc.exists(self.root))
 
     def test_combining_scopes_is_rejected_and_changes_nothing(self):
-        orc.task_create(self.root, self.run["id"], "unit")
-        orc.send(self.root, self.run["id"], "status", subject="살아있다")
+        orc.task_create(self.root, self.run_row["id"], "unit")
+        orc.send(self.root, self.run_row["id"], "status", subject="살아있다")
 
         result = siege.run_reset(json_out=True, tasks=True, messages=True)
 
         self.assertEqual(result, 2)
-        self.assertEqual(len(orc.task_list(self.root, self.run["id"])), 1, "거부됐는데 Task가 지워졌다")
-        self.assertEqual(len(orc.inbox(self.root, self.run["id"])), 1, "거부됐는데 메일이 지워졌다")
+        self.assertEqual(len(orc.task_list(self.root, self.run_row["id"])), 1, "거부됐는데 Task가 지워졌다")
+        self.assertEqual(len(orc.inbox(self.root, self.run_row["id"])), 1, "거부됐는데 메일이 지워졌다")
 
     def test_the_confirmation_line_does_not_claim_the_whole_ledger_was_wiped(self):
         """부분 초기화의 확인문은 '장부를 지웠어요' 라고 말하면 안 된다 — 실제로는 일부만 지웠다."""
-        orc.task_create(self.root, self.run["id"], "unit")
+        orc.task_create(self.root, self.run_row["id"], "unit")
         output = self.capture(lambda: siege.run_reset(tasks=True))
         self.assertNotIn("배차 장부를 지웠어요", output)
 
@@ -159,21 +159,21 @@ class TestGates(SiegeBase):
 
     def setUp(self) -> None:
         super().setUp()
-        self.run = orc.run_create(self.root, "갈래", quest_id="q-gate")
+        self.run_row = orc.run_create(self.root, "갈래", quest_id="q-gate")
         os.chdir(self.root)
 
     def test_open_gates_are_listed(self):
-        gate = orc.gate_create(self.root, self.run["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
+        gate = orc.gate_create(self.root, self.run_row["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
         payload = json.loads(self.capture(lambda: siege.run_gates(json_out=True)))
         self.assertEqual([row["id"] for row in payload], [gate["id"]])
         self.assertEqual(payload[0]["options"], ["A", "B"])
         self.assertEqual(payload[0]["status"], "open")
 
     def test_one_run_can_be_asked_for_alone(self):
-        mine = orc.gate_create(self.root, self.run["id"], "이 Run 의 갈래")
+        mine = orc.gate_create(self.root, self.run_row["id"], "이 Run 의 갈래")
         other = orc.run_create(self.root, "옆 Run", quest_id="q-other")
         orc.gate_create(self.root, other["id"], "옆 Run 의 갈래")
-        payload = json.loads(self.capture(lambda: siege.run_gates(self.run["id"], json_out=True)))
+        payload = json.loads(self.capture(lambda: siege.run_gates(self.run_row["id"], json_out=True)))
         self.assertEqual([row["id"] for row in payload], [mine["id"]], "Run 을 줬는데 옆 Run 것까지 끌어왔다")
         everywhere = json.loads(self.capture(lambda: siege.run_gates(json_out=True)))
         self.assertEqual(len(everywhere), 2, "Run 을 안 주면 장부 전체를 훑어야 한다")
@@ -182,28 +182,28 @@ class TestGates(SiegeBase):
         self.assertEqual(siege.run_gates("run_nope", json_out=True), 2)
 
     def test_the_list_prints_the_id_the_decide_verb_needs(self):
-        gate = orc.gate_create(self.root, self.run["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
+        gate = orc.gate_create(self.root, self.run_row["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
         output = self.capture(lambda: siege.run_gates())
         self.assertIn(gate["id"], output, "목록에 id 가 없으면 보고도 못 닫는다")
 
     def test_deciding_closes_the_gate(self):
-        gate = orc.gate_create(self.root, self.run["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
+        gate = orc.gate_create(self.root, self.run_row["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
         self.assertEqual(siege.run_decide(gate["id"], "A", json_out=True), 0)
         self.assertEqual(orc.gate_list(self.root, status="open"), [], "닫았는데 열린 채로 남았다")
         closed = orc.gate_list(self.root)[0]
         self.assertEqual((closed["status"], closed["resolution"]), ("resolved", "A"))
 
     def test_deciding_reports_the_closed_gate_as_json(self):
-        gate = orc.gate_create(self.root, self.run["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
+        gate = orc.gate_create(self.root, self.run_row["id"], "A 로 갈까요 B 로 갈까요?", options=["A", "B"])
         payload = json.loads(self.capture(lambda: siege.run_decide(gate["id"], "A", json_out=True)))
         self.assertEqual(payload["id"], gate["id"])
-        self.assertEqual(payload["run_id"], self.run["id"])
+        self.assertEqual(payload["run_id"], self.run_row["id"])
         self.assertEqual(payload["status"], "resolved")
         self.assertEqual(payload["resolution"], "A")
         self.assertEqual(payload["options"], ["A", "B"], "--json 은 options 를 목록으로 준다")
 
     def test_deciding_twice_fails(self):
-        gate = orc.gate_create(self.root, self.run["id"], "A 로 갈까요 B 로 갈까요?")
+        gate = orc.gate_create(self.root, self.run_row["id"], "A 로 갈까요 B 로 갈까요?")
         siege.run_decide(gate["id"], "A", json_out=True)
         self.assertEqual(siege.run_decide(gate["id"], "B", json_out=True), 2, "이미 닫힌 게이트를 또 닫았다")
         closed = orc.gate_list(self.root)[0]
@@ -213,7 +213,7 @@ class TestGates(SiegeBase):
         self.assertEqual(siege.run_decide("gate_nope", "A", json_out=True), 2)
 
     def test_a_resolved_gate_shows_only_when_asked(self):
-        gate = orc.gate_create(self.root, self.run["id"], "A 로 갈까요 B 로 갈까요?")
+        gate = orc.gate_create(self.root, self.run_row["id"], "A 로 갈까요 B 로 갈까요?")
         siege.run_decide(gate["id"], "A", json_out=True)
         self.assertEqual(json.loads(self.capture(lambda: siege.run_gates(json_out=True))), [])
         every = json.loads(self.capture(lambda: siege.run_gates(json_out=True, all_gates=True)))

@@ -17,6 +17,7 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 sys.path.insert(0, os.path.dirname(__file__))
@@ -79,14 +80,12 @@ class TestFailOpen(unittest.TestCase):
     def test_screen_survives_a_missing_engine_meter(self):
         import asgard.commands.orchestrate as surface
 
-        before = surface._engines_mod
-        surface._engines_mod = lambda: None
-        try:
-            with _Repo():
-                out = run_cli("orchestrate")
-                payload = json.loads(run_cli("orchestrate", "--json").stdout)
-        finally:
-            surface._engines_mod = before
+        def _none() -> object | None:
+            return None
+
+        with mock.patch.object(surface, "_engines_mod", _none), _Repo():
+            out = run_cli("orchestrate")
+            payload = json.loads(run_cli("orchestrate", "--json").stdout)
         self.assertEqual(out.exit_code, 0)
         self.assertEqual(payload["engines"], [])
         # 못 잰 것을 "0개 연결됨" 으로 적으면 그건 거짓이다 — 이유가 남아 있어야 한다.
@@ -103,13 +102,11 @@ class TestFailOpen(unittest.TestCase):
             def probe(self, *a: object, **k: object):
                 raise RuntimeError("잴 수 없다")
 
-        before = surface._engines_mod
-        surface._engines_mod = lambda: _Boom()
-        try:
-            with _Repo():
-                payload = json.loads(run_cli("orchestrate", "--json").stdout)
-        finally:
-            surface._engines_mod = before
+        def _boom() -> object:
+            return _Boom()
+
+        with mock.patch.object(surface, "_engines_mod", _boom), _Repo():
+            payload = json.loads(run_cli("orchestrate", "--json").stdout)
         self.assertEqual(payload["engines"], [])
         self.assertIn("잴 수 없다", payload["unmeasured"])
 
@@ -135,13 +132,12 @@ class TestProbeIsOptIn(unittest.TestCase):
         import asgard.commands.orchestrate as surface
 
         calls, spy = self._spy()
-        before = surface._engines_mod
-        surface._engines_mod = lambda: spy
-        try:
-            with _Repo():
-                run_cli("orchestrate", "--json")
-        finally:
-            surface._engines_mod = before
+
+        def _spy_mod() -> object:
+            return spy
+
+        with mock.patch.object(surface, "_engines_mod", _spy_mod), _Repo():
+            run_cli("orchestrate", "--json")
         self.assertEqual(calls["probe"], 0, "설정을 보러 온 호출이 네트워크를 탔다")
         self.assertEqual(calls["cached"], 1)
 
@@ -149,13 +145,12 @@ class TestProbeIsOptIn(unittest.TestCase):
         import asgard.commands.orchestrate as surface
 
         calls, spy = self._spy()
-        before = surface._engines_mod
-        surface._engines_mod = lambda: spy
-        try:
-            with _Repo():
-                run_cli("orchestrate", "--probe", "--json")
-        finally:
-            surface._engines_mod = before
+
+        def _spy_mod() -> object:
+            return spy
+
+        with mock.patch.object(surface, "_engines_mod", _spy_mod), _Repo():
+            run_cli("orchestrate", "--probe", "--json")
         self.assertEqual(calls["probe"], 1)
         self.assertEqual(calls["cached"], 0)
 

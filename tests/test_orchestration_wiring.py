@@ -15,14 +15,26 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from typing import TypedDict
+from unittest import mock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from asgard.agent.heimdall import bifrost  # noqa: E402
 
+
+class _Signals(TypedDict):
+    write_expected: bool
+    task_class: str
+    parallel_requested: bool
+    unit_count: int
+    specialists: list[str]
+    planned: bool
+
+
 # 병렬을 명시한 깊은 과업 + 배정 단위 셋. 정책이 없으면 이 신호는 언제나 graph 로 간다 —
 # 그래서 정책이 이 값을 바꾸면 그건 정책이 실제로 읽혔다는 뜻이다.
-_SIGNALS = {
+_SIGNALS: _Signals = {
     "write_expected": True,
     "task_class": "deep",
     "parallel_requested": True,
@@ -31,6 +43,14 @@ _SIGNALS = {
     "planned": True,
 }
 _CLS = {"write_expected": True, "task_class": "deep", "parallel_requested": True}
+
+
+def _decided(root: str, signals: dict) -> dict:
+    """정책이 낸 판정 하나. None 이면 이음매가 끊긴 것이라 여기서 바로 실패시킨다."""
+    found = bifrost._by_policy(root, signals)
+    if found is None:
+        raise AssertionError("정책 층이 안 읽혔다 — 이음매가 끊겼다")
+    return found
 
 
 class _Policy:
@@ -50,18 +70,23 @@ class _Policy:
         from asgard import engines as engines_mod
         from asgard.orchestration import policy
 
-        self._before = policy.current
-        self._before_cached = engines_mod.cached
-        policy.current = lambda root: (self.value, "project")
-        engines_mod.cached = lambda root, *a, **k: list(self.engines)
+        def _current(root: str) -> tuple[str, str]:
+            return (self.value, "project")
+
+        def _cached(root: str) -> list:
+            return list(self.engines)
+
+        self._patches = [
+            mock.patch.object(policy, "current", _current),
+            mock.patch.object(engines_mod, "cached", _cached),
+        ]
+        for patch in self._patches:
+            patch.start()
         return self
 
     def __exit__(self, *exc: object) -> None:
-        from asgard import engines as engines_mod
-        from asgard.orchestration import policy
-
-        policy.current = self._before
-        engines_mod.cached = self._before_cached
+        for patch in reversed(self._patches):
+            patch.stop()
 
 
 class TestPolicyReachesTheLoop(unittest.TestCase):
@@ -72,13 +97,12 @@ class TestPolicyReachesTheLoop(unittest.TestCase):
         정책을 아무도 안 읽은 것이다.
         """
         with _Policy("off"):
-            found = bifrost._by_policy(".", dict(_SIGNALS))
-        self.assertIsNotNone(found, "정책 층이 안 읽혔다 — 이음매가 끊겼다")
+            found = _decided(".", dict(_SIGNALS))
         self.assertEqual(found["shape"], "direct")
 
     def test_solo_collapses_a_parallel_signal(self):
         with _Policy("solo"):
-            found = bifrost._by_policy(".", dict(_SIGNALS))
+            found = _decided(".", dict(_SIGNALS))
         self.assertEqual(found["shape"], "single")
 
     def test_auto_leaves_the_signal_judgement_alone(self):
@@ -86,7 +110,7 @@ class TestPolicyReachesTheLoop(unittest.TestCase):
         from asgard.orchestration.strategy import choose
 
         with _Policy("auto"):
-            found = bifrost._by_policy(".", dict(_SIGNALS))
+            found = _decided(".", dict(_SIGNALS))
         self.assertEqual(found["shape"], choose(**_SIGNALS)["shape"])
 
     def test_a_downgrade_is_written_where_audits_read_it(self):
@@ -95,7 +119,7 @@ class TestPolicyReachesTheLoop(unittest.TestCase):
         조용히 내려앉으면 "왜 squad 로 안 돌았지" 의 답이 어디에도 안 남는다.
         """
         with _Policy("squad"):
-            found = bifrost._by_policy(".", dict(_SIGNALS))
+            found = _decided(".", dict(_SIGNALS))
         self.assertTrue(found["degraded"].strip(), "내려앉은 사실이 안 적혔다")
         self.assertIn("squad", bifrost._shape_why(found))
 
@@ -111,7 +135,7 @@ class TestPolicyReachesTheLoop(unittest.TestCase):
         # graph 를 가리켜서 진짜 이견이 생기고, 그러면 이 시험이 무엇을 재는지 흐려진다.)
         signals = dict(_SIGNALS, unit_count=0, parallel_requested=False)
         with _Policy("auto"):
-            found = bifrost._by_policy(".", signals)
+            found = _decided(".", signals)
         self.assertEqual(found["disagreement"], "", "배치 실패가 형상 이견 칸으로 샜다")
         # 배치를 못 한 사실 자체는 사라지지 않는다 — 다른 칸에 남는다.
         self.assertTrue(found["degraded"].strip())
@@ -123,22 +147,21 @@ class TestTheSeamIsFailOpen(unittest.TestCase):
     def test_a_broken_policy_layer_falls_back_to_signals(self):
         from asgard.orchestration import policy
 
-        before = policy.current
-        policy.current = lambda root: (_ for _ in ()).throw(RuntimeError("정책을 못 읽는다"))
-        try:
+        def _boom(root: str) -> tuple[str, str]:
+            raise RuntimeError("정책을 못 읽는다")
+
+        with mock.patch.object(policy, "current", _boom):
             self.assertIsNone(bifrost._by_policy(".", dict(_SIGNALS)))
-        finally:
-            policy.current = before
 
     def test_choose_shape_still_answers_when_policy_is_dead(self):
         """`_by_policy` 가 None 이어도 형상은 나온다 — 예전 길이 그대로 살아 있어야 한다."""
-        before = bifrost._by_policy
-        bifrost._by_policy = lambda root, signals: None
-        try:
+
+        def _nothing(root: str, signals: dict) -> dict | None:
+            return None
+
+        with mock.patch.object(bifrost, "_by_policy", _nothing):
             ledger = bifrost._NullLedger()
             found = ledger.choose_shape(_CLS, unit_count=3, specialists=[], planned=True)
-        finally:
-            bifrost._by_policy = before
         self.assertEqual(found["shape"], "graph")
         self.assertEqual(ledger.placements, ())
 

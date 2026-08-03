@@ -91,8 +91,9 @@ class TestPanelState(PanelCase):
 
     def test_missing_engines_are_reported_not_hidden(self):
         """엔진(engines·policy)이 없으면 None + missing — "없음"과 "못 읽었음"은 다른 화면이다."""
-        with mock.patch.object(asgard, "engines", None, create=True), mock.patch.object(
-            orch_pkg, "policy", None, create=True
+        with (
+            mock.patch.object(asgard, "engines", None, create=True),
+            mock.patch.object(orch_pkg, "policy", None, create=True),
         ):
             data = studio_orch.panel_state(self.root)
 
@@ -104,8 +105,9 @@ class TestPanelState(PanelCase):
         """판정기가 있으면 그 판정이 그대로 재료가 된다 — 최초 렌더는 cached 만 읽는다."""
         calls = {"cached": 0, "probe": 0}
         store = {}
-        with mock.patch.object(asgard, "engines", _engines_stub(calls), create=True), mock.patch.object(
-            orch_pkg, "policy", _policy_stub(store), create=True
+        with (
+            mock.patch.object(asgard, "engines", _engines_stub(calls), create=True),
+            mock.patch.object(orch_pkg, "policy", _policy_stub(store), create=True),
         ):
             data = studio_orch.panel_state(self.root)
 
@@ -127,8 +129,9 @@ class TestPanelState(PanelCase):
             raise RuntimeError("죽은 판정기")
 
         store = {}
-        with mock.patch.object(asgard, "engines", SimpleNamespace(cached=boom), create=True), mock.patch.object(
-            orch_pkg, "policy", _policy_stub(store), create=True
+        with (
+            mock.patch.object(asgard, "engines", SimpleNamespace(cached=boom), create=True),
+            mock.patch.object(orch_pkg, "policy", _policy_stub(store), create=True),
         ):
             data = studio_orch.panel_state(self.root)
 
@@ -188,8 +191,9 @@ class TestRecheck(PanelCase):
         """'다시 확인'만 네트워크를 탄다 — force 없는 재점검은 캐시를 또 읽는 것과 같다."""
         calls = {"cached": 0, "probe": 0}
         store = {}
-        with mock.patch.object(asgard, "engines", _engines_stub(calls), create=True), mock.patch.object(
-            orch_pkg, "policy", _policy_stub(store), create=True
+        with (
+            mock.patch.object(asgard, "engines", _engines_stub(calls), create=True),
+            mock.patch.object(orch_pkg, "policy", _policy_stub(store), create=True),
         ):
             status, _, body = studio.dispatch_post("/api/orchestration/recheck", {}, self.root)
 
