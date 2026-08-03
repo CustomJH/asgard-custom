@@ -771,6 +771,129 @@ class TestCoordinatorReadsReady(Base):
         self.assertEqual(supervised["dispatched"], [t["id"] for t in orc.task_list(self.root, ledger.run_id)][:1])
 
 
+class TestTheHaltBecomesADecisionGate(Base):
+    """멈춘 wave 가 **갚아야 할 결정**으로 장부에 남는가.
+
+    게이트는 워커의 `ask` 의 짝이 아니라 반대편이다 (`board.gate_create` 의 계약): 저쪽은 막힌
+    워커가 코디네이터에게 묻는 것이고, 이쪽은 코디네이터가 다음 갈래를 고르는 것이다. 개입
+    요청을 받고 다음 묶음을 안 밀어 넣기로 한 자리에서 그 다음 갈래는 아무도 안 골랐으므로,
+    거기가 게이트가 서는 유일한 자리다. 그리고 **기다리지 않는다** — 헤드리스 퀘스트에는 답할
+    사람이 없어서 기다리면 `asgard run` 이 통째로 멈춘다.
+    """
+
+    def _ledger(self, qid: str = "q-gate") -> BifrostLedger:
+        return BifrostLedger(FakeHeimdall(self.root, []), qid, "게이트")
+
+    def _escalating_dispatch(self, ledger: BifrostLedger, reason: str = "스키마를 바꿔야 해요"):
+        def dispatch(ready: list[dict]) -> None:
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                orc.escalate(self.root, ledger.run_id, reason, task_id=task["id"], sender="w")
+                orc.worker_done(
+                    self.root, ledger.run_id, task["id"], attempt["id"], "succeeded", subject="done", sender="w"
+                )
+
+        return dispatch
+
+    def test_a_halted_wave_opens_exactly_one_decision_gate(self):
+        """개입 요청이 여럿이어도 코디네이터가 마주한 갈래는 하나다 — 요청마다 한 줄씩 쌓지 않는다."""
+        ledger = self._ledger()
+        turn = orc.task_create(self.root, ledger.run_id, "WORKER — 구현", unit_id="WORKER")
+        ledger._turn_task = turn["id"]
+        orc.task_create(self.root, ledger.run_id, "a 만들기", unit_id="A")
+        with CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "게이트") as loop:
+            supervised = loop.supervise(self._escalating_dispatch(ledger))
+        self.assertEqual(len(supervised["escalations"]), 2, "개입 요청을 못 거뒀다")
+        gates = orc.gate_list(self.root, run_id=ledger.run_id, status="open")
+        self.assertEqual(len(gates), 1, f"멈춘 wave 가 결정 게이트를 안 남겼다: {gates}")
+        # 질문과 선택지가 **코디네이터가 마주한 갈래**를 적어야 한다 — 워커의 요청을 옮겨 적는
+        # 것이 아니다. 답할 사람이 목록만 보고 무엇을 고르는지 알 수 있어야 닫을 수 있다.
+        self.assertIn("멈췄어요", gates[0]["question"])
+        self.assertIn("스키마를 바꿔야 해요", gates[0]["question"])
+        self.assertEqual(len(gates[0]["options"]), 3, f"고를 갈래가 안 적혔다: {gates[0]['options']}")
+        self.assertEqual(gates[0]["task_id"], turn["id"], "게이트가 멈춘 역할 턴에 안 매달렸다")
+
+    def test_the_gate_is_a_record_not_a_barrier(self):
+        """게이트를 열어 둔 채로도 감독 고리는 곧장 돌아온다 — 답을 기다리면 헤드리스가 멈춘다."""
+        ledger = self._ledger("q-nonblocking")
+        orc.task_create(self.root, ledger.run_id, "a 만들기", unit_id="A")
+        done = threading.Event()
+
+        def run() -> None:
+            with CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "게이트") as loop:
+                loop.supervise(self._escalating_dispatch(ledger))
+            done.set()
+
+        thread = threading.Thread(target=run, daemon=True)
+        thread.start()
+        thread.join(timeout=20)
+        self.assertTrue(done.is_set(), "열린 게이트가 감독 고리를 세워 뒀다 — 게이트는 관문이 아니다")
+        self.assertEqual(len(orc.gate_list(self.root, run_id=ledger.run_id, status="open")), 1)
+
+    def test_the_same_turn_does_not_stack_a_second_gate(self):
+        """같은 턴이 다시 멈춰도 미결은 하나다 — 사람이 같은 결정을 두 번 닫게 하지 않는다."""
+        ledger = self._ledger("q-once")
+        ledger._turn_task = orc.task_create(self.root, ledger.run_id, "WORKER — 구현", unit_id="WORKER")["id"]
+        for name in ("A", "B"):
+            orc.task_create(self.root, ledger.run_id, f"{name} 만들기", unit_id=name)
+        for _ in range(2):
+            with CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "게이트") as loop:
+                loop.supervise(self._escalating_dispatch(ledger))
+        gates = orc.gate_list(self.root, run_id=ledger.run_id)
+        self.assertEqual(len(gates), 1, f"같은 턴의 멈춤이 게이트를 겹쳐 쌓았다: {gates}")
+
+    def test_a_new_turn_may_open_its_own_gate(self):
+        """다음 턴의 멈춤은 **다른** 멈춤이다 — WORKER 가 멈춘 자리와 WORKER_RETRY 가 멈춘 자리는 같은 갈래가 아니다."""
+        ledger = self._ledger("q-next-turn")
+        for role in ("WORKER", "WORKER_RETRY"):
+            ledger._turn_task = orc.task_create(self.root, ledger.run_id, f"{role} — 구현", unit_id=role)["id"]
+            orc.task_create(self.root, ledger.run_id, f"{role} 단위", unit_id=f"u-{role}")
+            with CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "게이트") as loop:
+                loop.supervise(self._escalating_dispatch(ledger))
+        self.assertEqual(len(orc.gate_list(self.root, run_id=ledger.run_id)), 2, "새 턴의 멈춤이 안 적혔다")
+
+    def test_a_quest_completes_when_the_gate_cannot_be_written(self):
+        """게이트를 못 적어도 퀘스트는 끝난다 — 부기가 진행을 잃게 하지 않는다 (fail-open).
+
+        준비도를 읽는 자리에 개입 요청을 끼워 넣어 실제 병렬 퀘스트에서 wave 를 멈추게 하고,
+        그 상태에서 게이트 쓰기를 깨뜨린다. 산출물 셋이 다 나와야 한다.
+        """
+        original = BifrostLedger.ready_tasks
+
+        def escalating_ready(ledger: BifrostLedger) -> list[dict] | None:
+            rows = original(ledger)
+            if rows:
+                orc.escalate(self.root, ledger.run_id, "워커가 막혔어요", sender="w")
+            return rows
+
+        h = FakeHeimdall(self.root, plan_script(self.root), cls=plan_cls())
+        stderr = io.StringIO()
+        with mock.patch.object(BifrostLedger, "ready_tasks", escalating_ready):
+            with mock.patch.object(bifrost_module, "gate_create", side_effect=RuntimeError("db locked")):
+                with contextlib.redirect_stderr(stderr):
+                    h.handle("a.txt·b.txt 를 병렬로 만들고 c.txt 로 합쳐")
+        for name in ("a.txt", "b.txt", "c.txt"):
+            self.assertTrue(os.path.exists(os.path.join(self.root, name)), f"{name} 이 안 생겼다")
+        self.assertIn("bifrost gate", stderr.getvalue(), "삼킨 게이트 실패가 어디에도 안 남았다")
+        self.assertEqual(orc.gate_list(self.root), [], "쓰기가 깨졌는데 게이트가 남았다")
+
+    def test_a_wave_that_never_halts_leaves_no_gate(self):
+        """개입 요청이 없으면 고를 갈래도 없다 — 게이트는 정상 완주의 부산물이 아니다."""
+        ledger = self._ledger("q-clean")
+        orc.task_create(self.root, ledger.run_id, "a 만들기", unit_id="A")
+
+        def dispatch(ready: list[dict]) -> None:
+            for task in ready:
+                attempt = orc.open_dispatch(self.root, task["id"], worker="w")
+                orc.worker_done(
+                    self.root, ledger.run_id, task["id"], attempt["id"], "succeeded", subject="done", sender="w"
+                )
+
+        with CoordinatorLoop(FakeHeimdall(self.root, []), ledger, "게이트") as loop:
+            loop.supervise(dispatch)
+        self.assertEqual(orc.gate_list(self.root, run_id=ledger.run_id), [])
+
+
 class TestSupervisionIsFailOpen(Base):
     """장부가 죽어도 일은 돈다 — 다만 조용히는 아니다."""
 

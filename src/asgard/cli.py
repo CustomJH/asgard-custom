@@ -819,11 +819,38 @@ def siege_answer(
     raise typer.Exit(run_answer(message_id, answer, json_out=json_))
 
 
+@siege_app.command("gates", help="the decisions a coordinator stopped to ask about — still waiting on you")
+def siege_gates(
+    run_id: str = typer.Argument("", metavar="[run_id]"),
+    all_: bool = typer.Option(False, "--all"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.siege import run_gates
+
+    raise typer.Exit(run_gates(run_id, json_out=json_, all_gates=all_))
+
+
+@siege_app.command("decide", help="close a waiting decision gate with your choice, and let the run carry on")
+def siege_decide(
+    gate_id: str = typer.Argument(..., metavar="<gate_id>"),
+    resolution: str = typer.Argument(..., metavar="<resolution>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.siege import run_decide
+
+    raise typer.Exit(run_decide(gate_id, resolution, json_out=json_))
+
+
 @siege_app.command("reset", help="wipe the siege record — it is all rebuilt from elsewhere, and the quest log stays")
-def siege_reset(json_: bool = typer.Option(False, "--json")) -> None:
+def siege_reset(
+    tasks: bool = typer.Option(False, "--tasks", help="clear the task DAG only — the run and mailbox stay"),
+    messages: bool = typer.Option(False, "--messages", help="clear the mailbox only — the task DAG stays"),
+    all_: bool = typer.Option(False, "--all", help="wipe the whole record (default when no scope is given)"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
     from .commands.siege import run_reset
 
-    raise typer.Exit(run_reset(json_out=json_))
+    raise typer.Exit(run_reset(json_out=json_, tasks=tasks, messages=messages, all_=all_))
 
 
 # Canonical Tool Kernel — inspect the actual role-scoped surfaces used by the

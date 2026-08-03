@@ -583,15 +583,36 @@ class BifrostLedger:
             self._note("blocked_on", exc)
             return []
 
-    def gate(self, question: str, options: list[str] | None = None) -> str:
-        """코디네이터가 다음 갈래를 고를 자리를 만든다. 돌려주는 값은 게이트 id 다."""
+    def gate(self, question: str, options: list[str] | None = None, *, once: str = "") -> str:
+        """코디네이터가 다음 갈래를 고를 자리를 만든다. 돌려주는 값은 게이트 id 다.
+
+        Args:
+            once: 주면 **같은 역할 턴에서 그 이름의 게이트를 한 번만** 만든다. `register_units`
+                가 이미 만든 단위를 건너뛰는 것과 같은 이유다 — 하나뿐인 미결이 라운드마다 행을
+                새로 쌓으면 `siege gates` 는 답할 것 하나를 여러 줄로 보여 주고, 사람은 같은
+                결정을 여러 번 닫아야 한다. 턴으로 자르는 것은 다음 턴의 멈춤이 **다른** 멈춤
+                이기 때문이다: WORKER 가 멈춘 자리와 WORKER_RETRY 가 멈춘 자리는 같은 갈래가
+                아니다. 열쇠는 만드는 데 **성공한** 뒤에 남긴다 — 못 적었으면 결정은 여전히
+                갚아야 할 것으로 남아 있고, 다음 기회에 다시 적을 수 있어야 한다.
+
+        Returns:
+            게이트 id. 장부가 꺼졌거나·이 턴에서 이미 만들었거나·쓰기가 실패하면 빈 문자열.
+            호출자는 그 값을 안 봐도 된다 — 게이트를 못 적는 것이 퀘스트를 멈출 이유는 아니다
+            (이 파일의 fail-open 계약).
+        """
         if not self.enabled:
             return ""
+        key = f"{self._turn_task}:{once}"
+        if once and key in self._gated:
+            return ""
         try:
-            return gate_create(self.root, self.run_id, question, task_id=self._turn_task, options=options)["id"]
+            gate_id = str(gate_create(self.root, self.run_id, question, task_id=self._turn_task, options=options)["id"])
         except Exception as exc:
             self._note("gate", exc)
             return ""
+        if once:
+            self._gated.add(key)
+        return gate_id
 
     def escalate(self, reason: str) -> None:
         """Odin 결정이 필요하다고 장부에 남긴다."""
@@ -717,7 +738,11 @@ class CoordinatorLoop:
             reports += settled
             escalations += raised
             if escalations:
-                break  # 개입이 필요하다 — 다음 묶음을 밀어 넣지 않는다
+                # 개입이 필요하다 — 다음 묶음을 밀어 넣지 않는다. 그 멈춤을 **갚아야 할 결정**
+                # 으로 장부에 남긴다: 여기서 코디네이터는 다음 갈래를 고른 것이 아니라 못 고른
+                # 것이고, 그 미결이 어디에도 안 적히면 멈춘 이유가 화면 한 줄로만 지나간다.
+                self._halt_gate(round_no, escalations)
+                break
         return {
             "rounds": rounds_run,
             "dispatched": dispatched,
@@ -725,6 +750,35 @@ class CoordinatorLoop:
             "escalations": escalations,
             "supervised": True,
         }
+
+    def _halt_gate(self, round_no: int, escalations: list[dict]) -> None:
+        """멈춘 wave 를 결정 게이트로 남긴다 — 코디네이터가 못 고른 갈래의 자리.
+
+        **워커의 escalation 과 코디네이터의 게이트는 다른 것이다** (`board.gate_create` 의 계약).
+        escalation 은 워커가 "개입이 필요하다" 고 보낸 **신호**이고, 그 신호를 받아 다음 준비
+        묶음을 안 밀어 넣기로 한 것은 코디네이터의 판단이다. 그런데 그 다음 — 이어서 배차할지,
+        계획을 다시 세울지, 사람이 이어받을지 — 는 아직 아무도 안 골랐다. 게이트가 적는 것은
+        신호가 아니라 그 **미결**이다. 게이트를 닫아도 워커의 요청에 답이 달리지 않고, 요청에
+        답해도 게이트는 안 닫힌다.
+
+        **기다리지 않는다.** 헤드리스 퀘스트에는 답할 사람이 붙어 있지 않으므로 여기서 답을
+        기다리면 `asgard run` 이 통째로 멈춘다. 게이트는 관문이 아니라 갚아야 할 결정의 **기록**
+        이다 — `asgard siege gates` 가 보여 주고 `asgard siege decide` 가 닫는다.
+
+        게이트를 못 적어도 감독 고리는 하던 대로 멈추고 나간다. 이 계층은 파생 기록이라
+        (이 파일의 fail-open 계약) 부기 하나 때문에 진행을 잃는 교환은 성립하지 않는다.
+        """
+        subjects = " / ".join(str(m.get("subject") or "").strip() or "(제목 없음)" for m in escalations[:3])
+        self._ledger.gate(
+            f"워커 개입 요청 {len(escalations)}건으로 {round_no}번째 묶음에서 wave 를 멈췄어요 — {subjects[:300]}. "
+            "남은 갈래를 골라 주세요.",
+            [
+                "요청에 답을 주고 남은 단위를 이어서 배차",
+                "계획을 다시 세워 재배정",
+                "여기서 멈추고 사람이 이어받기",
+            ],
+            once="wave-halt",
+        )
 
     def _settlement(self, counted: set[str], wait_ms: int) -> tuple[list[dict], list[dict]]:
         """이번 바퀴의 정산 메일을 (완료 보고, 개입 요청)으로 가른다.
