@@ -148,7 +148,7 @@ def new_plan(idea: str, title: str = "", root: str = "", mode: str = "", engine:
         "intake": onboarding,
         "chat": [{"id": intake.new_row_id("t"), "role": "user", "text": idea, "ts": now}],
         "prd": {
-            "sections": {section: {"body": ""} for section in PRD_SECTION_IDS},
+            "sections": {section: {"body": "", "previous": ""} for section in PRD_SECTION_IDS},
             "attributes": {"category": "", "roles": [], "environments": []},
         },
         "spec": {"items": []},
@@ -263,7 +263,13 @@ def _checked_prd(prd: Any) -> dict[str, Any]:
         body = row.get("body", "")
         if not isinstance(body, str) or len(body) > _MAX_TEXT:
             raise ValueError(f"prd.sections.{section}.body must be text under {_MAX_TEXT} characters")
-        checked[section] = {"body": body}
+        # 직전 본문은 **칸마다 하나**다. 목록으로 늘리면 `_MAX_PLAN_BYTES`(512KB)를 다섯 칸이
+        # 나눠 쓰게 되고, 되돌리기가 여러 단계면 화면이 지금 어느 판을 보여 주는지 못 적는다.
+        # 없으면 빈 값이다 — 이 칸이 생기기 전에 저장된 문서가 그대로 통과해야 한다.
+        previous = row.get("previous", "")
+        if not isinstance(previous, str) or len(previous) > _MAX_TEXT:
+            raise ValueError(f"prd.sections.{section}.previous must be text under {_MAX_TEXT} characters")
+        checked[section] = {"body": body, "previous": previous}
     attrs = prd.get("attributes") or {}
     if not isinstance(attrs, dict):
         raise ValueError("prd.attributes must be an object")

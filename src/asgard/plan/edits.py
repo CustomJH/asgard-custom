@@ -54,17 +54,50 @@ def _phase(plan: dict[str, Any], payload: dict[str, Any]) -> None:
 
 
 def _section(plan: dict[str, Any], payload: dict[str, Any]) -> None:
-    section = str(payload.get("section") or "")
+    section = _known_section(plan, str(payload.get("section") or ""))
+    _write_body(plan["prd"]["sections"][section], str(payload.get("body") or ""))
+
+
+def _known_section(plan: dict[str, Any], section: str) -> str:
+    """PRD 칸 하나의 id — 정본 다섯 개 밖이면 `ValueError`. 본문을 건드리는 연산이 다 이 문을 쓴다."""
     if section not in store.PRD_SECTION_IDS:
         raise ValueError(f"unknown PRD section: {section}")
-    plan["prd"]["sections"][section]["body"] = str(payload.get("body") or "")
+    return section
+
+
+def _write_body(row: dict[str, Any], body: str) -> None:
+    """PRD 칸 하나에 본문을 쓴다 — 쓰기 전에 지금 본문을 `previous`로 민다.
+
+    값이 같으면 아무것도 안 한다. 화면의 자동 저장은 입력이 멈출 때마다 보내므로 안 바뀐
+    본문도 다시 온다. 직전 본문은 칸마다 하나뿐이라, 그때도 밀면 그 값이 지금 본문과 같아져
+    되돌리기를 눌러도 글이 안 바뀐다."""
+    if row["body"] == body:
+        return
+    row["previous"] = row["body"]
+    row["body"] = body
+
+
+def _section_undo(plan: dict[str, Any], payload: dict[str, Any]) -> None:
+    """직전 본문과 지금 본문을 **맞바꾼다** — 다시 부르면 되돌아온다.
+
+    맞바꾸기라 다시하기가 따로 필요 없다: 같은 연산을 두 번 부르면 제자리다. 되돌릴 것이
+    없으면 아무것도 안 바꾸고 거부한다 — 빈 `previous`와 맞바꾸면 사람이 쓴 본문이 사라진다."""
+    section = _known_section(plan, str(payload.get("section") or ""))
+    row = plan["prd"]["sections"][section]
+    previous = row.get("previous") or ""
+    if not previous:
+        raise ValueError("되돌릴 것이 없어요")
+    row["body"], row["previous"] = previous, row["body"]
 
 
 def _sections(plan: dict[str, Any], payload: dict[str, Any]) -> None:
     """PRD 여러 칸을 **한 개정에** 쓴다 — 문서 전체 다듬기의 제안을 받는 자리.
 
     칸마다 `section`을 따로 보내면 개정이 칸 수만큼 늘고, 중간에 하나가 막히면 절반만 반영된
-    문서가 남는다. 모르는 sid 가 하나라도 있으면 한 칸도 안 쓴다."""
+    문서가 남는다. 모르는 sid 가 하나라도 있으면 한 칸도 안 쓴다.
+
+    직전 본문은 칸마다 따로 밀린다 — 되돌리기도 칸 단위라, 여러 칸을 한 번에 받은 뒤에도
+    각 칸이 자기 직전 글로 돌아간다."""
     incoming = payload.get("sections")
     if not isinstance(incoming, dict) or not incoming:
         raise ValueError("sections is required")
@@ -72,7 +105,7 @@ def _sections(plan: dict[str, Any], payload: dict[str, Any]) -> None:
     if unknown:
         raise ValueError(f"unknown PRD section: {', '.join(unknown)}")
     for sid, body in incoming.items():
-        plan["prd"]["sections"][sid]["body"] = str(body or "")
+        _write_body(plan["prd"]["sections"][sid], str(body or ""))
 
 
 def _attributes(plan: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -294,6 +327,7 @@ _OPS = {
     "root": _root,
     "phase": _phase,
     "section": _section,
+    "section.undo": _section_undo,
     "sections": _sections,
     "attributes": _attributes,
     "answer": _answer,
