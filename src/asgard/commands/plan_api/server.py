@@ -1,6 +1,7 @@
 """기획 화면의 HTTP 계약 — 루프백 전용, 의존성 0.
 
-경로는 두 갈래뿐이다. **읽기**는 문서와 진척을 한 왕복에 넣어 주고(`GET /api/plans/<id>`),
+경로는 두 갈래뿐이다. **읽기**는 문서·진척·심사를 한 왕복에 넣어 주고(`GET /api/plans/<id>`),
+문서 한 장을 마크다운으로 내보내는 문이 하나 더 있다(`GET /api/plans/<id>/export`).
 **쓰기**는 셋 중 하나다:
 
   · `/edit`      손으로 고치기 — 연산 이름은 `plan.edits.OPS`가 전량이다
@@ -21,7 +22,12 @@ from importlib.resources import files as _files
 from urllib.parse import urlsplit
 
 from ... import errors
-from ...plan import build, edits, store
+from ...plan import build, edits, folders, store
+
+# 파사드에서 `plan.review`는 같은 이름의 모듈이 아니라 **함수**다(`plan/__init__.py`). 여기서
+# 모듈 경로로 직접 들여오는 이유는 그 가림을 읽는 사람이 매번 되짚지 않게 하려는 것이다.
+from ...plan.export import to_markdown
+from ...plan.review import GRADE_LABEL, review
 from .. import loopback
 
 # 루프백 경계와 응답 헤더는 세 창이 한 곳을 같이 쓴다 (`commands.loopback`) — 세 곳에 적으면
@@ -33,11 +39,17 @@ origin_allowed = loopback.origin_allowed
 
 
 def plan_view(plan_id: str) -> dict:
-    """화면이 한 번에 받는 것 — 문서·진척·다음 할 일·트리. 나눠 주면 왕복마다 어긋난다."""
+    """화면이 한 번에 받는 것 — 문서·진척·심사·다음 할 일·트리. 나눠 주면 왕복마다 어긋난다.
+
+    `review`는 `readiness['prd']`가 든 점수 세 칸의 원본이다. 두 칸을 다 싣는 이유는 쓰는
+    자리가 다르기 때문이다 — 진척은 탭이 읽고, 지적·칸별 상태·가정 목록은 PRD 화면이 읽는다.
+    `grades`는 등급의 사람 이름표다: 화면이 등급 이름을 HTML 에 베껴 적으면 정본이 둘이 된다."""
     plan = store.load_plan(plan_id)
     return {
         "plan": plan,
         "readiness": store.readiness(plan),
+        "review": review(plan),
+        "grades": dict(GRADE_LABEL),
         "next": store.next_step(plan),
         "tree": store.spec_tree(plan),
     }
@@ -56,10 +68,15 @@ def dispatch(method: str, path: str, body: bytes = b"", root: str | None = None)
         if method == "POST":
             try:
                 payload = _payload(body)
+                # `mode`는 저장만 한다 — `auto`라도 여기서 PRD를 짓지 않는다. 한 왕복에 묶으면
+                # 진행 표시가 사라지고, 실패했을 때 기획이 안 만들어진 것인지 초안만 실패한
+                # 것인지 화면이 구분하지 못한다.
                 plan = store.create_plan(
                     payload.get("idea", ""),
                     payload.get("title", ""),
                     str(payload.get("root") or ""),
+                    str(payload.get("mode") or ""),
+                    payload.get("engine"),
                 )
                 return _json(201, plan_view(plan["id"]))
             except ValueError as exc:
@@ -73,7 +90,7 @@ def dispatch(method: str, path: str, body: bytes = b"", root: str | None = None)
             target = str(_payload(body).get("root") or "")
             if not target:
                 raise ValueError("root is required")
-            imported = store.import_root(target)
+            imported = folders.import_root(target)
         except ValueError as exc:
             return _api_error(400, "invalid_plan", str(exc))
         # `imported`와 목록을 통째로 겹치면 `plans`가 **건수에서 목록으로** 바뀐다(둘 다 그
@@ -104,7 +121,7 @@ def _pending_roots(root: str) -> list[str]:
         roots = known_roots(root or None)
     except Exception:
         roots = [root] if root else []
-    return store.pending_roots(roots)
+    return folders.pending_roots(roots)
 
 
 def _plan_route(method: str, plan_id: str, tail: list[str], body: bytes, root: str) -> tuple[int, str, bytes]:
@@ -120,6 +137,11 @@ def _plan_route(method: str, plan_id: str, tail: list[str], body: bytes, root: s
         if tail == ["readiness"] and method in ("GET", "HEAD"):
             plan = store.load_plan(plan_id)
             return _json(200, {"readiness": store.readiness(plan), "next": store.next_step(plan)})
+        if tail == ["export"] and method in ("GET", "HEAD"):
+            # 내보내기는 읽기다 — 그래서 JSON 관문(`X-Asgard-Plan`)이 아니라 다른 GET 경로와
+            # 같은 자리를 지난다. 본문은 JSON이 아니라 마크다운 원문이라 화면이 그대로
+            # 복사하거나 파일로 내린다.
+            return 200, "text/markdown; charset=utf-8", to_markdown(store.load_plan(plan_id)).encode("utf-8")
         if len(tail) == 1 and method == "POST":
             return _plan_action(tail[0], plan_id, _payload(body), root)
     except errors.AsgardError as exc:
@@ -144,18 +166,40 @@ def _plan_action(action: str, plan_id: str, payload: dict, root: str) -> tuple[i
     if action == "edit":
         edits.apply(plan_id, str(payload.get("op") or ""), payload)
         return _json(200, plan_view(plan_id))
+    if action == "engine":
+        store.set_engine(plan_id, str(payload.get("provider") or ""), str(payload.get("model") or ""))
+        return _json(200, plan_view(plan_id))
+    if action == "mode":
+        # 갈래는 한 번만 고른다. 이미 다른 갈래로 시작했으면 400 invalid_plan 으로 올라간다.
+        store.set_mode(plan_id, str(payload.get("mode") or ""))
+        return _json(200, plan_view(plan_id))
     if action == "refine":
         # 유일하게 저장하지 않는 쓰기 — 글만 돌려주고 반영은 사람이 누른다
-        return _json(
-            200,
-            build.propose_section(
-                plan_id,
-                str(payload.get("section") or ""),
-                str(payload.get("request") or ""),
-                str(payload.get("selection") or ""),
-                root,
-            ),
-        )
+        return _json(200, _refine(plan_id, payload, root))
+    return _plan_build(action, plan_id, payload, root)
+
+
+def _refine(plan_id: str, payload: dict, root: str) -> dict:
+    """다듬기 세 갈래 — **좁은 범위가 우선한다.**
+
+    `scope == "document"`면 문서 전체, 고른 글(`selection`)이 들어오면 그 구간만, 그 외에는
+    칸 하나다. 좁을수록 사람이 안 고른 자리가 갈릴 확률이 낮으므로 넓은 쪽을 기본으로 두지
+    않는다. 고른 글이 그 칸 본문에 없으면 `build`가 모델을 부르기 전에 `ValueError`이고, 그건
+    부르는 쪽의 400이다."""
+    request = str(payload.get("request") or "")
+    if str(payload.get("scope") or "") == "document":
+        return build.propose_document(plan_id, request, root)
+    section = str(payload.get("section") or "")
+    selection = str(payload.get("selection") or "")
+    if selection:
+        return build.propose_selection(plan_id, section, request, selection, root)
+    # 칸 전체 갈래에는 `selection`을 안 넘긴다 — 이 프롬프트는 칸 하나의 대체 본문을 요구하므로
+    # 고른 글을 함께 넘기면 칸 전체가 그 구간의 뜻으로 다시 쓰인다.
+    return build.propose_section(plan_id, section, request, "", root)
+
+
+def _plan_build(action: str, plan_id: str, payload: dict, root: str) -> tuple[int, str, bytes]:
+    """모델을 불러 문서를 짓는 갈래 — 전부 저장하고 문서 전체를 돌려준다."""
     runner = {
         "ask": lambda: build.ask(plan_id, root),
         "prd": lambda: build.draft_prd(plan_id, root),

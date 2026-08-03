@@ -175,13 +175,15 @@ class TestDispatch(StudioCase):
             self.assertTrue(json.loads(body)["readiness"]["spec"]["ready"])
 
     def test_a_new_plan_needs_only_one_line(self):
-        """Studio의 기획은 "어떤 기획을 할까요?" 한 칸에서 시작한다 — 고를 것이 없다."""
+        """Studio의 기획은 "어떤 기획을 할까요?" 한 칸에서 시작한다 — 적는 것은 한 줄뿐이다.
+
+        한 줄 뒤에 오는 것은 고르기 하나다: 질문 없이 초안을 쓸지, 문답으로 다듬을지."""
         with tempfile.TemporaryDirectory() as root:
             status, _, body = studio.dispatch_post("/api/plans", {"idea": "검색 명세를 정리하고 싶다"}, root)
             self.assertEqual(status, 201)
             view = json.loads(body)
             self.assertEqual(view["plan"]["phase"], "intake")
-            self.assertEqual(view["next"]["action"], "ask")
+            self.assertEqual(view["next"]["action"], "choose_mode")
 
             status, _, body = studio.dispatch_post("/api/plans", {"idea": "   "}, root)
             self.assertEqual(status, 400)

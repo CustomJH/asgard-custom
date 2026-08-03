@@ -5,21 +5,77 @@
 저장소에서도(`readiness`), 도메인 호출에서도(`require_ready`), HTTP 에서도(409).
 """
 
+import contextlib
 import json
 import os
 import tempfile
 import threading
+import types
 import unittest
 import urllib.error
 import urllib.request
+from unittest import mock
 
 from asgard import plan as P
 from asgard.commands import plan_api as surface
-from asgard.plan import planner
+from asgard.plan import build, intake, planner
 
 
 def _seeded(idea: str = "팀 회고를 자동으로 모아 주는 도구", root: str = "") -> dict:
     return P.create_plan(idea, root=root)
+
+
+@contextlib.contextmanager
+def _engine(reply, missing=()):
+    """모델 호출 자리를 가로챈다 — 무엇으로 불렀는지와 무슨 프롬프트가 갔는지를 남긴다.
+
+    `reply`가 함수면 모델에 간 user 페이로드(dict)를 받아 응답 dict를 돌려준다."""
+    seen: dict = {"resolved": [], "systems": [], "users": []}
+
+    def fake_resolve(root=None, provider=None, model=None):
+        seen["resolved"].append({"root": root, "provider": provider, "model": model})
+        return types.SimpleNamespace(missing=list(missing), model=model or "default", profile=None)
+
+    def fake_complete_with(resolved, root, system, user, max_tokens=3000):
+        seen["systems"].append(system)
+        seen["users"].append(json.loads(user))
+        payload = reply(seen["users"][-1]) if callable(reply) else reply
+        return json.dumps(payload, ensure_ascii=False)
+
+    with (
+        mock.patch("asgard.providers.resolve", fake_resolve),
+        mock.patch("asgard.agent.oneshot.complete_with", fake_complete_with),
+    ):
+        yield seen
+
+
+def _round(payload: dict) -> dict:
+    """단계의 필수 축마다 열린 질문 하나씩 — 판정은 전부 missing."""
+    axes = [row["id"] for row in payload["axes"] if row["required"]]
+    return {
+        "assessment": [{"axis": axis, "state": "missing"} for axis in axes],
+        "questions": [
+            {"axis": axis, "kind": "open", "target": "", "q": f"{payload['stage']}/{axis} 를 알려 주세요"}
+            for axis in axes
+        ],
+        "opened_axes": [],
+        "stage_done": False,
+    }
+
+
+def _answer_all(plan: dict) -> dict:
+    for row in plan["intake"]["questions"]:
+        if row["state"] == "open":
+            plan = P.apply_edit(plan["id"], "answer", {"question": row["id"], "text": "지난주에 그랬어요"})
+    return plan
+
+
+_PRD_REPLY = {
+    "sections": {sid: f"- {sid} 초안" for sid in P.PRD_SECTION_IDS},
+    "attributes": {"category": "협업 도구", "roles": ["스쿼드 리드"], "environments": ["웹"]},
+    "assumptions": [{"axis": "success_signal", "text": "석 달 뒤 회고 참여율로 잰다고 봤어요"}],
+    "checks": [{"axis": "user", "q": "스쿼드 리드가 매일 여는 게 맞을까요?"}],
+}
 
 
 def _with_overview(plan: dict) -> dict:
@@ -169,9 +225,14 @@ class TestGrounding(unittest.TestCase):
 
     def test_next_step_walks_the_documents_in_order(self):
         plan = _seeded()
+        # 갈래를 안 고르면 물을 것을 못 고른다 — 그래서 choose_mode 가 맨 앞이다.
+        self.assertEqual(P.next_step(plan)["action"], "choose_mode")
+        plan = P.set_mode(plan["id"], "guided")
         self.assertEqual(P.next_step(plan)["action"], "ask")
         plan = P.apply_edit(plan["id"], "questions", {"questions": ["누가 쓰나요?"]})
-        self.assertEqual(P.next_step(plan)["action"], "draft_prd")
+        self.assertEqual(P.next_step(plan)["action"], "answer")
+        plan = P.apply_edit(plan["id"], "intake.skip", {"id": plan["intake"]["questions"][0]["id"]})
+        self.assertEqual(P.next_step(plan)["action"], "ask")
         for section in P.PRD_SECTION_IDS:
             plan = P.apply_edit(plan["id"], "section", {"section": section, "body": "- 내용"})
         self.assertEqual(P.next_step(plan)["action"], "draft_spec")
@@ -187,14 +248,46 @@ class TestEdits(unittest.TestCase):
         self.assertIn("item.save", P.OPS)
 
     def test_answering_a_question_also_lands_in_the_conversation(self):
-        """문답이 대화 밖에 있으면 맥락이 갈린다 — 모델이 읽는 것과 사람이 보는 것이 달라진다."""
+        """문답이 대화 밖에 있으면 맥락이 갈린다 — 모델이 읽는 것과 사람이 보는 것이 달라진다.
+
+        물은 쪽과 답한 쪽은 **따로** 적힌다. 한 줄에 묶으면 화면이 그 줄을 누가 말한 것으로도
+        못 세워서 문답 표를 대화 밖에 한 번 더 그리게 되고, 같은 답이 두 자리에 선다."""
         plan = _seeded()
         plan = P.apply_edit(plan["id"], "questions", {"questions": ["누가 쓰나요?", "지금은 어떻게 하나요?"]})
         first = plan["intake"]["questions"][0]["id"]
         plan = P.apply_edit(plan["id"], "answer", {"question": first, "text": "스쿼드 리드"})
         self.assertEqual(plan["intake"]["questions"][0]["a"], "스쿼드 리드")
-        self.assertIn("스쿼드 리드", plan["chat"][-1]["text"])
-        self.assertEqual(P.readiness(plan)["intake"], {"ready": True, "asked": 2, "answered": 1, "blocked": []})
+        self.assertEqual(
+            [(turn["role"], turn["text"]) for turn in plan["chat"][-2:]],
+            [("asgard", "누가 쓰나요?"), ("user", "스쿼드 리드")],
+        )
+        onboarding = P.readiness(plan)["intake"]
+        self.assertEqual(
+            {key: onboarding[key] for key in ("asked", "answered", "blocked")},
+            {"asked": 2, "answered": 1, "blocked": []},
+        )
+
+    def test_skipping_a_question_also_lands_in_the_conversation(self):
+        """건너뛴 것도 대화에 남는다 — 안 남기면 화면이 그 기록을 대화 밖에 따로 들어야 한다."""
+        plan = _seeded()
+        plan = P.apply_edit(plan["id"], "questions", {"questions": ["언제 여나요?"]})
+        first = plan["intake"]["questions"][0]["id"]
+        plan = P.apply_edit(plan["id"], "intake.skip", {"id": first})
+        self.assertEqual(plan["intake"]["questions"][0]["state"], "skipped")
+        self.assertEqual(
+            [(turn["role"], turn["text"]) for turn in plan["chat"][-2:]],
+            [("asgard", "언제 여나요?"), ("user", "건너뛰었어요")],
+        )
+
+    def test_an_empty_answer_leaves_the_conversation_alone(self):
+        """빈 답은 아직 안 한 것이다 — 대화에 적으면 안 한 일이 한 것으로 남는다."""
+        plan = _seeded()
+        plan = P.apply_edit(plan["id"], "questions", {"questions": ["누가 쓰나요?"]})
+        before = len(plan["chat"])
+        first = plan["intake"]["questions"][0]["id"]
+        plan = P.apply_edit(plan["id"], "answer", {"question": first, "text": "   "})
+        self.assertEqual(len(plan["chat"]), before)
+        self.assertEqual(plan["intake"]["questions"][0]["state"], "open")
 
     def test_asking_the_same_question_twice_does_nothing(self):
         plan = _seeded()
@@ -256,6 +349,453 @@ class TestEdits(unittest.TestCase):
         tree = P.spec_tree(plan)
         self.assertEqual(len(tree), 1)
         self.assertEqual(tree[0]["children"][0]["title"], "슬랙에서 긁어오기")
+
+
+class TestIntakeSchema(unittest.TestCase):
+    """온보딩 스키마는 **순수 가산**이다 — 옛 문서가 그대로 통과하고, 새 필드는 저장에도 남는다."""
+
+    def test_a_plan_written_before_the_added_fields_still_loads(self):
+        """가산 필드가 없는 `{id, q, a}` 문서. 여기서 막으면 사용자의 `plans.json`이 통째로 거부된다."""
+        plan = _seeded()
+        old = json.loads(json.dumps(plan))
+        old["intake"] = {"idea": "옛 기획", "questions": [{"id": "q-old", "q": "누가 쓰나요?", "a": "리드"}]}
+        old.pop("engine")
+        checked = P.validate_plan(old)
+        row = checked["intake"]
+        self.assertEqual((row["mode"], row["stage"], row["rounds"]), ("", "entry", 0))
+        self.assertEqual((row["coverage"], row["assumptions"]), ({}, []))
+        self.assertEqual(checked["engine"], {"provider": "", "model": ""})
+        # 답이 있는 옛 줄은 answered 로 읽힌다 — state 칸이 없다고 열린 질문으로 되살아나면 안 된다
+        self.assertEqual(checked["intake"]["questions"][0]["state"], "answered")
+        self.assertEqual(checked["intake"]["questions"][0]["axis"], "")
+
+    def test_the_schema_version_stays_at_two_so_the_legacy_lane_never_fires(self):
+        """3으로 올리면 `_archive_legacy`가 사용자의 기획을 통째로 비켜 놓는다."""
+        self.assertEqual(P.SCHEMA_VERSION, 2)
+
+    def test_the_added_fields_survive_a_save(self):
+        """`_checked_intake`가 행을 `{id, q, a}` 로만 재조립하던 자리 — 안 고치면 매 저장마다 사라진다."""
+        plan = P.set_mode(_seeded()["id"], "guided")
+        plan = P.mutate(
+            plan["id"],
+            lambda draft: draft["intake"]["questions"].append(
+                {
+                    "id": "q-seed",
+                    "q": "지금은 어떻게 하고 있나요?",
+                    "a": "",
+                    "axis": "current_alternative",
+                    "kind": "follow_up",
+                    "parent": "",
+                    "stage": "frame",
+                    "state": "open",
+                }
+            ),
+        )
+        plan = P.mutate(plan["id"], lambda draft: intake.mark(draft["intake"]["coverage"], "problem", "thin"))
+        plan = P.mutate(plan["id"], lambda draft: intake.note_assumption(draft["intake"], "role"))
+
+        reloaded = P.load_plan(plan["id"])
+        row = reloaded["intake"]["questions"][0]
+        self.assertEqual(
+            (row["axis"], row["kind"], row["stage"], row["state"]),
+            ("current_alternative", "follow_up", "frame", "open"),
+        )
+        self.assertEqual(reloaded["intake"]["coverage"]["problem"]["state"], "thin")
+        self.assertEqual(reloaded["intake"]["assumptions"][0]["axis"], "role")
+        self.assertEqual(reloaded["intake"]["mode"], "guided")
+
+    def test_the_axis_and_stage_tables_are_the_ones_the_research_named(self):
+        """축 id와 단계 id는 코드가 든다 — 모델이 매번 지어내면 커버리지를 셀 수 없다."""
+        self.assertEqual(
+            [axis for axis, _, _ in P.INTAKE_AXES],
+            [
+                "problem",
+                "current_alternative",
+                "user",
+                "usage_moment",
+                "success_signal",
+                "non_goal",
+                "environment",
+                "role",
+                "constraint",
+                "why_now",
+                "risk_unknown",
+                "product_category",
+            ],
+        )
+        self.assertEqual([stage for stage, *_ in P.INTAKE_STAGES], ["entry", "frame", "scope", "ground", "confirm"])
+        # 축 → PRD 칸 대응은 정본 다섯 칸 안에서만 산다
+        self.assertTrue(all(section in P.PRD_SECTION_IDS for _, _, section in P.INTAKE_AXES))
+        self.assertEqual(len(intake.REQUIRED_AXES), 9)
+
+    def test_an_unknown_axis_or_stage_is_dropped_rather_than_stored(self):
+        plan = _seeded()
+        plan = P.mutate(plan["id"], lambda draft: draft["intake"]["coverage"].__setitem__("무엇", {"state": "covered"}))
+        self.assertEqual(P.load_plan(plan["id"])["intake"]["coverage"], {})
+        plan = P.mutate(plan["id"], lambda draft: draft["intake"].__setitem__("stage", "없는단계"))
+        self.assertEqual(P.load_plan(plan["id"])["intake"]["stage"], "entry")
+
+
+class TestOnboardingMode(unittest.TestCase):
+    def test_the_mode_is_chosen_once(self):
+        plan = _seeded()
+        self.assertEqual(plan["intake"]["mode"], "")
+        plan = P.set_mode(plan["id"], "guided")
+        self.assertEqual((plan["intake"]["mode"], plan["intake"]["stage"]), ("guided", "frame"))
+        # 같은 갈래를 다시 주는 것은 통과한다 — 화면이 재시도할 수 있다
+        self.assertEqual(P.set_mode(plan["id"], "guided")["intake"]["mode"], "guided")
+        with self.assertRaisesRegex(ValueError, "이미 다른 갈래"):
+            P.set_mode(plan["id"], "auto")
+
+    def test_the_auto_lane_stands_at_the_confirm_stage_from_the_start(self):
+        """자동초안은 문답을 안 돈다 — 검증만 남으므로 확인 단계로 바로 간다."""
+        plan = P.set_mode(_seeded()["id"], "auto")
+        self.assertEqual(plan["intake"]["stage"], "confirm")
+        self.assertEqual(P.next_step(plan)["action"], "draft_prd")
+
+    def test_a_plan_may_be_created_with_a_mode_and_an_engine(self):
+        plan = P.create_plan("회고 도구", mode="auto", engine={"provider": "nvidia", "model": "some-model"})
+        self.assertEqual(plan["intake"]["mode"], "auto")
+        self.assertEqual(plan["engine"], {"provider": "nvidia", "model": "some-model"})
+
+    def test_an_unknown_mode_is_refused(self):
+        with self.assertRaises(ValueError):
+            P.create_plan("회고 도구", mode="빠르게")
+        plan = _seeded()
+        with self.assertRaises(ValueError):
+            P.set_mode(plan["id"], "")
+
+
+class TestOnboardingRounds(unittest.TestCase):
+    """단계 루프 — 지금 단계의 안 덮인 축만 묻고, 상한은 코드가 센다."""
+
+    def test_one_stage_at_a_time_and_one_question_on_screen(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        with _engine(_round) as seen:
+            plan = P.ask(plan["id"])
+        self.assertEqual(seen["users"][0]["stage"], "frame")
+        self.assertEqual([row["stage"] for row in plan["intake"]["questions"]], ["frame"] * 3)
+        self.assertEqual(plan["intake"]["rounds"], 1)
+
+        # 대화 턴은 open_question 하나로 굴러간다 — 세 개를 한꺼번에 세우지 않는다
+        onboarding = P.readiness(plan)["intake"]
+        self.assertEqual(onboarding["open_question"]["q"], plan["intake"]["questions"][0]["q"])
+        self.assertEqual(onboarding["stage"], "frame")
+        self.assertEqual((onboarding["covered"], onboarding["axes"]), (0, 9))
+
+        plan = _answer_all(plan)
+        self.assertIsNone(P.readiness(plan)["intake"]["open_question"])
+        self.assertEqual(P.readiness(plan)["intake"]["covered"], 3)
+
+        with _engine(_round) as seen:
+            plan = P.ask(plan["id"])
+        self.assertEqual(seen["users"][0]["stage"], "scope")
+
+    def test_a_stage_asks_at_most_three_and_the_interview_at_most_twelve(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        flood = {
+            "assessment": [],
+            "questions": [
+                {"axis": axis, "kind": "open", "target": "", "q": f"{axis} 를 알려 주세요"} for axis in intake.AXIS_IDS
+            ],
+            "opened_axes": [],
+            "stage_done": False,
+        }
+        with _engine(flood):
+            plan = P.ask(plan["id"])
+        self.assertEqual(len(plan["intake"]["questions"]), 3)
+
+        for _ in range(6):
+            plan = _answer_all(plan)
+            with _engine(flood):
+                plan = P.ask(plan["id"])
+        self.assertLessEqual(len(plan["intake"]["questions"]), 12)
+        self.assertLessEqual(plan["intake"]["rounds"], 5)
+
+    def test_a_thin_answer_is_followed_up_once_and_then_frozen_as_an_assumption(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+
+        def thin(payload):
+            return {
+                "assessment": [{"axis": "problem", "state": "thin"}],
+                "questions": [
+                    {
+                        "axis": "problem",
+                        "kind": "follow_up",
+                        "target": "",
+                        "q": f"가장 최근은 언제였어요? {len(payload['answers'])}",
+                    }
+                ],
+                "opened_axes": [],
+                "stage_done": False,
+            }
+
+        with _engine(thin):
+            plan = P.ask(plan["id"])
+        self.assertEqual(plan["intake"]["questions"][0]["kind"], "follow_up")
+        plan = _answer_all(plan)
+        with _engine(thin):
+            plan = P.ask(plan["id"])
+        # 축당 되묻기 1회 — 두 번째 thin 은 가정으로 굳고 같은 축을 다시 묻지 않는다
+        self.assertEqual([row["kind"] for row in plan["intake"]["questions"]], ["follow_up"])
+        self.assertEqual(plan["intake"]["coverage"]["problem"]["state"], "assumed")
+        self.assertEqual([item["axis"] for item in plan["intake"]["assumptions"]], ["problem"])
+
+    def test_a_skipped_question_locks_its_axis_and_is_never_asked_again(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        with _engine(_round):
+            plan = P.ask(plan["id"])
+        first = plan["intake"]["questions"][0]
+        plan = P.apply_edit(plan["id"], "intake.skip", {"id": first["id"]})
+        self.assertEqual(plan["intake"]["questions"][0]["state"], "skipped")
+        self.assertEqual(plan["intake"]["coverage"][first["axis"]]["state"], "skipped")
+        self.assertEqual([item["axis"] for item in plan["intake"]["assumptions"]], [first["axis"]])
+
+        # 건너뛴 축은 커버리지에서 정리된 것으로 세되, 근거 있는 칸에서는 빠진다
+        onboarding = P.readiness(plan)["intake"]
+        self.assertEqual(onboarding["covered"], 1)
+        self.assertNotIn(intake.AXIS_SECTION[first["axis"]], onboarding["grounded_sections"])
+
+        for row in plan["intake"]["questions"][1:]:
+            plan = P.apply_edit(plan["id"], "answer", {"question": row["id"], "text": "지난주에 그랬어요"})
+        with _engine(_round) as seen:
+            plan = P.ask(plan["id"])
+        self.assertEqual(seen["users"][0]["stage"], "scope")
+        self.assertNotIn(first["axis"], [row["axis"] for row in plan["intake"]["questions"] if row["stage"] == "scope"])
+
+    def test_a_skipped_axis_gets_exactly_one_yes_no_check_in_the_confirm_stage(self):
+        """건너뛴 축은 다시 안 묻는다 — 예외는 확인 단계의 예·아니오 하나뿐이다."""
+
+        def stage_round(payload):
+            if payload["stage"] != "confirm":
+                return _round(payload)
+            return {
+                "assessment": [],
+                "questions": [
+                    {"axis": item["axis"], "kind": "check", "target": "", "q": f"{item['axis']} 가정이 맞을까요?"}
+                    for item in payload["assumptions"]
+                ],
+                "opened_axes": [],
+                "stage_done": True,
+            }
+
+        plan = P.set_mode(_seeded()["id"], "guided")
+        skipped = ""
+        for _ in range(20):
+            step = P.next_step(plan)["action"]
+            if step == "ask":
+                with _engine(stage_round):
+                    plan = P.ask(plan["id"])
+            elif step == "answer":
+                question = P.readiness(plan)["intake"]["open_question"]
+                if not skipped and question["kind"] == "open":
+                    skipped = question["axis"]
+                    plan = P.apply_edit(plan["id"], "intake.skip", {"id": question["id"]})
+                else:
+                    plan = P.apply_edit(plan["id"], "answer", {"question": question["id"], "text": "지난주에요"})
+            else:
+                break
+
+        checks = [row for row in plan["intake"]["questions"] if row["kind"] == "check"]
+        self.assertEqual([row["axis"] for row in checks], [skipped])
+        self.assertEqual(plan["intake"]["coverage"][skipped]["state"], "skipped")
+        self.assertTrue(all(item["confirmed"] for item in plan["intake"]["assumptions"]))
+        self.assertEqual(intake.pending_checks(plan["intake"]), [])
+        self.assertLessEqual(plan["intake"]["rounds"], 5)
+        self.assertLessEqual(len(plan["intake"]["questions"]), 12)
+
+    def test_answering_moves_the_axis_to_covered_and_grounds_its_prd_section(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        with _engine(_round):
+            plan = P.ask(plan["id"])
+        problem = next(row for row in plan["intake"]["questions"] if row["axis"] == "problem")
+        plan = P.apply_edit(plan["id"], "answer", {"question": problem["id"], "text": "지난 화요일에 로그를 놓쳤어요"})
+        self.assertEqual(plan["intake"]["coverage"]["problem"]["state"], "covered")
+        self.assertEqual(plan["intake"]["questions"][0]["state"], "answered")
+        self.assertIn("value", P.readiness(plan)["intake"]["grounded_sections"])
+
+    def test_asking_stops_when_every_required_axis_is_settled(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        plan = P.mutate(
+            plan["id"],
+            lambda draft: [intake.mark(draft["intake"]["coverage"], axis, "covered") for axis in intake.REQUIRED_AXES],
+        )
+        self.assertFalse(P.readiness(plan)["intake"]["can_ask"])
+        self.assertTrue(P.readiness(plan)["intake"]["ready"])
+        self.assertEqual(P.next_step(plan)["action"], "draft_prd")
+        with _engine(_round) as seen:
+            plan = P.ask(plan["id"])
+        self.assertEqual(seen["users"], [])  # 모델을 안 부른다
+
+
+class TestAutoLane(unittest.TestCase):
+    """질문 없이 PRD 초안 — 대신 가정을 꺼내고, 추측한 역할·환경을 안 적고, 사후 확인을 붙인다."""
+
+    def test_creating_an_auto_plan_does_not_draft_the_prd_in_the_same_round_trip(self):
+        with tempfile.TemporaryDirectory() as root:
+            body = json.dumps({"idea": "회고 도구", "mode": "auto"}).encode()
+            status, _, raw = surface.dispatch("POST", "/api/plans", body, root)
+            view = json.loads(raw)
+            self.assertEqual(status, 201)
+            self.assertEqual(view["plan"]["intake"]["mode"], "auto")
+            self.assertEqual(view["plan"]["prd"]["sections"]["overview"]["body"], "")
+            self.assertEqual(view["next"]["action"], "draft_prd")
+
+    def test_the_auto_draft_keeps_roles_and_environments_out_of_the_document(self):
+        """역할은 기능 명세서가, 환경은 유저 플로우가 그대로 소비한다 — 추측 하나가 뒤 문서 둘로 번진다."""
+        plan = P.set_mode(_seeded()["id"], "auto")
+        with _engine(_PRD_REPLY) as seen:
+            plan = P.draft_prd(plan["id"])
+        self.assertIn("답을 못 들어서 제가 채웠어요", seen["systems"][0])
+        self.assertEqual(plan["prd"]["attributes"]["roles"], [])
+        self.assertEqual(plan["prd"]["attributes"]["environments"], [])
+        self.assertEqual(plan["prd"]["attributes"]["category"], "협업 도구")
+
+        axes = {item["axis"] for item in plan["intake"]["assumptions"]}
+        self.assertIn("role", axes)
+        self.assertIn("environment", axes)
+        self.assertIn("success_signal", axes)
+
+    def test_the_auto_draft_leaves_at_most_three_yes_no_checks_and_next_step_points_at_them(self):
+        plan = P.set_mode(_seeded()["id"], "auto")
+        with _engine(_PRD_REPLY):
+            plan = P.draft_prd(plan["id"])
+        checks = [row for row in plan["intake"]["questions"] if row["kind"] == "check"]
+        self.assertEqual(len(checks), 1)
+        self.assertLessEqual(len(checks), 3)
+        self.assertEqual(checks[0]["stage"], "confirm")
+        # PRD 를 쓴 뒤에도 확인 질문이 먼저다 — 지나치면 근거 없는 PRD 가 명세서의 입력이 된다
+        self.assertEqual(P.next_step(plan)["action"], "answer")
+
+        plan = P.apply_edit(plan["id"], "answer", {"question": checks[0]["id"], "text": "예"})
+        self.assertTrue(any(item["confirmed"] for item in plan["intake"]["assumptions"]))
+        # 추측을 맞다고 확인한 것은 근거가 아니다 — 축은 assumed 로 남고 그 칸은 근거 없는 칸이다
+        self.assertEqual(plan["intake"]["coverage"]["user"]["state"], "assumed")
+        self.assertEqual(P.readiness(plan)["intake"]["grounded_sections"], [])
+        self.assertEqual(P.next_step(plan)["action"], "draft_spec")
+
+    def test_the_guided_draft_keeps_the_old_marker_and_fills_the_attributes(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        plan = P.mutate(
+            plan["id"],
+            lambda draft: [
+                intake.mark(draft["intake"]["coverage"], axis, "covered") for axis in ("role", "environment")
+            ],
+        )
+        with _engine(_PRD_REPLY) as seen:
+            plan = P.draft_prd(plan["id"])
+        self.assertIn(" (확인 필요)", seen["systems"][0])
+        self.assertNotIn("답을 못 들어서 제가 채웠어요", seen["systems"][0])
+        self.assertEqual(plan["prd"]["attributes"]["roles"], ["스쿼드 리드"])
+        self.assertEqual(plan["prd"]["attributes"]["environments"], ["웹"])
+        # 답을 못 들은 축은 두 갈래 모두 가정으로 굳는다 — 근거 없는 칸을 그냥 두지 않는다
+        self.assertEqual(plan["intake"]["coverage"]["problem"]["state"], "assumed")
+
+
+class TestEngineChoice(unittest.TestCase):
+    def test_the_plan_engine_reaches_resolve(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        plan = P.set_engine(plan["id"], "nvidia", "some/model")
+        self.assertEqual(plan["engine"], {"provider": "nvidia", "model": "some/model"})
+        with _engine(_round) as seen:
+            P.ask(plan["id"])
+        self.assertEqual(
+            {key: seen["resolved"][0][key] for key in ("provider", "model")},
+            {"provider": "nvidia", "model": "some/model"},
+        )
+
+    def test_an_empty_engine_falls_back_to_the_default_of_that_place(self):
+        plan = P.set_mode(_seeded()["id"], "guided")
+        with _engine(_round) as seen:
+            P.ask(plan["id"])
+        self.assertEqual(seen["resolved"][0]["provider"], None)
+        self.assertEqual(seen["resolved"][0]["model"], None)
+
+    def test_a_failure_names_the_engine_it_tried(self):
+        """기획마다 다른 엔진을 걸 수 있게 된 순간, 이유에 엔진 이름이 없으면 손쓸 곳을 못 찾는다."""
+        plan = P.set_mode(_seeded()["id"], "guided")
+        P.set_engine(plan["id"], "nvidia", "some/model")
+        with _engine(_round, missing=["API 키가 없어요"]):
+            with self.assertRaisesRegex(RuntimeError, "nvidia · some/model"):
+                P.ask(plan["id"])
+
+        P.set_engine(plan["id"], "", "")
+        with _engine(_round, missing=["API 키가 없어요"]):
+            with self.assertRaisesRegex(RuntimeError, "기본"):
+                P.ask(plan["id"])
+
+    def test_a_broken_engine_comes_back_as_502_with_the_reason(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = P.set_mode(_seeded()["id"], "guided")
+            P.set_engine(plan["id"], "nvidia", "some/model")
+            with _engine(_round, missing=["API 키가 없어요"]):
+                status, _, body = surface.dispatch("POST", f"/api/plans/{plan['id']}/ask", b"{}", root)
+            self.assertEqual(status, 502)
+            payload = json.loads(body)
+            self.assertEqual(payload["error"]["code"], "planner_failed")
+            self.assertIn("nvidia · some/model", payload["error"]["message"])
+
+
+class TestOnboardingRoutes(unittest.TestCase):
+    def test_the_mode_and_engine_routes_return_the_whole_view(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            status, _, body = surface.dispatch(
+                "POST", f"/api/plans/{plan['id']}/engine", b'{"provider":"nvidia","model":"m"}', root
+            )
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["plan"]["engine"], {"provider": "nvidia", "model": "m"})
+
+            status, _, body = surface.dispatch("POST", f"/api/plans/{plan['id']}/mode", b'{"mode":"guided"}', root)
+            self.assertEqual(status, 200)
+            self.assertEqual(json.loads(body)["next"]["action"], "ask")
+
+            status, _, body = surface.dispatch("POST", f"/api/plans/{plan['id']}/mode", b'{"mode":"auto"}', root)
+            self.assertEqual(status, 400)
+            self.assertEqual(json.loads(body)["error"]["code"], "invalid_plan")
+
+    def test_the_list_carries_the_axis_and_stage_tables_and_the_head_carries_the_engine(self):
+        """화면이 표를 베껴 적으면 표가 둘이 되고, 언젠가 그중 하나만 고친다."""
+        with tempfile.TemporaryDirectory() as root:
+            plan = P.create_plan("회고 도구", mode="guided", engine={"provider": "nvidia", "model": "m"})
+            P.apply_edit(plan["id"], "questions", {"questions": ["누가 쓰나요?"]})
+            status, _, body = surface.dispatch("GET", "/api/plans", root=root)
+            payload = json.loads(body)
+            self.assertEqual(status, 200)
+            self.assertEqual([row["id"] for row in payload["axes"]], list(intake.AXIS_IDS))
+            self.assertEqual([row["id"] for row in payload["stages"]], list(intake.STAGE_IDS))
+
+            head = payload["plans"][0]
+            self.assertEqual(head["engine"], {"provider": "nvidia", "model": "m"})
+            self.assertEqual((head["mode"], head["intake_asked"], head["intake_answered"]), ("guided", 1, 0))
+
+    def test_the_readiness_intake_carries_what_the_conversation_turn_needs(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = P.set_mode(_seeded()["id"], "guided")
+            with _engine(_round):
+                P.ask(plan["id"])
+            status, _, body = surface.dispatch("GET", f"/api/plans/{plan['id']}", root=root)
+            onboarding = json.loads(body)["readiness"]["intake"]
+            self.assertEqual(status, 200)
+            for key in ("mode", "stage", "rounds", "coverage", "covered", "axes", "open_question"):
+                self.assertIn(key, onboarding)
+            self.assertEqual(len(onboarding["coverage"]), len(intake.AXIS_IDS))
+            self.assertEqual(sorted(onboarding["open_question"]), ["axis", "id", "kind", "parent", "q", "stage"])
+
+    def test_skip_goes_through_the_one_edit_door(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            plan = P.apply_edit(plan["id"], "questions", {"questions": ["누가 쓰나요?"]})
+            question = plan["intake"]["questions"][0]["id"]
+            status, _, body = surface.dispatch(
+                "POST",
+                f"/api/plans/{plan['id']}/edit",
+                json.dumps({"op": "intake.skip", "id": question}).encode(),
+                root,
+            )
+            self.assertEqual(status, 200)
+            self.assertIsNone(json.loads(body)["readiness"]["intake"]["open_question"])
+            self.assertIn("intake.skip", P.OPS)
 
 
 class TestPlannerMaterialization(unittest.TestCase):
@@ -364,12 +904,12 @@ class TestDispatch(unittest.TestCase):
             status, _, body = surface.dispatch("POST", "/api/plans", b'{"idea":"\xed\x9a\x8c\xea\xb3\xa0"}', root)
             self.assertEqual(status, 201)
             view = json.loads(body)
-            self.assertEqual(sorted(view), ["next", "plan", "readiness", "tree"])
+            self.assertEqual(sorted(view), ["grades", "next", "plan", "readiness", "review", "tree"])
             plan_id = view["plan"]["id"]
 
             status, _, body = surface.dispatch("GET", f"/api/plans/{plan_id}", root=root)
             self.assertEqual(status, 200)
-            self.assertEqual(json.loads(body)["next"]["action"], "ask")
+            self.assertEqual(json.loads(body)["next"]["action"], "choose_mode")
 
             status, _, body = surface.dispatch("GET", "/api/plans", root=root)
             head = json.loads(body)["plans"][0]
@@ -491,6 +1031,155 @@ class TestLiveServer(unittest.TestCase):
             finally:
                 httpd.shutdown()
                 httpd.server_close()
+
+
+class TestReviewInTheView(unittest.TestCase):
+    """심사는 한 왕복에 같이 온다 — 화면이 점수를 따로 물으면 문서와 점수가 어긋난 순간이 생긴다."""
+
+    def test_the_view_carries_the_review_card_and_the_grade_names(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            status, _, body = surface.dispatch("GET", f"/api/plans/{plan['id']}", root=root)
+            self.assertEqual(status, 200)
+            view = json.loads(body)
+            card = view["review"]
+            self.assertEqual(sorted(card), ["assumptions", "blocking", "findings", "grade", "score", "sections"])
+            # 지적이 하나도 없는 칸도 들어간다 — 화면이 배지를 못 다는 칸이 있으면 안 된다.
+            self.assertEqual(sorted(card["sections"]), sorted(P.PRD_SECTION_IDS))
+            self.assertEqual((card["score"], card["grade"]), (view["readiness"]["prd"]["score"], "draft"))
+            # 등급 이름표는 서버가 든다 — 화면이 HTML 에 베껴 적으면 정본이 둘이 된다.
+            self.assertEqual(sorted(view["grades"]), sorted(P.GRADES))
+            self.assertEqual(view["grades"]["draft"], P.GRADE_LABEL["draft"])
+
+    def test_a_low_score_does_not_close_the_next_document(self):
+        """심사는 보여 주는 장치다 — 기능 명세서를 여는 판정은 그대로 개요 한 칸이다."""
+        with tempfile.TemporaryDirectory() as root:
+            plan = _with_overview(_seeded())
+            view = json.loads(surface.dispatch("GET", f"/api/plans/{plan['id']}", root=root)[2])
+            self.assertLess(view["review"]["score"], 100)
+            self.assertEqual(view["review"]["blocking"], 0)
+            self.assertTrue(view["readiness"]["spec"]["ready"])
+
+
+class TestRefineLanes(unittest.TestCase):
+    """다듬기 세 갈래 — `scope`와 `selection`이 어느 문으로 가는지가 계약이다."""
+
+    @contextlib.contextmanager
+    def _lanes(self):
+        """세 제안 함수를 이름표로 바꿔 끼운다 — 무엇이 불렸고 무엇으로 불렸는지만 본다."""
+        seen: dict = {}
+
+        def note(name):
+            def call(*args, **kwargs):
+                seen[name] = (args, kwargs)
+                return {"lane": name}
+
+            return call
+
+        with (
+            mock.patch.object(build, "propose_document", note("document")),
+            mock.patch.object(build, "propose_section", note("section")),
+            mock.patch.object(build, "propose_selection", note("selection")),
+        ):
+            yield seen
+
+    def _refine(self, plan_id: str, payload: dict, root: str):
+        return surface.dispatch("POST", f"/api/plans/{plan_id}/refine", json.dumps(payload).encode(), root)
+
+    def test_document_scope_takes_the_whole_document(self):
+        with tempfile.TemporaryDirectory() as root, self._lanes() as seen:
+            plan = _seeded()
+            status, _, body = self._refine(plan["id"], {"scope": "document", "request": "말투를 맞춰 줘"}, root)
+            self.assertEqual((status, json.loads(body)), (200, {"lane": "document"}))
+            self.assertEqual(seen["document"][0][:2], (plan["id"], "말투를 맞춰 줘"))
+            self.assertEqual(sorted(seen), ["document"])
+
+    def test_a_selection_wins_over_the_section_lane(self):
+        """좁은 범위가 우선한다 — 고른 글이 들어오면 칸 전체를 다시 쓰지 않는다."""
+        with tempfile.TemporaryDirectory() as root, self._lanes() as seen:
+            plan = _seeded()
+            payload = {"section": "overview", "request": "짧게", "selection": "한 줄"}
+            status, _, body = self._refine(plan["id"], payload, root)
+            self.assertEqual((status, json.loads(body)), (200, {"lane": "selection"}))
+            self.assertEqual(seen["selection"][0][:4], (plan["id"], "overview", "짧게", "한 줄"))
+            self.assertEqual(sorted(seen), ["selection"])
+
+    def test_the_section_lane_never_gets_the_selection(self):
+        """칸 전체 프롬프트는 대체 본문을 요구한다 — 고른 글을 함께 넘기면 칸이 그 뜻으로 다시 쓰인다."""
+        with tempfile.TemporaryDirectory() as root, self._lanes() as seen:
+            plan = _seeded()
+            status, _, body = self._refine(plan["id"], {"section": "overview", "request": "짧게"}, root)
+            self.assertEqual((status, json.loads(body)), (200, {"lane": "section"}))
+            self.assertEqual(seen["section"][0][:4], (plan["id"], "overview", "짧게", ""))
+            self.assertEqual(sorted(seen), ["section"])
+
+    def test_a_selection_outside_the_body_is_400_before_the_model_runs(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _with_overview(_seeded())
+            payload = {"section": "overview", "request": "짧게", "selection": "본문에 없는 글"}
+            status, _, body = self._refine(plan["id"], payload, root)
+            self.assertEqual(status, 400)
+            self.assertEqual(json.loads(body)["error"]["code"], "invalid_plan")
+
+
+class TestExportRoute(unittest.TestCase):
+    """내보내기는 읽기다 — JSON 관문 밖의 GET 이고 본문은 마크다운 원문이다."""
+
+    def test_export_answers_markdown_from_the_one_source(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _with_overview(_seeded())
+            status, ctype, body = surface.dispatch("GET", f"/api/plans/{plan['id']}/export", root=root)
+            self.assertEqual(status, 200)
+            self.assertEqual(ctype, "text/markdown; charset=utf-8")
+            text = body.decode("utf-8")
+            self.assertEqual(text, P.to_markdown(P.load_plan(plan["id"])))
+            self.assertTrue(text.startswith("# "))
+            for heading in ("## 개요", "## 속성", "## 가정", "## 심사"):
+                self.assertIn(heading, text)
+
+    def test_head_is_allowed_and_a_missing_plan_is_404(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            self.assertEqual(surface.dispatch("HEAD", f"/api/plans/{plan['id']}/export", root=root)[0], 200)
+            status, _, body = surface.dispatch("GET", "/api/plans/nope/export", root=root)
+            self.assertEqual(status, 404)
+            self.assertEqual(json.loads(body)["error"]["code"], "plan_not_found")
+
+    def test_export_is_not_a_write(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            status, _, body = surface.dispatch("POST", f"/api/plans/{plan['id']}/export", b"{}", root)
+            self.assertEqual(status, 404)
+            self.assertEqual(json.loads(body)["error"]["code"], "unknown_action")
+
+
+class TestSectionsEdit(unittest.TestCase):
+    """문서 전체 제안을 받는 자리 — 여러 칸이 **한 개정에** 저장된다."""
+
+    def _edit(self, plan_id: str, payload: dict, root: str):
+        return surface.dispatch("POST", f"/api/plans/{plan_id}/edit", json.dumps(payload).encode(), root)
+
+    def test_many_sections_land_in_one_revision(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            before = plan["revision"]
+            payload = {"op": "sections", "sections": {"overview": "- 한 줄", "value": "- 값"}}
+            status, _, body = self._edit(plan["id"], payload, root)
+            self.assertEqual(status, 200)
+            view = json.loads(body)
+            sections = view["plan"]["prd"]["sections"]
+            self.assertEqual((sections["overview"]["body"], sections["value"]["body"]), ("- 한 줄", "- 값"))
+            self.assertEqual(view["plan"]["revision"], before + 1)
+            self.assertEqual(view["readiness"]["prd"]["filled"], 2)
+
+    def test_one_unknown_section_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as root:
+            plan = _seeded()
+            payload = {"op": "sections", "sections": {"overview": "- 한 줄", "teleport": "- 없는 칸"}}
+            status, _, body = self._edit(plan["id"], payload, root)
+            self.assertEqual(status, 400)
+            self.assertEqual(json.loads(body)["error"]["code"], "invalid_plan")
+            self.assertEqual(P.load_plan(plan["id"])["prd"]["sections"]["overview"]["body"], "")
 
 
 if __name__ == "__main__":

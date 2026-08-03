@@ -22,15 +22,21 @@ from __future__ import annotations
 import copy
 import json
 import os
-import re
 import threading
-from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
 from .. import errors
 from ..io_files import read_json, write_json
+from . import intake
 
+# 온보딩 표의 정본은 `intake` 다. 계약이 `store.INTAKE_AXES` 로 부르므로 여기서 다시 낸다.
+INTAKE_AXES = intake.INTAKE_AXES
+INTAKE_STAGES = intake.INTAKE_STAGES
+
+# 순수 가산이라 버전을 안 올린다. 3으로 올리면 아래 `_archive_legacy`가 사용자의 `plans.json`을
+# 통째로 비켜 놓는데, 옛 문서는 `intake.checked`가 기본값을 채워 그대로 통과하므로 그 비용을
+# 치를 이유가 없다.
 SCHEMA_VERSION = 2
 
 # 커서가 설 수 있는 자리. 'done'은 문서 셋이 다 찬 뒤 사람이 닫은 상태다.
@@ -41,7 +47,7 @@ PRD_SECTIONS = (
     ("value", "핵심 가치", "사용자가 겪는 문제와 우리의 해결 방식, 다른 것과 무엇이 다른지."),
     ("target", "타겟 및 시나리오", "핵심 사용자 그룹과 그들이 실제로 이걸 쓰는 이야기."),
     ("success", "성공 지표", "무엇으로 성공을 재는지, 무엇이 위험한지, 아직 안 정한 것은 무엇인지."),
-    ("attributes", "속성 설정", "제품 갈래·사용자 역할·서비스 환경. 뒤 문서가 이 값을 그대로 씁니다."),
+    ("attributes", "속성 설정", "제품 갈래·사용자 역할·서비스 환경. 뒤 문서가 이 값을 그대로 써요."),
 )
 PRD_SECTION_IDS = tuple(section for section, _, _ in PRD_SECTIONS)
 _PRD_LABEL = {section: label for section, label, _ in PRD_SECTIONS}
@@ -60,21 +66,20 @@ CHAT_ROLES = ("user", "asgard")
 # 뒤 문서를 막는 이유. 코드는 계약이고, 사람 말은 화면이 고른다.
 BLOCKED_TEXT = {
     "prd.overview": "PRD의 개요를 먼저 채워 주세요",
-    "spec.feature": "기능 명세서에 기능을 최소 하나 정의해 주세요",
+    "spec.feature": "기능 명세서에 기능을 하나 이상 적어 주세요",
     "intake.idea": "무엇을 만들지 한 줄로 적어 주세요",
 }
 
-_ID = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
+_ID = intake.ROW_ID
+_MAX_TEXT = intake.MAX_TEXT
+_MAX_TITLE = intake.MAX_TITLE
 _MAX_PLAN_BYTES = 512_000
 _MAX_PLANS = 100
 _MAX_CHAT = 400
-_MAX_QUESTIONS = 12
 _MAX_ITEMS = 300
 _MAX_NODES = 200
 _MAX_EDGES = 400
 _MAX_SECTIONS = 40
-_MAX_TEXT = 8_000
-_MAX_TITLE = 200
 _LOCK = threading.Lock()
 
 
@@ -116,16 +121,20 @@ def _home() -> str:
     return workspace_home()
 
 
-def new_plan(idea: str, title: str = "", root: str = "") -> dict[str, Any]:
-    """한 줄에서 시작한다 — 고를 것은 없다. 제목은 안 주면 그 한 줄에서 깎는다.
+def new_plan(idea: str, title: str = "", root: str = "", mode: str = "", engine: Any = None) -> dict[str, Any]:
+    """한 줄에서 시작한다 — 고를 것은 갈래와 엔진뿐이고 둘 다 비워도 된다.
 
-    `root`는 이 기획이 **가리키는** 폴더지 있는 자리가 아니다. 비워도 된다 — 코드가 아직
-    없는 기획이 그렇고, 그게 기본이다."""
+    제목은 안 주면 그 한 줄에서 깎는다. `root`는 이 기획이 **가리키는** 폴더지 있는 자리가
+    아니다 — 코드가 아직 없는 기획이 그렇고, 그게 기본이다. `mode`가 비면 화면이 나중에
+    고르고, `engine`이 비면 그 자리의 기본 엔진으로 돈다."""
     idea = " ".join(str(idea or "").split())
     if not idea or len(idea) > _MAX_TEXT:
         raise ValueError(f"idea must be 1..{_MAX_TEXT} characters")
     name = " ".join(str(title or "").split()) or idea
     now = _now()
+    onboarding = intake.new(idea)
+    onboarding["mode"] = intake.checked_mode(mode)
+    onboarding["stage"] = _entry_stage(onboarding["mode"])
     return {
         "schema": SCHEMA_VERSION,
         "id": uuid4().hex,
@@ -135,8 +144,9 @@ def new_plan(idea: str, title: str = "", root: str = "") -> dict[str, Any]:
         "updated_at": now,
         "revision": 1,
         "phase": "intake",
-        "intake": {"idea": idea, "questions": []},
-        "chat": [{"id": _short("t"), "role": "user", "text": idea, "ts": now}],
+        "engine": _checked_engine(engine),
+        "intake": onboarding,
+        "chat": [{"id": intake.new_row_id("t"), "role": "user", "text": idea, "ts": now}],
         "prd": {
             "sections": {section: {"body": ""} for section in PRD_SECTION_IDS},
             "attributes": {"category": "", "roles": [], "environments": []},
@@ -173,7 +183,8 @@ def validate_plan(value: Any) -> dict[str, Any]:
     plan = copy.deepcopy(value)
     # 폴더는 선택이다 — 없는 것이 정상이라 없다고 거부하지 않는다(폴더 종속을 끊은 자리).
     plan["root"] = _checked_root(plan.get("root"))
-    plan["intake"] = _checked_intake(plan.get("intake"))
+    plan["engine"] = _checked_engine(plan.get("engine"))
+    plan["intake"] = intake.checked(plan.get("intake"))
     plan["chat"] = _checked_chat(plan.get("chat"))
     plan["prd"] = _checked_prd(plan.get("prd"))
     plan["spec"] = {"items": _checked_items(plan.get("spec"))}
@@ -195,30 +206,23 @@ def _checked_root(value: Any) -> str:
     return os.path.abspath(os.path.expanduser(text))
 
 
-def _checked_intake(intake: Any) -> dict[str, Any]:
-    if not isinstance(intake, dict):
-        raise ValueError("intake must be an object")
-    idea = intake.get("idea")
-    if not isinstance(idea, str) or not idea.strip() or len(idea) > _MAX_TEXT:
-        raise ValueError("intake.idea is required")
-    raw = intake.get("questions")
-    if not isinstance(raw, list) or len(raw) > _MAX_QUESTIONS:
-        raise ValueError(f"intake.questions must be a list with at most {_MAX_QUESTIONS} items")
-    seen: set[str] = set()
-    questions = []
-    for row in raw:
-        if not isinstance(row, dict):
-            raise ValueError("each intake question must be an object")
-        qid, text, answer = row.get("id"), row.get("q"), row.get("a", "")
-        if not isinstance(qid, str) or not _ID.fullmatch(qid) or qid in seen:
-            raise ValueError("each intake question needs a unique valid id")
-        if not isinstance(text, str) or not text.strip() or len(text) > _MAX_TITLE * 3:
-            raise ValueError("each intake question needs text")
-        if not isinstance(answer, str) or len(answer) > _MAX_TEXT:
-            raise ValueError("each intake answer must be text")
-        seen.add(qid)
-        questions.append({"id": qid, "q": text.strip(), "a": answer})
-    return {"idea": " ".join(idea.split()), "questions": questions}
+def _checked_engine(value: Any) -> dict[str, str]:
+    """이 기획이 쓰는 엔진. 둘 다 빈 값이면 그 자리의 기본 엔진으로 돈다 — 비어 있는 것이 기본이다."""
+    row = value if isinstance(value, dict) else {}
+    out = {}
+    for key in ("provider", "model"):
+        text = row.get(key, "")
+        if not isinstance(text, str) or len(text) > _MAX_TITLE:
+            raise ValueError(f"engine.{key} must be a short string")
+        out[key] = text.strip()
+    return out
+
+
+def _entry_stage(mode: str) -> str:
+    """갈래를 고른 직후 서는 단계. `auto`는 문답을 안 돌므로 확인 단계로 바로 간다."""
+    if not mode:
+        return "entry"
+    return "confirm" if mode == "auto" else "frame"
 
 
 def _checked_chat(chat: Any) -> list[dict[str, Any]]:
@@ -439,29 +443,36 @@ def readiness(value: Any) -> dict[str, Any]:
     """뒤 문서를 만들 재료가 있는가 — 전부 내용에서 파생한다(저장하지 않는다).
 
     막는 이유는 권한이 아니라 **빈 입력**이다: 개요가 비면 기능 명세서가 읽을 것이 없고,
-    기능이 하나도 없으면 유저 플로우가 이을 것이 없다."""
+    기능이 하나도 없으면 유저 플로우가 이을 것이 없다.
+
+    `prd`의 `score`·`grade`·`blocking`은 심사(`review`) 결과를 같이 실은 값이다. **판정에는
+    안 쓰인다** — `ready`는 여전히 개요 한 칸이 찼는가만 본다."""
+    # `review`가 이 모듈의 PRD 표를 읽는다 — 최상단에서 import 하면 순환이다.
+    from .review import review as review_prd
+
     plan = validate_plan(value)
+    card = review_prd(plan)
     sections = plan["prd"]["sections"]
-    filled = [s for s in PRD_SECTION_IDS if sections[s]["body"].strip()]
-    overview = "overview" in filled
+    # 채운 칸의 판정은 심사 쪽 하나다. 여기서 본문만 세면 속성 설정은 값 셋이 다 차도 늘 빈 칸으로
+    # 잡혀, 완성된 기획이 영원히 `4/5`로 보인다 — 속성의 뜻은 본문이 아니라 값 세 칸이 진다.
+    filled = [s for s in PRD_SECTION_IDS if card["sections"][s]["filled"]]
+    # 기능 명세서를 여는 판정만은 본문을 본다. 뒤 문서가 읽는 것이 개요 본문이라서다.
+    overview = bool(sections["overview"]["body"].strip())
     features = [i for i in plan["spec"]["items"] if i["level"] == 2]
-    answered = [q for q in plan["intake"]["questions"] if q["a"].strip()]
     spec_blocked = [] if overview else ["prd.overview"]
     flow_blocked = list(spec_blocked) + ([] if features else ["spec.feature"])
     return {
         "phase": plan["phase"],
-        "intake": {
-            "ready": True,
-            "asked": len(plan["intake"]["questions"]),
-            "answered": len(answered),
-            "blocked": [],
-        },
+        "intake": intake.readiness_view(plan["intake"]),
         "prd": {
             "ready": overview,
             "filled": len(filled),
             "total": len(PRD_SECTION_IDS),
             "sections": filled,
             "blocked": [],
+            "score": card["score"],
+            "grade": card["grade"],
+            "blocking": card["blocking"],
         },
         "spec": {
             "ready": not spec_blocked,
@@ -505,6 +516,9 @@ def list_plans(root: str = "") -> dict[str, Any]:
         "schema": SCHEMA_VERSION,
         "active_plan_id": state["active_plan_id"],
         "plans": [_head(plan) for plan in plans],
+        # 축·단계 표는 여기로 나간다 — 화면이 HTML에 베껴 적으면 표가 두 벌이 된다.
+        "axes": intake.axes_table(),
+        "stages": intake.stages_table(),
     }
 
 
@@ -521,6 +535,10 @@ def _head(plan: dict[str, Any]) -> dict[str, Any]:
         "prd_total": ready["prd"]["total"],
         "features": ready["spec"]["features"],
         "nodes": ready["flow"]["nodes"],
+        "engine": dict(plan.get("engine") or {"provider": "", "model": ""}),
+        "mode": ready["intake"]["mode"],
+        "intake_answered": ready["intake"]["answered"],
+        "intake_asked": ready["intake"]["asked"],
     }
 
 
@@ -531,8 +549,8 @@ def load_plan(plan_id: str) -> dict[str, Any]:
     raise KeyError(plan_id)
 
 
-def create_plan(idea: str, title: str = "", root: str = "") -> dict[str, Any]:
-    plan = new_plan(idea, title, root)
+def create_plan(idea: str, title: str = "", root: str = "", mode: str = "", engine: Any = None) -> dict[str, Any]:
+    plan = new_plan(idea, title, root, mode, engine)
     with _LOCK:
         state = _load_state()
         if len(state["plans"]) >= _MAX_PLANS:
@@ -600,7 +618,7 @@ def append_chat(plan: dict[str, Any], role: str, text: str) -> dict[str, Any]:
     body = str(text or "").strip()
     if not body:
         raise ValueError("chat text is required")
-    turn = {"id": _short("t"), "role": role, "text": body[:_MAX_TEXT], "ts": _now()}
+    turn = {"id": intake.new_row_id("t"), "role": role, "text": body[:_MAX_TEXT], "ts": _now()}
     chat = plan.setdefault("chat", [])
     chat.append(turn)
     if len(chat) > _MAX_CHAT:
@@ -615,6 +633,32 @@ def set_phase(plan: dict[str, Any], phase: str) -> None:
     if phase in {"spec", "flow"}:
         require_ready(plan, phase)
     plan["phase"] = phase
+
+
+def set_mode(plan_id: str, mode: str) -> dict[str, Any]:
+    """온보딩 갈래를 고른다 — 기획 하나에 한 번뿐이다.
+
+    같은 갈래를 다시 주는 것은 통과시킨다(화면이 재시도할 수 있다). 이미 다른 갈래로
+    시작했으면 `ValueError` — 두 갈래는 뒤 절차가 달라서 도중에 못 바꾼다."""
+    chosen = intake.checked_mode(mode)
+    if not chosen:
+        raise ValueError("mode must be auto or guided")
+
+    def change(draft: dict[str, Any]) -> None:
+        current = draft["intake"]["mode"]
+        if current and current != chosen:
+            raise ValueError("이 기획은 이미 다른 갈래로 시작했어요")
+        draft["intake"]["mode"] = chosen
+        if draft["intake"]["stage"] in ("", "entry"):
+            draft["intake"]["stage"] = _entry_stage(chosen)
+
+    return mutate(plan_id, change)
+
+
+def set_engine(plan_id: str, provider: str = "", model: str = "") -> dict[str, Any]:
+    """이 기획이 쓸 엔진을 바꾼다. 둘 다 빈 값이면 그 자리의 기본 엔진으로 되돌린다."""
+    engine = _checked_engine({"provider": provider, "model": model})
+    return mutate(plan_id, lambda draft: draft.__setitem__("engine", engine))
 
 
 def spec_tree(value: Any) -> list[dict[str, Any]]:
@@ -634,10 +678,14 @@ def next_step(value: Any) -> dict[str, str]:
     """지금 이어서 할 일 한 가지. 화면의 큰 버튼 하나가 이 값을 쓴다."""
     plan = validate_plan(value)
     ready = readiness(plan)
+    onboarding = ready["intake"]
     if not plan["prd"]["sections"]["overview"]["body"].strip():
-        if not plan["intake"]["questions"]:
-            return {"action": "ask", "label": "먼저 몇 가지 여쭤볼게요"}
-        return {"action": "draft_prd", "label": "여기까지로 PRD 초안 만들기"}
+        return _intake_step(onboarding)
+    # PRD를 쓴 뒤에도 확인 단계의 질문은 남는다. 자동초안이 추측으로 채운 줄이 걸린 축을
+    # 되묻는 자리라, 이걸 지나치면 근거 없는 PRD가 그대로 기능 명세서의 입력이 된다.
+    open_question = onboarding["open_question"]
+    if open_question and open_question["stage"] == "confirm":
+        return {"action": "answer", "label": "이 질문에 답해 주세요"}
     if ready["prd"]["filled"] < ready["prd"]["total"]:
         return {"action": "fill_prd", "label": "PRD의 남은 칸 채우기"}
     if not ready["spec"]["items"]:
@@ -647,12 +695,19 @@ def next_step(value: Any) -> dict[str, str]:
     return {"action": "review", "label": "문서 셋을 함께 점검하기"}
 
 
+def _intake_step(onboarding: dict[str, Any]) -> dict[str, str]:
+    """PRD를 쓰기 전의 다음 한 걸음 — 갈래 고르기 · 답하기 · 더 묻기 · 초안 쓰기 순서다."""
+    if not onboarding["mode"]:
+        return {"action": "choose_mode", "label": "어떻게 시작할까요"}
+    if onboarding["open_question"]:
+        return {"action": "answer", "label": "이 질문에 답해 주세요"}
+    if onboarding["can_ask"]:
+        return {"action": "ask", "label": "먼저 몇 가지 여쭤볼게요"}
+    return {"action": "draft_prd", "label": "여기까지로 PRD 초안 만들기"}
+
+
 def new_id(prefix: str) -> str:
-    return _short(prefix)
-
-
-def _short(prefix: str) -> str:
-    return f"{prefix}-{uuid4().hex[:10]}"
+    return intake.new_row_id(prefix)
 
 
 def _load_state() -> dict[str, Any]:
@@ -669,10 +724,10 @@ def _load_state() -> dict[str, Any]:
         # 그렇다고 지우지도 않는다: 비켜 두고 빈 저장소에서 시작한다.
         _archive_legacy(raw)
         return _empty()
-    return _checked_state(raw)
+    return checked_state(raw)
 
 
-def _checked_state(raw: dict[str, Any]) -> dict[str, Any]:
+def checked_state(raw: dict[str, Any]) -> dict[str, Any]:
     plans = raw.get("plans")
     if not isinstance(plans, list) or len(plans) > _MAX_PLANS:
         raise ValueError("invalid plan list")
@@ -701,52 +756,16 @@ def _write_state(state: dict[str, Any]) -> None:
     write_json(store_path(), state)
 
 
-# --- 폴더에 갇혀 있던 기획 들여오기 -------------------------------------------
+def adopt(plans: list[dict[str, Any]], root: str = "") -> int:
+    """다른 자리에서 온 기획을 워크스페이스에 더한다 — 더한 개수를 돌려준다.
 
-
-def pending_roots(roots: list[str]) -> list[str]:
-    """아직 안 들여온 폴더 기획을 든 자리들 — 창이 '들여올까요?'를 물을 근거."""
-    return [
-        root
-        for root in roots
-        if root and os.path.isfile(project_store_path(root)) and not os.path.isfile(_import_mark(root))
-    ]
-
-
-def import_root(root: str, *, force: bool = False) -> dict[str, Any]:
-    """폴더 하나의 기획을 워크스페이스로 들여온다.
-
-    **원본은 안 지운다.** 반입이 뭔가 잘못됐을 때 돌아갈 곳이 있어야 하고, 그 폴더를 아직
-    옛 버전으로 여는 사람이 있을 수 있다. 두 번 불러도 두 번 안 들어온다 — 표식 파일이
-    '이미 왔다'를 쓴다. 들어온 기획은 그 폴더를 `root`로 가리킨다(있는 자리가 아니라 링크)."""
-    root = os.path.abspath(root)
-    source = project_store_path(root)
-    out: dict[str, Any] = {"root": root, "imported": False, "plans": 0, "reason": ""}
-    if not os.path.isfile(source):
-        out["reason"] = "폴더에 기획 파일이 없습니다"
-        return out
-    if os.path.isfile(_import_mark(root)) and not force:
-        out["reason"] = "이미 들여왔습니다"
-        return out
-    raw = read_json(source)
-    if not isinstance(raw, dict):
-        out["reason"] = "기획 파일을 읽을 수 없습니다"
-        return out
-    if raw.get("schema") != SCHEMA_VERSION:
-        out["reason"] = "옛 형상이라 옮길 것이 없습니다"
-        _mark_imported(root, 0)
-        return out
-    try:
-        incoming = _checked_state(raw)["plans"]
-    except ValueError as exc:
-        out["reason"] = f"기획 파일이 정본 형상이 아닙니다: {exc}"
-        return out
-
+    이미 있는 id 는 건너뛴다(두 번 불러도 두 벌이 안 생긴다). `root` 를 주면 폴더 링크가 빈
+    기획에만 그 값을 건다 — 링크일 뿐 기획을 저장하는 자리는 아니다."""
     with _LOCK:
         state = _load_state()
         known = {plan["id"] for plan in state["plans"]}
         added = 0
-        for plan in incoming:
+        for plan in plans:
             if plan["id"] in known or len(state["plans"]) >= _MAX_PLANS:
                 continue
             plan["root"] = plan.get("root") or root
@@ -755,18 +774,8 @@ def import_root(root: str, *, force: bool = False) -> dict[str, Any]:
             added += 1
         if added:
             _write_state(state)
-    _mark_imported(root, added)
-    out.update({"imported": True, "plans": added, "source": source})
-    return out
-
-
-def _import_mark(root: str) -> str:
-    return os.path.join(os.path.abspath(root), ".asgard", "plan", "imported.json")
-
-
-def _mark_imported(root: str, count: int) -> None:
-    write_json(_import_mark(root), {"imported_at": _now(), "plans": count})
+    return added
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return intake.stamp()

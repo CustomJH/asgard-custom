@@ -14,13 +14,17 @@ from __future__ import annotations
 from typing import Any
 
 from .. import errors
-from . import store
+from . import intake, store
 
 
 class UnknownOp(errors.InvalidInput, ValueError):
     """모르는 편집 연산 — 화면과 서버가 아는 연산 목록이 갈렸다는 뜻이다."""
 
     code = "unknown_edit"
+
+
+# 건너뛴 질문이 대화에 남기는 답. 빈 답과 다르다 — 안 하기로 한 것이라 다시 안 묻는다.
+SKIPPED_NOTE = "건너뛰었어요"
 
 
 def apply(plan_id: str, op: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -56,6 +60,21 @@ def _section(plan: dict[str, Any], payload: dict[str, Any]) -> None:
     plan["prd"]["sections"][section]["body"] = str(payload.get("body") or "")
 
 
+def _sections(plan: dict[str, Any], payload: dict[str, Any]) -> None:
+    """PRD 여러 칸을 **한 개정에** 쓴다 — 문서 전체 다듬기의 제안을 받는 자리.
+
+    칸마다 `section`을 따로 보내면 개정이 칸 수만큼 늘고, 중간에 하나가 막히면 절반만 반영된
+    문서가 남는다. 모르는 sid 가 하나라도 있으면 한 칸도 안 쓴다."""
+    incoming = payload.get("sections")
+    if not isinstance(incoming, dict) or not incoming:
+        raise ValueError("sections is required")
+    unknown = sorted(sid for sid in incoming if sid not in store.PRD_SECTION_IDS)
+    if unknown:
+        raise ValueError(f"unknown PRD section: {', '.join(unknown)}")
+    for sid, body in incoming.items():
+        plan["prd"]["sections"][sid]["body"] = str(body or "")
+
+
 def _attributes(plan: dict[str, Any], payload: dict[str, Any]) -> None:
     attrs = plan["prd"]["attributes"]
     for key in ("category", "roles", "environments"):
@@ -64,16 +83,69 @@ def _attributes(plan: dict[str, Any], payload: dict[str, Any]) -> None:
 
 
 def _answer(plan: dict[str, Any], payload: dict[str, Any]) -> None:
-    """온보딩 답 하나. 답은 대화에도 남는다 — 문답이 대화 밖에 있으면 맥락이 갈린다."""
-    question_id = str(payload.get("question") or "")
+    """온보딩 답 하나. 답이 들어오면 그 질문의 축을 `covered`로 옮긴다.
+
+    답은 대화에도 남는다 — 문답이 대화 밖에 있으면 모델이 읽는 것과 사람이 보는 것이 갈린다.
+    빈 답은 아무 상태도 안 바꾼다: 아직 안 한 것과 안 하기로 한 것은 다르고, 후자는
+    `intake.skip`이 든다.
+
+    확인 질문(`kind == "check"`)의 답은 축을 `covered`로 올리지 않는다. 예·아니오로 추측을
+    맞다고 한 것은 근거가 아니라 확인된 가정이고, 올려 버리면 `grounded_sections`가 그 PRD
+    칸을 근거 있는 칸으로 셈한다."""
+    row = _question(plan, str(payload.get("question") or ""))
     text = str(payload.get("text") or "").strip()
+    row["a"] = text
+    if not text:
+        return
+    row["state"] = "answered"
+    if row["kind"] == "check":
+        _confirm_assumption(plan["intake"], row)
+    else:
+        intake.mark(plan["intake"]["coverage"], row["axis"], "covered", source=row["id"])
+    _log_exchange(plan, row, text)
+
+
+def _skip(plan: dict[str, Any], payload: dict[str, Any]) -> None:
+    """질문 하나를 건너뛴 것으로 표시한다 — 다시 안 묻는다.
+
+    그 축은 `skipped`로 잠기고, 그 축에 대응하는 PRD 칸은 근거 없이 채운 자리라 가정 목록에
+    오른다(`readiness().intake.grounded_sections`가 그 칸을 뺀다).
+
+    건너뛴 것도 대화에 남는다. 답만 남기면 화면이 건너뛴 기록을 대화 밖에 따로 들고 있어야
+    하고, 그 목록이 지금 물을 것 위에 계속 따라 붙는다."""
+    row = _question(plan, str(payload.get("id") or payload.get("question") or ""))
+    row["state"] = "skipped"
+    if row["axis"]:
+        intake.mark(plan["intake"]["coverage"], row["axis"], "skipped", source=row["id"])
+        intake.note_assumption(plan["intake"], row["axis"])
+    _log_exchange(plan, row, SKIPPED_NOTE)
+
+
+def _log_exchange(plan: dict[str, Any], question: dict[str, Any], answer: str) -> None:
+    """문답 한 쌍을 대화에 적는다 — 물은 쪽과 답한 쪽을 따로.
+
+    여태는 `질문\\n→ 답` 한 줄로 묶어 적었다. 묶인 줄은 누가 말한 것으로도 못 세워서 화면이
+    대화를 못 쓰고 문답 표를 따로 그렸고, 같은 답이 두 자리에 섰다. 나눠 적으면 대화 하나가
+    정본이 된다 — 모델이 읽는 것과 사람이 보는 것이 같은 줄이다."""
+    store.append_chat(plan, "asgard", question["q"])
+    store.append_chat(plan, "user", answer)
+
+
+def _question(plan: dict[str, Any], question_id: str) -> dict[str, Any]:
     for row in plan["intake"]["questions"]:
         if row["id"] == question_id:
-            row["a"] = text
-            if text:
-                store.append_chat(plan, "user", f"{row['q']}\n→ {text}")
-            return
+            return row
     raise KeyError(question_id)
+
+
+def _confirm_assumption(row: dict[str, Any], question: dict[str, Any]) -> None:
+    """확인 질문에 답이 오면 그 축의 가정을 확인된 것으로 표시한다.
+
+    `confirmed`는 사용자가 동의했다는 뜻이 아니라 **판정을 받았다**는 뜻이다. 아니라고 답한
+    가정도 다시 묻지 않는다 — 그 뒤는 PRD 칸을 고치는 일이지 문답이 아니다."""
+    for item in row["assumptions"]:
+        if item["axis"] == question["axis"]:
+            item["confirmed"] = True
 
 
 def _questions(plan: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -222,8 +294,13 @@ _OPS = {
     "root": _root,
     "phase": _phase,
     "section": _section,
+    "sections": _sections,
     "attributes": _attributes,
     "answer": _answer,
+    # 계약이 부르는 이름과 여기 있던 이름이 갈린다 — 둘 다 같은 함수로 받는다. 화면이 어느
+    # 쪽을 부르든 통해야 하고, 이름 하나 때문에 온보딩이 통째로 멈추는 것이 더 비싸다.
+    "intake.answer": _answer,
+    "intake.skip": _skip,
     "questions": _questions,
     "item.save": _item_save,
     "item.delete": _item_delete,
