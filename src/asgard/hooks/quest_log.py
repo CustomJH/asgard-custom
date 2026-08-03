@@ -2199,6 +2199,97 @@ def _ticket_finish(emit, ticket: dict, now: float, max_attempts: int, status, er
     return 0, {"finished": ticket["id"], "status": final_status, "attempt": attempts}
 
 
+def _siege_register(orc, root: str, run_id: str, tickets: dict) -> dict[str, str]:
+    """이 퀘스트의 배정 단위를 Task 로 장부에 세우고 unit → task id 표를 돌려준다.
+
+    `access` 가 곧 의존이다. `task_create` 는 만들 때 의존을 받고 나중에 더할 수 없으므로,
+    `topo_waves` 로 단위를 의존이 앞서는 순서로 편 뒤 그 순서대로 만든다. 이미 있는 단위는
+    다시 만들지 않는다 — 두 번째 claim 이 같은 Task 를 또 만들면 DAG 가 갈린다.
+    """
+    known = {str(uid): ticket for uid, ticket in tickets.items()}
+    order = orc.topo_waves(
+        list(known),
+        {uid: [a for a in (ticket.get("access") or []) if str(a) in known] for uid, ticket in known.items()},
+    )
+    by_unit: dict[str, str] = {}
+    for wave in order:
+        for uid in wave:
+            existing = orc.task_for_unit(root, run_id, uid)
+            if existing is not None:
+                by_unit[uid] = existing["id"]
+                continue
+            deps = [by_unit[str(a)] for a in (known[uid].get("access") or []) if str(a) in by_unit]
+            spec = str(known[uid].get("subtask") or "").strip() or uid
+            by_unit[uid] = orc.task_create(root, run_id, spec, deps=deps, unit_id=uid)["id"]
+    return by_unit
+
+
+def _native_loop_owns_the_ledger(worker_id) -> bool:
+    """이 단위를 네이티브 Trinity 루프가 잡았는가.
+
+    네이티브 모드도 이 훅으로 티켓을 잡는다(`agent/heimdall/ticket_lease.py`). 하지만 그
+    모드에서는 `agent/heimdall/bifrost.py` 가 이미 같은 배차를 장부에 적고 있어서, 여기서 또
+    적으면 한 Task 를 둘이 연다 — 뒤에 부른 쪽이 도메인에 거절당해 조용히 버려지고, 어느 쪽이
+    이겼는지는 실행마다 달라진다. 장부의 주인은 한 프로세스여야 한다.
+
+    표식은 `ticket_lease._claim` 이 넘기는 워커 id 접두사다. 그쪽이 형식을 바꾸면 이 판정이
+    조용히 무너지므로 `tests/test_siege_act.py` 가 두 문자열을 함께 붙든다.
+    """
+    return str(worker_id or "").startswith("native:")
+
+
+def _siege_mirror(root: str, qid: str, cmd: str, unit: str, payload: dict) -> None:
+    """티켓 전이를 배차 장부(`.asgard/orchestration.db`)에도 적는다.
+
+    호스트 모드(Claude Code·Cursor·Codex)에서 장부가 적히는 **유일한 경로**다. 네이티브 루프는
+    `agent/heimdall/bifrost.py` 가 같은 계약을 프로세스 안에서 부르지만 세 호스트 모드에는 그
+    루프가 없어서, 여기가 없으면 그 모드들에서 `asgard siege` 는 언제나 빈 장부를 보여 준다.
+
+    실패는 삼킨다. 장부는 퀘스트 로그에서 파생된 것이고(`asgard.orchestration` 모듈 주석),
+    파생을 얻으려다 정본의 전이를 잃으면 안 된다. 그래서 이 호출은 Quest lock 밖에 있다 —
+    SQLite 대기가 티켓 전이의 임계 구역을 늘리면 병렬 워커가 서로를 기다린다.
+    """
+    try:
+        from asgard import orchestration as orc
+
+        events = load_events(root, qid)
+        tickets = fold_tickets(events)
+        owner = payload.get("worker_id") or (tickets.get(str(unit)) or {}).get("worker_id")
+        if _native_loop_owns_the_ledger(owner):
+            return
+        objective = next((e.get("request") for e in events if e.get("request")), "") or qid
+        run = orc.run_bind(root, qid, str(objective)[:500], coordinator="heimdall")
+        by_unit = _siege_register(orc, root, run["id"], tickets)
+        task_id = by_unit.get(str(unit))
+        if not task_id:
+            return
+        if cmd == "ticket-claim":
+            orc.open_dispatch(root, task_id, worker=str(payload.get("worker_id") or ""), role="worker")
+            return
+        live = orc.dispatch_show(root, task_id=task_id)
+        if live is None or live["state"] != "ready":
+            return
+        if cmd == "ticket-heartbeat":
+            orc.heartbeat(root, run["id"], task_id, live["id"])
+            return
+        if cmd == "ticket-finish":
+            ticket = tickets.get(str(unit)) or {}
+            outcome = "succeeded" if payload.get("status") == "done" else "failed"
+            orc.worker_done(
+                root,
+                run["id"],
+                task_id,
+                live["id"],
+                outcome,
+                subject=str(ticket.get("error") or "")[:200] or outcome,
+                files_modified=[str(f) for f in (ticket.get("files") or [])][:50],
+                sender=str(ticket.get("worker_id") or ""),
+            )
+    except Exception:
+        # 장부가 없거나 잠겨 있거나 asgard 를 못 불러도 티켓 전이는 이미 정본에 적혔다.
+        return
+
+
 def ticket_runtime(
     root: str,
     qid: str,
@@ -2213,7 +2304,7 @@ def ticket_runtime(
     status: str | None = None,
     error: str | None = None,
 ) -> tuple[int, dict]:
-    """Ticket claim/lease 상태 전이를 Quest lock 아래에서 검사+기록한다."""
+    """Ticket claim/lease 상태 전이를 Quest lock 아래에서 검사+기록하고, 배차 장부에 옮긴다."""
     now = time.time()
     lease_seconds = max(1, min(int(lease_seconds), 86400))
     max_attempts = max(1, min(int(max_attempts), 20))
@@ -2228,20 +2319,23 @@ def ticket_runtime(
 
         tickets = fold_tickets(events)
         if cmd == "ticket-recover":
-            return _ticket_recover(emit, tickets, now, max_attempts)
-        ticket = tickets.get(str(unit))
-        if not ticket:
+            code, payload = _ticket_recover(emit, tickets, now, max_attempts)
+        elif not (ticket := tickets.get(str(unit))):
             return 1, {"error": "unknown ticket", "unit": unit}
-        if cmd == "ticket-claim":
-            return _ticket_claim(emit, tickets, ticket, now, worker, lease_seconds, max_attempts)
-        denial = _ticket_lease_denial(ticket, claim_token, now)
-        if denial:
+        elif cmd == "ticket-claim":
+            code, payload = _ticket_claim(emit, tickets, ticket, now, worker, lease_seconds, max_attempts)
+        elif denial := _ticket_lease_denial(ticket, claim_token, now):
             return 1, denial
-        if cmd == "ticket-heartbeat":
-            return _ticket_heartbeat(emit, ticket, now, lease_seconds, max_attempts)
-        if cmd == "ticket-finish":
-            return _ticket_finish(emit, ticket, now, max_attempts, status, error)
-        return 2, {"error": "unknown ticket runtime command"}
+        elif cmd == "ticket-heartbeat":
+            code, payload = _ticket_heartbeat(emit, ticket, now, lease_seconds, max_attempts)
+        elif cmd == "ticket-finish":
+            code, payload = _ticket_finish(emit, ticket, now, max_attempts, status, error)
+        else:
+            return 2, {"error": "unknown ticket runtime command"}
+    # 장부는 lock 밖에서 적는다 — 아래를 참조.
+    if code == 0 and unit and cmd != "ticket-recover":
+        _siege_mirror(root, qid, cmd, str(unit), payload)
+    return code, payload
 
 
 # ── CLI 갈래 ──────────────────────────────────────────────────────

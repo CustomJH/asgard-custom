@@ -433,7 +433,10 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     # 자기는 설정만 읽고 쓰지만 저장소 뿌리를 health 에서 받아 온다.
                     "orchestrate",
                     "plan_api",
+                    # siege(장부 읽기)·siege_act(장부 몰기) — 형제를 안 부른다. 둘 다 저장소 뿌리를
+                    # health 에서 직접 받으므로 같은 등급이고, 그래서 서로를 부르면 빨개진다.
                     "siege",
+                    "siege_act",
                     "studio",
                     "surface",
                     "sync",
