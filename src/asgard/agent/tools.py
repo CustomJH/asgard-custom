@@ -262,7 +262,13 @@ def _confine(root: str, path: str) -> str:
 
 def _hook_guard(root: str, module: str, tool_input: dict) -> str | None:
     """가드 훅을 배포 형태(subprocess stdin 계약)로 통과. 차단이면 사유 문자열, 통과면 None.
-    fail-open (훅 오류 = 통과) — 로직 중복 금지, 훅이 단일 출처."""
+    fail-open (훅 오류 = 통과) — 로직 중복 금지, 훅이 단일 출처.
+
+    훅은 아스가르드 자신이고 프로파일 홈에서 설정을 읽는다. `profiles.scoped()`가 contextvar라
+    자식에게 안 따라가므로 env로 명시해 넘긴다 — 안 넘기면 에이전트 A의 세션을 B의 설정으로
+    판정하게 된다."""
+    from ..profiles import subprocess_env
+
     try:
         p = subprocess.run(
             [sys.executable, "-m", module],
@@ -273,6 +279,7 @@ def _hook_guard(root: str, module: str, tool_input: dict) -> str | None:
             cwd=root,
             encoding="utf-8",
             errors="replace",
+            env=subprocess_env(),
         )
         if p.returncode != 0:
             return (p.stderr or p.stdout or module + " 차단").strip()[:500]
@@ -937,6 +944,11 @@ def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None)
     if blocked:
         raise ToolError(blocked)
     group: dict = {"start_new_session": True} if os.name == "posix" else {}
+    # 이 명령은 **에이전트를 대신해** 도는 것이라, 그 안에서 `asgard …`를 부르면 같은 에이전트로
+    # 돌아야 한다. 안 넘기면 끈끈한 활성으로 떨어져 남의 홈에 쓴다. 얹는 것은 아스가르드
+    # 이름공간의 두 키뿐이라 사용자 명령의 나머지 환경은 그대로다.
+    from ..profiles import subprocess_env
+
     p = subprocess.Popen(
         cmd,
         shell=True,
@@ -946,6 +958,7 @@ def run_bash(root: str, tool_input: dict, cancel: threading.Event | None = None)
         text=True,
         encoding="utf-8",
         errors="replace",
+        env=subprocess_env(),
         **group,
     )
     out_buf, err_buf = _TailBuffer(), _TailBuffer(4000)

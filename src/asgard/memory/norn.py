@@ -1017,10 +1017,17 @@ def wake(root: str, d: str | None = None) -> str | None:
 
 
 def _spawn_auto(root: str) -> bool:
-    """`memory norn --auto`를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관)."""
+    """`memory norn --auto`를 분리 스폰 — 호출자의 수명과 끊는다 (훅 타임아웃·턴 종료 무관).
+
+    **에이전트를 env로 명시해서 넘긴다.** `profiles.scoped()`는 contextvar라 자식에게 안 따라간다
+    — 안 넘기면 이 자식은 끈끈한 활성 에이전트로 떨어져, 에이전트 A로 돌던 세션의 기억을 B의
+    위키에 쓴다. 턴마다 도는 자식이라 조용히 쌓이고, 기억은 되돌리기가 가장 어렵다
+    (hermes 이슈 18594가 같은 사고였다)."""
     import shutil as _shutil
     import subprocess
     import sys
+
+    from ..profiles import subprocess_env
 
     exe = _shutil.which("asgard") or sys.argv[0]
     try:
@@ -1031,6 +1038,7 @@ def _spawn_auto(root: str) -> bool:
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             cwd=root or None,
+            env=subprocess_env(),
         )
     except Exception:
         return False
