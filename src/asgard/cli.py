@@ -118,7 +118,7 @@ def agent_show(
 
 @agent_app.command("open", help="open one agent's Studio window, reusing its live window unless --new is set")
 def agent_open(
-    name: str = typer.Argument(..., help="agent id"),
+    name: str = typer.Argument(None, help="agent id; omit to pick from configured and built-in agents"),
     new: bool = typer.Option(False, "--new", help="start another window even when this agent already has one"),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
@@ -321,9 +321,22 @@ def agent_where(
     raise typer.Exit(run_agent_where(json_out=json_, quiet=quiet))
 
 
-@app.command(help="open the Asgard terminal (Heimdall) — chat, connect a provider, run tasks")
+class _StartCommand(typer.core.TyperCommand):
+    """값 없는 --agent를 같은 명령의 선택 플래그로 판정해요."""
+
+    def parse_args(self, ctx, args):
+        values = list(args)
+        for index, value in enumerate(values):
+            if value == "--agent" and (index + 1 == len(values) or values[index + 1].startswith("-")):
+                values[index] = "--agents"
+        return super().parse_args(ctx, values)
+
+
+@app.command(cls=_StartCommand, help="open the Asgard terminal (Heimdall) — chat, connect a provider, run tasks")
 def start(
     check: bool = typer.Option(False, "--check", help="just run the checks and stop, without opening — for CI"),
+    agent: str = typer.Option(None, "--agent", help="agent to start as; overrides the global --agent option"),
+    agents: bool = typer.Option(False, "--agents", help="pick from configured and built-in agents"),
     provider: str = typer.Option(
         None,
         "--provider",
@@ -340,11 +353,22 @@ def start(
     ),
     sandbox_name: str = typer.Option(None, "--sandbox-name", help="go back into a walled-off workspace you named"),
 ) -> None:
+    from .commands.agent import select_agent
     from .commands.start import run_start
 
+    selected = (
+        select_agent(
+            agent,
+            title="시작할 에이전트를 골라요",
+            retry="`asgard start --agent <이름>`으로 이름을 대고 다시 부르세요",
+        )
+        if agent is not None or agents
+        else None
+    )
     raise typer.Exit(
         run_start(
             check_only=check,
+            agent=selected,
             provider=provider,
             model=model,
             cont=cont,

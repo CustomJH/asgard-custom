@@ -17,7 +17,7 @@ import json
 import os
 import time
 
-from .. import errors, profiles, swarm, ui
+from .. import errors, picker, profiles, swarm, ui
 from .health import _project_root
 
 
@@ -53,12 +53,86 @@ def _fmt_row(row: dict, id_width: int) -> str:
     return f"  {mark} {name}  {pages.rjust(5)}  {kind.ljust(14)}  {ui.dim(desc)}"
 
 
+def _inventory() -> tuple[list[dict], dict[str, dict]]:
+    rows = profiles.listing()
+    made = {row["id"] for row in rows}
+    return rows, {name: row for name, row in profiles.builtin_roster().items() if name not in made}
+
+
+def _render_inventory(rows: list[dict], available: dict[str, dict]) -> None:
+    ui.head(f"agent · 에인헤랴르 — {len(rows)}")
+    width = max((len(row["id"]) for row in rows), default=7)
+    for row in rows:
+        print(_fmt_row(row, width))
+    if available:
+        ui.step("")
+        ui.step(f"내장 에이전트 — 아직 안 세웠어요 ({len(available)})")
+        width = max(len(name) for name in available)
+        for name, row in sorted(available.items()):
+            print(f"    {name.ljust(width)}  {ui.dim(ui.oneline(str(row.get('description') or ''), 68))}")
+        ui.step(ui.dim("    `asgard agent use <이름>`을 치면 그 자리에서 세워져요 (자기 기억도 같이 열려요)"))
+
+
+def select_agent(
+    name: str | None,
+    *,
+    title: str,
+    retry: str,
+    json_out: bool = False,
+) -> str:
+    """명시 이름을 검증하거나, 세운 에이전트와 내장 에이전트 중 하나를 골라요."""
+    if name is not None:
+        return _agent(name)
+
+    rows, available = _inventory()
+    options = [
+        picker.Option(
+            row["id"],
+            f"세운 에이전트 · {row['id']}",
+            detail=" · ".join(
+                filter(
+                    None,
+                    (
+                        str(row.get("description") or "설명이 없어요"),
+                        f"1차 기억 {row.get('memory_pages', 0)}페이지",
+                        "지금 활성" if row.get("active") else "",
+                    ),
+                )
+            ),
+        )
+        for row in rows
+    ]
+    options.extend(
+        picker.Option(
+            builtin,
+            f"내장 에이전트 · {builtin}",
+            detail=f"{row.get('description') or '설명이 없어요'} · 고르면 바로 세워요",
+        )
+        for builtin, row in sorted(available.items())
+    )
+    if json_out or not picker.available():
+        if not json_out:
+            _render_inventory(rows, available)
+        raise errors.InvalidInput(
+            "에이전트 선택기는 대화형 터미널에서만 열 수 있어요",
+            remedy=retry,
+            detail={"agents": rows, "builtin_available": available},
+        )
+    default = next((index for index, row in enumerate(rows) if row.get("active")), 0)
+    selected = picker.pick(title, options, default=default)
+    if selected is None:
+        raise errors.InvalidInput("에이전트를 고르지 않았어요", remedy=retry)
+    if selected in available:
+        try:
+            profiles.ensure(selected)
+        except (ValueError, FileExistsError, FileNotFoundError, OSError) as exc:
+            raise _boundary(exc, remedy=retry) from exc
+    return _agent(selected)
+
+
 def run_agent_list(*, json_out: bool = False, quiet: bool = False) -> int:
     _surface(json_out, quiet)
-    rows = profiles.listing()
-    roster = profiles.builtin_roster()
-    made = {r["id"] for r in rows}
-    available = {k: v for k, v in roster.items() if k not in made}
+    rows, available = _inventory()
 
     if json_out:
         print(
@@ -70,14 +144,7 @@ def run_agent_list(*, json_out: bool = False, quiet: bool = False) -> int:
         )
         return 0
 
-    ui.head(f"agent · 에인헤랴르 — {len(rows)}")
-    width = max((len(r["id"]) for r in rows), default=7)
-    for row in rows:
-        print(_fmt_row(row, width))
-    if available:
-        ui.step("")
-        ui.step(f"내장 에이전트 — 아직 안 세웠어요 ({len(available)}): " + ui.dim(" · ".join(sorted(available))))
-        ui.step(ui.dim("    `asgard agent use <이름>`을 치면 그 자리에서 세워져요 (자기 기억도 같이 열려요)"))
+    _render_inventory(rows, available)
     warning = profiles.fallback_warning()
     if warning:
         ui.warn(warning)
@@ -134,9 +201,14 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
     return 0
 
 
-def run_agent_open(name: str, *, new: bool = False, json_out: bool = False) -> int:
+def run_agent_open(name: str | None, *, new: bool = False, json_out: bool = False) -> int:
     _surface(json_out, False)
-    canon = _agent(name)
+    canon = select_agent(
+        name,
+        title="열 에이전트를 골라요",
+        retry="`asgard agent open <이름>`으로 이름을 대고 다시 부르세요",
+        json_out=json_out,
+    )
     if not new:
         from .. import runs
 

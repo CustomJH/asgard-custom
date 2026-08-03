@@ -11,7 +11,7 @@ import importlib.util
 import os
 import sys
 
-from .. import errors, sandbox, ui
+from .. import errors, profiles, sandbox, ui
 from ..providers import ResolvedProvider, resolve
 
 
@@ -156,6 +156,7 @@ def _render_failure(checks: list[dict], failure: errors.PreflightFailed) -> None
 
 def run_start(
     check_only: bool = False,
+    agent: str | None = None,
     provider: str | None = None,
     model: str | None = None,
     cont: bool = False,
@@ -163,6 +164,8 @@ def run_start(
     sandbox_name: str | None = None,
 ) -> int:
     root = os.getcwd()
+    if agent is not None:
+        os.environ.update(profiles.env_overlay(agent))
 
     # --check는 CI/스모크용 게이트 — 프리플라이트만 돌고 종료 (기존 계약 유지).
     if check_only:
