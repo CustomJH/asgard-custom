@@ -3821,10 +3821,14 @@
        (되돌리기·제안 반영). 안 버리면 옛 초안이 새 본문을 화면에서 계속 가린다. */
     function planForget(id){
       clearTimeout(planSaveTimer[id]);delete planSaveTimer[id];delete state.plan.body[id];
+      /* 창을 닫을 때 보낸 값의 기록도 함께 버린다 — 저장소가 든 본문이 그 사이에 갈렸으므로,
+         사람이 같은 글을 다시 쳤을 때 "이미 보낸 값"으로 걸러지면 안 된다. */
+      delete planLeftBehind[(state.plan.open||'')+' '+id];
     }
     function planForgetAll(){
       Object.keys(planSaveTimer).forEach(planForget);
       state.plan.body={};state.plan.preview={};
+      Object.keys(planLeftBehind).forEach(key=>delete planLeftBehind[key]);
     }
     async function planSaveSection(id,body){
       const plan=state.plan.open;
@@ -3846,6 +3850,40 @@
         planSaveMark(id,'저장을 못 했어요');toast(e.message);
       }
     }
+    /* ── 창을 닫을 때 남은 본문 ──────────────────────────────────────────────────
+       디바운스가 흐르기 전에 창을 닫으면 방금 친 줄이 아무 데도 안 남는다. 문서가 사라지는
+       중에는 보통의 `fetch` 가 취소되므로 `keepalive:true` 를 얹는다 — 요청은 문서보다 오래
+       살고, `sendBeacon` 과 달리 커스텀 헤더가 그대로 실린다. 창의 쓰기 관문
+       (`commands/studio/server.py` 의 `_mutate`)이 보는 것은 루프백 Host 와, 루프백 평문
+       Origin 이거나 `X-Asgard-Studio: 1` + `Content-Type: application/json` 인가다.
+       `sendBeacon` 은 뒤엣것을 못 맞춰 Origin 한 갈래에만 기대게 되고, 같은 편집을 받는 기획
+       창(`commands/plan_api/server.py` 의 `_route`)은 헤더를 반드시 요구해 그쪽에서는 403 이다.
+       그래서 `api()` 를 그대로 쓴다: 헤더와 주소(`agentApiPath`)를 다시 적으면 관문 조건이
+       두 벌이 되어 갈린다. `keepalive` 본문 상한은 64KB 이고 칸 하나는 8000자다(`maxlength`).
+
+       `pagehide` 와 `visibilitychange`(hidden) 는 둘 다 올 수 있다 — 이미 흘린 값이면 안 보낸다.
+       응답은 안 읽는다: 그 시점의 화면은 이미 없거나 곧 없다. */
+    const planLeftBehind={};
+    function planFlushOnLeave(){
+      const plan=state.plan?.open;
+      if(!plan)return;
+      Object.keys(state.plan.body||{}).forEach(id=>{
+        const body=state.plan.body[id];
+        if(typeof body!=='string')return;
+        if(body===String(planDoc()?.prd?.sections?.[id]?.body||''))return;
+        const key=plan+' '+id;
+        if(planLeftBehind[key]===body)return;
+        planLeftBehind[key]=body;
+        clearTimeout(planSaveTimer[id]);delete planSaveTimer[id];
+        api('/api/plans/'+encodeURIComponent(plan)+'/edit',
+          {method:'POST',keepalive:true,body:JSON.stringify({op:'section',section:id,body})})
+          .catch(e=>void e);
+      });
+    }
+    window.addEventListener('pagehide',planFlushOnLeave);
+    document.addEventListener('visibilitychange',()=>{
+      if(document.visibilityState==='hidden')planFlushOnLeave();
+    });
     /* 저장 표시와 되돌리기 손잡이 — 제자리에서 글자와 `hidden` 만 바꾼다. 이 둘을 렌더로 그리면
        저장할 때마다 화면이 갈려 커서가 튄다(위와 같은 이유다). */
     function planSaveMark(id,text){
