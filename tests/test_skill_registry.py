@@ -476,6 +476,26 @@ class RegistryTest(unittest.TestCase):
         self.assertTrue(any(".claude/hooks/quest-log.py" in rule for rule in allow))
         self.assertFalse(any("skills assign" in rule or "skills disable" in rule for rule in allow))
 
+    def test_every_builtin_skill_separates_allowed_tools_with_commas(self):
+        """26-08-04 회귀 — allowed-tools 를 공백으로 이으면 그 스킬의 사전 승인이 통째로 죽는다.
+
+        쉼표 구분 목록이라 공백으로 이은 줄은 항목 **하나**로 파싱되고, 그 하나는
+        `Bash(git status *) Bash(git diff *) …` 라는 없는 명령과의 정확 일치라 어느 호출도
+        안 맞힌다. `asgard-seal` 이 이 상태였고, 봉인 절차의 git 명령이 전부 승인 프롬프트를
+        띄워 단순 커밋 한 번이 5분 넘게 걸렸다. 스킬 하나를 고쳐도 다음 스킬이 같은 자리를
+        밟으므로 표를 통째로 본다."""
+        from asgard.skill_registry import _builtin_plugins
+
+        for plugin in _builtin_plugins().values():
+            for name, text in plugin["skills"]:
+                line = next((ln for ln in text.splitlines() if ln.startswith("allowed-tools:")), None)
+                if line is None:
+                    continue
+                for rule in line.split(":", 1)[1].split(","):
+                    self.assertLessEqual(
+                        rule.count("Bash("), 1, f"{name}: 한 항목에 규칙이 여럿 뭉쳤어요 — {rule.strip()}"
+                    )
+
     def test_moving_landing_composes_freyja_policy_with_external_specialists(self):
         task = "아스가르드에 대한 현대적이고 모던한 스타일의 움직이는 랜딩페이지를 구성해줘"
         self.assertIn(

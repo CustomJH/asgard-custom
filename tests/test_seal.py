@@ -43,6 +43,22 @@ class TestSkillBody(unittest.TestCase):
         for rule in ("Bash(git add *)", "Bash(git commit *)", "Bash(git branch --show-current)"):
             self.assertIn(rule, SEAL_SKILL_MD)
 
+    def test_allowed_tools_is_a_comma_separated_list(self):
+        """26-08-04 회귀 — 공백으로 이으면 "사전 승인"이 한 건도 안 맞는다.
+
+        allowed-tools 는 쉼표 구분 목록이다. 공백으로 이으면 줄 전체가 항목 **하나**로 파싱되고,
+        그 하나는 `Bash(git status *) Bash(git diff *) …` 라는 없는 명령과의 정확 일치라 어느
+        호출도 안 맞힌다. 그러면 봉인 절차의 git 명령이 전부 승인 프롬프트를 띄우고, 단순 커밋
+        한 번이 승인 열몇 번짜리 일이 된다 (실측 5분 이상). `direct_skill` 이 어댑터 프론트매터를
+        쉼표로 잇는 것과 같은 계약이라, 상류가 공백으로 적으면 어댑터에서도 그대로 깨진다."""
+        line = next(ln for ln in SEAL_SKILL_MD.splitlines() if ln.startswith("allowed-tools:"))
+        rules = [part.strip() for part in line.split(":", 1)[1].split(",")]
+        self.assertGreater(len(rules), 1)  # 쉼표로 갈렸다 = 항목이 여럿으로 파싱된다
+        for rule in rules:
+            # 항목 하나에 `Bash(...)` 가 둘 이상이면 쉼표를 빠뜨린 자리다.
+            self.assertEqual(rule.count("Bash("), 1, f"한 항목에 규칙이 여럿 뭉쳤어요: {rule}")
+            self.assertRegex(rule, r"^Bash\([^()]+\)$", f"규칙 형태가 아님: {rule}")
+
     def test_no_attribution_footer_rule(self):
         self.assertIn("Co-Authored-By", SEAL_SKILL_MD)
         self.assertIn("Signed-off-by", SEAL_SKILL_MD)

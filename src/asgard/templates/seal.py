@@ -19,13 +19,24 @@
     비유로 설명하지 않고, 사전에 있는 말을 쓴다.
 
 lagom·selftest와 같은 패턴으로 단일 본문을 .claude/skills/ 와 .agents/skills/ (Cursor·Codex
-공용 스코프) 두 곳에 배포한다 — 툴별 렌더링 없음."""
+공용 스코프) 두 곳에 배포한다 — 툴별 렌더링 없음.
+
+allowed-tools 는 쉼표로 나눈다 (26-08-04 수리). 공백으로 이으면 목록 전체가 항목 **하나**로
+파싱되고, 그 하나는 `Bash(git status *) Bash(git diff *) …` 라는 없는 명령과의 정확 일치라
+어느 호출도 안 맞힌다. 그래서 사전 승인이라고 적힌 `git status`·`git diff`·`git add`·`git
+commit` 이 전부 승인 프롬프트를 띄웠고, 커밋 하나가 승인 열몇 번짜리 일이 됐다 (사용자 실측
+5분 이상). 규칙 형태 자체는 종전대로 `Bash(git add *)` — 끝의 ` *` 는 단어 경계가 붙은
+접두 와일드카드라 `git add src/x.py` 를 맞힌다 (`:*` 도 같은 뜻이다). skill_router 의
+`direct_skill` 이 어댑터를 만들 때 쉼표로 잇는 것과 같은 계약이다.
+
+완화는 이 줄이 하고 강제는 git-guard 훅이 하므로, 여기를 넓게 적어도 `git add -A` 금지 같은
+하드룰은 그대로 집행된다."""
 
 SEAL_SKILL_MD = """\
 ---
 name: asgard-seal
 description: 🔏 Seal — classify and seal working-tree changes into independent, revertible gitmoji case files (commits). Includes quality gates (one seal one case · 50/72 · reasoned body · secret blocking · staged re-verification). NEVER Co-Authored-By/Signed-off-by.
-allowed-tools: Bash(git status *) Bash(git diff *) Bash(git log *) Bash(git branch --show-current) Bash(git add *) Bash(git commit *)
+allowed-tools: Bash(git status *), Bash(git diff *), Bash(git log *), Bash(git branch --show-current), Bash(git add *), Bash(git commit *), Bash(git restore --staged *)
 ---
 
 # asgard-seal — Case Sealing (gitmoji commit)
