@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import subprocess
 import sys
 import tempfile
 import threading
@@ -150,6 +151,31 @@ class TestCircuitBreaker(OrchestrationBase):
         orc.dispatch_mark(self.root, dispatch["id"], "outcome_unknown")
         self.assertEqual(found(orc.task_show(self.root, task["id"]))["status"], "dispatched")
 
+    def test_unknown_outcomes_do_not_spend_the_failure_budget(self):
+        """프로세스 재시작 횟수는 실패 횟수가 아니다 — 시도 이력은 남기되 회로에는 넣지 않는다."""
+        task = orc.task_create(self.root, self.run_row["id"], "never failed")
+        for _ in range(model.MAX_ATTEMPTS):
+            dispatch = orc.open_dispatch(self.root, task["id"])
+            orc.dispatch_mark(self.root, dispatch["id"], "outcome_unknown")
+
+        retry = orc.open_dispatch(self.root, task["id"])
+        self.assertEqual(retry["attempt"], model.MAX_ATTEMPTS + 1)
+        settled = orc.dispatch_settle(self.root, retry["id"], "failed")
+        self.assertEqual(settled["task"]["status"], "ready", "첫 실패를 네 번째 시도라는 이유로 접었다")
+
+    def test_success_resets_the_consecutive_failure_count(self):
+        """늦게 확인된 성공 뒤의 실패만 센다 — 결과 순서와 시도 총수는 같은 수가 아니다."""
+        task = orc.task_create(self.root, self.run_row["id"], "eventually succeeded")
+        first = orc.open_dispatch(self.root, task["id"])
+        orc.dispatch_mark(self.root, first["id"], "outcome_unknown")
+        second = orc.open_dispatch(self.root, task["id"])
+        orc.dispatch_settle(self.root, second["id"], "failed")
+        orc.dispatch_settle(self.root, first["id"], "succeeded")
+
+        third = orc.open_dispatch(self.root, task["id"])
+        settled = orc.dispatch_settle(self.root, third["id"], "failed")
+        self.assertEqual(settled["task"]["status"], "ready")
+
 
 class TestReclaim(OrchestrationBase):
     """정산 없이 사라진 시도를 회수하는가 (감사 높음-3).
@@ -266,6 +292,76 @@ class TestReadDoesNotCreate(unittest.TestCase):
         self.assertTrue(orc.exists(self.root))
 
 
+class TestFailedWriteDoesNotCreateGhost(unittest.TestCase):
+    """쓰기가 실패해 아무것도 못 바꾸면 유령 장부가 남으면 안 된다 (감사 갭 2-A).
+
+    `connect()` 의 문서 약속은 조회에만 적혀 있었지만 쓰기에서도 거짓이었다 — 파일이 없던
+    자리에서 `sqlite3.connect(path)` 를 부르는 순간 이미 0바이트 파일이 생기고, 그 뒤
+    `_ensure_schema` 의 DDL 이 autocommit 되어 나중에 일어나는 `rollback()` 으로도 지울 수
+    없었다. `없는 메시지에 답하기`(`reply`)와 `없는 Run 에 Task 만들기`(`task_create`) 둘 다
+    실제로는 아무 INSERT 도 하기 전에 검사에서 걸려 실패하는 경로다 — 그런데도 파일은 남았다.
+    """
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = self._tmp.name
+        self.addCleanup(self._tmp.cleanup)
+
+    def test_replying_to_a_missing_message_leaves_no_ledger(self):
+        with self.assertRaises(orc.OrchestrationError):
+            orc.reply(self.root, "msg_nope", "x")
+        self.assertFalse(orc.exists(self.root))
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard")), "실패한 쓰기가 .asgard를 남겼다")
+
+    def test_creating_a_task_under_an_unknown_run_leaves_no_ledger(self):
+        with self.assertRaises(orc.OrchestrationError):
+            orc.task_create(self.root, "run_ghost", "고아 일감")
+        self.assertFalse(orc.exists(self.root))
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard")))
+
+    def test_a_genuine_first_write_still_creates_the_ledger(self):
+        """유령 청소가 진짜 첫 쓰기까지 지우면 안 된다 — 성공한 쓰기의 결과는 남아야 한다."""
+        run = orc.run_create(self.root, "첫 Run")
+        self.assertTrue(orc.exists(self.root))
+        self.assertEqual(found(orc.run_show(self.root, run["id"]))["id"], run["id"])
+
+
+class TestSchemaMigration(OrchestrationBase):
+    def test_version_one_database_gains_the_live_dispatch_constraint(self):
+        """이미 쓰던 장부도 판 올림 때 제약을 얻는다 — 새 파일만 안전하면 재시작 경계는 그대로 샌다."""
+        with sqlite3.connect(orc.db_path(self.root)) as conn:
+            conn.execute("DROP INDEX IF EXISTS dispatches_one_ready_per_task")
+            conn.execute("PRAGMA user_version=1")
+
+        orc.run_show(self.root, self.run_row["id"])
+
+        with sqlite3.connect(orc.db_path(self.root)) as conn:
+            version = conn.execute("PRAGMA user_version").fetchone()[0]
+            index = conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='index' AND name='dispatches_one_ready_per_task'"
+            ).fetchone()
+        self.assertEqual(version, 2)
+        self.assertIsNotNone(index)
+
+    def test_version_one_database_with_duplicates_still_opens(self):
+        """옛 중복은 장부 전체를 막지 않는다 — 파생 DB의 기존 fail-open 계약을 지킨다."""
+        task = orc.task_create(self.root, self.run_row["id"], "already duplicated")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        with sqlite3.connect(orc.db_path(self.root)) as conn:
+            conn.execute("DROP INDEX IF EXISTS dispatches_one_ready_per_task")
+            conn.execute(
+                "INSERT INTO dispatches SELECT ?, run_id, task_id, worker, role, agent, model, attempt + 1,"
+                " retry_of, state, outcome, summary, files_modified, created_at, updated_at, settled_at"
+                " FROM dispatches WHERE id=?",
+                ("disp_duplicate", dispatch["id"]),
+            )
+            conn.execute("PRAGMA user_version=1")
+
+        self.assertEqual(len(orc.dispatch_history(self.root, task["id"])), 2)
+        with sqlite3.connect(orc.db_path(self.root)) as conn:
+            self.assertEqual(conn.execute("PRAGMA user_version").fetchone()[0], 2)
+
+
 class TestStaleReports(OrchestrationBase):
     """죽은 시도의 뒤늦은 보고가 살아 있는 Task 를 흔들지 않는가 (감사 발견 3건).
 
@@ -290,6 +386,56 @@ class TestStaleReports(OrchestrationBase):
         orc.open_dispatch(self.root, task["id"])
         with self.assertRaises(orc.OrchestrationError):
             orc.open_dispatch(self.root, task["id"])
+
+    def test_two_processes_cannot_open_the_same_task(self):
+        """프로세스 로컬 락 밖에서도 패자는 같은 계약 오류를 받고 활성 시도는 하나만 남는다."""
+        child_code = """
+import os, sys
+sys.path.insert(0, os.environ["ASGARD_TEST_SRC"])
+from asgard import orchestration as orc
+sys.stdin.read(1)
+try:
+    orc.open_dispatch(os.environ["ASGARD_TEST_ROOT"], os.environ["ASGARD_TEST_TASK"])
+except Exception as exc:
+    print(type(exc).__name__)
+else:
+    print("ok")
+"""
+        source = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src"))
+        for attempt in range(12):
+            task = orc.task_create(self.root, self.run_row["id"], f"race {attempt}")
+            env = {
+                **os.environ,
+                "ASGARD_TEST_SRC": source,
+                "ASGARD_TEST_ROOT": self.root,
+                "ASGARD_TEST_TASK": task["id"],
+            }
+            children = [
+                subprocess.Popen(
+                    [sys.executable, "-c", child_code],
+                    env=env,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                )
+                for _ in range(2)
+            ]
+            for child in children:
+                assert child.stdin is not None
+                child.stdin.write("x")
+                child.stdin.close()
+            outcomes = []
+            for child in children:
+                child.wait(timeout=10)
+                assert child.stdout is not None and child.stderr is not None
+                self.assertEqual(child.returncode, 0, child.stderr.read())
+                outcomes.append(child.stdout.read().strip())
+            self.assertEqual(sorted(outcomes), ["OrchestrationError", "ok"])
+            self.assertEqual(
+                len([row for row in orc.dispatch_history(self.root, task["id"]) if row["state"] == "ready"]),
+                1,
+            )
 
     def test_settling_a_finished_dispatch_twice_is_refused(self):
         task = orc.task_create(self.root, self.run_row["id"], "unit")
@@ -517,6 +663,47 @@ class TestGates(OrchestrationBase):
             orc.gate_resolve(self.root, gate["id"], "b")
 
 
+class TestScopedReset(OrchestrationBase):
+    """부분 초기화 — 각 범위는 자기가 주장하는 것만 지우고 나머지는 그대로 둔다 (감사 갭 2-B).
+
+    Orca 의 `reset --tasks|--messages|--all` 과 같은 자리다. `--all`(=`reset`)은 이미 있었고
+    나머지 둘이 없어서, 코디네이터는 메일함만 비우거나 Task DAG 만 지우고 싶어도 장부 전체를
+    날리는 수밖에 없었다.
+    """
+
+    def test_reset_tasks_clears_the_dag_but_keeps_the_run_and_mail(self):
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        orc.dispatch_settle(self.root, dispatch["id"], "succeeded")
+        orc.send(self.root, self.run_row["id"], "status", subject="살아있다")
+
+        removed = orc.reset_tasks(self.root)
+
+        self.assertEqual(removed, 1, "지운 Task 행 수가 실제와 다르다")
+        self.assertEqual(orc.task_list(self.root, self.run_row["id"]), [])
+        self.assertEqual(orc.dispatch_history(self.root, task["id"]), [], "Task를 지웠는데 Dispatch가 남았다")
+        self.assertIsNotNone(orc.run_show(self.root, self.run_row["id"]), "Task 범위가 Run까지 지웠다")
+        self.assertEqual(len(orc.inbox(self.root, self.run_row["id"])), 1, "Task 범위가 메일함까지 비웠다")
+
+    def test_reset_messages_clears_the_mailbox_but_keeps_the_dag(self):
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        orc.send(self.root, self.run_row["id"], "status", subject="살아있다")
+        orc.send(self.root, self.run_row["id"], "status", subject="또 하나")
+
+        removed = orc.reset_messages(self.root)
+
+        self.assertEqual(removed, 2, "지운 메시지 행 수가 실제와 다르다")
+        self.assertEqual(orc.inbox(self.root, self.run_row["id"]), [])
+        self.assertEqual(found(orc.task_show(self.root, task["id"]))["id"], task["id"], "메일 범위가 Task DAG까지 지웠다")
+        self.assertIsNotNone(orc.run_show(self.root, self.run_row["id"]), "메일 범위가 Run까지 지웠다")
+
+    def test_whole_reset_still_removes_everything(self):
+        """범위 인자를 안 주는 기본 동작은 오늘까지와 같다 — 파일 전체가 사라진다."""
+        orc.task_create(self.root, self.run_row["id"], "unit")
+        self.assertTrue(orc.reset(self.root))
+        self.assertFalse(orc.exists(self.root))
+
+
 class TestRunBinding(OrchestrationBase):
     def test_bind_reuses_the_open_run_for_a_quest(self):
         again = orc.run_bind(self.root, "q-1", "다시")
@@ -673,6 +860,19 @@ class TestDeliveryContract(OrchestrationBase):
         emptied = orc.check(self.root, self.run_row["id"], ack=batch["delivery_id"])
         self.assertEqual(emptied["count"], 0, "필터 밖 메일이 ack 되지 않고 남았다")
         self.assertTrue(all(m["acked_at"] is not None for m in orc.inbox(self.root, self.run_row["id"])))
+
+    def test_ack_cannot_consume_another_runs_delivery(self):
+        """배달 id 를 알아도 다른 Run 권한으로 소비할 수 없다 — 원래 묶음은 계속 재생되어야 한다."""
+        other = orc.run_create(self.root, "다른 Run", quest_id="q-other")
+        orc.send(self.root, self.run_row["id"], "status", subject="이 Run 것")
+        claimed = orc.check(self.root, self.run_row["id"])
+
+        with self.assertRaisesRegex(orc.OrchestrationError, "다른 Run"):
+            orc.check(self.root, other["id"], ack=claimed["delivery_id"])
+
+        replayed = orc.check(self.root, self.run_row["id"])
+        self.assertEqual(replayed["delivery_id"], claimed["delivery_id"])
+        self.assertEqual(replayed["count"], 1)
 
 
 class TestCompletionAuthority(OrchestrationBase):

@@ -84,9 +84,9 @@ def task_status_for(current: str, dep_statuses: list[str]) -> str:
     return "pending"
 
 
-def circuit_broken(attempts: int, max_attempts: int = MAX_ATTEMPTS) -> bool:
-    """이 Task 를 더 시도하지 않고 failed 로 접어야 하는가."""
-    return attempts >= max(1, max_attempts)
+def circuit_broken(failed_outcomes: int, max_attempts: int = MAX_ATTEMPTS) -> bool:
+    """연속 실패 결과가 상한에 닿아 이 Task 를 접어야 하는가."""
+    return failed_outcomes >= max(1, max_attempts)
 
 
 def topo_waves(
@@ -116,7 +116,7 @@ def topo_waves(
     while pending:
         ready = sorted(tid for tid, need in pending.items() if not (need - done))
         if not ready:
-            raise OrchestrationError(f"순환 의존: {', '.join(sorted(pending))}")
+            raise OrchestrationError(f"순환 의존이에요: {', '.join(sorted(pending))}")
         wave: list[str] = []
         taken: set[str] = set()
         for tid in ready:

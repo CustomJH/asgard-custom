@@ -69,17 +69,17 @@ def send(
         OrchestrationError: 종류가 `MESSAGE_TYPES` 밖이거나, `worker_done` 이거나, Run 이 없을 때.
     """
     if message_type not in MESSAGE_TYPES:
-        raise OrchestrationError(f"type 은 {'/'.join(MESSAGE_TYPES)} 중 하나")
+        raise OrchestrationError(f"type은 {'/'.join(MESSAGE_TYPES)} 중 하나여야 해요")
     # 완료 보고는 이 문으로 못 들어온다. 여기서 넣으면 메일만 생기고 정산은 안 일어나서,
     # 코디네이터는 완료를 읽는데 Task 는 `dispatched` 로 남는다. 실패 보고면 outcome 칸도
     # 비어 본문에만 실패가 적힌다 — 계약이 금지하는 "글로만 적은 실패"가 그것이다.
     if message_type == "worker_done":
-        raise OrchestrationError("worker_done 은 `worker_done()` 으로 보낸다 — 정산과 한 트랜잭션이다")
+        raise OrchestrationError("worker_done은 `worker_done()`으로 보내요 — 정산과 한 트랜잭션이라서요")
     now = time.time()
     message_id = _new_id("msg")
     with connect(root, write=True) as conn:
         if conn.execute("SELECT 1 FROM runs WHERE id=?", (run_id,)).fetchone() is None:
-            raise OrchestrationError(f"없는 Run: {run_id}")
+            raise OrchestrationError(f"없는 Run이에요: {run_id}")
         conn.execute(
             "INSERT INTO messages(id, run_id, task_id, dispatch_id, thread_id, sender, recipient, type,"
             " subject, body, payload, priority, outcome, created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -128,7 +128,7 @@ def check(
         아니라 확인 시점이다 — 워커가 죽었다는 뜻으로 읽으면 안 된다.
     """
     if ack:
-        _ack(root, ack)
+        _ack(root, run_id, ack)
     deadline = time.monotonic() + (timeout_ms / 1000 if wait else 0)
     while True:
         found = _peek(root, run_id) if peek else _claim(root, run_id, types)
@@ -137,12 +137,20 @@ def check(
         time.sleep(min(_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
 
 
-def _ack(root: str, delivery_id: str) -> int:
+def _ack(root: str, run_id: str, delivery_id: str) -> int:
+    """이 Run 의 배달만 확인한다.
+
+    다른 Run 의 id 는 오류로 올린다. 조용히 넘기면 호출자는 소비됐다고 믿는데 원래 묶음은 계속
+    재생되어 권한 실수를 찾기 어렵다. 같은 Run 의 중복 ack 는 전송 재시도를 위해 no-op 이다.
+    """
     now = time.time()
     with connect(root, write=True) as conn:
+        owner = conn.execute("SELECT run_id FROM messages WHERE delivery_id=? LIMIT 1", (delivery_id,)).fetchone()
+        if owner is not None and owner["run_id"] != run_id:
+            raise OrchestrationError(f"다른 Run의 배달은 ack 할 수 없어요: {delivery_id}")
         cur = conn.execute(
-            "UPDATE messages SET acked_at=? WHERE delivery_id=? AND acked_at IS NULL",
-            (now, delivery_id),
+            "UPDATE messages SET acked_at=? WHERE run_id=? AND delivery_id=? AND acked_at IS NULL",
+            (now, run_id, delivery_id),
         )
         return cur.rowcount
 
@@ -267,7 +275,7 @@ def wait_answer(root: str, message_id: str, *, timeout_ms: int) -> dict:
         with connect(root) as conn:
             row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
         if row is None:
-            raise OrchestrationError(f"없는 메시지: {message_id}")
+            raise OrchestrationError(f"없는 메시지예요: {message_id}")
         if row["answered_at"] is not None or time.monotonic() >= deadline:
             return _message_dict(row)
         time.sleep(min(_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
@@ -288,11 +296,11 @@ def reply(root: str, message_id: str, answer: str) -> dict:
     with connect(root, write=True) as conn:
         row = conn.execute("SELECT * FROM messages WHERE id=?", (message_id,)).fetchone()
         if row is None:
-            raise OrchestrationError(f"없는 메시지: {message_id}")
+            raise OrchestrationError(f"없는 메시지예요: {message_id}")
         if row["type"] != "question":
-            raise OrchestrationError(f"질문이 아닌 메시지에는 답할 수 없다: {message_id} ({row['type']})")
+            raise OrchestrationError(f"질문이 아닌 메시지에는 답할 수 없어요: {message_id} ({row['type']})")
         if row["answered_at"] is not None:
-            raise OrchestrationError(f"이미 답한 질문: {message_id}")
+            raise OrchestrationError(f"이미 답이 달린 질문이에요: {message_id}")
         conn.execute(
             "UPDATE messages SET answer=?, answered_at=? WHERE id=?",
             (answer, now, message_id),
@@ -330,7 +338,7 @@ def worker_done(
             그 Dispatch 가 이미 끝났을 때(같은 보고의 두 번째 전송).
     """
     if outcome not in OUTCOMES:
-        raise OrchestrationError(f"outcome 은 {'/'.join(OUTCOMES)} 중 하나")
+        raise OrchestrationError(f"outcome은 {'/'.join(OUTCOMES)} 중 하나여야 해요")
     from .dispatch import settle_within
 
     now = time.time()
@@ -338,11 +346,11 @@ def worker_done(
     with connect(root, write=True) as conn:
         owner = conn.execute("SELECT * FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
         if owner is None:
-            raise OrchestrationError(f"없는 Dispatch: {dispatch_id}")
+            raise OrchestrationError(f"없는 Dispatch예요: {dispatch_id}")
         if task_id and owner["task_id"] != task_id:
-            raise OrchestrationError(f"Dispatch {dispatch_id} 는 Task {task_id} 의 것이 아니다")
+            raise OrchestrationError(f"Dispatch {dispatch_id}는 Task {task_id}의 것이 아니에요")
         if run_id and owner["run_id"] != run_id:
-            raise OrchestrationError(f"Dispatch {dispatch_id} 는 Run {run_id} 의 것이 아니다")
+            raise OrchestrationError(f"Dispatch {dispatch_id}는 Run {run_id}의 것이 아니에요")
         settled = settle_within(conn, dispatch_id, outcome, summary=body[:2000], files_modified=files_modified)
         conn.execute(
             "INSERT INTO messages(id, run_id, task_id, dispatch_id, thread_id, sender, recipient, type,"

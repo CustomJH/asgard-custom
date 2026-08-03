@@ -25,7 +25,7 @@ import sqlite3
 import threading
 from collections.abc import Iterator
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 DB_DIR = ".asgard"
 DB_FILE = "orchestration.db"
 STATE_ENV = "ASGARD_ORCHESTRATION_DB"  # 시험이 사용자의 배차 장부를 안 건드리게 하는 문
@@ -179,6 +179,12 @@ _UNIQUE_INDEXES = (
     CREATE UNIQUE INDEX IF NOT EXISTS tasks_one_per_unit
         ON tasks(run_id, unit_id) WHERE unit_id != '' AND parent_id IS NOT NULL
     """,
+    # 한 Task 에 살아 있는 Dispatch 는 하나뿐이다. 프로세스 로컬 락과 선조회만으로는 스튜디오와
+    # CLI 가 동시에 배차할 때 둘 다 빈자리를 보고 삽입하는 경쟁을 막지 못한다.
+    """
+    CREATE UNIQUE INDEX IF NOT EXISTS dispatches_one_ready_per_task
+        ON dispatches(task_id) WHERE state = 'ready'
+    """,
 )
 
 
@@ -205,9 +211,17 @@ def connect(root: str, *, write: bool = False) -> Iterator[sqlite3.Connection]:
     스키마를 세워 그쪽을 읽는다. `asgard siege` 같은 조회 명령이 디스크에 빈 DB 를 남기면
     "읽기 전용" 이라는 문서가 곧바로 거짓이 되고, 잘못된 디렉터리에서 친 조회가 그 자리에
     유령 장부를 만들어 다음 조회를 계속 속인다.
+
+    **쓰기도 마찬가지다.** `sqlite3.connect(path)` 는 그 호출 하나로 파일을 만든다 — DDL 이
+    autocommit 되는 것과 별개로, 연결 자체가 이미 디스크에 자국을 남긴다. 그래서 파일이 아직
+    없던 자리에서 부른 쓰기가 아무것도 바꾸지 못하고 실패하면(예: 없는 메시지에 답하려는
+    `siege answer`), 그 실패 전에 이미 스키마만 있는 장부가 디스크에 남는다. `finally` 에서
+    "이 호출이 파일을 새로 만들었고 그 결과 다섯 테이블이 모두 비었다" 를 확인해 지운다 —
+    반대로 진짜 첫 쓰기가 무언가를 남겼으면 그 파일은 유지된다.
     """
     path = db_path(root)
-    if write or os.path.isfile(path):
+    pre_existing = os.path.isfile(path)
+    if write or pre_existing:
         os.makedirs(os.path.dirname(path), mode=0o700, exist_ok=True)
     else:
         path = ":memory:"
@@ -216,17 +230,50 @@ def connect(root: str, *, write: bool = False) -> Iterator[sqlite3.Connection]:
         conn = sqlite3.connect(path, timeout=_BUSY_TIMEOUT_MS / 1000)
         conn.row_factory = sqlite3.Row
         try:
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
-            conn.execute("PRAGMA foreign_keys=ON")
-            _ensure_schema(conn)
-            yield conn
-            conn.commit()
-        except BaseException:
-            conn.rollback()
-            raise
+            try:
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute(f"PRAGMA busy_timeout={_BUSY_TIMEOUT_MS}")
+                conn.execute("PRAGMA foreign_keys=ON")
+                _ensure_schema(conn)
+                yield conn
+                conn.commit()
+            except BaseException:
+                conn.rollback()
+                raise
         finally:
+            ghost = write and not pre_existing and _is_empty_ledger(conn)
             conn.close()
+            if ghost:
+                _remove_ledger(path)
+
+
+def _is_empty_ledger(conn: sqlite3.Connection) -> bool:
+    """다섯 테이블이 다 비었고 meta 에도 schema_version 뿐인가 — 지워도 잃을 것이 없다는 판정.
+
+    스키마 자체가 다 안 섰으면(디스크 문제로 `_ensure_schema` 가 중간에 죽은 경우) 판정을
+    포기하고 지우지 않는다 — 판정에 실패한 예외로 호출자의 원래 예외를 덮어쓰면 안 된다.
+    """
+    tables = ("runs", "tasks", "dispatches", "messages", "gates")
+    try:
+        if any(conn.execute(f"SELECT 1 FROM {table} LIMIT 1").fetchone() for table in tables):
+            return False
+        extra_meta = conn.execute("SELECT 1 FROM meta WHERE key != 'schema_version' LIMIT 1").fetchone()
+        return extra_meta is None
+    except sqlite3.DatabaseError:
+        return False
+
+
+def _remove_ledger(path: str) -> None:
+    """장부 파일과 부속(-wal·-shm)을 지운다. 우리가 막 만든 디렉터리가 이제 비었으면 함께 지운다.
+
+    디렉터리는 안 비었으면(`.asgard/quest/` 같은 다른 정본이 있으면) `rmdir` 이 그냥 실패하고
+    넘어간다 — 이 함수가 지우는 것은 오직 우리가 만든 자리뿐이다.
+    """
+    for suffix in ("", "-wal", "-shm"):
+        with contextlib.suppress(OSError):
+            os.remove(path + suffix)
+    with contextlib.suppress(OSError):
+        os.rmdir(os.path.dirname(path))
 
 
 def _ensure_schema(conn: sqlite3.Connection) -> None:
@@ -272,7 +319,10 @@ def set_meta(root: str, key: str, value: str) -> None:
 
 
 def reset(root: str) -> bool:
-    """배차 장부를 지운다. 파생 상태라 지워도 퀘스트 로그는 남는다.
+    """배차 장부를 통째로 지운다 — 기본 동작. 파생 상태라 지워도 퀘스트 로그는 남는다.
+
+    Orca 의 `reset --all` 과 같은 자리다. 부분만 지우는 `reset_tasks`·`reset_messages` 와
+    달리 이쪽은 Run 도 함께 사라진다 — 그래서 "장부를 지웠다" 는 확인문은 이 함수에만 붙는다.
 
     Returns:
         지울 파일이 있었으면 True. 없었으면 False — 실패가 아니다.
@@ -284,3 +334,35 @@ def reset(root: str) -> bool:
             os.remove(path + suffix)
             removed = removed or not suffix
     return removed
+
+
+def reset_tasks(root: str) -> int:
+    """Task DAG 만 지운다 — Run 과 메일함은 그대로 둔다.
+
+    Orca 의 `reset --tasks` 와 같은 자리다. `dispatches` 는 `tasks(id) ON DELETE CASCADE` 라
+    Task 를 지우면 그 시도 이력도 같이 사라진다 — `foreign_keys=ON` 이 `connect()` 에서 이미
+    켜져 있으므로 이 함수는 그 캐스케이드에만 의존하고 따로 `dispatches` 를 지우지 않는다.
+    Run·메일(`messages`)·게이트는 손대지 않는다: 코디네이터가 일감만 새로 짜고 우편함의
+    지난 왕복은 참고로 남겨 두는 경우가 여기 해당한다.
+
+    파생 상태라 장부가 아직 없어도 오류가 아니다 — 지울 Task 가 0 개였을 뿐이다.
+
+    Returns:
+        지운 Task 행 수.
+    """
+    with connect(root, write=True) as conn:
+        return conn.execute("DELETE FROM tasks").rowcount
+
+
+def reset_messages(root: str) -> int:
+    """메일함만 비운다 — Run·Task DAG(Task·Dispatch)·게이트는 그대로 둔다.
+
+    Orca 의 `reset --messages` 와 같은 자리다. `messages` 는 다른 테이블에서 `ON DELETE
+    CASCADE` 로 참조되지 않으므로(질문·완료 보고가 지워진 Task 를 가리키게 될 일이 없다)
+    이 삭제는 다른 테이블에 아무 영향을 주지 않는다.
+
+    Returns:
+        지운 메시지 행 수.
+    """
+    with connect(root, write=True) as conn:
+        return conn.execute("DELETE FROM messages").rowcount

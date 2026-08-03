@@ -50,6 +50,17 @@ def _max_attempts(conn: sqlite3.Connection) -> int:
         return MAX_ATTEMPTS
 
 
+def _consecutive_failures(conn: sqlite3.Connection, task_id: str) -> int:
+    """마지막 성공 뒤의 실패 결과 수 — 결과 없는 복구 시도는 실패 예산을 쓰지 않는다."""
+    row = conn.execute(
+        "SELECT COUNT(*) AS count FROM dispatches WHERE task_id=? AND outcome='failed'"
+        " AND attempt > COALESCE((SELECT MAX(attempt) FROM dispatches"
+        " WHERE task_id=? AND outcome='succeeded'), 0)",
+        (task_id, task_id),
+    ).fetchone()
+    return int(row["count"])
+
+
 def _dispatch_dict(row: sqlite3.Row) -> dict:
     found = dict(row)
     found["files_modified"] = json.loads(found.get("files_modified") or "[]")
@@ -77,39 +88,48 @@ def open_dispatch(
     with connect(root, write=True) as conn:
         task = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         if task is None:
-            raise OrchestrationError(f"없는 Task: {task_id}")
+            raise OrchestrationError(f"없는 Task예요: {task_id}")
         if task["status"] in _UNDISPATCHABLE:
-            raise OrchestrationError(f"배차할 수 없는 Task: {task_id} ({task['status']})")
+            raise OrchestrationError(f"배차할 수 없는 Task예요: {task_id} ({task['status']})")
         run = conn.execute("SELECT status FROM runs WHERE id=?", (task["run_id"],)).fetchone()
         if run is not None and run["status"] != "open":
-            raise OrchestrationError(f"닫힌 Run 에 배차: {task['run_id']}")
+            raise OrchestrationError(f"닫힌 Run에는 배차할 수 없어요: {task['run_id']}")
         # 한 Task 에 살아 있는 시도는 하나뿐이다. 둘을 열면 두 워커가 같은 파일을 동시에 고치고,
         # 먼저 끝난 쪽 결과를 나중 쪽이 덮어쓴다. 재배차는 앞 시도를 정산한 **뒤**에 한다.
         active = conn.execute(
             "SELECT id FROM dispatches WHERE task_id=? AND state='ready' LIMIT 1", (task_id,)
         ).fetchone()
         if active is not None:
-            raise OrchestrationError(f"이미 활성 Dispatch 가 있음: {task_id} → {active['id']}")
+            raise OrchestrationError(f"이미 활성 Dispatch가 있어요: {task_id} → {active['id']}")
+        failures = _consecutive_failures(conn, task_id)
+        if circuit_broken(failures, _max_attempts(conn)):
+            raise OrchestrationError(f"회로 차단 — {task_id}의 최근 결과가 {failures}회 연속 실패했어요")
         attempts = int(task["attempts"]) + 1
-        if circuit_broken(attempts - 1, _max_attempts(conn)):
-            raise OrchestrationError(f"회로 차단 — {task_id} 은 이미 {attempts - 1}회 실패")
-        conn.execute(
-            "INSERT INTO dispatches(id, run_id, task_id, worker, role, agent, model, attempt, retry_of,"
-            " state, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,'ready',?,?)",
-            (
-                dispatch_id,
-                task["run_id"],
-                task_id,
-                worker,
-                role,
-                agent,
-                model,
-                attempts,
-                retry_of or None,
-                now,
-                now,
-            ),
-        )
+        try:
+            conn.execute(
+                "INSERT INTO dispatches(id, run_id, task_id, worker, role, agent, model, attempt, retry_of,"
+                " state, created_at, updated_at) VALUES(?,?,?,?,?,?,?,?,?,'ready',?,?)",
+                (
+                    dispatch_id,
+                    task["run_id"],
+                    task_id,
+                    worker,
+                    role,
+                    agent,
+                    model,
+                    attempts,
+                    retry_of or None,
+                    now,
+                    now,
+                ),
+            )
+        except sqlite3.IntegrityError:
+            active = conn.execute(
+                "SELECT id FROM dispatches WHERE task_id=? AND state='ready' LIMIT 1", (task_id,)
+            ).fetchone()
+            if active is not None:
+                raise OrchestrationError(f"이미 활성 Dispatch가 있어요: {task_id} → {active['id']}") from None
+            raise
         conn.execute(
             "UPDATE tasks SET status='dispatched', attempts=?, updated_at=? WHERE id=?",
             (attempts, now, task_id),
@@ -135,7 +155,7 @@ def settle(
         `{"dispatch": ..., "task": ...}` — 둘 다 갱신된 뒤의 값.
     """
     if outcome not in OUTCOMES:
-        raise OrchestrationError(f"outcome 은 {'/'.join(OUTCOMES)} 중 하나")
+        raise OrchestrationError(f"outcome은 {'/'.join(OUTCOMES)} 중 하나여야 해요")
     with connect(root, write=True) as conn:
         settled = settle_within(conn, dispatch_id, outcome, summary=summary, files_modified=files_modified)
     return settled
@@ -155,13 +175,13 @@ def settle_within(
     메일을 각자 커밋하면, 정산만 남고 메일이 없는 상태가 생겨 코디네이터가 완료를 못 읽는다.
     """
     if outcome not in OUTCOMES:
-        raise OrchestrationError(f"outcome 은 {'/'.join(OUTCOMES)} 중 하나")
+        raise OrchestrationError(f"outcome은 {'/'.join(OUTCOMES)} 중 하나여야 해요")
     now = time.time()
     row = conn.execute("SELECT * FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
     if row is None:
-        raise OrchestrationError(f"없는 Dispatch: {dispatch_id}")
+        raise OrchestrationError(f"없는 Dispatch예요: {dispatch_id}")
     if row["state"] in DISPATCH_TERMINAL:
-        raise OrchestrationError(f"이미 끝난 Dispatch 를 다시 정산: {dispatch_id} ({row['state']})")
+        raise OrchestrationError(f"이미 끝난 Dispatch는 다시 정산할 수 없어요: {dispatch_id} ({row['state']})")
     conn.execute(
         "UPDATE dispatches SET state=?, outcome=?, summary=?, files_modified=?, settled_at=?, updated_at=? WHERE id=?",
         (
@@ -189,7 +209,7 @@ def settle_within(
                 "UPDATE tasks SET status='completed', completed_at=?, updated_at=? WHERE id=?",
                 (now, now, task_id),
             )
-        elif circuit_broken(int(task["attempts"]), _max_attempts(conn)):
+        elif circuit_broken(_consecutive_failures(conn, task_id), _max_attempts(conn)):
             conn.execute(
                 "UPDATE tasks SET status='failed', completed_at=?, updated_at=? WHERE id=?",
                 (now, now, task_id),
@@ -219,14 +239,14 @@ def mark(root: str, dispatch_id: str, state: str) -> dict:
             Dispatch 일 때. 끝난 시도를 다시 표시하면 기록된 outcome 과 state 가 어긋난다.
     """
     if state not in RECOVERY_STATES:
-        raise OrchestrationError(f"mark 의 state 는 {'/'.join(RECOVERY_STATES)} 중 하나")
+        raise OrchestrationError(f"mark의 state는 {'/'.join(RECOVERY_STATES)} 중 하나여야 해요")
     now = time.time()
     with connect(root, write=True) as conn:
         row = conn.execute("SELECT state FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
         if row is None:
-            raise OrchestrationError(f"없는 Dispatch: {dispatch_id}")
+            raise OrchestrationError(f"없는 Dispatch예요: {dispatch_id}")
         if row["state"] in DISPATCH_TERMINAL:
-            raise OrchestrationError(f"이미 끝난 Dispatch 를 표시: {dispatch_id} ({row['state']})")
+            raise OrchestrationError(f"이미 끝난 Dispatch에는 표시를 남길 수 없어요: {dispatch_id} ({row['state']})")
         conn.execute(
             "UPDATE dispatches SET state=?, updated_at=? WHERE id=?",
             (state, now, dispatch_id),
@@ -238,7 +258,7 @@ def mark(root: str, dispatch_id: str, state: str) -> dict:
 def show(root: str, *, dispatch_id: str = "", task_id: str = "") -> dict | None:
     """Dispatch 하나를 본다. task_id 로 물으면 그 Task 의 **가장 최근** 시도를 돌려준다."""
     if not (dispatch_id or task_id):
-        raise OrchestrationError("dispatch_id 또는 task_id 필요")
+        raise OrchestrationError("dispatch_id나 task_id 중 하나는 있어야 해요")
     with connect(root) as conn:
         if dispatch_id:
             row = conn.execute("SELECT * FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()

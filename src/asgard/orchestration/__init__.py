@@ -68,7 +68,7 @@ from .model import (
     task_status_for,
     topo_waves,
 )
-from .store import META_MAX_ATTEMPTS, db_path, exists, reset, set_meta
+from .store import META_MAX_ATTEMPTS, db_path, exists, reset, reset_messages, reset_tasks, set_meta
 from .strategy import SHAPES
 from .strategy import choose as choose_shape
 
@@ -105,6 +105,8 @@ __all__ = [
     "refresh",
     "reply",
     "reset",
+    "reset_messages",
+    "reset_tasks",
     "run_bind",
     "run_close",
     "run_create",
