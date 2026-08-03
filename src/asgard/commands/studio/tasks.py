@@ -15,10 +15,12 @@ import sys
 import threading
 import time
 import uuid
+from contextvars import copy_context
 
 from ... import (
     activity,
     errors,
+    profiles,
     ui,  # noqa: F401  (하위 호환 — 이 모듈은 ui를 직접 쓰지 않는다)
 )
 from .. import loopback
@@ -40,12 +42,21 @@ def _public_task(task: dict) -> dict:
     return {k: v for k, v in task.items() if k not in {"process", "command"}}
 
 
+def _task_agent(task: dict) -> str:
+    # agent가 없던 기록은 default의 작업이다. 다른 프로파일에 공개하지 않는다.
+    return profiles.normalize(str(task.get("agent") or profiles.DEFAULT))
+
+
+def _visible_task(task: dict) -> bool:
+    return _task_agent(task) == profiles.active()
+
+
 def _task_snapshot(root: str | None = None) -> list[dict]:
     """작업은 작업 공간에 속한다 — root를 주면 그 경계 안의 것만 돌려준다.
     (기록이 없던 시절의 작업은 root가 없다. 그건 어느 경계에도 안 걸리게 두지 않고
     현재 작업 공간 것으로 본다 — 안 그러면 옛 작업이 화면에서 통째로 사라진다.)"""
     with _TASK_LOCK:
-        rows = [_public_task(task) for task in _TASKS.values()]
+        rows = [_public_task(task) for task in _TASKS.values() if _visible_task(task)]
     if root:
         target = os.path.abspath(root)
         rows = [row for row in rows if os.path.abspath(str(row.get("root") or target)) == target]
@@ -94,10 +105,11 @@ def load_project_tasks(root: str) -> int:
     from .. import studio_store
 
     root = os.path.abspath(root)
+    loaded = (profiles.active(), root)
     with _ROOT_LOCK:
-        if root in _LOADED_ROOTS:
+        if loaded in _LOADED_ROOTS:
             return 0
-        _LOADED_ROOTS.add(root)
+        _LOADED_ROOTS.add(loaded)
     try:
         rows = studio_store.load_tasks(root)
     except Exception:
@@ -273,7 +285,8 @@ def _watch(task_id: str, events: str):
                 return
             done.wait(0.35)
 
-    thread = threading.Thread(target=loop, daemon=True)
+    context = copy_context()
+    thread = threading.Thread(target=context.run, args=(loop,), daemon=True)
     thread.start()
 
     def close() -> None:
@@ -481,7 +494,8 @@ def _settle_ticket(root: str, task: dict) -> None:
 
 
 def _start(task_id: str, root: str) -> None:
-    threading.Thread(target=_run_task, args=(task_id, root), daemon=True).start()
+    context = copy_context()
+    threading.Thread(target=context.run, args=(_run_task, task_id, root), daemon=True).start()
 
 
 def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
@@ -499,7 +513,11 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
     if permission not in {"manual", "important", "auto"}:
         return _json_body(400, {"error": "unknown permission mode"})
     with _TASK_LOCK:
-        running = sum(task.get("status") in {"queued", "running", "paused"} for task in _TASKS.values())
+        running = sum(
+            task.get("status") in {"queued", "running", "paused"}
+            for task in _TASKS.values()
+            if _visible_task(task)
+        )
         if running >= _MAX_RUNNING:
             return _json_body(409, {"error": "too many running tasks"})
     provider = str(payload.get("provider") or "").strip()
@@ -520,7 +538,7 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
         "permission": permission,
         "provider": provider,
         "model": model,
-        "agent": agent,  # 누가 돌았는가 — 기록의 일부다(빈 값이면 활성 에이전트)
+        "agent": agent,  # 누가 돌았는가 — 기록의 일부다(빈 값은 default)
         "result": "",
         "log": "",
         "files": [],
@@ -569,14 +587,16 @@ def _run_command(prompt: str, agent: str, provider: str, model: str) -> list[str
 def _resolve_agent(wanted: object) -> tuple[str, str]:
     """이 이름으로 돌 수 있는가 — 돌 이름과 거절 사유 중 하나만 채워 돌려준다.
 
-    빈 값은 "이 창의 활성 에이전트"라는 뜻이라 통과시킨다. 아직 안 세운 이름만 막는다.
+    빈 값은 이 창의 활성 에이전트다. default는 기존 명령 형식을 유지하려고 빈 값으로 둔다.
+    아직 안 세운 이름만 막는다.
     여기서 미리 판정하는 이유는, 없는 에이전트로 띄우면 실패가 프로세스 로그 안쪽에만
     남아서다 — 창은 '실행 중'을 그리다 조용히 끝난 작업 하나를 보게 된다."""
     from ... import profiles
 
     name = str(wanted or "").strip()
     if not name:
-        return "", ""
+        active = profiles.active()
+        return ("" if active == profiles.DEFAULT else active), ""
     try:
         name = profiles.validate(name)
     except Exception as exc:

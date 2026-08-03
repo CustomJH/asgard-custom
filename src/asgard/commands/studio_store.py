@@ -33,6 +33,8 @@ import tempfile
 import threading
 import time
 
+from .. import profiles
+
 STUDIO_STATE_ENV = "ASGARD_STUDIO_STATE"
 STUDIO_DIR = os.path.join(".asgard", "studio")
 LEGACY_DIR = os.path.join(".asgard", "desktop")  # 옮겨 올 옛 자리 (읽기 전 1회 이관)
@@ -46,7 +48,7 @@ _ALIVE = frozenset({"running", "queued", "paused"})
 _IO_LOCK = threading.Lock()
 
 # 머리글에 넣는 칸 — 본문(log·turns·files)은 프로젝트 쪽에 두고 여기엔 안 넣는다.
-_INDEX_KEYS = ("id", "root", "prompt", "label", "status", "created", "updated", "permission")
+_INDEX_KEYS = ("id", "root", "prompt", "label", "status", "created", "updated", "permission", "agent")
 _PROMPT_HEAD = 300  # 목록의 한 줄이 드는 만큼만
 
 # 이 폴더가 "프로젝트"인지 — 자리에 있는 표식으로만 판정한다. 없으면 아니라고 말하고,
@@ -273,7 +275,12 @@ def public_task(task: dict) -> dict:
     return {key: value for key, value in task.items() if key not in _DROP_KEYS}
 
 
-def load_tasks(root: str) -> list[dict]:
+def _task_agent(task: dict) -> str:
+    # agent가 없던 기록은 default의 작업이다. 다른 프로파일에 공개하지 않는다.
+    return profiles.normalize(str(task.get("agent") or profiles.DEFAULT))
+
+
+def load_tasks(root: str, *, all_agents: bool = False) -> list[dict]:
     """그 프로젝트의 작업 기록. 살아 있던 상태는 interrupted로 정규화한다."""
     path = tasks_path(root)
     rows: list[dict] = []
@@ -291,6 +298,9 @@ def load_tasks(root: str) -> list[dict]:
                     rows.append(row)
     except OSError:
         return []
+    if not all_agents:
+        active = profiles.active()
+        rows = [row for row in rows if _task_agent(row) == active]
     here = os.path.abspath(root)
     for row in rows:
         if row.get("status") in _ALIVE:
@@ -316,7 +326,8 @@ def save_task(root: str, task: dict) -> bool:
 
     본문은 프로젝트에, 머리글은 기계에. 두 자리에 같은 순간 적히므로 목록과 상세가 어긋나지
     않는다. 색인 쓰기가 실패해도 본문 저장의 성패를 뒤집지 않는다 — 정본이 편의보다 우선한다."""
-    rows = [row for row in _read_raw(root) if row.get("id") != task.get("id")]
+    key = (_task_agent(task), task.get("id"))
+    rows = [row for row in _read_raw(root) if (_task_agent(row), row.get("id")) != key]
     rows.append(public_task(task))
     rows.sort(key=lambda row: row.get("created") or 0)
     saved = write_tasks(root, rows)
@@ -386,7 +397,8 @@ def index_task(root: str, task: dict) -> bool:
     row = index_row(root, task)
     if not row["id"]:
         return False
-    rows = [old for old in read_index() if old.get("id") != row["id"]]
+    key = (_task_agent(row), row["id"])
+    rows = [old for old in read_index() if (_task_agent(old), old.get("id")) != key]
     rows.append(row)
     rows.sort(key=lambda item: item.get("created") or 0)
     body = "".join(json.dumps(item, ensure_ascii=False) + "\n" for item in rows[-KEEP_INDEX:])
@@ -401,7 +413,8 @@ def feed(limit: int = 200) -> list[dict]:
     프로젝트의 옛 작업이 '실행 중'으로 떠 있으면, 그 줄은 계기가 아니라 거짓말이다.
     자리에 없는 프로젝트의 줄은 `missing` 표시만 달고 남긴다 — 마운트 안 된 외장 디스크의
     이력을 조용히 지우는 쪽이 사용자가 더 크게 잃는다."""
-    rows = read_index()
+    active = profiles.active()
+    rows = [row for row in read_index() if _task_agent(row) == active]
     for row in rows:
         if row.get("status") in _ALIVE:
             row["status"] = "interrupted"
@@ -415,13 +428,14 @@ def reindex(roots: list[str]) -> int:
 
     (색인 파일을 지웠거나, 색인이 생기기 전에 만든 작업이 있는 프로젝트를 위해.)"""
     rows: list[dict] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     for root in roots:
-        for task in load_tasks(root):
+        for task in load_tasks(root, all_agents=True):
             task_id = str(task.get("id") or "")
-            if not task_id or task_id in seen:
+            key = (_task_agent(task), task_id)
+            if not task_id or key in seen:
                 continue
-            seen.add(task_id)
+            seen.add(key)
             rows.append(index_row(root, task))
     rows.sort(key=lambda row: row.get("created") or 0)
     body = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows[-KEEP_INDEX:])

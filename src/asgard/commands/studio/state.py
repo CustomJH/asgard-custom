@@ -11,11 +11,40 @@ from __future__ import annotations
 import threading
 from typing import TYPE_CHECKING
 
+from ... import profiles
+
 if TYPE_CHECKING:  # pragma: no cover - 타입 전용
     from .server import _RootServer
 
 
-_TASKS: dict[str, dict] = {}
+def _task_owner(value: object = None) -> str:
+    return profiles.normalize(str(value or profiles.DEFAULT))
+
+
+class _ProfileTasks(dict[tuple[str, str], dict]):
+    """같은 서버의 프로파일 창들이 같은 작업 ID를 써도 상태를 공유하지 않는다."""
+
+    @staticmethod
+    def _key(key: object) -> tuple[str, str]:
+        if isinstance(key, tuple):
+            return key
+        return _task_owner(profiles.active()), str(key)
+
+    def __getitem__(self, key: object) -> dict:
+        return super().__getitem__(self._key(key))
+
+    def __setitem__(self, key: object, value: dict) -> None:
+        owner = _task_owner(value.get("agent")) if not isinstance(key, tuple) else str(key[0])
+        super().__setitem__((owner, str(key if not isinstance(key, tuple) else key[1])), value)
+
+    def __contains__(self, key: object) -> bool:
+        return super().__contains__(self._key(key))
+
+    def get(self, key: object, default: object = None) -> dict | object:
+        return super().get(self._key(key), default)
+
+
+_TASKS = _ProfileTasks()
 _TASK_LOCK = threading.Lock()
 _MAX_RUNNING = 4
 _PROMPT_CAP = 20_000
@@ -27,7 +56,7 @@ _ARTIFACT_CAP = 400_000  # 뷰어가 읽는 최대 바이트 — 창은 편집�
 # 핸들러를 안 받는데 전환은 POST 이고, 전환 직후의 GET도 같은 답을 해야 하기 때문이다.
 _CURRENT_ROOT: str | None = None
 _ROOT_LOCK = threading.Lock()
-_LOADED_ROOTS: set[str] = set()
+_LOADED_ROOTS: set[tuple[str, str]] = set()
 _SERVER: "_RootServer | None" = None
 
 _SETTING_KEYS = {
