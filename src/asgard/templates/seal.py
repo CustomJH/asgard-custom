@@ -37,6 +37,7 @@ SEAL_SKILL_MD = """\
 name: asgard-seal
 description: 🔏 Seal — classify and seal working-tree changes into independent, revertible gitmoji case files (commits). Includes quality gates (one seal one case · 50/72 · reasoned body · secret blocking · staged re-verification). NEVER Co-Authored-By/Signed-off-by.
 allowed-tools: Bash(git status *), Bash(git diff *), Bash(git log *), Bash(git branch --show-current), Bash(git add *), Bash(git commit *), Bash(git restore --staged *)
+lane: vcs
 ---
 
 # asgard-seal — Case Sealing (gitmoji commit)

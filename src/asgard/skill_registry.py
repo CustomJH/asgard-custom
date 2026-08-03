@@ -14,7 +14,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from xml.sax.saxutils import escape
+from xml.sax.saxutils import escape, unescape
 
 from .settings import global_dir, load_project, save_project, section
 from .skill_bank import learned_skills, record_use, resolve_learned
@@ -43,6 +43,29 @@ def _implicit(text: str) -> bool:
         return True
     match = re.search(r"^disable-model-invocation:\s*(.+)$", text.split("---", 2)[1], re.M)
     return not match or match.group(1).strip().lower() not in ("true", "yes", "1", "on")
+
+
+def _lane(text: str) -> str:
+    """Declared execution lane of a skill, or "" when it takes the ordinary delivery route.
+
+    The native loop classifies a turn from the request text, and a user-invoked skill hands it
+    the whole SKILL.md body instead — a contract that says what the procedure *may* do, not what
+    the user asked for. `asgard-seal`'s body alone carries twelve write verbs, so the write-verb
+    veto in `Heimdall._classify` promoted every `/asgard-seal` to a Trinity quest (plan → worker
+    waves → baseline suite → verifier) for a run that only calls git. A skill whose procedure is
+    already bounded declares its lane here and the router reads the declaration instead of
+    guessing from prose.
+    """
+    if not text.startswith("---"):
+        return ""
+    match = re.search(r"^lane:\s*(.+)$", text.split("---", 2)[1], re.M)
+    return match.group(1).strip().lower() if match else ""
+
+
+def skill_lane(root: str, name: str) -> str:
+    """Lane declared by one skill's frontmatter — "" for unknown skills and ordinary ones."""
+    text = show_skill(root, name)
+    return _lane(text) if text else ""
 
 
 def _file_skill(text: str) -> tuple[dict[str, str], str] | None:
@@ -549,6 +572,27 @@ def invoked_skill_prompt(root: str, command: str) -> str | None:
         "for the user's next decision even though ordinary unattended work should choose a safe default.\n\n"
         f"Arguments: {arguments.strip() or '(none)'}"
     )
+
+
+_INVOKED_HEAD = re.compile(r'^<user_invoked_skill name="([^"]+)">')
+_INVOKED_ARGS = re.compile(r"^Arguments: (.*)$", re.M)
+
+
+def invoked_skill_command(request: str) -> str | None:
+    """Recover the ``/skill args`` a prompt was expanded from, or None for an ordinary request.
+
+    Consumers that need to know *what was asked* — routing, request classification, the map and
+    tutor layers — must not read the expanded body. A SKILL.md is a contract describing what the
+    procedure may do, and reading it as the request inverts the answer: `asgard-seal`'s body alone
+    carries twelve write verbs, so the write-verb veto in `Heimdall._classify` promoted every
+    `/asgard-seal` to a full delivery quest. The producer above and this reader are adjacent on
+    purpose — the wrapper format has one owner."""
+    head = _INVOKED_HEAD.match(request)
+    if not head:
+        return None
+    args = _INVOKED_ARGS.search(request)
+    tail = args.group(1).strip() if args else ""
+    return f"/{unescape(head.group(1))}" + (f" {tail}" if tail and tail != "(none)" else "")
 
 
 def show_skill_resource(root: str, name: str, relative: str) -> str:

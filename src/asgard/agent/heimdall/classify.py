@@ -146,6 +146,30 @@ def memory_write_intent(request: str) -> bool:
     return bool(_IDENTITY_DECL_PAT.search(scan) or _STANDING_PAT.search(scan))
 
 
+# 봉인(커밋) 의도 — 워킹트리를 git 이력으로 옮기는 것만 하는 요청. 소스 파일은 한 줄도 안 바뀌므로
+# Trinity 가 검증할 대상 자체가 없다: 계획할 변경도, 돌릴 베이스라인도, 대조할 diff-hash 도 없다.
+# 그런데 라우터는 "커밋해줘"를 write 로 읽고 퀘스트를 열었고, 단순 커밋 한 번이 thinker 계획 →
+# worker 웨이브 → 테스트 스위트 → verifier 판정까지 갔다 (실측 5분 이상). 이 축이 그 경로를 끊는다.
+_COMMIT_INTENT_PAT = re.compile(
+    r"커밋|봉인(?:해|하)|\bcommit\b|\bseal\b|\bstage\s+(?:and|the)\b",
+    re.IGNORECASE,
+)
+# 판정을 좁히는 세 조건: ① 파일을 만지는 write 동사가 같이 있으면 아니다 ("커밋 규칙 문서 작성해줘"),
+# ② 묻는 문장은 아니다 ("commit 규칙이 뭐야?"는 답을 원하는 것이지 봉인 지시가 아니다),
+# ③ 길이 상한 — 긴 명세문이 본문 어딘가에서 커밋을 언급하는 것은 봉인 요청이 아니다.
+_VCS_ONLY_CAP = 200
+
+
+def vcs_only_intent(request: str) -> bool:
+    """git 이력만 건드리는 요청 여부 — 소스 write 가 없는 봉인·커밋 전용 턴."""
+    scan = " ".join(request.split())
+    if len(scan) > _VCS_ONLY_CAP or not _COMMIT_INTENT_PAT.search(scan):
+        return False
+    if any(v in scan.lower() for v in _READ_VERBS):
+        return False
+    return not has_write_verbs(scan)
+
+
 def has_write_verbs(request: str) -> bool:
     """부정구("수정하지 마") 제거 후 write 동사 존재 — LLM 분류 실패 시 폴백 라우팅의 결정론 축."""
     scan = _NEGATED_WRITE_PAT.sub("", " ".join(request.split()).lower())
@@ -172,6 +196,11 @@ def classify_heuristic(request: str) -> dict | None:
         return {**base, "write_expected": True, "destructive": True, "task_class": "deep"}
     if _SMALLTALK_PAT.match(low):
         return base  # 인사·잡담 전체 매치 — DIRECT 무세금 (단순한 것은 단순하게)
+    # 봉인 전용 턴 — write 이긴 하지만 git 이력만 쓴다. task_class 로 갈라 두면 라우터가
+    # Trinity 대신 seal 레인을 고른다 (write_expected 를 내리면 read-only DIRECT 로 가서
+    # 격리 워크스페이스에 커밋하게 되므로, 그쪽이 아니라 이쪽이다).
+    if vcs_only_intent(request):
+        return {**base, "write_expected": True, "task_class": "vcs"}
     # 순수 기억 지시(repo write 동사 없음)는 결정론 DIRECT — LLM 폴백이 trivial로 뭉개는 것을
     # 차단한다. 저장 자체는 라우팅이 아니라 core._direct의 memory_save 계약이 집행한다.
     # 혼합 요청("기억해두고 파일 수정해줘")은 write 분기로 계속 흘러 Trinity를 탄다.

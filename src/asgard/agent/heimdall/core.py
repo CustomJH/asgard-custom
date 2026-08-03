@@ -37,6 +37,7 @@ from .classify import (
     classify_heuristic,
     has_write_verbs,
     memory_write_intent,
+    vcs_only_intent,
 )
 from .delivery import DeliveryDispatch
 from .journal import _log_classify
@@ -74,6 +75,16 @@ def _new_recap() -> dict:
         "agents": Counter(),
         "recall_chars": 0,
     }
+
+
+def _invoked_command(request: str) -> str | None:
+    """이 턴이 `/skill args` 확장인지 — 맞으면 그 원문, 아니면 None (fail-open)."""
+    try:
+        from ...skill_registry import invoked_skill_command
+
+        return invoked_skill_command(request)
+    except Exception:
+        return None
 
 
 def _concurrent_label(rows: list[dict]) -> str:
@@ -518,6 +529,48 @@ class Heimdall:
         if agent != "loki" and tier in order and order.index(coord) > order.index(tier):
             tier = coord
         return table.get(tier)
+
+    def _invoked_lane(self, invoked: str) -> str:
+        """`/skill args` 원문이 가리키는 스킬의 선언 레인 — 실패·미선언은 빈 문자열 (fail-open)."""
+        try:
+            from ...skill_registry import skill_lane
+
+            return skill_lane(self.root, invoked.split()[0].removeprefix("/"))
+        except Exception:
+            return ""
+
+    def _skill_classification(self, invoked: str) -> dict:
+        """스킬 호출의 결정론 분류 — 선언된 레인이 있으면 그 레인, 없으면 딜리버리.
+
+        스킬 호출에 분류기를 부르면 무엇을 물어봐도 결과는 하나다: 스킬 본문에는 write 동사가
+        늘 있고, `_classify` 의 write 거부권이 분류 결과와 무관하게 그것을 write 로 확정한다.
+        이미 정해진 결과를 받으려고 스킬 본문 전체를 실은 호출을 한 번 더 내보내는 셈이라
+        그 호출만 없앤다 — 레인 선언이 없는 스킬의 라우팅 결과는 종전과 같다."""
+        lane = self._invoked_lane(invoked)
+        d = {
+            "write_expected": True,
+            "ambiguous": False,
+            "destructive": False,
+            "external_research": False,
+            "shared": False,
+            "parallel_requested": bool(_PARALLEL_WORK_PAT.search(invoked.lower())),
+            "criteria": [],
+            "task_class": lane if lane in ("vcs",) else "standard",
+        }
+        _log_classify(self.root, {"event": "classify", "source": "skill", **_pred_fields(d)})
+        return d
+
+    def _route(self, subject: str, invoked: str | None) -> dict:
+        """이 턴의 분류 — 스킬 호출은 결정론, 나머지는 휴리스틱·분류기."""
+        from ...i18n import t
+
+        if invoked:
+            return self._skill_classification(invoked)
+        self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (하임달이 길을 살피는 문구)
+        try:
+            return self._classify(subject)
+        finally:
+            self.on_status(None)
 
     def _classify(self, request: str) -> dict:
         # 1차 결정론 휴리스틱 (LLM 토큰 0) — 명백 케이스만. 모호하면 LLM 폴백.
@@ -1022,6 +1075,53 @@ class Heimdall:
         )
         return revised if adopted else draft
 
+    def _seal(self, request: str, subject: str) -> str:
+        """봉인 레인 — 워킹트리를 git 이력으로 옮기는 단발 세션. 퀘스트도 검증 절차도 열지 않는다.
+
+        DIRECT 도 Trinity 도 이 과업에 맞지 않는다. DIRECT 는 readonly 라 `git add`·`git commit`
+        이 정책에 막히고, 막히지 않더라도 readonly 세션은 격리 워크스페이스 사본에서 돌아 진짜
+        저장소에 커밋하지 않는다. Trinity 는 반대쪽으로 틀렸다 — 계획할 변경도, 돌릴 베이스라인도,
+        대조할 diff-hash 도 없는 턴에 thinker 계획 → worker 웨이브 → 테스트 스위트 → verifier
+        판정을 전부 실행한다 (단순 커밋 한 번이 5분 이상).
+
+        게이트를 없앤 게 아니라 다른 층이 맡는다: 봉인 규율(하나의 봉인 하나의 사건·50/72·시크릿
+        차단·staged 재검증)은 asgard-seal 스킬 본문이 계약으로 싣고, 이 세션이 소스 파일을 실제로
+        편집하면 아래 사후 판정이 Trinity 로 승격시킨다 (Canon 10, `_direct` 의 소급 승격과 같다)."""
+        from ...hooks.quest_log import snapshot_ref
+
+        before_ref = snapshot_ref(self.root)
+        r = self._session(
+            self.direct_identity + self.map_note,
+            role="seal",
+            readonly=False,
+        ).run(request)
+        if r.stop_reason == "cancelled":
+            raise TurnCancelled()
+        self.last_context_tokens = r.context_tokens or self.last_context_tokens
+        self._track_cache(r)
+        if r.writes:  # 편집 도구로 소스를 고쳤다 = 봉인이 아니다 — 검증 경로로 넘긴다
+            _log_classify(self.root, {"event": "misroute", "route": "seal", "actual_write": True})
+            self.on_text("\n⚠ 봉인 턴에서 소스 편집을 감지 — 소급 검증 경로 진입 (Canon 10)\n")
+            cls = {
+                "write_expected": True,
+                "ambiguous": False,
+                "destructive": False,
+                "external_research": False,
+                "shared": False,
+                "criteria": [],
+                "task_class": "standard",
+            }
+            # 넘기는 과업은 `subject`(=`/asgard-seal`)다. 부푼 본문은 Trinity 의 요청 상한
+            # (10,000자)을 혼자 넘겨 퀘스트가 열리지도 못한다 — 검증 대상은 어차피 관측된
+            # write(`pre_work`)이지 스킬 계약문이 아니다.
+            return self._trinity(subject, cls, pre_work=r, pre_base_ref=before_ref)
+        self.last_response_text = r.text
+        # 기록에 남기는 것은 `subject` 다 — 12.8KB 계약문을 턴 맥락과 turn_store 에 넣으면
+        # 다음 DIRECT 턴의 후속 질문 맥락이 스킬 본문으로 가득 찬다.
+        self.history = (self.history + [(subject, r.text[:500])])[-6:]
+        self._persist_turn(subject, r.text)
+        return r.text if r.stop_reason == "refusal" else ""  # 본문은 이미 스트리밍됨 — 이중 출력 방지
+
     def _direct(self, request: str, memory_intent: bool = False) -> str:
         """DIRECT 응답 — 본문은 on_text로 이미 스트리밍됨. 빈 문자열 반환해 이중 출력 방지.
         예외: refusal 안내는 스트림에 안 들어간 합성 텍스트 — 그것만 반환.
@@ -1247,23 +1347,22 @@ class Heimdall:
         return t("cancel_notice") + (t("cancel_notice_quest", qid=qid) if qid else "")
 
     def handle(self, request: str) -> str:
-        from ...i18n import t
-
         self._last_completion = None
         self._last_quest_id = None  # 턴 단위 리셋 — DIRECT 턴이 직전 퀘스트 귀속을 승계하지 않게
         self._explore_cmds = 0  # 턴 단위 리셋 — Trinity/거절 턴이 직전 DIRECT 탐색량을 승계하지 않게
         with self._state_lock:
             self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL이 턴 종료 후 회수
-        self._prepare_map(request)
-        self._tutor_brief(request)
+        # 스킬 호출이면 `request` 는 그 스킬 본문으로 부푼 프롬프트다. 요청이 무엇이냐를 읽는
+        # 층(지도 준비·튜터·분류)은 부푼 본문이 아니라 `/skill args` 원문을 봐야 한다 — 본문은
+        # 절차가 무엇을 할 수 있는지를 적은 계약이지 사용자가 부탁한 일이 아니다.
+        invoked = _invoked_command(request)
+        subject = invoked or request
+        self._prepare_map(subject)
+        self._tutor_brief(subject)
         self._tutor_tip()
         # cancel_event는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c가 유실된다 (경합).
-        self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (하임달이 길을 살피는 문구)
-        try:
-            cls = self._classify(request)
-        finally:
-            self.on_status(None)
+        cls = self._route(subject, invoked)
         if self.cancel_event.is_set():  # 분류 중 취소 — 라우팅 진입 전에 멈춘다
             return self._cancel_notice()
         if cls["destructive"]:
@@ -1276,10 +1375,18 @@ class Heimdall:
             try:
                 # 기억 지시는 분류 소스와 무관한 결정론 재판정 — LLM 분류가 trivial로 뭉개도 계약이 열린다.
                 return self._finalize_memory(
-                    request, self._direct(request, memory_intent=memory_write_intent(request))
+                    request, self._direct(request, memory_intent=memory_write_intent(subject))
                 )  # DIRECT — 무세금
             except TurnCancelled:
                 return self._cancel_notice()  # 취소 턴은 메모리 보존도 하지 않는다
+        # 봉인 레인 — write 이지만 소스는 안 건드린다 (git 이력만). Trinity 는 계획할 변경도,
+        # 돌릴 베이스라인도, 대조할 diff-hash 도 못 만드는 과업에 그 절차를 전부 실행한다.
+        if cls.get("task_class") == "vcs":
+            _log_classify(self.root, {"event": "route", "route": "seal"})
+            try:
+                return self._finalize_memory(request, self._seal(request, subject))
+            except TurnCancelled:
+                return self._cancel_notice()
         # 모든 비파괴 write는 Worker가 먼저 자율 계획·실행한다. standard는 기계 baseline 적격과
         # 개인 메모리 최소 회수만 표시하고, deep/ambiguous/shared도 선행 Thinker 없이 시작한다.
         # 별도 Thinker는 명시적 병렬 분해 또는 관측된 실패의 재계획에만 사용한다.

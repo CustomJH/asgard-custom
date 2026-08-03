@@ -26,6 +26,11 @@ ROLE_CAPABILITIES: Mapping[str, frozenset[str]] = {
     # injected-tool behavior. Heimdall always supplies an explicit role.
     "legacy": frozenset({"inspect", "mutate", "execute", "coordinate", "verify"}),
     "direct": frozenset({"inspect", "execute"}),
+    # 봉인 레인 — git 이력만 쓰는 단발 세션. `mutate` 가 필요한 이유는 편집이 아니라 bash 다:
+    # `git add`·`git commit` 은 readonly-safe 판정을 통과하지 못하고, readonly 세션은 격리
+    # 워크스페이스 사본에서 돌아 진짜 저장소에 커밋할 수도 없다. 편집 도구를 실제로 쓰면
+    # `Heimdall._seal` 의 사후 판정이 Trinity 로 승격시킨다 (DIRECT 의 소급 승격과 같은 장치).
+    "seal": frozenset({"inspect", "execute", "mutate"}),
     "readonly": frozenset({"inspect", "execute"}),
     "thinker": frozenset({"inspect", "execute"}),
     "thinker_alt": frozenset({"inspect", "execute"}),

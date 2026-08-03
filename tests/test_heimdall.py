@@ -2137,6 +2137,76 @@ class TestWaveParallel(Base):
         self.assertEqual(sum("Assigned unit 3" in session.prompt for session in workers), 2)
 
 
+class TestSealLane(Base):
+    """봉인 레인 — 커밋만 하는 턴이 Trinity 절차를 사지 않는다.
+
+    26-08-04 회귀: `/skill` 호출은 스킬 본문(seal 은 12.8KB)이 곧 요청이 되어 분류기에 실렸고,
+    본문에 든 write 동사 열둘이 `_classify` 의 write 거부권을 만족시켜 **분류 결과와 무관하게**
+    write 로 확정됐다. 그래서 커밋만 하면 되는 턴이 thinker 계획 → worker 웨이브 → 베이스라인
+    테스트 → verifier 판정을 전부 실행했다."""
+
+    def _seal_prompt(self) -> str:
+        """`invoked_skill_prompt` 와 같은 확장문 — 레지스트리 배정과 무관하게 파서 경로를 탄다."""
+        from asgard.templates.seal import SEAL_SKILL_MD
+
+        body = SEAL_SKILL_MD.split("---", 2)[2].lstrip()
+        return (
+            f'<user_invoked_skill name="asgard-seal">\n{body.rstrip()}\n</user_invoked_skill>\n\n'
+            "The user explicitly invoked this skill.\n\nArguments: (none)"
+        )
+
+    def test_the_invocation_is_recovered_from_the_expanded_prompt(self):
+        from asgard.skill_registry import invoked_skill_command
+
+        self.assertEqual(invoked_skill_command(self._seal_prompt()), "/asgard-seal")
+        self.assertIsNone(invoked_skill_command("커밋해줘"))  # 평범한 요청은 건드리지 않는다
+
+    def test_skill_body_alone_still_reads_as_a_write_task(self):
+        """회귀의 원인 자체 — 본문을 요청으로 읽으면 판정이 뒤집힌다는 사실을 못박는다."""
+        from asgard.agent.heimdall.classify import classify_heuristic, has_write_verbs
+        from asgard.templates.seal import SEAL_SKILL_MD
+
+        body = SEAL_SKILL_MD.split("---", 2)[2]
+        self.assertTrue(has_write_verbs(body))  # 본문은 늘 write 로 읽힌다
+        self.assertIsNone(classify_heuristic(body))  # read·write 신호가 뒤섞여 LLM 폴백행
+
+    def test_invoked_seal_takes_the_seal_lane_without_a_quest(self):
+        seal = FakeSession(SessionResult(text="봉인 완료", stop_reason="end_turn"), label="seal")
+        h = FakeHeimdall(self.root, [seal])
+        h.handle(self._seal_prompt())
+        self.assertEqual(len(h.consumed), 1)  # 단일 세션 — thinker·worker·verifier 없음
+        self.assertEqual(seal.role, "seal")
+        self.assertFalse(seal.readonly)  # 격리 사본이 아니라 진짜 저장소에서 커밋한다
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "ACTIVE")))
+        self.assertIn('"route": "seal"', open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read())
+
+    def test_seal_lane_never_calls_the_classifier(self):
+        seal = FakeSession(SessionResult(text="봉인 완료", stop_reason="end_turn"), label="seal")
+        h = FakeHeimdall(self.root, [seal])
+        with mock.patch.object(h, "_classify", side_effect=AssertionError("분류 호출 금지")):
+            h.handle(self._seal_prompt())
+
+    def test_plain_commit_request_takes_the_seal_lane_too(self):
+        seal = FakeSession(SessionResult(text="봉인 완료", stop_reason="end_turn"), label="seal")
+        h = FakeHeimdall(self.root, [seal])
+        h.handle("지금까지 변경사항 커밋해줘")
+        self.assertEqual(seal.role, "seal")
+
+    def test_seal_turn_that_edits_source_is_promoted_to_verification(self):
+        """게이트를 버린 게 아니라 자리를 옮겼다 — 편집이 관측되면 검증 경로로 승격한다."""
+        seal = worker({"sneaky.txt": "oops\n"}, self.root, text="봉인 완료")
+        h = FakeHeimdall(self.root, [seal, verifier("PASS")])
+        out = h.handle(self._seal_prompt())
+        self.assertIn(DONE, out)
+        self.assertIn("misroute", open(os.path.join(self.root, ".asgard", "state", "classify.jsonl")).read())
+
+    def test_skill_without_a_declared_lane_keeps_the_delivery_route(self):
+        h = FakeHeimdall(self.root, [])
+        cls = h._skill_classification("/asgard-freyja 랜딩 만들어줘")
+        self.assertTrue(cls["write_expected"])
+        self.assertEqual(cls["task_class"], "standard")
+
+
 class TestDirectGuard(Base):
     """DIRECT 가드 — 오분류 write 소급 편입."""
 
