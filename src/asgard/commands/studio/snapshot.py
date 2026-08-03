@@ -151,7 +151,29 @@ def settings_state(root: str) -> dict:
     }
 
 
-def snapshot_data(root: str) -> dict:
+def _agent_state(root: str, explicit: str = "") -> dict:
+    """이 요청이 쓰는 에이전트. 세션 계층이 아직 없으면 현재 기계 기본으로 답한다."""
+    from ... import profiles
+
+    try:
+        from ... import sessions
+
+        described = sessions.describe(root, explicit=explicit or None)
+    except (ImportError, AttributeError):
+        described = {"agent": explicit or profiles.sticky(), "source": "explicit" if explicit else "sticky", "key": ""}
+    agent = profiles.normalize(described.get("agent") or explicit or profiles.sticky())
+    row = next((item for item in profiles.listing() if item["id"] == agent), {})
+    return {
+        "id": agent,
+        "label": str(row.get("name") or agent),
+        "home": str(row.get("path") or profiles.profile_dir(agent)),
+        "is_default": agent == profiles.DEFAULT,
+        "source": str(described.get("source") or "sticky"),
+        "key": str(described.get("key") or ""),
+    }
+
+
+def snapshot_data(root: str, explicit_agent: str = "") -> dict:
     from ...memory.policy import inject_enabled, memory_dir
     from .. import studio_store
     from ..role import role_model_state
@@ -160,6 +182,7 @@ def snapshot_data(root: str) -> dict:
     catalog = _catalog_state(root)
     scratch = studio_store.is_scratch(root)
     return {
+        "agent": _agent_state(root, explicit_agent),
         "project": {
             "name": workspace_label(root),
             "root": root,

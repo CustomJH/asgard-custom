@@ -12,7 +12,7 @@ import shutil
 import subprocess
 import threading
 from http.server import ThreadingHTTPServer
-from urllib.parse import parse_qs, quote, urlsplit
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from ... import ui
 from .. import loopback
@@ -71,8 +71,11 @@ class _Handler(loopback.LoopbackHandler):
         parts = urlsplit(self.path)
         root = getattr(self.server, "root", os.getcwd())
         try:
+            # 쿼리도 같이 넘긴다 — `?agent=…`는 **읽기만의 것이 아니다**. 여태 쓰기 쪽은
+            # 이 값을 통째로 버려서, 명시로 고른 에이전트에 저장한 설정이 조용히 기본
+            # 에이전트의 파일로 갔다(`request_scope`가 빈 explicit을 받아 sticky로 떨어진다).
             route = dispatch_post if method == "POST" else dispatch_put
-            status, ctype, body = route(parts.path, payload, root)
+            status, ctype, body = route(parts.path, payload, root, parse_qs(parts.query))
         except Exception as exc:
             status, ctype, body = loopback.error_result(exc, surface="studio", root=root, where=parts.path)
         self._send(status, ctype, body)
@@ -86,16 +89,92 @@ class _Handler(loopback.LoopbackHandler):
 
 class _RootServer(ThreadingHTTPServer):
     root: str
+    agent: str
+    run_id: str
+    run_token: str
+
+    def server_close(self) -> None:
+        try:
+            run_id = getattr(self, "run_id", "")
+            if run_id:
+                from ... import runs
+
+                runs.unregister(run_id, getattr(self, "run_token", ""))
+                self.run_id = ""
+        finally:
+            super().server_close()
 
 
-def _bind(host: str, port: int, root: str | None = None) -> _RootServer:
+def _studio_url(host: str, port: int, agent: str = "", view: str = "") -> str:
+    query = urlencode({key: value for key, value in (("agent", agent), ("view", view)) if value})
+    return f"http://{host}:{port}/" + (f"?{query}" if query else "")
+
+
+def _resolve_agent(root: str, explicit: str | None = None) -> str:
+    from ... import errors, profiles, sessions
+
+    if explicit:
+        try:
+            explicit = profiles.validate(explicit)
+        except ValueError as exc:
+            raise errors.InvalidInput(str(exc), remedy="`asgard agent list`로 쓸 수 있는 이름을 확인하세요") from exc
+        if not profiles.exists(explicit):
+            raise errors.NotFound(
+                f"에이전트 {explicit!r}를 못 찾았어요",
+                remedy=f"`asgard agent create {explicit}`로 먼저 세우세요",
+                detail={"agent": explicit},
+            )
+    agent = sessions.resolve_agent(root, explicit=explicit)
+    if not profiles.exists(agent):
+        raise errors.NotFound(
+            f"에이전트 {agent!r}를 못 찾았어요",
+            remedy=f"`asgard agent create {agent}`로 먼저 세우세요",
+            detail={"agent": agent},
+        )
+    return agent
+
+
+def _agent_source(root: str, explicit: str = "") -> str:
+    """이 서버가 왜 그 에이전트로 섰는가 — explicit·binding·sticky 중 하나.
+
+    창의 배지가 이 값을 그대로 말한다. 해석 결과만 들고 있으면 "고정으로 골랐다"와 "프로젝트가
+    배치했다"와 "기계 기본이다"가 화면에서 구분되지 않는다."""
+    from ... import sessions
+
+    try:
+        return str(sessions.describe(root, explicit=explicit or None).get("source") or "sticky")
+    except Exception:  # 출처를 못 읽는 것이 서버 시동을 막으면 안 된다
+        return "explicit" if explicit else "sticky"
+
+
+def _bind(
+    host: str,
+    port: int,
+    root: str | None = None,
+    *,
+    agent: str | None = None,
+    label: str = "Asgard Studio",
+    isolated: bool = False,
+) -> _RootServer:
+    from ... import profiles
     from .. import studio_store
 
+    resolved_root = resolve_start_root(root)
+    resolved_agent = _resolve_agent(resolved_root, agent)
     try:
         httpd = _RootServer((host, port), _Handler)
     except OSError:
         httpd = _RootServer((host, 0), _Handler)
-    httpd.root = resolve_start_root(root)
+    httpd.root = resolved_root
+    httpd.agent = resolved_agent
+    # 명시로 고른 이름과 해석된 이름을 가른다. 등록부는 해석값을 적어야 하고(지금 누가 도는가),
+    # 시동 URL은 명시값만 실어야 한다(왜 그 에이전트인가). 여태 URL이 해석값을 실어서, 배치나
+    # 끈끈한 활성으로 연 창도 `?agent=`를 달고 열려 창이 그것을 explicit으로 읽었다 — 배지가
+    # "고정"이라고 말하는데 실제 출처는 sticky인 상태였다.
+    httpd.agent_explicit = profiles.normalize(agent) if agent else ""
+    httpd.agent_source = _agent_source(resolved_root, httpd.agent_explicit)
+    httpd.run_id = ""
+    httpd.run_token = ""
     # 자리와 서버 핸들은 `state`가 소유한다 — 여기서 `global`로 잡으면 이 모듈의 전역이
     # 하나 더 생길 뿐이고, 되돌아 읽는 쪽은 영영 None을 본다.
     state._SERVER = httpd
@@ -106,6 +185,20 @@ def _bind(host: str, port: int, root: str | None = None) -> _RootServer:
     if studio_store.looks_like_project(httpd.root):
         studio_store.touch_project(httpd.root)
     load_project_tasks(httpd.root)  # 지난번에 하던 일이 창을 열면 그대로 있어야 한다
+    from ... import runs
+
+    actual = int(httpd.server_address[1])
+    record = runs.register(
+        httpd.agent,
+        "studio",
+        host,
+        actual,
+        _studio_url(host, actual, httpd.agent_explicit),
+        root=httpd.root,
+        label=f"{label} (isolated)" if isolated else label,
+    )
+    httpd.run_id = str(record["id"])
+    httpd.run_token = str(record["token"])
     return httpd
 
 
@@ -162,8 +255,13 @@ def _native_candidates() -> list[str]:
     return list(dict.fromkeys(path for path in candidates if path and os.path.isfile(path)))
 
 
-def _open_native(url: str, root: str) -> bool:
-    env = {**os.environ, "ASGARD_STUDIO_URL": url, "ASGARD_STUDIO_ROOT": root}
+def _open_native(url: str, root: str, agent: str = "") -> bool:
+    env = {
+        **os.environ,
+        "ASGARD_STUDIO_URL": url,
+        "ASGARD_STUDIO_ROOT": root,
+        "ASGARD_STUDIO_AGENT": agent,
+    }
     for path in _native_candidates():
         try:
             subprocess.run([path], env=env, check=False)
@@ -181,28 +279,47 @@ def run_studio(
     view: str = "",
     label: str = "Asgard Studio",
     root: str | None = None,
+    agent: str | None = None,
+    isolated: bool = False,
+    json_out: bool = False,
 ) -> int:
     from .. import studio_store
 
     if host not in ("127.0.0.1", "localhost", "::1"):
         ui.warn(f"host {host!r} is not loopback — forcing 127.0.0.1")
         host = "127.0.0.1"
-    httpd = _bind(host, port, root)
+    httpd = _bind(host, port, root, agent=agent, label=label, isolated=isolated)
     actual = httpd.server_address[1]
-    # 모드 딥링크 — `--view plan`은 같은 창의 기획 화면으로 바로 들어온다(기획은 스튜디오 안에서만 쓴다)
-    suffix = f"?view={quote(view)}" if view else ""
-    url = f"http://{host}:{actual}/{suffix}"
-    ui.ok(f"{label} → {url}")
-    where = studio_store.SCRATCH_NAME if studio_store.is_scratch(httpd.root) else httpd.root
-    ui.step(f"작업 공간: {where} (창에서 언제든 바꿉니다)")
-    ui.step("종료: Ctrl-C")
+    url = _studio_url(host, actual, httpd.agent_explicit, view)
+    if json_out:
+        print(
+            json.dumps(
+                {
+                    "window": {
+                        "id": httpd.run_id,
+                        "agent": httpd.agent,
+                        "url": url,
+                        "pid": os.getpid(),
+                        "port": actual,
+                    },
+                    "reused": False,
+                },
+                ensure_ascii=False,
+            )
+        )
+    else:
+        ui.ok(f"{label} → {url}")
+        ui.step(f"에이전트: {httpd.agent}")
+        where = studio_store.SCRATCH_NAME if studio_store.is_scratch(httpd.root) else httpd.root
+        ui.step(f"작업 공간: {where} (창에서 언제든 바꿀 수 있어요)")
+        ui.step("종료: Ctrl-C")
     if open_browser:
 
         def launch() -> None:
-            if prefer_native and _open_native(url, httpd.root):
+            if prefer_native and _open_native(url, httpd.root, httpd.agent):
                 httpd.shutdown()
                 return
-            if prefer_native:
+            if prefer_native and not json_out:
                 ui.warn("Tauri app not built yet — opening the browser fallback")
             _open(url)
 

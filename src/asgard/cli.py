@@ -1830,12 +1830,22 @@ def open_studio(
     browser: bool = typer.Option(False, "--browser", help=t("hc_open_web")),
     view: str = typer.Option("", "--view", help=t("hc_open_view")),
     root: str = typer.Option("", "--root", help=t("hc_open_workspace")),
+    agent: str = typer.Option("", "--agent", help="default agent for this window; overrides the global --agent option"),
+    isolated: bool = typer.Option(False, "--isolated", help="start a dedicated server for this agent"),
 ) -> None:
     """Open Asgard Studio. 프로젝트 안이 아니어도 열린다 — 작업 공간은 창에서 고른다."""
     from .commands.studio import run_studio
 
     raise typer.Exit(
-        run_studio(port=port, open_browser=not no_open, prefer_native=not browser, view=view, root=root or None)
+        run_studio(
+            port=port,
+            open_browser=not no_open,
+            prefer_native=not browser,
+            view=view,
+            root=root or None,
+            agent=agent or None,
+            isolated=isolated,
+        )
     )
 
 

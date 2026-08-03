@@ -446,7 +446,7 @@ def _failure_of(payload: dict, code: int, stdout: str, stderr: str) -> dict | No
         return None
     raw = (stderr.strip() or stdout.strip() or "").strip()
     lines = [line.strip() for line in raw.splitlines() if line.strip()]
-    head = lines[-1] if lines else f"작업이 종료 코드 {code}로 끝났습니다."
+    head = lines[-1] if lines else f"작업이 종료 코드 {code}로 끝났어요."
     # 여기서는 앞을 남긴다 — `state.trim`은 로그용이라 꼬리를 남기지만, 표제는 첫머리가 뜻이다.
     return {
         "code": "task_failed",
@@ -473,9 +473,9 @@ def _settle_ticket(root: str, task: dict) -> None:
             if task.get("status") == "ready":
                 if ticket["status"] == "in_progress":
                     T.update_ticket(root, ticket["key"], {"status": "in_review"}, actor="studio")
-                T.add_comment(root, ticket["key"], summary or "작업이 끝났습니다.", author="studio")
+                T.add_comment(root, ticket["key"], summary or "작업이 끝났어요.", author="studio")
             else:
-                T.add_comment(root, ticket["key"], f"작업이 막혔습니다 — {summary}", author="studio")
+                T.add_comment(root, ticket["key"], f"작업이 막혔어요 — {summary}", author="studio")
     except Exception:
         pass
 
@@ -504,11 +504,10 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
             return _json_body(409, {"error": "too many running tasks"})
     provider = str(payload.get("provider") or "").strip()
     model = str(payload.get("model") or "").strip()
-    command = [sys.executable, "-m", "asgard", "run", prompt, "--json"]
-    if provider:
-        command += ["--provider", provider]
-    if model:
-        command += ["--model", model]
+    agent, failed = _resolve_agent(payload.get("agent"))
+    if failed:
+        return _json_body(400, {"error": failed})
+    command = _run_command(prompt, agent, provider, model)
     now = time.time()
     task_id = uuid.uuid4().hex[:12]
     task = {
@@ -521,6 +520,7 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
         "permission": permission,
         "provider": provider,
         "model": model,
+        "agent": agent,  # 누가 돌았는가 — 기록의 일부다(빈 값이면 활성 에이전트)
         "result": "",
         "log": "",
         "files": [],
@@ -530,15 +530,15 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
         "now": None,
         "activity": [],
         "todos": [],
-        # 한 작업 = 한 퀘스트. 턴이 쌓여도 원장의 줄은 하나다.
+        # 한 작업 = 한 퀘스트. 턴이 쌓여도 퀘스트 로그의 줄은 하나다.
         "turns": [{"role": "user", "text": prompt, "ts": now}],
         "root": root,  # 작업은 작업 공간에 속한다 — 어느 경계에서 돌았는지가 기록의 일부다
         "approval": {
             "action": "로컬 Asgard 작업 실행",
-            "reason": f"요청한 작업을 {workspace_label(root)}에서 실행하기 위해 필요합니다.",
+            "reason": f"{workspace_label(root)}에서 이 작업을 돌리려면 승인이 필요해요.",
             "scope": root,
             "target": f"{workspace_label(root)}의 파일과 허용된 도구",
-            "reversible": "Git 변경은 검토 후 되돌릴 수 있습니다. 외부 작업은 실행 시 별도 정책을 따릅니다.",
+            "reversible": "Git 변경은 검토한 뒤 되돌릴 수 있어요. 외부 작업은 돌릴 때 별도 정책을 따라요.",
         },
         "command": command,
     }
@@ -548,6 +548,43 @@ def create_task(payload: dict, root: str) -> tuple[int, str, bytes]:
     if task["status"] == "queued":
         _start(task_id, root)
     return _json_body(202, _public_task(task))
+
+
+def _run_command(prompt: str, agent: str, provider: str, model: str) -> list[str]:
+    """자식으로 띄울 명령 한 줄.
+
+    `--agent`는 하위 명령보다 먼저 평가되는 루트 옵션이라 **`run` 앞에** 서야 한다 —
+    뒤에 두면 typer가 run의 인자로 읽고 거절한다."""
+    command = [sys.executable, "-m", "asgard"]
+    if agent:
+        command += ["--agent", agent]
+    command += ["run", prompt, "--json"]
+    if provider:
+        command += ["--provider", provider]
+    if model:
+        command += ["--model", model]
+    return command
+
+
+def _resolve_agent(wanted: object) -> tuple[str, str]:
+    """이 이름으로 돌 수 있는가 — 돌 이름과 거절 사유 중 하나만 채워 돌려준다.
+
+    빈 값은 "이 창의 활성 에이전트"라는 뜻이라 통과시킨다. 아직 안 세운 이름만 막는다.
+    여기서 미리 판정하는 이유는, 없는 에이전트로 띄우면 실패가 프로세스 로그 안쪽에만
+    남아서다 — 창은 '실행 중'을 그리다 조용히 끝난 작업 하나를 보게 된다."""
+    from ... import profiles
+
+    name = str(wanted or "").strip()
+    if not name:
+        return "", ""
+    try:
+        name = profiles.validate(name)
+    except Exception as exc:
+        return "", str(exc)
+    if not profiles.exists(name):
+        made = ", ".join(row["id"] for row in profiles.listing()) or "default"
+        return "", f"{name} 에이전트가 아직 없어요 — 세운 에이전트는 {made}예요"
+    return name, ""
 
 
 _TICKET_BRIEF = "아래 티켓 하나를 끝내라. 끝나면 무엇을 바꿨는지 한 줄로 보고한다."
@@ -594,10 +631,14 @@ def run_ticket(payload: dict, root: str) -> tuple[int, str, bytes]:
     except T.StoreError as exc:
         return _json_body(503, {"error": str(exc)})
     if ticket["status_type"] in {"completed", "canceled"}:
-        return _json_body(409, {"error": f"{ticket['key']}는 이미 닫힌 티켓입니다"})
+        return _json_body(
+            409, {"error": f"{ticket['key']} 티켓은 이미 닫혀 있어요 — 상태를 다시 열어야 돌릴 수 있어요"}
+        )
     blocked = ticket["blocked_by"]
     if blocked and not payload.get("force"):
-        return _json_body(409, {"error": f"{ticket['key']}는 {', '.join(blocked)}에 막혀 있습니다"})
+        return _json_body(
+            409, {"error": f"{ticket['key']} 티켓은 {', '.join(blocked)}에 막혀 있어요 — 막은 티켓을 먼저 끝내 주세요"}
+        )
 
     lines = [_TICKET_BRIEF, "", f"[{ticket['key']}] {ticket['title']}"]
     if ticket["body"]:
@@ -626,8 +667,69 @@ def run_ticket(payload: dict, root: str) -> tuple[int, str, bytes]:
     return _json_body(202, {"task": task, "ticket": ticket})
 
 
+_ASSIGN_BRIEF = "댓글에서 이름이 불렸다. 아래 티켓에서 부탁받은 일을 하고, 무엇을 했는지 한 줄로 보고한다."
+
+
+def assign_ticket(payload: dict, root: str) -> tuple[int, str, bytes]:
+    """`POST /api/tickets/assign` — 댓글에서 부른 에이전트에게 이 티켓을 맡긴다.
+
+    `run`과 갈라 두는 이유는 **실린 맥락이 다르기 때문**이다. `run`은 티켓 본문만 준다
+    ("이걸 끝내라"). 부름은 대화 도중에 일어나므로 부른 말이 곧 지시다 — 그 한 줄을 빼면
+    에이전트는 티켓 전체를 다시 해석하고, 사람이 "이 부분만"이라고 적은 뜻이 사라진다.
+
+    담당도 같이 옮긴다. 부르기만 하고 담당이 비어 있으면 보드에서는 아무 일도 안 일어난
+    것처럼 보이고, 같은 일이 두 번 배정된다. 이미 다른 사람 것이면 **안 뺏는다** —
+    부름은 요청이지 인수인계가 아니다."""
+    from ...studio import mentions
+    from ...studio import tickets as T
+
+    ref = str(payload.get("ref") or "").strip()
+    agent = str(payload.get("agent") or "").strip().lower()
+    note = str(payload.get("note") or "").strip()
+    if not agent:
+        return _json_body(400, {"error": "어느 에이전트에게 맡길지 이름이 필요해요"})
+    if agent not in {row["handle"] for row in mentions.roster()}:
+        return _json_body(400, {"error": f"{agent} 에이전트가 아직 없어요 — 에이전트 화면에서 먼저 세워 주세요"})
+    try:
+        ticket = T.get_ticket(root, ref)
+    except T.TicketError as exc:
+        return _json_body(404, {"error": str(exc)})
+    except T.StoreError as exc:
+        return _json_body(503, {"error": str(exc)})
+    if ticket["status_type"] in {"completed", "canceled"}:
+        return _json_body(
+            409, {"error": f"{ticket['key']} 티켓은 이미 닫혀 있어요 — 상태를 다시 열어야 맡길 수 있어요"}
+        )
+
+    lines = [_ASSIGN_BRIEF, "", f"[{ticket['key']}] {ticket['title']}"]
+    if ticket["body"]:
+        lines += ["", ticket["body"]]
+    if note:
+        lines += ["", f"불린 자리의 말: {note}"]
+    status, ctype, body = create_task(
+        {
+            "prompt": "\n".join(lines)[:_PROMPT_CAP],
+            "label": f"{ticket['key']} · @{agent}"[:200],
+            "permission": payload.get("permission") or "important",
+            "agent": agent,
+            "root": payload.get("root") or _ticket_workspace(ticket, root),
+        },
+        root,
+    )
+    if status != 202:
+        return status, ctype, body
+    task = json.loads(body)
+    changes: dict = {"task_id": task["id"]}
+    if not ticket["assignee"]:
+        changes["assignee"] = agent
+    if ticket["status_type"] not in {"started"}:
+        changes["status"] = "in_progress"
+    ticket = T.update_ticket(root, ticket["key"], changes, actor=str(payload.get("actor") or "studio"))
+    return _json_body(202, {"task": task, "ticket": ticket, "agent": agent})
+
+
 # 한 퀘스트 안에서 이어 가기 — 후속 지시는 **새 작업이 아니라 같은 작업의 다음 턴**이다.
-# 여태 스튜디오은 매 실행을 새로 시작했다: 원장에 줄이 하나씩 늘고, 앞 턴의 맥락은 사라졌다.
+# 여태 스튜디오는 매 실행을 새로 시작했다: 퀘스트 로그에 줄이 하나씩 늘고, 앞 턴의 맥락은 사라졌다.
 _TURN_CAP = 40
 _THREAD_HEAD = "지금까지 이 작업에서 오간 것:"
 _THREAD_TAIL = "위 맥락을 이어서 아래 지시를 수행하라."
@@ -655,7 +757,7 @@ def follow_task(payload: dict, root: str) -> tuple[int, str, bytes]:
     task_id = str(payload.get("id") or "")
     prompt = str(payload.get("prompt") or "").strip()
     if not prompt or len(prompt) > _PROMPT_CAP:
-        return _json_body(400, {"error": "다음 지시가 필요합니다 (최대 20000자)"})
+        return _json_body(400, {"error": "다음 지시를 적어 주세요 (최대 20000자)"})
     # 권한은 이어가는 턴마다 다시 정할 수 있다 — 화면의 권한 칸이 입력과 같은 자리에 있으니,
     # 보내는 순간의 값이 이 턴의 범위다. 안 주면 그 작업이 여태 쓰던 값을 그대로 쓴다.
     override = str(payload.get("permission") or "").strip()
@@ -666,7 +768,7 @@ def follow_task(payload: dict, root: str) -> tuple[int, str, bytes]:
         if not task:
             return _json_body(404, {"error": "task not found"})
         if task.get("status") in {"running", "queued", "paused"}:
-            return _json_body(409, {"error": "아직 돌고 있는 작업입니다 — 끝나거나 멈춘 뒤에 이어 가세요"})
+            return _json_body(409, {"error": "아직 돌고 있는 작업이에요 — 끝나거나 멈춘 뒤에 이어 가 주세요"})
         turns = list(task.get("turns") or [])
         turns.append({"role": "user", "text": prompt, "ts": time.time()})
         permission = override or str(task.get("permission") or "important")
@@ -713,7 +815,13 @@ def approve_task(payload: dict, root: str) -> tuple[int, str, bytes]:
             return _json_body(409, {"error": "task does not need approval"})
         root = task_root(task, root)  # 승인은 그 대화의 자리를 연다 — 창이 옮겨 갔더라도
         if decision == "deny":
-            task.update({"status": "blocked", "updated": time.time(), "result": "사용자가 실행을 거부했습니다."})
+            task.update(
+                {
+                    "status": "blocked",
+                    "updated": time.time(),
+                    "result": "사용자가 실행을 거부해서 이 작업은 돌지 않았어요.",
+                }
+            )
             denied = _public_task(task)
             _remember(root, denied)
             return _json_body(200, denied)
@@ -739,12 +847,12 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
     with _TASK_LOCK:
         task = _TASKS.get(task_id)
         if not task:
-            return _json_body(404, {"error": "작업을 찾을 수 없습니다"})
+            return _json_body(404, {"error": "그 작업을 못 찾았어요"})
         if task.get("status") == "needs_input":
             # 아직 시작도 안 한 작업이다 — '이미 끝났다'고 답하면 눈앞의 승인 판과 어긋난다
-            return _json_body(409, {"error": "승인을 기다리는 작업입니다 — 승인 판에서 거부하세요"})
+            return _json_body(409, {"error": "아직 승인을 기다리는 작업이에요 — 승인 판에서 거부해 주세요"})
         if task.get("status") not in {"running", "queued", "paused"}:
-            return _json_body(409, {"error": "이미 끝난 작업입니다"})
+            return _json_body(409, {"error": "이미 끝난 작업이에요 — 중지할 것이 없어요"})
         was_paused = task.get("status") == "paused"
         process = task.get("process")
         task.update(
@@ -752,7 +860,7 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
                 "status": "blocked",
                 "updated": time.time(),
                 "now": None,
-                "result": "작업이 중지되었습니다.",
+                "result": "작업을 중지했어요.",
                 "stopped": True,
             }
         )
@@ -774,19 +882,19 @@ def stop_task(payload: dict) -> tuple[int, str, bytes]:
 
 def pause_task(payload: dict) -> tuple[int, str, bytes]:
     if not hasattr(signal, "SIGSTOP"):
-        return _json_body(501, {"error": "이 플랫폼에서는 일시정지를 지원하지 않습니다"})
+        return _json_body(501, {"error": "이 기계에서는 일시정지가 안 돼요 — 대신 중지할 수 있어요"})
     task_id = str(payload.get("id") or "")
     with _TASK_LOCK:
         task = _TASKS.get(task_id)
         if not task:
-            return _json_body(404, {"error": "작업을 찾을 수 없습니다"})
+            return _json_body(404, {"error": "그 작업을 못 찾았어요"})
         process = task.get("process")
         if task.get("status") != "running":
-            return _json_body(409, {"error": "실행 중인 작업이 아닙니다"})
+            return _json_body(409, {"error": "돌고 있는 작업만 멈출 수 있어요"})
         if process is None:
             # 상태는 '실행 중'인데 아직 프로세스가 없는 짧은 사이. 여기서 '실행 중이 아니다'라고
             # 답하면 눈앞의 화면과 어긋난 말이 된다 — 무엇을 기다리는지를 말한다.
-            return _json_body(409, {"error": "이제 막 시작하는 중입니다 — 잠시 뒤에 다시 눌러 주세요"})
+            return _json_body(409, {"error": "이제 막 시작하는 중이에요 — 잠시 뒤에 다시 눌러 주세요"})
         _signal_group(process, signal.SIGSTOP)
         task.update({"status": "paused", "updated": time.time()})
         return _json_body(200, _public_task(task))
@@ -794,15 +902,15 @@ def pause_task(payload: dict) -> tuple[int, str, bytes]:
 
 def resume_task(payload: dict) -> tuple[int, str, bytes]:
     if not hasattr(signal, "SIGCONT"):
-        return _json_body(501, {"error": "이 플랫폼에서는 재개를 지원하지 않습니다"})
+        return _json_body(501, {"error": "이 기계에서는 멈춘 작업을 다시 돌릴 수 없어요"})
     task_id = str(payload.get("id") or "")
     with _TASK_LOCK:
         task = _TASKS.get(task_id)
         if not task:
-            return _json_body(404, {"error": "작업을 찾을 수 없습니다"})
+            return _json_body(404, {"error": "그 작업을 못 찾았어요"})
         process = task.get("process")
         if task.get("status") != "paused" or process is None:
-            return _json_body(409, {"error": "멈춰 있는 작업이 아닙니다"})
+            return _json_body(409, {"error": "멈춰 있는 작업만 다시 돌릴 수 있어요"})
         _signal_group(process, signal.SIGCONT)
         task.update({"status": "running", "updated": time.time()})
         return _json_body(200, _public_task(task))
