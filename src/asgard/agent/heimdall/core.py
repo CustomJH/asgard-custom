@@ -782,6 +782,29 @@ class Heimdall:
         except Exception:
             pass  # 브리핑 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
 
+    def _tutor_tip(self) -> None:
+        """되짚기의 가운데 — 지금 이 세션에서 **읽지 않고 받고 있는** 자리를 한 번 말한다.
+
+        외부 클라이언트는 PostToolUse 훅이 이 일을 한다(도구 호출 사이). 네이티브 루프에는 끼어들
+        훅이 없어서 여기, 즉 턴 **머리**에 둔다. 도구 사이가 아니라 턴 사이라 한 박자 늦지만
+        늦는 것이 값을 안 깎는 이유가 있다: 이 팁이 재는 것은 방금 부른 도구 하나가 아니라
+        **이 세션에 쌓인 것**이다 — 몇 턴째인지, 답 없는 물음이 얼마나 밀렸는지, 답 하나가
+        떠안은 줄이 몇인지. 그 값은 턴 경계에서 읽어도 같다.
+
+        `on_text` 로만 나간다 — 이유는 `_tutor_brief` 와 같다. 모델이 이걸 보면 자기 자세를
+        고치는 대신 팁에 대신 답한다.
+        """
+        try:
+            from ...tutor import tips
+
+            # 세션 좌표는 `_memory_session_id` 다 — `_last_quest_id` 는 턴마다 리셋되므로 이 자리
+            # (턴 머리)에서는 항상 비어 있고, 비면 팁의 래치가 매 턴 처음으로 돌아가 같은 신호를
+            # 세션 내내 되풀이한다.
+            for line in tips(self.root, self._memory_session_id):
+                self.on_text(line + "\n\n")
+        except Exception:
+            pass  # 팁 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
+
     def _escalate(self, sid: str) -> None:
         """ESCALATE 퀘스트 로그 기록 — verify 이벤트는 verdict 필수 (없으면 quest_log가 거부, 조용히 유실)."""
         ql(
@@ -1233,6 +1256,7 @@ class Heimdall:
             self.turn_recap = _new_recap()  # 턴 recap 리셋 — REPL이 턴 종료 후 회수
         self._prepare_map(request)
         self._tutor_brief(request)
+        self._tutor_tip()
         # cancel_event는 여기서 clear 하지 않는다 — 제출측(REPL)이 턴 시작 전에 clear 한다.
         # handle() 진입 시 clear 하면 '제출 직후~handle 진입 전' ctrl+c가 유실된다 (경합).
         self.on_status(t("classifying"))  # 분류도 모델 호출 — 침묵 구간 커버 (하임달이 길을 살피는 문구)

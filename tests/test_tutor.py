@@ -15,10 +15,13 @@ from __future__ import annotations
 import contextlib
 import os
 import subprocess
+import sys
 import tempfile
+import types
 import unittest
+from unittest import mock
 
-from asgard import tutor, tutor_probes
+from asgard import tutor, tutor_growth, tutor_probes
 
 _ENV = {
     **os.environ,
@@ -27,6 +30,28 @@ _ENV = {
     "GIT_COMMITTER_NAME": "t",
     "GIT_COMMITTER_EMAIL": "t@t",
 }
+
+
+def _signal(name: str, level: int = 2, fact: str = "13턴", why: str = "검토가 밀린다", source: str = "test"):
+    return types.SimpleNamespace(name=name, level=level, fact=fact, why=why, source=source)
+
+
+def _ledger(signals=(), open_debt: int = 0, oldest_days: int = 0, turns: int = 0, added: int = 0):
+    return types.SimpleNamespace(
+        signals=tuple(signals), open_debt=open_debt, oldest_days=oldest_days, turns=turns, added=added
+    )
+
+
+def _debt_module(ledger=None, error: Exception | None = None):
+    module = types.ModuleType("asgard.tutor_debt")
+
+    def run(root: str, sid: str = "", now: float | None = None):
+        if error is not None:
+            raise error
+        return ledger
+
+    module.ledger = run
+    return mock.patch.dict(sys.modules, {"asgard.tutor_debt": module})
 
 
 class SwallowProbeTest(unittest.TestCase):
@@ -257,6 +282,150 @@ class TurnNoteTest(unittest.TestCase):
             root = self._repo_with_writes(stack)
             self.assertEqual(tutor.turn_note(root, "no-such-quest"), "")
             self.assertEqual(tutor.turn_note(root, None), "")
+
+
+class MidTurnTipsTest(unittest.TestCase):
+    """작업 도중 팁은 빚 신호가 있을 때만, 같은 세션에는 한 번만 나온다."""
+
+    def test_a_fresh_session_is_silent(self):
+        with tempfile.TemporaryDirectory() as root:
+            self.assertEqual(tutor.tips(root, "fresh", now=1000.0), [])
+
+    def test_a_debt_signal_emits_one_question_and_latches(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            debt = _ledger([_signal("session-load", fact="13턴이 쌓였다")])
+            with _debt_module(debt):
+                first = tutor.tips(root, "s1", now=1000.0)
+                self.assertEqual(len(first), 1)
+                self.assertIn("⠶ 도중 점검 — 세션 부하: 13턴이 쌓였다", first[0])
+                self.assertIn("    ▸ 다음 변경 전에", first[0])
+                self.assertEqual(tutor.tips(root, "s1", now=1001.0), [])
+                self.assertEqual(len(tutor.tips(root, "s2", now=1001.0)), 1)
+
+    def test_a_corrupt_latch_fails_open_then_latches(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            path = os.path.join(root, tutor.TIPS_REL)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                handle.write("{broken")
+            with _debt_module(_ledger([_signal("session-load")])):
+                self.assertEqual(len(tutor.tips(root, "s1", now=1000.0)), 1)
+                self.assertEqual(tutor.tips(root, "s1", now=1001.0), [])
+
+    def test_safe_or_missing_debt_is_silent(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            with _debt_module(_ledger([_signal("session-load", level=0)])):
+                self.assertEqual(tutor.tips(root, "s1", now=1000.0), [])
+            with _debt_module(error=RuntimeError("not ready")):
+                self.assertEqual(tutor.tips(root, "s1", now=1000.0), [])
+
+    def test_a_tip_asks_for_posture_without_explaining_the_answer(self):
+        with tempfile.TemporaryDirectory() as root:
+            signal = _signal("review-ratio", why="이 해설은 카드에 나오면 안 돼요", source="secret-source")
+            with _debt_module(_ledger([signal])):
+                card = tutor.tips(root, "s1", now=1000.0)[0]
+        self.assertTrue(card.splitlines()[-1].endswith("?"))
+        self.assertNotIn(signal.why, card)
+        self.assertNotIn(signal.source, card)
+
+    def test_cap_keeps_the_worst_signal_only(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            debt = _ledger(
+                [
+                    _signal("unanswered-backlog", level=1, fact="9건"),
+                    _signal("review-ratio", level=2, fact="답 1건당 430행"),
+                ]
+            )
+            with _debt_module(debt):
+                cards = tutor.tips(root, "s1", cap=1, now=1000.0)
+        self.assertEqual(len(cards), 1)
+        self.assertIn("검토 비율", cards[0])
+        self.assertNotIn("답 없는 물음", cards[0])
+
+
+class RecapTest(unittest.TestCase):
+    """recap은 숫자판이 아니라 남은 물음과 부채 위치를 드러내는 서사다."""
+
+    def _open_question(self, root: str, now: float = 1000.0) -> None:
+        tutor.record(
+            root,
+            [
+                {
+                    "kind": "silent-failure",
+                    "path": "app.py",
+                    "unit": "load",
+                    "key": "OSError@load",
+                    "ask": "이 실패는 사용자 화면에 어떻게 보이나요?",
+                }
+            ],
+            now=now,
+        )
+
+    def test_recap_has_work_unanswered_and_debt_paragraphs(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            self._open_question(root, now=1000.0)
+            debt = _ledger(
+                [_signal("review-ratio", fact="답 1건당 430행", why="검토보다 생성이 빨라요", source="debt.json")],
+                open_debt=1,
+                oldest_days=2,
+                turns=3,
+                added=120,
+            )
+            with _debt_module(debt):
+                text = tutor.recap(root, "s1", now=1000.0 + 2 * tutor_growth.DAY)
+        self.assertEqual(len(text.split("\n\n")), 3)
+        self.assertIn("⠶ 되짚기 — 이번 세션에는 튜터가 3턴을 보았고", text)
+        self.assertIn("⠶ 답 없이 남은 것 — 열린 물음 1건", text)
+        self.assertIn("app.py load", text)
+        self.assertIn("이 실패는 사용자 화면에 어떻게 보이나요?", text)
+        self.assertIn("⠶ 부채 위치 — 지금 가장 큰 신호는 검토 비율 쪽이에요: 답 1건당 430행.", text)
+        self.assertIn("근거는 검토보다 생성이 빨라요.", text)
+        self.assertNotIn("요예요", text)
+
+    def test_recap_marks_debt_unavailable_when_debt_is_missing(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            self._open_question(root)
+            with _debt_module(error=RuntimeError("not ready")):
+                text = tutor.recap(root, "s1", now=1000.0)
+        self.assertEqual(len(text.split("\n\n")), 3)
+        self.assertIn("⠶ 부채 위치 — 부채 계측을 읽지 못했어요", text)
+
+    def test_session_day_and_week_use_different_work_windows(self):
+        now = 10 * tutor_growth.DAY
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            for index, closed_at in enumerate((now - 3 * tutor_growth.DAY, now - tutor_growth.DAY / 2)):
+                self._open_question(root, now=closed_at - 10 - index)
+                key = next(iter(tutor_growth.load(root)["open"]))
+                tutor_growth.answer(root, key, "왜 닫아도 되는지 직접 설명한 충분히 긴 답이에요", now=closed_at)
+            with _debt_module(_ledger(turns=3, added=120)):
+                texts = {span: tutor.recap(root, "s1", span=span, now=now) for span in ("session", "day", "week")}
+        self.assertEqual(len(set(texts.values())), 3)
+        self.assertIn("이번 세션에는 튜터가 3턴을 보았고", texts["session"])
+        self.assertIn("오늘에는 물음 1건이 닫혔어요", texts["day"])
+        self.assertIn("이번 주에는 물음 2건이 닫혔어요", texts["week"])
+
+    def test_missing_tutor_debt_module_is_fail_open(self):
+        with tempfile.TemporaryDirectory() as root:
+            self._open_question(root)
+            with mock.patch.object(tutor.importlib, "import_module", side_effect=ModuleNotFoundError("missing")):
+                self.assertEqual(tutor.tips(root, "s1", now=1000.0), [])
+                text = tutor.recap(root, "s1", now=1000.0)
+        self.assertEqual(len(text.split("\n\n")), 3)
+        self.assertIn("부채 계측을 읽지 못했어요", text)
+
+    def test_empty_or_unknown_span_is_silent(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            with _debt_module(_ledger()):
+                self.assertEqual(tutor.recap(root, "s1", now=1000.0), "")
+                self.assertEqual(tutor.recap(root, "s1", span="month", now=1000.0), "")
 
 
 class NeverBlocksTest(unittest.TestCase):

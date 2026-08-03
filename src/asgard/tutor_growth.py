@@ -252,7 +252,7 @@ def answer(root: str, key: str, text: str, now: float | None = None) -> tuple[bo
     data = load(root)
     found = _resolve(data, key)
     if found is None:
-        return (False, f"열린 물음 중에 `{key}`로 시작하는 것이 없다")
+        return (False, f"열린 물음 중에 `{key}`로 시작하는 게 없어요")
     full, entry = found
     depth = _depth(text)
     topic = _topic(data, entry.get("kind", ""))
@@ -263,8 +263,8 @@ def answer(root: str, key: str, text: str, now: float | None = None) -> tuple[bo
     _close(data, full, entry, "answered", stamp, depth, text)
     save(root, data)
     if depth == "thin":
-        return (True, "적어 뒀다. 다만 한 줄짜리 답은 안내를 줄이지 않는다 — 줄이는 근거로는 안 쓴다")
-    return (True, "적어 뒀다. 이 종류의 안내가 다음부터 한 단계 줄어든다")
+        return (True, "적어 뒀어요. 다만 한 줄짜리 답은 안내를 줄이지 않아요 — 줄이는 근거로는 안 써요")
+    return (True, "적어 뒀어요. 이 종류의 안내가 다음부터 한 단계 줄어들어요")
 
 
 def dismiss(root: str, key: str, reason: str = "", now: float | None = None) -> tuple[bool, str]:
@@ -274,12 +274,12 @@ def dismiss(root: str, key: str, reason: str = "", now: float | None = None) -> 
     data = load(root)
     found = _resolve(data, key)
     if found is None:
-        return (False, f"열린 물음 중에 `{key}`로 시작하는 것이 없다")
+        return (False, f"열린 물음 중에 `{key}`로 시작하는 게 없어요")
     full, entry = found
     _topic(data, entry.get("kind", ""))["dismissed"] += 1
     _close(data, full, entry, "dismissed", stamp, "", reason)
     save(root, data)
-    return (True, "오탐으로 닫았다. 같은 종류가 반복되면 이 탐침을 스스로 낮춘다")
+    return (True, "오탐으로 닫았어요. 같은 종류가 반복되면 이 탐침을 스스로 낮춰요")
 
 
 def _resolve(data: dict, key: str) -> tuple[str, dict] | None:
@@ -347,9 +347,9 @@ def quiet_reason(data: dict, kind: str) -> str:
         return ""
     dismissed, skipped, deep = (int(row.get(k) or 0) for k in ("dismissed", "skipped", "deep"))
     if dismissed >= 3:
-        return f"오탐으로 {dismissed}번 닫혔다 — 이 저장소에서 잘 안 맞는 탐침으로 보고 접었다"
+        return f"오탐으로 {dismissed}번 닫혔어요 — 이 저장소에는 잘 안 맞는 탐침으로 보고 접었어요"
     if skipped >= QUIET_AT and deep == 0:
-        return f"{skipped}번 물었고 한 번도 답이 없었다 — 각도를 바꿔도 안 닿아서 접었다"
+        return f"{skipped}번 물었는데 한 번도 답이 없었어요 — 각도를 바꿔도 안 닿아서 접었어요"
     return ""
 
 

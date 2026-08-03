@@ -1,10 +1,15 @@
 #!/usr/bin/env python3
-# Asgard tutor-note — 되짚기의 두 도달 시점. 인자 하나로 갈린다:
+# Asgard tutor-note — 되짚기의 세 도달 시점. 인자 하나로 갈린다:
 #   (기본)  Stop            — 이 턴이 쓴 코드를 물음으로 되돌린다
 #   brief   UserPromptSubmit — 같은 자리를 다시 건드리기 **전에** 남은 물음을 꺼낸다
+#   tip     PostToolUse      — 일하는 **도중** 한 번, 지금 서 있는 자리를 말해 준다
 #
-# 두 시점을 한 파일에 두는 이유: 판정기가 하나여야 두 화면이 어긋나지 않는다. 파일을 나누면
-# 되짚기 규칙이 두 벌이 되고, 두 벌은 반드시 갈라진다(훅 계약).
+# 세 시점을 한 파일에 두는 이유: 판정기가 하나여야 세 화면이 어긋나지 않는다. 파일을 나누면
+# 되짚기 규칙이 세 벌이 되고, 세 벌은 반드시 갈라진다(훅 계약).
+#
+# `tip`이 나중에 생긴 이유가 이 층의 실측이다. 앞의 둘은 턴의 **경계**에만 닿는다 — 시작과 끝.
+# 그런데 사람이 실제로 받아 넘기는 자리는 그 사이다: 다섯 번째 변경에서, 검토가 얕아진 채로,
+# 읽기 전에 닫는다. 경계에서만 말하는 층은 그 구간을 통째로 못 본다.
 #
 # 왜 훅인가: 되짚기는 모델이 기억해야 하는 일이 되면 안 된다. 캐논에 "마지막에 리뷰 자료를
 # 주어라"를 한 줄 더 쓰는 방식은 이 저장소에서 이미 실패가 측정된 방법이다 — 제약을 얹을수록
@@ -38,13 +43,17 @@ for _stream in (sys.stdout, sys.stderr):
 
 MAX_SHOWN = 3  # 한 화면에 놓을 물음 수 — 전부 쏟으면 무엇부터 볼지가 사라진다
 MAX_BACK = 2  # 되돌아온 물음 상한 — 재방문이 이번 변경보다 길어지면 이번 변경을 안 보게 된다
+# 파일을 바꾼 호출 몇 번마다 팁을 한 번 물어볼 것인가. 작게 잡으면 도구 호출마다 프로세스가
+# 뜨고, 크게 잡으면 짧은 작업에서는 한 번도 안 닿는다. 여덟은 한 번의 작업 단위(파일 서넛을
+# 오가며 고치는 구간)가 끝날 무렵 한 번 닿는 값이다.
+TIP_EVERY = 8
 REPORT_REL = os.path.join(".asgard", "tutor", "last-review.md")
 _KIND = {
-    "contract-break": "공개 계약이 바뀌었다",
-    "behavior-removed": "동작이 사라졌다",
-    "test-removed": "판정이 사라졌다",
-    "silent-failure": "실패를 조용히 삼킨다",
-    "new-dependency": "외부 의존이 늘었다",
+    "contract-break": "공개 계약 바뀜",
+    "behavior-removed": "동작 사라짐",
+    "test-removed": "판정 사라짐",
+    "silent-failure": "조용히 삼킨 실패",
+    "new-dependency": "외부 의존 늘어남",
     "untested-surface": "판정 없는 새 표면",
     "todo-left": "안 끝난 표식",
 }
@@ -116,7 +125,11 @@ def _card(lesson: dict, points: list[dict], back: list[dict]) -> str:
     다르게 보이고, 그러면 사용자는 어느 쪽이 진짜인지부터 물어야 한다."""
     added, removed = int(lesson.get("added") or 0), int(lesson.get("removed") or 0)
     files = len(lesson.get("files") or [])
-    head = "⠶ 되짚기 — 이번 턴 %d개 파일 · +%d/-%d행. 아래는 **기계가 못 답하는** 것들이다." % (files, added, removed)
+    head = "⠶ 되짚기 — 이번 턴 %d개 파일 · +%d/-%d행이에요. 아래는 **기계가 못 답하는** 것들이에요." % (
+        files,
+        added,
+        removed,
+    )
     lines = [head, ""]
     shown = 0
     folded, quiet = {}, {}
@@ -136,11 +149,11 @@ def _card(lesson: dict, points: list[dict], back: list[dict]) -> str:
     if over > 0:
         lines.append("  …외 %d건" % over)
     if folded:
-        lines.append("  %s — 이미 답해 온 종류라 접었다" % _folded(folded))
+        lines.append("  %s — 이미 답해 오신 종류라 접었어요" % _folded(folded))
     if quiet:
-        lines.append("  %s — 계속 못 닿아서 튜터가 접었다 (`asgard tutor --progress`)" % _folded(quiet))
+        lines.append("  %s — 계속 못 닿아서 접었어요 (`asgard tutor --progress`)" % _folded(quiet))
     for row in back[:MAX_BACK]:
-        lines.append("  ↩ 다시 — %s  [%s]  (아직 답이 없다)" % (_where(row, False), row.get("cid") or "?"))
+        lines.append("  ↩ 다시 — %s  [%s]  (아직 답이 없어요)" % (_where(row, False), row.get("cid") or "?"))
         lines.append("    ▸ %s" % row.get("ask"))
     lines.append("")
     lines.append('  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`')
@@ -179,6 +192,86 @@ def _brief(exe: str, root: str, prompt: str) -> str:
         return (result.stdout or "").strip()
     except Exception:
         return ""  # 브리핑 불능이 턴 시작을 막지 않는다 — 앞서 말하는 층도 관문이 아니다
+
+
+def _run_tip(protocol: str, root: str, sid: str, data: dict) -> None:
+    """일하는 **도중** 한 번. 대부분의 호출은 아무것도 안 찍는다.
+
+    PostToolUse 는 도구를 부를 때마다 돈다 — 여기서 매번 `asgard`를 띄우면 그 값이 되짚기가 주는
+    값보다 크다. 그래서 두 겹으로 거른다: ① 파일을 실제로 바꾼 호출만 센다(읽기·검색은 안 센다),
+    ② 그중에서도 `TIP_EVERY` 번에 한 번만 밖으로 나간다. 팁을 고르는 판정 자체는 그 뒤에 있고,
+    거기서 또 한 번 걸러진다(같은 신호는 한 세션에 한 번) — 그래서 실제로 화면에 닿는 것은 드물다.
+
+    드물어야 하는 이유는 비용이 아니라 신뢰다. 매번 말하는 안내는 배경 소음이 되고, 배경 소음이
+    된 안내는 켜져 있어도 꺼진 것과 같다.
+    """
+    if not _wrote_a_file(data):
+        return
+    if not _every(root, sid, TIP_EVERY):
+        return
+    exe = shutil.which("asgard")
+    if not exe:
+        return
+    try:
+        result = subprocess.run(
+            [exe, "tutor", "--tip", "--sid", sid],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            cwd=root,
+            encoding="utf-8",
+            errors="replace",
+        )
+        card = (result.stdout or "").strip()
+    except Exception:
+        return  # 팁 불능이 도구 호출을 막지 않는다 — 되짚기는 규율이지 관문이 아니다
+    if not card:
+        return
+    if protocol == "cursor":
+        sys.stdout.write(json.dumps({"user_message": card}, ensure_ascii=False) + "\n")
+    elif protocol == "codex":
+        sys.stdout.write(card + "\n")
+    else:
+        sys.stdout.write(json.dumps({"systemMessage": card}, ensure_ascii=False) + "\n")
+
+
+def _wrote_a_file(data: dict) -> bool:
+    """이 도구 호출이 파일을 실제로 바꿨는가. 실패한 write 는 안 센다 — 안 바뀐 것은 안 바뀐 것이다."""
+    resp = data.get("tool_response") or data.get("tool_output")
+    if isinstance(resp, dict) and (resp.get("is_error") or resp.get("error")):
+        return False
+    name = str(data.get("tool_name") or "")
+    if name and name not in ("Write", "Edit", "MultiEdit", "NotebookEdit", "apply_patch"):
+        return False
+    raw = data.get("tool_input")
+    tool_input = raw if isinstance(raw, dict) else {}
+    path = str(tool_input.get("file_path") or tool_input.get("path") or "")
+    # `.asgard` 아래는 이 층 자신의 기록이다 — 자기가 쓴 것을 세면 팁이 자기를 부른다.
+    return bool(path) and ".asgard" not in path
+
+
+def _every(root: str, sid: str, span: int) -> bool:
+    """`span` 번에 한 번만 True. 세는 자리를 못 쓰면 False — 못 세면 **덜 말하는** 쪽으로 넘어진다.
+
+    브리핑·되짚기 래치는 반대로 넘어진다(못 세면 한 번 더 보여준다). 방향이 다른 이유는 실패의
+    값이 달라서다: 카드는 놓치면 그 턴의 물음이 통째로 사라지지만, 팁은 다음 write 에 또 온다.
+    """
+    path = os.path.join(root, ".asgard", "state", "tutor-tip-" + sid + ".json")
+    try:
+        with open(path, encoding="utf-8") as handle:
+            count = int(json.load(handle).get("writes") or 0)
+    except Exception:
+        count = 0
+    count += 1
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        tmp = "%s.%d.tmp" % (path, os.getpid())
+        with open(tmp, "w", encoding="utf-8") as handle:
+            json.dump({"writes": count}, handle)
+        os.replace(tmp, path)
+    except Exception:
+        return False
+    return count % max(1, span) == 0
 
 
 def _prompt_of(data: dict) -> str:
@@ -224,6 +317,9 @@ def main() -> None:
         sid = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw_sid))[:64]
         if mode == "brief":
             _run_brief(protocol, root, sid, data)
+            sys.exit(0)
+        if mode == "tip":
+            _run_tip(protocol, root, sid, data)
             sys.exit(0)
         paths = _writes(root, sid)
         if not paths:

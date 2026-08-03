@@ -157,6 +157,13 @@ matcher = "^(apply_patch|Write|Edit)$"
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/write-sentinel.py" codex'
 
+# tutor tip — the mid-work reach point. UserPromptSubmit/Stop only see the turn boundaries;
+# the stretch where review actually thins out is between them. Counts writes itself and only
+# shells out every Nth one, so the per-call cost here is a file read.
+[[hooks.PostToolUse.hooks]]
+type = "command"
+command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/tutor-note.py" codex tip'
+
 # Trinity role receipts and completion gate. Codex exposes custom agents as Agent tool calls.
 [[hooks.SubagentStart]]
 

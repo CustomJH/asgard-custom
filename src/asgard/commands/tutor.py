@@ -35,6 +35,21 @@ _ANSWER_SLOT = "  - 답: "  # `--collect`가 되읽는 자리 — 형식을 바�
 _CID_RE = re.compile(r"`([0-9a-f]{8})`")
 _ITEM_RE = re.compile(r"^\s*- \[.\] ")
 _LADDER = ("○○○", "●○○", "●●○", "●●●")
+# 항복 신호의 사람 이름. `KIND_LABEL`이 엔진에 있는 것과 달리 이 표는 표면이 갖는다 —
+# `tutor_debt.Signal`은 `fact`·`why`로 이미 사람 문장을 들고 오고, 여기서 더할 것은 그 신호를
+# 화면에서 부르는 이름 하나뿐이다. 엔진에 두면 재료와 표현이 다시 한 자리에 섞인다.
+#
+# 이름은 문장이 아니라 **명사**다. 한동안 여기만 문장("읽기 전에 닫았어요")이라 같은 신호가
+# 훅 줄에서는 "답 수용 속도"로 불렸고, 한 신호에 이름이 둘이었다. 명사여야 세 자리가 다 선다 —
+# 여기(`이름 — fact`)와 도중 점검 머리, 그리고 "가장 큰 신호는 ○○ 쪽이에요"의 빈칸.
+_SIGNAL_LABEL = {
+    "acceptance-latency": "답 수용 속도",
+    "unanswered-backlog": "답 없는 물음",
+    "review-ratio": "검토 비율",
+    "skip-streak": "연속 건너뜀",
+    "session-load": "세션 부하",
+}
+_LEVEL_MARK = ("·", "▸", "▲")  # 0 안전 · 1 주의 · 2 경고 — 색이 없는 터미널에서도 등급이 보이게
 
 
 def _summary(lesson: tutor.Lesson) -> str:
@@ -47,7 +62,7 @@ def _units_line(change: tutor.FileChange) -> str:
     if not change.code:
         return "코드 파일 아님"
     if not change.judged:
-        return "코드 단위를 못 읽었다"
+        return "코드 단위 못 읽음"
     bits = [
         f"새 단위 {len(change.units_added)}" if change.units_added else "",
         f"바뀐 단위 {len(change.units_changed)}" if change.units_changed else "",
@@ -72,7 +87,7 @@ def _emit_points(rows: list[tuple[tutor.Checkpoint, str]], limit: int) -> None:
         ui.ok("기계가 짚을 자리는 없어요 — 그래도 왜 이렇게 했는지는 직접 답하셔야 해요")
         return
     open_rows = [r for r in rows if r[1] not in ("fold", "quiet")]
-    ui.phase(f"당신이 직접 확인할 것 — {len(rows)}건 (막지 않는다)")
+    ui.phase(f"당신이 직접 확인할 것 — {len(rows)}건 (막지 않아요)")
     for point, form in open_rows[:limit]:
         ui.warn(f"{_KIND.get(point.kind, point.kind)} — {point.where}  [{point.cid}]")
         ui.step(ui.dim(f"    {point.what}"))
@@ -170,7 +185,7 @@ def _report_mandate(lesson: tutor.Lesson) -> list[str]:
         "## 0. 왜 이 자리였나",
         "",
         "이 변경은 요청이 아니라 **컨트롤러가 고른 것**이다. 아래는 그 선택의 기계 근거다 —",
-        "diff 에는 안 적혀 있고 코드를 읽어서 유도할 수도 없다.",
+        "diff에는 안 적혀 있고 코드를 읽어서 유도할 수도 없다.",
         "",
     ]
     for m in lesson.mandate:
@@ -341,7 +356,7 @@ def _run_progress(root: str, json_out: bool) -> int:
     if data["due"]:
         ui.step(ui.dim("    다음 되짚기 카드에 각도를 바꿔 다시 실어 드려요"))
     if data["quiet"]:
-        ui.phase(f"튜터가 스스로 낮춘 탐침 — {len(data['quiet'])}건이에요")
+        ui.phase(f"튜터가 스스로 낮춘 종류 — {len(data['quiet'])}건이에요")
         for kind, why in sorted(data["quiet"].items()):
             ui.warn(f"{_KIND.get(kind, kind)}")
             ui.step(ui.dim(f"    {why}"))
@@ -366,8 +381,160 @@ def _emit_said(data: dict) -> None:
         tag = "오탐" if row.get("reason") == "dismissed" else _KIND.get(row.get("kind"), row.get("kind"))
         where = str(row.get("path") or "")
         ui.step(f"{tag} — {where}{' ' + str(row.get('unit')) if row.get('unit') else ''}")
-        ui.step(ui.dim(f"    “{ui.oneline(str(row.get('said')), 90)}”"))
+        ui.step(ui.dim(f'    "{ui.oneline(str(row.get("said")), 90)}"'))
     ui.step(ui.dim("    같은 자리를 다시 열면 `asgard tutor --brief`가 이 문장을 되돌려 줘요"))
+
+
+# ── 부채 · 되짚기 서사 · 도중 팁 · 기대 사전 등록 ──────────────────
+#
+# 넷 다 같은 자리에서 왔다. 되짚기는 지금까지 **턴 시작**(brief)과 **턴 끝**(note) 두 시점에만
+# 닿았는데, 사람이 실제로 항복하는 자리는 그 사이다 — 다섯 번째 변경에서, 검토가 얕아진 채로,
+# 읽기 전에 닫는다. 그래서 세는 층(`--debt`)과 도중에 한 번 말하는 층(`--tip`)을 나눠 둔다.
+#
+# `--expect`는 방향이 반대인 하나다. 나머지 셋은 이미 벌어진 일을 재지만 이것은 **벌어지기 전에**
+# 사람의 견해를 먼저 받아 둔다. 근거는 하나다: 모델의 답을 본 뒤에 만든 견해는 그 답의 함수라
+# 대조에 못 쓴다. 먼저 적어 둔 한 줄만이 나중에 "내가 예상한 것과 다르다"를 만들 수 있다.
+
+
+def _engine(name: str) -> object | None:
+    """되짚기 엔진 하나를 늦게 부른다. 없으면 None — 표면이 엔진보다 먼저 배송될 수 있다.
+
+    `--debt`·`--tip`이 없는 모듈 때문에 죽으면 그건 관문이다(튜터 계약 ②). 없을 때 할 일은
+    실패가 아니라 침묵이다.
+    """
+    try:
+        from .. import tutor_debt
+
+        return tutor_debt if name == "tutor_debt" else None
+    except Exception:
+        return None
+
+
+def _run_debt(root: str, sid: str, json_out: bool) -> int:
+    """지금 이 저장소에서 **읽지 않고 받고 있는** 자리. 막지 않는다 — 세어서 보여 줄 뿐이다."""
+    debt = _engine("tutor_debt")
+    if debt is None:
+        if not json_out:
+            ui.head("tutor · 부채")
+            ui.ok("부채를 재는 기능이 아직 없어요")
+            ui.done()
+        return 0
+    book = debt.ledger(root, sid)  # ty: ignore[unresolved-attribute]
+    if json_out:
+        print(
+            json.dumps(
+                {
+                    "level": book.level,
+                    "open_debt": book.open_debt,
+                    "oldest_days": book.oldest_days,
+                    "turns": book.turns,
+                    "added": book.added,
+                    "signals": [asdict(s) for s in book.signals],
+                },
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        return 0
+    ui.head("tutor · 지금 어디서 받고만 있나")
+    ui.phase(f"답 없는 물음 {book.open_debt}건 · 가장 오래된 것 {book.oldest_days}일 · 이 세션 {book.turns}턴")
+    live = [s for s in book.signals if s.level > 0]
+    if not live:
+        ui.ok("항복 신호는 없어요 — 재는 다섯 갈래가 전부 조용해요")
+        ui.done()
+        return 0
+    for signal in sorted(live, key=lambda s: -s.level):
+        mark = _LEVEL_MARK[min(signal.level, len(_LEVEL_MARK) - 1)]
+        (ui.warn if signal.level >= 2 else ui.step)(
+            f"{mark} {_SIGNAL_LABEL.get(signal.name, signal.name)} — {signal.fact}"
+        )
+        ui.step(ui.dim(f"    {signal.why}"))
+        ui.step(ui.dim(f"    잰 것: {signal.source}"))
+    ui.step(ui.dim("    이건 관문이 아니에요 — 아무것도 막지 않고, 지금 어디에 서 있는지만 알려 드려요"))
+    ui.done()
+    return 0
+
+
+def _run_recap(root: str, sid: str, span: str, json_out: bool, quiet: bool) -> int:
+    """세션·하루·한 주의 서사. 통계(`--progress`)와 다른 화면인 이유는 묻는 것이 달라서다 —
+    `--progress`는 "무엇을 가져갔나"이고 이건 "방금 무슨 일이 있었나"다."""
+    body = tutor.recap(root, sid, span) if hasattr(tutor, "recap") else ""
+    if json_out:
+        print(json.dumps({"span": span, "recap": body}, ensure_ascii=False, indent=2))
+        return 0
+    if body:
+        print(body)
+        return 0
+    if not quiet:
+        ui.head("tutor · 되짚기")
+        ui.ok("되짚을 게 없어요 — 이 구간에 물음도 답도 안 남았어요")
+        ui.done()
+    return 0
+
+
+def _run_tip(root: str, sid: str, cap: int) -> int:
+    """작업 **도중** 한 번. 대부분의 호출은 아무것도 안 찍는다 — 매번 말하면 배경 소음이 되고,
+    배경 소음이 된 안내는 켜져 있어도 꺼진 것과 같다(`tutor.brief`가 이미 적어 둔 실측)."""
+    rows = tutor.tips(root, sid, cap) if hasattr(tutor, "tips") else []
+    for line in rows:
+        print(line)
+    return 0
+
+
+def _run_expect(root: str, sid: str, text: str, json_out: bool) -> int:
+    """에이전트를 돌리기 **전에** 당신의 예상을 한 줄로 받아 둔다.
+
+    Osmani 의 첫 번째 대책이다: 답을 본 뒤에 만든 견해는 그 답의 함수라 대조에 못 쓴다. 먼저
+    적어 둔 한 줄만이 나중에 "내가 생각한 것과 다르다"를 만들 수 있고, 그 차이가 유일하게
+    사람이 읽었다는 증거다. 옳고 그름은 여기서도 안 본다(성장 기록 계약 ①).
+    """
+    debt = _engine("tutor_debt")
+    body = " ".join(str(text or "").split())
+    if debt is None:
+        if not json_out:
+            ui.head("tutor · 예상 적어 두기")
+            ui.warn("예상을 적어 둘 기능이 아직 없어요")
+            ui.done()
+        return 0
+    if not body:
+        rows = debt.expectations(root, sid)  # ty: ignore[unresolved-attribute]
+        if json_out:
+            print(json.dumps(rows, ensure_ascii=False, indent=2))
+            return 0
+        ui.head("tutor · 아직 안 맞춰 본 예상")
+        if not rows:
+            ui.ok('적어 두신 예상이 없어요 — `asgard tutor --expect "..."`로 한 줄 남겨 두세요')
+            ui.done()
+            return 0
+        for row in rows:
+            ui.step(f"[{row.get('key')}] {row.get('text')}")
+        ui.step(ui.dim('    맞춰 보기: `asgard tutor --settle <표식> "실제로는 이랬다"`'))
+        ui.done()
+        return 0
+    key = debt.expect(root, sid, body)  # ty: ignore[unresolved-attribute]
+    if json_out:
+        print(json.dumps({"key": key, "text": body}, ensure_ascii=False))
+        return 0
+    ui.head("tutor · 예상 적어 두기")
+    ui.ok(f"적어 뒀어요 [{key}]")
+    ui.step(ui.dim(f'    끝나고 나서 `asgard tutor --settle {key} "실제로는 이랬다"`로 맞춰 보세요'))
+    ui.done()
+    return 0
+
+
+def _run_settle(root: str, key: str, verdict: str) -> int:
+    """예상과 실제를 맞춰 본다. **누가 맞았는지는 안 적는다** — 적으면 채점이 되고, 채점하는
+    순간 사람은 맞을 만한 예상만 적기 시작한다."""
+    debt = _engine("tutor_debt")
+    ui.head("tutor · 예상 맞춰 보기")
+    if debt is None:
+        ui.warn("예상을 맞춰 볼 기능이 아직 없어요")
+        ui.done()
+        return 0
+    ok, message = debt.settle(root, key, verdict)  # ty: ignore[unresolved-attribute]
+    (ui.ok if ok else ui.warn)(message)
+    ui.done()
+    return 0
 
 
 # ── 진입점 ─────────────────────────────────────────────────────────
@@ -390,11 +557,28 @@ def run_tutor(
     dismiss: str = "",
     note: str = "",
     collect: bool = False,
+    recap: bool = False,
+    span: str = "session",
+    debt: bool = False,
+    tip: bool = False,
+    expect: bool = False,
+    settle: str = "",
+    sid: str = "",
 ) -> int:
     """종료 코드는 언제나 0 — 튜터는 규율이지 관문이 아니다(`health`와 같은 등급)."""
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
 
+    if settle:
+        return _run_settle(root, settle, note)
+    if expect:
+        return _run_expect(root, sid, text or note, json_out)
+    if tip:
+        return _run_tip(root, sid, 1)  # 도중에 놓는 것은 언제나 하나다 — 둘이면 그건 카드지 팁이 아니다
+    if debt:
+        return _run_debt(root, sid, json_out)
+    if recap:
+        return _run_recap(root, sid, span, json_out, quiet)
     if answer or dismiss:
         return _run_close(root, answer, dismiss, note)
     if collect:

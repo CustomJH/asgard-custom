@@ -293,7 +293,16 @@ def cc_settings() -> str:
                                 {
                                     "type": "command",
                                     "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/write-sentinel.py"',
-                                }
+                                },
+                                # tutor tip — the mid-work reach point. The turn boundaries
+                                # (UserPromptSubmit / Stop) cannot see the stretch where review
+                                # actually thins out, so this speaks once inside it. It counts
+                                # writes itself and only shells out every Nth one, so the
+                                # per-call cost here is a file read.
+                                {
+                                    "type": "command",
+                                    "command": f'{py} "$CLAUDE_PROJECT_DIR/.claude/hooks/tutor-note.py" claude tip',
+                                },
                             ],
                         },
                     ],

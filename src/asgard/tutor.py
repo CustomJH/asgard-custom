@@ -28,6 +28,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import os
 import re
 import subprocess
@@ -55,11 +56,11 @@ WEIGHT = {
 }
 # 종류의 사람 이름 — 표면마다 다시 쓰면 같은 판정이 화면마다 다른 이름으로 불린다.
 KIND_LABEL = {
-    "contract-break": "공개 계약이 바뀌었다",
-    "behavior-removed": "동작이 사라졌다",
-    "test-removed": "판정이 사라졌다",
-    "silent-failure": "실패를 조용히 삼킨다",
-    "new-dependency": "외부 의존이 늘었다",
+    "contract-break": "공개 계약 바뀜",
+    "behavior-removed": "동작 사라짐",
+    "test-removed": "판정 사라짐",
+    "silent-failure": "조용히 삼킨 실패",
+    "new-dependency": "외부 의존 늘어남",
     "untested-surface": "판정 없는 새 표면",
     "todo-left": "안 끝난 표식",
 }
@@ -69,32 +70,32 @@ KIND_LABEL = {
 # 여기 없다(Checkpoint.ask가 갖는다). 각도가 떨어지면 마지막 각도를 유지한다.
 ANGLES: dict[str, tuple[str, ...]] = {
     "contract-break": (
-        "이 계약을 쓰던 코드를 지금 처음 보는 사람이 있다면, 그 사람은 무엇을 먼저 실행해 봐야 하는가?",
-        "되돌려야 한다면 어디를 되돌리는가 — 한 줄로 말할 수 있는가?",
+        "이 계약을 쓰던 코드를 지금 처음 보는 사람은 무엇부터 실행해 봐야 할까요?",
+        "되돌려야 한다면 어디를 되돌리나요? 한 줄로 말할 수 있나요?",
     ),
     "behavior-removed": (
-        "이 동작이 없어서 깨지는 상황을 하나만 말해 보라. 하나도 못 대겠다면 그건 왜인가?",
-        "이걸 다시 살려야 할 날이 온다면, 무엇을 근거로 그 판단을 내리는가?",
+        "이 동작이 없어서 깨지는 상황을 하나만 들어 볼까요? 하나도 못 대겠다면 그건 왜일까요?",
+        "이걸 다시 살려야 할 날이 온다면 무엇을 근거로 판단하나요?",
     ),
     "test-removed": (
-        "이 테스트가 잡던 실패를 지금 일부러 만들면, 무엇이 빨개지는가?",
-        "지운 판정을 대신하는 것이 없다면 — 없어도 되는 이유를 한 줄로 적어 보라.",
+        "이 테스트가 잡던 실패를 지금 일부러 만들면 무엇이 빨개지나요?",
+        "지운 판정을 대신하는 게 없다면, 없어도 되는 이유를 한 줄로 적어 볼까요?",
     ),
     "silent-failure": (
-        "이 예외가 지금 하루에 100번씩 일어나고 있다면, 당신은 그걸 어떻게 알아차리는가?",
-        "여기서 삼키는 대신 위로 올렸다면 무엇이 깨지는가? 그게 삼키는 이유인가?",
+        "이 예외가 지금 하루에 100번씩 일어나고 있다면 그걸 어떻게 알아차리나요?",
+        "여기서 삼키는 대신 위로 올렸다면 무엇이 깨지나요? 그게 삼키는 이유인가요?",
     ),
     "new-dependency": (
-        "이게 내일 폐기되거나 라이선스가 바뀐다면 당신은 무엇을 해야 하는가?",
-        "이 의존이 하는 일 중 실제로 쓰는 것은 얼마인가? 나머지도 같이 짊어질 값인가?",
+        "이게 내일 폐기되거나 라이선스가 바뀐다면 무엇을 해야 하나요?",
+        "이 의존이 하는 일 중 실제로 쓰는 건 얼마나 되나요? 나머지도 같이 짊어질 값인가요?",
     ),
     "untested-surface": (
-        "다음 사람이 이걸 반대로 고쳐 놓으면, 무엇이 그 사실을 알려 주는가?",
-        "판정을 안 붙이기로 했다면 그 결정은 지금 어디에 적혀 있는가?",
+        "다음 사람이 이걸 반대로 고쳐 놓으면 무엇이 그 사실을 알려 주나요?",
+        "판정을 안 붙이기로 했다면 그 결정은 지금 어디에 적혀 있나요?",
     ),
     "todo-left": (
-        "이 표식을 지우려면 그 전에 무엇이 끝나야 하는가?",
-        "여섯 달 뒤 이 줄을 처음 보는 사람은, 무엇을 해야 하는지 알 수 있는가?",
+        "이 표식을 지우려면 그 전에 무엇이 끝나야 하나요?",
+        "여섯 달 뒤 이 줄을 처음 보는 사람이 무엇을 해야 하는지 알 수 있을까요?",
     ),
 }
 
@@ -260,14 +261,14 @@ def _judge(root: str, rel: str, base: str, stats: dict[str, tuple[int, int]], ow
     code = _is_code(rel)
     text = _read(root, rel)
     if text is None:
-        return (FileChange(rel, *_stat(rel, None, stats), judged=False, code=code), [], "읽지 못했다", {})
+        return (FileChange(rel, *_stat(rel, None, stats), judged=False, code=code), [], "읽지 못했어요", {})
     stat = _stat(rel, text, stats)
     before = _at_base(root, rel, base)
     marks = _fresh(tutor_probes.marks(text, rel), tutor_probes.marks(before or "", rel))
     points = [_mark_point(rel, sig, line) for sig, line in sorted(marks.items(), key=lambda kv: kv[1])]
     now = tutor_probes.units_of(text, rel)
     if now is None:
-        why = "코드 단위를 읽지 못했다 — 함수 인벤토리·예외/의존 판정 없음"
+        why = "코드 단위를 읽지 못해서 함수 인벤토리와 예외·의존 판정을 못 냈어요"
         return (FileChange(rel, *stat, judged=False, code=code), points, why if code else None, {})
     old = (tutor_probes.units_of(before, rel) or {}) if before is not None else {}
     if rel.endswith(".py"):
@@ -315,9 +316,9 @@ def _python_points(rel: str, text: str, before: str, own: frozenset[str]) -> lis
             rel,
             line,
             sig.split("@", 1)[-1],
-            f"{sig.split('@', 1)[0]}를 잡고 아무것도 하지 않는다 — 이유가 어디에도 안 적혀 있다",
-            "삼킨 예외는 실패를 성공처럼 보이게 만든다. 의도한 fail-open 인지 흘린 것인지는 코드만 보고 알 수 없다",
-            "이 예외가 실제로 일어나면 사용자 화면에는 무엇이 보이는가? 아무것도 안 보이는 게 맞다면 왜인가?",
+            f"{sig.split('@', 1)[0]}를 잡고 아무것도 하지 않아요 — 이유가 어디에도 안 적혀 있어요",
+            "삼킨 예외는 실패를 성공처럼 보이게 만들어요. 일부러 열어 둔 건지 흘린 건지는 코드만 보고는 알 수 없어요",
+            "이 예외가 실제로 일어나면 사용자 화면에는 무엇이 보이나요? 아무것도 안 보이는 게 맞다면 왜 그런가요?",
             sig,  # 한 함수 안에 삼킴이 둘이면 `unit`이 같다 — 예외 종류까지 넣어야 다른 물음이 된다
         )
         for sig, line in sorted(_fresh(tutor_probes.swallows(text), tutor_probes.swallows(before)).items())
@@ -329,9 +330,9 @@ def _python_points(rel: str, text: str, before: str, own: frozenset[str]) -> lis
                 rel,
                 line,
                 "",
-                f"외부 의존 `{name}`이 이 파일에 새로 들어왔다",
-                "의존 하나는 코드보다 오래 남는다 — 버전·보안·라이선스·이관 비용이 전부 따라 들어온다",
-                f"`{name}`이 하는 일을 직접 짜면 몇 줄인가? 그 줄 수를 이 비용과 바꿀 값이 있는가?",
+                f"외부 의존 `{name}`이 이 파일에 새로 들어왔어요",
+                "의존 하나는 코드보다 오래 남아요 — 버전·보안·라이선스·이관 비용이 전부 따라 들어와요",
+                f"`{name}`이 하는 일을 직접 짜면 몇 줄인가요? 그 줄 수를 이 비용과 바꿀 값이 있나요?",
                 name,  # 의존 물음은 `unit`이 비어 있다 — 이름이 없으면 한 파일의 의존 전부가 한 물음이 된다
             )
         )
@@ -345,9 +346,9 @@ def _mark_point(rel: str, sig: str, line: int) -> Checkpoint:
         rel,
         line,
         "",
-        f"{kind} 표식이 새로 남았다 — {body or '(내용 없음)'}",
-        "표식은 저자가 스스로 '여기 안 끝났다'고 적은 자리다. 안 갚기로 했다면 표식이 아니라 결정으로 남아야 한다",
-        "이건 언제 갚는가? 안 갚을 것이면 왜 남겨 두는가?",
+        f"{kind} 표식이 새로 남았어요 — {body or '(내용 없음)'}",
+        "표식은 저자가 스스로 '여기 안 끝났다'고 적어 둔 자리예요. 안 갚기로 했다면 표식이 아니라 결정으로 남아야 해요",
+        "이건 언제 갚나요? 안 갚을 거라면 왜 남겨 두나요?",
         sig,  # 한 파일의 표식이 여럿이면 본문이 유일한 구분자다 (`unit`은 비어 있다)
     )
 
@@ -364,13 +365,13 @@ def _removal_points(rel: str, gone: list[str], old: dict[str, Unit]) -> list[Che
                 rel,
                 old[name].line if name in old else 1,
                 name,
-                f"`{name}`이 사라졌다 ({old[name].lines}행)" if name in old else f"`{name}`이 사라졌다",
-                "판정이 사라진 것과 기능이 사라진 것은 diff에서 똑같이 보인다"
+                f"`{name}`이 사라졌어요 ({old[name].lines}행)" if name in old else f"`{name}`이 사라졌어요",
+                "판정이 사라진 것과 기능이 사라진 것은 diff에서 똑같이 보여요"
                 if is_test
-                else "삭제는 diff에서 가장 조용한 변경이다 — 부르던 곳이 남아 있어도 실행 전엔 티가 안 난다",
-                "이 테스트가 지키던 조건은 지금 무엇이 지키는가?"
+                else "삭제는 diff에서 가장 조용한 변경이에요 — 부르던 곳이 남아 있어도 실행 전엔 티가 안 나요",
+                "이 테스트가 지키던 조건은 지금 무엇이 지키나요?"
                 if is_test
-                else "이걸 부르던 곳은 어디였고, 왜 이제 필요 없는가?",
+                else "이걸 부르던 곳은 어디였고, 왜 이제 필요 없나요?",
             )
         )
     return out
@@ -384,25 +385,25 @@ def _surface_points(root: str, base: str) -> tuple[list[Checkpoint], list[tuple[
     try:
         diff = surface.diff(root, base)
     except Exception:
-        return ([], [("(public surface)", "표면 대조를 돌리지 못했다 — 계약 변화 미판정")])
+        return ([], [("(public surface)", "표면 대조를 돌리지 못해서 계약이 바뀌었는지 못 봤어요")])
     out: list[Checkpoint] = []
     for change in diff.changes:
         if not change.breaking or change.kind == "removed":
             continue  # 삭제는 단위 인벤토리가 이미 묻는다 — 같은 것을 두 번 묻지 않는다
         sites = diff.obligations.get(change.qualname.rsplit(".", 1)[-1], ())
-        where = ", ".join(sites[:6]) if sites else "이 변경 밖에서 같은 이름을 못 찾았다"
+        where = ", ".join(sites[:6]) if sites else "이 변경 밖에서 같은 이름을 못 찾았어요"
         out.append(
             Checkpoint(
                 "contract-break",
                 change.path,
                 1,
                 change.qualname,
-                f"공개 계약이 바뀌었다 — {change.kind} ({change.detail})",
-                f"호출부가 그대로면 깨진다. 이름 기반 후보: {where}",
-                "위 후보를 하나씩 열어 확인했는가? 안 고쳐도 되는 것은 왜 안 고쳐도 되는가?",
+                f"공개 계약이 바뀌었어요 — {change.kind} ({change.detail})",
+                f"호출부가 그대로면 깨져요. 이름으로 찾은 후보는 {where}예요",
+                "위 후보를 하나씩 열어 확인해 보셨나요? 안 고쳐도 되는 것은 왜 그런가요?",
             )
         )
-    unparsed = [(p, "구문을 못 읽어 표면 대조에서 빠졌다") for p in diff.unparsed]
+    unparsed = [(p, "구문을 못 읽어서 표면 대조에서 빠졌어요") for p in diff.unparsed]
     return (out + _untested_points(root, diff), unparsed)
 
 
@@ -426,9 +427,9 @@ def _untested_points(root: str, diff: surface.SurfaceDiff) -> list[Checkpoint]:
                 change.path,
                 1,
                 change.qualname,
-                f"새 공개 심볼 `{change.qualname}` — 테스트 트리에서 이름이 안 보인다",
-                "판정 없는 표면은 다음 사람이 마음대로 바꿔도 아무것도 빨개지지 않는다",
-                "이게 틀렸을 때 무엇이 빨개지는가? 아무것도 안 빨개진다면 그래도 괜찮은 이유는?",
+                f"새 공개 심볼 `{change.qualname}` — 테스트 트리에서 이름이 안 보여요",
+                "판정 없는 표면은 다음 사람이 마음대로 바꿔도 아무것도 빨개지지 않아요",
+                "이게 틀렸을 때 무엇이 빨개지나요? 아무것도 안 빨개진다면 그래도 괜찮은 이유는 뭔가요?",
             )
         )
     return out
@@ -456,7 +457,10 @@ def review(root: str, base: str = "HEAD", paths: object = ()) -> Lesson:
             unknown.append((rel, why))
     if len(targets) > MAX_PATHS:
         unknown.append(
-            (f"(+{len(targets) - MAX_PATHS} more)", f"한 번에 {MAX_PATHS}개까지만 읽었다 — 경로를 좁혀 다시 보라")
+            (
+                f"(+{len(targets) - MAX_PATHS} more)",
+                f"한 번에 {MAX_PATHS}개까지만 읽었어요 — 경로를 좁혀 다시 봐 주세요",
+            )
         )
     contract, gaps = _surface_points(root, base)
     # 경로를 지목받았으면 표면 판정도 그 안으로 자른다. surface는 나무 전체의 변경을 보는데,
@@ -598,6 +602,231 @@ def record(root: str, points: object, now: float | None = None) -> dict[str, str
         return {}  # 기록 실패가 화면을 막지 않는다 — 되짚기는 규율이지 관문이 아니다
 
 
+# ── 도중 개입·서사 되짚기 ─────────────────────────────────────────
+
+TIPS_REL = os.path.join(".asgard", "tutor", "tips.json")
+_SIGNAL_LABEL = {
+    "acceptance-latency": "답 수용 속도",
+    "unanswered-backlog": "답 없는 물음",
+    "review-ratio": "검토 비율",
+    "skip-streak": "연속 건너뜀",
+    "session-load": "세션 부하",
+}
+_TIP_ASK = {
+    "acceptance-latency": "방금 받아들인 답을 반대로 깨뜨리는 예를 하나 떠올려 보셨나요?",
+    "unanswered-backlog": "계속 진행하기 전에 답 없는 물음 하나를 골라 직접 설명해 볼까요?",
+    "review-ratio": "가장 큰 변경 하나를 열고, 왜 이렇게 됐는지 말로 다시 확인해 볼까요?",
+    "skip-streak": "이 물음은 정말 버릴 물음인가요, 아니면 지금 닫을 답이 있나요?",
+    "session-load": "다음 변경 전에 지금까지의 결정을 한 줄로 다시 말해 볼까요?",
+}
+_SPAN_LABEL = {"session": "이번 세션", "day": "오늘", "week": "이번 주"}
+_SPAN_DAYS = {"day": 1.0, "week": 7.0}
+
+
+def tips(root: str, sid: str = "", cap: int = 1, now: float | None = None) -> list[str]:
+    """작업 **도중** 놓을 팁. 없으면 빈 목록 — 대부분의 턴은 빈 목록이어야 한다."""
+    try:
+        limit = max(0, int(cap))
+    except TypeError, ValueError:
+        return []
+    if limit <= 0:
+        return []
+    ledger = _debt_ledger(root, sid, now)
+    seen = _tips_seen(root, sid)
+    signals = [s for s in _active_signals(ledger) if _signal_name(s) not in seen]
+    picked = signals[:limit]
+    if not picked:
+        return []
+    _tips_mark(root, sid, [_signal_name(s) for s in picked])
+    return [_tip_card(s) for s in picked]
+
+
+def recap(root: str, sid: str = "", span: str = "session", now: float | None = None) -> str:
+    """세션/일 단위 서사. span = "session" | "day" | "week". 없으면 빈 문자열."""
+    name = str(span or "session")
+    if name not in _SPAN_LABEL:
+        return ""
+    stamp = time.time() if now is None else now
+    ledger = _debt_ledger(root, sid, stamp)
+    data = tutor_growth.load(root)
+    closed = _closed_in_span(data, name, stamp)
+    open_rows = tutor_growth.open_points(root)
+    if not _recap_has_material(ledger, closed, open_rows, name == "session"):
+        return ""
+    work_ledger = ledger if name == "session" else None
+    parts = [_recap_work(_SPAN_LABEL[name], work_ledger, closed), _recap_open(open_rows, ledger, stamp)]
+    debt = _recap_debt(ledger)
+    if debt:
+        parts.append(debt)
+    return "\n\n".join(p for p in parts if p)
+
+
+def _debt_ledger(root: str, sid: str, now: float | None):
+    """부채 계측은 늦게 읽는다 — 같은 시각에 만드는 모듈이 없어도 튜터 시작은 깨지면 안 된다."""
+    try:
+        module = importlib.import_module(f"{__package__}.tutor_debt")
+        return module.ledger(root, sid, now)
+    except Exception:
+        return None
+
+
+def _active_signals(ledger: object) -> list[object]:
+    rows = []
+    for signal in getattr(ledger, "signals", ()) or ():
+        if _signal_name(signal) and _signal_level(signal) > 0:
+            rows.append(signal)
+    return sorted(rows, key=lambda s: (-_signal_level(s), _signal_name(s)))
+
+
+def _signal_name(signal: object) -> str:
+    return str(getattr(signal, "name", "") or "")
+
+
+def _signal_level(signal: object) -> int:
+    try:
+        return int(getattr(signal, "level", 0) or 0)
+    except TypeError, ValueError:
+        return 0
+
+
+def _tip_card(signal: object) -> str:
+    name = _signal_name(signal)
+    fact = " ".join(str(getattr(signal, "fact", "") or "").split())
+    head = f"⠶ 도중 점검 — {_SIGNAL_LABEL.get(name, name)}"
+    if fact:
+        head += f": {fact}"
+    ask = _TIP_ASK.get(name, "이 신호를 보고 지금 사람이 직접 확인해야 할 판단은 무엇인가요?")
+    return f"{head}\n    ▸ {ask}"
+
+
+def _tips_path(root: str) -> str:
+    return os.path.join(root, TIPS_REL)
+
+
+def _sid(sid: str) -> str:
+    return str(sid or "").strip() or "(default)"
+
+
+def _tips_seen(root: str, sid: str) -> set[str]:
+    data = read_json(_tips_path(root), {})
+    sessions = data.get("sessions") if isinstance(data, dict) else {}
+    row = sessions.get(_sid(sid), []) if isinstance(sessions, dict) else []
+    return {str(name) for name in row} if isinstance(row, list) else set()
+
+
+def _tips_mark(root: str, sid: str, names: list[str]) -> None:
+    data = read_json(_tips_path(root), {})
+    if not isinstance(data, dict):
+        data = {}
+    sessions = data.setdefault("sessions", {})
+    if not isinstance(sessions, dict):
+        sessions = {}
+        data["sessions"] = sessions
+    key = _sid(sid)
+    row = sessions.get(key, [])
+    seen = {str(name) for name in row if name} if isinstance(row, list) else set()
+    seen.update(names)
+    sessions[key] = sorted(seen)
+    data["version"] = 1
+    try:
+        write_json(_tips_path(root), data)
+    except OSError:
+        pass  # 못 적었으면 같은 팁이 한 번 더 나올 수 있다 — 기록 실패가 작업을 막으면 안 된다
+
+
+def _closed_in_span(data: dict, span: str, stamp: float) -> list[dict]:
+    rows = [r for r in data.get("closed", []) if isinstance(r, dict)]
+    if span == "session":
+        return []
+    cutoff = stamp - _SPAN_DAYS[span] * tutor_growth.DAY
+    return [r for r in rows if _row_float(r, "at") >= cutoff]
+
+
+def _row_float(row: dict, name: str) -> float:
+    try:
+        return float(row.get(name) or 0.0)
+    except TypeError, ValueError:
+        return 0.0
+
+
+def _recap_has_material(
+    ledger: object, closed: list[dict], open_rows: list[tutor_growth.Revisit], include_work: bool
+) -> bool:
+    if closed or open_rows or _active_signals(ledger):
+        return True
+    names = ("open_debt", "oldest_days", "turns", "added") if include_work else ("open_debt", "oldest_days")
+    return any(_ledger_int(ledger, name) for name in names)
+
+
+def _ledger_int(ledger: object, name: str) -> int:
+    try:
+        return int(getattr(ledger, name, 0) or 0)
+    except TypeError, ValueError:
+        return 0
+
+
+def _recap_work(label: str, ledger: object, closed: list[dict]) -> str:
+    turns, added = _ledger_int(ledger, "turns"), _ledger_int(ledger, "added")
+    if turns or added:
+        return (
+            f"⠶ 되짚기 — {label}에는 튜터가 {turns}턴을 보았고, 변경은 +{added:,}행까지 쌓였어요. "
+            "닫힌 물음은 세션별로 나뉘어 있지 않아서, 아래에는 지금 남은 것과 부채 신호를 중심으로 적어요."
+        )
+    if closed:
+        kinds = _kind_summary([str(r.get("kind") or "") for r in closed])
+        return f"⠶ 되짚기 — {label}에는 물음 {len(closed)}건이 닫혔어요. 최근에는 {kinds} 쪽을 처리했어요."
+    return f"⠶ 되짚기 — {label}에 새로 닫힌 물음은 아직 확인하지 못했어요. 그래서 남은 질문을 먼저 봐요."
+
+
+def _recap_open(open_rows: list[tutor_growth.Revisit], ledger: object, stamp: float) -> str:
+    if open_rows:
+        oldest = min(open_rows, key=lambda r: r.opened)
+        return (
+            f"⠶ 답 없이 남은 것 — 열린 물음 {len(open_rows)}건이 그대로 남아 있어요. "
+            f"가장 오래된 것은 {oldest.where}에서 {oldest.days(stamp)}일째 기다리고 있고, "
+            f'질문은 "{oldest.ask}"예요.'
+        )
+    debt = _ledger_int(ledger, "open_debt")
+    if debt:
+        days = _ledger_int(ledger, "oldest_days")
+        return (
+            f"⠶ 답 없이 남은 것 — 계측에는 답 없는 물음 {debt}건이 잡혔지만 좌표 기록은 못 읽었어요. "
+            f"가장 오래된 것은 {days}일째 남아 있어요."
+        )
+    return "⠶ 답 없이 남은 것 — 지금 열린 물음은 없어요. 기록에 안 드러난 채 남은 물음도 없다는 뜻이에요."
+
+
+def _recap_debt(ledger: object) -> str:
+    if ledger is None:
+        return "⠶ 부채 위치 — 부채 계측을 읽지 못했어요. 못 본 값을 0으로 적지 않고 이 구간은 비워 둬요."
+    signals = _active_signals(ledger)
+    if not signals:
+        return "⠶ 부채 위치 — 지금 경고 신호는 없어요. 그래도 새 물음이 생기면 답을 숨기지 않고 남겨 둬야 해요."
+    signal = signals[0]
+    name, fact = _signal_name(signal), " ".join(str(getattr(signal, "fact", "") or "").split())
+    source = " ".join(str(getattr(signal, "source", "") or "").split())
+    why = " ".join(str(getattr(signal, "why", "") or "").split())
+    # 경로 뒤에 서술어를 붙이지 않는다 — `debt.json예요` 는 파일명의 일부처럼 읽히고, 사람이
+    # 그 자리를 복사해 열 때 조사까지 딸려 간다. 좌표는 좌표로 끝낸다.
+    tail = f" 출처: {source}." if source else ""
+    if why:
+        tail += f" 근거는 {why}" + ("" if why.endswith((".", "?", "!")) else ".")
+    return (
+        f"⠶ 부채 위치 — 지금 가장 큰 신호는 {_SIGNAL_LABEL.get(name, name)} 쪽이에요"
+        + (f": {fact}." if fact else ".")
+        + tail
+        + " 여기서 답을 정하지 말고, 사람이 다시 설명할 수 있는지 먼저 확인해요."
+    )
+
+
+def _kind_summary(kinds: list[str]) -> str:
+    counts: dict[str, int] = {}
+    for kind in kinds:
+        if kind:
+            counts[kind] = counts.get(kind, 0) + 1
+    return _folded_line(counts) if counts else "종류 없는 물음"
+
+
 # ── 앞서 말하는 층 (일을 시작하기 전) ──────────────────────────────
 
 _TOKEN = re.compile(r"[A-Za-z0-9_./\\-]{3,}")
@@ -627,7 +856,7 @@ def brief(root: str, text: str = "", paths: object = (), cap: int = 3) -> str:
     hit.sort(key=lambda r: (-WEIGHT.get(r.kind, 0), r.opened))
     lines = []
     if hit:
-        lines.append(f"⠶ 들어가기 전 — 이 자리에 답 없는 물음 {len(hit)}건이 남아 있다.")
+        lines.append(f"⠶ 들어가기 전 — 이 자리에 답 없는 물음이 {len(hit)}건 남아 있어요.")
         for row in hit[:cap]:
             lines.append(f"  {KIND_LABEL.get(row.kind, row.kind)} — {row.where}  [{row.cid}]")
             lines.append(f"    ▸ {row.ask}")
@@ -654,13 +883,13 @@ def _recall_lines(back: list[tutor_growth.Said], after_questions: bool) -> list[
         return []
     now = time.time()
     head = "  " if after_questions else "⠶ 들어가기 전 — "
-    lines = [f"{head}이 자리에 대해 **당신이 예전에 한 답**이 있다."]
+    lines = [f"{head}이 자리를 두고 **예전에 하신 답**이 있어요."]
     for row in back:
         days = row.days(now)
         when = f"{days}일 전" if days else "오늘"
         tag = "오탐으로 닫음" if row.dismissed else "답"
         lines.append(f"  ↺ {row.where} — {when} {tag}")
-        lines.append(f"    “{row.said}”")
+        lines.append(f'    "{row.said}"')
     return lines
 
 
@@ -747,8 +976,8 @@ def _card(
 ) -> str:
     added, removed = lesson.touched
     lines = [
-        f"⠶ 되짚기 — 이번 턴 {len(lesson.files)}개 파일 · +{added:,}/-{removed:,}행."
-        " 아래는 **기계가 못 답하는** 것들이다.",
+        f"⠶ 되짚기 — 이번 턴 {len(lesson.files)}개 파일 · +{added:,}/-{removed:,}행이에요."
+        " 아래는 **기계가 못 답하는** 것들이에요.",
         "",
     ]
     lines += _card_points(rows, limit)
@@ -781,9 +1010,9 @@ def _card_points(rows: list[tuple[Checkpoint, str]], limit: int) -> list[str]:
     if over > 0:
         lines.append(f"  …외 {over}건")
     if folded:
-        lines.append(f"  {_folded_line(folded)} — 이미 답해 온 종류라 접었다")
+        lines.append(f"  {_folded_line(folded)} — 이미 답해 오신 종류라 접었어요")
     if quiet:
-        lines.append(f"  {_folded_line(quiet)} — 계속 못 닿아서 튜터가 접었다 (`asgard tutor --progress`)")
+        lines.append(f"  {_folded_line(quiet)} — 계속 못 닿아서 접었어요 (`asgard tutor --progress`)")
     return lines
 
 
@@ -798,6 +1027,6 @@ def _card_back(back: list[tutor_growth.Revisit]) -> list[str]:
     for row in back:
         days = row.days(now)
         when = f"{days}일 전에 물었고" if days else "오늘 물었고"
-        lines.append(f"  ↩ 다시 — {row.where}  [{row.cid}]  ({when} 아직 답이 없다)")
+        lines.append(f"  ↩ 다시 — {row.where}  [{row.cid}]  ({when} 아직 답이 없어요)")
         lines.append(f"    ▸ {row.ask}")
     return lines

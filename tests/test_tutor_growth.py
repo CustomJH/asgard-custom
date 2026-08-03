@@ -348,7 +348,7 @@ class RecallTest(unittest.TestCase):
             handle.write("def fetch():\n    return 1\n")
         tutor_growth.answer(self.root, self.cid, "상류가 죽어도 화면은 캐시로 버텨야 해서 삼킨다")
         card = tutor.brief(self.root, "client.py 재시도 손보자")
-        self.assertIn("예전에 한 답", card)
+        self.assertIn("예전에 하신 답", card)
         self.assertIn("캐시로 버텨야", card)
 
 

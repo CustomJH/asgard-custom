@@ -73,7 +73,7 @@ class TutorNoteHookTest(unittest.TestCase):
         card = json.loads(out)["systemMessage"]
         self.assertIn("app.py:42 load_config", card, out)
         self.assertIn("이 except 가 삼키는 실패는 누가 알게 되나요?", card)
-        self.assertIn("실패를 조용히 삼킨다", card, "kind 가 사람 말로 번역돼야 한다")
+        self.assertIn("조용히 삼킨 실패", card, "kind 가 사람 말로 번역돼야 한다")
 
     def test_a_broken_payload_does_not_take_the_turn_down(self) -> None:
         """깨진 payload — 칸 타입이 어긋나도 훅은 조용히 0으로 끝나고 아무것도 안 낸다.

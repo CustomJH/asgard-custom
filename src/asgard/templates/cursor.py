@@ -146,7 +146,14 @@ def cursor_hooks_json() -> str:
                         {
                             "matcher": "Write|Edit|Delete",
                             "command": f"{py} .cursor/hooks/write-sentinel.py cursor",
-                        }
+                        },
+                        # 도중 팁 — 턴의 경계(시작·끝)가 못 보는 구간에서 한 번 말한다.
+                        # 쓴 횟수를 스스로 세고 N 번에 한 번만 밖으로 나가므로, 호출마다 드는
+                        # 값은 파일 한 번 읽기다.
+                        {
+                            "matcher": "Write|Edit|Delete",
+                            "command": f"{py} .cursor/hooks/tutor-note.py cursor tip",
+                        },
                     ],
                     "stop": [
                         {"command": f"{py} .cursor/hooks/verifier-gate.py cursor"},

@@ -487,6 +487,17 @@ def tutor(
     limit: int = typer.Option(6, "--limit", help="how many checkpoints to show on screen (the report carries all)"),
     progress: bool = typer.Option(False, "--progress", help="what you have actually taken ownership of, over time"),
     brief: bool = typer.Option(False, "--brief", help="before you start: questions still open where you are headed"),
+    recap: bool = typer.Option(
+        False, "--recap", help="the story of this session: what you did, what stayed unanswered"
+    ),
+    span: str = typer.Option("session", "--span", help="how wide --recap looks back: session · day · week"),
+    debt: bool = typer.Option(False, "--debt", help="where you are accepting without reading — the surrender signals"),
+    tip: bool = typer.Option(False, "--tip", help="one mid-work nudge, or nothing (hooks only)"),
+    expect: bool = typer.Option(
+        False, "--expect", help="before the agent runs: write what you think the answer looks like"
+    ),
+    settle: str = typer.Option("", "--settle", help="close an expectation against what actually landed (its mark)"),
+    sid: str = typer.Option("", "--sid", help="the session this belongs to (hooks pass it; scopes --tip and --recap)"),
     text: str = typer.Option("", "--text", help="the request text --brief matches against"),
     answer: str = typer.Option("", "--answer", help="close a question with your answer (checkpoint mark)"),
     dismiss: str = typer.Option("", "--dismiss", help="close a question as a false alarm (checkpoint mark)"),
@@ -520,6 +531,13 @@ def tutor(
             dismiss=dismiss,
             note=note or loose,
             collect=collect,
+            recap=recap,
+            span=span,
+            debt=debt,
+            tip=tip,
+            expect=expect,
+            settle=settle,
+            sid=sid,
         )
     )
 
