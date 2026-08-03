@@ -116,6 +116,68 @@ def agent_show(
     raise typer.Exit(run_agent_show(name, json_out=json_, quiet=quiet))
 
 
+@agent_app.command("open", help="open one agent's Studio window, reusing its live window unless --new is set")
+def agent_open(
+    name: str = typer.Argument(..., help="agent id"),
+    new: bool = typer.Option(False, "--new", help="start another window even when this agent already has one"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.agent import run_agent_open
+
+    raise typer.Exit(run_agent_open(name, new=new, json_out=json_))
+
+
+@agent_app.command("windows", help="show registered Studio windows, their agents, URLs, processes, and state")
+def agent_windows(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.agent import run_agent_windows
+
+    raise typer.Exit(run_agent_windows(json_out=json_))
+
+
+@agent_app.command("config", help="show or change one agent's model, provider, permissions, and other settings")
+def agent_config(
+    name: str = typer.Argument(..., help="agent id"),
+    set_values: list[str] = typer.Option(None, "--set", help="set SECTION.KEY=VALUE (repeatable)"),
+    unset_values: list[str] = typer.Option(None, "--unset", help="remove SECTION.KEY from this agent (repeatable)"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_config
+
+    raise typer.Exit(
+        run_agent_config(
+            name,
+            set_values=list(set_values or []),
+            unset_values=list(unset_values or []),
+            json_out=json_,
+            quiet=quiet,
+        )
+    )
+
+
+@agent_app.command("identity", help="show or replace an agent's AGENT.md instructions")
+def agent_identity(
+    name: str = typer.Argument(..., help="agent id"),
+    set_file: str = typer.Option(None, "--set-file", help="replace AGENT.md from a UTF-8 file"),
+    set_value: str = typer.Option(None, "--set", help="use '-' to replace AGENT.md from stdin"),
+    edit: bool = typer.Option(False, "--edit", help="open AGENT.md with $EDITOR"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_identity
+
+    raise typer.Exit(
+        run_agent_identity(
+            name,
+            set_file=set_file,
+            set_value=set_value,
+            edit=edit,
+            json_out=json_,
+            quiet=quiet,
+        )
+    )
+
+
 @agent_app.command("create", help="raise a new agent — it gets its own home, its own identity, its own memory")
 def agent_create(
     name: str = typer.Argument(..., help="agent id — [a-z0-9][a-z0-9_-]*"),
@@ -184,6 +246,42 @@ def agent_delete(
     from .commands.agent import run_agent_delete
 
     raise typer.Exit(run_agent_delete(name, yes=yes, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("rename", help="rename an agent and keep its settings, identity, and memory together")
+def agent_rename(
+    old: str = typer.Argument(..., help="current agent id"),
+    new: str = typer.Argument(..., help="new agent id"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_rename
+
+    raise typer.Exit(run_agent_rename(old, new, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("export", help="export an agent to a local tar.gz backup")
+def agent_export(
+    name: str = typer.Argument(..., help="agent id"),
+    out_path: str = typer.Option(None, "--output", "-o", help="archive path (default: ./<name>.tar.gz)"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_export
+
+    raise typer.Exit(run_agent_export(name, out_path=out_path, json_out=json_, quiet=quiet))
+
+
+@agent_app.command("import", help="import an agent from a tar.gz backup without overwriting an existing agent")
+def agent_import(
+    archive: str = typer.Argument(..., help="tar.gz archive path"),
+    as_name: str = typer.Option(None, "--as", help="import under a different agent id"),
+    json_: bool = typer.Option(False, "--json"),
+    quiet: bool = typer.Option(False, "--quiet", "-q"),
+) -> None:
+    from .commands.agent import run_agent_import
+
+    raise typer.Exit(run_agent_import(archive, as_name=as_name, json_out=json_, quiet=quiet))
 
 
 @agent_app.command(

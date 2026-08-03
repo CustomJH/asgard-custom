@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 
 from .. import errors, profiles, swarm, ui
 from .health import _project_root
@@ -76,7 +77,7 @@ def run_agent_list(*, json_out: bool = False, quiet: bool = False) -> int:
     if available:
         ui.step("")
         ui.step(f"내장 에이전트 — 아직 안 세웠어요 ({len(available)}): " + ui.dim(" · ".join(sorted(available))))
-        ui.step(ui.dim("    `asgard agent use <이름>`을 치면 그 자리에서 서요 (자기 기억도 같이 열려요)"))
+        ui.step(ui.dim("    `asgard agent use <이름>`을 치면 그 자리에서 세워져요 (자기 기억도 같이 열려요)"))
     warning = profiles.fallback_warning()
     if warning:
         ui.warn(warning)
@@ -133,6 +134,59 @@ def run_agent_show(name: str, *, json_out: bool = False, quiet: bool = False) ->
     return 0
 
 
+def run_agent_open(name: str, *, new: bool = False, json_out: bool = False) -> int:
+    _surface(json_out, False)
+    canon = _agent(name)
+    if not new:
+        from .. import runs
+
+        live = [row for row in runs.find(agent=canon, kind="studio") if row.get("state") == "live"]
+        if live:
+            row = max(live, key=lambda item: str(item.get("started", "")))
+            if json_out:
+                print(json.dumps({"window": row, "reused": True}, ensure_ascii=False, indent=2))
+                return 0
+            ui.head("agent · open")
+            ui.ok(f"{canon} 창이 이미 열려 있어요 — {row['url']}")
+            ui.done()
+            return 0
+
+    from .studio import run_studio
+
+    return run_studio(agent=canon, json_out=json_out)
+
+
+def run_agent_windows(*, json_out: bool = False) -> int:
+    _surface(json_out, False)
+    from .. import runs
+
+    rows = runs.listing(prune=False)
+    if json_out:
+        print(json.dumps({"windows": rows}, ensure_ascii=False, indent=2))
+        return 0
+
+    ui.head(f"agent · windows — {len(rows)}")
+    if not rows:
+        ui.step("열린 창이 없어요")
+    for row in rows:
+        started = row.get("started")
+        opened = (
+            time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(started))
+            if isinstance(started, (int, float))
+            else started
+        )
+        ui.step(
+            f"{row.get('agent') or 'default'}  {row.get('url') or '—'}  "
+            f"pid {row.get('pid') or '—'}  {row.get('state') or 'indeterminate'}  {opened or '—'}"
+        )
+    if any(row.get("state") == "stale" for row in rows):
+        ui.warn("stale 등록이 있어요 — 프로세스 종료를 확인한 뒤 등록부에서 정리하세요")
+    if any(row.get("state") == "indeterminate" for row in rows):
+        ui.warn("indeterminate 등록은 소유권을 확인할 수 없어 자동으로 지우지 않아요")
+    ui.done()
+    return 0
+
+
 def run_agent_create(
     name: str,
     *,
@@ -155,7 +209,7 @@ def run_agent_create(
             display=display,
         )
     except (ValueError, FileExistsError, FileNotFoundError) as exc:
-        raise _boundary(exc, remedy="`asgard agent list`로 이미 있는 이름을 확인하고 다른 이름으로 부르세요") from exc
+        raise _boundary(exc, remedy="`asgard agent list`로 이미 있는 이름을 확인하고 다른 이름을 고르세요") from exc
 
     canon = profiles.normalize(name)
     if json_out:
@@ -235,7 +289,7 @@ def run_agent_delete(name: str, *, yes: bool = False, json_out: bool = False, qu
         print(json.dumps({"deleted": canon, "path": path}, ensure_ascii=False))
         return 0
     ui.head(f"agent · {canon} 삭제")
-    ui.ok(f"제거됨 — {path}")
+    ui.ok(f"지웠어요 — {path}")
     ui.done()
     return 0
 
@@ -255,7 +309,7 @@ def run_agent_describe(
     if not profiles.exists(canon):
         raise errors.NotFound(
             f"에이전트 {canon!r}를 못 찾았어요",
-            remedy=f"`asgard agent create {canon}`로 먼저 만드세요",
+            remedy=f"`asgard agent create {canon}`로 먼저 세우세요",
             detail={"agent": canon},
         )
     profiles.write_manifest(
@@ -269,9 +323,320 @@ def run_agent_describe(
         print(json.dumps(m, ensure_ascii=False, indent=2))
         return 0
     ui.head(f"agent · {canon}")
-    ui.ok(m.get("description") or "(설명 없음)")
+    ui.ok(m.get("description") or "(설명이 없어요)")
     if m.get("capabilities"):
         ui.step(ui.dim("    할 수 있는 일  " + " · ".join(str(c) for c in m["capabilities"])))
+    ui.done()
+    return 0
+
+
+def _agent(name: str) -> str:
+    """이름을 사용자 경계에서 검증하고, 실제로 세운 에이전트만 돌려준다."""
+    try:
+        canon = profiles.validate(name)
+    except ValueError as exc:
+        raise _boundary(exc, remedy="`asgard agent list`로 쓸 수 있는 이름을 확인하세요") from exc
+    if not profiles.exists(canon):
+        raise errors.NotFound(
+            f"에이전트 {canon!r}를 못 찾았어요",
+            remedy=f"`asgard agent create {canon}`로 먼저 세우세요",
+            detail={"agent": canon},
+        )
+    return canon
+
+
+def _config_key(text: str) -> tuple[str, str]:
+    """`section.key` 한 층만 받는다 — 저장 계약도 바로 그 섹션 단위다."""
+    target = str(text or "").strip()
+    if target.count(".") != 1:
+        raise errors.InvalidInput(
+            f"설정 키 {text!r} 형식이 잘못됐어요",
+            remedy="`provider.model`처럼 <섹션>.<키>로 쓰세요",
+            detail={"key": text},
+        )
+    section, key = target.split(".", 1)
+    if not section or not key or any(ch.isspace() for ch in target):
+        raise errors.InvalidInput(
+            f"설정 키 {text!r} 형식이 잘못됐어요",
+            remedy="`provider.model`처럼 빈칸 없이 <섹션>.<키>로 쓰세요",
+            detail={"key": text},
+        )
+    return section, key
+
+
+def _config_set(text: str) -> tuple[str, str, object]:
+    target, sep, raw = str(text or "").partition("=")
+    if not sep:
+        raise errors.InvalidInput(
+            f"설정 값 {text!r} 형식이 잘못됐어요",
+            remedy="`provider.model=<id>`처럼 <섹션>.<키>=<값>으로 쓰세요",
+            detail={"setting": text},
+        )
+    section, key = _config_key(target)
+    lower = raw.casefold()
+    if lower in ("true", "false"):
+        value: object = lower == "true"
+    else:
+        try:
+            value = int(raw)
+        except ValueError:
+            value = raw
+    return section, key, value
+
+
+def _config_sources(view: dict, own: dict) -> dict:
+    """병합 결과의 각 값을 자기 선언과 기계 뿌리 상속으로 가른다."""
+    sources: dict = {}
+    for section, value in view.items():
+        declared = own.get(section)
+        if isinstance(value, dict):
+            declared_keys = declared if isinstance(declared, dict) else {}
+            sources[section] = {key: "profile" if key in declared_keys else "machine" for key in value}
+        else:
+            sources[section] = "profile" if section in own else "machine"
+    return sources
+
+
+def run_agent_config(
+    name: str,
+    *,
+    set_values: list[str] | None = None,
+    unset_values: list[str] | None = None,
+    json_out: bool = False,
+    quiet: bool = False,
+) -> int:
+    _surface(json_out, quiet)
+    from .. import settings
+
+    canon = _agent(name)
+    parsed_sets = [_config_set(item) for item in set_values or []]
+    parsed_unsets = [_config_key(item) for item in unset_values or []]
+    try:
+        own = settings.profile_config(canon)
+        changed: dict[str, dict] = {}
+        for section, key, value in parsed_sets:
+            section_values = changed.setdefault(section, dict(own.get(section) or {}))
+            section_values[key] = value
+        for section, key in parsed_unsets:
+            section_values = changed.setdefault(section, dict(own.get(section) or {}))
+            section_values.pop(key, None)
+        path = settings.profile_config_path(canon)
+        for section, values in changed.items():
+            path = settings.save_profile_config(canon, section, values)
+        own = settings.profile_config(canon)
+        view = settings.profile_config_view(canon)
+    except (ValueError, FileExistsError, FileNotFoundError) as exc:
+        raise _boundary(exc, remedy="`asgard agent list`로 에이전트 이름과 설정 키를 확인하세요") from exc
+
+    sources = _config_sources(view, own)
+    payload = {"agent": canon, "path": path, "config": view, "declared": own, "sources": sources}
+    if json_out:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    ui.head(f"agent · {canon} config")
+    if changed:
+        ui.ok(f"설정을 저장했어요 — {path}")
+    if not view:
+        ui.step("설정이 없어요 — 이 에이전트에도, 기계 기본값에도 아무것도 없어요")
+    for section, values in sorted(view.items()):
+        if isinstance(values, dict):
+            for key, value in sorted(values.items()):
+                source = "이 에이전트가 선언" if sources[section][key] == "profile" else "기계 기본값에서 상속"
+                ui.step(f"{section}.{key} = {json.dumps(value, ensure_ascii=False)}  {ui.dim(f'({source})')}")
+        else:
+            source = "이 에이전트가 선언" if sources[section] == "profile" else "기계 기본값에서 상속"
+            ui.step(f"{section} = {json.dumps(values, ensure_ascii=False)}  {ui.dim(f'({source})')}")
+    ui.done()
+    return 0
+
+
+def run_agent_identity(
+    name: str,
+    *,
+    set_file: str | None = None,
+    set_value: str | None = None,
+    edit: bool = False,
+    json_out: bool = False,
+    quiet: bool = False,
+) -> int:
+    _surface(json_out, quiet)
+    canon = _agent(name)
+    choices = sum((set_file is not None, set_value is not None, edit))
+    if choices > 1:
+        raise errors.InvalidInput(
+            "정체성을 바꾸는 방법을 하나만 골라야 해요",
+            remedy="`--set-file <경로>`, `--set -`, `--edit` 중 하나만 쓰세요",
+            detail={"agent": canon},
+        )
+
+    path = os.path.join(profiles.profile_dir(canon), profiles.IDENTITY)
+    body: str | None = None
+    if set_file is not None:
+        try:
+            with open(os.path.abspath(os.path.expanduser(set_file)), encoding="utf-8") as handle:
+                body = handle.read()
+        except FileNotFoundError as exc:
+            raise errors.NotFound(
+                f"정체성 파일 {set_file!r}을 못 찾았어요",
+                remedy="실제로 있는 UTF-8 파일 경로를 `--set-file`에 주세요",
+                detail={"path": set_file},
+            ) from exc
+        except (OSError, UnicodeError) as exc:
+            raise errors.InvalidInput(
+                f"정체성 파일 {set_file!r}을 읽지 못했어요: {exc}",
+                remedy="읽을 수 있는 UTF-8 파일을 주세요",
+                detail={"path": set_file},
+            ) from exc
+    elif set_value is not None:
+        if set_value != "-":
+            raise errors.InvalidInput(
+                f"--set 값 {set_value!r}은 지원하지 않아요",
+                remedy="표준 입력에서 읽으려면 `--set -`로 쓰세요",
+                detail={"value": set_value},
+            )
+        import sys
+
+        body = sys.stdin.read()
+    elif edit:
+        import shlex
+        import subprocess
+
+        editor = str(os.environ.get("EDITOR") or "").strip()
+        if not editor:
+            raise errors.InvalidInput(
+                "$EDITOR가 없어 편집기를 열 수 없어요",
+                remedy="`EDITOR=vim asgard agent identity <이름> --edit`처럼 편집기를 지정하세요",
+                detail={"agent": canon},
+            )
+        try:
+            argv = shlex.split(editor)
+            if not argv:
+                raise ValueError("편집기 명령이 비어 있어요")
+            completed = subprocess.run([*argv, path], check=False)
+        except (OSError, ValueError) as exc:
+            raise errors.InvalidInput(
+                f"편집기 {editor!r}를 열지 못했어요: {exc}",
+                remedy="실행할 수 있는 프로그램을 $EDITOR에 지정하세요",
+                detail={"editor": editor},
+            ) from exc
+        if completed.returncode:
+            raise errors.InvalidInput(
+                f"편집기가 종료 코드 {completed.returncode}로 끝났어요",
+                remedy="편집기 오류를 고치거나 `--set-file`로 정체성을 교체하세요",
+                detail={"editor": editor, "exit_code": completed.returncode},
+            )
+
+    if body is not None:
+        try:
+            path = profiles.write_identity(canon, body)
+        except (ValueError, FileNotFoundError) as exc:
+            raise _boundary(exc, remedy=f"`asgard agent create {canon}`로 먼저 세우세요") from exc
+
+    current = profiles.identity(canon)
+    meaningful = bool(profiles._meaningful(current))
+    payload = {"agent": canon, "path": path, "body": current, "meaningful": meaningful}
+    if json_out:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0
+
+    ui.head(f"agent · {canon} identity")
+    if body is not None:
+        ui.ok(f"정체성을 교체했어요 — {path}")
+    elif edit:
+        ui.ok(f"정체성을 편집했어요 — {path}")
+    if meaningful:
+        if body is None and not edit:
+            ui.ok(f"AGENT.md — {path}")
+        print(current.rstrip())
+    else:
+        ui.step(f"AGENT.md는 주석뿐이에요 — {path}")
+    ui.done()
+    return 0
+
+
+def run_agent_rename(old: str, new: str, *, json_out: bool = False, quiet: bool = False) -> int:
+    _surface(json_out, quiet)
+    try:
+        path = profiles.rename(old, new)
+    except (ValueError, FileExistsError, FileNotFoundError) as exc:
+        raise _boundary(exc, remedy="`asgard agent list`로 지금 이름을 확인하고 비어 있는 새 이름을 고르세요") from exc
+    before, after = profiles.normalize(old), profiles.normalize(new)
+    if json_out:
+        print(json.dumps({"renamed": {"from": before, "to": after}, "path": path}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head("agent · rename")
+    ui.ok(f"{before} → {after}")
+    ui.step(ui.dim(f"    {path}"))
+    ui.done()
+    return 0
+
+
+def run_agent_export(
+    name: str,
+    *,
+    out_path: str | None = None,
+    json_out: bool = False,
+    quiet: bool = False,
+) -> int:
+    _surface(json_out, quiet)
+    canon = profiles.normalize(name)
+    target = os.path.abspath(os.path.expanduser(out_path or os.path.join(os.getcwd(), f"{canon}.tar.gz")))
+    if os.path.exists(target):
+        raise errors.Conflict(
+            f"내보낼 파일이 이미 있어요 — {target}",
+            remedy="기존 파일을 보존하려면 `-o`로 다른 경로를 고르세요",
+            detail={"agent": canon, "path": target},
+        )
+    try:
+        path = profiles.export_archive(canon, target)
+    except (ValueError, FileExistsError, FileNotFoundError, OSError) as exc:
+        raise _boundary(exc, remedy="에이전트 이름과 쓸 수 있는 출력 경로를 확인하세요") from exc
+    if json_out:
+        print(json.dumps({"exported": canon, "path": path}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head("agent · export")
+    ui.ok(f"내보냈어요 — {canon} → {path}")
+    ui.done()
+    return 0
+
+
+def run_agent_import(
+    archive_path: str,
+    *,
+    as_name: str | None = None,
+    json_out: bool = False,
+    quiet: bool = False,
+) -> int:
+    _surface(json_out, quiet)
+    archive = os.path.abspath(os.path.expanduser(archive_path))
+    if not os.path.isfile(archive):
+        raise errors.NotFound(
+            f"가져올 보관 파일 {archive!r}을 못 찾았어요",
+            remedy="실제로 있는 `.tar.gz` 파일 경로를 주세요",
+            detail={"path": archive},
+        )
+    if as_name is not None:
+        try:
+            target = profiles.validate(as_name)
+        except ValueError as exc:
+            raise _boundary(exc, remedy="`[a-z0-9][a-z0-9_-]*` 형식의 새 이름을 `--as`에 주세요") from exc
+        if profiles.exists(target):
+            raise errors.Conflict(
+                f"에이전트 {target!r}가 이미 있어 덮어쓰지 않았어요",
+                remedy="기존 에이전트를 보존하려면 `--as`로 비어 있는 이름을 고르세요",
+                detail={"agent": target, "path": profiles.profile_dir(target)},
+            )
+    try:
+        path = profiles.import_archive(archive, name=as_name)
+    except (ValueError, FileExistsError, FileNotFoundError, OSError) as exc:
+        raise _boundary(exc, remedy="보관 파일을 확인하고, 이름이 겹치면 `--as`로 새 이름을 고르세요") from exc
+    canon = profiles.normalize(as_name or os.path.basename(os.path.normpath(path)))
+    if json_out:
+        print(json.dumps({"imported": canon, "path": path}, ensure_ascii=False, indent=2))
+        return 0
+    ui.head("agent · import")
+    ui.ok(f"가져왔어요 — {canon} → {path}")
     ui.done()
     return 0
 
@@ -294,7 +659,7 @@ def run_agent_bind(
     except (ValueError, FileNotFoundError) as exc:
         # 없는 이름과 잘못 쓴 자리는 다음 손이 다르다: 하나는 만들어야 하고, 하나는 고쳐 써야 한다.
         fix = (
-            f"`asgard agent create {profiles.normalize(name)}`로 먼저 만드세요"
+            f"`asgard agent create {profiles.normalize(name)}`로 먼저 세우세요"
             if isinstance(exc, FileNotFoundError)
             else "`asgard agent where`로 지금 배치를 보고 --mode/--role 중 하나만 주세요"
         )
