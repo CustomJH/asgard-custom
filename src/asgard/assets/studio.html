@@ -111,7 +111,7 @@
 
     /* ── 머리 — 누구의 어디. 입력은 여기 없다(대화 아래 독 하나뿐). 그래서 높이도 한 줄이다. ── */
     .command{border-bottom:1px solid var(--line);background:var(--surface);
-      display:flex;align-items:center;justify-content:space-between;gap:var(--space-md);
+      display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:var(--space-md);
       padding:var(--space-xs) var(--space-md)}
     .go{height:var(--row-h);padding:0 var(--space-lg);border:1px solid var(--gold);border-radius:var(--r1);
       background:var(--gold-soft);color:var(--gold-lit);white-space:nowrap;
@@ -160,7 +160,7 @@
     .agent-switch-row .window:hover{background:var(--surface-2)}
     .agent-switch-row .window b{display:block;color:var(--ink);font-weight:500}
     .agent-switch-row .window span{display:block;color:var(--faint);font-family:var(--mono);font-size:9.5px}
-    .agent-switch-row .machine{flex:none;color:var(--muted);font-size:10.5px}
+    .agent-switch-row .agent-action{flex:none;color:var(--muted);font-size:10.5px}
     .agent-scope-banner{flex:1 0 100%;padding:var(--space-xs) var(--space-sm);border:1px solid var(--warn-line);
       border-radius:var(--r1);background:var(--warn-fill);color:var(--warn);font-size:11.5px;line-height:1.5}
     .agent-scope-banner[hidden]{display:none}
@@ -2805,7 +2805,7 @@
     <form id="agent-create-form">
       <div>
         <div class="form-field"><label for="agent-create-name">이름</label>
-          <input id="agent-create-name" required pattern="[a-z0-9][a-z0-9_-]{0,47}" autocomplete="off" spellcheck="false"
+          <input id="agent-create-name" required pattern="[a-z0-9][a-z0-9_\-]{0,47}" autocomplete="off" spellcheck="false"
             placeholder="예: qa-helper" aria-describedby="agent-create-rule">
           <small id="agent-create-rule">소문자·숫자로 시작하고, 하이픈과 밑줄을 쓸 수 있어요.</small></div>
         <div class="form-field"><label for="agent-create-display">표시 이름</label>
@@ -3213,14 +3213,19 @@
         return '<div class="agent-switch-row"><button type="button" class="window" data-window-agent="'+esc(row.id)+'"'
           +(row.id===a.id?' disabled':'')+'><b>'+esc(name)+'</b><span>'
           +(row.id===a.id?'이 창에서 보는 중':(row.id===active?'이 기계의 기본':'이 창만 전환'))
-          +'</span></button><button type="button" class="machine" data-machine-agent="'+esc(row.id)+'"'
+          +'</span></button><a class="agent-action" href="'+esc(agentWindowUrl(row.id))+'" target="_blank" rel="noopener"'
+          +' aria-label="'+esc(name)+' 에이전트로 새 창 열기">이 프로파일로 새 창</a>'
+          +'<button type="button" class="agent-action" data-machine-agent="'+esc(row.id)+'"'
           +(row.id===active?' disabled':'')+'>기계 기본</button></div>';
       }).join('')||'<div class="empty">세워 둔 에이전트가 없어요.</div>';
       $$('#agent-switch-list [data-window-agent]').forEach(b=>b.onclick=()=>switchWindowAgent(b.dataset.windowAgent));
       $$('#agent-switch-list [data-machine-agent]').forEach(b=>b.onclick=()=>makeMachineAgent(b.dataset.machineAgent));
     }
+    function agentWindowUrl(name){
+      const url=new URL(location.href);url.searchParams.set('agent',name);return url.href;
+    }
     function switchWindowAgent(name){
-      const url=new URL(location.href);url.searchParams.set('agent',name);location.assign(url);
+      location.assign(agentWindowUrl(name));
     }
     async function makeMachineAgent(name){
       if(!confirm("'"+name+"' 에이전트를 이 기계의 기본으로 하면 새 창과 세션의 기본이 바뀌어요. 계속할까요?"))return false;
@@ -3234,10 +3239,13 @@
       const box=$('#agent-runs'),data=state.runs.data;if(!box||!data)return;
       const labels={live:'실행 중',stale:'오래됨',indeterminate:'상태를 확인할 수 없음'};
       box.innerHTML=(data.runs||[]).map(run=>{
-        const self=run.id===data.self,stateName=run.state||'indeterminate';
+        const self=run.id===data.self,stateName=run.state||'indeterminate',url=String(run.url||'');
+        const destination=/^https?:\/\//i.test(url)
+          ?'<a class="url" href="'+esc(url)+'" aria-label="'+esc(run.agent||'default')+' Studio로 이동">'+esc(url)+'</a>'
+          :'<span class="url">URL 없음</span>';
         return '<div class="agent-run '+(stateName==='stale'?'stale':'')+'"><span class="who">'
           +esc(run.agent||'default')+(self?' <span class="badge">이 창</span>':'')+'</span>'
-          +'<span class="url" title="'+esc(run.url||'')+'">'+esc(run.url||'URL 없음')+'</span>'
+          +destination
           +'<span class="state">'+esc(labels[stateName]||stateName)+'</span></div>';
       }).join('')||'<div class="empty">등록된 창이 없어요.</div>';
     }

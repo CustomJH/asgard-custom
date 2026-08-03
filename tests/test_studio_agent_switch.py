@@ -10,6 +10,7 @@ from unittest import mock
 
 from asgard import profiles
 from asgard.commands import studio, studio_store
+from asgard.commands.studio import routes
 
 
 def _clean_env(home: str) -> dict[str, str]:
@@ -99,6 +100,26 @@ class TestTaskProfileBoundary(AgentSwitchCase):
         self.assertEqual(self.get_tasks("default")[0]["id"], task["id"])
         with profiles.scoped("default"):
             self.assertNotIn("--agent", studio.state._TASKS[task["id"]]["command"])
+
+
+class TestWindowControls(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.page = routes.render_html()
+
+    def test_scope_banner_keeps_the_header_on_its_own_row(self) -> None:
+        self.assertIn("display:flex;flex-wrap:wrap", self.page)
+
+    def test_profile_switch_and_new_window_are_live_navigation(self) -> None:
+        self.assertIn("location.assign(agentWindowUrl(name))", self.page)
+        self.assertIn('target="_blank" rel="noopener"', self.page)
+        self.assertIn("이 프로파일로 새 창", self.page)
+
+    def test_a_registered_window_url_is_a_link(self) -> None:
+        self.assertIn('<a class="url" href="', self.page)
+
+    def test_profile_name_pattern_is_valid_in_current_browsers(self) -> None:
+        self.assertIn('pattern="[a-z0-9][a-z0-9_\\-]{0,47}"', self.page)
 
 
 if __name__ == "__main__":
