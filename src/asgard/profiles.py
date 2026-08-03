@@ -49,6 +49,8 @@ import json
 import os
 import re
 import shutil
+import tarfile
+import tempfile
 import time
 from contextvars import ContextVar, Token
 
@@ -172,9 +174,9 @@ def validate(name: str) -> str:
     if canon == DEFAULT:
         return canon
     if not ID_RE.match(canon):
-        raise ValueError(f"이름 {name!r}은 쓸 수 없다 — [a-z0-9][a-z0-9_-]{{0,47}} 규약")
+        raise ValueError(f"이름 {name!r}은 쓸 수 없어요 — [a-z0-9][a-z0-9_-]{{0,47}} 규약이에요")
     if canon in RESERVED:
-        raise ValueError(f"이름 {canon!r}은 예약어다 (CLI 하위 명령과 충돌) — 다른 이름을 골라라")
+        raise ValueError(f"이름 {canon!r}은 예약어예요 (CLI 하위 명령과 겹쳐요) — 다른 이름을 골라 주세요")
     return canon
 
 
@@ -317,9 +319,9 @@ def fallback_warning() -> str:
     if name == DEFAULT:
         return ""
     return (
-        f"활성 에이전트는 {name!r} 인데 ASGARD_HOME/ASGARD_PROFILE이 비어 있다 — "
-        f"이 프로세스는 기본 에이전트({root()})에 쓴다. 부모가 profiles.subprocess_env()로 "
-        f"환경을 넘겨야 한다."
+        f"활성 에이전트는 {name!r}인데 ASGARD_HOME/ASGARD_PROFILE이 비어 있어요 — "
+        f"이 프로세스는 기본 에이전트({root()})에 써요. 부모가 profiles.subprocess_env()로 "
+        f"환경을 넘겨야 해요."
     )
 
 
@@ -327,7 +329,7 @@ def set_active(name: str) -> str:
     """끈끈한 기본 에이전트 고정. default는 파일 삭제로 표현한다 (없음 = 기본)."""
     canon = validate(name)
     if canon != DEFAULT and not exists(canon):
-        raise FileNotFoundError(f"에이전트 {canon!r} 없음 — `asgard agent create {canon}`로 먼저 만들어라")
+        raise FileNotFoundError(f"에이전트 {canon!r}가 없어요 — `asgard agent create {canon}`로 먼저 세워 주세요")
     path = os.path.join(root(), ACTIVE_FILE)
     os.makedirs(root(), exist_ok=True)
     if canon == DEFAULT:
@@ -398,6 +400,28 @@ def identity(name: str) -> str:
             return handle.read()
     except Exception:
         return ""
+
+
+def write_identity(name: str, body: str) -> str:
+    """AGENT.md 본문 교체 — 임시 파일을 완성한 뒤 바꿔 반쪽 정체성을 노출하지 않는다."""
+    canon = validate(name)
+    directory = profile_dir(canon)
+    if canon != DEFAULT and not os.path.isdir(directory):
+        raise FileNotFoundError(f"에이전트 {canon!r}가 없어요")
+    os.makedirs(directory, exist_ok=True)
+    path = os.path.join(directory, IDENTITY)
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=f"{IDENTITY}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(body)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+    return path
 
 
 # ── 정체성 주입 ──────────────────────────────────────────────────────────────────
@@ -540,15 +564,17 @@ def create(
     물려받은 에이전트는 자기 일지의 주어가 누구인지 모른다)."""
     canon = validate(name)
     if canon == DEFAULT:
-        raise ValueError("default는 내장 에이전트다 (~/.asgard) — 새로 만들 수 없다")
+        raise ValueError("default는 내장 에이전트예요 (~/.asgard 자체예요) — 새로 세울 수 없어요")
     d = profile_dir(canon)
     if os.path.exists(d):
-        raise FileExistsError(f"에이전트 {canon!r} 이미 있음: {d}")
+        raise FileExistsError(f"에이전트 {canon!r}가 이미 있어요: {d}")
 
     roster = builtin_roster()
     seed = normalize(based_on) if based_on else ""
     if seed and seed not in roster:
-        raise ValueError(f"내장 에이전트 {seed!r} 없음 — {'/'.join(sorted(roster)) or '(명부 비어 있음)'}")
+        raise ValueError(
+            f"내장 에이전트 {seed!r}가 없어요 — 고를 수 있는 건 {'/'.join(sorted(roster)) or '(명부가 비어 있어요)'}"
+        )
 
     _seed_home(d)
 
@@ -556,7 +582,7 @@ def create(
         src_name = validate(clone_from)
         src = profile_dir(src_name)
         if not os.path.isdir(src):
-            raise FileNotFoundError(f"복제 원본 {src_name!r} 없음: {src}")
+            raise FileNotFoundError(f"복제 원본 {src_name!r}가 없어요: {src}")
         for fname in ("asgard-setting-global.json", IDENTITY):
             s = os.path.join(src, fname)
             if os.path.isfile(s):
@@ -614,14 +640,153 @@ def delete(name: str) -> str:
     active_profile은 모든 후속 프로세스를 custom으로 떨어뜨린다)."""
     canon = validate(name)
     if canon == DEFAULT:
-        raise ValueError("기본 에이전트는 지울 수 없다 (~/.asgard 자체다)")
+        raise ValueError("기본 에이전트는 지울 수 없어요 (~/.asgard 자체예요)")
     d = profile_dir(canon)
     if not os.path.isdir(d):
-        raise FileNotFoundError(f"에이전트 {canon!r} 없음")
+        raise FileNotFoundError(f"에이전트 {canon!r}가 없어요")
     shutil.rmtree(d)
     if sticky() == canon:
         set_active(DEFAULT)
     return d
+
+
+def rename(old: str, new: str) -> str:
+    """에이전트 디렉터리 개명 — 끈끈한 활성 포인터와 명세 id도 새 이름을 따른다."""
+    before, after = validate(old), validate(new)
+    if before == DEFAULT or after == DEFAULT:
+        raise ValueError("default는 이름을 바꿀 수 없어요 (~/.asgard 자체예요)")
+    source, target = profile_dir(before), profile_dir(after)
+    if not os.path.isdir(source):
+        raise FileNotFoundError(f"에이전트 {before!r}가 없어요")
+    if os.path.lexists(target):
+        raise FileExistsError(f"에이전트 {after!r}가 이미 있어요: {target}")
+    display = str(manifest(before).get("name") or before)
+    follows = sticky() == before
+    os.rename(source, target)
+    write_manifest(after, name=after if display == before else display)
+    if follows:
+        set_active(after)
+    return target
+
+
+def export_archive(name: str, out_path: str) -> str:
+    """배포 가능한 프로파일만 tar.gz로 묶는다 — 기억·세션·상태·자격은 담지 않는다."""
+    canon = validate(name)
+    source = profile_dir(canon)
+    if not os.path.isdir(source):
+        raise FileNotFoundError(f"에이전트 {canon!r}가 없어요")
+    target = os.path.abspath(os.path.expanduser(out_path))
+    if os.path.lexists(target):
+        raise FileExistsError(f"보관 파일이 이미 있어요: {target}")
+    os.makedirs(os.path.dirname(target), exist_ok=True)
+
+    created = False
+
+    def checked(info: tarfile.TarInfo) -> tarfile.TarInfo:
+        if info.issym() or info.islnk() or not (info.isfile() or info.isdir()):
+            raise ValueError(f"배포할 수 없는 파일 형식이에요: {info.name}")
+        return info
+
+    try:
+        with tarfile.open(target, "x:gz") as archive:
+            created = True
+            for entry in (MANIFEST, IDENTITY, "asgard-setting-global.json", "skills"):
+                path = os.path.join(source, entry)
+                if os.path.exists(path):
+                    archive.add(path, arcname=entry, recursive=True, filter=checked)
+    except BaseException:
+        if created:
+            try:
+                os.unlink(target)
+            except OSError:
+                pass
+        raise
+    return target
+
+
+def _archive_member_name(raw: str) -> str:
+    """아카이브 경로를 상대 POSIX 경로로 판정 — 어느 플랫폼에서도 루트·상위 이탈은 거부."""
+    text = raw.replace("\\", "/")
+    if text.startswith("/") or re.match(r"^[A-Za-z]:", text):
+        raise ValueError(f"아카이브의 절대 경로는 풀 수 없어요: {raw}")
+    parts = [part for part in text.split("/") if part not in ("", ".")]
+    if ".." in parts:
+        raise ValueError(f"아카이브의 상위 경로는 풀 수 없어요: {raw}")
+    return "/".join(parts)
+
+
+def import_archive(archive_path: str, name: str | None = None) -> str:
+    """보관 파일을 새 에이전트로 가져온다 — 경로 이탈과 모든 링크를 풀기 전에 거부한다."""
+    source = os.path.abspath(os.path.expanduser(archive_path))
+    if not os.path.isfile(source):
+        raise FileNotFoundError(f"보관 파일이 없어요: {source}")
+
+    try:
+        with tarfile.open(source, "r:*") as archive:
+            members: list[tuple[tarfile.TarInfo, str]] = []
+            manifest_member: tarfile.TarInfo | None = None
+            for member in archive.getmembers():
+                safe_name = _archive_member_name(member.name)
+                if member.issym() or member.islnk():
+                    raise ValueError(f"아카이브의 링크는 풀 수 없어요: {member.name}")
+                if not (member.isfile() or member.isdir()):
+                    raise ValueError(f"아카이브의 특수 파일은 풀 수 없어요: {member.name}")
+                members.append((member, safe_name))
+                if safe_name == MANIFEST and member.isfile():
+                    manifest_member = member
+
+            if manifest_member is None:
+                raise ValueError(f"아카이브에 {MANIFEST}가 없어요")
+            manifest_file = archive.extractfile(manifest_member)
+            if manifest_file is None:
+                raise ValueError(f"아카이브의 {MANIFEST}를 읽을 수 없어요")
+            with manifest_file:
+                loaded = json.load(manifest_file)
+            if not isinstance(loaded, dict):
+                raise ValueError(f"아카이브의 {MANIFEST}는 JSON 객체여야 해요")
+
+            canon = validate(name if name is not None else str(loaded.get("id") or ""))
+            if canon == DEFAULT:
+                raise FileExistsError("default 에이전트는 이미 있어요 (~/.asgard 자체예요)")
+            target = profile_dir(canon)
+            if os.path.lexists(target):
+                raise FileExistsError(f"에이전트 {canon!r}가 이미 있어요: {target}")
+
+            os.makedirs(profiles_root(), exist_ok=True)
+            stage = tempfile.mkdtemp(dir=profiles_root(), prefix=".import-")
+            try:
+                _seed_home(stage)
+                allowed = {MANIFEST, IDENTITY, "asgard-setting-global.json", "skills"}
+                for member, safe_name in members:
+                    if safe_name not in allowed and not safe_name.startswith("skills/"):
+                        continue
+                    destination = os.path.join(stage, *safe_name.split("/"))
+                    if member.isdir():
+                        os.makedirs(destination, exist_ok=True)
+                        continue
+                    os.makedirs(os.path.dirname(destination), exist_ok=True)
+                    extracted = archive.extractfile(member)
+                    if extracted is None:
+                        raise ValueError(f"아카이브 파일을 읽을 수 없어요: {member.name}")
+                    with extracted, open(destination, "wb") as handle:
+                        shutil.copyfileobj(extracted, handle)
+                    os.chmod(destination, member.mode & 0o777)
+
+                original_id = str(loaded.get("id") or "")
+                if loaded.get("name") == original_id:
+                    loaded["name"] = canon
+                loaded["id"] = canon
+                loaded.setdefault("name", canon)
+                with open(os.path.join(stage, MANIFEST), "w", encoding="utf-8") as handle:
+                    json.dump(loaded, handle, ensure_ascii=False, indent=2)
+                os.rename(stage, target)
+                stage = ""
+            finally:
+                if stage:
+                    shutil.rmtree(stage, ignore_errors=True)
+    except (tarfile.TarError, json.JSONDecodeError, UnicodeError) as exc:
+        raise ValueError(f"읽을 수 없는 에이전트 보관 파일이에요: {source}") from exc
+    return target
 
 
 def listing() -> list[dict]:

@@ -25,6 +25,8 @@ from ...model_tiers import TIERS
 from ...model_tiers import family_tier as _model_tier
 from ...model_tiers import tiers_for as _tiers_for
 from ...providers import ResolvedProvider, resolve_trinity
+from ...sessions import resolve_agent as _resolve_agent
+from ...sessions import session_key as _session_key
 from ..session import AgentSession, SessionResult, TurnCancelled, make_client, ql
 from .bifrost import NULL_LEDGER
 from .classify import (
@@ -103,9 +105,13 @@ class Heimdall:
         root: str,
         on_text: Callable[[str], None],
         on_status: Callable[[str | None], None] | None = None,
+        agent: str = "",
     ):
         self.rp, self.root, self.on_text = rp, root, on_text
         self.on_status = on_status or (lambda s: None)
+        # 이 세션이 명시로 고른 에이전트. 비어 있으면 프로젝트 배치와 끈끈한 활성이 정한다
+        # (sessions.resolve_agent 의 사다리). 게이트웨이의 `?agent=` 가 이 인자로 들어온다.
+        self._explicit_agent = str(agent or "")
         self._state_lock = threading.Lock()  # wave 병렬 스레드의 _clients/total_tokens 변이 보호
         self._session_seq = 0
         self._sessions: dict[str, dict] = {}
@@ -150,7 +156,9 @@ class Heimdall:
         # headless JSON 호출자는 실제 최종 응답을 이 필드에서 회수한다.
         self.last_response_text = ""
         self.history: list[tuple[str, str]] = []  # REPL 턴 간 (요청, 응답 요약) — DIRECT 후속 질문 맥락
-        self._memory_session_id = f"native-{uuid.uuid4().hex}"
+        # 세션 좌표에 에이전트를 넣는다 — 이 id 로 적히는 턴·에피소드·튜터 기록이 에이전트마다
+        # 갈린다. 주변 상태(ASGARD_PROFILE)가 나중에 바뀌어도 이 세션의 기록은 안 옮겨간다.
+        self._memory_session_id = _session_key(self._session_agent, scope="native", suffix=uuid.uuid4().hex)
         self._memory_turn_seq = 0
         self._last_quest_id: str | None = None  # 이 턴이 연 퀘스트 — turn_store 귀속 신호
         self._last_completion: dict | None = None
@@ -221,12 +229,13 @@ class Heimdall:
         # 스웜 — 이 프로젝트가 역할마다 다른 에이전트를 세워 뒀는가 (.asgard의 [agents].roles).
         # 세워 뒀으면 그 역할의 세션은 **그 에이전트의 홈**에서 돌고, 1차 기억 스냅샷도 거기서
         # 뜬다. 배치가 없으면 이 딕셔너리가 비어 있고 아래 경로는 전부 종전과 바이트 동일하다.
-        from ...swarm import resolve as _swarm_resolve
         from ...swarm import swarm as _swarm_roles
 
         try:
             self._role_agent: dict[str, str] = _swarm_roles(root)
-            self._session_agent: str = _swarm_resolve(root, mode="native")
+            # 세션 전체의 에이전트는 sessions 사다리가 정한다 — 이 세션이 명시로 고른 것이
+            # 프로젝트 배치보다, 배치가 끈끈한 활성보다 우선한다.
+            self._session_agent: str = _resolve_agent(root, self._explicit_agent, mode="native")
         except Exception:  # 배치 해석 실패가 세션 시동을 막으면 안 된다 (fail-open)
             self._role_agent, self._session_agent = {}, ""
         self._role_memory_snap: dict[str, str] = {}

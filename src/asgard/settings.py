@@ -129,6 +129,49 @@ def load_global() -> dict:
     return merged
 
 
+def _profile_name(name: str) -> str:
+    """존재하는 에이전트 이름 — 설정 창구가 없는 홈을 조용히 만들지 않게 막는다."""
+    from . import profiles
+
+    canon = profiles.validate(name)
+    if canon != profiles.DEFAULT and not profiles.exists(canon):
+        raise FileNotFoundError(f"에이전트 {canon!r}가 없어요")
+    return canon
+
+
+def profile_config(name: str) -> dict:
+    """에이전트가 자기 파일에 직접 적은 설정 전체 — 기계 뿌리 상속분은 제외."""
+    from . import profiles
+
+    canon = _profile_name(name)
+    return _own_global(profiles.profile_dir(canon))
+
+
+def profile_config_view(name: str) -> dict:
+    """에이전트가 실제로 보는 설정 — 기계 뿌리 위에 자기 설정을 키 단위로 덮은 뷰."""
+    from . import profiles
+
+    canon = _profile_name(name)
+    with profiles.scoped(canon):
+        return load_global()
+
+
+def save_profile_config(name: str, section_name: str, kv: dict) -> str:
+    """지정한 에이전트의 설정 섹션 교체 — 현재 활성 에이전트는 바꾸지 않는다."""
+    from . import profiles
+
+    canon = _profile_name(name)
+    with profiles.scoped(canon):
+        return save_global(section_name, kv)
+
+
+def profile_config_path(name: str) -> str:
+    """지정한 에이전트가 자기 설정을 적는 파일 경로."""
+    from . import profiles
+
+    return os.path.join(profiles.profile_dir(_profile_name(name)), GLOBAL_FILE)
+
+
 def _load_legacy_project(root: str) -> dict:
     """구 3파일 합성 뷰 — config.toml 섹션 + trinity-policy.json→trinity_policy
     + memory-server.json→memory. 마이그레이션과 폴백이 공유하는 유일한 레거시 해석."""
