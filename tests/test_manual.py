@@ -19,6 +19,7 @@
 import json
 import os
 import shutil
+import site
 import subprocess
 import sys
 import tempfile
@@ -705,7 +706,13 @@ class TestScaffoldE2E(unittest.TestCase):
             env: dict[str, str] = {**os.environ, "HOME": fake_home}
             env.pop("ASGARD_HOME", None)
             env.pop("ASGARD_PROFILE", None)
-            subprocess.run(
+            # 격리 대상은 **아스가르드의 홈**이지 파이썬 설치가 아니다: HOME 을 옮기면 인터프리터의
+            # per-user site-packages(`~/.local/lib/...`) 도 같이 옮겨 가, `pip install --user` 로 깔린
+            # 선언 의존성이 하위 프로세스에서 통째로 사라진다. 그러면 init 이 import 단계에서 죽고
+            # 아래 단언은 "매뉴얼을 안 깐다"로 읽힌다 — 원인과 증상이 어긋난다. 사용자 베이스만
+            # 진짜 홈에 고정해 그 교란을 끊는다 (HOME 은 그대로 임시 디렉터리 = 계약은 불변).
+            env["PYTHONUSERBASE"] = site.getuserbase()
+            done = subprocess.run(
                 [self.bin, "init", "--cc", "--yes", "-q"],
                 cwd=self.root,
                 capture_output=True,
@@ -713,11 +720,12 @@ class TestScaffoldE2E(unittest.TestCase):
                 timeout=180,
                 env=env,
             )
+            self.assertEqual(0, done.returncode, done.stderr)  # 깨진 init 을 "안 깔았다"로 오독하지 않는다
             common = os.path.join(fake_home, ".asgard", "MANUAL.md")
             self.assertTrue(os.path.exists(common))
             with open(common, "w", encoding="utf-8") as handle:
                 handle.write("- 내가 쓴 공통 규칙\n")
-            subprocess.run(
+            again = subprocess.run(
                 [self.bin, "init", "--cc", "--yes", "-q", "--force"],
                 cwd=self.root,
                 capture_output=True,
@@ -725,6 +733,7 @@ class TestScaffoldE2E(unittest.TestCase):
                 timeout=180,
                 env=env,
             )
+            self.assertEqual(0, again.returncode, again.stderr)  # 안 돈 init 은 안 덮은 것의 증거가 못 된다
             with open(common, encoding="utf-8") as handle:
                 self.assertEqual(handle.read(), "- 내가 쓴 공통 규칙\n")  # 두 번째 init이 안 덮는다
 
