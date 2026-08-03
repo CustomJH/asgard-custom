@@ -3964,6 +3964,37 @@
         :(marked?l.replace(/^(\s*)-\s+/,'$1'):l.replace(/^(\s*)/,'$1- '))).join('\n');
       return {value:value.slice(0,from)+next+value.slice(to),start:from,end:from+next.length};
     }
+    /* 칸의 글을 바꿔 쓴다 — **브라우저의 실행 취소 스택을 안 지운다.** `box.value` 에 대입하면
+       그 자리에서 스택이 비어 Ctrl+Z 가 죽는다. 서식 토글은 작고 잦은 편집이라 되돌리기
+       슬롯(`previous`)을 쓸 수 없다 — 칸마다 한 벌뿐이라 그걸 쓰면 정작 제안 반영을 못 되돌린다.
+       그러니 서식의 되돌리기는 브라우저가 계속 들고 있어야 한다: `insertText` 로 쓰면 그 한 번이
+       스택에 한 단으로 쌓인다.
+       바꾼 자리만 좁혀서 쓴다 — 공통 앞머리와 꼬리를 깎으면 굵게는 별 두 개, 목록은 줄머리만
+       갈린다. 칸 전체를 한 덩어리로 넣으면 안 바뀐 글까지 지웠다 다시 쓴 것이 되어 커서도
+       스택의 한 단도 거칠어진다. */
+    function planWrite(box,value){
+      const cur=box.value;
+      if(cur===value)return true;
+      let head=0;
+      while(head<cur.length&&head<value.length&&cur[head]===value[head])head++;
+      let tail=0;
+      while(tail<cur.length-head&&tail<value.length-head
+        &&cur[cur.length-1-tail]===value[value.length-1-tail])tail++;
+      const text=value.slice(head,value.length-tail);
+      try{
+        box.focus();box.setSelectionRange(head,cur.length-tail);
+        /* 넣을 글이 없으면(불릿을 벗기는 자리) `insertText` 대신 지운다 — 빈 글의 `insertText` 는
+           브라우저마다 고른 구간을 안 지우고 넘어간다. 고른 구간이 비어 있을 때는 여기 안 온다:
+           `cur!==value` 면 지울 구간이나 넣을 글 중 하나는 반드시 있다. */
+        const done=text?document.execCommand('insertText',false,text)
+          :document.execCommand('delete');
+        if(done&&box.value===value)return true;
+      }catch(e){void e}
+      /* 못 쓰면 통째로 대입한다. **이 갈래에서는 브라우저의 실행 취소 스택이 지워져** 그 편집만
+         Ctrl+Z 로 못 되돌린다 — 손잡이가 아무 일도 안 하는 것보다는 낫다. */
+      box.value=value;
+      return false;
+    }
     /* 표기를 걸고 그 자리를 다시 고른다 — **다시 그리지 않는다**(그리면 브라우저의 선택 표시가
        사라진다). 저장은 기다리지 않고 지금 보낸다: 손잡이를 누른 것은 이미 끝난 한 번의 편집이다. */
     function planMark(id,kind){
@@ -3973,7 +4004,10 @@
       if(start===end)return;
       const next=kind==='list'?planToggleList(box.value,start,end)
         :planToggleMark(box.value,start,end,PLAN_MARK[kind]);
-      box.value=next.value;box.setSelectionRange(next.start,next.end);box.focus();
+      /* `planWrite` 가 흘린 `input` 은 고른 자리를 지우고 저장을 예약한다 — 아래에서 둘 다
+         제자리로 돌린다(고른 자리를 다시 세우고, 예약을 걷고 지금 보낸다). */
+      planWrite(box,next.value);
+      box.setSelectionRange(next.start,next.end);box.focus();
       state.plan.body[id]=next.value;
       state.plan.selection={section:id,start:next.start,end:next.end,
         text:next.value.slice(next.start,next.end)};
