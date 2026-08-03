@@ -46,6 +46,7 @@ _FIELD_LABEL = {
     "blocks": "차단",
     "relates": "연관",
     "duplicates": "중복",
+    "evidence": "부하 근거",
 }
 _STATUS_WIDTH = 8  # 표시 폭 — '진행 중'은 글자 3개지만 터미널에서 7칸을 먹는다
 
@@ -184,7 +185,7 @@ def run_board(json_out: bool, team: str = "", project: str = "") -> int:
         # 어디에 사는지를 모르면, 첫 티켓을 만들고도 그것을 자기 것으로 안 읽는다.
         ui.step(ui.dim('아직 티켓이 없어요 — `asgard ticket new "할 일"`로 첫 건을 남겨 보세요.'))
         if not summary.get("team"):
-            ui.step(ui.dim(f"  첫 티켓은 {summary['prefix']}-1이 되고, 그때 팀도 하나 서요."))
+            ui.step(ui.dim(f"  첫 티켓은 {summary['prefix']}-1이 되고, 그때 팀도 하나 생겨요."))
         ui.step(ui.dim("  일감은 워크스페이스에 있어요 — 번호는 팀의 것이고, 프로젝트는 팀을 가로질러요."))
         ui.step(ui.dim("  기본은 늘 전체예요 — `--team <키>`로 좁힐 수 있고, `--team .`은 이 폴더의 팀이에요."))
         if L.pending_roots([root]):
@@ -264,6 +265,9 @@ def run_show(ref: str, json_out: bool) -> int:
             ui.step(ui.dim("  막힘 ← " + ", ".join(ticket["blocked_by"])))
         if ticket["blocks"]:
             ui.step(ui.dim("  막고 있음 → " + ", ".join(ticket["blocks"])))
+    if ticket.get("evidence"):
+        ui.phase(f"부하 근거 {len(ticket['evidence'])}")
+        _show_evidence(ticket["evidence"])
     if ticket["comments_list"]:
         ui.phase(f"댓글 {len(ticket['comments_list'])}")
         for note in ticket["comments_list"]:
@@ -349,7 +353,7 @@ def _rejected(exc: Exception, ref: str) -> errors.AsgardError:
     `StoreError`는 여기 안 온다: 호출부가 `TicketError`만 넘긴다. 저장소를 못 여는 것은 사용자가
     적은 값의 문제가 아니라 환경의 문제라 정본대로 `Unavailable` 1로 나가야 한다 — 그것을 2로
     바꾸면 스크립트가 "내가 틀렸다"와 "저장소가 깨졌다"를 구별하지 못한다."""
-    return errors.InvalidInput(str(exc), remedy="asgard ticket list 로 지금 있는 티켓을 보세요", detail={"ticket": ref})
+    return errors.InvalidInput(str(exc), remedy="asgard ticket list로 지금 있는 티켓을 보세요", detail={"ticket": ref})
 
 
 def run_comment(ref: str, text: str, author: str, json_out: bool = False) -> int:
@@ -370,7 +374,7 @@ def run_link(ref: str, other: str, kind: str, remove: bool, json_out: bool = Fal
             if not T.unlink_tickets(_root(), ref, kind, other):
                 raise errors.NotFound(
                     "그런 관계가 없어요",
-                    remedy=f"asgard ticket show {ref} 로 지금 걸린 관계를 보세요",
+                    remedy=f"asgard ticket show {ref} 명령으로 지금 걸린 관계를 보세요",
                     detail={"ticket": ref, "other": other, "kind": kind},
                 )
             return _emitted(
@@ -388,13 +392,88 @@ def run_link(ref: str, other: str, kind: str, remove: bool, json_out: bool = Fal
     )
 
 
+def run_evidence(
+    ref: str,
+    stamp: str = "",
+    scenario: str = "",
+    note: str = "",
+    list_only: bool = False,
+    remove: str = "",
+    json_out: bool = False,
+) -> int:
+    """부하 근거를 매달고·보고·뗀다. 표식을 안 주면 이 프로젝트의 가장 최근 기록이다.
+
+    이 명령은 티켓을 막지 않는다. 부하와 무관한 티켓이 대부분이라, 여기에 게이트를 두면 그
+    게이트는 우회되고 남는 것은 없다. 그래서 미판정 실행을 매달아도 종료 코드는 0이다 —
+    다만 화면과 저장된 판정 칸이 그것을 통과와 다르게 말한다."""
+    errors.set_json_surface(json_out)
+    ui.set_quiet(json_out)
+    root = _root()
+    try:
+        if remove:
+            if not T.detach_evidence(root, ref, remove):
+                raise errors.NotFound(
+                    "그 근거가 이 티켓에 없어요",
+                    remedy=f"asgard ticket evidence {ref} --list 명령으로 지금 매달린 것을 보세요",
+                    detail={"ticket": ref, "stamp": remove},
+                )
+            return _emitted({"ticket": ref, "stamp": remove, "attached": False}, f"{remove} 근거를 뗐어요", json_out)
+        if list_only:
+            rows = T.list_evidence(root, ref)
+            if json_out:
+                print(json.dumps(rows, ensure_ascii=False, indent=2, default=str))
+                return 0
+            _show_evidence(rows)
+            return 0
+        row = T.attach_evidence(root, ref, stamp, scenario=scenario, note=note, actor="cli")
+    except T.TicketError as exc:
+        # 처방이 `_rejected`와 다르다: 여기서 틀릴 수 있는 값이 둘(티켓·실행 표식)이라,
+        # 티켓 목록만 가리키면 표식을 잘못 친 사람은 볼 것이 없는 목록을 본다.
+        raise errors.InvalidInput(
+            str(exc),
+            remedy="asgard k6 report로 기록된 실행을, asgard ticket list로 티켓을 확인하세요",
+            detail={"ticket": ref, "stamp": stamp, "scenario": scenario},
+        ) from exc
+    if json_out:
+        print(json.dumps(row, ensure_ascii=False, indent=2, default=str))
+        return 0
+    ui.ok(f"{ref} ⠶ {row['stamp']} · {_VERDICT_LABEL[row['verdict']]} · {_evidence_numbers(row)}")
+    if row["verdict"] == "unjudged":
+        ui.warn("이 실행은 임계값이 없어서 판정을 못 받았어요 — 통과가 아니라 미판정으로 적었어요.")
+    return 0
+
+
+_VERDICT_LABEL = {"pass": "통과", "fail": "실패", "unjudged": "미판정"}
+
+
+def _evidence_numbers(row: dict) -> str:
+    return f"p95 {row['p95_ms']:.1f}ms · 실패율 {row['failed_rate'] * 100:.2f}% · {row['rate_per_s']:.1f}건/s"
+
+
+def _show_evidence(rows: list[dict]) -> None:
+    """근거 목록 — 미판정을 통과와 같은 줄로 보이게 하면 이 계층이 막으려던 오독이 화면에 남는다."""
+    if not rows:
+        ui.step(ui.dim("매달린 부하 근거가 없어요 — `asgard ticket evidence <티켓>`으로 최근 실행을 매달아요."))
+        return
+    width = max(len(row["stamp"]) for row in rows)
+    for row in rows:
+        # 판정 이름은 `_pad`로 맞춘다 — '미판정'은 글자 3개지만 터미널에서 6칸을 먹는다
+        verdict = _pad(_VERDICT_LABEL.get(row["verdict"], row["verdict"]), 6)
+        tail = [row["runner"] or "—"]
+        if not row["report_exists"]:
+            tail.append("원본 없음 · 여기 적힌 수치가 남은 전부예요")
+        if row["note"]:
+            tail.append(row["note"])
+        ui.step(f"  {_pad(row['stamp'], width)}  {verdict}  {_evidence_numbers(row)}" + ui.dim("  " + " · ".join(tail)))
+
+
 def run_delete(ref: str, json_out: bool = False) -> int:
     errors.set_json_surface(json_out)
     ui.set_quiet(json_out)
     if not T.delete_ticket(_root(), ref):
         raise errors.NotFound(
             f"그런 티켓을 못 찾았어요: {ref}",
-            remedy="asgard ticket list 로 지금 있는 티켓을 보세요",
+            remedy="asgard ticket list로 지금 있는 티켓을 보세요",
             detail={"ticket": ref},
         )
     return _emitted(
@@ -461,7 +540,7 @@ def run_teams(new: str, key: str, triage: str, cycle_weeks: int, json_out: bool)
             if cycle_weeks:
                 fields["cycle_weeks"] = cycle_weeks
             team = TM.create_team(new, key, **fields)
-            return _emitted(team, f"팀 {team['key']} · {team['name']} — 첫 티켓은 {team['key']}-1이 됩니다", json_out)
+            return _emitted(team, f"팀 {team['key']} · {team['name']} — 첫 티켓은 {team['key']}-1이 돼요", json_out)
             return 0
         rows = TM.list_teams()
     except _ERRORS as exc:
@@ -470,14 +549,14 @@ def run_teams(new: str, key: str, triage: str, cycle_weeks: int, json_out: bool)
         print(json.dumps(rows, ensure_ascii=False, indent=2))
         return 0
     if not rows:
-        ui.step(ui.dim("아직 팀이 없어요 — 첫 티켓을 발급하면 이 폴더 이름으로 하나 서요."))
+        ui.step(ui.dim("아직 팀이 없어요 — 첫 티켓을 발급하면 이 폴더 이름으로 하나 생겨요."))
         return 0
     for row in rows:
         marks = []
         if row["triage"]:
             marks.append(f"트리아지 {row['triaging']}")
         if row["cycle_weeks"]:
-            marks.append(f"{row['cycle_weeks']}주 사이클")
+            marks.append(f"{row['cycle_weeks']}주 주기")
         tail = ui.dim("  " + " · ".join(marks)) if marks else ""
         ui.step(f"  {row['key']:<6} {row['name']:<24} 티켓 {row['tickets']:>4}{tail}")
         for root in row["roots"]:
@@ -627,8 +706,121 @@ def run_import(json_out: bool) -> int:
     if not out["imported"]:
         ui.step(ui.dim(f"들여올 게 없어요 — {out['reason']}"))
         return 0
-    ui.ok(f"팀 {out['team']}으로 {out['tickets']}건 반입 (댓글 {out['comments']} · 라벨 {out['labels']})")
+    ui.ok(f"{out['tickets']}건을 들여왔어요 — 팀 {out['team']} (댓글 {out['comments']} · 라벨 {out['labels']})")
     if out.get("renamed"):
-        ui.warn(f"접두어 {out['was']}는 이미 쓰이고 있어서 {out['team']}로 비켰어요")
+        ui.warn(f"접두어가 이미 쓰이고 있어서 바꿨어요 — {out['was']} → {out['team']}")
     ui.step(ui.dim(f"원본은 그대로 있어요 — {out['source']}"))
     return 0
+
+
+def run_doc(
+    new: str, show: str, edit: str, body_from: str, delete: str, project: str, team: str, json_out: bool
+) -> int:
+    """문서 — 목록·신설·읽기·본문 교체·삭제.
+
+    본문은 셸 인자로 안 받는다(`--edit REF [--body 파일|-]`, 기본은 표준입력). 마크다운 한
+    편을 인자에 담으면 따옴표와 줄바꿈이 셸마다 다르게 깨지고, 그 사고는 **저장된 뒤에**
+    발견된다."""
+    from ..studio import documents as DOC
+
+    ui.set_quiet(json_out)
+    try:
+        if new:
+            doc = DOC.create_document(new, author=_actor(), project=project or None, team=team or None)
+            return _emitted(doc, f"{doc['title']} 문서를 열었어요 — `--edit`로 본문을 채워요", json_out)
+        if delete:
+            removed = DOC.delete_document(delete)
+            return _emitted({"deleted": removed}, "지웠어요" if removed else "그런 문서가 없어요", json_out)
+        if edit:
+            doc = DOC.update_document(edit, {"body": _read_body(body_from or "-")}, actor=_actor())
+            return _emitted(doc, f"{doc['title']} 본문을 다시 썼어요 ({doc['words']}단어)", json_out)
+        if show:
+            doc = DOC.get_document(show)
+            if json_out:
+                print(json.dumps(doc, ensure_ascii=False, indent=2))
+                return 0
+            ui.head(f"{doc['title']}{' · ' + doc['project']['name'] if doc['project'] else ''}")
+            print(doc["body"] or "")
+            return 0
+        rows = DOC.list_documents(project=project or None, team=team or None)
+    except _ERRORS as exc:
+        return _fail(exc)
+    if json_out:
+        print(json.dumps(rows, ensure_ascii=False, indent=2))
+        return 0
+    if not rows:
+        ui.step(ui.dim('문서가 없어요 — `asgard ticket doc --new "제목"`으로 시작해요.'))
+        return 0
+    ui.head(f"문서 {len(rows)}편")
+    width = max(len(row["title"]) for row in rows)
+    for row in rows:
+        where = row["project"]["name"] if row["project"] else (row["team"]["key"] if row["team"] else "")
+        ui.step(f"{_pad(row['title'], width)}  {ui.dim(where or '워크스페이스')}  {ui.dim(row['excerpt'])}")
+    return 0
+
+
+def _actor() -> str:
+    """이 손이 누구인가 — 활성 에이전트 이름. 기본 프로파일이면 사람(오딘)이 적은 것으로 본다."""
+    from ..profiles import active
+
+    name = active()
+    return "" if name in ("", "default") else name
+
+
+def _read_body(source: str) -> str:
+    """`-`면 표준입력, 아니면 파일. 편집기 파이프(`asgard … --edit -`)가 기본 사용법이다."""
+    import sys
+
+    if source == "-":
+        return sys.stdin.read()
+    with open(source, encoding="utf-8") as handle:
+        return handle.read()
+
+
+def run_doctor(recover: bool, json_out: bool) -> int:
+    """저장소가 열리는지 보고, 사람이 시키면 못 여는 파일을 치운다.
+
+    판정과 수리를 한 명령 안에 두되 **기본은 판정**이다. `--recover` 없이 부르면 아무것도
+    안 옮긴다: 진단이 곧 수리이면, 무엇이 잘못됐는지 읽어 보려던 사람이 파일을 갈아 버린다."""
+    from ..studio import db as D
+
+    ui.set_quiet(json_out)
+    found = D.probe()
+    if recover:
+        if found["ok"]:
+            found = {**found, "recovered": False, "reason": "저장소가 정상이라 치우지 않았어요"}
+        else:
+            try:
+                moved = D.quarantine()
+            except _ERRORS as exc:
+                return _fail(exc)
+            found = {**D.probe(), "recovered": True, "moved_to": moved}
+    # 종료 코드는 **판정**이 정한다 — 출력 형식이 아니라. `--json`을 붙였다고 못 여는 저장소가
+    # 0으로 나가면, 이 명령을 문에 세운 스크립트는 고장을 통과로 읽는다.
+    code = 0 if found["ok"] else 1
+    if json_out:
+        print(json.dumps(found, ensure_ascii=False, indent=2))
+        return code
+    if found.get("recovered"):
+        ui.ok("새 워크스페이스를 세웠어요")
+        ui.step(ui.dim(f"못 읽던 파일은 지우지 않고 옮겨 뒀어요 — {found['moved_to']}"))
+        ui.step(ui.dim("옛 폴더 보드가 남아 있으면 `asgard ticket import`로 번호째 들여올 수 있어요."))
+        return 0
+    if found["ok"]:
+        where = found["path"]
+        ui.ok(
+            "워크스페이스가 정상이에요"
+            if found["exists"]
+            else "아직 워크스페이스가 없어요 — 첫 티켓을 발급하면 그때 생겨요"
+        )
+        ui.step(ui.dim(where))
+        if found.get("reason"):
+            ui.step(ui.dim(found["reason"]))
+        return 0
+    ui.warn(f"워크스페이스를 못 열어요 — {found['message']}")
+    ui.step(ui.dim(found["path"]))
+    if found["recoverable"]:
+        ui.step("치우고 새로 시작하려면 `asgard ticket doctor --recover` — 지우지 않고 옆에 둬요.")
+    else:
+        ui.step("이 파일은 데이터베이스로는 읽혀요. 치우지 말고 Asgard를 최신판으로 올린 뒤 여세요.")
+    return 1

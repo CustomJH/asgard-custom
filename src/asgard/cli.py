@@ -1658,6 +1658,21 @@ def ticket_link(
     raise typer.Exit(run_link(ref, other, kind, remove, json_out))
 
 
+@ticket_app.command("evidence", help=t("hc_tk_evidence"))
+def ticket_evidence(
+    ref: str = typer.Argument(..., help=t("hc_tk_ref")),
+    stamp: str = typer.Argument("", help=t("hc_tk_ev_stamp")),
+    scenario: str = typer.Option("", "--scenario", help=t("hc_tk_ev_scenario")),
+    note: str = typer.Option("", "--note", help=t("hc_tk_ev_note")),
+    list_only: bool = typer.Option(False, "--list", help=t("hc_tk_ev_list")),
+    remove: str = typer.Option("", "--remove", help=t("hc_tk_ev_remove")),
+    json_out: bool = typer.Option(False, "--json", help=t("hc_json")),
+) -> None:
+    from .commands.ticket import run_evidence
+
+    raise typer.Exit(run_evidence(ref, stamp, scenario, note, list_only, remove, json_out))
+
+
 @ticket_app.command("delete", help=t("hc_tk_delete"))
 def ticket_delete(
     ref: str = typer.Argument(..., help=t("hc_tk_ref")),
@@ -1750,6 +1765,33 @@ def ticket_import(json_out: bool = typer.Option(False, "--json", help=t("hc_json
     from .commands.ticket import run_import
 
     raise typer.Exit(run_import(json_out))
+
+
+@ticket_app.command("doc", help=t("hc_tk_doc"))
+def ticket_doc(
+    new: str = typer.Option("", "--new", "-n", help=t("hc_tk_doc_new")),
+    show: str = typer.Option("", "--show", help=t("hc_tk_doc_show")),
+    edit: str = typer.Option("", "--edit", help=t("hc_tk_doc_edit")),
+    body: str = typer.Option("", "--body", "-b", help=t("hc_tk_doc_body")),
+    delete: str = typer.Option("", "--delete", help=t("hc_tk_doc_delete")),
+    # `-p`는 안 붙인다 — 이미 `--port`가 쓰고 있어 한 글자가 두 뜻이 된다(test_cli_surface).
+    project: str = typer.Option("", "--project", help=t("hc_tk_doc_project")),
+    team: str = typer.Option("", "--team", help=t("hc_tk_doc_team")),
+    json_out: bool = typer.Option(False, "--json", help=t("hc_json")),
+) -> None:
+    from .commands.ticket import run_doc
+
+    raise typer.Exit(run_doc(new, show, edit, body, delete, project, team, json_out))
+
+
+@ticket_app.command("doctor", help=t("hc_tk_doctor"))
+def ticket_doctor(
+    recover: bool = typer.Option(False, "--recover", help=t("hc_tk_doctor_recover")),
+    json_out: bool = typer.Option(False, "--json", help=t("hc_json")),
+) -> None:
+    from .commands.ticket import run_doctor
+
+    raise typer.Exit(run_doctor(recover, json_out))
 
 
 # ── 창 — 문은 하나다 ────────────────────────────────────────────────────────────

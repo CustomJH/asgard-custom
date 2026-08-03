@@ -188,6 +188,8 @@ _SUB_DESC = {
         "update": "a project progress note (health is written by a human)",
         "triage": "the team inbox — accept, decline",
         "import": "bring an old per-folder board into the workspace",
+        "doc": "free markdown documents that live beside the tickets",
+        "doctor": "check the workspace store, and set an unreadable one aside",
     },
 }
 

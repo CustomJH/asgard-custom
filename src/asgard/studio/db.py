@@ -55,11 +55,12 @@ import json
 import os
 import sqlite3
 import threading
+import time
 from collections.abc import Iterator
 
 from .. import errors
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 4
 # 자리를 옮기는 환경변수. 정본은 `settings.WORKSPACE_HOME_ENV` 다 — 기획도 같은 문을 본다.
 STUDIO_HOME_ENV = "ASGARD_STUDIO_HOME"
 STORE_DIR = os.path.join(".asgard", "studio")  # 저장소 안의 결속 파일 자리 (레거시 DB도 여기)
@@ -392,8 +393,66 @@ _SCHEMA = (
         created_at REAL NOT NULL
     )
     """,
+    # 부하 근거 — 이 티켓의 성능 주장이 어느 k6 실행에서 나왔는가.
+    #
+    # 스탬프만 적고 끝내지 않는 이유: 원본인 `.asgard/k6/runs/<스탬프>/report.json`은
+    # gitignore이고 정리 정책이 없다(사람이 손으로 지운다). 가리키는 값 하나만 남기면 그
+    # 디렉터리가 없어진 뒤에 티켓의 성능 주장은 근거를 잃고, 그 사실이 화면에 안 나타난다.
+    # 그래서 판정에 필요한 수치를 붙일 때 함께 적어 둔다 — 원본이 없어도 "무엇을 근거로
+    # 그렇게 말했나"는 답할 수 있고, 원본이 있으면 스탬프로 전문을 연다.
+    #
+    # `verdict`는 세 갈래다(pass·fail·unjudged). 임계값이 없던 실행은 통과가 아니라 미판정이고
+    # (`k6.Report.judged`), 그 둘이 같은 값으로 적히면 이 표가 바로 그 오독을 영구화한다.
+    #
+    # `root`는 원본을 되찾는 자리다. 워크스페이스는 폴더에 안 매이지만 `runs/`는 프로젝트
+    # 안에 있어서, 이 값이 없으면 다른 폴더에서 열린 창은 스탬프를 갖고도 전문을 못 찾는다.
+    """
+    CREATE TABLE IF NOT EXISTS ticket_evidence(
+        id          TEXT PRIMARY KEY,
+        ticket_id   TEXT NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+        stamp       TEXT NOT NULL,
+        scenario    TEXT NOT NULL DEFAULT '',
+        verdict     TEXT NOT NULL,
+        p95_ms      REAL NOT NULL DEFAULT 0,
+        failed_rate REAL NOT NULL DEFAULT 0,
+        rate_per_s  REAL NOT NULL DEFAULT 0,
+        runner      TEXT NOT NULL DEFAULT '',
+        k6_version  TEXT NOT NULL DEFAULT '',
+        target      TEXT NOT NULL DEFAULT '',
+        root        TEXT NOT NULL DEFAULT '',
+        note        TEXT NOT NULL DEFAULT '',
+        actor       TEXT NOT NULL DEFAULT '',
+        created_at  REAL NOT NULL,
+        UNIQUE(ticket_id, stamp)
+    )
+    """,
+    # ── 문서 — 사람이 자유롭게 적는 마크다운 ──────────────────────────────────────
+    # 티켓이 아닌 글이 설 자리다. 티켓으로 대신할 수 없는 이유: 티켓은 **닫히는** 것이라
+    # 상태·담당·번호를 지고 다니는데, 사양·회고·결정 기록은 닫히지 않고 고쳐 쓰인다.
+    # 백로그에 '문서' 티켓을 섞으면 열린 건수가 곧 거짓말이 된다.
+    #
+    # 매다는 자리는 셋 다 비어 있을 수 있다(워크스페이스 문서) — 프로젝트가 아직 없는
+    # 데서 글이 먼저 시작하는 것이 정상이다. 프로젝트를 지워도 문서는 남는다
+    # (`ON DELETE SET NULL`): 프로젝트에서 푸는 것과 글을 잃는 것은 다른 일이다.
+    """
+    CREATE TABLE IF NOT EXISTS documents(
+        id          TEXT PRIMARY KEY,
+        title       TEXT NOT NULL,
+        body        TEXT NOT NULL DEFAULT '',
+        icon        TEXT NOT NULL DEFAULT '',
+        team_id     TEXT REFERENCES teams(id)    ON DELETE SET NULL,
+        project_id  TEXT REFERENCES projects(id) ON DELETE SET NULL,
+        author      TEXT NOT NULL DEFAULT '',
+        created_at  REAL NOT NULL,
+        updated_at  REAL NOT NULL,
+        archived_at REAL
+    )
+    """,
     # (저장 뷰 — Linear의 Views — 는 아직 없다. 표만 미리 세우면 아무도 안 쓰는 칸이
     #  스키마에 남아, 다음 사람이 그걸 계약으로 읽는다. 필터는 지금 질의 인자로만 산다.)
+    "CREATE INDEX IF NOT EXISTS documents_updated ON documents(updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS documents_project ON documents(project_id, updated_at DESC)",
+    "CREATE INDEX IF NOT EXISTS documents_team ON documents(team_id, updated_at DESC)",
     "CREATE UNIQUE INDEX IF NOT EXISTS tickets_team_seq ON tickets(team_id, seq)",
     "CREATE INDEX IF NOT EXISTS tickets_status ON tickets(status, position)",
     "CREATE INDEX IF NOT EXISTS tickets_parent ON tickets(parent_id)",
@@ -404,6 +463,7 @@ _SCHEMA = (
     "CREATE INDEX IF NOT EXISTS comments_ticket ON comments(ticket_id, created_at)",
     "CREATE INDEX IF NOT EXISTS activity_ticket ON activity(ticket_id, id)",
     "CREATE INDEX IF NOT EXISTS links_target ON ticket_links(target_id)",
+    "CREATE INDEX IF NOT EXISTS evidence_ticket ON ticket_evidence(ticket_id, created_at DESC)",
     "CREATE INDEX IF NOT EXISTS states_team ON states(team_id, position)",
     "CREATE INDEX IF NOT EXISTS cycles_team ON cycles(team_id, number DESC)",
     "CREATE INDEX IF NOT EXISTS milestones_project ON milestones(project_id, position)",
@@ -469,6 +529,9 @@ def _migrate(conn: sqlite3.Connection) -> None:
         _add_columns(conn, "tickets", _V2_TICKET_COLUMNS)
         _add_columns(conn, "cycles", _V2_CYCLE_COLUMNS)
         _add_columns(conn, "labels", _V2_LABEL_COLUMNS)
+    # v2 → v3은 표 하나(documents)를 더하는 것뿐이라 여기 갈래가 없다 — `_apply_schema`의
+    # CREATE TABLE IF NOT EXISTS가 그대로 세운다. 칸을 고치는 판이 오면 그때 갈래를 판다.
+    # v3 → v4도 같다 — 표 하나(ticket_evidence)와 색인 하나를 더한다.
     _apply_schema(conn)
     if found != SCHEMA_VERSION:
         conn.execute(
@@ -511,6 +574,99 @@ def connect(root: str | None = None) -> sqlite3.Connection:
 
     호출자는 반드시 닫는다 — `reading()`/`writing()`을 쓰면 저절로 닫힌다."""
     return _open(workspace_path())
+
+
+# ── 못 열 때 나가는 문 ─────────────────────────────────────────────────────────
+#
+# "조용히 다시 만들지 않는다"는 옳지만, 그것만 있으면 **사람이 나갈 문이 없다**. 실제로
+# 이 워크스페이스가 SQLite가 아닌 쓰레기 파일로 덮인 적이 있고(테스트 유출), 그 뒤로 창의
+# 업무 화면은 503만 냈다 — 보드도 팀도 프로젝트도 안 열리고, 고칠 손잡이도 없었다.
+# 사용자가 읽은 것은 "티켓이 안 됨" 하나였다.
+#
+# 그래서 판정과 수리를 가른다. `probe()`는 사실만 말하고 아무것도 안 고친다. `quarantine()`은
+# **사람이 시켰을 때만** 못 여는 파일을 옆으로 치운다 — 지우지 않는다. 그리고 SQLite로
+# 읽히는 파일은 치우기를 거절한다: 미래 스키마로 적힌 정본은 손상이 아니라 **업그레이드할
+# 것**이고, 그걸 치우면 진짜 일감을 잃는다.
+
+_QUARANTINE_SUFFIX = ".broken-"
+# WAL·SHM은 본체와 한 묶음이다. 본체만 치우면 새로 만든 저장소가 남의 저널을 물려받는다.
+_SIDECARS = ("-wal", "-shm")
+
+
+def _sqlite_readable(path: str) -> bool:
+    """이 파일이 SQLite로 읽히기는 하는가 — 스키마 판이 무엇이든.
+
+    치울 수 있는가를 가르는 유일한 문이다. 열려는 있는데 판이 미래인 것(업그레이드가 답)과
+    아예 데이터베이스가 아닌 것(치우는 게 답)은 사용자에게 다른 처방이다."""
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=_BUSY_TIMEOUT_MS / 1000)
+    except sqlite3.Error:
+        return False
+    try:
+        conn.execute("PRAGMA schema_version").fetchone()
+        return True
+    except sqlite3.DatabaseError:
+        return False
+    finally:
+        conn.close()
+
+
+def probe() -> dict:
+    """워크스페이스가 열리는가. **아무것도 안 고친다** — 사실만 돌려준다.
+
+    `recoverable`은 "치워도 되는가"다. 파일이 아직 없거나(첫 실행) 잘 열리면 거짓이다:
+    멀쩡한 보드를 치우는 손잡이는 손잡이가 아니라 함정이다."""
+    path = workspace_path()
+    if not os.path.isfile(path):
+        return {"ok": True, "exists": False, "path": path, "code": "", "message": "", "recoverable": False}
+    try:
+        connect().close()
+    except StoreError as exc:
+        return {
+            "ok": False,
+            "exists": True,
+            "path": path,
+            "code": exc.code,
+            "message": str(exc),
+            # 미래 스키마는 열리기는 한다 → 치우기가 아니라 업그레이드가 처방이다.
+            "recoverable": not _sqlite_readable(path),
+        }
+    return {"ok": True, "exists": True, "path": path, "code": "", "message": "", "recoverable": False}
+
+
+def quarantine() -> str:
+    """못 여는 정본을 옆으로 치우고 그 자리를 비운다 — 지우지는 않는다.
+
+    돌려주는 것은 **치워 둔 자리**다. 어디로 갔는지를 말하지 않으면 사람은 '지웠다'로 읽고,
+    그러면 되돌릴 수 있다는 사실이 사라진다.
+
+    사람이 시켰을 때만 부른다(자동 호출 금지). 여기서 조용히 도는 순간, 잠깐 잠긴 저장소가
+    손상으로 오독돼 멀쩡한 보드가 매번 새 파일로 갈린다."""
+    path = workspace_path()
+    if not os.path.isfile(path):
+        raise StoreError("there is no studio workspace to set aside")
+    if _sqlite_readable(path):
+        raise StoreError(
+            "the studio workspace still reads as a database — it was not set aside; "
+            "upgrade Asgard if it was written by a newer version"
+        )
+    stamp = time.strftime("%Y%m%d-%H%M%S", time.localtime())
+    moved = f"{path}{_QUARANTINE_SUFFIX}{stamp}"
+    suffix = 1
+    while os.path.exists(moved):  # 같은 초에 두 번 눌러도 앞의 증거를 안 덮는다
+        moved = f"{path}{_QUARANTINE_SUFFIX}{stamp}-{suffix}"
+        suffix += 1
+    with _WRITE_LOCK:
+        try:
+            os.replace(path, moved)
+        except OSError as exc:
+            raise StoreError(f"cannot set the studio workspace aside: {exc}") from exc
+        for tail in _SIDECARS:
+            with contextlib.suppress(OSError):
+                if os.path.exists(path + tail):
+                    os.replace(path + tail, moved + tail)
+    connect().close()  # 빈 워크스페이스를 그 자리에 세운다 — 다음 화면이 곧장 쓸 수 있게
+    return moved
 
 
 def open_legacy(root: str) -> sqlite3.Connection | None:

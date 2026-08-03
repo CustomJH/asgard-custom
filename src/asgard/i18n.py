@@ -406,6 +406,18 @@ _M: dict[str, tuple[str, str]] = {
     "hc_tk_link_ref": ("the one doing the blocking", "막는 쪽"),
     "hc_tk_link_other": ("the one being blocked", "막히는 쪽"),
     "hc_tk_link_remove": ("cut the link instead of making one", "잇지 말고 끊어요"),
+    "hc_tk_evidence": (
+        "point a ticket at the load run its performance claim came from — a reference, not a gate",
+        "이 티켓의 성능 주장이 나온 부하 실행을 가리켜요 — 막는 게 아니라 근거를 남겨요",
+    ),
+    "hc_tk_ev_stamp": (
+        "run stamp under .asgard/k6/runs (default: the most recent one)",
+        ".asgard/k6/runs 안의 실행 표식 (기본값: 가장 최근 것)",
+    ),
+    "hc_tk_ev_scenario": ("pick the most recent run of this scenario", "이 시나리오로 돈 가장 최근 실행을 골라요"),
+    "hc_tk_ev_note": ("a line on why this run is the evidence", "이 실행이 근거인 이유를 한 줄로"),
+    "hc_tk_ev_list": ("show what is already attached instead of attaching", "매달지 말고 지금 매달린 것을 보여드려요"),
+    "hc_tk_ev_remove": ("take this stamp off the ticket", "이 표식을 티켓에서 떼요"),
     "hc_tk_delete": (
         "delete a ticket — its number is never handed out again",
         "티켓을 지워요 — 그 번호는 다시 발급되지 않아요",
@@ -465,6 +477,26 @@ _M: dict[str, tuple[str, str]] = {
         "pull in a board from back when every folder kept its own",
         "폴더마다 보드가 하나이던 시절의 저장소를 워크스페이스로 들여와요",
     ),
+    "hc_tk_doctor": (
+        "check whether the workspace store opens, and set an unreadable one aside",
+        "워크스페이스 저장소가 열리는지 보고, 못 여는 파일은 옆으로 치워요",
+    ),
+    "hc_tk_doctor_recover": (
+        "set the unreadable store aside (kept as a .broken- file) and start a fresh one",
+        "못 여는 저장소를 .broken- 파일로 치워 두고 새 워크스페이스를 세워요",
+    ),
+    # 문서
+    "hc_tk_doc": ("free markdown that lives beside the tickets", "티켓 옆에 사는 자유 마크다운 문서예요"),
+    "hc_tk_doc_new": ("start a document under this title", "이 제목으로 문서를 시작해요"),
+    "hc_tk_doc_show": ("read one document", "문서 하나를 읽어요"),
+    "hc_tk_doc_edit": ("rewrite this document's body", "이 문서의 본문을 다시 써요"),
+    "hc_tk_doc_body": (
+        "where the new body comes from — a file, or - for stdin",
+        "새 본문을 어디서 읽을지 — 파일, 또는 -는 표준입력",
+    ),
+    "hc_tk_doc_delete": ("delete this document", "이 문서를 지워요"),
+    "hc_tk_doc_project": ("hang it under this project", "이 프로젝트 아래 매달아요"),
+    "hc_tk_doc_team": ("hang it under this team", "이 팀 아래 매달아요"),
     # 창
     "hc_open_studio": (
         "Asgard Studio — work, tickets, planning, artifacts, skills, settings",

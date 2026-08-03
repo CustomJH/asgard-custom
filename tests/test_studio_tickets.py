@@ -207,6 +207,87 @@ class TestStore(TicketCase):
             T.list_tickets(self.root)
 
 
+class TestRecovery(TicketCase):
+    """못 여는 정본에서 **사람이 나가는 문**.
+
+    "조용히 다시 만들지 않는다"만 있으면 나갈 길이 없다 — 실제로 이 워크스페이스가
+    SQLite 아닌 파일로 덮인 뒤, 업무 화면은 며칠 동안 오류 한 줄만 냈다."""
+
+    def _break(self):
+        with open(studio_db.workspace_path(), "wb") as handle:
+            handle.write(b"corrupt" * 500)
+
+    def test_probe_tells_the_truth_without_touching_anything(self):
+        T.create_ticket(self.root, "있던 것")
+        self.assertEqual(studio_db.probe()["ok"], True)
+        self.assertFalse(studio_db.probe()["recoverable"])  # 멀쩡한 보드를 치우는 손잡이는 함정이다
+        self._break()
+        found = studio_db.probe()
+        self.assertEqual((found["ok"], found["recoverable"]), (False, True))
+        self.assertEqual(found["code"], "store_unavailable")
+        # 판정은 아무것도 안 고친다 — 그 파일이 그 자리에 그대로 있어야 한다
+        with open(studio_db.workspace_path(), "rb") as handle:
+            self.assertTrue(handle.read().startswith(b"corrupt"))
+
+    def test_quarantine_moves_the_file_aside_and_never_deletes_it(self):
+        T.create_ticket(self.root, "있던 것")
+        self._break()
+        moved = studio_db.quarantine()
+        self.assertTrue(os.path.isfile(moved))  # 지우지 않았다 — 되돌릴 수 있다
+        self.assertIn(".broken-", moved)
+        self.assertTrue(studio_db.probe()["ok"])
+        self.assertEqual(T.list_tickets(self.root), [])  # 새 워크스페이스는 비어 있다
+
+    def test_a_store_that_still_reads_as_a_database_is_refused(self):
+        """미래 스키마는 손상이 아니라 업그레이드할 것이다 — 치우면 진짜 일감을 잃는다."""
+        T.create_ticket(self.root, "미래에서 온 저장소")
+        with sqlite3.connect(studio_db.workspace_path()) as conn:
+            conn.execute("UPDATE meta SET value = ? WHERE key = 'schema'", (str(studio_db.SCHEMA_VERSION + 1),))
+        self.assertFalse(studio_db.probe()["recoverable"])
+        with self.assertRaises(studio_db.StoreError):
+            studio_db.quarantine()
+
+    def test_the_wal_sidecar_travels_with_the_file_it_belongs_to(self):
+        """본체만 치우면 새 저장소가 남의 저널을 물려받는다."""
+        T.create_ticket(self.root, "있던 것")
+        self._break()
+        with open(studio_db.workspace_path() + "-wal", "wb") as handle:
+            handle.write(b"stale journal")
+        moved = studio_db.quarantine()
+        self.assertTrue(os.path.isfile(moved + "-wal"))
+        self.assertFalse(os.path.exists(studio_db.workspace_path() + "-wal"))
+
+    def test_the_probe_door_answers_200_while_every_other_read_is_503(self):
+        """무엇이 왜 막혔는지 물을 곳이 없으면, 사용자에게 남는 것은 빈 화면 하나다."""
+        T.create_ticket(self.root, "있던 것")
+        self._break()
+        status, _, _ = ticket_api.dispatch("GET", "/api/tickets", {}, {}, self.root)
+        self.assertEqual(status, 503)
+        status, _, body = ticket_api.dispatch("GET", "/api/studio/probe", {}, {}, self.root)
+        self.assertEqual((status, json.loads(body)["recoverable"]), (200, True))
+
+    def test_recovery_over_http_needs_confirmation(self):
+        T.create_ticket(self.root, "있던 것")
+        self._break()
+        status, _, body = ticket_api.dispatch("POST", "/api/studio/recover", {}, {}, self.root)
+        self.assertEqual((status, json.loads(body)["error"]["code"]), (409, "confirm_required"))
+        status, _, body = ticket_api.dispatch("POST", "/api/studio/recover", {}, {"confirm": True}, self.root)
+        self.assertEqual(status, 200)
+        # 어디로 갔는지를 응답이 든다 — 안 넣으면 사람은 '지웠다'로 읽는다
+        self.assertTrue(os.path.isfile(json.loads(body)["moved_to"]))
+        self.assertEqual(ticket_api.dispatch("GET", "/api/tickets", {}, {}, self.root)[0], 200)
+
+    def test_the_cli_diagnoses_without_repairing_unless_asked(self):
+        from asgard.commands.ticket import run_doctor
+
+        T.create_ticket(self.root, "있던 것")
+        self._break()
+        self.assertEqual(run_doctor(False, True), 1)  # 진단만 — 파일은 그대로
+        self.assertFalse(studio_db.probe()["ok"])
+        self.assertEqual(run_doctor(True, True), 0)
+        self.assertTrue(studio_db.probe()["ok"])
+
+
 class TestApi(TicketCase):
     def call(self, method, path, params=None, payload=None):
         status, _, body = ticket_api.dispatch(method, path, params, payload, self.root)
@@ -244,6 +325,294 @@ class TestApi(TicketCase):
     def test_unknown_method_on_a_known_path_is_405(self):
         self.assertEqual(self.call("DELETE", "/api/tickets")[0], 405)
         self.assertFalse(ticket_api.owns("/api/tickets/run"))  # 실행은 작업 계층이 소유한다
+
+
+class EvidenceCase(TicketCase):
+    """부하 근거 — 티켓의 성능 주장이 어느 실행에서 나왔는가.
+
+    기록을 진짜 `k6` 직렬화기로 만든다. 손으로 적은 JSON을 쓰면 요약 계약이 바뀌어도 이
+    시험은 계속 초록이고, 그때 이 계층은 없는 칸을 읽는다."""
+
+    def record(self, stamp, *, scenario="", thresholds=(), exit_code=0, p95=35.7, failed_rate=0.0, rate=57.8):
+        from asgard import k6
+
+        report = k6.Report(
+            scenario=scenario or stamp.split("-", 1)[-1],
+            target="http://127.0.0.1:9000",
+            runner="native k6",
+            k6_version="k6 v2.1.0",
+            exit_code=exit_code,
+            latency_ms={"p95": p95},
+            failed_rate=failed_rate,
+            rate_per_s=rate,
+            thresholds=[k6.Threshold(metric, expression, ok) for metric, expression, ok in thresholds],
+        )
+        return k6.record_run(self.root, report, stamp)
+
+    def judged_run(self, stamp="20260803T000001-http-smoke", **kw):
+        return self.record(stamp, thresholds=(("http_req_duration", "p(95)<5000", True),), **kw)
+
+
+class TestEvidence(EvidenceCase):
+    def test_attaching_a_run_inscribes_the_numbers_next_to_the_stamp(self):
+        """가리키기만 하면 안 된다 — 판정에 필요한 값이 티켓 쪽에 함께 적혀야 한다."""
+        ticket = T.create_ticket(self.root, "느린 회수를 고친다")
+        self.judged_run()
+        row = T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke", note="회수 경로 실측")
+        self.assertEqual(
+            (row["stamp"], row["verdict"], row["scenario"]), ("20260803T000001-http-smoke", "pass", "http-smoke")
+        )
+        self.assertEqual((row["p95_ms"], row["failed_rate"], row["rate_per_s"]), (35.7, 0.0, 57.8))
+        self.assertEqual(
+            (row["runner"], row["k6_version"], row["target"]), ("native k6", "k6 v2.1.0", "http://127.0.0.1:9000")
+        )
+        self.assertEqual((row["note"], row["report_exists"]), ("회수 경로 실측", True))
+        self.assertTrue(row["created_at"] > 0)
+
+    def test_the_snapshot_outlives_the_run_directory(self):
+        """`.asgard/k6/runs/`는 gitignore이고 정리 정책이 없다 — 사람이 손으로 지운다.
+
+        원본이 없어진 뒤에도 "무엇을 근거로 그렇게 말했나"는 남아야 하고, **원본이 없다는
+        사실**도 함께 보여야 한다. 수치만 남고 그 구분이 사라지면 화면은 전문을 열 수 있다고
+        말하면서 못 연다."""
+        import shutil
+
+        from asgard import k6
+
+        ticket = T.create_ticket(self.root, "성능 주장이 있는 일감")
+        self.judged_run()
+        T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke")
+        shutil.rmtree(k6.runs_dir(self.root))
+        rows = T.list_evidence(self.root, ticket["key"])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["verdict"], rows[0]["p95_ms"], rows[0]["rate_per_s"]), ("pass", 35.7, 57.8))
+        self.assertFalse(rows[0]["report_exists"])
+        self.assertTrue(rows[0]["report_path"].endswith(os.path.join("20260803T000001-http-smoke", "report.json")))
+
+    def test_an_unjudged_run_is_recorded_as_unjudged_not_as_a_pass(self):
+        """임계값이 없던 실행은 통과가 아니라 미판정이다 — 저장소가 방금 막은 오독이 그것이다."""
+        ticket = T.create_ticket(self.root, "임계값 없이 돌린 것")
+        self.record("20260803T000002-verify-unjudged", thresholds=())
+        row = T.attach_evidence(self.root, ticket["key"], "20260803T000002-verify-unjudged")
+        self.assertEqual(row["verdict"], "unjudged")
+        self.assertFalse(row["judged"])
+        # 매달기는 티켓을 안 막는다 — 판정이 아니라 참조라서 상태가 그대로 남는다
+        self.assertEqual(T.get_ticket(self.root, ticket["key"])["status"], "todo")
+
+    def test_a_record_written_before_the_judged_column_existed_reads_as_unjudged(self):
+        """`judged` 칸이 생기기 전 기록이 아직 남아 있다. 없는 칸을 참으로 읽으면 안 된다."""
+        ticket = T.create_ticket(self.root, "옛 기록")
+        path = self.record("20260803T000003-legacy", thresholds=())
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload.pop("judged")
+        path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        self.assertEqual(T.attach_evidence(self.root, ticket["key"], "20260803T000003-legacy")["verdict"], "unjudged")
+
+    def test_a_breached_threshold_is_a_fail_and_still_attaches(self):
+        """느리다는 사실도 근거다 — 실패한 실행을 못 매달면 그 주장은 다시 사람의 기억이 된다."""
+        ticket = T.create_ticket(self.root, "느린 게 확인된 일감")
+        self.record("20260803T000004-slow", thresholds=(("http_req_duration", "p(95)<10", False),), exit_code=99)
+        self.assertEqual(T.attach_evidence(self.root, ticket["key"], "20260803T000004-slow")["verdict"], "fail")
+
+    def test_no_stamp_takes_the_most_recent_run_and_scenario_narrows_it(self):
+        ticket = T.create_ticket(self.root, "최근 실행을 매단다")
+        self.judged_run("20260803T000001-http-smoke")
+        self.judged_run("20260803T000002-recall", scenario="recall")
+        self.assertEqual(T.attach_evidence(self.root, ticket["key"])["stamp"], "20260803T000002-recall")
+        latest = T.attach_evidence(self.root, ticket["key"], scenario="http-smoke")
+        self.assertEqual(latest["stamp"], "20260803T000001-http-smoke")
+
+    def test_a_stamp_with_no_run_behind_it_is_refused(self):
+        """없는 실행을 매달면 그 티켓은 근거가 있다고 말하면서 아무것도 못 보여 준다."""
+        ticket = T.create_ticket(self.root, "근거 없는 주장")
+        with self.assertRaises(T.TicketError):
+            T.attach_evidence(self.root, ticket["key"], "20260803T999999-nope")
+        # 기록이 하나도 없으면 표식을 안 줘도 거절이다
+        with self.assertRaises(T.TicketError):
+            T.attach_evidence(self.root, ticket["key"])
+        self.assertEqual(T.list_evidence(self.root, ticket["key"]), [])
+
+    def test_a_ticket_with_no_ticket_behind_the_ref_is_refused_before_the_run_is_read(self):
+        """없는 티켓에 대고 "기록이 없다"고 답하면 사람은 엉뚱한 것을 고치러 간다."""
+        self.judged_run()
+        with self.assertRaisesRegex(T.TicketError, "ticket not found"):
+            T.attach_evidence(self.root, "NOR-99", "20260803T000001-http-smoke")
+
+    def test_the_window_standing_outside_the_project_still_reaches_the_run(self):
+        """창은 개인 작업 공간에서 열린다 — 그 자리에만 물으면 창으로 매다는 길이 막힌다."""
+        elsewhere = os.path.join(self._tmp.name, "window-here")
+        os.makedirs(elsewhere)
+        ticket = T.create_ticket(self.root, "이 저장소의 성능")
+        self.judged_run()
+        row = T.attach_evidence(elsewhere, ticket["key"])
+        self.assertEqual(row["stamp"], "20260803T000001-http-smoke")
+        self.assertEqual(row["root"], os.path.abspath(self.root))
+
+    def test_the_folder_you_stand_in_wins_when_it_has_runs_of_its_own(self):
+        """틀린 근거는 없는 근거보다 나쁘다 — 부르는 자리에 기록이 있으면 물러나지 않는다.
+
+        A에서 방금 잰 사람이 B에 적힌 티켓에 매달면, 붙어야 하는 것은 A의 실행이다. 티켓의
+        자리를 먼저 보면 다른 실행이 조용히 근거가 되고 그 사실은 화면에 안 나타난다."""
+        from asgard import k6
+
+        here = os.path.join(self._tmp.name, "other-project")
+        os.makedirs(here)
+        ticket = T.create_ticket(self.root, "다른 폴더에 적힌 일감")
+        self.judged_run("20260803T000001-there")
+        k6.record_run(
+            here,
+            k6.Report(
+                scenario="here",
+                thresholds=[k6.Threshold("http_req_duration", "p(95)<5000", True)],
+                latency_ms={"p95": 1.5},
+            ),
+            "20260803T000002-here",
+        )
+        row = T.attach_evidence(here, ticket["key"])
+        self.assertEqual((row["stamp"], row["p95_ms"]), ("20260803T000002-here", 1.5))
+        self.assertEqual(row["root"], os.path.abspath(here))
+
+    def test_a_stamp_that_leaves_its_directory_is_refused(self):
+        """이 값은 사람이 친다. 경로 성분 하나로 안 떨어지는 표식은 조립에 들어가면 안 된다."""
+        ticket = T.create_ticket(self.root, "손으로 친 표식")
+        self.judged_run()
+        # 빈 값은 여기 없다 — 그것은 틀린 표식이 아니라 "가장 최근 것"이라는 뜻이다
+        for bad in ("../../etc/passwd", "..", ".hidden", "a/b", "a\\b", "  ", "20260803T000001-http-smoke/.."):
+            with self.subTest(stamp=bad), self.assertRaises(T.TicketError):
+                T.attach_evidence(self.root, ticket["key"], bad)
+        self.assertEqual(T.list_evidence(self.root, ticket["key"]), [])
+
+    def test_attaching_the_same_run_twice_refreshes_one_row(self):
+        """한 티켓에 같은 실행이 두 줄로 붙으면 목록을 읽는 사람이 두 번 쟀다고 읽는다."""
+        ticket = T.create_ticket(self.root, "두 번 매다는 것")
+        self.judged_run()
+        T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke", note="처음")
+        self.assertEqual(len(T.list_evidence(self.root, ticket["key"])), 1)
+        self.judged_run("20260803T000001-http-smoke", p95=99.9)  # 같은 표식으로 다시 재고
+        after = T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke", note="다시 재고 나서")
+        self.assertEqual(len(T.list_evidence(self.root, ticket["key"])), 1)
+        self.assertEqual((after["p95_ms"], after["note"]), (99.9, "다시 재고 나서"))
+
+    def test_detaching_leaves_the_original_run_alone(self):
+        ticket = T.create_ticket(self.root, "뗄 근거")
+        path = self.judged_run()
+        T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke")
+        self.assertTrue(T.detach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke"))
+        self.assertFalse(T.detach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke"))
+        self.assertEqual(T.list_evidence(self.root, ticket["key"]), [])
+        self.assertTrue(path.exists())
+
+    def test_deleting_the_ticket_takes_its_evidence_with_it(self):
+        ticket = T.create_ticket(self.root, "지워질 일감")
+        self.judged_run()
+        T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke")
+        T.delete_ticket(self.root, ticket["key"])
+        with studio_db.reading() as conn:
+            left = conn.execute("SELECT COUNT(*) AS n FROM ticket_evidence").fetchone()["n"]
+        self.assertEqual(left, 0)
+
+    def test_show_carries_the_evidence_and_the_activity_line(self):
+        ticket = T.create_ticket(self.root, "상세에 보이는 근거")
+        self.judged_run()
+        T.attach_evidence(self.root, ticket["key"], "20260803T000001-http-smoke", actor="cli")
+        detail = T.get_ticket(self.root, ticket["key"])
+        self.assertEqual([row["stamp"] for row in detail["evidence"]], ["20260803T000001-http-smoke"])
+        self.assertIn("evidence", [row["field"] for row in detail["activity"]])
+
+
+class TestEvidenceCli(EvidenceCase):
+    def run_cli(self, *argv):
+        from asgard.commands import ticket as C
+
+        return C.run_evidence(*argv)
+
+    def test_the_command_attaches_lists_and_detaches(self):
+        ticket = T.create_ticket(self.root, "명령으로 매단다")
+        self.judged_run()
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, cwd)
+        self.assertEqual(self.run_cli(ticket["key"], "20260803T000001-http-smoke"), 0)
+        self.assertEqual(self.run_cli(ticket["key"], "", "", "", True), 0)
+        self.assertEqual(self.run_cli(ticket["key"], "", "", "", False, "20260803T000001-http-smoke"), 0)
+        self.assertEqual(T.list_evidence(self.root, ticket["key"]), [])
+
+    def test_attaching_an_unjudged_run_still_exits_zero(self):
+        """참조는 판정이 아니다 — 미판정을 매달았다고 종료 코드를 바꾸면 이 문은 게이트가 된다."""
+        ticket = T.create_ticket(self.root, "미판정을 매단다")
+        self.record("20260803T000002-verify-unjudged", thresholds=())
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, cwd)
+        self.assertEqual(self.run_cli(ticket["key"], "20260803T000002-verify-unjudged"), 0)
+        self.assertEqual(T.list_evidence(self.root, ticket["key"])[0]["verdict"], "unjudged")
+
+    def test_a_bad_stamp_is_a_fixable_mistake_not_a_broken_store(self):
+        from asgard import errors
+
+        ticket = T.create_ticket(self.root, "틀린 표식")
+        cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(os.chdir, cwd)
+        with self.assertRaises(errors.InvalidInput) as caught:
+            self.run_cli(ticket["key"], "../../etc/passwd")
+        self.assertEqual(caught.exception.exit_code, 2)
+
+
+class TestEvidenceApi(EvidenceCase):
+    def call(self, method, path, params=None, payload=None):
+        status, _, body = ticket_api.dispatch(method, path, params, payload, self.root)
+        return status, json.loads(body)
+
+    def test_the_window_attaches_reads_and_detaches_over_http(self):
+        T.create_ticket(self.root, "창이 매단다")
+        self.judged_run()
+        status, row = self.call(
+            "POST", "/api/tickets/evidence", payload={"ref": "NOR-1", "stamp": "20260803T000001-http-smoke"}
+        )
+        self.assertEqual((status, row["verdict"], row["p95_ms"]), (201, "pass", 35.7))
+        status, detail = self.call("GET", "/api/ticket", params={"key": ["NOR-1"]})
+        self.assertEqual((status, [r["stamp"] for r in detail["evidence"]]), (200, ["20260803T000001-http-smoke"]))
+        status, gone = self.call(
+            "POST", "/api/tickets/evidence/delete", payload={"ref": "NOR-1", "stamp": "20260803T000001-http-smoke"}
+        )
+        self.assertEqual((status, gone["removed"]), (200, True))
+
+    def test_a_stamp_with_no_run_behind_it_answers_400(self):
+        T.create_ticket(self.root, "없는 실행")
+        status, body = self.call("POST", "/api/tickets/evidence", payload={"ref": "NOR-1", "stamp": "../../etc"})
+        self.assertEqual((status, body["error"]["code"]), (400, "invalid_ticket"))
+
+    def test_an_unjudged_run_is_attached_and_marked_over_http(self):
+        """창이 통과와 다르게 그릴 근거는 응답의 판정 칸이다 — 거절이 아니라 표시가 계약이다."""
+        T.create_ticket(self.root, "창이 미판정을 매단다")
+        self.record("20260803T000002-verify-unjudged", thresholds=())
+        status, row = self.call(
+            "POST", "/api/tickets/evidence", payload={"ref": "NOR-1", "stamp": "20260803T000002-verify-unjudged"}
+        )
+        self.assertEqual((status, row["verdict"], row["judged"]), (201, "unjudged", False))
+
+
+class TestEvidenceSchema(EvidenceCase):
+    def test_an_existing_workspace_gains_the_table_without_losing_its_tickets(self):
+        """칸을 더하고 되돌릴 수 없는 변경은 안 한다 — 이미 있는 워크스페이스가 열려야 한다."""
+        ticket = T.create_ticket(self.root, "판 올리기 전에 있던 일감")
+        path = studio_db.workspace_path()
+        with sqlite3.connect(path) as conn:  # 판 3의 워크스페이스를 그 자리에 만든다
+            conn.execute("DROP TABLE ticket_evidence")
+            conn.execute("UPDATE meta SET value = '3' WHERE key = 'schema'")
+        with studio_db.reading() as conn:
+            found = conn.execute("SELECT value FROM meta WHERE key = 'schema'").fetchone()["value"]
+            tables = {row["name"] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        self.assertEqual((found, "ticket_evidence" in tables), (str(studio_db.SCHEMA_VERSION), True))
+        self.assertEqual(T.get_ticket(self.root, ticket["key"])["evidence"], [])
+
+    def test_a_newer_workspace_is_refused_instead_of_downgraded(self):
+        T.create_ticket(self.root, "미래 판")
+        with sqlite3.connect(studio_db.workspace_path()) as conn:
+            conn.execute("UPDATE meta SET value = ? WHERE key = 'schema'", (str(studio_db.SCHEMA_VERSION + 1),))
+        with self.assertRaises(studio_db.StoreError):
+            studio_db.connect()
 
 
 class TestStudioBridge(TicketCase):
