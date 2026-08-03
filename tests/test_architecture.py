@@ -76,6 +76,8 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # profiles — 에인헤랴르 홈 해석. settings가 이걸 부르므로 settings보다 아래여야
                 # 하고, 실제로 무의존이다 (내장 명부만 templates를 lazy로 본다).
                 "profiles",
+                # runs — asgard 내부 모듈을 임포트하지 않는 기계 단위 실행 등록부라 foundation 기반 등급이다.
+                "runs",
                 "sandbox",
                 "failures",
                 # errors — 예외의 정본(코드·처방·상태). failures 와 같은 자리에 둔다: 둘 다
@@ -146,6 +148,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 소스에서 증거를 뽑고, 그것을 어디에 쓸지는 위층이 정한다.
                 "map_notes",
                 "k6",
+                # k6_live — 부하가 도는 **동안**의 초 단위 계기. k6(러너·요약·판정) 하나만
+                # 보고 도메인의 다른 이름을 모른다. 레인을 둘로 가른 이유는 크기가 아니라
+                # 시점이다: k6 는 끝난 실행을 판정하고, 여기는 끝나기 전을 적는다.
+                "k6_live",
                 "evolution",
                 "evolution_bench",
                 "skill_curator",
@@ -153,6 +159,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # swarm — 프로젝트가 루트의 에이전트를 배치하는 규칙. 설정 해석 + 배치 판정이라
                 # charter/manual과 같은 자리이고, agent(application)·commands가 이걸 쓴다.
                 "swarm",
+                # sessions — profiles(foundation)·swarm(domain 자립)을 읽는 세션 정체성 해석이라 domain 표 등급이다.
+                "sessions",
+                # automations — io_files(foundation)만 읽는 프로젝트 자동화 규칙과 저장소라 domain 자립 등급이다.
+                "automations",
                 # studio — 일감(티켓)의 어휘와 규칙, 그리고 그것을 담는 프로젝트 로컬 저장소.
                 # memory 군과 같은 자리다: 자기 저장소를 소유하고 규칙만 진다(표면 없음). 위층
                 # 셋이 이걸 쓴다 — 창(commands.studio)·CLI(commands.ticket)·툴(agent.tools).
@@ -164,6 +174,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 자기 SQLite 를 소유하고 규칙만 진다. 실행은 위층(agent.heimdall)이 하고, 이
                 # 계층은 무엇이 배차됐고 무엇이 답을 기다리는지만 안다.
                 "orchestration",
+                # engines — 이 자리에 설정된 엔진이 **지금 실제로 닿는가**. providers(해석)만 보고
+                # 도메인 형제를 안 본다. 자동 배치가 이걸 근거로 삼는다: 닿지 않는 엔진에 역할을
+                # 앉히면 그건 배치가 아니라 지연된 실패다.
+                "engines",
                 "hooks",
             }
         ),
@@ -194,6 +208,7 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
                     "registry",
                     "failures",
                     "profiles",
+                    "runs",
                     "winterm",
                 }
             ),
@@ -245,15 +260,30 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
                     "studio",
                     "plan",
                     "orchestration",
+                    "engines",
+                    "automations",
                 }
             ),
         ),
         # 자립층 하나를 얹는다 — 판정 표(craft_rules→health), 색인(skill_registry→skill_bank),
         # 렌더(templates→hooks), 저장 어댑터 다리(memory_bridge→project_memory_backends).
         # evolution·skill_curator 도 skill_bank 하나만 보므로 같은 자리다.
+        # k6_live 가 여기 있는 것은 이름 때문이 아니라 순서 때문이다 — 자립층의 k6 하나를
+        # 얹는다(러너 조립·요약 파싱·판정을 되쓴다). 계약은 이름이 아니라 부등호다.
         (
             "표",
-            frozenset({"templates", "craft_rules", "memory_bridge", "skill_registry", "skill_curator", "evolution"}),
+            frozenset(
+                {
+                    "templates",
+                    "craft_rules",
+                    "memory_bridge",
+                    "skill_registry",
+                    "skill_curator",
+                    "evolution",
+                    "k6_live",
+                    "sessions",
+                }
+            ),
         ),
         # 표를 읽어 한 대상의 뜻을 만든다 — craft_lex·craft_note·thor_rules(규칙 해석),
         # code_map(templates 로 색인), project_memory·memory_context(다리 위 저장소), loop(고르기).
@@ -391,6 +421,11 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "init_tui",
                     "manual",
                     "memory_dashboard",
+                    # automations — commands.health의 프로젝트 경계 해석을 읽으므로 명령 소비 등급이다.
+                    "automations",
+                    # orchestrate — 정책·엔진 준비 상태의 표면. tutor 와 같은 자리인 이유도 같다:
+                    # 자기는 설정만 읽고 쓰지만 저장소 뿌리를 health 에서 받아 온다.
+                    "orchestrate",
                     "plan_api",
                     "siege",
                     "studio",
@@ -467,14 +502,29 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
     "orchestration": (
         # 어휘·순수 판정(model)·SQLite 정본(store)·형상 선택(strategy) — 서로를 안 부른다.
         ("정본", frozenset({"model", "store", "strategy"})),
+        # policy — 사용자가 고른 오케스트레이션 정책(auto 포함)을 형상·배치로 옮기는 자리.
+        # strategy(형상 선택) 바로 위다: strategy 는 "이 요청이 어떤 모양인가"만 보고, 여기는
+        # 거기에 "지금 무엇으로 돌릴 수 있는가"(닿는 엔진)와 사용자 뜻을 얹는다.
+        ("정책", frozenset({"policy"})),
         ("장부", frozenset({"board", "mail"})),
         ("배차", frozenset({"dispatch"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "plan": (
+        # intake — 온보딩의 축·단계 표와 커버리지 판정. store 아래인 이유는 store 가 이 표로
+        # 문서를 검사하기 때문이다: 표가 위에 있으면 정본이 자기 형상을 못 검사한다.
+        ("온보딩", frozenset({"intake"})),
         ("정본", frozenset({"store"})),
-        ("지능", frozenset({"planner", "edits"})),
+        # review — PRD 심사. 모델을 안 부르고 문서만 읽는 순수 판정이라 planner 와 나란하지
+        # 않고 정본 바로 위다. planner 가 이 판정을 읽는 것은 없고, export 만 읽는다.
+        ("판정", frozenset({"review"})),
+        # folders — 폴더에 갇혀 있던 기획을 워크스페이스로 들여오는 레인. 정본 위에 서고
+        # 지능과 나란하다: 저장소를 읽고 쓰지만 모델을 안 부른다.
+        ("지능", frozenset({"planner", "edits", "folders"})),
         ("앉히기", frozenset({"build"})),
+        # export — 문서와 심사를 마크다운 한 장으로. 담는 쪽이 아니라 꺼내는 쪽이라 build 와
+        # 같은 등급이 아니다.
+        ("내보내기", frozenset({"export"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "project_memory": (
@@ -485,10 +535,14 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("파사드", frozenset({"__init__"})),
     ),
     "studio": (
-        ("정본", frozenset({"db", "vocab"})),
+        # mentions — `@이름`을 읽어 에인헤랴르 명부에 맞춰 보는 어휘. 저장소를 안 보고
+        # profiles 만 본다(foundation) — vocab 과 같은 자리인 이유가 그것이다.
+        ("정본", frozenset({"db", "vocab", "mentions"})),
         # teams — 번호의 주인. projects·tickets 가 팀을 가로지르므로 그 아래다.
         ("팀", frozenset({"teams"})),
         ("축", frozenset({"projects", "tickets", "legacy"})),
+        # documents — 티켓과 나란한 글. 프로젝트·팀에 매달릴 수 있어 그 둘 위에 선다.
+        ("글", frozenset({"documents"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "templates": (
@@ -988,6 +1042,16 @@ STUDIO_CHAIN = (
     # tutor — 되짚기 창의 재료. routes 아래인 이유는 방향이다: 자기는 엔진(asgard.tutor·
     # tutor_debt)만 읽고, 그것을 어느 주소에 걸지는 routes 가 정한다.
     "tutor",
+    # orchestration — 오케스트레이션 정책·엔진 준비 상태의 창 재료. tutor 와 같은 자리다:
+    # 엔진(asgard.engines·orchestration.policy)만 읽고 주소는 routes 가 건다.
+    "orchestration",
+    # load — 부하 시험 창의 재료와 실행. tutor·orchestration 과 같은 자리다: 엔진(asgard.k6·
+    # k6_live)만 읽고 어느 주소에 걸지는 routes 가 정한다. 자기 실행 장부를 따로 드는 것은
+    # 부하가 창보다 오래 살기 때문이다 — 창을 닫아도 도는 판은 끝까지 가야 기록이 남는다.
+    "load",
+    # agents — 에인헤랴르(에이전트 프로파일) 창의 재료. tutor·orchestration 과 같은 자리다:
+    # 엔진(asgard.profiles·settings·swarm)만 읽고 어느 주소에 걸지는 routes 가 정한다.
+    "agents",
     "routes",
     "server",
     "__init__",
