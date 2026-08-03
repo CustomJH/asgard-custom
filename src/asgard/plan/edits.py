@@ -73,7 +73,7 @@ def _known_section(plan: dict[str, Any], section: str) -> str:
 def _write_body(row: dict[str, Any], body: str, *, snapshot: bool) -> None:
     """PRD 칸 하나에 본문을 쓴다 — `snapshot`이 참일 때만 쓰기 전에 지금 본문을 `previous`로 민다.
 
-    여태는 본문을 쓰는 모든 연산이 밀었다. 직전 본문은 칸마다 한 벌뿐인데 화면의 자동 저장은
+    여태는 본문을 쓰는 모든 연산이 밀었다. 직전 본문은 칸마다 하나뿐인데 화면의 자동 저장은
     입력이 멈추고 `PLAN_SAVE_DELAY`(800ms) 뒤에 보내므로, 타이핑까지 밀면 제안을 반영한 뒤
     한 번만 더 쳐도 사람이 쓴 원래 글이 `previous`에서 빠지고 되돌리기가 800ms 전 글로 간다.
     되돌리기가 필요한 이유가 그 반영인데 그것만 못 되돌리는 상태였다.
