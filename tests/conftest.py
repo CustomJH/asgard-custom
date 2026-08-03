@@ -33,6 +33,28 @@ def _hermetic_semantic_stream():
 
 
 @pytest.fixture(autouse=True)
+def _surface_state_is_not_shared():
+    """`--json` 표면 상태는 그 테스트 안에서 끝난다.
+
+    명령은 진입에서 `ui.set_quiet(json_out)`·`errors.set_json_surface(json_out)`를 켜고 끄지
+    않는다 — 프로세스가 그 명령 하나를 위해 살다 끝나기 때문이다. 테스트는 한 프로세스에서
+    명령 수십 개를 부르므로, 켠 채로 끝난 테스트 뒤의 테스트는 `ui.step`이 통째로 사라진 화면을
+    본다. 그런데 `ui.warn`·`ok`는 조용해지지 않아서, 실패는 "출력이 없다"가 아니라 "문구가
+    바뀌었다"로 보인다 — 원인과 증상이 어긋나 있어 화면 테스트가 무작위로 빨개진다.
+
+    실측(26-08-03): `test_health_gate` 또는 `test_tutor` 뒤에 `test_memory_human_surface`가
+    같은 워커에 놓이면 7건이 실패한다. 릴리스 파이프라인이 여기서 멈췄고, 같은 짝은
+    b62d0dd에서도 똑같이 재현된다 — 워커 분배가 바뀔 때만 드러나던 오염이다."""
+    from asgard import errors, ui
+
+    try:
+        yield
+    finally:
+        ui.set_quiet(False)
+        errors.set_json_surface(False)
+
+
+@pytest.fixture(autouse=True)
 def _hermetic_studio_home(tmp_path_factory):
     """티켓 워크스페이스를 스위트 밖으로 뺀다 — 그리고 **테스트마다** 새 자리를 준다.
 
