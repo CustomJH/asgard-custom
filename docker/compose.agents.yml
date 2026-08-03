@@ -1,0 +1,82 @@
+# 컨테이너 하나 = 에이전트 하나.
+#
+# 세 컨테이너가 **같은 이미지**로 뜨지만 각자 다른 에이전트다. 가르는 것은 두 줄뿐이다:
+#   · ASGARD_HOME = /agent/<이름>              이 컨테이너는 누구인가
+#   · volumes     = <이름>-home:/agent/<이름>   그 에이전트의 1차 기억을 어디에 두는가
+#
+# 마지막 조각(<이름>)이 곧 표시 이름이다: profiles.active()가 이 경로를 뿌리로도
+# profiles/<id>로도 못 읽어 `custom`을 돌려주고, profiles.label_for()가 명세 없는 홈을 홈
+# 디렉터리 이름으로 부른다. 그래서 컨테이너마다 `asgard agent where`의 홈 경로가 갈린다
+# (그 명령의 `process` 필드는 셋 다 `custom`이다 — 이름이 아니라 "이름 없는 홈" 표지다).
+#
+# 이미지는 `asgard start --execution container`가 굽는 것과 **같은 것**이다
+# (src/asgard/sandbox.py의 `image` 변수). 태그를 안 주면 여기서 멈춘다 — 조용히 딴 이미지를
+# 쓰는 것보다 낫다. 세우는 법과 태그를 정하는 법은 docker/README.md에 있다.
+#
+# 기억은 named volume에 둔다. bind가 아닌 이유: 이 에이전트들은 호스트의 `~/.asgard/profiles/`
+# 아래에 없는 컨테이너 전용이라, bind로 걸면 호스트에 아무도 안 쓰는 디렉터리를 남긴다.
+# (`asgard start --execution container`는 반대로 bind다 — 그쪽은 호스트에 이미 있는 에이전트
+# 자신이라 안에서 적은 기억이 호스트 CLI에 보여야 한다. 근거는 docker/README.md.)
+#
+# 자격증명 파일은 안 넘긴다. provider 키는 아래처럼 환경변수로만 들어간다.
+
+name: asgard-agents
+
+x-agent: &agent
+  image: asgard-runtime:${ASGARD_VERSION:?ASGARD_VERSION을 정해 주세요 — docker/README.md를 보세요}
+  stdin_open: true
+  tty: true
+  restart: "no"
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+
+services:
+  # 디자인 — 자기 홈에 자기 판단 기준을 적는다.
+  freyja:
+    <<: *agent
+    container_name: asgard-freyja
+    environment:
+      ASGARD_HOME: /agent/freyja
+      ASGARD_EXECUTION: local
+      ASGARD_ISOLATION: oci-container
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - freyja-home:/agent/freyja
+      - freyja-workspace:/workspace
+
+  # 검증·역발상.
+  loki:
+    <<: *agent
+    container_name: asgard-loki
+    environment:
+      ASGARD_HOME: /agent/loki
+      ASGARD_EXECUTION: local
+      ASGARD_ISOLATION: oci-container
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - loki-home:/agent/loki
+      - loki-workspace:/workspace
+
+  # 안내·문서.
+  mimir:
+    <<: *agent
+    container_name: asgard-mimir
+    environment:
+      ASGARD_HOME: /agent/mimir
+      ASGARD_EXECUTION: local
+      ASGARD_ISOLATION: oci-container
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    volumes:
+      - mimir-home:/agent/mimir
+      - mimir-workspace:/workspace
+
+volumes:
+  freyja-home:
+  loki-home:
+  mimir-home:
+  freyja-workspace:
+  loki-workspace:
+  mimir-workspace:

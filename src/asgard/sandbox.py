@@ -23,6 +23,21 @@ _API_KEY_ENVS = (
     "OLLAMA_API_KEY",
 )
 
+# 컨테이너 안에서 에이전트 홈을 두는 자리 — assets/container_kit/Dockerfile의 VOLUME과
+# **동일 유지**. 호스트 경로를 그대로 넘기면 컨테이너 안에 없는 경로가 되므로 여기로 옮겨서
+# 넘긴다. 마지막 조각이 에이전트 이름인 이유: profiles.active()가 이 경로를 뿌리로도
+# profiles/<id>로도 못 읽어 `custom`을 돌려주고, profiles.label_for()가 명세 없는 홈을 홈
+# 디렉터리 이름으로 부른다. 컨테이너 여럿을 띄웠을 때 서로를 가르는 이름이 이것이다.
+CONTAINER_AGENT_ROOT = "/agent"
+
+# 이미지가 root로 도므로 컨테이너 안 기계 뿌리는 /root/.asgard다 (providers.CRED_PATH와 같은 자리).
+CONTAINER_CRED_PATH = "/root/.asgard/credentials.json"
+
+# 경로 조각이 될 이름에서 허용하지 않는 문자.
+_LABEL_UNSAFE = re.compile(r"[^a-zA-Z0-9_.-]+")
+
+_TRUTHY = ("1", "true", "yes", "on")
+
 
 def choose_mode(requested: str | None) -> str:
     """Resolve an explicit/env mode, or ask only in an interactive host terminal."""
@@ -111,6 +126,34 @@ def _private_workspace(root: str, name: str) -> Path:
     return target
 
 
+def agent_label() -> str:
+    """컨테이너를 가를 이름 — 활성 에이전트 id, 이름 없는 홈이면 그 홈 디렉터리 이름.
+
+    경로 조각이 되므로 규약 밖 문자는 하이픈으로 접고, 접고 나서 빈 문자열이면 default로
+    떨어진다 (빈 조각은 `/agent/`가 되어 홈이 볼륨 뿌리와 같은 자리를 가리킨다)."""
+    from . import profiles
+
+    name = profiles.active()
+    raw = os.path.basename(os.path.abspath(profiles.home()).rstrip("/\\")) if name == profiles.CUSTOM else name
+    return _LABEL_UNSAFE.sub("-", raw).strip("-.") or profiles.DEFAULT
+
+
+def agent_binding() -> tuple[str, str]:
+    """(호스트 에이전트 홈, 컨테이너 안 에이전트 홈).
+
+    `profiles.env_overlay()`가 "이 프로세스는 누구인가"의 정본이다 — 여기서 다시 조립하지
+    않고 그 결과의 ASGARD_HOME만 컨테이너 안 경로로 옮긴다.
+
+    ASGARD_PROFILE은 컨테이너에 안 넘긴다. 이름은 호스트의 `~/.asgard/profiles/` 아래에서만
+    뜻이 있고 컨테이너 안에는 그 자리가 없어서, 남겨 두면 안에서 ASGARD_HOME을 지웠을 때
+    자식이 없는 경로를 고른다. ASGARD_HOME이 서 있는 동안은 profiles.active()·home() 둘 다
+    ASGARD_HOME을 먼저 보므로 어차피 안 읽힌다."""
+    from . import profiles
+
+    host = profiles.env_overlay().get("ASGARD_HOME") or profiles.home()
+    return os.path.abspath(host), f"{CONTAINER_AGENT_ROOT}/{agent_label()}"
+
+
 def run_container(root: str, *, shared: bool = False, name: str | None = None) -> int:
     """Run Asgard in a login-free Docker-compatible container."""
     engine = _container_engine()
@@ -164,13 +207,48 @@ def run_container(root: str, *, shared: bool = False, name: str | None = None) -
     if sys.stdin.isatty() and sys.stdout.isatty():
         cmd.append("-it")
     cmd.extend(("--mount", f"type=bind,src={workspace},dst=/workspace"))
+
+    # 에이전트 홈 — 이 컨테이너가 "기억 없는 기본 에이전트"가 아니라 **지금 이 프로세스의
+    # 에이전트**로 뜨게 하는 배선이다. named volume이 아니라 bind인 이유: 이 컨테이너는
+    # 호스트에 이미 있는 그 에이전트 자신이라, 안에서 적은 1차 기억이 호스트의
+    # `asgard agent show`에 그대로 보여야 한다. named volume은 도커가 쥔 별도 사본이라
+    # 호스트 CLI가 그 기억을 못 본다. (compose 쪽은 반대 판단이다 — 그쪽 에이전트는 호스트에
+    # 없는 컨테이너 전용이라 named volume이 맞다. 근거는 docker/README.md에 적었다.)
+    agent_home, guest_agent_home = agent_binding()
+    try:
+        os.makedirs(agent_home, exist_ok=True)
+    except OSError as exc:
+        sys.stderr.write(
+            f"Cannot prepare the agent home {agent_home}: {exc}\n"
+            "Fix the path permissions, or pick another agent with `asgard agent use <name>`.\n"
+        )
+        return 2
+    cmd.extend(("--mount", f"type=bind,src={agent_home},dst={guest_agent_home}"))
+    cmd.extend(("--env", f"ASGARD_HOME={guest_agent_home}"))
+
     cmd.extend(("--env", "ASGARD_EXECUTION=local", "--env", "ASGARD_ISOLATION=oci-container"))
     for key in _API_KEY_ENVS:
         if key in os.environ:
             cmd.extend(("--env", key))
+
+    # 기계 공용 자격증명은 기본으로 안 넘긴다 — 자격은 기계의 것이고 기억이 에이전트의
+    # 것이라는 profiles 계약을 컨테이너 경계에서도 지킨다. 정상 경로는 위 _API_KEY_ENVS
+    # 전달이고, 에이전트가 자기 키를 쓰면 그 파일은 에이전트 홈 안에 있어 위 마운트에 이미 포함된다
+    # (providers.cred_path()가 `<홈>/credentials.json`을 먼저 본다). 남는 건 기계 공용 키뿐이라
+    # 그것만 명시 opt-in으로, 읽기 전용으로 준다.
+    if str(os.environ.get("ASGARD_CONTAINER_CREDENTIALS") or "").strip().lower() in _TRUTHY:
+        from . import profiles
+
+        shared_cred = os.path.join(profiles.root(), "credentials.json")
+        if os.path.isfile(shared_cred):
+            cmd.extend(("--mount", f"type=bind,src={shared_cred},dst={CONTAINER_CRED_PATH},readonly"))
+
     cmd.append(image)
     sys.stderr.write(f"Starting {Path(engine).name} container {container_name}.\n")
     sys.stderr.write(f"Workspace: {workspace}{' (host working tree)' if shared else ' (private copy)'}\n")
+    # 이름은 위에서 정한 경로에서 되읽는다 — agent_label()을 다시 부르면 그 사이 활성
+    # 에이전트가 바뀌었을 때 마운트한 자리와 다른 이름을 알린다.
+    sys.stderr.write(f"Agent: {guest_agent_home.rsplit('/', 1)[-1]} — {agent_home} -> {guest_agent_home}\n")
     return subprocess.run(cmd, cwd=root, check=False).returncode
 
 
