@@ -2191,34 +2191,6 @@ def k6_report(
     raise typer.Exit(run_k6_report(path, json_))
 
 
-def main() -> None:
-    """터미널의 마지막 방어선 — 아스가르드가 아는 실패는 트레이스백으로 새지 않는다.
-
-    Typer는 명령이 던진 예외를 그대로 위로 올린다. 그래서 여태 `StoreError` 하나가
-    사용자 터미널에 40줄짜리 파이썬 스택으로 떨어졌다 — 사용자가 고칠 수 있는 잘못이었는데도
-    화면은 "우리가 깨졌다"고 말한 셈이다. 여기서 아는 실패만 골라 사유 한 줄과 처방 한 줄로
-    닫고, 그 예외가 정한 종료 코드로 끝낸다.
-
-    **모르는 예외는 그대로 둔다.** 전부 삼키면 진짜 버그의 스택이 사라지고, 그건 진단을
-    없애는 것이지 오류 처리가 아니다."""
-    import sys
-
-    from . import errors
-
-    # PATH 되찾기는 `_main` 콜백이 진다 — 이 문으로 안 들어오는 설치본도 있어서다.
-    try:
-        app()
-    except errors.AsgardError as exc:
-        errors.render_cli(exc)
-        sys.exit(exc.exit_code)
-    except KeyboardInterrupt:
-        # Ctrl-C는 사고가 아니다 — 스택을 뱉지 않고 관례대로 130으로 닫는다.
-        sys.stderr.write("\n")
-        sys.exit(130)
-
-
-if __name__ == "__main__":
-    main()
 k6_baseline_app = typer.Typer(
     help="the run this project measures against — pin it, look at it, drop it", invoke_without_command=True
 )
@@ -2267,3 +2239,105 @@ def k6_gate(json_: bool = typer.Option(False, "--json")) -> None:
     raise typer.Exit(run_k6_gate(json_))
 
 
+automations_app = typer.Typer(help="saved prompts this project can run when an OS scheduler asks what is due")
+app.add_typer(automations_app, name="automations")
+
+
+@automations_app.command("list", help="show every saved automation and its last outcome")
+def automations_list(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.automations import run_list
+
+    raise typer.Exit(run_list(json_))
+
+
+@automations_app.command("add", help="save one prompt with an hourly/daily/weekdays/weekly or 5-field cron schedule")
+def automations_add(
+    name: str = typer.Argument(..., metavar="<name>"),
+    prompt: str = typer.Argument(..., metavar="<prompt>"),
+    schedule: str = typer.Option(..., "--schedule", help="hourly | daily | weekdays | weekly | 5-field cron"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.automations import run_add
+
+    raise typer.Exit(run_add(name, prompt, schedule, json_))
+
+
+@automations_app.command("remove", help="remove a saved automation; its run history stays")
+def automations_remove(
+    name: str = typer.Argument(..., metavar="<name>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.automations import run_remove
+
+    raise typer.Exit(run_remove(name, json_))
+
+
+@automations_app.command("enable", help="let a saved automation become due again")
+def automations_enable(
+    name: str = typer.Argument(..., metavar="<name>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.automations import run_enable
+
+    raise typer.Exit(run_enable(name, True, json_))
+
+
+@automations_app.command("disable", help="keep a saved automation without letting it become due")
+def automations_disable(
+    name: str = typer.Argument(..., metavar="<name>"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.automations import run_enable
+
+    raise typer.Exit(run_enable(name, False, json_))
+
+
+@automations_app.command("due", help="report what is due now; --run explicitly puts each prompt through asgard run")
+def automations_due(
+    execute: bool = typer.Option(False, "--run", help="actually run each due prompt now"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.automations import run_due
+
+    raise typer.Exit(run_due(execute, json_))
+
+
+@automations_app.command("history", help="show recent automation runs, newest first")
+def automations_history(
+    name: str = typer.Argument("", metavar="[name]"),
+    limit: int = typer.Option(20, "--limit", help="how many runs to show"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.automations import run_history
+
+    raise typer.Exit(run_history(name, limit, json_))
+
+
+def main() -> None:
+    """터미널의 마지막 방어선 — 아스가르드가 아는 실패는 트레이스백으로 새지 않는다.
+
+    Typer는 명령이 던진 예외를 그대로 위로 올린다. 그래서 여태 `StoreError` 하나가
+    사용자 터미널에 40줄짜리 파이썬 스택으로 떨어졌다 — 사용자가 고칠 수 있는 잘못이었는데도
+    화면은 "우리가 깨졌다"고 말한 셈이다. 여기서 아는 실패만 골라 사유 한 줄과 처방 한 줄로
+    닫고, 그 예외가 정한 종료 코드로 끝낸다.
+
+    **모르는 예외는 그대로 둔다.** 전부 삼키면 진짜 버그의 스택이 사라지고, 그건 진단을
+    없애는 것이지 오류 처리가 아니다."""
+    import sys
+
+    from . import errors
+
+    # PATH 되찾기는 `_main` 콜백이 진다 — 이 문으로 안 들어오는 설치본도 있어서다.
+    try:
+        app()
+    except errors.AsgardError as exc:
+        errors.render_cli(exc)
+        sys.exit(exc.exit_code)
+    except KeyboardInterrupt:
+        # Ctrl-C는 사고가 아니다 — 스택을 뱉지 않고 관례대로 130으로 닫는다.
+        sys.stderr.write("\n")
+        sys.exit(130)
+
+
+if __name__ == "__main__":
+    main()
