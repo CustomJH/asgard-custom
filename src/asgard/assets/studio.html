@@ -3907,7 +3907,7 @@
         const body=state.plan.body[id];
         if(typeof body!=='string')return;
         if(body===String(planDoc()?.prd?.sections?.[id]?.body||''))return;
-        const key=plan+' '+id;
+        const key=plan+'\u0000'+id;
         if(planLeftBehind[key]===body)return;
         planLeftBehind[key]=body;
         clearTimeout(planSaveTimer[id]);delete planSaveTimer[id];
