@@ -2095,16 +2095,17 @@ def k6_run(
     iterations: int = typer.Option(0, "--iterations", help="a fixed number of requests instead (shared-iterations)"),
     p95_max: float = typer.Option(0.0, "--p95-max", help="the p95 this run has to come in under, in ms"),
     env: list[str] = typer.Option(
-        [], "--env", "-e", help="KEY=VALUE for the scenario (a bare UPPERCASE key gets the ASGARD_K6_ prefix)"
+        [], "--env", "-e", help="KEY=VALUE for the scenario (a bare key gets the ASGARD_K6_ prefix)"
     ),
     runner: str = typer.Option("", "--runner", help="docker | podman | native"),
     json_: bool = typer.Option(False, "--json"),
     no_record: bool = typer.Option(False, "--no-record", help="do not keep this run under .asgard/k6/runs/"),
+    live: bool = typer.Option(True, "--live/--no-live", help="watch it per second while it runs (a TTY only)"),
 ) -> None:
     from .commands.k6 import run_k6_run
 
     raise typer.Exit(
-        run_k6_run(scenario, target, vus, duration, iterations, p95_max, list(env), runner, json_, not no_record)
+        run_k6_run(scenario, target, vus, duration, iterations, p95_max, list(env), runner, json_, not no_record, live)
     )
 
 
@@ -2158,3 +2159,51 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+k6_baseline_app = typer.Typer(
+    help="the run this project measures against — pin it, look at it, drop it", invoke_without_command=True
+)
+k6_app.add_typer(k6_baseline_app, name="baseline")
+
+
+@k6_baseline_app.callback()
+def k6_baseline_default(ctx: typer.Context) -> None:
+    if ctx.invoked_subcommand is None:
+        from .commands.k6 import run_k6_baseline_show
+
+        raise typer.Exit(run_k6_baseline_show(False))
+
+
+@k6_baseline_app.command("set", help="pin a run as the target to beat (the newest one, unless you name a stamp)")
+def k6_baseline_set(
+    stamp: str = typer.Argument("", metavar="[stamp]"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from .commands.k6 import run_k6_baseline_set
+
+    raise typer.Exit(run_k6_baseline_set(stamp, json_))
+
+
+@k6_baseline_app.command("show", help="which run is the target right now, and how far a run may drift from it")
+def k6_baseline_show(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.k6 import run_k6_baseline_show
+
+    raise typer.Exit(run_k6_baseline_show(json_))
+
+
+@k6_baseline_app.command("clear", help="drop the target — the gate stops judging until you pin another")
+def k6_baseline_clear(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.k6 import run_k6_baseline_clear
+
+    raise typer.Exit(run_k6_baseline_clear(json_))
+
+
+@k6_app.command(
+    "gate",
+    help="did the last run get worse than the baseline (exit 1 = it did; it reads files, it does not run load)",
+)
+def k6_gate(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.k6 import run_k6_gate
+
+    raise typer.Exit(run_k6_gate(json_))
+
+

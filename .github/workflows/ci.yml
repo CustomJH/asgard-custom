@@ -45,3 +45,37 @@ jobs:
       # -n auto: 직렬 실측 898초(14분 58초)짜리 스위트다. 러너 코어 수만큼 갈라 붙인다.
       # 밀폐 픽스처는 프로세스 단위라 워커 격리가 이미 서 있다 (tests/conftest.py).
       - run: uv run pytest -q -n auto
+
+  # quality 는 tests/test_k6.py 를 수집하지만 ASGARD_K6_DOCKER 가 없어 실엔진 검증은 skip 한다.
+  # 이 잡은 같은 로컬 명령으로 truth·gate·saturate 판을 실제 엔진에 걸어 하네스 정합성을 막는다.
+  # 로컬 실측은 3.90초(0.07분)다. 10분 제한은 콜드 의존성 설치와 이미지 pull 여유를 포함한다.
+  k6-selftest:
+    name: k6 harness selftest
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.14"
+
+      - run: uv sync --group dev
+
+      # ubuntu-latest 의 Docker 클라이언트와 데몬이 실제로 응답하는지 실행 로그에 남긴다.
+      - run: docker version
+
+      - run: ASGARD_K6_DOCKER=1 uv run pytest tests/test_k6.py -q
+
+      # `asgard k6 gate`(기준선 대비 성능 회귀)는 여기 **일부러 안 넣었다**.
+      #
+      # 두 가지가 겹쳐서다. 기준선은 `.asgard/k6/baseline.json` 이고 그 경로는 gitignore 라
+      # CI 체크아웃에는 애초에 없다 — 넣으면 매 실행 "기준선이 없어요"로 종료 코드 0 을 내는
+      # 장식 스텝이 된다. 설령 기준선을 커밋한다 해도 게이트가 먼저 보는 비교 가능성 축
+      # (러너·k6 판·표적·vus_max)이 호스티드 러너에서 매번 달라 "견줄 수 없어요"로 나간다.
+      # 그 둘은 게이트의 결함이 아니라 정확한 거절이다: 다른 기계에서 잰 p95 를 견주는 것은
+      # 비교가 아니다.
+      #
+      # 그래서 이 잡이 막는 것은 **하네스가 참을 말하는가**(기계와 무관하고 pacer 로 결정론이다)
+      # 이고, 성능 회귀는 표적과 기준선이 있는 자리 — 로컬이나 전용 러너 — 에서 `asgard k6 gate`
+      # 로 건다. 여기에 옮겨 붙이려면 그 전에 위 두 조건을 먼저 풀어야 한다.
