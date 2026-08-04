@@ -435,16 +435,20 @@ class TestProtocol(BridgeBase):
 
     def test_tools_gated_by_config(self):
         names = [t["name"] for t in self.rpc("tools/list")["result"]["tools"]]
-        self.assertEqual(names, ["memory_propose", "memory_recall", "memory_retain", "memory_retain_commit"])
+        self.assertEqual(
+            names,
+            ["memory_propose", "memory_search", "memory_recall", "memory_retain", "memory_retain_commit"],
+        )
         # 파괴 툴 비노출 (Hindsight 원 표면 29~32종 차단이 브릿지의 존재 이유)
         for banned in ("delete_bank", "clear_memories", "delete_document", "reflect"):
             self.assertNotIn(banned, names)
         bare = os.path.join(self.tmp, "bare2")
         os.makedirs(bare)
         # 미설정 프로젝트에서 **프로젝트** 툴은 무소음. 개인 기억 툴은 남는다 — 공유 backend가
-        # 없는 저장소에서도 에이전트는 자기 기억을 제안할 수 있어야 한다.
+        # 없는 저장소에서도 에이전트는 자기 기억을 제안하고 **자기 기억을 찾을 수** 있어야 한다.
+        # 검색이 프로젝트 게이트 뒤에 있던 동안, 연결 안 된 저장소의 모델은 회수 수단이 0이었다.
         self.assertEqual(self.project_tools(start=bare), [])
-        self.assertEqual(self.personal_tools(start=bare), ["memory_propose"])
+        self.assertEqual(self.personal_tools(start=bare), ["memory_propose", "memory_search"])
 
     def test_call_without_config_is_clean_error(self):
         bare = os.path.join(self.tmp, "bare3")

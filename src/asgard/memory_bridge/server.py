@@ -53,7 +53,28 @@ _PERSONAL_TOOLS = [
             },
             "required": ["text", "kind"],
         },
-    }
+    },
+    {
+        "name": "memory_search",
+        "description": (
+            "Search your own tier-1 memory — the memory that survives across sessions and belongs "
+            "to this agent alone. Returns hints, never proof: nothing here is evidence that work "
+            "was done.\n\n"
+            "SEARCH WHEN: the user refers to something you were told before; you need a name, path, "
+            "preference or convention you were given rather than one you can read off a file; you "
+            "are about to ask the user something they may already have answered.\n\n"
+            "This is the personal lane. Facts about this repository's code live in project memory "
+            "(memory_recall) — a different tool that appears only when the project is connected."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "What you are trying to recall."},
+                "max_results": {"type": "integer", "description": "Max hits (default 5)."},
+            },
+            "required": ["query"],
+        },
+    },
 ]
 
 _TOOLS = [
@@ -154,8 +175,46 @@ def _text_result(rid, text: str, is_error: bool = False) -> dict:
     }
 
 
+def _search_personal(args: dict) -> tuple[str, bool]:
+    """개인 기억 검색 — `asgard memory query` 와 같은 인덱스·같은 순위 (렌더만 다르다).
+
+    주입 킬스위치를 그대로 지난다. 툴 응답도 결국 같은 원격 모델로 가는 전송면이라,
+    ambient 주입만 막고 이 경로를 열어 두면 킬스위치가 반쪽이 된다. 꺼져 있을 때 오류가
+    아니라 사유 한 줄을 돌려주는 이유는 그것이 고장이 아니라 사용자의 설정이기 때문이다."""
+    from .. import memory
+
+    if not memory.inject_allowed():
+        return "개인 기억 주입이 꺼져 있다 (memory.inject off) — `asgard memory inject on`", False
+    text = str(args.get("query") or "").strip()
+    if not text:
+        return "query가 비어 있다", True
+    try:
+        k = int(args.get("max_results") or 5)
+    except (TypeError, ValueError):
+        k = 5
+    hits = memory.query(text, k=max(1, min(k, 20)))
+    rows, used = [], 0
+    for hit in hits:
+        body = str(hit.get("snippet") or hit.get("title") or "").strip()
+        if not body:
+            continue
+        row = f"- {body} `{hit.get('kind') or 'note'}` ({hit.get('slug') or ''})"
+        if used + len(row) + 1 > RECALL_OUTPUT_BUDGET:
+            break
+        rows.append(row)
+        used += len(row) + 1
+    if not rows:
+        return "관련 기억 없음", False
+    return "개인 기억 (힌트 — 완료 증거 아님):\n" + "\n".join(rows), False
+
+
 def _call_personal_tool(name: str, args: dict) -> tuple[str, bool]:
     """개인 기억 툴 — 프로젝트 설정·binding을 안 본다 (이 기억은 에이전트의 것이다)."""
+    if name == "memory_search":
+        try:
+            return _search_personal(args)
+        except Exception as exc:  # 검색 불능이 세션을 죽이지 않는다
+            return f"{type(exc).__name__}: {exc}", True
     if name != "memory_propose":
         return f"unknown tool: {name}", True
     from ..memory import propose
