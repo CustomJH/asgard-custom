@@ -256,6 +256,15 @@ def _sem_floor() -> float:
         return SEM_FLOOR
 
 
+# 어휘가 안 잡은 단독 시맨틱 후보에 더 높은 문턱(0.35)을 걸어 봤고 **되돌렸다** (26-08-04).
+# 개인 위키 9장에서는 잡음이 걷혔지만(오답 42%→2.5%), 이득이 측정된 코퍼스는 그쪽이 아니었다:
+# benchmarks/hybrid-search 의 100장 대조에서 crosslingual hit@5 가 0.80 → 0.20 으로 떨어졌다
+# (문턱 0.20 에서 0.80, 0.30·0.35·0.40 에서 모두 0.20 — 문턱 하나가 원인). 어휘가 못 찾는 것이
+# 곧 교차언어의 정의라 그 후보가 정확히 이 갈래로 들어온다. 작은 저장소의 잡음은 실재하지만,
+# 두 코퍼스를 같이 만족하는 값은 아직 없다 — 고칠 때는 절대 문턱이 아니라 질의별 분산
+# (`_dispersion`, 리랭크 QPP 게이트와 같은 자)으로 접근할 것.
+
+
 def _temporal_multiplier(meta: dict, today: _dt.date | None = None) -> float:
     """빠르게 낡는 reference만 보수적으로 보정한다. 날짜 불명·다른 kind는 중립."""
     if _kind(meta) not in TEMPORAL_KINDS:
