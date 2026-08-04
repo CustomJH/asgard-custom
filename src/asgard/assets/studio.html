@@ -809,23 +809,36 @@
     .agent-field input,.agent-field select{width:100%;height:var(--row-h);border:1px solid var(--line-strong);
       background:var(--raised);border-radius:var(--r1);padding:0 var(--space-sm)}
     .agent-field .src{display:inline-block}
-    dialog.agent-dialog{width:min(520px,calc(100% - var(--space-xl)));border:1px solid var(--line-strong);
+    /* 만들기 판 — 새 에이전트·새 티켓·새 프로젝트·새 문서가 이 한 벌을 함께 쓴다. 규칙을
+       갈라 두면 나란히 뜬 두 판의 폭·머리·칸 간격이 서로 달라진다.
+       display 는 [open] 에만 준다 — dialog 에 바로 주면 UA 의 display:none 을 덮어써서
+       닫힌 판이 문서에 그대로 보인다. */
+    dialog.app-dialog{width:min(520px,calc(100% - var(--space-xl)));border:1px solid var(--line-strong);
       border-radius:var(--r2);background:var(--surface-1);color:var(--ink);padding:0;box-shadow:var(--shadow)}
-    dialog.agent-dialog::backdrop{background:var(--overlay)}
-    .agent-dialog header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-sm);
-      padding:var(--space-md) var(--space-lg);border-bottom:1px solid var(--line)}
-    .agent-dialog h2{font-family:var(--serif);font-size:19px;font-weight:500;margin:0;color:var(--gold-lit)}
-    .agent-dialog .close{min-width:32px;min-height:32px;color:var(--faint);border-radius:var(--r1)}
-    .agent-dialog .close:hover{color:var(--gold-lit);background:var(--surface-2)}
-    .agent-dialog form>div{padding:var(--space-lg)}
-    .agent-dialog .form-field{display:flex;flex-direction:column;gap:var(--space-2xs);margin-bottom:var(--space-md)}
-    .agent-dialog label{font-size:12.5px;color:var(--muted)}
-    .agent-dialog input,.agent-dialog select,.agent-dialog textarea{width:100%;border:1px solid var(--line-strong);
+    dialog.app-dialog[open]{display:flex;flex-direction:column;max-height:calc(100% - var(--space-xl))}
+    dialog.app-dialog::backdrop{background:var(--overlay)}
+    .app-dialog header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-sm);
+      padding:var(--space-md) var(--space-lg);border-bottom:1px solid var(--line);flex:none}
+    .app-dialog h2{font-family:var(--serif);font-size:19px;font-weight:500;margin:0;color:var(--gold-lit)}
+    .app-dialog .close{min-width:32px;min-height:32px;color:var(--faint);border-radius:var(--r1)}
+    .app-dialog .close:hover{color:var(--gold-lit);background:var(--surface-2)}
+    /* 칸이 창보다 길면 머리는 붙박이고 칸만 구른다 — 낮은 창에서 제출 단추가 잘리면 못 만든다. */
+    .app-dialog form{display:flex;flex-direction:column;min-height:0}
+    .app-dialog form>div{padding:var(--space-lg);overflow-y:auto;min-height:0}
+    .app-dialog .form-field{display:flex;flex-direction:column;gap:var(--space-2xs);margin-bottom:var(--space-md)}
+    .app-dialog label{font-size:12.5px;color:var(--muted)}
+    .app-dialog input,.app-dialog select,.app-dialog textarea{width:100%;border:1px solid var(--line-strong);
       border-radius:var(--r1);background:var(--raised);padding:var(--space-xs) var(--space-sm)}
-    .agent-dialog input,.agent-dialog select{height:var(--row-h)}
-    .agent-dialog textarea{min-height:76px;resize:vertical}
-    .agent-dialog small{color:var(--faint);font-size:11px}
-    .agent-dialog .actions{justify-content:flex-end;margin-top:var(--space-lg)}
+    .app-dialog input,.app-dialog select{height:var(--row-h)}
+    .app-dialog textarea{min-height:76px;resize:vertical}
+    .app-dialog small{color:var(--faint);font-size:11px}
+    .app-dialog .actions{justify-content:flex-end;margin-top:var(--space-lg)}
+    /* 티켓·프로젝트·문서 판은 칸이 더 많다: 폭을 넓히고, 설명 칸을 키우고, 짧은 칸 둘은
+       한 줄에 세운다. 나머지 생김새는 위 .app-dialog 그대로다. */
+    dialog.tk-dialog{width:min(560px,calc(100% - var(--space-xl)))}
+    .tk-dialog textarea{min-height:104px}
+    .tk-dialog .row{display:flex;gap:var(--space-md);flex-wrap:wrap}
+    .tk-dialog .row>.form-field{flex:1 1 160px;min-width:0}
 
     /* ── 되짚기 — 계기 띠 + 물음 목록 + 답 왕복. 물음은 카드 격자가 아니라 한 기둥이다:
        나란히 놓고 고르는 것이 아니라 위(무거운 것)부터 갚아 내려가는 목록이기 때문이다.
@@ -1100,8 +1113,6 @@
     .pj-dates{display:flex;align-items:center;gap:4px}
     .pj-dates i{color:var(--faint);font-style:normal;font-size:11px}
     .pj-none{font-size:11.5px;color:var(--faint);margin:0;line-height:1.5}
-    .pj-prop .chip{font-family:var(--mono);font-size:10px;padding:1px 5px;border-radius:3px;
-      background:var(--gold-soft);color:var(--gold-lit);margin-right:3px}
     .pj-side-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:4px}
     .pj-side-list li{display:flex;justify-content:space-between;gap:var(--space-xs);font-size:11.5px;
       color:var(--muted)}
@@ -1242,9 +1253,9 @@
       font-family:var(--mono);font-size:10.5px;color:var(--faint)}
     .tk-bar .ghost:hover{color:var(--gold-lit);border-color:var(--gold)}
     /* 티켓 필터는 티켓을 보는 모드에서만. 검색만 남기는 이유는 그것이 모드를 안 가리기
-       때문이다(문서·팀 화면에서도 "어디 있더라"는 같은 물음이다). */
-    .tk-bar.narrow select:not(#tk-f-team),.tk-bar.narrow #tk-reset,
-    .tk-bar.narrow label[for^="tk-f-"]:not([for="tk-f-team"]){display:none}
+       때문이다(문서·프로젝트 화면에서도 "어디 있더라"는 같은 물음이다). */
+    .tk-bar.narrow select,.tk-bar.narrow #tk-reset,
+    .tk-bar.narrow label[for^="tk-f-"]{display:none}
 
     /* 보드 — 칸은 가로로 서고 판은 가로로 구른다. 세로 스크롤은 칸 안에서만 일어난다:
        판 전체가 세로로 구르면 칸 머리(상태 이름과 건수)가 화면 밖으로 나간다. */
@@ -1378,48 +1389,6 @@
     .tk-drawer-foot textarea{flex:1;min-width:160px;height:32px;min-height:32px;max-height:120px;
       border:1px solid var(--line);border-radius:var(--r1);background:var(--raised);padding:var(--space-2xs) var(--space-xs);
       font-size:12.5px;resize:vertical}
-
-    /* 새 티켓 — 별도 화면이 아니라 같은 자리 위의 판. 적자마자 보드에 떨어지는 것이 요점이다. */
-    .tk-new{border:1px solid var(--gold);border-radius:var(--r2);background:var(--surface-1);
-      padding:var(--space-md);margin-bottom:var(--space-md);display:flex;flex-direction:column;gap:var(--space-xs)}
-    .tk-new[hidden]{display:none}
-    .tk-new input,.tk-new textarea,.tk-new select{border:1px solid var(--line-strong);background:var(--raised);
-      border-radius:var(--r1);padding:var(--space-xs) var(--space-sm);font-size:13px;width:100%}
-    .tk-new textarea{min-height:64px;resize:vertical;line-height:1.6}
-    .tk-new .row{display:flex;gap:var(--space-xs);flex-wrap:wrap}
-    .tk-new .row > *{flex:1;min-width:130px}
-    .tk-new .acts{display:flex;gap:var(--space-xs);justify-content:flex-end}
-    .tk-new .tk-check{display:flex;align-items:center;gap:var(--space-2xs);font-size:12px;color:var(--muted);
-      flex:1;min-width:130px}
-    .tk-new .tk-check input{width:auto;flex:none}
-    .tk-new .tk-hint{margin:0;font-size:11.5px;color:var(--faint);line-height:1.5}
-
-    /* 팀 — 번호의 주인. 카드 하나가 "이 팀이 무엇을 들고 있나"에 답한다:
-       접두어·열린 건수·워크플로 칸·결속된 폴더·트리아지. */
-    .tk-teams{display:grid;gap:var(--space-md);grid-template-columns:repeat(auto-fill,minmax(320px,1fr))}
-    .tk-team{border:1px solid var(--line);border-radius:var(--r2);background:var(--surface-1);
-      padding:var(--space-md);display:flex;flex-direction:column;gap:var(--space-sm)}
-    .tk-team .head{display:flex;align-items:baseline;gap:var(--space-xs)}
-    .tk-team .head strong{font-size:15px;color:var(--ink)}
-    .tk-team .head .key{font-family:var(--mono);font-size:10.5px;letter-spacing:.08em;color:var(--gold-lit);
-      border:1px solid var(--gold);border-radius:var(--r1);padding:1px 6px}
-    .tk-team .head .n{margin-left:auto;font-family:var(--mono);font-size:11px;color:var(--faint)}
-    .tk-team p{margin:0;font-size:12.5px;color:var(--muted);line-height:1.5}
-    .tk-team .states{display:flex;flex-wrap:wrap;gap:4px}
-    .tk-team .states span{display:inline-flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);
-      border:1px solid var(--line);border-radius:999px;padding:1px 8px}
-    .tk-team .states i{width:7px;height:7px;border-radius:50%;background:var(--faint);flex:none}
-    .tk-team .states i.started{background:var(--gold)}
-    .tk-team .states i.completed{background:var(--ok)}
-    .tk-team .states i.canceled{background:var(--danger)}
-    .tk-team .states i.unstarted{box-shadow:inset 0 0 0 1.5px var(--muted);background:transparent}
-    .tk-team .states i.backlog{box-shadow:inset 0 0 0 1.5px var(--line-strong);background:transparent}
-    .tk-team .roots{display:flex;flex-direction:column;gap:2px;font-family:var(--mono);font-size:10.5px;
-      color:var(--faint);overflow-wrap:anywhere}
-    .tk-team .foot{display:flex;gap:var(--space-xs);flex-wrap:wrap;margin-top:auto;padding-top:var(--space-xs)}
-    .tk-team .foot button{font-family:var(--mono);font-size:10.5px;padding:2px 8px;border-radius:var(--r1);
-      border:1px solid var(--line);color:var(--muted)}
-    .tk-team .foot button:hover{color:var(--gold-lit);border-color:var(--gold)}
 
     /* 문서 — 목록은 발췌 한 줄까지만. 본문은 열 때 나른다. */
     .tk-docs{display:flex;flex-direction:column;gap:var(--space-2xs)}
@@ -2439,10 +2408,10 @@
             <div class="view-head">
               <div>
                 <h1>업무</h1>
-                <p>일감은 <b>워크스페이스</b>에 모여요. 저장소 하나가 팀 하나이고(번호를 매기는 곳), 프로젝트는 여러 팀에 걸쳐요. 사람이 적은 것과 Asgard가 스스로 끊은 것이 같은 보드에 올라오고, 번호는 한 번만 발급해요.</p>
+                <p>일감은 <b>워크스페이스</b> 하나에 모여요. 어느 폴더에서 창을 열든 같은 보드가 서고, 사람이 적은 것과 Asgard가 스스로 끊은 것이 나란히 올라와요. 번호는 한 번만 발급하고, 끝이 있는 일은 프로젝트로 묶어요.</p>
               </div>
               <!-- 만드는 단추는 **보고 있는 것**을 만든다. 여태 이 자리는 늘 '새 티켓'이라,
-                   창에서 할 수 있는 일이 티켓 발급 하나뿐이었다 — 팀도 프로젝트도 문서도
+                   창에서 할 수 있는 일이 티켓 발급 하나뿐이었다 — 프로젝트도 문서도
                    터미널로 나가야 만들어졌고, 빈 화면의 안내문이 명령어를 시켰다. -->
               <button type="button" class="primary" id="tk-new-btn">새 티켓</button>
             </div>
@@ -2452,80 +2421,16 @@
             <!-- 트리아지 인박스 — 아직 받아들이지 않은 일감. 보드 **위**에 선다:
                  밑에 두면 스크롤 아래로 내려가고, 안 보이는 인박스는 인박스가 아니다. -->
             <section class="tk-triage" id="tk-triage" hidden aria-label="트리아지 인박스"></section>
-            <form class="tk-new" id="tk-new-form" hidden>
-              <label class="vh" for="tk-nt">제목</label>
-              <input id="tk-nt" placeholder="무엇을 해야 하나요" maxlength="300" autocomplete="off">
-              <label class="vh" for="tk-nb">설명</label>
-              <textarea id="tk-nb" placeholder="맥락·수용 기준 (선택)" maxlength="20000"></textarea>
-              <div class="row">
-                <select id="tk-ns" aria-label="상태"></select>
-                <select id="tk-np" aria-label="우선순위"></select>
-                <input id="tk-na" placeholder="담당" maxlength="60" autocomplete="off" aria-label="담당">
-                <input id="tk-nl" placeholder="라벨 (쉼표로 구분)" maxlength="200" autocomplete="off" aria-label="라벨">
-              </div>
-              <div class="acts">
-                <button type="button" class="secondary" id="tk-cancel">취소</button>
-                <button type="submit" class="primary">티켓 발급</button>
-              </div>
-            </form>
-            <!-- 팀 — 번호의 주인. 키를 사람이 고르게 두는 이유는 그것이 **대화에서 부르는
-                 이름**이라서다(NOR-12). 이름에서 뽑아 주면 한글 팀명에서 뽑을 것이 없다. -->
-            <form class="tk-new" id="tk-team-form" hidden>
-              <label class="vh" for="tk-tm-name">팀 이름</label>
-              <input id="tk-tm-name" placeholder="팀 이름 (예: 노른)" maxlength="60" autocomplete="off">
-              <div class="row">
-                <input id="tk-tm-key" placeholder="번호 접두어 (예: NOR)" maxlength="8" autocomplete="off" aria-label="번호 접두어">
-                <label class="tk-check"><input type="checkbox" id="tk-tm-triage"> 트리아지 인박스 쓰기</label>
-                <label class="tk-check"><input type="checkbox" id="tk-tm-bind" checked> 지금 작업 공간을 이 팀에 결속</label>
-              </div>
-              <p class="tk-hint">접두어를 비우면 이름에서 뽑아요. 팀을 옮겨도 이미 나간 번호는 안 바뀌어요.</p>
-              <div class="acts">
-                <button type="button" class="secondary" data-tk-cancel="team">취소</button>
-                <button type="submit" class="primary">팀 만들기</button>
-              </div>
-            </form>
-            <!-- 프로젝트 — 끝이 있는 일. 팀을 가로지르므로 참여 팀은 여럿일 수 있다. -->
-            <form class="tk-new" id="tk-project-form" hidden>
-              <label class="vh" for="tk-pj-name">프로젝트 이름</label>
-              <input id="tk-pj-name" placeholder="무엇을 끝내려는 일인가요" maxlength="120" autocomplete="off">
-              <label class="vh" for="tk-pj-desc">설명</label>
-              <textarea id="tk-pj-desc" placeholder="무엇을·왜 (선택)" maxlength="20000"></textarea>
-              <div class="row">
-                <select id="tk-pj-team" aria-label="참여 팀"></select>
-                <input id="tk-pj-lead" placeholder="리드 (선택)" maxlength="60" autocomplete="off" aria-label="리드">
-                <input id="tk-pj-target" type="date" aria-label="목표일">
-              </div>
-              <div class="acts">
-                <button type="button" class="secondary" data-tk-cancel="project">취소</button>
-                <button type="submit" class="primary">프로젝트 만들기</button>
-              </div>
-            </form>
-            <!-- 문서 — 닫히지 않는 글. 제목만으로 시작한다: 자리를 먼저 고르게 하면 그 글은
-                 안 적히거나 엉뚱한 프로젝트에 걸린다. -->
-            <form class="tk-new" id="tk-doc-form" hidden>
-              <label class="vh" for="tk-dc-title">문서 제목</label>
-              <input id="tk-dc-title" placeholder="무엇에 대한 글인가요" maxlength="200" autocomplete="off">
-              <div class="row">
-                <select id="tk-dc-project" aria-label="프로젝트에 매달기"></select>
-                <select id="tk-dc-team" aria-label="팀에 매달기"></select>
-              </div>
-              <div class="acts">
-                <button type="button" class="secondary" data-tk-cancel="doc">취소</button>
-                <button type="submit" class="primary">문서 시작</button>
-              </div>
-            </form>
+            <!-- 만드는 폼은 이 안에 없다 — 문서 끝의 <dialog> 셋으로 나가 있다(#tk-new-dialog
+                 ·#tk-project-dialog·#tk-doc-dialog). 여기 접어 두던 때는 폼이 펼쳐질 때마다
+                 아래의 보드가 그만큼 밀려 내려갔다. -->
             <div class="tk-bar">
               <div class="tk-modes" role="group" aria-label="보기 방식">
                 <button type="button" data-tk-mode="board" aria-pressed="true">보드</button>
                 <button type="button" data-tk-mode="list" aria-pressed="false">목록</button>
                 <button type="button" data-tk-mode="projects" aria-pressed="false">프로젝트</button>
                 <button type="button" data-tk-mode="docs" aria-pressed="false">문서</button>
-                <button type="button" data-tk-mode="teams" aria-pressed="false">팀</button>
               </div>
-              <!-- 어느 팀을 보는가. **기본이 워크스페이스 전체**이고, 폴더는 좁히는 값이다 —
-                   폴더를 안 열고도 "지금 뭘 해야 하지"에 답할 수 있어야 한다. -->
-              <label class="vh" for="tk-f-team">팀으로 거르기</label>
-              <select id="tk-f-team"></select>
               <label class="vh" for="tk-search">티켓 검색</label>
               <input id="tk-search" type="search" placeholder="제목·설명·번호로 찾기" autocomplete="off">
               <label class="vh" for="tk-f-project">프로젝트로 거르기</label>
@@ -2799,7 +2704,7 @@
     </div>
   </div>
 
-  <dialog class="agent-dialog" id="agent-create-dialog" aria-labelledby="agent-create-title">
+  <dialog class="app-dialog" id="agent-create-dialog" aria-labelledby="agent-create-title">
     <header><h2 id="agent-create-title">새 에이전트</h2>
       <button type="button" class="close" id="agent-create-close" aria-label="새 에이전트 창 닫기">닫기</button></header>
     <form id="agent-create-form">
@@ -2820,10 +2725,81 @@
     </form>
   </dialog>
 
+  <!-- 티켓 — 머리의 만들기 단추와 칸 머리의 `+` 둘 다 이 판을 연다. `+` 로 열면 누른 칸이
+       #tk-ns 에 미리 들어간다. -->
+  <dialog class="app-dialog tk-dialog" id="tk-new-dialog" aria-labelledby="tk-new-dialog-title">
+    <header><h2 id="tk-new-dialog-title">새 티켓</h2>
+      <button type="button" class="close" data-tk-cancel="ticket" aria-label="새 티켓 창 닫기">닫기</button></header>
+    <form id="tk-new-form">
+      <div>
+        <div class="form-field"><label for="tk-nt">제목</label>
+          <input id="tk-nt" placeholder="무엇을 해야 하나요" maxlength="300" autocomplete="off"></div>
+        <div class="form-field"><label for="tk-nb">설명</label>
+          <textarea id="tk-nb" placeholder="맥락·수용 기준 (선택)" maxlength="20000"></textarea></div>
+        <div class="row">
+          <div class="form-field"><label for="tk-ns">상태</label>
+            <select id="tk-ns"></select></div>
+          <div class="form-field"><label for="tk-np">우선순위</label>
+            <select id="tk-np"></select></div>
+        </div>
+        <div class="row">
+          <div class="form-field"><label for="tk-na">담당</label>
+            <input id="tk-na" placeholder="비워 둘 수 있어요" maxlength="60" autocomplete="off"></div>
+          <div class="form-field"><label for="tk-nl">라벨</label>
+            <input id="tk-nl" placeholder="쉼표로 구분해요" maxlength="200" autocomplete="off"></div>
+        </div>
+        <div class="actions"><button type="button" class="secondary" id="tk-cancel" data-tk-cancel="ticket">취소</button>
+          <button type="submit" class="primary">티켓 발급</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 프로젝트 — 끝이 있는 일. 목표일이 있으면 진척과 기한 초과를 셀 수 있다. -->
+  <dialog class="app-dialog tk-dialog" id="tk-project-dialog" aria-labelledby="tk-project-dialog-title">
+    <header><h2 id="tk-project-dialog-title">새 프로젝트</h2>
+      <button type="button" class="close" data-tk-cancel="project" aria-label="새 프로젝트 창 닫기">닫기</button></header>
+    <form id="tk-project-form">
+      <div>
+        <div class="form-field"><label for="tk-pj-name">프로젝트 이름</label>
+          <input id="tk-pj-name" placeholder="무엇을 끝내려는 일인가요" maxlength="120" autocomplete="off"></div>
+        <div class="form-field"><label for="tk-pj-desc">설명</label>
+          <textarea id="tk-pj-desc" placeholder="무엇을·왜 (선택)" maxlength="20000"></textarea></div>
+        <div class="row">
+          <div class="form-field"><label for="tk-pj-lead">리드</label>
+            <input id="tk-pj-lead" placeholder="비워 둘 수 있어요" maxlength="60" autocomplete="off"></div>
+          <div class="form-field"><label for="tk-pj-target">목표일</label>
+            <input id="tk-pj-target" type="date"></div>
+        </div>
+        <div class="actions"><button type="button" class="secondary" data-tk-cancel="project">취소</button>
+          <button type="submit" class="primary">프로젝트 만들기</button></div>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 문서 — 닫히지 않는 글. 제목만으로 시작한다: 자리를 먼저 고르게 하면 그 글은
+       안 적히거나 엉뚱한 프로젝트에 걸린다. -->
+  <dialog class="app-dialog tk-dialog" id="tk-doc-dialog" aria-labelledby="tk-doc-dialog-title">
+    <header><h2 id="tk-doc-dialog-title">새 문서</h2>
+      <button type="button" class="close" data-tk-cancel="doc" aria-label="새 문서 창 닫기">닫기</button></header>
+    <form id="tk-doc-form">
+      <div>
+        <div class="form-field"><label for="tk-dc-title">문서 제목</label>
+          <input id="tk-dc-title" placeholder="무엇에 대한 글인가요" maxlength="200" autocomplete="off"></div>
+        <div class="form-field"><label for="tk-dc-project">프로젝트에 매달기</label>
+          <select id="tk-dc-project"></select></div>
+        <div class="actions"><button type="button" class="secondary" data-tk-cancel="doc">취소</button>
+          <button type="submit" class="primary">문서 시작</button></div>
+      </div>
+    </form>
+  </dialog>
+
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
   <script>
     const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
+    /* 모달이 하나라도 떠 있는가. showModal() 로 뜬 <dialog> 는 top layer 에 서고 뒤의 문서는
+       inert 가 되므로, 전역 키 손잡이들은 이 값이 참일 때 물러난다. */
+    const modalOpen=()=>!!document.querySelector('dialog[open]');
     const state={snapshot:null,catalog:null,tasks:[],current:null,view:'home',timer:null,saveSeq:0,
       /* feed = 프로젝트를 건너 보는 작업 목록(머리글). tasks 는 지금 열린 작업 공간의 상세.
          scope = 사이드바가 어느 쪽을 드는가. 'all' 이 기본이다 — 창은 폴더가 아니라 사람의
@@ -2862,7 +2838,7 @@
       /* 업무 — data 는 서버가 한 왕복에 함께 준 보드+현황+어휘. flag 는 현황 타일이 건 지름길
          필터고, mode 는 보드/목록. open 은 지금 오른쪽 판에 펼친 티켓. */
       tickets:{data:null,error:null,probe:null,mode:'board',q:'',flag:'',
-        filter:{priority:'',assignee:'',label:'',cycle:'',team:'',project:''},
+        filter:{priority:'',assignee:'',label:'',cycle:'',project:''},
         open:null,drag:null,
         /* 본문을 지금 고치고 있는가 — 읽기(마크다운)와 쓰기(원문)를 오가는 손잡이 */
         editing:false,
@@ -5820,7 +5796,7 @@
        정본은 `<에이전트 홈>/studio/workspace.db` — 이 화면은 투영이다. 상태·우선순위 어휘도 서버가
        실어 보낸다(`/api/tickets` 응답의 statuses·priorities): 같은 enum 을 화면이 한 벌 더
        들고 있으면 칸 하나를 늘릴 때 두 곳을 고쳐야 하고, 언젠가 한 곳만 고친다. */
-    const TK_SELECT_FILTERS=['priority','assignee','label','cycle','team','project'];
+    const TK_SELECT_FILTERS=['priority','assignee','label','cycle','project'];
     function tkVocab(){return state.tickets.data||{statuses:[],priorities:[],cycles:[],summary:null}}
     function tkStatusLabel(id){return (tkVocab().statuses.find(s=>s.id===id)||{}).label||id}
     function tkStatusType(id){return (tkVocab().statuses.find(s=>s.id===id)||{}).type||'backlog'}
@@ -5916,15 +5892,11 @@
         +((s?.labels)||[]).map(l=>'<option value="'+esc(l.name)+'">'+esc(l.name)+' ('+l.count+')</option>').join('');
       $('#tk-f-cycle').innerHTML='<option value="">주기 전체</option>'
         +(data.cycles||[]).map(c=>'<option value="'+c.number+'">'+esc(c.name||('주기 '+c.number))+'</option>').join('');
-      /* 팀 — 빈 값이 **워크스페이스 전체**다. 일감은 폴더의 것이 아니라 사람의 것이라,
-         창이 어느 자리에 서 있든 기본으로 보이는 것은 같다. `.` 은 이 폴더에 결속된 팀. */
-      $('#tk-f-team').innerHTML='<option value="">워크스페이스 전체</option><option value=".">이 폴더의 팀</option>'
-        +(data.teams||[]).map(t=>'<option value="'+esc(t.key)+'">'+esc(t.key)+' · '+esc(t.name)+'</option>').join('');
       $('#tk-f-project').innerHTML='<option value="">프로젝트 전체</option>'
         +(data.projects||[]).map(p=>'<option value="'+esc(p.id)+'">'+esc(p.name)+'</option>').join('');
       TK_SELECT_FILTERS.forEach(k=>{const el=$('#tk-f-'+k);el.value=keep[k];if(el.value!==keep[k])el.value=''});
-      /* 새 티켓의 상태 칸은 **그 팀의 워크플로**를 든다 — 팀이 만든 '배포 대기'가 여기 없으면
-         창에서는 만들 수 없는 상태가 된다. */
+      /* 새 티켓의 상태 칸은 워크플로가 지금 든 칸(`summary.states`)을 그대로 든다 — 저장소에
+         있는 '배포 대기'가 여기 없으면 창에서는 만들 수 없는 상태가 된다. */
       const states=(data.summary?.states||[]).length
         ?data.summary.states.map(slug=>({id:slug,label:(data.statuses.find(x=>x.id===slug)||{}).label||slug}))
         :data.statuses;
@@ -6007,7 +5979,7 @@
       $('#tk-import').onclick=async()=>{
         try{
           const out=await api('/api/studio/import',{method:'POST',body:JSON.stringify({root})});
-          toast(out.imported?('팀 '+out.team+'에 '+out.tickets+'건 들여왔어요'):('들여올 것이 없어요 — '+out.reason));
+          toast(out.imported?('워크스페이스로 '+out.tickets+'건 들여왔어요'):('들여올 것이 없어요 — '+out.reason));
           await loadTickets();
         }catch(e){toast(e.message)}
       };
@@ -6016,7 +5988,7 @@
     function renderProjects(){
       const rows=state.tickets.data?.projects||[];
       if(!rows.length){
-        return '<div class="empty"><b>프로젝트가 없어요</b>목표일이 있는 일이나 여러 팀에 걸친 일을 프로젝트로 묶어요. '
+        return '<div class="empty"><b>프로젝트가 없어요</b>목표일이 있는 일이나 티켓 여러 건에 걸친 일을 프로젝트로 묶어요. '
           +'위의 <span class="mono">새 프로젝트</span>로 시작하세요.</div>';
       }
       return '<div class="tk-projects">'+rows.map(p=>{
@@ -6028,7 +6000,6 @@
           +'<div class="meter" aria-label="진척 '+pct+'%"><i style="width:'+pct+'%"></i></div>'
           +'<div class="foot"><span>'+p.done+'/'+p.total+' ('+pct+'%)</span>'
           +(p.lead?'<span>리드 '+esc(p.lead)+'</span>':'')
-          +(p.teams?.length?'<span>'+p.teams.map(t=>esc(t.key)).join(' · ')+'</span>':'')
           +(p.target_at?'<span>목표 '+esc(fmt(p.target_at))+'</span>':'')
           +(p.health?'<span class="health '+esc(p.health)+'">'+esc(tkHealthLabel(p.health))+'</span>':'')
           +'</div></article>';
@@ -6223,7 +6194,6 @@
         +row('멤버','<input id="pj-members" value="'+esc((p.members||[]).join(', '))+'" placeholder="쉼표로 구분">')
         +row('기간','<span class="pj-dates"><input id="pj-start" type="date" value="'+dateValue(p.starts_at)+'">'
           +'<i>→</i><input id="pj-target" type="date" value="'+dateValue(p.target_at)+'"></span>')
-        +row('팀',(p.teams||[]).length?p.teams.map(t=>'<span class="chip">'+esc(t.key)+'</span>').join(''):'<span class="pj-none">없음</span>')
         +row('라벨','<input id="pj-labels" value="'+esc((p.labels||[]).map(l=>l.name).join(', '))+'" placeholder="쉼표로 구분">')
         +row('건강도',sel('pj-health',[{v:'',l:'없음'},...(data.healths||[]).map(h=>({v:h.id,l:h.label}))],p.health))
         +'</section>'
@@ -6332,75 +6302,68 @@
       };
     }
     /* ── 만들기 — 보고 있는 것을 만든다 ─────────────────────────────────────────
-       여태 이 창에서 만들 수 있는 것은 티켓뿐이었다. 팀도 프로젝트도 서버에는 문이 있었지만
-       (`POST /api/teams`·`/api/projects`) 화면이 한 번도 안 불렀고, 빈 목록의 안내문이
-       터미널 명령을 시켰다 — 창을 켠 사람에게 "여기서는 못 한다"고 말한 셈이다.
+       여태 이 창에서 만들 수 있는 것은 티켓뿐이었다. 프로젝트도 서버에는 문이 있었지만
+       (`POST /api/projects`) 화면이 한 번도 안 불렀고, 빈 목록의 안내문이 터미널 명령을
+       시켰다 — 창을 켠 사람에게 "여기서는 못 한다"고 말한 셈이다.
 
-       단추 하나가 모드를 따라간다. 만들기를 모드마다 따로 세우면 머리에 단추가 넷이 서고,
-       그중 셋은 늘 지금 화면과 무관하다. */
+       단추 하나가 모드를 따라간다. 만들기를 모드마다 따로 세우면 머리에 단추가 셋이 서고,
+       그중 둘은 늘 지금 화면과 무관하다.
+
+       폼은 <dialog> 로 뜬다. 보드 본문에 접어 두던 때는 폼이 펼쳐질 때마다 그 아래 보드가
+       밀려 내려가, 무엇을 적고 있는지가 화면에서 흩어졌다. */
     const TK_CREATE={
-      board:{label:'새 티켓',form:'#tk-new-form',focus:'#tk-nt'},
-      list:{label:'새 티켓',form:'#tk-new-form',focus:'#tk-nt'},
-      projects:{label:'새 프로젝트',form:'#tk-project-form',focus:'#tk-pj-name'},
-      docs:{label:'새 문서',form:'#tk-doc-form',focus:'#tk-dc-title'},
-      teams:{label:'팀 만들기',form:'#tk-team-form',focus:'#tk-tm-name'},
+      board:{label:'새 티켓',dialog:'#tk-new-dialog',focus:'#tk-nt'},
+      list:{label:'새 티켓',dialog:'#tk-new-dialog',focus:'#tk-nt'},
+      projects:{label:'새 프로젝트',dialog:'#tk-project-dialog',focus:'#tk-pj-name'},
+      docs:{label:'새 문서',dialog:'#tk-doc-dialog',focus:'#tk-dc-title'},
     };
+    const TK_DIALOGS=['#tk-new-dialog','#tk-project-dialog','#tk-doc-dialog'];
     function tkCreate(){return TK_CREATE[state.tickets.mode]||TK_CREATE.board}
-    /* 티켓을 거르는 손잡이들은 티켓을 보는 모드에서만 선다. 문서·팀 화면 위에 '우선순위로
+    /* 티켓을 거르는 손잡이들은 티켓을 보는 모드에서만 선다. 문서·프로젝트 화면 위에 '우선순위로
        거르기'가 서 있으면, 그 칸이 지금 화면에 아무 영향도 없다는 것을 눌러 봐야 안다. */
     const TK_TICKET_MODES=new Set(['board','list']);
     function tkSyncCreate(){
       $('#tk-new-btn').textContent=tkCreate().label;
       $('.tk-bar').classList.toggle('narrow',!TK_TICKET_MODES.has(state.tickets.mode));
-      // 모드를 옮기면 열려 있던 폼은 닫는다 — 프로젝트 화면 위에 뜬 '티켓 발급' 폼은
-      // 어디에 발급되는지 아무도 모른다.
-      Object.values(TK_CREATE).forEach(entry=>{const f=$(entry.form);if(f)f.hidden=true});
+      /* 지금 모드가 만드는 것과 **다른** 판만 닫는다 — 프로젝트 화면 위에 뜬 '티켓 발급' 판은
+         어디에 발급되는지 알 수 없다. 같은 판은 그대로 둔다: 이 함수는 보드를 다시 그릴 때마다
+         도는데, 여기서 무조건 닫으면 적는 도중에 들어온 새로고침이 판을 걷어 간다(실측:
+         창을 켠 직후 loadTickets 가 끝나면서 방금 연 새 티켓 판이 닫혔다). */
+      tkCloseCreate(tkCreate().dialog);
     }
-    function tkToggleCreate(){
-      const entry=tkCreate(),form=$(entry.form);if(!form)return;
-      const opening=form.hidden;
-      Object.values(TK_CREATE).forEach(other=>{const f=$(other.form);if(f)f.hidden=true});
-      form.hidden=!opening;
-      if(opening){tkFillCreateSelects();$(entry.focus)?.focus()}
+    function tkCloseCreate(keep){
+      TK_DIALOGS.forEach(sel=>{if(sel===keep)return;const d=$(sel);if(d?.open)d.close()});
     }
-    /* 폼 안의 고르는 칸도 서버가 실어 보낸 목록으로 채운다 — 화면이 팀 명부를 따로 들면
-       팀을 새로 만든 직후의 프로젝트 폼이 어제의 명부를 보여 준다. */
+    /* 닫힌 뒤 초점이 돌아갈 자리. close() 가 열었던 단추로 되돌리지만, 칸 머리의 `+` 는 발급
+       직후의 다시 그리기에서 사라져 초점이 <body> 로 떨어진다(실측: `+` 로 발급하면 그 뒤
+       Tab 이 문서 맨 앞부터 다시 셌다). 보드 안(#tk-stage)에서 연 것은 살아남는 머리의
+       만들기 단추를 대신 적는다. */
+    let tkCreateFrom=null;
+    function tkOpenCreate(sel,focus){
+      const dialog=$(sel);if(!dialog)return;
+      tkCloseCreate();tkFillCreateSelects();
+      const from=document.activeElement;
+      tkCreateFrom=from?.closest?.('#tk-stage')?$('#tk-new-btn'):from;
+      dialog.showModal();$(focus)?.focus();
+    }
+    /* 폼 안의 고르는 칸도 서버가 실어 보낸 목록으로 채운다 — 화면이 프로젝트 명부를 따로 들면
+       프로젝트를 새로 만든 직후의 문서 폼이 어제의 명부를 보여 준다. */
     function tkFillCreateSelects(){
-      const data=state.tickets.data||{},teams=data.teams||[],projects=data.projects||[];
+      const data=state.tickets.data||{},projects=data.projects||[];
       const opts=(rows,none,pick)=>'<option value="">'+esc(none)+'</option>'
         +rows.map(r=>'<option value="'+esc(pick(r).value)+'">'+esc(pick(r).label)+'</option>').join('');
-      const teamOpts=opts(teams,'팀 없음',t=>({value:t.key,label:t.key+' · '+t.name}));
-      const projectOpts=opts(projects,'프로젝트 없음',p=>({value:p.id,label:p.name}));
-      if($('#tk-pj-team'))$('#tk-pj-team').innerHTML=opts(teams,'팀은 나중에',t=>({value:t.key,label:t.key+' · '+t.name}));
-      if($('#tk-dc-team'))$('#tk-dc-team').innerHTML=teamOpts;
-      if($('#tk-dc-project'))$('#tk-dc-project').innerHTML=projectOpts;
-    }
-    async function createTeam(){
-      const name=$('#tk-tm-name').value.trim();if(!name)return toast('팀 이름을 적어 주세요');
-      try{
-        const team=await api('/api/teams',{method:'POST',body:JSON.stringify({
-          name,key:$('#tk-tm-key').value.trim(),triage:$('#tk-tm-triage').checked})});
-        /* 결속은 **선택**이다. 폴더가 저절로 팀이 되면, 저장소 다섯 곳을 오간 사람은 고른 적
-           없는 팀 다섯과 번호 다섯 갈래를 갖게 된다. 그래서 사람이 체크한 때만 건다. */
-        if($('#tk-tm-bind').checked){
-          try{await api('/api/teams/bind',{method:'POST',body:JSON.stringify({ref:team.key})})}
-          catch(e){toast('팀은 만들었지만 결속은 못 걸었어요 — '+e.message)}
-        }
-        $('#tk-team-form').hidden=true;$('#tk-tm-name').value='';$('#tk-tm-key').value='';
-        await loadTickets();toast(team.key+' 팀을 만들었어요 — 첫 티켓은 '+team.key+'-1이에요');
-      }catch(e){toast(e.message)}
+      if($('#tk-dc-project'))$('#tk-dc-project').innerHTML=opts(projects,'프로젝트 없음',p=>({value:p.id,label:p.name}));
     }
     async function createProject(){
       const name=$('#tk-pj-name').value.trim();if(!name)return toast('프로젝트 이름을 적어 주세요');
       const target=$('#tk-pj-target').value;
-      const teams=$('#tk-pj-team').value?[$('#tk-pj-team').value]:[];
       try{
-        const project=await api('/api/projects',{method:'POST',body:JSON.stringify({name,teams,
+        const project=await api('/api/projects',{method:'POST',body:JSON.stringify({name,
           description:$('#tk-pj-desc').value.trim(),lead:$('#tk-pj-lead').value.trim(),
           /* 날짜 칸은 YYYY-MM-DD 를 주고 저장소는 유닉스 초를 받는다. 정오로 고정하는 이유는
              시간대다 — 자정으로 두면 UTC-9 에서 하루 전으로 읽힌다. */
           ...(target?{target_at:new Date(target+'T12:00:00').getTime()/1000}:{})})});
-        $('#tk-project-form').hidden=true;['#tk-pj-name','#tk-pj-desc','#tk-pj-lead','#tk-pj-target']
+        $('#tk-project-dialog').close();['#tk-pj-name','#tk-pj-desc','#tk-pj-lead','#tk-pj-target']
           .forEach(id=>$(id).value='');
         await loadTickets();openProject(project.id);toast(project.name+' 프로젝트를 열었어요');
       }catch(e){toast(e.message)}
@@ -6409,52 +6372,10 @@
       const title=$('#tk-dc-title').value.trim();if(!title)return toast('문서 제목을 적어 주세요');
       try{
         const doc=await api('/api/docs',{method:'POST',body:JSON.stringify({title,actor:'odin',
-          project:$('#tk-dc-project').value,team:$('#tk-dc-team').value})});
-        $('#tk-doc-form').hidden=true;$('#tk-dc-title').value='';
+          project:$('#tk-dc-project').value})});
+        $('#tk-doc-dialog').close();$('#tk-dc-title').value='';
         await loadTickets();openDoc(doc.id);
       }catch(e){toast(e.message)}
-    }
-    /* ── 팀 — 번호의 주인 ───────────────────────────────────────────────────────
-       카드 하나가 "이 팀이 무엇을 들고 있나"에 답한다. 워크플로 칸을 같이 세우는 이유는
-       그것이 팀마다 다른 유일한 어휘라서다: 이름은 팀이 짓고 범주만 다섯으로 고정이다. */
-    function renderTeams(){
-      const rows=state.tickets.data?.teams||[];
-      if(!rows.length){
-        return '<div class="empty"><b>아직 팀이 없어요</b>팀은 번호의 주인이에요 — 티켓 번호(<span class="mono">NOR-12</span>)가 '
-          +'그 팀에서 나오고, 워크플로 칸과 사이클도 팀이 지어요. 위의 <span class="mono">팀 만들기</span>로 시작하세요.</div>';
-      }
-      return '<div class="tk-teams">'+rows.map(t=>{
-        const states=(t.states||[]).map(s=>'<span><i class="'+esc(s.type)+'"></i>'+esc(s.name)+'</span>').join('');
-        const roots=(t.roots||[]).map(r=>'<div>'+esc(r)+'</div>').join('');
-        return '<article class="tk-team" data-tk-team="'+esc(t.key)+'">'
-          +'<div class="head"><span class="key">'+esc(t.key)+'</span><strong>'+esc(t.name)+'</strong>'
-          +'<span class="n">'+(t.open??0)+' 열림 / '+(t.total??0)+'</span></div>'
-          +(t.description?'<p>'+esc(t.description)+'</p>':'')
-          +(states?'<div class="states">'+states+'</div>':'')
-          +(roots?'<div class="roots">'+roots+'</div>'
-            :'<p class="tk-hint">결속된 작업 공간이 없어요 — 여기 티켓은 실행할 때 창이 보는 자리에서 돌아요.</p>')
-          +'<div class="foot">'
-          +'<button type="button" data-tk-team-board="'+esc(t.key)+'">이 팀의 보드</button>'
-          +'<button type="button" data-tk-team-triage="'+esc(t.key)+'">트리아지 '+(t.triage?'끄기':'켜기')+'</button>'
-          +'<button type="button" data-tk-team-bind="'+esc(t.key)+'">'
-          +((t.roots||[]).length?'지금 작업 공간 결속':'지금 작업 공간 결속')+'</button>'
-          +'</div></article>';
-      }).join('')+'</div>';
-    }
-    function wireTeams(){
-      $$('#tk-stage [data-tk-team-board]').forEach(b=>b.onclick=()=>{
-        state.tickets.filter.team=b.dataset.tkTeamBoard;state.tickets.mode='board';
-        $('#tk-f-team').value=b.dataset.tkTeamBoard;loadTickets();
-      });
-      $$('#tk-stage [data-tk-team-triage]').forEach(b=>b.onclick=async()=>{
-        const key=b.dataset.tkTeamTriage,team=(state.tickets.data?.teams||[]).find(t=>t.key===key);
-        try{await api('/api/teams',{method:'PUT',body:JSON.stringify({ref:key,changes:{triage:!team?.triage}})});
-          await loadTickets();toast(key+' 트리아지를 '+(team?.triage?'껐어요':'켰어요'))}catch(e){toast(e.message)}
-      });
-      $$('#tk-stage [data-tk-team-bind]').forEach(b=>b.onclick=async()=>{
-        try{await api('/api/teams/bind',{method:'POST',body:JSON.stringify({ref:b.dataset.tkTeamBind})});
-          await loadTickets();toast('이 작업 공간을 '+b.dataset.tkTeamBind+'에 결속했어요')}catch(e){toast(e.message)}
-      });
     }
     /* ── 문서 — 닫히지 않는 글 ─────────────────────────────────────────────────
        목록은 발췌 한 줄까지만 든다. 본문은 열 때 나른다(`/api/doc`) — 목록마다 본문을
@@ -6463,11 +6384,11 @@
       const rows=state.tickets.data?.documents||[];
       if(!rows.length){
         return '<div class="empty"><b>아직 문서가 없어요</b>티켓으로 적기엔 닫히지 않는 것들 — 사양·회고·결정 기록·회의 메모가 '
-          +'여기에 모여요. 마크다운으로 자유롭게 적고, 프로젝트나 팀에 매달 수 있어요. '
+          +'여기에 모여요. 마크다운으로 자유롭게 적고, 프로젝트에 매달 수 있어요. '
           +'위의 <span class="mono">새 문서</span>로 시작하세요.</div>';
       }
       return '<div class="tk-docs">'+rows.map(d=>{
-        const where=d.project?d.project.name:(d.team?d.team.key:'워크스페이스');
+        const where=d.project?d.project.name:'워크스페이스';
         return '<button type="button" class="tk-doc" data-tk-doc="'+esc(d.id)+'">'
           +'<strong>'+(d.icon?esc(d.icon)+' ':'')+esc(d.title)+'</strong>'
           +'<span class="ex">'+esc(d.excerpt||'빈 문서')+'</span>'
@@ -6500,8 +6421,6 @@
         +'<div class="doc-meta">'
         +'<label for="doc-project">프로젝트</label>'
         +'<select id="doc-project">'+pick(data.projects||[],d.project?.id||'','매달지 않음',p=>p.id,p=>p.name)+'</select>'
-        +'<label for="doc-team">팀</label>'
-        +'<select id="doc-team">'+pick(data.teams||[],d.team?.key||'','매달지 않음',t=>t.key,t=>t.key+' · '+t.name)+'</select>'
         +'<span class="grow"></span><span>'+d.words+'단어 · '+esc(fmt(d.updated_at))+' 고침</span></div>'
         +'<div class="doc-body">'+(state.tickets.docEditing
           ?'<textarea id="doc-text" maxlength="200000" placeholder="마크다운으로 자유롭게 적으세요">'+esc(d.body||'')+'</textarea>'
@@ -6519,7 +6438,6 @@
       };
       $('#doc-title').onchange=e=>saveDoc({title:e.target.value.trim()}).then(renderDoc);
       $('#doc-project').onchange=e=>saveDoc({project:e.target.value}).then(renderDoc);
-      $('#doc-team').onchange=e=>saveDoc({team:e.target.value}).then(renderDoc);
       const text=$('#doc-text');
       if(text){
         // 타자를 멈추면 저장한다. 저장 단추를 따로 두면 사람은 그것을 안 누르고 창을 닫는다.
@@ -6554,9 +6472,6 @@
       // 보기 표시는 어느 갈래로 가든 먼저 맞춘다 — 프로젝트 보기에서 일찍 돌아가면
       // 눌린 단추가 '보드'에 머물러, 화면과 단추가 서로 다른 말을 한다.
       $$('[data-tk-mode]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.tkMode===state.tickets.mode)));
-      if(state.tickets.mode==='teams'){
-        stage.innerHTML=renderTeams();wireTeams();return;
-      }
       if(state.tickets.mode==='docs'){
         stage.innerHTML=renderDocs();
         $$('#tk-stage [data-tk-doc]').forEach(b=>b.onclick=()=>openDoc(b.dataset.tkDoc));
@@ -6595,12 +6510,13 @@
         el.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();openTicket(el.dataset.tkCard)}};
         el.onmousedown=e=>tkGrab(e,el);
       });
-      /* 그룹 머리의 `+` — 그 칸으로 바로 티켓 하나. 상태를 고른 뒤 폼을 여는 대신
-         **누른 칸이 곧 상태**다(목록에서 가장 잦은 동작이라 왕복을 없앤다). */
+      /* 그룹 머리의 `+` — 그 칸으로 바로 티켓 하나. 판을 연 뒤 상태를 고르게 하는 대신
+         **누른 칸이 곧 상태**다(목록에서 가장 잦은 동작이라 왕복을 없앤다).
+         상태 칸은 판을 연 다음에 넣는다 — 여는 쪽이 목록을 다시 채우기 때문이다. */
       $$('[data-iss-add]').forEach(b=>b.onclick=e=>{
         e.stopPropagation();
-        const form=$('#tk-new-form');
-        if(form){form.hidden=false;$('#tk-ns').value=b.dataset.issAdd;$('#tk-nt').focus()}
+        tkOpenCreate('#tk-new-dialog','#tk-nt');
+        $('#tk-ns').value=b.dataset.issAdd;
       });
     }
     /* 카드 끌기 — HTML5 드래그(dragstart/drop)는 안 쓴다. 이 창은 브라우저와 네이티브 웹뷰
@@ -6844,24 +6760,29 @@
       const payload={title,body:$('#tk-nb').value,status:$('#tk-ns').value,
         priority:Number($('#tk-np').value),assignee:$('#tk-na').value.trim(),reporter:'odin',
         labels:$('#tk-nl').value.split(',').map(x=>x.trim()).filter(Boolean),actor:'odin'};
-      /* 보고 있는 팀·프로젝트가 곧 적을 자리다 — 걸러 놓고 만들었는데 다른 데로 가면,
-         방금 만든 티켓이 화면에서 사라진다. ('*'는 범위지 자리가 아니라 안 싣는다.) */
-      const team=state.tickets.filter.team;
-      if(team&&team!=='*')payload.team=team;
+      /* 보고 있는 프로젝트가 곧 적을 자리다 — 걸러 놓고 만들었는데 다른 데로 가면,
+         방금 만든 티켓이 화면에서 사라진다. */
       if(state.tickets.filter.project)payload.project=state.tickets.filter.project;
       try{
         const t=await api('/api/tickets',{method:'POST',body:JSON.stringify(payload)});
         ['#tk-nt','#tk-nb','#tk-na','#tk-nl'].forEach(id=>$(id).value='');
-        $('#tk-new-form').hidden=true;
+        $('#tk-new-dialog').close();
         await loadTickets();openTicket(t.key);toast(t.key+' 발급');
       }catch(e){toast(e.message)}
     }
     let tkSearchTimer=null;
-    $('#tk-new-btn').onclick=tkToggleCreate;
-    $('#tk-cancel').onclick=()=>{$('#tk-new-form').hidden=true};
-    $$('[data-tk-cancel]').forEach(b=>b.onclick=()=>{b.closest('form').hidden=true});
+    $('#tk-new-btn').onclick=()=>{const entry=tkCreate();tkOpenCreate(entry.dialog,entry.focus)};
+    /* 닫는 손잡이는 머리의 닫기와 취소가 함께 단다. Esc 와 판 바깥 클릭은 <dialog> 공통
+       배선(아래 dialog.app-dialog)이 받는다. 어느 쪽이든 close() 하나로 끝난다. */
+    $$('[data-tk-cancel]').forEach(b=>b.onclick=()=>b.closest('dialog')?.close());
+    TK_DIALOGS.forEach(sel=>$(sel).addEventListener('close',()=>{
+      const back=tkCreateFrom;tkCreateFrom=null;
+      /* close 이벤트는 큐를 거쳐 뒤늦게 오므로, 판을 갈아 끼우는 중이면 방금 연 판에서
+         초점을 도로 가져간다. 그때는 아무것도 안 한다. */
+      if(modalOpen())return;
+      if(back?.isConnected)back.focus();
+    }));
     $('#tk-new-form').onsubmit=e=>{e.preventDefault();createTicket()};
-    $('#tk-team-form').onsubmit=e=>{e.preventDefault();createTeam()};
     $('#tk-project-form').onsubmit=e=>{e.preventDefault();createProject()};
     $('#tk-doc-form').onsubmit=e=>{e.preventDefault();createDoc()};
     $('#tk-search').oninput=e=>{clearTimeout(tkSearchTimer);const v=e.target.value.trim();
@@ -6978,6 +6899,7 @@
     document.addEventListener('keydown',e=>{
       if(e.key!=='Escape'||$('#tk-drawer').hidden)return;
       if(!$('#palette').hidden)return;  /* 팔레트가 위에 떠 있으면 그쪽이 먼저 닫힌다 */
+      if(modalOpen())return;  /* 만들기 판이 떠 있으면 Esc 는 그 판만 닫는다 */
       closeTicket();
     });
 
@@ -7340,6 +7262,9 @@ let section=kind,values={};if(kind==='ui')values={theme:'dark',density:$('#densi
     $('#agent-new').onclick=openAgentCreate;
     $('#agent-create-close').onclick=()=>$('#agent-create-dialog').close();
     $('#agent-create-cancel').onclick=()=>$('#agent-create-dialog').close();
+    /* 판 바깥을 누르면 닫는다 — <dialog> 는 백드롭을 누른 클릭도 대상이 dialog 자신이라,
+       안쪽 판을 누른 것과 이 비교 하나로 갈린다. 모든 .app-dialog 가 같이 받는다. */
+    $$('dialog.app-dialog').forEach(d=>d.addEventListener('click',e=>{if(e.target===d)d.close()}));
     $('#agent-create-form').onsubmit=createAgent;
     $('#agent-bind-slot').onchange=renderAgentBinding;
     $('#agent-bind').onclick=()=>changeAgentBinding(false);
@@ -7438,6 +7363,9 @@ let section=kind,values={};if(kind==='ui')values={theme:'dark',density:$('#densi
     pal.input.oninput=palFilter;
     pal.box.onclick=e=>{if(e.target===pal.box)palClose()};
     document.addEventListener('keydown',e=>{
+      /* 모달이 떠 있는 동안은 전역 단축키를 안 듣는다 — 팔레트는 top layer 밖이라 열어도
+         판 뒤에 가리고, 레일 접기는 그 판에서 안 보인다. */
+      if(modalOpen())return;
       if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();pal.box.hidden?palOpen():palClose();return}
       /* ⌘\ — 레일 접기. 글을 쓰는 중에도 듣는다(수식 키가 붙은 역슬래시는 어느 칸에서도 글자가
          아니다). 팔레트가 떠 있어도 같다: 접기는 무엇을 고르는 일이 아니라 창을 넓히는 일이다. */
