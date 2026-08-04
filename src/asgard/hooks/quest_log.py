@@ -837,10 +837,18 @@ def _testfile(p: str) -> bool:
 def deleted_tests(root: str, base_ref: str | None) -> list[str]:
     """base_ref 이후 삭제된 테스트 파일 — 테스트를 지워 green을 사는 경로 차단 (anti-Goodhart,
     Anthropic feature-ledger "removing tests is unacceptable" analog). 삭제만 본다 — 테스트 수정은
-    정상 작업이라 전부 full로 올리면 세금이 되레 는다. verifier_gate.py와 동일 유지 (단일 출처 원칙)."""
+    정상 작업이라 전부 full로 올리면 세금이 되레 는다. verifier_gate.py와 동일 유지 (단일 출처 원칙).
+
+    현재 쪽도 트리로 맞댄다 (diff_state와 같은 형상). base_ref는 미추적 파일까지 담은 트리라
+    (snapshot_ref의 `add -A`) 색인과 맞대면 디스크에 멀쩡히 있는 미추적 파일이 전부 삭제로
+    잡힌다 — 미추적 테스트 파일 하나가 모든 쓰기 퀘스트를 full Verifier로 올린다 (26-08-04
+    실측: 이 저장소의 미추적 테스트 4개가 24줄 변경을 full로 올렸다). 현재 트리를 못 뜨면
+    종전 비교로 남는다 — 과다 트리거는 안전한 방향이다."""
     if not base_ref or base_ref == "NONE":
         return []
-    _, out = git(root, "diff", "--name-only", "--diff-filter=D", base_ref, "--", ".", ":(exclude).asgard")
+    current_ref = current_tree_ref(root)
+    refs = [base_ref, current_ref] if current_ref else [base_ref]
+    _, out = git(root, "diff", "--name-only", "--diff-filter=D", *refs, "--", ".", ":(exclude).asgard")
     return [p for p in out.splitlines() if p.strip() and _testfile(p)]
 
 
@@ -1069,10 +1077,15 @@ _SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn |return\b
 def signature_risk(root: str, base_ref: str | None) -> bool:
     """diff에 삭제·변경된 공개 선언·반환 라인 존재 여부 — 숨은-caller/값 형태 리스크 신호.
     '-' 라인만 본다: 신규 추가(+def)는 기존 caller가 없고, 바뀐 줄은 기존 '-' 절반이 잡힌다.
-    게이트-우선(STANDARD) 라우팅 전용 — verifier_gate 대응 불필요."""
+    게이트-우선(STANDARD) 라우팅 전용 — verifier_gate 대응 불필요.
+
+    현재 쪽을 트리로 맞대는 이유는 deleted_tests와 같다 — 색인과 맞대면 미추적 파일이 통째로
+    '-' 라인이 되어 있지도 않은 시그니처 삭제가 잡힌다."""
     if not base_ref or base_ref == "NONE":
         return False
-    rc, out = git(root, "diff", "-U0", base_ref, "--", ".", ":(exclude).asgard")
+    current_ref = current_tree_ref(root)
+    refs = [base_ref, current_ref] if current_ref else [base_ref]
+    rc, out = git(root, "diff", "-U0", *refs, "--", ".", ":(exclude).asgard")
     if rc != 0:
         return False
     return any(_SIG_PAT.match(line) for line in out.splitlines())

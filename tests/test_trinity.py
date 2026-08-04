@@ -1343,6 +1343,19 @@ class TestBaseline(TrinityBase):
         self.assertEqual(gp.get("decision"), "block")
         self.assertIn("deleted tests", gp.get("reason", ""))
 
+    def test_untracked_test_file_is_not_a_deleted_test(self):
+        """미추적 테스트가 디스크에 멀쩡히 있는데 삭제로 잡히면, 그 저장소의 모든 쓰기 퀘스트가
+        무엇을 고치든 full Verifier 로 간다 — base_ref 는 미추적까지 담은 트리라 색인과 맞대면
+        안 되고 현재 트리와 맞대야 한다 (26-08-04 실측: 미추적 4개가 24줄 변경을 full 로 올렸다)."""
+        self.write("tests/test_untracked.py", "def test_a(): pass\n")  # 커밋하지 않는다
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        st = jout(self.qlog("state"))
+        self.assertEqual(st["deleted_tests"], [])
+        self.assertFalse(st["full_required"])
+        self.assertFalse(st["sig_risk"])
+        self.assertTrue(os.path.exists(os.path.join(self.root, "tests", "test_untracked.py")))
+
 
 class TestDetectChecks(unittest.TestCase):
     """베이스라인 자동 감지 (uv-우선) — uv 프로젝트는 uv run, 아니면 PATH pytest, 명시 정책 최우선."""

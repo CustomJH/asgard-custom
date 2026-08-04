@@ -393,10 +393,15 @@ def _testfile(p):
 
 def deleted_tests(root, base_ref):
     """quest_log.py의 deleted_tests와 동일 유지 (단일 출처 원칙) — 테스트를 지워 green을 사는
-    경로 차단 (anti-Goodhart). 삭제된 테스트 파일이 있으면 full-verify 강제."""
+    경로 차단 (anti-Goodhart). 삭제된 테스트 파일이 있으면 full-verify 강제.
+
+    현재 쪽도 트리로 맞댄다 — base_ref는 미추적 파일까지 담은 트리라 색인과 맞대면 디스크에
+    있는 미추적 테스트가 삭제로 잡힌다 (quest_log.deleted_tests와 같은 수리)."""
     if not base_ref or base_ref == "NONE":
         return []
-    _, out = git(root, "diff", "--name-only", "--diff-filter=D", base_ref, "--", ".", ":(exclude).asgard")
+    current_ref = current_tree_ref(root)
+    refs = [base_ref, current_ref] if current_ref else [base_ref]
+    _, out = git(root, "diff", "--name-only", "--diff-filter=D", *refs, "--", ".", ":(exclude).asgard")
     return [p for p in out.splitlines() if p.strip() and _testfile(p)]
 
 
