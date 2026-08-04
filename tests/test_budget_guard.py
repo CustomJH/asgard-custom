@@ -229,21 +229,30 @@ class TestHookProtocol(unittest.TestCase):
     def _payload(self, transcript, **extra):
         return {"cwd": self.root, "transcript_path": transcript, **extra}
 
-    def test_claude_block_is_exit_two_with_stderr(self):
-        code, _, err = _run(self._payload(self.over), ["claude-code", "prompt"])
+    def test_claude_prompt_ceiling_injects_instead_of_erasing(self):
+        # exit 2는 방금 입력한 프롬프트를 지운다 — 지출은 그대로고 마무리를 지시할 통로만 없어진다.
+        code, out, err = _run(self._payload(self.over), ["claude-code", "prompt"])
+        self.assertEqual(code, 0)
+        self.assertIn("[gate:budget-ceiling]", out)
+        self.assertEqual(err, "")
+
+    def test_codex_prompt_ceiling_injects_instead_of_erasing(self):
+        code, out, err = _run(self._payload(self.over), ["codex", "prompt"])
+        self.assertEqual(code, 0)
+        self.assertIn("budget-ceiling", json.loads(out)["hookSpecificOutput"]["additionalContext"])
+        self.assertEqual(err, "")
+
+    def test_cursor_prompt_ceiling_does_not_stop_the_prompt(self):
+        # 남은 출력이 continue=False 뿐이고 그것이 곧 지우는 동작이라, Cursor 메인 레인은 조용하다.
+        code, out, err = _run(self._payload(self.over), ["cursor", "prompt"])
+        self.assertEqual((code, out, err), (0, "", ""))
+
+    def test_claude_task_ceiling_still_denies_the_spawn(self):
+        # 스폰 거부는 회복 가능하다 — 도구 호출 하나가 거절되고 모델이 사유를 읽는다.
+        payload = self._payload(self.over, tool_input={"subagent_type": "asgard-worker"})
+        code, _, err = _run(payload, ["claude-code", "task"])
         self.assertEqual(code, 2)
         self.assertIn("[gate:budget-ceiling]", err)
-
-    def test_codex_block_is_exit_two(self):
-        code, _, err = _run(self._payload(self.over), ["codex", "prompt"])
-        self.assertEqual(code, 2)
-        self.assertIn("budget-ceiling", err)
-
-    def test_cursor_prompt_block_uses_continue_false(self):
-        # beforeSubmitPrompt는 permission 스키마가 아니다 — 한 스키마로 밀면 한쪽이 조용히 통과한다.
-        code, out, _ = _run(self._payload(self.over), ["cursor", "prompt"])
-        self.assertEqual(code, 0)
-        self.assertIs(json.loads(out)["continue"], False)
 
     def test_cursor_task_block_uses_permission_deny(self):
         code, out, _ = _run(self._payload(self.over, tool_input={"subagent_type": "asgard-worker"}), ["cursor", "task"])

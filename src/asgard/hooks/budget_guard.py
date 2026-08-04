@@ -25,10 +25,18 @@
 #
 # 헬리오스가 못 찾던 agent_type이 여기 있다. 훅 페이로드가 아니라 디스크가 정본이다.
 #
-# ── 왜 두 지점을 다 막는가 ──────────────────────────────────────────────────────────
+# ── 지점은 둘, 거부는 하나 ──────────────────────────────────────────────────────────
 # 트랜스크립트 381세션 실측에서 상위 소비 세션(29.3M·28.8M·24.5M cost unit)은 **서브에이전트
-# 호출이 0** 이었다. 진짜 지출은 메인 레인에서 난다. Task 스폰만 막으면 최대 지출을 통째로
-# 놓친다. 그래서 UserPromptSubmit(턴 시작 전)과 PreToolUse(Task)(스폰 전) 둘 다에 건다.
+# 호출이 0** 이었다. 진짜 지출은 메인 레인에서 난다. Task 스폰만 재면 최대 지출을 통째로
+# 놓친다. 그래서 UserPromptSubmit(턴 시작 전)과 PreToolUse(Agent)(스폰 전) 둘 다에서 잰다.
+# 거부는 그중 스폰 지점에만 있다.
+#
+# UserPromptSubmit 의 거부(exit 2)는 방금 입력한 프롬프트를 지운다. 지워진 프롬프트는 이미 나간
+# 지출을 되돌리지 못하고, 트랜스크립트는 자라기만 하므로 다음 프롬프트도 같은 자리에서 지워진다.
+# 상한 문구는 "마무리하고 무엇이 남았는지 보고하라"인데, 그 문구를 읽어야 할 모델의 턴이 시작되지
+# 않는다 — 설정을 고치기 전에는 세션 안에서 빠져나올 통로가 없다. 그래서 메인 레인은 상한에서도
+# 지시를 컨텍스트에 넣고 턴을 연다. PreToolUse 의 거부는 도구 호출 하나가 거절되고 모델이 사유를
+# 읽는 자리라 다르다: 세션은 살아 있고 남은 일은 메인 레인에서 이어진다.
 #
 # ── 왜 원시 토큰이 아니라 가중 비용 단위인가 ──────────────────────────────────────────
 # 같은 실측에서 한 세션의 cache_read가 14.4M, output이 106k 였다. 원시 합으로 상한을 걸면
@@ -87,8 +95,11 @@ DEFAULTS = {
 GATE_MESSAGES = {
     "budget-ceiling": (
         "Session spend {spent} cost units has reached the ceiling ({limit}). "
-        "Wrap up: report what is done, what remains, and stop. To continue, either start a "
-        "fresh session or raise budget.session_cost_units in .asgard/asgard-setting-project.json."
+        "Finish the deliverable in hand, report what is done and what remains, and start no new "
+        "work in this session. Subagent dispatch is refused from here under the default "
+        "`budget.enforce: block`. To lift the ceiling, raise budget.session_cost_units in "
+        ".asgard/asgard-setting-project.json — the limit is one number for every model, so a "
+        "session on a large-context model reaches it in fewer turns."
     ),
     "budget-agent-ceiling": (
         "Subagent role `{role}` has consumed {spent} cost units this session (limit {limit}). "
@@ -346,8 +357,9 @@ def emit(current_client: str, text: str, event: str, current_action: str = "prom
     """주입 스키마는 클라이언트마다 다르다 — unattended-context·map-activate와 동일 유지 (단일 규약).
 
     Cursor의 beforeSubmitPrompt는 컨텍스트 주입 통로가 없다 (출력이 continue/user_message 뿐,
-    cursor.com/docs/hooks 26-07-27 확인) — 경고는 조용히 버린다. 틀린 스키마를 내면 훅 전체가
-    파싱 실패로 죽어서 **차단까지 같이 사라진다**. 경고 하나를 잃는 편이 게이트를 잃는 것보다 낫다."""
+    cursor.com/docs/hooks 26-07-27 확인). 남은 continue=False 는 프롬프트를 지우는 그 동작이라
+    상한 안내에도 쓸 수 없다 — Cursor 메인 레인은 경고도 상한도 내보내지 않고, 사람 표면은
+    `asgard budget` 하나다. 틀린 스키마를 내면 훅 전체가 파싱 실패로 죽어 스폰 거부까지 사라진다."""
     if current_client == "cursor":
         if current_action == "prompt":
             return
@@ -364,17 +376,13 @@ def emit(current_client: str, text: str, event: str, current_action: str = "prom
         sys.stdout.write(text)
 
 
-def deny(current_client: str, message: str, current_action: str = "prompt") -> None:
-    """차단 — Claude Code/Codex는 exit 2 + stderr (git-guard와 동일 규약).
+def deny(current_client: str, message: str) -> None:
+    """스폰 거부 — Claude Code/Codex는 exit 2 + stderr (git-guard와 동일 규약).
 
-    Cursor는 이벤트마다 차단 스키마가 다르다: preToolUse는 permission JSON, beforeSubmitPrompt는
-    continue/user_message. 한 스키마로 밀면 한쪽이 조용히 통과한다."""
+    메인 레인에는 호출자가 없다: UserPromptSubmit 의 거부는 프롬프트를 지우기 때문이다(모듈 주석).
+    남은 지점이 PreToolUse 하나라서 Cursor 도 스키마가 permission JSON 하나로 좁아진다."""
     if current_client == "cursor":
-        payload = (
-            {"continue": False, "user_message": message}
-            if current_action == "prompt"
-            else {"permission": "deny", "user_message": message, "agent_message": message}
-        )
+        payload = {"permission": "deny", "user_message": message, "agent_message": message}
         sys.stdout.write(json.dumps(payload, ensure_ascii=False))
         sys.exit(0)
     print(message, file=sys.stderr)
@@ -418,8 +426,10 @@ def main() -> None:
     result = verdict(ledger, limits, role)
 
     if result.action == "block":
-        if enforce == "block":
-            deny(current_client, "Asgard budget-guard — " + result.message, current_action)
+        # 거부는 스폰 레인에만 있다 — 메인 레인의 거부는 프롬프트를 지우고, 지워진 프롬프트는
+        # 지출을 되돌리지 못한다(모듈 주석). 상한에서도 메인 레인은 지시를 넣고 턴을 연다.
+        if enforce == "block" and current_action == "task":
+            deny(current_client, "Asgard budget-guard — " + result.message)
         emit(current_client, "[asgard budget] " + result.message, _EVENT[current_action], current_action)
         sys.exit(0)
     if result.action == "warn":
