@@ -1097,6 +1097,24 @@ class AgentSession:
 # ── 퀘스트 로그·게이트 subprocess 래퍼 — 훅을 배포 형태 그대로 (36/36 테스트된 계약) ──
 
 
+def _ql_timeout(root: str) -> int:
+    """append(PASS) 하나가 이 프로세스 안에서 얼마나 오래 걸릴 수 있는가.
+
+    그 호출은 하네스 베이스라인과 계약 명령을 직접 실행한다 (체크당 `baseline_timeout`, 최대 10개).
+    상한을 상수로 적어 두면 정책이 커질 때 조용히 어긋나고, 그때 죽는 것은 **이미 끝난 Verifier 턴
+    전체**다 — 판정을 처음부터 다시 사야 하므로 이 시스템에서 가장 비싼 실패다. 그래서 정책에서
+    계산한다. 마지막 120초는 지도 갱신·트리 해시 두 번 같은 나머지 몫이다."""
+    from ..hooks.quest_log import DEFAULT_POLICY, detect_checks, load_policy
+
+    try:
+        policy = load_policy(root)
+        per_check = int(policy.get("baseline_timeout") or 120)
+        checks = min(len(detect_checks(root, policy)), 10) or 1
+    except Exception:  # 정책을 못 읽어도 append 는 돌아야 한다 — 내장 기본값으로 계산
+        per_check, checks = int(DEFAULT_POLICY["baseline_timeout"]), 1
+    return per_check * (checks + 1) + 120
+
+
 def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subprocess.CompletedProcess:
     return subprocess.run(
         [sys.executable, "-m", "asgard.hooks.quest_log", *args, "--session", session],
@@ -1106,7 +1124,7 @@ def ql(root: str, *args: str, stdin: str = "", session: str = "native") -> subpr
         encoding="utf-8",
         errors="replace",
         cwd=root,
-        timeout=300,  # append(PASS)가 하네스 베이스라인 체크를 직접 돌린다 (체크당 기본 120s)
+        timeout=_ql_timeout(root),
     )
 
 

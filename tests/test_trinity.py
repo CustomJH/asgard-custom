@@ -7,6 +7,7 @@ python3 <file> 로 도는 것과 동일 경로. 임시 git repo를 만들어 시
 실행: uv run pytest tests/test_trinity.py
 """
 
+import hashlib
 import io
 import json
 import os
@@ -2075,6 +2076,113 @@ class TestCompletionFunnel(TrinityBase):
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "LAST")))
 
 
+class TestVerifyCostControls(TrinityBase):
+    """판정 기준은 그대로 두고 중복 실행과 중복 대기만 없앤다 — 판정 결과가 같은지까지 함께 본다."""
+
+    def last_event(self):
+        with open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")) as handle:
+            return json.loads(handle.read().splitlines()[-1])
+
+    def test_deleted_test_is_full_level_from_the_first_verdict(self):
+        """level 과 full_required 가 어긋나면 micro PASS 가 거부돼 같은 diff 를 두 번 판정한다.
+
+        테스트를 지운 작은 diff 는 full_required 라서, 전이가 micro 를 배정하면 그 PASS 는
+        completion_decision 이 micro-pass 로 되돌린다 — 판정 결과는 같고 Verifier 턴만 하나 늘었다."""
+        self.write("tests/test_app.py", "def test_x():\n    assert True\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.root, "commit", "-qm", "add test"], check=True)
+        self.open_quest()
+        os.remove(os.path.join(self.root, "tests", "test_app.py"))
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["verify_level"], "full")
+
+    SLOW_TEST = (
+        "import time, unittest\n\n\nclass T(unittest.TestCase):\n    def test_slow(self):\n        time.sleep(5)\n"
+    )
+
+    def test_a_timed_out_check_is_not_paid_for_twice(self):
+        """timeout 은 red 도 green 도 아니다 (증거 없음). 다시 돌려도 판정은 그대로라 기다림만 남는다."""
+        self.write("slow_test.py", self.SLOW_TEST)
+        self.policy(baseline_checks=["python3 -m unittest slow_test"], baseline_timeout=1)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()
+        self.assertTrue(self.last_event()["baseline"]["results"][0].get("timed_out"))
+        self.write("app.py", "print('ok2')\n")  # diff_hash 가 달라져 캐시는 못 쓴다
+        self.verify()
+        row = self.last_event()["baseline"]["results"][0]
+        self.assertTrue(row.get("memo"))
+        self.assertEqual(row["secs"], 0.0)
+        self.assertEqual(jout(self.qlog("state"))["baseline_state"], "none")  # 판정은 그대로 증거 없음
+
+    def test_contract_reuses_the_baseline_run_of_the_same_command(self):
+        """`verify:` 계약이 baseline 체크와 같은 명령이면 같은 트리에서 두 번 돌 이유가 없다."""
+        self.policy(baseline_checks=["python3 -m compileall -q ."])
+        self.qlog("open", "q1", "--criteria", "컴파일된다 | verify: python3 -m compileall -q .")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
+        check = self.last_event()["criteria_checks"][0]
+        self.assertTrue(check.get("shared"))
+        self.assertEqual(check["exit_code"], 0)  # 공유해도 계약 충족 판정은 동일
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
+
+    def test_the_baseline_lane_reuses_its_own_run_for_the_same_contract(self):
+        """LLM 없이 끝나는 싼 레인도 계약이 baseline 과 같은 명령이면 두 번 돌 이유가 없다.
+
+        공유는 append 경로에만 붙어 있었다 — 정작 지연을 줄이려고 만든 레인이 스위트를 두 번 물었다."""
+        # 행위 테스트 러너만 LLM 판정자를 대신할 수 있다 (gate_first_checks_available) — 이 레인을
+        # 실제로 세우려면 baseline 이 pytest 여야 한다.
+        self.policy(baseline_checks=["python3 -m pytest -q"])
+        self.qlog("open", "q1", "--criteria", "테스트가 초록이다 | verify: python3 -m pytest -q")
+        self.write("app.py", "print('ok')\n")
+        self.write("tests/test_app.py", "def test_ok():\n    assert True\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.assertEqual(jout(self.qlog("verify-baseline"))["verdict"], "PASS")
+        check = self.last_event()["criteria_checks"][0]
+        self.assertTrue(check.get("shared"))
+        self.assertEqual(check["exit_code"], 0)  # 공유해도 계약 충족 판정은 동일
+
+    def test_a_baseline_slower_than_the_timeout_names_the_command(self):
+        """체크가 상한보다 느리면 이 레인은 영영 못 서고 모든 쓰기 퀘스트가 LLM Verifier 로 간다.
+
+        종전 메시지는 그 자리를 '체크 없음/전부 skip' 으로 뭉갰다 — 읽는 사람은 판정 결과로 알지
+        설정 결함으로 안 읽는다. 고칠 곳이 baseline_timeout 인지 명령 범위인지 말해야 한다."""
+        self.write("tests/test_slow.py", "import time\n\n\ndef test_slow():\n    time.sleep(5)\n")
+        subprocess.run(["git", "-C", self.root, "add", "-A"], check=True)
+        subprocess.run(["git", "-C", self.root, "commit", "-qm", "slow"], check=True)
+        self.policy(baseline_checks=["python3 -m pytest -q"], baseline_timeout=1)
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        p = self.qlog("verify-baseline")
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn("baseline_timeout", p.stderr)
+        self.assertIn("python3 -m pytest -q", p.stderr)
+
+    def test_the_append_timeout_follows_the_policy_not_a_constant(self):
+        """append 가 baseline 보다 먼저 끊기면 이미 끝난 Verifier 턴 전체를 다시 사야 한다.
+
+        상수로 적힌 상한은 정책의 baseline_timeout 이 커질 때 조용히 어긋난다 — 정책에서 계산해야
+        둘이 갈라지지 않는다."""
+        from asgard.agent.session import _ql_timeout
+
+        self.policy(baseline_checks=["python3 -m compileall -q ."], baseline_timeout=600)
+        self.assertGreater(_ql_timeout(self.root), 600 * 2)  # 체크 1개 + 계약 몫보다 커야 한다
+
+    def test_a_contract_slower_than_the_timeout_says_so(self):
+        """계약이 timeout 보다 느리면 영영 못 채운다. 미충족은 유지하되 이유를 실패로 적지 않는다 —
+        수리 턴이 멀쩡한 코드를 고치러 가는 것을 막는다."""
+        self.write("slow_test.py", self.SLOW_TEST)
+        self.policy(baseline_timeout=1)
+        self.qlog("open", "q1", "--criteria", "느린 계약 | verify: python3 -m unittest slow_test")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        self.verify("PASS", commands=[{"cmd": "git status", "exit_code": 0}])
+        unmet = jout(self.qlog("state"))["contracts_unmet"]
+        self.assertTrue(any("timed out" in u for u in unmet), unmet)
+        self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "VERIFIER")
+
+
 class TestCriteriaContracts(TrinityBase):
     """criteria verify 계약 — 계약 선언 기준은 하네스가 명령·산출물을 직접 결속 (무관한 exit-0 무효)."""
 
@@ -2921,6 +3029,30 @@ class TestPipelineVerification(TrinityBase):
         self.finish(1)
         self.assertEqual(jout(self.qlog("state"))["verifiable_units"], ["1"])
         self.assertNotEqual(self.qlog("close").returncode, 0)
+
+
+class TestGateCopyParity(TrinityBase):
+    """게이트 사본이 로그 정본과 같은 답을 내는가 — 같은 트리에 두 코드를 나란히 세워 본다."""
+
+    def test_stale_pass_scope_agrees_across_both_copies(self):
+        """반환 형상까지 같아야 한다. 첫 값이 목록에서 bool 로 되돌아가면 게이트의 `stale[:10]` 이
+        TypeError 로 죽고, 훅 계약이 fail-open 이라 그 죽음은 조용하다 — 판정 없이 통과한다."""
+        from asgard.hooks import quest_log, verifier_gate
+
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        events = [{"role": "worker", "event": "work", "changed_files": ["app.py"]}]
+        last_pass = {"tree_ref": "", "changed_files": ["app.py"]}  # tree_ref 없음 = fail-safe 갈래
+        self.assertEqual(
+            quest_log.stale_pass_scope(self.root, last_pass, events, ["app.py"]),
+            verifier_gate.stale_pass_scope(self.root, last_pass, events, ["app.py"]),
+        )
+        digests = []
+        for module in (quest_log, verifier_gate):
+            digest = hashlib.sha256()
+            changed = module.reconcile_ignored(self.root, {"build/out.o": "1", "src/kept.py": "1"}, digest)
+            digests.append((changed, digest.hexdigest()))
+        self.assertEqual(digests[0], digests[1])
 
 
 class TestPolicyMirror(unittest.TestCase):

@@ -428,10 +428,48 @@ def current_tree_ref(root: str) -> str | None:
 # ".cache": 리포 안 XDG 캐시 (CC 샌드박스가 UV_CACHE_DIR를 cwd/.cache/uv로 주입) — uv 캐시
 # 전체가 ignored_snapshot에 해시로 실려 퀘스트 로그 1.5MB 블롯이 됐다 (26-07-23 실측).
 _JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv", ".cache"}
+# 두 목록을 나눠 두는 이유 — 두 소비처가 보는 파일 집합이 다르다.
+# `_junk`는 current_tree_ref에서 **추적되지 않은**(`ls-files --others --exclude-standard`,
+# `--ignored` 없음) 파일을 트리 스냅샷에서 뺀다. 여기를 넓히면 gitignore되지 않은 새 소스
+# `build/x.py`가 스냅샷에서 사라져 diff 해시에 안 잡힌다 — 게이트가 증거를 못 보는 구멍이다.
+# `_generated`는 ignored_state에서 **이미 무시된** 파일만 본다. 무시된 빌드 산출물은 증거가
+# 아니고, 빼지 않으면 비용이 워크트리 크기에 묶인다: cargo 릴리스 빌드 하나가 해시 대상을
+# 31MB에서 2,371MB로 올려 ignored_state가 51ms에서 1,257ms가 됐고, 그 값을 state·next·
+# verifier-gate 세 자리가 매 턴 따로 문다 (26-08-04 실측).
+_GENERATED_DIRS = _JUNK_DIRS | {"target", "dist", "build", ".next", ".gradle", "coverage", "htmlcov"}
 
 
 def _junk(p: str) -> bool:
     return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
+
+
+def _generated(p: str) -> bool:
+    return p.endswith((".pyc", ".pyo")) or any(seg in _GENERATED_DIRS for seg in p.split("/"))
+
+
+def reconcile_ignored(root: str, ignored_base: dict[str, str] | None, digest) -> list[str]:
+    """무시 파일의 기준선↔현재 대조. 바뀐 경로를 돌려주고 그 내역을 digest에 먹인다.
+
+    verifier_gate.py의 같은 이름 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 영구 stale).
+    ignored_base가 None이면 대조 대상이 없다는 뜻이라 빈 목록."""
+    if ignored_base is None:
+        return []
+    # 기준선도 현재와 같은 _generated를 태운다. 안 그러면 목록이 넓어진 순간, 열려 있던 퀘스트의
+    # 스냅샷에만 남은 경로가 전부 "사라짐 = 변경"으로 읽혀 PASS가 통째로 stale이 된다
+    # (26-08-04: target 추가 시 changed_files 8,118건).
+    base = {path: value for path, value in ignored_base.items() if not _generated(path)}
+    current = ignored_state(root)
+    changed = sorted(path for path in set(base) | set(current) if base.get(path) != current.get(path))
+    for path in changed:
+        digest.update(
+            b"ignored\0"
+            + path.encode("utf-8", "surrogateescape")
+            + b"\0"
+            + str(base.get(path, "<missing>")).encode()
+            + b"\0"
+            + str(current.get(path, "<missing>")).encode()
+        )
+    return changed
 
 
 def unsafe_map_links(root: str) -> list[str]:
@@ -472,7 +510,7 @@ def sensitive_path(path: str, needles) -> bool:
 
 
 def ignored_state(root: str) -> dict[str, str]:
-    """Hash ignored non-junk files without following symlinks, so they cannot evade quest binding."""
+    """Hash ignored non-generated files without following symlinks, so they cannot evade quest binding."""
     rc, raw = git(
         root,
         "ls-files",
@@ -494,7 +532,7 @@ def ignored_state(root: str) -> dict[str, str]:
         if not item:
             continue
         path = item.decode("utf-8", "surrogateescape")
-        if _junk(path):
+        if _generated(path):
             continue
         full = os.path.join(root, path)
         try:
@@ -575,23 +613,7 @@ def diff_state(
             if not _testfile(parts[2]):
                 nt_lines += n
     h = hashlib.sha256(diff)
-    ignored_changed: list[str] = []
-    if ignored_base is not None:
-        current_ignored = ignored_state(root)
-        ignored_changed = sorted(
-            path
-            for path in set(ignored_base) | set(current_ignored)
-            if ignored_base.get(path) != current_ignored.get(path)
-        )
-        for path in ignored_changed:
-            h.update(
-                b"ignored\0"
-                + path.encode("utf-8", "surrogateescape")
-                + b"\0"
-                + str(ignored_base.get(path, "<missing>")).encode()
-                + b"\0"
-                + str(current_ignored.get(path, "<missing>")).encode()
-            )
+    ignored_changed = reconcile_ignored(root, ignored_base, h)
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
@@ -785,6 +807,26 @@ def fail_lines(stdout: bytes | None, stderr: bytes | None, limit: int = 5) -> li
     return [ln[:200] for ln in (hits or lines[-3:])[:limit]]
 
 
+def _timed_out_before(events: list[dict], cmd: str) -> bool:
+    """이 퀘스트에서 이미 시간을 다 쓰고 끊긴 체크인가.
+
+    timeout 은 red 도 green 도 아니라 증거 없음이다 (run_baseline 의 skip 규약). 그래서 다시
+    돌려도 판정은 한 글자도 안 바뀌고, append 마다 baseline_timeout 만큼 더 기다리기만 한다.
+    26-08-04 실측: 이 저장소의 `uv run pytest -x -q` 는 615s 인데 baseline_timeout 은 120s 라
+    verify append 가 매번 120s 를 태우고 아무 증거도 못 얻었다."""
+    return any(_timed_out_row((event.get("baseline") or {}).get("results"), cmd, 120) for event in events)
+
+
+def _timed_out_row(rows, cmd: str, width: int) -> bool:
+    """기록된 실행 행 중 이 명령이 timeout 으로 끊긴 것이 있는가. width 는 그 표면의 cmd 절단 길이."""
+    return any(isinstance(r, dict) and r.get("timed_out") and r.get("cmd") == cmd[:width] for r in rows or [])
+
+
+def _contract_timed_out_before(events: list[dict], cmd: str) -> bool:
+    """이 퀘스트에서 이미 timeout 으로 끊긴 계약 명령인가 (run_criteria_checks 쪽 기록 형상)."""
+    return any(_timed_out_row(event.get("criteria_checks"), cmd, 200) for event in events)
+
+
 def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) -> dict | None:
     """체크 전부 실행 → {"state": green|red|none, "results": [...]}. 체크 없음 → None (요건 면제).
     같은 diff_hash의 기존 verify 기록은 재사용 — 동일 트리에 pytest를 두 번 돌리지 않는다.
@@ -803,15 +845,23 @@ def run_baseline(root: str, policy: dict, events: list[dict], diff_hash: str) ->
     results: list[dict] = []
     state = "none"
     for cmd in checks[:10]:
+        if _timed_out_before(events, cmd):
+            results.append({"cmd": cmd[:120], "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True})
+            continue
         t0 = time.time()
         code: int | None
         p = None
+        timed_out = False
         try:
             p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
             code = p.returncode
+        except subprocess.TimeoutExpired:
+            code, timed_out = None, True  # skip 취급 (fail-open) — 다음 append 는 memo 로 건너뛴다
         except Exception:
-            code = None  # timeout 포함 — skip 취급 (fail-open)
+            code = None  # 그 밖의 실행 실패도 skip
         row: dict = {"cmd": cmd[:120], "exit_code": code, "secs": round(time.time() - t0, 1)}
+        if timed_out:
+            row["timed_out"] = True
         results.append(row)
         # skip = 체크가 "돌 수 없었다": 127 미설치 · pytest 5 수집 없음 · timeout. 자동 감지 pytest는
         # 2/3/4(수집·사용법 오류 — venv 밖 pytest가 흔한 원인)도 skip — 환경 문제를 코드 red로
@@ -1020,20 +1070,46 @@ def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:
     산출물은 지금(호출 시점) 존재를 라이브 재확인 — 산출물은 .gitignore로 diff-hash 밖일 수 있어
     stale 검사가 삭제를 못 잡는다. 계약이 있는데 기록이 없으면(구버전 이벤트) 미충족 — 재검증 유도."""
     unmet = []
-    checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in (rec.get("criteria_checks") or [])}
+    rows = [c for c in (rec.get("criteria_checks") or []) if isinstance(c, dict)]
+    checks = {(" ".join(str(c.get("cmd", "")).split())): c.get("exit_code") for c in rows}
+    stalled = {" ".join(str(c.get("cmd", "")).split()) for c in rows if c.get("timed_out")}
     for c in criteria_contracts(criteria):
         cmd = c["verify_cmd"]
         if cmd and checks.get(" ".join(cmd.split())) != 0:
-            unmet.append("verify: " + cmd)
+            # timeout 은 실패와 다르다. 그대로 미충족이지만(기준 유지) 이유를 실패로 적으면 수리 턴이
+            # 멀쩡한 코드를 고치러 가고 계약은 영영 안 채워진다 — 고칠 곳은 명령이나 baseline_timeout 이다.
+            if " ".join(cmd.split()) in stalled:
+                unmet.append(f"verify: {cmd} (timed out — narrow the command or raise baseline_timeout)")
+            else:
+                unmet.append("verify: " + cmd)
         for a in c["artifacts"]:
             if not os.path.exists(os.path.join(root, a)):
                 unmet.append("artifact: " + a)
     return unmet
 
 
-def run_criteria_checks(root: str, policy: dict, criteria, events: list[dict], diff_hash: str) -> list[dict] | None:
+def baseline_ran(root: str, policy: dict, baseline: dict | None) -> dict[str, dict]:
+    """이번 판정에서 baseline 이 이미 돌린 명령 → 그 실행 행 (정규화된 명령이 키다).
+
+    두 판정 경로(append·verify-baseline)가 각자 이 짝을 세우면 한쪽만 고쳐진다 — 실제로 그랬다.
+    baseline 은 detect_checks 순서대로 돌고 첫 red 에서 멈추므로 zip 이 실행된 만큼만 짝짓는다."""
+    return {
+        " ".join(cmd.split()): row
+        for cmd, row in zip(detect_checks(root, policy), (baseline or {}).get("results") or [])
+        if isinstance(row, dict)
+    }
+
+
+def run_criteria_checks(
+    root: str, policy: dict, criteria, events: list[dict], diff_hash: str, ran: dict[str, dict] | None = None
+) -> list[dict] | None:
     """계약 명령을 하네스가 직접 실행해 기록 — stdin 위조는 normalize가 버리고 이 코드만이
-    기록 경로 (baseline과 동일). 같은 diff_hash의 기존 기록은 재사용. 계약 없음 → None (요건 면제)."""
+    기록 경로 (baseline과 동일). 같은 diff_hash의 기존 기록은 재사용. 계약 없음 → None (요건 면제).
+
+    `ran`은 이번 append 에서 baseline 이 이미 돌린 명령의 결과다(정규화 명령 → 실행 행). 계약이
+    baseline 체크와 같은 명령이면 — `verify: uv run pytest -q` 처럼 흔하다 — 같은 트리에서 같은
+    스위트를 한 번 더 돌릴 이유가 없다. 물리적으로 같은 실행이고 둘 다 하네스 소유 기록이라
+    판정은 그대로고 append 시간만 절반이 된다."""
     contracts = [c for c in criteria_contracts(criteria) if c["verify_cmd"]]
     if not contracts:
         return None
@@ -1044,14 +1120,31 @@ def run_criteria_checks(root: str, policy: dict, criteria, events: list[dict], d
     timeout = int(policy.get("baseline_timeout") or 120)
     results: list[dict] = []
     for c in contracts:
+        cmd = c["verify_cmd"]
+        shared = (ran or {}).get(" ".join(cmd.split()))
+        if shared and shared.get("exit_code") is not None:
+            results.append({**shared, "cmd": cmd[:200], "shared": True})
+            continue
+        if _contract_timed_out_before(events, cmd):
+            # 계약 명령이 timeout 보다 느리면 그 계약은 이 설정으로는 영영 충족될 수 없다. 미충족은
+            # 그대로 두되(기준 유지) 같은 대기를 append 마다 다시 사지는 않는다 — 판정은 안 바뀌고
+            # 재검증 턴마다 timeout 만큼만 늘어나던 자리다.
+            results.append({"cmd": cmd[:200], "exit_code": None, "secs": 0.0, "timed_out": True, "memo": True})
+            continue
         t0 = time.time()
         code: int | None
+        timed_out = False
         try:
-            p = subprocess.run(c["verify_cmd"], shell=True, cwd=root, capture_output=True, timeout=timeout)
+            p = subprocess.run(cmd, shell=True, cwd=root, capture_output=True, timeout=timeout)
             code = p.returncode
+        except subprocess.TimeoutExpired:
+            code, timed_out = None, True
         except Exception:
-            code = None  # timeout 포함 — 미충족 취급 (계약은 명시 선언이라 skip 면제 없음)
-        results.append({"cmd": c["verify_cmd"][:200], "exit_code": code, "secs": round(time.time() - t0, 1)})
+            code = None  # 미충족 취급 (계약은 명시 선언이라 skip 면제 없음)
+        row: dict = {"cmd": cmd[:200], "exit_code": code, "secs": round(time.time() - t0, 1)}
+        if timed_out:
+            row["timed_out"] = True
+        results.append(row)
     return results
 
 
@@ -1867,6 +1960,11 @@ def _transition_axes(s: dict, policy: dict, flags) -> dict:
     sensitive = bool(s["sensitive_files"]) or flags.shared
     has_write = s["diff_hash"] != EMPTY or s["risk_write"] or flags.write_expected
     gf_small = s.get("nontest_lines", s["diff_lines"]) <= int(policy.get("gate_first_max_lines") or 25)
+    # level과 full_required는 한 식에서 갈라져 나온다. 둘을 따로 쓰면 조용히 어긋난다 — 실제로
+    # 어긋나 있었다: level이 deleted_tests를 안 봐서 테스트를 지운 작은 diff가 micro를 배정받고,
+    # Verifier가 micro로 PASS를 내면 completion_decision이 그 PASS를 micro-pass로 거부해
+    # 같은 diff에 full Verifier 턴이 한 번 더 붙었다 (판정은 그대로, 대기시간만 두 배).
+    full_required = s["full_required"] or flags.shared
     return {
         "features": {
             "has_write": has_write,
@@ -1882,8 +1980,8 @@ def _transition_axes(s: dict, policy: dict, flags) -> dict:
             "external_research": flags.external_research,
         },
         "has_write": has_write,
-        "full_required": s["full_required"] or flags.shared,
-        "level": "full" if (sensitive or big) else "micro",
+        "full_required": full_required,
+        "level": "full" if full_required else "micro",
         "standard_ok": (
             not sensitive
             and not big
@@ -2611,13 +2709,15 @@ def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> N
     # 하네스 소유 베이스라인 — normalize가 stdin baseline을 버린 뒤 여기서만 기록.
     # 무변경(diff EMPTY) 퀘스트는 red의 원인이 될 수 없다 — 전 트리 체크의 타 세션 잔여물 red가
     # 무변경 퀘스트를 인질로 잡지 않게 면제 (26-07-23 감사).
+    ran: dict[str, dict] = {}
     if ev["diff_hash"] != EMPTY:
         bl = run_baseline(root, policy, events, ev["diff_hash"])
         if bl:
             ev["baseline"] = bl
+            ran = baseline_ran(root, policy, bl)
     # criteria verify 계약 — 하네스가 계약 명령을 직접 실행해 기록 (stdin 위조는 normalize가 버림)
     crit = contract_criteria(ev.get("criteria"), *(e.get("criteria") for e in events))
-    cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
+    cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"], ran)
     if cc is not None:
         ev["criteria_checks"] = cc
     # PASS 시점 트리 봉인 — stale 판정의 귀속 범위 대조 축 (stale_pass_scope)
@@ -2680,7 +2780,11 @@ def _baseline_observe(root: str, policy: dict, events: list[dict], ev: dict) -> 
     bl = run_baseline(root, policy, events, ev["diff_hash"]) or {}
     state = bl.get("state")
     if state not in ("green", "red") and map_ok:
-        return {**obs, "state": state, "results": [], "observed_ok": False, "undecidable": True}
+        # 왜 근거가 없는지까지 들려보낸다. 체크가 timeout 으로 끊겨 여기 오는 경우와 체크가 아예
+        # 없는 경우는 고칠 곳이 서로 다른데(baseline_timeout·명령 범위 vs baseline_checks),
+        # 종전 메시지는 둘을 "all skipped" 한 마디로 뭉개 이 레인이 꺼져 있는 줄도 모르게 했다.
+        stalled = [str(r.get("cmd")) for r in (bl.get("results") or []) if isinstance(r, dict) and r.get("timed_out")]
+        return {**obs, "state": state, "results": [], "observed_ok": False, "undecidable": True, "stalled": stalled}
     results = [c for c in bl.get("results", []) if isinstance(c, dict)]
     ev["commands"] = results[:20]
     ev["baseline"] = bl
@@ -2712,7 +2816,11 @@ def _baseline_failing(root: str, policy: dict, events: list[dict], ev: dict, obs
         ev["failure_sig"] = "unsafe-map-link"
         return failing
     crit = contract_criteria(*(e.get("criteria") for e in events))
-    cc = run_criteria_checks(root, policy, crit, events, ev["diff_hash"])
+    # 이 경로도 바로 위에서 baseline 을 돌렸다 — 계약이 같은 명령이면 같은 트리에서 두 번 돌 이유가
+    # 없다. 종전에는 append 만 공유해서, 정작 LLM 없이 끝나는 싼 레인이 스위트를 두 번 물었다.
+    cc = run_criteria_checks(
+        root, policy, crit, events, ev["diff_hash"], baseline_ran(root, policy, ev.get("baseline"))
+    )
     if cc is not None:
         ev["criteria_checks"] = cc
     unmet = unmet_contracts(root, crit, ev)
@@ -2748,6 +2856,16 @@ def _cmd_verify_baseline(root: str, qid: str, events: list[dict], policy: dict, 
     ev = normalize({"role": "harness", "event": "verify"}, events, qid, args.session)
     obs = _baseline_observe(root, policy, events, ev)
     if obs.get("undecidable"):
+        stalled = obs.get("stalled") or []
+        if stalled:
+            # 이 자리는 설정 결함이지 판정이 아니다 — 체크가 상한보다 느리면 이 레인은 영영 못 서고
+            # 모든 쓰기 퀘스트가 LLM Verifier 로 넘어간다. 무엇을 고칠지 명령과 숫자로 말한다.
+            return _error(
+                "the baseline check did not finish inside baseline_timeout (%ds): %s — this leaves the "
+                "deterministic lane permanently off, so every write quest escalates to the LLM Verifier. "
+                "Narrow the command or raise trinity_policy.baseline_timeout."
+                % (int(policy.get("baseline_timeout") or 120), ", ".join(stalled))
+            )
         return _error("cannot render a baseline verdict (no checks/all skipped) — verify with the LLM Verifier")
     ev["verdict"] = "PASS" if obs["observed_ok"] and obs["map_ok"] and obs["snapshot_ok"] else "FAIL"
     failing = _baseline_failing(root, policy, events, ev, obs)

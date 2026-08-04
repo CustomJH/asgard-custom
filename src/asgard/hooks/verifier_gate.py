@@ -232,10 +232,37 @@ def current_tree_ref(root):
 # 검증 실행 아티팩트 — quest_log.py의 _junk와 동일해야 한다 (양쪽 hash 불일치 = 영구 stale).
 # lagom: 고정 목록 — 정책 파일로 빼면 exclude 확대가 게이트 우회 벡터가 되므로 하드코딩 유지.
 _JUNK_DIRS = {"__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", "node_modules", ".venv", ".cache"}
+# 두 목록을 나눠 두는 이유는 quest_log.py의 같은 자리에 적혀 있다 — `_junk`는 추적되지 않은
+# 파일을, `_generated`는 이미 무시된 파일을 본다. 넓은 쪽을 `_junk`에 쓰면 gitignore되지 않은
+# 새 소스가 트리 스냅샷에서 빠져 게이트가 증거를 못 본다.
+_GENERATED_DIRS = _JUNK_DIRS | {"target", "dist", "build", ".next", ".gradle", "coverage", "htmlcov"}
 
 
 def _junk(p):
     return p.endswith((".pyc", ".pyo")) or any(seg in _JUNK_DIRS for seg in p.split("/"))
+
+
+def _generated(p):
+    return p.endswith((".pyc", ".pyo")) or any(seg in _GENERATED_DIRS for seg in p.split("/"))
+
+
+def reconcile_ignored(root, ignored_base, digest):
+    """무시 파일의 기준선↔현재 대조. quest_log.py의 같은 이름 함수와 동일 유지 (단일 출처 원칙)."""
+    if ignored_base is None:
+        return []
+    base = {path: value for path, value in ignored_base.items() if not _generated(path)}
+    current = ignored_state(root)
+    changed = sorted(path for path in set(base) | set(current) if base.get(path) != current.get(path))
+    for path in changed:
+        digest.update(
+            b"ignored\0"
+            + path.encode("utf-8", "surrogateescape")
+            + b"\0"
+            + str(base.get(path, "<missing>")).encode()
+            + b"\0"
+            + str(current.get(path, "<missing>")).encode()
+        )
+    return changed
 
 
 def unsafe_map_links(root):
@@ -292,7 +319,7 @@ def ignored_state(root):
         if not item:
             continue
         path = item.decode("utf-8", "surrogateescape")
-        if _junk(path):
+        if _generated(path):
             continue
         full = os.path.join(root, path)
         try:
@@ -366,23 +393,7 @@ def diff_state(root, base_ref, ignored_base=None):
             if not _testfile(parts[2]):
                 nt_lines += n
     h = hashlib.sha256(diff)
-    ignored_changed = []
-    if ignored_base is not None:
-        current_ignored = ignored_state(root)
-        ignored_changed = sorted(
-            path
-            for path in set(ignored_base) | set(current_ignored)
-            if ignored_base.get(path) != current_ignored.get(path)
-        )
-        for path in ignored_changed:
-            h.update(
-                b"ignored\0"
-                + path.encode("utf-8", "surrogateescape")
-                + b"\0"
-                + str(ignored_base.get(path, "<missing>")).encode()
-                + b"\0"
-                + str(current_ignored.get(path, "<missing>")).encode()
-            )
+    ignored_changed = reconcile_ignored(root, ignored_base, h)
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
