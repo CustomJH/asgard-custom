@@ -668,6 +668,71 @@ def _last_seen(name: str, skills: dict, use: dict) -> float:
         return _time.time()  # 날짜 불명 = 판정 보류 (fail-open)
 
 
+def _auto_baseline_check(root: str, policy: dict, quest_log_mod) -> dict | None:
+    """자동 감지 레인 — 무엇을 고를지, 그것이 상한 안에 드는지 말한다.
+
+    종전에는 `baseline_checks` 가 비면 아무 말도 안 했다 ("사용자가 적은 것이 없으니 말할 것도
+    없다"). 그 침묵이 가장 비싼 자리였다: 감지된 명령이 `baseline_timeout` 보다 느리면 결정론
+    레인은 매번 상한을 태우고 증거 없이 끊기고, **모든 쓰기 퀘스트가 LLM Verifier 로 간다**
+    (quest_log.transition 의 checks_available 갈림길). 이 저장소 26-08-04 실측: 전체 pytest
+    739초 대 상한 120초 — 레인이 원리상 못 선다.
+
+    새로 재지 않는다. 판정 근거는 퀘스트 기장에 이미 있다 — 끊긴 실행은 `timed_out` 로 적힌다."""
+    checks = quest_log_mod.detect_checks(root, policy)
+    if not checks:
+        return {
+            "name": "baseline checks",
+            "ok": True,
+            "detail": "자동 감지 대상 없음 — 게이트는 LLM Verifier 로 판정해요",
+            "fix": "",
+        }
+    timeout = int(policy.get("baseline_timeout") or 120)
+    stalled = sorted({cmd for cmd in checks if _ever_timed_out(root, cmd, quest_log_mod)})
+    listed = ", ".join(cmd[:60] for cmd in checks[:2])
+    if not stalled:
+        return {
+            "name": "baseline checks",
+            "ok": True,
+            "detail": f"자동 감지 · {listed} (상한 {timeout}초)",
+            "fix": "",
+        }
+    # 기장이 받치는 사실만 말한다 — `timed_out` 행은 **그때의** 상한에서 끊겼다는 기록이고,
+    # 지금 설정된 초가 그때와 같다는 보장이 없다 (이 저장소의 행은 120초에서 적혔는데 현재
+    # 설정은 180초다). 지금 값은 고칠 자리를 가리키는 참고로만 붙인다.
+    return {
+        "name": "baseline checks",
+        "ok": False,
+        "detail": f"자동 감지 명령이 이전 실행에서 상한에 끊겼어요: {', '.join(c[:60] for c in stalled)} "
+        f"(현재 상한 {timeout}초) — 결정론 레인이 꺼진 채라 쓰기 퀘스트마다 LLM Verifier 가 붙어요",
+        "fix": "`.asgard/asgard-setting-project.json` → trinity_policy.baseline_checks 에 이 저장소의 "
+        "빠른 행위 검사를 적고(예: `uv run pytest -q -x tests/<범위>`), 필요하면 baseline_timeout 도 "
+        "그 명령이 실제로 쓰는 초로 올려 주세요",
+    }
+
+
+def _ever_timed_out(root: str, cmd: str, quest_log_mod) -> bool:
+    """이 명령이 퀘스트 기장에서 상한에 끊긴 적이 있는가 — 최근 기장만 훑는다 (판정용 관측)."""
+    import glob
+
+    import json as _json
+
+    paths = sorted(glob.glob(os.path.join(root, ".asgard", "quest", "*.jsonl")), key=os.path.getmtime)[-20:]
+    for path in reversed(paths):
+        try:
+            with open(path, encoding="utf-8", errors="replace") as handle:
+                for line in handle:
+                    try:
+                        event = _json.loads(line)
+                    except ValueError:
+                        continue
+                    rows = (event.get("baseline") or {}).get("results")
+                    if quest_log_mod._timed_out_row(rows, cmd, 120):
+                        return True
+        except OSError:
+            continue
+    return False
+
+
 def _baseline_checks_check(root: str) -> dict | None:
     """게이트의 독립 증거 레인 — 적어 둔 체크가 실제로 도는가.
 
@@ -679,7 +744,7 @@ def _baseline_checks_check(root: str) -> dict | None:
 
         policy = quest_log_mod.load_policy(root)
         if not policy.get("baseline_checks"):
-            return None  # 자동 감지 레인 — 사용자가 적은 것이 없으니 말할 것도 없다
+            return _auto_baseline_check(root, policy, quest_log_mod)
         accepted, rejected = quest_log_mod.configured_checks(policy)
     except Exception:
         return None
