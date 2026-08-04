@@ -16,6 +16,37 @@ ROLE_AGENTS: list[tuple[str, str]] = sorted(
     (f.name, f.read_text(encoding="utf-8")) for f in resources.files(__package__).iterdir() if f.name.endswith(".md")
 )
 
+# 역할 문서가 어떻게 다시 쓰이든 살아남아야 하는 문구 — {파일명: ((문구, 왜), ...)}.
+#
+# 이 표가 있는 이유: 이 문서들은 산문이라 누구든 통째로 다시 쓸 수 있고, 그때 사라지는 것은
+# 문장이 아니라 **계약**이다. 실제로 한 번 그랬다 (26-08-04): 판정자 문서가 41줄에서 105줄로
+# 다시 쓰이면서 `not a verification waiver` 와 `read-only guard` 가 같이 사라졌다. 그때도 시험은
+# 빨개졌지만 두 곳 다 **우연히** 그 문구를 쓰고 있었을 뿐이라(하나는 doctor 드리프트 카나리아의
+# 치환 대상, 하나는 lagom 계약 검사), 무엇이 왜 깨졌는지는 아무 데도 안 적혀 있었다.
+# 여기 적어 두면 문구가 빠지는 순간 그 역할과 사유를 대며 죽는다.
+ROLE_CONTRACT_INVARIANTS: dict[str, tuple[tuple[str, str], ...]] = {
+    "asgard-verifier.md": (
+        ("lagom:", "마커 인지가 없으면 판정자가 선언된 절충을 미완성으로 FAIL 한다"),
+        ("not a verification waiver", "마커가 기준 면제로 읽히면 lagom 주석 한 줄이 판정을 무력화한다"),
+        ("is still FAIL", "마커가 있어도 미충족 기준·안전 예외·증거 부재는 그대로 FAIL 이다"),
+        ("read-only guard", "판정자 Bash 허용목록의 유일한 안내 — 없으면 막힌 명령의 변형을 반복한다"),
+        ("A PASS with no commands is void", "성공한 검증 명령 기록이 없는 PASS 는 게이트가 거부한다"),
+    ),
+}
+
+
+def missing_role_invariants() -> list[str]:
+    """계약 문구를 잃은 역할 문서 — `<파일명>: '<문구>' (<왜>)` 형태로.
+
+    비어 있으면 모든 역할 문서가 자기 계약을 들고 있다."""
+    bodies = dict(ROLE_AGENTS)
+    return [
+        f"{fname}: '{phrase}' 가 사라졌다 ({why})"
+        for fname, pairs in ROLE_CONTRACT_INVARIANTS.items()
+        for phrase, why in pairs
+        if phrase not in bodies.get(fname, "")
+    ]
+
 
 def role_document(content: str) -> tuple[dict, str]:
     """Parse one canonical role file for client-specific adapters."""
