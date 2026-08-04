@@ -319,10 +319,16 @@ class TestFailOpen(unittest.TestCase):
         self.assertEqual((code, out, err), (0, "", ""))
 
     def test_warn_mode_never_blocks(self):
+        # 상한은 이 시험이 직접 정한다. `os.getcwd()` 를 뿌리로 쓰면 저장소 자신의 설정을 읽어,
+        # 사람이 상한을 올린 날 "상한을 넘겼는가"를 묻는 시험이 조용히 반대 답을 낸다.
+        root, home = tempfile.mkdtemp(), tempfile.mkdtemp()
+        os.makedirs(os.path.join(root, ".asgard"), exist_ok=True)
+        with open(os.path.join(root, ".asgard", "asgard-setting-project.json"), "w", encoding="utf-8") as handle:
+            json.dump({"budget": {"session_cost_units": 1_000_000}}, handle)
         over = _transcript(_assistant(output_tokens=10_000_000))
         self.addCleanup(os.unlink, over)
-        with mock.patch.dict(os.environ, {"ASGARD_BUDGET": "warn"}):
-            code, out, _ = _run({"cwd": os.getcwd(), "transcript_path": over}, ["claude-code", "prompt"])
+        with mock.patch.dict(os.environ, {"ASGARD_BUDGET": "warn", "HOME": home}):
+            code, out, _ = _run({"cwd": root, "transcript_path": over}, ["claude-code", "prompt"])
         self.assertEqual(code, 0)
         self.assertIn("budget-ceiling", out)
 
