@@ -50,7 +50,7 @@ class DocumentToolTest(unittest.TestCase):
             ToolContext(root=self.root, role="worker"),
         )
         self.assertEqual(result.status, "error")
-        self.assertIn("프로젝트 루트를 벗어납니다", result.content)
+        self.assertIn("작업 뿌리를 벗어납니다", result.content)
 
     def test_pdf_reader_is_paginated(self):
         Path(self.root, "sample.pdf").write_bytes(b"%PDF-test")

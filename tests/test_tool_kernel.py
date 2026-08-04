@@ -21,8 +21,11 @@ class TestRegistry(unittest.TestCase):
         with tempfile.TemporaryDirectory() as root:
             os.makedirs(os.path.join(root, ".claude"))
             os.symlink(".claude", os.path.join(root, "control"))
-            self.assertTrue(_path_token_targets_control(root, "control/settings.json", (".claude", ".asgard")))
-            self.assertTrue(_path_token_targets_control(root, "--output=control/settings.json", (".claude", ".asgard")))
+            roots = (os.path.realpath(root),)  # 뿌리는 이제 여럿이다 — 판정은 그 전부를 본다
+            self.assertTrue(_path_token_targets_control(roots, "control/settings.json", (".claude", ".asgard")))
+            self.assertTrue(
+                _path_token_targets_control(roots, "--output=control/settings.json", (".claude", ".asgard"))
+            )
 
     def test_readonly_shell_parser_respects_quoted_pipes_and_trinity_metadata(self):
         self.assertTrue(is_readonly_bash_safe('grep -nE "add_parser|next_role" hook.py | head -20'))
@@ -52,6 +55,41 @@ class TestRegistry(unittest.TestCase):
         self.assertTrue(is_readonly_bash_safe("asgard skills show asgard-worker-testing"))
         self.assertFalse(is_readonly_bash_safe("asgard skills resolve --agent mimir task"))
         self.assertFalse(is_readonly_bash_safe("asgard skills show ../escape"))
+
+    def test_readonly_uv_runner_keeps_the_bare_interpreter_judgement(self):
+        """`uv run …` 래퍼는 벗겨서 판정한다 — 맨 인터프리터와 결과가 같아야 한다.
+
+        정본 훅 명령이 `uv run --no-project python <hooks>/quest-log.py …`로 바뀌었다
+        (`platform.hook_python`). 래퍼 스트리퍼가 `run` 바로 뒤의 플래그를 몰라 차단하면,
+        읽기전용 역할(Verifier·Loki·Thinker·Ullr·Mimir)이 정본대로 친 기장 명령이 막히고
+        subagent-gate 는 이벤트 없는 종료를 거부한다 — 양쪽이 막혀 교착이 된다.
+
+        반대 방향이 더 중요하다: 래퍼를 통과시키면서 판정을 건너뛰면 `python3 -c` 에는 걸리는
+        쓰기 스니펫이 `uv run python -c` 로 새어 나간다. 두 방향을 한 자리에서 고정한다."""
+        hooks = "." + "claude/hooks"  # 리터럴 `.claude` 는 통제표면 판정에 걸린다 (실행 시점 조립)
+        # (a) 정당한 기장 — 맨 python3 와 동일하게 허용
+        for verb in ("open q --criteria x", "state", "verify-baseline", "append --verdict PASS"):
+            self.assertTrue(is_readonly_bash_safe(f"uv run --no-project python {hooks}/quest-log.py {verb}"))
+        self.assertTrue(
+            is_readonly_bash_safe(
+                f"""echo '{{"role":"verifier","event":"verify"}}' | """
+                f"uv run --no-project python {hooks}/quest-log.py append --verdict PASS --level micro"
+            )
+        )
+        self.assertTrue(is_readonly_bash_safe("uv run --frozen pytest -q"))
+        self.assertTrue(is_readonly_bash_safe('uv run --no-project python -c "import asgard; print(asgard)"'))
+        # 래퍼가 권한을 새로 만들지 않는다 — 맨 형태에서 막히는 것은 여기서도 막힌다
+        self.assertFalse(is_readonly_bash_safe(f"uv run --no-project python {hooks}/quest-log.py close --force"))
+        self.assertFalse(is_readonly_bash_safe('uv run --no-project python -c "import subprocess; subprocess.run(1)"'))
+        self.assertFalse(is_readonly_bash_safe("uv run --no-project python -c \"open('PWNED','w').write('x')\""))
+        self.assertFalse(is_readonly_bash_safe("uv run --no-project rm -rf ."))
+        self.assertFalse(is_readonly_bash_safe(f"uv run --no-project python {hooks}/malicious.py"))
+        # (b) 값을 받거나 실행 노출을 넓히는 플래그는 목록 밖 — 판정 불가이므로 fail-closed
+        self.assertFalse(is_readonly_bash_safe('uv run --with evil-pkg python -c "print(1)"'))
+        self.assertFalse(is_readonly_bash_safe('uv run --python /tmp/rogue python -c "print(1)"'))
+        self.assertFalse(is_readonly_bash_safe("uv run --script /tmp/rogue.py"))
+        self.assertFalse(is_readonly_bash_safe("uv run --env-file /tmp/e pytest"))
+        self.assertFalse(is_readonly_bash_safe("uv run -m pytest"))
 
     def test_readonly_allows_chained_observation(self):
         # 26-07-26 helios 실측: 허용 읽기끼리의 연결이 통째로 차단돼 차단 39건의 최다 사유였다.

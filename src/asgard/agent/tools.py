@@ -253,11 +253,18 @@ class ToolError(Exception):
 
 
 def _confine(root: str, path: str) -> str:
-    """모델이 준 경로를 루트 안으로 격리. 탈출(.., 절대경로 밖, 심링크)은 거부."""
+    """모델이 준 경로를 작업 뿌리 안으로 격리. 탈출(.., 절대경로 밖, 심링크)은 거부.
+
+    뿌리는 하나가 아니다 — 선언된 추가 뿌리(`hooks.readonly_guard.work_roots`)까지가 경계이고,
+    그 판정은 훅과 같은 함수를 쓴다. 네이티브만 다른 규칙을 들면 같은 작업이 모드에 따라 되고
+    안 된다."""
+    from ..hooks.readonly_guard import work_roots
+
     p = os.path.realpath(os.path.join(root, path) if not os.path.isabs(path) else path)
-    if p != os.path.realpath(root) and not p.startswith(os.path.realpath(root) + os.sep):
-        raise ToolError(f"경로가 프로젝트 루트를 벗어납니다: {path} (Canon — 범위 존중)")
-    return p
+    for base in work_roots(root):
+        if p == base or p.startswith(base + os.sep):
+            return p
+    raise ToolError(f"경로가 작업 뿌리를 벗어납니다: {path} (Canon — 범위 존중)")
 
 
 def _hook_guard(root: str, module: str, tool_input: dict) -> str | None:
