@@ -2702,6 +2702,25 @@ def _open_event(qid: str, args, base_ref: str, request: str, ignored_snapshot: d
     )
 
 
+def _next_note(root: str, qid: str, events: list[dict], policy: dict, args) -> dict:
+    """지금 상태에서 누가 도는가 — `next` 가 내는 것과 같은 값, 같은 함수(`transition`)에서.
+
+    `open` 과 `append` 응답에 합류시킨다. 두 명령은 이미 상태를 다 계산해 놓고도 역할은 안
+    돌려줘서, 계약이 매번 `next` 를 따로 부르게 했다 — 퀘스트 한 건에 모델 왕복 2회가 그
+    사이에 상태가 한 글자도 안 바뀌는 채로 들어갔다 (26-08-04 실측: 슬라이스 한 건 8회 중 2회).
+
+    판정 기준은 옮기지 않는다. 이 함수는 `transition` 을 부를 뿐이고, `next` 도 같은 것을
+    부른다 — 두 자리가 갈리면 모델이 보는 역할과 게이트가 세는 역할이 달라진다. 실패는 삼킨다:
+    역할 힌트를 못 만든 것이 기장 자체를 막으면 안 된다 (`next` 로 다시 물으면 된다)."""
+    try:
+        state = summarize(root, qid, events, policy)
+        state["tests_available"] = tests_available(root)
+        verdict = transition(state, policy, args, load_priors(root))
+    except Exception:
+        return {}
+    return {key: verdict[key] for key in ("next_role", "why", "verify_level") if key in verdict}
+
+
 def _cmd_open(root: str, args) -> int:
     """open — 과업 로그를 시작한다.
 
@@ -2735,6 +2754,7 @@ def _cmd_open(root: str, args) -> int:
                 "acceptance_hash": ev["acceptance_hash"],
                 "base_ref": base_ref,
                 "turn": ev["turn"],
+                **_next_note(root, qid, [ev], load_policy(root), args),
             },
             ensure_ascii=False,
         )
@@ -2871,6 +2891,7 @@ def _cmd_append(root: str, qid: str, events: list[dict], policy: dict, args) -> 
                 "verdict": ev["verdict"],
                 "diff_hash": ev["diff_hash"],
                 "verification_id": ev.get("verification_id"),
+                **_next_note(root, qid, [*events, ev], policy, args),
             },
             ensure_ascii=False,
         )
