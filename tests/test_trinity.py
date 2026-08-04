@@ -2073,7 +2073,7 @@ class TestCriteriaContracts(TrinityBase):
         self.assertIn("contract", out.get("reason", ""))
 
     def test_contract_binds_when_verifier_reports_criteria_as_objects(self):
-        # 26-07-26 실측 교착: 판정자가 기준별 판정을 객체로 실으면(역할 계약이 요구하는 형태)
+        # 26-07-26 실측 교착: 판정자가 기준별 판정을 객체로 넣으면(역할 계약이 요구하는 형태)
         # 계약이 0건으로 보여 하네스가 계약 명령을 실행하지 않는데 게이트는 퀘스트 선언에서
         # 계약을 계속 읽어 `criteria-unverified`로 Stop을 영구 차단했다.
         self.open_with("app.py 정상 실행 | verify: python3 app.py")
@@ -2091,6 +2091,26 @@ class TestCriteriaContracts(TrinityBase):
         self.assertEqual(jout(self.qlog("state"))["contracts_unmet"], [])
         self.assertEqual(jout(self.qlog("next", "--write-expected"))["next_role"], "DONE")
         self.assertNotEqual(jout(self.gate()).get("decision"), "block")  # Stop 통과 — 교착 해소
+        self.assertEqual(self.qlog("close").returncode, 0)
+
+    def test_contract_binds_when_verifier_reports_criteria_as_prose_strings(self):
+        # 같은 교착의 다른 문 (26-08-04 실측): 판정자가 기준별 판정을 산문 **문자열**로 보내면
+        # 형태 판별(객체 거르기)을 그냥 지나가고, 계약을 한 줄도 안 실은 목록이 원본으로 잡혀
+        # 계약 명령이 영영 안 돈다. 원본은 형태가 아니라 계약 보유로 골라야 한다.
+        self.open_with("app.py 정상 실행 | verify: python3 app.py")
+        self.write("app.py", "print('ok')\n")
+        self.qlog("append", "--role", "worker", "--event", "work")
+        body = {
+            "role": "verifier",
+            "event": "verify",
+            "criteria": ["기준1 app.py 정상 실행 — 직접 실행해 확인", "기준2 회귀 없음 — 스위트 통과"],
+            "commands": [{"cmd": "git status", "exit_code": 0}],
+        }
+        self.qlog("append", "--verdict", "PASS", "--session", "s1", stdin=json.dumps(body))
+        with open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl"), encoding="utf-8") as handle:
+            ev = json.loads(handle.read().splitlines()[-1])
+        self.assertEqual(ev["criteria_checks"][0]["exit_code"], 0)
+        self.assertEqual(jout(self.qlog("state"))["contracts_unmet"], [])
         self.assertEqual(self.qlog("close").returncode, 0)
 
     def test_object_criteria_do_not_mask_a_failing_contract(self):

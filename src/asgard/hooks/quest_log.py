@@ -1001,12 +1001,18 @@ def contract_criteria(*sources) -> list:
     그 객체를 계약 원본으로 쓰면 계약이 0건으로 보여 하네스가 계약 명령을 실행하지 않는데,
     게이트는 퀘스트 선언(문자열)에서 계약을 계속 읽으므로 영구 미충족이 된다 (26-07-26 실측:
     CC 모드에서 `criteria-unverified`로 Stop이 막혀 세션이 49분간 종료하지 못했다).
-    형태로 원본을 고르면 두 경로가 같은 계약을 본다."""
-    for src in sources:
-        strings = [c for c in (src or []) if isinstance(c, str)]
-        if strings:
+    형태로 원본을 고르면 두 경로가 같은 계약을 본다.
+
+    형태만으로는 부족하다 — 판정자는 같은 기준별 판정을 **문자열 목록**으로도 보낸다(역할 계약이
+    산문 판정을 허용한다). 그러면 계약을 한 줄도 안 실은 원본이 먼저 잡혀 26-07-26 과 똑같은
+    영구 미충족이 다른 문으로 되살아난다 (26-08-04 실측: 판정자가 기준 6건을 산문 문자열로 보내
+    close 가 `criteria-unverified` 로 두 번 거부됐다). 그래서 계약을 실은 원본을 먼저 고르고,
+    어디에도 없을 때만 첫 문자열 원본으로 물러선다."""
+    string_sources = [s for s in ([c for c in (src or []) if isinstance(c, str)] for src in sources) if s]
+    for strings in string_sources:
+        if any(c["verify_cmd"] for c in criteria_contracts(strings)):
             return strings
-    return []
+    return string_sources[0] if string_sources else []
 
 
 def unmet_contracts(root: str, criteria, rec: dict) -> list[str]:

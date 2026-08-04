@@ -617,12 +617,15 @@ def contract_criteria(*sources):
     """계약 추출 원본 — 문자열 항목을 실은 첫 후보. quest_log.py와 동일 유지.
 
     계약은 문자열 기준에만 담긴다. 판정자가 기준별 판정을 객체로 실은 이벤트를 원본으로 쓰면
-    한쪽은 계약 0건(명령 미실행), 게이트는 계약 있음(미충족)으로 갈려 Stop이 영구 차단된다."""
-    for src in sources:
-        strings = [c for c in (src or []) if isinstance(c, str)]
-        if strings:
+    한쪽은 계약 0건(명령 미실행), 게이트는 계약 있음(미충족)으로 갈려 Stop이 영구 차단된다.
+
+    판정자가 같은 판정을 산문 **문자열**로 보내면 형태 판별만으로는 못 거른다 — 계약을 실은
+    원본을 먼저 고른다 (quest_log.contract_criteria와 동일 유지)."""
+    string_sources = [s for s in ([c for c in (src or []) if isinstance(c, str)] for src in sources) if s]
+    for strings in string_sources:
+        if any(c["verify_cmd"] for c in criteria_contracts(strings)):
             return strings
-    return []
+    return string_sources[0] if string_sources else []
 
 
 def unmet_contracts(root, criteria, rec):
