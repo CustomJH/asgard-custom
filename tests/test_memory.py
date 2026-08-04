@@ -188,7 +188,9 @@ class TestMemoryDirectoryConfig(MemoryBase):
         ):
             result = CliRunner().invoke(app, ["memory", "obsidian"])
         self.assertEqual(result.exit_code, 0, result.output)
-        expected = quote(os.path.join(configured, memory.INDEX), safe="")
+        # 여는 문서는 maps/index.md 다 — 루트 index.md 는 칸 예산에 묶인 주입 카탈로그라
+        # 칸이 차면 뒤가 잘린다. 사람이 처음 보는 화면은 전체를 지고 있는 쪽이어야 한다.
+        expected = quote(os.path.join(configured, "maps", "index.md"), safe="")
         opened.assert_called_once_with(["open", f"obsidian://open?path={expected}"], check=True)
 
         result = CliRunner().invoke(app, ["memory", "path", "--reset"])
@@ -213,7 +215,7 @@ class TestAutosaveCommand(MemoryBase):
         result = CliRunner().invoke(app, ["memory", "autosave", "--json"])
         self.assertEqual(result.exit_code, 0, result.output)
         # `project`는 옛 뜻 그대로 "실제로 켜졌는가"(bool | 미연결이면 None)다. 2차는 리포의
-        # 요청과 이 기계의 승인이 따로 노는 세 상태라, 그 사실은 `_state` 키가 따로 싣는다 —
+        # 요청과 이 기계의 승인이 따로 노는 세 상태라, 그 사실은 `_state` 키가 따로 넣는다 —
         # 상태 이름을 `project`에 넣으면 "off"가 참인 문자열이 되어 여길 참/거짓으로 읽던
         # 쪽이 조용히 반대로 판정한다.
         self.assertEqual(
@@ -1129,7 +1131,7 @@ class TestDerivedCatalogsShareOneRead(MemoryBase):
             )
         )
         maps = vault.build_maps(self.d, _read_all(self.d))
-        self.assertNotIn("tainted", maps["by-kind.md"])
+        self.assertNotIn("tainted", "".join(maps.values()))
 
 
 class TestReindexAndSnapshot(MemoryBase):
@@ -1196,7 +1198,7 @@ class TestReindexAndSnapshot(MemoryBase):
         self.assertEqual([f["slug"] for f in over], ["index.md#reference"])  # 통합할 칸을 지목한다
 
     def test_a_row_never_says_the_same_sentence_twice(self):
-        # 한 문장 페이지는 title과 _desc가 같은 줄이다 — 그대로 실으면 주입면 절반이 반복이다.
+        # 한 문장 페이지는 title과 _desc가 같은 줄이다 — 그대로 넣으면 주입면 절반이 반복이다.
         memory.add("퀘스트 로그를 원장이라 부르지 않는다", kind="note")
 
         note = memory.snapshot_note()
@@ -1489,7 +1491,7 @@ class TestRecallAndAllowlist(MemoryBase):
         self.assertTrue(memory.inject_allowed("codex"))
         self.assertTrue(memory.inject_allowed("cursor"))
         open(cfg, "w").write('[memory]\ninject = "off"\nproviders = ["ollama"]\n')
-        self.assertFalse(memory.inject_allowed("ollama"))  # 킬스위치가 allowlist를 이긴다
+        self.assertFalse(memory.inject_allowed("ollama"))  # 킬스위치가 allowlist를 우선한다
         self.assertFalse(memory.inject_allowed("claude-code"))  # 킬스위치는 클라이언트 모드도 막는다
 
 

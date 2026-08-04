@@ -3,7 +3,8 @@
 정본은 이미 Obsidian이 읽는 형식이다 (md + frontmatter + [[wikilink]]). 모자란 건 두 가지였다.
 
 ① 첫 열기의 마찰. `.obsidian/`이 없으면 폴더는 vault가 아니고, URI로 열 수도 없다.
-   그래서 최소 설정을 심는다 — 이미 있는 파일은 절대 덮지 않는다 (사용자 설정이 정본).
+   그래서 최소 설정을 심는다 — 사람이 고른 값은 절대 덮지 않되, 없는 키는 채운다
+   (`_merged_keys`). 불가침의 단위가 파일이 아니라 키인 이유가 거기 적혀 있다.
 
 ② 길잡이. 주입 카탈로그는 kind 별 칸 예산에 묶여 있어 전부를 실을 수 없다 (칸이 차면 최신부터
    살아남고 나머지는 잘린다). 그래서 전체 목차는 maps/ 로 뺀다. maps/ 는 파생물이다 —
@@ -12,6 +13,13 @@
 
 maps/ 안의 링크는 전부 [[slug]] 다. Obsidian의 그래프·백링크·아웃라인이 그대로 살아나고,
 파일을 직접 읽는 에이전트에게도 같은 문서가 목차로 동작한다 — 두 독자에게 형식이 하나다.
+
+정본 pages/ 는 한 겹으로 고정돼 있다. 페이지를 세는 자리 여섯(store._pages·
+store._pages_fingerprint·backup.canonical_members·sync.digest_map·store.ensure_home 의 chmod·
+index.reindex)이 전부 os.listdir 한 번이라, pages/ 아래 하위 폴더는 오류 없이 목록에서
+빠진다 — 백업에서 빠진 채로 backup.restore 의 rmtree 를 만나면 되돌릴 수 없다. 그래서 사람이
+쓰는 폴더 구분은 정본이 아니라 이 파생 계층이 맡는다: maps/kind/<kind>.md 가 Obsidian 파일
+탐색기에 접히는 트리로 표시되고, pages/ 는 저장소로 남는다.
 """
 
 from __future__ import annotations
@@ -28,7 +36,10 @@ _WIKILINK = re.compile(r"\[\[([^\]|#]+)")
 
 MAPS_DIR = "maps"
 OBSIDIAN_DIR = ".obsidian"
-MAP_FILES = ("index.md", "by-kind.md", "recent.md", "loose-ends.md")
+# 종류별 목록은 파일 하나가 아니라 폴더 하나다. Obsidian 파일 탐색기는 폴더만 접고 펴므로,
+# 한 장짜리 `by-kind.md` 는 페이지가 늘어도 계속 한 줄로만 보인다 — 종류가 트리에 뜨지 않는다.
+KIND_DIR = "kind"
+MAP_FILES = ("index.md", "recent.md", "loose-ends.md")
 RECENT_LIMIT = 60
 
 # 최소 vault 설정. Obsidian은 나머지를 스스로 만든다 — 여기서는 "폴더가 vault 다"라고
@@ -75,15 +86,37 @@ def is_vault(d: str) -> bool:
     return os.path.isdir(os.path.join(d, OBSIDIAN_DIR))
 
 
+def _merged_keys(path: str, payload: dict) -> dict | None:
+    """기존 설정에 우리 키 중 **없는 것만** 얹은 값 — 얹을 게 없거나 못 읽으면 None.
+
+    파일 단위로 건너뛰면 안 되는 이유: Obsidian은 첫 열기에 이 파일들을 스스로 만든다. 그래서
+    "있으면 안 건드린다"는 사람이 고른 적 없는 기본값을 지키게 되고, 우리가 나중에 추가하는
+    어떤 키도 이미 열어 본 vault 에는 영원히 닿지 못한다. 실측(26-08-04, ~/.asgard/memory):
+    Obsidian이 app.json 을 `{}` 로 다시 써서 attachmentFolderPath 가 사라졌고, 스캐폴드는
+    그 뒤로 한 번도 그 값을 되돌리지 못했다.
+
+    사람이 고른 값은 그대로 둔다 — 키가 이미 있으면 값이 무엇이든 손대지 않는다. 객체가 아닌
+    설정(core-plugins.json 은 판 버전에 따라 배열이거나 객체다)은 형태를 모르므로 건너뛴다."""
+    try:
+        with open(path, encoding="utf-8") as handle:
+            current = json.load(handle)
+    except OSError, ValueError:
+        return None  # 손상·권한 문제로 못 읽는 설정을 우리 기본값으로 덮지 않는다
+    if not isinstance(current, dict):
+        return None
+    missing = {key: value for key, value in payload.items() if key not in current}
+    return {**current, **missing} if missing else None
+
+
 def scaffold_obsidian(d: str | None = None) -> list[str]:
-    """vault 최소 설정을 심는다. 이미 있는 파일은 건드리지 않는다. 반환 = 새로 만든 파일들."""
+    """vault 최소 설정을 심는다. 사람이 고른 키는 건드리지 않는다. 반환 = 새로 쓴 파일들."""
     d = ensure_home(d)
     root = os.path.join(d, OBSIDIAN_DIR)
     if os.path.islink(root):
         raise ValueError("vault config directory must not be a symlink")
     os.makedirs(root, exist_ok=True)
     _chmod(root, 0o700)
-    created: list[str] = []
+    written: list[str] = []
     for name, payload in (
         ("app.json", _APP_JSON),
         ("appearance.json", _APPEARANCE_JSON),
@@ -91,10 +124,14 @@ def scaffold_obsidian(d: str | None = None) -> list[str]:
     ):
         path = os.path.join(root, name)
         if os.path.exists(path):
-            continue  # 사용자 설정이 정본 — 우리 기본값으로 되돌리지 않는다
+            if os.path.islink(path) or not isinstance(payload, dict):
+                continue
+            payload = _merged_keys(path, payload)
+            if payload is None:
+                continue
         _atomic_write(path, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
-        created.append(os.path.join(OBSIDIAN_DIR, name))
-    return created
+        written.append(os.path.join(OBSIDIAN_DIR, name))
+    return written
 
 
 # ── 목차 (파생) ───────────────────────────────────────────────────────────────
@@ -126,9 +163,12 @@ def _rows(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> list[dic
     return rows
 
 
-def _map_header(title: str, note: str) -> list[str]:
+def _map_header(title: str, note: str, *, home: bool = False) -> list[str]:
     stamp = _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%d")
-    return [f"# {title}", "", f"> {note}", f"> 파생 목차 — pages/ 에서 재생성된다 ({stamp}).", ""]
+    lines = [f"# {title}", "", f"> {note}", f"> 파생 목차 — pages/ 에서 재생성된다 ({stamp})."]
+    if not home:
+        lines.append(f"> [[{MAPS_DIR}/index|← 메모리 지도]]")
+    return [*lines, ""]
 
 
 def build_maps(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> dict[str, str]:
@@ -140,24 +180,28 @@ def build_maps(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> dic
     for row in rows:
         by_kind.setdefault(row["kind"], []).append(row)
 
-    home = _map_header("메모리 지도", "이 vault를 돌아다니는 출발점.")
+    ordered_kinds = sorted(by_kind, key=lambda k: (-len(by_kind[k]), k))
+
+    home = _map_header("메모리 지도", "이 vault를 돌아다니는 출발점.", home=True)
     home += [
-        f"- [[{MAPS_DIR}/by-kind|종류별]] — 무엇에 대한 기억인지로 묶은 목록",
         f"- [[{MAPS_DIR}/recent|최근순]] — 최근에 고친 것부터",
         f"- [[{MAPS_DIR}/loose-ends|끊어진 곳]] — 아무도 가리키지 않는 페이지와 죽은 링크",
         "",
         f"페이지 {len(rows)}장 · 종류 {len(by_kind)}가지",
         "",
-        "## 종류별 요약",
+        f"## 종류별 — `{MAPS_DIR}/{KIND_DIR}/`",
         "",
     ]
-    for kind in sorted(by_kind, key=lambda k: (-len(by_kind[k]), k)):
-        home.append(f"- **{_KIND_TITLES.get(kind, kind)}** ({kind}) — {len(by_kind[kind])}장")
+    for kind in ordered_kinds:
+        title = _KIND_TITLES.get(kind, kind)
+        home.append(f"- [[{MAPS_DIR}/{KIND_DIR}/{kind}|{title}]] `{kind}` — {len(by_kind[kind])}장")
 
-    kinds = _map_header("종류별", "같은 성격의 기억끼리 모아 둔 목록.")
-    for kind in sorted(by_kind, key=lambda k: (-len(by_kind[k]), k)):
-        kinds += ["", f"## {_KIND_TITLES.get(kind, kind)} `{kind}`", ""]
-        kinds += [f"- [[{row['slug']}|{row['title']}]] — {row['desc']}" for row in sorted(by_kind[kind], key=_by_title)]
+    kind_maps = {}
+    for kind in ordered_kinds:
+        title = _KIND_TITLES.get(kind, kind)
+        page = _map_header(f"{title} `{kind}`", f"같은 종류로 묶인 기억 {len(by_kind[kind])}장.")
+        page += [f"- [[{row['slug']}|{row['title']}]] — {row['desc']}" for row in sorted(by_kind[kind], key=_by_title)]
+        kind_maps[f"{KIND_DIR}/{kind}.md"] = "\n".join(page) + "\n"
 
     recent = _map_header("최근순", "마지막으로 손댄 순서. 지금 무엇을 다루고 있었는지가 여기 보인다.")
     for row in sorted(rows, key=lambda r: (r["updated"], r["slug"]), reverse=True)[:RECENT_LIMIT]:
@@ -180,9 +224,9 @@ def build_maps(d: str, loaded: list[tuple[str, dict, str]] | None = None) -> dic
 
     return {
         "index.md": "\n".join(home) + "\n",
-        "by-kind.md": "\n".join(kinds) + "\n",
         "recent.md": "\n".join(recent) + "\n",
         "loose-ends.md": "\n".join(loose) + "\n",
+        **kind_maps,
     }
 
 
@@ -202,15 +246,35 @@ def write_maps(d: str | None = None, *, loaded: list[tuple[str, dict, str]] | No
         contents = build_maps(d, loaded)
         root = maps_dir(d)
         for name, text in contents.items():
-            _atomic_write(os.path.join(root, name), text)
+            path = os.path.join(root, *name.split("/"))
+            parent = os.path.dirname(path)
+            if parent != root:
+                os.makedirs(parent, exist_ok=True)
+                _chmod(parent, 0o700)
+            _atomic_write(path, text)
             written.append(f"{MAPS_DIR}/{name}")
-        for stale in os.listdir(root):
-            if stale.endswith(".md") and stale not in contents:
-                with contextlib.suppress(OSError):
-                    os.remove(os.path.join(root, stale))
+        _prune_stale(root, contents)
     except Exception:
         return written
     return written
+
+
+def _prune_stale(root: str, contents: dict[str, str]) -> None:
+    """이번에 쓴 것이 아닌 `.md` 와 그 뒤에 남는 빈 폴더를 치운다.
+
+    종류가 사라지면 `kind/<kind>.md` 도 사라져야 한다. 훑기가 한 겹이면 하위 폴더 안의 그 파일이
+    영원히 남아, 없는 종류를 있다고 말하는 목차가 된다. `topdown=False` 는 자식을 먼저 비운 뒤
+    부모를 지우기 위한 것이다."""
+    keep = {os.path.join(root, *name.split("/")) for name in contents}
+    for base, _dirs, files in os.walk(root, topdown=False):
+        for name in files:
+            path = os.path.join(base, name)
+            if name.endswith(".md") and path not in keep:
+                with contextlib.suppress(OSError):
+                    os.remove(path)
+        if base != root:
+            with contextlib.suppress(OSError):
+                os.rmdir(base)  # 비어 있을 때만 성공한다 — 사용자 파일이 남아 있으면 그대로 둔다
 
 
 def refresh(d: str | None = None) -> dict:
@@ -228,6 +292,7 @@ def vault_note(d: str | None = None) -> str:
 
 
 __all__ = [
+    "KIND_DIR",
     "MAPS_DIR",
     "OBSIDIAN_DIR",
     "build_maps",

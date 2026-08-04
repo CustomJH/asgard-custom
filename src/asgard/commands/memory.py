@@ -1092,14 +1092,19 @@ def run_obsidian(refresh_only: bool = False, json_out: bool = False) -> int:
             print(_json.dumps(state, ensure_ascii=False, indent=2))
             return 0
         if state["scaffolded"]:
-            ui.step(f"vault 설정 생성 · {', '.join(state['scaffolded'])}")
+            # 새로 만든 것과 빠진 키를 채운 것이 같은 목록에 온다 — "생성"은 후자를 거짓으로 말한다
+            ui.step(f"vault 설정 반영 · {', '.join(state['scaffolded'])}")
         ui.step(f"목차 갱신 · {len(state['maps'])}개 지도 · {state['pages']} page(s)")
         if refresh_only:
             ui.ok(f"vault 준비됨 → {vault}")
             return 0
         # Obsidian URI는 이미 등록된 vault만 연다. 설정만 심어서는 등록되지 않으므로,
         # 한 번은 사람이 "Open folder as vault"를 해야 한다 — 그 한 번을 정확히 안내한다.
-        uri = f"obsidian://open?path={quote(os.path.join(vault, memory.INDEX), safe='')}"
+        # 여는 문서는 루트 index.md 가 아니라 maps/index.md 다. 루트 쪽은 kind 별 칸 예산에
+        # 묶인 주입 카탈로그라 칸이 차면 뒤가 잘린다 — 사람이 처음 보는 화면이 그것이면
+        # 없는 페이지를 없다고 읽게 된다. 전체를 지고 있는 쪽은 maps/ 다 (vault 모듈 ②).
+        home = os.path.join(vault, vault_mod.MAPS_DIR, "index.md")
+        uri = f"obsidian://open?path={quote(home, safe='')}"
         try:
             if sys.platform == "darwin":
                 subprocess.run(["open", uri], check=True)
