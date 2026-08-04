@@ -242,6 +242,12 @@ def anchor_skill(root: str, plugin: dict, name: str) -> str:
         pass
     home = os.path.dirname(target)
     try:
+        # `_safe_tree` 는 ValueError 를 던지고 아래 `except OSError` 가 그걸 안 잡는다. 종전에는
+        # 같은 조건을 `bundled_plugins()` 의 `except ValueError: continue` 가 삼켜 플러그인이
+        # 조용히 빠졌는데(읽기 경로가 얕아지며 그 자리가 없어졌다), 여기서 새어 나가면 스킬
+        # 해석 전체가 역추적으로 죽는다. 링크가 든 트리는 배송을 포기하고 휠 사본을 가리킨다 —
+        # 아래 OSError 갈래와 같은 폴백이다.
+        _safe_tree(source)
         os.makedirs(home, mode=0o700, exist_ok=True)
         # 이 트리는 파생물이다 — 셋업 전이라 `.asgard/.gitignore`가 아직 없어도 커밋에 안 섞이게.
         Path(os.path.join(home, ".gitignore")).write_text("*\n", encoding="utf-8")
@@ -257,7 +263,7 @@ def anchor_skill(root: str, plugin: dict, name: str) -> str:
             os.replace(staging, target)
         finally:
             shutil.rmtree(temp, ignore_errors=True)
-    except OSError:
+    except OSError, ValueError:
         return source
     return target
 
@@ -292,7 +298,18 @@ def _delivered_md(root: str, plugin: dict, name: str, *, unpack: bool = True) ->
     return _anchor_md(directory, name, frontmatter, len(text.splitlines()))
 
 
-def _validate_manifest(root: str) -> dict:
+def _validate_manifest(root: str, *, deep: bool = True) -> dict:
+    """플러그인 매니페스트를 읽고 검증한다. `deep=False` 면 자원 트리 순회(`_safe_tree`)를 건너뛴다.
+
+    순회는 신뢰 경계를 지키는 검사다 — 링크·특수 파일·상한 초과를 **복사하거나 실행하기 전에**
+    막는다. 그 경계가 없는 자리가 하나 있다: 휠에 함께 배송되는 번들 플러그인은 이 파이썬
+    코드와 출처가 같아서, 거기 링크를 심을 수 있는 자는 이 파일도 심을 수 있다. 그 자리에서
+    순회는 보호가 아니라 값이다 — 26-08-04 실측으로 `bundled_plugins()` 47.2ms 의 89% 이고,
+    resolve 3회에 os.walk 4,485회·lstat 21,319회를 낸다.
+
+    그래서 읽기 경로만 얕게 본다. 실제 경계는 그대로 남는다: 제3자 번들을 읽는
+    `installed_plugins()` 와 설치하는 `install_plugin()` 은 깊게 보고, 디스크로 복사하는
+    `anchor_skill()` 은 복사 직전에 스스로 `_safe_tree` 를 부른다."""
     try:
         manifest = json.loads(_read_text(os.path.join(root, "plugin.json")))
     except (OSError, ValueError, TypeError) as exc:
@@ -362,7 +379,8 @@ def _validate_manifest(root: str) -> dict:
     anchored = _items(manifest.get("anchored"))
     if set(anchored).difference(normalized):
         raise ValueError("plugin anchored must list declared skills")
-    _safe_tree(root)
+    if deep:
+        _safe_tree(root)
     entrypoints = _entrypoints(manifest, normalized)
     for skill, relative in entrypoints.items():
         path = os.path.join(skills_root, skill, relative)
@@ -384,6 +402,11 @@ def _validate_manifest(root: str) -> dict:
 
 
 def bundled_plugins() -> dict[str, dict]:
+    """휠에 동봉된 플러그인 목록 — 자원 트리는 얕게 본다 (`_validate_manifest` 의 deep 인자).
+
+    호출당 값은 47.2ms 에서 2.3ms 로 내려갔다 (26-08-04 실측). 프로세스 캐시는 안 둔다:
+    남는 값이 호출 몇 번어치뿐인데, 반환값이 `_BUNDLED_PLUGINS_DIR` 과 디스크 내용에 걸려
+    있어 그 둘을 바꿔 끼우는 자리(테스트·앵커 복구)마다 무를 자리를 만들어야 한다."""
     found: dict[str, dict] = {}
     if not _BUNDLED_PLUGINS_DIR.is_dir():
         return found
@@ -391,7 +414,7 @@ def bundled_plugins() -> dict[str, dict]:
         if child.name.startswith(".") or child.is_symlink() or not child.is_dir():
             continue
         try:
-            manifest = _validate_manifest(str(child))
+            manifest = _validate_manifest(str(child), deep=False)
         except ValueError:
             continue
         if manifest["name"] == child.name:
@@ -400,6 +423,7 @@ def bundled_plugins() -> dict[str, dict]:
 
 
 def installed_plugins() -> dict[str, dict]:
+    """사람이 설치한 제3자 플러그인 — 자원 트리는 깊게 본다 (신뢰 경계)."""
     found: dict[str, dict] = {}
     base = _plugins_dir()
     if not os.path.isdir(base):
@@ -955,7 +979,7 @@ def skill_catalog(
         )
     items = "\n".join(
         f"  - {'[task-match] ' if matched is not None and row['name'] in matched else ''}"
-        f"{escape(row['name'])}: {escape(row['description'])}"
+        f"{escape(row['name'])}: {escape(_catalog_line(row['description']))}"
         for row in rows
     )
     return (
@@ -965,6 +989,42 @@ def skill_catalog(
         f"{items}\n"
         "</available_skills>"
     )
+
+
+_CATALOG_LINE_CAP = 240
+
+
+def _catalog_line(description: str) -> str:
+    """카탈로그 한 줄 — 첫 문장, 최대 240자.
+
+    이 목록이 하는 일은 모델이 **이름을 고르게** 하는 것뿐이다. 고른 뒤에 오는 본문이 정책이고,
+    트리거 매칭(`_trigger_hits`)은 이 줄을 아예 안 읽는다. 그런데 정본 프론트매터의 description
+    을 글자 그대로 썼던 탓에 한 항목이 616B(asgard-office)·412B 까지 길어졌고, 역할 하나가 무는
+    합계가 4,818B 였다 (26-08-04 실측, worker 기준 17종). 그 값을 **핸드오프마다** 문다.
+
+    **상한까지 문장을 채운다.** 첫 문장에서 무조건 끊던 판은 예산을 절반도 안 쓰고 버렸다:
+    번들 28종 중 14종이 상한을 넘는데 그 첫 문장은 37~185자라 55~200자가 남았고, 남은 자리에
+    있던 것이 하필 "언제 이 스킬을 고르는가"였다 (`asgard-freyja-fjadrhamr` 418자 → 37자
+    "Freyja Fjadrhamr — the falcon cloak." 처럼 이름만 남았다). 그래서 문장 경계로 자르되
+    상한이 허락하는 만큼 이어 붙이고, 한 문장도 못 담으면 그때만 글자로 끊는다.
+
+    잘렸으면 언제나 말줄임표로 끝난다 — 사람이 잘렸음을 알아야 정본을 열어 본다. 트리거 문구는
+    정본 본문이 들고 있으므로 라우팅 정확도는 이 길이에 걸려 있지 않다."""
+    text = " ".join(str(description or "").split())
+    if len(text) <= _CATALOG_LINE_CAP:
+        return text
+    budget = _CATALOG_LINE_CAP - 2  # 말줄임표(" …") 자리를 미리 뺀다 — 상한은 결과 길이다
+    kept = ""
+    for piece in re.split(r"(?<=[.!?])\s+|(?<=다\.)\s+|(?<=요\.)\s+", text):
+        candidate = f"{kept} {piece}".strip() if kept else piece
+        if len(candidate) > budget:
+            # 남은 자리가 넉넉하면 다음 문장의 앞부분까지 쓴다 — 그 문장이 대개 "언제 쓰는가"다.
+            room = budget - len(kept) - 1
+            if room >= 60:
+                kept = f"{kept} {piece[:room]}".strip() if kept else piece[:room]
+            break
+        kept = candidate
+    return (kept.rstrip() + " …") if kept else text[: budget - 1].rstrip() + " …"
 
 
 def load_skill_for_agent(
