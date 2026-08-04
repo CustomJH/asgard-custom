@@ -89,6 +89,7 @@ DEFAULT_POLICY: dict[str, Any] = {
     "baseline_timeout": 120,
 }
 MAX_BLOCKS = 3  # Canon 9 정합 — 동일 세션 4번째 차단 대신 에스컬레이션
+UNSCOPED_DRIFT = "<unscoped>"  # quest_log.py와 동일 유지 — 귀속을 못 따진 fail-safe stale 표시
 UNATTENDED_MODES = {"bypassPermissions", "dontAsk"}  # unattended_context.py와 동일 유지
 _HOST_PROTOCOL = "claude"
 
@@ -437,21 +438,24 @@ def quest_owned_files(root, events):
 def stale_pass_scope(root, last_pass, events, current_changed):
     """quest_log.py의 stale_pass_scope와 동일 유지 (단일 출처 원칙) — 해시 불일치 시
     PASS 시점 tree_ref ↔ 현재 트리 드리프트가 퀘스트 귀속 파일·관리 지도에 닿을 때만 stale.
-    tree_ref 없는 구 로그·귀속 공집합·트리 계산 실패는 종전 엄격 판정(stale) — fail-safe."""
+    tree_ref 없는 구 로그·귀속 공집합·트리 계산 실패는 종전 엄격 판정(stale) — fail-safe.
+
+    첫 값은 stale 을 만든 파일 목록이고 비었을 때 falsy 다. 게이트가 차단을 기록할 때 사유
+    코드만이 아니라 닿은 파일까지 남기려고 목록으로 받는다."""
     pass_tree = str(last_pass.get("tree_ref") or "")
     owned = quest_owned_files(root, events)
     if not pass_tree or not owned:
-        return True, []
+        return [UNSCOPED_DRIFT], []
     cur_tree = current_tree_ref(root)
     if not cur_tree:
-        return True, []
+        return [UNSCOPED_DRIFT], []
     rc, names = git(root, "diff", "--name-only", pass_tree, cur_tree)
     if rc != 0:
-        return True, []
+        return [UNSCOPED_DRIFT], []
     drift = {n for n in names.splitlines() if n.strip()}
     drift |= set(map(str, current_changed or [])) ^ {str(p) for p in (last_pass.get("changed_files") or [])}
     hits = sorted(p for p in drift if p in owned or p == ".asgard/map" or p.startswith(".asgard/map/"))
-    return bool(hits), sorted(drift - set(hits))
+    return hits, sorted(drift - set(hits))
 
 
 def readonly(cmd, allow):
@@ -650,14 +654,20 @@ def block_counter_path(root, sid):
     return os.path.join(root, ".asgard", f"gate-blocks-{sid}-{scope}.json")
 
 
-def gate_event(root, kind, code):
+def gate_event(root, kind, code, subject=None):
     """게이트 운영 이벤트 영속 기록 — 차단 카운터 파일은 성공 통과 시 삭제되므로 운영 지표가
-    안 남는다. doctor가 block/escalation 률을 집계할 수 있게 append-only로 남긴다. fail-open."""
+    안 남는다. doctor가 block/escalation 률을 집계할 수 있게 append-only로 남긴다. fail-open.
+
+    `subject`는 그 차단이 무엇을 두고 걸렸는지다(stale-pass 면 드리프트한 파일). 사유 코드만
+    남기면 어떤 사유가 몇 번인지는 세어도 무엇을 고칠지는 기록에서 알 수 없다."""
     try:
         path = os.path.join(root, ".asgard", "state", "gate-events.jsonl")
         os.makedirs(os.path.dirname(path), exist_ok=True)
+        row = {"event": kind, "code": code}
+        if subject:
+            row["subject"] = list(subject)
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps({"event": kind, "code": code}) + "\n")
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
     except Exception:
         pass
 
@@ -709,10 +719,14 @@ def gate_message(code, **params):
     return "[gate:%s] " % code + GATE_MESSAGES[code].format(**params)
 
 
-def block(root, sid, code, **params):
+def block(root, sid, code, subject=None, **params):
     """차단 — active quest별 MAX_BLOCKS 회까지. 초과 시 warn+allow + Odin 에스컬레이션 지시.
     사유는 코드+파라미터로만 받는다 — 문장은 GATE_MESSAGES가 렌더하고, 소비자(classify·doctor)는
-    `[gate:<code>]` 태그/payload code를 직독한다 (문장 파싱 금지)."""
+    `[gate:<code>]` 태그/payload code를 직독한다 (문장 파싱 금지).
+
+    `subject`는 운영 기록에만 들어간다. 이름이 `detail`이 아닌 이유는 그것이 `ledger-invalid`
+    메시지의 렌더 인자라서다 — 같은 이름을 쓰면 그 값이 `**params`에 안 담기고 이 인자로 들어와
+    `gate_message`가 `{detail}` 자리를 채우지 못한다."""
     reason = gate_message(code, **params)
     path = block_counter_path(root, sid)
     n = 0
@@ -730,7 +744,7 @@ def block(root, sid, code, **params):
         os.replace(tmp, path)
     except Exception:
         pass
-    gate_event(root, "gate_escalate" if n > MAX_BLOCKS else "gate_block", code)
+    gate_event(root, "gate_escalate" if n > MAX_BLOCKS else "gate_block", code, subject)
     if n > MAX_BLOCKS:
         sys.stderr.write(
             "asgard verifier-gate: exceeded %d blocks — allowing through, but Odin escalation "
@@ -1030,7 +1044,7 @@ def main():
             # quest_log.summarize와 동일 판정). fail-safe: 대조 불가면 종전대로 차단.
             stale, _drift_out = stale_pass_scope(root, p, events, changed)
             if stale:
-                block(root, sid, "stale-pass")
+                block(root, sid, "stale-pass", subject=stale[:10])
         if p.get("execution_id") and (
             not p.get("verification_id") or p.get("verification_id") != verification_identity(p)
         ):

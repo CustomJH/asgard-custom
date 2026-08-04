@@ -958,6 +958,44 @@ class TestGate(TrinityBase):
         self.assertTrue(b)
         self.assertIn("stale", reason)
 
+    def test_stale_pass_records_which_file_drifted(self):
+        """stale-pass 는 게이트 마찰의 최대 항목인데 사유 코드만 남으면 무엇을 고칠지 알 수 없다.
+
+        차단 기록에 드리프트한 파일까지 실어야 자가치유든 수리든 추측이 아닌 것으로 시작한다."""
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        # 귀속을 세우는 이벤트 — 관측 파일이 실려야 그 파일이 이 퀘스트 소유가 된다
+        self.qlog(
+            "append",
+            "--role",
+            "worker",
+            "--event",
+            "work",
+            stdin=json.dumps({"role": "worker", "event": "work", "changed_files": ["app.py"]}),
+        )
+        self.verify()
+        self.write("app.py", "print('tampered')\n")
+        self.gate()
+        path = os.path.join(self.root, ".asgard", "state", "gate-events.jsonl")
+        with open(path, encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle if line.strip()]
+        stale = [r for r in rows if r.get("code") == "stale-pass"]
+        self.assertTrue(stale, rows)
+        self.assertIn("app.py", stale[-1].get("subject") or [])
+
+    def test_stale_pass_says_unscoped_when_it_cannot_attribute(self):
+        """귀속을 못 따진 차단은 파일을 아는 척하지 않는다 — 그 자리는 사유 표시다."""
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        self.verify()  # work 이벤트 없음 → 귀속 집합이 비어 fail-safe stale
+        self.write("app.py", "print('tampered')\n")
+        self.gate()
+        path = os.path.join(self.root, ".asgard", "state", "gate-events.jsonl")
+        with open(path, encoding="utf-8") as handle:
+            rows = [json.loads(line) for line in handle if line.strip()]
+        stale = [r for r in rows if r.get("code") == "stale-pass"]
+        self.assertEqual(stale[-1].get("subject"), ["<unscoped>"])
+
     def test_verify_artifacts_do_not_stale_pass(self):
         # s1 라이브 실측 — .gitignore 없는 프로젝트에서 검증 명령이 만든 __pycache__가
         # hash를 바꿔 PASS를 stale로 만들던 자기파괴 회귀 방지 (_junk 제외, 양 훅 동일).

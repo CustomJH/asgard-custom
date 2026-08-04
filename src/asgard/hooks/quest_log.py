@@ -1127,8 +1127,17 @@ def quest_owned_files(root: str, events: list[dict]) -> set[str]:
     return owned
 
 
-def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_changed) -> tuple[bool, list[str]]:
-    """(stale 여부, 범위 밖 드리프트) — PASS 이후 트리 변화의 퀘스트 귀속 판정.
+UNSCOPED_DRIFT = "<unscoped>"  # 귀속을 못 따진 fail-safe stale — 경로가 아니라 사유 표시다
+
+
+def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_changed) -> tuple[list[str], list[str]]:
+    """(stale 을 만든 파일, 범위 밖 드리프트) — PASS 이후 트리 변화의 퀘스트 귀속 판정.
+
+    첫 값은 비었을 때 falsy 라 `if stale:` / `not stale` 로 그대로 읽힌다. 목록으로 돌려주는
+    이유는 게이트가 차단을 기록할 때 **무엇이 드리프트했는지**까지 남겨야 하기 때문이다 —
+    사유 코드만 남기면 stale-pass 가 게이트 마찰의 최대 항목인데도(26-08-04 실측 45건 중 20건)
+    기록만 보고는 무엇을 고칠지 알 수 없다. 귀속을 못 따진 fail-safe 경로는 경로 대신
+    `UNSCOPED_DRIFT` 한 항목을 담는다 — 그 자리는 "닿은 파일을 못 셌다"이지 "파일 하나"가 아니다.
 
     전 트리 해시 불일치를 전부 stale로 보면 병렬 세션 쓰기·빌드 아티팩트 1건이 full 재검증을
     재소환하고, 트리가 움직이는 한 예산까지 반복된다 (26-07-21 실측: 타 세션 파일 34개로
@@ -1142,17 +1151,17 @@ def stale_pass_scope(root: str, last_pass: dict, events: list[dict], current_cha
     pass_tree = str(last_pass.get("tree_ref") or "")
     owned = quest_owned_files(root, events)
     if not pass_tree or not owned:
-        return True, []
+        return [UNSCOPED_DRIFT], []
     cur_tree = current_tree_ref(root)
     if not cur_tree:
-        return True, []
+        return [UNSCOPED_DRIFT], []
     rc, names = git(root, "diff", "--name-only", pass_tree, cur_tree)
     if rc != 0:
-        return True, []
+        return [UNSCOPED_DRIFT], []
     drift = {n for n in names.splitlines() if n.strip()}
     drift |= set(map(str, current_changed or [])) ^ {str(p) for p in (last_pass.get("changed_files") or [])}
     hits = sorted(p for p in drift if p in owned or p == ".asgard/map" or p.startswith(".asgard/map/"))
-    return bool(hits), sorted(drift - set(hits))
+    return hits, sorted(drift - set(hits))
 
 
 def load_policy(root: str) -> dict:
