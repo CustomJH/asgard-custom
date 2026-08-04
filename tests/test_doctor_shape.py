@@ -101,6 +101,18 @@ class TestTrinityRowNames(unittest.TestCase):
             rows = doctor._trinity_checks(td)
         self.assertTrue(all(not r["name"].startswith("trinity") for r in rows))
 
+    def test_no_agents_md_still_reports_client_wiring(self):
+        """AGENTS.md 는 배선의 조건이 아니다 — `.claude/` 가 있는데 훅이 안 걸린 것을 말해야 한다.
+
+        말 안 하던 동안 doctor 는 정책값(`personal memory inject on`)만 초록으로 보였고,
+        스냅샷·회수·Stop 동기화가 한 번도 안 도는 프로젝트가 정상으로 읽혔다."""
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, ".claude"))
+            rows = {c["name"]: c for c in doctor._trinity_checks(td)}
+        self.assertIn("memory wiring (CC)", rows)
+        self.assertFalse(rows["memory wiring (CC)"]["ok"])
+        self.assertIn("hook file", rows["memory wiring (CC)"]["detail"])
+
     def test_client_rows_appear_only_for_installed_clients(self):
         with tempfile.TemporaryDirectory() as td:
             _scaffolded(td)

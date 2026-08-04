@@ -1085,11 +1085,16 @@ def _quest_log_writable_check(root: str) -> dict:
 def _trinity_checks(root: str) -> list[dict]:
     """Trinity 에셋 진단 — AGENTS.md가 있는 프로젝트에서만. 여기 나열한 순서가 곧 표면 순서다.
 
-    공유 메모리 검사만 AGENTS.md 유무와 무관하다 — 스캐폴드가 없어도 설정된 프로젝트 메모리는
-    진단 대상이기 때문이다. `dict | None`을 돌려주는 항목은 그 계층을 못 읽었을 때 빠진다."""
+    공유 메모리 검사와 **클라이언트 배선 검사**는 AGENTS.md 유무와 무관하다. 앞은 스캐폴드가
+    없어도 설정된 프로젝트 메모리가 진단 대상이라서고, 뒤는 AGENTS.md가 배선의 조건이 아니기
+    때문이다 — `.claude/`가 있는데 memory-activate가 안 걸린 프로젝트는 스냅샷도 회수도 Stop
+    동기화도 한 번을 안 도는데, AGENTS.md 하나가 없다는 이유로 doctor가 그 사실을 통째로
+    안 말하고 정책값(`memory inject on`)만 초록으로 보였다. 없는 통로를 켜져 있다고 읽는다.
+    `dict | None`을 돌려주는 항목은 그 계층을 못 읽었을 때 빠진다."""
     memory_check = _shared_memory_check(root)
     if not os.path.exists(os.path.join(root, "AGENTS.md")):
-        return [memory_check] if memory_check else []
+        rows = _client_wiring_checks(root)
+        return (rows + [memory_check]) if memory_check else rows
     checks = [
         _trinity_block_check(root),
         _skill_adapter_check(root),
