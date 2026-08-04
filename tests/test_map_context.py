@@ -465,26 +465,26 @@ class TestMapActivateHook(Base):
         run.assert_not_called()
 
         completed = subprocess.CompletedProcess(["asgard"], 0, stdout="", stderr="")
-        # Stop 인데 이 세션이 아무것도 안 썼으면 재생성하지 않는다 — 지도는 그대로고 턴만 비싸진다.
-        with (
-            mock.patch.object(map_activate.time, "time", return_value=10_000),
-            mock.patch.object(map_activate.os.path, "getmtime", return_value=10_000),
-            mock.patch.object(map_activate.subprocess, "run") as run,
-        ):
-            map_activate.maintain("/bin/asgard", self.root, stop=True)
-        run.assert_not_called()
-
-        # write-sentinel 이 남긴 기록이 지도보다 새로우면 Stop 은 주기와 무관하게 최신화한다
-        # (지도 변경분이 Verifier 해시에 실려야 한다).
+        # 주기가 지났어도 Stop 은 지도를 안 쓴다. 판정을 적는 자리도 Stop 이고 같은 이벤트의 훅은
+        # 병렬이라, 여기서 쓰면 verifier-gate 가 방금 적힌 PASS 를 stale 로 읽는다 (26-08-05 실측).
         os.utime(graph, (10_000, 10_000))
         writes = os.path.join(state, "writes-abc.json")
         open(writes, "w", encoding="utf-8").write('["src/x.py"]')
         os.utime(writes, (20_000, 20_000))
         with (
-            mock.patch.object(map_activate.time, "time", return_value=10_100),
-            mock.patch.object(map_activate.subprocess, "run", return_value=completed) as run,
+            mock.patch.object(map_activate.time, "time", return_value=99_000),
+            mock.patch.object(map_activate.subprocess, "run") as run,
         ):
             map_activate.maintain("/bin/asgard", self.root, stop=True)
+        run.assert_not_called()
+        self.assertFalse(os.path.exists(os.path.join(state, "map-maintained")))
+
+        # 쓴 턴의 최신화는 다음 요청이 받는다 — 판정보다 앞이라 안전하다.
+        with (
+            mock.patch.object(map_activate.time, "time", return_value=99_000),
+            mock.patch.object(map_activate.subprocess, "run", return_value=completed) as run,
+        ):
+            map_activate.maintain("/bin/asgard", self.root)
         self.assertEqual(
             [call.args[0][1:3] for call in run.call_args_list],
             [["map", "update"], ["map", "scan"]],

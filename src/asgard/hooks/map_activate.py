@@ -70,29 +70,19 @@ def emit(current_mode, current_event, text):
         sys.stdout.write(text + "\n")
 
 
-def wrote_since(state_dir, newest):
-    """이 세션이 도구 계층으로 판 파일이 지도보다 새로운가.
-
-    write-sentinel(PostToolUse)이 남기는 `writes-<sid>.json`의 mtime이 유일한 신호다. Bash
-    리다이렉션 write는 그쪽도 못 보므로(write_sentinel 모듈 주석의 lagom 항목) 그 경로는
-    주기 새로고침이 받는다 — 지도가 조금 늦는 것이 턴마다 2초를 태우는 것보다 싸다.
-    """
-    try:
-        names = os.listdir(state_dir)
-    except OSError:
-        return False
-    for name in names:
-        if name.startswith("writes-") and name.endswith(".json"):
-            try:
-                if os.path.getmtime(os.path.join(state_dir, name)) > newest:
-                    return True
-            except OSError:
-                pass
-    return False
-
-
 def maintain(exe, root, stop=False):
-    """Refresh both map tiers at most once per interval; failures stay fail-open."""
+    """Refresh both map tiers at most once per interval; failures stay fail-open.
+
+    Stop 에서는 절대 안 쓴다. 지도는 Verifier 해시의 일부인데(AGENTS.md map 절) 판정을 기록하는
+    자리도 Stop 이라, 여기서 `map update` 를 돌리면 같은 이벤트의 verifier-gate 가 방금 적힌
+    PASS 를 stale 로 읽는다 — 같은 이벤트의 훅은 병렬이라 순서를 정할 수도 없다 (26-08-05 실측:
+    PASS 10d56dcc 직후 현재 해시 68992095, 차이는 지도의 파일 수 두 줄뿐이었다).
+
+    쓴 턴의 최신화는 사라지지 않는다. 판정 대상 diff 안에서는 `quest_log.refresh_managed_map`
+    이 **해시를 뜨기 전에** 갱신하고(그 함수 독스트링이 같은 규칙을 적어 뒀다), 그 밖의 턴은
+    다음 요청의 UserPromptSubmit 이 주기 새로고침으로 받는다 — 판정보다 앞이라 안전하다."""
+    if stop:
+        return
     # ponytail: concurrent hooks may duplicate one scan; add a lock only if scans become costly.
     state_dir = os.path.join(root, ".asgard", "state")
     marker = os.path.join(state_dir, "map-maintained")
@@ -103,9 +93,8 @@ def maintain(exe, root, stop=False):
             newest = max(newest, os.path.getmtime(path))
         except OSError:
             pass
-    # 지도는 Verifier 해시의 일부라(AGENTS.md map 절) **쓴 턴**은 반드시 최신화한다. 읽기만 한
-    # 턴까지 재생성하면 턴마다 통째로 헛돈다 — 이 저장소 실측 4.7s, 지도 정리 뒤에도 2.2s.
-    if not (stop and wrote_since(state_dir, newest)) and time.time() - newest < REFRESH_SECONDS:
+    # 읽기만 한 턴까지 재생성하면 턴마다 통째로 헛돈다 — 이 저장소 실측 4.7s, 지도 정리 뒤에도 2.2s.
+    if time.time() - newest < REFRESH_SECONDS:
         return
     for command in ([exe, "map", "update", "--quiet"], [exe, "map", "scan", "--quiet"]):
         result = subprocess.run(
