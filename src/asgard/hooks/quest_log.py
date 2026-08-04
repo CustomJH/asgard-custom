@@ -667,6 +667,16 @@ SAFE_CHECK_PREFIXES = (
     "cargo test",
     "cargo check",
     "go test",
+    # JVM 러너 — 표에 없던 동안 Gradle·Maven 저장소는 `baseline_checks` 를 손으로 적어도
+    # 안전 표를 못 넘어 조용히 버려졌고, 아래 `gate_first_checks_available` 도 이 이름들을
+    # 안 세서 결정론 레인이 **설정으로도** 못 섰다 (26-08-04 hvami-mono 실측: Gradle 6모듈 +
+    # Maven 2모듈 모노레포에서 레인이 통째로 꺼진 채 돌았다). 신뢰 등급은 이미 있는
+    # `npm test`·`make test` 와 같다 — 셋 다 저장소 안 파일이 무엇을 도는지 정한다.
+    "./gradlew test",
+    "gradle test",
+    "./mvnw test",
+    "mvn test",
+    "mvn -q test",
     "make test",
     "make check",
     "make verify",
@@ -801,13 +811,28 @@ def _detect_node_checks(root: str) -> list[str]:
 
 
 def gate_first_checks_available(root: str, policy: dict) -> bool:
-    """Only behavior test runners may replace an LLM Verifier; lint/compile/artifact checks may not."""
+    """Only behavior test runners may replace an LLM Verifier; lint/compile/artifact checks may not.
+
+    JVM 러너는 자동 감지가 못 내놓는다 (`detect_checks` 는 pytest 와 npm 계열만 본다). 그래도
+    여기서 세는 이유는 사람이 `baseline_checks` 에 적은 것도 이 함수를 지나기 때문이다 —
+    안 세면 Gradle·Maven 저장소는 설정을 해도 레인이 안 선다."""
+    behavior = (
+        ["npm", "test"],
+        ["pnpm", "test"],
+        ["yarn", "test"],
+        ["cargo", "test"],
+        ["go", "test"],
+        ["gradle", "test"],
+        ["./gradlew", "test"],
+        ["mvn", "test"],
+        ["./mvnw", "test"],
+    )
     for command in detect_checks(root, policy):
         words = command.split()
-        if "pytest" in words or words[:2] in (["npm", "test"], ["pnpm", "test"], ["yarn", "test"]):
+        if "pytest" in words or words[:2] in behavior:
             return True
-        if words[:2] in (["cargo", "test"], ["go", "test"]):
-            return True
+        if words[0] in ("mvn", "./mvnw") and "test" in words:
+            return True  # `mvn -q test` — 조용히 도는 표기가 흔하다
     return False
 
 
