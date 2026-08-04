@@ -198,8 +198,22 @@ def _destructive_git(subcommand: str, args: list[str]) -> str | None:
     return None
 
 
+# 토큰으로 못 가르는 텍스트 — 여기서만 아래 정규식 표를 명령문 전체에 댄다.
+#
+# 무엇을 담는가: 셸이나 인터프리터가 **문자열 인자를 다시 명령으로 펴는** 형태 전부. 프로그램
+# 본문이 통째로 한 토큰이라 위 토큰 분류기가 `git` 을 못 본다. 처음 낸 목록은 `sh -c` 계열만
+# 담아서 인라인 코드(`python -c` · `node -e`)와 파이프 실행(`printf … | sh`)이 빠져 있었다
+# (26-08-04 교차검토 지적) — 같은 원리인데 철자만 달랐다.
+_OPAQUE = re.compile(
+    r"\$\(|`|\beval\b|\b(?:ba|z|k)?sh\s+-c\b|\bxargs\b"
+    r"|\bpython[0-9.]*\s+-c\b|\bnode\s+-(?:e|-eval)\b|\bperl\s+-e\b|\bruby\s+-e\b"
+    r"|\|\s*(?:ba|z|k)?sh\b"
+)
+
+
 def blocked_reason(command: str) -> str | None:
-    for segment in _segments(command):
+    segments = _segments(command)
+    for segment in segments:
         for index, token in enumerate(segment):
             base = os.path.basename(token)
             if base == "rm":
@@ -214,9 +228,16 @@ def blocked_reason(command: str) -> str | None:
             reason = _destructive_git(subcommand, args)
             if reason:
                 return reason
-    for pattern, label in BLOCK:  # defense in depth for unusual shell text
-        if re.search(pattern, command):
-            return label
+    # 정규식 표는 **토큰으로 못 읽은 명령**에만 댄다. 명령문 전체를 늘 훑던 종전 갈래는 인용
+    # 안쪽의 글자까지 명령으로 읽어서, 파일에서 문구를 찾는 `grep -n "git stash" <파일>` 이
+    # 워크트리 소실로 차단됐다 (26-08-04 실측). 위 토큰 분류기가 같은 표를 이미 전부 갖고 있고
+    # (`_destructive_git`), 모르는 전역 옵션은 error 로 fail-closed 하므로 파싱이 된 명령에서
+    # 이 표는 판정을 더하지 않고 오탐만 더한다. 파싱이 안 됐거나 셸이 문자열을 다시 명령으로
+    # 펴는 형태($(...)·eval·sh -c·xargs)에서는 그대로 댄다 — 거기서는 토큰이 증거가 아니다.
+    if not segments or _OPAQUE.search(command):
+        for pattern, label in BLOCK:
+            if re.search(pattern, command):
+                return label
     return None
 
 
