@@ -2140,8 +2140,8 @@ class TestWaveParallel(Base):
 class TestSealLane(Base):
     """봉인 레인 — 커밋만 하는 턴이 Trinity 절차를 사지 않는다.
 
-    26-08-04 회귀: `/skill` 호출은 스킬 본문(seal 은 12.8KB)이 곧 요청이 되어 분류기에 실렸고,
-    본문에 든 write 동사 열둘이 `_classify` 의 write 거부권을 만족시켜 **분류 결과와 무관하게**
+    26-08-04 회귀: `/skill` 호출은 당시 12.8KB였던 스킬 본문이 곧 요청이 되어 분류기에 실렸고,
+    본문에 든 write 동사 열둘이 `_classify`의 write 거부권을 만족시켜 **분류 결과와 무관하게**
     write 로 확정됐다. 그래서 커밋만 하면 되는 턴이 thinker 계획 → worker 웨이브 → 베이스라인
     테스트 → verifier 판정을 전부 실행했다."""
 
@@ -2162,13 +2162,16 @@ class TestSealLane(Base):
         self.assertIsNone(invoked_skill_command("커밋해줘"))  # 평범한 요청은 건드리지 않는다
 
     def test_skill_body_alone_still_reads_as_a_write_task(self):
-        """회귀의 원인 자체 — 본문을 요청으로 읽으면 판정이 뒤집힌다는 사실을 못박는다."""
+        """회귀의 원인 자체 — 본문을 요청으로 읽으면 vcs 전용 판정이 사라진다."""
         from asgard.agent.heimdall.classify import classify_heuristic, has_write_verbs
         from asgard.templates.seal import SEAL_SKILL_MD
 
         body = SEAL_SKILL_MD.split("---", 2)[2]
         self.assertTrue(has_write_verbs(body))  # 본문은 늘 write 로 읽힌다
-        self.assertIsNone(classify_heuristic(body))  # read·write 신호가 뒤섞여 LLM 폴백행
+        classification = classify_heuristic(body)
+        self.assertIsNotNone(classification)
+        self.assertTrue(classification["write_expected"])
+        self.assertNotEqual(classification["task_class"], "vcs")
 
     def test_invoked_seal_takes_the_seal_lane_without_a_quest(self):
         seal = FakeSession(SessionResult(text="봉인 완료", stop_reason="end_turn"), label="seal")

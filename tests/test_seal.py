@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""asgard-seal 스킬 자가 검증 — 스캐폴드 배선 + 하드룰·품질 게이트 문구가 본문에 실존하는지.
+"""asgard-seal 스킬 자가 검증 — 배선, gitmoji 제목 형식, 단일 턴 절차.
 
 실행: uv run pytest tests/test_seal.py
 """
@@ -31,7 +31,7 @@ class TestScaffold(unittest.TestCase):
 
 
 class TestSkillBody(unittest.TestCase):
-    """본문 계약 — 자료조사로 확정한 하드룰이 빠지면 스킬의 존재 이유가 사라진다."""
+    """본문 계약 — 빠른 커밋 경로와 안전 규칙을 함께 고정한다."""
 
     def test_frontmatter(self):
         self.assertTrue(SEAL_SKILL_MD.startswith("---\nname: asgard-seal\n"))
@@ -40,7 +40,7 @@ class TestSkillBody(unittest.TestCase):
         """봉인 절차의 git 명령은 스킬 활성 중 사전 승인 — 승인 완화일 뿐, 강제(add -A 금지 등)는
         본문 하드룰 + git-guard 훅이 계속 담당한다."""
         self.assertIn("allowed-tools:", SEAL_SKILL_MD)
-        for rule in ("Bash(git add *)", "Bash(git commit *)", "Bash(git branch --show-current)"):
+        for rule in ("Bash(git status *)", "Bash(git diff *)", "Bash(git add *)", "Bash(git commit *)"):
             self.assertIn(rule, SEAL_SKILL_MD)
 
     def test_allowed_tools_is_a_comma_separated_list(self):
@@ -71,43 +71,45 @@ class TestSkillBody(unittest.TestCase):
         self.assertIn("Canon 4", SEAL_SKILL_MD)
         self.assertIn("No `--no-verify`", SEAL_SKILL_MD)
 
-    def test_gitmoji_semver_anchors(self):
-        for emoji in ("✨", "🐛", "♻️", "💥", "🎉"):
-            self.assertIn(emoji, SEAL_SKILL_MD)
-        self.assertIn("BREAKING CHANGE", SEAL_SKILL_MD)  # Conventional Commits 1.0.0
-        self.assertIn("major", SEAL_SKILL_MD)  # 💥 semver 매핑
+    def test_conventional_commit_anchors(self):
+        self.assertIn("gitmoji", SEAL_SKILL_MD.lower())
+        self.assertIn("<gitmoji> <type>[(<scope>)][!]: <description>", SEAL_SKILL_MD)
+        self.assertIn("gitmoji는 필수", SEAL_SKILL_MD)
+        self.assertIn("없으면 type 기본값", SEAL_SKILL_MD)
+        self.assertIn("BREAKING CHANGE", SEAL_SKILL_MD)
 
     def test_commit_message_canon(self):
-        self.assertIn("If this seal is", SEAL_SKILL_MD)  # 명령형 판별 (cbeams 테스트의 우리 용어판)
-        self.assertIn("Target 50 chars, hard cap 72", SEAL_SKILL_MD)
-        self.assertIn("Wrap at 72 chars", SEAL_SKILL_MD)
+        self.assertIn("✨ feat(seal): gitmoji 제목 형식 적용", SEAL_SKILL_MD)
+        self.assertIn("🐛 fix(auth): 만료 토큰 거부", SEAL_SKILL_MD)
+        self.assertIn("body는 선택 사항", SEAL_SKILL_MD)
 
-    def test_subject_convention_is_per_language_not_translated_english(self):
-        """한국어에는 커밋 명령형이 없다 — 영어 규칙만 주면 모델이 평서형 경구로 메운다."""
+    def test_korean_subject_is_a_noun_phrase_not_a_declarative_sentence(self):
         self.assertIn("개조식 명사형", SEAL_SKILL_MD)
-        self.assertIn("Korean has no commit imperative", SEAL_SKILL_MD)
-        self.assertIn("aphorism", SEAL_SKILL_MD)  # 경구는 제목이 아니라 본문 첫 줄이다
+        for ending in ("`한다`", "`된다`", "`했다`", "`였다`"):
+            self.assertIn(ending, SEAL_SKILL_MD)
+        self.assertNotIn('"만료 토큰을 거부한다" ✓', SEAL_SKILL_MD)
 
-    def test_body_is_an_engineering_record_not_an_essay(self):
-        """가장 자주 무너지는 자리 — 규칙을 다 지키고도 정비하는 사람이 쓸 수 없는 글이 나온다."""
-        self.assertIn("an engineering record, not an essay", SEAL_SKILL_MD)
-        self.assertIn("Name the code", SEAL_SKILL_MD)  # 본문의 주장은 diff 의 무언가를 가리킨다
-        self.assertIn("No aphorisms, metaphors, or narration", SEAL_SKILL_MD)
-        # 일반론은 이 커밋의 것이 아니다 — 다른 커밋에서도 참이면 지운다
-        self.assertIn("survive unchanged in a different commit", SEAL_SKILL_MD)
-        self.assertIn("bisecting a regression", SEAL_SKILL_MD)  # 독자를 못 박는다
+    def test_fast_path_has_no_ceremony_or_second_approval(self):
+        for rule in (
+            "추가 승인을 묻지 않는다",
+            "분류표를 만들지 않는다",
+            "브랜치 이름을 검사하거나 바꾸지 않는다",
+            "테스트나 QA를 다시 실행하지 않는다",
+        ):
+            self.assertIn(rule, SEAL_SKILL_MD)
+        self.assertNotIn("git branch --show-current", SEAL_SKILL_MD)
+        self.assertNotIn("git log --oneline", SEAL_SKILL_MD)
 
-    def test_grammar_is_not_traded_for_the_line_budget(self):
-        """50/72는 줄 예산이지 조사를 떼거나 낱말을 자를 근거가 아니다."""
-        self.assertIn("quest_log.py를", SEAL_SKILL_MD)  # 붙여 쓴 본보기
-        self.assertIn("never `quest_log.py 를`", SEAL_SKILL_MD)
-        self.assertIn("불요", SEAL_SKILL_MD)  # 조어 금지 본보기
-        self.assertIn("never a licence to drop a particle", SEAL_SKILL_MD)
+    def test_one_inspection_pass_then_stage_verify_and_commit(self):
+        self.assertIn("한 번의 확인", SEAL_SKILL_MD)
+        self.assertIn("git status --short", SEAL_SKILL_MD)
+        self.assertIn("git diff --cached --check", SEAL_SKILL_MD)
+        self.assertIn("git diff --cached --stat", SEAL_SKILL_MD)
+        self.assertIn('git commit -m "<subject>"', SEAL_SKILL_MD)
 
     def test_atomic_commit_rules(self):
         self.assertIn("1 commit = 1 logical change", SEAL_SKILL_MD)
-        self.assertIn("Independent-revert", SEAL_SKILL_MD)
-        self.assertIn("Refactor vs. behavior change", SEAL_SKILL_MD)
+        self.assertIn("구현과 그 구현을 검증하는 테스트는 같은 commit", SEAL_SKILL_MD)
 
 
 if __name__ == "__main__":

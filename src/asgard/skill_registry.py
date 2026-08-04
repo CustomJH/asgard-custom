@@ -50,7 +50,7 @@ def _lane(text: str) -> str:
 
     The native loop classifies a turn from the request text, and a user-invoked skill hands it
     the whole SKILL.md body instead — a contract that says what the procedure *may* do, not what
-    the user asked for. `asgard-seal`'s body alone carries twelve write verbs, so the write-verb
+    the user asked for. `asgard-seal`'s old body alone carried twelve write verbs, so the write-verb
     veto in `Heimdall._classify` promoted every `/asgard-seal` to a Trinity quest (plan → worker
     waves → baseline suite → verifier) for a run that only calls git. A skill whose procedure is
     already bounded declares its lane here and the router reads the declaration instead of
@@ -592,8 +592,8 @@ def invoked_skill_command(request: str) -> str | None:
 
     Consumers that need to know *what was asked* — routing, request classification, the map and
     tutor layers — must not read the expanded body. A SKILL.md is a contract describing what the
-    procedure may do, and reading it as the request inverts the answer: `asgard-seal`'s body alone
-    carries twelve write verbs, so the write-verb veto in `Heimdall._classify` promoted every
+    procedure may do, and reading it as the request inverts the answer: `asgard-seal`'s old body
+    carried twelve write verbs, so the write-verb veto in `Heimdall._classify` promoted every
     `/asgard-seal` to a full delivery quest. The producer above and this reader are adjacent on
     purpose — the wrapper format has one owner."""
     head = _INVOKED_HEAD.match(request)

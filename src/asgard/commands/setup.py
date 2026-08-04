@@ -423,7 +423,7 @@ def plan_files(cc: bool, cursor: bool, codex: bool, root: str | None = None) -> 
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in LAGOM_SKILLS]
         # Bragi 스킬 — 보고문 사람 문체 감사·재작성 (다국어 판정기 asgard/bragi.py 소비)
         files += [(j(root, ".claude", "skills", sname, "SKILL.md"), direct_skill(body)) for sname, body in BRAGI_SKILLS]
-        # /asgard-seal — gitmoji 사건 봉인 (한 봉인 한 사건 + 품질 게이트)
+        # /asgard-seal — 빠른 gitmoji commit (Conventional type + 시크릿·staged 게이트)
         files.append((j(root, ".claude", "skills", "asgard-seal", "SKILL.md"), direct_skill(SEAL_SKILL_MD)))
         # asgard-memory — 개인 메모리 읽기/저장 계약 (직접 파일 편집 금지, ingest 승인 게이트)
         files.append((j(root, ".claude", "skills", "asgard-memory", "SKILL.md"), direct_skill(MEMORY_SKILL_MD)))

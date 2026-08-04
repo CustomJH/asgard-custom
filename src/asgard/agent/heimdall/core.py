@@ -37,7 +37,6 @@ from .classify import (
     classify_heuristic,
     has_write_verbs,
     memory_write_intent,
-    vcs_only_intent,
 )
 from .delivery import DeliveryDispatch
 from .journal import _log_classify
@@ -1084,7 +1083,7 @@ class Heimdall:
         대조할 diff-hash 도 없는 턴에 thinker 계획 → worker 웨이브 → 테스트 스위트 → verifier
         판정을 전부 실행한다 (단순 커밋 한 번이 5분 이상).
 
-        게이트를 없앤 게 아니라 다른 층이 맡는다: 봉인 규율(하나의 봉인 하나의 사건·50/72·시크릿
+        게이트를 없앤 게 아니라 다른 층이 맡는다: 봉인 규율(gitmoji + Conventional type·시크릿
         차단·staged 재검증)은 asgard-seal 스킬 본문이 계약으로 싣고, 이 세션이 소스 파일을 실제로
         편집하면 아래 사후 판정이 Trinity 로 승격시킨다 (Canon 10, `_direct` 의 소급 승격과 같다)."""
         from ...hooks.quest_log import snapshot_ref
@@ -1116,8 +1115,8 @@ class Heimdall:
             # write(`pre_work`)이지 스킬 계약문이 아니다.
             return self._trinity(subject, cls, pre_work=r, pre_base_ref=before_ref)
         self.last_response_text = r.text
-        # 기록에 남기는 것은 `subject` 다 — 12.8KB 계약문을 턴 맥락과 turn_store 에 넣으면
-        # 다음 DIRECT 턴의 후속 질문 맥락이 스킬 본문으로 가득 찬다.
+        # 기록에 남기는 것은 `subject` 다 — 당시 12.8KB였던 계약문을 턴 맥락과 turn_store 에
+        # 넣으면 다음 DIRECT 턴의 후속 질문 맥락이 스킬 본문으로 가득 찼다.
         self.history = (self.history + [(subject, r.text[:500])])[-6:]
         self._persist_turn(subject, r.text)
         return r.text if r.stop_reason == "refusal" else ""  # 본문은 이미 스트리밍됨 — 이중 출력 방지
