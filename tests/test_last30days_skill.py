@@ -30,6 +30,8 @@ from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
+from cli_boundary import strip_ansi  # noqa: E402
+
 from asgard import skill_registry  # noqa: E402
 from asgard.templates.skill_router import direct_skill, openai_skill_metadata  # noqa: E402
 
@@ -121,10 +123,12 @@ class VendoredSnapshotTest(unittest.TestCase):
             timeout=120,
             # 설치 트리에 .pyc를 남기지 않는다 — `run_skill`과 같은 규율이고, 남기면 휠 소스가
             # 오염되는 데다 그 파일이 스냅샷 지문을 조용히 흔든다.
-            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            # 색 없이 받는다 — Python 3.14 부터 argparse 가 help 를 ANSI 로 칠하고, 그러면
+            # `usage:` 와 프로그램 이름 사이에 이스케이프가 끼어 평문 대조가 깨진다.
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "NO_COLOR": "1", "TERM": "dumb"},
         )
         self.assertEqual(proc.returncode, 0, proc.stderr[-2000:])
-        self.assertIn("usage: last30days.py", proc.stdout)
+        self.assertIn("usage: last30days.py", strip_ansi(proc.stdout))
 
 
 def _module_exists(package: Path, name: str) -> bool:
