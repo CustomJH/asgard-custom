@@ -32,6 +32,7 @@ import re
 import shutil
 import subprocess
 import sys
+from collections.abc import Sequence
 
 # Windows 콘솔/파이프 기본 인코딩(cp1252 등)은 한국어 출력을 넣지 못한다 — 인코딩 오류가
 # fail-open에 삼켜지면 훅 산출이 통째로 증발한다. UTF-8 강제.
@@ -89,14 +90,16 @@ def _lesson(exe: str, root: str, paths: list[str]) -> dict:
         return {}
 
 
-def _signature(points: list[dict], back: list[dict]) -> str:
-    """물음 집합의 지문. 같은 물음을 매 턴 다시 놓으면 세 번째부터 아무도 안 읽는다.
+def _signature(points: list[dict], back: list[dict], told: Sequence[str] = ()) -> str:
+    """카드에 실릴 것 전부의 지문. 같은 카드를 매 턴 다시 놓으면 세 번째부터 아무도 안 읽는다.
 
-    재방문도 지문에 넣는다 — 안 넣으면 오늘 처음 돌아온 옛 물음이 "직전 턴과 같은 카드"로
-    판정돼 통째로 사라진다. 래치가 자기 성장 경로를 막는 형상이다.
+    재방문도 설명 절도 지문에 넣는다 — 안 넣으면 오늘 처음 돌아온 옛 물음이나 새로 바뀐 설명이
+    "직전 턴과 같은 카드"로 판정돼 통째로 사라진다. 래치가 자기 성장 경로를 막는 형상이다.
     """
     rows = ["%s|%s|%s" % (p.get("kind"), p.get("path"), p.get("unit")) for p in points]
     rows += ["revisit|%s|%s" % (r.get("cid"), r.get("asks")) for r in back]
+    if told:
+        rows.append("explain|" + hashlib.sha256("\n".join(told).encode("utf-8")).hexdigest()[:16])
     return hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()[:16]
 
 
@@ -120,7 +123,7 @@ def _latched(root: str, sid: str, sig: str, slot: str = "") -> bool:
     return False
 
 
-def _card(lesson: dict, points: list[dict], back: list[dict]) -> str:
+def _card(lesson: dict, points: list[dict], back: list[dict], told: Sequence[str] = ()) -> str:
     """네이티브 루프의 `tutor._card`와 같은 화면을 낸다 — 형식이 갈리면 같은 판정이 클라이언트마다
     다르게 보이고, 그러면 사용자는 어느 쪽이 진짜인지부터 물어야 한다."""
     added, removed = int(lesson.get("added") or 0), int(lesson.get("removed") or 0)
@@ -131,6 +134,10 @@ def _card(lesson: dict, points: list[dict], back: list[dict]) -> str:
         removed,
     )
     lines = [head, ""]
+    if told:
+        # 설명이 물음보다 위에 온다 — 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라
+        # 침묵을 받는다. 네이티브 `tutor._card`가 같은 자리에 같은 절을 놓는다.
+        lines += [*told, ""]
     shown = 0
     folded, quiet = {}, {}
     for point in points:
@@ -157,8 +164,80 @@ def _card(lesson: dict, points: list[dict], back: list[dict]) -> str:
         lines.append("    ▸ %s" % row.get("ask"))
     lines.append("")
     lines.append('  답은 `asgard tutor --answer <표식> "..."` · 오탐이면 `asgard tutor --dismiss <표식>`')
-    lines.append("  전체와 '왜 이렇게 했는가' 빈칸: %s  (다시 보기: `asgard tutor --report`)" % REPORT_REL)
+    # 보고서 경로는 판정이 실제로 쓴 자리를 적는다 — 상수를 적으면 저장소 설정이 자리를 옮겼을 때
+    # 사용자가 여는 경로가 빈 자리가 된다. 안 실려 오면 기본 자리로 돌아간다.
+    report = str(lesson.get("report") or "").strip() or REPORT_REL
+    lines.append("  전체와 '왜 이렇게 했는가' 빈칸: %s  (다시 보기: `asgard tutor --report`)" % report)
     return "\n".join(lines)
+
+
+def _explain(exp: object, limit: int = MAX_SHOWN) -> list[str]:
+    """`asgard tutor --json`의 `explain` 칸을 그린다 — 훅은 설명을 만들지 않는다.
+
+    칸이 없거나 `null`이면 빈 목록이고, 그러면 카드는 지금까지처럼 물음만 낸다. 훅은 stdlib
+    전용이라 엔진을 부를 수 없어서(hooks 패키지 계약) 여기서 하는 일은 이미 판정된 칸을 줄로
+    옮기는 것뿐이다 — 무엇을 설명할지 고르는 규칙은 `asgard.tutor_teach`가 혼자 갖는다.
+
+    줄 모양은 `tutor_teach.card`를 그대로 옮긴다. 판정이 하나라도 화면이 둘이면 사용자는 어느
+    쪽이 진짜인지부터 물어야 한다 — `tests/test_tutor_note_hook.py`가 두 산출을 문자열로 맞대
+    본다. 깊이별로 줄어드는 규칙(`owned`는 한 줄, `first`가 아니면 자리까지)도 거기서 온다.
+
+    설명 절은 물음에 답하지 않는다. 여기 실리는 것은 "무엇이 어디서 바뀌었나"이고, "왜 그렇게
+    했나"는 아래 물음이 그대로 열어 둔다.
+    """
+    if not isinstance(exp, dict):
+        return []
+    steps, terms = _rows(exp, "steps"), _rows(exp, "terms")
+    checks, recall = _texts(exp, "checks"), _texts(exp, "recall")
+    gaps = [g for g in _rows(exp, "gaps", list) if len(g) >= 2]
+    # `gaps`는 빈 판정에서 뺀다 — 엔진 `tutor_teach.card`와 같은 규칙이다. 못 본 것 하나로 카드를
+    # 내면 "읽을 자리 0곳" 두 줄이 턴마다 나가고, 빈 카드는 다음 카드의 신뢰를 깎는다. 그 줄은
+    # `--explain`과 보고서가 받는다. 이 조건이 엔진과 갈리면 같은 payload가 화면마다 다르게 나온다.
+    if not steps and not terms and not checks:
+        return []
+    depth = str(exp.get("depth") or "")
+    if depth == "owned":
+        where = " · ".join(("%s %s" % (_at(step), step.get("unit") or "")).strip() for step in steps[:limit])
+        return ["⠶ 설명 — %s" % where] if where else []
+    lines = ["⠶ 설명 — 이번 변경에서 읽을 자리 %d곳이에요." % len(steps)]
+    mission = " ".join(str(exp.get("mission") or "").split())
+    if depth == "first" and mission:
+        lines.append("  임무 — " + mission[:120])
+    for step in steps[:limit]:
+        lines.append(
+            "  %s. %s %s — %s · %s"
+            % (step.get("order"), _at(step), step.get("unit") or "", step.get("what") or "", step.get("why_here") or "")
+        )
+    if len(steps) > limit:
+        lines.append("  …외 %d건" % (len(steps) - limit))
+    if depth != "first":
+        return lines
+    if terms:
+        lines.append("  새로 들어온 말")
+        for term in terms[:limit]:
+            gloss = str(term.get("gloss") or "")
+            lines.append("    `%s` — %s" % (term.get("name"), term.get("where")) + (" — %s" % gloss if gloss else ""))
+        if len(terms) > limit:
+            lines.append("    …외 %d건" % (len(terms) - limit))
+    lines += ["  확인 — %s" % check for check in checks]
+    lines += ["    ▸ %s" % ask for ask in recall]
+    lines += ["  못 본 것 — %s: %s" % (gap[0], gap[1]) for gap in gaps[:limit]]
+    return lines
+
+
+def _at(step: dict) -> str:
+    """`Step.where` — 엔진의 프로퍼티는 JSON에 안 실려서 여기서 같은 규칙으로 다시 만든다."""
+    return "%s:%s" % (step.get("path"), step.get("line"))
+
+
+def _rows(exp: dict, name: str, kind: type = dict) -> list:
+    rows = exp.get(name)
+    return [row for row in rows if isinstance(row, kind)] if isinstance(rows, list) else []
+
+
+def _texts(exp: dict, name: str) -> list:
+    rows = exp.get(name)
+    return [str(row) for row in rows if str(row).strip()] if isinstance(rows, list) else []
 
 
 def _label(row: dict) -> str:
@@ -330,12 +409,13 @@ def main() -> None:
         lesson = _lesson(exe, root, paths)
         points = [p for p in (lesson.get("checkpoints") or []) if isinstance(p, dict)]
         back = [r for r in (lesson.get("revisits") or []) if isinstance(r, dict)]
-        if not points and not back:
-            sys.exit(0)  # 물을 것이 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
-        if _latched(root, sid, _signature(points, back)):
+        told = _explain(lesson.get("explain"))
+        if not points and not back and not told:
+            sys.exit(0)  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
+        if _latched(root, sid, _signature(points, back, told)):
             sys.exit(0)
         key = "followup_message" if protocol == "cursor" else "systemMessage"
-        sys.stdout.write(json.dumps({key: _card(lesson, points, back)}, ensure_ascii=False) + "\n")
+        sys.stdout.write(json.dumps({key: _card(lesson, points, back, told)}, ensure_ascii=False) + "\n")
     except Exception:
         pass  # 되짚기 불능이 턴을 막지 않는다 — 튜터는 규율이지 관문이 아니다
     sys.exit(0)

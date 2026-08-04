@@ -619,6 +619,13 @@ def tutor(
         False, "--expect", help="before the agent runs: write what you think the answer looks like"
     ),
     settle: str = typer.Option("", "--settle", help="close an expectation against what actually landed (its mark)"),
+    explain: bool = typer.Option(
+        False, "--explain", help="how to read this change: the order, the words it uses, what to run"
+    ),
+    depth: str = typer.Option("", "--depth", help="how much --explain spells out: first · familiar · owned"),
+    mission: bool = typer.Option(
+        False, "--mission", help="what you are heading toward (write one, or call it bare to see it)"
+    ),
     sid: str = typer.Option("", "--sid", help="the session this belongs to (hooks pass it; scopes --tip and --recap)"),
     text: str = typer.Option("", "--text", help="the request text --brief matches against"),
     answer: str = typer.Option("", "--answer", help="close a question with your answer (checkpoint mark)"),
@@ -660,6 +667,9 @@ def tutor(
             expect=expect,
             settle=settle,
             sid=sid,
+            explain=explain,
+            depth=depth,
+            mission=mission,
         )
     )
 

@@ -239,15 +239,23 @@ def _inventory(rel: str, now: dict[str, Unit], old: dict[str, Unit], stat: tuple
     return FileChange(rel, stat[0], stat[1], added, changed, removed, fresh, judged=True, code=True)
 
 
-def _stat(rel: str, text: str | None, stats: dict[str, tuple[int, int]]) -> tuple[int, int]:
-    """추적되지 않은 새 파일은 `git diff --numstat`에 안 나온다 — 본문 전체가 이번에 추가된 것이다.
+def _stat(rel: str, text: str | None, stats: dict[str, tuple[int, int]], before: str | None = None) -> tuple[int, int]:
+    """(추가행, 삭제행). numstat에 없는 경로는 `before`가 갈라 준다.
 
+    추적되지 않은 새 파일은 `git diff --numstat`에 안 나온다 — 본문 전체가 이번에 추가된 것이다.
     안 세면 신규 파일이 전부 `+0/-0`으로 보이고, 그러면 보고서에서 가장 큰 변경이 가장 작아
     보인다. 0은 "안 바뀜"이라는 뜻으로 읽히므로 못 센 것을 0으로 두면 그건 거짓말이다.
+
+    반대 방향도 거짓말이다: 경로를 지목받은 호출(훅은 write sentinel이 준 경로를 넘긴다)에는
+    **안 바뀐 추적 파일**도 들어온다. numstat은 그런 파일을 안 싣는데, base에 본문이 있으면
+    안 바뀐 것이므로 (0, 0)이다 — 안 가르면 안 건드린 파일이 통째로 새 파일로 보고된다
+    (실측: `asgard tutor --json --path src/asgard/tutor.py`가 `added: 1032`을 냈다).
     """
     known = stats.get(rel)
     if known is not None:
         return known
+    if before is not None:
+        return (0, 0)
     return (len(text.splitlines()), 0) if text is not None else (0, 0)
 
 
@@ -262,8 +270,8 @@ def _judge(root: str, rel: str, base: str, stats: dict[str, tuple[int, int]], ow
     text = _read(root, rel)
     if text is None:
         return (FileChange(rel, *_stat(rel, None, stats), judged=False, code=code), [], "읽지 못했어요", {})
-    stat = _stat(rel, text, stats)
     before = _at_base(root, rel, base)
+    stat = _stat(rel, text, stats, before)
     marks = _fresh(tutor_probes.marks(text, rel), tutor_probes.marks(before or "", rel))
     points = [_mark_point(rel, sig, line) for sig, line in sorted(marks.items(), key=lambda kv: kv[1])]
     now = tutor_probes.units_of(text, rel)
@@ -934,11 +942,38 @@ def turn_note(root: str, sid: object, limit: int = 3) -> str:
     lesson = review(root, "HEAD", paths)
     points = lesson.ranked
     rows, back = hand_back(root, points, limit)
-    if not points and not back:
-        return ""  # 물을 것이 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
-    if _repeat(root, key, points, back):
+    told = _explained(root, paths, limit)
+    if not points and not back and not told:
+        return ""  # 물을 것도 설명할 것도 없으면 침묵한다 — 빈 카드는 다음 카드의 신뢰를 깎는다
+    if _repeat(root, key, points, back, told):
         return ""
-    return _card(lesson, rows, back, limit)
+    return _card(lesson, rows, back, limit, told)
+
+
+def _explained(root: str, paths: list[str], limit: int) -> str:
+    """이번 변경의 설명 절. 엔진이 없으면 빈 문자열 — 그러면 카드는 물음만 낸다.
+
+    늦게 읽는 이유는 `_debt_ledger`와 같다: 같은 시각에 만드는 모듈이 없어도 되짚기 시작은
+    깨지면 안 된다. 문장은 엔진의 `card`가 그대로 만든다 — 여기서 다시 조립하면 화면이 두 벌이
+    되고, 두 벌은 반드시 갈라진다(훅 `_card`와 같은 계약).
+
+    카드가 실제로 그린 말은 그 자리에서 용어집에 적립한다. 이 경로에만 사는 세션(네이티브 루프)은
+    `asgard tutor`를 안 거치므로, 여기서 안 적으면 용어집이 영영 안 쌓이고 설명은 회차마다 같은
+    길이로 나온다. 적립 목록을 `shown_terms`에서 받는 이유는 하나다 — 카드가 상한에서 자른 말까지
+    적으면 사람이 못 본 말이 "이미 설명한 말"이 된다.
+    """
+    try:
+        module = importlib.import_module(f"{__package__}.tutor_teach")
+        exp = module.explain(root, "HEAD", paths)
+        told = str(module.card(exp, limit) or "").strip()
+    except Exception:
+        return ""
+    try:
+        if told:
+            module.glossary_merge(root, module.shown_terms(exp, limit))
+    except Exception:
+        pass  # 적립 실패가 카드를 지우지는 않는다 — 그 말은 다음 회차에 한 번 더 설명된다
+    return told
 
 
 def _session_writes(root: str, sid: str) -> list[str]:
@@ -949,10 +984,12 @@ def _session_writes(root: str, sid: str) -> list[str]:
     return [str(row) for row in rows] if isinstance(rows, list) else []
 
 
-def _repeat(root: str, sid: str, points: tuple[Checkpoint, ...], back: list[tutor_growth.Revisit]) -> bool:
+def _repeat(
+    root: str, sid: str, points: tuple[Checkpoint, ...], back: list[tutor_growth.Revisit], told: str = ""
+) -> bool:
     """같은 물음을 매 턴 다시 놓으면 세 번째부터 아무도 안 읽는다 — 지문이 같으면 침묵."""
     path = os.path.join(root, ".asgard", "state", f"tutor-{sid}.json")
-    sig = _fingerprint(points, back)
+    sig = _fingerprint(points, back, told)
     seen = (read_json(path, {}) or {}).get("signature")
     try:
         write_json(path, {"signature": sig})
@@ -961,10 +998,13 @@ def _repeat(root: str, sid: str, points: tuple[Checkpoint, ...], back: list[tuto
     return seen == sig
 
 
-def _fingerprint(points: tuple[Checkpoint, ...], back: list[tutor_growth.Revisit]) -> str:
-    """물음 집합의 지문. 재방문도 지문에 넣는다 — 안 넣으면 이번 턴에 처음 돌아온 옛 물음이
-    "직전 턴과 같은 카드"로 판정돼 통째로 사라진다(래치가 자기 성장 경로를 막는다)."""
+def _fingerprint(points: tuple[Checkpoint, ...], back: list[tutor_growth.Revisit], told: str = "") -> str:
+    """카드에 실릴 것 전부의 지문. 재방문도 설명 절도 여기 들어간다 — 안 넣으면 이번 턴에 처음
+    돌아온 옛 물음이나 새로 바뀐 설명이 "직전 턴과 같은 카드"로 판정돼 통째로 사라진다(래치가
+    자기 성장 경로를 막는다)."""
     rows = [f"{p.kind}|{p.path}|{p.unit}" for p in points] + [f"revisit|{r.cid}|{r.asks}" for r in back]
+    if told:
+        rows.append("explain|" + hashlib.sha256(told.encode("utf-8")).hexdigest()[:16])
     return hashlib.sha256("\n".join(sorted(rows)).encode("utf-8")).hexdigest()[:16]
 
 
@@ -973,6 +1013,7 @@ def _card(
     rows: list[tuple[Checkpoint, str]],
     back: list[tutor_growth.Revisit],
     limit: int,
+    told: str = "",
 ) -> str:
     added, removed = lesson.touched
     lines = [
@@ -980,6 +1021,11 @@ def _card(
         " 아래는 **기계가 못 답하는** 것들이에요.",
         "",
     ]
+    # 설명이 물음보다 위에 온다. 전달된 적 없는 것을 인출부터 시키면 물음은 답이 아니라 침묵을
+    # 받는다 — 설명 절은 물음에 답하지 않고 그 물음이 서 있는 자리만 준다.
+    if told:
+        lines.append(told)
+        lines.append("")
     lines += _card_points(rows, limit)
     lines += _card_back(back)
     lines.append("")

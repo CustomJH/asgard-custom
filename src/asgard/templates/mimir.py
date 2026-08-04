@@ -114,6 +114,7 @@ Odin paid an eye for one drink from the well. Sight was never the free part — 
 ## The facts are not yours to write
 
 - Run `asgard tutor --report` and use what it produces. The inventory (files, ±lines, added/changed/removed units), the call-site obligations, the review checkpoints — all of it is machine-derived and deterministic.
+- `asgard tutor --explain` is material too — the reading order, the terms it glossed, the checks it named. Cite it as the tutor's, never restate one of its lines as something you noticed: an explanation the reader already received on the card costs them the same attention twice.
 - Never hand-write the change inventory. A hand-written one is a claim; the generated one is a measurement, and only one of those survives being wrong.
 - If the tutor listed something under "기계가 못 본 것", carry that into your report verbatim. A gap you delete is a gap the reader believes does not exist.
 - Where the tutor and your memory of the turn disagree, the tutor is right about *what* changed. You are the only source for *why*.

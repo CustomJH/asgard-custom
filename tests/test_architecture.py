@@ -139,6 +139,10 @@ LAYERS: list[tuple[str, frozenset[str]]] = [
                 # 판정은 tutor 가 소비한다. 여기 있는 이유는 tutor_probes 와 같다: 재기만 하고
                 # 무엇을 할지는 안 정한다.
                 "tutor_debt",
+                # tutor_teach — 이번 변경을 사람에게 **설명하는** 재료(읽는 순서·용어·확인 명령).
+                # tutor 는 물음을 만들고 이쪽은 설명을 만든다 — 같은 축의 반대쪽이라 계층이 같다.
+                # 판정 등급인 이유는 부등호다: 계측(tutor_probes)을 읽고 적용(tutor)이 이걸 읽는다.
+                "tutor_teach",
                 "map_context",
                 "map_graph",
                 # map_lex — 질의 어휘 사전. craft_lex·thor_lex와 같은 자리다: 순수 표이고, 그것을
@@ -305,8 +309,10 @@ SUBTIERS: dict[str, list[tuple[str, frozenset[str]]]] = {
             "계측",
             frozenset({"craft_c", "thor_lex", "tutor_probes", "tutor_debt", "map_graph", "map_context", "map_notes"}),
         ),
-        # 계측을 합쳐 결론을 낸다.
-        ("판정", frozenset({"craft"})),
+        # 계측을 합쳐 결론을 낸다. tutor_teach 가 craft 옆인 이유는 방향이다 — 탐침(tutor_probes)과
+        # 기록(tutor_growth)을 읽어 "무엇을 어떤 순서로 읽어야 하는가"를 만들고, 그 결론을
+        # 적용 등급의 tutor 가 화면에 넣는다. craft 를 부르지 않는 것이 이 자리의 조건이다.
+        ("판정", frozenset({"craft", "tutor_teach"})),
         # 결론을 소비한다 — 막고(thor_gate·freyja_gate) 고치고(craft_fix) 되짚는다(tutor).
         ("적용", frozenset({"craft_fix", "freyja_gate", "thor_gate", "tutor"})),
     ],

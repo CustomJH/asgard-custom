@@ -13,6 +13,9 @@
 from __future__ import annotations
 
 import contextlib
+import dataclasses
+import io
+import json
 import os
 import subprocess
 import sys
@@ -21,7 +24,7 @@ import types
 import unittest
 from unittest import mock
 
-from asgard import tutor, tutor_growth, tutor_probes
+from asgard import tutor, tutor_growth, tutor_probes, tutor_teach
 
 _ENV = {
     **os.environ,
@@ -40,6 +43,65 @@ def _ledger(signals=(), open_debt: int = 0, oldest_days: int = 0, turns: int = 0
     return types.SimpleNamespace(
         signals=tuple(signals), open_debt=open_debt, oldest_days=oldest_days, turns=turns, added=added
     )
+
+
+@dataclasses.dataclass(frozen=True)
+class _Term:
+    name: str
+    where: str
+    gloss: str
+    source: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _Step:
+    order: int
+    path: str
+    line: int
+    unit: str
+    what: str
+    why_here: str
+
+
+@dataclasses.dataclass(frozen=True)
+class _Explanation:
+    base: str
+    depth: str
+    mission: str
+    steps: tuple[_Step, ...]
+    terms: tuple[_Term, ...]
+    checks: tuple[str, ...]
+    recall: tuple[str, ...]
+    gaps: tuple[tuple[str, str], ...]
+
+
+def _explanation(depth: str = "first"):
+    """`tutor_teach.explain()`이 돌려주기로 한 모양 — 표면은 이 모양만 알면 된다(공유 SPEC)."""
+    return _Explanation(
+        base="HEAD",
+        depth=depth,
+        mission="캐시 계층을 걷어낸다",
+        steps=(_Step(1, "src/asgard/tutor.py", 42, "review", "diff를 물음으로 바꾼다", "여기부터 값이 생긴다"),),
+        terms=(_Term("래칫", "src/asgard/tutor.py:88", "이미 있던 물음은 다시 안 묻는 규칙", "docstring"),),
+        checks=("python -m pytest tests/test_tutor.py -q",),
+        recall=("이 변경이 없으면 무엇이 깨지나요?",),
+        gaps=(("src/asgard/ui.py", "설명 대상이 아니다"),),
+    )
+
+
+def _teach_module(explanation=None, error: Exception | None = None):
+    module = types.ModuleType("asgard.tutor_teach")
+    store: dict[str, str] = {}
+
+    def explain(root: str, base: str = "HEAD", paths=(), depth: str = ""):
+        if error is not None:
+            raise error
+        return explanation
+
+    setattr(module, "explain", explain)
+    setattr(module, "mission", lambda root: store.get(root, ""))
+    setattr(module, "set_mission", lambda root, text: store.setdefault(root, text))
+    return mock.patch.dict(sys.modules, {"asgard.tutor_teach": module})
 
 
 def _debt_module(ledger=None, error: Exception | None = None):
@@ -277,6 +339,20 @@ class TurnNoteTest(unittest.TestCase):
             self.assertTrue(tutor.turn_note(root, "q1"))
             self.assertEqual(tutor.turn_note(root, "q1"), "")
 
+    def test_the_native_card_banks_the_words_it_showed(self):
+        """네이티브 루프만 도는 세션은 `asgard tutor`를 안 거친다 — 여기서 안 적으면 용어집이
+        영영 안 쌓이고 설명은 회차마다 같은 길이로 나온다(`tutor_teach` 계약 ③).
+        """
+        with contextlib.ExitStack() as stack:
+            root = self._repo_with_writes(stack)
+            for args in (["add", "-A"], ["commit", "-qm", "base"]):
+                subprocess.run(["git", *args], cwd=root, check=True, env=_ENV, capture_output=True)
+            with open(os.path.join(root, "m.py"), "a", encoding="utf-8") as handle:
+                handle.write('\n\ndef steam(cup):\n    """우유를 데워요."""\n    return cup\n')
+            subprocess.run(["git", "add", "-A"], cwd=root, check=True, env=_ENV, capture_output=True)
+            self.assertIn("`steam`", tutor.turn_note(root, "q1"))
+            self.assertEqual(tutor_teach.glossary_known(root), {"steam"})
+
     def test_a_turn_that_wrote_nothing_is_silent(self):
         with contextlib.ExitStack() as stack:
             root = self._repo_with_writes(stack)
@@ -428,6 +504,105 @@ class RecapTest(unittest.TestCase):
                 self.assertEqual(tutor.recap(root, "s1", span="month", now=1000.0), "")
 
 
+class ReportLaneTest(unittest.TestCase):
+    """`--json`과 `--report`를 같이 준 호출. 훅이 언제나 그렇게 부르므로 여기가 실사용 경로다."""
+
+    def _repo(self, stack) -> str:
+        root = stack.enter_context(tempfile.TemporaryDirectory())
+        for args in (["init", "-q"], ["config", "user.email", "t@t"], ["config", "user.name", "t"]):
+            subprocess.run(["git", *args], cwd=root, check=True, env=_ENV, capture_output=True)
+        with open(os.path.join(root, "m.py"), "w", encoding="utf-8") as handle:
+            handle.write("import requests\n\n\ndef f(a, b):\n    return a\n")
+        stack.enter_context(contextlib.chdir(root))
+        return root
+
+    def _run(self, **kwargs) -> str:
+        from asgard.commands.tutor import run_tutor
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(run_tutor(**kwargs), 0)
+        return out.getvalue()
+
+    def test_json_and_report_together_still_write_the_file(self):
+        """실측 결함: `--json`이 먼저 돌아서서 보고서가 8일간 안 갱신됐다. 훅 카드가 가리키는 자리다."""
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            body = self._run(json_out=True, report=True, paths=("m.py",))
+            written = os.path.join(root, ".asgard", "tutor", "last-review.md")
+            self.assertTrue(os.path.exists(written), "--json --report로 불렀는데 보고서가 안 생겼다")
+            self.assertEqual(json.loads(body)["report"], os.path.join(".asgard", "tutor", "last-review.md"))
+
+    def test_the_json_keys_the_hook_reads_stay(self):
+        with contextlib.ExitStack() as stack:
+            self._repo(stack)
+            data = json.loads(self._run(json_out=True, paths=("m.py",)))
+            for key in ("base", "files", "added", "removed", "checkpoints", "revisits", "undetermined", "mandate"):
+                self.assertIn(key, data)
+            self.assertIn("explain", data)
+
+    def test_the_explain_slot_is_null_when_the_engine_is_missing(self):
+        """표면이 엔진보다 먼저 배송될 수 있다 — 그때 훅이 받는 값은 예외가 아니라 null이다."""
+        with contextlib.ExitStack() as stack:
+            self._repo(stack)
+            stack.enter_context(mock.patch.dict(sys.modules, {"asgard.tutor_teach": None}))
+            self.assertIsNone(json.loads(self._run(json_out=True, paths=("m.py",)))["explain"])
+
+    def test_nothing_to_review_writes_no_report(self):
+        """되짚을 게 없을 때까지 쓰면 빈 보고서가 직전에 쓴 진짜 보고서를 덮는다."""
+        with contextlib.ExitStack() as stack:
+            root = self._repo(stack)
+            for args in (["add", "-A"], ["commit", "-qm", "base"]):
+                subprocess.run(["git", *args], cwd=root, check=True, env=_ENV, capture_output=True)
+            body = self._run(json_out=True, report=True)
+            self.assertEqual(json.loads(body)["report"], "")
+            self.assertFalse(os.path.exists(os.path.join(root, ".asgard", "tutor", "last-review.md")))
+
+
+class ExplainLaneTest(unittest.TestCase):
+    """설명 레인. 엔진이 아직 없어도 죽지 않고, 있으면 물음의 답을 대신 적지 않는다."""
+
+    def _run(self, **kwargs) -> str:
+        from asgard.commands.tutor import run_tutor
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(run_tutor(**kwargs), 0)
+        return out.getvalue()
+
+    def test_the_lane_is_silent_when_the_engine_is_missing(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            stack.enter_context(contextlib.chdir(root))
+            stack.enter_context(mock.patch.dict(sys.modules, {"asgard.tutor_teach": None}))
+            self.assertEqual(self._run(explain=True, json_out=True).strip(), "null")
+
+    def test_the_explanation_is_carried_into_the_json(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            stack.enter_context(contextlib.chdir(root))
+            stack.enter_context(_teach_module(_explanation()))
+            data = json.loads(self._run(explain=True, json_out=True))
+            self.assertEqual(data["steps"][0]["path"], "src/asgard/tutor.py")
+            self.assertEqual(data["terms"][0]["name"], "래칫")
+
+    def test_the_report_puts_the_explanation_before_the_unanswered_section(self):
+        """설명 절이 2절 뒤로 가면 저자가 2절을 이미 채워진 것으로 읽고 넘긴다."""
+        from asgard.commands import tutor as surface
+
+        text = surface._report(tutor.Lesson("HEAD", (), (), ()), _explanation())
+        self.assertLess(text.index("## 1-1."), text.index("## 2. 왜 이렇게 했는가"))
+        self.assertIn(surface._WHY_SLOT, text, "2절 빈칸 문구는 그대로여야 한다")
+
+    def test_a_mission_written_once_comes_back(self):
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            stack.enter_context(contextlib.chdir(root))
+            stack.enter_context(_teach_module(_explanation()))
+            self._run(mission=True, text="캐시 계층을 걷어낸다")
+            self.assertEqual(json.loads(self._run(mission=True, json_out=True))["mission"], "캐시 계층을 걷어낸다")
+
+
 class NeverBlocksTest(unittest.TestCase):
     """튜터는 규율이지 관문이 아니다 — 통과/실패를 만들기 시작하면 사람이 먼저 끈다."""
 
@@ -435,6 +610,17 @@ class NeverBlocksTest(unittest.TestCase):
         from asgard.commands.tutor import run_tutor
 
         self.assertEqual(run_tutor(json_out=True), 0)
+
+    def test_an_engine_that_throws_does_not_take_the_surface_down(self):
+        from asgard.commands.tutor import run_tutor
+
+        with contextlib.ExitStack() as stack:
+            root = stack.enter_context(tempfile.TemporaryDirectory())
+            stack.enter_context(contextlib.chdir(root))
+            stack.enter_context(_teach_module(_explanation(), error=RuntimeError("boom")))
+            with contextlib.redirect_stdout(io.StringIO()):
+                self.assertEqual(run_tutor(explain=True), 0)
+                self.assertEqual(run_tutor(explain=True, json_out=True), 0)
 
 
 if __name__ == "__main__":

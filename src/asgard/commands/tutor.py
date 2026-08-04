@@ -21,6 +21,8 @@ import json
 import os
 import re
 from dataclasses import asdict
+from importlib import import_module
+from typing import Any
 
 from .. import tutor, tutor_growth, ui
 from .health import _project_root
@@ -129,8 +131,18 @@ def _emit_back(back: list[tutor_growth.Revisit]) -> None:
         ui.step(f"    ▸ {row.ask}")
 
 
-def _payload(lesson: tutor.Lesson, rows: list[tuple[tutor.Checkpoint, str]], back: list) -> str:
-    """훅과 화면이 같은 판정을 쓰도록 조절 결과까지 넣는다 — 판정기가 둘이면 반드시 어긋난다."""
+def _payload(
+    lesson: tutor.Lesson,
+    rows: list[tuple[tutor.Checkpoint, str]],
+    back: list,
+    exp: Any = None,
+    report_rel: str = "",
+) -> str:
+    """훅과 화면이 같은 판정을 쓰도록 조절 결과까지 넣는다 — 판정기가 둘이면 반드시 어긋난다.
+
+    칸은 더하기만 한다. 훅(`hooks/tutor_note.py`)과 스튜디오 창이 이 이름들을 그대로 읽으므로
+    하나를 지우거나 고쳐 부르면 그쪽 화면이 조용히 빈다.
+    """
     return json.dumps(
         {
             "base": lesson.base,
@@ -144,6 +156,10 @@ def _payload(lesson: tutor.Lesson, rows: list[tuple[tutor.Checkpoint, str]], bac
             ],
             "undetermined": [{"path": p, "why": w} for p, w in lesson.undetermined],
             "mandate": list(lesson.mandate),
+            # 훅이 카드 마지막 줄에 적을 자리. 안 썼으면 빈 문자열이다 — 훅이 제 상수로 되메우게.
+            "report": report_rel,
+            # 설명 엔진(`tutor_teach`)이 아직 없거나 죽으면 null. 표면이 엔진보다 먼저 배송된다.
+            "explain": _as_dict(exp),
         },
         ensure_ascii=False,
         indent=2,
@@ -241,7 +257,37 @@ def _report_points(lesson: tutor.Lesson) -> list[str]:
     return lines
 
 
-def _report(lesson: tutor.Lesson) -> str:
+def _report_explain(exp: Any) -> list[str]:
+    """1 절과 2 절 사이 — 읽는 순서와 말뜻. **2 절을 대신 채우지 않는다.**
+
+    0 절과 같은 이유로 2 절 앞에 둔다. 여기 있는 것은 "어디부터 읽어야 하는가"이고, 답이
+    diff 에 있다. 2 절은 "왜 이렇게 고쳤나"이고 답은 코드를 쓴 쪽에만 있다 — 뒤에 두면 저자가
+    설명을 읽은 뒤 2 절을 이미 채워진 것으로 보고 넘긴다.
+    """
+    if exp is None or not (exp.steps or exp.terms or exp.checks or exp.recall):
+        return []
+    lines = ["", "## 1-1. 이 변경을 읽는 순서", ""]
+    if exp.mission:
+        lines += [f"향하는 곳: {exp.mission}", ""]
+    for step in exp.steps:
+        where = f"`{step.path}:{step.line}`" + (f" `{step.unit}`" if step.unit else "")
+        lines += [f"{step.order}. {where} — {step.what}", f"   - {step.why_here}"]
+    if exp.terms:
+        lines += ["", "이 변경이 쓰는 말:", ""]
+        lines += [f"- **{t.name}** — {t.gloss} (`{t.where}` · {t.source})" for t in exp.terms]
+    if exp.checks:
+        lines += ["", "직접 쳐 볼 확인 명령:", ""]
+        lines += [f"- `{c}`" for c in exp.checks]
+    if exp.recall:
+        lines += ["", "되짚어 볼 물음:", ""]
+        lines += [f"- {q}" for q in exp.recall]
+    if exp.gaps:
+        lines += ["", "설명이 못 닿은 자리:", ""]
+        lines += [f"- `{where}` — {why}" for where, why in exp.gaps]
+    return lines
+
+
+def _report(lesson: tutor.Lesson, exp: Any = None) -> str:
     lines = [
         "# 변경 되짚기",
         "",
@@ -250,6 +296,7 @@ def _report(lesson: tutor.Lesson) -> str:
     ]
     lines += _report_mandate(lesson)
     lines += _report_files(lesson)
+    lines += _report_explain(exp)
     lines += ["", "## 2. 왜 이렇게 했는가", "", _WHY_SLOT]
     lines += ["", *_report_points(lesson)]
     if lesson.undetermined:
@@ -264,11 +311,11 @@ def _report(lesson: tutor.Lesson) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _write_report(root: str, lesson: tutor.Lesson, out: str) -> str:
+def _write_report(root: str, lesson: tutor.Lesson, out: str, exp: Any = None) -> str:
     from ..io_files import write_text
 
     path = out if os.path.isabs(out) else os.path.join(root, out)
-    write_text(path, _report(lesson))
+    write_text(path, _report(lesson, exp))
     return path
 
 
@@ -396,16 +443,14 @@ def _emit_said(data: dict) -> None:
 # 대조에 못 쓴다. 먼저 적어 둔 한 줄만이 나중에 "내가 예상한 것과 다르다"를 만들 수 있다.
 
 
-def _engine(name: str) -> object | None:
+def _engine(name: str) -> Any:
     """되짚기 엔진 하나를 늦게 부른다. 없으면 None — 표면이 엔진보다 먼저 배송될 수 있다.
 
-    `--debt`·`--tip`이 없는 모듈 때문에 죽으면 그건 관문이다(튜터 계약 ②). 없을 때 할 일은
-    실패가 아니라 침묵이다.
+    `--debt`·`--tip`·`--explain`이 없는 모듈 때문에 죽으면 그건 관문이다(튜터 계약 ②). 없을 때
+    할 일은 실패가 아니라 침묵이다.
     """
     try:
-        from .. import tutor_debt
-
-        return tutor_debt if name == "tutor_debt" else None
+        return import_module(".." + name, __package__)
     except Exception:
         return None
 
@@ -419,7 +464,7 @@ def _run_debt(root: str, sid: str, json_out: bool) -> int:
             ui.ok("부채를 재는 기능이 아직 없어요")
             ui.done()
         return 0
-    book = debt.ledger(root, sid)  # ty: ignore[unresolved-attribute]
+    book = debt.ledger(root, sid)
     if json_out:
         print(
             json.dumps(
@@ -497,7 +542,7 @@ def _run_expect(root: str, sid: str, text: str, json_out: bool) -> int:
             ui.done()
         return 0
     if not body:
-        rows = debt.expectations(root, sid)  # ty: ignore[unresolved-attribute]
+        rows = debt.expectations(root, sid)
         if json_out:
             print(json.dumps(rows, ensure_ascii=False, indent=2))
             return 0
@@ -511,7 +556,7 @@ def _run_expect(root: str, sid: str, text: str, json_out: bool) -> int:
         ui.step(ui.dim('    맞춰 보기: `asgard tutor --settle <표식> "실제로는 이랬다"`'))
         ui.done()
         return 0
-    key = debt.expect(root, sid, body)  # ty: ignore[unresolved-attribute]
+    key = debt.expect(root, sid, body)
     if json_out:
         print(json.dumps({"key": key, "text": body}, ensure_ascii=False))
         return 0
@@ -531,8 +576,151 @@ def _run_settle(root: str, key: str, verdict: str) -> int:
         ui.warn("예상을 맞춰 볼 기능이 아직 없어요")
         ui.done()
         return 0
-    ok, message = debt.settle(root, key, verdict)  # ty: ignore[unresolved-attribute]
+    ok, message = debt.settle(root, key, verdict)
     (ui.ok if ok else ui.warn)(message)
+    ui.done()
+    return 0
+
+
+# ── 설명 레인 ──────────────────────────────────────────────────────
+#
+# `--report`가 "당신이 답할 것"을 놓는다면 이쪽은 "이걸 읽으려면 어디부터 보나"를 놓는다. 두 축을
+# 한 화면에 섞지 않는 이유는 계약이다: 설명이 물음의 답을 대신 적으면 사람이 답할 자리가 사라진다.
+
+
+def _explanation(root: str, base: str, paths: tuple[str, ...], depth: str) -> Any:
+    """설명 재료 하나. 엔진이 없거나 던지면 None — 침묵이지 실패가 아니다(튜터 계약 ②)."""
+    teach = _engine("tutor_teach")
+    if teach is None:
+        return None
+    try:
+        return teach.explain(root, base, paths, depth)
+    except Exception:
+        return None
+
+
+def _learned(root: str, exp: Any) -> None:
+    """카드에 실린 말을 용어집에 더한다 — 다음 회차부터 그 말은 설명에서 빠진다(계약 ③).
+
+    부르는 자리를 `explain()` 안이 아니라 표면에 두는 이유는 `tutor.hand_back`과 같다: **사람
+    앞에 나간 것만 센다.** 기계가 훑어보는 호출(`--json`만)까지 병합하면 사람이 본 적 없는 말이
+    "이미 설명한 말"이 되고, 그때부터 이 층은 설명해야 할 것을 조용히 건너뛴다.
+
+    무엇이 실렸는지 아는 것은 엔진의 `shown_terms` 하나뿐이라 목록도 거기서 받는다. 카드가 상한
+    아래로 자른 말과 `owned`·`familiar` 깊이에서 안 그린 말은 그래서 안 들어간다. `--explain`
+    화면과 보고서는 그보다 더 많이 넣지만 적립은 카드 목록에만 맞춘다 — 덜 적립하면 그 말이 다음
+    회차에 한 번 더 설명될 뿐이고, 더 적립하면 영영 설명 안 된다.
+
+    엔진이 없거나 못 적으면 그냥 지나간다 — 튜터는 관문이 아니다.
+    """
+    teach = _engine("tutor_teach")
+    if teach is None or exp is None:
+        return
+    try:
+        teach.glossary_merge(root, teach.shown_terms(exp))
+    except Exception:
+        return
+
+
+def _as_dict(exp: Any) -> dict | None:
+    """`Explanation` → dict. 모양이 계약과 다르면 None — 반쯤 펴진 칸을 훅에 넘기지 않는다."""
+    if exp is None:
+        return None
+    try:
+        return asdict(exp)
+    except Exception:
+        return None
+
+
+def _emit_explain(exp: Any) -> None:
+    """읽는 순서 · 말뜻 · 확인 명령 · 못 닿은 자리.
+
+    `owned`면 좌표만 남긴다. 이미 아는 자리를 세 번째로 설명하면 다음 설명도 안 읽는다 —
+    `_emit_points`의 접기(fold)와 같은 근거다.
+    """
+    if exp.mission:
+        ui.phase(f"지금 향하는 곳 — {exp.mission}")
+    short = exp.depth == "owned"
+    if exp.steps:
+        ui.phase(f"읽는 순서 — {len(exp.steps)}단계")
+    for step in exp.steps:
+        ui.step(f"{step.order}. {step.path}:{step.line}" + (f"  {step.unit}" if step.unit else ""))
+        if short:
+            continue
+        ui.step(ui.dim(f"    {step.what}"))
+        if exp.depth != "familiar":  # 두 번째부터는 "왜 여기부터인가"가 이미 아는 말이 된다
+            ui.step(ui.dim(f"    {step.why_here}"))
+    if not short:
+        _emit_terms(exp)
+        if exp.checks:
+            ui.phase("직접 쳐 보실 것")
+            for line in exp.checks:
+                ui.step(f"▸ {line}")
+        if exp.recall:
+            ui.phase("되짚어 보실 물음")
+            for line in exp.recall:
+                ui.step(f"▸ {line}")
+            ui.step(ui.dim("    답은 안 적어 드려요 — 적어 두면 그 답이 당신의 답 자리를 차지해요"))
+    if exp.gaps:
+        ui.phase(f"설명이 못 닿은 자리 — {len(exp.gaps)}건")
+        for where, why in exp.gaps:
+            ui.step(ui.dim(f"    {where} — {why}"))
+
+
+def _emit_terms(exp: Any) -> None:
+    if not exp.terms:
+        return
+    ui.phase(f"이 변경이 쓰는 말 — {len(exp.terms)}개")
+    for term in exp.terms:
+        ui.step(f"{term.name} — {term.gloss}")
+        ui.step(ui.dim(f"    {term.where} · {term.source}"))
+
+
+def _run_explain(root: str, base: str, paths: tuple[str, ...], depth: str, json_out: bool) -> int:
+    exp = _explanation(root, base, paths, depth)
+    if json_out:
+        print(json.dumps(_as_dict(exp), ensure_ascii=False, indent=2))
+        return 0
+    ui.head("tutor · 이 변경을 어떻게 읽나")
+    if exp is None:
+        # 두 사정을 갈라 적는다 — 엔진이 없는 것과 이번 변경에서 못 만든 것은 다음에 할 일이 다르다.
+        ui.ok(
+            "설명을 만드는 기능이 아직 없어요" if _engine("tutor_teach") is None else "이번 변경은 설명을 못 만들었어요"
+        )
+        ui.done()
+        return 0
+    _emit_explain(exp)
+    _learned(root, exp)
+    ui.done()
+    return 0
+
+
+def _run_mission(root: str, text: str, json_out: bool) -> int:
+    """지금 향하는 곳 한 줄. 적으면 저장하고, 빈손으로 부르면 적혀 있는 것을 보여 준다.
+
+    설명이 순서를 고르려면 이 줄이 있어야 한다 — 어디로 가는지 모르면 어느 자리부터 읽어야
+    하는지도 못 고른다.
+    """
+    teach = _engine("tutor_teach")
+    body = " ".join(str(text or "").split())
+    if teach is None:
+        if not json_out:
+            ui.head("tutor · 지금 향하는 곳")
+            ui.ok("향하는 곳을 적어 둘 기능이 아직 없어요")
+            ui.done()
+        return 0
+    try:
+        current = teach.set_mission(root, body) if body else teach.mission(root)
+    except Exception:
+        current = ""
+    if json_out:
+        print(json.dumps({"mission": current}, ensure_ascii=False))
+        return 0
+    ui.head("tutor · 지금 향하는 곳")
+    if current:
+        ui.ok(current)
+    else:
+        ui.ok('아직 안 적으셨어요 — `asgard tutor --mission "..."`으로 한 줄 남겨 두세요')
     ui.done()
     return 0
 
@@ -564,11 +752,18 @@ def run_tutor(
     expect: bool = False,
     settle: str = "",
     sid: str = "",
+    explain: bool = False,
+    depth: str = "",
+    mission: bool = False,
 ) -> int:
     """종료 코드는 언제나 0 — 튜터는 규율이지 관문이 아니다(`health`와 같은 등급)."""
     root = _project_root(os.getcwd())
     ui.set_quiet(json_out or quiet)
 
+    if mission:
+        return _run_mission(root, text or note, json_out)
+    if explain:
+        return _run_explain(root, base, paths, depth, json_out)
     if settle:
         return _run_settle(root, settle, note)
     if expect:
@@ -587,22 +782,63 @@ def run_tutor(
         return _run_progress(root, json_out)
     if brief:
         return _run_brief(root, text, paths, quiet or json_out)
+    return _run_review(
+        root, base, paths, json_out=json_out, report=report, out=out, limit=limit, record=record, depth=depth
+    )
 
+
+def _run_review(
+    root: str,
+    base: str,
+    paths: tuple[str, ...],
+    *,
+    json_out: bool,
+    report: bool,
+    out: str,
+    limit: int,
+    record: bool,
+    depth: str,
+) -> int:
+    """기본 갈래 — 이번 변경을 화면이나 JSON, 그리고 보고서로 돌려준다."""
     lesson = tutor.review(root, base, paths)
     # 화면에 들어갔으면 물은 것이다 — 사람이 보는 호출은 그대로 센다. `--json`만 예외로 두는 이유:
     # 기계가 훑어보는 호출까지 세면 "몇 번 물었나"가 사람이 몇 번 봤나와 무관해진다(`--record`로 켠다).
     # 세는 범위는 `limit` 까지다 — 판정이 100건을 찾아도 화면에 여섯이면 물은 것은 여섯이다.
     rows, back = tutor.hand_back(root, lesson.ranked, limit, count=record or not json_out)
+    # 설명은 실을 자리가 있을 때만 만든다 — 기본 화면(`--explain` 없이)은 물음 축만 놓는다.
+    exp = _explanation(root, base, paths, depth) if (json_out or report or out) else None
+
+    # 보고서를 `--json`보다 **먼저** 쓴다. 훅은 언제나 `--json --record --report`로 부르므로 JSON
+    # 갈래에서 먼저 돌아서면 카드가 가리키는 `.asgard/tutor/last-review.md`가 영영 안 갱신된다
+    # (26-07-27 이후 8일간 그렇게 멈춰 있었다). 되짚을 게 없을 때 안 쓰는 것은 그대로다 —
+    # 빈 보고서로 덮으면 직전에 쓴 진짜 보고서가 사라진다.
+    written = ""
+    if (report or out) and (lesson.files or lesson.checkpoints):
+        written = os.path.relpath(_write_report(root, lesson, out or _REPORT_REL, exp), root)
+
+    # 세는 조건은 물음 쪽(`hand_back`)과 같다 — 화면이나 보고서로 사람 앞에 나간 회차만 병합한다.
+    if record or not json_out:
+        _learned(root, exp)
 
     if json_out:
-        print(_payload(lesson, rows, back))
+        print(_payload(lesson, rows, back, exp, written))
         return 0
+    _emit_review(lesson, rows, back, limit, written)
+    return 0
 
+
+def _emit_review(
+    lesson: tutor.Lesson,
+    rows: list[tuple[tutor.Checkpoint, str]],
+    back: list,
+    limit: int,
+    written: str,
+) -> None:
     ui.head(f"tutor · 이번 변경 되짚기 ({lesson.base})")
     if not lesson.files and not lesson.checkpoints:
         ui.ok(f"{lesson.base} 대비 달라진 게 없어요 — 되짚을 게 없네요")
         ui.done()
-        return 0
+        return
     _emit_mandate(lesson)
     _emit_inventory(lesson)
     _emit_points(rows, limit)
@@ -611,13 +847,12 @@ def run_tutor(
         ui.phase(f"기계가 못 본 것 — {len(lesson.undetermined)}건")
         for path, why in lesson.undetermined[:5]:
             ui.step(ui.dim(f"    {path} — {why}"))
-    if report or out:
+    if written:
         ui.step("")
-        ui.ok(f"보고서: {os.path.relpath(_write_report(root, lesson, out or _REPORT_REL), root)}")
+        ui.ok(f"보고서: {written}")
     if rows:
         ui.step(ui.dim('    답: `asgard tutor --answer <표식> "..."` · 오탐: `asgard tutor --dismiss <표식>`'))
     ui.done()
-    return 0
 
 
 def _run_close(root: str, answer: str, dismiss: str, note: str) -> int:
