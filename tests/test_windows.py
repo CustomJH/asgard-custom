@@ -25,20 +25,48 @@ def _win(module):
 
 
 class TestHookPython(unittest.TestCase):
-    """hook_python — POSIX는 python3 고정, Windows는 python → py 런처 탐지."""
+    """hook_python — uv 가 정본, 시스템 파이썬은 폴백.
 
-    def test_posix_is_python3(self):
+    설치 경로(install.sh·install.ps1)가 uv → uv 관리 CPython → asgard 순이라, 설치가 끝난
+    기계에서 존재가 보장된 런타임은 uv 뿐이다. 시스템 python3 는 없을 수도(Windows 는 없는
+    쪽이 보통) 낡았을 수도 있다 — 그래서 우선순위가 뒤다.
+
+    배선(`hook_python`)은 절대 경로, 안내문·허용목록(`hook_python_token`)은 맨 토큰이다."""
+
+    def test_uv_wins_on_posix(self):
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
-            self.assertEqual(asg_platform.hook_python(), "python3")
+            with mock.patch.object(asg_platform.shutil, "which", side_effect=lambda c: f"/usr/local/bin/{c}"):
+                self.assertEqual(asg_platform.hook_python(), "/usr/local/bin/uv run --no-project python")
+                self.assertEqual(asg_platform.hook_python_token(), "uv run --no-project python")
 
-    def test_windows_prefers_python(self):
+    def test_uv_wins_on_windows(self):
+        with _win(asg_platform):
+            with mock.patch.object(asg_platform.shutil, "which", side_effect=lambda c: rf"C:\bin\{c}.exe"):
+                # 역슬래시는 따옴표 안에서도 셸마다 다르게 읽힌다 — 정방향 슬래시로 넘긴다.
+                self.assertEqual(asg_platform.hook_python(), "C:/bin/uv.exe run --no-project python")
+                self.assertEqual(asg_platform.hook_python_token(), "uv run --no-project python")
+
+    def test_a_path_that_cannot_be_quoted_falls_back_to_the_bare_token(self):
+        """작은따옴표가 든 경로는 codex 의 TOML 리터럴 문자열 안에서 탈출할 방법이 없다."""
+        with mock.patch.object(asg_platform.sys, "platform", "linux"):
+            with mock.patch.object(asg_platform.shutil, "which", side_effect=lambda c: f"/home/o'brien/bin/{c}"):
+                self.assertEqual(asg_platform.hook_python(), "uv run --no-project python")
+
+    def test_posix_without_uv_is_python3(self):
+        with mock.patch.object(asg_platform.sys, "platform", "linux"):
+            with mock.patch.object(
+                asg_platform.shutil, "which", side_effect=lambda c: "/usr/bin/python3" if c == "python3" else None
+            ):
+                self.assertEqual(asg_platform.hook_python(), "python3")
+
+    def test_windows_without_uv_prefers_python(self):
         with _win(asg_platform):
             with mock.patch.object(
                 asg_platform.shutil, "which", side_effect=lambda c: r"C:\Python\python.exe" if c == "python" else None
             ):
                 self.assertEqual(asg_platform.hook_python(), "python")
 
-    def test_windows_falls_back_to_py_launcher(self):
+    def test_windows_without_uv_falls_back_to_py_launcher(self):
         with _win(asg_platform):
             with mock.patch.object(
                 asg_platform.shutil, "which", side_effect=lambda c: r"C:\Windows\py.exe" if c == "py" else None
@@ -50,19 +78,10 @@ class TestHookPython(unittest.TestCase):
             with mock.patch.object(asg_platform.shutil, "which", return_value=None):
                 self.assertEqual(asg_platform.hook_python(), "python")
 
-    def test_posix_no_python3_falls_back_to_uv(self):
+    def test_posix_nothing_found_defaults_python3(self):
         with mock.patch.object(asg_platform.sys, "platform", "linux"):
-            with mock.patch.object(
-                asg_platform.shutil, "which", side_effect=lambda c: "/usr/local/bin/uv" if c == "uv" else None
-            ):
-                self.assertEqual(asg_platform.hook_python(), "uv run --no-project python")
-
-    def test_windows_no_python_falls_back_to_uv(self):
-        with _win(asg_platform):
-            with mock.patch.object(
-                asg_platform.shutil, "which", side_effect=lambda c: r"C:\uv\uv.exe" if c == "uv" else None
-            ):
-                self.assertEqual(asg_platform.hook_python(), "uv run --no-project python")
+            with mock.patch.object(asg_platform.shutil, "which", return_value=None):
+                self.assertEqual(asg_platform.hook_python(), "python3")
 
 
 class TestDetectAuthWindows(unittest.TestCase):
@@ -99,8 +118,6 @@ class TestTemplatesWindowsWiring(unittest.TestCase):
             s = json.loads(cc_settings())
         cmds = self._hook_cmds(s)
         self.assertTrue(cmds and all(c.startswith('py "$CLAUDE_PROJECT_DIR') for c in cmds))
-        # statusline은 bash 유지 — Claude Code Windows는 Git Bash 필수라 셸 계약이 성립한다
-        self.assertTrue(s["statusLine"]["command"].startswith("bash "))
 
     def test_cc_settings_posix_stays_python3(self):
         with mock.patch("asgard.templates.claude.hook_python", return_value="python3"):
@@ -169,7 +186,7 @@ class TestDoctorWindows(unittest.TestCase):
     def test_python_check_uses_hook_python(self):
         from asgard.commands import doctor
 
-        with mock.patch.object(doctor, "hook_python", return_value="py"):
+        with mock.patch.object(doctor, "hook_python_token", return_value="py"):
             with mock.patch.object(doctor, "on_path", side_effect=lambda b: f"C:\\bin\\{b}.exe"):
                 with mock.patch.object(doctor.sys, "platform", "win32"):
                     import io

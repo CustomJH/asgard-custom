@@ -4,13 +4,14 @@ a global `asgard doctor` outside any project stays exactly as before."""
 
 import json as _json
 import os
+import shlex
 import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import NamedTuple
 
 from .. import __version__, ui
-from ..platform import hook_python, on_path
+from ..platform import hook_python_argv, hook_python_token, on_path
 from ..templates.roles import ROLE_AGENTS
 
 
@@ -759,6 +760,65 @@ def _hook_wired(config: dict, event: str, marker: str) -> bool:
         return False
 
 
+def _wired_hook_argv(root: str) -> list[str] | None:
+    """배선 파일에 실제로 적힌 인터프리터 — 훅 스크립트 인자 앞까지. 못 읽으면 None.
+
+    지금 계산한 인터프리터가 아니라 **적혀 있는 것**을 봐야 uv 가 스캐폴드 이후에 옮겨 간
+    경우(경로가 굳어 있다)를 잡는다."""
+    try:
+        entries = _client_config(root, ".claude", "settings.json")["hooks"]["SessionStart"]
+        for entry in entries:
+            for hook in entry.get("hooks", []):
+                command = str(hook.get("command") or "")
+                if "hooks/" not in command:
+                    continue
+                # posix=False — Windows 경로의 역슬래시를 탈출 문자로 먹지 않는다.
+                argv = [token.strip('"') for token in shlex.split(command, posix=False)]
+                head = [token for token in argv if "hooks/" not in token.replace("\\", "/")]
+                return head or None
+    except Exception:
+        return None
+    return None
+
+
+def _hook_interpreter_check(root: str) -> dict:
+    """배선된 훅 인터프리터를 한 번 실제로 돌려 본다 — PATH 조회는 이 자리를 못 본다.
+
+    훅 줄은 doctor 의 PATH 가 아니라 호스트 프로세스의 PATH 에서 돈다. 독·Finder·launchd 가
+    띄운 프로세스는 `/usr/bin:/bin:/usr/sbin:/sbin` 넉 줄만 물려받아 `uv` 를 못 찾고, 훅 계약이
+    fail-open 이라 exit 127 은 조용히 삼켜진다 — 가드가 전부 꺼진 상태로 doctor 만 초록이었다.
+    `-c pass` 는 인터프리터가 서는지만 묻는다."""
+    import subprocess
+
+    argv = _wired_hook_argv(root) or hook_python_argv()
+    wired = " ".join(argv)
+    try:
+        proc = subprocess.run(
+            [*argv, "-c", "pass"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,  # 인터프리터가 없는 기계에서는 첫 실행이 CPython 을 내려받는다
+        )
+        ok = proc.returncode == 0
+        detail = wired if ok else "exit %s — %s" % (proc.returncode, (proc.stderr or proc.stdout).strip()[:160])
+    except Exception as exc:
+        ok, detail = False, "%s: %s" % (type(exc).__name__, exc)
+    return {
+        "name": "%s (hooks)" % hook_python_token(),
+        "ok": ok,
+        "detail": detail,
+        # python.org 를 가리키면 틀린 처방이에요 — 설치가 세운 파이썬은 uv 가 관리하는 것이고,
+        # 이 줄이 빨간 건 거의 언제나 uv 가 없거나 배선 뒤에 자리를 옮겼다는 뜻이에요.
+        "fix": (
+            "훅이 이 명령으로 돌아요 — `%s`. uv 를 깔고(https://astral.sh/uv) `asgard sync` 로 "
+            "배선을 다시 써 주세요 (훅 줄에는 이 기계의 uv 절대 경로가 박혀 있어서, uv 가 자리를 "
+            "옮기면 다시 써야 해요)" % wired
+        ),
+    }
+
+
 def _trinity_block_check(root: str) -> dict:
     """AGENTS.md에 Trinity 블록 표식이 남아 있는가."""
     try:
@@ -1321,8 +1381,9 @@ def _engine_reachable_check(root: str) -> list[dict]:
 
 def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     asgard = on_path("asgard")
-    py_cmd = hook_python()  # Windows는 python3가 PATH에 없는 게 정상 (python/py 런처)
-    py = on_path(py_cmd.split()[0])  # uv 폴백이면 "uv run --no-project python" — 첫 토큰만 PATH 조회
+    # uv 가 설치 경로의 전제다 — install.sh·install.ps1 이 uv → uv 관리 CPython → asgard 순으로
+    # 세운다. 그래서 훅 인터프리터도 uv 가 정본이고(platform.hook_python), uv 가 없으면 시스템
+    # 파이썬으로 내려가는 폴백일 뿐이다. 두 줄의 순서를 이 사실에 맞춰 둔다.
     uv = on_path("uv")
     path_fix = (
         "add the uv tool dir to PATH — run: uv tool update-shell, then restart the terminal"
@@ -1336,17 +1397,15 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
             "detail": asgard or "not found",
             "fix": path_fix,
         },
-        {
-            "name": f"{py_cmd} (hooks)",
-            "ok": bool(py),
-            "detail": py or "not found",
-            "fix": f"Canon hooks run via {py_cmd} — https://www.python.org/downloads/",
-        },
+        _hook_interpreter_check(os.getcwd()),
         {
             "name": "uv on PATH",
             "ok": bool(uv),
             "detail": uv or "not found",
-            "fix": "install uv — https://astral.sh/uv (asgard update · 훅 인터프리터 폴백 · uv 프로젝트 베이스라인에 필요)",
+            "fix": (
+                "uv 를 깔아 주세요 — https://astral.sh/uv · 선택이 아니라 전제예요: "
+                "설치·업데이트(asgard update)·훅 인터프리터·베이스라인 검증이 모두 uv 를 써요"
+            ),
         },
     ]
     checks += _engine_reachable_check(os.getcwd())

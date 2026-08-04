@@ -20,7 +20,7 @@ import re
 GATE_MESSAGES: dict[str, str] = {
     "orphan-write": (
         "This session wrote files ({files}) but there is no quest log. Write quests require "
-        "the Trinity loop: open a log with python3 <hooks>/quest-log.py open <quest-id> "
+        "the Trinity loop: open a log with uv run --no-project python <hooks>/quest-log.py open <quest-id> "
         '--criteria "..." and record Verifier verification.'
     ),
     "unsafe-map": "unsafe code map symlink/junction: {targets}",

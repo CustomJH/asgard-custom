@@ -65,10 +65,12 @@ mode-B ticket protocol. Verifier verdicts are submitted only via the verdict too
 discovered through the load_skill tool, not by reading skill bodies up front.
 Reporting a gate's verdict is allowed; declaring completion on your own is not — the verdict
 belongs to the Verifier + gate (Canon 10).
-Run Python with the project interpreter — in a uv project (`uv.lock` present) use `uv run pytest`,
-`uv run python -m …`, `uv run python -c '…'`; otherwise `python -m …`. Calling the system
-`python3` directly is forbidden — it cannot see project dependencies (uv already set up the
-environment at install time).
+Run Python through uv — it is the interpreter Asgard's own install stands on, so it is the one
+runtime guaranteed to exist here. In a project (`uv.lock` present) use `uv run pytest`,
+`uv run python -m …`, `uv run python -c '…'`, which see the project's dependencies; outside a
+project add `--no-project` (`uv run --no-project python …`), which is also the canonical form for
+the Asgard hooks. Calling the system `python3` directly is forbidden — it may be absent (normal on
+Windows), it may be older than the one the install uses, and it cannot see project dependencies.
 Do not use emoji pictograms in user-visible text — when a marker is needed, use text glyphs
 (✓ ⚠ ✗ ▸ · ⠶) only."""
 

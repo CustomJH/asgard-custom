@@ -47,8 +47,9 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,47}$")
 
 _COMMENT = re.compile(r"<!--.*?-->", re.DOTALL)
 
-# 숫자 파싱 실패 두 종. 이름으로 묶는 이유는 취향이 아니다: 훅은 asgard의 venv가 아니라
-# 사용자 PATH의 python3로 돈다(`platform.hook_python`). 괄호 없는 다중 except는 3.14+
+# 숫자 파싱 실패 두 종. 이름으로 묶는 이유는 취향이 아니다: 훅은 asgard의 venv가 아니라 그
+# 기계가 내주는 인터프리터로 돈다(`platform.hook_python` — uv 가 있으면 `uv run --no-project
+# python`, 없으면 PATH 의 python3/py). 괄호 없는 다중 except는 3.14+
 # 문법(PEP 758)이라 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError가 되고, 훅 계약이
 # fail-open이라 그 죽음이 **조용하다** — 사용자는 계층이 켜진 줄 안다. 그렇다고 괄호로 쓰면
 # 이 리포의 포매터(target-version=py314)가 도로 벗긴다. 이름은 포매터가 못 건드린다.

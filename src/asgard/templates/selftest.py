@@ -28,7 +28,7 @@ report it as **a single scorecard**. Three layers: A wiring (static) → B harne
    directory (whichever of `.claude/hooks` | `.cursor/hooks` | `.codex/hooks` matches the current
    tool) · (Claude only) `verifier-gate.py` + `write-sentinel.py` +
    `.claude/agents/asgard-{thinker,worker,verifier}.md` + the Stop gate wiring in settings.json.
-3. **Executability**: `python3 <hooks>/quest-log.py state` exits 0.
+3. **Executability**: `uv run --no-project python <hooks>/quest-log.py state` exits 0.
 
 ## B. Harness (deterministic — run the script below verbatim)
 
@@ -42,7 +42,7 @@ GATE=""; [ -f "$SRC/.claude/hooks/verifier-gate.py" ] && { cp "$SRC/.claude/hook
 cd "$T" || exit 1
 git init -q && git config user.email t@t && git config user.name t
 echo base > f.txt && git add -A && git commit -qm init
-QL="python3 ql.py"; n=0; f=0
+QL="uv run --no-project python ql.py"; n=0; f=0
 ck(){ n=$((n+1)); if eval "$2" >/dev/null 2>&1; then echo "ok   $1"; else echo "FAIL $1"; f=$((f+1)); fi; }
 W='{"role":"worker","event":"work","changed_files":["f.txt"],"commands":[{"cmd":"true","exit_code":0}]}'
 V='{"role":"verifier","event":"verify","commands":[{"cmd":"test -s f.txt","exit_code":0}]}'
@@ -57,9 +57,9 @@ if [ -n "$GATE" ]; then
   $QL open q2 --criteria c >/dev/null; echo y >> f.txt
   echo "$V" | $QL append --verdict PASS --level micro >/dev/null
   echo z >> f.txt   # tamper after PASS
-  ck "gate: tamper → stale block" "echo '{\\"session_id\\":\\"st\\"}' | CLAUDE_PROJECT_DIR=\\"$T\\" python3 vg.py | grep -q block"
+  ck "gate: tamper → stale block" "echo '{\\"session_id\\":\\"st\\"}' | CLAUDE_PROJECT_DIR=\\"$T\\" uv run --no-project python vg.py | grep -q block"
   echo "$V" | $QL append --verdict ESCALATE --level full >/dev/null
-  ck "gate: ESCALATE → allow"   "test -z \\"\\$(echo '{\\"session_id\\":\\"st\\"}' | CLAUDE_PROJECT_DIR=\\"$T\\" python3 vg.py)\\""
+  ck "gate: ESCALATE → allow"   "test -z \\"\\$(echo '{\\"session_id\\":\\"st\\"}' | CLAUDE_PROJECT_DIR=\\"$T\\" uv run --no-project python vg.py)\\""
 fi
 echo "-- harness: $((n-f))/$n ok"
 cd "$SRC" && rm -rf "$T"
@@ -71,7 +71,7 @@ All `ok` = pass — copy any `FAIL` lines into the scorecard verbatim.
 
 Run one real Trinity cycle in the real repo as a micro quest (following the AGENTS.md trinity loop exactly):
 
-1. `python3 <hooks>/quest-log.py open selftest-live --criteria "python3 selftest_probe.py exits 0"`
+1. `uv run --no-project python <hooks>/quest-log.py open selftest-live --criteria "uv run --no-project python selftest_probe.py exits 0"`
 2. **[Worker]** create `selftest_probe.py` (one line: `print("probe ok")`) → append a work event.
 3. **[Verifier]** ignore the Worker's narrative, run the verification command directly → append verify PASS (diff_hash auto-computed).
 4. Confirm `close` succeeds → **only then** delete `selftest_probe.py` (in the reverse order the gate
@@ -81,7 +81,7 @@ Run one real Trinity cycle in the real repo as a micro quest (following the AGEN
 
 ## Latency (optional)
 
-Run `time python3 <hooks>/quest-log.py state` 3 times — report the median. (Claude) Same for Stop gate allow.
+Run `time uv run --no-project python <hooks>/quest-log.py state` 3 times — report the median. (Claude) Same for Stop gate allow.
 Reference (M5 Max): state ~97ms · gate allow ~87ms · non-quest-session gate ~24ms.
 
 ## Scorecard (report format)

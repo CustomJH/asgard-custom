@@ -685,10 +685,13 @@ def gate_event(root, kind, code, subject=None):
 
 # ── 차단 메시지 카탈로그 — 코드가 정본, 문장은 렌더링. 자기완결 배포 제약으로 asgard.failures
 # 를 임포트하지 못해 사본을 품는다 — tests/test_failures.py 패리티 테스트가 두 표를 봉인한다. ──
+# 문장 속 `uv run --no-project python`은 platform.hook_python_token() 의 정본을 리터럴로 옮겨 적은
+# 것이다. 여기서 인터프리터를 다시 탐지하지 않는 이유는 두 가지다 — 이 파일은 asgard 를
+# 임포트할 수 없고(자기완결 배포), uv 는 설치 경로가 보장하는 런타임이라 탐지할 것이 없다.
 GATE_MESSAGES = {
     "orphan-write": (
         "This session wrote files ({files}) but there is no quest log. Write quests require "
-        "the Trinity loop: open a log with python3 <hooks>/quest-log.py open <quest-id> "
+        "the Trinity loop: open a log with uv run --no-project python <hooks>/quest-log.py open <quest-id> "
         '--criteria "..." and record Verifier verification.'
     ),
     "unsafe-map": "unsafe code map symlink/junction: {targets}",
@@ -765,8 +768,10 @@ def block(root, sid, code, subject=None, **params):
     message = (
         "Asgard verifier-gate (Canon 10 — proof of completion): "
         + reason
-        + " Record the Verifier verdict in the log: echo '{...}' | python3 <hooks>/quest-log.py "
-        "append --verdict PASS|FAIL (the verify event auto-computes diff_hash). "
+        # 명령 하나 + 상대 경로 — 허용목록이 원문 프리픽스로 맞추므로 파이프라인이면 앞
+        # 세그먼트(`echo`)까지 허용목록에 있어야 하고, 없으면 헤드리스에서 자동 거부된다.
+        + " Record the Verifier verdict in the log: uv run --no-project python <hooks>/quest-log.py "
+        "append --json '{...}' --verdict PASS|FAIL (the verify event auto-computes diff_hash). "
         "If blocked 3+ times, stop and report to Odin (Canon 9)."
     )
     # code 필드는 claude/네이티브 경로만 — codex/cursor 프로토콜은 미지 필드 관용을 보증할 수

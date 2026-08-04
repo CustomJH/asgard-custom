@@ -17,6 +17,7 @@ import ast
 import io
 import json
 import os
+import sys
 import tempfile
 import unittest
 from contextlib import redirect_stdout
@@ -149,6 +150,39 @@ class TestPiecesStandAlone(unittest.TestCase):
             self.assertFalse(doctor._trinity_block_check(td)["ok"])
             _scaffolded(td)
             self.assertTrue(doctor._trinity_block_check(td)["ok"])
+
+
+class TestHookInterpreterIsExecuted(unittest.TestCase):
+    """훅 인터프리터 줄은 PATH 조회가 아니라 실행으로 판정한다.
+
+    조회만 하던 동안 doctor 는 자기 PATH 에서 `uv` 를 찾고 초록을 찍었다. 정작 훅이 도는
+    프로세스(독·Finder·launchd)는 `/usr/bin:/bin:/usr/sbin:/sbin` 넉 줄만 물려받아 exit 127 이
+    났고, 훅 계약이 fail-open 이라 가드가 전부 꺼진 채로 아무도 그 사실을 몰랐다."""
+
+    @staticmethod
+    def _wire(root: str, command: str) -> None:
+        settings = {"hooks": {"SessionStart": [{"hooks": [{"type": "command", "command": command}]}]}}
+        _write(root, os.path.join(".claude", "settings.json"), json.dumps(settings))
+
+    def test_a_dead_wired_interpreter_is_red_with_an_actionable_fix(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._wire(td, '/nonexistent/bin/uv run --no-project python "$CLAUDE_PROJECT_DIR/.claude/hooks/x.py"')
+            row = doctor._hook_interpreter_check(td)
+        self.assertFalse(row["ok"])
+        self.assertIn("/nonexistent/bin/uv", row["detail"] + row["fix"])
+        self.assertIn("asgard sync", row["fix"])
+
+    def test_a_live_wired_interpreter_is_green(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._wire(td, '%s "$CLAUDE_PROJECT_DIR/.claude/hooks/x.py"' % sys.executable)
+            row = doctor._hook_interpreter_check(td)
+        self.assertTrue(row["ok"], row["detail"])
+        self.assertEqual([sys.executable], doctor._wired_hook_argv(td) or [sys.executable])
+
+    def test_no_wiring_falls_back_to_the_interpreter_this_machine_would_wire(self):
+        with tempfile.TemporaryDirectory() as td:
+            self.assertIsNone(doctor._wired_hook_argv(td))
+            self.assertTrue(doctor._hook_interpreter_check(td)["ok"])
 
 
 class TestConfigReading(unittest.TestCase):

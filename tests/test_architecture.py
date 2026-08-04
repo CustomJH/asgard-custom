@@ -917,19 +917,24 @@ class TestLayeredArchitecture(unittest.TestCase):
         self.assertFalse(violations, "훅 자립 계약 위반:\n" + "\n".join(violations))
 
     def test_hooks_parse_on_old_python(self):
-        """훅 문법 바닥 — hooks/*.py는 사용자 PATH의 `python3`로 돈다, asgard의 venv가 아니라.
+        """훅 문법 바닥 — hooks/*.py는 asgard의 venv가 아니라 그 기계가 내주는 파이썬으로 돈다.
 
-        `platform.hook_python()`은 `shutil.which("python3")`이 찾은 것을 그대로 쓴다. 그래서
-        asgard 자신의 `requires-python`은 훅에 대한 보장이 못 된다 — 훅이 최신 문법을 쓰면
-        조금 낡은 기계에서 임포트 시점 SyntaxError가 되고, 훅 계약은 fail-open이라 그 죽음이
-        **조용하다**: 사용자는 계층이 켜진 줄 알고 아무 일도 안 일어난다.
+        `platform.hook_python()`의 정본은 이제 `uv run --no-project python`이다 — 설치가 uv
+        관리 CPython 위에 서므로 보통은 충분히 새 인터프리터가 온다. 그래도 asgard 자신의
+        `requires-python`은 여전히 훅에 대한 보장이 못 된다: uv 가 없는 기계에서는 PATH 의
+        python3/py 로 내려가고(패키지 매니저 설치·사내 이미지), 그 파이썬은 낡을 수 있다.
+        훅이 최신 문법을 쓰면 거기서 임포트 시점 SyntaxError가 되고, 훅 계약은 fail-open이라
+        그 죽음이 **조용하다**: 사용자는 계층이 켜진 줄 알고 아무 일도 안 일어난다.
 
         실제로 그 자리가 있었다: 괄호 없는 다중 except (PEP 758, 3.14+)가 세 군데 있었고,
         3.13 기계에서는 매뉴얼 계층과 퀘스트 로그가 통째로 증발하는 상태였다.
 
-        바닥을 3.9로 잡는다 — "python3라고 불리는 것"의 현실적 하한이다. 문법만 본다
-        (`ast`는 실행하지 않는다). 새 문법이 정말 필요하면 이 상수를 올리되, 그건 훅이 도는
-        기계의 최소 사양을 올리겠다는 **명시적 결정**이어야 한다."""
+        바닥은 3.9 그대로 둔다. uv 정본이 인터프리터를 새것으로 끌어올리긴 하지만 그건
+        **정본 경로의 성질**이지 폴백 경로의 보장이 아니다 — 바닥을 올리면 그 보장을 uv 부재
+        기계에 소급 적용하는 셈이고, 어긋나는 순간의 실패가 조용하다는 성질은 그대로다.
+        비용이 없는 벨트라 남긴다. 문법만 본다(`ast`는 실행하지 않는다). 새 문법이 정말
+        필요하면 이 상수를 올리되, 그건 훅이 도는 기계의 최소 사양을 올리겠다는 **명시적
+        결정**이어야 한다."""
         floor = (3, 9)
         hooks_dir = os.path.join(SRC, "hooks")
         broken: list[str] = []

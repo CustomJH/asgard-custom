@@ -3,7 +3,7 @@ and the foundational .claude/ folder set (each seeded with a README so git track
 
 import json
 
-from ..platform import hook_python
+from ..platform import UV_HOOK_PYTHON, hook_python, hook_python_token
 
 CC_FOLDERS = [
     (
@@ -32,33 +32,50 @@ CC_FOLDERS = [
 
 def cc_settings() -> str:
     # Permission floor (belt) + deterministic PreToolUse guards (braces): "prose asks, hooks forbid."
-    # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — Windows 엔 python3 실행 파일이 없다.
+    # 훅 인터프리터는 생성 시점의 타깃 머신 기준 — uv 가 설치 보장 런타임이라 정본이고,
+    # uv 없는 기계에서만 python3/py 로 내려간다 (platform.hook_python).
+    #
+    # 두 표기가 서로 다른 일을 한다. 배선(`py`)은 이 기계의 절대 경로라 PATH 가 넉 줄뿐인
+    # 독·launchd 프로세스에서도 서고, 허용목록(`token`)은 안내문이 시키는 맨 토큰이라 모델이
+    # 친 명령과 한 글자도 안 어긋난다.
     py = hook_python()
+    token = hook_python_token()
     return (
         json.dumps(
             {
-                # Lagom 모드 가시성 — 상태파일/config를 읽는 셸 전용 스크립트
-                "statusLine": {
-                    "type": "command",
-                    "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
-                },
+                # statusLine 은 여기 없다. Claude Code 는 프로젝트 설정이 사용자 설정보다 우선하므로
+                # 이 키를 적으면 사용자가 ~/.claude/settings.json에 지정한 상태줄이 asgard
+                # 프로젝트마다 무시된다. 호스트의 상태줄은 호스트 설정이 정하고, 아스가르드 고유
+                # 상태줄은 네이티브 터미널에만 있다 (agent/repl.py statusline). lagom-statusline.sh
+                # 는 그대로 설치되니, 쓰려면 사용자 settings.json의 statusLine 에 그 경로를 지정한다.
                 "permissions": {
                     # 스킬 시스템의 유일한 로드 경로(asgard skills 읽기 3종)와 quest-log 루프는
                     # 사전 승인 — 헤드리스(-p)에서 자동 거부되면 정본 폴백·게이트 불능이 된다.
                     # 쓰기 계열(assign/disable 등)은 제외.
-                    "allow": [
-                        "Bash(git status)",
-                        "Bash(git diff *)",
-                        "Bash(git log *)",
-                        "Bash(asgard skills list*)",
-                        "Bash(asgard skills show *)",
-                        "Bash(asgard skills resolve *)",
-                        # 개인 메모리 계약 읽기(AGENTS.md) — 회상이 승인 프롬프트에 막히면
-                        # 헤드리스에서 조용히 죽는다. 쓰기(ingest)는 의도적으로 제외 —
-                        # 저장 동의는 클라이언트 권한 프롬프트가 오딘의 승인 표면이다.
-                        "Bash(asgard memory query *)",
-                        f"Bash({py} .claude/hooks/quest-log.py *)",
-                    ],
+                    # dict.fromkeys — uv 기계에서는 hook_python_token()과 정본 토큰이 같은
+                    # 문자열이라 같은 항목이 두 번 들어간다. 순서는 보존한 채 접는다.
+                    "allow": list(
+                        dict.fromkeys(
+                            [
+                                "Bash(git status)",
+                                "Bash(git diff *)",
+                                "Bash(git log *)",
+                                "Bash(asgard skills list*)",
+                                "Bash(asgard skills show *)",
+                                "Bash(asgard skills resolve *)",
+                                # 개인 메모리 계약 읽기(AGENTS.md) — 회상이 승인 프롬프트에 막히면
+                                # 헤드리스에서 조용히 죽는다. 쓰기(ingest)는 의도적으로 제외 —
+                                # 저장 동의는 클라이언트 권한 프롬프트가 오딘의 승인 표면이다.
+                                "Bash(asgard memory query *)",
+                                f"Bash({token} .claude/hooks/quest-log.py *)",
+                                # 안내문(AGENTS.md·역할 계약)은 정적이라 언제나 uv 정본 형태를 적는다.
+                                # 이 기계의 hook_python_token()이 폴백을 골랐을 때 허용목록만 다른
+                                # 토큰을 담으면, 헤드리스(-p)에서 모델이 적힌 대로 친 명령이 자동
+                                # 거부되고 게이트가 조용히 죽는다.
+                                f"Bash({UV_HOOK_PYTHON} .claude/hooks/quest-log.py *)",
+                            ]
+                        )
+                    ),
                     "deny": [
                         "Bash(rm -rf *)",
                         "Bash(git push --force*)",

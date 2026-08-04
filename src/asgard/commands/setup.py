@@ -1,7 +1,9 @@
 """setup / init — scaffold a project. AGENTS.md is always canonical; a tool flag scopes the setup to
 that tool (nothing for the others); no flag wires every agent (universal). Flags combine. Generated
-content is byte-identical to the TS version; hooks are Python (.py) wired via python3."""
+content is byte-identical to the TS version; hooks are Python (.py) wired via the canonical hook
+interpreter — `uv run --no-project python` where uv is present (`platform.hook_python`)."""
 
+import contextlib
 import os
 import sys
 from pathlib import Path

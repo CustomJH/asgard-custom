@@ -1,6 +1,7 @@
 """Asgard hook library — the single home for hook code (grows as we add hooks).
 
-Each `*.py` here is a REAL, standalone, stdlib-only script: runnable directly (`python3 <file>`) and
+Each `*.py` here is a REAL, standalone, stdlib-only script: runnable directly (`<hook-python> <file>`,
+canonically `uv run --no-project python <file>` — see `platform.hook_python`) and
 testable in isolation, with no escaping and no `asgard` import (it runs inside the *user's* repo). setup
 scaffolds a hook by reading its source verbatim via `script(name)` — this package is the abstraction
 boundary, so command/template code never embeds hook bodies as escaped strings.

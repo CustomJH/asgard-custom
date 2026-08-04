@@ -3,7 +3,7 @@
 #
 # 코디네이터(Heimdall)의 "관찰·기록·배정" 프리미티브. 훅이 아니라 에이전트가 직접 부르는 도구다:
 #   open   <quest-id>  과업 로그 시작 (base_ref = 현재 HEAD 고정, ACTIVE 포인터 갱신)
-#   append             이벤트 1건 기록 (stdin JSON + 플래그) — verify는 diff_hash 자동 계산
+#   append             이벤트 1건 기록 (--json 또는 stdin JSON + 플래그) — verify는 diff_hash 자동 계산
 #   state              로그 요약 관찰 (코디네이터의 state observation)
 #   next               전이 함수: 로그 상태 + risk_features → next_role (결정 테이블)
 #   close              완료된 quest의 ACTIVE 해제 (PASS+hash 일치 또는 ESCALATE만)
@@ -57,8 +57,9 @@ for _stream in (sys.stdout, sys.stderr):
 
 SCHEMA = 2
 EMPTY = hashlib.sha256(b"").hexdigest()  # 변경 전무(diff 없음 + untracked 없음)의 정준 해시
-# 숫자 파싱 실패 두 종. 이름으로 묶는 이유: 훅은 asgard의 venv가 아니라 사용자 PATH의
-# python3로 돈다(`platform.hook_python`). 괄호 없는 다중 except는 3.14+ 문법(PEP 758)이라
+# 숫자 파싱 실패 두 종. 이름으로 묶는 이유: 훅은 asgard의 venv가 아니라 그 기계가 내주는
+# 인터프리터로 돈다(`platform.hook_python` — uv 가 있으면 `uv run --no-project python`,
+# 없으면 PATH 의 python3/py). 괄호 없는 다중 except는 3.14+ 문법(PEP 758)이라
 # 3.13 이하 기계에선 이 파일이 임포트 시점 SyntaxError가 되고, 훅 계약이 fail-open이라 그
 # 죽음이 **조용하다**. 그렇다고 괄호로 쓰면 포매터(target-version=py314)가 도로 벗긴다 —
 # 이름은 못 건드린다. tests/test_architecture.py의 문법 바닥 검사가 이 불변식을 지킨다.
@@ -636,6 +637,14 @@ SAFE_CHECK_PREFIXES = (
     "python -m unittest ",
     "python3 -m unittest ",
     "uv run pytest ",
+    # `uv run python -m <안전 모듈>` — 이미 있는 `python -m <같은 모듈>`과 `uv run pytest `의
+    # 표기 조합일 뿐, 새로 닿는 실행 파일이 없다. uv 가 정본 인터프리터가 된 뒤 정책에 이렇게
+    # 적히는 것이 자연스러워졌는데 표가 못 받아 **조용히 버려지면** 게이트의 유일한 독립 증거
+    # 레인이 사라진다. 훅 정본의 `--no-project` 형태는 일부러 넣지 않는다 — 베이스라인 체크는
+    # 프로젝트 의존성을 봐야 하므로 프로젝트를 떼는 형태는 애초에 잘못된 설정이다.
+    "uv run python -m pytest ",
+    "uv run python -m unittest ",
+    "uv run python -m compileall ",
     "uv run ruff check ",
     "uv run ruff format --check ",
     "uv run ty check",
@@ -2539,6 +2548,7 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--request-stdin", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--base-ref", help=argparse.SUPPRESS)
     ap.add_argument("--session", default=host_session_id())
+    ap.add_argument("--json", help="append: event body as one argument (stdin equivalent, single command)")
     ap.add_argument("--role"), ap.add_argument("--event"), ap.add_argument("--verdict")
     ap.add_argument("--level", choices=["micro", "full"])
     ap.add_argument("--unit")
@@ -2674,9 +2684,24 @@ def _cmd_open(root: str, args) -> int:
 
 
 def _append_payload(args) -> tuple[dict | None, int]:
-    """append가 받을 이벤트 원문 — stdin JSON 위에 플래그를 덮는다. (원문, 종료 코드)."""
+    """append가 받을 이벤트 원문 — `--json`(없으면 stdin) 위에 플래그를 덮는다. (원문, 종료 코드).
+
+    `--json`이 있는 이유는 권한 계층이다. 호스트의 Bash 허용목록은 원문 문자열 프리픽스로
+    맞추고 셸 연산자를 알아보므로, `echo … | quest-log.py append` 는 앞 세그먼트(`echo`)까지
+    허용목록에 있어야 통과한다 — 없으면 헤드리스에서 자동 거부되고, 역할이 이벤트를 못 남기니
+    subagent-gate 가 종료를 다시 막아 교착이다. 인자 하나로 받으면 명령이 하나라 그 자리에서
+    프리픽스에 걸린다."""
     raw: dict = {}
-    if not sys.stdin.isatty():
+    if args.json:
+        try:
+            raw = json.loads(args.json)
+        except Exception:
+            print(json.dumps({"error": "--json is not valid JSON"}), file=sys.stderr)
+            return None, 2
+        if not isinstance(raw, dict):
+            print(json.dumps({"error": "--json must be a JSON object"}), file=sys.stderr)
+            return None, 2
+    elif not sys.stdin.isatty():
         try:
             body = sys.stdin.read().strip()
             raw = json.loads(body) if body else {}

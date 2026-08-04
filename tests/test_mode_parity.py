@@ -10,12 +10,14 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
 
 from asgard.commands.doctor import _PARITY_HOOKS, _mode_parity_check
 from asgard.commands.setup import hook_files, plan_files
+from asgard.platform import UV_HOOK_PYTHON
 from asgard.templates import cc_settings, codex_config, cursor_hooks_json
 
 # 세 모드에 같은 규율로 서야 하는 계층 — 훅 이름이 곧 계약이다.
@@ -195,6 +197,149 @@ class TestHookProtocolParity(unittest.TestCase):
 
         for folder in (".claude", ".cursor", ".codex"):
             self.assertTrue(is_readonly_bash_safe(f"python3 {folder}/hooks/quest-log.py open q --criteria x"))
+            self.assertTrue(is_readonly_bash_safe(f"{UV_HOOK_PYTHON} {folder}/hooks/quest-log.py open q --criteria x"))
+
+
+class TestCanonicalHookPython(unittest.TestCase):
+    """훅 인터프리터 토큰은 배포되는 모든 표면에서 하나여야 한다.
+
+    안내문이 시키는 명령과 권한 허용목록에 적힌 명령이 다르면 헤드리스(-p) 세션에서 모델이
+    적힌 대로 친 명령이 자동 거부되고, 퀘스트 로그가 안 열려 게이트가 조용히 죽는다. 여기서
+    고정하는 것은 넷이다 — (1) 안내문에 맨 `python3 …/quest-log.py`가 남아 있지 않다,
+    (2) 허용목록 토큰 == 안내문 토큰, (3) 배선은 절대 경로·허용목록은 맨 토큰,
+    (4) 시키는 명령이 허용목록 프리픽스에 그대로 걸린다."""
+
+    # 안내문이 그대로 시키는 표면들 — 모델이 이 문장을 읽고 그대로 친다.
+    PROSE_SURFACES = (
+        "templates/agents.py",
+        "templates/selftest.py",
+        "templates/roles/asgard-worker.md",
+        "templates/roles/asgard-thinker.md",
+        "templates/roles/asgard-verifier.md",
+        "failures.py",
+        "hooks/verifier_gate.py",
+        "hooks/subagent_gate.py",
+    )
+    # 맨 python3 로 quest-log 를 부르는 형태 (셸 변수·경로 표기 차이를 포괄).
+    BARE = re.compile(r"python3\s+\S*quest-log\.py")
+
+    def test_no_shipped_surface_tells_the_model_to_type_bare_python3(self):
+        src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard")
+        offenders = []
+        for rel in self.PROSE_SURFACES:
+            path = os.path.join(src, rel)
+            with open(path, encoding="utf-8") as handle:
+                for lineno, line in enumerate(handle, 1):
+                    if self.BARE.search(line):
+                        offenders.append(f"{rel}:{lineno}")
+        self.assertEqual(
+            offenders,
+            [],
+            "맨 python3 로 quest-log 를 부르라고 적힌 자리 — 시스템 python3 는 없을 수 있다 "
+            f"(정본: {UV_HOOK_PYTHON}):\n" + "\n".join(offenders),
+        )
+
+    def test_allowlist_token_equals_the_prose_token(self):
+        """허용목록의 quest-log 항목이 안내문 토큰을 반드시 담는다.
+
+        안내문은 정적이라 언제나 uv 정본을 적는다. 이 기계의 hook_python()이 폴백을 골랐더라도
+        허용목록에는 정본 토큰이 함께 실려야 한다 — 안 그러면 그 기계에서만 게이트가 죽는다."""
+        allow = json.loads(cc_settings())["permissions"]["allow"]
+        self.assertIn(f"Bash({UV_HOOK_PYTHON} .claude/hooks/quest-log.py *)", allow)
+        with mock.patch("asgard.templates.claude.hook_python_token", return_value="py"):
+            fallback = json.loads(cc_settings())["permissions"]["allow"]
+        self.assertIn(f"Bash({UV_HOOK_PYTHON} .claude/hooks/quest-log.py *)", fallback)
+        self.assertIn("Bash(py .claude/hooks/quest-log.py *)", fallback)
+
+    def test_agents_md_and_gate_messages_use_the_same_token(self):
+        """AGENTS.md 안내문과 게이트 차단문이 같은 토큰을 쓴다 — 차단이 가르치는 명령이 곧 정본."""
+        from asgard.failures import GATE_MESSAGES
+        from asgard.templates import agents_md
+
+        self.assertIn(f"{UV_HOOK_PYTHON} <hooks>/quest-log.py open", agents_md("demo"))
+        self.assertIn(f"{UV_HOOK_PYTHON} <hooks>/quest-log.py open", GATE_MESSAGES["orphan-write"])
+
+    def test_wiring_carries_an_absolute_path_and_the_allowlist_carries_the_bare_token(self):
+        """배선은 절대 경로, 허용목록·안내문은 맨 토큰 — 두 표면이 요구하는 것이 서로 다르다.
+
+        맨 `uv` 를 배선하면 PATH 가 `/usr/bin:/bin:/usr/sbin:/sbin` 넉 줄뿐인 프로세스(독·
+        Finder·launchd)에서 훅 줄이 전부 exit 127 이 되고, fail-open 계약이라 조용하다. 반대로
+        허용목록에 기계별 절대 경로를 담으면 안내문이 시키는 명령과 어긋나 자동 거부된다."""
+        with mock.patch("asgard.platform.shutil.which", side_effect=lambda c: f"/opt/tools/{c}"):
+            from asgard.platform import hook_python, hook_python_argv, hook_python_token
+
+            self.assertEqual(hook_python(), "/opt/tools/uv run --no-project python")
+            self.assertEqual(hook_python_argv(), ["/opt/tools/uv", "run", "--no-project", "python"])
+            self.assertEqual(hook_python_token(), UV_HOOK_PYTHON)
+            settings = json.loads(cc_settings())
+        commands = [h["command"] for event in settings["hooks"].values() for e in event for h in e["hooks"]]
+        self.assertTrue(commands and all(c.startswith("/opt/tools/uv run --no-project python ") for c in commands))
+        allow = settings["permissions"]["allow"]
+        self.assertIn(f"Bash({UV_HOOK_PYTHON} .claude/hooks/quest-log.py *)", allow)
+        self.assertEqual([], [entry for entry in allow if "/opt/tools/" in entry])
+
+    def test_a_wiring_path_with_spaces_stays_one_shell_word(self):
+        """공백이 든 경로(Windows 의 `C:/Program Files/…`)는 따옴표 없이는 두 낱말로 쪼개진다."""
+        import shlex
+
+        from asgard.platform import hook_python
+
+        with mock.patch("asgard.platform.shutil.which", side_effect=lambda c: rf"C:\Program Files\{c}.exe"):
+            command = hook_python()
+        self.assertEqual(command, '"C:/Program Files/uv.exe" run --no-project python')
+        self.assertEqual(shlex.split(command), ["C:/Program Files/uv.exe", "run", "--no-project", "python"])
+
+    # 모델이 그대로 타이핑하는 명령이 실려 있는 표면 — 허용목록과 한 글자도 어긋나면 안 된다.
+    # 훅 디렉토리 표기는 표면마다 다르다: 안내문은 `<hooks>`, 클라이언트별 배선은 실제 경로.
+    ALLOWED_HEADS = tuple(
+        f"{UV_HOOK_PYTHON} {folder}/" for folder in ("<hooks>", ".claude/hooks", ".cursor/hooks", ".codex/hooks")
+    )
+
+    def _instruction_surfaces(self) -> list[tuple[str, str]]:
+        from asgard.failures import GATE_MESSAGES
+        from asgard.hooks.subagent_gate import EVENT_ROLE, record_hint
+        from asgard.templates import agents_md
+
+        src = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "src", "asgard")
+        surfaces = [
+            ("agents_md", agents_md("demo")),
+            ("failures.py", "\n".join(GATE_MESSAGES.values())),
+            # 렌더된 문장으로 본다 — 이 명령은 훅 디렉토리를 런타임에 채운다.
+            ("subagent_gate.record_hint", "\n".join(record_hint(".claude/hooks", e) for e in EVENT_ROLE)),
+        ]
+        for rel in ("hooks/verifier_gate.py",) + tuple(
+            f"templates/roles/asgard-{role}.md" for role in ("worker", "thinker", "verifier")
+        ):
+            with open(os.path.join(src, rel), encoding="utf-8") as handle:
+                text = handle.read()
+            # 파이썬 소스는 문자열 이어붙이기 이음매를 지운다 — 렌더된 문장 기준으로 봐야
+            # `… | ` 와 `uv run …` 이 두 줄에 걸쳐 나뉘어 파이프라인이 안 보이는 일이 없다.
+            surfaces.append((rel, re.sub(r"['\"]\s*\n\s*['\"]", "", text) if rel.endswith(".py") else text))
+        return surfaces
+
+    def test_every_instructed_quest_log_command_matches_the_allowlist(self):
+        """시키는 명령이 허용목록 프리픽스에 그대로 걸려야 한다 — 안 걸리면 헤드리스 교착이다.
+
+        호스트의 Bash 규칙은 원문 문자열 프리픽스로 맞추고 셸 연산자를 알아본다. 그래서
+        `$CLAUDE_PROJECT_DIR/...` 절대 형태는 상대 경로 항목과 한 글자도 안 겹치고, 파이프라인은
+        앞 세그먼트(`echo`)까지 허용목록을 요구한다. 둘 다 결과가 같다 — 헤드리스(-p)에서 자동
+        거부 → 역할이 이벤트를 못 남김 → subagent-gate 가 종료를 다시 차단 → 교착."""
+        self.assertIn(
+            f"Bash({UV_HOOK_PYTHON} .claude/hooks/quest-log.py *)",
+            json.loads(cc_settings())["permissions"]["allow"],
+        )
+        offenders = []
+        for rel, text in self._instruction_surfaces():
+            for match in re.finditer(r"quest-log\.py", text):
+                head = text[: match.start()]
+                if "python" not in head[-60:]:
+                    continue  # 도구 이름 언급이지 타이핑할 명령이 아니다
+                matched = next((allowed for allowed in self.ALLOWED_HEADS if head.endswith(allowed)), None)
+                if not matched:
+                    offenders.append(f"{rel}: …{head[-60:]}quest-log.py — 허용목록 프리픽스가 아니다")
+                elif head[: -len(matched)].rstrip().endswith(("|", "&", ";")):
+                    offenders.append(f"{rel}: …{head[-80:]}quest-log.py — 복합 명령의 뒷 세그먼트다")
+        self.assertEqual(offenders, [], "허용목록과 어긋나는 지시 명령:\n" + "\n".join(offenders))
 
 
 class TestNativeParity(unittest.TestCase):
