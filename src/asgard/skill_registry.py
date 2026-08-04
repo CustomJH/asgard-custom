@@ -6,6 +6,7 @@ Code, Cursor, Codex, and the native Heimdall loop share one source of truth.
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import re
@@ -762,6 +763,44 @@ def _resolve_bundled(root: str, task: str, agent: str) -> list[tuple[str, str]]:
     return hits
 
 
+_ASCII_TRIGGER = re.compile(r"^[a-z0-9][a-z0-9 ._+-]*$")
+
+
+_TRIGGER_TAIL = r"(?:s|es|ing|ed|er|ers)?"
+
+
+@functools.lru_cache(maxsize=1024)
+def _trigger_pattern(trigger: str) -> re.Pattern[str] | None:
+    """라틴 트리거의 낱말 경계 패턴 — 한글 등 비 ASCII 는 None (부분 문자열 그대로).
+
+    뒤 경계는 흔한 굴절만큼 늦춘다. 오탐을 죽이는 것은 **앞** 경계라(`password` ⊃ `word`,
+    `cascade` ⊃ `cad`, `serialize` ⊃ `serial` 전부 앞에서 걸린다), 뒤를 넓혀도 오탐은 안
+    돌아오고 미탐만 준다. `s?` 만 두었을 때 실측된 미탐: "the designer asked for a hero
+    section"(designer), "batching the outbound webhook calls"(batch), "refactoring the domain
+    modeling of orders"(refactor·modeling) — 셋 다 평범한 요청 표현이다 (26-08-04 교차검토)."""
+    if not _ASCII_TRIGGER.match(trigger):
+        return None
+    return re.compile(rf"(?<![a-z0-9]){re.escape(trigger)}{_TRIGGER_TAIL}(?![a-z0-9])")
+
+
+def _trigger_hits(trigger: str, task: str) -> bool:
+    """이 트리거가 요청에 실제로 나오는가 — 라틴 트리거는 낱말 경계로 본다.
+
+    부분 문자열로 보던 동안 짧은 영어 트리거가 남의 낱말 안쪽에 붙어 관계없는 스킬 본문을
+    끌어왔다 (26-08-04 실측: `password` ⊃ `word` 로 office 스킬, `cascade` ⊃ `cad` 로 CAD
+    스킬, `serialize` ⊃ `serial` 로 프로토콜 스킬. 오발 10건 84,941 B). 같은 병을 역할
+    프롬프트 쪽은 이미 `templates/worker.py` 의 `_WORD_RE` 로 고쳐 뒀는데 플러그인 경로만
+    안 받았다.
+
+    뒤 경계를 한 글자 늦춘다(`s?`). 영어 복수형이 이 트리거 집합의 가장 흔한 굴절이라, 딱
+    붙여 끊으면 `endpoints`·`tickets`·`templates`·`migrations` 가 전부 미탐이 된다 (실측:
+    진짜 매칭 8/8 → 2/8). 오발 쪽은 앞 경계에서 이미 걸러지므로 `s?` 가 되살리지 않는다.
+
+    한글 트리거는 부분 문자열 그대로 둔다 — 조사와 활용이 붙는 교착어라 낱말 경계가 없다."""
+    pattern = _trigger_pattern(trigger)
+    return bool(pattern.search(task)) if pattern else trigger in task
+
+
 def _resolve_file_plugins(root: str, task: str, agent: str, sources: dict[str, dict]) -> list[tuple[str, str]]:
     task = task.lower()
     hits: list[tuple[int, str, str]] = []
@@ -782,7 +821,7 @@ def _resolve_file_plugins(root: str, task: str, agent: str, sources: dict[str, d
                 continue
             if not _assigned(name, agent, defaults, policy):
                 continue
-            matched = sum(1 for trigger in route["triggers"] if trigger in task)
+            matched = sum(1 for trigger in route["triggers"] if _trigger_hits(trigger, task))
             if matched:
                 delivered = _file_skill(_delivered_md(root, plugin, name))
                 hits.append((-matched, name, delivered[1] if delivered else body))
