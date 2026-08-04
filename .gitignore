@@ -295,5 +295,4 @@ src/asgard/assets/**/*.py[codz]
 src/asgard/assets/**/.DS_Store
 src/asgard/assets/**/node_modules/
 
-.asgard
 .idea
