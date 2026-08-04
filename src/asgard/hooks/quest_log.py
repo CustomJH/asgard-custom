@@ -1319,6 +1319,29 @@ def update_priors(root: str, task_class: str, red: bool) -> None:
         pass
 
 
+_SESSION_ENV = (
+    "CLAUDE_CODE_SESSION_ID",  # Claude Code 가 실제로 내보내는 이름
+    "CLAUDE_SESSION_ID",  # 종전에 이 파일이 찾던 이름 — 다른 호스트가 줄 수 있으니 남긴다
+    "CURSOR_SESSION_ID",
+    "CODEX_SESSION_ID",
+)
+
+
+def host_session_id() -> str:
+    """호스트가 준 세션 신원. 없으면 `"-"` — 신원이 아니라 신원 부재의 표시다.
+
+    verifier_gate.py 의 같은 이름 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 포인터를 쓰는
+    쪽과 읽는 쪽이 다른 이름을 본다). 종전에는 `CLAUDE_SESSION_ID` 하나만 봤는데 Claude Code 가
+    내보내는 이름은 `CLAUDE_CODE_SESSION_ID` 라 조회가 늘 빗나갔고, 그래서 한 저장소의 모든
+    세션과 서브에이전트가 포인터 파일 하나(`sessions/-.active`)를 공유했다. 나중에 open 한
+    쪽이 앞선 쪽의 포인터를 가져가, 판정이 남의 퀘스트에 적혔다 (26-08-04 실측 3건)."""
+    for name in _SESSION_ENV:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return "-"
+
+
 def _session_key(session: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]", "_", str(session or "default"))[:64] or "default"
 
@@ -1355,6 +1378,21 @@ def _fsync_dir(path: str) -> None:
 
 
 def active_quest(root: str, session: str | None = None) -> str | None:
+    """이 session이 보고 있는 quest.
+
+    남은 결함 — `--session` 기본값은 `host_session_id()` 라서 호스트가 세션 이름을 내주는 동안은
+    세션마다 포인터가 갈린다. 하지만 아무 이름도 없으면 그 함수는 `"-"` 를 주고, 여기서는 그것이
+    신원처럼 쓰인다: 그 기계에서 도는 모든 세션과 서브에이전트가 포인터 파일 하나
+    (`sessions/-.active`)를 공유하고, 나중에 `open` 한 쪽이 앞선 쪽의 포인터까지 가져간다.
+    이름을 못 찾던 시절의 실측 26-08-04, 같은 원인으로 두 건: Verifier 서브에이전트의 PASS 가
+    남의 `verifier-latency-cut` turn 2 에 적혔고(그 quest 는 아무도 검증한 적이 없다), 한 세션의
+    append 가 남의 `uv-hook-defects` turn 3 으로 들어갔다. 회수를 뒤에 붙여도 `last_verdict` 는
+    안 돌아온다.
+
+    신원 부재를 신원에서 떼어내려면 gate 의 "무퀘스트" 판정이 같이 움직인다
+    (`TestAdversarialSuite` · `TestQuestScopedStale` 가 그 자리를 잡는다) — 별도 퀘스트다.
+    그때까지 이름 없는 호스트에서의 회피책은 하나뿐이다: 쓰기 명령에 quest id 를 **명시**한다
+    (`quest-log append <quest-id> …`). 역할 계약들은 아직 맨 `append` 를 안내한다."""
     paths = []
     if session is not None:
         session_path = _session_pointer(root, session)
@@ -2500,7 +2538,7 @@ def _parser() -> argparse.ArgumentParser:
     ap.add_argument("--request", default="", help="open: original task text for crash-safe native resume")
     ap.add_argument("--request-stdin", action="store_true", help=argparse.SUPPRESS)
     ap.add_argument("--base-ref", help=argparse.SUPPRESS)
-    ap.add_argument("--session", default=os.environ.get("CLAUDE_SESSION_ID", "-"))
+    ap.add_argument("--session", default=host_session_id())
     ap.add_argument("--role"), ap.add_argument("--event"), ap.add_argument("--verdict")
     ap.add_argument("--level", choices=["micro", "full"])
     ap.add_argument("--unit")

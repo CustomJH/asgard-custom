@@ -822,6 +822,24 @@ def quest_pointer(root, sid, kind="active"):
     return None
 
 
+_SESSION_ENV = (
+    "CLAUDE_CODE_SESSION_ID",  # Claude Code 가 실제로 내보내는 이름
+    "CLAUDE_SESSION_ID",  # 종전에 이 파일이 찾던 이름 — 다른 호스트가 줄 수 있으니 남긴다
+    "CURSOR_SESSION_ID",
+    "CODEX_SESSION_ID",
+)
+
+
+def host_session_id():
+    """호스트가 준 세션 신원. 없으면 `"-"`. quest_log.py의 같은 이름 함수와 동일 유지 —
+    포인터를 쓰는 쪽과 읽는 쪽이 다른 이름을 보면 게이트가 남의 quest를 판정한다."""
+    for name in _SESSION_ENV:
+        value = (os.environ.get(name) or "").strip()
+        if value:
+            return value
+    return "-"
+
+
 def session_candidates(data, protocol):
     """이 Stop이 가리킬 수 있는 세션 신원 후보 — 앞선 것이 우선.
 
@@ -836,9 +854,9 @@ def session_candidates(data, protocol):
     seen, out = set(), []
     for raw in (
         data.get("session_id"),
-        os.environ.get("CLAUDE_SESSION_ID"),
+        host_session_id(),  # quest-log.py의 --session 기본값과 같은 이름을 같은 순서로 본다
         "cursor" if protocol == "cursor" else None,
-        "-",  # quest-log.py의 --session 기본값
+        "-",  # 신원 부재로 열린 구 로그 호환 — 이 이름은 세션끼리 공유된다
         "default",  # 종전 게이트 기본값 (구 로그 호환)
     ):
         name = re.sub(r"[^A-Za-z0-9_.-]", "_", str(raw or ""))[:64]

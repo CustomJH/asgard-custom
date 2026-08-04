@@ -3079,6 +3079,34 @@ class TestPolicyMirror(unittest.TestCase):
             self.assertIn(key, quest_log.DEFAULT_POLICY)
             self.assertEqual(value, quest_log.DEFAULT_POLICY[key], key)
 
+    def test_verifier_gate_shared_helpers_answer_like_quest_log(self):
+        """두 훅이 같은 이름으로 품은 판정 함수는 같은 입력에 같은 답을 내야 한다.
+
+        verifier_gate 는 자기완결 배포라 quest_log 를 임포트하지 못하고 사본을 가진다. 사본이
+        갈라지면 게이트가 센 diff 해시와 로그가 적은 해시가 달라져 PASS 가 영구 stale 이 된다.
+        봉인은 DEFAULT_POLICY 하나뿐이라, 26-08-04 에 새로 복제된 넷은 주석으로만 묶여 있었다.
+        본문 대조가 아니라 답 대조인 이유는 두 사본의 표기가 원래 다르기 때문이다 — 훅 사본은
+        3.9 에서도 파싱돼야 해서 타입 주석을 안 단다."""
+        from asgard.hooks import quest_log, verifier_gate
+
+        self.assertEqual(quest_log._GENERATED_DIRS, verifier_gate._GENERATED_DIRS)
+        self.assertEqual(quest_log.UNSCOPED_DRIFT, verifier_gate.UNSCOPED_DRIFT)
+        paths = [
+            "target/debug/app",  # 무시 산출물 — 양쪽 다 제외
+            "build/x.py",
+            "src/app.py",  # 평범한 소스 — 양쪽 다 포함
+            "coverage/lcov.info",
+            "src/__pycache__/app.pyc",
+            "notbuild/app.py",  # 세그먼트 경계 — 접두사만 겹치는 이름은 산출물이 아니다
+        ]
+        for path in paths:
+            self.assertEqual(quest_log._generated(path), verifier_gate._generated(path), path)
+        for name in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID", "CURSOR_SESSION_ID", "CODEX_SESSION_ID"):
+            with mock.patch.dict(os.environ, {name: "sid-" + name}, clear=True):
+                self.assertEqual(quest_log.host_session_id(), verifier_gate.host_session_id(), name)
+        with mock.patch.dict(os.environ, {}, clear=True):
+            self.assertEqual(quest_log.host_session_id(), verifier_gate.host_session_id())
+
     def test_subagent_gate_verifiable_units_mirrors_quest_log(self):
         from asgard.hooks import quest_log, subagent_gate
 
