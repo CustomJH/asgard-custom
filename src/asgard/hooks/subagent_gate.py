@@ -43,6 +43,8 @@ AGENT_TARGETS = {
 }
 # 역할 이벤트의 "신선도" 기준점 — 이 이벤트 뒤에 자기 이벤트가 있어야 이번 턴 기록으로 인정.
 ANCHOR = {"plan": "verify", "work": "verify", "verify": "work"}
+# 이벤트 이름은 역할 이름이 아니다 — 기장 명령이 시키는 `role` 값은 여기서 온다.
+EVENT_ROLE = {"plan": "thinker", "work": "worker", "verify": "verifier"}
 
 
 def _read_text(path: str) -> str:
@@ -505,6 +507,27 @@ def physical_worker_problem(root: str, qid: str, sid: str, tickets: dict[str, di
     return ""
 
 
+def record_hint(hooks_dir: str, want: str) -> str:
+    """미기록 종료를 막을 때 같이 건네는 기장 명령.
+
+    `uv run --no-project python` 은 platform.hook_python_token() 의 정본을 리터럴로 옮긴 것이다 —
+    이 파일은 자기완결 배포라 asgard 를 임포트할 수 없고, uv 는 설치 경로가 보장하는 런타임이라
+    여기서 다시 탐지할 것이 없다.
+
+    형태가 **명령 하나 + 상대 경로**인 이유는 허용목록이다. 호스트의 Bash 규칙은
+    `Bash(uv run --no-project python .claude/hooks/quest-log.py *)` 처럼 원문 프리픽스로 맞추므로,
+    `$CLAUDE_PROJECT_DIR` 절대 형태는 한 글자도 안 겹치고 파이프라인은 앞 세그먼트(`echo`)까지
+    허용목록을 요구한다. 둘 다 헤드리스에서 자동 거부 → 이벤트 미기록 → 재차단의 교착이다."""
+    return 'uv run --no-project python %s/quest-log.py append --json \'{"role":"%s","event":"%s",...}\'%s' % (
+        hooks_dir,
+        EVENT_ROLE[want],
+        want,
+        " --verdict PASS|FAIL --level micro|full (must run the verification commands directly and record them)"
+        if want == "verify"
+        else "",
+    )
+
+
 def main():
     try:
         data = json.load(sys.stdin)
@@ -590,20 +613,7 @@ def main():
                 sid,
                 agent,
                 "%s is trying to end quest %s without recording a %s event. A role is only fulfilled by "
-                'logging it — record it, then end: echo \'{"role":"%s","event":"%s",...}\' | '
-                'python3 "$CLAUDE_PROJECT_DIR/%s/quest-log.py" append%s'
-                % (
-                    agent,
-                    qid,
-                    want,
-                    want if want != "verify" else "verifier",
-                    want,
-                    hooks_dir,
-                    " --verdict PASS|FAIL --level micro|full (must run the verification commands directly "
-                    "and record them)"
-                    if want == "verify"
-                    else "",
-                ),
+                "logging it — record it, then end: %s" % (agent, qid, want, record_hint(hooks_dir, want)),
                 protocol=protocol,
             )
         if want == "verify":
