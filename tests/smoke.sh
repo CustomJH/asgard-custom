@@ -175,7 +175,7 @@ grep -q '"SubagentStart"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc se
 for _f in lagom-activate.py lagom-tracker.py lagom-subagent.py lagom-canon.md lagom-statusline.sh; do
   [ -f "$PROJ/.claude/hooks/$_f" ] || { echo "FAIL: --cc missing $_f"; exit 1; }
 done
-grep -q '"statusLine"' "$PROJ/.claude/settings.json" || { echo "FAIL: --cc settings.json missing statusLine (lagom)"; exit 1; }
+grep -q '"statusLine"' "$PROJ/.claude/settings.json" && { echo "FAIL: --cc settings.json must not own statusLine (host keeps its own)"; exit 1; } || true
 printf '%s' '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"'"$PROJ"'"}}' | bash "$PROJ/.claude/hooks/lagom-statusline.sh" | grep -q 'lagom:full' || { echo "FAIL: lagom-statusline must show default full"; exit 1; }
 "$PY" -m py_compile "$PROJ/.claude/hooks/lagom-activate.py" "$PROJ/.claude/hooks/lagom-tracker.py" "$PROJ/.claude/hooks/lagom-subagent.py" || { echo "FAIL: lagom hooks invalid Python"; exit 1; }
 printf '%s' '{"source":"startup"}' | CLAUDE_PROJECT_DIR="$PROJ" "$PY" "$PROJ/.claude/hooks/lagom-activate.py" | grep -q 'mode=full' || { echo "FAIL: lagom-activate must inject default full"; exit 1; }

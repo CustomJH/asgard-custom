@@ -212,8 +212,10 @@ LAGOM_SKILLS: list[tuple[str, str]] = [
 ]
 
 
-# ── CC statusline — 모델 · 디렉토리 · lagom 모드. init 스캐폴드가 settings.json을
-# 통째로 방출하므로 nudge 불필요 — 새 프로젝트는 배선 포함, 기존 프로젝트는 --force 재스캐폴드.
+# ── CC statusline — 모델 · 디렉토리 · lagom 모드. 파일만 설치하고 배선은 하지 않는다: Claude Code 는
+# 프로젝트 설정이 사용자 설정보다 우선하므로, 프로젝트 settings.json에 statusLine 을 적으면 사용자가
+# ~/.claude/settings.json에 지정한 상태줄이 asgard 프로젝트마다 무시된다. 쓰려면 사용자
+# settings.json의 statusLine 에 이 경로를 지정한다 (templates/claude.py cc_settings 주석).
 # 셸 전용 (statusline은 ~300ms 주기 실행 — python 기동 비용 회피). JSON 상태파일 > config > full,
 # lagom_activate.py의 resolve와 동일 유지 (단일 출처 원칙: asgard/lagom.py).
 LAGOM_STATUSLINE_SH = """\

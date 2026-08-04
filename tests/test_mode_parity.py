@@ -65,7 +65,8 @@ def _hook_payload(script: str, payload: dict, argv: list[str]) -> tuple[int, str
 
 class TestScaffoldParity(unittest.TestCase):
     def test_hook_table_is_one_table(self):
-        """훅 표는 클라이언트별로 갈라지지 않는다 — CC statusLine만 예외."""
+        """훅 표는 클라이언트별로 갈라지지 않는다 — CC 에만 깔리는 statusLine 스크립트만 예외.
+        그 스크립트도 배선은 안 한다 (호스트 상태줄은 호스트 몫)."""
         cc = {os.path.basename(p) for p, _ in hook_files("/h", "claude-code")}
         cursor = {os.path.basename(p) for p, _ in hook_files("/h", "cursor")}
         codex = {os.path.basename(p) for p, _ in hook_files("/h", "codex")}

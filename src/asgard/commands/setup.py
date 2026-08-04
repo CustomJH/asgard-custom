@@ -128,12 +128,30 @@ def merge_gitignore(existing: str | None) -> str:
     return base + ("\n" if base else "") + _GITIGNORE_BLOCK
 
 
+# 판정 로직과 달리 이 두 키는 저장소마다 다른 환경 값이다 — 어떤 명령이 이 저장소의 행위
+# 베이스라인이고 그 명령이 몇 초를 쓰는가. 시드로 되돌리면 스위트가 baseline_timeout 보다 긴
+# 저장소는 결정론 레인이 꺼진 채 돌고(quest_log.run_baseline 은 timeout 을 skip 으로 처리한다)
+# 모든 쓰기 퀘스트가 LLM Verifier 로 간다 — quest_log.transition 의 checks_available 갈림길.
+PROJECT_OWNED_POLICY_KEYS = ("baseline_checks", "baseline_timeout")
+
+
+def _refreshed_policy(seed: dict, current: object) -> dict:
+    """정책 갱신 — 판정 키는 시드가 이기고, 환경 의존 키만 프로젝트 값을 살린다."""
+    policy = dict(seed)
+    if isinstance(current, dict):
+        for key in PROJECT_OWNED_POLICY_KEYS:
+            if key in current:
+                policy[key] = current[key]
+    return policy
+
+
 def merge_project_settings(existing: str | None, seeded: str) -> str:
     """재스캐폴드 시 통합 설정(asgard-setting-project.json) 병합 — 사용자 값 보존이 기본.
 
     사용자 소유 섹션(project_memory 연결·lagom·agent_models·provider 등 전부)은 기존 값을
-    유지하고 시드는 누락 섹션만 채운다. trinity_policy만 asgard 소유 로직이라 최신 시드로
-    갱신한다 (시드 드리프트 = 4모드 정책 패치 무효화, 26-07-23 sensitive_paths 회귀). 프로젝트
+    유지하고 시드는 누락 섹션만 채운다. trinity_policy의 판정 키는 asgard 소유 로직이라 최신
+    시드로 갱신한다 (시드 드리프트 = 4모드 정책 패치 무효화, 26-07-23 sensitive_paths 회귀);
+    PROJECT_OWNED_POLICY_KEYS만 예외로 프로젝트 값을 살린다. 프로젝트
     레벨 구 memory 섹션에 실 설정이 있으면 project_memory로 승격한다 (write_config와 같은
     개명 계약). 파손 JSON은 시드로 재생한다."""
     import json
@@ -146,7 +164,7 @@ def merge_project_settings(existing: str | None, seeded: str) -> str:
     if not isinstance(current, dict):
         return seeded
     merged = {**seed, **current}
-    merged["trinity_policy"] = seed["trinity_policy"]
+    merged["trinity_policy"] = _refreshed_policy(seed["trinity_policy"], current.get("trinity_policy"))
     legacy = merged.get("memory")
     if isinstance(legacy, dict) and any(not str(k).startswith("_") for k in legacy):
         pm = merged.get("project_memory")
@@ -155,6 +173,26 @@ def merge_project_settings(existing: str | None, seeded: str) -> str:
             merged["project_memory"] = legacy
         merged.pop("memory")
     return json.dumps(merged, ensure_ascii=False, indent=2) + "\n"
+
+
+def _keep_preserved(path: str, scaffold: str, shown: str) -> None:
+    """보존 대상 시드를 그대로 둔다 — 스캐폴드의 negation 을 **써넣지 않는다**.
+
+    한동안은 누락분을 병합했다 (26-07-23: 신규 공유 자산 negation 이 안 퍼지면 팀 공유가
+    조용히 깨진다). 그런데 이 파일에 무엇을 내보낼지는 프로젝트의 결정이고, 좁힌 목록을
+    셋업이 도로 넓히면 그 결정이 재실행 한 번에 증발한다 — 이 저장소가 26-08-01 에 map/·
+    binding.json·asgard-setting-project.json 을 일부러 닫아 두고도 `asgard init` 한 번에
+    셋 다 추적 가능해진 것이 실측이다 (중요정보 파일이 그중 하나였다).
+
+    그래서 전파 요구는 **쓰기가 아니라 말하기**로 갚는다: 빠진 negation 을 한 줄로 알리고
+    판단은 사람에게 남긴다. 경계는 tests/test_repo_memory_records.py 가 지킨다."""
+    missing: list[str] = []
+    with contextlib.suppress(OSError, UnicodeDecodeError):
+        prev_lines = Path(path).read_text(encoding="utf-8").splitlines()
+        missing = [line for line in scaffold.splitlines() if line.startswith("!") and line not in prev_lines]
+    ui.ok(ui.dim(shown) + ui.dim(" (기존 유지)"))
+    if missing:
+        ui.step(f"{shown} 에 없는 공유 예외 {len(missing)}건 — 필요하면 직접 넣어 주세요: {' '.join(missing)}")
 
 
 def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bool) -> int:
@@ -253,18 +291,7 @@ def _scaffold(files: list[tuple[str, str]], label: str, force: bool, dry_run: bo
             ui.ok(ui.dim(rel(p)) + ("" if prev is None else ui.dim(" (asgard 블록 갱신)")))
             continue
         if _seed_kind(p) == "preserve" and os.path.lexists(p):
-            # 보존하되 asgard 관리 공유 경로 negation 누락분은 병합 — 보존 정책이 신규 공유
-            # 자산(binding.json 등)의 전파를 막으면 팀 공유가 조용히 깨진다 (26-07-23 실측).
-            try:
-                prev_lines = Path(p).read_text(encoding="utf-8").splitlines()
-                missing = [line for line in content.splitlines() if line.startswith("!") and line not in prev_lines]
-                if missing:
-                    Path(p).write_text("\n".join(prev_lines + missing) + "\n", encoding="utf-8")
-                    ui.ok(ui.dim(rel(p)) + ui.dim(" (공유 예외 병합)"))
-                    continue
-            except Exception:
-                pass
-            ui.ok(ui.dim(rel(p)) + ui.dim(" (기존 유지)"))
+            _keep_preserved(p, content, rel(p))
             continue
         _write(p, content)
     ui.done(f"{len(files)} file(s) · make anything, your way")
@@ -288,7 +315,8 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
 
     표가 클라이언트별로 갈라지지 않는 것이 핵심이다 — 세 모드가 같은 규율을 지려면 같은 파일이
     깔려야 하고, 어느 이벤트에 매다는지만 클라이언트 설정(cc_settings/cursor_hooks_json/
-    codex_config)이 정한다. 갈라지는 항목은 호스트에만 있는 표면 하나뿐이다 (CC statusLine)."""
+    codex_config)이 정한다. 갈라지는 항목은 호스트에만 있는 표면 하나뿐이다 (CC statusLine 스크립트,
+    배선 없이 파일만)."""
     j = os.path.join
     files = [
         (j(hooks_dir, "git-guard.py"), hook("git-guard")),
@@ -318,7 +346,9 @@ def hook_files(hooks_dir: str, client: str = "claude-code") -> list[tuple[str, s
         (j(hooks_dir, "agent-activate.py"), hook("agent-activate")),
         (j(hooks_dir, "map-activate.py"), hook("map-activate")),
     ]
-    if client == "claude-code":  # statusLine은 CC 에만 있는 표면 — 다른 클라이언트엔 걸 자리가 없다
+    # statusLine 은 CC 에만 있는 표면이라 스크립트도 CC 에만 설치한다. 배선은 하지 않는다 —
+    # 호스트의 상태줄은 호스트 설정이 정한다 (templates/lagom.py LAGOM_STATUSLINE_SH 주석).
+    if client == "claude-code":
         files.append((j(hooks_dir, "lagom-statusline.sh"), LAGOM_STATUSLINE_SH))
     return files
 

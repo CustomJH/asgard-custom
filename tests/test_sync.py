@@ -69,9 +69,12 @@ class TestRegistry(Base):
         self.assertIsNotNone(memory._read(memory.memory_dir(), memory.DEFAULT_SKILL_PREFERENCE_SLUG))
 
     def test_setup_tolerates_preexisting_map_seed(self):
-        # `asgard map`·훅이 init 전에 .asgard/.gitignore + map/INDEX.md를 lazy 생성해도 init은
-        # 차단(rc 2)하지 않는다 — .gitignore는 사용자 내용 보존하되 asgard 관리 공유 예외(`!`)
-        # 누락분만 병합(binding.json 등 신규 공유 자산 전파), INDEX.md는 asgard 소유라 재동기화.
+        """`asgard map`·훅이 init 전에 `.asgard/.gitignore` + `map/INDEX.md` 를 lazy 생성해도 init 은
+        차단(rc 2)하지 않는다. `.gitignore` 는 한 글자도 안 건드리고, INDEX.md 는 asgard 소유라 재동기화.
+
+        한동안은 스캐폴드의 negation 누락분을 병합해 넣었다 (신규 공유 자산 전파). 그 쓰기가
+        무엇을 내보낼지에 대한 프로젝트의 결정을 재실행 한 번에 뒤집어서 알림으로 바뀌었다
+        (`setup._keep_preserved`) — 이 시험은 그때 같이 안 옮겨져 옛 계약을 붙들고 있었다."""
         from asgard.commands.setup import run_setup
 
         os.makedirs(os.path.join(self.root, ".asgard", "map"))
@@ -88,10 +91,9 @@ class TestRegistry(Base):
             os.chdir(cwd)
         with open(os.path.join(self.root, ".asgard", ".gitignore")) as fh:
             merged = fh.read()
-        self.assertTrue(merged.startswith(custom_ignore))  # 사용자 내용은 원문 그대로 선두 보존
-        merged_lines = merged.splitlines()
+        self.assertEqual(merged, custom_ignore)  # 원문 그대로 — 넓히는 쪽으로도 안 쓴다
         for negation in ("!map/", "!memory/binding.json", "!asgard-setting-project.json"):
-            self.assertIn(negation, merged_lines)  # asgard 관리 공유 예외 누락분 병합
+            self.assertNotIn(negation, merged.splitlines())  # 알릴 뿐, 써넣지 않는다
         from asgard.templates import MAP_INDEX_MD
 
         with open(os.path.join(self.root, ".asgard", "map", "INDEX.md")) as fh:
@@ -224,6 +226,25 @@ class TestInitOverwrite(Base):
         self.assertEqual(merged["trinity_policy"], DEFAULT_POLICY)  # 정책만 최신 시드로
         self.assertEqual(merged["agent_models"], {})  # 누락 섹션은 시드로 채움
 
+    def test_merge_project_settings_keeps_the_projects_own_baseline_command_and_timeout(self):
+        """스위트가 120초보다 긴 저장소는 자기 베이스라인 설정을 재스캐폴드 너머로 지켜야 한다 —
+        시드로 되돌아가면 결정론 레인이 꺼진 채 돌고 모든 쓰기 퀘스트가 LLM Verifier 로 간다."""
+        from asgard.commands.setup import merge_project_settings
+        from asgard.hooks.quest_log import DEFAULT_POLICY
+        from asgard.templates import project_settings
+
+        current = {
+            "trinity_policy": {
+                "baseline_checks": ["uv run pytest -x -q -n auto"],
+                "baseline_timeout": 600,
+                "sensitive_paths": ["낡은목록"],  # 판정 키 — 시드가 이겨야 한다
+            }
+        }
+        policy = json.loads(merge_project_settings(json.dumps(current), project_settings()))["trinity_policy"]
+        self.assertEqual(policy["baseline_checks"], ["uv run pytest -x -q -n auto"])
+        self.assertEqual(policy["baseline_timeout"], 600)
+        self.assertEqual(policy["sensitive_paths"], DEFAULT_POLICY["sensitive_paths"])
+
     def test_merge_project_settings_promotes_legacy_memory_section(self):
         from asgard.commands.setup import merge_project_settings
         from asgard.templates import project_settings
@@ -307,11 +328,72 @@ class TestSettingsMerge(Base):
         self.assertIn("Bash(git status)", merged["permissions"]["allow"])  # 템플릿 바닥 유지
         self.assertEqual(merged["model"], "opus")
 
+    def test_planted_statusline_removed_and_user_statusline_kept(self):
+        """스캐폴드가 기록했던 statusLine 은 제거하고, 사용자가 지정한 것은 그대로 둔다.
+
+        Claude Code 는 프로젝트 설정이 사용자 설정보다 우선한다 — 그래서 이 키가 남아 있는 한
+        사용자가 ~/.claude/settings.json에 지정한 상태줄은 asgard 프로젝트마다 무시된다.
+        """
+        tmpl = cc_settings()
+        planted = json.loads(tmpl)
+        planted["statusLine"] = {
+            "type": "command",
+            "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
+        }
+        self.assertNotIn("statusLine", json.loads(merge_cc_settings(json.dumps(planted), tmpl)))
+        mine = json.loads(tmpl)
+        mine["statusLine"] = {"type": "command", "command": "~/.claude/statusline.sh"}
+        merged = json.loads(merge_cc_settings(json.dumps(mine), tmpl))
+        self.assertEqual(merged["statusLine"], mine["statusLine"])
+
     def test_broken_json_falls_back_to_template(self):
         self.assertEqual(merge_cc_settings("{broken", cc_settings()), cc_settings())
 
 
 class TestSyncProject(Base):
+    def test_a_projects_own_commit_boundary_survives_resync(self):
+        """`.asgard/.gitignore` 를 좁힌 저장소가 재싱크로 다시 넓어지면 안 된다.
+
+        스캐폴드의 예외는 map/·설정·binding 을 팀 공유로 뚫는 쪽이다. 그것을 이 기계의
+        런타임 상태로 두기로 정한 저장소에서 덮어쓰면 결정이 조용히 뒤집히고, 되돌릴 정본도
+        없다 — 이 파일 자신이 추적 대상이 아니다. 이 저장소가 실제로 그렇게 당했다
+        (`tests/test_repo_memory_records.py` 가 그때 빨개진 자리다).
+        """
+        narrowed = "*\n!memory/\nmemory/*\n!memory/records/\n!memory/records/**\n"
+        sync_project(self.root, cc=True, cursor=False, codex=False)
+        path = os.path.join(self.root, ".asgard", ".gitignore")
+        self.assertTrue(os.path.exists(path), "없으면 시드는 해야 한다")
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(narrowed)
+
+        sync_project(self.root, cc=True, cursor=False, codex=False)
+
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), narrowed)
+
+    def test_resync_returns_the_host_statusline_to_the_user(self):
+        """재싱크 한 번이 스캐폴드가 기록했던 statusLine 을 지우고, 사용자 값은 건드리지 않는다.
+
+        merge_cc_settings 만 맞아도 `_policy` 가 이 파일을 다른 갈래로 보내면 효과가 없다 —
+        두 갈래를 한 번에 재는 자리가 여기다.
+        """
+        settings = os.path.join(self.root, ".claude", "settings.json")
+        planted = {"type": "command", "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"'}
+        sync_project(self.root, cc=True, cursor=False, codex=False)
+        with open(settings, encoding="utf-8") as handle:
+            fresh = json.load(handle)
+        self.assertNotIn("statusLine", fresh)  # 새 스캐폴드는 아예 안 적는다
+
+        for value, expected in ((planted, None), ({"type": "command", "command": "~/.claude/mine.sh"}, "keep")):
+            fresh["statusLine"] = value
+            with open(settings, "w", encoding="utf-8") as handle:
+                json.dump(fresh, handle, indent=2)
+            sync_project(self.root, cc=True, cursor=False, codex=False)
+            with open(settings, encoding="utf-8") as handle:
+                got = json.load(handle).get("statusLine")
+            self.assertEqual(got, None if expected is None else value)
+            fresh.pop("statusLine", None)
+
     def test_fresh_root_scaffolds_everything(self):
         c = sync_project(self.root, cc=True, cursor=False, codex=False)
         self.assertGreater(c["updated"], 10)

@@ -558,7 +558,7 @@ class TestNativeIntegration(LagomBase):
         self.set_config("lite")
         n = lagom.note(self.root)
         self.assertIn("| **lite** |", n)
-        lagom.write_state(self.root, "full")  # 세션 전환이 이긴다
+        lagom.write_state(self.root, "full")  # 세션 전환이 우선한다
         self.assertIn("| **full** |", lagom.note(self.root))
 
     def test_scaffold_plan_contains_lagom_assets(self):
@@ -585,7 +585,8 @@ class TestNativeIntegration(LagomBase):
         self.assertIn("startup|resume|clear|compact", json.dumps(s["hooks"]["SessionStart"]))
         self.assertIn("lagom-tracker", json.dumps(s["hooks"]["UserPromptSubmit"]))
         self.assertIn("lagom-subagent", json.dumps(s["hooks"]["SubagentStart"]))
-        self.assertIn("lagom-statusline", s["statusLine"]["command"])
+        # 호스트 상태줄은 사용자 것 — 프로젝트 설정이 사용자 설정을 이기므로 여기 적으면 가려진다
+        self.assertNotIn("statusLine", s)
 
     def test_agents_skills_scaffold_for_codex_cursor(self):
         from asgard.commands.setup import plan_files
@@ -596,7 +597,7 @@ class TestNativeIntegration(LagomBase):
 
 
 class TestStatusline(LagomBase):
-    """CC statusLine 셸 스크립트: 상태파일 > config > full, off는 숨김."""
+    """CC statusLine 셸 스크립트 (배선 없이 깔리는 옵트인): 상태파일 > config > full, off는 숨김."""
 
     def setUp(self):
         super().setUp()

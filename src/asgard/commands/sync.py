@@ -5,7 +5,7 @@
   overwrite   asgard 소유 파일 (훅·역할 에이전트·스킬·캐논·브릿지·README 시드) — 항상 최신으로.
   markers     AGENTS.md — `<!-- >>> asgard:* >>>` 마커 블록만 교체, 밖(Conventions 등)은 보존.
               마커가 하나도 없으면 사용자 소유 파일로 보고 건너뛴다.
-  json-merge  .claude/settings.json — hooks/statusLine 배선은 재계산, 사용자 permissions·기타 키 보존.
+  json-merge  .claude/settings.json — hooks 배선은 재계산, 사용자 permissions·기타 키 보존.
   keep        .asgard/trinity-policy.json — 사용자 튜닝 존중, 없을 때만 생성.
   gitignore   루트 .gitignore — 기존 merge_gitignore (asgard 블록만 교체)."""
 
@@ -50,11 +50,19 @@ def merge_agents_md(existing: str | None, new: str) -> str | None:
 
 
 # settings.json에서 asgard가 소유(재계산)하는 최상위 키 — 나머지는 사용자 몫으로 보존
-_SETTINGS_OWNED = ("hooks", "statusLine")
+_SETTINGS_OWNED = ("hooks",)
+
+# 0.10.5까지 스캐폴드가 기록하던 statusLine 값. Claude Code 는 프로젝트 설정이 사용자 설정보다
+# 우선하므로, 이 키가 남아 있으면 사용자가 ~/.claude/settings.json에 지정한 상태줄이 asgard
+# 프로젝트마다 무시된다. 정확히 이 값일 때만 제거한다 — 다른 값이 된 statusLine 은 사용자 소유다.
+_PLANTED_STATUSLINE = {
+    "type": "command",
+    "command": 'bash "$CLAUDE_PROJECT_DIR/.claude/hooks/lagom-statusline.sh"',
+}
 
 
 def merge_cc_settings(existing: str | None, new: str) -> str:
-    """.claude/settings.json 병합 — 훅 배선·statusLine은 항상 최신 템플릿, permissions는
+    """.claude/settings.json 병합 — 훅 배선은 항상 최신 템플릿, permissions는
     템플릿(바닥) + 사용자 추가분 합집합, 그 외 사용자 키는 그대로. 기존이 JSON 파손이면 템플릿."""
     if existing is None:
         return new
@@ -66,6 +74,8 @@ def merge_cc_settings(existing: str | None, new: str) -> str:
         return new
     for key in _SETTINGS_OWNED:
         cur[key] = tmpl[key]
+    if cur.get("statusLine") == _PLANTED_STATUSLINE:
+        del cur["statusLine"]  # 호스트 상태줄은 사용자 설정이 정한다
     perms = cur.get("permissions")
     if not isinstance(perms, dict):
         perms = {}
@@ -88,6 +98,12 @@ def _policy(root: str, path: str) -> str:
         return "json-merge"
     if rel == os.path.join(".asgard", "asgard-setting-project.json"):
         return "keep"  # 사용자 튜닝(정책·project-memory backend·배치) 존중 — 없을 때만 시드
+    if rel == os.path.join(".asgard", ".gitignore"):
+        # 커밋 경계는 저장소마다 다르게 정한 결정이다. 스캐폴드의 예외는 팀 공유를 넓게 뚫는
+        # 쪽인데, 어떤 저장소는 map/·설정·binding 을 이 기계의 상태로 두고 닫는다. 덮어쓰면
+        # 그 결정이 조용히 뒤집히고 런타임 상태가 팀 저장소로 샌다 — 되돌릴 정본도 없다
+        # (이 파일 자신이 추적 대상이 아니다). 없을 때만 시드한다.
+        return "keep"
     if rel == "MANUAL.md" or rel == os.path.join(".asgard", "MANUAL.md"):
         return "keep"  # 오딘이 쓴 규칙 — 재스캐폴드가 덮으면 그건 Canon 3 급 데이터 손실이다
     return "overwrite"

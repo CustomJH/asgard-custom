@@ -40,5 +40,34 @@ class TestRepoHygiene(unittest.TestCase):
         self.assertEqual(p.stdout.strip(), "", f"{SENSITIVE} 가 git 인덱스에 추적되고 있음 — git rm --cached 필요")
 
 
+class TestSetupLeavesANarrowedIgnoreAlone(unittest.TestCase):
+    """위 둘은 이 저장소가 **이미 망가진 뒤**에 잡는다 — 여기서 원인을 잡는다.
+
+    셋업이 기존 `.asgard/.gitignore` 에 스캐폴드 negation 을 병합하던 동안, 일부러 좁혀 둔
+    목록이 재실행 한 번에 도로 넓어졌다 (26-08-04 실측: `asgard init --cc` 한 번에 map/·
+    binding.json·asgard-setting-project.json 셋이 추적 가능해졌고 그중 하나가 중요정보다).
+    전파는 쓰기가 아니라 말하기로 갚는다 — 파일은 한 바이트도 안 바뀌어야 한다."""
+
+    def test_preserved_ignore_is_not_rewritten(self):
+        import tempfile
+        from pathlib import Path
+
+        from asgard.commands import setup
+
+        narrowed = "*\n!memory/\nmemory/*\n!memory/records/\n!.gitignore\n"
+        scaffold = narrowed + "!map/\n!memory/binding.json\n!asgard-setting-project.json\n"
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as td:
+            target = Path(td, ".asgard", ".gitignore")
+            target.parent.mkdir(parents=True)
+            target.write_text(narrowed, encoding="utf-8")
+            os.chdir(td)
+            try:
+                setup._scaffold([(str(target), scaffold)], "test", force=False, dry_run=False)
+            finally:
+                os.chdir(cwd)
+            self.assertEqual(target.read_text(encoding="utf-8"), narrowed)
+
+
 if __name__ == "__main__":
     unittest.main()
