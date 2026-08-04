@@ -215,6 +215,85 @@ class TestUnitWorkspace(unittest.TestCase):
 
         self.assertFalse(os.path.exists(os.path.join(self.root, "other.txt")))
 
+    def test_control_surface_edits_cannot_ride_a_unit_patch_into_the_repository(self):
+        """격리 클론 안에서는 스캐폴드 편집이 허용된다 (readonly_guard 의 harness_owned 갈래).
+        되돌려 붙이는 자리에서 막지 않으면 통제 표면 규칙이 클론을 경유해 우회된다."""
+        for rel in (
+            ".claude/hooks/quest-log.py",
+            ".claude/settings.json",
+            ".CLAUDE/settings.json",  # macOS·Windows 는 같은 파일을 연다 — 표기로 지나가면 안 된다
+            "./.codex/agents/x.toml",
+            ".cursor/rules/000-agents.mdc",
+            ".codex/agents/asgard-worker.toml",
+            ".agents/skills/asgard-skills/SKILL.md",
+            ".asgard/asgard-setting-project.json",
+            ".git/config",
+        ):
+            patch = UnitPatch(
+                unit="smuggle",
+                data=(
+                    f"diff --git a/{rel} b/{rel}\nnew file mode 100644\n--- /dev/null\n+++ b/{rel}\n"
+                    "@@ -0,0 +1 @@\n+owned\n"
+                ).encode(),
+                paths=(rel,),
+                artifacts=(),
+            )
+            target = os.path.join(self.root, rel)
+            before = self.read_or_none(target)
+            with self.assertRaisesRegex(WorkspaceError, "control surface|unsafe unit patch path", msg=rel):
+                UnitWorkspace(self.root, "smuggle").apply(patch)
+            self.assertEqual(before, self.read_or_none(target), rel)
+
+    def test_ordinary_paths_that_only_start_with_a_control_name_still_apply(self):
+        """`.claudecfg` 는 `.claude` 가 아니다 — 세그먼트 경계로 판정한다."""
+        from asgard.agent.unit_workspace import _safe_rel
+
+        for rel in (".claudecfg/note.txt", "docs/.claude-notes.md", "src/agents/main.py"):
+            self.assertEqual(_safe_rel(self.root, rel), rel)
+
+    def test_isolation_still_opens_in_a_repository_that_has_scaffold_files(self):
+        """열거가 `_safe_rel` 로 거절하면 `.claude/` 파일 하나만 있어도 격리가 통째로 못 뜬다 —
+        격리가 안 도는 것이 스캐폴드 반입을 막는 방법이 되어 버린다 (26-08-05 교차검토 실측)."""
+        self.write(".gitignore", b".claude/settings.local.json\n")
+        self.write(".codex/agents/worker.toml", b"scaffold\n")  # 추적 파일 — clone 으로 따라온다
+        subprocess.run(["git", "add", "-A"], cwd=self.root, check=True)
+        subprocess.run(["git", "commit", "-qm", "scaffold"], cwd=self.root, check=True)
+        self.write(".claude/settings.local.json", b'{"local": true}\n')  # 무시 파일
+        self.write(".claude/agents/worker.md", b"scaffold\n")  # 미추적 파일
+
+        with UnitWorkspace(self.root, "enter") as workspace:
+            for rel in (".claude/settings.local.json", ".claude/agents/worker.md"):
+                self.assertFalse(os.path.exists(os.path.join(workspace.path, rel)), rel)
+            self.write_in(workspace.path, "src/app.py", b"print('unit work')\n")
+            self.write_in(workspace.path, ".claude/agents/worker.md", b"smuggled\n")
+            self.write_in(workspace.path, ".codex/agents/worker.toml", b"smuggled\n")
+            patch = workspace.capture()
+
+        self.assertIn("src/app.py", patch.paths)
+        self.assertEqual([p for p in patch.paths if p.startswith((".claude", ".codex"))], [])
+        self.assertNotIn(b".codex/agents/worker.toml", patch.data)
+        UnitWorkspace(self.root, "enter").apply(patch)  # 정당한 작업은 살아서 돌아온다
+        with open(os.path.join(self.root, "src", "app.py"), "rb") as handle:
+            self.assertEqual(handle.read(), b"print('unit work')\n")
+        with open(os.path.join(self.root, ".codex", "agents", "worker.toml"), "rb") as handle:
+            self.assertEqual(handle.read(), b"scaffold\n")
+        with open(os.path.join(self.root, ".claude", "agents", "worker.md"), "rb") as handle:
+            self.assertEqual(handle.read(), b"scaffold\n")
+
+    def test_forbidden_roots_match_the_guard_control_surface(self):
+        """두 목록이 갈리면 한쪽이 막는 자리를 다른 쪽이 연다 (단일 출처 원칙)."""
+        from asgard.agent.unit_workspace import _FORBIDDEN_ROOTS
+        from asgard.hooks.readonly_guard import _CONTROL_PATHS
+
+        self.assertEqual(set(_CONTROL_PATHS) - set(_FORBIDDEN_ROOTS), set())
+
+    @staticmethod
+    def read_or_none(path: str) -> bytes | None:
+        if not os.path.isfile(path):
+            return None
+        with open(path, "rb") as handle:
+            return handle.read()
+
     @staticmethod
     def write_in(root: str, rel: str, data: bytes) -> None:
         path = os.path.join(root, rel)

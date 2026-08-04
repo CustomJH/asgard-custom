@@ -59,12 +59,36 @@ def _git(root: str, *args: str, input_data: bytes | None = None, check: bool = T
     return proc
 
 
+# 패치로 되돌아올 수 없는 자리 — Git 내부와 통제 표면 전부.
+# 통제 표면은 어떤 역할도 고치지 않는데 (`readonly_guard._CONTROL_PATHS` 와 같은 표 —
+# tests/test_unit_workspace.py 가 두 목록의 일치를 잡는다), 유닛 클론 안에서는 그 가드의
+# `harness_owned` 갈래가 `asgard-unit-*` 아래 편집을 허용한다. 여기서 안 막으면 규칙이 클론을
+# 경유해 우회된다: 격리 공간에서 스캐폴드를 고치고 패치로 반입하면 그만이다.
+_FORBIDDEN_ROOTS = (".git", ".claude", ".cursor", ".codex", ".agents", ".asgard")
+
+
+def control_surface_rel(rel: str) -> bool:
+    """이 경로가 통제 표면 아래인가 — 거르는 자리와 거절하는 자리가 같은 술어를 쓴다.
+
+    열거는 **거르고**(`continue`) 패치는 **거절한다**(raise). 두 자리에 술어를 따로 두면 한쪽만
+    넓어지고, 그때 `__enter__` 가 저장소의 기존 `.claude/` 파일을 만나 통째로 죽는다 — 격리
+    기능이 안 도는 것이 곧 스캐폴드 반입을 막는 방법이 되어 버린다 (26-08-05 교차검토 실측:
+    이 저장소에만 그런 무시·미추적 파일이 101개).
+
+    대소문자를 접어서 본다 — macOS(APFS)·Windows 는 `.CLAUDE/settings.json` 을 `.claude/` 와
+    같은 파일로 연다. 정확 비교만 하면 그 표기 하나가 규칙을 통째로 지나간다."""
+    folded = os.path.normpath(rel).replace(os.sep, "/").lower()
+    return any(folded == entry or folded.startswith(entry + "/") for entry in _FORBIDDEN_ROOTS)
+
+
 def _safe_rel(root: str, rel: str) -> str:
     normalized = os.path.normpath(rel).replace(os.sep, "/")
-    if normalized in ("", ".") or normalized == ".git" or normalized == ".asgard":
+    if normalized in ("", "."):
         raise WorkspaceError(f"unsafe unit patch path: {rel}")
-    if normalized.startswith("../") or normalized.startswith(".git/") or normalized.startswith(".asgard/"):
+    if normalized.startswith("../"):
         raise WorkspaceError(f"unsafe unit patch path: {rel}")
+    if control_surface_rel(normalized):
+        raise WorkspaceError(f"unit patch targets a control surface: {rel}")
     absolute = os.path.abspath(os.path.join(root, normalized))
     if os.path.commonpath((os.path.abspath(root), absolute)) != os.path.abspath(root):
         raise WorkspaceError(f"unit patch escapes project root: {rel}")
@@ -142,8 +166,8 @@ class UnitWorkspace:
             if not item:
                 continue
             raw_rel = os.fsdecode(item).replace(os.sep, "/")
-            if raw_rel == ".asgard" or raw_rel.startswith(".asgard/"):
-                continue
+            if control_surface_rel(raw_rel):
+                continue  # 통제 표면은 클론에 안 들어간다 — 나가는 길을 막았으니 들어오는 길도 막는다
             self._ignored_at_entry.add(_safe_rel(self.root, raw_rel))
         # A read-only Verifier may need quest-changed ignored artifacts, but must not receive
         # every pre-existing ignored credential. Callers provide the canonical changed-path
@@ -174,8 +198,8 @@ class UnitWorkspace:
             if not encoded:
                 continue
             raw_rel = os.fsdecode(encoded).replace(os.sep, "/")
-            if raw_rel == ".asgard" or raw_rel.startswith(".asgard/"):
-                continue
+            if control_surface_rel(raw_rel):
+                continue  # 통제 표면은 클론에 안 들어간다 — 나가는 길을 막았으니 들어오는 길도 막는다
             rel = _safe_rel(self.root, raw_rel)
             src = os.path.join(self.root, rel)
             dst = os.path.join(self.path, rel)
@@ -211,11 +235,16 @@ class UnitWorkspace:
         # baseline entries on some Git versions and can hide Worker deletions.
         untracked = _git(self.path, "ls-files", "--others", "--exclude-standard", "-z").stdout
         for encoded in untracked.split(b"\0"):
-            if encoded and not _junk_rel(os.fsdecode(encoded).replace(os.sep, "/")):
+            decoded = os.fsdecode(encoded).replace(os.sep, "/") if encoded else ""
+            if decoded and not _junk_rel(decoded) and not control_surface_rel(decoded):
                 _git(self.path, "add", "-N", "--", os.fsdecode(encoded))
-        names = _git(self.path, "diff", "--name-only", "-z").stdout
+        # 통제 표면은 diff 자체에서 뺀다. 경로 목록에서만 빼면 `apply` 가 `data` 를 통째로 붙이므로
+        # 오히려 반입이 되고, 반대로 `apply` 의 거절에만 기대면 클론 안 스캐폴드 편집 하나가
+        # 그 단위의 패치 전체를 버린다 — 정당한 작업까지 같이 사라진다.
+        spec = [".", *(f":(exclude,icase){entry}" for entry in _FORBIDDEN_ROOTS)]
+        names = _git(self.path, "diff", "--name-only", "-z", "--", *spec).stdout
         git_paths = {_safe_rel(self.root, os.fsdecode(item)) for item in names.split(b"\0") if item}
-        patch = _git(self.path, "diff", "--binary", "--full-index", "--no-ext-diff").stdout
+        patch = _git(self.path, "diff", "--binary", "--full-index", "--no-ext-diff", "--", *spec).stdout
         artifacts: list[UnitArtifact] = []
         for raw_path in extra_paths:
             rel = self._reported_rel(raw_path)
