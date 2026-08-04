@@ -38,9 +38,13 @@ READONLY_BASH_HINT = (
     "npm|pnpm|yarn test|lint|check, tests/ scripts. "
     "sed/awk without in-place writes. Allowed commands may be chained with `|`, `&&`, `||`, `;` "
     "(each segment is judged on its own), and `2>/dev/null` / `2>&1` / `< /dev/null` are fine. "
-    "Blocked: file writes, redirection to a file, heredocs, $()/backticks/$VAR, paths outside the "
-    "project (the harness's own isolated unit workspace is allowed). "
-    "Use python -c instead of a scratch file, and for a uv project (uv.lock) use `uv run pytest -x -q`. "
+    "Shell loops of read-only commands are fine (`for f in a b; do wc -c \"$f\"; done`). "
+    "Blocked: file writes, redirection to a file, heredocs, $()/backticks, paths outside the "
+    "project (the harness's own isolated unit workspace and this session's scratchpad are allowed). "
+    "A `$VAR` is fine as an operand, but not as the script of `python -c` / sed / awk — there the "
+    "judged text is not the text that runs, so those lanes abstain. "
+    "Use python -c with a literal snippet instead of a scratch file, and for a uv project (uv.lock) "
+    "use `uv run pytest -x -q`. "
     "A blocked command never ran — switch straight to an allowed lane instead of retrying a variant."
 )
 
@@ -82,6 +86,9 @@ _INSPECT = {
 # sed 스크립트의 파일 접근 명령 — w/W(쓰기)·r/R(읽기)는 경로 검사를 우회하는 표면이라 함께 막는다
 # (`sed '1w /tmp/leak'`·`sed '1r /etc/passwd'`). 낱글자 경계로만 잡아 단어 속 w/r은 통과한다.
 _SED_WRITE = re.compile(r"(?<![A-Za-z])[wWrR](?![A-Za-z])")
+# 셸 변수 참조 — 스크립트나 스니펫 안에 있으면 그 자리의 실제 내용을 이 훅은 못 본다.
+# 텍스트를 읽어 판정하는 레인(python -c · sed · awk)은 이것을 만나면 기권한다 (fail-closed).
+_SHELL_EXPANSION = re.compile(r"\$\{?[A-Za-z_]")
 # awk 프로그램의 쓰기·실행·파일읽기 표면. 비교 연산자 `>`까지 함께 걸리지만 관측용 awk는 쓰지 않는다.
 _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\|")
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
@@ -201,6 +208,7 @@ def _without_workspace(text: str) -> str:
 
 
 _UNIT_WORKSPACE_PREFIX = "asgard-unit-"
+_HOST_SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_SESSION_ID", "CURSOR_SESSION_ID", "CODEX_SESSION_ID")
 
 
 def _within_unit_workspace(candidate: str) -> bool:
@@ -210,6 +218,8 @@ def _within_unit_workspace(candidate: str) -> bool:
     자기 파일을 절대경로로 가리키는 `node --test <ws>/tests/...`·`git -C <ws> status`가 경로
     이탈로 차단됐다 — 격리 레인과 경로 레인이 서로를 막아 관측 자체가 불가능해진다."""
     resolved = os.path.realpath(candidate)
+    if _within_host_scratchpad(resolved):
+        return True
     temp_root = os.path.realpath(tempfile.gettempdir())
     try:
         if os.path.commonpath((temp_root, resolved)) != temp_root:
@@ -217,6 +227,45 @@ def _within_unit_workspace(candidate: str) -> bool:
     except ValueError:
         return False
     return any(part.startswith(_UNIT_WORKSPACE_PREFIX) for part in resolved.split(os.sep))
+
+
+def _within_host_state(resolved: str, roots: tuple[str, ...]) -> bool:
+    """호스트가 **이 프로젝트** 몫으로 내준 상태 폴더인가 — `~/.claude/projects/<슬러그>/…`.
+
+    스크래치패드와 같은 부류다: 저장소 밖이지만 하네스가 에이전트에게 "여기에 쓰라"고 지정하는
+    자리이고(세션 기록·자동 기억), 경로에 `.claude` 가 들어 있다는 이유로 통제 표면 취급을 하면
+    에이전트가 자기 기억을 한 줄도 못 남긴다 (26-08-04 실측).
+
+    슬러그로 좁힌다 — 호스트는 프로젝트 절대경로에서 구분자와 밑줄을 `-` 로 바꿔 폴더 이름을
+    만든다 (`/Users/yun/…/personal_space/…` → `-Users-yun-…-personal-space-…`). 남의 프로젝트
+    폴더나 `~/.claude` 전체가 열리지는 않는다."""
+    base = os.path.realpath(os.path.join(os.path.expanduser("~"), ".claude", "projects"))
+    if not _within(base, resolved):
+        return False
+    slugs = {root.replace(os.sep, "-").replace("_", "-") for root in roots}
+    parts = [segment for segment in resolved[len(base) :].split(os.sep) if segment]
+    # **첫 칸만** 본다. 어느 깊이에서나 맞추면 남의 프로젝트 폴더 안에 이 슬러그로 디렉터리를
+    # 하나 만들어 두는 것만으로 그 아래가 열린다.
+    return bool(parts) and parts[0] in slugs
+
+
+def _within_host_scratchpad(resolved: str) -> bool:
+    """호스트가 이 세션에 내준 임시 자리인가 — 시스템 프롬프트가 "여기를 쓰라"고 지정하는 그 폴더다.
+
+    프로젝트 밖이라 경로 이탈로 막혔는데, 막힌 쪽은 임시 계측 스크립트와 분석 산출물이라
+    역할이 그것을 저장소 안에 쓰거나 아예 포기했다 (26-08-04 실측). 세션 신원으로 좁힌다 —
+    임시 뿌리 아래에서 **이 세션의 id 를 경로에 담은** `scratchpad` 만 연다. 남의 세션 자리나
+    임시 뿌리 전체가 열리지는 않는다."""
+    parts = resolved.split(os.sep)
+    if "scratchpad" not in parts:
+        return False
+    session_ids = {value for name in _HOST_SESSION_ENV if (value := (os.environ.get(name) or "").strip())}
+    if not session_ids:
+        return False
+    temp_roots = {os.path.realpath(tempfile.gettempdir()), os.path.realpath("/tmp")}
+    if not any(_within(base, resolved) for base in temp_roots):
+        return False
+    return bool(session_ids.intersection(parts))
 
 
 def _resolve_token(roots: tuple[str, ...], token: str) -> str:
@@ -244,9 +293,27 @@ def _path_token_within_root(roots: tuple[str, ...], token: str) -> bool:
     if not roots:
         return True
     candidate = _resolve_token(roots, token)
-    if _within_unit_workspace(candidate):
+    if _within_unit_workspace(candidate) or _within_host_state(candidate, roots):
         return True
     return any(_within(root, candidate) for root in roots)
+
+
+def _control_anchors(roots: tuple[str, ...], markers: tuple[str, ...]) -> list[str]:
+    """이 판정에서 통제 표면으로 치는 실제 디렉터리들.
+
+    작업 뿌리마다의 표식 디렉터리에 **기계 전역 자리(`~/.asgard`·`~/.claude`·`~/.cursor`·
+    `~/.codex`)** 를 더한다. 두 가지가 그 아래 있다: 스튜디오 작업 공간이 `~/.asgard/studio/
+    workspace` 라 한 칸만 올라가면 어느 작업 뿌리에도 안 걸리는 하네스 상태에 닿고
+    (`<작업공간>/../workspace.db`), `~/.claude/settings.json` 은 `work_roots()` 가 읽어
+    **이 가드의 경계를 정하는** 파일이다 — 거기에 쓸 수 있으면 나머지 판정이 전부 무의미해진다.
+
+    읽기를 막지는 않는다. 이 목록을 쓰는 두 자리 모두 read-only 레인을 먼저 빼기 때문이다
+    (`control_shell_write` 의 `not readonly_shell`), 그리고 하네스가 이 프로젝트 몫으로 내준
+    폴더는 `_within_host_state` 가 아래에서 따로 뺀다."""
+    anchors = [os.path.realpath(os.path.join(root, marker)) for root in roots for marker in markers]
+    home = os.path.expanduser("~")
+    anchors += [os.path.realpath(os.path.join(home, marker)) for marker in markers]
+    return anchors
 
 
 def _path_token_targets_control(roots: tuple[str, ...], token: str, markers: tuple[str, ...]) -> bool:
@@ -260,11 +327,9 @@ def _path_token_targets_control(roots: tuple[str, ...], token: str, markers: tup
         if not token:
             return False
     candidate = _resolve_token(roots, token)
-    for root in roots:
-        for marker in markers:
-            if _within(os.path.realpath(os.path.join(root, marker)), candidate):
-                return True
-    return False
+    if _within(os.path.realpath(_studio_workspace()), candidate) or _within_host_state(candidate, roots):
+        return False  # 작업 공간과 이 프로젝트 몫 상태 폴더는 작업 대상이다
+    return any(_within(anchor, candidate) for anchor in _control_anchors(roots, markers))
 
 
 def _command_targets_control(roots: tuple[str, ...], command: str, markers: tuple[str, ...]) -> bool:
@@ -333,12 +398,22 @@ def _safe_stream_editor(program: str, tokens: list[str], roots: tuple[str, ...])
             continue
         if not script_seen:  # 첫 비플래그 인자 = 스크립트
             script_seen = True
-            if write_pattern.search(arg):
+            # 셸 변수가 든 스크립트는 판정 대상 텍스트가 실행 텍스트와 다르다 (`_SHELL_EXPANSION`)
+            if _SHELL_EXPANSION.search(arg) or write_pattern.search(arg):
                 return False
             continue
         if not _path_token_within_root(roots, arg):
             return False
     return script_seen
+
+
+# 셸 제어문 낱말 — 그 자체로는 아무것도 실행하지 않는다. 없으면 읽기 전용 명령만 담은
+# `for f in a b; do wc -c "$f"; done` 이 통째로 미분류가 돼 막힌다 (26-08-04 실측).
+# 명령 치환(`$(…)`)은 여전히 `_shell_parts` 가 거부한다 — 그 안은 판정할 수 없다.
+_BLOCK_OPENERS = {"do", "then", "else"}
+_BLOCK_CLOSERS = {"done", "fi", "esac", ";;"}
+_COMMAND_HEADERS = {"while", "until", "if", "elif"}  # 뒤에 오는 것이 명령이다
+_WORDLIST_HEADERS = {"for", "select"}  # 뒤에 오는 것은 낱말 목록이다
 
 
 def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
@@ -348,6 +423,17 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
         return False
     if not tokens:
         return False
+    while tokens and tokens[0] in _BLOCK_OPENERS | _COMMAND_HEADERS:
+        tokens = tokens[1:]
+    if tokens and tokens[0] in _WORDLIST_HEADERS:
+        # `for NAME in …` 는 목록 선언이라 실행은 do 뒤 본문이 하지만, **낱말이 곧 경로**다.
+        # 본문은 그 경로를 변수로 읽으므로 여기서 안 보면 뿌리 밖 파일이 반복문 형태로만 열린다
+        # (같은 파일을 평범한 명령으로 읽으면 막힌다 — 판정이 형태에 따라 갈리면 안 된다).
+        return len(tokens) >= 2 and all(_path_token_within_root(roots, word) for word in tokens[3:])
+    while tokens and tokens[-1] in _BLOCK_CLOSERS:
+        tokens = tokens[:-1]
+    if not tokens:
+        return True  # 닫는 낱말만 남은 조각 (`done`) — 실행이 없다
     # 선행 환경 대입(VAR=x cmd / env VAR=x cmd)은 프로세스-로컬 — 판정은 본체 명령으로.
     # 터미널 폭 스모크(COLUMNS=130 python -c …) 같은 정당한 검증이 env 때문에 막히지 않게 한다.
     if os.path.basename(tokens[0]) == "env":
@@ -457,7 +543,15 @@ def _safe_segment(segment: str, roots: tuple[str, ...] = ()) -> bool:
             return True
         if len(tokens) >= 3 and tokens[1] == "-c":
             # Verifier 계약의 한 줄 스모크 레인 — 파일 작성 없이 대표 함수를 직접 호출한다.
-            return not _PY_SNIPPET_MUTATION.search(" ".join(tokens[2:]))
+            snippet = " ".join(tokens[2:])
+            # 셸 변수가 들어 있으면 **판정하는 글과 실행되는 글이 다르다** — 아래 쓰기 휴리스틱이
+            # 보는 것은 `$PAYLOAD` 라는 네 글자뿐이고, 셸이 그 자리에 넣는 것은 무엇이든 될 수
+            # 있다. 26-08-04 에 그렇게 기장 파일이 만들어졌다:
+            #   for PAYLOAD in "…write_text('forged')"; do python -c "$PAYLOAD"; done
+            # 스니펫을 판정할 수 없으면 통과시키지 않는다 (fail-closed).
+            if _SHELL_EXPANSION.search(snippet):
+                return False
+            return not _PY_SNIPPET_MUTATION.search(snippet)
         if len(tokens) >= 2:
             return tokens[1].replace("\\", "/").endswith(".py") and _is_test_path(tokens[1])
     return False
@@ -673,27 +767,45 @@ def main() -> None:
     except ValueError:
         normalized_command = command
     normalized_command = _without_workspace(normalized_command.replace("\\", "/"))
-    control_write = tool_name in {"Write", "Edit", "NotebookEdit"} and (
-        any(marker in normalized_path for marker in _CONTROL_PATHS)
-        or _path_token_targets_control(roots, path, _CONTROL_PATHS)
+    # 하네스가 이 세션·이 프로젝트 몫으로 내준 자리는 통제 표면이 아니라 작업 대상이다
+    # (`_within_host_state`·`_within_unit_workspace`). 경로에 `.claude` 가 들어 있다는 이유로
+    # 여기를 막으면 에이전트가 자기 기억과 계측 산출물을 한 줄도 못 남긴다.
+    harness_owned = bool(path) and (
+        _within_host_state(os.path.realpath(os.path.expanduser(path)), roots)
+        or _within_unit_workspace(os.path.expanduser(path))
     )
+    control_write = (
+        tool_name in {"Write", "Edit", "NotebookEdit"}
+        and not harness_owned
+        and (
+            any(marker in normalized_path for marker in _CONTROL_PATHS)
+            or _path_token_targets_control(roots, path, _CONTROL_PATHS)
+        )
+    )
+    # Bash 갈래는 **읽기 전용 레인을 먼저 뺀다**. 사설 통제 경로(퀘스트 기장·영수증·상태)를
+    # 지키는 것은 위조 방지이지 열람 금지가 아닌데, 종전에는 예외가 없어 `ls .asgard/quest/`
+    # 한 줄도 막혔다 — 자기 기장을 못 읽는 역할이 같은 사실을 알아내려고 턴을 더 썼다
+    # (26-08-04 실측 4회). 쓰기 형상은 아래 `is_readonly_bash_safe` 가 여전히 전부 잡는다.
+    readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots)
     private_control_access = (
         any(marker in normalized_path for marker in _PRIVATE_CONTROL_PATHS)
         or _path_token_targets_control(roots, path, _PRIVATE_CONTROL_PATHS)
         or tool_name == "Bash"
+        and not readonly_shell
         and (
             any(marker in normalized_command for marker in _PRIVATE_CONTROL_PATHS)
             or _command_targets_control(roots, command, _PRIVATE_CONTROL_PATHS)
         )
     )
     path_escape = bool(path) and not _path_token_within_root(roots, path)
+    # 넓은 통제 표식(.claude/.cursor/.codex/.agents/.asgard)은 **뿌리 기준으로 푼 경로 인자**로만
+    # 판정한다. 명령문 전체를 부분문자열로 훑던 종전 갈래는 경로가 아닌 언급까지 잡았다: 저장소
+    # 밖에 있는 호스트 세션 디렉터리(`~/.claude/projects/…`)나 히어독 본문에 스친 한 마디가
+    # 읽기 전용 조사를 통째로 막았고, 그 자리는 이 프로젝트의 통제 표면이 아니다. 인용 안쪽에
+    # 경로를 숨긴 쓰기가 이 갈래를 빠져나가는 것은 받아들인 값이다 — 그쪽은 write-sentinel 이
+    # 적고 Stop 의 verifier-gate 가 물리 대조로 잡는다 (이 파일 위쪽의 같은 분담).
     control_shell_write = (
-        tool_name == "Bash"
-        and (
-            any(marker in normalized_command for marker in _CONTROL_PATHS)
-            or _command_targets_control(roots, command, _CONTROL_PATHS)
-        )
-        and not is_readonly_bash_safe(command, roots=roots)
+        tool_name == "Bash" and _command_targets_control(roots, command, _CONTROL_PATHS) and not readonly_shell
     )
     denied = (
         private_control_access
@@ -701,10 +813,7 @@ def main() -> None:
         or control_write
         or control_shell_write
         or readonly
-        and (
-            tool_name in {"Write", "Edit", "NotebookEdit"}
-            or (tool_name == "Bash" and not is_readonly_bash_safe(command, roots=roots))
-        )
+        and (tool_name in {"Write", "Edit", "NotebookEdit"} or (tool_name == "Bash" and not readonly_shell))
     )
     if denied:
         if private_control_access or control_write or control_shell_write:
