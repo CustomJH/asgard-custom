@@ -453,18 +453,60 @@ def _generated(p: str) -> bool:
     return p.endswith((".pyc", ".pyo")) or any(seg in _GENERATED_DIRS for seg in p.split("/"))
 
 
-def reconcile_ignored(root: str, ignored_base: dict[str, str] | None, digest) -> list[str]:
+def artifact_scope(criteria) -> tuple[str, ...]:
+    """무시 파일 대조가 볼 경로 — 퀘스트가 `artifacts:` 로 선언한 것만. 빈 튜플이면 대조 없음.
+
+    선언 밖의 gitignored 경로까지 세면 검증이 자기 판정을 무효로 만든다: 계측 스크립트를
+    워크스페이스에 한 번 쓸 때마다 직전 PASS 가 stale 이 되어 게이트가 orphan-write 로 막았다
+    (26-08-04 세션 3회 — recorded 905553b5 / current 84f3aa97). 선언한 산출물은 그대로
+    결속된다: .gitignore 아래 증거물이 바뀌거나 사라지면 해시가 따라 바뀐다. 선언 밖의 무시
+    파일은 배송물이 아니라서 diff 에도 안 실리고, 그 자리의 쓰기는 write-sentinel 이 적는다.
+    verifier_gate.py 의 같은 이름 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 영구 stale)."""
+    # `criteria_contracts` 의 5건 상한은 **verify 명령**이 턴을 인질로 잡지 않게 두는 것이지
+    # 결속 범위의 상한이 아니다. 그 상한을 여기까지 물리면 여섯 번째로 적힌 산출물이 조용히
+    # 안 묶인다 — 해시는 안 움직이는데 증거물은 바뀔 수 있는 자리가 생긴다.
+    out: set[str] = set()
+    for text in criteria or []:
+        if not isinstance(text, str):
+            continue
+        for raw in parse_criterion(text)["artifacts"]:
+            path = os.path.normpath(str(raw)).replace("\\", "/")
+            # `..` 는 git 이 "저장소 밖"으로 거절해 rc!=0 을 내고, 그러면 스냅샷 전체가
+            # `<snapshot-unavailable>` 이 되어 퀘스트가 열리지도 닫히지도 않는다.
+            # 절대 경로는 앞의 `/` 를 떼어 저장소 상대로 바꾸지 않는다: 그러면 결속은 있지도 않은
+            # `tmp/run/x.json` 에 걸리는데 `unmet_contracts` 는 원문을 그대로 이어 붙여 저장소
+            # **밖** 파일로 계약을 충족시킨다 — 한 선언을 두 소비처가 다른 파일로 읽는다.
+            if path and path not in (".", "..") and not path.startswith(("../", "/")):
+                out.add(path)
+    return tuple(sorted(out))
+
+
+def in_artifact_scope(path: str, scope) -> bool:
+    """선언된 산출물 자신이거나 그 아래인가 (세그먼트 경계 — `workspace2/`가 `workspace`에 안 걸린다)."""
+    return any(path == entry or path.startswith(entry + "/") for entry in scope)
+
+
+def quest_events_scope(events) -> tuple[str, ...]:
+    """이 퀘스트가 선언한 산출물 전부 — 이벤트 어디에 실렸든 모은다.
+
+    `contract_criteria` 는 계약을 실은 원본 **하나**를 고르지만, 결속 범위는 넓은 쪽이 안전하다:
+    빠뜨린 선언은 증거를 안 묶고, 더 문 선언은 재검증을 부를 뿐이다."""
+    return artifact_scope([c for e in events for c in (e.get("criteria") or []) if isinstance(c, str)])
+
+
+def reconcile_ignored(root: str, ignored_base: dict[str, str] | None, digest, scope=()) -> list[str]:
     """무시 파일의 기준선↔현재 대조. 바뀐 경로를 돌려주고 그 내역을 digest에 먹인다.
 
     verifier_gate.py의 같은 이름 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 영구 stale).
-    ignored_base가 None이면 대조 대상이 없다는 뜻이라 빈 목록."""
-    if ignored_base is None:
+    ignored_base가 None이면 대조 대상이 없다는 뜻이라 빈 목록. scope가 비면 선언된 산출물이
+    없다는 뜻이라 역시 빈 목록 — 그때는 열거조차 하지 않는다 (`artifact_scope` 참고)."""
+    if ignored_base is None or not scope:
         return []
-    # 기준선도 현재와 같은 _generated를 태운다. 안 그러면 목록이 넓어진 순간, 열려 있던 퀘스트의
-    # 스냅샷에만 남은 경로가 전부 "사라짐 = 변경"으로 읽혀 PASS가 통째로 stale이 된다
+    # 기준선도 현재와 같은 scope를 태운다. 안 그러면 목록이 좁아지거나 넓어진 순간, 열려 있던
+    # 퀘스트의 스냅샷에만 남은 경로가 전부 "사라짐 = 변경"으로 읽혀 PASS가 통째로 stale이 된다
     # (26-08-04: target 추가 시 changed_files 8,118건).
-    base = {path: value for path, value in ignored_base.items() if not _generated(path)}
-    current = ignored_state(root)
+    base = {path: value for path, value in ignored_base.items() if in_artifact_scope(path, scope)}
+    current = ignored_state(root, scope)
     changed = sorted(path for path in set(base) | set(current) if base.get(path) != current.get(path))
     for path in changed:
         digest.update(
@@ -515,8 +557,12 @@ def sensitive_path(path: str, needles) -> bool:
     return False
 
 
-def ignored_state(root: str) -> dict[str, str]:
-    """Hash ignored non-generated files without following symlinks, so they cannot evade quest binding."""
+def ignored_state(root: str, scope=()) -> dict[str, str]:
+    """Hash ignored non-generated files under `scope` without following symlinks, so declared
+    artifacts cannot evade quest binding. 빈 scope는 결속 대상이 없다는 뜻이라 git도 안 부른다 —
+    이 저장소에서 전 무시 파일 7,507건 열거·해시가 432ms 였다 (26-08-05 콜드 실측)."""
+    if not scope:
+        return {}
     rc, raw = git(
         root,
         "ls-files",
@@ -525,7 +571,7 @@ def ignored_state(root: str) -> dict[str, str]:
         "--exclude-standard",
         "-z",
         "--",
-        ".",
+        *scope,
         ":(exclude).asgard",
         binary=True,
     )
@@ -538,7 +584,12 @@ def ignored_state(root: str) -> dict[str, str]:
         if not item:
             continue
         path = item.decode("utf-8", "surrogateescape")
-        if _generated(path):
+        # pathspec 은 glob 을 받는다 — 선언이 `*` 한 글자여도 결속 범위는 넓어지지 않게, 돌려받은
+        # 경로를 같은 술어로 한 번 더 거른다 (scope 는 퀘스트를 연 쪽이 쓴 값이다).
+        # `_generated` 는 여기서 안 태운다: 전 저장소를 훑던 시절의 비용 상한이지 결속 규칙이
+        # 아니고, 태우면 `artifacts: build/report.json` 처럼 **선언된** 산출물이 조용히 안 묶인다
+        # — Gradle·Maven 의 기본 출력 자리가 바로 `build/`·`target/` 이다.
+        if not in_artifact_scope(path, scope):
             continue
         full = os.path.join(root, path)
         try:
@@ -560,7 +611,7 @@ def ignored_state(root: str) -> dict[str, str]:
 
 
 def diff_state(
-    root: str, base_ref: str | None, ignored_base: dict[str, str] | None = None
+    root: str, base_ref: str | None, ignored_base: dict[str, str] | None = None, scope=()
 ) -> tuple[str, list[str], int, int]:
     """(diff_hash, changed_files, changed_lines, nontest_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
@@ -619,7 +670,7 @@ def diff_state(
             if not _testfile(parts[2]):
                 nt_lines += n
     h = hashlib.sha256(diff)
-    ignored_changed = reconcile_ignored(root, ignored_base, h)
+    ignored_changed = reconcile_ignored(root, ignored_base, h, scope)
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
@@ -667,16 +718,10 @@ SAFE_CHECK_PREFIXES = (
     "cargo test",
     "cargo check",
     "go test",
-    # JVM 러너 — 표에 없던 동안 Gradle·Maven 저장소는 `baseline_checks` 를 손으로 적어도
-    # 안전 표를 못 넘어 조용히 버려졌고, 아래 `gate_first_checks_available` 도 이 이름들을
-    # 안 세서 결정론 레인이 **설정으로도** 못 섰다 (26-08-04 hvami-mono 실측: Gradle 6모듈 +
-    # Maven 2모듈 모노레포에서 레인이 통째로 꺼진 채 돌았다). 신뢰 등급은 이미 있는
-    # `npm test`·`make test` 와 같다 — 셋 다 저장소 안 파일이 무엇을 도는지 정한다.
-    "./gradlew test",
-    "gradle test",
-    "./mvnw test",
-    "mvn test",
-    "mvn -q test",
+    # JVM 러너는 이 표가 아니라 `jvm_behavior_check` 하나가 받는다 — 접두사로 적어 두면
+    # 루트 상대 `./gradlew test` 형태만 통과해 서비스마다 래퍼를 두는 모노레포가 빠지고,
+    # 안전 표와 `gate_first_checks_available` 가 서로 다른 기준을 들어 설정이 통과했다가
+    # 레인을 못 세운다 (26-08-04 hvami-mono 실측: gradlew 3개가 전부 하위 디렉터리).
     "make test",
     "make check",
     "make verify",
@@ -685,6 +730,84 @@ SAFE_CHECK_PREFIXES = (
 )
 _PY_EXE = re.compile(r"^python[0-9.]*$")
 _SAFE_MODULES = {"pytest", "compileall", "py_compile", "unittest"}
+# Gradle·Maven 래퍼는 저장소 안에 있는 파일이다. 신뢰 등급은 `npm test`·`make test` 와 같다 —
+# 셋 다 저장소 안 파일이 무엇을 도는지 정한다.
+_JVM_WRAPPERS = {"gradlew", "gradlew.bat", "mvnw", "mvnw.cmd"}
+_JVM_ON_PATH = {"gradle", "mvn"}
+# Maven 은 테스트를 도는 페이즈·골이 `test` 말고도 있다. Gradle 쪽은 태스크 이름이 자유라
+# 접두사로 본다 (`testDebugUnitTest`, `:app:test`).
+_MVN_TEST_GOALS = {"test", "verify", "integration-test", "surefire:test", "failsafe:integration-test"}
+# 실행자 이름에 허용하는 글자 — 셸이 나중에 펴는 것(`$HOME/x/gradlew`, `~/x/gradlew`)을 여기서
+# 막는다. `os.path.isabs("$HOME/…")` 는 False 라 절대경로 검사만으로는 안 걸리고, 실행은
+# `shell=True` 라 그때는 펴진다 (26-08-05 교차검토 실측).
+_RUNNER_NAME = re.compile(r"^[A-Za-z0-9._/-]+$")
+# 테스트를 **끄는** 인자. 앞의 것을 안 보면 `./gradlew test -x test` 와 `mvn -DskipTests test` 가
+# 아무것도 안 돌리면서 결정론 레인을 세운다 — 그 레인이 LLM 판정자를 대신하므로 exit 0 이
+# 설계상 보장된 셈이 된다.
+_JVM_SKIP_FLAGS = ("-dskiptests", "-dmaven.test.skip", "-dskipitests")
+# Gradle 의 컴파일 전용 태스크 — 이름이 `test` 로 시작하지만 아무 단언도 돌지 않는다.
+_GRADLE_NON_RUNNING = {"testclasses", "testfixturesclasses", "testfixturesjar", "testjar"}
+
+
+def jvm_behavior_check(cmd: str) -> bool:
+    """Gradle·Maven 러너가 **테스트 태스크**를 부르는가.
+
+    안전 표(`configured_checks`)와 게이트-우선 판정(`gate_first_checks_available`)이 같은 자를
+    쓴다. 종전에는 표는 접두사로 받고 판정은 낱말 두 개를 정확 비교해서, `./gradlew
+    testDebugUnitTest` 가 설정으로는 통과했다가 결정론 레인은 못 세웠다 (26-08-04 실측).
+
+    래퍼는 저장소 안 상대 경로만 받는다 — 서비스마다 `gradlew` 를 두는 모노레포가 그 형태고
+    (`hvami-batch/gradlew test`), 절대 경로·`..`·셸이 펴는 표기는 저장소 밖 실행 파일로 새는
+    길이라 뺀다. `gradle`·`mvn` 은 PATH 실행자라 경로가 붙으면 받지 않는다.
+
+    테스트를 끄는 인자가 하나라도 있으면 거절한다: 이 판정이 참이면 결정론 레인이 LLM 판정자를
+    대신하는데, 아무것도 안 돌리는 명령이 그 자리에 서면 exit 0 이 설계상 보장된다."""
+    try:
+        tokens = _strip_env_prefix(shlex.split(cmd, posix=True))
+    except ValueError:
+        return False
+    if not tokens:
+        return False
+    head = tokens[0].replace("\\", "/")
+    if not _RUNNER_NAME.match(head):
+        return False  # `$HOME/…`·`~/…`·글로브 — 셸이 펴는 이름은 저장소 안이라고 말할 수 없다
+    base = os.path.basename(head)
+    if base in _JVM_WRAPPERS:
+        segments = os.path.normpath(head).replace("\\", "/").split("/")
+        if os.path.isabs(head) or ".." in segments:
+            return False
+    elif base in _JVM_ON_PATH:
+        if "/" in head:
+            return False
+    else:
+        return False
+    maven = base in {"mvn", "mvnw", "mvnw.cmd"}
+    if any(token.lower().startswith(_JVM_SKIP_FLAGS) for token in tokens[1:]):
+        return False
+    tasks: list[str] = []
+    excluded: set[str] = set()
+    # 값을 뒤 토큰으로 받는 인자 — 그 값을 태스크로 읽으면 `--tests SomeTest` 가 태스크 없는
+    # 필터인데 태스크로 읽히고, `-x test` 는 테스트를 **빼는** 명령인데 도는 명령으로 읽힌다.
+    pending = ""
+    for token in tokens[1:]:
+        if pending:
+            if pending in ("-x", "--exclude-task"):
+                excluded.add(token.split(":")[-1].lower())
+            pending = ""
+            continue
+        if token.startswith("-"):
+            pending = token if token in ("-x", "--exclude-task", "--tests", "-P", "-D") else ""
+            continue
+        tasks.append(token)
+    for token in tasks:
+        task = (token if maven else token.split(":")[-1]).lower()
+        if task in excluded:
+            continue
+        if maven and token in _MVN_TEST_GOALS:
+            return True
+        if not maven and task.startswith("test") and task not in _GRADLE_NON_RUNNING:
+            return True
+    return False
 
 
 def _strip_env_prefix(tokens: list[str]) -> list[str]:
@@ -749,7 +872,10 @@ def configured_checks(policy: dict) -> tuple[list[str], list[str]]:
             not trivial_evidence(cmd)
             and "\n" not in cmd
             and not any(token in cmd for token in (";", "&&", "||", "`", "$(", ">", "<"))
-            and any(shape == prefix.rstrip() or shape.startswith(prefix) for prefix in SAFE_CHECK_PREFIXES)
+            and (
+                any(shape == prefix.rstrip() or shape.startswith(prefix) for prefix in SAFE_CHECK_PREFIXES)
+                or jvm_behavior_check(cmd)
+            )
         )
         (accepted if ok else rejected).append(cmd)
     return accepted, rejected
@@ -815,24 +941,19 @@ def gate_first_checks_available(root: str, policy: dict) -> bool:
 
     JVM 러너는 자동 감지가 못 내놓는다 (`detect_checks` 는 pytest 와 npm 계열만 본다). 그래도
     여기서 세는 이유는 사람이 `baseline_checks` 에 적은 것도 이 함수를 지나기 때문이다 —
-    안 세면 Gradle·Maven 저장소는 설정을 해도 레인이 안 선다."""
+    안 세면 Gradle·Maven 저장소는 설정을 해도 레인이 안 선다. 그 판정은 안전 표와 같은
+    `jvm_behavior_check` 가 낸다 (두 자리가 갈리면 설정은 통과했는데 레인은 안 서는 상태가 된다)."""
     behavior = (
         ["npm", "test"],
         ["pnpm", "test"],
         ["yarn", "test"],
         ["cargo", "test"],
         ["go", "test"],
-        ["gradle", "test"],
-        ["./gradlew", "test"],
-        ["mvn", "test"],
-        ["./mvnw", "test"],
     )
     for command in detect_checks(root, policy):
         words = command.split()
-        if "pytest" in words or words[:2] in behavior:
+        if "pytest" in words or words[:2] in behavior or jvm_behavior_check(command):
             return True
-        if words[0] in ("mvn", "./mvnw") and "test" in words:
-            return True  # `mvn -q test` — 조용히 도는 표기가 흔하다
     return False
 
 
@@ -1860,7 +1981,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     ignored_base = next(
         (e.get("ignored_snapshot") for e in events if isinstance(e.get("ignored_snapshot"), dict)), None
     )
-    cur, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
+    cur, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base, quest_events_scope(events))
     verifies = [e for e in events if e.get("event") == "verify"]
     passes = [e for e in verifies if e.get("verdict") == "PASS"]
     last_pass = passes[-1] if passes else None
@@ -2589,6 +2710,7 @@ def _parser() -> argparse.ArgumentParser:
         "cmd",
         choices=[
             "open",
+            "attach",
             "append",
             "state",
             "replay",
@@ -2702,6 +2824,62 @@ def _open_event(qid: str, args, base_ref: str, request: str, ignored_snapshot: d
     )
 
 
+def _cmd_attach(root: str, args) -> int:
+    """attach — 이 세션의 포인터를 이미 열려 있는 퀘스트에 다시 묶는다.
+
+    호스트가 세션 신원을 갈아끼우면 (26-08-04 실측: CLAUDE_CODE_SESSION_ID 가
+    39f84a83→2a24f078) `sessions/<sid>.active` 가 없어 모든 명령이 "no active quest" 를 낸다.
+    포인터를 쓰는 명령은 `open` 하나인데 그쪽은 같은 id 의 재개통을 거부하므로(한 id = 한 실행)
+    돌아갈 길이 아예 없었다 — 진행 중인 기장이 세션 하나를 통째로 잃었다.
+
+    새 실행을 만들지 않는다: 이벤트도, base_ref 도, acceptance_hash 도 그대로다. 옮기는 것은
+    **이 세션의** 포인터 파일뿐이라 판정 근거도, 다른 세션이 보는 것도 안 바뀐다.
+
+    다른 세션이 이미 같은 퀘스트를 들고 있어도 막지 않는다 — 그 상태가 바로 이 명령이 푸는
+    자리다(옛 신원의 포인터는 남아 있다). 대신 두 세션이 한 기장에 적게 되므로, 누가 적었는지는
+    이벤트의 `session_id` 로만 남는다."""
+    if not args.quest_id:
+        print("usage: quest-log attach <quest-id> [--session <id>]", file=sys.stderr)
+        return 2
+    qid = sanitize(args.quest_id)
+    events = load_events(root, qid)
+    if not events:
+        return _error("no such quest to attach: %s" % qid)
+    if any(event.get("event") == "quest_closed" for event in events):
+        return _error("quest is closed — open a new quest id rather than attaching to a finished execution")
+    # 이 세션 **자신의** 포인터만 본다. active_quest 의 승계 갈래(활성 퀘스트가 정확히 하나면
+    # 물려받는다)를 쓰면 남의 퀘스트를 이유로 재바인딩이 거부된다 — 그 자리가 바로 이 명령이
+    # 풀려는 자리다.
+    try:
+        held = _read_text(_session_pointer(root, args.session)).strip()
+    except Exception:
+        held = ""
+    if held and held != qid:
+        return _error("session already holds an open quest (%s) — close it before attaching to another" % held)
+    # 이 세션의 포인터만 옮긴다. `set_active_quest` 는 기계 전역 `ACTIVE` 도 같이 쓰는데, 그것은
+    # 세션 이름 없이 묻는 소비처들이 읽는 자리다 (subagent_gate·failure_tracker·verifier_gate·
+    # heimdall·memory_activate). 한 세션의 복구 명령이 그 자리를 옮기면 옆 세션의 일이 이쪽
+    # 퀘스트로 귀속된다 — 이 명령이 고치려는 사고와 같은 종류다 (26-08-05 교차검토 실측).
+    _write_pointer(_session_pointer(root, args.session), qid)
+    _write_pointer(_session_pointer(root, args.session, "known"), qid)
+    first = events[0]
+    print(
+        json.dumps(
+            {
+                "attached": qid,
+                "session": args.session,
+                "execution_id": first.get("execution_id"),
+                "acceptance_hash": first.get("acceptance_hash"),
+                "base_ref": first.get("base_ref"),
+                "turn": events[-1].get("turn"),
+                **_next_note(root, qid, events, load_policy(root), args),
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0
+
+
 def _next_note(root: str, qid: str, events: list[dict], policy: dict, args) -> dict:
     """지금 상태에서 누가 도는가 — `next` 가 내는 것과 같은 값, 같은 함수(`transition`)에서.
 
@@ -2737,7 +2915,7 @@ def _cmd_open(root: str, args) -> int:
     base_ref, why = _open_base_ref(root, args)
     if base_ref is None:
         return _error(why)
-    ignored_snapshot = ignored_state(root)
+    ignored_snapshot = ignored_state(root, artifact_scope(args.criteria))
     if "<snapshot-unavailable>" in ignored_snapshot:
         return _error("ignored-file snapshot unavailable")
     ev = _open_event(qid, args, base_ref, request, ignored_snapshot)
@@ -2824,7 +3002,9 @@ def _verify_evidence(root: str, policy: dict, events: list[dict], ev: dict) -> N
         (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
         None,
     )
-    ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
+    ev["diff_hash"], ev["changed_files"], _, _ = diff_state(
+        root, ev["base_ref"], ignored_base, quest_events_scope([*events, ev])
+    )
     unsafe_maps = unsafe_map_links(root)
     if "<snapshot-unavailable>" in ev["changed_files"] and ev["verdict"] == "PASS":
         ev["verdict"] = "FAIL"
@@ -2908,7 +3088,9 @@ def _baseline_observe(root: str, policy: dict, events: list[dict], ev: dict) -> 
     ignored_base = next(
         (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
     )
-    ev["diff_hash"], ev["changed_files"], _, _ = diff_state(root, ev["base_ref"], ignored_base)
+    ev["diff_hash"], ev["changed_files"], _, _ = diff_state(
+        root, ev["base_ref"], ignored_base, quest_events_scope([*events, ev])
+    )
     snapshot_ok = "<snapshot-unavailable>" not in ev["changed_files"]
     ev["level"] = "micro"
     # 무변경(diff EMPTY) 판정 — '변경 없음' 주장의 올바른 검증은 트리 관측 그 자체다
@@ -3166,10 +3348,19 @@ def main() -> int:
 
     if args.cmd == "open":
         return _cmd_open(root, args)
+    if args.cmd == "attach":
+        return _cmd_attach(root, args)
 
     qid = sanitize(args.quest_id) if args.quest_id else active_quest(root, args.session)
     if not qid:
-        print(json.dumps({"error": "no active quest — run: quest-log open <quest-id>"}))
+        print(
+            json.dumps(
+                {
+                    "error": "no active quest — run: quest-log open <quest-id>, "
+                    "or quest-log attach <quest-id> if this session lost its pointer"
+                }
+            )
+        )
         return 1
     events = load_events(root, qid)
     if not events:

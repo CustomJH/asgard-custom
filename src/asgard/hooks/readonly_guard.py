@@ -638,6 +638,7 @@ def _safe_asgard_hook(tokens: list[str], roots: tuple[str, ...] = ()) -> bool:
     if name == "quest-log.py":
         if len(tokens) < 3 or tokens[2] not in {
             "open",
+            "attach",
             "append",
             "state",
             "replay",
@@ -668,9 +669,6 @@ def is_readonly_bash_safe(command: str, root: str | None = None, roots: tuple[st
     parts, valid = _shell_parts(command)
     if not valid:
         return False
-    # Canonical quest bookkeeping is an allowed metadata write, not source mutation.
-    if len(parts) == 1 and _safe_asgard_hook(parts[0], roots):
-        return True
     if (
         len(parts) == 2
         and parts[0]
@@ -679,8 +677,13 @@ def is_readonly_bash_safe(command: str, root: str | None = None, roots: tuple[st
         and "append" in parts[1]
     ):
         return True
-    # Pipelines are safe only when every stage is independently read-only.
-    return all(_safe_segment(shlex.join(part), roots) for part in parts)
+    # Pipelines are safe only when every stage is independently read-only. 퀘스트 기장은 소스
+    # 변경이 아니라 허용된 메타데이터 쓰기이므로 그 단계도 스스로 안전하다 — 단계별로 보지 않고
+    # 명령 전체가 한 토막일 때만 인정하면, 계약이 안내하는 형태에 `| tail` 한 번만 붙어도
+    # 판정이 뒤집힌다: 그 뒤 `.claude/hooks/quest-log.py` 라는 경로 인자가 통제 표면 갈래에
+    # 걸려 기장 자체가 막힌다 (26-08-05 실측 2회 — open 과 사본 대조가 그렇게 거부됐다).
+    # 한 토막일 때 되던 것이 파이프 뒤에서 되는 것뿐이라 열리는 권한은 없다.
+    return all(_safe_asgard_hook(part, roots) or _safe_segment(shlex.join(part), roots) for part in parts)
 
 
 def _deny(protocol: str, message: str) -> None:

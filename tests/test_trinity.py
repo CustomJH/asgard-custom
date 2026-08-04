@@ -122,6 +122,69 @@ class TestQuestLog(TrinityBase):
         self.assertEqual(active_quest(self.root, "s1"), "q1")
         self.assertEqual(active_quest(self.root, "s2"), "q2")
 
+    def test_attach_rebinds_a_pointer_after_the_host_changes_the_session_id(self):
+        """호스트가 세션 신원을 갈면 (26-08-04 실측: 39f84a83→2a24f078) 진행 중인 기장이 사라진다.
+        `open` 은 같은 id 재개통을 거부하므로 돌아갈 동사가 아예 없었다."""
+        from asgard.hooks.quest_log import active_quest
+
+        self.assertEqual(self.qlog("open", "q1", "--criteria", "one", "--session", "old-sid").returncode, 0)
+        self.assertEqual(self.qlog("open", "q2", "--criteria", "two", "--session", "other").returncode, 0)
+        # 활성 퀘스트가 둘이라 승계 갈래가 fail-closed 다 — 새 신원은 아무것도 못 본다.
+        self.assertIsNone(active_quest(self.root, "new-sid"))
+        self.assertIn("no active quest", self.qlog("state", "--session", "new-sid").stdout)
+
+        active_file = os.path.join(self.root, ".asgard", "quest", "ACTIVE")
+        with open(active_file) as handle:
+            global_before = handle.read()
+
+        attached = jout(self.qlog("attach", "q1", "--session", "new-sid"))
+        self.assertEqual(attached["attached"], "q1")
+        # 기계 전역 ACTIVE 는 세션 이름 없이 묻는 소비처들이 읽는 자리다 (subagent_gate·
+        # failure_tracker·verifier_gate·heimdall). 복구 명령이 그것을 옮기면 옆 세션의 일이
+        # 이쪽 퀘스트로 귀속된다.
+        with open(active_file) as handle:
+            self.assertEqual(handle.read(), global_before)
+        self.assertEqual(attached["base_ref"], jout(self.qlog("state", "--session", "old-sid"))["base_ref"])
+        self.assertEqual(active_quest(self.root, "new-sid"), "q1")
+
+        # 새 실행이 아니다 — 이벤트도 실행 신원도 그대로고, 이어서 적힌다.
+        self.qlog("append", "--role", "worker", "--event", "work", "--session", "new-sid")
+        with open(os.path.join(self.root, ".asgard", "quest", "q1.jsonl")) as handle:
+            events = [json.loads(line) for line in handle]
+        self.assertEqual([e["turn"] for e in events], [1, 2])
+        self.assertEqual({e["execution_id"] for e in events}, {attached["execution_id"]})
+        self.assertEqual([e["session_id"] for e in events], ["old-sid", "new-sid"])
+
+    def test_attach_refuses_a_missing_quest_a_closed_one_and_a_session_that_holds_another(self):
+        self.assertEqual(self.qlog("open", "q1", "--criteria", "one", "--session", "s1", "--no-write").returncode, 0)
+        self.assertEqual(self.qlog("attach", "nope", "--session", "s2").returncode, 1)
+        self.assertEqual(self.qlog("open", "q2", "--criteria", "two", "--session", "s2", "--no-write").returncode, 0)
+        refused = self.qlog("attach", "q1", "--session", "s2")
+        self.assertEqual(refused.returncode, 1)
+        self.assertIn("already holds", refused.stdout + refused.stderr)
+
+        self.assertEqual(self.qlog("close", "q1", "--session", "s1", "--force").returncode, 0)
+        closed = self.qlog("attach", "q1", "--session", "s3")
+        self.assertEqual(closed.returncode, 1)
+        self.assertIn("closed", closed.stdout + closed.stderr)
+
+    def test_attach_is_admitted_by_the_read_only_bash_allowlist(self):
+        """역할 계약이 안내하는 명령이 가드에 막히면 그 동사는 없는 것과 같다."""
+        from asgard.hooks.readonly_guard import is_readonly_bash_safe
+
+        for hooks in (".claude/hooks", ".cursor/hooks", ".codex/hooks"):
+            command = f"uv run --no-project python {hooks}/quest-log.py attach q1"
+            self.assertTrue(is_readonly_bash_safe(command, root=self.root), command)
+            # 파이프 한 번에 판정이 뒤집히면 계약이 안내하는 형태가 통제 표면 갈래에 걸린다.
+            self.assertTrue(is_readonly_bash_safe(command + " | tail -5", root=self.root), command)
+        # 기장 단계가 붙었다고 다른 단계가 열리지는 않는다.
+        for unsafe in (
+            ".claude/hooks/quest-log.py state | tee out.txt",
+            ".claude/hooks/quest-log.py state && rm -rf src",
+            ".claude/hooks/quest-log.py close --force",
+        ):
+            self.assertFalse(is_readonly_bash_safe(unsafe, root=self.root), unsafe)
+
     def test_close_is_session_scoped_and_records_durable_close_event(self):
         self.qlog("open", "q1", "--criteria", "one", "--session", "s1", "--no-write")
         self.qlog("open", "q2", "--criteria", "two", "--session", "s2", "--no-write")
@@ -313,10 +376,11 @@ class TestQuestLog(TrinityBase):
         self.assertTrue(st["pass_hash_match"])
         self.assertIn("app.py", st["changed_files"])
 
-    def test_ignored_file_changes_are_bound_to_pass_hash_and_stale_detection(self):
+    def test_declared_ignored_artifacts_are_bound_to_pass_hash_and_stale_detection(self):
+        """선언한 무시 파일은 결속된다. 선언 밖의 무시 경로는 tests/test_gate_ignored_scope.py 담당."""
         self.write(".gitignore", "secret.env\n")
         self.write("secret.env", "before\n")
-        self.open_quest()
+        self.open_quest("--criteria", "런타임 설정 | artifacts: secret.env")
         self.write("secret.env", "after\n")
         self.verify(commands=[{"cmd": "cat secret.env", "exit_code": 0}])
         state = jout(self.qlog("state"))
@@ -329,11 +393,12 @@ class TestQuestLog(TrinityBase):
     def test_ignored_enumeration_failure_blocks_open_and_close(self):
         from asgard.hooks import quest_log, verifier_gate
 
+        # 스냅샷은 선언된 산출물에만 걸린다 (artifact_scope) — 열거 실패도 그 자리에서만 판정된다.
         marker = {"<snapshot-unavailable>": "ignored-enumeration-failed"}
         with mock.patch.object(quest_log, "git", return_value=(1, b"")):
-            self.assertEqual(quest_log.ignored_state(self.root), marker)
+            self.assertEqual(quest_log.ignored_state(self.root, ("workspace",)), marker)
         with mock.patch.object(verifier_gate, "git", return_value=(1, b"")):
-            self.assertEqual(verifier_gate.ignored_state(self.root), marker)
+            self.assertEqual(verifier_gate.ignored_state(self.root, ("workspace",)), marker)
 
         with (
             mock.patch.object(quest_log, "repo_root", return_value=self.root),
@@ -345,7 +410,8 @@ class TestQuestLog(TrinityBase):
             self.assertEqual(quest_log.main(), 1)
         self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "quest", "snapshot-fail.jsonl")))
 
-        self.open_quest()
+        # 스냅샷을 실제로 뜨는 퀘스트여야 열거 실패가 판정에 닿는다 — 선언이 없으면 열거도 없다.
+        self.open_quest("--criteria", "산출물 | artifacts: workspace/out.txt")
         self.write("app.py", "print('ok')\n")
         self.verify()
         with (
@@ -391,7 +457,8 @@ class TestQuestLog(TrinityBase):
         fifo = os.path.join(self.root, "blocked.fifo")
         os.mkfifo(fifo)
         code = (
-            f"from asgard.hooks.quest_log import ignored_state; print(ignored_state({self.root!r}).get('blocked.fifo'))"
+            "from asgard.hooks.quest_log import ignored_state; "
+            f"print(ignored_state({self.root!r}, ('blocked.fifo',)).get('blocked.fifo'))"
         )
         result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=2)
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -1527,6 +1594,50 @@ class TestDetectChecks(unittest.TestCase):
         self.package({"test": "vitest run"}, "pnpm-lock.yaml")
         with self.which("pnpm", "npm"):
             self.assertTrue(quest_log.gate_first_checks_available(self.root, {}))
+
+    # ── JVM 레인 — 서비스마다 래퍼를 두는 모노레포는 루트에 gradlew 가 없다 (26-08-04 hvami-mono:
+    #    gradlew 3개가 전부 하위 디렉터리). 안전 표와 게이트-우선 판정이 같은 자를 써야 설정이
+    #    통과했는데 레인은 안 서는 상태가 안 생긴다.
+    def test_jvm_wrappers_are_accepted_at_any_depth_inside_the_repository(self):
+        from asgard.hooks import quest_log
+
+        for cmd in (
+            "./gradlew test",
+            "./gradlew testDebugUnitTest",
+            "hvami-batch/gradlew test",
+            "./hvami-feph-secure/gradlew :app:testDebugUnitTest --no-daemon",
+            "gradle test",
+            "mvn -q test",
+            "hvami-parser-secure/mvnw verify",
+            "./gradlew test --tests SomeTest",  # 필터가 붙어도 태스크는 돈다
+        ):
+            policy = {"baseline_checks": [cmd]}
+            self.assertEqual(quest_log.configured_checks(policy)[0], [cmd], cmd)
+            self.assertTrue(quest_log.gate_first_checks_available(self.root, policy), cmd)
+
+    def test_jvm_runners_outside_the_repository_or_without_a_test_task_are_refused(self):
+        from asgard.hooks import quest_log
+
+        for cmd in (
+            "/opt/evil/gradlew test",  # 저장소 밖 실행 파일
+            "../evil/gradlew test",
+            "$HOME/evil/gradlew test",  # 셸이 나중에 편다 — isabs 는 False 인데 실행은 shell=True
+            "~/evil/gradlew test",
+            "${HOME}/x/mvnw test",
+            "/usr/bin/mvn test",  # PATH 러너에 경로가 붙으면 이름으로 안 접는다
+            "./gradlew build",  # 테스트 태스크가 아니다
+            "mvn package",
+            "./gradlew",
+            "./gradlew test -x test",  # 테스트를 빼는 명령이다
+            "./gradlew testClasses",  # 컴파일만 — 단언이 안 돈다
+            "./gradlew --tests SomeTest",  # 필터만 있고 태스크가 없다
+            "mvn -DskipTests test",
+            "mvn verify -Dmaven.test.skip=true",
+        ):
+            policy = {"baseline_checks": [cmd]}
+            self.assertEqual(quest_log.configured_checks(policy)[0], [], cmd)
+            self.assertIn(cmd, quest_log.rejected_checks(policy), cmd)
+            self.assertFalse(quest_log.gate_first_checks_available(self.root, policy), cmd)
 
 
 class TestStandardTransition(TrinityBase):
@@ -3050,7 +3161,9 @@ class TestGateCopyParity(TrinityBase):
         digests = []
         for module in (quest_log, verifier_gate):
             digest = hashlib.sha256()
-            changed = module.reconcile_ignored(self.root, {"build/out.o": "1", "src/kept.py": "1"}, digest)
+            changed = module.reconcile_ignored(
+                self.root, {"build/out.o": "1", "src/kept.py": "1"}, digest, ("build", "src")
+            )
             digests.append((changed, digest.hexdigest()))
         self.assertEqual(digests[0], digests[1])
 

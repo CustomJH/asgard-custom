@@ -246,12 +246,43 @@ def _generated(p):
     return p.endswith((".pyc", ".pyo")) or any(seg in _GENERATED_DIRS for seg in p.split("/"))
 
 
-def reconcile_ignored(root, ignored_base, digest):
+def artifact_scope(criteria):
+    """무시 파일 대조가 볼 경로 — 퀘스트가 `artifacts:` 로 선언한 것만. 빈 튜플이면 대조 없음.
+
+    선언 밖의 gitignored 경로까지 세면 검증이 자기 판정을 무효로 만든다 — 계측 산출물 하나가
+    직전 PASS 를 stale 로 만들어 이 게이트가 orphan-write 로 막았다 (26-08-04 세션 3회).
+    quest_log.py 의 같은 이름 함수와 동일 유지 (단일 출처 원칙 — 어긋나면 영구 stale)."""
+    # `criteria_contracts` 의 5건 상한은 verify 명령용이지 결속 범위의 상한이 아니다 —
+    # 물리면 여섯 번째 산출물이 조용히 안 묶인다 (quest_log.py 의 같은 함수와 동일 유지).
+    out = set()
+    for text in criteria or []:
+        if not isinstance(text, str):
+            continue
+        for raw in parse_criterion(text)["artifacts"]:
+            path = os.path.normpath(str(raw)).replace("\\", "/")
+            # `..` 는 git 이 저장소 밖으로 거절해 스냅샷 전체를 `<snapshot-unavailable>` 로 만든다.
+            # 절대 경로는 저장소 상대로 바꾸지 않는다 — quest_log.py 의 같은 함수와 같은 이유.
+            if path and path not in (".", "..") and not path.startswith(("../", "/")):
+                out.add(path)
+    return tuple(sorted(out))
+
+
+def in_artifact_scope(path, scope):
+    """선언된 산출물 자신이거나 그 아래인가 (세그먼트 경계 — `workspace2/`가 `workspace`에 안 걸린다)."""
+    return any(path == entry or path.startswith(entry + "/") for entry in scope)
+
+
+def quest_events_scope(events):
+    """이 퀘스트가 선언한 산출물 전부 — quest_log.py의 같은 이름 함수와 동일 유지."""
+    return artifact_scope([c for e in events for c in (e.get("criteria") or []) if isinstance(c, str)])
+
+
+def reconcile_ignored(root, ignored_base, digest, scope=()):
     """무시 파일의 기준선↔현재 대조. quest_log.py의 같은 이름 함수와 동일 유지 (단일 출처 원칙)."""
-    if ignored_base is None:
+    if ignored_base is None or not scope:
         return []
-    base = {path: value for path, value in ignored_base.items() if not _generated(path)}
-    current = ignored_state(root)
+    base = {path: value for path, value in ignored_base.items() if in_artifact_scope(path, scope)}
+    current = ignored_state(root, scope)
     changed = sorted(path for path in set(base) | set(current) if base.get(path) != current.get(path))
     for path in changed:
         digest.update(
@@ -297,7 +328,11 @@ def sensitive_path(path, needles):
     return False
 
 
-def ignored_state(root):
+def ignored_state(root, scope=()):
+    """선언된 산출물 아래의 무시 파일만 해시한다 — 빈 scope는 결속 대상이 없다는 뜻이라 git도 안
+    부른다 (26-08-05 콜드 실측: 이 저장소의 전 무시 파일 7,507건 열거·해시가 432ms)."""
+    if not scope:
+        return {}
     rc, raw = git(
         root,
         "ls-files",
@@ -306,7 +341,7 @@ def ignored_state(root):
         "--exclude-standard",
         "-z",
         "--",
-        ".",
+        *scope,
         ":(exclude).asgard",
         binary=True,
     )
@@ -319,7 +354,9 @@ def ignored_state(root):
         if not item:
             continue
         path = item.decode("utf-8", "surrogateescape")
-        if _generated(path):
+        # pathspec 은 glob 을 받는다 — 돌려받은 경로를 같은 술어로 한 번 더 거른다.
+        # `_generated` 는 안 태운다 — 선언된 `build/`·`target/` 산출물이 조용히 안 묶인다.
+        if not in_artifact_scope(path, scope):
             continue
         full = os.path.join(root, path)
         try:
@@ -340,7 +377,7 @@ def ignored_state(root):
     return out
 
 
-def diff_state(root, base_ref, ignored_base=None):
+def diff_state(root, base_ref, ignored_base=None, scope=()):
     # nontest_lines 4번째 원소 — quest_log.py와 동일 유지 (테스트 추가 ≠ 리스크 질량)
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
@@ -393,7 +430,7 @@ def diff_state(root, base_ref, ignored_base=None):
             if not _testfile(parts[2]):
                 nt_lines += n
     h = hashlib.sha256(diff)
-    ignored_changed = reconcile_ignored(root, ignored_base, h)
+    ignored_changed = reconcile_ignored(root, ignored_base, h, scope)
     changed = sorted(set(n for n in names.splitlines() if n.strip()) | set(map_changed) | set(ignored_changed))
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
@@ -962,7 +999,7 @@ def orphan_writes(root, sid, candidates=None):
                 (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)),
                 None,
             )
-            current_hash, last_changed, _, _ = diff_state(root, base_ref, ignored_base)
+            current_hash, last_changed, _, _ = diff_state(root, base_ref, ignored_base, quest_events_scope(events))
             # LAST 면제도 증거 요구 — 무증거 PASS + close 우회 구멍. 무변경은 관측이 곧 증거.
             evidence = pass_evidence(last, no_change=current_hash == EMPTY)
             fresh = last.get("diff_hash") == current_hash or not stale_pass_scope(root, last, events, last_changed)[0]
@@ -1039,7 +1076,7 @@ def main():
         ignored_base = next(
             (event.get("ignored_snapshot") for event in events if isinstance(event.get("ignored_snapshot"), dict)), None
         )
-        current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base)
+        current, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base, quest_events_scope(events))
         if "<snapshot-unavailable>" in changed:
             block(root, sid, "snapshot-fail")
         cmds = [c for e in events for c in (e.get("commands") or []) if isinstance(c, dict)]
