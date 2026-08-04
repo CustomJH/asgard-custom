@@ -363,7 +363,7 @@ class TestStemFloor(unittest.TestCase):
         """`ization`이 목록에 없는 이유 — 넣으면 어근까지 벗겨져 남의 낱말을 삼킨다.
 
         `ation`만 두면 같은 파생을 `authoriz`로 잡아 `authorize`에는 붙고 `author`에는 안 붙는다.
-        근거 벤치 수치는 두 방식이 같아서(코퍼스에 `-ization` 양성 한 건뿐) 이 절이 그 차이를 든다."""
+        근거 벤치 수치는 두 방식이 같아서(코퍼스에 `-ization` 양성 한 건뿐) 이 절이 그 차이를 쓴다."""
         self.assertTrue(recall._stem_hit("authorization", "authorize the caller"))  # 파생은 잡고
         self.assertFalse(recall._stem_hit("authorization", "the author of the commit"))  # 어근은 안 잡는다
         self.assertFalse(recall._stem_hit("organization", "an organ transplant"))
@@ -842,6 +842,19 @@ class TestWake(NornBase):
             mock.patch.object(norn, "_memory_settings", return_value={"norn_auto": "full"}),
         ):
             self.assertIsNone(norn.wake(self.tmp, self.d))
+
+    def test_the_detached_child_does_not_inherit_the_download_ceiling(self):
+        """훅이 켠 상한은 **부모의 시계**다. 물려주면 이 자식이 위키를 쓰면서 벡터를 안 만들어
+        (`memory/index.py` 의 `_vec_upsert` 가 `active()` 로 잠근다) vec_coverage 가 조용히 썩는다."""
+        with (
+            mock.patch.dict(os.environ, {"ASGARD_MEMORY_NO_DOWNLOAD": "1", "PATH": os.environ.get("PATH", "")}),
+            mock.patch("subprocess.Popen") as popen,
+        ):
+            self.assertTrue(norn._spawn_auto(self.tmp))
+            self.assertEqual(os.environ.get("ASGARD_MEMORY_NO_DOWNLOAD"), "1")  # 부모 환경은 그대로다
+        env = popen.call_args.kwargs["env"]
+        self.assertNotIn("ASGARD_MEMORY_NO_DOWNLOAD", env)
+        self.assertTrue(popen.call_args.kwargs["start_new_session"])
 
     def test_wake_never_pays_for_the_llm_itself(self):
         """due 판정은 파일 두 개다 — 비싼 손질은 분리 스폰한 자식 몫이라야 턴이 안 늘어진다."""

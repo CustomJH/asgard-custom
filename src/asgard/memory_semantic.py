@@ -220,6 +220,16 @@ def deadline_bound() -> bool:
     return bool((os.environ.get(_DEADLINE_ENV) or "").strip())
 
 
+def detached_env(env: dict[str, str]) -> dict[str, str]:
+    """분리 스폰용 환경 — 부모의 시간 상한 표식을 뗀다 (같은 dict 를 돌려준다).
+
+    상한은 **부모의 시계**를 뜻하는데 `start_new_session=True` 로 떼어낸 자식은 그 시계 밖이다.
+    물려주면 그 자식이 위키를 쓰면서 벡터를 안 만들고 (`memory/index.py` 의 `_vec_upsert` 가
+    `active()` 로 잠근다), 페이지는 늘고 벡터는 안 늘어 vec_coverage 가 조용히 썩는다."""
+    env.pop(_DEADLINE_ENV, None)
+    return env
+
+
 # ── 첫 내려받기 실패 래치 ─────────────────────────────────────────────────────
 #
 # 위 보호는 켜 주는 자리가 외부 클라이언트 훅 하나뿐이다. 네이티브 루프와 모든 `asgard

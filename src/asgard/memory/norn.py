@@ -1022,11 +1022,16 @@ def _spawn_auto(root: str) -> bool:
     **에이전트를 env로 명시해서 넘긴다.** `profiles.scoped()`는 contextvar라 자식에게 안 따라간다
     — 안 넘기면 이 자식은 끈끈한 활성 에이전트로 떨어져, 에이전트 A로 돌던 세션의 기억을 B의
     위키에 쓴다. 턴마다 도는 자식이라 조용히 쌓이고, 기억은 되돌리기가 가장 어렵다
-    (hermes 이슈 18594가 같은 사고였다)."""
+    (hermes 이슈 18594가 같은 사고였다).
+
+    **시간 상한 표식은 떼고 넘긴다** (`memory_semantic.detached_env`). 훅이 켠
+    `ASGARD_MEMORY_NO_DOWNLOAD` 는 부모의 시계를 뜻하는데 이 자식은 그 밖에서 돌고, 물려받으면
+    위키를 쓰면서 벡터를 안 만들어 vec_coverage 가 조용히 썩는다."""
     import shutil as _shutil
     import subprocess
     import sys
 
+    from ..memory_semantic import detached_env
     from ..profiles import subprocess_env
 
     exe = _shutil.which("asgard") or sys.argv[0]
@@ -1038,7 +1043,7 @@ def _spawn_auto(root: str) -> bool:
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             cwd=root or None,
-            env=subprocess_env(),
+            env=detached_env(subprocess_env()),
         )
     except Exception:
         return False
