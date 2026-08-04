@@ -1434,6 +1434,27 @@ class TestRecallAndAllowlist(MemoryBase):
 
         self.assertIn("review-style", note)
 
+    def test_recall_carries_short_fact_whole(self):
+        """상한 안에 들어가는 본문은 창 경계에서 잘리지 않는다 — 잘린 경로는 안 열린다."""
+        fact = "helios-application 의 로컬 경로는 /Users/odin/develop/work_space/vn_onm/helios-application 이다."
+        self.assertLessEqual(len(fact), memory.recall.SNIPPET_MAX)
+        memory.add(fact, title="helios-path", kind="reference")
+
+        note = memory.recall_note("helios 로컬 경로")
+
+        self.assertIn("/Users/odin/develop/work_space/vn_onm/helios-application 이다.", note)
+
+    def test_recall_windows_body_past_the_cap(self):
+        """상한을 넘는 본문은 그대로 창 발췌 — 적중 둘레만 들어간다 (예산이 실재한다)."""
+        body = "머리말 " * 60 + "NEEDLE-7742 가 여기 있다 " + "꼬리말 " * 60
+        memory.add(body, title="long-body", kind="note")
+
+        rows = memory.recall_rows("NEEDLE-7742")
+
+        self.assertTrue(rows)
+        self.assertIn("NEEDLE-7742", rows[0])
+        self.assertLess(len(rows[0]), len(body))
+
     def test_recall_respects_kill_switch(self):
         memory.add("사실", title="fact")
         os.environ["ASGARD_MEMORY_INJECT"] = "off"

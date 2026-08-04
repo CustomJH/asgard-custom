@@ -698,6 +698,25 @@ def clean_pages(d: str) -> dict[str, tuple[dict, str]]:
     return {slug: (meta, body) for slug, meta, body in _read_all_cached(d) if not verdicts.get(slug, "")}
 
 
+# 발췌 상한 — 렌더(`_hit_row`)가 자르는 길이와 **같은 값**이어야 한다. 두 값이 갈리면 여기서
+# 통째로 넣어 보낸 본문을 저쪽이 다시 자르거나, 여기서 자른 것을 저쪽이 온전한 줄로 취급한다.
+SNIPPET_MAX = 160
+
+
+def _snippet(body: str, i: int) -> str:
+    """적중 위치 둘레 발췌 — 단, 렌더 상한 안에 들어가는 본문은 자르지 않는다.
+
+    창(window)만 쓰던 시절, 한 문장짜리 페이지가 창 경계에서 잘려 나갔다. 실측 26-08-04:
+    본문 89자 `helios-application의 로컬 경로는 /Users/yun/.../helios-application 이다.`가
+    `.../helios-applicati` 로 실렸다 — 경로 끝 두 글자가 없어진 채로. 저장된 사실은 온전한데
+    주입된 사실만 틀렸고, 그 값을 그대로 쓰면 열리지 않는 경로가 된다. 상한 안에 다 들어가는
+    본문은 자를 이유가 애초에 없다."""
+    whole = body.strip()
+    if len(whole) <= SNIPPET_MAX:
+        return whole
+    return body[max(i - 40, 0) : i + 80].strip()
+
+
 def query(
     text: str,
     k: int = 5,
@@ -918,7 +937,7 @@ def query(
             "slug": slug,
             "title": meta.get("title", slug),
             "kind": _kind(meta),
-            "snippet": body[max(i - 40, 0) : i + 80].strip(),
+            "snippet": _snippet(body, i),
             "score": round(rrf[slug], 4),
         }
         if explain:
@@ -1169,7 +1188,7 @@ def _hit_row(hit: dict) -> str:
     두 번** 들어간다 (실측 26-07-29: 182자 중 절반이 반복). 레인 간 중복을 제거하면서 한 줄
     안의 중복을 남겨 두는 것은 앞뒤가 안 맞는다."""
     title = _neutralize(str(hit["title"]))[:120]
-    snippet = _neutralize(str(hit["snippet"]))[:160]
+    snippet = _neutralize(str(hit["snippet"]))[:SNIPPET_MAX]
     head = f"{title} `{hit['kind']}`"
     if not snippet:
         return head
