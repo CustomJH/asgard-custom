@@ -245,74 +245,23 @@ def main():
             preview = str((result.get("proposal") or {}).get("preview") or "")
             if preview:
                 messages.append("⠶ Project memory approval proposal\n" + preview)
-            # 자가발전 넛지 — 미채굴 hard-won 신호가 새로 생겼을 때만 한 줄 (latch는 CLI가 관리).
-            # 네이티브 루프는 quest close 시점에 직접 넛지하므로 이 경로는 외부 클라이언트 훅 전용이다.
+            # 턴 끝 넛지 넷 — 자가발전·노른 wake·패턴 학습·시맨틱 준비. 판정과 latch 는 전부
+            # CLI 소유고 (`asgard memory tick`), 훅은 낸 줄을 전달만 한다. 넷을 각각 띄우던
+            # 동안 값의 대부분이 인터프리터 부팅이었다 — 26-08-04 실측 460ms → 218ms.
             try:
                 n = subprocess.run(
-                    [exe, "evolve", "nudge"],
+                    [exe, "memory", "tick"],
                     capture_output=True,
                     text=True,
-                    timeout=10,
+                    timeout=20,
                     cwd=root,
                     encoding="utf-8",
                     errors="replace",
                 )
-                nudge = (n.stdout or "").strip()
-                if n.returncode == 0 and nudge:
-                    messages.append("⠶ " + nudge.splitlines()[0])
+                if n.returncode == 0:
+                    messages += ["⠶ " + line for line in (n.stdout or "").splitlines() if line.strip()]
             except Exception:
                 pass  # 넛지 불능이 Stop을 막지 않는다
-            # 위그드라실 노른 wake — due 시 자율 모드(safe/full)는 백그라운드 자동 통합을 분리
-            # 스폰하고, off는 넛지 한 줄만 (latch·모드 분기 전부 CLI 단일 출처)
-            try:
-                n = subprocess.run(
-                    [exe, "memory", "norn", "--wake"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=root,
-                    encoding="utf-8",
-                    errors="replace",
-                )
-                nudge = (n.stdout or "").strip()
-                if n.returncode == 0 and nudge:
-                    messages.append("⠶ " + nudge.splitlines()[0])
-            except Exception:
-                pass  # 노른 넛지 불능도 Stop을 막지 않는다
-            # 패턴 학습 넛지 — 마지막 패스 이후 턴이 문턱만큼 쌓였을 때만 한 줄. 노른이 위키를
-            # 손질한다면 이쪽은 대화에서 오딘에 대한 관측을 길어 올린다 (승격은 언제나 사람 검토).
-            try:
-                n = subprocess.run(
-                    [exe, "memory", "pattern", "--due"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=root,
-                    encoding="utf-8",
-                    errors="replace",
-                )
-                nudge = (n.stdout or "").strip()
-                if n.returncode == 0 and nudge:
-                    messages.append("⠶ " + nudge.splitlines()[0])
-            except Exception:
-                pass  # 패턴 넛지 불능도 Stop을 막지 않는다
-            # 시맨틱 준비 넛지 — 이 훅은 자식의 stderr를 삼키므로 "준비 중" 알림이 사용자에게
-            # 닿지 않는다. 여기가 사람에게 보이는 유일한 통로다 (한 번만 — latch는 CLI 소유).
-            try:
-                n = subprocess.run(
-                    [exe, "memory", "semantic", "nudge"],
-                    capture_output=True,
-                    text=True,
-                    timeout=10,
-                    cwd=root,
-                    encoding="utf-8",
-                    errors="replace",
-                )
-                nudge = (n.stdout or "").strip()
-                if n.returncode == 0 and nudge:
-                    messages.append("⠶ " + nudge.splitlines()[0])
-            except Exception:
-                pass  # 준비 넛지 불능도 Stop을 막지 않는다
             if messages:
                 key = "followup_message" if mode == "cursor" else "systemMessage"
                 sys.stdout.write(json.dumps({key: "\n\n".join(messages)}, ensure_ascii=False) + "\n")

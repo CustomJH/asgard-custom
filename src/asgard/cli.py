@@ -1768,6 +1768,13 @@ def memory_pattern(
     raise typer.Exit(run_pattern(apply, json_, due))
 
 
+@memory_app.command("tick", hidden=True, help="for hooks: the end-of-turn nudges, in one process")
+def memory_tick(json_: bool = typer.Option(False, "--json")) -> None:
+    from .commands.memory import run_tick
+
+    raise typer.Exit(run_tick(json_))
+
+
 @memory_app.command("ask", help="ask something about Odin — answered from personal, episodic and project memory")
 def memory_ask(
     question: str = typer.Argument(..., help="ask it the way you would out loud"),

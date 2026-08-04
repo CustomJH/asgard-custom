@@ -204,9 +204,19 @@ _DEADLINE_ENV = "ASGARD_MEMORY_NO_DOWNLOAD"
 def deadline_bound() -> bool:
     """이 프로세스가 남의 시간 상한 안에서 도는가 — 훅이 자식에게 켜 준다.
 
-    켜져 있으면 첫 내려받기를 **시작하지 않는다**. 시작해 봐야 상한에 잘려 죽고, 죽으면서
-    다음 호출도 같은 자리에서 다시 죽기 때문이다 (진전이 없다). 시맨틱만 빠지고 어휘·그래프
-    스트림은 그대로 도므로 회수는 나빠질 뿐 멈추지 않는다."""
+    켜져 있으면 임베더를 **차게 세우지 않는다**. 내려받기뿐 아니라 로드도 그렇다: 26-08-04
+    실측에서 `asgard memory recall` 1,370ms 중 1,050ms 가 이미 캐시에 있는 정적 모델을
+    프로세스마다 다시 올리는 값이었다 (`tokenizers.Tokenizer.from_file` 490ms +
+    StaticModel.__init__ 423ms + get_vocab 134ms — 어휘 50만 항목 재구축). 훅은 프롬프트마다
+    새 프로세스라 그 값을 매번 문다. 같은 저장소에서 어휘 2경로만 도는 회수는 140~222ms 다.
+
+    질의 자체는 싸다 (벤치 hybrid-search: 시맨틱 켠 query() p50 9.47ms). 그러니 이 판정이
+    아끼는 것은 검색이 아니라 프로세스 경계다. 이미 선 임베더는 이 판정에 안 걸린다 —
+    `embedder()` 가 `_CACHE["loaded"]` 에서 먼저 돌려주기 때문에, 오래 사는 네이티브 루프와
+    사람이 기다리는 `asgard memory query` 는 한 번 올린 뒤 상한과 무관하게 3경로를 쓴다.
+    값을 무는 것은 프롬프트마다 새로 뜨는 훅 프로세스뿐이다.
+
+    시맨틱만 빠지고 어휘·그래프 스트림은 그대로 도므로 회수는 나빠질 뿐 멈추지 않는다."""
     return bool((os.environ.get(_DEADLINE_ENV) or "").strip())
 
 
@@ -280,11 +290,13 @@ def embedder() -> Callable[[str], list[float]] | None:
         return None
     if _CACHE["loaded"]:
         return _CACHE["fn"]
-    cached = model_cached()
-    if deadline_bound() and not cached:
-        # 시간 상한 안에서는 35초짜리 첫 내려받기를 열지 않는다. 준비는 warmup이 한다.
+    if deadline_bound():
+        # 시간 상한 안에서는 콜드 로드를 안 연다 — 캐시에 없으면 35초짜리 첫 내려받기고,
+        # 캐시에 있어도 1,050ms 짜리 재구축이다 (deadline_bound 의 실측). 위 `_CACHE["loaded"]`
+        # 갈래가 먼저라 이미 선 임베더는 여기까지 안 온다.
         _CACHE["loaded"], _CACHE["fn"], _CACHE["dim"] = True, None, 0
         return None
+    cached = model_cached()
     if not cached and _download_latched():
         # 최근에 같은 첫 내려받기가 실패했다 — 프로세스마다 같은 값을 다시 치르지 않는다.
         _CACHE["loaded"], _CACHE["fn"], _CACHE["dim"] = True, None, 0

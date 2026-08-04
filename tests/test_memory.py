@@ -1942,8 +1942,12 @@ class TestCCWiring(MemoryBase):
         self.assertIn("중요 사건 사용자 승인 제안", payload["systemMessage"])
         self.assertNotIn("탐색 발견 저장 후보", payload["systemMessage"])  # 넛지 침묵 = systemMessage에 미등장
 
-    def test_cc_stop_surfaces_evolve_nudge(self):
-        """자가발전 넛지 CC 배선 — 미채굴 신호가 있으면 Stop systemMessage로 한 줄 (26-07-18)."""
+    def test_cc_stop_surfaces_every_nudge_from_one_tick(self):
+        """턴 끝 넛지 CC 배선 — `memory tick` 한 번이 낸 줄이 전부 Stop systemMessage 로 나온다.
+
+        종전에는 자식 넷(evolve nudge · norn --wake · pattern --due · semantic nudge)을 훅이
+        차례로 띄웠다. 판정은 그대로 CLI 소유고 훅은 전달만 하므로, 이 시험은 **여러 줄이
+        빠짐없이** 올라오는지를 본다 — 한 줄만 보면 합치면서 뒤가 잘려도 통과한다."""
         import json as j
 
         bindir = os.path.join(self.tmp, "nudge-bin")
@@ -1951,8 +1955,10 @@ class TestCCWiring(MemoryBase):
         fake = os.path.join(bindir, "asgard")
         open(fake, "w").write(
             "#!/bin/sh\n"
+            '[ "$1" = memory ] && [ "$2" = tick ] && '
+            "printf '%s\\n%s\\n' \"진화 후보 신호 1건 — asgard evolve scan 으로 채굴\" "
+            '"위그드라실 노른 통합이 밀렸어요"\n'
             '[ "$1" = memory ] && printf \'%s\' \'{"status":"skipped"}\'\n'
-            '[ "$1" = evolve ] && [ "$2" = nudge ] && printf \'%s\' "진화 후보 신호 1건 — asgard evolve scan 으로 채굴"\n'
             "exit 0\n"
         )
         os.chmod(fake, 0o755)
@@ -1969,6 +1975,7 @@ class TestCCWiring(MemoryBase):
         payload = j.loads(out)
         self.assertIn("⠶", payload["systemMessage"])
         self.assertIn("진화 후보 신호 1건", payload["systemMessage"])
+        self.assertIn("위그드라실 노른 통합이 밀렸어요", payload["systemMessage"])
 
 
 def _json_dumps(payload: dict) -> str:
@@ -2413,6 +2420,20 @@ class TestColdStartUnderADeadline(MemoryBase):
         self.assertIsNone(sem.embedder())
         self.fake["_load_local"].assert_not_called()  # 상한 안에서는 적재를 시작조차 하면 안 된다
 
+    def test_a_deadline_bound_process_does_not_reload_an_already_cached_model(self):
+        """캐시가 있어도 상한 안에서는 안 세운다 — 값을 무는 것은 내려받기만이 아니다.
+
+        26-08-04 실측: 이미 받아 둔 정적 모델을 프로세스마다 다시 올리는 데 1,050ms 가 든다
+        (`asgard memory recall` 1,370ms 중). 훅은 프롬프트마다 새 프로세스라 그 값을 매번
+        문다. 어휘 2경로만 도는 같은 회수는 124~144ms 다."""
+        from asgard import memory_semantic as sem
+
+        self.fake["model_cached"].return_value = True
+        os.environ[sem._DEADLINE_ENV] = "1"
+
+        self.assertIsNone(sem.embedder())
+        self.fake["_load_local"].assert_not_called()
+
     def test_without_the_deadline_the_load_is_still_attempted(self):
         """플래그가 원인임을 못 박는다 — 없으면 평시대로 적재를 시도한다 (warmup 복구 경로)."""
         from asgard import memory_semantic as sem
@@ -2420,6 +2441,19 @@ class TestColdStartUnderADeadline(MemoryBase):
         self.assertFalse(sem.deadline_bound())
         sem.embedder()
         self.assertEqual(self.fake["_load_local"].call_count, 1)
+
+    def test_an_embedder_that_already_stands_is_used_inside_the_deadline(self):
+        """상한은 콜드 로드만 막는다 — 오래 사는 프로세스가 한 번 세운 임베더는 계속 쓴다.
+
+        네이티브 루프와 `asgard memory query` 가 3경로를 잃지 않는 근거다."""
+        from asgard import memory_semantic as sem
+
+        sem.embedder()  # 상한 밖에서 한 번 세운다
+        self.assertEqual(self.fake["_load_local"].call_count, 1)
+        os.environ[sem._DEADLINE_ENV] = "1"
+
+        sem.embedder()
+        self.assertEqual(self.fake["_load_local"].call_count, 1)  # 다시 세우지 않는다
 
     def test_lexical_recall_survives_when_semantic_is_skipped(self):
         from asgard import memory_semantic as sem

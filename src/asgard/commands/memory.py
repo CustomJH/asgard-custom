@@ -2114,6 +2114,50 @@ def _semantic_nudge_line(d: str) -> str:
     return message
 
 
+def run_tick(json_out: bool = False) -> int:
+    """턴 끝 넛지 넷을 한 프로세스에서 본다 — 진화·노른·패턴·시맨틱 준비.
+
+    Stop 훅이 네 번 띄우던 자리다: `evolve nudge` · `memory norn --wake` ·
+    `memory pattern --due` · `memory semantic nudge`. 넷이 하는 일은 "낼 말이 한 줄 있는가"
+    판정이고 출력도 각각 한 줄인데, 값의 대부분은 인터프리터 부팅이었다 (26-08-04 실측:
+    네 자식 합계 408~434ms, 그중 프로세스 바닥값 68ms × 4).
+
+    판정·latch·스폰은 옮기지 않는다 — 각 모듈의 같은 함수를 그대로 부른다. 하나가 죽어도
+    나머지는 낸다: 넛지는 편의지 계약이 아니라, 하나의 실패가 턴 종료를 막으면 안 된다."""
+    d = memory.ensure_home()
+    # 진화 넛지는 종전에 `asgard evolve nudge` 가 git toplevel 로 뿌리를 풀었다 (commands/evolve.py
+    # 의 `_surface`). cwd 를 그대로 주면 하위 폴더에서 돌 때 `.asgard/evolution` latch 와
+    # `.asgard/quest` 를 엉뚱한 자리에서 읽어 매 턴 초기화된다 — 나머지 셋은 원래 cwd 였다.
+    from .evolve import _root as _git_toplevel
+
+    root = _git_toplevel()
+    lines: list[str] = []
+
+    def _collect(make) -> None:
+        try:
+            line = (make() or "").strip()
+        except Exception:
+            return
+        if line:
+            lines.append(line.splitlines()[0])
+
+    from .. import evolution as evo
+    from ..memory import norn as norn_mod
+    from ..memory import pattern as pattern_mod
+
+    _collect(lambda: evo.nudge_line(root))
+    _collect(lambda: norn_mod.wake(root, d))
+    _collect(lambda: pattern_mod.nudge_line(root, d))
+    _collect(lambda: _semantic_nudge_line(d))
+
+    if json_out:
+        print(_json.dumps({"nudges": lines}, ensure_ascii=False))
+    else:
+        for line in lines:
+            print(line)
+    return 0
+
+
 def run_semantic(action: str = "status", json_out: bool = False) -> int:
     """시맨틱 검색 상태·워밍업·켜고 끄기. 첫 실행의 긴 내려받기를 여기서 미리 부담한다."""
 
