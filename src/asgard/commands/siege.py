@@ -33,7 +33,17 @@ _TASK_MARK = {
     "blocked": "⊘",
 }
 _GATE_MARK = {"open": "◆", "resolved": "◇"}
+# 시도의 상태를 사람 말로. `ready` 는 아직 답이 안 온 시도라 "도는 중" 이다 — 여기가 "지금 누가
+# 무엇을 붙들고 있는가" 에 답하는 유일한 칸이고, 상태 이름 그대로 두면 그 사실이 안 읽힌다.
+_DISPATCH_STATE = {
+    "ready": "도는 중",
+    "settled": "성공",
+    "failed": "실패",
+    "stopped": "중지",
+    "outcome_unknown": "결과 모름",
+}
 _SPEC_HEAD = 60  # 목록 한 줄이 드는 만큼
+_AGENT_HEAD = 18  # 에이전트 이름 칸 — `asgard-thor-lead` 가 가장 긴 이름이다
 
 
 def _root() -> str:
@@ -45,6 +55,20 @@ def _root() -> str:
     return _project_root(os.getcwd())
 
 
+def _attempt_line(attempt: dict) -> str:
+    """시도 한 줄 — 누가 들었고, 지금 어떻게 됐고, 무엇을 남겼는가.
+
+    이름 칸은 `agent` 가 먼저다. `worker` 는 그 시도를 부른 쪽이 붙인 손잡이(`<퀘스트>:WORKER`)
+    라 무엇이 돌았는지를 말하지 못한다 — 에이전트 이름이 없을 때만 대신 세운다.
+    """
+    who = attempt.get("agent") or attempt.get("worker") or "-"
+    state = _DISPATCH_STATE.get(attempt.get("state") or "", attempt.get("state") or "?")
+    line = f"↳ {attempt.get('attempt') or 1} {who:<{_AGENT_HEAD}} {state}"
+    if attempt.get("summary"):
+        line += f" · {ui.oneline(attempt['summary'], _SPEC_HEAD)}"
+    return line
+
+
 def _dump(payload, json_out: bool) -> None:
     if json_out:
         print(json.dumps(payload, ensure_ascii=False, indent=2, default=str))
@@ -53,7 +77,8 @@ def _dump(payload, json_out: bool) -> None:
 def run_runs(json_out: bool = False, limit: int = 20) -> int:
     """Run 목록 — 최근 것이 위."""
     ui.set_quiet(json_out)
-    rows = orc.run_list(_root())[: max(1, limit)]
+    root = _root()
+    rows = orc.run_list(root)[: max(1, limit)]
     if json_out:
         _dump(rows, True)
         return 0
@@ -64,6 +89,11 @@ def run_runs(json_out: bool = False, limit: int = 20) -> int:
         shape = row.get("shape") or "-"
         state = "열림" if row["status"] == "open" else "닫힘"
         ui.step(f"{row['id']}  {shape:<6} {state:<4} {ui.dim(ui.oneline(row.get('objective') or '', _SPEC_HEAD))}")
+        # 지금 답을 기다리는 중인 에이전트. 목록의 다른 칸은 전부 지나간 일이라, 이 줄이 없으면
+        # "무엇이 아직 돌고 있는가" 를 알려면 Run 마다 `siege show` 를 쳐야 한다.
+        running = [d["agent"] or d["worker"] for d in orc.live_agents(root, row["id"])]
+        if running:
+            ui.step(ui.dim(f"    지금 도는 중 — {', '.join(dict.fromkeys(running))}"))
     return 0
 
 
@@ -106,6 +136,8 @@ def run_show(run_id: str, json_out: bool = False) -> int:
             line += f" ← {deps}"
         ui.step(line)
         ui.step(ui.dim(f"      {ui.oneline(task['spec'], _SPEC_HEAD)}"))
+        for attempt in task["attempts_detail"]:
+            ui.step(ui.dim(f"      {_attempt_line(attempt)}"))
     gates = orc.gate_list(root, run_id=run_id, status="open")
     if gates:
         ui.step(ui.dim(f"열린 결정 게이트 {len(gates)}건"))

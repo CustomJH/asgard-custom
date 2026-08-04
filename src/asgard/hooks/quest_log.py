@@ -64,6 +64,11 @@ EMPTY = hashlib.sha256(b"").hexdigest()  # 변경 전무(diff 없음 + untracked
 # 죽음이 **조용하다**. 그렇다고 괄호로 쓰면 포매터(target-version=py314)가 도로 벗긴다 —
 # 이름은 못 건드린다. tests/test_architecture.py의 문법 바닥 검사가 이 불변식을 지킨다.
 _BAD_NUMBER = (TypeError, ValueError)
+# 읽을 수 없는 영수증 두 종 — 파일이 없거나 열리지 않거나(OSError), JSON 이 아니거나
+# (JSONDecodeError 는 ValueError 다). 위와 같은 이유로 이름을 붙인다. `except Exception` 으로
+# 뭉치면 `_unit_agent` 안의 진짜 결함(AttributeError 류)까지 조용히 건너뛰고, 그 함수는
+# 빈 문자열이 정상 답이라 삼킨 자리가 겉으로 드러나지 않는다.
+_UNREADABLE_RECEIPT = (OSError, ValueError)
 EVENTS = {
     "plan",
     "work",
@@ -2411,6 +2416,29 @@ def _native_loop_owns_the_ledger(worker_id) -> bool:
     return str(worker_id or "").startswith("native:")
 
 
+def _unit_agent(root: str, qid: str, unit: str) -> str:
+    """이 배정 단위를 어떤 에이전트가 잡았는가 — 디스패치 영수증이 적어 둔 이름.
+
+    티켓 자체는 워커 id 만 든다(`u1`·`worker-3`). 어떤 에이전트가 그 id 로 돌았는지는 디스패치
+    시점에만 알 수 있고, 그것을 적는 자리가 `subagent_gate.record_worker_dispatch` 다. 영수증이
+    없으면 빈 문자열을 돌려준다 — 서브에이전트가 없는 모드(mode A)에서는 그것이 사실이다.
+    """
+    directory = os.path.join(root, ".asgard", "quest", "receipts", qid)
+    try:
+        names = [name for name in os.listdir(directory) if name.startswith("dispatch-")]
+    except OSError:
+        return ""
+    for name in names:
+        try:
+            with open(os.path.join(directory, name), encoding="utf-8") as handle:
+                record = json.load(handle)
+        except _UNREADABLE_RECEIPT:  # 읽기·JSON 두 갈래 다 "이 영수증은 못 읽는다" 로 같다
+            continue
+        if str(record.get("unit")) == str(unit):
+            return str(record.get("agent_type") or "")
+    return ""
+
+
 def _siege_mirror(root: str, qid: str, cmd: str, unit: str, payload: dict) -> None:
     """티켓 전이를 배차 장부(`.asgard/orchestration.db`)에도 적는다.
 
@@ -2437,7 +2465,13 @@ def _siege_mirror(root: str, qid: str, cmd: str, unit: str, payload: dict) -> No
         if not task_id:
             return
         if cmd == "ticket-claim":
-            orc.open_dispatch(root, task_id, worker=str(payload.get("worker_id") or ""), role="worker")
+            orc.open_dispatch(
+                root,
+                task_id,
+                worker=str(payload.get("worker_id") or ""),
+                role="worker",
+                agent=_unit_agent(root, qid, unit),
+            )
             return
         live = orc.dispatch_show(root, task_id=task_id)
         if live is None or live["state"] != "ready":

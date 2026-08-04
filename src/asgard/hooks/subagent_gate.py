@@ -337,6 +337,78 @@ def unit_marker(tool_input: dict) -> str | None:
     return str(int(raw_unit)) if raw_unit.isdigit() else raw_unit[:80]
 
 
+def call_spec(tool_input: dict) -> str:
+    """이 호출로 무엇을 시켰는가 — 장부의 Task 한 줄. 없으면 빈 문자열."""
+    text = str(tool_input.get("description") or tool_input.get("prompt") or tool_input.get("task") or "")
+    for line in text.splitlines():
+        stripped = re.sub(r"\[ASGARD_UNIT:[^\]]*\]", "", line).strip()
+        if stripped:
+            return stripped[:500]
+    return ""
+
+
+def siege_open(root: str, qid: str, caller: str, target: str, tool_input: dict) -> None:
+    """호출된 에이전트를 배차 장부에 세운다 — 호스트 모드에서 이것이 적히는 유일한 자리.
+
+    네이티브 루프는 `agent/heimdall/bifrost.py` 가 같은 것을 프로세스 안에서 적는다. 세 호스트
+    모드에는 그 루프가 없고 디스패치를 아는 자리가 이 훅뿐이라, 여기가 없으면 `asgard siege` 는
+    어떤 에이전트가 불렸는지 영영 말하지 못한다 — 오늘 잡히는 것은 배정 단위 티켓뿐이다.
+
+    실패는 삼킨다. 장부는 퀘스트 로그에서 파생된 기록이고, 파생을 얻으려다 디스패치를 막는
+    교환은 성립하지 않는다.
+    """
+    try:
+        from asgard import orchestration as orc
+
+        # 목표는 Run 을 처음 열 때만 쓴다. 이미 열려 있으면 퀘스트 로그를 통째로 읽을 까닭이
+        # 없다 — 이 훅은 서브에이전트를 띄우는 길목이라 매 호출의 지연이 그대로 얹힌다.
+        objective = qid
+        if orc.run_for_quest(root, qid) is None:
+            objective = next((e.get("request") for e in load_quest_events(root, qid) if e.get("request")), "") or qid
+        orc.note_agent(
+            root,
+            qid,
+            target,
+            spec=call_spec(tool_input),
+            objective=str(objective),
+            caller=caller,
+        )
+    except Exception:
+        return
+
+
+def siege_close(root: str, qid: str, agent: str, summary: str = "") -> None:
+    """그 에이전트의 살아 있는 시도를 접는다. `siege_open` 이 연 것만 — 배정 단위 티켓의
+    수명은 ticket-finish 가 쥔다.
+
+    결과는 언제나 `succeeded` 다. 이 자리가 아는 것은 호출이 답을 들고 돌아왔다는 사실뿐이고,
+    판정의 옳고 그름은 다른 축이다 — 네이티브의 `bifrost.settle_turn` 도 턴이 예외로 죽었을
+    때만 failed 를 적는다. Verifier 의 FAIL 은 `summary` 로 간다.
+    """
+    try:
+        from asgard import orchestration as orc
+
+        orc.close_agent(root, qid, agent, "succeeded", summary=summary)
+    except Exception:
+        return
+
+
+def _role_summary(event: dict, want: str) -> str:
+    """역할 턴이 장부에 남길 한 줄 — 퀘스트 로그가 실제로 든 값만 옮긴다.
+
+    이벤트에 자유 서술 칸은 없다. 판정은 `verdict`(+`level`), 나머지는 단위 설명이나 바꾼 파일
+    수가 전부다 — 없는 것을 지어내면 장부가 근거를 잃는다.
+    """
+    if want == "verify":
+        level = event.get("level")
+        return "판정 %s%s" % (event.get("verdict") or "NA", " (%s)" % level if level else "")
+    subtask = str(event.get("subtask") or "").strip()
+    if subtask:
+        return subtask[:200]
+    changed = event.get("changed_files") or []
+    return "파일 %d건 변경" % len(changed) if changed else ""
+
+
 def pipeline_denial_reason(tickets: dict[str, dict], unit: str) -> str:
     """왜 이 유닛이 아직 조기 검증 대상이 아닌지 — done 아님 / 파일 미선언 / 파일 충돌 순으로 구체화."""
     ticket = tickets.get(unit)
@@ -479,12 +551,22 @@ def main():
                     problem = physical_worker_problem(root, qid, sid, tickets)
                     if problem:
                         deny_pretool(protocol, "Asgard Mode B: " + problem)
+            # 통과한 디스패치만 장부에 세운다 — 거절된 호출은 돌지 않으므로 시도가 아니다.
+            # 단위 마커가 붙은 호출은 건너뛴다: 그 수명은 ticket-claim/finish 가 이미 쥐고 있고
+            # (quest_log._siege_mirror), 여기서 또 열면 한 Task 를 둘이 연다.
+            if target and unit_marker(tool_input) is None:
+                siege_open(root, qid, agent, target, tool_input)
             if protocol == "cursor":
                 sys.stdout.write(json.dumps({"permission": "allow"}))
             sys.exit(0)
+        stopping = event in {"SubagentStop", "subagentStop", "stop"}
         want = ROLE_EVENT.get(agent)
         if not want:
-            sys.exit(0)  # Trinity 역할 아님 (딜리버리 전문가 포함) → 대상 아님
+            # Trinity 역할 아님 (딜리버리 전문가 포함) → 로그 규율의 대상은 아니다. 그래도 장부는
+            # 접는다: 안 접으면 `siege show` 가 이미 끝난 에이전트를 영영 "도는 중" 으로 보인다.
+            if stopping:
+                siege_close(root, qid, agent)
+            sys.exit(0)
         task = str(data.get("task") or data.get("description") or "")
         agent_id = str(data.get("agent_id") or data.get("subagent_id") or "")
         if event in {"SubagentStart", "subagentStart", "start"}:
@@ -537,6 +619,9 @@ def main():
                     protocol=protocol,
                 )
         record_agent_stop(root, qid, agent_id, agent, task)
+        # 규율을 통과한 뒤에 접는다 — 차단된 역할은 아직 안 끝났고, 접어 두면 이어지는 두 번째
+        # 종료가 접을 것을 못 찾아 그 역할이 장부에서 한 번 돈 것으로 남는다.
+        siege_close(root, qid, agent, summary=_role_summary(fresh[-1], want))
         # 통과 → 이 역할의 차단 카운터 리셋 (다음 위반은 새로 계수)
         try:
             path = os.path.join(root, ".asgard", "subgate-" + sid + ".json")

@@ -213,8 +213,9 @@ matcher = "^asgard-thinker$"
 type = "command"
 command = '{py} "$(git rev-parse --show-toplevel)/.codex/hooks/memory-activate.py" codex'
 
+# Unmatched: role discipline covers the three roles, but closing the siege ledger row covers every
+# agent that was called — a matcher would leave specialists standing as "still running" forever.
 [[hooks.SubagentStop]]
-matcher = "^asgard-(thinker|worker|verifier)$"
 
 [[hooks.SubagentStop.hooks]]
 type = "command"

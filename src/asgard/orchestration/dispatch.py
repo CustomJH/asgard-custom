@@ -20,6 +20,7 @@ import time
 import uuid
 
 from .board import _refresh, _task_dict
+from .mail import heartbeat_message
 from .model import DISPATCH_TERMINAL, MAX_ATTEMPTS, OUTCOMES, OrchestrationError, circuit_broken
 from .store import META_MAX_ATTEMPTS, connect, get_meta
 
@@ -253,6 +254,30 @@ def mark(root: str, dispatch_id: str, state: str) -> dict:
         )
         marked = conn.execute("SELECT * FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
     return _dispatch_dict(marked)
+
+
+def heartbeat(root: str, run_id: str, task_id: str, dispatch_id: str, phase: str = "") -> dict:
+    """시도가 아직 살아 있다고 알린다 — 우편함과 Dispatch 의 `updated_at` 둘 다에.
+
+    신호가 메일에만 남으면 `board.reclaim(older_than=N)` 이 그것을 못 본다. 그쪽은
+    `dispatches.updated_at` 으로만 오래된 시도를 고르기 때문이다. 그러면 30초마다 신호를
+    보내는 워커도 `--older-than 60` 에 회수되고, 회수된 Task 에 두 번째 워커가 열린다 —
+    한 Task 에 살아 있는 시도는 하나뿐이라는 계약이 신호를 보낸 쪽에서 깨진다.
+
+    끝난 Dispatch 에는 안 적는다. 정산된 시도의 `updated_at` 을 뒤로 미루면 그 시도가
+    언제 끝났는지가 기록에서 밀린다.
+
+    Raises:
+        OrchestrationError: 없는 Dispatch 이거나 이미 끝난 Dispatch 일 때.
+    """
+    with connect(root, write=True) as conn:
+        row = conn.execute("SELECT state FROM dispatches WHERE id=?", (dispatch_id,)).fetchone()
+        if row is None:
+            raise OrchestrationError(f"없는 Dispatch예요: {dispatch_id}")
+        if row["state"] in DISPATCH_TERMINAL:
+            raise OrchestrationError(f"이미 끝난 Dispatch는 살아 있다고 알릴 수 없어요: {dispatch_id} ({row['state']})")
+        conn.execute("UPDATE dispatches SET updated_at=? WHERE id=?", (time.time(), dispatch_id))
+    return heartbeat_message(root, run_id, task_id, dispatch_id, phase)
 
 
 def show(root: str, *, dispatch_id: str = "", task_id: str = "") -> dict | None:

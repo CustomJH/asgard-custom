@@ -396,8 +396,14 @@ def escalate(
     )
 
 
-def heartbeat(root: str, run_id: str, task_id: str, dispatch_id: str, phase: str = "") -> dict:
-    """아직 살아 있다는 신호. 완료가 아니며, 이것만으로 워커를 정리하면 안 된다."""
+def heartbeat_message(root: str, run_id: str, task_id: str, dispatch_id: str, phase: str = "") -> dict:
+    """살아 있다는 신호를 우편함에 적는다. 완료가 아니며, 이것만으로 워커를 정리하면 안 된다.
+
+    이름이 `heartbeat` 가 아닌 이유는 여기가 절반이기 때문이다. 신호는 메일과 Dispatch 의
+    `updated_at` **둘 다** 닿아야 회수(`board.reclaim`)가 살아 있는 시도를 비껴간다. 그
+    둘을 한 번에 하는 자리는 `dispatch.heartbeat` 다 — 이 모듈은 Dispatch 행을 못 쓴다
+    (board 와 같은 등급이라 서로를 안 부른다).
+    """
     return send(
         root,
         run_id,

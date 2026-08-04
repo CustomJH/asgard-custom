@@ -517,6 +517,9 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
         ("정책", frozenset({"policy"})),
         ("장부", frozenset({"board", "mail"})),
         ("배차", frozenset({"dispatch"})),
+        # roster — 호출된 에이전트 하나를 Run·Task·Dispatch 로 엮는 조합. 배차 위인 이유는
+        # 아래 셋을 순서대로 부르기만 하기 때문이다 — 어느 계약도 바꾸지 않는다.
+        ("명부", frozenset({"roster"})),
         ("파사드", frozenset({"__init__"})),
     ),
     "plan": (

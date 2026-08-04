@@ -325,9 +325,11 @@ def cc_settings() -> str:
                     ],
                     # Trinity mode B — role subagents must record their quest-log event before
                     # finishing (deterministic role-discipline; final backstop is still the Stop gate).
+                    # Unmatched: the same hook also closes the siege ledger row this dispatch opened,
+                    # and delivery specialists open one too. A matcher here would leave every
+                    # non-role agent standing as "still running" in `asgard siege` forever.
                     "SubagentStop": [
                         {
-                            "matcher": "^asgard-(thinker|worker|verifier)$",
                             "hooks": [
                                 {
                                     "type": "command",

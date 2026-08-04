@@ -39,16 +39,15 @@ from .board import (
     task_show,
     task_update,
 )
+from .dispatch import heartbeat, open_dispatch
 from .dispatch import history as dispatch_history
 from .dispatch import mark as dispatch_mark
-from .dispatch import open_dispatch
 from .dispatch import settle as dispatch_settle
 from .dispatch import show as dispatch_show
 from .mail import (
     ask,
     check,
     escalate,
-    heartbeat,
     inbox,
     pending_questions,
     reply,
@@ -68,6 +67,7 @@ from .model import (
     task_status_for,
     topo_waves,
 )
+from .roster import close_agent, live_agents, note_agent
 from .store import META_MAX_ATTEMPTS, db_path, exists, reset, reset_messages, reset_tasks, set_meta
 from .strategy import SHAPES
 from .strategy import choose as choose_shape
@@ -87,6 +87,7 @@ __all__ = [
     "ask",
     "check",
     "circuit_broken",
+    "close_agent",
     "db_path",
     "dispatch_history",
     "dispatch_mark",
@@ -99,6 +100,8 @@ __all__ = [
     "gate_resolve",
     "heartbeat",
     "inbox",
+    "live_agents",
+    "note_agent",
     "open_dispatch",
     "pending_questions",
     "reclaim",

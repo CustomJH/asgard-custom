@@ -27,6 +27,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from asgard import orchestration as orc  # noqa: E402
 from asgard.orchestration import model, strategy  # noqa: E402
+from asgard.orchestration.store import connect  # noqa: E402
 
 
 def found(row: dict | None) -> dict:
@@ -217,6 +218,37 @@ class TestReclaim(OrchestrationBase):
         orc.open_dispatch(self.root, task["id"])
         self.assertEqual(orc.reclaim(self.root, self.run_row["id"], older_than=3600), [])
         self.assertEqual(found(orc.task_show(self.root, task["id"]))["status"], "dispatched")
+
+    def test_heartbeat_keeps_a_live_dispatch_out_of_the_age_window(self):
+        """살아 있다는 신호가 회수를 비껴가게 하는가.
+
+        신호가 우편함에만 남던 동안 이 시험은 실패했다. `reclaim` 은 `dispatches.updated_at`
+        만 보므로, 30초마다 신호를 보내는 워커도 `older_than=60` 에 회수되고 그 Task 에
+        두 번째 워커가 열렸다 — 한 Task 에 살아 있는 시도는 하나라는 계약이 신호를 보낸
+        쪽에서 깨진다.
+        """
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        with connect(self.root, write=True) as conn:  # 신호 없이 창 밖으로 늙힌다
+            conn.execute("UPDATE dispatches SET updated_at=? WHERE id=?", (time.time() - 600, dispatch["id"]))
+
+        orc.heartbeat(self.root, self.run_row["id"], task["id"], dispatch["id"], phase="아직 붙들고 있어요")
+
+        self.assertEqual(orc.reclaim(self.root, self.run_row["id"], older_than=60), [])
+        self.assertEqual(found(orc.dispatch_show(self.root, dispatch_id=dispatch["id"]))["state"], "ready")
+        self.assertEqual(
+            [m["type"] for m in orc.inbox(self.root, self.run_row["id"]) if m["type"] == "heartbeat"],
+            ["heartbeat"],
+            "신호가 우편함에는 안 남았다 — 코디네이터가 진행 상황을 못 읽는다",
+        )
+
+    def test_a_settled_dispatch_cannot_claim_to_be_alive(self):
+        """끝난 시도의 `updated_at` 을 뒤로 미루면 그 시도가 언제 끝났는지가 밀린다."""
+        task = orc.task_create(self.root, self.run_row["id"], "unit")
+        dispatch = orc.open_dispatch(self.root, task["id"])
+        orc.dispatch_settle(self.root, dispatch["id"], "succeeded")
+        with self.assertRaises(orc.OrchestrationError):
+            orc.heartbeat(self.root, self.run_row["id"], task["id"], dispatch["id"])
 
 
 class TestUndispatchable(OrchestrationBase):

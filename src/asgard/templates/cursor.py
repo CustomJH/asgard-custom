@@ -135,10 +135,10 @@ def cursor_hooks_json() -> str:
                         {"command": f"{py} .cursor/hooks/map-activate.py cursor"},
                     ],
                     "subagentStop": [
-                        {
-                            "matcher": "^asgard-(thinker|worker|verifier)$",
-                            "command": f"{py} .cursor/hooks/subagent-gate.py stop",
-                        },
+                        # 매처 없음 — 로그 규율은 세 역할만 받지만, 배차 장부를 접는 것은 불린
+                        # 에이전트 전부다. 매처를 걸면 딜리버리 전문가가 `asgard siege` 에서
+                        # 영영 "도는 중" 으로 남는다.
+                        {"command": f"{py} .cursor/hooks/subagent-gate.py stop"},
                         # 미시 형상 래칫 — 매처 없음: 규율은 역할이 아니라 쓴 코드를 따라간다
                         {"command": f"{py} .cursor/hooks/craft-gate.py cursor"},
                     ],
