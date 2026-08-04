@@ -97,6 +97,7 @@ def _builtin_plugins() -> dict[str, dict]:
     from .templates.lagom import LAGOM_SKILLS
     from .templates.memory import MEMORY_SKILL_MD
     from .templates.mimir import MIMIR_SKILLS, mimir_core_skill
+    from .templates.siege import SIEGE_SKILLS
     from .templates.thor import THOR_SKILLS, eitri_core_skill, thor_core_skill
     from .templates.worker import WORKER_SKILLS
 
@@ -139,6 +140,14 @@ def _builtin_plugins() -> dict[str, dict]:
             "skills": [("asgard-mimir", mimir_core_skill()), *MIMIR_SKILLS],
             "agents": ("mimir",),
             "resolver": "mimir",
+        },
+        # siege — 배차 장부를 모는 계약. 딜리버리 전문가와 달리 표면이 아니라 조율을 진다:
+        # Worker 와 Thor 편대장이 배차를 여는 쪽이라 그 둘에만 붙인다.
+        "siege": {
+            "description": "Dispatch ledger — task graphs, attempts, coordinator mail, and decision gates",
+            "skills": SIEGE_SKILLS,
+            "agents": ("worker", "thor-lead"),
+            "resolver": "siege",
         },
         "lagom": {"description": "Lagom review, debt, and compression modes", "skills": LAGOM_SKILLS},
         "bragi": {"description": "Human-voice audit and rewrite for reports, any language", "skills": BRAGI_SKILLS},
@@ -694,6 +703,10 @@ def _builtin_resolver(name: str):
         from .templates.mimir import resolve_mimir_skills
 
         return resolve_mimir_skills
+    if name == "siege":
+        from .templates.siege import resolve_siege_skills
+
+        return resolve_siege_skills
     return None
 
 
