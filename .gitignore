@@ -266,18 +266,18 @@ workspace/
 # 블록 밖 + `**/` 접두: asgard setup 의 블록 교체·광역 규칙 이관(정확히 `.asgard/` 만 삭제)에서 생존.
 **/.asgard/
 
+# 폴더 **입구**는 열어 둔다 — 안쪽은 위 한 줄 그대로 닫힌 채다. 입구까지 닫으면 완료 게이트가
+# 워킹트리를 못 찍는다: 스냅샷이 `git add -A -- . :(exclude).asgard` 로 도는데, 무시된 경로를
+# pathspec 이 직접 지목한 꼴이 되어 git 이 거부한다(rc=1). 그러면 changed_files 가
+# `<snapshot-unavailable>` 이 되고 이 저장소의 모든 세션이 [gate:snapshot-fail] 로 막힌다.
+!/.asgard/
+/.asgard/*
+
 # ── 예외 하나: 이 저장소의 2차 메모리 정본 (26-08-01 결정) ──
 # 2차 메모리는 "정본은 Git" 위에 서 있는데, 위 한 줄이 승인된 record 를 통째로 추적 밖으로
 # 밀어내 이 저장소에서만 그 서사가 성립하지 않았다 (`git ls-files .asgard` 가 빈 출력이었다).
 # 무시를 걷지 않고 records/ 한 갈래만 뚫는다.
-#
-# gitignore 규칙상 **부모가 제외된 자식은 되살릴 수 없다** — 그래서 위에서 아래로 한 층씩
-# 열고 형제는 다시 닫는다. 선두 `/` 로 저장소 루트에 못 박는 것도 의도다: 앵커가 없으면
-# `!.asgard/` 가 어느 깊이의 `.asgard` 든 되살려 위 `**/` 한 줄을 통째로 무효로 만든다.
-!/.asgard/
-/.asgard/*
-!/.asgard/memory/records/
-!/.asgard/memory/records/**
+
 design-qa.md
 
 output/
