@@ -34,6 +34,7 @@ _DESC = {
     "freyja-gate": "visual surfaces of THIS diff — judged by each Freyja engine, ratcheted vs a base",
     "thor": "backend procedure engine — verb playbooks, the next verb, and the correctness gate",
     "tutor": "hand THIS diff back to you — what changed, and the questions only you can answer",
+    "review": "optional read-only suggestions — runs only after Odin approves an exact diff",
     "surface": "public API surface vs a base ref — breaking changes and call-site obligations",
     "setup": "set up or refresh project-aware assets",
     "update": "update asgard to the latest release",
@@ -57,6 +58,12 @@ _DESC = {
 }
 # 그룹별 서브커맨드 설명 — 위와 같은 규칙(없으면 앱 help, 차례표에만 남은 이름은 버림).
 _SUB_DESC = {
+    "review": {
+        "list": "pending and completed reviews",
+        "show": "one request and its saved suggestions",
+        "decide": "accept, dismiss, resolve, or reopen a suggestion",
+        "cancel": "decline a pending request without model cost",
+    },
     "role": {
         "list": "bridge flags + role placements",
         "model": "list or set role models",

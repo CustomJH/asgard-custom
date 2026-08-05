@@ -97,6 +97,7 @@ RESERVED = frozenset(
         "open",
         "plugins",
         "role",
+        "review",
         "setup",
         "skills",
         "start",
