@@ -19,7 +19,7 @@ from __future__ import annotations
 import json
 import threading
 
-from ..session import ql
+from ..quest_bridge import ql
 
 
 class TicketLease:

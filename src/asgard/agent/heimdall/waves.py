@@ -13,7 +13,8 @@ from contextlib import ExitStack
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
-from ..session import TurnCancelled, ql
+from ..quest_bridge import ql
+from ..session import TurnCancelled
 from .journal import record_writes
 from .patch_merge import merge_unit_patches
 from .planning import _plan_waves

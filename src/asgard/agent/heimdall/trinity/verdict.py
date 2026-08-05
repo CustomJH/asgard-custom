@@ -9,7 +9,7 @@ from .... import theme, ui
 from ....hooks.quest_log import EMPTY as _EMPTY_DIFF
 from ....hooks.quest_log import inspection_evidence as _inspection_evidence
 from ....hooks.quest_log import trivial_evidence as _trivial_evidence
-from ...session import gate, ql
+from ...quest_bridge import gate, ql
 from ..classify import _gate_repair, _gate_sig
 from ..roles import (
     LAGOM_VERIFIER_NOTE,

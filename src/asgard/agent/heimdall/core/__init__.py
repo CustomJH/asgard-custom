@@ -16,7 +16,8 @@ from typing import Callable
 
 from ....providers import ResolvedProvider, resolve_trinity
 from ....sessions import session_key as _session_key
-from ...session import TurnCancelled, ql
+from ...quest_bridge import ql
+from ...session import TurnCancelled
 from ..bifrost import NULL_LEDGER
 from ..classify import memory_write_intent
 from ..delivery import DeliveryDispatch

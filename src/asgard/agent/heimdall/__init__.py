@@ -34,7 +34,7 @@ Claude Code/Codex/Cursor 세션과 퀘스트 로그을 이어 쓴다 (크로스�
 시험이 내부를 아는 것은 괜찮지만, 그것을 파사드에 넣으면 interface 계층까지 따라 알게 된다.
 """
 
-from ..session import gate, ql
+from ..quest_bridge import gate, ql
 from .classify import classify_api_error, classify_heuristic, memory_write_intent
 from .core import Heimdall, SessionLike
 from .delivery import DeliveryDispatch

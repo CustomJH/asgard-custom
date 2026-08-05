@@ -2525,10 +2525,83 @@ class TestVerifyCostControls(TrinityBase):
 
         상수로 적힌 상한은 정책의 baseline_timeout 이 커질 때 조용히 어긋난다 — 정책에서 계산해야
         둘이 갈라지지 않는다."""
-        from asgard.agent.session import _ql_timeout
+        from asgard.agent.quest_bridge import _ql_timeout
 
         self.policy(baseline_checks=["python3 -m compileall -q ."], baseline_timeout=600)
         self.assertGreater(_ql_timeout(self.root), 600 * 2)  # 체크 1개 + 계약 몫보다 커야 한다
+
+    def test_only_the_harness_running_calls_pay_for_a_process(self):
+        """어느 호출이 프로세스로 나가는가 — 하네스 명령을 실제로 도는 갈래만.
+
+        이 갈림이 뒤집히면 둘 중 하나가 조용히 깨진다: 무거운 갈래가 안으로 들어오면 분 단위
+        벽시계를 끊을 손이 없어지고(timeout 은 프로세스에만 걸린다), 가벼운 갈래가 밖으로 나가면
+        역할 턴 하나가 되사는 왕복이 29번이다. 그래서 목록이 아니라 **기준**을 고정한다."""
+        from asgard.agent.quest_bridge import _ql_heavy
+
+        for args in (("verify-baseline",), ("append", "--verdict", "PASS"), ("state", "--request-stdin")):
+            with self.subTest(args=args):
+                self.assertTrue(_ql_heavy(args))
+        for args in (("state",), ("next",), ("open", "q1"), ("append", "--role", "worker", "--event", "work")):
+            with self.subTest(args=args):
+                self.assertFalse(_ql_heavy(args))
+
+    def test_one_summary_builds_the_working_tree_once(self):
+        """요약 하나가 트리를 한 번만 짓는다 — 그리고 그 값이 셋에게 그대로 간다.
+
+        26-08-06 실측: 셋이 저마다 지을 때 `state` 한 번이 git 24회·301ms 였고 그중 224ms 가
+        같은 트리를 두 번 더 짓는 몫이었다. 값보다 큰 것은 일관성이다 — 셋 사이에 파일이 바뀌면
+        한 요약이 서로 다른 트리를 근거로 쓴다. 캐시로는 이것을 못 산다: 트리 참조는 워킹트리가
+        바뀌면 같이 바뀌어야 하고(그래서 `current_tree_ref` 자체는 매번 다시 짓는다), 수명을 아는
+        것은 판정을 조립하는 쪽뿐이다."""
+        import asgard.hooks.asgard_hooklib.summary as summary_mod
+        from asgard.hooks.asgard_hooklib.ledger import load_events
+        from asgard.hooks.asgard_hooklib.policy import load_policy
+
+        self.open_quest()
+        self.write("app.py", "print('ok')\n")
+        built: list[str | None] = []
+        real = summary_mod.current_tree_ref
+
+        def counting(root: str):
+            built.append(real(root))
+            return built[-1]
+
+        summary_mod.current_tree_ref = counting
+        try:
+            summary_mod.summarize(self.root, "q1", load_events(self.root, "q1"), load_policy(self.root))
+        finally:
+            summary_mod.current_tree_ref = real
+        self.assertEqual(len(built), 1, f"요약 한 번이 트리를 {len(built)}번 지었다")
+
+        # 그리고 캐시가 아니다 — 파일이 바뀌면 다음 트리는 다른 값이어야 한다
+        from asgard.hooks.asgard_hooklib.tree import current_tree_ref
+
+        before = current_tree_ref(self.root)
+        self.write("app.py", "print('changed')\n")
+        self.assertNotEqual(before, current_tree_ref(self.root))
+
+    def test_the_in_process_branch_answers_like_the_process_one(self):
+        """같은 명령이 두 갈래에서 같은 것을 낸다 — 종료 코드도, stdout 도.
+
+        인프로세스 갈래는 `sys.stdout` 을 바꿔 끼워 답을 받는다. 그 배선이 틀리면 반환은 0인데
+        본문이 비고, 호출부는 `json.loads("") or {}` 로 그것을 조용히 빈 상태로 읽는다."""
+        import json as _json
+        import subprocess
+        import sys
+
+        from asgard.agent import quest_bridge
+
+        self.open_quest()
+        inproc = quest_bridge.ql(self.root, "state", session="native")
+        forced = subprocess.run(
+            [sys.executable, "-m", "asgard.hooks.quest_log", "state", "--session", "native"],
+            capture_output=True,
+            text=True,
+            cwd=self.root,
+            timeout=60,
+        )
+        self.assertEqual(inproc.returncode, forced.returncode)
+        self.assertEqual(_json.loads(inproc.stdout)["quest_id"], _json.loads(forced.stdout)["quest_id"])
 
     def test_a_contract_slower_than_the_timeout_says_so(self):
         """계약이 timeout 보다 느리면 영영 못 채운다. 미충족은 유지하되 이유를 실패로 적지 않는다 —

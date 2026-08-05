@@ -6,7 +6,7 @@ import json
 import tempfile
 
 from .... import ui
-from ...session import ql
+from ...quest_bridge import ql
 from ..journal import record_writes
 from ..planning import _UNITS_NOTE, _parse_units, _plan_waves
 from ..roles import (

@@ -6,7 +6,7 @@ import sys
 
 from ... import ui
 from ...i18n import t
-from ..session import ql
+from ..quest_bridge import ql
 from .catalog import _COMMAND_HELP, _help_items
 from .chrome import _O, banner
 from .editline import _PT_CTX

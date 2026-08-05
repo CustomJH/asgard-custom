@@ -19,7 +19,7 @@ from .paths import fsync_dir, is_testfile, mtime
 from .policy import full_verify_required, sensitive_path, verify_strength
 from .runners import gate_first_checks_available, rejected_checks
 from .session import pointer_qid
-from .tree import deleted_tests, diff_state, signature_risk, stale_pass_scope
+from .tree import current_tree_ref, deleted_tests, diff_state, signature_risk, stale_pass_scope
 
 
 def load_priors(root: str) -> dict:
@@ -137,7 +137,14 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
     ignored_base = next(
         (e.get("ignored_snapshot") for e in events if isinstance(e.get("ignored_snapshot"), dict)), None
     )
-    cur, changed, lines, nt_lines = diff_state(root, base_ref, ignored_base, quest_events_scope(events))
+    # 한 요약이 트리를 **한 번만** 짓는다. 아래 셋(diff_state·deleted_tests·signature_risk)이
+    # 저마다 지으면 같은 워킹트리를 세 번 짓게 되는데, 26-08-06 실측으로 그것이 `state` 한 번의
+    # 301ms 중 224ms 였다. 값만의 문제도 아니다 — 셋 사이에 파일이 바뀌면 한 요약이 서로 다른
+    # 트리를 근거로 쓴다. 여기서 한 번 지어 나눠 주면 그 창이 닫힌다.
+    current_ref = current_tree_ref(root) if base_ref and base_ref != "NONE" else None
+    cur, changed, lines, nt_lines = diff_state(
+        root, base_ref, ignored_base, quest_events_scope(events), current_ref=current_ref
+    )
     verifies = [e for e in events if e.get("event") == "verify"]
     passes = [e for e in verifies if e.get("verdict") == "PASS"]
     last_pass = passes[-1] if passes else None
@@ -163,7 +170,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         if sig and e.get("failure_sig") == sig:
             fail_streak += 1
     sens = [f for f in changed if sensitive_path(f, policy["sensitive_paths"])]
-    dts = deleted_tests(root, base_ref)
+    dts = deleted_tests(root, base_ref, current_ref=current_ref)
     # small_write 판정은 테스트 파일 제외 — 테스트 추가는 검증 표면이지 리스크 질량이 아니다
     # (스모크 실측: 잠금 테스트 2파일 추가 → big 오판 → full 강제·게이트-우선 무력화). 삭제는 dts가 잡는다.
     nt_files = [f for f in changed if not is_testfile(f)]
@@ -248,7 +255,7 @@ def summarize(root: str, qid: str, events: list[dict], policy: dict) -> dict:
         # 적어 두었는데 실행되지 않는 체크 — 비어 있지 않으면 사용자가 켠 줄 아는 증거 레인이
         # 실제로는 꺼져 있다. 조용히 버리지 않고 상태에 넣어 doctor·판정 표면이 말하게 한다.
         "baseline_checks_rejected": rejected_checks(policy),
-        "sig_risk": signature_risk(root, base_ref),
+        "sig_risk": signature_risk(root, base_ref, current_ref=current_ref),
         "tickets": list(tickets.values()),
         "ticket_counts": {status: count for status, count in ticket_counts.items() if count},
         # Pipeline eligibility (no cross-unit barrier) — units safe to verify now, before the

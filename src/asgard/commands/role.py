@@ -273,7 +273,7 @@ def _bridge_preconditions(root: str, role: str, sid: str) -> dict:
     두 실패는 종료 코드가 같지만(2) `code`가 갈린다. 모르는 역할은 인자가 틀린 것이고, quest
     없음은 순서가 어긋난 것이다. 호스트가 그 둘에 다르게 반응해야 하기 때문이다 — 하나는
     명령을 고쳐 다시 부르고, 하나는 같은 명령을 quest를 연 뒤 그대로 부른다."""
-    from ..agent.session import ql
+    from ..agent.quest_bridge import ql
 
     if role not in TRINITY_ROLES:
         raise errors.InvalidInput(
@@ -335,7 +335,8 @@ def _turn_inputs(
 
 def run_role_run(role: str, task: str, json_out: bool = False) -> int:
     from ..agent.heimdall import record_writes, role_prompt
-    from ..agent.session import AgentSession, make_client, ql
+    from ..agent.quest_bridge import ql
+    from ..agent.session import AgentSession, make_client
 
     root = os.getcwd()
     errors.set_json_surface(json_out)

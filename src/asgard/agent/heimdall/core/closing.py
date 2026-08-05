@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import json
 
-from ...session import TurnCancelled, ql
+from ...quest_bridge import ql
+from ...session import TurnCancelled
 from ..journal import _log_classify
 from ._shared import _HeimdallState
 

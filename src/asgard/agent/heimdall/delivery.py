@@ -15,7 +15,8 @@ import os
 import re
 
 from ... import theme, ui
-from ..session import TurnCancelled, ql
+from ..quest_bridge import ql
+from ..session import TurnCancelled
 from .roles import _DELIVERY, _DELIVERY_READONLY, _LEAD_BASE, _skill_support
 from .todo import TodoBoard, files_note
 from .toolspec import THOR_SQUAD_TOOL

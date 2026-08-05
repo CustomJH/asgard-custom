@@ -14,7 +14,7 @@ import time
 import uuid
 
 from .... import activity, i18n, ui
-from ...session import ql
+from ...quest_bridge import ql
 from ..bifrost import NULL_LEDGER, CoordinatorLoop, open_ledger
 from ..journal import record_writes
 from ..roles import _ROLE_KEY, _transition_line

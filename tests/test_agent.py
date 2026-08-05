@@ -16,7 +16,7 @@ from unittest import mock
 
 from asgard.agent import tools as T
 from asgard.agent.heimdall import record_writes
-from asgard.agent.session import gate, ql
+from asgard.agent.quest_bridge import gate, ql
 
 
 class Base(unittest.TestCase):

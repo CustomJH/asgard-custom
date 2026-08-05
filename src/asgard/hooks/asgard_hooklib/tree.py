@@ -127,7 +127,13 @@ def seed_index(root: str, head: str, index_path: str, run) -> bool:
 
 
 def current_tree_ref(root: str) -> str | None:
-    """Materialize the exact current non-control tree in a temporary index without touching the user's index."""
+    """Materialize the exact current non-control tree in a temporary index without touching the user's index.
+
+    비싸다 — 이 저장소에서 한 번에 약 75ms 이고 그 대부분이 git 네 번이다. 한 판정이 이것을
+    여러 번 필요로 하면 **부르는 쪽이 한 번 지어 나눠 준다** (아래 세 함수의 `current_ref` 인자).
+    여기에 캐시를 두지 않는 이유는 정확성이다: 이 함수의 답은 작업 트리가 바뀌면 같이 바뀌어야
+    하고, 그 수명을 아는 것은 판정을 조립하는 쪽뿐이다 (26-08-06: 캐시를 여기 두자 파일을 고친
+    뒤에도 옛 해시가 나왔다 — 게이트가 낡은 트리로 PASS 를 주는 모양이다)."""
     rc, raw_head = git(root, "rev-parse", "--verify", "HEAD")
     head = raw_head.decode("utf-8", "replace") if isinstance(raw_head, bytes) else raw_head
     if rc != 0 or not head.strip():
@@ -171,7 +177,11 @@ def current_tree_ref(root: str) -> str | None:
 
 
 def diff_state(
-    root: str, base_ref: str | None, ignored_base: dict[str, str] | None = None, scope=()
+    root: str,
+    base_ref: str | None,
+    ignored_base: dict[str, str] | None = None,
+    scope=(),
+    current_ref: str | None = None,
 ) -> tuple[str, list[str], int, int]:
     """(diff_hash, changed_files, changed_lines, nontest_lines) — base_ref 트리 ↔ 현재 워킹트리 전체.
     커밋 여부와 무관 (base_ref는 open 시점 고정 커밋). `.asgard/**` 제외 — 로그 기록 자체가
@@ -181,7 +191,7 @@ def diff_state(
     별도 하드 트리거 (deleted_tests)."""
     if not base_ref or base_ref == "NONE":
         return EMPTY, [], 0, 0
-    current_ref = current_tree_ref(root)
+    current_ref = current_ref or current_tree_ref(root)
     if not current_ref:
         return hashlib.sha256(b"snapshot-unavailable").hexdigest(), ["<snapshot-unavailable>"], 0, 0
     spec = [base_ref, current_ref, "--", ".", ":(exclude).asgard"]
@@ -235,7 +245,7 @@ def diff_state(
     return (h.hexdigest() if changed else EMPTY), changed, lines, nt_lines
 
 
-def deleted_tests(root: str, base_ref: str | None) -> list[str]:
+def deleted_tests(root: str, base_ref: str | None, current_ref: str | None = None) -> list[str]:
     """base_ref 이후 삭제된 테스트 파일 — 테스트를 지워 green을 사는 경로 차단 (anti-Goodhart,
     Anthropic feature-ledger "removing tests is unacceptable" analog). 삭제만 본다 — 테스트 수정은
     정상 작업이라 전부 full로 올리면 세금이 되레 는다. verifier_gate.py와 동일 유지 (단일 출처 원칙).
@@ -247,7 +257,7 @@ def deleted_tests(root: str, base_ref: str | None) -> list[str]:
     종전 비교로 남는다 — 과다 트리거는 안전한 방향이다."""
     if not base_ref or base_ref == "NONE":
         return []
-    current_ref = current_tree_ref(root)
+    current_ref = current_ref or current_tree_ref(root)
     refs = [base_ref, current_ref] if current_ref else [base_ref]
     _, out = git(root, "diff", "--name-only", "--diff-filter=D", *refs, "--", ".", ":(exclude).asgard")
     return [p for p in out.splitlines() if p.strip() and is_testfile(p)]
@@ -256,7 +266,7 @@ def deleted_tests(root: str, base_ref: str | None) -> list[str]:
 _SIG_PAT = re.compile(r"^-\s*(def |class |function |export |public |fn |return\b|yield\b)")
 
 
-def signature_risk(root: str, base_ref: str | None) -> bool:
+def signature_risk(root: str, base_ref: str | None, current_ref: str | None = None) -> bool:
     """diff에 삭제·변경된 공개 선언·반환 라인 존재 여부 — 숨은-caller/값 형태 리스크 신호.
     '-' 라인만 본다: 신규 추가(+def)는 기존 caller가 없고, 바뀐 줄은 기존 '-' 절반이 잡힌다.
     게이트-우선(STANDARD) 라우팅 전용 — verifier_gate 대응 불필요.
@@ -265,7 +275,7 @@ def signature_risk(root: str, base_ref: str | None) -> bool:
     '-' 라인이 되어 있지도 않은 시그니처 삭제가 잡힌다."""
     if not base_ref or base_ref == "NONE":
         return False
-    current_ref = current_tree_ref(root)
+    current_ref = current_ref or current_tree_ref(root)
     refs = [base_ref, current_ref] if current_ref else [base_ref]
     rc, out = git(root, "diff", "-U0", *refs, "--", ".", ":(exclude).asgard")
     if rc != 0:

@@ -387,6 +387,9 @@ PACKAGE_TIERS: dict[str, tuple[tuple[str, frozenset[str]], ...]] = {
                     "rate_limit",
                     "compact_lessons",
                     "unit_workspace",
+                    # 퀘스트 로그·게이트를 부르는 자리. agent 안의 어느 모듈도 안 부르고 hooks 만
+                    # 부르므로 바닥이다 — 루프(heimdall)와 표면(repl)이 여기로 내려온다.
+                    "quest_bridge",
                 }
             ),
         ),
