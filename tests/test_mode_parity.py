@@ -133,17 +133,19 @@ class TestHookProtocolParity(unittest.TestCase):
 
     def test_control_surface_is_protected_in_every_mode(self):
         with tempfile.TemporaryDirectory() as root:
-            for folder in (".claude", ".cursor", ".codex", ".agents", ".asgard"):
+            # 닫혀 있는 것은 판정의 물리 대조가 못 보는 하네스 상태와, 이 가드의 뿌리를 정하는
+            # 설정 파일 둘뿐이다. 나머지 스캐폴드는 diff 스냅샷 안이라 평범한 작업 대상이다.
+            for target in (".asgard/state/x.json", ".claude/settings.json", ".claude/settings.local.json"):
                 payload = {
-                    "agent_type": "asgard-worker",  # 쓰기 권한 역할이어도 통제 표면은 작업 대상이 아니다
+                    "agent_type": "asgard-worker",  # 쓰기 권한 역할이어도 하네스 상태는 작업 대상이 아니다
                     "tool_name": "Write",
-                    "tool_input": {"file_path": f"{folder}/hooks/x.py"},
+                    "tool_input": {"file_path": target},
                     "cwd": root,
                 }
-                self.assertEqual(_hook_payload("readonly_guard", payload, [])[0], 2, folder)
-                self.assertEqual(_hook_payload("readonly_guard", payload, ["codex"])[0], 2, folder)
+                self.assertEqual(_hook_payload("readonly_guard", payload, [])[0], 2, target)
+                self.assertEqual(_hook_payload("readonly_guard", payload, ["codex"])[0], 2, target)
                 code, out = _hook_payload("readonly_guard", payload, ["cursor"])
-                self.assertEqual((code, json.loads(out)["permission"]), (0, "deny"), folder)
+                self.assertEqual((code, json.loads(out)["permission"]), (0, "deny"), target)
 
     def test_readonly_roles_are_blocked_in_every_mode(self):
         with tempfile.TemporaryDirectory() as root:

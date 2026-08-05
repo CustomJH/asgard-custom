@@ -1,7 +1,8 @@
 """작업 뿌리 — 저장소 하나가 곧 작업 경계라는 가정이 깨지는 자리들.
 
 여기서 보는 것은 셋이다. 선언되지 않은 저장소 밖 경로는 그대로 막히는가, 선언된 자리는
-열리는가, 그리고 열린 자리 안에서도 스캐폴드(`.claude`/`.asgard`)는 여전히 막히는가.
+열리는가, 그리고 열린 자리 안에서도 하네스 상태(`.asgard`)와 이 가드의 뿌리를 정하는 파일
+(`.claude/settings*.json`)은 여전히 막히는가.
 스튜디오의 개인 작업 공간은 `~/.asgard/studio/workspace`라 경로에 `.asgard`가 들어 있다 —
 그 한 글자 때문에 창의 기본 자리에서 쓰기가 한 건도 안 통하던 것이 이 파일의 출발점이다.
 """
@@ -105,7 +106,7 @@ class TestDeclaredRootOpens(Sandboxed):
         )
         self.assertEqual(self.edit(os.path.join(self.pair, "src", "api.py"))[0], 0)
 
-    def test_declared_root_scaffold_stays_protected(self) -> None:
+    def test_declared_root_boundary_file_stays_protected(self) -> None:
         _write(
             os.path.join(self.repo, ".asgard", "asgard-setting-project.json"),
             {"paths": {"additional_roots": [self.pair]}},
@@ -181,11 +182,18 @@ class TestNativeLaneAgrees(Sandboxed):
 
 
 class TestExistingDisciplineUnchanged(Sandboxed):
-    def test_repo_scaffold_blocked(self) -> None:
-        for scaffold in (".claude/settings.json", ".cursor/hooks.json", ".codex/config.toml", ".asgard/state/x.json"):
+    def test_harness_state_and_the_guards_own_boundary_stay_blocked(self) -> None:
+        for scaffold in (".claude/settings.json", ".claude/settings.local.json", ".asgard/state/x.json"):
             code, _, err = self.edit(os.path.join(self.repo, scaffold))
             self.assertEqual(code, 2, scaffold)
             self.assertIn("control-surface", err, scaffold)
+
+    def test_the_rest_of_the_scaffold_is_an_ordinary_work_target(self) -> None:
+        # 판정의 물리 대조가 닿는 자리다 (`diff_state` 는 `.asgard` 만 뺀다) — 거기 쓴 것은
+        # 판정 해시에 묶여 Odin 이 diff 로 본다. 스캐폴드가 곧 산출물인 저장소에서 이 자리를
+        # 닫아 두면 관측도 편집도 통째로 막힌다 (26-08-05: 한 세션의 첫 세 명령이 그렇게 막혔다).
+        for scaffold in (".claude/hooks/quest-log.py", ".claude/agents/asgard-worker.md", ".cursor/hooks.json"):
+            self.assertEqual(self.edit(os.path.join(self.repo, scaffold))[0], 0, scaffold)
 
     def test_readonly_role_still_cannot_write(self) -> None:
         payload = {
@@ -229,10 +237,10 @@ class TestReadingTheControlSurfaceIsNotWriting(Sandboxed):
         self.assertEqual(code, 2)
         self.assertIn("control-surface", err)
 
-    def test_deleting_a_scaffold_is_still_blocked(self) -> None:
-        self.assertEqual(self.bash("rm -rf .claude/hooks")[0], 2)
+    def test_deleting_harness_state_is_still_blocked(self) -> None:
+        self.assertEqual(self.bash("rm -rf .asgard/state")[0], 2)
 
-    def test_editing_a_scaffold_is_still_blocked(self) -> None:
+    def test_editing_harness_state_is_still_blocked(self) -> None:
         self.assertEqual(self.edit(os.path.join(self.repo, ".asgard", ".gitignore"))[0], 2)
 
 
@@ -376,10 +384,10 @@ class TestOnlyArgumentsAreTreatedAsPaths(Sandboxed):
         self.assertEqual(self.bash(command)[0], 2)
 
     def test_an_unterminated_heredoc_does_not_hide_the_arguments_after_it(self) -> None:
-        self.assertEqual(self.bash("cat <<EOF ; rm -rf .claude/hooks")[0], 2)
+        self.assertEqual(self.bash("cat <<EOF ; rm -rf .asgard/quest")[0], 2)
 
     def test_a_real_path_operand_is_still_a_write(self) -> None:
-        for command in ("rm -rf .asgard/quest", "cp x .claude/hooks/quest-log.py", "touch .asgard/state/forged"):
+        for command in ("rm -rf .asgard/quest", "cp x .asgard/receipts/r.json", "touch .asgard/state/forged"):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command)[0], 2)
 
@@ -479,7 +487,7 @@ class TestTheMessageOperandIsNotAnEscapeHatch(Sandboxed):
     def test_a_flag_that_takes_no_message_does_not_swallow_the_next_path(self) -> None:
         # `git checkout -m <경로>` 의 `-m` 은 피연산자를 안 받는다 — 하위 명령을 안 보고
         # 낱글자만 보면 바로 뒤 경로가 통째로 사라져 통제 표면 쓰기가 통과한다.
-        for command in ("git checkout -m .claude", "git checkout -m .claude/settings.json"):
+        for command in ("git checkout -m .asgard", "git checkout -m .claude/settings.json"):
             with self.subTest(command=command):
                 self.assertEqual(self.bash(command)[0], 2)
 

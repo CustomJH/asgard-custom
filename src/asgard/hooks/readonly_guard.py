@@ -93,15 +93,22 @@ _SHELL_EXPANSION = re.compile(r"\$\{?[A-Za-z_]")
 _AWK_WRITE = re.compile(r">|\bsystem\s*\(|\bclose\s*\(|\bgetline\b|\bENVIRON\b|\|")
 _VERIFY = {"pytest", "mypy", "pyright", "ty"}
 _GIT_READ = {"diff", "status", "log", "show", "grep", "ls-files", "rev-parse"}
-# 통제 표면은 클라이언트마다 다른 디렉토리에 있다 — 한 클라이언트만 보호하면 같은 규율이
-# 모드에 따라 있고 없다. 스캐폴드(훅·에이전트·설정)는 어느 모드에서도 작업 대상이 아니다.
-_CONTROL_PATHS = (".claude", ".cursor", ".codex", ".agents", ".asgard")
+# 통제 표면 = **판정의 물리 대조가 못 보는 자리**. `diff_state` 의 diff 범위는
+# `[base, current, "--", ".", ":(exclude).asgard"]` 라 `.asgard/**` 에 쓴 것은 판정 해시에
+# 한 바이트도 안 들어간다 (영역 지도 `.asgard/map/*.md` 만 따로 다시 읽어 넣는다). 그 자리만
+# 하드 블록으로 닫는다.
+#
+# `.claude`·`.cursor`·`.codex`·`.agents` 는 뺐다. 스냅샷 안에 있어서 거기 쓴 것은 판정 해시에
+# 묶이고 Odin 이 diff 로 본다 — 대가는 훅 본문도 고칠 수 있게 된다는 것이고, 얻는 것은 스캐폴드가
+# 곧 산출물인 저장소에서 관측·편집이 통째로 막히지 않는다는 것이다 (26-08-05: 한 세션의 첫 세
+# 명령이 `wc -l .claude/hooks/*.py` 형태로 연속 차단됐다). 되돌리려면 이 tuple 에 이름을 되돌린다.
+_CONTROL_PATHS = (".asgard",)
 _HOOK_DIRS = (".claude/hooks/", ".cursor/hooks/", ".codex/hooks/")
 _PRIVATE_CONTROL_PATHS = (".asgard/quest", ".asgard/receipts", ".asgard/state")
 # 이 가드 **자신의 경계를 정하는** 파일들 (`work_roots` 가 읽는 그 파일들이다). 여기에 쓸 수
-# 있으면 뿌리가 다시 정해져 나머지 판정이 통째로 무의미해지는데, `.asgard/**` 는 판정 스냅샷에서
-# 빠져 있어 (`diff_state` 의 exclude) 뒤에서 잡아 줄 물리 대조도 없다. 넓은 표식과 달리 인자가
-# 아닌 글에서도 찾는 이유가 그것이다 — 히어독 본문에 담아 넘긴 쓰기까지 본다.
+# 있으면 뿌리가 다시 정해져 나머지 판정이 통째로 무의미해진다. 넓은 표식과 달리 인자가 아닌
+# 글에서도 찾고, `.claude/settings*.json` 은 넓은 표식이 더는 안 덮으므로 쓰기 도구 갈래도
+# 이 목록으로 판정한다 — 히어독 본문에 담아 넘긴 쓰기까지 본다.
 #
 # 한계는 분명하다: 글자를 찾는 검사라 런타임에 조립한 경로(`'.claude/'+'settings.json'`)는 못
 # 본다. 실수와 곧이곧대로의 쓰기를 막는 그물이지 적대 봉쇄가 아니다. 경로 모양으로 적어 두는
@@ -310,11 +317,11 @@ def _path_token_within_root(roots: tuple[str, ...], token: str) -> bool:
 def _control_anchors(roots: tuple[str, ...], markers: tuple[str, ...]) -> list[str]:
     """이 판정에서 통제 표면으로 치는 실제 디렉터리들.
 
-    작업 뿌리마다의 표식 디렉터리에 **기계 전역 자리(`~/.asgard`·`~/.claude`·`~/.cursor`·
-    `~/.codex`)** 를 더한다. 두 가지가 그 아래 있다: 스튜디오 작업 공간이 `~/.asgard/studio/
-    workspace` 라 한 칸만 올라가면 어느 작업 뿌리에도 안 걸리는 하네스 상태에 닿고
-    (`<작업공간>/../workspace.db`), `~/.claude/settings.json` 은 `work_roots()` 가 읽어
-    **이 가드의 경계를 정하는** 파일이다 — 거기에 쓸 수 있으면 나머지 판정이 전부 무의미해진다.
+    작업 뿌리마다의 표식 디렉터리에 **기계 전역 자리(`~/.asgard`)** 를 더한다. 스튜디오 작업
+    공간이 `~/.asgard/studio/workspace` 라 한 칸만 올라가면 어느 작업 뿌리에도 안 걸리는 하네스
+    상태에 닿는다 (`<작업공간>/../workspace.db`). `~/.claude/settings.json` 은 표식이 아니라
+    `_BOUNDARY_FILES` 가 잡는다 — `work_roots()` 가 읽어 **이 가드의 경계를 정하는** 파일이라,
+    거기에 쓸 수 있으면 나머지 판정이 전부 무의미해진다.
 
     읽기를 막지는 않는다. 이 목록을 쓰는 두 자리 모두 read-only 레인을 먼저 빼기 때문이다
     (`control_shell_write` 의 `not readonly_shell`), 그리고 하네스가 이 프로젝트 몫으로 내준
@@ -865,7 +872,7 @@ def _refusal(reason: str, tool_name: str, command: str, path: str, roots: tuple[
 
     통제 표면 차단에 "읽기전용 역할" 문장을 붙이면 쓰기 권한이 있는 역할이 자기 신원을 의심하며
     턴을 태우고, Edit 차단에 Bash 허용목록을 붙이면 없는 레인을 찾는다 (26-07-26 실측).
-    스캐폴드 차단과 뿌리 밖 차단도 사유가 다르다: 전자는 아무도 못 고치는 자리라 처방이
+    하네스 상태 차단과 뿌리 밖 차단도 사유가 다르다: 전자는 아무도 못 고치는 자리라 처방이
     `asgard init/sync`고, 후자는 선언 한 줄로 열리는 자리라 처방이 그 선언이다. 둘을 한 문장으로
     묶어 두면 열 수 있는 차단이 못 여는 차단처럼 읽힌다 (26-08-04 실측)."""
     target = command[:160] if tool_name == "Bash" else (path[:160] or "(no path)")
@@ -882,9 +889,11 @@ def _refusal(reason: str, tool_name: str, command: str, path: str, roots: tuple[
     if reason == "control":
         return (
             f"Asgard control-surface policy blocked {tool_name}: {target}\n"
-            "Scaffolds and harness state (.claude/.cursor/.codex/.agents/.asgard) are not work "
-            "targets — no role edits them. Change the Asgard config through its own commands "
-            "(asgard init/sync)."
+            "Harness state (.asgard/, except the shared map .asgard/map/*.md) and the two files "
+            "that define this guard's work roots (.claude/settings.json, .claude/settings.local.json) "
+            "are not work targets: the verdict's physical diff does not cover them, so a write there "
+            "leaves no evidence. Change them through Asgard's own commands (asgard init/sync). "
+            "The rest of .claude/.cursor/.codex/.agents is an ordinary work target — edit it directly."
         )
     if tool_name == "Bash":
         return f"Asgard read-only role policy blocked mutating or unclassified Bash: {target}\n{READONLY_BASH_HINT}"
@@ -899,6 +908,28 @@ def _allow(protocol: str) -> None:
 
 
 _WRITE_TOOLS = {"Write", "Edit", "NotebookEdit"}
+
+
+def _forgery_surface_access(
+    tool_name: str, command: str, normalized_path: str, path: str, roots: tuple[str, ...], readonly_shell: bool
+) -> bool:
+    """기장·영수증·상태(`_PRIVATE_CONTROL_PATHS`)에 닿는가 — **위조를 막는 자리**라 넓은 표식보다
+    그물이 촘촘하다.
+
+    경로 인자로 안 풀리는 토큰도 나중에 실행돼 기장을 쓸 수 있어서 (`python -c "$PAYLOAD"`)
+    명령문 텍스트까지 본다. 그 텍스트에서 실행되지 않는 자리만 뺀다 — `_scannable_text`.
+    읽기 전용 레인은 먼저 빠진다: 여기를 지키는 것은 위조 방지이지 열람 금지가 아닌데, 예외가
+    없던 판에서는 `ls .asgard/quest/` 한 줄도 막혔다 (26-08-04 실측 4회)."""
+    if any(marker in normalized_path for marker in _PRIVATE_CONTROL_PATHS):
+        return True
+    if _path_token_targets_control(roots, path, _PRIVATE_CONTROL_PATHS):
+        return True
+    if tool_name != "Bash" or readonly_shell:
+        return False
+    scannable = _without_workspace(_scannable_text(command).replace("\\", "/"))
+    return any(marker in scannable for marker in _PRIVATE_CONTROL_PATHS) or _command_targets_control(
+        roots, command, _PRIVATE_CONTROL_PATHS
+    )
 
 
 def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ...], agent: str) -> str:
@@ -923,46 +954,37 @@ def refusal_reason(tool_name: str, command: str, path: str, roots: tuple[str, ..
         or _within_unit_workspace(os.path.expanduser(path))
         or _within_managed_map(roots, _resolve_token(roots, path) if roots else "")
     )
+    # 넓은 표식이 `.asgard` 하나로 좁아졌으므로 `.claude/settings*.json` 은 여기서 따로 본다 —
+    # 그 파일이 `work_roots()` 를 정하고, 정하는 자리를 열면 나머지 판정이 통째로 무의미해진다.
     control_write = (
         tool_name in _WRITE_TOOLS
         and not harness_owned
         and (
             any(marker in normalized_path for marker in _CONTROL_PATHS)
+            or any(name in normalized_path for name in _BOUNDARY_FILES)
             or _path_token_targets_control(roots, path, _CONTROL_PATHS)
         )
     )
-    # Bash 갈래는 **읽기 전용 레인을 먼저 뺀다**. 사설 통제 경로를 지키는 것은 위조 방지이지
-    # 열람 금지가 아닌데, 종전에는 예외가 없어 `ls .asgard/quest/` 한 줄도 막혔다 — 자기 기장을
-    # 못 읽는 역할이 같은 사실을 알아내려고 턴을 더 썼다 (26-08-04 실측 4회).
     readonly_shell = tool_name == "Bash" and is_readonly_bash_safe(command, roots=roots)
-    # 사설 통제 경로(기장·영수증·상태)는 **위조를 막는 자리**라 넓은 표식보다 그물이 촘촘하다:
-    # 경로 인자로 안 풀리는 토큰도 나중에 실행돼 기장을 쓸 수 있어서 (`python -c "$PAYLOAD"`)
-    # 명령문 텍스트까지 본다. 그 텍스트에서 실행되지 않는 자리만 뺀다 — `_scannable_text`.
-    scannable = _without_workspace(_scannable_text(command).replace("\\", "/"))
-    private_control_access = (
-        any(marker in normalized_path for marker in _PRIVATE_CONTROL_PATHS)
-        or _path_token_targets_control(roots, path, _PRIVATE_CONTROL_PATHS)
-        or tool_name == "Bash"
-        and not readonly_shell
-        and (
-            any(marker in scannable for marker in _PRIVATE_CONTROL_PATHS)
-            or _command_targets_control(roots, command, _PRIVATE_CONTROL_PATHS)
-        )
-    )
     # 넓은 통제 표식은 **뿌리 기준으로 푼 경로 인자**로만 판정한다. 명령문 전체를 부분문자열로
     # 훑던 종전 갈래는 경로가 아닌 언급까지 잡았다: 저장소 밖 호스트 세션 디렉터리나 히어독
     # 본문에 스친 한 마디가 읽기 전용 조사를 통째로 막았다. 인용 안쪽에 숨긴 쓰기가 이 갈래를
     # 빠져나가는 것은 받아들인 값이다 — 그쪽은 write-sentinel 이 적고 verifier-gate 가 물리
-    # 대조로 잡는다. 그 대조가 안 닿는 파일 둘만 `_BOUNDARY_FILES` 로 따로 본다.
+    # 대조로 잡는다. `_BOUNDARY_FILES` 만 글에서도 찾는다: 그 셋은 이 가드의 뿌리를 정하는
+    # 파일이라, 열리면 뒤이은 판정이 무엇을 기준으로 했는지부터 무의미해진다.
     control_shell_write = (
         tool_name == "Bash"
         and not readonly_shell
         and (
             _command_targets_control(roots, command, _CONTROL_PATHS)
-            or any(name in scannable for name in _BOUNDARY_FILES)
+            or any(name in _without_workspace(_scannable_text(command).replace("\\", "/")) for name in _BOUNDARY_FILES)
         )
     )
-    if private_control_access or control_write or control_shell_write:
+    if (
+        _forgery_surface_access(tool_name, command, normalized_path, path, roots, readonly_shell)
+        or control_write
+        or control_shell_write
+    ):
         return "control"
     if bool(path) and not _path_token_within_root(roots, path):
         return "escape"

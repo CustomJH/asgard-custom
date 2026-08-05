@@ -306,7 +306,11 @@ def _release_guard(root: str, command: str) -> str | None:
 # 셸 파괴 명령 가드 (Canon 3) — git 계열은 git-guard 훅이 단일 출처, 여기는 비-git만.
 # 루트 안 rm -rf는 허용 (스크래치 정리는 정당 + git이 복구 지점) — 루트 밖·조상 경로만 차단.
 _DEV_DESTRUCTIVE = re.compile(r"\bmkfs(\.\w+)?\b|\bdd\b[^|;&]*\bof=/dev/")
-_CONTROL_PATHS = (".asgard", ".claude")
+# `readonly_guard._CONTROL_PATHS`·`_BOUNDARY_FILES` 와 같은 표 — 호스트 세 모드와 네이티브가
+# 같은 자리를 닫는다. 닫는 것은 판정의 물리 대조가 못 보는 하네스 상태(`.asgard/**`)와 이
+# 격리의 뿌리를 정하는 설정 파일 둘뿐이고, 나머지 스캐폴드는 평범한 작업 대상이다.
+_CONTROL_PATHS = (".asgard",)
+_BOUNDARY_FILES = (".claude/settings.json", ".claude/settings.local.json")
 
 
 def _destructive_guard(root: str, cmd: str) -> str | None:
@@ -380,7 +384,7 @@ def _scope_guard(root: str, command: str) -> str | None:
             if any(
                 candidate == os.path.realpath(os.path.join(root, marker))
                 or candidate.startswith(os.path.realpath(os.path.join(root, marker)) + os.sep)
-                for marker in _CONTROL_PATHS
+                for marker in (*_CONTROL_PATHS, *_BOUNDARY_FILES)
             ):
                 return "Asgard 제어 경로는 모델 Bash에서 접근할 수 없음 — 하니스/전용 명령만 사용"
             if (
@@ -1169,7 +1173,12 @@ def _parse_patch(patch_text: str) -> list[dict]:
 def _patch_path(root: str, path: str) -> tuple[str, str]:
     absolute = _confine(root, path)
     relative = os.path.relpath(absolute, os.path.realpath(root))
-    if relative in _CONTROL_PATHS or relative.startswith(tuple(marker + os.sep for marker in _CONTROL_PATHS)):
+    normalized = relative.replace(os.sep, "/")
+    if (
+        relative in _CONTROL_PATHS
+        or relative.startswith(tuple(marker + os.sep for marker in _CONTROL_PATHS))
+        or normalized in _BOUNDARY_FILES
+    ):
         raise ToolError("Asgard 제어 경로는 모델이 변경할 수 없음")
     return absolute, relative
 
