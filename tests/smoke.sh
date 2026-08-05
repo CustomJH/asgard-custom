@@ -56,8 +56,13 @@ if "${ASG[@]}" completions badshell >/dev/null 2>&1; then echo "FAIL: bad shell 
 
 # doctor 는 cwd 의 .asgard 상태(공유 메모리 백엔드 등)를 읽는다 — 개발자 로컬 repo 에서 돌리면
 # 호스트 백엔드 접속 상태가 smoke 를 물들인다. HOME 격리와 같은 이유로 중립 cwd 에서 판정.
-( cd "$HOME" && asgard doctor >/dev/null ) || { echo "FAIL: doctor exit nonzero (asgard on PATH)"; exit 1; }
-( cd "$HOME" && asgard doctor --json | grep -q '"ok": true' ) || { echo "FAIL: doctor --json ok"; exit 1; }
+# 종료코드 0=전부 초록 · 1=이 설치를 못 쓴다 · 2=쓸 수는 있고 손볼 항목이 있다. smoke 가 묻는
+# 것은 "쓸 수 있는가"이므로 2 는 통과다 — 중립 cwd 에는 프로젝트 배선이 없어 그 항목들이 늘
+# 빨갛고, 그걸 설치 실패로 읽으면 멀쩡한 설치가 매번 FAIL 이 된다.
+rc=0; ( cd "$HOME" && asgard doctor >/dev/null ) || rc=$?  # set -e 안전 캡처 (45행과 같은 관용구)
+[ "$rc" -eq 0 ] || [ "$rc" -eq 2 ] || { echo "FAIL: doctor exit $rc (asgard on PATH)"; exit 1; }
+# `ok` 는 이제 **모든** 항목이 초록일 때만 참이다. 설치 가능 여부를 묻는 자리는 `blocking_ok`.
+( cd "$HOME" && asgard doctor --json | grep -q '"blocking_ok": true' ) || { echo "FAIL: doctor --json blocking_ok"; exit 1; }
 # Canonical Tool Kernel catalog — installed CLI reports both runtime surfaces.
 asgard tools list --role worker --json | grep -q '"str_replace_based_edit_tool"' || { echo "FAIL: native tool catalog"; exit 1; }
 asgard tools list --role worker --json | grep -q '"NotebookEdit"' || { echo "FAIL: Claude Code tool catalog"; exit 1; }

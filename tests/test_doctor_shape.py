@@ -56,10 +56,21 @@ class TestDoctorJsonShape(unittest.TestCase):
 
     def test_envelope_keys(self):
         payload = self._run_json()
-        for key in ("version", "runtime", "ok", "freyja2_engine", "checks"):
+        for key in ("version", "runtime", "ok", "blocking_ok", "wants_attention", "freyja2_engine", "checks"):
             self.assertIn(key, payload, f"봉투에서 {key} 가 사라졌다")
         self.assertIsInstance(payload["checks"], list)
         self.assertIsInstance(payload["ok"], bool)
+        self.assertIsInstance(payload["blocking_ok"], bool)
+        self.assertIsInstance(payload["wants_attention"], list)
+
+    def test_ok_counts_every_check(self):
+        """ok 가 PATH·security 만 세던 시절에는 다른 항목이 몇 개 빨갛든 done 이 찍혔다."""
+        payload = self._run_json()
+        self.assertEqual(payload["ok"], all(c["ok"] for c in payload["checks"]))
+        self.assertEqual(
+            sorted(payload["wants_attention"]),
+            sorted(c["name"] for c in payload["checks"] if not c["ok"]),
+        )
 
     def test_every_check_carries_the_required_keys(self):
         for check in self._run_json()["checks"]:
@@ -72,11 +83,18 @@ class TestDoctorJsonShape(unittest.TestCase):
         names = [c["name"] for c in self._run_json()["checks"]]
         self.assertEqual(len(names), len(set(names)), "항목 이름이 겹치면 소비자가 어느 쪽인지 못 고른다")
 
-    def test_exit_code_follows_ok(self):
+    def test_exit_code_separates_unusable_from_degraded(self):
+        """0=전부 초록 · 1=이 설치를 못 쓴다 · 2=쓸 수는 있고 손볼 항목이 있다.
+
+        2 를 따로 두지 않으면 지도 하나가 git-ignore 됐다는 이유로 install 스크립트가
+        멀쩡한 설치를 실패로 읽는다."""
         buf = io.StringIO()
         with redirect_stdout(buf):
             code = doctor.run_doctor(json_out=True)
-        self.assertEqual(code, 0 if json.loads(buf.getvalue())["ok"] else 1)
+        payload = json.loads(buf.getvalue())
+        expected = 0 if payload["ok"] else (1 if not payload["blocking_ok"] else 2)
+        self.assertEqual(code, expected)
+        self.assertEqual(code == 0, not payload["wants_attention"])
 
 
 class TestTrinityRowNames(unittest.TestCase):

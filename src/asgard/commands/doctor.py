@@ -713,7 +713,6 @@ def _auto_baseline_check(root: str, policy: dict, quest_log_mod) -> dict | None:
 def _ever_timed_out(root: str, cmd: str, quest_log_mod) -> bool:
     """이 명령이 퀘스트 기장에서 상한에 끊긴 적이 있는가 — 최근 기장만 훑는다 (판정용 관측)."""
     import glob
-
     import json as _json
 
     paths = sorted(glob.glob(os.path.join(root, ".asgard", "quest", "*.jsonl")), key=os.path.getmtime)[-20:]
@@ -1177,7 +1176,96 @@ def _trinity_checks(root: str) -> list[dict]:
     checks += _route_prior_check(root)
     checks += _gate_event_check(root)
     checks += _skill_bank_check(root)
+    checks += _verification_independence_check(root)
+    checks += _workspace_trust_check(root)
     return checks
+
+
+def _workspace_trust_check(root: str) -> list[dict]:
+    """호스트가 이 프로젝트의 권한 선언을 실제로 읽는가.
+
+    `asgard init` 은 `.claude/settings.json` 에 허용 항목을 적어 두는데, Claude Code 는 사람이
+    그 폴더를 한 번 신뢰하기 전까지 그 항목을 **통째로 무시한다** — 그리고 그 사실을 실행 첫
+    줄에 한 번 말하고 만다 (26-08-05 실측: 갓 init 한 저장소에서 "Ignoring 17 permissions.allow
+    entries … this workspace has not been trusted"). 배선은 초록인데 힘이 없는 상태라, doctor 가
+    안 보면 아무 표면에도 안 나온다.
+
+    신뢰 여부는 오딘이 정할 일이라 여기서 켜 주지 않는다 — 꺼져 있다는 사실만 말한다."""
+    settings = os.path.join(root, ".claude", "settings.json")
+    if not os.path.isfile(settings):
+        return []
+    try:
+        with open(settings, encoding="utf-8") as handle:
+            declared = ((_json.load(handle) or {}).get("permissions") or {}).get("allow") or []
+    except Exception:
+        return []
+    if not isinstance(declared, list) or not declared:
+        return []
+    record = os.path.join(os.path.expanduser("~"), ".claude.json")
+    trusted: object = None
+    try:
+        with open(record, encoding="utf-8") as handle:
+            projects = (_json.load(handle) or {}).get("projects") or {}
+        entry = projects.get(os.path.realpath(root)) or projects.get(root) or {}
+        trusted = entry.get("hasTrustDialogAccepted")
+    except Exception:
+        return []  # 기록을 못 읽으면 말하지 않는다 — 추측으로 경고하지 않는다
+    return [
+        {
+            "name": "workspace trust (CC)",
+            "ok": bool(trusted),
+            "detail": (
+                f"허용 항목 {len(declared)}개가 힘을 받고 있어요"
+                if trusted
+                else f"허용 항목 {len(declared)}개를 Claude Code 가 무시해요 — 이 폴더가 아직 신뢰되지 않았어요"
+            ),
+            "fix": "이 폴더에서 claude 를 한 번 대화형으로 열어 신뢰 대화상자를 수락해 주세요.",
+        }
+    ]
+
+
+# 호스트별 표면 라벨 — 다른 행("mode parity (CC)")과 같은 표기를 쓴다.
+_HOST_SURFACES = (("claude-code", ".claude", "CC"), ("cursor", ".cursor", "Cursor"), ("codex", ".codex", "Codex"))
+
+
+def _verification_independence_check(root: str) -> list[dict]:
+    """판정자가 만든 이와 같은 모델로 도는가 — 검증 독립성이 가장 얇아지는 자리.
+
+    자기 선호 편향은 같은 모델이 **자기 산출을** 판정할 때 나온다. 아스가르드는 판정자를 구조로
+    떼어 놓지만(무주입·쓰기 가능한 하위 에이전트 금지·해시 물리 대조) 모델까지 떼지는 않아,
+    claude-code 는 worker·verifier 가 둘 다 `inherit` 이라 한 모델이 자기 diff 를 심판한다.
+
+    막지 않는다 (`ok` 는 늘 True). 이건 결함이 아니라 **고를 수 있는 선택**인데 아무 표면에도
+    안 보여서, 설치한 사람이 판정을 독립이라고 읽는 것이 문제였다 — 배선(`asgard mode`,
+    `agent_models.<host>.verifier`, 그리고 외부 제공자로 넘기는 `/bridge`)은 이미 다 있다.
+    빨간불로 올리면 기본 설정의 모든 설치가 늘 경고를 달고, 늘 켜진 경고는 아무도 안 읽는다."""
+    rows: list[dict] = []
+    try:
+        from ..templates.agent_models import agent_model
+    except Exception:
+        return rows
+    for host, marker, label in _HOST_SURFACES:
+        if not os.path.isdir(os.path.join(root, marker)):
+            continue
+        try:
+            worker = agent_model(root, host, "worker").get("model", "")
+            verifier = agent_model(root, host, "verifier").get("model", "")
+        except Exception:
+            continue
+        same = worker == verifier
+        rows.append(
+            {
+                "name": f"verification independence ({label})",
+                "ok": True,
+                "detail": (
+                    f"worker 와 verifier 가 같은 모델({verifier}) — 구조는 분리, 모델은 공유"
+                    if same
+                    else f"worker={worker} · verifier={verifier} — 교차 모델"
+                ),
+                "fix": "",
+            }
+        )
+    return rows
 
 
 # 세 클라이언트가 공유하는 규율 — 한쪽에만 깔린 게이트는 기능이 아니라 드리프트다.
@@ -1233,29 +1321,72 @@ def _mode_parity_check(root: str) -> list[dict]:
         except OSError:
             config_text = ""
         unwired = [name for name in _PARITY_WIRED if name not in config_text]
+        stale = _stale_hook_copies(hooks_dir)
         # 폴더가 있다고 아스가르드가 깔린 것은 아니다 — 클라이언트가 스스로 만드는 자리이기도 하다
         # (CC는 `.claude/settings.local.json` 만으로도 폴더를 만든다). 훅 디렉터리도 없고 배선도
         # 한 줄 없으면 **설치된 적 없는 모드**이므로 드리프트라고 말할 것이 없다 — 그 자리에 경고를
         # 세우면 `asgard sync`를 시켜도 사라지지 않는 영구 경고가 된다 (26-07-31 실측).
         if not os.path.isdir(hooks_dir) and len(unwired) == len(_PARITY_WIRED):
             continue
+        # 배선이 같아도 **강제력**은 호스트가 정한다. Cursor 의 `stop` 훅이 낼 수 있는 필드는
+        # `followup_message` 하나뿐이고(cursor.com/docs/hooks), 그건 다음 사용자 메시지를 자동
+        # 제출하는 통로라 대화형·루프 흐름에서만 작동한다. 일회성 헤드리스(`cursor-agent -p`)는
+        # 그 메시지를 받을 턴이 없어 게이트가 차단을 **기록만 하고** 실행은 그대로 끝난다
+        # (26-08-05 실측: hvami-mono 에서 orphan-write 를 적어 놓고 exit 0 · 완료 보고).
+        # 배선을 "동일 규율"이라고만 적으면 그 한계가 어느 표면에도 안 나온다.
         detail = "동일 규율 배선"
-        if missing or unwired:
+        if client == "Cursor":
+            detail += " · Stop 게이트는 여기서 권고예요 — 호스트에 차단 필드가 없어요"
+        if missing or unwired or stale:
             parts = []
             if missing:
                 parts.append("파일 없음: " + ", ".join(missing[:6]))
             if unwired:
                 parts.append("미배선: " + ", ".join(unwired[:6]))
+            if stale:
+                parts.append("판본 뒤처짐: " + ", ".join(stale[:6]))
             detail = " · ".join(parts)
         checks.append(
             {
                 "name": f"mode parity ({client})",
-                "ok": not missing and not unwired,
+                "ok": not missing and not unwired and not stale,
                 "detail": detail,
-                "fix": "asgard sync — 세 모드에 같은 훅 표를 다시 깐다",
+                "fix": "asgard sync --here — 이 프로젝트의 훅 표를 다시 깐다",
             }
         )
     return checks
+
+
+def _stale_hook_copies(hooks_dir: str) -> list[str]:
+    """배포된 훅이 패키지본과 다른가 — 이름이 같다고 같은 파일은 아니다.
+
+    이 검사가 **이름과 배선만** 보던 판은 판본 드리프트를 통째로 못 봤다: 배포된
+    `quest-log.py` 가 패키지본보다 50줄 뒤처져 있어 같은 저장소에서 네이티브와 Claude Code 가
+    서로 다른 베이스라인을 검출하고 있었는데, doctor 는 "동일 규율 배선"이라고 적었다
+    (26-08-05 감사). 훅은 sync 가 바이트 그대로 복사하므로 내용 비교가 곧 판본 비교다.
+
+    패키지본을 못 읽으면 아무 말도 하지 않는다 — 추측으로 경고하지 않는다."""
+    try:
+        from .. import hooks as _hooks
+
+        source_dir = os.path.dirname(_hooks.__file__)
+    except Exception:
+        return []
+    stale: list[str] = []
+    for name in _PARITY_HOOKS:
+        if not name.endswith(".py"):
+            continue
+        deployed = os.path.join(hooks_dir, name)
+        source = os.path.join(source_dir, name.replace("-", "_"))
+        if not (os.path.isfile(deployed) and os.path.isfile(source)):
+            continue
+        try:
+            with open(deployed, "rb") as a, open(source, "rb") as b:
+                if a.read() != b.read():
+                    stale.append(name)
+        except OSError:
+            continue
+    return stale
 
 
 def _freyja_engine_dir() -> Path:
@@ -1295,7 +1426,9 @@ def _design_engine_checks() -> list[dict]:
     from ..skill_registry import _BUNDLED_PLUGINS_DIR
 
     scripts = Path(_BUNDLED_PLUGINS_DIR) / "freyja-3d/skills/asgard-freyja-3d/engine/scripts"
-    required = ("shoot.mjs", "mesh_audit.mjs", "scene_audit.mjs", "detect3d.mjs", "preflight.mjs", "cad_build.py")
+    # cad 레인의 입구는 `cad.py` 다. 예전 이름 `cad_build.py` 를 그대로 물고 있어서, 파일이
+    # 멀쩡히 있는 설치에서도 doctor 가 매번 "missing" 을 냈다 (26-08-05).
+    required = ("shoot.mjs", "mesh_audit.mjs", "scene_audit.mjs", "detect3d.mjs", "preflight.mjs", "cad.py")
     missing = [name for name in required if not (scripts / name).is_file()]
     checks.append(
         {
@@ -1496,16 +1629,26 @@ def run_doctor(json_out: bool = False, quiet: bool = False) -> int:
     checks += _trinity_checks(os.getcwd())
     checks += _mode_parity_check(os.getcwd())  # 모드 간 규율 대조
     security_ok = all(ch["ok"] for ch in checks if ch.get("security"))
-    ok = bool(asgard) and security_ok
+    # 두 판정을 갈라 둔다. blocking 은 "이 설치를 쓸 수 있는가", ok 는 "전부 초록인가"다.
+    # 예전에는 ok 가 PATH·security 만 집계해서, 나머지 항목이 몇 개 빨갛든 종료코드가 0 이고
+    # 마지막 줄은 done 이었다 — 자동화가 exit code 로 설치 건전성을 물으면 늘 통과가 나왔다.
+    blocking_ok = bool(asgard) and security_ok
+    ok = blocking_ok and all(ch["ok"] for ch in checks)
     runtime = f"python {sys.version.split()[0]}"
 
-    return _emit_doctor(checks, ok=ok, runtime=runtime, json_out=json_out, quiet=quiet)
+    return _emit_doctor(checks, ok=ok, blocking_ok=blocking_ok, runtime=runtime, json_out=json_out, quiet=quiet)
 
 
-def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, quiet: bool) -> int:
+def _emit_doctor(checks: list[dict], *, ok: bool, blocking_ok: bool, runtime: str, json_out: bool, quiet: bool) -> int:
     """판정 결과를 표면으로. **판정과 갈라 두는 이유**는 종료코드가 하나라는 것이다 —
     두 표면이 같은 `ok`를 쓰는지 한자리에서 보이지 않으면, 한쪽만 고쳐 두 표면이 다른 답을
-    내는 일이 조용히 생긴다 (`--json`이 통과인데 화면은 실패인 doctor는 doctor가 아니다)."""
+    내는 일이 조용히 생긴다 (`--json`이 통과인데 화면은 실패인 doctor는 doctor가 아니다).
+
+    종료코드 0 = 전부 초록, 1 = 이 설치를 못 쓴다(PATH·보안), 2 = 쓸 수는 있고 손볼 항목이 있다.
+    2 를 따로 둔 이유는 1 의 뜻을 지키기 위해서다 — 지도가 git-ignore 됐다고 설치 실패로
+    보고하면 install 스크립트가 멀쩡한 설치를 되돌린다."""
+    wants = [ch["name"] for ch in checks if not ch["ok"]]
+    code = 0 if ok else (1 if not blocking_ok else 2)
     if json_out:
         sys.stdout.write(
             _json.dumps(
@@ -1513,6 +1656,8 @@ def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, 
                     "version": __version__,
                     "runtime": runtime,
                     "ok": ok,
+                    "blocking_ok": blocking_ok,
+                    "wants_attention": wants,
                     # 훅 매니페스트(engine/hooks/)가 `${FREYJA2_ENGINE}`로 참조하는 경로.
                     # 설치 위치는 버전마다 달라지므로 하드코딩 대신 여기서 읽어 간다.
                     "freyja2_engine": str(_freyja_engine_dir()),
@@ -1522,7 +1667,7 @@ def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, 
             )
             + "\n"
         )
-        return 0 if ok else 1
+        return code
     if not quiet:
         ui.head(f"doctor · v{__version__} {ui.dim('(' + runtime + ')')}")
     for ch in checks:
@@ -1531,5 +1676,10 @@ def _emit_doctor(checks: list[dict], *, ok: bool, runtime: str, json_out: bool, 
         if not ch["ok"]:
             sys.stdout.write(f"      {ui.paint(ui._INFO, '→')} {ch['fix']}\n")
     if not quiet:
-        ui.done() if ok else ui.warn("asgard not on PATH — see fix above.")
-    return 0 if ok else 1
+        if ok:
+            ui.done()
+        elif not blocking_ok:
+            ui.warn("asgard 를 못 찾거나 보안 항목이 막혀 있어요 — 위 → 줄을 보세요.")
+        else:
+            ui.warn(f"{len(wants)}건이 손을 기다려요 — {', '.join(wants)}")
+    return code

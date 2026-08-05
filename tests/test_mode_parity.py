@@ -388,23 +388,55 @@ class TestNativeParity(unittest.TestCase):
 
 
 class TestDoctorParityCheck(unittest.TestCase):
+    @staticmethod
+    def _lay_down(root: str) -> None:
+        """sync 가 하는 것과 같게 — 패키지본을 바이트 그대로 복사한다.
+
+        빈 파일을 두면 판본 검사가 정당하게 뒤처짐으로 잡는다: 이름이 같다고 같은 파일이 아니다."""
+        import shutil
+
+        from asgard import hooks as _hooks
+
+        source_dir = os.path.dirname(_hooks.__file__)
+        for folder in (".claude", ".cursor"):
+            os.makedirs(os.path.join(root, folder, "hooks"), exist_ok=True)
+            for name in _PARITY_HOOKS:
+                source = os.path.join(source_dir, name.replace("-", "_"))
+                target = os.path.join(root, folder, "hooks", name)
+                if name.endswith(".py") and os.path.isfile(source):
+                    shutil.copy2(source, target)
+                else:
+                    open(target, "w").close()
+        with open(os.path.join(root, ".claude", "settings.json"), "w", encoding="utf-8") as handle:
+            handle.write(cc_settings())
+        with open(os.path.join(root, ".cursor", "hooks.json"), "w", encoding="utf-8") as handle:
+            handle.write(cursor_hooks_json())
+
     def test_missing_hook_in_one_client_is_reported(self):
         with tempfile.TemporaryDirectory() as root:
-            for folder in (".claude", ".cursor"):
-                os.makedirs(os.path.join(root, folder, "hooks"))
-                for name in _PARITY_HOOKS:
-                    with open(os.path.join(root, folder, "hooks", name), "w"):
-                        pass
-            with open(os.path.join(root, ".claude", "settings.json"), "w", encoding="utf-8") as handle:
-                handle.write(cc_settings())
-            with open(os.path.join(root, ".cursor", "hooks.json"), "w", encoding="utf-8") as handle:
-                handle.write(cursor_hooks_json())
+            self._lay_down(root)
             os.remove(os.path.join(root, ".cursor", "hooks", "craft-gate.py"))
             checks = {check["name"]: check for check in _mode_parity_check(root)}
-            self.assertTrue(checks["mode parity (CC)"]["ok"])
+            self.assertTrue(checks["mode parity (CC)"]["ok"], checks["mode parity (CC)"]["detail"])
             self.assertFalse(checks["mode parity (Cursor)"]["ok"])
             self.assertIn("craft-gate.py", checks["mode parity (Cursor)"]["detail"])
             self.assertNotIn("mode parity (Codex)", checks)  # 미설치 클라이언트는 진단 대상이 아니다
+
+    def test_a_deployed_copy_that_fell_behind_is_reported(self):
+        """이름과 배선만 보던 판은 판본 드리프트를 통째로 못 봤다.
+
+        배포된 `quest-log.py` 가 패키지본보다 50줄 뒤처져 같은 저장소에서 네이티브와 Claude
+        Code 가 서로 다른 베이스라인을 검출하고 있었는데, doctor 는 "동일 규율 배선"이라고
+        적었다 (26-08-05 감사)."""
+        with tempfile.TemporaryDirectory() as root:
+            self._lay_down(root)
+            with open(os.path.join(root, ".claude", "hooks", "quest-log.py"), "a", encoding="utf-8") as handle:
+                handle.write("\n# 예전 판에는 없던 줄\n")
+            checks = {check["name"]: check for check in _mode_parity_check(root)}
+            self.assertFalse(checks["mode parity (CC)"]["ok"])
+            self.assertIn("quest-log.py", checks["mode parity (CC)"]["detail"])
+            self.assertIn("판본 뒤처짐", checks["mode parity (CC)"]["detail"])
+            self.assertTrue(checks["mode parity (Cursor)"]["ok"], checks["mode parity (Cursor)"]["detail"])
 
 
 if __name__ == "__main__":
