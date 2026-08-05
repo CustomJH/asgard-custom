@@ -52,20 +52,33 @@ class TestSkillBodies(unittest.TestCase):
 
     def test_debugging_anchors(self):
         d = self.by_name["asgard-worker-debugging"]
-        self.assertIn("Reproduce first (no reproduction, no fix)", d)
+        self.assertIn("Build the loop first", d)  # 빨간 루프가 1단계 — 가설보다 앞
+        self.assertIn("red-capable", d)  # 완료 기준 4속성
+        self.assertIn("deterministic", d)
+        self.assertIn("agent-runnable", d)
+        self.assertIn("higher reproduction rate", d)  # 간헐 버그 — 깨끗한 재현 대신 재현율
+        self.assertIn("every remaining element is load-bearing", d)  # 최소화 완료 기준
+        self.assertIn("3–5 ranked hypotheses before testing any of them", d)  # 앵커링 방지
         self.assertIn("One hypothesis = one change", d)  # 동시 다중 변경 금지
         self.assertIn("Make hypotheses falsifiable", d)
         self.assertIn("git bisect", d)  # 이분 탐색 — 커밋 축
+        self.assertIn("[DEBUG-", d)  # 태그 계측 — 정리가 grep 한 번
         self.assertIn("concealment", d)  # 증상 덧대기 ≠ 수정
         self.assertIn("Leave a test that fails before the fix and passes after", d)  # 회귀 고정
+        self.assertIn("that absence is the finding", d)  # 고정할 seam 이 없다는 것도 발견
         self.assertIn("Stop after 3 attempts", d)  # 상한 — 무근거 반복 방지
         self.assertIn("asgard-worker-testing", d)  # 상호 참조
 
     def test_testing_anchors(self):
         t = self.by_name["asgard-worker-testing"]
         self.assertIn("public behavior", t)  # 구현 세부 고정 금지
+        self.assertIn("Agree the seams before writing one", t)  # 합의 안 된 seam 에는 안 쓴다
         self.assertIn("must be seen to fail once", t)  # 실패 먼저
+        self.assertIn("Red before green", t)
         self.assertIn("Vertical slice", t)
+        self.assertIn("tracer bullet", t)  # 한 사이클이 다음 사이클을 가르친다
+        self.assertIn("passes by construction", t)  # 동어반복 단언 — 코드와 반대될 수 없다
+        self.assertIn("Refactoring belongs to the review stage", t)  # red→green 루프 밖
         self.assertIn("Determinism", t)
         for axis in ("Time", "Random", "Network", "Filesystem", "Order"):  # flaky 5축
             self.assertIn(axis, t)
