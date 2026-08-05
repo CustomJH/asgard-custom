@@ -215,6 +215,10 @@ class TestTheHostHookRecordsTheCall(RosterBase):
         runs = orc.run_list(self.root)
         self.assertEqual(len(runs), 1, "디스패치가 장부에 아무것도 안 남겼다")
         until(lambda: len(orc.task_list(self.root, runs[0]["id"])) >= count)
+        # 시도 행도 기다린다 — Task 와 같은 프로세스가 적지만 같은 순간은 아니다. Task 만 보고
+        # 곧바로 `live_agents` 를 읽으면 빈 목록이 나온다 (26-08-06 러너 실측: 로컬 6회 연속
+        # 통과, ubuntu 러너 전수 병렬에서 한 건 빨강). 이 대기가 이 함수 독스트링의 계약이다.
+        until(lambda: len(orc.live_agents(self.root, runs[0]["id"])) >= count)
         return orc.task_list(self.root, runs[0]["id"])
 
     def dispatch_payload(self, target: str, prompt: str, caller: str = "") -> dict:
