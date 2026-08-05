@@ -553,11 +553,19 @@ def surface(
 @app.command(help="what this session has cost you so far — the total, what makes it up, and which lane spent it")
 def budget(
     transcript: str = typer.Option("", "--transcript", help="read this transcript instead of the newest one"),
+    set_: list[str] = typer.Option(
+        None,
+        "--set",
+        help="raise or lower one limit, e.g. --set session_cost_units=60000000 (repeatable)",
+        metavar="KEY=VALUE",
+    ),
     json_: bool = typer.Option(False, "--json"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
 ) -> None:
-    from .commands.budget import run_budget
+    from .commands.budget import run_budget, run_budget_set
 
+    if set_:
+        raise typer.Exit(run_budget_set(list(set_), json_out=json_))
     raise typer.Exit(run_budget(transcript=transcript, json_out=json_, quiet=quiet))
 
 
@@ -762,13 +770,14 @@ app.command("upgrade", hidden=True, help="alias of `update`")(update)
 def sync(
     dry_run: bool = typer.Option(False, "--dry-run"),
     list_: bool = typer.Option(False, "--list", help="just list the registered projects, then stop"),
+    here: bool = typer.Option(False, "--here", help="only the project you are standing in"),
     quiet: bool = typer.Option(False, "--quiet", "-q"),
     json_out: bool = typer.Option(False, "--json", help="print the result as JSON"),
 ) -> None:
     ui.set_quiet(quiet)
     from .commands.sync import run_sync
 
-    raise typer.Exit(run_sync(dry_run=dry_run, list_only=list_, json_out=json_out))
+    raise typer.Exit(run_sync(dry_run=dry_run, list_only=list_, json_out=json_out, here=here))
 
 
 @app.command(help="remove asgard (the uv tool only — your ~/.asgard data is kept)")

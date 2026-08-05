@@ -92,23 +92,28 @@ DEFAULTS = {
 
 # 차단 사유 — 전송 표면 계약은 메시지 서두의 `[gate:<code>]` 태그 (failures.py 규약과 동일 어휘).
 # verifier_gate의 GATE_MESSAGES 와는 별개 표다 (다른 게이트, 다른 코드 공간).
+# 상한을 올리는 길은 **`asgard budget --set` 하나**로 적는다. 설정 파일을 직접 고치라고 적던
+# 문장은 통제 표면 가드가 막는 편집을 지시했고 (readonly_guard 는 `.asgard/` 아래 편집을 어느
+# 역할에도 안 연다), 역할은 그 앞에서 멈추거나 우회로를 찾았다 (26-08-05).
 GATE_MESSAGES = {
     "budget-ceiling": (
         "Session spend {spent} cost units has reached the ceiling ({limit}). "
         "Finish the deliverable in hand, report what is done and what remains, and start no new "
         "work in this session. Subagent dispatch is refused from here under the default "
-        "`budget.enforce: block`. To lift the ceiling, raise budget.session_cost_units in "
-        ".asgard/asgard-setting-project.json — the limit is one number for every model, so a "
-        "session on a large-context model reaches it in fewer turns."
+        "`budget.enforce: block`. Raising the ceiling is Odin's call, not yours — report that you "
+        "hit it and name the command (`asgard budget --set session_cost_units=<n>`). The limit is "
+        "one number for every model, so a session on a large-context model reaches it in fewer turns."
     ),
     "budget-agent-ceiling": (
         "Subagent role `{role}` has consumed {spent} cost units this session (limit {limit}). "
-        "Do the remaining work in the main lane, or raise budget.agent_cost_units."
+        "Do the remaining work in the main lane, or report that the ceiling needs raising "
+        "(`asgard budget --set agent_cost_units=<n>`)."
     ),
     "budget-agent-calls": (
         "Subagent role `{role}` has been dispatched {spent} times this session (limit {limit}). "
         "Repeated dispatch of the same role is the shape of a loop, not of progress — "
-        "reconsider the approach (Canon 9) or raise budget.agent_calls."
+        "reconsider the approach (Canon 9), or report that the limit needs raising "
+        "(`asgard budget --set agent_calls=<n>`)."
     ),
 }
 

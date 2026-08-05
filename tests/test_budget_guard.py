@@ -10,10 +10,12 @@ from __future__ import annotations
 import io
 import json
 import os
+import re
 import tempfile
 import unittest
 from unittest import mock
 
+from asgard.commands.budget import SETTABLE
 from asgard.hooks import budget_guard as bg
 
 
@@ -368,6 +370,116 @@ class TestLimitsConfig(unittest.TestCase):
         self.assertGreaterEqual(ceiling, p95)
         self.assertLessEqual(ceiling, p99)
         self.assertLess(warn, ceiling)
+
+
+class TestTheGateNamesAWayThrough(unittest.TestCase):
+    """게이트가 안내하는 처방은 실제로 실행할 수 있어야 한다.
+
+    종전 문구는 `.asgard/asgard-setting-project.json` 을 직접 고치라고 했는데, 통제 표면 가드는
+    그 파일을 어느 역할에게도 안 연다 — 하네스가 자기가 막는 편집을 지시하던 자리다 (26-08-05).
+    """
+
+    def test_no_gate_message_tells_a_role_to_edit_the_settings_file(self) -> None:
+        for code, template in bg.GATE_MESSAGES.items():
+            with self.subTest(code=code):
+                self.assertNotIn("asgard-setting-project.json", template)
+
+    def test_every_gate_message_names_a_command_that_exists(self) -> None:
+        from asgard.commands.budget import SETTABLE
+
+        for code, template in bg.GATE_MESSAGES.items():
+            with self.subTest(code=code):
+                named = re.findall(r"asgard budget --set ([a-z_]+)=", template)
+                self.assertTrue(named, f"{code} 가 처방을 하나도 안 가리킨다")
+                for key in named:
+                    self.assertIn(key, SETTABLE, f"{code} 가 없는 손잡이를 가리킨다")
+
+
+class TestBudgetSet(unittest.TestCase):
+    """`asgard budget --set` — 게이트가 가리키는 좁은 동사."""
+
+    def setUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = os.path.realpath(self.tmp.name)
+        self.cwd = os.getcwd()
+        os.chdir(self.root)
+        self.addCleanup(lambda: os.chdir(self.cwd))
+
+    def _set(self, *args: str) -> tuple[int, dict]:
+        from asgard.commands.budget import run_budget_set
+
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            code = run_budget_set(list(args), json_out=True)
+        try:
+            return code, json.loads(out.getvalue() or "{}")
+        except json.JSONDecodeError:
+            return code, {}
+
+    def _section(self) -> dict:
+        with open(os.path.join(self.root, ".asgard", "asgard-setting-project.json"), encoding="utf-8") as handle:
+            return json.load(handle).get("budget") or {}
+
+    def test_it_writes_only_the_named_key(self) -> None:
+        code, _ = self._set("session_cost_units=60000000")
+        self.assertEqual(code, 0)
+        self.assertEqual(self._section(), {"session_cost_units": 60_000_000})
+
+    def test_it_keeps_the_keys_it_was_not_asked_about(self) -> None:
+        self._set("warn_cost_units=24000000")
+        self._set("session_cost_units=60000000")
+        self.assertEqual(self._section(), {"warn_cost_units": 24_000_000, "session_cost_units": 60_000_000})
+
+    def test_the_hook_reads_back_what_the_command_wrote(self) -> None:
+        self._set("session_cost_units=60000000", "agent_calls=48")
+        limits = bg.load_limits(self.root)
+        self.assertEqual(limits["session_cost_units"], 60_000_000)
+        self.assertEqual(limits["agent_calls"], 48)
+
+    def test_turning_enforcement_off_is_not_a_handle_this_command_gives(self) -> None:
+        # 막 막힌 역할이 자기를 막은 문을 떼는 손잡이는 없다 — 상한을 올리는 것과 다른 결정이다.
+        self.assertNotIn("enforce", SETTABLE)
+        self.assertEqual(self._set("enforce=off")[0], 2)
+
+    def test_an_unknown_key_is_refused_and_writes_nothing(self) -> None:
+        code, payload = self._set("nope=1")
+        self.assertEqual(code, 2)
+        self.assertIn("nope", payload.get("error", ""))
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".asgard", "asgard-setting-project.json")))
+
+    def test_a_bad_value_is_refused(self) -> None:
+        for assignment in (
+            "session_cost_units=abc",
+            "session_cost_units=0",
+            "session_cost_units=-1",
+            "session_cost_units=inf",
+            "session_cost_units=1e400",
+            "session_cost_units",
+        ):
+            with self.subTest(assignment=assignment):
+                self.assertEqual(self._set(assignment)[0], 2)
+
+    def test_an_unreadable_settings_file_is_not_overwritten(self) -> None:
+        # `load_project` 는 못 읽는 파일에 빈 dict 로 물러서고 `save_project` 는 섹션을 통째로
+        # 교체한다 — 그대로 두면 쉼표 하나가 trinity_policy·paths·agents 를 한 번에 지운다.
+        path = os.path.join(self.root, ".asgard", "asgard-setting-project.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        broken = '{"trinity_policy": {"baseline_timeout": 180},}'
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(broken)
+        self.assertEqual(self._set("session_cost_units=60000000")[0], 2)
+        with open(path, encoding="utf-8") as handle:
+            self.assertEqual(handle.read(), broken)
+
+    def test_it_writes_where_the_settings_are_actually_read(self) -> None:
+        os.makedirs(os.path.join(self.root, ".asgard"), exist_ok=True)
+        nested = os.path.join(self.root, "src", "deep")
+        os.makedirs(nested)
+        os.chdir(nested)
+        self._set("session_cost_units=60000000")
+        self.assertFalse(os.path.exists(os.path.join(nested, ".asgard")))
+        self.assertEqual(bg.load_limits(self.root)["session_cost_units"], 60_000_000)
 
 
 if __name__ == "__main__":

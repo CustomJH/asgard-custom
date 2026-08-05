@@ -263,14 +263,27 @@ def _profile(project: dict) -> str:
     return "+".join(k for k in ("cc", "cursor", "codex") if project.get(k)) or "universal"
 
 
-def run_sync(dry_run: bool = False, list_only: bool = False, json_out: bool = False) -> int:
+def run_sync(dry_run: bool = False, list_only: bool = False, json_out: bool = False, here: bool = False) -> int:
     """등록된 프로젝트의 코어를 갱신한다.
 
     `--json`은 프로젝트별 결과를 그대로 낸다 — 설치 스크립트와 CI가 "몇 개가 어떻게 됐나"로
-    분기한다. `ui.ok`·`warn`·`fail`·`done`은 `--quiet`을 안 보므로 그 넷은 따로 막는다."""
+    분기한다. `ui.ok`·`warn`·`fail`·`done`은 `--quiet`을 안 보므로 그 넷은 따로 막는다.
+
+    `here=True` 는 지금 있는 프로젝트 하나만 본다. 훅이나 템플릿을 고친 사람이 그 변경을 자기
+    저장소에서 확인하려면 등록된 전부(이 기계는 72개, 대부분 시험이 남긴 임시 폴더)를 건드려야
+    했고, 그래서 사람은 안 돌리거나 내부 함수를 직접 부르게 된다 — 어느 쪽도 정본 통로가
+    아니다 (26-08-05)."""
     ui.set_quiet(ui._QUIET or json_out)
     _autoregister_cwd()
     projects = registry.load()
+    if here:
+        cwd = os.path.realpath(os.getcwd())
+        projects = [p for p in projects if os.path.realpath(str(p["root"])) == cwd]
+        if not projects:
+            if json_out:
+                return _emit({"projects": [], "failed": 0, "dry_run": dry_run, "here": True}, 0)
+            ui.warn("여기는 등록된 프로젝트가 아니에요 — 먼저 `asgard init` 을 돌려 주세요.")
+            return 0
     ui.head(f"sync · {len(projects)} project(s)" + (" · dry-run" if dry_run else ""))
     if not projects:
         if json_out:
