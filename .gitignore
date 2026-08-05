@@ -276,8 +276,6 @@ workspace/
 # `!.asgard/` 가 어느 깊이의 `.asgard` 든 되살려 위 `**/` 한 줄을 통째로 무효로 만든다.
 !/.asgard/
 /.asgard/*
-!/.asgard/memory/
-/.asgard/memory/*
 !/.asgard/memory/records/
 !/.asgard/memory/records/**
 design-qa.md
