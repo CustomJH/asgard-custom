@@ -54,6 +54,26 @@ def memory_query(
 
 
 @memory_app.command(
+    "graph",
+    help="read the memory as a graph — what it grew around, why two pages are connected, "
+    "what sits around one, and how many clumps there are",
+)
+def memory_graph(
+    verb: str = typer.Argument(..., help="hubs|path|expand|communities|stats"),
+    source: str = typer.Argument("", help="the node to start from (path, expand)"),
+    target: str = typer.Argument("", help="the node to reach (path)"),
+    scope: str = typer.Option("personal", "--scope", help="personal|project"),
+    edges: str = typer.Option("all", "--edges", help="all|explicit|mention|term — which links to count"),
+    top: int = typer.Option(10, "--limit", "-k", help="how many hubs to show"),
+    depth: int = typer.Option(2, "--depth", help="how many hops out to walk (expand)"),
+    json_: bool = typer.Option(False, "--json"),
+) -> None:
+    from ..commands.memory.graph import run_graph
+
+    raise typer.Exit(run_graph(verb, source, target, scope=scope, edges=edges, top=top, depth=depth, json_out=json_))
+
+
+@memory_app.command(
     "episodes",
     help="search the raw session transcripts — rebuilt from the logs, so treat it as a lead, not a source. "
     "an empty query gives you the counts instead",
@@ -313,11 +333,19 @@ def memory_norn(
 def memory_pattern(
     apply: bool = typer.Option(False, "--apply", help="write the observations that checked out into the wiki"),
     due: bool = typer.Option(False, "--due", hidden=True, help="for hooks: say whether a pass is due"),
+    auto: bool = typer.Option(
+        False,
+        "--auto",
+        help="go on its own, but only as far as the pattern_auto tier allows — inferences still come to you as proposals",
+    ),
+    wake: bool = typer.Option(
+        False, "--wake", hidden=True, help="for hooks: start a detached --auto run when one is due"
+    ),
     json_: bool = typer.Option(False, "--json"),
 ) -> None:
     from ..commands.memory import run_pattern
 
-    raise typer.Exit(run_pattern(apply, json_, due))
+    raise typer.Exit(run_pattern(apply, json_, due, auto, wake))
 
 
 @memory_app.command("tick", hidden=True, help="for hooks: the end-of-turn nudges, in one process")
