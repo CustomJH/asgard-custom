@@ -26,33 +26,59 @@ from __future__ import annotations
 import contextlib
 import os
 import sqlite3
+import time
 from collections.abc import Iterator
 
 # studio/db.py·orchestration/store.py 가 이미 쓰던 값. 세 자리가 서로 다르면 어느 쪽이 정본인지
 # 물어야 하고, 물어야 하는 값은 계약이 아니다.
 BUSY_TIMEOUT_MS = 10_000
+# WAL 전환 재시도 — 전환은 밀리초로 끝나므로 짧게 여러 번이 길게 한 번보다 낫다.
+_WAL_TRIES = 20
+_WAL_BACKOFF_S = 0.01
 
 
 def connect(path: str) -> sqlite3.Connection:
     """WAL 과 busy_timeout 을 건 연결. 부모 디렉터리는 호출자가 이미 만들어 둔다.
 
-    순서가 뜻을 가진다. WAL 전환이 먼저인 이유는 그것이 옛 파일에 대해서는 쓰기이고, 파이썬
-    기본 대기(5초)가 그 한 문장을 덮는 유일한 창이기 때문이다. busy_timeout 을 먼저 걸면 그
-    창이 10초로 늘어나 실패해야 할 때 더 오래 매달린다. 전환이 한 번 끝나면 모드는 파일에
-    남으므로 다음 연결부터 이 문장은 잠금이 필요 없다.
+    `busy_timeout` 이 먼저다 — 그 값은 이 연결이 뒤에 치는 모든 쓰기가 쓴다. WAL 전환만은 그
+    값을 못 쓰고(`_enable_wal` 참고), 그래서 전환은 이 함수에서 유일하게 실패해도 되는 문장이다.
 
-    예외는 삼키지 않는다 — 손상 파일 판정(`sqlite3.DatabaseError` 의 errorcode)이 호출자 몫이라
-    그 예외가 그대로 올라가야 한다. 대신 열린 핸들은 여기서 닫는다: 예외와 함께 반쯤 열린
-    연결이 호출자에게 가면 그것을 닫을 사람이 없다.
+    나머지 예외는 삼키지 않는다 — 손상 파일 판정(`sqlite3.DatabaseError` 의 errorcode)이 호출자
+    몫이라 그 예외가 그대로 올라가야 한다. 대신 열린 핸들은 여기서 닫는다: 예외와 함께 반쯤
+    열린 연결이 호출자에게 가면 그것을 닫을 사람이 없다.
     """
     conn = sqlite3.connect(path)
     try:
-        conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        _enable_wal(conn)
     except BaseException:
         conn.close()
         raise
     return conn
+
+
+def _enable_wal(conn: sqlite3.Connection) -> None:
+    """WAL 로 바꾼다. 못 바꿔도 연결은 살린다 — 이 함수가 지키는 것은 모드가 아니라 연결이다.
+
+    저널 모드 변경은 `busy_timeout` 을 안 쓴다. 다른 연결이 그 파일을 붙들고 있으면 SQLite 는
+    busy handler 를 부르지 않고 즉시 SQLITE_BUSY 를 낸다. 같은 파일을 처음 여는 스레드가
+    여럿이면 그중 하나만 전환에 성공하고, 나머지에서 이 예외를 올리면 그 세션의 쓰기가 통째로
+    사라진다 — 26-08-06 실측(`agent/evicted.archive`, 4스레드 × 25건)에서 12회 중 4회가 그렇게
+    25건씩 잃었고, 호출부가 fail-open 이라 행 수가 준 것 말고는 아무 흔적이 없었다.
+
+    전환은 밀리초로 끝나므로 짧게 여러 번 다시 친다. 그래도 안 되면 그대로 둔다: 먼저 전환한
+    연결이 세워 둔 WAL 을 쓰거나, 아무도 못 세웠으면 기본 저널로 돈다. 둘 다 정확성은 같고
+    동시성만 다르다. 잠금이 아닌 실패는 올린다 — 손상 파일이 조용히 지나가면 안 된다.
+    """
+    for attempt in range(_WAL_TRIES):
+        try:
+            conn.execute("PRAGMA journal_mode=WAL")
+            return
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc) and "busy" not in str(exc).lower():
+                raise
+            if attempt < _WAL_TRIES - 1:
+                time.sleep(_WAL_BACKOFF_S)
 
 
 @contextlib.contextmanager
@@ -65,9 +91,13 @@ def writing(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     SQLite 는 기다리는 대신 바로 포기한다. 처음부터 쓰기 락을 요청하면(`BEGIN IMMEDIATE`) 그
     경합이 정상적인 대기가 되고 `busy_timeout` 이 덮는다.
 
-    26-08-06 실측(`agent/evicted.archive`): 4스레드가 25건씩 보관할 때 두 스레드가 승격에서
-    죽어 50건이 통째로 사라졌고, 호출부가 fail-open 이라 화면에는 아무것도 안 보였다. 같은
-    부하를 immediate 로 받으면 8스레드에서도 무손실이다.
+    이 계약이 먼저 지키는 것은 값이다. `archive` 처럼 `max(seq)` 를 읽고 그 위에 쓰는 블록에서
+    읽기를 락 밖에 두면 두 세션이 같은 top 을 보고 같은 seq 를 쓴다.
+
+    26-08-06 에 이 자리를 immediate 로 바꾼 커밋(dd4ce1b8)은 "4스레드 × 25건에서 승격 실패로
+    50건 유실"을 근거로 들었는데, 그 유실의 실제 자리는 승격이 아니라 `_enable_wal` 이었다.
+    connect 를 고친 뒤에는 deferred 로 되돌려도 같은 부하에서 20회 무손실이다. 승격 경합은
+    여전히 실재하지만(위 문단), 그 숫자가 그것을 재지는 않았다.
 
     읽기만 하는 블록에는 쓰지 않는다 — 그때는 쓰기 락이 남의 쓰기를 막을 뿐이다."""
     conn.execute("BEGIN IMMEDIATE")
