@@ -74,8 +74,12 @@ def _enable_wal(conn: sqlite3.Connection) -> None:
         try:
             conn.execute("PRAGMA journal_mode=WAL")
             return
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc) and "busy" not in str(exc).lower():
+        except sqlite3.DatabaseError as exc:
+            # errorcode 로 가른다 — 메시지 부분일치는 로케일과 SQLite 판에 따라 달라지고, 이
+            # 분기가 놓치면 손상 파일이 재시도 스무 번을 돌다 조용히 지나간다. 저장소의 다른
+            # 네 자리(`project_memory/documents`·`memory/index`·`agent/episodes`·`agent/evicted`)도
+            # 같은 축을 쓴다.
+            if getattr(exc, "sqlite_errorcode", None) not in {sqlite3.SQLITE_BUSY, sqlite3.SQLITE_LOCKED}:
                 raise
             if attempt < _WAL_TRIES - 1:
                 time.sleep(_WAL_BACKOFF_S)
