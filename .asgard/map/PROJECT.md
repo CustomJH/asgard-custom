@@ -7,8 +7,8 @@
 ## Orientation
 
 - Project root: `./`
-- Languages by observed source files: Python (527), JavaScript (6), Rust (2)
-- Evidence scan: 729 files; 35 landmarks
+- Languages by observed source files: Python (558), JavaScript (6), Rust (2)
+- Evidence scan: 762 files; 36 landmarks
 
 ## Landmarks
 
@@ -33,6 +33,7 @@
 - `src/asgard/commands/plan_api/` — Python package root
 - `src/asgard/commands/studio/` — Python package root
 - `src/asgard/hooks/` — Python package root
+- `src/asgard/hooks/asgard_hooklib/` — Python package root
 - `src/asgard/map_graph/` — Python package root
 - `src/asgard/memory/` — Python package root
 - `src/asgard/memory_bridge/` — Python package root
@@ -67,6 +68,7 @@
 - `benchmarks/latency/README.md` — doc: 회수 지연 — k6 부하 시험 · sections: 실행; 실측 (26-07-28 · Apple Silicon · 시맨틱 ON · 100페이지); 읽는 법; 한계
 - `benchmarks/longmemeval/REPORT.md` — doc: LongMemEval — asgard 회수 벤치 · sections: 결과; 유형별 (R@5); 외부 대조 (각 저장소 공개값); 읽는 법; 후속: temporal-reasoning 4-암 실험 (n=133); 구절 리랭크 도입 후 (최종)
 - `benchmarks/map-shortcut/REPORT.md` — doc: map 숏컷 벤치 — 주입면이 명령으로 라우팅하는가 (26-08-01) · sections: 질문; 방법 (harness.py); 고치기 전 (같은 저장소, 26-08-01 실측); 고친 뒤 (results.jsonl); 남은 미스 — 닫힌 사전의 한계가 그 자리다; 정직성 기록 — 사전을 사후에 늘렸다
+- `benchmarks/memory-graph/REPORT.md` — doc: 기억 그래프 벤치 — 명시 링크만 vs 파생 간선까지 (26-08-06) · sections: 질문; 방법; 결과; 읽는 법; 이 벤치가 못 재는 것; 대조 — 무엇을 가져왔고 무엇을 안 가져왔나
 - `benchmarks/project-memory/REPORT.md` — doc: 2차(프로젝트) 메모리 회수 벤치 · sections: 레인 1 · 로컬 문서 레인 hit@k (실측 26-08-01); 레인 2 · 관계 1홉 확장은 회수를 **올린다** (깎지 않는다); 레인 3 · 동언어 렉시컬 기권 정밀도; 제품 코드를 고쳐야만 잴 수 있는 것 (안 고쳤다)
 - `benchmarks/shortcut-recall/REPORT.md` — doc: 숏컷 벤치 — recall 주입 on/off A/B (26-07-16, 36런) · sections: 질문; 방법 (harness.py); 결과 (results-36runs.jsonl — 런당 1행 append, 원본 그대로); 판정기 주의 (jsonl 의 _success_ 필드를 그대로 믿지 말 것); 한계
 - `docker/asgard-k6/README.md` — doc: asgard-k6 — 부하 시험 러너 이미지 · sections: 왜 우리 이름의 이미지인가; 볼륨은 프로젝트 것이다; 수동 스택
@@ -95,12 +97,14 @@
 - `benchmarks/latency/server.py` — public surface: def build(profile, pages); def main()
 - `benchmarks/longmemeval/calibrate_dispersion.py` — public surface: def calibrate(rows); def main()
 - `benchmarks/map-shortcut/ab_harness.py` — public surface: def build_sandbox(); def build_map(); def precheck(); def run_one(fid, task, judge, arm, rep); def report(rows)
+- `benchmarks/memory-graph/harness.py` — public surface: def build_wiki(d, extra); def score_arm(d, mode); def graph_shape(d); def main()
 - `benchmarks/norn-evolution/harness.py` — public surface: def build_wiki(d); def run_norn(d, truth); def evaluate(d, truth, insight_slugs); def run_replicate(rep); def main()
 - `benchmarks/project-memory/corpus.py` — public surface: def build(root)
 - `benchmarks/project_memory_projection.py` — public surface: def local_benchmark(files); def live_benchmark(); def main(); uses `src/asgard/memory_context.py`
 - `benchmarks/shortcut-recall/harness.py` — public surface: def build_sandbox(); def build_memory(); def precheck(); def run_one(fid, task, judge, arm, rep); def main()
 - `studio-shell/src-tauri/icons/build_icons.py` — public surface: def superellipse(box, n, steps); def body_mask(size); def night(size); def master(); def main()
 - `tests/cli_boundary.py` — public surface: def strip_ansi(text); class Outcome; def run_cli(*argv, stdin)
+- `tests/hookscaffold.py` — public surface: def deploy_library(hooks_dir); def deploy_cli(bin_dir); def until(predicate, timeout, step)
 - `tests/test_activity.py` — public surface: class ActivityEmitCase; class ActivityReadCase; class StudioAbsorbCase; class SessionEmitCase; class StudioLiveRunCase
 - `tests/test_adversarial_gate.py` — public surface: def run(script, args, stdin, cwd, env_extra); class AdversarialBase; class TestAdversarialVectors; class TestEncodingDisarm; class TestSessionIdentityDisarm
 - `tests/test_agent.py` — public surface: class Base; class TestEditor; class TestBash; class TestTruncation; class TestBashDestructiveGuard; uses `src/asgard/agent/session.py`
@@ -133,8 +137,6 @@
 - `tests/test_document_tools.py` — public surface: class DocumentToolTest; class BundledDocumentSkillTest; uses `src/asgard/agent/tool_kernel.py`
 - `tests/test_eitri.py` — public surface: class TestScaffold; class TestSkillBodies; class TestSkillResolver; class TestWiring; uses `src/asgard/templates/eitri.py`
 - `tests/test_engines.py` — public surface: def test_api_catalog_and_fallback_are_distinct_reachability(monkeypatch, tmp_path); def test_anthropic_uses_its_existing_catalog_probe(monkeypatch, tmp_path); def test_unconfigured_engine_never_calls_catalog(monkeypatch, tmp_path); def test_cli_and_codex_use_their_native_readiness_checks(monkeypatch, tmp_path); def test_cache_ttl_boundary_and_cached_never_probe(monkeypatch, tmp_path); uses `src/asgard/providers.py`
-- `tests/test_episodes.py` — public surface: class Base; class TestIndexAndSearch; class TestPolicy; class TestEpisodeNote; class TestExternalClientLane
-- `tests/test_error_boundary.py` — public surface: class Sandboxed; class TestHumanSurfaceStaysHuman; class TestJsonSurfaceFailsInJson; class TestExitCodesFollowTheCanon; class TestEveryFixableFailureSaysWhatToDo
 
 ## Navigation contract
 
